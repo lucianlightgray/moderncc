@@ -3342,6 +3342,21 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_FUSION=1")
         endforeach()
 
+        # §27 loop tiling (tile-and-interchange): force MCC_AST_TILE on across the exec corpus with a
+        # small strip (7) so the partial-last-tile boundary is exercised, and every permutable nest is
+        # strip-mined + hoisted and its runtime output validated (a wrong permutation, a mis-synthesized
+        # strip cond/bound, or an aliasing strip IV would surface as a wrong result). Value-changing.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-tile/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-tile-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-tile/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_TILE=1;MCC_AST_TILE_SIZE=7")
+        endforeach()
+
         # -fmerge-constants string pooling: force MCC_MERGE_STRINGS on across the exec corpus so
         # every identical rodata literal is merged and re-homed, and the runtime output validates
         # that the shared storage + symbol re-bind is correct (a lost NUL or wrong offset shows up

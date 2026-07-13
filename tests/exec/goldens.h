@@ -296,6 +296,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"narrow_ranged", "run", "exec/optimizer/narrow_ranged.c", "chk=10780901990224392681\nOK\n", "", "", ""},
 		{"loop_interchange", "run", "exec/optimizer/loop_interchange.c", "6727813338129931117 -7361308579892106783\n", "", "", ""},
 		{"loop_fusion", "run", "exec/optimizer/loop_fusion.c", "876625318051309021\n", "", "", ""},
+		{"loop_tile", "run", "exec/optimizer/loop_tile.c", "11124253871231167314\n", "", "", ""},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);

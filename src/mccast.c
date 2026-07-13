@@ -697,6 +697,8 @@ static int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
+static int ast_tile_env; /* MCC_AST_TILE: strip-mine the inner loop of a permutable nest + hoist the strip loop outermost (§27 tile-and-interchange) */
+static int ast_tile_size; /* MCC_AST_TILE_SIZE: strip length (default 32) */
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
@@ -1176,6 +1178,10 @@ void ast_configure(MCCState *s1) {
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
 	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", 0);
 	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", 0);
+	ast_tile_env = ast_env_gate("MCC_AST_TILE", 0);
+	ast_tile_size = ast_env_int("MCC_AST_TILE_SIZE", 32);
+	if (ast_tile_size < 2)
+		ast_tile_size = 32;
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
@@ -10315,6 +10321,160 @@ static int ast_fusion_run(AstArena *a) {
 	return total;
 }
 
+/* §27 tile-and-interchange. Strip-mine the inner loop of a 2-deep perfect nest and
+ * hoist the strip loop OUTERMOST:
+ *   for(i=0;i<N;i++) for(j=0;j<M;j++) BODY
+ *     -> for(jj=0;jj<M;jj+=T) for(i=0;i<N;i++) for(j=jj; j<M && j<jj+T; j++) BODY
+ * Correct iff the nest is fully permutable, which for a 2-deep nest is exactly
+ * `ast_loop_interchange_legal` (both canonicalize dependence vectors and reject the
+ * lone `(<,>)`); the body-safety whitelist rejects effects the affine dep test can't
+ * model. The strip IV `jj` is a fresh replay-time stack slot, minted the same way the
+ * ast_ltemp pass mints temporaries (frame reserved via `loc = ast_ltemp_cur`). */
+static AstLocal ast_tile_local_ref(AstArena *a, int off, int op, int tt,
+																	 uint64_t tr) {
+	AstLocal r = ast_node(a, AST_Ref);
+	ast_set_op(a, r, op);
+	ast_set_ival(a, r, (uint64_t)off);
+	ast_set_type(a, r, tt, tr);
+	return r;
+}
+
+static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) {
+	if (ast_op(a, outer) != 3 || ast_op(a, inner) != 3)
+		return 0;
+	if (ast_nchild(a, outer) != 3 || ast_nchild(a, inner) != 3)
+		return 0;
+	AstLocal pbb = ast_parent(a, outer);
+	if (pbb == AST_NONE || ast_kind(a, pbb) != AST_BasicBlock)
+		return 0;
+	AstLocal obody = ast_parent(a, inner);
+	if (obody == AST_NONE || ast_kind(a, obody) != AST_BasicBlock ||
+			obody != ast_child(a, outer, 2))
+		return 0;
+	int ivo, ivj, t;
+	int64_t sto, stj;
+	if (!ast_loop_iv(a, outer, &ivo, &t, &sto) ||
+			!ast_loop_iv(a, inner, &ivj, &t, &stj))
+		return 0;
+	if (stj != 1)
+		return 0; /* strip step +T assumes unit inner stride */
+	AstLocal ibody, iincr;
+	ast_loop_parts(a, inner, ast_op(a, inner), &ibody, &iincr);
+	if (!ast_interchange_body_ok(a, ibody))
+		return 0;
+	/* inner cond must be `Ref(j) < LiteralM`; reuse its op/M for the strip cond. */
+	AstLocal cond_j = ast_child(a, inner, 0);
+	if (cond_j == AST_NONE || ast_kind(a, cond_j) != AST_Binary ||
+			ast_op(a, cond_j) != TOK_LT || ast_nchild(a, cond_j) != 2)
+		return 0;
+	AstLocal jref = ast_child(a, cond_j, 0), mexpr = ast_child(a, cond_j, 1);
+	if (!ast_ref_is_local_off(a, jref, ivj) || ast_kind(a, mexpr) != AST_Literal)
+		return 0;
+	int T = ast_tile_size;
+	if ((int64_t)ast_ival(a, mexpr) <= T)
+		return 0; /* nothing to subdivide */
+	/* inits: outer i-init and inner j-init are the literal stores before each loop. */
+	AstLocal i_init = ast_li_prev_sib(a, outer);
+	AstLocal j_init = ast_li_prev_sib(a, inner);
+	if (!ast_interchange_is_init(a, i_init, ivo) ||
+			!ast_interchange_is_init(a, j_init, ivj))
+		return 0;
+	if (ast_li_prev_sib(a, j_init) != AST_NONE)
+		return 0; /* inner body is exactly [j_init, inner] (perfect nest) */
+	if (ast_ltemp_n >= AST_LTEMP_MAX)
+		return 0;
+	int jop = ast_op(a, jref), jtt = ast_type_t(a, jref);
+	uint64_t jtr = ast_type_ref(a, jref);
+	int ctt = ast_type_t(a, cond_j);
+	AstLocal afterOuter = ast_next_sib(a, outer);
+	int64_t jstart = (int64_t)ast_ival(a, ast_dep_strip(a, ast_child(a, j_init, 1)));
+
+	/* mint the strip induction variable jj (fresh slot below the frame low-water). */
+	int jjoff = (ast_ltemp_cur - 8) & -8;
+	ast_ltemp_cur = jjoff;
+	ast_ltemp_off[ast_ltemp_n++] = jjoff;
+
+	/* jj = jstart; before the (new outer) strip loop. */
+	AstLocal jj_init = ast_node(a, AST_Store);
+	ast_add_child(a, jj_init, ast_tile_local_ref(a, jjoff, jop, jtt, jtr));
+	ast_add_child(a, jj_init, ast_bf_lit(a, jtt, (uint64_t)jstart));
+	/* strip cond: jj < M (same op + M literal as the inner cond). */
+	AstLocal cond_jj = ast_bf_bin(a, TOK_LT, ctt,
+															 ast_tile_local_ref(a, jjoff, jop, jtt, jtr),
+															 ast_dup_sub(a, mexpr));
+	/* strip incr block: jj = jj + T. */
+	AstLocal incr_jj = ast_node(a, AST_BasicBlock);
+	AstLocal jj_step = ast_node(a, AST_Store);
+	ast_add_child(a, jj_step, ast_tile_local_ref(a, jjoff, jop, jtt, jtr));
+	ast_add_child(a, jj_step,
+								ast_bf_bin(a, '+', jtt,
+													 ast_tile_local_ref(a, jjoff, jop, jtt, jtr),
+													 ast_bf_lit(a, jtt, (uint64_t)T)));
+	ast_add_child(a, incr_jj, jj_step);
+	/* tile body: [i_init, outer], moved under the strip loop. */
+	AstLocal tbody = ast_node(a, AST_BasicBlock);
+	/* strip loop node. */
+	AstLocal tile = ast_node(a, AST_If);
+	ast_set_op(a, tile, 3);
+
+	/* inner cond -> (j < M) && (j < jj + T). */
+	AstLocal guard = ast_bf_bin(a, TOK_LT, ctt,
+														 ast_tile_local_ref(a, ivj, jop, jtt, jtr),
+														 ast_bf_bin(a, '+', jtt,
+																				ast_tile_local_ref(a, jjoff, jop, jtt, jtr),
+																				ast_bf_lit(a, jtt, (uint64_t)T)));
+	/* Detach cond_j from inner BEFORE grafting it under the new `&&`: ast_add_child
+	 * clobbers cond_j's next_sib, which would sever inner's [incr, body] children. */
+	AstLocal incr_j = ast_child(a, inner, 1);
+	ast_li_list_remove(a, inner, cond_j);
+	AstLocal newcond = ast_bf_bin(a, TOK_LAND, ctt, cond_j, guard);
+	ast_li_list_insert_before(a, inner, incr_j, newcond);
+
+	/* inner init: j = jstart -> j = jj (Convert-wrapped, matching the emit shape). */
+	AstLocal j_start_val = ast_child(a, j_init, 1);
+	AstLocal jj_as_j = ast_node(a, AST_Convert);
+	ast_set_type(a, jj_as_j, jtt, jtr);
+	ast_add_child(a, jj_as_j, ast_tile_local_ref(a, jjoff, jop, jtt, jtr));
+	ast_li_list_insert_before(a, j_init, j_start_val, jj_as_j);
+	ast_li_list_remove(a, j_init, j_start_val);
+
+	/* splice: [.. i_init, outer ..] -> [.. jj_init, tile{ i_init; outer } ..]. */
+	ast_li_list_remove(a, pbb, i_init);
+	ast_li_list_remove(a, pbb, outer);
+	ast_add_child(a, tbody, i_init);
+	ast_add_child(a, tbody, outer);
+	ast_add_child(a, tile, cond_jj);
+	ast_add_child(a, tile, incr_jj);
+	ast_add_child(a, tile, tbody);
+	ast_li_list_insert_before(a, pbb, afterOuter, jj_init);
+	ast_li_list_insert_before(a, pbb, afterOuter, tile);
+	MCC_TRACE("tile outer#%u inner#%u iv@%d strip@%d T=%d\n", (unsigned)outer,
+						(unsigned)inner, ivj, jjoff, T);
+	return 1;
+}
+
+static int ast_tile_run(AstArena *a) {
+	if (!ast_tile_env)
+		return 0;
+	ast_loopnest_sync(a);
+	/* At most one tile per function: tiling turns the 2-deep nest into a 3-deep
+	 * one, and re-scanning could re-tile the freshly created strip loop. A single
+	 * strip keeps the transform bounded and the output predictable. */
+	for (int i = 0; i < ast_loopnest_n; i++) {
+		AstLocal inner = ast_loopnest[i].header;
+		AstLocal outer = ast_loopnest[i].parent;
+		if (outer == AST_NONE)
+			continue;
+		if (ast_op(a, outer) != 3 || ast_op(a, inner) != 3)
+			continue;
+		if (!ast_loop_interchange_legal(a, outer, inner))
+			continue;
+		if (ast_tile_apply(a, outer, inner))
+			return 1;
+	}
+	return 0;
+}
+
 static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	if (ast_kind(a, bb) != AST_BasicBlock)
 		return 0;
@@ -12210,6 +12370,7 @@ void ast_func_end(Sym *sym) {
 			int narrows = 0;
 			int interchanged = 0;
 			int fused = 0;
+			int tiled = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -12248,6 +12409,8 @@ void ast_func_end(Sym *sym) {
 						interchanged = ast_interchange_run(ast_cur);
 					if (ast_fusion_env)
 						fused = ast_fusion_run(ast_cur);
+					if (ast_tile_env)
+						tiled = ast_tile_run(ast_cur);
 				}
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
@@ -12311,11 +12474,12 @@ void ast_func_end(Sym *sym) {
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || interchanged || fused)
+						do_tco || do_narrow || interchanged || fused || tiled)
 					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_bf && !do_sethi && !do_tco && !do_narrow && !interchanged && !fused)
+						!do_bf && !do_sethi && !do_tco && !do_narrow && !interchanged && !fused &&
+						!tiled)
 					loc = saved_loc;
 				if (ast_jit_splice_env && faithful) {
 					ind = ast_body_ind_sv;
@@ -12332,7 +12496,7 @@ void ast_func_end(Sym *sym) {
 										(int)rel_len);
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || interchanged || fused) {
+						do_tco || do_narrow || interchanged || fused || tiled) {
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -12346,7 +12510,8 @@ void ast_func_end(Sym *sym) {
 		anon_sym = saved_anon;                                                        \
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
-										do_tco || do_narrow || interchanged || fused || (ui))       \
+										do_tco || do_narrow || interchanged || fused || tiled ||    \
+										(ui))                                                        \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \

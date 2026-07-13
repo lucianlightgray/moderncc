@@ -143,8 +143,8 @@ second measurement engine.
   5-backend grind + a missing primitive; pick up opportunistically per-backend.
 - **§28 rewrite-rule IR** — Explore-tier; gate behind P1–P3. (Its two former co-tenants on this
   line landed: the §27 loop-nest foundation — model 1522b3b1 + dependence/legality 98959ace — and
-  the §26 runtime-JIT core; §27 interchange has since landed too, so only the §27 fusion/tiling
-  transforms and the §26 marginal tail remain, tracked in their own sections.)
+  the §26 runtime-JIT core; the full §27 transform trilogy (interchange + fusion + tiling) has since
+  landed too, so only the §26 marginal tail remains, tracked in its own section.)
 
 ### Campaign queue — JIT/AST autonomous campaign (checkpoint 2026-07-13)
 
@@ -153,13 +153,14 @@ validate the gated-ON path to the full M8 bar; independently re-verify firing (a
 test often does NOT fire the pass — const-folds or wrong shape; confirm via `-v128` TRACE or an
 object-diff) plus correctness vs gcc; commit; update TODO.
 
-- [ ] **1. §27 loop tiling.** (§27 interchange `MCC_AST_INTERCHANGE` + fusion `MCC_AST_FUSION`
-  both LANDED, default off; see the bucket-1 §27 item for the tiling design.)
-- [ ] **2. Then:** §24 hot-slice ranking (uses the landed `ast_loop_depth`) · §32a widening
+  (The §27 transform trilogy — interchange `MCC_AST_INTERCHANGE`, fusion `MCC_AST_FUSION`, tiling
+  `MCC_AST_TILE` — has LANDED, all default off; see the bucket-1 §27 item for the remaining tiling
+  extensions.)
+- [ ] **1. Then:** §24 hot-slice ranking (uses the landed `ast_loop_depth`) · §32a widening
   dataflow · §30 value-table dispatch (needs the P2 `.rodata` data-emission project first) ·
   FLOAT combo M2/M3 (search-infra, lower risk) · V-* strategy-decomposition follow-ons · the §26
   marginal tail (float/struct KGC args, static-link E1a, bitfields, N-worker queue, M7 patchpoint).
-- [ ] **3. Endgame:** flip the validated gates default-on — the P0 "next default-on batch" item.
+- [ ] **2. Endgame:** flip the validated gates default-on — the P0 "next default-on batch" item.
 
 ---
 
@@ -1001,11 +1002,13 @@ tag and are sequenced by § Strategic path, not by their bucket.
   `ast_loop_fusion_legal` — rejects backward cross-loop deps; dump `MCC_AST_LOOPDEP_DUMP`).
   Default 3968/3968 byte-identical; validated on matmul/while/do + mcc.c (1068 loops).
   The legality API now has live consumers on the real emit path: §27 interchange
-  (`MCC_AST_INTERCHANGE`) drives `ast_loop_interchange_legal`, and §27 fusion (`MCC_AST_FUSION`)
-  drives `ast_loop_fusion_legal` (both LANDED, default off); the `exec-interchange/` + `exec-fusion/`
-  ctest corpora and the `exec/optimizer/loop_{interchange,fusion}.c` goldens exercise them end-to-end.
+  (`MCC_AST_INTERCHANGE`) + tiling (`MCC_AST_TILE`) drive `ast_loop_interchange_legal`, and §27 fusion
+  (`MCC_AST_FUSION`) drives `ast_loop_fusion_legal` (all LANDED, default off); the
+  `exec-{interchange,fusion,tile}/` ctest corpora and the `exec/optimizer/loop_{interchange,fusion,
+  tile}.c` goldens exercise them end-to-end.
   **Remaining:** evaluating symbolic (variable) bounds; dependence-test precision (fewer
-  non-affine bail-outs); a dedicated asttool suite asserting the analyses in isolation; then §27 tiling.
+  non-affine bail-outs); a dedicated asttool suite asserting the analyses in isolation (blocked —
+  the dep functions live inside `#ifdef MCC_INTERNAL`, which `tools/asttool.c` excludes).
 
 ## 4 — several open questions
 
@@ -1213,25 +1216,21 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
   (a value axis, not a gate bit). (§23 step 1)
 - [ ] **Add more §23 param shapes.** (§23 step 2)
-- [ ] **Implement §27 loop tiling.** (legality analysis landed; the transform is open. Follow the
-  interchange/fusion model in `ast_func_end`: a default-off env (`ast_*_run` gated), the body-safety
-  whitelist `ast_interchange_body_ok` (rejects calls / scalar carried deps / nested control the
-  affine dep test can't model), the `ast_li_list_*` + `ast_li_append_children` sibling-list surgery
-  helpers, and OR the pass's fired-flag into the `AST_PF_EMIT` re-emit conditions.
-  **De-risked (2026-07-13): NOT blocked on new-local allocation** — the `ast_ltemp` pass already
-  mints a fresh stack slot during replay (`off = (ast_ltemp_cur - 8) & -8`, tracked in
-  `ast_ltemp_off[]`/`ast_ltemp_n`, frame reserved via `loc = ast_ltemp_n ? ast_ltemp_cur :
-  saved_loc`); reuse that to allocate the strip IV `ii`. Remaining work is loop-HEADER node
-  synthesis: strip-mine `for(i=0;i<N;i++)BODY` → `for(ii=0;ii<N;ii+=T) for(i=ii; i<N && i<ii+T; i++)
-  BODY` — build the outer `AST_If op3` (cond `ii<N`, incrBB `ii+=T`), rewrite the inner init to
-  `i=ii` and AND its cond with `i<ii+T` (a `TOK_LAND` the bound classifier still parses), nest the
-  original loop in the outer body. Correct for any N,T (the `i<N` conjunct caps the last partial
-  tile). **BUT strip-mining a single loop alone has NO locality benefit** — real tiling strip-mines
-  BOTH loops of a nest then interchanges the two strip (`ii`,`jj`) loops outward
-  (tile-and-interchange), composing the strip primitive with the landed `ast_interchange_*`. Higher
-  node-synthesis surface than interchange/fusion (comparisons, `&&`, `+=T` stores, two new IVs, a
-  4-loop result) → its own careful M8 cycle; a reuse/footprint heuristic picks T and which nests are
-  worth tiling. Do it as a focused session, not a turn-tail.)
+- [~] **§27 loop tiling — LANDED (`MCC_AST_TILE`, default off; `MCC_AST_TILE_SIZE`, default 32).**
+  Tile-and-interchange: strip-mines the inner loop of a 2-deep perfect nest and hoists the strip loop
+  OUTERMOST — `for(i)for(j)BODY` → `for(jj=0;jj<M;jj+=T) for(i) for(j=jj; j<M && j<jj+T; j++) BODY`.
+  Gated on `ast_loop_interchange_legal` (for a 2-deep nest that equals full permutability — both
+  canonicalize dependence vectors and reject the lone `(<,>)`, so the hoist is sound) + the
+  `ast_interchange_body_ok` whitelist. The strip IV `jj` is a fresh replay-time stack slot minted the
+  `ast_ltemp` way (`off = (ast_ltemp_cur-8)&-8`, frame reserved via `loc = ast_ltemp_cur`); the strip
+  cond/incr/`&&`-guard are synthesized with `ast_bf_lit`/`ast_bf_bin`; `ast_li_list_*` do the splice.
+  Validated to the full M8 bar: default ctest 4889/4889 byte-identical; `exec/optimizer/loop_tile.c`
+  golden (arch-neutral) + `exec-tile/` corpus (T=7 forced) 296/296; gate-on differential -O0..-O6 vs
+  gcc across T∈{3,7,8,16,32,64} all match; fuzz 149 agree/0 miscompile (TILE + TILE7 in the runner
+  GATES); shadow 0-divergence over 496 sources; sanitizer clean over 255; abstains on `(<,>)` skew.
+  **Remaining (v1 scope):** one tile per function (re-scan could re-tile the fresh strip); inner bound
+  must be a `Ref(j) < LiteralM` const; only unit inner stride; the outer loop is NOT also strip-mined
+  (true 2-D cache tiling = strip BOTH loops → 4-deep); no reuse/footprint heuristic tuning T yet.
 - [~] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
   `ast_narrow_binop_ranged` (gated `MCC_AST_VLAT`) now covers **unsigned `/ %` + `<<`const** (PR-2) and
   **`>>` (`TOK_SAR`/`TOK_SHR`, PR-3, 2a24c2b4)** — constant count [0,31] + op0-fit, signedness-aware.
