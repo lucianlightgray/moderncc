@@ -869,12 +869,14 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   seam (returns NULL for now); `src/algorithms/jit.h` is the M7b graduated-memo escape-hatch. All behind
   the `MCC_EMBED_JIT` CMake option (default OFF → TU not compiled, byte-neutral). Remaining: Tier-B slice
   actually re-invoked; cross-session `Sym` graph reconstruction (flagged gap); ~800 KB size validation.
-- [ ] **[DEFER] M5 — Stage 2 runtime recompiler + hot-swap (W4)** — thin driver: the dispatcher reads a
-  global variant-pointer slot (init = baseline); the driver re-invokes the embedded engine on a hot
-  `sym` into a fresh `MCCState`/`run_ptr` via the `mcc_relocate` path (`mccrun.c`), then one aligned
-  8-byte atomic store publishes the new pointer (F3d = **never-free first**, bounded leak; QSBR upgrade
-  later). x86_64 ELF only (D7). Validate: JIT differential — variant output == baseline over the guarded
-  domain. **NEXT — the remaining greenfield lane; rides on the M4 seam + AST-CORE dispatcher.**
+- [~] **M5 — Stage 2 dispatch mechanism LANDED (9670f2f9); runtime recompile+hot-swap deferred** —
+  `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable
+  `.data` slot, `R_X86_64_64` slot→body reloc so it runs identically until swapped); `mcc_jit_publish`
+  does the aligned `__ATOMIC_RELEASE` 8-byte store (F3d never-free). x86_64 ELF only (D7). Validated:
+  default 3968/3968; mode-6 differential fuzz 60/60 0-miscompile; self-host fixpoint stage2==stage3.
+  **Remaining:** wire `mcc_jit_recompile` (still returns NULL) to actually re-invoke the M4 engine into
+  a fresh `MCCState`/`run_ptr` via `mcc_relocate` and publish — blocked on the M4 cross-session `Sym`
+  closure gap; QSBR reclamation upgrade later. The trigger/pool that calls it is M6.
 - [~] **[DEFER] M6 — Stage 3 triggers + threads + budget — PLUMBING LANDED (362fe0d5), pool deferred** —
   `--jit-threads` flag + `jit_threads` field added; libpthread link now gated on `jit_threads>0` (not
   `embed_jit`). Remaining: `jit-profile` hot-counter strategy, the `.init_array` pool-spawn ctor
