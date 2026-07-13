@@ -858,42 +858,45 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
     reassigned/addr-taken param may be null after the guard); cloning keeps `ast_cur` pristine. No
     existing fold consumes a non-null fact (verified) so the mini-pass was required. Disasm-confirmed
     null-check elision; ctest 3968/3968 modes 0/1/2/3.
-- [ ] **M3 — wire `--jit-functions` selection (D8 partial)** — make the parsed-but-inert
-  `--jit-functions` (`libmcc.c:2152`) actually select which `sym`s get the M2 dispatcher (default
-  `main`, sites at the common ancestor per `mcc.c:96`); keep the `--embed-jit` manifest (`mcc.c:1344`),
-  add the selection wiring.
-- [ ] **[DEFER] M4 — embed the libmcc engine slice into `-O4+` output (W4 prerequisite, heaviest
-  piece)** — embed the ~800 KB strategy-engine + per-function intention-tree slice so the runtime can
-  re-invoke it (D2=A). Dominant size/build cost — isolate behind `--embed-jit`. Gating dependency for M5.
+- [x] **M3 — wire `--jit-functions` selection (D8 partial) — LANDED (e6e18acd)** — `ast_jit_fns_parse`
+  parses `mcc_state->jit_functions` into a name set (default `"main"`); `ast_jit_selected(funcname)` ANDed
+  into both the dispatcher-install (`mccast.c:~10810`) and baseline-retain (`~11030`) gates.
+  `MCC_AST_JIT`/`MCC_AST_JIT_DISPATCH` stay the master switches; the flag only narrows selection.
+  TRACE-confirmed (only selected sym dispatched).
+- [~] **[DEFER] M4 — embed the libmcc engine slice into `-O4+` output — SCAFFOLD LANDED (e47d6509),
+  full embed deferred** — `src/mccjit_embed.c` (all `visibility("hidden")`, E2a) has the E3a intent
+  serializer (SoA arena + sym/cst/type side-table closure + salt witness) and the M5 `mcc_jit_recompile`
+  seam (returns NULL for now); `src/algorithms/jit.h` is the M7b graduated-memo escape-hatch. All behind
+  the `MCC_EMBED_JIT` CMake option (default OFF → TU not compiled, byte-neutral). Remaining: Tier-B slice
+  actually re-invoked; cross-session `Sym` graph reconstruction (flagged gap); ~800 KB size validation.
 - [ ] **[DEFER] M5 — Stage 2 runtime recompiler + hot-swap (W4)** — thin driver: the dispatcher reads a
   global variant-pointer slot (init = baseline); the driver re-invokes the embedded engine on a hot
   `sym` into a fresh `MCCState`/`run_ptr` via the `mcc_relocate` path (`mccrun.c`), then one aligned
-  8-byte atomic store publishes the new pointer; triple-buffer/RCU reclamation of the old region
-  (`mcc_run_free`, `mccrun.c:101`). x86_64 ELF only (D7). Validate: JIT differential — variant output ==
-  baseline output over the guarded domain.
-- [ ] **[DEFER] M6 — Stage 3 triggers + threads + budget (W5, D5=both, D8 pthread pool)** — add the
-  `jit-profile` strategy (live-in range capture + hot counter, the 3rd jit row); emit a synthesized
-  `.init_array` ctor (`add_array`, `mccelf.c:1375`) that spawns the `--jit-threads` pthread pool via the
-  `threads.h` shim; the pool eagerly warms `--jit-functions` AND services counter-triggered lazy
-  recompiles; enforce `--jit-max-duration` as the runtime budget bound (`mcc.c:1345` manifest → real
-  deadline); link libpthread into `--embed-jit` output.
+  8-byte atomic store publishes the new pointer (F3d = **never-free first**, bounded leak; QSBR upgrade
+  later). x86_64 ELF only (D7). Validate: JIT differential — variant output == baseline over the guarded
+  domain. **NEXT — the remaining greenfield lane; rides on the M4 seam + AST-CORE dispatcher.**
+- [~] **[DEFER] M6 — Stage 3 triggers + threads + budget — PLUMBING LANDED (362fe0d5), pool deferred** —
+  `--jit-threads` flag + `jit_threads` field added; libpthread link now gated on `jit_threads>0` (not
+  `embed_jit`). Remaining: `jit-profile` hot-counter strategy, the `.init_array` pool-spawn ctor
+  (`add_array`, `mccelf.c:1375`), eager-warm + lazy-recompile service, `--jit-max-duration` real deadline.
 - [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable
   prologue for in-place code-patch hot-swap. Lower priority; M5's pointer-swap dispatcher is the primary
   mechanism. Deferrable.
-- [ ] **[DEFER] M8 — Stage 4 `eval_slice` soundness gate (W3, hardening — D6 places it here)** —
-  independent AST-over-values interpreter `eval_slice(arena, slice, env) -> {value, defined}`. UB
-  oracle: `defined=0` on div/mod-by-0, `INT_MIN/-1`, shift `>= width` or `< 0`, and signed +/−/*
-  overflow — NOT the masking/wrapping `ast_fold_eval`/`gen_opic` (both mask `shift & 63/31`,
-  `mccast.c:4102`/`mccgen.c:2347`, which would otherwise certify a wrong rewrite). Domain enumeration
-  from `ast_vlat_context` (`mccast.c:7189`) via the `ast_tco_run` live-in walk (`5944`); harness
-  modeled on `ast_vlat_check_sound` recompute-then-abort under `MCC_CONFIG_AST_SHADOW`, then promote to
-  a hard per-strategy gate.
+- [~] **M8 — `eval_slice` soundness oracle (W3, hardening) — SHADOW-ONLY LANDED (e6e18acd), hard-gate
+  promotion deferred (L1a)** — `src/ast_eval_slice.h`: independent AST-over-values interpreter, UB oracle
+  (`defined=0` on div/mod-by-0, `INT_MIN/-1`, shift `>= width`/`< 0`, signed +/−/* overflow — NO
+  `shift & 63/31` masking; kernel unit-tested 44/44). Wired as a **baseline-vs-spec differential** under
+  `MCC_CONFIG_AST_SHADOW` in the mode-4/5 spec path: aborts only when the baseline root is well-defined
+  and the spec value differs or is UB (so an unevaluable root ≠ divergence). **Remaining (L1a):** it
+  no-ops on whole-function roots — needs value-slice enumeration to actually bite, then promote to a hard
+  per-strategy gate after N clean self-host+fuzz soaks.
 
 **Optional AST-strategy rows (only to make the landed dispatcher search-selectable):**
 
-- [ ] **§26 `jit-dispatch` / `jit-guard` strategy rows** — register the landed dispatcher + guard as
-  `ast_strategies[]` rows (gate bits 40/41) so the -O4+ search can select them; the deopt mechanism
-  itself already ships as machine-byte splice, so these are non-blocking.
+- [x] **§26 `jit-dispatch` / `jit-guard` gate bits — LANDED (e6e18acd)** — `AST_SG_JIT_DISPATCH`/
+  `AST_SG_JIT_GUARD` (bits 40/41) wired into `ast_search_gates_now/_set` + `searchable`; the -O4+ search
+  can select them above a `MCC_AST_JIT` baseline. Chosen as **gate bits, not `ast_strategies[]` apply-rows**
+  (B1a) to avoid `ast_order_pack` 4-bit-nibble aliasing (rows already index >15).
 - [ ] **§26 `jit-profile` strategy row** — live-in range-capture instrumentation (the M6 hot-counter
   trigger source, D5).
 
