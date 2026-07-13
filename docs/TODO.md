@@ -1231,8 +1231,13 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
   `ast_narrow_binop` handles only the distributive `+ - * & | ^` today. (needs the
   lattice; `MCC_AST_NARROW` truncation-sink narrowing ships default-on -O2)
-- [ ] **[P1] Implement §29 outer-narrow elimination** — drop a cast when the value
-  provably fits. (needs the lattice)
+- [~] **[P1] §29 outer-narrow elimination — LANDED gated (9dc8ce2f, `MCC_AST_NARROW_ELIM` default off)** —
+  `ast_narrow_elim` drops a redundant narrowing `AST_Convert` when the operand provably fits (constant
+  round-trip, or a readonly local whose `AstVLat` type-range fits, peeling one widening convert). Fires on
+  the `(narrow)((wide)var)` shape `ast_ident_convert` misses on signedness (needs `MCC_AST_VLAT=1`).
+  Default 3968/3968 byte-identical; gate-on fuzz 60/0-miscompile + self-host fixpoint. **Remaining:**
+  flow-SENSITIVE facts so guard-derived sub-ranges fire (AstVLat is flow-insensitive today → only
+  type-full-range-fits shapes); globals (no frame-offset fact); flip default-on after broad exposure.
 - [ ] **Add the §30 `switch`-arm detection form.**
 - [ ] **Implement §31 adaptive beam width.**
 - [ ] **Implement §31 per-function scoping.**
