@@ -3312,6 +3312,21 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_ZERO_BSS=1")
         endforeach()
 
+        # §27 loop interchange: force MCC_AST_INTERCHANGE on across the exec corpus so every
+        # interchange-legal + locality-beneficial perfect nest is swapped and its runtime output
+        # validated (a wrong swap — reordered side effect, mis-moved IV init — would surface as a
+        # wrong result). Value-changing (reorders iterations), so an exec (runtime) variant.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-interchange/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-interchange-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-interchange/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_INTERCHANGE=1")
+        endforeach()
+
         # -fmerge-constants string pooling: force MCC_MERGE_STRINGS on across the exec corpus so
         # every identical rodata literal is merged and re-homed, and the runtime output validates
         # that the shared storage + symbol re-bind is correct (a lost NUL or wrong offset shows up

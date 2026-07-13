@@ -695,6 +695,7 @@ static int ast_bfold_sign_env;
 static int ast_bfold_round_env;
 static int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
+static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
@@ -1172,6 +1173,7 @@ void ast_configure(MCCState *s1) {
 	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", 1);
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
+	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", 0);
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
@@ -9991,6 +9993,213 @@ void ast_loopdep_dump(AstArena *a, const char *fname) {
 		}
 }
 
+static AstLocal ast_li_prev_sib(AstArena *a, AstLocal n) {
+	AstLocal p = ast_parent(a, n);
+	if (p == AST_NONE)
+		return AST_NONE;
+	AstLocal prev = AST_NONE;
+	for (AstLocal c = ast_first_child(a, p); c != AST_NONE; c = ast_next_sib(a, c)) {
+		if (c == n)
+			return prev;
+		prev = c;
+	}
+	return AST_NONE;
+}
+
+static void ast_li_list_remove(AstArena *a, AstLocal parent, AstLocal node) {
+	a->epoch++;
+	AstLocal prev = AST_NONE;
+	for (AstLocal c = a->first_child[parent]; c != AST_NONE; c = a->next_sib[c]) {
+		if (c == node) {
+			if (prev == AST_NONE)
+				a->first_child[parent] = a->next_sib[c];
+			else
+				a->next_sib[prev] = a->next_sib[c];
+			if (a->last_child[parent] == c)
+				a->last_child[parent] = prev;
+			a->next_sib[c] = AST_NONE;
+			a->nchild[parent]--;
+			return;
+		}
+		prev = c;
+	}
+}
+
+static void ast_li_list_insert_before(AstArena *a, AstLocal parent, AstLocal ref,
+																			AstLocal node) {
+	a->epoch++;
+	a->parent[node] = parent;
+	if (a->first_child[parent] == ref) {
+		a->next_sib[node] = ref;
+		a->first_child[parent] = node;
+		a->nchild[parent]++;
+		return;
+	}
+	for (AstLocal c = a->first_child[parent]; c != AST_NONE; c = a->next_sib[c])
+		if (a->next_sib[c] == ref) {
+			a->next_sib[node] = ref;
+			a->next_sib[c] = node;
+			a->nchild[parent]++;
+			return;
+		}
+	a->next_sib[node] = AST_NONE;
+	if (a->first_child[parent] == AST_NONE)
+		a->first_child[parent] = node;
+	else
+		a->next_sib[a->last_child[parent]] = node;
+	a->last_child[parent] = node;
+	a->nchild[parent]++;
+}
+
+static int ast_interchange_is_init(AstArena *a, AstLocal store, int iv_off) {
+	if (store == AST_NONE || ast_kind(a, store) != AST_Store || ast_nchild(a, store) < 2)
+		return 0;
+	if (!ast_ref_is_local_off(a, ast_child(a, store, 0), iv_off))
+		return 0;
+	AstLocal rhs = ast_dep_strip(a, ast_child(a, store, 1));
+	return rhs != AST_NONE && ast_kind(a, rhs) == AST_Literal;
+}
+
+/* Interchange reorders iterations, so it is only sound when EVERY order-sensitive
+ * side effect of the body is captured by the affine-array dependence test. That
+ * test models memory stores/loads whose address is a computed `AST_Load`; it does
+ * NOT model function calls, scalar-local carried dependences (a store straight to
+ * an `AST_Ref`, e.g. a non-associative accumulator), early exits, or nested
+ * control flow. Whitelist the node kinds the analysis fully accounts for; reject
+ * anything else. Non-affine array accesses are already blocked upstream (they
+ * decode to `!ok` refs → `ast_loop_interchange_legal` returns 0). */
+static int ast_interchange_body_ok(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 1;
+	switch (ast_kind(a, n)) {
+	case AST_BasicBlock:
+	case AST_Load:
+	case AST_Ref:
+	case AST_Literal:
+	case AST_Unary:
+	case AST_Binary:
+	case AST_Convert:
+		break;
+	case AST_Store:
+		if (ast_nchild(a, n) < 2 || ast_kind(a, ast_child(a, n, 0)) != AST_Load)
+			return 0; /* scalar / register store — carried dep the dep test misses */
+		break;
+	default:
+		return 0; /* Invoke, If (nested loop/branch), Jump, Return, InitList, ... */
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_interchange_body_ok(a, c))
+			return 0;
+	return 1;
+}
+
+static int ast_interchange_beneficial(AstArena *a, AstLocal outer, AstLocal inner) {
+	int ivo, ivi, t;
+	int64_t st;
+	if (!ast_loop_iv(a, outer, &ivo, &t, &st) ||
+			!ast_loop_iv(a, inner, &ivi, &t, &st))
+		return 0;
+	int ivs[2] = {ivo, ivi};
+	AstLocal body, incr;
+	ast_loop_parts(a, inner, ast_op(a, inner), &body, &incr);
+	int nref, overflow;
+	AstDepRef *refs = ast_dep_collect(a, body, ivs, 2, &nref, &overflow);
+	int64_t inner_w = 0, outer_w = 0;
+	int any = 0;
+	for (int i = 0; i < nref; i++) {
+		if (!refs[i].ok)
+			continue;
+		for (int d = 0; d < refs[i].ndim; d++) {
+			int64_t co = refs[i].sub[d].coeff[0], ci = refs[i].sub[d].coeff[1];
+			int64_t w = refs[i].ndim - d; /* earlier dim = larger memory stride */
+			outer_w += w * (co < 0 ? -co : co);
+			inner_w += w * (ci < 0 ? -ci : ci);
+		}
+		any = 1;
+	}
+	mcc_free(refs);
+	return any && outer_w < inner_w;
+}
+
+static int ast_interchange_apply(AstArena *a, AstLocal outer, AstLocal inner) {
+	if (ast_op(a, outer) != 3 || ast_op(a, inner) != 3)
+		return 0;
+	if (ast_nchild(a, outer) != 3 || ast_nchild(a, inner) != 3)
+		return 0;
+	AstLocal pbb = ast_parent(a, outer);
+	if (pbb == AST_NONE || ast_kind(a, pbb) != AST_BasicBlock)
+		return 0;
+	AstLocal body_o = ast_parent(a, inner);
+	if (body_o == AST_NONE || ast_kind(a, body_o) != AST_BasicBlock)
+		return 0;
+	AstLocal cond_o = ast_child(a, outer, 0), incr_o = ast_child(a, outer, 1),
+					 bodyO = ast_child(a, outer, 2);
+	AstLocal cond_i = ast_child(a, inner, 0), incr_i = ast_child(a, inner, 1),
+					 bodyI = ast_child(a, inner, 2);
+	if (bodyO != body_o)
+		return 0;
+	int ivo, ivi, t;
+	int64_t st;
+	if (!ast_loop_iv(a, outer, &ivo, &t, &st) ||
+			!ast_loop_iv(a, inner, &ivi, &t, &st))
+		return 0;
+	AstLocal so = ast_li_prev_sib(a, outer);
+	AstLocal si = ast_li_prev_sib(a, inner);
+	if (!ast_interchange_is_init(a, so, ivo) || !ast_interchange_is_init(a, si, ivi))
+		return 0;
+	ast_clear_children(a, outer);
+	ast_add_child(a, outer, cond_i);
+	ast_add_child(a, outer, incr_i);
+	ast_add_child(a, outer, bodyO);
+	ast_clear_children(a, inner);
+	ast_add_child(a, inner, cond_o);
+	ast_add_child(a, inner, incr_o);
+	ast_add_child(a, inner, bodyI);
+	ast_li_list_remove(a, pbb, so);
+	ast_li_list_remove(a, body_o, si);
+	ast_li_list_insert_before(a, body_o, inner, so);
+	ast_li_list_insert_before(a, pbb, outer, si);
+	MCC_TRACE("interchange outer#%u inner#%u iv@%d<->@%d\n", (unsigned)outer,
+						(unsigned)inner, ivo, ivi);
+	return 1;
+}
+
+static int ast_interchange_run(AstArena *a) {
+	if (!ast_interchange_env)
+		return 0;
+	int total = 0;
+	for (int guard = 0; guard < AST_LOOPNEST_CAP; guard++) {
+		ast_loopnest_sync(a);
+		int applied = 0;
+		for (int i = 0; i < ast_loopnest_n; i++) {
+			AstLocal inner = ast_loopnest[i].header;
+			AstLocal outer = ast_loopnest[i].parent;
+			if (outer == AST_NONE)
+				continue;
+			if (ast_op(a, outer) != 3 || ast_op(a, inner) != 3)
+				continue;
+			if (!ast_loop_interchange_legal(a, outer, inner))
+				continue;
+			{
+				AstLocal ibody, iincr;
+				ast_loop_parts(a, inner, ast_op(a, inner), &ibody, &iincr);
+				if (!ast_interchange_body_ok(a, ibody))
+					continue;
+			}
+			if (!ast_interchange_beneficial(a, outer, inner))
+				continue;
+			if (ast_interchange_apply(a, outer, inner)) {
+				total++;
+				applied = 1;
+				break;
+			}
+		}
+		if (!applied)
+			break;
+	}
+	return total;
+}
+
 static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	if (ast_kind(a, bb) != AST_BasicBlock)
 		return 0;
@@ -11884,6 +12093,7 @@ void ast_func_end(Sym *sym) {
 			int sethis = 0;
 			int tcos = 0;
 			int narrows = 0;
+			int interchanged = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -11917,6 +12127,9 @@ void ast_func_end(Sym *sym) {
 					(void)ast_vlat_narrowing(ast_cur, 0, VT_INT);
 					(void)ast_vlat_context(ast_cur, 0, &ast_vlat_ctx);
 				}
+				if (faithful && ast_interchange_env &&
+						(ast_opt_limit < 0 || ast_opt_total < ast_opt_limit))
+					interchanged = ast_interchange_run(ast_cur);
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
 					ast_strat_order_reset();
@@ -11979,11 +12192,11 @@ void ast_func_end(Sym *sym) {
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow)
+						do_tco || do_narrow || interchanged)
 					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_bf && !do_sethi && !do_tco && !do_narrow)
+						!do_bf && !do_sethi && !do_tco && !do_narrow && !interchanged)
 					loc = saved_loc;
 				if (ast_jit_splice_env && faithful) {
 					ind = ast_body_ind_sv;
@@ -12000,7 +12213,7 @@ void ast_func_end(Sym *sym) {
 										(int)rel_len);
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow) {
+						do_tco || do_narrow || interchanged) {
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -12014,7 +12227,7 @@ void ast_func_end(Sym *sym) {
 		anon_sym = saved_anon;                                                        \
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
-										do_tco || do_narrow || (ui))                                 \
+										do_tco || do_narrow || interchanged || (ui))                 \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \
