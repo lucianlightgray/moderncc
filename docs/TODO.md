@@ -1135,21 +1135,20 @@ tag and are sequenced by § Strategic path, not by their bucket.
   is the separate riskier change; promote stays at its heuristic. Also still deferred: inline as a
   freely-reorderable mid-sequence arena graft (`fold→inline→fold`) — `ast_inline_graft` grafts during the
   emit-replay traversal, not as a standalone pass.
-  **ARM64/macOS-HOST FINDING (2026-07-13): `exec-search-emitiso/*` (`-O4` + EMITSIZE + EMITISO) can crash
-  non-deterministically on arm64/mac — but only as a RARE full-suite-load heisenbug, NOT reliably
-  reproducible.** Seen ONCE, during a genuine full `ctest -j8` run (~5000 tests): `errors_and_warnings`
-  (a single `-dt -run` process compiling+running ~295 functions) crashed partway, the crash *point*
-  moving run-to-run (`test_return_from_statement_expr`, `test_scope_1`, …). **Could NOT be reproduced in
-  isolation:** the emitiso group passes 100%/296 under `ctest -j8` (×2), under `-j16` + 4 background CPU
-  burners (×3), and the single test passes 5/5 serially and 8/8 concurrently. **The `MCC_SEARCH_WORKER`
-  correlation was a measurement artifact** (that flag only gates a bitflag report, `mccast.c:12332`; it
-  does NOT drive the fork pool — that is `MCC_AST_SEARCH_THREADS`, which this variant leaves off). So this
-  is neither a fork-pool bug nor the inline/promote value-axis shared-defect above; it is a rare
-  robustness failure of the **non-reproducible-by-design `-O4` timed emitiso search** under genuine
-  full-suite contention (a crash, not merely a different-but-correct pick, so a real latent bug). Off
-  every shipping/`-O1..-O3` path (`-O4+` is quarantined non-reproducible by design); x86-Linux CI green.
-  Root-causing needs many full-suite runs to re-catch + bisect — deferred as high-effort / ~zero
-  shipping-gain. The CI-lock (b04cd79b) will re-surface it if it recurs.
+  **emitiso `-dt` crash — ROOT-CAUSED + FIXED (2026-07-13):** the roaming `exec-search-emitiso/*` crash
+  was a **heap-use-after-free of the scratch text section across `MCCState` teardown**, not a heisenbug.
+  `ast_scratch_sec` (the `.mcc.scratch.text` isolation section for the EMITISO emit-size measurement) was a
+  file-static caching a `Section` owned by the `MCCState` that first triggered the search. In a `-dt -run`
+  corpus each test snippet is compiled in its own `MCCState`; `mcc_delete → mccelf_delete` frees every
+  section (incl. the private scratch sections) but left the file-static dangling, so the next snippet's
+  `ast_scratch_enter` wrote through the freed pointer (`sc->data_offset = 0`) → heap corruption whose crash
+  *point* roamed with allocator reuse (hence the "load-dependent heisenbug" mirage; ASan pins it exactly at
+  `ast_scratch_enter`). Fix: the scratch section is now owned by `MCCState` (`s1->ast_scratch_sec`, next to
+  `got`/`plt`), so it dies with the state and is recreated per-state — no dangling static, build-model
+  independent (single- and multi-source both route through `mcc_state`). Verified in an x86_64-Linux Docker
+  repro (was 30/30 deterministic fail in isolation → 0/40; full `ctest -j12` 5183/5183; search-variant
+  stress ×5 clean; ASan UAF gone). The earlier "non-reproducible-by-design / arm64-mac-only" framing was
+  wrong: it reproduces deterministically on x86-Linux once the corpus is run to the reuse point.
 - [ ] **Explore EMI mutation (Orion/Athena/Hermes)** targeting optimizer
   miscompiles.
 - [ ] **Design the broader template library** (algebraic/dead-branch/jump-table).

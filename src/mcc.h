@@ -804,6 +804,7 @@ struct MCCState {
 	Section *dynsymtab_section;
 	Section *dynsym;
 	Section *got, *plt;
+	Section *ast_scratch_sec;
 	Section *eh_frame_section;
 	Section *eh_frame_hdr_section;
 	unsigned long eh_start;

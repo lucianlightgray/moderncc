@@ -11604,25 +11604,25 @@ typedef struct {
 	int promo_total, graft_total, opt_total;
 } AstScratchSave;
 
-static Section *ast_scratch_sec;
-
 static void ast_scratch_init(void) {
-	Section *sr;
+	Section *sc, *sr;
 	char buf[64];
-	if (ast_scratch_sec)
+	if (mcc_state->ast_scratch_sec)
 		return;
-	ast_scratch_sec = new_section(mcc_state, ".mcc.scratch.text", SHT_PROGBITS,
-																SHF_PRIVATE);
+	sc = new_section(mcc_state, ".mcc.scratch.text", SHT_PROGBITS, SHF_PRIVATE);
 	snprintf(buf, sizeof(buf), REL_SECTION_FMT, ".mcc.scratch.text");
 	sr = new_section(mcc_state, buf, SHT_RELX, SHF_PRIVATE);
 	sr->sh_entsize = sizeof(ElfW_Rel);
 	sr->link = symtab_section;
-	sr->sh_info = ast_scratch_sec->sh_num;
-	ast_scratch_sec->reloc = sr;
+	sr->sh_info = sc->sh_num;
+	sc->reloc = sr;
+	mcc_state->ast_scratch_sec = sc;
 }
 
 static void ast_scratch_enter(AstScratchSave *sv) {
+	Section *sc;
 	ast_scratch_init();
+	sc = mcc_state->ast_scratch_sec;
 	sv->sec = cur_text_section;
 	sv->sec_doff = cur_text_section->data_offset;
 	sv->ind = ind;
@@ -11638,19 +11638,20 @@ static void ast_scratch_enter(AstScratchSave *sv) {
 	sv->promo_total = ast_promo_total;
 	sv->graft_total = ast_graft_total;
 	sv->opt_total = ast_opt_total;
-	cur_text_section = ast_scratch_sec;
-	ast_scratch_sec->data_offset = 0;
-	if (ast_scratch_sec->reloc)
-		ast_scratch_sec->reloc->data_offset = 0;
+	cur_text_section = sc;
+	sc->data_offset = 0;
+	if (sc->reloc)
+		sc->reloc->data_offset = 0;
 	MCC_TRACE("scratch enter sec=%s ind0=%d\n", sv->sec->name, sv->ind);
 }
 
 static int ast_scratch_measure_exit(AstScratchSave *sv) {
+	Section *sc = mcc_state->ast_scratch_sec;
 	int size = ind - ast_body_ind_sv;
 	MCC_TRACE("scratch measure size=%d\n", size);
-	ast_scratch_sec->data_offset = 0;
-	if (ast_scratch_sec->reloc)
-		ast_scratch_sec->reloc->data_offset = 0;
+	sc->data_offset = 0;
+	if (sc->reloc)
+		sc->reloc->data_offset = 0;
 	sym_pop(&local_stack, sv->lsmark, 0);
 	cur_text_section = sv->sec;
 	ind = sv->ind;
