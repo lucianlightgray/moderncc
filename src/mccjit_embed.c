@@ -1553,12 +1553,18 @@ int mccjit_embed_have_fns(void) {
 void mccjit_embed_finalize(MCCState *s1) {
 	MccjitEmbedFn *e, *nx;
 	CString cs;
+	int n = 0;
+	int async = 0;
 	if (!s1 || !s1->embed_jit || !mccjit_embed_fns)
 		return;
-	if (s1->output_type == MCC_OUTPUT_MEMORY)
-		return;
+	async = s1->jit_threads > 0;
+	if (s1->output_type == MCC_OUTPUT_MEMORY) {
+		mcc_add_symbol(s1, "mccjit_boot_swap", (void *)mccjit_boot_swap);
+		mcc_add_symbol(s1, "mccjit_boot_swap_async",
+									 (void *)mccjit_boot_swap_async);
+	}
 	cstr_new(&cs);
-	if (s1->jit_threads > 0)
+	if (async)
 		cstr_printf(&cs,
 								"extern void mccjit_boot_swap_async(void**, const void*, unsigned long, unsigned long, unsigned long);\n");
 	else
@@ -1574,19 +1580,27 @@ void mccjit_embed_finalize(MCCState *s1) {
 		set_global_sym(s1, blobname, data_section, off);
 		cstr_printf(&cs, "extern unsigned char __mccjit_blob_%s[];\n", e->name);
 		cstr_printf(&cs, "extern void *__mccjit_slot_%s;\n", e->name);
-		if (s1->jit_threads > 0)
-			cstr_printf(&cs,
-									"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
-									"mccjit_boot_swap_async(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL, %luUL, %luUL);}\n",
-									e->name, e->name, e->name, (unsigned long)e->len,
-									(unsigned long)s1->jit_max_duration,
-									(unsigned long)s1->jit_threads);
-		else
-			cstr_printf(&cs,
-									"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
-									"mccjit_boot_swap(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL);}\n",
-									e->name, e->name, e->name, (unsigned long)e->len);
+		n++;
 	}
+	cstr_printf(&cs,
+							"static struct __mccjit_reg { void **slot; const unsigned char *blob; "
+							"unsigned long len; } __mccjit_registry[] = {\n");
+	for (e = mccjit_embed_fns; e; e = e->next)
+		cstr_printf(&cs, "{&__mccjit_slot_%s, __mccjit_blob_%s, %luUL},\n", e->name,
+								e->name, (unsigned long)e->len);
+	cstr_printf(&cs, "};\n");
+	cstr_printf(
+			&cs,
+			"__attribute__((constructor)) static void __mccjit_boot_all(void){\nint __i;\nfor(__i=0;__i<%d;__i++)\n",
+			n);
+	if (async)
+		cstr_printf(&cs,
+								"mccjit_boot_swap_async(__mccjit_registry[__i].slot, __mccjit_registry[__i].blob, __mccjit_registry[__i].len, %luUL, %luUL);\n}\n",
+								(unsigned long)s1->jit_max_duration,
+								(unsigned long)s1->jit_threads);
+	else
+		cstr_printf(&cs,
+								"mccjit_boot_swap(__mccjit_registry[__i].slot, __mccjit_registry[__i].blob, __mccjit_registry[__i].len);\n}\n");
 	mcc_compile_string(s1, cs.data);
 	cstr_free(&cs);
 	for (e = mccjit_embed_fns; e; e = nx) {
@@ -3392,6 +3406,82 @@ int mccjit_selftest_observability(void) {
 	mcc_delete(s1);
 	printf("mccjit-selftest-observability: %s (%d failure%s)\n",
 				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
+	static const char src[] =
+			"int f(int x){return x*3+7;}\nint main(void){return f(11);}\n";
+	MCCState *s;
+	char *av[] = {"liverun", NULL};
+	char path[64];
+	int fails = 0;
+	int rc;
+	int perf_found = 0;
+
+	printf("mccjit-selftest-liverun: begin\n");
+
+	setenv("MCC_AST_JIT_DISPATCH", "6", 1);
+	setenv("MCC_JIT_PERF_MAP", "1", 1);
+	snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
+	remove(path);
+
+	s = mcc_new();
+	if (!s) {
+		printf("mccjit-selftest-liverun: mcc_new failed\n");
+		unsetenv("MCC_AST_JIT_DISPATCH");
+		unsetenv("MCC_JIT_PERF_MAP");
+		return 1;
+	}
+	if (libpath)
+		mcc_set_lib_path(s, libpath);
+	if (incpath)
+		mcc_add_include_path(s, incpath);
+	s->optimize = 1;
+	s->embed_jit = 1;
+	s->jit_threads = 0;
+	mcc_free(s->jit_functions);
+	s->jit_functions = mcc_strdup("f");
+	mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
+
+	if (mcc_compile_string(s, src) != 0) {
+		printf("mccjit-selftest-liverun: compile failed FAIL\n");
+		fails++;
+		rc = -1;
+	} else {
+		rc = mcc_run(s, 1, av);
+	}
+	unsetenv("MCC_AST_JIT_DISPATCH");
+	unsetenv("MCC_JIT_PERF_MAP");
+
+	printf("mccjit-selftest-liverun: main() returned %d (expect 40) %s\n", rc,
+				 rc == 40 ? "OK" : "FAIL");
+	if (rc != 40)
+		fails++;
+
+	{
+		FILE *pf = fopen(path, "r");
+		if (pf) {
+			char line[256];
+			while (fgets(line, sizeof line, pf)) {
+				char nm[128] = {0};
+				unsigned long a = 0, sz = 0;
+				if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 &&
+						!strcmp(nm, "f"))
+					perf_found = 1;
+			}
+			fclose(pf);
+		}
+	}
+	printf("mccjit-selftest-liverun: live recompile %s during .init_array ctor %s\n",
+				 perf_found ? "fired" : "did NOT fire", perf_found ? "OK" : "FAIL");
+	if (!perf_found)
+		fails++;
+	remove(path);
+
+	mcc_delete(s);
+	printf("mccjit-selftest-liverun: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 

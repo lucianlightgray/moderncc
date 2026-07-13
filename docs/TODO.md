@@ -199,7 +199,16 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    `/tmp/perf-<pid>.map` for each recompiled body, opt-in via `MCC_JIT_PERF_MAP` (default off → clean /tmp +
    reproducible/CI-safe). Test: `jit/selftest-observability` (`MCC_JIT_FORCE_INFEASIBLE` gives the fallback path
    teeth).
-4. **[J3A]** per-sym blob registry + one generic ctor → **live in-program recompile** (the "real live JIT").
+4. ✅ **[J3A]** DONE — per-sym blob registry + one generic ctor → **live in-program recompile** (the "real
+   live JIT"). `mccjit_embed_finalize` now emits ONE `__mccjit_registry[] = {{&slot,blob,len},…}` table + ONE
+   `__attribute__((constructor)) __mccjit_boot_all` that loops the table (was N per-fn ctors). The MEMORY/`-run`
+   gap is closed: the mode-6 slot is now named + blob-stashed for MEMORY too (mccast.c guard relaxed), the
+   MEMORY early-return in finalize is gone, and the boot engine symbols are wired into the run image via
+   `mcc_add_symbol(mccjit_boot_swap[_async])` so `_runmain`'s `.init_array` pass calls the generic ctor →
+   self-recompile → slot hot-swap, all in-process. Verified end-to-end on both disk (`route=kgc … swapped`,
+   correct result) and `mcc -run`. Test: `jit/selftest-liverun` (in-process `mcc_run`; perf-map presence proves
+   the recompile fired in the ctor — teeth-verified). Standalone disk exe still needs `libmcc` on the loader
+   path — that's the deferred **[J4A]** static-link (step 7), not J3A.
 5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — split code/data keys, ratio poison, one classified
    {good,bad,unknown} set, poison-as-search-input (a 99%-variant + a benchmarked switch-table cover).
 6. **[K5/L4A/L5A]** best-of-3 promotion on the KGC-recorded live-ins, incumbent-wins-on-tie.
@@ -731,16 +740,17 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   gate (`ast_jit_eligible`; runtime `mccjit_last_kgc_ok` also rejects bitfield/variadic); (2) **[J4A/L9B]** static-link a **parser-less re-emit-only engine slice** (E1a: codegen + opt +
   objfmt, no C front-end — `ast_reemit` re-emits from serialized intent without re-parsing, so the embed is
   materially smaller than the full ~800 KB compiler; **refines D2=A** = re-invoke the engine, but the re-emit
-  slice) instead of the dynamic dep; validate Tier-B; (3) **[J3A]** a per-sym blob **registry** + one generic ctor (one ctor per fn today)
-  — the keystone for live in-program recompile, see M5; (4) **[J4A]** fix the non-fatal `libmccrt.a not found`
+  slice) instead of the dynamic dep; validate Tier-B; (3) ✅ **[J3A]** DONE — a per-sym blob **registry** + one
+  generic ctor (`__mccjit_registry[]` + `__mccjit_boot_all`, replacing the per-fn ctors); wired for both disk
+  and in-program `-run`, see M5; (4) **[J4A]** fix the non-fatal `libmccrt.a not found`
   on the call-bearing embed link (subsumed by the static link); (5) **[J4A]** ~800 KB Tier-B size validation.
-- [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring deferred** —
+- [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring DONE (J3A)** —
   `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable `.data`
   slot). The complete recompile→publish→swap loop works (`mcc_jit_recompile_blob` + `mcc_jit_publish` aligned
   `__ATOMIC_RELEASE` swap), including a genuine const-param-specialized variant. x86_64 ELF only (D7).
-  **Remaining:** **[J3A]** connect the in-*program* mode-6 slot to the runtime recompile — build the per-sym
-  blob registry + generic ctor (an in-memory `-run` program today gets a slot pointing at the AOT body with no
-  recompile hookup); this is the headline "real live JIT" capability. **[J5→K9: un-deferred]** old-variant
+  ✅ **[J3A] DONE:** the in-*program* mode-6 slot is now connected to the runtime recompile via the per-sym blob
+  registry + one generic ctor; an in-memory `-run` program self-recompiles + hot-swaps its own slot at startup
+  (`_runmain` `.init_array` → `__mccjit_boot_all` → `mccjit_boot_swap`). **[J5→K9: un-deferred]** old-variant
   reclamation is now built via **QSBR** — K9 requires QSBR for in-place-patch quiescence, and the same primitive
   gives principled reclamation, so J5 is no longer deferred (it rides K9's QSBR). Trigger/pool = M6 (landed).
 - [~] **M5b — runtime known-good cache + differential deopt-verify — mechanism + live integration landed;

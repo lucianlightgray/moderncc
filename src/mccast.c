@@ -12717,8 +12717,7 @@ void ast_func_end(Sym *sym) {
 							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
 						greloca(data_section, body_sym, slot_off, R_X86_64_64, 0);
 #ifdef MCC_EMBED_JIT
-						if (mcc_state && mcc_state->embed_jit &&
-								mcc_state->output_type != MCC_OUTPUT_MEMORY) {
+						if (mcc_state && mcc_state->embed_jit) {
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "__mccjit_slot_%s", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);

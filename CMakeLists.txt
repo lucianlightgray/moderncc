@@ -3742,6 +3742,14 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_observability PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-observability COMMAND jit_selftest_observability)
             set_tests_properties(jit/selftest-observability PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_liverun tests/embed/jit_selftest_liverun.c)
+            target_link_libraries(jit_selftest_liverun PRIVATE libmcc)
+            target_include_directories(jit_selftest_liverun PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-liverun
+                COMMAND jit_selftest_liverun "-B${CMAKE_BINARY_DIR}"
+                        "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+            set_tests_properties(jit/selftest-liverun PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
