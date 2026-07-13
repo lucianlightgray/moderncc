@@ -1,1412 +1,794 @@
 # TODO
 
-Two layers. **§ Strategic path** (next section) is the authoritative execution order — the
-recommended sequence, the two resolved forks, and what is deferred. Everything below it is
-the **reference library**: the open + partially-landed backlog and the long tail, retagged
-with the phase that consumes each item (`[P0]`/`[P1]`/`[P2]`/`[P3]`/`[FLOAT]`/`[DEFER]`).
-Fully-finished items (zero remaining work) are pruned — this is no longer a full historical
-record; the landed cores of still-open items stay for context. When the path and the library
-disagree, the path wins.
+Three layers. **§ System matrix** (next) is the orientation — the four subsystems (CST · AST · AOT ·
+JIT), their macro features, gating posture, and coverage boundaries, reconciled against `src/` this
+session. **§ Strategic path** is the authoritative execution order — the recommended sequence, the
+resolved forks, and what is deferred. Everything below is the **reference library**: the open +
+partially-landed backlog and the long tail, retagged with the phase that consumes each item
+(`[P0]`/`[P1]`/`[P2]`/`[P3]`/`[FLOAT]`/`[DEFER]`). Completed items are pruned; a still-open item is
+reduced to what is left. When path and library disagree, the path wins.
+
+---
+
+## System matrix — CST · AST · AOT · JIT
+
+Four subsystems share one parse pass and one gate vocabulary (`src/mccgate.h`), but diverge sharply in
+maturity and reach. Macro-feature status is **L** landed · **~** partial (tail open) · **○** built but
+unconsumed · **✗** not built.
+
+### CST — concrete syntax tree · `src/mcccst.{c,h}` (~1640 L)
+
+| Macro feature | State | Detail |
+|---|---|---|
+| Lossless byte-exact CST + round-trip | L | SoA `CstArena`, 37 `CstKind`, width-tiling validated (`cst_validate`) |
+| Content-addressed `#include` store | ~ | data path built (`CstStore` intern/dedup); **not driver-wired** into the consuming file |
+| Symbol def→use xref | ○ | `cst_hook_def/use` resolved via `cst_node_at`; **no query surface** |
+| Positional query (offset→node) | L | `cst_node_at` |
+| Snapshot save/load | ○ | versioned, endian-tagged; **self-check only**, no driver path |
+| Merkle struct+trivia hash | L | incremental-reconcile primitive |
+| **Product consumer** | **✗** | `cst_capture_end` **discards the arena unconditionally**. No LSP server, no `-g`-from-CST, no `--hotreload`. The whole subsystem is a validated substrate + test harness — every product capability is latent. |
+
+**Coverage:** single main-file only (multi-file `#include` stitching = the one open CST slice, "slice-G");
+architecture-independent (pure byte-offset logic, no arch `#ifdef`). `CST_Error`/`CST_Missing` kinds are
+declared but never emitted (no error-recovery CST).
+
+### AST — side-car substrate + unified optimizer + search · `src/mccast.c` (13049 L)
+
+| Macro feature | State | Detail |
+|---|---|---|
+| 20-row strategy pipeline `ast_strategies[]` | L | `ast_func_end` runs the frozen table (cycled to fixpoint under `MCC_AST_CYCLE`) |
+| Side-car indices (epoch-invalidated) | ~ | `ast_hash_*` / `ast_du_*` / `ast_memo_*` built; **4th index (predicate-vector) NOT built** |
+| Value lattice `AstVLat` | L | interval + known-bits, region-scoped per-use projection; gated `MCC_AST_VLAT` (off) |
+| `combo_run` `-O4+` search | L | subset/order lattice over baseline gates; opt-in `MCC_AST_SEARCH`; fork-pool scoring |
+| Memo | ~ | in-mem `AstSearchMemo[4096]` + disk `MSZ1`; **3 memos not yet unified** (+ `ComboMemo`, out-of-proc `SoPfCkpt`) — M2/M3 |
+| Loop-nest §27 (interchange/fusion/tile) | L | `AstLoopInfo` + dep test; all gated off |
+| `eval_slice` soundness oracle | ~ | AST-over-values UB oracle; **shadow-only** (hard-gate deferred) |
+| const-data re-emit (`AST_Data`, M5) | L | size-preserving in-place; size-**changing** datacomp (M6) open |
+
+**Coverage:** replay on `-O1+`; register-promote is **x86_64-only** (`opt_promote`); validation = the M8
+7-gate bar. **Held** (default-off pending soak/backend): `DIVMAGIC` (x86_64 self-host mul-high miscompile),
+`ABS` (needs cmov), `COLOR` (fix landed, soaking), `REASSOC` (order-non-confluent), `VLAT` (queued; PR-C
+IV-widening held), §27 passes, §26 JIT.
+
+### AOT — codegen backend · `src/mccgen.c` (12955 L) + `src/arch/*` + `src/objfmt/*`
+
+| Macro feature | State | Detail |
+|---|---|---|
+| Code generation (AST-replay-driven) | L | frontend records AST, `ast_replay_*` re-drives the same `*-gen.c` emitters |
+| 5 arch backends | ~ | x86_64 Tier-4 (ref) · arm64 Tier-3 · i386/arm Tier-2 · riscv64 Tier-3 **self-host gap** |
+| 3 object formats | ~ | ELF (mature) · Mach-O (x86_64+arm64) · PE (no UBSan/asan-shadow, over-align off) |
+| Assembler / disassembler | L | GAS-style asm; full 5-arch disasm |
+| Own linker (self-host) | L | per-arch `*-link.c`; external GNU ld hits the overlapping-FDE `.eh_frame` quirk |
+| Debug info | L | DWARF + stabs (`mccdbg.c`) |
+| Sanitizers | ~ | ASan native-shadow **x86_64/ELF-only**; bcheck ELF+PE; UBSan trap x86_64/arm64/riscv64 non-PE; stack-protector x86_64+arm64 |
+| Reg alloc / promote / color | ~ | AST-level analysis (arch-agnostic); promote wired x86_64; arm64 x19–x28 gap, riscv64 gap |
+
+**Coverage boundaries (measured):** **cmov/csel emitted on NO arch** (codegen has none; only asm/disasm
+know the mnemonics). div-magic is a 32-bit **AST fold**; 64-bit needs a per-arch `mulh`/`__int128` primitive.
+Over-alignment gated off on PE and under asan/bcheck. Self-host: x86_64 full 3-stage fixpoint · arm64 via
+qemu+musl · **riscv64 blocked (Tier-3 gap)** · i386/arm cross-conformance only. qemu is x86-TSO → cannot
+validate the aarch64/armv7 memory model.
+
+### JIT — runtime recompile + guarded deopt (§26) · `src/mccjit_embed.c` (3059 L) + `src/mccrun.c`
+
+| Macro feature | State | Detail |
+|---|---|---|
+| Baseline retention (deopt fallback) | L (M1) | `ast_baseline_splice` — retained AOT bytes+relocs |
+| Machine-byte-splice entry dispatcher | L (M2) | modes 1–6; "M2 alone is a shippable guarded-deopt JIT" |
+| Non-null speculative spec + `--jit-functions` | L (M3) | search-selectable via gate bits 40/41 |
+| Cross-session re-emit / embed self-swap | ~ (M4) | intent serialize + `.init_array` ctor; **remaining:** bitfields, static-link, per-sym registry, Tier-B size |
+| Mode-6 slot + in-process hot-swap loop | ~ (M5) | recompile→publish→atomic-swap works; **remaining:** in-*program* slot→recompile wiring, QSBR |
+| Known-good cache + differential deopt-verify | ~ (M5b) | `MccjitKgc` mmap tuple set; **remaining:** FP/struct args, mismatch policy, oracle-skip |
+| Purity classifier | ~ (M5c) | `ast_fn_purity` whole-fn; **remaining:** statement-level slicing, off-C-ABI register kernels |
+| N-worker pool + hot-counter trigger | L (M6) | shared queue + async lazy promotion |
+| `jit-patchpoint` (D3B) | ✗ (M7) | deferred; pointer-swap is primary |
+| `eval_slice` hard-gate | ~ (M8) | oracle bites in shadow mode; hard-gate promotion deferred |
+
+**Coverage boundary (the sharp one):** the recompile *engine* (`mcc_run`/`mcc_relocate`/`host_runmem`,
+incl. arm64/macOS `MAP_JIT` W^X) is **cross-arch**; the dispatch/stub *tail* (mode-6 slot, KGC stub,
+trampoline, counter) is **hand-emitted x86_64-ELF-only machine bytes** (`__x86_64__`), validated on Linux/x86
+CI only — not the arm64-macOS dev host. Signatures restricted to **1–6 GP int/ptr args, non-FP/non-struct
+return** (KGC stub emits only `mov64`/`movsxd`; FP/struct fall back to the direct trampoline, no verify).
+Build gate `MCC_EMBED_JIT` off; runtime `MCC_AST_JIT` off.
+
+### Cross-subsystem overlap (the intersections)
+
+- **AST↔AOT — one replay path.** `ast_reemit_retain` stashes byte-faithful bodies serving **three** consumers:
+  inline-graft, JIT deopt fallback, const-data re-emit. Optimizations mutate the AST *between* record and
+  replay; the same `*-gen.c` emitters produce both faithful and optimized bytes.
+- **AST↔JIT — not a fork.** The JIT's compile-time pieces are dispatcher modes emitted inside `ast_func_end`,
+  driven by gate bits 40/41 in the same `AstGateMask` the superopt search scores. Recompile = re-invoke the
+  whole engine (`mcc_new`→`mccgen_init`→`ast_reemit_extern`→`mcc_relocate`). The genuinely JIT-only runtime:
+  `MccjitKgc`, the hand-emitted stubs, the pool, the boot-swap ctor.
+- **AOT↔JIT — shared engine, split tail.** `mcc_run`/`mcc_relocate`/`host_runmem` are shared `-run` infra;
+  the divergence is the x86_64-only stub layer above them.
+- **CST↔everything — observer only.** Shares the parse pass and one namespace slot (`MCC_NS_CST_BRANCH`),
+  injects one field (`cst_base`) into the lexer, and otherwise has no pointers into AST/codegen and no
+  influence on output. Freed immediately after capture.
+- **Search substrate — vocabulary unified, memos not.** `mccgate.h` (`AstGateMask`, `AST_SG_*`) is the single
+  shared gate definition across `mccast.c`, `tools/asttool.c`, `mccjit_embed.c`. But three measurement engines
+  persist (in-proc search memo, `ComboMemo`, out-of-proc superopt) — M2/M3 collapse them.
+
+---
+
+## Gating ledger — default state by posture
+
+Defaults set in `ast_configure()` (`mccast.c:1097+`). Three postures:
+
+**Default-ON (tied to `-O`):** `MCC_AST_TEMPLATES`/replay (`-O1+`); at `-O2+`: `SETHI`, `BITFLAG`,
+`CPROP_JOIN`, `NARROW`(+`_FIX`), `SCCP_FIX`, `DSE_CALL`, `TCO_PTR`, `CSE_COMM`, `RANGE`, `CSE_JOIN`,
+`CALL_WINDOW`, `ZERO_BSS`, `MERGE_STRINGS`, `PROMOTE` (x86_64-only); at `-O3` non-size: `INLINE`. Ident/reassoc/
+bfold/narrow-class sub-knobs default 1 (bite only when parent on).
+
+**Opt-in, default-OFF (landed, cleared or clearing the bar):** `NARROW_ELIM`, `VLAT`, `ARGFWD`, `SETHI_NARY`,
+`SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`, `LICM_TEMP`, `IVSR`, `PRE`, `SETHI_LEAF`, `COST`,
+`PERFN_INPROC`, §27 (`INTERCHANGE`/`FUSION`/`TILE`), the search family (`SEARCH`/`_EMITSIZE`/`_EMITISO`/
+`_INLINE`/`_THREADS`/`_ORDERED`/`_ORDER`).
+
+**Held (default-OFF, blocked — see coverage ledger):** `DIVMAGIC`, `ABS`, `REASSOC`, `VLAT` PR-C IV-widening,
+`JIT`/`JIT_SPLICE`/`JIT_DISPATCH` (§26).
+
+**CST:** build `MCC_CONFIG_LSP` (default ON) + runtime `--lsp` (opt-in) + `MCC_CST_*` env probes (all off,
+result discarded). No gate bit.
+**JIT build:** `MCC_EMBED_JIT` (default OFF); runtime `MCC_AST_JIT` (off), `MCC_AST_JIT_DISPATCH` modes 1–6.
+
+## Coverage ledger — arch × capability
+
+| Capability | x86_64 | arm64 | i386 | arm | riscv64 |
+|---|---|---|---|---|---|
+| Backend tier | Tier-4 ref | Tier-3 | Tier-2/3 | Tier-2 | Tier-3 |
+| Self-host 3-stage | ✅ | qemu | cross | cross | **✗ gap** |
+| Reg promotion | ✅ | x19–x28 gap | n/a | n/a | gap |
+| Tier-4 replay-inline | ✅ | ✅ | skip | skip | **unverified** |
+| UBSan trap | ✅ (non-PE) | ✅ | ✗ | ✗ | ✅ |
+| ASan native-shadow | ✅ **only** | ✗ | ✗ | ✗ | ✗ |
+| Stack protector | ✅ | ✅ (Mach-O) | ✗ | ✗ | ✗ |
+| TLS GD/LDM | ✅ | LE only | **untested** | — | — |
+| cmov/csel codegen | ✗ | ✗ | ✗ | ✗ | ✗ |
+| div-magic (32-bit fold) | ✅* | ✅* | ✅* | ✅* | ✅* |
+| JIT dispatch/stub tail | ✅ **only** | ✗ | ✗ | ✗ | ✗ |
+
+\* AST fold, but `DIVMAGIC` held default-off. **Validation bar (M8, applied per gated item):** (a) ctest
+byte-identity · (b) `-O6` differential vs gcc/clang · (c) self-host 3-stage fixpoint (via mcc's own linker
++ `mccrt_blob`) · (d) UBSan/ASan · (e) cross-arch i386/arm32/riscv64/arm64 (qemu-docker) · (f) differential
+miscompile fuzz (~100 seeds, x86_64-Linux-only) · (g) `MCC_CONFIG_AST_SHADOW` zero-divergence. **The fuzzer
+and the shadow-IV oracle are x86-only — the held items (DIVMAGIC/COLOR/VLAT-PR-C) all wait on x86 fuzz soak,
+and none of the M8 gates covers the memory model on weak-ordering arches.**
+
+---
 
 ## Strategic path — least resistance × greatest gains
 
-**Ordering rule.** At each step take the lowest-resistance item among the highest remaining
-gain, and make it unblock the next. **Guardrail (every phase):** the full M8 bar — ctest,
-`-O6` differentials vs gcc/clang, self-host 3-stage fixpoint, sanitizers (UBSan/ASan),
-cross-arch (i386/arm32/riscv64/arm64, qemu-docker), differential miscompile fuzz,
-`MCC_CONFIG_AST_SHADOW` zero-divergence. Every step stays byte-neutral on the default path
-until its own opt-in flag; nothing here may regress `-O1..-O3`.
+**Ordering rule.** At each step take the lowest-resistance item among the highest remaining gain, and make
+it unblock the next. **Guardrail (every phase):** the full M8 bar (above). Every step stays byte-neutral on
+the default path until its own opt-in flag; nothing here may regress `-O1..-O3`.
 
-Net shape: **P0 free money → P1 the multiplier → P2 the root-blocker → P3 the milestone**,
-with substrate-unify floating and the two hard forks pre-resolved so no phase stalls on a
-decision.
+Net shape: **P0 free money → P1 the multiplier → P2 the root-blocker → P3 the milestone**, with substrate-
+unify floating and the two hard forks pre-resolved so no phase stalls on a decision.
 
-### P0 — Default-on sweep · *warm-up; near-zero resistance* — **8/10 LANDED**
+### Resolved this session — 7 decisions folded in
 
-Flip the knobs that already cleared the full M8 bar from opt-in to default, after one broader
-field-exposure pass. Gain lands on every compile; no new code, only golden churn. Also shakes
-out the search vocabulary before P1..P3 lean on it.
+The matrix cross-examination surfaced seven forks between the implementation and this roadmap; all are now
+locked. Several are **keystone unblocks** (one landing clears a cluster), so the phase order below is revised.
 
-- **LANDED (default-on at `-O2+`, `s1->optimize >= 2` in `ast_func_end`'s config block, `mccast.c`):**
-  `MCC_AST_RANGE` (V-bf range folds), M6z `MCC_ZERO_BSS`, M6s `MCC_MERGE_STRINGS`, plus the audited
-  `AST_SG_*` knobs `MCC_AST_NARROW_FIX`, `MCC_AST_SCCP_FIX`, `MCC_AST_DSE_CALL`, `MCC_AST_TCO_PTR`,
-  `MCC_AST_CSE_COMM`. Validated to the full M8 bar as a batch: ctest **3653/3653**; self-host 3-stage
-  fixpoint **byte-identical** (stage2==3==4, all-8-on); real cross-arch i386/arm64 exec (fail-sets
-  identical on-vs-off, no regressions); `MCC_CONFIG_AST_SHADOW` **2990/2990 zero-divergence**;
-  differential fuzz 150 seeds **0 miscompiles**. Each is `-v128` TRACE-observable (`zero-bss move`,
-  `string merge`, `range fold`, etc.) and env-overridable (`MCC_AST_X=0` force-off even when default-on).
-  (The comparison-identity + unsigned-range-vs-0 folds were already default-on.)
+- **1A — CST gets a real consumer.** slice-G multi-file `#include` stitching → `-g`-from-provenance (also
+  feeds the debugger suite). Promotes CST from `[DEFER]` to an active workstream **[CST]**, run independently
+  of the optimizer path (after P0).
+- **2B — port the JIT stub tail to arm64.** The mode-6 slot / KGC stub / trampoline / counter get an arm64
+  emission path so §26 validates on the arm64-macOS dev host, not just x86-Linux CI. **Reinterprets D7 as
+  "x86_64-first," not "only."** Slots into P3's tail after the x86_64 milestones close.
+- **3A — fix the emit-time value-axis framework** (full-state save/restore: promotion plan + allocator +
+  `vtop` + `nocode_wanted`). **Keystone unblock** — clears the §22 promotion axis, §23 inline budgets, M1's
+  scoring gain, and inline/promote in the search in one landing. Promoted ahead of the search-scoring items
+  that depend on it (P1-adjacent).
+- **4B — dedicated backend-parity session** (cmov/csel emission + a temp-materialization mechanism). Clears
+  ABS, 64-bit div-magic, branchless-select, and — with the x86_64 mul-high regalloc fix — DIVMAGIC together.
+  Promotes the `[DEFER]` backend-parity cluster to a scheduled session gating the P0 held items.
+- **5A — migrate the memo to `ComboMemo` now.** M2/M3 promoted from FLOAT to active: one `ComboMemo` + disk
+  backing, retiring the out-of-process superopt's second measurement engine.
+- **6A — close the riscv64 Tier-3 self-host gap.** **Validation-infra unblock** — makes the M8 cross-arch
+  gate real on riscv64. Done early; everything gated on cross-arch rides on it.
+- **7A — promote `eval_slice` to a hard gate. N := 3** clean self-host + fuzz soak cycles, then flip from
+  shadow-only to a hard per-strategy gate (rides on 2B for the cross-arch signal).
+
+**Revised order:** **6A** (validation infra) · **3A** (value-axis keystone) → **P0** batch flip + **4B**
+(backend parity, clears the held DIVMAGIC/ABS) → **P1** (lattice) · **5A** (memo) → **P2** (const-data) →
+**P3** (JIT tails) → **2B** (arm64 stub) → **7A** (hard gate). **[CST] 1A** runs in parallel after P0.
+
+### P0 — Default-on sweep · *warm-up; near-zero resistance*
+
+Flip knobs that already cleared the full M8 bar from opt-in to default. Gain lands on every compile; no new
+code, only golden churn. Also shakes out the search vocabulary before P1..P3.
+
 - **HELD opt-in (default `0`):**
-  - `MCC_AST_DIVMAGIC` — **blocked by an x86_64-specific self-host miscompile** the M8 bar caught:
-    default-on at `-O2`, mcc's stage2 (compiled with DIVMAGIC) **SIGSEGVs recompiling `src/mcc.c`**
-    (deterministic stack-overflow via runaway self-recursion). NOT a wrong quotient (div/rem results
-    match gcc exactly, fuzz-clean) — it is a **non-local x86_64 mul-high (`imul; shr $0x20`) register-
-    pressure codegen bug** that only manifests on a heavy TU (i386/arm64 self-host + the whole exec
-    corpus + `-g` builds are all clean; the crash is masked by regalloc changes). DIVMAGIC fires 34× on
-    `mcc.c`. Fix the 64-bit/mul-high x86_64 register allocation (ties to the open "optimal 1×-multiply
-    form" item — needs a real temp-materialization mechanism) before flipping. Interim: opt-in works.
-  - `MCC_AST_ABS` — held on a perf judgment, not a bug: its branchless bit-trick
-    (`(x^(x>>31))-(x>>31)`) vs a (well-predicted) branch is a genuine tradeoff, and gcc's chosen
-    branchless form is `neg;cmovs` (cmov), which mcc lacks. Revisit when the cmov backend lands
-    (see the `[DEFER]` "branchless select" item), which would make the bit-trick moot.
-- [ ] **Next default-on batch (campaign endgame)** — after broad exposure/soak, flip the opt-in
-  gates that already cleared the full bar: `MCC_AST_NARROW_ELIM`, `MCC_AST_VLAT`, `MCC_AST_ARGFWD`,
-  `MCC_AST_SETHI_NARY`, `MCC_AST_SPILL_SHARE`, `MCC_AST_INLINE_PASS`, `MCC_AST_CYCLE`, and
-  `MCC_AST_COLOR` (its self-host miscompile — an unsound def-first live-interval heuristic — is
-  FIXED, 556de5c2, but it needs a post-fix soak). DIVMAGIC/ABS stay held per the bullets above.
-- Not in P0: the inline/promote value axes — they want emit-size scoring (needs §22
-  scratch-`Section` isolation), so they stay `[FLOAT]`.
+  - `MCC_AST_DIVMAGIC` — **blocked by an x86_64-specific self-host miscompile**: default-on at `-O2`, stage2
+    (compiled with DIVMAGIC) **SIGSEGVs recompiling `src/mcc.c`** (deterministic stack-overflow via runaway
+    self-recursion). NOT a wrong quotient — a **non-local x86_64 mul-high (`imul; shr $0x20`) register-pressure
+    codegen bug** that only manifests on a heavy TU (i386/arm64 self-host + the exec corpus + `-g` builds are
+    clean). Fix the 64-bit/mul-high x86_64 register allocation (the "optimal 1×-multiply form" — needs a real
+    temp-materialization mechanism) before flipping — **scheduled as the 4B backend-parity session**.
+  - `MCC_AST_ABS` — held on a perf judgment: its branchless bit-trick (`(x^(x>>31))-(x>>31)`) vs a
+    well-predicted branch is a genuine tradeoff, and gcc's chosen form is `neg;cmovs` (cmov), which mcc lacks.
+    Revisit when the cmov backend lands — **the 4B backend-parity session** (cmov/csel emission).
+- [ ] **Next default-on batch (campaign endgame)** — after broad exposure/soak, flip the opt-in gates that
+  already cleared the full bar: `MCC_AST_NARROW_ELIM`, `MCC_AST_VLAT`, `MCC_AST_ARGFWD`, `MCC_AST_SETHI_NARY`,
+  `MCC_AST_SPILL_SHARE`, `MCC_AST_INLINE_PASS`, `MCC_AST_CYCLE`, and `MCC_AST_COLOR` (its self-host miscompile
+  is fixed, 556de5c2, but it needs a post-fix soak). DIVMAGIC/ABS stay held.
+- Not in P0: the inline/promote value axes — they want emit-size scoring (needs §22 scratch-`Section`
+  isolation) **and the emit-time value-axis framework is currently unsound** (both inline and promote axes
+  fail 4/296 and 3–12/296 on the corpus — see the §22 promotion-axis item). They stay `[FLOAT]`, blocked.
 
-### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L** · **PR-1/A/B LANDED · PR-C held**
+### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L**
 
-**Status (checkpoint 2026-07-13):** PR-1 (side-car + both projections) · **PR-A** (region-scoped per-use
-projection `ast_vlat_context_at`) · **PR-B** (first value-changing consumer — path-sensitive narrowing in
-`ast_narrow_fits`/`ast_narrow_elim`) all LANDED, gated `MCC_AST_VLAT`, byte-neutral, full ctest 5169/5169
-on arm64. **PR-C** (loop-IV monotonicity widening, the §32a core) is spec'd + **held** — miscompile-
-sensitive, and its validator (the differential fuzzer) is x86-only. Details in the `[P1] context_in /
-context_out` item below.
+Build §29 range/known-bits and `context_in`/`context_out` as **one** artifact with two projections, not two
+lattices. One integer value-domain lattice over locals, mining the dominating-`AST_If` predicate source; §29
+reads the narrowing-residue projection, `context_in` reads the reaching-context / memo-key projection (a 4th
+side-car predicate-vector reads a third view later). Hooks the existing `ast_du_*` / `ast_hash_*` epoch
+machinery. The side-car (`AstVLat`), both projections (`ast_vlat_narrowing`/`ast_vlat_context`), the
+region-scoped per-use projection (`ast_vlat_context_at`), and the first value-changing consumer (path-
+sensitive narrowing) are landed gated `MCC_AST_VLAT`, byte-neutral by default.
 
-Build §29 range/known-bits and `context_in`/`context_out` as **one** artifact with two
-projections, not two lattices. One integer value-domain lattice over locals, mining the
-dominating-`AST_If` predicate source; §29 reads the narrowing-residue projection, `context_in`
-reads the reaching-context / memo-key projection (the 4th side-car predicate-vector reads a
-third view later). Hooks the existing `ast_du_*` / `ast_hash_*` epoch machinery.
+**Remaining:** the memo-key context consumer, the predicate-vector 4th index, and **PR-C** (loop-IV
+monotonicity widening, the §32a core) — spec'd + **held** (miscompile-sensitive; its validator, the
+differential fuzzer, is x86-only). Details in the `[P1] context_in / context_out` item. Comparison-operand
+narrowing is DROPPED as backend-redundant.
 
-**PR-1 LANDED — the side-car representation + both projections, byte-neutral, no consumer.**
-`AstVLat` (`src/mccast.c`: `int64 lo,hi` interval ∧ `uint64 kzero,kone` known-bits ∧ `tt` ∧
-`state` TOP/FACT/BOTTOM) with `ast_vlat_meet` (interval union ∧ known-bits intersection — the
-control-flow-merge over-approximation, generalizing `ast_cprop_state_meet`). `AST_VLAT_CAP`
-slot-offset side-car (mirrors `ast_du_`), epoch-synced (`ast_vlat_sync`/`_invalidate` wired into
-the invalidate decls + `ast_arena_free`). `ast_vlat_build` = `do{}while(changed)` fixpoint
-(house style, bounded by `ast_count`): for each never-written (`ast_local_is_readonly`) integer
-local, walk the `a->parent[]` spine of each use meeting in every dominating branch predicate
-(`if` then-arms op 0 child 1, loop bodies op ∈{2,3,4}, incl. `&&`/`TOK_LAND` conjunctions parsed
-by reusing `ast_range_bound`). Two projections: `ast_vlat_narrowing(off,width_tt)` (§29 residue,
-"provably fits width", TOP-safe → returns "doesn't fit" when unknown/env-off so a consumer can
-never widen on an unproven fact) and `ast_vlat_context(off,*out)` (the `context_in` fact). Gated
-`MCC_AST_VLAT` (default off) → **byte-neutral**. Under `MCC_CONFIG_AST_SHADOW`, `ast_vlat_check_sound`
-asserts cached ⊇ fresh recompute (never narrower / never claims a bit fresh doesn't). `-v128` TRACE
-`vlat build slots=N iters=M`. Validated: ctest **3654/3654** (env-off byte-identical + new `ast/vlat`);
-`tools/asttool.c` `suite_vlat` **25/0** (meet/transfer/narrowing/conservatism on known fixtures — the
-logic gate ctest can't provide with no consumer); shadow **2991/2991** zero-divergence + a 400-source
-`MCC_AST_VLAT=1` soundness sweep (0 aborts). **PR-2+ (deferred):** wire the first consumer — replace
-`ast_ii_width` in `ast_narrow_binary` with `ast_vlat_narrowing` (the value-changing narrowing), then
-feed `ast_vlat_context` into a memo key; then the `/ % << >>` (**LANDED** — `ast_narrow_binop_ranged`
-+ `ast_narrow_ranged_ok`/`ast_narrow_fits`, VLat-context-consuming, gated `MCC_AST_VLAT`) + comparison
-narrowings; then the predicate-vector 4th index. **Comparison-operand narrowing DROPPED — backend-
-redundant** (checkpoint 2026-07-13): a relational's operands already sit in native registers, so gcc
-emits e.g. arm64 `cmp w0,w1; cset` / x86 `cmp` at the promoted (32-bit) width with **no extend to
-elide** — narrowing `(int)uc < (int)uc` back to a byte compare changes no emitted instruction (same
-class as V-ident(a) strength-reduction: "backend-redundant — skip"). The remaining live PR-2 steps are
-the memo-key context consumer and the predicate-vector 4th index.
+- **Unblocks in one build:** §29 non-distributive narrowing (`/ % << >>`), §29 outer-narrow elimination,
+  V-cprop(c) known-bits/range variant, V-cse(c) redundant-load elimination — and pre-pays `eval_slice`'s
+  enumeration bound for P3.
+- **Resolves Fork L:** *same lattice, two projections.* "Shares representation, differs in scope."
 
-- **Unblocks in one build:** §29 non-distributive narrowing (`/ % << >>` + comparisons), §29
-  outer-narrow elimination, V-cprop(c) known-bits/range variant, V-cse(c) redundant-load
-  elimination — and pre-pays `eval_slice`'s enumeration bound for P3.
-- **Resolves Fork L** (lattice same-or-distinct): *same lattice, two projections.* The
-  reference note "overlaps but is not §29" is superseded by "shares representation, differs
-  in scope."
-- First-PR surface: representation (range ∧ known-bits), the two projections, the fixpoint
-  driver, and the `ast_du_*`/`ast_hash_*` hook points.
+### P2 — Const-data rewrite · *root-blocker clear*
 
-### P2 — Const-data rewrite · *root-blocker clear* — **M5 primitive LANDED**
+The `AST_Data` kind + the size-preserving in-place re-emit primitive (`ast_data_reemit`) are landed on the
+section-level side-car (`ast_hook_data` fires at TU scope, no per-function arena). **Remaining:** the
+size-CHANGING datacomp rewrite = M6 (C) `.init_array` decompress ctor + (D) `__mcc_decompress` runtime (multi-
+backend, breaks link-time-constant consumers) + M4(b/c) score-fold. Details in `[P2] M5`/M6.
 
-Build the M5 `AstKind` data node + re-emit pass — the single missing mechanism the whole data
-cluster waits on (`kind_names[]` has no data kind; const bytes are `memcpy`'d at parse time
-outside the AST capture window). Then M6 datacomp (ctor + `__mcc_decompress` runtime) and M4
-fair scoring fall out.
-
-**Status (checkpoint 2026-07-13):** `AST_Data` kind + `kind_names[]` LANDED, and the **re-emit
-primitive** `ast_data_reemit` (size-preserving in-place section rewrite) LANDED + validated
-(329-source `MCC_AST_DATA_REEMIT` self-test, 0 mismatches; full ctest 5169/5169). **Architectural
-finding:** the data node is NOT a per-function AST node — `ast_hook_data` fires at TU scope with no
-`ast_cur` arena, so the primitive operates on the section-level side-car (`ast_data_recs`). **Remaining:**
-the size-CHANGING datacomp rewrite = M6 (C) `.init_array` decompress ctor + (D) `__mcc_decompress`
-runtime (multi-backend, breaks link-time-constant consumers) + M4(b/c) score-fold. Details in the
-`[P2] M5` item below.
-
-- **Decouples the M4↔M6 apparent circularity:** once a transform *owns* a candidate's bytes
-  the data-delta is per-candidate and transform-attributed, so M4(b/c) folds into the score
-  without the shared-rodata order-noise that blocks it today. Direction is M5 rewrite node →
-  M6 owned delta → M4 fold-into-score — sequencing, not a cycle.
-- **Consumes (landed):** the M5 visibility side-car (`ast_hook_data`), the M6 candidate-ID
-  estimator + round-trip gate (`ast_data_estimate`/`ast_data_roundtrips`), the M4a data/rodata
-  snapshot.
+- **Decouples the M4↔M6 circularity:** once a transform *owns* a candidate's bytes the data-delta is per-
+  candidate and transform-attributed, so M4(b/c) folds into the score without shared-rodata order-noise.
+  Direction: M5 rewrite node → M6 owned delta → M4 fold.
 - **Also unblocks:** §30 value-table dispatch.
-- Gain: shippable binary-size wins under a flag; visible, per-compile.
 
-### P3 — Guarded-deopt Stage 1 · *capability milestone* — **LANDED**
+### P3 — Guarded-deopt Stage 1 · *capability milestone*
 
-Shipped as §26 M1–M3 (baseline retention + machine-byte-splice entry dispatcher + non-null
-speculative specialization + `--jit-functions` selection), search-selectable via gate bits 40/41
-rather than `ast_strategies[]` rows (B1a: `ast_order_pack` packs row indices as 4-bit nibbles and
-rows already exceed index 15, so apply-rows would alias in the ordered-search memo). Emits real
-`{guard; spec arm else AOT-baseline splice}` entirely at compile time; the §26 runtime core on
-top is also complete — what remains there is the marginal tail (see NEXT MILESTONE).
+Shipped as §26 M1–M3 (baseline retention + machine-byte-splice entry dispatcher + non-null speculative
+specialization + `--jit-functions`), search-selectable via gate bits 40/41. **M6 (pool) also landed** (commit
+457ca8a1). The remaining §26 runtime tail (M4/M5/M5b/M5c/M8 tails, x86_64-only) is tracked in NEXT MILESTONE.
 
-### [FLOAT] — Substrate unification · *drop in between P1..P3; maintenance gain* — **resolves Fork C**
+### [5A·ACTIVE] — Substrate unification · *now active (was FLOAT); maintenance gain* — **resolves Fork C**
 
 Finish M1–M3 / M7 leftovers: `ComboMemo` + MSZ1 as the one memo, one eviction, one key
-(`ast_search_key_salt` ≡ `so_pf_key` already converged). Retires the out-of-process superopt's
-second measurement engine.
+(`ast_search_key_salt` ≡ `so_pf_key` already converged). Retires the out-of-process superopt's second engine.
 
-- **Resolves Fork C** (memo concurrency): adopt **whole-file rewrite** (the working in-proc
-  model); add a `claim` sub-record to the MSZ1 container *only if/when* distributed superopt
-  work-stealing is actually wanted. Not on the capability critical path — slot it as a
-  palate-cleanser, never ahead of P1/P2.
-- Rolled-in sub-decisions: the int-axis vocabulary (budgets/levels with no gate bit) — quantize
-  into `AstGateMask` bits vs. a new `combo_run` parameter dimension; M7b `jit.h` graduation
-  (mask-replay vs algorithm-synthesis) stays `[DEFER]`.
+- **Resolves Fork C:** adopt **whole-file rewrite** (the working in-proc model); add a `claim` sub-record to
+  the MSZ1 container *only if/when* distributed work-stealing is actually wanted. Not on the capability path —
+  slot it as a palate-cleanser, never ahead of P1/P2.
+- Rolled-in sub-decisions: the int-axis vocabulary (budgets/levels with no gate bit) — quantize into
+  `AstGateMask` bits vs. a new `combo_run` parameter dimension; M7b `jit.h` graduation stays `[DEFER]`.
 
 ### [DEFER] — after P1–P3 land
 
-- **Backend parity vs gcc** — cmov/csel branchless select, 64-bit div-magic (needs a
-  `mulh`/`__int128` primitive), boolean-normalizing ternary. High per-compile gain but a
-  5-backend grind + a missing primitive; pick up opportunistically per-backend.
-- **§28 rewrite-rule IR** — Explore-tier; gate behind P1–P3. (Its two former co-tenants on this
-  line landed: the §27 loop-nest foundation — model 1522b3b1 + dependence/legality 98959ace — and
-  the §26 runtime-JIT core; the full §27 transform trilogy (interchange + fusion + tiling) has since
-  landed too, so only the §26 marginal tail remains, tracked in its own section.)
+- **Backend parity vs gcc** — cmov/csel branchless select, 64-bit div-magic (needs `mulh`/`__int128`),
+  boolean-normalizing ternary. High per-compile gain but a 5-backend grind + a missing primitive; pick up
+  opportunistically per-backend.
+- **§28 rewrite-rule IR** — Explore-tier; gate behind P1–P3.
 
-### Campaign queue — JIT/AST autonomous campaign (checkpoint 2026-07-13)
+### Campaign queue — JIT/AST autonomous campaign
 
-Per-item pattern: implement gated behind a new env (default OFF → default byte-identical);
-validate the gated-ON path to the full M8 bar; independently re-verify firing (a quick throwaway
-test often does NOT fire the pass — const-folds or wrong shape; confirm via `-v128` TRACE or an
-object-diff) plus correctness vs gcc; commit; update TODO.
+Per-item pattern: implement gated behind a new env (default OFF → default byte-identical); validate the
+gated-ON path to the full M8 bar; independently re-verify firing (a quick throwaway test often does NOT fire
+the pass — confirm via `-v128` TRACE or an object-diff) plus correctness vs gcc; commit; update TODO.
 
-  (The §27 transform trilogy — interchange `MCC_AST_INTERCHANGE`, fusion `MCC_AST_FUSION`, tiling
-  `MCC_AST_TILE` — has LANDED, all default off; see the bucket-1 §27 item for the remaining tiling
-  extensions.)
-- [ ] **1. Then:** §24 hot-slice ranking (uses the landed `ast_loop_depth`; **BLOCKED — no consumer
-  yet:** the search budget is applied per-function at full value, `ast_search_budget_ms = ast_search_seconds*1000`
-  in `ast_func_end`, `mccast.c:~12063`, so a hotness ranking is inert until cross-function budget
-  *allocation* exists — and that piece needs §22 emit isolation; do §22/M2 first) · §32a widening
-  dataflow · §30 value-table dispatch (needs the P2 `.rodata` data-emission project first) ·
-  FLOAT combo M2/M3 (search-infra, lower risk) · V-* strategy-decomposition follow-ons · the §26
-  marginal tail (float/struct KGC args, static-link E1a, bitfields, N-worker queue, M7 patchpoint).
-  (**Host note:** the §26 JIT tail is x86_64-ELF-only, D7 — its stubs are hand-emitted x86_64 machine
-  bytes, so those milestones can only be validated on Linux/x86 CI, not the arm64-macOS dev host.)
+- [ ] **1.** §24 hot-slice ranking (uses the landed `ast_loop_depth`; **BLOCKED — no consumer yet:** the
+  search budget is applied per-function at full value in `ast_func_end`, so a hotness ranking is inert until
+  cross-function budget *allocation* exists — needs §22 emit isolation; do §22/M2 first) · §32a widening
+  dataflow · §30 value-table dispatch (needs the P2 `.rodata` project) · FLOAT combo M2/M3 (search-infra) ·
+  V-* strategy-decomposition follow-ons · the §26 marginal tail (float/struct KGC args, static-link E1a,
+  bitfields, M7 patchpoint). (**Host note:** the §26 JIT tail is x86_64-ELF-only, D7.)
 - [ ] **2. Endgame:** flip the validated gates default-on — the P0 "next default-on batch" item.
 
 ---
 
 ## AST substrate + unified optimizer · [FLOAT reference]
 
-Collapse the three optimization drivers (the `ast_func_end` pipeline, the §22
-`AST_PF_EMIT` trial, the `mcc.c` out-of-process search) into one side-car
-substrate + one memo + one strategy engine, shared by the AOT backend and a live
-JIT. This reframes/subsumes several items below (§21 cache key, §22 emit
-isolation, §28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e
-epoch hash, the time-budgeted engine, per-function `-O1`, PP-as-executable JIT).
+Collapse the three optimization drivers (the `ast_func_end` pipeline, the §22 `AST_PF_EMIT` trial, the
+`mcc.c` out-of-process search) into one side-car substrate + one memo + one strategy engine, shared by the
+AOT backend and a live JIT. This reframes/subsumes several items below (§21 cache key, §22 emit isolation,
+§28 rewrite IR, §33b/e seam+window keys, §30 predicate bitset, H_e epoch hash, the time-budgeted engine,
+per-function `-O1`, PP-as-executable JIT). The staged rollout (naming partition, three side-car indices,
+strategy engine, live `-O4+` search) is in place; `-O1..-O3` never search and stay byte-reproducible. Runtime
+JIT + guarded deopt is the separate post-rollout milestone (NEXT MILESTONE below).
 
-**The staged AST-optimizer rollout (steps 1–5) is COMPLETE.** On `main`, default byte-neutral, each gated by `-O6`
-differentials + full ctest + the `MCC_CONFIG_AST_SHADOW` shadow build (zero side-car divergence):
-the `(tag,id)` naming partition (`src/mccname.h`); the read-only side-car (step-1 `ast_du_*` def/use,
-step-2 `ast_memo_*` property memos, step-3 `ast_hash_*` structural hash); the step-4 strategy engine
-(the sole `ast_strategies[]` pipeline; the legacy inline block + `MCC_AST_ENGINE` removed); and the
-step-5 live -O4+ search (`ast_search_select`/`MCC_AST_SEARCH` over the fold-gate lattice, with
-static-cost, emit-size `MCC_AST_SEARCH_EMITSIZE`, and NCores-1 fork-pool `MCC_AST_SEARCH_THREADS`
-scoring; next-tick forecast in `src/mccforecast.h`; in-memory + disk memo `mcc-search.memo` keyed by
-`ast_intention_hash`). The search only *selects* a gate config — the normal pipeline emits the winner
-on the untouched tree, so a search bug can only pick a larger-but-correct config, never a miscompile;
--O4+ output is timing-bounded / non-reproducible by design (quarantined there — `-O1..-O3` never
-search, stay byte-reproducible). Runtime JIT + guarded deopt is **not** a rollout step (the design
-lists it as "steps 3-5 **+ the JIT**") — it is the separate post-rollout milestone below, gated by
-the §26 recompiler design.
+Open scoring/parallelism continuations:
 
-The Step-5+ scoring/parallelism continuations still open (were inline in the removed LANDED prose):
-
-- [ ] **Step 5+ — emit-size scoring under the *tick* scheduler + JIT-runtime scoring** — emit-size
-  scoring is run-to-completion per candidate today because the fair-interleave tick scheduler
-  thrashes the shared ltemp/fconst emit state across candidates; making it tick-interleavable needs
-  the per-context emit state (the C11-thread item below). JIT-runtime scoring — wiring the shipped
-  `MCC_AST_JITSCORE` runtime measurement into the search's ranking key — is the other half. (needs
-  §22 scratch-`Section` emit isolation)
-- [ ] **Step 5+ — C11-thread pool with `_Thread_local` per-context state** — the fork pool (COW
-  isolation) already covers candidate *scoring* with no thread-local marking, so this is only needed
-  for interior / tick-mode parallelism. The per-context-state refactor is the remaining substrate
-  item if ever wanted — its own gated change (side-car shadow + fixpoint + fuzz).
+- [ ] **Step 5+ — emit-size scoring under the *tick* scheduler + JIT-runtime scoring** — emit-size scoring is
+  run-to-completion per candidate today because the fair-interleave tick scheduler thrashes the shared
+  ltemp/fconst emit state across candidates; making it tick-interleavable needs per-context emit state (the
+  C11-thread item). JIT-runtime scoring — wiring the shipped `MCC_AST_JITSCORE` runtime measurement into the
+  ranking key — is the other half. (needs §22 scratch-`Section` emit isolation)
+- [ ] **Step 5+ — C11-thread pool with `_Thread_local` per-context state** — the fork pool (COW isolation)
+  already covers candidate *scoring* with no thread-local marking, so this is only needed for interior /
+  tick-mode parallelism. Its own gated change (side-car shadow + fixpoint + fuzz).
 - [ ] **Step 5+ — widen the search space** — the candidate set is the subset lattice of
-  `searchable = base | opt-in-knobs` on `combo_run` (see M1). **LANDED:** the search ADDS knobs that
-  are off in every -O baseline (not just drops base gates); `AstGateMask` is a `uint64_t` (low 48 bits
-  persisted — `AST_GATE_BITS`; MAGIC in the high 16, old 8-bit records rejected); budget-scaled to
-  `AST_SEARCH_MAX_CAND`=128 with a best-first `est_cost_delta` frontier that scores base's
-  single-toggle neighbours first and reorders `items[]` most-improving-first (non-silent when the cap
-  truncates). 13 opt-in knobs are wired to `AST_SG_*` bits and added to `searchable`: NARROWFIX,
-  SETHILEAF, LTEMP, IVSR, PRE, DSECALL, TCOPTR, CSECOMM, RANGE, DIVMAGIC, ABS, REASSOC, SCCPFIX (the
-  narrow/sethi/templates-modifier knobs are base-gated; RANGE/DIVMAGIC/ABS/REASSOC/SCCPFIX standalone).
-  CI coverage: the `exec-{narrowfix,search,search-emitsize,search-threads}/*` ctest variants + the
-  fuzzer `GATES[]` table cover the whole search subsystem end-to-end; default `-O1..-O3` byte-identical.
-  **Still open:** the **inline/promote axes** (want emit-size scoring — inline/promote effects are
-  emit-time), and the search-mode superopt shadowing (templates-gated knobs only fire in perfn mode,
-  so the search-mode workers never exercise them → M3 wiring).
-- [ ] **Step 5+ — disk-backed cross-build memo (refcounted, LFU-evicted, compressed)** —
-  the per-function winner persists across builds as a **refcounted permutation**:
-  `<cachedir>/mcc-search.memo`, records `{intention-hash, gates|MAGIC<<8, refcount}`,
-  loaded into `ast_search_memo`; a hit applies `cached & base` (a winner cached under a
-  different -O base never enables a gate this build disabled), **bumps the permutation's
-  refcount**, and persists. The on-disk form is a **compressed whole-file container**
-  ("MSZ1" magic + best-of-3 rle/lzss/lzw over the serialized record image; a rewrite
-  replaces the old raw append-log, so a hit rewrites only when the working set changed).
-  Every accessor (load / store / hit) checks the **shared cache-dir disk usage**; at
-  **10 GiB** it evicts the lowest-refcount quarter of the working set and rewrites the file
-  (temp + rename), keeping the most-reused permutations. `mcc --clear-cache` wipes it.
-  Validated: cross-invocation refcount accumulation, -O6 differential correct, the eviction
-  path (lowered-cap test: file grows then compacts, output preserved), and the compressed
-  round-trip (real -O4 populate+reload). Still open (now tracked as **M2/M3** in the macro
-  roadmap below): **unify with the out-of-process `pf-*.ck` format** (`so_pf_key`) so the
-  in-process search fully subsumes `mcc_superopt_perfn`; salt the key with version/triplet;
-  raise `AST_SEARCH_MEMO_CAP` if the 4096-entry hot set proves too small; throttle the
-  per-accessor dir-walk if it shows up on very large caches.
+  `searchable = base | opt-in-knobs`. **Still open:** the **inline/promote axes** (want emit-size scoring —
+  inline/promote effects are emit-time; **unblocked by the 3A framework fix**), and the search-mode superopt
+  shadowing (templates-gated knobs only fire in perfn mode → M3 wiring, done under 5A).
+- [ ] **Step 5+ — disk-backed cross-build memo (refcounted, LFU-evicted, compressed)** — the per-function
+  winner persists across builds in the compressed "MSZ1" whole-file container, evicting the lowest-refcount
+  quarter at the shared 10 GiB cap. **Still open (M2/M3):** unify with the out-of-process `pf-*.ck` format so
+  the in-process search fully subsumes `mcc_superopt_perfn`; raise `AST_SEARCH_MEMO_CAP` if the 4096-entry hot
+  set proves too small; throttle the per-accessor dir-walk on very large caches.
 
-**LANDED — compression codecs + the `mcccombo` substrate.** `src/algorithms/{rle,lzss,lzw}.h`
-(header-only PackBits-RLE / LZSS / LZW, selftest 18/18) and `src/mcccombo.h` (`combo_run`
-subset×ordering enumerator with `ComboScoreFn` lower-is-better, `combo_pipeline_search` codec-chain
-search, `ComboMemo` refcount + LFU-evicted key->value cache; selftest 20/20). The -O4 disk memo
-(`mcc-search.memo`) stores a compressed "MSZ1" best-of-3 (rle/lzss/lzw) container. **M1 wired
-`ast_search` onto `combo_run`**; the remaining call-site migration (the memo struct, the superopt,
-the formula families) is tracked as M2/M3/M7 below.
+### Substrate indices/analyses designed but not built · [P1 reference]
 
-### Substrate indices/analyses designed but not built (from the retired substrate design doc) · [P1 reference]
-
-The rollout built three of the four planned side-car indices (`ast_hash_*` structural hash, `ast_du_*`
-def/use, `ast_memo_*` property memos) plus the strategy engine and search. These designed pieces were
-never rollout steps and have no symbol in `src/` today:
+The rollout built three of the four planned side-car indices (`ast_hash_*`, `ast_du_*`, `ast_memo_*`) plus
+the strategy engine and search. These have no symbol in `src/` today:
 
 - [ ] **[P1] Predicate-vector projection — the 4th side-car index** — a packed bitset of tested-predicate
-  truths over ≤8 named slots in a window (the `predicate_vector(cursor, keys≤8) -> bitset` verb), the
-  semantic sibling of the structural hash, for **branch coalescing** — generalizes `ast_bf_run` (V-bf)
-  + the §30 value-table/bit-flag dispatch. No `predvec`/`predicate_vector` symbol exists (only the
-  three other indices were built). Distinct from the §30 *transform*: this is the index it would read.
-- [ ] **[P1] `context_in` / `context_out` value-domain fact lattice (the "net-new half")** — the value-domain
-  restriction on live-in slots: a bounded backward walk collecting the equality/range predicates of
-  dominating `AST_If` conditions (reuse the `ast_cprop_{koff,ktt,kval}` set shape), O(fixpoint) first /
-  O(1) warm. It is the checker's enumeration bound (see `eval_slice`, §26 Stage 4) and the memo's
-  *context* key. Step 3 shipped only the structural-hash half (`ast_hash_*`). **PR-1 LANDED as the
-  unified `AstVLat` side-car** (see P1 in § Strategic path): the value-domain lattice + the bounded
-  parent-spine dominating-`AST_If` walk exist, and `ast_vlat_context(off,*out)` is the reaching-context
-  projection accessor. **PR-A LANDED (region-scoped projection, byte-neutral, no consumer):**
-  `ast_vlat_context_at(a, use, *out)` returns the value-domain fact at ONE specific use *before* the
-  whole-function meet `ast_vlat_pass` performs — `ast_vlat_element` already computes the path-sensitive
-  per-use over-approximation (starts from the full type range, refines only by dominating predicates
-  that must hold to reach the use), so exposing it un-meeted is the region-scoped (`context_in`) fact a
-  consumer keys on. Readonly locals only for now (same `ast_vlat_use_of` gate). Sound by the same
-  construction as the meeted `ast_vlat_context` and strictly no wider (per-use ⊆ the meet, which ⊇ every
-  element); under `MCC_CONFIG_AST_SHADOW` the accessor asserts `element ⊆ whole-function fact` and a
-  whole-function-emit sweep runs it on every node. Gated `MCC_AST_VLAT` → byte-neutral. Validated on
-  arm64/mac: build clean (no unused-fn warning via the `ast_func_end` keep-alive); default ctest
-  byte-identical; `exec-vlat` (`-O2 MCC_AST_VLAT=1`) **296/296**; a shadow-build `MCC_AST_VLAT=1` sweep
-  over **291** corpus sources → **0** `context_at` aborts / 0 crashes. **PR-B LANDED (first region-scoped
-  CONSUMER — the value-changing half, gated):** `ast_narrow_fits` (the ranged `/ % << >>` narrow path)
-  and `ast_narrow_elim_srcrange` (outer-narrow elimination) now read the per-use `ast_vlat_context_at(a,
-  use, …)` at the exact operand ref instead of the whole-function `ast_vlat_context(a, off, …)`. This is
-  **path-sensitive**: it narrows where the same readonly local is *also used unguarded* elsewhere (which
-  drags the whole-function meet to type-full so the old code couldn't fire). Sound by construction —
-  region-scoped ⊆ meet (shadow-asserted) and the fact is exactly the value at that use, so narrowing on
-  it is *more* precise, never less sound. Both consumers already opt-in behind `MCC_AST_NARROW_ELIM`+
-  `MCC_AST_VLAT` → default byte-neutral. Validated arm64/mac: fires (`narrow elim ct=3 tt=49` on a
-  guarded use whose local is meet-widened by an unguarded `sink=x`); correct vs gcc (`32896==32896`);
-  full exec corpus with `MCC_AST_VLAT=1 MCC_AST_NARROW_ELIM=1` forced on → all real programs pass (only
-  the 2 asm tests that skip in ctest differ, identically with gates off, so unrelated); shadow-build
-  `VLAT+NARROW_ELIM` sweep over **291** sources → **0** aborts. **Remaining (PR-C — the §32a core, MISCOMPILE-SENSITIVE, held):** admit loop-carried
-  IVs to `ast_vlat_context_at` so a body use of induction var `i` gets the guard-derived range
-  (`i < N` → `i ≤ N-1`, etc.). **Soundness precondition worked out (2026-07-13):** apply the loop bound to
-  an IV body use ONLY for **op-3/op-5 for-loops**. `ast_loop_find_iv` scans `ivsrc = (op==3||op==5) ?
-  li->incr : li->body` and requires `ast_ivsr_count_writes(loop, iv) == 1` (+ non-escaping). For op 3/5
-  the single IV write is the `incr` clause, so the body has **zero** IV writes → every body use sees the
-  value that satisfied the guard this iteration → sound. For **op 2/4 (while/do-while) the single write
-  is IN the body**, so a use *after* it violates the guard → UNSOUND unless the use provably dominates
-  the write (defer, or add a dominance check). Also: honor strict-vs-non-strict in the bound (`<` vs
-  `<=`), and only const bounds (`ast_loop_bounds` / `AST_LOOP_BOUND_CONST`) for the first cut. The lower
-  bound from `i=init` needs an init field (`AstLoopInfo` has stride but not init today) + monotonicity;
-  the guard alone gives one side (upper for `<`, lower for `>`). **Validation gap:** the primary
-  miscompile catcher — the differential fuzzer (`fuzz/*`) — is x86_64-Linux-only and SKIPS on arm64/mac.
-  On arm64 the substitutes are the forced-on exec corpus + golden differential (real, many loop programs)
-  + a shadow soundness assertion (needs an IV-specific oracle — there is no whole-function meet baseline
-  for a written local, so `ast_vlat_context_at`'s ⊆-meet assert does NOT cover IVs) + gcc differential on
-  crafted loops. **Keep gated OFF and do NOT flip default-on until the x86 differential fuzz soaks clean**
-  (same discipline as DIVMAGIC/COLOR). Then feed `ast_vlat_context` into a memo/`eval_slice` key. Overlaps but is not §29 (that reads the *narrowing-residue* projection
-  `ast_vlat_narrowing` of the same lattice).
+  truths over ≤8 named slots in a window (the `predicate_vector(cursor, keys≤8) -> bitset` verb), the semantic
+  sibling of the structural hash, for **branch coalescing** — generalizes `ast_bf_run` (V-bf) + the §30 value-
+  table dispatch. Distinct from the §30 *transform*: this is the index it would read.
+- [ ] **[P1] `context_in` / `context_out` value-domain fact lattice** — the value-domain restriction on
+  live-in slots: a bounded backward walk collecting the equality/range predicates of dominating `AST_If`
+  conditions, O(fixpoint) first / O(1) warm. It is the checker's enumeration bound (`eval_slice`, §26 Stage 4)
+  and the memo's *context* key. The unified `AstVLat` side-car, the whole-function projection
+  (`ast_vlat_context`), the region-scoped per-use projection (`ast_vlat_context_at`), and the first region-
+  scoped consumer (path-sensitive narrowing) are landed gated `MCC_AST_VLAT`. **Remaining (PR-C — the §32a
+  core, MISCOMPILE-SENSITIVE, held):** admit loop-carried IVs to `ast_vlat_context_at` so a body use of
+  induction var `i` gets the guard-derived range (`i < N` → `i ≤ N-1`). **Soundness precondition:** apply the
+  loop bound to an IV body use ONLY for op-3/op-5 for-loops (single IV write is the `incr` clause → body has
+  zero IV writes → every body use sees the guarded value → sound); op-2/4 (while/do-while) write IN the body,
+  UNSOUND unless the use provably dominates the write (defer, or add a dominance check). Honor strict-vs-non-
+  strict bounds; const bounds only (`AST_LOOP_BOUND_CONST`) for the first cut; the lower bound needs an init
+  field (`AstLoopInfo` has stride but not init) + monotonicity. **Validation gap:** the differential fuzzer is
+  x86_64-Linux-only and SKIPS on arm64/mac; no whole-function meet baseline for a written local, so the ⊆-meet
+  shadow assert does NOT cover IVs (needs an IV-specific oracle). **Keep gated OFF until the x86 differential
+  fuzz soaks clean.** Then feed `ast_vlat_context` into a memo/`eval_slice` key. Overlaps but is not §29.
 - [ ] **[P1] Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
-  queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
-  ivsr) become O(1) table lookups. PR-2's whole-function `ast_du_*` table subsumes only the two
-  whole-arena scanners (`ast_cprop_escapes`, `ast_local_is_readonly`); "written under node n" needs a
+  queries `ast_licm_written` (cse/licm) and `ast_ivsr_count_writes` (ivsr) become O(1) table lookups. The
+  whole-function `ast_du_*` table subsumes only the two whole-arena scanners; "written under node n" needs a
   descendant range index. Both remain recursive subtree walks today.
 
 ### Macro roadmap — collapse both searches + const-data onto one substrate · [M1–M3/M7/M7b = FLOAT · M4–M6 = P2]
 
-Grounded by two audits: (i) the out-of-process superopt duplicates **every** concern of the
-in-process `ast_search` on a second substrate (process-spawn + ELF-file measurement vs.
-arena-clone + cost model); (ii) the substrate target (`src/mcccombo.h`) and its four migration
-call-sites already exist. Numbered macro steps; lettered sub-features inline; `(A)` nested
-subgroups; each names the concrete hook and the double-checked blocker. Order is dependency order
-(M4 before M6; M5 before M6).
+Grounded by two audits: (i) the out-of-process superopt duplicates **every** concern of the in-process
+`ast_search` on a second substrate; (ii) the substrate target (`src/mcccombo.h`) and its four migration
+call-sites already exist. Order is dependency order (M4 before M6; M5 before M6).
 
-- [x] **[FLOAT] M1 — wire the live -O4 search onto `combo_run`** — **LANDED (subset mode, byte-identical).**
-  `ast_search_select` drives the serial static-cost and emit-size searches through `combo_run`
-  (`ast_search_combo_score` → `ast_search_score_one`, which owns the `ast_cur` + gate save/restore so
-  `combo_run` stays a pure enumerator; budget/abort via `COMBO_REJECT`); base is scored first and wins
-  ties, and the candidate set equals the old submask lattice `{base .. 0}`. Byte-identical to HEAD
-  across `-O2` / `MCC_AST_SEARCH` / `+EMITSIZE` / `+THREADS`. Also landed on top: the **hit-count
-  tie-break** (`ast_search_pack_score` — within an equal cost, favor the config whose passes fired
-  more folds; -O4+ only, default untouched). **Remaining — M1(c):** ordered enumeration
-  (`MCC_AST_SEARCH_ORDERED`) is plumbed to `combo_run`'s permutation mode but a no-op over the bitmask
-  vocabulary; making it meaningful needs `ast_strategies[]` as the ordered combo vocabulary AND
-  `ast_func_end`'s frozen loop to honor the discovered per-fn order (tracked in the variation catalog
-  below); `ast_fc_forecast` best-first ordering is the open synergy.
-  **Traversal-generator groundwork LANDED (byte-neutral) — the strategy-runner refactor (D1–D6, settled
-  with the user).** `combo_run` now takes a `ComboSpec.walk` mode + an observer `visit` callback and
-  offers three selectable enumeration orders over the subset lattice besides the default linear
-  mask-counter: `COMBO_WALK_DFS` (depth-first — deepen a branch fully), `COMBO_WALK_BFS` (breadth by
-  subset size), `COMBO_WALK_PRODUCT` (DFS×BFS hybrid — breadth over roots, then DFS-deepen each). Env
-  `MCC_AST_SEARCH_WALK={linear,dfs,bfs,product}` selects it on the -O4+ search; `ast_search_walk_trace`
-  emits `-v128` `combo walk=%s depth=%d k=%d seq=%s` per visit. **Winner is INVARIANT across walks**
-  (same candidate set, different visit order — the correctness anchor, since scoring is still the
-  commutative gate-mask; ordering does not yet change output). `tools/asttool.c suite_combo_walk` (16/0)
-  asserts the exact DFS/BFS/PRODUCT/linear visit orders + winner-invariance; `-v128` demonstrates all
-  three live; default `linear` + observer `visit` ⇒ ctest 3958/3958 byte-identical, self-host untouched.
-  **This is the DFS/BFS-runner half of D2.**
+- [~] **[FLOAT] M1 — live -O4 search on `combo_run`** — core landed (subset mode; order-honoring emit +
+  row-order search + memo order persistence; `MCC_AST_CYCLE`; the arena inliner PR-1 `MCC_AST_INLINE_PASS`;
+  the DFS/BFS/PRODUCT traversal walks — all default byte-neutral). **Remaining:** `ast_fc_forecast` best-first
+  ordering (the open M1(c) synergy); a *scoring* gain needs a pass whose reordering changes cost/size — the
+  future inline/promote (D6, gated on §22 isolation + the unsound-framework fix) or a size-scored reassoc;
+  inliner PR-2+ (callees with LOCALS + control flow — §34b-risky frame-offset + label/switch/break-continue
+  remap — plus struct-return / const-arg specialization); sequence-with-repetition encoding; runner-as-strategy
+  + memo identity (D2b); the unified score/forecast estimator (D4/M7); all-opts-as-strategies (D6, gated §22).
+- [ ] **[5A·ACTIVE] M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`; b) value =
+  winner record stored best-of-3 compressed (the "MSZ1" logic moves into `ComboMemo`); c) refcount + LFU
+  eviction under the shared 10 GiB cap. The version/triplet salt (`ast_search_key_salt`, FNV over
+  `MCC_VERSION_STR` + `MCC_CONFIG_TRIPLET`) is landed. **Remaining:** the `ComboMemo`-struct migration (a)+(c)
+  — the current disk memo is the hand-rolled `AstSearchMemo`/MSZ1 path, not yet the `ComboMemo` type. *Synergy:*
+  the shadow oracle `MCC_CONFIG_AST_SHADOW` validates a cache hit == recompute.
+- [ ] **[5A·ACTIVE] M3 — subsume the out-of-process superopt** (`mcc_superopt_perfn`/`mcc_superopt_search`,
+  `mcc.c:922/1053`) onto the substrate. a) map perfn `{1,3,7}` config bits and the search 3-axis int product
+  into the `sel[]`/gate vocabulary; b) fold `pf-*.ck`/`so-*.ck` into the compressed container; c) reconcile
+  concurrency — per-key `flock` + claim-cursor work-stealing (`so_claim`) vs the memo's whole-file rewrite.
+  The record fields (`score`/`tried`) and the lossless config↔gate mapping (`src/mccgate.h`, selftested via
+  `tools/asttool.c`) are landed but NOT yet wired into a unified search. **Remaining:** that wiring + the
+  `budget` int-axes (node/graft/bitflag levels, which carry no gate bit); expose `tried` in ordering.
+- [ ] **[P2] M4 — extend scoring to data/rodata.** a) snapshot `data_section`/`rodata_section` offsets before
+  replay and diff after (the `ast_search_emit_size` hook + `-v128` TRACE is landed); b) combined score = text
+  delta + data/rodata delta; c) add a data-size term to `ast_cost_score`. **M4(b)+(c) score-folding is
+  DEFERRED with a measured reason:** the replay re-emits `.rodata` float constants shared across candidate
+  clones (`ast_fconst_reuse` no-op under replay), so the per-candidate rodata delta is order-dependent noise;
+  folding it changes selection unfairly, and an attempt that *restored* the offset **miscompiled**. Score stays
+  **text-only** until M6's data-**rewrite** provides a real per-candidate delta. The snapshot must **not**
+  rewind data/rodata (shared, deliberately grown).
+- [ ] **[P2] M5 — const-data emission foundation.** The visibility side-car (`ast_hook_data`), the `AST_Data`
+  kind, and the size-preserving in-place re-emit primitive (`ast_data_reemit`) are landed. **Why `AST_Data` is
+  NOT a per-function node:** `ast_hook_data` fires at parse time for TU-level globals/statics where there is no
+  per-function `ast_cur` arena, so the rewrite operates on the section-level side-car (`ast_data_recs`). A
+  future TU-level data-node home is the remaining structural piece if the search/replay lifecycle ever scores
+  data rewrites per candidate. **Remaining (the actual datacomp rewrite):** a *size-changing* rewrite needs M6
+  (C) `.init_array` ctor + (D) `__mcc_decompress` runtime. *Synergy:* also unblocks §30.
+- [ ] **[P2] M6 — datacomp: const-data compression pass** (codegen-layer, opt-in; **not** an AST strategy).
+  **(A) Target:** string literals · `static const` arrays · both; threshold by size×entropy. **(B) Codec:**
+  per-blob best via `combo_pack`, or `combo_pipeline_search` for a chain. **(C) Decompression:** eager
+  `.init_array` ctor · lazy first-use guard · both. **(D) Runtime:** new `__mcc_decompress` in `runtime/`, call
+  via `vpush_helper_func`+`gfunc_call`. **Blockers (audited):** breaks link-time-constant consumers;
+  `const`→writable `.bss`; multi-backend ctor synthesis (all 5 arches). The candidate-ID analysis
+  (`ast_data_estimate`) + round-trip gate (`ast_data_roundtrips`) are landed. **Remaining:** the actual (C)
+  ctor + (D) runtime, which need M5's non-neutral rewrite. **Gate:** off; fires only when M4 says it net-shrinks.
+- [ ] **[P0] M6z — zero-init `.bss` placement** — landed default-on at `-O2+` (`MCC_ZERO_BSS`), guarded to a
+  provably-safe subset (initializer emitted no relocation is the critical guard). **Remaining:** TLS
+  `tdata`→`tbss` and the asan/bcheck cases (excluded by guards today).
+- [ ] **[FLOAT] M7 — formula-family unification** (long tail). a) expose cost/ratio formulas as fold-math
+  builtins; b) make the forecast ensemble a first-class `combo` formula family; c) one `-f` front — extend
+  `fold-math` or add a gate. *Synergy:* one enumerator over {strategies, predictors, codecs}.
+- [ ] **[DEFER] M7b — graduate the disk search-memo into compiled-in strategies** (`cache` →
+  `src/algorithms/jit.h`). A new `tools/` utility + CMake target reads the shared cache dir and materializes
+  each hot memoized winner as a `jit_graduated_table` entry, registered in `ast_strategies[]` so a discovered
+  gate config ships compiled-in. **Open questions:** (a) gate-mask replay (v1) vs synthesizing a new
+  `AstStrategy.apply`; (b) key stability (version/triplet salt in `jit.h`); (c) the removal step's verification
+  gate; (d) when the tool runs. *Synergy:* the AOT dual of the §26 runtime JIT. Gated by M8.
+- [ ] **[guardrail] M8 — validation gates** (= the coverage-ledger bar; apply to each of M1–M7). Behavior-
+  preserving steps (M1 subset, M2, M3) stay byte-identical; M4–M7 gated opt-in, change bytes only under flag.
 
-  **M1(c) KEYSTONE LANDED (Deliverable B, both phases) — order-honoring emit + row-order search + memo
-  order persistence, byte-neutral by default.** `ast_func_end`'s emit and both scorers now iterate through
-  a per-fn `ast_strat_order[]`/`_n` (identity default ⇒ byte-for-byte the frozen `si=0..COUNT` loop). The
-  `MCC_AST_SEARCH_ORDER` search (opt-in, -O4+) ranges its vocabulary over the **base-enabled strategy ROW
-  indices** (not gate bits), `combo_run(ordered=1)` enumerates subset+permutation candidates over the
-  selected walk, and `ast_search_score_order` applies `ast_strategies[seq[i]]` **in seq order** (each row
-  already gate-enabled ⇒ any order correct-by-construction). The winning order is written to
-  `ast_strat_order[]` for emit and **persisted in the disk memo** (record grew 5→7 words: `order_packed`
-  16-nibble + `order_n`; MAGIC `0x4643→0x4644` rejects old records). Forced-order override
-  `MCC_AST_STRAT_ORDER="i,j,k"` for testing. Validated to the **full M8 bar**: default byte-identical
-  (ctest 3958, object-diff 0/960, asttool 656/0); self-host 3-stage fixpoint **byte-identical** with
-  `MCC_AST_SEARCH_ORDER=1`; -O6 differential vs gcc/clang 0 miscompiles; fuzz 130 seeds 0 miscompiles;
-  shadow 240/0 zero-divergence; memo 7-word round-trip + old-record reject + cross-run order persistence.
-  TRACE: `strat order forced`, `combo winner order`, `memo store/hit order`.
-  **KEY FINDING (honest):** order-honoring is *byte*-non-confluent (a forced reorder changes emitted bytes)
-  but the current 16 strategies are ***cost/size-confluent*** — reordering doesn't change the score metric,
-  so the search always keeps identity (ties→base) and order-search yields **no measured gain yet**. The
-  machinery is correct + byte-neutral infrastructure; a *scoring* gain needs a pass whose reordering changes
-  cost/size — the future inline/promote (D6, gated on §22 scratch-`Section` isolation) or a size-scored
-  reassoc. (Subset *selection* does fire: the search picked a 3-row subset scoring better than base.)
+### Strategy-variation catalog — widen the search vocabulary · [P0 default-on candidates + FLOAT]
 
-  **A3c PIPELINE cycle-to-fixpoint LANDED (`MCC_AST_CYCLE`, default off → single pass → byte-identical).**
-  `ast_run_strat_seq` (run the ordered sequence once, sum apply() hits) + `ast_run_strat_cycle`
-  (`do{chits=run_seq; TRACE cycle iter/hits}while(chits>0 && iter<AST_CYCLE_MAX(8) && ast_cycle_env)`, cap
-  non-silent) wrap the strategy phase in BOTH `ast_func_end` emit and all three scorers (scored winner ==
-  emitted result). The `AST_PF_EMIT`/inline/promote emit stage still runs ONCE after the fixpoint.
-  **Finding:** under default gates NO cross-pass cascade exists (400 seeds converge in 1 iter — the passes'
-  internal fixpoints already cover it), so cycle is pure byte-neutral infra there. A real cascade appears
-  when a **tree-EXPANDING** pass runs: `MCC_AST_DIVMAGIC=1` (div→magic-multiply expansion) re-exposes folds
-  for bfold/cse/sccp → `cycle iter=1 hits=3 → iter=2 hits=1 → iter=3 hits=0`, cycle-on object ~16 B smaller.
-  Validated to full M8: default ctest 3958/3958 + object-diff 0/320; self-host 3-stage byte-identical with
-  `MCC_AST_CYCLE=1` (1701071 B each); -O6 differential + 120-seed register-pressure fuzz + `--gates`×DIVMAGIC
-  0 miscompiles; shadow 0 divergence. This is the **pipeline-fixpoint half** of A3c.
-  **`fold→inline→fold` UNLOCKED (D3) — arena inliner PR-1 LANDED (`MCC_AST_INLINE_PASS`, default off).**
-  Key reframe from the research: `ast_inline_graft` is *emit-time codegen* (replays the callee arena into
-  the byte stream), NOT an arena op — so the arena inliner was **built from scratch**, not decoupled. New
-  `AST_STRAT_INLINE` strategy row: `ast_inline_run` snapshots `nn=ast_count`, rewrites eligible `AST_Invoke`
-  nodes in place (divmagic-style) via `ast_inline_copy_expr` (cross-arena expr copy with `Convert`-wrapped
-  param→arg substitution). **PR-1 scope = pure-expression callees only** (one `Return` of a pure scalar-
-  int/ptr expr over params; NO locals/control-flow/nested-calls/struct-return/varargs/FP) → the copy needs
-  **no frame-offset or label remap**, sidestepping the §34b/arm64 miscompile classes. Args must be pure
-  (impure ⇒ skip), so duplicating multiply-used args preserves single-eval (no temps). Now inline is a
-  **tree-expanding reorderable row** the A3c cycle interleaves: `add(2,3)+sq(5)` → `cycle iter=1` grafts,
-  `iter=2 hits=4` folds the grafted bodies → `iter=3` fixpoint, object 1686→1606. Validated: default
-  byte-identical (ctest 3958/3958); self-host x86_64 stage2==3==4 byte-identical with the pass ON (**fires
-  7× on `mcc.c`** — narrow_bs ×4, ucn_disallowed_initial, so_gate_dead, host_path_normalize — real firing,
-  still a fixpoint); differential 800/800 vs gcc + fuzz (register-pressure) **0 miscompiles** + -O6 30/30;
-  cross-arch i386/arm64 (qemu) fire + match gcc (arm64-native = CI-only). `-v128` TRACE `inline graft
-  call=%u callee=%s`. **PR-2+ (deferred):** callees with LOCALS + control flow (needs the frame-offset +
-  label/switch/break-continue remap — the §34b-risky part) + struct-return/const-arg specialization.
-  Promote stays emit-time (planning already split, but register-binding emission is irreducibly late — not
-  decouplable). Order-matters emit-divergence: not yet — emit-time const-fold makes constant cases converge.
-  **Still open:** sequence-with-repetition encoding; runner-as-strategy + memo identity (D2b); the unified
-  score/forecast estimator (D4/M7); all-opts-as-strategies (D6, gated on §22).
+Of the 20 `ast_strategies[]` rows, most implement a single algorithmic variation. Each variation below is a
+candidate **search knob** — a distinct `AstStrategy` row or a per-strategy parameter. The M1(c) precondition
+applies to any *ordering*/*pipeline* variant: the emit path must honor the discovered per-fn order.
 
-- [ ] **[FLOAT] M2 — unify the memo on `ComboMemo` + disk backing.** a) key = `ast_intention_hash`
-  (`mccast.c:435`, already the memo key, stable across builds); b) value = winner record (gates +
-  score/size) stored best-of-3 compressed (the "MSZ1" container logic moves into `ComboMemo`);
-  c) refcount + LFU eviction under the shared 10 GiB cap (already present). **(A)** extend
-  `ComboMemo` with disk load/store. **(B) Blocker — LANDED:** the version/triplet salt is now
-  applied. `ast_search_key_salt` (mccast.c, FNV over `MCC_VERSION_STR` + `MCC_CONFIG_TRIPLET`,
-  mirroring `so_pf_key`, `#ifdef`-guarded so the standalone asttool TU still builds) salts the
-  search-memo key at computation in `ast_search_select`, partitioning the shared cache dir so a
-  winner cached by an incompatible build/target is never silently reused. Validated: ctest
-  1905/1905, asttool 130/0, cross-invocation cache-hit still preserved (run 1 searches, run 2 is a
-  full memo hit with identical output). Still open: the `ComboMemo`-struct migration (a)+(c) — the
-  current disk memo is the hand-rolled `AstSearchMemo`/MSZ1 path, not yet the `ComboMemo` type.
-  *Synergy:* the shadow oracle `MCC_CONFIG_AST_SHADOW` (`mccast.c:2485`) validates a
-  cache hit == recompute, reusing the per-node memo's existing shadow-assert harness.
+**Holds (do NOT re-attempt):** `licm` core is not separable from `cse` (`ast_licm_at_loop` reads the LIVE CSE
+availability window at the exact walk position); `cprop`+`sccp` stay FUSED (joint fixpoint); per-node-bundle
+row-splits are non-neutral. Governing distinction: a **gate-split** (per-family `if(gate)` inside one pass) is
+byte-neutral by construction; a **row-split** (new reorderable row) is byte-neutral ONLY for an independent
+whole-arena pass.
 
-- [ ] **[FLOAT] M3 — subsume the out-of-process superopt** (`mcc_superopt_perfn`/`mcc_superopt_search`,
-  `mcc.c:922/1053`) onto the substrate. a) map perfn `{1,3,7}` config bits and the search 3-axis
-  int product into the `sel[]`/gate vocabulary; b) fold `pf-*.ck`/`so-*.ck` (`mcc.c:817-896`) into
-  the compressed container; c) reconcile concurrency — per-key `flock` + claim-cursor work-stealing
-  (`so_claim`, `mcc.c:447`) vs the memo's whole-file rewrite. **(A) Blocker — LANDED (record
-  fields):** `AstSearchMemo` + the on-disk record now carry `int64 score` (the winning config's
-  search score, populated from the live `best_score`) and `uint64 tried` (a measured-config bitmask
-  — one bit per candidate the combo scorer actually measured before the budget ran out, so a
-  truncated search records partial progress; `memo_add` accumulates it across builds) — the fields
-  `SoPfCkpt` keeps (`best_size`/`tried`) so one record serves both searches. The disk record grew
-  3→5 u64 words (`AST_MEMO_RECWORDS`); old 3-word records fail the per-record MAGIC check and are
-  skipped (cache rebuilds; version/triplet-salted). Validated: ctest 1906/1906, 5-word round-trip
-  (280B → 7 entries = 40B/rec), score + tried persist across runs (`-v128` winner trace shows
-  `tried=7fff` = all 15 of the 2^4 lattice measured). Remaining: expose `tried` in the superopt's
-  own config-index ordering (needs the unified search to define that ordering). **(B) Blocker — LANDED (vocabulary bridge):** the lossless config↔gate mapping is
-  defined in **`src/mccgate.h`** (`ast_gate_from_so`/`ast_gate_to_so` for the superopt-search 4-bit
-  gate, `ast_gate_from_perfn`/`ast_gate_to_perfn` for the perfn `{1,3,7}` cfg) with the two
-  vocabularies laid out on one 64-bit `AstGateMask` — fold gates + knobs in the low bits, the
-  superopt-only axes (`AST_SG_{PROMOTE,INLINE,NOCALLFUL,CPROPJOIN,CSEJOIN}`) in bits 6.. so they
-  never collide. Selftested by `tools/asttool.c` `suite_gatemap` (483 round-trip checks: full
-  16-value so-gate space both directions, the 8 perfn cfgs, exact bit correspondences, disjointness)
-  — asttool 613/0. Header-only + dependency-free so the harness tests it without the `MCC_INTERNAL`
-  search body (the `mcccombo.h` "selftested before wired" pattern); NOT yet wired into a unified
-  search — that wiring + the `budget` int-axes (node/graft/bitflag levels, which carry no gate bit)
-  are the remaining M3 work. *Synergy:* the fork score-only pool (`ast_search_pool`) replaces
-  fork+exec child compilers for scoring; one cache dir, one eviction, one key scheme retires the
-  second substrate.
+- [ ] **V-bfold** (`ast_bfold_run`) — **remaining under (a):** `fmod` needs a real exact-remainder kernel;
+  `nearbyint`/`rint` need the (d) rounding-mode gate; `ldexp`'s `int` 2nd arg doesn't fit the same-btype `ab[]`
+  loader; `pow/exp/log/sin/cos/hypot` fold in `-ffold-math` — don't duplicate. b) `fma` DROPPED. c) `fmin(x,+inf)`
+  etc. UNSOUND for NaN; `copysign(x,C)` DROPPED. d) `FLT_ROUNDS`/errno gate for `-frounding-math` (open).
+- [ ] **V-ident** — a) strength reduction backend-redundant — skip; b) fast-math-gated float identities; d) a
+  worklist/BFS ordering variant.
+- [ ] **V-narrow** — b) replace the type-width heuristic with demanded-bits/known-bits; c) comparisons DROPPED
+  (backend-redundant). (`/ % << >>` narrowing landed gated `MCC_AST_VLAT`.)
+- [ ] **V-cprop** — a) promote the join/per-block choice to a first-class strategy pair; b) copy propagation;
+  c) known-bits/range lattice variant.
+- [ ] **V-cse** — a) hash-based value-numbering (LVN/GVN); c) redundant-load elimination (needs the §29 lattice).
+  (join/comm/window knobs landed.)
+- [ ] **V-licm** — a) discover loop-invariant subexprs directly; b) fixpoint + hoist to outermost level; c)
+  preheader creation + hoist invariant loads/stores. Caveat: `licm` folds are counted inside `cse`.
+- [ ] **V-dse** — a) global backward-liveness across blocks; b) partial-dead-store; c) track stores across
+  `AST_If`/loop children. (see-through-calls landed default-on.)
+- [ ] **V-sccp** — a) **true** SCCP (constant lattice + CFG-edge worklist); b) switch/computed-branch folding.
+  (cprop+sccp fixpoint fusion landed default-on + wired as `AST_SG_SCCPFIX`.)
+- [ ] **V-jt** — a) real jump threading through a determining predecessor; b) duplicate-condition threading;
+  c) correlated-condition threading; d) hammock merge.
+- [ ] **V-bf** — b) windows >64 via multi-word masks; c) `switch`→jump-table/bitmask sibling; d) perfect-hash
+  for sparse sets. (range predicates landed default-on.)
+- [ ] **V-sethi** — a) extend the leaf-aware metric to memory-vs-register refs; b) full Sethi-Ullman labeling;
+  c) reassociation to rebalance associative chains; d) deterministic tie-break when `l == r`.
+- [ ] **V-tco** — a) break param cycles via temporaries; b) general/sibling tail calls via a tail-call ABI;
+  c) float/struct params (int+pointer landed); d) tail-recursion-modulo-accumulator.
 
-- [ ] **[P2] M4 — extend scoring to data/rodata** (prerequisite for const-data compression to *compete*).
-  a) snapshot `data_section->data_offset` + `rodata_section->data_offset` before replay and diff
-  after — mirrors the reloc-cursor save/restore `ast_search_emit_size` already does (`mccast.c:8925`);
-  b) combined score = text delta + data/rodata delta; c) add a data-size term to `ast_cost_score`
-  (`mccast.c:6017`, today text/AST only). **(A) Audited fact:** emit-size scoring is **text-delta
-  only** — a data-shrinking transform currently scores as a net regression, so without M4 datacomp
-  can never be chosen. *Synergy:* makes M6 visible to the search; no separate scoring path.
-  **OBSERVABILITY FOUNDATION LANDED (byte-neutral).** `ast_search_emit_size` (`mccast.c`) now
-  snapshots `data_section->data_offset` + `rodata_section->data_offset` before `ast_replay_body`
-  and computes `ddelta`/`rodelta` after (M4a). The per-candidate delta is exposed via `-v128` TRACE
-  (`ast_search_emit_size: emit-size data delta text=.. data=.. rodata=..`, greppable by fn+values),
-  giving M6 the measurement hook. **M4(b)+(c) score-folding is DEFERRED, and the reason is now a
-  measured finding, not a guess:** the replay re-emits `.rodata` **float constants** (verified —
-  a `(int)x + (unsigned)(x*2.5)` candidate shows `rodata=8`), and those constants are emitted once
-  and **shared/reused across candidate clones** (`ast_fconst_reuse`/`ast_fconst_record` no-op under
-  replay), so the per-candidate rodata delta is **order-dependent noise** ("who measured first"), not
-  a transform-attributed cost — folding it into `size` changes selection unfairly, and an earlier
-  attempt that also *restored* the offset **miscompiled** (`exec-search-emitsize/{random_stuff,
-  double_to_signed}`: truncating the shared rodata dropped reused constants → wrong values). So the
-  score stays **text-only** (selection byte-identical, ctest 3653/3653) until M6's data-**rewrite**
-  step provides a real, per-candidate, transform-attributed data delta to count. The snapshot must
-  **not** rewind data/rodata (they are shared, deliberately grown by the original path).
+### Confirmed backend codegen gaps vs gcc · [4B — SCHEDULED: one backend-parity session]
 
-- [ ] **[P2] M5 — const-data emission foundation** (the existing `.rodata data-emission` item above).
-  Add an `AstKind` array/global/static-data node + a table-symbol+initializer emitter wired into the
-  replay/rewrite lifecycle. **(A) Audited blocker:** const data is `memcpy`'d into `Section->data` at
-  **parse time, outside the AST capture window** (`init_putv`, `mccgen.c`) — this step is what brings
-  it under the substrate so a pass can rewrite it. **First step LANDED — const-data visibility
-  side-car (byte-neutral):** `ast_hook_data(sec, off, size, is_ro)` (`mccast.c`, mirrors the def/use
-  `ast_du_*` side-car) records one entry per initialized static/global object, hooked read-only at
-  `decl_initializer_alloc`'s `put_extern_sym`/`vpush_ref` (`mccgen.c`, `#if MCC_CONFIG_OPTIMIZER`),
-  keeping running .rodata/.data byte totals. Const data is now *visible* to the substrate (queryable:
-  `MCC_AST_DATA_REPORT` dumps per-object `{section, offset, size}`, or `-v128` TRACE `ast_hook_data`)
-  — the prerequisite for M4 data-size scoring + M6 datacomp. Verified: `static const int[8]`→rodata
-  32B, string literal→rodata 13B, `static int[4]`→data 16B, `const char *`→data 8B. Validated:
-  byte-neutral (ctest 3070, changes no emitted bytes), self-host, i386 cross-arch exec 292/292.
-  **Second step LANDED — the hook now fires AFTER `decl_initializer` writes the bytes** (moved from
-  `put_extern_sym` to after the `decl_initializer(&p,...)` write in `decl_initializer_alloc`), so the
-  side-car can read each object's emitted bytes and feed the M6 candidate-ID estimator below.
-  **Third step LANDED — `AST_Data` kind + the re-emit PRIMITIVE (byte-neutral):** added `AST_Data` to the
-  `AstKind` enum + `kind_names[]` (the data-node vocabulary the doc calls for), and `ast_data_reemit(i,
-  src, n)` (`mccast.c`) — the mechanism a pass uses to *rewrite* a recorded const object's bytes in place
-  (`memmove` into `((Section*)rec->sec)->data + rec->off`, size-preserving). Exercised + validated via
-  `MCC_AST_DATA_REEMIT` (default off): `ast_data_reemit_selftest` re-emits each just-recorded object with
-  its own bytes and asserts a bit-exact identity round-trip, proving the primitive addresses the right
-  `{section, offset, size}`. Validated arm64/mac: build clean (debug+shadow); default byte-neutral (gated
-  off; no arena nodes created, no default-path code changed); re-emit self-test sweep over **329** corpus
-  sources (`tests/exec` + `runtime` + `src`) → **0** mismatches / 0 aborts.
-  **ARCHITECTURAL FINDING (2026-07-13) — why the "AstKind data node" is NOT a per-function AST node:**
-  `ast_hook_data` fires at **parse time for TU-level globals/statics** (`decl_initializer_alloc`,
-  mccgen.c), where there is **no per-function `ast_cur` arena** to attach a node to (the AST arena is
-  per-function; const data lives at TU scope, outside every function's capture window — the original P2
-  audit). So the rewrite primitive correctly operates on the **section-level side-car** (`ast_data_recs`,
-  addressing `Section->data` directly), not an arena node. `AST_Data` is reserved vocabulary + the record
-  tag; a future TU-level data-node home (a TU arena, or promoting `AstDataRec` to a node type) is the
-  remaining structural piece if the search/replay lifecycle ever needs to score data rewrites per
-  candidate. **Remaining (the actual datacomp rewrite):** a *size-changing* rewrite (compression) needs
-  M6 (C) the `.init_array` decompress ctor + (D) the `__mcc_decompress` runtime — the primitive here is
-  the size-preserving in-place write those build on; same-size canonicalizing rewrites can use it
-  directly today. *Synergy:* also unblocks §30 value-table dispatch.
+**4B bundles these three into one dedicated per-backend session**, because they share two missing primitives —
+**conditional-move emission** (cmov/csel, absent from every backend's codegen) and a **temp-materialization
+mechanism** (Store-to-fresh-local + Loads). Landing those clears branchless-select, the signed/`a==1` divmagic
+form, and — with the x86_64 mul-high regalloc fix — unblocks `MCC_AST_ABS` and `MCC_AST_DIVMAGIC` default-on.
+Grind = 5 backends (x86 `cmov`, arm64 `csel`, riscv branchless-arith fallback; per-arch `mulh` for 64-bit).
 
-- [ ] **[P2] M6 — datacomp: const-data compression pass** (codegen-layer, opt-in; **not** an AST
-  strategy — audited infeasible as one: data absent from the AST, text-only score, needs a
-  synthesized ctor). **(A) Target:** a) string literals ・ b) `static const` arrays ・ c) both;
-  threshold by size×entropy. **(B) Codec:** per-blob best via `combo_pack`, or `combo_pipeline_search`
-  for a chain. **(C) Decompression:** a) eager `.init_array` ctor (`add_array`) ・ b) lazy first-use
-  guard ・ c) both. **(D) Runtime:** new `__mcc_decompress` in `runtime/`, call emitted via
-  `vpush_helper_func`+`gfunc_call`. **Blockers (audited):** breaks link-time-constant consumers;
-  `const`→writable `.bss`; multi-backend ctor synthesis (x86_64/arm64/riscv64/i386/arm32). **Gate:**
-  off by default; fires only when M4 scoring says it net-shrinks.
-  **Candidate-ID step LANDED (byte-neutral, rides the M5 visibility side-car):** `ast_data_estimate`
-  (`mccast.c`) runs `combo_pipeline_search` (mcccombo.h — the SAME `combo_run` permutation engine the
-  -O4 gate search rides) over each just-emitted const object's bytes to find the best codec CHAIN
-  (depth ≤3 over RLE/LZSS/LZW), flags objects that shrink >50% as M6 datacomp candidates, and
-  accumulates an estimated-bytes-saved total plus the winning chain (the exact recipe (B)+(C) would
-  emit). A chain beats any single codec, so the estimate is tighter than a best-of-3 `combo_pack`. This
-  is analysis (B) "which blobs are worth compressing, with what chain" without yet performing (C)/(D).
-  Read-only (size 32..8192 window, ping-pong-buffer bounded); changes no emitted bytes. **Round-trip
-  correctness gate LANDED:** before a chain is counted, `ast_data_roundtrips` (`mccast.c`) runs
-  `combo_pipe_apply`→`combo_pipe_unapply` and `memcmp`s against the source — a candidate is only
-  accepted if compress→decompress is bit-exact (a datacomp rewrite trusting a lossy chain would silently
-  miscompile). Doubles as a decoder bug-hunt: every const object in every compiled TU exercises the
-  chosen `dec()` path against a known original. Verified: `const int[256]={0}`→`rle+lzss` 1024→5B flagged
-  (vs 16B single-codec), 53×`'a'`→`rle` 4B, `{1,2,3,4}`/varied text NOT flagged; src/mcc.c → 3 candidates,
-  0 lossy; ctest 3070 byte-identical, decoders run corpus-wide with no crash/mismatch. `MCC_AST_DATA_REPORT`
-  prints `^ compressible A->B chain=rle+lzss ... round-trip OK`; `-v128` TRACE `data pack ... k=N` /
-  `LOSSY chain`. **Remaining:** the actual (C) ctor + (D) runtime, which need M5's non-neutral rewrite step.
+- [ ] **Branchless select for min/max/abs/sign** (`cmov`/`csel`). **Measured:** mcc emits compare + branch;
+  gcc emits `cmovle`/`cmovge`/`neg;cmovs`. **mcc's code GENERATOR emits no `cmov` on any arch** — `cmov`
+  appears only in the disassembler/assembler. Needs new conditional-move emission per backend (x86 `cmov`,
+  arm64 `csel`, riscv branchless-arith fallback), plus a safe-to-cmov analysis. Also blocks re-enabling
+  `MCC_AST_ABS`.
+- [ ] **Branchless boolean-normalizing ternary `cond?1:0`** (frontend codegen, NOT an AST fold). `expr_cond`'s
+  `is_cond_bool` fast path lowers via branches AND returns before `ast_hook_ternary_end` — so these ternaries
+  DESYNC and the AST optimizer never captures them. Fix: materialize the condition branchlessly (`setCC`/`cset`).
+  Target-sensitive, churns goldens; incidentally fixes the AST-desync.
+- [ ] **Constant integer division/remainder strength reduction** (magic-number multiply). 32-bit landed
+  (`src/mccmagic.h` + `ast_divmagic_run`, `MCC_AST_DIVMAGIC` opt-in; ⚠ NOT default-on-ready — P0). **Open:**
+  (a) **64-bit** — needs the HIGH 64 bits of a 64×64→128 product (`mulh`), which mcc's type system can't
+  express (`__int128` is a parse error) — a per-backend primitive (x86_64 `mulq`, arm64 `umulh`/`smulh`, riscv
+  `mulhu`, i386→runtime helper). (b) the **optimal 1×-multiply form** for the signed / `a==1` cases → needs a
+  real temp-materialization mechanism. **⚠ Cross-arch validation caveat:** `cmake-qemu-*` emit native x86_64;
+  use `cmake-cross/mcc-i386` and `cmake-cross/mcc-arm64` for real cross-arch checks.
 
-- [ ] **[P0] M6z — zero-init `.bss` placement** (a free placement fix surfaced by the M5 side-car; NOT
-  compression). mcc emitted `static int x[256]={0}` into `.data` as 1024 zero disk bytes; C11 6.7.9
-  makes `={0}` ≡ no initializer, so it belongs in `.bss` (NOBITS). **LANDED — P0 default-on at `-O2+`
-  (flag `MCC_ZERO_BSS`, full M8 bar).** Approach B (post-emission move) in `decl_initializer_alloc`: truncate
-  `data_section->data_offset` back to the object's `addr`, re-allocate in `bss_section`, re-bind the
-  symbol (`put_extern_sym`) — relocations are symbol-keyed so references fix automatically. Guarded to a
-  provably-safe subset (`v && sym`, `sec==data_section`, `!bcheck && !asan_g && !flexible_array && !TLS`,
-  last-allocation, and **initializer emitted no relocation** — the critical guard: a pointer init
-  `={0,&g}` has zero bytes but a reloc, so it is correctly NOT moved). Validated default byte-neutral;
-  `MCC_ZERO_BSS=1` exec 292/292 x86_64 + i386 + arm64, self-host, fuzz 7/7; `exec-zerobss/` ctest locks
-  it. `-v128` TRACE `zero-bss move`. **P0 default-on landed** (`s1->optimize >= 2`) after the
-  broader field-exposure pass — batched with 7 sibling knobs to the full M8 bar (ctest 3653/3653,
-  byte-identical self-host fixpoint, cross-arch i386/arm64, shadow 2990/2990, fuzz). **Remaining:**
-  TLS `tdata`→`tbss` and the asan/bcheck cases (excluded by guards).
+## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [core COMPLETE — M1–M3 + M6 done · remaining = tails + M7]
 
-- [ ] **[FLOAT] M7 — formula-family unification** (the long tail). a) expose cost/ratio formulas as
-  fold-math builtins (`mcc_cost_*`/`mcc_ratio_*`, copy-pasting the `foldfc_try` template,
-  `mccgen.c:8402`); b) make the forecast ensemble a first-class `combo` formula family (pick
-  codec/strategy/threshold, not just next-tick duration); c) one `-f` front — extend `fold-math`
-  (`s->fold_math`, `libmcc.c:1902`), which **already** unifies libm + forecast folding, or add a new
-  gate. *Synergy:* one enumerator over {strategies, predictors, codecs}; one flag family; the
-  four `host_cache_dir` caches collapse to one `ComboMemo` store.
+Entry-guarded variant dispatch with a runtime recompiler + hot-swap. **Critical path M1 → M2 → (M3) → M4 →
+M5 → M6**, with M7/M8 attaching independently after M2. **M2 alone is a shippable, complete guarded-deopt JIT;
+M4 is the size/build gate for everything runtime.**
 
-- [ ] **[DEFER] M7b — graduate the disk search-memo into compiled-in strategies (`cache` -> `src/algorithms/jit.h`).**
-  A new `tools/` C utility + a CMake target that reads the shared cache dir (`~/.cache/mcc/`, i.e. the
-  `mcc-search.memo` MSZ1 container — records `{intention-hash, gates|MAGIC<<8, refcount, score, tried}`,
-  see M2) and **materializes each hot (high-refcount) memoized winner as an entry in a generated header
-  `src/algorithms/jit.h`**, then **registers those entries in the AST optimization-strategy list**
-  (`ast_strategies[]`, `mccast.c`) so a discovered gate configuration ships compiled-in instead of being
-  re-searched every build. Flow: (1) the tool emits, per graduated record, a `{intention-hash, gate-mask,
-  score}` row into `jit.h` (dep-free, header-only, the "selftested-before-wired" `mcccombo.h`/`mccgate.h`
-  pattern); (2) `ast_func_end`/`ast_search_select` consult the compiled-in `jit.h` table as a
-  **zero-latency memo tier above the disk memo** — a keyed hit by `ast_intention_hash` applies
-  `graduated & searchable` directly, no search, no disk read; (3) **once verified that the newly
-  compiled-in strategy is matched by the optimizer to that cache key** — i.e. a build proves the live
-  `ast_intention_hash` of some function equals the graduated key AND the compiled-in mask reproduces the
-  cached winner (differential/byte gate) — **the tool removes that entry from `~/.cache/mcc/`** (the disk
-  record has served its purpose; drop it to keep the cache to genuinely-live, not-yet-graduated shapes).
-  **Open questions:** (a) is a graduated record a *gate-mask* replay (trivially a new `jit.h` row consumed
-  by the existing pipeline) or does it need to synthesize a genuinely new *algorithm* shape (a real new
-  `AstStrategy.apply`)? — the cache stores gate BITMASKS today (M3 vocabulary bridge, `mccgate.h`), so v1
-  is mask-graduation; algorithm-synthesis is the harder follow-on. (b) key stability: `ast_intention_hash`
-  is salted per version/triplet (`ast_search_key_salt`) — `jit.h` must carry the salt so a graduated entry
-  is only consulted for a matching build/target (else a stale mask fires on an incompatible shape). (c) the
-  removal step's verification gate (byte-diff vs re-search? shadow-oracle recompute==graduated?). (d) when
-  does the tool run — a manual `--target jit-graduate`, or a build step that folds the hottest N records in?
-  *Synergy:* this is the AOT dual of the §26 runtime JIT (NEXT MILESTONE below) — instead of recompiling hot
-  functions at runtime, it bakes the search's disk-memoized winners into the compiler; rides M2's
-  `ComboMemo`/MSZ1 format and M3's `AstGateMask` vocabulary directly. Gated by M8.
+**Baseline & cache model.** The JIT *baseline* is the AOT-compiled function that ships in the object (final
+emit at the chosen `-O`), NOT the pre-fold body. At runtime the JIT produces a *further*-optimized variant
+specialized to an observed context, keyed by a hash of that context; the cache maps `key → best-known
+variant`, and the dispatcher **deopts to the AOT baseline on guard-fail / key-miss**.
 
-- [ ] **[guardrail] M8 — validation gates** (apply to *each* of M1–M7 as it lands; = the Strategic-path guardrail). a) full ctest (currently 3654/3654);
-  b) `-O6` differentials vs gcc/clang; c) self-host 3-stage fixpoint; d) sanitizers (UBSan/ASan);
-  e) cross-arch (i386/arm32/riscv64/arm64, qemu-docker); f) differential miscompile fuzz;
-  g) `MCC_CONFIG_AST_SHADOW` zero-divergence. Behavior-preserving steps (M1 subset-mode, M2, M3)
-  must stay byte-identical; M4–M7 are gated opt-in and may change emitted bytes only under their flag.
-  Per-gated-item recipe (campaign-proven): the default full ctest byte-identity run is MANDATORY
-  (gate off = byte-identical); gate-on `tests/fuzz/fuzz_runner … --ref gcc … --ref clang …` ~100
-  seeds 0 miscompile; gate-on self-host 3-stage fixpoint byte-identical, linking stage objects via
-  mcc's OWN linker + the `mccrt_blob` object (GNU ld hits overlapping-FDE/`__va_arg`; stage2 needs
-  the embedded runtime — a targeted reproducer + objdump beats fighting the ad-hoc header recipe).
+**Global gate `MCC_AST_JIT` (default off)** until the full validation bar passes, then a P0-style flip. Build
+gate `MCC_EMBED_JIT` (default off) adds the ~800 KB embed. **The runtime dispatch/stub tail is x86_64-ELF-only
+hand-emitted machine bytes (D7), validated on Linux/x86 CI only — not the arm64-macOS dev host; the recompile
+engine underneath is cross-arch. Supported signatures: 1–6 GP int/ptr args, non-FP/non-struct return.**
+**2B (scheduled after the x86_64 tails close):** give the mode-6 slot / KGC stub / trampoline / counter an
+arm64 emission path so §26 validates on the dev host — reinterpreting D7 as "x86_64-first," not "only." This
+is the prerequisite for a meaningful cross-arch 7A hard-gate and for any JIT default-on flip.
 
-### Strategy-variation catalog — one algorithm-variant per pass today; widen the search vocabulary · [P0 default-on candidates + FLOAT]
-
-Audit result: of the 12 `ast_strategies[]` passes, **9 implement a single algorithmic variation**
-(bfold, ident, narrow, licm, dse, sccp, jt, sethi, tco) and 3 already carry one extra axis
-(`cprop`/`cse` a per-block-vs-join env toggle, `bf` a `ast_bitflag_min` threshold). Every `apply`
-already returns a hit count (now consumed by `ast_search_pack_score`). Each variation below is a
-candidate **search knob** — a distinct `AstStrategy` row or a per-strategy parameter the M1
-`combo_run` vocabulary enumerates over. The M1(c) precondition applies to any *ordering* or
-*pipeline* variant: the emit path must honor the discovered per-fn order, not just the frozen table.
-
-- [x] **Strategy-granularity audit + all low-risk splits — DONE (2026-07-12)** — governing
-  distinction: a **gate-split** (per-family `if(gate)` guard inside one pass, default all-on) is
-  byte-neutral by construction; a **row-split** (a new reorderable `ast_strategies[]` row) is
-  byte-neutral ONLY for an independent whole-arena pass, never for a per-node dispatch bundle
-  (N sequential full passes see different arena-wide intermediate state than one interleaved pass).
-  Landed byte-neutral + fuzz-clean: `ident` 6-family gate-split (`MCC_AST_IDENT_{CONV,SHIFT,ARITH,
-  BIT,REL,URANGE}`, bits 2^22..2^27); cse-tail row-extract (`ltemp`/`ivsr`/`pre` → reorderable
-  `AST_STRAT_{LTEMP,IVSR,PRE}` rows, `AST_STRAT_COUNT_MAX` 20→24); `reassoc` 4-way
-  (`ASSOC,SHLSHR,SHRSHL,MULDIST`, bits 2^28..2^31); `bfold` 4-way (`SQRT,SIGN,ROUND,MINMAX`, bits
-  2^32..2^35); `narrow` per-class (`MCC_AST_NARROW_CLASS{0..3}`, bits 2^36..2^39). **Verdicts
-  (hold — do NOT re-attempt):** `licm` core is not separable from `cse` (`ast_licm_at_loop` reads
-  the LIVE CSE availability window `ast_cse_expr[]` at the exact walk position — extracted, it
-  hoists nothing); `cprop`+`sccp` stay FUSED (joint fixpoint); per-node-bundle row-splits are
-  non-neutral. Further vocabulary widening continues in the V-* items below.
-
-- [ ] **V-bfold** (`ast_bfold_run`, table `ast_bfold_tab`, ~~8~~ 9 ops) — **a) PARTIAL — `round`/
-  `roundf` LANDED (default-on).** New id-8 table rows + a bit-exact hand-rolled `ast_bfold_round`
-  kernel (round-half-away-from-zero, built on the existing `ast_bfold_trunc` since `x - trunc(x)` is
-  always exact in IEEE) + `case 8` in `ast_bfold_eval_f`/`_d`. Errno-free and rounding-mode-independent
-  (unlike `nearbyint`/`rint`), so it joins the default-on errno/rounding-safe subset. `-v128` TRACE
-  `ast_bfold_run: bfold round id=8 ... res=0x..`. Validated: **ctest 3653/3653** (no golden
-  regression), native differential vs gcc **bit-exact** across `round(2.5)=3`/`round(-2.5)=-3`/
-  `round(-0.5)=-1`/`roundf` (half-away + negatives + signed-zero), non-const `round(x)` **preserved**
-  (still calls libm, 2 undef refs), **self-host fixpoint-invariant passes**. Cross-arch is
-  correct-by-construction (a target-independent literal splice via the same double-literal backend path
-  as the 7 already-cross-validated folds; the `cmake-cross/mcc-{i386,arm64}` builds don't run bfold at
-  all — verified floor/trunc also don't fire there). **Still open under (a):** `fmod` needs a real
-  exact-remainder kernel (NOT the lossy `x - trunc(x/y)*y`); `nearbyint`/`rint` need the (d) rounding-
-  mode gate; `ldexp`'s `int` 2nd arg doesn't fit the same-btype `ab[]` loader; `pow/exp/log/sin/cos/
-  hypot` already fold in the `-ffold-math` `foldmath_try` engine (mccgen), don't duplicate here.
-  b) `fma` contraction (`a*b+c` all-literal) — DROPPED this pass (needs the `ab[]` loader extended
-  to 3 args + reliance on a correctly-rounded host `fma`; single-rounding risk outside the low-risk
-  envelope);
-  c) **PARTIAL — min/max ∞ partials LANDED (default-on):** `fmin(x,-inf)→-inf`, `fmax(x,+inf)→+inf`
-  (only the ∞ arg literal, `x` runtime) via the literal-splice path, guarded by the existing
-  `AST_SG_BFOLD_MINMAX`. Sound for ALL x incl NaN/±0 (fmin/fmax return the non-NaN arg, ∓∞ dominates
-  the ordering). ctest 3968/3968, gcc-differential bit-exact, self-host byte-identical, shadow 0-div,
-  fuzz 150-seed 0-miscompile. The complementary `fmin(x,+inf)→x`/`fmax(x,-inf)→x` are UNSOUND for NaN
-  x (`fmin(NaN,+inf)=+inf≠x`) and deliberately do NOT fire. **`copysign(x,C)` DROPPED:** it is
-  `±fabs(x)` not `±x` (a magnitude op), and `-fabs(x)` has no bit-exact AST encoding (no float-negate
-  node; `0.0-fabs(x)` gives `+0.0` at `x==0` where the result must be `-0.0`), while `fabs(x)` needs a
-  risky synthesized-`Sym` callee retarget — revisit when the heavy gates are wired.
-  d) `FLT_ROUNDS`/errno-safe gate for `-frounding-math` (still open).
-- [ ] **V-ident** (`ast_ident_rec`, DFS post-order, iterated to fixpoint, integer-only) —
-  a) strength reduction (`x*2^k → x<<k`) is **backend-redundant** (mcc already emits `shl` for
-  `x*8`) — skip; b) fast-math-gated float identities (drop the `ast_ident_intt` block);
-  **c) LANDED — comparison identities:** `x OP x` folds to a compile-time 0/1 for all ten relational
-  ops (`== <= >=` → 1; `< > !=` → 0; signed + unsigned), for pure integer `x` (int-only gate → the
-  float NaN idiom `x==x` is untouched). Result typed `VT_INT` (a relational node stores `type_t==0`;
-  the C result is `int` — the bug that first made the fold a silent no-op, caught with `-v128` TRACE
-  of `nodetype=0 ct=3`). **Default-on** (not backend-done: mcc otherwise emits `cmp;sete`), so it
-  improves every -O1+ compile. Validated to the M8 bar: ctest 3070 (no golden regressions), 10-form
-  exec check, differential fuzz (60 seeds 0 miscompiles — comparisons well-stressed by gen.h), and
-  self-host. **c-extra) LANDED — unsigned range vs 0:** for any unsigned `u`, `u >= 0` / `0 <= u`
-  fold to 1 and `u < 0` / `0 > u` to 0 (the discarded operand must be pure; signed `x >= 0` is left
-  alone). The relational op is the SIGNED token `TOK_GE/LT/LE/GT` — unsignedness lives in the operand
-  type (`tx & VT_UNSIGNED`), which `-v128` TRACE (`cmp2 op=157 tx=51(uns=1)`) caught after a first
-  attempt wrongly keyed on `TOK_UGE` (never emitted at the AST level). Default-on, validated: ctest
-  3070, exec, fuzz (80 seeds 0 miscompiles), self-host. d) a worklist/BFS ordering variant.
-- [ ] **V-narrow** (`ast_narrow_rec`, single post-order pass, NOT iterated) — **a) LANDED:**
-  `ast_narrow_run` iterates to a `do/while` fixpoint under `MCC_AST_NARROW_FIX` (**P0 default-on at `-O2+`**; `=0` →
-  single pass, byte-identical), wired into the search as the opt-in `AST_SG_NARROWFIX` knob (see
-  "widen the search space" above). b) replace the type-width heuristic (`ast_ii_width`) with a
-  demanded-bits/known-bits analysis; **c) PARTIAL — shifts LANDED** (`/ % << >>` via
-  `ast_narrow_binop_ranged`, gated `MCC_AST_VLAT`); **comparisons DROPPED — backend-redundant**
-  (relational operands already live in native registers; gcc/mcc compare at the promoted 32-bit width
-  with no extend to elide, so narrowing the operands changes no emitted instruction — see the P1 PR-2
-  note). (mirrors §29 non-distributive item).
-- [ ] **V-cprop** (`ast_cprop_run`, join-vs-per-block already env-gated) — a) promote the
-  join/per-block choice from `MCC_AST_CPROP_JOIN` env to a first-class strategy pair; b) copy
-  propagation (`local == local`, not just constants); c) known-bits/range lattice variant;
-  **d) LANDED** — `AST_CPROP_MAX` split into an array cap (512) + runtime `ast_cprop_window`
-  (`MCC_AST_CPROP_WINDOW`, default 128 → byte-identical), raisable so constant-tracking state is not
-  silently dropped in large functions. Correct-by-construction (sound cprop; more tracking → more
-  folds). Validated: ctest 3070, exec-corpus, fuzz `GATES[]` `CPROP_WINDOW` (60 seeds 0 miscompiles),
-  self-host, i386 cross-arch (292/292).
-- [ ] **V-cse** (`ast_cse_run`, O(n²) structural `ast_ident_same` match, cap 64) — a) hash-based
-  value-numbering (LVN/GVN) alternative; **b) LANDED (commutative-aware match)** — `ast_cse_same`
-  (`MCC_AST_CSE_COMM`, **P0 default-on at `-O2+`**; `=0` → exact match only, byte-identical; `AST_SG_CSECOMM` search knob)
-  also matches `a OP b` against `b OP a` for commutative `+ * & | ^`, so the two share one cached
-  result — correct-by-construction (commutative ops yield equal values incl. IEEE add/mul). Top-level
-  pair only; deeper structure still exact. Validated to the **full M8 bar**: ctest 3070, exec-corpus
-  291, fuzz `GATES[]` `CSE_COMM` (100 seeds 0 miscompiles), self-host, cross-arch i386/arm64/riscv64
-  (292/292 each); verified it fires (a `csec.c` case drops 4→3 adds). c) redundant-load elimination as
-  a distinct availability class (needs the §29 lattice — comparison-result cast elision looked cheap
-  but the `movzbl` is normal materialization, not a redundant narrow); **d) LANDED (window cap knob)**
-  — `ast_cse_window` (`MCC_AST_CSE_WINDOW`, default 64 → byte-identical) is the runtime availability
-  cap, raisable to `AST_CSE_MAX`=256 to catch more common subexpressions in large functions.
-  Correct-by-construction (sound CSE; more tracking → more folds, never unsound). Validated: ctest
-  3070, exec-corpus, fuzz `GATES[]` `CSE_WINDOW` (60 seeds 0 miscompiles), self-host, i386 cross-arch.
-  (join toggle is already `MCC_AST_CSE_JOIN`.)
-- [ ] **V-licm** (hoisting inside `ast_cse_run` via `ast_licm_at_loop`; only exprs already in the
-  CSE list) — a) discover loop-invariant subexprs directly (not gated on CSE presence); b) iterate
-  to fixpoint + hoist to the outermost invariant level (nested loops); c) preheader creation +
-  hoist invariant loads/stores; **d) PARTIAL — promoted `ast_ltemp_run`/`ast_ivsr_run`/`ast_pre_run`
-  into the unified gate vocabulary:** `AST_SG_LTEMP`/`AST_SG_IVSR`/`AST_SG_PRE` (bits 11-13) wired
-  into `ast_search_gates_now`/`_set` so the three CSE-embedded helpers are tracked/persisted/
-  restorable gate state (default off → byte-identical, ctest 3070). Validated: exec-corpus
-  (`exec-narrowfix/*` now forces all six knobs on across ~291 programs) + self-host (mcc self-compiles
-  with them on → working compiler) — they previously had only differential-fuzz coverage.
-  **d) NOW FULL — the search proactively enables them:** `searchable` adds `LTEMP|IVSR|PRE` when
-  templates is in base, so the -O4 search explores them (verified perfn-mode `searchable=0x383f` =
-  the 9-bit vocabulary; exec 12/12 vs baseline; self-host with all six on → working compiler). This
-  was unblocked by **budget-scaling** (below). **Knob-boundary caveat:** `licm` folds are counted
-  inside `cse`, so toggling `cse` off zeroes `ast_licm_folds`.
-- [ ] **V-dse** (`ast_dse_block`, resets on any non-Store stmt → strictly intra-block) —
-  **d) LANDED — see through bare calls** (`MCC_AST_DSE_CALL`, **P0 default-on at `-O2+`**; `=0` → full reset, byte-
-  identical): instead of the conservative full reset on a non-store statement, an `AST_Invoke` (a
-  bare call) only `kill_reads` the locals it reads via its args and keeps the rest of the dead-store
-  tracking — so `x=1; foo(); x=2` drops the dead `x=1`. **Correct by DSE's existing escape analysis:**
-  it tracks only NON-ESCAPING locals, whose address never escaped, so no call (via arg, global ptr,
-  or otherwise) can *write* them — sidestepping the control-flow/asm/aliasing trap that makes general
-  DSE-through-statements risky (only `AST_Invoke` is seen through; If/loops/asm still reset). This is
-  a genuine **non-monotonic dataflow** transform validated to the **full M8 bar**: ctest 3070 (default
-  byte-identical), exec-corpus 291 (forced on), differential fuzz `GATES[]` `DSE_CALL` (100-seed run 0
-  miscompiles), self-host (mcc's call-heavy source), and **cross-arch i386/arm64/riscv64 (292/292
-  each under qemu)**. a) global backward-liveness across blocks (subsumes the A1 item); b) partial-
-  dead-store (dead on some paths); c) track stores across `AST_If`/loop children instead of bailing.
-- [ ] **V-sccp** (`ast_sccp_run` — misnamed: only folds `AST_If` with an already-constant cond, no
-  lattice) — a) implement **true** sparse-conditional constant propagation (constant lattice +
-  CFG-edge worklist pruning unreachable edges); b) switch/computed-branch folding; **c) LANDED —
-  fuse cprop+sccp into one fixpoint:** `ast_sccp_run` now loops `{ ast_cprop_run; ast_sccp_scan }`
-  under `MCC_AST_SCCP_FIX` (**P0 default-on at `-O2+`**; `=0` → single scan, byte-identical) so a folded constant branch
-  exposes constants that cprop propagates and sccp re-folds. Correct-by-construction and terminating
-  — cprop only *adds* constants, sccp only *removes* dead branches (both monotonic, neither reverts
-  the other → converges, bounded by node count). Validated: default byte-identical (ctest 3070);
-  forced on across the whole exec corpus (`exec-narrowfix/*`) + differential fuzz `GATES[]`
-  (`SCCP_FIX`, 100-seed campaign 0 miscompiles) + exec 14/14 vs default. **NOW an `AST_SG` search
-  bit — LANDED:** `AST_SG_SCCPFIX` (bit 21, `mccgate.h`) wired into `ast_search_gates_now`/`_set` and
-  added to `searchable` under the templates-gated group (like ltemp/ivsr/pre — sccp runs inside the
-  templates block), so the -O4 search enumerates it. Scheduling-only (correct-by-construction: the
-  search only selects among individually-sound configs), so default `-O1..-O3` stay byte-identical
-  (ctest **3653/3653**). Verified perfn-mode `searchable=0x3ff83f` (bit 21 set, `nitems=17`) via
-  `-v128` `combo winner` TRACE, perfn -O4 exec output matches gcc, shadow-build search/exec/ast subset
-  937/937 zero-divergence. As predicted it is shadowed in search-mode (sccp templates-gated); **perfn
-  mode is where it actually varies the winner.** Adding the bit pushed the perfn vocabulary to
-  `nitems=17`, one past `COMBO_MAX=16`, so `combo_run`'s internal subset enumeration now clamps — but
-  the best-first frontier scores **every** single-toggle `base ^ items[i]` (incl. SCCPFIX) before the
-  capped combo pass, so no single knob is lost; only combinations of the least-improving knob are
-  dropped. Made that clamp **non-silent** per the M1 "no silent caps" rule (`-v128` TRACE
-  `combo enum clamped nitems=17 -> COMBO_MAX=16 ...`).
-- [ ] **V-jt** (`ast_jt_run` — not real threading: only empty-both-arms or identical-arms) —
-  a) real jump threading through a predecessor that determines a later identical condition;
-  b) duplicate-condition threading across straight-line blocks (`ast_ident_pure` proves re-eval
-  safety); c) correlated-condition threading (`if(x>0)…if(x>=1)…`); d) hammock merge.
-- [ ] **V-bf** (`ast_bf_run`, 4 flat scans, window ≤63) — **a) LANDED — range predicates `lo<=x &&
-  x<=hi` → `(unsigned)(x-lo) <= (hi-lo)`** (`ast_range_run`, `MCC_AST_RANGE`, `AST_STRAT_RANGE`; **P0 default-on
-  at `-O2+`**, `=0` → byte-identical). A new sibling pass modeled on `ast_bf_run`, reusing its builders
-  (`ast_bf_keyexpr` = `(unsigned)x - base`, `ast_bf_lit`) and its purity/const readers. Matches a
-  `TOK_LAND` `AST_Binary` (the `&&`-as-condition form; value-context `&&` desyncs the AST so isn't
-  touched) whose two children are **signed** relationals (`TOK_LE/GE/LT/GT`, literal on either side,
-  operand-mirroring handled) over the **same pure integer key** with one lower + one upper inclusive
-  bound and `lo<=hi`. Correct-by-construction (standard unsigned-subtract range identity; `<`/`>`
-  normalized to inclusive, INT64_MIN/MAX half-ranges rejected to avoid overflow; unsigned keys skipped
-  since they use `TOK_ULE`). Closes a real gap: mcc emitted two signed compares + branches, gcc emits
-  branchless `sub; cmp; setbe` — now mcc matches when on. Verified codegen (`sub $0xa; cmp $0xa`),
-  reversed-operand (`100>=x && 50<=x`) + negative-lo (`x>=-5`) fold correctly, OFF==ON output. **The
-  complementary out-of-range form ALSO landed** (`ast_range_try_lor`/`ast_range_bound_or`): `x < lo ||
-  x > hi` (a `TOK_LOR` of two relationals — every bounds check `if (x<0 || x>=n)…`) → `(unsigned)(x-lo)
-  > (hi-lo)` (`TOK_UGT`), the exact complement identity; each operand normalized to the KEPT-range bound
-  (`x<C`→lo=C, `x<=C`→lo=C+1, `x>C`→hi=C, `x>=C`→hi=C-1, INT64 extremes rejected). Verified `x<10||x>20`,
-  reversed `x>20||x<10`, and `c<'0'||c>'9'` fold to branchless `sub;cmp;ja`, OFF==ON. Both forms share
-  the `MCC_AST_RANGE` knob + `AST_SG_RANGE` search bit. Validated to the **full M8 bar**: default
-  byte-neutral (ctest 3652), `MCC_AST_RANGE=1` exec 292 (x86_64) + i386 292 + arm64 292, self-host OK,
-  differential fuzz vs gcc/clang (`GATES[]` `RANGE` + env-forced). `-v128`
-  TRACE `range fold key=.. lo=.. hi=.. span=..`. **Also wired into the -O4 search vocabulary** —
-  `AST_SG_RANGE` (bit 17), reflected in `ast_search_gates_now`/`_set` and added to `searchable`
-  unconditionally (standalone pass, no base-gate dependency), so the -O4 search can enable it per
-  function; validated exec-search/-emitsize/-threads 874/874, asttool 57/57. b) windows >64 via
-  multi-word masks; c) `switch` → jump-table/bitmask
-  sibling transform (ties into §30 + the `switch`-arm item); d) perfect-hash lowering for sparse sets.
-- [ ] **V-sethi** (`ast_sethi_run` — top-level commutative operand swap only, naive balance count)
-  — a) **LANDED (partial):** leaf-aware register-need metric — `ast_sethi_num` returns 0 for an
-  `AST_Literal` leaf (immediate, 0 registers) vs 1 for a ref, under `MCC_AST_SETHI_LEAF`, wired as
-  the `AST_SG_SETHILEAF` search knob (default off → every leaf counts 1, byte-identical). Still
-  open: extend the leaf metric to memory-vs-register refs (not just literals). b) full Sethi-Ullman
-  labeling + evaluation schedule (not a single swap); c) reassociation to rebalance associative
-  chains for register pressure (coordinate with V-cse canonicalization; §35 n-ary ordering);
-  d) deterministic tie-break when `l == r`.
-- [ ] **V-tco** (`ast_tco_run` — self-recursion only, int params ≤16, bails on param cycle) —
-  **param-count cap LANDED as a knob:** `AST_TCO_MAXP` split into an array cap (64) + runtime
-  `ast_tco_maxp` (`MCC_AST_TCO_MAXP`, default 16 → byte-identical), so functions with >16 params are
-  now TCO-able. Real value: an 18-param 500k-deep tail recursion **stack-overflows** at default but
-  TCO's to a loop (correct output) at maxp=32. Validated: ctest 3070, that exec test, fuzz `GATES[]`
-  `TCO_MAXP` (60 seeds 0 miscompiles), self-host (maxp=32).
-  a) break param cycles via temporaries instead of `if (cyc) continue`; b) general/sibling tail
-  calls via a tail-call ABI; **c) LANDED (pointer params)** — `MCC_AST_TCO_PTR` (**P0 default-on at `-O2+`**; `=0` →
-  int-only, byte-identical) also accepts `VT_PTR` params: the param store/reload is already
-  type-generic (`ast_set_type` with the captured `ptt`/`pref`), so a pointer stores/reloads exactly
-  like an integer of the same width; arrays/VLAs/volatile still excluded. Common in list/tree walkers
-  (`sumlist(p+1,…)`). Validated to the **full M8 bar**: ctest 3070, exec-corpus 291, fuzz `GATES[]`
-  `TCO_PTR` (80 seeds 0 miscompiles), **self-host** (mcc's own pointer-recursion-heavy source — e.g.
-  `ast_ident_rec(a,n)` — self-compiles with pointer-TCO → working compiler, a strong test), and
-  **cross-arch i386/arm64/riscv64 (292/292 each)**. Still open under c): float/struct params.
-  d) tail-recursion-modulo-accumulator (`return n*fact(n-1)` → loop + accumulator).
-
-### Confirmed backend codegen gaps vs gcc (measured via `-S`; NOT bounded AST folds — backend/
-### target-specific dedicated sessions, unlike the range folds which were target-independent rewrites) · [DEFER]
-
-- [ ] **Branchless select for min/max/abs/sign** (`cmov`/`csel`). **Measured:** mcc emits a compare +
-  conditional **branch** for `a<b?a:b`, `a>b?a:b`, `x<0?-x:x`; gcc emits branchless `cmovle`/`cmovge`/
-  `neg;cmovs`. **mcc's code GENERATOR emits no `cmov` at all** — `cmov` appears only in the i386/x86_64
-  **disassembler/assembler** (`src/arch/*-dis.c`, `-asm.h`), never in codegen. So this needs new
-  conditional-move emission in each backend (x86 `cmov`, arm64 `csel`, riscv has none — needs a
-  branchless-arith fallback or stays branched), plus a safe-to-cmov analysis (both ternary arms
-  side-effect-free, no traps). Target-specific → a dedicated per-backend session, not an AST fold.
-- [ ] **Branchless boolean-normalizing ternary `cond?1:0` / `cond?0:1`** (frontend codegen, NOT an AST
-  fold). **Measured:** mcc emits a compare + a branch and 3 jumps for `x<y?1:0`, `x?1:0`, etc.; gcc emits a
-  single `setl`/`setne`/`sete` (branchless). **Confirmed it CANNOT be an AST fold:** `expr_cond`
-  (`mccgen.c:9932`) has an `is_cond_bool(vtop)&&is_cond_bool(&sv)` fast path for `cond?bool:bool` that
-  lowers via `gvtst`/`gjmp` (branches) AND **returns early before `ast_hook_ternary_end`** — so these
-  ternaries DESYNC and the AST optimizer never captures them (verified: `x<0?5:7` is captured but `x<y?1:0`
-  is not; a landed `ast_bool_try` never fired and was reverted). The fix is to make that `is_cond_bool`
-  path materialize the condition branchlessly (the backend already emits `setCC` — e.g. `!(a<b)→setge` —
-  so route through that VT_CMP materialization instead of `gvtst`+`gjmp`). Core default-codegen change,
-  target-sensitive (x86 `setCC`, arm `cset`), churns goldens → a focused frontend session, high value
-  (very common pattern). Also incidentally fixes the AST-desync (calling `ast_hook_ternary_end` on that path).
-  **`abs`/-abs branchless bit-trick LANDED** (`ast_abs_run`, `MCC_AST_ABS`, `AST_SG_ABS` bit19, default
-  off, search-selectable): mcc branched (`sub;jge;sub`) on `x<0?-x:x`; now folds to `(x^(x>>31))-(x>>31)`
-  (arith shifts, only cheap x-dups, no temp/cmov) → `sub;sar;xor;sar;sub` branchless. Matches `AST_If` op
-  `5` (the ternary, children `[cond,tval,fval]`) where `cond = x REL 0` (signed pure int x, literal 0),
-  `{tval,fval}={x,-x}`; unary `-x` is `AST_Binary('-',[0,x])` (confirmed: mccgen `vpushi(0);gen_op('-')`).
-  Handles all orientations (LT/LE/GT/GE × operand order) → abs or -abs. Validated **with GENUINE cross-arch**:
-  default byte-neutral (ctest 3653); all 5 forms (`x<0?-x:x`, `x>=0?x:-x`, `x>0?x:-x`, mirrored, -abs)
-  correct over ±1000 on x86_64 **and real i386 and real arm64**; exec-narrowfix, self-host, fuzz (`GATES[]`
-  `ABS`). gcc's `neg;cmovs` is marginally better (needs the cmov backend), but this beats the branch.
-  min/max bit-tricks (`b ^ ((a^b) & -(a<b))`) are uglier (multi-operand) — still best via cmov.
-- [ ] **Constant integer division/remainder strength reduction** (magic-number multiply).
-  **32-bit is COMPLETE** — `src/mccmagic.h` (`mcc_magicu`/`mcc_magics`, Granlund-Montgomery /
-  Hacker's Delight, exhaustively selftested by the `ast/magic` ctest) + `ast_divmagic_run`
-  (`MCC_AST_DIVMAGIC`, bit 18, default off, search-selectable) fold EVERY 32-bit case: unsigned
-  `x/C`,`x%C` (both `a==0` and the `a==1` add-correction), signed pow2 (incl. negative), and signed
-  non-pow2 — replacing hardware `div`/`idiv` with `imul;shr`/`sar` sequences. Validated to the full
-  M8 bar with genuine cross-arch (exhaustive differential sweeps vs a volatile-divisor reference = 0
-  fails on x86_64 + real i386 + real arm64; self-host; fuzz `GATES[]` `DIVMAGIC`); default byte-neutral.
-  **⚠ NOT default-on-ready (P0):** as an *opt-in* knob it clears M8, but flipping it default-on at -O2
-  makes x86_64 stage2 self-host **SIGSEGV** recompiling `src/mcc.c` — a non-local mul-high (`imul; shr
-  $0x20`) **register-pressure** codegen bug that only heavy TUs trip (i386/arm64 self-host, exec corpus,
-  ctest, `-g` all clean; fuzz never reproduces it). Correct quotients throughout — it is a regalloc bug,
-  same root as (b). Fix (b)/x86_64 mul-high regalloc before P0 can flip it. See P0 section.
-  **Open:** (a) **64-bit** — genuinely backend-blocked: needs the HIGH 64 bits of a 64×64→128 product
-  (`mulh`), which mcc's type system can't express (`__int128` is a parse error, `mccgen.c`) — a
-  per-backend primitive (x86_64 `mulq`, arm64 `umulh`/`smulh`, riscv `mulhu`, i386→runtime helper).
-  (b) the **optimal 1×-multiply form** for the signed / `a==1` cases (they emit 2-3× `imul` because CSE,
-  which runs earlier, won't merge the duplicated mul-high — reorder-before-CSE was tried and does not
-  merge them) → needs a real temp-materialization mechanism (Store to a fresh local + Loads).
-  **⚠ Cross-arch validation caveat:** `cmake-qemu-i386`/`-arm64` emit **native x86_64** (not cross);
-  use `cmake-cross/mcc-i386` (ELF32 runs on the host) and `cmake-cross/mcc-arm64` (via
-  `qemu-aarch64 -L vendor/gentoo-stage3-arm64-glibc`) for real cross-arch checks.
-
-## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [core COMPLETE — M1–M3 done, M4–M6/M8 landed cores · remaining = marginal tail + M7]
-
-The design's separate "+ the JIT" work — entry-guarded variant dispatch with a runtime recompiler +
-hot-swap. Singularly-focused, dependency-ordered; **critical path M1 → M2 → (M3) → M4 → M5 → M6**, with
-M7 and M8 attaching independently after M2. **M2 alone is a shippable, complete guarded-deopt JIT; M4
-is the size/build gate for everything runtime.**
-
-**Baseline & cache model.** The JIT *baseline* is the AOT-compiled, possibly-optimized function that
-ships in the object (the final emit at the chosen `-O`), NOT the pre-fold parse-time body. At runtime
-the JIT produces a *further*-optimized variant specialized to an observed context, keyed by a hash of
-that context (§21 epoch/cache key + §25 hot-value key); the cache maps `key → best-known variant`, and
-the dispatcher **deopts to the AOT baseline on guard-fail / key-miss**.
-
-**Global gate `MCC_AST_JIT` (default off)** until the full validation bar passes, then a P0-style flip.
-Every milestone clears the repo bar before the next: default byte-identical (ctest object-diff 0),
-self-host 3-stage fixpoint byte-identical, -O6 differential == gcc == clang, cross-arch i386/arm64,
-differential fuzz 0 miscompiles, shadow zero-divergence, UBSan trap clean.
-
-**Architecture — the JIT is mostly Strategy objects, not a separate subsystem** ("one code path and one
-memo; the opt level is a dial, not a fork"). The compile-time pieces are (optionally) new rows in the
-same `ast_strategies[]` table the search consumes + scores (4 free slots, 20/24, `mccast.c:817,8872`);
-only a thin runtime remains. Stage 1 shipped instead via **mechanism B — machine-byte splice** (the
-deopt arm reinstalls the retained AOT baseline bytes with rebased relocations), NOT the AST-level rows;
-those rows stay optional (needed only to make the dispatcher search-selectable, gate bits 40/41).
+**Architecture — the JIT is mostly Strategy objects, not a separate subsystem.** The compile-time pieces are
+(optionally) new rows in the same `ast_strategies[]` table the search consumes; only a thin runtime remains.
+Stage 1 shipped via **mechanism B — machine-byte splice** (the deopt arm reinstalls the retained AOT baseline
+bytes with rebased relocations), NOT the AST-level rows; those rows stay optional (gate bits 40/41).
 
 **Reusable infra (verified grounding).** `-run` compile-to-executable-memory (`mcc_run`, `mccrun.c`;
-`host_runmem_alloc` RWX / W^X dual-map + `host_runmem_protect` + `host_icache_flush`, `mcchost.c`) +
-`mcc_relocate` (rejects double-relocate, so a recompile targets a fresh `run_ptr`); D3=A entry
-dispatcher sidesteps the static `E8 rel32` problem (`x86_64-gen.c:588`) — call sites unchanged, the
+`host_runmem_alloc` RWX / W^X dual-map + `host_runmem_protect` + `host_icache_flush`) + `mcc_relocate` (rejects
+double-relocate); D3=A entry dispatcher sidesteps the static `E8 rel32` problem — call sites unchanged, the
 dispatcher reads a swappable data pointer flipped by one aligned 8-byte atomic store; `.init_array` ctor
-emission wired (`add_array`, `mccelf.c:1375`); C11 `<threads.h>` is a real pthread shim
-(`runtime/include/threads.h`, `thrd_create`) — the design's "threads don't exist / concurrency is fork"
-note is stale; entry-prepend prior art = `ast_tco_run` (`mccast.c:6068`), guard = op-encoded `AST_If`,
-label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the function under
-`keep_inline`/`keep_reemit`.
+emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior art = `ast_tco_run`.
 
 **Milestones (dependency-ordered):**
 
-- [x] **M1–M3 — LANDED, zero remaining** (baseline retention 10cc7f05/7114e90c; Stage-1
-  entry-dispatcher: reloc-rebasing splice primitive f18031e5 + dispatcher control flow dedbbb0e +
-  non-null speculative specialization 5840d9b9 = `MCC_AST_JIT_DISPATCH` modes 1–3;
-  `--jit-functions` selection e6e18acd). A complete compile-time guarded-deopt JIT: `[guard; jcc
-  deopt] [spec arm] [jmp epilogue] deopt: [AOT-baseline splice]`, both arms sharing one
-  prologue/epilogue + `rsym` chain; only `ast_local_is_readonly` pointer params qualify for the
-  non-null guard; `MCC_AST_JIT`/`MCC_AST_JIT_DISPATCH` are the master switches, the flag only
-  narrows selection. Note: `orig`/`orig_rel` (`mccast.c:10246`) are the pre-fold body + revert
-  buffer, NOT this baseline.
-- [~] **M4 — scaffold + Stage-1 leaf-int re-emit (ddca483d) + embed-into-output LANDED (23415f73);
-  Stage-2 graph + static link deferred** — `src/mccjit_embed.c` (E2a hidden-vis) serializes a leaf-int
-  fn's intent (SoA arena + Ea name strings + signature block + salt) and re-emits it cross-session via
-  `ast_reemit` (mccast.c:11128). **Embed-into-output WORKS: a compiled program self-hot-swaps its own
-  leaf fn at runtime** — the driver links the engine into `--embed-jit` output (gated on
-  `mccjit_embed_have_fns()`; dynamic libmcc.so today), the intent is emitted as `__mccjit_blob_<fn>` in
-  `.data` (magic MCJ1), and a synthesized `.init_array` ctor calls `mccjit_boot_swap(&__mccjit_slot_<fn>,
-  blob, len)` to recompile from the blob and publish into the mode-6 slot. Verified `./prog`: boots, swaps
-  (probe(7)=15), f(0..4) correct. Default 3968/3968 byte-identical; embedjit 353/353. Leaf-int AST-node
-  closure is empty cross-session; only the primitive FUNC signature is rebuilt. `src/algorithms/jit.h` =
-  M7b memo escape-hatch. **Stage-2 LANDED (5363ebce):** pointer params + external calls close the
-  CType/Sym graph (role side-table PLAIN/NAMED/PTR/FUNC + worklist expand + memoized cycle-safe rebuild;
-  callees bind at runtime via `dlsym(RTLD_DEFAULT)`); verified live (`prog_g` g=42/-1, `prog_h`→abs
-  h=13/6). **Structs/unions LANDED (306b3649):** `MCCJIT_ROLE_STRUCT` (format 4) serializes size/align +
-  field chain; field offsets are AST-baked (MEMBER→ival) so only struct type IDENTITY (size/align for
-  `s[1].a` indexing / MEMBER_ARROW indir) is rebuilt; verified `f(struct S*)`/`s[1].a`/pointer-field.
-  **Remaining:** (1) bitfields (`VT_BITFIELD`, different AST path) + flexible array members; (2) static
-  `libmcc.a` link (E1a) instead of the dynamic dep; (3) a per-sym blob **registry** + one generic ctor
-  (one ctor per fn today); (4) fix the non-fatal `libmccrt.a not found` on the call-bearing embed link;
-  (5) ~800 KB Tier-B size validation. (The live mode-6 self-swap guard is scalar-`int`-only — non-int
-  params recompile via the blob path but the in-program guard/trampoline needs the M5b general-signature
-  marshalling.)
-- [~] **M5 — dispatch (mode 6, 9670f2f9) + full in-process hot-swap loop LANDED (b52793b2); in-program
-  wiring deferred** — `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` →
-  8-byte writable `.data` slot, `R_X86_64_64` slot→body reloc). The complete recompile→publish→swap loop
-  works: `mcc_jit_recompile_blob` re-emits a leaf fn into a fresh `MCCState`; `mcc_jit_publish(&slot, v2)`
-  does the aligned `__ATOMIC_RELEASE` swap; calls through the slot observe the new variant; every swapped
-  output == baseline. `mcc_jit_recompile_blob_spec` produces a GENUINE const-param-specialized variant
-  (`spec[x==7]` folds `7*2+1`→`return 15`). F3d never-free. x86_64 ELF only (D7). Validated: default
-  3968/3968 byte-identical; mode-6 differential fuzz 60/60; self-host fixpoint; embedjit jit/ast/exec
-  353/353. **Remaining:** connect the in-*program* mode-6 slot to the runtime recompile — needs the
-  per-sym blob registry (an in-memory `-run` / `MCC_OUTPUT_MEMORY` program today gets a slot pointing
-  at the AOT body with no recompile hookup, `mccast.c:~12082`); the Stage-2 CType closure LANDED on
-  the recompile side (5363ebce/306b3649 — pointer/call + struct closure), so past-leaf-int live
-  dispatch is now gated only by the M5b int-only KGC stub; QSBR reclamation upgrade later.
-  Trigger/pool = M6.
-- [~] **M5b — runtime known-good cache + differential deopt-verify — MECHANISM LANDED (c39419e0);
-  dispatcher-guard integration deferred** — the runtime soundness+memoization layer (the runtime dual of
-  the static M8 oracle; the **baseline execution IS the oracle**). `MccjitKgc` = sorted set of fixed-width
-  live-in tuples (arity 4 int64) backed by an `mmap`'d file `{magic, arity, salt, count, cap}` (salt =
-  `mccjit_salt_witness`, stale file resets); binary-search membership, sorted `memmove` insert + `msync`
-  write-through, remap-doubling growth, anonymous (path=NULL) for the hot path. `mccjit_kgc_call1`: HIT →
-  variant; MISS → run baseline + variant, **match** → insert + return, **mismatch** → flag + return the
-  **baseline** result. **Killer test (`jit/selftest-kgc`):** a wrongly-specialized variant (const-folded
-  to 15 for all x) NEVER returns a wrong answer — x==7 caches+re-hits, x!=7 deopts to correct baseline
-  (11,1,7,201). mmap persistence round-trips; stale-salt resets. embedjit 355/355; default 3968/3968.
-  **LIVE dispatcher integration LANDED (13a8be14):** the published mode-6 slot routes calls through the
-  KGC differential via a hand-emitted ~59-byte x86_64 stub — a LIVE binary running a provably-WRONG
-  variant returns correct results (wrong=0 SOUND) because x!=domain deopts to baseline; KGC-off = wrong=11
-  UNSOUND (int(int) leaf scope; independently verified). Tier-0/Tier-1 memoize gate active (M5c).
-  **N-integer-arg live dispatch LANDED (31c55cf2):** the KGC stub now gathers 1–6 SysV int/pointer arg
-  registers into an on-stack argv and routes through `mccjit_kgc_calln` (n-tuple key, ARITY 6);
-  `ret_wide` handles `long` returns; verified `add3`(3)/`s6`(6)/`ladd(long)` live-sound vs gcc. **Remaining:**
-  (1) float/SSE + struct-by-value args (fall back to the non-KGC direct trampoline today; the stub
-  emits only GP mov/movsxd and `kgc_ok=0` rejects FP/struct signatures); (2) mismatch →
-  invalidate-vs-recompile policy — the per-stub flag word is written on mismatch but never
-  consulted, so every post-mismatch call keeps double-executing; (3) skip the miss-check when the
-  M8 static oracle proves the value in-domain. (Size bound `MCCJIT_KGC_MAX`=1<<16 + per-cache `pthread_mutex_t` concurrency lock LANDED
-  ee85e9ac.)
-- [~] **M5c — pure classifier LANDED (16d54aab); pure/impure slicing + custom ABI deferred** — the
-  whole-function purity classifier `ast_fn_purity` (mccast.c, via mccast.h): IMPURE (any `AST_Store`/
-  `AST_Invoke`/`VT_VOLATILE`), **TIER1** (`AST_Load` present → memory-value-dependent, immediate-re-run
-  only), **TIER0** (register-value-only → memoizable). Wired into M5b via `MccjitKgc.memoize_ok`
-  (Tier-0 fast-paths, Tier-1 always re-differentiates, IMPURE not differential-eligible). Proven: a Tier-1
-  fn's stale-memory speculative variant returns wrong under memoize_ok=1 but correct under the
-  classifier-derived memoize_ok=0. **Remaining (the larger deferred piece — net-new backend work):**
-  statement-level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); the
-  bespoke **off-C-ABI register calling convention** for pure kernels (nothing register-only exists to
-  graft onto — `gfunc_prolog` spills all params to frame); how a pure slice's live-ins key the M5b cache;
-  interaction with inlining/W2.3; partial-specializing an impure bound call without losing ABI compliance.
-- [x] **M6 — Stage 3 triggers + threads + budget — LANDED (zero remaining)** — plumbing + async pool +
-  budget (ff493110) + hot-counter LAZY trigger (0682f4cf) + **N-worker shared queue & async lazy
-  promotion (this session)**. `--jit-max-duration` = real `CLOCK_MONOTONIC` deadline (0=unlimited=byte-
-  identical). **D5=both complete:** eager `.init_array` warm AND (opt-in `MCC_JIT_LAZY`) a runtime counting
-  trampoline (34-byte x86_64 thunk + `mccjit_counter_tick`) that runs the baseline until
-  `MCC_JIT_HOT_THRESHOLD` calls then promotes (recompile→KGC differential stub→swap) — no mccast.c change
-  needed; verified correct across the boundary and lazy+sound (`MCC_JIT_SPEC_WRONG` never leaks a wrong
-  result). **N-worker shared queue LANDED:** `--jit-threads` is now the size of a **bounded pool** — a
-  single lazily-started set of N detached workers drains one FIFO job queue (`mccjit_pool_*`, cond-var
-  signalled), replacing the per-fn `pthread_create`+detach (which spawned one thread per JIT function). The
-  actual recompile stays serialized on `mccjit_swap_lock` (the compiler's global state is not re-entrant),
-  so N bounds *threads* and decouples thread count from function count rather than parallelizing the
-  compile; jobs carry a `run` callback so eager-boot and lazy-promote share the same worker loop.
-  `jit_threads` is now threaded into the emitted boot ctor as a 5th arg. **Async lazy promotion LANDED:**
-  when the hot threshold is crossed and a pool exists, `mccjit_counter_tick` enqueues the promote build to
-  the pool (`building` guard → at most one in flight) and keeps returning the AOT baseline until the worker
-  publishes the promoted entry — the recompile no longer blocks the hot call/holds `st->lock`; with no pool
-  (`--jit-threads 0`) it falls back to the original synchronous promote. Lock order is acyclic
-  (`swap_lock` → `st->lock` → `qlock`; `qlock` is never held across another acquire). Validated arm64/mac:
-  new `jit/selftest-pool` (real 2-worker pool: async-eager publish + async-promote, both bit-exact) +
-  jit/ast **66/66**; default embed-off byte-neutral (all edits are in inert JIT-runtime paths; emission
-  stays `#if MCC_TARGET_X86_64`-gated). NB: the end-to-end embedded runtime is x86_64-only
-  (`mccrun.c` is `#ifdef MCC_TARGET_IS_HOST`; the boot ctor/counter stub are `#if __x86_64__`), so the
-  x86_64 embed-program soak is a CI-cell (x86_64-host) validation, not runnable on the arm64 dev host.
-- [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable
-  prologue for in-place code-patch hot-swap. Lower priority; M5's pointer-swap dispatcher is the primary
-  mechanism. Deferrable.
-- [~] **M8 — `eval_slice` soundness oracle (W3) — oracle LANDED + now BITES (1be1908e); hard-gate
-  promotion deferred** — `src/ast_eval_slice.h`: independent AST-over-values UB oracle (`defined=0` on
-  div/mod-by-0, `INT_MIN/-1`, bad shift, signed overflow — no `& 63/31` masking; kernel 44/44). L1a
-  landed: enumerates `AST_Return` value-slices and checks every spec return value is in the baseline's
-  defined-value set over the guarded env (mode 4 exact const; mode 5 mixed-radix sampling, **L2a cap**
-  `AST_EVAL_SLICE_DOMAIN_CAP=4096`/`SAMPLE_CAP=8`). Never false-aborts (unevaluable→skip); verified to
-  catch a wrong fold (corrupted spec return 999999 → divergence). Covers straight-line/ternary returns;
-  statement control flow/calls/memory are out of scope (skipped). Shadow ast/exec + default 3968/3968.
-  **Remaining:** promote from shadow-only to a hard per-strategy gate after N clean self-host+fuzz soaks;
-  extend eval_slice to statement-level control flow to widen coverage.
+- [~] **M4 — scaffold + Stage-1/2 re-emit landed; static link + Tier-B size deferred** — `src/mccjit_embed.c`
+  serializes a fn's intent (SoA arena + name strings + signature block + salt) and re-emits it cross-session
+  via `ast_reemit`. Embed-into-output works (a compiled program self-hot-swaps its own leaf fn via an
+  `.init_array` ctor calling `mccjit_boot_swap`). Stage-2 (pointer params + external calls; callees bind via
+  `dlsym(RTLD_DEFAULT)`) and structs/unions (`MCCJIT_ROLE_STRUCT`) landed. **Remaining:** (1) bitfields
+  (`VT_BITFIELD`) + flexible array members; (2) static `libmcc.a` link (E1a) instead of the dynamic dep;
+  (3) a per-sym blob **registry** + one generic ctor (one ctor per fn today); (4) fix the non-fatal
+  `libmccrt.a not found` on the call-bearing embed link; (5) ~800 KB Tier-B size validation.
+- [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring deferred** —
+  `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable `.data`
+  slot). The complete recompile→publish→swap loop works (`mcc_jit_recompile_blob` + `mcc_jit_publish` aligned
+  `__ATOMIC_RELEASE` swap), including a genuine const-param-specialized variant. x86_64 ELF only (D7).
+  **Remaining:** connect the in-*program* mode-6 slot to the runtime recompile — needs the per-sym blob
+  registry (an in-memory `-run` program gets a slot pointing at the AOT body with no recompile hookup); QSBR
+  reclamation later. Trigger/pool = M6 (landed).
+- [~] **M5b — runtime known-good cache + differential deopt-verify — mechanism + live integration landed;
+  policy + FP args deferred** — `MccjitKgc` = sorted set of fixed-width live-in tuples backed by an `mmap`'d
+  file; HIT → variant, MISS → run baseline + variant, match → insert, mismatch → return the baseline result (a
+  provably-WRONG variant never returns a wrong answer). Live dispatcher integration (a hand-emitted x86_64 stub
+  routing 1–6 SysV int/ptr args through `mccjit_kgc_calln`) + the concurrency lock landed. **Remaining:** (1)
+  float/SSE + struct-by-value args (the stub emits only GP `mov`/`movsxd` and rejects FP/struct signatures —
+  falls back to the non-KGC direct trampoline); (2) mismatch → invalidate-vs-recompile policy — the per-stub
+  flag word is written on mismatch but never consulted, so every post-mismatch call keeps double-executing;
+  (3) skip the miss-check when the M8 static oracle proves the value in-domain.
+- [~] **M5c — pure classifier landed; pure/impure slicing + custom ABI deferred** — the whole-function purity
+  classifier `ast_fn_purity` (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only), wired into
+  M5b via `MccjitKgc.memoize_ok`. **Remaining (net-new backend work):** statement-level pure/impure **slicing**;
+  the bespoke **off-C-ABI register calling convention** for pure kernels (`gfunc_prolog` spills all params to
+  frame); how a pure slice's live-ins key the M5b cache; interaction with inlining; partial-specializing an
+  impure bound call without losing ABI compliance.
+- [~] **M6 — trigger/pool: LANDED** (commit 457ca8a1) — N-worker shared queue + async lazy promotion +
+  hot-counter (`MccjitCounterState`, threshold default 1000, `MCC_JIT_HOT_THRESHOLD`). x86_64-only counter stub.
+- [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable prologue
+  for in-place code-patch hot-swap. M5's pointer-swap dispatcher is the primary mechanism. Deferrable.
+- [~] **M8 — `eval_slice` soundness oracle (W3) — oracle landed + now bites; hard-gate promotion deferred** —
+  `src/ast_eval_slice.h`: independent AST-over-values UB oracle (`defined=0` on div/mod-by-0, `INT_MIN/-1`, bad
+  shift, signed overflow). Enumerates `AST_Return` value-slices and checks every spec return value is in the
+  baseline's defined-value set over the guarded env (mode 4 exact const; mode 5 mixed-radix sampling, caps
+  `DOMAIN_CAP=4096`/`SAMPLE_CAP=8`). Covers straight-line/ternary returns; statement control flow/calls/memory
+  are out of scope. **Remaining (7A):** promote from shadow-only to a hard per-strategy gate after **N := 3**
+  clean self-host + fuzz soak cycles (rides on 2B for the cross-arch signal); extend to statement-level control
+  flow.
 
-**Optional AST-strategy rows** (the dispatcher is already search-selectable via the landed
-`AST_SG_JIT_DISPATCH`/`AST_SG_JIT_GUARD` gate bits 40/41, e6e18acd — bits, not apply-rows, per
-B1a nibble-aliasing):
+**Optional AST-strategy rows** (dispatcher already search-selectable via gate bits 40/41):
 
-- [ ] **§26 `jit-profile` strategy row** — live-in range-capture instrumentation (the M6 hot-counter
-  trigger source, D5). Also what makes dispatch mode 5 bite: its range-guard bound comes from the
-  *static* `ast_vlat_context` fact (C3a), and entry params usually carry only the trivial
-  type-full range — so mode 5 emits a redundant `[INT_MIN,INT_MAX]` assertion (sound,
-  deopt-protected, but no pruning) until a runtime-observed range exists.
+- [ ] **§26 `jit-profile` strategy row** — live-in range-capture instrumentation (the M6 hot-counter trigger
+  source, D5). Also what makes dispatch mode 5 bite: its range-guard bound comes from the *static*
+  `ast_vlat_context` fact — entry params usually carry only the trivial type-full range, so mode 5 emits a
+  redundant `[INT_MIN,INT_MAX]` assertion (sound, deopt-protected, no pruning) until a runtime range exists.
 
 **Research / open questions:**
 
-- [ ] **Research generalizing the W2.3 speculative guard beyond non-null** — alias facts, value ranges,
-  and additional live-in domains as further speculative specializations. (which facts have no existing
-  fold consumer, as non-null did, and thus need a new mini-pass?)
+- [ ] **Research generalizing the W2.3 speculative guard beyond non-null** — alias facts, value ranges, and
+  additional live-in domains as further speculative specializations. (which facts have no existing fold
+  consumer, as non-null did, and thus need a new mini-pass?)
 
-**Decisions (all settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the
-engine), **D3=A** (entry dispatcher; the code-patch D3B is the `jit-patchpoint` strategy), **D4=A**
-(runtime-observed live-in range), **D5=both** (startup `.init_array` ctor AND `jit-profile` hot
-counter), **D6=deopt-first** (`eval_slice` is later hardening, M8 — Stage 1 rides the AOT differential
-+ retained-baseline fallback), **D7=ELF x86_64 first**, **D8=pthread pool** via
-`runtime/include/threads.h`. Deopt-arm mechanism = **B (machine-byte splice)**, not AST-level.
+**Decisions (all settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the engine),
+**D3=A** (entry dispatcher; code-patch D3B = `jit-patchpoint`), **D4=A** (runtime-observed live-in range),
+**D5=both** (startup `.init_array` ctor AND `jit-profile` hot counter), **D6=deopt-first**, **D7=ELF x86_64**,
+**D8=pthread pool**. Deopt-arm mechanism = **B (machine-byte splice)**, not AST-level.
+
+## CST — concrete syntax tree · [1A — ACTIVE: slice-G stitching → `-g`-from-provenance]
+
+The CST is a byte-exact lossless side-car (`src/mcccst.c`) built during the normal parse and **discarded
+immediately** (`cst_capture_end` → `cst_arena_free`, returns NULL). Every downstream capability is latent.
+The engine, store, snapshot, hashing, and sym-xref all pass their unit + round-trip tests (`tools/csttool.c`,
+`tests/cst/*`), but no driver path consumes the tree. **1A promotes CST to an active workstream: wire the
+first real consumer.** Sequence: slice-G stitching (the tree-completeness prerequisite) → `-g`-from-provenance
+(the first consumer; also stands up the debugger + gdb test suite). Runs independently of the optimizer path
+(after P0). First step is to stop discarding the arena on the `--lsp`+`-g` path and hang the DWARF emitter off
+`cst_node_at` provenance.
+
+- [ ] **[1A·step 1] Implement slice-G multi-file `#include` stitching** — currently main-file only; includes
+  are captured as separate line-granular templates, never spliced into the consuming file's tree at the
+  include site during a real compile. Prerequisite for a whole-TU `-g` index.
+- [ ] **[1A·step 2] `-g` from provenance** (CST → DWARF) — the first product consumer; stands up the debugger
+  + gdb test suite. (Merges the "Design a full `-g` debugger + gdb test suite" long-tail item.)
+- [ ] **Design `--hotreload` from reconciled CST snapshots** — the snapshot + Merkle-reconcile primitives
+  exist; no command.
+- [ ] **Revisit the `Bind`-marker** — only if the CST can't answer a `-g`/LSP query (open: does the CST
+  supersede the separate Bind mechanism?).
+- Latent/stubbed (not previously tracked): `CST_Error`/`CST_Missing` node kinds never emitted (no error-
+  recovery CST); `cst_build_sourcefile` include templates are line-granular (coarser than the main-file token
+  CST); snapshot format is endian-tagged (rejects cross-endian loads).
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
-- [ ] **Honor auto over-alignment under `-fsanitize=address` / `-b`** — the
-  over-align indirect path in `decl_initializer_alloc` is gated off when
-  `asan_g`/`bcheck` is active (the native-shadow stack instrumentation and the
-  bcheck redzone both assume an rbp-relative slot), so `alignas(32+)` autos are
-  under-aligned in those modes (verified: `-O0` gives aligned, `-fsanitize=address`
-  and `-b` give unaligned). Needs the shadow/redzone bookkeeping to follow the
-  runtime-aligned pointer, or a separate over-aligned+instrumented slot scheme.
-- [ ] **Extend auto over-alignment to the PE (Windows) targets** — x86_64/arm64/
-  i386 PE are still gated off (`STACK_OVERALIGN_MAX` undefined) because PE routes
-  VLA alloc through the `__chkstk`/alloca helper (align-16 only); needs the helper
-  parameterized on alignment + a bare-`VT_LLOCAL` load case on the PE paths. No
-  native Windows runner here, so validate on a Windows-arm64/x64 cell.
-- [ ] **Root-cause the string-literal `L.N`/anon-symbol layout sensitivity** — 3 exec files
-  (atomic_aggregate, c11_freestanding_headers, c11_threads) shift internal `L.N`/anon-symbol
-  numbering under ANY source change (proven with a dummy fn; code identical, goldens pass);
-  currently excluded from the object-diff oracle. A latent layout sensitivity worth a root-cause.
-
-- [ ] **Add a strict-c89-vs-gnu89 discriminator** — `gnu_ext` is a hardcoded constant `1` in
-  `mcc_new` (`libmcc.c`), never cleared, so the landed batch-2c pedantic diags (`inline`,
-  `restrict`, `//` comments, extended identifiers) fire under both `-std=c89` and `-std=gnu89`
-  with `-pedantic-errors`; a true strict-vs-gnu split needs a new state field in `libmcc.c`.
-
-- [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the
-  captured arena that the §22/§24 search composes into compound transforms, scored
-  by §25, cached by §21, each rule differential-tested against the faithful replay
-  before it may fire. (IR form? how does the search compose rules? scoring hook?
-  cache key? the per-rule soundness gate?)
+- [ ] **Honor auto over-alignment under `-fsanitize=address` / `-b`** — the over-align indirect path in
+  `decl_initializer_alloc` is gated off when `asan_g`/`bcheck` is active (native-shadow stack instrumentation
+  and the bcheck redzone both assume an rbp-relative slot), so `alignas(32+)` autos are under-aligned there.
+  Needs the shadow/redzone bookkeeping to follow the runtime-aligned pointer, or a separate slot scheme.
+- [ ] **Extend auto over-alignment to the PE (Windows) targets** — x86_64/arm64/i386 PE are gated off
+  (`STACK_OVERALIGN_MAX` undefined) because PE routes VLA alloc through `__chkstk`/alloca (align-16 only);
+  needs the helper parameterized on alignment + a bare-`VT_LLOCAL` load case. Validate on a Windows-arm64/x64
+  cell.
+- [ ] **Root-cause the string-literal `L.N`/anon-symbol layout sensitivity** — 3 exec files (atomic_aggregate,
+  c11_freestanding_headers, c11_threads) shift internal `L.N`/anon-symbol numbering under ANY source change;
+  currently excluded from the object-diff oracle.
+- [ ] **Add a strict-c89-vs-gnu89 discriminator** — `gnu_ext` is a hardcoded `1` in `mcc_new` (`libmcc.c`),
+  never cleared, so pedantic diags fire under both `-std=c89` and `-std=gnu89` with `-pedantic-errors`; a true
+  split needs a new state field.
+- [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the captured arena that the §22/§24
+  search composes into compound transforms, scored by §25, cached by §21, each rule differential-tested against
+  the faithful replay before it may fire. (IR form? how does the search compose rules? scoring hook? cache key?
+  the per-rule soundness gate?)
 
 ## Long tail — buckets by open-question count · [DEFER unless phase-tagged]
 
-The `## 5 … ## 0` buckets below are the reference backlog, still ordered most-open-first.
-Default status is `[DEFER]`; items a phase pulls forward carry an inline `[P1]`/`[P2]`/`[P3]`
-tag and are sequenced by § Strategic path, not by their bucket.
+The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-first. Default status is
+`[DEFER]`; items a phase pulls forward carry an inline tag and are sequenced by § Strategic path.
 
 ## 5 — many open questions
 
-- [ ] **Explore a link-time/ABI differential fuzzer** — mix mcc `.o` with gcc
-  `.o`, cross-check struct-return/varargs/`long double`/bitfield layout (the
-  current fuzzer is deliberately tools-only, single whole-program).
-- [~] **§27 loop-nest analysis foundation — COMPLETE (1522b3b1 model + 98959ace dependence/legality;
-  analysis-only, inert by default)** — the loop-nest model over the `AST_If` op 2..5 forms
-  (`AstLoopInfo` epoch-guarded side-cache: nesting depth, parent chain, IV offset/stride,
-  const/symbolic bounds; query API `ast_loop_depth/_parent/_iv/_bounds/_analyzable`; dump
-  `MCC_AST_LOOPNEST_DUMP`) plus the conservative dependence test (`ast_dep_decode` per-dim affine
-  `coeff*iv+cst` decode, GCD/divisibility independence proof, else `{<,=,>,*}` direction vectors;
-  non-affine/indirect/coupled → conservative dependence) and the legality API
-  (`ast_loop_interchange_legal` — rejects `(<,>)` pairs/incomplete components;
-  `ast_loop_fusion_legal` — rejects backward cross-loop deps; dump `MCC_AST_LOOPDEP_DUMP`).
-  Default 3968/3968 byte-identical; validated on matmul/while/do + mcc.c (1068 loops).
-  The legality API now has live consumers on the real emit path: §27 interchange
-  (`MCC_AST_INTERCHANGE`) + tiling (`MCC_AST_TILE`) drive `ast_loop_interchange_legal`, and §27 fusion
-  (`MCC_AST_FUSION`) drives `ast_loop_fusion_legal` (all LANDED, default off); the
-  `exec-{interchange,fusion,tile}/` ctest corpora and the `exec/optimizer/loop_{interchange,fusion,
-  tile}.c` goldens exercise them end-to-end.
-  **Remaining:** evaluating symbolic (variable) bounds; dependence-test precision (fewer
-  non-affine bail-outs); a dedicated asttool suite asserting the analyses in isolation (blocked —
-  the dep functions live inside `#ifdef MCC_INTERNAL`, which `tools/asttool.c` excludes).
+- [ ] **Explore a link-time/ABI differential fuzzer** — mix mcc `.o` with gcc `.o`, cross-check struct-return/
+  varargs/`long double`/bitfield layout (the current fuzzer is tools-only, single whole-program).
+- [~] **§27 loop-nest analysis foundation — model + dependence/legality landed; precision remaining** — the
+  loop-nest model over `AST_If` op 2..5 (`AstLoopInfo` epoch-guarded side-cache; `ast_loop_depth/_parent/_iv/
+  _bounds/_analyzable`), the conservative dependence test (`ast_dep_decode` affine decode, GCD/divisibility
+  proof, else direction vectors), and the legality API (`ast_loop_interchange_legal`, `ast_loop_fusion_legal`)
+  are landed with live consumers (§27 interchange/fusion/tiling). **Remaining:** evaluating symbolic bounds;
+  dependence-test precision (fewer non-affine bail-outs); a dedicated asttool suite (blocked — the dep functions
+  live inside `#ifdef MCC_INTERNAL`, which `tools/asttool.c` excludes).
 
 ## 4 — several open questions
 
-- [ ] **Decide the §33b post-graft window dataflow (the pivot)** —
-  splice-then-reanalyze (A: copy the callee subtree into the caller arena so one
-  join pass sees the merged window) vs two-pass hand-off (B: thread the caller's
-  exit facts into `ast_inline_graft` as the callee replay's entry facts).
-  Deliverable is the A-vs-B decision + arena/gate design.
-  **STEP 1 LANDED (byte + score-neutral) — `MCC_AST_SEARCH_EMITISO`, default off.** `ast_scratch_init`/
-  `_enter`/`_measure_exit` (`src/mccast.c`) redirect `cur_text_section` to a lazily-created private
-  `.mcc.scratch.text` + `.rela.mcc.scratch.text` (flagged `SHF_PRIVATE` so they never leak into the
-  output object); `ast_search_emit_size` brackets its replay with enter/measure_exit when the flag is on.
-  **TEXT + reloc isolated ONLY** — `data`/`rodata` deliberately left shared-and-grown (never truncated:
-  the M4 rodata-truncation miscompile trap), score = text-delta, so the winner selection is IDENTICAL to
-  the in-place path. `AstScratchSave` snapshots text/ind/rsym/loc/anon_sym/local_stack-mark/`ast_promo_*`/
-  counters (phase-2-complete). Validated: default byte-identical (ctest 3958/3958); **score-neutral**
-  (EMITISO 0 vs 1 → identical `combo winner` score + byte-identical `.o`, personally reverified: score
-  446462, `.o` identical); self-host 3-stage fixpoint byte-identical with EMITISO=1; shadow zero-
-  divergence; -O6 differential == gcc == clang. `-v128` TRACE `scratch enter/measure/exit` (no `scratch
-  LEAK`). *Bonus finding:* the OLD in-place path leaks duplicate rodata constants (441 vs 6 clean); scratch
-  isolation is if anything MORE correct (picks the canonical low-offset copy), though production emit is
-  unaffected either way. **STEP 2 (E1b) — INLINE axis LANDED (`MCC_AST_SEARCH_INLINE`, default off).**
-  `ast_search_emit_size` honors `ast_search_want_inline` inside the scratch measurement; `ast_search_axis_pick`
-  enumerates inline∈{0,1} on the winning gates, seeds the heuristic (inline-on) with a strict-less keep so
-  ties stay byte-identical, and the real emit ANDs the searched pick into `do_inline` (can only decline an
-  inline the heuristic would take). Validated: default byte-identical (ctest 3958/3958); self-host 3-stage
-  fixpoint byte-identical with `MCC_AST_SEARCH_INLINE=1 EMITISO=1 EMITSIZE=1` (stage3==stage4); 140-seed
-  gcc+clang differential + 70-file axis-on-vs-off exec differential 0 miscompiles; shadow 0 divergence / 0
-  `scratch LEAK`. TRACE `emit-size inline=%d size` + `search picks inline=%d` (proof: a graftable large
-  callee is measured inline=1 size=264 vs inline=0 size=62 → search picks inline=0, `.o` drops the caller
-  from 97 to 37 insns; a constant-folding callee measures inline=1 size=24 < inline=0 size=36 → picks
-  inline=1). **PROMOTE axis DEFERRED:** running `ast_plan_promotion`/`ast_promo_entry_init` (or even the
-  promoted-local body substitution) inside the scratch measurement corrupts register-allocator/frame state
-  the scratch does not snapshot (`AstScratchSave` isolates text+reloc+promo-counters, NOT the value stack /
-  spill slots / reg-alloc) → miscompiles the self-host stage3 (`empty character constant`). Isolating that
-  is the separate riskier change; promote stays at its heuristic. Also still deferred: inline as a
-  freely-reorderable mid-sequence arena graft (`fold→inline→fold`) — `ast_inline_graft` grafts during the
-  emit-replay traversal, not as a standalone pass.
-  **emitiso `-dt` crash — ROOT-CAUSED + FIXED (2026-07-13):** the roaming `exec-search-emitiso/*` crash
-  was a **heap-use-after-free of the scratch text section across `MCCState` teardown**, not a heisenbug.
-  `ast_scratch_sec` (the `.mcc.scratch.text` isolation section for the EMITISO emit-size measurement) was a
-  file-static caching a `Section` owned by the `MCCState` that first triggered the search. In a `-dt -run`
-  corpus each test snippet is compiled in its own `MCCState`; `mcc_delete → mccelf_delete` frees every
-  section (incl. the private scratch sections) but left the file-static dangling, so the next snippet's
-  `ast_scratch_enter` wrote through the freed pointer (`sc->data_offset = 0`) → heap corruption whose crash
-  *point* roamed with allocator reuse (hence the "load-dependent heisenbug" mirage; ASan pins it exactly at
-  `ast_scratch_enter`). Fix: the scratch section is now owned by `MCCState` (`s1->ast_scratch_sec`, next to
-  `got`/`plt`), so it dies with the state and is recreated per-state — no dangling static, build-model
-  independent (single- and multi-source both route through `mcc_state`). Verified in an x86_64-Linux Docker
-  repro (was 30/30 deterministic fail in isolation → 0/40; full `ctest -j12` 5183/5183; search-variant
-  stress ×5 clean; ASan UAF gone). The earlier "non-reproducible-by-design / arm64-mac-only" framing was
-  wrong: it reproduces deterministically on x86-Linux once the corpus is run to the reuse point.
-- [ ] **Explore EMI mutation (Orion/Athena/Hermes)** targeting optimizer
-  miscompiles.
+- [ ] **Decide the §33b post-graft window dataflow (the pivot)** — splice-then-reanalyze (A) vs two-pass
+  hand-off (B). The scratch-`Section` emit isolation this rides on is landed (`MCC_AST_SEARCH_EMITISO`,
+  text+reloc isolated, data/rodata shared-and-grown; the INLINE axis `MCC_AST_SEARCH_INLINE` also landed).
+  **Remaining:** the PROMOTE axis is deferred (corrupts allocator/frame state the scratch doesn't snapshot);
+  inline as a freely-reorderable mid-sequence graft is deferred.
+- [ ] **Explore EMI mutation (Orion/Athena/Hermes)** targeting optimizer miscompiles.
 - [ ] **Design the broader template library** (algebraic/dead-branch/jump-table).
 
 ## 3 — a few open questions
 
-- [ ] **Decide compiler-rt-interop vs `libmccsan`** — shapes recover-mode/ASan
-  downstream.
-- [ ] **Investigate the §33d seam peephole window / McKeeman peephole** — a
-  store-to-slot immediately followed by a load-from-the-same-slot straddling the
-  inline boundary. Resolve whether a bounded 2–3-op window elision preserves the
-  pass-1 faithfulness contract, or must run only in pass-2 replay under a
-  differential exec gate.
-- [ ] **Revisit §32c genuinely-speculative arm insertion (deferred by design)** —
-  inserting E into an arm where it is not guaranteed to reach a post-join use can
-  pessimize cold paths and is the class that killed the earlier prototype (arm64
-  self-host miscompile). Only revisit with the 3-stage self-host fixpoint as the
-  gate. (PRE hoist-only ships: `MCC_AST_PRE`, default off)
-- [ ] **Explore coverage-guided generation** — gcov / Intel-PT feedback into
-  `tests/fuzz/gen.h` (today purely deterministic seed-driven).
-- [ ] **Build the `.rodata` data-emission project** — the `AstKind` enum has no
-  array/global/static-data kind and no pass emits initialized data; add a
-  table-symbol+initializer emitter wired into the replay/rewrite lifecycle.
-  Prerequisite for §30 value-table dispatch.
-- [ ] **Close the riscv64 Tier-3 backend gap** that blocks full `src/mcc.c`
-  self-host (real-program codegen is correct; the whole-compiler self-host is not).
-- [~] **Build a systematic negative/`dg-error` diagnostic tier** — LANDED first tier:
-  `tests/diagnostics/dg-error/*.c` (10 cases) + `run_dgerror.cmake` harness (leading
-  `/* dg-error: <substring> */` convention, per-case `add_test` `diag.dg-error.*` asserting
-  non-zero exit AND stderr substring match, glob+CONFIGURE_DEPENDS so new cases need no CMake
-  edit). Remaining: broaden toward gcc's C99/C11 diagnostic files (~70% diagnostic).
-- [ ] **Build the `H_e` epoch hash** — invertible slot-keyed O(1) edit patch;
-  designed, not built. (The `slot_key -> branch_tag` naming split it needed is already
-  done — `src/mccname.h` `MCC_NS_{AST_SLOT,CST_BRANCH}`, `cst_mark_branch` uses
-  `branch_tag`; only the H_e patch itself remains.)
+- [ ] **Decide compiler-rt-interop vs `libmccsan`** — shapes recover-mode/ASan downstream.
+- [ ] **Investigate the §33d seam peephole window** — a store-to-slot immediately followed by a load-from-the-
+  same-slot straddling the inline boundary. Resolve whether a bounded 2–3-op window elision preserves the
+  pass-1 faithfulness contract, or must run only in pass-2 replay under a differential exec gate.
+- [ ] **Revisit §32c genuinely-speculative arm insertion (deferred by design)** — inserting E into an arm where
+  it is not guaranteed to reach a post-join use can pessimize cold paths and is the class that killed the
+  earlier prototype (arm64 self-host miscompile). Only revisit with the 3-stage self-host fixpoint as the gate.
+  (PRE hoist-only ships: `MCC_AST_PRE`, default off.)
+- [ ] **Explore coverage-guided generation** — gcov / Intel-PT feedback into `tests/fuzz/gen.h`.
+- [ ] **Build the `.rodata` data-emission project** — the `AstKind` enum has no array/global/static-data kind
+  and no pass emits initialized data; add a table-symbol+initializer emitter wired into the replay/rewrite
+  lifecycle. Prerequisite for §30 value-table dispatch. (Overlaps P2/M5 — the `AST_Data` foundation is landed;
+  this is the per-function-node home M5 flagged as remaining.)
+- [ ] **[6A·PRIORITIZED] Close the riscv64 Tier-3 backend gap** that blocks full `src/mcc.c` self-host (real-
+  program codegen is correct; the whole-compiler self-host is not). **This is the cross-arch validation choke
+  point** — riscv64 is in the M8 cross-arch gate but cannot self-host, so nothing validates end-to-end there.
+  6A does it early: it makes the M8 cross-arch gate real on riscv64, which every cross-arch-gated item rides on.
+- [~] **Build a systematic negative/`dg-error` diagnostic tier** — the first tier landed
+  (`tests/diagnostics/dg-error/*.c` + `run_dgerror.cmake`, leading `/* dg-error: <substring> */`, glob +
+  CONFIGURE_DEPENDS). **Remaining:** broaden toward gcc's C99/C11 diagnostic files.
+- [ ] **Build the `H_e` epoch hash** — invertible slot-keyed O(1) edit patch; designed, not built. (The
+  `slot_key -> branch_tag` naming split it needed is done — `src/mccname.h`; only the H_e patch remains.)
 - [ ] **Design cross-TU LTO.**
 - [ ] **Design separate `-O2`/`-O3` SSA drivers.**
-- [ ] **Design a full `-g` debugger + gdb test suite.**
+- [ ] **Design a full `-g` debugger + gdb test suite.** → folded into **[1A·step 2]** (`-g`-from-CST-provenance
+  stands up the debugger + gdb suite).
 
 ## 2 — two open questions
 
-- [ ] **Port native-shadow ASan (inline probe + `mccasan.c` runtime) to
-  arm64/riscv64** — the native shadow is x86_64/ELF-only end-to-end; those arches
-  only have the separate bcheck-based `-fsanitize=address` today.
-- [ ] **Implement arm64/riscv64 native-shadow stack-redzone instrumentation** via
-  the `gfunc_prolog`/`gfunc_epilog` hooks (x86_64/ELF-only today). (needs the
-  native-shadow port)
-- [ ] **Implement UBSan `-recover` mode** — `sanitize-recover=undefined` is parsed
-  but silently ignored; no recover state var or codegen.
-- [ ] **Explore a self-host differential** — compile `src/mcc.c` with mcc vs gcc
-  and diff the two compilers' behavior over the corpus.
+- [ ] **Port native-shadow ASan (inline probe + `mccasan.c` runtime) to arm64/riscv64** — the native shadow is
+  x86_64/ELF-only end-to-end; those arches only have the separate bcheck-based `-fsanitize=address` today.
+- [ ] **Implement arm64/riscv64 native-shadow stack-redzone instrumentation** via the `gfunc_prolog`/
+  `gfunc_epilog` hooks (x86_64/ELF-only today). (needs the native-shadow port)
+- [ ] **Implement UBSan `-recover` mode** — `sanitize-recover=undefined` is parsed but silently ignored; no
+  recover state var or codegen.
+- [ ] **Explore a self-host differential** — compile `src/mcc.c` with mcc vs gcc and diff the two compilers'
+  behavior over the corpus.
 - [ ] **Explore a freestanding/KASAN-style sanitizer for the runtime itself.**
 - [ ] **Inline cross-TU static callees.** (§23 step 3)
 - [ ] **Explore heuristic non-static inlining** (optional). (§23 step 4)
-- [ ] **Implement §24 hot-slice budget allocation** — use the landed
-  `MCC_AST_COST` model to allocate `optimize_search_seconds` to the top functions
-  first; rank by `-g` profile entry-frequency, else `node# × loop-nest-depth ×
-  call-out-count`. (needs §22; the `ast_loop_depth` loop-nest-depth factor is landed)
-- [ ] **Implement the §25 `-g` hot-value cache** — log function-argument and
-  branch/switch key values + frequencies beside the opt checkpoint cache; seed
-  each strategy's `MIN..MAX` from the observed hot range. Feeds §29 + §30.
-  (`MCC_AST_JITSCORE` already ships.)
-- [ ] **Explore §28 instruction-level superoptimization** over a fixed emitted
-  window (optional).
-- [ ] **[P1] Build the §29 integer range/known-bits lattice** — shared prerequisite for
-  the narrowing residue. **In P1 this is built as the one lattice with two projections
-  (with `context_in`); see § Strategic path. Representation LANDED (PR-1) as `AstVLat` +
-  both projection accessors (`ast_vlat_narrowing`/`ast_vlat_context`); the value-changing
-  narrowing consumer is PR-2+.
-
-**PR-2 (first slice) LANDED — the first value-changing consumer, gated `MCC_AST_VLAT`.** Extends the
-truncation-sink narrowing (`ast_narrow_binary`) past the distributive `+ - * & | ^` to the
-non-distributive **unsigned `/` `%`** and **`<<` with constant count ∈[0,31]**, gated behind
-`ast_vlat_env` (default off → -O2 byte-identical; distributive path unchanged). Every narrowing here is
-LONG-LONG→INT (the pass's own width gates force `tt`=4,`wt`=8), so soundness reduces to "low-32 of the
-64-bit op == the 32-bit op on truncated operands." New `ast_narrow_binop_ranged`/`_operand_off`/`_fits`/
-`_ranged_ok`: unsigned `/ %` require both operands proven to fit `[0,UINT32_MAX]` (via `ast_narrow_class`
-0/1, an in-range constant, or `ast_vlat_context` — NOT raw `ast_vlat_narrowing`, which would unsoundly
-accept a proven-negative signed local); `<<` needs only a constant count in range (low-bits-only,
-sign-agnostic). Deferred to PR-3: signed `/ %` (INT_MIN/−1 trap divergence), `>>` (TOK_SAR, needs op0
-fit + count), `<<` value-count; comparisons SKIP (wrong pass shape). Validated to the **full M8 bar with
-`MCC_AST_VLAT=1`**: default byte-identical (ctest, object-diff 0); **self-host 3-stage fixpoint
-byte-identical** (the gate P0's DIVMAGIC failed); -O6 differential == gcc == clang; real cross-arch
-i386/arm64; differential fuzz 144 seeds 0 miscompiles; shadow 304/304 zero-divergence; UBSan trap-mode
-clean. `-v128` TRACE `narrow ranged op=.. tt=.. wt=..`. **Remaining PR-3+:** the deferred ops, then
-flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
-- [ ] **Implement §30 value-table dispatch** for bit-flag clusters with *differing*
-  bodies. (needs `.rodata` data-emission)
-- [ ] **Build widening/fixpoint dataflow for §32a** cross-loop-iteration value
-  merging (none present today).
-- [~] **§33c argument de-spill / caller-value forwarding — LANDED gated (0cf09f38,
-  `MCC_AST_ARGFWD` default off)** — forwards a caller value into the callee's single param use via the
-  generalized `ast_argsub` channel, eliding the spill. Legality: param readonly + non-escaping + single
-  read, and the actual is a pure const or a non-escaping caller local's `AST_Ref`. Default 3968/3968
-  byte-identical; gate-on fuzz 100/0-miscompile + firing/fallback correct vs gcc + self-host fixpoint.
-  **Remaining:** widen past single-use (needs the §33b seam for clobber-safety across multiple uses);
-  an argfwd-exercising self-host binary is blocked by the pre-existing mcc-linker segfault on inlined
-  `mcc.c` + GNU-ld eh_frame quirk; flip default-on after broad exposure.
-- [ ] **Design the §33e window-level cache key** — `ast_intention_hash` runs
-  pre-graft over the caller arena, excluding the callee body, so a window transform
-  needs a window-level key or an accepted first-graft cache miss.
-- [~] **§36 spill-slot sharing — LANDED gated (a66ad07f, `MCC_AST_SPILL_SHARE` off)** — the callee-save
-  COLOR promotion save-area shares one spill slot per distinct register (disjoint-lifetime locals coalesced
-  onto a register share its save slot); frame shrinks `8*promo_n`→`8*distinct_regs`. Fires on mcc.c (121
-  shares, ~1488 bytes). Default 3968/3968 byte-identical; COLOR+SHARE fuzz 120/0-miscompile; correct vs gcc.
-  **Remaining:** general per-value spill slots (backend `get_temp_local_var` already recycles by vstack
-  liveness; user-local offsets front-end-fixed — both out of AST-layer reach); the `MCC_AST_COLOR=1`-alone self-host segfault that
-  blocked the COLOR+SHARE self-host fixpoint is **FIXED** (556de5c2, unsound def-first
-  live-interval heuristic) — run that fixpoint now that it is unblocked; native arm64/riscv64.
-- [ ] **Normalize CMake incrementally** — autodetect + enable-what-the-host-
-  supports, offload gating to `tools/`, fold `.cmake` files in — with a verifiable
-  target, not a sweep (CI-breakage risk across ~35 presets/platforms).
-- [ ] **Cut CI wall-clock — attack the long-pole jobs** (from `logs_78925034425`:
-  run starts ~21:01, last job `dist / macos-x86_64-clang` finishes 21:24:54, so ~24
-  min end-to-end). The critical path is macOS + Windows + matrix jobs; native Linux
-  is already fast (ctest ~60s). Biggest per-job sinks, in priority order:
-  - **The `bench` target (~500s)** runs on the macOS/dist jobs (e.g. macos-cross:
-    build+ctest done 21:09:48, then `--target bench` alone runs to 21:18:21). Gate it
-    to a single fast native runner or a nightly job instead of every macOS/dist cell.
-  - **macOS ctest is ~7× native (~431s vs ~60s)** — slow runners / residual Rosetta
-    emulation (a prior pass already removed some; see [[arm64-native-ci-failures]]).
-    Shard the macOS ctest across more `-j`/jobs and shrink the emulated subset.
-  - **Matrix jobs re-run the full ctest per config cell sequentially** (38_matrix:
-    three ~146s passes ≈ 430s). Parallelize cells or prune redundant ones.
-  - **Windows msvc / sanitize-msvc / mingw ~900-970s** — profile build-vs-test split
-    and cache/prune. Measure each change against the same log-derived baseline.
-- [ ] **Implement slice-G multi-file `#include` stitching** — currently main-file
-  only (the one open CST slice).
+- [ ] **Implement §24 hot-slice budget allocation** — use the landed `MCC_AST_COST` model to allocate
+  `optimize_search_seconds` to the top functions first; rank by `-g` profile entry-frequency, else `node# ×
+  loop-nest-depth × call-out-count`. (needs §22; the `ast_loop_depth` factor is landed)
+- [ ] **Implement the §25 `-g` hot-value cache** — log function-argument and branch/switch key values +
+  frequencies beside the opt checkpoint cache; seed each strategy's `MIN..MAX` from the observed hot range.
+  Feeds §29 + §30. (`MCC_AST_JITSCORE` already ships.)
+- [ ] **Explore §28 instruction-level superoptimization** over a fixed emitted window (optional).
+- [ ] **[P1] Build the §29 integer range/known-bits lattice** — shared prerequisite for the narrowing residue.
+  Built in P1 as the one lattice with two projections; the representation (`AstVLat`) + both projection
+  accessors + the first value-changing narrowing consumer (unsigned `/ %` + `<<`const, gated `MCC_AST_VLAT`)
+  are landed. **Remaining (PR-3+):** signed `/ %` (INT_MIN/−1 trap divergence), `<<` value-count; comparisons
+  SKIP; then flip `MCC_AST_VLAT` default-on once broadly exposed.
+- [ ] **Implement §30 value-table dispatch** for bit-flag clusters with *differing* bodies. (needs `.rodata`
+  data-emission)
+- [ ] **Build widening/fixpoint dataflow for §32a** cross-loop-iteration value merging (none present today).
+- [~] **§33c argument de-spill / caller-value forwarding — landed gated (`MCC_AST_ARGFWD` default off)** —
+  forwards a caller value into the callee's single param use via `ast_argsub`, eliding the spill. **Remaining:**
+  widen past single-use (needs the §33b seam); an argfwd-exercising self-host binary is blocked by the mcc-
+  linker segfault on inlined `mcc.c` + GNU-ld eh_frame quirk; flip default-on after exposure.
+- [ ] **Design the §33e window-level cache key** — `ast_intention_hash` runs pre-graft over the caller arena,
+  excluding the callee body, so a window transform needs a window-level key or an accepted first-graft miss.
+- [~] **§36 spill-slot sharing — landed gated (`MCC_AST_SPILL_SHARE` off)** — the callee-save COLOR promotion
+  save-area shares one spill slot per distinct register. **Remaining:** general per-value spill slots (backend
+  `get_temp_local_var` recycles by liveness; user-local offsets front-end-fixed); run the COLOR+SHARE self-host
+  fixpoint now that the `MCC_AST_COLOR=1` segfault is fixed (556de5c2); native arm64/riscv64.
+- [ ] **Normalize CMake incrementally** — autodetect + enable-what-the-host-supports, offload gating to
+  `tools/`, fold `.cmake` files in — with a verifiable target, not a sweep (CI-breakage risk across ~35
+  presets/platforms).
+- [ ] **Cut CI wall-clock — attack the long-pole jobs** (~24 min end-to-end). Critical path is macOS + Windows
+  + matrix jobs; native Linux is fast (ctest ~60s). Biggest sinks: the `bench` target (~500s) on macOS/dist —
+  gate to one fast native/nightly runner; macOS ctest ~7× native (~431s) — shard + shrink emulated subset;
+  matrix jobs re-run full ctest per cell (~430s) — parallelize/prune; Windows msvc/sanitize-msvc/mingw
+  ~900-970s — profile build-vs-test split and cache/prune.
 - [ ] **Root-cause the named promote/inline gap tests.**
-- [ ] **Revisit PP-as-executable-C JIT** (the broader form; `-fmacro-eval`
-  shipped).
+- [ ] **Revisit PP-as-executable-C JIT** (`-fmacro-eval` shipped).
 - [ ] **Design a time-budgeted engine.**
 - [ ] **Design dependency-ordered `-O1`.**
-- [ ] **Design `-g` from provenance.**
 - [ ] **Design human-friendly diagnostics** tested against terminal geometry.
-- [ ] **Design `--hotreload` from reconciled CST snapshots.**
 
 ## 1 — one open question
 
-- [ ] **Preserve the faulting address to the asan-shadow trap** (found by the
-  `[x]`-audit) — the `-fasan-shadow` SIGILL report has the class, pc, shadow byte,
-  and granule offset but is missing the faulting data address, access type
-  (READ/WRITE) and size, the region-relative locator ("N bytes after M-byte region
-  [lo,hi)"), and the "Shadow bytes around the buggy address" hex dump that real
-  ASan prints. Root cause: the codegen traps with only the shadow byte (rax) and
-  granule offset (rdx) live — the fault address is not carried to the `ud2`.
-  `on_sigill` in `runtime/lib/mccasan.c` can format the rest once the address is
-  preserved.
-- [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap
-  mode ships (`ud2` on x86_64, `brk` on arm64/riscv64); no handler ABI exists.
+- [ ] **Preserve the faulting address to the asan-shadow trap** — the `-fasan-shadow` SIGILL report has the
+  class, pc, shadow byte, and granule offset but is missing the faulting data address, access type, and size,
+  and the "Shadow bytes around the buggy address" hex dump. Root cause: codegen traps with only the shadow byte
+  (rax) and granule offset (rdx) live — the fault address is not carried to the `ud2`.
+- [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap mode ships (`ud2` x86_64,
+  `brk` arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.
 - [ ] **Explore `-fsanitize-coverage`** — feeds the coverage-guided fuzzer.
 - [ ] **Explore `-fsanitize=cfi` hardening** (absent today).
-- [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent today;
-  `-fstack-protector` already ships with real x86_64/arm64 canary codegen).
-- [ ] **Add the §22 promotion re-emit axis** on top of emit isolation. Scratch-`Section` isolation
-  is LANDED + CI-locked; the axis lets `ast_search_emit_size` measure WITH promotion ON (re-plan +
-  `ast_promo_entry_init` inside the scratch window) and score promote on/off, overriding `do_promote`.
-  **Prototype attempted 2026-07-13 and REVERTED — the measurement is leakier than the scratch guard
-  catches.** Findings for the next attempt: (1) `AST_PF_EMIT`'s register-pin loop iterates
-  `ast_promo_n` UNCONDITIONALLY, relying on the invariant "`ast_promo_n==0` unless this fn promotes";
-  a `do_tco` fn skips `ast_plan_promotion` (short-circuit), so a stale plan left by the axis pins wrong
-  registers → SIGSEGV in the emitted binary (`tail_call_loop`). A `if (!do_promote) ast_promo_n = 0;`
-  after the do_promote decision fixes THAT class (12/296 → 3/296). (2) The remaining 3 (`nodata_wanted`,
-  `errors_and_warnings`, `run_atexit`) still CRASH the compiler mid-measurement on data-suppression /
-  pointer-cast / atexit shapes — `AstScratchSave` restores `ast_promo_{n,callful,save_loc,total}` but
-  NOT the plan arrays (`ast_promo_{off,typ,reg}[]`, `ast_promo_save_slot[]`/`_n`), nor `nocode_wanted`,
-  nor the register-allocator/`vtop` interior state that `ast_promo_entry_init`'s `store`/`gv` touch.
-  A safe landing needs the measurement to save/restore the FULL promotion plan + allocator state (or a
-  much narrower "is this fn promotion-measurable" guard), not just the scratch cursor set. Emit-size
-  scoring only ranks, but the promotion APPLICATION during measurement emits real code + mutates
-  allocator state, so it is NOT purely side-effect-free — that is the crux to solve first.
-  **SHARED-DEFECT FINDING (2026-07-13): the emit-time value-axis measurement is unsound for the INLINE
-  axis too, not just promotion.** The pre-existing inline axis (`MCC_AST_SEARCH_INLINE` →
-  `ast_search_axis_pick`, measures inline on/off under scratch and overrides `do_inline`) had NO ctest
-  coverage; a throwaway `exec-search-inline/` variant (`-O4` + emitsize + emitiso + SEARCH_INLINE)
-  fails **4/296** on the corpus — the same leak class. So the root problem is the emit-size
-  *value-axis* framework (measuring by actually APPLYING inline/promotion emission), not any one axis.
-  Fix the framework's full-state save/restore ONCE, then both the inline axis and the promotion/budget
-  axes ride it. Until then, do not enable `MCC_AST_SEARCH_INLINE`/`_PROMOTE` in any default or CI path
-  (they are opt-in and off by default, so nothing regresses).
-- [ ] **Add the §22 arena-mutating pass-subset re-emit axis** on top of emit
-  isolation. (Scratch-`Section` isolation LANDED; inline-size axis `MCC_AST_PERFN_INPROC` already
-  ships.)
-- [ ] **Register the §23 inline budgets as a §22 search value-axis** — the graft/node/depth runtime
-  knobs (`MCC_AST_GRAFT`/`MCC_AST_INLINE_NODES`/`MCC_AST_INLINE_DEPTH`) all landed; the open work is
-  exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
-  (a value axis, not a gate bit). (§23 step 1) **BLOCKED on the emit-time value-axis framework being
-  unsound — the existing binary inline axis already fails 4/296 under emit-size measurement (see the
-  §22 promotion-axis item's SHARED-DEFECT FINDING). Fix the framework's full-state save/restore before
-  adding budget levels on top.**
+- [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent; `-fstack-protector` already ships with real
+  x86_64/arm64 canary codegen).
+- [ ] **[3A·SCHEDULED] Add the §22 promotion re-emit axis** on top of emit isolation (scratch-`Section`
+  isolation is landed + CI-locked). The axis lets `ast_search_emit_size` measure WITH promotion ON and score
+  promote on/off. **3A schedules the framework fix that unblocks this** (below). **A
+  prototype was attempted and REVERTED — the measurement is leakier than the scratch guard catches.** For the
+  next attempt: (1) `AST_PF_EMIT`'s register-pin loop iterates `ast_promo_n` UNCONDITIONALLY, so a stale plan
+  pins wrong registers → SIGSEGV (`if (!do_promote) ast_promo_n = 0;` fixes THAT class, 12/296 → 3/296); (2)
+  `AstScratchSave` restores `ast_promo_{n,callful,save_loc,total}` but NOT the plan arrays, nor `nocode_wanted`,
+  nor the register-allocator/`vtop` interior state that `ast_promo_entry_init`'s `store`/`gv` touch. A safe
+  landing needs full promotion-plan + allocator-state save/restore. **SHARED-DEFECT:** the emit-time value-axis
+  measurement is unsound for the INLINE axis too — `exec-search-inline` (`-O4` + emitsize + emitiso +
+  SEARCH_INLINE) fails 4/296 (same leak class). **3A = fix the framework's full-state save/restore ONCE
+  (promotion plan arrays + `nocode_wanted` + register-allocator/`vtop` interior state, not just the scratch
+  cursor set), then both the inline axis and the promotion/budget axes ride it. This is the keystone unblock —
+  it clears §22 promotion, §23 inline budgets, M1's scoring gain, and inline/promote in the search together.
+  Until it lands, do not enable `MCC_AST_SEARCH_INLINE`/`_PROMOTE` in any default or CI path.**
+- [ ] **Add the §22 arena-mutating pass-subset re-emit axis** on top of emit isolation. (inline-size axis
+  `MCC_AST_PERFN_INPROC` already ships.)
+- [ ] **Register the §23 inline budgets as a §22 search value-axis** — the graft/node/depth runtime knobs all
+  landed; exposing them to the search needs emit-size scoring (a value axis). **Unblocked by 3A** (the
+  emit-time value-axis framework full-state save/restore fix — see the §22 promotion-axis item). (§23 step 1)
 - [ ] **Add more §23 param shapes.** (§23 step 2)
-- [~] **§27 loop tiling — LANDED (`MCC_AST_TILE`, default off; `MCC_AST_TILE_SIZE`, default 32).**
-  Tile-and-interchange: strip-mines the inner loop of a 2-deep perfect nest and hoists the strip loop
-  OUTERMOST — `for(i)for(j)BODY` → `for(jj=0;jj<M;jj+=T) for(i) for(j=jj; j<M && j<jj+T; j++) BODY`.
-  Gated on `ast_loop_interchange_legal` (for a 2-deep nest that equals full permutability — both
-  canonicalize dependence vectors and reject the lone `(<,>)`, so the hoist is sound) + the
-  `ast_interchange_body_ok` whitelist. The strip IV `jj` is a fresh replay-time stack slot minted the
-  `ast_ltemp` way (`off = (ast_ltemp_cur-8)&-8`, frame reserved via `loc = ast_ltemp_cur`); the strip
-  cond/incr/`&&`-guard are synthesized with `ast_bf_lit`/`ast_bf_bin`; `ast_li_list_*` do the splice.
-  Validated to the full M8 bar: default ctest 4889/4889 byte-identical; `exec/optimizer/loop_tile.c`
-  golden (arch-neutral) + `exec-tile/` corpus (T=7 forced) 296/296; gate-on differential -O0..-O6 vs
-  gcc across T∈{3,7,8,16,32,64} all match; fuzz 149 agree/0 miscompile (TILE + TILE7 in the runner
-  GATES); shadow 0-divergence over 496 sources; sanitizer clean over 255; abstains on `(<,>)` skew.
-  **Remaining (v1 scope):** one tile per function (re-scan could re-tile the fresh strip); inner bound
-  must be a `Ref(j) < LiteralM` const; only unit inner stride; the outer loop is NOT also strip-mined
-  (true 2-D cache tiling = strip BOTH loops → 4-deep); no reuse/footprint heuristic tuning T yet.
-- [~] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
-  `ast_narrow_binop_ranged` (gated `MCC_AST_VLAT`) now covers **unsigned `/ %` + `<<`const** (PR-2) and
-  **`>>` (`TOK_SAR`/`TOK_SHR`, PR-3, 2a24c2b4)** — constant count [0,31] + op0-fit, signedness-aware.
-  Each landed default-off + full-bar validated (3968/3968, fuzz 0-miscompile, self-host fixpoint).
-  **Remaining:** signed `/ %` (INT_MIN/−1 trap divergence), `<<` value-count, comparisons (wrong pass
-  shape — likely SKIP); then flip `MCC_AST_VLAT` default-on after broad exposure.
-- [~] **[P1] §29 outer-narrow elimination — LANDED gated (9dc8ce2f, `MCC_AST_NARROW_ELIM` default off)** —
-  `ast_narrow_elim` drops a redundant narrowing `AST_Convert` when the operand provably fits (constant
-  round-trip, or a readonly local whose `AstVLat` type-range fits, peeling one widening convert). Fires on
-  the `(narrow)((wide)var)` shape `ast_ident_convert` misses on signedness (needs `MCC_AST_VLAT=1`).
-  Default 3968/3968 byte-identical; gate-on fuzz 60/0-miscompile + self-host fixpoint. **Remaining:**
-  flow-SENSITIVE facts so guard-derived sub-ranges fire (AstVLat is flow-insensitive today → only
-  type-full-range-fits shapes); globals (no frame-offset fact); flip default-on after broad exposure.
+- [~] **§27 loop tiling — landed (`MCC_AST_TILE`, default off; `MCC_AST_TILE_SIZE` default 32)** — tile-and-
+  interchange: strip-mines the inner loop of a 2-deep perfect nest and hoists the strip loop OUTERMOST.
+  **Remaining (v1 scope):** one tile per function; inner bound must be a `Ref(j) < LiteralM` const; only unit
+  inner stride; the outer loop is NOT also strip-mined (true 2-D cache tiling = strip BOTH → 4-deep); no
+  reuse/footprint heuristic tuning yet.
+- [~] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** — `ast_narrow_binop_ranged`
+  (gated `MCC_AST_VLAT`) covers **unsigned `/ %` + `<<`const** and **`>>`** (constant count [0,31] + op0-fit,
+  signedness-aware). **Remaining:** signed `/ %` (INT_MIN/−1 trap divergence), `<<` value-count, comparisons
+  (likely SKIP); then flip `MCC_AST_VLAT` default-on.
+- [~] **[P1] §29 outer-narrow elimination — landed gated (`MCC_AST_NARROW_ELIM` default off)** — `ast_narrow_elim`
+  drops a redundant narrowing `AST_Convert` when the operand provably fits. **Remaining:** flow-SENSITIVE facts
+  so guard-derived sub-ranges fire (AstVLat is flow-insensitive today); globals (no frame-offset fact); flip
+  default-on after exposure.
 - [ ] **Add the §30 `switch`-arm detection form.**
 - [ ] **Implement §31 adaptive beam width.**
 - [ ] **Implement §31 per-function scoping.**
 - [ ] **Wire §25 scoring of the §33e de-spill delta.**
-- [ ] **Replace the `ast_plan_promotion` heuristic with §36 coloring outright**
-  (not just filter it). Fixpoint-gated + native arm64/riscv64.
-- [ ] **Verify Tier-4 inline (`ast/replay-inline-spec`) on riscv64/other arches,
-  then ungate** — registered on x86_64 + arm64; skip-gated elsewhere.
-- [ ] **Extend the arm64 backend register model for Tier-3 register promotion** —
-  `MCC_NB_REGS=28` doesn't expose x19–x28 — + qemu validation. (promotion analysis
-  is arch-agnostic and reused)
-- [ ] **Extend the riscv64 backend register model for Tier-3 register promotion**
-  + qemu validation.
-- [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c
-  only emits `R_386_TLS_LE`, so GD/LDM are untested) — needs an i386 cross + a
-  32-bit sysroot.
-- [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked
-  (no 32-bit sysroot); aarch64/armv7-linux partial (qemu is x86-TSO — only the
-  memory-model-independent subset). arm64-windows is **no longer blocked** — CI now
-  runs a native `windows-11-arm64` cell (MSVC 2022 ARM64 as the ref cc) that passes the
-  full 1809-test suite (`logs_78925034425`); revisit the arm64-windows `mcc_skip_test`s
-  for ungating there.
-- [ ] **Revisit the `Bind`-marker** — only if the CST can't answer a `-g`/LSP query.
+- [ ] **Replace the `ast_plan_promotion` heuristic with §36 coloring outright** (not just filter it).
+  Fixpoint-gated + native arm64/riscv64.
+- [ ] **Verify Tier-4 inline (`ast/replay-inline-spec`) on riscv64/other arches, then ungate** — registered on
+  x86_64 + arm64; skip-gated elsewhere.
+- [ ] **Extend the arm64 backend register model for Tier-3 register promotion** — `MCC_NB_REGS=28` doesn't
+  expose x19–x28 — + qemu validation. (promotion analysis is arch-agnostic and reused)
+- [ ] **Extend the riscv64 backend register model for Tier-3 register promotion** + qemu validation.
+- [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c only emits `R_386_TLS_LE`) —
+  needs an i386 cross + a 32-bit sysroot.
+- [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked (no 32-bit sysroot);
+  aarch64/armv7-linux partial (qemu is x86-TSO — only the memory-model-independent subset). arm64-windows is
+  **no longer blocked** — CI runs a native `windows-11-arm64` cell (MSVC 2022 ARM64) that passes the full
+  suite; revisit the arm64-windows `mcc_skip_test`s for ungating.
 - [ ] **Revisit the `k` always-inline depth policy.**
 - [ ] **Revisit size-gated outline.**
 - [ ] **Revisit store factoring** (shared render engine).
@@ -1416,6 +798,6 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 ## 0 — fully specified or execution-blocked (no open design questions)
 
 - [ ] **Ungate the `i386-fastcall-abi` test** — the CMake is already conditionally ungated on
-  `if(TARGET mcc-i386)` (real test) with `mcc_skip_test` only as the else-fallback; the remaining
-  blocker is building the `mcc-i386` cross target via `cmake --preset cross` (the ELF-32/`gcc -m32`
-  reference is available on Linux hosts with 32-bit multilib).
+  `if(TARGET mcc-i386)` with `mcc_skip_test` only as the else-fallback; the remaining blocker is building the
+  `mcc-i386` cross target via `cmake --preset cross` (the ELF-32/`gcc -m32` reference is available on Linux
+  hosts with 32-bit multilib).
