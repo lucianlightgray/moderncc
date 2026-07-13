@@ -509,42 +509,82 @@ double-relocate); D3=A entry dispatcher sidesteps the static `E8 rel32` problem 
 dispatcher reads a swappable data pointer flipped by one aligned 8-byte atomic store; `.init_array` ctor
 emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior art = `ast_tco_run`.
 
+**Resolved this session — JIT forks (J1–J10, folded into the milestones below):**
+
+- **J1A — mismatch = invalidate → permanent-deopt for that key**, discard the whole variant after K distinct-key
+  mismatches. **The KGC invalidation persists to the `mmap`'d on-disk cache** so a future run/compile with
+  matching code+data inherits the "known-bad variant" verdict instead of re-learning it. (M5b)
+- **J2B — close the silent unverified path.** Restrict JIT eligibility to the verified GP-int signature set and
+  **refuse to JIT** everything else (no unverified direct-trampoline fallback). Extend the marshaller to SysV
+  SSE + small struct-by-value later (then those become eligible). (M5b)
+- **J3A — build the per-sym blob registry + one generic ctor** → live in-program recompile (clears M4 item 3). (M5/M4)
+- **J4A — static-link `libmcc.a` into the embed (E1a)**; accept ~800 KB, validate Tier-B; kills the dynamic dep
+  + the `libmccrt.a not found` wart. (M4)
+- **J5 — DEFER reclamation** until memory usage becomes an issue (no interim bounded pool). (M5)
+- **J6A — build the `jit-profile` row as the D5 hot-counter's co-instrumentation** (runtime range capture rides
+  the existing counter) → makes mode 5 bite.
+- **J7A — value-range is the next speculative fact** (W2.3), after J6 supplies the runtime range source.
+- **J8B — refuse-to-JIT bitfield/FAM-bearing fns now** (cheap gate); serialize them later, low priority. (M4)
+- **J9A — build the M5c pure-kernel path** (statement-level pure/impure slicing + the off-C-ABI register calling
+  convention). Promoted from deferred to active.
+- **J10 — hot-patch is a STRATEGY FAMILY, not one mechanism.** The JIT should implement many *how-to-patch*
+  strategies (pointer-swap dispatcher, D3B nop-pad patchpoint, and further variants) as search-selectable rows,
+  and a new item benchmarks/profiles permutations of them (see the "hot-patch strategy family" item below).
+
 **Milestones (dependency-ordered):**
 
 - [~] **M4 — scaffold + Stage-1/2 re-emit landed; static link + Tier-B size deferred** — `src/mccjit_embed.c`
   serializes a fn's intent (SoA arena + name strings + signature block + salt) and re-emits it cross-session
   via `ast_reemit`. Embed-into-output works (a compiled program self-hot-swaps its own leaf fn via an
   `.init_array` ctor calling `mccjit_boot_swap`). Stage-2 (pointer params + external calls; callees bind via
-  `dlsym(RTLD_DEFAULT)`) and structs/unions (`MCCJIT_ROLE_STRUCT`) landed. **Remaining:** (1) bitfields
-  (`VT_BITFIELD`) + flexible array members; (2) static `libmcc.a` link (E1a) instead of the dynamic dep;
-  (3) a per-sym blob **registry** + one generic ctor (one ctor per fn today); (4) fix the non-fatal
-  `libmccrt.a not found` on the call-bearing embed link; (5) ~800 KB Tier-B size validation.
+  `dlsym(RTLD_DEFAULT)`) and structs/unions (`MCCJIT_ROLE_STRUCT`) landed. **Remaining:** (1) **[J8B]**
+  refuse-to-JIT bitfield (`VT_BITFIELD`) + flexible-array-member fns now (cheap eligibility gate); serialize
+  them later, low priority; (2) **[J4A]** static `libmcc.a` link (E1a) instead of the dynamic dep — accept the
+  ~800 KB, validate Tier-B; (3) **[J3A]** a per-sym blob **registry** + one generic ctor (one ctor per fn today)
+  — the keystone for live in-program recompile, see M5; (4) **[J4A]** fix the non-fatal `libmccrt.a not found`
+  on the call-bearing embed link (subsumed by the static link); (5) **[J4A]** ~800 KB Tier-B size validation.
 - [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring deferred** —
   `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable `.data`
   slot). The complete recompile→publish→swap loop works (`mcc_jit_recompile_blob` + `mcc_jit_publish` aligned
   `__ATOMIC_RELEASE` swap), including a genuine const-param-specialized variant. x86_64 ELF only (D7).
-  **Remaining:** connect the in-*program* mode-6 slot to the runtime recompile — needs the per-sym blob
-  registry (an in-memory `-run` program gets a slot pointing at the AOT body with no recompile hookup); QSBR
-  reclamation later. Trigger/pool = M6 (landed).
+  **Remaining:** **[J3A]** connect the in-*program* mode-6 slot to the runtime recompile — build the per-sym
+  blob registry + generic ctor (an in-memory `-run` program today gets a slot pointing at the AOT body with no
+  recompile hookup); this is the headline "real live JIT" capability. **[J5·DEFER]** old-variant reclamation
+  (QSBR/leak-and-cap) stays deferred until memory usage becomes an issue — no interim bounded pool. Trigger/pool
+  = M6 (landed).
 - [~] **M5b — runtime known-good cache + differential deopt-verify — mechanism + live integration landed;
   policy + FP args deferred** — `MccjitKgc` = sorted set of fixed-width live-in tuples backed by an `mmap`'d
   file; HIT → variant, MISS → run baseline + variant, match → insert, mismatch → return the baseline result (a
   provably-WRONG variant never returns a wrong answer). Live dispatcher integration (a hand-emitted x86_64 stub
   routing 1–6 SysV int/ptr args through `mccjit_kgc_calln`) + the concurrency lock landed. **Remaining:** (1)
-  float/SSE + struct-by-value args (the stub emits only GP `mov`/`movsxd` and rejects FP/struct signatures —
-  falls back to the non-KGC direct trampoline); (2) mismatch → invalidate-vs-recompile policy — the per-stub
-  flag word is written on mismatch but never consulted, so every post-mismatch call keeps double-executing;
-  (3) skip the miss-check when the M8 static oracle proves the value in-domain.
-- [~] **M5c — pure classifier landed; pure/impure slicing + custom ABI deferred** — the whole-function purity
-  classifier `ast_fn_purity` (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only), wired into
-  M5b via `MccjitKgc.memoize_ok`. **Remaining (net-new backend work):** statement-level pure/impure **slicing**;
-  the bespoke **off-C-ABI register calling convention** for pure kernels (`gfunc_prolog` spills all params to
-  frame); how a pure slice's live-ins key the M5b cache; interaction with inlining; partial-specializing an
-  impure bound call without losing ABI compliance.
+  **[J2B]** close the silent unverified path — restrict JIT eligibility to the verified GP-int signature set and
+  **refuse to JIT** FP/struct sigs (today they fall back to the non-KGC direct trampoline with NO differential
+  verify, so a wrong variant *can* return a wrong answer); extend the stub to SysV SSE (xmm0–7) + small
+  struct-by-value later, then those become eligible; (2) **[J1A]** mismatch policy — on a deopt-verify mismatch,
+  invalidate that KGC key (permanent-deopt for it) and discard the whole variant after K distinct-key mismatches;
+  **persist the invalidation to the `mmap`'d on-disk cache** so a future run/compile with matching code+data
+  inherits the known-bad verdict (today the per-stub flag is written but never consulted → post-mismatch calls
+  keep double-executing); (3) skip the miss-check when the M8 static oracle proves the value in-domain.
+- [~] **[J9A·ACTIVE] M5c — pure classifier landed; pure/impure slicing + custom ABI now active** — the whole-
+  function purity classifier `ast_fn_purity` (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only),
+  wired into M5b via `MccjitKgc.memoize_ok`. **J9A promotes the net-new backend work to active:** statement-
+  level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); the bespoke **off-C-ABI
+  register calling convention** for pure kernels (`gfunc_prolog` spills all params to frame today); how a pure
+  slice's live-ins key the M5b cache; interaction with inlining; partial-specializing an impure bound call
+  without losing ABI compliance.
 - [~] **M6 — trigger/pool: LANDED** (commit 457ca8a1) — N-worker shared queue + async lazy promotion +
   hot-counter (`MccjitCounterState`, threshold default 1000, `MCC_JIT_HOT_THRESHOLD`). x86_64-only counter stub.
-- [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable prologue
-  for in-place code-patch hot-swap. M5's pointer-swap dispatcher is the primary mechanism. Deferrable.
+- [ ] **[J10·ACTIVE] M7 — hot-patch strategy FAMILY** (was: the single `jit-patchpoint` row). Hot-patching is
+  not one mechanism — the JIT should implement **many *how-to-patch* strategies** as search-selectable rows, so
+  the dispatch/swap mechanism is itself a dial the search scores (like the opt-level dial). Known members: (a)
+  M5's indirect pointer-swap dispatcher (landed); (b) D3B nop-padded patchable prologue for in-place code-patch
+  (`jit-patchpoint`); (c) further variants (int3/trap-based patch, per-call-site trampoline rewrite, dual-map
+  atomic page flip). Each is a row selectable via the gate vocabulary; correctness is the same guarded-deopt
+  contract regardless of *how* the swap lands. **New benchmark item below.**
+- [ ] **[J10] Benchmark/profile permutations of JIT hot-patch strategies** — build a harness that measures each
+  patching mechanism (and their combinations) on swap latency, steady-state call overhead, code-cache
+  footprint, and cross-thread quiescence cost; feed the winner into the search's ranking so the dispatcher
+  picks the cheapest *how-to-patch* per function/workload. Depends on ≥2 patch strategies existing (M7 a+b).
 - [~] **M8 — `eval_slice` soundness oracle (W3) — oracle landed + now bites; hard-gate promotion deferred** —
   `src/ast_eval_slice.h`: independent AST-over-values UB oracle (`defined=0` on div/mod-by-0, `INT_MIN/-1`, bad
   shift, signed overflow). Enumerates `AST_Return` value-slices and checks every spec return value is in the
@@ -556,16 +596,19 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
 
 **Optional AST-strategy rows** (dispatcher already search-selectable via gate bits 40/41):
 
-- [ ] **§26 `jit-profile` strategy row** — live-in range-capture instrumentation (the M6 hot-counter trigger
-  source, D5). Also what makes dispatch mode 5 bite: its range-guard bound comes from the *static*
+- [ ] **[J6A·ACTIVE] §26 `jit-profile` strategy row** — build live-in range-capture instrumentation **as the
+  D5 hot-counter's co-instrumentation** (range sampling rides the existing `MccjitCounterState` counter, not a
+  separate pass). This is what makes dispatch mode 5 bite: its range-guard bound comes from the *static*
   `ast_vlat_context` fact — entry params usually carry only the trivial type-full range, so mode 5 emits a
   redundant `[INT_MIN,INT_MAX]` assertion (sound, deopt-protected, no pruning) until a runtime range exists.
+  Unblocks J7 (value-range speculation).
 
 **Research / open questions:**
 
-- [ ] **Research generalizing the W2.3 speculative guard beyond non-null** — alias facts, value ranges, and
-  additional live-in domains as further speculative specializations. (which facts have no existing fold
-  consumer, as non-null did, and thus need a new mini-pass?)
+- [~] **[J7A] Generalize the W2.3 speculative guard beyond non-null — value-range is the next fact** — it is
+  the one candidate with a landed consumer (dispatch mode 5's range guard) and a cheap runtime source (J6A's
+  `jit-profile` range capture). Do it after J6A. Later candidates (alias/points-to, type-tag/discriminant) have
+  no existing fold consumer and each needs a new mini-pass — deferred behind value-range.
 
 **Decisions (all settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the engine),
 **D3=A** (entry dispatcher; code-patch D3B = `jit-patchpoint`), **D4=A** (runtime-observed live-in range),
