@@ -1171,9 +1171,14 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   Sethi–Ullman number (highest-pressure first), a value-preserving permutation; reassociation stays out.
   Default 3968/3968 byte-identical; gate-on fuzz 120/0-miscompile, value-identical vs gcc, self-host -O0
   fixpoint + -O2 3-stage byte-identical (fires 3× on mcc.c); float/call/mixed/pointer chains not reordered.
-- [ ] **Implement §36 spill-slot sharing** — extend the `MCC_AST_COLOR` interval
-  sharing to spilled ranges; subsumes the A1 backward-liveness item.
-  Fixpoint-gated + native arm64/riscv64.
+- [~] **§36 spill-slot sharing — LANDED gated (a66ad07f, `MCC_AST_SPILL_SHARE` off)** — the callee-save
+  COLOR promotion save-area shares one spill slot per distinct register (disjoint-lifetime locals coalesced
+  onto a register share its save slot); frame shrinks `8*promo_n`→`8*distinct_regs`. Fires on mcc.c (121
+  shares, ~1488 bytes). Default 3968/3968 byte-identical; COLOR+SHARE fuzz 120/0-miscompile; correct vs gcc.
+  **Remaining:** general per-value spill slots (backend `get_temp_local_var` already recycles by vstack
+  liveness; user-local offsets front-end-fixed — both out of AST-layer reach); a COLOR+SHARE self-host
+  fixpoint is blocked by the **pre-existing** `MCC_AST_COLOR=1`-alone self-host segfault (orthogonal, needs
+  its own fix); native arm64/riscv64.
 - [ ] **Normalize CMake incrementally** — autodetect + enable-what-the-host-
   supports, offload gating to `tools/`, fold `.cmake` files in — with a verifiable
   target, not a sweep (CI-breakage risk across ~35 presets/platforms).
