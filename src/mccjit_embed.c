@@ -12,7 +12,23 @@
 #endif
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
-#define MCCJIT_INTENT_FORMAT 2u
+#define MCCJIT_INTENT_FORMAT 3u
+
+#define MCCJIT_ROLE_PLAIN 0u
+#define MCCJIT_ROLE_NAMED 1u
+#define MCCJIT_ROLE_PTR 2u
+#define MCCJIT_ROLE_FUNC 3u
+
+static unsigned mccjit_role_for_base(int t) {
+	switch (t & VT_BTYPE) {
+	case VT_PTR:
+		return MCCJIT_ROLE_PTR;
+	case VT_FUNC:
+		return MCCJIT_ROLE_FUNC;
+	default:
+		return MCCJIT_ROLE_PLAIN;
+	}
+}
 
 void ast_reemit_extern(Sym *sym, AstArena *ast);
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
@@ -77,6 +93,9 @@ static void mccjit_buf_put(MccjitBuf *b, const void *p, size_t n) {
 	b->len += n;
 }
 
+static void mccjit_put_u8(MccjitBuf *b, uint8_t v) {
+	mccjit_buf_put(b, &v, 1);
+}
 static void mccjit_put_u16(MccjitBuf *b, uint16_t v) {
 	unsigned char t[2] = {(unsigned char)v, (unsigned char)(v >> 8)};
 	mccjit_buf_put(b, t, 2);
@@ -115,6 +134,14 @@ static int mccjit_have(MccjitReader *r, size_t n) {
 		return 0;
 	}
 	return 1;
+}
+static uint8_t mccjit_get_u8(MccjitReader *r) {
+	uint8_t v = 0;
+	if (mccjit_have(r, 1)) {
+		v = r->data[r->pos];
+		r->pos += 1;
+	}
+	return v;
 }
 static uint16_t mccjit_get_u16(MccjitReader *r) {
 	uint16_t v = 0;
@@ -166,6 +193,7 @@ static char *mccjit_get_str(MccjitReader *r) {
 typedef struct MccjitHandles {
 	uint64_t *raw;
 	int64_t *token_v;
+	uint8_t *role;
 	uint32_t count;
 	uint32_t cap;
 	int oom;
@@ -174,6 +202,7 @@ typedef struct MccjitHandles {
 static void mccjit_handles_init(MccjitHandles *h) {
 	h->raw = NULL;
 	h->token_v = NULL;
+	h->role = NULL;
 	h->count = 0;
 	h->cap = 0;
 	h->oom = 0;
@@ -181,25 +210,32 @@ static void mccjit_handles_init(MccjitHandles *h) {
 static void mccjit_handles_free(MccjitHandles *h) {
 	mcc_free(h->raw);
 	mcc_free(h->token_v);
+	mcc_free(h->role);
 	mccjit_handles_init(h);
 }
 
-static uint32_t mccjit_handles_intern(MccjitHandles *h, uint64_t raw) {
+static uint32_t mccjit_handles_intern(MccjitHandles *h, uint64_t raw, unsigned role) {
 	uint32_t i;
 	if (raw == 0)
 		return 0;
 	for (i = 0; i < h->count; i++)
-		if (h->raw[i] == raw)
+		if (h->raw[i] == raw) {
+			if (role != MCCJIT_ROLE_PLAIN && h->role[i] == MCCJIT_ROLE_PLAIN)
+				h->role[i] = (uint8_t)role;
 			return i + 1;
+		}
 	if (h->count == h->cap) {
 		uint32_t ncap = h->cap ? h->cap * 2 : 16;
 		uint64_t *nr = mcc_realloc(h->raw, ncap * sizeof *nr);
 		int64_t *nv = mcc_realloc(h->token_v, ncap * sizeof *nv);
+		uint8_t *no = mcc_realloc(h->role, ncap * sizeof *no);
 		if (nr)
 			h->raw = nr;
 		if (nv)
 			h->token_v = nv;
-		if (!nr || !nv) {
+		if (no)
+			h->role = no;
+		if (!nr || !nv || !no) {
 			h->oom = 1;
 			return 0;
 		}
@@ -207,8 +243,82 @@ static uint32_t mccjit_handles_intern(MccjitHandles *h, uint64_t raw) {
 	}
 	h->raw[h->count] = raw;
 	h->token_v[h->count] = (int64_t)(intptr_t)((Sym *)(uintptr_t)raw)->v;
+	h->role[h->count] = (uint8_t)role;
 	h->count++;
 	return h->count;
+}
+
+static void mccjit_handles_expand(MccjitHandles *h, uint32_t i) {
+	Sym *s = (Sym *)(uintptr_t)h->raw[i];
+	Sym *p;
+	if (!s)
+		return;
+	switch (h->role[i]) {
+	case MCCJIT_ROLE_PTR:
+		if (s->type.ref)
+			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
+														mccjit_role_for_base(s->type.t));
+		break;
+	case MCCJIT_ROLE_FUNC:
+		if (s->type.ref)
+			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
+														mccjit_role_for_base(s->type.t));
+		for (p = s->next; p; p = p->next)
+			if (p->type.ref)
+				mccjit_handles_intern(h, (uint64_t)(uintptr_t)p->type.ref,
+															mccjit_role_for_base(p->type.t));
+		break;
+	case MCCJIT_ROLE_NAMED:
+		if (s->type.ref)
+			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
+														mccjit_role_for_base(s->type.t));
+		break;
+	default:
+		break;
+	}
+}
+
+static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i) {
+	Sym *s = (Sym *)(uintptr_t)h->raw[i];
+	unsigned role = h->role[i];
+	mccjit_put_u8(buf, (uint8_t)role);
+	switch (role) {
+	case MCCJIT_ROLE_NAMED:
+	case MCCJIT_ROLE_PTR:
+		mccjit_put_u32(buf, (uint32_t)s->type.t);
+		mccjit_put_u32(buf, s->type.ref
+													 ? mccjit_handles_intern(
+																 h, (uint64_t)(uintptr_t)s->type.ref,
+																 mccjit_role_for_base(s->type.t))
+													 : 0);
+		break;
+	case MCCJIT_ROLE_FUNC: {
+		Sym *p;
+		uint32_t np = 0;
+		mccjit_put_u32(buf, (uint32_t)s->type.t);
+		mccjit_put_u32(buf, s->type.ref
+													 ? mccjit_handles_intern(
+																 h, (uint64_t)(uintptr_t)s->type.ref,
+																 mccjit_role_for_base(s->type.t))
+													 : 0);
+		mccjit_put_u32(buf, (uint32_t)s->f.func_type);
+		mccjit_put_u32(buf, (uint32_t)s->f.func_call);
+		for (p = s->next; p; p = p->next)
+			np++;
+		mccjit_put_u32(buf, np);
+		for (p = s->next; p; p = p->next) {
+			mccjit_put_u32(buf, (uint32_t)p->type.t);
+			mccjit_put_u32(buf, p->type.ref
+														 ? mccjit_handles_intern(
+																	 h, (uint64_t)(uintptr_t)p->type.ref,
+																	 mccjit_role_for_base(p->type.t))
+														 : 0);
+		}
+		break;
+	}
+	default:
+		break;
+	}
 }
 
 MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf) {
@@ -221,9 +331,18 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	mccjit_handles_init(&handles);
 
 	for (n = 0; n < count; n++) {
-		mccjit_handles_intern(&handles, ast_sym(a, n));
-		mccjit_handles_intern(&handles, ast_type_ref(a, n));
+		uint64_t tref = ast_type_ref(a, n);
+		uint64_t nsym = ast_sym(a, n);
+		if (tref)
+			mccjit_handles_intern(&handles, tref,
+														mccjit_role_for_base(ast_type_t(a, n)));
+		if (nsym)
+			mccjit_handles_intern(&handles, nsym,
+														(ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
+																										: MCCJIT_ROLE_PLAIN);
 	}
+	for (k = 0; k < handles.count; k++)
+		mccjit_handles_expand(&handles, k);
 	if (handles.oom) {
 		mccjit_handles_free(&handles);
 		return -1;
@@ -245,17 +364,26 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 			mccjit_put_str(buf, get_tok_str((int)tv, NULL));
 		else
 			mccjit_put_str(buf, "");
+		mccjit_emit_type_record(buf, &handles, k);
 	}
 
 	for (n = 0; n < count; n++) {
 		uint32_t nc = ast_nchild(a, n), i;
+		uint64_t nsym = ast_sym(a, n);
+		uint64_t tref = ast_type_ref(a, n);
 		mccjit_put_u16(buf, ast_kind(a, n));
 		mccjit_put_u32(buf, (uint32_t)ast_op(a, n));
 		mccjit_put_u32(buf, (uint32_t)ast_type_t(a, n));
 		mccjit_put_u64(buf, ast_ival(a, n));
 		mccjit_put_u64(buf, ast_fbits(a, n));
-		mccjit_put_u32(buf, mccjit_handles_intern(&handles, ast_sym(a, n)));
-		mccjit_put_u32(buf, mccjit_handles_intern(&handles, ast_type_ref(a, n)));
+		mccjit_put_u32(buf, nsym ? mccjit_handles_intern(
+															 &handles, nsym,
+															 (ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
+																											 : MCCJIT_ROLE_PLAIN)
+														 : 0);
+		mccjit_put_u32(buf, tref ? mccjit_handles_intern(
+															 &handles, tref, mccjit_role_for_base(ast_type_t(a, n)))
+														 : 0);
 		mccjit_put_u64(buf, ast_cst(a, n));
 		mccjit_put_u32(buf, nc);
 		for (i = 0; i < nc; i++)
@@ -292,6 +420,20 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	return buf->oom ? -1 : 0;
 }
 
+typedef struct MccjitTypeRec {
+	uint8_t role;
+	uint8_t building;
+	uint8_t done;
+	uint32_t a;
+	uint32_t b;
+	uint32_t c;
+	uint32_t d;
+	uint32_t nparam;
+	uint32_t *pt;
+	uint32_t *pr;
+	struct Sym *built;
+} MccjitTypeRec;
+
 typedef struct MccjitIntent {
 	AstArena *arena;
 	uint64_t salt;
@@ -300,6 +442,8 @@ typedef struct MccjitIntent {
 	uint64_t *handle_raw;
 	int64_t *handle_token_v;
 	char **handle_name;
+	MccjitTypeRec *recs;
+	int has_external;
 	char *fn_name;
 	uint32_t ret_type_t;
 	uint32_t func_type;
@@ -321,6 +465,12 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) {
 	if (it->param_name)
 		for (i = 0; i < it->nparam; i++)
 			mcc_free(it->param_name[i]);
+	if (it->recs)
+		for (i = 0; i < it->handle_count; i++) {
+			mcc_free(it->recs[i].pt);
+			mcc_free(it->recs[i].pr);
+		}
+	mcc_free(it->recs);
 	mcc_free(it->handle_raw);
 	mcc_free(it->handle_token_v);
 	mcc_free(it->handle_name);
@@ -332,10 +482,72 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) {
 	it->handle_raw = NULL;
 	it->handle_token_v = NULL;
 	it->handle_name = NULL;
+	it->recs = NULL;
 	it->fn_name = NULL;
 	it->param_type_t = NULL;
 	it->param_off = NULL;
 	it->param_name = NULL;
+}
+
+static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) {
+	uint32_t i;
+	MccjitTypeRec *r;
+	Sym *res = NULL;
+	if (!id1 || id1 > it->handle_count || !it->recs)
+		return NULL;
+	i = id1 - 1;
+	r = &it->recs[i];
+	if (r->done)
+		return r->built;
+	if (r->building)
+		return NULL;
+	r->building = 1;
+	switch (r->role) {
+	case MCCJIT_ROLE_PTR: {
+		CType pc;
+		pc.t = (int)r->a;
+		pc.ref = mccjit_build_rec(it, r->b);
+		res = sym_push(SYM_FIELD, &pc, 0, -1);
+		break;
+	}
+	case MCCJIT_ROLE_FUNC: {
+		Sym *sr = sym_push2(&global_stack, SYM_FIELD, 0, 0);
+		Sym *first = NULL, **plast = &first, *p;
+		uint32_t k;
+		sr->type.t = (int)r->a;
+		sr->type.ref = mccjit_build_rec(it, r->b);
+		sr->f.func_call = (int)r->d;
+		sr->f.func_type = r->c ? (int)r->c : FUNC_NEW;
+		sr->f.func_args = r->nparam;
+		for (k = 0; k < r->nparam; k++) {
+			p = sym_push2(&global_stack, SYM_FIELD, (int)r->pt[k], 0);
+			p->type.ref = mccjit_build_rec(it, r->pr[k]);
+			p->r = VT_LOCAL | VT_LVAL;
+			p->a.inited = 1;
+			*plast = p;
+			plast = &p->next;
+		}
+		sr->next = first;
+		res = sr;
+		break;
+	}
+	case MCCJIT_ROLE_NAMED: {
+		CType ct;
+		const char *nm = it->handle_name ? it->handle_name[i] : NULL;
+		if (nm && nm[0]) {
+			ct.t = (int)r->a;
+			ct.ref = mccjit_build_rec(it, r->b);
+			res = external_global_sym(tok_alloc(nm, (int)strlen(nm))->tok, &ct);
+		}
+		break;
+	}
+	default:
+		break;
+	}
+	r->built = res;
+	r->done = 1;
+	r->building = 0;
+	return res;
 }
 
 MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
@@ -371,7 +583,9 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		out->handle_raw = mcc_malloc(hc * sizeof *out->handle_raw);
 		out->handle_token_v = mcc_malloc(hc * sizeof *out->handle_token_v);
 		out->handle_name = mcc_mallocz(hc * sizeof *out->handle_name);
-		if (!out->handle_raw || !out->handle_token_v || !out->handle_name)
+		out->recs = mcc_mallocz(hc * sizeof *out->recs);
+		if (!out->handle_raw || !out->handle_token_v || !out->handle_name ||
+				!out->recs)
 			goto done;
 	}
 	out->handle_count = hc;
@@ -379,6 +593,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		uint64_t raw = mccjit_get_u64(&r);
 		int64_t tv = (int64_t)mccjit_get_u64(&r);
 		char *nm = mccjit_get_str(&r);
+		MccjitTypeRec *rec = &out->recs[i];
 		if (r.err)
 			goto done;
 		out->handle_raw[i] = raw;
@@ -386,9 +601,48 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		if (nm && nm[0] && mcc_state)
 			tv = tok_alloc(nm, (int)strlen(nm))->tok;
 		out->handle_token_v[i] = tv;
+		rec->role = mccjit_get_u8(&r);
+		if (rec->role == MCCJIT_ROLE_NAMED)
+			out->has_external = 1;
+		switch (rec->role) {
+		case MCCJIT_ROLE_NAMED:
+		case MCCJIT_ROLE_PTR:
+			rec->a = mccjit_get_u32(&r);
+			rec->b = mccjit_get_u32(&r);
+			break;
+		case MCCJIT_ROLE_FUNC: {
+			uint32_t k;
+			rec->a = mccjit_get_u32(&r);
+			rec->b = mccjit_get_u32(&r);
+			rec->c = mccjit_get_u32(&r);
+			rec->d = mccjit_get_u32(&r);
+			rec->nparam = mccjit_get_u32(&r);
+			if (r.err)
+				goto done;
+			if (rec->nparam) {
+				rec->pt = mcc_mallocz(rec->nparam * sizeof *rec->pt);
+				rec->pr = mcc_mallocz(rec->nparam * sizeof *rec->pr);
+				if (!rec->pt || !rec->pr)
+					goto done;
+			}
+			for (k = 0; k < rec->nparam; k++) {
+				rec->pt[k] = mccjit_get_u32(&r);
+				rec->pr[k] = mccjit_get_u32(&r);
+			}
+			break;
+		}
+		default:
+			break;
+		}
+		if (r.err)
+			goto done;
 	}
 	if (r.err)
 		goto done;
+
+	if (mcc_state)
+		for (i = 0; i < hc; i++)
+			mccjit_build_rec(out, i + 1);
 
 	a = ast_arena_new();
 	if (!a)
@@ -412,9 +666,11 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		uint32_t typeref_id = mccjit_get_u32(&r);
 		uint64_t cst = mccjit_get_u64(&r);
 		uint32_t nc = mccjit_get_u32(&r), j;
-		uint64_t sym_raw = (sym_id && sym_id <= hc) ? out->handle_raw[sym_id - 1] : 0;
-		uint64_t tref_raw =
-				(typeref_id && typeref_id <= hc) ? out->handle_raw[typeref_id - 1] : 0;
+		Sym *sym_new = (sym_id && sym_id <= hc) ? mccjit_build_rec(out, sym_id) : NULL;
+		Sym *tref_new =
+				(typeref_id && typeref_id <= hc) ? mccjit_build_rec(out, typeref_id) : NULL;
+		uint64_t sym_raw = (uint64_t)(uintptr_t)sym_new;
+		uint64_t tref_raw = (uint64_t)(uintptr_t)tref_new;
 		AstLocal node;
 		if (r.err)
 			goto done;
@@ -537,6 +793,9 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mcc_delete(js);
 		return NULL;
 	}
+
+	if (it.has_external)
+		js->nostdlib = 0;
 
 	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
 		mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
@@ -825,6 +1084,153 @@ int mccjit_selftest(void) {
 	mcc_delete(s1);
 	printf("mccjit-selftest: %s (%d failure%s)\n", fails ? "FAIL" : "PASS", fails,
 				 fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+static unsigned char *mccjit_stash_one(const char *src, const char *fn,
+																			 int nostdlib, size_t *out_len,
+																			 MCCState **out_state) {
+	MCCState *s1;
+	unsigned char *blob = NULL;
+	*out_len = 0;
+	*out_state = NULL;
+	mcc_free(mccjit_last_blob);
+	mccjit_last_blob = NULL;
+	mccjit_last_len = 0;
+	s1 = mcc_new();
+	if (!s1)
+		return NULL;
+	s1->optimize = 1;
+	s1->nostdlib = nostdlib;
+	mcc_free(s1->jit_functions);
+	s1->jit_functions = mcc_strdup(fn);
+	mcc_set_output_type(s1, MCC_OUTPUT_MEMORY);
+	if (mcc_compile_string(s1, src) != 0) {
+		mcc_delete(s1);
+		return NULL;
+	}
+	if (mccjit_last_blob) {
+		blob = mcc_malloc(mccjit_last_len ? mccjit_last_len : 1);
+		if (blob) {
+			memcpy(blob, mccjit_last_blob, mccjit_last_len);
+			*out_len = mccjit_last_len;
+		}
+	}
+	*out_state = s1;
+	return blob;
+}
+
+int mccjit_selftest_stage2(void) {
+	static const char src_g[] =
+			"int g(int *p, int x){ return p ? *p + x : -1; }";
+	static const char src_h[] =
+			"int abs(int); int h(int x){ return abs(x) + 1; }";
+	int fails = 0;
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+
+	printf("mccjit-selftest-stage2: begin\n");
+
+	blob = mccjit_stash_one(src_g, "g", 1, &blen, &s1);
+	if (!s1) {
+		printf("mccjit-selftest-stage2: g compile setup failed\n");
+		return 1;
+	}
+	if (!blob) {
+		printf("mccjit-selftest-stage2: no intent blob stashed for 'g'\n");
+		mcc_delete(s1);
+		fails++;
+	} else {
+		int (*aotg)(int *, int) = NULL;
+		int (*jitg)(int *, int);
+		MCCState *js;
+		int cells[3] = {41, -8, 0};
+		int i;
+		printf("mccjit-selftest-stage2: stashed pointer-param intent = %lu bytes\n",
+					 (unsigned long)blen);
+		if (mcc_relocate(s1) == 0)
+			aotg = (int (*)(int *, int))mcc_get_symbol(s1, "g");
+		jitg = (int (*)(int *, int))mcc_jit_recompile_blob(blob, blen);
+		if (!jitg) {
+			printf("mccjit-selftest-stage2: g recompile returned NULL\n");
+			fails++;
+		} else {
+			js = mccjit_last_state;
+			for (i = 0; i < 3; i++) {
+				int x = cells[i] + i * 7;
+				int got = jitg(&cells[i], x);
+				int want = cells[i] + x;
+				int aot = aotg ? aotg(&cells[i], x) : want;
+				int ok = (got == want) && (got == aot);
+				printf("mccjit-selftest-stage2: g(&%d,%d) jit=%d expect=%d aot=%d %s\n",
+							 cells[i], x, got, want, aot, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+			{
+				int got = jitg((int *)0, 99);
+				int aot = aotg ? aotg((int *)0, 99) : -1;
+				int ok = (got == -1) && (got == aot);
+				printf("mccjit-selftest-stage2: g(NULL,99) jit=%d expect=-1 aot=%d %s\n",
+							 got, aot, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+			if (js)
+				mcc_delete(js);
+			mccjit_last_state = NULL;
+		}
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+
+	blob = mccjit_stash_one(src_h, "h", 0, &blen, &s1);
+	if (!s1) {
+		printf("mccjit-selftest-stage2: h compile setup failed\n");
+		return fails + 1;
+	}
+	if (!blob) {
+		printf("mccjit-selftest-stage2: no intent blob stashed for 'h'\n");
+		mcc_delete(s1);
+		fails++;
+	} else {
+		int (*aoth)(int) = NULL;
+		int (*jith)(int);
+		MCCState *js;
+		int inputs[4] = {5, -12, 0, 40};
+		int i;
+		printf("mccjit-selftest-stage2: stashed call-bearing intent = %lu bytes\n",
+					 (unsigned long)blen);
+		if (mcc_relocate(s1) == 0)
+			aoth = (int (*)(int))mcc_get_symbol(s1, "h");
+		jith = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+		if (!jith) {
+			printf("mccjit-selftest-stage2: h recompile returned NULL (callee unbound?)\n");
+			fails++;
+		} else {
+			js = mccjit_last_state;
+			for (i = 0; i < 4; i++) {
+				int x = inputs[i];
+				int got = jith(x);
+				int want = (x < 0 ? -x : x) + 1;
+				int aot = aoth ? aoth(x) : want;
+				int ok = (got == want) && (got == aot);
+				printf("mccjit-selftest-stage2: h(%d) jit=%d expect=%d aot=%d %s\n", x,
+							 got, want, aot, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+			if (js)
+				mcc_delete(js);
+			mccjit_last_state = NULL;
+		}
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+
+	printf("mccjit-selftest-stage2: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 

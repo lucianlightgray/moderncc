@@ -3612,6 +3612,12 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-leaf-int COMMAND jit_selftest)
             set_tests_properties(jit/selftest-leaf-int PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_stage2 tests/embed/jit_selftest_stage2.c)
+            target_link_libraries(jit_selftest_stage2 PRIVATE libmcc)
+            target_include_directories(jit_selftest_stage2 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-stage2 COMMAND jit_selftest_stage2)
+            set_tests_properties(jit/selftest-stage2 PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
