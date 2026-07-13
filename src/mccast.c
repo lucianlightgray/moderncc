@@ -847,6 +847,52 @@ static int ast_jit_selected(const char *fn) {
 			return 1;
 	return 0;
 }
+
+static int ast_jit_type_eligible(int t) {
+	switch (t & VT_BTYPE) {
+	case VT_BOOL:
+	case VT_BYTE:
+	case VT_SHORT:
+	case VT_INT:
+	case VT_LLONG:
+	case VT_PTR:
+	case VT_FUNC:
+		return !(t & VT_BITFIELD);
+	default:
+		return 0;
+	}
+}
+
+static int ast_jit_eligible(Sym *sym) {
+	Sym *sig = sym ? sym->type.ref : NULL;
+	Sym *p;
+	int np = 0;
+	if (!sig)
+		return 0;
+	if (sig->f.func_type == FUNC_ELLIPSIS)
+		return 0;
+	if (!ast_jit_type_eligible(sig->type.t))
+		return 0;
+	for (p = sig->next; p; p = p->next) {
+		if (++np > 6)
+			return 0;
+		if (!ast_jit_type_eligible(p->type.t))
+			return 0;
+	}
+	return np >= 1;
+}
+
+static int ast_jit_want(const char *fn, Sym *sym) {
+	if (!ast_jit_selected(fn))
+		return 0;
+	if (ast_jit_eligible(sym))
+		return 1;
+	if (getenv("MCC_JIT_VERBOSE"))
+		fprintf(stderr,
+						"mccjit: refuse-to-JIT %s — signature not in the verified GP-int set\n",
+						fn ? fn : "?");
+	return 0;
+}
 static int ast_templates_env;
 static int ast_search_env;
 static int ast_search_emitsize_env;
@@ -12648,7 +12694,7 @@ void ast_func_end(Sym *sym) {
 #undef AST_PF_EMIT
 				}
 				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env &&
-						ast_jit_selected(funcname)) {
+						ast_jit_want(funcname, sym)) {
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 					int aot_base = ast_body_ind_sv;
 					int aot_len = ind - aot_base;
@@ -12912,14 +12958,14 @@ void ast_func_end(Sym *sym) {
 			}
 			if (faithful && ind < orig_ind)
 				memset(cur_text_section->data + ind, 0, (size_t)(orig_ind - ind));
-			if (ast_jit_env && faithful && ast_jit_selected(funcname))
+			if (ast_jit_env && faithful && ast_jit_want(funcname, sym))
 				keep_baseline = ast_baseline_retain(sym, ast_cur, ast_body_ind_sv,
 																						ast_reloc0_sv, rsym);
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
 #ifdef MCC_EMBED_JIT
-		if (ast_fn_faithful && ast_cur && ast_jit_selected(funcname))
+		if (ast_fn_faithful && ast_cur && ast_jit_want(funcname, sym))
 			mccjit_embed_stash_leaf(ast_cur, sym);
 #endif
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);

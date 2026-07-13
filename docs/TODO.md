@@ -176,8 +176,14 @@ list is the *order*. Each item's rationale is its `[decision]` tag — the 7 str
 tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every step.
 
 **Phase 1 — verified, shippable live JIT on x86_64** *(lowest resistance, headline capability; all on landed infra)*
-1. **[J2B/K3A/J8B]** refuse-to-JIT eligibility gate at *selection* — close the silent unverified path; refuse
-   FP/struct/bitfield/FAM sigs (the safety floor everything downstream trusts).
+1. ✅ **[J2B/K3A/J8B]** refuse-to-JIT eligibility gate at *selection* — DONE. `ast_jit_want`/`ast_jit_eligible`
+   (`src/mccast.c`) refuse at all three `ast_jit_selected` sites (dispatch, baseline-retain, embed-stash) so an
+   ineligible fn never gets an intent blob; eligibility = 1–6 GP-int/ptr args + GP-int (non-void/FP/struct)
+   return, refusing FP/struct-by-value/void/bitfield/variadic/>6-arg/0-arg. Runtime defense-in-depth: the
+   `mccjit_last_kgc_ok` gate now also rejects bitfield + `FUNC_ELLIPSIS`, and the silent direct-trampoline
+   fallback (`mccjit_boot_swap_run`/`mccjit_lazy_build`) is gated behind the explicit `MCC_JIT_NO_KGC` unsafe
+   escape hatch — by default an unverifiable variant keeps the AOT baseline (`refused-unverified`). Test:
+   `jit/selftest-eligibility` (12 cases).
 2. **[L11A]** runtime robustness — `atfork` / signal-safety / PIC.
 3. **[hardened-env + observability]** boot-probe JIT feasibility (silent baseline fallback) + emit `perf-<pid>.map`.
 4. **[J3A]** per-sym blob registry + one generic ctor → **live in-program recompile** (the "real live JIT").
@@ -707,9 +713,9 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   serializes a fn's intent (SoA arena + name strings + signature block + salt) and re-emits it cross-session
   via `ast_reemit`. Embed-into-output works (a compiled program self-hot-swaps its own leaf fn via an
   `.init_array` ctor calling `mccjit_boot_swap`). Stage-2 (pointer params + external calls; callees bind via
-  `dlsym(RTLD_DEFAULT)`) and structs/unions (`MCCJIT_ROLE_STRUCT`) landed. **Remaining:** (1) **[J8B]**
-  refuse-to-JIT bitfield (`VT_BITFIELD`) + flexible-array-member fns now (cheap eligibility gate); serialize
-  them later, low priority; (2) **[J4A/L9B]** static-link a **parser-less re-emit-only engine slice** (E1a: codegen + opt +
+  `dlsym(RTLD_DEFAULT)`) and structs/unions (`MCCJIT_ROLE_STRUCT`) landed. **Remaining:** (1) ✅ **[J8B]** DONE —
+  refuse-to-JIT bitfield (`VT_BITFIELD`) + FAM/struct-by-value fns is folded into the Phase-1 step-1 eligibility
+  gate (`ast_jit_eligible`; runtime `mccjit_last_kgc_ok` also rejects bitfield/variadic); (2) **[J4A/L9B]** static-link a **parser-less re-emit-only engine slice** (E1a: codegen + opt +
   objfmt, no C front-end — `ast_reemit` re-emits from serialized intent without re-parsing, so the embed is
   materially smaller than the full ~800 KB compiler; **refines D2=A** = re-invoke the engine, but the re-emit
   slice) instead of the dynamic dep; validate Tier-B; (3) **[J3A]** a per-sym blob **registry** + one generic ctor (one ctor per fn today)
@@ -729,9 +735,10 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   file; HIT → variant, MISS → run baseline + variant, match → insert, mismatch → return the baseline result (a
   provably-WRONG variant never returns a wrong answer). Live dispatcher integration (a hand-emitted x86_64 stub
   routing 1–6 SysV int/ptr args through `mccjit_kgc_calln`) + the concurrency lock landed. **Remaining:** (1)
-  **[J2B]** close the silent unverified path — restrict JIT eligibility to the verified GP-int signature set and
-  **refuse to JIT** FP/struct sigs (today they fall back to the non-KGC direct trampoline with NO differential
-  verify, so a wrong variant *can* return a wrong answer); extend the stub to SysV SSE (xmm0–7) + small
+  ✅ **[J2B]** DONE — the silent unverified path is closed (Phase-1 step 1): eligibility is refused at selection
+  (`ast_jit_eligible`) and the runtime direct-trampoline fallback now fires only under the explicit
+  `MCC_JIT_NO_KGC` unsafe escape hatch, so by default an FP/struct/unverifiable variant keeps the AOT baseline
+  instead of running unverified. Still to extend the stub to SysV SSE (xmm0–7) + small
   struct-by-value later, then those become eligible (**[K4A]** this coverage is itself a strategy row with sane
   per-platform limits, not a hardcoded gate); (2) **[J1A/K1C/K2]** mismatch policy — **split the key into a
   code-hash + data-hash pair** and record poison per (code+data) tuple; discard a variant on a **mismatch/hit

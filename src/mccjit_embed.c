@@ -938,13 +938,18 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		if (rb == VT_STRUCT || rb == VT_FLOAT || rb == VT_DOUBLE ||
 				rb == VT_LDOUBLE || rb == VT_VOID)
 			mccjit_last_kgc_ok = 0;
+		if (it.ret_type_t & VT_BITFIELD)
+			mccjit_last_kgc_ok = 0;
+		if (it.func_type == FUNC_ELLIPSIS)
+			mccjit_last_kgc_ok = 0;
 		if (it.nparam < 1 || it.nparam > MCCJIT_KGC_MAXARG)
 			mccjit_last_kgc_ok = 0;
 		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
 			mccjit_last_param_t[qi] = 0;
 		for (qi = 0; qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++) {
 			mccjit_last_param_t[qi] = it.param_type_t[qi];
-			if (!mccjit_type_gp((int)it.param_type_t[qi]))
+			if (!mccjit_type_gp((int)it.param_type_t[qi]) ||
+					(it.param_type_t[qi] & VT_BITFIELD))
 				mccjit_last_kgc_ok = 0;
 		}
 	}
@@ -1101,7 +1106,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 					routed = 1;
 			}
 		}
-		if (!entry)
+		if (!entry && no_kgc)
 			entry = variant ? mccjit_make_trampoline(variant) : NULL;
 		if (timed && max_duration && entry &&
 				mccjit_elapsed(t0) > (double)max_duration) {
@@ -1117,8 +1122,12 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s np=%u probe(7)=%d %s\n",
 						mode, (void *)slot, aot_init, blob, len, variant, baseline, entry,
 						routed ? "kgc" : "direct", mccjit_last_nparam, probe,
-						skipped ? "budget-skip"
-										: over ? "over-budget-kept-aot" : entry ? "swapped" : "kept-aot");
+						skipped				 ? "budget-skip"
+						: over					 ? "over-budget-kept-aot"
+						: entry					 ? "swapped"
+						: (variant && !no_kgc && !mccjit_last_kgc_ok)
+								? "refused-unverified"
+								: "kept-aot");
 	}
 	if (entry)
 		mcc_jit_publish(slot, entry);
@@ -1151,7 +1160,7 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 				*routed = 1;
 		}
 	}
-	if (!entry)
+	if (!entry && no_kgc)
 		entry = variant ? mccjit_make_trampoline(variant) : NULL;
 	return entry;
 }
@@ -3030,6 +3039,72 @@ int mccjit_selftest_pool(void) {
 
 	printf("mccjit-selftest-pool: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_eligibility(void) {
+	static const struct {
+		const char *src;
+		const char *fn;
+		int eligible;
+		const char *why;
+	} cases[] = {
+			{"int f(int x){return x*2+1;}", "f", 1, "GP-int arg + int return"},
+			{"long f(long a, long b){return a+b;}", "f", 1, "two GP args"},
+			{"int f(int *p){return *p;}", "f", 1, "pointer arg"},
+			{"int f(int a,int b,int c,int d,int e,int g){return a+b+c+d+e+g;}", "f", 1,
+			 "six GP args (ABI max)"},
+			{"double f(int x){return x*1.5;}", "f", 0, "FP return"},
+			{"int f(double x){return (int)x;}", "f", 0, "FP arg"},
+			{"struct S{int a;int b;}; struct S f(int x){struct S s; s.a=x; s.b=-x; return s;}",
+			 "f", 0, "struct-by-value return"},
+			{"struct S{int a;int b;}; int f(struct S s){return s.a+s.b;}", "f", 0,
+			 "struct-by-value arg"},
+			{"void f(int x){(void)x;}", "f", 0, "void return (not verifiable)"},
+			{"int f(void){return 42;}", "f", 0, "zero args"},
+			{"int f(int a,int b,int c,int d,int e,int g,int h){return a+h;}", "f", 0,
+			 "seven args (over ABI max)"},
+			{"int f(int x, ...){return x;}", "f", 0, "variadic"},
+	};
+	int n = (int)(sizeof cases / sizeof cases[0]);
+	int fails = 0;
+	int i;
+
+	printf("mccjit-selftest-eligibility: begin (%d cases)\n", n);
+
+	for (i = 0; i < n; i++) {
+		size_t blen = 0;
+		MCCState *st = NULL;
+		unsigned char *blob =
+				mccjit_stash_one(cases[i].src, cases[i].fn, 1, &blen, &st);
+		int selected = (blob != NULL);
+		int compiled = (st != NULL);
+		int ok;
+		if (!compiled) {
+			printf("mccjit-selftest-eligibility: [%s] compile FAILED (setup)\n",
+						 cases[i].why);
+			fails++;
+		} else {
+			ok = (selected == cases[i].eligible);
+			printf(
+					"mccjit-selftest-eligibility: %-28s want=%s got=%s %s\n", cases[i].why,
+					cases[i].eligible ? "jit" : "refuse", selected ? "jit" : "refuse",
+					ok ? "OK" : "FAIL");
+			if (!ok)
+				fails++;
+		}
+		mcc_free(blob);
+		if (st)
+			mcc_delete(st);
+	}
+
+	mcc_free(mccjit_last_blob);
+	mccjit_last_blob = NULL;
+	mccjit_last_len = 0;
+	mccjit_last_state = NULL;
+
+	printf("mccjit-selftest-eligibility: %s (%d failure%s)\n",
+				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 
