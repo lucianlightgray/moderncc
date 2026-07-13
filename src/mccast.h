@@ -207,6 +207,14 @@ int ast_data_all_zero(void *sec, long off, long size);
 extern int ast_merge_strings_env;
 long ast_strpool_find_or_add(void *sec, long addr, long size, int align);
 
+int ast_loopnest_build(AstArena *a);
+int ast_loop_depth(AstArena *a, AstLocal loop);
+AstLocal ast_loop_parent(AstArena *a, AstLocal loop);
+int ast_loop_iv(AstArena *a, AstLocal loop, int *off, int *tt, int64_t *stride);
+int ast_loop_bounds(AstArena *a, AstLocal loop, int64_t *bound, int *is_lower);
+int ast_loop_analyzable(AstArena *a, AstLocal loop);
+void ast_loopnest_dump(AstArena *a, const char *fname);
+
 #endif
 
 #endif

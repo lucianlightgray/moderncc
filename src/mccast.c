@@ -83,6 +83,7 @@ static void ast_du_invalidate(const AstArena *a);
 static void ast_memo_invalidate(const AstArena *a);
 static void ast_hash_invalidate(const AstArena *a);
 static void ast_vlat_invalidate(const AstArena *a);
+static void ast_loopnest_invalidate(const AstArena *a);
 #endif
 
 AstArena *ast_arena_new(void) {
@@ -103,6 +104,7 @@ void ast_arena_free(AstArena *a) {
 	ast_memo_invalidate(a);
 	ast_hash_invalidate(a);
 	ast_vlat_invalidate(a);
+	ast_loopnest_invalidate(a);
 #endif
 	free(a->kind);
 	free(a->parent);
@@ -727,6 +729,7 @@ static int ast_call_window_env;
 static int ast_licm_temp_env;
 static int ast_ivsr_env;
 static int ast_pre_env;
+static int ast_loopnest_dump_env;
 static int ast_perfn_inproc_env;
 static int ast_argfwd_env;
 
@@ -1201,6 +1204,7 @@ void ast_configure(MCCState *s1) {
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
 	ast_pre_env = ast_env_gate("MCC_AST_PRE", 0);
+	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
 	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
@@ -9080,6 +9084,318 @@ static int ast_ivsr_run(AstArena *a) {
 	return did;
 }
 
+#define AST_LOOPNEST_CAP 256
+
+enum {
+	AST_LOOP_BOUND_NONE = 0,
+	AST_LOOP_BOUND_CONST = 1,
+	AST_LOOP_BOUND_SYMBOLIC = 2
+};
+
+typedef struct AstLoopInfo {
+	AstLocal header;
+	AstLocal parent;
+	AstLocal body;
+	AstLocal incr;
+	AstLocal cond;
+	int op;
+	int depth;
+	int unanalyzable;
+	int has_iv;
+	int iv_off;
+	int iv_tt;
+	int64_t iv_stride;
+	int bound_kind;
+	int64_t bound;
+	int bound_is_lower;
+} AstLoopInfo;
+
+static AstLoopInfo ast_loopnest[AST_LOOPNEST_CAP];
+static int ast_loopnest_n;
+static int ast_loopnest_overflow;
+static AstArena *ast_loopnest_arena;
+static unsigned ast_loopnest_epoch;
+static int ast_loopnest_state;
+
+static AstLocal ast_loop_cond_node(AstArena *a, AstLocal loop, int op) {
+	if (op == 2 || op == 3)
+		return ast_child(a, loop, 0);
+	if (op == 4)
+		return ast_child(a, loop, 1);
+	return AST_NONE;
+}
+
+static void ast_loop_parts(AstArena *a, AstLocal loop, int op, AstLocal *body,
+													 AstLocal *incr) {
+	switch (op) {
+	case 2:
+		*body = ast_child(a, loop, 1);
+		*incr = AST_NONE;
+		break;
+	case 3:
+		*incr = ast_child(a, loop, 1);
+		*body = ast_child(a, loop, 2);
+		break;
+	case 4:
+		*body = ast_child(a, loop, 0);
+		*incr = AST_NONE;
+		break;
+	case 5:
+		*incr = ast_child(a, loop, 0);
+		*body = ast_child(a, loop, 1);
+		break;
+	default:
+		*body = AST_NONE;
+		*incr = AST_NONE;
+	}
+}
+
+static int ast_loop_has_unstructured(AstArena *a, AstLocal n) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Jump &&
+			(ast_op(a, n) == 4 || ast_op(a, n) == 5))
+		return 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_loop_has_unstructured(a, c))
+			return 1;
+	return 0;
+}
+
+static void ast_loop_ancestry(AstArena *a, AstLocal loop, AstLocal *parent,
+															int *depth) {
+	int d = 0;
+	AstLocal par = AST_NONE;
+	for (AstLocal p = ast_parent(a, loop); p != AST_NONE; p = ast_parent(a, p))
+		if (ast_licm_is_loop(a, p)) {
+			if (par == AST_NONE)
+				par = p;
+			d++;
+		}
+	*parent = par;
+	*depth = d;
+}
+
+static int ast_loop_find_iv(AstArena *a, AstLocal loop, AstLocal src, int *off,
+														int *tt, int64_t *stride) {
+	if (src == AST_NONE || ast_kind(a, src) != AST_BasicBlock)
+		return 0;
+	for (AstLocal s = ast_first_child(a, src); s != AST_NONE;
+			 s = ast_next_sib(a, s)) {
+		int o, t;
+		int64_t st;
+		if (!ast_ivsr_incr_of(a, s, &o, &t, &st))
+			continue;
+		if (ast_cprop_escapes(a, o))
+			continue;
+		if (ast_ivsr_count_writes(a, loop, o) != 1)
+			continue;
+		*off = o;
+		*tt = t;
+		*stride = st;
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_loop_part_uses_iv(AstArena *a, AstLocal n, int iv_off) {
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 0;
+	int op = ast_op(a, n);
+	if (op != TOK_LE && op != TOK_GE && op != TOK_LT && op != TOK_GT &&
+			op != TOK_NE && op != TOK_EQ)
+		return 0;
+	return ast_ref_is_local_off(a, ast_child(a, n, 0), iv_off) ||
+				 ast_ref_is_local_off(a, ast_child(a, n, 1), iv_off);
+}
+
+static int ast_loop_classify_bound(AstArena *a, AstLocal cond, int iv_off,
+																	 int64_t *bound, int *is_lower) {
+	if (cond == AST_NONE)
+		return AST_LOOP_BOUND_NONE;
+	AstLocal parts[2];
+	int nparts = 1;
+	parts[0] = cond;
+	if (ast_kind(a, cond) == AST_Binary && ast_op(a, cond) == TOK_LAND &&
+			ast_nchild(a, cond) == 2) {
+		parts[0] = ast_child(a, cond, 0);
+		parts[1] = ast_child(a, cond, 1);
+		nparts = 2;
+	}
+	for (int i = 0; i < nparts; i++) {
+		AstLocal key;
+		int64_t b;
+		int il;
+		if (!ast_range_bound(a, parts[i], &key, &b, &il))
+			continue;
+		if (ast_kind(a, key) != AST_Ref)
+			continue;
+		int r = ast_op(a, key);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			continue;
+		if ((int)(int64_t)ast_ival(a, key) != iv_off)
+			continue;
+		*bound = b;
+		*is_lower = il;
+		return AST_LOOP_BOUND_CONST;
+	}
+	for (int i = 0; i < nparts; i++)
+		if (ast_loop_part_uses_iv(a, parts[i], iv_off))
+			return AST_LOOP_BOUND_SYMBOLIC;
+	return AST_LOOP_BOUND_NONE;
+}
+
+static void ast_loopnest_compute(AstArena *a) {
+	ast_loopnest_n = 0;
+	ast_loopnest_overflow = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		if (!ast_licm_is_loop(a, n))
+			continue;
+		if (ast_loopnest_n >= AST_LOOPNEST_CAP) {
+			ast_loopnest_overflow = 1;
+			break;
+		}
+		AstLoopInfo *li = &ast_loopnest[ast_loopnest_n++];
+		memset(li, 0, sizeof *li);
+		li->header = n;
+		li->parent = AST_NONE;
+		li->op = ast_op(a, n);
+		li->bound_kind = AST_LOOP_BOUND_NONE;
+		ast_loop_ancestry(a, n, &li->parent, &li->depth);
+		ast_loop_parts(a, n, li->op, &li->body, &li->incr);
+		li->cond = ast_loop_cond_node(a, n, li->op);
+		if (ast_loop_has_unstructured(a, n)) {
+			li->unanalyzable = 1;
+			continue;
+		}
+		AstLocal ivsrc = (li->op == 3 || li->op == 5) ? li->incr : li->body;
+		if (ast_loop_find_iv(a, n, ivsrc, &li->iv_off, &li->iv_tt, &li->iv_stride))
+			li->has_iv = 1;
+		if (li->has_iv && li->cond != AST_NONE)
+			li->bound_kind = ast_loop_classify_bound(a, li->cond, li->iv_off,
+																							 &li->bound, &li->bound_is_lower);
+	}
+}
+
+static void ast_loopnest_invalidate(const AstArena *a) {
+	if (ast_loopnest_arena == a) {
+		ast_loopnest_state = 0;
+		ast_loopnest_arena = NULL;
+	}
+}
+
+static void ast_loopnest_sync(AstArena *a) {
+	if (ast_loopnest_state && ast_loopnest_arena == a &&
+			ast_loopnest_epoch == a->epoch)
+		return;
+	ast_loopnest_arena = a;
+	ast_loopnest_epoch = a->epoch;
+	ast_loopnest_state = 1;
+	ast_loopnest_compute(a);
+}
+
+static AstLoopInfo *ast_loop_find(AstArena *a, AstLocal loop) {
+	ast_loopnest_sync(a);
+	for (int i = 0; i < ast_loopnest_n; i++)
+		if (ast_loopnest[i].header == loop)
+			return &ast_loopnest[i];
+	return NULL;
+}
+
+int ast_loopnest_build(AstArena *a) {
+	ast_loopnest_sync(a);
+	return ast_loopnest_overflow ? -1 : ast_loopnest_n;
+}
+
+int ast_loop_depth(AstArena *a, AstLocal loop) {
+	AstLoopInfo *li = ast_loop_find(a, loop);
+	return li ? li->depth : -1;
+}
+
+AstLocal ast_loop_parent(AstArena *a, AstLocal loop) {
+	AstLoopInfo *li = ast_loop_find(a, loop);
+	return li ? li->parent : AST_NONE;
+}
+
+int ast_loop_iv(AstArena *a, AstLocal loop, int *off, int *tt, int64_t *stride) {
+	AstLoopInfo *li = ast_loop_find(a, loop);
+	if (!li || !li->has_iv)
+		return 0;
+	if (off)
+		*off = li->iv_off;
+	if (tt)
+		*tt = li->iv_tt;
+	if (stride)
+		*stride = li->iv_stride;
+	return 1;
+}
+
+int ast_loop_bounds(AstArena *a, AstLocal loop, int64_t *bound, int *is_lower) {
+	AstLoopInfo *li = ast_loop_find(a, loop);
+	if (!li || li->bound_kind != AST_LOOP_BOUND_CONST)
+		return 0;
+	if (bound)
+		*bound = li->bound;
+	if (is_lower)
+		*is_lower = li->bound_is_lower;
+	return 1;
+}
+
+int ast_loop_analyzable(AstArena *a, AstLocal loop) {
+	AstLoopInfo *li = ast_loop_find(a, loop);
+	return li && !li->unanalyzable && li->has_iv;
+}
+
+static const char *ast_loop_kind_name(int op) {
+	switch (op) {
+	case 2:
+		return "while";
+	case 3:
+		return "for";
+	case 4:
+		return "do-while";
+	case 5:
+		return "for-noinc";
+	}
+	return "?";
+}
+
+void ast_loopnest_dump(AstArena *a, const char *fname) {
+	ast_loopnest_sync(a);
+	fprintf(stderr, "[LOOPNEST] %s: %d loop(s)%s\n", fname ? fname : "?",
+					ast_loopnest_n, ast_loopnest_overflow ? " OVERFLOW" : "");
+	for (int i = 0; i < ast_loopnest_n; i++) {
+		AstLoopInfo *li = &ast_loopnest[i];
+		fprintf(stderr, "  loop#%u kind=%s depth=%d parent=",
+						(unsigned)li->header, ast_loop_kind_name(li->op), li->depth);
+		if (li->parent == AST_NONE)
+			fprintf(stderr, "-");
+		else
+			fprintf(stderr, "#%u", (unsigned)li->parent);
+		if (li->unanalyzable) {
+			fprintf(stderr, " UNANALYZABLE(label/goto)\n");
+			continue;
+		}
+		int lo = (int)li->body, hi = (int)li->body;
+		ast_subtree_span(a, li->body, &lo, &hi);
+		fprintf(stderr, " body=[%d,%d]", lo, hi);
+		if (li->has_iv)
+			fprintf(stderr, " iv=@%d stride=%lld", li->iv_off,
+							(long long)li->iv_stride);
+		else
+			fprintf(stderr, " iv=none");
+		if (li->bound_kind == AST_LOOP_BOUND_CONST)
+			fprintf(stderr, " bound%s=%lld", li->bound_is_lower ? ">=" : "<=",
+							(long long)li->bound);
+		else if (li->bound_kind == AST_LOOP_BOUND_SYMBOLIC)
+			fprintf(stderr, " bound=symbolic");
+		else
+			fprintf(stderr, " bound=none");
+		fprintf(stderr, " analyzable=%d\n", li->has_iv ? 1 : 0);
+	}
+}
+
 static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	if (ast_kind(a, bb) != AST_BasicBlock)
 		return 0;
@@ -10912,6 +11228,8 @@ void ast_func_end(Sym *sym) {
 			ast_fn_cost(ast_cur, funcname);
 		if (ast_bitflag_report_env && !ast_search_worker)
 			ast_bf_report(ast_cur, funcname);
+		if (ast_loopnest_dump_env)
+			ast_loopnest_dump(ast_cur, funcname);
 		int ast_sv_tmpl = ast_templates_env, ast_sv_promo = ast_promote_env,
 				ast_sv_inl = ast_inline_env;
 		if (ast_fncfg_n) {
