@@ -1018,9 +1018,13 @@ tag and are sequenced by § Strategic path, not by their bucket.
 - [ ] **Explore a link-time/ABI differential fuzzer** — mix mcc `.o` with gcc
   `.o`, cross-check struct-return/varargs/`long double`/bitfield layout (the
   current fuzzer is deliberately tools-only, single whole-program).
-- [ ] **Build the §27 loop-nest analysis foundation** — a loop-nest model over the
-  `AST_If` op 2..5 forms, a conservative dependence test (subscript direction
-  vectors, bail-to-"no"), and a legality check. (no new node kind)
+- [~] **§27 loop-nest analysis foundation — MODEL LANDED (1522b3b1, analysis-only, inert)** — the
+  loop-nest model over the `AST_If` op 2..5 forms is built: `AstLoopInfo` side-cache with nesting depth,
+  parent chain, IV (offset/stride), and const/symbolic bounds; query API `ast_loop_depth/_parent/_iv/
+  _bounds/_analyzable`. Default 3968/3968 byte-identical; validated on matmul/while/do + mcc.c (1068 loops).
+  **Remaining (for the transforms):** a conservative **dependence test** (subscript direction vectors,
+  bail-to-"no") and a **legality check**; evaluating symbolic (variable) bounds. These gate §27 interchange/
+  fusion/tiling.
 
 ## 4 — several open questions
 
