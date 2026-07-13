@@ -503,6 +503,31 @@ is the prerequisite for a meaningful cross-arch 7A hard-gate and for any JIT def
 Stage 1 shipped via **mechanism B — machine-byte splice** (the deopt arm reinstalls the retained AOT baseline
 bytes with rebased relocations), NOT the AST-level rows; those rows stay optional (gate bits 40/41).
 
+**Unifying principle — AOT `-O4` *is* the JIT (locked this session).** The AOT `-O4` search and the runtime
+JIT are the **same engine over the same strategy pool**; the only difference is the **output sink** — AOT
+emits the winning variant as static code that ships in the build, the JIT hot-swaps it at runtime. `mcc` the
+backend does **not** run a JIT "alongside" AOT: at `-O4` (or `--jit`, or a JIT-default target) the optimizer
+*is* the JIT, run to a static-emit sink. The JIT only runs because the backend was given `-O4` or the frontend
+`--jit` (or the target defaults JIT-on). Corollaries (they govern every K-decision below):
+
+- **Nothing is binary.** Every choice — signature/marshalling coverage (K4), C-ABI-vs-register calling
+  convention (K7), inline-vs-shim (K8), how-to-hot-patch (J10), quiescence (K9) — is a **strategy row** the
+  permutations×combinations search enumerates under sane per-platform limits, and **benchmark-always-wins**
+  decides promotion. There is no fixed answer; there is a pool and a scorer.
+- **The search space is code+data jointly**, not code alone. The const-data rewrite (P2/M6), the exhaustive
+  data cache (K6), and the KGC poison set (K2) are all inputs the search consumes.
+- **Promotion gate = best-of-3 self-benchmark (K5).** A candidate is promoted over the incumbent only after it
+  passes the range/soundness sanity tests AND wins a best-of-3 benchmark against the currently-selected variant.
+- **Compound paths emerge (K2).** A 99%-match specialized variant + a switch-table covering the 1% poisoned
+  (code+data) misses is a *compound* optimization the search should discover and promote when it benchmarks
+  better than the previous best.
+- **⚠ The one seam (open — see the reproducibility item):** the *scorer* cannot be identical across sinks. The
+  runtime-JIT sink may use a **wall-clock** best-of-3 benchmark; the AOT-static sink **cannot** without breaking
+  the M8 byte-identical self-host bar — a wall-clock-driven search is machine/timing-dependent and non-
+  reproducible. AOT `-O4` must therefore score with a **deterministic cost/emit-size model** while the runtime
+  JIT scores with wall-clock. Same engine, same pool, *sink-dependent scorer.* This is the precise boundary
+  where "one engine" is literally true for the strategy pool but not for the objective function.
+
 **Reusable infra (verified grounding).** `-run` compile-to-executable-memory (`mcc_run`, `mccrun.c`;
 `host_runmem_alloc` RWX / W^X dual-map + `host_runmem_protect` + `host_icache_flush`) + `mcc_relocate` (rejects
 double-relocate); D3=A entry dispatcher sidesteps the static `E8 rel32` problem — call sites unchanged, the
@@ -530,6 +555,45 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
 - **J10 — hot-patch is a STRATEGY FAMILY, not one mechanism.** The JIT should implement many *how-to-patch*
   strategies (pointer-swap dispatcher, D3B nop-pad patchpoint, and further variants) as search-selectable rows,
   and a new item benchmarks/profiles permutations of them (see the "hot-patch strategy family" item below).
+
+**Resolved this session — JIT tier-2 forks (K1–K8; K9 open):**
+
+- **K1C — poison is ratio-based**, not a fixed count: a variant is discarded when its mismatch/hit *ratio*
+  crosses a threshold, so a rarely-wrong variant survives (and feeds the K2 compound path) while a broadly-wrong
+  one is dropped. (M5b)
+- **K2 — split the code-key from the data-key; track poison as (code+data).** The KGC/memo key becomes a pair
+  (code-hash, data-hash) and poison is recorded per code+data tuple. **The poison set is a search INPUT:** a
+  99%-match variant whose 1% misses are covered by a synthesized switch-table is a compound optimization the
+  permutations×combinations search should find and promote when it benchmarks better than the previous best.
+  (M5b + the search)
+- **K3A — refuse-to-JIT at selection time** (`ast_jit_selected`), before the pool job spawns — the unverified
+  path is then unreachable. (M5b)
+- **K4A — signature/marshalling coverage is itself a strategy row** in the pool, with sane per-platform limits
+  (scalar FP xmm0–7 + struct-by-value ≤16 B first; MEMORY-class later). Not a hardcoded gate. (M5b + the search)
+- **K5 — promotion gate = best-of-3 self-benchmark.** After the newest most-optimized code+data variant passes
+  the range/soundness sanity tests, it runs a best-of-3 benchmark **against the currently-selected variant**;
+  it is promoted only if it wins. (the runtime-JIT scorer; see the ⚠ seam above for the AOT-static scorer)
+- **K6 — the sorted mmap'd data cache is exhaustive + content-addressed by incremental hash.** On a hash match
+  against a previously-computed optimizer output, the data emission is **replaced/optimized-out with the already-
+  optimized code** (data → code substitution). **TODO — work through the details** (direction of substitution,
+  what "the optimized code for this data" means when the data has no owning function, interaction with P2/M5's
+  section-level `ast_data_recs` and the const-data rewrite): the mechanism is clear, the lifecycle is not.
+- **K7 — implement BOTH register optimizers, they coexist in the pool.** A C-ABI-compliant register optimizer
+  and a non-ABI register optimizer are separate strategy rows; when an Invoke/Call requires C-ABI compliance,
+  the non-ABI kernel carries its **own pre/post-Call harness** to meet the ABI at the boundary. Nothing is
+  binary — the search picks per call/workload. (M5c)
+- **K8 — inline-vs-shim is a search axis**, not a fixed choice: permute × combine, benchmark wins. (M5c)
+- **K9 — OPEN (under discussion): quiescence for in-place code-patch.** Pointer-swap needs no quiescence and is
+  the safe floor; in-place patch (D3B) requires a quiescence protocol, which couples back to J5 (deferred
+  reclamation). The crux: does "benchmark everything, nothing binary" justify un-deferring J5/QSBR to admit
+  in-place patch to the benchmarkable pool? **The correctness floor** — a wrong quiescence choice crashes, it
+  does not merely run slower — means the pool membership is correctness-gated per platform, unlike the other
+  K-axes. Resolve before building any in-place mechanism.
+- **⚠ OPEN (reproducibility seam):** default the on-disk KGC/benchmark cache **ephemeral** (per-run) so the M8
+  byte-identical self-host + fuzz bars see deterministic behavior, with **opt-in persistence** for production;
+  the J1A on-disk poison persistence then bites only under that opt-in flag. Reconcile vs J1A. (This is the
+  concrete form of the ⚠ scorer seam above.) **Also still open:** hardened-env (W^X-denied) fallback, and JIT-
+  frame `perf-map`/unwind observability — neither was decided.
 
 **Milestones (dependency-ordered):**
 
@@ -560,18 +624,23 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   **[J2B]** close the silent unverified path — restrict JIT eligibility to the verified GP-int signature set and
   **refuse to JIT** FP/struct sigs (today they fall back to the non-KGC direct trampoline with NO differential
   verify, so a wrong variant *can* return a wrong answer); extend the stub to SysV SSE (xmm0–7) + small
-  struct-by-value later, then those become eligible; (2) **[J1A]** mismatch policy — on a deopt-verify mismatch,
-  invalidate that KGC key (permanent-deopt for it) and discard the whole variant after K distinct-key mismatches;
-  **persist the invalidation to the `mmap`'d on-disk cache** so a future run/compile with matching code+data
-  inherits the known-bad verdict (today the per-stub flag is written but never consulted → post-mismatch calls
-  keep double-executing); (3) skip the miss-check when the M8 static oracle proves the value in-domain.
+  struct-by-value later, then those become eligible (**[K4A]** this coverage is itself a strategy row with sane
+  per-platform limits, not a hardcoded gate); (2) **[J1A/K1C/K2]** mismatch policy — **split the key into a
+  code-hash + data-hash pair** and record poison per (code+data) tuple; discard a variant on a **mismatch/hit
+  ratio** threshold (K1C), not a fixed count, so a rarely-wrong variant survives; **the poison set is a search
+  input** (K2) — a 99%-match variant + a switch-table over the 1% misses is a compound path the search promotes
+  if it benchmarks better. Persist poison to the `mmap`'d cache **only under the opt-in persistent-cache flag**
+  (default ephemeral — see the reproducibility seam); today the per-stub flag is written but never consulted →
+  post-mismatch calls keep double-executing; (3) skip the miss-check when the M8 static oracle proves in-domain.
 - [~] **[J9A·ACTIVE] M5c — pure classifier landed; pure/impure slicing + custom ABI now active** — the whole-
   function purity classifier `ast_fn_purity` (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only),
   wired into M5b via `MccjitKgc.memoize_ok`. **J9A promotes the net-new backend work to active:** statement-
-  level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); the bespoke **off-C-ABI
-  register calling convention** for pure kernels (`gfunc_prolog` spills all params to frame today); how a pure
-  slice's live-ins key the M5b cache; interaction with inlining; partial-specializing an impure bound call
-  without losing ABI compliance.
+  level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); **[K7]** implement
+  BOTH a C-ABI-compliant and a non-ABI register calling convention as coexisting strategy rows (`gfunc_prolog`
+  spills all params to frame today) — when an Invoke/Call requires C-ABI compliance the non-ABI kernel carries
+  its own pre/post-Call harness at the boundary; **[K8]** inline-vs-shim for kernel invocation is a search axis
+  (permute × combine, benchmark wins); how a pure slice's live-ins key the M5b cache; interaction with inlining;
+  partial-specializing an impure bound call without losing ABI compliance.
 - [~] **M6 — trigger/pool: LANDED** (commit 457ca8a1) — N-worker shared queue + async lazy promotion +
   hot-counter (`MccjitCounterState`, threshold default 1000, `MCC_JIT_HOT_THRESHOLD`). x86_64-only counter stub.
 - [ ] **[J10·ACTIVE] M7 — hot-patch strategy FAMILY** (was: the single `jit-patchpoint` row). Hot-patching is
@@ -601,7 +670,16 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   separate pass). This is what makes dispatch mode 5 bite: its range-guard bound comes from the *static*
   `ast_vlat_context` fact — entry params usually carry only the trivial type-full range, so mode 5 emits a
   redundant `[INT_MIN,INT_MAX]` assertion (sound, deopt-protected, no pruning) until a runtime range exists.
-  Unblocks J7 (value-range speculation).
+  Unblocks J7 (value-range speculation). **[K5] Promotion gate:** once the newest most-optimized code+data
+  variant passes the range/soundness sanity tests, it runs a best-of-3 benchmark against the currently-selected
+  variant and is promoted only if it wins (the runtime-JIT wall-clock scorer; the AOT-static sink uses the
+  deterministic cost/size scorer instead — the ⚠ seam).
+- [ ] **[K6] Exhaustive content-addressed data cache + data→code substitution** — the sorted `mmap`'d data
+  cache is keyed by incremental hash; on a hash match against a previously-computed optimizer output, replace
+  the data emission with the already-optimized code. **TODO — the lifecycle is ambiguous:** direction of
+  substitution; what "the optimized code for this data" is when the data has no owning function; interaction
+  with P2/M5's section-level `ast_data_recs` + the const-data rewrite. Depends on P2/M5. Ties to M2's `ComboMemo`
+  unification (5A) — the data cache and the code memo should share one content-addressed store.
 
 **Research / open questions:**
 
