@@ -19,12 +19,13 @@
 #endif
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
-#define MCCJIT_INTENT_FORMAT 3u
+#define MCCJIT_INTENT_FORMAT 4u
 
 #define MCCJIT_ROLE_PLAIN 0u
 #define MCCJIT_ROLE_NAMED 1u
 #define MCCJIT_ROLE_PTR 2u
 #define MCCJIT_ROLE_FUNC 3u
+#define MCCJIT_ROLE_STRUCT 4u
 
 static unsigned mccjit_role_for_base(int t) {
 	switch (t & VT_BTYPE) {
@@ -32,6 +33,8 @@ static unsigned mccjit_role_for_base(int t) {
 		return MCCJIT_ROLE_PTR;
 	case VT_FUNC:
 		return MCCJIT_ROLE_FUNC;
+	case VT_STRUCT:
+		return MCCJIT_ROLE_STRUCT;
 	default:
 		return MCCJIT_ROLE_PLAIN;
 	}
@@ -281,6 +284,12 @@ static void mccjit_handles_expand(MccjitHandles *h, uint32_t i) {
 			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
 														mccjit_role_for_base(s->type.t));
 		break;
+	case MCCJIT_ROLE_STRUCT:
+		for (p = s->next; p; p = p->next)
+			if (p->type.ref)
+				mccjit_handles_intern(h, (uint64_t)(uintptr_t)p->type.ref,
+															mccjit_role_for_base(p->type.t));
+		break;
 	default:
 		break;
 	}
@@ -315,6 +324,31 @@ static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i
 			np++;
 		mccjit_put_u32(buf, np);
 		for (p = s->next; p; p = p->next) {
+			mccjit_put_u32(buf, (uint32_t)p->type.t);
+			mccjit_put_u32(buf, p->type.ref
+														 ? mccjit_handles_intern(
+																	 h, (uint64_t)(uintptr_t)p->type.ref,
+																	 mccjit_role_for_base(p->type.t))
+														 : 0);
+		}
+		break;
+	}
+	case MCCJIT_ROLE_STRUCT: {
+		Sym *p;
+		uint32_t nf = 0;
+		mccjit_put_u32(buf, (uint32_t)s->type.t);
+		mccjit_put_u32(buf, (uint32_t)s->c);
+		mccjit_put_u32(buf, (uint32_t)s->r);
+		for (p = s->next; p; p = p->next)
+			nf++;
+		mccjit_put_u32(buf, nf);
+		for (p = s->next; p; p = p->next) {
+			int ft = (p->v & ~(SYM_FIELD | SYM_STRUCT));
+			const char *fn = (ft >= TOK_IDENT && ft < SYM_FIRST_ANOM)
+													 ? get_tok_str(ft, NULL)
+													 : "";
+			mccjit_put_str(buf, fn);
+			mccjit_put_u32(buf, (uint32_t)p->c);
 			mccjit_put_u32(buf, (uint32_t)p->type.t);
 			mccjit_put_u32(buf, p->type.ref
 														 ? mccjit_handles_intern(
@@ -439,6 +473,8 @@ typedef struct MccjitTypeRec {
 	uint32_t nparam;
 	uint32_t *pt;
 	uint32_t *pr;
+	uint32_t *foff;
+	char **fnm;
 	struct Sym *built;
 } MccjitTypeRec;
 
@@ -475,6 +511,12 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) {
 			mcc_free(it->param_name[i]);
 	if (it->recs)
 		for (i = 0; i < it->handle_count; i++) {
+			uint32_t j;
+			if (it->recs[i].fnm)
+				for (j = 0; j < it->recs[i].nparam; j++)
+					mcc_free(it->recs[i].fnm[j]);
+			mcc_free(it->recs[i].fnm);
+			mcc_free(it->recs[i].foff);
 			mcc_free(it->recs[i].pt);
 			mcc_free(it->recs[i].pr);
 		}
@@ -537,6 +579,27 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) {
 		}
 		sr->next = first;
 		res = sr;
+		break;
+	}
+	case MCCJIT_ROLE_STRUCT: {
+		Sym *first = NULL, **plast = &first, *p;
+		uint32_t k;
+		Sym *ss = sym_push2(&global_stack, anon_sym++ | SYM_STRUCT, (int)r->a, (int)r->c);
+		ss->r = (unsigned short)r->d;
+		r->built = ss;
+		r->done = 1;
+		r->building = 0;
+		res = ss;
+		for (k = 0; k < r->nparam; k++) {
+			const char *fn = it->recs[i].fnm ? it->recs[i].fnm[k] : NULL;
+			int ftok = (fn && fn[0]) ? (tok_alloc(fn, (int)strlen(fn))->tok | SYM_FIELD)
+															 : (anon_sym++ | SYM_FIELD);
+			p = sym_push2(&global_stack, ftok, (int)r->pt[k], (int)r->foff[k]);
+			p->type.ref = mccjit_build_rec(it, r->pr[k]);
+			*plast = p;
+			plast = &p->next;
+		}
+		ss->next = first;
 		break;
 	}
 	case MCCJIT_ROLE_NAMED: {
@@ -634,6 +697,30 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 					goto done;
 			}
 			for (k = 0; k < rec->nparam; k++) {
+				rec->pt[k] = mccjit_get_u32(&r);
+				rec->pr[k] = mccjit_get_u32(&r);
+			}
+			break;
+		}
+		case MCCJIT_ROLE_STRUCT: {
+			uint32_t k;
+			rec->a = mccjit_get_u32(&r);
+			rec->c = mccjit_get_u32(&r);
+			rec->d = mccjit_get_u32(&r);
+			rec->nparam = mccjit_get_u32(&r);
+			if (r.err)
+				goto done;
+			if (rec->nparam) {
+				rec->pt = mcc_mallocz(rec->nparam * sizeof *rec->pt);
+				rec->pr = mcc_mallocz(rec->nparam * sizeof *rec->pr);
+				rec->foff = mcc_mallocz(rec->nparam * sizeof *rec->foff);
+				rec->fnm = mcc_mallocz(rec->nparam * sizeof *rec->fnm);
+				if (!rec->pt || !rec->pr || !rec->foff || !rec->fnm)
+					goto done;
+			}
+			for (k = 0; k < rec->nparam; k++) {
+				rec->fnm[k] = mccjit_get_str(&r);
+				rec->foff[k] = mccjit_get_u32(&r);
 				rec->pt[k] = mccjit_get_u32(&r);
 				rec->pr[k] = mccjit_get_u32(&r);
 			}
@@ -1347,6 +1434,170 @@ int mccjit_selftest_stage2(void) {
 	}
 
 	printf("mccjit-selftest-stage2: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+struct MccjitTestS {
+	int a;
+	int b;
+};
+
+struct MccjitTestT {
+	int *p;
+	int k;
+};
+
+int mccjit_selftest_struct(void) {
+	static const char src_f[] =
+			"struct S{int a; int b;}; int f(struct S*s){return s->a*3 + s->b;}";
+	static const char src_i[] =
+			"struct S{int a; int b;}; int fi(struct S*s){return s[1].a*3 + s[0].b;}";
+	static const char src_g[] =
+			"struct T{int *p; int k;}; int g(struct T*t){return *t->p + t->k;}";
+	int fails = 0;
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+
+	printf("mccjit-selftest-struct: begin\n");
+
+	blob = mccjit_stash_one(src_f, "f", 1, &blen, &s1);
+	if (!s1) {
+		printf("mccjit-selftest-struct: f compile setup failed\n");
+		return 1;
+	}
+	if (!blob) {
+		printf("mccjit-selftest-struct: no intent blob stashed for 'f'\n");
+		mcc_delete(s1);
+		fails++;
+	} else {
+		int (*aotf)(struct MccjitTestS *) = NULL;
+		int (*jitf)(struct MccjitTestS *);
+		MCCState *js;
+		struct MccjitTestS cells[3] = {{7, 5}, {-2, 9}, {0, -11}};
+		int i;
+		printf("mccjit-selftest-struct: stashed struct-param intent = %lu bytes\n",
+					 (unsigned long)blen);
+		if (mcc_relocate(s1) == 0)
+			aotf = (int (*)(struct MccjitTestS *))mcc_get_symbol(s1, "f");
+		jitf = (int (*)(struct MccjitTestS *))mcc_jit_recompile_blob(blob, blen);
+		if (!jitf) {
+			printf("mccjit-selftest-struct: f recompile returned NULL\n");
+			fails++;
+		} else {
+			js = mccjit_last_state;
+			for (i = 0; i < 3; i++) {
+				int got = jitf(&cells[i]);
+				int want = cells[i].a * 3 + cells[i].b;
+				int aot = aotf ? aotf(&cells[i]) : want;
+				int ok = (got == want) && (got == aot);
+				printf("mccjit-selftest-struct: f({%d,%d}) jit=%d expect=%d aot=%d %s\n",
+							 cells[i].a, cells[i].b, got, want, aot, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+			if (js)
+				mcc_delete(js);
+			mccjit_last_state = NULL;
+		}
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+
+	blob = mccjit_stash_one(src_i, "fi", 1, &blen, &s1);
+	if (!s1) {
+		printf("mccjit-selftest-struct: fi compile setup failed\n");
+		return fails + 1;
+	}
+	if (!blob) {
+		printf("mccjit-selftest-struct: no intent blob stashed for 'fi'\n");
+		mcc_delete(s1);
+		fails++;
+	} else {
+		int (*aotfi)(struct MccjitTestS *) = NULL;
+		int (*jitfi)(struct MccjitTestS *);
+		MCCState *js;
+		struct MccjitTestS cells[6] = {{7, 5}, {-2, 9}, {0, -11},
+																	 {3, 4},  {8, -1}, {6, 2}};
+		int i;
+		printf("mccjit-selftest-struct: stashed struct-index intent = %lu bytes\n",
+					 (unsigned long)blen);
+		if (mcc_relocate(s1) == 0)
+			aotfi = (int (*)(struct MccjitTestS *))mcc_get_symbol(s1, "fi");
+		jitfi = (int (*)(struct MccjitTestS *))mcc_jit_recompile_blob(blob, blen);
+		if (!jitfi) {
+			printf("mccjit-selftest-struct: fi recompile returned NULL\n");
+			fails++;
+		} else {
+			js = mccjit_last_state;
+			for (i = 0; i + 1 < 6; i++) {
+				int got = jitfi(&cells[i]);
+				int want = cells[i + 1].a * 3 + cells[i].b;
+				int aot = aotfi ? aotfi(&cells[i]) : want;
+				int ok = (got == want) && (got == aot);
+				printf("mccjit-selftest-struct: fi(&cells[%d]) jit=%d expect=%d aot=%d %s\n",
+							 i, got, want, aot, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+			if (js)
+				mcc_delete(js);
+			mccjit_last_state = NULL;
+		}
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+
+	blob = mccjit_stash_one(src_g, "g", 1, &blen, &s1);
+	if (!s1) {
+		printf("mccjit-selftest-struct: g compile setup failed\n");
+		return fails + 1;
+	}
+	if (!blob) {
+		printf("mccjit-selftest-struct: no intent blob stashed for 'g'\n");
+		mcc_delete(s1);
+		fails++;
+	} else {
+		int (*aotg)(struct MccjitTestT *) = NULL;
+		int (*jitg)(struct MccjitTestT *);
+		MCCState *js;
+		int slots[3] = {10, -4, 100};
+		struct MccjitTestT recs[3];
+		int i;
+		for (i = 0; i < 3; i++) {
+			recs[i].p = &slots[i];
+			recs[i].k = i * 3 - 1;
+		}
+		printf("mccjit-selftest-struct: stashed pointer-field intent = %lu bytes\n",
+					 (unsigned long)blen);
+		if (mcc_relocate(s1) == 0)
+			aotg = (int (*)(struct MccjitTestT *))mcc_get_symbol(s1, "g");
+		jitg = (int (*)(struct MccjitTestT *))mcc_jit_recompile_blob(blob, blen);
+		if (!jitg) {
+			printf("mccjit-selftest-struct: g recompile returned NULL\n");
+			fails++;
+		} else {
+			js = mccjit_last_state;
+			for (i = 0; i < 3; i++) {
+				int got = jitg(&recs[i]);
+				int want = slots[i] + recs[i].k;
+				int aot = aotg ? aotg(&recs[i]) : want;
+				int ok = (got == want) && (got == aot);
+				printf("mccjit-selftest-struct: g({*%d,%d}) jit=%d expect=%d aot=%d %s\n",
+							 slots[i], recs[i].k, got, want, aot, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+			if (js)
+				mcc_delete(js);
+			mccjit_last_state = NULL;
+		}
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+
+	printf("mccjit-selftest-struct: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
