@@ -971,9 +971,14 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   48-bit top-down VA. **Validated end-to-end on real arm64-Linux** (native-in-container, `tests/qemu/native-
   optcheck.sh` path): probe disasm exact; heap-buffer-overflow → trap `shadow byte 0xfa`; heap-use-after-free →
   `0xfd`; clean programs (incl. `-O1` optimizer+asan) no false positive, exit 0. Default macOS/x86 unaffected
-  (gated behind `-fasan-shadow`). **PR-2 (stack redzone) also landed** — see the next item. **Remaining:**
-  globals table on arm64; 39-bit-VA / bottom-up-mmap shadow-layout robustness (assumes 48-bit top-down); the
-  faulting-address + shadow dump; then riscv64.
+  (gated behind `-fasan-shadow`). **PR-2 (stack redzone) also landed** — see the next item. **Globals work on
+  arm64 with NO extra code** (validated 2026-07-13): the `asan_g` global-emission path (`mccgen.c`) and
+  `asan_register_globals` (runtime) are both arch-agnostic, so PR-1's enablement already emits the
+  `__asan_globals` table and poisons global right-redzones — global-buffer-overflow traps `shadow byte 0xf9`,
+  clean global/static access is false-positive-free. **So arm64 native-shadow ASan now covers all four core
+  classes** (heap-overflow 0xfa · use-after-free 0xfd · stack-overflow 0xf2 · global-overflow 0xf9).
+  **Remaining:** 39-bit-VA / bottom-up-mmap shadow-layout robustness (assumes 48-bit top-down); the
+  faulting-address + shadow dump (shared with x86 — the "1 — one open question" item); then riscv64.
 - [~] **arm64 native-shadow stack-redzone — landed (PR-2).** `arm64-gen.c` `gen_asan_stack_{prolog,epilog}`
   wired into `gfunc_prolog`/`gfunc_epilog`: the prologue reserves 4 insns and the epilogue (once all locals
   are known via `add_asan_locals`) patches in `__asan_stack_enter(table, x29)` there + emits
