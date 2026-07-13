@@ -84,8 +84,14 @@ asserts cached ⊇ fresh recompute (never narrower / never claims a bit fresh do
 logic gate ctest can't provide with no consumer); shadow **2991/2991** zero-divergence + a 400-source
 `MCC_AST_VLAT=1` soundness sweep (0 aborts). **PR-2+ (deferred):** wire the first consumer — replace
 `ast_ii_width` in `ast_narrow_binary` with `ast_vlat_narrowing` (the value-changing narrowing), then
-feed `ast_vlat_context` into a memo key; then the `/ % << >>` + comparison narrowings; then the
-predicate-vector 4th index.
+feed `ast_vlat_context` into a memo key; then the `/ % << >>` (**LANDED** — `ast_narrow_binop_ranged`
++ `ast_narrow_ranged_ok`/`ast_narrow_fits`, VLat-context-consuming, gated `MCC_AST_VLAT`) + comparison
+narrowings; then the predicate-vector 4th index. **Comparison-operand narrowing DROPPED — backend-
+redundant** (checkpoint 2026-07-13): a relational's operands already sit in native registers, so gcc
+emits e.g. arm64 `cmp w0,w1; cset` / x86 `cmp` at the promoted (32-bit) width with **no extend to
+elide** — narrowing `(int)uc < (int)uc` back to a byte compare changes no emitted instruction (same
+class as V-ident(a) strength-reduction: "backend-redundant — skip"). The remaining live PR-2 steps are
+the memo-key context consumer and the predicate-vector 4th index.
 
 - **Unblocks in one build:** §29 non-distributive narrowing (`/ % << >>` + comparisons), §29
   outer-narrow elimination, V-cprop(c) known-bits/range variant, V-cse(c) redundant-load
@@ -156,10 +162,15 @@ object-diff) plus correctness vs gcc; commit; update TODO.
   (The §27 transform trilogy — interchange `MCC_AST_INTERCHANGE`, fusion `MCC_AST_FUSION`, tiling
   `MCC_AST_TILE` — has LANDED, all default off; see the bucket-1 §27 item for the remaining tiling
   extensions.)
-- [ ] **1. Then:** §24 hot-slice ranking (uses the landed `ast_loop_depth`) · §32a widening
+- [ ] **1. Then:** §24 hot-slice ranking (uses the landed `ast_loop_depth`; **BLOCKED — no consumer
+  yet:** the search budget is applied per-function at full value, `ast_search_budget_ms = ast_search_seconds*1000`
+  in `ast_func_end`, `mccast.c:~12063`, so a hotness ranking is inert until cross-function budget
+  *allocation* exists — and that piece needs §22 emit isolation; do §22/M2 first) · §32a widening
   dataflow · §30 value-table dispatch (needs the P2 `.rodata` data-emission project first) ·
   FLOAT combo M2/M3 (search-infra, lower risk) · V-* strategy-decomposition follow-ons · the §26
   marginal tail (float/struct KGC args, static-link E1a, bitfields, N-worker queue, M7 patchpoint).
+  (**Host note:** the §26 JIT tail is x86_64-ELF-only, D7 — its stubs are hand-emitted x86_64 machine
+  bytes, so those milestones can only be validated on Linux/x86 CI, not the arm64-macOS dev host.)
 - [ ] **2. Endgame:** flip the validated gates default-on — the P0 "next default-on batch" item.
 
 ---
@@ -603,8 +614,11 @@ candidate **search knob** — a distinct `AstStrategy` row or a per-strategy par
   `ast_narrow_run` iterates to a `do/while` fixpoint under `MCC_AST_NARROW_FIX` (**P0 default-on at `-O2+`**; `=0` →
   single pass, byte-identical), wired into the search as the opt-in `AST_SG_NARROWFIX` knob (see
   "widen the search space" above). b) replace the type-width heuristic (`ast_ii_width`) with a
-  demanded-bits/known-bits analysis; c) extend `ast_narrow_binop` past `+ - * & | ^` to shifts and
-  comparisons (mirrors §29 non-distributive item).
+  demanded-bits/known-bits analysis; **c) PARTIAL — shifts LANDED** (`/ % << >>` via
+  `ast_narrow_binop_ranged`, gated `MCC_AST_VLAT`); **comparisons DROPPED — backend-redundant**
+  (relational operands already live in native registers; gcc/mcc compare at the promoted 32-bit width
+  with no extend to elide, so narrowing the operands changes no emitted instruction — see the P1 PR-2
+  note). (mirrors §29 non-distributive item).
 - [ ] **V-cprop** (`ast_cprop_run`, join-vs-per-block already env-gated) — a) promote the
   join/per-block choice from `MCC_AST_CPROP_JOIN` env to a first-class strategy pair; b) copy
   propagation (`local == local`, not just constants); c) known-bits/range lattice variant;
