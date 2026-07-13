@@ -1,11 +1,17 @@
 #ifndef MCC_ARM64_GEN_H
 #define MCC_ARM64_GEN_H
 
-#define MCC_NB_REGS 28
+#define MCC_NB_REGS 32
 
 #define MCC_TREG_R(x) (x)
 #define MCC_TREG_R30 19
 #define MCC_TREG_F(x) (x + 20)
+
+/* Callee-saved integer registers x19..x22, exposed only to the Tier-3
+   register-promotion pool (reg_classes[] entry 0, so the general allocator
+   never picks them).  intr() maps these indices to their physical encoding. */
+#define MCC_TREG_SAVED(x) (28 + (x))
+#define MCC_NB_SAVED 4
 
 #define MCC_RC_INT (1 << 0)
 #define MCC_RC_FLOAT (1 << 1)

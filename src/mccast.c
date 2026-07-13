@@ -2312,11 +2312,30 @@ void ast_hook_implicit_return(void) {
 	ast_add_child(ast_cur, bb, ret);
 }
 
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
 #define AST_PROMO_MAX 5
-static const int ast_promo_caller[3] = {10, 9, 8};
-static const int ast_promo_callee[5] = {3, 12, 13, 14, 15};
-static const int ast_promo_xmm[2] = {22, 23};
+#if defined(MCC_TARGET_X86_64)
+#define AST_PROMO_CALLER_N 3
+#define AST_PROMO_CALLEE_N 5
+#define AST_PROMO_XMM_N 2
+static const int ast_promo_caller[AST_PROMO_CALLER_N] = {10, 9, 8};
+static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {3, 12, 13, 14, 15};
+static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23};
+#else
+/* arm64 PR-1: promote only in callful functions into the callee-saved pool
+   x19..x22 (indices 28..31, mapped by intr()); their incoming values are
+   saved/restored by ast_promo_entry_init/_exit_restore, so no prolog change
+   is needed and the value survives any call.  The caller (leaf) and float
+   pools are held empty here (a leaf caller-saved value is clobbered by any
+   hidden libcall, e.g. arm64-Linux quad long double); revisit once the pool
+   is widened past index 31 (needs a 64-bit pin mask). */
+#define AST_PROMO_CALLER_N 0
+#define AST_PROMO_CALLEE_N 4
+#define AST_PROMO_XMM_N 0
+static const int ast_promo_caller[1] = {-1};
+static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {28, 29, 30, 31};
+static const int ast_promo_xmm[1] = {-1};
+#endif
 #define AST_PROMO_SLOTS (AST_PROMO_MAX * 8)
 static int ast_promo_off[AST_PROMO_SLOTS];
 static int ast_promo_typ[AST_PROMO_SLOTS];
@@ -3364,7 +3383,7 @@ static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) {
 		ast_subtree_span(a, c, lo, hi);
 }
 
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		return -1;
@@ -3563,9 +3582,8 @@ static int ast_plan_promotion(AstArena *a) {
 	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
 	ast_promo_callful = has_call;
 	const int *gp_pool = has_call ? ast_promo_callee : ast_promo_caller;
-	int gp_max = has_call ? (int)(sizeof ast_promo_callee / sizeof *ast_promo_callee)
-												: (int)(sizeof ast_promo_caller / sizeof *ast_promo_caller);
-	int xmm_max = has_call ? 0 : (int)(sizeof ast_promo_xmm / sizeof *ast_promo_xmm);
+	int gp_max = has_call ? AST_PROMO_CALLEE_N : AST_PROMO_CALLER_N;
+	int xmm_max = has_call ? 0 : AST_PROMO_XMM_N;
 	int gp_n = 0, xmm_n = 0;
 	if (ast_color_env && !has_goto) {
 		int cfirst[AST_PROMO_MAX * 8], clast[AST_PROMO_MAX * 8];
@@ -4118,7 +4136,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) {
 			 s = ast_next_sib(a, s)) {
 		switch (ast_kind(a, s)) {
 		case AST_Store: {
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
 			int preg = (ast_promo_n && !ast_in_graft)
 										 ? ast_promo_reg_of(a, ast_child(a, s, 0))
 										 : -1;

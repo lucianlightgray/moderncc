@@ -780,8 +780,29 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   Fixpoint-gated + native arm64/riscv64.
 - [ ] **Verify Tier-4 inline (`ast/replay-inline-spec`) on riscv64/other arches, then ungate** — registered on
   x86_64 + arm64; skip-gated elsewhere.
-- [ ] **Extend the arm64 backend register model for Tier-3 register promotion** — `MCC_NB_REGS=28` doesn't
-  expose x19–x28 — + qemu validation. (promotion analysis is arch-agnostic and reused)
+- [~] **Extend the arm64 backend register model for Tier-3 register promotion — PR-1 landed (callee-saved
+  x19–x22, `MCC_AST_PROMOTE` default off).** The whole `ast_promo_*` block (pools + `ast_plan_promotion` +
+  entry/exit save-restore + the store-rewrite replay hook) was x86_64-`#if`-gated; extended those three
+  guards to arm64 and defined arm64 pools. **Register model:** `MCC_NB_REGS` 28→32; four promotion-only
+  callee-saved slots `MCC_TREG_SAVED(0..3)` at indices 28–31 with `reg_classes[]=0` (so the general
+  allocator never picks them — promotion drives them via the `load(reg,…)` path, not a reg-class); `intr()`
+  maps 28–31→physical x19–x22; `IS_FREG` tightened to the range `[F0,F7]` so the new int indices aren't
+  misclassified as float. **No prolog/epilog change needed** — `ast_promo_entry_init`/`_exit_restore` save
+  the incoming callee-saved value to a stack slot and restore it at the single epilog (arch-agnostic
+  store/load), and callee-saved regs survive every call (incl. hidden libcalls), so callful promotion is
+  sound by construction. Pools (`mccast.c`): arm64 **callee = {x19,x20,x21,x22}** (callful fns); **caller
+  (leaf) and float pools held empty** — a caller-saved value is clobbered by any hidden libcall (e.g.
+  arm64-Linux quad `long double`), and >4 int regs / any leaf/float pool needs indices >31 → a 64-bit pin
+  mask (`ast_pinned_regs`/`sv->pinned` are `unsigned` today). `opt_promote` stays 0 on arm64 ⇒ default
+  byte-neutral. Validated on native arm64/macOS (Mach-O): default exec **296/296** byte-neutral; forced
+  `MCC_AST_PROMOTE=1` exec **296/296**; `exec-replay-promote` **296/296** (now real arm64 coverage, was a
+  no-op); disasm shows `callful`'s 4 locals held in x19–x22 across `bl` with `stur`/`ldur` save-restore;
+  **self-host** — `mcc.c` recompiled with promotion on → a working stage2 mcc that itself compiles+promotes
+  correctly (the heavy-TU DIVMAGIC-class check); new `ast/replay-promote` arm64 variant asserts `callful`
+  promotes (leaf/float abstain). **Remaining (PR-2):** widen the pin mask to 64-bit → add x23–x28 + a
+  caller/leaf pool (with a hidden-libcall guard, e.g. treat `long double` ops as callful) + a float pool
+  (v-regs); run the x86-style qemu-arm64-Linux cross differential + the COLOR+SPILL_SHARE self-host
+  fixpoint on arm64 ([[macos-arm64-status]]). Then flip `opt_promote` on for arm64 after broad exposure.
 - [ ] **Extend the riscv64 backend register model for Tier-3 register promotion** + qemu validation.
 - [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c only emits `R_386_TLS_LE`) —
   needs an i386 cross + a 32-bit sysroot.

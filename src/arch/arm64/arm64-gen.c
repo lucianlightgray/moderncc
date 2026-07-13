@@ -41,7 +41,11 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_FLOAT | MCC_RC_F(4),
 		MCC_RC_FLOAT | MCC_RC_F(5),
 		MCC_RC_FLOAT | MCC_RC_F(6),
-		MCC_RC_FLOAT | MCC_RC_F(7)};
+		MCC_RC_FLOAT | MCC_RC_F(7),
+		0,
+		0,
+		0,
+		0};
 
 #if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
@@ -53,9 +57,11 @@ ST_DATA int func_bound_add_epilog;
 #define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #endif
 
-#define IS_FREG(x) ((x) >= MCC_TREG_F(0))
+#define IS_FREG(x) ((x) >= MCC_TREG_F(0) && (x) <= MCC_TREG_F(7))
 
 static uint32_t intr(int r) {
+	if (r >= MCC_TREG_SAVED(0) && r <= MCC_TREG_SAVED(MCC_NB_SAVED - 1))
+		return (uint32_t)(r - MCC_TREG_SAVED(0) + 19);
 	assert(MCC_TREG_R(0) <= r && r <= MCC_TREG_R30);
 	return r < MCC_TREG_R30 ? r : 30;
 }

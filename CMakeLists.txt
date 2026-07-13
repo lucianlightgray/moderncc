@@ -3065,9 +3065,20 @@ if(MCC_BUILD_TESTS)
                     "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DPROMOTES=loopy,callful,sumptr,fdot"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            elseif(MCC_CPU STREQUAL "arm64")
+                # arm64 Tier-3 PR-1: promotion into the callee-saved pool x19–x22
+                # (callful functions only). The leaf/caller-saved and float pools are
+                # held empty, so loopy/sumptr/fdot abstain here — assert callful only.
+                add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
+                    "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
+                    "-DEXPECT_RC=42" "-DREPLAYED=callful" "-DPROMOTE=1" "-DPROMOTES=callful"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
+                set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             else()
                 mcc_skip_test("ast/replay-promote"
-                    "Tier-3 register promotion is x86_64-only (caller-saved R10/R9/R8 + callee-saved RBX/R12–R15 pools); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
+                    "Tier-3 register promotion is wired for x86_64 (full) + arm64 (callee-saved x19–x22); on ${MCC_CPU} it is a no-op — coverage stays via exec-replay-promote")
             endif()
 
             if(MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
