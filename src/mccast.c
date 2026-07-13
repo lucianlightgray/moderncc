@@ -610,6 +610,7 @@ static void ast_vlat_refine_bound(AstVLat *v, int64_t bound, int is_lower) {
 
 static int ast_vlat_narrowing(AstArena *a, int off, int width_tt) AST_VLAT_ATTR;
 static int ast_vlat_context(AstArena *a, int off, AstVLat *out) AST_VLAT_ATTR;
+static int ast_vlat_context_at(AstArena *a, AstLocal use, AstVLat *out) AST_VLAT_ATTR;
 
 static int ast_vlat_fits_bytes(const AstVLat *v, int width) AST_VLAT_ATTR;
 static int ast_vlat_fits_bytes(const AstVLat *v, int width) {
@@ -5416,7 +5417,7 @@ static int ast_narrow_operand_off(AstArena *a, AstLocal op, int *off) {
 }
 
 static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) {
-	int lt, off, w;
+	int lt, w;
 	uint64_t lv, umax;
 	int64_t smax;
 	AstVLat ctx;
@@ -5424,7 +5425,7 @@ static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) {
 		return 1;
 	if (ast_ident_cval(a, op, &lt, &lv))
 		return value64(lv, tt) == lv;
-	if (!ast_narrow_operand_off(a, op, &off) || !ast_vlat_context(a, off, &ctx))
+	if (!ast_vlat_context_at(a, op, &ctx))
 		return 0;
 	w = ast_ii_width(tt);
 	if (w <= 0 || w >= 8)
@@ -5541,7 +5542,7 @@ static int ast_narrow_elim_srcrange(AstArena *a, AstLocal c, AstVLat *out) {
 	uint64_t cref, iref;
 	AstLocal inner;
 	if (ast_narrow_operand_off(a, c, &off))
-		return ast_vlat_context(a, off, out);
+		return ast_vlat_context_at(a, c, out);
 	if (ast_kind(a, c) != AST_Convert || ast_nchild(a, c) != 1)
 		return 0;
 	inner = ast_first_child(a, c);
@@ -5557,7 +5558,7 @@ static int ast_narrow_elim_srcrange(AstArena *a, AstLocal c, AstVLat *out) {
 		return 0;
 	if (!(it & VT_UNSIGNED) && (ct & VT_UNSIGNED))
 		return 0;
-	return ast_vlat_context(a, off, out);
+	return ast_vlat_context_at(a, inner, out);
 }
 
 static int ast_narrow_elim_fits(AstArena *a, AstLocal c, int tt) {

@@ -281,12 +281,23 @@ never rollout steps and have no symbol in `src/` today:
   whole-function-emit sweep runs it on every node. Gated `MCC_AST_VLAT` → byte-neutral. Validated on
   arm64/mac: build clean (no unused-fn warning via the `ast_func_end` keep-alive); default ctest
   byte-identical; `exec-vlat` (`-O2 MCC_AST_VLAT=1`) **296/296**; a shadow-build `MCC_AST_VLAT=1` sweep
-  over **291** corpus sources → **0** `context_at` aborts / 0 crashes. **Remaining (PR-B):** admit
-  loop-carried IVs via `ast_loop_iv`/`ast_loop_bounds` monotonicity widening (init⊕stride⊕predicate),
-  unblocking §32a — its own soundness treatment (widening/narrowing) + fuzz. **(PR-C):** first consumer
-  (§32a loop-range narrowing / bounds-check elim) + feed `ast_vlat_context` into a memo/`eval_slice`
-  key. Overlaps but is not §29 (that reads the *narrowing-residue* projection `ast_vlat_narrowing` of
-  the same lattice).
+  over **291** corpus sources → **0** `context_at` aborts / 0 crashes. **PR-B LANDED (first region-scoped
+  CONSUMER — the value-changing half, gated):** `ast_narrow_fits` (the ranged `/ % << >>` narrow path)
+  and `ast_narrow_elim_srcrange` (outer-narrow elimination) now read the per-use `ast_vlat_context_at(a,
+  use, …)` at the exact operand ref instead of the whole-function `ast_vlat_context(a, off, …)`. This is
+  **path-sensitive**: it narrows where the same readonly local is *also used unguarded* elsewhere (which
+  drags the whole-function meet to type-full so the old code couldn't fire). Sound by construction —
+  region-scoped ⊆ meet (shadow-asserted) and the fact is exactly the value at that use, so narrowing on
+  it is *more* precise, never less sound. Both consumers already opt-in behind `MCC_AST_NARROW_ELIM`+
+  `MCC_AST_VLAT` → default byte-neutral. Validated arm64/mac: fires (`narrow elim ct=3 tt=49` on a
+  guarded use whose local is meet-widened by an unguarded `sink=x`); correct vs gcc (`32896==32896`);
+  full exec corpus with `MCC_AST_VLAT=1 MCC_AST_NARROW_ELIM=1` forced on → all real programs pass (only
+  the 2 asm tests that skip in ctest differ, identically with gates off, so unrelated); shadow-build
+  `VLAT+NARROW_ELIM` sweep over **291** sources → **0** aborts. **Remaining (PR-C):** admit loop-carried
+  IVs via `ast_loop_iv`/`ast_loop_bounds` monotonicity widening (init⊕stride⊕predicate) — unblocks §32a,
+  its own soundness treatment (widening/narrowing) + fuzz; then feed `ast_vlat_context` into a memo/
+  `eval_slice` key. Overlaps but is not §29 (that reads the *narrowing-residue* projection
+  `ast_vlat_narrowing` of the same lattice).
 - [ ] **[P1] Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
   queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
   ivsr) become O(1) table lookups. PR-2's whole-function `ast_du_*` table subsumes only the two
