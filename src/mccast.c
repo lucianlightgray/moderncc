@@ -5273,6 +5273,8 @@ static int ast_narrow_binop_ranged(int op) {
 	case '/':
 	case '%':
 	case TOK_SHL:
+	case TOK_SAR:
+	case TOK_SHR:
 		return 1;
 	}
 	return 0;
@@ -5292,6 +5294,7 @@ static int ast_narrow_operand_off(AstArena *a, AstLocal op, int *off) {
 static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) {
 	int lt, off, w;
 	uint64_t lv, umax;
+	int64_t smax;
 	AstVLat ctx;
 	if (cls == 0 || cls == 1)
 		return 1;
@@ -5303,7 +5306,10 @@ static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) {
 	if (w <= 0 || w >= 8)
 		return 0;
 	umax = ((uint64_t)1 << (w * 8)) - 1;
-	return ctx.lo >= 0 && (uint64_t)ctx.hi <= umax;
+	if (tt & VT_UNSIGNED)
+		return ctx.lo >= 0 && (uint64_t)ctx.hi <= umax;
+	smax = (int64_t)(umax >> 1);
+	return ctx.lo >= -smax - 1 && ctx.hi <= smax;
 }
 
 static int ast_narrow_ranged_ok(AstArena *a, int op, int tt, int wt, AstLocal op0,
@@ -5322,6 +5328,20 @@ static int ast_narrow_ranged_ok(AstArena *a, int op, int tt, int wt, AstLocal op
 		if (!ast_ident_cval(a, op1, &lt, &lv))
 			return 0;
 		return (int64_t)lv >= 0 && (int64_t)lv <= 31;
+	case TOK_SAR:
+		if (!ast_ident_cval(a, op1, &lt, &lv))
+			return 0;
+		if ((int64_t)lv < 0 || (int64_t)lv > 31)
+			return 0;
+		return ast_narrow_fits(a, op0, c0, tt);
+	case TOK_SHR:
+		if (!(tt & VT_UNSIGNED))
+			return 0;
+		if (!ast_ident_cval(a, op1, &lt, &lv))
+			return 0;
+		if ((int64_t)lv < 0 || (int64_t)lv > 31)
+			return 0;
+		return ast_narrow_fits(a, op0, c0, tt);
 	}
 	return 0;
 }

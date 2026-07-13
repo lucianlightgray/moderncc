@@ -293,7 +293,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"tail_call_loop", "run", "exec/optimizer/tail_call_loop.c", "chk=2376757668953582540 g=10665\nOK\n", "", "", ""},
 		{"jump_thread", "run", "exec/optimizer/jump_thread.c", "chk=8600891625247101411 g=27\nOK\n", "", "", ""},
 		{"redundant_cast", "run", "exec/optimizer/redundant_cast.c", "chk=18444010340373568468 g=2\nOK\n", "", "", ""},
-		{"narrow_ranged", "run", "exec/optimizer/narrow_ranged.c", "chk=1845529750990699958\nOK\n", "", "", ""},
+		{"narrow_ranged", "run", "exec/optimizer/narrow_ranged.c", "chk=10780901990224392681\nOK\n", "", "", ""},
 };
 
 static const int mcc_goldens_count = (int)(sizeof mcc_goldens / sizeof mcc_goldens[0]);

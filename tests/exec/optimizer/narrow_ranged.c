@@ -24,6 +24,22 @@ static int shl_wide(long long a, int c) {
 	return (int)(a << c);
 }
 
+static int sar3(int x) {
+	return (int)((long long)x >> 3);
+}
+
+static unsigned shr_u3(unsigned x) {
+	return (unsigned)((unsigned long long)x >> 3);
+}
+
+static int sar_wide(long long a, int c) {
+	return (int)(a >> c);
+}
+
+static unsigned shr_big(unsigned x) {
+	return (unsigned)((unsigned long long)x >> 40);
+}
+
 int main(void) {
 	volatile unsigned vx = 4000000000u, vy = 7u;
 	volatile int vs = -1234567;
@@ -40,6 +56,11 @@ int main(void) {
 	chk = chk * 31 + div_high(va, 3u);
 	chk = chk * 31 + (unsigned)shl_wide(vw, 40);
 	chk = chk * 31 + (unsigned)shl_wide(vw, 3);
+	chk = chk * 31 + (unsigned)sar3(vs);
+	chk = chk * 31 + (unsigned)sar3(-vs);
+	chk = chk * 31 + shr_u3(vx);
+	chk = chk * 31 + (unsigned)sar_wide(vw, 5);
+	chk = chk * 31 + shr_big(vx);
 	printf("chk=%llu\n", chk);
 	printf("OK\n");
 	return 0;
