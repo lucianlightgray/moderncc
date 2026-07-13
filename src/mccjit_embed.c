@@ -931,14 +931,10 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	{
 		uint32_t qi;
-		int rb = (int)it.ret_type_t & VT_BTYPE;
 		mccjit_last_nparam = it.nparam;
 		mccjit_last_ret_wide = mccjit_type_wide((int)it.ret_type_t);
 		mccjit_last_kgc_ok = 1;
-		if (rb == VT_STRUCT || rb == VT_FLOAT || rb == VT_DOUBLE ||
-				rb == VT_LDOUBLE || rb == VT_VOID)
-			mccjit_last_kgc_ok = 0;
-		if (it.ret_type_t & VT_BITFIELD)
+		if (!mccjit_type_gp((int)it.ret_type_t) || (it.ret_type_t & VT_BITFIELD))
 			mccjit_last_kgc_ok = 0;
 		if (it.func_type == FUNC_ELLIPSIS)
 			mccjit_last_kgc_ok = 0;
