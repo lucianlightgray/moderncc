@@ -877,6 +877,30 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   **Remaining:** wire `mcc_jit_recompile` (still returns NULL) to actually re-invoke the M4 engine into
   a fresh `MCCState`/`run_ptr` via `mcc_relocate` and publish — blocked on the M4 cross-session `Sym`
   closure gap; QSBR reclamation upgrade later. The trigger/pool that calls it is M6.
+- [ ] **[DEFER] M5b — runtime known-good value cache + differential deopt-verify (settled design)** —
+  the runtime soundness+memoization layer for a hot-swapped variant; makes speculative specialization
+  runtime-sound *regardless of static-guard/oracle imperfection*, and is the runtime dual of the static
+  M8 `eval_slice` oracle (here the **baseline execution IS the oracle**, memoized persistently).
+  - **Known-good set:** per hot-swapped variant, keep **sorted, `mmap`'d cache file(s)** of the live-in
+    value tuples proven good (optimized output == baseline output for that input). Sorted → O(log n)
+    binary-search membership; `mmap`'d → persists across runs (warm, profile-guided) and is cheap to map.
+    The tuple key = the guarded live-in domain (§25 hot-value key).
+  - **Entry guard = membership test:** look the incoming live-in tuple up in the sorted known-good set.
+    **HIT** → run the optimized variant directly. **MISS (anonymous/new value)** → run the **original
+    baseline (deopt) variant** for a correct result AND compute the optimized variant's result and
+    compare: **match** → insert the tuple (now known-good; future calls take the fast path); **mismatch**
+    → the optimized variant is unsound for that input → keep the baseline result (permanent deopt for
+    that value) and flag the variant for invalidation/recompile.
+  - **Why sound:** any unverified input falls back to baseline; any divergent input is caught by the
+    differential and never trusted. The static guard becomes an optimization (skip the miss-path check
+    when the value is statically in-domain), not the sole correctness mechanism.
+  - **Open sub-questions:** cache-file format (sorted fixed-width tuple records + header/salt keyed like
+    `ast_search_key_salt`); **side-effect safety** — running baseline+optimized to compare is only
+    directly valid for PURE functions; impure ones need buffered/rolled-back effects or a pure-slice
+    restriction (this gates which functions qualify); insertion concurrency (append+resort under a lock,
+    or per-thread staging merged periodically); eviction / size bound of the set; mismatch →
+    invalidate-vs-recompile policy; interaction with the M8 static oracle (static-in-domain values skip
+    the runtime check entirely).
 - [~] **[DEFER] M6 — Stage 3 triggers + threads + budget — PLUMBING LANDED (362fe0d5), pool deferred** —
   `--jit-threads` flag + `jit_threads` field added; libpthread link now gated on `jit_threads>0` (not
   `embed_jit`). Remaining: `jit-profile` hot-counter strategy, the `.init_array` pool-spawn ctor
@@ -911,9 +935,12 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
 - [ ] **Research the M5 old-variant reclamation** — the triple-buffer/RCU scheme that frees a
   swapped-out region while other threads may still be executing it. (quiescence detection? epoch /
   grace-period reclaim vs never-free? interaction with `mcc_run_free`?)
-- [ ] **Research the runtime cache key + eviction** — the `key → best-known variant` map keyed by §21
-  epoch/cache key + §25 hot-value key. (collision policy? eviction / size bound? does a key-miss pick
-  the deopt baseline or trigger a recompile?)
+- [x] **Research the runtime cache key + eviction — SETTLED (see M5b above)** — the model is a
+  per-variant **sorted `mmap`'d known-good value cache** with **differential deopt-verify** on miss:
+  key = the guarded live-in tuple (§25 hot-value key); key-miss runs the baseline (deopt) AND verifies
+  the optimized result against it, inserting the tuple only on match. Remaining sub-questions
+  (file format, side-effect safety, insertion concurrency, eviction bound, mismatch policy) tracked
+  under M5b.
 - [ ] **Research the M8 `eval_slice` enumeration cap** — refuse any slice whose context-restricted
   domain exceeds a fixed cap (stays JIT-speculative). (what cap value? the static `context_in` domain
   that replaces the runtime-observed range in the guard — how is it derived?)

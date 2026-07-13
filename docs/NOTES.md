@@ -37,6 +37,14 @@ Decisions taken this push (A1a-indexed matrix), with the non-obvious "why":
   munmaps immediately with no quiescence, so a real QSBR/epoch reclaimer is deferred, not day-one.
 - **G2a** — the libpthread link for the JIT pool is gated on `jit_threads>0`, not `embed_jit`
   (default-on), to keep ordinary binaries pthread-free and byte-identical.
+- **M5b runtime known-good cache (settled 2026-07-12)** — hot-swap soundness is a *runtime differential*,
+  not just the static guard: per variant keep a sorted `mmap`'d file of live-in tuples proven
+  optimized==baseline; the entry guard is a membership test; a miss runs the baseline (deopt) AND
+  compares the optimized result, inserting only on match, permanently deopting (and flagging for
+  recompile) on mismatch. The baseline execution IS the oracle, so the JIT stays correct even if the
+  static guard/`eval_slice` oracle is imperfect — the static side just lets in-domain values skip the
+  miss-path check. Key caveat: comparing by re-running both arms is only valid for PURE functions;
+  impure functions need buffered/rolled-back effects or a pure-slice restriction (gates eligibility).
 - **P2a** — `MCC_AST_JIT` is targeted to flip default-on (P0-style) after the full validation bar
   (byte-identity, shadow, differential vs gcc/clang, self-host fixpoint, fuzz, cross-arch) plus a soak
   — it is not a permanent opt-in.
