@@ -1166,8 +1166,11 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Design the §33e window-level cache key** — `ast_intention_hash` runs
   pre-graft over the caller arena, excluding the callee body, so a window transform
   needs a window-level key or an accepted first-graft cache miss.
-- [ ] **Extend §35 to an n-ary reassociation-aware ordering** past top-level
-  commutative pairs (reassociation itself stays out — not commutative-safe).
+- [x] **§35 n-ary Sethi–Ullman chain ordering — LANDED gated (91132620, `MCC_AST_SETHI_NARY` off)** —
+  reorders commutative-associative INTEGER chains (`+ * & | ^`, ≥3 pure same-type leaves) by
+  Sethi–Ullman number (highest-pressure first), a value-preserving permutation; reassociation stays out.
+  Default 3968/3968 byte-identical; gate-on fuzz 120/0-miscompile, value-identical vs gcc, self-host -O0
+  fixpoint + -O2 3-stage byte-identical (fires 3× on mcc.c); float/call/mixed/pointer chains not reordered.
 - [ ] **Implement §36 spill-slot sharing** — extend the `MCC_AST_COLOR` interval
   sharing to spilled ranges; subsumes the A1 backward-liveness item.
   Fixpoint-gated + native arm64/riscv64.
