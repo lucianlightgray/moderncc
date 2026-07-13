@@ -521,12 +521,19 @@ backend does **not** run a JIT "alongside" AOT: at `-O4` (or `--jit`, or a JIT-d
 - **Compound paths emerge (K2).** A 99%-match specialized variant + a switch-table covering the 1% poisoned
   (code+data) misses is a *compound* optimization the search should discover and promote when it benchmarks
   better than the previous best.
-- **⚠ The one seam (open — see the reproducibility item):** the *scorer* cannot be identical across sinks. The
-  runtime-JIT sink may use a **wall-clock** best-of-3 benchmark; the AOT-static sink **cannot** without breaking
-  the M8 byte-identical self-host bar — a wall-clock-driven search is machine/timing-dependent and non-
-  reproducible. AOT `-O4` must therefore score with a **deterministic cost/emit-size model** while the runtime
-  JIT scores with wall-clock. Same engine, same pool, *sink-dependent scorer.* This is the precise boundary
-  where "one engine" is literally true for the strategy pool but not for the objective function.
+- **The one seam (RESOLVED): the *scorer* is sink-dependent — same engine, same pool, different objective +
+  different range source.** The runtime-JIT sink uses a **wall-clock** best-of-3 benchmark (K5) fed by
+  **runtime-observed** live-in ranges (J6A). The AOT-static sink **cannot** use wall-clock without breaking the
+  M8 byte-identical self-host bar, so it scores with a **deterministic cost/emit-size model** and derives its
+  ranges from **static analysis / const-folding** (the `AstVLat`/§29 lattice min/max) instead of runtime
+  observation. This is opt-in via `-O4+` and is **explicitly "known to be less effective than runtime values,"
+  but must be no worse than gcc/clang inferring ranges by the same/similar static methods** (the parity bar).
+  To spend a limited compile-time budget well, the AOT sink **sorts the strategy pool by expected gain — biggest
+  known gains first** (gain-ordered, time-budgeted scheduling; consumes the `ast_fc_forecast` best-first work of
+  M1(c) + the §24 hot-slice ranking + §31 beam). So "one engine" is literally true for the *strategy pool and
+  search*; the *objective function and range source* differ by sink — and that difference is exactly what keeps
+  the AOT build byte-reproducible while the runtime JIT stays free to benchmark. **New work item below:
+  "AOT-static sink scorer."**
 
 **Reusable infra (verified grounding).** `-run` compile-to-executable-memory (`mcc_run`, `mccrun.c`;
 `host_runmem_alloc` RWX / W^X dual-map + `host_runmem_protect` + `host_icache_flush`) + `mcc_relocate` (rejects
@@ -583,17 +590,26 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   the non-ABI kernel carries its **own pre/post-Call harness** to meet the ABI at the boundary. Nothing is
   binary — the search picks per call/workload. (M5c)
 - **K8 — inline-vs-shim is a search axis**, not a fixed choice: permute × combine, benchmark wins. (M5c)
-- **K9 — OPEN (under discussion): quiescence for in-place code-patch.** Pointer-swap needs no quiescence and is
-  the safe floor; in-place patch (D3B) requires a quiescence protocol, which couples back to J5 (deferred
-  reclamation). The crux: does "benchmark everything, nothing binary" justify un-deferring J5/QSBR to admit
-  in-place patch to the benchmarkable pool? **The correctness floor** — a wrong quiescence choice crashes, it
-  does not merely run slower — means the pool membership is correctness-gated per platform, unlike the other
-  K-axes. Resolve before building any in-place mechanism.
-- **⚠ OPEN (reproducibility seam):** default the on-disk KGC/benchmark cache **ephemeral** (per-run) so the M8
-  byte-identical self-host + fuzz bars see deterministic behavior, with **opt-in persistence** for production;
-  the J1A on-disk poison persistence then bites only under that opt-in flag. Reconcile vs J1A. (This is the
-  concrete form of the ⚠ scorer seam above.) **Also still open:** hardened-env (W^X-denied) fallback, and JIT-
-  frame `perf-map`/unwind observability — neither was decided.
+- **K9 — RESOLVED: QSBR.** Build QSBR (quiescent-state-based reclamation) now — it is the general primitive for
+  *both* in-place-patch quiescence and old-variant reclamation, so it un-defers J5 and admits the in-place
+  code-patch (D3B) mechanism to the benchmarkable pool. Per-thread quiescent-point instrumentation is gated
+  behind the `-O4`/`--jit` runtime sink (AOT-only builds pay nothing). **The correctness floor holds:** pool
+  membership is correctness-gated per platform (a wrong quiescence choice crashes), and *within* the correct
+  set the benchmark decides — and once in-place patch exists, the **quiescence mechanism itself** (QSBR vs
+  stop-the-world vs signal-safepoint) becomes its own benchmarkable axis. Near-term pool = pointer-swap +
+  dual-map page flip (both quiescence-free) + in-place patch (QSBR-gated).
+- **RESOLVED (reproducibility): ephemeral-default runtime cache.** The unification makes this cheap: AOT `-O4`
+  (what M8 self-host validates) uses only the deterministic scorer + static facts and **never touches the
+  runtime KGC/benchmark cache**, so it is byte-reproducible by construction. The on-disk KGC/benchmark cache
+  exists only at the runtime-JIT sink; default it **ephemeral** (per-run) for JIT'd-program determinism +
+  CI/fuzz safety, with **opt-in persistence** for production — J1A's poison persistence bites only under that
+  flag. Self-host/fuzz reproducibility is unaffected either way.
+- **RESOLVED (hardened-env W^X-denied fallback): boot-probe.** The `.init_array` ctor probes JIT feasibility
+  (`MAP_JIT` / RWX); on failure the program silently runs the AOT baseline (deopt-first already provides it) +
+  a `MCC_JIT_VERBOSE` note. Never errors.
+- **RESOLVED (observability): emit a `perf-<pid>.map`** for JIT'd variants (cheap; unblocks `perf` profiling of
+  JIT'd frames). Runtime DWARF/unwind deferred — though the in-place-patch cold-only quiescence path would want
+  it, QSBR (K9) doesn't, so unwind stays deferred.
 
 **Milestones (dependency-ordered):**
 
@@ -613,9 +629,9 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   `__ATOMIC_RELEASE` swap), including a genuine const-param-specialized variant. x86_64 ELF only (D7).
   **Remaining:** **[J3A]** connect the in-*program* mode-6 slot to the runtime recompile — build the per-sym
   blob registry + generic ctor (an in-memory `-run` program today gets a slot pointing at the AOT body with no
-  recompile hookup); this is the headline "real live JIT" capability. **[J5·DEFER]** old-variant reclamation
-  (QSBR/leak-and-cap) stays deferred until memory usage becomes an issue — no interim bounded pool. Trigger/pool
-  = M6 (landed).
+  recompile hookup); this is the headline "real live JIT" capability. **[J5→K9: un-deferred]** old-variant
+  reclamation is now built via **QSBR** — K9 requires QSBR for in-place-patch quiescence, and the same primitive
+  gives principled reclamation, so J5 is no longer deferred (it rides K9's QSBR). Trigger/pool = M6 (landed).
 - [~] **M5b — runtime known-good cache + differential deopt-verify — mechanism + live integration landed;
   policy + FP args deferred** — `MccjitKgc` = sorted set of fixed-width live-in tuples backed by an `mmap`'d
   file; HIT → variant, MISS → run baseline + variant, match → insert, mismatch → return the baseline result (a
@@ -674,6 +690,21 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   variant passes the range/soundness sanity tests, it runs a best-of-3 benchmark against the currently-selected
   variant and is promoted only if it wins (the runtime-JIT wall-clock scorer; the AOT-static sink uses the
   deterministic cost/size scorer instead — the ⚠ seam).
+- [ ] **[AOT-static sink scorer] `-O4+` deterministic search** — the AOT sink of the one engine: (a) score with
+  the deterministic cost/emit-size model (no wall-clock); (b) derive live-in min/max ranges from static analysis
+  / const-folding (`AstVLat`/§29), the static analog of J6A's runtime range capture; (c) **gain-ordered,
+  time-budgeted strategy scheduling** — sort the pool by expected gain, biggest first, so a limited compile
+  budget captures the largest wins (consumes M1(c) `ast_fc_forecast` best-first + §24 hot-slice ranking + §31
+  beam). **Bar:** opt-in, "known less effective than runtime values" but **no worse than gcc/clang static range
+  inference** (parity). Depends on P1 (the VLat lattice) for the range source.
+- [ ] **[K9] QSBR quiescence + reclamation** — quiescent-state-based reclamation as the shared primitive for
+  in-place-patch quiescence (admits D3B to the J10 pool) and old-variant reclamation (resolves J5). Per-thread
+  quiescent-point instrumentation gated behind the `-O4`/`--jit` runtime sink. Once landed, the quiescence
+  mechanism becomes its own benchmarkable axis (QSBR vs stop-the-world vs signal-safepoint).
+- [ ] **[hardened-env] Boot-probe JIT feasibility** — the `.init_array` ctor probes `MAP_JIT`/RWX; on failure
+  run the AOT baseline silently (deopt-first) + a `MCC_JIT_VERBOSE` note. Never errors.
+- [ ] **[observability] Emit `perf-<pid>.map`** for JIT'd variants (unblocks `perf` on JIT'd frames). Runtime
+  DWARF/unwind deferred (QSBR needs no unwind; only the dropped cold-only quiescence path would have).
 - [ ] **[K6] Exhaustive content-addressed data cache + data→code substitution** — the sorted `mmap`'d data
   cache is keyed by incremental hash; on a hash match against a previously-computed optimizer output, replace
   the data emission with the already-optimized code. **TODO — the lifecycle is ambiguous:** direction of
