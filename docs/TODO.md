@@ -960,13 +960,6 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
 
 **Research / open questions:**
 
-- [ ] **Research the M4 engine-slice extraction** — what exactly of the ~800 KB strategy engine +
-  per-function intention tree must be embedded to re-invoke it at runtime, and how to isolate the
-  size/build cost behind `--embed-jit`? (minimal closure of `ast_strategies` + memo/search deps? static
-  vs dynamically-linked slice? build-time size budget?)
-- [ ] **Research the M5 old-variant reclamation** — the triple-buffer/RCU scheme that frees a
-  swapped-out region while other threads may still be executing it. (quiescence detection? epoch /
-  grace-period reclaim vs never-free? interaction with `mcc_run_free`?)
 - [ ] **Research the M8 `eval_slice` enumeration cap** — refuse any slice whose context-restricted
   domain exceeds a fixed cap (stays JIT-speculative). (what cap value? the static `context_in` domain
   that replaces the runtime-observed range in the guard — how is it derived?)
