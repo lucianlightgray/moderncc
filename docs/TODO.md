@@ -57,7 +57,14 @@ out the search vocabulary before P1..P3 lean on it.
 - Not in P0: the inline/promote value axes — they want emit-size scoring (needs §22
   scratch-`Section` isolation), so they stay `[FLOAT]`.
 
-### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L** · **PR-1 LANDED**
+### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L** · **PR-1/A/B LANDED · PR-C held**
+
+**Status (checkpoint 2026-07-13):** PR-1 (side-car + both projections) · **PR-A** (region-scoped per-use
+projection `ast_vlat_context_at`) · **PR-B** (first value-changing consumer — path-sensitive narrowing in
+`ast_narrow_fits`/`ast_narrow_elim`) all LANDED, gated `MCC_AST_VLAT`, byte-neutral, full ctest 5169/5169
+on arm64. **PR-C** (loop-IV monotonicity widening, the §32a core) is spec'd + **held** — miscompile-
+sensitive, and its validator (the differential fuzzer) is x86-only. Details in the `[P1] context_in /
+context_out` item below.
 
 Build §29 range/known-bits and `context_in`/`context_out` as **one** artifact with two
 projections, not two lattices. One integer value-domain lattice over locals, mining the
@@ -102,12 +109,21 @@ the memo-key context consumer and the predicate-vector 4th index.
 - First-PR surface: representation (range ∧ known-bits), the two projections, the fixpoint
   driver, and the `ast_du_*`/`ast_hash_*` hook points.
 
-### P2 — Const-data rewrite · *root-blocker clear*
+### P2 — Const-data rewrite · *root-blocker clear* — **M5 primitive LANDED**
 
 Build the M5 `AstKind` data node + re-emit pass — the single missing mechanism the whole data
 cluster waits on (`kind_names[]` has no data kind; const bytes are `memcpy`'d at parse time
 outside the AST capture window). Then M6 datacomp (ctor + `__mcc_decompress` runtime) and M4
 fair scoring fall out.
+
+**Status (checkpoint 2026-07-13):** `AST_Data` kind + `kind_names[]` LANDED, and the **re-emit
+primitive** `ast_data_reemit` (size-preserving in-place section rewrite) LANDED + validated
+(329-source `MCC_AST_DATA_REEMIT` self-test, 0 mismatches; full ctest 5169/5169). **Architectural
+finding:** the data node is NOT a per-function AST node — `ast_hook_data` fires at TU scope with no
+`ast_cur` arena, so the primitive operates on the section-level side-car (`ast_data_recs`). **Remaining:**
+the size-CHANGING datacomp rewrite = M6 (C) `.init_array` decompress ctor + (D) `__mcc_decompress`
+runtime (multi-backend, breaks link-time-constant consumers) + M4(b/c) score-fold. Details in the
+`[P2] M5` item below.
 
 - **Decouples the M4↔M6 apparent circularity:** once a transform *owns* a candidate's bytes
   the data-delta is per-candidate and transform-attributed, so M4(b/c) folds into the score
