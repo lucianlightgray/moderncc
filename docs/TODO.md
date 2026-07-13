@@ -1075,6 +1075,19 @@ tag and are sequenced by § Strategic path, not by their bucket.
   is the separate riskier change; promote stays at its heuristic. Also still deferred: inline as a
   freely-reorderable mid-sequence arena graft (`fold→inline→fold`) — `ast_inline_graft` grafts during the
   emit-replay traversal, not as a standalone pass.
+  **ARM64/macOS-HOST FINDING (2026-07-13): base `exec-search-emitiso/*` crashes non-deterministically on
+  arm64/mac, but ONLY when the fork score-pool is also on.** Repro: `MCC_TEST_OPT=-O4 MCC_AST_SEARCH=1
+  MCC_AST_SEARCH_EMITSIZE=1 MCC_AST_SEARCH_EMITISO=1 MCC_SEARCH_WORKER=1` on `errors_and_warnings` (a
+  single `-dt -run` process compiling+running ~295 test functions) crashes partway — the crash *point
+  moves* run-to-run (`test_return_from_statement_expr`, `test_scope_1`, …) and under `ctest -j8` load it
+  reddens 1–2 tests. **Isolated to the fork pool:** dropping `MCC_SEARCH_WORKER=1` → emitiso passes 3/3
+  (295/295 each). So this is NOT the inline/promote value-axis shared-defect above (that's base-emitiso-
+  clean); it is a **`MCC_SEARCH_WORKER` (ast_search_pool COW-fork scorer) × `.mcc.scratch.text`
+  emit-measurement interaction on Mach-O/arm64** — plausibly a non-fork-safe global, the RWX/W^X run-mem
+  map, or Mach-O scratch-section state surviving the fork differently than ELF. Both flags default-OFF
+  and off every shipping/`-O1..-O3` path; x86-Linux CI is green (per STEP-1's self-host+differential
+  validation), so this is an arm64-host-only defect in a doubly-opt-in `-O4` search combo. Not yet
+  root-caused; the CI-lock (b04cd79b) is correctly catching it on this host.
 - [ ] **Explore EMI mutation (Orion/Athena/Hermes)** targeting optimizer
   miscompiles.
 - [ ] **Design the broader template library** (algebraic/dead-branch/jump-table).
