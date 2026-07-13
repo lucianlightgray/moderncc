@@ -873,11 +873,15 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   blob, len)` to recompile from the blob and publish into the mode-6 slot. Verified `./prog`: boots, swaps
   (probe(7)=15), f(0..4) correct. Default 3968/3968 byte-identical; embedjit 353/353. Leaf-int AST-node
   closure is empty cross-session; only the primitive FUNC signature is rebuilt. `src/algorithms/jit.h` =
-  M7b memo escape-hatch. **Remaining:** (1) **Stage-2 CType-graph closure** — pointer params
-  (`mk_pointer` type.ref) + calls (`VT_SYM` callee, runtime-bound via `dlsym(RTLD_DEFAULT)`); (2) static
-  `libmcc.a` link (E1a) instead of the dynamic dep; (3) a per-sym blob **registry** + one generic ctor;
-  (4) a general (non-leaf) trampoline, or relocate the mode-6 stub to fn entry so the slot holds a
-  full-function pointer; (5) ~800 KB Tier-B size validation.
+  M7b memo escape-hatch. **Stage-2 LANDED (5363ebce):** pointer params + external calls close the
+  CType/Sym graph (role side-table PLAIN/NAMED/PTR/FUNC + worklist expand + memoized cycle-safe rebuild;
+  callees bind at runtime via `dlsym(RTLD_DEFAULT)`); verified live (`prog_g` g=42/-1, `prog_h`→abs
+  h=13/6). **Remaining:** (1) structs/unions in the type graph (deferred → NULL today); (2) static
+  `libmcc.a` link (E1a) instead of the dynamic dep; (3) a per-sym blob **registry** + one generic ctor
+  (one ctor per fn today); (4) a general (non-leaf) trampoline, or relocate the mode-6 stub to fn entry so
+  the slot holds a full-function pointer (the `MCC_JIT_VERBOSE` boot probe is leaf-`int(int)`-only today);
+  (5) fix the non-fatal `libmccrt.a not found` on the call-bearing embed link; (6) ~800 KB Tier-B size
+  validation.
 - [~] **M5 — dispatch (mode 6, 9670f2f9) + full in-process hot-swap loop LANDED (b52793b2); in-program
   wiring deferred** — `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` →
   8-byte writable `.data` slot, `R_X86_64_64` slot→body reloc). The complete recompile→publish→swap loop
