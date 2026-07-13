@@ -44,6 +44,7 @@ void mcc_jit_publish(void **slot, void *variant);
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
 MCCJIT_LOCAL MCCState *mccjit_last_state;
+MCCJIT_LOCAL int mccjit_last_purity;
 
 MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) {
 	uint64_t h = 0xcbf29ce484222325ull;
@@ -804,6 +805,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	if (it.has_external)
 		js->nostdlib = 0;
 
+	mccjit_last_purity = ast_fn_purity(it.arena);
+
 	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
 		mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
 
@@ -1348,6 +1351,7 @@ typedef struct MccjitKgc {
 	MccjitKgcHdr *hdr;
 	int64_t *tuples;
 	uint32_t arity;
+	int memoize_ok;
 } MccjitKgc;
 
 static size_t mccjit_kgc_bytes(uint64_t cap, uint32_t arity) {
@@ -1383,6 +1387,7 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 	size_t initbytes;
 	memset(k, 0, sizeof *k);
 	k->fd = -1;
+	k->memoize_ok = 1;
 	if (arity == 0 || arity > MCCJIT_KGC_ARITY)
 		return -1;
 	k->arity = arity;
@@ -1539,12 +1544,13 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
 		tuple[i] = 0;
 	tuple[0] = x;
-	if (mccjit_kgc_contains(k, tuple))
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple))
 		return (int64_t)vf((int)x);
 	bval = (int64_t)bf((int)x);
 	vval = (int64_t)vf((int)x);
 	if (vval == bval) {
-		mccjit_kgc_insert(k, tuple);
+		if (k->memoize_ok)
+			mccjit_kgc_insert(k, tuple);
 		return bval;
 	}
 	if (flagged)
@@ -1721,6 +1727,244 @@ int mccjit_selftest_kgc(void) {
 	mccjit_last_state = NULL;
 	mcc_delete(s1);
 	printf("mccjit-selftest-kgc: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+static int mccjit_classify_blob(const void *buf, size_t len) {
+	MccjitIntent it;
+	MCCState *js;
+	int purity;
+	js = mcc_new();
+	if (!js)
+		return -1;
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) {
+		mcc_exit_state(js);
+		mcc_delete(js);
+		return -1;
+	}
+	purity = ast_fn_purity(it.arena);
+	mccjit_intent_release(&it);
+	mcc_exit_state(js);
+	mcc_delete(js);
+	return purity;
+}
+
+static const char *mccjit_purity_name(int p) {
+	switch (p) {
+	case AST_PURITY_TIER0:
+		return "TIER0";
+	case AST_PURITY_TIER1:
+		return "TIER1";
+	case AST_PURITY_IMPURE:
+		return "IMPURE";
+	default:
+		return "ERR";
+	}
+}
+
+int mccjit_selftest_purity(void) {
+	static const struct {
+		const char *src;
+		const char *fn;
+		int nostdlib;
+		int want;
+	} cases[4] = {
+			{"int f(int x){return x*2+1;}", "f", 1, AST_PURITY_TIER0},
+			{"int g(int *p, int x){return p ? *p + x : -1;}", "g", 1,
+			 AST_PURITY_TIER1},
+			{"int s(int *p, int x){*p = x; return x;}", "s", 1, AST_PURITY_IMPURE},
+			{"int abs(int); int h(int x){return abs(x) + 1;}", "h", 1,
+			 AST_PURITY_IMPURE},
+	};
+	int fails = 0;
+	int i;
+
+	printf("mccjit-selftest-purity: begin\n");
+	printf("mccjit-selftest-purity: classify  fn  got       want      ok\n");
+	for (i = 0; i < 4; i++) {
+		unsigned char *blob;
+		size_t blen;
+		MCCState *s1;
+		int got, ok;
+		blob = mccjit_stash_one(cases[i].src, cases[i].fn, cases[i].nostdlib, &blen,
+														&s1);
+		if (!s1 || !blob) {
+			printf("mccjit-selftest-purity: %s stash failed\n", cases[i].fn);
+			if (s1)
+				mcc_delete(s1);
+			mcc_free(blob);
+			fails++;
+			continue;
+		}
+		got = mccjit_classify_blob(blob, blen);
+		ok = (got == cases[i].want);
+		printf("mccjit-selftest-purity:           %-3s %-9s %-9s %s\n", cases[i].fn,
+					 mccjit_purity_name(got), mccjit_purity_name(cases[i].want),
+					 ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+
+	{
+		static const struct {
+			const char *src;
+			const char *fn;
+			int want;
+		} wire[2] = {
+				{"int f(int x){return x*2+1;}", "f", AST_PURITY_TIER0},
+				{"int g(int *p, int x){return p ? *p + x : -1;}", "g",
+				 AST_PURITY_TIER1},
+		};
+		int w;
+		printf("mccjit-selftest-purity: recompile-path wiring (mccjit_last_purity "
+					 "set by mcc_jit_recompile_blob):\n");
+		for (w = 0; w < 2; w++) {
+			unsigned char *blob;
+			size_t blen;
+			MCCState *s1;
+			void *rj;
+			int tier, ok;
+			blob = mccjit_stash_one(wire[w].src, wire[w].fn, 1, &blen, &s1);
+			if (!s1 || !blob) {
+				if (s1)
+					mcc_delete(s1);
+				mcc_free(blob);
+				fails++;
+				continue;
+			}
+			rj = mcc_jit_recompile_blob(blob, blen);
+			tier = mccjit_last_purity;
+			if (rj && mccjit_last_state)
+				mcc_delete(mccjit_last_state);
+			mccjit_last_state = NULL;
+			ok = (tier == wire[w].want);
+			printf("mccjit-selftest-purity:           %-3s -> %-6s memoize_ok=%d %s\n",
+						 wire[w].fn, mccjit_purity_name(tier), tier == AST_PURITY_TIER0,
+						 ok ? "OK" : "FAIL");
+			if (!ok)
+				fails++;
+			mcc_free(blob);
+			mcc_delete(s1);
+		}
+	}
+
+	{
+		static const char src_t[] = "int *gp; int t(int x){return *gp + x;}";
+		static const char src_tv[] = "int tv(int x){return x + 10;}";
+		unsigned char *tblob = NULL, *vblob = NULL;
+		size_t tlen = 0, vlen = 0;
+		MCCState *st = NULL, *sv = NULL;
+		int (*baseline)(int) = NULL;
+		int (*variant)(int) = NULL;
+		int **gpp = NULL;
+		int cell = 0;
+		int tier = -1;
+
+		tblob = mccjit_stash_one(src_t, "t", 1, &tlen, &st);
+		if (st && tblob && mcc_relocate(st) == 0) {
+			baseline = (int (*)(int))mcc_get_symbol(st, "t");
+			gpp = (int **)mcc_get_symbol(st, "gp");
+		}
+		vblob = mccjit_stash_one(src_tv, "tv", 1, &vlen, &sv);
+		if (sv && vblob && mcc_relocate(sv) == 0)
+			variant = (int (*)(int))mcc_get_symbol(sv, "tv");
+
+		if (tblob)
+			tier = mccjit_classify_blob(tblob, tlen);
+
+		printf("mccjit-selftest-purity: gating demo tier(t)=%s (memoize_ok=%d)\n",
+					 mccjit_purity_name(tier), tier == AST_PURITY_TIER0);
+		if (tier != AST_PURITY_TIER1)
+			fails++;
+
+		if (gpp)
+			*gpp = &cell;
+
+		if (!baseline || !variant || !gpp) {
+			printf("mccjit-selftest-purity: gating demo setup failed "
+						 "(baseline=%p variant=%p gpp=%p)\n",
+						 (void *)baseline, (void *)variant, (void *)gpp);
+			fails++;
+		} else {
+			MccjitKgc ka, kb;
+			int oa = mccjit_kgc_open(&ka, NULL, mccjit_salt_witness(), 1);
+			int ob = mccjit_kgc_open(&kb, NULL, mccjit_salt_witness(), 1);
+			if (oa != 0 || ob != 0) {
+				printf("mccjit-selftest-purity: kgc open failed\n");
+				fails++;
+			} else {
+				int64_t r1, r2, r3, r4;
+				int f1 = 0, f2 = 0, f3 = 0, f4 = 0;
+
+				ka.memoize_ok = 1;
+				kb.memoize_ok = (tier == AST_PURITY_TIER0);
+
+				printf("mccjit-selftest-purity: --- gating demo: t is %s, correct "
+							 "treatment memoize_ok=%d ---\n",
+							 mccjit_purity_name(tier), kb.memoize_ok);
+				printf("mccjit-selftest-purity: t(x)=*gp+x ; "
+							 "variant=speculative t (assumes *gp==10)\n");
+
+				cell = 10;
+				r1 = mccjit_kgc_call1(&ka, (void *)variant, (void *)baseline, 5, &f1);
+				cell = 100;
+				r2 = mccjit_kgc_call1(&ka, (void *)variant, (void *)baseline, 5, &f2);
+				printf("mccjit-selftest-purity: [memoize_ok=1] t(5) *gp=10 ->%lld ; "
+							 "*gp=100 (repeat)->%lld flagged=%d  (unsound: stale, want 105)\n",
+							 (long long)r1, (long long)r2, f2);
+
+				cell = 10;
+				r3 = mccjit_kgc_call1(&kb, (void *)variant, (void *)baseline, 5, &f3);
+				cell = 100;
+				r4 = mccjit_kgc_call1(&kb, (void *)variant, (void *)baseline, 5, &f4);
+				printf("mccjit-selftest-purity: [memoize_ok=0] t(5) *gp=10 ->%lld ; "
+							 "*gp=100 (repeat)->%lld flagged=%d  (sound: re-differentiated)\n",
+							 (long long)r3, (long long)r4, f4);
+
+				if (r1 != 15) {
+					printf("mccjit-selftest-purity: setup r1 expected 15\n");
+					fails++;
+				}
+				if (r2 != 15) {
+					printf("mccjit-selftest-purity: memoize_ok=1 did not fast-path stale\n");
+					fails++;
+				}
+				if (r4 != 105 || !f4) {
+					printf("mccjit-selftest-purity: memoize_ok=0 did not re-differentiate "
+								 "(r4=%lld f4=%d, want 105/1)\n",
+								 (long long)r4, f4);
+					fails++;
+				}
+				mccjit_kgc_close(&ka);
+				mccjit_kgc_close(&kb);
+			}
+		}
+
+		mcc_free(tblob);
+		mcc_free(vblob);
+		if (st)
+			mcc_delete(st);
+		if (sv)
+			mcc_delete(sv);
+	}
+
+	mcc_free(mccjit_last_blob);
+	mccjit_last_blob = NULL;
+	mccjit_last_len = 0;
+	mccjit_last_state = NULL;
+	printf("mccjit-selftest-purity: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

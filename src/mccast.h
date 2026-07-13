@@ -79,6 +79,16 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root);
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 										int *color);
 
+#if MCC_EMBED_JIT
+typedef enum AstPurity {
+	AST_PURITY_IMPURE = 0,
+	AST_PURITY_TIER1 = 1,
+	AST_PURITY_TIER0 = 2
+} AstPurity;
+
+int ast_fn_purity(const AstArena *a);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

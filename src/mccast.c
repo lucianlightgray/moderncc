@@ -4805,6 +4805,28 @@ static int ast_ident_pure_compute(AstArena *a, AstLocal n) {
 	return 1;
 }
 
+#if MCC_EMBED_JIT
+int ast_fn_purity(const AstArena *a) {
+	AstLocal nn = ast_count(a), n;
+	int has_load = 0;
+	for (n = 0; n < nn; n++) {
+		if (ast_type_t(a, n) & VT_VOLATILE)
+			return AST_PURITY_IMPURE;
+		switch (ast_kind(a, n)) {
+		case AST_Store:
+		case AST_Invoke:
+			return AST_PURITY_IMPURE;
+		case AST_Load:
+			has_load = 1;
+			break;
+		default:
+			break;
+		}
+	}
+	return has_load ? AST_PURITY_TIER1 : AST_PURITY_TIER0;
+}
+#endif
+
 static int ast_ident_same_scan(const AstArena *a, AstLocal x, AstLocal y) {
 	if (a->kind[x] != a->kind[y] || a->op[x] != a->op[y] ||
 			a->type_t[x] != a->type_t[y] || a->type_ref[x] != a->type_ref[y] ||

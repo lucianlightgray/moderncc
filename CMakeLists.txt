@@ -3624,6 +3624,12 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_kgc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-kgc COMMAND jit_selftest_kgc)
             set_tests_properties(jit/selftest-kgc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_purity tests/embed/jit_selftest_purity.c)
+            target_link_libraries(jit_selftest_purity PRIVATE libmcc)
+            target_include_directories(jit_selftest_purity PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-purity COMMAND jit_selftest_purity)
+            set_tests_properties(jit/selftest-purity PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
