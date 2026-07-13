@@ -3327,6 +3327,21 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_INTERCHANGE=1")
         endforeach()
 
+        # §27 loop fusion: force MCC_AST_FUSION on across the exec corpus so every fusion-legal
+        # adjacent same-trip loop pair is merged and its runtime output validated (a wrong merge —
+        # dropped/duplicated increment, mis-hoisted IV init, illegal fuse across a backward dep —
+        # would surface as a wrong result). Value-changing, so an exec (runtime) variant.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-fusion/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-fusion-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-fusion/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_FUSION=1")
+        endforeach()
+
         # -fmerge-constants string pooling: force MCC_MERGE_STRINGS on across the exec corpus so
         # every identical rodata literal is merged and re-homed, and the runtime output validates
         # that the shared storage + symbol re-bind is correct (a lost NUL or wrong offset shows up

@@ -153,8 +153,8 @@ validate the gated-ON path to the full M8 bar; independently re-verify firing (a
 test often does NOT fire the pass — const-folds or wrong shape; confirm via `-v128` TRACE or an
 object-diff) plus correctness vs gcc; commit; update TODO.
 
-- [ ] **1. §27 loop fusion**, then **§27 tiling**. (§27 loop interchange LANDED —
-  `MCC_AST_INTERCHANGE`, default off; see the bucket-1 §27 item for the fusion/tiling design.)
+- [ ] **1. §27 loop tiling.** (§27 interchange `MCC_AST_INTERCHANGE` + fusion `MCC_AST_FUSION`
+  both LANDED, default off; see the bucket-1 §27 item for the tiling design.)
 - [ ] **2. Then:** §24 hot-slice ranking (uses the landed `ast_loop_depth`) · §32a widening
   dataflow · §30 value-table dispatch (needs the P2 `.rodata` data-emission project first) ·
   FLOAT combo M2/M3 (search-infra, lower risk) · V-* strategy-decomposition follow-ons · the §26
@@ -1000,12 +1000,12 @@ tag and are sequenced by § Strategic path, not by their bucket.
   (`ast_loop_interchange_legal` — rejects `(<,>)` pairs/incomplete components;
   `ast_loop_fusion_legal` — rejects backward cross-loop deps; dump `MCC_AST_LOOPDEP_DUMP`).
   Default 3968/3968 byte-identical; validated on matmul/while/do + mcc.c (1068 loops).
-  The legality API now has a live consumer: §27 interchange (`MCC_AST_INTERCHANGE`, LANDED) drives
-  `ast_loop_interchange_legal` on the real emit path, and the `exec-interchange/` ctest corpus +
-  `exec/optimizer/loop_interchange.c` golden exercise it end-to-end.
+  The legality API now has live consumers on the real emit path: §27 interchange
+  (`MCC_AST_INTERCHANGE`) drives `ast_loop_interchange_legal`, and §27 fusion (`MCC_AST_FUSION`)
+  drives `ast_loop_fusion_legal` (both LANDED, default off); the `exec-interchange/` + `exec-fusion/`
+  ctest corpora and the `exec/optimizer/loop_{interchange,fusion}.c` goldens exercise them end-to-end.
   **Remaining:** evaluating symbolic (variable) bounds; dependence-test precision (fewer
-  non-affine bail-outs); a dedicated asttool suite asserting the analyses in isolation
-  (`ast_loop_fusion_legal` is still called only from the dump path); then §27 fusion + tiling.
+  non-affine bail-outs); a dedicated asttool suite asserting the analyses in isolation; then §27 tiling.
 
 ## 4 — several open questions
 
@@ -1213,12 +1213,12 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
   (a value axis, not a gate bit). (§23 step 1)
 - [ ] **Add more §23 param shapes.** (§23 step 2)
-- [ ] **Implement §27 loop fusion.** (`ast_loop_fusion_legal` landed; the transform is open.
-  Follow the interchange model: gate `MCC_AST_INTERCHANGE`/`ast_interchange_run` in `ast_func_end`
-  — a default-off env, a body-safety whitelist (`ast_interchange_body_ok` rejects calls / scalar
-  carried deps / nested control the affine dep test can't model), the `ast_li_list_*` sibling-list
-  surgery helpers for arena mutation, and the `interchanged`-into-`AST_PF_EMIT` re-emit wiring.)
-- [ ] **Implement §27 loop tiling.** (legality analysis landed; the transform is open)
+- [ ] **Implement §27 loop tiling.** (legality analysis landed; the transform is open. Follow the
+  interchange/fusion model in `ast_func_end`: a default-off env (`ast_*_run` gated), the body-safety
+  whitelist `ast_interchange_body_ok` (rejects calls / scalar carried deps / nested control the
+  affine dep test can't model), the `ast_li_list_*` + `ast_li_append_children` sibling-list surgery
+  helpers, and OR the pass's fired-flag into the `AST_PF_EMIT` re-emit conditions. Tiling is the
+  harder one — it splits one loop into a strip-mined pair and needs new IV nodes, not just relinking.)
 - [~] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
   `ast_narrow_binop_ranged` (gated `MCC_AST_VLAT`) now covers **unsigned `/ %` + `<<`const** (PR-2) and
   **`>>` (`TOK_SAR`/`TOK_SHR`, PR-3, 2a24c2b4)** — constant count [0,31] + op0-fit, signedness-aware.

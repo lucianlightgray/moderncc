@@ -696,6 +696,7 @@ static int ast_bfold_round_env;
 static int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
+static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
@@ -1174,6 +1175,7 @@ void ast_configure(MCCState *s1) {
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
 	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", 0);
+	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", 0);
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
 	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
@@ -10200,6 +10202,119 @@ static int ast_interchange_run(AstArena *a) {
 	return total;
 }
 
+static int ast_li_refs_off(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref && ast_ref_is_local_off(a, n, off))
+		return 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_li_refs_off(a, c, off))
+			return 1;
+	return 0;
+}
+
+static void ast_li_append_children(AstArena *a, AstLocal dst, AstLocal src) {
+	a->epoch++;
+	AstLocal c = a->first_child[src];
+	while (c != AST_NONE) {
+		AstLocal nx = a->next_sib[c];
+		a->parent[c] = dst;
+		a->next_sib[c] = AST_NONE;
+		if (a->first_child[dst] == AST_NONE)
+			a->first_child[dst] = c;
+		else
+			a->next_sib[a->last_child[dst]] = c;
+		a->last_child[dst] = c;
+		a->nchild[dst]++;
+		c = nx;
+	}
+	a->first_child[src] = AST_NONE;
+	a->last_child[src] = AST_NONE;
+	a->nchild[src] = 0;
+}
+
+/* Fuse two adjacent same-trip `for` loops (l1 before l2) into one. Legality
+ * (`ast_loop_fusion_legal`: adjacency, identical trip, no backward cross-loop
+ * array dependence) is proven by the §27 analysis; here we additionally require
+ * that every order-sensitive effect is dependence-modeled (`ast_interchange_body_ok`
+ * on both bodies rejects calls / scalar carried deps / nested control) and that
+ * the only statement between the two loops is loop2's IV-init literal store.
+ * Keep-both-IVs: body2 continues to reference its own IV, which stays in lockstep
+ * because we graft loop2's increment into loop1's incr block and hoist loop2's
+ * init ahead of the fused loop; when both loops share one IV we instead drop the
+ * mid re-init and leave the single increment. */
+static int ast_fusion_apply(AstArena *a, AstLocal l1, AstLocal l2) {
+	if (ast_op(a, l1) != 3 || ast_op(a, l2) != 3)
+		return 0;
+	if (ast_nchild(a, l1) != 3 || ast_nchild(a, l2) != 3)
+		return 0;
+	AstLocal pbb = ast_parent(a, l1);
+	if (pbb == AST_NONE || ast_kind(a, pbb) != AST_BasicBlock)
+		return 0;
+	if (ast_parent(a, l2) != pbb)
+		return 0;
+	AstLocal incr1 = ast_child(a, l1, 1), body1 = ast_child(a, l1, 2);
+	AstLocal incr2 = ast_child(a, l2, 1), body2 = ast_child(a, l2, 2);
+	if (ast_kind(a, incr1) != AST_BasicBlock || ast_kind(a, body1) != AST_BasicBlock ||
+			ast_kind(a, incr2) != AST_BasicBlock || ast_kind(a, body2) != AST_BasicBlock)
+		return 0;
+	int o1, o2, t;
+	int64_t s;
+	if (!ast_loop_iv(a, l1, &o1, &t, &s) || !ast_loop_iv(a, l2, &o2, &t, &s))
+		return 0;
+	if (!ast_interchange_body_ok(a, body1) || !ast_interchange_body_ok(a, body2))
+		return 0;
+	AstLocal init2 = ast_li_prev_sib(a, l2);
+	if (!ast_interchange_is_init(a, init2, o2))
+		return 0;
+	if (ast_li_prev_sib(a, init2) != l1)
+		return 0; /* only loop2's init may sit between the two loops */
+	if (o1 != o2 &&
+			(ast_li_refs_off(a, body1, o2) || ast_li_refs_off(a, incr1, o2)))
+		return 0; /* loop1 must not read loop2's (soon-hoisted) IV */
+	ast_li_append_children(a, body1, body2);
+	if (o1 != o2) {
+		ast_li_append_children(a, incr1, incr2);
+		ast_li_list_remove(a, pbb, init2);
+		ast_li_list_insert_before(a, pbb, l1, init2);
+	} else {
+		ast_li_list_remove(a, pbb, init2);
+	}
+	ast_li_list_remove(a, pbb, l2);
+	MCC_TRACE("fusion loop#%u += loop#%u iv@%d/@%d\n", (unsigned)l1, (unsigned)l2,
+						o1, o2);
+	return 1;
+}
+
+static int ast_fusion_run(AstArena *a) {
+	if (!ast_fusion_env)
+		return 0;
+	int total = 0;
+	for (int guard = 0; guard < AST_LOOPNEST_CAP; guard++) {
+		ast_loopnest_sync(a);
+		int applied = 0;
+		for (int i = 0; i < ast_loopnest_n && !applied; i++)
+			for (int j = 0; j < ast_loopnest_n && !applied; j++) {
+				if (i == j)
+					continue;
+				AstLocal l1 = ast_loopnest[i].header, l2 = ast_loopnest[j].header;
+				if (ast_op(a, l1) != 3 || ast_op(a, l2) != 3)
+					continue;
+				if (!ast_dep_adjacent(a, l1, l2))
+					continue;
+				if (!ast_loop_fusion_legal(a, l1, l2))
+					continue;
+				if (ast_fusion_apply(a, l1, l2)) {
+					total++;
+					applied = 1;
+				}
+			}
+		if (!applied)
+			break;
+	}
+	return total;
+}
+
 static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) {
 	if (ast_kind(a, bb) != AST_BasicBlock)
 		return 0;
@@ -12094,6 +12209,7 @@ void ast_func_end(Sym *sym) {
 			int tcos = 0;
 			int narrows = 0;
 			int interchanged = 0;
+			int fused = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -12127,9 +12243,12 @@ void ast_func_end(Sym *sym) {
 					(void)ast_vlat_narrowing(ast_cur, 0, VT_INT);
 					(void)ast_vlat_context(ast_cur, 0, &ast_vlat_ctx);
 				}
-				if (faithful && ast_interchange_env &&
-						(ast_opt_limit < 0 || ast_opt_total < ast_opt_limit))
-					interchanged = ast_interchange_run(ast_cur);
+				if (faithful && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) {
+					if (ast_interchange_env)
+						interchanged = ast_interchange_run(ast_cur);
+					if (ast_fusion_env)
+						fused = ast_fusion_run(ast_cur);
+				}
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
 					ast_strat_order_reset();
@@ -12192,11 +12311,11 @@ void ast_func_end(Sym *sym) {
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || interchanged)
+						do_tco || do_narrow || interchanged || fused)
 					ast_opt_total++;
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_bf && !do_sethi && !do_tco && !do_narrow && !interchanged)
+						!do_bf && !do_sethi && !do_tco && !do_narrow && !interchanged && !fused)
 					loc = saved_loc;
 				if (ast_jit_splice_env && faithful) {
 					ind = ast_body_ind_sv;
@@ -12213,7 +12332,7 @@ void ast_func_end(Sym *sym) {
 										(int)rel_len);
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || interchanged) {
+						do_tco || do_narrow || interchanged || fused) {
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -12227,7 +12346,7 @@ void ast_func_end(Sym *sym) {
 		anon_sym = saved_anon;                                                        \
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
-										do_tco || do_narrow || interchanged || (ui))                 \
+										do_tco || do_narrow || interchanged || fused || (ui))       \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \
