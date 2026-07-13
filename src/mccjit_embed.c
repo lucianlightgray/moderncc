@@ -1860,7 +1860,10 @@ typedef struct MccjitKgc {
 	uint32_t arity;
 	int memoize_ok;
 	int ret_wide;
+	pthread_mutex_t lock;
 } MccjitKgc;
+
+#define MCCJIT_KGC_MAX ((uint64_t)1 << 16)
 
 static size_t mccjit_kgc_bytes(uint64_t cap, uint32_t arity) {
 	return sizeof(MccjitKgcHdr) + (size_t)cap * arity * sizeof(int64_t);
@@ -1896,6 +1899,7 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 	memset(k, 0, sizeof *k);
 	k->fd = -1;
 	k->memoize_ok = 1;
+	pthread_mutex_init(&k->lock, NULL);
 	if (arity == 0 || arity > MCCJIT_KGC_ARITY)
 		return -1;
 	k->arity = arity;
@@ -2028,6 +2032,8 @@ static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) {
 	int64_t *dst;
 	if (found)
 		return 0;
+	if (k->hdr->count >= MCCJIT_KGC_MAX)
+		return 0;
 	if (k->hdr->count + 1 > k->hdr->cap &&
 			mccjit_kgc_grow(k, k->hdr->count + 1) != 0)
 		return -1;
@@ -2052,15 +2058,20 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
 		tuple[i] = 0;
 	tuple[0] = x;
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple))
+	pthread_mutex_lock(&k->lock);
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+		pthread_mutex_unlock(&k->lock);
 		return (int64_t)vf((int)x);
+	}
 	bval = (int64_t)bf((int)x);
 	vval = (int64_t)vf((int)x);
 	if (vval == bval) {
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
+		pthread_mutex_unlock(&k->lock);
 		return bval;
 	}
+	pthread_mutex_unlock(&k->lock);
 	if (flagged)
 		*flagged = 1;
 	return bval;
@@ -2109,15 +2120,20 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 		tuple[i] = 0;
 	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
 		tuple[i] = argv[i];
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple))
+	pthread_mutex_lock(&k->lock);
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(variant, argv, nargs, wide);
+	}
 	bval = mccjit_invoke(baseline, argv, nargs, wide);
 	vval = mccjit_invoke(variant, argv, nargs, wide);
 	if (vval == bval) {
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
+		pthread_mutex_unlock(&k->lock);
 		return bval;
 	}
+	pthread_mutex_unlock(&k->lock);
 	if (flagged)
 		*flagged = 1;
 	return bval;
