@@ -920,18 +920,38 @@ static double mccjit_elapsed(const struct timespec *t0) {
 				 (double)(t1.tv_nsec - t0->tv_nsec) / 1000000000.0;
 }
 
+static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok);
+
 static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
 																 unsigned long max_duration, const char *mode,
 																 const struct timespec *t0, int timed) {
 	void *variant = NULL;
+	void *baseline = NULL;
+	void *aot_init = slot ? *slot : NULL;
 	void *entry = NULL;
 	int over = 0;
 	int skipped = 0;
+	int routed = 0;
+	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
+	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
 	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) {
 		skipped = 1;
 	} else {
-		variant = mcc_jit_recompile_blob(blob, (size_t)len);
-		entry = variant ? mccjit_make_trampoline(variant) : NULL;
+		variant = spec_wrong
+									? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
+									: mcc_jit_recompile_blob(blob, (size_t)len);
+		if (variant && !no_kgc) {
+			int memoize_ok;
+			baseline = mcc_jit_recompile_blob(blob, (size_t)len);
+			memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
+			if (baseline) {
+				entry = mccjit_make_kgc_stub(variant, baseline, memoize_ok);
+				if (entry)
+					routed = 1;
+			}
+		}
+		if (!entry)
+			entry = variant ? mccjit_make_trampoline(variant) : NULL;
 		if (timed && max_duration && entry &&
 				mccjit_elapsed(t0) > (double)max_duration) {
 			over = 1;
@@ -941,9 +961,9 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 	if (getenv("MCC_JIT_VERBOSE")) {
 		int probe = variant ? ((int (*)(int))variant)(7) : -1;
 		fprintf(stderr,
-						"mccjit-boot[%s]: slot=%p old=%p blob=%p len=%lu variant=%p entry=%p probe(7)=%d %s\n",
-						mode, (void *)slot, slot ? *slot : (void *)0, blob, len, variant, entry,
-						probe,
+						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s probe(7)=%d %s\n",
+						mode, (void *)slot, aot_init, blob, len, variant, baseline, entry,
+						routed ? "kgc" : "direct", probe,
 						skipped ? "budget-skip"
 										: over ? "over-budget-kept-aot" : entry ? "swapped" : "kept-aot");
 	}
@@ -1557,6 +1577,72 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 		*flagged = 1;
 	return bval;
 }
+
+#if defined(__x86_64__)
+static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok) {
+	unsigned char *p;
+	MccjitKgc *kgc;
+	int *flag;
+	void *call1 = (void *)mccjit_kgc_call1;
+	void *fp;
+	size_t o = 0;
+	kgc = mcc_mallocz(sizeof *kgc);
+	if (!kgc)
+		return NULL;
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), 1) != 0) {
+		mcc_free(kgc);
+		return NULL;
+	}
+	kgc->memoize_ok = memoize_ok;
+	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) {
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		return NULL;
+	}
+	flag = (int *)(p + 256);
+	*flag = 0;
+	fp = flag;
+	p[o++] = 0xc9;
+	p[o++] = 0x55;
+	p[o++] = 0x48;
+	p[o++] = 0x63;
+	p[o++] = 0xcf;
+	p[o++] = 0x48;
+	p[o++] = 0xbf;
+	memcpy(p + o, &kgc, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xbe;
+	memcpy(p + o, &variant, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xba;
+	memcpy(p + o, &baseline, 8);
+	o += 8;
+	p[o++] = 0x49;
+	p[o++] = 0xb8;
+	memcpy(p + o, &fp, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xb8;
+	memcpy(p + o, &call1, 8);
+	o += 8;
+	p[o++] = 0xff;
+	p[o++] = 0xd0;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
+	return p;
+}
+#else
+static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok) {
+	(void)variant;
+	(void)baseline;
+	(void)memoize_ok;
+	return NULL;
+}
+#endif
 
 int mccjit_selftest_kgc(void) {
 	static const char src[] = "int f(int x){return x*2+1;}";
