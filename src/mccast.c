@@ -292,6 +292,7 @@ static const char *const kind_names[AST_KIND_COUNT] = {
 		"Invoke",
 		"InitList",
 		"Poison",
+		"Data",
 };
 
 const char *ast_kind_name(uint16_t kind) {
@@ -706,6 +707,7 @@ static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body
 static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt, 3=non-null speculative, 4=const-param, 5=value-range (§26 W2.2/W2.3) */
 static int ast_jit_guard_env;
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
+static int ast_data_reemit_env; /* MCC_AST_DATA_REEMIT: exercise the M5 re-emit primitive (identity round-trip, byte-neutral) */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
 static int ast_strpool_n;       /* live entries in the per-TU string-content pool */
@@ -1188,6 +1190,7 @@ void ast_configure(MCCState *s1) {
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
+	ast_data_reemit_env = ast_env_gate("MCC_AST_DATA_REEMIT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
 	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", s1->optimize >= 2);
 	ast_strpool_n = 0; /* content pool is per translation unit */
@@ -3027,6 +3030,37 @@ static void ast_data_estimate(void *sec, long off, long size, int is_ro) {
 	}
 }
 
+static int ast_data_reemit(int i, const unsigned char *src, long n) {
+	AstDataRec *r;
+	if (i < 0 || i >= ast_data_n)
+		return 0;
+	r = &ast_data_recs[i];
+	if (!r->sec || n <= 0 || n != r->size)
+		return 0;
+	memmove(((Section *)r->sec)->data + r->off, src, (size_t)n);
+	return 1;
+}
+
+static void ast_data_reemit_selftest(int i) {
+	unsigned char buf[AST_DATA_PACKMAX];
+	AstDataRec *r;
+	long n;
+	if (i < 0 || i >= ast_data_n)
+		return;
+	r = &ast_data_recs[i];
+	n = r->size;
+	if (!r->sec || n <= 0 || n > (long)sizeof buf)
+		return;
+	memcpy(buf, ((Section *)r->sec)->data + r->off, (size_t)n);
+	if (!ast_data_reemit(i, buf, n))
+		return;
+	if (memcmp(((Section *)r->sec)->data + r->off, buf, (size_t)n) != 0) {
+		fprintf(stderr, "mcc: ast_data_reemit self-test byte mismatch off=%ld size=%ld\n",
+						r->off, n);
+		abort();
+	}
+}
+
 void ast_hook_data(void *sec, long off, long size, int is_ro) {
 	if (size <= 0)
 		return;
@@ -3048,6 +3082,8 @@ void ast_hook_data(void *sec, long off, long size, int is_ro) {
 						is_ro ? "rodata" : "data", off, size, ast_data_total_ro, ast_data_total_rw);
 	ast_data_estimate(sec, off, size, is_ro);
 	ast_data_zero_check(sec, off, size, is_ro);
+	if (ast_data_reemit_env)
+		ast_data_reemit_selftest(ast_data_n - 1);
 }
 
 #define AST_DU_CAP 2048

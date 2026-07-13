@@ -489,8 +489,27 @@ subgroups; each names the concrete hook and the double-checked blocker. Order is
   **Second step LANDED — the hook now fires AFTER `decl_initializer` writes the bytes** (moved from
   `put_extern_sym` to after the `decl_initializer(&p,...)` write in `decl_initializer_alloc`), so the
   side-car can read each object's emitted bytes and feed the M6 candidate-ID estimator below.
-  **Remaining (non-neutral):** the `AstKind` data node + a re-emit pass so a pass can *rewrite* the
-  bytes (not just observe them). *Synergy:* also unblocks §30 value-table dispatch.
+  **Third step LANDED — `AST_Data` kind + the re-emit PRIMITIVE (byte-neutral):** added `AST_Data` to the
+  `AstKind` enum + `kind_names[]` (the data-node vocabulary the doc calls for), and `ast_data_reemit(i,
+  src, n)` (`mccast.c`) — the mechanism a pass uses to *rewrite* a recorded const object's bytes in place
+  (`memmove` into `((Section*)rec->sec)->data + rec->off`, size-preserving). Exercised + validated via
+  `MCC_AST_DATA_REEMIT` (default off): `ast_data_reemit_selftest` re-emits each just-recorded object with
+  its own bytes and asserts a bit-exact identity round-trip, proving the primitive addresses the right
+  `{section, offset, size}`. Validated arm64/mac: build clean (debug+shadow); default byte-neutral (gated
+  off; no arena nodes created, no default-path code changed); re-emit self-test sweep over **329** corpus
+  sources (`tests/exec` + `runtime` + `src`) → **0** mismatches / 0 aborts.
+  **ARCHITECTURAL FINDING (2026-07-13) — why the "AstKind data node" is NOT a per-function AST node:**
+  `ast_hook_data` fires at **parse time for TU-level globals/statics** (`decl_initializer_alloc`,
+  mccgen.c), where there is **no per-function `ast_cur` arena** to attach a node to (the AST arena is
+  per-function; const data lives at TU scope, outside every function's capture window — the original P2
+  audit). So the rewrite primitive correctly operates on the **section-level side-car** (`ast_data_recs`,
+  addressing `Section->data` directly), not an arena node. `AST_Data` is reserved vocabulary + the record
+  tag; a future TU-level data-node home (a TU arena, or promoting `AstDataRec` to a node type) is the
+  remaining structural piece if the search/replay lifecycle ever needs to score data rewrites per
+  candidate. **Remaining (the actual datacomp rewrite):** a *size-changing* rewrite (compression) needs
+  M6 (C) the `.init_array` decompress ctor + (D) the `__mcc_decompress` runtime — the primitive here is
+  the size-preserving in-place write those build on; same-size canonicalizing rewrites can use it
+  directly today. *Synergy:* also unblocks §30 value-table dispatch.
 
 - [ ] **[P2] M6 — datacomp: const-data compression pass** (codegen-layer, opt-in; **not** an AST
   strategy — audited infeasible as one: data absent from the AST, text-only score, needs a

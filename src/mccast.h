@@ -22,6 +22,7 @@ typedef enum AstKind {
 	AST_Invoke,
 	AST_InitList,
 	AST_Poison,
+	AST_Data,
 
 	AST_KIND_COUNT
 } AstKind;
