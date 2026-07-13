@@ -5,8 +5,12 @@
 #include "mccgate.h"
 #include "algorithms/jit.h"
 
+#include <fcntl.h>
 #include <pthread.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 
 #if defined(__GNUC__) || defined(__clang__)
 #define MCCJIT_LOCAL __attribute__((visibility("hidden")))
@@ -1320,6 +1324,403 @@ int mccjit_selftest_stage2(void) {
 	}
 
 	printf("mccjit-selftest-stage2: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+#define MCCJIT_KGC_ARITY 4
+#define MCCJIT_KGC_MAGIC 0x43474b4dul
+
+typedef struct MccjitKgcHdr {
+	uint32_t magic;
+	uint32_t arity;
+	uint64_t salt;
+	uint64_t count;
+	uint64_t cap;
+} MccjitKgcHdr;
+
+typedef struct MccjitKgc {
+	int fd;
+	int anon;
+	char *path;
+	void *map;
+	size_t map_len;
+	MccjitKgcHdr *hdr;
+	int64_t *tuples;
+	uint32_t arity;
+} MccjitKgc;
+
+static size_t mccjit_kgc_bytes(uint64_t cap, uint32_t arity) {
+	return sizeof(MccjitKgcHdr) + (size_t)cap * arity * sizeof(int64_t);
+}
+
+static void mccjit_kgc_bind(MccjitKgc *k) {
+	k->hdr = (MccjitKgcHdr *)k->map;
+	k->tuples = (int64_t *)((char *)k->map + sizeof(MccjitKgcHdr));
+}
+
+static int mccjit_kgc_map_shared(MccjitKgc *k, size_t bytes) {
+	void *m = mmap(0, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, k->fd, 0);
+	if (m == MAP_FAILED)
+		return -1;
+	k->map = m;
+	k->map_len = bytes;
+	mccjit_kgc_bind(k);
+	return 0;
+}
+
+static void mccjit_kgc_init_hdr(MccjitKgc *k, uint64_t salt, uint64_t cap) {
+	k->hdr->magic = MCCJIT_KGC_MAGIC;
+	k->hdr->arity = k->arity;
+	k->hdr->salt = salt;
+	k->hdr->count = 0;
+	k->hdr->cap = cap;
+}
+
+static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
+													 uint32_t arity) {
+	uint64_t initcap = 64;
+	size_t initbytes;
+	memset(k, 0, sizeof *k);
+	k->fd = -1;
+	if (arity == 0 || arity > MCCJIT_KGC_ARITY)
+		return -1;
+	k->arity = arity;
+	initbytes = mccjit_kgc_bytes(initcap, arity);
+	if (!path) {
+		void *m = mmap(0, initbytes, PROT_READ | PROT_WRITE,
+									 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (m == MAP_FAILED)
+			return -1;
+		k->anon = 1;
+		k->map = m;
+		k->map_len = initbytes;
+		mccjit_kgc_bind(k);
+		mccjit_kgc_init_hdr(k, salt, initcap);
+		return 0;
+	}
+	k->path = mcc_strdup(path);
+	k->fd = open(path, O_RDWR | O_CREAT, 0644);
+	if (k->fd < 0)
+		return -1;
+	{
+		struct stat st;
+		MccjitKgcHdr peek;
+		int valid = 0;
+		if (fstat(k->fd, &st) == 0 && (size_t)st.st_size >= sizeof(MccjitKgcHdr) &&
+				pread(k->fd, &peek, sizeof peek, 0) == (ssize_t)sizeof peek &&
+				peek.magic == MCCJIT_KGC_MAGIC && peek.salt == salt &&
+				peek.arity == arity && peek.cap >= 1 && peek.count <= peek.cap &&
+				(size_t)st.st_size >= mccjit_kgc_bytes(peek.cap, arity)) {
+			if (mccjit_kgc_map_shared(k, mccjit_kgc_bytes(peek.cap, arity)) == 0)
+				valid = 1;
+		}
+		if (!valid) {
+			if (ftruncate(k->fd, (off_t)initbytes) != 0 ||
+					mccjit_kgc_map_shared(k, initbytes) != 0) {
+				close(k->fd);
+				k->fd = -1;
+				return -1;
+			}
+			mccjit_kgc_init_hdr(k, salt, initcap);
+			msync(k->map, k->map_len, MS_SYNC);
+		}
+	}
+	return 0;
+}
+
+static void mccjit_kgc_close(MccjitKgc *k) {
+	if (!k)
+		return;
+	if (k->map && k->map != MAP_FAILED) {
+		if (!k->anon)
+			msync(k->map, k->map_len, MS_SYNC);
+		munmap(k->map, k->map_len);
+	}
+	if (k->fd >= 0)
+		close(k->fd);
+	mcc_free(k->path);
+	memset(k, 0, sizeof *k);
+	k->fd = -1;
+}
+
+static int mccjit_kgc_cmp(const int64_t *a, const int64_t *b, uint32_t arity) {
+	uint32_t i;
+	for (i = 0; i < arity; i++) {
+		if (a[i] < b[i])
+			return -1;
+		if (a[i] > b[i])
+			return 1;
+	}
+	return 0;
+}
+
+static uint64_t mccjit_kgc_lower(const MccjitKgc *k, const int64_t *tuple,
+																 int *found) {
+	uint64_t lo = 0, hi = k->hdr->count;
+	*found = 0;
+	while (lo < hi) {
+		uint64_t mid = lo + (hi - lo) / 2;
+		int c = mccjit_kgc_cmp(k->tuples + mid * k->arity, tuple, k->arity);
+		if (c < 0) {
+			lo = mid + 1;
+		} else if (c > 0) {
+			hi = mid;
+		} else {
+			*found = 1;
+			return mid;
+		}
+	}
+	return lo;
+}
+
+static int mccjit_kgc_contains(const MccjitKgc *k, const int64_t *tuple) {
+	int found;
+	mccjit_kgc_lower(k, tuple, &found);
+	return found;
+}
+
+static int mccjit_kgc_grow(MccjitKgc *k, uint64_t need) {
+	uint64_t ncap = k->hdr->cap ? k->hdr->cap : 1;
+	size_t nbytes;
+	while (ncap < need)
+		ncap *= 2;
+	nbytes = mccjit_kgc_bytes(ncap, k->arity);
+	if (k->anon) {
+		void *nm = mmap(0, nbytes, PROT_READ | PROT_WRITE,
+										MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (nm == MAP_FAILED)
+			return -1;
+		memcpy(nm, k->map, k->map_len);
+		munmap(k->map, k->map_len);
+		k->map = nm;
+		k->map_len = nbytes;
+		mccjit_kgc_bind(k);
+		k->hdr->cap = ncap;
+		return 0;
+	}
+	munmap(k->map, k->map_len);
+	k->map = NULL;
+	if (ftruncate(k->fd, (off_t)nbytes) != 0)
+		return -1;
+	if (mccjit_kgc_map_shared(k, nbytes) != 0)
+		return -1;
+	k->hdr->cap = ncap;
+	return 0;
+}
+
+static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) {
+	int found;
+	uint64_t at = mccjit_kgc_lower(k, tuple, &found);
+	int64_t *dst;
+	if (found)
+		return 0;
+	if (k->hdr->count + 1 > k->hdr->cap &&
+			mccjit_kgc_grow(k, k->hdr->count + 1) != 0)
+		return -1;
+	dst = k->tuples + at * k->arity;
+	if (at < k->hdr->count)
+		memmove(dst + k->arity, dst,
+						(size_t)(k->hdr->count - at) * k->arity * sizeof(int64_t));
+	memcpy(dst, tuple, (size_t)k->arity * sizeof(int64_t));
+	k->hdr->count++;
+	if (!k->anon)
+		msync(k->map, k->map_len, MS_SYNC);
+	return 1;
+}
+
+static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
+																int64_t x, int *flagged) {
+	int (*vf)(int) = (int (*)(int))variant;
+	int (*bf)(int) = (int (*)(int))baseline;
+	int64_t tuple[MCCJIT_KGC_ARITY];
+	int64_t bval, vval;
+	uint32_t i;
+	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
+		tuple[i] = 0;
+	tuple[0] = x;
+	if (mccjit_kgc_contains(k, tuple))
+		return (int64_t)vf((int)x);
+	bval = (int64_t)bf((int)x);
+	vval = (int64_t)vf((int)x);
+	if (vval == bval) {
+		mccjit_kgc_insert(k, tuple);
+		return bval;
+	}
+	if (flagged)
+		*flagged = 1;
+	return bval;
+}
+
+int mccjit_selftest_kgc(void) {
+	static const char src[] = "int f(int x){return x*2+1;}";
+	MCCState *s1;
+	int (*baseline)(int) = NULL;
+	void *variant = NULL;
+	MCCState *vstate = NULL;
+	MccjitKgc kgc;
+	int fails = 0;
+	int variant_flagged = 0;
+	int64_t inputs[6] = {7, 7, 5, 0, 3, 100};
+	int i;
+
+	mcc_free(mccjit_last_blob);
+	mccjit_last_blob = NULL;
+	mccjit_last_len = 0;
+	mccjit_last_state = NULL;
+
+	printf("mccjit-selftest-kgc: begin (arity=%d salt=%016llx)\n", MCCJIT_KGC_ARITY,
+				 (unsigned long long)mccjit_salt_witness());
+
+	s1 = mcc_new();
+	if (!s1) {
+		printf("mccjit-selftest-kgc: mcc_new failed\n");
+		return 1;
+	}
+	s1->optimize = 1;
+	s1->nostdlib = 1;
+	mcc_free(s1->jit_functions);
+	s1->jit_functions = mcc_strdup("f");
+	mcc_set_output_type(s1, MCC_OUTPUT_MEMORY);
+	if (mcc_compile_string(s1, src) != 0 || !mccjit_last_blob) {
+		printf("mccjit-selftest-kgc: compile/stash failed\n");
+		mcc_delete(s1);
+		return 1;
+	}
+	if (mcc_relocate(s1) == 0)
+		baseline = (int (*)(int))mcc_get_symbol(s1, "f");
+	if (!baseline) {
+		printf("mccjit-selftest-kgc: no AOT baseline entry for f\n");
+		mcc_delete(s1);
+		return 1;
+	}
+	variant = mcc_jit_recompile_blob_spec(mccjit_last_blob, mccjit_last_len, 0, 7);
+	if (!variant) {
+		printf("mccjit-selftest-kgc: wrongly-specialized variant recompile NULL\n");
+		mcc_delete(s1);
+		return 1;
+	}
+	vstate = mccjit_last_state;
+	printf("mccjit-selftest-kgc: baseline f=%p variant spec[x==7]=%p v(0)=%d v(7)=%d\n",
+				 (void *)baseline, variant, ((int (*)(int))variant)(0),
+				 ((int (*)(int))variant)(7));
+
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) != 0) {
+		printf("mccjit-selftest-kgc: kgc open (anon) failed\n");
+		if (vstate)
+			mcc_delete(vstate);
+		mcc_delete(s1);
+		return 1;
+	}
+
+	printf("mccjit-selftest-kgc:    x  path  variant  baseline  returned  flagged  ok\n");
+	for (i = 0; i < 6; i++) {
+		int64_t x = inputs[i];
+		int64_t tuple[MCCJIT_KGC_ARITY];
+		int hit, flagged = 0, ok;
+		int64_t returned, want = x * 2 + 1;
+		int vv = ((int (*)(int))variant)((int)x);
+		int bv = baseline((int)x);
+		uint32_t j;
+		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			tuple[j] = 0;
+		tuple[0] = x;
+		hit = mccjit_kgc_contains(&kgc, tuple);
+		returned = mccjit_kgc_call1(&kgc, variant, baseline, x, &flagged);
+		if (flagged)
+			variant_flagged = 1;
+		ok = (returned == want);
+		if (i == 1 && !hit)
+			ok = 0;
+		if (x != 7 && !flagged)
+			ok = 0;
+		if (x == 7 && flagged)
+			ok = 0;
+		printf("mccjit-selftest-kgc: %4lld  %-4s  %7d  %8d  %8lld  %7d  %s\n",
+					 (long long)x, hit ? "HIT" : "MISS", vv, bv, (long long)returned,
+					 flagged, ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+	printf("mccjit-selftest-kgc: variant flagged-unsound=%d (expected 1)\n",
+				 variant_flagged);
+	if (!variant_flagged)
+		fails++;
+	{
+		int64_t t7[MCCJIT_KGC_ARITY];
+		uint32_t j;
+		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			t7[j] = 0;
+		t7[0] = 7;
+		if (!mccjit_kgc_contains(&kgc, t7)) {
+			printf("mccjit-selftest-kgc: x=7 not cached after verify\n");
+			fails++;
+		}
+	}
+	mccjit_kgc_close(&kgc);
+
+	{
+		char path[] = "/tmp/mccjit_kgc_XXXXXX";
+		int fd = mkstemp(path);
+		uint64_t salt = mccjit_salt_witness();
+		int64_t vals[5] = {100, -7, 42, 7, 3};
+		int j;
+		MccjitKgc p;
+		uint64_t saved = 0;
+		if (fd >= 0)
+			close(fd);
+		if (fd < 0 || mccjit_kgc_open(&p, path, salt, 1) != 0) {
+			printf("mccjit-selftest-kgc: persistence open failed\n");
+			fails++;
+		} else {
+			for (j = 0; j < 5; j++) {
+				int64_t t[MCCJIT_KGC_ARITY];
+				uint32_t m;
+				for (m = 0; m < MCCJIT_KGC_ARITY; m++)
+					t[m] = 0;
+				t[0] = vals[j];
+				mccjit_kgc_insert(&p, t);
+			}
+			saved = p.hdr->count;
+			mccjit_kgc_close(&p);
+			printf("mccjit-selftest-kgc: persistence wrote %llu tuples, closed\n",
+						 (unsigned long long)saved);
+			if (mccjit_kgc_open(&p, path, salt, 1) != 0) {
+				printf("mccjit-selftest-kgc: persistence reopen failed\n");
+				fails++;
+			} else {
+				int survived = (p.hdr->count == saved);
+				for (j = 0; j < 5; j++) {
+					int64_t t[MCCJIT_KGC_ARITY];
+					uint32_t m;
+					for (m = 0; m < MCCJIT_KGC_ARITY; m++)
+						t[m] = 0;
+					t[0] = vals[j];
+					if (!mccjit_kgc_contains(&p, t))
+						survived = 0;
+				}
+				printf("mccjit-selftest-kgc: reopened count=%llu survived=%s\n",
+							 (unsigned long long)p.hdr->count, survived ? "yes" : "no");
+				if (!survived)
+					fails++;
+				mccjit_kgc_close(&p);
+			}
+			if (mccjit_kgc_open(&p, path, salt ^ 0xdeadbeefull, 1) == 0) {
+				printf("mccjit-selftest-kgc: stale-salt reopen count=%llu (expect 0 reset)\n",
+							 (unsigned long long)p.hdr->count);
+				if (p.hdr->count != 0)
+					fails++;
+				mccjit_kgc_close(&p);
+			}
+			unlink(path);
+		}
+	}
+
+	if (vstate)
+		mcc_delete(vstate);
+	mccjit_last_state = NULL;
+	mcc_delete(s1);
+	printf("mccjit-selftest-kgc: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
