@@ -611,6 +611,51 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   JIT'd frames). Runtime DWARF/unwind deferred — though the in-place-patch cold-only quiescence path would want
   it, QSBR (K9) doesn't, so unwind stays deferred.
 
+**Resolved this session — JIT tier-3 forks (L1–L12):**
+
+- **L1B — AOT budget = wall-clock explore + memo-pinned winner.** The `-O4+` search explores under a wall-clock
+  budget but persists the winner to the memo, so rebuilds replay deterministically; `-O4` stays *off* the M8
+  byte-identity bar (only `-O1..-O3` are on it). Seam closed — consistent with the existing search design.
+- **L2A — quiescent-point placement = function-entry + loop back-edges** (guarantees a compute-bound thread
+  still reaches a quiescent state), gated behind the runtime sink; fall back to pointer-swap where the poll is
+  absent.
+- **L3 — occupancy is a RECLAMATION problem, not a patch-safety problem** (perspective shift). **Pointer-swap
+  is the always-correct default:** it never mutates bytes a thread may execute (the thread finishes on the old
+  variant), and it is **transparent to arbitrary address-taking** — `&func` returns the stable dispatcher entry
+  (`jmp *SLOT`), and saved `&&label`/return addresses stay valid because the old region stays mapped (in-place
+  patch, by contrast, would sabotage exactly those saved addresses). So **correctness needs no occupancy
+  accounting.** The residual "when may I free the old variant?" is reclamation: **leak-and-cap now → QSBR
+  per-thread epoch (contention-free) / `membarrier` + conservative stack-and-return-address scan when memory
+  matters.** The stack-scan is the *self-accounting-against-unknown-threads* option (checks real occupancy,
+  handles unregistered threads, zero per-call cost; needs return-addr/unwind info → couples reclamation to the
+  deferred unwind observability). **REJECTED: a per-call volatile entry/exit counter** — it is the slowest safe
+  option (contended atomic RMW per call + cache-line ping-pong) AND unsafe under non-local exit (longjmp /
+  exception / cancellation skips the decrement → the count sticks > 0 → the patcher stalls forever). In-place
+  patch (D3B) stays gated behind a search-*proved* safety property (no non-local exit through the region + all
+  callers instrumented); absent the proof, pointer-swap wins by default. **This refines K9:** QSBR is still
+  built, but its role is *reclamation*, not patch-safety.
+- **L4A — benchmark against the KGC-recorded live-ins** (the real observed distribution). (K5)
+- **L5A — incumbent-wins-on-tie** (hysteresis, kills promote↔deopt oscillation) + a deterministic iteration
+  cap on the benchmark. (K5)
+- **L6A — switch-table cover shape is a benchmarked strategy row** (dense→jump-table, sparse→perfect-hash/
+  binary-search); fires when the compound (variant + cover) beats the base. (K2)
+- **L7A — one classified set {good, bad, unknown}** keyed (code,data), LFU-bounded; abandon a base variant and
+  re-search when its poison ratio exceeds the K1C threshold. (K2, unifies the KGC and the poison set)
+- **L8A — K6 data→code substitution = compile-time only, data→code**, via a synthetic `.init_array` ctor
+  (reuses M6 datacomp's ctor machinery); ownerless data gets that ctor. Resolves the K6 lifecycle TODO.
+- **L9B — ship a parser-less re-emit-only engine slice** for the embed (codegen + opt + objfmt, no C front-end)
+  — most recompiles are re-emit-from-serialized-intent (`ast_reemit`), which never re-parses, so the Tier-B
+  embed can be materially smaller than the full ~800 KB compiler. **Refines D2=A** (re-invoke the engine, but
+  the re-emit slice, not the parser). (M4/J4A)
+- **L10C — the opt-in persistent cache is documented-untrusted** (the user owns its integrity, like any build
+  artifact). Default stays ephemeral; persistence is an explicit opt-in the user vouches for. (No HMAC/re-verify
+  layer — accepted risk in persistent mode.)
+- **L11A — runtime robustness is one work item** (not a fork): `pthread_atfork` resets the code cache + QSBR
+  registry; recompile is pool-thread-only (the dispatcher's atomic-load is async-signal-safe); PIC/PLT calls
+  reuse the existing reloc path.
+- **L12A — per-platform marshalling limits track the ABI** (SysV: 6 GP + 8 SSE + struct ≤16 B on x86_64;
+  AAPCS per arm64), expanded as each arch stub lands (2B). (J2B/K4A)
+
 **Milestones (dependency-ordered):**
 
 - [~] **M4 — scaffold + Stage-1/2 re-emit landed; static link + Tier-B size deferred** — `src/mccjit_embed.c`
@@ -619,8 +664,10 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   `.init_array` ctor calling `mccjit_boot_swap`). Stage-2 (pointer params + external calls; callees bind via
   `dlsym(RTLD_DEFAULT)`) and structs/unions (`MCCJIT_ROLE_STRUCT`) landed. **Remaining:** (1) **[J8B]**
   refuse-to-JIT bitfield (`VT_BITFIELD`) + flexible-array-member fns now (cheap eligibility gate); serialize
-  them later, low priority; (2) **[J4A]** static `libmcc.a` link (E1a) instead of the dynamic dep — accept the
-  ~800 KB, validate Tier-B; (3) **[J3A]** a per-sym blob **registry** + one generic ctor (one ctor per fn today)
+  them later, low priority; (2) **[J4A/L9B]** static-link a **parser-less re-emit-only engine slice** (E1a: codegen + opt +
+  objfmt, no C front-end — `ast_reemit` re-emits from serialized intent without re-parsing, so the embed is
+  materially smaller than the full ~800 KB compiler; **refines D2=A** = re-invoke the engine, but the re-emit
+  slice) instead of the dynamic dep; validate Tier-B; (3) **[J3A]** a per-sym blob **registry** + one generic ctor (one ctor per fn today)
   — the keystone for live in-program recompile, see M5; (4) **[J4A]** fix the non-fatal `libmccrt.a not found`
   on the call-bearing embed link (subsumed by the static link); (5) **[J4A]** ~800 KB Tier-B size validation.
 - [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring deferred** —
@@ -697,20 +744,30 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   budget captures the largest wins (consumes M1(c) `ast_fc_forecast` best-first + §24 hot-slice ranking + §31
   beam). **Bar:** opt-in, "known less effective than runtime values" but **no worse than gcc/clang static range
   inference** (parity). Depends on P1 (the VLat lattice) for the range source.
-- [ ] **[K9] QSBR quiescence + reclamation** — quiescent-state-based reclamation as the shared primitive for
-  in-place-patch quiescence (admits D3B to the J10 pool) and old-variant reclamation (resolves J5). Per-thread
-  quiescent-point instrumentation gated behind the `-O4`/`--jit` runtime sink. Once landed, the quiescence
-  mechanism becomes its own benchmarkable axis (QSBR vs stop-the-world vs signal-safepoint).
+- [ ] **[K9/L3] Reclamation (QSBR) — pointer-swap is the correctness default** — pointer-swap never mutates
+  live bytes and is transparent to arbitrary address-taking (`&func` → stable dispatcher entry; saved
+  `&&label`/return addrs stay valid via the still-mapped old region), so **correctness needs no occupancy
+  accounting**. Occupancy is only a *reclamation* question — when to free an old variant — solved in tiers:
+  **(1)** leak-and-cap now; **(2)** QSBR per-thread epoch (contention-free; quiescent points at **[L2A]**
+  function-entry + loop back-edges, runtime-sink-gated); **(3)** `membarrier` + conservative stack/return-addr
+  scan when memory matters (self-accounting against unregistered threads; needs unwind info). **No per-call
+  entry/exit counter** (slowest + unsafe under non-local exit). In-place patch (D3B) is gated behind a
+  search-*proved* safety property (no non-local exit + all callers instrumented); else pointer-swap wins by
+  default. Once ≥2 mechanisms exist the quiescence/reclaim mechanism is itself a benchmarkable axis.
 - [ ] **[hardened-env] Boot-probe JIT feasibility** — the `.init_array` ctor probes `MAP_JIT`/RWX; on failure
   run the AOT baseline silently (deopt-first) + a `MCC_JIT_VERBOSE` note. Never errors.
 - [ ] **[observability] Emit `perf-<pid>.map`** for JIT'd variants (unblocks `perf` on JIT'd frames). Runtime
-  DWARF/unwind deferred (QSBR needs no unwind; only the dropped cold-only quiescence path would have).
-- [ ] **[K6] Exhaustive content-addressed data cache + data→code substitution** — the sorted `mmap`'d data
-  cache is keyed by incremental hash; on a hash match against a previously-computed optimizer output, replace
-  the data emission with the already-optimized code. **TODO — the lifecycle is ambiguous:** direction of
-  substitution; what "the optimized code for this data" is when the data has no owning function; interaction
-  with P2/M5's section-level `ast_data_recs` + the const-data rewrite. Depends on P2/M5. Ties to M2's `ComboMemo`
-  unification (5A) — the data cache and the code memo should share one content-addressed store.
+  DWARF/unwind deferred (QSBR needs no unwind — but the L3 `membarrier`+stack-scan reclamation tier does, so
+  unwind info returns as a *reclamation* dependency if leak-and-cap/epoch prove insufficient).
+- [ ] **[L11A] Runtime robustness** (one item, not a fork) — `pthread_atfork` resets the code cache + QSBR
+  registry across `fork()`; recompile is pool-thread-only so it never runs in a signal context (the dispatcher's
+  atomic-load is async-signal-safe); PIC/PLT calls from a variant reuse the existing reloc path.
+- [ ] **[K6/L8A] Exhaustive content-addressed data cache + data→code substitution** — the sorted `mmap`'d data
+  cache is keyed by incremental hash; on a hash match against a previously-computed optimizer output, **[L8A]**
+  replace the data emission with the already-optimized code, **compile-time only, direction data→code**, via a
+  synthetic `.init_array` ctor (reuses M6 datacomp's ctor machinery); ownerless data gets that ctor. Interacts
+  with P2/M5's section-level `ast_data_recs` + the const-data rewrite; depends on P2/M5. Ties to M2's `ComboMemo`
+  unification (5A) — the data cache and the code memo share one content-addressed store.
 
 **Research / open questions:**
 
