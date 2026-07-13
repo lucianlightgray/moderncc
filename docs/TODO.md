@@ -910,10 +910,12 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   KGC differential via a hand-emitted ~59-byte x86_64 stub — a LIVE binary running a provably-WRONG
   variant returns correct results (wrong=0 SOUND) because x!=domain deopts to baseline; KGC-off = wrong=11
   UNSOUND (int(int) leaf scope; independently verified). Tier-0/Tier-1 memoize gate active (M5c).
-  **Remaining:** (1) general signatures — N-arg/float/struct marshalling thunk + variadic-arity KGC key
-  (fixed arity-1 int64 today); (2) eviction/size bound; (3) insertion concurrency under the async pool;
-  (4) mismatch → invalidate-vs-recompile policy; (5) skip the miss-check when the M8 static oracle proves
-  the value in-domain.
+  **N-integer-arg live dispatch LANDED (31c55cf2):** the KGC stub now gathers 1–6 SysV int/pointer arg
+  registers into an on-stack argv and routes through `mccjit_kgc_calln` (n-tuple key, ARITY 6);
+  `ret_wide` handles `long` returns; verified `add3`(3)/`s6`(6)/`ladd(long)` live-sound vs gcc. **Remaining:**
+  (1) float/SSE + struct-by-value args (fall back to the non-KGC direct trampoline today); (2) eviction/size
+  bound; (3) insertion concurrency under the async pool; (4) mismatch → invalidate-vs-recompile policy;
+  (5) skip the miss-check when the M8 static oracle proves the value in-domain.
 - [~] **M5c — pure classifier LANDED (16d54aab); pure/impure slicing + custom ABI deferred** — the
   whole-function purity classifier `ast_fn_purity` (mccast.c, via mccast.h): IMPURE (any `AST_Store`/
   `AST_Invoke`/`VT_VOLATILE`), **TIER1** (`AST_Load` present → memory-value-dependent, immediate-re-run
