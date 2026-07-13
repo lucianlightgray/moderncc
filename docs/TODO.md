@@ -893,30 +893,22 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   353/353. **Remaining:** connect the in-*program* mode-6 slot to the runtime recompile — needs M4
   embed-into-output (blob + engine in the compiled program) + a per-sym blob registry; extend past
   leaf-int via M4 Stage-2 CType closure; QSBR reclamation upgrade later. Trigger/pool = M6.
-- [ ] **[DEFER] M5b — runtime known-good value cache + differential deopt-verify (settled design)** —
-  the runtime soundness+memoization layer for a hot-swapped variant; makes speculative specialization
-  runtime-sound *regardless of static-guard/oracle imperfection*, and is the runtime dual of the static
-  M8 `eval_slice` oracle (here the **baseline execution IS the oracle**, memoized persistently).
-  - **Known-good set:** per hot-swapped variant, keep **sorted, `mmap`'d cache file(s)** of the live-in
-    value tuples proven good (optimized output == baseline output for that input). Sorted → O(log n)
-    binary-search membership; `mmap`'d → persists across runs (warm, profile-guided) and is cheap to map.
-    The tuple key = the guarded live-in domain (§25 hot-value key).
-  - **Entry guard = membership test:** look the incoming live-in tuple up in the sorted known-good set.
-    **HIT** → run the optimized variant directly. **MISS (anonymous/new value)** → run the **original
-    baseline (deopt) variant** for a correct result AND compute the optimized variant's result and
-    compare: **match** → insert the tuple (now known-good; future calls take the fast path); **mismatch**
-    → the optimized variant is unsound for that input → keep the baseline result (permanent deopt for
-    that value) and flag the variant for invalidation/recompile.
-  - **Why sound:** any unverified input falls back to baseline; any divergent input is caught by the
-    differential and never trusted. The static guard becomes an optimization (skip the miss-path check
-    when the value is statically in-domain), not the sole correctness mechanism.
-  - **Open sub-questions:** cache-file format (sorted fixed-width tuple records + header/salt keyed like
-    `ast_search_key_salt`); **side-effect safety** — running baseline+optimized to compare is only
-    directly valid for PURE functions; impure ones need buffered/rolled-back effects or a pure-slice
-    restriction (this gates which functions qualify); insertion concurrency (append+resort under a lock,
-    or per-thread staging merged periodically); eviction / size bound of the set; mismatch →
-    invalidate-vs-recompile policy; interaction with the M8 static oracle (static-in-domain values skip
-    the runtime check entirely); **side-effect safety is solved by the pure/impure slicing in M5c**.
+- [~] **M5b — runtime known-good cache + differential deopt-verify — MECHANISM LANDED (c39419e0);
+  dispatcher-guard integration deferred** — the runtime soundness+memoization layer (the runtime dual of
+  the static M8 oracle; the **baseline execution IS the oracle**). `MccjitKgc` = sorted set of fixed-width
+  live-in tuples (arity 4 int64) backed by an `mmap`'d file `{magic, arity, salt, count, cap}` (salt =
+  `mccjit_salt_witness`, stale file resets); binary-search membership, sorted `memmove` insert + `msync`
+  write-through, remap-doubling growth, anonymous (path=NULL) for the hot path. `mccjit_kgc_call1`: HIT →
+  variant; MISS → run baseline + variant, **match** → insert + return, **mismatch** → flag + return the
+  **baseline** result. **Killer test (`jit/selftest-kgc`):** a wrongly-specialized variant (const-folded
+  to 15 for all x) NEVER returns a wrong answer — x==7 caches+re-hits, x!=7 deopts to correct baseline
+  (11,1,7,201). mmap persistence round-trips; stale-salt resets. embedjit 355/355; default 3968/3968.
+  **Remaining:** (1) wire the mode-6 **entry guard to consult the cache** (emit the membership test +
+  miss-path in the dispatcher — mccast.c) instead of the current in-harness `kgc_call1`; (2) **Tier-0 vs
+  Tier-1** — memoization is sound only for Load-free (Tier-0) fns; Tier-1 (Load-present) needs the key to
+  include loaded values or immediate-re-run-only (M5c classifier gates this); (3) eviction/size bound;
+  (4) insertion concurrency under the async pool; (5) mismatch → invalidate-vs-recompile policy; (6) skip
+  the miss-check when the M8 static oracle proves the value in-domain.
 - [ ] **[DEFER] M5c — pure/impure function slicing + custom-ABI pure slices** — partition each JIT'd
   function into **pure** (side-effect-free) computation slices and **impure** (effectful) boundary ops,
   so the hot computation can be hyper-optimized off the C ABI while the effectful skeleton stays
