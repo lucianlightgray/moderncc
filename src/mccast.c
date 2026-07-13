@@ -14,6 +14,7 @@
 #include "algorithms/rle.h"
 #ifdef MCC_EMBED_JIT
 #include "algorithms/jit.h"
+void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym);
 #endif
 #include "mcccombo.h"
 #include "mccmagic.h" /* constant-division magic (selftested in tools/asttool.c:suite_magic) */
@@ -11093,6 +11094,10 @@ void ast_func_end(Sym *sym) {
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
+#ifdef MCC_EMBED_JIT
+		if (ast_fn_faithful && ast_cur && ast_jit_selected(funcname))
+			mccjit_embed_stash_leaf(ast_cur, sym);
+#endif
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);
 		int keep_reemit = ast_fn_faithful && ast_reemit_retain(ast_cur, sym);
 		if (!keep_inline && !keep_reemit && !keep_baseline)
@@ -11220,6 +11225,12 @@ void ast_reemit_forward_inlines(void) {
 		if (ast_reemit_has_forward(&ast_reemit_pool[i]))
 			ast_reemit(ast_reemit_pool[i].sym, ast_reemit_pool[i].ast);
 }
+
+#ifdef MCC_EMBED_JIT
+void ast_reemit_extern(Sym *sym, AstArena *ast) {
+	ast_reemit(sym, ast);
+}
+#endif
 
 #undef gjmp_addr
 #undef gjmp
