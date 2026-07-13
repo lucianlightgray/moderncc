@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -1196,6 +1197,32 @@ static struct {
 } mccjit_pool = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER,
 								 0, 0};
 
+static pthread_once_t mccjit_fork_once = PTHREAD_ONCE_INIT;
+
+static void mccjit_atfork_prepare(void) {
+	pthread_mutex_lock(&mccjit_pool.qlock);
+	pthread_mutex_lock(&mccjit_swap_lock);
+}
+
+static void mccjit_atfork_parent(void) {
+	pthread_mutex_unlock(&mccjit_swap_lock);
+	pthread_mutex_unlock(&mccjit_pool.qlock);
+}
+
+static void mccjit_atfork_child(void) {
+	mccjit_pool.head = mccjit_pool.tail = NULL;
+	mccjit_pool.started = 0;
+	mccjit_pool.nworkers = 0;
+	pthread_cond_init(&mccjit_pool.qcond, NULL);
+	pthread_mutex_unlock(&mccjit_swap_lock);
+	pthread_mutex_unlock(&mccjit_pool.qlock);
+}
+
+static void mccjit_fork_setup(void) {
+	pthread_atfork(mccjit_atfork_prepare, mccjit_atfork_parent,
+								 mccjit_atfork_child);
+}
+
 static void *mccjit_pool_worker(void *arg) {
 	(void)arg;
 	for (;;) {
@@ -1218,6 +1245,7 @@ static void *mccjit_pool_worker(void *arg) {
 
 static int mccjit_pool_start(unsigned long workers) {
 	int n;
+	pthread_once(&mccjit_fork_once, mccjit_fork_setup);
 	pthread_mutex_lock(&mccjit_pool.qlock);
 	if (!mccjit_pool.started) {
 		int want = (int)workers;
@@ -3101,6 +3129,102 @@ int mccjit_selftest_eligibility(void) {
 
 	printf("mccjit-selftest-eligibility: %s (%d failure%s)\n",
 				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_fork(void) {
+	static const char src[] = "int f(int x){return x*2+1;}";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	void *baseline;
+	int nw;
+	int fails = 0;
+	pid_t pid;
+
+	printf("mccjit-selftest-fork: begin\n");
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-fork: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = mcc_jit_recompile_blob(blob, blen);
+	if (!baseline) {
+		printf("mccjit-selftest-fork: baseline recompile NULL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+	mccjit_last_state = NULL;
+
+	nw = mccjit_pool_start(2);
+	printf("mccjit-selftest-fork: parent pool workers=%d started=%d\n", nw,
+				 mccjit_pool.started);
+	if (nw <= 0 || !mccjit_pool.started) {
+		printf("mccjit-selftest-fork: pool failed to start FAIL\n");
+		return 1;
+	}
+
+	fflush(stdout);
+	pid = fork();
+	if (pid == 0) {
+		int cf = 0;
+		if (mccjit_pool.started != 0 || mccjit_pool.nworkers != 0) {
+			fprintf(stderr,
+							"mccjit-selftest-fork[child]: phantom pool NOT reset "
+							"(started=%d nworkers=%d) FAIL\n",
+							mccjit_pool.started, mccjit_pool.nworkers);
+			cf++;
+		}
+		if (((int (*)(int))baseline)(9) != 19) {
+			fprintf(stderr,
+							"mccjit-selftest-fork[child]: installed variant f(9)!=19 FAIL\n");
+			cf++;
+		}
+		if (mccjit_pool_start(2) <= 0) {
+			fprintf(stderr,
+							"mccjit-selftest-fork[child]: pool locks unusable post-fork "
+							"(deadlock/start failure) FAIL\n");
+			cf++;
+		}
+		fflush(stderr);
+		_exit(cf ? 1 : 0);
+	}
+
+	if (pid < 0) {
+		printf("mccjit-selftest-fork: fork() failed FAIL\n");
+		fails++;
+	} else {
+		int status = 0;
+		while (waitpid(pid, &status, 0) < 0)
+			;
+		{
+			int child_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+			printf(
+					"mccjit-selftest-fork: child pool reset + variant runs after fork: %s\n",
+					child_ok ? "OK" : "FAIL");
+			if (!child_ok)
+				fails++;
+		}
+		if (mccjit_pool.started != 1 || mccjit_pool.nworkers != nw ||
+				((int (*)(int))baseline)(9) != 19) {
+			printf("mccjit-selftest-fork: parent pool broken after fork "
+						 "(started=%d nworkers=%d) FAIL\n",
+						 mccjit_pool.started, mccjit_pool.nworkers);
+			fails++;
+		} else {
+			printf("mccjit-selftest-fork: parent pool intact after fork OK\n");
+		}
+	}
+
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-fork: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 

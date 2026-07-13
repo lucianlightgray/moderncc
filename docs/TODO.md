@@ -184,7 +184,14 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    fallback (`mccjit_boot_swap_run`/`mccjit_lazy_build`) is gated behind the explicit `MCC_JIT_NO_KGC` unsafe
    escape hatch — by default an unverifiable variant keeps the AOT baseline (`refused-unverified`). Test:
    `jit/selftest-eligibility` (12 cases).
-2. **[L11A]** runtime robustness — `atfork` / signal-safety / PIC.
+2. ✅ **[L11A]** runtime robustness — DONE. `pthread_atfork` (registered once via `pthread_once` in
+   `mccjit_pool_start`) resets the worker-pool code cache in the child: prepare acquires `qlock`+`swap_lock`,
+   parent releases, child drops the phantom job queue + `started`/`nworkers` and reinits the sync objects so a
+   forked child inherits no held lock and no orphaned worker. Signal-safety: no recompile ever runs in a signal
+   handler (no `sigaction`/`signal` in the TU) and the dispatcher slot load is an `__ATOMIC` load; PIC/PLT
+   variant calls already reuse the reloc path (`ast_reemit_extern`→`mcc_relocate`→`dlsym(RTLD_DEFAULT)`), no
+   change needed. Test: `jit/selftest-fork` (child sees reset pool + runs installed variant + restarts pool;
+   parent pool intact) — verified to fail without the handler.
 3. **[hardened-env + observability]** boot-probe JIT feasibility (silent baseline fallback) + emit `perf-<pid>.map`.
 4. **[J3A]** per-sym blob registry + one generic ctor → **live in-program recompile** (the "real live JIT").
 5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — split code/data keys, ratio poison, one classified
@@ -811,9 +818,21 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
 - [ ] **[observability] Emit `perf-<pid>.map`** for JIT'd variants (unblocks `perf` on JIT'd frames). Runtime
   DWARF/unwind deferred (QSBR needs no unwind — but the L3 `membarrier`+stack-scan reclamation tier does, so
   unwind info returns as a *reclamation* dependency if leak-and-cap/epoch prove insufficient).
-- [ ] **[L11A] Runtime robustness** (one item, not a fork) — `pthread_atfork` resets the code cache + QSBR
-  registry across `fork()`; recompile is pool-thread-only so it never runs in a signal context (the dispatcher's
-  atomic-load is async-signal-safe); PIC/PLT calls from a variant reuse the existing reloc path.
+- [x] **[L11A] Runtime robustness** (one item, not a fork) — DONE. `pthread_atfork` resets the worker-pool code
+  cache across `fork()` (`mccjit_atfork_prepare`/`_parent`/`_child` registered once via `pthread_once` in
+  `mccjit_pool_start`): the child drops the phantom job queue, resets `started`/`nworkers`, and reinits
+  `qlock`/`qcond`/`swap_lock`, so it inherits no held lock and no orphaned detached worker. QSBR registry reset
+  folds in when K9/QSBR lands (Phase-2 step 11). Signal-safety holds but the *reason* is narrower than first
+  written: recompile is **not** pool-thread-only (it also runs synchronously on the calling thread — sync boot,
+  sync-fallback, lazy-when-pool-cold, selftests), but it **never runs in a signal handler** (the TU installs no
+  signal handlers) and the dispatcher's swap-slot read is an `__ATOMIC_RELEASE`/`ACQUIRE` load, which is
+  async-signal-safe. PIC/PLT calls from a variant already reuse the reloc path (`ast_reemit_extern` →
+  `mcc_relocate` → `dlsym(RTLD_DEFAULT)` for `SHN_UNDEF`), no change needed. Per-instance KGC/counter-state
+  locks are out of scope (held only in brief non-blocking critical sections; their stack/free lifecycle
+  precludes a global reset registry — that belongs to the deferred QSBR/reclamation tier). Test:
+  `jit/selftest-fork`. **Aside (pre-existing, separate bug):** `jit/selftest-pool` SIGSEGVs on a clean tree —
+  root cause is that executing a **pool-worker-built KGC stub** crashes (the fork test's child deliberately
+  avoids worker-built stubs for this reason); tracked separately, not part of L11A.
 - [ ] **[K6/L8A] Exhaustive content-addressed data cache + data→code substitution** — the sorted `mmap`'d data
   cache is keyed by incremental hash; on a hash match against a previously-computed optimizer output, **[L8A]**
   replace the data emission with the already-optimized code, **compile-time only, direction data→code**, via a
