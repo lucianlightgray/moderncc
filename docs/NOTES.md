@@ -2,6 +2,42 @@
 
 Rationale that does not belong in code comments or the TODO checklist. Newest first.
 
+## JIT/AST `/goal` campaign — CHECKPOINT (resume here)
+
+Autonomous campaign to implement all JIT/AST TODO items. **All landed work is on `main` (through 98959ace);
+every landing held default `3968/3968` byte-identity.** Pattern for each item: a worktree agent implements
+it **gated behind a new env, default OFF → default byte-identical**; validate the gated-ON path to the full
+bar (differential fuzz vs gcc+clang + self-host 3-stage fixpoint); integrate + independently re-verify
+firing + correctness; commit; update TODO.
+
+**Landed:** entire §26 runtime JIT (complete — live self-hot-swap, known-good-cache soundness, purity
+gate, oracle). §27+ optimizations, each gated: §29 outer-narrow `MCC_AST_NARROW_ELIM`; §29 right-shift
+narrowing `MCC_AST_VLAT`; §33c arg-forwarding `MCC_AST_ARGFWD`; §35 n-ary Sethi–Ullman `MCC_AST_SETHI_NARY`;
+§36 spill-slot sharing `MCC_AST_SPILL_SHARE`. §27 loop foundation: loop-nest model + dependence test +
+`ast_loop_interchange_legal`/`ast_loop_fusion_legal` (analysis-only, inert; dumps `MCC_AST_LOOPNEST_DUMP`/
+`MCC_AST_LOOPDEP_DUMP`). Fixed a real bug: `MCC_AST_COLOR` self-host miscompile (unsound cdeffirst interval
+heuristic). Pruned stale TODO items (§31 registry already done, etc.).
+
+**RESUME HERE (next items, in order):**
+1. **§27 loop interchange** — the first transform on the legality gate. New env e.g. `MCC_AST_INTERCHANGE`
+   (default off). Swap two adjacent PERFECTLY-nested `for` loops (`AST_If` op 3, children [cond,incr,body])
+   when `ast_loop_interchange_legal(outer,inner)` AND a locality heuristic helps; pure header exchange.
+   Full-bar; RESULT-identity is the correctness gate (reordered loop must give identical results).
+2. **§27 loop fusion** (`ast_loop_fusion_legal`), then **§27 tiling**.
+3. Then: §24 hot-slice ranking (uses `ast_loop_depth`); §32a widening dataflow; §30 (needs the `.rodata`
+   data-emission project first); FLOAT combo M2/M3 (search-infra, lower risk); V-* strategy decomposition;
+   §26 marginal tail (float/struct KGC args, static-link E1a, bitfields, N-worker queue, M7 patchpoint).
+4. **Endgame:** after broad exposure/soak, flip the validated gates default-on (P0-style); fix the
+   pre-existing `MCC_AST_COLOR=1` interaction so COLOR can flip too.
+
+**Validation recipe (per default-codegen item):** default full `ctest --test-dir cmake-debug` (3968,
+object-diff 0) is MANDATORY (gate off = byte-identical); gate-on `tests/fuzz/fuzz_runner … --ref gcc … --ref
+clang …` ~100 seeds 0 miscompile; gate-on self-host 3-stage fixpoint byte-identical (link stage objects via
+mcc's OWN linker + the `mccrt_blob` object — GNU ld hits overlapping-FDE/`__va_arg`; stage2 needs the
+embedded runtime, so the ad-hoc header recipe is fiddly — a targeted reproducer + objdump beats fighting it).
+Independent-verify tip: a quick throwaway test often DOESN'T fire the pass (const-folds / wrong shape) —
+confirm firing via `-v128` TRACE or an object-diff, then correctness vs gcc.
+
 ## §26 runtime JIT — 2026-07-12 parallel implementation push
 
 Landed: M3 selection, search-bits 40/41, W2.3 modes 4/5, M8 oracle (e6e18acd); M6 plumbing
