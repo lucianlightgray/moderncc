@@ -2076,8 +2076,31 @@ typedef struct MccjitKgc {
 	uint32_t arity;
 	int memoize_ok;
 	int ret_wide;
+	uint64_t hits;
+	uint64_t misses;
+	int poisoned;
 	pthread_mutex_t lock;
 } MccjitKgc;
+
+static int mccjit_poison_min(void) {
+	const char *e = getenv("MCC_JIT_POISON_MIN");
+	if (e && e[0]) {
+		long v = strtol(e, NULL, 10);
+		if (v > 0)
+			return (int)v;
+	}
+	return 8;
+}
+
+static int mccjit_poison_pct(void) {
+	const char *e = getenv("MCC_JIT_POISON_PCT");
+	if (e && e[0]) {
+		long v = strtol(e, NULL, 10);
+		if (v > 0 && v <= 100)
+			return (int)v;
+	}
+	return 50;
+}
 
 #define MCCJIT_KGC_MAX ((uint64_t)1 << 16)
 
@@ -2337,6 +2360,10 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
 		tuple[i] = argv[i];
 	pthread_mutex_lock(&k->lock);
+	if (k->poisoned) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke(baseline, argv, nargs, wide);
+	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(variant, argv, nargs, wide);
@@ -2344,10 +2371,18 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	bval = mccjit_invoke(baseline, argv, nargs, wide);
 	vval = mccjit_invoke(variant, argv, nargs, wide);
 	if (vval == bval) {
+		k->hits++;
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
 		pthread_mutex_unlock(&k->lock);
 		return bval;
+	}
+	k->misses++;
+	{
+		uint64_t total = k->hits + k->misses;
+		if (total >= (uint64_t)mccjit_poison_min() &&
+				k->misses * 100 >= total * (uint64_t)mccjit_poison_pct())
+			k->poisoned = 1;
 	}
 	pthread_mutex_unlock(&k->lock);
 	if (flagged)
@@ -3481,6 +3516,94 @@ int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 
 	mcc_delete(s);
 	printf("mccjit-selftest-liverun: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_poison(void) {
+	static const char src[] = "int f(int x){return x*2+1;}";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	int (*baseline)(int) = NULL;
+	void *variant = NULL;
+	MCCState *vstate = NULL;
+	MccjitKgc kgc;
+	int fails = 0;
+	int i;
+	int flagged_calls = 0;
+	int min;
+	int poison_at = -1;
+
+	printf("mccjit-selftest-poison: begin\n");
+
+	setenv("MCC_JIT_POISON_MIN", "4", 1);
+	setenv("MCC_JIT_POISON_PCT", "50", 1);
+	min = mccjit_poison_min();
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-poison: stash failed\n");
+		unsetenv("MCC_JIT_POISON_MIN");
+		unsetenv("MCC_JIT_POISON_PCT");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	if (mcc_relocate(s1) == 0)
+		baseline = (int (*)(int))mcc_get_symbol(s1, "f");
+	variant = mcc_jit_recompile_blob_spec(blob, blen, 0, 7);
+	vstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!baseline || !variant) {
+		printf("mccjit-selftest-poison: baseline/variant build failed FAIL\n");
+		fails++;
+	} else if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) != 0) {
+		printf("mccjit-selftest-poison: kgc open failed FAIL\n");
+		fails++;
+	} else {
+		for (i = 0; i < 10; i++) {
+			int64_t args[1];
+			int flagged = 0;
+			int64_t r;
+			args[0] = 3;
+			r = mccjit_kgc_calln(&kgc, variant, baseline, args, 1, &flagged);
+			if (kgc.poisoned && poison_at < 0)
+				poison_at = i;
+			if (flagged)
+				flagged_calls++;
+			if (r != 7) {
+				printf("mccjit-selftest-poison: call %d returned %lld (expect baseline "
+							 "7) FAIL\n",
+							 i, (long long)r);
+				fails++;
+			}
+		}
+		printf(
+				"mccjit-selftest-poison: mismatches-flagged=%d (expect %d) poisoned=%d "
+				"first-poison-call=%d %s\n",
+				flagged_calls, min, kgc.poisoned, poison_at,
+				(flagged_calls == min && kgc.poisoned) ? "OK" : "FAIL");
+		if (flagged_calls != min || !kgc.poisoned)
+			fails++;
+		if (kgc.hits != 0 || kgc.misses != (uint64_t)min) {
+			printf("mccjit-selftest-poison: counters hits=%llu misses=%llu "
+						 "(expect 0/%d) FAIL\n",
+						 (unsigned long long)kgc.hits, (unsigned long long)kgc.misses, min);
+			fails++;
+		}
+		mccjit_kgc_close(&kgc);
+	}
+
+	unsetenv("MCC_JIT_POISON_MIN");
+	unsetenv("MCC_JIT_POISON_PCT");
+	if (vstate)
+		mcc_delete(vstate);
+	mccjit_last_state = NULL;
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-poison: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

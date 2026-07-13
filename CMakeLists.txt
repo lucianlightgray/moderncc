@@ -3750,6 +3750,12 @@ if(MCC_BUILD_TESTS)
                 COMMAND jit_selftest_liverun "-B${CMAKE_BINARY_DIR}"
                         "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
             set_tests_properties(jit/selftest-liverun PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_poison tests/embed/jit_selftest_poison.c)
+            target_link_libraries(jit_selftest_poison PRIVATE libmcc)
+            target_include_directories(jit_selftest_poison PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-poison COMMAND jit_selftest_poison)
+            set_tests_properties(jit/selftest-poison PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)

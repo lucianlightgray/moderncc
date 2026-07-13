@@ -209,8 +209,16 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    correct result) and `mcc -run`. Test: `jit/selftest-liverun` (in-process `mcc_run`; perf-map presence proves
    the recompile fired in the ctor — teeth-verified). Standalone disk exe still needs `libmcc` on the loader
    path — that's the deferred **[J4A]** static-link (step 7), not J3A.
-5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — split code/data keys, ratio poison, one classified
-   {good,bad,unknown} set, poison-as-search-input (a 99%-variant + a benchmarked switch-table cover).
+5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — ⏳ CORE DONE (runtime poison/deopt), search-side deferred.
+   ✅ **[J1A+K1C] DONE:** `mccjit_kgc_calln` now tracks per-variant `hits`/`misses`; on a mismatch/hit *ratio*
+   (default ≥50% over ≥8 verified calls, `MCC_JIT_POISON_PCT`/`MCC_JIT_POISON_MIN`) it flips the variant to
+   `poisoned` → **permanent baseline-only deopt** (no more double-execution — fixes the documented "flag written
+   but never consulted" bug). In-memory / ephemeral by default (matches the reproducibility seam). Test:
+   `jit/selftest-poison`. **DEFERRED (needs the AOT search engine / opt-in persistence):** **[K2]** split the
+   KGC key into (code-hash, data-hash) + poison-as-search-INPUT; **[L6A]** the switch-table cover shape as a
+   benchmarked strategy row (the 99%-variant + 1%-cover compound); **[L7A]** the unified {good,bad,unknown}
+   LFU-bounded classified set; **[J1A persist]** poison persisted to the `mmap`'d cache under the opt-in
+   persistent-cache flag. These ride the AOT `-O4` search integration (Phase 4).
 6. **[K5/L4A/L5A]** best-of-3 promotion on the KGC-recorded live-ins, incumbent-wins-on-tie.
 7. **[J4A/L9B]** parser-less re-emit-only static-link slice (E1a) + Tier-B size validation — the ship gate.
 
@@ -763,13 +771,17 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   `MCC_JIT_NO_KGC` unsafe escape hatch, so by default an FP/struct/unverifiable variant keeps the AOT baseline
   instead of running unverified. Still to extend the stub to SysV SSE (xmm0–7) + small
   struct-by-value later, then those become eligible (**[K4A]** this coverage is itself a strategy row with sane
-  per-platform limits, not a hardcoded gate); (2) **[J1A/K1C/K2]** mismatch policy — **split the key into a
-  code-hash + data-hash pair** and record poison per (code+data) tuple; discard a variant on a **mismatch/hit
-  ratio** threshold (K1C), not a fixed count, so a rarely-wrong variant survives; **the poison set is a search
-  input** (K2) — a 99%-match variant + a switch-table over the 1% misses is a compound path the search promotes
-  if it benchmarks better. Persist poison to the `mmap`'d cache **only under the opt-in persistent-cache flag**
-  (default ephemeral — see the reproducibility seam); today the per-stub flag is written but never consulted →
-  post-mismatch calls keep double-executing; (3) skip the miss-check when the M8 static oracle proves in-domain.
+  per-platform limits, not a hardcoded gate); (2) **[J1A/K1C]** mismatch policy — ✅ **runtime core DONE:**
+  `mccjit_kgc_calln` tracks per-variant `hits`/`misses` and, on a mismatch/hit **ratio** threshold (K1C:
+  default ≥50% over ≥8 verified calls; env `MCC_JIT_POISON_PCT`/`MCC_JIT_POISON_MIN`), flips the variant to
+  `poisoned` → **permanent baseline-only deopt** (J1A). This fixes the double-execution bug — the poison flag is
+  now consulted (baseline-only fast path at `calln` entry). In-memory / ephemeral default (`jit/selftest-poison`).
+  **Still DEFERRED (ride the AOT search integration / opt-in persistence):** **[K2]** split the key into a
+  code-hash + data-hash pair, record poison per (code+data), and feed the poison set as a search **input** — a
+  99%-match variant + a switch-table over the 1% misses (**[L6A]**) is a compound path the search promotes if it
+  benchmarks better; **[L7A]** unify KGC + poison into one {good,bad,unknown} LFU-bounded classified set; persist
+  poison to the `mmap`'d cache **only under the opt-in persistent-cache flag** (default ephemeral — see the
+  reproducibility seam); (3) skip the miss-check when the M8 static oracle proves in-domain.
 - [~] **[J9A·ACTIVE] M5c — pure classifier landed; pure/impure slicing + custom ABI now active** — the whole-
   function purity classifier `ast_fn_purity` (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only),
   wired into M5b via `MccjitKgc.memoize_ok`. **J9A promotes the net-new backend work to active:** statement-
