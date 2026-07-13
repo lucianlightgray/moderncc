@@ -964,12 +964,6 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
 - [ ] **Research the M5 old-variant reclamation** — the triple-buffer/RCU scheme that frees a
   swapped-out region while other threads may still be executing it. (quiescence detection? epoch /
   grace-period reclaim vs never-free? interaction with `mcc_run_free`?)
-- [x] **Research the runtime cache key + eviction — SETTLED (see M5b above)** — the model is a
-  per-variant **sorted `mmap`'d known-good value cache** with **differential deopt-verify** on miss:
-  key = the guarded live-in tuple (§25 hot-value key); key-miss runs the baseline (deopt) AND verifies
-  the optimized result against it, inserting the tuple only on match. Remaining sub-questions
-  (file format, side-effect safety, insertion concurrency, eviction bound, mismatch policy) tracked
-  under M5b.
 - [ ] **Research the M8 `eval_slice` enumeration cap** — refuse any slice whose context-restricted
   domain exceeds a fixed cap (stays JIT-speculative). (what cap value? the static `context_in` domain
   that replaces the runtime-observed range in the guard — how is it derived?)
