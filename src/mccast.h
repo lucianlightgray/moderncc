@@ -105,7 +105,7 @@ extern int ast_replaying;
 extern int ast_in_op;
 extern int ast_bail;
 extern int ast_func_has_asm;
-extern unsigned ast_pinned_regs;
+extern uint64_t ast_pinned_regs;
 
 void ast_configure(struct MCCState *s1);
 uint64_t ast_intention_value(void);

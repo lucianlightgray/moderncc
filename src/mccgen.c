@@ -1512,7 +1512,7 @@ ST_FUNC int get_reg_ex(int rc, int rc2) {
 	for (r = 0; r < MCC_NB_REGS; r++) {
 		if (reg_classes[r] & rc2) {
 #if MCC_CONFIG_OPTIMIZER
-			if (ast_pinned_regs & (1u << r))
+			if (ast_pinned_regs & ((uint64_t)1 << r))
 				continue;
 #endif
 			int n;
@@ -1537,7 +1537,7 @@ ST_FUNC int get_reg(int rc) {
 	for (r = 0; r < MCC_NB_REGS; r++) {
 		if (reg_classes[r] & rc) {
 #if MCC_CONFIG_OPTIMIZER
-			if (ast_pinned_regs & (1u << r))
+			if (ast_pinned_regs & ((uint64_t)1 << r))
 				continue;
 #endif
 			if (nocode_wanted)
@@ -1555,14 +1555,14 @@ ST_FUNC int get_reg(int rc) {
 	for (p = vstack; p <= vtop; p++) {
 		r = p->r2;
 #if MCC_CONFIG_OPTIMIZER
-		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
+		if (r < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << r)))
 			r = VT_CONST;
 #endif
 		if (r < VT_CONST && (reg_classes[r] & rc))
 			goto save_found;
 		r = p->r & VT_VALMASK;
 #if MCC_CONFIG_OPTIMIZER
-		if (r < VT_CONST && (ast_pinned_regs & (1u << r)))
+		if (r < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << r)))
 			r = VT_CONST;
 #endif
 		if (r < VT_CONST && (reg_classes[r] & rc)) {

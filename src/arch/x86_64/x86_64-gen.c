@@ -2071,7 +2071,7 @@ void gen_opf(int op) {
 #if MCC_CONFIG_OPTIMIZER
 			{
 				int dr = vtop[-1].r & VT_VALMASK;
-				if (dr < VT_CONST && (ast_pinned_regs & (1u << dr))) {
+				if (dr < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << dr))) {
 					int sc = get_reg(MCC_RC_FLOAT);
 					o((ft & VT_BTYPE) == VT_DOUBLE ? 0x100ff2 : 0x100ff3);
 					o(0xc0 + REG_VALUE(dr) + REG_VALUE(sc) * 8);

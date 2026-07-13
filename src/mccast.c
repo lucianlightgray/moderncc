@@ -974,7 +974,7 @@ static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 static int ast_loc_low;
 
-unsigned ast_pinned_regs;
+uint64_t ast_pinned_regs;
 int ast_func_has_asm;
 
 int ast_alloc_loc(int size, int align) {
@@ -2322,19 +2322,22 @@ static const int ast_promo_caller[AST_PROMO_CALLER_N] = {10, 9, 8};
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {3, 12, 13, 14, 15};
 static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23};
 #else
-/* arm64 PR-1: promote only in callful functions into the callee-saved pool
-   x19..x22 (indices 28..31, mapped by intr()); their incoming values are
-   saved/restored by ast_promo_entry_init/_exit_restore, so no prolog change
-   is needed and the value survives any call.  The caller (leaf) and float
-   pools are held empty here (a leaf caller-saved value is clobbered by any
-   hidden libcall, e.g. arm64-Linux quad long double); revisit once the pool
-   is widened past index 31 (needs a 64-bit pin mask). */
-#define AST_PROMO_CALLER_N 0
-#define AST_PROMO_CALLEE_N 4
-#define AST_PROMO_XMM_N 0
-static const int ast_promo_caller[1] = {-1};
-static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {28, 29, 30, 31};
-static const int ast_promo_xmm[1] = {-1};
+/* arm64 (PR-2): callful functions promote into the callee-saved pool x19..x28
+   (indices 28..37, mapped by intr()); their incoming values are saved/restored
+   by ast_promo_entry_init/_exit_restore, so no prolog change is needed and the
+   value survives every call.  Leaf functions promote into caller-saved x9..x15
+   (no save needed) and floats into v2..v5 — but a caller-saved value is
+   clobbered by any hidden libcall, and on arm64 the only scalar op that lowers
+   to a libcall (unlike x86 x87) is quad long double, so ast_plan_promotion
+   forces has_call when a long-double op is present (routing it to the saved
+   callee pool). */
+#define AST_PROMO_CALLER_N 7
+#define AST_PROMO_CALLEE_N 10
+#define AST_PROMO_XMM_N 4
+static const int ast_promo_caller[AST_PROMO_CALLER_N] = {9, 10, 11, 12, 13, 14, 15};
+static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {28, 29, 30, 31, 32,
+																												 33, 34, 35, 36, 37};
+static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23, 24, 25};
 #endif
 #define AST_PROMO_SLOTS (AST_PROMO_MAX * 8)
 static int ast_promo_off[AST_PROMO_SLOTS];
@@ -3473,6 +3476,10 @@ static int ast_plan_promotion(AstArena *a) {
 					has_loop = 1;
 			}
 		}
+#if defined(MCC_TARGET_ARM64)
+		if ((ast_type_t(a, n) & VT_BTYPE) == VT_LDOUBLE)
+			has_call = 1;
+#endif
 	}
 	if (has_vla)
 		return 0;
@@ -3794,9 +3801,9 @@ static void ast_promo_save_sv(SValue *sv, int i) {
 static void ast_promo_write(int reg, CType *ct) {
 	gen_cast(ct);
 	if (reg_classes[reg]) {
-		ast_pinned_regs &= ~(1u << reg);
-		gv(reg_classes[reg]);
-		ast_pinned_regs |= (1u << reg);
+		ast_pinned_regs &= ~((uint64_t)1 << reg);
+		gv(reg_classes[reg] & ~(MCC_RC_INT | MCC_RC_FLOAT));
+		ast_pinned_regs |= ((uint64_t)1 << reg);
 	} else {
 		gv(MCC_RC_INT);
 		load(reg, vtop);
@@ -3843,12 +3850,12 @@ static void ast_promo_entry_init(void) {
 		sv.r2 = VT_CONST;
 		sv.c.i = ast_promo_off[i];
 		vpushv(&sv);
-		ast_pinned_regs &= ~(1u << reg);
+		ast_pinned_regs &= ~((uint64_t)1 << reg);
 		if (reg_classes[reg])
-			gv(reg_classes[reg]);
+			gv(reg_classes[reg] & ~(MCC_RC_INT | MCC_RC_FLOAT));
 		else
 			load(reg, vtop);
-		ast_pinned_regs |= (1u << reg);
+		ast_pinned_regs |= ((uint64_t)1 << reg);
 		vpop();
 	}
 }
@@ -11617,7 +11624,7 @@ typedef struct {
 	int ind, rsym, loc, anon_sym;
 	SValue *vtop;
 	Sym *lsmark;
-	unsigned pinned;
+	uint64_t pinned;
 	int promo_n, promo_callful, promo_save_loc;
 	int promo_total, graft_total, opt_total;
 } AstScratchSave;
@@ -12611,7 +12618,7 @@ void ast_func_end(Sym *sym) {
 		ast_inline_active = (ui);                                                     \
 		ast_graft_budget = ast_graft_budget_max;                                     \
 		for (int pi = 0; pi < ast_promo_n; pi++)                                      \
-			ast_pinned_regs |= (1u << ast_promo_regpool_at(pi));                       \
+			ast_pinned_regs |= ((uint64_t)1 << ast_promo_regpool_at(pi));               \
 		if (do_promote)                                                              \
 			ast_promo_entry_init();                                                    \
 		ast_loc_low = loc;                                                            \

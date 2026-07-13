@@ -45,6 +45,12 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		0,
 		0,
 		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
 		0};
 
 #if MCC_CONFIG_DIAG_RT >= 2
