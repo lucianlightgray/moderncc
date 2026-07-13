@@ -1228,9 +1228,12 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   nest changes. (needs the loop-nest analysis foundation)
 - [ ] **Implement §27 loop fusion.** (needs the loop-nest analysis foundation)
 - [ ] **Implement §27 loop tiling.** (needs the loop-nest analysis foundation)
-- [ ] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
-  `ast_narrow_binop` handles only the distributive `+ - * & | ^` today. (needs the
-  lattice; `MCC_AST_NARROW` truncation-sink narrowing ships default-on -O2)
+- [~] **[P1] Extend §29 narrowing to non-distributive `/ % << >>` + comparisons** —
+  `ast_narrow_binop_ranged` (gated `MCC_AST_VLAT`) now covers **unsigned `/ %` + `<<`const** (PR-2) and
+  **`>>` (`TOK_SAR`/`TOK_SHR`, PR-3, 2a24c2b4)** — constant count [0,31] + op0-fit, signedness-aware.
+  Each landed default-off + full-bar validated (3968/3968, fuzz 0-miscompile, self-host fixpoint).
+  **Remaining:** signed `/ %` (INT_MIN/−1 trap divergence), `<<` value-count, comparisons (wrong pass
+  shape — likely SKIP); then flip `MCC_AST_VLAT` default-on after broad exposure.
 - [~] **[P1] §29 outer-narrow elimination — LANDED gated (9dc8ce2f, `MCC_AST_NARROW_ELIM` default off)** —
   `ast_narrow_elim` drops a redundant narrowing `AST_Convert` when the operand provably fits (constant
   round-trip, or a readonly local whose `AstVLat` type-range fits, peeling one widening convert). Fires on
