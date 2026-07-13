@@ -1604,7 +1604,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 	mcc_add_pragma_libs(s1);
 
 	if (!s1->nostdlib) {
-		int lpthread = s1->option_pthread;
+		int lpthread = s1->option_pthread || (s1->jit_threads > 0);
 
 #if MCC_CONFIG_DIAG_RT >= 2
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL) {
