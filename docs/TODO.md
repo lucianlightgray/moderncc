@@ -925,14 +925,15 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   bespoke **off-C-ABI register calling convention** for pure kernels (nothing register-only exists to
   graft onto — `gfunc_prolog` spills all params to frame); how a pure slice's live-ins key the M5b cache;
   interaction with inlining/W2.3; partial-specializing an impure bound call without losing ABI compliance.
-- [~] **M6 — Stage 3 triggers + threads + budget — plumbing (362fe0d5) + async pool + budget LANDED
-  (ff493110); lazy trigger deferred** — `--jit-threads` spawns a detached pthread worker (per-fn, mutex-
-  serialized against the compiler's global state) that recompiles+publishes off the startup critical path;
-  `--jit-max-duration` is a real `CLOCK_MONOTONIC` deadline (pre-check skip + post-check drop-variant/keep-
-  AOT; 0=unlimited=byte-identical sync). The `.init_array` boot ctor already drives the eager warm.
-  Verified: sync/async/budget progs all correct, 20 async runs no deadlock; default 3968/3968. **Remaining:**
-  the `jit-profile` **hot-counter LAZY trigger** (recompile on hotness, not just at startup — needs mode-6
-  entry counter emit in mccast.c); an N-worker shared queue (per-fn detached worker today).
+- [~] **M6 — Stage 3 triggers + threads + budget — plumbing + async pool + budget (ff493110) + hot-counter
+  LAZY trigger (0682f4cf) LANDED; N-worker queue only remains** — `--jit-threads` = detached pthread worker
+  (per-fn, mutex-serialized) recompiling off the startup path; `--jit-max-duration` = real `CLOCK_MONOTONIC`
+  deadline (0=unlimited=byte-identical). **D5=both complete:** eager `.init_array` warm AND (opt-in
+  `MCC_JIT_LAZY`) a runtime counting trampoline (34-byte x86_64 thunk + `mccjit_counter_tick`) that runs
+  the baseline until `MCC_JIT_HOT_THRESHOLD` calls then promotes (recompile→KGC differential stub→swap) —
+  no mccast.c change needed; verified correct across the boundary and lazy+sound (`MCC_JIT_SPEC_WRONG`
+  never leaks a wrong result). Default 3968/3968. **Remaining:** an N-worker shared queue (per-fn detached
+  worker today); async (off-hot-thread) promotion for the lazy path (synchronous today).
 - [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable
   prologue for in-place code-patch hot-swap. Lower priority; M5's pointer-swap dispatcher is the primary
   mechanism. Deferrable.
