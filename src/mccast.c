@@ -689,7 +689,8 @@ static int ast_inline_pass_env;
 static int ast_vlat_env;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
-static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt, 3=non-null speculative (§26 W2.2/W2.3) */
+static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt, 3=non-null speculative, 4=const-param, 5=value-range (§26 W2.2/W2.3) */
+static int ast_jit_guard_env;
 static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
 int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
 int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
@@ -779,6 +780,52 @@ static int ast_fncfg_find(const char *fn) {
 		if (!strcmp(ast_fncfg[i].name, fn))
 			return i;
 	return -1;
+}
+
+static char ast_jit_fns[AST_FNCFG_MAX][80];
+static int ast_jit_fns_n;
+
+static void ast_jit_fns_default(void) {
+	memcpy(ast_jit_fns[0], "main", 5);
+	ast_jit_fns_n = 1;
+}
+
+static void ast_jit_fns_parse(const char *csv) {
+	ast_jit_fns_n = 0;
+	if (!csv) {
+		ast_jit_fns_default();
+		return;
+	}
+	while (*csv && ast_jit_fns_n < AST_FNCFG_MAX) {
+		const char *name = csv;
+		int nlen;
+		while (*csv && *csv != ',')
+			csv++;
+		nlen = (int)(csv - name);
+		if (nlen >= 80)
+			nlen = 79;
+		if (nlen > 0) {
+			memcpy(ast_jit_fns[ast_jit_fns_n], name, nlen);
+			ast_jit_fns[ast_jit_fns_n][nlen] = 0;
+			ast_jit_fns_n++;
+		}
+		if (*csv == ',')
+			csv++;
+	}
+	if (ast_jit_fns_n == 0)
+		ast_jit_fns_default();
+}
+
+static int ast_jit_selected(const char *fn) {
+	int i;
+	if (!fn)
+		return 0;
+	if (ast_jit_fns_n == 0)
+		return !strcmp(fn, "main");
+	for (i = 0; i < ast_jit_fns_n; i++)
+		if (!strcmp(ast_jit_fns[i], fn))
+			return 1;
+	return 0;
 }
 static int ast_templates_env;
 static int ast_search_env;
@@ -1149,6 +1196,7 @@ void ast_configure(MCCState *s1) {
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
 	ast_fncfg_parse();
+	ast_jit_fns_parse(mcc_state ? mcc_state->jit_functions : 0);
 }
 
 int ast_fconst_reuse(void) {
@@ -6018,6 +6066,121 @@ static int ast_nonnull_fold(AstArena *a, const int *offs, int noff) {
 }
 #endif
 
+static int ast_constparam_probe(AstArena *a, int off, int64_t *val) {
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		int op, lt;
+		uint64_t lv;
+		AstLocal x, y;
+		if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+			continue;
+		op = ast_op(a, n);
+		if (op != TOK_EQ && op != TOK_NE)
+			continue;
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		if (ast_nonnull_ref(a, x, &off, 1) && ast_ident_cval(a, y, &lt, &lv)) {
+			*val = (int64_t)lv;
+			return 1;
+		}
+		if (ast_nonnull_ref(a, y, &off, 1) && ast_ident_cval(a, x, &lt, &lv)) {
+			*val = (int64_t)lv;
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int ast_constparam_params(AstArena *a, Sym *fsym, int *offs, int64_t *vals, int max) {
+	int n = 0;
+	if (!fsym || !fsym->type.ref || fsym->type.ref->f.func_type != FUNC_NEW)
+		return 0;
+	for (Sym *p = fsym->type.ref->next; p; p = p->next) {
+		int v = p->v & ~SYM_FIELD;
+		int64_t cval;
+		if (v < TOK_IDENT)
+			continue;
+		Sym *ls = sym_find(v);
+		if (!ls)
+			continue;
+		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
+			continue;
+		if (!ast_ident_intt(ls->type.t))
+			continue;
+		if (!ast_local_is_readonly(a, (int)ls->c))
+			continue;
+		if (ast_du_slot_flags(a, (int)ls->c) & AST_DU_ESCAPED)
+			continue;
+		if (!ast_constparam_probe(a, (int)ls->c, &cval))
+			continue;
+		if ((int64_t)(int32_t)cval != cval)
+			continue;
+		if (n < max) {
+			offs[n] = (int)ls->c;
+			vals[n] = cval;
+			n++;
+		}
+	}
+	return n;
+}
+
+static int ast_constparam_fold(AstArena *a, const int *offs, const int64_t *vals, int noff) {
+	int folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) {
+		int r, off, tt;
+		uint64_t ref;
+		if (ast_kind(a, n) != AST_Ref)
+			continue;
+		r = ast_op(a, n);
+		if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+			continue;
+		off = (int)(int64_t)ast_ival(a, n);
+		for (int i = 0; i < noff; i++)
+			if (offs[i] == off) {
+				if (!ast_ident_etype(a, n, &tt, &ref))
+					tt = VT_INT;
+				ast_ident_setlit(a, n, tt, (uint64_t)vals[i]);
+				folds++;
+				break;
+			}
+	}
+	return folds;
+}
+
+static int ast_rangeparam_params(AstArena *a, Sym *fsym, int *offs, int64_t *los,
+																 int64_t *his, int max) {
+	int n = 0;
+	if (!fsym || !fsym->type.ref || fsym->type.ref->f.func_type != FUNC_NEW)
+		return 0;
+	for (Sym *p = fsym->type.ref->next; p; p = p->next) {
+		int v = p->v & ~SYM_FIELD;
+		AstVLat vl;
+		if (v < TOK_IDENT)
+			continue;
+		Sym *ls = sym_find(v);
+		if (!ls)
+			continue;
+		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
+			continue;
+		if (!ast_ident_intt(ls->type.t))
+			continue;
+		if (!ast_local_is_readonly(a, (int)ls->c))
+			continue;
+		if (!ast_vlat_context(a, (int)ls->c, &vl) || vl.state != AST_VLAT_FACT)
+			continue;
+		if (vl.lo > vl.hi)
+			continue;
+		if (n < max) {
+			offs[n] = (int)ls->c;
+			los[n] = vl.lo;
+			his[n] = vl.hi;
+			n++;
+		}
+	}
+	return n;
+}
+
 static int ast_sccp_run(AstArena *a) {
 	ast_sccp_folds = ast_sccp_scan(a);
 	/* V-sccp: fuse cprop+sccp to a fixpoint (MCC_AST_SCCP_FIX). Folding a constant
@@ -9553,6 +9716,24 @@ static int ast_search_should_stop(void) {
 	return ast_search_expect_ms() > rem;
 }
 
+#if defined(__has_include)
+#if __has_include("ast_eval_slice.h")
+#include "ast_eval_slice.h"
+#endif
+#endif
+#ifndef AST_EVAL_SLICE_PROVIDED
+static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64_t *v,
+													int c, int64_t *out) {
+	(void)a;
+	(void)n;
+	(void)o;
+	(void)v;
+	(void)c;
+	(void)out;
+	return 1;
+}
+#endif
+
 static AstGateMask ast_search_gates_now(void) {
 	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
 				 (ast_narrow_env ? AST_SG_NARROW : 0) |
@@ -9588,7 +9769,9 @@ static AstGateMask ast_search_gates_now(void) {
 				 (ast_narrow_c0_env ? AST_SG_NARROW_C0 : 0) |
 				 (ast_narrow_c1_env ? AST_SG_NARROW_C1 : 0) |
 				 (ast_narrow_c2_env ? AST_SG_NARROW_C2 : 0) |
-				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0);
+				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0) |
+				 (ast_jit_dispatch_env ? AST_SG_JIT_DISPATCH : 0) |
+				 (ast_jit_guard_env ? AST_SG_JIT_GUARD : 0);
 }
 
 static void ast_search_gates_set(AstGateMask g) {
@@ -9627,6 +9810,8 @@ static void ast_search_gates_set(AstGateMask g) {
 	ast_narrow_c1_env = (g & AST_SG_NARROW_C1) != 0;
 	ast_narrow_c2_env = (g & AST_SG_NARROW_C2) != 0;
 	ast_narrow_c3_env = (g & AST_SG_NARROW_C3) != 0;
+	ast_jit_dispatch_env = (g & AST_SG_JIT_DISPATCH) ? (ast_jit_dispatch_env ? ast_jit_dispatch_env : 1) : 0;
+	ast_jit_guard_env = (g & AST_SG_JIT_GUARD) != 0;
 }
 
 #ifndef SHF_PRIVATE
@@ -10173,6 +10358,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 							 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
 							 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
 							 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
+							 (ast_jit_env ? (AST_SG_JIT_DISPATCH | AST_SG_JIT_GUARD) : 0) |
 							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
 								* when templates is in base. Safe to add now that the candidate count is
 								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
@@ -10621,7 +10807,8 @@ void ast_func_end(Sym *sym) {
 					promoted = ast_promo_n;
 #undef AST_PF_EMIT
 				}
-				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env) {
+				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env &&
+						ast_jit_selected(funcname)) {
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 					int aot_base = ast_body_ind_sv;
 					int aot_len = ind - aot_base;
@@ -10633,16 +10820,45 @@ void ast_func_end(Sym *sym) {
 					unsigned char *aot_rel = mcc_malloc(aot_rlen > 0 ? aot_rlen : 1);
 					if (aot_rlen > 0)
 						memcpy(aot_rel, rs->data + ast_reloc0_sv, aot_rlen);
+					int specmode = ast_jit_dispatch_env;
 					int poffs[AST_TCO_MAXP];
-					int npoff = ast_jit_dispatch_env >= 3 ? ast_nonnull_params(ast_cur, sym, poffs, AST_TCO_MAXP) : 0;
+					int64_t pvals[AST_TCO_MAXP], plos[AST_TCO_MAXP], phis[AST_TCO_MAXP];
+					int npoff = 0;
+					if (specmode == 3)
+						npoff = ast_nonnull_params(ast_cur, sym, poffs, AST_TCO_MAXP);
+					else if (specmode == 4)
+						npoff = ast_constparam_params(ast_cur, sym, poffs, pvals, AST_TCO_MAXP);
+					else if (specmode == 5)
+						npoff = ast_rangeparam_params(ast_cur, sym, poffs, plos, phis, AST_TCO_MAXP);
 					/* Specialize a CLONE (ast_cur stays pristine → still inline-graftable / sound). */
 					AstArena *ast_spec = NULL;
 					if (npoff > 0 && (ast_spec = ast_arena_clone(ast_cur))) {
 						AstArena *sv = ast_cur;
 						ast_cur = ast_spec;
-						ast_nonnull_fold(ast_spec, poffs, npoff);
+						if (specmode == 3)
+							ast_nonnull_fold(ast_spec, poffs, npoff);
+						else if (specmode == 4)
+							ast_constparam_fold(ast_spec, poffs, pvals, npoff);
 						ast_sccp_run(ast_spec);
 						ast_cur = sv;
+#if MCC_CONFIG_AST_SHADOW
+						{
+							int32_t soff[AST_TCO_MAXP];
+							int64_t sval[AST_TCO_MAXP], sout, bout;
+							for (int i = 0; i < npoff; i++) {
+								soff[i] = poffs[i];
+								sval[i] = specmode == 4 ? pvals[i] : (specmode == 5 ? plos[i] : 0);
+							}
+							if (ast_eval_slice(ast_cur, ast_root(ast_cur), soff, sval, npoff, &bout) &&
+									(!ast_eval_slice(ast_spec, ast_root(ast_spec), soff, sval, npoff, &sout) ||
+									 bout != sout)) {
+								fprintf(stderr,
+												"mcc: AST side-car divergence: jit-spec-slice(mode=%d) value mismatch over guarded domain\n",
+												specmode);
+								abort();
+							}
+						}
+#endif
 					}
 					int spec = ast_spec != NULL;
 					ind = aot_base;
@@ -10650,8 +10866,57 @@ void ast_func_end(Sym *sym) {
 					if (rs)
 						rs->data_offset = ast_reloc0_sv;
 					nocode_wanted = 0;
-					int ast_guard_slots[AST_TCO_MAXP + 1], ast_guard_n = 0;
-					if (spec) {
+					int ast_guard_slots[2 * AST_TCO_MAXP + 1], ast_guard_n = 0;
+					if (spec && specmode == 4) {
+						for (int i = 0; i < npoff; i++) {
+							g(0x48);
+							g(0x81);
+							g(0xbd);
+							gen_le32(poffs[i]);
+							gen_le32((int)pvals[i]);
+							g(0x0f);
+							ast_guard_slots[ast_guard_n++] = oad(0x85, 0);
+						}
+					} else if (spec && specmode == 5) {
+						for (int i = 0; i < npoff; i++) {
+							if ((int64_t)(int32_t)plos[i] == plos[i]) {
+								g(0x48);
+								g(0x81);
+								g(0xbd);
+								gen_le32(poffs[i]);
+								gen_le32((int)plos[i]);
+							} else {
+								g(0x48);
+								g(0xb8);
+								gen_le32((int)(uint32_t)(uint64_t)plos[i]);
+								gen_le32((int)(uint32_t)((uint64_t)plos[i] >> 32));
+								g(0x48);
+								g(0x39);
+								g(0x85);
+								gen_le32(poffs[i]);
+							}
+							g(0x0f);
+							ast_guard_slots[ast_guard_n++] = oad(0x8c, 0);
+							if ((int64_t)(int32_t)phis[i] == phis[i]) {
+								g(0x48);
+								g(0x81);
+								g(0xbd);
+								gen_le32(poffs[i]);
+								gen_le32((int)phis[i]);
+							} else {
+								g(0x48);
+								g(0xb8);
+								gen_le32((int)(uint32_t)(uint64_t)phis[i]);
+								gen_le32((int)(uint32_t)((uint64_t)phis[i] >> 32));
+								g(0x48);
+								g(0x39);
+								g(0x85);
+								gen_le32(poffs[i]);
+							}
+							g(0x0f);
+							ast_guard_slots[ast_guard_n++] = oad(0x8f, 0);
+						}
+					} else if (spec) {
 						for (int i = 0; i < npoff; i++) {
 							g(0x48); /* cmp qword [rbp+off32], 0 */
 							g(0x83);
@@ -10773,7 +11038,7 @@ void ast_func_end(Sym *sym) {
 				if (promoted)
 					fprintf(stderr, "[ast-promote] %d %s\n", promoted, funcname);
 			}
-			if (ast_jit_env && faithful)
+			if (ast_jit_env && faithful && ast_jit_selected(funcname))
 				keep_baseline = ast_baseline_retain(sym, ast_cur, ast_body_ind_sv,
 																						ast_reloc0_sv, rsym);
 			mcc_free(orig);

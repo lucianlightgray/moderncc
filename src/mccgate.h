@@ -110,6 +110,8 @@ typedef uint64_t AstGateMask;
 #define AST_SG_NARROW_C1 ((AstGateMask)137438953472)
 #define AST_SG_NARROW_C2 ((AstGateMask)274877906944)
 #define AST_SG_NARROW_C3 ((AstGateMask)549755813888)
+#define AST_SG_JIT_DISPATCH ((AstGateMask)1 << 40)
+#define AST_SG_JIT_GUARD ((AstGateMask)1 << 41)
 
 enum {
 	SO_GATE_TEMPLATES = 1u,
