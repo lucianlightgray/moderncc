@@ -270,9 +270,23 @@ never rollout steps and have no symbol in `src/` today:
   *context* key. Step 3 shipped only the structural-hash half (`ast_hash_*`). **PR-1 LANDED as the
   unified `AstVLat` side-car** (see P1 in § Strategic path): the value-domain lattice + the bounded
   parent-spine dominating-`AST_If` walk exist, and `ast_vlat_context(off,*out)` is the reaching-context
-  projection accessor. Remaining: feed `ast_vlat_context` into an actual memo/`eval_slice` key
-  (the value-changing consumer) — PR-2+. Overlaps but is not §29 (that reads the *narrowing-residue*
-  projection `ast_vlat_narrowing` of the same lattice).
+  projection accessor. **PR-A LANDED (region-scoped projection, byte-neutral, no consumer):**
+  `ast_vlat_context_at(a, use, *out)` returns the value-domain fact at ONE specific use *before* the
+  whole-function meet `ast_vlat_pass` performs — `ast_vlat_element` already computes the path-sensitive
+  per-use over-approximation (starts from the full type range, refines only by dominating predicates
+  that must hold to reach the use), so exposing it un-meeted is the region-scoped (`context_in`) fact a
+  consumer keys on. Readonly locals only for now (same `ast_vlat_use_of` gate). Sound by the same
+  construction as the meeted `ast_vlat_context` and strictly no wider (per-use ⊆ the meet, which ⊇ every
+  element); under `MCC_CONFIG_AST_SHADOW` the accessor asserts `element ⊆ whole-function fact` and a
+  whole-function-emit sweep runs it on every node. Gated `MCC_AST_VLAT` → byte-neutral. Validated on
+  arm64/mac: build clean (no unused-fn warning via the `ast_func_end` keep-alive); default ctest
+  byte-identical; `exec-vlat` (`-O2 MCC_AST_VLAT=1`) **296/296**; a shadow-build `MCC_AST_VLAT=1` sweep
+  over **291** corpus sources → **0** `context_at` aborts / 0 crashes. **Remaining (PR-B):** admit
+  loop-carried IVs via `ast_loop_iv`/`ast_loop_bounds` monotonicity widening (init⊕stride⊕predicate),
+  unblocking §32a — its own soundness treatment (widening/narrowing) + fuzz. **(PR-C):** first consumer
+  (§32a loop-range narrowing / bounds-check elim) + feed `ast_vlat_context` into a memo/`eval_slice`
+  key. Overlaps but is not §29 (that reads the *narrowing-residue* projection `ast_vlat_narrowing` of
+  the same lattice).
 - [ ] **[P1] Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
   queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
   ivsr) become O(1) table lookups. PR-2's whole-function `ast_du_*` table subsumes only the two

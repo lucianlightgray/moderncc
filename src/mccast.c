@@ -7775,6 +7775,30 @@ static int ast_vlat_context(AstArena *a, int off, AstVLat *out) {
 	return 1;
 }
 
+static int ast_vlat_context_at(AstArena *a, AstLocal use, AstVLat *out) {
+	int off, kt;
+	AstVLat el;
+	if (!ast_vlat_env)
+		return 0;
+	if (!ast_vlat_use_of(a, use, &off, &kt))
+		return 0;
+	el = ast_vlat_element(a, use, off, kt);
+	if (el.state != AST_VLAT_FACT)
+		return 0;
+#if MCC_CONFIG_AST_SHADOW
+	ast_vlat_sync(a);
+	if (ast_vlat_state >= 0) {
+		AstVLat *whole = ast_vlat_find(off, 0);
+		if (whole && whole->state == AST_VLAT_FACT &&
+				(el.lo < whole->lo || el.hi > whole->hi ||
+				 (whole->kzero & ~el.kzero) || (whole->kone & ~el.kone)))
+			ast_vlat_diverge("context_at", off, el.lo, el.hi);
+	}
+#endif
+	*out = el;
+	return 1;
+}
+
 static int ast_range_try(AstArena *a, AstLocal n) {
 	AstLocal c0 = ast_child(a, n, 0), c1 = ast_child(a, n, 1), k0, k1, key, kexpr, hlit;
 	int64_t b0, b1, lo, hi;
@@ -12403,6 +12427,14 @@ void ast_func_end(Sym *sym) {
 					ast_vlat_sync(ast_cur);
 					(void)ast_vlat_narrowing(ast_cur, 0, VT_INT);
 					(void)ast_vlat_context(ast_cur, 0, &ast_vlat_ctx);
+					(void)ast_vlat_context_at(ast_cur, ast_root(ast_cur), &ast_vlat_ctx);
+#if MCC_CONFIG_AST_SHADOW
+					{
+						AstLocal ast_vlat_nn = ast_count(ast_cur);
+						for (AstLocal ast_vlat_u = 0; ast_vlat_u < ast_vlat_nn; ast_vlat_u++)
+							(void)ast_vlat_context_at(ast_cur, ast_vlat_u, &ast_vlat_ctx);
+					}
+#endif
 				}
 				if (faithful && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) {
 					if (ast_interchange_env)
