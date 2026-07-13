@@ -15,6 +15,8 @@
 #define MCCJIT_INTENT_FORMAT 2u
 
 void ast_reemit_extern(Sym *sym, AstArena *ast);
+int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
+void mcc_jit_publish(void **slot, void *variant);
 
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
@@ -277,8 +279,11 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 			const char *pn = (p->v >= TOK_IDENT && p->v < SYM_FIRST_ANOM)
 													 ? get_tok_str(p->v, NULL)
 													 : "";
+			Sym *ls = (p->v >= TOK_IDENT && p->v < SYM_FIRST_ANOM) ? sym_find(p->v) : NULL;
+			int64_t poff = (ls && (ls->r & VT_VALMASK) == VT_LOCAL) ? (int64_t)ls->c
+																															: (int64_t)p->c;
 			mccjit_put_u32(buf, (uint32_t)p->type.t);
-			mccjit_put_u64(buf, (uint64_t)(int64_t)p->c);
+			mccjit_put_u64(buf, (uint64_t)poff);
 			mccjit_put_str(buf, pn);
 		}
 	}
@@ -506,7 +511,8 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) {
 														 &functype);
 }
 
-MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) {
+static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
+																		 int param_index, int64_t const_val) {
 	MccjitIntent it;
 	MCCState *js;
 	Sym *sym;
@@ -532,6 +538,9 @@ MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) {
 		return NULL;
 	}
 
+	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
+		mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
+
 	sym = mccjit_rebuild_sym(&it);
 	if (sym)
 		ast_reemit_extern(sym, it.arena);
@@ -548,6 +557,15 @@ MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) {
 		mcc_delete(js);
 	}
 	return entry;
+}
+
+MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) {
+	return mccjit_recompile_common(buf, len, 0, -1, 0);
+}
+
+MCCJIT_LOCAL void *mcc_jit_recompile_blob_spec(const void *buf, size_t len,
+																							 int param_index, int64_t const_val) {
+	return mccjit_recompile_common(buf, len, 1, param_index, const_val);
 }
 
 MCCJIT_LOCAL void *mcc_jit_recompile(Sym *sym, const void *ctxkey) {
@@ -579,6 +597,8 @@ int mccjit_selftest(void) {
 	int (*jitf)(int) = NULL;
 	int inputs[4] = {5, 0, -3, 100};
 	int i, fails = 0;
+	void *slot = NULL, *v1 = NULL, *v2 = NULL, *vspec = NULL;
+	MCCState *v1state = NULL, *v2state = NULL, *vspecstate = NULL;
 
 	mcc_free(mccjit_last_blob);
 	mccjit_last_blob = NULL;
@@ -618,6 +638,7 @@ int mccjit_selftest(void) {
 		mcc_delete(s1);
 		return 1;
 	}
+	v1state = mccjit_last_state;
 
 	for (i = 0; i < 4; i++) {
 		int x = inputs[i];
@@ -631,10 +652,69 @@ int mccjit_selftest(void) {
 			fails++;
 	}
 
-	if (mccjit_last_state) {
-		mcc_delete(mccjit_last_state);
-		mccjit_last_state = NULL;
+	v1 = (void *)jitf;
+	slot = v1;
+	printf("mccjit-selftest: hotswap slot init -> v1=%p\n", slot);
+	for (i = 0; i < 4; i++) {
+		int x = inputs[i];
+		int got = ((int (*)(int))slot)(x);
+		int want = x * 2 + 1;
+		int ok = (got == want);
+		printf("mccjit-selftest: slot(v1) f(%d)=%d expect=%d %s\n", x, got, want,
+					 ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
 	}
+
+	v2 = mcc_jit_recompile_blob(mccjit_last_blob, mccjit_last_len);
+	if (!v2) {
+		printf("mccjit-selftest: v2 recompile returned NULL\n");
+		if (v1state)
+			mcc_delete(v1state);
+		mcc_delete(s1);
+		return 1;
+	}
+	v2state = mccjit_last_state;
+	mcc_jit_publish(&slot, v2);
+	printf("mccjit-selftest: published v2=%p into slot (was v1=%p)\n", v2, v1);
+	if (slot != v2) {
+		printf("mccjit-selftest: slot did not observe v2 after publish\n");
+		fails++;
+	}
+	for (i = 0; i < 4; i++) {
+		int x = inputs[i];
+		int gv1 = ((int (*)(int))v1)(x);
+		int gv2 = ((int (*)(int))slot)(x);
+		int want = x * 2 + 1;
+		int ok = (gv2 == want) && (gv1 == gv2);
+		printf("mccjit-selftest: swap f(%d) v1=%d v2=%d expect=%d %s\n", x, gv1, gv2,
+					 want, ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+
+	vspec = mcc_jit_recompile_blob_spec(mccjit_last_blob, mccjit_last_len, 0, 7);
+	if (!vspec) {
+		printf("mccjit-selftest: specialized recompile returned NULL\n");
+		fails++;
+	} else {
+		int sval = ((int (*)(int))vspec)(7);
+		int sfold = ((int (*)(int))vspec)(5);
+		int ok = (sval == 15) && (sfold == 15);
+		vspecstate = mccjit_last_state;
+		printf("mccjit-selftest: spec[x==7] f(7)=%d expect=15; f(5)=%d (folded=%s) %s\n",
+					 sval, sfold, sfold == 15 ? "const" : "live", ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+
+	if (vspecstate)
+		mcc_delete(vspecstate);
+	if (v2state)
+		mcc_delete(v2state);
+	if (v1state)
+		mcc_delete(v1state);
+	mccjit_last_state = NULL;
 	mcc_delete(s1);
 	printf("mccjit-selftest: %s (%d failure%s)\n", fails ? "FAIL" : "PASS", fails,
 				 fails == 1 ? "" : "s");

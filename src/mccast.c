@@ -11230,6 +11230,18 @@ void ast_reemit_forward_inlines(void) {
 void ast_reemit_extern(Sym *sym, AstArena *ast) {
 	ast_reemit(sym, ast);
 }
+
+int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val) {
+	AstArena *sv = ast_cur;
+	int folds;
+	if (!ast)
+		return 0;
+	ast_cur = ast;
+	folds = ast_constparam_fold(ast, &off, &val, 1);
+	ast_sccp_run(ast);
+	ast_cur = sv;
+	return folds;
+}
 #endif
 
 #undef gjmp_addr
