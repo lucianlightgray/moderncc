@@ -727,6 +727,7 @@ static int ast_licm_temp_env;
 static int ast_ivsr_env;
 static int ast_pre_env;
 static int ast_perfn_inproc_env;
+static int ast_argfwd_env;
 
 #define AST_LTEMP_MAX 32
 #define AST_LTEMP_PER_LOOP 8
@@ -1198,6 +1199,7 @@ void ast_configure(MCCState *s1) {
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
 	ast_pre_env = ast_env_gate("MCC_AST_PRE", 0);
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
+	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
@@ -2306,6 +2308,16 @@ static int ast_promo_regpool_at(int i) {
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
 static int ast_local_is_readonly(AstArena *a, int off);
+static int ast_cprop_escapes(AstArena *a, int off);
+static int ast_ref_is_local_off(AstArena *a, AstLocal n, int off);
+static int ast_argfwd_read_count(AstArena *a, int off) {
+	AstLocal nn = ast_count(a);
+	int cnt = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		if (ast_kind(a, n) == AST_Ref && ast_ref_is_local_off(a, n, off))
+			cnt++;
+	return cnt;
+}
 #define AST_INLINE_MAX 512
 #define AST_INLINE_MAX_PARAMS 6
 static struct AstInlineFn {
@@ -2514,6 +2526,33 @@ static int ast_inline_graft(AstArena *a, AstLocal n) {
 			continue;
 		}
 		ast_replay_value(a, ast_child(a, n, hidden + i + 1));
+		if (ast_argfwd_env && vtop->r2 == VT_CONST &&
+				(e->param_typ[i] & VT_BTYPE) != VT_STRUCT &&
+				ast_local_is_readonly(e->ast, e->param_off[i]) &&
+				!ast_cprop_escapes(e->ast, e->param_off[i]) &&
+				ast_argfwd_read_count(e->ast, e->param_off[i]) == 1) {
+			int vr = vtop->r, fwd = 0;
+			if ((vr & VT_VALMASK) == VT_CONST && !(vr & VT_LVAL)) {
+				fwd = 1;
+			} else if ((vr & VT_VALMASK) == VT_LOCAL && (vr & VT_LVAL) &&
+								 !(vr & VT_SYM) && ast_kind(a, arg) == AST_Ref &&
+								 !ast_cprop_escapes(a, (int)(int64_t)ast_ival(a, arg))) {
+				fwd = 1;
+			}
+			if (fwd) {
+				SValue fv = *vtop;
+				fv.type.t = e->param_typ[i];
+				fv.type.ref = (Sym *)e->param_ref[i];
+				vpop();
+				suboff[nsub] = e->param_off[i];
+				subval[nsub] = fv;
+				nsub++;
+				MCC_TRACE("argfwd %s param#%d off=%d %s\n",
+									get_tok_str(((Sym *)csym)->v, NULL), i, e->param_off[i],
+									(vr & VT_VALMASK) == VT_CONST ? "const" : "local");
+				continue;
+			}
+		}
 		SValue slot;
 		memset(&slot, 0, sizeof slot);
 		slot.type.t = e->param_typ[i];
