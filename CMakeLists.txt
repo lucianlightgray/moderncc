@@ -3406,6 +3406,24 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_SEARCH_WORKER=1")
         endforeach()
 
+        # §22 scratch-Section emit isolation (MCC_AST_SEARCH_EMITISO): the emit-size measurement
+        # replays each candidate into a private .mcc.scratch.text section (own reloc sub-section)
+        # instead of the live text section, then rewinds and asserts a zero-leak on the real section
+        # (ast_scratch_enter/measure_exit, hard mcc_internal_error guard). This variant exercises that
+        # isolation path across the corpus so a leak (a promo/loc desync, an unrewound cursor, a
+        # symbol-scope leak) trips the guard or shows as a wrong runtime result. Fires heavily on the
+        # optimizer sources (100s-1000s of scratch measurements each).
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-search-emitiso/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-search-emitiso-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-search-emitiso/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_AST_SEARCH_EMITISO=1;MCC_SEARCH_WORKER=1")
+        endforeach()
+
         # NCores-1 fork score-only pool (ast_search_pool) — a distinct concurrency path
         # (fork COW isolation, pipe collection, single-threaded winner apply).
         foreach(_gl IN LISTS _exec_glines)

@@ -1017,10 +1017,6 @@ tag and are sequenced by § Strategic path, not by their bucket.
   join pass sees the merged window) vs two-pass hand-off (B: thread the caller's
   exit facts into `ast_inline_graft` as the callee replay's entry facts).
   Deliverable is the A-vs-B decision + arena/gate design.
-- [~] **Build scratch-`Section` emit isolation for §22 (cell C1c)** — redirect
-  `cur_text_section` (+ reloc, `ind`, symbol scope) to a throwaway `Section` per
-  measurement, measure, discard, emit the winner once. In-place save/restore was
-  proven insufficient (`ast_promo_entry_init` desyncs).
   **STEP 1 LANDED (byte + score-neutral) — `MCC_AST_SEARCH_EMITISO`, default off.** `ast_scratch_init`/
   `_enter`/`_measure_exit` (`src/mccast.c`) redirect `cur_text_section` to a lazily-created private
   `.mcc.scratch.text` + `.rela.mcc.scratch.text` (flagged `SHF_PRIVATE` so they never leak into the
@@ -1206,11 +1202,15 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Explore `-fsanitize=cfi` hardening** (absent today).
 - [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent today;
   `-fstack-protector` already ships with real x86_64/arm64 canary codegen).
-- [ ] **Add the §22 promotion re-emit axis** on top of emit isolation. (needs the
-  scratch-`Section` isolation)
+- [ ] **Add the §22 promotion re-emit axis** on top of emit isolation. (Scratch-`Section` isolation
+  is now LANDED + CI-locked and its `AstScratchSave` already save/restores the full promotion state,
+  so the blocker is cleared; the open work is letting `ast_search_emit_size` measure WITH promotion
+  ON — today it forces promotion off — by re-planning + running `ast_promo_entry_init` inside the
+  scratch window, then scoring promotion on/off as a search axis. Low correctness risk: emit-size
+  scoring only scores, never miscompiles.)
 - [ ] **Add the §22 arena-mutating pass-subset re-emit axis** on top of emit
-  isolation. (needs the scratch-`Section` isolation; inline-size axis
-  `MCC_AST_PERFN_INPROC` already ships)
+  isolation. (Scratch-`Section` isolation LANDED; inline-size axis `MCC_AST_PERFN_INPROC` already
+  ships.)
 - [ ] **Register the §23 inline budgets as a §22 search value-axis** — the graft/node/depth runtime
   knobs (`MCC_AST_GRAFT`/`MCC_AST_INLINE_NODES`/`MCC_AST_INLINE_DEPTH`) all landed; the open work is
   exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
