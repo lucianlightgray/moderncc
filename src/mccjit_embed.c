@@ -49,6 +49,41 @@ MCCJIT_LOCAL size_t mccjit_last_len;
 MCCJIT_LOCAL MCCState *mccjit_last_state;
 MCCJIT_LOCAL int mccjit_last_purity;
 
+#define MCCJIT_KGC_MAXARG 6
+
+MCCJIT_LOCAL uint32_t mccjit_last_nparam;
+MCCJIT_LOCAL uint32_t mccjit_last_param_t[MCCJIT_KGC_MAXARG];
+MCCJIT_LOCAL int mccjit_last_ret_wide;
+MCCJIT_LOCAL int mccjit_last_kgc_ok;
+
+static int mccjit_type_wide(int t) {
+	switch (t & VT_BTYPE) {
+	case VT_LLONG:
+	case VT_PTR:
+	case VT_FUNC:
+		return 1;
+	case VT_INT:
+		return (t & VT_LONG) ? 1 : 0;
+	default:
+		return 0;
+	}
+}
+
+static int mccjit_type_gp(int t) {
+	switch (t & VT_BTYPE) {
+	case VT_BOOL:
+	case VT_BYTE:
+	case VT_SHORT:
+	case VT_INT:
+	case VT_LLONG:
+	case VT_PTR:
+	case VT_FUNC:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) {
 	uint64_t h = 0xcbf29ce484222325ull;
 	const char *s;
@@ -894,6 +929,26 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	mccjit_last_purity = ast_fn_purity(it.arena);
 
+	{
+		uint32_t qi;
+		int rb = (int)it.ret_type_t & VT_BTYPE;
+		mccjit_last_nparam = it.nparam;
+		mccjit_last_ret_wide = mccjit_type_wide((int)it.ret_type_t);
+		mccjit_last_kgc_ok = 1;
+		if (rb == VT_STRUCT || rb == VT_FLOAT || rb == VT_DOUBLE ||
+				rb == VT_LDOUBLE || rb == VT_VOID)
+			mccjit_last_kgc_ok = 0;
+		if (it.nparam < 1 || it.nparam > MCCJIT_KGC_MAXARG)
+			mccjit_last_kgc_ok = 0;
+		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
+			mccjit_last_param_t[qi] = 0;
+		for (qi = 0; qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++) {
+			mccjit_last_param_t[qi] = it.param_type_t[qi];
+			if (!mccjit_type_gp((int)it.param_type_t[qi]))
+				mccjit_last_kgc_ok = 0;
+		}
+	}
+
 	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
 		mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
 
@@ -1007,7 +1062,9 @@ static double mccjit_elapsed(const struct timespec *t0) {
 				 (double)(t1.tv_nsec - t0->tv_nsec) / 1000000000.0;
 }
 
-static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok);
+static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
+																		const uint32_t *param_t, uint32_t nargs,
+																		int ret_wide);
 
 static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
 																 unsigned long max_duration, const char *mode,
@@ -1027,12 +1084,19 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		variant = spec_wrong
 									? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
 									: mcc_jit_recompile_blob(blob, (size_t)len);
-		if (variant && !no_kgc) {
+		if (variant && !no_kgc && mccjit_last_kgc_ok) {
 			int memoize_ok;
+			uint32_t nargs = mccjit_last_nparam;
+			int ret_wide = mccjit_last_ret_wide;
+			uint32_t ptypes[MCCJIT_KGC_MAXARG];
+			uint32_t qi;
+			for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
+				ptypes[qi] = mccjit_last_param_t[qi];
 			baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 			memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 			if (baseline) {
-				entry = mccjit_make_kgc_stub(variant, baseline, memoize_ok);
+				entry = mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes,
+																			 nargs, ret_wide);
 				if (entry)
 					routed = 1;
 			}
@@ -1046,11 +1110,13 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		}
 	}
 	if (getenv("MCC_JIT_VERBOSE")) {
-		int probe = variant ? ((int (*)(int))variant)(7) : -1;
+		int probeable = variant && mccjit_last_nparam == 1 &&
+										!mccjit_type_wide((int)mccjit_last_param_t[0]);
+		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
 		fprintf(stderr,
-						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s probe(7)=%d %s\n",
+						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s np=%u probe(7)=%d %s\n",
 						mode, (void *)slot, aot_init, blob, len, variant, baseline, entry,
-						routed ? "kgc" : "direct", probe,
+						routed ? "kgc" : "direct", mccjit_last_nparam, probe,
 						skipped ? "budget-skip"
 										: over ? "over-budget-kept-aot" : entry ? "swapped" : "kept-aot");
 	}
@@ -1067,11 +1133,20 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 	void *entry = NULL;
 	if (routed)
 		*routed = 0;
-	if (variant && !no_kgc) {
-		void *baseline = mcc_jit_recompile_blob(blob, (size_t)len);
-		int memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
+	if (variant && !no_kgc && mccjit_last_kgc_ok) {
+		uint32_t nargs = mccjit_last_nparam;
+		int ret_wide = mccjit_last_ret_wide;
+		uint32_t ptypes[MCCJIT_KGC_MAXARG];
+		uint32_t qi;
+		void *baseline;
+		int memoize_ok;
+		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
+			ptypes[qi] = mccjit_last_param_t[qi];
+		baseline = mcc_jit_recompile_blob(blob, (size_t)len);
+		memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 		if (baseline) {
-			entry = mccjit_make_kgc_stub(variant, baseline, memoize_ok);
+			entry = mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes, nargs,
+																		 ret_wide);
 			if (entry && routed)
 				*routed = 1;
 		}
@@ -1138,10 +1213,13 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) {
 	if (p == MAP_FAILED)
 		return NULL;
 	p[o++] = 0x57;
-	p[o++] = 0x48;
-	p[o++] = 0x83;
-	p[o++] = 0xec;
-	p[o++] = 0x08;
+	p[o++] = 0x56;
+	p[o++] = 0x52;
+	p[o++] = 0x51;
+	p[o++] = 0x41;
+	p[o++] = 0x50;
+	p[o++] = 0x41;
+	p[o++] = 0x51;
 	p[o++] = 0x48;
 	p[o++] = 0xbf;
 	memcpy(p + o, &st, 8);
@@ -1152,10 +1230,13 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) {
 	o += 8;
 	p[o++] = 0xff;
 	p[o++] = 0xd0;
-	p[o++] = 0x48;
-	p[o++] = 0x83;
-	p[o++] = 0xc4;
-	p[o++] = 0x08;
+	p[o++] = 0x41;
+	p[o++] = 0x59;
+	p[o++] = 0x41;
+	p[o++] = 0x58;
+	p[o++] = 0x59;
+	p[o++] = 0x5a;
+	p[o++] = 0x5e;
 	p[o++] = 0x5f;
 	p[o++] = 0xff;
 	p[o++] = 0xe0;
@@ -1757,7 +1838,7 @@ int mccjit_selftest_struct(void) {
 	return fails ? 1 : 0;
 }
 
-#define MCCJIT_KGC_ARITY 4
+#define MCCJIT_KGC_ARITY 6
 #define MCCJIT_KGC_MAGIC 0x43474b4dul
 
 typedef struct MccjitKgcHdr {
@@ -1778,6 +1859,7 @@ typedef struct MccjitKgc {
 	int64_t *tuples;
 	uint32_t arity;
 	int memoize_ok;
+	int ret_wide;
 } MccjitKgc;
 
 static size_t mccjit_kgc_bytes(uint64_t cap, uint32_t arity) {
@@ -1984,22 +2066,92 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	return bval;
 }
 
+static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
+	switch (n) {
+	case 1:
+		return wide ? (int64_t)((long (*)(long))fn)(a[0])
+								: (int64_t)((int (*)(long))fn)(a[0]);
+	case 2:
+		return wide ? (int64_t)((long (*)(long, long))fn)(a[0], a[1])
+								: (int64_t)((int (*)(long, long))fn)(a[0], a[1]);
+	case 3:
+		return wide ? (int64_t)((long (*)(long, long, long))fn)(a[0], a[1], a[2])
+								: (int64_t)((int (*)(long, long, long))fn)(a[0], a[1], a[2]);
+	case 4:
+		return wide
+							 ? (int64_t)((long (*)(long, long, long, long))fn)(a[0], a[1], a[2],
+																																 a[3])
+							 : (int64_t)((int (*)(long, long, long, long))fn)(a[0], a[1], a[2],
+																															 a[3]);
+	case 5:
+		return wide ? (int64_t)((long (*)(long, long, long, long, long))fn)(
+											a[0], a[1], a[2], a[3], a[4])
+								: (int64_t)((int (*)(long, long, long, long, long))fn)(
+											a[0], a[1], a[2], a[3], a[4]);
+	case 6:
+		return wide ? (int64_t)((long (*)(long, long, long, long, long, long))fn)(
+											a[0], a[1], a[2], a[3], a[4], a[5])
+								: (int64_t)((int (*)(long, long, long, long, long, long))fn)(
+											a[0], a[1], a[2], a[3], a[4], a[5]);
+	default:
+		return 0;
+	}
+}
+
+static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
+																const int64_t *argv, uint32_t nargs,
+																int *flagged) {
+	int wide = k->ret_wide;
+	int64_t tuple[MCCJIT_KGC_ARITY];
+	int64_t bval, vval;
+	uint32_t i;
+	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
+		tuple[i] = 0;
+	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
+		tuple[i] = argv[i];
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple))
+		return mccjit_invoke(variant, argv, nargs, wide);
+	bval = mccjit_invoke(baseline, argv, nargs, wide);
+	vval = mccjit_invoke(variant, argv, nargs, wide);
+	if (vval == bval) {
+		if (k->memoize_ok)
+			mccjit_kgc_insert(k, tuple);
+		return bval;
+	}
+	if (flagged)
+		*flagged = 1;
+	return bval;
+}
+
 #if defined(__x86_64__)
-static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok) {
+static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
+																		const uint32_t *param_t, uint32_t nargs,
+																		int ret_wide) {
+	static const unsigned char mov64_pre[MCCJIT_KGC_MAXARG][4] = {
+			{0x48, 0x89, 0x7c, 0x24}, {0x48, 0x89, 0x74, 0x24},
+			{0x48, 0x89, 0x54, 0x24}, {0x48, 0x89, 0x4c, 0x24},
+			{0x4c, 0x89, 0x44, 0x24}, {0x4c, 0x89, 0x4c, 0x24}};
+	static const unsigned char movsxd[MCCJIT_KGC_MAXARG][3] = {
+			{0x48, 0x63, 0xc7}, {0x48, 0x63, 0xc6}, {0x48, 0x63, 0xc2},
+			{0x48, 0x63, 0xc1}, {0x49, 0x63, 0xc0}, {0x49, 0x63, 0xc1}};
 	unsigned char *p;
 	MccjitKgc *kgc;
 	int *flag;
-	void *call1 = (void *)mccjit_kgc_call1;
+	void *calln = (void *)mccjit_kgc_calln;
 	void *fp;
 	size_t o = 0;
+	uint32_t i;
+	if (nargs < 1 || nargs > MCCJIT_KGC_MAXARG)
+		return NULL;
 	kgc = mcc_mallocz(sizeof *kgc);
 	if (!kgc)
 		return NULL;
-	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), 1) != 0) {
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) {
 		mcc_free(kgc);
 		return NULL;
 	}
 	kgc->memoize_ok = memoize_ok;
+	kgc->ret_wide = ret_wide;
 	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED) {
@@ -2013,8 +2165,25 @@ static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok)
 	p[o++] = 0xc9;
 	p[o++] = 0x55;
 	p[o++] = 0x48;
-	p[o++] = 0x63;
-	p[o++] = 0xcf;
+	p[o++] = 0x83;
+	p[o++] = 0xec;
+	p[o++] = 0x40;
+	for (i = 0; i < nargs; i++) {
+		unsigned char disp = (unsigned char)(i * 8);
+		if (mccjit_type_wide((int)param_t[i])) {
+			memcpy(p + o, mov64_pre[i], 4);
+			o += 4;
+			p[o++] = disp;
+		} else {
+			memcpy(p + o, movsxd[i], 3);
+			o += 3;
+			p[o++] = 0x48;
+			p[o++] = 0x89;
+			p[o++] = 0x44;
+			p[o++] = 0x24;
+			p[o++] = disp;
+		}
+	}
 	p[o++] = 0x48;
 	p[o++] = 0xbf;
 	memcpy(p + o, &kgc, 8);
@@ -2027,25 +2196,41 @@ static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok)
 	p[o++] = 0xba;
 	memcpy(p + o, &baseline, 8);
 	o += 8;
-	p[o++] = 0x49;
+	p[o++] = 0x48;
+	p[o++] = 0x89;
+	p[o++] = 0xe1;
+	p[o++] = 0x41;
 	p[o++] = 0xb8;
+	memcpy(p + o, &nargs, 4);
+	o += 4;
+	p[o++] = 0x49;
+	p[o++] = 0xb9;
 	memcpy(p + o, &fp, 8);
 	o += 8;
 	p[o++] = 0x48;
 	p[o++] = 0xb8;
-	memcpy(p + o, &call1, 8);
+	memcpy(p + o, &calln, 8);
 	o += 8;
 	p[o++] = 0xff;
 	p[o++] = 0xd0;
+	p[o++] = 0x48;
+	p[o++] = 0x83;
+	p[o++] = 0xc4;
+	p[o++] = 0x40;
 	p[o++] = 0x5d;
 	p[o++] = 0xc3;
 	return p;
 }
 #else
-static void *mccjit_make_kgc_stub(void *variant, void *baseline, int memoize_ok) {
+static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
+																		const uint32_t *param_t, uint32_t nargs,
+																		int ret_wide) {
 	(void)variant;
 	(void)baseline;
 	(void)memoize_ok;
+	(void)param_t;
+	(void)nargs;
+	(void)ret_wide;
 	return NULL;
 }
 #endif
