@@ -877,15 +877,17 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   a `.data` section + runtime `sym→blob` table so `mcc_jit_recompile` finds it at runtime); ~800 KB Tier-B
   size validation. The compile-time serialize hook in `ast_func_end` is the embed seam (stashes in memory
   today).
-- [~] **M5 — Stage 2 dispatch mechanism LANDED (9670f2f9); runtime recompile+hot-swap deferred** —
-  `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable
-  `.data` slot, `R_X86_64_64` slot→body reloc so it runs identically until swapped); `mcc_jit_publish`
-  does the aligned `__ATOMIC_RELEASE` 8-byte store (F3d never-free). x86_64 ELF only (D7). Validated:
-  default 3968/3968; mode-6 differential fuzz 60/60 0-miscompile; self-host fixpoint stage2==stage3.
-  **Remaining:** the leaf-int recompile path now works end-to-end (M4 Stage-1 `mcc_jit_recompile_blob`,
-  ddca483d) — wire it to the mode-6 slot publish + a real trigger so a hot leaf fn is recompiled and
-  hot-swapped in a running program (needs M4 embed-into-output so the blob is present at runtime); extend
-  past leaf-int via the M4 Stage-2 CType closure; QSBR reclamation upgrade later. The trigger/pool is M6.
+- [~] **M5 — dispatch (mode 6, 9670f2f9) + full in-process hot-swap loop LANDED (b52793b2); in-program
+  wiring deferred** — `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` →
+  8-byte writable `.data` slot, `R_X86_64_64` slot→body reloc). The complete recompile→publish→swap loop
+  works: `mcc_jit_recompile_blob` re-emits a leaf fn into a fresh `MCCState`; `mcc_jit_publish(&slot, v2)`
+  does the aligned `__ATOMIC_RELEASE` swap; calls through the slot observe the new variant; every swapped
+  output == baseline. `mcc_jit_recompile_blob_spec` produces a GENUINE const-param-specialized variant
+  (`spec[x==7]` folds `7*2+1`→`return 15`). F3d never-free. x86_64 ELF only (D7). Validated: default
+  3968/3968 byte-identical; mode-6 differential fuzz 60/60; self-host fixpoint; embedjit jit/ast/exec
+  353/353. **Remaining:** connect the in-*program* mode-6 slot to the runtime recompile — needs M4
+  embed-into-output (blob + engine in the compiled program) + a per-sym blob registry; extend past
+  leaf-int via M4 Stage-2 CType closure; QSBR reclamation upgrade later. Trigger/pool = M6.
 - [ ] **[DEFER] M5b — runtime known-good value cache + differential deopt-verify (settled design)** —
   the runtime soundness+memoization layer for a hot-swapped variant; makes speculative specialization
   runtime-sound *regardless of static-guard/oracle imperfection*, and is the runtime dual of the static
