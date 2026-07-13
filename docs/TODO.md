@@ -971,11 +971,17 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   48-bit top-down VA. **Validated end-to-end on real arm64-Linux** (native-in-container, `tests/qemu/native-
   optcheck.sh` path): probe disasm exact; heap-buffer-overflow → trap `shadow byte 0xfa`; heap-use-after-free →
   `0xfd`; clean programs (incl. `-O1` optimizer+asan) no false positive, exit 0. Default macOS/x86 unaffected
-  (gated behind `-fasan-shadow`). **Remaining:** stack-redzone (next item) + globals table on arm64; 39-bit-VA
-  / bottom-up-mmap shadow-layout robustness (PR-1 assumes 48-bit top-down); the faulting-address + shadow dump;
-  then riscv64.
-- [ ] **Implement arm64/riscv64 native-shadow stack-redzone instrumentation** via the `gfunc_prolog`/
-  `gfunc_epilog` hooks (x86_64/ELF-only today). (needs the native-shadow port)
+  (gated behind `-fasan-shadow`). **PR-2 (stack redzone) also landed** — see the next item. **Remaining:**
+  globals table on arm64; 39-bit-VA / bottom-up-mmap shadow-layout robustness (assumes 48-bit top-down); the
+  faulting-address + shadow dump; then riscv64.
+- [~] **arm64 native-shadow stack-redzone — landed (PR-2).** `arm64-gen.c` `gen_asan_stack_{prolog,epilog}`
+  wired into `gfunc_prolog`/`gfunc_epilog`: the prologue reserves 4 insns and the epilogue (once all locals
+  are known via `add_asan_locals`) patches in `__asan_stack_enter(table, x29)` there + emits
+  `__asan_stack_leave(table, x29)`, preserving the return value (x0 + d0 via `fmov`) across the leave call.
+  Locals sit below x29 like x86 locals below rbp, so the runtime's `fp+offset` poison/unpoison works
+  unchanged. **Validated on real arm64-Linux:** stack-buffer-overflow → trap `shadow byte 0xf2`; clean
+  stack code (arrays/structs) at -O0/-O1/-O2 no false positive; heap detection still works. **Remaining:**
+  riscv64 stack-redzone (needs the riscv64 native-shadow port first). (x86_64 already ships this.)
 - [ ] **Implement UBSan `-recover` mode** — `sanitize-recover=undefined` is parsed but silently ignored; no
   recover state var or codegen.
 - [ ] **Explore a self-host differential** — compile `src/mcc.c` with mcc vs gcc and diff the two compilers'

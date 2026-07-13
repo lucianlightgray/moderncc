@@ -1290,6 +1290,59 @@ static void gen_stack_chk_epilog(void) {
 }
 #endif
 
+/* -fasan-shadow stack redzones (mirrors x86_64 gen_asan_stack_{prolog,epilog}):
+   the prologue reserves a slot and, once every local is known, the epilogue
+   patches in a __asan_stack_enter(table, x29) call there and emits a
+   __asan_stack_leave(table, x29) call. add_asan_locals (mccgen.c) records each
+   local's x29-relative offset + size into .asan_lstack (arm64 locals sit below
+   x29 like x86 locals sit below rbp, so the runtime's fp+offset works as-is). */
+#define ARM64_ASAN_ENTER_SLOTS 4
+static addr_t arm64_asan_off;
+static addr_t arm64_asan_ind;
+
+static void arm64_asan_stack_call(Sym *tab, const char *name) {
+	arm64_sym(0, tab, 0);       /* x0 = &table (adrp + GOT ldr, 2 insns) */
+	o(0xaa1d03e1);              /* mov x1, x29                           */
+	greloca(cur_text_section, external_helper_sym(tok_alloc_const(name)), ind,
+					R_AARCH64_CALL26, 0);
+	o(ARM64_BL);                /* bl <name>                             */
+}
+
+static void gen_asan_stack_prolog(void) {
+	if (!mcc_state->do_asan_shadow)
+		return;
+	if (!asan_lstack_section)
+		asan_lstack_section =
+			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC);
+	arm64_asan_off = asan_lstack_section->data_offset;
+	arm64_asan_ind = ind;
+	for (int i = 0; i < ARM64_ASAN_ENTER_SLOTS; i++)
+		o(ARM64_NOP);
+}
+
+static void gen_asan_stack_epilog(void) {
+	addr_t saved_ind;
+	Sym *tab;
+	if (!mcc_state->do_asan_shadow)
+		return;
+	if (!gen_asan_stack_epilog_head(arm64_asan_off, &tab))
+		return;
+	saved_ind = ind;
+	ind = arm64_asan_ind;
+	arm64_asan_stack_call(tab, "__asan_stack_enter");
+	ind = saved_ind;
+	/* leave runs in the epilogue where x0/d0 hold the return value */
+	o(0xd10043ff); /* sub  sp, sp, #16   */
+	o(0xf90003e0); /* str  x0, [sp]       */
+	o(0x9e660000); /* fmov x0, d0         */
+	o(0xf90007e0); /* str  x0, [sp, #8]   */
+	arm64_asan_stack_call(tab, "__asan_stack_leave");
+	o(0xf94007e0); /* ldr  x0, [sp, #8]   */
+	o(0x9e670000); /* fmov d0, x0         */
+	o(0xf94003e0); /* ldr  x0, [sp]       */
+	o(0x910043ff); /* add  sp, sp, #16    */
+}
+
 ST_FUNC void gfunc_prolog(Sym *func_sym) {
 	CType *func_type = &func_sym->type;
 	int n = 0;
@@ -1406,6 +1459,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) {
 	for (i = 0; i < ARM64_FUNC_STACK_SETUP_SLOTS; ++i)
 		o(ARM64_NOP);
 	loc = 0;
+	gen_asan_stack_prolog();
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_prolog();
@@ -1627,6 +1681,7 @@ ST_FUNC void gfunc_return(CType *func_type) {
 }
 
 ST_FUNC void gfunc_epilog(void) {
+	gen_asan_stack_epilog();
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		gen_bounds_epilog();
