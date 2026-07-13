@@ -903,12 +903,14 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   **baseline** result. **Killer test (`jit/selftest-kgc`):** a wrongly-specialized variant (const-folded
   to 15 for all x) NEVER returns a wrong answer — x==7 caches+re-hits, x!=7 deopts to correct baseline
   (11,1,7,201). mmap persistence round-trips; stale-salt resets. embedjit 355/355; default 3968/3968.
-  **Remaining:** (1) wire the mode-6 **entry guard to consult the cache** (emit the membership test +
-  miss-path in the dispatcher — mccast.c) instead of the current in-harness `kgc_call1`; (2) **Tier-0 vs
-  Tier-1** — memoization is sound only for Load-free (Tier-0) fns; Tier-1 (Load-present) needs the key to
-  include loaded values or immediate-re-run-only (M5c classifier gates this); (3) eviction/size bound;
-  (4) insertion concurrency under the async pool; (5) mismatch → invalidate-vs-recompile policy; (6) skip
-  the miss-check when the M8 static oracle proves the value in-domain.
+  **LIVE dispatcher integration LANDED (13a8be14):** the published mode-6 slot routes calls through the
+  KGC differential via a hand-emitted ~59-byte x86_64 stub — a LIVE binary running a provably-WRONG
+  variant returns correct results (wrong=0 SOUND) because x!=domain deopts to baseline; KGC-off = wrong=11
+  UNSOUND (int(int) leaf scope; independently verified). Tier-0/Tier-1 memoize gate active (M5c).
+  **Remaining:** (1) general signatures — N-arg/float/struct marshalling thunk + variadic-arity KGC key
+  (fixed arity-1 int64 today); (2) eviction/size bound; (3) insertion concurrency under the async pool;
+  (4) mismatch → invalidate-vs-recompile policy; (5) skip the miss-check when the M8 static oracle proves
+  the value in-domain.
 - [~] **M5c — pure classifier LANDED (16d54aab); pure/impure slicing + custom ABI deferred** — the
   whole-function purity classifier `ast_fn_purity` (mccast.c, via mccast.h): IMPURE (any `AST_Store`/
   `AST_Invoke`/`VT_VOLATILE`), **TIER1** (`AST_Load` present → memory-value-dependent, immediate-re-run
