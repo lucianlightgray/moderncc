@@ -86,3 +86,17 @@ This image is the macOS-friendly wrapper: it stages the tree and execs
 configure/build/fixup/test steps. Linux CI has user-mode qemu already, so it
 skips Docker and runs `ci qemu` directly on the runner, one job per
 `(arch × libc)` cell (see `.github/workflows/ci.yml`).
+
+## Validating the AST optimizer on a Linux arch (not just conformance)
+
+The matrix above cross-builds each `<arch>-mcc` **without** `MCC_CONFIG_OPTIMIZER`,
+so it exercises codegen conformance but never the AST optimizer (replay, register
+promotion, COLOR, VLAT, ...). To validate optimizer work on a Linux arch from the
+macOS host, use `../native-optcheck.sh`: on Apple silicon + colima the container
+is arm64, so it does a **native** optimizer-enabled build of mcc and runs the exec
+suite under chosen `MCC_AST_*` gates — e.g.
+
+```sh
+MCC_GATES="MCC_AST_PROMOTE=1" tests/qemu/native-optcheck.sh   # arm64-Linux
+PLATFORM=linux/amd64 tests/qemu/native-optcheck.sh            # x86_64-Linux
+```

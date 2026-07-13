@@ -1070,16 +1070,18 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   callful holds locals in x19–x28 across `bl` with stack save-restore; **self-host** — `mcc.c` recompiled
   with promotion (all pools) → a working stage2 mcc that itself compiles+promotes correctly; the
   **PROMOTE-only and PROMOTE+COLOR+SPILL_SHARE self-host fixpoints are byte-identical** (stage2==stage3,
-  2068166 B). **The `long double` libcall guard is correct-by-construction but NOT exercised end-to-end
-  anywhere reachable locally:** macOS is `MCC_USING_DOUBLE_FOR_LDOUBLE` (no `VT_LDOUBLE` nodes → guard never
-  fires), and the local `cmake-cross/mcc-arm64` is **built without `MCC_CONFIG_OPTIMIZER`** (verified in its
-  compile_commands — the AST replay/promotion is compiled out, so no `[ast-replay]`/`[ast-promote]` fires and
-  promotion cannot be checked on it at all) ([[macos-arm64-status]]). **Remaining (PR-3):** callee-saved
-  float pool (v8–v15) for callful float promotion (needs a renumber — float indices must stay inside
-  `IS_FREG`'s range; e.g. v0–v15 at 20–35, int callee x19–x28 at 36–45); the x86-style qemu-arm64-**Linux**
-  cross differential (needs an **optimizer-enabled** aarch64-linux mcc + qemu-aarch64/sysroot — the docker CI
-  matrix; this is the only place the `long double` guard actually fires); then flip `opt_promote` on for
-  arm64 after broad exposure.
+  2068166 B). **arm64-LINUX validation now DONE (2026-07-13, via `tests/qemu/native-optcheck.sh` — a native
+  optimizer-enabled build inside an arm64 Debian container under colima; the `cmake-cross/mcc-arm64` path is a
+  dead end there — it's built WITHOUT `MCC_CONFIG_OPTIMIZER`, so no promotion fires on it).** On real
+  arm64-Linux (`sizeof(long double)==16`, quad): exec suite **296/296** default, `MCC_AST_PROMOTE=1`, AND
+  `PROMOTE+COLOR+SPILL_SHARE`; leaf `loopy` promotes into caller-saved x9–x15 (9 refs); and the **`long double`
+  guard is confirmed on real quad `long double`** — `ld_leaf` (a long-double fn) has **0** caller-saved x9–x15
+  refs, so a hidden `__addtf3`/`__multf3` `bl` cannot clobber a promoted value (macOS can't test this —
+  `MCC_USING_DOUBLE_FOR_LDOUBLE` gives no `VT_LDOUBLE` nodes) ([[macos-arm64-status]]). **Remaining (PR-3):**
+  callee-saved float pool (v8–v15) for callful float promotion (niche — x86 doesn't do callee-saved float
+  promotion either; needs a float-index renumber to stay inside `IS_FREG`'s range, e.g. v0–v15 at 20–35, int
+  callee x19–x28 at 36–45); then flip `opt_promote` on for arm64 after a broad-exposure soak (the arm64-Linux
+  M8 evidence above clears the correctness bar; the flip is now a soak/judgment call, no longer blocked).
 - [ ] **Extend the riscv64 backend register model for Tier-3 register promotion** + qemu validation.
 - [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c only emits `R_386_TLS_LE`) —
   needs an i386 cross + a 32-bit sysroot.
