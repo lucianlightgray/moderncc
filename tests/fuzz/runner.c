@@ -248,6 +248,7 @@ static const gate_t GATES[] = {
 	{"BITFLAG", "MCC_AST_BITFLAG=1"},
 	{"SETHI", "MCC_AST_SETHI=1"},
 	{"PROMOTE", "MCC_AST_PROMOTE=1"},
+	{"COLOR", "MCC_AST_COLOR=1"},
 	{"INLINE", "MCC_AST_INLINE=1"},
 	{"LICM_TEMP", "MCC_AST_LICM_TEMP=1"},
 	{"IVSR", "MCC_AST_IVSR=1"},

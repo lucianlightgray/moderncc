@@ -3362,6 +3362,21 @@ static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) {
 		ast_subtree_span(a, c, lo, hi);
 }
 
+static int ast_subtree_reads_local(AstArena *a, AstLocal n, int off) {
+	if (n == AST_NONE)
+		return 0;
+	if (ast_kind(a, n) == AST_Ref) {
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM) &&
+				(int)(int64_t)ast_ival(a, n) == off)
+			return 1;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (ast_subtree_reads_local(a, c, off))
+			return 1;
+	return 0;
+}
+
 static int ast_plan_promotion(AstArena *a) {
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
@@ -3519,6 +3534,14 @@ static int ast_plan_promotion(AstArena *a) {
 					break;
 				}
 		}
+		int first_branch = (int)nn;
+		for (AstLocal n = 0; n < nn; n++) {
+			uint16_t k = ast_kind(a, n);
+			if (k == AST_If || k == AST_Jump) {
+				first_branch = (int)n;
+				break;
+			}
+		}
 		for (AstLocal n = 0; n < nn; n++) {
 			if (ast_kind(a, n) != AST_Store)
 				continue;
@@ -3526,6 +3549,8 @@ static int ast_plan_promotion(AstArena *a) {
 			if (tgt == AST_NONE || ast_kind(a, tgt) != AST_Ref)
 				continue;
 			int off = (int)(int64_t)ast_ival(a, tgt);
+			if ((int)n >= first_branch || ast_subtree_reads_local(a, ast_child(a, n, 1), off))
+				continue;
 			for (int j = 0; j < nc; j++)
 				if (coff[j] == off && cfirst[j] == (int)tgt)
 					cdeffirst[j] = 1;
