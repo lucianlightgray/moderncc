@@ -863,20 +863,29 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   into both the dispatcher-install (`mccast.c:~10810`) and baseline-retain (`~11030`) gates.
   `MCC_AST_JIT`/`MCC_AST_JIT_DISPATCH` stay the master switches; the flag only narrows selection.
   TRACE-confirmed (only selected sym dispatched).
-- [~] **[DEFER] M4 — embed the libmcc engine slice into `-O4+` output — SCAFFOLD LANDED (e47d6509),
-  full embed deferred** — `src/mccjit_embed.c` (all `visibility("hidden")`, E2a) has the E3a intent
-  serializer (SoA arena + sym/cst/type side-table closure + salt witness) and the M5 `mcc_jit_recompile`
-  seam (returns NULL for now); `src/algorithms/jit.h` is the M7b graduated-memo escape-hatch. All behind
-  the `MCC_EMBED_JIT` CMake option (default OFF → TU not compiled, byte-neutral). Remaining: Tier-B slice
-  actually re-invoked; cross-session `Sym` graph reconstruction (flagged gap); ~800 KB size validation.
+- [~] **M4 — scaffold (e47d6509) + Stage-1 leaf-int cross-session re-emit LANDED (ddca483d); embed-into-
+  output + full graph deferred** — `src/mccjit_embed.c` (E2a hidden-vis) has the E3a intent serializer
+  (SoA arena + handle side-table w/ Ea name strings + signature block + salt witness) and, now, a WORKING
+  `mcc_jit_recompile_blob` that deserializes a leaf-int function's intent and **re-emits it into a fresh
+  `MCCState` via `ast_reemit`** (mccast.c:11128) → `mcc_relocate` → `mcc_get_symbol`, byte-correct vs the
+  AOT baseline (harness `jit/selftest-leaf-int`: f(5)=11 … all == aot). `src/algorithms/jit.h` = M7b memo
+  escape-hatch. Key finding: a leaf-int fn's **AST-node closure is empty cross-session** (primitives →
+  NULL type_ref; the lone local-ref sym is inert, zeroed Ca); only the primitive-typed FUNC **signature**
+  is reconstructed (`mccjit_rebuild_sym`). All `MCC_EMBED_JIT`-gated (default OFF → byte-identical).
+  **Remaining:** Stage-2 CType-graph closure (pointer params → `mk_pointer` type.ref; calls → `VT_SYM`
+  callee, runtime-bound via `dlsym(RTLD_DEFAULT)`); the **embed-into-output** (emit each jit-fn's blob as
+  a `.data` section + runtime `sym→blob` table so `mcc_jit_recompile` finds it at runtime); ~800 KB Tier-B
+  size validation. The compile-time serialize hook in `ast_func_end` is the embed seam (stashes in memory
+  today).
 - [~] **M5 — Stage 2 dispatch mechanism LANDED (9670f2f9); runtime recompile+hot-swap deferred** —
   `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable
   `.data` slot, `R_X86_64_64` slot→body reloc so it runs identically until swapped); `mcc_jit_publish`
   does the aligned `__ATOMIC_RELEASE` 8-byte store (F3d never-free). x86_64 ELF only (D7). Validated:
   default 3968/3968; mode-6 differential fuzz 60/60 0-miscompile; self-host fixpoint stage2==stage3.
-  **Remaining:** wire `mcc_jit_recompile` (still returns NULL) to actually re-invoke the M4 engine into
-  a fresh `MCCState`/`run_ptr` via `mcc_relocate` and publish — blocked on the M4 cross-session `Sym`
-  closure gap; QSBR reclamation upgrade later. The trigger/pool that calls it is M6.
+  **Remaining:** the leaf-int recompile path now works end-to-end (M4 Stage-1 `mcc_jit_recompile_blob`,
+  ddca483d) — wire it to the mode-6 slot publish + a real trigger so a hot leaf fn is recompiled and
+  hot-swapped in a running program (needs M4 embed-into-output so the blob is present at runtime); extend
+  past leaf-int via the M4 Stage-2 CType closure; QSBR reclamation upgrade later. The trigger/pool is M6.
 - [ ] **[DEFER] M5b — runtime known-good value cache + differential deopt-verify (settled design)** —
   the runtime soundness+memoization layer for a hot-swapped variant; makes speculative specialization
   runtime-sound *regardless of static-guard/oracle imperfection*, and is the runtime dual of the static
