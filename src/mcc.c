@@ -1391,6 +1391,21 @@ redo:
 	if (s->do_bench)
 		end_time = host_clock_ms();
 
+#ifdef MCC_EMBED_JIT
+	{
+		extern int mccjit_embed_have_fns(void);
+		if (0 == ret && s->embed_jit && mccjit_embed_have_fns() &&
+				(s->output_type == MCC_OUTPUT_EXE ||
+				 (s->output_type == MCC_OUTPUT_OBJ && s->option_r))) {
+			const char *eng = getenv("MCC_EMBED_JIT_LIB");
+			if (eng && eng[0])
+				ret = mcc_add_file(s, eng);
+			else
+				ret = mcc_add_library(s, "mcc");
+		}
+	}
+#endif
+
 	if (s->run_test) {
 		t = 0;
 	} else if (s->output_type == MCC_OUTPUT_PREPROCESS) {

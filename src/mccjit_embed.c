@@ -590,6 +590,113 @@ void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym) {
 	mccjit_last_len = b.len;
 }
 
+typedef struct MccjitEmbedFn {
+	char *name;
+	unsigned char *blob;
+	size_t len;
+	struct MccjitEmbedFn *next;
+} MccjitEmbedFn;
+
+MCCJIT_LOCAL MccjitEmbedFn *mccjit_embed_fns;
+
+void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) {
+	MccjitBuf b;
+	MccjitEmbedFn *e;
+	if (!name || !name[0] || !ast || !sym)
+		return;
+	for (e = mccjit_embed_fns; e; e = e->next)
+		if (!strcmp(e->name, name))
+			return;
+	mccjit_buf_init(&b);
+	if (mccjit_intent_serialize(ast, sym, &b) != 0) {
+		mccjit_buf_free(&b);
+		return;
+	}
+	e = mcc_mallocz(sizeof *e);
+	if (!e) {
+		mccjit_buf_free(&b);
+		return;
+	}
+	e->name = mcc_strdup(name);
+	e->blob = b.data;
+	e->len = b.len;
+	e->next = mccjit_embed_fns;
+	mccjit_embed_fns = e;
+}
+
+#if defined(__x86_64__)
+#include <sys/mman.h>
+static void *mccjit_make_trampoline(void *variant) {
+	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		return variant;
+	p[0] = 0xc9;
+	p[1] = 0x48;
+	p[2] = 0xb8;
+	memcpy(p + 3, &variant, 8);
+	p[11] = 0xff;
+	p[12] = 0xe0;
+	return p;
+}
+#else
+static void *mccjit_make_trampoline(void *variant) { return variant; }
+#endif
+
+void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
+	void *variant = mcc_jit_recompile_blob(blob, (size_t)len);
+	void *entry = variant ? mccjit_make_trampoline(variant) : NULL;
+	if (getenv("MCC_JIT_VERBOSE")) {
+		int probe = variant ? ((int (*)(int))variant)(7) : -1;
+		fprintf(stderr,
+						"mccjit-boot: slot=%p old=%p blob=%p len=%lu variant=%p entry=%p probe(7)=%d %s\n",
+						(void *)slot, slot ? *slot : (void *)0, blob, len, variant, entry,
+						probe, entry ? "swapped" : "kept-aot");
+	}
+	if (entry)
+		mcc_jit_publish(slot, entry);
+}
+
+int mccjit_embed_have_fns(void) {
+	return mccjit_embed_fns != NULL;
+}
+
+void mccjit_embed_finalize(MCCState *s1) {
+	MccjitEmbedFn *e, *nx;
+	CString cs;
+	if (!s1 || !s1->embed_jit || !mccjit_embed_fns)
+		return;
+	if (s1->output_type == MCC_OUTPUT_MEMORY)
+		return;
+	cstr_new(&cs);
+	cstr_printf(&cs,
+							"extern void mccjit_boot_swap(void**, const void*, unsigned long);\n");
+	for (e = mccjit_embed_fns; e; e = e->next) {
+		int off = data_section->data_offset;
+		unsigned char *p = section_ptr_add(data_section, e->len ? e->len : 1);
+		char blobname[256];
+		if (e->len)
+			memcpy(p, e->blob, e->len);
+		snprintf(blobname, sizeof blobname, "__mccjit_blob_%s", e->name);
+		set_global_sym(s1, blobname, data_section, off);
+		cstr_printf(&cs, "extern unsigned char __mccjit_blob_%s[];\n", e->name);
+		cstr_printf(&cs, "extern void *__mccjit_slot_%s;\n", e->name);
+		cstr_printf(&cs,
+								"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
+								"mccjit_boot_swap(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL);}\n",
+								e->name, e->name, e->name, (unsigned long)e->len);
+	}
+	mcc_compile_string(s1, cs.data);
+	cstr_free(&cs);
+	for (e = mccjit_embed_fns; e; e = nx) {
+		nx = e->next;
+		mcc_free(e->name);
+		mcc_free(e->blob);
+		mcc_free(e);
+	}
+	mccjit_embed_fns = NULL;
+}
+
 int mccjit_selftest(void) {
 	static const char src[] = "int f(int x){return x*2+1;}";
 	MCCState *s1;

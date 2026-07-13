@@ -15,6 +15,7 @@
 #ifdef MCC_EMBED_JIT
 #include "algorithms/jit.h"
 void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym);
+void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym);
 #endif
 #include "mcccombo.h"
 #include "mccmagic.h" /* constant-division magic (selftested in tools/asttool.c:suite_magic) */
@@ -10848,6 +10849,15 @@ void ast_func_end(Sym *sym) {
 						Sym *body_sym =
 							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
 						greloca(data_section, body_sym, slot_off, R_X86_64_64, 0);
+#ifdef MCC_EMBED_JIT
+						if (mcc_state && mcc_state->embed_jit &&
+								mcc_state->output_type != MCC_OUTPUT_MEMORY) {
+							char slotname[256];
+							snprintf(slotname, sizeof slotname, "__mccjit_slot_%s", funcname);
+							set_global_sym(mcc_state, slotname, data_section, slot_off);
+							mccjit_embed_note(funcname, ast_cur, sym);
+						}
+#endif
 						ind = aot_base;
 						rsym = 0;
 						if (rs)

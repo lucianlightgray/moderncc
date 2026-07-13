@@ -1598,6 +1598,14 @@ ST_FUNC void mccelf_add_crtend(MCCState *s1) {
 ST_FUNC void mcc_add_runtime(MCCState *s1) {
 	s1->filetype = 0;
 
+#ifdef MCC_EMBED_JIT
+	{
+		extern void mccjit_embed_finalize(MCCState * s);
+		if (s1->embed_jit)
+			mccjit_embed_finalize(s1);
+	}
+#endif
+
 #if MCC_CONFIG_DIAG_RT >= 2
 	mcc_add_bcheck(s1);
 #endif
