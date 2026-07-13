@@ -876,12 +876,15 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   M7b memo escape-hatch. **Stage-2 LANDED (5363ebce):** pointer params + external calls close the
   CType/Sym graph (role side-table PLAIN/NAMED/PTR/FUNC + worklist expand + memoized cycle-safe rebuild;
   callees bind at runtime via `dlsym(RTLD_DEFAULT)`); verified live (`prog_g` g=42/-1, `prog_h`→abs
-  h=13/6). **Remaining:** (1) structs/unions in the type graph (deferred → NULL today); (2) static
+  h=13/6). **Structs/unions LANDED (306b3649):** `MCCJIT_ROLE_STRUCT` (format 4) serializes size/align +
+  field chain; field offsets are AST-baked (MEMBER→ival) so only struct type IDENTITY (size/align for
+  `s[1].a` indexing / MEMBER_ARROW indir) is rebuilt; verified `f(struct S*)`/`s[1].a`/pointer-field.
+  **Remaining:** (1) bitfields (`VT_BITFIELD`, different AST path) + flexible array members; (2) static
   `libmcc.a` link (E1a) instead of the dynamic dep; (3) a per-sym blob **registry** + one generic ctor
-  (one ctor per fn today); (4) a general (non-leaf) trampoline, or relocate the mode-6 stub to fn entry so
-  the slot holds a full-function pointer (the `MCC_JIT_VERBOSE` boot probe is leaf-`int(int)`-only today);
-  (5) fix the non-fatal `libmccrt.a not found` on the call-bearing embed link; (6) ~800 KB Tier-B size
-  validation.
+  (one ctor per fn today); (4) fix the non-fatal `libmccrt.a not found` on the call-bearing embed link;
+  (5) ~800 KB Tier-B size validation. (The live mode-6 self-swap guard is scalar-`int`-only — non-int
+  params recompile via the blob path but the in-program guard/trampoline needs the M5b general-signature
+  marshalling.)
 - [~] **M5 — dispatch (mode 6, 9670f2f9) + full in-process hot-swap loop LANDED (b52793b2); in-program
   wiring deferred** — `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` →
   8-byte writable `.data` slot, `R_X86_64_64` slot→body reloc). The complete recompile→publish→swap loop
