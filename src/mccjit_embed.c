@@ -1058,7 +1058,159 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		mcc_jit_publish(slot, entry);
 }
 
+static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed) {
+	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
+	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
+	void *variant = spec_wrong
+											? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
+											: mcc_jit_recompile_blob(blob, (size_t)len);
+	void *entry = NULL;
+	if (routed)
+		*routed = 0;
+	if (variant && !no_kgc) {
+		void *baseline = mcc_jit_recompile_blob(blob, (size_t)len);
+		int memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
+		if (baseline) {
+			entry = mccjit_make_kgc_stub(variant, baseline, memoize_ok);
+			if (entry && routed)
+				*routed = 1;
+		}
+	}
+	if (!entry)
+		entry = variant ? mccjit_make_trampoline(variant) : NULL;
+	return entry;
+}
+
+typedef struct MccjitCounterState {
+	void **slot;
+	const void *blob;
+	unsigned long len;
+	void *baseline;
+	long threshold;
+	long count;
+	void *promoted;
+	pthread_mutex_t lock;
+} MccjitCounterState;
+
+static void *mccjit_counter_tick(MccjitCounterState *st) {
+	long n;
+	void *target;
+	int verbose = getenv("MCC_JIT_VERBOSE") != NULL;
+	pthread_mutex_lock(&st->lock);
+	n = ++st->count;
+	if (st->promoted) {
+		target = st->promoted;
+	} else if (n < st->threshold) {
+		if (verbose && n == 1)
+			fprintf(stderr,
+							"mccjit-lazy[cold]: slot=%p call=%ld<threshold=%ld running baseline=%p\n",
+							(void *)st->slot, n, st->threshold, st->baseline);
+		target = st->baseline;
+	} else {
+		int routed = 0;
+		void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
+		if (entry) {
+			st->promoted = entry;
+			mcc_jit_publish(st->slot, entry);
+			target = entry;
+			if (verbose)
+				fprintf(stderr,
+								"mccjit-lazy[promote]: slot=%p hot after %ld calls -> entry=%p route=%s\n",
+								(void *)st->slot, n, entry, routed ? "kgc" : "direct");
+		} else {
+			target = st->baseline;
+			if (verbose)
+				fprintf(stderr,
+								"mccjit-lazy[promote]: slot=%p build failed, staying cold\n",
+								(void *)st->slot);
+		}
+	}
+	pthread_mutex_unlock(&st->lock);
+	return target;
+}
+
+#if defined(__x86_64__)
+static void *mccjit_make_counter_stub(MccjitCounterState *st) {
+	void *tick = (void *)mccjit_counter_tick;
+	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	size_t o = 0;
+	if (p == MAP_FAILED)
+		return NULL;
+	p[o++] = 0x57;
+	p[o++] = 0x48;
+	p[o++] = 0x83;
+	p[o++] = 0xec;
+	p[o++] = 0x08;
+	p[o++] = 0x48;
+	p[o++] = 0xbf;
+	memcpy(p + o, &st, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xb8;
+	memcpy(p + o, &tick, 8);
+	o += 8;
+	p[o++] = 0xff;
+	p[o++] = 0xd0;
+	p[o++] = 0x48;
+	p[o++] = 0x83;
+	p[o++] = 0xc4;
+	p[o++] = 0x08;
+	p[o++] = 0x5f;
+	p[o++] = 0xff;
+	p[o++] = 0xe0;
+	return p;
+}
+#else
+static void *mccjit_make_counter_stub(MccjitCounterState *st) {
+	(void)st;
+	return NULL;
+}
+#endif
+
+static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len) {
+	void *baseline = slot ? *slot : NULL;
+	long threshold = 1000;
+	const char *e = getenv("MCC_JIT_HOT_THRESHOLD");
+	MccjitCounterState *st;
+	void *stub;
+	if (e && e[0]) {
+		long v = strtol(e, NULL, 10);
+		if (v > 0)
+			threshold = v;
+	}
+	st = mcc_mallocz(sizeof *st);
+	if (!st)
+		return -1;
+	st->slot = slot;
+	st->blob = blob;
+	st->len = len;
+	st->baseline = baseline;
+	st->threshold = threshold;
+	st->count = 0;
+	st->promoted = NULL;
+	pthread_mutex_init(&st->lock, NULL);
+	stub = mccjit_make_counter_stub(st);
+	if (getenv("MCC_JIT_VERBOSE"))
+		fprintf(stderr,
+						"mccjit-lazy[install]: slot=%p baseline=%p blob=%p len=%lu threshold=%ld stub=%p\n",
+						(void *)slot, baseline, blob, len, threshold, stub);
+	if (!stub) {
+		mcc_free(st);
+		return -1;
+	}
+	mcc_jit_publish(slot, stub);
+	return 0;
+}
+
+static int mccjit_lazy_enabled(void) {
+	const char *e = getenv("MCC_JIT_LAZY");
+	return e && e[0] && e[0] != '0';
+}
+
 void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
+	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
+		return;
 	mccjit_boot_swap_run(slot, blob, len, 0, "sync", NULL, 0);
 }
 
@@ -1085,7 +1237,10 @@ static void *mccjit_swap_worker(void *p) {
 
 void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 														unsigned long max_duration) {
-	MccjitSwapJob *job = mcc_malloc(sizeof *job);
+	MccjitSwapJob *job;
+	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
+		return;
+	job = mcc_malloc(sizeof *job);
 	if (job) {
 		pthread_t th;
 		job->slot = slot;
@@ -2302,6 +2457,121 @@ int mccjit_selftest_purity(void) {
 	mccjit_last_len = 0;
 	mccjit_last_state = NULL;
 	printf("mccjit-selftest-purity: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_lazy(void) {
+	static const char src[] = "int f(int x){return x*2+1;}";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	int (*baseline)(int) = NULL;
+	MCCState *bstate = NULL;
+	void *slot = NULL;
+	MccjitCounterState st;
+	long threshold = 8;
+	int inputs[6] = {5, 0, -3, 100, 7, -40};
+	int fails = 0;
+	long c;
+	int i;
+
+	printf("mccjit-selftest-lazy: begin (threshold=%ld)\n", threshold);
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-lazy: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+	bstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!baseline) {
+		printf("mccjit-selftest-lazy: baseline recompile returned NULL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+
+	slot = (void *)baseline;
+	memset(&st, 0, sizeof st);
+	st.slot = &slot;
+	st.blob = blob;
+	st.len = blen;
+	st.baseline = (void *)baseline;
+	st.threshold = threshold;
+	st.count = 0;
+	st.promoted = NULL;
+	pthread_mutex_init(&st.lock, NULL);
+
+	printf("mccjit-selftest-lazy: cold phase (calls 1..%ld run baseline):\n",
+				 threshold - 1);
+	for (c = 1; c < threshold; c++) {
+		void *t = mccjit_counter_tick(&st);
+		int x = inputs[(c - 1) % 6];
+		int got = ((int (*)(int))t)(x);
+		int want = x * 2 + 1;
+		int ok = (t == (void *)baseline) && (got == want) && (st.promoted == NULL) &&
+						 (slot == (void *)baseline);
+		printf("mccjit-selftest-lazy: cold call %ld path=%s f(%d)=%d expect=%d %s\n", c,
+					 t == (void *)baseline ? "baseline" : "other", x, got, want,
+					 ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+
+	{
+		void *t = mccjit_counter_tick(&st);
+		int ok = (st.promoted != NULL) && (t == st.promoted) &&
+						 (slot == st.promoted) && (t != (void *)baseline);
+		printf("mccjit-selftest-lazy: PROMOTE at call %ld promoted=%p slot=%p %s\n",
+					 st.count, st.promoted, slot, ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+
+	for (i = 0; i < 3; i++) {
+		void *t = mccjit_counter_tick(&st);
+		int ok = (t == st.promoted) && (slot == st.promoted);
+		printf("mccjit-selftest-lazy: hot call %ld path=promoted stable=%s %s\n",
+					 st.count, t == st.promoted ? "yes" : "no", ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+
+	{
+		int (*v)(int) = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+		MCCState *vstate = mccjit_last_state;
+		mccjit_last_state = NULL;
+		if (!v) {
+			printf("mccjit-selftest-lazy: post-promote variant recompile NULL\n");
+			fails++;
+		} else {
+			for (i = 0; i < 6; i++) {
+				int x = inputs[i];
+				int got = v(x);
+				int want = x * 2 + 1;
+				int ok = (got == want);
+				printf("mccjit-selftest-lazy: post-promote variant f(%d)=%d expect=%d %s\n",
+							 x, got, want, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+		}
+		if (vstate)
+			mcc_delete(vstate);
+	}
+
+	pthread_mutex_destroy(&st.lock);
+	if (bstate)
+		mcc_delete(bstate);
+	mccjit_last_state = NULL;
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-lazy: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
