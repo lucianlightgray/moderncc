@@ -937,10 +937,14 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
     key the M5b known-good cache; interaction with inlining and with W2.3 speculative arms; whether an
     impure "bound" call can itself be partially specialized (e.g. constant-folded arguments) without
     losing ABI compliance.
-- [~] **[DEFER] M6 — Stage 3 triggers + threads + budget — PLUMBING LANDED (362fe0d5), pool deferred** —
-  `--jit-threads` flag + `jit_threads` field added; libpthread link now gated on `jit_threads>0` (not
-  `embed_jit`). Remaining: `jit-profile` hot-counter strategy, the `.init_array` pool-spawn ctor
-  (`add_array`, `mccelf.c:1375`), eager-warm + lazy-recompile service, `--jit-max-duration` real deadline.
+- [~] **M6 — Stage 3 triggers + threads + budget — plumbing (362fe0d5) + async pool + budget LANDED
+  (ff493110); lazy trigger deferred** — `--jit-threads` spawns a detached pthread worker (per-fn, mutex-
+  serialized against the compiler's global state) that recompiles+publishes off the startup critical path;
+  `--jit-max-duration` is a real `CLOCK_MONOTONIC` deadline (pre-check skip + post-check drop-variant/keep-
+  AOT; 0=unlimited=byte-identical sync). The `.init_array` boot ctor already drives the eager warm.
+  Verified: sync/async/budget progs all correct, 20 async runs no deadlock; default 3968/3968. **Remaining:**
+  the `jit-profile` **hot-counter LAZY trigger** (recompile on hotness, not just at startup — needs mode-6
+  entry counter emit in mccast.c); an N-worker shared queue (per-fn detached worker today).
 - [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable
   prologue for in-place code-patch hot-swap. Lower priority; M5's pointer-swap dispatcher is the primary
   mechanism. Deferrable.
