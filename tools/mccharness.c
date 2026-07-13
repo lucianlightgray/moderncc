@@ -45,6 +45,19 @@ static int run_to(const char *const *argv, const char *outfile) {
 	return run_to_l(argv, NULL, outfile);
 }
 
+static int run_to_retry(const char *const *argv, const char *const *launcher,
+												const char *outfile, const char *what) {
+	int rc = -1, attempt;
+	for (attempt = 1; attempt <= 4; attempt++) {
+		rc = run_to_l(argv, launcher, outfile);
+		if (rc == 0)
+			return 0;
+		fprintf(stderr, "  %s exited abnormally (code %d), attempt %d/4\n", what, rc,
+						attempt);
+	}
+	return rc;
+}
+
 static const char *opt(int argc, char **argv, const char *key, const char *dflt) {
 	int i;
 	for (i = 2; i < argc - 1; i++)
@@ -443,7 +456,11 @@ static int suite_mcctest(int argc, char **argv) {
 	}
 	{
 		const char *r[] = {refexe, 0};
-		run_to(r, refout);
+		if (run_to_retry(r, NULL, refout, "reference cc program")) {
+			fprintf(stderr, "mcctest: reference cc program crashed for %s;"
+											" differential comparison not attempted\n", src);
+			return 1;
+		}
 	}
 
 	{
@@ -469,7 +486,10 @@ static int suite_mcctest(int argc, char **argv) {
 	}
 	{
 		const char *r[] = {mccexe, 0};
-		run_to_l(r, emu, mccout);
+		if (run_to_retry(r, emu, mccout, "mcc program")) {
+			fprintf(stderr, "mcctest: mcc program crashed for %s\n", src);
+			return 1;
+		}
 	}
 
 	if (ts_file_equal(refout, mccout) != 1) {
