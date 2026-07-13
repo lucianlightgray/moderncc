@@ -736,6 +736,7 @@ static int ast_ltemp_off[AST_LTEMP_MAX];
 static int ast_ltemp_n;
 static int ast_ltemp_cur;
 static int ast_color_env;
+static int ast_spill_share_env;
 static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
@@ -1203,6 +1204,7 @@ void ast_configure(MCCState *s1) {
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
 	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", 0);
 	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
+	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", 0);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
@@ -3661,13 +3663,36 @@ static int ast_plan_promotion(AstArena *a) {
 }
 
 static int ast_promo_save_loc;
+static int ast_promo_save_slot[AST_PROMO_SLOTS];
+static int ast_promo_save_n;
+
+static void ast_promo_save_plan(void) {
+	if (ast_spill_share_env) {
+		ast_promo_save_n = 0;
+		for (int i = 0; i < ast_promo_n; i++) {
+			int s = -1;
+			for (int p = 0; p < i; p++)
+				if (ast_promo_reg[p] == ast_promo_reg[i]) {
+					s = ast_promo_save_slot[p];
+					break;
+				}
+			ast_promo_save_slot[i] = s >= 0 ? s : ast_promo_save_n++;
+		}
+		if (ast_promo_callful && ast_promo_save_n < ast_promo_n)
+			MCC_TRACE("spillshare slots=%d->%d\n", ast_promo_n, ast_promo_save_n);
+	} else {
+		for (int i = 0; i < ast_promo_n; i++)
+			ast_promo_save_slot[i] = i;
+		ast_promo_save_n = ast_promo_n;
+	}
+}
 
 static void ast_promo_save_sv(SValue *sv, int i) {
 	memset(sv, 0, sizeof *sv);
 	sv->type.t = VT_LLONG;
 	sv->r = VT_LOCAL | VT_LVAL;
 	sv->r2 = VT_CONST;
-	sv->c.i = ast_promo_save_loc + 8 * i;
+	sv->c.i = ast_promo_save_loc + 8 * ast_promo_save_slot[i];
 }
 
 static void ast_promo_write(int reg, CType *ct) {
@@ -3687,11 +3712,20 @@ static void ast_promo_write(int reg, CType *ct) {
 }
 
 static void ast_promo_entry_init(void) {
+	ast_promo_save_plan();
 	if (ast_promo_callful) {
 		SValue sv;
-		loc = (loc - 8 * ast_promo_n) & -8;
+		loc = (loc - 8 * ast_promo_save_n) & -8;
 		ast_promo_save_loc = loc;
 		for (int i = 0; i < ast_promo_n; i++) {
+			int dup = 0;
+			for (int p = 0; p < i; p++)
+				if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) {
+					dup = 1;
+					break;
+				}
+			if (dup)
+				continue;
 			ast_promo_save_sv(&sv, i);
 			store(ast_promo_reg[i], &sv);
 		}
@@ -3728,6 +3762,14 @@ static void ast_promo_exit_restore(void) {
 	if (!ast_promo_callful)
 		return;
 	for (int i = ast_promo_n - 1; i >= 0; i--) {
+		int dup = 0;
+		for (int p = i + 1; p < ast_promo_n; p++)
+			if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) {
+				dup = 1;
+				break;
+			}
+		if (dup)
+			continue;
 		ast_promo_save_sv(&sv, i);
 		load(ast_promo_reg[i], &sv);
 	}
