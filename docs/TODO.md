@@ -1151,8 +1151,6 @@ clean. `-v128` TRACE `narrow ranged op=.. tt=.. wt=..`. **Remaining PR-3+:** the
 flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Implement §30 value-table dispatch** for bit-flag clusters with *differing*
   bodies. (needs `.rodata` data-emission)
-- [ ] **Refactor the §31 scheduler to a static-vtable strategy registry** — passes
-  are invoked by a hardcoded env-gated `if` chain today.
 - [ ] **Build widening/fixpoint dataflow for §32a** cross-loop-iteration value
   merging (none present today).
 - [~] **§33c argument de-spill / caller-value forwarding — LANDED gated (0cf09f38,
@@ -1256,8 +1254,9 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Implement §31 adaptive beam width.**
 - [ ] **Implement §31 per-function scoping.**
 - [ ] **Wire §25 scoring of the §33e de-spill delta.**
-- [ ] **Register the §35 Sethi–Ullman ordering as a §31 search strategy** —
-  `MCC_AST_SETHI` is called inline in the emit loop today. (needs the §31 registry)
+- [x] **§35 Sethi–Ullman ordering is a §31 table/search strategy — DONE** — `ast_sethi_run` is
+  `AST_STRAT_SETHI` in the `ast_strategies[]` registry (609abd83/0b3d7e69), search-selectable; the old
+  "called inline in the emit loop" premise is stale. (n-ary extension landed separately, 91132620.)
 - [ ] **Replace the `ast_plan_promotion` heuristic with §36 coloring outright**
   (not just filter it). Fixpoint-gated + native arm64/riscv64.
 - [ ] **Verify Tier-4 inline (`ast/replay-inline-spec`) on riscv64/other arches,
