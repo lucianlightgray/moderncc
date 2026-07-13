@@ -1341,10 +1341,18 @@ redo:
 			s->nb_files >= 1 && s->files[0]->name && !(s->files[0]->type & AFF_TYPE_LIB)) {
 		int (*so)(int, char **, MCCState *, const char *) =
 				getenv("MCC_AST_PERFN") ? mcc_superopt_perfn : mcc_superopt_search;
+#ifdef MCC_EMBED_JIT
+		{
+			extern int mccjit_embed_manifest(MCCState * s);
+			if (s->embed_jit)
+				mccjit_embed_manifest(s);
+		}
+#else
 		if (s->embed_jit && s->verbose)
 			printf("embed-jit manifest: functions=%s max-duration=%us%s\n",
 						 s->jit_functions ? s->jit_functions : "main", s->jit_max_duration,
 						 s->jit_max_duration == 0 ? " (unlimited)" : "");
+#endif
 		if (!s->outfile)
 			s->outfile = default_outputfile(s, s->files[0]->name);
 		MCC_TRACE_ST(s, "superopt dispatch %s -> %s\n", s->files[0]->name, s->outfile);

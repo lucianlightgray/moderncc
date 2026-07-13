@@ -1175,6 +1175,8 @@ mcc_config_node(MCC_MCCRT_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the native mccrt with the host CC instead of mcc (faster bcheck)")
 mcc_config_node(MCC_EMBED_MCCRT TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake libmccrt.a into the mcc binary (self-contained; no sidecar .a needed). Forces the native mccrt to be host-CC built to break the build cycle. ELF/Mach-O only.")
+mcc_config_node(MCC_EMBED_JIT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
+    HELP "Link the §26 Tier-B runtime-JIT engine slice + intention serializer/recompile seam (src/mccjit_embed.c) into mcc, and enable --embed-jit's real effect. Default OFF keeps the build byte-identical; ON adds the ~800KB embed.")
 mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
     HELP "Non-strict mode: auto-correct inert/non-runnable config combinations instead of only warning")
 
@@ -1655,6 +1657,9 @@ endif()
 if(MCC_CONFIG_OPTIMIZER)
     list(APPEND _mccdefs "MCC_CONFIG_OPTIMIZER=1")
 endif()
+if(MCC_EMBED_JIT)
+    list(APPEND _mccdefs "MCC_EMBED_JIT=1")
+endif()
 if(MCC_CONFIG_AST_SHADOW)
     list(APPEND _mccdefs "MCC_CONFIG_AST_SHADOW=1")
 endif()
@@ -1788,6 +1793,10 @@ endif()
 file(GLOB MCC_CORE_SRC CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt/mccelf.c")
 list(REMOVE_ITEM MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c")
+list(REMOVE_ITEM MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_embed.c")
+if(MCC_EMBED_JIT)
+    list(APPEND MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_embed.c")
+endif()
 
 file(GLOB MCC_BACKEND_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${MCC_CPU}/*.c")
 if(NOT MCC_BACKEND_SRC)
@@ -1930,6 +1939,9 @@ add_executable(mcc src/mcc.c)
 set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
 target_include_directories(mcc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MCC_EMBED_JIT)
+    target_sources(mcc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_embed.c")
+endif()
 if(NOT MCC_TARGETOS STREQUAL "WIN32")
     target_link_libraries(mcc PRIVATE m)
     find_package(Threads)
