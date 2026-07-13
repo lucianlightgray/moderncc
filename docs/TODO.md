@@ -1129,11 +1129,6 @@ tag and are sequenced by § Strategic path, not by their bucket.
   branch/switch key values + frequencies beside the opt checkpoint cache; seed
   each strategy's `MIN..MAX` from the observed hot range. Feeds §29 + §30.
   (`MCC_AST_JITSCORE` already ships.)
-- [ ] **Embed the §26 per-function intention trees + libmcc slice** into `-O4+`
-  output — the ~800 KB slice is the dominant size/build-system cost.
-- [ ] **Implement §26 hot-function recompile + hot-swap** — recompile via the
-  embedded `mcc_relocate`, hot-swap through an atomic-pointer slot +
-  triple-buffer/RCU reclamation.
 - [ ] **Explore §28 instruction-level superoptimization** over a fixed emitted
   window (optional).
 - [ ] **[P1] Build the §29 integer range/known-bits lattice** — shared prerequisite for
@@ -1233,9 +1228,6 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
   (a value axis, not a gate bit). (§23 step 1)
 - [ ] **Add more §23 param shapes.** (§23 step 2)
-- [ ] **Build the §26 ELF `.init_array` ctor** spawning the `--jit-threads` pool.
-- [ ] **Enforce the `--jit-max-duration` runtime bound** — parsed but not enforced
-  (§26). (run §26 LAST; builds on §25 + §21)
 - [ ] **Implement the §27 interchange rewrite** + re-run the §22 search after the
   nest changes. (needs the loop-nest analysis foundation)
 - [ ] **Implement §27 loop fusion.** (needs the loop-nest analysis foundation)
