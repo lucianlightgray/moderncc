@@ -6000,6 +6000,20 @@ static int ast_sccp_scan(AstArena *a) {
 	return folded;
 }
 
+static int ast_nonnull_ref(AstArena *a, AstLocal op, const int *offs, int noff) {
+	int r, off;
+	if (ast_kind(a, op) != AST_Ref)
+		return 0;
+	r = ast_op(a, op);
+	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+		return 0;
+	off = (int)(int64_t)ast_ival(a, op);
+	for (int i = 0; i < noff; i++)
+		if (offs[i] == off)
+			return 1;
+	return 0;
+}
+
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 /* Collect the frame offsets of the pointer parameters of `fsym` (the assumed-non-null
  * set for a speculative variant). Same param-chain walk / local-Sym gate as ast_tco_run. */
@@ -6026,20 +6040,6 @@ static int ast_nonnull_params(AstArena *a, Sym *fsym, int *offs, int max) {
 			offs[n++] = (int)ls->c;
 	}
 	return n;
-}
-
-static int ast_nonnull_ref(AstArena *a, AstLocal op, const int *offs, int noff) {
-	int r, off;
-	if (ast_kind(a, op) != AST_Ref)
-		return 0;
-	r = ast_op(a, op);
-	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
-		return 0;
-	off = (int)(int64_t)ast_ival(a, op);
-	for (int i = 0; i < noff; i++)
-		if (offs[i] == off)
-			return 1;
-	return 0;
 }
 
 /* Speculative non-null fold: assuming the params at `offs` are non-null, rewrite
