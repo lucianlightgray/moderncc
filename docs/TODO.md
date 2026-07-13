@@ -992,15 +992,30 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   bespoke **off-C-ABI register calling convention** for pure kernels (nothing register-only exists to
   graft onto — `gfunc_prolog` spills all params to frame); how a pure slice's live-ins key the M5b cache;
   interaction with inlining/W2.3; partial-specializing an impure bound call without losing ABI compliance.
-- [~] **M6 — Stage 3 triggers + threads + budget — plumbing + async pool + budget (ff493110) + hot-counter
-  LAZY trigger (0682f4cf) LANDED; N-worker queue only remains** — `--jit-threads` = detached pthread worker
-  (per-fn, mutex-serialized) recompiling off the startup path; `--jit-max-duration` = real `CLOCK_MONOTONIC`
-  deadline (0=unlimited=byte-identical). **D5=both complete:** eager `.init_array` warm AND (opt-in
-  `MCC_JIT_LAZY`) a runtime counting trampoline (34-byte x86_64 thunk + `mccjit_counter_tick`) that runs
-  the baseline until `MCC_JIT_HOT_THRESHOLD` calls then promotes (recompile→KGC differential stub→swap) —
-  no mccast.c change needed; verified correct across the boundary and lazy+sound (`MCC_JIT_SPEC_WRONG`
-  never leaks a wrong result). Default 3968/3968. **Remaining:** an N-worker shared queue (per-fn detached
-  worker today); async (off-hot-thread) promotion for the lazy path (synchronous today).
+- [x] **M6 — Stage 3 triggers + threads + budget — LANDED (zero remaining)** — plumbing + async pool +
+  budget (ff493110) + hot-counter LAZY trigger (0682f4cf) + **N-worker shared queue & async lazy
+  promotion (this session)**. `--jit-max-duration` = real `CLOCK_MONOTONIC` deadline (0=unlimited=byte-
+  identical). **D5=both complete:** eager `.init_array` warm AND (opt-in `MCC_JIT_LAZY`) a runtime counting
+  trampoline (34-byte x86_64 thunk + `mccjit_counter_tick`) that runs the baseline until
+  `MCC_JIT_HOT_THRESHOLD` calls then promotes (recompile→KGC differential stub→swap) — no mccast.c change
+  needed; verified correct across the boundary and lazy+sound (`MCC_JIT_SPEC_WRONG` never leaks a wrong
+  result). **N-worker shared queue LANDED:** `--jit-threads` is now the size of a **bounded pool** — a
+  single lazily-started set of N detached workers drains one FIFO job queue (`mccjit_pool_*`, cond-var
+  signalled), replacing the per-fn `pthread_create`+detach (which spawned one thread per JIT function). The
+  actual recompile stays serialized on `mccjit_swap_lock` (the compiler's global state is not re-entrant),
+  so N bounds *threads* and decouples thread count from function count rather than parallelizing the
+  compile; jobs carry a `run` callback so eager-boot and lazy-promote share the same worker loop.
+  `jit_threads` is now threaded into the emitted boot ctor as a 5th arg. **Async lazy promotion LANDED:**
+  when the hot threshold is crossed and a pool exists, `mccjit_counter_tick` enqueues the promote build to
+  the pool (`building` guard → at most one in flight) and keeps returning the AOT baseline until the worker
+  publishes the promoted entry — the recompile no longer blocks the hot call/holds `st->lock`; with no pool
+  (`--jit-threads 0`) it falls back to the original synchronous promote. Lock order is acyclic
+  (`swap_lock` → `st->lock` → `qlock`; `qlock` is never held across another acquire). Validated arm64/mac:
+  new `jit/selftest-pool` (real 2-worker pool: async-eager publish + async-promote, both bit-exact) +
+  jit/ast **66/66**; default embed-off byte-neutral (all edits are in inert JIT-runtime paths; emission
+  stays `#if MCC_TARGET_X86_64`-gated). NB: the end-to-end embedded runtime is x86_64-only
+  (`mccrun.c` is `#ifdef MCC_TARGET_IS_HOST`; the boot ctor/counter stub are `#if __x86_64__`), so the
+  x86_64 embed-program soak is a CI-cell (x86_64-host) validation, not runnable on the arm64 dev host.
 - [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable
   prologue for in-place code-patch hot-swap. Lower priority; M5's pointer-swap dispatcher is the primary
   mechanism. Deferrable.

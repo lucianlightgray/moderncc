@@ -1164,8 +1164,116 @@ typedef struct MccjitCounterState {
 	long threshold;
 	long count;
 	void *promoted;
+	int building;
 	pthread_mutex_t lock;
 } MccjitCounterState;
+
+typedef struct MccjitSwapJob {
+	void (*run)(struct MccjitSwapJob *);
+	void **slot;
+	const void *blob;
+	unsigned long len;
+	unsigned long max_duration;
+	struct timespec start;
+	int timed;
+	MccjitCounterState *cst;
+	struct MccjitSwapJob *next;
+} MccjitSwapJob;
+
+static pthread_mutex_t mccjit_swap_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static struct {
+	MccjitSwapJob *head, *tail;
+	pthread_mutex_t qlock;
+	pthread_cond_t qcond;
+	int started;
+	int nworkers;
+} mccjit_pool = {NULL, NULL, PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER,
+								 0, 0};
+
+static void *mccjit_pool_worker(void *arg) {
+	(void)arg;
+	for (;;) {
+		MccjitSwapJob *job;
+		pthread_mutex_lock(&mccjit_pool.qlock);
+		while (!mccjit_pool.head)
+			pthread_cond_wait(&mccjit_pool.qcond, &mccjit_pool.qlock);
+		job = mccjit_pool.head;
+		mccjit_pool.head = job->next;
+		if (!mccjit_pool.head)
+			mccjit_pool.tail = NULL;
+		pthread_mutex_unlock(&mccjit_pool.qlock);
+		pthread_mutex_lock(&mccjit_swap_lock);
+		job->run(job);
+		pthread_mutex_unlock(&mccjit_swap_lock);
+		mcc_free(job);
+	}
+	return NULL;
+}
+
+static int mccjit_pool_start(unsigned long workers) {
+	int n;
+	pthread_mutex_lock(&mccjit_pool.qlock);
+	if (!mccjit_pool.started) {
+		int want = (int)workers;
+		int i;
+		if (want < 1)
+			want = 1;
+		mccjit_pool.started = 1;
+		for (i = 0; i < want; i++) {
+			pthread_t th;
+			if (pthread_create(&th, NULL, mccjit_pool_worker, NULL) != 0)
+				break;
+			pthread_detach(th);
+			mccjit_pool.nworkers++;
+		}
+		if (getenv("MCC_JIT_VERBOSE"))
+			fprintf(stderr, "mccjit-pool[start]: requested=%d live=%d\n", want,
+							mccjit_pool.nworkers);
+	}
+	n = mccjit_pool.nworkers;
+	pthread_mutex_unlock(&mccjit_pool.qlock);
+	return n;
+}
+
+static int mccjit_pool_ready(void) {
+	return mccjit_pool.nworkers > 0;
+}
+
+static void mccjit_pool_enqueue(MccjitSwapJob *job) {
+	pthread_mutex_lock(&mccjit_pool.qlock);
+	job->next = NULL;
+	if (mccjit_pool.tail)
+		mccjit_pool.tail->next = job;
+	else
+		mccjit_pool.head = job;
+	mccjit_pool.tail = job;
+	pthread_cond_signal(&mccjit_pool.qcond);
+	pthread_mutex_unlock(&mccjit_pool.qlock);
+}
+
+static void mccjit_job_run_eager(MccjitSwapJob *job) {
+	mccjit_boot_swap_run(job->slot, job->blob, job->len, job->max_duration,
+											 "async", &job->start, job->timed);
+}
+
+static void mccjit_job_run_lazy(MccjitSwapJob *job) {
+	MccjitCounterState *st = job->cst;
+	int routed = 0;
+	void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
+	pthread_mutex_lock(&st->lock);
+	if (entry) {
+		st->promoted = entry;
+		mcc_jit_publish(st->slot, entry);
+	}
+	st->building = 0;
+	pthread_mutex_unlock(&st->lock);
+	if (getenv("MCC_JIT_VERBOSE"))
+		fprintf(stderr,
+						"mccjit-lazy[promote-async]: slot=%p entry=%p route=%s %s\n",
+						(void *)st->slot, entry, routed ? "kgc" : "direct",
+						entry ? "promoted" : "build-failed");
+}
 
 static void *mccjit_counter_tick(MccjitCounterState *st) {
 	long n;
@@ -1180,6 +1288,21 @@ static void *mccjit_counter_tick(MccjitCounterState *st) {
 			fprintf(stderr,
 							"mccjit-lazy[cold]: slot=%p call=%ld<threshold=%ld running baseline=%p\n",
 							(void *)st->slot, n, st->threshold, st->baseline);
+		target = st->baseline;
+	} else if (mccjit_pool_ready()) {
+		if (!st->building) {
+			MccjitSwapJob *job = mcc_malloc(sizeof *job);
+			if (job) {
+				job->run = mccjit_job_run_lazy;
+				job->cst = st;
+				st->building = 1;
+				mccjit_pool_enqueue(job);
+				if (verbose)
+					fprintf(stderr,
+									"mccjit-lazy[promote-async]: slot=%p hot after %ld calls -> queued\n",
+									(void *)st->slot, n);
+			}
+		}
 		target = st->baseline;
 	} else {
 		int routed = 0;
@@ -1295,46 +1418,23 @@ void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
 	mccjit_boot_swap_run(slot, blob, len, 0, "sync", NULL, 0);
 }
 
-typedef struct MccjitSwapJob {
-	void **slot;
-	const void *blob;
-	unsigned long len;
-	unsigned long max_duration;
-	struct timespec start;
-	int timed;
-} MccjitSwapJob;
-
-static pthread_mutex_t mccjit_swap_lock = PTHREAD_MUTEX_INITIALIZER;
-
-static void *mccjit_swap_worker(void *p) {
-	MccjitSwapJob job = *(MccjitSwapJob *)p;
-	mcc_free(p);
-	pthread_mutex_lock(&mccjit_swap_lock);
-	mccjit_boot_swap_run(job.slot, job.blob, job.len, job.max_duration, "async",
-											 &job.start, job.timed);
-	pthread_mutex_unlock(&mccjit_swap_lock);
-	return NULL;
-}
-
 void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
-														unsigned long max_duration) {
+														unsigned long max_duration, unsigned long workers) {
 	MccjitSwapJob *job;
+	int nw = mccjit_pool_start(workers);
 	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
 		return;
-	job = mcc_malloc(sizeof *job);
+	job = (nw > 0) ? mcc_malloc(sizeof *job) : NULL;
 	if (job) {
-		pthread_t th;
+		job->run = mccjit_job_run_eager;
 		job->slot = slot;
 		job->blob = blob;
 		job->len = len;
 		job->max_duration = max_duration;
 		job->timed =
 				(max_duration != 0) && (clock_gettime(CLOCK_MONOTONIC, &job->start) == 0);
-		if (pthread_create(&th, NULL, mccjit_swap_worker, job) == 0) {
-			pthread_detach(th);
-			return;
-		}
-		mcc_free(job);
+		mccjit_pool_enqueue(job);
+		return;
 	}
 	{
 		struct timespec t0;
@@ -1359,7 +1459,7 @@ void mccjit_embed_finalize(MCCState *s1) {
 	cstr_new(&cs);
 	if (s1->jit_threads > 0)
 		cstr_printf(&cs,
-								"extern void mccjit_boot_swap_async(void**, const void*, unsigned long, unsigned long);\n");
+								"extern void mccjit_boot_swap_async(void**, const void*, unsigned long, unsigned long, unsigned long);\n");
 	else
 		cstr_printf(&cs,
 								"extern void mccjit_boot_swap(void**, const void*, unsigned long);\n");
@@ -1376,9 +1476,10 @@ void mccjit_embed_finalize(MCCState *s1) {
 		if (s1->jit_threads > 0)
 			cstr_printf(&cs,
 									"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
-									"mccjit_boot_swap_async(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL, %luUL);}\n",
+									"mccjit_boot_swap_async(&__mccjit_slot_%s, __mccjit_blob_%s, %luUL, %luUL, %luUL);}\n",
 									e->name, e->name, e->name, (unsigned long)e->len,
-									(unsigned long)s1->jit_max_duration);
+									(unsigned long)s1->jit_max_duration,
+									(unsigned long)s1->jit_threads);
 		else
 			cstr_printf(&cs,
 									"__attribute__((constructor)) static void __mccjit_boot_%s(void){"
@@ -2773,6 +2874,161 @@ int mccjit_selftest_lazy(void) {
 	mcc_free(blob);
 	mcc_delete(s1);
 	printf("mccjit-selftest-lazy: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+static void mccjit_pool_nap(void) {
+	struct timespec ts;
+	ts.tv_sec = 0;
+	ts.tv_nsec = 1000000;
+	nanosleep(&ts, NULL);
+}
+
+int mccjit_selftest_pool(void) {
+	static const char src[] = "int f(int x){return x*2+1;}";
+	static void *slot_a;
+	static void *slot_b;
+	static MccjitCounterState st;
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	int (*baseline)(int) = NULL;
+	int inputs[6] = {5, 0, -3, 100, 7, -40};
+	int fails = 0;
+	int i;
+	int nw;
+
+	printf("mccjit-selftest-pool: begin\n");
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-pool: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+	mccjit_last_state = NULL;
+	if (!baseline) {
+		printf("mccjit-selftest-pool: baseline recompile returned NULL\n");
+		return 1;
+	}
+
+	nw = mccjit_pool_start(2);
+	printf("mccjit-selftest-pool: pool workers=%d\n", nw);
+	if (nw <= 0) {
+		printf("mccjit-selftest-pool: pool start failed FAIL\n");
+		return 1;
+	}
+
+	slot_a = (void *)baseline;
+	{
+		MccjitSwapJob *job = mcc_malloc(sizeof *job);
+		void *pub = (void *)baseline;
+		int spins = 0;
+		if (!job) {
+			printf("mccjit-selftest-pool: eager job alloc failed FAIL\n");
+			fails++;
+		} else {
+			job->run = mccjit_job_run_eager;
+			job->slot = &slot_a;
+			job->blob = blob;
+			job->len = blen;
+			job->max_duration = 0;
+			job->timed = 0;
+			mccjit_pool_enqueue(job);
+			while (spins++ < 5000) {
+				pub = __atomic_load_n(&slot_a, __ATOMIC_ACQUIRE);
+				if (pub != (void *)baseline)
+					break;
+				mccjit_pool_nap();
+			}
+			if (pub == (void *)baseline) {
+				printf("mccjit-selftest-pool: eager async never published (timeout) FAIL\n");
+				fails++;
+			} else {
+				for (i = 0; i < 6; i++) {
+					int x = inputs[i];
+					int got = ((int (*)(int))pub)(x);
+					int want = x * 2 + 1;
+					int ok = got == want;
+					printf("mccjit-selftest-pool: eager pub f(%d)=%d expect=%d %s\n", x, got,
+								 want, ok ? "OK" : "FAIL");
+					if (!ok)
+						fails++;
+				}
+			}
+		}
+	}
+
+	{
+		long threshold = 4;
+		long c;
+		void *promoted = NULL;
+		int spins = 0;
+		int building = 0;
+		slot_b = (void *)baseline;
+		memset(&st, 0, sizeof st);
+		st.slot = &slot_b;
+		st.blob = blob;
+		st.len = blen;
+		st.baseline = (void *)baseline;
+		st.threshold = threshold;
+		pthread_mutex_init(&st.lock, NULL);
+
+		for (c = 1; c < threshold; c++) {
+			void *t = mccjit_counter_tick(&st);
+			int ok = (t == (void *)baseline);
+			if (!ok) {
+				printf("mccjit-selftest-pool: cold call %ld not baseline FAIL\n", c);
+				fails++;
+			}
+		}
+		{
+			void *t = mccjit_counter_tick(&st);
+			pthread_mutex_lock(&st.lock);
+			building = st.building;
+			promoted = st.promoted;
+			pthread_mutex_unlock(&st.lock);
+			printf("mccjit-selftest-pool: cross call %ld path=%s building=%d %s\n",
+						 st.count, t == (void *)baseline ? "baseline" : "other", building,
+						 (t == (void *)baseline) ? "OK" : "FAIL");
+			if (t != (void *)baseline)
+				fails++;
+		}
+		while (spins++ < 5000) {
+			pthread_mutex_lock(&st.lock);
+			promoted = st.promoted;
+			pthread_mutex_unlock(&st.lock);
+			if (promoted)
+				break;
+			mccjit_pool_nap();
+		}
+		if (!promoted) {
+			printf("mccjit-selftest-pool: async promote never landed (timeout) FAIL\n");
+			fails++;
+		} else {
+			printf("mccjit-selftest-pool: PROMOTE-ASYNC promoted=%p slot=%p %s\n",
+						 promoted, slot_b, (slot_b == promoted) ? "OK" : "FAIL");
+			if (slot_b != promoted)
+				fails++;
+			for (i = 0; i < 6; i++) {
+				void *t = mccjit_counter_tick(&st);
+				int x = inputs[i];
+				int got = ((int (*)(int))t)(x);
+				int want = x * 2 + 1;
+				int ok = (t == promoted) && (got == want);
+				printf("mccjit-selftest-pool: promoted f(%d)=%d expect=%d %s\n", x, got,
+							 want, ok ? "OK" : "FAIL");
+				if (!ok)
+					fails++;
+			}
+		}
+	}
+
+	printf("mccjit-selftest-pool: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

@@ -3705,6 +3705,12 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_lazy PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-lazy COMMAND jit_selftest_lazy)
             set_tests_properties(jit/selftest-lazy PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_pool tests/embed/jit_selftest_pool.c)
+            target_link_libraries(jit_selftest_pool PRIVATE libmcc)
+            target_include_directories(jit_selftest_pool PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-pool COMMAND jit_selftest_pool)
+            set_tests_properties(jit/selftest-pool PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
