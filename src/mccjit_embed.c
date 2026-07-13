@@ -376,6 +376,12 @@ MCCJIT_LOCAL void *mcc_jit_recompile(Sym *sym, const void *ctxkey) {
 	return entry;
 }
 
+void mcc_jit_publish(void **slot, void *variant) {
+	if (!slot)
+		return;
+	__atomic_store_n(slot, variant, __ATOMIC_RELEASE);
+}
+
 MCCJIT_LOCAL int mccjit_embed_active(void) {
 	return 1;
 }

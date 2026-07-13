@@ -10837,6 +10837,35 @@ void ast_func_end(Sym *sym) {
 					unsigned char *aot_rel = mcc_malloc(aot_rlen > 0 ? aot_rlen : 1);
 					if (aot_rlen > 0)
 						memcpy(aot_rel, rs->data + ast_reloc0_sv, aot_rlen);
+#if defined(MCC_TARGET_X86_64)
+					if (ast_jit_dispatch_env == 6) {
+						int slot_off = data_section->data_offset;
+						unsigned char *slotp = section_ptr_add(data_section, 8);
+						memset(slotp, 0, 8);
+						Sym *slot_sym =
+							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
+						Sym *body_sym =
+							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
+						greloca(data_section, body_sym, slot_off, R_X86_64_64, 0);
+						ind = aot_base;
+						rsym = 0;
+						if (rs)
+							rs->data_offset = ast_reloc0_sv;
+						nocode_wanted = 0;
+						g(0xff);
+						g(0x25);
+						greloca(cur_text_section, slot_sym, ind, R_X86_64_PC32, -4);
+						gen_le32(0);
+						ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base,
+																aot_chain);
+						if (saved_loc < loc)
+							loc = saved_loc;
+						mcc_free(aot_code);
+						mcc_free(aot_rel);
+						MCC_TRACE("jit-slot %s (slot@sec+%d, body+6)\n", funcname, slot_off);
+						goto ast_jit_dispatch_done;
+					}
+#endif
 					int specmode = ast_jit_dispatch_env;
 					int poffs[AST_TCO_MAXP];
 					int64_t pvals[AST_TCO_MAXP], plos[AST_TCO_MAXP], phis[AST_TCO_MAXP];
@@ -10988,6 +11017,9 @@ void ast_func_end(Sym *sym) {
 					mcc_free(aot_rel);
 					MCC_TRACE("jit-dispatch %s mode=%d spec=%d np=%d (%d code, %d rel)\n", funcname,
 										ast_jit_dispatch_env, spec, npoff, aot_len, aot_rlen);
+#if defined(MCC_TARGET_X86_64)
+				ast_jit_dispatch_done:;
+#endif
 #endif
 				}
 			} else {
