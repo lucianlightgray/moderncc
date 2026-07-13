@@ -62,13 +62,27 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
 #if defined(__aarch64__)
     long sh = uc ? (long)uc->uc_mcontext.regs[17] : 0;
     long off = uc ? (long)uc->uc_mcontext.regs[16] : 0;
+    uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.regs[15] : 0;
 #else
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
+    uintptr_t addr = 0;
 #endif
     wstr("=================================================================\n");
     wstr("==ERROR: AddressSanitizer: "); wstr(asan_class((int)sh));
-    wstr(" (mcc native shadow)\n    pc "); whex((uintptr_t)si->si_addr);
+    wstr(" (mcc native shadow)\n");
+    if(addr){
+        /* granule offset = (addr&7) + size-1  ->  size = off - (addr&7) + 1 */
+        long asz = off - (long)(addr&7) + 1;
+        unsigned char *s = shadow((void*)addr);
+        wstr("    at faulting address "); whex(addr);
+        wstr("    access size "); whexn((uintptr_t)(asz>0?asz:0),2,1);
+        wstr("  shadow bytes around 0x"); whexn((uintptr_t)s,16,1);
+        wstr("   ");
+        for(int c=-8;c<8;c++){ if(c==0)wstr("["); whexn((uintptr_t)(s[c]&0xff),2,0); if(c==0)wstr("]"); else wstr(" "); }
+        wstr("\n");
+    }
+    wstr("    pc "); whex((uintptr_t)si->si_addr);
     wstr("    shadow byte 0x"); whexn((uintptr_t)(sh&0xff),2,0);
     wstr("  granule offset "); whexn((uintptr_t)(off&0xff),2,1);
     _exit(1);

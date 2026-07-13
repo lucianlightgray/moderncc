@@ -1910,9 +1910,10 @@ static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) {
 
 /* Inline ASan shadow probe for -fasan-shadow (mirrors x86_64 gen_asan_shadow_check):
    shadow = (int8)*(( addr>>3 ) + ASAN_OFF); trap if shadow!=0 && (addr&7)+sz-1 >= shadow.
-   x16/x17 are the scratch pair (saved/restored so the probe is transparent to the
-   pointer register, even when it IS x16/x17); at the brk, w17=shadow byte and
-   w16=granule offset for the runtime SIGTRAP handler (runtime/lib/mccasan.c). */
+   x16/x17 are the scratch pair; x15 additionally carries the full faulting address
+   (x30 is a save-pair filler). All saved/restored so the probe is transparent to the
+   pointer register, even when it IS x15/x16/x17. At the brk the runtime SIGTRAP handler
+   reads x15=faulting address, w16=granule offset, w17=shadow byte (runtime/lib/mccasan.c). */
 void gen_asan_shadow_check(int sz) {
 	uint32_t a;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)
@@ -1921,17 +1922,20 @@ void gen_asan_shadow_check(int sz) {
 		return;
 	a = intr(vtop->r);
 	o(0xa9bf47f0);                              /* stp   x16, x17, [sp, #-16]!   */
+	o(0xa9bf7bef);                              /* stp   x15, x30, [sp, #-16]!   */
 	o(0xaa0003f0 | (a << 16));                  /* mov   x16, Xaddr              */
 	arm64_movimm(17, 0x7fff8000);               /* mov   x17, #ASAN_OFF          */
 	o(0x8b500e31);                              /* add   x17, x17, x16, lsr #3   */
 	o(0x39c00231);                              /* ldrsb w17, [x17]              */
-	o(0x340000d1);                              /* cbz   w17, ok  (+6 insns)     */
+	o(0x340000f1);                              /* cbz   w17, ok  (+7 insns)     */
+	o(0xaa1003ef);                              /* mov   x15, x16  (fault addr)  */
 	o(0x12000a10);                              /* and   w16, w16, #7            */
 	o(0x11000210 | ((uint32_t)(sz - 1) << 10)); /* add   w16, w16, #(sz-1)       */
 	o(0x6b11021f);                              /* cmp   w16, w17                */
 	o(0x5400004b);                              /* b.lt  ok  (+2 insns)          */
 	o(0xd4200000);                              /* brk   #0  (poison -> trap)    */
-	o(0xa8c147f0);                              /* ok: ldp x16, x17, [sp], #16   */
+	o(0xa8c17bef);                              /* ok: ldp x15, x30, [sp], #16   */
+	o(0xa8c147f0);                              /*     ldp x16, x17, [sp], #16   */
 }
 
 static void arm64_gen_opil(int op, uint32_t l) {

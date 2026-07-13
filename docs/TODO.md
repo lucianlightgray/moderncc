@@ -1061,10 +1061,15 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
 
 ## 1 — one open question
 
-- [ ] **Preserve the faulting address to the asan-shadow trap** — the `-fasan-shadow` SIGILL report has the
-  class, pc, shadow byte, and granule offset but is missing the faulting data address, access type, and size,
-  and the "Shadow bytes around the buggy address" hex dump. Root cause: codegen traps with only the shadow byte
-  (rax) and granule offset (rdx) live — the fault address is not carried to the `ud2`.
+- [~] **Preserve the faulting address to the asan-shadow trap — done for arm64.** The arm64 inline probe now
+  carries the full faulting address in **x15** to the `brk` (x16=granule, x17=shadow as before; x15/x30 saved
+  as a second stp pair so the probe stays transparent to the pointer reg). The runtime (`mccasan.c` arm64
+  branch) reads `regs[15]` and adds to the report the **faulting address**, the **access size** (= granule −
+  (addr&7) + 1), and a **"shadow bytes around" hex dump** with the buggy granule bracketed — e.g.
+  `at faulting address 0x…502c / access size 04 / … 00 00 00 fa fa 00 00 fa [fa] fa …`. Validated on real
+  arm64-Linux (heap/stack/global). **Remaining:** the same for x86_64 (mirror in `x86_64-gen.c` — carry the
+  addr in a 3rd saved reg, e.g. rcx — needs qemu-amd64 validation); access type (READ/WRITE — the probe in
+  `indir` doesn't distinguish load vs store); the region-relative locator ("N bytes after M-byte region").
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap mode ships (`ud2` x86_64,
   `brk` arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.
