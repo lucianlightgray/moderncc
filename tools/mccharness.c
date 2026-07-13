@@ -457,9 +457,9 @@ static int suite_mcctest(int argc, char **argv) {
 	{
 		const char *r[] = {refexe, 0};
 		if (run_to_retry(r, NULL, refout, "reference cc program")) {
-			fprintf(stderr, "mcctest: reference cc program crashed for %s;"
-											" differential comparison not attempted\n", src);
-			return 1;
+			fprintf(stderr, "mcctest: reference cc program crashed for %s (built by the"
+											" reference cc, not mcc); no differential oracle, skipping\n", src);
+			return 77;
 		}
 	}
 

@@ -3837,7 +3837,8 @@ if(MCC_BUILD_TESTS)
             --refflags "${_mcctest_refflags}"
             --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
             --emu "${MCC_EMULATOR}")
-        set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        set_tests_properties(mcctest PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
         if(MCC_CONFIG_DIAG_RT STREQUAL "bounds" AND MCC_TARGETOS STREQUAL "WIN32")
             mcc_skip_test(mcctest-bcheck "mcc bounds-checking is unsupported on the PE/msvcrt target (faults in msvcrt callbacks/library calls)")
         elseif(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
@@ -3850,7 +3851,8 @@ if(MCC_BUILD_TESTS)
                 --refflags "${_mcctest_refflags}"
                 --testdefs "-DCC_NAME=CC_${_ref_cc_name} -DGCC_MAJOR=${_ref_cc_major}"
                 --mccargs -b --emu "${MCC_EMULATOR}")
-            set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            set_tests_properties(mcctest-bcheck PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77)
         else()
             mcc_skip_test(mcctest-bcheck "requires MCC_CONFIG_DIAG_RT=bounds (bounds-checked differential test)")
         endif()
