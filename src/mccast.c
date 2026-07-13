@@ -3316,6 +3316,17 @@ static int ast_local_is_readonly(AstArena *a, int off) {
 }
 #endif
 
+static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) {
+	if (n == AST_NONE)
+		return;
+	if ((int)n < *lo)
+		*lo = (int)n;
+	if ((int)n > *hi)
+		*hi = (int)n;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		ast_subtree_span(a, c, lo, hi);
+}
+
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
 static int ast_promo_reg_of(AstArena *a, AstLocal n) {
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
@@ -3365,17 +3376,6 @@ static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff,
 	int cd = (k == AST_If && ast_op(a, n) == 2) ? depth + 1 : depth;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		ast_promo_weigh(a, c, cd, coff, nc, cweight);
-}
-
-static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) {
-	if (n == AST_NONE)
-		return;
-	if ((int)n < *lo)
-		*lo = (int)n;
-	if ((int)n > *hi)
-		*hi = (int)n;
-	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_subtree_span(a, c, lo, hi);
 }
 
 static int ast_subtree_reads_local(AstArena *a, AstLocal n, int off) {
