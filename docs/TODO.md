@@ -1237,7 +1237,6 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
   exposing them to the -O4 search, which needs emit-size scoring since inline effects are emit-time
   (a value axis, not a gate bit). (§23 step 1)
 - [ ] **Add more §23 param shapes.** (§23 step 2)
-- [ ] **Add the `--jit-threads` flag** — does not exist yet (§26).
 - [ ] **Build the §26 ELF `.init_array` ctor** spawning the `--jit-threads` pool.
 - [ ] **Enforce the `--jit-max-duration` runtime bound** — parsed but not enforced
   (§26). (run §26 LAST; builds on §25 + §21)
