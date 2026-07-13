@@ -10899,21 +10899,12 @@ void ast_func_end(Sym *sym) {
 						ast_sccp_run(ast_spec);
 						ast_cur = sv;
 #if MCC_CONFIG_AST_SHADOW
-						{
-							int32_t soff[AST_TCO_MAXP];
-							int64_t sval[AST_TCO_MAXP], sout, bout;
-							for (int i = 0; i < npoff; i++) {
-								soff[i] = poffs[i];
-								sval[i] = specmode == 4 ? pvals[i] : (specmode == 5 ? plos[i] : 0);
-							}
-							if (ast_eval_slice(ast_cur, ast_root(ast_cur), soff, sval, npoff, &bout) &&
-									(!ast_eval_slice(ast_spec, ast_root(ast_spec), soff, sval, npoff, &sout) ||
-									 bout != sout)) {
-								fprintf(stderr,
-												"mcc: AST side-car divergence: jit-spec-slice(mode=%d) value mismatch over guarded domain\n",
-												specmode);
-								abort();
-							}
+						if (!ast_eval_slice_sound(ast_cur, ast_spec, specmode, poffs, pvals,
+																			plos, phis, npoff, AST_TCO_MAXP)) {
+							fprintf(stderr,
+											"mcc: AST side-car divergence: jit-spec-slice(mode=%d) return-value mismatch over guarded domain\n",
+											specmode);
+							abort();
 						}
 #endif
 					}

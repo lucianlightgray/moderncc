@@ -414,6 +414,111 @@ static int ast_eval_slice(AstArena *a, AstLocal node, const int32_t *off,
 	return ast_eval_slice_rec(a, node, off, val, n, out);
 }
 
+#define AST_EVAL_SLICE_MAXRET 64
+#define AST_EVAL_SLICE_SAMPLE_CAP 8
+#define AST_EVAL_SLICE_DOMAIN_CAP 4096
+
+static int ast_eval_slice_returns(AstArena *a, AstLocal *out, int max) {
+	int n = 0;
+	AstLocal cnt = ast_count(a);
+	for (AstLocal r = 0; r < cnt; r++) {
+		if (ast_kind(a, r) != AST_Return || ast_nchild(a, r) != 1)
+			continue;
+		AstLocal v = ast_first_child(a, r);
+		if (v != AST_NONE && n < max)
+			out[n++] = v;
+	}
+	return n;
+}
+
+static int ast_eval_slice_env_ok(AstArena *base, AstArena *spec, const int32_t *off,
+																 const int64_t *val, int nenv) {
+	AstLocal brets[AST_EVAL_SLICE_MAXRET], srets[AST_EVAL_SLICE_MAXRET];
+	int64_t bvals[AST_EVAL_SLICE_MAXRET];
+	int nb = ast_eval_slice_returns(base, brets, AST_EVAL_SLICE_MAXRET);
+	int ns = ast_eval_slice_returns(spec, srets, AST_EVAL_SLICE_MAXRET);
+	int nbv = 0;
+	for (int i = 0; i < nb; i++) {
+		int64_t v;
+		if (ast_eval_slice(base, brets[i], off, val, nenv, &v))
+			bvals[nbv++] = v;
+	}
+	if (nbv == 0)
+		return 1;
+	for (int i = 0; i < ns; i++) {
+		int64_t sv;
+		if (!ast_eval_slice(spec, srets[i], off, val, nenv, &sv))
+			continue;
+		int found = 0;
+		for (int j = 0; j < nbv; j++)
+			if (bvals[j] == sv) {
+				found = 1;
+				break;
+			}
+		if (!found)
+			return 0;
+	}
+	return 1;
+}
+
+static int ast_eval_slice_sound(AstArena *base, AstArena *spec, int mode,
+																const int *offs, const int64_t *pvals,
+																const int64_t *plos, const int64_t *phis,
+																int npoff, int maxp) {
+	if (npoff <= 0 || npoff > maxp || npoff > AST_EVAL_SLICE_MAXRET)
+		return 1;
+	int32_t soff[AST_EVAL_SLICE_MAXRET];
+	int64_t sval[AST_EVAL_SLICE_MAXRET];
+	for (int i = 0; i < npoff; i++)
+		soff[i] = offs[i];
+	if (mode == 4) {
+		for (int i = 0; i < npoff; i++)
+			sval[i] = pvals[i];
+		return ast_eval_slice_env_ok(base, spec, soff, sval, npoff);
+	}
+	if (mode != 5)
+		return 1;
+	int64_t card = 1;
+	for (int i = 0; i < npoff; i++) {
+		if (plos[i] > phis[i])
+			return 1;
+		uint64_t w = (uint64_t)(phis[i] - plos[i]) + 1;
+		if (w > (uint64_t)AST_EVAL_SLICE_DOMAIN_CAP)
+			return 1;
+		card *= (int64_t)w;
+		if (card > AST_EVAL_SLICE_DOMAIN_CAP)
+			return 1;
+	}
+	int k[AST_EVAL_SLICE_MAXRET];
+	int64_t sp[AST_EVAL_SLICE_MAXRET][4];
+	int64_t total = 1;
+	for (int i = 0; i < npoff; i++) {
+		int64_t lo = plos[i], hi = phis[i];
+		int c = 0;
+		sp[i][c++] = lo;
+		if (hi != lo)
+			sp[i][c++] = hi;
+		if (hi - lo >= 2)
+			sp[i][c++] = lo + (hi - lo) / 2;
+		if (hi - lo >= 3)
+			sp[i][c++] = lo + (hi - lo) / 3;
+		k[i] = c;
+		total *= c;
+	}
+	int lim = total < AST_EVAL_SLICE_SAMPLE_CAP ? (int)total : AST_EVAL_SLICE_SAMPLE_CAP;
+	for (int s = 0; s < lim; s++) {
+		int rem = s;
+		for (int i = 0; i < npoff; i++) {
+			int idx = rem % k[i];
+			rem /= k[i];
+			sval[i] = sp[i][idx];
+		}
+		if (!ast_eval_slice_env_ok(base, spec, soff, sval, npoff))
+			return 0;
+	}
+	return 1;
+}
+
 #endif /* AST_EVAL_SLICE_KERNEL_ONLY */
 
 #endif /* AST_EVAL_SLICE_PROVIDED */
