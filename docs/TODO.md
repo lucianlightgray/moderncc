@@ -163,39 +163,81 @@ and none of the M8 gates covers the memory model on weak-ordering arches.**
 it unblock the next. **Guardrail (every phase):** the full M8 bar (above). Every step stays byte-neutral on
 the default path until its own opt-in flag; nothing here may regress `-O1..-O3`.
 
-Net shape: **P0 free money → P1 the multiplier → P2 the root-blocker → P3 the milestone**, with substrate-
-unify floating and the two hard forks pre-resolved so no phase stalls on a decision.
+Net shape (this session, **JIT-first**): **finish the x86_64 live JIT → deepen it → cross-arch + hard-gate
+it → then the shared foundations its default-on + AOT-convergence need → const-data → CST.** The JIT capability
+tail rides the already-landed §26 M1–M3 + M6 on x86_64, so it needs no foundation work to *start*; only the
+JIT's convergence with AOT (the AOT-static scorer, data→code) and its default-on flip (cross-arch + hard gate)
+wait on the shared foundations (P1 lattice, P2 const-data, 6A/2B cross-arch), which follow.
 
-### Resolved this session — 7 decisions folded in
+### Master execution order — JIT-first
 
-The matrix cross-examination surfaced seven forks between the implementation and this roadmap; all are now
-locked. Several are **keystone unblocks** (one landing clears a cluster), so the phase order below is revised.
+Authoritative sequence. The thematic phase subsections (P0/P1/P2/P3/FLOAT/DEFER) below are the *detail*; this
+list is the *order*. Each item's rationale is its `[decision]` tag — the 7 strategic forks (1A–7A), the JIT
+tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every step.
 
-- **1A — CST gets a real consumer.** slice-G multi-file `#include` stitching → `-g`-from-provenance (also
-  feeds the debugger suite). Promotes CST from `[DEFER]` to an active workstream **[CST]**, run independently
-  of the optimizer path (after P0).
-- **2B — port the JIT stub tail to arm64.** The mode-6 slot / KGC stub / trampoline / counter get an arm64
-  emission path so §26 validates on the arm64-macOS dev host, not just x86-Linux CI. **Reinterprets D7 as
-  "x86_64-first," not "only."** Slots into P3's tail after the x86_64 milestones close.
-- **3A — fix the emit-time value-axis framework** (full-state save/restore: promotion plan + allocator +
-  `vtop` + `nocode_wanted`). **Keystone unblock** — clears the §22 promotion axis, §23 inline budgets, M1's
-  scoring gain, and inline/promote in the search in one landing. Promoted ahead of the search-scoring items
-  that depend on it (P1-adjacent).
-- **4B — dedicated backend-parity session** (cmov/csel emission + a temp-materialization mechanism). Clears
-  ABS, 64-bit div-magic, branchless-select, and — with the x86_64 mul-high regalloc fix — DIVMAGIC together.
-  Promotes the `[DEFER]` backend-parity cluster to a scheduled session gating the P0 held items.
-- **5A — migrate the memo to `ComboMemo` now.** M2/M3 promoted from FLOAT to active: one `ComboMemo` + disk
-  backing, retiring the out-of-process superopt's second measurement engine.
-- **6A — close the riscv64 Tier-3 self-host gap.** **Validation-infra unblock** — makes the M8 cross-arch
-  gate real on riscv64. Done early; everything gated on cross-arch rides on it.
-- **7A — promote `eval_slice` to a hard gate. N := 3** clean self-host + fuzz soak cycles, then flip from
-  shadow-only to a hard per-strategy gate (rides on 2B for the cross-arch signal).
+**Phase 1 — verified, shippable live JIT on x86_64** *(lowest resistance, headline capability; all on landed infra)*
+1. **[J2B/K3A/J8B]** refuse-to-JIT eligibility gate at *selection* — close the silent unverified path; refuse
+   FP/struct/bitfield/FAM sigs (the safety floor everything downstream trusts).
+2. **[L11A]** runtime robustness — `atfork` / signal-safety / PIC.
+3. **[hardened-env + observability]** boot-probe JIT feasibility (silent baseline fallback) + emit `perf-<pid>.map`.
+4. **[J3A]** per-sym blob registry + one generic ctor → **live in-program recompile** (the "real live JIT").
+5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — split code/data keys, ratio poison, one classified
+   {good,bad,unknown} set, poison-as-search-input (a 99%-variant + a benchmarked switch-table cover).
+6. **[K5/L4A/L5A]** best-of-3 promotion on the KGC-recorded live-ins, incumbent-wins-on-tie.
+7. **[J4A/L9B]** parser-less re-emit-only static-link slice (E1a) + Tier-B size validation — the ship gate.
 
-**Revised order:** **6A** (validation infra) · **3A** (value-axis keystone) → **P0** batch flip + **4B**
-(backend parity, clears the held DIVMAGIC/ABS) → **P1** (lattice) · **5A** (memo) → **P2** (const-data) →
-**P3** (JIT tails) → **2B** (arm64 stub) → **7A** (hard gate). **[CST] 1A** runs in parallel after P0.
+**Phase 2 — specialization depth + reclamation**
+8. **[J6A]** `jit-profile` range capture riding the hot counter → makes dispatch mode 5 bite.
+9. **[J7A]** value-range speculative guard (after J6A supplies the runtime range).
+10. **[K4A/L12A]** marshalling coverage as a strategy row (SSE + small struct-by-value, per-ABI limits) → widens
+    eligibility past GP-int.
+11. **[K9/L2A/L3]** QSBR reclamation (leak-and-cap → per-thread epoch); un-defers J5. Pointer-swap stays the
+    correctness default — occupancy is a reclamation, not a patch-safety, concern.
+12. **[J10]** hot-patch strategy family (pointer-swap + dual-map + QSBR-gated in-place) + the benchmark harness.
 
-### P0 — Default-on sweep · *warm-up; near-zero resistance*
+**Phase 3 — pure-kernel backend + cross-arch + hard-gate**
+13. **[J9A/K7/K8]** M5c pure/impure slicing + dual (C-ABI + non-ABI) register conventions + inline-vs-shim
+    (largest net-new backend investment).
+14. **[2B]** port the dispatch/stub tail to arm64 → cross-arch + arm64-macOS dev-host validation.
+15. **[7A]** promote `eval_slice` to a hard per-strategy gate (**N := 3** clean soaks). Its cross-arch signal is
+    the **JIT-capable** arches (x86_64 + arm64-via-2B), so it rides 2B, **not** 6A — riscv64 has no JIT tail, so
+    the riscv64 self-host gap (step 16) is orthogonal to the JIT hard-gate.
+
+**Phase 4 — shared foundations the JIT default-on + AOT-convergence need** *(also the standalone optimizer gains)*
+16. **[6A]** close the riscv64 Tier-3 self-host gap → makes the M8 cross-arch gate real (validation-infra unblock).
+17. **[3A]** fix the emit-time value-axis framework (keystone: unblocks §22/§23/inline-promote/M1 scoring).
+18. **[4B]** backend-parity session (cmov/csel + temp-materialization) → clears ABS, DIVMAGIC, 64-bit div-magic,
+    branchless-select; then flip the held P0 items.
+19. **[5A]** memo unification (`ComboMemo` + disk) — the one content-addressed store the AOT and JIT searches share.
+20. **[P1]** the unified value lattice → feeds the **AOT-static sink scorer**.
+21. **[AOT-static sink scorer / L1B]** deterministic cost/size scoring + static-analysis ranges + gain-ordered,
+    memo-pinned search — the AOT side of "AOT `-O4` *is* the JIT" (`-O4` stays off the byte-identity bar).
+
+**Phase 5 — const-data + the JIT data path**
+22. **[P2]** const-data rewrite (M5 → M6).
+23. **[K6/L8A]** data→code substitution (compile-time, via a synthetic ctor; needs P2/M5).
+
+**Parallel / non-blocking:**
+- **[CST] 1A** — slice-G stitching → `-g`-from-provenance. Independent of the optimizer path; run whenever
+  attention frees after the JIT phases.
+- **P0 ready-batch flip** — near-zero resistance, orthogonal; flip already-cleared gates (`NARROW_ELIM`, `VLAT`,
+  `ARGFWD`, `SETHI_NARY`, `SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`) in batches as soak time accrues, not
+  gated on a phase. The *held* items (DIVMAGIC/ABS) unblock at step 18 (4B).
+
+### The seven strategic decisions (rationale for the phase-4/5/CST steps)
+
+- **1A — CST gets a real consumer.** slice-G stitching → `-g`-from-provenance (also feeds the debugger suite).
+  Promotes CST from `[DEFER]` to active **[CST]**, independent of the optimizer path.
+- **2B — port the JIT stub tail to arm64** (step 14). Reinterprets D7 as "x86_64-first," not "only."
+- **3A — fix the emit-time value-axis framework** (step 17). Keystone: clears §22 promotion, §23 inline budgets,
+  M1 scoring, inline/promote in the search.
+- **4B — backend-parity session** (step 18): cmov/csel + temp-materialization; clears ABS/DIVMAGIC/64-bit-divmagic/
+  branchless-select together.
+- **5A — memo unification** (step 19): one `ComboMemo` + disk store, retiring the out-of-process superopt engine.
+- **6A — riscv64 Tier-3 self-host** (step 16): validation-infra unblock; makes the cross-arch gate real.
+- **7A — `eval_slice` hard gate** (step 15): N := 3 soaks, rides 2B.
+
+### P0 — Default-on sweep · *near-zero resistance; parallel/non-blocking* — ready-batch interleaves anytime; held items at step 18 (4B)
 
 Flip knobs that already cleared the full M8 bar from opt-in to default. Gain lands on every compile; no new
 code, only golden churn. Also shakes out the search vocabulary before P1..P3.
@@ -218,7 +260,7 @@ code, only golden churn. Also shakes out the search vocabulary before P1..P3.
   isolation) **and the emit-time value-axis framework is currently unsound** (both inline and promote axes
   fail 4/296 and 3–12/296 on the corpus — see the §22 promotion-axis item). They stay `[FLOAT]`, blocked.
 
-### P1 — Unified value lattice · *keystone; highest multiplier* — **resolves Fork L**
+### P1 — Unified value lattice · *master-order step 20; feeds the AOT-static scorer* — **resolves Fork L**
 
 Build §29 range/known-bits and `context_in`/`context_out` as **one** artifact with two projections, not two
 lattices. One integer value-domain lattice over locals, mining the dominating-`AST_If` predicate source; §29
@@ -238,7 +280,7 @@ narrowing is DROPPED as backend-redundant.
   enumeration bound for P3.
 - **Resolves Fork L:** *same lattice, two projections.* "Shares representation, differs in scope."
 
-### P2 — Const-data rewrite · *root-blocker clear*
+### P2 — Const-data rewrite · *master-order steps 22–23 (with K6/L8A data→code)* — *root-blocker clear*
 
 The `AST_Data` kind + the size-preserving in-place re-emit primitive (`ast_data_reemit`) are landed on the
 section-level side-car (`ast_hook_data` fires at TU scope, no per-function arena). **Remaining:** the
@@ -250,11 +292,13 @@ backend, breaks link-time-constant consumers) + M4(b/c) score-fold. Details in `
   Direction: M5 rewrite node → M6 owned delta → M4 fold.
 - **Also unblocks:** §30 value-table dispatch.
 
-### P3 — Guarded-deopt Stage 1 · *capability milestone*
+### P3 / JIT — **now the lead (master-order Phases 1–3)** · *capability milestone*
 
-Shipped as §26 M1–M3 (baseline retention + machine-byte-splice entry dispatcher + non-null speculative
-specialization + `--jit-functions`), search-selectable via gate bits 40/41. **M6 (pool) also landed** (commit
-457ca8a1). The remaining §26 runtime tail (M4/M5/M5b/M5c/M8 tails, x86_64-only) is tracked in NEXT MILESTONE.
+Core shipped as §26 M1–M3 (baseline retention + machine-byte-splice entry dispatcher + non-null speculative
+specialization + `--jit-functions`), search-selectable via gate bits 40/41; **M6 (pool) also landed** (commit
+457ca8a1). **This session prioritizes the JIT first:** the remaining tail (M4/M5/M5b/M5c/M8 + the J*/K*/L*
+decisions) is sequenced as master-order **Phases 1–3** and detailed in **NEXT MILESTONE (§26)** below — that
+section is the JIT rationale + milestone status; the *order* is the master list above.
 
 ### [5A·ACTIVE] — Substrate unification · *now active (was FLOAT); maintenance gain* — **resolves Fork C**
 
@@ -481,9 +525,10 @@ Grind = 5 backends (x86 `cmov`, arm64 `csel`, riscv branchless-arith fallback; p
 
 ## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [core COMPLETE — M1–M3 + M6 done · remaining = tails + M7]
 
-Entry-guarded variant dispatch with a runtime recompiler + hot-swap. **Critical path M1 → M2 → (M3) → M4 →
-M5 → M6**, with M7/M8 attaching independently after M2. **M2 alone is a shippable, complete guarded-deopt JIT;
-M4 is the size/build gate for everything runtime.**
+Entry-guarded variant dispatch with a runtime recompiler + hot-swap. **This is the session's lead workstream
+— its execution ORDER is the master list above (Phases 1–3); this section is the milestone status + the
+J*/K*/L* decision rationale.** **Critical path M1 → M2 → (M3) → M4 → M5 → M6**, with M7/M8 attaching
+independently after M2. **M2 alone is a shippable, complete guarded-deopt JIT; M4 is the size/build gate.**
 
 **Baseline & cache model.** The JIT *baseline* is the AOT-compiled function that ships in the object (final
 emit at the chosen `-O`), NOT the pre-fold body. At runtime the JIT produces a *further*-optimized variant
@@ -776,10 +821,14 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   `jit-profile` range capture). Do it after J6A. Later candidates (alias/points-to, type-tag/discriminant) have
   no existing fold consumer and each needs a new mini-pass — deferred behind value-range.
 
-**Decisions (all settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the engine),
-**D3=A** (entry dispatcher; code-patch D3B = `jit-patchpoint`), **D4=A** (runtime-observed live-in range),
-**D5=both** (startup `.init_array` ctor AND `jit-profile` hot counter), **D6=deopt-first**, **D7=ELF x86_64**,
-**D8=pthread pool**. Deopt-arm mechanism = **B (machine-byte splice)**, not AST-level.
+**Decisions (all settled with the user):** **D1=B** (embedded), **D2=A** (recompile = re-invoke the engine —
+**refined by L9B: a parser-less re-emit-only slice, not the full compiler**), **D3=A** (entry dispatcher;
+code-patch D3B is now one member of the **J10 hot-patch strategy family**, not the sole mechanism), **D4=A**
+(runtime-observed live-in range), **D5=both** (startup `.init_array` ctor AND `jit-profile` hot counter),
+**D6=deopt-first**, **D7=x86_64-first** (2B ports the tail to arm64; was "ELF x86_64 only"), **D8=pthread
+pool**. Deopt-arm mechanism = **B (machine-byte splice)**, not AST-level. Tier-2/3 refinements (J*/K*/L*) are
+in the blocks above; the AOT↔JIT unification (**AOT `-O4` *is* the JIT**, sink-dependent scorer) is in the
+Architecture/Unifying-principle paragraphs.
 
 ## CST — concrete syntax tree · [1A — ACTIVE: slice-G stitching → `-g`-from-provenance]
 
