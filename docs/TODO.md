@@ -1075,19 +1075,21 @@ tag and are sequenced by § Strategic path, not by their bucket.
   is the separate riskier change; promote stays at its heuristic. Also still deferred: inline as a
   freely-reorderable mid-sequence arena graft (`fold→inline→fold`) — `ast_inline_graft` grafts during the
   emit-replay traversal, not as a standalone pass.
-  **ARM64/macOS-HOST FINDING (2026-07-13): base `exec-search-emitiso/*` crashes non-deterministically on
-  arm64/mac, but ONLY when the fork score-pool is also on.** Repro: `MCC_TEST_OPT=-O4 MCC_AST_SEARCH=1
-  MCC_AST_SEARCH_EMITSIZE=1 MCC_AST_SEARCH_EMITISO=1 MCC_SEARCH_WORKER=1` on `errors_and_warnings` (a
-  single `-dt -run` process compiling+running ~295 test functions) crashes partway — the crash *point
-  moves* run-to-run (`test_return_from_statement_expr`, `test_scope_1`, …) and under `ctest -j8` load it
-  reddens 1–2 tests. **Isolated to the fork pool:** dropping `MCC_SEARCH_WORKER=1` → emitiso passes 3/3
-  (295/295 each). So this is NOT the inline/promote value-axis shared-defect above (that's base-emitiso-
-  clean); it is a **`MCC_SEARCH_WORKER` (ast_search_pool COW-fork scorer) × `.mcc.scratch.text`
-  emit-measurement interaction on Mach-O/arm64** — plausibly a non-fork-safe global, the RWX/W^X run-mem
-  map, or Mach-O scratch-section state surviving the fork differently than ELF. Both flags default-OFF
-  and off every shipping/`-O1..-O3` path; x86-Linux CI is green (per STEP-1's self-host+differential
-  validation), so this is an arm64-host-only defect in a doubly-opt-in `-O4` search combo. Not yet
-  root-caused; the CI-lock (b04cd79b) is correctly catching it on this host.
+  **ARM64/macOS-HOST FINDING (2026-07-13): `exec-search-emitiso/*` (`-O4` + EMITSIZE + EMITISO) can crash
+  non-deterministically on arm64/mac — but only as a RARE full-suite-load heisenbug, NOT reliably
+  reproducible.** Seen ONCE, during a genuine full `ctest -j8` run (~5000 tests): `errors_and_warnings`
+  (a single `-dt -run` process compiling+running ~295 functions) crashed partway, the crash *point*
+  moving run-to-run (`test_return_from_statement_expr`, `test_scope_1`, …). **Could NOT be reproduced in
+  isolation:** the emitiso group passes 100%/296 under `ctest -j8` (×2), under `-j16` + 4 background CPU
+  burners (×3), and the single test passes 5/5 serially and 8/8 concurrently. **The `MCC_SEARCH_WORKER`
+  correlation was a measurement artifact** (that flag only gates a bitflag report, `mccast.c:12332`; it
+  does NOT drive the fork pool — that is `MCC_AST_SEARCH_THREADS`, which this variant leaves off). So this
+  is neither a fork-pool bug nor the inline/promote value-axis shared-defect above; it is a rare
+  robustness failure of the **non-reproducible-by-design `-O4` timed emitiso search** under genuine
+  full-suite contention (a crash, not merely a different-but-correct pick, so a real latent bug). Off
+  every shipping/`-O1..-O3` path (`-O4+` is quarantined non-reproducible by design); x86-Linux CI green.
+  Root-causing needs many full-suite runs to re-catch + bisect — deferred as high-effort / ~zero
+  shipping-gain. The CI-lock (b04cd79b) will re-surface it if it recurs.
 - [ ] **Explore EMI mutation (Orion/Athena/Hermes)** targeting optimizer
   miscompiles.
 - [ ] **Design the broader template library** (algebraic/dead-branch/jump-table).
