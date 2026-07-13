@@ -948,14 +948,16 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
 - [ ] **[DEFER] M7 — `jit-patchpoint` strategy (D3B, optional)** — 4th jit row: nop-padded patchable
   prologue for in-place code-patch hot-swap. Lower priority; M5's pointer-swap dispatcher is the primary
   mechanism. Deferrable.
-- [~] **M8 — `eval_slice` soundness oracle (W3, hardening) — SHADOW-ONLY LANDED (e6e18acd), hard-gate
-  promotion deferred (L1a)** — `src/ast_eval_slice.h`: independent AST-over-values interpreter, UB oracle
-  (`defined=0` on div/mod-by-0, `INT_MIN/-1`, shift `>= width`/`< 0`, signed +/−/* overflow — NO
-  `shift & 63/31` masking; kernel unit-tested 44/44). Wired as a **baseline-vs-spec differential** under
-  `MCC_CONFIG_AST_SHADOW` in the mode-4/5 spec path: aborts only when the baseline root is well-defined
-  and the spec value differs or is UB (so an unevaluable root ≠ divergence). **Remaining (L1a):** it
-  no-ops on whole-function roots — needs value-slice enumeration to actually bite, then promote to a hard
-  per-strategy gate after N clean self-host+fuzz soaks.
+- [~] **M8 — `eval_slice` soundness oracle (W3) — oracle LANDED + now BITES (1be1908e); hard-gate
+  promotion deferred** — `src/ast_eval_slice.h`: independent AST-over-values UB oracle (`defined=0` on
+  div/mod-by-0, `INT_MIN/-1`, bad shift, signed overflow — no `& 63/31` masking; kernel 44/44). L1a
+  landed: enumerates `AST_Return` value-slices and checks every spec return value is in the baseline's
+  defined-value set over the guarded env (mode 4 exact const; mode 5 mixed-radix sampling, **L2a cap**
+  `AST_EVAL_SLICE_DOMAIN_CAP=4096`/`SAMPLE_CAP=8`). Never false-aborts (unevaluable→skip); verified to
+  catch a wrong fold (corrupted spec return 999999 → divergence). Covers straight-line/ternary returns;
+  statement control flow/calls/memory are out of scope (skipped). Shadow ast/exec + default 3968/3968.
+  **Remaining:** promote from shadow-only to a hard per-strategy gate after N clean self-host+fuzz soaks;
+  extend eval_slice to statement-level control flow to widen coverage.
 
 **Optional AST-strategy rows (only to make the landed dispatcher search-selectable):**
 
