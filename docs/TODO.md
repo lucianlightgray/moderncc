@@ -293,10 +293,24 @@ never rollout steps and have no symbol in `src/` today:
   guarded use whose local is meet-widened by an unguarded `sink=x`); correct vs gcc (`32896==32896`);
   full exec corpus with `MCC_AST_VLAT=1 MCC_AST_NARROW_ELIM=1` forced on → all real programs pass (only
   the 2 asm tests that skip in ctest differ, identically with gates off, so unrelated); shadow-build
-  `VLAT+NARROW_ELIM` sweep over **291** sources → **0** aborts. **Remaining (PR-C):** admit loop-carried
-  IVs via `ast_loop_iv`/`ast_loop_bounds` monotonicity widening (init⊕stride⊕predicate) — unblocks §32a,
-  its own soundness treatment (widening/narrowing) + fuzz; then feed `ast_vlat_context` into a memo/
-  `eval_slice` key. Overlaps but is not §29 (that reads the *narrowing-residue* projection
+  `VLAT+NARROW_ELIM` sweep over **291** sources → **0** aborts. **Remaining (PR-C — the §32a core, MISCOMPILE-SENSITIVE, held):** admit loop-carried
+  IVs to `ast_vlat_context_at` so a body use of induction var `i` gets the guard-derived range
+  (`i < N` → `i ≤ N-1`, etc.). **Soundness precondition worked out (2026-07-13):** apply the loop bound to
+  an IV body use ONLY for **op-3/op-5 for-loops**. `ast_loop_find_iv` scans `ivsrc = (op==3||op==5) ?
+  li->incr : li->body` and requires `ast_ivsr_count_writes(loop, iv) == 1` (+ non-escaping). For op 3/5
+  the single IV write is the `incr` clause, so the body has **zero** IV writes → every body use sees the
+  value that satisfied the guard this iteration → sound. For **op 2/4 (while/do-while) the single write
+  is IN the body**, so a use *after* it violates the guard → UNSOUND unless the use provably dominates
+  the write (defer, or add a dominance check). Also: honor strict-vs-non-strict in the bound (`<` vs
+  `<=`), and only const bounds (`ast_loop_bounds` / `AST_LOOP_BOUND_CONST`) for the first cut. The lower
+  bound from `i=init` needs an init field (`AstLoopInfo` has stride but not init today) + monotonicity;
+  the guard alone gives one side (upper for `<`, lower for `>`). **Validation gap:** the primary
+  miscompile catcher — the differential fuzzer (`fuzz/*`) — is x86_64-Linux-only and SKIPS on arm64/mac.
+  On arm64 the substitutes are the forced-on exec corpus + golden differential (real, many loop programs)
+  + a shadow soundness assertion (needs an IV-specific oracle — there is no whole-function meet baseline
+  for a written local, so `ast_vlat_context_at`'s ⊆-meet assert does NOT cover IVs) + gcc differential on
+  crafted loops. **Keep gated OFF and do NOT flip default-on until the x86 differential fuzz soaks clean**
+  (same discipline as DIVMAGIC/COLOR). Then feed `ast_vlat_context` into a memo/`eval_slice` key. Overlaps but is not §29 (that reads the *narrowing-residue* projection
   `ast_vlat_narrowing` of the same lattice).
 - [ ] **[P1] Descendant-indexed (DFS enter/exit) def/use extension** — so the two *subtree-scoped* write
   queries `ast_licm_written` (`mccast.c`, called from cse/licm) and `ast_ivsr_count_writes` (`mccast.c`,
