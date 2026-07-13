@@ -1202,12 +1202,23 @@ flip `MCC_AST_VLAT` default-on (P0-style) once broadly exposed.**
 - [ ] **Explore `-fsanitize=cfi` hardening** (absent today).
 - [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent today;
   `-fstack-protector` already ships with real x86_64/arm64 canary codegen).
-- [ ] **Add the §22 promotion re-emit axis** on top of emit isolation. (Scratch-`Section` isolation
-  is now LANDED + CI-locked and its `AstScratchSave` already save/restores the full promotion state,
-  so the blocker is cleared; the open work is letting `ast_search_emit_size` measure WITH promotion
-  ON — today it forces promotion off — by re-planning + running `ast_promo_entry_init` inside the
-  scratch window, then scoring promotion on/off as a search axis. Low correctness risk: emit-size
-  scoring only scores, never miscompiles.)
+- [ ] **Add the §22 promotion re-emit axis** on top of emit isolation. Scratch-`Section` isolation
+  is LANDED + CI-locked; the axis lets `ast_search_emit_size` measure WITH promotion ON (re-plan +
+  `ast_promo_entry_init` inside the scratch window) and score promote on/off, overriding `do_promote`.
+  **Prototype attempted 2026-07-13 and REVERTED — the measurement is leakier than the scratch guard
+  catches.** Findings for the next attempt: (1) `AST_PF_EMIT`'s register-pin loop iterates
+  `ast_promo_n` UNCONDITIONALLY, relying on the invariant "`ast_promo_n==0` unless this fn promotes";
+  a `do_tco` fn skips `ast_plan_promotion` (short-circuit), so a stale plan left by the axis pins wrong
+  registers → SIGSEGV in the emitted binary (`tail_call_loop`). A `if (!do_promote) ast_promo_n = 0;`
+  after the do_promote decision fixes THAT class (12/296 → 3/296). (2) The remaining 3 (`nodata_wanted`,
+  `errors_and_warnings`, `run_atexit`) still CRASH the compiler mid-measurement on data-suppression /
+  pointer-cast / atexit shapes — `AstScratchSave` restores `ast_promo_{n,callful,save_loc,total}` but
+  NOT the plan arrays (`ast_promo_{off,typ,reg}[]`, `ast_promo_save_slot[]`/`_n`), nor `nocode_wanted`,
+  nor the register-allocator/`vtop` interior state that `ast_promo_entry_init`'s `store`/`gv` touch.
+  A safe landing needs the measurement to save/restore the FULL promotion plan + allocator state (or a
+  much narrower "is this fn promotion-measurable" guard), not just the scratch cursor set. Emit-size
+  scoring only ranks, but the promotion APPLICATION during measurement emits real code + mutates
+  allocator state, so it is NOT purely side-effect-free — that is the crux to solve first.
 - [ ] **Add the §22 arena-mutating pass-subset re-emit axis** on top of emit
   isolation. (Scratch-`Section` isolation LANDED; inline-size axis `MCC_AST_PERFN_INPROC` already
   ships.)
