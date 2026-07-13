@@ -909,26 +909,17 @@ label/goto = `AST_Jump` op 4/5 (no new node kind); `ast_cur` survives the functi
   include loaded values or immediate-re-run-only (M5c classifier gates this); (3) eviction/size bound;
   (4) insertion concurrency under the async pool; (5) mismatch → invalidate-vs-recompile policy; (6) skip
   the miss-check when the M8 static oracle proves the value in-domain.
-- [ ] **[DEFER] M5c — pure/impure function slicing + custom-ABI pure slices** — partition each JIT'd
-  function into **pure** (side-effect-free) computation slices and **impure** (effectful) boundary ops,
-  so the hot computation can be hyper-optimized off the C ABI while the effectful skeleton stays
-  standard-callable. This is the mechanism that makes M5b's differential deopt-verify sound.
-  - **Pure slices** sidestep the C ABI: a bespoke calling convention (live-ins/outs in registers, no ABI
-    stack frame / caller-saved / red-zone constraints), free specialization. Being pure, they are freely
-    **re-runnable** → safe to run-and-compare against the baseline for the M5b known-good check, and safe
-    to memoize/speculate.
-  - **Impure parts** — stores visible to the caller, I/O, calls to impure/external functions — stay
-    **C-ABI-compliant boundary ("bound") calls**, executed once in program order, preserving interop and
-    forbidding unsafe re-execution.
-  - The slice split IS the M5b eligibility gate: only pure slices qualify for re-run-and-compare; the
-    impure boundary is never re-run. Lets the JIT give the hot pure kernel a custom ABI while the
-    effectful shell remains ordinary-C-callable (and deopt-able to the retained AOT baseline).
-  - **Open questions:** purity/effect analysis to find the slices (reuse `ast_local_is_readonly` +
-    no-store + no-impure-call, or a new effect lattice?); the custom pure-slice ABI (register assignment,
-    how the impure skeleton calls into/out of a pure slice, spill discipline); how a pure slice's live-ins
-    key the M5b known-good cache; interaction with inlining and with W2.3 speculative arms; whether an
-    impure "bound" call can itself be partially specialized (e.g. constant-folded arguments) without
-    losing ABI compliance.
+- [~] **M5c — pure classifier LANDED (16d54aab); pure/impure slicing + custom ABI deferred** — the
+  whole-function purity classifier `ast_fn_purity` (mccast.c, via mccast.h): IMPURE (any `AST_Store`/
+  `AST_Invoke`/`VT_VOLATILE`), **TIER1** (`AST_Load` present → memory-value-dependent, immediate-re-run
+  only), **TIER0** (register-value-only → memoizable). Wired into M5b via `MccjitKgc.memoize_ok`
+  (Tier-0 fast-paths, Tier-1 always re-differentiates, IMPURE not differential-eligible). Proven: a Tier-1
+  fn's stale-memory speculative variant returns wrong under memoize_ok=1 but correct under the
+  classifier-derived memoize_ok=0. **Remaining (the larger deferred piece — net-new backend work):**
+  statement-level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); the
+  bespoke **off-C-ABI register calling convention** for pure kernels (nothing register-only exists to
+  graft onto — `gfunc_prolog` spills all params to frame); how a pure slice's live-ins key the M5b cache;
+  interaction with inlining/W2.3; partial-specializing an impure bound call without losing ABI compliance.
 - [~] **M6 — Stage 3 triggers + threads + budget — plumbing (362fe0d5) + async pool + budget LANDED
   (ff493110); lazy trigger deferred** — `--jit-threads` spawns a detached pthread worker (per-fn, mutex-
   serialized against the compiler's global state) that recompiles+publishes off the startup critical path;
