@@ -17,21 +17,21 @@ typedef struct
 	char regbuf[8];
 } Dis;
 
-static unsigned char peek(Dis *d, int i) {
+static unsigned char peek(Dis *d, int i) { MCC_TRACE("enter\n");
 	addr_t o = d->pc0 + d->len + i;
 	return (o < d->dc->size) ? d->dc->data[o] : 0;
 }
-static unsigned char get8(Dis *d) {
+static unsigned char get8(Dis *d) { MCC_TRACE("enter\n");
 	unsigned char c = peek(d, 0);
 	d->len++;
 	return c;
 }
-static int get16(Dis *d) {
+static int get16(Dis *d) { MCC_TRACE("enter\n");
 	int v = get8(d);
 	v |= get8(d) << 8;
 	return v;
 }
-static long get32(Dis *d) {
+static long get32(Dis *d) { MCC_TRACE("enter\n");
 	unsigned v = get8(d);
 	v |= (unsigned)get8(d) << 8;
 	v |= (unsigned)get8(d) << 16;
@@ -45,10 +45,10 @@ static const char *reg16[8] = {
 		"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 static const char *reg8[8] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
-static const char *gpr(Dis *d, int size, int n) {
+static const char *gpr(Dis *d, int size, int n) { MCC_TRACE("enter\n");
 	char *buf = d->regbuf;
 	const char *nm;
-	switch (size) {
+	switch (size) { MCC_TRACE("br\n");
 	case 4:
 		nm = reg32[n & 7];
 		break;
@@ -63,16 +63,16 @@ static const char *gpr(Dis *d, int size, int n) {
 	return buf;
 }
 
-static const char *reloc_op(int rtype) {
+static const char *reloc_op(int rtype) { MCC_TRACE("enter\n");
 	return rtype == R_386_TLS_LE ? "@ntpoff" : "";
 }
 
-static void modrm(Dis *d, int size) {
+static void modrm(Dis *d, int size) { MCC_TRACE("enter\n");
 	unsigned char m = get8(d);
 	int mod = m >> 6, rm = m & 7;
 	d->reg = (m >> 3) & 7;
 
-	if (mod == 3) {
+	if (mod == 3) { MCC_TRACE("br\n");
 		d->rm_is_mem = 0;
 		snprintf(d->rm, sizeof d->rm, "%s", gpr(d, size, rm));
 		return;
@@ -86,21 +86,21 @@ static void modrm(Dis *d, int size) {
 		addr_t disp_off = 0;
 		const char *seg = d->seg ? d->seg : "";
 
-		if (rm == 4) {
+		if (rm == 4) { MCC_TRACE("br\n");
 			unsigned char sib = get8(d);
 			int ss = sib >> 6, idx = (sib >> 3) & 7, bse = sib & 7;
 			if (idx != 4)
 				snprintf(index, sizeof index, ",%%%s,%d", reg32[idx], 1 << ss);
-			if (bse == 5 && mod == 0) {
+			if (bse == 5 && mod == 0) { MCC_TRACE("br\n");
 				have_base = 0;
 				have_disp = 1;
 				disp_size = 4;
 				disp_off = d->pc0 + d->len;
 				disp = get32(d);
-			} else {
+			} else { MCC_TRACE("br\n");
 				snprintf(base, sizeof base, "%%%s", reg32[bse]);
 			}
-		} else if (rm == 5 && mod == 0) {
+		} else if (rm == 5 && mod == 0) { MCC_TRACE("br\n");
 			int rtype = 0;
 			const char *sym;
 			disp_off = d->pc0 + d->len;
@@ -112,16 +112,16 @@ static void modrm(Dis *d, int size) {
 			else
 				snprintf(d->rm, sizeof d->rm, "%s0x%lx", seg, disp);
 			return;
-		} else {
+		} else { MCC_TRACE("br\n");
 			snprintf(base, sizeof base, "%%%s", reg32[rm]);
 		}
 
-		if (mod == 1) {
+		if (mod == 1) { MCC_TRACE("br\n");
 			have_disp = 1;
 			disp_size = 1;
 			disp_off = d->pc0 + d->len;
 			disp = (signed char)get8(d);
-		} else if (mod == 2) {
+		} else if (mod == 2) { MCC_TRACE("br\n");
 			have_disp = 1;
 			disp_size = 4;
 			disp_off = d->pc0 + d->len;
@@ -154,7 +154,7 @@ static void modrm(Dis *d, int size) {
 	}
 }
 
-static void P(Dis *d, const char *fmt, ...) {
+static void P(Dis *d, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	if (d->dc->collect)
 		return;
@@ -163,7 +163,7 @@ static void P(Dis *d, const char *fmt, ...) {
 	va_end(ap);
 }
 
-static char sfx(int size) {
+static char sfx(int size) { MCC_TRACE("enter\n");
 	return size == 4
 						 ? 'l'
 				 : size == 2
@@ -171,11 +171,11 @@ static char sfx(int size) {
 						 : 'b';
 }
 
-static int vsize(Dis *d) {
+static int vsize(Dis *d) { MCC_TRACE("enter\n");
 	return d->opsz ? 2 : 4;
 }
 
-static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) {
+static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) { MCC_TRACE("enter\n");
 	addr_t off = d->pc0 + d->len;
 	int rtype = 0;
 
@@ -188,11 +188,11 @@ static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) {
 		v = (short)get16(d);
 	else
 		v = get32(d);
-	if (sym) {
+	if (sym) { MCC_TRACE("br\n");
 		snprintf(out, outsz, "$%s%s", sym, reloc_op(rtype));
 		return;
 	}
-	if (size < opsize && v < 0) {
+	if (size < opsize && v < 0) { MCC_TRACE("br\n");
 		snprintf(out, outsz, "$-0x%lx", -v);
 		return;
 	}
@@ -204,14 +204,14 @@ static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) {
 	snprintf(out, outsz, "$0x%lx", (unsigned long)v & mask);
 }
 
-static void imm(Dis *d, int size, char *out, int outsz) {
+static void imm(Dis *d, int size, char *out, int outsz) { MCC_TRACE("enter\n");
 	imm_ext(d, size, size, out, outsz);
 }
 
 static const char *alu8[8] =
 		{"add", "or", "adc", "sbb", "and", "sub", "xor", "cmp"};
 
-static void alu_rm(Dis *d, const char *name, int size, int dbit) {
+static void alu_rm(Dis *d, const char *name, int size, int dbit) { MCC_TRACE("enter\n");
 	modrm(d, size);
 	if (dbit)
 		P(d, "%s\t%s, %s", name, d->rm, gpr(d, size, d->reg));
@@ -223,31 +223,31 @@ static const char *cc[16] = {
 		"o", "no", "b", "ae", "e", "ne", "be", "a",
 		"s", "ns", "p", "np", "l", "ge", "le", "g"};
 
-static int decode(Dis *d) {
+static int decode(Dis *d) { MCC_TRACE("enter\n");
 	unsigned char op;
 	char i1[64];
 	int size;
 
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		unsigned char b = peek(d, 0);
-		if (b == 0x66) {
+		if (b == 0x66) { MCC_TRACE("br\n");
 			d->opsz = 1;
 			d->len++;
-		} else if (b == 0xf2) {
+		} else if (b == 0xf2) { MCC_TRACE("br\n");
 			d->repne = 1;
 			d->len++;
-		} else if (b == 0xf3) {
+		} else if (b == 0xf3) { MCC_TRACE("br\n");
 			d->rep = 1;
 			d->len++;
-		} else if (b == 0xf0) {
+		} else if (b == 0xf0) { MCC_TRACE("br\n");
 			P(d, "lock ");
 			d->len++;
-		} else if (b == 0x2e || b == 0x36 || b == 0x3e || b == 0x26) {
+		} else if (b == 0x2e || b == 0x36 || b == 0x3e || b == 0x26) { MCC_TRACE("br\n");
 			d->len++;
-		} else if (b == 0x64) {
+		} else if (b == 0x64) { MCC_TRACE("br\n");
 			d->seg = "%fs:";
 			d->len++;
-		} else if (b == 0x65) {
+		} else if (b == 0x65) { MCC_TRACE("br\n");
 			d->seg = "%gs:";
 			d->len++;
 		} else
@@ -256,10 +256,10 @@ static int decode(Dis *d) {
 
 	op = get8(d);
 
-	if (op < 0x40 && (op & 7) < 6 && (op & 0xc0) == 0) {
+	if (op < 0x40 && (op & 7) < 6 && (op & 0xc0) == 0) { MCC_TRACE("br\n");
 		int grp = (op >> 3) & 7;
 		int lo = op & 7;
-		if (lo < 4) {
+		if (lo < 4) { MCC_TRACE("br\n");
 			size = (lo & 1) ? vsize(d) : 1;
 			alu_rm(d, alu8[grp], size, lo & 2);
 			return d->len;
@@ -271,12 +271,12 @@ static int decode(Dis *d) {
 		return d->len;
 	}
 
-	if (op >= 0x40 && op <= 0x4f) {
+	if (op >= 0x40 && op <= 0x4f) { MCC_TRACE("br\n");
 		P(d, "%s\t%s", op < 0x48 ? "inc" : "dec", gpr(d, vsize(d), op & 7));
 		return d->len;
 	}
 
-	switch (op) {
+	switch (op) { MCC_TRACE("br\n");
 	case 0x50:
 	case 0x51:
 	case 0x52:
@@ -383,7 +383,7 @@ static int decode(Dis *d) {
 		P(d, "lea\t%s, %s", d->rm, gpr(d, vsize(d), d->reg));
 		return d->len;
 	case 0x90:
-		if (d->rep) {
+		if (d->rep) { MCC_TRACE("br\n");
 			P(d, "pause");
 			return d->len;
 		}
@@ -482,14 +482,14 @@ static int decode(Dis *d) {
 				{"rol", "ror", "rcl", "rcr", "shl", "shr", "sal", "sar"};
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size);
-		if (op <= 0xc1) {
+		if (op <= 0xc1) { MCC_TRACE("br\n");
 			imm(d, 1, i1, sizeof i1);
 			P(d, "%s%s\t%s, %s", sh[d->reg & 7],
 				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", i1, d->rm);
-		} else if (op <= 0xd1) {
+		} else if (op <= 0xd1) { MCC_TRACE("br\n");
 			P(d, "%s%s\t%s", sh[d->reg & 7],
 				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
-		} else {
+		} else { MCC_TRACE("br\n");
 			P(d, "%s%s\t%%cl, %s", sh[d->reg & 7],
 				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 		}
@@ -544,13 +544,13 @@ static int decode(Dis *d) {
 				{"test", "test", "not", "neg", "mul", "imul", "div", "idiv"};
 		size = (op & 1) ? vsize(d) : 1;
 		modrm(d, size);
-		if ((d->reg & 7) < 2) {
+		if ((d->reg & 7) < 2) { MCC_TRACE("br\n");
 			imm_ext(d, size, size, i1, sizeof i1);
 			if (d->rm_is_mem)
 				P(d, "test%c\t%s, %s", sfx(size), i1, d->rm);
 			else
 				P(d, "test\t%s, %s", i1, d->rm);
-		} else {
+		} else { MCC_TRACE("br\n");
 			P(d, "%s%s\t%s", g3[d->reg & 7],
 				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 		}
@@ -562,12 +562,12 @@ static int decode(Dis *d) {
 		size = (op == 0xfe) ? 1 : vsize(d);
 		modrm(d, size);
 		r = d->reg & 7;
-		if (op == 0xfe) {
+		if (op == 0xfe) { MCC_TRACE("br\n");
 			P(d, "%s%s\t%s", r == 0 ? "inc" : "dec",
 				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 			return d->len;
 		}
-		switch (r) {
+		switch (r) { MCC_TRACE("br\n");
 		case 0:
 			P(d, "inc%s\t%s", d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
 			break;
@@ -599,21 +599,21 @@ static int decode(Dis *d) {
 	case 0xdf: {
 		unsigned char mb = peek(d, 0);
 		int rf = (mb >> 3) & 7;
-		if ((mb >> 6) == 3) {
+		if ((mb >> 6) == 3) { MCC_TRACE("br\n");
 			static const char *st[8] =
 					{
 							"%st(0)", "%st(1)", "%st(2)", "%st(3)",
 							"%st(4)", "%st(5)", "%st(6)", "%st(7)"};
 			int r = mb & 7;
 			get8(d);
-			switch (op) {
+			switch (op) { MCC_TRACE("br\n");
 			case 0xd9:
 				if (mb >= 0xc0 && mb <= 0xc7)
 					P(d, "fld\t%s", st[r]);
 				else if (mb >= 0xc8 && mb <= 0xcf)
 					P(d, "fxch\t%s", st[r]);
 				else
-					switch (mb) {
+					switch (mb) { MCC_TRACE("br\n");
 					case 0xe0:
 						P(d, "fchs");
 						break;
@@ -792,7 +792,7 @@ static int decode(Dis *d) {
 	}
 
 	op = get8(d);
-	switch (op) {
+	switch (op) { MCC_TRACE("br\n");
 	case 0x40:
 	case 0x41:
 	case 0x42:
@@ -900,7 +900,7 @@ static int decode(Dis *d) {
 	}
 }
 
-ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) {
+ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	Dis d;
 	memset(&d, 0, sizeof d);
 	d.dc = dc;
@@ -908,8 +908,8 @@ ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) {
 	return decode(&d);
 }
 
-ST_FUNC int mcc_disasm_reloc_size(int type) {
-	switch (type) {
+ST_FUNC int mcc_disasm_reloc_size(int type) { MCC_TRACE("enter\n");
+	switch (type) { MCC_TRACE("br\n");
 	case R_386_32:
 	case R_386_PC32:
 	case R_386_PLT32:
@@ -929,7 +929,7 @@ ST_FUNC int mcc_disasm_reloc_size(int type) {
 	return 0;
 }
 
-ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) {
+ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) { MCC_TRACE("enter\n");
 	if (type == R_386_PC32 || type == R_386_PLT32 || type == R_386_GOTPC)
 		return size;
 	return 0;

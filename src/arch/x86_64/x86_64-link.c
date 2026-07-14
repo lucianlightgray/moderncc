@@ -1,7 +1,7 @@
 #include "mcc.h"
 
-ST_FUNC int code_reloc(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_X86_64_32:
 	case R_X86_64_32S:
 	case R_X86_64_64:
@@ -35,8 +35,8 @@ ST_FUNC int code_reloc(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC int gotplt_entry_type(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_X86_64_GLOB_DAT:
 	case R_X86_64_JUMP_SLOT:
 	case R_X86_64_COPY:
@@ -77,7 +77,7 @@ ST_FUNC int gotplt_entry_type(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) {
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) { MCC_TRACE("enter\n");
 	Section *plt = s1->plt;
 	uint8_t *p;
 	int modrm;
@@ -85,7 +85,7 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 
 	modrm = 0x25;
 
-	if (plt->data_offset == 0) {
+	if (plt->data_offset == 0) { MCC_TRACE("br\n");
 		p = section_ptr_add(plt, 16);
 		p[0] = 0xff;
 		p[1] = modrm + 0x10;
@@ -109,7 +109,7 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 	return plt_offset;
 }
 
-ST_FUNC void relocate_plt(MCCState *s1) {
+ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
@@ -118,18 +118,18 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
 
-	if (p < p_end) {
+	if (p < p_end) { MCC_TRACE("br\n");
 		int x = s1->got->sh_addr - s1->plt->sh_addr - 6;
 		add32le(p + 2, x);
 		add32le(p + 8, x - 6);
 		p += 16;
-		while (p < p_end) {
+		while (p < p_end) { MCC_TRACE("br\n");
 			add32le(p + 2, x + (s1->plt->data - p));
 			p += 16;
 		}
 	}
 
-	if (s1->plt->reloc) {
+	if (s1->plt->reloc) { MCC_TRACE("br\n");
 		ElfW_Rel *rel;
 		int x = s1->plt->sh_addr + 16 + 6;
 		p = s1->got->data;
@@ -140,13 +140,13 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	}
 }
 
-static addr_t x86_64_tpoff(MCCState *s1, addr_t val) {
+static addr_t x86_64_tpoff(MCCState *s1, addr_t val) { MCC_TRACE("enter\n");
 	addr_t tls_start = 0, tls_end = 0, tls_align = 1, aligned;
 
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[i];
 		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-		if (s->sh_flags & SHF_TLS && ssz) {
+		if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 			if (!tls_start || s->sh_addr < tls_start)
 				tls_start = s->sh_addr;
 			if (s->sh_addr + ssz > tls_end)
@@ -161,22 +161,22 @@ static addr_t x86_64_tpoff(MCCState *s1, addr_t val) {
 	return val - (tls_start + aligned);
 }
 
-ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
+ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	int sym_index, esym_index;
 
 	sym_index = ELFW(R_SYM)(rel->r_info);
 
-	switch (type) {
+	switch (type) { MCC_TRACE("br\n");
 	case R_X86_64_64:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
 			qrel->r_offset = rel->r_offset;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_64);
 				qrel->r_addend = rel->r_addend;
 				qrel++;
 				break;
-			} else {
+			} else { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(0, R_X86_64_RELATIVE);
 				qrel->r_addend = read64le(ptr) + val;
 				qrel++;
@@ -186,7 +186,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		break;
 	case R_X86_64_32:
 	case R_X86_64_32S:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			qrel->r_offset = rel->r_offset;
 			qrel->r_info = ELFW(R_INFO)(0, R_X86_64_RELATIVE);
 			qrel->r_addend = (int)read32le(ptr) + val;
@@ -194,16 +194,16 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		}
 		if ((type == R_X86_64_32 ? val != (unsigned)val : val != (int)val) && (stab_section == NULL ||
 																																					 addr < stab_section->sh_addr ||
-																																					 addr >= (stab_section->sh_addr + stab_section->data_offset))) {
+																																					 addr >= (stab_section->sh_addr + stab_section->data_offset))) { MCC_TRACE("br\n");
 			mcc_error_noabort("relocation 'R_X86_64_32[S]' out of range");
 		}
 		add32le(ptr, val);
 		break;
 
 	case R_X86_64_PC32:
-		if (s1->output_type == MCC_OUTPUT_DLL) {
+		if (s1->output_type == MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_offset = rel->r_offset;
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_PC32);
 				qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
@@ -218,7 +218,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	plt32pc32: {
 		long long diff;
 		diff = (long long)val - addr;
-		if (diff < -2147483648LL || diff > 2147483647LL) {
+		if (diff < -2147483648LL || diff > 2147483647LL) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
 			if (((ElfW(Sym) *)symtab_section->data)[sym_index].st_shndx != SHN_UNDEF)
 #endif
@@ -235,9 +235,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		break;
 
 	case R_X86_64_PC64:
-		if (s1->output_type == MCC_OUTPUT_DLL) {
+		if (s1->output_type == MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_offset = rel->r_offset;
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_X86_64_PC64);
 				qrel->r_addend = read64le(ptr) + rel->r_addend;
@@ -267,7 +267,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		break;
 	case R_X86_64_GOTTPOFF: {
 		ElfW(Sym) *tsym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-		if ((s1->output_type & MCC_OUTPUT_EXE) && tsym->st_shndx != SHN_UNDEF) {
+		if ((s1->output_type & MCC_OUTPUT_EXE) && tsym->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			uint8_t rex = ptr[-3], op = ptr[-2], modrm = ptr[-1];
 			int reg = ((rex & 4) ? 8 : 0) | ((modrm >> 3) & 7);
 			ptr[-3] = (rex & ~4) | (reg >= 8 ? 1 : 0);
@@ -279,7 +279,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			else
 				mcc_error_noabort("unexpected R_X86_64_GOTTPOFF instruction");
 			write32le(ptr, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
-		} else {
+		} else { MCC_TRACE("br\n");
 			add32le(ptr, val - s1->got->sh_addr);
 		}
 	} break;
@@ -300,7 +300,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,
 				0x48, 0x8d, 0x80, 0x00, 0x00, 0x00, 0x00};
 
-		if (memcmp(ptr - 4, expect, sizeof(expect)) == 0) {
+		if (memcmp(ptr - 4, expect, sizeof(expect)) == 0) { MCC_TRACE("br\n");
 			memcpy(ptr - 4, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
 			add32le(ptr + 8, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
@@ -315,7 +315,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				0x66, 0x66, 0x66, 0x64, 0x48, 0x8b, 0x04, 0x25,
 				0x00, 0x00, 0x00, 0x00};
 
-		if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) {
+		if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) { MCC_TRACE("br\n");
 			memcpy(ptr - 3, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
 		} else
@@ -331,10 +331,10 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 		sec = s1->sections[sym->st_shndx];
 
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-			if (s->sh_flags & SHF_TLS && ssz) {
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					tls_start = s->sh_addr;
 				if (s->sh_addr + ssz > tls_end)
@@ -343,7 +343,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 					tls_align = s->sh_addralign;
 			}
 		}
-		if (tls_end > tls_start) {
+		if (tls_end > tls_start) { MCC_TRACE("br\n");
 			addr_t tls_size = tls_end - tls_start;
 			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
@@ -352,7 +352,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #else
 			x = val - (tls_start + aligned_size);
 #endif
-		} else {
+		} else { MCC_TRACE("br\n");
 			x = val - sec->sh_addr - sec->data_offset;
 		}
 		add32le(ptr, x);
@@ -367,10 +367,10 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 		sec = s1->sections[sym->st_shndx];
 
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-			if (s->sh_flags & SHF_TLS && ssz) {
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					tls_start = s->sh_addr;
 				if (s->sh_addr + ssz > tls_end)
@@ -379,7 +379,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 					tls_align = s->sh_addralign;
 			}
 		}
-		if (tls_end > tls_start) {
+		if (tls_end > tls_start) { MCC_TRACE("br\n");
 			addr_t tls_size = tls_end - tls_start;
 			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
@@ -388,7 +388,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #else
 			x = val - (tls_start + aligned_size);
 #endif
-		} else {
+		} else { MCC_TRACE("br\n");
 			x = val - sec->sh_addr - sec->data_offset;
 		}
 		add64le(ptr, x);

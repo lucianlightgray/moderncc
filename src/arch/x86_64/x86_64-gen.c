@@ -53,21 +53,21 @@ ST_DATA int func_bound_add_epilog;
 #define func_alloca (mcc_state->cg_func_alloca)
 #endif
 
-ST_FUNC void o(unsigned int c) {
-	while (c) {
+ST_FUNC void o(unsigned int c) { MCC_TRACE("enter\n");
+	while (c) { MCC_TRACE("br\n");
 		g(c);
 		c = c >> 8;
 	}
 }
 
-ST_FUNC void gen_le32(int c) {
+ST_FUNC void gen_le32(int c) { MCC_TRACE("enter\n");
 	g(c);
 	g(c >> 8);
 	g(c >> 16);
 	g(c >> 24);
 }
 
-ST_FUNC void gen_le64(int64_t c) {
+ST_FUNC void gen_le64(int64_t c) { MCC_TRACE("enter\n");
 	g(c);
 	g(c >> 8);
 	g(c >> 16);
@@ -78,7 +78,7 @@ ST_FUNC void gen_le64(int64_t c) {
 	g(c >> 56);
 }
 
-static void orex(int ll, int r, int r2, int b) {
+static void orex(int ll, int r, int r2, int b) { MCC_TRACE("enter\n");
 	if ((r & VT_VALMASK) >= VT_CONST)
 		r = 0;
 	if ((r2 & VT_VALMASK) >= VT_CONST)
@@ -88,8 +88,8 @@ static void orex(int ll, int r, int r2, int b) {
 	o(b);
 }
 
-ST_FUNC void gsym_addr(int t, int a) {
-	while (t) {
+ST_FUNC void gsym_addr(int t, int a) { MCC_TRACE("enter\n");
+	while (t) { MCC_TRACE("br\n");
 		unsigned char *ptr = cur_text_section->data + t;
 		uint32_t n = read32le(ptr);
 		write32le(ptr, a < 0 ? -a : a - t - 4);
@@ -97,7 +97,7 @@ ST_FUNC void gsym_addr(int t, int a) {
 	}
 }
 
-static int is64_type(int t) {
+static int is64_type(int t) { MCC_TRACE("enter\n");
 	return ((t & VT_BTYPE) == VT_PTR ||
 					(t & VT_BTYPE) == VT_FUNC ||
 					(t & VT_BTYPE) == VT_LLONG);
@@ -105,19 +105,19 @@ static int is64_type(int t) {
 
 #define gjmp2(instr, lbl) oad(instr, lbl)
 
-ST_FUNC void gen_addr32(int r, Sym *sym, int c) {
+ST_FUNC void gen_addr32(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	if (r & VT_SYM)
 		greloca(cur_text_section, sym, ind, R_X86_64_32S, c), c = 0;
 	gen_le32(c);
 }
 
-ST_FUNC void gen_addrpc32(int r, Sym *sym, int c) {
+ST_FUNC void gen_addrpc32(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	if (r & VT_SYM)
 		greloca(cur_text_section, sym, ind, R_X86_64_PC32, c - 4), c = 4;
 	gen_le32(c - 4);
 }
 
-static void gen_gotpcrel(int r, Sym *sym, int c) {
+static void gen_gotpcrel(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 
 #ifdef MCC_TARGET_PE
 	mcc_error("internal error: no GOT on PE: %s %x %x | %02x %02x %02x\n",
@@ -128,47 +128,47 @@ static void gen_gotpcrel(int r, Sym *sym, int c) {
 #endif
 	greloca(cur_text_section, sym, ind, R_X86_64_GOTPCREL, -4);
 	gen_le32(0);
-	if (c) {
+	if (c) { MCC_TRACE("br\n");
 		orex(1, r, 0, 0x81);
 		o(0xc0 + REG_VALUE(r));
 		gen_le32(c);
 	}
 }
 
-static void gen_modrm_impl(int op_reg, int r, Sym *sym, int c, int is_got) {
+static void gen_modrm_impl(int op_reg, int r, Sym *sym, int c, int is_got) { MCC_TRACE("enter\n");
 	op_reg = REG_VALUE(op_reg) << 3;
-	if ((r & VT_VALMASK) == VT_CONST) {
-		if (!(r & VT_SYM)) {
+	if ((r & VT_VALMASK) == VT_CONST) { MCC_TRACE("br\n");
+		if (!(r & VT_SYM)) { MCC_TRACE("br\n");
 			o(0x04 | op_reg);
 			oad(0x25, c);
-		} else {
+		} else { MCC_TRACE("br\n");
 			o(0x05 | op_reg);
-			if (is_got) {
+			if (is_got) { MCC_TRACE("br\n");
 				gen_gotpcrel(r, sym, c);
-			} else {
+			} else { MCC_TRACE("br\n");
 				gen_addrpc32(r, sym, c);
 			}
 		}
-	} else if ((r & VT_VALMASK) == VT_LOCAL) {
-		if (c == (signed char)c) {
+	} else if ((r & VT_VALMASK) == VT_LOCAL) { MCC_TRACE("br\n");
+		if (c == (signed char)c) { MCC_TRACE("br\n");
 			o(0x45 | op_reg);
 			g(c);
-		} else {
+		} else { MCC_TRACE("br\n");
 			oad(0x85 | op_reg, c);
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		int rv = REG_VALUE(r);
 		int indirect = (r & VT_VALMASK) >= MCC_TREG_MEM;
 		int disp32 = indirect && c;
-		if (disp32) {
+		if (disp32) { MCC_TRACE("br\n");
 			g(0x80 | op_reg | rv);
 			if (rv == 4)
 				g(0x24);
 			gen_le32(c);
-		} else if (rv == 5) {
+		} else if (rv == 5) { MCC_TRACE("br\n");
 			g(0x40 | op_reg | rv);
 			g(0x00);
-		} else {
+		} else { MCC_TRACE("br\n");
 			g(0x00 | op_reg | rv);
 			if (rv == 4)
 				g(0x24);
@@ -176,11 +176,11 @@ static void gen_modrm_impl(int op_reg, int r, Sym *sym, int c, int is_got) {
 	}
 }
 
-static void gen_modrm(int op_reg, int r, Sym *sym, int c) {
+static void gen_modrm(int op_reg, int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	gen_modrm_impl(op_reg, r, sym, c, 0);
 }
 
-static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c) {
+static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	int is_got;
 	is_got = (op_reg & MCC_TREG_MEM) && !(sym->type.t & VT_STATIC);
 	orex(1, r, op_reg, opcode);
@@ -188,7 +188,7 @@ static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c) {
 }
 
 #ifdef MCC_TARGET_PE
-static void gen_pe_tls_base(int dst) {
+static void gen_pe_tls_base(int dst) { MCC_TRACE("enter\n");
 	int sc = (REG_VALUE(dst) == MCC_TREG_RAX) ? MCC_TREG_RCX : MCC_TREG_RAX;
 	o(0x50 + sc);
 	o(0x65);
@@ -210,7 +210,7 @@ static void gen_pe_tls_base(int dst) {
 #endif
 
 #ifdef MCC_TARGET_MACHO
-static void gen_macho_tls_base(Sym *sym) {
+static void gen_macho_tls_base(Sym *sym) { MCC_TRACE("enter\n");
 	o(0x50);
 	o(0x57);
 	o(0x3d8d48);
@@ -222,7 +222,7 @@ static void gen_macho_tls_base(Sym *sym) {
 }
 #endif
 
-void load(int r, SValue *sv) {
+void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	int v, t, ft, fc, fr;
 	SValue v1;
 
@@ -236,9 +236,9 @@ void load(int r, SValue *sv) {
 
 #ifndef MCC_TARGET_PE
 	if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
-			(fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC) && !(sv->sym->type.t & VT_TLS)) {
+			(fr & VT_LVAL) && !(sv->sym->type.t & VT_STATIC) && !(sv->sym->type.t & VT_TLS)) { MCC_TRACE("br\n");
 		int tr = r | MCC_TREG_MEM;
-		if (is_float(ft)) {
+		if (is_float(ft)) { MCC_TRACE("br\n");
 			tr = get_reg(MCC_RC_INT) | MCC_TREG_MEM;
 		}
 		gen_modrm64(0x8b, tr, fr, sv->sym, 0);
@@ -248,7 +248,7 @@ void load(int r, SValue *sv) {
 #endif
 
 	if ((fr & VT_VALMASK) == VT_CONST && (fr & VT_SYM) &&
-			(fr & VT_LVAL) && (sv->sym->type.t & VT_TLS)) {
+			(fr & VT_LVAL) && (sv->sym->type.t & VT_TLS)) { MCC_TRACE("br\n");
 		int tr = r | MCC_TREG_MEM;
 		if (is_float(ft))
 			tr = get_reg(MCC_RC_INT) | MCC_TREG_MEM;
@@ -280,9 +280,9 @@ void load(int r, SValue *sv) {
 	}
 
 	v = fr & VT_VALMASK;
-	if (fr & VT_LVAL) {
+	if (fr & VT_LVAL) { MCC_TRACE("br\n");
 		int b, ll;
-		if (v == VT_LLOCAL) {
+		if (v == VT_LLOCAL) { MCC_TRACE("br\n");
 			v1.type.t = VT_PTR;
 			v1.r = VT_LOCAL | VT_LVAL;
 			v1.c.i = fc;
@@ -292,7 +292,7 @@ void load(int r, SValue *sv) {
 				fr = get_reg(MCC_RC_INT);
 			load(fr, &v1);
 		}
-		if (fc != sv->c.i) {
+		if (fc != sv->c.i) { MCC_TRACE("br\n");
 			v1.type.t = VT_LLONG;
 			v1.r = VT_CONST;
 			v1.c.i = sv->c.i;
@@ -304,9 +304,9 @@ void load(int r, SValue *sv) {
 			fc = 0;
 		}
 		ll = 0;
-		if ((ft & VT_BTYPE) == VT_STRUCT) {
+		if ((ft & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 			int align;
-			switch (type_size(&sv->type, &align)) {
+			switch (type_size(&sv->type, &align)) { MCC_TRACE("br\n");
 			case 1:
 				ft = VT_BYTE;
 				break;
@@ -324,55 +324,55 @@ void load(int r, SValue *sv) {
 				break;
 			}
 		}
-		if ((ft & VT_BTYPE) == VT_FLOAT) {
+		if ((ft & VT_BTYPE) == VT_FLOAT) { MCC_TRACE("br\n");
 			o(0x66);
 			b = 0x6e0f;
 			r = REG_VALUE(r);
-		} else if ((ft & VT_BTYPE) == VT_DOUBLE) {
+		} else if ((ft & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 			o(0xf3);
 			b = 0x7e0f;
 			r = REG_VALUE(r);
-		} else if ((ft & VT_BTYPE) == VT_LDOUBLE) {
+		} else if ((ft & VT_BTYPE) == VT_LDOUBLE) { MCC_TRACE("br\n");
 			b = 0xdb, r = 5;
-		} else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) {
+		} else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) { MCC_TRACE("br\n");
 			b = 0xbe0f;
-		} else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED)) {
+		} else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED)) { MCC_TRACE("br\n");
 			b = 0xb60f;
-		} else if ((ft & VT_TYPE) == VT_SHORT) {
+		} else if ((ft & VT_TYPE) == VT_SHORT) { MCC_TRACE("br\n");
 			b = 0xbf0f;
-		} else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED)) {
+		} else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED)) { MCC_TRACE("br\n");
 			b = 0xb70f;
-		} else if ((ft & VT_TYPE) == (VT_VOID)) {
+		} else if ((ft & VT_TYPE) == (VT_VOID)) { MCC_TRACE("br\n");
 			return;
-		} else {
+		} else { MCC_TRACE("br\n");
 			assert(((ft & VT_BTYPE) == VT_INT) || ((ft & VT_BTYPE) == VT_LLONG) || ((ft & VT_BTYPE) == VT_PTR) || ((ft & VT_BTYPE) == VT_FUNC));
 			ll = is64_type(ft);
 			b = 0x8b;
 		}
-		if (ll) {
+		if (ll) { MCC_TRACE("br\n");
 			gen_modrm64(b, r, fr, sv->sym, fc);
-		} else {
+		} else { MCC_TRACE("br\n");
 			orex(ll, fr, r, b);
 			gen_modrm(r, fr, sv->sym, fc);
 		}
-	} else {
-		if (v == VT_CONST) {
-			if (fr & VT_SYM) {
+	} else { MCC_TRACE("br\n");
+		if (v == VT_CONST) { MCC_TRACE("br\n");
+			if (fr & VT_SYM) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
-				if (sv->sym->type.t & VT_TLS) {
+				if (sv->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 					gen_pe_tls_base(r);
 					o(0x48 | REX_BASE(r));
 					o(0x81);
 					o(0xc0 | REG_VALUE(r));
 					greloca(cur_text_section, sv->sym, ind, R_X86_64_TPOFF32, fc);
 					gen_le32(0);
-				} else {
+				} else { MCC_TRACE("br\n");
 					orex(1, 0, r, 0x8d);
 					o(0x05 + REG_VALUE(r) * 8);
 					gen_addrpc32(fr, sv->sym, fc);
 				}
 #else
-				if (sv->sym->type.t & VT_TLS) {
+				if (sv->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_MACHO
 					gen_macho_tls_base(sv->sym);
 					o(0x48 | (REX_BASE(r) << 2) | REX_BASE(MCC_TREG_R11));
@@ -394,39 +394,39 @@ void load(int r, SValue *sv) {
 									R_X86_64_TPOFF32, fc);
 					gen_le32(0);
 #endif
-				} else if (sv->sym->type.t & VT_STATIC) {
+				} else if (sv->sym->type.t & VT_STATIC) { MCC_TRACE("br\n");
 					orex(1, 0, r, 0x8d);
 					o(0x05 + REG_VALUE(r) * 8);
 					gen_addrpc32(fr, sv->sym, fc);
-				} else {
+				} else { MCC_TRACE("br\n");
 					orex(1, 0, r, 0x8b);
 					o(0x05 + REG_VALUE(r) * 8);
 					gen_gotpcrel(r, sv->sym, fc);
 				}
 #endif
-			} else if (is64_type(ft)) {
-				if (sv->c.i >> 32) {
+			} else if (is64_type(ft)) { MCC_TRACE("br\n");
+				if (sv->c.i >> 32) { MCC_TRACE("br\n");
 					orex(1, r, 0, 0xb8 + REG_VALUE(r));
 					gen_le64(sv->c.i);
-				} else if (sv->c.i > 0) {
+				} else if (sv->c.i > 0) { MCC_TRACE("br\n");
 					orex(0, r, 0, 0xb8 + REG_VALUE(r));
 					gen_le32(sv->c.i);
-				} else {
+				} else { MCC_TRACE("br\n");
 					orex(0, r, r, 0x31);
 					o(0xc0 + REG_VALUE(r) * 9);
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				orex(0, r, 0, 0xb8 + REG_VALUE(r));
 				gen_le32(fc);
 			}
-		} else if (v == VT_LOCAL) {
+		} else if (v == VT_LOCAL) { MCC_TRACE("br\n");
 			orex(1, 0, r, 0x8d);
 			gen_modrm(r, VT_LOCAL, sv->sym, fc);
-		} else if (v == VT_LLOCAL) {
+		} else if (v == VT_LLOCAL) { MCC_TRACE("br\n");
 			orex(1, 0, r, 0x8b);
 			gen_modrm(r, VT_LOCAL, sv->sym, fc);
-		} else if (v == VT_CMP) {
-			if (fc & 0x100) {
+		} else if (v == VT_CMP) { MCC_TRACE("br\n");
+			if (fc & 0x100) { MCC_TRACE("br\n");
 				v = vtop->cmp_r;
 				fc &= ~0x100;
 				orex(0, r, 0, 0xb0 + REG_VALUE(r));
@@ -438,7 +438,7 @@ void load(int r, SValue *sv) {
 			o(0xc0 + REG_VALUE(r));
 			orex(0, r, r, 0x0f);
 			o(0xc0b6 + REG_VALUE(r) * 0x900);
-		} else if (v == VT_JMP || v == VT_JMPI) {
+		} else if (v == VT_JMP || v == VT_JMPI) { MCC_TRACE("br\n");
 			t = v & 1;
 			orex(0, r, 0, 0);
 			oad(0xb8 + REG_VALUE(r), t);
@@ -446,30 +446,30 @@ void load(int r, SValue *sv) {
 			gsym(fc);
 			orex(0, r, 0, 0);
 			oad(0xb8 + REG_VALUE(r), t ^ 1);
-		} else if (v != r) {
-			if ((r >= MCC_TREG_XMM0) && (r <= MCC_TREG_XMM7)) {
-				if (v == MCC_TREG_ST0) {
+		} else if (v != r) { MCC_TRACE("br\n");
+			if ((r >= MCC_TREG_XMM0) && (r <= MCC_TREG_XMM7)) { MCC_TRACE("br\n");
+				if (v == MCC_TREG_ST0) { MCC_TRACE("br\n");
 					o(0xf0245cdd);
 					o(0x100ff2);
 					o(0x44 + REG_VALUE(r) * 8);
 					o(0xf024);
-				} else {
+				} else { MCC_TRACE("br\n");
 					assert((v >= MCC_TREG_XMM0) && (v <= MCC_TREG_XMM7));
-					if ((ft & VT_BTYPE) == VT_FLOAT) {
+					if ((ft & VT_BTYPE) == VT_FLOAT) { MCC_TRACE("br\n");
 						o(0x100ff3);
-					} else {
+					} else { MCC_TRACE("br\n");
 						assert((ft & VT_BTYPE) == VT_DOUBLE);
 						o(0x100ff2);
 					}
 					o(0xc0 + REG_VALUE(v) + REG_VALUE(r) * 8);
 				}
-			} else if (r == MCC_TREG_ST0) {
+			} else if (r == MCC_TREG_ST0) { MCC_TRACE("br\n");
 				assert((v >= MCC_TREG_XMM0) && (v <= MCC_TREG_XMM7));
 				o(0x110ff2);
 				o(0x44 + REG_VALUE(r) * 8);
 				o(0xf024);
 				o(0xf02444dd);
-			} else {
+			} else { MCC_TRACE("br\n");
 				orex(is64_type(ft), r, v, 0x89);
 				o(0xc0 + REG_VALUE(r) + REG_VALUE(v) * 8);
 			}
@@ -477,7 +477,7 @@ void load(int r, SValue *sv) {
 	}
 }
 
-void store(int r, SValue *v) {
+void store(int r, SValue *v) { MCC_TRACE("enter\n");
 	int fr, bt, ft, fc;
 	int op64 = 0;
 	int pic = 0;
@@ -490,7 +490,7 @@ void store(int r, SValue *v) {
 	ft &= ~VT_QUALIFY;
 	bt = ft & VT_BTYPE;
 
-	if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) {
+	if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_PE)
 		gen_pe_tls_base(MCC_TREG_R11);
 		o(0x49);
@@ -500,7 +500,7 @@ void store(int r, SValue *v) {
 		gen_le32(0);
 #elif defined(MCC_TARGET_MACHO)
 		gen_macho_tls_base(v->sym);
-		if (fc) {
+		if (fc) { MCC_TRACE("br\n");
 			o(0x49);
 			o(0x81);
 			o(0xc3);
@@ -523,14 +523,14 @@ void store(int r, SValue *v) {
 		fc = 0;
 	}
 #ifndef MCC_TARGET_PE
-	else if (fr == VT_CONST && (v->r & VT_SYM) && !(v->sym->type.t & VT_STATIC)) {
+	else if (fr == VT_CONST && (v->r & VT_SYM) && !(v->sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
 		o(0x1d8b4c);
 		gen_gotpcrel(MCC_TREG_R11, v->sym, v->c.i);
 		pic = is64_type(bt) ? 0x49 : 0x41;
 	}
 #endif
 
-	if (bt == VT_FLOAT) {
+	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 		o(0x66);
 		if (pic)
 			o(pic);
@@ -538,7 +538,7 @@ void store(int r, SValue *v) {
 			orex(0, v->r, r, 0);
 		o(0x7e0f);
 		r = REG_VALUE(r);
-	} else if (bt == VT_DOUBLE) {
+	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
 		o(0x66);
 		if (pic)
 			o(pic);
@@ -546,7 +546,7 @@ void store(int r, SValue *v) {
 			orex(0, v->r, r, 0);
 		o(0xd60f);
 		r = REG_VALUE(r);
-	} else if (bt == VT_LDOUBLE) {
+	} else if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 		o(0xc0d9);
 		if (pic)
 			o(pic);
@@ -554,7 +554,7 @@ void store(int r, SValue *v) {
 			orex(0, v->r, 0, 0);
 		o(0xdb);
 		r = 7;
-	} else {
+	} else { MCC_TRACE("br\n");
 		if (bt == VT_SHORT)
 			o(0x66);
 		o(pic);
@@ -565,33 +565,33 @@ void store(int r, SValue *v) {
 		else
 			orex(0, fr, r, 0x89);
 	}
-	if (pic) {
+	if (pic) { MCC_TRACE("br\n");
 		if (op64)
 			o(op64);
 		o(3 + (r << 3));
-	} else if (op64) {
-		if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) {
+	} else if (op64) { MCC_TRACE("br\n");
+		if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) { MCC_TRACE("br\n");
 			gen_modrm64(op64, r, v->r, v->sym, fc);
-		} else if (fr != r) {
+		} else if (fr != r) { MCC_TRACE("br\n");
 			orex(1, fr, r, op64);
 			o(0xc0 + fr + r * 8);
 		}
-	} else {
-		if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) {
+	} else { MCC_TRACE("br\n");
+		if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) { MCC_TRACE("br\n");
 			gen_modrm(r, v->r, v->sym, fc);
-		} else if (fr != r) {
+		} else if (fr != r) { MCC_TRACE("br\n");
 			o(0xc0 + fr + r * 8);
 		}
 	}
 }
 
-static void gcall_or_jmp(int is_jmp) {
+static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 	int r;
 	if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST &&
-			((vtop->r & VT_SYM) && (vtop->c.i - 4) == (int)(vtop->c.i - 4))) {
+			((vtop->r & VT_SYM) && (vtop->c.i - 4) == (int)(vtop->c.i - 4))) { MCC_TRACE("br\n");
 		greloca(cur_text_section, vtop->sym, ind + 1, R_X86_64_PLT32, (int)(vtop->c.i - 4));
 		oad(0xe8 + is_jmp, 0);
-	} else {
+	} else { MCC_TRACE("br\n");
 		r = MCC_TREG_R11;
 		load(r, vtop);
 		o(0x41);
@@ -602,7 +602,7 @@ static void gcall_or_jmp(int is_jmp) {
 
 #if MCC_CONFIG_DIAG_RT >= 2
 
-static void gen_bounds_call(int v) {
+static void gen_bounds_call(int v) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(v);
 	oad(0xe8, 0);
 	greloca(cur_text_section, sym, ind - 4, R_X86_64_PLT32, -4);
@@ -614,7 +614,7 @@ static void gen_bounds_call(int v) {
 #define MCC_TREG_FASTCALL_1 MCC_TREG_RDI
 #endif
 
-static void gen_bounds_prolog(void) {
+static void gen_bounds_prolog(void) { MCC_TRACE("enter\n");
 	func_bound_offset = lbounds_section->data_offset;
 	func_bound_ind = ind;
 	func_bound_add_epilog = 0;
@@ -623,7 +623,7 @@ static void gen_bounds_prolog(void) {
 	oad(0xb8, 0);
 }
 
-static void gen_bounds_epilog(void) {
+static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 	addr_t saved_ind;
 	Sym *sym_data;
 	int offset_modified;
@@ -631,7 +631,7 @@ static void gen_bounds_epilog(void) {
 	if (!gen_bounds_epilog_head(func_bound_offset, &sym_data, &offset_modified))
 		return;
 
-	if (offset_modified) {
+	if (offset_modified) { MCC_TRACE("br\n");
 		saved_ind = ind;
 		ind = func_bound_ind;
 		greloca(cur_text_section, sym_data, ind + 3, R_X86_64_PC32, -4);
@@ -658,13 +658,13 @@ static void gen_bounds_epilog(void) {
 #endif
 
 #ifndef MCC_TARGET_PE
-static void gen_asan_stack_call(const char *name) {
+static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(tok_alloc_const(name));
 	oad(0xe8, 0);
 	greloca(cur_text_section, sym, ind - 4, R_X86_64_PLT32, -4);
 }
 
-static void gen_asan_stack_prolog(void) {
+static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
 	if (!asan_lstack_section)
 		asan_lstack_section =
 			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC);
@@ -676,7 +676,7 @@ static void gen_asan_stack_prolog(void) {
 	oad(0xb8, 0);
 }
 
-static void gen_asan_stack_epilog(void) {
+static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
 	addr_t saved_ind;
 	Sym *sym_data;
 
@@ -714,29 +714,29 @@ static void gen_asan_stack_epilog(void) {
 static const uint8_t arg_regs[REGN] = {
 		MCC_TREG_RCX, MCC_TREG_RDX, MCC_TREG_R8, MCC_TREG_R9};
 
-static int arg_prepare_reg(int idx) {
+static int arg_prepare_reg(int idx) { MCC_TRACE("enter\n");
 	if (idx == 0 || idx == 1)
 		return idx + 10;
 	else
 		return idx >= 0 && idx < REGN ? arg_regs[idx] : 0;
 }
 
-static void gen_offs_sp(int b, int r, int d) {
+static void gen_offs_sp(int b, int r, int d) { MCC_TRACE("enter\n");
 	orex(1, 0, r & 0x100 ? 0 : r, b);
-	if (d == (signed char)d) {
+	if (d == (signed char)d) { MCC_TRACE("br\n");
 		o(0x2444 | (REG_VALUE(r) << 3));
 		g(d);
-	} else {
+	} else { MCC_TRACE("br\n");
 		o(0x2484 | (REG_VALUE(r) << 3));
 		gen_le32(d);
 	}
 }
 
-static int using_regs(int size) {
+static int using_regs(int size) { MCC_TRACE("enter\n");
 	return !(size > 8 || (size & (size - 1)));
 }
 
-ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) {
+ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) { MCC_TRACE("enter\n");
 	int size, align;
 	*ret_align = 1;
 	*regsize = 8;
@@ -755,20 +755,20 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 	return 1;
 }
 
-static int is_sse_float(int t) {
+static int is_sse_float(int t) { MCC_TRACE("enter\n");
 	int bt;
 	bt = t & VT_BTYPE;
 	return bt == VT_DOUBLE || bt == VT_FLOAT;
 }
 
-static int gfunc_arg_size(CType *type) {
+static int gfunc_arg_size(CType *type) { MCC_TRACE("enter\n");
 	int align;
 	if (type->t & (VT_ARRAY | VT_BITFIELD))
 		return 8;
 	return type_size(type, &align);
 }
 
-void gfunc_call(int nb_args) {
+void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	int size, r, args_size, d, bt, struct_size;
 	int arg;
 
@@ -783,7 +783,7 @@ void gfunc_call(int nb_args) {
 	arg = nb_args;
 
 	struct_size = args_size;
-	for (int i = 0; i < nb_args; i++) {
+	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 		SValue *sv;
 
 		--arg;
@@ -794,7 +794,7 @@ void gfunc_call(int nb_args) {
 		if (using_regs(size))
 			continue;
 
-		if (bt == VT_STRUCT) {
+		if (bt == VT_STRUCT) { MCC_TRACE("br\n");
 			size = (size + 15) & ~15;
 			r = get_reg(MCC_RC_INT);
 			gen_offs_sp(0x8d, r, struct_size);
@@ -804,7 +804,7 @@ void gfunc_call(int nb_args) {
 			vpushv(sv);
 			vstore();
 			--vtop;
-		} else if (bt == VT_LDOUBLE) {
+		} else if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 			gv(MCC_RC_ST0);
 			gen_offs_sp(0xdb, 0x107, struct_size);
 			struct_size += 16;
@@ -817,38 +817,38 @@ void gfunc_call(int nb_args) {
 	arg = nb_args;
 	struct_size = args_size;
 
-	for (int i = 0; i < nb_args; i++) {
+	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 		--arg;
 		bt = (vtop->type.t & VT_BTYPE);
 
 		size = gfunc_arg_size(&vtop->type);
-		if (!using_regs(size)) {
+		if (!using_regs(size)) { MCC_TRACE("br\n");
 			size = (size + 15) & ~15;
-			if (arg >= REGN) {
+			if (arg >= REGN) { MCC_TRACE("br\n");
 				d = get_reg(MCC_RC_INT);
 				gen_offs_sp(0x8d, d, struct_size);
 				gen_offs_sp(0x89, d, arg * 8);
-			} else {
+			} else { MCC_TRACE("br\n");
 				d = arg_prepare_reg(arg);
 				gen_offs_sp(0x8d, d, struct_size);
 			}
 			struct_size += size;
-		} else {
-			if (is_sse_float(vtop->type.t)) {
+		} else { MCC_TRACE("br\n");
+			if (is_sse_float(vtop->type.t)) { MCC_TRACE("br\n");
 				if (mcc_state->nosse)
 					mcc_error("SSE disabled");
-				if (arg >= REGN) {
+				if (arg >= REGN) { MCC_TRACE("br\n");
 					gv(MCC_RC_XMM0);
 					gen_offs_sp(0xd60f66, 0x100, arg * 8);
-				} else {
+				} else { MCC_TRACE("br\n");
 					gv(MCC_RC_XMM0 << arg);
 					d = arg_prepare_reg(arg);
 					o(0x66);
 					orex(1, d, 0, 0x7e0f);
 					o(0xc0 + arg * 8 + REG_VALUE(d));
 				}
-			} else {
-				if (bt == VT_STRUCT) {
+			} else { MCC_TRACE("br\n");
+				if (bt == VT_STRUCT) { MCC_TRACE("br\n");
 					vtop->type.ref = NULL;
 					vtop->type.t = size > 4 ? VT_LLONG : size > 2 ? VT_INT
 																					 : size > 1		? VT_SHORT
@@ -856,9 +856,9 @@ void gfunc_call(int nb_args) {
 				}
 
 				r = gv(MCC_RC_INT);
-				if (arg >= REGN) {
+				if (arg >= REGN) { MCC_TRACE("br\n");
 					gen_offs_sp(0x89, r, arg * 8);
-				} else {
+				} else { MCC_TRACE("br\n");
 					d = arg_prepare_reg(arg);
 					orex(1, d, r, 0x89);
 					o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(d));
@@ -868,16 +868,16 @@ void gfunc_call(int nb_args) {
 		vtop--;
 	}
 
-	if (nb_args > 0) {
+	if (nb_args > 0) { MCC_TRACE("br\n");
 		o(0xd1894c);
-		if (nb_args > 1) {
+		if (nb_args > 1) { MCC_TRACE("br\n");
 			o(0xda894c);
 		}
 	}
 
 	gcall_or_jmp(0);
 
-	if ((vtop->r & VT_SYM) && vtop->sym->v == TOK_alloca) {
+	if ((vtop->r & VT_SYM) && vtop->sym->v == TOK_alloca) { MCC_TRACE("br\n");
 		o(0x48);
 		func_alloca = oad(0x05, func_alloca);
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -890,7 +890,7 @@ void gfunc_call(int nb_args) {
 
 #define FUNC_PROLOG_SIZE 11
 
-void gfunc_prolog(Sym *func_sym) {
+void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	int addr, reg_param_index, bt, size;
 	Sym *sym;
@@ -909,30 +909,30 @@ void gfunc_prolog(Sym *func_sym) {
 	sym = func_type->ref;
 
 	size = gfunc_arg_size(&func_vt);
-	if (!using_regs(size)) {
+	if (!using_regs(size)) { MCC_TRACE("br\n");
 		gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, addr);
 		func_vc = addr;
 		reg_param_index++;
 		addr += 8;
 	}
 
-	while ((sym = sym->next) != NULL) {
+	while ((sym = sym->next) != NULL) { MCC_TRACE("br\n");
 		type = &sym->type;
 		bt = type->t & VT_BTYPE;
 		size = gfunc_arg_size(type);
-		if (!using_regs(size)) {
-			if (reg_param_index < REGN) {
+		if (!using_regs(size)) { MCC_TRACE("br\n");
+			if (reg_param_index < REGN) { MCC_TRACE("br\n");
 				gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, addr);
 			}
 			gfunc_set_param(sym, addr, 1);
-		} else {
-			if (reg_param_index < REGN) {
-				if ((bt == VT_FLOAT) || (bt == VT_DOUBLE)) {
+		} else { MCC_TRACE("br\n");
+			if (reg_param_index < REGN) { MCC_TRACE("br\n");
+				if ((bt == VT_FLOAT) || (bt == VT_DOUBLE)) { MCC_TRACE("br\n");
 					if (mcc_state->nosse)
 						mcc_error("SSE disabled");
 					o(0xd60f66);
 					gen_modrm(reg_param_index, VT_LOCAL, NULL, addr);
-				} else {
+				} else { MCC_TRACE("br\n");
 					gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, addr);
 				}
 			}
@@ -942,8 +942,8 @@ void gfunc_prolog(Sym *func_sym) {
 		reg_param_index++;
 	}
 
-	while (reg_param_index < REGN) {
-		if (func_var) {
+	while (reg_param_index < REGN) { MCC_TRACE("br\n");
+		if (func_var) { MCC_TRACE("br\n");
 			gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, addr);
 			addr += 8;
 		}
@@ -955,7 +955,7 @@ void gfunc_prolog(Sym *func_sym) {
 #endif
 }
 
-void gfunc_epilog(void) {
+void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	int v, start;
 
 	func_scratch = (func_scratch + 15) & -16;
@@ -967,9 +967,9 @@ void gfunc_epilog(void) {
 #endif
 
 	o(0xc9);
-	if (func_ret_sub == 0) {
+	if (func_ret_sub == 0) { MCC_TRACE("br\n");
 		o(0xc3);
-	} else {
+	} else { MCC_TRACE("br\n");
 		o(0xc2);
 		g(func_ret_sub);
 		g(func_ret_sub >> 8);
@@ -981,13 +981,13 @@ void gfunc_epilog(void) {
 	pe_add_unwind_data(start, ind, v);
 
 	ind = start;
-	if (v >= 4096) {
+	if (v >= 4096) { MCC_TRACE("br\n");
 		Sym *sym = external_helper_sym(TOK___chkstk);
 		oad(0xb8, v);
 		oad(0xe8, 0);
 		greloca(cur_text_section, sym, ind - 4, R_X86_64_PLT32, -4);
 		o(0x90);
-	} else {
+	} else { MCC_TRACE("br\n");
 		o(0xe5894855);
 		o(0xec8148);
 		gen_le32(v);
@@ -999,11 +999,11 @@ void gfunc_epilog(void) {
 
 #else
 
-static void gadd_sp(int val) {
-	if (val == (signed char)val) {
+static void gadd_sp(int val) { MCC_TRACE("enter\n");
+	if (val == (signed char)val) { MCC_TRACE("br\n");
 		o(0xc48348);
 		g(val);
-	} else {
+	} else { MCC_TRACE("br\n");
 		oad(0xc48148, val);
 	}
 }
@@ -1016,7 +1016,7 @@ typedef enum X86_64_Mode {
 	x86_64_mode_x87
 } X86_64_Mode;
 
-static X86_64_Mode classify_x86_64_merge(X86_64_Mode a, X86_64_Mode b) {
+static X86_64_Mode classify_x86_64_merge(X86_64_Mode a, X86_64_Mode b) { MCC_TRACE("enter\n");
 	if (a == b)
 		return a;
 	else if (a == x86_64_mode_none)
@@ -1033,11 +1033,11 @@ static X86_64_Mode classify_x86_64_merge(X86_64_Mode a, X86_64_Mode b) {
 		return x86_64_mode_sse;
 }
 
-static X86_64_Mode classify_x86_64_inner(CType *ty) {
+static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	Sym *f;
 
-	switch (ty->t & VT_BTYPE) {
+	switch (ty->t & VT_BTYPE) { MCC_TRACE("br\n");
 	case VT_VOID:
 		return x86_64_mode_none;
 
@@ -1070,32 +1070,32 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) {
 	return 0;
 }
 
-static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) {
+static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;
 
-	if (ty->t & (VT_BITFIELD | VT_ARRAY)) {
+	if (ty->t & (VT_BITFIELD | VT_ARRAY)) { MCC_TRACE("br\n");
 		*psize = 8;
 		*palign = 8;
 		*reg_count = 1;
 		ret_t = ty->t;
 		mode = x86_64_mode_integer;
-	} else {
+	} else { MCC_TRACE("br\n");
 		size = type_size(ty, &align);
 		*psize = (size + 7) & ~7;
 		*palign = (align + 7) & ~7;
 		*reg_count = 0;
 
-		if (size > 16) {
+		if (size > 16) { MCC_TRACE("br\n");
 			mode = x86_64_mode_memory;
-		} else {
+		} else { MCC_TRACE("br\n");
 			mode = classify_x86_64_inner(ty);
-			switch (mode) {
+			switch (mode) { MCC_TRACE("br\n");
 			case x86_64_mode_integer:
-				if (size > 8) {
+				if (size > 8) { MCC_TRACE("br\n");
 					*reg_count = 2;
 					ret_t = VT_QLONG;
-				} else {
+				} else { MCC_TRACE("br\n");
 					*reg_count = 1;
 					if (size > 4)
 						ret_t = VT_LLONG;
@@ -1116,10 +1116,10 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 				break;
 
 			case x86_64_mode_sse:
-				if (size > 8) {
+				if (size > 8) { MCC_TRACE("br\n");
 					*reg_count = 2;
 					ret_t = VT_QFLOAT;
-				} else {
+				} else { MCC_TRACE("br\n");
 					*reg_count = 1;
 					ret_t = (size > 4) ? VT_DOUBLE : VT_FLOAT;
 				}
@@ -1130,7 +1130,7 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 		}
 	}
 
-	if (ret) {
+	if (ret) { MCC_TRACE("br\n");
 		ret->ref = NULL;
 		ret->t = ret_t;
 	}
@@ -1138,7 +1138,7 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 	return mode;
 }
 
-ST_FUNC int classify_x86_64_va_arg(CType *ty) {
+ST_FUNC int classify_x86_64_va_arg(CType *ty) { MCC_TRACE("enter\n");
 	enum __va_arg_type {
 		__va_gen_reg,
 		__va_float_reg,
@@ -1146,7 +1146,7 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty) {
 	};
 	int size, align, reg_count;
 	X86_64_Mode mode = classify_x86_64_arg(ty, NULL, &size, &align, &reg_count);
-	switch (mode) {
+	switch (mode) { MCC_TRACE("br\n");
 	default:
 		return __va_stack;
 	case x86_64_mode_integer:
@@ -1156,13 +1156,13 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty) {
 	}
 }
 
-static int x86_64_complex_ldouble(CType *vt) {
+static int x86_64_complex_ldouble(CType *vt) { MCC_TRACE("enter\n");
 	return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex && (vt->ref->next->type.t & VT_BTYPE) == VT_LDOUBLE;
 }
 
-ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) {
+ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) { MCC_TRACE("enter\n");
 	int size, align, reg_count;
-	if (x86_64_complex_ldouble(vt)) {
+	if (x86_64_complex_ldouble(vt)) { MCC_TRACE("br\n");
 		*ret_align = 1;
 		*regsize = 16;
 		ret->t = VT_LDOUBLE;
@@ -1176,17 +1176,17 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 	return 1;
 }
 
-ST_FUNC void arch_transfer_ret_regs(int aftercall) {
+ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 	SValue *sv = vtop;
 	Sym *re = sv->type.ref->next;
 	int fr = sv->r & VT_VALMASK;
 	int fc = sv->c.i;
-	if (aftercall) {
+	if (aftercall) { MCC_TRACE("br\n");
 		o(0xdb);
 		gen_modrm(7, fr, sv->sym, fc + re->c);
 		o(0xdb);
 		gen_modrm(7, fr, sv->sym, fc + re->next->c);
-	} else {
+	} else { MCC_TRACE("br\n");
 		o(0xdb);
 		gen_modrm(5, fr, sv->sym, fc + re->next->c);
 		o(0xdb);
@@ -1198,14 +1198,14 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) {
 static const uint8_t arg_regs[REGN] = {
 		MCC_TREG_RDI, MCC_TREG_RSI, MCC_TREG_RDX, MCC_TREG_RCX, MCC_TREG_R8, MCC_TREG_R9};
 
-static int arg_prepare_reg(int idx) {
+static int arg_prepare_reg(int idx) { MCC_TRACE("enter\n");
 	if (idx == 2 || idx == 3)
 		return idx + 8;
 	else
 		return idx >= 0 && idx < REGN ? arg_regs[idx] : 0;
 }
 
-void gfunc_call(int nb_args) {
+void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	CType type;
 	int size, align, r, args_size, stack_adjust, reg_count;
@@ -1222,20 +1222,20 @@ void gfunc_call(int nb_args) {
 	save_regs(nb_args);
 
 	stack_adjust = 0;
-	for (int i = nb_args - 1; i >= 0; i--) {
+	for (int i = nb_args - 1; i >= 0; i--) { MCC_TRACE("br\n");
 		mode = classify_x86_64_arg(&vtop[-i].type, NULL, &size, &align, &reg_count);
 		if (size == 0)
 			continue;
-		if (mode == x86_64_mode_sse && nb_sse_args + reg_count <= 8) {
+		if (mode == x86_64_mode_sse && nb_sse_args + reg_count <= 8) { MCC_TRACE("br\n");
 			nb_sse_args += reg_count;
 			onstack[i] = 0;
-		} else if (mode == x86_64_mode_integer && nb_reg_args + reg_count <= REGN) {
+		} else if (mode == x86_64_mode_integer && nb_reg_args + reg_count <= REGN) { MCC_TRACE("br\n");
 			nb_reg_args += reg_count;
 			onstack[i] = 0;
-		} else if (mode == x86_64_mode_none) {
+		} else if (mode == x86_64_mode_none) { MCC_TRACE("br\n");
 			onstack[i] = 0;
-		} else {
-			if (align == 16 && (stack_adjust &= 15)) {
+		} else { MCC_TRACE("br\n");
+			if (align == 16 && (stack_adjust &= 15)) { MCC_TRACE("br\n");
 				onstack[i] = 2;
 				stack_adjust = 0;
 			} else
@@ -1251,14 +1251,14 @@ void gfunc_call(int nb_args) {
 	sse_reg = nb_sse_args;
 	args_size = 0;
 	stack_adjust &= 15;
-	for (int i = 0, k = 0; i < nb_args;) {
+	for (int i = 0, k = 0; i < nb_args;) { MCC_TRACE("br\n");
 		mode = classify_x86_64_arg(&vtop[-i].type, NULL, &size, &align, &reg_count);
-		if (size) {
-			if (!onstack[i + k]) {
+		if (size) { MCC_TRACE("br\n");
+			if (!onstack[i + k]) { MCC_TRACE("br\n");
 				++i;
 				continue;
 			}
-			if (stack_adjust) {
+			if (stack_adjust) { MCC_TRACE("br\n");
 				o(0x50);
 				args_size += 8;
 				stack_adjust = 0;
@@ -1269,7 +1269,7 @@ void gfunc_call(int nb_args) {
 
 		vrotb(i + 1);
 
-		switch (vtop->type.t & VT_BTYPE) {
+		switch (vtop->type.t & VT_BTYPE) { MCC_TRACE("br\n");
 		case VT_STRUCT:
 			o(0x48);
 			oad(0xec81, size);
@@ -1324,34 +1324,34 @@ void gfunc_call(int nb_args) {
 
 	assert(gen_reg <= REGN);
 	assert(sse_reg <= 8);
-	for (int i = 0; i < nb_args; i++) {
+	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 		mode = classify_x86_64_arg(&vtop->type, &type, &size, &align, &reg_count);
 		if (size == 0)
 			continue;
 		vtop->type = type;
-		if (mode == x86_64_mode_sse) {
-			if (reg_count == 2) {
+		if (mode == x86_64_mode_sse) { MCC_TRACE("br\n");
+			if (reg_count == 2) { MCC_TRACE("br\n");
 				sse_reg -= 2;
 				gv(MCC_RC_FRET);
-				if (sse_reg) {
+				if (sse_reg) { MCC_TRACE("br\n");
 					o(0x280f);
 					o(0xc1 + ((sse_reg + 1) << 3));
 					o(0x280f);
 					o(0xc0 + (sse_reg << 3));
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				assert(reg_count == 1);
 				--sse_reg;
 				gv(MCC_RC_XMM0 << sse_reg);
 			}
-		} else if (mode == x86_64_mode_integer) {
+		} else if (mode == x86_64_mode_integer) { MCC_TRACE("br\n");
 			int d;
 			gen_reg -= reg_count;
 			r = gv(MCC_RC_INT);
 			d = arg_prepare_reg(gen_reg);
 			orex(1, d, r, 0x89);
 			o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(d));
-			if (reg_count == 2) {
+			if (reg_count == 2) { MCC_TRACE("br\n");
 				d = arg_prepare_reg(gen_reg + 1);
 				orex(1, d, vtop->r2, 0x89);
 				o(0xc0 + REG_VALUE(vtop->r2) * 8 + REG_VALUE(d));
@@ -1362,9 +1362,9 @@ void gfunc_call(int nb_args) {
 	assert(gen_reg == 0);
 	assert(sse_reg == 0);
 
-	if (nb_reg_args > 2) {
+	if (nb_reg_args > 2) { MCC_TRACE("br\n");
 		o(0xd2894c);
-		if (nb_reg_args > 3) {
+		if (nb_reg_args > 3) { MCC_TRACE("br\n");
 			o(0xd9894c);
 		}
 	}
@@ -1379,14 +1379,14 @@ void gfunc_call(int nb_args) {
 
 #define FUNC_PROLOG_SIZE 11
 
-static void push_arg_reg(int i) {
+static void push_arg_reg(int i) { MCC_TRACE("enter\n");
 	loc -= 8;
 	gen_modrm64(0x89, arg_regs[i], VT_LOCAL, NULL, loc);
 }
 
 #if defined(MCC_TARGET_MACHO)
 
-static void gen_stack_chk_prolog(void) {
+static void gen_stack_chk_prolog(void) { MCC_TRACE("enter\n");
 	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
 	func_stack_chk_loc = (loc -= 8);
 	o(0x058b48);
@@ -1400,7 +1400,7 @@ static void gen_stack_chk_prolog(void) {
 	gen_le32(func_stack_chk_loc);
 }
 
-static void gen_stack_chk_epilog(void) {
+static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
 
 	g(0x48);
@@ -1419,7 +1419,7 @@ static void gen_stack_chk_epilog(void) {
 					ind - 4, R_X86_64_PLT32, -4);
 }
 #elif !defined(MCC_TARGET_PE)
-static void gen_stack_chk_prolog(void) {
+static void gen_stack_chk_prolog(void) { MCC_TRACE("enter\n");
 	func_stack_chk_loc = (loc -= 8);
 	g(0x64);
 	g(0x48);
@@ -1433,7 +1433,7 @@ static void gen_stack_chk_prolog(void) {
 	gen_le32(func_stack_chk_loc);
 }
 
-static void gen_stack_chk_epilog(void) {
+static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 	g(0x48);
 	g(0x8b);
 	g(0x8d);
@@ -1452,7 +1452,7 @@ static void gen_stack_chk_epilog(void) {
 }
 #endif
 
-void gfunc_prolog(Sym *func_sym) {
+void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	X86_64_Mode mode, ret_mode;
 	int addr, align, size, reg_count;
@@ -1468,16 +1468,16 @@ void gfunc_prolog(Sym *func_sym) {
 	func_ret_sub = 0;
 	ret_mode = classify_x86_64_arg(&func_vt, NULL, &size, &align, &reg_count);
 
-	if (func_var) {
+	if (func_var) { MCC_TRACE("br\n");
 		int seen_reg_num, seen_sse_num, seen_stack_size;
 		seen_reg_num = ret_mode == x86_64_mode_memory && !x86_64_complex_ldouble(&func_vt);
 		seen_sse_num = 0;
 		seen_stack_size = MCC_PTR_SIZE * 2;
 		sym = func_type->ref;
-		while ((sym = sym->next) != NULL) {
+		while ((sym = sym->next) != NULL) { MCC_TRACE("br\n");
 			type = &sym->type;
 			mode = classify_x86_64_arg(type, NULL, &size, &align, &reg_count);
-			switch (mode) {
+			switch (mode) { MCC_TRACE("br\n");
 			default:
 			stack_arg:
 				seen_stack_size = ((seen_stack_size + align - 1) & -align) + size;
@@ -1509,9 +1509,9 @@ void gfunc_prolog(Sym *func_sym) {
 		gen_le32(-176 - 24);
 		o(0xf85d894c);
 
-		for (int i = 0; i < 8; i++) {
+		for (int i = 0; i < 8; i++) { MCC_TRACE("br\n");
 			loc -= 16;
-			if (!mcc_state->nosse) {
+			if (!mcc_state->nosse) { MCC_TRACE("br\n");
 				o(0xd60f66);
 				gen_modrm(7 - i, VT_LOCAL, NULL, loc);
 			}
@@ -1519,7 +1519,7 @@ void gfunc_prolog(Sym *func_sym) {
 			gen_le32(loc + 8);
 			gen_le32(0);
 		}
-		for (int i = 0; i < REGN; i++) {
+		for (int i = 0; i < REGN; i++) { MCC_TRACE("br\n");
 			push_arg_reg(REGN - 1 - i);
 		}
 	}
@@ -1528,27 +1528,27 @@ void gfunc_prolog(Sym *func_sym) {
 	reg_param_index = 0;
 	sse_param_index = 0;
 
-	if (ret_mode == x86_64_mode_memory && !x86_64_complex_ldouble(&func_vt)) {
+	if (ret_mode == x86_64_mode_memory && !x86_64_complex_ldouble(&func_vt)) { MCC_TRACE("br\n");
 		push_arg_reg(reg_param_index);
 		func_vc = loc;
 		reg_param_index++;
 	}
-	while ((sym = sym->next) != NULL) {
+	while ((sym = sym->next) != NULL) { MCC_TRACE("br\n");
 		type = &sym->type;
 		mode = classify_x86_64_arg(type, NULL, &size, &align, &reg_count);
-		switch (mode) {
+		switch (mode) { MCC_TRACE("br\n");
 		case x86_64_mode_sse:
 			if (mcc_state->nosse)
 				mcc_error("SSE disabled but floating point arguments used");
-			if (sse_param_index + reg_count <= 8) {
+			if (sse_param_index + reg_count <= 8) { MCC_TRACE("br\n");
 				loc -= reg_count * 8;
 				param_addr = loc;
-				for (int i = 0; i < reg_count; ++i) {
+				for (int i = 0; i < reg_count; ++i) { MCC_TRACE("br\n");
 					o(0xd60f66);
 					gen_modrm(sse_param_index, VT_LOCAL, NULL, param_addr + i * 8);
 					++sse_param_index;
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				addr = (addr + align - 1) & -align;
 				param_addr = addr;
 				addr += size;
@@ -1563,14 +1563,14 @@ void gfunc_prolog(Sym *func_sym) {
 			break;
 
 		case x86_64_mode_integer: {
-			if (reg_param_index + reg_count <= REGN) {
+			if (reg_param_index + reg_count <= REGN) { MCC_TRACE("br\n");
 				loc -= reg_count * 8;
 				param_addr = loc;
-				for (int i = 0; i < reg_count; ++i) {
+				for (int i = 0; i < reg_count; ++i) { MCC_TRACE("br\n");
 					gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, param_addr + i * 8);
 					++reg_param_index;
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				addr = (addr + align - 1) & -align;
 				param_addr = addr;
 				addr += size;
@@ -1596,7 +1596,7 @@ void gfunc_prolog(Sym *func_sym) {
 #endif
 }
 
-void gfunc_epilog(void) {
+void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	int v, saved_ind;
 
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -1610,9 +1610,9 @@ void gfunc_epilog(void) {
 		gen_stack_chk_epilog();
 #endif
 	o(0xc9);
-	if (func_ret_sub == 0) {
+	if (func_ret_sub == 0) { MCC_TRACE("br\n");
 		o(0xc3);
-	} else {
+	} else { MCC_TRACE("br\n");
 		o(0xc2);
 		g(func_ret_sub);
 		g(func_ret_sub >> 8);
@@ -1628,33 +1628,33 @@ void gfunc_epilog(void) {
 
 #endif
 
-ST_FUNC void gen_fill_nops(int bytes) {
+ST_FUNC void gen_fill_nops(int bytes) { MCC_TRACE("enter\n");
 	while (bytes--)
 		g(0x90);
 }
 
-int gjmp(int t) {
+int gjmp(int t) { MCC_TRACE("enter\n");
 	return gjmp2(0xe9, t);
 }
 
-void gjmp_addr(int a) {
+void gjmp_addr(int a) { MCC_TRACE("enter\n");
 	int r;
 	r = a - ind - 2;
-	if (r == (signed char)r) {
+	if (r == (signed char)r) { MCC_TRACE("br\n");
 		g(0xeb);
 		g(r);
-	} else {
+	} else { MCC_TRACE("br\n");
 		oad(0xe9, a - ind - 5);
 	}
 }
 
-ST_FUNC int gjmp_cond(int op, int t) {
-	if (op & 0x100) {
+ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
+	if (op & 0x100) { MCC_TRACE("br\n");
 		int v = vtop->cmp_r;
 		op &= ~0x100;
 		if (op ^ v ^ (v != TOK_NE))
 			o(0x067a);
-		else {
+		else { MCC_TRACE("br\n");
 			g(0x0f);
 			t = gjmp2(0x8a, t);
 		}
@@ -1664,7 +1664,7 @@ ST_FUNC int gjmp_cond(int op, int t) {
 	return t;
 }
 
-static void gen_ubsan_check(int cc) {
+static void gen_ubsan_check(int cc) { MCC_TRACE("enter\n");
 	int t;
 	g(0x0f);
 	t = gjmp2(cc, 0);
@@ -1672,7 +1672,7 @@ static void gen_ubsan_check(int cc) {
 	gsym(t);
 }
 
-void gen_ubsan_nullptr(void) {
+void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	int r;
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		return;
@@ -1684,7 +1684,7 @@ void gen_ubsan_nullptr(void) {
 	gen_ubsan_check(0x85);
 }
 
-void gen_asan_shadow_check(int sz) {
+void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	int r, t = 0;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)
 		return;
@@ -1729,7 +1729,7 @@ void gen_asan_shadow_check(int sz) {
 	g(0x58);                         /* pop rax                      */
 }
 
-void gen_opi(int op) {
+void gen_opi(int op) { MCC_TRACE("enter\n");
 	int r, fr, opc, c;
 	int ll, uu, cc;
 
@@ -1737,25 +1737,25 @@ void gen_opi(int op) {
 	uu = (vtop[-1].type.t & VT_UNSIGNED) != 0;
 	cc = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 
-	switch (op) {
+	switch (op) { MCC_TRACE("br\n");
 	case '+':
 	case TOK_ADDC1:
 		opc = 0;
 	gen_op8:
-		if (cc && (!ll || (int)vtop->c.i == vtop->c.i)) {
+		if (cc && (!ll || (int)vtop->c.i == vtop->c.i)) { MCC_TRACE("br\n");
 			vswap();
 			r = gv(MCC_RC_INT);
 			vswap();
 			c = vtop->c.i;
-			if (c == (signed char)c) {
+			if (c == (signed char)c) { MCC_TRACE("br\n");
 				orex(ll, r, 0, 0x83);
 				o(0xc0 | (opc << 3) | REG_VALUE(r));
 				g(c);
-			} else {
+			} else { MCC_TRACE("br\n");
 				orex(ll, r, 0, 0x81);
 				oad(0xc0 | (opc << 3) | REG_VALUE(r), c);
 			}
-		} else {
+		} else { MCC_TRACE("br\n");
 			gv2(MCC_RC_INT, MCC_RC_INT);
 			r = vtop[-1].r;
 			fr = vtop[0].r;
@@ -1808,17 +1808,17 @@ void gen_opi(int op) {
 		opc = 7;
 	gen_shift:
 		opc = 0xc0 | (opc << 3);
-		if (cc) {
+		if (cc) { MCC_TRACE("br\n");
 			vswap();
 			r = gv(MCC_RC_INT);
 			vswap();
 			orex(ll, r, 0, 0xc1);
 			o(opc | REG_VALUE(r));
 			g(vtop->c.i & (ll ? 63 : 31));
-		} else {
+		} else { MCC_TRACE("br\n");
 			gv2(MCC_RC_INT, MCC_RC_RCX);
 			r = vtop[-1].r;
-			if (mcc_state->do_sanitize_undefined && !nocode_wanted) {
+			if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
 				orex(0, MCC_TREG_RCX, 0, 0x83);
 				o((0xc0 | (7 << 3)) + REG_VALUE(MCC_TREG_RCX));
 				g(ll ? 64 : 32);
@@ -1843,7 +1843,7 @@ void gen_opi(int op) {
 		fr = vtop[0].r;
 		vtop--;
 		save_reg(MCC_TREG_RDX);
-		if (mcc_state->do_sanitize_undefined && !nocode_wanted) {
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
 			orex(ll, fr, fr, 0x85);
 			o(0xc0 + REG_VALUE(fr) * 9);
 			gen_ubsan_check(0x85);
@@ -1863,20 +1863,20 @@ void gen_opi(int op) {
 	}
 }
 
-void gen_opl(int op) {
+void gen_opl(int op) { MCC_TRACE("enter\n");
 	gen_opi(op);
 }
 
-void gen_opf(int op) {
+void gen_opf(int op) { MCC_TRACE("enter\n");
 	int a, ft, fc, swapped, r;
 	int bt = vtop->type.t & VT_BTYPE;
 	int float_type = bt == VT_LDOUBLE ? MCC_RC_ST0 : MCC_RC_FLOAT;
 
-	if (op == TOK_NEG) {
+	if (op == TOK_NEG) { MCC_TRACE("br\n");
 		gv(float_type);
-		if (float_type == MCC_RC_ST0) {
+		if (float_type == MCC_RC_ST0) { MCC_TRACE("br\n");
 			o(0xe0d9);
-		} else {
+		} else { MCC_TRACE("br\n");
 			save_reg(vtop->r);
 			o(0x80);
 			gen_modrm(6, vtop->r, NULL, vtop->c.i + (bt == VT_DOUBLE ? 7 : 3));
@@ -1886,7 +1886,7 @@ void gen_opf(int op) {
 		return;
 	}
 
-	if ((vtop[-1].r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
+	if ((vtop[-1].r & (VT_VALMASK | VT_LVAL)) == VT_CONST) { MCC_TRACE("br\n");
 		vswap();
 		gv(float_type);
 		vswap();
@@ -1894,12 +1894,12 @@ void gen_opf(int op) {
 	if ((vtop[0].r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
 		gv(float_type);
 
-	if (float_type == MCC_RC_FLOAT) {
+	if (float_type == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 		if ((vtop[0].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
 				vtop[0].sym && (vtop[0].sym->type.t & VT_TLS))
 			gv(float_type);
 		if ((vtop[-1].r & (VT_LVAL | VT_SYM)) == (VT_LVAL | VT_SYM) &&
-				vtop[-1].sym && (vtop[-1].sym->type.t & VT_TLS)) {
+				vtop[-1].sym && (vtop[-1].sym->type.t & VT_TLS)) { MCC_TRACE("br\n");
 			vswap();
 			gv(float_type);
 			vswap();
@@ -1907,18 +1907,18 @@ void gen_opf(int op) {
 	}
 
 	if ((vtop[-1].r & VT_LVAL) &&
-			(vtop[0].r & VT_LVAL)) {
+			(vtop[0].r & VT_LVAL)) { MCC_TRACE("br\n");
 		vswap();
 		gv(float_type);
 		vswap();
 	}
 	swapped = 0;
-	if (vtop[-1].r & VT_LVAL) {
+	if (vtop[-1].r & VT_LVAL) { MCC_TRACE("br\n");
 		vswap();
 		swapped = 1;
 	}
-	if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE) {
-		if (op >= TOK_ULT && op <= TOK_GT) {
+	if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (op >= TOK_ULT && op <= TOK_GT) { MCC_TRACE("br\n");
 			load(MCC_TREG_ST0, vtop);
 			save_reg(MCC_TREG_RAX);
 			if (op == TOK_GE || op == TOK_GT)
@@ -1932,27 +1932,27 @@ void gen_opf(int op) {
 			else
 				o(0xd9de);
 			o(0xe0df);
-			if (op == TOK_EQ) {
+			if (op == TOK_EQ) { MCC_TRACE("br\n");
 				o(0x45e480);
 				o(0x40fC80);
-			} else if (op == TOK_NE) {
+			} else if (op == TOK_NE) { MCC_TRACE("br\n");
 				o(0x45e480);
 				o(0x40f480);
 				op = TOK_NE;
-			} else if (op == TOK_GE || op == TOK_LE) {
+			} else if (op == TOK_GE || op == TOK_LE) { MCC_TRACE("br\n");
 				o(0x05c4f6);
 				op = TOK_EQ;
-			} else {
+			} else { MCC_TRACE("br\n");
 				o(0x45c4f6);
 				op = TOK_EQ;
 			}
 			vtop--;
 			vset_VT_CMP(op);
-		} else {
+		} else { MCC_TRACE("br\n");
 			load(MCC_TREG_ST0, vtop);
 			swapped = !swapped;
 
-			switch (op) {
+			switch (op) { MCC_TRACE("br\n");
 			default:
 			case '+':
 				a = 0;
@@ -1977,11 +1977,11 @@ void gen_opf(int op) {
 			o(0xc1 + (a << 3));
 			vtop--;
 		}
-	} else {
-		if (op >= TOK_ULT && op <= TOK_GT) {
+	} else { MCC_TRACE("br\n");
+		if (op >= TOK_ULT && op <= TOK_GT) { MCC_TRACE("br\n");
 			r = vtop->r;
 			fc = vtop->c.i;
-			if ((r & VT_VALMASK) == VT_LLOCAL) {
+			if ((r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
 				SValue v1;
 				r = get_reg(MCC_RC_INT);
 				v1.type.t = VT_PTR;
@@ -1993,19 +1993,19 @@ void gen_opf(int op) {
 				vtop->r = r = r | VT_LVAL;
 			}
 
-			if (op == TOK_EQ || op == TOK_NE) {
+			if (op == TOK_EQ || op == TOK_NE) { MCC_TRACE("br\n");
 				swapped = 0;
-			} else {
+			} else { MCC_TRACE("br\n");
 				if (op == TOK_LE || op == TOK_LT)
 					swapped = !swapped;
-				if (op == TOK_LE || op == TOK_GE) {
+				if (op == TOK_LE || op == TOK_GE) { MCC_TRACE("br\n");
 					op = 0x93;
-				} else {
+				} else { MCC_TRACE("br\n");
 					op = 0x97;
 				}
 			}
 
-			if (swapped) {
+			if (swapped) { MCC_TRACE("br\n");
 				gv(MCC_RC_FLOAT);
 				vswap();
 			}
@@ -2020,18 +2020,18 @@ void gen_opf(int op) {
 			else
 				o(0x2f0f);
 
-			if (vtop->r & VT_LVAL) {
+			if (vtop->r & VT_LVAL) { MCC_TRACE("br\n");
 				gen_modrm(vtop[-1].r, r, vtop->sym, fc);
-			} else {
+			} else { MCC_TRACE("br\n");
 				o(0xc0 + REG_VALUE(vtop[0].r) + REG_VALUE(vtop[-1].r) * 8);
 			}
 
 			vtop--;
 			vset_VT_CMP(op | 0x100);
 			vtop->cmp_r = op;
-		} else {
+		} else { MCC_TRACE("br\n");
 			assert((vtop->type.t & VT_BTYPE) != VT_LDOUBLE);
-			switch (op) {
+			switch (op) { MCC_TRACE("br\n");
 			default:
 			case '+':
 				a = 0;
@@ -2051,7 +2051,7 @@ void gen_opf(int op) {
 			assert((ft & VT_BTYPE) != VT_LDOUBLE);
 
 			r = vtop->r;
-			if ((vtop->r & VT_VALMASK) == VT_LLOCAL) {
+			if ((vtop->r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
 				SValue v1;
 				r = get_reg(MCC_RC_INT);
 				v1.type.t = VT_PTR;
@@ -2064,7 +2064,7 @@ void gen_opf(int op) {
 			}
 
 			assert(!(vtop[-1].r & VT_LVAL));
-			if (swapped) {
+			if (swapped) { MCC_TRACE("br\n");
 				assert(vtop->r & VT_LVAL);
 				gv(MCC_RC_FLOAT);
 				vswap();
@@ -2075,7 +2075,7 @@ void gen_opf(int op) {
 #if MCC_CONFIG_OPTIMIZER
 			{
 				int dr = vtop[-1].r & VT_VALMASK;
-				if (dr < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << dr))) {
+				if (dr < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << dr))) { MCC_TRACE("br\n");
 					int sc = get_reg(MCC_RC_FLOAT);
 					o((ft & VT_BTYPE) == VT_DOUBLE ? 0x100ff2 : 0x100ff3);
 					o(0xc0 + REG_VALUE(dr) + REG_VALUE(sc) * 8);
@@ -2085,9 +2085,9 @@ void gen_opf(int op) {
 				}
 			}
 #endif
-			if ((ft & VT_BTYPE) == VT_DOUBLE) {
+			if ((ft & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 				o(0xf2);
-			} else {
+			} else { MCC_TRACE("br\n");
 				o(0xf3);
 			}
 			if (vtop->r & VT_LVAL)
@@ -2095,9 +2095,9 @@ void gen_opf(int op) {
 			o(0x0f);
 			o(0x58 + a);
 
-			if (vtop->r & VT_LVAL) {
+			if (vtop->r & VT_LVAL) { MCC_TRACE("br\n");
 				gen_modrm(vtop[-1].r, r, vtop->sym, fc);
-			} else {
+			} else { MCC_TRACE("br\n");
 				o(0xc0 + REG_VALUE(vtop[0].r) + REG_VALUE(vtop[-1].r) * 8);
 			}
 
@@ -2106,34 +2106,34 @@ void gen_opf(int op) {
 	}
 }
 
-void gen_cvt_itof(int t) {
-	if ((t & VT_BTYPE) == VT_LDOUBLE) {
+void gen_cvt_itof(int t) { MCC_TRACE("enter\n");
+	if ((t & VT_BTYPE) == VT_LDOUBLE) { MCC_TRACE("br\n");
 		save_reg(MCC_TREG_ST0);
 		gv(MCC_RC_INT);
-		if ((vtop->type.t & VT_BTYPE) == VT_LLONG) {
+		if ((vtop->type.t & VT_BTYPE) == VT_LLONG) { MCC_TRACE("br\n");
 			o(0x50 + (vtop->r & VT_VALMASK));
 			o(0x242cdf);
 			o(0x08c48348);
 		} else if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
-							 (VT_INT | VT_UNSIGNED)) {
+							 (VT_INT | VT_UNSIGNED)) { MCC_TRACE("br\n");
 			o(0x6a);
 			g(0x00);
 			o(0x50 + (vtop->r & VT_VALMASK));
 			o(0x242cdf);
 			o(0x10c48348);
-		} else {
+		} else { MCC_TRACE("br\n");
 			o(0x50 + (vtop->r & VT_VALMASK));
 			o(0x2404db);
 			o(0x08c48348);
 		}
 		vtop->r = MCC_TREG_ST0;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int r = get_reg(MCC_RC_FLOAT);
 		gv(MCC_RC_INT);
 		o(0xf2 + ((t & VT_BTYPE) == VT_FLOAT ? 1 : 0));
 		if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
 						(VT_INT | VT_UNSIGNED) ||
-				(vtop->type.t & VT_BTYPE) == VT_LLONG) {
+				(vtop->type.t & VT_BTYPE) == VT_LLONG) { MCC_TRACE("br\n");
 			o(0x48);
 		}
 		o(0x2a0f);
@@ -2142,21 +2142,21 @@ void gen_cvt_itof(int t) {
 	}
 }
 
-void gen_cvt_ftof(int t) {
+void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 	int ft, bt, tbt;
 
 	ft = vtop->type.t;
 	bt = ft & VT_BTYPE;
 	tbt = t & VT_BTYPE;
 
-	if (bt == VT_FLOAT) {
+	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
-		if (tbt == VT_DOUBLE) {
+		if (tbt == VT_DOUBLE) { MCC_TRACE("br\n");
 			o(0x140f);
 			o(0xc0 + REG_VALUE(vtop->r) * 9);
 			o(0x5a0f);
 			o(0xc0 + REG_VALUE(vtop->r) * 9);
-		} else if (tbt == VT_LDOUBLE) {
+		} else if (tbt == VT_LDOUBLE) { MCC_TRACE("br\n");
 			save_reg(MCC_RC_ST0);
 			o(0x110ff3);
 			o(0x44 + REG_VALUE(vtop->r) * 8);
@@ -2164,14 +2164,14 @@ void gen_cvt_ftof(int t) {
 			o(0xf02444d9);
 			vtop->r = MCC_TREG_ST0;
 		}
-	} else if (bt == VT_DOUBLE) {
+	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
-		if (tbt == VT_FLOAT) {
+		if (tbt == VT_FLOAT) { MCC_TRACE("br\n");
 			o(0x140f66);
 			o(0xc0 + REG_VALUE(vtop->r) * 9);
 			o(0x5a0f66);
 			o(0xc0 + REG_VALUE(vtop->r) * 9);
-		} else if (tbt == VT_LDOUBLE) {
+		} else if (tbt == VT_LDOUBLE) { MCC_TRACE("br\n");
 			save_reg(MCC_RC_ST0);
 			o(0x110ff2);
 			o(0x44 + REG_VALUE(vtop->r) * 8);
@@ -2179,17 +2179,17 @@ void gen_cvt_ftof(int t) {
 			o(0xf02444dd);
 			vtop->r = MCC_TREG_ST0;
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		int r;
 		gv(MCC_RC_ST0);
 		r = get_reg(MCC_RC_FLOAT);
-		if (tbt == VT_DOUBLE) {
+		if (tbt == VT_DOUBLE) { MCC_TRACE("br\n");
 			o(0xf0245cdd);
 			o(0x100ff2);
 			o(0x44 + REG_VALUE(r) * 8);
 			o(0xf024);
 			vtop->r = r;
-		} else if (tbt == VT_FLOAT) {
+		} else if (tbt == VT_FLOAT) { MCC_TRACE("br\n");
 			o(0xf0245cd9);
 			o(0x100ff3);
 			o(0x44 + REG_VALUE(r) * 8);
@@ -2199,12 +2199,12 @@ void gen_cvt_ftof(int t) {
 	}
 }
 
-void gen_cvt_ftoi(int t) {
+void gen_cvt_ftoi(int t) { MCC_TRACE("enter\n");
 	int ft, bt, size, r;
 	ft = vtop->type.t;
 	bt = ft & VT_BTYPE;
-	if (bt == VT_LDOUBLE) {
-		if (t != VT_INT) {
+	if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (t != VT_INT) { MCC_TRACE("br\n");
 			vpush_helper_func(TOK___fixxfdi);
 			vswap();
 			gfunc_call(1);
@@ -2224,11 +2224,11 @@ void gen_cvt_ftoi(int t) {
 		size = 4;
 
 	r = get_reg(MCC_RC_INT);
-	if (bt == VT_FLOAT) {
+	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 		o(0xf3);
-	} else if (bt == VT_DOUBLE) {
+	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
 		o(0xf2);
-	} else {
+	} else { MCC_TRACE("br\n");
 		assert(0);
 	}
 	orex(size == 8, r, 0, 0x2c0f);
@@ -2236,13 +2236,13 @@ void gen_cvt_ftoi(int t) {
 	vtop->r = r;
 }
 
-ST_FUNC void gen_cvt_sxtw(void) {
+ST_FUNC void gen_cvt_sxtw(void) { MCC_TRACE("enter\n");
 	int r = gv(MCC_RC_INT);
 	o(0x6348);
 	o(0xc0 + (REG_VALUE(r) << 3) + REG_VALUE(r));
 }
 
-ST_FUNC void gen_cvt_csti(int t) {
+ST_FUNC void gen_cvt_csti(int t) { MCC_TRACE("enter\n");
 	int r, sz, xl, ll;
 	r = gv(MCC_RC_INT);
 	sz = !(t & VT_UNSIGNED);
@@ -2251,33 +2251,33 @@ ST_FUNC void gen_cvt_csti(int t) {
 	orex(ll, r, 0, 0xc0b60f | (sz << 3 | xl) << 8 | (REG_VALUE(r) << 3 | REG_VALUE(r)) << 16);
 }
 
-ST_FUNC void gen_increment_tcov(SValue *sv) {
+ST_FUNC void gen_increment_tcov(SValue *sv) { MCC_TRACE("enter\n");
 	o(0x058348);
 	greloca(cur_text_section, sv->sym, ind, R_X86_64_PC32, -5);
 	gen_le32(0);
 	o(1);
 }
 
-ST_FUNC void ggoto(void) {
+ST_FUNC void ggoto(void) { MCC_TRACE("enter\n");
 	gcall_or_jmp(1);
 	vtop--;
 }
 
-ST_FUNC void gen_vla_sp_save(int addr) {
+ST_FUNC void gen_vla_sp_save(int addr) { MCC_TRACE("enter\n");
 	gen_modrm64(0x89, MCC_TREG_RSP, VT_LOCAL, NULL, addr);
 }
 
-ST_FUNC void gen_vla_sp_restore(int addr) {
+ST_FUNC void gen_vla_sp_restore(int addr) { MCC_TRACE("enter\n");
 	gen_modrm64(0x8b, MCC_TREG_RSP, VT_LOCAL, NULL, addr);
 }
 
 #ifdef MCC_TARGET_PE
-ST_FUNC void gen_vla_result(int addr) {
+ST_FUNC void gen_vla_result(int addr) { MCC_TRACE("enter\n");
 	gen_modrm64(0x89, MCC_TREG_RAX, VT_LOCAL, NULL, addr);
 }
 #endif
 
-ST_FUNC void gen_vla_alloc(CType *type, int align) {
+ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	int use_call = 0;
 
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -2286,36 +2286,36 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) {
 #ifdef MCC_TARGET_PE
 	use_call = 1;
 #endif
-	if (use_call) {
+	if (use_call) { MCC_TRACE("br\n");
 		vpush_helper_func(TOK_alloca);
 		vswap();
 		gfunc_call(1);
-	} else {
+	} else { MCC_TRACE("br\n");
 		int r;
 		int a = align < 16 ? 16 : align;
 		r = gv(MCC_RC_INT);
 		o(0x2b48);
 		o(0xe0 | REG_VALUE(r));
-		if (a > 16) {
+		if (a > 16) { MCC_TRACE("br\n");
 			o(0xe48148);
 			gen_le32(-a);
-		} else {
+		} else { MCC_TRACE("br\n");
 			o(0xf0e48348);
 		}
 		vpop();
 	}
 }
 
-ST_FUNC void gen_struct_copy(int size) {
+ST_FUNC void gen_struct_copy(int size) { MCC_TRACE("enter\n");
 	int n = size / MCC_PTR_SIZE;
 #ifdef MCC_TARGET_PE
 	o(0x5756);
 #endif
 	gv2(MCC_RC_RDI, MCC_RC_RSI);
-	if (n <= 4) {
+	if (n <= 4) { MCC_TRACE("br\n");
 		while (n)
 			o(0xa548), --n;
-	} else {
+	} else { MCC_TRACE("br\n");
 		vpushi(n);
 		gv(MCC_RC_RCX);
 		o(0xa548f3);

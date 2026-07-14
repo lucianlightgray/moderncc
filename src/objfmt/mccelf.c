@@ -27,7 +27,7 @@ static const char rdata[] = ".data.ro";
 #endif
 
 #if MCC_TARGET_UNIX
-static char *musl_elfinterp(MCCState *s) {
+static char *musl_elfinterp(MCCState *s) { MCC_TRACE("enter\n");
 	const char *arch;
 	char interp[64], probe[1024];
 	FILE *f;
@@ -57,7 +57,7 @@ static char *musl_elfinterp(MCCState *s) {
 }
 #endif
 
-ST_FUNC void mccelf_new(MCCState *s) {
+ST_FUNC void mccelf_new(MCCState *s) { MCC_TRACE("enter\n");
 	MCCState *s1 = s;
 
 	dynarray_add(&s->sections, &s->nb_sections, NULL);
@@ -80,7 +80,7 @@ ST_FUNC void mccelf_new(MCCState *s) {
 																		".dynhashtab", SHF_PRIVATE);
 	get_sym_attr(s, 0, 1);
 
-	if (s->do_debug) {
+	if (s->do_debug) { MCC_TRACE("br\n");
 		mcc_debug_new(s);
 	}
 
@@ -91,7 +91,7 @@ ST_FUNC void mccelf_new(MCCState *s) {
 #endif
 
 #if MCC_CONFIG_DIAG_RT >= 2
-	if (s->do_bounds_check) {
+	if (s->do_bounds_check) { MCC_TRACE("br\n");
 		bounds_section = new_section(s, ".bounds", SHT_PROGBITS, shf_RELRO);
 		lbounds_section = new_section(s, ".lbounds", SHT_PROGBITS, shf_RELRO);
 	}
@@ -103,9 +103,9 @@ ST_FUNC void mccelf_new(MCCState *s) {
 #endif
 
 #if MCC_TARGET_UNIX
-	if (NULL == s->elfint && s1->output_type != MCC_OUTPUT_OBJ) {
+	if (NULL == s->elfint && s1->output_type != MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
 		s->elfint = musl_elfinterp(s);
-		if (NULL == s->elfint) {
+		if (NULL == s->elfint) { MCC_TRACE("br\n");
 			const char *p = mcc_target_defaults.elfinterp;
 #ifdef MCC_TARGET_ARM
 			if (s->float_abi == ARM_HARD_FLOAT && mcc_target_defaults.elfinterp_armhf)
@@ -124,7 +124,7 @@ ST_FUNC void mccelf_new(MCCState *s) {
 #endif
 }
 
-ST_FUNC void free_section(Section *s) {
+ST_FUNC void free_section(Section *s) { MCC_TRACE("enter\n");
 	if (!s)
 		return;
 	mcc_free(s->data);
@@ -132,9 +132,9 @@ ST_FUNC void free_section(Section *s) {
 	s->data_allocated = s->data_offset = 0;
 }
 
-ST_FUNC void mccelf_delete(MCCState *s1) {
+ST_FUNC void mccelf_delete(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_TARGET_UNIX
-	for (int i = 0; i < nb_sym_versions; i++) {
+	for (int i = 0; i < nb_sym_versions; i++) { MCC_TRACE("br\n");
 		mcc_free(sym_versions[i].version);
 		mcc_free(sym_versions[i].lib);
 	}
@@ -154,9 +154,9 @@ ST_FUNC void mccelf_delete(MCCState *s1) {
 	symtab_section = NULL;
 }
 
-ST_FUNC void mccelf_begin_file(MCCState *s1) {
+ST_FUNC void mccelf_begin_file(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s;
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		s->sh_offset = s->data_offset;
 	}
@@ -169,7 +169,7 @@ ST_FUNC void mccelf_begin_file(MCCState *s1) {
 
 static void update_relocs(MCCState *s1, Section *s, int *old_to_new_syms, int first_sym);
 
-ST_FUNC void mccelf_end_file(MCCState *s1) {
+ST_FUNC void mccelf_end_file(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s = s1->symtab;
 	int first_sym, nb_syms, *tr;
 
@@ -180,15 +180,15 @@ ST_FUNC void mccelf_end_file(MCCState *s1) {
 	s->hash = s->reloc, s->reloc = NULL;
 	tr = mcc_mallocz(nb_syms * sizeof *tr);
 
-	for (int i = 0; i < nb_syms; ++i) {
+	for (int i = 0; i < nb_syms; ++i) { MCC_TRACE("br\n");
 		ElfSym *sym = (ElfSym *)s->data + first_sym + i;
-		if (sym->st_shndx == SHN_UNDEF) {
+		if (sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 			int sym_bind = ELFW(ST_BIND)(sym->st_info);
 			int sym_type = ELFW(ST_TYPE)(sym->st_info);
 			if (sym_bind == STB_LOCAL)
 				sym_bind = STB_GLOBAL;
 #ifndef MCC_TARGET_PE
-			if (sym_bind == STB_GLOBAL && s1->output_type == MCC_OUTPUT_OBJ) {
+			if (sym_bind == STB_GLOBAL && s1->output_type == MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
 				sym_type = STT_NOTYPE;
 			}
 #endif
@@ -199,13 +199,13 @@ ST_FUNC void mccelf_end_file(MCCState *s1) {
 	}
 	update_relocs(s1, s, tr, first_sym);
 	mcc_free(tr);
-	for (int i = 0; i < 4; ++i) {
+	for (int i = 0; i < 4; ++i) { MCC_TRACE("br\n");
 		s = s1->sections[i + 1];
 		s1->total_output[i] += s->data_offset - s->sh_offset;
 	}
 }
 
-ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh_flags) {
+ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh_flags) { MCC_TRACE("enter\n");
 	Section *sec;
 
 	sec = mcc_mallocz(sizeof(Section) + strlen(name));
@@ -213,7 +213,7 @@ ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh
 	strcpy(sec->name, name);
 	sec->sh_type = sh_type;
 	sec->sh_flags = sh_flags;
-	switch (sh_type) {
+	switch (sh_type) { MCC_TRACE("br\n");
 	case SHT_GNU_versym:
 		sec->sh_addralign = 2;
 		break;
@@ -236,9 +236,9 @@ ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh
 		break;
 	}
 
-	if (sh_flags & SHF_PRIVATE) {
+	if (sh_flags & SHF_PRIVATE) { MCC_TRACE("br\n");
 		dynarray_add(&s1->priv_sections, &s1->nb_priv_sections, sec);
-	} else {
+	} else { MCC_TRACE("br\n");
 		sec->sh_num = s1->nb_sections;
 		dynarray_add(&s1->sections, &s1->nb_sections, sec);
 	}
@@ -246,7 +246,7 @@ ST_FUNC Section *new_section(MCCState *s1, const char *name, int sh_type, int sh
 	return sec;
 }
 
-ST_FUNC void init_symtab(Section *s) {
+ST_FUNC void init_symtab(Section *s) { MCC_TRACE("enter\n");
 	int *ptr, nb_buckets = 1;
 	put_elf_str(s->link, "");
 	section_ptr_add(s, sizeof(ElfW(Sym)));
@@ -259,7 +259,7 @@ ST_FUNC void init_symtab(Section *s) {
 ST_FUNC Section *new_symtab(MCCState *s1,
 														const char *symtab_name, int sh_type, int sh_flags,
 														const char *strtab_name,
-														const char *hash_name, int hash_sh_flags) {
+														const char *hash_name, int hash_sh_flags) { MCC_TRACE("enter\n");
 	Section *symtab, *strtab, *hash;
 	symtab = new_section(s1, symtab_name, sh_type, sh_flags);
 	symtab->sh_entsize = sizeof(ElfW(Sym));
@@ -273,7 +273,7 @@ ST_FUNC Section *new_symtab(MCCState *s1,
 	return symtab;
 }
 
-ST_FUNC void section_realloc(Section *sec, unsigned long new_size) {
+ST_FUNC void section_realloc(Section *sec, unsigned long new_size) { MCC_TRACE("enter\n");
 	unsigned long size;
 	unsigned char *data;
 
@@ -284,7 +284,7 @@ ST_FUNC void section_realloc(Section *sec, unsigned long new_size) {
 	sec->data_allocated = size;
 }
 
-ST_FUNC size_t section_add(Section *sec, addr_t size, int align) {
+ST_FUNC size_t section_add(Section *sec, addr_t size, int align) { MCC_TRACE("enter\n");
 	size_t offset, offset1;
 
 	offset = (sec->data_offset + align - 1) & -align;
@@ -297,13 +297,13 @@ ST_FUNC size_t section_add(Section *sec, addr_t size, int align) {
 	return offset;
 }
 
-ST_FUNC void *section_ptr_add(Section *sec, addr_t size) {
+ST_FUNC void *section_ptr_add(Section *sec, addr_t size) { MCC_TRACE("enter\n");
 	size_t offset = section_add(sec, size, 1);
 	return sec->data + offset;
 }
 
 #if MCC_TARGET_UNIX
-static void section_reserve(Section *sec, unsigned long size) {
+static void section_reserve(Section *sec, unsigned long size) { MCC_TRACE("enter\n");
 	if (size > sec->data_allocated)
 		section_realloc(sec, size);
 	if (size > sec->data_offset)
@@ -311,9 +311,9 @@ static void section_reserve(Section *sec, unsigned long size) {
 }
 #endif
 
-static Section *have_section(MCCState *s1, const char *name) {
+static Section *have_section(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
 	Section *sec;
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		sec = s1->sections[i];
 		if (!strcmp(name, sec->name))
 			return sec;
@@ -321,14 +321,14 @@ static Section *have_section(MCCState *s1, const char *name) {
 	return NULL;
 }
 
-ST_FUNC Section *find_section(MCCState *s1, const char *name) {
+ST_FUNC Section *find_section(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
 	Section *sec = have_section(s1, name);
 	if (sec)
 		return sec;
 	return new_section(s1, name, SHT_PROGBITS, SHF_ALLOC);
 }
 
-ST_FUNC int put_elf_str(Section *s, const char *sym) {
+ST_FUNC int put_elf_str(Section *s, const char *sym) { MCC_TRACE("enter\n");
 	int offset, len;
 	char *ptr;
 
@@ -339,10 +339,10 @@ ST_FUNC int put_elf_str(Section *s, const char *sym) {
 	return offset;
 }
 
-static ElfW(Word) elf_hash(const unsigned char *name) {
+static ElfW(Word) elf_hash(const unsigned char *name) { MCC_TRACE("enter\n");
 	ElfW(Word) h = 0, g;
 
-	while (*name) {
+	while (*name) { MCC_TRACE("br\n");
 		h = (h << 4) + *name++;
 		g = h & 0xf0000000;
 		if (g)
@@ -352,7 +352,7 @@ static ElfW(Word) elf_hash(const unsigned char *name) {
 	return h;
 }
 
-static void rebuild_hash(Section *s, unsigned int nb_buckets) {
+static void rebuild_hash(Section *s, unsigned int nb_buckets) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 	int *ptr, *hash, nb_syms, h;
 	unsigned char *strtab;
@@ -373,12 +373,12 @@ static void rebuild_hash(Section *s, unsigned int nb_buckets) {
 	ptr += nb_buckets + 1;
 
 	sym = (ElfW(Sym) *)s->data + 1;
-	for (int sym_index = 1; sym_index < nb_syms; sym_index++) {
-		if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) {
+	for (int sym_index = 1; sym_index < nb_syms; sym_index++) { MCC_TRACE("br\n");
+		if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 			h = elf_hash(strtab + sym->st_name) % nb_buckets;
 			*ptr = hash[h];
 			hash[h] = sym_index;
-		} else {
+		} else { MCC_TRACE("br\n");
 			*ptr = 0;
 		}
 		ptr++;
@@ -387,7 +387,7 @@ static void rebuild_hash(Section *s, unsigned int nb_buckets) {
 }
 
 ST_FUNC int put_elf_sym(Section *s, addr_t value, unsigned long size,
-												int info, int other, int shndx, const char *name) {
+												int info, int other, int shndx, const char *name) { MCC_TRACE("enter\n");
 	int name_offset, sym_index;
 	int nbuckets, h;
 	ElfW(Sym) * sym;
@@ -406,21 +406,21 @@ ST_FUNC int put_elf_sym(Section *s, addr_t value, unsigned long size,
 	sym->st_shndx = shndx;
 	sym_index = sym - (ElfW(Sym) *)s->data;
 	hs = s->hash;
-	if (hs) {
+	if (hs) { MCC_TRACE("br\n");
 		int *ptr, *base;
 		ptr = section_ptr_add(hs, sizeof(int));
 		base = (int *)hs->data;
-		if (ELFW(ST_BIND)(info) != STB_LOCAL) {
+		if (ELFW(ST_BIND)(info) != STB_LOCAL) { MCC_TRACE("br\n");
 			nbuckets = base[0];
 			h = elf_hash((unsigned char *)s->link->data + name_offset) % nbuckets;
 			*ptr = base[2 + h];
 			base[2 + h] = sym_index;
 			base[1]++;
 			hs->nb_hashed_syms++;
-			if (hs->nb_hashed_syms > 2 * nbuckets) {
+			if (hs->nb_hashed_syms > 2 * nbuckets) { MCC_TRACE("br\n");
 				rebuild_hash(s, 2 * nbuckets);
 			}
-		} else {
+		} else { MCC_TRACE("br\n");
 			*ptr = 0;
 			base[1]++;
 		}
@@ -428,7 +428,7 @@ ST_FUNC int put_elf_sym(Section *s, addr_t value, unsigned long size,
 	return sym_index;
 }
 
-ST_FUNC int find_elf_sym(Section *s, const char *name) {
+ST_FUNC int find_elf_sym(Section *s, const char *name) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 	Section *hs;
 	int nbuckets, sym_index, h;
@@ -440,7 +440,7 @@ ST_FUNC int find_elf_sym(Section *s, const char *name) {
 	nbuckets = ((int *)hs->data)[0];
 	h = elf_hash((unsigned char *)name) % nbuckets;
 	sym_index = ((int *)hs->data)[2 + h];
-	while (sym_index != 0) {
+	while (sym_index != 0) { MCC_TRACE("br\n");
 		sym = &((ElfW(Sym) *)s->data)[sym_index];
 		name1 = (char *)s->link->data + sym->st_name;
 		if (!strcmp(name, name1))
@@ -450,7 +450,7 @@ ST_FUNC int find_elf_sym(Section *s, const char *name) {
 	return 0;
 }
 
-ST_FUNC addr_t get_sym_addr(MCCState *s1, const char *name, int err, int forc) {
+ST_FUNC addr_t get_sym_addr(MCCState *s1, const char *name, int err, int forc) { MCC_TRACE("enter\n");
 	int sym_index;
 	ElfW(Sym) * sym;
 	char buf[256];
@@ -458,14 +458,14 @@ ST_FUNC addr_t get_sym_addr(MCCState *s1, const char *name, int err, int forc) {
 #ifdef MCC_TARGET_PE
 			&& !strchr(name, '@')
 #endif
-	) {
+	) { MCC_TRACE("br\n");
 		buf[0] = '_';
 		pstrcpy(buf + 1, sizeof(buf) - 1, name);
 		name = buf;
 	}
 	sym_index = find_elf_sym(s1->symtab, name);
 	sym = &((ElfW(Sym) *)s1->symtab->data)[sym_index];
-	if (!sym_index || sym->st_shndx == SHN_UNDEF) {
+	if (!sym_index || sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 		if (err)
 			mcc_error_noabort("%s not defined", name);
 		return (addr_t)-1;
@@ -473,17 +473,17 @@ ST_FUNC addr_t get_sym_addr(MCCState *s1, const char *name, int err, int forc) {
 	return sym->st_value;
 }
 
-LIBMCCAPI void *mcc_get_symbol(MCCState *s, const char *name) {
+LIBMCCAPI void *mcc_get_symbol(MCCState *s, const char *name) { MCC_TRACE("enter\n");
 	addr_t addr = get_sym_addr(s, name, 0, 1);
 	return addr == -1 ? NULL : (void *)(uintptr_t)addr;
 }
 
-LIBMCCAPI int mcc_add_symbol(MCCState *s1, const char *name, const void *val) {
+LIBMCCAPI int mcc_add_symbol(MCCState *s1, const char *name, const void *val) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_PE
 	pe_putimport(s1, 0, name, (uintptr_t)val);
 #else
 	char buf[256];
-	if (s1->leading_underscore) {
+	if (s1->leading_underscore) { MCC_TRACE("br\n");
 		buf[0] = '_';
 		pstrcpy(buf + 1, sizeof(buf) - 1, name);
 		name = buf;
@@ -494,7 +494,7 @@ LIBMCCAPI int mcc_add_symbol(MCCState *s1, const char *name, const void *val) {
 }
 
 ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
-															void (*symbol_cb)(void *ctx, const char *name, const void *val)) {
+															void (*symbol_cb)(void *ctx, const char *name, const void *val)) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 	Section *symtab;
 	int sym_index, end_sym;
@@ -503,13 +503,13 @@ ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
 
 	symtab = s->symtab;
 	end_sym = symtab->data_offset / sizeof(ElfSym);
-	for (sym_index = 0; sym_index < end_sym; ++sym_index) {
+	for (sym_index = 0; sym_index < end_sym; ++sym_index) { MCC_TRACE("br\n");
 		sym = &((ElfW(Sym) *)symtab->data)[sym_index];
-		if (sym->st_value) {
+		if (sym->st_value) { MCC_TRACE("br\n");
 			name = (char *)symtab->link->data + sym->st_name;
 			sym_bind = ELFW(ST_BIND)(sym->st_info);
 			sym_vis = ELFW(ST_VISIBILITY)(sym->st_other);
-			if (sym_bind == STB_GLOBAL && sym_vis == STV_DEFAULT) {
+			if (sym_bind == STB_GLOBAL && sym_vis == STV_DEFAULT) { MCC_TRACE("br\n");
 				const char *uname = name;
 				if (s->leading_underscore && uname[0] == '_')
 					uname++;
@@ -520,13 +520,13 @@ ST_FUNC void list_elf_symbols(MCCState *s, void *ctx,
 }
 
 LIBMCCAPI void mcc_list_symbols(MCCState *s, void *ctx,
-																void (*symbol_cb)(void *ctx, const char *name, const void *val)) {
+																void (*symbol_cb)(void *ctx, const char *name, const void *val)) { MCC_TRACE("enter\n");
 	list_elf_symbols(s, ctx, symbol_cb);
 }
 
 #if MCC_TARGET_UNIX
 static void
-version_add(MCCState *s1) {
+version_add(MCCState *s1) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 	ElfW(Verneed) *vn = NULL;
 	Section *symtab;
@@ -543,7 +543,7 @@ version_add(MCCState *s1) {
 	symtab = s1->dynsym;
 	end_sym = symtab->data_offset / sizeof(ElfSym);
 	versym = section_ptr_add(versym_section, end_sym * sizeof(ElfW(Half)));
-	for (sym_index = 1; sym_index < end_sym; ++sym_index) {
+	for (sym_index = 1; sym_index < end_sym; ++sym_index) { MCC_TRACE("br\n");
 		int dllindex, verndx;
 		sym = &((ElfW(Sym) *)symtab->data)[sym_index];
 		name = (char *)symtab->link->data + sym->st_name;
@@ -551,19 +551,19 @@ version_add(MCCState *s1) {
 		verndx = (dllindex && dllindex < nb_sym_to_version)
 								 ? sym_to_version[dllindex]
 								 : -1;
-		if (verndx >= 0 && (sym->st_shndx == SHN_UNDEF || (s1->output_type & MCC_OUTPUT_EXE))) {
+		if (verndx >= 0 && (sym->st_shndx == SHN_UNDEF || (s1->output_type & MCC_OUTPUT_EXE))) { MCC_TRACE("br\n");
 			if (!sym_versions[verndx].out_index)
 				sym_versions[verndx].out_index = nb_versions++;
 			versym[sym_index] = sym_versions[verndx].out_index;
-		} else {
+		} else { MCC_TRACE("br\n");
 			versym[sym_index] = 1;
 		}
 	}
-	if (nb_versions > 2) {
+	if (nb_versions > 2) { MCC_TRACE("br\n");
 		verneed_section = new_section(s1, ".gnu.version_r",
 																	SHT_GNU_verneed, SHF_ALLOC);
 		verneed_section->link = s1->dynsym->link;
-		for (int i = nb_sym_versions; i-- > 0;) {
+		for (int i = nb_sym_versions; i-- > 0;) { MCC_TRACE("br\n");
 			struct sym_version *sv = &sym_versions[i];
 			int n_same_libs = 0, prev;
 			size_t vnofs;
@@ -579,9 +579,9 @@ version_add(MCCState *s1) {
 			vn->vn_version = 1;
 			vn->vn_file = put_elf_str(verneed_section->link, sv->lib);
 			vn->vn_aux = sizeof(*vn);
-			do {
+			do { MCC_TRACE("br\n");
 				prev = sv->prev_same_lib;
-				if (sv->out_index > 0) {
+				if (sv->out_index > 0) { MCC_TRACE("br\n");
 					vna = section_ptr_add(verneed_section, sizeof(*vna));
 					vna->vna_hash = elf_hash((const unsigned char *)sv->version);
 					vna->vna_flags = 0;
@@ -609,7 +609,7 @@ version_add(MCCState *s1) {
 #endif
 
 ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
-												int info, int other, int shndx, const char *name) {
+												int info, int other, int shndx, const char *name) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	ElfW(Sym) * esym;
 	int sym_bind, sym_index, sym_type, esym_bind;
@@ -619,43 +619,43 @@ ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
 	sym_type = ELFW(ST_TYPE)(info);
 	sym_vis = ELFW(ST_VISIBILITY)(other);
 
-	if (sym_bind != STB_LOCAL) {
+	if (sym_bind != STB_LOCAL) { MCC_TRACE("br\n");
 		sym_index = find_elf_sym(s, name);
 		if (!sym_index)
 			goto do_def;
 		esym = &((ElfW(Sym) *)s->data)[sym_index];
 		if (esym->st_value == value && esym->st_size == size && esym->st_info == info && esym->st_other == other && esym->st_shndx == shndx)
 			return sym_index;
-		if (esym->st_shndx != SHN_UNDEF) {
+		if (esym->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			esym_bind = ELFW(ST_BIND)(esym->st_info);
 			esym_vis = ELFW(ST_VISIBILITY)(esym->st_other);
-			if (esym_vis == STV_DEFAULT) {
+			if (esym_vis == STV_DEFAULT) { MCC_TRACE("br\n");
 				new_vis = sym_vis;
-			} else if (sym_vis == STV_DEFAULT) {
+			} else if (sym_vis == STV_DEFAULT) { MCC_TRACE("br\n");
 				new_vis = esym_vis;
-			} else {
+			} else { MCC_TRACE("br\n");
 				new_vis = (esym_vis < sym_vis) ? esym_vis : sym_vis;
 			}
 			esym->st_other = (esym->st_other & ~ELFW(ST_VISIBILITY)(-1)) | new_vis;
-			if (shndx == SHN_UNDEF) {
-			} else if (sym_bind == STB_GLOBAL && esym_bind == STB_WEAK) {
+			if (shndx == SHN_UNDEF) { MCC_TRACE("br\n");
+			} else if (sym_bind == STB_GLOBAL && esym_bind == STB_WEAK) { MCC_TRACE("br\n");
 				goto do_patch;
-			} else if (sym_bind == STB_WEAK && esym_bind == STB_GLOBAL) {
-			} else if (sym_bind == STB_WEAK && esym_bind == STB_WEAK) {
-			} else if (sym_vis == STV_HIDDEN || sym_vis == STV_INTERNAL) {
-			} else if ((esym->st_shndx == SHN_COMMON || esym->st_shndx == bss_section->sh_num) && (shndx < SHN_LORESERVE && shndx != bss_section->sh_num)) {
+			} else if (sym_bind == STB_WEAK && esym_bind == STB_GLOBAL) { MCC_TRACE("br\n");
+			} else if (sym_bind == STB_WEAK && esym_bind == STB_WEAK) { MCC_TRACE("br\n");
+			} else if (sym_vis == STV_HIDDEN || sym_vis == STV_INTERNAL) { MCC_TRACE("br\n");
+			} else if ((esym->st_shndx == SHN_COMMON || esym->st_shndx == bss_section->sh_num) && (shndx < SHN_LORESERVE && shndx != bss_section->sh_num)) { MCC_TRACE("br\n");
 				goto do_patch;
-			} else if (shndx == SHN_COMMON || shndx == bss_section->sh_num) {
-			} else if (s->sh_flags & SHF_DYNSYM) {
-			} else if (esym->st_other & ST_ASM_SET) {
+			} else if (shndx == SHN_COMMON || shndx == bss_section->sh_num) { MCC_TRACE("br\n");
+			} else if (s->sh_flags & SHF_DYNSYM) { MCC_TRACE("br\n");
+			} else if (esym->st_other & ST_ASM_SET) { MCC_TRACE("br\n");
 				goto do_patch;
-			} else {
+			} else { MCC_TRACE("br\n");
 				if (g_debug & MCC_DBG_SYM)
 					printf("new_bind=%x new_shndx=%x new_vis=%x old_bind=%x old_shndx=%x old_vis=%x\n",
 								 sym_bind, shndx, new_vis, esym_bind, esym->st_shndx, esym_vis);
 				mcc_error_noabort("'%s' defined twice", name);
 			}
-		} else {
+		} else { MCC_TRACE("br\n");
 			esym->st_other = other;
 		do_patch:
 			esym->st_info = ELFW(ST_INFO)(sym_bind, sym_type);
@@ -663,7 +663,7 @@ ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
 			esym->st_value = value;
 			esym->st_size = size;
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 	do_def:
 		sym_index = put_elf_sym(s, value, size,
 														ELFW(ST_INFO)(sym_bind, sym_type), other,
@@ -673,14 +673,14 @@ ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
 }
 
 ST_FUNC void put_elf_reloca(Section *symtab, Section *s, unsigned long offset,
-														int type, int symbol, addr_t addend) {
+														int type, int symbol, addr_t addend) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	char buf[256];
 	Section *sr;
 	ElfW_Rel *rel;
 
 	sr = s->reloc;
-	if (!sr) {
+	if (!sr) { MCC_TRACE("br\n");
 		snprintf(buf, sizeof(buf), REL_SECTION_FMT, s->name);
 		sr = new_section(s->s1, buf, SHT_RELX, symtab->sh_flags);
 		sr->sh_entsize = sizeof(ElfW_Rel);
@@ -698,15 +698,15 @@ ST_FUNC void put_elf_reloca(Section *symtab, Section *s, unsigned long offset,
 }
 
 ST_FUNC void put_elf_reloc(Section *symtab, Section *s, unsigned long offset,
-													 int type, int symbol) {
+													 int type, int symbol) { MCC_TRACE("enter\n");
 	put_elf_reloca(symtab, s, offset, type, symbol, 0);
 }
 
-ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc) {
+ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc) { MCC_TRACE("enter\n");
 	int n;
 	struct sym_attr *tab;
 
-	if (index >= s1->nb_sym_attrs) {
+	if (index >= s1->nb_sym_attrs) { MCC_TRACE("br\n");
 		if (!alloc)
 			return s1->sym_attrs;
 		n = 1;
@@ -721,14 +721,14 @@ ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc) {
 	return &s1->sym_attrs[index];
 }
 
-static void update_relocs(MCCState *s1, Section *s, int *old_to_new_syms, int first_sym) {
+static void update_relocs(MCCState *s1, Section *s, int *old_to_new_syms, int first_sym) { MCC_TRACE("enter\n");
 	int type, sym_index;
 	Section *sr;
 	ElfW_Rel *rel;
 
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		sr = s1->sections[i];
-		if (sr->sh_type == SHT_RELX && sr->link == s) {
+		if (sr->sh_type == SHT_RELX && sr->link == s) { MCC_TRACE("br\n");
 			for_each_elem(sr, 0, rel, ElfW_Rel) {
 				sym_index = ELFW(R_SYM)(rel->r_info);
 				type = ELFW(R_TYPE)(rel->r_info);
@@ -741,7 +741,7 @@ static void update_relocs(MCCState *s1, Section *s, int *old_to_new_syms, int fi
 	}
 }
 
-static void sort_syms(MCCState *s1, Section *s) {
+static void sort_syms(MCCState *s1, Section *s) { MCC_TRACE("enter\n");
 	int *old_to_new_syms;
 	ElfW(Sym) * new_syms;
 	int nb_syms;
@@ -753,8 +753,8 @@ static void sort_syms(MCCState *s1, Section *s) {
 
 	p = (ElfW(Sym) *)s->data;
 	q = new_syms;
-	for (int i = 0; i < nb_syms; i++) {
-		if (ELFW(ST_BIND)(p->st_info) == STB_LOCAL) {
+	for (int i = 0; i < nb_syms; i++) { MCC_TRACE("br\n");
+		if (ELFW(ST_BIND)(p->st_info) == STB_LOCAL) { MCC_TRACE("br\n");
 			old_to_new_syms[i] = q - new_syms;
 			*q++ = *p;
 		}
@@ -764,8 +764,8 @@ static void sort_syms(MCCState *s1, Section *s) {
 		s->sh_info = q - new_syms;
 
 	p = (ElfW(Sym) *)s->data;
-	for (int i = 0; i < nb_syms; i++) {
-		if (ELFW(ST_BIND)(p->st_info) != STB_LOCAL) {
+	for (int i = 0; i < nb_syms; i++) { MCC_TRACE("br\n");
+		if (ELFW(ST_BIND)(p->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 			old_to_new_syms[i] = q - new_syms;
 			*q++ = *p;
 		}
@@ -782,7 +782,7 @@ static void sort_syms(MCCState *s1, Section *s) {
 #if MCC_TARGET_UNIX
 #define ELFCLASS_BITS (MCC_PTR_SIZE * 8)
 
-static Section *create_gnu_hash(MCCState *s1) {
+static Section *create_gnu_hash(MCCState *s1) { MCC_TRACE("enter\n");
 	int nb_syms, ndef, nbuckets, symoffset, bloom_size, bloom_shift;
 	ElfW(Sym) * p;
 	Section *gnu_hash;
@@ -816,7 +816,7 @@ static Section *create_gnu_hash(MCCState *s1) {
 	return gnu_hash;
 }
 
-static Elf32_Word elf_gnu_hash(const unsigned char *name) {
+static Elf32_Word elf_gnu_hash(const unsigned char *name) { MCC_TRACE("enter\n");
 	Elf32_Word h = 5381;
 	unsigned char c;
 
@@ -825,7 +825,7 @@ static Elf32_Word elf_gnu_hash(const unsigned char *name) {
 	return h;
 }
 
-static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
+static void update_gnu_hash(MCCState *s1, Section *gnu_hash) { MCC_TRACE("enter\n");
 	int *old_to_new_syms;
 	ElfW(Sym) * new_syms;
 	int nb_syms, nbuckets, bloom_size, bloom_shift;
@@ -850,8 +850,8 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
 
 	p = (ElfW(Sym) *)dynsym->data;
 	q = new_syms;
-	for (int i = 0; i < nb_syms; i++, p++) {
-		if (p->st_shndx == SHN_UNDEF) {
+	for (int i = 0; i < nb_syms; i++, p++) { MCC_TRACE("br\n");
+		if (p->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 			old_to_new_syms[i] = q - new_syms;
 			*q++ = *p;
 		} else
@@ -878,24 +878,24 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
 
 	p = (ElfW(Sym) *)dynsym->data;
 	for (int i = 0; i < nb_syms; i++, p++)
-		if (p->st_shndx != SHN_UNDEF) {
+		if (p->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			int bucket = hash[i] % nbuckets;
 
 			if (buck[bucket].first == -1)
 				buck[bucket].first = buck[bucket].last = i;
-			else {
+			else { MCC_TRACE("br\n");
 				nextbuck[buck[bucket].last] = i;
 				buck[bucket].last = i;
 			}
 		}
 
 	p = (ElfW(Sym) *)dynsym->data;
-	for (int i = 0; i < nbuckets; i++) {
+	for (int i = 0; i < nbuckets; i++) { MCC_TRACE("br\n");
 		int cur = buck[i].first;
 
-		if (cur != -1) {
+		if (cur != -1) { MCC_TRACE("br\n");
 			buckets[i] = q - new_syms;
-			for (;;) {
+			for (;;) { MCC_TRACE("br\n");
 				old_to_new_syms[cur] = q - new_syms;
 				*q++ = p[cur];
 				*chain++ = hash[cur] & ~1;
@@ -919,10 +919,10 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
 	update_relocs(s1, dynsym, old_to_new_syms, 0);
 
 	vs = versym_section;
-	if (vs) {
+	if (vs) { MCC_TRACE("br\n");
 		ElfW(Half) * newver, *versym = (ElfW(Half) *)vs->data;
 
-		if (1) {
+		if (1) { MCC_TRACE("br\n");
 			newver = mcc_malloc(nb_syms * sizeof(*newver));
 			for (int i = 0; i < nb_syms; i++)
 				newver[old_to_new_syms[i]] = versym[i];
@@ -938,10 +938,10 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) {
 }
 #endif
 
-static int sym_referenced_by_reloc(MCCState *s1, int sym_index) {
+static int sym_referenced_by_reloc(MCCState *s1, int sym_index) { MCC_TRACE("enter\n");
 	Section *s;
 	ElfW_Rel *rel;
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (s->sh_type != SHT_RELX || s->link != symtab_section)
 			continue;
@@ -952,29 +952,29 @@ static int sym_referenced_by_reloc(MCCState *s1, int sym_index) {
 	return 0;
 }
 
-ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
+ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 	int sym_bind, sh_num;
 	const char *name;
 
 	for_each_elem(symtab, 1, sym, ElfW(Sym)) {
 		sh_num = sym->st_shndx;
-		if (sh_num == SHN_UNDEF) {
+		if (sh_num == SHN_UNDEF) { MCC_TRACE("br\n");
 			if (do_resolve == 2)
 				continue;
 			name = (char *)s1->symtab->link->data + sym->st_name;
-			if (do_resolve) {
+			if (do_resolve) { MCC_TRACE("br\n");
 #if defined MCC_TARGET_IS_HOST && !defined MCC_TARGET_PE
 				const char *name_ud = &name[s1->leading_underscore];
 				void *addr = NULL;
 				if (!s1->nostdlib || s1->output_type == MCC_OUTPUT_MEMORY)
 					addr = host_dlsym_process(name_ud);
-				if (addr == NULL) {
+				if (addr == NULL) { MCC_TRACE("br\n");
 					for (int i = 0; i < s1->nb_loaded_dlls; i++)
 						if ((addr = host_dlsym(s1->loaded_dlls[i]->handle, name_ud)))
 							break;
 				}
-				if (addr) {
+				if (addr) { MCC_TRACE("br\n");
 					sym->st_value = (addr_t)addr;
 					if (g_debug & MCC_DBG_RELOC)
 						printf("relocate_sym: %s -> 0x%lx\n", name, (long)sym->st_value);
@@ -987,7 +987,7 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 				goto found;
 			if (s1->static_link &&
 					(!strcmp(name, "__tls_get_addr") ||
-					 !strcmp(name, "___tls_get_addr"))) {
+					 !strcmp(name, "___tls_get_addr"))) { MCC_TRACE("br\n");
 				sym->st_value = 0;
 				goto found;
 			}
@@ -998,14 +998,14 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 				sym->st_value = 0;
 			else
 				mcc_error_noabort("unresolved reference to '%s'", name);
-		} else if (sh_num < SHN_LORESERVE) {
+		} else if (sh_num < SHN_LORESERVE) { MCC_TRACE("br\n");
 			sym->st_value += s1->sections[sym->st_shndx]->sh_addr;
 		}
 	found:;
 	}
 }
 
-static void relocate_section(MCCState *s1, Section *s, Section *sr) {
+static void relocate_section(MCCState *s1, Section *s, Section *sr) { MCC_TRACE("enter\n");
 	ElfW_Rel *rel;
 	ElfW(Sym) * sym;
 	int type, sym_index;
@@ -1024,7 +1024,7 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) {
 		tgt = sym->st_value;
 		if (SHT_RELX == SHT_RELA)
 			tgt += ELFW_R_ADDEND(rel);
-		if (is_dwarf && type == R_DATA_32DW && sym->st_shndx >= s1->dwlo && sym->st_shndx < s1->dwhi) {
+		if (is_dwarf && type == R_DATA_32DW && sym->st_shndx >= s1->dwlo && sym->st_shndx < s1->dwhi) { MCC_TRACE("br\n");
 			add32le(ptr, tgt - s1->sections[sym->st_shndx]->sh_addr);
 			continue;
 		}
@@ -1033,9 +1033,9 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) {
 	}
 
 #if MCC_TARGET_UNIX
-	if (sr->sh_flags & SHF_ALLOC) {
+	if (sr->sh_flags & SHF_ALLOC) { MCC_TRACE("br\n");
 		sr->link = s1->dynsym;
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			size_t r = (uint8_t *)qrel - sr->data;
 			if (sizeof((Stab_Sym *)0)->n_value < MCC_PTR_SIZE && 0 == strcmp(s->name, ".stab"))
 				r = 0;
@@ -1053,10 +1053,10 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) {
 #endif
 }
 
-ST_FUNC void relocate_sections(MCCState *s1) {
+ST_FUNC void relocate_sections(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s, *sr;
 
-	for (int i = 1; i < s1->nb_sections; ++i) {
+	for (int i = 1; i < s1->nb_sections; ++i) { MCC_TRACE("br\n");
 		sr = s1->sections[i];
 		if (sr->sh_type != SHT_RELX)
 			continue;
@@ -1066,11 +1066,11 @@ ST_FUNC void relocate_sections(MCCState *s1) {
 #ifndef MCC_TARGET_MACHO
 		if (s != s1->got || s1->static_link || s1->output_type == MCC_OUTPUT_MEMORY)
 #endif
-		{
+		{ MCC_TRACE("br\n");
 			relocate_section(s1, s, sr);
 		}
 #if MCC_TARGET_UNIX
-		if (sr->sh_flags & SHF_ALLOC) {
+		if (sr->sh_flags & SHF_ALLOC) { MCC_TRACE("br\n");
 			ElfW_Rel *rel;
 			for_each_elem(sr, 0, rel, ElfW_Rel)
 					rel->r_offset += s->sh_addr;
@@ -1080,7 +1080,7 @@ ST_FUNC void relocate_sections(MCCState *s1) {
 }
 
 #if MCC_TARGET_UNIX
-static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
+static int prepare_dynamic_rel(MCCState *s1, Section *sr) { MCC_TRACE("enter\n");
 	int count = 0;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64) || \
 		defined(MCC_TARGET_ARM) || defined(MCC_TARGET_ARM64) ||   \
@@ -1089,10 +1089,10 @@ static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 	for_each_elem(sr, 0, rel, ElfW_Rel) {
 		int sym_index = ELFW(R_SYM)(rel->r_info);
 		int type = ELFW(R_TYPE)(rel->r_info);
-		switch (type) {
+		switch (type) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_I386)
 		case R_386_32:
-			if (!get_sym_attr(s1, sym_index, 0)->dyn_index && ((ElfW(Sym) *)symtab_section->data + sym_index)->st_shndx == SHN_UNDEF) {
+			if (!get_sym_attr(s1, sym_index, 0)->dyn_index && ((ElfW(Sym) *)symtab_section->data + sym_index)->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 				rel->r_info = ELFW(R_INFO)(sym_index, R_386_RELATIVE);
 				break;
 			}
@@ -1116,7 +1116,7 @@ static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 		case R_386_PC32: {
 			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			if (sym->st_shndx != SHN_UNDEF &&
-					ELFW(ST_VISIBILITY)(sym->st_other) == STV_HIDDEN) {
+					ELFW(ST_VISIBILITY)(sym->st_other) == STV_HIDDEN) { MCC_TRACE("br\n");
 				rel->r_info = ELFW(R_INFO)(sym_index, R_386_PLT32);
 				break;
 			}
@@ -1125,7 +1125,7 @@ static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 		case R_X86_64_PC32: {
 			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			if (sym->st_shndx != SHN_UNDEF &&
-					ELFW(ST_VISIBILITY)(sym->st_other) == STV_HIDDEN) {
+					ELFW(ST_VISIBILITY)(sym->st_other) == STV_HIDDEN) { MCC_TRACE("br\n");
 				rel->r_info = ELFW(R_INFO)(sym_index, R_X86_64_PLT32);
 				break;
 			}
@@ -1147,7 +1147,7 @@ static int prepare_dynamic_rel(MCCState *s1, Section *sr) {
 }
 #endif
 
-static int build_got(MCCState *s1) {
+static int build_got(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->got = new_section(s1, ".got", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE);
 	s1->got->sh_entsize = 4;
 	section_ptr_add(s1->got, 3 * MCC_PTR_SIZE);
@@ -1156,7 +1156,7 @@ static int build_got(MCCState *s1) {
 }
 
 static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
-																			int sym_index) {
+																			int sym_index) { MCC_TRACE("enter\n");
 	int need_plt_entry;
 	const char *name;
 	ElfW(Sym) * sym;
@@ -1173,8 +1173,8 @@ static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
 		return attr;
 
 	s_rel = s1->got;
-	if (need_plt_entry) {
-		if (!s1->plt) {
+	if (need_plt_entry) { MCC_TRACE("br\n");
+		if (!s1->plt) { MCC_TRACE("br\n");
 			s1->plt = new_section(s1, ".plt", SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR);
 			s1->plt->sh_entsize = 4;
 		}
@@ -1187,11 +1187,11 @@ static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
 	sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 	name = (char *)symtab_section->link->data + sym->st_name;
 
-	if (s1->dynsym) {
-		if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) {
+	if (s1->dynsym) { MCC_TRACE("br\n");
+		if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) { MCC_TRACE("br\n");
 			put_elf_reloc(s1->dynsym, s1->got, got_offset, R_RELATIVE,
 										sym_index);
-		} else {
+		} else { MCC_TRACE("br\n");
 			if (0 == attr->dyn_index)
 				attr->dyn_index = set_elf_sym(s1->dynsym, sym->st_value,
 																			sym->st_size, sym->st_info, 0,
@@ -1199,12 +1199,12 @@ static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
 			put_elf_reloc(s1->dynsym, s_rel, got_offset, dyn_reloc_type,
 										attr->dyn_index);
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		put_elf_reloc(symtab_section, s1->got, got_offset, dyn_reloc_type,
 									sym_index);
 	}
 
-	if (need_plt_entry) {
+	if (need_plt_entry) { MCC_TRACE("br\n");
 		attr->plt_offset = create_plt_entry(s1, got_offset, attr);
 
 		len = strlen(name);
@@ -1214,14 +1214,14 @@ static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
 		strcpy(plt_name + len, "@plt");
 		attr->plt_sym = put_elf_sym(s1->symtab, attr->plt_offset, 0,
 																ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0, s1->plt->sh_num, plt_name);
-	} else {
+	} else { MCC_TRACE("br\n");
 		attr->got_offset = got_offset;
 	}
 
 	return attr;
 }
 
-ST_FUNC void build_got_entries(MCCState *s1, int got_sym) {
+ST_FUNC void build_got_entries(MCCState *s1, int got_sym) { MCC_TRACE("enter\n");
 	Section *s;
 	ElfW_Rel *rel;
 	ElfW(Sym) * sym;
@@ -1229,7 +1229,7 @@ ST_FUNC void build_got_entries(MCCState *s1, int got_sym) {
 	struct sym_attr *attr;
 	int pass = 0;
 redo:
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (s->sh_type != SHT_RELX)
 			continue;
@@ -1238,24 +1238,24 @@ redo:
 		for_each_elem(s, 0, rel, ElfW_Rel) {
 			type = ELFW(R_TYPE)(rel->r_info);
 			gotplt_entry = gotplt_entry_type(type);
-			if (gotplt_entry == -1) {
+			if (gotplt_entry == -1) { MCC_TRACE("br\n");
 				mcc_error_noabort("Unknown relocation type for got: %d", type);
 				continue;
 			}
 			sym_index = ELFW(R_SYM)(rel->r_info);
 			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 
-			if (gotplt_entry == NO_GOTPLT_ENTRY) {
+			if (gotplt_entry == NO_GOTPLT_ENTRY) { MCC_TRACE("br\n");
 				continue;
 			}
 
-			if (gotplt_entry == AUTO_GOTPLT_ENTRY) {
-				if (sym->st_shndx == SHN_UNDEF) {
+			if (gotplt_entry == AUTO_GOTPLT_ENTRY) { MCC_TRACE("br\n");
+				if (sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 					ElfW(Sym) * esym;
 					int dynindex;
 					if (!PCRELATIVE_DLLPLT && (s1->output_type & MCC_OUTPUT_DYN))
 						continue;
-					if (s1->dynsym) {
+					if (s1->dynsym) { MCC_TRACE("br\n");
 						dynindex = get_sym_attr(s1, sym_index, 0)->dyn_index;
 						esym = (ElfW(Sym) *)s1->dynsym->data + dynindex;
 						if (dynindex && (ELFW(ST_TYPE)(esym->st_info) == STT_FUNC || (ELFW(ST_TYPE)(esym->st_info) ==
@@ -1263,7 +1263,7 @@ redo:
 																																					ELFW(ST_TYPE)(sym->st_info) == STT_FUNC)))
 							goto jmp_slot;
 					}
-				} else if (sym->st_shndx == SHN_ABS) {
+				} else if (sym->st_shndx == SHN_ABS) { MCC_TRACE("br\n");
 					if (sym->st_value == 0)
 						continue;
 #ifndef MCC_TARGET_ARM
@@ -1279,7 +1279,7 @@ redo:
 					sym->st_shndx != SHN_UNDEF &&
 					(ELFW(ST_VISIBILITY)(sym->st_other) != STV_DEFAULT ||
 					 ELFW(ST_BIND)(sym->st_info) == STB_LOCAL ||
-					 s1->output_type & MCC_OUTPUT_EXE)) {
+					 s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
 				if (pass != 0)
 					continue;
 				rel->r_info = ELFW(R_INFO)(sym_index, R_386_PC32);
@@ -1291,7 +1291,7 @@ redo:
 					sym->st_shndx != SHN_UNDEF &&
 					(ELFW(ST_VISIBILITY)(sym->st_other) != STV_DEFAULT ||
 					 ELFW(ST_BIND)(sym->st_info) == STB_LOCAL ||
-					 s1->output_type & MCC_OUTPUT_EXE)) {
+					 s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
 				if (pass != 0)
 					continue;
 				rel->r_info = ELFW(R_INFO)(sym_index, R_X86_64_PC32);
@@ -1299,7 +1299,7 @@ redo:
 			}
 			if ((type == R_X86_64_PLT32 || type == R_X86_64_PC32) &&
 					sym->st_shndx == SHN_UNDEF && s1->static_link &&
-					ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
+					ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
 				if (pass != 0)
 					continue;
 				rel->r_info = ELFW(R_INFO)(sym_index, R_X86_64_PC32);
@@ -1307,17 +1307,17 @@ redo:
 			}
 #endif
 			reloc_type = code_reloc(type);
-			if (reloc_type == -1) {
+			if (reloc_type == -1) { MCC_TRACE("br\n");
 				mcc_error_noabort("Unknown relocation type: %d", type);
 				continue;
 			}
 
-			if (reloc_type != 0) {
+			if (reloc_type != 0) { MCC_TRACE("br\n");
 			jmp_slot:
 				if (pass != 0)
 					continue;
 				reloc_type = R_JMP_SLOT;
-			} else {
+			} else { MCC_TRACE("br\n");
 				if (pass != 1)
 					continue;
 				reloc_type = R_GLOB_DAT;
@@ -1343,7 +1343,7 @@ redo:
 		((ElfW(Sym) *)symtab_section->data)[got_sym].st_size = s1->got->data_offset;
 }
 
-ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t offs) {
+ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t offs) { MCC_TRACE("enter\n");
 	int shn = sec
 								? sec->sh_num
 						: offs || !name
@@ -1355,15 +1355,15 @@ ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t 
 										 ELFW(ST_INFO)(name ? STB_GLOBAL : STB_LOCAL, STT_NOTYPE), 0, shn, name);
 }
 
-static void add_init_array_defines(MCCState *s1, const char *section_name) {
+static void add_init_array_defines(MCCState *s1, const char *section_name) { MCC_TRACE("enter\n");
 	Section *s;
 	addr_t end_offset;
 	char buf[1024];
 	s = have_section(s1, section_name);
-	if (!s || !(s->sh_flags & SHF_ALLOC)) {
+	if (!s || !(s->sh_flags & SHF_ALLOC)) { MCC_TRACE("br\n");
 		end_offset = 0;
 		s = text_section;
-	} else {
+	} else { MCC_TRACE("br\n");
 		end_offset = s->data_offset;
 	}
 	snprintf(buf, sizeof(buf), "__%s_start", section_name + 1);
@@ -1372,7 +1372,7 @@ static void add_init_array_defines(MCCState *s1, const char *section_name) {
 	set_global_sym(s1, buf, s, end_offset);
 }
 
-ST_FUNC void add_array(MCCState *s1, const char *sec, int c) {
+ST_FUNC void add_array(MCCState *s1, const char *sec, int c) { MCC_TRACE("enter\n");
 	Section *s;
 	s = find_section(s1, sec);
 	s->sh_flags = shf_RELRO;
@@ -1382,23 +1382,23 @@ ST_FUNC void add_array(MCCState *s1, const char *sec, int c) {
 }
 
 #if MCC_CONFIG_DIAG_RT >= 2
-ST_FUNC void mcc_add_bcheck(MCCState *s1) {
+ST_FUNC void mcc_add_bcheck(MCCState *s1) { MCC_TRACE("enter\n");
 	if (0 == s1->do_bounds_check)
 		return;
 	section_ptr_add(bounds_section, sizeof(addr_t));
 }
 #endif
 
-static void set_local_sym(MCCState *s1, const char *name, Section *s, int offset) {
+static void set_local_sym(MCCState *s1, const char *name, Section *s, int offset) { MCC_TRACE("enter\n");
 	int c = find_elf_sym(s1->symtab, name);
-	if (!c) {
+	if (!c) { MCC_TRACE("br\n");
 		ElfW(Sym) *syms = (ElfW(Sym) *)s1->symtab->data;
 		int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
 		for (int i = 1; i < n; i++)
 			if (!strcmp((char *)s1->symtab->link->data + syms[i].st_name, name))
 				c = i;
 	}
-	if (c) {
+	if (c) { MCC_TRACE("br\n");
 		ElfW(Sym) *esym = (ElfW(Sym) *)s1->symtab->data + c;
 		esym->st_info = ELFW(ST_INFO)(STB_LOCAL, STT_NOTYPE);
 		esym->st_value = offset;
@@ -1406,7 +1406,7 @@ static void set_local_sym(MCCState *s1, const char *name, Section *s, int offset
 	}
 }
 
-static void mcc_compile_string_no_debug(MCCState *s, const char *str) {
+static void mcc_compile_string_no_debug(MCCState *s, const char *str) { MCC_TRACE("enter\n");
 	int save_do_debug = s->do_debug;
 	int save_test_coverage = s->test_coverage;
 
@@ -1418,7 +1418,7 @@ static void mcc_compile_string_no_debug(MCCState *s, const char *str) {
 }
 
 #if MCC_CONFIG_DIAG_RT >= 1
-static void put_ptr(MCCState *s1, Section *s, int offs) {
+static void put_ptr(MCCState *s1, Section *s, int offs) { MCC_TRACE("enter\n");
 	int c;
 	c = set_global_sym(s1, NULL, s, offs);
 	s = data_section;
@@ -1426,7 +1426,7 @@ static void put_ptr(MCCState *s1, Section *s, int offs) {
 	section_ptr_add(s, MCC_PTR_SIZE);
 }
 
-ST_FUNC void mcc_add_btstub(MCCState *s1) {
+ST_FUNC void mcc_add_btstub(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s;
 	int n, o, *p;
 	CString cstr;
@@ -1435,14 +1435,14 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 	s = data_section;
 	section_add(s, 0, MCC_PTR_SIZE);
 	o = s->data_offset;
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		put_ptr(s1, dwarf_line_section, 0);
 		put_ptr(s1, dwarf_line_section, -1);
 		if (s1->dwarf >= 5)
 			put_ptr(s1, dwarf_line_str_section, 0);
 		else
 			put_ptr(s1, dwarf_str_section, 0);
-	} else {
+	} else { MCC_TRACE("br\n");
 		put_ptr(s1, stab_section, 0);
 		put_ptr(s1, stab_section, -1);
 		put_ptr(s1, stab_section->link, 0);
@@ -1450,9 +1450,9 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 
 	section_ptr_add(s, 3 * MCC_PTR_SIZE);
 
-	if (s1->output_type == MCC_OUTPUT_MEMORY && 0 == s1->dwarf) {
+	if (s1->output_type == MCC_OUTPUT_MEMORY && 0 == s1->dwarf) { MCC_TRACE("br\n");
 		put_ptr(s1, text_section, 0);
-	} else {
+	} else { MCC_TRACE("br\n");
 		put_ptr(s1, NULL, 0);
 #if defined MCC_TARGET_MACHO
 		if (s1->dwarf == 0 && s1->output_type == MCC_OUTPUT_EXE)
@@ -1462,7 +1462,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 	}
 	n = 3 * MCC_PTR_SIZE;
 #if MCC_CONFIG_DIAG_RT >= 2
-	if (s1->do_bounds_check) {
+	if (s1->do_bounds_check) { MCC_TRACE("br\n");
 		put_ptr(s1, bounds_section, 0);
 		n -= MCC_PTR_SIZE;
 	}
@@ -1472,7 +1472,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 	p[0] = s1->rt_num_callers;
 	p[1] = s1->dwarf;
 
-	if (s1->output_type == MCC_OUTPUT_MEMORY) {
+	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
 		set_global_sym(s1, __rt_info, s, o);
 		return;
 	}
@@ -1501,7 +1501,7 @@ ST_FUNC void mcc_add_btstub(MCCState *s1) {
 }
 #endif
 
-static void mcc_tcov_add_file(MCCState *s1, const char *filename) {
+static void mcc_tcov_add_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	CString cstr;
 	void *ptr;
 	char wd[1024];
@@ -1514,7 +1514,7 @@ static void mcc_tcov_add_file(MCCState *s1, const char *filename) {
 	cstr_new(&cstr);
 	if (filename[0] == '/')
 		cstr_printf(&cstr, "%s.tcov", filename);
-	else {
+	else { MCC_TRACE("br\n");
 		getcwd(wd, sizeof(wd));
 		cstr_printf(&cstr, "%s/%s.tcov", wd, filename);
 	}
@@ -1537,7 +1537,7 @@ static void mcc_tcov_add_file(MCCState *s1, const char *filename) {
 }
 
 #ifdef MCC_TARGET_UNIX
-ST_FUNC void mccelf_add_crtbegin(MCCState *s1) {
+ST_FUNC void mccelf_add_crtbegin(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_TARGETOS_OpenBSD
 	if (s1->output_type != MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crt0.o");
@@ -1571,7 +1571,7 @@ ST_FUNC void mccelf_add_crtbegin(MCCState *s1) {
 #endif
 }
 
-ST_FUNC void mccelf_add_crtend(MCCState *s1) {
+ST_FUNC void mccelf_add_crtend(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_TARGETOS_OpenBSD
 	if (s1->output_type == MCC_OUTPUT_DLL)
 		mcc_add_crt(s1, "crtendS.o");
@@ -1595,7 +1595,7 @@ ST_FUNC void mccelf_add_crtend(MCCState *s1) {
 #endif
 
 #ifndef MCC_TARGET_PE
-ST_FUNC void mcc_add_runtime(MCCState *s1) {
+ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->filetype = 0;
 
 #ifdef MCC_EMBED_JIT
@@ -1611,11 +1611,11 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 #endif
 	mcc_add_pragma_libs(s1);
 
-	if (!s1->nostdlib) {
+	if (!s1->nostdlib) { MCC_TRACE("br\n");
 		int lpthread = s1->option_pthread || (s1->jit_threads > 0);
 
 #if MCC_CONFIG_DIAG_RT >= 2
-		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL) {
+		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_add_support(s1, "bcheck.o");
 #if !(MCC_TARGETOS_OpenBSD || MCC_TARGETOS_NetBSD)
 			mcc_add_library(s1, "dl");
@@ -1628,7 +1628,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 			mcc_add_support(s1, "mccasan.o");
 #endif
 #if MCC_CONFIG_DIAG_RT >= 1
-		if (s1->do_backtrace) {
+		if (s1->do_backtrace) { MCC_TRACE("br\n");
 			if (s1->output_type & MCC_OUTPUT_EXE)
 				mcc_add_support(s1, "bt-exe.o");
 			if (s1->output_type != MCC_OUTPUT_DLL)
@@ -1641,7 +1641,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 			mcc_add_library(s1, "pthread");
 		mcc_add_library(s1, "c");
 #ifdef MCC_LIBGCC
-		if (!s1->static_link) {
+		if (!s1->static_link) { MCC_TRACE("br\n");
 			if (MCC_LIBGCC[0] == '/')
 				mcc_add_file(s1, MCC_LIBGCC);
 			else
@@ -1654,7 +1654,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 #ifdef MCC_EMBED_MCCRT
 		mcc_add_mccrt_embedded(s1);
 #else
-		if (MCC_MCCRT[0]) {
+		if (MCC_MCCRT[0]) { MCC_TRACE("br\n");
 			if (s1->output_type == MCC_OUTPUT_MEMORY)
 				mcc_add_dll(s1, MCC_MCCRT, 0); /* attempt; silent if absent -> undefined
 																					helpers bind in-process via dlsym */
@@ -1670,7 +1670,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 }
 #endif
 
-static void mcc_add_linker_symbols(MCCState *s1) {
+static void mcc_add_linker_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 	char buf[1024];
 	Section *s;
 
@@ -1691,15 +1691,15 @@ static void mcc_add_linker_symbols(MCCState *s1) {
 	add_init_array_defines(s1, ".preinit_array");
 	add_init_array_defines(s1, ".init_array");
 	add_init_array_defines(s1, ".fini_array");
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		if ((s->sh_flags & SHF_ALLOC) && (s->sh_type == SHT_PROGBITS || s->sh_type == SHT_NOBITS || s->sh_type == SHT_STRTAB)) {
+		if ((s->sh_flags & SHF_ALLOC) && (s->sh_type == SHT_PROGBITS || s->sh_type == SHT_NOBITS || s->sh_type == SHT_STRTAB)) { MCC_TRACE("br\n");
 			const char *p0, *p;
 			p0 = s->name;
 			if (*p0 == '.')
 				++p0;
 			p = p0;
-			for (;;) {
+			for (;;) { MCC_TRACE("br\n");
 				int c = *p;
 				if (!c)
 					break;
@@ -1716,11 +1716,11 @@ static void mcc_add_linker_symbols(MCCState *s1) {
 	}
 }
 
-ST_FUNC void resolve_common_syms(MCCState *s1) {
+ST_FUNC void resolve_common_syms(MCCState *s1) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 
 	for_each_elem(symtab_section, 1, sym, ElfW(Sym)) {
-		if (sym->st_shndx == SHN_COMMON) {
+		if (sym->st_shndx == SHN_COMMON) { MCC_TRACE("br\n");
 			sym->st_value = section_add(bss_section, sym->st_size,
 																	sym->st_value);
 			sym->st_shndx = bss_section->sh_num;
@@ -1731,7 +1731,7 @@ ST_FUNC void resolve_common_syms(MCCState *s1) {
 }
 
 #if MCC_TARGET_UNIX
-ST_FUNC void fill_got_entry(MCCState *s1, ElfW_Rel *rel) {
+ST_FUNC void fill_got_entry(MCCState *s1, ElfW_Rel *rel) { MCC_TRACE("enter\n");
 	int sym_index = ELFW(R_SYM)(rel->r_info);
 	ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 	struct sym_attr *attr = get_sym_attr(s1, sym_index, 0);
@@ -1747,18 +1747,18 @@ ST_FUNC void fill_got_entry(MCCState *s1, ElfW_Rel *rel) {
 #endif
 }
 
-ST_FUNC void fill_got(MCCState *s1) {
+ST_FUNC void fill_got(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s;
 	ElfW_Rel *rel;
 
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (s->sh_type != SHT_RELX)
 			continue;
 		if (s->link != symtab_section)
 			continue;
 		for_each_elem(s, 0, rel, ElfW_Rel) {
-			switch (ELFW(R_TYPE)(rel->r_info)) {
+			switch (ELFW(R_TYPE)(rel->r_info)) { MCC_TRACE("br\n");
 			case R_X86_64_GOT32:
 			case R_X86_64_GOTPCREL:
 			case R_X86_64_GOTPCRELX:
@@ -1772,14 +1772,14 @@ ST_FUNC void fill_got(MCCState *s1) {
 }
 
 #if defined MCC_TARGET_X86_64
-static void mcc_prepare_static_ifunc(MCCState *s1) {
+static void mcc_prepare_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *iplt = NULL, *relaplt = NULL;
 	int nb = s1->nb_sections;
 
 	if (!(s1->static_link && (s1->output_type & MCC_OUTPUT_EXE)))
 		return;
 
-	for (int i = 1; i < nb; i++) {
+	for (int i = 1; i < nb; i++) { MCC_TRACE("br\n");
 		Section *sr = s1->sections[i];
 		ElfW_Rel *rel;
 		if (sr->sh_type != SHT_RELX || sr->link != symtab_section)
@@ -1796,7 +1796,7 @@ static void mcc_prepare_static_ifunc(MCCState *s1) {
 			if (type != R_X86_64_PLT32 && type != R_X86_64_PC32)
 				continue;
 
-			if (!iplt) {
+			if (!iplt) { MCC_TRACE("br\n");
 				iplt = new_section(s1, ".iplt", SHT_PROGBITS,
 													 SHF_ALLOC | SHF_EXECINSTR);
 				iplt->sh_addralign = 1;
@@ -1808,7 +1808,7 @@ static void mcc_prepare_static_ifunc(MCCState *s1) {
 			}
 
 			attr = get_sym_attr(s1, sym_index, 1);
-			if (!attr->plt_sym) {
+			if (!attr->plt_sym) { MCC_TRACE("br\n");
 				const char *sname =
 						(char *)symtab_section->link->data + sym->st_name;
 				unsigned stub = iplt->data_offset;
@@ -1835,13 +1835,13 @@ static void mcc_prepare_static_ifunc(MCCState *s1) {
 		}
 	}
 
-	if (relaplt && relaplt->data_offset) {
+	if (relaplt && relaplt->data_offset) { MCC_TRACE("br\n");
 		set_global_sym(s1, "__rela_iplt_start", relaplt, 0);
 		set_global_sym(s1, "__rela_iplt_end", relaplt, relaplt->data_offset);
 	}
 }
 
-static void mcc_fill_static_ifunc(MCCState *s1) {
+static void mcc_fill_static_ifunc(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *relaplt;
 	ElfW_Rel *rel;
 
@@ -1861,12 +1861,12 @@ static void mcc_fill_static_ifunc(MCCState *s1) {
 }
 #endif
 
-static void fill_local_got_entries(MCCState *s1) {
+static void fill_local_got_entries(MCCState *s1) { MCC_TRACE("enter\n");
 	ElfW_Rel *rel;
 	if (!s1->got->reloc)
 		return;
 	for_each_elem(s1->got->reloc, 0, rel, ElfW_Rel) {
-		if (ELFW(R_TYPE)(rel->r_info) == R_RELATIVE) {
+		if (ELFW(R_TYPE)(rel->r_info) == R_RELATIVE) { MCC_TRACE("br\n");
 			int sym_index = ELFW(R_SYM)(rel->r_info);
 			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			struct sym_attr *attr = get_sym_attr(s1, sym_index, 0);
@@ -1882,28 +1882,28 @@ static void fill_local_got_entries(MCCState *s1) {
 	}
 }
 
-static void bind_exe_dynsyms(MCCState *s1, int is_PIE) {
+static void bind_exe_dynsyms(MCCState *s1, int is_PIE) { MCC_TRACE("enter\n");
 	const char *name;
 	int sym_index, index;
 	ElfW(Sym) * sym, *esym;
 	int type;
 
 	for_each_elem(symtab_section, 1, sym, ElfW(Sym)) {
-		if (sym->st_shndx == SHN_UNDEF) {
+		if (sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 			name = (char *)symtab_section->link->data + sym->st_name;
 			sym_index = find_elf_sym(s1->dynsymtab_section, name);
-			if (sym_index) {
+			if (sym_index) { MCC_TRACE("br\n");
 				if (is_PIE)
 					continue;
 				esym = &((ElfW(Sym) *)s1->dynsymtab_section->data)[sym_index];
 				type = ELFW(ST_TYPE)(esym->st_info);
-				if ((type == STT_FUNC) || (type == STT_GNU_IFUNC)) {
+				if ((type == STT_FUNC) || (type == STT_GNU_IFUNC)) { MCC_TRACE("br\n");
 					int dynindex = put_elf_sym(s1->dynsym, 0, esym->st_size,
 																		 ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0, 0,
 																		 name);
 					int index = sym - (ElfW(Sym) *)symtab_section->data;
 					get_sym_attr(s1, index, 1)->dyn_index = dynindex;
-				} else if (type == STT_OBJECT) {
+				} else if (type == STT_OBJECT) { MCC_TRACE("br\n");
 					unsigned long offset;
 					ElfW(Sym) * dynsym;
 					offset = bss_section->data_offset;
@@ -1914,9 +1914,9 @@ static void bind_exe_dynsyms(MCCState *s1, int is_PIE) {
 															esym->st_info, 0, bss_section->sh_num,
 															name);
 
-					if (ELFW(ST_BIND)(esym->st_info) == STB_WEAK) {
+					if (ELFW(ST_BIND)(esym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
 						for_each_elem(s1->dynsymtab_section, 1, dynsym, ElfW(Sym)) {
-							if ((dynsym->st_value == esym->st_value) && (ELFW(ST_BIND)(dynsym->st_info) == STB_GLOBAL)) {
+							if ((dynsym->st_value == esym->st_value) && (ELFW(ST_BIND)(dynsym->st_info) == STB_GLOBAL)) { MCC_TRACE("br\n");
 								char *dynname = (char *)s1->dynsymtab_section->link->data + dynsym->st_name;
 								put_elf_sym(s1->dynsym, offset, dynsym->st_size,
 														dynsym->st_info, 0,
@@ -1931,11 +1931,11 @@ static void bind_exe_dynsyms(MCCState *s1, int is_PIE) {
 					offset += esym->st_size;
 					bss_section->data_offset = offset;
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK ||
-						!strcmp(name, "_fp_hw")) {
+						!strcmp(name, "_fp_hw")) { MCC_TRACE("br\n");
 				} else if (sym_referenced_by_reloc(
-											 s1, (int)(sym - (ElfW(Sym) *)symtab_section->data))) {
+											 s1, (int)(sym - (ElfW(Sym) *)symtab_section->data))) { MCC_TRACE("br\n");
 					mcc_error_noabort("unresolved reference to '%s'", name);
 				}
 			}
@@ -1943,7 +1943,7 @@ static void bind_exe_dynsyms(MCCState *s1, int is_PIE) {
 	}
 }
 
-static void bind_libs_dynsyms(MCCState *s1) {
+static void bind_libs_dynsyms(MCCState *s1) { MCC_TRACE("enter\n");
 	const char *name;
 	int dynsym_index;
 	ElfW(Sym) * sym, *esym;
@@ -1951,13 +1951,13 @@ static void bind_libs_dynsyms(MCCState *s1) {
 	for_each_elem(symtab_section, 1, sym, ElfW(Sym)) {
 		name = (char *)symtab_section->link->data + sym->st_name;
 		dynsym_index = find_elf_sym(s1->dynsymtab_section, name);
-		if (sym->st_shndx != SHN_UNDEF) {
+		if (sym->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL && (dynsym_index || s1->rdynamic))
 				set_elf_sym(s1->dynsym, sym->st_value, sym->st_size,
 										sym->st_info, 0, sym->st_shndx, name);
-		} else if (dynsym_index) {
+		} else if (dynsym_index) { MCC_TRACE("br\n");
 			esym = (ElfW(Sym) *)s1->dynsymtab_section->data + dynsym_index;
-			if (esym->st_shndx == SHN_UNDEF) {
+			if (esym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 				if (ELFW(ST_BIND)(esym->st_info) != STB_WEAK)
 					mcc_warning("unresolved dynamic reference to '%s'", name);
 			}
@@ -1965,12 +1965,12 @@ static void bind_libs_dynsyms(MCCState *s1) {
 	}
 }
 
-static void export_global_syms(MCCState *s1) {
+static void export_global_syms(MCCState *s1) { MCC_TRACE("enter\n");
 	int dynindex, index;
 	const char *name;
 	ElfW(Sym) * sym;
 	for_each_elem(symtab_section, 1, sym, ElfW(Sym)) {
-		if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) {
+		if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 			name = (char *)symtab_section->link->data + sym->st_name;
 			dynindex = set_elf_sym(s1->dynsym, sym->st_value, sym->st_size,
 														 sym->st_info, 0, sym->st_shndx, name);
@@ -1980,17 +1980,17 @@ static void export_global_syms(MCCState *s1) {
 	}
 }
 
-static int set_sec_sizes(MCCState *s1) {
+static int set_sec_sizes(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s;
 	int textrel = 0;
 	int file_type = s1->output_type;
 
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		if (s->sh_type == SHT_RELX && !(s->sh_flags & SHF_ALLOC)) {
-			if ((file_type & MCC_OUTPUT_DYN) && (s1->sections[s->sh_info]->sh_flags & SHF_ALLOC)) {
+		if (s->sh_type == SHT_RELX && !(s->sh_flags & SHF_ALLOC)) { MCC_TRACE("br\n");
+			if ((file_type & MCC_OUTPUT_DYN) && (s1->sections[s->sh_info]->sh_flags & SHF_ALLOC)) { MCC_TRACE("br\n");
 				int count = prepare_dynamic_rel(s1, s);
-				if (count) {
+				if (count) { MCC_TRACE("br\n");
 					s->sh_flags |= SHF_ALLOC;
 					s->sh_size = count * sizeof(ElfW_Rel);
 					if (s1->sections[s->sh_info]->sh_flags & SHF_EXECINSTR)
@@ -2001,7 +2001,7 @@ static int set_sec_sizes(MCCState *s1) {
 #ifdef MCC_TARGET_ARM
 							 || s->sh_type == SHT_ARM_ATTRIBUTES
 #endif
-							 || s1->do_debug) {
+							 || s1->do_debug) { MCC_TRACE("br\n");
 			s->sh_size = s->data_offset;
 		}
 	}
@@ -2029,68 +2029,68 @@ struct dyn_inf {
 	Section _roinf, *roinf;
 };
 
-static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
+static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MCC_TRACE("enter\n");
 	Section *s;
 	int j, k, f, f0, n;
 	int nb_sections = s1->nb_sections;
 	int *sec_cls = sec_order + nb_sections;
 
-	for (int i = 1; i < nb_sections; i++) {
+	for (int i = 1; i < nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		if (0 == s->sh_name) {
+		if (0 == s->sh_name) { MCC_TRACE("br\n");
 			j = 0x900;
-		} else if (s->sh_flags & SHF_ALLOC) {
+		} else if (s->sh_flags & SHF_ALLOC) { MCC_TRACE("br\n");
 			j = 0x100;
 			if (s->sh_flags & SHF_WRITE)
 				j = 0x200;
-		} else {
+		} else { MCC_TRACE("br\n");
 			j = 0x700;
 		}
 		if (j >= 0x700 && s1->output_format != MCC_OUTPUT_FORMAT_ELF)
 			s->sh_size = 0, j = 0x900;
 
-		if (s->sh_flags & SHF_TLS) {
+		if (s->sh_flags & SHF_TLS) { MCC_TRACE("br\n");
 			k = (s->sh_type == SHT_NOBITS) ? 0x6f : 0x6e;
-		} else if (s->sh_type == SHT_SYMTAB || s->sh_type == SHT_DYNSYM) {
+		} else if (s->sh_type == SHT_SYMTAB || s->sh_type == SHT_DYNSYM) { MCC_TRACE("br\n");
 			k = 0x10;
-		} else if (s->sh_type == SHT_STRTAB && strcmp(s->name, ".stabstr")) {
+		} else if (s->sh_type == SHT_STRTAB && strcmp(s->name, ".stabstr")) { MCC_TRACE("br\n");
 			k = 0x11;
 			if (i == nb_sections - 1)
 				k = 0xff;
-		} else if (s->sh_type == SHT_HASH || s->sh_type == SHT_GNU_HASH) {
+		} else if (s->sh_type == SHT_HASH || s->sh_type == SHT_GNU_HASH) { MCC_TRACE("br\n");
 			k = 0x12;
-		} else if (s->sh_type == SHT_GNU_verdef || s->sh_type == SHT_GNU_verneed || s->sh_type == SHT_GNU_versym) {
+		} else if (s->sh_type == SHT_GNU_verdef || s->sh_type == SHT_GNU_verneed || s->sh_type == SHT_GNU_versym) { MCC_TRACE("br\n");
 			k = 0x13;
-		} else if (s->sh_type == SHT_RELX) {
+		} else if (s->sh_type == SHT_RELX) { MCC_TRACE("br\n");
 			k = 0x20;
 			if (s1->plt && s == s1->plt->reloc)
 				k = 0x21;
-		} else if (s->sh_flags & SHF_EXECINSTR) {
+		} else if (s->sh_flags & SHF_EXECINSTR) { MCC_TRACE("br\n");
 			k = 0x30;
-		} else if (s->sh_type == SHT_PREINIT_ARRAY) {
+		} else if (s->sh_type == SHT_PREINIT_ARRAY) { MCC_TRACE("br\n");
 			k = 0x41;
-		} else if (s->sh_type == SHT_INIT_ARRAY) {
+		} else if (s->sh_type == SHT_INIT_ARRAY) { MCC_TRACE("br\n");
 			k = 0x42;
-		} else if (s->sh_type == SHT_FINI_ARRAY) {
+		} else if (s->sh_type == SHT_FINI_ARRAY) { MCC_TRACE("br\n");
 			k = 0x43;
-		} else if (s->sh_type == SHT_DYNAMIC) {
+		} else if (s->sh_type == SHT_DYNAMIC) { MCC_TRACE("br\n");
 			k = 0x46;
-		} else if (s == s1->got) {
+		} else if (s == s1->got) { MCC_TRACE("br\n");
 			k = 0x47;
-		} else if (s->reloc && (s->reloc->sh_flags & SHF_ALLOC) && j == 0x100) {
+		} else if (s->reloc && (s->reloc->sh_flags & SHF_ALLOC) && j == 0x100) { MCC_TRACE("br\n");
 			k = 0x44;
-		} else if (s->sh_type == SHT_NOTE) {
+		} else if (s->sh_type == SHT_NOTE) { MCC_TRACE("br\n");
 			k = 0x60;
-		} else if (s->sh_type == SHT_NOBITS) {
+		} else if (s->sh_type == SHT_NOBITS) { MCC_TRACE("br\n");
 			k = 0x70;
-		} else if (s == d->interp) {
+		} else if (s == d->interp) { MCC_TRACE("br\n");
 			k = 0x00;
-		} else {
+		} else { MCC_TRACE("br\n");
 			k = 0x50;
 		}
 		k += j;
 
-		if ((k & 0xfff0) == 0x140) {
+		if ((k & 0xfff0) == 0x140) { MCC_TRACE("br\n");
 			k += 0x100, s->sh_flags |= SHF_WRITE;
 		}
 		for (n = i; n > 1 && k < (f = sec_cls[n - 1]); --n)
@@ -2101,13 +2101,13 @@ static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	d->shnum = 1;
 
 	n = f0 = 0;
-	for (int i = 1; i < nb_sections; i++) {
+	for (int i = 1; i < nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[sec_order[i]];
 		k = sec_cls[i];
 		f = 0;
 		if (k < 0x900)
 			++d->shnum;
-		if (k < 0x700) {
+		if (k < 0x700) { MCC_TRACE("br\n");
 			f = s->sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR);
 #if MCC_TARGETOS_NetBSD
 			if ((f & SHF_WRITE) == 0)
@@ -2124,8 +2124,8 @@ static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	return n;
 }
 
-static ElfW(Phdr) * fill_phdr(ElfW(Phdr) * ph, int type, Section *s) {
-	if (s) {
+static ElfW(Phdr) * fill_phdr(ElfW(Phdr) * ph, int type, Section *s) { MCC_TRACE("enter\n");
+	if (s) { MCC_TRACE("br\n");
 		ph->p_offset = s->sh_offset;
 		ph->p_vaddr = s->sh_addr;
 		ph->p_filesz = s->sh_size;
@@ -2138,7 +2138,7 @@ static ElfW(Phdr) * fill_phdr(ElfW(Phdr) * ph, int type, Section *s) {
 	return ph;
 }
 
-static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
+static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MCC_TRACE("enter\n");
 	Section *s;
 	addr_t addr, tmp, align, s_align, base;
 	ElfW(Phdr) *ph = NULL;
@@ -2160,9 +2160,9 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 		++phnum;
 	{
 		int has_tls = 0;
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			s = s1->sections[i];
-			if (s->sh_flags & SHF_TLS) {
+			if (s->sh_flags & SHF_TLS) { MCC_TRACE("br\n");
 				has_tls = 1;
 				break;
 			}
@@ -2174,7 +2174,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	d->phdr = mcc_mallocz(phnum * sizeof(ElfW(Phdr)));
 
 	file_offset = 0;
-	if (s1->output_format == MCC_OUTPUT_FORMAT_ELF) {
+	if (s1->output_format == MCC_OUTPUT_FORMAT_ELF) { MCC_TRACE("br\n");
 		file_offset = (sizeof(ElfW(Ehdr)) + phnum * sizeof(ElfW(Phdr)) + 3) & -4;
 		file_offset += d->shnum * sizeof(ElfW(Shdr));
 	}
@@ -2187,9 +2187,9 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	if (s1->output_type & MCC_OUTPUT_DYN)
 		addr = 0;
 
-	if (s1->has_text_addr) {
+	if (s1->has_text_addr) { MCC_TRACE("br\n");
 		addr = s1->text_addr;
-		if (0) {
+		if (0) { MCC_TRACE("br\n");
 			int a_offset, p_offset;
 			a_offset = (int)(addr & (s_align - 1));
 			p_offset = file_offset & (s_align - 1);
@@ -2202,12 +2202,12 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	addr += file_offset;
 
 	n = 0;
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[sec_order[i]];
 		f = sec_order[i + s1->nb_sections];
 		align = s->sh_addralign - 1;
 
-		if (f == 0) {
+		if (f == 0) { MCC_TRACE("br\n");
 			file_offset = (file_offset + align) & ~align;
 			s->sh_offset = file_offset;
 			if (s->sh_type != SHT_NOBITS)
@@ -2215,11 +2215,11 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 			continue;
 		}
 
-		if ((f & 1 << 8) && n) {
-			if (s1->output_format == MCC_OUTPUT_FORMAT_ELF) {
+		if ((f & 1 << 8) && n) { MCC_TRACE("br\n");
+			if (s1->output_format == MCC_OUTPUT_FORMAT_ELF) { MCC_TRACE("br\n");
 				if ((addr & (s_align - 1)) != 0)
 					addr += s_align;
-			} else {
+			} else { MCC_TRACE("br\n");
 				align = s_align - 1;
 			}
 		}
@@ -2230,7 +2230,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 		s->sh_offset = file_offset;
 		s->sh_addr = addr;
 
-		if (f & 1 << 8) {
+		if (f & 1 << 8) { MCC_TRACE("br\n");
 			ph = &d->phdr[phfill + n];
 			ph->p_type = PT_LOAD;
 			ph->p_align = s_align;
@@ -2242,7 +2242,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 
 			ph->p_offset = file_offset;
 			ph->p_vaddr = addr;
-			if (n == 0) {
+			if (n == 0) { MCC_TRACE("br\n");
 				ph->p_offset = 0;
 				ph->p_vaddr = base;
 			}
@@ -2250,9 +2250,9 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 			++n;
 		}
 
-		if (f & 1 << 4) {
+		if (f & 1 << 4) { MCC_TRACE("br\n");
 			Section *roinf = &d->_roinf;
-			if (roinf->sh_size == 0) {
+			if (roinf->sh_size == 0) { MCC_TRACE("br\n");
 				roinf->sh_offset = s->sh_offset;
 				roinf->sh_addr = s->sh_addr;
 				roinf->sh_addralign = 1;
@@ -2264,7 +2264,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 		if (s->sh_type != SHT_NOBITS)
 			file_offset += s->sh_size;
 
-		if (ph) {
+		if (ph) { MCC_TRACE("br\n");
 			ph->p_filesz = file_offset - ph->p_offset;
 			ph->p_memsz = addr - ph->p_vaddr;
 		}
@@ -2281,14 +2281,14 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	{
 		Section *tls_start_sec = NULL;
 		addr_t tls_start = 0, tls_end = 0, tls_file_end = 0;
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			s = s1->sections[i];
-			if (s->sh_flags & SHF_TLS && s->sh_size) {
-				if (!tls_start_sec) {
+			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
+				if (!tls_start_sec) { MCC_TRACE("br\n");
 					tls_start_sec = s;
 					tls_start = s->sh_addr;
 					tls_end = s->sh_addr + s->sh_size;
-				} else {
+				} else { MCC_TRACE("br\n");
 					if (s->sh_addr < tls_start)
 						tls_start = s->sh_addr;
 					if (s->sh_addr + s->sh_size > tls_end)
@@ -2299,7 +2299,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 					tls_file_end = s->sh_addr + s->sh_size;
 			}
 		}
-		if (tls_start_sec) {
+		if (tls_start_sec) { MCC_TRACE("br\n");
 			ph = fill_phdr(++ph, PT_TLS, tls_start_sec);
 			ph->p_vaddr = tls_start;
 			ph->p_paddr = tls_start;
@@ -2310,7 +2310,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	}
 	if (d->interp)
 		fill_phdr(&d->phdr[1], PT_INTERP, d->interp);
-	if (phfill) {
+	if (phfill) { MCC_TRACE("br\n");
 		ph = &d->phdr[0];
 		ph->p_offset = sizeof(ElfW(Ehdr));
 		ph->p_vaddr = base + ph->p_offset;
@@ -2321,14 +2321,14 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) {
 	return 0;
 }
 
-static void put_dt(Section *dynamic, int dt, addr_t val) {
+static void put_dt(Section *dynamic, int dt, addr_t val) { MCC_TRACE("enter\n");
 	ElfW(Dyn) * dyn;
 	dyn = section_ptr_add(dynamic, sizeof(ElfW(Dyn)));
 	dyn->d_tag = dt;
 	dyn->d_un.d_val = val;
 }
 
-static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) {
+static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) { MCC_TRACE("enter\n");
 	Section *dynamic = dyninf->dynamic;
 	Section *s;
 
@@ -2342,7 +2342,7 @@ static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) {
 	put_dt(dynamic, DT_RELA, dyninf->rel_addr);
 	put_dt(dynamic, DT_RELASZ, dyninf->rel_size);
 	put_dt(dynamic, DT_RELAENT, sizeof(ElfW_Rel));
-	if (s1->plt && s1->plt->reloc) {
+	if (s1->plt && s1->plt->reloc) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_PLTGOT, s1->got->sh_addr);
 		put_dt(dynamic, DT_PLTRELSZ, s1->plt->reloc->data_offset);
 		put_dt(dynamic, DT_JMPREL, s1->plt->reloc->sh_addr);
@@ -2353,7 +2353,7 @@ static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) {
 	put_dt(dynamic, DT_REL, dyninf->rel_addr);
 	put_dt(dynamic, DT_RELSZ, dyninf->rel_size);
 	put_dt(dynamic, DT_RELENT, sizeof(ElfW_Rel));
-	if (s1->plt && s1->plt->reloc) {
+	if (s1->plt && s1->plt->reloc) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_PLTGOT, s1->got->sh_addr);
 		put_dt(dynamic, DT_PLTRELSZ, s1->plt->reloc->data_offset);
 		put_dt(dynamic, DT_JMPREL, s1->plt->reloc->sh_addr);
@@ -2361,32 +2361,32 @@ static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) {
 	}
 	put_dt(dynamic, DT_RELCOUNT, 0);
 #endif
-	if (versym_section && verneed_section) {
+	if (versym_section && verneed_section) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_VERSYM, versym_section->sh_addr);
 		put_dt(dynamic, DT_VERNEED, verneed_section->sh_addr);
 		put_dt(dynamic, DT_VERNEEDNUM, dt_verneednum);
 	}
 	s = have_section(s1, ".preinit_array");
-	if (s && s->data_offset) {
+	if (s && s->data_offset) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_PREINIT_ARRAY, s->sh_addr);
 		put_dt(dynamic, DT_PREINIT_ARRAYSZ, s->data_offset);
 	}
 	s = have_section(s1, ".init_array");
-	if (s && s->data_offset) {
+	if (s && s->data_offset) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_INIT_ARRAY, s->sh_addr);
 		put_dt(dynamic, DT_INIT_ARRAYSZ, s->data_offset);
 	}
 	s = have_section(s1, ".fini_array");
-	if (s && s->data_offset) {
+	if (s && s->data_offset) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_FINI_ARRAY, s->sh_addr);
 		put_dt(dynamic, DT_FINI_ARRAYSZ, s->data_offset);
 	}
 	s = have_section(s1, ".init");
-	if (s && s->data_offset) {
+	if (s && s->data_offset) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_INIT, s->sh_addr);
 	}
 	s = have_section(s1, ".fini");
-	if (s && s->data_offset) {
+	if (s && s->data_offset) { MCC_TRACE("br\n");
 		put_dt(dynamic, DT_FINI, s->sh_addr);
 	}
 	if (s1->do_debug)
@@ -2394,20 +2394,20 @@ static void fill_dynamic(MCCState *s1, struct dyn_inf *dyninf) {
 	put_dt(dynamic, DT_NULL, 0);
 }
 
-static void update_reloc_sections(MCCState *s1, struct dyn_inf *dyninf) {
+static void update_reloc_sections(MCCState *s1, struct dyn_inf *dyninf) { MCC_TRACE("enter\n");
 	unsigned long file_offset = 0;
 	Section *s;
 	Section *relocplt = s1->plt ? s1->plt->reloc : NULL;
 
 	dyninf->rel_addr = dyninf->rel_size = 0;
 
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		if (s->sh_type == SHT_RELX && s != relocplt) {
-			if (dyninf->rel_size == 0) {
+		if (s->sh_type == SHT_RELX && s != relocplt) { MCC_TRACE("br\n");
+			if (dyninf->rel_size == 0) { MCC_TRACE("br\n");
 				dyninf->rel_addr = s->sh_addr;
 				file_offset = s->sh_offset;
-			} else {
+			} else { MCC_TRACE("br\n");
 				s->sh_addr = dyninf->rel_addr + dyninf->rel_size;
 				s->sh_offset = file_offset + dyninf->rel_size;
 			}
@@ -2417,7 +2417,7 @@ static void update_reloc_sections(MCCState *s1, struct dyn_inf *dyninf) {
 }
 #endif
 
-static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
+static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) { MCC_TRACE("enter\n");
 	int i, shnum, offset, size, file_type;
 	Section *s;
 	ElfW(Ehdr) ehdr;
@@ -2427,7 +2427,7 @@ static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
 	shnum = s1->nb_sections;
 
 	memset(&ehdr, 0, sizeof(ehdr));
-	if (phnum > 0) {
+	if (phnum > 0) { MCC_TRACE("br\n");
 		ehdr.e_phentsize = sizeof(ElfW(Phdr));
 		ehdr.e_phnum = phnum;
 		ehdr.e_phoff = sizeof(ElfW(Ehdr));
@@ -2458,9 +2458,9 @@ static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
 	ehdr.e_flags = EF_RISCV_FLOAT_ABI_DOUBLE;
 #endif
 
-	if (file_type == MCC_OUTPUT_OBJ) {
+	if (file_type == MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
 		ehdr.e_type = ET_REL;
-	} else {
+	} else { MCC_TRACE("br\n");
 		if (file_type & MCC_OUTPUT_DYN)
 			ehdr.e_type = ET_DYN;
 		else
@@ -2489,15 +2489,15 @@ static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
 	if (phdr)
 		offset += fwrite(phdr, 1, phnum * sizeof(ElfW(Phdr)), f);
 
-	while (offset < ehdr.e_shoff) {
+	while (offset < ehdr.e_shoff) { MCC_TRACE("br\n");
 		fputc(0, f);
 		offset++;
 	}
 
-	for (i = 0; i < shnum; i++) {
+	for (i = 0; i < shnum; i++) { MCC_TRACE("br\n");
 		sh = &shdr;
 		memset(sh, 0, sizeof(ElfW(Shdr)));
-		if (i) {
+		if (i) { MCC_TRACE("br\n");
 			s = s1->sections[i];
 			sh->sh_name = s->sh_name;
 			sh->sh_type = s->sh_type;
@@ -2514,10 +2514,10 @@ static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
 		offset += fwrite(sh, 1, sizeof(ElfW(Shdr)), f);
 	}
 
-	for (i = 1; i < s1->nb_sections; i++) {
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		if (s->sh_type != SHT_NOBITS) {
-			while (offset < s->sh_offset) {
+		if (s->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
+			while (offset < s->sh_offset) { MCC_TRACE("br\n");
 				fputc(0, f);
 				offset++;
 			}
@@ -2529,16 +2529,16 @@ static int mcc_output_elf(MCCState *s1, FILE *f, int phnum, ElfW(Phdr) * phdr) {
 	return 0;
 }
 
-static int mcc_output_binary(MCCState *s1, FILE *f) {
+static int mcc_output_binary(MCCState *s1, FILE *f) { MCC_TRACE("enter\n");
 	Section *s;
 	int i, offset, size;
 
 	offset = 0;
-	for (i = 1; i < s1->nb_sections; i++) {
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (s->sh_type != SHT_NOBITS &&
-				(s->sh_flags & SHF_ALLOC)) {
-			while (offset < s->sh_offset) {
+				(s->sh_flags & SHF_ALLOC)) { MCC_TRACE("br\n");
+			while (offset < s->sh_offset) { MCC_TRACE("br\n");
 				fputc(0, f);
 				offset++;
 			}
@@ -2551,7 +2551,7 @@ static int mcc_output_binary(MCCState *s1, FILE *f) {
 }
 
 static int mcc_write_elf_file(MCCState *s1, const char *filename, int phnum,
-															ElfW(Phdr) * phdr) {
+															ElfW(Phdr) * phdr) { MCC_TRACE("enter\n");
 	int fd, mode, file_type, ret;
 	FILE *f;
 
@@ -2576,24 +2576,24 @@ static int mcc_write_elf_file(MCCState *s1, const char *filename, int phnum,
 }
 
 #if MCC_TARGET_UNIX
-static void reorder_sections(MCCState *s1, int *sec_order) {
+static void reorder_sections(MCCState *s1, int *sec_order) { MCC_TRACE("enter\n");
 	int i, nnew, k, *backmap;
 	Section **snew, *s;
 	ElfW(Sym) * sym;
 
 	backmap = mcc_malloc(s1->nb_sections * sizeof(backmap[0]));
-	for (i = 0, nnew = 0, snew = NULL; i < s1->nb_sections; i++) {
+	for (i = 0, nnew = 0, snew = NULL; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		k = sec_order[i];
 		s = s1->sections[k];
-		if (!i || s->sh_name) {
+		if (!i || s->sh_name) { MCC_TRACE("br\n");
 			backmap[k] = nnew;
 			dynarray_add(&snew, &nnew, s);
-		} else {
+		} else { MCC_TRACE("br\n");
 			backmap[k] = 0;
 			dynarray_add(&s1->priv_sections, &s1->nb_priv_sections, s);
 		}
 	}
-	for (i = 1; i < nnew; i++) {
+	for (i = 1; i < nnew; i++) { MCC_TRACE("br\n");
 		s = snew[i];
 		s->sh_num = i;
 		if (s->sh_type == SHT_RELX)
@@ -2609,7 +2609,7 @@ static void reorder_sections(MCCState *s1, int *sec_order) {
 }
 
 #ifdef MCC_TARGET_ARM
-static void create_arm_attribute_section(MCCState *s1) {
+static void create_arm_attribute_section(MCCState *s1) { MCC_TRACE("enter\n");
 	static const unsigned char arm_attr[] = {
 			0x41,
 			0x2c, 0x00, 0x00, 0x00,
@@ -2637,7 +2637,7 @@ static void create_arm_attribute_section(MCCState *s1) {
 	unsigned char *ptr = section_ptr_add(attr, sizeof(arm_attr));
 	attr->sh_addralign = 1;
 	memcpy(ptr, arm_attr, sizeof(arm_attr));
-	if (s1->float_abi != ARM_HARD_FLOAT) {
+	if (s1->float_abi != ARM_HARD_FLOAT) { MCC_TRACE("br\n");
 		ptr[26] = 0x00;
 		ptr[41] = 0x1e;
 		ptr[42] = 0x06;
@@ -2646,7 +2646,7 @@ static void create_arm_attribute_section(MCCState *s1) {
 #endif
 
 #ifdef MCC_TARGET_RISCV64
-static void create_riscv_attribute_section(MCCState *s1) {
+static void create_riscv_attribute_section(MCCState *s1) { MCC_TRACE("enter\n");
 	static const unsigned char riscv_attr[] = {
 			0x41,
 			0x49,
@@ -2734,13 +2734,13 @@ static void create_riscv_attribute_section(MCCState *s1) {
 #if MCC_TARGETOS_OpenBSD || MCC_TARGETOS_NetBSD || MCC_TARGETOS_FreeBSD
 
 static void fill_bsd_note(Section *s, int type,
-													const char *value, uint32_t data) {
+													const char *value, uint32_t data) { MCC_TRACE("enter\n");
 	unsigned long offset = 0;
 	char *ptr;
 	ElfW(Nhdr) * note;
 	int align = s->sh_addralign;
 
-	while (offset + sizeof(ElfW(Nhdr)) < s->data_offset) {
+	while (offset + sizeof(ElfW(Nhdr)) < s->data_offset) { MCC_TRACE("br\n");
 		note = (ElfW(Nhdr) *)(s->data + offset);
 		if (note->n_type == type)
 			return;
@@ -2759,7 +2759,7 @@ static void fill_bsd_note(Section *s, int type,
 
 static Section *create_bsd_note_section(MCCState *s1,
 																				const char *name,
-																				const char *value) {
+																				const char *value) { MCC_TRACE("enter\n");
 	Section *s;
 	unsigned int major = 0, minor = 0, patch = 0;
 
@@ -2790,7 +2790,7 @@ static Section *create_bsd_note_section(MCCState *s1,
 
 static void alloc_sec_names(MCCState *s1, int is_obj);
 
-static int elf_output_file(MCCState *s1, const char *filename) {
+static int elf_output_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	int ret, file_type, *sec_order;
 	struct dyn_inf dyninf = {0};
 	Section *interp, *dynstr, *dynamic;
@@ -2825,8 +2825,8 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 	mcc_add_runtime(s1);
 	resolve_common_syms(s1);
 
-	if (!s1->static_link) {
-		if (file_type & MCC_OUTPUT_EXE) {
+	if (!s1->static_link) { MCC_TRACE("br\n");
+		if (file_type & MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 			interp = new_section(s1, ".interp", SHT_PROGBITS, SHF_ALLOC);
 			interp->sh_addralign = 1;
 			put_elf_str(interp, s1->elfint);
@@ -2844,22 +2844,22 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 		dynamic->sh_entsize = sizeof(ElfW(Dyn));
 
 		got_sym = build_got(s1);
-		if (file_type & MCC_OUTPUT_EXE) {
+		if (file_type & MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 			bind_exe_dynsyms(s1, file_type & MCC_OUTPUT_DYN);
 			if (s1->nb_errors)
 				goto the_end;
 		}
 		build_got_entries(s1, got_sym);
-		if (file_type & MCC_OUTPUT_EXE) {
+		if (file_type & MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 			bind_libs_dynsyms(s1);
-		} else {
+		} else { MCC_TRACE("br\n");
 			export_global_syms(s1);
 		}
 #if MCC_EH_FRAME
 		mcc_eh_frame_hdr(s1, 0);
 #endif
 		dyninf.gnu_hash = create_gnu_hash(s1);
-	} else {
+	} else { MCC_TRACE("br\n");
 #if defined MCC_TARGET_X86_64
 		mcc_prepare_static_ifunc(s1);
 #endif
@@ -2869,8 +2869,8 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 
 	textrel = set_sec_sizes(s1);
 
-	if (!s1->static_link) {
-		for (int i = 0; i < s1->nb_loaded_dlls; i++) {
+	if (!s1->static_link) { MCC_TRACE("br\n");
+		for (int i = 0; i < s1->nb_loaded_dlls; i++) { MCC_TRACE("br\n");
 			DLLReference *dllref = s1->loaded_dlls[i];
 			if (dllref->level == 0)
 				put_dt(dynamic, DT_NEEDED, put_elf_str(dynstr, dllref->name));
@@ -2881,7 +2881,7 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 						 put_elf_str(dynstr, s1->rpath));
 
 		dt_flags_1 = DF_1_NOW;
-		if (file_type & MCC_OUTPUT_DYN) {
+		if (file_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			if (s1->soname)
 				put_dt(dynamic, DT_SONAME, put_elf_str(dynstr, s1->soname));
 			if (textrel)
@@ -2908,7 +2908,7 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 	sec_order = mcc_malloc(sizeof(int) * 2 * s1->nb_sections);
 	layout_sections(s1, sec_order, &dyninf);
 
-	if (dynamic) {
+	if (dynamic) { MCC_TRACE("br\n");
 		write32le(s1->got->data, dynamic->sh_addr);
 		if (file_type == MCC_OUTPUT_EXE || (RELOCATE_DLLPLT && (file_type & MCC_OUTPUT_DYN)))
 			relocate_plt(s1);
@@ -2919,12 +2919,12 @@ static int elf_output_file(MCCState *s1, const char *filename) {
 	if (s1->nb_errors != 0)
 		goto the_end;
 	relocate_sections(s1);
-	if (dynamic) {
+	if (dynamic) { MCC_TRACE("br\n");
 		update_reloc_sections(s1, &dyninf);
 		dynamic->data_offset = dyninf.data_offset;
 		fill_dynamic(s1, &dyninf);
 	}
-	if (file_type == MCC_OUTPUT_EXE && s1->static_link) {
+	if (file_type == MCC_OUTPUT_EXE && s1->static_link) { MCC_TRACE("br\n");
 		fill_got(s1);
 #if defined MCC_TARGET_X86_64
 		mcc_fill_static_ifunc(s1);
@@ -2947,12 +2947,12 @@ the_end:
 }
 #endif
 
-static void alloc_sec_names(MCCState *s1, int is_obj) {
+static void alloc_sec_names(MCCState *s1, int is_obj) { MCC_TRACE("enter\n");
 	Section *s, *strsec;
 
 	strsec = new_section(s1, ".shstrtab", SHT_STRTAB, 0);
 	put_elf_str(strsec, "");
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (is_obj)
 			s->sh_size = s->data_offset;
@@ -2964,7 +2964,7 @@ static void alloc_sec_names(MCCState *s1, int is_obj) {
 	strsec->sh_size = strsec->data_offset;
 }
 
-static int elf_output_obj(MCCState *s1, const char *filename) {
+static int elf_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	Section *s;
 	int ret, file_offset;
 #ifdef MCC_TARGET_RISCV64
@@ -2973,7 +2973,7 @@ static int elf_output_obj(MCCState *s1, const char *filename) {
 	alloc_sec_names(s1, 1);
 	file_offset = (sizeof(ElfW(Ehdr)) + 3) & -4;
 	file_offset += s1->nb_sections * sizeof(ElfW(Shdr));
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		file_offset = (file_offset + 15) & -16;
 		s->sh_offset = file_offset;
@@ -2984,7 +2984,7 @@ static int elf_output_obj(MCCState *s1, const char *filename) {
 	return ret;
 }
 
-LIBMCCAPI int mcc_output_file(MCCState *s, const char *filename) {
+LIBMCCAPI int mcc_output_file(MCCState *s, const char *filename) { MCC_TRACE("enter\n");
 	s->nb_errors = 0;
 	if (s->test_coverage)
 		mcc_tcov_add_file(s, filename);
@@ -3001,10 +3001,10 @@ LIBMCCAPI int mcc_output_file(MCCState *s, const char *filename) {
 #endif
 }
 
-ST_FUNC ssize_t full_read(int fd, void *buf, size_t count) {
+ST_FUNC ssize_t full_read(int fd, void *buf, size_t count) { MCC_TRACE("enter\n");
 	char *cbuf = buf;
 	size_t rnum = 0;
-	while (1) {
+	while (1) { MCC_TRACE("br\n");
 		ssize_t num = read(fd, cbuf, count - rnum);
 		if (num < 0)
 			return num;
@@ -3015,7 +3015,7 @@ ST_FUNC ssize_t full_read(int fd, void *buf, size_t count) {
 	}
 }
 
-ST_FUNC void *load_data(int fd, unsigned long file_offset, unsigned long size) {
+ST_FUNC void *load_data(int fd, unsigned long file_offset, unsigned long size) { MCC_TRACE("enter\n");
 	void *data;
 
 	data = mcc_malloc(size);
@@ -3031,14 +3031,14 @@ typedef struct SectionMergeInfo {
 	uint8_t link_once;
 } SectionMergeInfo;
 
-ST_FUNC int mcc_object_type(int fd, ElfW(Ehdr) * h) {
+ST_FUNC int mcc_object_type(int fd, ElfW(Ehdr) * h) { MCC_TRACE("enter\n");
 	int size = full_read(fd, h, sizeof *h);
-	if (size == sizeof *h && 0 == memcmp(h, ELFMAG, 4)) {
+	if (size == sizeof *h && 0 == memcmp(h, ELFMAG, 4)) { MCC_TRACE("br\n");
 		if (h->e_type == ET_REL)
 			return AFF_BINTYPE_REL;
 		if (h->e_type == ET_DYN)
 			return AFF_BINTYPE_DYN;
-	} else if (size >= 8) {
+	} else if (size >= 8) { MCC_TRACE("br\n");
 		if (0 == memcmp(h, ARMAG, 8))
 			return AFF_BINTYPE_AR;
 	}
@@ -3046,7 +3046,7 @@ ST_FUNC int mcc_object_type(int fd, ElfW(Ehdr) * h) {
 }
 
 ST_FUNC int mcc_load_object_file(MCCState *s1,
-																 int fd, unsigned long file_offset) {
+																 int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
 	ElfW(Ehdr) ehdr;
 	ElfW(Shdr) * shdr, *sh;
 	unsigned long size, offset, offseti;
@@ -3064,7 +3064,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 	if (mcc_object_type(fd, &ehdr) != AFF_BINTYPE_REL)
 		goto invalid;
 	if (ehdr.e_ident[5] != ELFDATA2LSB ||
-			ehdr.e_machine != EM_MCC_TARGET) {
+			ehdr.e_machine != EM_MCC_TARGET) { MCC_TRACE("br\n");
 	invalid:
 		return mcc_error_noabort("invalid object file");
 	}
@@ -3083,10 +3083,10 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 	stab_index = stabstr_index = 0;
 	ret = -1;
 
-	for (i = 1; i < ehdr.e_shnum; i++) {
+	for (i = 1; i < ehdr.e_shnum; i++) { MCC_TRACE("br\n");
 		sh = &shdr[i];
-		if (sh->sh_type == SHT_SYMTAB) {
-			if (symtab) {
+		if (sh->sh_type == SHT_SYMTAB) { MCC_TRACE("br\n");
+			if (symtab) { MCC_TRACE("br\n");
 				mcc_error_noabort("object must contain only one symtab");
 				goto the_end;
 			}
@@ -3101,18 +3101,18 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 			seencompressed = 1;
 	}
 
-	for (i = 1; i < ehdr.e_shnum; i++) {
+	for (i = 1; i < ehdr.e_shnum; i++) { MCC_TRACE("br\n");
 		if (i == ehdr.e_shstrndx)
 			continue;
 		sh = &shdr[i];
 		if (sh->sh_type == SHT_RELX)
 			sh = &shdr[sh->sh_info];
 		sh_name = strsec + sh->sh_name;
-		if (0 == strncmp(sh_name, ".debug_", 7) || 0 == strncmp(sh_name, ".stab", 5)) {
+		if (0 == strncmp(sh_name, ".debug_", 7) || 0 == strncmp(sh_name, ".stab", 5)) { MCC_TRACE("br\n");
 			if (!s1->do_debug || seencompressed)
 				continue;
 #if !(MCC_TARGETOS_OpenBSD || MCC_TARGETOS_FreeBSD || MCC_TARGETOS_NetBSD)
-		} else if (0 == strncmp(sh_name, ".eh_frame", 9)) {
+		} else if (0 == strncmp(sh_name, ".eh_frame", 9)) { MCC_TRACE("br\n");
 			if (NULL == eh_frame_section)
 				continue;
 #endif
@@ -3135,19 +3135,19 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		sh_name = strsec + sh->sh_name;
 		if (sh->sh_addralign < 1)
 			sh->sh_addralign = 1;
-		for (j = 1; j < s1->nb_sections; j++) {
+		for (j = 1; j < s1->nb_sections; j++) { MCC_TRACE("br\n");
 			s = s1->sections[j];
 			if (strcmp(s->name, sh_name))
 				continue;
-			if (sh->sh_type != s->sh_type && strcmp(s->name, ".eh_frame") && strcmp(s->name, ".note.GNU-stack")) {
+			if (sh->sh_type != s->sh_type && strcmp(s->name, ".eh_frame") && strcmp(s->name, ".note.GNU-stack")) { MCC_TRACE("br\n");
 				mcc_error_noabort("section type conflict: %s %02x <> %02x", s->name, sh->sh_type, s->sh_type);
 				goto the_end;
 			}
-			if (!strncmp(sh_name, ".gnu.linkonce", 13)) {
+			if (!strncmp(sh_name, ".gnu.linkonce", 13)) { MCC_TRACE("br\n");
 				sm_table[i].link_once = 1;
 				goto next;
 			}
-			if (stab_section) {
+			if (stab_section) { MCC_TRACE("br\n");
 				if (s == stab_section)
 					stab_index = i;
 				if (s == stab_section->link)
@@ -3166,7 +3166,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 			s->sh_addralign = sh->sh_addralign;
 		sm_table[i].offset = offset;
 		sm_table[i].s = s;
-		if (sh->sh_type != SHT_NOBITS && size) {
+		if (sh->sh_type != SHT_NOBITS && size) { MCC_TRACE("br\n");
 			unsigned char *ptr;
 			lseek(fd, file_offset + sh->sh_offset, SEEK_SET);
 			ptr = s->data + offset;
@@ -3179,28 +3179,28 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 	next:;
 	}
 
-	if (stab_index && stabstr_index) {
+	if (stab_index && stabstr_index) { MCC_TRACE("br\n");
 		Stab_Sym *a, *b;
 		unsigned o;
 		s = sm_table[stab_index].s;
 		a = (Stab_Sym *)(s->data + sm_table[stab_index].offset);
 		b = (Stab_Sym *)(s->data + s->data_offset);
 		o = sm_table[stabstr_index].offset;
-		while (a < b) {
+		while (a < b) { MCC_TRACE("br\n");
 			if (a->n_strx)
 				a->n_strx += o;
 			a++;
 		}
 	}
 
-	for (i = 1; i < ehdr.e_shnum; i++) {
+	for (i = 1; i < ehdr.e_shnum; i++) { MCC_TRACE("br\n");
 		s = sm_table[i].s;
 		if (!s || !sm_table[i].new_section)
 			continue;
 		sh = &shdr[i];
 		if (sh->sh_link > 0)
 			s->link = sm_table[sh->sh_link].s;
-		if (sh->sh_type == SHT_RELX) {
+		if (sh->sh_type == SHT_RELX) { MCC_TRACE("br\n");
 			s->sh_info = sm_table[sh->sh_info].s->sh_num;
 			s1->sections[s->sh_info]->reloc = s;
 		}
@@ -3212,12 +3212,12 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 	old_to_new_syms = mcc_mallocz(nb_syms * sizeof(int));
 
 	sym = symtab + 1;
-	for (i = 1; i < nb_syms; i++, sym++) {
+	for (i = 1; i < nb_syms; i++, sym++) { MCC_TRACE("br\n");
 		if (sym->st_shndx != SHN_UNDEF &&
-				sym->st_shndx < SHN_LORESERVE) {
+				sym->st_shndx < SHN_LORESERVE) { MCC_TRACE("br\n");
 			sm = &sm_table[sym->st_shndx];
-			if (sm->link_once) {
-				if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) {
+			if (sm->link_once) { MCC_TRACE("br\n");
+				if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 					name = strtab + sym->st_name;
 					sym_index = find_elf_sym(symtab_section, name);
 					if (sym_index)
@@ -3237,19 +3237,19 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		old_to_new_syms[i] = sym_index;
 	}
 
-	for (i = 1; i < ehdr.e_shnum; i++) {
+	for (i = 1; i < ehdr.e_shnum; i++) { MCC_TRACE("br\n");
 		s = sm_table[i].s;
 		if (!s)
 			continue;
 		sh = &shdr[i];
 		offset = sm_table[i].offset;
 		size = sh->sh_size;
-		switch (s->sh_type) {
+		switch (s->sh_type) { MCC_TRACE("br\n");
 		case SHT_RELX:
 			offseti = sm_table[sh->sh_info].offset;
 			for (rel = (ElfW_Rel *)s->data + (offset / sizeof(*rel));
 					 rel < (ElfW_Rel *)s->data + ((offset + size) / sizeof(*rel));
-					 rel++) {
+					 rel++) { MCC_TRACE("br\n");
 				int type;
 				unsigned sym_index;
 				type = ELFW(R_TYPE)(rel->r_info);
@@ -3263,7 +3263,7 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 #elif defined MCC_TARGET_RISCV64
 						&& type != R_RISCV_ALIGN && type != R_RISCV_RELAX
 #endif
-				) {
+				) { MCC_TRACE("br\n");
 				invalid_reloc:
 					mcc_error_noabort("Invalid relocation entry [%2d] '%s' @ %.8x",
 														i, strsec + sh->sh_name, (int)rel->r_offset);
@@ -3305,14 +3305,14 @@ typedef struct ArchiveHeader {
 
 #define ARFMAG "`\n"
 
-static unsigned long long get_be(const uint8_t *b, int n) {
+static unsigned long long get_be(const uint8_t *b, int n) { MCC_TRACE("enter\n");
 	unsigned long long ret = 0;
 	while (n)
 		ret = (ret << 8) | *b++, --n;
 	return ret;
 }
 
-static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) {
+static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) { MCC_TRACE("enter\n");
 	char *p, *e;
 	int len;
 	lseek(fd, offset, SEEK_SET);
@@ -3329,7 +3329,7 @@ static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) {
 	return len;
 }
 
-static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) {
+static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MCC_TRACE("enter\n");
 	int i, bound, nsyms, sym_index, len, ret = -1;
 	unsigned long long off;
 	uint8_t *data;
@@ -3345,9 +3345,9 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) {
 	ar_index = data + entrysize;
 	ar_names = (char *)ar_index + nsyms * entrysize;
 
-	do {
+	do { MCC_TRACE("br\n");
 		bound = 0;
-		for (p = ar_names, i = 0; i < nsyms; i++, p += strlen(p) + 1) {
+		for (p = ar_names, i = 0; i < nsyms; i++, p += strlen(p) + 1) { MCC_TRACE("br\n");
 			Section *s = symtab_section;
 			sym_index = find_elf_sym(s, p);
 			if (!sym_index)
@@ -3357,7 +3357,7 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) {
 				continue;
 			off = get_be(ar_index + i * entrysize, entrysize);
 			len = read_ar_header(fd, off, &hdr);
-			if (len <= 0 || memcmp(hdr.ar_fmag, ARFMAG, 2)) {
+			if (len <= 0 || memcmp(hdr.ar_fmag, ARFMAG, 2)) { MCC_TRACE("br\n");
 			invalid:
 				mcc_error_noabort("invalid archive");
 				goto the_end;
@@ -3376,7 +3376,7 @@ the_end:
 	return ret;
 }
 
-ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) {
+ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) { MCC_TRACE("enter\n");
 	ArchiveHeader hdr;
 	int size, len;
 	unsigned long file_offset;
@@ -3384,7 +3384,7 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) {
 
 	file_offset = sizeof ARMAG - 1;
 
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		len = read_ar_header(fd, file_offset, &hdr);
 		if (len == 0)
 			return 0;
@@ -3392,12 +3392,12 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) {
 			return mcc_error_noabort("invalid archive");
 		file_offset += len;
 		size = strtol(hdr.ar_size, NULL, 0);
-		if (alacarte) {
+		if (alacarte) { MCC_TRACE("br\n");
 			if (!strcmp(hdr.ar_name, "/"))
 				return mcc_load_alacarte(s1, fd, size, 4);
 			if (!strcmp(hdr.ar_name, "/SYM64/"))
 				return mcc_load_alacarte(s1, fd, size, 8);
-		} else if (mcc_object_type(fd, &ehdr) == AFF_BINTYPE_REL) {
+		} else if (mcc_object_type(fd, &ehdr) == AFF_BINTYPE_REL) { MCC_TRACE("br\n");
 			if (s1->verbose == 2)
 				printf("   -> %s\n", hdr.ar_name);
 			if (mcc_load_object_file(s1, fd, file_offset) < 0)
@@ -3408,21 +3408,21 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) {
 }
 
 #if MCC_TARGET_UNIX
-static void set_ver_to_ver(MCCState *s1, int *n, int **lv, int i, char *lib, char *version) {
-	while (i >= *n) {
+static void set_ver_to_ver(MCCState *s1, int *n, int **lv, int i, char *lib, char *version) { MCC_TRACE("enter\n");
+	while (i >= *n) { MCC_TRACE("br\n");
 		*lv = mcc_realloc(*lv, (*n + 1) * sizeof(**lv));
 		(*lv)[(*n)++] = -1;
 	}
-	if ((*lv)[i] == -1) {
+	if ((*lv)[i] == -1) { MCC_TRACE("br\n");
 		int v, prev_same_lib = -1;
-		for (v = 0; v < nb_sym_versions; v++) {
+		for (v = 0; v < nb_sym_versions; v++) { MCC_TRACE("br\n");
 			if (strcmp(sym_versions[v].lib, lib))
 				continue;
 			prev_same_lib = v;
 			if (!strcmp(sym_versions[v].version, version))
 				break;
 		}
-		if (v == nb_sym_versions) {
+		if (v == nb_sym_versions) { MCC_TRACE("br\n");
 			sym_versions = mcc_realloc(sym_versions,
 																 (v + 1) * sizeof(*sym_versions));
 			sym_versions[v].lib = mcc_strdup(lib);
@@ -3436,8 +3436,8 @@ static void set_ver_to_ver(MCCState *s1, int *n, int **lv, int i, char *lib, cha
 }
 
 static void
-set_sym_version(MCCState *s1, int sym_index, int verndx) {
-	if (sym_index >= nb_sym_to_version) {
+set_sym_version(MCCState *s1, int sym_index, int verndx) { MCC_TRACE("enter\n");
+	if (sym_index >= nb_sym_to_version) { MCC_TRACE("br\n");
 		int newelems = sym_index ? sym_index * 2 : 1;
 		sym_to_version = mcc_realloc(sym_to_version,
 																 newelems * sizeof(*sym_to_version));
@@ -3457,15 +3457,15 @@ struct versym_info {
 	int nb_local_ver, *local_ver;
 };
 
-static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
+static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) { MCC_TRACE("enter\n");
 	char *lib, *version;
 	uint32_t next;
 	int i;
 
-	if (v->versym && v->verdef) {
+	if (v->versym && v->verdef) { MCC_TRACE("br\n");
 		ElfW(Verdef) *vdef = v->verdef;
 		lib = NULL;
-		do {
+		do { MCC_TRACE("br\n");
 			ElfW(Verdaux) *verdaux =
 					(ElfW(Verdaux) *)(((char *)vdef) + vdef->vd_aux);
 
@@ -3473,7 +3473,7 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 				printf("verdef: version:%u flags:%u index:%u, hash:%u\n",
 							 vdef->vd_version, vdef->vd_flags, vdef->vd_ndx,
 							 vdef->vd_hash);
-			if (vdef->vd_cnt) {
+			if (vdef->vd_cnt) { MCC_TRACE("br\n");
 				version = dynstr + verdaux->vda_name;
 
 				if (lib == NULL)
@@ -3488,17 +3488,17 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 			vdef = (ElfW(Verdef) *)(((char *)vdef) + next);
 		} while (next);
 	}
-	if (v->versym && v->verneed) {
+	if (v->versym && v->verneed) { MCC_TRACE("br\n");
 		ElfW(Verneed) *vneed = v->verneed;
-		do {
+		do { MCC_TRACE("br\n");
 			ElfW(Vernaux) *vernaux =
 					(ElfW(Vernaux) *)(((char *)vneed) + vneed->vn_aux);
 
 			lib = dynstr + vneed->vn_file;
 			if (g_debug & MCC_DBG_VER)
 				printf("verneed: %u %s\n", vneed->vn_version, lib);
-			for (i = 0; i < vneed->vn_cnt; i++) {
-				if ((vernaux->vna_other & 0x8000) == 0) {
+			for (i = 0; i < vneed->vn_cnt; i++) { MCC_TRACE("br\n");
+				if ((vernaux->vna_other & 0x8000) == 0) { MCC_TRACE("br\n");
 					version = dynstr + vernaux->vna_name;
 					set_ver_to_ver(s1, &v->nb_local_ver, &v->local_ver, vernaux->vna_other,
 												 lib, version);
@@ -3514,9 +3514,9 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 		} while (next);
 	}
 
-	if (g_debug & MCC_DBG_VER) {
-		for (i = 0; i < v->nb_local_ver; i++) {
-			if (v->local_ver[i] > 0) {
+	if (g_debug & MCC_DBG_VER) { MCC_TRACE("br\n");
+		for (i = 0; i < v->nb_local_ver; i++) { MCC_TRACE("br\n");
+			if (v->local_ver[i] > 0) { MCC_TRACE("br\n");
 				printf("%d: lib: %s, version %s\n",
 							 i, sym_versions[v->local_ver[i]].lib,
 							 sym_versions[v->local_ver[i]].version);
@@ -3525,7 +3525,7 @@ static void store_version(MCCState *s1, struct versym_info *v, char *dynstr) {
 	}
 }
 
-ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) {
+ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) { MCC_TRACE("enter\n");
 	ElfW(Ehdr) ehdr;
 	ElfW(Shdr) * shdr, *sh, *sh1;
 	int i, nb_syms, nb_dts, sym_bind, ret = -1;
@@ -3540,7 +3540,7 @@ ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) 
 	full_read(fd, &ehdr, sizeof(ehdr));
 
 	if (ehdr.e_ident[5] != ELFDATA2LSB ||
-			ehdr.e_machine != EM_MCC_TARGET) {
+			ehdr.e_machine != EM_MCC_TARGET) { MCC_TRACE("br\n");
 		return mcc_error_noabort("bad architecture");
 	}
 
@@ -3553,8 +3553,8 @@ ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) 
 	dynstr = NULL;
 	memset(&v, 0, sizeof v);
 
-	for (i = 0, sh = shdr; i < ehdr.e_shnum; i++, sh++) {
-		switch (sh->sh_type) {
+	for (i = 0, sh = shdr; i < ehdr.e_shnum; i++, sh++) { MCC_TRACE("br\n");
+		switch (sh->sh_type) { MCC_TRACE("br\n");
 		case SHT_DYNAMIC:
 			nb_dts = sh->sh_size / sizeof(ElfW(Dyn));
 			dynamic = load_data(fd, sh->sh_offset, sh->sh_size);
@@ -3596,14 +3596,14 @@ ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) 
 	else
 		store_version(s1, &v, dynstr);
 
-	for (i = 1, sym = dynsym + 1; i < nb_syms; i++, sym++) {
+	for (i = 1, sym = dynsym + 1; i < nb_syms; i++, sym++) { MCC_TRACE("br\n");
 		sym_bind = ELFW(ST_BIND)(sym->st_info);
 		if (sym_bind == STB_LOCAL)
 			continue;
 		name = dynstr + sym->st_name;
 		sym_index = set_elf_sym(s1->dynsymtab_section, sym->st_value, sym->st_size,
 														sym->st_info, sym->st_other, sym->st_shndx, name);
-		if (v.versym) {
+		if (v.versym) { MCC_TRACE("br\n");
 			ElfW(Half) vsym = v.versym[i];
 			if ((vsym & 0x8000) == 0 && vsym > 0 && vsym < v.nb_local_ver)
 				set_sym_version(s1, sym_index, v.local_ver[vsym]);
@@ -3627,7 +3627,7 @@ the_end:
 #define LD_TOK_NAME 256
 #define LD_TOK_EOF (-1)
 
-static int ld_inp(MCCState *s1) {
+static int ld_inp(MCCState *s1) { MCC_TRACE("enter\n");
 	int c = *s1->ld_p;
 	if (c == 0)
 		return CH_EOF;
@@ -3639,14 +3639,14 @@ static int ld_inp(MCCState *s1) {
 	if (ch != CH_EOF)      \
 	--s1->ld_p
 
-static int ld_next(MCCState *s1, char *name, int name_size) {
+static int ld_next(MCCState *s1, char *name, int name_size) { MCC_TRACE("enter\n");
 	int c, d, ch;
 	char *q;
 
 redo:
 	ch = ld_inp(s1);
 	q = name, *q++ = ch;
-	switch (ch) {
+	switch (ch) { MCC_TRACE("br\n");
 	case ' ':
 	case '\t':
 	case '\f':
@@ -3656,14 +3656,14 @@ redo:
 		goto redo;
 	case '/':
 		ch = ld_inp(s1);
-		if (ch == '*') {
-			for (d = 0;; d = ch) {
+		if (ch == '*') { MCC_TRACE("br\n");
+			for (d = 0;; d = ch) { MCC_TRACE("br\n");
 				ch = ld_inp(s1);
 				if (ch == CH_EOF || (ch == '/' && d == '*'))
 					break;
 			}
 			goto redo;
-		} else {
+		} else { MCC_TRACE("br\n");
 			goto parse_name;
 		}
 		break;
@@ -3725,7 +3725,7 @@ redo:
 	case '.':
 	case '$':
 	case '~':
-		for (;;) {
+		for (;;) { MCC_TRACE("br\n");
 			ch = ld_inp(s1);
 		parse_name:
 			if (!((ch >= 'a' && ch <= 'z') ||
@@ -3733,7 +3733,7 @@ redo:
 						(ch >= '0' && ch <= '9') ||
 						strchr("/.-_+=$:\\,~", ch)))
 				break;
-			if ((q - name) < name_size - 1) {
+			if ((q - name) < name_size - 1) { MCC_TRACE("br\n");
 				*q++ = ch;
 			}
 		}
@@ -3751,10 +3751,10 @@ redo:
 	return c;
 }
 
-static int ld_add_file(MCCState *s1, const char filename[]) {
+static int ld_add_file(MCCState *s1, const char filename[]) { MCC_TRACE("enter\n");
 	if (filename[0] == '-' && filename[1] == 'l')
 		return mcc_add_library(s1, filename + 2);
-	if ((s1->sysroot && s1->sysroot[0]) || MCC_CONFIG_SYSROOT[0] != '\0' || !HOST_IS_ABSPATH(filename)) {
+	if ((s1->sysroot && s1->sysroot[0]) || MCC_CONFIG_SYSROOT[0] != '\0' || !HOST_IS_ABSPATH(filename)) { MCC_TRACE("br\n");
 		int ret = mcc_add_dll(s1, mcc_basename(filename), 0);
 		if (ret != FILE_NOT_FOUND)
 			return ret;
@@ -3762,8 +3762,8 @@ static int ld_add_file(MCCState *s1, const char filename[]) {
 	return mcc_add_file_internal(s1, filename, AFF_PRINT_ERROR);
 }
 
-static int new_undef_sym(MCCState *s1, int sym_offset) {
-	while (sym_offset < s1->symtab->data_offset) {
+static int new_undef_sym(MCCState *s1, int sym_offset) { MCC_TRACE("enter\n");
+	while (sym_offset < s1->symtab->data_offset) { MCC_TRACE("br\n");
 		ElfW(Sym) *esym = (void *)(s1->symtab->data + sym_offset);
 		if (esym->st_shndx == SHN_UNDEF)
 			return 1;
@@ -3772,7 +3772,7 @@ static int new_undef_sym(MCCState *s1, int sym_offset) {
 	return 0;
 }
 
-static int ld_add_file_list(MCCState *s1, const char *cmd) {
+static int ld_add_file_list(MCCState *s1, const char *cmd) { MCC_TRACE("enter\n");
 	char filename[1024];
 	int t, c, sym_offset, ret = 0;
 	unsigned char *pos = s1->ld_p;
@@ -3786,16 +3786,16 @@ repeat:
 	if (t != '(')
 		return mcc_error_noabort("expected '(' after %s", cmd);
 	t = ld_next(s1, filename, sizeof(filename));
-	for (;;) {
-		if (t == LD_TOK_EOF) {
+	for (;;) { MCC_TRACE("br\n");
+		if (t == LD_TOK_EOF) { MCC_TRACE("br\n");
 			return mcc_error_noabort("unexpected end of file");
-		} else if (t == ')') {
+		} else if (t == ')') { MCC_TRACE("br\n");
 			break;
-		} else if (t != LD_TOK_NAME) {
+		} else if (t != LD_TOK_NAME) { MCC_TRACE("br\n");
 			return mcc_error_noabort("unexpected token '%c'", t);
-		} else if (!strcmp(filename, "AS_NEEDED")) {
+		} else if (!strcmp(filename, "AS_NEEDED")) { MCC_TRACE("br\n");
 			ret |= ld_add_file_list(s1, filename);
-		} else if (c == 'I' || c == 'G' || c == 'A') {
+		} else if (c == 'I' || c == 'G' || c == 'A') { MCC_TRACE("br\n");
 			ret |= !!ld_add_file(s1, filename);
 		}
 		if (ret < 0)
@@ -3809,26 +3809,26 @@ repeat:
 	return ret;
 }
 
-ST_FUNC int mcc_load_ldscript(MCCState *s1, int fd) {
+ST_FUNC int mcc_load_ldscript(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 	char cmd[64];
 	int t, ret = 0, noscript = 1;
 	unsigned char *text_ptr, *saved_ptr;
 
 	saved_ptr = s1->ld_p;
 	s1->ld_p = text_ptr = (void *)mcc_load_text(fd);
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		t = ld_next(s1, cmd, sizeof(cmd));
 		if (t == LD_TOK_EOF)
 			break;
 		if (!strcmp(cmd, "INPUT") ||
-				!strcmp(cmd, "GROUP")) {
+				!strcmp(cmd, "GROUP")) { MCC_TRACE("br\n");
 			ret |= ld_add_file_list(s1, cmd);
 		} else if (!strcmp(cmd, "OUTPUT_FORMAT") ||
-							 !strcmp(cmd, "TARGET")) {
+							 !strcmp(cmd, "TARGET")) { MCC_TRACE("br\n");
 			ret |= ld_add_file_list(s1, cmd);
-		} else if (noscript) {
+		} else if (noscript) { MCC_TRACE("br\n");
 			ret = FILE_NOT_RECOGNIZED;
-		} else {
+		} else { MCC_TRACE("br\n");
 			ret = mcc_error_noabort("unexpected '%s'", cmd);
 		}
 		if (ret < 0)

@@ -2,8 +2,8 @@
 
 #define AARCH64_TLS_TCB_SIZE 16
 
-ST_FUNC int code_reloc(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_AARCH64_ABS32:
 	case R_AARCH64_ABS64:
 	case R_AARCH64_PREL32:
@@ -36,8 +36,8 @@ ST_FUNC int code_reloc(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC int gotplt_entry_type(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_AARCH64_PREL32:
 	case R_AARCH64_MOVW_UABS_G0_NC:
 	case R_AARCH64_MOVW_UABS_G1_NC:
@@ -72,12 +72,12 @@ ST_FUNC int gotplt_entry_type(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) {
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) { MCC_TRACE("enter\n");
 	Section *plt = s1->plt;
 	uint8_t *p;
 	unsigned plt_offset;
 
-	if (plt->data_offset == 0) {
+	if (plt->data_offset == 0) { MCC_TRACE("br\n");
 		section_ptr_add(plt, 32);
 	}
 	plt_offset = plt->data_offset;
@@ -88,7 +88,7 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 	return plt_offset;
 }
 
-ST_FUNC void relocate_plt(MCCState *s1) {
+ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
@@ -97,7 +97,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
 
-	if (p < p_end) {
+	if (p < p_end) { MCC_TRACE("br\n");
 		uint64_t plt = s1->plt->sh_addr;
 		uint64_t got = s1->got->sh_addr + 16;
 		uint64_t off = (got >> 12) - (plt >> 12);
@@ -118,7 +118,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 		write32le(p + 28, ARM64_NOP);
 		p += 32;
 		got = s1->got->sh_addr;
-		while (p < p_end) {
+		while (p < p_end) { MCC_TRACE("br\n");
 			uint64_t pc = plt + (p - s1->plt->data);
 			uint64_t addr = got + read64le(p);
 			uint64_t off = (addr >> 12) - (pc >> 12);
@@ -136,7 +136,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 		}
 	}
 
-	if (s1->plt->reloc) {
+	if (s1->plt->reloc) { MCC_TRACE("br\n");
 		ElfW_Rel *rel;
 		p = s1->got->data;
 		for_each_elem(s1->plt->reloc, 0, rel, ElfW_Rel) {
@@ -145,21 +145,21 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	}
 }
 
-ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
+ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	int sym_index = ELFW(R_SYM)(rel->r_info), esym_index;
 	ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 
-	switch (type) {
+	switch (type) { MCC_TRACE("br\n");
 	case R_AARCH64_ABS64:
-		if ((s1->output_type & MCC_OUTPUT_DYN)) {
+		if ((s1->output_type & MCC_OUTPUT_DYN)) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
 			qrel->r_offset = rel->r_offset;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_AARCH64_ABS64);
 				qrel->r_addend = rel->r_addend;
 				qrel++;
 				break;
-			} else {
+			} else { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(0, R_AARCH64_RELATIVE);
 				qrel->r_addend = read64le(ptr) + val;
 				qrel++;
@@ -168,7 +168,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		add64le(ptr, val);
 		return;
 	case R_AARCH64_ABS32:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			qrel->r_offset = rel->r_offset;
 			qrel->r_info = ELFW(R_INFO)(0, R_AARCH64_RELATIVE);
 			qrel->r_addend = (int)read32le(ptr) + val;
@@ -177,9 +177,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		add32le(ptr, val);
 		return;
 	case R_AARCH64_PREL32:
-		if (s1->output_type == MCC_OUTPUT_DLL) {
+		if (s1->output_type == MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_offset = rel->r_offset;
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_AARCH64_PREL32);
 				qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
@@ -208,8 +208,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_ADR_PREL_PG_HI21: {
 		uint64_t off = (val >> 12) - (addr >> 12);
 #ifdef MCC_TARGET_PE
-		if ((off + ((uint64_t)1 << 20)) >> 21) {
-			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
+		if ((off + ((uint64_t)1 << 20)) >> 21) { MCC_TRACE("br\n");
+			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
 				write32le(ptr, 0xd2800000 | (read32le(ptr) & 0x1f));
 				return;
 			}
@@ -272,9 +272,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		if (g_debug & MCC_DBG_RELOC)
 			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
 						 (char *)symtab_section->link->data + sym->st_name);
-		if (((val - addr) + ((uint64_t)1 << 27)) & ~(uint64_t)0xffffffc) {
+		if (((val - addr) + ((uint64_t)1 << 27)) & ~(uint64_t)0xffffffc) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
-			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) {
+			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
 				write32le(ptr, ARM64_NOP);
 				return;
 			}
@@ -323,11 +323,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12: {
 		addr_t tls_start = 0;
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
 
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-			if (s->sh_flags & SHF_TLS && ssz) {
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					tls_start = s->sh_addr;
 			}

@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef MCC_TRACE
+#define MCC_TRACE(...) ((void)0)
+#endif
+
 static int fails, checks;
 #define CHECK(cond, msg)                                                              \
 	do {                                                                               \
@@ -19,7 +23,7 @@ static int fails, checks;
 
 /* A toy score for combo_run: prefer the smallest-index subset of a given size. The
  * score is the sum of selected indices, so the best k=2 combination is {0,1}=1. */
-static long sum_score(const int *sel, int k, void *user) {
+static long sum_score(const int *sel, int k, void *user) { MCC_TRACE("enter\n");
 	long s = 0;
 	int i;
 	(void)user;
@@ -28,7 +32,7 @@ static long sum_score(const int *sel, int k, void *user) {
 	return s;
 }
 
-static void test_enumerate(void) {
+static void test_enumerate(void) { MCC_TRACE("enter\n");
 	ComboSpec spec;
 	ComboBest best;
 	spec.nitems = 5;
@@ -63,22 +67,22 @@ static void test_enumerate(void) {
 	CHECK(best.evaluated == 7 && !best.exhausted, "budget bounds the candidate count");
 }
 
-static void fill(unsigned char *b, long n, int mode) {
+static void fill(unsigned char *b, long n, int mode) { MCC_TRACE("enter\n");
 	long i;
 	unsigned long r = 0x2545f491u;
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		if (mode == 0)
 			b[i] = (unsigned char)('A' + (i % 7)); /* repetitive text */
 		else if (mode == 1)
 			b[i] = 0x5a; /* one long run */
-		else {
+		else { MCC_TRACE("br\n");
 			r = r * 1103515245u + 12345u;
 			b[i] = (unsigned char)(r >> 16); /* pseudo-random */
 		}
 	}
 }
 
-static void test_pipeline(void) {
+static void test_pipeline(void) { MCC_TRACE("enter\n");
 	static unsigned char data[8000], a[40000], b[40000], out[40000];
 	unsigned char *comp = NULL, *back = NULL;
 	long clen, blen;
@@ -104,7 +108,7 @@ static void test_pipeline(void) {
 				"pipeline round-trips exactly");
 }
 
-static void test_memo(void) {
+static void test_memo(void) { MCC_TRACE("enter\n");
 	static ComboMemo m;
 	static unsigned char val[2000], got[2000];
 	combo_u64 k0, k1;
@@ -165,7 +169,7 @@ static void test_memo(void) {
 	}
 }
 
-int main(void) {
+int main(void) { MCC_TRACE("enter\n");
 	test_enumerate();
 	test_pipeline();
 	test_memo();

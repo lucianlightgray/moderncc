@@ -19,8 +19,8 @@
 #define MCC_JIT_DEFAULT 1
 #endif
 
-MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) {
-	switch (t & VT_BTYPE) {
+MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) { MCC_TRACE("enter\n");
+	switch (t & VT_BTYPE) { MCC_TRACE("br\n");
 	case VT_PTR:
 		return MCCJIT_ROLE_PTR;
 	case VT_FUNC:
@@ -51,8 +51,8 @@ MCCJIT_LOCAL uint32_t mccjit_last_ngp;
 MCCJIT_LOCAL uint32_t mccjit_last_nsse;
 MCCJIT_LOCAL int mccjit_last_ret_fp;
 
-static int mccjit_type_wide(int t) {
-	switch (t & VT_BTYPE) {
+static int mccjit_type_wide(int t) { MCC_TRACE("enter\n");
+	switch (t & VT_BTYPE) { MCC_TRACE("br\n");
 	case VT_LLONG:
 	case VT_PTR:
 	case VT_FUNC:
@@ -64,8 +64,8 @@ static int mccjit_type_wide(int t) {
 	}
 }
 
-static int mccjit_type_gp(int t) {
-	switch (t & VT_BTYPE) {
+static int mccjit_type_gp(int t) { MCC_TRACE("enter\n");
+	switch (t & VT_BTYPE) { MCC_TRACE("br\n");
 	case VT_BOOL:
 	case VT_BYTE:
 	case VT_SHORT:
@@ -79,9 +79,9 @@ static int mccjit_type_gp(int t) {
 	}
 }
 
-static int mccjit_type_fp(int t) { return (t & VT_BTYPE) == VT_DOUBLE; }
+static int mccjit_type_fp(int t) { MCC_TRACE("enter\n"); return (t & VT_BTYPE) == VT_DOUBLE; }
 
-MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) {
+MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) { MCC_TRACE("enter\n");
 	uint64_t h = 0xcbf29ce484222325ull;
 	const char *s;
 	(void)s;
@@ -97,7 +97,7 @@ MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) {
 }
 
 
-static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) {
+static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) { MCC_TRACE("enter\n");
 	char path[64];
 	FILE *f;
 	size_t size = 0;
@@ -122,7 +122,7 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) {
 static int mccjit_internal_compile;
 
 static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
-																		 int param_index, int64_t const_val) {
+																		 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
 	Sym *sym;
@@ -144,7 +144,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	funcname = "";
 	func_ind = -1;
 
-	if (mccjit_intent_deserialize(buf, len, &it) != 0) {
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
 		mcc_exit_state(js);
 		mcc_delete(js);
 		return NULL;
@@ -181,7 +181,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		ret_fp = mccjit_type_fp((int)it.ret_type_t);
 		scalar_ok = (it.func_type != FUNC_ELLIPSIS && it.nparam >= 1 &&
 								 it.nparam <= MCCJIT_KGC_MAXARG && (ret_gp || ret_fp));
-		for (qi = 0; qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++) {
+		for (qi = 0; qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++) { MCC_TRACE("br\n");
 			int pt = (int)it.param_type_t[qi];
 			mccjit_last_param_t[qi] = it.param_type_t[qi];
 			if (mccjit_type_gp(pt) && !(pt & VT_BITFIELD))
@@ -204,7 +204,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	sym = mccjit_rebuild_sym(&it);
 	mccjit_internal_compile = 1;
-	if (sym) {
+	if (sym) { MCC_TRACE("br\n");
 		ast_fconst_reuse_disable(1);
 		ast_reemit_extern(sym, it.arena);
 		ast_fconst_reuse_disable(0);
@@ -220,24 +220,24 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	mccjit_intent_release(&it);
 
-	if (entry) {
+	if (entry) { MCC_TRACE("br\n");
 		mccjit_last_state = js;
-	} else {
+	} else { MCC_TRACE("br\n");
 		mcc_delete(js);
 	}
 	return entry;
 }
 
-MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) {
+MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
 	return mccjit_recompile_common(buf, len, 0, -1, 0);
 }
 
 MCCJIT_LOCAL void *mcc_jit_recompile_blob_spec(const void *buf, size_t len,
-																							 int param_index, int64_t const_val) {
+																							 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
 	return mccjit_recompile_common(buf, len, 1, param_index, const_val);
 }
 
-MCCJIT_LOCAL void *mcc_jit_recompile(Sym *sym, const void *ctxkey) {
+MCCJIT_LOCAL void *mcc_jit_recompile(Sym *sym, const void *ctxkey) { MCC_TRACE("enter\n");
 	(void)sym;
 	(void)ctxkey;
 	if (!mccjit_last_blob)
@@ -245,12 +245,12 @@ MCCJIT_LOCAL void *mcc_jit_recompile(Sym *sym, const void *ctxkey) {
 	return mcc_jit_recompile_blob(mccjit_last_blob, mccjit_last_len);
 }
 
-void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym) {
+void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym) { MCC_TRACE("enter\n");
 	MccjitBuf b;
 	if (!ast || !sym)
 		return;
 	mccjit_buf_init(&b);
-	if (mccjit_intent_serialize(ast, sym, &b) != 0) {
+	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
 		return;
 	}
@@ -268,7 +268,7 @@ typedef struct MccjitEmbedFn {
 
 MCCJIT_LOCAL MccjitEmbedFn *mccjit_embed_fns;
 
-void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) {
+void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("enter\n");
 	MccjitBuf b;
 	MccjitEmbedFn *e;
 	if (!name || !name[0] || !ast || !sym || mccjit_internal_compile)
@@ -277,12 +277,12 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) {
 		if (!strcmp(e->name, name))
 			return;
 	mccjit_buf_init(&b);
-	if (mccjit_intent_serialize(ast, sym, &b) != 0) {
+	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
 		return;
 	}
 	e = mcc_mallocz(sizeof *e);
-	if (!e) {
+	if (!e) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
 		return;
 	}
@@ -295,7 +295,7 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) {
 
 #if defined(__x86_64__)
 #include <sys/mman.h>
-static void *mccjit_make_trampoline(void *variant) {
+static void *mccjit_make_trampoline(void *variant) { MCC_TRACE("enter\n");
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
@@ -309,10 +309,10 @@ static void *mccjit_make_trampoline(void *variant) {
 	return p;
 }
 #else
-static void *mccjit_make_trampoline(void *variant) { return variant; }
+static void *mccjit_make_trampoline(void *variant) { MCC_TRACE("enter\n"); return variant; }
 #endif
 
-static double mccjit_elapsed(const struct timespec *t0) {
+static double mccjit_elapsed(const struct timespec *t0) { MCC_TRACE("enter\n");
 	struct timespec t1;
 	if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0)
 		return -1.0;
@@ -331,7 +331,7 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 
 static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
 																 unsigned long max_duration, const char *mode,
-																 const struct timespec *t0, int timed) {
+																 const struct timespec *t0, int timed) { MCC_TRACE("enter\n");
 	void *variant = NULL;
 	void *baseline = NULL;
 	void *aot_init = slot ? *slot : NULL;
@@ -341,13 +341,13 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 	int routed = 0;
 	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
 	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
-	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) {
+	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) { MCC_TRACE("br\n");
 		skipped = 1;
-	} else {
+	} else { MCC_TRACE("br\n");
 		variant = spec_wrong
 									? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
 									: mcc_jit_recompile_blob(blob, (size_t)len);
-		if (variant && !no_kgc && mccjit_last_kgc_ok) {
+		if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
 			int memoize_ok;
 			uint32_t nargs = mccjit_last_nparam;
 			int ret_wide = mccjit_last_ret_wide;
@@ -362,7 +362,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 				ptypes[qi] = mccjit_last_param_t[qi];
 			baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 			memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
-			if (baseline) {
+			if (baseline) { MCC_TRACE("br\n");
 				entry = mixed ? mccjit_make_kgc_stub_mixed(variant, baseline, memoize_ok,
 																									 ngp, nsse, ret_fp, ret_wide)
 							: all_fp ? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok,
@@ -376,12 +376,12 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		if (!entry && no_kgc)
 			entry = variant ? mccjit_make_trampoline(variant) : NULL;
 		if (timed && max_duration && entry &&
-				mccjit_elapsed(t0) > (double)max_duration) {
+				mccjit_elapsed(t0) > (double)max_duration) { MCC_TRACE("br\n");
 			over = 1;
 			entry = NULL;
 		}
 	}
-	if (getenv("MCC_JIT_VERBOSE")) {
+	if (getenv("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
 		int probeable = variant && mccjit_last_nparam == 1 &&
 										!mccjit_type_wide((int)mccjit_last_param_t[0]);
 		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
@@ -400,12 +400,12 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		mcc_jit_publish(slot, entry);
 }
 
-static int mccjit_bench_enabled(void) {
+static int mccjit_bench_enabled(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_BENCH");
 	return e && e[0] && e[0] != '0';
 }
 
-static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed) {
+static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed) { MCC_TRACE("enter\n");
 	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
 	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
 	void *variant = spec_wrong
@@ -414,7 +414,7 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 	void *entry = NULL;
 	if (routed)
 		*routed = 0;
-	if (variant && !no_kgc && mccjit_last_kgc_ok) {
+	if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
 		uint32_t nargs = mccjit_last_nparam;
 		int ret_wide = mccjit_last_ret_wide;
 		int all_fp = mccjit_last_allfp;
@@ -430,7 +430,7 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 			ptypes[qi] = mccjit_last_param_t[qi];
 		baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 		memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
-		if (baseline) {
+		if (baseline) { MCC_TRACE("br\n");
 			entry = mixed ? mccjit_make_kgc_stub_mixed(variant, baseline, memoize_ok,
 																								 ngp, nsse, ret_fp, ret_wide)
 						: all_fp
@@ -471,7 +471,7 @@ MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 
 static int mccjit_bench_admit(void *cand, void *incumbent,
 															const MccjitCounterState *st, uint32_t nargs,
-															int wide, int allfp, int routed) {
+															int wide, int allfp, int routed) { MCC_TRACE("enter\n");
 	if (!mccjit_bench_enabled())
 		return 1;
 	if (!routed || allfp || !cand || !incumbent || nargs == 0)
@@ -485,21 +485,21 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
    order, so the pointer walks r9..rdi). We accumulate a per-param min/max
    range (feeds dispatch mode 5's range guard + J7A) and a small ring of real
    observed tuples (the safe live-in set for the K5 promotion benchmark). */
-static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) {
+static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) { MCC_TRACE("enter\n");
 	int i;
-	for (i = 0; i < MCCJIT_KGC_MAXARG; i++) {
+	for (i = 0; i < MCCJIT_KGC_MAXARG; i++) { MCC_TRACE("br\n");
 		int64_t v = regs[MCCJIT_KGC_MAXARG - 1 - i];
-		if (st->argseen == 0) {
+		if (st->argseen == 0) { MCC_TRACE("br\n");
 			st->argmin[i] = v;
 			st->argmax[i] = v;
-		} else {
+		} else { MCC_TRACE("br\n");
 			if (v < st->argmin[i])
 				st->argmin[i] = v;
 			if (v > st->argmax[i])
 				st->argmax[i] = v;
 		}
 	}
-	if (st->nsample < MCCJIT_PROFILE_SAMPLES) {
+	if (st->nsample < MCCJIT_PROFILE_SAMPLES) { MCC_TRACE("br\n");
 		for (i = 0; i < MCCJIT_KGC_MAXARG; i++)
 			st->sample[st->nsample][i] = regs[MCCJIT_KGC_MAXARG - 1 - i];
 		st->nsample++;
@@ -513,12 +513,12 @@ static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) 
    the first `nargs` params (the counter also captures unused arg registers,
    whose "range" is meaningless). Returns 1 + the param index/value to fold. */
 static int mccjit_profile_pick_const(const MccjitCounterState *st, uint32_t nargs,
-																		 long min_samples, int *pidx, int64_t *pval) {
+																		 long min_samples, int *pidx, int64_t *pval) { MCC_TRACE("enter\n");
 	uint32_t i;
 	if (!st || nargs == 0 || st->argseen < min_samples)
 		return 0;
-	for (i = 0; i < nargs && i < MCCJIT_KGC_MAXARG; i++) {
-		if (st->argmin[i] == st->argmax[i]) {
+	for (i = 0; i < nargs && i < MCCJIT_KGC_MAXARG; i++) { MCC_TRACE("br\n");
+		if (st->argmin[i] == st->argmax[i]) { MCC_TRACE("br\n");
 			if (pidx)
 				*pidx = (int)i;
 			if (pval)
@@ -537,7 +537,7 @@ static int mccjit_profile_pick_const(const MccjitCounterState *st, uint32_t narg
    plain recompile when the profile shows no constant param. */
 MCCJIT_LOCAL void *mccjit_recompile_profiled(const void *blob, size_t len,
 																						 const MccjitCounterState *st,
-																						 uint32_t nargs, long min_samples) {
+																						 uint32_t nargs, long min_samples) { MCC_TRACE("enter\n");
 	int pidx = -1;
 	int64_t pval = 0;
 	if (mccjit_profile_pick_const(st, nargs, min_samples, &pidx, &pval))
@@ -570,17 +570,17 @@ static struct {
 
 static pthread_once_t mccjit_fork_once = PTHREAD_ONCE_INIT;
 
-static void mccjit_atfork_prepare(void) {
+static void mccjit_atfork_prepare(void) { MCC_TRACE("enter\n");
 	pthread_mutex_lock(&mccjit_pool.qlock);
 	pthread_mutex_lock(&mccjit_swap_lock);
 }
 
-static void mccjit_atfork_parent(void) {
+static void mccjit_atfork_parent(void) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_swap_lock);
 	pthread_mutex_unlock(&mccjit_pool.qlock);
 }
 
-static void mccjit_atfork_child(void) {
+static void mccjit_atfork_child(void) { MCC_TRACE("enter\n");
 	mccjit_pool.head = mccjit_pool.tail = NULL;
 	mccjit_pool.started = 0;
 	mccjit_pool.nworkers = 0;
@@ -589,14 +589,14 @@ static void mccjit_atfork_child(void) {
 	pthread_mutex_unlock(&mccjit_pool.qlock);
 }
 
-static void mccjit_fork_setup(void) {
+static void mccjit_fork_setup(void) { MCC_TRACE("enter\n");
 	pthread_atfork(mccjit_atfork_prepare, mccjit_atfork_parent,
 								 mccjit_atfork_child);
 }
 
-static void *mccjit_pool_worker(void *arg) {
+static void *mccjit_pool_worker(void *arg) { MCC_TRACE("enter\n");
 	(void)arg;
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		MccjitSwapJob *job;
 		pthread_mutex_lock(&mccjit_pool.qlock);
 		while (!mccjit_pool.head)
@@ -614,17 +614,17 @@ static void *mccjit_pool_worker(void *arg) {
 	return NULL;
 }
 
-static int mccjit_pool_start(unsigned long workers) {
+static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 	int n;
 	pthread_once(&mccjit_fork_once, mccjit_fork_setup);
 	pthread_mutex_lock(&mccjit_pool.qlock);
-	if (!mccjit_pool.started) {
+	if (!mccjit_pool.started) { MCC_TRACE("br\n");
 		int want = (int)workers;
 		int i;
 		if (want < 1)
 			want = 1;
 		mccjit_pool.started = 1;
-		for (i = 0; i < want; i++) {
+		for (i = 0; i < want; i++) { MCC_TRACE("br\n");
 			pthread_t th;
 			if (pthread_create(&th, NULL, mccjit_pool_worker, NULL) != 0)
 				break;
@@ -640,11 +640,11 @@ static int mccjit_pool_start(unsigned long workers) {
 	return n;
 }
 
-static int mccjit_pool_ready(void) {
+static int mccjit_pool_ready(void) { MCC_TRACE("enter\n");
 	return mccjit_pool.nworkers > 0;
 }
 
-static void mccjit_pool_enqueue(MccjitSwapJob *job) {
+static void mccjit_pool_enqueue(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	pthread_mutex_lock(&mccjit_pool.qlock);
 	job->next = NULL;
 	if (mccjit_pool.tail)
@@ -656,12 +656,12 @@ static void mccjit_pool_enqueue(MccjitSwapJob *job) {
 	pthread_mutex_unlock(&mccjit_pool.qlock);
 }
 
-static void mccjit_job_run_eager(MccjitSwapJob *job) {
+static void mccjit_job_run_eager(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	mccjit_boot_swap_run(job->slot, job->blob, job->len, job->max_duration,
 											 "async", &job->start, job->timed);
 }
 
-static void mccjit_job_run_lazy(MccjitSwapJob *job) {
+static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	MccjitCounterState *st = job->cst;
 	int routed = 0;
 	void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
@@ -669,15 +669,15 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) {
 	int wide = mccjit_last_ret_wide;
 	int allfp = mccjit_last_allfp;
 	pthread_mutex_lock(&st->lock);
-	if (entry) {
+	if (entry) { MCC_TRACE("br\n");
 		void *incumbent = st->promoted ? st->promoted : st->baseline;
-		if (!mccjit_bench_admit(entry, incumbent, st, nargs, wide, allfp, routed)) {
-			if (incumbent) {
+		if (!mccjit_bench_admit(entry, incumbent, st, nargs, wide, allfp, routed)) { MCC_TRACE("br\n");
+			if (incumbent) { MCC_TRACE("br\n");
 				st->promoted = incumbent;
 				mcc_jit_publish(st->slot, incumbent);
 			}
 			entry = incumbent;
-		} else {
+		} else { MCC_TRACE("br\n");
 			st->promoted = entry;
 			mcc_jit_publish(st->slot, entry);
 			if (mcc_stats_mask)
@@ -693,7 +693,7 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) {
 						entry ? "promoted" : "build-failed");
 }
 
-static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
+static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { MCC_TRACE("enter\n");
 	long n;
 	void *target;
 	int verbose = getenv("MCC_JIT_VERBOSE") != NULL;
@@ -701,18 +701,18 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 	n = ++st->count;
 	if (regs && !st->promoted)
 		mccjit_counter_capture(st, regs);
-	if (st->promoted) {
+	if (st->promoted) { MCC_TRACE("br\n");
 		target = st->promoted;
-	} else if (n < st->threshold) {
+	} else if (n < st->threshold) { MCC_TRACE("br\n");
 		if (verbose && n == 1)
 			fprintf(stderr,
 							"mccjit-lazy[cold]: slot=%p call=%ld<threshold=%ld running baseline=%p\n",
 							(void *)st->slot, n, st->threshold, st->baseline);
 		target = st->baseline;
-	} else if (mccjit_pool_ready()) {
-		if (!st->building) {
+	} else if (mccjit_pool_ready()) { MCC_TRACE("br\n");
+		if (!st->building) { MCC_TRACE("br\n");
 			MccjitSwapJob *job = mcc_malloc(sizeof *job);
-			if (job) {
+			if (job) { MCC_TRACE("br\n");
 				job->run = mccjit_job_run_lazy;
 				job->cst = st;
 				st->building = 1;
@@ -724,15 +724,15 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 			}
 		}
 		target = st->baseline;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int routed = 0;
 		void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
-		if (entry) {
+		if (entry) { MCC_TRACE("br\n");
 			void *incumbent = st->promoted ? st->promoted : st->baseline;
 			if (!mccjit_bench_admit(entry, incumbent, st, mccjit_last_nparam,
 															mccjit_last_ret_wide, mccjit_last_allfp,
-															routed)) {
-				if (incumbent) {
+															routed)) { MCC_TRACE("br\n");
+				if (incumbent) { MCC_TRACE("br\n");
 					st->promoted = incumbent;
 					mcc_jit_publish(st->slot, incumbent);
 				}
@@ -741,7 +741,7 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 					fprintf(stderr,
 									"mccjit-lazy[promote]: slot=%p candidate=%p lost bench -> keep incumbent=%p\n",
 									(void *)st->slot, entry, incumbent);
-			} else {
+			} else { MCC_TRACE("br\n");
 				st->promoted = entry;
 				mcc_jit_publish(st->slot, entry);
 				target = entry;
@@ -752,7 +752,7 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 									"mccjit-lazy[promote]: slot=%p hot after %ld calls -> entry=%p route=%s\n",
 									(void *)st->slot, n, entry, routed ? "kgc" : "direct");
 			}
-		} else {
+		} else { MCC_TRACE("br\n");
 			target = st->baseline;
 			if (verbose)
 				fprintf(stderr,
@@ -765,7 +765,7 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 }
 
 #if defined(__x86_64__)
-static void *mccjit_make_counter_stub(MccjitCounterState *st) {
+static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter\n");
 	void *tick = (void *)mccjit_counter_tick;
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -806,19 +806,19 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) {
 	return p;
 }
 #else
-static void *mccjit_make_counter_stub(MccjitCounterState *st) {
+static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter\n");
 	(void)st;
 	return NULL;
 }
 #endif
 
-static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len) {
+static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len) { MCC_TRACE("enter\n");
 	void *baseline = slot ? *slot : NULL;
 	long threshold = 1000;
 	const char *e = getenv("MCC_JIT_HOT_THRESHOLD");
 	MccjitCounterState *st;
 	void *stub;
-	if (e && e[0]) {
+	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
 			threshold = v;
@@ -839,7 +839,7 @@ static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len)
 		fprintf(stderr,
 						"mccjit-lazy[install]: slot=%p baseline=%p blob=%p len=%lu threshold=%ld stub=%p\n",
 						(void *)slot, baseline, blob, len, threshold, stub);
-	if (!stub) {
+	if (!stub) { MCC_TRACE("br\n");
 		mcc_free(st);
 		return -1;
 	}
@@ -847,12 +847,12 @@ static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len)
 	return 0;
 }
 
-static int mccjit_lazy_enabled(void) {
+static int mccjit_lazy_enabled(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_LAZY");
 	return e && e[0] && e[0] != '0';
 }
 
-static int mccjit_probe_exec_mem(void) {
+static int mccjit_probe_exec_mem(void) { MCC_TRACE("enter\n");
 	void *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 								 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
@@ -875,7 +875,7 @@ static int mccjit_probe_exec_mem(void) {
 static int mccjit_feasible_flag;
 static pthread_once_t mccjit_feasible_once = PTHREAD_ONCE_INIT;
 
-static void mccjit_feasible_probe(void) {
+static void mccjit_feasible_probe(void) { MCC_TRACE("enter\n");
 	mccjit_feasible_flag = mccjit_probe_exec_mem();
 	if (!mccjit_feasible_flag && getenv("MCC_JIT_VERBOSE"))
 		fprintf(stderr,
@@ -883,7 +883,7 @@ static void mccjit_feasible_probe(void) {
 						"AOT baseline\n");
 }
 
-static int mccjit_feasible(void) {
+static int mccjit_feasible(void) { MCC_TRACE("enter\n");
 	if (getenv("MCC_JIT_FORCE_INFEASIBLE"))
 		return 0;
 	pthread_once(&mccjit_feasible_once, mccjit_feasible_probe);
@@ -918,11 +918,11 @@ static struct {
 	pthread_mutex_t lock;
 } mccjit_qsbr = {1, {0}, {0}, {{0}}, 0, 0, 0, PTHREAD_MUTEX_INITIALIZER};
 
-static int mccjit_qsbr_register(void) {
+static int mccjit_qsbr_register(void) { MCC_TRACE("enter\n");
 	int i, slot = -1;
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++)
-		if (!mccjit_qsbr.used[i]) {
+		if (!mccjit_qsbr.used[i]) { MCC_TRACE("br\n");
 			slot = i;
 			mccjit_qsbr.used[i] = 1;
 			mccjit_qsbr.local[i] = mccjit_qsbr.global;
@@ -932,7 +932,7 @@ static int mccjit_qsbr_register(void) {
 	return slot;
 }
 
-static void mccjit_qsbr_unregister(int slot) {
+static void mccjit_qsbr_unregister(int slot) { MCC_TRACE("enter\n");
 	if (slot < 0 || slot >= MCCJIT_QSBR_SLOTS)
 		return;
 	pthread_mutex_lock(&mccjit_qsbr.lock);
@@ -942,7 +942,7 @@ static void mccjit_qsbr_unregister(int slot) {
 }
 
 /* Lock-free hot path: announce this thread has observed the current epoch. */
-static void mccjit_qsbr_quiescent(int slot) {
+static void mccjit_qsbr_quiescent(int slot) { MCC_TRACE("enter\n");
 	if (slot < 0 || slot >= MCCJIT_QSBR_SLOTS)
 		return;
 	__atomic_store_n(&mccjit_qsbr.local[slot],
@@ -950,11 +950,11 @@ static void mccjit_qsbr_quiescent(int slot) {
 									 __ATOMIC_RELEASE);
 }
 
-static uint64_t mccjit_qsbr_min_local(void) {
+static uint64_t mccjit_qsbr_min_local(void) { MCC_TRACE("enter\n");
 	int i;
 	uint64_t m = __atomic_load_n(&mccjit_qsbr.global, __ATOMIC_ACQUIRE);
 	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++)
-		if (mccjit_qsbr.used[i]) {
+		if (mccjit_qsbr.used[i]) { MCC_TRACE("br\n");
 			uint64_t l = __atomic_load_n(&mccjit_qsbr.local[i], __ATOMIC_ACQUIRE);
 			if (l < m)
 				m = l;
@@ -962,22 +962,22 @@ static uint64_t mccjit_qsbr_min_local(void) {
 	return m;
 }
 
-static void mccjit_qsbr_reclaim_locked(void) {
+static void mccjit_qsbr_reclaim_locked(void) { MCC_TRACE("enter\n");
 	uint64_t minl = mccjit_qsbr_min_local();
 	int i = 0;
-	while (i < mccjit_qsbr.nlimbo) {
-		if (mccjit_qsbr.limbo[i].epoch <= minl) {
+	while (i < mccjit_qsbr.nlimbo) { MCC_TRACE("br\n");
+		if (mccjit_qsbr.limbo[i].epoch <= minl) { MCC_TRACE("br\n");
 			if (mccjit_qsbr.limbo[i].ptr && mccjit_qsbr.limbo[i].size)
 				munmap(mccjit_qsbr.limbo[i].ptr, mccjit_qsbr.limbo[i].size);
 			mccjit_qsbr.reclaimed++;
 			mccjit_qsbr.limbo[i] = mccjit_qsbr.limbo[--mccjit_qsbr.nlimbo];
-		} else {
+		} else { MCC_TRACE("br\n");
 			i++;
 		}
 	}
 }
 
-static void mccjit_qsbr_reclaim(void) {
+static void mccjit_qsbr_reclaim(void) { MCC_TRACE("enter\n");
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	mccjit_qsbr_reclaim_locked();
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
@@ -985,16 +985,16 @@ static void mccjit_qsbr_reclaim(void) {
 
 /* Defer-free an old variant after its slot has been pointer-swapped away.
    MUST be called only after the publish, so no thread can newly enter it. */
-static void mccjit_qsbr_retire(void *ptr, size_t size) {
+static void mccjit_qsbr_retire(void *ptr, size_t size) { MCC_TRACE("enter\n");
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	{
 		uint64_t e = __atomic_add_fetch(&mccjit_qsbr.global, 1, __ATOMIC_ACQ_REL);
-		if (mccjit_qsbr.nlimbo < MCCJIT_QSBR_LIMBO) {
+		if (mccjit_qsbr.nlimbo < MCCJIT_QSBR_LIMBO) { MCC_TRACE("br\n");
 			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].ptr = ptr;
 			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].size = size;
 			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].epoch = e;
 			mccjit_qsbr.nlimbo++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			mccjit_qsbr.leaked++; /* leak-and-cap fallback: never free a live variant */
 		}
 		mccjit_qsbr_reclaim_locked();
@@ -1002,7 +1002,7 @@ static void mccjit_qsbr_retire(void *ptr, size_t size) {
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
-static void mccjit_qsbr_reset(void) {
+static void mccjit_qsbr_reset(void) { MCC_TRACE("enter\n");
 	int i;
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	for (i = 0; i < mccjit_qsbr.nlimbo; i++)
@@ -1012,14 +1012,14 @@ static void mccjit_qsbr_reset(void) {
 	mccjit_qsbr.global = 1;
 	mccjit_qsbr.reclaimed = 0;
 	mccjit_qsbr.leaked = 0;
-	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++) {
+	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++) { MCC_TRACE("br\n");
 		mccjit_qsbr.used[i] = 0;
 		mccjit_qsbr.local[i] = 0;
 	}
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
-void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
+void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) { MCC_TRACE("enter\n");
 	mcc_stats_env_init();
 	if (!mccjit_feasible())
 		return;
@@ -1029,7 +1029,7 @@ void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
 }
 
 void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
-														unsigned long max_duration, unsigned long workers) {
+														unsigned long max_duration, unsigned long workers) { MCC_TRACE("enter\n");
 	MccjitSwapJob *job;
 	int nw;
 	mcc_stats_env_init();
@@ -1039,7 +1039,7 @@ void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 	if (mccjit_lazy_enabled() && mccjit_lazy_install(slot, blob, len) == 0)
 		return;
 	job = (nw > 0) ? mcc_malloc(sizeof *job) : NULL;
-	if (job) {
+	if (job) { MCC_TRACE("br\n");
 		job->run = mccjit_job_run_eager;
 		job->slot = slot;
 		job->blob = blob;
@@ -1059,11 +1059,11 @@ void mccjit_boot_swap_async(void **slot, const void *blob, unsigned long len,
 	}
 }
 
-int mccjit_embed_have_fns(void) {
+int mccjit_embed_have_fns(void) { MCC_TRACE("enter\n");
 	return mccjit_embed_fns != NULL;
 }
 
-void mccjit_embed_finalize(MCCState *s1) {
+void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 	MccjitEmbedFn *e, *nx;
 	CString cs;
 	int n = 0;
@@ -1072,7 +1072,7 @@ void mccjit_embed_finalize(MCCState *s1) {
 			!mccjit_embed_fns || mccjit_internal_compile)
 		return;
 	async = s1->jit_threads > 0;
-	if (s1->output_type == MCC_OUTPUT_MEMORY) {
+	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
 		mcc_add_symbol(s1, "mccjit_boot_swap", (void *)mccjit_boot_swap);
 		mcc_add_symbol(s1, "mccjit_boot_swap_async",
 									 (void *)mccjit_boot_swap_async);
@@ -1084,7 +1084,7 @@ void mccjit_embed_finalize(MCCState *s1) {
 	else
 		cstr_printf(&cs,
 								"extern void mccjit_boot_swap(void**, const void*, unsigned long);\n");
-	for (e = mccjit_embed_fns; e; e = e->next) {
+	for (e = mccjit_embed_fns; e; e = e->next) { MCC_TRACE("br\n");
 		int off = data_section->data_offset;
 		unsigned char *p = section_ptr_add(data_section, e->len ? e->len : 1);
 		char blobname[256];
@@ -1128,7 +1128,7 @@ void mccjit_embed_finalize(MCCState *s1) {
 								"mccjit_boot_swap(__mccjit_registry[__i].slot, __mccjit_registry[__i].blob, __mccjit_registry[__i].len);\n}\n");
 	mcc_compile_string(s1, cs.data);
 	cstr_free(&cs);
-	for (e = mccjit_embed_fns; e; e = nx) {
+	for (e = mccjit_embed_fns; e; e = nx) { MCC_TRACE("br\n");
 		nx = e->next;
 		mcc_free(e->name);
 		mcc_free(e->blob);
@@ -1137,7 +1137,7 @@ void mccjit_embed_finalize(MCCState *s1) {
 	mccjit_embed_fns = NULL;
 }
 
-int mccjit_selftest(void) {
+int mccjit_selftest(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	MCCState *s1;
 	int (*aotf)(int) = NULL;
@@ -1153,7 +1153,7 @@ int mccjit_selftest(void) {
 	mccjit_last_state = NULL;
 
 	s1 = mcc_new();
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: mcc_new failed\n");
 		return 1;
 	}
@@ -1163,12 +1163,12 @@ int mccjit_selftest(void) {
 	s1->jit_functions = mcc_strdup("f");
 	mcc_set_output_type(s1, MCC_OUTPUT_MEMORY);
 
-	if (mcc_compile_string(s1, src) != 0) {
+	if (mcc_compile_string(s1, src) != 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: state1 compile failed\n");
 		mcc_delete(s1);
 		return 1;
 	}
-	if (!mccjit_last_blob) {
+	if (!mccjit_last_blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: no intent blob stashed for 'f' (not faithful?)\n");
 		mcc_delete(s1);
 		return 1;
@@ -1180,14 +1180,14 @@ int mccjit_selftest(void) {
 		aotf = (int (*)(int))mcc_get_symbol(s1, "f");
 
 	jitf = (int (*)(int))mcc_jit_recompile_blob(mccjit_last_blob, mccjit_last_len);
-	if (!jitf) {
+	if (!jitf) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: cross-session recompile returned NULL\n");
 		mcc_delete(s1);
 		return 1;
 	}
 	v1state = mccjit_last_state;
 
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
 		int x = inputs[i];
 		int got = jitf(x);
 		int want = x * 2 + 1;
@@ -1202,7 +1202,7 @@ int mccjit_selftest(void) {
 	v1 = (void *)jitf;
 	slot = v1;
 	printf("mccjit-selftest: hotswap slot init -> v1=%p\n", slot);
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
 		int x = inputs[i];
 		int got = ((int (*)(int))slot)(x);
 		int want = x * 2 + 1;
@@ -1214,7 +1214,7 @@ int mccjit_selftest(void) {
 	}
 
 	v2 = mcc_jit_recompile_blob(mccjit_last_blob, mccjit_last_len);
-	if (!v2) {
+	if (!v2) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: v2 recompile returned NULL\n");
 		if (v1state)
 			mcc_delete(v1state);
@@ -1224,11 +1224,11 @@ int mccjit_selftest(void) {
 	v2state = mccjit_last_state;
 	mcc_jit_publish(&slot, v2);
 	printf("mccjit-selftest: published v2=%p into slot (was v1=%p)\n", v2, v1);
-	if (slot != v2) {
+	if (slot != v2) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: slot did not observe v2 after publish\n");
 		fails++;
 	}
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
 		int x = inputs[i];
 		int gv1 = ((int (*)(int))v1)(x);
 		int gv2 = ((int (*)(int))slot)(x);
@@ -1241,10 +1241,10 @@ int mccjit_selftest(void) {
 	}
 
 	vspec = mcc_jit_recompile_blob_spec(mccjit_last_blob, mccjit_last_len, 0, 7);
-	if (!vspec) {
+	if (!vspec) { MCC_TRACE("br\n");
 		printf("mccjit-selftest: specialized recompile returned NULL\n");
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int sval = ((int (*)(int))vspec)(7);
 		int sfold = ((int (*)(int))vspec)(5);
 		int ok = (sval == 15) && (sfold == 15);
@@ -1270,7 +1270,7 @@ int mccjit_selftest(void) {
 
 static unsigned char *mccjit_stash_one(const char *src, const char *fn,
 																			 int nostdlib, size_t *out_len,
-																			 MCCState **out_state) {
+																			 MCCState **out_state) { MCC_TRACE("enter\n");
 	MCCState *s1;
 	unsigned char *blob = NULL;
 	*out_len = 0;
@@ -1287,15 +1287,15 @@ static unsigned char *mccjit_stash_one(const char *src, const char *fn,
 	s1->jit_functions = mcc_strdup(fn);
 	mcc_set_output_type(s1, MCC_OUTPUT_MEMORY);
 	mccjit_internal_compile = 1;
-	if (mcc_compile_string(s1, src) != 0) {
+	if (mcc_compile_string(s1, src) != 0) { MCC_TRACE("br\n");
 		mccjit_internal_compile = 0;
 		mcc_delete(s1);
 		return NULL;
 	}
 	mccjit_internal_compile = 0;
-	if (mccjit_last_blob) {
+	if (mccjit_last_blob) { MCC_TRACE("br\n");
 		blob = mcc_malloc(mccjit_last_len ? mccjit_last_len : 1);
-		if (blob) {
+		if (blob) { MCC_TRACE("br\n");
 			memcpy(blob, mccjit_last_blob, mccjit_last_len);
 			*out_len = mccjit_last_len;
 		}
@@ -1304,7 +1304,7 @@ static unsigned char *mccjit_stash_one(const char *src, const char *fn,
 	return blob;
 }
 
-int mccjit_selftest_stage2(void) {
+int mccjit_selftest_stage2(void) { MCC_TRACE("enter\n");
 	static const char src_g[] =
 			"int g(int *p, int x){ return p ? *p + x : -1; }";
 	static const char src_h[] =
@@ -1317,15 +1317,15 @@ int mccjit_selftest_stage2(void) {
 	printf("mccjit-selftest-stage2: begin\n");
 
 	blob = mccjit_stash_one(src_g, "g", 1, &blen, &s1);
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-stage2: g compile setup failed\n");
 		return 1;
 	}
-	if (!blob) {
+	if (!blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-stage2: no intent blob stashed for 'g'\n");
 		mcc_delete(s1);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int (*aotg)(int *, int) = NULL;
 		int (*jitg)(int *, int);
 		MCCState *js;
@@ -1336,12 +1336,12 @@ int mccjit_selftest_stage2(void) {
 		if (mcc_relocate(s1) == 0)
 			aotg = (int (*)(int *, int))mcc_get_symbol(s1, "g");
 		jitg = (int (*)(int *, int))mcc_jit_recompile_blob(blob, blen);
-		if (!jitg) {
+		if (!jitg) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-stage2: g recompile returned NULL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			js = mccjit_last_state;
-			for (i = 0; i < 3; i++) {
+			for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
 				int x = cells[i] + i * 7;
 				int got = jitg(&cells[i], x);
 				int want = cells[i] + x;
@@ -1370,15 +1370,15 @@ int mccjit_selftest_stage2(void) {
 	}
 
 	blob = mccjit_stash_one(src_h, "h", 0, &blen, &s1);
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-stage2: h compile setup failed\n");
 		return fails + 1;
 	}
-	if (!blob) {
+	if (!blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-stage2: no intent blob stashed for 'h'\n");
 		mcc_delete(s1);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int (*aoth)(int) = NULL;
 		int (*jith)(int);
 		MCCState *js;
@@ -1389,12 +1389,12 @@ int mccjit_selftest_stage2(void) {
 		if (mcc_relocate(s1) == 0)
 			aoth = (int (*)(int))mcc_get_symbol(s1, "h");
 		jith = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
-		if (!jith) {
+		if (!jith) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-stage2: h recompile returned NULL (callee unbound?)\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			js = mccjit_last_state;
-			for (i = 0; i < 4; i++) {
+			for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
 				int x = inputs[i];
 				int got = jith(x);
 				int want = (x < 0 ? -x : x) + 1;
@@ -1428,7 +1428,7 @@ struct MccjitTestT {
 	int k;
 };
 
-int mccjit_selftest_struct(void) {
+int mccjit_selftest_struct(void) { MCC_TRACE("enter\n");
 	static const char src_f[] =
 			"struct S{int a; int b;}; int f(struct S*s){return s->a*3 + s->b;}";
 	static const char src_i[] =
@@ -1443,15 +1443,15 @@ int mccjit_selftest_struct(void) {
 	printf("mccjit-selftest-struct: begin\n");
 
 	blob = mccjit_stash_one(src_f, "f", 1, &blen, &s1);
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-struct: f compile setup failed\n");
 		return 1;
 	}
-	if (!blob) {
+	if (!blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-struct: no intent blob stashed for 'f'\n");
 		mcc_delete(s1);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int (*aotf)(struct MccjitTestS *) = NULL;
 		int (*jitf)(struct MccjitTestS *);
 		MCCState *js;
@@ -1462,12 +1462,12 @@ int mccjit_selftest_struct(void) {
 		if (mcc_relocate(s1) == 0)
 			aotf = (int (*)(struct MccjitTestS *))mcc_get_symbol(s1, "f");
 		jitf = (int (*)(struct MccjitTestS *))mcc_jit_recompile_blob(blob, blen);
-		if (!jitf) {
+		if (!jitf) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-struct: f recompile returned NULL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			js = mccjit_last_state;
-			for (i = 0; i < 3; i++) {
+			for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
 				int got = jitf(&cells[i]);
 				int want = cells[i].a * 3 + cells[i].b;
 				int aot = aotf ? aotf(&cells[i]) : want;
@@ -1486,15 +1486,15 @@ int mccjit_selftest_struct(void) {
 	}
 
 	blob = mccjit_stash_one(src_i, "fi", 1, &blen, &s1);
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-struct: fi compile setup failed\n");
 		return fails + 1;
 	}
-	if (!blob) {
+	if (!blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-struct: no intent blob stashed for 'fi'\n");
 		mcc_delete(s1);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int (*aotfi)(struct MccjitTestS *) = NULL;
 		int (*jitfi)(struct MccjitTestS *);
 		MCCState *js;
@@ -1506,12 +1506,12 @@ int mccjit_selftest_struct(void) {
 		if (mcc_relocate(s1) == 0)
 			aotfi = (int (*)(struct MccjitTestS *))mcc_get_symbol(s1, "fi");
 		jitfi = (int (*)(struct MccjitTestS *))mcc_jit_recompile_blob(blob, blen);
-		if (!jitfi) {
+		if (!jitfi) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-struct: fi recompile returned NULL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			js = mccjit_last_state;
-			for (i = 0; i + 1 < 6; i++) {
+			for (i = 0; i + 1 < 6; i++) { MCC_TRACE("br\n");
 				int got = jitfi(&cells[i]);
 				int want = cells[i + 1].a * 3 + cells[i].b;
 				int aot = aotfi ? aotfi(&cells[i]) : want;
@@ -1530,22 +1530,22 @@ int mccjit_selftest_struct(void) {
 	}
 
 	blob = mccjit_stash_one(src_g, "g", 1, &blen, &s1);
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-struct: g compile setup failed\n");
 		return fails + 1;
 	}
-	if (!blob) {
+	if (!blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-struct: no intent blob stashed for 'g'\n");
 		mcc_delete(s1);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int (*aotg)(struct MccjitTestT *) = NULL;
 		int (*jitg)(struct MccjitTestT *);
 		MCCState *js;
 		int slots[3] = {10, -4, 100};
 		struct MccjitTestT recs[3];
 		int i;
-		for (i = 0; i < 3; i++) {
+		for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
 			recs[i].p = &slots[i];
 			recs[i].k = i * 3 - 1;
 		}
@@ -1554,12 +1554,12 @@ int mccjit_selftest_struct(void) {
 		if (mcc_relocate(s1) == 0)
 			aotg = (int (*)(struct MccjitTestT *))mcc_get_symbol(s1, "g");
 		jitg = (int (*)(struct MccjitTestT *))mcc_jit_recompile_blob(blob, blen);
-		if (!jitg) {
+		if (!jitg) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-struct: g recompile returned NULL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			js = mccjit_last_state;
-			for (i = 0; i < 3; i++) {
+			for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
 				int got = jitg(&recs[i]);
 				int want = slots[i] + recs[i].k;
 				int aot = aotg ? aotg(&recs[i]) : want;
@@ -1616,9 +1616,9 @@ typedef struct MccjitKgc {
 	pthread_mutex_t lock;
 } MccjitKgc;
 
-static int mccjit_poison_min(void) {
+static int mccjit_poison_min(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_POISON_MIN");
-	if (e && e[0]) {
+	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
 			return (int)v;
@@ -1626,9 +1626,9 @@ static int mccjit_poison_min(void) {
 	return 8;
 }
 
-static int mccjit_poison_pct(void) {
+static int mccjit_poison_pct(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_POISON_PCT");
-	if (e && e[0]) {
+	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0 && v <= 100)
 			return (int)v;
@@ -1638,16 +1638,16 @@ static int mccjit_poison_pct(void) {
 
 #define MCCJIT_KGC_MAX ((uint64_t)1 << 16)
 
-static size_t mccjit_kgc_bytes(uint64_t cap, uint32_t arity) {
+static size_t mccjit_kgc_bytes(uint64_t cap, uint32_t arity) { MCC_TRACE("enter\n");
 	return sizeof(MccjitKgcHdr) + (size_t)cap * arity * sizeof(int64_t);
 }
 
-static void mccjit_kgc_bind(MccjitKgc *k) {
+static void mccjit_kgc_bind(MccjitKgc *k) { MCC_TRACE("enter\n");
 	k->hdr = (MccjitKgcHdr *)k->map;
 	k->tuples = (int64_t *)((char *)k->map + sizeof(MccjitKgcHdr));
 }
 
-static int mccjit_kgc_map_shared(MccjitKgc *k, size_t bytes) {
+static int mccjit_kgc_map_shared(MccjitKgc *k, size_t bytes) { MCC_TRACE("enter\n");
 	void *m = mmap(0, bytes, PROT_READ | PROT_WRITE, MAP_SHARED, k->fd, 0);
 	if (m == MAP_FAILED)
 		return -1;
@@ -1657,7 +1657,7 @@ static int mccjit_kgc_map_shared(MccjitKgc *k, size_t bytes) {
 	return 0;
 }
 
-static void mccjit_kgc_init_hdr(MccjitKgc *k, uint64_t salt, uint64_t cap) {
+static void mccjit_kgc_init_hdr(MccjitKgc *k, uint64_t salt, uint64_t cap) { MCC_TRACE("enter\n");
 	k->hdr->magic = MCCJIT_KGC_MAGIC;
 	k->hdr->arity = k->arity;
 	k->hdr->salt = salt;
@@ -1666,7 +1666,7 @@ static void mccjit_kgc_init_hdr(MccjitKgc *k, uint64_t salt, uint64_t cap) {
 }
 
 static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
-													 uint32_t arity) {
+													 uint32_t arity) { MCC_TRACE("enter\n");
 	uint64_t initcap = 64;
 	size_t initbytes;
 	memset(k, 0, sizeof *k);
@@ -1677,7 +1677,7 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 		return -1;
 	k->arity = arity;
 	initbytes = mccjit_kgc_bytes(initcap, arity);
-	if (!path) {
+	if (!path) { MCC_TRACE("br\n");
 		void *m = mmap(0, initbytes, PROT_READ | PROT_WRITE,
 									 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (m == MAP_FAILED)
@@ -1701,13 +1701,13 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 				pread(k->fd, &peek, sizeof peek, 0) == (ssize_t)sizeof peek &&
 				peek.magic == MCCJIT_KGC_MAGIC && peek.salt == salt &&
 				peek.arity == arity && peek.cap >= 1 && peek.count <= peek.cap &&
-				(size_t)st.st_size >= mccjit_kgc_bytes(peek.cap, arity)) {
+				(size_t)st.st_size >= mccjit_kgc_bytes(peek.cap, arity)) { MCC_TRACE("br\n");
 			if (mccjit_kgc_map_shared(k, mccjit_kgc_bytes(peek.cap, arity)) == 0)
 				valid = 1;
 		}
-		if (!valid) {
+		if (!valid) { MCC_TRACE("br\n");
 			if (ftruncate(k->fd, (off_t)initbytes) != 0 ||
-					mccjit_kgc_map_shared(k, initbytes) != 0) {
+					mccjit_kgc_map_shared(k, initbytes) != 0) { MCC_TRACE("br\n");
 				close(k->fd);
 				k->fd = -1;
 				return -1;
@@ -1719,10 +1719,10 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 	return 0;
 }
 
-static void mccjit_kgc_close(MccjitKgc *k) {
+static void mccjit_kgc_close(MccjitKgc *k) { MCC_TRACE("enter\n");
 	if (!k)
 		return;
-	if (k->map && k->map != MAP_FAILED) {
+	if (k->map && k->map != MAP_FAILED) { MCC_TRACE("br\n");
 		if (!k->anon)
 			msync(k->map, k->map_len, MS_SYNC);
 		munmap(k->map, k->map_len);
@@ -1734,9 +1734,9 @@ static void mccjit_kgc_close(MccjitKgc *k) {
 	k->fd = -1;
 }
 
-static int mccjit_kgc_cmp(const int64_t *a, const int64_t *b, uint32_t arity) {
+static int mccjit_kgc_cmp(const int64_t *a, const int64_t *b, uint32_t arity) { MCC_TRACE("enter\n");
 	uint32_t i;
-	for (i = 0; i < arity; i++) {
+	for (i = 0; i < arity; i++) { MCC_TRACE("br\n");
 		if (a[i] < b[i])
 			return -1;
 		if (a[i] > b[i])
@@ -1746,17 +1746,17 @@ static int mccjit_kgc_cmp(const int64_t *a, const int64_t *b, uint32_t arity) {
 }
 
 static uint64_t mccjit_kgc_lower(const MccjitKgc *k, const int64_t *tuple,
-																 int *found) {
+																 int *found) { MCC_TRACE("enter\n");
 	uint64_t lo = 0, hi = k->hdr->count;
 	*found = 0;
-	while (lo < hi) {
+	while (lo < hi) { MCC_TRACE("br\n");
 		uint64_t mid = lo + (hi - lo) / 2;
 		int c = mccjit_kgc_cmp(k->tuples + mid * k->arity, tuple, k->arity);
-		if (c < 0) {
+		if (c < 0) { MCC_TRACE("br\n");
 			lo = mid + 1;
-		} else if (c > 0) {
+		} else if (c > 0) { MCC_TRACE("br\n");
 			hi = mid;
-		} else {
+		} else { MCC_TRACE("br\n");
 			*found = 1;
 			return mid;
 		}
@@ -1764,19 +1764,19 @@ static uint64_t mccjit_kgc_lower(const MccjitKgc *k, const int64_t *tuple,
 	return lo;
 }
 
-static int mccjit_kgc_contains(const MccjitKgc *k, const int64_t *tuple) {
+static int mccjit_kgc_contains(const MccjitKgc *k, const int64_t *tuple) { MCC_TRACE("enter\n");
 	int found;
 	mccjit_kgc_lower(k, tuple, &found);
 	return found;
 }
 
-static int mccjit_kgc_grow(MccjitKgc *k, uint64_t need) {
+static int mccjit_kgc_grow(MccjitKgc *k, uint64_t need) { MCC_TRACE("enter\n");
 	uint64_t ncap = k->hdr->cap ? k->hdr->cap : 1;
 	size_t nbytes;
 	while (ncap < need)
 		ncap *= 2;
 	nbytes = mccjit_kgc_bytes(ncap, k->arity);
-	if (k->anon) {
+	if (k->anon) { MCC_TRACE("br\n");
 		void *nm = mmap(0, nbytes, PROT_READ | PROT_WRITE,
 										MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		if (nm == MAP_FAILED)
@@ -1799,7 +1799,7 @@ static int mccjit_kgc_grow(MccjitKgc *k, uint64_t need) {
 	return 0;
 }
 
-static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) {
+static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) { MCC_TRACE("enter\n");
 	int found;
 	uint64_t at = mccjit_kgc_lower(k, tuple, &found);
 	int64_t *dst;
@@ -1822,7 +1822,7 @@ static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) {
 }
 
 static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
-																int64_t x, int *flagged) {
+																int64_t x, int *flagged) { MCC_TRACE("enter\n");
 	int (*vf)(int) = (int (*)(int))variant;
 	int (*bf)(int) = (int (*)(int))baseline;
 	int64_t tuple[MCCJIT_KGC_ARITY];
@@ -1832,13 +1832,13 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 		tuple[i] = 0;
 	tuple[0] = x;
 	pthread_mutex_lock(&k->lock);
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return (int64_t)vf((int)x);
 	}
 	bval = (int64_t)bf((int)x);
 	vval = (int64_t)vf((int)x);
-	if (vval == bval) {
+	if (vval == bval) { MCC_TRACE("br\n");
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
 		pthread_mutex_unlock(&k->lock);
@@ -1850,8 +1850,8 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	return bval;
 }
 
-static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
-	switch (n) {
+static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) { MCC_TRACE("enter\n");
+	switch (n) { MCC_TRACE("br\n");
 	case 1:
 		return wide ? (int64_t)((long (*)(long))fn)(a[0])
 								: (int64_t)((int (*)(long))fn)(a[0]);
@@ -1886,8 +1886,8 @@ static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
    xmm0-7 double vector; the return is a double (xmm0). Fixed C signatures let
    the compiler place args in xmm and read the xmm0 return, so no hand-emitted
    argument classifier is needed for the all-FP case. */
-static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) {
-	switch (n) {
+static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) { MCC_TRACE("enter\n");
+	switch (n) { MCC_TRACE("br\n");
 	case 1:
 		return ((double (*)(double))fn)(a[0]);
 	case 2:
@@ -1910,9 +1910,9 @@ static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) {
 
 static volatile int64_t mccjit_bench_sink;
 
-static long mccjit_bench_iters(void) {
+static long mccjit_bench_iters(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_BENCH_ITERS");
-	if (e && e[0]) {
+	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
 			return v;
@@ -1920,9 +1920,9 @@ static long mccjit_bench_iters(void) {
 	return 100000;
 }
 
-static int mccjit_bench_margin_pct(void) {
+static int mccjit_bench_margin_pct(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_BENCH_MARGIN_PCT");
-	if (e && e[0]) {
+	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v >= 0 && v <= 100)
 			return (int)v;
@@ -1931,7 +1931,7 @@ static int mccjit_bench_margin_pct(void) {
 }
 
 static double mccjit_bench_run(void *fn, const int64_t *tuples, uint32_t ntuples,
-															uint32_t nargs, int wide, uint32_t reps) {
+															uint32_t nargs, int wide, uint32_t reps) { MCC_TRACE("enter\n");
 	struct timespec t0;
 	int64_t sink = 0;
 	uint32_t r, i;
@@ -1951,7 +1951,7 @@ static double mccjit_bench_run(void *fn, const int64_t *tuples, uint32_t ntuples
    ties (L5A). Work is bounded by a deterministic inner-iteration cap, not
    wall-clock, so the decision is reproducible. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
-														 uint32_t ntuples, uint32_t nargs, int wide) {
+														 uint32_t ntuples, uint32_t nargs, int wide) { MCC_TRACE("enter\n");
 	double cb = 1e300, ib = 1e300;
 	uint32_t k, reps;
 	long iters;
@@ -1963,7 +1963,7 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	reps = (uint32_t)(iters / (long)ntuples);
 	if (reps < 1)
 		reps = 1;
-	for (k = 0; k < 3; k++) {
+	for (k = 0; k < 3; k++) { MCC_TRACE("br\n");
 		double c = mccjit_bench_run(cand, tuples, ntuples, nargs, wide, reps);
 		double i2 = mccjit_bench_run(incumbent, tuples, ntuples, nargs, wide, reps);
 		if (c < cb)
@@ -1982,7 +1982,7 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
    (the incumbent-wins-on-tie hysteresis still lives in mccjit_bench_pair). */
 MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 																					 const MccjitCounterState *st,
-																					 uint32_t nargs, int wide) {
+																					 uint32_t nargs, int wide) { MCC_TRACE("enter\n");
 	int64_t tuples[MCCJIT_PROFILE_SAMPLES * MCCJIT_KGC_ARITY];
 	uint32_t nt, i, j;
 	if (!cand || !incumbent || !st || st->nsample <= 0 || nargs == 0)
@@ -1998,7 +1998,7 @@ MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 
 static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 																const int64_t *argv, uint32_t nargs,
-																int *flagged) {
+																int *flagged) { MCC_TRACE("enter\n");
 	int wide = k->ret_wide;
 	int64_t tuple[MCCJIT_KGC_ARITY];
 	int64_t bval, vval;
@@ -2008,17 +2008,17 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
 		tuple[i] = argv[i];
 	pthread_mutex_lock(&k->lock);
-	if (k->poisoned) {
+	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(baseline, argv, nargs, wide);
 	}
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(variant, argv, nargs, wide);
 	}
 	bval = mccjit_invoke(baseline, argv, nargs, wide);
 	vval = mccjit_invoke(variant, argv, nargs, wide);
-	if (vval == bval) {
+	if (vval == bval) { MCC_TRACE("br\n");
 		k->hits++;
 		if (mcc_stats_mask)
 			mcc_stats_jit_kgc_hit();
@@ -2033,7 +2033,7 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	{
 		uint64_t total = k->hits + k->misses;
 		if (total >= (uint64_t)mccjit_poison_min() &&
-				k->misses * 100 >= total * (uint64_t)mccjit_poison_pct()) {
+				k->misses * 100 >= total * (uint64_t)mccjit_poison_pct()) { MCC_TRACE("br\n");
 			if (mcc_stats_mask && !k->poisoned)
 				mcc_stats_jit_poison();
 			k->poisoned = 1;
@@ -2051,7 +2051,7 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
    the conservative-correct choice — it just returns the baseline). */
 static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 																	const double *argv, uint32_t nargs,
-																	int *flagged) {
+																	int *flagged) { MCC_TRACE("enter\n");
 	int64_t tuple[MCCJIT_KGC_ARITY];
 	double bval, vval;
 	uint64_t bbits = 0, vbits = 0;
@@ -2061,11 +2061,11 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
 		memcpy(&tuple[i], &argv[i], sizeof tuple[i]);
 	pthread_mutex_lock(&k->lock);
-	if (k->poisoned) {
+	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_fp(baseline, argv, nargs);
 	}
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_fp(variant, argv, nargs);
 	}
@@ -2073,7 +2073,7 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 	vval = mccjit_invoke_fp(variant, argv, nargs);
 	memcpy(&bbits, &bval, sizeof bbits);
 	memcpy(&vbits, &vval, sizeof vbits);
-	if (vbits == bbits) {
+	if (vbits == bbits) { MCC_TRACE("br\n");
 		k->hits++;
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
@@ -2118,10 +2118,10 @@ typedef double (*MccjitThunkD)(void *fn, const int64_t *gpv, const double *fpv);
 static void *mccjit_mixed_thunk;
 static pthread_once_t mccjit_mixed_thunk_once = PTHREAD_ONCE_INIT;
 
-static void mccjit_mixed_thunk_build(void) {
+static void mccjit_mixed_thunk_build(void) { MCC_TRACE("enter\n");
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED) {
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
 		mccjit_mixed_thunk = NULL;
 		return;
 	}
@@ -2129,23 +2129,23 @@ static void mccjit_mixed_thunk_build(void) {
 	mccjit_mixed_thunk = p;
 }
 
-static void *mccjit_mixed_thunk_get(void) {
+static void *mccjit_mixed_thunk_get(void) { MCC_TRACE("enter\n");
 	pthread_once(&mccjit_mixed_thunk_once, mccjit_mixed_thunk_build);
 	return mccjit_mixed_thunk;
 }
 
 static int64_t mccjit_invoke_mixed_i(void *fn, const int64_t *gpv,
-																		 const double *fpv) {
+																		 const double *fpv) { MCC_TRACE("enter\n");
 	return ((MccjitThunkI)mccjit_mixed_thunk_get())(fn, gpv, fpv);
 }
 
 static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
-																		const double *fpv) {
+																		const double *fpv) { MCC_TRACE("enter\n");
 	return ((MccjitThunkD)mccjit_mixed_thunk_get())(fn, gpv, fpv);
 }
 
 static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
-														 const double *fpv, int64_t *tuple) {
+														 const double *fpv, int64_t *tuple) { MCC_TRACE("enter\n");
 	uint32_t i, a = 0;
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
 		tuple[i] = 0;
@@ -2155,7 +2155,7 @@ static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 		memcpy(&tuple[a], &fpv[i], sizeof tuple[a]);
 }
 
-static void mccjit_mixed_poison_update(MccjitKgc *k) {
+static void mccjit_mixed_poison_update(MccjitKgc *k) { MCC_TRACE("enter\n");
 	uint64_t total = k->hits + k->misses;
 	if (total >= (uint64_t)mccjit_poison_min() &&
 			k->misses * 100 >= total * (uint64_t)mccjit_poison_pct())
@@ -2163,17 +2163,17 @@ static void mccjit_mixed_poison_update(MccjitKgc *k) {
 }
 
 static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
-																				const double *fpv) {
+																				const double *fpv) { MCC_TRACE("enter\n");
 	void *variant = k->mx_variant, *baseline = k->mx_baseline;
 	int64_t tuple[MCCJIT_KGC_ARITY];
 	int64_t bval, vval, bc, vc;
 	mccjit_mixed_key(k, gpv, fpv, tuple);
 	pthread_mutex_lock(&k->lock);
-	if (k->poisoned) {
+	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_i(baseline, gpv, fpv);
 	}
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_i(variant, gpv, fpv);
 	}
@@ -2181,7 +2181,7 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 	vval = mccjit_invoke_mixed_i(variant, gpv, fpv);
 	bc = k->ret_wide ? bval : (int64_t)(int32_t)bval;
 	vc = k->ret_wide ? vval : (int64_t)(int32_t)vval;
-	if (vc == bc) {
+	if (vc == bc) { MCC_TRACE("br\n");
 		k->hits++;
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
@@ -2197,18 +2197,18 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 }
 
 static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
-																			 const double *fpv) {
+																			 const double *fpv) { MCC_TRACE("enter\n");
 	void *variant = k->mx_variant, *baseline = k->mx_baseline;
 	int64_t tuple[MCCJIT_KGC_ARITY];
 	double bval, vval;
 	uint64_t bbits = 0, vbits = 0;
 	mccjit_mixed_key(k, gpv, fpv, tuple);
 	pthread_mutex_lock(&k->lock);
-	if (k->poisoned) {
+	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_d(baseline, gpv, fpv);
 	}
-	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_d(variant, gpv, fpv);
 	}
@@ -2216,7 +2216,7 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 	vval = mccjit_invoke_mixed_d(variant, gpv, fpv);
 	memcpy(&bbits, &bval, sizeof bbits);
 	memcpy(&vbits, &vval, sizeof vbits);
-	if (vbits == bbits) {
+	if (vbits == bbits) { MCC_TRACE("br\n");
 		k->hits++;
 		if (k->memoize_ok)
 			mccjit_kgc_insert(k, tuple);
@@ -2232,7 +2232,7 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 }
 
 static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
-																		 int memoize_ok, uint32_t nargs) {
+																		 int memoize_ok, uint32_t nargs) { MCC_TRACE("enter\n");
 	unsigned char *p;
 	MccjitKgc *kgc;
 	int *flag;
@@ -2245,7 +2245,7 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	kgc = mcc_mallocz(sizeof *kgc);
 	if (!kgc)
 		return NULL;
-	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) {
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) { MCC_TRACE("br\n");
 		mcc_free(kgc);
 		return NULL;
 	}
@@ -2253,7 +2253,7 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	kgc->ret_wide = 1;
 	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED) {
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
 		mccjit_kgc_close(kgc);
 		mcc_free(kgc);
 		return NULL;
@@ -2267,7 +2267,7 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	p[o++] = 0x83;
 	p[o++] = 0xec;
 	p[o++] = 0x40;
-	for (i = 0; i < nargs; i++) {
+	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 		unsigned char disp = (unsigned char)(i * 8);
 		p[o++] = 0xf2;
 		p[o++] = 0x0f;
@@ -2316,7 +2316,7 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 
 static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
 																		const uint32_t *param_t, uint32_t nargs,
-																		int ret_wide) {
+																		int ret_wide) { MCC_TRACE("enter\n");
 	static const unsigned char mov64_pre[MCCJIT_KGC_MAXARG][4] = {
 			{0x48, 0x89, 0x7c, 0x24}, {0x48, 0x89, 0x74, 0x24},
 			{0x48, 0x89, 0x54, 0x24}, {0x48, 0x89, 0x4c, 0x24},
@@ -2336,7 +2336,7 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	kgc = mcc_mallocz(sizeof *kgc);
 	if (!kgc)
 		return NULL;
-	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) {
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) { MCC_TRACE("br\n");
 		mcc_free(kgc);
 		return NULL;
 	}
@@ -2344,7 +2344,7 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	kgc->ret_wide = ret_wide;
 	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED) {
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
 		mccjit_kgc_close(kgc);
 		mcc_free(kgc);
 		return NULL;
@@ -2358,13 +2358,13 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	p[o++] = 0x83;
 	p[o++] = 0xec;
 	p[o++] = 0x40;
-	for (i = 0; i < nargs; i++) {
+	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 		unsigned char disp = (unsigned char)(i * 8);
-		if (mccjit_type_wide((int)param_t[i])) {
+		if (mccjit_type_wide((int)param_t[i])) { MCC_TRACE("br\n");
 			memcpy(p + o, mov64_pre[i], 4);
 			o += 4;
 			p[o++] = disp;
-		} else {
+		} else { MCC_TRACE("br\n");
 			memcpy(p + o, movsxd[i], 3);
 			o += 3;
 			p[o++] = 0x48;
@@ -2420,7 +2420,7 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
    offset 88, the calln address at offset 106 (both movabs-loaded). */
 static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
-																				uint32_t nsse, int ret_fp, int ret_wide) {
+																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
 	static const unsigned char tmpl[] = {
 			0xc9, 0x55, 0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00, 0x48, 0x89, 0x3c,
 			0x24, 0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x89, 0x54, 0x24, 0x10, 0x48,
@@ -2446,7 +2446,7 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 	kgc = mcc_mallocz(sizeof *kgc);
 	if (!kgc)
 		return NULL;
-	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), arity) != 0) {
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), arity) != 0) { MCC_TRACE("br\n");
 		mcc_free(kgc);
 		return NULL;
 	}
@@ -2459,7 +2459,7 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 	kgc->mx_ret_fp = ret_fp;
 	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED) {
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
 		mccjit_kgc_close(kgc);
 		mcc_free(kgc);
 		return NULL;
@@ -2475,7 +2475,7 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 #else
 static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
 																		const uint32_t *param_t, uint32_t nargs,
-																		int ret_wide) {
+																		int ret_wide) { MCC_TRACE("enter\n");
 	(void)variant;
 	(void)baseline;
 	(void)memoize_ok;
@@ -2485,7 +2485,7 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	return NULL;
 }
 static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
-																		 int memoize_ok, uint32_t nargs) {
+																		 int memoize_ok, uint32_t nargs) { MCC_TRACE("enter\n");
 	(void)variant;
 	(void)baseline;
 	(void)memoize_ok;
@@ -2494,7 +2494,7 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 }
 static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
-																				uint32_t nsse, int ret_fp, int ret_wide) {
+																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
 	(void)variant;
 	(void)baseline;
 	(void)memoize_ok;
@@ -2506,7 +2506,7 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 }
 #endif
 
-int mccjit_selftest_kgc(void) {
+int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	MCCState *s1;
 	int (*baseline)(int) = NULL;
@@ -2527,7 +2527,7 @@ int mccjit_selftest_kgc(void) {
 				 (unsigned long long)mccjit_salt_witness());
 
 	s1 = mcc_new();
-	if (!s1) {
+	if (!s1) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-kgc: mcc_new failed\n");
 		return 1;
 	}
@@ -2536,20 +2536,20 @@ int mccjit_selftest_kgc(void) {
 	mcc_free(s1->jit_functions);
 	s1->jit_functions = mcc_strdup("f");
 	mcc_set_output_type(s1, MCC_OUTPUT_MEMORY);
-	if (mcc_compile_string(s1, src) != 0 || !mccjit_last_blob) {
+	if (mcc_compile_string(s1, src) != 0 || !mccjit_last_blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-kgc: compile/stash failed\n");
 		mcc_delete(s1);
 		return 1;
 	}
 	if (mcc_relocate(s1) == 0)
 		baseline = (int (*)(int))mcc_get_symbol(s1, "f");
-	if (!baseline) {
+	if (!baseline) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-kgc: no AOT baseline entry for f\n");
 		mcc_delete(s1);
 		return 1;
 	}
 	variant = mcc_jit_recompile_blob_spec(mccjit_last_blob, mccjit_last_len, 0, 7);
-	if (!variant) {
+	if (!variant) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-kgc: wrongly-specialized variant recompile NULL\n");
 		mcc_delete(s1);
 		return 1;
@@ -2559,7 +2559,7 @@ int mccjit_selftest_kgc(void) {
 				 (void *)baseline, variant, ((int (*)(int))variant)(0),
 				 ((int (*)(int))variant)(7));
 
-	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) != 0) {
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) != 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-kgc: kgc open (anon) failed\n");
 		if (vstate)
 			mcc_delete(vstate);
@@ -2568,7 +2568,7 @@ int mccjit_selftest_kgc(void) {
 	}
 
 	printf("mccjit-selftest-kgc:    x  path  variant  baseline  returned  flagged  ok\n");
-	for (i = 0; i < 6; i++) {
+	for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
 		int64_t x = inputs[i];
 		int64_t tuple[MCCJIT_KGC_ARITY];
 		int hit, flagged = 0, ok;
@@ -2606,7 +2606,7 @@ int mccjit_selftest_kgc(void) {
 		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
 			t7[j] = 0;
 		t7[0] = 7;
-		if (!mccjit_kgc_contains(&kgc, t7)) {
+		if (!mccjit_kgc_contains(&kgc, t7)) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-kgc: x=7 not cached after verify\n");
 			fails++;
 		}
@@ -2623,11 +2623,11 @@ int mccjit_selftest_kgc(void) {
 		uint64_t saved = 0;
 		if (fd >= 0)
 			close(fd);
-		if (fd < 0 || mccjit_kgc_open(&p, path, salt, 1) != 0) {
+		if (fd < 0 || mccjit_kgc_open(&p, path, salt, 1) != 0) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-kgc: persistence open failed\n");
 			fails++;
-		} else {
-			for (j = 0; j < 5; j++) {
+		} else { MCC_TRACE("br\n");
+			for (j = 0; j < 5; j++) { MCC_TRACE("br\n");
 				int64_t t[MCCJIT_KGC_ARITY];
 				uint32_t m;
 				for (m = 0; m < MCCJIT_KGC_ARITY; m++)
@@ -2639,12 +2639,12 @@ int mccjit_selftest_kgc(void) {
 			mccjit_kgc_close(&p);
 			printf("mccjit-selftest-kgc: persistence wrote %llu tuples, closed\n",
 						 (unsigned long long)saved);
-			if (mccjit_kgc_open(&p, path, salt, 1) != 0) {
+			if (mccjit_kgc_open(&p, path, salt, 1) != 0) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-kgc: persistence reopen failed\n");
 				fails++;
-			} else {
+			} else { MCC_TRACE("br\n");
 				int survived = (p.hdr->count == saved);
-				for (j = 0; j < 5; j++) {
+				for (j = 0; j < 5; j++) { MCC_TRACE("br\n");
 					int64_t t[MCCJIT_KGC_ARITY];
 					uint32_t m;
 					for (m = 0; m < MCCJIT_KGC_ARITY; m++)
@@ -2659,7 +2659,7 @@ int mccjit_selftest_kgc(void) {
 					fails++;
 				mccjit_kgc_close(&p);
 			}
-			if (mccjit_kgc_open(&p, path, salt ^ 0xdeadbeefull, 1) == 0) {
+			if (mccjit_kgc_open(&p, path, salt ^ 0xdeadbeefull, 1) == 0) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-kgc: stale-salt reopen count=%llu (expect 0 reset)\n",
 							 (unsigned long long)p.hdr->count);
 				if (p.hdr->count != 0)
@@ -2679,7 +2679,7 @@ int mccjit_selftest_kgc(void) {
 	return fails ? 1 : 0;
 }
 
-static int mccjit_classify_blob(const void *buf, size_t len) {
+static int mccjit_classify_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
 	int purity;
@@ -2695,7 +2695,7 @@ static int mccjit_classify_blob(const void *buf, size_t len) {
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
-	if (mccjit_intent_deserialize(buf, len, &it) != 0) {
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
 		mcc_exit_state(js);
 		mcc_delete(js);
 		return -1;
@@ -2708,7 +2708,7 @@ static int mccjit_classify_blob(const void *buf, size_t len) {
 }
 
 static int mccjit_slice_profile_blob(const void *buf, size_t len,
-																		 AstSliceProfile *out) {
+																		 AstSliceProfile *out) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
 	js = mcc_new();
@@ -2723,7 +2723,7 @@ static int mccjit_slice_profile_blob(const void *buf, size_t len,
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
-	if (mccjit_intent_deserialize(buf, len, &it) != 0) {
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
 		mcc_exit_state(js);
 		mcc_delete(js);
 		return -1;
@@ -2735,8 +2735,8 @@ static int mccjit_slice_profile_blob(const void *buf, size_t len,
 	return 0;
 }
 
-static const char *mccjit_purity_name(int p) {
-	switch (p) {
+static const char *mccjit_purity_name(int p) { MCC_TRACE("enter\n");
+	switch (p) { MCC_TRACE("br\n");
 	case AST_PURITY_TIER0:
 		return "TIER0";
 	case AST_PURITY_TIER1:
@@ -2748,7 +2748,7 @@ static const char *mccjit_purity_name(int p) {
 	}
 }
 
-int mccjit_selftest_strlit(void) {
+int mccjit_selftest_strlit(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int i){ return \"ABCDE\"[i]; }";
 	unsigned char *blob;
 	size_t blen;
@@ -2760,7 +2760,7 @@ int mccjit_selftest_strlit(void) {
 	printf("mccjit-selftest-strlit: begin (rodata string literal recompile)\n");
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-strlit: stash failed (string literal bailed?) FAIL\n");
 		if (s1)
 			mcc_delete(s1);
@@ -2771,14 +2771,14 @@ int mccjit_selftest_strlit(void) {
 				 (unsigned long)blen);
 
 	jitf = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
-	if (!jitf) {
+	if (!jitf) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-strlit: recompile returned NULL FAIL\n");
 		mcc_free(blob);
 		mcc_delete(s1);
 		return 1;
 	}
 
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < 5; i++) { MCC_TRACE("br\n");
 		int got = jitf(i);
 		int ok = (got == want[i]);
 		printf("mccjit-selftest-strlit: f(%d)=%d expect=%d %s\n", i, got, want[i],
@@ -2803,10 +2803,10 @@ int mccjit_selftest_strlit(void) {
 		b2 = mccjit_stash_one(src2, "g", 1, &l2, &s2);
 		if (s2 && b2)
 			g = (int (*)(int))mcc_jit_recompile_blob(b2, l2);
-		if (!g) {
+		if (!g) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-strlit: two-string recompile NULL FAIL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			int ok = (g(1) == 'X') && (g(0) == 'R');
 			printf("mccjit-selftest-strlit: g(1)=%d g(0)=%d expect=88,82 %s\n", g(1),
 						 g(0), ok ? "OK" : "FAIL");
@@ -2831,10 +2831,10 @@ int mccjit_selftest_strlit(void) {
 		b3 = mccjit_stash_one(src3, "h", 1, &l3, &s3);
 		if (s3 && b3)
 			h = (int (*)(int))mcc_jit_recompile_blob(b3, l3);
-		if (!h) {
+		if (!h) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-strlit: two-string-mix recompile NULL FAIL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			int ok = (h(0) == 'l' + 'h') && (h(1) == 'o' + 'i');
 			printf("mccjit-selftest-strlit: h(0)=%d h(1)=%d expect=%d,%d %s\n", h(0),
 						 h(1), 'l' + 'h', 'o' + 'i', ok ? "OK" : "FAIL");
@@ -2854,7 +2854,7 @@ int mccjit_selftest_strlit(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_purity(void) {
+int mccjit_selftest_purity(void) { MCC_TRACE("enter\n");
 	static const struct {
 		const char *src;
 		const char *fn;
@@ -2873,14 +2873,14 @@ int mccjit_selftest_purity(void) {
 
 	printf("mccjit-selftest-purity: begin\n");
 	printf("mccjit-selftest-purity: classify  fn  got       want      ok\n");
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
 		unsigned char *blob;
 		size_t blen;
 		MCCState *s1;
 		int got, ok;
 		blob = mccjit_stash_one(cases[i].src, cases[i].fn, cases[i].nostdlib, &blen,
 														&s1);
-		if (!s1 || !blob) {
+		if (!s1 || !blob) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-purity: %s stash failed\n", cases[i].fn);
 			if (s1)
 				mcc_delete(s1);
@@ -2912,14 +2912,14 @@ int mccjit_selftest_purity(void) {
 		int w;
 		printf("mccjit-selftest-purity: recompile-path wiring (mccjit_last_purity "
 					 "set by mcc_jit_recompile_blob):\n");
-		for (w = 0; w < 2; w++) {
+		for (w = 0; w < 2; w++) { MCC_TRACE("br\n");
 			unsigned char *blob;
 			size_t blen;
 			MCCState *s1;
 			void *rj;
 			int tier, ok;
 			blob = mccjit_stash_one(wire[w].src, wire[w].fn, 1, &blen, &s1);
-			if (!s1 || !blob) {
+			if (!s1 || !blob) { MCC_TRACE("br\n");
 				if (s1)
 					mcc_delete(s1);
 				mcc_free(blob);
@@ -2955,7 +2955,7 @@ int mccjit_selftest_purity(void) {
 		int tier = -1;
 
 		tblob = mccjit_stash_one(src_t, "t", 1, &tlen, &st);
-		if (st && tblob && mcc_relocate(st) == 0) {
+		if (st && tblob && mcc_relocate(st) == 0) { MCC_TRACE("br\n");
 			baseline = (int (*)(int))mcc_get_symbol(st, "t");
 			gpp = (int **)mcc_get_symbol(st, "gp");
 		}
@@ -2974,19 +2974,19 @@ int mccjit_selftest_purity(void) {
 		if (gpp)
 			*gpp = &cell;
 
-		if (!baseline || !variant || !gpp) {
+		if (!baseline || !variant || !gpp) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-purity: gating demo setup failed "
 						 "(baseline=%p variant=%p gpp=%p)\n",
 						 (void *)baseline, (void *)variant, (void *)gpp);
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			MccjitKgc ka, kb;
 			int oa = mccjit_kgc_open(&ka, NULL, mccjit_salt_witness(), 1);
 			int ob = mccjit_kgc_open(&kb, NULL, mccjit_salt_witness(), 1);
-			if (oa != 0 || ob != 0) {
+			if (oa != 0 || ob != 0) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-purity: kgc open failed\n");
 				fails++;
-			} else {
+			} else { MCC_TRACE("br\n");
 				int64_t r1, r2, r3, r4;
 				int f1 = 0, f2 = 0, f3 = 0, f4 = 0;
 
@@ -3015,15 +3015,15 @@ int mccjit_selftest_purity(void) {
 							 "*gp=100 (repeat)->%lld flagged=%d  (sound: re-differentiated)\n",
 							 (long long)r3, (long long)r4, f4);
 
-				if (r1 != 15) {
+				if (r1 != 15) { MCC_TRACE("br\n");
 					printf("mccjit-selftest-purity: setup r1 expected 15\n");
 					fails++;
 				}
-				if (r2 != 15) {
+				if (r2 != 15) { MCC_TRACE("br\n");
 					printf("mccjit-selftest-purity: memoize_ok=1 did not fast-path stale\n");
 					fails++;
 				}
-				if (r4 != 105 || !f4) {
+				if (r4 != 105 || !f4) { MCC_TRACE("br\n");
 					printf("mccjit-selftest-purity: memoize_ok=0 did not re-differentiate "
 								 "(r4=%lld f4=%d, want 105/1)\n",
 								 (long long)r4, f4);
@@ -3051,7 +3051,7 @@ int mccjit_selftest_purity(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_lazy(void) {
+int mccjit_selftest_lazy(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	unsigned char *blob;
 	size_t blen;
@@ -3069,7 +3069,7 @@ int mccjit_selftest_lazy(void) {
 	printf("mccjit-selftest-lazy: begin (threshold=%ld)\n", threshold);
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-lazy: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -3079,7 +3079,7 @@ int mccjit_selftest_lazy(void) {
 	baseline = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
 	bstate = mccjit_last_state;
 	mccjit_last_state = NULL;
-	if (!baseline) {
+	if (!baseline) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-lazy: baseline recompile returned NULL\n");
 		mcc_free(blob);
 		mcc_delete(s1);
@@ -3099,7 +3099,7 @@ int mccjit_selftest_lazy(void) {
 
 	printf("mccjit-selftest-lazy: cold phase (calls 1..%ld run baseline):\n",
 				 threshold - 1);
-	for (c = 1; c < threshold; c++) {
+	for (c = 1; c < threshold; c++) { MCC_TRACE("br\n");
 		void *t = mccjit_counter_tick(&st, NULL);
 		int x = inputs[(c - 1) % 6];
 		int got = ((int (*)(int))t)(x);
@@ -3123,7 +3123,7 @@ int mccjit_selftest_lazy(void) {
 			fails++;
 	}
 
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
 		void *t = mccjit_counter_tick(&st, NULL);
 		int ok = (t == st.promoted) && (slot == st.promoted);
 		printf("mccjit-selftest-lazy: hot call %ld path=promoted stable=%s %s\n",
@@ -3136,11 +3136,11 @@ int mccjit_selftest_lazy(void) {
 		int (*v)(int) = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
 		MCCState *vstate = mccjit_last_state;
 		mccjit_last_state = NULL;
-		if (!v) {
+		if (!v) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-lazy: post-promote variant recompile NULL\n");
 			fails++;
-		} else {
-			for (i = 0; i < 6; i++) {
+		} else { MCC_TRACE("br\n");
+			for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
 				int x = inputs[i];
 				int got = v(x);
 				int want = x * 2 + 1;
@@ -3166,7 +3166,7 @@ int mccjit_selftest_lazy(void) {
 	return fails ? 1 : 0;
 }
 
-static void mccjit_pool_nap(void) {
+static void mccjit_pool_nap(void) { MCC_TRACE("enter\n");
 	struct timespec ts;
 	ts.tv_sec = 0;
 	ts.tv_nsec = 1000000;
@@ -3178,7 +3178,7 @@ static void mccjit_pool_nap(void) {
  * direct call. This builds a minimal dispatcher — push rbp; mov rbp,rsp; jmp
  * *[slot] — so a test can invoke a published stub through its correct entry.
  * Non-x86_64 hosts fall back to the raw pointer (their stub shapes differ). */
-static void *mccjit_dispatch_entry(void **slot, void *fallback) {
+static void *mccjit_dispatch_entry(void **slot, void *fallback) { MCC_TRACE("enter\n");
 #if defined(__x86_64__)
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -3198,7 +3198,7 @@ static void *mccjit_dispatch_entry(void **slot, void *fallback) {
 #endif
 }
 
-int mccjit_selftest_pool(void) {
+int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	static void *slot_a;
 	static void *slot_b;
@@ -3215,7 +3215,7 @@ int mccjit_selftest_pool(void) {
 	printf("mccjit-selftest-pool: begin\n");
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-pool: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -3224,14 +3224,14 @@ int mccjit_selftest_pool(void) {
 	}
 	baseline = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
 	mccjit_last_state = NULL;
-	if (!baseline) {
+	if (!baseline) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-pool: baseline recompile returned NULL\n");
 		return 1;
 	}
 
 	nw = mccjit_pool_start(2);
 	printf("mccjit-selftest-pool: pool workers=%d\n", nw);
-	if (nw <= 0) {
+	if (nw <= 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-pool: pool start failed FAIL\n");
 		return 1;
 	}
@@ -3241,10 +3241,10 @@ int mccjit_selftest_pool(void) {
 		MccjitSwapJob *job = mcc_malloc(sizeof *job);
 		void *pub = (void *)baseline;
 		int spins = 0;
-		if (!job) {
+		if (!job) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-pool: eager job alloc failed FAIL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			job->run = mccjit_job_run_eager;
 			job->slot = &slot_a;
 			job->blob = blob;
@@ -3252,18 +3252,18 @@ int mccjit_selftest_pool(void) {
 			job->max_duration = 0;
 			job->timed = 0;
 			mccjit_pool_enqueue(job);
-			while (spins++ < 5000) {
+			while (spins++ < 5000) { MCC_TRACE("br\n");
 				pub = __atomic_load_n(&slot_a, __ATOMIC_ACQUIRE);
 				if (pub != (void *)baseline)
 					break;
 				mccjit_pool_nap();
 			}
-			if (pub == (void *)baseline) {
+			if (pub == (void *)baseline) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-pool: eager async never published (timeout) FAIL\n");
 				fails++;
-			} else {
+			} else { MCC_TRACE("br\n");
 				void *disp_a = mccjit_dispatch_entry(&slot_a, pub);
-				for (i = 0; i < 6; i++) {
+				for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
 					int x = inputs[i];
 					int got = ((int (*)(int))disp_a)(x);
 					int want = x * 2 + 1;
@@ -3292,10 +3292,10 @@ int mccjit_selftest_pool(void) {
 		st.threshold = threshold;
 		pthread_mutex_init(&st.lock, NULL);
 
-		for (c = 1; c < threshold; c++) {
+		for (c = 1; c < threshold; c++) { MCC_TRACE("br\n");
 			void *t = mccjit_counter_tick(&st, NULL);
 			int ok = (t == (void *)baseline);
-			if (!ok) {
+			if (!ok) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-pool: cold call %ld not baseline FAIL\n", c);
 				fails++;
 			}
@@ -3312,7 +3312,7 @@ int mccjit_selftest_pool(void) {
 			if (t != (void *)baseline)
 				fails++;
 		}
-		while (spins++ < 5000) {
+		while (spins++ < 5000) { MCC_TRACE("br\n");
 			pthread_mutex_lock(&st.lock);
 			promoted = st.promoted;
 			pthread_mutex_unlock(&st.lock);
@@ -3320,16 +3320,16 @@ int mccjit_selftest_pool(void) {
 				break;
 			mccjit_pool_nap();
 		}
-		if (!promoted) {
+		if (!promoted) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-pool: async promote never landed (timeout) FAIL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			printf("mccjit-selftest-pool: PROMOTE-ASYNC promoted=%p slot=%p %s\n",
 						 promoted, slot_b, (slot_b == promoted) ? "OK" : "FAIL");
 			if (slot_b != promoted)
 				fails++;
 			void *disp_b = mccjit_dispatch_entry(&slot_b, promoted);
-			for (i = 0; i < 6; i++) {
+			for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
 				void *t = mccjit_counter_tick(&st, NULL);
 				int x = inputs[i];
 				int got = ((int (*)(int))disp_b)(x);
@@ -3348,7 +3348,7 @@ int mccjit_selftest_pool(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_eligibility(void) {
+int mccjit_selftest_eligibility(void) { MCC_TRACE("enter\n");
 	static const struct {
 		const char *src;
 		const char *fn;
@@ -3378,7 +3378,7 @@ int mccjit_selftest_eligibility(void) {
 
 	printf("mccjit-selftest-eligibility: begin (%d cases)\n", n);
 
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		size_t blen = 0;
 		MCCState *st = NULL;
 		unsigned char *blob =
@@ -3386,11 +3386,11 @@ int mccjit_selftest_eligibility(void) {
 		int selected = (blob != NULL);
 		int compiled = (st != NULL);
 		int ok;
-		if (!compiled) {
+		if (!compiled) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-eligibility: [%s] compile FAILED (setup)\n",
 						 cases[i].why);
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			ok = (selected == cases[i].eligible);
 			printf(
 					"mccjit-selftest-eligibility: %-28s want=%s got=%s %s\n", cases[i].why,
@@ -3414,7 +3414,7 @@ int mccjit_selftest_eligibility(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_fork(void) {
+int mccjit_selftest_fork(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	unsigned char *blob;
 	size_t blen;
@@ -3427,7 +3427,7 @@ int mccjit_selftest_fork(void) {
 	printf("mccjit-selftest-fork: begin\n");
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fork: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -3435,7 +3435,7 @@ int mccjit_selftest_fork(void) {
 		return 1;
 	}
 	baseline = mcc_jit_recompile_blob(blob, blen);
-	if (!baseline) {
+	if (!baseline) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fork: baseline recompile NULL\n");
 		mcc_free(blob);
 		mcc_delete(s1);
@@ -3446,28 +3446,28 @@ int mccjit_selftest_fork(void) {
 	nw = mccjit_pool_start(2);
 	printf("mccjit-selftest-fork: parent pool workers=%d started=%d\n", nw,
 				 mccjit_pool.started);
-	if (nw <= 0 || !mccjit_pool.started) {
+	if (nw <= 0 || !mccjit_pool.started) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fork: pool failed to start FAIL\n");
 		return 1;
 	}
 
 	fflush(stdout);
 	pid = fork();
-	if (pid == 0) {
+	if (pid == 0) { MCC_TRACE("br\n");
 		int cf = 0;
-		if (mccjit_pool.started != 0 || mccjit_pool.nworkers != 0) {
+		if (mccjit_pool.started != 0 || mccjit_pool.nworkers != 0) { MCC_TRACE("br\n");
 			fprintf(stderr,
 							"mccjit-selftest-fork[child]: phantom pool NOT reset "
 							"(started=%d nworkers=%d) FAIL\n",
 							mccjit_pool.started, mccjit_pool.nworkers);
 			cf++;
 		}
-		if (((int (*)(int))baseline)(9) != 19) {
+		if (((int (*)(int))baseline)(9) != 19) { MCC_TRACE("br\n");
 			fprintf(stderr,
 							"mccjit-selftest-fork[child]: installed variant f(9)!=19 FAIL\n");
 			cf++;
 		}
-		if (mccjit_pool_start(2) <= 0) {
+		if (mccjit_pool_start(2) <= 0) { MCC_TRACE("br\n");
 			fprintf(stderr,
 							"mccjit-selftest-fork[child]: pool locks unusable post-fork "
 							"(deadlock/start failure) FAIL\n");
@@ -3477,10 +3477,10 @@ int mccjit_selftest_fork(void) {
 		_exit(cf ? 1 : 0);
 	}
 
-	if (pid < 0) {
+	if (pid < 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fork: fork() failed FAIL\n");
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		int status = 0;
 		while (waitpid(pid, &status, 0) < 0)
 			;
@@ -3493,12 +3493,12 @@ int mccjit_selftest_fork(void) {
 				fails++;
 		}
 		if (mccjit_pool.started != 1 || mccjit_pool.nworkers != nw ||
-				((int (*)(int))baseline)(9) != 19) {
+				((int (*)(int))baseline)(9) != 19) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-fork: parent pool broken after fork "
 						 "(started=%d nworkers=%d) FAIL\n",
 						 mccjit_pool.started, mccjit_pool.nworkers);
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			printf("mccjit-selftest-fork: parent pool intact after fork OK\n");
 		}
 	}
@@ -3510,7 +3510,7 @@ int mccjit_selftest_fork(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_observability(void) {
+int mccjit_selftest_observability(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	int fails = 0;
 	char path[64];
@@ -3520,16 +3520,16 @@ int mccjit_selftest_observability(void) {
 
 	printf("mccjit-selftest-observability: begin\n");
 
-	if (!mccjit_feasible()) {
+	if (!mccjit_feasible()) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-observability: exec-mem probe infeasible on this "
 					 "host FAIL\n");
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		printf("mccjit-selftest-observability: exec-mem probe feasible OK\n");
 	}
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-observability: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -3542,18 +3542,18 @@ int mccjit_selftest_observability(void) {
 		MCCState *bstate = mccjit_last_state;
 		void *slot = baseline;
 		mccjit_last_state = NULL;
-		if (!baseline) {
+		if (!baseline) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-observability: baseline recompile NULL FAIL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			setenv("MCC_JIT_FORCE_INFEASIBLE", "1", 1);
 			mccjit_boot_swap(&slot, blob, blen);
 			unsetenv("MCC_JIT_FORCE_INFEASIBLE");
-			if (slot != baseline) {
+			if (slot != baseline) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-observability: infeasible boot swapped anyway "
 							 "(no silent fallback) FAIL\n");
 				fails++;
-			} else {
+			} else { MCC_TRACE("br\n");
 				printf("mccjit-selftest-observability: infeasible -> kept AOT baseline "
 							 "OK\n");
 			}
@@ -3575,14 +3575,14 @@ int mccjit_selftest_observability(void) {
 		vstate = mccjit_last_state;
 		mccjit_last_state = NULL;
 		unsetenv("MCC_JIT_PERF_MAP");
-		if (!v) {
+		if (!v) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-observability: perf-map recompile NULL FAIL\n");
 			fails++;
 		}
 		f = fopen(path, "r");
-		if (f) {
+		if (f) { MCC_TRACE("br\n");
 			char line[256];
-			while (fgets(line, sizeof line, f)) {
+			while (fgets(line, sizeof line, f)) { MCC_TRACE("br\n");
 				unsigned long a = 0, sz = 0;
 				char nm[128] = {0};
 				if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 &&
@@ -3609,7 +3609,7 @@ int mccjit_selftest_observability(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
+int mccjit_selftest_liverun(const char *libpath, const char *incpath) { MCC_TRACE("enter\n");
 	static const char src[] =
 			"int f(int x){return x*3+7;}\nint main(void){return f(11);}\n";
 	MCCState *s;
@@ -3627,7 +3627,7 @@ int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 	remove(path);
 
 	s = mcc_new();
-	if (!s) {
+	if (!s) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-liverun: mcc_new failed\n");
 		unsetenv("MCC_AST_JIT_DISPATCH");
 		unsetenv("MCC_JIT_PERF_MAP");
@@ -3644,11 +3644,11 @@ int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 	s->jit_functions = mcc_strdup("f");
 	mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
 
-	if (mcc_compile_string(s, src) != 0) {
+	if (mcc_compile_string(s, src) != 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-liverun: compile failed FAIL\n");
 		fails++;
 		rc = -1;
-	} else {
+	} else { MCC_TRACE("br\n");
 		rc = mcc_run(s, 1, av);
 	}
 	unsetenv("MCC_AST_JIT_DISPATCH");
@@ -3661,9 +3661,9 @@ int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 
 	{
 		FILE *pf = fopen(path, "r");
-		if (pf) {
+		if (pf) { MCC_TRACE("br\n");
 			char line[256];
-			while (fgets(line, sizeof line, pf)) {
+			while (fgets(line, sizeof line, pf)) { MCC_TRACE("br\n");
 				char nm[128] = {0};
 				unsigned long a = 0, sz = 0;
 				if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 &&
@@ -3685,7 +3685,7 @@ int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_poison(void) {
+int mccjit_selftest_poison(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	unsigned char *blob;
 	size_t blen;
@@ -3707,7 +3707,7 @@ int mccjit_selftest_poison(void) {
 	min = mccjit_poison_min();
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-poison: stash failed\n");
 		unsetenv("MCC_JIT_POISON_MIN");
 		unsetenv("MCC_JIT_POISON_PCT");
@@ -3721,14 +3721,14 @@ int mccjit_selftest_poison(void) {
 	variant = mcc_jit_recompile_blob_spec(blob, blen, 0, 7);
 	vstate = mccjit_last_state;
 	mccjit_last_state = NULL;
-	if (!baseline || !variant) {
+	if (!baseline || !variant) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-poison: baseline/variant build failed FAIL\n");
 		fails++;
-	} else if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) != 0) {
+	} else if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) != 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-poison: kgc open failed FAIL\n");
 		fails++;
-	} else {
-		for (i = 0; i < 10; i++) {
+	} else { MCC_TRACE("br\n");
+		for (i = 0; i < 10; i++) { MCC_TRACE("br\n");
 			int64_t args[1];
 			int flagged = 0;
 			int64_t r;
@@ -3738,7 +3738,7 @@ int mccjit_selftest_poison(void) {
 				poison_at = i;
 			if (flagged)
 				flagged_calls++;
-			if (r != 7) {
+			if (r != 7) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-poison: call %d returned %lld (expect baseline "
 							 "7) FAIL\n",
 							 i, (long long)r);
@@ -3752,7 +3752,7 @@ int mccjit_selftest_poison(void) {
 				(flagged_calls == min && kgc.poisoned) ? "OK" : "FAIL");
 		if (flagged_calls != min || !kgc.poisoned)
 			fails++;
-		if (kgc.hits != 0 || kgc.misses != (uint64_t)min) {
+		if (kgc.hits != 0 || kgc.misses != (uint64_t)min) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-poison: counters hits=%llu misses=%llu "
 						 "(expect 0/%d) FAIL\n",
 						 (unsigned long long)kgc.hits, (unsigned long long)kgc.misses, min);
@@ -3773,7 +3773,7 @@ int mccjit_selftest_poison(void) {
 	return fails ? 1 : 0;
 }
 
-static long mccjit_bench_fast_fn(long x) {
+static long mccjit_bench_fast_fn(long x) { MCC_TRACE("enter\n");
 	long s = 0;
 	int i;
 	for (i = 0; i < 30; i++)
@@ -3781,7 +3781,7 @@ static long mccjit_bench_fast_fn(long x) {
 	return s;
 }
 
-static long mccjit_bench_slow_fn(long x) {
+static long mccjit_bench_slow_fn(long x) { MCC_TRACE("enter\n");
 	long s = 0;
 	int i;
 	for (i = 0; i < 900; i++)
@@ -3789,7 +3789,7 @@ static long mccjit_bench_slow_fn(long x) {
 	return s;
 }
 
-int mccjit_selftest_bench(void) {
+int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 	int64_t tuples[4 * MCCJIT_KGC_ARITY];
 	uint32_t nt = 4, i, j;
 	int fails = 0;
@@ -3837,7 +3837,7 @@ int mccjit_selftest_bench(void) {
      - trampoline     (in-place patch): movabs rax,imm; jmp rax; swap = rewrite imm
    both forward to *slot / imm and tail-return to the caller (no frame). */
 #if defined(__x86_64__)
-static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) {
+static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MCC_TRACE("enter\n");
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	int32_t disp;
@@ -3854,7 +3854,7 @@ static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) {
 }
 
 static unsigned char *mccjit_patch_make_tramp(void *target,
-																							void **immout) {
+																							void **immout) { MCC_TRACE("enter\n");
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
@@ -3870,10 +3870,10 @@ static unsigned char *mccjit_patch_make_tramp(void *target,
 }
 #endif
 
-static int mccjit_patch_t1(int x) { return x * 2 + 1; }
-static int mccjit_patch_t2(int x) { return x * 3 + 7; }
+static int mccjit_patch_t1(int x) { MCC_TRACE("enter\n"); return x * 2 + 1; }
+static int mccjit_patch_t2(int x) { MCC_TRACE("enter\n"); return x * 3 + 7; }
 
-int mccjit_selftest_patch(void) {
+int mccjit_selftest_patch(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 #if !defined(__x86_64__)
 	printf("mccjit-selftest-patch: non-x86_64 SKIP\n");
@@ -3892,7 +3892,7 @@ int mccjit_selftest_patch(void) {
 	double dsm, dslot, dtramp, dswap_ptr, dswap_inplace;
 
 	printf("mccjit-selftest-patch: begin (hot-patch strategy family)\n");
-	if (e && e[0]) {
+	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
 			iters = v;
@@ -3900,7 +3900,7 @@ int mccjit_selftest_patch(void) {
 
 	slotd = mccjit_patch_make_slot((void *)mccjit_patch_t1, &slot);
 	trampd = mccjit_patch_make_tramp((void *)mccjit_patch_t1, &imm);
-	if (!slotd || !trampd) {
+	if (!slotd || !trampd) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-patch: stub alloc failed FAIL\n");
 		return 1;
 	}
@@ -3909,17 +3909,17 @@ int mccjit_selftest_patch(void) {
 
 	/* Functional: both dispatch shapes forward correctly, and a swap
 	   (pointer-swap slot store / in-place immediate rewrite) redirects them. */
-	if (sf(5) != mccjit_patch_t1(5) || tf(5) != mccjit_patch_t1(5)) {
+	if (sf(5) != mccjit_patch_t1(5) || tf(5) != mccjit_patch_t1(5)) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-patch: initial dispatch wrong FAIL\n");
 		fails++;
 	}
 	__atomic_store_n(slot, (void *)mccjit_patch_t2, __ATOMIC_RELEASE);
 	memcpy(imm, &(void *){(void *)mccjit_patch_t2}, 8);
-	if (sf(5) != mccjit_patch_t2(5)) {
+	if (sf(5) != mccjit_patch_t2(5)) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-patch: pointer-swap did not redirect FAIL\n");
 		fails++;
 	}
-	if (tf(5) != mccjit_patch_t2(5)) {
+	if (tf(5) != mccjit_patch_t2(5)) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-patch: in-place patch did not redirect FAIL\n");
 		fails++;
 	}
@@ -3929,7 +3929,7 @@ int mccjit_selftest_patch(void) {
 
 	/* steady-state per-call overhead: direct vs slot vs trampoline (best of 3) */
 	dsm = dslot = dtramp = 1e300;
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
 		long k;
 		double d;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -3987,13 +3987,13 @@ int mccjit_selftest_patch(void) {
 #endif
 }
 
-static void *mccjit_qsbr_thread(void *arg) {
+static void *mccjit_qsbr_thread(void *arg) { MCC_TRACE("enter\n");
 	int rounds = *(int *)arg;
 	int slot = mccjit_qsbr_register();
 	int i;
 	if (slot < 0)
 		return NULL;
-	for (i = 0; i < rounds; i++) {
+	for (i = 0; i < rounds; i++) { MCC_TRACE("br\n");
 		mccjit_qsbr_quiescent(slot);
 		mccjit_pool_nap();
 	}
@@ -4001,7 +4001,7 @@ static void *mccjit_qsbr_thread(void *arg) {
 	return NULL;
 }
 
-int mccjit_selftest_qsbr(void) {
+int mccjit_selftest_qsbr(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 	int s0, s1;
 	void *p1, *p2;
@@ -4011,13 +4011,13 @@ int mccjit_selftest_qsbr(void) {
 
 	s0 = mccjit_qsbr_register();
 	s1 = mccjit_qsbr_register();
-	if (s0 < 0 || s1 < 0) {
+	if (s0 < 0 || s1 < 0) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-qsbr: register failed FAIL\n");
 		return 1;
 	}
 
 	p1 = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p1 == MAP_FAILED) {
+	if (p1 == MAP_FAILED) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-qsbr: mmap failed\n");
 		return 1;
 	}
@@ -4051,7 +4051,7 @@ int mccjit_selftest_qsbr(void) {
 
 	mccjit_qsbr_reset();
 	p2 = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p2 != MAP_FAILED) {
+	if (p2 != MAP_FAILED) { MCC_TRACE("br\n");
 		mccjit_qsbr_retire(p2, 4096);
 		printf("mccjit-selftest-qsbr: no registered threads -> immediate reclaim "
 					 "nlimbo=%d reclaimed=%llu (expect 0,1) %s\n",
@@ -4069,7 +4069,7 @@ int mccjit_selftest_qsbr(void) {
 		for (i = 0; i < 3; i++)
 			if (pthread_create(&th[i], NULL, mccjit_qsbr_thread, &rounds) == 0)
 				n++;
-		for (i = 0; i < 8; i++) {
+		for (i = 0; i < 8; i++) { MCC_TRACE("br\n");
 			void *pg =
 					mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 			if (pg != MAP_FAILED)
@@ -4094,7 +4094,7 @@ int mccjit_selftest_qsbr(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
+int mccjit_selftest_fparg(const char *libpath, const char *incpath) { MCC_TRACE("enter\n");
 	static const char src[] = "double f(double a, double b){return a*b + a;}";
 	static const char src_g[] = "double g(double a, double b){return a*b + b;}";
 	unsigned char *blob;
@@ -4110,7 +4110,7 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 	printf("mccjit-selftest-fparg: begin\n");
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fparg: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -4121,7 +4121,7 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 	allfp_seen = mccjit_last_allfp;
 	bstate = mccjit_last_state;
 	mccjit_last_state = NULL;
-	if (!baseline) {
+	if (!baseline) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fparg: baseline recompile NULL FAIL\n");
 		mcc_free(blob);
 		mcc_delete(s1);
@@ -4131,7 +4131,7 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 				 allfp_seen, allfp_seen ? "OK" : "FAIL");
 	if (!allfp_seen)
 		fails++;
-	if (baseline(3.0, 4.0) != 15.0 || baseline(2.5, 2.0) != 7.5) {
+	if (baseline(3.0, 4.0) != 15.0 || baseline(2.5, 2.0) != 7.5) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-fparg: baseline miscomputes FAIL\n");
 		fails++;
 	}
@@ -4142,7 +4142,7 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 		size_t ql;
 		MCCState *qs;
 		qb = mccjit_stash_one(qsrc, "q", 1, &ql, &qs);
-		if (qs && qb) {
+		if (qs && qb) { MCC_TRACE("br\n");
 			double (*qf)(double) = (double (*)(double))mcc_jit_recompile_blob(qb, ql);
 			MCCState *qstate = mccjit_last_state;
 			double got = qf ? qf(3.0) : -1.0;
@@ -4166,15 +4166,15 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 	/* FP differential-verify marshalling (mccjit_invoke_fp + bitwise compare),
 	   driven directly — a faithful variant must agree with the baseline and not
 	   flag; a divergent one (g) must return the baseline and flag. */
-	if (variant) {
+	if (variant) { MCC_TRACE("br\n");
 		MccjitKgc kgc;
-		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) {
+		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) { MCC_TRACE("br\n");
 			static const struct {
 				double a, b, want;
 			} cs[5] = {{3, 4, 15},	 {2.5, 2, 7.5}, {-1, 5, -6},
 								 {0, 9, 0}, {1.5, 1.5, 3.75}};
 			int okall = 1;
-			for (i = 0; i < 5; i++) {
+			for (i = 0; i < 5; i++) { MCC_TRACE("br\n");
 				double a2[2];
 				int flagged = 0;
 				double r;
@@ -4198,14 +4198,14 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 		size_t glen;
 		MCCState *sg;
 		gblob = mccjit_stash_one(src_g, "g", 1, &glen, &sg);
-		if (sg && gblob) {
+		if (sg && gblob) { MCC_TRACE("br\n");
 			double (*gv)(double, double) =
 					(double (*)(double, double))mcc_jit_recompile_blob(gblob, glen);
 			MCCState *gstate = mccjit_last_state;
 			mccjit_last_state = NULL;
-			if (gv) {
+			if (gv) { MCC_TRACE("br\n");
 				MccjitKgc kgc;
-				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) {
+				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) { MCC_TRACE("br\n");
 					double args[2];
 					int flagged = 0;
 					double r;
@@ -4247,7 +4247,7 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 		snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
 		remove(path);
 		rs = mcc_new();
-		if (rs) {
+		if (rs) { MCC_TRACE("br\n");
 			FILE *pf;
 			if (libpath)
 				mcc_set_lib_path(rs, libpath);
@@ -4262,9 +4262,9 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 			if (mcc_compile_string(rs, prog) == 0)
 				rc = mcc_run(rs, 1, av);
 			pf = fopen(path, "r");
-			if (pf) {
+			if (pf) { MCC_TRACE("br\n");
 				char line[256];
-				while (fgets(line, sizeof line, pf)) {
+				while (fgets(line, sizeof line, pf)) { MCC_TRACE("br\n");
 					char nm[128] = {0};
 					unsigned long a = 0, sz = 0;
 					if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 &&
@@ -4297,7 +4297,7 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
+int mccjit_selftest_mixed(const char *libpath, const char *incpath) { MCC_TRACE("enter\n");
 #if !defined(__x86_64__)
 	(void)libpath;
 	(void)incpath;
@@ -4322,7 +4322,7 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 	printf("mccjit-selftest-mixed: begin (scalar mixed GP+FP marshalling)\n");
 
 	blob = mccjit_stash_one(src_f, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-mixed: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -4336,7 +4336,7 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 	retfp_seen = mccjit_last_ret_fp;
 	fbstate = mccjit_last_state;
 	mccjit_last_state = NULL;
-	if (!fbase) {
+	if (!fbase) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-mixed: baseline recompile NULL FAIL\n");
 		mcc_free(blob);
 		mcc_delete(s1);
@@ -4367,9 +4367,9 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 			fails++;
 	}
 
-	if (fvar) {
+	if (fvar) { MCC_TRACE("br\n");
 		MccjitKgc kgc;
-		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 3) == 0) {
+		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 3) == 0) { MCC_TRACE("br\n");
 			int64_t gpv[MCCJIT_KGC_MAXARG] = {5, 3, 0, 0, 0, 0};
 			double fpv[MCCJIT_KGC_MAXARG] = {2.5, 0, 0, 0, 0, 0};
 			int flag = 0;
@@ -4397,14 +4397,14 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 		size_t glen;
 		MCCState *sg;
 		gblob = mccjit_stash_one(src_g, "g", 1, &glen, &sg);
-		if (sg && gblob) {
+		if (sg && gblob) { MCC_TRACE("br\n");
 			long (*gv)(long, double, long) =
 					(long (*)(long, double, long))mcc_jit_recompile_blob(gblob, glen);
 			MCCState *gstate = mccjit_last_state;
 			mccjit_last_state = NULL;
-			if (gv) {
+			if (gv) { MCC_TRACE("br\n");
 				MccjitKgc kgc;
-				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 3) == 0) {
+				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 3) == 0) { MCC_TRACE("br\n");
 					int64_t gpv[MCCJIT_KGC_MAXARG] = {5, 3, 0, 0, 0, 0};
 					double fpv[MCCJIT_KGC_MAXARG] = {2.5, 0, 0, 0, 0, 0};
 					int flag = 0;
@@ -4439,7 +4439,7 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 		size_t hlen;
 		MCCState *sh;
 		hblob = mccjit_stash_one(src_h, "h", 1, &hlen, &sh);
-		if (sh && hblob) {
+		if (sh && hblob) { MCC_TRACE("br\n");
 			double (*hb)(long, double) =
 					(double (*)(long, double))mcc_jit_recompile_blob(hblob, hlen);
 			MCCState *hstate = mccjit_last_state;
@@ -4452,9 +4452,9 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 						 (h_mixed && h_ngp == 1 && h_nsse == 1 && h_retfp) ? "OK" : "FAIL");
 			if (!h_mixed || h_ngp != 1 || h_nsse != 1 || !h_retfp)
 				fails++;
-			if (hb) {
+			if (hb) { MCC_TRACE("br\n");
 				MccjitKgc kgc;
-				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) {
+				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) { MCC_TRACE("br\n");
 					int64_t gpv[MCCJIT_KGC_MAXARG] = {3, 0, 0, 0, 0, 0};
 					double fpv[MCCJIT_KGC_MAXARG] = {1.5, 0, 0, 0, 0, 0};
 					int flag = 0;
@@ -4498,7 +4498,7 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 		snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
 		remove(path);
 		rs = mcc_new();
-		if (rs) {
+		if (rs) { MCC_TRACE("br\n");
 			FILE *pf;
 			if (libpath)
 				mcc_set_lib_path(rs, libpath);
@@ -4513,9 +4513,9 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 			if (mcc_compile_string(rs, prog) == 0)
 				rc = mcc_run(rs, 1, av);
 			pf = fopen(path, "r");
-			if (pf) {
+			if (pf) { MCC_TRACE("br\n");
 				char line[256];
-				while (fgets(line, sizeof line, pf)) {
+				while (fgets(line, sizeof line, pf)) { MCC_TRACE("br\n");
 					char nm[128] = {0};
 					unsigned long a = 0, sz = 0;
 					if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 && !strcmp(nm, "f"))
@@ -4547,10 +4547,10 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 #endif
 }
 
-static long mccjit_profile_id1(long x) { return x; }
-static long mccjit_profile_sum2(long a, long b) { return a + b; }
+static long mccjit_profile_id1(long x) { MCC_TRACE("enter\n"); return x; }
+static long mccjit_profile_sum2(long a, long b) { MCC_TRACE("enter\n"); return a + b; }
 
-int mccjit_selftest_vrange(void) {
+int mccjit_selftest_vrange(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int a, int b){return a*100 + b;}";
 	unsigned char *blob;
 	size_t blen;
@@ -4567,7 +4567,7 @@ int mccjit_selftest_vrange(void) {
 	printf("mccjit-selftest-vrange: begin\n");
 
 	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
-	if (!s1 || !blob) {
+	if (!s1 || !blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-vrange: stash failed\n");
 		if (s1)
 			mcc_delete(s1);
@@ -4577,7 +4577,7 @@ int mccjit_selftest_vrange(void) {
 	baseline = (int (*)(int, int))mcc_jit_recompile_blob(blob, blen);
 	bstate = mccjit_last_state;
 	mccjit_last_state = NULL;
-	if (!baseline) {
+	if (!baseline) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-vrange: baseline recompile NULL FAIL\n");
 		mcc_free(blob);
 		mcc_delete(s1);
@@ -4589,7 +4589,7 @@ int mccjit_selftest_vrange(void) {
 	st.threshold = 1L << 30;
 	pthread_mutex_init(&st.lock, NULL);
 	stub = mccjit_make_counter_stub(&st);
-	if (!stub) {
+	if (!stub) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-vrange: counter stub NULL (non-x86_64?) SKIP\n");
 		pthread_mutex_destroy(&st.lock);
 		if (bstate)
@@ -4602,12 +4602,12 @@ int mccjit_selftest_vrange(void) {
 		((int (*)(int, int))stub)(7, i);
 
 	if (!mccjit_profile_pick_const(&st, 2, 3, &pidx, &pval) || pidx != 0 ||
-			pval != 7) {
+			pval != 7) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-vrange: const-param detect pidx=%d pval=%lld "
 					 "(expect 0,7) FAIL\n",
 					 pidx, (long long)pval);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		printf("mccjit-selftest-vrange: profile detected const param a==7 OK\n");
 	}
 
@@ -4616,25 +4616,25 @@ int mccjit_selftest_vrange(void) {
 				(int (*)(int, int))mccjit_recompile_profiled(blob, blen, &st, 2, 3);
 		MCCState *vstate = mccjit_last_state;
 		mccjit_last_state = NULL;
-		if (!v) {
+		if (!v) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-vrange: profiled recompile NULL FAIL\n");
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			int in_domain = v(7, 5);
 			int folded = v(999, 5);
 			int base = baseline(7, 5);
 			printf("mccjit-selftest-vrange: spec v(7,5)=%d v(999,5)=%d base(7,5)=%d\n",
 						 in_domain, folded, base);
-			if (in_domain != 705 || base != 705) {
+			if (in_domain != 705 || base != 705) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-vrange: in-domain value wrong FAIL\n");
 				fails++;
 			}
-			if (folded != 705) {
+			if (folded != 705) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-vrange: a NOT folded (v(999,5)=%d, expect 705) "
 							 "FAIL\n",
 							 folded);
 				fails++;
-			} else {
+			} else { MCC_TRACE("br\n");
 				printf("mccjit-selftest-vrange: speculation folded a=7 (variant ignores "
 							 "passed a) OK\n");
 			}
@@ -4653,22 +4653,22 @@ int mccjit_selftest_vrange(void) {
 		st2.threshold = 1L << 30;
 		pthread_mutex_init(&st2.lock, NULL);
 		stub2 = mccjit_make_counter_stub(&st2);
-		if (stub2) {
+		if (stub2) { MCC_TRACE("br\n");
 			for (i = 0; i < 5; i++)
 				((int (*)(int, int))stub2)(i + 1, i * 2);
-			if (mccjit_profile_pick_const(&st2, 2, 3, NULL, NULL)) {
+			if (mccjit_profile_pick_const(&st2, 2, 3, NULL, NULL)) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-vrange: false-positive const on varying params "
 							 "FAIL\n");
 				fails++;
-			} else {
+			} else { MCC_TRACE("br\n");
 				int (*v2)(int, int) =
 						(int (*)(int, int))mccjit_recompile_profiled(blob, blen, &st2, 2, 3);
 				MCCState *v2state = mccjit_last_state;
 				mccjit_last_state = NULL;
-				if (v2 && v2(999, 5) == baseline(999, 5)) {
+				if (v2 && v2(999, 5) == baseline(999, 5)) { MCC_TRACE("br\n");
 					printf("mccjit-selftest-vrange: no const param -> unspecialized "
 								 "(v(999,5)=base) OK\n");
-				} else {
+				} else { MCC_TRACE("br\n");
 					printf("mccjit-selftest-vrange: no-const case wrong FAIL\n");
 					fails++;
 				}
@@ -4690,7 +4690,7 @@ int mccjit_selftest_vrange(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_profile(void) {
+int mccjit_selftest_profile(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;
 	int fails = 0;
@@ -4704,14 +4704,14 @@ int mccjit_selftest_profile(void) {
 	st.threshold = 1L << 30;
 	pthread_mutex_init(&st.lock, NULL);
 	stub = mccjit_make_counter_stub(&st);
-	if (!stub) {
+	if (!stub) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-profile: counter stub NULL (non-x86_64?) SKIP\n");
 		pthread_mutex_destroy(&st.lock);
 		return 0;
 	}
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < 5; i++) { MCC_TRACE("br\n");
 		long r = ((long (*)(long))stub)((long)inputs[i]);
-		if (r != inputs[i]) {
+		if (r != inputs[i]) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-profile: stub(%lld) returned %ld (expect %lld) FAIL\n",
 						 (long long)inputs[i], r, (long long)inputs[i]);
 			fails++;
@@ -4720,16 +4720,16 @@ int mccjit_selftest_profile(void) {
 	printf("mccjit-selftest-profile: 1-arg range=[%lld,%lld] seen=%ld nsample=%d\n",
 				 (long long)st.argmin[0], (long long)st.argmax[0], st.argseen,
 				 st.nsample);
-	if (st.argmin[0] != -3 || st.argmax[0] != 100 || st.argseen != 5) {
+	if (st.argmin[0] != -3 || st.argmax[0] != 100 || st.argseen != 5) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-profile: 1-arg range/seen mismatch FAIL\n");
 		fails++;
 	}
-	if (st.nsample != 5) {
+	if (st.nsample != 5) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-profile: nsample=%d (expect 5) FAIL\n", st.nsample);
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		for (i = 0; i < 5; i++)
-			if (st.sample[i][0] != inputs[i]) {
+			if (st.sample[i][0] != inputs[i]) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-profile: sample[%d][0]=%lld (expect %lld) FAIL\n",
 							 i, (long long)st.sample[i][0], (long long)inputs[i]);
 				fails++;
@@ -4742,14 +4742,14 @@ int mccjit_selftest_profile(void) {
 	st.threshold = 1L << 30;
 	pthread_mutex_init(&st.lock, NULL);
 	stub = mccjit_make_counter_stub(&st);
-	if (stub) {
+	if (stub) { MCC_TRACE("br\n");
 		((long (*)(long, long))stub)(3, 7);
 		((long (*)(long, long))stub)(-2, 20);
 		printf("mccjit-selftest-profile: 2-arg p0=[%lld,%lld] p1=[%lld,%lld]\n",
 					 (long long)st.argmin[0], (long long)st.argmax[0],
 					 (long long)st.argmin[1], (long long)st.argmax[1]);
 		if (st.argmin[0] != -2 || st.argmax[0] != 3 || st.argmin[1] != 7 ||
-				st.argmax[1] != 20) {
+				st.argmax[1] != 20) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-profile: 2-arg per-param range mismatch FAIL\n");
 			fails++;
 		}
@@ -4761,7 +4761,7 @@ int mccjit_selftest_profile(void) {
 	return fails ? 1 : 0;
 }
 
-static void mccjit_evalgate_compile(const char *src) {
+static void mccjit_evalgate_compile(const char *src) { MCC_TRACE("enter\n");
 	MCCState *s = mcc_new();
 	if (!s)
 		return;
@@ -4774,7 +4774,7 @@ static void mccjit_evalgate_compile(const char *src) {
 	mcc_delete(s);
 }
 
-int mccjit_selftest_evalgate(void) {
+int mccjit_selftest_evalgate(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int *p){return *p + 1;}";
 	int fails = 0;
 	int r0, r1, r2;
@@ -4805,10 +4805,10 @@ int mccjit_selftest_evalgate(void) {
 	setenv("MCC_AST_EVAL_FORCE_UNSOUND", "1", 1);
 	unsetenv("MCC_AST_JIT_EVAL_GATE");
 	mccjit_evalgate_compile(src);
-	if (ast_jit_eval_refused_count() != r2) {
+	if (ast_jit_eval_refused_count() != r2) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-evalgate: gate OFF still refused (should not) FAIL\n");
 		fails++;
-	} else {
+	} else { MCC_TRACE("br\n");
 		printf("mccjit-selftest-evalgate: gate OFF -> no refusal (rollout opt-in) OK\n");
 	}
 	unsetenv("MCC_AST_EVAL_FORCE_UNSOUND");
@@ -4819,7 +4819,7 @@ int mccjit_selftest_evalgate(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_slice(void) {
+int mccjit_selftest_slice(void) { MCC_TRACE("enter\n");
 	static const struct {
 		const char *src;
 		const char *fn;
@@ -4836,14 +4836,14 @@ int mccjit_selftest_slice(void) {
 	int i;
 
 	printf("mccjit-selftest-slice: begin (M5c pure/impure partition analysis)\n");
-	for (i = 0; i < 5; i++) {
+	for (i = 0; i < 5; i++) { MCC_TRACE("br\n");
 		unsigned char *blob;
 		size_t blen;
 		MCCState *s1;
 		AstSliceProfile prof;
 		int ok;
 		blob = mccjit_stash_one(cases[i].src, cases[i].fn, 1, &blen, &s1);
-		if (!s1 || !blob) {
+		if (!s1 || !blob) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-slice: %s stash failed\n", cases[i].fn);
 			if (s1)
 				mcc_delete(s1);
@@ -4851,10 +4851,10 @@ int mccjit_selftest_slice(void) {
 			fails++;
 			continue;
 		}
-		if (mccjit_slice_profile_blob(blob, blen, &prof) != 0) {
+		if (mccjit_slice_profile_blob(blob, blen, &prof) != 0) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-slice: %s profile failed\n", cases[i].fn);
 			fails++;
-		} else {
+		} else { MCC_TRACE("br\n");
 			ok = (prof.impure_ops == cases[i].want_impure) && (prof.pure_compute > 0) &&
 					 (!cases[i].want_loads_pos || prof.loads > 0);
 			printf("mccjit-selftest-slice: %-3s impure=%d(want %d) loads=%d compute=%d "
@@ -4872,7 +4872,7 @@ int mccjit_selftest_slice(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_l4a(void) {
+int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;
 	int fails = 0;
@@ -4900,7 +4900,7 @@ int mccjit_selftest_l4a(void) {
 	st.threshold = 1L << 30;
 	pthread_mutex_init(&st.lock, NULL);
 	stub = mccjit_make_counter_stub(&st);
-	if (!stub) {
+	if (!stub) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-l4a: counter stub NULL (non-x86_64?) SKIP\n");
 		pthread_mutex_destroy(&st.lock);
 		unsetenv("MCC_JIT_BENCH_ITERS");
@@ -4938,7 +4938,7 @@ int mccjit_selftest_l4a(void) {
 	return fails ? 1 : 0;
 }
 
-int mccjit_selftest_benchwire(void) {
+int mccjit_selftest_benchwire(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st, empty;
 	void *fast = (void *)mccjit_bench_fast_fn;
 	void *slow = (void *)mccjit_bench_slow_fn;
@@ -5008,17 +5008,17 @@ int mccjit_selftest_benchwire(void) {
 	return fails ? 1 : 0;
 }
 
-void mcc_jit_publish(void **slot, void *variant) {
+void mcc_jit_publish(void **slot, void *variant) { MCC_TRACE("enter\n");
 	if (!slot)
 		return;
 	__atomic_store_n(slot, variant, __ATOMIC_RELEASE);
 }
 
-MCCJIT_LOCAL int mccjit_embed_active(void) {
+MCCJIT_LOCAL int mccjit_embed_active(void) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-int mccjit_embed_manifest(MCCState *s) {
+int mccjit_embed_manifest(MCCState *s) { MCC_TRACE("enter\n");
 	if (!s || !s->verbose)
 		return mccjit_embed_active();
 	printf("embed-jit manifest: functions=%s max-duration=%us%s\n",

@@ -43,11 +43,11 @@ typedef struct rt_frame {
 static MCCState *g_s1;
 HOST_SEM(rt_sem);
 
-static void rt_wait_sem(void) {
+static void rt_wait_sem(void) { MCC_TRACE("enter\n");
 	HOST_SEM_WAIT(&rt_sem);
 }
 
-static void rt_post_sem(void) {
+static void rt_post_sem(void) { MCC_TRACE("enter\n");
 	HOST_SEM_POST(&rt_sem);
 }
 
@@ -66,7 +66,7 @@ static int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap);
 #define PAGESIZE host_pagesize()
 #define PAGEALIGN(n) ((addr_t)n + (-(addr_t)n & (PAGESIZE - 1)))
 
-static int rt_mem(MCCState *s1, int size) {
+static int rt_mem(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	unsigned sz = size;
 	int ptr_diff = 0;
 	void *ptr = host_runmem_alloc(&sz, &ptr_diff);
@@ -77,7 +77,7 @@ static int rt_mem(MCCState *s1, int size) {
 	return ptr_diff;
 }
 
-LIBMCCAPI int mcc_relocate(MCCState *s1) {
+LIBMCCAPI int mcc_relocate(MCCState *s1) { MCC_TRACE("enter\n");
 	int size, ret, ptr_diff;
 
 	if (s1->run_ptr)
@@ -98,11 +98,11 @@ LIBMCCAPI int mcc_relocate(MCCState *s1) {
 	return ret;
 }
 
-ST_FUNC void mcc_run_free(MCCState *s1) {
+ST_FUNC void mcc_run_free(MCCState *s1) { MCC_TRACE("enter\n");
 	unsigned size;
 	void *ptr;
 
-	for (int i = 0; i < s1->nb_loaded_dlls; i++) {
+	for (int i = 0; i < s1->nb_loaded_dlls; i++) { MCC_TRACE("br\n");
 		DLLReference *ref = s1->loaded_dlls[i];
 		if (ref->handle)
 			host_dlclose(ref->handle);
@@ -118,7 +118,7 @@ ST_FUNC void mcc_run_free(MCCState *s1) {
 
 #define RT_EXIT_ZERO 0xE0E00E0E
 
-LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) {
+LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) { MCC_TRACE("enter\n");
 	int (*prog_main)(int, char **, char **), ret;
 	const char *top_sym;
 	jmp_buf main_jb;
@@ -141,7 +141,7 @@ LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) {
 	if ((addr_t)-1 == (addr_t)prog_main)
 		return -1;
 
-	if (s1->run_stdin && !freopen(s1->run_stdin, "r", stdin)) {
+	if (s1->run_stdin && !freopen(s1->run_stdin, "r", stdin)) { MCC_TRACE("br\n");
 		mcc_error_noabort("failed to reopen stdin from '%s'", s1->run_stdin);
 		return -1;
 	}
@@ -151,9 +151,9 @@ LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) {
 	fflush(stderr);
 
 	ret = mcc_setjmp(s1, main_jb, mcc_get_symbol(s1, top_sym));
-	if (0 == ret) {
+	if (0 == ret) { MCC_TRACE("br\n");
 		ret = prog_main(argc, argv, envp);
-	} else if (RT_EXIT_ZERO == ret) {
+	} else if (RT_EXIT_ZERO == ret) { MCC_TRACE("br\n");
 		ret = 0;
 	}
 
@@ -162,12 +162,12 @@ LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) {
 	return ret;
 }
 
-static void cleanup_symbols(MCCState *s1) {
+static void cleanup_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s = s1->symtab;
 	int sym_index, end_sym = s->data_offset / sizeof(ElfSym);
 	s->data_offset = s->link->data_offset = s->hash->data_offset = 0;
 	init_symtab(s);
-	for (sym_index = 1; sym_index < end_sym; ++sym_index) {
+	for (sym_index = 1; sym_index < end_sym; ++sym_index) { MCC_TRACE("br\n");
 		ElfW(Sym) *sym = &((ElfW(Sym) *)s->data)[sym_index];
 		const char *name = (char *)s->link->data + sym->st_name;
 		if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL)
@@ -176,32 +176,32 @@ static void cleanup_symbols(MCCState *s1) {
 	}
 }
 
-static void cleanup_sections(MCCState *s1) {
+static void cleanup_sections(MCCState *s1) { MCC_TRACE("enter\n");
 	struct
 	{
 		Section **secs;
 		int nb_secs;
 	} *p = (void *)&s1->sections;
 	int i, f = 2;
-	do {
-		for (i = --f; i < p->nb_secs; i++) {
+	do { MCC_TRACE("br\n");
+		for (i = --f; i < p->nb_secs; i++) { MCC_TRACE("br\n");
 			Section *s = p->secs[i];
-			if (s == s1->symtab || s == s1->symtab->link || s == s1->symtab->hash) {
+			if (s == s1->symtab || s == s1->symtab->link || s == s1->symtab->hash) { MCC_TRACE("br\n");
 				s->data = mcc_realloc(s->data, s->data_allocated = s->data_offset);
-			} else {
+			} else { MCC_TRACE("br\n");
 				free_section(s), mcc_free(s), p->secs[i] = NULL;
 			}
 		}
 	} while (++p, f);
 }
 
-static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) {
+static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRACE("enter\n");
 	Section *s;
 	unsigned offset, length, align, i, k, f;
 	unsigned n, copy;
 	addr_t mem, addr;
 
-	if (NULL == ptr) {
+	if (NULL == ptr) { MCC_TRACE("br\n");
 		s1->nb_errors = 0;
 #ifdef MCC_TARGET_PE
 		pe_output_file(s1, NULL);
@@ -222,23 +222,23 @@ redo:
 	if (copy == 3)
 		return 0;
 
-	for (k = 0; k < 3; ++k) {
+	for (k = 0; k < 3; ++k) { MCC_TRACE("br\n");
 		n = 0;
 		addr = 0;
-		for (i = 1; i < s1->nb_sections; i++) {
+		for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			static const char shf[] = {
 					SHF_ALLOC | SHF_EXECINSTR, SHF_ALLOC, SHF_ALLOC | SHF_WRITE};
 			s = s1->sections[i];
 			if (shf[k] != (s->sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR)))
 				continue;
 			length = s->data_offset;
-			if (copy == 2) {
+			if (copy == 2) { MCC_TRACE("br\n");
 				if (addr == 0)
 					addr = s->sh_addr;
 				n = (s->sh_addr - addr) + length;
 				continue;
 			}
-			if (copy) {
+			if (copy) { MCC_TRACE("br\n");
 				if (MCC_VTIER(s1->verbose) == MCC_V2)
 					printf("%d: %-16s %p  len %05x  align %04x\n",
 								 k, s->name, (void *)s->sh_addr, length, s->sh_addralign);
@@ -253,7 +253,7 @@ redo:
 			}
 
 			align = s->sh_addralign;
-			if (++n == 1) {
+			if (++n == 1) { MCC_TRACE("br\n");
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 				if (align < 64)
 					align = 64;
@@ -267,19 +267,19 @@ redo:
 			s->sh_addr = mem ? addr + offset : 0;
 			offset += length;
 		}
-		if (copy == 2) {
+		if (copy == 2) { MCC_TRACE("br\n");
 			if (n == 0)
 				continue;
 			if (k == 0 && host_runmem_dual())
 				continue;
 			f = k;
-			if (f >= HOST_RUNMEM_RO) {
+			if (f >= HOST_RUNMEM_RO) { MCC_TRACE("br\n");
 				if (f != 0)
 					continue;
 				f = 3;
 			}
 			n = PAGEALIGN(n);
-			if (MCC_VTIER(s1->verbose) == MCC_V2) {
+			if (MCC_VTIER(s1->verbose) == MCC_V2) { MCC_TRACE("br\n");
 				printf("protect         %3s %p  len %05x\n",
 							 &"rx\0ro\0rw\0rwx"[f * 3], (void *)addr, (unsigned)n);
 			}
@@ -291,12 +291,12 @@ redo:
 	if (0 == mem)
 		return PAGEALIGN(offset);
 
-	if (++copy == 2) {
+	if (++copy == 2) { MCC_TRACE("br\n");
 		goto redo;
 	}
-	if (copy == 3) {
+	if (copy == 3) { MCC_TRACE("br\n");
 #if defined MCC_TARGET_PE && (defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64)
-		if (s1->uw_pdata) {
+		if (s1->uw_pdata) { MCC_TRACE("br\n");
 			s1->run_function_table = host_unwind_register(
 					(void *)s1->uw_pdata->sh_addr,
 					(unsigned)s1->uw_pdata->data_offset,
@@ -323,7 +323,7 @@ redo:
 	goto redo;
 }
 
-static void bt_link(MCCState *s1) {
+static void bt_link(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_DIAG_RT >= 1
 	rt_context *rc;
 	if (!s1->do_backtrace)
@@ -337,7 +337,7 @@ static void bt_link(MCCState *s1) {
 	if (MCC_PTR_SIZE == 8 && !s1->dwarf)
 		rc->prog_base &= 0xffffffff00000000ULL;
 #if MCC_CONFIG_DIAG_RT >= 2
-	if (s1->do_bounds_check) {
+	if (s1->do_bounds_check) { MCC_TRACE("br\n");
 		void *p;
 		if ((p = mcc_get_symbol(s1, "__bound_init")))
 			((void (*)(void *, int))p)(rc->bounds_start, 1);
@@ -349,25 +349,25 @@ static void bt_link(MCCState *s1) {
 #endif
 }
 
-static void st_link(MCCState *s1) {
+static void st_link(MCCState *s1) { MCC_TRACE("enter\n");
 	rt_wait_sem();
 	s1->next = g_s1, g_s1 = s1;
 	bt_link(s1);
 	rt_post_sem();
 }
 
-static void ptr_unlink(void *list, void *e, unsigned next) {
+static void ptr_unlink(void *list, void *e, unsigned next) { MCC_TRACE("enter\n");
 	void **pp, **nn, *p;
-	for (pp = list; !!(p = *pp); pp = nn) {
+	for (pp = list; !!(p = *pp); pp = nn) { MCC_TRACE("br\n");
 		nn = (void *)((char *)p + next);
-		if (p == e) {
+		if (p == e) { MCC_TRACE("br\n");
 			*pp = *nn;
 			break;
 		}
 	}
 }
 
-static void st_unlink(MCCState *s1) {
+static void st_unlink(MCCState *s1) { MCC_TRACE("enter\n");
 	rt_wait_sem();
 #if MCC_CONFIG_DIAG_RT >= 1
 	ptr_unlink(&g_rc, s1->rc, offsetof(rt_context, next));
@@ -376,7 +376,7 @@ static void st_unlink(MCCState *s1) {
 	rt_post_sem();
 }
 
-LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp) {
+LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_longjmp) { MCC_TRACE("enter\n");
 	s1->run_lj = p_longjmp;
 	s1->run_jb = p_jmp_buf;
 #if MCC_CONFIG_DIAG_RT >= 1
@@ -386,23 +386,23 @@ LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_l
 	return p_jmp_buf;
 }
 
-LIBMCCAPI void mcc_set_backtrace_func(MCCState *s1, void *data, MCCBtFunc *func) {
+LIBMCCAPI void mcc_set_backtrace_func(MCCState *s1, void *data, MCCBtFunc *func) { MCC_TRACE("enter\n");
 	s1->bt_func = func;
 	s1->bt_data = data;
 }
 
-static MCCState *rt_find_state(rt_frame *f) {
+static MCCState *rt_find_state(rt_frame *f) { MCC_TRACE("enter\n");
 	MCCState *s;
 	addr_t pc;
 
 	s = g_s1;
-	if (NULL == s || NULL == s->next) {
+	if (NULL == s || NULL == s->next) { MCC_TRACE("br\n");
 		return s;
 	}
-	for (int level = 0; level < 8; ++level) {
+	for (int level = 0; level < 8; ++level) { MCC_TRACE("br\n");
 		if (rt_get_caller_pc(&pc, f, level) < 0)
 			break;
-		for (s = g_s1; s; s = s->next) {
+		for (s = g_s1; s; s = s->next) { MCC_TRACE("br\n");
 			if (pc >= (addr_t)s->run_ptr && pc < (addr_t)s->run_ptr + s->run_size)
 				return s;
 		}
@@ -410,14 +410,14 @@ static MCCState *rt_find_state(rt_frame *f) {
 	return NULL;
 }
 
-static void rt_exit(rt_frame *f, int code) {
+static void rt_exit(rt_frame *f, int code) { MCC_TRACE("enter\n");
 	MCCState *s;
 	rt_wait_sem();
 	s = rt_find_state(f);
 	rt_post_sem();
-	if (s && s->run_lj) {
+	if (s && s->run_lj) { MCC_TRACE("br\n");
 #if MCC_CONFIG_DIAG_RT >= 2
-		if (f->fp) {
+		if (f->fp) { MCC_TRACE("br\n");
 			void *p = mcc_get_symbol(s, "__bound_exit");
 			if (p)
 				((void (*)(void))p)();
@@ -431,19 +431,19 @@ static void rt_exit(rt_frame *f, int code) {
 }
 
 #else
-static void rt_exit(rt_frame *f, int code) {
+static void rt_exit(rt_frame *f, int code) { MCC_TRACE("enter\n");
 	exit(code);
 }
 #endif
 #if MCC_CONFIG_DIAG_RT >= 1
 
-static int rt_vprintf(const char *fmt, va_list ap) {
+static int rt_vprintf(const char *fmt, va_list ap) { MCC_TRACE("enter\n");
 	int ret = vfprintf(stderr, fmt, ap);
 	fflush(stderr);
 	return ret;
 }
 
-static int rt_printf(const char *fmt, ...) {
+static int rt_printf(const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	int r;
 	va_start(ap, fmt);
@@ -452,11 +452,11 @@ static int rt_printf(const char *fmt, ...) {
 	return r;
 }
 
-static char *rt_elfsym(rt_context *rc, addr_t wanted_pc, addr_t *func_addr) {
+static char *rt_elfsym(rt_context *rc, addr_t wanted_pc, addr_t *func_addr) { MCC_TRACE("enter\n");
 	ElfW(Sym) * esym;
-	for (esym = rc->esym_start + 1; esym < rc->esym_end; ++esym) {
+	for (esym = rc->esym_start + 1; esym < rc->esym_end; ++esym) { MCC_TRACE("br\n");
 		int type = ELFW(ST_TYPE)(esym->st_info);
-		if ((type == STT_FUNC || type == STT_GNU_IFUNC) && wanted_pc >= esym->st_value && wanted_pc < esym->st_value + esym->st_size) {
+		if ((type == STT_FUNC || type == STT_GNU_IFUNC) && wanted_pc >= esym->st_value && wanted_pc < esym->st_value + esym->st_size) { MCC_TRACE("br\n");
 			*func_addr = esym->st_value;
 			return rc->elf_str + esym->st_name;
 		}
@@ -471,7 +471,7 @@ typedef struct bt_info {
 	addr_t func_pc;
 } bt_info;
 
-static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
+static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) { MCC_TRACE("enter\n");
 	char func_name[128];
 	addr_t func_addr, last_pc, pc;
 	const char *incl_files[INCLUDE_STACK_SIZE];
@@ -486,11 +486,11 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
 	last_line_num = 1;
 	last_incl_index = 0;
 
-	for (sym = rc->stab_sym + 1; sym < rc->stab_sym_end; ++sym) {
+	for (sym = rc->stab_sym + 1; sym < rc->stab_sym_end; ++sym) { MCC_TRACE("br\n");
 		str = rc->stab_str + sym->n_strx;
 		pc = sym->n_value;
 
-		switch (sym->n_type) {
+		switch (sym->n_type) { MCC_TRACE("br\n");
 		case N_SLINE:
 			if (func_addr)
 				goto rel_pc;
@@ -513,7 +513,7 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
 			break;
 		}
 
-		switch (sym->n_type) {
+		switch (sym->n_type) { MCC_TRACE("br\n");
 		case N_FUN:
 			if (sym->n_strx == 0)
 				goto reset_func;
@@ -538,7 +538,7 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
 			break;
 		case N_SO:
 			incl_index = 0;
-			if (sym->n_strx) {
+			if (sym->n_strx) { MCC_TRACE("br\n");
 				len = strlen(str);
 				if (len > 0 && str[len - 1] != '/')
 					incl_files[incl_index++] = str;
@@ -557,7 +557,7 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
 	last_incl_index = 0, func_name[0] = 0, func_addr = 0;
 found:
 	i = last_incl_index;
-	if (i > 0) {
+	if (i > 0) { MCC_TRACE("br\n");
 		pstrcpy(bi->file, sizeof bi->file, incl_files[--i]);
 		bi->line = last_line_num;
 	}
@@ -593,7 +593,7 @@ found:
 		goto next_line;                   \
 	}
 
-static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) {
+static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) { MCC_TRACE("enter\n");
 	unsigned char *ln;
 	unsigned char *cp;
 	unsigned char *end;
@@ -640,7 +640,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 	file_dir = 0;
 
 	ln = rc->dwarf_line;
-	while (ln < rc->dwarf_line_end) {
+	while (ln < rc->dwarf_line_end) { MCC_TRACE("br\n");
 		dir_size = 0;
 		filename_size = 0;
 		last_pc = 0;
@@ -675,16 +675,16 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 		opcode_length = ln;
 		ln += opcode_base - 1;
 		opindex = 0;
-		if (version >= 5) {
+		if (version >= 5) { MCC_TRACE("br\n");
 			col = dwarf_read_1(ln, end);
-			for (i = 0; i < col; i++) {
+			for (i = 0; i < col; i++) { MCC_TRACE("br\n");
 				entry_format[i].type = dwarf_read_uleb128(&ln, end);
 				entry_format[i].form = dwarf_read_uleb128(&ln, end);
 			}
 			dir_size = dwarf_read_uleb128(&ln, end);
-			for (i = 0; i < dir_size; i++) {
-				for (j = 0; j < col; j++) {
-					if (entry_format[j].type == DW_LNCT_path) {
+			for (i = 0; i < dir_size; i++) { MCC_TRACE("br\n");
+				for (j = 0; j < col; j++) { MCC_TRACE("br\n");
+					if (entry_format[j].type == DW_LNCT_path) { MCC_TRACE("br\n");
 						if (entry_format[j].form != DW_FORM_line_strp)
 							goto next_line;
 						value = length == 4
@@ -697,7 +697,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				}
 			}
 			col = dwarf_read_1(ln, end);
-			for (i = 0; i < col; i++) {
+			for (i = 0; i < col; i++) { MCC_TRACE("br\n");
 				entry_format[i].type = dwarf_read_uleb128(&ln, end);
 				entry_format[i].form = dwarf_read_uleb128(&ln, end);
 			}
@@ -705,8 +705,8 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 			for (i = 0; i < filename_size && i < FILE_TABLE_SIZE; i++)
 				filename_table[i].dir_entry = 0;
 			for (i = 0; i < filename_size; i++)
-				for (j = 0; j < col; j++) {
-					if (entry_format[j].type == DW_LNCT_path) {
+				for (j = 0; j < col; j++) { MCC_TRACE("br\n");
+					if (entry_format[j].type == DW_LNCT_path) { MCC_TRACE("br\n");
 						if (entry_format[j].form != DW_FORM_line_strp)
 							goto next_line;
 						value = length == 4
@@ -715,8 +715,8 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 						if (i < FILE_TABLE_SIZE)
 							filename_table[i].name =
 									(char *)rc->dwarf_line_str + value;
-					} else if (entry_format[j].type == DW_LNCT_directory_index) {
-						switch (entry_format[j].form) {
+					} else if (entry_format[j].type == DW_LNCT_directory_index) { MCC_TRACE("br\n");
+						switch (entry_format[j].form) { MCC_TRACE("br\n");
 						case DW_FORM_data1:
 							value = dwarf_read_1(ln, end);
 							break;
@@ -737,22 +737,22 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					} else
 						dwarf_ignore_type(ln, end);
 				}
-		} else {
-			while ((dwarf_read_1(ln, end))) {
+		} else { MCC_TRACE("br\n");
+			while ((dwarf_read_1(ln, end))) { MCC_TRACE("br\n");
 				if (++dir_size < DIR_TABLE_SIZE)
 					dirs[dir_size] = (char *)ln - 1;
-				while (dwarf_read_1(ln, end)) {
+				while (dwarf_read_1(ln, end)) { MCC_TRACE("br\n");
 				}
 			}
-			while ((dwarf_read_1(ln, end))) {
-				if (++filename_size < FILE_TABLE_SIZE) {
+			while ((dwarf_read_1(ln, end))) { MCC_TRACE("br\n");
+				if (++filename_size < FILE_TABLE_SIZE) { MCC_TRACE("br\n");
 					filename_table[filename_size - 1].name = (char *)ln - 1;
-					while (dwarf_read_1(ln, end)) {
+					while (dwarf_read_1(ln, end)) { MCC_TRACE("br\n");
 					}
 					filename_table[filename_size - 1].dir_entry =
 							dwarf_read_uleb128(&ln, end);
-				} else {
-					while (dwarf_read_1(ln, end)) {
+				} else { MCC_TRACE("br\n");
+					while (dwarf_read_1(ln, end)) { MCC_TRACE("br\n");
 					}
 					dwarf_read_uleb128(&ln, end);
 				}
@@ -760,17 +760,17 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				dwarf_read_uleb128(&ln, end);
 			}
 		}
-		if (filename_size >= 1) {
+		if (filename_size >= 1) { MCC_TRACE("br\n");
 			filename = filename_table[0].name;
 			file_dir = filename_table[0].dir_entry;
 		}
-		while (ln < end) {
+		while (ln < end) { MCC_TRACE("br\n");
 			last_pc = pc;
 			i = dwarf_read_1(ln, end);
-			if (i >= opcode_base) {
+			if (i >= opcode_base) { MCC_TRACE("br\n");
 				if (max_ops_per_insn == 1)
 					pc += ((i - opcode_base) / line_range) * min_insn_length;
-				else {
+				else { MCC_TRACE("br\n");
 					pc += (opindex + (i - opcode_base) / line_range) /
 								max_ops_per_insn * min_insn_length;
 					opindex = (opindex + (i - opcode_base) / line_range) %
@@ -781,15 +781,15 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				if (pc >= wanted_pc && wanted_pc >= last_pc)
 					goto found;
 				line += i;
-			} else {
-				switch (i) {
+			} else { MCC_TRACE("br\n");
+				switch (i) { MCC_TRACE("br\n");
 				case 0:
 					len = dwarf_read_uleb128(&ln, end);
 					cp = ln;
 					ln += len;
 					if (len == 0)
 						goto next_line;
-					switch (dwarf_read_1(cp, end)) {
+					switch (dwarf_read_1(cp, end)) { MCC_TRACE("br\n");
 					case DW_LNE_end_sequence:
 						break;
 					case DW_LNE_set_address:
@@ -804,14 +804,14 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 						opindex = 0;
 						break;
 					case DW_LNE_define_file:
-						if (++filename_size < FILE_TABLE_SIZE) {
+						if (++filename_size < FILE_TABLE_SIZE) { MCC_TRACE("br\n");
 							filename_table[filename_size - 1].name = (char *)ln - 1;
-							while (dwarf_read_1(ln, end)) {
+							while (dwarf_read_1(ln, end)) { MCC_TRACE("br\n");
 							}
 							filename_table[filename_size - 1].dir_entry =
 									dwarf_read_uleb128(&ln, end);
-						} else {
-							while (dwarf_read_1(ln, end)) {
+						} else { MCC_TRACE("br\n");
+							while (dwarf_read_1(ln, end)) { MCC_TRACE("br\n");
 							}
 							dwarf_read_uleb128(&ln, end);
 						}
@@ -829,7 +829,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				case DW_LNS_advance_pc:
 					if (max_ops_per_insn == 1)
 						pc += dwarf_read_uleb128(&ln, end) * min_insn_length;
-					else {
+					else { MCC_TRACE("br\n");
 						unsigned long long off = dwarf_read_uleb128(&ln, end);
 
 						pc += (opindex + off) / max_ops_per_insn *
@@ -844,7 +844,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				case DW_LNS_set_file:
 					i = dwarf_read_uleb128(&ln, end);
 					i -= i > 0 && version < 5;
-					if (i < FILE_TABLE_SIZE && i < filename_size) {
+					if (i < FILE_TABLE_SIZE && i < filename_size) { MCC_TRACE("br\n");
 						filename = filename_table[i].name;
 						file_dir = filename_table[i].dir_entry;
 					}
@@ -852,7 +852,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				case DW_LNS_const_add_pc:
 					if (max_ops_per_insn == 1)
 						pc += ((255 - opcode_base) / line_range) * min_insn_length;
-					else {
+					else { MCC_TRACE("br\n");
 						unsigned int off = (255 - opcode_base) / line_range;
 
 						pc += ((opindex + off) / max_ops_per_insn) *
@@ -879,7 +879,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 	}
 	filename = function = NULL, func_addr = 0;
 found:
-	if (filename) {
+	if (filename) { MCC_TRACE("br\n");
 		if (file_dir && file_dir < DIR_TABLE_SIZE &&
 				file_dir < dir_size + (version < 5) && filename[0] != '/')
 			snprintf(bi->file, sizeof bi->file, "%s/%s",
@@ -896,7 +896,7 @@ found:
 #ifndef MCC_CONFIG_BACKTRACE_ONLY
 static
 #endif
-		int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap) {
+		int _mcc_backtrace(rt_frame *f, const char *fmt, va_list ap) { MCC_TRACE("enter\n");
 	rt_context *rc, *rc2;
 	addr_t pc;
 	char skip[40], msg[200];
@@ -906,7 +906,7 @@ static
 	addr_t (*getinfo)(rt_context *, addr_t, bt_info *);
 
 	skip[0] = 0;
-	if (fmt[0] == '^' && (b = strchr(a = fmt + 1, fmt[0]))) {
+	if (fmt[0] == '^' && (b = strchr(a = fmt + 1, fmt[0]))) { MCC_TRACE("br\n");
 		memcpy(skip, a, b - a), skip[b - a] = 0;
 		fmt = b + 1;
 	}
@@ -918,22 +918,22 @@ static
 	rt_wait_sem();
 	rc = g_rc;
 	getinfo = rt_printline, n = 6;
-	if (rc) {
+	if (rc) { MCC_TRACE("br\n");
 		if (rc->dwarf)
 			getinfo = rt_printline_dwarf;
 		if (rc->num_callers)
 			n = rc->num_callers;
 	}
 
-	for (i = level = 0; level < n; i++) {
+	for (i = level = 0; level < n; i++) { MCC_TRACE("br\n");
 		ret = rt_get_caller_pc(&pc, f, i);
 		if (ret == -1)
 			break;
 		memset(&bi, 0, sizeof bi);
-		for (rc2 = rc; rc2; rc2 = rc2->next) {
+		for (rc2 = rc; rc2; rc2 = rc2->next) { MCC_TRACE("br\n");
 			if (getinfo(rc2, pc, &bi))
 				break;
-			if (!!(a = rt_elfsym(rc2, pc, &bi.func_pc))) {
+			if (!!(a = rt_elfsym(rc2, pc, &bi.func_pc))) { MCC_TRACE("br\n");
 				pstrcpy(bi.func, sizeof bi.func, a);
 				break;
 			}
@@ -946,7 +946,7 @@ static
 #ifndef MCC_CONFIG_BACKTRACE_ONLY
 		{
 			MCCState *s = rt_find_state(f);
-			if (s && s->bt_func) {
+			if (s && s->bt_func) { MCC_TRACE("br\n");
 				ret = s->bt_func(
 						s->bt_data,
 						(void *)pc,
@@ -960,13 +960,13 @@ static
 			}
 		}
 #endif
-		if (bi.file[0]) {
+		if (bi.file[0]) { MCC_TRACE("br\n");
 			rt_printf("%s:%d", bi.file, bi.line);
-		} else {
+		} else { MCC_TRACE("br\n");
 			rt_printf("0x%08llx", (long long)pc);
 		}
 		rt_printf(": %s %s", level ? "by" : "at", bi.func[0] ? bi.func : "???");
-		if (level == 0) {
+		if (level == 0) { MCC_TRACE("br\n");
 			rt_printf(": %s", msg);
 			if (one)
 				break;
@@ -984,7 +984,7 @@ static
 	return 0;
 }
 
-static int rt_error(rt_frame *f, const char *fmt, ...) {
+static int rt_error(rt_frame *f, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	char msg[200];
 	int ret;
@@ -995,11 +995,11 @@ static int rt_error(rt_frame *f, const char *fmt, ...) {
 	return ret;
 }
 
-static int rt_fault(int code, unsigned detail, HostFaultRegs *hr) {
+static int rt_fault(int code, unsigned detail, HostFaultRegs *hr) { MCC_TRACE("enter\n");
 	rt_frame f;
 
 	f.ip = hr->pc, f.fp = hr->fp, f.sp = hr->sp;
-	switch (code) {
+	switch (code) { MCC_TRACE("br\n");
 	case HOST_FAULT_DIVZERO:
 		rt_error(&f, "division by zero");
 		break;
@@ -1031,17 +1031,17 @@ static int rt_fault(int code, unsigned detail, HostFaultRegs *hr) {
 	return 0;
 }
 
-static void set_exception_handler(void) {
+static void set_exception_handler(void) { MCC_TRACE("enter\n");
 	host_fault_install(rt_fault);
 }
 
 #if defined(__i386__) || defined(__x86_64__)
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
-	if (level == 0) {
+static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE("enter\n");
+	if (level == 0) { MCC_TRACE("br\n");
 		*paddr = rc->ip;
-	} else {
+	} else { MCC_TRACE("br\n");
 		addr_t fp = rc->fp;
-		while (1) {
+		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
 				return -1;
 			if (0 == --level)
@@ -1054,12 +1054,12 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
 }
 
 #elif defined(__arm__) && !MCC_HOST_WIN32
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
-	if (level == 0) {
+static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE("enter\n");
+	if (level == 0) { MCC_TRACE("br\n");
 		*paddr = rc->ip;
-	} else {
+	} else { MCC_TRACE("br\n");
 		addr_t fp = rc->fp;
-		while (1) {
+		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
 				return -1;
 			if (0 == --level)
@@ -1072,12 +1072,12 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
 }
 
 #elif defined(__aarch64__)
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
-	if (level == 0) {
+static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE("enter\n");
+	if (level == 0) { MCC_TRACE("br\n");
 		*paddr = rc->ip;
-	} else {
+	} else { MCC_TRACE("br\n");
 		addr_t fp = rc->fp;
-		while (1) {
+		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
 				return -1;
 			if (0 == --level)
@@ -1090,12 +1090,12 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
 }
 
 #elif defined(__riscv)
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
-	if (level == 0) {
+static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE("enter\n");
+	if (level == 0) { MCC_TRACE("br\n");
 		*paddr = rc->ip;
-	} else {
+	} else { MCC_TRACE("br\n");
 		addr_t fp = rc->fp;
-		while (1) {
+		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
 				return -1;
 			if (0 == --level)
@@ -1109,13 +1109,13 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
 
 #else
 #warning add arch specific rt_get_caller_pc()
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) {
+static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE("enter\n");
 	return -1;
 }
 
 #endif
 #else
-static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level) {
+static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level) { MCC_TRACE("enter\n");
 	if (level)
 		return -1;
 	*paddr = f->ip;

@@ -13,7 +13,7 @@ static const char *const frn[32] = {
 		"fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
 		"fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
 
-static void P(disasm_ctx *dc, const char *fmt, ...) {
+static void P(disasm_ctx *dc, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	if (dc->collect)
 		return;
@@ -22,31 +22,31 @@ static void P(disasm_ctx *dc, const char *fmt, ...) {
 	va_end(ap);
 }
 
-static int raw32(disasm_ctx *dc, uint32_t w) {
+static int raw32(disasm_ctx *dc, uint32_t w) { MCC_TRACE("enter\n");
 	P(dc, ".long\t0x%08x", w);
 	return 4;
 }
 
-static int32_t imm_i(uint32_t w) {
+static int32_t imm_i(uint32_t w) { MCC_TRACE("enter\n");
 	return (int32_t)w >> 20;
 }
-static int32_t imm_s(uint32_t w) {
+static int32_t imm_s(uint32_t w) { MCC_TRACE("enter\n");
 	return (((int32_t)w >> 25) << 5) | ((w >> 7) & 0x1f);
 }
-static int32_t imm_b(uint32_t w) {
+static int32_t imm_b(uint32_t w) { MCC_TRACE("enter\n");
 	int32_t v = (((w >> 31) & 1) << 12) | (((w >> 7) & 1) << 11) | (((w >> 25) & 0x3f) << 5) | (((w >> 8) & 0xf) << 1);
 	return (v << 19) >> 19;
 }
-static int32_t imm_j(uint32_t w) {
+static int32_t imm_j(uint32_t w) { MCC_TRACE("enter\n");
 	int32_t v = (((w >> 31) & 1) << 20) | (((w >> 12) & 0xff) << 12) | (((w >> 20) & 1) << 11) | (((w >> 21) & 0x3ff) << 1);
 	return (v << 11) >> 11;
 }
 
-static int plain_sym(const char *s) {
+static int plain_sym(const char *s) { MCC_TRACE("enter\n");
 	return s && !strchr(s, '+') && !strchr(s, '-');
 }
 
-static const char *sym_esc(const char *s) {
+static const char *sym_esc(const char *s) { MCC_TRACE("enter\n");
 	static const char *const csr[] = {
 			"cycle", "fcsr", "fflags", "frm", "instret", "time",
 			"cycleh", "instreth", "timeh", "pc", NULL};
@@ -62,7 +62,7 @@ static const char *sym_esc(const char *s) {
 	return "";
 }
 
-static ElfW(Sym) * reloc_sym_at(disasm_ctx *dc, addr_t off, int type) {
+static ElfW(Sym) * reloc_sym_at(disasm_ctx *dc, addr_t off, int type) { MCC_TRACE("enter\n");
 	Section *sr = dc->sec->reloc;
 	ElfW_Rel *rel;
 	if (!sr)
@@ -74,18 +74,18 @@ static ElfW(Sym) * reloc_sym_at(disasm_ctx *dc, addr_t off, int type) {
 	return NULL;
 }
 
-static int defined_before(disasm_ctx *dc, ElfW(Sym) * s, addr_t pc) {
+static int defined_before(disasm_ctx *dc, ElfW(Sym) * s, addr_t pc) { MCC_TRACE("enter\n");
 	return s && s->st_shndx == dc->sec->sh_num && s->st_value < pc;
 }
 
-static addr_t pcrel_lo_target(disasm_ctx *dc, addr_t off, int type) {
+static addr_t pcrel_lo_target(disasm_ctx *dc, addr_t off, int type) { MCC_TRACE("enter\n");
 	ElfW(Sym) *s = reloc_sym_at(dc, off, type);
 	if (!s || s->st_shndx != dc->sec->sh_num)
 		return (addr_t)-1;
 	return s->st_value;
 }
 
-static int auipc_spelling(disasm_ctx *dc, addr_t A) {
+static int auipc_spelling(disasm_ctx *dc, addr_t A) { MCC_TRACE("enter\n");
 	int rtype = 0, lotype = 0;
 	const char *rel, *lo;
 	char relbuf[256];
@@ -104,14 +104,14 @@ static int auipc_spelling(disasm_ctx *dc, addr_t A) {
 	return 0;
 }
 
-static int dis_auipc(disasm_ctx *dc, uint32_t w) {
+static int dis_auipc(disasm_ctx *dc, uint32_t w) { MCC_TRACE("enter\n");
 	int rd = (w >> 7) & 0x1f;
 	int rtype = 0, lotype = 0;
 	char relbuf[256];
 	const char *rel = disasm_reloc(dc, dc->pc, 4, &rtype);
 	const char *lo;
 
-	if (rel) {
+	if (rel) { MCC_TRACE("br\n");
 		snprintf(relbuf, sizeof relbuf, "%s", rel);
 		rel = relbuf;
 	}
@@ -119,33 +119,33 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w) {
 					 ? disasm_reloc(dc, dc->pc + 4, 4, &lotype)
 					 : NULL;
 
-	if (!rel) {
+	if (!rel) { MCC_TRACE("br\n");
 		P(dc, "auipc\t%s, 0x%x", xrn[rd], (w >> 12) & 0xfffff);
 		return 4;
 	}
-	if (rtype == R_RISCV_CALL || rtype == R_RISCV_CALL_PLT) {
+	if (rtype == R_RISCV_CALL || rtype == R_RISCV_CALL_PLT) { MCC_TRACE("br\n");
 		ElfW(Sym) *s = reloc_sym_at(dc, dc->pc, rtype);
-		if (plain_sym(rel)) {
-			if (defined_before(dc, s, dc->pc) && ELFW(ST_BIND)(s->st_info) != STB_LOCAL) {
+		if (plain_sym(rel)) { MCC_TRACE("br\n");
+			if (defined_before(dc, s, dc->pc) && ELFW(ST_BIND)(s->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 				P(dc, ".set\t.Lcs%llx, %s%s\n\tauipc\t%s, .Lcs%llx",
 					(unsigned long long)dc->pc, sym_esc(rel), rel, xrn[rd],
 					(unsigned long long)dc->pc);
-			} else {
+			} else { MCC_TRACE("br\n");
 				P(dc, "auipc\t%s, %s%s", xrn[rd], sym_esc(rel), rel);
 			}
 			return 4;
 		}
 		return raw32(dc, w);
 	}
-	if (rtype == R_RISCV_GOT_HI20 && plain_sym(rel) && lo && lotype == R_RISCV_PCREL_LO12_I && !defined_before(dc, reloc_sym_at(dc, dc->pc, rtype), dc->pc)) {
+	if (rtype == R_RISCV_GOT_HI20 && plain_sym(rel) && lo && lotype == R_RISCV_PCREL_LO12_I && !defined_before(dc, reloc_sym_at(dc, dc->pc, rtype), dc->pc)) { MCC_TRACE("br\n");
 		P(dc, ".globl\t%s\n\tauipc\t%s, %s%s", rel, xrn[rd], sym_esc(rel), rel);
 		return 4;
 	}
-	if (rtype == R_RISCV_PCREL_HI20 && plain_sym(rel) && lo && lotype == R_RISCV_PCREL_LO12_I) {
+	if (rtype == R_RISCV_PCREL_HI20 && plain_sym(rel) && lo && lotype == R_RISCV_PCREL_LO12_I) { MCC_TRACE("br\n");
 		P(dc, "auipc\t%s, %s%s", xrn[rd], sym_esc(rel), rel);
 		return 4;
 	}
-	if (rtype == R_RISCV_PCREL_HI20 || rtype == R_RISCV_GOT_HI20) {
+	if (rtype == R_RISCV_PCREL_HI20 || rtype == R_RISCV_GOT_HI20) { MCC_TRACE("br\n");
 		P(dc, ".Lpc%llx:\n\tauipc\t%s, %s(%s%s)",
 			(unsigned long long)dc->pc, xrn[rd],
 			rtype == R_RISCV_GOT_HI20 ? "%got_pcrel_hi" : "%pcrel_hi",
@@ -156,14 +156,14 @@ static int dis_auipc(disasm_ctx *dc, uint32_t w) {
 	return raw32(dc, w);
 }
 
-static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
+static int dis_op_fp(disasm_ctx *dc, uint32_t w) { MCC_TRACE("enter\n");
 	int rd = (w >> 7) & 0x1f, rm = (w >> 12) & 7;
 	int rs1 = (w >> 15) & 0x1f, rs2 = (w >> 20) & 0x1f;
 	int f7 = w >> 25;
 	char fc = (f7 & 1) ? 'd' : 's';
 	static const char *const cvt[4] = {"w", "wu", "l", "lu"};
 
-	switch (f7 & ~1) {
+	switch (f7 & ~1) { MCC_TRACE("br\n");
 	case 0x00:
 	case 0x04:
 	case 0x08:
@@ -236,18 +236,18 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
 		P(dc, "fcvt.%c.%s\t%s, %s", fc, cvt[rs2], frn[rd], xrn[rs1]);
 		return 4;
 	case 0x70:
-		if (rm == 1 && rs2 == 0) {
+		if (rm == 1 && rs2 == 0) { MCC_TRACE("br\n");
 			P(dc, "fclass.%c\t%s, %s", fc, xrn[rd], frn[rs1]);
 			return 4;
 		}
-		if (rm == 0 && rs2 == 0) {
+		if (rm == 0 && rs2 == 0) { MCC_TRACE("br\n");
 			P(dc, "fmv.x.%c\t%s, %s", (f7 & 1) ? 'd' : 'w',
 				xrn[rd], frn[rs1]);
 			return 4;
 		}
 		break;
 	case 0x78:
-		if (rm == 0 && rs2 == 0) {
+		if (rm == 0 && rs2 == 0) { MCC_TRACE("br\n");
 			P(dc, "fmv.%c.x\t%s, %s", (f7 & 1) ? 'd' : 'w',
 				frn[rd], xrn[rs1]);
 			return 4;
@@ -257,18 +257,18 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) {
 	return raw32(dc, w);
 }
 
-static int dis_insn(disasm_ctx *dc) {
+static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	addr_t pc = dc->pc;
 	uint32_t w;
 	int rd, f3, rs1, rs2, rtype;
 	const char *rel;
 
-	if (pc + 2 > dc->size) {
+	if (pc + 2 > dc->size) { MCC_TRACE("br\n");
 		P(dc, ".byte\t0x%02x", dc->data[pc]);
 		return 1;
 	}
 	w = read16le(dc->data + pc);
-	if ((w & 3) != 3 || pc + 4 > dc->size) {
+	if ((w & 3) != 3 || pc + 4 > dc->size) { MCC_TRACE("br\n");
 		P(dc, ".short\t0x%04x", w);
 		return 2;
 	}
@@ -278,7 +278,7 @@ static int dis_insn(disasm_ctx *dc) {
 	rs1 = (w >> 15) & 0x1f;
 	rs2 = (w >> 20) & 0x1f;
 
-	switch (w & 0x7f) {
+	switch (w & 0x7f) { MCC_TRACE("br\n");
 	case 0x37:
 		if (disasm_reloc(dc, pc, 4, &rtype))
 			return raw32(dc, w);
@@ -327,9 +327,9 @@ static int dis_insn(disasm_ctx *dc) {
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (!nm[f3] || (rel && rtype != R_RISCV_PCREL_LO12_I))
 			return raw32(dc, w);
-		if (rel) {
+		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
-			if (auipc_spelling(dc, A) == 2) {
+			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)", nm[f3], xrn[rd],
 					(unsigned long long)A, xrn[rs1]);
 				return 4;
@@ -344,9 +344,9 @@ static int dis_insn(disasm_ctx *dc) {
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (f3 > 3 || (rel && rtype != R_RISCV_PCREL_LO12_S))
 			return raw32(dc, w);
-		if (rel) {
+		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
-			if (auipc_spelling(dc, A) == 2) {
+			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)", nm[f3], xrn[rs2],
 					(unsigned long long)A, xrn[rs1]);
 				return 4;
@@ -360,9 +360,9 @@ static int dis_insn(disasm_ctx *dc) {
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if ((f3 != 2 && f3 != 3) || (rel && rtype != R_RISCV_PCREL_LO12_I))
 			return raw32(dc, w);
-		if (rel) {
+		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
-			if (auipc_spelling(dc, A) == 2) {
+			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)",
 					f3 == 3 ? "fld" : "flw", frn[rd],
 					(unsigned long long)A, xrn[rs1]);
@@ -377,9 +377,9 @@ static int dis_insn(disasm_ctx *dc) {
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if ((f3 != 2 && f3 != 3) || (rel && rtype != R_RISCV_PCREL_LO12_S))
 			return raw32(dc, w);
-		if (rel) {
+		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
-			if (auipc_spelling(dc, A) == 2) {
+			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
 				P(dc, "%s\t%s, %%pcrel_lo(.Lpc%llx)(%s)",
 					f3 == 3 ? "fsd" : "fsw", frn[rs2],
 					(unsigned long long)A, xrn[rs1]);
@@ -397,7 +397,7 @@ static int dis_insn(disasm_ctx *dc) {
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (rel && rtype != R_RISCV_PCREL_LO12_I && rtype != R_RISCV_TPREL_LO12_I)
 			return raw32(dc, w);
-		if (f3 == 1 || f3 == 5) {
+		if (f3 == 1 || f3 == 5) { MCC_TRACE("br\n");
 			int top6 = w >> 26;
 			if (f3 == 1 && top6 == 0)
 				P(dc, "slli\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63);
@@ -409,9 +409,9 @@ static int dis_insn(disasm_ctx *dc) {
 				return raw32(dc, w);
 			return 4;
 		}
-		if (f3 == 0 && rel && rtype == R_RISCV_PCREL_LO12_I) {
+		if (f3 == 0 && rel && rtype == R_RISCV_PCREL_LO12_I) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
-			if (auipc_spelling(dc, A) == 2) {
+			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
 				P(dc, "addi\t%s, %s, %%pcrel_lo(.Lpc%llx)", xrn[rd],
 					xrn[rs1], (unsigned long long)A);
 				return 4;
@@ -460,13 +460,13 @@ static int dis_insn(disasm_ctx *dc) {
 			nm = muldiv[f3];
 		if (!nm)
 			return raw32(dc, w);
-		if (w32) {
+		if (w32) { MCC_TRACE("br\n");
 			if (strcmp(nm, "add") && strcmp(nm, "sub") && strcmp(nm, "sll") && strcmp(nm, "srl") &&
 					strcmp(nm, "sra") && strcmp(nm, "mul") && strcmp(nm, "div") && strcmp(nm, "divu") &&
 					strcmp(nm, "rem") && strcmp(nm, "remu"))
 				return raw32(dc, w);
 			P(dc, "%sw\t%s, %s, %s", nm, xrn[rd], xrn[rs1], xrn[rs2]);
-		} else {
+		} else { MCC_TRACE("br\n");
 			P(dc, "%s\t%s, %s, %s", nm, xrn[rd], xrn[rs1], xrn[rs2]);
 		}
 		return 4;
@@ -496,12 +496,12 @@ static int dis_insn(disasm_ctx *dc) {
 	return raw32(dc, w);
 }
 
-ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) {
+ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	return dis_insn(dc);
 }
 
-ST_FUNC int mcc_disasm_reloc_size(int type) {
-	switch (type) {
+ST_FUNC int mcc_disasm_reloc_size(int type) { MCC_TRACE("enter\n");
+	switch (type) { MCC_TRACE("br\n");
 	case R_RISCV_64:
 		return 8;
 	case R_RISCV_32:
@@ -511,7 +511,7 @@ ST_FUNC int mcc_disasm_reloc_size(int type) {
 	return 0;
 }
 
-ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) {
+ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) { MCC_TRACE("enter\n");
 	(void)type;
 	(void)size;
 	return 0;

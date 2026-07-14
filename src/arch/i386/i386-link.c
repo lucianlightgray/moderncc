@@ -1,7 +1,7 @@
 #include "mcc.h"
 
-ST_FUNC int code_reloc(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_386_RELATIVE:
 	case R_386_16:
 	case R_386_32:
@@ -26,8 +26,8 @@ ST_FUNC int code_reloc(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC int gotplt_entry_type(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_386_RELATIVE:
 	case R_386_16:
 	case R_386_GLOB_DAT:
@@ -58,7 +58,7 @@ ST_FUNC int gotplt_entry_type(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) {
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) { MCC_TRACE("enter\n");
 	Section *plt = s1->plt;
 	uint8_t *p;
 	int modrm;
@@ -69,7 +69,7 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 	else
 		modrm = 0x25;
 
-	if (plt->data_offset == 0) {
+	if (plt->data_offset == 0) { MCC_TRACE("br\n");
 		p = section_ptr_add(plt, 16);
 		p[0] = 0xff;
 		p[1] = modrm + 0x10;
@@ -93,7 +93,7 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 	return plt_offset;
 }
 
-ST_FUNC void relocate_plt(MCCState *s1) {
+ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
@@ -102,17 +102,17 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
 
-	if (!(s1->output_type & MCC_OUTPUT_DYN) && p < p_end) {
+	if (!(s1->output_type & MCC_OUTPUT_DYN) && p < p_end) { MCC_TRACE("br\n");
 		add32le(p + 2, s1->got->sh_addr);
 		add32le(p + 8, s1->got->sh_addr);
 		p += 16;
-		while (p < p_end) {
+		while (p < p_end) { MCC_TRACE("br\n");
 			add32le(p + 2, s1->got->sh_addr);
 			p += 16;
 		}
 	}
 
-	if (s1->plt->reloc) {
+	if (s1->plt->reloc) { MCC_TRACE("br\n");
 		ElfW_Rel *rel;
 		int x = s1->plt->sh_addr + 16 + 6;
 		p = s1->got->data;
@@ -123,21 +123,21 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	}
 }
 
-ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) {
+ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	int sym_index, esym_index;
 
 	sym_index = ELFW(R_SYM)(rel->r_info);
 
-	switch (type) {
+	switch (type) { MCC_TRACE("br\n");
 	case R_386_32:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
 			qrel->r_offset = rel->r_offset;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_386_32);
 				qrel++;
 				return;
-			} else {
+			} else { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(0, R_386_RELATIVE);
 				qrel++;
 			}
@@ -145,9 +145,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		add32le(ptr, val);
 		return;
 	case R_386_PC32:
-		if (s1->output_type == MCC_OUTPUT_DLL) {
+		if (s1->output_type == MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_offset = rel->r_offset;
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_386_PC32);
 				qrel++;
@@ -174,7 +174,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		add32le(ptr, get_sym_attr(s1, sym_index, 0)->got_offset);
 		return;
 	case R_386_16:
-		if (s1->output_format != MCC_OUTPUT_FORMAT_BINARY) {
+		if (s1->output_format != MCC_OUTPUT_FORMAT_BINARY) { MCC_TRACE("br\n");
 		output_file:
 			mcc_error_noabort("can only produce 16-bit binary files");
 		}
@@ -200,7 +200,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				0x65, 0xa1, 0x00, 0x00, 0x00, 0x00,
 				0x81, 0xe8, 0x00, 0x00, 0x00, 0x00};
 
-		if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) {
+		if (memcmp(ptr - 3, expect, sizeof(expect)) == 0) { MCC_TRACE("br\n");
 			ElfW(Sym) * sym;
 			Section *sec;
 			int32_t x;
@@ -224,7 +224,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				0x90,
 				0x8d, 0x74, 0x26, 0x00};
 
-		if (memcmp(ptr - 2, expect, sizeof(expect)) == 0) {
+		if (memcmp(ptr - 2, expect, sizeof(expect)) == 0) { MCC_TRACE("br\n");
 			memcpy(ptr - 2, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_386_NONE);
 		} else
@@ -251,10 +251,10 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 		sec = s1->sections[sym->st_shndx];
 
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
-			if (s->sh_flags & SHF_TLS && ssz) {
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					tls_start = s->sh_addr;
 				if (s->sh_addr + ssz > tls_end)
@@ -263,7 +263,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 					tls_align = s->sh_addralign;
 			}
 		}
-		if (tls_end > tls_start) {
+		if (tls_end > tls_start) { MCC_TRACE("br\n");
 			addr_t tls_size = tls_end - tls_start;
 			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
@@ -272,7 +272,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #else
 			x = val - (tls_start + aligned_size);
 #endif
-		} else {
+		} else { MCC_TRACE("br\n");
 			x = val - sec->sh_addr - sec->data_offset;
 		}
 		add32le(ptr, x);

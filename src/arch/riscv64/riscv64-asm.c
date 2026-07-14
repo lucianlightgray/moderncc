@@ -79,7 +79,7 @@ static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Ope
 static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Operand *rs1, const Operand *imm);
 static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const Operand *imm);
 
-ST_FUNC void gen_le32(int i) {
+ST_FUNC void gen_le32(int i) { MCC_TRACE("enter\n");
 	int ind1;
 	if (nocode_wanted)
 		return;
@@ -92,16 +92,16 @@ ST_FUNC void gen_le32(int i) {
 	cur_text_section->data[ind++] = (i >> 24) & 0xFF;
 }
 
-ST_FUNC void gen_expr32(ExprValue *pe) {
+ST_FUNC void gen_expr32(ExprValue *pe) { MCC_TRACE("enter\n");
 	gen_le32(pe->v);
 }
 
-static void asm_emit_opcode(uint32_t opcode) {
+static void asm_emit_opcode(uint32_t opcode) { MCC_TRACE("enter\n");
 	gen_le32(opcode);
 }
 
-static void asm_nullary_opcode(MCCState *s1, int token) {
-	switch (token) {
+static void asm_nullary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_fence_i:
 		asm_emit_opcode((0x3 << 2) | 3 | (1 << 12));
 		return;
@@ -137,14 +137,14 @@ static void asm_nullary_opcode(MCCState *s1, int token) {
 	}
 }
 
-static void parse_operand(MCCState *s1, Operand *op) {
+static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 	ExprValue e = {0};
 	Sym label = {0};
 	int8_t reg;
 
 	op->type = 0;
 
-	if (tok == '%') {
+	if (tok == '%') { MCC_TRACE("br\n");
 		const char *mod;
 		int rtype;
 		next();
@@ -155,7 +155,7 @@ static void parse_operand(MCCState *s1, Operand *op) {
 			rtype = R_RISCV_GOT_HI20;
 		else if (!strcmp(mod, "pcrel_lo"))
 			rtype = 0;
-		else {
+		else { MCC_TRACE("br\n");
 			expect("relocation modifier");
 			return;
 		}
@@ -163,39 +163,39 @@ static void parse_operand(MCCState *s1, Operand *op) {
 		skip('(');
 		asm_expr(s1, &e);
 		skip(')');
-		if (!e.sym) {
+		if (!e.sym) { MCC_TRACE("br\n");
 			expect("symbol");
 			return;
 		}
-		if (rtype) {
+		if (rtype) { MCC_TRACE("br\n");
 			greloca(cur_text_section, e.sym, ind, rtype, e.v);
 			op->type = OP_IM32;
 			op->e.v = 0;
-		} else {
+		} else { MCC_TRACE("br\n");
 			op->type = OP_PCREL_LO;
 			op->e = e;
 		}
 		return;
 	}
 
-	if ((reg = asm_parse_regvar(tok)) != -1) {
+	if ((reg = asm_parse_regvar(tok)) != -1) { MCC_TRACE("br\n");
 		next();
 		op->type = OP_REG;
 		op->reg = (uint8_t)reg;
 		return;
-	} else if (tok == '$') {
+	} else if (tok == '$') { MCC_TRACE("br\n");
 		next();
-	} else if ((e.v = asm_parse_csrvar(tok)) != -1) {
+	} else if ((e.v = asm_parse_csrvar(tok)) != -1) { MCC_TRACE("br\n");
 		next();
-	} else {
+	} else { MCC_TRACE("br\n");
 		asm_expr(s1, &e);
 	}
 	op->type = OP_IM32;
 	op->e = e;
-	if (!op->e.sym) {
+	if (!op->e.sym) { MCC_TRACE("br\n");
 		if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
 			op->type = OP_IM12S;
-	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
+	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) { MCC_TRACE("br\n");
 		label.type.t = VT_VOID | VT_STATIC;
 
 		if (op->e.sym->type.t & VT_STATIC)
@@ -207,71 +207,71 @@ static void parse_operand(MCCState *s1, Operand *op) {
 
 		op->type = OP_IM12S;
 		op->e.v = 0;
-	} else {
+	} else { MCC_TRACE("br\n");
 		expect("operand");
 	}
 }
 
-static void parse_branch_offset_operand(MCCState *s1, Operand *op) {
+static void parse_branch_offset_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 	ExprValue e = {0};
 
 	asm_expr(s1, &e);
 	op->type = OP_IM32;
 	op->e = e;
-	if (!op->e.sym) {
+	if (!op->e.sym) { MCC_TRACE("br\n");
 		if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
 			op->type = OP_IM12S;
-	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
+	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) { MCC_TRACE("br\n");
 		op->type = OP_IM32;
 		op->e.v = 0;
-	} else {
+	} else { MCC_TRACE("br\n");
 		expect("operand");
 	}
 }
 
-static void parse_jump_offset_operand(MCCState *s1, Operand *op) {
+static void parse_jump_offset_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 	ExprValue e = {0};
 
 	asm_expr(s1, &e);
 	op->type = OP_IM32;
 	op->e = e;
-	if (!op->e.sym) {
+	if (!op->e.sym) { MCC_TRACE("br\n");
 		if ((int)op->e.v >= -0x1000 && (int)op->e.v < 0x1000)
 			op->type = OP_IM12S;
-	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) {
+	} else if (op->e.sym->type.t & (VT_EXTERN | VT_STATIC)) { MCC_TRACE("br\n");
 		greloca(cur_text_section, op->e.sym, ind, R_RISCV_JAL, 0);
 		op->type = OP_IM12S;
 		op->e.v = 0;
-	} else {
+	} else { MCC_TRACE("br\n");
 		expect("operand");
 	}
 }
 
-static void parse_operands(MCCState *s1, Operand *ops, int count) {
-	for (int i = 0; i < count; i++) {
+static void parse_operands(MCCState *s1, Operand *ops, int count) { MCC_TRACE("enter\n");
+	for (int i = 0; i < count; i++) { MCC_TRACE("br\n");
 		if (i != 0)
 			skip(',');
 		parse_operand(s1, &ops[i]);
 	}
 }
 
-static void parse_mem_access_operands(MCCState *s1, Operand *ops) {
+static void parse_mem_access_operands(MCCState *s1, Operand *ops) { MCC_TRACE("enter\n");
 	Operand op;
 
 	parse_operand(s1, &ops[0]);
 	skip(',');
-	if (tok == '(') {
+	if (tok == '(') { MCC_TRACE("br\n");
 		next();
 		parse_operand(s1, &ops[1]);
 		skip(')');
 		ops[2] = zimm;
-	} else {
+	} else { MCC_TRACE("br\n");
 		parse_operand(s1, &ops[2]);
-		if (tok == '(') {
+		if (tok == '(') { MCC_TRACE("br\n");
 			next();
 			parse_operand(s1, &ops[1]);
 			skip(')');
-		} else {
+		} else { MCC_TRACE("br\n");
 			op = ops[2];
 			ops[1] = ops[2];
 			ops[2] = op;
@@ -280,14 +280,14 @@ static void parse_mem_access_operands(MCCState *s1, Operand *ops) {
 	}
 }
 
-static void asm_jal_opcode(MCCState *s1, int token) {
+static void asm_jal_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[2];
 
-	if (token == TOK_ASM_j) {
+	if (token == TOK_ASM_j) { MCC_TRACE("br\n");
 		ops[0] = zero;
-	} else if (asm_parse_regvar(tok) == -1) {
+	} else if (asm_parse_regvar(tok) == -1) { MCC_TRACE("br\n");
 		ops[0] = ra;
-	} else {
+	} else { MCC_TRACE("br\n");
 		parse_operand(s1, &ops[0]);
 		if (tok == ',')
 			next();
@@ -298,30 +298,30 @@ static void asm_jal_opcode(MCCState *s1, int token) {
 	asm_emit_j(token, 0x6f, &ops[0], &ops[1]);
 }
 
-static void asm_jalr_opcode(MCCState *s1, int token) {
+static void asm_jalr_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[3];
 	Operand op;
 
 	parse_operand(s1, &ops[0]);
 	if (tok == ',')
 		next();
-	else {
+	else { MCC_TRACE("br\n");
 		asm_emit_i(token, 0x67 | (0 << 12), &ra, &ops[0], &zimm);
 		return;
 	}
 
-	if (tok == '(') {
+	if (tok == '(') { MCC_TRACE("br\n");
 		next();
 		parse_operand(s1, &ops[1]);
 		skip(')');
 		ops[2] = zimm;
-	} else {
+	} else { MCC_TRACE("br\n");
 		parse_operand(s1, &ops[2]);
-		if (tok == '(') {
+		if (tok == '(') { MCC_TRACE("br\n");
 			next();
 			parse_operand(s1, &ops[1]);
 			skip(')');
-		} else {
+		} else { MCC_TRACE("br\n");
 			op = ops[2];
 			ops[1] = ops[2];
 			ops[2] = op;
@@ -331,22 +331,22 @@ static void asm_jalr_opcode(MCCState *s1, int token) {
 	asm_emit_i(token, 0x67 | (0 << 12), &ops[0], &ops[1], &ops[2]);
 }
 
-static void asm_unary_opcode(MCCState *s1, int token) {
+static void asm_unary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	uint32_t opcode = (0x1C << 2) | 3 | (2 << 12);
 	Operand op;
 
-	if (token == TOK_ASM_call || token == TOK_ASM_tail) {
+	if (token == TOK_ASM_call || token == TOK_ASM_tail) { MCC_TRACE("br\n");
 		ExprValue e = {0};
 		asm_expr(s1, &e);
-		if (!e.sym) {
+		if (!e.sym) { MCC_TRACE("br\n");
 			expect("symbol");
 			return;
 		}
 		greloca(cur_text_section, e.sym, ind, R_RISCV_CALL, e.v);
-		if (token == TOK_ASM_call) {
+		if (token == TOK_ASM_call) { MCC_TRACE("br\n");
 			asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(1));
 			asm_emit_opcode(0x67 | ENCODE_RD(1) | ENCODE_RS1(1));
-		} else {
+		} else { MCC_TRACE("br\n");
 			asm_emit_opcode(3 | (5 << 2) | ENCODE_RD(6));
 			asm_emit_opcode(0x67 | ENCODE_RS1(6));
 		}
@@ -356,7 +356,7 @@ static void asm_unary_opcode(MCCState *s1, int token) {
 	parse_operands(s1, &op, 1);
 	opcode |= ENCODE_RD(op.reg);
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_rdcycle:
 		asm_emit_opcode(opcode | (0xC00 << 20));
 		return;
@@ -406,52 +406,52 @@ static void asm_unary_opcode(MCCState *s1, int token) {
 	}
 }
 
-static void asm_emit_u(int token, uint32_t opcode, const Operand *rd, const Operand *rs2) {
-	if (rd->type != OP_REG) {
+static void asm_emit_u(int token, uint32_t opcode, const Operand *rd, const Operand *rs2) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_IM12S && rs2->type != OP_IM32) {
+	if (rs2->type != OP_IM12S && rs2->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value", get_tok_str(token, NULL));
-	} else if (rs2->e.v >= 0x100000) {
+	} else if (rs2->e.v >= 0x100000) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0xfffff",
 							get_tok_str(token, NULL));
 	}
 	gen_le32(opcode | ENCODE_RD(rd->reg) | (rs2->e.v << 12));
 }
 
-static int parse_fence_operand() {
+static int parse_fence_operand() { MCC_TRACE("enter\n");
 	int t = tok;
-	if (tok == TOK_ASM_or) {
+	if (tok == TOK_ASM_or) { MCC_TRACE("br\n");
 		t = TOK_ASM_or_fence;
 	}
 	next();
 	return t - (TOK_ASM_w_fence - 1);
 }
 
-static void asm_fence_opcode(MCCState *s1, int token) {
+static void asm_fence_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	int succ = 0xF, pred = 0xF;
-	if (tok != TOK_LINEFEED && tok != ';' && tok != CH_EOF) {
+	if (tok != TOK_LINEFEED && tok != ';' && tok != CH_EOF) { MCC_TRACE("br\n");
 		pred = parse_fence_operand();
-		if (pred > 0xF || pred < 0) {
+		if (pred > 0xF || pred < 0) { MCC_TRACE("br\n");
 			mcc_error("'%s': Expected first operand that is a valid predecessor operand", get_tok_str(token, NULL));
 		}
 		skip(',');
 		succ = parse_fence_operand();
-		if (succ > 0xF || succ < 0) {
+		if (succ > 0xF || succ < 0) { MCC_TRACE("br\n");
 			mcc_error("'%s': Expected second operand that is a valid successor operand", get_tok_str(token, NULL));
 		}
 	}
 	asm_emit_opcode((0x3 << 2) | 3 | (0 << 12) | succ << 20 | pred << 24);
 }
 
-static void asm_binary_opcode(MCCState *s1, int token) {
+static void asm_binary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand imm = {OP_IM12S, {0}};
 	Operand ops[2];
 	int32_t lo;
 	uint32_t hi;
 
 	parse_operands(s1, &ops[0], 2);
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_lui:
 		asm_emit_u(token, (0xD << 2) | 3, &ops[0], &ops[1]);
 		return;
@@ -567,13 +567,13 @@ static void asm_binary_opcode(MCCState *s1, int token) {
 		asm_emit_i(token, 3 | (4 << 2), ops, ops, ops + 1);
 		return;
 	case TOK_ASM_li:
-		if (ops[1].type != OP_IM32 && ops[1].type != OP_IM12S) {
+		if (ops[1].type != OP_IM32 && ops[1].type != OP_IM12S) { MCC_TRACE("br\n");
 			mcc_error("'%s': Expected first source operand that is an immediate value between 0 and 0xFFFFFFFFFFFFFFFF",
 								get_tok_str(token, NULL));
 		}
 		lo = ops[1].e.v;
 		hi = (int64_t)ops[1].e.v >> 32;
-		if (lo < 0) {
+		if (lo < 0) { MCC_TRACE("br\n");
 			hi += 1;
 		}
 		imm.e.v = ((hi + 0x800) & 0xfffff000) >> 12;
@@ -683,72 +683,72 @@ static void asm_binary_opcode(MCCState *s1, int token) {
 	}
 }
 
-static void asm_emit_r(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) {
-	if (rd->type != OP_REG) {
+static void asm_emit_r(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs1->type != OP_REG) {
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is a register or immediate", get_tok_str(token, NULL));
 	}
 	gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 }
 
-static void asm_emit_f(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) {
-	if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
+static void asm_emit_f(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
 	}
-	if (rs1->type != OP_REG || !REG_IS_FLOAT(rs1->reg)) {
+	if (rs1->type != OP_REG || !REG_IS_FLOAT(rs1->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected first source operand that is a floating-point register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_REG || !REG_IS_FLOAT(rs2->reg)) {
+	if (rs2->type != OP_REG || !REG_IS_FLOAT(rs2->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is a floating-point register", get_tok_str(token, NULL));
 	}
 	gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 }
 
-static void asm_emit_fb(int token, uint32_t opcode, const Operand *rd, const Operand *rs) {
-	if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
+static void asm_emit_fb(int token, uint32_t opcode, const Operand *rd, const Operand *rs) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
 	}
-	if (rs->type != OP_REG || !REG_IS_FLOAT(rs->reg)) {
+	if (rs->type != OP_REG || !REG_IS_FLOAT(rs->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a floating-point register", get_tok_str(token, NULL));
 	}
 	gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs->reg) | ENCODE_RS2(0));
 }
 
 static void asm_emit_fq(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2,
-												const Operand *rs3) {
-	if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) {
+												const Operand *rs3) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG || !REG_IS_FLOAT(rd->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a floating-point register", get_tok_str(token, NULL));
 	}
-	if (rs1->type != OP_REG || !REG_IS_FLOAT(rs1->reg)) {
+	if (rs1->type != OP_REG || !REG_IS_FLOAT(rs1->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected first source operand that is a floating-point register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_REG || !REG_IS_FLOAT(rs2->reg)) {
+	if (rs2->type != OP_REG || !REG_IS_FLOAT(rs2->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is a floating-point register", get_tok_str(token, NULL));
 	}
-	if (rs3->type != OP_REG || !REG_IS_FLOAT(rs3->reg)) {
+	if (rs3->type != OP_REG || !REG_IS_FLOAT(rs3->reg)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected third source operand that is a floating-point register", get_tok_str(token, NULL));
 	}
 	gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (REG_VALUE(rs3->reg) << 27));
 }
 
-static void asm_emit_i(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) {
-	if (rd->type != OP_REG) {
+static void asm_emit_i(int token, uint32_t opcode, const Operand *rd, const Operand *rs1, const Operand *rs2) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs1->type != OP_REG) {
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs2->type == OP_PCREL_LO) {
+	if (rs2->type == OP_PCREL_LO) { MCC_TRACE("br\n");
 		greloca(cur_text_section, rs2->e.sym, ind, R_RISCV_PCREL_LO12_I, rs2->e.v);
 		gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg));
 		return;
 	}
-	if (rs2->type != OP_IM12S) {
+	if (rs2->type != OP_IM12S) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191",
 							get_tok_str(token, NULL));
 	}
@@ -756,42 +756,42 @@ static void asm_emit_i(int token, uint32_t opcode, const Operand *rd, const Oper
 	gen_le32(opcode | ENCODE_RD(rd->reg) | ENCODE_RS1(rs1->reg) | (rs2->e.v << 20));
 }
 
-static void asm_emit_j(int token, uint32_t opcode, const Operand *rd, const Operand *rs2) {
+static void asm_emit_j(int token, uint32_t opcode, const Operand *rd, const Operand *rs2) { MCC_TRACE("enter\n");
 	uint32_t imm;
 
-	if (rd->type != OP_REG) {
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_IM12S && rs2->type != OP_IM32) {
+	if (rs2->type != OP_IM12S && rs2->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	imm = rs2->e.v;
 
-	if ((int)imm > (1 << 20) - 1 || (int)imm <= -1 * ((1 << 20) - 1)) {
+	if ((int)imm > (1 << 20) - 1 || (int)imm <= -1 * ((1 << 20) - 1)) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 0x1fffff",
 							get_tok_str(token, NULL));
 	}
 
-	if (imm & 1) {
+	if (imm & 1) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an even immediate value", get_tok_str(token, NULL));
 	}
 	gen_le32(
 			opcode | ENCODE_RD(rd->reg) | (((imm >> 20) & 1) << 31) | (((imm >> 1) & 0x3ff) << 21) | (((imm >> 11) & 1) << 20) | (((imm >> 12) & 0xff) << 12));
 }
 
-static void asm_mem_access_opcode(MCCState *s1, int token) {
+static void asm_mem_access_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[3];
 	parse_mem_access_operands(s1, &ops[0]);
 
-	if (ops[1].type == OP_IM32 && ops[1].e.sym && ops[1].e.sym->type.t & VT_STATIC) {
+	if (ops[1].type == OP_IM32 && ops[1].e.sym && ops[1].e.sym->type.t & VT_STATIC) { MCC_TRACE("br\n");
 		ops[1] = ops[0];
 		ops[2].type = OP_IM12S;
 		ops[2].e.v = 0;
 		asm_emit_u(token, (0x05 << 2) | 3, &ops[0], &ops[2]);
 	}
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_lb:
 		asm_emit_i(token, (0x0 << 2) | 3, &ops[0], &ops[1], &ops[2]);
 		return;
@@ -841,13 +841,13 @@ static void asm_mem_access_opcode(MCCState *s1, int token) {
 	}
 }
 
-static void asm_branch_opcode(MCCState *s1, int token, int argc) {
+static void asm_branch_opcode(MCCState *s1, int token, int argc) { MCC_TRACE("enter\n");
 	Operand ops[3];
 	parse_operands(s1, &ops[0], argc - 1);
 	skip(',');
 	parse_branch_offset_operand(s1, &ops[argc - 1]);
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_beq:
 		asm_emit_b(token, 0x63 | (0 << 12), ops, ops + 1, ops + 2);
 		return;
@@ -899,11 +899,11 @@ static void asm_branch_opcode(MCCState *s1, int token, int argc) {
 	}
 }
 
-static void asm_ternary_opcode(MCCState *s1, int token) {
+static void asm_ternary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[3];
 	parse_operands(s1, &ops[0], 3);
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_sll:
 		asm_emit_r(token, (0xC << 2) | 3 | (1 << 12), &ops[0], &ops[1], &ops[2]);
 		return;
@@ -1158,11 +1158,11 @@ static void asm_ternary_opcode(MCCState *s1, int token) {
 	}
 }
 
-static void asm_quaternary_opcode(MCCState *s1, int token) {
+static void asm_quaternary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[4];
 	parse_operands(s1, &ops[0], 4);
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_fmadd_d:
 		asm_emit_fq(token, 0x43 | (1 << 25) | (7 << 12), ops, ops + 1, ops + 2, ops + 3);
 		return;
@@ -1175,15 +1175,15 @@ static void asm_quaternary_opcode(MCCState *s1, int token) {
 	}
 }
 
-static void asm_atomic_opcode(MCCState *s1, int token) {
+static void asm_atomic_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[3];
 
 	parse_operand(s1, &ops[0]);
 	skip(',');
 
-	if (token <= TOK_ASM_lr_d_aqrl && token >= TOK_ASM_lr_w) {
+	if (token <= TOK_ASM_lr_d_aqrl && token >= TOK_ASM_lr_w) { MCC_TRACE("br\n");
 		ops[1] = zero;
-	} else {
+	} else { MCC_TRACE("br\n");
 		parse_operand(s1, &ops[1]);
 		skip(',');
 	}
@@ -1192,7 +1192,7 @@ static void asm_atomic_opcode(MCCState *s1, int token) {
 	parse_operand(s1, &ops[2]);
 	skip(')');
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_lr_w:
 		asm_emit_a(token, 0x2F | 0x2 << 12 | 0xC << 27, &ops[0], &ops[1], &ops[2], 0, 0);
 		break;
@@ -1467,7 +1467,7 @@ static void asm_atomic_opcode(MCCState *s1, int token) {
 }
 
 static void asm_emit_a(int token, uint32_t opcode, const Operand *rd1, const Operand *rs2, const Operand *rs1, int aq,
-											 int rl) {
+											 int rl) { MCC_TRACE("enter\n");
 	if (rd1->type != OP_REG)
 		mcc_error("'%s': Expected first destination operand that is a register", get_tok_str(token, NULL));
 	if (rs2->type != OP_REG)
@@ -1477,19 +1477,19 @@ static void asm_emit_a(int token, uint32_t opcode, const Operand *rd1, const Ope
 	gen_le32(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | ENCODE_RD(rd1->reg) | aq << 26 | rl << 25);
 }
 
-static void asm_emit_s(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm) {
-	if (rs1->type != OP_REG) {
+static void asm_emit_s(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm) { MCC_TRACE("enter\n");
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is a register", get_tok_str(token, NULL));
 	}
-	if (imm->type == OP_PCREL_LO) {
+	if (imm->type == OP_PCREL_LO) { MCC_TRACE("br\n");
 		greloca(cur_text_section, imm->e.sym, ind, R_RISCV_PCREL_LO12_S, imm->e.v);
 		gen_le32(opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg));
 		return;
 	}
-	if (imm->type != OP_IM12S) {
+	if (imm->type != OP_IM12S) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected third operand that is an immediate value between 0 and 8191",
 							get_tok_str(token, NULL));
 	}
@@ -1499,16 +1499,16 @@ static void asm_emit_s(int token, uint32_t opcode, const Operand *rs1, const Ope
 	}
 }
 
-static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm) {
+static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Operand *rs2, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t offset;
 
-	if (rs1->type != OP_REG) {
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected first source operand that is a register", get_tok_str(token, NULL));
 	}
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
-	if (imm->type == OP_IM32 && imm->e.sym) {
+	if (imm->type == OP_IM32 && imm->e.sym) { MCC_TRACE("br\n");
 		int b_ofs = ind;
 		uint32_t inv_func3 = ((opcode >> 12) & 7) ^ 1;
 		uint32_t inv_opcode = (opcode & ~(7 << 12)) | (inv_func3 << 12);
@@ -1519,7 +1519,7 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
 							read32le(cur_text_section->data + b_ofs) | (((ind - b_ofs) >> 1) & 0xf) << 8 | (((ind - b_ofs) >> 5) & 0x3f) << 25 | (((ind - b_ofs) >> 11) & 1) << 7 | (((ind - b_ofs) >> 12) & 1) << 31);
 		return;
 	}
-	if (imm->type != OP_IM12S) {
+	if (imm->type != OP_IM12S) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected second source operand that is an immediate value between 0 and 8191",
 							get_tok_str(token, NULL));
 	}
@@ -1530,11 +1530,11 @@ static void asm_emit_b(int token, uint32_t opcode, const Operand *rs1, const Ope
 			opcode | ENCODE_RS1(rs1->reg) | ENCODE_RS2(rs2->reg) | (((offset >> 1) & 0xF) << 8) | (((offset >> 5) & 0x1f) << 25) | (((offset >> 11) & 1) << 7) | (((offset >> 12) & 1) << 31));
 }
 
-static int asm_fcvt_rm(MCCState *s1) {
+static int asm_fcvt_rm(MCCState *s1) { MCC_TRACE("enter\n");
 	int rm = 7;
-	if (tok == ',') {
+	if (tok == ',') { MCC_TRACE("br\n");
 		next();
-		switch (tok) {
+		switch (tok) { MCC_TRACE("br\n");
 		case TOK_ASM_rne:
 			rm = 0;
 			next();
@@ -1563,7 +1563,7 @@ static int asm_fcvt_rm(MCCState *s1) {
 	return rm;
 }
 
-static void asm_fcvt_opcode(MCCState *s1, int token) {
+static void asm_fcvt_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	Operand ops[2];
 	int rm;
 	uint32_t enc = 0;
@@ -1572,7 +1572,7 @@ static void asm_fcvt_opcode(MCCState *s1, int token) {
 	skip(',');
 	parse_operand(s1, &ops[1]);
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_fcvt_w_s:
 		rm = asm_fcvt_rm(s1);
 		enc = 0x53 | (0x60 << 25) | (rm << 12);
@@ -1662,8 +1662,8 @@ static void asm_fcvt_opcode(MCCState *s1, int token) {
 	asm_emit_opcode(enc | ENCODE_RD(ops[0].reg) | ENCODE_RS1(ops[1].reg));
 }
 
-ST_FUNC void asm_opcode(MCCState *s1, int token) {
-	switch (token) {
+ST_FUNC void asm_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_ebreak:
 	case TOK_ASM_ecall:
 	case TOK_ASM_fence_i:
@@ -2044,8 +2044,8 @@ ST_FUNC void asm_opcode(MCCState *s1, int token) {
 	}
 }
 
-static int asm_parse_csrvar(int t) {
-	switch (t) {
+static int asm_parse_csrvar(int t) { MCC_TRACE("enter\n");
+	switch (t) { MCC_TRACE("br\n");
 	case TOK_ASM_cycle:
 		return 0xc00;
 	case TOK_ASM_fcsr:
@@ -2069,17 +2069,17 @@ static int asm_parse_csrvar(int t) {
 	}
 }
 
-ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
+ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC_TRACE("enter\n");
 	int r, reg, val;
 
 	r = sv->r;
-	if ((r & VT_VALMASK) == VT_CONST) {
+	if ((r & VT_VALMASK) == VT_CONST) { MCC_TRACE("br\n");
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
-				modifier != 'P') {
+				modifier != 'P') { MCC_TRACE("br\n");
 		}
-		if (r & VT_SYM) {
+		if (r & VT_SYM) { MCC_TRACE("br\n");
 			const char *name = get_tok_str(sv->sym->v, NULL);
-			if (sv->sym->v >= SYM_FIRST_ANOM) {
+			if (sv->sym->v >= SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 				get_asm_sym(tok_alloc(name, strlen(name))->tok, sv->sym);
 			}
 			if (mcc_state->leading_underscore)
@@ -2092,51 +2092,51 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) {
 		val = sv->c.i;
 		if (modifier == 'n')
 			val = -val;
-		if (modifier == 'z' && sv->c.i == 0) {
+		if (modifier == 'z' && sv->c.i == 0) { MCC_TRACE("br\n");
 			cstr_cat(add_str, "zero", -1);
-		} else {
+		} else { MCC_TRACE("br\n");
 			cstr_printf(add_str, "%d", (int)sv->c.i);
 		}
 	no_offset:;
-	} else if ((r & VT_VALMASK) == VT_LOCAL) {
+	} else if ((r & VT_VALMASK) == VT_LOCAL) { MCC_TRACE("br\n");
 		cstr_printf(add_str, "%d", (int)sv->c.i);
-	} else if (r & VT_LVAL) {
+	} else if (r & VT_LVAL) { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
 			mcc_internal_error("");
 		if ((sv->type.t & VT_BTYPE) == VT_FLOAT ||
-				(sv->type.t & VT_BTYPE) == VT_DOUBLE) {
+				(sv->type.t & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 			reg = TOK_ASM_f0 + REG_VALUE(reg);
-		} else {
+		} else { MCC_TRACE("br\n");
 			reg = TOK_ASM_x0 + reg;
 		}
 		cstr_cat(add_str, get_tok_str(reg, NULL), -1);
-	} else {
+	} else { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
 			mcc_internal_error("");
 		if ((sv->type.t & VT_BTYPE) == VT_FLOAT ||
-				(sv->type.t & VT_BTYPE) == VT_DOUBLE) {
+				(sv->type.t & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 			reg = TOK_ASM_f0 + REG_VALUE(reg);
-		} else {
+		} else { MCC_TRACE("br\n");
 			reg = TOK_ASM_x0 + reg;
 		}
 		cstr_cat(add_str, get_tok_str(reg, NULL), -1);
 	}
 }
 
-static int mcc_ireg(int r) {
+static int mcc_ireg(int r) { MCC_TRACE("enter\n");
 	return REG_VALUE(r) - 10;
 }
 
-static int mcc_freg(int r) {
+static int mcc_freg(int r) { MCC_TRACE("enter\n");
 	return REG_VALUE(r) - 10 + 8;
 }
 
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 													int nb_outputs, int is_output,
 													uint8_t *clobber_regs,
-													int out_reg) {
+													int out_reg) { MCC_TRACE("enter\n");
 	uint8_t regs_allocated[MCC_NB_ASM_REGS];
 	ASMOperand *op;
 	int reg;
@@ -2146,55 +2146,55 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			40, 41, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59};
 
 	memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
-	for (int i = 0; i < nb_operands; i++) {
+	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		op = &operands[i];
-		if (op->reg >= 0) {
+		if (op->reg >= 0) { MCC_TRACE("br\n");
 			regs_allocated[op->reg] = 1;
 		}
 	}
 
-	if (!is_output) {
-		for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) {
+	if (!is_output) { MCC_TRACE("br\n");
+		for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) { MCC_TRACE("br\n");
 			reg = reg_saved[i];
-			if (regs_allocated[reg]) {
+			if (regs_allocated[reg]) { MCC_TRACE("br\n");
 				gen_le32((4 << 2) | 3 |
 								 ENCODE_RD(2) | ENCODE_RS1(2) | (unsigned)-8 << 20);
-				if (REG_IS_FLOAT(reg)) {
+				if (REG_IS_FLOAT(reg)) { MCC_TRACE("br\n");
 					gen_le32(0x27 | (3 << 12) |
 									 ENCODE_RS2(reg) | ENCODE_RS1(2));
-				} else {
+				} else { MCC_TRACE("br\n");
 					gen_le32((0x8 << 2) | 3 | (3 << 12) |
 									 ENCODE_RS2(reg) | ENCODE_RS1(2));
 				}
 			}
 		}
 
-		for (int i = 0; i < nb_operands; i++) {
+		for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 			op = &operands[i];
-			if (op->reg >= 0) {
+			if (op->reg >= 0) { MCC_TRACE("br\n");
 				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL &&
-						op->is_memory) {
+						op->is_memory) { MCC_TRACE("br\n");
 					SValue sv;
 					sv = *op->vt;
 					sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
 					sv.type.t = VT_PTR;
 					load(mcc_ireg(op->reg), &sv);
-				} else if (i >= nb_outputs || op->is_rw) {
+				} else if (i >= nb_outputs || op->is_rw) { MCC_TRACE("br\n");
 					if ((op->vt->type.t & VT_BTYPE) == VT_FLOAT ||
-							(op->vt->type.t & VT_BTYPE) == VT_DOUBLE) {
+							(op->vt->type.t & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 						load(mcc_freg(op->reg), op->vt);
-					} else {
+					} else { MCC_TRACE("br\n");
 						load(mcc_ireg(op->reg), op->vt);
 					}
 				}
 			}
 		}
-	} else {
-		for (int i = 0; i < nb_outputs; i++) {
+	} else { MCC_TRACE("br\n");
+		for (int i = 0; i < nb_outputs; i++) { MCC_TRACE("br\n");
 			op = &operands[i];
-			if (op->reg >= 0) {
-				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
-					if (!op->is_memory) {
+			if (op->reg >= 0) { MCC_TRACE("br\n");
+				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
+					if (!op->is_memory) { MCC_TRACE("br\n");
 						SValue sv;
 						sv = *op->vt;
 						sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL;
@@ -2205,23 +2205,23 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 						sv.r = (sv.r & ~VT_VALMASK) | out_reg;
 						store(mcc_ireg(op->reg), &sv);
 					}
-				} else {
+				} else { MCC_TRACE("br\n");
 					if ((op->vt->type.t & VT_BTYPE) == VT_FLOAT ||
-							(op->vt->type.t & VT_BTYPE) == VT_DOUBLE) {
+							(op->vt->type.t & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 						store(mcc_freg(op->reg), op->vt);
-					} else {
+					} else { MCC_TRACE("br\n");
 						store(mcc_ireg(op->reg), op->vt);
 					}
 				}
 			}
 		}
-		for (int i = sizeof(reg_saved) / sizeof(reg_saved[0]) - 1; i >= 0; i--) {
+		for (int i = sizeof(reg_saved) / sizeof(reg_saved[0]) - 1; i >= 0; i--) { MCC_TRACE("br\n");
 			reg = reg_saved[i];
-			if (regs_allocated[reg]) {
-				if (REG_IS_FLOAT(reg)) {
+			if (regs_allocated[reg]) { MCC_TRACE("br\n");
+				if (REG_IS_FLOAT(reg)) { MCC_TRACE("br\n");
 					gen_le32(7 | (3 << 12) |
 									 ENCODE_RD(reg) | ENCODE_RS1(2) | 0);
-				} else {
+				} else { MCC_TRACE("br\n");
 					gen_le32(3 | (3 << 12) |
 									 ENCODE_RD(reg) | ENCODE_RS1(2) | 0);
 				}
@@ -2232,16 +2232,16 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 	}
 }
 
-static inline int constraint_priority(const char *str) {
+static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 	int priority, c, pr;
 
 	priority = 0;
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		c = *str;
 		if (c == '\0')
 			break;
 		str++;
-		switch (c) {
+		switch (c) { MCC_TRACE("br\n");
 		case 'A':
 		case 'S':
 		case 'f':
@@ -2276,7 +2276,7 @@ static inline int constraint_priority(const char *str) {
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 																		 int nb_operands, int nb_outputs,
 																		 const uint8_t *clobber_regs,
-																		 int *pout_reg) {
+																		 int *pout_reg) { MCC_TRACE("enter\n");
 	ASMOperand *op;
 	int sorted_op[MAX_ASM_OPERANDS];
 	int j, reg, c, reg_mask;
@@ -2286,27 +2286,27 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
 													 clobber_regs, sorted_op, regs_allocated);
 
-	for (int i = 0; i < nb_operands; i++) {
+	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		j = sorted_op[i];
 		op = &operands[j];
 		str = op->constraint;
 		if (op->ref_index >= 0)
 			continue;
-		if (op->input_index >= 0) {
+		if (op->input_index >= 0) { MCC_TRACE("br\n");
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
-		} else if (j < nb_outputs) {
+		} else if (j < nb_outputs) { MCC_TRACE("br\n");
 			reg_mask = REG_OUT_MASK;
-		} else {
+		} else { MCC_TRACE("br\n");
 			reg_mask = REG_IN_MASK;
 		}
-		if (op->reg >= 0) {
+		if (op->reg >= 0) { MCC_TRACE("br\n");
 			if (is_reg_allocated(op->reg))
 				mcc_error("asm regvar requests register that's taken already");
 			reg = op->reg;
 		}
 	try_next:
 		c = *str++;
-		switch (c) {
+		switch (c) { MCC_TRACE("br\n");
 		case '=':
 			goto try_next;
 		case '+':
@@ -2321,7 +2321,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			if ((reg = op->reg) >= 0)
 				goto reg_found;
 			else
-				for (reg = 10; reg <= 18; reg++) {
+				for (reg = 10; reg <= 18; reg++) { MCC_TRACE("br\n");
 					if (!is_reg_allocated(reg))
 						goto reg_found;
 				}
@@ -2335,7 +2335,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			if ((reg = op->reg) >= 0)
 				goto reg_found;
 			else
-				for (reg = 42; reg <= 50; reg++) {
+				for (reg = 42; reg <= 50; reg++) { MCC_TRACE("br\n");
 					if (!is_reg_allocated(reg))
 						goto reg_found;
 				}
@@ -2347,9 +2347,9 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			break;
 		case 'm':
 		case 'g':
-			if (j < nb_outputs || c == 'm') {
-				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) {
-					for (reg = 10; reg <= 18; reg++) {
+			if (j < nb_outputs || c == 'm') { MCC_TRACE("br\n");
+				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
+					for (reg = 10; reg <= 18; reg++) { MCC_TRACE("br\n");
 						if (!(regs_allocated[reg] & REG_IN_MASK))
 							goto reg_found1;
 					}
@@ -2366,24 +2366,24 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 								j, op->constraint);
 			break;
 		}
-		if (op->input_index >= 0) {
+		if (op->input_index >= 0) { MCC_TRACE("br\n");
 			operands[op->input_index].reg = op->reg;
 			operands[op->input_index].is_llong = op->is_llong;
 		}
 	}
 
 	*pout_reg = -1;
-	for (int i = 0; i < nb_operands; i++) {
+	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		op = &operands[i];
 		if (op->reg >= 0 &&
-				(op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) {
-			if (REG_IS_FLOAT(op->reg)) {
-				for (reg = 42; reg <= 50; reg++) {
+				(op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) { MCC_TRACE("br\n");
+			if (REG_IS_FLOAT(op->reg)) { MCC_TRACE("br\n");
+				for (reg = 42; reg <= 50; reg++) { MCC_TRACE("br\n");
 					if (!(regs_allocated[reg] & REG_OUT_MASK))
 						goto reg_found2;
 				}
-			} else {
-				for (reg = 10; reg <= 18; reg++) {
+			} else { MCC_TRACE("br\n");
+				for (reg = 10; reg <= 18; reg++) { MCC_TRACE("br\n");
 					if (!(regs_allocated[reg] & REG_OUT_MASK))
 						goto reg_found2;
 				}
@@ -2395,8 +2395,8 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		}
 	}
 
-	if (g_debug & MCC_DBG_ASM) {
-		for (int i = 0; i < nb_operands; i++) {
+	if (g_debug & MCC_DBG_ASM) { MCC_TRACE("br\n");
+		for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 			j = sorted_op[i];
 			op = &operands[j];
 			printf("%%%d [%s]: \"%s\" r=0x%04x reg=%d\n",
@@ -2409,7 +2409,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	}
 }
 
-ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {
+ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("enter\n");
 	int reg;
 	TokenSym *ts;
 
@@ -2419,13 +2419,13 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) {
 		return;
 	ts = tok_alloc(str, strlen(str));
 	reg = asm_parse_regvar(ts->tok);
-	if (reg == -1) {
+	if (reg == -1) { MCC_TRACE("br\n");
 		mcc_error("invalid clobber register '%s'", str);
 	}
 	clobber_regs[reg] = 1;
 }
 
-ST_FUNC int asm_parse_regvar(int t) {
+ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	if (t >= TOK_ASM_pc || t < TOK_ASM_x0)
 		return -1;
 
@@ -2441,56 +2441,56 @@ ST_FUNC int asm_parse_regvar(int t) {
 	return t - TOK_ASM_ft0 + 32;
 }
 
-static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) {
+static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) { MCC_TRACE("enter\n");
 	uint8_t dst, src;
 
-	if (rd->type != OP_REG) {
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
 	}
 
 	dst = rd->reg - 8;
 	src = rs2->reg - 8;
 
-	if (dst > 7) {
+	if (dst > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
-	if (src > 7) {
+	if (src > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
 	gen_le16(opcode | C_ENCODE_RS2(src) | C_ENCODE_RS1(dst));
 }
 
-static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Operand *imm) {
+static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t offset;
 	uint8_t src;
 
-	if (rs1->type != OP_REG) {
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (imm->type != OP_IM12S && imm->type != OP_IM32) {
+	if (imm->type != OP_IM12S && imm->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	offset = imm->e.v;
 
-	if (offset & 1) {
+	if (offset & 1) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
 	}
 
 	src = rs1->reg - 8;
 
-	if (src > 7) {
+	if (src > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_c_beqz:
 	case TOK_ASM_c_bnez:
 		gen_le16(
@@ -2502,20 +2502,20 @@ static void asm_emit_cb(int token, uint16_t opcode, const Operand *rs1, const Op
 	}
 }
 
-static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Operand *imm) {
+static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t immediate;
 
-	if (rd->type != OP_REG) {
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (imm->type != OP_IM12S && imm->type != OP_IM32) {
+	if (imm->type != OP_IM12S && imm->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	immediate = imm->e.v;
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_c_addi:
 	case TOK_ASM_c_addiw:
 	case TOK_ASM_c_li:
@@ -2548,32 +2548,32 @@ static void asm_emit_ci(int token, uint16_t opcode, const Operand *rd, const Ope
 	}
 }
 
-static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Operand *imm) {
+static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t nzuimm;
 	uint8_t dst;
 
-	if (rd->type != OP_REG) {
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (imm->type != OP_IM12S && imm->type != OP_IM32) {
+	if (imm->type != OP_IM12S && imm->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	dst = rd->reg - 8;
 
-	if (dst > 7) {
+	if (dst > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
 	nzuimm = imm->e.v;
 
-	if (nzuimm > 0x3fc) {
+	if (nzuimm > 0x3fc) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0x3ff",
 							get_tok_str(token, NULL));
 	}
 
-	if (nzuimm & 3) {
+	if (nzuimm & 3) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a non-zero immediate value divisible by 4",
 							get_tok_str(token, NULL));
 	}
@@ -2582,16 +2582,16 @@ static void asm_emit_ciw(int token, uint16_t opcode, const Operand *rd, const Op
 			opcode | ENCODE_RS2(rd->reg) | ((NTH_BIT(nzuimm, 3) | (NTH_BIT(nzuimm, 2) << 1) | (((nzuimm >> 6) & 0xf) << 2) | (((nzuimm >> 4) & 3) << 6)) << 5));
 }
 
-static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm) {
+static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t offset;
 
-	if (imm->type != OP_IM12S) {
+	if (imm->type != OP_IM12S) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a 12-bit immediate value", get_tok_str(token, NULL));
 	}
 
 	offset = imm->e.v;
 
-	if (offset & 1) {
+	if (offset & 1) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an even immediate value", get_tok_str(token, NULL));
 	}
 
@@ -2599,45 +2599,45 @@ static void asm_emit_cj(int token, uint16_t opcode, const Operand *imm) {
 			opcode | (NTH_BIT(offset, 5) << 2) | (((offset >> 1) & 7) << 3) | (NTH_BIT(offset, 7) << 6) | (NTH_BIT(offset, 6) << 7) | (NTH_BIT(offset, 10) << 8) | (((offset >> 8) & 3) << 9) | (NTH_BIT(offset, 4) << 11) | (NTH_BIT(offset, 11) << 12));
 }
 
-static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Operand *rs1, const Operand *imm) {
+static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Operand *rs1, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t offset;
 	uint8_t dst, src;
 
-	if (rd->type != OP_REG) {
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (rs1->type != OP_REG) {
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (imm->type != OP_IM12S && imm->type != OP_IM32) {
+	if (imm->type != OP_IM12S && imm->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	dst = rd->reg - 8;
 	src = rs1->reg - 8;
 
-	if (dst > 7) {
+	if (dst > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
-	if (src > 7) {
+	if (src > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
 	offset = imm->e.v;
 
-	if (offset > 0xff) {
+	if (offset > 0xff) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff",
 							get_tok_str(token, NULL));
 	}
 
-	if (offset & 3) {
+	if (offset & 3) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
 	}
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_c_flw:
 	case TOK_ASM_c_lw:
 		gen_le16(
@@ -2653,57 +2653,57 @@ static void asm_emit_cl(int token, uint16_t opcode, const Operand *rd, const Ope
 	}
 }
 
-static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) {
-	if (rd->type != OP_REG) {
+static void asm_emit_cr(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) { MCC_TRACE("enter\n");
+	if (rd->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
 	}
 
 	gen_le16(opcode | C_ENCODE_RS1(rd->reg) | C_ENCODE_RS2(rs2->reg));
 }
 
-static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Operand *rs1, const Operand *imm) {
+static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Operand *rs1, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t offset;
 	uint8_t base, src;
 
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (rs1->type != OP_REG) {
+	if (rs1->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (imm->type != OP_IM12S && imm->type != OP_IM32) {
+	if (imm->type != OP_IM12S && imm->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	base = rs1->reg - 8;
 	src = rs2->reg - 8;
 
-	if (base > 7) {
+	if (base > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
-	if (src > 7) {
+	if (src > 7) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is a valid C-extension register", get_tok_str(token, NULL));
 	}
 
 	offset = imm->e.v;
 
-	if (offset > 0xff) {
+	if (offset > 0xff) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff",
 							get_tok_str(token, NULL));
 	}
 
-	if (offset & 3) {
+	if (offset & 3) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
 	}
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_c_fsw:
 	case TOK_ASM_c_sw:
 		gen_le16(
@@ -2719,29 +2719,29 @@ static void asm_emit_cs(int token, uint16_t opcode, const Operand *rs2, const Op
 	}
 }
 
-static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const Operand *imm) {
+static void asm_emit_css(int token, uint16_t opcode, const Operand *rs2, const Operand *imm) { MCC_TRACE("enter\n");
 	uint32_t offset;
 
-	if (rs2->type != OP_REG) {
+	if (rs2->type != OP_REG) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected destination operand that is a register", get_tok_str(token, NULL));
 	}
 
-	if (imm->type != OP_IM12S && imm->type != OP_IM32) {
+	if (imm->type != OP_IM12S && imm->type != OP_IM32) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value", get_tok_str(token, NULL));
 	}
 
 	offset = imm->e.v;
 
-	if (offset > 0xff) {
+	if (offset > 0xff) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value between 0 and 0xff",
 							get_tok_str(token, NULL));
 	}
 
-	if (offset & 3) {
+	if (offset & 3) { MCC_TRACE("br\n");
 		mcc_error("'%s': Expected source operand that is an immediate value divisible by 4", get_tok_str(token, NULL));
 	}
 
-	switch (token) {
+	switch (token) { MCC_TRACE("br\n");
 	case TOK_ASM_c_fswsp:
 	case TOK_ASM_c_swsp:
 		gen_le16(opcode | ENCODE_RS2(rs2->reg) | (((offset >> 6) & 3) << 7) | (((offset >> 2) & 0xf) << 9));

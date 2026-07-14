@@ -8,22 +8,22 @@
 
 #define g_uniq (s1->disasm_uniq)
 
-static void build_unique_names(MCCState *s1) {
+static void build_unique_names(MCCState *s1) { MCC_TRACE("enter\n");
 	int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
 	ElfW(Sym) *syms = (ElfW(Sym) *)s1->symtab->data;
 	const char *strtab = (char *)s1->symtab->link->data;
 	g_uniq = mcc_mallocz(n * sizeof *g_uniq);
-	for (int i = 1; i < n; i++) {
+	for (int i = 1; i < n; i++) { MCC_TRACE("br\n");
 		const char *name = strtab + syms[i].st_name;
 		int dup = 0;
 		if (!name[0])
 			continue;
 		for (int j = 1; j < i; j++)
-			if (syms[j].st_name && !strcmp(strtab + syms[j].st_name, name)) {
+			if (syms[j].st_name && !strcmp(strtab + syms[j].st_name, name)) { MCC_TRACE("br\n");
 				dup = 1;
 				break;
 			}
-		if (dup) {
+		if (dup) { MCC_TRACE("br\n");
 			char buf[256];
 			snprintf(buf, sizeof buf, "%s.%d", name, i);
 			g_uniq[i] = mcc_strdup(buf);
@@ -31,7 +31,7 @@ static void build_unique_names(MCCState *s1) {
 	}
 }
 
-static void free_unique_names(MCCState *s1) {
+static void free_unique_names(MCCState *s1) { MCC_TRACE("enter\n");
 	int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
 	for (int i = 0; i < n; i++)
 		mcc_free(g_uniq[i]);
@@ -39,7 +39,7 @@ static void free_unique_names(MCCState *s1) {
 	g_uniq = NULL;
 }
 
-static const char *sym_name(MCCState *s1, int sym_index) {
+static const char *sym_name(MCCState *s1, int sym_index) { MCC_TRACE("enter\n");
 	ElfW(Sym) *sym = &((ElfW(Sym) *)s1->symtab->data)[sym_index];
 	const char *name = (char *)s1->symtab->link->data + sym->st_name;
 	if (g_uniq && g_uniq[sym_index])
@@ -52,7 +52,7 @@ static const char *sym_name(MCCState *s1, int sym_index) {
 	return ".L.anon";
 }
 
-static int reloc_field_size(int type) {
+static int reloc_field_size(int type) { MCC_TRACE("enter\n");
 #ifdef MCC_HAVE_DISASM
 	return mcc_disasm_reloc_size(type);
 #else
@@ -61,7 +61,7 @@ static int reloc_field_size(int type) {
 #endif
 }
 
-ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptype) {
+ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptype) { MCC_TRACE("enter\n");
 	char *buf = dc->relocbuf;
 	Section *sr = dc->sec->reloc;
 	ElfW_Rel *rel;
@@ -77,9 +77,9 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
 			long long addend;
 			if (ptype)
 				*ptype = type;
-			if (SHT_RELX == SHT_RELA) {
+			if (SHT_RELX == SHT_RELA) { MCC_TRACE("br\n");
 				addend = ELFW_R_ADDEND(rel);
-			} else {
+			} else { MCC_TRACE("br\n");
 				addend = 0;
 				if (reloc_field_size(type) == 4 && rel->r_offset + 4 <= dc->size)
 					addend = (int32_t)read32le(dc->data + rel->r_offset);
@@ -101,15 +101,15 @@ ST_FUNC const char *disasm_reloc(disasm_ctx *dc, addr_t off, int size, int *ptyp
 }
 
 #ifdef MCC_HAVE_DISASM
-ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) {
+ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) { MCC_TRACE("enter\n");
 	char *buf = dc->labelbuf;
-	if (dc->collect && target < dc->size) {
+	if (dc->collect && target < dc->size) { MCC_TRACE("br\n");
 		int i;
 		for (i = 0; i < dc->nlabels; i++)
 			if (dc->labels[i] == target)
 				break;
-		if (i == dc->nlabels) {
-			if (dc->nlabels == dc->labels_cap) {
+		if (i == dc->nlabels) { MCC_TRACE("br\n");
+			if (dc->nlabels == dc->labels_cap) { MCC_TRACE("br\n");
 				dc->labels_cap = dc->labels_cap ? dc->labels_cap * 2 : 16;
 				dc->labels = mcc_realloc(dc->labels,
 																 dc->labels_cap * sizeof *dc->labels);
@@ -121,7 +121,7 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) {
 	return buf;
 }
 
-static int addr_cmp(const void *a, const void *b) {
+static int addr_cmp(const void *a, const void *b) { MCC_TRACE("enter\n");
 	addr_t x = *(const addr_t *)a, y = *(const addr_t *)b;
 	return x < y
 						 ? -1
@@ -137,7 +137,7 @@ struct secsym {
 	const char *name;
 };
 
-static int secsym_cmp(const void *a, const void *b) {
+static int secsym_cmp(const void *a, const void *b) { MCC_TRACE("enter\n");
 	const struct secsym *x = a, *y = b;
 	if (x->value < y->value)
 		return -1;
@@ -147,7 +147,7 @@ static int secsym_cmp(const void *a, const void *b) {
 	return 0;
 }
 
-static struct secsym *collect_syms(MCCState *s1, int shndx, int *pn) {
+static struct secsym *collect_syms(MCCState *s1, int shndx, int *pn) { MCC_TRACE("enter\n");
 	ElfW(Sym) *sym0 = (ElfW(Sym) *)s1->symtab->data;
 	ElfW(Sym) * sym;
 	int n = 0, cap = 0;
@@ -169,7 +169,7 @@ static struct secsym *collect_syms(MCCState *s1, int shndx, int *pn) {
 		if (name[0] == '$')
 			continue;
 #endif
-		if (n == cap) {
+		if (n == cap) { MCC_TRACE("br\n");
 			cap = cap ? cap * 2 : 16;
 			v = mcc_realloc(v, cap * sizeof *v);
 		}
@@ -184,7 +184,7 @@ static struct secsym *collect_syms(MCCState *s1, int shndx, int *pn) {
 	return v;
 }
 
-static void emit_sym_decl(FILE *f, ElfW(Sym) * sym, const char *name) {
+static void emit_sym_decl(FILE *f, ElfW(Sym) * sym, const char *name) { MCC_TRACE("enter\n");
 	int bind = ELFW(ST_BIND)(sym->st_info);
 	int type = ELFW(ST_TYPE)(sym->st_info);
 	if (bind == STB_GLOBAL)
@@ -219,10 +219,10 @@ struct cfi_info {
 	int nfdes, fdes_cap;
 };
 
-static void cfi_add_note(struct cfi_info *ci, addr_t pc, const char *fmt, ...) {
+static void cfi_add_note(struct cfi_info *ci, addr_t pc, const char *fmt, ...) { MCC_TRACE("enter\n");
 	struct cfi_note *n;
 	va_list ap;
-	if (ci->nnotes == ci->notes_cap) {
+	if (ci->nnotes == ci->notes_cap) { MCC_TRACE("br\n");
 		ci->notes_cap = ci->notes_cap ? ci->notes_cap * 2 : 32;
 		ci->notes = mcc_realloc(ci->notes, ci->notes_cap * sizeof *ci->notes);
 	}
@@ -233,13 +233,13 @@ static void cfi_add_note(struct cfi_info *ci, addr_t pc, const char *fmt, ...) {
 	va_end(ap);
 }
 
-static int cfi_fde_shndx(MCCState *s1, Section *eh, addr_t off) {
+static int cfi_fde_shndx(MCCState *s1, Section *eh, addr_t off) { MCC_TRACE("enter\n");
 	Section *sr = eh->reloc;
 	ElfW_Rel *rel;
 	if (!sr)
 		return 0;
 	for_each_elem(sr, 0, rel, ElfW_Rel) {
-		if (rel->r_offset == off) {
+		if (rel->r_offset == off) { MCC_TRACE("br\n");
 			int idx = ELFW(R_SYM)(rel->r_info);
 			return ((ElfW(Sym) *)s1->symtab->data)[idx].st_shndx;
 		}
@@ -247,7 +247,7 @@ static int cfi_fde_shndx(MCCState *s1, Section *eh, addr_t off) {
 	return 0;
 }
 
-static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
+static int cfi_parse(MCCState *s1, struct cfi_info *ci) { MCC_TRACE("enter\n");
 	Section *eh = eh_frame_section;
 	unsigned char *base, *end, *p;
 	unsigned long long code_align = 1;
@@ -259,13 +259,13 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 	base = eh->data;
 	end = base + eh->data_offset;
 	p = base;
-	while (end - p >= 4) {
+	while (end - p >= 4) { MCC_TRACE("br\n");
 		unsigned char *q = p;
 		unsigned int length = dwarf_read_4(q, end);
 		unsigned char *eend;
 		unsigned int id;
 
-		if (length == 0) {
+		if (length == 0) { MCC_TRACE("br\n");
 			p = q;
 			continue;
 		}
@@ -273,7 +273,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 			return 0;
 		eend = q + length;
 		id = dwarf_read_4(q, eend);
-		if (id == 0) {
+		if (id == 0) { MCC_TRACE("br\n");
 			unsigned int version = dwarf_read_1(q, eend);
 			if (version != 1 && version != 3)
 				return 0;
@@ -287,7 +287,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 			if (!code_align || !data_align)
 				return 0;
 			have_cie = 1;
-		} else {
+		} else { MCC_TRACE("br\n");
 			addr_t start, off = 0;
 			unsigned int range;
 			unsigned long long auglen, u1, u2;
@@ -304,9 +304,9 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 			if (auglen > (size_t)(eend - q))
 				return 0;
 			q += auglen;
-			while (q < eend) {
+			while (q < eend) { MCC_TRACE("br\n");
 				unsigned int op = dwarf_read_1(q, eend);
-				switch (op >> 6) {
+				switch (op >> 6) { MCC_TRACE("br\n");
 				case 1:
 					off += (addr_t)(op & 0x3f) * code_align;
 					continue;
@@ -320,7 +320,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 											 op & 0x3f);
 					continue;
 				}
-				switch (op) {
+				switch (op) { MCC_TRACE("br\n");
 				case DW_CFA_nop:
 					continue;
 				case DW_CFA_advance_loc1:
@@ -364,7 +364,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 			}
 			if (off > range)
 				return 0;
-			if (ci->nfdes == ci->fdes_cap) {
+			if (ci->nfdes == ci->fdes_cap) { MCC_TRACE("br\n");
 				ci->fdes_cap = ci->fdes_cap ? ci->fdes_cap * 2 : 16;
 				ci->fdes = mcc_realloc(ci->fdes,
 															 ci->fdes_cap * sizeof *ci->fdes);
@@ -381,7 +381,7 @@ static int cfi_parse(MCCState *s1, struct cfi_info *ci) {
 	return ci->nfdes > 0;
 }
 
-static void emit_directive_header(FILE *f, Section *s) {
+static void emit_directive_header(FILE *f, Section *s) { MCC_TRACE("enter\n");
 	const char *n = s->name;
 
 	if (!strcmp(n, ".data.ro") || !strcmp(n, ".rdata"))
@@ -394,7 +394,7 @@ static void emit_directive_header(FILE *f, Section *s) {
 		fprintf(f, "\t.bss\n");
 	else if (!strcmp(n, ".rodata"))
 		fprintf(f, "\t.section\t.rodata,\"a\",%sprogbits\n", TYPE_PFX);
-	else {
+	else { MCC_TRACE("br\n");
 		fprintf(f, "\t.section\t%s", n);
 		if (s->sh_type == SHT_NOBITS)
 			fprintf(f, ",\"aw\",%snobits", TYPE_PFX);
@@ -411,7 +411,7 @@ static void emit_directive_header(FILE *f, Section *s) {
 }
 
 static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
-											struct cfi_info *ci) {
+											struct cfi_info *ci) { MCC_TRACE("enter\n");
 	FILE *f = dc->out;
 	addr_t pc, end = dc->size;
 	int si, li;
@@ -420,7 +420,7 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 #ifdef MCC_HAVE_DISASM
 
 	dc->collect = 1;
-	for (pc = 0; pc < end;) {
+	for (pc = 0; pc < end;) { MCC_TRACE("br\n");
 		int len;
 		dc->pc = pc;
 		len = mcc_disasm_insn(dc);
@@ -432,9 +432,9 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 #endif
 
 	si = li = 0;
-	for (pc = 0; pc < end;) {
-		if (ci) {
-			if (in_proc && pc >= ci->fdes[fi].end) {
+	for (pc = 0; pc < end;) { MCC_TRACE("br\n");
+		if (ci) { MCC_TRACE("br\n");
+			if (in_proc && pc >= ci->fdes[fi].end) { MCC_TRACE("br\n");
 				while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
 					fprintf(f, "\t%s\n", ci->notes[ni++].text);
 				fprintf(f, "\t.cfi_endproc\n");
@@ -445,19 +445,19 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 				while (fi < ci->nfdes && (ci->fdes[fi].shndx != dc->sec->sh_num || ci->fdes[fi].start < pc))
 					fi++;
 		}
-		while (si < nsym && syms[si].value == pc) {
+		while (si < nsym && syms[si].value == pc) { MCC_TRACE("br\n");
 			emit_sym_decl(f, syms[si].sym, syms[si].name);
 			fprintf(f, "%s:\n", syms[si].name);
 			si++;
 		}
-		while (li < dc->nlabels && dc->labels[li] == pc) {
+		while (li < dc->nlabels && dc->labels[li] == pc) { MCC_TRACE("br\n");
 			fprintf(f, ".L%llx:\n", (unsigned long long)pc);
 			li++;
 		}
 		while (li < dc->nlabels && dc->labels[li] < pc)
 			li++;
-		if (ci) {
-			if (!in_proc && fi < ci->nfdes && ci->fdes[fi].shndx == dc->sec->sh_num && ci->fdes[fi].start == pc) {
+		if (ci) { MCC_TRACE("br\n");
+			if (!in_proc && fi < ci->nfdes && ci->fdes[fi].shndx == dc->sec->sh_num && ci->fdes[fi].start == pc) { MCC_TRACE("br\n");
 				fprintf(f, "\t.cfi_startproc\n");
 				in_proc = 1;
 				ni = ci->fdes[fi].note0;
@@ -480,21 +480,21 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 		pc++;
 #endif
 	}
-	if (ci && in_proc) {
+	if (ci && in_proc) { MCC_TRACE("br\n");
 		while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
 			fprintf(f, "\t%s\n", ci->notes[ni++].text);
 		fprintf(f, "\t.cfi_endproc\n");
 	}
 }
 
-static void emit_data(disasm_ctx *dc, struct secsym *syms, int nsym) {
+static void emit_data(disasm_ctx *dc, struct secsym *syms, int nsym) { MCC_TRACE("enter\n");
 	FILE *f = dc->out;
 	addr_t pc = 0, end = dc->size;
 	int si = 0;
-	while (pc < end) {
+	while (pc < end) { MCC_TRACE("br\n");
 		int rtype = 0, sz;
 		const char *r;
-		while (si < nsym && syms[si].value == pc) {
+		while (si < nsym && syms[si].value == pc) { MCC_TRACE("br\n");
 			emit_sym_decl(f, syms[si].sym, syms[si].name);
 			fprintf(f, "%s:\n", syms[si].name);
 			si++;
@@ -502,7 +502,7 @@ static void emit_data(disasm_ctx *dc, struct secsym *syms, int nsym) {
 
 		r = disasm_reloc(dc, pc, 1, &rtype);
 		sz = r ? reloc_field_size(rtype) : 0;
-		if (r && sz) {
+		if (r && sz) { MCC_TRACE("br\n");
 			fprintf(f, "\t%s\t%s\n", sz == 8 ? ".quad" : ".long", r);
 			pc += sz;
 			continue;
@@ -511,8 +511,8 @@ static void emit_data(disasm_ctx *dc, struct secsym *syms, int nsym) {
 		{
 			addr_t run = pc;
 			fprintf(f, "\t.byte\t");
-			while (run < end) {
-				if (run != pc) {
+			while (run < end) { MCC_TRACE("br\n");
+				if (run != pc) { MCC_TRACE("br\n");
 					if (si < nsym && syms[si].value == run)
 						break;
 					if (dc->sec->reloc && disasm_reloc(dc, run, 1, &rtype))
@@ -530,8 +530,8 @@ static void emit_data(disasm_ctx *dc, struct secsym *syms, int nsym) {
 	}
 }
 
-static void emit_sizes(FILE *f, struct secsym *syms, int nsym) {
-	for (int i = 0; i < nsym; i++) {
+static void emit_sizes(FILE *f, struct secsym *syms, int nsym) { MCC_TRACE("enter\n");
+	for (int i = 0; i < nsym; i++) { MCC_TRACE("br\n");
 		int type = ELFW(ST_TYPE)(syms[i].sym->st_info);
 		if ((type == STT_FUNC || type == STT_OBJECT) && syms[i].sym->st_size)
 			fprintf(f, "\t.size\t%s, %llu\n", syms[i].name,
@@ -539,7 +539,7 @@ static void emit_sizes(FILE *f, struct secsym *syms, int nsym) {
 	}
 }
 
-static int section_is_output(Section *s) {
+static int section_is_output(Section *s) { MCC_TRACE("enter\n");
 	static const char *skip[] = {
 
 			".eh_frame", ".note", ".comment", ".debug", ".stab", ".gnu", 0};
@@ -556,7 +556,7 @@ static int section_is_output(Section *s) {
 	return 1;
 }
 
-ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
+ST_FUNC int asm_output_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	FILE *f;
 	int i;
 	struct cfi_info ci_data = {0}, *ci = NULL;
@@ -574,7 +574,7 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
 	if (cfi_parse(s1, &ci_data))
 		ci = &ci_data;
 
-	for (i = 1; i < s1->nb_sections; i++) {
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[i];
 		struct secsym *syms;
 		int nsym;
@@ -594,11 +594,11 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
 		dc.size = (s->sh_type == SHT_NOBITS) ? 0 : s->data_offset;
 		dc.out = f;
 
-		if (s->sh_type == SHT_NOBITS) {
+		if (s->sh_type == SHT_NOBITS) { MCC_TRACE("br\n");
 			int si = 0;
 			addr_t pc = 0, end = s->data_offset;
-			while (si < nsym) {
-				if (syms[si].value > pc && syms[si].value <= end) {
+			while (si < nsym) { MCC_TRACE("br\n");
+				if (syms[si].value > pc && syms[si].value <= end) { MCC_TRACE("br\n");
 					fprintf(f, "\t.skip\t%llu\n",
 									(unsigned long long)(syms[si].value - pc));
 					pc = syms[si].value;
@@ -609,9 +609,9 @@ ST_FUNC int asm_output_file(MCCState *s1, const char *filename) {
 			}
 			if (end > pc)
 				fprintf(f, "\t.skip\t%llu\n", (unsigned long long)(end - pc));
-		} else if (s->sh_flags & SHF_EXECINSTR) {
+		} else if (s->sh_flags & SHF_EXECINSTR) { MCC_TRACE("br\n");
 			emit_text(&dc, syms, nsym, ci);
-		} else {
+		} else { MCC_TRACE("br\n");
 			emit_data(&dc, syms, nsym);
 		}
 

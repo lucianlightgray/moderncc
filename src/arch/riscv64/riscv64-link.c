@@ -1,7 +1,7 @@
 #include "mcc.h"
 
-ST_FUNC int code_reloc(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_RISCV_BRANCH:
 	case R_RISCV_CALL:
 	case R_RISCV_JAL:
@@ -37,8 +37,8 @@ ST_FUNC int code_reloc(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC int gotplt_entry_type(int reloc_type) {
-	switch (reloc_type) {
+ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
+	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_RISCV_ALIGN:
 	case R_RISCV_RELAX:
 	case R_RISCV_RVC_BRANCH:
@@ -81,7 +81,7 @@ ST_FUNC int gotplt_entry_type(int reloc_type) {
 	return -1;
 }
 
-ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) {
+ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr) { MCC_TRACE("enter\n");
 	Section *plt = s1->plt;
 	uint8_t *p;
 	unsigned plt_offset;
@@ -95,7 +95,7 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 	return plt_offset;
 }
 
-ST_FUNC void relocate_plt(MCCState *s1) {
+ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
@@ -104,7 +104,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
 
-	if (p < p_end) {
+	if (p < p_end) { MCC_TRACE("br\n");
 		uint64_t plt = s1->plt->sh_addr;
 		uint64_t got = s1->got->sh_addr;
 		uint64_t off = (got - plt + 0x800) >> 12;
@@ -120,7 +120,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 		write32le(p + 24, 0x0082b283);
 		write32le(p + 28, 0x000e0067);
 		p += 32;
-		while (p < p_end) {
+		while (p < p_end) { MCC_TRACE("br\n");
 			uint64_t pc = plt + (p - s1->plt->data);
 			uint64_t addr = got + read64le(p);
 			uint64_t off = (addr - pc + 0x800) >> 12;
@@ -135,7 +135,7 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 		}
 	}
 
-	if (s1->plt->reloc) {
+	if (s1->plt->reloc) { MCC_TRACE("br\n");
 		ElfW_Rel *rel;
 		p = s1->got->data;
 		for_each_elem(s1->plt->reloc, 0, rel, ElfW_Rel) {
@@ -144,17 +144,17 @@ ST_FUNC void relocate_plt(MCCState *s1) {
 	}
 }
 
-static void riscv64_record_pcrel_hi(MCCState *s1, addr_t addr, addr_t val) {
+static void riscv64_record_pcrel_hi(MCCState *s1, addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	struct pcrel_hi *entry = mcc_malloc(sizeof *entry);
 	entry->addr = addr;
 	entry->val = val;
 	dynarray_add(&s1->pcrel_hi_entries, &s1->nb_pcrel_hi_entries, entry);
 }
 
-static int riscv64_lookup_pcrel_hi(MCCState *s1, addr_t hi_addr, addr_t *hi_val) {
-	for (int i = s1->nb_pcrel_hi_entries; i > 0;) {
+static int riscv64_lookup_pcrel_hi(MCCState *s1, addr_t hi_addr, addr_t *hi_val) { MCC_TRACE("enter\n");
+	for (int i = s1->nb_pcrel_hi_entries; i > 0;) { MCC_TRACE("br\n");
 		struct pcrel_hi *entry = s1->pcrel_hi_entries[--i];
-		if (entry->addr == hi_addr) {
+		if (entry->addr == hi_addr) { MCC_TRACE("br\n");
 			*hi_val = entry->val;
 			return 0;
 		}
@@ -163,13 +163,13 @@ static int riscv64_lookup_pcrel_hi(MCCState *s1, addr_t hi_addr, addr_t *hi_val)
 }
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
-											addr_t addr, addr_t val) {
+											addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	uint64_t off64;
 	uint32_t off32;
 	int sym_index = ELFW(R_SYM)(rel->r_info), esym_index;
 	ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 
-	switch (type) {
+	switch (type) { MCC_TRACE("br\n");
 	case R_RISCV_ALIGN:
 	case R_RISCV_RELAX:
 		return;
@@ -254,7 +254,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 
 	case R_RISCV_32:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			qrel->r_offset = rel->r_offset;
 			qrel->r_info = ELFW(R_INFO)(0, R_RISCV_RELATIVE);
 			qrel->r_addend = (int)read32le(ptr) + val;
@@ -263,15 +263,15 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		add32le(ptr, val);
 		return;
 	case R_RISCV_64:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
 			qrel->r_offset = rel->r_offset;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_RISCV_64);
 				qrel->r_addend = rel->r_addend;
 				qrel++;
 				break;
-			} else {
+			} else { MCC_TRACE("br\n");
 				qrel->r_info = ELFW(R_INFO)(0, R_RISCV_RELATIVE);
 				qrel->r_addend = read64le(ptr) + val;
 				qrel++;
@@ -314,9 +314,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		*ptr = (*ptr & ~0x3f) | ((*ptr - val) & 0x3f);
 		return;
 	case R_RISCV_32_PCREL:
-		if (s1->output_type & MCC_OUTPUT_DYN) {
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
-			if (esym_index) {
+			if (esym_index) { MCC_TRACE("br\n");
 				qrel->r_offset = rel->r_offset;
 				qrel->r_info = ELFW(R_INFO)(esym_index, R_RISCV_32_PCREL);
 				qrel->r_addend = (int)read32le(ptr) + rel->r_addend;
@@ -338,20 +338,20 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_RISCV_TPREL_LO12_I: {
 		addr_t tls_start = 0;
 		int64_t tp_offset;
-		for (int i = 1; i < s1->nb_sections; i++) {
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
-			if (s->sh_flags & SHF_TLS && s->sh_size) {
+			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
 					tls_start = s->sh_addr;
 			}
 		}
 		tp_offset = val - tls_start;
-		if (type == R_RISCV_TPREL_HI20) {
+		if (type == R_RISCV_TPREL_HI20) { MCC_TRACE("br\n");
 			off64 = (int64_t)(tp_offset + 0x800) >> 12;
 			if ((off64 + ((uint64_t)1 << 20)) >> 21)
 				mcc_error_noabort("R_RISCV_TPREL_HI20 relocation failed");
 			write32le(ptr, (read32le(ptr) & 0xfff) | ((off64 & 0xfffff) << 12));
-		} else {
+		} else { MCC_TRACE("br\n");
 			write32le(ptr, (read32le(ptr) & 0xfffff) | (((tp_offset) & 0xfff) << 20));
 		}
 		return;

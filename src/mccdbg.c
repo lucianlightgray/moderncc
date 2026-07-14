@@ -403,7 +403,7 @@ struct _mccdbg {
 static int put_stabs(MCCState *s1, const char *str, int type, int other,
 										 int desc, unsigned long value);
 
-ST_FUNC void mcc_debug_new(MCCState *s1) {
+ST_FUNC void mcc_debug_new(MCCState *s1) { MCC_TRACE("enter\n");
 	int shf = 0;
 	if (!s1->dState)
 		s1->dState = mcc_mallocz(sizeof *s1->dState);
@@ -415,7 +415,7 @@ ST_FUNC void mcc_debug_new(MCCState *s1) {
 		shf = SHF_ALLOC;
 #endif
 
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		static const char *const debug[] = {
 				".debug_macro",
 				".debug_loc",
@@ -445,14 +445,14 @@ ST_FUNC void mcc_debug_new(MCCState *s1) {
 						dwarf_line_section->sh_addralign =
 								dwarf_aranges_section->sh_addralign =
 										dwarf_str_section->sh_addralign = 1;
-		if (s1->dwarf >= 5) {
+		if (s1->dwarf >= 5) { MCC_TRACE("br\n");
 			dwarf_line_str_section =
 					new_section(s1, ".debug_line_str", SHT_PROGBITS, shf);
 			dwarf_line_str_section->sh_entsize = 1;
 			dwarf_line_str_section->sh_addralign = 1;
 		}
 		s1->dwhi = s1->nb_sections;
-	} else {
+	} else { MCC_TRACE("br\n");
 		stab_section = new_section(s1, ".stab", SHT_PROGBITS, shf);
 		stab_section->sh_entsize = sizeof(Stab_Sym);
 		stab_section->sh_addralign = sizeof((Stab_Sym *)0)->n_value;
@@ -462,19 +462,19 @@ ST_FUNC void mcc_debug_new(MCCState *s1) {
 }
 
 static int put_stabs(MCCState *s1, const char *str, int type, int other, int desc,
-										 unsigned long value) {
+										 unsigned long value) { MCC_TRACE("enter\n");
 	Stab_Sym *sym;
 
 	unsigned offset;
-	if (type == N_SLINE && (offset = stab_section->data_offset) && (sym = (Stab_Sym *)(stab_section->data + offset) - 1) && sym->n_type == type && sym->n_value == value) {
+	if (type == N_SLINE && (offset = stab_section->data_offset) && (sym = (Stab_Sym *)(stab_section->data + offset) - 1) && sym->n_type == type && sym->n_value == value) { MCC_TRACE("br\n");
 		sym->n_desc = desc;
 		return 0;
 	}
 
 	sym = section_ptr_add(stab_section, sizeof(Stab_Sym));
-	if (str) {
+	if (str) { MCC_TRACE("br\n");
 		sym->n_strx = put_elf_str(stab_section->link, str);
-	} else {
+	} else { MCC_TRACE("br\n");
 		sym->n_strx = 0;
 	}
 	sym->n_type = type;
@@ -485,7 +485,7 @@ static int put_stabs(MCCState *s1, const char *str, int type, int other, int des
 }
 
 static void put_stabs_r(MCCState *s1, const char *str, int type, int other, int desc,
-												unsigned long value, Section *sec, int sym_index) {
+												unsigned long value, Section *sec, int sym_index) { MCC_TRACE("enter\n");
 	if (put_stabs(s1, str, type, other, desc, value))
 		put_elf_reloc(symtab_section, stab_section,
 									stab_section->data_offset - 4,
@@ -493,7 +493,7 @@ static void put_stabs_r(MCCState *s1, const char *str, int type, int other, int 
 									sym_index);
 }
 
-static void put_stabn(MCCState *s1, int type, int other, int desc, int value) {
+static void put_stabn(MCCState *s1, int type, int other, int desc, int value) { MCC_TRACE("enter\n");
 	put_stabs(s1, NULL, type, other, desc, value);
 }
 
@@ -506,21 +506,21 @@ static void put_stabn(MCCState *s1, int type, int other, int desc, int value) {
 #define dwarf_data8(s, data) \
 	write64le(section_ptr_add((s), 8), (data))
 
-static int dwarf_get_section_sym(Section *s) {
+static int dwarf_get_section_sym(Section *s) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	return put_elf_sym(symtab_section, 0, 0,
 										 ELFW(ST_INFO)(STB_LOCAL, STT_SECTION), 0,
 										 s->sh_num, NULL);
 }
 
-static void dwarf_reloc(Section *s, int sym, int rel) {
+static void dwarf_reloc(Section *s, int sym, int rel) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	put_elf_reloca(symtab_section, s, s->data_offset, rel, sym, 0);
 }
 
-static void free_str(struct dwarf_str_hash **str) {
-	for (int i = 0; i < N_STR_HASH; i++) {
-		while (str[i]) {
+static void free_str(struct dwarf_str_hash **str) { MCC_TRACE("enter\n");
+	for (int i = 0; i < N_STR_HASH; i++) { MCC_TRACE("br\n");
+		while (str[i]) { MCC_TRACE("br\n");
 			struct dwarf_str_hash *next = str[i]->next;
 
 			mcc_free(str[i]);
@@ -529,7 +529,7 @@ static void free_str(struct dwarf_str_hash **str) {
 	}
 }
 
-static unsigned str_hash(const char *s) {
+static unsigned str_hash(const char *s) { MCC_TRACE("enter\n");
 	unsigned h = 5381;
 
 	while (*s)
@@ -537,7 +537,7 @@ static unsigned str_hash(const char *s) {
 	return h;
 }
 
-static void dwarf_string(Section *s, Section *dw, int sym, const char *str) {
+static void dwarf_string(Section *s, Section *dw, int sym, const char *str) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	int len, hash = str_hash(str) % N_STR_HASH;
 	char *ptr;
@@ -547,27 +547,27 @@ static void dwarf_string(Section *s, Section *dw, int sym, const char *str) {
 
 	len = strlen(str) + 1;
 	new_hash = dw_hash[hash];
-	while (new_hash) {
+	while (new_hash) { MCC_TRACE("br\n");
 		if (new_hash->len == len &&
 				!memcmp(str, dw->data + new_hash->data_offset, len))
 			break;
 		new_hash = new_hash->next;
 	}
-	if (new_hash == NULL) {
+	if (new_hash == NULL) { MCC_TRACE("br\n");
 		unsigned long offset = dw->data_offset;
 
 		new_hash = dw_hash[hash];
-		while (new_hash) {
+		while (new_hash) { MCC_TRACE("br\n");
 			unsigned long n = new_hash->data_offset + new_hash->len - len;
 
 			if (new_hash->len > len &&
-					!memcmp(str, dw->data + n, len)) {
+					!memcmp(str, dw->data + n, len)) { MCC_TRACE("br\n");
 				offset = n;
 				break;
 			}
 			new_hash = new_hash->next;
 		}
-		if (new_hash == NULL) {
+		if (new_hash == NULL) { MCC_TRACE("br\n");
 			ptr = section_ptr_add(dw, len);
 			memmove(ptr, str, len);
 		}
@@ -583,18 +583,18 @@ static void dwarf_string(Section *s, Section *dw, int sym, const char *str) {
 	dwarf_data4(s, MCC_PTR_SIZE == 4 ? new_hash->data_offset : 0);
 }
 
-static void dwarf_strp(Section *s, const char *str) {
+static void dwarf_strp(Section *s, const char *str) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	dwarf_string(s, dwarf_str_section, dwarf_sym.str, str);
 }
 
-static void dwarf_line_strp(Section *s, const char *str) {
+static void dwarf_line_strp(Section *s, const char *str) { MCC_TRACE("enter\n");
 	MCCState *s1 = s->s1;
 	dwarf_string(s, dwarf_line_str_section, dwarf_sym.line_str, str);
 }
 
-static void dwarf_line_op(MCCState *s1, unsigned char op) {
-	if (dwarf_line.line_size >= dwarf_line.line_max_size) {
+static void dwarf_line_op(MCCState *s1, unsigned char op) { MCC_TRACE("enter\n");
+	if (dwarf_line.line_size >= dwarf_line.line_max_size) { MCC_TRACE("br\n");
 		dwarf_line.line_max_size += 1024;
 		dwarf_line.line_data =
 				(unsigned char *)mcc_realloc(dwarf_line.line_data,
@@ -603,44 +603,44 @@ static void dwarf_line_op(MCCState *s1, unsigned char op) {
 	dwarf_line.line_data[dwarf_line.line_size++] = op;
 }
 
-static void dwarf_file(MCCState *s1) {
+static void dwarf_file(MCCState *s1) { MCC_TRACE("enter\n");
 	int i, j;
 	char *filename;
 	int index_offset = s1->dwarf < 5;
 
-	if (!strcmp(file->filename, "<command line>")) {
+	if (!strcmp(file->filename, "<command line>")) { MCC_TRACE("br\n");
 		dwarf_line.cur_file = 1;
 		return;
 	}
 	filename = strrchr(file->filename, '/');
-	if (filename == NULL) {
+	if (filename == NULL) { MCC_TRACE("br\n");
 		for (i = 1; i < dwarf_line.filename_size; i++)
 			if (dwarf_line.filename_table[i].dir_entry == 0 &&
 					strcmp(dwarf_line.filename_table[i].name,
-								 file->filename) == 0) {
+								 file->filename) == 0) { MCC_TRACE("br\n");
 				dwarf_line.cur_file = i + index_offset;
 				return;
 			}
 		i = -index_offset;
 		filename = file->filename;
-	} else {
+	} else { MCC_TRACE("br\n");
 		char *undo = filename;
 		char *dir = file->filename;
 
 		*filename++ = '\0';
 		for (i = 0; i < dwarf_line.dir_size; i++)
-			if (strcmp(dwarf_line.dir_table[i], dir) == 0) {
+			if (strcmp(dwarf_line.dir_table[i], dir) == 0) { MCC_TRACE("br\n");
 				for (j = 1; j < dwarf_line.filename_size; j++)
 					if (dwarf_line.filename_table[j].dir_entry - index_offset == i &&
 							strcmp(dwarf_line.filename_table[j].name,
-										 filename) == 0) {
+										 filename) == 0) { MCC_TRACE("br\n");
 						*undo = '/';
 						dwarf_line.cur_file = j + index_offset;
 						return;
 					}
 				break;
 			}
-		if (i == dwarf_line.dir_size) {
+		if (i == dwarf_line.dir_size) { MCC_TRACE("br\n");
 			dwarf_line.dir_size++;
 			dwarf_line.dir_table =
 					(char **)mcc_realloc(dwarf_line.dir_table,
@@ -663,16 +663,16 @@ static void dwarf_file(MCCState *s1) {
 	return;
 }
 
-static void dwarf_uleb128(Section *s, unsigned long long value) {
+static void dwarf_uleb128(Section *s, unsigned long long value) { MCC_TRACE("enter\n");
 	mcc_write_uleb128(s, value);
 }
 
-static void dwarf_sleb128(Section *s, long long value) {
+static void dwarf_sleb128(Section *s, long long value) { MCC_TRACE("enter\n");
 	mcc_write_sleb128(s, value);
 }
 
-static void dwarf_uleb128_op(MCCState *s1, unsigned long long value) {
-	do {
+static void dwarf_uleb128_op(MCCState *s1, unsigned long long value) { MCC_TRACE("enter\n");
+	do { MCC_TRACE("br\n");
 		unsigned char byte = value & 0x7f;
 
 		value >>= 7;
@@ -680,12 +680,12 @@ static void dwarf_uleb128_op(MCCState *s1, unsigned long long value) {
 	} while (value != 0);
 }
 
-static void dwarf_sleb128_op(MCCState *s1, long long value) {
+static void dwarf_sleb128_op(MCCState *s1, long long value) { MCC_TRACE("enter\n");
 	int more;
 	long long end = value >> 63;
 	unsigned char last = end & 0x40;
 
-	do {
+	do { MCC_TRACE("br\n");
 		unsigned char byte = value & 0x7f;
 
 		value >>= 7;
@@ -695,7 +695,7 @@ static void dwarf_sleb128_op(MCCState *s1, long long value) {
 }
 
 #if MCC_EH_FRAME
-ST_FUNC void mcc_eh_frame_start(MCCState *s1) {
+ST_FUNC void mcc_eh_frame_start(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!s1->unwind_tables)
 		return;
 	eh_frame_section = new_section(s1, ".eh_frame", SHT_PROGBITS, SHF_ALLOC);
@@ -764,9 +764,9 @@ ST_FUNC void mcc_eh_frame_start(MCCState *s1) {
 						eh_frame_section->data_offset - s1->eh_start - 4);
 }
 
-ST_FUNC int mcc_cfi_uleb(unsigned char *p, unsigned long long value) {
+ST_FUNC int mcc_cfi_uleb(unsigned char *p, unsigned long long value) { MCC_TRACE("enter\n");
 	int n = 0;
-	do {
+	do { MCC_TRACE("br\n");
 		unsigned char byte = value & 0x7f;
 
 		value >>= 7;
@@ -775,19 +775,19 @@ ST_FUNC int mcc_cfi_uleb(unsigned char *p, unsigned long long value) {
 	return n;
 }
 
-ST_FUNC int mcc_cfi_advance(unsigned char *p, unsigned long delta) {
+ST_FUNC int mcc_cfi_advance(unsigned char *p, unsigned long delta) { MCC_TRACE("enter\n");
 	if (delta == 0)
 		return 0;
-	if (delta < 0x40) {
+	if (delta < 0x40) { MCC_TRACE("br\n");
 		p[0] = DW_CFA_advance_loc + delta;
 		return 1;
 	}
-	if (delta < 0x100) {
+	if (delta < 0x100) { MCC_TRACE("br\n");
 		p[0] = DW_CFA_advance_loc1;
 		p[1] = delta;
 		return 2;
 	}
-	if (delta < 0x10000) {
+	if (delta < 0x10000) { MCC_TRACE("br\n");
 		p[0] = DW_CFA_advance_loc2;
 		write16le(p + 1, delta);
 		return 3;
@@ -800,7 +800,7 @@ ST_FUNC int mcc_cfi_advance(unsigned char *p, unsigned long delta) {
 ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 															unsigned long func_start,
 															unsigned long func_size,
-															const unsigned char *ops, int nops) {
+															const unsigned char *ops, int nops) { MCC_TRACE("enter\n");
 	int eh_section_sym, i;
 	unsigned long fde_start;
 
@@ -833,7 +833,7 @@ ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 						eh_frame_section->data_offset - fde_start - 4);
 }
 
-static void mcc_debug_frame_end(MCCState *s1, int size) {
+static void mcc_debug_frame_end(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	unsigned char cfi[64];
 	int n = 0, range = size;
 
@@ -924,7 +924,7 @@ static void mcc_debug_frame_end(MCCState *s1, int size) {
 	mcc_eh_frame_fde(s1, text_section, func_ind, range, cfi, n);
 }
 
-ST_FUNC void mcc_eh_frame_end(MCCState *s1) {
+ST_FUNC void mcc_eh_frame_end(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!eh_frame_section)
 		return;
 	dwarf_data4(eh_frame_section, 0);
@@ -935,7 +935,7 @@ struct eh_search_table {
 	uint32_t fde_offset;
 };
 
-static int sort_eh_table(const void *a, const void *b) {
+static int sort_eh_table(const void *a, const void *b) { MCC_TRACE("enter\n");
 	uint32_t pc1 = ((const struct eh_search_table *)a)->pc_offset;
 	uint32_t pc2 = ((const struct eh_search_table *)b)->pc_offset;
 
@@ -946,7 +946,7 @@ static int sort_eh_table(const void *a, const void *b) {
 						 : 0;
 }
 
-ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final) {
+ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final) { MCC_TRACE("enter\n");
 	int count = 0, offset;
 	unsigned long count_offset, tab_offset;
 	unsigned char *ln, *end;
@@ -973,7 +973,7 @@ ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final) {
 	tab_offset = eh_frame_hdr_section->data_offset;
 	ln = eh_frame_section->data;
 	end = eh_frame_section->data + eh_frame_section->data_offset;
-	while (ln < end) {
+	while (ln < end) { MCC_TRACE("br\n");
 		unsigned char *fde = ln, *rd = ln;
 		unsigned int cie_offset, version, length = dwarf_read_4(rd, end);
 		unsigned int pc_offset, fde_offset;
@@ -983,7 +983,7 @@ ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final) {
 		cie_offset = dwarf_read_4(rd, end);
 		if (cie_offset == 0)
 			goto next;
-		if (cie_offset != last_cie_offset) {
+		if (cie_offset != last_cie_offset) { MCC_TRACE("br\n");
 			unsigned char *cie = rd - cie_offset + 4;
 
 			if (cie < eh_frame_section->data)
@@ -992,12 +992,12 @@ ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final) {
 			if ((version == 1 || version == 3) &&
 					dwarf_read_1(cie, end) == 'z' &&
 					dwarf_read_1(cie, end) == 'R' &&
-					dwarf_read_1(cie, end) == 0) {
+					dwarf_read_1(cie, end) == 0) { MCC_TRACE("br\n");
 				dwarf_read_uleb128(&cie, end);
 				dwarf_read_sleb128(&cie, end);
 				dwarf_read_1(cie, end);
 				if (dwarf_read_uleb128(&cie, end) == 1 &&
-						dwarf_read_1(cie, end) == MCC_FDE_ENCODING) {
+						dwarf_read_1(cie, end) == MCC_FDE_ENCODING) { MCC_TRACE("br\n");
 					last_cie_offset = cie_offset;
 				} else
 					goto next;
@@ -1020,7 +1020,7 @@ ST_FUNC void mcc_eh_frame_hdr(MCCState *s1, int final) {
 }
 #endif
 
-ST_FUNC void mcc_debug_start(MCCState *s1) {
+ST_FUNC void mcc_debug_start(MCCState *s1) { MCC_TRACE("enter\n");
 	char buf[512];
 	char *filename;
 
@@ -1030,7 +1030,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 							ELFW(ST_INFO)(STB_LOCAL, STT_FILE), 0,
 							SHN_ABS, filename);
 
-	if (s1->do_debug) {
+	if (s1->do_debug) { MCC_TRACE("br\n");
 		put_elf_sym(symtab_section, text_section->data_offset, 0,
 								ELFW(ST_INFO)(STB_LOCAL, STT_NOTYPE), 0,
 								text_section->sh_num, "$a");
@@ -1049,7 +1049,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 		getcwd(buf, sizeof(buf));
 		host_path_normalize(buf);
 
-		if (s1->dwarf) {
+		if (s1->dwarf) { MCC_TRACE("br\n");
 			int start_abbrev;
 			unsigned char *ptr;
 			char *undo;
@@ -1058,13 +1058,13 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 			ptr = section_ptr_add(dwarf_abbrev_section, sizeof(dwarf_abbrev_init));
 			memcpy(ptr, dwarf_abbrev_init, sizeof(dwarf_abbrev_init));
 
-			if (s1->dwarf < 5) {
-				while (*ptr) {
+			if (s1->dwarf < 5) { MCC_TRACE("br\n");
+				while (*ptr) { MCC_TRACE("br\n");
 					ptr += 3;
-					while (*ptr) {
+					while (*ptr) { MCC_TRACE("br\n");
 						if (ptr[1] == DW_FORM_line_strp)
 							ptr[1] = DW_FORM_strp;
-						if (s1->dwarf < 4) {
+						if (s1->dwarf < 4) { MCC_TRACE("br\n");
 							if (ptr[1] == DW_FORM_sec_offset)
 								ptr[1] = DW_FORM_data4;
 							if (ptr[1] == DW_FORM_exprloc)
@@ -1082,7 +1082,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 			dwarf_sym.str = dwarf_get_section_sym(dwarf_str_section);
 			if (mcc_state->dwarf >= 5)
 				dwarf_sym.line_str = dwarf_get_section_sym(dwarf_line_str_section);
-			else {
+			else { MCC_TRACE("br\n");
 				dwarf_line_str_section = dwarf_str_section;
 				dwarf_sym.line_str = dwarf_sym.str;
 			}
@@ -1091,12 +1091,12 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 			dwarf_info.start = dwarf_info_section->data_offset;
 			dwarf_data4(dwarf_info_section, 0);
 			dwarf_data2(dwarf_info_section, s1->dwarf);
-			if (s1->dwarf >= 5) {
+			if (s1->dwarf >= 5) { MCC_TRACE("br\n");
 				dwarf_data1(dwarf_info_section, DW_UT_compile);
 				dwarf_data1(dwarf_info_section, MCC_PTR_SIZE);
 				dwarf_reloc(dwarf_info_section, dwarf_sym.abbrev, R_DATA_32DW);
 				dwarf_data4(dwarf_info_section, start_abbrev);
-			} else {
+			} else { MCC_TRACE("br\n");
 				dwarf_reloc(dwarf_info_section, dwarf_sym.abbrev, R_DATA_32DW);
 				dwarf_data4(dwarf_info_section, start_abbrev);
 				dwarf_data1(dwarf_info_section, MCC_PTR_SIZE);
@@ -1121,7 +1121,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 			dwarf_line.start = dwarf_line_section->data_offset;
 			dwarf_data4(dwarf_line_section, 0);
 			dwarf_data2(dwarf_line_section, s1->dwarf);
-			if (s1->dwarf >= 5) {
+			if (s1->dwarf >= 5) { MCC_TRACE("br\n");
 				dwarf_data1(dwarf_line_section, MCC_PTR_SIZE);
 				dwarf_data1(dwarf_line_section, 0);
 			}
@@ -1149,12 +1149,12 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 					(struct dwarf_filename_struct *)
 							mcc_malloc(2 * sizeof(struct dwarf_filename_struct));
 			dwarf_line.filename_table[0].dir_entry = 0;
-			if (undo) {
+			if (undo) { MCC_TRACE("br\n");
 				dwarf_line.filename_table[0].name = mcc_strdup(undo + 1);
 				dwarf_line.filename_table[1].dir_entry = 1;
 				dwarf_line.filename_table[1].name = mcc_strdup(undo + 1);
 				*undo = '/';
-			} else {
+			} else { MCC_TRACE("br\n");
 				dwarf_line.filename_table[0].name = mcc_strdup(filename);
 				dwarf_line.filename_table[1].dir_entry = 0;
 				dwarf_line.filename_table[1].name = mcc_strdup(filename);
@@ -1171,7 +1171,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 			for (int i = 0; i < MCC_PTR_SIZE; i++)
 				dwarf_line_op(s1, 0);
 			memset(&dwarf_info.base_type_used, 0, sizeof(dwarf_info.base_type_used));
-		} else {
+		} else { MCC_TRACE("br\n");
 			pstrcat(buf, sizeof(buf), "/");
 			section_sym = put_elf_sym(symtab_section, 0, 0,
 																ELFW(ST_INFO)(STB_LOCAL, STT_SECTION), 0,
@@ -1189,14 +1189,14 @@ ST_FUNC void mcc_debug_start(MCCState *s1) {
 
 static void fix_debug_forw_hash(MCCState *s1, int global, int start);
 
-ST_FUNC void mcc_debug_end(MCCState *s1) {
+ST_FUNC void mcc_debug_end(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!s1->do_debug || debug_next_type == 0)
 		return;
 
 	if (debug_info_root)
 		mcc_debug_funcend(s1, 0);
 
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		int i;
 		int start_aranges;
 		unsigned char *ptr;
@@ -1236,7 +1236,7 @@ ST_FUNC void mcc_debug_end(MCCState *s1) {
 		ptr = dwarf_aranges_section->data + start_aranges;
 		write32le(ptr, dwarf_aranges_section->data_offset - start_aranges - 4);
 
-		if (s1->dwarf >= 5) {
+		if (s1->dwarf >= 5) { MCC_TRACE("br\n");
 			dwarf_data1(dwarf_line_section, 1);
 			dwarf_uleb128(dwarf_line_section, DW_LNCT_path);
 			dwarf_uleb128(dwarf_line_section, DW_FORM_line_strp);
@@ -1249,22 +1249,22 @@ ST_FUNC void mcc_debug_end(MCCState *s1) {
 			dwarf_uleb128(dwarf_line_section, DW_LNCT_directory_index);
 			dwarf_uleb128(dwarf_line_section, DW_FORM_udata);
 			dwarf_uleb128(dwarf_line_section, dwarf_line.filename_size);
-			for (i = 0; i < dwarf_line.filename_size; i++) {
+			for (i = 0; i < dwarf_line.filename_size; i++) { MCC_TRACE("br\n");
 				dwarf_line_strp(dwarf_line_section,
 												dwarf_line.filename_table[i].name);
 				dwarf_uleb128(dwarf_line_section,
 											dwarf_line.filename_table[i].dir_entry);
 			}
-		} else {
+		} else { MCC_TRACE("br\n");
 			int len;
 
-			for (i = 0; i < dwarf_line.dir_size; i++) {
+			for (i = 0; i < dwarf_line.dir_size; i++) { MCC_TRACE("br\n");
 				len = strlen(dwarf_line.dir_table[i]) + 1;
 				ptr = section_ptr_add(dwarf_line_section, len);
 				memmove(ptr, dwarf_line.dir_table[i], len);
 			}
 			dwarf_data1(dwarf_line_section, 0);
-			for (i = 0; i < dwarf_line.filename_size; i++) {
+			for (i = 0; i < dwarf_line.filename_size; i++) { MCC_TRACE("br\n");
 				len = strlen(dwarf_line.filename_table[i].name) + 1;
 				ptr = section_ptr_add(dwarf_line_section, len);
 				memmove(ptr, dwarf_line.filename_table[i].name, len);
@@ -1295,7 +1295,7 @@ ST_FUNC void mcc_debug_end(MCCState *s1) {
 		mcc_free(dwarf_line.line_data);
 		write32le(dwarf_line_section->data + dwarf_line.start,
 							dwarf_line_section->data_offset - dwarf_line.start - 4);
-	} else {
+	} else { MCC_TRACE("br\n");
 		put_stabs_r(s1, NULL, N_SO, 0, 0,
 								text_section->data_offset, text_section, section_sym);
 	}
@@ -1308,11 +1308,11 @@ ST_FUNC void mcc_debug_end(MCCState *s1) {
 	debug_next_type = 0;
 }
 
-static BufferedFile *put_new_file(MCCState *s1) {
+static BufferedFile *put_new_file(MCCState *s1) { MCC_TRACE("enter\n");
 	BufferedFile *f = file;
 	if (f->filename[0] == ':')
 		f = f->prev;
-	if (f && new_file) {
+	if (f && new_file) { MCC_TRACE("br\n");
 		new_file = last_line_num = 0;
 		if (s1->dwarf)
 			dwarf_file(s1);
@@ -1322,7 +1322,7 @@ static BufferedFile *put_new_file(MCCState *s1) {
 	return f;
 }
 
-ST_FUNC void mcc_debug_newfile(MCCState *s1) {
+ST_FUNC void mcc_debug_newfile(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!s1->do_debug)
 		return;
 	if (s1->dwarf)
@@ -1330,7 +1330,7 @@ ST_FUNC void mcc_debug_newfile(MCCState *s1) {
 	new_file = 1;
 }
 
-ST_FUNC void mcc_debug_bincl(MCCState *s1) {
+ST_FUNC void mcc_debug_bincl(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!s1->do_debug)
 		return;
 	if (s1->dwarf)
@@ -1340,7 +1340,7 @@ ST_FUNC void mcc_debug_bincl(MCCState *s1) {
 	new_file = 1;
 }
 
-ST_FUNC void mcc_debug_eincl(MCCState *s1) {
+ST_FUNC void mcc_debug_eincl(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!s1->do_debug)
 		return;
 	if (s1->dwarf)
@@ -1350,7 +1350,7 @@ ST_FUNC void mcc_debug_eincl(MCCState *s1) {
 	new_file = 1;
 }
 
-ST_FUNC void mcc_debug_line(MCCState *s1) {
+ST_FUNC void mcc_debug_line(MCCState *s1) { MCC_TRACE("enter\n");
 	BufferedFile *f;
 
 	if (!s1->do_debug)
@@ -1364,12 +1364,12 @@ ST_FUNC void mcc_debug_line(MCCState *s1) {
 		return;
 	last_line_num = f->line_num;
 
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		int len_pc = (ind - dwarf_line.last_pc) / DWARF_MIN_INSTR_LEN;
 		int len_line = f->line_num - dwarf_line.last_line;
 		int n = len_pc * DWARF_LINE_RANGE + len_line + DWARF_OPCODE_BASE - DWARF_LINE_BASE;
 
-		if (dwarf_line.cur_file != dwarf_line.last_file) {
+		if (dwarf_line.cur_file != dwarf_line.last_file) { MCC_TRACE("br\n");
 			dwarf_line.last_file = dwarf_line.cur_file;
 			dwarf_line_op(s1, DW_LNS_set_file);
 			dwarf_uleb128_op(s1, dwarf_line.cur_file);
@@ -1378,22 +1378,22 @@ ST_FUNC void mcc_debug_line(MCCState *s1) {
 				len_line >= DWARF_LINE_BASE && len_line <= (DWARF_OPCODE_BASE + DWARF_LINE_BASE) &&
 				n >= DWARF_OPCODE_BASE && n <= 255)
 			dwarf_line_op(s1, n);
-		else {
-			if (len_pc) {
+		else { MCC_TRACE("br\n");
+			if (len_pc) { MCC_TRACE("br\n");
 				n = len_pc * DWARF_LINE_RANGE + 0 + DWARF_OPCODE_BASE - DWARF_LINE_BASE;
 				if (n >= DWARF_OPCODE_BASE && n <= 255)
 					dwarf_line_op(s1, n);
-				else {
+				else { MCC_TRACE("br\n");
 					dwarf_line_op(s1, DW_LNS_advance_pc);
 					dwarf_uleb128_op(s1, len_pc);
 				}
 			}
-			if (len_line) {
+			if (len_line) { MCC_TRACE("br\n");
 				n = 0 * DWARF_LINE_RANGE + len_line + DWARF_OPCODE_BASE - DWARF_LINE_BASE;
 				if (len_line >= DWARF_LINE_BASE && len_line <= (DWARF_OPCODE_BASE + DWARF_LINE_BASE) &&
 						n >= DWARF_OPCODE_BASE && n <= 255)
 					dwarf_line_op(s1, n);
-				else {
+				else { MCC_TRACE("br\n");
 					dwarf_line_op(s1, DW_LNS_advance_line);
 					dwarf_sleb128_op(s1, len_line);
 					dwarf_line_op(s1, DWARF_OPCODE_BASE - DWARF_LINE_BASE);
@@ -1402,20 +1402,20 @@ ST_FUNC void mcc_debug_line(MCCState *s1) {
 		}
 		dwarf_line.last_pc = ind;
 		dwarf_line.last_line = f->line_num;
-	} else {
-		if (func_ind != -1) {
+	} else { MCC_TRACE("br\n");
+		if (func_ind != -1) { MCC_TRACE("br\n");
 			put_stabn(s1, N_SLINE, 0, f->line_num, ind - func_ind);
-		} else {
+		} else { MCC_TRACE("br\n");
 			put_stabs_r(s1, NULL, N_SLINE, 0, f->line_num, ind, text_section, section_sym);
 		}
 	}
 }
 
 static void mcc_debug_stabs(MCCState *s1, const char *str, int type, unsigned long value,
-														Section *sec, int sym_index, int info) {
+														Section *sec, int sym_index, int info) { MCC_TRACE("enter\n");
 	struct debug_sym *s;
 
-	if (debug_info) {
+	if (debug_info) { MCC_TRACE("br\n");
 		debug_info->sym =
 				(struct debug_sym *)mcc_realloc(debug_info->sym,
 																				sizeof(struct debug_sym) *
@@ -1435,14 +1435,14 @@ static void mcc_debug_stabs(MCCState *s1, const char *str, int type, unsigned lo
 		put_stabs(s1, str, type, 0, 0, value);
 }
 
-static void fix_debug_forw_hash(MCCState *s1, int global, int start) {
-	if (s1->dwarf) {
+static void fix_debug_forw_hash(MCCState *s1, int global, int start) { MCC_TRACE("enter\n");
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		int i, j, n_hash = global ? n_debug_forw_hash_global : n_debug_forw_hash_local;
 		struct _debug_forw_hash *hash = global
 																				? debug_forw_hash_global
 																				: debug_forw_hash_local;
 
-		for (i = start; i < n_hash; i++) {
+		for (i = start; i < n_hash; i++) { MCC_TRACE("br\n");
 			Sym *t = hash[i].type;
 			int pos = dwarf_info_section->data_offset;
 
@@ -1465,10 +1465,10 @@ static void fix_debug_forw_hash(MCCState *s1, int global, int start) {
 	}
 }
 
-ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value) {
+ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value) { MCC_TRACE("enter\n");
 	if (!s1->do_debug)
 		return;
-	if (type == N_LBRAC) {
+	if (type == N_LBRAC) { MCC_TRACE("br\n");
 		struct _debug_info *info =
 				(struct _debug_info *)mcc_mallocz(sizeof(*info));
 
@@ -1476,8 +1476,8 @@ ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value) {
 		info->last_debug_hash = n_debug_hash_local;
 		info->last_debug_forw_hash = n_debug_forw_hash_local;
 		info->parent = debug_info;
-		if (debug_info) {
-			if (debug_info->child) {
+		if (debug_info) { MCC_TRACE("br\n");
+			if (debug_info->child) { MCC_TRACE("br\n");
 				if (debug_info->child->last)
 					debug_info->child->last->next = info;
 				else
@@ -1488,7 +1488,7 @@ ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value) {
 		} else
 			debug_info_root = info;
 		debug_info = info;
-	} else {
+	} else { MCC_TRACE("br\n");
 		fix_debug_forw_hash(s1, 0, debug_info->last_debug_forw_hash);
 		n_debug_hash_local = debug_info->last_debug_hash;
 		n_debug_forw_hash_local = debug_info->last_debug_forw_hash;
@@ -1497,10 +1497,10 @@ ST_FUNC void mcc_debug_stabn(MCCState *s1, int type, int value) {
 	}
 }
 
-static int check_global(Sym *t) {
+static int check_global(Sym *t) { MCC_TRACE("enter\n");
 	Sym *g = local_stack;
 
-	while (g) {
+	while (g) { MCC_TRACE("br\n");
 		if (t == g)
 			return 0;
 		g = g->prev;
@@ -1508,13 +1508,13 @@ static int check_global(Sym *t) {
 	return 1;
 }
 
-static int mcc_debug_find(MCCState *s1, Sym *t, int dwarf) {
+static int mcc_debug_find(MCCState *s1, Sym *t, int dwarf) { MCC_TRACE("enter\n");
 	int i, g = check_global(t);
 	int n_hash, *n_forw_hash;
 	struct _debug_hash *hash;
 	struct _debug_forw_hash **forw_hash;
 
-	if ((t->type.t & VT_BTYPE) == VT_STRUCT && t->c == -1) {
+	if ((t->type.t & VT_BTYPE) == VT_STRUCT && t->c == -1) { MCC_TRACE("br\n");
 		forw_hash = g ? &debug_forw_hash_global : &debug_forw_hash_local;
 		n_forw_hash = g ? &n_debug_forw_hash_global : &n_debug_forw_hash_local;
 		for (i = 0; i < *n_forw_hash; i++)
@@ -1538,17 +1538,17 @@ static int mcc_debug_find(MCCState *s1, Sym *t, int dwarf) {
 
 static int mcc_get_dwarf_info(MCCState *s1, Sym *s);
 
-static void mcc_debug_check_forw(MCCState *s1, Sym *t, int debug_type) {
-	if ((t->type.t & VT_BTYPE) == VT_STRUCT && t->type.ref->c == -1) {
+static void mcc_debug_check_forw(MCCState *s1, Sym *t, int debug_type) { MCC_TRACE("enter\n");
+	if ((t->type.t & VT_BTYPE) == VT_STRUCT && t->type.ref->c == -1) { MCC_TRACE("br\n");
 		int i, j, g = check_global(t);
 		int n_forw_hash;
 		struct _debug_forw_hash **forw_hash;
 
-		for (i = g; i <= 1; i++) {
+		for (i = g; i <= 1; i++) { MCC_TRACE("br\n");
 			forw_hash = i ? &debug_forw_hash_global : &debug_forw_hash_local;
 			n_forw_hash = i ? n_debug_forw_hash_global : n_debug_forw_hash_local;
 			for (j = 0; j < n_forw_hash; j++)
-				if (t->type.ref == (*forw_hash)[j].type) {
+				if (t->type.ref == (*forw_hash)[j].type) { MCC_TRACE("br\n");
 					(*forw_hash)[j].debug_type =
 							mcc_realloc((*forw_hash)[j].debug_type,
 													((*forw_hash)[j].n_debug_type + 1) * sizeof(int));
@@ -1562,22 +1562,22 @@ static void mcc_debug_check_forw(MCCState *s1, Sym *t, int debug_type) {
 
 static void stabs_struct_complete(MCCState *s1, CType *t);
 
-ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t) {
+ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t) { MCC_TRACE("enter\n");
 	if (!(s1->do_debug & 2))
 		return;
-	if (0 == s1->dwarf) {
+	if (0 == s1->dwarf) { MCC_TRACE("br\n");
 		stabs_struct_complete(s1, t);
 		return;
 	}
-	if ((t->t & VT_BTYPE) == VT_STRUCT && t->ref->c != -1) {
+	if ((t->t & VT_BTYPE) == VT_STRUCT && t->ref->c != -1) { MCC_TRACE("br\n");
 		int i, j, debug_type, g = check_global(t->ref);
 		int *n_forw_hash;
 		struct _debug_forw_hash **forw_hash;
 		forw_hash = g ? &debug_forw_hash_global : &debug_forw_hash_local;
 		n_forw_hash = g ? &n_debug_forw_hash_global : &n_debug_forw_hash_local;
 		for (i = 0; i < *n_forw_hash; i++)
-			if (t->ref == (*forw_hash)[i].type) {
-				if (s1->dwarf) {
+			if (t->ref == (*forw_hash)[i].type) { MCC_TRACE("br\n");
+				if (s1->dwarf) { MCC_TRACE("br\n");
 					Sym sym = {0};
 					sym.type = *t;
 
@@ -1595,7 +1595,7 @@ ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t) {
 	}
 }
 
-static int mcc_debug_add(MCCState *s1, Sym *t, int dwarf) {
+static int mcc_debug_add(MCCState *s1, Sym *t, int dwarf) { MCC_TRACE("enter\n");
 	int offset = dwarf ? dwarf_info_section->data_offset : ++debug_next_type;
 	int *n_hash, g = check_global(t);
 	struct _debug_hash **hash;
@@ -1610,7 +1610,7 @@ static int mcc_debug_add(MCCState *s1, Sym *t, int dwarf) {
 	return offset;
 }
 
-static int STRUCT_NODEBUG(Sym *s) {
+static int STRUCT_NODEBUG(Sym *s) { MCC_TRACE("enter\n");
 	return (s->a.nodebug ||
 					((s->v & ~SYM_FIELD) >= SYM_FIRST_ANOM &&
 					 ((s->type.t & VT_BTYPE) == VT_BYTE ||
@@ -1620,11 +1620,11 @@ static int STRUCT_NODEBUG(Sym *s) {
 						(s->type.t & VT_BTYPE) == VT_LLONG)));
 }
 
-static int stabs_struct_find(MCCState *s1, Sym *t, int *p_id) {
+static int stabs_struct_find(MCCState *s1, Sym *t, int *p_id) { MCC_TRACE("enter\n");
 	Sym *s = t->type.ref;
 	if (NULL == p_id)
 		return s && !s->r && t->c >= 0;
-	if (NULL == s) {
+	if (NULL == s) { MCC_TRACE("br\n");
 		s = sym_push2(&global_stack, SYM_FIELD | 0x00DEBBED, 0, ++debug_next_type);
 		t->type.ref = s;
 	}
@@ -1635,7 +1635,7 @@ static int stabs_struct_find(MCCState *s1, Sym *t, int *p_id) {
 	return 1;
 }
 
-static int remove_type_info(int type) {
+static int remove_type_info(int type) { MCC_TRACE("enter\n");
 	type &= ~(VT_STORAGE | VT_CONSTANT | VT_VOLATILE | VT_VLA);
 	if ((type & VT_BTYPE) != VT_BYTE)
 		type &= ~VT_DEFSIGN;
@@ -1644,23 +1644,23 @@ static int remove_type_info(int type) {
 	return type;
 }
 
-static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
+static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) { MCC_TRACE("enter\n");
 	int type;
 	int n = 0;
 	int debug_type = -1;
 	Sym *t = s;
 	CString str;
 
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		type = remove_type_info(t->type.t);
 		if (type == VT_PTR || type == (VT_PTR | VT_ARRAY))
 			n++, t = t->type.ref;
 		else
 			break;
 	}
-	if ((type & VT_BTYPE) == VT_STRUCT) {
+	if ((type & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 		t = t->type.ref;
-		if (stabs_struct_find(s1, t, &debug_type)) {
+		if (stabs_struct_find(s1, t, &debug_type)) { MCC_TRACE("br\n");
 			cstr_new(&str);
 			cstr_printf(&str, "%s:T%d=%c%d",
 									(t->v & ~SYM_STRUCT) >= SYM_FIRST_ANOM
@@ -1670,7 +1670,7 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
 									IS_UNION(t->type.t) ? 'u' : 's',
 									t->c);
 
-			while (t->next) {
+			while (t->next) { MCC_TRACE("br\n");
 				int pos, size, align;
 				t = t->next;
 				if (STRUCT_NODEBUG(t))
@@ -1680,10 +1680,10 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
 												? ""
 												: get_tok_str(t->v, NULL));
 				mcc_get_debug_info(s1, t, &str);
-				if (t->type.t & VT_BITFIELD) {
+				if (t->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
 					pos = t->c * 8 + BIT_POS(t->type.t);
 					size = BIT_SIZE(t->type.t);
-				} else {
+				} else { MCC_TRACE("br\n");
 					pos = t->c * 8;
 					size = type_size(&t->type, &align) * 8;
 				}
@@ -1693,16 +1693,16 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
 			mcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
 			cstr_free(&str);
 		}
-	} else if (IS_ENUM(type)) {
+	} else if (IS_ENUM(type)) { MCC_TRACE("br\n");
 		Sym *e = t = t->type.ref;
-		if (stabs_struct_find(s1, t, &debug_type)) {
+		if (stabs_struct_find(s1, t, &debug_type)) { MCC_TRACE("br\n");
 			cstr_new(&str);
 			cstr_printf(&str, "%s:T%d=e",
 									(t->v & ~SYM_STRUCT) >= SYM_FIRST_ANOM
 											? ""
 											: get_tok_str(t->v, NULL),
 									debug_type);
-			while (t->next) {
+			while (t->next) { MCC_TRACE("br\n");
 				t = t->next;
 				cstr_printf(&str, "%s:",
 										(t->v & ~SYM_FIELD) >= SYM_FIRST_ANOM
@@ -1715,7 +1715,7 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
 			mcc_debug_stabs(s1, str.data, N_LSYM, 0, NULL, 0, 0);
 			cstr_free(&str);
 		}
-	} else if ((type & VT_BTYPE) != VT_FUNC) {
+	} else if ((type & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 		type &= ~VT_STRUCT_MASK;
 		for (debug_type = 1; debug_type <= N_DEFAULT_DEBUG; debug_type++)
 			if (default_debug[debug_type - 1].type == type)
@@ -1730,14 +1730,14 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
 	if (n > 0)
 		cstr_printf(result, "%d=", ++debug_next_type);
 	t = s;
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		type = remove_type_info(t->type.t);
 		if (type == VT_PTR)
 			cstr_printf(result, "%d=*", ++debug_next_type);
 		else if (type == (VT_PTR | VT_ARRAY))
 			cstr_printf(result, "%d=ar1;0;%d;",
 									++debug_next_type, t->type.ref->c - 1);
-		else if (type == VT_FUNC) {
+		else if (type == VT_FUNC) { MCC_TRACE("br\n");
 			cstr_printf(result, "%d=f", ++debug_next_type);
 			mcc_get_debug_info(s1, t->type.ref, result);
 			return;
@@ -1748,15 +1748,15 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) {
 	cstr_printf(result, "%d", debug_type);
 }
 
-static void stabs_struct_complete(MCCState *s1, CType *t) {
-	if (stabs_struct_find(s1, t->ref, NULL)) {
+static void stabs_struct_complete(MCCState *s1, CType *t) { MCC_TRACE("enter\n");
+	if (stabs_struct_find(s1, t->ref, NULL)) { MCC_TRACE("br\n");
 		Sym s = {0};
 		s.type = *t;
 		mcc_get_debug_info(s1, &s, NULL);
 	}
 }
 
-static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
+static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 	int type;
 	int debug_type = -1;
 	Sym *e, *t = s;
@@ -1766,23 +1766,23 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 
 	if (new_file)
 		put_new_file(s1);
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		type = remove_type_info(t->type.t);
 		if (type == VT_PTR || type == (VT_PTR | VT_ARRAY))
 			t = t->type.ref;
 		else
 			break;
 	}
-	if ((type & VT_BTYPE) == VT_STRUCT) {
+	if ((type & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 		t = t->type.ref;
 		debug_type = mcc_debug_find(s1, t, 1);
-		if (debug_type == -1) {
+		if (debug_type == -1) { MCC_TRACE("br\n");
 			int pos_sib = 0, i, *pos_type;
 
 			debug_type = mcc_debug_add(s1, t, 1);
 			e = t;
 			i = 0;
-			while (e->next) {
+			while (e->next) { MCC_TRACE("br\n");
 				e = e->next;
 				if (STRUCT_NODEBUG(e))
 					continue;
@@ -1802,13 +1802,13 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			dwarf_uleb128(dwarf_info_section, t->c);
 			dwarf_uleb128(dwarf_info_section, dwarf_line.cur_file);
 			dwarf_uleb128(dwarf_info_section, file->line_num);
-			if (t->next) {
+			if (t->next) { MCC_TRACE("br\n");
 				pos_sib = dwarf_info_section->data_offset;
 				dwarf_data4(dwarf_info_section, 0);
 			}
 			e = t;
 			i = 0;
-			while (e->next) {
+			while (e->next) { MCC_TRACE("br\n");
 				e = e->next;
 				if (STRUCT_NODEBUG(e))
 					continue;
@@ -1821,7 +1821,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 				dwarf_uleb128(dwarf_info_section, file->line_num);
 				pos_type[i++] = dwarf_info_section->data_offset;
 				dwarf_data4(dwarf_info_section, 0);
-				if (e->type.t & VT_BITFIELD) {
+				if (e->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
 					int pos = e->c * 8 + BIT_POS(e->type.t);
 					int size = BIT_SIZE(e->type.t);
 
@@ -1830,14 +1830,14 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 				} else
 					dwarf_uleb128(dwarf_info_section, e->c);
 			}
-			if (t->next) {
+			if (t->next) { MCC_TRACE("br\n");
 				dwarf_data1(dwarf_info_section, 0);
 				write32le(dwarf_info_section->data + pos_sib,
 									dwarf_info_section->data_offset - dwarf_info.start);
 			}
 			e = t;
 			i = 0;
-			while (e->next) {
+			while (e->next) { MCC_TRACE("br\n");
 				e = e->next;
 				if (STRUCT_NODEBUG(e))
 					continue;
@@ -1848,10 +1848,10 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			}
 			mcc_free(pos_type);
 		}
-	} else if (IS_ENUM(type)) {
+	} else if (IS_ENUM(type)) { MCC_TRACE("br\n");
 		t = t->type.ref;
 		debug_type = mcc_debug_find(s1, t, 1);
-		if (debug_type == -1) {
+		if (debug_type == -1) { MCC_TRACE("br\n");
 			int pos_sib, pos_type;
 			Sym sym = {0};
 			sym.type.t = VT_INT | (type & VT_UNSIGNED);
@@ -1872,7 +1872,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			pos_sib = dwarf_info_section->data_offset;
 			dwarf_data4(dwarf_info_section, 0);
 			e = t;
-			while (e->next) {
+			while (e->next) { MCC_TRACE("br\n");
 				e = e->next;
 				dwarf_data1(dwarf_info_section,
 										type & VT_UNSIGNED ? DWARF_ABBREV_ENUMERATOR_UNSIGNED
@@ -1890,7 +1890,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			write32le(dwarf_info_section->data + pos_sib,
 								dwarf_info_section->data_offset - dwarf_info.start);
 		}
-	} else if ((type & VT_BTYPE) != VT_FUNC) {
+	} else if ((type & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 		type &= ~VT_STRUCT_MASK;
 		for (i = 1; i <= N_DEFAULT_DEBUG; i++)
 			if (default_debug[i - 1].type == type)
@@ -1898,7 +1898,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 		if (i > N_DEFAULT_DEBUG)
 			return 0;
 		debug_type = dwarf_info.base_type_used[i - 1];
-		if (debug_type == 0) {
+		if (debug_type == 0) { MCC_TRACE("br\n");
 			char name[100];
 
 			debug_type = dwarf_info_section->data_offset;
@@ -1914,15 +1914,15 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 	retval = debug_type;
 	e = NULL;
 	t = s;
-	for (;;) {
+	for (;;) { MCC_TRACE("br\n");
 		type = remove_type_info(t->type.t);
-		if (type == VT_PTR) {
+		if (type == VT_PTR) { MCC_TRACE("br\n");
 			i = dwarf_info_section->data_offset;
 			if (retval == debug_type)
 				retval = i;
 			dwarf_data1(dwarf_info_section, DWARF_ABBREV_POINTER);
 			dwarf_data1(dwarf_info_section, MCC_PTR_SIZE);
-			if (last_pos != -1) {
+			if (last_pos != -1) { MCC_TRACE("br\n");
 				mcc_debug_check_forw(s1, e, last_pos);
 				write32le(dwarf_info_section->data + last_pos,
 									i - dwarf_info.start);
@@ -1930,7 +1930,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			last_pos = dwarf_info_section->data_offset;
 			e = t->type.ref;
 			dwarf_data4(dwarf_info_section, 0);
-		} else if (type == (VT_PTR | VT_ARRAY)) {
+		} else if (type == (VT_PTR | VT_ARRAY)) { MCC_TRACE("br\n");
 			int sib_pos, sub_type;
 #if LONG_SIZE == 4
 			Sym sym = {0};
@@ -1945,7 +1945,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			if (retval == debug_type)
 				retval = i;
 			dwarf_data1(dwarf_info_section, DWARF_ABBREV_ARRAY_TYPE);
-			if (last_pos != -1) {
+			if (last_pos != -1) { MCC_TRACE("br\n");
 				mcc_debug_check_forw(s1, e, last_pos);
 				write32le(dwarf_info_section->data + last_pos,
 									i - dwarf_info.start);
@@ -1955,7 +1955,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			dwarf_data4(dwarf_info_section, 0);
 			sib_pos = dwarf_info_section->data_offset;
 			dwarf_data4(dwarf_info_section, 0);
-			for (;;) {
+			for (;;) { MCC_TRACE("br\n");
 				dwarf_data1(dwarf_info_section, DWARF_ABBREV_SUBRANGE_TYPE);
 				dwarf_data4(dwarf_info_section, sub_type - dwarf_info.start);
 				dwarf_uleb128(dwarf_info_section, t->type.ref->c - 1);
@@ -1968,7 +1968,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			dwarf_data1(dwarf_info_section, 0);
 			write32le(dwarf_info_section->data + sib_pos,
 								dwarf_info_section->data_offset - dwarf_info.start);
-		} else if (type == VT_FUNC) {
+		} else if (type == VT_FUNC) { MCC_TRACE("br\n");
 			int sib_pos = 0, *pos_type;
 			Sym *f;
 
@@ -1979,7 +1979,7 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			dwarf_data1(dwarf_info_section,
 									t->type.ref->next ? DWARF_ABBREV_SUBROUTINE_TYPE
 																		: DWARF_ABBREV_SUBROUTINE_EMPTY_TYPE);
-			if (last_pos != -1) {
+			if (last_pos != -1) { MCC_TRACE("br\n");
 				mcc_debug_check_forw(s1, e, last_pos);
 				write32le(dwarf_info_section->data + last_pos,
 									i - dwarf_info.start);
@@ -1987,33 +1987,33 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 			last_pos = dwarf_info_section->data_offset;
 			e = t->type.ref;
 			dwarf_data4(dwarf_info_section, 0);
-			if (t->type.ref->next) {
+			if (t->type.ref->next) { MCC_TRACE("br\n");
 				sib_pos = dwarf_info_section->data_offset;
 				dwarf_data4(dwarf_info_section, 0);
 			}
 			f = t->type.ref;
 			i = 0;
-			while (f->next) {
+			while (f->next) { MCC_TRACE("br\n");
 				f = f->next;
 				i++;
 			}
 			pos_type = (int *)mcc_malloc(i * sizeof(int));
 			f = t->type.ref;
 			i = 0;
-			while (f->next) {
+			while (f->next) { MCC_TRACE("br\n");
 				f = f->next;
 				dwarf_data1(dwarf_info_section, DWARF_ABBREV_FORMAL_PARAMETER2);
 				pos_type[i++] = dwarf_info_section->data_offset;
 				dwarf_data4(dwarf_info_section, 0);
 			}
-			if (t->type.ref->next) {
+			if (t->type.ref->next) { MCC_TRACE("br\n");
 				dwarf_data1(dwarf_info_section, 0);
 				write32le(dwarf_info_section->data + sib_pos,
 									dwarf_info_section->data_offset - dwarf_info.start);
 			}
 			f = t->type.ref;
 			i = 0;
-			while (f->next) {
+			while (f->next) { MCC_TRACE("br\n");
 				f = f->next;
 				type = mcc_get_dwarf_info(s1, f);
 				mcc_debug_check_forw(s1, f, pos_type[i]);
@@ -2021,8 +2021,8 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 									type - dwarf_info.start);
 			}
 			mcc_free(pos_type);
-		} else {
-			if (last_pos != -1) {
+		} else { MCC_TRACE("br\n");
+			if (last_pos != -1) { MCC_TRACE("br\n");
 				mcc_debug_check_forw(s1, e, last_pos);
 				write32le(dwarf_info_section->data + last_pos,
 									debug_type - dwarf_info.start);
@@ -2034,12 +2034,12 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) {
 	return retval;
 }
 
-static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) {
-	while (cur) {
+static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) { MCC_TRACE("enter\n");
+	while (cur) { MCC_TRACE("br\n");
 		struct _debug_info *next = cur->next;
 
-		if (s1->dwarf) {
-			for (int i = cur->n_sym - 1; i >= 0; i--) {
+		if (s1->dwarf) { MCC_TRACE("br\n");
+			for (int i = cur->n_sym - 1; i >= 0; i--) { MCC_TRACE("br\n");
 				struct debug_sym *s = &cur->sym[i];
 
 				dwarf_data1(dwarf_info_section,
@@ -2051,12 +2051,12 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) {
 												? DWARF_ABBREV_VARIABLE_STATIC
 												: DWARF_ABBREV_VARIABLE_LOCAL);
 				dwarf_strp(dwarf_info_section, s->str);
-				if (s->type == N_GSYM || s->type == N_STSYM) {
+				if (s->type == N_GSYM || s->type == N_STSYM) { MCC_TRACE("br\n");
 					dwarf_uleb128(dwarf_info_section, s->file);
 					dwarf_uleb128(dwarf_info_section, s->line);
 				}
 				dwarf_data4(dwarf_info_section, s->info - dwarf_info.start);
-				if (s->type == N_GSYM || s->type == N_STSYM) {
+				if (s->type == N_GSYM || s->type == N_STSYM) { MCC_TRACE("br\n");
 					if (s->type == N_GSYM)
 						dwarf_data1(dwarf_info_section, 1);
 					dwarf_data1(dwarf_info_section, MCC_PTR_SIZE + 1);
@@ -2068,7 +2068,7 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) {
 #else
 					dwarf_data8(dwarf_info_section, s->value);
 #endif
-				} else {
+				} else { MCC_TRACE("br\n");
 					dwarf_data1(dwarf_info_section, mcc_sleb128_size((long)s->value) + 1);
 					dwarf_data1(dwarf_info_section, DW_OP_fbreg);
 					dwarf_sleb128(dwarf_info_section, (long)s->value);
@@ -2090,8 +2090,8 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) {
 			mcc_debug_finish(s1, cur->child);
 			if (cur->child)
 				dwarf_data1(dwarf_info_section, 0);
-		} else {
-			for (int i = 0; i < cur->n_sym; i++) {
+		} else { MCC_TRACE("br\n");
+			for (int i = 0; i < cur->n_sym; i++) { MCC_TRACE("br\n");
 				struct debug_sym *s = &cur->sym[i];
 
 				if (s->sec)
@@ -2111,7 +2111,7 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) {
 	}
 }
 
-ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e) {
+ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e) { MCC_TRACE("enter\n");
 	CString debug_str;
 	int param;
 
@@ -2120,14 +2120,14 @@ ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e) {
 
 	cstr_new(&debug_str);
 	param = !e;
-	for (; s != e; s = s->prev) {
+	for (; s != e; s = s->prev) { MCC_TRACE("br\n");
 		if (!s->v || (s->r & VT_VALMASK) != VT_LOCAL)
 			continue;
-		if (s1->dwarf) {
+		if (s1->dwarf) { MCC_TRACE("br\n");
 			mcc_debug_stabs(s1, get_tok_str(s->v, NULL),
 											param ? N_PSYM : N_LSYM, s->c, NULL, 0,
 											mcc_get_dwarf_info(s1, s));
-		} else {
+		} else { MCC_TRACE("br\n");
 			cstr_reset(&debug_str);
 			cstr_printf(&debug_str, "%s:%s", get_tok_str(s->v, NULL),
 									param ? "p" : "");
@@ -2139,7 +2139,7 @@ ST_FUNC void mcc_add_debug_info(MCCState *s1, Sym *s, Sym *e) {
 	cstr_free(&debug_str);
 }
 
-ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) {
+ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
 	CString debug_str;
 	BufferedFile *f;
 
@@ -2152,11 +2152,11 @@ ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) {
 	if (!f)
 		return;
 
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		mcc_debug_line(s1);
 		dwarf_info.func = sym;
 		dwarf_info.line = file->line_num;
-		if (s1->do_backtrace) {
+		if (s1->do_backtrace) { MCC_TRACE("br\n");
 			int i, len;
 
 			dwarf_line_op(s1, 0);
@@ -2166,7 +2166,7 @@ ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) {
 			for (i = 0; i < len; i++)
 				dwarf_line_op(s1, funcname[i]);
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		cstr_new(&debug_str);
 		cstr_printf(&debug_str, "%s:%c", funcname, sym->type.t & VT_STATIC ? 'f' : 'F');
 		mcc_get_debug_info(s1, sym->type.ref, &debug_str);
@@ -2176,17 +2176,17 @@ ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) {
 	}
 }
 
-ST_FUNC void mcc_debug_prolog_epilog(MCCState *s1, int value) {
+ST_FUNC void mcc_debug_prolog_epilog(MCCState *s1, int value) { MCC_TRACE("enter\n");
 	if (!s1->do_debug)
 		return;
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		dwarf_line_op(s1, value == 0
 													? DW_LNS_set_prologue_end
 													: DW_LNS_set_epilogue_begin);
 	}
 }
 
-ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) {
+ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	int min_instr_len;
 
 #if MCC_EH_FRAME
@@ -2199,7 +2199,7 @@ ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) {
 	mcc_debug_line(s1);
 	ind += min_instr_len;
 	mcc_debug_stabn(s1, N_RBRAC, size);
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		int func_sib = 0;
 		Sym *sym = dwarf_info.func;
 		int n_debug_info = mcc_get_dwarf_info(s1, sym->type.ref);
@@ -2242,19 +2242,19 @@ ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) {
 		dwarf_data1(dwarf_info_section, 0);
 		write32le(dwarf_info_section->data + func_sib,
 							dwarf_info_section->data_offset - dwarf_info.start);
-	} else {
+	} else { MCC_TRACE("br\n");
 		mcc_debug_finish(s1, debug_info_root);
 	}
 	debug_info_root = 0;
 }
 
-ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type) {
+ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bind, int sym_type) { MCC_TRACE("enter\n");
 	if (!(s1->do_debug & 2))
 		return;
 
 	if (sym_type == STT_FUNC || sym->v >= SYM_FIRST_ANOM)
 		return;
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		int debug_type;
 
 		debug_type = mcc_get_dwarf_info(s1, sym);
@@ -2278,7 +2278,7 @@ ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bi
 #else
 		dwarf_data8(dwarf_info_section, 0);
 #endif
-	} else {
+	} else { MCC_TRACE("br\n");
 		Section *s = sh_num == SHN_COMMON
 										 ? common_section
 										 : s1->sections[sh_num];
@@ -2305,15 +2305,15 @@ ST_FUNC void mcc_debug_extern_sym(MCCState *s1, Sym *sym, int sh_num, int sym_bi
 	}
 }
 
-ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym) {
+ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
 	if (!(s1->do_debug & 2))
 		return;
 
-	if (s1->dwarf) {
+	if (s1->dwarf) { MCC_TRACE("br\n");
 		int debug_type;
 
 		debug_type = mcc_get_dwarf_info(s1, sym);
-		if (debug_type != -1) {
+		if (debug_type != -1) { MCC_TRACE("br\n");
 			dwarf_data1(dwarf_info_section, DWARF_ABBREV_TYPEDEF);
 			dwarf_strp(dwarf_info_section, get_tok_str(sym->v, NULL));
 			dwarf_uleb128(dwarf_info_section, dwarf_line.cur_file);
@@ -2321,7 +2321,7 @@ ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym) {
 			mcc_debug_check_forw(s1, sym, dwarf_info_section->data_offset);
 			dwarf_data4(dwarf_info_section, debug_type - dwarf_info.start);
 		}
-	} else {
+	} else { MCC_TRACE("br\n");
 		CString str;
 		cstr_new(&str);
 		cstr_printf(&str, "%s:t", get_tok_str(sym->v, NULL));
@@ -2333,7 +2333,7 @@ ST_FUNC void mcc_debug_typedef(MCCState *s1, Sym *sym) {
 
 ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line);
 
-ST_FUNC void mcc_tcov_block_begin(MCCState *s1) {
+ST_FUNC void mcc_tcov_block_begin(MCCState *s1) { MCC_TRACE("enter\n");
 	SValue sv;
 	void *ptr;
 	unsigned long last_offset = tcov_data.offset;
@@ -2344,7 +2344,7 @@ ST_FUNC void mcc_tcov_block_begin(MCCState *s1) {
 
 	if (tcov_data.last_file_name == 0 ||
 			strcmp((const char *)(tcov_section->data + tcov_data.last_file_name),
-						 file->true_filename) != 0) {
+						 file->true_filename) != 0) { MCC_TRACE("br\n");
 		char wd[1024];
 		CString cstr;
 
@@ -2354,10 +2354,10 @@ ST_FUNC void mcc_tcov_block_begin(MCCState *s1) {
 			section_ptr_add(tcov_section, 1);
 		tcov_data.last_func_name = 0;
 		cstr_new(&cstr);
-		if (file->true_filename[0] == '/') {
+		if (file->true_filename[0] == '/') { MCC_TRACE("br\n");
 			tcov_data.last_file_name = tcov_section->data_offset;
 			cstr_printf(&cstr, "%s", file->true_filename);
-		} else {
+		} else { MCC_TRACE("br\n");
 			getcwd(wd, sizeof(wd));
 			tcov_data.last_file_name = tcov_section->data_offset + strlen(wd) + 1;
 			cstr_printf(&cstr, "%s/%s", wd, file->true_filename);
@@ -2369,7 +2369,7 @@ ST_FUNC void mcc_tcov_block_begin(MCCState *s1) {
 	}
 	if (tcov_data.last_func_name == 0 ||
 			strcmp((const char *)(tcov_section->data + tcov_data.last_func_name),
-						 funcname) != 0) {
+						 funcname) != 0) { MCC_TRACE("br\n");
 		size_t len;
 
 		if (tcov_data.last_func_name)
@@ -2384,7 +2384,7 @@ ST_FUNC void mcc_tcov_block_begin(MCCState *s1) {
 	}
 	if (ind == tcov_data.ind && tcov_data.line == file->line_num)
 		tcov_data.offset = last_offset;
-	else {
+	else { MCC_TRACE("br\n");
 		Sym label = {0};
 		label.type.t = VT_LLONG | VT_STATIC;
 
@@ -2412,12 +2412,12 @@ ST_FUNC void mcc_tcov_block_begin(MCCState *s1) {
 	}
 }
 
-ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line) {
+ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line) { MCC_TRACE("enter\n");
 	if (s1->test_coverage == 0)
 		return;
 	if (line == -1)
 		line = tcov_data.line;
-	if (tcov_data.offset) {
+	if (tcov_data.offset) { MCC_TRACE("br\n");
 		void *ptr = tcov_section->data + tcov_data.offset;
 		unsigned long long nline = line ? line : file->line_num;
 
@@ -2426,11 +2426,11 @@ ST_FUNC void mcc_tcov_block_end(MCCState *s1, int line) {
 	}
 }
 
-ST_FUNC void mcc_tcov_check_line(MCCState *s1, int start) {
+ST_FUNC void mcc_tcov_check_line(MCCState *s1, int start) { MCC_TRACE("enter\n");
 	if (s1->test_coverage == 0)
 		return;
-	if (tcov_data.line != file->line_num) {
-		if ((tcov_data.line + 1) != file->line_num) {
+	if (tcov_data.line != file->line_num) { MCC_TRACE("br\n");
+		if ((tcov_data.line + 1) != file->line_num) { MCC_TRACE("br\n");
 			mcc_tcov_block_end(s1, -1);
 			if (start)
 				mcc_tcov_block_begin(s1);
@@ -2439,20 +2439,20 @@ ST_FUNC void mcc_tcov_check_line(MCCState *s1, int start) {
 	}
 }
 
-ST_FUNC void mcc_tcov_start(MCCState *s1) {
+ST_FUNC void mcc_tcov_start(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->test_coverage == 0)
 		return;
 	if (!s1->dState)
 		s1->dState = mcc_mallocz(sizeof *s1->dState);
 	memset(&tcov_data, 0, sizeof(tcov_data));
-	if (tcov_section == NULL) {
+	if (tcov_section == NULL) { MCC_TRACE("br\n");
 		tcov_section = new_section(mcc_state, ".tcov", SHT_PROGBITS,
 															 SHF_ALLOC | SHF_WRITE);
 		section_ptr_add(tcov_section, 4);
 	}
 }
 
-ST_FUNC void mcc_tcov_end(MCCState *s1) {
+ST_FUNC void mcc_tcov_end(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->test_coverage == 0)
 		return;
 	if (tcov_data.last_func_name)
@@ -2461,7 +2461,7 @@ ST_FUNC void mcc_tcov_end(MCCState *s1) {
 		section_ptr_add(tcov_section, 1);
 }
 
-ST_FUNC void mcc_tcov_reset_ind(MCCState *s1) {
+ST_FUNC void mcc_tcov_reset_ind(MCCState *s1) { MCC_TRACE("enter\n");
 	tcov_data.ind = 0;
 }
 

@@ -457,7 +457,7 @@ struct macho {
 #define SHT_LINKEDIT (SHT_LOOS + 42)
 #define SHN_FROMDLL (SHN_LOOS + 2)
 
-static void *add_lc(struct macho *mo, uint32_t cmd, uint32_t cmdsize) {
+static void *add_lc(struct macho *mo, uint32_t cmd, uint32_t cmdsize) { MCC_TRACE("enter\n");
 	struct load_command *lc = mcc_mallocz(cmdsize);
 	lc->cmd = cmd;
 	lc->cmdsize = cmdsize;
@@ -466,7 +466,7 @@ static void *add_lc(struct macho *mo, uint32_t cmd, uint32_t cmdsize) {
 	return lc;
 }
 
-static struct segment_command_64 *add_segment(struct macho *mo, const char *name) {
+static struct segment_command_64 *add_segment(struct macho *mo, const char *name) { MCC_TRACE("enter\n");
 	struct segment_command_64 *sc = add_lc(mo, LC_SEGMENT_64, sizeof(*sc));
 	strncpy(sc->segname, name, 16);
 	mo->seg2lc = mcc_realloc(mo->seg2lc, sizeof(*mo->seg2lc) * (mo->nseg + 1));
@@ -474,11 +474,11 @@ static struct segment_command_64 *add_segment(struct macho *mo, const char *name
 	return sc;
 }
 
-static struct segment_command_64 *get_segment(struct macho *mo, int i) {
+static struct segment_command_64 *get_segment(struct macho *mo, int i) { MCC_TRACE("enter\n");
 	return (struct segment_command_64 *)(mo->lc[mo->seg2lc[i]]);
 }
 
-static int add_section(struct macho *mo, struct segment_command_64 **_seg, const char *name) {
+static int add_section(struct macho *mo, struct segment_command_64 **_seg, const char *name) { MCC_TRACE("enter\n");
 	struct segment_command_64 *seg = *_seg;
 	int ret = seg->nsects;
 	struct section_64 *sec;
@@ -493,11 +493,11 @@ static int add_section(struct macho *mo, struct segment_command_64 **_seg, const
 	return ret;
 }
 
-static struct section_64 *get_section(struct segment_command_64 *seg, int i) {
+static struct section_64 *get_section(struct segment_command_64 *seg, int i) { MCC_TRACE("enter\n");
 	return (struct section_64 *)((char *)seg + sizeof(*seg)) + i;
 }
 
-static void *add_dylib(struct macho *mo, char *name) {
+static void *add_dylib(struct macho *mo, char *name) { MCC_TRACE("enter\n");
 	struct dylib_command *lc;
 	int sz = (sizeof(*lc) + strlen(name) + 1 + 7) & -8;
 	lc = add_lc(mo, LC_LOAD_DYLIB, sz);
@@ -509,7 +509,7 @@ static void *add_dylib(struct macho *mo, char *name) {
 	return lc;
 }
 
-static void mcc_macho_add_destructor(MCCState *s1) {
+static void mcc_macho_add_destructor(MCCState *s1) { MCC_TRACE("enter\n");
 	int init_sym, mh_execute_header, at_exit_sym;
 	Section *s;
 	ElfW_Rel *rel;
@@ -605,7 +605,7 @@ static void mcc_macho_add_destructor(MCCState *s1) {
 
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 static void bind_rebase_add(struct macho *mo, int bind, int sh_info,
-														ElfW_Rel *rel, struct sym_attr *attr) {
+														ElfW_Rel *rel, struct sym_attr *attr) { MCC_TRACE("enter\n");
 	mo->bind_rebase = mcc_realloc(mo->bind_rebase, (mo->n_bind_rebase + 1) *
 																										 sizeof(struct bind_rebase));
 	mo->bind_rebase[mo->n_bind_rebase].section = sh_info;
@@ -617,7 +617,7 @@ static void bind_rebase_add(struct macho *mo, int bind, int sh_info,
 	mo->n_bind += bind;
 }
 
-static void check_relocs(MCCState *s1, struct macho *mo) {
+static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	Section *s;
 	ElfW_Rel *rel, save_rel;
 	ElfW(Sym) * sym;
@@ -627,7 +627,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 
 	goti = NULL;
 	mo->nr_plt = mo->n_got = 0;
-	for (i = 1; i < s1->nb_sections; i++) {
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (s->sh_type != SHT_RELX ||
 				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7))
@@ -639,9 +639,9 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 			for_code = code_reloc(type);
 			sym_index = ELFW(R_SYM)(rel->r_info);
 			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-			if (sym->st_shndx == SHN_UNDEF || gotplt_entry == ALWAYS_GOTPLT_ENTRY) {
+			if (sym->st_shndx == SHN_UNDEF || gotplt_entry == ALWAYS_GOTPLT_ENTRY) { MCC_TRACE("br\n");
 				attr = get_sym_attr(s1, sym_index, 1);
-				if (!attr->dyn_index) {
+				if (!attr->dyn_index) { MCC_TRACE("br\n");
 					attr->got_offset = s1->got->data_offset;
 					attr->plt_offset = -1;
 					attr->dyn_index = 1;
@@ -649,12 +649,12 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 					put_elf_reloc(s1->symtab, s1->got, attr->got_offset,
 												R_JMP_SLOT, sym_index);
 					goti = mcc_realloc(goti, (mo->n_got + 1) * sizeof(*goti));
-					if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) {
+					if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) { MCC_TRACE("br\n");
 						if (sym->st_shndx == SHN_UNDEF)
 							mcc_error("unresolved local reference to '%s'",
 												(char *)symtab_section->link->data + sym->st_name);
 						goti[mo->n_got++] = INDIRECT_SYMBOL_LOCAL;
-					} else {
+					} else { MCC_TRACE("br\n");
 						goti[mo->n_got++] = mo->e2msym[sym_index];
 						if (sym->st_shndx == SHN_UNDEF
 #ifdef MCC_TARGET_X86_64
@@ -662,7 +662,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 #elif defined MCC_TARGET_ARM64
 								&& type == R_AARCH64_ADR_GOT_PAGE
 #endif
-						) {
+						) { MCC_TRACE("br\n");
 							attr->plt_offset = -mo->n_bind_rebase - 2;
 							bind_rebase_add(mo, 1, s1->got->reloc->sh_info, &save_rel, attr);
 							s1->got->reloc->data_offset -= sizeof(ElfW_Rel);
@@ -671,12 +671,12 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 							s1->got->reloc->data_offset -= sizeof(ElfW_Rel);
 					}
 				}
-				if (for_code && sym->st_shndx == SHN_UNDEF) {
-					if ((int)attr->plt_offset < -1) {
+				if (for_code && sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
+					if ((int)attr->plt_offset < -1) { MCC_TRACE("br\n");
 						mo->bind_rebase[-attr->plt_offset - 2].bind = 2;
 						attr->plt_offset = -1;
 					}
-					if (attr->plt_offset == -1) {
+					if (attr->plt_offset == -1) { MCC_TRACE("br\n");
 						uint8_t *jmp;
 
 						attr->plt_offset = mo->stubs->data_offset;
@@ -733,7 +733,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 
 #else
 
-static void check_relocs(MCCState *s1, struct macho *mo) {
+static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	uint8_t *jmp;
 	Section *s;
 	ElfW_Rel *rel, save_rel;
@@ -777,7 +777,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 
 	goti = NULL;
 	mo->nr_plt = mo->n_got = 0;
-	for (int i = 1; i < s1->nb_sections; i++) {
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (s->sh_type != SHT_RELX ||
 				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7))
@@ -789,9 +789,9 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 			for_code = code_reloc(type);
 			sym_index = ELFW(R_SYM)(rel->r_info);
 			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
-			if (sym->st_shndx == SHN_UNDEF || gotplt_entry == ALWAYS_GOTPLT_ENTRY) {
+			if (sym->st_shndx == SHN_UNDEF || gotplt_entry == ALWAYS_GOTPLT_ENTRY) { MCC_TRACE("br\n");
 				attr = get_sym_attr(s1, sym_index, 1);
-				if (!attr->dyn_index) {
+				if (!attr->dyn_index) { MCC_TRACE("br\n");
 					attr->got_offset = s1->got->data_offset;
 					attr->plt_offset = -1;
 					attr->dyn_index = 1;
@@ -799,12 +799,12 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 					put_elf_reloc(s1->symtab, s1->got, attr->got_offset,
 												R_JMP_SLOT, sym_index);
 					goti = mcc_realloc(goti, (mo->n_got + 1) * sizeof(*goti));
-					if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) {
+					if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) { MCC_TRACE("br\n");
 						if (sym->st_shndx == SHN_UNDEF)
 							mcc_error("unresolved local reference to '%s'",
 												(char *)symtab_section->link->data + sym->st_name);
 						goti[mo->n_got++] = INDIRECT_SYMBOL_LOCAL;
-					} else {
+					} else { MCC_TRACE("br\n");
 						goti[mo->n_got++] = mo->e2msym[sym_index];
 						if (sym->st_shndx == SHN_UNDEF
 #ifdef MCC_TARGET_X86_64
@@ -812,7 +812,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 #elif defined MCC_TARGET_ARM64
 								&& type == R_AARCH64_ADR_GOT_PAGE
 #endif
-						) {
+						) { MCC_TRACE("br\n");
 							mo->bind =
 									mcc_realloc(mo->bind,
 															(mo->n_bind + 1) *
@@ -825,8 +825,8 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 						}
 					}
 				}
-				if (for_code && sym->st_shndx == SHN_UNDEF) {
-					if (attr->plt_offset == -1) {
+				if (for_code && sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
+					if (attr->plt_offset == -1) { MCC_TRACE("br\n");
 						attr->plt_offset = mo->stubs->data_offset;
 #ifdef MCC_TARGET_X86_64
 						if (type != R_X86_64_PLT32)
@@ -908,15 +908,15 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 					rel->r_addend += attr->plt_offset;
 				}
 			}
-			if (type == R_DATA_PTR || type == R_JMP_SLOT) {
-				if (sym->st_shndx == SHN_UNDEF) {
+			if (type == R_DATA_PTR || type == R_JMP_SLOT) { MCC_TRACE("br\n");
+				if (sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 					mo->bind = mcc_realloc(mo->bind,
 																 (mo->n_bind + 1) *
 																		 sizeof(struct bind));
 					mo->bind[mo->n_bind].section = s->sh_info;
 					mo->bind[mo->n_bind].rel = save_rel;
 					mo->n_bind++;
-				} else {
+				} else { MCC_TRACE("br\n");
 					mo->s_rebase =
 							mcc_realloc(mo->s_rebase, (mo->n_rebase + 1) *
 																						sizeof(struct s_rebase));
@@ -935,13 +935,13 @@ static void check_relocs(MCCState *s1, struct macho *mo) {
 }
 #endif
 
-static int check_symbols(MCCState *s1, struct macho *mo) {
+static int check_symbols(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int sym_end;
 	int ret = 0;
 
 	mo->ilocal = mo->iextdef = mo->iundef = -1;
 	sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
-	for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
+	for (int sym_index = 1; sym_index < sym_end; ++sym_index) { MCC_TRACE("br\n");
 		int elf_index = ((struct nlist_64 *)mo->symtab->data + sym_index - 1)->n_value;
 		ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + elf_index;
 		const char *name = (char *)symtab_section->link->data + sym->st_name;
@@ -952,20 +952,20 @@ static int check_symbols(MCCState *s1, struct macho *mo) {
 		dprintf("%4d (%4d): %09lx %4d %4d %4d %3d %s\n",
 						sym_index, elf_index, (long)sym->st_value,
 						type, bind, vis, sym->st_shndx, name);
-		if (bind == STB_LOCAL) {
+		if (bind == STB_LOCAL) { MCC_TRACE("br\n");
 			if (mo->ilocal == -1)
 				mo->ilocal = sym_index - 1;
 			if (mo->iextdef != -1 || mo->iundef != -1)
 				mcc_error("local syms after global ones");
-		} else if (sym->st_shndx != SHN_UNDEF) {
+		} else if (sym->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			if (mo->iextdef == -1)
 				mo->iextdef = sym_index - 1;
 			if (mo->iundef != -1)
 				mcc_error("external defined symbol after undefined");
-		} else if (sym->st_shndx == SHN_UNDEF) {
+		} else if (sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 			if (mo->iundef == -1)
 				mo->iundef = sym_index - 1;
-			if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK || s1->output_type != MCC_OUTPUT_EXE || find_elf_sym(s1->dynsymtab_section, name)) {
+			if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK || s1->output_type != MCC_OUTPUT_EXE || find_elf_sym(s1->dynsymtab_section, name)) { MCC_TRACE("br\n");
 				sym->st_shndx = SHN_FROMDLL;
 				continue;
 			}
@@ -976,11 +976,11 @@ static int check_symbols(MCCState *s1, struct macho *mo) {
 	return ret;
 }
 
-static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) {
+static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) { MCC_TRACE("enter\n");
 	struct nlist_64 n = *pn;
 	ElfSym *sym = (ElfW(Sym) *)symtab_section->data + pn->n_value;
 	const char *name = (char *)symtab_section->link->data + sym->st_name;
-	switch (ELFW(ST_TYPE)(sym->st_info)) {
+	switch (ELFW(ST_TYPE)(sym->st_info)) { MCC_TRACE("br\n");
 	case STT_NOTYPE:
 	case STT_OBJECT:
 	case STT_FUNC:
@@ -1003,7 +1003,7 @@ static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) 
 		n.n_type = N_ABS, n.n_sect = 0;
 	else if (sym->st_shndx >= SHN_LORESERVE)
 		mcc_error("unhandled ELF symbol section %d %s", sym->st_shndx, name);
-	else if (!mo->elfsectomacho[sym->st_shndx]) {
+	else if (!mo->elfsectomacho[sym->st_shndx]) { MCC_TRACE("br\n");
 		if (strncmp(s1->sections[sym->st_shndx]->name, ".debug_", 7))
 			mcc_error("ELF section %d(%s) not mapped into Mach-O for symbol %s",
 								sym->st_shndx, s1->sections[sym->st_shndx]->name, name);
@@ -1018,13 +1018,13 @@ static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) 
 	*pn = n;
 }
 
-static void convert_symbols(MCCState *s1, struct macho *mo) {
+static void convert_symbols(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	struct nlist_64 *pn;
 	for_each_elem(mo->symtab, 0, pn, struct nlist_64)
 			convert_symbol(s1, mo, pn);
 }
 
-static int machosymcmp(const void *_a, const void *_b, void *arg) {
+static int machosymcmp(const void *_a, const void *_b, void *arg) { MCC_TRACE("enter\n");
 	MCCState *s1 = arg;
 	int ea = ((struct nlist_64 *)_a)->n_value;
 	int eb = ((struct nlist_64 *)_b)->n_value;
@@ -1037,7 +1037,7 @@ static int machosymcmp(const void *_a, const void *_b, void *arg) {
 	r = (sa->st_shndx == SHN_UNDEF) - (sb->st_shndx == SHN_UNDEF);
 	if (r)
 		return r;
-	if (ELFW(ST_BIND)(sa->st_info) != STB_LOCAL) {
+	if (ELFW(ST_BIND)(sa->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 		const char *na = (char *)symtab_section->link->data + sa->st_name;
 		const char *nb = (char *)symtab_section->link->data + sb->st_name;
 		r = strcmp(na, nb);
@@ -1048,23 +1048,23 @@ static int machosymcmp(const void *_a, const void *_b, void *arg) {
 }
 
 static void mcc_qsort(void *base, size_t nel, size_t width,
-											int (*comp)(const void *, const void *, void *), void *arg) {
+											int (*comp)(const void *, const void *, void *), void *arg) { MCC_TRACE("enter\n");
 	size_t wnel, gap, wgap, i, j, k;
 	char *a, *b, tmp;
 
 	wnel = width * nel;
 	for (gap = 0; ++gap < nel;)
 		gap *= 3;
-	while (gap /= 3) {
+	while (gap /= 3) { MCC_TRACE("br\n");
 		wgap = width * gap;
-		for (i = wgap; i < wnel; i += width) {
-			for (j = i - wgap;; j -= wgap) {
+		for (i = wgap; i < wnel; i += width) { MCC_TRACE("br\n");
+			for (j = i - wgap;; j -= wgap) { MCC_TRACE("br\n");
 				a = j + (char *)base;
 				b = a + wgap;
 				if ((*comp)(a, b, arg) <= 0)
 					break;
 				k = width;
-				do {
+				do { MCC_TRACE("br\n");
 					tmp = *a;
 					*a++ = *b;
 					*b++ = tmp;
@@ -1076,7 +1076,7 @@ static void mcc_qsort(void *base, size_t nel, size_t width,
 	}
 }
 
-static void create_symtab(MCCState *s1, struct macho *mo) {
+static void create_symtab(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int sym_end;
 	struct nlist_64 *pn;
 
@@ -1118,7 +1118,7 @@ static void create_symtab(MCCState *s1, struct macho *mo) {
 	put_elf_str(mo->strtab, " ");
 	sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
 	pn = section_ptr_add(mo->symtab, sizeof(*pn) * (sym_end - 1));
-	for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
+	for (int sym_index = 1; sym_index < sym_end; ++sym_index) { MCC_TRACE("br\n");
 		ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + sym_index;
 		const char *name = (char *)symtab_section->link->data + sym->st_name;
 		pn[sym_index - 1].n_strx = put_elf_str(mo->strtab, name);
@@ -1128,7 +1128,7 @@ static void create_symtab(MCCState *s1, struct macho *mo) {
 	mcc_qsort(pn, sym_end - 1, sizeof(*pn), machosymcmp, s1);
 	mo->e2msym = mcc_malloc(sym_end * sizeof(*mo->e2msym));
 	mo->e2msym[0] = -1;
-	for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
+	for (int sym_index = 1; sym_index < sym_end; ++sym_index) { MCC_TRACE("br\n");
 		mo->e2msym[pn[sym_index - 1].n_value] = sym_index - 1;
 	}
 }
@@ -1189,18 +1189,18 @@ const struct
 #define N_SEGMENT (sizeof(all_segment) / sizeof(all_segment[0]))
 
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS
-static void calc_fixup_size(MCCState *s1, struct macho *mo) {
+static void calc_fixup_size(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int size;
 
 	size = (sizeof(struct dyld_chained_fixups_header) + 7) & -8;
 	size += (sizeof(struct dyld_chained_starts_in_image) + (mo->nseg - 1) * sizeof(uint32_t) + 7) & -8;
-	for (int i = (s1->output_type == MCC_OUTPUT_EXE); i < mo->nseg - 1; i++) {
+	for (int i = (s1->output_type == MCC_OUTPUT_EXE); i < mo->nseg - 1; i++) { MCC_TRACE("br\n");
 		int page_count = (get_segment(mo, i)->vmsize + SEG_PAGE_SIZE - 1) / SEG_PAGE_SIZE;
 		size += (sizeof(struct dyld_chained_starts_in_segment) + (page_count - 1) * sizeof(uint16_t) + 7) & -8;
 	}
 	size += mo->n_bind * sizeof(struct dyld_chained_import) + 1;
-	for (int i = 0; i < mo->n_bind_rebase; i++) {
-		if (mo->bind_rebase[i].bind) {
+	for (int i = 0; i < mo->n_bind_rebase; i++) { MCC_TRACE("br\n");
+		if (mo->bind_rebase[i].bind) { MCC_TRACE("br\n");
 			int sym_index = ELFW(R_SYM)(mo->bind_rebase[i].rel.r_info);
 			ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			const char *name = (char *)symtab_section->link->data + sym->st_name;
@@ -1215,11 +1215,11 @@ static void calc_fixup_size(MCCState *s1, struct macho *mo) {
 
 static void set_segment_and_offset(MCCState *s1, struct macho *mo, addr_t addr,
 																	 uint8_t *ptr, int opcode,
-																	 Section *sec, addr_t offset) {
+																	 Section *sec, addr_t offset) { MCC_TRACE("enter\n");
 	int i;
 	struct segment_command_64 *seg = NULL;
 
-	for (i = (s1->output_type == MCC_OUTPUT_EXE); i < mo->nseg - 1; i++) {
+	for (i = (s1->output_type == MCC_OUTPUT_EXE); i < mo->nseg - 1; i++) { MCC_TRACE("br\n");
 		seg = get_segment(mo, i);
 		if (addr >= seg->vmaddr && addr < (seg->vmaddr + seg->vmsize))
 			break;
@@ -1228,12 +1228,12 @@ static void set_segment_and_offset(MCCState *s1, struct macho *mo, addr_t addr,
 	mcc_write_uleb128(sec, offset - seg->vmaddr);
 }
 
-static void bind_rebase(MCCState *s1, struct macho *mo) {
+static void bind_rebase(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	uint8_t *ptr;
 	ElfW(Sym) * sym;
 	const char *name;
 
-	for (int i = 0; i < mo->n_lazy_bind; i++) {
+	for (int i = 0; i < mo->n_lazy_bind; i++) { MCC_TRACE("br\n");
 		int sym_index = ELFW(R_SYM)(mo->s_lazy_bind[i].rel.r_info);
 
 		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
@@ -1256,7 +1256,7 @@ static void bind_rebase(MCCState *s1, struct macho *mo) {
 		*ptr++ = BIND_OPCODE_DO_BIND;
 		*ptr = BIND_OPCODE_DONE;
 	}
-	for (int i = 0; i < mo->n_rebase; i++) {
+	for (int i = 0; i < mo->n_rebase; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[mo->s_rebase[i].section];
 
 		ptr = section_ptr_add(mo->rebase, 2);
@@ -1269,7 +1269,7 @@ static void bind_rebase(MCCState *s1, struct macho *mo) {
 		ptr = section_ptr_add(mo->rebase, 1);
 		*ptr = REBASE_OPCODE_DO_REBASE_IMM_TIMES | 1;
 	}
-	for (int i = 0; i < mo->n_bind; i++) {
+	for (int i = 0; i < mo->n_bind; i++) { MCC_TRACE("br\n");
 		int sym_index = ELFW(R_SYM)(mo->bind[i].rel.r_info);
 		Section *s = s1->sections[mo->bind[i].section];
 		Section *binding;
@@ -1298,15 +1298,15 @@ static void bind_rebase(MCCState *s1, struct macho *mo) {
 		ptr = section_ptr_add(binding, 1);
 		*ptr++ = BIND_OPCODE_DO_BIND;
 	}
-	if (mo->rebase->data_offset) {
+	if (mo->rebase->data_offset) { MCC_TRACE("br\n");
 		ptr = section_ptr_add(mo->rebase, 1);
 		*ptr = REBASE_OPCODE_DONE;
 	}
-	if (mo->binding->data_offset) {
+	if (mo->binding->data_offset) { MCC_TRACE("br\n");
 		ptr = section_ptr_add(mo->binding, 1);
 		*ptr = BIND_OPCODE_DONE;
 	}
-	if (mo->weak_binding->data_offset) {
+	if (mo->weak_binding->data_offset) { MCC_TRACE("br\n");
 		ptr = section_ptr_add(mo->weak_binding, 1);
 		*ptr = BIND_OPCODE_DONE;
 	}
@@ -1342,13 +1342,13 @@ struct trie_seq {
 
 static void create_trie(struct trie_node *node,
 												int from, int to, int index_start,
-												int n_trie, struct trie_info *trie) {
+												int n_trie, struct trie_info *trie) { MCC_TRACE("enter\n");
 	int i;
 	int start, end, index_end;
 	char cur;
 	struct trie_node *child;
 
-	for (i = from; i < to; i = end) {
+	for (i = from; i < to; i = end) { MCC_TRACE("br\n");
 		cur = trie[i].name[index_start];
 		start = i++;
 		for (; i < to; i++)
@@ -1359,15 +1359,15 @@ static void create_trie(struct trie_node *node,
 				(trie[start].name[index_start] &&
 				 trie[start].name[index_start + 1] == 0))
 			index_end = trie[start].str_size - 1;
-		else {
+		else { MCC_TRACE("br\n");
 			index_end = index_start + 1;
-			for (;;) {
+			for (;;) { MCC_TRACE("br\n");
 				cur = trie[start].name[index_end];
 				for (i = start + 1; i < end; i++)
 					if (cur != trie[i].name[index_end])
 						break;
 				if (trie[start].name[index_end] &&
-						trie[start].name[index_end + 1] == 0) {
+						trie[start].name[index_end + 1] == 0) { MCC_TRACE("br\n");
 					end = start + 1;
 					index_end = trie[start].str_size - 1;
 					break;
@@ -1395,12 +1395,12 @@ static void create_trie(struct trie_node *node,
 
 static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
 											struct trie_node *node,
-											int n_trie, struct trie_info *trie) {
+											int n_trie, struct trie_info *trie) { MCC_TRACE("enter\n");
 	int nest_offset, last_seq = *n_seq, retval = *offset;
 	struct trie_seq *p_seq;
 	struct trie_node *p_nest;
 
-	for (int i = 0; i < node->n_child; i++) {
+	for (int i = 0; i < node->n_child; i++) { MCC_TRACE("br\n");
 		p_nest = &node->child[i];
 		*seq = mcc_realloc(*seq, (*n_seq + 1) * sizeof(struct trie_seq));
 		p_seq = &(*seq)[(*n_seq)++];
@@ -1411,7 +1411,7 @@ static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
 		*offset += (i == 0 ? 1 + 1 : 0) +
 							 p_nest->index_end - p_nest->index_start + 1 + 3;
 	}
-	for (int i = 0; i < node->n_child; i++) {
+	for (int i = 0; i < node->n_child; i++) { MCC_TRACE("br\n");
 		nest_offset =
 				create_seq(offset, n_seq, seq, &node->child[i], n_trie, trie);
 		p_seq = &(*seq)[last_seq + i];
@@ -1420,13 +1420,13 @@ static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
 	return retval;
 }
 
-static void node_free(struct trie_node *node) {
+static void node_free(struct trie_node *node) { MCC_TRACE("enter\n");
 	for (int i = 0; i < node->n_child; i++)
 		node_free(&node->child[i]);
 	mcc_free(node->child);
 }
 
-static int triecmp(const void *_a, const void *_b, void *arg) {
+static int triecmp(const void *_a, const void *_b, void *arg) { MCC_TRACE("enter\n");
 	struct trie_info *a = (struct trie_info *)_a;
 	struct trie_info *b = (struct trie_info *)_b;
 	int len_a = strlen(a->name);
@@ -1437,7 +1437,7 @@ static int triecmp(const void *_a, const void *_b, void *arg) {
 	return strcmp(a->name, b->name);
 }
 
-static void export_trie(MCCState *s1, struct macho *mo) {
+static void export_trie(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int size, offset = 0, save_offset;
 	uint8_t *ptr;
 	int sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
@@ -1447,13 +1447,13 @@ static void export_trie(MCCState *s1, struct macho *mo) {
 	struct trie_seq *seq = NULL;
 	addr_t vm_addr = get_segment(mo, s1->output_type == MCC_OUTPUT_EXE)->vmaddr;
 
-	for (int sym_index = 1; sym_index < sym_end; ++sym_index) {
+	for (int sym_index = 1; sym_index < sym_end; ++sym_index) { MCC_TRACE("br\n");
 		ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + sym_index;
 		const char *name = (char *)symtab_section->link->data + sym->st_name;
 
 		if (sym->st_shndx != SHN_UNDEF && sym->st_shndx < SHN_LORESERVE &&
 				(ELFW(ST_BIND)(sym->st_info) == STB_GLOBAL ||
-				 ELFW(ST_BIND)(sym->st_info) == STB_WEAK)) {
+				 ELFW(ST_BIND)(sym->st_info) == STB_WEAK)) { MCC_TRACE("br\n");
 			int flag = EXPORT_SYMBOL_FLAGS_KIND_REGULAR;
 			addr_t addr =
 					sym->st_value + s1->sections[sym->st_shndx]->sh_addr - vm_addr;
@@ -1470,24 +1470,24 @@ static void export_trie(MCCState *s1, struct macho *mo) {
 			n_trie++;
 		}
 	}
-	if (n_trie) {
+	if (n_trie) { MCC_TRACE("br\n");
 		mcc_qsort(trie, n_trie, sizeof(struct trie_info), triecmp, NULL);
 		memset(&node, 0, sizeof(node));
 		create_trie(&node, 0, n_trie, 0, n_trie, trie);
 		create_seq(&offset, &n_seq, &seq, &node, n_trie, trie);
 		save_offset = offset;
-		for (int i = 0; i < n_seq; i++) {
+		for (int i = 0; i < n_seq; i++) { MCC_TRACE("br\n");
 			p_node = seq[i].node;
-			if (p_node->n_child == 0) {
+			if (p_node->n_child == 0) { MCC_TRACE("br\n");
 				p_trie = &trie[p_node->start];
 				seq[i].nest_offset = offset;
 				offset += 1 + p_trie->term_size + 1;
 			}
 		}
-		for (int i = 0; i < n_seq; i++) {
+		for (int i = 0; i < n_seq; i++) { MCC_TRACE("br\n");
 			p_node = seq[i].node;
 			p_trie = &trie[p_node->start];
-			if (seq[i].n_child >= 0) {
+			if (seq[i].n_child >= 0) { MCC_TRACE("br\n");
 				section_ptr_add(mo->exports,
 												seq[i].offset - mo->exports->data_offset);
 				ptr = section_ptr_add(mo->exports, 2);
@@ -1501,9 +1501,9 @@ static void export_trie(MCCState *s1, struct macho *mo) {
 			mcc_write_uleb128(mo->exports, seq[i].nest_offset);
 		}
 		section_ptr_add(mo->exports, save_offset - mo->exports->data_offset);
-		for (int i = 0; i < n_seq; i++) {
+		for (int i = 0; i < n_seq; i++) { MCC_TRACE("br\n");
 			p_node = seq[i].node;
-			if (p_node->n_child == 0) {
+			if (p_node->n_child == 0) { MCC_TRACE("br\n");
 				p_trie = &trie[p_node->start];
 				mcc_write_uleb128(mo->exports, p_trie->term_size);
 				mcc_write_uleb128(mo->exports, p_trie->flag);
@@ -1519,7 +1519,7 @@ static void export_trie(MCCState *s1, struct macho *mo) {
 	mcc_free(trie);
 }
 
-static void collect_sections(MCCState *s1, struct macho *mo, const char *filename) {
+static void collect_sections(MCCState *s1, struct macho *mo, const char *filename) { MCC_TRACE("enter\n");
 	int i, sk, numsec;
 	int used_segment[N_SEGMENT];
 	uint64_t curaddr, fileofs;
@@ -1542,14 +1542,14 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 		used_segment[i] = all_segment[i].used;
 
 	memset(mo->sk_to_sect, 0, sizeof(mo->sk_to_sect));
-	for (i = s1->nb_sections; i-- > 1;) {
+	for (i = s1->nb_sections; i-- > 1;) { MCC_TRACE("br\n");
 		int type, flags;
 		s = s1->sections[i];
 		type = s->sh_type;
 		flags = s->sh_flags;
 		sk = sk_unknown;
-		if ((flags & SHF_ALLOC) || !strncmp(s->name, ".debug_", 7)) {
-			switch (type) {
+		if ((flags & SHF_ALLOC) || !strncmp(s->name, ".debug_", 7)) { MCC_TRACE("br\n");
+			switch (type) { MCC_TRACE("br\n");
 			default:
 				sk = sk_unknown;
 				break;
@@ -1627,7 +1627,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 		used_segment[0] = 0;
 
 	for (i = 0; i < N_SEGMENT; i++)
-		if (used_segment[i]) {
+		if (used_segment[i]) { MCC_TRACE("br\n");
 			seg = add_segment(mo, all_segment[i].name);
 			if (i == 1 && s1->output_type != MCC_OUTPUT_EXE)
 				seg->vmaddr = 0;
@@ -1642,7 +1642,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 					mo->segment[sk] = mo->nseg - 1;
 		}
 
-	if (s1->output_type != MCC_OUTPUT_EXE) {
+	if (s1->output_type != MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 		const char *name = s1->install_name ? s1->install_name : filename;
 		i = (sizeof(*dylib) + strlen(name) + 1 + 7) & -8;
 		dylib = add_lc(mo, LC_ID_DYLIB, i);
@@ -1668,7 +1668,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	symlc = add_lc(mo, LC_SYMTAB, sizeof(*symlc));
 	dysymlc = add_lc(mo, LC_DYSYMTAB, sizeof(*dysymlc));
 
-	if (s1->output_type == MCC_OUTPUT_EXE) {
+	if (s1->output_type == MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 		i = (sizeof(*dyldlc) + strlen("/usr/lib/dyld") + 1 + 7) & -8;
 		dyldlc = add_lc(mo, LC_LOAD_DYLINKER, i);
 		dyldlc->name = sizeof(*dyldlc);
@@ -1687,20 +1687,20 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	dyldsv = add_lc(mo, LC_SOURCE_VERSION, sizeof(*dyldsv));
 	dyldsv->version = 0;
 
-	if (s1->output_type == MCC_OUTPUT_EXE) {
+	if (s1->output_type == MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 		mo->ep = add_lc(mo, LC_MAIN, sizeof(*mo->ep));
 		mo->ep->entryoff = 4096;
 	}
 
-	for (i = 0; i < s1->nb_loaded_dlls; i++) {
+	for (i = 0; i < s1->nb_loaded_dlls; i++) { MCC_TRACE("br\n");
 		DLLReference *dllref = s1->loaded_dlls[i];
 		if (dllref->level == 0)
 			add_dylib(mo, dllref->name);
 	}
 
-	if (s1->rpath) {
+	if (s1->rpath) { MCC_TRACE("br\n");
 		char *path = s1->rpath, *end;
-		do {
+		do { MCC_TRACE("br\n");
 			end = strchr(path, ':');
 			if (!end)
 				end = strchr(path, 0);
@@ -1720,30 +1720,30 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	seg = NULL;
 	numsec = 0;
 	mo->elfsectomacho = mcc_mallocz(sizeof(*mo->elfsectomacho) * s1->nb_sections);
-	for (sk = sk_unknown; sk < sk_last; sk++) {
+	for (sk = sk_unknown; sk < sk_last; sk++) { MCC_TRACE("br\n");
 		struct section_64 *sec = NULL;
-		if (seg) {
+		if (seg) { MCC_TRACE("br\n");
 			seg->vmsize = curaddr - seg->vmaddr;
 			seg->filesize = fileofs - seg->fileoff;
 		}
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS
-		if (sk == sk_linkedit) {
+		if (sk == sk_linkedit) { MCC_TRACE("br\n");
 			calc_fixup_size(s1, mo);
 			export_trie(s1, mo);
 		}
 #else
-		if (sk == sk_linkedit) {
+		if (sk == sk_linkedit) { MCC_TRACE("br\n");
 			bind_rebase(s1, mo);
 			export_trie(s1, mo);
 		}
 #endif
 		if (skinfo[sk].seg_initial &&
 				(s1->output_type != MCC_OUTPUT_EXE || mo->segment[sk]) &&
-				mo->sk_to_sect[sk].s) {
+				mo->sk_to_sect[sk].s) { MCC_TRACE("br\n");
 			uint64_t al = 0;
 			int si;
 			seg = get_segment(mo, mo->segment[sk]);
-			if (skinfo[sk].name) {
+			if (skinfo[sk].name) { MCC_TRACE("br\n");
 				si = add_section(mo, &seg, skinfo[sk].name);
 				numsec++;
 				mo->lc[mo->seg2lc[mo->segment[sk]]] = (struct load_command *)seg;
@@ -1763,14 +1763,14 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 					sec->reserved1 = mo->nr_plt + mo->n_got;
 #endif
 			}
-			if (seg->vmaddr == -1) {
+			if (seg->vmaddr == -1) { MCC_TRACE("br\n");
 				curaddr = (curaddr + SEG_PAGE_SIZE - 1) & -SEG_PAGE_SIZE;
 				seg->vmaddr = curaddr;
 				fileofs = (fileofs + SEG_PAGE_SIZE - 1) & -SEG_PAGE_SIZE;
 				seg->fileoff = fileofs;
 			}
 
-			for (s = mo->sk_to_sect[sk].s; s; s = s->prev) {
+			for (s = mo->sk_to_sect[sk].s; s; s = s->prev) { MCC_TRACE("br\n");
 				int a = exact_log2p1(s->sh_addralign);
 				if (a && al < (a - 1))
 					al = a - 1;
@@ -1783,17 +1783,17 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 				mcc_warning("alignment > 4096"), sec->align = 12, al = 4096;
 			curaddr = (curaddr + al - 1) & -al;
 			fileofs = (fileofs + al - 1) & -al;
-			if (sec) {
+			if (sec) { MCC_TRACE("br\n");
 				sec->addr = curaddr;
 				sec->offset = fileofs;
 			}
-			for (s = mo->sk_to_sect[sk].s; s; s = s->prev) {
+			for (s = mo->sk_to_sect[sk].s; s; s = s->prev) { MCC_TRACE("br\n");
 				al = s->sh_addralign;
 				curaddr = (curaddr + al - 1) & -al;
 				dprintf("%s: curaddr now 0x%lx\n", s->name, (long)curaddr);
 				s->sh_addr = curaddr;
 				curaddr += s->sh_size;
-				if (s->sh_type != SHT_NOBITS) {
+				if (s->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
 					fileofs = (fileofs + al - 1) & -al;
 					s->sh_offset = fileofs;
 					fileofs += s->sh_size;
@@ -1806,7 +1806,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 				sec->size = curaddr - sec->addr;
 		}
 		if (DEBUG_MACHO)
-			for (s = mo->sk_to_sect[sk].s; s; s = s->prev) {
+			for (s = mo->sk_to_sect[sk].s; s; s = s->prev) { MCC_TRACE("br\n");
 				int type = s->sh_type;
 				int flags = s->sh_flags;
 				printf("%d section %-16s %-10s %09lx %04x %02d %s,%s,%s\n",
@@ -1835,7 +1835,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 							 flags & SHF_EXECINSTR ? "exec" : "");
 			}
 	}
-	if (seg) {
+	if (seg) { MCC_TRACE("br\n");
 		seg->vmsize = curaddr - seg->vmaddr;
 		seg->filesize = fileofs - seg->fileoff;
 	}
@@ -1855,39 +1855,39 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	dysymlc->nindirectsyms = mo->indirsyms->data_offset / sizeof(uint32_t);
 
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS
-	if (mo->chained_fixups->data_offset) {
+	if (mo->chained_fixups->data_offset) { MCC_TRACE("br\n");
 		chained_fixups_lc->dataoff = mo->chained_fixups->sh_offset;
 		chained_fixups_lc->datasize = mo->chained_fixups->data_offset;
 	}
-	if (mo->exports->data_offset) {
+	if (mo->exports->data_offset) { MCC_TRACE("br\n");
 		export_trie_lc->dataoff = mo->exports->sh_offset;
 		export_trie_lc->datasize = mo->exports->data_offset;
 	}
 #else
-	if (mo->rebase->data_offset) {
+	if (mo->rebase->data_offset) { MCC_TRACE("br\n");
 		mo->dyldinfo->rebase_off = mo->rebase->sh_offset;
 		mo->dyldinfo->rebase_size = mo->rebase->data_offset;
 	}
-	if (mo->binding->data_offset) {
+	if (mo->binding->data_offset) { MCC_TRACE("br\n");
 		mo->dyldinfo->bind_off = mo->binding->sh_offset;
 		mo->dyldinfo->bind_size = mo->binding->data_offset;
 	}
-	if (mo->weak_binding->data_offset) {
+	if (mo->weak_binding->data_offset) { MCC_TRACE("br\n");
 		mo->dyldinfo->weak_bind_off = mo->weak_binding->sh_offset;
 		mo->dyldinfo->weak_bind_size = mo->weak_binding->data_offset;
 	}
-	if (mo->lazy_binding->data_offset) {
+	if (mo->lazy_binding->data_offset) { MCC_TRACE("br\n");
 		mo->dyldinfo->lazy_bind_off = mo->lazy_binding->sh_offset;
 		mo->dyldinfo->lazy_bind_size = mo->lazy_binding->data_offset;
 	}
-	if (mo->exports->data_offset) {
+	if (mo->exports->data_offset) { MCC_TRACE("br\n");
 		mo->dyldinfo->export_off = mo->exports->sh_offset;
 		mo->dyldinfo->export_size = mo->exports->data_offset;
 	}
 #endif
 }
 
-static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) {
+static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) { MCC_TRACE("enter\n");
 	int sk;
 	uint64_t fileofs = 0;
 	Section *s;
@@ -1899,10 +1899,10 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) {
 	mo->mh.mh.cputype = CPU_TYPE_ARM64;
 	mo->mh.mh.cpusubtype = CPU_SUBTYPE_ARM64_ALL;
 #endif
-	if (s1->output_type == MCC_OUTPUT_EXE) {
+	if (s1->output_type == MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 		mo->mh.mh.filetype = MH_EXECUTE;
 		mo->mh.mh.flags = MH_DYLDLINK | MH_PIE;
-	} else {
+	} else { MCC_TRACE("br\n");
 		mo->mh.mh.filetype = MH_DYLIB;
 		mo->mh.mh.flags = MH_DYLDLINK;
 	}
@@ -1915,22 +1915,22 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) {
 
 	fwrite(&mo->mh, 1, sizeof(mo->mh), fp);
 	fileofs += sizeof(mo->mh);
-	for (int i = 0; i < mo->nlc; i++) {
+	for (int i = 0; i < mo->nlc; i++) { MCC_TRACE("br\n");
 		fwrite(mo->lc[i], 1, mo->lc[i]->cmdsize, fp);
 		fileofs += mo->lc[i]->cmdsize;
 	}
 
-	for (sk = sk_unknown; sk < sk_last; sk++) {
+	for (sk = sk_unknown; sk < sk_last; sk++) { MCC_TRACE("br\n");
 		if (skinfo[sk].seg_initial == 0 ||
 				(s1->output_type == MCC_OUTPUT_EXE && !mo->segment[sk]) ||
 				!mo->sk_to_sect[sk].s)
 			continue;
 		get_segment(mo, mo->segment[sk]);
-		for (s = mo->sk_to_sect[sk].s; s; s = s->prev) {
-			if (s->sh_type != SHT_NOBITS) {
+		for (s = mo->sk_to_sect[sk].s; s; s = s->prev) { MCC_TRACE("br\n");
+			if (s->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
 				while (fileofs < s->sh_offset)
 					fputc(0, fp), fileofs++;
-				if (s->sh_size) {
+				if (s->sh_size) { MCC_TRACE("br\n");
 					fwrite(s->data, 1, s->sh_size, fp);
 					fileofs += s->sh_size;
 				}
@@ -1940,7 +1940,7 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) {
 }
 
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS
-static int bind_rebase_cmp(const void *_a, const void *_b, void *arg) {
+static int bind_rebase_cmp(const void *_a, const void *_b, void *arg) { MCC_TRACE("enter\n");
 	MCCState *s1 = arg;
 	struct bind_rebase *a = (struct bind_rebase *)_a;
 	struct bind_rebase *b = (struct bind_rebase *)_b;
@@ -1954,7 +1954,7 @@ static int bind_rebase_cmp(const void *_a, const void *_b, void *arg) {
 						 : 0;
 }
 
-ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
+ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int i, k, bind_index, size, page_count, sym_index;
 	const char *name;
 	ElfW(Sym) * sym;
@@ -1969,7 +1969,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 						bind_rebase_cmp, s1);
 	for (i = 0; i < mo->n_bind_rebase - 1; i++)
 		if (mo->bind_rebase[i].section == mo->bind_rebase[i + 1].section &&
-				mo->bind_rebase[i].rel.r_offset == mo->bind_rebase[i + 1].rel.r_offset) {
+				mo->bind_rebase[i].rel.r_offset == mo->bind_rebase[i + 1].rel.r_offset) { MCC_TRACE("br\n");
 			sym_index = ELFW(R_SYM)(mo->bind_rebase[i].rel.r_info);
 			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
 			name = (char *)symtab_section->link->data + sym->st_name;
@@ -1989,7 +1989,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 	image = (struct dyld_chained_starts_in_image *)data;
 	data += (size + 7) & -8;
 	image->seg_count = mo->nseg;
-	for (i = (s1->output_type == MCC_OUTPUT_EXE); i < mo->nseg - 1; i++) {
+	for (i = (s1->output_type == MCC_OUTPUT_EXE); i < mo->nseg - 1; i++) { MCC_TRACE("br\n");
 		image->seg_info_offset[i] = (data - mo->chained_fixups->data) -
 																header->starts_offset;
 		seg = get_segment(mo, i);
@@ -2014,7 +2014,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 		segment->page_count = page_count;
 		bind_index = 0;
 		k = 0;
-		for (int j = 0; j < page_count; j++) {
+		for (int j = 0; j < page_count; j++) { MCC_TRACE("br\n");
 			addr_t start = seg->vmaddr + j * SEG_PAGE_SIZE;
 			addr_t end = start + SEG_PAGE_SIZE;
 			void *last = NULL;
@@ -2024,7 +2024,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 			struct dyld_chained_ptr_64_bind *bind;
 
 			segment->page_start[j] = DYLD_CHAINED_PTR_START_NONE;
-			for (; k < mo->n_bind_rebase; k++) {
+			for (; k < mo->n_bind_rebase; k++) { MCC_TRACE("br\n");
 				Section *s = s1->sections[mo->bind_rebase[k].section];
 				addr_t r_offset = mo->bind_rebase[k].rel.r_offset;
 				addr_t addr = s->sh_addr + r_offset;
@@ -2035,12 +2035,12 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 										s->name, (long long)r_offset);
 				if (addr >= end)
 					break;
-				if (addr >= start) {
+				if (addr >= start) { MCC_TRACE("br\n");
 					cur_o = addr - start;
-					if (mo->bind_rebase[k].bind) {
+					if (mo->bind_rebase[k].bind) { MCC_TRACE("br\n");
 						if (segment->page_start[j] == DYLD_CHAINED_PTR_START_NONE)
 							segment->page_start[j] = cur_o;
-						else {
+						else { MCC_TRACE("br\n");
 							bind = (struct dyld_chained_ptr_64_bind *)last;
 							bind->next = (cur_o - last_o) / 4;
 						}
@@ -2052,10 +2052,10 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 						bind->reserved = 0;
 						bind->next = 0;
 						bind->bind = 1;
-					} else {
+					} else { MCC_TRACE("br\n");
 						if (segment->page_start[j] == DYLD_CHAINED_PTR_START_NONE)
 							segment->page_start[j] = cur_o;
-						else {
+						else { MCC_TRACE("br\n");
 							rebase = (struct dyld_chained_ptr_64_rebase *)last;
 							rebase->next = (cur_o - last_o) / 4;
 						}
@@ -2082,8 +2082,8 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 	data += mo->n_bind * sizeof(struct dyld_chained_import);
 	header->symbols_offset = data - mo->chained_fixups->data;
 	data++;
-	for (i = 0, bind_index = 0; i < mo->n_bind_rebase; i++) {
-		if (mo->bind_rebase[i].bind) {
+	for (i = 0, bind_index = 0; i < mo->n_bind_rebase; i++) { MCC_TRACE("br\n");
+		if (mo->bind_rebase[i].bind) { MCC_TRACE("br\n");
 			import[bind_index].lib_ordinal =
 					BIND_SPECIAL_DYLIB_FLAT_LOOKUP & 0xffu;
 			import[bind_index].name_offset =
@@ -2102,11 +2102,11 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) {
 }
 #endif
 
-static void macho_tls_setup(MCCState *s1, struct macho *mo) {
+static void macho_tls_setup(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int i, tlv_sym = 0;
 	int sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
 
-	for (i = 1; i < sym_end; i++) {
+	for (i = 1; i < sym_end; i++) { MCC_TRACE("br\n");
 		ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + i;
 		int desc_off;
 		ElfW_Rel rel;
@@ -2114,14 +2114,14 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) {
 		if (ELFW(ST_TYPE)(sym->st_info) != STT_TLS)
 			continue;
 		if (sym->st_shndx != tdata_section->sh_num &&
-				sym->st_shndx != tbss_section->sh_num) {
+				sym->st_shndx != tbss_section->sh_num) { MCC_TRACE("br\n");
 			if (sym->st_shndx == SHN_UNDEF)
 				mcc_error("Mach-O: external thread-local '%s' is unsupported",
 									(char *)symtab_section->link->data + sym->st_name);
 			continue;
 		}
 
-		if (!mo->tls_vars) {
+		if (!mo->tls_vars) { MCC_TRACE("br\n");
 			mo->tls_vars = new_section(s1, ".tlv_descriptors", SHT_PROGBITS,
 																 SHF_ALLOC | SHF_WRITE);
 			mo->tls_vars->sh_addralign = MCC_PTR_SIZE;
@@ -2160,7 +2160,7 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) {
 	}
 }
 
-static void macho_tls_finalize(MCCState *s1, struct macho *mo) {
+static void macho_tls_finalize(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	addr_t base = (addr_t)-1;
 	int i;
 
@@ -2170,7 +2170,7 @@ static void macho_tls_finalize(MCCState *s1, struct macho *mo) {
 		base = tdata_section->sh_addr;
 	if (tbss_section->sh_size && tbss_section->sh_addr < base)
 		base = tbss_section->sh_addr;
-	for (i = 0; i < mo->n_tls; i++) {
+	for (i = 0; i < mo->n_tls; i++) { MCC_TRACE("br\n");
 		Section *os = s1->sections[mo->tls[i].orig_sec];
 		addr_t var_addr = os->sh_addr + mo->tls[i].orig_val;
 		write64le(mo->tls_vars->data + mo->tls[i].desc_off + 2 * MCC_PTR_SIZE,
@@ -2178,7 +2178,7 @@ static void macho_tls_finalize(MCCState *s1, struct macho *mo) {
 	}
 }
 
-ST_FUNC int macho_output_file(MCCState *s1, const char *filename) {
+ST_FUNC int macho_output_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	int fd, mode, file_type;
 	FILE *fp;
 	int ret = -1;
@@ -2193,7 +2193,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) {
 		mode = 0777;
 	unlink(filename);
 	fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, mode);
-	if (fd < 0 || (fp = fdopen(fd, "wb")) == NULL) {
+	if (fd < 0 || (fp = fdopen(fd, "wb")) == NULL) { MCC_TRACE("br\n");
 		mcc_error_noabort("could not write '%s: %s'", filename, strerror(errno));
 		return -1;
 	}
@@ -2204,7 +2204,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) {
 	create_symtab(s1, &mo);
 	check_relocs(s1, &mo);
 	ret = check_symbols(s1, &mo);
-	if (!ret) {
+	if (!ret) { MCC_TRACE("br\n");
 		int save_output = s1->output_type;
 
 		collect_sections(s1, &mo, filename);
@@ -2212,7 +2212,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) {
 		relocate_syms(s1, s1->symtab, 0);
 		if (s1->output_type == MCC_OUTPUT_EXE)
 			mo.ep->entryoff = get_sym_addr(s1, "main", 1, 1) - get_segment(&mo, 1)->vmaddr;
-		if (s1->nb_errors) {
+		if (s1->nb_errors) { MCC_TRACE("br\n");
 			ret = -1;
 			goto do_ret;
 		}
@@ -2245,11 +2245,11 @@ do_ret:
 	return ret;
 }
 
-static uint32_t macho_swap32(uint32_t x) {
+static uint32_t macho_swap32(uint32_t x) { MCC_TRACE("enter\n");
 	return (x >> 24) | (x << 24) | ((x >> 8) & 0xff00) | ((x & 0xff00) << 8);
 }
 
-static uint64_t macho_swap64(uint64_t x) {
+static uint64_t macho_swap64(uint64_t x) { MCC_TRACE("enter\n");
 	return ((uint64_t)macho_swap32((uint32_t)x) << 32) | macho_swap32((uint32_t)(x >> 32));
 }
 
@@ -2270,17 +2270,17 @@ static uint64_t macho_swap64(uint64_t x) {
 #define tbd_parse_trample *pos++ = 0
 
 #ifdef MCC_TARGET_IS_HOST
-ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) {
+ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) { MCC_TRACE("enter\n");
 	const char *sdk = host_macos_sdk_root();
 	CString path;
 	cstr_new(&path);
-	if (sdk) {
+	if (sdk) { MCC_TRACE("br\n");
 		cstr_printf(&path, "%s/usr/lib", sdk);
 		mcc_add_library_path(s, (char *)path.data);
 		cstr_reset(&path);
 		cstr_printf(&path, "%s/System/Library/Frameworks", sdk);
 		mcc_add_framework_path(s, (char *)path.data);
-	} else {
+	} else { MCC_TRACE("br\n");
 		mcc_add_library_path(s,
 												 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
 												 ":"
@@ -2293,14 +2293,14 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) {
 	cstr_free(&path);
 }
 
-ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) {
+ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) { MCC_TRACE("enter\n");
 	const char *sdk = host_macos_sdk_root();
 	CString path;
 	cstr_new(&path);
-	if (sdk) {
+	if (sdk) { MCC_TRACE("br\n");
 		cstr_printf(&path, "%s/usr/include", sdk);
 		mcc_add_sysinclude_path(s, (char *)path.data);
-	} else {
+	} else { MCC_TRACE("br\n");
 		mcc_add_sysinclude_path(s,
 														"/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 														":"
@@ -2309,7 +2309,7 @@ ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) {
 	cstr_free(&path);
 }
 
-ST_FUNC char *macho_tbd_soname(int fd) {
+ST_FUNC char *macho_tbd_soname(int fd) { MCC_TRACE("enter\n");
 	char *soname, *data, *pos;
 	char *ret = 0;
 	pos = data = mcc_load_text(fd);
@@ -2328,7 +2328,7 @@ the_end:
 }
 #endif
 
-ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev) {
+ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev) { MCC_TRACE("enter\n");
 	char *soname, *data, *pos;
 	int ret = -1;
 
@@ -2344,14 +2344,14 @@ ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev) 
 	ret = 0;
 	if (mcc_add_dllref(s1, soname, lev)->found)
 		goto the_end;
-	while (pos) {
+	while (pos) { MCC_TRACE("br\n");
 		char *sym = NULL;
 		int cont = 1;
 		if (!tbd_parse_movepast("symbols: "))
 			break;
 		if (!tbd_parse_movepast("["))
 			break;
-		while (cont) {
+		while (cont) { MCC_TRACE("br\n");
 			tbd_parse_skipws;
 			tbd_parse_tramplequote;
 			sym = pos;
@@ -2373,7 +2373,7 @@ the_end:
 	return ret;
 }
 
-ST_FUNC int macho_load_dll(MCCState *s1, int fd, const char *filename, int lev) {
+ST_FUNC int macho_load_dll(MCCState *s1, int fd, const char *filename, int lev) { MCC_TRACE("enter\n");
 	unsigned char buf[sizeof(struct mach_header_64)];
 	void *buf2;
 	uint32_t machofs = 0;
@@ -2393,7 +2393,7 @@ again:
 	if (full_read(fd, buf, sizeof(buf)) != sizeof(buf))
 		return -1;
 	memcpy(&fh, buf, sizeof(fh));
-	if (fh.magic == FAT_MAGIC || fh.magic == FAT_CIGAM) {
+	if (fh.magic == FAT_MAGIC || fh.magic == FAT_CIGAM) { MCC_TRACE("br\n");
 		struct fat_arch *fa = load_data(fd, sizeof(fh),
 																		fh.nfat_arch * sizeof(*fa));
 		swap = fh.magic == FAT_CIGAM;
@@ -2404,7 +2404,7 @@ again:
 			if (SWAP(fa[i].cputype) == CPU_TYPE_ARM64 && SWAP(fa[i].cpusubtype) == CPU_SUBTYPE_ARM64_ALL)
 #endif
 				break;
-		if (i == SWAP(fh.nfat_arch)) {
+		if (i == SWAP(fh.nfat_arch)) { MCC_TRACE("br\n");
 			mcc_free(fa);
 			return -1;
 		}
@@ -2412,7 +2412,7 @@ again:
 		mcc_free(fa);
 		lseek(fd, machofs, SEEK_SET);
 		goto again;
-	} else if (fh.magic == FAT_MAGIC_64 || fh.magic == FAT_CIGAM_64) {
+	} else if (fh.magic == FAT_MAGIC_64 || fh.magic == FAT_CIGAM_64) { MCC_TRACE("br\n");
 		struct fat_arch_64 *fa;
 		swap = fh.magic == FAT_CIGAM_64;
 		fa = load_data(fd, sizeof(fh), SWAP(fh.nfat_arch) * sizeof(*fa));
@@ -2423,7 +2423,7 @@ again:
 			if (SWAP(fa[i].cputype) == CPU_TYPE_ARM64 && SWAP(fa[i].cpusubtype) == CPU_SUBTYPE_ARM64_ALL)
 #endif
 				break;
-		if (i == SWAP(fh.nfat_arch)) {
+		if (i == SWAP(fh.nfat_arch)) { MCC_TRACE("br\n");
 			mcc_free(fa);
 			return -1;
 		}
@@ -2438,9 +2438,9 @@ again:
 		return -1;
 	dprintf("found Mach-O at %d\n", machofs);
 	buf2 = load_data(fd, machofs + sizeof(struct mach_header_64), mh.sizeofcmds);
-	for (i = 0, lc = buf2; i < mh.ncmds; i++) {
+	for (i = 0, lc = buf2; i < mh.ncmds; i++) { MCC_TRACE("br\n");
 		dprintf("lc %2d: 0x%08x\n", i, lc->cmd);
-		switch (lc->cmd) {
+		switch (lc->cmd) { MCC_TRACE("br\n");
 		case LC_SYMTAB: {
 			struct symtab_command *sc = (struct symtab_command *)lc;
 			nsyms = sc->nsyms;
@@ -2464,7 +2464,7 @@ again:
 			dprintf(" REEXPORT %s\n", name);
 			if (subfd < 0)
 				mcc_warning("can't open %s (reexported from %s)", name, filename);
-			else {
+			else { MCC_TRACE("br\n");
 				macho_load_dll(s1, subfd, name, lev + 1);
 				close(subfd);
 			}
@@ -2488,7 +2488,7 @@ again:
 
 	dprintf("symbols (exported):\n");
 	dprintf("    n: typ sec   desc              value name\n");
-	for (i = iextdef; i < iextdef + nextdef; i++) {
+	for (i = iextdef; i < iextdef + nextdef; i++) { MCC_TRACE("br\n");
 		struct nlist_64 *sym = symtab + i;
 		dprintf("%5d: %3d %3d 0x%04x 0x%016lx %s\n",
 						i, sym->n_type, sym->n_sect, sym->n_desc, (long)sym->n_value,
