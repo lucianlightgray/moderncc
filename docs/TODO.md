@@ -284,7 +284,16 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     old variant on the hot-swap path (needs the old region's ptr/size + MCCState lifetime), the **[L2A]**
     quiescent-point instrumentation (function-entry + loop back-edges of the variant), and un-deferring J5. This
     also lets the L11A `pthread_atfork` child reset the QSBR registry (noted there).
-12. **[J10]** hot-patch strategy family (pointer-swap + dual-map + QSBR-gated in-place) + the benchmark harness.
+12. **[J10]** hot-patch strategy family — ⏳ 2 MECHANISMS + HARNESS DONE, D3B in-place-codegen deferred. Hot-patch
+    is now a benchmarkable family, not one mechanism: `jit/selftest-patch` builds two direct-callable dispatch
+    shapes — **pointer-swap slot** (`jmp *[rip+slot]`, swap = one atomic store) and **in-place trampoline
+    rewrite** (`movabs rax,imm; jmp rax`, swap = rewrite the 8-byte immediate) — validates both **functionally**
+    (initial dispatch + each swap redirects to a new target) and runs the **benchmark harness**: steady-state
+    ns/call (direct ≈1.0 vs slot/trampoline ≈2.5 — the ~1.5ns indirection cost), swap-latency ns/swap
+    (~0.7-0.8), and code-cache footprint (16/12 B). This is the J10 measurement infra the search consumes.
+    **DEFERRED:** the real **D3B** nop-padded patchable-prologue in-place code-patch (AOT prologue emission +
+    aligned atomic 5/8-byte patch + icache flush, QSBR-gated via step 11) and int3/trap + dual-map page-flip
+    variants; and feeding the measured winner into the dispatcher's per-function/workload ranking.
 
 **Phase 3 — pure-kernel backend + cross-arch + hard-gate**
 13. **[J9A/K7/K8]** M5c pure/impure slicing + dual (C-ABI + non-ABI) register conventions + inline-vs-shim
@@ -868,10 +877,11 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   (`jit-patchpoint`); (c) further variants (int3/trap-based patch, per-call-site trampoline rewrite, dual-map
   atomic page flip). Each is a row selectable via the gate vocabulary; correctness is the same guarded-deopt
   contract regardless of *how* the swap lands. **New benchmark item below.**
-- [ ] **[J10] Benchmark/profile permutations of JIT hot-patch strategies** — build a harness that measures each
-  patching mechanism (and their combinations) on swap latency, steady-state call overhead, code-cache
-  footprint, and cross-thread quiescence cost; feed the winner into the search's ranking so the dispatcher
-  picks the cheapest *how-to-patch* per function/workload. Depends on ≥2 patch strategies existing (M7 a+b).
+- [~] **[J10] Benchmark/profile permutations of JIT hot-patch strategies** — ⏳ harness DONE. `jit/selftest-patch`
+  measures **swap latency**, **steady-state call overhead**, and **code-cache footprint** for two mechanisms
+  (pointer-swap slot + in-place trampoline immediate-rewrite) against the direct-call floor. **Remaining:** the
+  cross-thread quiescence-cost metric (rides QSBR step 11), more mechanisms (D3B nop-pad, dual-map flip), and
+  feeding the winner into the search's per-function/workload ranking. Now unblocked (≥2 strategies exist).
 - [~] **M8 — `eval_slice` soundness oracle (W3) — oracle landed + now bites; hard-gate promotion deferred** —
   `src/ast_eval_slice.h`: independent AST-over-values UB oracle (`defined=0` on div/mod-by-0, `INT_MIN/-1`, bad
   shift, signed overflow). Enumerates `AST_Return` value-slices and checks every spec return value is in the

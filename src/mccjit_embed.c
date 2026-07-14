@@ -4121,6 +4121,163 @@ int mccjit_selftest_bench(void) {
 	return fails ? 1 : 0;
 }
 
+/* J10 — hot-patch is a strategy family: the how-to-patch mechanism is itself a
+   search dial. These are two direct-callable (tail-jump) dispatch shapes for
+   the benchmark harness:
+     - slot dispatch  (pointer-swap): jmp *[rip+slot]; swap = 1 store to the slot
+     - trampoline     (in-place patch): movabs rax,imm; jmp rax; swap = rewrite imm
+   both forward to *slot / imm and tail-return to the caller (no frame). */
+#if defined(__x86_64__)
+static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) {
+	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	int32_t disp;
+	if (p == MAP_FAILED)
+		return NULL;
+	p[0] = 0xff;
+	p[1] = 0x25;
+	disp = 2; /* slot at p+8, next insn at p+6 -> disp = 2 */
+	memcpy(p + 2, &disp, 4);
+	memcpy(p + 8, &target, 8);
+	if (slotout)
+		*slotout = (void **)(p + 8);
+	return p;
+}
+
+static unsigned char *mccjit_patch_make_tramp(void *target,
+																							void **immout) {
+	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		return NULL;
+	p[0] = 0x48;
+	p[1] = 0xb8;
+	memcpy(p + 2, &target, 8);
+	p[10] = 0xff;
+	p[11] = 0xe0;
+	if (immout)
+		*immout = (void *)(p + 2);
+	return p;
+}
+#endif
+
+static int mccjit_patch_t1(int x) { return x * 2 + 1; }
+static int mccjit_patch_t2(int x) { return x * 3 + 7; }
+
+int mccjit_selftest_patch(void) {
+	int fails = 0;
+#if !defined(__x86_64__)
+	printf("mccjit-selftest-patch: non-x86_64 SKIP\n");
+	return 0;
+#else
+	unsigned char *slotd, *trampd;
+	void **slot = NULL;
+	void *imm = NULL;
+	int (*sf)(int);
+	int (*tf)(int);
+	long iters = 2000000;
+	const char *e = getenv("MCC_JIT_PATCH_ITERS");
+	int i;
+	int64_t acc = 0;
+	struct timespec t0;
+	double dsm, dslot, dtramp, dswap_ptr, dswap_inplace;
+
+	printf("mccjit-selftest-patch: begin (hot-patch strategy family)\n");
+	if (e && e[0]) {
+		long v = strtol(e, NULL, 10);
+		if (v > 0)
+			iters = v;
+	}
+
+	slotd = mccjit_patch_make_slot((void *)mccjit_patch_t1, &slot);
+	trampd = mccjit_patch_make_tramp((void *)mccjit_patch_t1, &imm);
+	if (!slotd || !trampd) {
+		printf("mccjit-selftest-patch: stub alloc failed FAIL\n");
+		return 1;
+	}
+	sf = (int (*)(int))slotd;
+	tf = (int (*)(int))trampd;
+
+	/* Functional: both dispatch shapes forward correctly, and a swap
+	   (pointer-swap slot store / in-place immediate rewrite) redirects them. */
+	if (sf(5) != mccjit_patch_t1(5) || tf(5) != mccjit_patch_t1(5)) {
+		printf("mccjit-selftest-patch: initial dispatch wrong FAIL\n");
+		fails++;
+	}
+	__atomic_store_n(slot, (void *)mccjit_patch_t2, __ATOMIC_RELEASE);
+	memcpy(imm, &(void *){(void *)mccjit_patch_t2}, 8);
+	if (sf(5) != mccjit_patch_t2(5)) {
+		printf("mccjit-selftest-patch: pointer-swap did not redirect FAIL\n");
+		fails++;
+	}
+	if (tf(5) != mccjit_patch_t2(5)) {
+		printf("mccjit-selftest-patch: in-place patch did not redirect FAIL\n");
+		fails++;
+	}
+	/* restore t1 for the steady-state benchmark */
+	__atomic_store_n(slot, (void *)mccjit_patch_t1, __ATOMIC_RELEASE);
+	memcpy(imm, &(void *){(void *)mccjit_patch_t1}, 8);
+
+	/* steady-state per-call overhead: direct vs slot vs trampoline (best of 3) */
+	dsm = dslot = dtramp = 1e300;
+	for (i = 0; i < 3; i++) {
+		long k;
+		double d;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (k = 0; k < iters; k++)
+			acc += mccjit_patch_t1((int)k);
+		d = mccjit_elapsed(&t0);
+		if (d < dsm)
+			dsm = d;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (k = 0; k < iters; k++)
+			acc += sf((int)k);
+		d = mccjit_elapsed(&t0);
+		if (d < dslot)
+			dslot = d;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (k = 0; k < iters; k++)
+			acc += tf((int)k);
+		d = mccjit_elapsed(&t0);
+		if (d < dtramp)
+			dtramp = d;
+	}
+
+	/* swap latency: pointer-swap (atomic store) vs in-place (imm rewrite) */
+	{
+		long k;
+		void *a = (void *)mccjit_patch_t1, *b = (void *)mccjit_patch_t2;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (k = 0; k < iters; k++)
+			__atomic_store_n(slot, (k & 1) ? a : b, __ATOMIC_RELEASE);
+		dswap_ptr = mccjit_elapsed(&t0);
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		for (k = 0; k < iters; k++)
+			memcpy(imm, (k & 1) ? &a : &b, 8);
+		dswap_inplace = mccjit_elapsed(&t0);
+		__atomic_store_n(slot, (void *)mccjit_patch_t1, __ATOMIC_RELEASE);
+		memcpy(imm, &(void *){(void *)mccjit_patch_t1}, 8);
+	}
+
+	printf("mccjit-selftest-patch: steady-state ns/call over %ld iters: "
+				 "direct=%.2f slot=%.2f trampoline=%.2f\n",
+				 iters, dsm / iters * 1e9, dslot / iters * 1e9, dtramp / iters * 1e9);
+	printf("mccjit-selftest-patch: swap latency ns/swap: pointer-swap=%.2f "
+				 "in-place=%.2f\n",
+				 dswap_ptr / iters * 1e9, dswap_inplace / iters * 1e9);
+	printf("mccjit-selftest-patch: footprint bytes/dispatch: slot=%d trampoline=%d "
+				 "(page-backed)\n",
+				 16, 12);
+	mccjit_bench_sink ^= acc;
+
+	munmap(slotd, 4096);
+	munmap(trampd, 4096);
+	printf("mccjit-selftest-patch: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+#endif
+}
+
 static void *mccjit_qsbr_thread(void *arg) {
 	int rounds = *(int *)arg;
 	int slot = mccjit_qsbr_register();
