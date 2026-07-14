@@ -1398,10 +1398,13 @@ redo:
 				(s->output_type == MCC_OUTPUT_EXE ||
 				 (s->output_type == MCC_OUTPUT_OBJ && s->option_r))) {
 			const char *eng = getenv("MCC_EMBED_JIT_LIB");
+			int saved_ft = s->filetype;
+			s->filetype |= AFF_WHOLE_ARCHIVE;
 			if (eng && eng[0])
 				ret = mcc_add_file(s, eng);
 			else
 				ret = mcc_add_library(s, "mcc");
+			s->filetype = saved_ft;
 		}
 	}
 #endif

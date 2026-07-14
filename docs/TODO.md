@@ -228,7 +228,18 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    benchmark must run on the **real observed** distribution, never synthetic inputs (a synthetic pointer/divisor
    would crash the callee), so wiring the scorer into the live promotion path waits on **[J6A]** cold-phase
    live-in capture (step 8); until then the scorer is a tested primitive J6A/K5-integration consumes.
-7. **[J4A/L9B]** parser-less re-emit-only static-link slice (E1a) + Tier-B size validation — the ship gate.
+7. **[J4A/L9B]** static-link ship gate — ⏳ SELF-CONTAINMENT DONE, size-slice deferred. ✅ **[J4A] core:** an
+   `--embed-jit` exe now static-links the engine archive and runs **standalone — no `libmcc.so` at load** — and
+   still self-recompiles + hot-swaps. Enabled by `mcc.c` marking the engine link `AFF_WHOLE_ARCHIVE` (the generic
+   ctor that references `mccjit_boot_swap` is synthesized during output, *after* the archive is linked, so
+   on-demand extraction would miss it — whole-archive pulls the member up-front; harmless for the dynamic `.so`
+   fallback, which is unchanged). Mechanism: `MCC_EMBED_JIT_LIB=<libmcc-static.a>` (the archive ships as
+   `libmcc-static.a` under `MCC_BUILD_STATIC_LIB`, not `libmcc.a`, so the explicit-path env is the wiring — auto
+   `-lmcc` still resolves the dynamic lib). Test: `jit/standalone-static` (builds an embed exe, asserts no libmcc
+   NEEDED, runs it with `LD_LIBRARY_PATH` cleared, checks the swap fired). **DEFERRED — the size slice:**
+   **[L9B]** a parser-less re-emit-only engine slice + `-ffunction-sections`/`--gc-sections` to hit the ~800 KB
+   Tier-B target (today the whole-archive pull is ~2 MB — the full compiler, since the engine re-invokes
+   `mcc_new`/`mcc_relocate`); and reconciling the CMake `libmcc-static.a` name so plain `-lmcc` prefers it.
 
 **Phase 2 — specialization depth + reclamation**
 8. **[J6A]** `jit-profile` range capture riding the hot counter → makes dispatch mode 5 bite.
@@ -763,8 +774,11 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   materially smaller than the full ~800 KB compiler; **refines D2=A** = re-invoke the engine, but the re-emit
   slice) instead of the dynamic dep; validate Tier-B; (3) ✅ **[J3A]** DONE — a per-sym blob **registry** + one
   generic ctor (`__mccjit_registry[]` + `__mccjit_boot_all`, replacing the per-fn ctors); wired for both disk
-  and in-program `-run`, see M5; (4) **[J4A]** fix the non-fatal `libmccrt.a not found`
-  on the call-bearing embed link (subsumed by the static link); (5) **[J4A]** ~800 KB Tier-B size validation.
+  and in-program `-run`, see M5; (4) ✅ **[J4A]** the call-bearing embed link is now self-contained — static-link
+  the engine archive whole (`AFF_WHOLE_ARCHIVE`) via `MCC_EMBED_JIT_LIB=<libmcc-static.a>`; the exe has no
+  `libmcc.so`/`libmccrt.a` runtime dep and self-recompiles standalone (`jit/standalone-static`); (5) **[J4A/L9B]**
+  the ~800 KB Tier-B size slice is still open — needs the parser-less re-emit-only engine slice +
+  `-ffunction-sections`/`--gc-sections` (today whole-archive pulls ~2 MB, the full compiler).
 - [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring DONE (J3A)** —
   `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable `.data`
   slot). The complete recompile→publish→swap loop works (`mcc_jit_recompile_blob` + `mcc_jit_publish` aligned
