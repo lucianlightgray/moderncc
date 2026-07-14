@@ -66,7 +66,7 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
 #else
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
-    uintptr_t addr = 0;
+    uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.gregs[REG_RCX] : 0;
 #endif
     wstr("=================================================================\n");
     wstr("==ERROR: AddressSanitizer: "); wstr(asan_class((int)sh));

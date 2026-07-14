@@ -1086,15 +1086,20 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
 
 ## 1 — one open question
 
-- [~] **Preserve the faulting address to the asan-shadow trap — done for arm64.** The arm64 inline probe now
-  carries the full faulting address in **x15** to the `brk` (x16=granule, x17=shadow as before; x15/x30 saved
-  as a second stp pair so the probe stays transparent to the pointer reg). The runtime (`mccasan.c` arm64
-  branch) reads `regs[15]` and adds to the report the **faulting address**, the **access size** (= granule −
-  (addr&7) + 1), and a **"shadow bytes around" hex dump** with the buggy granule bracketed — e.g.
-  `at faulting address 0x…502c / access size 04 / … 00 00 00 fa fa 00 00 fa [fa] fa …`. Validated on real
-  arm64-Linux (heap/stack/global). **Remaining:** the same for x86_64 (mirror in `x86_64-gen.c` — carry the
-  addr in a 3rd saved reg, e.g. rcx — needs qemu-amd64 validation); access type (READ/WRITE — the probe in
-  `indir` doesn't distinguish load vs store); the region-relative locator ("N bytes after M-byte region").
+- [~] **Preserve the faulting address to the asan-shadow trap — done for arm64 AND x86_64.** Both inline probes
+  now carry the full faulting address to the trap and the runtime (`mccasan.c`) prints the **faulting address**,
+  the **access size** (= granule − (addr&7) + 1), and a **"shadow bytes around" hex dump** with the buggy
+  granule bracketed — e.g. `at faulting address 0x…502c / access size 04 / … 00 00 00 fa fa 00 00 fa [fa] fa …`.
+  arm64: address in **x15** (x16=granule, x17=shadow; x15/x30 saved as a 2nd stp pair). x86_64: address in
+  **rcx** (rax=shadow, rdx=granule; `push rcx`/`pop rcx` added, `mov rcx,r` on the slow path before `ud2` so
+  `gsym` auto-patches the jump offsets) — `on_sigill` reads `REG_RCX`. arm64 fully run-validated on real
+  arm64-Linux (heap/stack/global reports + clean/no-FP + exec 296/296 + macOS ctest 5170); the x86_64 probe
+  **encoding is disasm-verified** (via `cmake-cross/mcc-x86_64`) and its runtime path mirrors the run-validated
+  arm64 one — end-to-end x86 run is left to the native x86 CI runner (an emulated-amd64 container qemu-user
+  OOM-kills on the x86 ASan runtime's ~17 TB `MAP_NORESERVE` shadow map — a pre-existing emulation limit,
+  unrelated to this change). **Remaining:** access type (READ/WRITE — the
+  probe in `indir` doesn't distinguish load vs store); the region-relative locator ("N bytes after M-byte
+  region").
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap mode ships (`ud2` x86_64,
   `brk` arm64/riscv64); no handler ABI exists.
 - [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.

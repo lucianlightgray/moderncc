@@ -1691,38 +1691,42 @@ void gen_asan_shadow_check(int sz) {
 	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
 		return;
 	r = vtop->r & VT_VALMASK;
-	g(0x50);
-	g(0x52);
-	orex(1, 2, r, 0x89);
+	g(0x50);                         /* push rax                     */
+	g(0x52);                         /* push rdx                     */
+	g(0x51);                         /* push rcx                     */
+	orex(1, 2, r, 0x89);             /* mov rdx, r                   */
 	o(0xc0 | REG_VALUE(r) << 3 | 2);
-	orex(1, 0, r, 0x89);
+	orex(1, 0, r, 0x89);             /* mov rax, r                   */
 	o(0xc0 | REG_VALUE(r) << 3 | 0);
-	g(0x48);
+	g(0x48);                         /* shr rax, 3                   */
 	g(0xc1);
 	g(0xe8);
 	g(0x03);
-	g(0x0f);
+	g(0x0f);                         /* movsbl 0x7fff8000(rax), eax  */
 	g(0xbe);
 	g(0x80);
 	gen_le32(0x7fff8000);
-	g(0x85);
+	g(0x85);                         /* test eax, eax                */
 	g(0xc0);
-	g(0x0f);
+	g(0x0f);                         /* jz ok                        */
 	t = gjmp2(0x84, t);
-	g(0x83);
+	g(0x83);                         /* and edx, 7                   */
 	g(0xe2);
 	g(0x07);
-	g(0x83);
+	g(0x83);                         /* add edx, sz-1                */
 	g(0xc2);
 	g(sz - 1);
-	g(0x39);
+	g(0x39);                         /* cmp edx, eax                 */
 	g(0xc2);
-	g(0x0f);
+	g(0x0f);                         /* jl ok                        */
 	t = gjmp2(0x8c, t);
-	o(0x0b0f);
-	gsym(t);
-	g(0x5a);
-	g(0x58);
+	orex(1, 1, r, 0x89);             /* mov rcx, r  (fault addr)     */
+	o(0xc0 | REG_VALUE(r) << 3 | 1);
+	o(0x0b0f);                       /* ud2 (rax=shadow,rdx=gran,rcx=addr) */
+	gsym(t);                         /* ok:                          */
+	g(0x59);                         /* pop rcx                      */
+	g(0x5a);                         /* pop rdx                      */
+	g(0x58);                         /* pop rax                      */
 }
 
 void gen_opi(int op) {
