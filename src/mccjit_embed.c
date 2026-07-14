@@ -2665,6 +2665,28 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	return cb * (100.0 + (double)margin) < ib * 100.0;
 }
 
+/* L4A — the K5 promotion scorer over the REAL observed distribution: benchmark
+   a candidate vs the incumbent on the live-in tuples J6A captured on the hot
+   counter (st->sample), not a synthetic sweep. Real observed values are the
+   only safe input (a synthesized pointer/divisor would crash the callee). With
+   no observed samples yet there is no basis to reject, so promotion is allowed
+   (the incumbent-wins-on-tie hysteresis still lives in mccjit_bench_pair). */
+MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
+																					 const MccjitCounterState *st,
+																					 uint32_t nargs, int wide) {
+	int64_t tuples[MCCJIT_PROFILE_SAMPLES * MCCJIT_KGC_ARITY];
+	uint32_t nt, i, j;
+	if (!cand || !incumbent || !st || st->nsample <= 0 || nargs == 0)
+		return 1;
+	nt = (uint32_t)st->nsample;
+	if (nt > MCCJIT_PROFILE_SAMPLES)
+		nt = MCCJIT_PROFILE_SAMPLES;
+	for (i = 0; i < nt; i++)
+		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			tuples[i * MCCJIT_KGC_ARITY + j] = st->sample[i][j];
+	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide);
+}
+
 static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 																const int64_t *argv, uint32_t nargs,
 																int *flagged) {
@@ -4914,6 +4936,72 @@ int mccjit_selftest_slice(void) {
 		mcc_delete(s1);
 	}
 	printf("mccjit-selftest-slice: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_l4a(void) {
+	MccjitCounterState st;
+	void *stub;
+	int fails = 0;
+	int64_t inputs[6] = {5, 12, -3, 100, 7, 40};
+	int i;
+	int r_no_samples, r_promote_fast, r_keep_slow;
+
+	printf("mccjit-selftest-l4a: begin (K5 scorer over J6A-captured live-ins)\n");
+	setenv("MCC_JIT_BENCH_ITERS", "3000", 1);
+	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
+
+	memset(&st, 0, sizeof st);
+	pthread_mutex_init(&st.lock, NULL);
+	r_no_samples = mccjit_promote_by_profile(
+			(void *)mccjit_bench_fast_fn, (void *)mccjit_bench_slow_fn, &st, 1, 1);
+	printf("mccjit-selftest-l4a: no captured samples -> promote=%d (expect 1, "
+				 "allow) %s\n",
+				 r_no_samples, r_no_samples == 1 ? "OK" : "FAIL");
+	if (r_no_samples != 1)
+		fails++;
+	pthread_mutex_destroy(&st.lock);
+
+	memset(&st, 0, sizeof st);
+	st.baseline = (void *)mccjit_profile_id1;
+	st.threshold = 1L << 30;
+	pthread_mutex_init(&st.lock, NULL);
+	stub = mccjit_make_counter_stub(&st);
+	if (!stub) {
+		printf("mccjit-selftest-l4a: counter stub NULL (non-x86_64?) SKIP\n");
+		pthread_mutex_destroy(&st.lock);
+		unsetenv("MCC_JIT_BENCH_ITERS");
+		unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+		return 0;
+	}
+	for (i = 0; i < 6; i++)
+		((long (*)(long))stub)((long)inputs[i]);
+	printf("mccjit-selftest-l4a: captured nsample=%d from the hot counter\n",
+				 st.nsample);
+	if (st.nsample <= 0)
+		fails++;
+
+	r_promote_fast = mccjit_promote_by_profile(
+			(void *)mccjit_bench_fast_fn, (void *)mccjit_bench_slow_fn, &st, 1, 1);
+	r_keep_slow = mccjit_promote_by_profile(
+			(void *)mccjit_bench_slow_fn, (void *)mccjit_bench_fast_fn, &st, 1, 1);
+	unsetenv("MCC_JIT_BENCH_ITERS");
+	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+
+	printf("mccjit-selftest-l4a: faster candidate over captured live-ins "
+				 "promote=%d (expect 1) %s\n",
+				 r_promote_fast, r_promote_fast == 1 ? "OK" : "FAIL");
+	if (r_promote_fast != 1)
+		fails++;
+	printf("mccjit-selftest-l4a: slower candidate over captured live-ins "
+				 "promote=%d (expect 0) %s\n",
+				 r_keep_slow, r_keep_slow == 0 ? "OK" : "FAIL");
+	if (r_keep_slow != 0)
+		fails++;
+	pthread_mutex_destroy(&st.lock);
+
+	printf("mccjit-selftest-l4a: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

@@ -224,10 +224,14 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    caller-supplied live-in tuple set (L4A), promoting only when the candidate is faster by more than a
    **hysteresis margin** — the **incumbent wins ties** (L5A) — with a **deterministic inner-iteration cap**
    (`MCC_JIT_BENCH_ITERS`, not wall-clock) so the verdict is reproducible. Test: `jit/selftest-bench`
-   (faster→promote, slower→keep, equal→keep; stable over 10 runs). **DEFERRED — the live-in *source*:** the
-   benchmark must run on the **real observed** distribution, never synthetic inputs (a synthetic pointer/divisor
-   would crash the callee), so wiring the scorer into the live promotion path waits on **[J6A]** cold-phase
-   live-in capture (step 8); until then the scorer is a tested primitive J6A/K5-integration consumes.
+   (faster→promote, slower→keep, equal→keep; stable over 10 runs). ✅ **[L4A] source wired:**
+   `mccjit_promote_by_profile` feeds the scorer the **real observed** live-ins J6A captured on the hot counter
+   (`st->sample`) — never synthetic inputs (a synthetic pointer/divisor would crash the callee); with no
+   samples yet it allows promotion (no basis to reject). Test: `jit/selftest-l4a` (scores fast-vs-slow over the
+   counter-captured distribution: faster→promote, slower→keep, no-samples→allow). **Remaining:** call
+   `mccjit_promote_by_profile` from the live promotion path (`mccjit_counter_tick`/`mccjit_lazy_build`) — needs
+   the raw candidate+incumbent variant pointers + nargs threaded to the promote site (the counter state already
+   carries the samples); gate it opt-in behind `MCC_JIT_BENCH` first.
 7. **[J4A/L9B]** static-link ship gate — ⏳ SELF-CONTAINMENT DONE, size-slice deferred. ✅ **[J4A] core:** an
    `--embed-jit` exe now static-links the engine archive and runs **standalone — no `libmcc.so` at load** — and
    still self-recompiles + hot-swaps. Enabled by `mcc.c` marking the engine link `AFF_WHOLE_ARCHIVE` (the generic
