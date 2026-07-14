@@ -117,11 +117,11 @@ Defaults set in `ast_configure()` (`mccast.c:1097+`). Three postures:
 
 **Default-ON (tied to `-O`):** `MCC_AST_TEMPLATES`/replay (`-O1+`); at `-O2+`: `SETHI`, `BITFLAG`,
 `CPROP_JOIN`, `NARROW`(+`_FIX`), `SCCP_FIX`, `DSE_CALL`, `TCO_PTR`, `CSE_COMM`, `RANGE`, `CSE_JOIN`,
-`CALL_WINDOW`, `ZERO_BSS`, `MERGE_STRINGS`, `PROMOTE` (x86_64-only); at `-O3` non-size: `INLINE`. Ident/reassoc/
-bfold/narrow-class sub-knobs default 1 (bite only when parent on).
+`CALL_WINDOW`, `ZERO_BSS`, `MERGE_STRINGS`, `PROMOTE` (x86_64-only), and **(P0 batch, flipped this session)**
+`NARROW_ELIM`, `VLAT`, `ARGFWD`, `SETHI_NARY`, `SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`; at `-O3` non-size:
+`INLINE`. Ident/reassoc/bfold/narrow-class sub-knobs default 1 (bite only when parent on).
 
-**Opt-in, default-OFF (landed, cleared or clearing the bar):** `NARROW_ELIM`, `VLAT`, `ARGFWD`, `SETHI_NARY`,
-`SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`, `LICM_TEMP`, `IVSR`, `PRE`, `SETHI_LEAF`, `COST`,
+**Opt-in, default-OFF (landed, cleared or clearing the bar):** `LICM_TEMP`, `IVSR`, `PRE`, `SETHI_LEAF`, `COST`,
 `PERFN_INPROC`, §27 (`INTERCHANGE`/`FUSION`/`TILE`), the search family (`SEARCH`/`_EMITSIZE`/`_EMITISO`/
 `_INLINE`/`_THREADS`/`_ORDERED`/`_ORDER`).
 
@@ -392,9 +392,13 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
 **Parallel / non-blocking:**
 - **[CST] 1A** — slice-G stitching → `-g`-from-provenance. Independent of the optimizer path; run whenever
   attention frees after the JIT phases.
-- **P0 ready-batch flip** — near-zero resistance, orthogonal; flip already-cleared gates (`NARROW_ELIM`, `VLAT`,
-  `ARGFWD`, `SETHI_NARY`, `SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`) in batches as soak time accrues, not
-  gated on a phase. The *held* items (DIVMAGIC/ABS) unblock at step 18 (4B).
+- **P0 ready-batch flip** — ✅ **DONE.** The 8 cleared gates (`NARROW_ELIM`, `VLAT`, `ARGFWD`, `SETHI_NARY`,
+  `SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`) are now **default-on at `-O2+`** (`ast_configure`, each
+  `ast_env_gate("MCC_AST_*", s1->optimize >= 2)`; env still overrides). Soak evidence: base exec corpus (296),
+  diff3 differential vs gcc/clang (248), self-host smoke (mcc.c self-compiled at `-O2` with all 8 on → correct
+  executables — the DIVMAGIC-class catch), differential fuzz (7), and byte-identical `-O2` determinism all pass.
+  No byte/asm goldens exist (tests are behavioral), so no golden regen. The *held* items (DIVMAGIC/ABS) stay off
+  and unblock at step 18 (4B).
 
 ### The seven strategic decisions (rationale for the phase-4/5/CST steps)
 

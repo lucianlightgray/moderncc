@@ -1165,7 +1165,7 @@ void ast_configure(MCCState *s1) {
 	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
 	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
 	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
-	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", 0);
+	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
 	if (ast_strat_order_forced) {
@@ -1198,7 +1198,7 @@ void ast_configure(MCCState *s1) {
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
 	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", s1->optimize >= 2);
 	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", 0);
-	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", 0);
+	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", s1->optimize >= 2);
 	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", s1->optimize >= 2);
 	ast_bitflag_report_env = ast_env_gate("MCC_AST_BITFLAG_REPORT", 0);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
@@ -1211,7 +1211,7 @@ void ast_configure(MCCState *s1) {
 	ast_narrow_c1_env = ast_env_gate("MCC_AST_NARROW_CLASS1", 1);
 	ast_narrow_c2_env = ast_env_gate("MCC_AST_NARROW_CLASS2", 1);
 	ast_narrow_c3_env = ast_env_gate("MCC_AST_NARROW_CLASS3", 1);
-	ast_narrow_elim_env = ast_env_gate("MCC_AST_NARROW_ELIM", 0);
+	ast_narrow_elim_env = ast_env_gate("MCC_AST_NARROW_ELIM", s1->optimize >= 2);
 	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", s1->optimize >= 2);
 	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", 1);
 	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", 1);
@@ -1234,14 +1234,14 @@ void ast_configure(MCCState *s1) {
 	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", 1);
 	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", 1);
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
-	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", 0);
+	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
 	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", 0);
 	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", 0);
 	ast_tile_env = ast_env_gate("MCC_AST_TILE", 0);
 	ast_tile_size = ast_env_int("MCC_AST_TILE_SIZE", 32);
 	if (ast_tile_size < 2)
 		ast_tile_size = 32;
-	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", 0);
+	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", s1->optimize >= 2);
 	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", 0);
@@ -1278,9 +1278,9 @@ void ast_configure(MCCState *s1) {
 	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
 	ast_loopdep_dump_env = ast_env_gate("MCC_AST_LOOPDEP_DUMP", 0);
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
-	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", 0);
-	ast_color_env = ast_env_gate("MCC_AST_COLOR", 0);
-	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", 0);
+	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", s1->optimize >= 2);
+	ast_color_env = ast_env_gate("MCC_AST_COLOR", s1->optimize >= 2);
+	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", s1->optimize >= 2);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
