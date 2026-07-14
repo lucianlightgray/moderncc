@@ -3855,6 +3855,12 @@ if(MCC_BUILD_TESTS)
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.c"
                         "${CMAKE_BINARY_DIR}")
+            # §26 2B — arm64 all-double (K4A SSE-class) KGC stub validator:
+            # d0-d spill + verify (raw-bits compare) + d0 return pass-through.
+            add_test(NAME jit/arm64-kgcfp
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgcfp.sh"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgcfp.c"
+                        "${CMAKE_BINARY_DIR}")
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)

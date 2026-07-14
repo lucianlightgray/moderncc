@@ -335,9 +335,15 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     layout), **sign-extends narrow args with `sxtw`** (the arm64 analogue of x86 `movsxd` — a zero-extend would
     corrupt a negative arg and fail the arithmetic assert), calls the C verifier `(kgc,variant,baseline,argv,
     nargs,*flagged)`, and returns its result; asserts both the match path (flag 0) and the mismatch→baseline
-    deopt path (flag 1) under qemu. So all three data-path stub mechanisms (dispatch + counter + KGC-verify) are
-    now proven at the byte level; the FP-arg KGC variant (`_kgc_stub_fp`) and the `src/mccast.c` mode-6 slot are
-    the untranslated pieces.
+    deopt path (flag 1) under qemu. ✅ **all-double (K4A SSE-class) KGC variant also validated** (`jit/arm64-kgcfp`):
+    the FP stub spills the FP arg regs (d0-d1, the arm64 analogue of the x86 `movsd` xmm spill) into a double argv
+    frame, calls the verifier with the GP arg regs (the double argv passed by POINTER in x3, exactly as
+    `mccjit_kgc_calln_fp` expects), which compares RAW return bits and returns the baseline double on mismatch, and
+    the stub returns leaving d0 untouched so the double return propagates to the caller. Asserts match (flag 0) +
+    mismatch→baseline deopt (flag 1) on a 2-double signature under qemu. **So ALL FOUR data-path stub mechanisms
+    (dispatch + counter + KGC-verify GP + KGC-verify FP) are now byte-level proven** — the remaining port is the
+    `src/mccast.c` mode-6 slot emission + folding these four validated byte sequences into the `mccjit_embed.c`
+    `#elif __aarch64__` stub branches, then an arm64 libmcc build running the jit selftests under qemu.
     **DEFERRED — the interdependent libmcc port** (all one arm64 convention): the mode-6 slot
     emission in `src/mccast.c` (the arm64 `ldr x16,[slot]; br x16` prologue + slot in `.data` + icache flush) and
     the `mccjit_embed.c` stubs (`mccjit_make_trampoline`/`_counter_stub`/`_kgc_stub_n`/`_kgc_stub_fp`, currently
@@ -379,10 +385,10 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
 - **1A — CST gets a real consumer.** slice-G stitching → `-g`-from-provenance (also feeds the debugger suite).
   Promotes CST from `[DEFER]` to active **[CST]**, independent of the optimizer path.
 - **2B — port the JIT stub tail to arm64** (step 14). Reinterprets D7 as "x86_64-first," not "only." — ⏳
-  all three data-path stub mechanisms (dispatch + counter/profiling + KGC differential-verify) + icache-flush
-  validated under qemu-aarch64 (`jit/arm64-dispatch`, `jit/arm64-counter`, `jit/arm64-kgc`); llvm-mc + clang/lld/
-  qemu pipeline ready; the FP-arg KGC variant, the mccast.c mode-6 slot, and folding these mechanisms into the
-  `mccjit_embed.c` `#elif __aarch64__` stub branches are the remaining port.
+  all four data-path stub mechanisms (dispatch + counter/profiling + KGC-verify GP + KGC-verify FP) + icache-flush
+  validated under qemu-aarch64 (`jit/arm64-{dispatch,counter,kgc,kgcfp}`); llvm-mc + clang/lld/qemu pipeline ready;
+  the mccast.c mode-6 slot emission + folding these four validated byte sequences into the `mccjit_embed.c`
+  `#elif __aarch64__` stub branches (then an arm64 libmcc build) are the remaining port.
 - **3A — fix the emit-time value-axis framework** (step 17). Keystone: clears §22 promotion, §23 inline budgets,
   M1 scoring, inline/promote in the search.
 - **4B — backend-parity session** (step 18): cmov/csel + temp-materialization; clears ABS/DIVMAGIC/64-bit-divmagic/
