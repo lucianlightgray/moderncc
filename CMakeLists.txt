@@ -3756,6 +3756,12 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_poison PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-poison COMMAND jit_selftest_poison)
             set_tests_properties(jit/selftest-poison PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+            add_executable(jit_selftest_bench tests/embed/jit_selftest_bench.c)
+            target_link_libraries(jit_selftest_bench PRIVATE libmcc)
+            target_include_directories(jit_selftest_bench PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-bench COMMAND jit_selftest_bench)
+            set_tests_properties(jit/selftest-bench PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)

@@ -219,7 +219,15 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    benchmarked strategy row (the 99%-variant + 1%-cover compound); **[L7A]** the unified {good,bad,unknown}
    LFU-bounded classified set; **[J1A persist]** poison persisted to the `mmap`'d cache under the opt-in
    persistent-cache flag. These ride the AOT `-O4` search integration (Phase 4).
-6. **[K5/L4A/L5A]** best-of-3 promotion on the KGC-recorded live-ins, incumbent-wins-on-tie.
+6. **[K5/L4A/L5A]** best-of-3 promotion — ⏳ SCORER DONE, live wiring rides J6A. ✅ `mccjit_bench_pair`
+   (`src/mccjit_embed.c`) runs a **best-of-3** wall-clock benchmark of a candidate vs the incumbent over a
+   caller-supplied live-in tuple set (L4A), promoting only when the candidate is faster by more than a
+   **hysteresis margin** — the **incumbent wins ties** (L5A) — with a **deterministic inner-iteration cap**
+   (`MCC_JIT_BENCH_ITERS`, not wall-clock) so the verdict is reproducible. Test: `jit/selftest-bench`
+   (faster→promote, slower→keep, equal→keep; stable over 10 runs). **DEFERRED — the live-in *source*:** the
+   benchmark must run on the **real observed** distribution, never synthetic inputs (a synthetic pointer/divisor
+   would crash the callee), so wiring the scorer into the live promotion path waits on **[J6A]** cold-phase
+   live-in capture (step 8); until then the scorer is a tested primitive J6A/K5-integration consumes.
 7. **[J4A/L9B]** parser-less re-emit-only static-link slice (E1a) + Tier-B size validation — the ship gate.
 
 **Phase 2 — specialization depth + reclamation**
@@ -660,7 +668,9 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   (scalar FP xmm0–7 + struct-by-value ≤16 B first; MEMORY-class later). Not a hardcoded gate. (M5b + the search)
 - **K5 — promotion gate = best-of-3 self-benchmark.** After the newest most-optimized code+data variant passes
   the range/soundness sanity tests, it runs a best-of-3 benchmark **against the currently-selected variant**;
-  it is promoted only if it wins. (the runtime-JIT scorer; see the ⚠ seam above for the AOT-static scorer)
+  it is promoted only if it wins. (the runtime-JIT scorer; see the ⚠ seam above for the AOT-static scorer) — ✅
+  **scorer DONE** (`mccjit_bench_pair`, best-of-3 + L5A tie/margin + deterministic cap, `jit/selftest-bench`);
+  live wiring rides J6A's real live-in capture (step 8).
 - **K6 — the sorted mmap'd data cache is exhaustive + content-addressed by incremental hash.** On a hash match
   against a previously-computed optimizer output, the data emission is **replaced/optimized-out with the already-
   optimized code** (data → code substitution). **TODO — work through the details** (direction of substitution,
@@ -715,9 +725,12 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   patch (D3B) stays gated behind a search-*proved* safety property (no non-local exit through the region + all
   callers instrumented); absent the proof, pointer-swap wins by default. **This refines K9:** QSBR is still
   built, but its role is *reclamation*, not patch-safety.
-- **L4A — benchmark against the KGC-recorded live-ins** (the real observed distribution). (K5)
+- **L4A — benchmark against the KGC-recorded live-ins** (the real observed distribution). (K5) — ✅ the scorer
+  `mccjit_bench_pair` takes the live-in tuple set as input; **the real-distribution source rides J6A** (step 8),
+  since synthetic inputs are unsafe to feed an arbitrary callee.
 - **L5A — incumbent-wins-on-tie** (hysteresis, kills promote↔deopt oscillation) + a deterministic iteration
-  cap on the benchmark. (K5)
+  cap on the benchmark. (K5) — ✅ DONE in `mccjit_bench_pair` (hysteresis margin `MCC_JIT_BENCH_MARGIN_PCT`
+  default 6%; deterministic inner-iteration cap `MCC_JIT_BENCH_ITERS`).
 - **L6A — switch-table cover shape is a benchmarked strategy row** (dense→jump-table, sparse→perfect-hash/
   binary-search); fires when the compound (variant + cover) beats the base. (K2)
 - **L7A — one classified set {good, bad, unknown}** keyed (code,data), LFU-bounded; abandon a base variant and

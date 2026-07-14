@@ -2348,6 +2348,72 @@ static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
 	}
 }
 
+static volatile int64_t mccjit_bench_sink;
+
+static long mccjit_bench_iters(void) {
+	const char *e = getenv("MCC_JIT_BENCH_ITERS");
+	if (e && e[0]) {
+		long v = strtol(e, NULL, 10);
+		if (v > 0)
+			return v;
+	}
+	return 100000;
+}
+
+static int mccjit_bench_margin_pct(void) {
+	const char *e = getenv("MCC_JIT_BENCH_MARGIN_PCT");
+	if (e && e[0]) {
+		long v = strtol(e, NULL, 10);
+		if (v >= 0 && v <= 100)
+			return (int)v;
+	}
+	return 6;
+}
+
+static double mccjit_bench_run(void *fn, const int64_t *tuples, uint32_t ntuples,
+															uint32_t nargs, int wide, uint32_t reps) {
+	struct timespec t0;
+	int64_t sink = 0;
+	uint32_t r, i;
+	if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0)
+		return 1e300;
+	for (r = 0; r < reps; r++)
+		for (i = 0; i < ntuples; i++)
+			sink += mccjit_invoke(fn, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+	mccjit_bench_sink ^= sink;
+	return mccjit_elapsed(&t0);
+}
+
+/* K5/L4A/L5A promotion scorer: best-of-3 wall-clock benchmark of a candidate
+   vs the incumbent over a caller-supplied live-in set (the real observed
+   distribution, provided by J6A once it lands). Returns 1 only if the
+   candidate is faster by more than a hysteresis margin — the incumbent wins
+   ties (L5A). Work is bounded by a deterministic inner-iteration cap, not
+   wall-clock, so the decision is reproducible. */
+static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
+														 uint32_t ntuples, uint32_t nargs, int wide) {
+	double cb = 1e300, ib = 1e300;
+	uint32_t k, reps;
+	long iters;
+	int margin;
+	if (!cand || !incumbent || !tuples || ntuples == 0 || nargs == 0)
+		return 1;
+	iters = mccjit_bench_iters();
+	margin = mccjit_bench_margin_pct();
+	reps = (uint32_t)(iters / (long)ntuples);
+	if (reps < 1)
+		reps = 1;
+	for (k = 0; k < 3; k++) {
+		double c = mccjit_bench_run(cand, tuples, ntuples, nargs, wide, reps);
+		double i2 = mccjit_bench_run(incumbent, tuples, ntuples, nargs, wide, reps);
+		if (c < cb)
+			cb = c;
+		if (i2 < ib)
+			ib = i2;
+	}
+	return cb * (100.0 + (double)margin) < ib * 100.0;
+}
+
 static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 																const int64_t *argv, uint32_t nargs,
 																int *flagged) {
@@ -3604,6 +3670,63 @@ int mccjit_selftest_poison(void) {
 	mcc_free(blob);
 	mcc_delete(s1);
 	printf("mccjit-selftest-poison: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+static long mccjit_bench_fast_fn(long x) {
+	long s = 0;
+	int i;
+	for (i = 0; i < 30; i++)
+		s += (x ^ (long)i) * 2654435761L;
+	return s;
+}
+
+static long mccjit_bench_slow_fn(long x) {
+	long s = 0;
+	int i;
+	for (i = 0; i < 900; i++)
+		s += (x ^ (long)i) * 2654435761L;
+	return s;
+}
+
+int mccjit_selftest_bench(void) {
+	int64_t tuples[4 * MCCJIT_KGC_ARITY];
+	uint32_t nt = 4, i, j;
+	int fails = 0;
+	int r_win, r_lose, r_tie;
+
+	printf("mccjit-selftest-bench: begin\n");
+	setenv("MCC_JIT_BENCH_ITERS", "3000", 1);
+	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
+	for (i = 0; i < nt; i++)
+		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1);
+
+	r_win = mccjit_bench_pair((void *)mccjit_bench_fast_fn,
+													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1);
+	r_lose = mccjit_bench_pair((void *)mccjit_bench_slow_fn,
+														(void *)mccjit_bench_fast_fn, tuples, nt, 1, 1);
+	r_tie = mccjit_bench_pair((void *)mccjit_bench_slow_fn,
+													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1);
+	unsetenv("MCC_JIT_BENCH_ITERS");
+	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+
+	printf("mccjit-selftest-bench: faster candidate promoted=%d (expect 1) %s\n",
+				 r_win, r_win == 1 ? "OK" : "FAIL");
+	if (r_win != 1)
+		fails++;
+	printf("mccjit-selftest-bench: slower candidate promoted=%d (expect 0) %s\n",
+				 r_lose, r_lose == 0 ? "OK" : "FAIL");
+	if (r_lose != 0)
+		fails++;
+	printf(
+			"mccjit-selftest-bench: equal candidate promoted=%d (expect 0, incumbent-wins-tie) %s\n",
+			r_tie, r_tie == 0 ? "OK" : "FAIL");
+	if (r_tie != 0)
+		fails++;
+
+	printf("mccjit-selftest-bench: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
