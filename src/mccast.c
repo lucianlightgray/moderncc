@@ -1288,8 +1288,12 @@ void ast_configure(MCCState *s1) {
 	ast_jit_fns_parse(mcc_state ? mcc_state->jit_functions : 0);
 }
 
+static int ast_fconst_reuse_off;
+
+void ast_fconst_reuse_disable(int off) { ast_fconst_reuse_off = off; }
+
 int ast_fconst_reuse(void) {
-	if (ast_replaying && ast_fconst_i < ast_fconst_n)
+	if (ast_replaying && !ast_fconst_reuse_off && ast_fconst_i < ast_fconst_n)
 		return ast_fconst[ast_fconst_i++];
 	return 0;
 }

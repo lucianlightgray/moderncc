@@ -293,12 +293,13 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     GP/FP verify, divergent→flag, and **end-to-end `mcc -run` dispatch** (`f(long,double,long)→10`, mixed-stub
     swapped). All stub/thunk bytes are llvm-mc-verified. **DEFERRED:** small struct-by-value (≤16B) — needs the
     real per-eightbyte ABI classifier (a struct with a float field is SSE-class); the clean enabler is promoting
-    mcc's own `classify_x86_64_arg` (x86_64-gen.c) from `static` to `ST_FUNC`. **NOTE — discovered latent bug
-    (see [[mcc-jit-fp-const-reemit-bug]]):** the JIT recompile path re-emits FP *constants* as `0.0` (the intent
-    serialization drops the `.rodata` float literal pool), so a recompiled variant of any FP-arithmetic function
-    using a literal (e.g. `b*2.0`) computes wrong — the differential verify catches it (variant≠AOT-baseline →
-    deopt, correctness safe) but the variant is useless. Pre-existing (hits the all-double path too), exposed
-    while validating mixed. Fixing it unlocks useful FP-return JIT variants.
+    mcc's own `classify_x86_64_arg` (x86_64-gen.c) from `static` to `ST_FUNC`. ✅ **FIXED — the FP-constant
+    re-emit bug** (discovered while validating mixed): the JIT recompile re-emitted FP *constants* as `0.0`
+    because `ast_fconst_reuse` (a replay opt that skips `init_putv` and reuses a recorded `.rodata` offset)
+    referenced stale offsets from the original compile against the recompile's FRESH empty rodata section. Fix:
+    `ast_fconst_reuse_disable(1)` around the recompile's `ast_reemit_extern` (mccast.c flag) so every fconst is
+    written fresh; AOT replay unaffected. Regression: `jit/selftest-fparg` q(3)=7, `jit/selftest-mixed` h=6. This
+    un-blocks useful FP-return/FP-arithmetic JIT variants (they no longer always-deopt).
 11. **[K9/L2A/L3]** QSBR reclamation — ⏳ EPOCH PRIMITIVE DONE, swap-wiring deferred. Built the QSBR core in
     `src/mccjit_embed.c`: a per-thread epoch registry (`mccjit_qsbr_register`/`_unregister`/`_quiescent`, the
     hot path lock-free) + `mccjit_qsbr_retire(ptr,size)` (tags an old variant with the bumped global epoch,

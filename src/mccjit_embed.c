@@ -1007,8 +1007,11 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
 
 	sym = mccjit_rebuild_sym(&it);
-	if (sym)
+	if (sym) {
+		ast_fconst_reuse_disable(1);
 		ast_reemit_extern(sym, it.arena);
+		ast_fconst_reuse_disable(0);
+	}
 	mcc_exit_state(js);
 
 	if (sym && mcc_relocate(js) == 0)
@@ -4774,6 +4777,29 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 		fails++;
 	}
 
+	{
+		static const char qsrc[] = "double q(double a){ return a*2.0 + 1.0; }";
+		unsigned char *qb;
+		size_t ql;
+		MCCState *qs;
+		qb = mccjit_stash_one(qsrc, "q", 1, &ql, &qs);
+		if (qs && qb) {
+			double (*qf)(double) = (double (*)(double))mcc_jit_recompile_blob(qb, ql);
+			MCCState *qstate = mccjit_last_state;
+			double got = qf ? qf(3.0) : -1.0;
+			mccjit_last_state = NULL;
+			printf("mccjit-selftest-fparg: FP-constant re-emit q(3)=%g (expect 7) %s\n",
+						 got, got == 7.0 ? "OK" : "FAIL");
+			if (got != 7.0)
+				fails++;
+			if (qstate)
+				mcc_delete(qstate);
+		}
+		mcc_free(qb);
+		if (qs)
+			mcc_delete(qs);
+	}
+
 	variant = (double (*)(double, double))mcc_jit_recompile_blob(blob, blen);
 	vstate = mccjit_last_state;
 	mccjit_last_state = NULL;
@@ -4924,7 +4950,7 @@ int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
 	static const char src_g[] =
 			"long g(long a, double b, long c){ return a + (long)b + c + 1; }";
 	static const char src_h[] =
-			"double h(long a, double b){ return (double)a + b + b; }";
+			"double h(long a, double b){ return (double)a + b*2.0; }";
 	unsigned char *blob;
 	size_t blen;
 	MCCState *s1;
