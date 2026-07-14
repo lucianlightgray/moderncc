@@ -1170,6 +1170,11 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		mcc_jit_publish(slot, entry);
 }
 
+static int mccjit_bench_enabled(void) {
+	const char *e = getenv("MCC_JIT_BENCH");
+	return e && e[0] && e[0] != '0';
+}
+
 static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed) {
 	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
 	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
@@ -1223,6 +1228,20 @@ typedef struct MccjitCounterState {
 	int64_t sample[MCCJIT_PROFILE_SAMPLES][MCCJIT_KGC_MAXARG];
 	pthread_mutex_t lock;
 } MccjitCounterState;
+
+MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
+																					 const MccjitCounterState *st,
+																					 uint32_t nargs, int wide);
+
+static int mccjit_bench_admit(void *cand, void *incumbent,
+															const MccjitCounterState *st, uint32_t nargs,
+															int wide, int allfp, int routed) {
+	if (!mccjit_bench_enabled())
+		return 1;
+	if (!routed || allfp || !cand || !incumbent || nargs == 0)
+		return 1;
+	return mccjit_promote_by_profile(cand, incumbent, st, nargs, wide);
+}
 
 /* J6A jit-profile: runtime live-in capture riding the D5 hot counter. The
    counter stub spills the 6 GP arg registers and hands their address to the
@@ -1410,10 +1429,22 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) {
 	MccjitCounterState *st = job->cst;
 	int routed = 0;
 	void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
+	uint32_t nargs = mccjit_last_nparam;
+	int wide = mccjit_last_ret_wide;
+	int allfp = mccjit_last_allfp;
 	pthread_mutex_lock(&st->lock);
 	if (entry) {
-		st->promoted = entry;
-		mcc_jit_publish(st->slot, entry);
+		void *incumbent = st->promoted ? st->promoted : st->baseline;
+		if (!mccjit_bench_admit(entry, incumbent, st, nargs, wide, allfp, routed)) {
+			if (incumbent) {
+				st->promoted = incumbent;
+				mcc_jit_publish(st->slot, incumbent);
+			}
+			entry = incumbent;
+		} else {
+			st->promoted = entry;
+			mcc_jit_publish(st->slot, entry);
+		}
 	}
 	st->building = 0;
 	pthread_mutex_unlock(&st->lock);
@@ -1459,13 +1490,28 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 		int routed = 0;
 		void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
 		if (entry) {
-			st->promoted = entry;
-			mcc_jit_publish(st->slot, entry);
-			target = entry;
-			if (verbose)
-				fprintf(stderr,
-								"mccjit-lazy[promote]: slot=%p hot after %ld calls -> entry=%p route=%s\n",
-								(void *)st->slot, n, entry, routed ? "kgc" : "direct");
+			void *incumbent = st->promoted ? st->promoted : st->baseline;
+			if (!mccjit_bench_admit(entry, incumbent, st, mccjit_last_nparam,
+															mccjit_last_ret_wide, mccjit_last_allfp,
+															routed)) {
+				if (incumbent) {
+					st->promoted = incumbent;
+					mcc_jit_publish(st->slot, incumbent);
+				}
+				target = incumbent ? incumbent : st->baseline;
+				if (verbose)
+					fprintf(stderr,
+									"mccjit-lazy[promote]: slot=%p candidate=%p lost bench -> keep incumbent=%p\n",
+									(void *)st->slot, entry, incumbent);
+			} else {
+				st->promoted = entry;
+				mcc_jit_publish(st->slot, entry);
+				target = entry;
+				if (verbose)
+					fprintf(stderr,
+									"mccjit-lazy[promote]: slot=%p hot after %ld calls -> entry=%p route=%s\n",
+									(void *)st->slot, n, entry, routed ? "kgc" : "direct");
+			}
 		} else {
 			target = st->baseline;
 			if (verbose)
@@ -5003,6 +5049,76 @@ int mccjit_selftest_l4a(void) {
 
 	printf("mccjit-selftest-l4a: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_benchwire(void) {
+	MccjitCounterState st, empty;
+	void *fast = (void *)mccjit_bench_fast_fn;
+	void *slow = (void *)mccjit_bench_slow_fn;
+	int fails = 0, i;
+	int a_off, a_faster, a_slower, a_unrouted, a_allfp, a_nosamp;
+
+	printf("mccjit-selftest-benchwire: begin (MCC_JIT_BENCH admit gate)\n");
+	setenv("MCC_JIT_BENCH_ITERS", "3000", 1);
+	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
+
+	memset(&st, 0, sizeof st);
+	pthread_mutex_init(&st.lock, NULL);
+	st.nsample = 4;
+	for (i = 0; i < st.nsample; i++)
+		st.sample[i][0] = 11 + i;
+	memset(&empty, 0, sizeof empty);
+	pthread_mutex_init(&empty.lock, NULL);
+
+	unsetenv("MCC_JIT_BENCH");
+	a_off = mccjit_bench_admit(slow, fast, &st, 1, 1, 0, 1);
+	printf("mccjit-selftest-benchwire: gate off, slower candidate -> admit=%d "
+				 "(expect 1) %s\n",
+				 a_off, a_off == 1 ? "OK" : "FAIL");
+	if (a_off != 1)
+		fails++;
+
+	setenv("MCC_JIT_BENCH", "1", 1);
+	a_faster = mccjit_bench_admit(fast, slow, &st, 1, 1, 0, 1);
+	a_slower = mccjit_bench_admit(slow, fast, &st, 1, 1, 0, 1);
+	a_unrouted = mccjit_bench_admit(slow, fast, &st, 1, 1, 0, 0);
+	a_allfp = mccjit_bench_admit(slow, fast, &st, 1, 1, 1, 1);
+	a_nosamp = mccjit_bench_admit(slow, fast, &empty, 1, 1, 0, 1);
+	unsetenv("MCC_JIT_BENCH");
+	unsetenv("MCC_JIT_BENCH_ITERS");
+	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+
+	printf("mccjit-selftest-benchwire: gate on, faster candidate -> admit=%d "
+				 "(expect 1) %s\n",
+				 a_faster, a_faster == 1 ? "OK" : "FAIL");
+	if (a_faster != 1)
+		fails++;
+	printf("mccjit-selftest-benchwire: gate on, slower candidate -> admit=%d "
+				 "(expect 0) %s\n",
+				 a_slower, a_slower == 0 ? "OK" : "FAIL");
+	if (a_slower != 0)
+		fails++;
+	printf("mccjit-selftest-benchwire: gate on, unrouted -> admit=%d (expect 1) "
+				 "%s\n",
+				 a_unrouted, a_unrouted == 1 ? "OK" : "FAIL");
+	if (a_unrouted != 1)
+		fails++;
+	printf("mccjit-selftest-benchwire: gate on, all-fp -> admit=%d (expect 1) "
+				 "%s\n",
+				 a_allfp, a_allfp == 1 ? "OK" : "FAIL");
+	if (a_allfp != 1)
+		fails++;
+	printf("mccjit-selftest-benchwire: gate on, no samples -> admit=%d (expect "
+				 "1) %s\n",
+				 a_nosamp, a_nosamp == 1 ? "OK" : "FAIL");
+	if (a_nosamp != 1)
+		fails++;
+
+	pthread_mutex_destroy(&st.lock);
+	pthread_mutex_destroy(&empty.lock);
+	printf("mccjit-selftest-benchwire: %s (%d failure%s)\n",
+				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 

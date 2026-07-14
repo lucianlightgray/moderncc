@@ -219,7 +219,7 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    benchmarked strategy row (the 99%-variant + 1%-cover compound); **[L7A]** the unified {good,bad,unknown}
    LFU-bounded classified set; **[J1A persist]** poison persisted to the `mmap`'d cache under the opt-in
    persistent-cache flag. These ride the AOT `-O4` search integration (Phase 4).
-6. **[K5/L4A/L5A]** best-of-3 promotion — ⏳ SCORER DONE, live wiring rides J6A. ✅ `mccjit_bench_pair`
+6. ✅ **[K5/L4A/L5A]** best-of-3 promotion — DONE (opt-in `MCC_JIT_BENCH`; live-wired). ✅ `mccjit_bench_pair`
    (`src/mccjit_embed.c`) runs a **best-of-3** wall-clock benchmark of a candidate vs the incumbent over a
    caller-supplied live-in tuple set (L4A), promoting only when the candidate is faster by more than a
    **hysteresis margin** — the **incumbent wins ties** (L5A) — with a **deterministic inner-iteration cap**
@@ -228,10 +228,17 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    `mccjit_promote_by_profile` feeds the scorer the **real observed** live-ins J6A captured on the hot counter
    (`st->sample`) — never synthetic inputs (a synthetic pointer/divisor would crash the callee); with no
    samples yet it allows promotion (no basis to reject). Test: `jit/selftest-l4a` (scores fast-vs-slow over the
-   counter-captured distribution: faster→promote, slower→keep, no-samples→allow). **Remaining:** call
-   `mccjit_promote_by_profile` from the live promotion path (`mccjit_counter_tick`/`mccjit_lazy_build`) — needs
-   the raw candidate+incumbent variant pointers + nargs threaded to the promote site (the counter state already
-   carries the samples); gate it opt-in behind `MCC_JIT_BENCH` first.
+   counter-captured distribution: faster→promote, slower→keep, no-samples→allow). ✅ **live wiring DONE:**
+   both the sync (`mccjit_counter_tick`) and async (`mccjit_job_run_lazy`) promotion paths now route the freshly-
+   built hot variant through `mccjit_bench_admit` before publishing — under the opt-in `MCC_JIT_BENCH` gate it
+   benchmarks the candidate vs the incumbent (`st->promoted ? st->promoted : st->baseline`) over the J6A-captured
+   `st->sample` live-ins and **keeps the incumbent on a loss** (a non-specializing recompile no longer displaces
+   the AOT baseline just because it built). `nargs`/`ret_wide` come from the recompile's `mccjit_last_*`; the
+   bench is skipped (promote as before) when the gate is off, the entry is unrouted (non-KGC), all-FP (the
+   int-tuple scorer can't drive an FP callee), or there are no samples. Default (gate off) is byte-neutral. Test:
+   `jit/selftest-benchwire` (gate-off→admit, faster→admit, slower→reject, unrouted/all-fp/no-samples→admit); the
+   full jit suite also passes with `MCC_JIT_BENCH=1` forced globally. **Search-side deferral unchanged** (K2/L6A/
+   L7A/J1A-persist ride Phase 4).
 7. **[J4A/L9B]** static-link ship gate — ⏳ SELF-CONTAINMENT DONE, size-slice deferred. ✅ **[J4A] core:** an
    `--embed-jit` exe now static-links the engine archive and runs **standalone — no `libmcc.so` at load** — and
    still self-recompiles + hot-swaps. Enabled by `mcc.c` marking the engine link `AFF_WHOLE_ARCHIVE` (the generic

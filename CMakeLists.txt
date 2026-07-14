@@ -3814,6 +3814,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-l4a COMMAND jit_selftest_l4a)
             set_tests_properties(jit/selftest-l4a PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_benchwire tests/embed/jit_selftest_benchwire.c)
+            target_link_libraries(jit_selftest_benchwire PRIVATE libmcc)
+            target_include_directories(jit_selftest_benchwire PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-benchwire COMMAND jit_selftest_benchwire)
+            set_tests_properties(jit/selftest-benchwire PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # J4A ship gate: a static-linked --embed-jit exe must run standalone
             # (no libmcc.so at load) and still self-recompile. Needs the static
             # engine archive (MCC_BUILD_STATIC_LIB) — libmcc is then the archive.
