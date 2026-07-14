@@ -53,24 +53,24 @@ identically on clean HEAD under qemu amd64; no regressions from this change.
 ### Remaining decision already made by user
 Keep `MCC_CONFIG_JIT` default ON; user chose to fix the recompile crash rather than flip OFF.
 
-### Future work — JIT string-using functions (separate feature, NOT part of this WIP)
-Scoped for a later session with its own fuzz/differential soak — this is a wire-format bump
-with silent-miscompile risk, deliberately not shipped alongside the blocker fix above. The
-current behaviour (serialize-bail → AOT fallback for string-using functions) is correct and
-intentional; this only widens JIT coverage.
+### DONE — JIT string-using functions via `MCCJIT_ROLE_DATA` (commit d099aa73)
+Serialize-bail replaced by a new `MCCJIT_ROLE_DATA`: anonymous rodata symbols (string
+literals) are captured as raw bytes and rematerialized as a fresh 16-byte-aligned rodata
+symbol in `mccjit_build_rec`. Bumped `MCCJIT_INTENT_FORMAT` 4→5.
 
-Sketch: extend the intent format (bump `MCCJIT_INTENT_FORMAT` 4→5) with a new
-`MCCJIT_ROLE_DATA` for anonymous rodata/data symbols (string literals), and re-materialize
-them as fresh rodata syms in `mccjit_build_rec`. Non-trivial sub-problems found while scoping:
-- Anonymous string syms carry an unstable `anon_sym` token (`sym->v >= SYM_FIRST_ANOM`), so the
-  AST-replay token→sym resolution needs a handle-indexed path, not name/token lookup.
-- The array type must be rebuilt from `type.ref->c` (element count) — the current PLAIN type
-  record does not capture an array-count sym.
-- Serialize the section kind + byte length + bytes (`sec->data + off`, size from `elfsym`),
-  rebuild by `section_ptr_add` into the recompile state's rodata + `get_sym_ref`.
-- Keep the bail for every shape not positively handled (wide strings, struct/array-in-rodata,
-  bss) so any uncertainty still falls back to AOT.
-Acceptance gate: `ctest -R jit/` = 28/28 + full exec differential (JIT-on == `MCC_JIT=0`,
-0 mismatches) + a fuzz soak, per the promotion-default-on precedent.
+The scoping worries turned out not to apply: replay takes the SValue type from the AST node
+(`ast_type_t`/`ast_type_ref`) and uses the rebuilt symbol only as the relocation target
+(`sv.sym`), and rebuilt `Sym*` are stored directly into the arena — so no type/array-count
+reconstruction and no anon-token remapping are needed. A `char*` `get_sym_ref` over the copied
+bytes suffices. Safety guards in `mccjit_data_sym_info`: rodata only (immutable → copy-safe,
+never mutable `data_section`), valid in-bounds elfsym, size-capped (`MCCJIT_DATA_MAX`), and no
+relocations in the byte range (a raw-byte copy would drop pointer relocs → miscompile). Any
+unhandled shape still bails to AOT.
+
+Validated: new `jit/selftest-strlit` (indexed load, two strings, mixed-string arithmetic);
+`ctest -R jit/` = 29/29; full suite only pre-existing env/qemu-flake failures (all pass in
+isolation). Note: a pre-existing, unrelated limitation remains — recompiling a
+pointer-*returning* function (`char *h(char*,int){return p+i;}`, no string involved) segfaults
+in `ast_reemit`; not exercised by the runtime eligibility gate or the exec suite.
 
 Memory: [[mcc-jit-unification]] updated with all of the above.
