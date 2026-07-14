@@ -53,9 +53,24 @@ identically on clean HEAD under qemu amd64; no regressions from this change.
 ### Remaining decision already made by user
 Keep `MCC_CONFIG_JIT` default ON; user chose to fix the recompile crash rather than flip OFF.
 
-### Follow-up (coverage, not blocking)
-The serialize-bail keeps string-using functions on AOT. To actually JIT them, extend the
-intent format to serialize anonymous data-symbol bytes (string literals) and re-materialize
-them as fresh rodata syms in `mccjit_build_rec` (new `MCCJIT_ROLE_DATA`, bump `MCCJIT_INTENT_FORMAT`).
+### Future work — JIT string-using functions (separate feature, NOT part of this WIP)
+Scoped for a later session with its own fuzz/differential soak — this is a wire-format bump
+with silent-miscompile risk, deliberately not shipped alongside the blocker fix above. The
+current behaviour (serialize-bail → AOT fallback for string-using functions) is correct and
+intentional; this only widens JIT coverage.
+
+Sketch: extend the intent format (bump `MCCJIT_INTENT_FORMAT` 4→5) with a new
+`MCCJIT_ROLE_DATA` for anonymous rodata/data symbols (string literals), and re-materialize
+them as fresh rodata syms in `mccjit_build_rec`. Non-trivial sub-problems found while scoping:
+- Anonymous string syms carry an unstable `anon_sym` token (`sym->v >= SYM_FIRST_ANOM`), so the
+  AST-replay token→sym resolution needs a handle-indexed path, not name/token lookup.
+- The array type must be rebuilt from `type.ref->c` (element count) — the current PLAIN type
+  record does not capture an array-count sym.
+- Serialize the section kind + byte length + bytes (`sec->data + off`, size from `elfsym`),
+  rebuild by `section_ptr_add` into the recompile state's rodata + `get_sym_ref`.
+- Keep the bail for every shape not positively handled (wide strings, struct/array-in-rodata,
+  bss) so any uncertainty still falls back to AOT.
+Acceptance gate: `ctest -R jit/` = 28/28 + full exec differential (JIT-on == `MCC_JIT=0`,
+0 mismatches) + a fuzz soak, per the promotion-default-on precedent.
 
 Memory: [[mcc-jit-unification]] updated with all of the above.
