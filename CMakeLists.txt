@@ -3783,6 +3783,14 @@ if(MCC_BUILD_TESTS)
                         "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
             set_tests_properties(jit/selftest-fparg PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_mixed tests/embed/jit_selftest_mixed.c)
+            target_link_libraries(jit_selftest_mixed PRIVATE libmcc)
+            target_include_directories(jit_selftest_mixed PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-mixed
+                COMMAND jit_selftest_mixed "-B${CMAKE_BINARY_DIR}"
+                        "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+            set_tests_properties(jit/selftest-mixed PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_qsbr tests/embed/jit_selftest_qsbr.c)
             target_link_libraries(jit_selftest_qsbr PRIVATE libmcc)
             target_include_directories(jit_selftest_qsbr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

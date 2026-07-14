@@ -57,6 +57,10 @@ MCCJIT_LOCAL uint32_t mccjit_last_param_t[MCCJIT_KGC_MAXARG];
 MCCJIT_LOCAL int mccjit_last_ret_wide;
 MCCJIT_LOCAL int mccjit_last_kgc_ok;
 MCCJIT_LOCAL int mccjit_last_allfp;
+MCCJIT_LOCAL int mccjit_last_mixed;
+MCCJIT_LOCAL uint32_t mccjit_last_ngp;
+MCCJIT_LOCAL uint32_t mccjit_last_nsse;
+MCCJIT_LOCAL int mccjit_last_ret_fp;
 
 static int mccjit_type_wide(int t) {
 	switch (t & VT_BTYPE) {
@@ -85,6 +89,8 @@ static int mccjit_type_gp(int t) {
 		return 0;
 	}
 }
+
+static int mccjit_type_fp(int t) { return (t & VT_BTYPE) == VT_DOUBLE; }
 
 MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) {
 	uint64_t h = 0xcbf29ce484222325ull;
@@ -955,7 +961,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	{
 		uint32_t qi;
-		int allfp;
+		int allfp, scalar_ok, allgp, ret_gp, ret_fp;
+		uint32_t ngp = 0, nsse = 0;
 		mccjit_last_nparam = it.nparam;
 		mccjit_last_ret_wide = mccjit_type_wide((int)it.ret_type_t);
 		/* K4A all-double (SSE) class: 1-6 double params + a double return. */
@@ -965,22 +972,35 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 			if (((int)it.param_type_t[qi] & VT_BTYPE) != VT_DOUBLE)
 				allfp = 0;
 		mccjit_last_allfp = allfp;
-		mccjit_last_kgc_ok = 1;
-		if (it.func_type == FUNC_ELLIPSIS)
-			mccjit_last_kgc_ok = 0;
-		if (it.nparam < 1 || it.nparam > MCCJIT_KGC_MAXARG)
-			mccjit_last_kgc_ok = 0;
-		if (!allfp &&
-				(!mccjit_type_gp((int)it.ret_type_t) || (it.ret_type_t & VT_BITFIELD)))
-			mccjit_last_kgc_ok = 0;
 		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
 			mccjit_last_param_t[qi] = 0;
+		/* K4A/L12A scalar mixed GP+FP: each param and the return is either a GP
+			 (int/ptr, non-bitfield) or a scalar double. SysV assigns GP args to
+			 rdi.. and SSE args to xmm0.. with independent counters, so the two
+			 per-class occupancy counts fully determine the marshalling — no
+			 per-arg class vector is needed. all-GP routes to the n-stub and
+			 all-double+double-ret to the fp-stub (both unchanged); every other
+			 scalar case routes to the new mixed stub. */
+		ret_gp = mccjit_type_gp((int)it.ret_type_t) && !(it.ret_type_t & VT_BITFIELD);
+		ret_fp = mccjit_type_fp((int)it.ret_type_t);
+		scalar_ok = (it.func_type != FUNC_ELLIPSIS && it.nparam >= 1 &&
+								 it.nparam <= MCCJIT_KGC_MAXARG && (ret_gp || ret_fp));
 		for (qi = 0; qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++) {
+			int pt = (int)it.param_type_t[qi];
 			mccjit_last_param_t[qi] = it.param_type_t[qi];
-			if (!allfp && (!mccjit_type_gp((int)it.param_type_t[qi]) ||
-										 (it.param_type_t[qi] & VT_BITFIELD)))
-				mccjit_last_kgc_ok = 0;
+			if (mccjit_type_gp(pt) && !(pt & VT_BITFIELD))
+				ngp++;
+			else if (mccjit_type_fp(pt))
+				nsse++;
+			else
+				scalar_ok = 0;
 		}
+		mccjit_last_ret_fp = ret_fp;
+		mccjit_last_ngp = ngp;
+		mccjit_last_nsse = nsse;
+		allgp = scalar_ok && nsse == 0 && !ret_fp;
+		mccjit_last_mixed = scalar_ok && !allfp && !allgp;
+		mccjit_last_kgc_ok = scalar_ok;
 	}
 
 	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
@@ -1104,6 +1124,9 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 																		int ret_wide);
 static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 																		 int memoize_ok, uint32_t nargs);
+static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
+																				int memoize_ok, uint32_t ngp,
+																				uint32_t nsse, int ret_fp, int ret_wide);
 
 static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
 																 unsigned long max_duration, const char *mode,
@@ -1128,6 +1151,10 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 			uint32_t nargs = mccjit_last_nparam;
 			int ret_wide = mccjit_last_ret_wide;
 			int all_fp = mccjit_last_allfp;
+			int mixed = mccjit_last_mixed;
+			uint32_t ngp = mccjit_last_ngp;
+			uint32_t nsse = mccjit_last_nsse;
+			int ret_fp = mccjit_last_ret_fp;
 			uint32_t ptypes[MCCJIT_KGC_MAXARG];
 			uint32_t qi;
 			for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
@@ -1135,7 +1162,9 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 			baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 			memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 			if (baseline) {
-				entry = all_fp ? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok,
+				entry = mixed ? mccjit_make_kgc_stub_mixed(variant, baseline, memoize_ok,
+																									 ngp, nsse, ret_fp, ret_wide)
+							: all_fp ? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok,
 																								 nargs)
 											 : mccjit_make_kgc_stub_n(variant, baseline, memoize_ok,
 																								ptypes, nargs, ret_wide);
@@ -1188,6 +1217,10 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 		uint32_t nargs = mccjit_last_nparam;
 		int ret_wide = mccjit_last_ret_wide;
 		int all_fp = mccjit_last_allfp;
+		int mixed = mccjit_last_mixed;
+		uint32_t ngp = mccjit_last_ngp;
+		uint32_t nsse = mccjit_last_nsse;
+		int ret_fp = mccjit_last_ret_fp;
 		uint32_t ptypes[MCCJIT_KGC_MAXARG];
 		uint32_t qi;
 		void *baseline;
@@ -1197,7 +1230,9 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 		baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 		memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 		if (baseline) {
-			entry = all_fp
+			entry = mixed ? mccjit_make_kgc_stub_mixed(variant, baseline, memoize_ok,
+																								 ngp, nsse, ret_fp, ret_wide)
+						: all_fp
 									? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok, nargs)
 									: mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes,
 																					 nargs, ret_wide);
@@ -2350,6 +2385,12 @@ typedef struct MccjitKgc {
 	uint64_t hits;
 	uint64_t misses;
 	int poisoned;
+	void *mx_variant;
+	void *mx_baseline;
+	uint32_t mx_ngp;
+	uint32_t mx_nsse;
+	int mx_ret_fp;
+	int *mx_flag;
 	pthread_mutex_t lock;
 } MccjitKgc;
 
@@ -2824,6 +2865,143 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 }
 
 #if defined(__x86_64__)
+/* K4A/L12A scalar mixed GP+FP marshalling. One signature-agnostic forwarding
+   thunk reconstructs any scalar SysV call: it loads gpv[0..5] into rdi..r9 and
+   fpv[0..7] into xmm0..7 and tail-calls the target. Because SysV assigns
+   INTEGER-class args to the GP regs and SSE-class args to the XMM regs with
+   independent counters, per-class arrays (gpv,fpv) placed in class order fully
+   reconstruct the call — no per-arg class vector is needed. Unused registers are
+   loaded with harmless garbage the callee ignores. Same bytes, cast to a GP-int
+   or a double return per the callee's return class. */
+static const unsigned char mccjit_mixed_thunk_code[] = {
+		0x55, 0x48, 0x89, 0xe5, 0x49, 0x89, 0xfb, 0x49, 0x89, 0xd2, 0xf2, 0x41,
+		0x0f, 0x10, 0x02, 0xf2, 0x41, 0x0f, 0x10, 0x4a, 0x08, 0xf2, 0x41, 0x0f,
+		0x10, 0x52, 0x10, 0xf2, 0x41, 0x0f, 0x10, 0x5a, 0x18, 0xf2, 0x41, 0x0f,
+		0x10, 0x62, 0x20, 0xf2, 0x41, 0x0f, 0x10, 0x6a, 0x28, 0xf2, 0x41, 0x0f,
+		0x10, 0x72, 0x30, 0xf2, 0x41, 0x0f, 0x10, 0x7a, 0x38, 0x48, 0x8b, 0x3e,
+		0x48, 0x8b, 0x56, 0x10, 0x48, 0x8b, 0x4e, 0x18, 0x4c, 0x8b, 0x46, 0x20,
+		0x4c, 0x8b, 0x4e, 0x28, 0x48, 0x8b, 0x76, 0x08, 0xb0, 0x08, 0x41, 0xff,
+		0xd3, 0xc9, 0xc3};
+
+typedef int64_t (*MccjitThunkI)(void *fn, const int64_t *gpv, const double *fpv);
+typedef double (*MccjitThunkD)(void *fn, const int64_t *gpv, const double *fpv);
+
+static void *mccjit_mixed_thunk;
+static pthread_once_t mccjit_mixed_thunk_once = PTHREAD_ONCE_INIT;
+
+static void mccjit_mixed_thunk_build(void) {
+	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) {
+		mccjit_mixed_thunk = NULL;
+		return;
+	}
+	memcpy(p, mccjit_mixed_thunk_code, sizeof mccjit_mixed_thunk_code);
+	mccjit_mixed_thunk = p;
+}
+
+static void *mccjit_mixed_thunk_get(void) {
+	pthread_once(&mccjit_mixed_thunk_once, mccjit_mixed_thunk_build);
+	return mccjit_mixed_thunk;
+}
+
+static int64_t mccjit_invoke_mixed_i(void *fn, const int64_t *gpv,
+																		 const double *fpv) {
+	return ((MccjitThunkI)mccjit_mixed_thunk_get())(fn, gpv, fpv);
+}
+
+static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
+																		const double *fpv) {
+	return ((MccjitThunkD)mccjit_mixed_thunk_get())(fn, gpv, fpv);
+}
+
+static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
+														 const double *fpv, int64_t *tuple) {
+	uint32_t i, a = 0;
+	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
+		tuple[i] = 0;
+	for (i = 0; i < k->mx_ngp && a < MCCJIT_KGC_ARITY; i++, a++)
+		tuple[a] = gpv[i];
+	for (i = 0; i < k->mx_nsse && a < MCCJIT_KGC_ARITY; i++, a++)
+		memcpy(&tuple[a], &fpv[i], sizeof tuple[a]);
+}
+
+static void mccjit_mixed_poison_update(MccjitKgc *k) {
+	uint64_t total = k->hits + k->misses;
+	if (total >= (uint64_t)mccjit_poison_min() &&
+			k->misses * 100 >= total * (uint64_t)mccjit_poison_pct())
+		k->poisoned = 1;
+}
+
+static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
+																				const double *fpv) {
+	void *variant = k->mx_variant, *baseline = k->mx_baseline;
+	int64_t tuple[MCCJIT_KGC_ARITY];
+	int64_t bval, vval, bc, vc;
+	mccjit_mixed_key(k, gpv, fpv, tuple);
+	pthread_mutex_lock(&k->lock);
+	if (k->poisoned) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke_mixed_i(baseline, gpv, fpv);
+	}
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke_mixed_i(variant, gpv, fpv);
+	}
+	bval = mccjit_invoke_mixed_i(baseline, gpv, fpv);
+	vval = mccjit_invoke_mixed_i(variant, gpv, fpv);
+	bc = k->ret_wide ? bval : (int64_t)(int32_t)bval;
+	vc = k->ret_wide ? vval : (int64_t)(int32_t)vval;
+	if (vc == bc) {
+		k->hits++;
+		if (k->memoize_ok)
+			mccjit_kgc_insert(k, tuple);
+		pthread_mutex_unlock(&k->lock);
+		return bval;
+	}
+	k->misses++;
+	mccjit_mixed_poison_update(k);
+	pthread_mutex_unlock(&k->lock);
+	if (k->mx_flag)
+		*k->mx_flag = 1;
+	return bval;
+}
+
+static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
+																			 const double *fpv) {
+	void *variant = k->mx_variant, *baseline = k->mx_baseline;
+	int64_t tuple[MCCJIT_KGC_ARITY];
+	double bval, vval;
+	uint64_t bbits = 0, vbits = 0;
+	mccjit_mixed_key(k, gpv, fpv, tuple);
+	pthread_mutex_lock(&k->lock);
+	if (k->poisoned) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke_mixed_d(baseline, gpv, fpv);
+	}
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke_mixed_d(variant, gpv, fpv);
+	}
+	bval = mccjit_invoke_mixed_d(baseline, gpv, fpv);
+	vval = mccjit_invoke_mixed_d(variant, gpv, fpv);
+	memcpy(&bbits, &bval, sizeof bbits);
+	memcpy(&vbits, &vval, sizeof vbits);
+	if (vbits == bbits) {
+		k->hits++;
+		if (k->memoize_ok)
+			mccjit_kgc_insert(k, tuple);
+		pthread_mutex_unlock(&k->lock);
+		return bval;
+	}
+	k->misses++;
+	mccjit_mixed_poison_update(k);
+	pthread_mutex_unlock(&k->lock);
+	if (k->mx_flag)
+		*k->mx_flag = 1;
+	return bval;
+}
+
 static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 																		 int memoize_ok, uint32_t nargs) {
 	unsigned char *p;
@@ -3004,6 +3182,67 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	p[o++] = 0xc3;
 	return p;
 }
+
+/* K4A/L12A mixed stub: spill ALL 6 GP arg regs to gpv[0..5] and ALL 8 XMM to
+   fpv[0..7] (uniform, no per-arg logic — SysV's independent GP/SSE counters mean
+   gpv[k]/fpv[k] are exactly the k-th arg of that class), then call the mixed
+   verify calln (i or d by the return class). Leading `leave` is the dispatch-only
+   entry quirk shared with the GP/FP stubs. The kgc immediate is patched at
+   offset 88, the calln address at offset 106 (both movabs-loaded). */
+static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
+																				int memoize_ok, uint32_t ngp,
+																				uint32_t nsse, int ret_fp, int ret_wide) {
+	static const unsigned char tmpl[] = {
+			0xc9, 0x55, 0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00, 0x48, 0x89, 0x3c,
+			0x24, 0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x89, 0x54, 0x24, 0x10, 0x48,
+			0x89, 0x4c, 0x24, 0x18, 0x4c, 0x89, 0x44, 0x24, 0x20, 0x4c, 0x89, 0x4c,
+			0x24, 0x28, 0xf2, 0x0f, 0x11, 0x44, 0x24, 0x30, 0xf2, 0x0f, 0x11, 0x4c,
+			0x24, 0x38, 0xf2, 0x0f, 0x11, 0x54, 0x24, 0x40, 0xf2, 0x0f, 0x11, 0x5c,
+			0x24, 0x48, 0xf2, 0x0f, 0x11, 0x64, 0x24, 0x50, 0xf2, 0x0f, 0x11, 0x6c,
+			0x24, 0x58, 0xf2, 0x0f, 0x11, 0x74, 0x24, 0x60, 0xf2, 0x0f, 0x11, 0x7c,
+			0x24, 0x68, 0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x48, 0x89, 0xe6, 0x48, 0x8d, 0x54, 0x24, 0x30, 0x48, 0xb8, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xd0, 0x48, 0x81, 0xc4, 0x80,
+			0x00, 0x00, 0x00, 0x5d, 0xc3};
+	unsigned char *p;
+	MccjitKgc *kgc;
+	int *flag;
+	void *calln = ret_fp ? (void *)mccjit_kgc_calln_mixed_d
+											 : (void *)mccjit_kgc_calln_mixed_i;
+	uint32_t arity = ngp + nsse;
+	if (arity < 1 || arity > MCCJIT_KGC_ARITY)
+		return NULL;
+	if (!mccjit_mixed_thunk_get())
+		return NULL;
+	kgc = mcc_mallocz(sizeof *kgc);
+	if (!kgc)
+		return NULL;
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), arity) != 0) {
+		mcc_free(kgc);
+		return NULL;
+	}
+	kgc->memoize_ok = memoize_ok;
+	kgc->ret_wide = ret_wide;
+	kgc->mx_variant = variant;
+	kgc->mx_baseline = baseline;
+	kgc->mx_ngp = ngp;
+	kgc->mx_nsse = nsse;
+	kgc->mx_ret_fp = ret_fp;
+	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) {
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		return NULL;
+	}
+	flag = (int *)(p + 256);
+	*flag = 0;
+	kgc->mx_flag = flag;
+	memcpy(p, tmpl, sizeof tmpl);
+	memcpy(p + 88, &kgc, 8);
+	memcpy(p + 106, &calln, 8);
+	return p;
+}
 #else
 static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
 																		const uint32_t *param_t, uint32_t nargs,
@@ -3022,6 +3261,18 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	(void)baseline;
 	(void)memoize_ok;
 	(void)nargs;
+	return NULL;
+}
+static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
+																				int memoize_ok, uint32_t ngp,
+																				uint32_t nsse, int ret_fp, int ret_wide) {
+	(void)variant;
+	(void)baseline;
+	(void)memoize_ok;
+	(void)ngp;
+	(void)nsse;
+	(void)ret_fp;
+	(void)ret_wide;
 	return NULL;
 }
 #endif
@@ -3747,8 +3998,8 @@ int mccjit_selftest_eligibility(void) {
 			{"int f(int *p){return *p;}", "f", 1, "pointer arg"},
 			{"int f(int a,int b,int c,int d,int e,int g){return a+b+c+d+e+g;}", "f", 1,
 			 "six GP args (ABI max)"},
-			{"double f(int x){return x*1.5;}", "f", 0, "FP return"},
-			{"int f(double x){return (int)x;}", "f", 0, "FP arg"},
+			{"double f(int x){return (double)x;}", "f", 1, "FP return (mixed)"},
+			{"int f(double x){return (int)x;}", "f", 1, "FP arg (mixed)"},
 			{"struct S{int a;int b;}; struct S f(int x){struct S s; s.a=x; s.b=-x; return s;}",
 			 "f", 0, "struct-by-value return"},
 			{"struct S{int a;int b;}; int f(struct S s){return s.a+s.b;}", "f", 0,
@@ -4659,6 +4910,256 @@ int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
 	printf("mccjit-selftest-fparg: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_mixed(const char *libpath, const char *incpath) {
+#if !defined(__x86_64__)
+	(void)libpath;
+	(void)incpath;
+	printf("mccjit-selftest-mixed: non-x86_64 SKIP\n");
+	return 0;
+#else
+	static const char src_f[] =
+			"long f(long a, double b, long c){ return a + (long)b + c; }";
+	static const char src_g[] =
+			"long g(long a, double b, long c){ return a + (long)b + c + 1; }";
+	static const char src_h[] =
+			"double h(long a, double b){ return (double)a + b + b; }";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	MCCState *fbstate = NULL, *fvstate = NULL;
+	long (*fbase)(long, double, long) = NULL;
+	long (*fvar)(long, double, long) = NULL;
+	int fails = 0;
+	int mixed_seen, ngp_seen, nsse_seen, retfp_seen;
+
+	printf("mccjit-selftest-mixed: begin (scalar mixed GP+FP marshalling)\n");
+
+	blob = mccjit_stash_one(src_f, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-mixed: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	fbase = (long (*)(long, double, long))mcc_jit_recompile_blob(blob, blen);
+	mixed_seen = mccjit_last_mixed;
+	ngp_seen = (int)mccjit_last_ngp;
+	nsse_seen = (int)mccjit_last_nsse;
+	retfp_seen = mccjit_last_ret_fp;
+	fbstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!fbase) {
+		printf("mccjit-selftest-mixed: baseline recompile NULL FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+	printf("mccjit-selftest-mixed: f(long,double,long)->long classified mixed=%d "
+				 "ngp=%d nsse=%d ret_fp=%d (expect 1,2,1,0) %s\n",
+				 mixed_seen, ngp_seen, nsse_seen, retfp_seen,
+				 (mixed_seen && ngp_seen == 2 && nsse_seen == 1 && !retfp_seen) ? "OK"
+																																				: "FAIL");
+	if (!mixed_seen || ngp_seen != 2 || nsse_seen != 1 || retfp_seen)
+		fails++;
+
+	fvar = (long (*)(long, double, long))mcc_jit_recompile_blob(blob, blen);
+	fvstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+
+	{
+		int64_t gpv[MCCJIT_KGC_MAXARG] = {5, 3, 0, 0, 0, 0};
+		double fpv[MCCJIT_KGC_MAXARG] = {2.5, 0, 0, 0, 0, 0};
+		long direct = fbase(5, 2.5, 3);
+		int64_t thunked = mccjit_invoke_mixed_i((void *)fbase, gpv, fpv);
+		printf("mccjit-selftest-mixed: thunk marshalling direct=%ld thunk=%lld "
+					 "(expect 10,10) %s\n",
+					 direct, (long long)thunked,
+					 (direct == 10 && thunked == 10) ? "OK" : "FAIL");
+		if (direct != 10 || thunked != 10)
+			fails++;
+	}
+
+	if (fvar) {
+		MccjitKgc kgc;
+		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 3) == 0) {
+			int64_t gpv[MCCJIT_KGC_MAXARG] = {5, 3, 0, 0, 0, 0};
+			double fpv[MCCJIT_KGC_MAXARG] = {2.5, 0, 0, 0, 0, 0};
+			int flag = 0;
+			int64_t r;
+			kgc.memoize_ok = 0;
+			kgc.ret_wide = 1;
+			kgc.mx_variant = (void *)fvar;
+			kgc.mx_baseline = (void *)fbase;
+			kgc.mx_ngp = 2;
+			kgc.mx_nsse = 1;
+			kgc.mx_ret_fp = 0;
+			kgc.mx_flag = &flag;
+			r = mccjit_kgc_calln_mixed_i(&kgc, gpv, fpv);
+			printf("mccjit-selftest-mixed: faithful GP-ret verify r=%lld flag=%d "
+						 "(expect 10,0) %s\n",
+						 (long long)r, flag, (r == 10 && !flag) ? "OK" : "FAIL");
+			if (r != 10 || flag)
+				fails++;
+			mccjit_kgc_close(&kgc);
+		}
+	}
+
+	{
+		unsigned char *gblob;
+		size_t glen;
+		MCCState *sg;
+		gblob = mccjit_stash_one(src_g, "g", 1, &glen, &sg);
+		if (sg && gblob) {
+			long (*gv)(long, double, long) =
+					(long (*)(long, double, long))mcc_jit_recompile_blob(gblob, glen);
+			MCCState *gstate = mccjit_last_state;
+			mccjit_last_state = NULL;
+			if (gv) {
+				MccjitKgc kgc;
+				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 3) == 0) {
+					int64_t gpv[MCCJIT_KGC_MAXARG] = {5, 3, 0, 0, 0, 0};
+					double fpv[MCCJIT_KGC_MAXARG] = {2.5, 0, 0, 0, 0, 0};
+					int flag = 0;
+					int64_t r;
+					kgc.memoize_ok = 0;
+					kgc.ret_wide = 1;
+					kgc.mx_variant = (void *)gv;
+					kgc.mx_baseline = (void *)fbase;
+					kgc.mx_ngp = 2;
+					kgc.mx_nsse = 1;
+					kgc.mx_ret_fp = 0;
+					kgc.mx_flag = &flag;
+					r = mccjit_kgc_calln_mixed_i(&kgc, gpv, fpv);
+					printf("mccjit-selftest-mixed: divergent GP-ret r=%lld flag=%d "
+								 "(expect 10,1) %s\n",
+								 (long long)r, flag, (r == 10 && flag) ? "OK" : "FAIL");
+					if (r != 10 || !flag)
+						fails++;
+					mccjit_kgc_close(&kgc);
+				}
+			}
+			if (gstate)
+				mcc_delete(gstate);
+		}
+		mcc_free(gblob);
+		if (sg)
+			mcc_delete(sg);
+	}
+
+	{
+		unsigned char *hblob;
+		size_t hlen;
+		MCCState *sh;
+		hblob = mccjit_stash_one(src_h, "h", 1, &hlen, &sh);
+		if (sh && hblob) {
+			double (*hb)(long, double) =
+					(double (*)(long, double))mcc_jit_recompile_blob(hblob, hlen);
+			MCCState *hstate = mccjit_last_state;
+			int h_mixed = mccjit_last_mixed, h_retfp = mccjit_last_ret_fp;
+			int h_ngp = (int)mccjit_last_ngp, h_nsse = (int)mccjit_last_nsse;
+			mccjit_last_state = NULL;
+			printf("mccjit-selftest-mixed: h(long,double)->double classified mixed=%d "
+						 "ngp=%d nsse=%d ret_fp=%d (expect 1,1,1,1) %s\n",
+						 h_mixed, h_ngp, h_nsse, h_retfp,
+						 (h_mixed && h_ngp == 1 && h_nsse == 1 && h_retfp) ? "OK" : "FAIL");
+			if (!h_mixed || h_ngp != 1 || h_nsse != 1 || !h_retfp)
+				fails++;
+			if (hb) {
+				MccjitKgc kgc;
+				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) {
+					int64_t gpv[MCCJIT_KGC_MAXARG] = {3, 0, 0, 0, 0, 0};
+					double fpv[MCCJIT_KGC_MAXARG] = {1.5, 0, 0, 0, 0, 0};
+					int flag = 0;
+					double r;
+					kgc.memoize_ok = 0;
+					kgc.ret_wide = 1;
+					kgc.mx_variant = (void *)hb;
+					kgc.mx_baseline = (void *)hb;
+					kgc.mx_ngp = 1;
+					kgc.mx_nsse = 1;
+					kgc.mx_ret_fp = 1;
+					kgc.mx_flag = &flag;
+					r = mccjit_kgc_calln_mixed_d(&kgc, gpv, fpv);
+					printf("mccjit-selftest-mixed: faithful FP-ret verify r=%g flag=%d "
+								 "(expect 6,0) %s\n",
+								 r, flag, (r == 6.0 && !flag) ? "OK" : "FAIL");
+					if (r != 6.0 || flag)
+						fails++;
+					mccjit_kgc_close(&kgc);
+				}
+			}
+			if (hstate)
+				mcc_delete(hstate);
+		}
+		mcc_free(hblob);
+		if (sh)
+			mcc_delete(sh);
+	}
+
+	{
+		static const char prog[] =
+				"long f(long a, double b, long c){ return a + (long)b + c; }\n"
+				"int main(void){ return (int)f(5, 2.5, 3); }\n";
+		MCCState *rs;
+		char *av[] = {"mixed", NULL};
+		char path[64];
+		int rc = -1;
+		int swapped = 0;
+		setenv("MCC_AST_JIT_DISPATCH", "6", 1);
+		setenv("MCC_JIT_PERF_MAP", "1", 1);
+		snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
+		remove(path);
+		rs = mcc_new();
+		if (rs) {
+			FILE *pf;
+			if (libpath)
+				mcc_set_lib_path(rs, libpath);
+			if (incpath)
+				mcc_add_include_path(rs, incpath);
+			rs->optimize = 1;
+			rs->embed_jit = 1;
+			rs->jit_threads = 0;
+			mcc_free(rs->jit_functions);
+			rs->jit_functions = mcc_strdup("f");
+			mcc_set_output_type(rs, MCC_OUTPUT_MEMORY);
+			if (mcc_compile_string(rs, prog) == 0)
+				rc = mcc_run(rs, 1, av);
+			pf = fopen(path, "r");
+			if (pf) {
+				char line[256];
+				while (fgets(line, sizeof line, pf)) {
+					char nm[128] = {0};
+					unsigned long a = 0, sz = 0;
+					if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 && !strcmp(nm, "f"))
+						swapped = 1;
+				}
+				fclose(pf);
+			}
+			mcc_delete(rs);
+		}
+		remove(path);
+		unsetenv("MCC_AST_JIT_DISPATCH");
+		unsetenv("MCC_JIT_PERF_MAP");
+		printf("mccjit-selftest-mixed: end-to-end dispatch main()=%d (expect 10) "
+					 "mixed-stub-swapped=%d %s\n",
+					 rc, swapped, (rc == 10 && swapped) ? "OK" : "FAIL");
+		if (rc != 10 || !swapped)
+			fails++;
+	}
+
+	if (fvstate)
+		mcc_delete(fvstate);
+	if (fbstate)
+		mcc_delete(fbstate);
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-mixed: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+#endif
 }
 
 static long mccjit_profile_id1(long x) { return x; }

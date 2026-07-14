@@ -272,7 +272,7 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    **DEFERRED:** the general (non-collapsed) range-narrowing fold — injecting `[lo,hi]` as a VLat fact so the
    optimizer narrows/eliminates — needs the P1 VLat consumer; the compile-time mode-5 guard already emits the
    range check but has no fold yet either.
-10. **[K4A/L12A]** marshalling coverage — ⏳ SCALAR ALL-DOUBLE DONE, mixed/struct deferred. Widened JIT
+10. **[K4A/L12A]** marshalling coverage — ⏳ SCALAR MIXED GP+FP DONE, struct deferred. Widened JIT
     eligibility past GP-int to the **all-double SSE class** (1-6 `double` params + `double` return):
     `ast_jit_eligible`/`mccjit_last_kgc_ok` admit it (`mccjit_last_allfp`), a new hand-emitted stub
     `mccjit_make_kgc_stub_fp` `movsd`-spills xmm0-7 and routes through `mccjit_kgc_calln_fp` +
@@ -280,10 +280,25 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     verify compares the **raw return bits** (a faithful recompile is bit-identical; +0/-0 or NaN-bit drift is
     conservatively a mismatch → returns baseline). Test `jit/selftest-fparg`: all-double detect, faithful FP
     verify, a divergent variant (g) caught+flagged, and **end-to-end `mcc -run` dispatch** (`main()=15`,
-    fp-stub swapped — validating the movsd stub through its correct `jmp *slot` entry). **DEFERRED:** mixed
-    GP+FP signatures and small struct-by-value (≤16B) — both need per-arg register-class routing, which C's
-    fixed casts can't express; the clean enabler is promoting mcc's own `classify_x86_64_arg` (x86_64-gen.c)
-    from `static` to `ST_FUNC` and classifying at intent-build time, then a class-vector-driven marshaller.
+    fp-stub swapped — validating the movsd stub through its correct `jmp *slot` entry). ✅ **scalar mixed GP+FP
+    DONE** (`jit/selftest-mixed`): any scalar signature mixing int/ptr + `double` params (1-6 total) with a GP-int
+    or `double` return is now eligible (`ast_jit_type_scalar` in mccast.c; `mccjit_last_mixed`/`_ngp`/`_nsse`/
+    `_ret_fp` at intent-build). **The key insight avoids the per-arg class vector** the deferral note feared:
+    SysV assigns INTEGER-class args to rdi.. and SSE-class args to xmm0.. with *independent* counters, so the
+    mixed stub (`mccjit_make_kgc_stub_mixed`) spills ALL 6 GP regs → gpv[] and ALL 8 XMM → fpv[] uniformly (no
+    per-arg logic) and one signature-agnostic forwarding thunk (`mccjit_mixed_thunk_code`: load gpv→rdi..r9,
+    fpv→xmm0-7, call) reconstructs any scalar call — only `(ngp,nsse,ret_fp)` counts are needed, for the memo key
+    + return class. Two callns (`mccjit_kgc_calln_mixed_i`/`_d`) do the differential verify (GP compare masked by
+    ret_wide for narrow returns; FP compares raw bits). Test covers classification, thunk marshalling, faithful
+    GP/FP verify, divergent→flag, and **end-to-end `mcc -run` dispatch** (`f(long,double,long)→10`, mixed-stub
+    swapped). All stub/thunk bytes are llvm-mc-verified. **DEFERRED:** small struct-by-value (≤16B) — needs the
+    real per-eightbyte ABI classifier (a struct with a float field is SSE-class); the clean enabler is promoting
+    mcc's own `classify_x86_64_arg` (x86_64-gen.c) from `static` to `ST_FUNC`. **NOTE — discovered latent bug
+    (see [[mcc-jit-fp-const-reemit-bug]]):** the JIT recompile path re-emits FP *constants* as `0.0` (the intent
+    serialization drops the `.rodata` float literal pool), so a recompiled variant of any FP-arithmetic function
+    using a literal (e.g. `b*2.0`) computes wrong — the differential verify catches it (variant≠AOT-baseline →
+    deopt, correctness safe) but the variant is useless. Pre-existing (hits the all-double path too), exposed
+    while validating mixed. Fixing it unlocks useful FP-return JIT variants.
 11. **[K9/L2A/L3]** QSBR reclamation — ⏳ EPOCH PRIMITIVE DONE, swap-wiring deferred. Built the QSBR core in
     `src/mccjit_embed.c`: a per-thread epoch registry (`mccjit_qsbr_register`/`_unregister`/`_quiescent`, the
     hot path lock-free) + `mccjit_qsbr_retire(ptr,size)` (tags an old variant with the bumped global epoch,
