@@ -318,8 +318,15 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     emission in `src/mccast.c` (the arm64 `ldr x16,[slot]; br x16` prologue + slot in `.data` + icache flush) and
     the `mccjit_embed.c` stubs (`mccjit_make_trampoline`/`_counter_stub`/`_kgc_stub_n`/`_kgc_stub_fp`, currently
     `#if __x86_64__`-only) as `#elif __aarch64__` branches, then run the jit selftests on an arm64 libmcc build.
-15. **[7A]** promote `eval_slice` to a hard per-strategy gate (**N := 3** clean soaks). Its cross-arch signal is
-    the **JIT-capable** arches (x86_64 + arm64-via-2B), so it rides 2B, **not** 6A — riscv64 has no JIT tail, so
+15. ✅ **[7A]** promote `eval_slice` to a hard per-strategy gate — DONE (opt-in; default-on flip awaits the soak).
+    The UB-soundness oracle now runs in **production** (not just shadow builds) and, under the opt-in
+    `MCC_AST_JIT_EVAL_GATE`, **refuses** an unsound spec-slice — discards the speculative clone and falls back to
+    the unspecialized dispatch (always correctness-safe: never emits an unsound variant). Shadow builds still
+    hard-`abort` on divergence. `MCC_AST_EVAL_FORCE_UNSOUND` is a test hook; `ast_jit_eval_refused_count()`
+    exposes the refusal tally. Test `jit/selftest-evalgate` (forced-unsound→refused+correct; sound→not
+    over-refused; gate-off→no refusal). **Remaining (the flip, not the code):** flip the gate default-on after
+    **N := 3** clean self-host + fuzz soaks (measuring the false-positive/over-refusal rate). Its cross-arch
+    signal is the **JIT-capable** arches (x86_64 + arm64-via-2B), so it rides 2B, **not** 6A — riscv64 has no JIT tail, so
     the riscv64 self-host gap (step 16) is orthogonal to the JIT hard-gate.
 
 **Phase 4 — shared foundations the JIT default-on + AOT-convergence need** *(also the standalone optimizer gains)*
@@ -356,7 +363,8 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
   branchless-select together.
 - **5A — memo unification** (step 19): one `ComboMemo` + disk store, retiring the out-of-process superopt engine.
 - **6A — riscv64 Tier-3 self-host** (step 16): validation-infra unblock; makes the cross-arch gate real.
-- **7A — `eval_slice` hard gate** (step 15): N := 3 soaks, rides 2B.
+- **7A — `eval_slice` hard gate** (step 15): N := 3 soaks, rides 2B. — ✅ gate DONE (opt-in
+  `MCC_AST_JIT_EVAL_GATE`, refuses unsound specs; `jit/selftest-evalgate`); default-on flip awaits the soaks.
 
 ### P0 — Default-on sweep · *near-zero resistance; parallel/non-blocking* — ready-batch interleaves anytime; held items at step 18 (4B)
 
@@ -911,9 +919,11 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   shift, signed overflow). Enumerates `AST_Return` value-slices and checks every spec return value is in the
   baseline's defined-value set over the guarded env (mode 4 exact const; mode 5 mixed-radix sampling, caps
   `DOMAIN_CAP=4096`/`SAMPLE_CAP=8`). Covers straight-line/ternary returns; statement control flow/calls/memory
-  are out of scope. **Remaining (7A):** promote from shadow-only to a hard per-strategy gate after **N := 3**
-  clean self-host + fuzz soak cycles (rides on 2B for the cross-arch signal); extend to statement-level control
-  flow.
+  are out of scope. ✅ **7A DONE (opt-in):** the oracle now runs in production and, under
+  `MCC_AST_JIT_EVAL_GATE`, refuses an unsound spec-slice (falls back to the unspecialized dispatch — always
+  correctness-safe); shadow still aborts. Test `jit/selftest-evalgate`. **Remaining:** flip the gate default-on
+  after **N := 3** clean self-host + fuzz soaks (rides 2B for the cross-arch signal); extend to statement-level
+  control flow.
 
 **Optional AST-strategy rows** (dispatcher already search-selectable via gate bits 40/41):
 

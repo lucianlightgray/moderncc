@@ -909,6 +909,10 @@ static int ast_jit_want(const char *fn, Sym *sym) {
 						fn ? fn : "?");
 	return 0;
 }
+
+static int ast_jit_eval_refused;
+int ast_jit_eval_refused_count(void) { return ast_jit_eval_refused; }
+
 static int ast_templates_env;
 static int ast_search_env;
 static int ast_search_emitsize_env;
@@ -12806,13 +12810,44 @@ void ast_func_end(Sym *sym) {
 							ast_constparam_fold(ast_spec, poffs, pvals, npoff);
 						ast_sccp_run(ast_spec);
 						ast_cur = sv;
+#ifdef AST_EVAL_SLICE_PROVIDED
+						{
+							int forced = getenv("MCC_AST_EVAL_FORCE_UNSOUND") != NULL;
+							int gate = getenv("MCC_AST_JIT_EVAL_GATE") != NULL;
 #if MCC_CONFIG_AST_SHADOW
-						if (!ast_eval_slice_sound(ast_cur, ast_spec, specmode, poffs, pvals,
-																			plos, phis, npoff, AST_TCO_MAXP)) {
-							fprintf(stderr,
-											"mcc: AST side-car divergence: jit-spec-slice(mode=%d) return-value mismatch over guarded domain\n",
-											specmode);
-							abort();
+							int need = 1;
+#else
+							int need = gate || forced;
+#endif
+							int sound = 1;
+							if (need)
+								sound = forced ? 0
+															 : ast_eval_slice_sound(ast_cur, ast_spec, specmode,
+																											poffs, pvals, plos, phis,
+																											npoff, AST_TCO_MAXP);
+							if (!sound) {
+#if MCC_CONFIG_AST_SHADOW
+								if (!forced) {
+									fprintf(stderr,
+													"mcc: AST side-car divergence: jit-spec-slice(mode=%d) return-value mismatch over guarded domain\n",
+													specmode);
+									abort();
+								}
+#endif
+								/* 7A hard gate: refuse an unsound spec-slice — discard the
+								   speculative clone and fall back to the unspecialized
+								   dispatch. Always correctness-safe (never emits an unsound
+								   variant); opt-in during the soak rollout. */
+								if (gate) {
+									ast_arena_free(ast_spec);
+									ast_spec = NULL;
+									ast_jit_eval_refused++;
+									if (getenv("MCC_JIT_VERBOSE"))
+										fprintf(stderr,
+														"mccjit: eval-slice hard-gate refused unsound spec (mode=%d)\n",
+														specmode);
+								}
+							}
 						}
 #endif
 					}

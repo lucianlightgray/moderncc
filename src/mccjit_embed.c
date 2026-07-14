@@ -4807,6 +4807,64 @@ int mccjit_selftest_profile(void) {
 	return fails ? 1 : 0;
 }
 
+static void mccjit_evalgate_compile(const char *src) {
+	MCCState *s = mcc_new();
+	if (!s)
+		return;
+	s->optimize = 1;
+	s->nostdlib = 1;
+	mcc_free(s->jit_functions);
+	s->jit_functions = mcc_strdup("f");
+	mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
+	mcc_compile_string(s, src);
+	mcc_delete(s);
+}
+
+int mccjit_selftest_evalgate(void) {
+	static const char src[] = "int f(int *p){return *p + 1;}";
+	int fails = 0;
+	int r0, r1, r2;
+
+	printf("mccjit-selftest-evalgate: begin (7A eval-slice hard gate)\n");
+	setenv("MCC_AST_JIT_DISPATCH", "3", 1);
+
+	setenv("MCC_AST_JIT_EVAL_GATE", "1", 1);
+	setenv("MCC_AST_EVAL_FORCE_UNSOUND", "1", 1);
+	r0 = ast_jit_eval_refused_count();
+	mccjit_evalgate_compile(src);
+	r1 = ast_jit_eval_refused_count();
+	unsetenv("MCC_AST_EVAL_FORCE_UNSOUND");
+	printf("mccjit-selftest-evalgate: forced-unsound + gate: refused delta=%d "
+				 "(expect >=1) %s\n",
+				 r1 - r0, (r1 > r0) ? "OK" : "FAIL");
+	if (r1 <= r0)
+		fails++;
+
+	mccjit_evalgate_compile(src);
+	r2 = ast_jit_eval_refused_count();
+	printf("mccjit-selftest-evalgate: sound spec + gate: refused delta=%d "
+				 "(expect 0) %s\n",
+				 r2 - r1, (r2 == r1) ? "OK" : "FAIL");
+	if (r2 != r1)
+		fails++;
+
+	setenv("MCC_AST_EVAL_FORCE_UNSOUND", "1", 1);
+	unsetenv("MCC_AST_JIT_EVAL_GATE");
+	mccjit_evalgate_compile(src);
+	if (ast_jit_eval_refused_count() != r2) {
+		printf("mccjit-selftest-evalgate: gate OFF still refused (should not) FAIL\n");
+		fails++;
+	} else {
+		printf("mccjit-selftest-evalgate: gate OFF -> no refusal (rollout opt-in) OK\n");
+	}
+	unsetenv("MCC_AST_EVAL_FORCE_UNSOUND");
+	unsetenv("MCC_AST_JIT_DISPATCH");
+
+	printf("mccjit-selftest-evalgate: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_slice(void) {
 	static const struct {
 		const char *src;
