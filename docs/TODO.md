@@ -1211,6 +1211,16 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   promotion either; needs a float-index renumber to stay inside `IS_FREG`'s range, e.g. v0–v15 at 20–35, int
   callee x19–x28 at 36–45); then flip `opt_promote` on for arm64 after a broad-exposure soak (the arm64-Linux
   M8 evidence above clears the correctness bar; the flip is now a soak/judgment call, no longer blocked).
+  **SOAK IN PROGRESS (2026-07-13):** the primary miscompile catcher — the differential fuzzer (mcc[PROMOTE] vs
+  gcc 14.2 vs clang 19.1) — was previously unrunnable on the dev host (macOS gcc==clang), but the arm64-Linux
+  container gives distinct gcc+clang+native-arm64. Ran it with `MCC_AST_PROMOTE=1` forced: seeds 1–1500 (1487
+  agree) + seeds 1501–6500 (4961 agree) + a 500-seed `--gates` promotion×other-gates batch (497 agree) =
+  **~7000 seeds, 0 miscompiles** (≈55 UB/impl-def-dropped). Reproduce with `tests/qemu/native-optcheck.sh`'s
+  container: build mcc + `cc tests/fuzz/runner.c` + `MCC_AST_PROMOTE=1 ./runner mcc B idir work --ref gcc … --ref
+  clang … --count N`. x86 promotion is already soaked continuously by CI's `fuzz/matrix-*` (`--gates` includes
+  PROMOTE); arm64 promotion soaks manually via the container fuzz (the CMake fuzz-suite is x86_64-gated — CI
+  can't run it on arm64; a linux-arm64 CI fuzz cell would make this continuous). **Flip once the arm64 seed
+  count is well into the tens of thousands clean across sessions.**
 - [ ] **Extend the riscv64 backend register model for Tier-3 register promotion** + qemu validation.
 - [ ] **Test the i386 TLS `R_386_TLS_GD/LDM` paths** (`i386-link.c`; i386-gen.c only emits `R_386_TLS_LE`) —
   needs an i386 cross + a 32-bit sysroot.
