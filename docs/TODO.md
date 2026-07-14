@@ -261,8 +261,18 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    **DEFERRED:** the general (non-collapsed) range-narrowing fold — injecting `[lo,hi]` as a VLat fact so the
    optimizer narrows/eliminates — needs the P1 VLat consumer; the compile-time mode-5 guard already emits the
    range check but has no fold yet either.
-10. **[K4A/L12A]** marshalling coverage as a strategy row (SSE + small struct-by-value, per-ABI limits) → widens
-    eligibility past GP-int.
+10. **[K4A/L12A]** marshalling coverage — ⏳ SCALAR ALL-DOUBLE DONE, mixed/struct deferred. Widened JIT
+    eligibility past GP-int to the **all-double SSE class** (1-6 `double` params + `double` return):
+    `ast_jit_eligible`/`mccjit_last_kgc_ok` admit it (`mccjit_last_allfp`), a new hand-emitted stub
+    `mccjit_make_kgc_stub_fp` `movsd`-spills xmm0-7 and routes through `mccjit_kgc_calln_fp` +
+    `mccjit_invoke_fp` (fixed `double(double,…)` casts — the compiler places args in xmm), and the differential
+    verify compares the **raw return bits** (a faithful recompile is bit-identical; +0/-0 or NaN-bit drift is
+    conservatively a mismatch → returns baseline). Test `jit/selftest-fparg`: all-double detect, faithful FP
+    verify, a divergent variant (g) caught+flagged, and **end-to-end `mcc -run` dispatch** (`main()=15`,
+    fp-stub swapped — validating the movsd stub through its correct `jmp *slot` entry). **DEFERRED:** mixed
+    GP+FP signatures and small struct-by-value (≤16B) — both need per-arg register-class routing, which C's
+    fixed casts can't express; the clean enabler is promoting mcc's own `classify_x86_64_arg` (x86_64-gen.c)
+    from `static` to `ST_FUNC` and classifying at intent-build time, then a class-vector-driven marshaller.
 11. **[K9/L2A/L3]** QSBR reclamation (leak-and-cap → per-thread epoch); un-defers J5. Pointer-swap stays the
     correctness default — occupancy is a reclamation, not a patch-safety, concern.
 12. **[J10]** hot-patch strategy family (pointer-swap + dual-map + QSBR-gated in-place) + the benchmark harness.
@@ -697,6 +707,8 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   path is then unreachable. (M5b)
 - **K4A — signature/marshalling coverage is itself a strategy row** in the pool, with sane per-platform limits
   (scalar FP xmm0–7 + struct-by-value ≤16 B first; MEMORY-class later). Not a hardcoded gate. (M5b + the search)
+  — ⏳ **scalar all-double DONE** (`mccjit_make_kgc_stub_fp`/`_calln_fp`/`_invoke_fp`, `jit/selftest-fparg`);
+  mixed GP+FP + struct-by-value deferred (need `classify_x86_64_arg`→ST_FUNC + a class-vector marshaller).
 - **K5 — promotion gate = best-of-3 self-benchmark.** After the newest most-optimized code+data variant passes
   the range/soundness sanity tests, it runs a best-of-3 benchmark **against the currently-selected variant**;
   it is promoted only if it wins. (the runtime-JIT scorer; see the ⚠ seam above for the AOT-static scorer) — ✅

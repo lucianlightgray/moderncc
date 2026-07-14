@@ -56,6 +56,7 @@ MCCJIT_LOCAL uint32_t mccjit_last_nparam;
 MCCJIT_LOCAL uint32_t mccjit_last_param_t[MCCJIT_KGC_MAXARG];
 MCCJIT_LOCAL int mccjit_last_ret_wide;
 MCCJIT_LOCAL int mccjit_last_kgc_ok;
+MCCJIT_LOCAL int mccjit_last_allfp;
 
 static int mccjit_type_wide(int t) {
 	switch (t & VT_BTYPE) {
@@ -954,21 +955,30 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	{
 		uint32_t qi;
+		int allfp;
 		mccjit_last_nparam = it.nparam;
 		mccjit_last_ret_wide = mccjit_type_wide((int)it.ret_type_t);
+		/* K4A all-double (SSE) class: 1-6 double params + a double return. */
+		allfp = (it.nparam >= 1 && it.nparam <= MCCJIT_KGC_MAXARG &&
+						 ((int)it.ret_type_t & VT_BTYPE) == VT_DOUBLE);
+		for (qi = 0; allfp && qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++)
+			if (((int)it.param_type_t[qi] & VT_BTYPE) != VT_DOUBLE)
+				allfp = 0;
+		mccjit_last_allfp = allfp;
 		mccjit_last_kgc_ok = 1;
-		if (!mccjit_type_gp((int)it.ret_type_t) || (it.ret_type_t & VT_BITFIELD))
-			mccjit_last_kgc_ok = 0;
 		if (it.func_type == FUNC_ELLIPSIS)
 			mccjit_last_kgc_ok = 0;
 		if (it.nparam < 1 || it.nparam > MCCJIT_KGC_MAXARG)
+			mccjit_last_kgc_ok = 0;
+		if (!allfp &&
+				(!mccjit_type_gp((int)it.ret_type_t) || (it.ret_type_t & VT_BITFIELD)))
 			mccjit_last_kgc_ok = 0;
 		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
 			mccjit_last_param_t[qi] = 0;
 		for (qi = 0; qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++) {
 			mccjit_last_param_t[qi] = it.param_type_t[qi];
-			if (!mccjit_type_gp((int)it.param_type_t[qi]) ||
-					(it.param_type_t[qi] & VT_BITFIELD))
+			if (!allfp && (!mccjit_type_gp((int)it.param_type_t[qi]) ||
+										 (it.param_type_t[qi] & VT_BITFIELD)))
 				mccjit_last_kgc_ok = 0;
 		}
 	}
@@ -1092,6 +1102,8 @@ static double mccjit_elapsed(const struct timespec *t0) {
 static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
 																		const uint32_t *param_t, uint32_t nargs,
 																		int ret_wide);
+static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
+																		 int memoize_ok, uint32_t nargs);
 
 static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long len,
 																 unsigned long max_duration, const char *mode,
@@ -1115,6 +1127,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 			int memoize_ok;
 			uint32_t nargs = mccjit_last_nparam;
 			int ret_wide = mccjit_last_ret_wide;
+			int all_fp = mccjit_last_allfp;
 			uint32_t ptypes[MCCJIT_KGC_MAXARG];
 			uint32_t qi;
 			for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
@@ -1122,8 +1135,10 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 			baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 			memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 			if (baseline) {
-				entry = mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes,
-																			 nargs, ret_wide);
+				entry = all_fp ? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok,
+																								 nargs)
+											 : mccjit_make_kgc_stub_n(variant, baseline, memoize_ok,
+																								ptypes, nargs, ret_wide);
 				if (entry)
 					routed = 1;
 			}
@@ -1167,6 +1182,7 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 	if (variant && !no_kgc && mccjit_last_kgc_ok) {
 		uint32_t nargs = mccjit_last_nparam;
 		int ret_wide = mccjit_last_ret_wide;
+		int all_fp = mccjit_last_allfp;
 		uint32_t ptypes[MCCJIT_KGC_MAXARG];
 		uint32_t qi;
 		void *baseline;
@@ -1176,8 +1192,10 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 		baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 		memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 		if (baseline) {
-			entry = mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes, nargs,
-																		 ret_wide);
+			entry = all_fp
+									? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok, nargs)
+									: mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes,
+																					 nargs, ret_wide);
 			if (entry && routed)
 				*routed = 1;
 		}
@@ -2426,6 +2444,32 @@ static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
 	}
 }
 
+/* K4A: scalar all-double marshalling (SSE class). Args come in via a spilled
+   xmm0-7 double vector; the return is a double (xmm0). Fixed C signatures let
+   the compiler place args in xmm and read the xmm0 return, so no hand-emitted
+   argument classifier is needed for the all-FP case. */
+static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) {
+	switch (n) {
+	case 1:
+		return ((double (*)(double))fn)(a[0]);
+	case 2:
+		return ((double (*)(double, double))fn)(a[0], a[1]);
+	case 3:
+		return ((double (*)(double, double, double))fn)(a[0], a[1], a[2]);
+	case 4:
+		return ((double (*)(double, double, double, double))fn)(a[0], a[1], a[2],
+																														a[3]);
+	case 5:
+		return ((double (*)(double, double, double, double, double))fn)(
+				a[0], a[1], a[2], a[3], a[4]);
+	case 6:
+		return ((double (*)(double, double, double, double, double, double))fn)(
+				a[0], a[1], a[2], a[3], a[4], a[5]);
+	default:
+		return 0.0;
+	}
+}
+
 static volatile int64_t mccjit_bench_sink;
 
 static long mccjit_bench_iters(void) {
@@ -2534,7 +2578,138 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	return bval;
 }
 
+/* All-double differential verify. Args/return are doubles; the memo key and
+   the mismatch check use the raw bit pattern (a faithful recompile is
+   bit-identical, and treating +0/-0 or a NaN-bit difference as a mismatch is
+   the conservative-correct choice — it just returns the baseline). */
+static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
+																	const double *argv, uint32_t nargs,
+																	int *flagged) {
+	int64_t tuple[MCCJIT_KGC_ARITY];
+	double bval, vval;
+	uint64_t bbits = 0, vbits = 0;
+	uint32_t i;
+	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
+		tuple[i] = 0;
+	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
+		memcpy(&tuple[i], &argv[i], sizeof tuple[i]);
+	pthread_mutex_lock(&k->lock);
+	if (k->poisoned) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke_fp(baseline, argv, nargs);
+	}
+	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) {
+		pthread_mutex_unlock(&k->lock);
+		return mccjit_invoke_fp(variant, argv, nargs);
+	}
+	bval = mccjit_invoke_fp(baseline, argv, nargs);
+	vval = mccjit_invoke_fp(variant, argv, nargs);
+	memcpy(&bbits, &bval, sizeof bbits);
+	memcpy(&vbits, &vval, sizeof vbits);
+	if (vbits == bbits) {
+		k->hits++;
+		if (k->memoize_ok)
+			mccjit_kgc_insert(k, tuple);
+		pthread_mutex_unlock(&k->lock);
+		return bval;
+	}
+	k->misses++;
+	{
+		uint64_t total = k->hits + k->misses;
+		if (total >= (uint64_t)mccjit_poison_min() &&
+				k->misses * 100 >= total * (uint64_t)mccjit_poison_pct())
+			k->poisoned = 1;
+	}
+	pthread_mutex_unlock(&k->lock);
+	if (flagged)
+		*flagged = 1;
+	return bval;
+}
+
 #if defined(__x86_64__)
+static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
+																		 int memoize_ok, uint32_t nargs) {
+	unsigned char *p;
+	MccjitKgc *kgc;
+	int *flag;
+	void *calln = (void *)mccjit_kgc_calln_fp;
+	void *fp;
+	size_t o = 0;
+	uint32_t i;
+	if (nargs < 1 || nargs > MCCJIT_KGC_MAXARG)
+		return NULL;
+	kgc = mcc_mallocz(sizeof *kgc);
+	if (!kgc)
+		return NULL;
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) {
+		mcc_free(kgc);
+		return NULL;
+	}
+	kgc->memoize_ok = memoize_ok;
+	kgc->ret_wide = 1;
+	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) {
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		return NULL;
+	}
+	flag = (int *)(p + 256);
+	*flag = 0;
+	fp = flag;
+	p[o++] = 0xc9;
+	p[o++] = 0x55;
+	p[o++] = 0x48;
+	p[o++] = 0x83;
+	p[o++] = 0xec;
+	p[o++] = 0x40;
+	for (i = 0; i < nargs; i++) {
+		unsigned char disp = (unsigned char)(i * 8);
+		p[o++] = 0xf2;
+		p[o++] = 0x0f;
+		p[o++] = 0x11;
+		p[o++] = (unsigned char)(0x44 + i * 8);
+		p[o++] = 0x24;
+		p[o++] = disp;
+	}
+	p[o++] = 0x48;
+	p[o++] = 0xbf;
+	memcpy(p + o, &kgc, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xbe;
+	memcpy(p + o, &variant, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xba;
+	memcpy(p + o, &baseline, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0x89;
+	p[o++] = 0xe1;
+	p[o++] = 0x41;
+	p[o++] = 0xb8;
+	memcpy(p + o, &nargs, 4);
+	o += 4;
+	p[o++] = 0x49;
+	p[o++] = 0xb9;
+	memcpy(p + o, &fp, 8);
+	o += 8;
+	p[o++] = 0x48;
+	p[o++] = 0xb8;
+	memcpy(p + o, &calln, 8);
+	o += 8;
+	p[o++] = 0xff;
+	p[o++] = 0xd0;
+	p[o++] = 0x48;
+	p[o++] = 0x83;
+	p[o++] = 0xc4;
+	p[o++] = 0x40;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
+	return p;
+}
+
 static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
 																		const uint32_t *param_t, uint32_t nargs,
 																		int ret_wide) {
@@ -2642,6 +2817,14 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	(void)param_t;
 	(void)nargs;
 	(void)ret_wide;
+	return NULL;
+}
+static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
+																		 int memoize_ok, uint32_t nargs) {
+	(void)variant;
+	(void)baseline;
+	(void)memoize_ok;
+	(void)nargs;
 	return NULL;
 }
 #endif
@@ -3805,6 +3988,186 @@ int mccjit_selftest_bench(void) {
 		fails++;
 
 	printf("mccjit-selftest-bench: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_fparg(const char *libpath, const char *incpath) {
+	static const char src[] = "double f(double a, double b){return a*b + a;}";
+	static const char src_g[] = "double g(double a, double b){return a*b + b;}";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	double (*baseline)(double, double) = NULL;
+	double (*variant)(double, double) = NULL;
+	MCCState *bstate = NULL, *vstate = NULL;
+	int fails = 0;
+	int allfp_seen;
+	int i;
+
+	printf("mccjit-selftest-fparg: begin\n");
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-fparg: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = (double (*)(double, double))mcc_jit_recompile_blob(blob, blen);
+	allfp_seen = mccjit_last_allfp;
+	bstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!baseline) {
+		printf("mccjit-selftest-fparg: baseline recompile NULL FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+	printf("mccjit-selftest-fparg: all-double signature detected=%d (expect 1) %s\n",
+				 allfp_seen, allfp_seen ? "OK" : "FAIL");
+	if (!allfp_seen)
+		fails++;
+	if (baseline(3.0, 4.0) != 15.0 || baseline(2.5, 2.0) != 7.5) {
+		printf("mccjit-selftest-fparg: baseline miscomputes FAIL\n");
+		fails++;
+	}
+
+	variant = (double (*)(double, double))mcc_jit_recompile_blob(blob, blen);
+	vstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+
+	/* FP differential-verify marshalling (mccjit_invoke_fp + bitwise compare),
+	   driven directly — a faithful variant must agree with the baseline and not
+	   flag; a divergent one (g) must return the baseline and flag. */
+	if (variant) {
+		MccjitKgc kgc;
+		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) {
+			static const struct {
+				double a, b, want;
+			} cs[5] = {{3, 4, 15},	 {2.5, 2, 7.5}, {-1, 5, -6},
+								 {0, 9, 0}, {1.5, 1.5, 3.75}};
+			int okall = 1;
+			for (i = 0; i < 5; i++) {
+				double a2[2];
+				int flagged = 0;
+				double r;
+				a2[0] = cs[i].a;
+				a2[1] = cs[i].b;
+				r = mccjit_kgc_calln_fp(&kgc, (void *)variant, (void *)baseline, a2, 2,
+																&flagged);
+				if (r != cs[i].want || flagged)
+					okall = 0;
+			}
+			printf("mccjit-selftest-fparg: faithful FP verify (5 cases) %s\n",
+						 okall ? "OK" : "FAIL");
+			if (!okall)
+				fails++;
+			mccjit_kgc_close(&kgc);
+		}
+	}
+
+	{
+		unsigned char *gblob;
+		size_t glen;
+		MCCState *sg;
+		gblob = mccjit_stash_one(src_g, "g", 1, &glen, &sg);
+		if (sg && gblob) {
+			double (*gv)(double, double) =
+					(double (*)(double, double))mcc_jit_recompile_blob(gblob, glen);
+			MCCState *gstate = mccjit_last_state;
+			mccjit_last_state = NULL;
+			if (gv) {
+				MccjitKgc kgc;
+				if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) {
+					double args[2];
+					int flagged = 0;
+					double r;
+					args[0] = 3.0;
+					args[1] = 4.0;
+					r = mccjit_kgc_calln_fp(&kgc, (void *)gv, (void *)baseline, args, 2,
+																	&flagged);
+					printf("mccjit-selftest-fparg: mismatch f-vs-g returned=%g flagged=%d "
+								 "(expect 15,1) %s\n",
+								 r, flagged, (r == 15.0 && flagged) ? "OK" : "FAIL");
+					if (r != 15.0 || !flagged)
+						fails++;
+					mccjit_kgc_close(&kgc);
+				}
+			}
+			if (gstate)
+				mcc_delete(gstate);
+		}
+		mcc_free(gblob);
+		if (sg)
+			mcc_delete(sg);
+	}
+
+	/* End-to-end: a -run program self-recompiles its all-double f and calls it
+	   through the mode-6 dispatch slot -> the hand-emitted FP stub (movsd spill
+	   + calln_fp). This exercises the stub via its correct entry (jmp *slot);
+	   direct-calling a dispatch stub corrupts the frame. */
+	{
+		static const char prog[] =
+				"double f(double a, double b){return a*b + a;}\n"
+				"int main(void){ double r = f(3.0, 4.0); return (int)r; }\n";
+		MCCState *rs;
+		char *av[] = {"fparg", NULL};
+		char path[64];
+		int rc = -1;
+		int swapped = 0;
+		setenv("MCC_AST_JIT_DISPATCH", "6", 1);
+		setenv("MCC_JIT_PERF_MAP", "1", 1);
+		snprintf(path, sizeof path, "/tmp/perf-%d.map", (int)getpid());
+		remove(path);
+		rs = mcc_new();
+		if (rs) {
+			FILE *pf;
+			if (libpath)
+				mcc_set_lib_path(rs, libpath);
+			if (incpath)
+				mcc_add_include_path(rs, incpath);
+			rs->optimize = 1;
+			rs->embed_jit = 1;
+			rs->jit_threads = 0;
+			mcc_free(rs->jit_functions);
+			rs->jit_functions = mcc_strdup("f");
+			mcc_set_output_type(rs, MCC_OUTPUT_MEMORY);
+			if (mcc_compile_string(rs, prog) == 0)
+				rc = mcc_run(rs, 1, av);
+			pf = fopen(path, "r");
+			if (pf) {
+				char line[256];
+				while (fgets(line, sizeof line, pf)) {
+					char nm[128] = {0};
+					unsigned long a = 0, sz = 0;
+					if (sscanf(line, "%lx %lx %127s", &a, &sz, nm) == 3 &&
+							!strcmp(nm, "f"))
+						swapped = 1;
+				}
+				fclose(pf);
+			}
+			mcc_delete(rs);
+		}
+		remove(path);
+		unsetenv("MCC_AST_JIT_DISPATCH");
+		unsetenv("MCC_JIT_PERF_MAP");
+		printf("mccjit-selftest-fparg: end-to-end dispatch main()=%d (expect 15) "
+					 "fp-stub-swapped=%d %s\n",
+					 rc, swapped, (rc == 15 && swapped) ? "OK" : "FAIL");
+		if (rc != 15 || !swapped)
+			fails++;
+	}
+
+	if (vstate)
+		mcc_delete(vstate);
+	if (bstate)
+		mcc_delete(bstate);
+	mccjit_last_state = NULL;
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-fparg: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

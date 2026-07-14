@@ -863,6 +863,20 @@ static int ast_jit_type_eligible(int t) {
 	}
 }
 
+static int ast_jit_all_double(Sym *sig) {
+	Sym *p;
+	int np = 0;
+	if ((sig->type.t & VT_BTYPE) != VT_DOUBLE)
+		return 0;
+	for (p = sig->next; p; p = p->next) {
+		if (++np > 6)
+			return 0;
+		if ((p->type.t & VT_BTYPE) != VT_DOUBLE)
+			return 0;
+	}
+	return np >= 1;
+}
+
 static int ast_jit_eligible(Sym *sym) {
 	Sym *sig = sym ? sym->type.ref : NULL;
 	Sym *p;
@@ -871,6 +885,8 @@ static int ast_jit_eligible(Sym *sym) {
 		return 0;
 	if (sig->f.func_type == FUNC_ELLIPSIS)
 		return 0;
+	if (ast_jit_all_double(sig))
+		return 1;
 	if (!ast_jit_type_eligible(sig->type.t))
 		return 0;
 	for (p = sig->next; p; p = p->next) {
