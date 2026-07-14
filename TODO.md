@@ -74,3 +74,83 @@ pointer-*returning* function (`char *h(char*,int){return p+i;}`, no string invol
 in `ast_reemit`; not exercised by the runtime eligibility gate or the exec suite.
 
 Memory: [[mcc-jit-unification]] updated with all of the above.
+
+## Known bugs (to fix)
+
+### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit`
+Discovered 2026-07-14 while validating the `MCCJIT_ROLE_DATA` feature above. Independent of
+that feature (reproduces with no string literal involved).
+
+Repro (in-process, e.g. from a selftest calling the internal API in `src/mccjit_embed.c`):
+```
+char *h(char *p, int i){ return p + i; }        // pointer arithmetic + pointer return
+// stash: mccjit_stash_one(src, "h", 1, &len, &state)  -> blob is produced OK
+// recompile: mcc_jit_recompile_blob(blob, len)        -> SIGSEGV
+```
+Also crashes with a string base (`char *h(int i){ return "world" + i; }`).
+
+What is known:
+- The function *stashes* fine (`mccjit_intent_serialize` succeeds, blob non-NULL) and
+  `mccjit_rebuild_sym` returns a non-NULL sym.
+- The crash is inside `ast_reemit_extern` → `ast_reemit` → `ast_replay_body`
+  (`src/mccast.c`): instrumentation printed "after rebuild_sym" but never "after reemit".
+  So it faults while replaying the body of a function whose return type is a pointer and
+  whose body is pointer arithmetic.
+- NOT hit by the exec suite: `exec-*/function_pointer`, `func_pointers`,
+  `func_arg_struct_compare` all pass under JIT. Likely the runtime promotion/eligibility gate
+  does not recompile pointer-returning functions, OR they never get hot; the selftests hit it
+  only because `mcc_jit_recompile_blob` bypasses that gate.
+- Latent-severity note: the `MCCJIT_ROLE_DATA` feature widened what serializes, so a
+  string-using function that *also* returns a pointer now serializes (instead of bailing) and
+  would hit this crash on recompile rather than falling back to AOT. Not observed in the exec
+  suite, but a reason to fix this rather than leave it latent.
+
+Next steps to fix:
+- Get the exact fault: build the `linux-gcc-sanitize` preset (ASan) under amd64 docker and run
+  a minimal harness that recompiles `char *h(char*,int){return p+i;}`; gdb does NOT work under
+  qemu emulation (exits 127), so ASan is the way to get a stack. Or add fine-grained markers
+  through `ast_replay_body`'s `AST_Ref`/`AST_Literal`/binary-op cases (`src/mccast.c` ~4170).
+- Suspect the replayed node's type/`type.ref` for the returned pointer, or the sret/return
+  handling in the reemit epilogue path, not the DATA symbol (the DATA sym is only a reloc
+  target). Compare the AST-node stream for a pointer-return vs an int-return leaf.
+
+### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS)
+Pre-existing, config-specific; documented in memory [[embedjit-arm64-vla-o1-crash]].
+An `MCC_EMBED_JIT=1` build of `mcc` on arm64/macOS **deterministically SIGSEGVs (rc=139)**
+compiling `tests/exec/vla/basic.c` at `-O1` — a plain compile, no `--embed-jit` flag. Surfaces
+as **14 `exec-*/basic` ctest failures** (replay, replay-tmpl, replay-promote, narrowfix, vlat,
+zerobss, interchange, fusion, tile, mergestrings, search, search-emitsize, search-emitiso,
+search-threads) because every `*/basic` runner batches a 295-case set including that VLA source.
+- Reproduced 3/3 on a pristine pre-change embed `mcc` (not from any recent JIT work).
+- Config-specific: the embed-**off** build compiles the same file fine (rc=0). So it is the
+  `MCC_EMBED_JIT=1` build config interacting with the VLA path at `-O1`, not the front-end in
+  general, and not the emitiso `-dt` scratch-section UAF (that was fixed in 7ee2207e; crash
+  persists after).
+Next steps: bisect what the embed build config changes (blob embedding / static-engine link /
+extra defines) that perturbs `-O1` VLA codegen; reproduce under ASan on an embed build.
+
+### BUG 3 (hardening/audit) — brace-initialized automatic `Operand` unions leave `e.v` garbage
+Documented in memory [[union-init-partial-zero]]. The per-arch assembler `Operand` structs
+(e.g. `src/arch/riscv64/riscv64-asm.c`) wrap a union whose first member is a small `uint8_t
+reg` with `ExprValue e` behind it. `Operand x = { OP_..., { 0 } }` only zeroes the first union
+member; homebrew gcc-16 leaves `x.e.v` upper bytes as stack garbage (clang zeroes the whole
+union) — a host-compiler-dependent codegen bug (caused the 2026-07-03 dash-s-bytes-riscv64 CI
+failure via `mv` emitting a garbage `addi` immediate). The specific `mv` instance was fixed;
+this is an **audit item** for other pseudo-instruction cases.
+Next steps: grep the arch `*-asm.c` files for automatic `Operand`/union brace-inits whose `e`/
+`imm`/`e.v` is read without an explicit prior assignment; assign `e.v` explicitly or use the
+file-static fully-zeroed `zimm`/`zero` consts.
+
+### Not bugs — local qemu-amd64 emulation noise (do NOT chase as compiler defects)
+When running the full ctest suite in an amd64 Ubuntu container under qemu on Apple Silicon, a
+recurring set fails that also fails identically on clean HEAD and/or passes when run serially in
+isolation — these are environment/emulation artifacts, not compiler bugs:
+- `macho-*` (Mach-O = macOS output format; cannot run on Linux),
+- `asan_shadow_native_*`, `cli/bcheck_exe_static_bounds` (ASan/bounds runtime under emulation),
+- `config-defines` (host triplet/OS-release specific), `run_atexit`,
+  `exec-search*/errors_and_warnings` (diagnostic-text/atexit env deltas),
+- `git-stamp` (fails only when the working tree is dirty),
+- sporadic `function_pointer`/`func_pointers`/`func_arg_struct_compare`/`complex` (qemu
+  parallelism flakes — pass in isolation; also seen as spurious gcc SIGSEGVs mid-build).
+Real regressions show up as a *different* failing test; validate JIT/codegen work with
+`ctest -R jit/` + `ctest -R ast/` and per-test serial reruns, not the full parallel sweep.
