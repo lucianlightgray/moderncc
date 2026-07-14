@@ -3849,6 +3849,12 @@ if(MCC_BUILD_TESTS)
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.c"
                         "${CMAKE_BINARY_DIR}")
+            # §26 2B — arm64 KGC differential-verify stub validator (last
+            # data-path stub): gather argv + sxtw narrow args + verify + return.
+            add_test(NAME jit/arm64-kgc
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.sh"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.c"
+                        "${CMAKE_BINARY_DIR}")
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
