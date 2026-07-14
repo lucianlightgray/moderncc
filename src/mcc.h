@@ -602,6 +602,7 @@ struct MCCState {
 	unsigned jit_threads;
 	char *jit_functions;
 	unsigned optimize_search_seconds;
+	unsigned stats;
 	signed char pie;
 	unsigned char pic;
 	unsigned char option_pthread;

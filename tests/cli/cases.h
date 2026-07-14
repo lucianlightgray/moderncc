@@ -136,7 +136,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"embed_jit_manifest", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/mf.c && "
-		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --embed-jit --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
 		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --no-embed-jit -c {W}/mf.c -o {W}/mf2.o 2>&1 | grep -c 'embed-jit manifest'",
 		 "embed-jit manifest: functions=main,helper max-duration=120s\n0\n"},
 
@@ -181,8 +181,8 @@ static const cli_case_t cli_cases[] = {
 
 		{"perfn_inproc", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'static int big(int x,int y){int s=0;for(int i=0;i<x;i++){s+=(i*y)^(i+x);s-=(i&y)|(x^i);s+=(i*i)-(y*y);}return s;}static int tiny(int x){return x+1;}int main(void){int s=0;s+=big(5,3)+big(7,2)+big(9,4)+big(3,6);s+=tiny(10)+tiny(20)+tiny(30);return s&0x7f;}\\n' > {W}/pfi.c && "
-		 "{MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
-		 "MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
+		 "MCC_AST_INLINE_PASS=0 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
+		 "MCC_AST_INLINE_PASS=0 MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "
 		 "( cmp -s {W}/pfi.off.o {W}/pfi.on.o && echo SAME || echo DIFFER ) ; "
 		 "MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 {W}/pfi.c -o {W}/pfi.on && {W}/pfi.on ; echo rc=$? ; "
 		 "{MCC} -B{B} -I{I} -O0 {W}/pfi.c -o {W}/pfi.o0 && {W}/pfi.o0 ; echo rc=$?",

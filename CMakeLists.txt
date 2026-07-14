@@ -1175,7 +1175,7 @@ mcc_config_node(MCC_MCCRT_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the native mccrt with the host CC instead of mcc (faster bcheck)")
 mcc_config_node(MCC_EMBED_MCCRT TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake libmccrt.a into the mcc binary (self-contained; no sidecar .a needed). Forces the native mccrt to be host-CC built to break the build cycle. ELF/Mach-O only.")
-mcc_config_node(MCC_EMBED_JIT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
+mcc_config_node(MCC_EMBED_JIT TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     HELP "Link the §26 Tier-B runtime-JIT engine slice + intention serializer/recompile seam (src/mccjit_embed.c) into mcc, and enable --embed-jit's real effect. Default OFF keeps the build byte-identical; ON adds the ~800KB embed.")
 mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
     HELP "Non-strict mode: auto-correct inert/non-runnable config combinations instead of only warning")
@@ -1794,8 +1794,10 @@ file(GLOB MCC_CORE_SRC CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt/mccelf.c")
 list(REMOVE_ITEM MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c")
 list(REMOVE_ITEM MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_embed.c")
+list(REMOVE_ITEM MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_intent.c")
 if(MCC_EMBED_JIT)
     list(APPEND MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_embed.c")
+    list(APPEND MCC_CORE_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/mccjit_intent.c")
 endif()
 
 file(GLOB MCC_BACKEND_SRC CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${MCC_CPU}/*.c")
@@ -1935,7 +1937,14 @@ if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
     set(_libmcc_shared libmcc_shared)
 endif()
 
+if(MCC_EMBED_JIT AND NOT MCC_BUILD_STATIC_LIB)
+    mcc_add_libmcc(libmcc_jitengine STATIC FALSE)
+endif()
+
 add_executable(mcc src/mcc.c)
+if(TARGET libmcc_jitengine)
+    add_dependencies(mcc libmcc_jitengine)
+endif()
 set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
 target_include_directories(mcc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -2250,7 +2259,7 @@ if(MCC_BUILD_SANITIZE)
     endif()
 endif()
 
-foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared mcc_p mcc_s)
+foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s)
     if(TARGET ${_nt})
         target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
     endif()
@@ -2511,6 +2520,21 @@ if(MCC_EMBED_MCCRT)
     target_compile_definitions(mcc PRIVATE MCC_EMBED_MCCRT=1)
 endif()
 
+if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
+    if(NOT TARGET bin2c)
+        add_executable(bin2c tools/bin2c.c)
+    endif()
+    add_custom_command(
+        OUTPUT "${CMAKE_BINARY_DIR}/mccjit_blob.c"
+        COMMAND "$<TARGET_FILE:bin2c>" "$<TARGET_FILE:libmcc_jitengine>"
+                "${CMAKE_BINARY_DIR}/mccjit_blob.c" mccjit_blob
+        DEPENDS bin2c libmcc_jitengine
+        COMMENT "Embedding the static JIT engine (libmcc-static.a) into mcc (mccjit_blob.c)"
+        VERBATIM)
+    target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccjit_blob.c")
+    target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_BLOB=1)
+endif()
+
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
 
@@ -2538,6 +2562,27 @@ if(MCC_BUILD_COVERAGE)
         COMMENT "mcc -ftest-coverage mcc.c -> mcc_c" VERBATIM)
     add_custom_target(mcc_cov ALL DEPENDS "${CMAKE_BINARY_DIR}/mcc_c")
 endif()
+
+add_custom_target(mcc-stats
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${CMAKE_BINARY_DIR}/mcc-stats-cache"
+    COMMAND ${CMAKE_COMMAND} -E env
+            "XDG_CACHE_HOME=${CMAKE_BINARY_DIR}/mcc-stats-cache"
+            MCC_AST_SEARCH=1 MCC_SEARCH_WORKER=1
+            ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" -O10 --stats
+            -c "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
+            -o "${CMAKE_BINARY_DIR}/mcc-stats.o"
+            "-I${CMAKE_BINARY_DIR}" "-I${CMAKE_CURRENT_SOURCE_DIR}"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/src/formats"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/src/objfmt"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/i386"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/src/arch/${MCC_CPU}"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "-B${CMAKE_CURRENT_SOURCE_DIR}" "-B${CMAKE_BINARY_DIR}"
+    DEPENDS mcc mccrt
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    VERBATIM USES_TERMINAL
+    COMMENT "mcc -O10 --stats: 10s live optimizer/JIT search stats panel over src/mcc.c")
 
 function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
     set(_variants "${base_tgt}|${base_out}|dynamic")
@@ -4218,6 +4263,7 @@ if(MCC_BUILD_TESTS)
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
                 --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}" --ast-shadow "${MCC_CONFIG_AST_SHADOW}" --trace "${MCC_CONFIG_TRACE}"
+                --embed-jit "${MCC_EMBED_JIT}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
                 --mccdir "${MCC_RESOLVED_MCCDIR}")

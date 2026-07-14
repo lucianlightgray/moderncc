@@ -178,7 +178,8 @@ static int derive_defs(const char *json_path, Vec *defs, char *root, int rootsz)
 		const char *fp = match;
 		char tok[8192];
 		while (shell_token(&fp, tok, sizeof tok))
-			if (!strncmp(tok, "-D", 2) && !strstr(tok, "MCC_EMBED_MCCRT"))
+			if (!strncmp(tok, "-D", 2) && !strstr(tok, "MCC_EMBED_MCCRT") &&
+					!strstr(tok, "MCC_EMBED_JIT_BLOB"))
 				vec_add(defs, strdup(tok));
 	}
 	{

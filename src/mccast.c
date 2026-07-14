@@ -1,6 +1,7 @@
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
 #include "mccast.h"
+#include "mccstats.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -806,8 +807,7 @@ static char ast_jit_fns[AST_FNCFG_MAX][80];
 static int ast_jit_fns_n;
 
 static void ast_jit_fns_default(void) {
-	memcpy(ast_jit_fns[0], "main", 5);
-	ast_jit_fns_n = 1;
+	ast_jit_fns_n = 0;
 }
 
 static void ast_jit_fns_parse(const char *csv) {
@@ -841,7 +841,7 @@ static int ast_jit_selected(const char *fn) {
 	if (!fn)
 		return 0;
 	if (ast_jit_fns_n == 0)
-		return !strcmp(fn, "main");
+		return 1;
 	for (i = 0; i < ast_jit_fns_n; i++)
 		if (!strcmp(ast_jit_fns[i], fn))
 			return 1;
@@ -1242,9 +1242,9 @@ void ast_configure(MCCState *s1) {
 	if (ast_tile_size < 2)
 		ast_tile_size = 32;
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", s1->optimize >= 2);
-	ast_jit_env = ast_env_gate("MCC_AST_JIT", 0);
+	ast_jit_env = ast_env_gate("MCC_JIT", ast_env_gate("MCC_AST_JIT", 0));
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
-	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", 0);
+	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", ast_jit_env ? 6 : 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_data_reemit_env = ast_env_gate("MCC_AST_DATA_REEMIT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
@@ -11655,9 +11655,7 @@ static AstGateMask ast_search_gates_now(void) {
 				 (ast_narrow_c0_env ? AST_SG_NARROW_C0 : 0) |
 				 (ast_narrow_c1_env ? AST_SG_NARROW_C1 : 0) |
 				 (ast_narrow_c2_env ? AST_SG_NARROW_C2 : 0) |
-				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0) |
-				 (ast_jit_dispatch_env ? AST_SG_JIT_DISPATCH : 0) |
-				 (ast_jit_guard_env ? AST_SG_JIT_GUARD : 0);
+				 (ast_narrow_c3_env ? AST_SG_NARROW_C3 : 0);
 }
 
 static void ast_search_gates_set(AstGateMask g) {
@@ -11696,8 +11694,6 @@ static void ast_search_gates_set(AstGateMask g) {
 	ast_narrow_c1_env = (g & AST_SG_NARROW_C1) != 0;
 	ast_narrow_c2_env = (g & AST_SG_NARROW_C2) != 0;
 	ast_narrow_c3_env = (g & AST_SG_NARROW_C3) != 0;
-	ast_jit_dispatch_env = (g & AST_SG_JIT_DISPATCH) ? (ast_jit_dispatch_env ? ast_jit_dispatch_env : 1) : 0;
-	ast_jit_guard_env = (g & AST_SG_JIT_GUARD) != 0;
 }
 
 #ifndef SHF_PRIVATE
@@ -12010,6 +12006,10 @@ static long ast_search_combo_score(const int *sel, int k, void *user) {
 														cx->saved_loc, cx->saved_anon);
 	ast_search_durwin_push(ast_now_ms() - t0);
 	MCC_TRACE("combo cand gates=%llx k=%d score=%ld\n", (unsigned long long)gates, k, sc);
+	if (mcc_stats_mask)
+		mcc_stats_combo_cand(gates, sel, k, cx->items, sc, cx->ord,
+												 ast_now_ms() - ast_search_start_ms, ast_search_budget_ms,
+												 ast_search_expect_ms());
 	if (sc < 0)
 		return COMBO_REJECT;
 	return sc;
@@ -12245,7 +12245,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 							 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
 							 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
 							 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
-							 (ast_jit_env ? (AST_SG_JIT_DISPATCH | AST_SG_JIT_GUARD) : 0) |
 							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
 								* when templates is in base. Safe to add now that the candidate count is
 								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
@@ -12321,6 +12320,9 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		for (b = 0; b < 64; b++)
 			if (searchable & ((AstGateMask)1 << b))
 				items[nitems++] = (AstGateMask)1 << b;
+		if (mcc_stats_mask)
+			mcc_stats_search_begin(funcname, h, base, searchable, nitems,
+														 ast_search_walk_env, ast_search_ordered_env ? 1 : 0);
 #if MCC_HOST_POSIX
 		if (ast_search_threads_env) {
 			AstGateMask sub = searchable;
@@ -12446,6 +12448,8 @@ search_done:
 	ast_promo_total = p0;
 	ast_opt_total = o0;
 	ast_search_gates_set(best);
+	if (mcc_stats_mask)
+		mcc_stats_search_end(best, best_score, (long)nc, ast_search_memo_n);
 	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file.
 					* score = the winning config's search score; tried = the bitmask of candidates
 					* actually measured before the budget ran out (M3 blocker A progress fields).
@@ -12606,6 +12610,8 @@ void ast_func_end(Sym *sym) {
 						sf[si] = 0;
 					ast_run_strat_cycle(ast_cur, sym, faithful, ast_strat_order,
 															ast_strat_order_n, sf);
+					if (mcc_stats_mask)
+						mcc_stats_strat_hits(sf, AST_STRAT_COUNT);
 					bfolds = sf[AST_STRAT_BFOLD];
 					idents = sf[AST_STRAT_IDENT];
 					narrows = sf[AST_STRAT_NARROW];
@@ -12734,7 +12740,10 @@ void ast_func_end(Sym *sym) {
 #undef AST_PF_EMIT
 				}
 				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env &&
-						ast_jit_want(funcname, sym)) {
+						ast_jit_want(funcname, sym) &&
+						(ast_jit_dispatch_env != 6 ||
+						 (mcc_state && (mcc_state->embed_jit ||
+														mcc_state->output_type == MCC_OUTPUT_MEMORY)))) {
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 					int aot_base = ast_body_ind_sv;
 					int aot_len = ind - aot_base;
@@ -12757,7 +12766,8 @@ void ast_func_end(Sym *sym) {
 							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
 						greloca(data_section, body_sym, slot_off, R_X86_64_64, 0);
 #ifdef MCC_EMBED_JIT
-						if (mcc_state && mcc_state->embed_jit) {
+						if (mcc_state && (mcc_state->embed_jit ||
+															mcc_state->output_type == MCC_OUTPUT_MEMORY)) {
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "__mccjit_slot_%s", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
@@ -13035,7 +13045,8 @@ void ast_func_end(Sym *sym) {
 			mcc_free(orig_rel);
 		}
 #ifdef MCC_EMBED_JIT
-		if (ast_fn_faithful && ast_cur && ast_jit_want(funcname, sym))
+		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&
+				ast_cur && ast_jit_want(funcname, sym))
 			mccjit_embed_stash_leaf(ast_cur, sym);
 #endif
 		int keep_inline = ast_fn_faithful && ast_inline_retain(ast_cur, sym);

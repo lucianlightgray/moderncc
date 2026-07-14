@@ -4,6 +4,7 @@
 
 #if MCC_AMALGAMATED
 #include "mcchost.c"
+#include "mccstats.c"
 #include "mccpp.c"
 #include "mccgen.c"
 #include "mcccst.c"
@@ -14,6 +15,7 @@
 #include "mccrun.c"
 #include "mccdis.c"
 #ifdef MCC_EMBED_JIT
+#include "mccjit_intent.c"
 #include "mccjit_embed.c"
 #endif
 #ifdef MCC_TARGET_I386
@@ -53,6 +55,7 @@
 #endif
 
 #include "mcc.h"
+#include "mccstats.h"
 
 ST_DATA struct MCCState *mcc_state;
 HOST_SEM(mcc_compile_sem);
@@ -953,7 +956,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->warn_varargs = 1;
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
-	s->embed_jit = 1;
+	s->embed_jit = 0;
 	s->jit_max_duration = 600;
 	s->jit_threads = 0;
 
@@ -982,6 +985,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 }
 
 LIBMCCAPI void mcc_delete(MCCState *s1) {
+	mcc_stats_finish();
 	mccelf_delete(s1);
 
 	dynarray_reset(&s1->library_paths, &s1->nb_library_paths);
@@ -1369,6 +1373,34 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) {
 }
 #endif
 
+#ifdef MCC_EMBED_JIT_BLOB
+extern const unsigned char mccjit_blob[];
+extern const unsigned int mccjit_blob_len;
+
+ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) {
+	char tmp[] = "/tmp/.mccjitXXXXXX";
+	size_t off;
+	int fd, ret;
+
+	fd = mkstemp(tmp);
+	if (fd < 0)
+		return mcc_error_noabort("embedded jit engine: cannot create temp fd");
+	unlink(tmp);
+	for (off = 0; off < mccjit_blob_len;) {
+		ssize_t w = write(fd, mccjit_blob + off, mccjit_blob_len - off);
+		if (w <= 0) {
+			close(fd);
+			return mcc_error_noabort("embedded jit engine: write failed");
+		}
+		off += (size_t)w;
+	}
+	lseek(fd, 0, SEEK_SET);
+	ret = mcc_add_binary(s1, AFF_PRINT_ERROR | AFF_WHOLE_ARCHIVE,
+											 "<embedded jit engine>", fd);
+	return ret;
+}
+#endif
+
 #ifdef MCC_TARGET_UNIX
 ST_FUNC int mcc_add_crt(MCCState *s1, const char *filename) {
 	int ret = mcc_add_library_internal(s1, "%s/%s",
@@ -1673,6 +1705,7 @@ enum {
 	MCC_OPTION_jit_threads,
 	MCC_OPTION_jit_functions,
 	MCC_OPTION_clear_cache,
+	MCC_OPTION_stats,
 	MCC_OPTION_c,
 	MCC_OPTION_dumpmachine,
 	MCC_OPTION_dumpversion,
@@ -1766,6 +1799,7 @@ static const MCCOption mcc_options[] = {
 		{"-jit-threads", MCC_OPTION_jit_threads, MCC_OPTION_HAS_ARG},
 		{"-jit-functions", MCC_OPTION_jit_functions, MCC_OPTION_HAS_ARG},
 		{"-clear-cache", MCC_OPTION_clear_cache, 0},
+		{"-stats", MCC_OPTION_stats, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"g", MCC_OPTION_g, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 #ifdef MCC_TARGET_MACHO
 		{"compatibility_version", MCC_OPTION_compatibility_version, MCC_OPTION_HAS_ARG},
@@ -2162,6 +2196,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 		case MCC_OPTION_clear_cache:
 			s->clear_cache = 1;
+			break;
+		case MCC_OPTION_stats:
+			if (optarg[0] == '=')
+				optarg++;
+			s->stats = optarg[0] ? (unsigned)strtoul(optarg, NULL, 0) : MCC_STATS_ALL;
+			mcc_stats_enable(s->stats);
 			break;
 		case MCC_OPTION_b:
 #if MCC_CONFIG_DIAG_RT >= 2

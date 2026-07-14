@@ -967,7 +967,7 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) {
 #if defined MCC_TARGET_IS_HOST && !defined MCC_TARGET_PE
 				const char *name_ud = &name[s1->leading_underscore];
 				void *addr = NULL;
-				if (!s1->nostdlib)
+				if (!s1->nostdlib || s1->output_type == MCC_OUTPUT_MEMORY)
 					addr = host_dlsym_process(name_ud);
 				if (addr == NULL) {
 					for (int i = 0; i < s1->nb_loaded_dlls; i++)
@@ -1601,7 +1601,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 #ifdef MCC_EMBED_JIT
 	{
 		extern void mccjit_embed_finalize(MCCState * s);
-		if (s1->embed_jit)
+		if (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY)
 			mccjit_embed_finalize(s1);
 	}
 #endif
@@ -1654,8 +1654,13 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) {
 #ifdef MCC_EMBED_MCCRT
 		mcc_add_mccrt_embedded(s1);
 #else
-		if (MCC_MCCRT[0])
-			mcc_add_support(s1, MCC_MCCRT);
+		if (MCC_MCCRT[0]) {
+			if (s1->output_type == MCC_OUTPUT_MEMORY)
+				mcc_add_dll(s1, MCC_MCCRT, 0); /* attempt; silent if absent -> undefined
+																					helpers bind in-process via dlsym */
+			else
+				mcc_add_support(s1, MCC_MCCRT);
+		}
 #endif
 #ifndef MCC_TARGET_MACHO
 		if (s1->output_type != MCC_OUTPUT_MEMORY)

@@ -91,10 +91,11 @@ static const char help2[] =
 		"  -Wp,<arg>                     Pass the comma-separated <arg> to the preprocessor\n"
 		"  -O<n>                         Optimize: 1 = AST replay + const-fold, 2/s = + register promotion, 3 = + inlining;\n"
 		"                                n>=4 = spend n seconds searching pass configs for the smallest object\n"
-		"  --embed-jit, --no-embed-jit   Embed the always-on runtime self-optimizing JIT in the output (default on)\n"
+		"  --embed-jit, --no-embed-jit   Bake the runtime JIT engine into a file output (default off); MCC_JIT=1 runs the in-process JIT for -run without embedding\n"
 		"  --jit-max-duration <sec>      Runtime JIT budget baked into the output (default 600; 0 = unlimited)\n"
 		"  --jit-functions <syms>        Comma list of functions to JIT-optimize (default main; sites at their common ancestor)\n"
 		"  --clear-cache                 Remove the per-user optimizer cache directory and exit\n"
+		"  --stats[=N]                   Live optimizer/JIT stats panel; N is a bitmask (2=jit 4=strategy 8=combo 16=search; default all)\n"
 		"  -pthread                      Support POSIX threads (-D_REENTRANT and -lpthread)\n"
 		"  -include <file>               Include <file> before parsing each input file\n"
 		"  -isystem <dir>                Add <dir> to the system include search path\n"
@@ -1397,14 +1398,43 @@ redo:
 		if (0 == ret && s->embed_jit && mccjit_embed_have_fns() &&
 				(s->output_type == MCC_OUTPUT_EXE ||
 				 (s->output_type == MCC_OUTPUT_OBJ && s->option_r))) {
-			const char *eng = getenv("MCC_EMBED_JIT_LIB");
-			int saved_ft = s->filetype;
-			s->filetype |= AFF_WHOLE_ARCHIVE;
-			if (eng && eng[0])
-				ret = mcc_add_file(s, eng);
-			else
-				ret = mcc_add_library(s, "mcc");
-			s->filetype = saved_ft;
+			int bs = find_elf_sym(s->symtab, "mccjit_boot_swap");
+			int internal =
+					bs && ((ElfW(Sym) *)s->symtab->data)[bs].st_shndx != SHN_UNDEF;
+			if (!internal) {
+				const char *eng = getenv("MCC_EMBED_JIT_LIB");
+				if (eng && eng[0]) {
+					int saved_ft = s->filetype;
+					s->filetype |= AFF_WHOLE_ARCHIVE;
+					ret = mcc_add_file(s, eng);
+					s->filetype = saved_ft;
+				} else {
+#ifdef MCC_EMBED_JIT_BLOB
+					extern int mcc_add_jit_engine_embedded(MCCState *);
+					ret = mcc_add_jit_engine_embedded(s);
+#else
+					char engbuf[1024], exe[1024], *sl;
+					int saved_ft = s->filetype;
+					s->filetype |= AFF_WHOLE_ARCHIVE;
+					if (host_exe_path(exe, sizeof exe) > 0 && (sl = strrchr(exe, '/'))) {
+						*sl = 0;
+						if (snprintf(engbuf, sizeof engbuf, "%s/libmcc-static.a", exe) <
+								(int)sizeof engbuf) {
+							FILE *ef = fopen(engbuf, "rb");
+							if (ef) {
+								fclose(ef);
+								ret = mcc_add_file(s, engbuf);
+								s->filetype = saved_ft;
+								goto jit_engine_done;
+							}
+						}
+					}
+					ret = mcc_add_library(s, "mcc");
+				jit_engine_done:
+					s->filetype = saved_ft;
+#endif
+				}
+			}
 		}
 	}
 #endif
