@@ -3816,6 +3816,17 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
 
+        # §26 2B — arm64 JIT dispatch tail validator (freestanding aarch64 run
+        # under qemu-aarch64; self-skips without a clang cross-toolchain + qemu).
+        # Independent of MCC_EMBED_JIT — validates the hand-emitted arm64
+        # pointer-swap dispatch + icache-flush the libmcc port will use.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_test(NAME jit/arm64-dispatch
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.sh"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.c"
+                        "${CMAKE_BINARY_DIR}")
+        endif()
+
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
         target_link_libraries(libmcc_test_extra PRIVATE libmcc)
         target_include_directories(libmcc_test_extra PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

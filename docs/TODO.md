@@ -307,7 +307,17 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     kernel, keep impure ops as bound C-ABI calls); **[K7]** the non-ABI register calling convention as a second
     codegen row (`gfunc_prolog` spills all params to frame today — the kernel would keep them in registers +
     carry its own pre/post-Call ABI harness at boundaries); **[K8]** inline-vs-shim as a benchmarked search axis.
-14. **[2B]** port the dispatch/stub tail to arm64 → cross-arch + arm64-macOS dev-host validation.
+14. **[2B]** port the dispatch/stub tail to arm64 — ⏳ MECHANISM VALIDATED + pipeline established; libmcc port
+    remaining. Proved the core arm64 JIT dispatch end-to-end under `qemu-aarch64`: a hand-emitted AArch64
+    pointer-swap dispatch (`ldr x16,[pc+8]; br x16` reading a swappable data slot) + the **arm64 icache
+    maintenance an arm64 JIT MUST do** (`dc cvau; dsb ish; ic ivau; dsb ish; isb` — the reason the tail is a
+    per-arch hand-emitted primitive, not shared with x86). Test `jit/arm64-dispatch` (freestanding, built with a
+    cross `clang --target=aarch64 -fuse-ld=lld -nostdlib -static`, run under `qemu-aarch64`; self-skips without
+    the toolchain). Validation infra now ready: **llvm-mc** for byte-exact AArch64 encodings + **clang/lld/qemu**
+    for execution. **DEFERRED — the interdependent libmcc port** (all one arm64 convention): the mode-6 slot
+    emission in `src/mccast.c` (the arm64 `ldr x16,[slot]; br x16` prologue + slot in `.data` + icache flush) and
+    the `mccjit_embed.c` stubs (`mccjit_make_trampoline`/`_counter_stub`/`_kgc_stub_n`/`_kgc_stub_fp`, currently
+    `#if __x86_64__`-only) as `#elif __aarch64__` branches, then run the jit selftests on an arm64 libmcc build.
 15. **[7A]** promote `eval_slice` to a hard per-strategy gate (**N := 3** clean soaks). Its cross-arch signal is
     the **JIT-capable** arches (x86_64 + arm64-via-2B), so it rides 2B, **not** 6A — riscv64 has no JIT tail, so
     the riscv64 self-host gap (step 16) is orthogonal to the JIT hard-gate.
@@ -337,7 +347,9 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
 
 - **1A — CST gets a real consumer.** slice-G stitching → `-g`-from-provenance (also feeds the debugger suite).
   Promotes CST from `[DEFER]` to active **[CST]**, independent of the optimizer path.
-- **2B — port the JIT stub tail to arm64** (step 14). Reinterprets D7 as "x86_64-first," not "only."
+- **2B — port the JIT stub tail to arm64** (step 14). Reinterprets D7 as "x86_64-first," not "only." — ⏳
+  dispatch mechanism + icache-flush validated under qemu-aarch64 (`jit/arm64-dispatch`); llvm-mc + clang/lld/qemu
+  pipeline ready; the mccast.c mode-6 slot + mccjit_embed.c stub arm64 branches are the remaining port.
 - **3A — fix the emit-time value-axis framework** (step 17). Keystone: clears §22 promotion, §23 inline budgets,
   M1 scoring, inline/promote in the search.
 - **4B — backend-parity session** (step 18): cmov/csel + temp-materialization; clears ABS/DIVMAGIC/64-bit-divmagic/
