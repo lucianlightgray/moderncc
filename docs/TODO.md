@@ -242,7 +242,14 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    `mcc_new`/`mcc_relocate`); and reconciling the CMake `libmcc-static.a` name so plain `-lmcc` prefers it.
 
 **Phase 2 — specialization depth + reclamation**
-8. **[J6A]** `jit-profile` range capture riding the hot counter → makes dispatch mode 5 bite.
+8. ✅ **[J6A]** DONE — `jit-profile` runtime live-in capture riding the D5 hot counter. The counter stub now
+   spills the 6 GP arg registers and passes their address to `mccjit_counter_tick(st, regs)` (one extra
+   `mov rsi,rsp`); `mccjit_counter_capture` accumulates a **per-param min/max range** (the runtime range that
+   makes dispatch mode 5's guard bite + feeds J7A) plus a small **ring of real observed tuples** — the *safe*
+   live-in set (real values, no synthetic pointer/divisor) that closes step 6's L4A live-in-source gap for the
+   K5 scorer. Captured only during the cold phase (`!promoted`), under the existing counter lock. Test:
+   `jit/selftest-profile` (1-arg range `[-3,100]`; 2-arg per-param `p0=[-2,3] p1=[7,20]`; sample ring matches).
+   Consumers next: J7A (step 9) reads the range; wiring the K5 scorer onto `st->sample` is a small step-6 follow-on.
 9. **[J7A]** value-range speculative guard (after J6A supplies the runtime range).
 10. **[K4A/L12A]** marshalling coverage as a strategy row (SSE + small struct-by-value, per-ABI limits) → widens
     eligibility past GP-int.
@@ -842,12 +849,13 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
 
 **Optional AST-strategy rows** (dispatcher already search-selectable via gate bits 40/41):
 
-- [ ] **[J6A·ACTIVE] §26 `jit-profile` strategy row** — build live-in range-capture instrumentation **as the
-  D5 hot-counter's co-instrumentation** (range sampling rides the existing `MccjitCounterState` counter, not a
-  separate pass). This is what makes dispatch mode 5 bite: its range-guard bound comes from the *static*
-  `ast_vlat_context` fact — entry params usually carry only the trivial type-full range, so mode 5 emits a
-  redundant `[INT_MIN,INT_MAX]` assertion (sound, deopt-protected, no pruning) until a runtime range exists.
-  Unblocks J7 (value-range speculation). **[K5] Promotion gate:** once the newest most-optimized code+data
+- [x] **[J6A] §26 `jit-profile` strategy row** — DONE. Live-in range-capture instrumentation rides the D5 hot
+  counter (`MccjitCounterState`), not a separate pass: the counter stub spills the 6 GP arg regs and passes
+  their address to `mccjit_counter_tick`, and `mccjit_counter_capture` accumulates per-param `argmin/argmax`
+  (the runtime range that makes mode 5's guard bite — until now it emitted a redundant `[INT_MIN,INT_MAX]`
+  assertion) plus a ring of real observed tuples (`st->sample`, the safe live-in set for K5). Cold-phase only,
+  under the counter lock. Test `jit/selftest-profile`. **Unblocks J7 (step 9, value-range speculation)** and
+  supplies L4A's live-in source for the step-6 K5 scorer. **[K5] Promotion gate:** once the newest most-optimized code+data
   variant passes the range/soundness sanity tests, it runs a best-of-3 benchmark against the currently-selected
   variant and is promoted only if it wins (the runtime-JIT wall-clock scorer; the AOT-static sink uses the
   deterministic cost/size scorer instead — the ⚠ seam).

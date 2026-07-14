@@ -1187,6 +1187,8 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 	return entry;
 }
 
+#define MCCJIT_PROFILE_SAMPLES 8
+
 typedef struct MccjitCounterState {
 	void **slot;
 	const void *blob;
@@ -1196,8 +1198,41 @@ typedef struct MccjitCounterState {
 	long count;
 	void *promoted;
 	int building;
+	long argseen;
+	int nsample;
+	int64_t argmin[MCCJIT_KGC_MAXARG];
+	int64_t argmax[MCCJIT_KGC_MAXARG];
+	int64_t sample[MCCJIT_PROFILE_SAMPLES][MCCJIT_KGC_MAXARG];
 	pthread_mutex_t lock;
 } MccjitCounterState;
+
+/* J6A jit-profile: runtime live-in capture riding the D5 hot counter. The
+   counter stub spills the 6 GP arg registers and hands their address to the
+   tick as `regs`; regs[MCCJIT_KGC_MAXARG-1-i] is param i (rdi..r9 pushed in
+   order, so the pointer walks r9..rdi). We accumulate a per-param min/max
+   range (feeds dispatch mode 5's range guard + J7A) and a small ring of real
+   observed tuples (the safe live-in set for the K5 promotion benchmark). */
+static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) {
+	int i;
+	for (i = 0; i < MCCJIT_KGC_MAXARG; i++) {
+		int64_t v = regs[MCCJIT_KGC_MAXARG - 1 - i];
+		if (st->argseen == 0) {
+			st->argmin[i] = v;
+			st->argmax[i] = v;
+		} else {
+			if (v < st->argmin[i])
+				st->argmin[i] = v;
+			if (v > st->argmax[i])
+				st->argmax[i] = v;
+		}
+	}
+	if (st->nsample < MCCJIT_PROFILE_SAMPLES) {
+		for (i = 0; i < MCCJIT_KGC_MAXARG; i++)
+			st->sample[st->nsample][i] = regs[MCCJIT_KGC_MAXARG - 1 - i];
+		st->nsample++;
+	}
+	st->argseen++;
+}
 
 typedef struct MccjitSwapJob {
 	void (*run)(struct MccjitSwapJob *);
@@ -1333,12 +1368,14 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) {
 						entry ? "promoted" : "build-failed");
 }
 
-static void *mccjit_counter_tick(MccjitCounterState *st) {
+static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) {
 	long n;
 	void *target;
 	int verbose = getenv("MCC_JIT_VERBOSE") != NULL;
 	pthread_mutex_lock(&st->lock);
 	n = ++st->count;
+	if (regs && !st->promoted)
+		mccjit_counter_capture(st, regs);
 	if (st->promoted) {
 		target = st->promoted;
 	} else if (n < st->threshold) {
@@ -1401,6 +1438,9 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) {
 	p[o++] = 0x50;
 	p[o++] = 0x41;
 	p[o++] = 0x51;
+	p[o++] = 0x48;
+	p[o++] = 0x89;
+	p[o++] = 0xe6;
 	p[o++] = 0x48;
 	p[o++] = 0xbf;
 	memcpy(p + o, &st, 8);
@@ -3028,7 +3068,7 @@ int mccjit_selftest_lazy(void) {
 	printf("mccjit-selftest-lazy: cold phase (calls 1..%ld run baseline):\n",
 				 threshold - 1);
 	for (c = 1; c < threshold; c++) {
-		void *t = mccjit_counter_tick(&st);
+		void *t = mccjit_counter_tick(&st, NULL);
 		int x = inputs[(c - 1) % 6];
 		int got = ((int (*)(int))t)(x);
 		int want = x * 2 + 1;
@@ -3042,7 +3082,7 @@ int mccjit_selftest_lazy(void) {
 	}
 
 	{
-		void *t = mccjit_counter_tick(&st);
+		void *t = mccjit_counter_tick(&st, NULL);
 		int ok = (st.promoted != NULL) && (t == st.promoted) &&
 						 (slot == st.promoted) && (t != (void *)baseline);
 		printf("mccjit-selftest-lazy: PROMOTE at call %ld promoted=%p slot=%p %s\n",
@@ -3052,7 +3092,7 @@ int mccjit_selftest_lazy(void) {
 	}
 
 	for (i = 0; i < 3; i++) {
-		void *t = mccjit_counter_tick(&st);
+		void *t = mccjit_counter_tick(&st, NULL);
 		int ok = (t == st.promoted) && (slot == st.promoted);
 		printf("mccjit-selftest-lazy: hot call %ld path=promoted stable=%s %s\n",
 					 st.count, t == st.promoted ? "yes" : "no", ok ? "OK" : "FAIL");
@@ -3195,7 +3235,7 @@ int mccjit_selftest_pool(void) {
 		pthread_mutex_init(&st.lock, NULL);
 
 		for (c = 1; c < threshold; c++) {
-			void *t = mccjit_counter_tick(&st);
+			void *t = mccjit_counter_tick(&st, NULL);
 			int ok = (t == (void *)baseline);
 			if (!ok) {
 				printf("mccjit-selftest-pool: cold call %ld not baseline FAIL\n", c);
@@ -3203,7 +3243,7 @@ int mccjit_selftest_pool(void) {
 			}
 		}
 		{
-			void *t = mccjit_counter_tick(&st);
+			void *t = mccjit_counter_tick(&st, NULL);
 			pthread_mutex_lock(&st.lock);
 			building = st.building;
 			promoted = st.promoted;
@@ -3231,7 +3271,7 @@ int mccjit_selftest_pool(void) {
 			if (slot_b != promoted)
 				fails++;
 			for (i = 0; i < 6; i++) {
-				void *t = mccjit_counter_tick(&st);
+				void *t = mccjit_counter_tick(&st, NULL);
 				int x = inputs[i];
 				int got = ((int (*)(int))t)(x);
 				int want = x * 2 + 1;
@@ -3727,6 +3767,80 @@ int mccjit_selftest_bench(void) {
 		fails++;
 
 	printf("mccjit-selftest-bench: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+static long mccjit_profile_id1(long x) { return x; }
+static long mccjit_profile_sum2(long a, long b) { return a + b; }
+
+int mccjit_selftest_profile(void) {
+	MccjitCounterState st;
+	void *stub;
+	int fails = 0;
+	int64_t inputs[5] = {5, 0, -3, 100, 7};
+	int i;
+
+	printf("mccjit-selftest-profile: begin\n");
+
+	memset(&st, 0, sizeof st);
+	st.baseline = (void *)mccjit_profile_id1;
+	st.threshold = 1L << 30;
+	pthread_mutex_init(&st.lock, NULL);
+	stub = mccjit_make_counter_stub(&st);
+	if (!stub) {
+		printf("mccjit-selftest-profile: counter stub NULL (non-x86_64?) SKIP\n");
+		pthread_mutex_destroy(&st.lock);
+		return 0;
+	}
+	for (i = 0; i < 5; i++) {
+		long r = ((long (*)(long))stub)((long)inputs[i]);
+		if (r != inputs[i]) {
+			printf("mccjit-selftest-profile: stub(%lld) returned %ld (expect %lld) FAIL\n",
+						 (long long)inputs[i], r, (long long)inputs[i]);
+			fails++;
+		}
+	}
+	printf("mccjit-selftest-profile: 1-arg range=[%lld,%lld] seen=%ld nsample=%d\n",
+				 (long long)st.argmin[0], (long long)st.argmax[0], st.argseen,
+				 st.nsample);
+	if (st.argmin[0] != -3 || st.argmax[0] != 100 || st.argseen != 5) {
+		printf("mccjit-selftest-profile: 1-arg range/seen mismatch FAIL\n");
+		fails++;
+	}
+	if (st.nsample != 5) {
+		printf("mccjit-selftest-profile: nsample=%d (expect 5) FAIL\n", st.nsample);
+		fails++;
+	} else {
+		for (i = 0; i < 5; i++)
+			if (st.sample[i][0] != inputs[i]) {
+				printf("mccjit-selftest-profile: sample[%d][0]=%lld (expect %lld) FAIL\n",
+							 i, (long long)st.sample[i][0], (long long)inputs[i]);
+				fails++;
+			}
+	}
+	pthread_mutex_destroy(&st.lock);
+
+	memset(&st, 0, sizeof st);
+	st.baseline = (void *)mccjit_profile_sum2;
+	st.threshold = 1L << 30;
+	pthread_mutex_init(&st.lock, NULL);
+	stub = mccjit_make_counter_stub(&st);
+	if (stub) {
+		((long (*)(long, long))stub)(3, 7);
+		((long (*)(long, long))stub)(-2, 20);
+		printf("mccjit-selftest-profile: 2-arg p0=[%lld,%lld] p1=[%lld,%lld]\n",
+					 (long long)st.argmin[0], (long long)st.argmax[0],
+					 (long long)st.argmin[1], (long long)st.argmax[1]);
+		if (st.argmin[0] != -2 || st.argmax[0] != 3 || st.argmin[1] != 7 ||
+				st.argmax[1] != 20) {
+			printf("mccjit-selftest-profile: 2-arg per-param range mismatch FAIL\n");
+			fails++;
+		}
+	}
+	pthread_mutex_destroy(&st.lock);
+
+	printf("mccjit-selftest-profile: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
