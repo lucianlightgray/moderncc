@@ -1242,7 +1242,7 @@ void ast_configure(MCCState *s1) {
 	if (ast_tile_size < 2)
 		ast_tile_size = 32;
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", s1->optimize >= 2);
-	ast_jit_env = ast_env_gate("MCC_JIT", ast_env_gate("MCC_AST_JIT", 0));
+	ast_jit_env = s1 && (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", ast_jit_env ? 6 : 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);

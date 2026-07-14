@@ -327,6 +327,20 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		return -1;
 	}
 
+	/* A NAMED handle is rebuilt by name (external_global_sym). Anonymous symbols
+		 (string literals, other unnamed rodata/data) carry no name to rebuild from,
+		 so mccjit_build_rec would yield a NULL sym and codegen would deref it. Such
+		 functions cannot be faithfully recompiled from the intent blob: refuse to
+		 serialize so the caller keeps the AOT baseline instead. */
+	for (k = 0; k < handles.count; k++) {
+		int64_t tv = handles.token_v[k];
+		if (handles.role[k] == MCCJIT_ROLE_NAMED &&
+				!(tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)) {
+			mccjit_handles_free(&handles);
+			return -1;
+		}
+	}
+
 	mccjit_put_u32(buf, MCCJIT_INTENT_MAGIC);
 	mccjit_put_u32(buf, MCCJIT_INTENT_FORMAT);
 	mccjit_put_u64(buf, mccjit_salt_witness());

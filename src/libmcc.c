@@ -957,6 +957,7 @@ LIBMCCAPI MCCState *mcc_new(void) {
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
 	s->embed_jit = 0;
+	s->jit = -1;
 	s->jit_max_duration = 600;
 	s->jit_threads = 0;
 
@@ -1701,6 +1702,8 @@ enum {
 	MCC_OPTION_g,
 	MCC_OPTION_embed_jit,
 	MCC_OPTION_no_embed_jit,
+	MCC_OPTION_jit,
+	MCC_OPTION_no_jit,
 	MCC_OPTION_jit_max_duration,
 	MCC_OPTION_jit_threads,
 	MCC_OPTION_jit_functions,
@@ -1795,6 +1798,8 @@ static const MCCOption mcc_options[] = {
 		{"b", MCC_OPTION_b, 0},
 		{"-embed-jit", MCC_OPTION_embed_jit, 0},
 		{"-no-embed-jit", MCC_OPTION_no_embed_jit, 0},
+		{"-jit", MCC_OPTION_jit, 0},
+		{"-no-jit", MCC_OPTION_no_jit, 0},
 		{"-jit-max-duration", MCC_OPTION_jit_max_duration, MCC_OPTION_HAS_ARG},
 		{"-jit-threads", MCC_OPTION_jit_threads, MCC_OPTION_HAS_ARG},
 		{"-jit-functions", MCC_OPTION_jit_functions, MCC_OPTION_HAS_ARG},
@@ -2184,6 +2189,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) {
 			break;
 		case MCC_OPTION_no_embed_jit:
 			s->embed_jit = 0;
+			break;
+		case MCC_OPTION_jit:
+			s->jit = 1;
+			break;
+		case MCC_OPTION_no_jit:
+			s->jit = 0;
 			break;
 		case MCC_OPTION_jit_max_duration:
 			s->jit_max_duration = (unsigned)atoi(optarg);

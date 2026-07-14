@@ -15,6 +15,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifndef MCC_JIT_DEFAULT
+#define MCC_JIT_DEFAULT 1
+#endif
+
 MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) {
 	switch (t & VT_BTYPE) {
 	case VT_PTR:
@@ -1095,10 +1099,21 @@ void mccjit_embed_finalize(MCCState *s1) {
 		cstr_printf(&cs, "{&__mccjit_slot_%s, __mccjit_blob_%s, %luUL},\n", e->name,
 								e->name, (unsigned long)e->len);
 	cstr_printf(&cs, "};\n");
-	cstr_printf(
-			&cs,
-			"__attribute__((constructor)) static void __mccjit_boot_all(void){\nint __i;\nfor(__i=0;__i<%d;__i++)\n",
-			n);
+	{
+		int def_on = (s1->output_type == MCC_OUTPUT_MEMORY && s1->jit >= 0)
+										 ? s1->jit
+										 : (MCC_JIT_DEFAULT ? 1 : 0);
+		cstr_printf(&cs, "extern char *getenv(const char*);\n");
+		cstr_printf(
+				&cs,
+				"__attribute__((constructor)) static void __mccjit_boot_all(void){\n"
+				"const char *__e = getenv(\"MCC_JIT\");\n"
+				"int __on = __e ? (__e[0] != '0') : %d;\n"
+				"int __i;\n"
+				"if(!__on) return;\n"
+				"for(__i=0;__i<%d;__i++)\n",
+				def_on, n);
+	}
 	if (async)
 		cstr_printf(&cs,
 								"mccjit_boot_swap_async(__mccjit_registry[__i].slot, __mccjit_registry[__i].blob, __mccjit_registry[__i].len, %luUL, %luUL);\n}\n",
