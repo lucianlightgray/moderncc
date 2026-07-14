@@ -250,7 +250,17 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    K5 scorer. Captured only during the cold phase (`!promoted`), under the existing counter lock. Test:
    `jit/selftest-profile` (1-arg range `[-3,100]`; 2-arg per-param `p0=[-2,3] p1=[7,20]`; sample ring matches).
    Consumers next: J7A (step 9) reads the range; wiring the K5 scorer onto `st->sample` is a small step-6 follow-on.
-9. **[J7A]** value-range speculative guard (after J6A supplies the runtime range).
+9. **[J7A]** value-range speculative guard — ⏳ CONST-COLLAPSE DONE, general narrowing deferred. Now that J6A
+   supplies the runtime per-param range, the actionable speculation is the collapsed case: a param observed to
+   hold a single value over the whole profile (`argmin==argmax`) is a speculative constant. `mccjit_profile_pick_const`
+   detects it (only over the real `nargs`, skipping the counter's unused arg-reg captures) and
+   `mccjit_recompile_profiled` const-specializes on it (reusing the mode-4 `spec_fold`) — guarded downstream by
+   the KGC differential verify (a wrong fold returns baseline) + the K1C poison policy (a frequently-wrong fold
+   is discarded), so no static soundness proof is needed at recompile. Test: `jit/selftest-vrange` (profile
+   `a==7` → variant folds `a`: `v(999,5)=705` proves it ignores the passed arg; varying params → unspecialized).
+   **DEFERRED:** the general (non-collapsed) range-narrowing fold — injecting `[lo,hi]` as a VLat fact so the
+   optimizer narrows/eliminates — needs the P1 VLat consumer; the compile-time mode-5 guard already emits the
+   range check but has no fold yet either.
 10. **[K4A/L12A]** marshalling coverage as a strategy row (SSE + small struct-by-value, per-ABI limits) → widens
     eligibility past GP-int.
 11. **[K9/L2A/L3]** QSBR reclamation (leak-and-cap → per-thread epoch); un-defers J5. Pointer-swap stays the
@@ -662,7 +672,10 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
 - **J5 — DEFER reclamation** until memory usage becomes an issue (no interim bounded pool). (M5)
 - **J6A — build the `jit-profile` row as the D5 hot-counter's co-instrumentation** (runtime range capture rides
   the existing counter) → makes mode 5 bite.
-- **J7A — value-range is the next speculative fact** (W2.3), after J6 supplies the runtime range source.
+- **J7A — value-range is the next speculative fact** (W2.3), after J6 supplies the runtime range source. — ⏳
+  const-collapse DONE (`mccjit_profile_pick_const` + `mccjit_recompile_profiled`: a param observed constant in
+  the J6A profile is speculatively const-folded, KGC/poison-guarded; `jit/selftest-vrange`); general range
+  narrowing deferred to the P1 VLat consumer.
 - **J8B — refuse-to-JIT bitfield/FAM-bearing fns now** (cheap gate); serialize them later, low priority. (M4)
 - **J9A — build the M5c pure-kernel path** (statement-level pure/impure slicing + the off-C-ABI register calling
   convention). Promoted from deferred to active.

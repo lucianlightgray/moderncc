@@ -1234,6 +1234,44 @@ static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) 
 	st->argseen++;
 }
 
+/* J7A value-range speculation: the actionable fact from J6A's captured range
+   is the collapsed case — a param observed to hold a single value over the
+   whole profile (argmin==argmax) is a speculative constant. We only consider
+   the first `nargs` params (the counter also captures unused arg registers,
+   whose "range" is meaningless). Returns 1 + the param index/value to fold. */
+static int mccjit_profile_pick_const(const MccjitCounterState *st, uint32_t nargs,
+																		 long min_samples, int *pidx, int64_t *pval) {
+	uint32_t i;
+	if (!st || nargs == 0 || st->argseen < min_samples)
+		return 0;
+	for (i = 0; i < nargs && i < MCCJIT_KGC_MAXARG; i++) {
+		if (st->argmin[i] == st->argmax[i]) {
+			if (pidx)
+				*pidx = (int)i;
+			if (pval)
+				*pval = st->argmin[i];
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/* Build the hot variant, speculating on the J6A profile: if a param is
+   observed constant, const-specialize on it (mode-4 fold). The speculation is
+   guarded downstream by the KGC differential verify (a wrong fold returns the
+   baseline result) and the K1C poison policy (a frequently-wrong fold is
+   discarded), so it needs no static soundness proof here. Falls back to the
+   plain recompile when the profile shows no constant param. */
+MCCJIT_LOCAL void *mccjit_recompile_profiled(const void *blob, size_t len,
+																						 const MccjitCounterState *st,
+																						 uint32_t nargs, long min_samples) {
+	int pidx = -1;
+	int64_t pval = 0;
+	if (mccjit_profile_pick_const(st, nargs, min_samples, &pidx, &pval))
+		return mcc_jit_recompile_blob_spec(blob, len, pidx, pval);
+	return mcc_jit_recompile_blob(blob, (size_t)len);
+}
+
 typedef struct MccjitSwapJob {
 	void (*run)(struct MccjitSwapJob *);
 	void **slot;
@@ -3773,6 +3811,146 @@ int mccjit_selftest_bench(void) {
 
 static long mccjit_profile_id1(long x) { return x; }
 static long mccjit_profile_sum2(long a, long b) { return a + b; }
+
+int mccjit_selftest_vrange(void) {
+	static const char src[] = "int f(int a, int b){return a*100 + b;}";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	int (*baseline)(int, int) = NULL;
+	MCCState *bstate = NULL;
+	MccjitCounterState st;
+	void *stub;
+	int fails = 0;
+	int i;
+	int pidx = -1;
+	int64_t pval = 0;
+
+	printf("mccjit-selftest-vrange: begin\n");
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-vrange: stash failed\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = (int (*)(int, int))mcc_jit_recompile_blob(blob, blen);
+	bstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!baseline) {
+		printf("mccjit-selftest-vrange: baseline recompile NULL FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+
+	memset(&st, 0, sizeof st);
+	st.baseline = (void *)baseline;
+	st.threshold = 1L << 30;
+	pthread_mutex_init(&st.lock, NULL);
+	stub = mccjit_make_counter_stub(&st);
+	if (!stub) {
+		printf("mccjit-selftest-vrange: counter stub NULL (non-x86_64?) SKIP\n");
+		pthread_mutex_destroy(&st.lock);
+		if (bstate)
+			mcc_delete(bstate);
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 0;
+	}
+	for (i = 1; i <= 5; i++)
+		((int (*)(int, int))stub)(7, i);
+
+	if (!mccjit_profile_pick_const(&st, 2, 3, &pidx, &pval) || pidx != 0 ||
+			pval != 7) {
+		printf("mccjit-selftest-vrange: const-param detect pidx=%d pval=%lld "
+					 "(expect 0,7) FAIL\n",
+					 pidx, (long long)pval);
+		fails++;
+	} else {
+		printf("mccjit-selftest-vrange: profile detected const param a==7 OK\n");
+	}
+
+	{
+		int (*v)(int, int) =
+				(int (*)(int, int))mccjit_recompile_profiled(blob, blen, &st, 2, 3);
+		MCCState *vstate = mccjit_last_state;
+		mccjit_last_state = NULL;
+		if (!v) {
+			printf("mccjit-selftest-vrange: profiled recompile NULL FAIL\n");
+			fails++;
+		} else {
+			int in_domain = v(7, 5);
+			int folded = v(999, 5);
+			int base = baseline(7, 5);
+			printf("mccjit-selftest-vrange: spec v(7,5)=%d v(999,5)=%d base(7,5)=%d\n",
+						 in_domain, folded, base);
+			if (in_domain != 705 || base != 705) {
+				printf("mccjit-selftest-vrange: in-domain value wrong FAIL\n");
+				fails++;
+			}
+			if (folded != 705) {
+				printf("mccjit-selftest-vrange: a NOT folded (v(999,5)=%d, expect 705) "
+							 "FAIL\n",
+							 folded);
+				fails++;
+			} else {
+				printf("mccjit-selftest-vrange: speculation folded a=7 (variant ignores "
+							 "passed a) OK\n");
+			}
+		}
+		if (vstate)
+			mcc_delete(vstate);
+		mccjit_last_state = NULL;
+	}
+	pthread_mutex_destroy(&st.lock);
+
+	{
+		MccjitCounterState st2;
+		void *stub2;
+		memset(&st2, 0, sizeof st2);
+		st2.baseline = (void *)baseline;
+		st2.threshold = 1L << 30;
+		pthread_mutex_init(&st2.lock, NULL);
+		stub2 = mccjit_make_counter_stub(&st2);
+		if (stub2) {
+			for (i = 0; i < 5; i++)
+				((int (*)(int, int))stub2)(i + 1, i * 2);
+			if (mccjit_profile_pick_const(&st2, 2, 3, NULL, NULL)) {
+				printf("mccjit-selftest-vrange: false-positive const on varying params "
+							 "FAIL\n");
+				fails++;
+			} else {
+				int (*v2)(int, int) =
+						(int (*)(int, int))mccjit_recompile_profiled(blob, blen, &st2, 2, 3);
+				MCCState *v2state = mccjit_last_state;
+				mccjit_last_state = NULL;
+				if (v2 && v2(999, 5) == baseline(999, 5)) {
+					printf("mccjit-selftest-vrange: no const param -> unspecialized "
+								 "(v(999,5)=base) OK\n");
+				} else {
+					printf("mccjit-selftest-vrange: no-const case wrong FAIL\n");
+					fails++;
+				}
+				if (v2state)
+					mcc_delete(v2state);
+				mccjit_last_state = NULL;
+			}
+		}
+		pthread_mutex_destroy(&st2.lock);
+	}
+
+	if (bstate)
+		mcc_delete(bstate);
+	mccjit_last_state = NULL;
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-vrange: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
 
 int mccjit_selftest_profile(void) {
 	MccjitCounterState st;
