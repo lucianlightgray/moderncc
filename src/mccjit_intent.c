@@ -232,7 +232,38 @@ static void mccjit_handles_expand(MccjitHandles *h, uint32_t i) {
 	}
 }
 
+static int mccjit_data_sym_info(Sym *s, unsigned long *poff, unsigned long *psize) {
+	MCCState *s1 = mcc_state;
+	ElfSym *es;
+	if (!s1 || !s || !(s->r & VT_SYM))
+		return 0;
+	if (!rodata_section)
+		return 0;
+	es = elfsym(s);
+	if (!es || es->st_shndx == SHN_UNDEF || es->st_size == 0)
+		return 0;
+	if (es->st_shndx != rodata_section->sh_num)
+		return 0;
+	if (es->st_size > MCCJIT_DATA_MAX)
+		return 0;
+	if ((unsigned long)es->st_value + es->st_size > rodata_section->data_offset)
+		return 0;
+	if (rodata_section->reloc) {
+		Section *rel = rodata_section->reloc;
+		unsigned long n = rel->data_offset / sizeof(ElfW_Rel), k;
+		ElfW_Rel *r = (ElfW_Rel *)rel->data;
+		for (k = 0; k < n; k++)
+			if (r[k].r_offset >= (addr_t)es->st_value &&
+					r[k].r_offset < (addr_t)es->st_value + es->st_size)
+				return 0;
+	}
+	*poff = es->st_value;
+	*psize = es->st_size;
+	return 1;
+}
+
 static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i) {
+	MCCState *s1 = mcc_state;
 	Sym *s = (Sym *)(uintptr_t)h->raw[i];
 	unsigned role = h->role[i];
 	mccjit_put_u8(buf, (uint8_t)role);
@@ -295,6 +326,14 @@ static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i
 		}
 		break;
 	}
+	case MCCJIT_ROLE_DATA: {
+		unsigned long off = 0, sz = 0, bi;
+		mccjit_data_sym_info(s, &off, &sz);
+		mccjit_put_u32(buf, (uint32_t)sz);
+		for (bi = 0; bi < sz; bi++)
+			mccjit_put_u8(buf, rodata_section->data[off + bi]);
+		break;
+	}
 	default:
 		break;
 	}
@@ -327,15 +366,16 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		return -1;
 	}
 
-	/* A NAMED handle is rebuilt by name (external_global_sym). Anonymous symbols
-		 (string literals, other unnamed rodata/data) carry no name to rebuild from,
-		 so mccjit_build_rec would yield a NULL sym and codegen would deref it. Such
-		 functions cannot be faithfully recompiled from the intent blob: refuse to
-		 serialize so the caller keeps the AOT baseline instead. */
 	for (k = 0; k < handles.count; k++) {
 		int64_t tv = handles.token_v[k];
 		if (handles.role[k] == MCCJIT_ROLE_NAMED &&
 				!(tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)) {
+			Sym *s = (Sym *)(uintptr_t)handles.raw[k];
+			unsigned long off, sz;
+			if (mccjit_data_sym_info(s, &off, &sz)) {
+				handles.role[k] = (uint8_t)MCCJIT_ROLE_DATA;
+				continue;
+			}
 			mccjit_handles_free(&handles);
 			return -1;
 		}
@@ -436,6 +476,7 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) {
 			mcc_free(it->recs[i].foff);
 			mcc_free(it->recs[i].pt);
 			mcc_free(it->recs[i].pr);
+			mcc_free(it->recs[i].data);
 		}
 	mcc_free(it->recs);
 	mcc_free(it->handle_raw);
@@ -457,6 +498,7 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) {
 }
 
 static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) {
+	MCCState *s1 = mcc_state;
 	uint32_t i;
 	MccjitTypeRec *r;
 	Sym *res = NULL;
@@ -527,6 +569,21 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) {
 			ct.ref = mccjit_build_rec(it, r->b);
 			res = external_global_sym(tok_alloc(nm, (int)strlen(nm))->tok, &ct);
 		}
+		break;
+	}
+	case MCCJIT_ROLE_DATA: {
+		unsigned long off, pad;
+		unsigned char *p;
+		if (!rodata_section)
+			break;
+		pad = (16 - (rodata_section->data_offset & 15)) & 15;
+		if (pad)
+			section_ptr_add(rodata_section, pad);
+		off = rodata_section->data_offset;
+		p = section_ptr_add(rodata_section, r->datalen ? r->datalen : 1);
+		if (r->datalen && r->data)
+			memcpy(p, r->data, r->datalen);
+		res = get_sym_ref(&char_pointer_type, rodata_section, off, r->datalen);
 		break;
 	}
 	default:
@@ -640,6 +697,20 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 				rec->foff[k] = mccjit_get_u32(&r);
 				rec->pt[k] = mccjit_get_u32(&r);
 				rec->pr[k] = mccjit_get_u32(&r);
+			}
+			break;
+		}
+		case MCCJIT_ROLE_DATA: {
+			uint32_t bi;
+			rec->datalen = mccjit_get_u32(&r);
+			if (r.err || rec->datalen > MCCJIT_DATA_MAX)
+				goto done;
+			if (rec->datalen) {
+				rec->data = mcc_malloc(rec->datalen);
+				if (!rec->data)
+					goto done;
+				for (bi = 0; bi < rec->datalen; bi++)
+					rec->data[bi] = mccjit_get_u8(&r);
 			}
 			break;
 		}

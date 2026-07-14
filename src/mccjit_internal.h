@@ -20,13 +20,16 @@
 #define MCCJIT_KGC_MAXARG 6
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
-#define MCCJIT_INTENT_FORMAT 4u
+#define MCCJIT_INTENT_FORMAT 5u
 
 #define MCCJIT_ROLE_PLAIN 0u
 #define MCCJIT_ROLE_NAMED 1u
 #define MCCJIT_ROLE_PTR 2u
 #define MCCJIT_ROLE_FUNC 3u
 #define MCCJIT_ROLE_STRUCT 4u
+#define MCCJIT_ROLE_DATA 5u
+
+#define MCCJIT_DATA_MAX 65536u
 
 typedef struct MccjitBuf {
 	unsigned char *data;
@@ -48,6 +51,8 @@ typedef struct MccjitTypeRec {
 	uint32_t *pr;
 	uint32_t *foff;
 	char **fnm;
+	uint32_t datalen;
+	unsigned char *data;
 	struct Sym *built;
 } MccjitTypeRec;
 

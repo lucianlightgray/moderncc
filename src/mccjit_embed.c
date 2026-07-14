@@ -2748,6 +2748,112 @@ static const char *mccjit_purity_name(int p) {
 	}
 }
 
+int mccjit_selftest_strlit(void) {
+	static const char src[] = "int f(int i){ return \"ABCDE\"[i]; }";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1 = NULL;
+	int (*jitf)(int) = NULL;
+	int want[5] = {'A', 'B', 'C', 'D', 'E'};
+	int fails = 0, i;
+
+	printf("mccjit-selftest-strlit: begin (rodata string literal recompile)\n");
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) {
+		printf("mccjit-selftest-strlit: stash failed (string literal bailed?) FAIL\n");
+		if (s1)
+			mcc_delete(s1);
+		mcc_free(blob);
+		return 1;
+	}
+	printf("mccjit-selftest-strlit: serialized string-using intent = %lu bytes OK\n",
+				 (unsigned long)blen);
+
+	jitf = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+	if (!jitf) {
+		printf("mccjit-selftest-strlit: recompile returned NULL FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+
+	for (i = 0; i < 5; i++) {
+		int got = jitf(i);
+		int ok = (got == want[i]);
+		printf("mccjit-selftest-strlit: f(%d)=%d expect=%d %s\n", i, got, want[i],
+					 ok ? "OK" : "FAIL");
+		if (!ok)
+			fails++;
+	}
+
+	if (mccjit_last_state)
+		mcc_delete(mccjit_last_state);
+	mccjit_last_state = NULL;
+	mcc_free(blob);
+	mcc_delete(s1);
+
+	{
+		static const char src2[] =
+				"int g(int i){ return i ? \"XY\"[0] : \"PQRS\"[2]; }";
+		MCCState *s2 = NULL;
+		unsigned char *b2;
+		size_t l2;
+		int (*g)(int) = NULL;
+		b2 = mccjit_stash_one(src2, "g", 1, &l2, &s2);
+		if (s2 && b2)
+			g = (int (*)(int))mcc_jit_recompile_blob(b2, l2);
+		if (!g) {
+			printf("mccjit-selftest-strlit: two-string recompile NULL FAIL\n");
+			fails++;
+		} else {
+			int ok = (g(1) == 'X') && (g(0) == 'R');
+			printf("mccjit-selftest-strlit: g(1)=%d g(0)=%d expect=88,82 %s\n", g(1),
+						 g(0), ok ? "OK" : "FAIL");
+			if (!ok)
+				fails++;
+		}
+		if (mccjit_last_state)
+			mcc_delete(mccjit_last_state);
+		mccjit_last_state = NULL;
+		mcc_free(b2);
+		if (s2)
+			mcc_delete(s2);
+	}
+
+	{
+		static const char src3[] =
+				"int h(int i){ return \"lo\"[i & 1] + \"hi\"[i & 1]; }";
+		MCCState *s3 = NULL;
+		unsigned char *b3;
+		size_t l3;
+		int (*h)(int) = NULL;
+		b3 = mccjit_stash_one(src3, "h", 1, &l3, &s3);
+		if (s3 && b3)
+			h = (int (*)(int))mcc_jit_recompile_blob(b3, l3);
+		if (!h) {
+			printf("mccjit-selftest-strlit: two-string-mix recompile NULL FAIL\n");
+			fails++;
+		} else {
+			int ok = (h(0) == 'l' + 'h') && (h(1) == 'o' + 'i');
+			printf("mccjit-selftest-strlit: h(0)=%d h(1)=%d expect=%d,%d %s\n", h(0),
+						 h(1), 'l' + 'h', 'o' + 'i', ok ? "OK" : "FAIL");
+			if (!ok)
+				fails++;
+		}
+		if (mccjit_last_state)
+			mcc_delete(mccjit_last_state);
+		mccjit_last_state = NULL;
+		mcc_free(b3);
+		if (s3)
+			mcc_delete(s3);
+	}
+
+	printf("mccjit-selftest-strlit: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_purity(void) {
 	static const struct {
 		const char *src;
