@@ -3783,6 +3783,12 @@ if(MCC_BUILD_TESTS)
                         "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
             set_tests_properties(jit/selftest-fparg PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_qsbr tests/embed/jit_selftest_qsbr.c)
+            target_link_libraries(jit_selftest_qsbr PRIVATE libmcc)
+            target_include_directories(jit_selftest_qsbr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-qsbr COMMAND jit_selftest_qsbr)
+            set_tests_properties(jit/selftest-qsbr PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             # J4A ship gate: a static-linked --embed-jit exe must run standalone
             # (no libmcc.so at load) and still self-recompile. Needs the static
             # engine archive (MCC_BUILD_STATIC_LIB) — libmcc is then the archive.

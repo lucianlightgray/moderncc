@@ -1604,6 +1604,135 @@ static int mccjit_feasible(void) {
 	return mccjit_feasible_flag;
 }
 
+/* K9/L2A/L3 — QSBR reclamation. Pointer-swap is the always-correct default: it
+   never mutates bytes a running thread may execute, so an old variant can only
+   be *freed* once no thread can still be inside it. This is the epoch core:
+   each participating thread holds a slot with a local epoch; retiring an old
+   variant tags it with the bumped global epoch; a retiree is reclaimed once
+   every registered thread has announced a quiescent state at or after that
+   epoch (min local >= tag), i.e. every thread has left any JIT call since the
+   swap. Quiescent points (L2A: function-entry + loop back-edges) and the
+   swap-path retire wiring are the deferred integration; the default stays
+   leak-and-cap so a QSBR bug can never free a live variant. */
+#define MCCJIT_QSBR_SLOTS 64
+#define MCCJIT_QSBR_LIMBO 256
+
+static struct {
+	uint64_t global;
+	uint64_t local[MCCJIT_QSBR_SLOTS];
+	int used[MCCJIT_QSBR_SLOTS];
+	struct {
+		void *ptr;
+		size_t size;
+		uint64_t epoch;
+	} limbo[MCCJIT_QSBR_LIMBO];
+	int nlimbo;
+	uint64_t reclaimed;
+	uint64_t leaked;
+	pthread_mutex_t lock;
+} mccjit_qsbr = {1, {0}, {0}, {{0}}, 0, 0, 0, PTHREAD_MUTEX_INITIALIZER};
+
+static int mccjit_qsbr_register(void) {
+	int i, slot = -1;
+	pthread_mutex_lock(&mccjit_qsbr.lock);
+	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++)
+		if (!mccjit_qsbr.used[i]) {
+			slot = i;
+			mccjit_qsbr.used[i] = 1;
+			mccjit_qsbr.local[i] = mccjit_qsbr.global;
+			break;
+		}
+	pthread_mutex_unlock(&mccjit_qsbr.lock);
+	return slot;
+}
+
+static void mccjit_qsbr_unregister(int slot) {
+	if (slot < 0 || slot >= MCCJIT_QSBR_SLOTS)
+		return;
+	pthread_mutex_lock(&mccjit_qsbr.lock);
+	mccjit_qsbr.used[slot] = 0;
+	mccjit_qsbr.local[slot] = 0;
+	pthread_mutex_unlock(&mccjit_qsbr.lock);
+}
+
+/* Lock-free hot path: announce this thread has observed the current epoch. */
+static void mccjit_qsbr_quiescent(int slot) {
+	if (slot < 0 || slot >= MCCJIT_QSBR_SLOTS)
+		return;
+	__atomic_store_n(&mccjit_qsbr.local[slot],
+									 __atomic_load_n(&mccjit_qsbr.global, __ATOMIC_ACQUIRE),
+									 __ATOMIC_RELEASE);
+}
+
+static uint64_t mccjit_qsbr_min_local(void) {
+	int i;
+	uint64_t m = __atomic_load_n(&mccjit_qsbr.global, __ATOMIC_ACQUIRE);
+	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++)
+		if (mccjit_qsbr.used[i]) {
+			uint64_t l = __atomic_load_n(&mccjit_qsbr.local[i], __ATOMIC_ACQUIRE);
+			if (l < m)
+				m = l;
+		}
+	return m;
+}
+
+static void mccjit_qsbr_reclaim_locked(void) {
+	uint64_t minl = mccjit_qsbr_min_local();
+	int i = 0;
+	while (i < mccjit_qsbr.nlimbo) {
+		if (mccjit_qsbr.limbo[i].epoch <= minl) {
+			if (mccjit_qsbr.limbo[i].ptr && mccjit_qsbr.limbo[i].size)
+				munmap(mccjit_qsbr.limbo[i].ptr, mccjit_qsbr.limbo[i].size);
+			mccjit_qsbr.reclaimed++;
+			mccjit_qsbr.limbo[i] = mccjit_qsbr.limbo[--mccjit_qsbr.nlimbo];
+		} else {
+			i++;
+		}
+	}
+}
+
+static void mccjit_qsbr_reclaim(void) {
+	pthread_mutex_lock(&mccjit_qsbr.lock);
+	mccjit_qsbr_reclaim_locked();
+	pthread_mutex_unlock(&mccjit_qsbr.lock);
+}
+
+/* Defer-free an old variant after its slot has been pointer-swapped away.
+   MUST be called only after the publish, so no thread can newly enter it. */
+static void mccjit_qsbr_retire(void *ptr, size_t size) {
+	pthread_mutex_lock(&mccjit_qsbr.lock);
+	{
+		uint64_t e = __atomic_add_fetch(&mccjit_qsbr.global, 1, __ATOMIC_ACQ_REL);
+		if (mccjit_qsbr.nlimbo < MCCJIT_QSBR_LIMBO) {
+			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].ptr = ptr;
+			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].size = size;
+			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].epoch = e;
+			mccjit_qsbr.nlimbo++;
+		} else {
+			mccjit_qsbr.leaked++; /* leak-and-cap fallback: never free a live variant */
+		}
+		mccjit_qsbr_reclaim_locked();
+	}
+	pthread_mutex_unlock(&mccjit_qsbr.lock);
+}
+
+static void mccjit_qsbr_reset(void) {
+	int i;
+	pthread_mutex_lock(&mccjit_qsbr.lock);
+	for (i = 0; i < mccjit_qsbr.nlimbo; i++)
+		if (mccjit_qsbr.limbo[i].ptr && mccjit_qsbr.limbo[i].size)
+			munmap(mccjit_qsbr.limbo[i].ptr, mccjit_qsbr.limbo[i].size);
+	mccjit_qsbr.nlimbo = 0;
+	mccjit_qsbr.global = 1;
+	mccjit_qsbr.reclaimed = 0;
+	mccjit_qsbr.leaked = 0;
+	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++) {
+		mccjit_qsbr.used[i] = 0;
+		mccjit_qsbr.local[i] = 0;
+	}
+	pthread_mutex_unlock(&mccjit_qsbr.lock);
+}
+
 void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) {
 	if (!mccjit_feasible())
 		return;
@@ -3988,6 +4117,113 @@ int mccjit_selftest_bench(void) {
 		fails++;
 
 	printf("mccjit-selftest-bench: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+static void *mccjit_qsbr_thread(void *arg) {
+	int rounds = *(int *)arg;
+	int slot = mccjit_qsbr_register();
+	int i;
+	if (slot < 0)
+		return NULL;
+	for (i = 0; i < rounds; i++) {
+		mccjit_qsbr_quiescent(slot);
+		mccjit_pool_nap();
+	}
+	mccjit_qsbr_unregister(slot);
+	return NULL;
+}
+
+int mccjit_selftest_qsbr(void) {
+	int fails = 0;
+	int s0, s1;
+	void *p1, *p2;
+
+	printf("mccjit-selftest-qsbr: begin\n");
+	mccjit_qsbr_reset();
+
+	s0 = mccjit_qsbr_register();
+	s1 = mccjit_qsbr_register();
+	if (s0 < 0 || s1 < 0) {
+		printf("mccjit-selftest-qsbr: register failed FAIL\n");
+		return 1;
+	}
+
+	p1 = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p1 == MAP_FAILED) {
+		printf("mccjit-selftest-qsbr: mmap failed\n");
+		return 1;
+	}
+	mccjit_qsbr_retire(p1, 4096);
+	printf("mccjit-selftest-qsbr: after retire nlimbo=%d reclaimed=%llu "
+				 "(expect 1,0) %s\n",
+				 mccjit_qsbr.nlimbo, (unsigned long long)mccjit_qsbr.reclaimed,
+				 (mccjit_qsbr.nlimbo == 1 && mccjit_qsbr.reclaimed == 0) ? "OK" : "FAIL");
+	if (mccjit_qsbr.nlimbo != 1 || mccjit_qsbr.reclaimed != 0)
+		fails++;
+
+	mccjit_qsbr_quiescent(s0);
+	mccjit_qsbr_reclaim();
+	printf("mccjit-selftest-qsbr: one thread quiesced nlimbo=%d (expect 1, "
+				 "not-yet-reclaimed) %s\n",
+				 mccjit_qsbr.nlimbo, mccjit_qsbr.nlimbo == 1 ? "OK" : "FAIL");
+	if (mccjit_qsbr.nlimbo != 1)
+		fails++;
+
+	mccjit_qsbr_quiescent(s1);
+	mccjit_qsbr_reclaim();
+	printf("mccjit-selftest-qsbr: all threads quiesced nlimbo=%d reclaimed=%llu "
+				 "(expect 0,1) %s\n",
+				 mccjit_qsbr.nlimbo, (unsigned long long)mccjit_qsbr.reclaimed,
+				 (mccjit_qsbr.nlimbo == 0 && mccjit_qsbr.reclaimed == 1) ? "OK" : "FAIL");
+	if (mccjit_qsbr.nlimbo != 0 || mccjit_qsbr.reclaimed != 1)
+		fails++;
+
+	mccjit_qsbr_unregister(s0);
+	mccjit_qsbr_unregister(s1);
+
+	mccjit_qsbr_reset();
+	p2 = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p2 != MAP_FAILED) {
+		mccjit_qsbr_retire(p2, 4096);
+		printf("mccjit-selftest-qsbr: no registered threads -> immediate reclaim "
+					 "nlimbo=%d reclaimed=%llu (expect 0,1) %s\n",
+					 mccjit_qsbr.nlimbo, (unsigned long long)mccjit_qsbr.reclaimed,
+					 (mccjit_qsbr.nlimbo == 0 && mccjit_qsbr.reclaimed == 1) ? "OK" : "FAIL");
+		if (mccjit_qsbr.nlimbo != 0 || mccjit_qsbr.reclaimed != 1)
+			fails++;
+	}
+
+	{
+		mccjit_qsbr_reset();
+		pthread_t th[3];
+		int rounds = 200;
+		int i, n = 0;
+		for (i = 0; i < 3; i++)
+			if (pthread_create(&th[i], NULL, mccjit_qsbr_thread, &rounds) == 0)
+				n++;
+		for (i = 0; i < 8; i++) {
+			void *pg =
+					mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			if (pg != MAP_FAILED)
+				mccjit_qsbr_retire(pg, 4096);
+			mccjit_pool_nap();
+		}
+		for (i = 0; i < n; i++)
+			pthread_join(th[i], NULL);
+		mccjit_qsbr_reclaim();
+		printf("mccjit-selftest-qsbr: MT smoke (%d threads) after join nlimbo=%d "
+					 "reclaimed=%llu leaked=%llu %s\n",
+					 n, mccjit_qsbr.nlimbo, (unsigned long long)mccjit_qsbr.reclaimed,
+					 (unsigned long long)mccjit_qsbr.leaked,
+					 mccjit_qsbr.nlimbo == 0 ? "OK" : "FAIL");
+		if (mccjit_qsbr.nlimbo != 0)
+			fails++;
+	}
+
+	mccjit_qsbr_reset();
+	printf("mccjit-selftest-qsbr: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

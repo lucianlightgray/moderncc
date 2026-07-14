@@ -273,8 +273,17 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     GP+FP signatures and small struct-by-value (≤16B) — both need per-arg register-class routing, which C's
     fixed casts can't express; the clean enabler is promoting mcc's own `classify_x86_64_arg` (x86_64-gen.c)
     from `static` to `ST_FUNC` and classifying at intent-build time, then a class-vector-driven marshaller.
-11. **[K9/L2A/L3]** QSBR reclamation (leak-and-cap → per-thread epoch); un-defers J5. Pointer-swap stays the
-    correctness default — occupancy is a reclamation, not a patch-safety, concern.
+11. **[K9/L2A/L3]** QSBR reclamation — ⏳ EPOCH PRIMITIVE DONE, swap-wiring deferred. Built the QSBR core in
+    `src/mccjit_embed.c`: a per-thread epoch registry (`mccjit_qsbr_register`/`_unregister`/`_quiescent`, the
+    hot path lock-free) + `mccjit_qsbr_retire(ptr,size)` (tags an old variant with the bumped global epoch,
+    leak-and-caps if limbo overflows) + `mccjit_qsbr_reclaim` (frees a retiree once `min(local) >= tag`, i.e.
+    every registered thread has hit a quiescent state since the swap). Pointer-swap stays the correctness
+    default; **the default is still leak-and-cap** — QSBR only frees once wired, so a bug can never free a live
+    variant. Test `jit/selftest-qsbr` (retire→retain, partial-quiesce→retain, all-quiesce→reclaim,
+    no-threads→immediate, MT smoke: 8 retirees reclaimed / 0 leaked). **DEFERRED — the integration:** retire the
+    old variant on the hot-swap path (needs the old region's ptr/size + MCCState lifetime), the **[L2A]**
+    quiescent-point instrumentation (function-entry + loop back-edges of the variant), and un-deferring J5. This
+    also lets the L11A `pthread_atfork` child reset the QSBR registry (noted there).
 12. **[J10]** hot-patch strategy family (pointer-swap + dual-map + QSBR-gated in-place) + the benchmark harness.
 
 **Phase 3 — pure-kernel backend + cross-arch + hard-gate**
@@ -901,6 +910,9 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   entry/exit counter** (slowest + unsafe under non-local exit). In-place patch (D3B) is gated behind a
   search-*proved* safety property (no non-local exit + all callers instrumented); else pointer-swap wins by
   default. Once ≥2 mechanisms exist the quiescence/reclaim mechanism is itself a benchmarkable axis.
+  — ⏳ **epoch primitive DONE** (`mccjit_qsbr_*`: register/quiescent/retire/reclaim, `min(local)>=tag` grace
+  rule; `jit/selftest-qsbr`); default still leak-and-cap until the swap-path retire + L2A quiescent points are
+  wired.
 - [x] **[hardened-env] Boot-probe JIT feasibility** — DONE. `mccjit_feasible()` (`pthread_once`-cached) probes
   by `mmap`-ing a `PROT_READ|WRITE|EXEC` page and executing a tiny x86_64 stub; it gates `mccjit_boot_swap` and
   `mccjit_boot_swap_async`, so a W^X-denied / hardened host silently keeps the AOT baseline (deopt-first) + a
