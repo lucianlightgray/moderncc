@@ -20,25 +20,35 @@ Replaces the compile-time `MCC_JIT`/`MCC_AST_JIT` env gate with a runtime model:
   `busy()` still recompiles (perf-map); string-using `main` safely falls back.
 - CLI tests `embed_jit_manifest`, `clear_cache_and_jit_flags` pass.
 
-### BLOCKER — 7 JIT selftests regressed (must fix before commit is "green")
-`jit/selftest-{lazy,pool,fork,observability,vrange,fparg,mixed}` fail:
+### BLOCKER — FIXED (28/28 jit selftests green, cmake-linux-gcc under amd64 docker)
+`jit/selftest-{lazy,pool,fork,observability,vrange,fparg,mixed}` regressed to
 `mcc: error: unresolved reference to '__mccjit_slot_f'` → "baseline recompile returned NULL".
-All 7 PASS on clean HEAD (confirmed via stash) — caused by this change.
 
-Root cause: `src/mccast.c:1245` now sets `ast_jit_env = s1 && (embed_jit || output_type==MCC_OUTPUT_MEMORY)`.
-But `mccjit_recompile_common` (`src/mccjit_embed.c:136`) creates the recompile state with
-`output_type = MCC_OUTPUT_MEMORY`, so during the **recompile's own** `ast_reemit_extern`,
-`ast_jit_env` is true → the mode-6 dispatch-stub transform (`mccast.c:12742`) re-applies to
-the function being recompiled, emitting a `jmp *__mccjit_slot_f` with no slot defined in the
-fresh state → unresolved. Previously `ast_jit_env` came from the `MCC_JIT` env (unset during
-selftests) so the re-emit stayed plain.
+The original diagnosis (dispatch-stub transform re-applying during the recompile's own
+`ast_reemit_extern`) was **wrong**: `ast_reemit_extern` → `ast_reemit` → `ast_replay_body`,
+which never reaches the `mccast.c:12742` transform (confirmed by instrumentation — the transform
+fires exactly once, during the stash, never during recompile).
 
-Fix next session: suppress the JIT transform while inside a recompile. Options:
-1. Add a `mccjit_recompiling` flag (set around `ast_reemit_extern` in `mccjit_recompile_common`),
-   and `&&` it into the `ast_jit_env` computation (or the 12742 gate).
-2. Gate `ast_jit_env` also on `s1->optimize >= 1` — the recompile state sets `optimize=0`
-   (`mccjit_embed.c:134`). Cheaper but coincidental; option 1 is cleaner/explicit.
-After fixing, re-run: `ctest -R jit/` in cmake-linux-gcc (expect 28/28) + the exec differential.
+Actual root cause: `mccjit_embed_fns` is a **process-global** registry. With the WIP making
+`ast_jit_env` true for any `MCC_OUTPUT_MEMORY` compile, every internal `mccjit_stash_one`
+(all callers are selftests) now runs the dispatch transform, whose `mccjit_embed_note`
+(`mccast.c:12778`) appends the stashed fn to that global list. Nothing consumes/clears it (the
+stash never relocates), so entries leak. On the next `mcc_relocate` of an internal state
+(`MCC_OUTPUT_MEMORY`), `mccjit_embed_finalize` emits `extern void *__mccjit_slot_<fn>` + a
+registry for every stale entry, but the slot is only *defined* by the transform when the fn's
+body is compiled in that state → unresolved. This bit both the recompile (stale `f`) and the
+end-to-end embed tests (stale `q`/`g` from earlier stashes in the same test).
+
+Fix (`src/mccjit_embed.c` only, 9 lines): a file-static `mccjit_internal_compile` set around
+the compile in `mccjit_stash_one` and around the reemit+relocate in `mccjit_recompile_common`.
+It early-returns `mccjit_embed_note` (producer) and `mccjit_embed_finalize` (consumer) so
+internal JIT-helper compiles never touch the embed registry. Real `mcc -run`/`--embed-jit`
+programs (flag stays 0) build the registry exactly as before. Note: gating on `embed_jit`
+alone would have broken real `-run` JIT, which is `MCC_OUTPUT_MEMORY` with `embed_jit==0`.
+
+Validated: `ctest -R jit/` = 28/28. Full suite shows only pre-existing env/emulation failures
+(macho-*, asan_shadow_native_*, config-defines, run_atexit, errors_and_warnings) that fail
+identically on clean HEAD under qemu amd64; no regressions from this change.
 
 ### Remaining decision already made by user
 Keep `MCC_CONFIG_JIT` default ON; user chose to fix the recompile crash rather than flip OFF.

@@ -119,6 +119,8 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) {
 	fclose(f);
 }
 
+static int mccjit_internal_compile;
+
 static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 																		 int param_index, int64_t const_val) {
 	MccjitIntent it;
@@ -201,6 +203,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
 
 	sym = mccjit_rebuild_sym(&it);
+	mccjit_internal_compile = 1;
 	if (sym) {
 		ast_fconst_reuse_disable(1);
 		ast_reemit_extern(sym, it.arena);
@@ -210,6 +213,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	if (sym && mcc_relocate(js) == 0)
 		entry = mcc_get_symbol(js, it.fn_name);
+	mccjit_internal_compile = 0;
 
 	if (entry)
 		mccjit_perf_map_emit(js, it.fn_name, entry);
@@ -267,7 +271,7 @@ MCCJIT_LOCAL MccjitEmbedFn *mccjit_embed_fns;
 void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) {
 	MccjitBuf b;
 	MccjitEmbedFn *e;
-	if (!name || !name[0] || !ast || !sym)
+	if (!name || !name[0] || !ast || !sym || mccjit_internal_compile)
 		return;
 	for (e = mccjit_embed_fns; e; e = e->next)
 		if (!strcmp(e->name, name))
@@ -1065,7 +1069,7 @@ void mccjit_embed_finalize(MCCState *s1) {
 	int n = 0;
 	int async = 0;
 	if (!s1 || !(s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY) ||
-			!mccjit_embed_fns)
+			!mccjit_embed_fns || mccjit_internal_compile)
 		return;
 	async = s1->jit_threads > 0;
 	if (s1->output_type == MCC_OUTPUT_MEMORY) {
@@ -1282,10 +1286,13 @@ static unsigned char *mccjit_stash_one(const char *src, const char *fn,
 	mcc_free(s1->jit_functions);
 	s1->jit_functions = mcc_strdup(fn);
 	mcc_set_output_type(s1, MCC_OUTPUT_MEMORY);
+	mccjit_internal_compile = 1;
 	if (mcc_compile_string(s1, src) != 0) {
+		mccjit_internal_compile = 0;
 		mcc_delete(s1);
 		return NULL;
 	}
+	mccjit_internal_compile = 0;
 	if (mccjit_last_blob) {
 		blob = mcc_malloc(mccjit_last_len ? mccjit_last_len : 1);
 		if (blob) {
