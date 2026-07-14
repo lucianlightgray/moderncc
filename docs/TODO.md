@@ -296,8 +296,17 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     variants; and feeding the measured winner into the dispatcher's per-function/workload ranking.
 
 **Phase 3 — pure-kernel backend + cross-arch + hard-gate**
-13. **[J9A/K7/K8]** M5c pure/impure slicing + dual (C-ABI + non-ABI) register conventions + inline-vs-shim
-    (largest net-new backend investment).
+13. **[J9A/K7/K8]** M5c pure/impure slicing — ⏳ ANALYSIS FOUNDATION ONLY; the backend (largest net-new
+    investment) stays deferred. Landed the **partition analysis** `ast_fn_slice_profile` (`src/mccast.c`): it
+    profiles a function into `impure_ops` (the C-ABI boundary ops — Store / Invoke / volatile that must stay on
+    the ABI), `loads`, and `pure_compute` (the extractable register-value kernel) — a function with many
+    pure_compute + few impure_ops is the strong slicing candidate. This is the analysis that the non-ABI kernel
+    codegen (K7) and inline-vs-shim (K8) will consume. Test: `jit/selftest-slice` (pure fn→0 boundaries; 1 store
+    →1; 2 stores→2; a call→1; loads counted). **DEFERRED — the actual backend, a multi-week project unsuitable
+    for an autonomous step (miscompile-risky):** the statement-level slicing *transform* (extract the pure
+    kernel, keep impure ops as bound C-ABI calls); **[K7]** the non-ABI register calling convention as a second
+    codegen row (`gfunc_prolog` spills all params to frame today — the kernel would keep them in registers +
+    carry its own pre/post-Call ABI harness at boundaries); **[K8]** inline-vs-shim as a benchmarked search axis.
 14. **[2B]** port the dispatch/stub tail to arm64 → cross-arch + arm64-macOS dev-host validation.
 15. **[7A]** promote `eval_slice` to a hard per-strategy gate (**N := 3** clean soaks). Its cross-arch signal is
     the **JIT-capable** arches (x86_64 + arm64-via-2B), so it rides 2B, **not** 6A — riscv64 has no JIT tail, so
@@ -859,9 +868,12 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   benchmarks better; **[L7A]** unify KGC + poison into one {good,bad,unknown} LFU-bounded classified set; persist
   poison to the `mmap`'d cache **only under the opt-in persistent-cache flag** (default ephemeral — see the
   reproducibility seam); (3) skip the miss-check when the M8 static oracle proves in-domain.
-- [~] **[J9A·ACTIVE] M5c — pure classifier landed; pure/impure slicing + custom ABI now active** — the whole-
-  function purity classifier `ast_fn_purity` (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only),
-  wired into M5b via `MccjitKgc.memoize_ok`. **J9A promotes the net-new backend work to active:** statement-
+- [~] **[J9A·ACTIVE] M5c — pure classifier + slice-profile analysis landed; the slicing/non-ABI BACKEND is the
+  deferred remainder** — the whole-function purity classifier `ast_fn_purity`
+  (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only), wired into M5b via
+  `MccjitKgc.memoize_ok`, plus the ⏳ **partition analysis** `ast_fn_slice_profile` (impure_ops / loads /
+  pure_compute, `jit/selftest-slice`) — the slicing-candidacy analysis K7/K8 consume. **The net-new backend
+  work stays deferred (miscompile-risky, multi-week):** statement-
   level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); **[K7]** implement
   BOTH a C-ABI-compliant and a non-ABI register calling convention as coexisting strategy rows (`gfunc_prolog`
   spills all params to frame today) — when an Invoke/Call requires C-ABI compliance the non-ABI kernel carries

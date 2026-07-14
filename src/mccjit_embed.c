@@ -3159,6 +3159,34 @@ static int mccjit_classify_blob(const void *buf, size_t len) {
 	return purity;
 }
 
+static int mccjit_slice_profile_blob(const void *buf, size_t len,
+																		 AstSliceProfile *out) {
+	MccjitIntent it;
+	MCCState *js;
+	js = mcc_new();
+	if (!js)
+		return -1;
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) {
+		mcc_exit_state(js);
+		mcc_delete(js);
+		return -1;
+	}
+	ast_fn_slice_profile(it.arena, out);
+	mccjit_intent_release(&it);
+	mcc_exit_state(js);
+	mcc_delete(js);
+	return 0;
+}
+
 static const char *mccjit_purity_name(int p) {
 	switch (p) {
 	case AST_PURITY_TIER0:
@@ -4775,6 +4803,59 @@ int mccjit_selftest_profile(void) {
 	pthread_mutex_destroy(&st.lock);
 
 	printf("mccjit-selftest-profile: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+int mccjit_selftest_slice(void) {
+	static const struct {
+		const char *src;
+		const char *fn;
+		int want_impure;
+		int want_loads_pos;
+	} cases[5] = {
+			{"int f(int x){return x*2+1;}", "f", 0, 0},
+			{"int r(int *p, int x){return *p + x;}", "r", 0, 1},
+			{"int s(int *p, int x){*p = x; return x;}", "s", 1, 0},
+			{"int s2(int *p, int *q, int x){*p = x; *q = x + 1; return x;}", "s2", 2, 0},
+			{"int mabs(int); int h(int x){return mabs(x) + 1;}", "h", 1, 0},
+	};
+	int fails = 0;
+	int i;
+
+	printf("mccjit-selftest-slice: begin (M5c pure/impure partition analysis)\n");
+	for (i = 0; i < 5; i++) {
+		unsigned char *blob;
+		size_t blen;
+		MCCState *s1;
+		AstSliceProfile prof;
+		int ok;
+		blob = mccjit_stash_one(cases[i].src, cases[i].fn, 1, &blen, &s1);
+		if (!s1 || !blob) {
+			printf("mccjit-selftest-slice: %s stash failed\n", cases[i].fn);
+			if (s1)
+				mcc_delete(s1);
+			mcc_free(blob);
+			fails++;
+			continue;
+		}
+		if (mccjit_slice_profile_blob(blob, blen, &prof) != 0) {
+			printf("mccjit-selftest-slice: %s profile failed\n", cases[i].fn);
+			fails++;
+		} else {
+			ok = (prof.impure_ops == cases[i].want_impure) && (prof.pure_compute > 0) &&
+					 (!cases[i].want_loads_pos || prof.loads > 0);
+			printf("mccjit-selftest-slice: %-3s impure=%d(want %d) loads=%d compute=%d "
+						 "nodes=%d %s\n",
+						 cases[i].fn, prof.impure_ops, cases[i].want_impure, prof.loads,
+						 prof.pure_compute, prof.nodes, ok ? "OK" : "FAIL");
+			if (!ok)
+				fails++;
+		}
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+	printf("mccjit-selftest-slice: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

@@ -88,6 +88,20 @@ typedef enum AstPurity {
 } AstPurity;
 
 int ast_fn_purity(const AstArena *a);
+
+/* M5c slicing foundation: partition a function into a pure register/value
+   computation kernel + the impure "bound" ops (Store / Invoke / volatile)
+   that must stay on the C ABI. This is the analysis the non-ABI kernel
+   codegen (K7) and inline-vs-shim (K8) will consume — a function with many
+   pure_compute nodes and few impure_ops is the strong slicing candidate. */
+typedef struct AstSliceProfile {
+	int impure_ops;	 /* C-ABI boundary ops: Store, Invoke, volatile access */
+	int loads;			 /* memory-value reads (TIER1) */
+	int pure_compute; /* register-value-only compute nodes (the kernel body) */
+	int nodes;			 /* total nodes */
+} AstSliceProfile;
+
+void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out);
 #endif
 
 #ifdef __cplusplus

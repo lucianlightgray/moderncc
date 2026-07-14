@@ -5075,6 +5075,32 @@ int ast_fn_purity(const AstArena *a) {
 	}
 	return has_load ? AST_PURITY_TIER1 : AST_PURITY_TIER0;
 }
+
+void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out) {
+	AstLocal nn = ast_count(a), n;
+	out->impure_ops = 0;
+	out->loads = 0;
+	out->pure_compute = 0;
+	out->nodes = (int)nn;
+	for (n = 0; n < nn; n++) {
+		if (ast_type_t(a, n) & VT_VOLATILE) {
+			out->impure_ops++;
+			continue;
+		}
+		switch (ast_kind(a, n)) {
+		case AST_Store:
+		case AST_Invoke:
+			out->impure_ops++;
+			break;
+		case AST_Load:
+			out->loads++;
+			break;
+		default:
+			out->pure_compute++;
+			break;
+		}
+	}
+}
 #endif
 
 static int ast_ident_same_scan(const AstArena *a, AstLocal x, AstLocal y) {
