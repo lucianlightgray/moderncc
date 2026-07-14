@@ -325,7 +325,14 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     per-arch hand-emitted primitive, not shared with x86). Test `jit/arm64-dispatch` (freestanding, built with a
     cross `clang --target=aarch64 -fuse-ld=lld -nostdlib -static`, run under `qemu-aarch64`; self-skips without
     the toolchain). Validation infra now ready: **llvm-mc** for byte-exact AArch64 encodings + **clang/lld/qemu**
-    for execution. **DEFERRED — the interdependent libmcc port** (all one arm64 convention): the mode-6 slot
+    for execution. ✅ **counter/profiling-stub mechanism also validated** (`jit/arm64-counter`, same freestanding
+    qemu pipeline): the AArch64 hot-counter stub spills x0-x5 + LR, calls the C tick with `x0=state`, `x1=&regs`
+    in the profiler's `regs[MCCJIT_KGC_MAXARG-1-i]==param i` layout (regs[0]=x5 … regs[5]=x0), restores x0-x5 so
+    the tick-returned target sees the original args, and tail-`br`s to it (the target's `ret` uses the restored
+    LR — the arm64 analogue of x86 `jmp rax`). Asserts both the surviving-args result and the capture layout under
+    qemu. So the two data-path stub mechanisms (dispatch + counter) are now proven; the KGC differential-verify
+    stubs (`_kgc_stub_n`/`_kgc_stub_fp`) and the `src/mccast.c` mode-6 slot are the untranslated pieces.
+    **DEFERRED — the interdependent libmcc port** (all one arm64 convention): the mode-6 slot
     emission in `src/mccast.c` (the arm64 `ldr x16,[slot]; br x16` prologue + slot in `.data` + icache flush) and
     the `mccjit_embed.c` stubs (`mccjit_make_trampoline`/`_counter_stub`/`_kgc_stub_n`/`_kgc_stub_fp`, currently
     `#if __x86_64__`-only) as `#elif __aarch64__` branches, then run the jit selftests on an arm64 libmcc build.
@@ -366,8 +373,9 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
 - **1A — CST gets a real consumer.** slice-G stitching → `-g`-from-provenance (also feeds the debugger suite).
   Promotes CST from `[DEFER]` to active **[CST]**, independent of the optimizer path.
 - **2B — port the JIT stub tail to arm64** (step 14). Reinterprets D7 as "x86_64-first," not "only." — ⏳
-  dispatch mechanism + icache-flush validated under qemu-aarch64 (`jit/arm64-dispatch`); llvm-mc + clang/lld/qemu
-  pipeline ready; the mccast.c mode-6 slot + mccjit_embed.c stub arm64 branches are the remaining port.
+  dispatch + counter/profiling stub mechanisms + icache-flush validated under qemu-aarch64 (`jit/arm64-dispatch`,
+  `jit/arm64-counter`); llvm-mc + clang/lld/qemu pipeline ready; the KGC differential-verify stubs, the mccast.c
+  mode-6 slot, and the mccjit_embed.c stub arm64 branches are the remaining port.
 - **3A — fix the emit-time value-axis framework** (step 17). Keystone: clears §22 promotion, §23 inline budgets,
   M1 scoring, inline/promote in the search.
 - **4B — backend-parity session** (step 18): cmov/csel + temp-materialization; clears ABS/DIVMAGIC/64-bit-divmagic/

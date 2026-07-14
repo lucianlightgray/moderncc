@@ -3843,6 +3843,12 @@ if(MCC_BUILD_TESTS)
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.c"
                         "${CMAKE_BINARY_DIR}")
+            # §26 2B — arm64 counter/profiling-stub tail validator (the piece
+            # after the dispatch tail): spill args + tick + restore + tail-br.
+            add_test(NAME jit/arm64-counter
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.sh"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.c"
+                        "${CMAKE_BINARY_DIR}")
         endif()
 
         add_executable(libmcc_test_extra tests/embed/api_extra.c)
