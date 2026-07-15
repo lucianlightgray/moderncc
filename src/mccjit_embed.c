@@ -5558,6 +5558,93 @@ int mccjit_selftest_slicereemit(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static void *mccjit_reemit_kernel_of(const char *src, const char *fn,
+																		 MCCState **stash_state, MCCState **keep,
+																		 AstArena **kernel) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	void *ptr;
+	blob = mccjit_stash_one(src, fn, 1, &blen, stash_state);
+	if (!*stash_state || !blob) { MCC_TRACE("br\n");
+		mcc_free(blob);
+		return NULL;
+	}
+	*kernel = mccjit_kernel_from_blob(blob, blen);
+	ptr = *kernel ? mccjit_reemit_arena_blob(blob, blen, *kernel, keep) : NULL;
+	mcc_free(blob);
+	return ptr;
+}
+
+int mccjit_selftest_sliceinstall(void) { MCC_TRACE("enter\n");
+	MCCState *sf = NULL, *sf2 = NULL, *kef = NULL, *kef2 = NULL;
+	AstArena *akf = NULL, *akf2 = NULL;
+	void *kf, *kf2;
+	int fails = 0, i, installed = 0;
+
+	printf("mccjit-selftest-sliceinstall: begin (F2b slice hot-patch install + F3c "
+				 "ranking)\n");
+	kf = mccjit_reemit_kernel_of("int f(int x){return x*2+1;}", "f", &sf, &kef, &akf);
+	kf2 = mccjit_reemit_kernel_of("int f2(int x){return x*3+7;}", "f2", &sf2, &kef2,
+																&akf2);
+	if (!kf || !kf2) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-sliceinstall: kernel reemit failed (kf=%p kf2=%p) FAIL\n",
+					 kf, kf2);
+		fails++;
+	} else { MCC_TRACE("br\n");
+		for (i = 0; i < MCCJIT_PATCH_NREG; i++) { MCC_TRACE("br\n");
+			const MccjitPatchStrategy *s = &mccjit_patch_reg[i];
+			void *h = NULL, *entry;
+			int r1, r2, ok;
+			if (!mccjit_patch_benchmarkable(s)) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-sliceinstall: %-14s unavailable SKIP\n", s->name);
+				continue;
+			}
+			entry = s->make(kf, &h);
+			if (!entry) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-sliceinstall: %-14s make failed FAIL\n", s->name);
+				fails++;
+				continue;
+			}
+			installed++;
+			r1 = s->call_i(entry, 5);
+			s->swap(h, kf2);
+			r2 = s->call_i(entry, 5);
+			ok = (r1 == 11 && r2 == 22);
+			printf("mccjit-selftest-sliceinstall: %-14s install(f)=%d swap(f2)=%d "
+						 "(want 11,22) %s\n",
+						 s->name, r1, r2, ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+			if (s->dispose)
+				{ MCC_TRACE("br\n"); s->dispose(entry); }
+		}
+		{
+			int order[MCCJIT_PATCH_NREG];
+			double ns[MCCJIT_PATCH_NREG];
+			int nr = mccjit_patch_bench_rank(kf, order, ns, MCCJIT_PATCH_NREG);
+			if (nr > 0)
+				{ MCC_TRACE("br\n"); printf("mccjit-selftest-sliceinstall: F3c ranked "
+																		"install mechanism = %s (%.2f ns/call)\n",
+																		mccjit_patch_reg[order[0]].name, ns[0]); }
+		}
+		printf("mccjit-selftest-sliceinstall: %d mechanism(s) installed a slice kernel\n",
+					 installed);
+	}
+	ast_arena_free(akf);
+	ast_arena_free(akf2);
+	if (kef)
+		{ MCC_TRACE("br\n"); mcc_delete(kef); }
+	if (kef2)
+		{ MCC_TRACE("br\n"); mcc_delete(kef2); }
+	if (sf)
+		{ MCC_TRACE("br\n"); mcc_delete(sf); }
+	if (sf2)
+		{ MCC_TRACE("br\n"); mcc_delete(sf2); }
+	printf("mccjit-selftest-sliceinstall: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;

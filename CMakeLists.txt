@@ -3913,6 +3913,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-slicereemit COMMAND jit_selftest_slicereemit)
             set_tests_properties(jit/selftest-slicereemit PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_sliceinstall tests/embed/jit_selftest_sliceinstall.c)
+            target_link_libraries(jit_selftest_sliceinstall PRIVATE libmcc)
+            target_include_directories(jit_selftest_sliceinstall PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-sliceinstall COMMAND jit_selftest_sliceinstall)
+            set_tests_properties(jit/selftest-sliceinstall PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_evalgate tests/embed/jit_selftest_evalgate.c)
             target_link_libraries(jit_selftest_evalgate PRIVATE libmcc)
             target_include_directories(jit_selftest_evalgate PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
