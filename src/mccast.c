@@ -13034,7 +13034,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						(ast_jit_dispatch_env != 6 ||
 						 (mcc_state && (mcc_state->embed_jit ||
 														mcc_state->output_type == MCC_OUTPUT_MEMORY)))) { MCC_TRACE("br\n");
-#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64) || \
+		defined(MCC_TARGET_ARM64)
 					int aot_base = ast_body_ind_sv;
 					int aot_len = ind - aot_base;
 					Section *rs = cur_text_section->reloc;
@@ -13054,7 +13055,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						if (mcc_state && (mcc_state->embed_jit ||
 															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
 							char slotname[256];
-							snprintf(slotname, sizeof slotname, "__mccjit_slot_%s", funcname);
+							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
+											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
 							mccjit_embed_note(funcname, ast_cur, sym);
 						}
@@ -13092,7 +13094,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						if (mcc_state && (mcc_state->embed_jit ||
 															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
 							char slotname[256];
-							snprintf(slotname, sizeof slotname, "__mccjit_slot_%s", funcname);
+							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
+											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
 							mccjit_embed_note(funcname, ast_cur, sym);
 						}
@@ -13123,6 +13126,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						goto ast_jit_dispatch_done;
 					}
 #endif
+#if !defined(MCC_TARGET_ARM64)
 					int specmode = ast_jit_dispatch_env;
 					int poffs[AST_TCO_MAXP];
 					int64_t pvals[AST_TCO_MAXP], plos[AST_TCO_MAXP], phis[AST_TCO_MAXP];
@@ -13296,7 +13300,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					mcc_free(aot_rel);
 					MCC_TRACE("jit-dispatch %s mode=%d spec=%d np=%d (%d code, %d rel)\n", funcname,
 										ast_jit_dispatch_env, spec, npoff, aot_len, aot_rlen);
-#if defined(MCC_TARGET_X86_64)
+#endif
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 				ast_jit_dispatch_done:;
 #endif
 #endif

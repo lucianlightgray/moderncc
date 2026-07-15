@@ -1150,7 +1150,8 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		char blobname[256];
 		if (e->len)
 			{ MCC_TRACE("br\n"); memcpy(p, e->blob, e->len); }
-		snprintf(blobname, sizeof blobname, "__mccjit_blob_%s", e->name);
+		snprintf(blobname, sizeof blobname, "%s__mccjit_blob_%s",
+						 s1->leading_underscore ? "_" : "", e->name);
 		set_global_sym(s1, blobname, data_section, off);
 		cstr_printf(&cs, "extern unsigned char __mccjit_blob_%s[];\n", e->name);
 		cstr_printf(&cs, "extern void *__mccjit_slot_%s;\n", e->name);
