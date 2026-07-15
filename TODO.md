@@ -80,11 +80,16 @@ Memory: [[mcc-jit-unification]] updated with all of the above.
 ### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit`
 Discovered 2026-07-14 while validating the `MCCJIT_ROLE_DATA` feature above. Independent of
 that feature (reproduces with no string literal involved).
-**MITIGATED (commit 407df3a8):** `ast_jit_eligible` now rejects a `VT_PTR` return, so
-pointer-returning functions bail to plain AOT and are never recompiled through the normal
-path — the crash is no longer reachable via eligibility. The underlying `ast_reemit` fault
-is still latent for a forced `mcc_jit_recompile_blob` on such a function; root-cause and fix
-below still stand as the real bug.
+**Pointer-return MITIGATED (commit 407df3a8):** `ast_jit_eligible` rejects a `VT_PTR` return.
+**Enum subclass FIXED (commit 20ce0a42):** BUG 1 was broader than pointer returns — ANY enum
+type (param, return, local, or an enum-typed callee) crashed the same way. Root cause: an enum
+is `VT_INT` + `VT_ENUM` (struct-mask) + a `type.ref` to the enum sym; `mccjit_role_for_base`
+keys off `VT_BTYPE` (=`VT_INT`) so the ref is classified PLAIN and never rebuilt (NULL), while
+`mccjit_rebuild_sym` sets `type.ref=NULL` on the enum-flagged type → any `IS_ENUM` path
+dereferences NULL and crashes in `rebuild_sym`/`ast_reemit`. Fix: `mccjit_strip_enum()` clears
+the enum struct-mask bits at rebuild (return, params, every AST node) so enums recompile as
+their integer base. The pointer-return `ast_reemit` fault is likely the same family (NULL
+`type.ref`) and remains latent behind the eligibility gate.
 
 Repro (in-process, e.g. from a selftest calling the internal API in `src/mccjit_embed.c`):
 ```
@@ -119,7 +124,7 @@ Next steps to fix:
   handling in the reemit epilogue path, not the DATA symbol (the DATA sym is only a reloc
   target). Compare the AST-node stream for a pointer-return vs an int-return leaf.
 
-### BUG 1b — mode-6 dispatch raw-splice orphans anon labels (switch case FIXED; ~8 residual)
+### BUG 1b — mode-6 dispatch orphans anon slot symbols — FIXED (switch + residual 8)
 Found 2026-07-14 while implementing self-JIT of mcc's own functions (`--embed-jit` over
 `src/mcc.c`). The mode-6 dispatch transform rewinds `ind` and raw-splices the saved AOT body
 (`ast_baseline_splice`) without redefining a function's anonymous label symbols; modes 1-3
@@ -135,19 +140,28 @@ Fix = mint `slot_sym` immediately before the `greloca` that uses it. **Confirmed
 qemu:** emitting `-r` and `readelf -s` showed 8 `GLOBAL UND` L.N symbols in mcc's own object —
 deterministic output, qemu-independent. embed-all of mcc.c now LINKS with 0 unresolved labels.
 
-### BUG 1c — embed-all self-host binary segfaults at startup (mass mode-6 dispatch) — OPEN
-Exposed once BUG 1b let embed-all link (commit 68e6d384). `mcc --embed-jit … src/mcc.c` (all
-~459 KGC-eligible functions get a mode-6 dispatch stub) now produces a binary that **SIGSEGVs at
-startup even with `MCC_JIT=0`** (so it is NOT the runtime recompile — the AOT baseline reached via
-the dispatch stubs is itself broken at this scale). Isolation done: a PLAIN self-host (no
-`--embed-jit`) of the same mcc.c runs correctly (rc=22); small embed-jit programs (int and the
-foldm_acos-class double) run correctly with `recompiles=2`; jit selftests 29/29; exec 296/296. So
-the bug is specific to applying mode-6 dispatch across the full self-host function set. Next:
-bisect by embedding a growing subset (`--jit-functions a,b,c…`) to find the function whose stub
-breaks startup, then compare its dispatch/baseline-splice codegen against a working one. Repro:
-`mcc -B<build> --embed-jit <mcc defines/includes> -O1 src/mcc.c <blobs> -o mccFull` then run
-`MCC_JIT=0 mccFull -c t.c` in amd64 docker → rc=139.
-Impact: only full embed-all self-JIT of mcc; targeted `--jit-functions` and `-run` work fine.
+### BUG 1c — embed-all self-host startup crash — FIXED; JIT-on leaves a benign error leak
+Exposed once BUG 1b let embed-all link. **FIXED (commit cb16ed00):** the `MCC_JIT=0` startup
+SIGSEGV was `body_sym` (the AOT-baseline entry the dispatch slot points at) having the SAME
+early-creation bug as `slot_sym` — undefined by the intervening `set_global_sym`/
+`mccjit_embed_note`; unlike `slot_sym` its `R_X86_64_64` .data slot-init reloc resolves SILENTLY
+to 0, giving a NULL slot → `jmp *NULL` at the first call (found via the whole-tree `MCC_TRACE`
+build: last successful entry then RIP=0). Fix = mint `body_sym` right before its use too.
+Result: `mcc --embed-jit src/mcc.c` now RUNS as a pure-AOT compiler (`MCC_JIT=0`, rc correct).
+With `MCC_JIT=1` it also no longer crashes (after the enum fix 20ce0a42) and produces correct
+output, self-recompiling ~19 functions (731 KGC hits).
+
+**Remaining (OPEN, cosmetic): JIT-on speculative-recompile error leak.** Recompiling an mcc
+function that calls a *static* (local-linkage, non-`dlsym`-able) callee — e.g. `read32le`,
+`host_clock_ms`, `so_jit_env` — fails at `mcc_relocate(js)` with "unresolved reference"; the
+recompile correctly bails to AOT (output stays correct), but the diagnostics print and leak
+into the exit code (`rc=1`). The right fix is to bail these at SERIALIZE (refuse to serialize a
+function whose intent references a static/local-linkage function, since it can never be
+`dlsym`-resolved at recompile) — NOT to suppress errors at runtime (tried gating `error1` on
+`mccjit_is_internal_compile()`; the early return skips error1's cleanup and made it worse —
+reverted). Detect via the callee sym's linkage in the serialize handle loop
+(`src/mccjit_intent.c`). Impact: only full embed-all self-JIT of mcc; targeted
+`--jit-functions <leaf fn>` and `-run` are clean.
 
 ### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS)
 Pre-existing, config-specific; documented in memory [[embedjit-arm64-vla-o1-crash]].
