@@ -35,6 +35,7 @@ MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) { MCC_TRACE("enter\n");
 void ast_reemit_extern(Sym *sym, AstArena *ast);
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
 void mcc_jit_publish(void **slot, void *variant);
+void mcc_jit_export_local(MCCState *s1, const char *name);
 
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
@@ -267,6 +268,26 @@ typedef struct MccjitEmbedFn {
 } MccjitEmbedFn;
 
 MCCJIT_LOCAL MccjitEmbedFn *mccjit_embed_fns;
+
+static char **mccjit_export_names;
+static int mccjit_export_n, mccjit_export_cap;
+
+MCCJIT_LOCAL void mccjit_note_export_name(const char *name) { MCC_TRACE("enter\n");
+	int i;
+	if (!name || !name[0])
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 0; i < mccjit_export_n; i++)
+		if (!strcmp(mccjit_export_names[i], name))
+			{ MCC_TRACE("br\n"); return; }
+	if (mccjit_export_n == mccjit_export_cap) { MCC_TRACE("br\n");
+		int nc = mccjit_export_cap ? mccjit_export_cap * 2 : 32;
+		char **np = mcc_realloc(mccjit_export_names, (size_t)nc * sizeof(char *));
+		if (!np) { MCC_TRACE("br\n"); return; }
+		mccjit_export_names = np;
+		mccjit_export_cap = nc;
+	}
+	mccjit_export_names[mccjit_export_n++] = mcc_strdup(name);
+}
 
 void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("enter\n");
 	MccjitBuf b;
@@ -1136,6 +1157,11 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		mcc_add_symbol(s1, "mccjit_boot_swap", (void *)mccjit_boot_swap);
 		mcc_add_symbol(s1, "mccjit_boot_swap_async",
 									 (void *)mccjit_boot_swap_async);
+	} else if (getenv("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
+		int i;
+		s1->rdynamic = 1;
+		for (i = 0; i < mccjit_export_n; i++)
+			{ MCC_TRACE("br\n"); mcc_jit_export_local(s1, mccjit_export_names[i]); }
 	}
 	cstr_new(&cs);
 	if (async)
@@ -1196,6 +1222,14 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		mcc_free(e);
 	}
 	mccjit_embed_fns = NULL;
+	{
+		int i;
+		for (i = 0; i < mccjit_export_n; i++)
+			{ MCC_TRACE("br\n"); mcc_free(mccjit_export_names[i]); }
+		mcc_free(mccjit_export_names);
+		mccjit_export_names = NULL;
+		mccjit_export_n = mccjit_export_cap = 0;
+	}
 }
 
 int mccjit_selftest(void) { MCC_TRACE("enter\n");

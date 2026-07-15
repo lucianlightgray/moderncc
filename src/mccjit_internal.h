@@ -85,6 +85,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len, MccjitIntent *it);
 MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it);
 MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it);
+MCCJIT_LOCAL void mccjit_note_export_name(const char *name);
 
 #endif /* MCC_EMBED_JIT */
 #endif /* MCC_JIT_INTERNAL_H */

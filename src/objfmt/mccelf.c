@@ -1250,6 +1250,9 @@ redo:
 			}
 
 			if (gotplt_entry == AUTO_GOTPLT_ENTRY) { MCC_TRACE("br\n");
+				if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
+					continue;
+				}
 				if (sym->st_shndx == SHN_UNDEF) { MCC_TRACE("br\n");
 					ElfW(Sym) * esym;
 					int dynindex;
@@ -1353,6 +1356,30 @@ ST_FUNC int set_global_sym(MCCState *s1, const char *name, Section *sec, addr_t 
 		{ MCC_TRACE("br\n"); offs = sec->data_offset; }
 	return set_elf_sym(symtab_section, offs, 0,
 										 ELFW(ST_INFO)(name ? STB_GLOBAL : STB_LOCAL, STT_NOTYPE), 0, shn, name);
+}
+
+ST_FUNC void mcc_jit_export_local(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
+	char buf[512];
+	const char *ln = name;
+	ElfW(Sym) * sym;
+	if (!name || !name[0] || !symtab_section)
+		{ MCC_TRACE("br\n"); return; }
+	if (s1->leading_underscore) { MCC_TRACE("br\n");
+		buf[0] = '_';
+		pstrcpy(buf + 1, sizeof(buf) - 1, name);
+		ln = buf;
+	}
+	for_each_elem(symtab_section, 1, sym, ElfW(Sym)) {
+		const char *n2 = (char *)symtab_section->link->data + sym->st_name;
+		if (sym->st_shndx == SHN_UNDEF || sym->st_shndx >= SHN_LORESERVE)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL)
+			{ MCC_TRACE("br\n"); continue; }
+		if (strcmp(n2, ln))
+			{ MCC_TRACE("br\n"); continue; }
+		sym->st_info = ELFW(ST_INFO)(STB_GLOBAL, ELFW(ST_TYPE)(sym->st_info));
+		break;
+	}
 }
 
 static void add_init_array_defines(MCCState *s1, const char *section_name) { MCC_TRACE("enter\n");

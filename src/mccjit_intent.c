@@ -408,9 +408,11 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		int64_t tv = handles.token_v[k];
 		mccjit_put_u64(buf, handles.raw[k]);
 		mccjit_put_u64(buf, (uint64_t)tv);
-		if (tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)
-			{ MCC_TRACE("br\n"); mccjit_put_str(buf, get_tok_str((int)tv, NULL)); }
-		else
+		if (tv >= TOK_IDENT && tv < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
+			const char *nm = get_tok_str((int)tv, NULL);
+			mccjit_note_export_name(nm);
+			mccjit_put_str(buf, nm);
+		} else
 			{ MCC_TRACE("br\n"); mccjit_put_str(buf, ""); }
 		mccjit_emit_type_record(buf, &handles, k);
 	}
