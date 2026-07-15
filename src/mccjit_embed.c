@@ -197,7 +197,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mccjit_last_nsse = nsse;
 		allgp = scalar_ok && nsse == 0 && !ret_fp;
 		mccjit_last_mixed = scalar_ok && !allfp && !allgp;
-		mccjit_last_kgc_ok = scalar_ok;
+		mccjit_last_kgc_ok = scalar_ok && mccjit_last_purity != AST_PURITY_IMPURE;
 	}
 
 	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
@@ -289,10 +289,26 @@ MCCJIT_LOCAL void mccjit_note_export_name(const char *name) { MCC_TRACE("enter\n
 	mccjit_export_names[mccjit_export_n++] = mcc_strdup(name);
 }
 
+/* Functions the JIT engine itself calls (directly or via MCC_TRACE/logging)
+   must never be JIT-swapped: doing so re-enters the swap machinery when the
+   engine runs and recurses to a stack overflow. Only self-host builds carry
+   these names, so this is a no-op for ordinary programs. */
+static int mccjit_engine_internal(const char *name) { MCC_TRACE("enter\n");
+	if (!strncmp(name, "mccjit_", 7) || !strncmp(name, "mcc_jit_", 8))
+		{ MCC_TRACE("br\n"); return 1; }
+	if (!strcmp(name, "mcc_log_enabled") || !strcmp(name, "mcc_log_enabled_st") ||
+			!strcmp(name, "mcc_trace_at") || !strcmp(name, "mcc_logf") ||
+			!strcmp(name, "mcc_log_tag"))
+		{ MCC_TRACE("br\n"); return 1; }
+	return 0;
+}
+
 void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("enter\n");
 	MccjitBuf b;
 	MccjitEmbedFn *e;
 	if (!name || !name[0] || !ast || !sym || mccjit_internal_compile)
+		{ MCC_TRACE("br\n"); return; }
+	if (mccjit_engine_internal(name))
 		{ MCC_TRACE("br\n"); return; }
 	for (e = mccjit_embed_fns; e; e = e->next)
 		{ MCC_TRACE("br\n"); if (!strcmp(e->name, name))
