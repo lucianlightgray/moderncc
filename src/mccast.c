@@ -656,6 +656,9 @@ static int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
 int ast_active;
 static int ast_replay_env;
 static int ast_replay_dump;
+static int ast_verify_env;
+static const char *ast_verify_out;
+static const char *ast_verify_diff;
 static int ast_graft_limit;
 static int ast_graft_total;
 static int ast_promo_limit;
@@ -1166,6 +1169,9 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 	ast_replay_env = s1->optimize >= 1;
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
+	ast_verify_env = ast_env_int("MCC_AST_VERIFY", 0);
+	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");
+	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
 	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
@@ -10990,6 +10996,28 @@ static int ast_try_active;
 static int ast_body_ind_sv;
 static addr_t ast_reloc0_sv;
 
+static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
+																 int blen, const unsigned char *repl,
+																 int rlen) {
+	int lim = blen < rlen ? blen : rlen;
+	int d = 0;
+	while (d < lim && base[d] == repl[d])
+		d++;
+	fprintf(stderr, "[ast-diff] %s: baseline %d B, replay %d B", fn, blen, rlen);
+	if (d == lim && blen == rlen)
+		fprintf(stderr, " (code identical — relocation/length divergence)\n");
+	else
+		fprintf(stderr, ", first diff @ +%d\n", d);
+	int lo = d - 8 < 0 ? 0 : d - 8;
+	fprintf(stderr, "  base @+%d:", lo);
+	for (int i = lo; i < lo + 96 && i < blen; i++)
+		fprintf(stderr, " %02x", base[i]);
+	fprintf(stderr, "\n  repl @+%d:", lo);
+	for (int i = lo; i < lo + 96 && i < rlen; i++)
+		fprintf(stderr, " %02x", repl[i]);
+	fprintf(stderr, "\n");
+}
+
 void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
 	ast_fn_switch = 0;
@@ -12584,6 +12612,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										memcmp(rsec2->data + ast_reloc0_sv, orig_rel, rel_len) == 0);
 				ast_fn_faithful = faithful;
 
+				if (ast_verify_diff && ast_verify_diff[0] && !faithful &&
+						(!strcmp(ast_verify_diff, "1") || !strcmp(ast_verify_diff, "all") ||
+						 strstr(funcname, ast_verify_diff)))
+					ast_verify_dump_diff(funcname, orig, body_len,
+															 cur_text_section->data + ast_body_ind_sv, new_len);
+
 				ast_ltemp_cur = saved_loc;
 				ast_ltemp_n = 0;
 				if (ast_vlat_env && faithful) { MCC_TRACE("br\n");
@@ -13054,6 +13088,42 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																						ast_reloc0_sv, rsym);
 			mcc_free(orig);
 			mcc_free(orig_rel);
+		}
+		if (ast_verify_env) {
+			const char *ast_verdict;
+			int ast_gap = 0;
+			if (ast_fn_faithful) {
+				ast_verdict = "faithful";
+			} else if (ast_desync) {
+				ast_verdict = "desync";
+				ast_gap = 1;
+			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) {
+				ast_verdict = "empty";
+			} else if (ast_bail) {
+				ast_verdict = "bail";
+			} else if (ast_vn != 0 || ast_cf_top != 0) {
+				ast_verdict = "stackresidue";
+				ast_gap = 1;
+			} else {
+				ast_verdict = "unfaithful";
+				ast_gap = 1;
+			}
+			const char *ast_vfile = mcc_state && mcc_state->current_filename
+																	? mcc_state->current_filename
+																	: "?";
+			if (ast_verify_out && ast_verify_out[0]) {
+				FILE *ast_vf = fopen(ast_verify_out, "a");
+				if (ast_vf) {
+					fprintf(ast_vf, "%s\t%s\t%s\n", ast_verdict, ast_vfile, funcname);
+					fclose(ast_vf);
+				}
+			} else {
+				fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", ast_verdict, ast_vfile,
+								funcname);
+			}
+			if (ast_verify_env >= 2 && ast_gap)
+				mcc_error_noabort("ast-verify: %s replay for '%s'", ast_verdict,
+													funcname);
 		}
 #ifdef MCC_EMBED_JIT
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&

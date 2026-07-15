@@ -6,3 +6,6 @@
 
 Dockerfile      text eol=lf
 *.dockerfile    text eol=lf
+
+tests/ast/*.cmake               text eol=lf
+tests/ast/verify-baseline/*     text eol=lf

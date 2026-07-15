@@ -189,3 +189,27 @@ isolation — these are environment/emulation artifacts, not compiler bugs:
   parallelism flakes — pass in isolation; also seen as spurious gcc SIGSEGVs mid-build).
 Real regressions show up as a *different* failing test; validate JIT/codegen work with
 `ctest -R jit/` + `ctest -R ast/` and per-test serial reruns, not the full parallel sweep.
+
+### DONE (gate) / TODO (port) — Windows support for the new JIT embed
+`MCC_EMBED_JIT` default flipped OFF→ON in `e0fca0a5`, so `src/mccjit_embed.c` now compiles on
+every target — but it is POSIX/glibc-only: `#include <pthread.h> <sys/mman.h> <sys/wait.h>
+<unistd.h>` and uses `fork`/`waitpid`/`mmap`/`munmap`/`pthread_*`/`pthread_atfork`. None of
+those exist under MSVC (`error C1083: 'pthread.h'`), and mingw lacks `sys/mman.h`/`fork`/
+`sys/wait.h` too, so both WIN32 toolchains break. Stopgap to unbreak CI: gate `MCC_EMBED_JIT`
+OFF for `MCC_TARGETOS STREQUAL "WIN32"` in `CMakeLists.txt` (~line 1662 / 1805) so the embed
+stays glibc-only. **APPLIED** (CMakeLists ~line 1662, mirroring the `MCC_EMBED_MCCRT` WIN32
+gate); the canonical Windows debug + msvc builds are green again.
+
+To actually support Windows, port the embed's OS primitives:
+- executable memory: `VirtualAlloc(MEM_COMMIT, PAGE_EXECUTE_READWRITE)` / `VirtualFree` in
+  place of `mmap`/`munmap` (all ~15 `PROT_READ|WRITE|EXEC` sites).
+- threading/locks: Win32 `CRITICAL_SECTION` + `CONDITION_VARIABLE` + `InitOnceExecuteOnce`
+  (or `<threads.h>` on ucrt) for the `pthread_mutex`/`pthread_cond`/`pthread_once` pool.
+- the `fork`/`waitpid` selftest path (`mccjit_selftest_fork`) and `pthread_atfork` handlers
+  have no Win32 equivalent — either `#ifdef` them out on WIN32 or reimplement over
+  `CreateProcess`.
+- the shared-file KGC map (`open`/`ftruncate`/`MAP_SHARED`) needs `CreateFileMapping`/
+  `MapViewOfFile`.
+- the embed-blob mechanism (`bin2c` of `libmcc_jitengine.a` → `MCC_EMBED_JIT_BLOB`) assumes an
+  ELF static lib; the PE equivalent is unbuilt.
+The WIN32 CMake gate is in place; the items above remain for a real Windows JIT port.

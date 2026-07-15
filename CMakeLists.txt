@@ -1659,6 +1659,10 @@ endif()
 if(MCC_CONFIG_OPTIMIZER)
     list(APPEND _mccdefs "MCC_CONFIG_OPTIMIZER=1")
 endif()
+if(MCC_EMBED_JIT AND MCC_TARGETOS STREQUAL "WIN32")
+    set(MCC_EMBED_JIT OFF)
+    message(STATUS "mcc: MCC_EMBED_JIT not supported on WIN32 (src/mccjit_embed.c is glibc-only); building without the runtime-JIT embed")
+endif()
 if(MCC_EMBED_JIT)
     list(APPEND _mccdefs "MCC_EMBED_JIT=1")
 endif()
@@ -3330,6 +3334,23 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("exec-replay-promote/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=1;MCC_AST_INLINE=0")
         endforeach()
+
+        # AST recorder-fidelity ratchet: sweep the exec corpus under MCC_AST_VERIFY
+        # and fail if the set of non-faithful (desync/unfaithful/stackresidue)
+        # functions drifts from the checked-in per-target baseline. This is the
+        # guardrail for eventually retiring desync/faithfulness: the gap set can
+        # only shrink. Targets with no baseline yet SKIP (regenerate with REGEN=1).
+        string(TOLOWER "${MCC_CPU}-${MCC_TARGETOS}" _verify_key)
+        add_test(NAME ast-verify-ratchet
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}"
+                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                    "-DBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify-baseline/${_verify_key}.txt"
+                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-verify-tmp"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify_ratchet.cmake")
+        set_tests_properties(ast-verify-ratchet PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
 
         # Force the opt-in search knobs (V-narrow(a) narrow-to-fixpoint, V-sethi(a)
         # leaf-aware Sethi-Ullman) ON directly at -O2 across the whole exec corpus, so
