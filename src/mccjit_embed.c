@@ -5413,6 +5413,151 @@ int mccjit_selftest_slicekernel(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static void *mccjit_reemit_arena_blob(const void *buf, size_t len, AstArena *arena,
+																			MCCState **keep) { MCC_TRACE("enter\n");
+	MccjitIntent it;
+	MCCState *js;
+	Sym *sym;
+	void *entry = NULL;
+	js = mcc_new();
+	if (!js)
+		{ MCC_TRACE("br\n"); return NULL; }
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
+		mcc_exit_state(js);
+		mcc_delete(js);
+		return NULL;
+	}
+	if (it.has_external)
+		{ MCC_TRACE("br\n"); js->nostdlib = 0; }
+	sym = mccjit_rebuild_sym(&it);
+	mccjit_internal_compile = 1;
+	if (sym) { MCC_TRACE("br\n");
+		ast_fconst_reuse_disable(1);
+		ast_reemit_extern(sym, arena ? arena : it.arena);
+		ast_fconst_reuse_disable(0);
+	}
+	mcc_exit_state(js);
+	if (sym && mcc_relocate(js) == 0)
+		{ MCC_TRACE("br\n"); entry = mcc_get_symbol(js, it.fn_name); }
+	mccjit_internal_compile = 0;
+	mccjit_intent_release(&it);
+	if (entry)
+		{ MCC_TRACE("br\n"); *keep = js; }
+	else
+		{ MCC_TRACE("br\n"); mcc_delete(js); }
+	return entry;
+}
+
+static AstArena *mccjit_kernel_from_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
+	MccjitIntent it;
+	MCCState *js;
+	AstArena *k = NULL;
+	js = mcc_new();
+	if (!js)
+		{ MCC_TRACE("br\n"); return NULL; }
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(buf, len, &it) == 0) { MCC_TRACE("br\n");
+		AstLocal ret = mccjit_ret_expr(it.arena);
+		if (ret != AST_NONE && ast_slice_certifiable(it.arena, ret))
+			{ MCC_TRACE("br\n"); k = ast_slice_wrap_kernel(it.arena, ret); }
+		mccjit_intent_release(&it);
+	}
+	mcc_exit_state(js);
+	mcc_delete(js);
+	return k;
+}
+
+static int mccjit_reemit_one(const char *src, const char *fn, int arity,
+														 const int *a0, const int *a1, const int *a2,
+														 int nsamp) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *ko = NULL, *kk = NULL;
+	void *orig, *kern;
+	int fails = 0, i, mism = 0;
+	AstArena *k;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicereemit: %s stash failed\n", fn);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	k = mccjit_kernel_from_blob(blob, blen);
+	orig = mccjit_reemit_arena_blob(blob, blen, NULL, &ko);
+	kern = k ? mccjit_reemit_arena_blob(blob, blen, k, &kk) : NULL;
+	if (!k || !orig || !kern) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicereemit: %-3s reemit failed (k=%p orig=%p kern=%p) FAIL\n",
+					 fn, (void *)k, orig, kern);
+		fails++;
+	} else { MCC_TRACE("br\n");
+		for (i = 0; i < nsamp; i++) { MCC_TRACE("br\n");
+			int ro = 0, rk = 0;
+			if (arity == 1) { MCC_TRACE("br\n");
+				ro = ((int (*)(int))orig)(a0[i]);
+				rk = ((int (*)(int))kern)(a0[i]);
+			} else if (arity == 2) { MCC_TRACE("br\n");
+				ro = ((int (*)(int, int))orig)(a0[i], a1[i]);
+				rk = ((int (*)(int, int))kern)(a0[i], a1[i]);
+			} else { MCC_TRACE("br\n");
+				ro = ((int (*)(int, int, int))orig)(a0[i], a1[i], a2[i]);
+				rk = ((int (*)(int, int, int))kern)(a0[i], a1[i], a2[i]);
+			}
+			if (ro != rk)
+				{ MCC_TRACE("br\n"); mism++; }
+		}
+		printf("mccjit-selftest-slicereemit: %-3s reemitted+executed kernel, %d/%d "
+					 "samples match origin %s\n",
+					 fn, nsamp - mism, nsamp, mism ? "FAIL" : "OK");
+		if (mism)
+			{ MCC_TRACE("br\n"); fails++; }
+	}
+	ast_arena_free(k);
+	if (ko)
+		{ MCC_TRACE("br\n"); mcc_delete(ko); }
+	if (kk)
+		{ MCC_TRACE("br\n"); mcc_delete(kk); }
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
+int mccjit_selftest_slicereemit(void) { MCC_TRACE("enter\n");
+	static const int s0[6] = {0, 1, -1, 5, 12, -7};
+	static const int s1v[6] = {3, 2, 9, -4, 6, 1};
+	static const int s2v[6] = {1, -2, 4, 7, -1, 3};
+	int fails = 0;
+
+	printf("mccjit-selftest-slicereemit: begin (D3a reemit slice kernel + execute)\n");
+	fails += mccjit_reemit_one("int f(int x){return x*2+1;}", "f", 1, s0, NULL, NULL, 6);
+	fails += mccjit_reemit_one("int g(int a, int b){return a*b+a;}", "g", 2, s0, s1v,
+														 NULL, 6);
+	fails += mccjit_reemit_one("int t(int a, int b, int c){return (a+b)*c-1;}", "t", 3,
+														 s0, s1v, s2v, 6);
+
+	printf("mccjit-selftest-slicereemit: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;
