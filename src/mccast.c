@@ -12805,9 +12805,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						int slot_off = data_section->data_offset;
 						unsigned char *slotp = section_ptr_add(data_section, 8);
 						memset(slotp, 0, 8);
-						Sym *body_sym =
-							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
-						greloca(data_section, body_sym, slot_off, R_X86_64_64, 0);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
 															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
@@ -12828,6 +12825,9 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
 						greloca(cur_text_section, slot_sym, ind, R_X86_64_PC32, -4);
 						gen_le32(0);
+						Sym *body_sym =
+							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
+						greloca(data_section, body_sym, slot_off, R_X86_64_64, 0);
 						ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base,
 																aot_chain);
 						if (saved_loc < loc)
