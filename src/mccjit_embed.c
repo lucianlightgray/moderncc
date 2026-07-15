@@ -3868,6 +3868,38 @@ static unsigned char *mccjit_patch_make_tramp(void *target,
 		{ MCC_TRACE("br\n"); *immout = (void *)(p + 2); }
 	return p;
 }
+#elif defined(__aarch64__)
+static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MCC_TRACE("enter\n");
+	size_t page = host_pagesize();
+	void **slot = mcc_malloc(sizeof(void *));
+	unsigned char *p;
+	uint32_t insns[6];
+	uint64_t a;
+	if (!slot)
+		{ MCC_TRACE("br\n"); return NULL; }
+	*slot = target;
+	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
+		mcc_free(slot);
+		return NULL;
+	}
+	a = (uint64_t)(uintptr_t)slot;
+	insns[0] = 0xd2800011u | (uint32_t)((a & 0xffff) << 5);         /* movz x17,#a0 */
+	insns[1] = 0xf2a00011u | (uint32_t)(((a >> 16) & 0xffff) << 5); /* movk x17,#a1,lsl16 */
+	insns[2] = 0xf2c00011u | (uint32_t)(((a >> 32) & 0xffff) << 5); /* movk x17,#a2,lsl32 */
+	insns[3] = 0xf2e00011u | (uint32_t)(((a >> 48) & 0xffff) << 5); /* movk x17,#a3,lsl48 */
+	insns[4] = 0xf9400230u; /* ldr x16,[x17] */
+	insns[5] = 0xd61f0200u; /* br  x16 */
+	memcpy(p, insns, sizeof insns);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		mcc_free(slot);
+		return NULL;
+	}
+	if (slotout)
+		{ MCC_TRACE("br\n"); *slotout = slot; }
+	return p;
+}
 #endif
 
 static int mccjit_patch_t1(int x) { MCC_TRACE("enter\n"); return x * 2 + 1; }
@@ -3908,11 +3940,7 @@ static void mccjit_patch_free_cell(void *entry) { MCC_TRACE("enter\n");
 	mcc_free(entry);
 }
 
-#if defined(__x86_64__)
-static void mccjit_patch_swap_imm(void *handle, void *target) { MCC_TRACE("enter\n");
-	memcpy(handle, &target, 8);
-}
-
+#if defined(__x86_64__) || defined(__aarch64__)
 static int mccjit_patch_call_code(void *entry, int arg) { MCC_TRACE("enter\n");
 	return ((int (*)(int))entry)(arg);
 }
@@ -3925,6 +3953,12 @@ static void *mccjit_patch_mk_slot(void *target, void **handle) { MCC_TRACE("ente
 	if (handle)
 		{ MCC_TRACE("br\n"); *handle = slot; }
 	return entry;
+}
+#endif
+
+#if defined(__x86_64__)
+static void mccjit_patch_swap_imm(void *handle, void *target) { MCC_TRACE("enter\n");
+	memcpy(handle, &target, 8);
 }
 
 static void *mccjit_patch_mk_tramp(void *target, void **handle) { MCC_TRACE("enter\n");
@@ -3942,6 +3976,12 @@ static void mccjit_patch_free_page(void *entry) { MCC_TRACE("enter\n");
 }
 #endif
 
+#if defined(__aarch64__)
+static void mccjit_patch_free_runmem(void *entry) { MCC_TRACE("enter\n");
+	munmap(entry, host_pagesize());
+}
+#endif
+
 static const MccjitPatchStrategy mccjit_patch_reg[] = {
 		{"c-indirect", (unsigned)sizeof(void *), mccjit_patch_avail_yes,
 		 mccjit_patch_mk_cell, mccjit_patch_swap_store, mccjit_patch_call_cell,
@@ -3951,6 +3991,9 @@ static const MccjitPatchStrategy mccjit_patch_reg[] = {
 		 mccjit_patch_swap_store, mccjit_patch_call_code, mccjit_patch_free_page},
 		{"inplace-tramp", 12, mccjit_patch_avail_yes, mccjit_patch_mk_tramp,
 		 mccjit_patch_swap_imm, mccjit_patch_call_code, mccjit_patch_free_page},
+#elif defined(__aarch64__)
+		{"ptr-swap-slot", 16, mccjit_patch_avail_yes, mccjit_patch_mk_slot,
+		 mccjit_patch_swap_store, mccjit_patch_call_code, mccjit_patch_free_runmem},
 #endif
 		{"nop-pad-d3b", 8, mccjit_patch_avail_no, NULL, NULL, NULL, NULL},
 };
