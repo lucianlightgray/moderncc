@@ -311,29 +311,50 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     old variant on the hot-swap path (needs the old region's ptr/size + MCCState lifetime), the **[L2A]**
     quiescent-point instrumentation (function-entry + loop back-edges of the variant), and un-deferring J5. This
     also lets the L11A `pthread_atfork` child reset the QSBR registry (noted there).
-12. **[J10]** hot-patch strategy family — ⏳ 2 MECHANISMS + HARNESS DONE, D3B in-place-codegen deferred. Hot-patch
-    is now a benchmarkable family, not one mechanism: `jit/selftest-patch` builds two direct-callable dispatch
-    shapes — **pointer-swap slot** (`jmp *[rip+slot]`, swap = one atomic store) and **in-place trampoline
-    rewrite** (`movabs rax,imm; jmp rax`, swap = rewrite the 8-byte immediate) — validates both **functionally**
-    (initial dispatch + each swap redirects to a new target) and runs the **benchmark harness**: steady-state
-    ns/call (direct ≈1.0 vs slot/trampoline ≈2.5 — the ~1.5ns indirection cost), swap-latency ns/swap
-    (~0.7-0.8), and code-cache footprint (16/12 B). This is the J10 measurement infra the search consumes.
-    **DEFERRED:** the real **D3B** nop-padded patchable-prologue in-place code-patch (AOT prologue emission +
-    aligned atomic 5/8-byte patch + icache flush, QSBR-gated via step 11) and int3/trap + dual-map page-flip
-    variants; and feeding the measured winner into the dispatcher's per-function/workload ranking.
+12. **[J10]** hot-patch strategy family — ⏳ REGISTRY + BENCH-RANK + SLICE-INSTALL DONE, D3B in-place-codegen
+    deferred. Hot-patch is now a search-enumerable **registry** `mccjit_patch_reg[]` (`src/mccjit_embed.c`): each
+    row is `{name, footprint, available(), make(target,&handle)→entry, swap(handle,target), call_i, dispose}` — a
+    uniform interface over any patch mechanism. Rows: **c-indirect** (portable data-pointer dispatch — a swappable
+    `void*` cell; runs on every arch incl. arm64), **ptr-swap-slot** (`jmp *[rip+slot]`, x86), **inplace-tramp**
+    (`movabs rax,imm; jmp rax`, x86), and a deferred **nop-pad-d3b** row (`available()==0`, present so the table
+    documents the family). `mccjit_patch_bench_rank` measures steady-state ns/call per available row (best-of-3) →
+    best-first ordering — the benchmark-always-wins scorer over the patch axis. `jit/selftest-patch` drives the
+    registry (well-formedness + functional redirect + sorted ranking); `jit/selftest-sliceinstall` installs a
+    reemitted slice kernel behind a row (call→11) and hot-swaps to another kernel (call→22), mechanism chosen by
+    the rank (F2b/F3c). **DEFERRED:** the real **D3B** nop-padded patchable-prologue in-place code-patch (AOT
+    prologue emission + aligned atomic 5/8-byte patch + icache flush, QSBR-gated via step 11) and int3/trap +
+    dual-map page-flip variants. (Landed this session: `0eb94ec5`, `02afb6ef`.)
 
 **Phase 3 — pure-kernel backend + cross-arch + hard-gate**
-13. **[J9A/K7/K8]** M5c pure/impure slicing — ⏳ ANALYSIS FOUNDATION ONLY; the backend (largest net-new
-    investment) stays deferred. Landed the **partition analysis** `ast_fn_slice_profile` (`src/mccast.c`): it
-    profiles a function into `impure_ops` (the C-ABI boundary ops — Store / Invoke / volatile that must stay on
-    the ABI), `loads`, and `pure_compute` (the extractable register-value kernel) — a function with many
-    pure_compute + few impure_ops is the strong slicing candidate. This is the analysis that the non-ABI kernel
-    codegen (K7) and inline-vs-shim (K8) will consume. Test: `jit/selftest-slice` (pure fn→0 boundaries; 1 store
-    →1; 2 stores→2; a call→1; loads counted). **DEFERRED — the actual backend, a multi-week project unsuitable
-    for an autonomous step (miscompile-risky):** the statement-level slicing *transform* (extract the pure
-    kernel, keep impure ops as bound C-ABI calls); **[K7]** the non-ABI register calling convention as a second
-    codegen row (`gfunc_prolog` spills all params to frame today — the kernel would keep them in registers +
-    carry its own pre/post-Call ABI harness at boundaries); **[K8]** inline-vs-shim as a benchmarked search axis.
+13. **[J9A/K7/K8]** M5c pure/impure slicing — ✅ C-ABI SLICE PIPELINE DONE end-to-end
+    (extract→certify→wrap→reemit→**execute**→install→search); **[K7]** non-ABI register convention still deferred.
+    The partition analysis `ast_fn_slice_profile` now has a full consuming pipeline, all `MCC_EMBED_JIT`,
+    sound-by-construction, default build byte-identical:
+    - `ast_slice_extract` — lift any connected subtree into a fresh pre-order-renumbered arena (out-of-slice links
+      fall to AST_NONE); `jit/selftest-sliceextract` (every node of 5 fns as a root, 41 slices).
+    - `ast_slice_certifiable` + `ast_slice_equiv` — the soundness oracle. A slice is **certifiable** iff it is a
+      pure integer kernel the eval-slice interpreter fully models (whitelisted kinds, int types, no load/call/
+      store); **C4b** uncertifiable⇒never-patchable, one-sided safe. `equiv` is a sampled differential check over
+      the shared live-in offset space. Also fixed a latent defect that made the whole eval-slice oracle a silent
+      no-op on deserialized intent arenas — operation nodes carry `type_t==0` there — via `ast_eval_slice_wtype`
+      (infer an op's int width from its leaves). `jit/selftest-sliceoracle`.
+    - `ast_slice_live_ins` — the kernel's param signature (B2b); `jit/selftest-slicekernel`.
+    - `ast_slice_wrap_kernel` — wrap a pure slice into a BasicBlock→Return→expr function arena that passes
+      `ast_validate` (the D3a bridge); live-ins keep origin offsets = in-place-frame semantics.
+    - `mccjit_reemit_arena_blob` — reemit the kernel via `mccjit_rebuild_sym`→`ast_reemit_extern`→`mcc_relocate`→
+      `mcc_get_symbol` and **execute in-process on arm64 macOS** (dual-map W^X, no MAP_JIT; the x86-only pieces
+      are only the KGC/counter stubs, which a direct call bypasses). Param layout comes from the Sym, so building
+      the kernel Sym from the origin signature lines the frame offsets up. Matches origin 6/6; `jit/selftest-
+      slicereemit`. Install + hot-swap: `jit/selftest-sliceinstall`.
+    - `ast_slice_search` — perm×comb `combo_run` over the maximal certifiable slices of an expression, scored by
+      covered nodes, best ≤budget subset; finds the extractable kernels the memory ops force apart
+      (`*p + a*2 + b*3`→{a*2,b*3}). H1b; `jit/selftest-slicesearch`.
+    **STILL DEFERRED — the multi-week miscompile-risky backend (do it in a dedicated shadow-diff + self-host-
+    verified session):** **[K7]** the non-ABI register calling convention as a second codegen row (`gfunc_prolog`
+    spills to frame today; the C-ABI kernel path **D1a works**, D1c/D3b would keep params in registers with a
+    boundary ABI harness); **[K8]** inline-vs-shim as a benchmarked axis; float slices (C2b) and memory-boundary
+    slices via bound C-ABI ops (C2c/A2b). (Landed this session: `0c510232`, `90e706e4`, `5a203ce7`, `0127653e`,
+    `7e12755a`, `02afb6ef`, `79dba029`.)
 14. **[2B]** port the dispatch/stub tail to arm64 — ⏳ MECHANISM VALIDATED + pipeline established; libmcc port
     remaining. Proved the core arm64 JIT dispatch end-to-end under `qemu-aarch64`: a hand-emitted AArch64
     pointer-swap dispatch (`ldr x16,[pc+8]; br x16` reading a swappable data slot) + the **arm64 icache
@@ -940,13 +961,17 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   benchmarks better; **[L7A]** unify KGC + poison into one {good,bad,unknown} LFU-bounded classified set; persist
   poison to the `mmap`'d cache **only under the opt-in persistent-cache flag** (default ephemeral — see the
   reproducibility seam); (3) skip the miss-check when the M8 static oracle proves in-domain.
-- [~] **[J9A·ACTIVE] M5c — pure classifier + slice-profile analysis landed; the slicing/non-ABI BACKEND is the
-  deferred remainder** — the whole-function purity classifier `ast_fn_purity`
+- [~] **[J9A·ACTIVE] M5c — C-ABI slice pipeline LANDED end-to-end; only the [K7] non-ABI register convention
+  remains deferred** (see item 13 above for the full landing list + tests). The pure/impure **slicing transform**
+  is done for pure integer kernels: `ast_slice_extract` → `ast_slice_certifiable`/`ast_slice_equiv` (oracle) →
+  `ast_slice_live_ins` → `ast_slice_wrap_kernel` → reemit + **execute in-process** (`mccjit_reemit_arena_blob`,
+  arm64-verified) → install/hot-swap → `ast_slice_search` (perm×comb over slice regions). The whole-function
+  purity classifier `ast_fn_purity`
   (IMPURE / TIER1 memory-value-dependent / TIER0 register-value-only), wired into M5b via
-  `MccjitKgc.memoize_ok`, plus the ⏳ **partition analysis** `ast_fn_slice_profile` (impure_ops / loads /
-  pure_compute, `jit/selftest-slice`) — the slicing-candidacy analysis K7/K8 consume. **The net-new backend
-  work stays deferred (miscompile-risky, multi-week):** statement-
-  level pure/impure **slicing** (partition into pure kernels + impure C-ABI "bound" ops); **[K7]** implement
+  `MccjitKgc.memoize_ok`, plus the **partition analysis** `ast_fn_slice_profile` (impure_ops / loads /
+  pure_compute, `jit/selftest-slice`) remain the candidacy inputs. **The net-new register backend
+  stays deferred (miscompile-risky, multi-week):** the non-ABI kernel calling convention (the C-ABI path D1a is
+  the landed one); **[K7]** implement
   BOTH a C-ABI-compliant and a non-ABI register calling convention as coexisting strategy rows (`gfunc_prolog`
   spills all params to frame today) — when an Invoke/Call requires C-ABI compliance the non-ABI kernel carries
   its own pre/post-Call harness at the boundary; **[K8]** inline-vs-shim for kernel invocation is a search axis
@@ -954,13 +979,13 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   partial-specializing an impure bound call without losing ABI compliance.
 - [~] **M6 — trigger/pool: LANDED** (commit 457ca8a1) — N-worker shared queue + async lazy promotion +
   hot-counter (`MccjitCounterState`, threshold default 1000, `MCC_JIT_HOT_THRESHOLD`). x86_64-only counter stub.
-- [ ] **[J10·ACTIVE] M7 — hot-patch strategy FAMILY** (was: the single `jit-patchpoint` row). Hot-patching is
-  not one mechanism — the JIT should implement **many *how-to-patch* strategies** as search-selectable rows, so
-  the dispatch/swap mechanism is itself a dial the search scores (like the opt-level dial). Known members: (a)
-  M5's indirect pointer-swap dispatcher (landed); (b) D3B nop-padded patchable prologue for in-place code-patch
-  (`jit-patchpoint`); (c) further variants (int3/trap-based patch, per-call-site trampoline rewrite, dual-map
-  atomic page flip). Each is a row selectable via the gate vocabulary; correctness is the same guarded-deopt
-  contract regardless of *how* the swap lands. **New benchmark item below.**
+- [~] **[J10·ACTIVE] M7 — hot-patch strategy FAMILY: REGISTRY LANDED** (see item 12 above). Hot-patching is
+  now a search-enumerable `mccjit_patch_reg[]` table with `mccjit_patch_bench_rank`; rows: c-indirect (portable),
+  ptr-swap-slot + inplace-tramp (x86), nop-pad-d3b (deferred, `available()==0`). A reemitted slice kernel installs
+  behind a row and hot-swaps (`jit/selftest-sliceinstall`, F2b/F3c). Known remaining members: (b) D3B nop-padded
+  patchable prologue for in-place code-patch (`jit-patchpoint`); (c) further variants (int3/trap-based patch,
+  per-call-site trampoline rewrite, dual-map atomic page flip). Correctness is the same guarded-deopt contract
+  regardless of *how* the swap lands.
 - [~] **[J10] Benchmark/profile permutations of JIT hot-patch strategies** — ⏳ harness DONE. `jit/selftest-patch`
   measures **swap latency**, **steady-state call overhead**, and **code-cache footprint** for two mechanisms
   (pointer-swap slot + in-place trampoline immediate-rewrite) against the direct-call floor. **Remaining:** the
