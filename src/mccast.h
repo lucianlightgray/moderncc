@@ -105,6 +105,7 @@ void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out);
 AstArena *ast_slice_extract(const AstArena *src, AstLocal root);
 int ast_slice_certifiable(AstArena *a, AstLocal root);
 int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b, AstLocal broot);
+int ast_slice_live_ins(AstArena *a, AstLocal root, int32_t *offs, int max);
 
 /* 7A eval-slice hard gate: cumulative count of speculative spec-slices refused
    because the UB-soundness oracle flagged them (opt-in `MCC_AST_JIT_EVAL_GATE`). */

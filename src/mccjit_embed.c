@@ -5278,6 +5278,71 @@ int mccjit_selftest_sliceoracle(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static int mccjit_livein_one(const char *src, const char *fn, int want_n,
+														 int want_cert) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicekernel: %s stash failed\n", fn);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			AstLocal ret = mccjit_ret_expr(it.arena);
+			int32_t offs[16];
+			int n = (ret != AST_NONE) ? ast_slice_live_ins(it.arena, ret, offs, 16) : -2;
+			int cert = (ret != AST_NONE) ? ast_slice_certifiable(it.arena, ret) : -1;
+			int ok = (n == want_n) && (cert == want_cert);
+			printf("mccjit-selftest-slicekernel: %-3s live-ins=%d(want %d) "
+						 "certifiable=%d(want %d) %s\n",
+						 fn, n, want_n, cert, want_cert, ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-slicekernel: %s deserialize failed\n", fn);
+			fails++;
+		}
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
+int mccjit_selftest_slicekernel(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+
+	printf("mccjit-selftest-slicekernel: begin (B2b live-in kernel signature)\n");
+	fails += mccjit_livein_one("int f(int x){return x*2+1;}", "f", 1, 1);
+	fails += mccjit_livein_one("int c(int x){return 41;}", "c", 0, 1);
+	fails += mccjit_livein_one("int g(int a, int b){return a*b+a;}", "g", 2, 1);
+	fails += mccjit_livein_one("int t(int a, int b, int c){return a*b+c;}", "t", 3, 1);
+	fails += mccjit_livein_one("int r(int *p, int x){return *p + x;}", "r", 2, 0);
+
+	printf("mccjit-selftest-slicekernel: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;

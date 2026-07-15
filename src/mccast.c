@@ -11785,6 +11785,22 @@ int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 	return 0;
 #endif
 }
+
+int ast_slice_live_ins(AstArena *a, AstLocal root, int32_t *offs,
+											 int max) { MCC_TRACE("enter\n");
+#ifdef AST_EVAL_SLICE_PROVIDED
+	int cnt = 0;
+	if (!ast_eval_slice_livein(a, root, offs, &cnt, max))
+		{ MCC_TRACE("br\n"); return -1; }
+	return cnt;
+#else
+	(void)a;
+	(void)root;
+	(void)offs;
+	(void)max;
+	return -1;
+#endif
+}
 #endif
 
 static AstGateMask ast_search_gates_now(void) { MCC_TRACE("enter\n");
