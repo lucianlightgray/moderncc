@@ -5274,6 +5274,11 @@ static void mccjit_evalgate_compile(const char *src) { MCC_TRACE("enter\n");
 }
 
 int mccjit_selftest_evalgate(void) { MCC_TRACE("enter\n");
+#if !defined(__x86_64__)
+	printf("mccjit-selftest-evalgate: non-x86_64 SKIP "
+				 "(spec-slice eval-gate path is x86_64-only; arm64 dispatches mode-6)\n");
+	return 0;
+#else
 	static const char src[] = "int f(int *p){return *p + 1;}";
 	int fails = 0;
 	int r0, r1, r2;
@@ -5316,6 +5321,7 @@ int mccjit_selftest_evalgate(void) { MCC_TRACE("enter\n");
 	printf("mccjit-selftest-evalgate: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
+#endif
 }
 
 int mccjit_selftest_slice(void) { MCC_TRACE("enter\n");

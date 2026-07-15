@@ -178,20 +178,19 @@ the function's own sym (`s != sym`) so a recursive static function still recompi
 error-suppression. Validated: `ctest -R jit/` 36/36 (incl. `selftest-stage2`, whose `abs` callee
 is extern/global → not bailed); no regressions.
 
-### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS)
-Pre-existing, config-specific; documented in memory [[embedjit-arm64-vla-o1-crash]].
-An `MCC_EMBED_JIT=1` build of `mcc` on arm64/macOS **deterministically SIGSEGVs (rc=139)**
-compiling `tests/exec/vla/basic.c` at `-O1` — a plain compile, no `--embed-jit` flag. Surfaces
+### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS) — RESOLVED (no longer reproduces at HEAD)
+Was: an `MCC_EMBED_JIT=1` build of `mcc` on arm64/macOS **deterministically SIGSEGV'd (rc=139)**
+compiling `tests/exec/vla/basic.c` at `-O1` — a plain compile, no `--embed-jit` flag. Surfaced
 as **14 `exec-*/basic` ctest failures** (replay, replay-tmpl, replay-promote, narrowfix, vlat,
 zerobss, interchange, fusion, tile, mergestrings, search, search-emitsize, search-emitiso,
 search-threads) because every `*/basic` runner batches a 295-case set including that VLA source.
-- Reproduced 3/3 on a pristine pre-change embed `mcc` (not from any recent JIT work).
-- Config-specific: the embed-**off** build compiles the same file fine (rc=0). So it is the
-  `MCC_EMBED_JIT=1` build config interacting with the VLA path at `-O1`, not the front-end in
-  general, and not the emitiso `-dt` scratch-section UAF (that was fixed in 7ee2207e; crash
-  persists after).
-Next steps: bisect what the embed build config changes (blob embedding / static-engine link /
-extra defines) that perturbs `-O1` VLA codegen; reproduce under ASan on an embed build.
+**RESOLVED (verified 2026-07-15):** on a clean-rebuilt (`--clean-first`) `cmake-build-embedjit`
+(`MCC_EMBED_JIT=ON`, clang) at HEAD, `mcc -O1 -c tests/exec/vla/basic.c` succeeds 5/5 (rc=0),
+compile+run correct at `-O0..-O3`, and all 14 `exec-*/basic` variants PASS (`ctest -R basic$`
+34/34). Not bisected to a single commit; the crash disappeared across the JIT embed unification /
+SOC-split refactor window (e0fca0a5 + the `mccjit_embed.c` split). Memory
+[[embedjit-arm64-vla-o1-crash]] updated: the 14 `*/basic` failures are no longer expected noise on
+the arm64 embed host — if they reappear that's a real regression.
 
 ### BUG 3 (hardening/audit) — brace-initialized automatic `Operand` unions leave `e.v` garbage — AUDITED CLEAN (2026-07-15)
 Documented in memory [[union-init-partial-zero]]. The per-arch assembler `Operand` structs
