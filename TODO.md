@@ -77,10 +77,25 @@ Memory: [[mcc-jit-unification]] updated with all of the above.
 
 ## Known bugs (to fix)
 
-### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit`
+### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit` — FIXED (2026-07-15)
 Discovered 2026-07-14 while validating the `MCCJIT_ROLE_DATA` feature above. Independent of
 that feature (reproduces with no string literal involved).
-**Pointer-return MITIGATED (commit 407df3a8):** `ast_jit_eligible` rejects a `VT_PTR` return.
+**FIXED (2026-07-15):** Root cause = `mccjit_rebuild_sym` (`src/mccjit_intent.c`) hardcoding the
+rebuilt signature's return `type.ref = NULL`. The intent carried only the return *base*
+`ret_type_t`, no pointee, so a `VT_PTR` return rebuilt as `{VT_PTR, ref=NULL}`; the return cast
+`verify_assign_cast`'s `VT_PTR` case then deref'd it via `pointed_type` (`&NULL->type`) →
+SIGSEGV in `ast_replay_body`'s `AST_Return`. (Pointer arithmetic in the body already replayed
+correctly — it uses the AST node's rebuilt ref, not the signature.) Fix: serialize the return
+pointee as a handle-table entry (intern `sig->type.ref` with `mccjit_role_for_base`; new
+`MccjitIntent.ret_type_ref`; `MCCJIT_INTENT_FORMAT` 5→6) and rebuild it via `mccjit_build_rec`
+in `mccjit_rebuild_sym`. The now-unnecessary `VT_PTR`-return rejection in `ast_jit_eligible`
+(`src/mccast.c`) is removed, so pointer-returning functions JIT correctly instead of always
+deopting. New `jit/selftest-ptrret`: `char*`/`int*` pointer-arithmetic returns + the
+string-literal (`MCCJIT_ROLE_DATA`) + pointer-return combo. Validated: `ctest -R jit/` 36/36;
+exec suite 4396/4396 excluding the documented run_atexit/errors_and_warnings env noise. The
+`ast_reemit` pointer-return fault BUG 1b/1c speculated might share this family is now resolved
+for the return path.
+**Prior mitigation (commit 407df3a8):** `ast_jit_eligible` rejected a `VT_PTR` return.
 **Enum subclass FIXED (commit 20ce0a42):** BUG 1 was broader than pointer returns — ANY enum
 type (param, return, local, or an enum-typed callee) crashed the same way. Root cause: an enum
 is `VT_INT` + `VT_ENUM` (struct-mask) + a `type.ref` to the enum sym; `mccjit_role_for_base`
@@ -151,17 +166,17 @@ Result: `mcc --embed-jit src/mcc.c` now RUNS as a pure-AOT compiler (`MCC_JIT=0`
 With `MCC_JIT=1` it also no longer crashes (after the enum fix 20ce0a42) and produces correct
 output, self-recompiling ~19 functions (731 KGC hits).
 
-**Remaining (OPEN, cosmetic): JIT-on speculative-recompile error leak.** Recompiling an mcc
-function that calls a *static* (local-linkage, non-`dlsym`-able) callee — e.g. `read32le`,
-`host_clock_ms`, `so_jit_env` — fails at `mcc_relocate(js)` with "unresolved reference"; the
-recompile correctly bails to AOT (output stays correct), but the diagnostics print and leak
-into the exit code (`rc=1`). The right fix is to bail these at SERIALIZE (refuse to serialize a
-function whose intent references a static/local-linkage function, since it can never be
-`dlsym`-resolved at recompile) — NOT to suppress errors at runtime (tried gating `error1` on
-`mccjit_is_internal_compile()`; the early return skips error1's cleanup and made it worse —
-reverted). Detect via the callee sym's linkage in the serialize handle loop
-(`src/mccjit_intent.c`). Impact: only full embed-all self-JIT of mcc; targeted
-`--jit-functions <leaf fn>` and `-run` are clean.
+**JIT-on speculative-recompile error leak — FIXED (2026-07-15).** Recompiling an mcc function
+that called a *static* (local-linkage, non-`dlsym`-able) callee — e.g. `read32le`,
+`host_clock_ms`, `so_jit_env` — failed at `mcc_relocate(js)` with "unresolved reference"; the
+recompile bailed to AOT (output stayed correct) but the diagnostics printed and leaked into the
+exit code (`rc=1`). Fixed as specified — bail at SERIALIZE, not at runtime: the serialize handle
+loop in `mccjit_intent_serialize` (`src/mccjit_intent.c`) now returns `-1` (→ silent AOT
+fallback, no blob stashed, no recompile) when a NAMED handle references a `VT_FUNC` sym with
+`VT_STATIC|VT_INLINE` linkage (the exact STB_LOCAL condition from `put_extern_sym2`), excluding
+the function's own sym (`s != sym`) so a recursive static function still recompiles. No runtime
+error-suppression. Validated: `ctest -R jit/` 36/36 (incl. `selftest-stage2`, whose `abs` callee
+is extern/global → not bailed); no regressions.
 
 ### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS)
 Pre-existing, config-specific; documented in memory [[embedjit-arm64-vla-o1-crash]].
@@ -178,17 +193,23 @@ search-threads) because every `*/basic` runner batches a 295-case set including 
 Next steps: bisect what the embed build config changes (blob embedding / static-engine link /
 extra defines) that perturbs `-O1` VLA codegen; reproduce under ASan on an embed build.
 
-### BUG 3 (hardening/audit) — brace-initialized automatic `Operand` unions leave `e.v` garbage
+### BUG 3 (hardening/audit) — brace-initialized automatic `Operand` unions leave `e.v` garbage — AUDITED CLEAN (2026-07-15)
 Documented in memory [[union-init-partial-zero]]. The per-arch assembler `Operand` structs
 (e.g. `src/arch/riscv64/riscv64-asm.c`) wrap a union whose first member is a small `uint8_t
 reg` with `ExprValue e` behind it. `Operand x = { OP_..., { 0 } }` only zeroes the first union
 member; homebrew gcc-16 leaves `x.e.v` upper bytes as stack garbage (clang zeroes the whole
 union) — a host-compiler-dependent codegen bug (caused the 2026-07-03 dash-s-bytes-riscv64 CI
-failure via `mv` emitting a garbage `addi` immediate). The specific `mv` instance was fixed;
-this is an **audit item** for other pseudo-instruction cases.
-Next steps: grep the arch `*-asm.c` files for automatic `Operand`/union brace-inits whose `e`/
-`imm`/`e.v` is read without an explicit prior assignment; assign `e.v` explicitly or use the
-file-static fully-zeroed `zimm`/`zero` consts.
+failure via `mv` emitting a garbage `addi` immediate). The specific `mv` instance was fixed.
+**AUDITED 2026-07-15 — zero remaining vulnerable sites.** Only `riscv64-asm.c` and `arm-asm.c`
+have the vulnerable union at all (i386/x86_64 and arm64 lay `e` as a plain trailing member, so
+a partial brace-init well-definedly zeroes it — the class can't occur). The only two automatic
+`Operand` brace-inits in the tree are both already safe: `riscv64-asm.c:448` (`Operand imm`)
+assigns `imm.e.v` explicitly on every path that reads it, and the zero-immediate pseudo-ops
+(`mv`/`sext_w`/`nop`/`ret`) already pass the file-static fully-zeroed `&zero`/`&zimm` consts;
+`arm-asm.c:543` (`Operand shift`) only reads `.e` under `if (nb_shift)`, which is set only when
+`asm_parse_optional_shift` has fully populated it. Nothing relies on the `{0}` brace-init for a
+read. No code change needed. (If a future site appears, mirror the `mv` fix: pass `&zimm`/`&zero`,
+or assign `e.v` explicitly.)
 
 ### Not bugs — local qemu-amd64 emulation noise (do NOT chase as compiler defects)
 When running the full ctest suite in an amd64 Ubuntu container under qemu on Apple Silicon, a

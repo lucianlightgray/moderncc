@@ -343,6 +343,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	MccjitHandles handles;
 	AstLocal count, n;
 	uint32_t k;
+	uint32_t ret_ref_id = 0;
 	if (!a || !buf)
 		{ MCC_TRACE("br\n"); return -1; }
 	count = ast_count(a);
@@ -359,6 +360,13 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 														(ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
 																										: MCCJIT_ROLE_PLAIN); }
 	}
+	{
+		Sym *rsig = sym ? sym->type.ref : NULL;
+		if (rsig && rsig->type.ref)
+			{ MCC_TRACE("br\n"); ret_ref_id = mccjit_handles_intern(
+					&handles, (uint64_t)(uintptr_t)rsig->type.ref,
+					mccjit_role_for_base(rsig->type.t)); }
+	}
 	for (k = 0; k < handles.count; k++)
 		{ MCC_TRACE("br\n"); mccjit_handles_expand(&handles, k); }
 	if (handles.oom) { MCC_TRACE("br\n");
@@ -368,14 +376,21 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 
 	for (k = 0; k < handles.count; k++) { MCC_TRACE("br\n");
 		int64_t tv = handles.token_v[k];
-		if (handles.role[k] == MCCJIT_ROLE_NAMED &&
-				!(tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)) { MCC_TRACE("br\n");
-			Sym *s = (Sym *)(uintptr_t)handles.raw[k];
+		Sym *s;
+		if (handles.role[k] != MCCJIT_ROLE_NAMED)
+			{ MCC_TRACE("br\n"); continue; }
+		s = (Sym *)(uintptr_t)handles.raw[k];
+		if (!(tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)) { MCC_TRACE("br\n");
 			unsigned long off, sz;
 			if (mccjit_data_sym_info(s, &off, &sz)) { MCC_TRACE("br\n");
 				handles.role[k] = (uint8_t)MCCJIT_ROLE_DATA;
 				continue;
 			}
+			mccjit_handles_free(&handles);
+			return -1;
+		}
+		if (s && s != sym && (s->type.t & VT_BTYPE) == VT_FUNC &&
+				(s->type.t & (VT_STATIC | VT_INLINE))) { MCC_TRACE("br\n");
 			mccjit_handles_free(&handles);
 			return -1;
 		}
@@ -432,6 +447,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 														: "";
 		mccjit_put_str(buf, fname);
 		mccjit_put_u32(buf, sig ? (uint32_t)sig->type.t : (uint32_t)VT_INT);
+		mccjit_put_u32(buf, ret_ref_id);
 		mccjit_put_u32(buf, sig ? (uint32_t)sig->f.func_type : (uint32_t)FUNC_NEW);
 		for (p = sig ? sig->next : NULL; p; p = p->next)
 			{ MCC_TRACE("br\n"); np++; }
@@ -793,6 +809,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 
 	out->fn_name = mccjit_get_str(&r);
 	out->ret_type_t = mccjit_get_u32(&r);
+	out->ret_type_ref = mccjit_get_u32(&r);
 	out->func_type = mccjit_get_u32(&r);
 	out->nparam = mccjit_get_u32(&r);
 	if (r.err)
@@ -833,7 +850,9 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) { MCC_TRACE("enter\
 
 	sr = sym_push2(&global_stack, SYM_FIELD, 0, 0);
 	sr->type.t = mccjit_strip_enum((int)it->ret_type_t);
-	sr->type.ref = NULL;
+	sr->type.ref = it->ret_type_ref
+										 ? mccjit_build_rec((MccjitIntent *)it, it->ret_type_ref)
+										 : NULL;
 	sr->f.func_call = FUNC_CDECL;
 	sr->f.func_type = it->func_type ? (int)it->func_type : FUNC_NEW;
 	sr->f.func_args = it->nparam;

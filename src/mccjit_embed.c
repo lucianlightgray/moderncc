@@ -3077,6 +3077,115 @@ int mccjit_selftest_strlit(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+int mccjit_selftest_ptrret(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+
+	printf("mccjit-selftest-ptrret: begin (pointer-returning recompile)\n");
+
+	{
+		static const char src[] = "char *h(char *p, int i){ return p + i; }";
+		unsigned char *blob;
+		size_t blen;
+		MCCState *s1 = NULL;
+		char *(*h)(char *, int) = NULL;
+		char buf[8] = "ABCDEFG";
+		blob = mccjit_stash_one(src, "h", 1, &blen, &s1);
+		if (!s1 || !blob) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-ptrret: char* stash failed FAIL\n");
+			fails++;
+		} else { MCC_TRACE("br\n");
+			h = (char *(*)(char *, int))mcc_jit_recompile_blob(blob, blen);
+			if (!h) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-ptrret: char* recompile NULL FAIL\n");
+				fails++;
+			} else { MCC_TRACE("br\n");
+				int ok = (h(buf, 0) == buf) && (h(buf, 3) == buf + 3) &&
+								 (*h(buf, 3) == 'D');
+				printf("mccjit-selftest-ptrret: h(buf,3)=%p buf+3=%p *=%c %s\n",
+							 (void *)h(buf, 3), (void *)(buf + 3), *h(buf, 3),
+							 ok ? "OK" : "FAIL");
+				if (!ok)
+					{ MCC_TRACE("br\n"); fails++; }
+			}
+		}
+		if (mccjit_last_state)
+			{ MCC_TRACE("br\n"); mcc_delete(mccjit_last_state); }
+		mccjit_last_state = NULL;
+		mcc_free(blob);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+	}
+
+	{
+		static const char src[] = "int *g(int *p, int i){ return p + i; }";
+		unsigned char *blob;
+		size_t blen;
+		MCCState *s1 = NULL;
+		int *(*g)(int *, int) = NULL;
+		int arr[4] = {10, 20, 30, 40};
+		blob = mccjit_stash_one(src, "g", 1, &blen, &s1);
+		if (!s1 || !blob) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-ptrret: int* stash failed FAIL\n");
+			fails++;
+		} else { MCC_TRACE("br\n");
+			g = (int *(*)(int *, int))mcc_jit_recompile_blob(blob, blen);
+			if (!g) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-ptrret: int* recompile NULL FAIL\n");
+				fails++;
+			} else { MCC_TRACE("br\n");
+				int ok = (g(arr, 2) == arr + 2) && (*g(arr, 2) == 30);
+				printf("mccjit-selftest-ptrret: g(arr,2)=%p arr+2=%p *=%d %s\n",
+							 (void *)g(arr, 2), (void *)(arr + 2), *g(arr, 2),
+							 ok ? "OK" : "FAIL");
+				if (!ok)
+					{ MCC_TRACE("br\n"); fails++; }
+			}
+		}
+		if (mccjit_last_state)
+			{ MCC_TRACE("br\n"); mcc_delete(mccjit_last_state); }
+		mccjit_last_state = NULL;
+		mcc_free(blob);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+	}
+
+	{
+		static const char src[] = "char *s(int i){ return \"world\" + i; }";
+		unsigned char *blob;
+		size_t blen;
+		MCCState *s1 = NULL;
+		char *(*sf)(int) = NULL;
+		blob = mccjit_stash_one(src, "s", 1, &blen, &s1);
+		if (!s1 || !blob) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-ptrret: strlit+ptr stash failed FAIL\n");
+			fails++;
+		} else { MCC_TRACE("br\n");
+			sf = (char *(*)(int))mcc_jit_recompile_blob(blob, blen);
+			if (!sf) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-ptrret: strlit+ptr recompile NULL FAIL\n");
+				fails++;
+			} else { MCC_TRACE("br\n");
+				int ok = (sf(0)[0] == 'w') && (sf(1)[0] == 'o') &&
+								 (strcmp(sf(0), "world") == 0);
+				printf("mccjit-selftest-ptrret: s(0)=\"%s\" s(1)[0]=%c %s\n", sf(0),
+							 sf(1)[0], ok ? "OK" : "FAIL");
+				if (!ok)
+					{ MCC_TRACE("br\n"); fails++; }
+			}
+		}
+		if (mccjit_last_state)
+			{ MCC_TRACE("br\n"); mcc_delete(mccjit_last_state); }
+		mccjit_last_state = NULL;
+		mcc_free(blob);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+	}
+
+	printf("mccjit-selftest-ptrret: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_purity(void) { MCC_TRACE("enter\n");
 	static const struct {
 		const char *src;

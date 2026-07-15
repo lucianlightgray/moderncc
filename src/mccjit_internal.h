@@ -20,7 +20,7 @@
 #define MCCJIT_KGC_MAXARG 6
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
-#define MCCJIT_INTENT_FORMAT 5u
+#define MCCJIT_INTENT_FORMAT 6u
 
 #define MCCJIT_ROLE_PLAIN 0u
 #define MCCJIT_ROLE_NAMED 1u
@@ -68,6 +68,7 @@ typedef struct MccjitIntent {
 	int has_external;
 	char *fn_name;
 	uint32_t ret_type_t;
+	uint32_t ret_type_ref;
 	uint32_t func_type;
 	uint32_t nparam;
 	uint32_t *param_type_t;

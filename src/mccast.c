@@ -971,8 +971,6 @@ static int ast_jit_eligible(Sym *sym) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_jit_type_scalar(sig->type.t))
 		{ MCC_TRACE("br\n"); return 0; }
-	if ((sig->type.t & VT_BTYPE) == VT_PTR)
-		{ MCC_TRACE("br\n"); return 0; }
 	for (p = sig->next; p; p = p->next) { MCC_TRACE("br\n");
 		if (++np > 6)
 			{ MCC_TRACE("br\n"); return 0; }

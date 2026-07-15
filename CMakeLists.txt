@@ -3792,6 +3792,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-struct COMMAND jit_selftest_struct)
             set_tests_properties(jit/selftest-struct PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_ptrret tests/embed/jit_selftest_ptrret.c)
+            target_link_libraries(jit_selftest_ptrret PRIVATE libmcc)
+            target_include_directories(jit_selftest_ptrret PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-ptrret COMMAND jit_selftest_ptrret)
+            set_tests_properties(jit/selftest-ptrret PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_lazy tests/embed/jit_selftest_lazy.c)
             target_link_libraries(jit_selftest_lazy PRIVATE libmcc)
             target_include_directories(jit_selftest_lazy PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
