@@ -11762,6 +11762,31 @@ static int ast_eval_slice(AstArena *a, AstLocal n, const int32_t *o, const int64
 }
 #endif
 
+#if MCC_EMBED_JIT
+int ast_slice_certifiable(AstArena *a, AstLocal root) { MCC_TRACE("enter\n");
+#ifdef AST_EVAL_SLICE_PROVIDED
+	return ast_eval_slice_kind_ok(a, root, 0);
+#else
+	(void)a;
+	(void)root;
+	return 0;
+#endif
+}
+
+int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
+										AstLocal broot) { MCC_TRACE("enter\n");
+#ifdef AST_EVAL_SLICE_PROVIDED
+	return ast_eval_slice_equiv(a, aroot, b, broot);
+#else
+	(void)a;
+	(void)aroot;
+	(void)b;
+	(void)broot;
+	return 0;
+#endif
+}
+#endif
+
 static AstGateMask ast_search_gates_now(void) { MCC_TRACE("enter\n");
 	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
 				 (ast_narrow_env ? AST_SG_NARROW : 0) |

@@ -5111,6 +5111,173 @@ int mccjit_selftest_sliceextract(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static AstLocal mccjit_ret_expr(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal r, nn = ast_count(a);
+	for (r = 0; r < nn; r++) { MCC_TRACE("br\n");
+		if (ast_kind(a, r) == AST_Return && ast_nchild(a, r) == 1)
+			{ MCC_TRACE("br\n"); return ast_first_child(a, r); }
+	}
+	return AST_NONE;
+}
+
+static AstLocal mccjit_find_kind(const AstArena *a, AstLocal n,
+																 uint16_t kind) { MCC_TRACE("enter\n");
+	AstLocal c, r;
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (ast_kind(a, n) == kind)
+		{ MCC_TRACE("br\n"); return n; }
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
+		r = mccjit_find_kind(a, c, kind);
+		if (r != AST_NONE)
+			{ MCC_TRACE("br\n"); return r; }
+	}
+	return AST_NONE;
+}
+
+static AstArena *mccjit_extract_ret_slice(const char *src,
+																					const char *fn) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	AstArena *slice = NULL;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return NULL;
+	}
+	js = mcc_new();
+	if (!js) { MCC_TRACE("br\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return NULL;
+	}
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+		AstLocal ret = mccjit_ret_expr(it.arena);
+		if (ret != AST_NONE)
+			{ MCC_TRACE("br\n"); slice = ast_slice_extract(it.arena, ret); }
+		mccjit_intent_release(&it);
+	}
+	mcc_exit_state(js);
+	mcc_delete(js);
+	mcc_free(blob);
+	mcc_delete(s1);
+	return slice;
+}
+
+static int mccjit_certify_one(const char *src, const char *fn, int want,
+															int do_equiv) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-sliceoracle: %s stash failed\n", fn);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			AstLocal ret = mccjit_ret_expr(it.arena);
+			int cert = (ret != AST_NONE) ? ast_slice_certifiable(it.arena, ret) : -1;
+			int ok = (cert == want);
+			printf("mccjit-selftest-sliceoracle: %-3s certifiable=%d(want %d) %s\n", fn,
+						 cert, want, ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+			if (do_equiv && ret != AST_NONE) { MCC_TRACE("br\n");
+				AstArena *sl = ast_slice_extract(it.arena, ret);
+				AstLocal lit = mccjit_find_kind(it.arena, ret, AST_Literal);
+				int self_eq = ast_slice_equiv(it.arena, ret, it.arena, ret);
+				int slice_eq = sl ? ast_slice_equiv(it.arena, ret, sl, ast_root(sl)) : 0;
+				int neg_eq = (lit != AST_NONE)
+												 ? ast_slice_equiv(it.arena, ret, it.arena, lit)
+												 : 1;
+				printf("mccjit-selftest-sliceoracle: %-3s equiv self=%d slice=%d neg=%d "
+							 "(want 1,1,0) %s\n",
+							 fn, self_eq, slice_eq, neg_eq,
+							 (self_eq == 1 && slice_eq == 1 && neg_eq == 0) ? "OK" : "FAIL");
+				if (!(self_eq == 1 && slice_eq == 1 && neg_eq == 0))
+					{ MCC_TRACE("br\n"); fails++; }
+				ast_arena_free(sl);
+			}
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-sliceoracle: %s deserialize failed\n", fn);
+			fails++;
+		}
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
+int mccjit_selftest_sliceoracle(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+	AstArena *sc1, *sc2, *sc3;
+
+	printf("mccjit-selftest-sliceoracle: begin (C1b slice equiv + C4b certifiable)\n");
+
+	fails += mccjit_certify_one("int f(int x){return x*2+1;}", "f", 1, 1);
+	fails += mccjit_certify_one("int r(int *p, int x){return *p + x;}", "r", 0, 0);
+	fails += mccjit_certify_one("int mabs(int); int h(int x){return mabs(x)+1;}", "h",
+															0, 0);
+
+	sc1 = mccjit_extract_ret_slice("int c1(int x){return 41;}", "c1");
+	sc3 = mccjit_extract_ret_slice("int c3(int x){return 40+1;}", "c3");
+	sc2 = mccjit_extract_ret_slice("int c2(int x){return 42;}", "c2");
+	if (!sc1 || !sc2 || !sc3) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-sliceoracle: constant-slice extract failed FAIL\n");
+		fails++;
+	} else { MCC_TRACE("br\n");
+		AstLocal r1 = ast_root(sc1), r2 = ast_root(sc2), r3 = ast_root(sc3);
+		int self_eq = ast_slice_equiv(sc1, r1, sc1, r1);
+		int sem_eq = ast_slice_equiv(sc1, r1, sc3, r3);
+		int diff_eq = ast_slice_equiv(sc1, r1, sc2, r2);
+		int ok = (self_eq == 1 && sem_eq == 1 && diff_eq == 0);
+		printf("mccjit-selftest-sliceoracle: const equiv self=%d semantic(41==40+1)=%d "
+					 "diff(41!=42)=%d (want 1,1,0) %s\n",
+					 self_eq, sem_eq, diff_eq, ok ? "OK" : "FAIL");
+		if (!ok)
+			{ MCC_TRACE("br\n"); fails++; }
+	}
+	ast_arena_free(sc1);
+	ast_arena_free(sc2);
+	ast_arena_free(sc3);
+
+	printf("mccjit-selftest-sliceoracle: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;

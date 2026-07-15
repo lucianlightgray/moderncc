@@ -273,6 +273,36 @@ static int64_t ast_eval_slice_fit(int64_t x, int t) {
 	}
 }
 
+static int ast_eval_slice_wtype(AstArena *a, AstLocal n) {
+	int t;
+	if (n == AST_NONE)
+		return 0;
+	t = ast_type_t(a, n);
+	if (!ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t))
+		return t;
+	switch (ast_kind(a, n)) {
+	case AST_Binary:
+		if (ast_nchild(a, n) >= 1) {
+			int wt = ast_eval_slice_wtype(a, ast_child(a, n, 0));
+			if (wt)
+				return wt;
+			if (ast_nchild(a, n) >= 2)
+				return ast_eval_slice_wtype(a, ast_child(a, n, 1));
+		}
+		return 0;
+	case AST_Unary:
+		return ast_eval_slice_wtype(a, ast_first_child(a, n));
+	case AST_If:
+		if (ast_nchild(a, n) == 3) {
+			int wt = ast_eval_slice_wtype(a, ast_child(a, n, 1));
+			return wt ? wt : ast_eval_slice_wtype(a, ast_child(a, n, 2));
+		}
+		return 0;
+	default:
+		return 0;
+	}
+}
+
 static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 															const int64_t *val, int nenv, int64_t *out) {
 	if (n == AST_NONE)
@@ -340,10 +370,9 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 	}
 	case AST_Unary: {
 		int uop = ast_op(a, n);
-		int t = ast_type_t(a, n);
+		int t = ast_eval_slice_wtype(a, n);
 		AstLocal c = ast_first_child(a, n);
-		if (c == AST_NONE || ast_bad_type(t) || is_float(t) ||
-				!ast_eval_slice_intt(t))
+		if (c == AST_NONE || !t)
 			return 0;
 		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
 			return 0;
@@ -382,9 +411,8 @@ static int ast_eval_slice_rec(AstArena *a, AstLocal n, const int32_t *off,
 		if (ast_nchild(a, n) != 2)
 			return 0;
 		AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
-		int xt = ast_type_t(a, x);
-		if (ast_bad_type(xt) || is_float(xt) || is_float(ast_type_t(a, y)) ||
-				!ast_eval_slice_intt(xt))
+		int xt = ast_eval_slice_wtype(a, x);
+		if (!xt || is_float(ast_type_t(a, x)) || is_float(ast_type_t(a, y)))
 			return 0;
 		int64_t lv, rv;
 		if (!ast_eval_slice_rec(a, x, off, val, nenv, &lv))
@@ -517,6 +545,153 @@ static int ast_eval_slice_sound(AstArena *base, AstArena *spec, int mode,
 			return 0;
 	}
 	return 1;
+}
+
+static int ast_eval_slice_kind_ok(AstArena *a, AstLocal n, int allow_load) {
+	if (n == AST_NONE)
+		return 0;
+	switch (ast_kind(a, n)) {
+	case AST_Literal: {
+		int t = ast_type_t(a, n);
+		return !ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t) &&
+					 (ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	}
+	case AST_Ref: {
+		int r = ast_op(a, n), t = ast_type_t(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM))
+			return ast_eval_slice_intt(t) && !is_float(t);
+		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)
+			return !ast_bad_type(t) && !is_float(t) && ast_eval_slice_intt(t);
+		return 0;
+	}
+	case AST_Load: {
+		AstLocal c = ast_first_child(a, n);
+		int r, t = ast_type_t(a, n);
+		if (!allow_load || c == AST_NONE || ast_kind(a, c) != AST_Ref)
+			return 0;
+		r = ast_op(a, c);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+			return 0;
+		return ast_eval_slice_intt(t) && !is_float(t);
+	}
+	case AST_Convert: {
+		int t = ast_type_t(a, n);
+		AstLocal c = ast_first_child(a, n);
+		if (c == AST_NONE || is_float(t) || is_float(ast_type_t(a, c)))
+			return 0;
+		if (ast_bad_type(t) || !ast_eval_slice_intt(t))
+			return 0;
+		return ast_eval_slice_kind_ok(a, c, allow_load);
+	}
+	case AST_Unary: {
+		int uop = ast_op(a, n), t = ast_eval_slice_wtype(a, n);
+		AstLocal c = ast_first_child(a, n);
+		if (c == AST_NONE || !t)
+			return 0;
+		if (uop != '-' && uop != TOK_NEG && uop != '~' && uop != '!')
+			return 0;
+		return ast_eval_slice_kind_ok(a, c, allow_load);
+	}
+	case AST_Binary: {
+		int bop = ast_op(a, n);
+		AstLocal x, y;
+		if (bop == TOK_LAND || bop == TOK_LOR) {
+			uint32_t nc = ast_nchild(a, n), k;
+			for (k = 0; k < nc; k++)
+				if (!ast_eval_slice_kind_ok(a, ast_child(a, n, k), allow_load))
+					return 0;
+			return 1;
+		}
+		if (ast_nchild(a, n) != 2)
+			return 0;
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		if (!ast_eval_slice_wtype(a, x) || is_float(ast_type_t(a, x)) ||
+				is_float(ast_type_t(a, y)))
+			return 0;
+		return ast_eval_slice_kind_ok(a, x, allow_load) &&
+					 ast_eval_slice_kind_ok(a, y, allow_load);
+	}
+	case AST_If: {
+		if (ast_nchild(a, n) != 3)
+			return 0;
+		return ast_eval_slice_kind_ok(a, ast_child(a, n, 0), allow_load) &&
+					 ast_eval_slice_kind_ok(a, ast_child(a, n, 1), allow_load) &&
+					 ast_eval_slice_kind_ok(a, ast_child(a, n, 2), allow_load);
+	}
+	default:
+		return 0;
+	}
+}
+
+static int ast_eval_slice_livein(AstArena *a, AstLocal n, int32_t *offs, int *cnt,
+																 int max) {
+	AstLocal c;
+	int i, r;
+	int32_t o;
+	if (n == AST_NONE)
+		return 1;
+	if (ast_kind(a, n) == AST_Ref) {
+		r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+			o = (int32_t)(int64_t)ast_ival(a, n);
+			for (i = 0; i < *cnt; i++)
+				if (offs[i] == o)
+					return 1;
+			if (*cnt >= max)
+				return 0;
+			offs[(*cnt)++] = o;
+		}
+		return 1;
+	}
+	if (ast_kind(a, n) == AST_Load) {
+		c = ast_first_child(a, n);
+		if (c != AST_NONE && ast_kind(a, c) == AST_Ref) {
+			r = ast_op(a, c);
+			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) {
+				o = (int32_t)(int64_t)ast_ival(a, c);
+				for (i = 0; i < *cnt; i++)
+					if (offs[i] == o)
+						return 1;
+				if (*cnt >= max)
+					return 0;
+				offs[(*cnt)++] = o;
+			}
+		}
+		return 1;
+	}
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		if (!ast_eval_slice_livein(a, c, offs, cnt, max))
+			return 0;
+	return 1;
+}
+
+static int ast_eval_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
+																AstLocal broot) {
+	static const int64_t seed[8] = {0, 1, -1, 2, 7, -3, 100, 12345};
+	int32_t offs[AST_EVAL_SLICE_MAXRET];
+	int64_t val[AST_EVAL_SLICE_MAXRET];
+	int no = 0, s, i, evaluated = 0;
+	if (!ast_eval_slice_kind_ok(a, aroot, 0) ||
+			!ast_eval_slice_kind_ok(b, broot, 0))
+		return 0;
+	if (!ast_eval_slice_livein(a, aroot, offs, &no, AST_EVAL_SLICE_MAXRET))
+		return 0;
+	if (!ast_eval_slice_livein(b, broot, offs, &no, AST_EVAL_SLICE_MAXRET))
+		return 0;
+	for (s = 0; s < 8; s++) {
+		int64_t av, bv;
+		for (i = 0; i < no; i++)
+			val[i] = seed[(i + s) & 7];
+		if (!ast_eval_slice(a, aroot, offs, val, no, &av))
+			continue;
+		if (!ast_eval_slice(b, broot, offs, val, no, &bv))
+			return 0;
+		if (av != bv)
+			return 0;
+		evaluated++;
+	}
+	return evaluated > 0;
 }
 
 #endif /* AST_EVAL_SLICE_KERNEL_ONLY */
