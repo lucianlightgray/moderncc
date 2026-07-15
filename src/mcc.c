@@ -270,23 +270,23 @@ static char *default_outputfile(MCCState *s, const char *first_file) { MCC_TRACE
 	const char *name = "a";
 
 	if (first_file && strcmp(first_file, "-"))
-		name = mcc_basename(first_file);
+		{ MCC_TRACE("br\n"); name = mcc_basename(first_file); }
 	if (strlen(name) + 4 >= sizeof buf)
-		name = "a";
+		{ MCC_TRACE("br\n"); name = "a"; }
 	strcpy(buf, name);
 	ext = mcc_fileextension(buf);
 	if ((s->just_deps || s->output_type == MCC_OUTPUT_OBJ) && !s->option_r && *ext)
-		strcpy(ext, ".o");
+		{ MCC_TRACE("br\n"); strcpy(ext, ".o"); }
 	else if (s->output_type == MCC_OUTPUT_ASM && *ext)
-		strcpy(ext, ".s");
+		{ MCC_TRACE("br\n"); strcpy(ext, ".s"); }
 #ifdef MCC_TARGET_PE
 	else if (s->output_type == MCC_OUTPUT_DLL)
-		strcpy(ext, ".dll");
+		{ MCC_TRACE("br\n"); strcpy(ext, ".dll"); }
 	else if (s->output_type == MCC_OUTPUT_EXE)
-		strcpy(ext, ".exe");
+		{ MCC_TRACE("br\n"); strcpy(ext, ".exe"); }
 #endif
 	else
-		strcpy(buf, "a.out");
+		{ MCC_TRACE("br\n"); strcpy(buf, "a.out"); }
 	return mcc_strdup(buf);
 }
 
@@ -307,9 +307,9 @@ static pid_t so_fork(void) { MCC_TRACE("enter\n");
 	for (tries = 0; tries < 64; tries++) { MCC_TRACE("br\n");
 		pid_t pid = fork();
 		if (pid >= 0)
-			return pid;
+			{ MCC_TRACE("br\n"); return pid; }
 		if (errno != EAGAIN && errno != EINTR)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		usleep(2000);
 	}
 	return -1;
@@ -384,7 +384,7 @@ static uint64_t so_key(MCCState *s) { MCC_TRACE("enter\n");
 static int so_ckpt_path(char *buf, int cap, uint64_t key) { MCC_TRACE("enter\n");
 	char dir[3072];
 	if (host_cache_dir(dir, sizeof dir) != 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	snprintf(buf, cap, "%s/so-%016" PRIx64 ".ck", dir, key);
 	return 0;
 }
@@ -393,7 +393,7 @@ static int so_ckpt_read(const char *path, uint64_t key, SoCkpt *c) { MCC_TRACE("
 	FILE *f = host_fopen(path, "rb");
 	SoCkpt t;
 	if (!f)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (fread(&t, sizeof t, 1, f) != 1 || t.fmt != SO_CKPT_FMT || t.key != key) { MCC_TRACE("br\n");
 		fclose(f);
 		return -1;
@@ -411,7 +411,7 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) { MCC_TRACE("enter
 	snprintf(lockp, sizeof lockp, "%s.lock", path);
 	lockfd = open(lockp, O_CREAT | O_RDWR, 0644);
 	if (lockfd >= 0)
-		flock(lockfd, LOCK_EX);
+		{ MCC_TRACE("br\n"); flock(lockfd, LOCK_EX); }
 	if ((f = host_fopen(path, "rb"))) { MCC_TRACE("br\n");
 		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == nw->fmt && b.key == nw->key) { MCC_TRACE("br\n");
 			if (b.best_text >= 0 && (out.best_text < 0 || b.best_text < out.best_text)) { MCC_TRACE("br\n");
@@ -421,13 +421,13 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) { MCC_TRACE("enter
 				out.best_limit = b.best_limit;
 			}
 			if (b.claim_gate > out.claim_gate)
-				out.claim_gate = b.claim_gate;
+				{ MCC_TRACE("br\n"); out.claim_gate = b.claim_gate; }
 			if (b.budget_cursor > out.budget_cursor)
-				out.budget_cursor = b.budget_cursor;
+				{ MCC_TRACE("br\n"); out.budget_cursor = b.budget_cursor; }
 			if (b.limit_cursor > out.limit_cursor)
-				out.limit_cursor = b.limit_cursor;
+				{ MCC_TRACE("br\n"); out.limit_cursor = b.limit_cursor; }
 			if (b.round > out.round)
-				out.round = b.round;
+				{ MCC_TRACE("br\n"); out.round = b.round; }
 		}
 		fclose(f);
 	}
@@ -436,7 +436,7 @@ static void so_ckpt_write(const char *path, const SoCkpt *nw) { MCC_TRACE("enter
 		fwrite(&out, sizeof out, 1, f);
 		fflush(f);
 		if ((fd = fileno(f)) >= 0)
-			fsync(fd);
+			{ MCC_TRACE("br\n"); fsync(fd); }
 		fclose(f);
 		rename(tmpp, path);
 	}
@@ -459,24 +459,24 @@ static unsigned so_claim(const char *path, uint64_t key, SoCkpt *shared) { MCC_T
 	snprintf(lockp, sizeof lockp, "%s.lock", path);
 	lockfd = open(lockp, O_CREAT | O_RDWR, 0644);
 	if (lockfd >= 0)
-		flock(lockfd, LOCK_EX);
+		{ MCC_TRACE("br\n"); flock(lockfd, LOCK_EX); }
 	if ((f = host_fopen(path, "rb"))) { MCC_TRACE("br\n");
 		SoCkpt b;
 		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == SO_CKPT_FMT && b.key == key)
-			c = b;
+			{ MCC_TRACE("br\n"); c = b; }
 		fclose(f);
 	}
 	start = c.claim_gate;
 	if (start < SO_GATE_SPACE) { MCC_TRACE("br\n");
 		c.claim_gate = start + SO_CLAIM_CHUNK;
 		if (c.claim_gate > SO_GATE_SPACE)
-			c.claim_gate = SO_GATE_SPACE;
+			{ MCC_TRACE("br\n"); c.claim_gate = SO_GATE_SPACE; }
 		snprintf(tmpp, sizeof tmpp, "%s.tmp", path);
 		if ((f = host_fopen(tmpp, "wb"))) { MCC_TRACE("br\n");
 			fwrite(&c, sizeof c, 1, f);
 			fflush(f);
 			if ((fd = fileno(f)) >= 0)
-				fsync(fd);
+				{ MCC_TRACE("br\n"); fsync(fd); }
 			fclose(f);
 			rename(tmpp, path);
 		}
@@ -544,7 +544,7 @@ static long so_textsize(const char *p) { MCC_TRACE("enter\n");
 	uint64_t shoff, flags, size;
 	uint16_t shentsize, shnum, i;
 	if (!f)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (fread(h, 1, sizeof h, f) < 64 || h[0] != 0x7f || h[1] != 'E' ||
 			h[2] != 'L' || h[3] != 'F' || h[4] != 2) { MCC_TRACE("br\n");
 		fclose(f);
@@ -556,13 +556,13 @@ static long so_textsize(const char *p) { MCC_TRACE("enter\n");
 	for (i = 0; i < shnum; i++) { MCC_TRACE("br\n");
 		unsigned char sh[64];
 		if (fseek(f, (long)(shoff + (uint64_t)i * shentsize), SEEK_SET) != 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (fread(sh, 1, sizeof sh, f) < 40)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		memcpy(&flags, sh + 8, 8);
 		memcpy(&size, sh + 32, 8);
 		if (flags & 0x4u)
-			total += (long)size;
+			{ MCC_TRACE("br\n"); total += (long)size; }
 	}
 	fclose(f);
 	return total > 0 ? total : so_filesize(p);
@@ -583,7 +583,7 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 	long o;
 	int n = 0, strtab_idx = -1;
 	if (!f)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (fread(h, 1, 64, f) < 64 || h[0] != 0x7f || h[4] != 2) { MCC_TRACE("br\n");
 		fclose(f);
 		return -1;
@@ -594,7 +594,7 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 	for (i = 0; i < shnum; i++) { MCC_TRACE("br\n");
 		if (fseek(f, (long)(shoff + (uint64_t)i * shentsize), SEEK_SET) != 0 ||
 				fread(sh, 1, 64, f) < 64)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		memcpy(&type, sh + 4, 4);
 		if (type == 2) { MCC_TRACE("br\n");
 			memcpy(&symoff, sh + 24, 8);
@@ -610,7 +610,7 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 	}
 	if (fseek(f, (long)(shoff + (uint64_t)strtab_idx * shentsize), SEEK_SET) == 0 &&
 			fread(sh, 1, 64, f) == 64)
-		memcpy(&stroff, sh + 24, 8);
+		{ MCC_TRACE("br\n"); memcpy(&stroff, sh + 24, 8); }
 	for (o = 0; (uint64_t)o < symsz && n < max; o += (long)syment) { MCC_TRACE("br\n");
 		unsigned char sym[24];
 		uint32_t stname;
@@ -618,18 +618,18 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 		char nm[80];
 		int k = 0, c;
 		if (fseek(f, (long)symoff + o, SEEK_SET) != 0 || fread(sym, 1, 24, f) < 24)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		memcpy(&stname, sym, 4);
 		memcpy(&stsize, sym + 16, 8);
 		if ((sym[4] & 0xf) != 2 || stsize == 0)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		if (fseek(f, (long)stroff + stname, SEEK_SET) != 0)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		while (k < 79 && (c = fgetc(f)) > 0)
 			nm[k++] = (char)c;
 		nm[k] = 0;
 		if (!nm[0])
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		snprintf(out[n].name, sizeof out[n].name, "%s", nm);
 		out[n].size = (long)stsize;
 		out[n].cfg = 0;
@@ -645,7 +645,7 @@ static int so_copy(const char *src, const char *dst) { MCC_TRACE("enter\n");
 	size_t n;
 	int ok = 0;
 	if (!(in = host_fopen(src, "rb")))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if ((out = host_fopen(dst, "wb"))) { MCC_TRACE("br\n");
 		ok = 1;
 		while ((n = fread(buf, 1, sizeof buf, in)) > 0)
@@ -659,7 +659,7 @@ static int so_copy(const char *src, const char *dst) { MCC_TRACE("enter\n");
 	if (ok) { MCC_TRACE("br\n");
 		struct stat st;
 		if (stat(src, &st) == 0)
-			chmod(dst, st.st_mode & 07777);
+			{ MCC_TRACE("br\n"); chmod(dst, st.st_mode & 07777); }
 	}
 	return ok ? 0 : -1;
 }
@@ -668,7 +668,7 @@ static int so_spawn_timeout(const char **cv, unsigned timeout_ms) { MCC_TRACE("e
 	unsigned t0;
 	pid_t pid = so_fork();
 	if (pid < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (pid == 0) { MCC_TRACE("br\n");
 		execvp(cv[0], (char *const *)cv);
 		_exit(127);
@@ -678,10 +678,10 @@ static int so_spawn_timeout(const char **cv, unsigned timeout_ms) { MCC_TRACE("e
 		int status;
 		pid_t r = waitpid(pid, &status, WNOHANG);
 		if (r == pid)
-			return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+			{ MCC_TRACE("br\n"); return WIFEXITED(status) ? WEXITSTATUS(status) : -1; }
 		if (r < 0) { MCC_TRACE("br\n");
 			if (errno == EINTR)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			return -1;
 		}
 		if (so_stop || host_clock_ms() - t0 >= timeout_ms) { MCC_TRACE("br\n");
@@ -698,7 +698,7 @@ static int so_spawn_must(const char **cv, unsigned timeout_ms, int tries) { MCC_
 	for (k = 0; k < tries && !so_stop; k++) { MCC_TRACE("br\n");
 		rc = so_spawn_timeout(cv, timeout_ms);
 		if (rc >= 0)
-			return rc;
+			{ MCC_TRACE("br\n"); return rc; }
 		usleep((unsigned)(k + 1) * 5000u);
 	}
 	return rc;
@@ -710,14 +710,14 @@ static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 	struct rusage ru;
 	pid_t pid = so_fork();
 	if (pid < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (pid == 0) { MCC_TRACE("br\n");
 		int nul = open("/dev/null", O_RDWR);
 		if (nul >= 0) { MCC_TRACE("br\n");
 			dup2(nul, 1);
 			dup2(nul, 2);
 			if (nul > 2)
-				close(nul);
+				{ MCC_TRACE("br\n"); close(nul); }
 		}
 		execvp(cv[0], (char *const *)cv);
 		_exit(127);
@@ -732,7 +732,7 @@ static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 				int rc = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 				gettimeofday(&t1, NULL);
 				if (rc != 0)
-					return -1;
+					{ MCC_TRACE("br\n"); return -1; }
 				*usec = (long)(t1.tv_sec - t0.tv_sec) * 1000000L +
 								(long)(t1.tv_usec - t0.tv_usec);
 				*rss_kb = (long)ru.ru_maxrss;
@@ -743,7 +743,7 @@ static int so_spawn_run(const char **cv, unsigned timeout_ms, long *usec,
 			}
 			if (r < 0) { MCC_TRACE("br\n");
 				if (errno == EINTR)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				return -1;
 			}
 			if (so_stop || host_clock_ms() - tstart >= timeout_ms) { MCC_TRACE("br\n");
@@ -762,11 +762,11 @@ static long so_run_score(unsigned timeout_ms) { MCC_TRACE("enter\n");
 	for (k = 0; k < 3 && !so_stop; k++) { MCC_TRACE("br\n");
 		long usec = -1, rss = -1;
 		if (so_spawn_run(so_run_cv, timeout_ms, &usec, &rss) != 0)
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		if (best < 0 || usec < best)
-			best = usec;
+			{ MCC_TRACE("br\n"); best = usec; }
 		if (rss_best < 0 || rss < rss_best)
-			rss_best = rss;
+			{ MCC_TRACE("br\n"); rss_best = rss; }
 	}
 	so_last_rss = rss_best;
 	return best;
@@ -777,11 +777,11 @@ static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
 										unsigned timeout_ms) { MCC_TRACE("enter\n");
 	so_setenv_cfg(gate, budget, limit_lvl);
 	if (so_spawn_timeout(cv, timeout_ms) != 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (so_jitscore && so_run_cv) { MCC_TRACE("br\n");
 		long sc = so_run_score(timeout_ms);
 		if (sc >= 0)
-			return sc;
+			{ MCC_TRACE("br\n"); return sc; }
 	}
 	return so_textsize(cand_tmp);
 }
@@ -810,7 +810,7 @@ static long so_fn_find(struct so_fn *a, int n, const char *name) { MCC_TRACE("en
 	int i;
 	for (i = 0; i < n; i++)
 		if (!strcmp(a[i].name, name))
-			return a[i].size;
+			{ MCC_TRACE("br\n"); return a[i].size; }
 	return -1;
 }
 
@@ -837,7 +837,7 @@ static uint64_t so_pf_key(uint64_t fnhash) { MCC_TRACE("enter\n");
 static int so_pf_path(char *buf, int cap, uint64_t key) { MCC_TRACE("enter\n");
 	char dir[3072];
 	if (host_cache_dir(dir, sizeof dir) != 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	snprintf(buf, cap, "%s/pf-%016" PRIx64 ".ck", dir, key);
 	return 0;
 }
@@ -847,9 +847,9 @@ static int so_pf_read(uint64_t key, SoPfCkpt *c) { MCC_TRACE("enter\n");
 	FILE *f;
 	SoPfCkpt t;
 	if (so_pf_path(path, sizeof path, key) != 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (!(f = host_fopen(path, "rb")))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (fread(&t, sizeof t, 1, f) != 1 || t.fmt != SO_PF_FMT || t.key != key) { MCC_TRACE("br\n");
 		fclose(f);
 		return -1;
@@ -865,11 +865,11 @@ static void so_pf_write(uint64_t key, const SoPfCkpt *nw) { MCC_TRACE("enter\n")
 	SoPfCkpt out = *nw, b;
 	FILE *f;
 	if (so_pf_path(path, sizeof path, key) != 0)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	snprintf(lockp, sizeof lockp, "%s.lock", path);
 	lockfd = open(lockp, O_CREAT | O_RDWR, 0644);
 	if (lockfd >= 0)
-		flock(lockfd, LOCK_EX);
+		{ MCC_TRACE("br\n"); flock(lockfd, LOCK_EX); }
 	if ((f = host_fopen(path, "rb"))) { MCC_TRACE("br\n");
 		if (fread(&b, sizeof b, 1, f) == 1 && b.fmt == SO_PF_FMT &&
 				b.key == key) { MCC_TRACE("br\n");
@@ -887,7 +887,7 @@ static void so_pf_write(uint64_t key, const SoPfCkpt *nw) { MCC_TRACE("enter\n")
 		fwrite(&out, sizeof out, 1, f);
 		fflush(f);
 		if ((fd = fileno(f)) >= 0)
-			fsync(fd);
+			{ MCC_TRACE("br\n"); fsync(fd); }
 		fclose(f);
 		rename(tmpp, path);
 	}
@@ -906,13 +906,13 @@ static int so_fn_hashes(const char *path, struct so_fn *fns, int nf,
 	for (i = 0; i < nf; i++)
 		fnh[i] = 0;
 	if (!f)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	while (fscanf(f, "%79s %llx", nm, &h) == 2)
 		for (i = 0; i < nf; i++) { MCC_TRACE("br\n");
 			const char *sn = fns[i].name;
 			if (!strcmp(sn, nm) || (sn[0] == '_' && !strcmp(sn + 1, nm))) { MCC_TRACE("br\n");
 				if (!fnh[i])
-					got++;
+					{ MCC_TRACE("br\n"); got++; }
 				fnh[i] = h;
 				break;
 			}
@@ -934,7 +934,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	long best_size[SO_MAXFN], sz;
 	static const unsigned cfgs[3] = {1, 3, 7};
 	if (host_exe_path(exe, sizeof exe) <= 0)
-		pstrcpy(exe, sizeof exe, argv[0]);
+		{ MCC_TRACE("br\n"); pstrcpy(exe, sizeof exe, argv[0]); }
 	snprintf(cand, sizeof cand, "%s.mcc-pf", outfile);
 	snprintf(hashp, sizeof hashp, "%s.fnh", cand);
 	cfg = mcc_malloc(SO_MAXFN * 96);
@@ -969,7 +969,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 		int mx = fi, j;
 		for (j = fi + 1; j < nf; j++)
 			if (fns[j].size > fns[mx].size)
-				mx = j;
+				{ MCC_TRACE("br\n"); mx = j; }
 		if (mx != fi) { MCC_TRACE("br\n");
 			struct so_fn t = fns[fi];
 			fns[fi] = fns[mx];
@@ -992,7 +992,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 					best_size[fi] = c.best_size;
 				}
 				if (tried[fi] == 7)
-					cached++;
+					{ MCC_TRACE("br\n"); cached++; }
 			}
 		}
 	}
@@ -1001,17 +1001,17 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 			int m, j;
 			if (((tried[fi] >> ci) & 1) ||
 					host_clock_ms() - start >= budget_ms || so_stop)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			for (p = 0, j = 0; j < nf; j++)
 				p += snprintf(cfg + p, SO_MAXFN * 96 - p, "%s=%u;", fns[j].name,
 											j == fi ? cfgs[ci] : best_cfg[j]);
 			setenv("MCC_AST_FN_CONFIG", cfg, 1);
 			if (so_spawn_timeout(cv, 300000u) != 0)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			m = so_fn_sizes(cand, cur, SO_MAXFN);
 			sz = so_fn_find(cur, m, fns[fi].name);
 			if (sz <= 0)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			tried[fi] |= 1u << ci;
 			if (sz < best_size[fi]) { MCC_TRACE("br\n");
 				best_size[fi] = sz;
@@ -1071,11 +1071,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S") ||
 				!strcmp(argv[i], "-E") || !strcmp(argv[i], "-r") ||
 				!strcmp(argv[i], "-shared"))
-			links_exe = 0;
+			{ MCC_TRACE("br\n"); links_exe = 0; }
 	so_jitscore = so_jit_env() && links_exe;
 	key = so_key(s);
 	if (host_exe_path(exe, sizeof exe) <= 0)
-		pstrcpy(exe, sizeof exe, argv[0]);
+		{ MCC_TRACE("br\n"); pstrcpy(exe, sizeof exe, argv[0]); }
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
 	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
 	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) { MCC_TRACE("br\n");
@@ -1107,7 +1107,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			}
 			if (!strcmp(argv[i], "-c") || !strcmp(argv[i], "-S") ||
 					!strcmp(argv[i], src))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			rv[rn++] = argv[i];
 		}
 		rv[rn++] = "-run";
@@ -1164,21 +1164,21 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			}
 			cend = cstart + SO_CLAIM_CHUNK;
 			if (cend > SO_GATE_SPACE)
-				cend = SO_GATE_SPACE;
+				{ MCC_TRACE("br\n"); cend = SO_GATE_SPACE; }
 			for (g = cstart; g < cend && !so_stop && host_clock_ms() < g_dead &&
 											host_clock_ms() - start < budget_ms;
 					 g++) { MCC_TRACE("br\n");
 				long sz;
 				if (so_gate_dead(g))
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				sz = so_eval(cv, cand_tmp, g, best_budget, best_limit, cap_ms);
 				tried++;
 				if (sz >= 0 && sz < best) { MCC_TRACE("br\n");
 					best = sz;
 					best_gate = g;
 					if (have_ckpt)
-						so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit,
-												 budget_cur, limit_cur, round, best);
+						{ MCC_TRACE("br\n"); so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit,
+												 budget_cur, limit_cur, round, best); }
 				}
 			}
 		}
@@ -1206,11 +1206,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		}
 		round++;
 		if (have_ckpt)
-			so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit, budget_cur,
-									 limit_cur, round, best);
+			{ MCC_TRACE("br\n"); so_ckpt_save(ckpt, key, best_gate, best_budget, best_limit, budget_cur,
+									 limit_cur, round, best); }
 		if (gate_exhausted && budget_cur >= SO_BUDGET_SPACE &&
 				limit_cur >= SO_LIMIT_SPACE)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 
 	if (so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u) < 0) { MCC_TRACE("br\n");
@@ -1225,17 +1225,17 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	remove(cand_tmp);
 	if (mcc_log_enabled_st(s, MCC_LOG_DEBUG)) { MCC_TRACE("br\n");
 		if (so_jitscore)
-			mcc_logf_st(s, MCC_LOG_DEBUG,
+			{ MCC_TRACE("br\n"); mcc_logf_st(s, MCC_LOG_DEBUG,
 									"superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
 									"%ld us/run, peak RSS %ld KiB\n",
 									tried, host_clock_ms() - start, best_gate, best_budget,
-									best_limit, best, so_last_rss);
+									best_limit, best, so_last_rss); }
 		else
-			mcc_logf_st(s, MCC_LOG_DEBUG,
+			{ MCC_TRACE("br\n"); mcc_logf_st(s, MCC_LOG_DEBUG,
 									"superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
 									"%ld .text\n",
 									tried, host_clock_ms() - start, best_gate, best_budget,
-									best_limit, best);
+									best_limit, best); }
 	}
 	mcc_free(cv);
 	mcc_free(rv);
@@ -1264,20 +1264,20 @@ redo:
 		if (opt == OPT_HELP) { MCC_TRACE("br\n");
 			fputs(help, stdout);
 			if (s->verbose)
-				goto help2;
+				{ MCC_TRACE("br\n"); goto help2; }
 		} else if (opt == OPT_HELP2) { MCC_TRACE("br\n");
 		help2:
 			fputs(help2, stdout);
 		} else if (opt == OPT_M32 || opt == OPT_M64) { MCC_TRACE("br\n");
 			ret = mcc_tool_cross(argv, opt);
 		} else if (s->verbose)
-			printf("%s", version);
+			{ MCC_TRACE("br\n"); printf("%s", version); }
 
 		if (opt == OPT_AR)
-			ret = mcc_tool_ar(argc, argv);
+			{ MCC_TRACE("br\n"); ret = mcc_tool_ar(argc, argv); }
 #ifdef MCC_TARGET_PE
 		if (opt == OPT_IMPDEF)
-			ret = mcc_tool_impdef(argc, argv);
+			{ MCC_TRACE("br\n"); ret = mcc_tool_impdef(argc, argv); }
 #endif
 		if (opt == OPT_PRINT_DIRS) { MCC_TRACE("br\n");
 			set_environment(s);
@@ -1286,8 +1286,8 @@ redo:
 		}
 		if (opt) { MCC_TRACE("br\n");
 			if (opt < 0)
-			err:
-				ret = 1;
+			{ MCC_TRACE("br\n"); err:
+				ret = 1; }
 			mcc_delete(s);
 			return ret;
 		}
@@ -1306,34 +1306,34 @@ redo:
 			if (s->outfile && 0 != strcmp("-", s->outfile)) { MCC_TRACE("br\n");
 				ppfp = host_fopen(s->outfile, "wb");
 				if (!ppfp)
-					mcc_error_noabort("could not write '%s'", s->outfile);
+					{ MCC_TRACE("br\n"); mcc_error_noabort("could not write '%s'", s->outfile); }
 			}
 		} else if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r) || s->output_type == MCC_OUTPUT_ASM) { MCC_TRACE("br\n");
 			const char *act = s->output_type == MCC_OUTPUT_ASM ? "-S" : "-c";
 			if (s->nb_libraries)
-				mcc_error_noabort("cannot specify libraries with %s", act);
+				{ MCC_TRACE("br\n"); mcc_error_noabort("cannot specify libraries with %s", act); }
 			else if (s->nb_files > 1 && s->outfile)
-				mcc_error_noabort("cannot specify output file with %s many files", act);
+				{ MCC_TRACE("br\n"); mcc_error_noabort("cannot specify output file with %s many files", act); }
 		}
 		if (s->nb_errors)
-			goto err;
+			{ MCC_TRACE("br\n"); goto err; }
 		if (s->do_bench)
-			start_time = host_clock_ms();
+			{ MCC_TRACE("br\n"); start_time = host_clock_ms(); }
 	}
 
 	set_environment(s);
 	if (s->output_type == 0)
-		s->output_type = MCC_OUTPUT_EXE;
+		{ MCC_TRACE("br\n"); s->output_type = MCC_OUTPUT_EXE; }
 	ret = mcc_set_output_type(s, s->output_type);
 	if (ppfp)
-		s->ppfp = ppfp;
+		{ MCC_TRACE("br\n"); s->ppfp = ppfp; }
 
 	if ((s->output_type == MCC_OUTPUT_MEMORY || s->output_type == MCC_OUTPUT_PREPROCESS) && (s->dflag & 16)) { MCC_TRACE("br\n");
 		if (t)
-			s->dflag |= 32;
+			{ MCC_TRACE("br\n"); s->dflag |= 32; }
 		s->run_test = ++t;
 		if (n)
-			--n;
+			{ MCC_TRACE("br\n"); --n; }
 	}
 
 #if MCC_HOST_POSIX
@@ -1347,16 +1347,16 @@ redo:
 		{
 			extern int mccjit_embed_manifest(MCCState * s);
 			if (s->embed_jit)
-				mccjit_embed_manifest(s);
+				{ MCC_TRACE("br\n"); mccjit_embed_manifest(s); }
 		}
 #else
 		if (s->embed_jit && s->verbose)
-			printf("embed-jit manifest: functions=%s max-duration=%us%s\n",
+			{ MCC_TRACE("br\n"); printf("embed-jit manifest: functions=%s max-duration=%us%s\n",
 						 s->jit_functions ? s->jit_functions : "main", s->jit_max_duration,
-						 s->jit_max_duration == 0 ? " (unlimited)" : "");
+						 s->jit_max_duration == 0 ? " (unlimited)" : ""); }
 #endif
 		if (!s->outfile)
-			s->outfile = default_outputfile(s, s->files[0]->name);
+			{ MCC_TRACE("br\n"); s->outfile = default_outputfile(s, s->files[0]->name); }
 		MCC_TRACE_ST(s, "superopt dispatch %s -> %s\n", s->files[0]->name, s->outfile);
 		if (so(argc0, argv0, s, s->outfile) == 0) { MCC_TRACE("br\n");
 			mcc_delete(s);
@@ -1379,19 +1379,19 @@ redo:
 			ret = mcc_add_library(s, f->name);
 		} else { MCC_TRACE("br\n");
 			if (MCC_VTIER(s->verbose) == MCC_V1)
-				printf("-> %s\n", f->name);
+				{ MCC_TRACE("br\n"); printf("-> %s\n", f->name); }
 			if (!first_file)
-				first_file = f->name;
+				{ MCC_TRACE("br\n"); first_file = f->name; }
 			ret = mcc_add_file(s, f->name);
 		}
 		if (++n == s->nb_files)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r) || s->output_type == MCC_OUTPUT_ASM)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 
 	if (s->do_bench)
-		end_time = host_clock_ms();
+		{ MCC_TRACE("br\n"); end_time = host_clock_ms(); }
 
 #ifdef MCC_EMBED_JIT
 	{
@@ -1453,30 +1453,30 @@ redo:
 			;
 		} else { MCC_TRACE("br\n");
 			if (!s->outfile)
-				s->outfile = default_outputfile(s, first_file);
+				{ MCC_TRACE("br\n"); s->outfile = default_outputfile(s, first_file); }
 			MCC_TRACE_ST(s, "output_file %s type=%d\n", s->outfile, s->output_type);
 			if (!s->just_deps)
-				ret = mcc_output_file(s, s->outfile);
+				{ MCC_TRACE("br\n"); ret = mcc_output_file(s, s->outfile); }
 			if (!ret && s->gen_deps)
-				gen_makedeps(s, s->outfile, s->deps_outfile);
+				{ MCC_TRACE("br\n"); gen_makedeps(s, s->outfile, s->deps_outfile); }
 		}
 	}
 
 	done = 1;
 	if (t)
-		done = 0;
+		{ MCC_TRACE("br\n"); done = 0; }
 	else if (ret) { MCC_TRACE("br\n");
 		if (s->nb_errors)
-			ret = 1;
+			{ MCC_TRACE("br\n"); ret = 1; }
 	} else if (n < s->nb_files)
-		done = 0;
+		{ MCC_TRACE("br\n"); done = 0; }
 	else if (s->do_bench)
-		mcc_print_stats(s, end_time - start_time);
+		{ MCC_TRACE("br\n"); mcc_print_stats(s, end_time - start_time); }
 
 	mcc_delete(s);
 	if (!done)
-		goto redo;
+		{ MCC_TRACE("br\n"); goto redo; }
 	if (ppfp)
-		host_fclose(ppfp);
+		{ MCC_TRACE("br\n"); host_fclose(ppfp); }
 	return ret;
 }

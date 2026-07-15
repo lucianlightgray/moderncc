@@ -65,9 +65,9 @@ ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_
 	unsigned plt_offset, relofs;
 
 	if (s1->output_type & MCC_OUTPUT_DYN)
-		modrm = 0xa3;
+		{ MCC_TRACE("br\n"); modrm = 0xa3; }
 	else
-		modrm = 0x25;
+		{ MCC_TRACE("br\n"); modrm = 0x25; }
 
 	if (plt->data_offset == 0) { MCC_TRACE("br\n");
 		p = section_ptr_add(plt, 16);
@@ -97,7 +97,7 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
@@ -182,7 +182,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_386_PC16:
 		if (s1->output_format != MCC_OUTPUT_FORMAT_BINARY)
-			goto output_file;
+			{ MCC_TRACE("br\n"); goto output_file; }
 		write16le(ptr, read16le(ptr) + val - addr);
 		return;
 	case R_386_RELATIVE:
@@ -212,7 +212,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			x = sym->st_value - sec->sh_addr - sec->data_offset;
 			add32le(ptr + 5, -x);
 		} else
-			mcc_error_noabort("unexpected R_386_TLS_GD pattern");
+			{ MCC_TRACE("br\n"); mcc_error_noabort("unexpected R_386_TLS_GD pattern"); }
 	}
 		return;
 	case R_386_TLS_LDM: {
@@ -228,7 +228,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			memcpy(ptr - 2, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_386_NONE);
 		} else
-			mcc_error_noabort("unexpected R_386_TLS_LDM pattern");
+			{ MCC_TRACE("br\n"); mcc_error_noabort("unexpected R_386_TLS_LDM pattern"); }
 	}
 		return;
 	case R_386_TLS_LDO_32: {
@@ -256,11 +256,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
-					tls_start = s->sh_addr;
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 				if (s->sh_addr + ssz > tls_end)
-					tls_end = s->sh_addr + ssz;
+					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + ssz; }
 				if (s->sh_addralign > tls_align)
-					tls_align = s->sh_addralign;
+					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
 		if (tls_end > tls_start) { MCC_TRACE("br\n");

@@ -35,7 +35,7 @@ static void parse_string(const char *p, int len);
 static int pp_in_system_header(void) { MCC_TRACE("enter\n");
 	BufferedFile *wf;
 	if (!mcc_state->error_set_jmp_enabled)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
 		;
 	return wf && wf->system_header;
@@ -172,7 +172,7 @@ tail_call:
 	mcc_free(al);
 	al = next;
 	if (al)
-		goto tail_call;
+		{ MCC_TRACE("br\n"); goto tail_call; }
 	*pal = al;
 }
 
@@ -181,7 +181,7 @@ static void tal_free_impl(TinyAlloc **pal, void *p MCC_TAL_DEBUG_PARAMS) { MCC_T
 	tal_header_t *header;
 
 	if (!p)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	header = (tal_header_t *)p - 1;
 #if MCC_TAL_DEBUG
 	if (header->line_num < 0) { MCC_TRACE("br\n");
@@ -190,7 +190,7 @@ static void tal_free_impl(TinyAlloc **pal, void *p MCC_TAL_DEBUG_PARAMS) { MCC_T
 		fprintf(stderr, "%s:%d: %d bytes\n",
 						header->file_name, (int)-header->line_num, (int)header->size);
 	} else
-		header->line_num = -header->line_num;
+		{ MCC_TRACE("br\n"); header->line_num = -header->line_num; }
 #endif
 	al = *pal;
 	while ((uint8_t *)p < al->buffer || (uint8_t *)p > al->bufend)
@@ -219,7 +219,7 @@ static void *tal_realloc_impl(TinyAlloc **pal, void *p, unsigned size MCC_TAL_DE
 			al = al->next;
 		header = (tal_header_t *)p - 1;
 		if ((uint8_t *)p + header->size == al->p)
-			al->p = (uint8_t *)header;
+			{ MCC_TRACE("br\n"); al->p = (uint8_t *)header; }
 		if (al->p + adj_size > al->bufend) { MCC_TRACE("br\n");
 			ret = tal_realloc(pal, 0, size);
 			memcpy(ret, p, header->size);
@@ -273,25 +273,25 @@ ST_INLN void cstr_ccat(CString *cstr, int ch) { MCC_TRACE("enter\n");
 	int size;
 	size = cstr->size + 1;
 	if (size > cstr->size_allocated)
-		cstr_realloc(cstr, size);
+		{ MCC_TRACE("br\n"); cstr_realloc(cstr, size); }
 	cstr->data[size - 1] = ch;
 	cstr->size = size;
 }
 
 ST_INLN char *unicode_to_utf8(char *b, uint32_t Uc) { MCC_TRACE("enter\n");
 	if (Uc < 0x80)
-		*b++ = Uc;
+		{ MCC_TRACE("br\n"); *b++ = Uc; }
 	else if (Uc < 0x800)
-		*b++ = 192 + Uc / 64, *b++ = 128 + Uc % 64;
+		{ MCC_TRACE("br\n"); *b++ = 192 + Uc / 64, *b++ = 128 + Uc % 64; }
 	else if (Uc - 0xd800u < 0x800)
-		goto error;
+		{ MCC_TRACE("br\n"); goto error; }
 	else if (Uc < 0x10000)
-		*b++ = 224 + Uc / 4096, *b++ = 128 + Uc / 64 % 64, *b++ = 128 + Uc % 64;
+		{ MCC_TRACE("br\n"); *b++ = 224 + Uc / 4096, *b++ = 128 + Uc / 64 % 64, *b++ = 128 + Uc % 64; }
 	else if (Uc < 0x110000)
-		*b++ = 240 + Uc / 262144, *b++ = 128 + Uc / 4096 % 64, *b++ = 128 + Uc / 64 % 64, *b++ = 128 + Uc % 64;
+		{ MCC_TRACE("br\n"); *b++ = 240 + Uc / 262144, *b++ = 128 + Uc / 4096 % 64, *b++ = 128 + Uc / 64 % 64, *b++ = 128 + Uc % 64; }
 	else
-	error:
-		mcc_error("0x%x is not a valid universal character", Uc);
+	{ MCC_TRACE("br\n"); error:
+		mcc_error("0x%x is not a valid universal character", Uc); }
 	return b;
 }
 
@@ -341,9 +341,9 @@ static int ucn_allowed_in_identifier(unsigned int v) { MCC_TRACE("enter\n");
 	unsigned i;
 	for (i = 0; i < sizeof r / sizeof r[0]; i++)
 		if (v >= r[i].lo && v <= r[i].hi)
-			return 1;
+			{ MCC_TRACE("br\n"); return 1; }
 	if (v >= 0x10000 && v <= 0xEFFFD && (v & 0xFFFF) <= 0xFFFD)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	return 0;
 }
 
@@ -352,31 +352,31 @@ static int decode_ucn(uint8_t **pp) { MCC_TRACE("enter\n");
 	int n, i, c;
 	unsigned int v = 0;
 	if (p[0] != '\\')
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (p[1] == 'u')
-		n = 4;
+		{ MCC_TRACE("br\n"); n = 4; }
 	else if (p[1] == 'U')
-		n = 8;
+		{ MCC_TRACE("br\n"); n = 8; }
 	else
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		c = p[2 + i];
 		if (c >= '0' && c <= '9')
-			v = v * 16 + (c - '0');
+			{ MCC_TRACE("br\n"); v = v * 16 + (c - '0'); }
 		else if (c >= 'a' && c <= 'f')
-			v = v * 16 + (c - 'a' + 10);
+			{ MCC_TRACE("br\n"); v = v * 16 + (c - 'a' + 10); }
 		else if (c >= 'A' && c <= 'F')
-			v = v * 16 + (c - 'A' + 10);
+			{ MCC_TRACE("br\n"); v = v * 16 + (c - 'A' + 10); }
 		else
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 	}
 	*pp = p + 2 + n;
 	if ((v < 0xA0 && v != 0x24 && v != 0x40 && v != 0x60) || (v >= 0xD800 && v <= 0xDFFF))
-		mcc_error("universal character \\u%04x is not valid in an identifier",
-							v);
+		{ MCC_TRACE("br\n"); mcc_error("universal character \\u%04x is not valid in an identifier",
+							v); }
 	if (v >= 0xA0 && !ucn_allowed_in_identifier(v))
-		mcc_error("universal character \\u%04x is not valid in an identifier",
-							v);
+		{ MCC_TRACE("br\n"); mcc_error("universal character \\u%04x is not valid in an identifier",
+							v); }
 	return (int)v;
 }
 
@@ -425,20 +425,20 @@ static void validate_utf8_identifier(const char *s, int len) { MCC_TRACE("enter\
 		int cp = utf8_next_cp(&p, end);
 		if (cp >= 0 && leadbyte >= 0x80) { MCC_TRACE("br\n");
 			if ((cp < 0xA0 && cp != 0x24 && cp != 0x40 && cp != 0x60) || (cp >= 0xD800 && cp <= 0xDFFF) || (cp >= 0xA0 && !ucn_allowed_in_identifier(cp)))
-				mcc_error("universal character \\u%04x is not valid in an "
+				{ MCC_TRACE("br\n"); mcc_error("universal character \\u%04x is not valid in an "
 									"identifier",
-									cp);
+									cp); }
 			else if (!warned && mcc_state->warn_pedantic && mcc_state->cversion < 199901) { MCC_TRACE("br\n");
 				warned = 1;
 				if (mcc_state->pedantic_errors)
-					mcc_error("extended identifiers are a C99 feature");
+					{ MCC_TRACE("br\n"); mcc_error("extended identifiers are a C99 feature"); }
 				else
-					mcc_warning("extended identifiers are a C99 feature");
+					{ MCC_TRACE("br\n"); mcc_warning("extended identifiers are a C99 feature"); }
 			}
 			if (first && ucn_disallowed_initial(cp))
-				mcc_error("universal character \\u%04x is not valid as the "
+				{ MCC_TRACE("br\n"); mcc_error("universal character \\u%04x is not valid as the "
 									"first character of an identifier",
-									cp);
+									cp); }
 		}
 		first = 0;
 	}
@@ -447,12 +447,12 @@ static void validate_utf8_identifier(const char *s, int len) { MCC_TRACE("enter\
 ST_FUNC void cstr_cat(CString *cstr, const char *str, int len) { MCC_TRACE("enter\n");
 	int size;
 	if (len <= 0)
-		len = strlen(str) + 1 + len;
+		{ MCC_TRACE("br\n"); len = strlen(str) + 1 + len; }
 	size = cstr->size + len;
 	if (size > cstr->size_allocated)
-		cstr_realloc(cstr, size);
+		{ MCC_TRACE("br\n"); cstr_realloc(cstr, size); }
 	if (len)
-		memmove(cstr->data + cstr->size, str, len);
+		{ MCC_TRACE("br\n"); memmove(cstr->data + cstr->size, str, len); }
 	cstr->size = size;
 }
 
@@ -460,7 +460,7 @@ ST_FUNC void cstr_wccat(CString *cstr, int ch) { MCC_TRACE("enter\n");
 	int size;
 	size = cstr->size + sizeof(nwchar_t);
 	if (size > cstr->size_allocated)
-		cstr_realloc(cstr, size);
+		{ MCC_TRACE("br\n"); cstr_realloc(cstr, size); }
 	*(nwchar_t *)(cstr->data + size - sizeof(nwchar_t)) = ch;
 	cstr->size = size;
 }
@@ -483,13 +483,13 @@ ST_FUNC int cstr_vprintf(CString *cstr, const char *fmt, va_list ap) { MCC_TRACE
 	for (;;) { MCC_TRACE("br\n");
 		size += cstr->size;
 		if (size > cstr->size_allocated)
-			cstr_realloc(cstr, size);
+			{ MCC_TRACE("br\n"); cstr_realloc(cstr, size); }
 		size = cstr->size_allocated - cstr->size;
 		va_copy(v, ap);
 		len = vsnprintf(cstr->data + cstr->size, size, fmt, v);
 		va_end(v);
 		if (len >= 0 && len < size)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		size *= 2;
 	}
 	cstr->size += len;
@@ -528,7 +528,7 @@ static TokenSym *tok_alloc_new(TokenSym **pts, const char *str, int len) { MCC_T
 	int i;
 
 	if (tok_ident >= SYM_FIRST_ANOM)
-		mcc_error("memory full (symbols)");
+		{ MCC_TRACE("br\n"); mcc_error("memory full (symbols)"); }
 
 	i = tok_ident - TOK_IDENT;
 	if ((i % TOK_ALLOC_INCR) == 0) { MCC_TRACE("br\n");
@@ -567,9 +567,9 @@ ST_FUNC TokenSym *tok_alloc(const char *str, int len) { MCC_TRACE("enter\n");
 	for (;;) { MCC_TRACE("br\n");
 		ts = *pts;
 		if (!ts)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (ts->len == len && !memcmp(ts->str, str, len))
-			return ts;
+			{ MCC_TRACE("br\n"); return ts; }
 		pts = &(ts->hash_next);
 	}
 	return tok_alloc_new(pts, str, len);
@@ -585,7 +585,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv) { MCC_TRACE("enter\n");
 
 	cstr_reset(&cstr_buf);
 	if (cstr_buf.size_allocated < 32)
-		cstr_realloc(&cstr_buf, 32);
+		{ MCC_TRACE("br\n"); cstr_realloc(&cstr_buf, 32); }
 	p = cstr_buf.data;
 
 	switch (v) { MCC_TRACE("br\n");
@@ -623,7 +623,7 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv) { MCC_TRACE("enter\n");
 		FALLTHROUGH;
 	case TOK_U8STR:
 		if (v == TOK_U8STR)
-			cstr_ccat(&cstr_buf, 'u'), cstr_ccat(&cstr_buf, '8');
+			{ MCC_TRACE("br\n"); cstr_ccat(&cstr_buf, 'u'), cstr_ccat(&cstr_buf, '8'); }
 		FALLTHROUGH;
 	case TOK_STR:
 		cstr_ccat(&cstr_buf, '\"');
@@ -755,7 +755,7 @@ static int handle_eob(void) { MCC_TRACE("enter\n");
 #endif
 			len = read(bf->fd, bf->buffer, len);
 			if (len < 0)
-				len = 0;
+				{ MCC_TRACE("br\n"); len = 0; }
 			if (mcc_state->trigraphs && len > 0) { MCC_TRACE("br\n");
 				len = trigraph_replace(bf->buffer, len);
 				if (len > 2) { MCC_TRACE("br\n");
@@ -763,7 +763,7 @@ static int handle_eob(void) { MCC_TRACE("enter\n");
 					while (k < 2 && bf->buffer[len - 1 - k] == '?')
 						k++;
 					if (k > 0 && lseek(bf->fd, -(long)k, SEEK_CUR) != (off_t)-1)
-						len -= k;
+						{ MCC_TRACE("br\n"); len -= k; }
 				}
 			}
 		} else { MCC_TRACE("br\n");
@@ -772,7 +772,7 @@ static int handle_eob(void) { MCC_TRACE("enter\n");
 		total_bytes += len;
 #if MCC_CONFIG_LSP
 		if (bf->fd >= 0)
-			bf->cst_base += (unsigned long)(bf->buf_end - bf->buffer);
+			{ MCC_TRACE("br\n"); bf->cst_base += (unsigned long)(bf->buf_end - bf->buffer); }
 #endif
 		bf->buf_ptr = bf->buffer;
 		bf->buf_end = bf->buffer + len;
@@ -789,7 +789,7 @@ static int handle_eob(void) { MCC_TRACE("enter\n");
 static int next_c(void) { MCC_TRACE("enter\n");
 	int ch = *++file->buf_ptr;
 	if (ch == CH_EOB && file->buf_ptr >= file->buf_end)
-		ch = handle_eob();
+		{ MCC_TRACE("br\n"); ch = handle_eob(); }
 	return ch;
 }
 
@@ -804,11 +804,11 @@ static int handle_stray_noerror(int err) { MCC_TRACE("enter\n");
 			if (ch == '\r') { MCC_TRACE("br\n");
 				ch = next_c();
 				if (ch == '\n')
-					goto newl;
+					{ MCC_TRACE("br\n"); goto newl; }
 				*--file->buf_ptr = '\r';
 			}
 			if (err)
-				mcc_error("stray '\\' in program");
+				{ MCC_TRACE("br\n"); mcc_error("stray '\\' in program"); }
 			return *--file->buf_ptr = '\\';
 		}
 	}
@@ -856,18 +856,18 @@ static uint8_t *parse_line_comment(uint8_t *p) { MCC_TRACE("enter\n");
 			c = *++p;
 		redo:
 			if (c == '\n' || c == '\\')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			c = *++p;
 			if (c == '\n' || c == '\\')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 		if (c == '\n')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		c = handle_bs(&p);
 		if (c == CH_EOF)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (c != '\\')
-			goto redo;
+			{ MCC_TRACE("br\n"); goto redo; }
 	}
 	return p;
 }
@@ -879,10 +879,10 @@ static uint8_t *parse_comment(uint8_t *p) { MCC_TRACE("enter\n");
 			c = *++p;
 		redo:
 			if (c == '\n' || c == '*' || c == '\\')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			c = *++p;
 			if (c == '\n' || c == '*' || c == '\\')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 		if (c == '\n') { MCC_TRACE("br\n");
 			file->line_num++;
@@ -891,17 +891,17 @@ static uint8_t *parse_comment(uint8_t *p) { MCC_TRACE("enter\n");
 				c = *++p;
 			} while (c == '*');
 			if (c == '\\')
-				c = handle_bs(&p);
+				{ MCC_TRACE("br\n"); c = handle_bs(&p); }
 			if (c == '/')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			goto check_eof;
 		} else { MCC_TRACE("br\n");
 			c = handle_bs(&p);
 		check_eof:
 			if (c == CH_EOF)
-				mcc_error("unexpected end of file in comment");
+				{ MCC_TRACE("br\n"); mcc_error("unexpected end of file in comment"); }
 			if (c != '\\')
-				goto redo;
+				{ MCC_TRACE("br\n"); goto redo; }
 		}
 	}
 	return p + 1;
@@ -922,12 +922,12 @@ static uint8_t *parse_pp_string(uint8_t *p, int sep, CString *str) { MCC_TRACE("
 				mcc_error("missing terminating %c character", sep);
 			} else if (c == '\\') { MCC_TRACE("br\n");
 				if (str)
-					cstr_ccat(str, c);
+					{ MCC_TRACE("br\n"); cstr_ccat(str, c); }
 				c = *++p;
 				if (c == '\\') { MCC_TRACE("br\n");
 					c = handle_bs(&p);
 					if (c == CH_EOF)
-						goto unterminated_string;
+						{ MCC_TRACE("br\n"); goto unterminated_string; }
 				}
 				goto add_char;
 			} else { MCC_TRACE("br\n");
@@ -946,18 +946,18 @@ static uint8_t *parse_pp_string(uint8_t *p, int sep, CString *str) { MCC_TRACE("
 		} else if (c == '\r') { MCC_TRACE("br\n");
 			c = *++p;
 			if (c == '\\')
-				c = handle_bs(&p);
+				{ MCC_TRACE("br\n"); c = handle_bs(&p); }
 			if (c == '\n')
-				goto add_lf;
+				{ MCC_TRACE("br\n"); goto add_lf; }
 			if (c == CH_EOF)
-				goto unterminated_string;
+				{ MCC_TRACE("br\n"); goto unterminated_string; }
 			if (str)
-				cstr_ccat(str, '\r');
+				{ MCC_TRACE("br\n"); cstr_ccat(str, '\r'); }
 			goto redo;
 		} else { MCC_TRACE("br\n");
 		add_char:
 			if (str)
-				cstr_ccat(str, c);
+				{ MCC_TRACE("br\n"); cstr_ccat(str, c); }
 		}
 	}
 	p++;
@@ -990,20 +990,20 @@ redo_start:
 		case '\\':
 			c = handle_bs(&p);
 			if (c == CH_EOF)
-				expect("#endif");
+				{ MCC_TRACE("br\n"); expect("#endif"); }
 			if (c == '\\')
-				++p;
+				{ MCC_TRACE("br\n"); ++p; }
 			continue;
 		case '\"':
 		case '\'':
 			if (in_warn_or_error)
-				goto _default;
+				{ MCC_TRACE("br\n"); goto _default; }
 			tok_flags &= ~TOK_FLAG_BOL;
 			p = parse_pp_string(p, c, NULL);
 			break;
 		case '/':
 			if (in_warn_or_error)
-				goto _default;
+				{ MCC_TRACE("br\n"); goto _default; }
 			++p;
 			c = handle_bs(&p);
 			if (c == '*') { MCC_TRACE("br\n");
@@ -1020,21 +1020,21 @@ redo_start:
 				p = file->buf_ptr;
 				if (a == 0 &&
 						(tok == TOK_ELSE || tok == TOK_ELIF || tok == TOK_ENDIF))
-					goto the_end;
+					{ MCC_TRACE("br\n"); goto the_end; }
 				if (tok == TOK_IF || tok == TOK_IFDEF || tok == TOK_IFNDEF)
-					a++;
+					{ MCC_TRACE("br\n"); a++; }
 				else if (tok == TOK_ENDIF)
-					a--;
+					{ MCC_TRACE("br\n"); a--; }
 				else if (tok == TOK_ERROR || tok == TOK_WARNING)
-					in_warn_or_error = 1;
+					{ MCC_TRACE("br\n"); in_warn_or_error = 1; }
 				else if (tok == TOK_LINEFEED)
-					goto redo_start;
+					{ MCC_TRACE("br\n"); goto redo_start; }
 				else if (parse_flags & PARSE_FLAG_ASM_FILE)
-					p = parse_line_comment(p - 1);
+					{ MCC_TRACE("br\n"); p = parse_line_comment(p - 1); }
 			}
 #if !defined(MCC_TARGET_ARM) && !defined(MCC_TARGET_ARM64)
 			else if (parse_flags & PARSE_FLAG_ASM_FILE)
-				p = parse_line_comment(p - 1);
+				{ MCC_TRACE("br\n"); p = parse_line_comment(p - 1); }
 #else
 #endif
 			break;
@@ -1076,7 +1076,7 @@ ST_FUNC int *tok_str_realloc(TokenString *s, int new_size) { MCC_TRACE("enter\n"
 
 	size = s->allocated_len;
 	if (size < 16)
-		size = 16;
+		{ MCC_TRACE("br\n"); size = 16; }
 	while (size < new_size)
 		size = size * 2;
 	if (size > s->allocated_len) { MCC_TRACE("br\n");
@@ -1093,7 +1093,7 @@ ST_FUNC void tok_str_add(TokenString *s, int t) { MCC_TRACE("enter\n");
 	len = s->len;
 	str = s->str;
 	if (len >= s->allocated_len)
-		str = tok_str_realloc(s, len + 1);
+		{ MCC_TRACE("br\n"); str = tok_str_realloc(s, len + 1); }
 	str[len++] = t;
 	s->len = len;
 }
@@ -1116,7 +1116,7 @@ ST_FUNC void end_macro(void) { MCC_TRACE("enter\n");
 		str->len = str->need_spc = 0;
 	} else { MCC_TRACE("br\n");
 		if (str->alloc == 2)
-			str->str = NULL;
+			{ MCC_TRACE("br\n"); str->str = NULL; }
 		tok_str_free(str);
 	}
 }
@@ -1128,7 +1128,7 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 	str = s->str;
 
 	if (len + TOK_MAX_SIZE >= s->allocated_len)
-		str = tok_str_realloc(s, len + TOK_MAX_SIZE + 1);
+		{ MCC_TRACE("br\n"); str = tok_str_realloc(s, len + TOK_MAX_SIZE + 1); }
 	str[len++] = t;
 	switch (t) { MCC_TRACE("br\n");
 	case TOK_CINT:
@@ -1155,7 +1155,7 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 		size_t nb_words =
 				1 + (cv->str.size + sizeof(int) - 1) / sizeof(int);
 		if (len + nb_words >= s->allocated_len)
-			str = tok_str_realloc(s, len + nb_words + 1);
+			{ MCC_TRACE("br\n"); str = tok_str_realloc(s, len + nb_words + 1); }
 		str[len] = cv->str.size;
 		memcpy(&str[len + 1], cv->str.data, cv->str.size);
 		len += nb_words;
@@ -1174,9 +1174,9 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 		str[len++] = cv->tab[0];
 		str[len++] = cv->tab[1];
 		if (LDOUBLE_WORDS >= 3)
-			str[len++] = cv->tab[2];
+			{ MCC_TRACE("br\n"); str[len++] = cv->tab[2]; }
 		if (LDOUBLE_WORDS >= 4)
-			str[len++] = cv->tab[3];
+			{ MCC_TRACE("br\n"); str[len++] = cv->tab[3]; }
 	default:
 		break;
 	}
@@ -1196,7 +1196,7 @@ ST_FUNC void tok_str_add_tok(TokenString *s) { MCC_TRACE("enter\n");
 
 static void tok_str_add2_spc(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n");
 	if (s->need_spc == 3)
-		tok_str_add(s, ' ');
+		{ MCC_TRACE("br\n"); tok_str_add(s, ' '); }
 	s->need_spc = 2;
 	tok_str_add2(s, t, cv);
 }
@@ -1274,7 +1274,7 @@ static int macro_is_equal(const int *a, const int *b) { MCC_TRACE("enter\n");
 	int t;
 
 	if (!a || !b)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 
 	while (*a && *b) { MCC_TRACE("br\n");
 		cstr_reset(&tokcstr);
@@ -1282,7 +1282,7 @@ static int macro_is_equal(const int *a, const int *b) { MCC_TRACE("enter\n");
 		cstr_cat(&tokcstr, get_tok_str(t, &cv), 0);
 		TOK_GET(&t, &b, &cv);
 		if (strcmp(tokcstr.data, get_tok_str(t, &cv)))
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 	}
 	return !(*a || *b);
 }
@@ -1297,19 +1297,19 @@ ST_INLN void define_push(int v, int macro_type, int *str, Sym *first_arg) { MCC_
 	table_ident[v - TOK_IDENT]->sym_define = s;
 
 	if (o && !macro_is_equal(o->d, s->d))
-		mcc_warning("%s redefined", get_tok_str(v, NULL));
+		{ MCC_TRACE("br\n"); mcc_warning("%s redefined", get_tok_str(v, NULL)); }
 }
 
 ST_FUNC void define_undef(Sym *s) { MCC_TRACE("enter\n");
 	int v = s->v;
 	if (v >= TOK_IDENT && v < tok_ident)
-		table_ident[v - TOK_IDENT]->sym_define = NULL;
+		{ MCC_TRACE("br\n"); table_ident[v - TOK_IDENT]->sym_define = NULL; }
 }
 
 ST_INLN Sym *define_find(int v) { MCC_TRACE("enter\n");
 	v -= TOK_IDENT;
 	if ((unsigned)v >= (unsigned)(tok_ident - TOK_IDENT))
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	return table_ident[v]->sym_define;
 }
 
@@ -1326,21 +1326,21 @@ ST_FUNC void free_defines(Sym *b) { MCC_TRACE("enter\n");
 static void maybe_run_test(MCCState *s) { MCC_TRACE("enter\n");
 	const char *p;
 	if (s->include_stack_ptr != s->include_stack)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	p = get_tok_str(tok, NULL);
 	if (0 != memcmp(p, "test_", 5))
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (0 != --s->run_test)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	fprintf(s->ppfp, &"\n[%s]\n"[!(s->dflag & 32)], p), fflush(s->ppfp);
 	define_push(tok, MACRO_OBJ, NULL, NULL);
 }
 
 ST_FUNC void skip_to_eol(int warn) { MCC_TRACE("enter\n");
 	if (tok == TOK_LINEFEED)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (warn)
-		mcc_warning("extra tokens after directive");
+		{ MCC_TRACE("br\n"); mcc_warning("extra tokens after directive"); }
 	while (macro_stack)
 		end_macro();
 	file->buf_ptr = parse_line_comment(file->buf_ptr - 1);
@@ -1373,9 +1373,9 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 			next();
 			p = name, i = strlen(p) - 1;
 			if (i > 0 && ((p[0] == '"' && p[i] == '"') || (p[0] == '<' && p[i] == '>')))
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			if (tok == TOK_LINEFEED)
-				mcc_error("'#include' expects \"FILENAME\" or <FILENAME>");
+				{ MCC_TRACE("br\n"); mcc_error("'#include' expects \"FILENAME\" or <FILENAME>"); }
 			pstrcat(name, sizeof name, get_tok_str(tok, &tokc));
 		}
 		c = p[0];
@@ -1383,7 +1383,7 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 	}
 
 	if (!test)
-		skip_to_eol(1);
+		{ MCC_TRACE("br\n"); skip_to_eol(1); }
 
 	int parent_sys = file ? file->system_header : 0, cand_sys = 0, fw = 0;
 	i = do_next ? file->include_next_index : -1;
@@ -1393,18 +1393,18 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 		fw = 0;
 		if (i == 0) { MCC_TRACE("br\n");
 			if (!HOST_IS_ABSPATH(name))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			buf[0] = '\0';
 		} else if (i == 1) { MCC_TRACE("br\n");
 			if (c != '\"')
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			p = file->true_filename;
 			pstrncpy(buf, sizeof buf, p, mcc_basename(p) - p);
 		} else { MCC_TRACE("br\n");
 			int j = i - 2;
 			if (j < s1->nb_iquote_paths) { MCC_TRACE("br\n");
 				if (c != '\"')
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				p = s1->iquote_paths[j];
 			} else if ((j -= s1->nb_iquote_paths) < s1->nb_include_paths) { MCC_TRACE("br\n");
 				p = s1->include_paths[j];
@@ -1420,10 +1420,10 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 				char comp[256];
 				size_t cl;
 				if (c == '\"' || !slash)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				cl = (size_t)(slash - name);
 				if (cl >= sizeof comp)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				memcpy(comp, name, cl), comp[cl] = 0;
 				pstrcpy(buf, sizeof buf, s1->framework_paths[j]);
 				pstrcat(buf, sizeof buf, "/");
@@ -1434,29 +1434,29 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 				fw = 1;
 #endif
 			} else if (test)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			else
-				mcc_error("include file '%s' not found", name);
+				{ MCC_TRACE("br\n"); mcc_error("include file '%s' not found", name); }
 			if (!fw) { MCC_TRACE("br\n");
 				pstrcpy(buf, sizeof buf, p);
 				pstrcat(buf, sizeof buf, "/");
 			}
 		}
 		if (!fw)
-			pstrcat(buf, sizeof buf, name);
+			{ MCC_TRACE("br\n"); pstrcat(buf, sizeof buf, name); }
 		e = search_cached_include(s1, buf, 0);
 		if (e && (define_find(e->ifndef_macro) || e->once)) { MCC_TRACE("br\n");
 			if ((s1->verbose | 1) == 3)
-				printf("=> %*s%s (cached)\n",
-							 (int)(s1->include_stack_ptr - s1->include_stack), "", buf);
+				{ MCC_TRACE("br\n"); printf("=> %*s%s (cached)\n",
+							 (int)(s1->include_stack_ptr - s1->include_stack), "", buf); }
 #if MCC_CONFIG_LSP
 			if (!test)
-				cst_hook_include(buf, file == cst_main_bf);
+				{ MCC_TRACE("br\n"); cst_hook_include(buf, file == cst_main_bf); }
 #endif
 			return 1;
 		}
 		if (mcc_open(s1, buf) >= 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 	file->system_header = cand_sys || parent_sys;
 
@@ -1464,7 +1464,7 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 		mcc_close();
 	} else { MCC_TRACE("br\n");
 		if (s1->include_stack_ptr >= s1->include_stack + INCLUDE_STACK_SIZE)
-			mcc_error("#include recursion too deep");
+			{ MCC_TRACE("br\n"); mcc_error("#include recursion too deep"); }
 		*s1->include_stack_ptr++ = file->prev;
 		file->include_next_index = i;
 		if (s1->gen_deps
@@ -1474,14 +1474,14 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 			while (i == 1 && (bf = bf->prev))
 				i = bf->include_next_index;
 			if (s1->include_sys_deps || i - 2 < s1->nb_include_paths)
-				dynarray_add(&s1->target_deps, &s1->nb_target_deps,
-										 mcc_strdup(buf));
+				{ MCC_TRACE("br\n"); dynarray_add(&s1->target_deps, &s1->nb_target_deps,
+										 mcc_strdup(buf)); }
 		}
 		mcc_debug_bincl(s1);
 #if MCC_CONFIG_LSP
 		if (!(c == '<' && 0 == strcmp(name, "mccdefs.h") &&
 					0 == strcmp(file->prev->filename, "<command line>")))
-			cst_hook_include(buf, file->prev == cst_main_bf);
+			{ MCC_TRACE("br\n"); cst_hook_include(buf, file->prev == cst_main_bf); }
 #endif
 	}
 	return 1;
@@ -1490,7 +1490,7 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 static int pp_builtin_func(int v) { MCC_TRACE("enter\n");
 	const char *n;
 	if (v < TOK_IDENT)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	n = get_tok_str(v, NULL);
 	return !strcmp(n, "__has_feature") || !strcmp(n, "__has_extension") ||
 				 !strcmp(n, "__has_builtin") || !strcmp(n, "__has_attribute") ||
@@ -1513,27 +1513,27 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		t = tok;
 		if (tok < TOK_IDENT) { MCC_TRACE("br\n");
 			if (tok == TOK_LINEFEED || tok == TOK_EOF)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			if (tok >= TOK_STR && tok <= TOK_CLDOUBLE)
-				mcc_error("invalid constant in preprocessor expression");
+				{ MCC_TRACE("br\n"); mcc_error("invalid constant in preprocessor expression"); }
 		} else if (tok == TOK_DEFINED) { MCC_TRACE("br\n");
 			parse_flags &= ~PARSE_FLAG_PREPROCESS;
 			next();
 			t = tok;
 			if (t == '(')
-				next();
+				{ MCC_TRACE("br\n"); next(); }
 			parse_flags |= PARSE_FLAG_PREPROCESS;
 			if (tok < TOK_IDENT)
-				expect("identifier after 'defined'");
+				{ MCC_TRACE("br\n"); expect("identifier after 'defined'"); }
 			if (s1->run_test)
-				maybe_run_test(s1);
+				{ MCC_TRACE("br\n"); maybe_run_test(s1); }
 			c = 0;
 			if (define_find(tok) || tok == TOK___HAS_INCLUDE || tok == TOK___HAS_INCLUDE_NEXT)
-				c = 1;
+				{ MCC_TRACE("br\n"); c = 1; }
 			if (t == '(') { MCC_TRACE("br\n");
 				next();
 				if (tok != ')')
-					expect("')'");
+					{ MCC_TRACE("br\n"); expect("')'"); }
 			}
 			goto c_number;
 		} else if (tok == TOK___HAS_INCLUDE ||
@@ -1541,24 +1541,24 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 			t = tok;
 			next();
 			if (tok != '(')
-				expect("'('");
+				{ MCC_TRACE("br\n"); expect("'('"); }
 			c = parse_include(s1, t - TOK___HAS_INCLUDE, 1);
 			if (tok != ')')
-				expect("')'");
+				{ MCC_TRACE("br\n"); expect("')'"); }
 			goto c_number;
 		} else if (pp_builtin_func(tok)) { MCC_TRACE("br\n");
 			int depth = 1;
 			next();
 			if (tok != '(')
-				expect("'('");
+				{ MCC_TRACE("br\n"); expect("'('"); }
 			while (depth) { MCC_TRACE("br\n");
 				next();
 				if (tok == TOK_EOF || tok == TOK_LINEFEED)
-					expect("')'");
+					{ MCC_TRACE("br\n"); expect("')'"); }
 				if (tok == '(')
-					depth++;
+					{ MCC_TRACE("br\n"); depth++; }
 				else if (tok == ')')
-					depth--;
+					{ MCC_TRACE("br\n"); depth--; }
 			}
 			c = 0;
 			goto c_number;
@@ -1573,7 +1573,7 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		tok_str_add_tok(str);
 	}
 	if (0 == str->len)
-		mcc_error("#%s with no expression", get_tok_str(t0, 0));
+		{ MCC_TRACE("br\n"); mcc_error("#%s with no expression", get_tok_str(t0, 0)); }
 	tok_str_add(str, TOK_EOF);
 	pp_expr = t0;
 	t = tok;
@@ -1581,7 +1581,7 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 	next();
 	c = expr_const();
 	if (tok != TOK_EOF)
-		mcc_error("...");
+		{ MCC_TRACE("br\n"); mcc_error("..."); }
 	pp_expr = 0;
 	end_macro();
 	tok = t;
@@ -1598,11 +1598,11 @@ ST_FUNC void pp_error(CString *cs) { MCC_TRACE("enter\n");
 static int is_predef_macro(int v) { MCC_TRACE("enter\n");
 	const char *n;
 	if (v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__ || v == TOK___TIME__ || v == TOK___COUNTER__)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if (v >= TOK_IDENT) { MCC_TRACE("br\n");
 		n = get_tok_str(v, NULL);
 		if (!strcmp(n, "__STDC__") || !strcmp(n, "__STDC_VERSION__") || !strcmp(n, "__STDC_HOSTED__"))
-			return 1;
+			{ MCC_TRACE("br\n"); return 1; }
 	}
 	return 0;
 }
@@ -1616,9 +1616,9 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 
 	v = tok;
 	if (v < TOK_IDENT || v == TOK_DEFINED || v == TOK___VA_ARGS__)
-		mcc_error("invalid macro name '%s'", get_tok_str(tok, &tokc));
+		{ MCC_TRACE("br\n"); mcc_error("invalid macro name '%s'", get_tok_str(tok, &tokc)); }
 	if (is_predef_macro(v))
-		mcc_warning("%s redefined", get_tok_str(v, NULL));
+		{ MCC_TRACE("br\n"); mcc_warning("%s redefined", get_tok_str(v, NULL)); }
 	first = NULL;
 	t = MACRO_OBJ;
 	parse_flags = ((parse_flags & ~PARSE_FLAG_ASM_FILE) | PARSE_FLAG_SPACES);
@@ -1630,7 +1630,7 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 		next_nomacro();
 		ps = &first;
 		if (tok != ')')
-			for (;;) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (;;) { MCC_TRACE("br\n");
 				varg = tok;
 				next_nomacro();
 				is_vaargs = 0;
@@ -1642,24 +1642,24 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 					next_nomacro();
 				}
 				if (varg < TOK_IDENT)
-				bad_list:
-					mcc_error("bad macro parameter list");
+				{ MCC_TRACE("br\n"); bad_list:
+					mcc_error("bad macro parameter list"); }
 				{
 					Sym *pp;
 					for (pp = first; pp; pp = pp->next)
 						if ((pp->v & ~SYM_FIELD) == (varg & ~SYM_FIELD))
-							mcc_error("duplicate macro parameter \"%s\"",
-												get_tok_str(varg, NULL));
+							{ MCC_TRACE("br\n"); mcc_error("duplicate macro parameter \"%s\"",
+												get_tok_str(varg, NULL)); }
 				}
 				s = sym_push2(&define_stack, varg | SYM_FIELD, is_vaargs, 0);
 				*ps = s;
 				ps = &s->next;
 				if (tok == ')')
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				if (tok != ',' || is_vaargs)
-					goto bad_list;
+					{ MCC_TRACE("br\n"); goto bad_list; }
 				next_nomacro();
-			}
+			} }
 		parse_flags |= PARSE_FLAG_SPACES;
 		next_nomacro();
 		t = MACRO_FUNC;
@@ -1676,7 +1676,7 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 		} else { MCC_TRACE("br\n");
 			if (TOK_TWOSHARPS == tok) { MCC_TRACE("br\n");
 				if (0 == t0)
-					goto bad_twosharp;
+					{ MCC_TRACE("br\n"); goto bad_twosharp; }
 				tok = TOK_PPJOIN;
 				t |= MACRO_JOIN;
 			}
@@ -1689,25 +1689,25 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 						break;
 					}
 				if (!isparam)
-					mcc_error("'#' is not followed by a macro parameter");
+					{ MCC_TRACE("br\n"); mcc_error("'#' is not followed by a macro parameter"); }
 				hash_pending = 0;
 			}
 			hash_pending = (func_like && tok == '#');
 			if (tok == TOK___VA_ARGS__ && !is_vaargs)
-				mcc_warning("__VA_ARGS__ can only appear in the expansion of a "
-										"C99 variadic macro");
+				{ MCC_TRACE("br\n"); mcc_warning("__VA_ARGS__ can only appear in the expansion of a "
+										"C99 variadic macro"); }
 			tok_str_add2_spc(&str, tok, &tokc);
 			t0 = tok;
 		}
 		next_nomacro();
 	}
 	if (hash_pending)
-		mcc_error("'#' is not followed by a macro parameter");
+		{ MCC_TRACE("br\n"); mcc_error("'#' is not followed by a macro parameter"); }
 	parse_flags = saved_parse_flags;
 	tok_str_add(&str, 0);
 	if (t0 == TOK_PPJOIN)
-	bad_twosharp:
-		mcc_error("'##' cannot appear at either end of macro");
+	{ MCC_TRACE("br\n"); bad_twosharp:
+		mcc_error("'##' cannot appear at either end of macro"); }
 	define_push(v, t, str.str, first);
 }
 
@@ -1728,16 +1728,16 @@ static CachedInclude *search_cached_include(MCCState *s1, const char *filename, 
 	i = s1->cached_includes_hash[h];
 	for (;;) { MCC_TRACE("br\n");
 		if (i == 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		e = s1->cached_includes[i - 1];
 		if (0 == HOST_PATHCMP(filename, e->filename))
-			return e;
+			{ MCC_TRACE("br\n"); return e; }
 		if (e->once && 0 == HOST_PATHCMP(basename, mcc_basename(e->filename)) && 0 == normalized_PATHCMP(filename, e->filename))
-			return e;
+			{ MCC_TRACE("br\n"); return e; }
 		i = e->hash_next;
 	}
 	if (!add)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 
 	e = mcc_malloc(sizeof(CachedInclude) + (len = strlen(filename)));
 	memcpy(e->filename, filename, len + 1);
@@ -1755,12 +1755,12 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		Sym *s;
 
 		if (next(), tok != '(')
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 		if (next(), tok != TOK_STR)
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 		v = tok_alloc(tokc.str.data, tokc.str.size - 1)->tok;
 		if (next(), tok != ')')
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 		if (t == TOK_push_macro) { MCC_TRACE("br\n");
 			while (NULL == (s = define_find(v)))
 				define_push(v, 0, NULL, NULL);
@@ -1773,9 +1773,9 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 				}
 		}
 		if (s)
-			table_ident[v - TOK_IDENT]->sym_define = s->d ? s : NULL;
+			{ MCC_TRACE("br\n"); table_ident[v - TOK_IDENT]->sym_define = s->d ? s : NULL; }
 		else
-			mcc_warning("unbalanced #pragma pop_macro");
+			{ MCC_TRACE("br\n"); mcc_warning("unbalanced #pragma pop_macro"); }
 		pp_debug_tok = t, pp_debug_symv = v;
 	} else if (tok == TOK_once) { MCC_TRACE("br\n");
 		search_cached_include(s1, file->true_filename, 1)->once = 1;
@@ -1801,24 +1801,24 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 				if (tok == TOK_ASM_push) { MCC_TRACE("br\n");
 					next();
 					if (s1->pack_stack_ptr >= s1->pack_stack + PACK_STACK_SIZE - 1)
-						goto stk_error;
+						{ MCC_TRACE("br\n"); goto stk_error; }
 					val = *s1->pack_stack_ptr++;
 					if (tok != ',')
-						goto pack_set;
+						{ MCC_TRACE("br\n"); goto pack_set; }
 					next();
 				}
 				if (tok != TOK_CINT)
-					goto pragma_err;
+					{ MCC_TRACE("br\n"); goto pragma_err; }
 				val = tokc.i;
 				if (val < 1 || val > 16 || (val & (val - 1)) != 0)
-					goto pragma_err;
+					{ MCC_TRACE("br\n"); goto pragma_err; }
 				next();
 			}
 		pack_set:
 			*s1->pack_stack_ptr = val;
 		}
 		if (tok != ')')
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 	} else if (tok == TOK_comment) { MCC_TRACE("br\n");
 		char *p;
 		int t;
@@ -1828,16 +1828,16 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		next();
 		skip(',');
 		if (tok != TOK_STR)
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 		p = mcc_strdup(tokc.str.data);
 		next();
 		if (tok != ')')
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 		if (t == TOK_lib) { MCC_TRACE("br\n");
 			dynarray_add(&s1->pragma_libs, &s1->nb_pragma_libs, p);
 		} else { MCC_TRACE("br\n");
 			if (t == TOK_option)
-				mcc_set_options(s1, p);
+				{ MCC_TRACE("br\n"); mcc_set_options(s1, p); }
 			mcc_free(p);
 		}
 	} else if (tok == TOK_pragma_message) { MCC_TRACE("br\n");
@@ -1848,17 +1848,17 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 			next();
 		}
 		if (tok != TOK_STR)
-			goto pragma_err;
+			{ MCC_TRACE("br\n"); goto pragma_err; }
 		if (file)
-			fprintf(stderr, "%s:%d: note: #pragma message: %s\n",
-							file->filename, file->line_num, (char *)tokc.str.data);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "%s:%d: note: #pragma message: %s\n",
+							file->filename, file->line_num, (char *)tokc.str.data); }
 		else
-			fprintf(stderr, "note: #pragma message: %s\n",
-							(char *)tokc.str.data);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "note: #pragma message: %s\n",
+							(char *)tokc.str.data); }
 		next();
 		if (paren) { MCC_TRACE("br\n");
 			if (tok != ')')
-				goto pragma_err;
+				{ MCC_TRACE("br\n"); goto pragma_err; }
 			next();
 		}
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
@@ -1870,11 +1870,11 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		next_nomacro();
 		sw = get_tok_str(tok, &tokc);
 		if (!strcmp(sw, "FP_CONTRACT"))
-			slot = &s1->stdc_fp_contract;
+			{ MCC_TRACE("br\n"); slot = &s1->stdc_fp_contract; }
 		else if (!strcmp(sw, "FENV_ACCESS"))
-			slot = &s1->stdc_fenv_access;
+			{ MCC_TRACE("br\n"); slot = &s1->stdc_fenv_access; }
 		else if (!strcmp(sw, "CX_LIMITED_RANGE"))
-			slot = &s1->stdc_cx_limited;
+			{ MCC_TRACE("br\n"); slot = &s1->stdc_cx_limited; }
 		else { MCC_TRACE("br\n");
 			mcc_warning_c(warn_all)("unknown #pragma STDC '%s'", sw);
 			while (tok != TOK_LINEFEED && tok != TOK_EOF)
@@ -1885,11 +1885,11 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		{
 			const char *st = get_tok_str(tok, &tokc);
 			if (!strcmp(st, "ON"))
-				state = STDC_ON;
+				{ MCC_TRACE("br\n"); state = STDC_ON; }
 			else if (!strcmp(st, "OFF"))
-				state = STDC_OFF;
+				{ MCC_TRACE("br\n"); state = STDC_OFF; }
 			else if (!strcmp(st, "DEFAULT"))
-				state = STDC_DEFAULT;
+				{ MCC_TRACE("br\n"); state = STDC_DEFAULT; }
 			else { MCC_TRACE("br\n");
 				mcc_warning_c(warn_all)(
 						"malformed #pragma STDC %s (expected ON/OFF/DEFAULT)", sw);
@@ -1919,9 +1919,9 @@ ST_FUNC void mccpp_putfile(const char *filename) { MCC_TRACE("enter\n");
 	pstrcpy(buf, sizeof buf, filename);
 	host_path_normalize(buf);
 	if (0 == strcmp(file->filename, buf))
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (file->true_filename == file->filename)
-		file->true_filename = mcc_strdup(file->filename);
+		{ MCC_TRACE("br\n"); file->true_filename = mcc_strdup(file->filename); }
 	pstrcpy(file->filename, sizeof file->filename, buf);
 	mcc_debug_newfile(mcc_state);
 }
@@ -1978,12 +1978,12 @@ redo:
 		next_nomacro();
 		pp_debug_symv = tok;
 		if (tok == TOK_DEFINED || tok == TOK___VA_ARGS__)
-			mcc_error("invalid macro name '%s'", get_tok_str(tok, NULL));
+			{ MCC_TRACE("br\n"); mcc_error("invalid macro name '%s'", get_tok_str(tok, NULL)); }
 		if (is_predef_macro(tok))
-			mcc_warning("undefining %s", get_tok_str(tok, NULL));
+			{ MCC_TRACE("br\n"); mcc_warning("undefining %s", get_tok_str(tok, NULL)); }
 		s = define_find(tok);
 		if (s)
-			define_undef(s);
+			{ MCC_TRACE("br\n"); define_undef(s); }
 		next_nomacro();
 		break;
 	case TOK_INCLUDE:
@@ -2001,34 +2001,34 @@ redo:
 	do_ifdef:
 		next_nomacro();
 		if (tok < TOK_IDENT)
-			mcc_error("invalid argument for '#if%sdef'", c ? "n" : "");
+			{ MCC_TRACE("br\n"); mcc_error("invalid argument for '#if%sdef'", c ? "n" : ""); }
 		if (is_bof) { MCC_TRACE("br\n");
 			if (c) { MCC_TRACE("br\n");
 				file->ifndef_macro = tok;
 			}
 		}
 		if (define_find(tok) || tok == TOK___HAS_INCLUDE || tok == TOK___HAS_INCLUDE_NEXT)
-			c ^= 1;
+			{ MCC_TRACE("br\n"); c ^= 1; }
 		next_nomacro();
 	do_if:
 		if (s1->ifdef_stack_ptr >= s1->ifdef_stack + IFDEF_STACK_SIZE)
-			mcc_error("memory full (ifdef)");
+			{ MCC_TRACE("br\n"); mcc_error("memory full (ifdef)"); }
 		*s1->ifdef_stack_ptr++ = c;
 		goto test_skip;
 	case TOK_ELSE:
 		next_nomacro();
 		if (s1->ifdef_stack_ptr == s1->ifdef_stack)
-			mcc_error("#else without matching #if");
+			{ MCC_TRACE("br\n"); mcc_error("#else without matching #if"); }
 		if (s1->ifdef_stack_ptr[-1] & 2)
-			mcc_error("#else after #else");
+			{ MCC_TRACE("br\n"); mcc_error("#else after #else"); }
 		c = (s1->ifdef_stack_ptr[-1] ^= 3);
 		goto test_else;
 	case TOK_ELIF:
 		if (s1->ifdef_stack_ptr == s1->ifdef_stack)
-			mcc_error("#elif without matching #if");
+			{ MCC_TRACE("br\n"); mcc_error("#elif without matching #if"); }
 		c = s1->ifdef_stack_ptr[-1];
 		if (c > 1)
-			mcc_error("#elif after #else");
+			{ MCC_TRACE("br\n"); mcc_error("#elif after #else"); }
 		if (c == 1) { MCC_TRACE("br\n");
 			skip_to_eol(0);
 			c = 0;
@@ -2038,12 +2038,12 @@ redo:
 		}
 	test_else:
 		if (s1->ifdef_stack_ptr == file->ifdef_stack_ptr + 1)
-			file->ifndef_macro = 0;
+			{ MCC_TRACE("br\n"); file->ifndef_macro = 0; }
 	test_skip:
 		if (!(c & 1)) { MCC_TRACE("br\n");
 #if MCC_CONFIG_LSP
 			if (cst_pp_kind && cst_leafcount() > cst_pp_first)
-				cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
+				{ MCC_TRACE("br\n"); cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount()); }
 #endif
 			skip_to_eol(1);
 			preprocess_skip();
@@ -2054,7 +2054,7 @@ redo:
 	case TOK_ENDIF:
 		next_nomacro();
 		if (s1->ifdef_stack_ptr <= file->ifdef_stack_ptr)
-			mcc_error("#endif without matching #if");
+			{ MCC_TRACE("br\n"); mcc_error("#endif without matching #if"); }
 		s1->ifdef_stack_ptr--;
 		if (file->ifndef_macro &&
 				s1->ifdef_stack_ptr == file->ifdef_stack_ptr) { MCC_TRACE("br\n");
@@ -2075,23 +2075,23 @@ redo:
 		goto _line_num;
 	case TOK_PPNUM:
 		if (parse_flags & PARSE_FLAG_ASM_FILE)
-			goto ignore;
+			{ MCC_TRACE("br\n"); goto ignore; }
 		c = 0;
 	_line_num: {
 		uint64_t nn = 0;
 		int line_ovf = 0;
 		for (q = tokc.str.data; *q; ++q) { MCC_TRACE("br\n");
 			if (!isnum(*q))
-				goto _line_err;
+				{ MCC_TRACE("br\n"); goto _line_err; }
 			nn = nn * 10 + (*q - '0');
 			if (nn > 2147483647)
-				line_ovf = 1;
+				{ MCC_TRACE("br\n"); line_ovf = 1; }
 		}
 		if ((line_ovf || nn == 0) && mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 			if (mcc_state->pedantic_errors)
-				mcc_error("line number out of range");
+				{ MCC_TRACE("br\n"); mcc_error("line number out of range"); }
 			else
-				mcc_warning("line number out of range");
+				{ MCC_TRACE("br\n"); mcc_warning("line number out of range"); }
 		}
 		n = line_ovf ? 2147483647 : (int)nn;
 	}
@@ -2099,14 +2099,14 @@ redo:
 		next();
 		if (tok != TOK_LINEFEED) { MCC_TRACE("br\n");
 			if (tok != TOK_PPSTR || tokc.str.data[0] != '"')
-				goto _line_err;
+				{ MCC_TRACE("br\n"); goto _line_err; }
 			tokc.str.data[tokc.str.size - 2] = 0;
 			mccpp_putfile(tokc.str.data + 1);
 			next();
 			skip_to_eol(c);
 		}
 		if (file->fd > 0)
-			total_lines += file->line_num - n;
+			{ MCC_TRACE("br\n"); total_lines += file->line_num - n; }
 		file->line_num = n;
 		break;
 
@@ -2116,32 +2116,32 @@ redo:
 		c = skip_spaces();
 		while (c != '\n' && c != CH_EOF) { MCC_TRACE("br\n");
 			if ((q - buf) < sizeof(buf) - 1)
-				*q++ = c;
+				{ MCC_TRACE("br\n"); *q++ = c; }
 			c = ninp();
 		}
 		*q = '\0';
 		if (tok == TOK_ERROR)
-			mcc_error("#error %s", buf);
+			{ MCC_TRACE("br\n"); mcc_error("#error %s", buf); }
 		else
-			mcc_warning("#warning %s", buf);
+			{ MCC_TRACE("br\n"); mcc_warning("#warning %s", buf); }
 		next_nomacro();
 		break;
 	}
 	case TOK_PRAGMA:
 		if (!pragma_parse(s1))
-			goto ignore;
+			{ MCC_TRACE("br\n"); goto ignore; }
 		break;
 	case TOK_LINEFEED:
 		goto the_end;
 	default:
 		if (saved_parse_flags & PARSE_FLAG_ASM_FILE)
-			goto ignore;
+			{ MCC_TRACE("br\n"); goto ignore; }
 		if (tok == '!' && is_bof)
-			goto ignore;
+			{ MCC_TRACE("br\n"); goto ignore; }
 		if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
 			const char *d = get_tok_str(tok, &tokc);
 			if (!strcmp(d, "ident") || !strcmp(d, "sccs"))
-				goto ignore;
+				{ MCC_TRACE("br\n"); goto ignore; }
 		}
 		mcc_error("invalid preprocessing directive #%s", get_tok_str(tok, &tokc));
 	ignore:
@@ -2152,7 +2152,7 @@ redo:
 the_end:
 #if MCC_CONFIG_LSP
 	if (cst_pp_kind && cst_leafcount() > cst_pp_first)
-		cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount());
+		{ MCC_TRACE("br\n"); cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount()); }
 #endif
 	parse_flags = saved_parse_flags;
 }
@@ -2165,7 +2165,7 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 	for (;;) { MCC_TRACE("br\n");
 		c = *p;
 		if (c == '\0')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (c == '\\') { MCC_TRACE("br\n");
 			p++;
 			c = *p;
@@ -2191,7 +2191,7 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 					}
 				}
 				if (!is_long && n > 0xFF)
-					mcc_warning("octal escape sequence out of range");
+					{ MCC_TRACE("br\n"); mcc_warning("octal escape sequence out of range"); }
 				c = n;
 				goto add_char_nonext;
 			case 'x':
@@ -2210,16 +2210,16 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 				do { MCC_TRACE("br\n");
 					c = *p;
 					if (c >= 'a' && c <= 'f')
-						c = c - 'a' + 10;
+						{ MCC_TRACE("br\n"); c = c - 'a' + 10; }
 					else if (c >= 'A' && c <= 'F')
-						c = c - 'A' + 10;
+						{ MCC_TRACE("br\n"); c = c - 'A' + 10; }
 					else if (isnum(c))
-						c = c - '0';
+						{ MCC_TRACE("br\n"); c = c - '0'; }
 					else if (i >= 0)
-						expect("more hex digits in universal-character-name");
+						{ MCC_TRACE("br\n"); expect("more hex digits in universal-character-name"); }
 					else { MCC_TRACE("br\n");
 						if (!is_long && n > 0xFF)
-							mcc_warning("hex escape sequence out of range");
+							{ MCC_TRACE("br\n"); mcc_warning("hex escape sequence out of range"); }
 						goto add_hex_or_ucn;
 					}
 					n = (unsigned)n * 16 + c;
@@ -2227,9 +2227,9 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 				} while (--i);
 				if (is_ucn && mcc_state->warn_pedantic && mcc_state->cversion < 202311 && ((n < 0xA0 && n != 0x24 && n != 0x40 && n != 0x60) || (n >= 0xD800 && n <= 0xDFFF))) { MCC_TRACE("br\n");
 					if (mcc_state->pedantic_errors)
-						mcc_error("\\u%04x is not a valid universal character", n);
+						{ MCC_TRACE("br\n"); mcc_error("\\u%04x is not a valid universal character", n); }
 					else
-						mcc_warning("\\u%04x is not a valid universal character", n);
+						{ MCC_TRACE("br\n"); mcc_warning("\\u%04x is not a valid universal character", n); }
 				}
 				if (is_long) { MCC_TRACE("br\n");
 				add_hex_or_ucn:
@@ -2261,12 +2261,12 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 				break;
 			case 'e':
 				if (!gnu_ext)
-					goto invalid_escape;
+					{ MCC_TRACE("br\n"); goto invalid_escape; }
 				if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 					if (mcc_state->pedantic_errors)
-						mcc_error("\\e is a non-ISO escape sequence");
+						{ MCC_TRACE("br\n"); mcc_error("\\e is a non-ISO escape sequence"); }
 					else
-						mcc_warning("\\e is a non-ISO escape sequence");
+						{ MCC_TRACE("br\n"); mcc_warning("\\e is a non-ISO escape sequence"); }
 				}
 				c = 27;
 				break;
@@ -2278,9 +2278,9 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 			default:
 			invalid_escape:
 				if (c >= '!' && c <= '~')
-					mcc_warning("unknown escape sequence: \'\\%c\'", c);
+					{ MCC_TRACE("br\n"); mcc_warning("unknown escape sequence: \'\\%c\'", c); }
 				else
-					mcc_warning("unknown escape sequence: \'\\x%x\'", c);
+					{ MCC_TRACE("br\n"); mcc_warning("unknown escape sequence: \'\\x%x\'", c); }
 				break;
 			}
 		} else if (is_long && c >= 0x80) { MCC_TRACE("br\n");
@@ -2346,7 +2346,7 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 		p++;
 	add_char_nonext:
 		if (!is_long)
-			cstr_ccat(outstr, c);
+			{ MCC_TRACE("br\n"); cstr_ccat(outstr, c); }
 		else { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
 			if (c < 0x10000) { MCC_TRACE("br\n");
@@ -2362,9 +2362,9 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 		}
 	}
 	if (!is_long)
-		cstr_ccat(outstr, '\0');
+		{ MCC_TRACE("br\n"); cstr_ccat(outstr, '\0'); }
 	else
-		cstr_wccat(outstr, '\0');
+		{ MCC_TRACE("br\n"); cstr_wccat(outstr, '\0'); }
 }
 
 static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
@@ -2372,33 +2372,33 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 	int is_long, sep, prefix = 0;
 
 	if (*s == 'L' || *s == 'u' || *s == 'U' || *s == '8')
-		prefix = *s++, --len;
+		{ MCC_TRACE("br\n"); prefix = *s++, --len; }
 	is_long = (prefix == 'L' || prefix == 'u' || prefix == 'U');
 	sep = *s++;
 	len -= 2;
 	if (len >= sizeof buf)
-		p = mcc_malloc(len + 1);
+		{ MCC_TRACE("br\n"); p = mcc_malloc(len + 1); }
 	memcpy(p, s, len);
 	p[len] = 0;
 
 	cstr_reset(&tokcstr);
 	parse_escape_string(&tokcstr, p, is_long);
 	if (p != buf)
-		mcc_free(p);
+		{ MCC_TRACE("br\n"); mcc_free(p); }
 
 	if (sep == '\'') { MCC_TRACE("br\n");
 		int char_size, i, n, c;
 		if (!is_long)
-			tok = TOK_CCHAR, char_size = 1;
+			{ MCC_TRACE("br\n"); tok = TOK_CCHAR, char_size = 1; }
 		else
-			tok = TOK_LCHAR, char_size = sizeof(nwchar_t);
+			{ MCC_TRACE("br\n"); tok = TOK_LCHAR, char_size = sizeof(nwchar_t); }
 		if (prefix == 'u')
-			tok = TOK_U16CHAR;
+			{ MCC_TRACE("br\n"); tok = TOK_U16CHAR; }
 		else if (prefix == 'U')
-			tok = TOK_U32CHAR;
+			{ MCC_TRACE("br\n"); tok = TOK_U32CHAR; }
 		n = tokcstr.size / char_size - 1;
 		if (n < 1)
-			mcc_error("empty character constant");
+			{ MCC_TRACE("br\n"); mcc_error("empty character constant"); }
 		if (prefix == 'U') { MCC_TRACE("br\n");
 			int nchars = 0;
 			for (c = i = 0; i < n; ++i) { MCC_TRACE("br\n");
@@ -2414,18 +2414,18 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 				nchars++;
 			}
 			if (nchars > 1)
-				mcc_warning("multi-character character constant");
+				{ MCC_TRACE("br\n"); mcc_warning("multi-character character constant"); }
 		} else { MCC_TRACE("br\n");
 			if (n > 1)
-				mcc_warning("multi-character character constant");
+				{ MCC_TRACE("br\n"); mcc_warning("multi-character character constant"); }
 			for (c = i = 0; i < n; ++i) { MCC_TRACE("br\n");
 				if (is_long)
-					c = ((nwchar_t *)tokcstr.data)[i];
+					{ MCC_TRACE("br\n"); c = ((nwchar_t *)tokcstr.data)[i]; }
 				else
-					c = (c << 8) | ((char *)tokcstr.data)[i];
+					{ MCC_TRACE("br\n"); c = (c << 8) | ((char *)tokcstr.data)[i]; }
 			}
 			if (prefix == 'u')
-				c &= 0xFFFF;
+				{ MCC_TRACE("br\n"); c &= 0xFFFF; }
 		}
 		tokc.i = c;
 	} else if (prefix == 'u') { MCC_TRACE("br\n");
@@ -2480,11 +2480,11 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 		tokc.str.size = tokcstr.size;
 		tokc.str.data = tokcstr.data;
 		if (prefix == '8')
-			tok = TOK_U8STR;
+			{ MCC_TRACE("br\n"); tok = TOK_U8STR; }
 		else if (!is_long)
-			tok = TOK_STR;
+			{ MCC_TRACE("br\n"); tok = TOK_STR; }
 		else
-			tok = TOK_LSTR;
+			{ MCC_TRACE("br\n"); tok = TOK_LSTR; }
 	}
 }
 
@@ -2493,7 +2493,7 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 static int bn_lshift(unsigned int *bn, int shift, int or_val) { MCC_TRACE("enter\n");
 	unsigned int v;
 	if (bn[BN_SIZE - 1] >> (32 - shift))
-		return shift;
+		{ MCC_TRACE("br\n"); return shift; }
 	for (int i = 0; i < BN_SIZE; i++) { MCC_TRACE("br\n");
 		v = bn[i];
 		bn[i] = (v << shift) | or_val;
@@ -2510,11 +2510,11 @@ static void bn_zero(unsigned int *bn) { MCC_TRACE("enter\n");
 
 static void pp_c11_prefix_pedantic(const char *what) { MCC_TRACE("enter\n");
 	if (mcc_state->cversion >= 201112 || !mcc_state->warn_pedantic)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (mcc_state->pedantic_errors)
-		mcc_error("%s is a C11 feature", what);
+		{ MCC_TRACE("br\n"); mcc_error("%s is a C11 feature", what); }
 	else
-		mcc_warning("%s is a C11 feature", what);
+		{ MCC_TRACE("br\n"); mcc_warning("%s is a C11 feature", what); }
 }
 
 static void parse_number(const char *p) { MCC_TRACE("enter\n");
@@ -2540,9 +2540,9 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		} else if (mcc_state->mcc_ext && (ch == 'b' || ch == 'B')) { MCC_TRACE("br\n");
 			if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 				if (mcc_state->pedantic_errors)
-					mcc_error("binary integer constants are a C23/GNU extension");
+					{ MCC_TRACE("br\n"); mcc_error("binary integer constants are a C23/GNU extension"); }
 				else
-					mcc_warning("binary integer constants are a C23/GNU extension");
+					{ MCC_TRACE("br\n"); mcc_warning("binary integer constants are a C23/GNU extension"); }
 			}
 			q--;
 			ch = *p++;
@@ -2551,15 +2551,15 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 	}
 	while (1) { MCC_TRACE("br\n");
 		if (ch >= 'a' && ch <= 'f')
-			t = ch - 'a' + 10;
+			{ MCC_TRACE("br\n"); t = ch - 'a' + 10; }
 		else if (ch >= 'A' && ch <= 'F')
-			t = ch - 'A' + 10;
+			{ MCC_TRACE("br\n"); t = ch - 'A' + 10; }
 		else if (isnum(ch))
-			t = ch - '0';
+			{ MCC_TRACE("br\n"); t = ch - '0'; }
 		else
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (t >= b)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (q >= token_buf + STRING_MAX_SIZE) { MCC_TRACE("br\n");
 		num_too_long:
 			mcc_error("number too long");
@@ -2572,17 +2572,17 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			((ch == 'p' || ch == 'P') && (b == 16 || b == 2))) { MCC_TRACE("br\n");
 		if (b == 16 && mcc_state->cversion < 199901 && mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 			if (mcc_state->pedantic_errors)
-				mcc_error("hexadecimal floating constants are a C99 feature");
+				{ MCC_TRACE("br\n"); mcc_error("hexadecimal floating constants are a C99 feature"); }
 			else
-				mcc_warning("hexadecimal floating constants are a C99 feature");
+				{ MCC_TRACE("br\n"); mcc_warning("hexadecimal floating constants are a C99 feature"); }
 		}
 		if (b != 10) { MCC_TRACE("br\n");
 			frac_bits = 0;
 			*q = '\0';
 			if (b == 16)
-				shift = 4;
+				{ MCC_TRACE("br\n"); shift = 4; }
 			else
-				shift = 1;
+				{ MCC_TRACE("br\n"); shift = 1; }
 			bn_zero(bn);
 			q = token_buf;
 			while (1) { MCC_TRACE("br\n");
@@ -2612,14 +2612,14 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 						break;
 					}
 					if (t >= b)
-						mcc_error("invalid digit");
+						{ MCC_TRACE("br\n"); mcc_error("invalid digit"); }
 					frac_bits -= bn_lshift(bn, shift, t);
 					frac_bits += shift;
 					ch = *p++;
 				}
 			}
 			if (ch != 'p' && ch != 'P')
-				expect("exponent");
+				{ MCC_TRACE("br\n"); expect("exponent"); }
 			ch = *p++;
 			s = 1;
 			exp_val = 0;
@@ -2630,10 +2630,10 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				ch = *p++;
 			}
 			if (ch < '0' || ch > '9')
-				expect("exponent digits");
+				{ MCC_TRACE("br\n"); expect("exponent digits"); }
 			while (ch >= '0' && ch <= '9') { MCC_TRACE("br\n");
 				if (exp_val < 100000000)
-					exp_val = exp_val * 10 + ch - '0';
+					{ MCC_TRACE("br\n"); exp_val = exp_val * 10 + ch - '0'; }
 				ch = *p++;
 			}
 			exp_val = exp_val * s;
@@ -2659,33 +2659,33 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		} else { MCC_TRACE("br\n");
 			if (ch == '.') { MCC_TRACE("br\n");
 				if (q >= token_buf + STRING_MAX_SIZE)
-					goto num_too_long;
+					{ MCC_TRACE("br\n"); goto num_too_long; }
 				*q++ = ch;
 				ch = *p++;
 			float_frac_parse:
 				while (ch >= '0' && ch <= '9') { MCC_TRACE("br\n");
 					if (q >= token_buf + STRING_MAX_SIZE)
-						goto num_too_long;
+						{ MCC_TRACE("br\n"); goto num_too_long; }
 					*q++ = ch;
 					ch = *p++;
 				}
 			}
 			if (ch == 'e' || ch == 'E') { MCC_TRACE("br\n");
 				if (q >= token_buf + STRING_MAX_SIZE)
-					goto num_too_long;
+					{ MCC_TRACE("br\n"); goto num_too_long; }
 				*q++ = ch;
 				ch = *p++;
 				if (ch == '-' || ch == '+') { MCC_TRACE("br\n");
 					if (q >= token_buf + STRING_MAX_SIZE)
-						goto num_too_long;
+						{ MCC_TRACE("br\n"); goto num_too_long; }
 					*q++ = ch;
 					ch = *p++;
 				}
 				if (ch < '0' || ch > '9')
-					expect("exponent digits");
+					{ MCC_TRACE("br\n"); expect("exponent digits"); }
 				while (ch >= '0' && ch <= '9') { MCC_TRACE("br\n");
 					if (q >= token_buf + STRING_MAX_SIZE)
-						goto num_too_long;
+						{ MCC_TRACE("br\n"); goto num_too_long; }
 					*q++ = ch;
 					ch = *p++;
 				}
@@ -2721,19 +2721,19 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		while (1) { MCC_TRACE("br\n");
 			t = *q++;
 			if (t == '\0')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			else if (t >= 'a')
-				t = t - 'a' + 10;
+				{ MCC_TRACE("br\n"); t = t - 'a' + 10; }
 			else if (t >= 'A')
-				t = t - 'A' + 10;
+				{ MCC_TRACE("br\n"); t = t - 'A' + 10; }
 			else
-				t = t - '0';
+				{ MCC_TRACE("br\n"); t = t - '0'; }
 			if (t >= b)
-				mcc_error("invalid digit");
+				{ MCC_TRACE("br\n"); mcc_error("invalid digit"); }
 			n1 = n;
 			n = n * b + t;
 			if (n1 >= 0x1000000000000000ULL && n / b != n1)
-				ov = 1;
+				{ MCC_TRACE("br\n"); ov = 1; }
 		}
 
 		lcount = ucount = 0;
@@ -2743,23 +2743,23 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			t = toup(ch);
 			if (t == 'L') { MCC_TRACE("br\n");
 				if (lcount >= 2)
-					mcc_error("three 'l's in integer constant");
+					{ MCC_TRACE("br\n"); mcc_error("three 'l's in integer constant"); }
 				if (lcount == 1 && ch != l0)
-					mcc_error("incorrect integer suffix: %s", p1);
+					{ MCC_TRACE("br\n"); mcc_error("incorrect integer suffix: %s", p1); }
 				if (lcount == 0)
-					l0 = ch;
+					{ MCC_TRACE("br\n"); l0 = ch; }
 				lcount++;
 				if (lcount == 2 && mcc_state->cversion < 199901 &&
 						mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 					if (mcc_state->pedantic_errors)
-						mcc_error("ISO C90 does not support 'long long'");
+						{ MCC_TRACE("br\n"); mcc_error("ISO C90 does not support 'long long'"); }
 					else
-						mcc_warning("ISO C90 does not support 'long long'");
+						{ MCC_TRACE("br\n"); mcc_warning("ISO C90 does not support 'long long'"); }
 				}
 				ch = *p++;
 			} else if (t == 'U') { MCC_TRACE("br\n");
 				if (ucount >= 1)
-					mcc_error("two 'u's in integer constant");
+					{ MCC_TRACE("br\n"); mcc_error("two 'u's in integer constant"); }
 				ucount++;
 				ch = *p++;
 			} else { MCC_TRACE("br\n");
@@ -2768,37 +2768,37 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		}
 
 		if (pp_expr)
-			lcount = 2;
+			{ MCC_TRACE("br\n"); lcount = 2; }
 
 		if (ucount == 0 && b == 10) { MCC_TRACE("br\n");
 			if (lcount <= (LONG_SIZE == 4)) { MCC_TRACE("br\n");
 				if (n >= 0x80000000U)
-					lcount = (LONG_SIZE == 4) + 1;
+					{ MCC_TRACE("br\n"); lcount = (LONG_SIZE == 4) + 1; }
 			}
 			if (n >= 0x8000000000000000ULL)
-				ov = 1, ucount = 1;
+				{ MCC_TRACE("br\n"); ov = 1, ucount = 1; }
 		} else { MCC_TRACE("br\n");
 			if (lcount <= (LONG_SIZE == 4)) { MCC_TRACE("br\n");
 				if (n >= 0x100000000ULL)
-					lcount = (LONG_SIZE == 4) + 1;
+					{ MCC_TRACE("br\n"); lcount = (LONG_SIZE == 4) + 1; }
 				else if (n >= 0x80000000U)
-					ucount = 1;
+					{ MCC_TRACE("br\n"); ucount = 1; }
 			}
 			if (n >= 0x8000000000000000ULL)
-				ucount = 1;
+				{ MCC_TRACE("br\n"); ucount = 1; }
 		}
 
 		if (ov)
-			mcc_warning("integer constant overflow");
+			{ MCC_TRACE("br\n"); mcc_warning("integer constant overflow"); }
 
 		tok = TOK_CINT;
 		if (lcount) { MCC_TRACE("br\n");
 			tok = TOK_CLONG;
 			if (lcount == 2)
-				tok = TOK_CLLONG;
+				{ MCC_TRACE("br\n"); tok = TOK_CLLONG; }
 		}
 		if (ucount)
-			++tok;
+			{ MCC_TRACE("br\n"); ++tok; }
 		tokc.i = n;
 	}
 	if ((ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J') && (tok == TOK_CFLOAT || tok == TOK_CDOUBLE || tok == TOK_CLDOUBLE || (tok >= TOK_CINT && tok <= TOK_CULONG))) { MCC_TRACE("br\n");
@@ -2806,7 +2806,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		ch = *p++;
 	}
 	if (ch)
-		mcc_error("invalid number");
+		{ MCC_TRACE("br\n"); mcc_error("invalid number"); }
 }
 
 #define PARSE2(c1, tok1, c2, tok2) \
@@ -2839,7 +2839,7 @@ ST_FUNC CstArena *cst_capture_end(void) { MCC_TRACE("enter\n");
 		cst_source(a, &slen);
 		for (n = 0; n < nn; n++)
 			if (cst_sym_ref(a, n) != (CstId)0xffffffffffffffffull)
-				nrefs++;
+				{ MCC_TRACE("br\n"); nrefs++; }
 		fprintf(stderr, "CST selfcheck: %s (%u bytes, %u nodes, %u sym-refs)%s%s\n",
 						rc == 0 ? "round-trip OK" : "MISMATCH", slen, nn, nrefs,
 						rc == 0 ? "" : ": ", rc == 0 ? "" : msg);
@@ -2865,17 +2865,17 @@ ST_FUNC CstArena *cst_capture_end(void) { MCC_TRACE("enter\n");
 			uint16_t k = cst_kind(a, n);
 			uint32_t o = cst_abs_offset(a, n), w = cst_width(a, n);
 			if (k == CST_Token)
-				fprintf(stderr, "%*sToken '%.*s'\n", d * 2, "",
-								w > 24 ? 24 : (int)w, src + o);
+				{ MCC_TRACE("br\n"); fprintf(stderr, "%*sToken '%.*s'\n", d * 2, "",
+								w > 24 ? 24 : (int)w, src + o); }
 			else
-				fprintf(stderr, "%*s%s [%u,%u)\n", d * 2, "",
-								k < CST_KIND_COUNT ? kn[k] : "?", o, o + w);
+				{ MCC_TRACE("br\n"); fprintf(stderr, "%*s%s [%u,%u)\n", d * 2, "",
+								k < CST_KIND_COUNT ? kn[k] : "?", o, o + w); }
 			CstLocal kids[256];
 			int nk = 0;
 			for (CstLocal c = cst_first_child(a, n); c != CST_NONE;
 					 c = cst_next_sib(a, c))
 				if (nk < 256)
-					kids[nk++] = c;
+					{ MCC_TRACE("br\n"); kids[nk++] = c; }
 			while (nk-- > 0 && sp < 256) { MCC_TRACE("br\n");
 				stackn[sp] = kids[nk];
 				depthn[sp] = d + 1;
@@ -2894,7 +2894,7 @@ ST_FUNC CstArena *cst_capture_end(void) { MCC_TRACE("enter\n");
 		for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 			CstId d = cst_sym_ref(a, n);
 			if (d == (CstId)0xffffffffffffffffull)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			CstLocal dn = cst_id_local(d);
 			uint32_t uo = cst_abs_offset(a, n), uw = cst_width(a, n);
 			uint32_t vo = cst_abs_offset(a, dn), vw = cst_width(a, dn);
@@ -2926,7 +2926,7 @@ ST_FUNC CstArena *cst_capture_end(void) { MCC_TRACE("enter\n");
 			uint32_t tn = cst_node_count(tmpl), k, cc = 0, slen = 0;
 			for (k = 0; k < tn; k++)
 				if (cst_kind(tmpl, k) == CST_PPConditional)
-					cc++;
+					{ MCC_TRACE("br\n"); cc++; }
 			cst_source(tmpl, &slen);
 			size_t rid = cst_render_identity(tmpl, NULL, 0);
 			fprintf(stderr,
@@ -2935,17 +2935,17 @@ ST_FUNC CstArena *cst_capture_end(void) { MCC_TRACE("enter\n");
 		}
 		for (n = 0; n < nn; n++)
 			if (cst_kind(a, n) == CST_IncludeDirective)
-				fprintf(stderr, "  include node %u -> template %u\n", n,
-								cst_include_target(a, n));
+				{ MCC_TRACE("br\n"); fprintf(stderr, "  include node %u -> template %u\n", n,
+								cst_include_target(a, n)); }
 	}
 	if (a)
-		cst_arena_free(a);
+		{ MCC_TRACE("br\n"); cst_arena_free(a); }
 	return NULL;
 }
 
 static void cst_capture_tok(void) { MCC_TRACE("enter\n");
 	if (file != cst_main_bf)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	unsigned long end =
 			file->cst_base + (unsigned long)(file->buf_ptr - file->buffer);
 	if (end > cst_prev_end) { MCC_TRACE("br\n");
@@ -2971,7 +2971,7 @@ redo_no_start:
 		p++;
 	maybe_space:
 		if (parse_flags & PARSE_FLAG_SPACES)
-			goto keep_tok_flags;
+			{ MCC_TRACE("br\n"); goto keep_tok_flags; }
 		while (isidnum_table[*p - CH_EOF] & IS_SPC)
 			++p;
 		goto redo_no_start;
@@ -2983,14 +2983,14 @@ redo_no_start:
 	case '\\':
 		if ((uc = decode_ucn(&p)) >= 0) { MCC_TRACE("br\n");
 			if (ucn_disallowed_initial(uc))
-				mcc_error("universal character \\u%04x is not valid as the "
+				{ MCC_TRACE("br\n"); mcc_error("universal character \\u%04x is not valid as the "
 									"first character of an identifier",
-									uc);
+									uc); }
 			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901) { MCC_TRACE("br\n");
 				if (mcc_state->pedantic_errors)
-					mcc_error("extended identifiers are a C99 feature");
+					{ MCC_TRACE("br\n"); mcc_error("extended identifiers are a C99 feature"); }
 				else
-					mcc_warning("extended identifiers are a C99 feature");
+					{ MCC_TRACE("br\n"); mcc_warning("extended identifiers are a C99 feature"); }
 			}
 			cstr_reset(&tokcstr);
 			cstr_u8cat(&tokcstr, uc);
@@ -2999,7 +2999,7 @@ redo_no_start:
 		}
 		c = handle_stray(&p);
 		if (c == '\\')
-			goto parse_simple;
+			{ MCC_TRACE("br\n"); goto parse_simple; }
 		if (c == CH_EOF) { MCC_TRACE("br\n");
 			MCCState *s1 = mcc_state;
 			if (!(tok_flags & TOK_FLAG_BOL)) { MCC_TRACE("br\n");
@@ -3034,7 +3034,7 @@ redo_no_start:
 	maybe_newline:
 		tok_flags |= TOK_FLAG_BOL;
 		if (0 == (parse_flags & PARSE_FLAG_LINEFEED))
-			goto redo_no_start;
+			{ MCC_TRACE("br\n"); goto redo_no_start; }
 		tok = TOK_LINEFEED;
 		goto keep_tok_flags;
 
@@ -3067,7 +3067,7 @@ redo_no_start:
 
 	case '$':
 		if (!(isidnum_table['$' - CH_EOF] & IS_ID) || (parse_flags & PARSE_FLAG_ASM_FILE))
-			goto parse_simple;
+			{ MCC_TRACE("br\n"); goto parse_simple; }
 		FALLTHROUGH;
 	case 'a':
 	case 'b':
@@ -3130,7 +3130,7 @@ redo_no_start:
 				hi |= c;
 			}
 			if (hi & 0x80)
-				validate_utf8_identifier((const char *)p1, p - p1);
+				{ MCC_TRACE("br\n"); validate_utf8_identifier((const char *)p1, p - p1); }
 		}
 		len = p - p1;
 		if (c != '\\') { MCC_TRACE("br\n");
@@ -3141,9 +3141,9 @@ redo_no_start:
 			for (;;) { MCC_TRACE("br\n");
 				ts = *pts;
 				if (!ts)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				if (ts->len == len && !memcmp(ts->str, p1, len))
-					goto token_found;
+					{ MCC_TRACE("br\n"); goto token_found; }
 				pts = &(ts->hash_next);
 			}
 			ts = tok_alloc_new(pts, (char *)p1, len);
@@ -3162,7 +3162,7 @@ redo_no_start:
 					p--;
 					PEEKC(c, p);
 					if (c == '\\')
-						break;
+						{ MCC_TRACE("br\n"); break; }
 					continue;
 				}
 				if (isidnum_table[c - CH_EOF] & (IS_ID | IS_NUM)) { MCC_TRACE("br\n");
@@ -3231,7 +3231,7 @@ redo_no_start:
 		for (;;) { MCC_TRACE("br\n");
 			cstr_ccat(&tokcstr, t);
 			if (!((isidnum_table[c - CH_EOF] & (IS_ID | IS_NUM)) || c == '.' || ((c == '+' || c == '-') && (((t == 'e' || t == 'E') && !(parse_flags & PARSE_FLAG_ASM_FILE && ((char *)tokcstr.data)[0] == '0' && toup(((char *)tokcstr.data)[1]) == 'X')) || t == 'p' || t == 'P'))))
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			t = c;
 			PEEKC(c, p);
 		}
@@ -3268,7 +3268,7 @@ redo_no_start:
 	str_const:
 		cstr_reset(&tokcstr);
 		if (str_prefix)
-			cstr_ccat(&tokcstr, str_prefix);
+			{ MCC_TRACE("br\n"); cstr_ccat(&tokcstr, str_prefix); }
 		cstr_ccat(&tokcstr, c);
 		p = parse_pp_string(p, c, &tokcstr);
 		cstr_ccat(&tokcstr, c);
@@ -3415,9 +3415,9 @@ redo_no_start:
 			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901 &&
 					!pp_in_system_header()) { MCC_TRACE("br\n");
 				if (mcc_state->pedantic_errors)
-					mcc_error("C++ style comments are a C99 feature");
+					{ MCC_TRACE("br\n"); mcc_error("C++ style comments are a C99 feature"); }
 				else
-					mcc_warning("C++ style comments are a C99 feature");
+					{ MCC_TRACE("br\n"); mcc_warning("C++ style comments are a C99 feature"); }
 			}
 			p = parse_line_comment(p);
 			tok = ' ';
@@ -3468,9 +3468,9 @@ redo_no_start:
 		FALLTHROUGH;
 	default:
 		if (c >= 0x80 && c <= 0xFF)
-			goto parse_ident_fast;
+			{ MCC_TRACE("br\n"); goto parse_ident_fast; }
 		if (parse_flags & PARSE_FLAG_ASM_FILE)
-			goto parse_simple;
+			{ MCC_TRACE("br\n"); goto parse_simple; }
 		mcc_error("unrecognized character \\x%02x", c);
 		break;
 	}
@@ -3481,7 +3481,7 @@ keep_tok_flags:
 	cst_capture_tok();
 #endif
 	if (g_debug & MCC_DBG_TOK)
-		printf("token = %d %s\n", tok, get_tok_str(tok, &tokc));
+		{ MCC_TRACE("br\n"); printf("token = %d %s\n", tok, get_tok_str(tok, &tokc)); }
 }
 
 static void define_print(MCCState *s1, int v);
@@ -3490,13 +3490,13 @@ static void pp_print(const char *msg, int v, const int *str) { MCC_TRACE("enter\
 	int *indent = &mcc_state->pp_debug_indent;
 
 	if (!fp)
-		fp = stdout;
+		{ MCC_TRACE("br\n"); fp = stdout; }
 	if (msg[0] == '#' && *indent == 0)
-		fprintf(fp, "\n");
+		{ MCC_TRACE("br\n"); fprintf(fp, "\n"); }
 	else if (msg[0] == '+')
-		++*indent, ++msg;
+		{ MCC_TRACE("br\n"); ++*indent, ++msg; }
 	else if (msg[0] == '-')
-		--*indent, ++msg;
+		{ MCC_TRACE("br\n"); --*indent, ++msg; }
 
 	fprintf(fp, "%*s", *indent, "");
 	if (msg[0] == '#') { MCC_TRACE("br\n");
@@ -3540,7 +3540,7 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 	while (1) { MCC_TRACE("br\n");
 		TOK_GET(&t, &macro_str, &cval);
 		if (!t)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (t == '#') { MCC_TRACE("br\n");
 			do
 				t = *macro_str++;
@@ -3556,9 +3556,9 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 					s = get_tok_str(t, &cval);
 					while (*s) { MCC_TRACE("br\n");
 						if (t == TOK_PPSTR && *s != '\'')
-							add_char(&tokcstr, *s);
+							{ MCC_TRACE("br\n"); add_char(&tokcstr, *s); }
 						else
-							cstr_ccat(&tokcstr, *s);
+							{ MCC_TRACE("br\n"); cstr_ccat(&tokcstr, *s); }
 						++s;
 					}
 				}
@@ -3599,12 +3599,12 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 						} else { MCC_TRACE("br\n");
 							str.len++;
 							if (c == ' ')
-								str.str[str.len++] = c;
+								{ MCC_TRACE("br\n"); str.str[str.len++] = c; }
 							goto add_var;
 						}
 					} else { MCC_TRACE("br\n");
 						if (*st == TOK_EOF)
-							tok_str_add(&str, TOK_PLCHLDR);
+							{ MCC_TRACE("br\n"); tok_str_add(&str, TOK_PLCHLDR); }
 					}
 				} else { MCC_TRACE("br\n");
 				add_var:
@@ -3628,7 +3628,7 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 			tok_str_add2(&str, t, &cval);
 		}
 		if (t != ' ')
-			t0 = t1, t1 = t;
+			{ MCC_TRACE("br\n"); t0 = t1, t1 = t; }
 	}
 	tok_str_add(&str, 0);
 	PP_PRINT(("areslt:", 0, str.str));
@@ -3646,19 +3646,19 @@ static inline int *macro_twosharps(const int *ptr0) { MCC_TRACE("enter\n");
 	for (ptr = ptr0;;) { MCC_TRACE("br\n");
 		TOK_GET(&t1, &ptr, &cv1);
 		if (t1 == 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		for (;;) { MCC_TRACE("br\n");
 			n = 0;
 			while ((t2 = ptr[n]) == ' ')
 				++n;
 			if (t2 != TOK_PPJOIN)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			ptr += n;
 			while ((t2 = *++ptr) == ' ' || t2 == TOK_PPJOIN)
 				;
 			TOK_GET(&t2, &ptr, &cv2);
 			if (t2 == TOK_PLCHLDR)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			if (t1 != TOK_PLCHLDR) { MCC_TRACE("br\n");
 				cstr_cat(&tokcstr, get_tok_str(t1, &cv1), -1);
 				t1 = TOK_PLCHLDR;
@@ -3671,8 +3671,8 @@ static inline int *macro_twosharps(const int *ptr0) { MCC_TRACE("enter\n");
 			for (ci = 0; ci + 1 < tokcstr.size - 1; ci++) { MCC_TRACE("br\n");
 				char *d = (char *)tokcstr.data;
 				if (d[ci] == '/' && (d[ci + 1] == '/' || d[ci + 1] == '*'))
-					mcc_error("pasting formed '%s', an invalid preprocessing token",
-										(char *)tokcstr.data);
+					{ MCC_TRACE("br\n"); mcc_error("pasting formed '%s', an invalid preprocessing token",
+										(char *)tokcstr.data); }
 			}
 			mcc_open_bf(mcc_state, ":paste:", tokcstr.size);
 			memcpy(file->buffer, tokcstr.data, tokcstr.size);
@@ -3681,7 +3681,7 @@ static inline int *macro_twosharps(const int *ptr0) { MCC_TRACE("enter\n");
 				next_nomacro();
 				tok_str_add2(&macro_str1, tok, &tokc);
 				if (*file->buf_ptr == 0)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				tok_str_add(&macro_str1, ' ');
 				l = file->buf_ptr - file->buffer;
 				mcc_warning("pasting \"%.*s\" and \"%s\" does not give a valid"
@@ -3692,7 +3692,7 @@ static inline int *macro_twosharps(const int *ptr0) { MCC_TRACE("enter\n");
 			cstr_reset(&tokcstr);
 		}
 		if (t1 != TOK_PLCHLDR)
-			tok_str_add2(&macro_str1, t1, &cv1);
+			{ MCC_TRACE("br\n"); tok_str_add2(&macro_str1, t1, &cv1); }
 	}
 	tok_str_add(&macro_str1, 0);
 	PP_PRINT(("pasted:", 0, macro_str1.str));
@@ -3708,9 +3708,9 @@ static int peek_file(TokenString *ws_str) { MCC_TRACE("enter\n");
 		case '/':
 			PEEKC(c, p);
 			if (c == '*')
-				p = parse_comment(p);
+				{ MCC_TRACE("br\n"); p = parse_comment(p); }
 			else if (c == '/')
-				p = parse_line_comment(p);
+				{ MCC_TRACE("br\n"); p = parse_line_comment(p); }
 			else { MCC_TRACE("br\n");
 				c = *--p = '/';
 				goto leave;
@@ -3733,7 +3733,7 @@ static int peek_file(TokenString *ws_str) { MCC_TRACE("enter\n");
 			return c;
 		}
 		if (ws_str)
-			tok_str_add(ws_str, c);
+			{ MCC_TRACE("br\n"); tok_str_add(ws_str, c); }
 	}
 }
 
@@ -3746,7 +3746,7 @@ static int next_argstream(Sym **nested_list, TokenString *ws_str) { MCC_TRACE("e
 		while ((t = *m) != 0) { MCC_TRACE("br\n");
 			if (ws_str) { MCC_TRACE("br\n");
 				if (t != ' ')
-					return t;
+					{ MCC_TRACE("br\n"); return t; }
 				++m;
 			} else { MCC_TRACE("br\n");
 				TOK_GET(&tok, &macro_ptr, &tokc);
@@ -3756,14 +3756,14 @@ static int next_argstream(Sym **nested_list, TokenString *ws_str) { MCC_TRACE("e
 		end_macro();
 		sa = *nested_list;
 		if (sa)
-			*nested_list = sa->prev, sym_free(sa);
+			{ MCC_TRACE("br\n"); *nested_list = sa->prev, sym_free(sa); }
 	}
 	if (ws_str) { MCC_TRACE("br\n");
 		return peek_file(ws_str);
 	} else { MCC_TRACE("br\n");
 		next_nomacro();
 		if (tok == '\t' || tok == TOK_LINEFEED)
-			tok = ' ';
+			{ MCC_TRACE("br\n"); tok = ' '; }
 		return tok;
 	}
 }
@@ -3796,8 +3796,8 @@ static int macro_subst_tok(
 				parse_flags = saved_parse_flags;
 				tok_str_add2_spc(tok_str, v, 0);
 				if (parse_flags & PARSE_FLAG_SPACES)
-					for (i = 0; i < str.len; i++)
-						tok_str_add(tok_str, str.str[i]);
+					{ MCC_TRACE("br\n"); for (i = 0; i < str.len; i++)
+						tok_str_add(tok_str, str.str[i]); }
 				tok_str_free_str(str.str);
 				return 0;
 			} else { MCC_TRACE("br\n");
@@ -3814,7 +3814,7 @@ static int macro_subst_tok(
 
 				if (!sa) { MCC_TRACE("br\n");
 					if (t == ')')
-						break;
+						{ MCC_TRACE("br\n"); break; }
 					mcc_error("macro '%s' used with too many args",
 										get_tok_str(v, 0));
 				}
@@ -3823,14 +3823,14 @@ static int macro_subst_tok(
 				parlevel = 0;
 				while (parlevel > 0 || (t != ')' && (t != ',' || sa->type.t))) { MCC_TRACE("br\n");
 					if (t == TOK_EOF)
-						mcc_error("EOF in invocation of macro '%s'",
-											get_tok_str(v, 0));
+						{ MCC_TRACE("br\n"); mcc_error("EOF in invocation of macro '%s'",
+											get_tok_str(v, 0)); }
 					if (t == '(')
-						parlevel++;
+						{ MCC_TRACE("br\n"); parlevel++; }
 					if (t == ')')
-						parlevel--;
+						{ MCC_TRACE("br\n"); parlevel--; }
 					if (t == ' ')
-						str.need_spc |= 1;
+						{ MCC_TRACE("br\n"); str.need_spc |= 1; }
 					else if (t == TOK___LINE__) { MCC_TRACE("br\n");
 						CValue lcv;
 						char lbuf[32];
@@ -3839,7 +3839,7 @@ static int macro_subst_tok(
 						lcv.str.data = lbuf;
 						tok_str_add2_spc(&str, TOK_PPNUM, &lcv);
 					} else
-						tok_str_add2_spc(&str, t, &tokc);
+						{ MCC_TRACE("br\n"); tok_str_add2_spc(&str, t, &tokc); }
 					t = next_argstream(nested_list, NULL);
 				}
 				tok_str_add(&str, TOK_EOF);
@@ -3848,15 +3848,15 @@ static int macro_subst_tok(
 				sa = sa->next;
 				if (t == ')') { MCC_TRACE("br\n");
 					if (!sa)
-						break;
+						{ MCC_TRACE("br\n"); break; }
 					if (sa->type.t && gnu_ext) { MCC_TRACE("br\n");
 						if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 							if (mcc_state->pedantic_errors)
-								mcc_error("ISO C does not permit a variadic macro "
-													"to be invoked with no argument for the '...'");
+								{ MCC_TRACE("br\n"); mcc_error("ISO C does not permit a variadic macro "
+													"to be invoked with no argument for the '...'"); }
 							else
-								mcc_warning("ISO C does not permit a variadic macro "
-														"to be invoked with no argument for the '...'");
+								{ MCC_TRACE("br\n"); mcc_warning("ISO C does not permit a variadic macro "
+														"to be invoked with no argument for the '...'"); }
 						}
 						goto empty_arg;
 					}
@@ -3880,17 +3880,17 @@ static int macro_subst_tok(
 
 		jstr = mstr;
 		if (s->type.t & MACRO_JOIN)
-			jstr = macro_twosharps(mstr);
+			{ MCC_TRACE("br\n"); jstr = macro_twosharps(mstr); }
 
 		sa = sym_push2(nested_list, v, 0, 0);
 		ret = macro_subst(tok_str, nested_list, jstr);
 		if (sa == *nested_list)
-			*nested_list = sa->prev, sym_free(sa);
+			{ MCC_TRACE("br\n"); *nested_list = sa->prev, sym_free(sa); }
 
 		if (jstr != mstr)
-			tok_str_free_str(jstr);
+			{ MCC_TRACE("br\n"); tok_str_free_str(jstr); }
 		if (mstr != s->d)
-			tok_str_free_str(mstr);
+			{ MCC_TRACE("br\n"); tok_str_free_str(mstr); }
 		return ret;
 	} else { MCC_TRACE("br\n");
 		CValue cval;
@@ -3945,11 +3945,11 @@ static int macro_subst(
 	while (1) { MCC_TRACE("br\n");
 		TOK_GET(&t, &macro_str, &cval);
 		if (t == 0 || t == TOK_EOF)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (t >= TOK_IDENT) { MCC_TRACE("br\n");
 			s = define_find(t);
 			if (s == NULL || nosubst)
-				goto no_subst;
+				{ MCC_TRACE("br\n"); goto no_subst; }
 			if (sym_find2(*nested_list, t)) { MCC_TRACE("br\n");
 				t |= SYM_FIELD;
 				goto no_subst;
@@ -3965,14 +3965,14 @@ static int macro_subst(
 			end_macro();
 		} else if (t == ' ') { MCC_TRACE("br\n");
 			if (parse_flags & PARSE_FLAG_SPACES)
-				tok_str->need_spc |= 1;
+				{ MCC_TRACE("br\n"); tok_str->need_spc |= 1; }
 		} else { MCC_TRACE("br\n");
 		no_subst:
 			tok_str_add2_spc(tok_str, t, &cval);
 			if (nosubst && t != '(')
-				nosubst = 0;
+				{ MCC_TRACE("br\n"); nosubst = 0; }
 			if (t == TOK_DEFINED && pp_expr)
-				nosubst = 1;
+				{ MCC_TRACE("br\n"); nosubst = 1; }
 		}
 	}
 
@@ -3991,7 +3991,7 @@ static void pragma_operator(void) { MCC_TRACE("enter\n");
 
 	next();
 	if (tok != '(')
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	next();
 	if (tok != TOK_STR) { MCC_TRACE("br\n");
 		mcc_error("_Pragma takes a parenthesized string literal");
@@ -4037,7 +4037,7 @@ ST_FUNC void next(void) { MCC_TRACE("enter\n");
 			t &= ~SYM_FIELD;
 			if (t == '\\') { MCC_TRACE("br\n");
 				if (!(parse_flags & PARSE_FLAG_ACCEPT_STRAYS))
-					mcc_error("stray '\\' in program");
+					{ MCC_TRACE("br\n"); mcc_error("stray '\\' in program"); }
 			}
 		}
 		tok = t;
@@ -4083,10 +4083,10 @@ ST_FUNC void next(void) { MCC_TRACE("enter\n");
 convert:
 	if (t == TOK_PPNUM) { MCC_TRACE("br\n");
 		if (parse_flags & PARSE_FLAG_TOK_NUM)
-			parse_number(tokc.str.data);
+			{ MCC_TRACE("br\n"); parse_number(tokc.str.data); }
 	} else if (t == TOK_PPSTR) { MCC_TRACE("br\n");
 		if (parse_flags & PARSE_FLAG_TOK_STR)
-			parse_string(tokc.str.data, tokc.str.size - 1);
+			{ MCC_TRACE("br\n"); parse_string(tokc.str.data, tokc.str.size - 1); }
 	}
 }
 
@@ -4094,9 +4094,9 @@ ST_INLN void unget_tok(int last_tok) { MCC_TRACE("enter\n");
 	TokenString *str = &unget_buf;
 	int alloc = 0;
 	if (str->len)
-		str = tok_str_alloc(), alloc = 1;
+		{ MCC_TRACE("br\n"); str = tok_str_alloc(), alloc = 1; }
 	if (tok != TOK_EOF)
-		tok_str_add2(str, tok, &tokc);
+		{ MCC_TRACE("br\n"); tok_str_add2(str, tok, &tokc); }
 	tok_str_add(str, 0);
 	begin_macro(str, alloc);
 	tok = last_tok;
@@ -4156,40 +4156,40 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 
 #ifdef MCC_TARGET_ARM
 	if (s1->float_abi == ARM_HARD_FLOAT)
-		putdef(cs, "__ARM_PCS_VFP");
+		{ MCC_TRACE("br\n"); putdef(cs, "__ARM_PCS_VFP"); }
 #endif
 	if (is_asm)
-		putdef(cs, "__ASSEMBLER__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__ASSEMBLER__"); }
 	if (s1->output_type == MCC_OUTPUT_PREPROCESS)
-		putdef(cs, "__MCC_PP__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_PP__"); }
 	if (s1->output_type == MCC_OUTPUT_MEMORY)
-		putdef(cs, "__MCC_RUN__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_RUN__"); }
 #if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace)
-		putdef(cs, "__MCC_BACKTRACE__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_BACKTRACE__"); }
 #endif
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check)
-		putdef(cs, "__MCC_BCHECK__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_BCHECK__"); }
 #endif
 	if (s1->do_sanitize_undefined)
-		putdef(cs, "__MCC_SANITIZE_UNDEFINED__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_SANITIZE_UNDEFINED__"); }
 	if (s1->do_sanitize_address)
-		putdef(cs, "__SANITIZE_ADDRESS__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__SANITIZE_ADDRESS__"); }
 	if (s1->char_is_unsigned)
-		putdef(cs, "__CHAR_UNSIGNED__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__CHAR_UNSIGNED__"); }
 	if (s1->optimize > 0)
-		putdef(cs, "__OPTIMIZE__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__OPTIMIZE__"); }
 	if (s1->optimize_size)
-		putdef(cs, "__OPTIMIZE_SIZE__");
+		{ MCC_TRACE("br\n"); putdef(cs, "__OPTIMIZE_SIZE__"); }
 	if (s1->option_pthread)
-		putdef(cs, "_REENTRANT");
+		{ MCC_TRACE("br\n"); putdef(cs, "_REENTRANT"); }
 	if (s1->leading_underscore)
-		putdef(cs, "__leading_underscore");
+		{ MCC_TRACE("br\n"); putdef(cs, "__leading_underscore"); }
 	if (s1->leading_underscore)
-		cstr_printf(cs, "#define __USER_LABEL_PREFIX__ _\n");
+		{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __USER_LABEL_PREFIX__ _\n"); }
 	else
-		cstr_printf(cs, "#define __USER_LABEL_PREFIX__\n");
+		{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __USER_LABEL_PREFIX__\n"); }
 	cstr_printf(cs, "#define __SIZEOF_POINTER__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_LONG__ %d\n", LONG_SIZE);
 	if (!is_asm) { MCC_TRACE("br\n");
@@ -4197,7 +4197,7 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 		cstr_printf(cs, "#define __STDC_HOSTED__ %d\n",
 								(s1->nostdlib || s1->freestanding) ? 0 : 1);
 		if (s1->cversion)
-			cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion);
+			{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion); }
 		cstr_cat(cs,
 #if MCC_CONFIG_PREDEFS
 #include "mccdefs_.h"
@@ -4233,9 +4233,9 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 		cstr_new(&cstr);
 		mcc_predefs(s1, &cstr, is_asm);
 		if (s1->cmdline_defs.size)
-			cstr_cat(&cstr, s1->cmdline_defs.data, s1->cmdline_defs.size);
+			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_defs.data, s1->cmdline_defs.size); }
 		if (s1->cmdline_incl.size)
-			cstr_cat(&cstr, s1->cmdline_incl.data, s1->cmdline_incl.size);
+			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_incl.data, s1->cmdline_incl.size); }
 		*s1->include_stack_ptr++ = file;
 		mcc_open_bf(s1, "<command line>", cstr.size);
 		file->system_header = 1;
@@ -4298,7 +4298,7 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 		for (;;) { MCC_TRACE("br\n");
 			c = *r++;
 			if (c == '\0')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 		tok_alloc(p, r - p - 1);
 		p = r;
@@ -4318,7 +4318,7 @@ ST_FUNC void mccpp_delete(MCCState *s) { MCC_TRACE("enter\n");
 
 	n = tok_ident - TOK_IDENT;
 	if (n > total_idents)
-		total_idents = n;
+		{ MCC_TRACE("br\n"); total_idents = n; }
 	for (int i = n; --i >= 0;)
 		tal_free(&toksym_alloc, table_ident[i]);
 	mcc_free(table_ident);
@@ -4349,9 +4349,9 @@ static void tok_print(const int *str, const char *msg, ...) { MCC_TRACE("enter\n
 	while (str) { MCC_TRACE("br\n");
 		TOK_GET(&t, &str, &cval);
 		if (t == 0 || t == TOK_EOF)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (pp_need_space(t0, t))
-			s = 0;
+			{ MCC_TRACE("br\n"); s = 0; }
 		fprintf(fp, &" %s"[s], t == TOK_PLCHLDR ? "<>" : get_tok_str(t, &cval));
 		s = 1, t0 = t;
 	}
@@ -4362,7 +4362,7 @@ static void pp_line(MCCState *s1, BufferedFile *f, int level) { MCC_TRACE("enter
 	int d = f->line_num - f->line_ref;
 
 	if (s1->dflag & 4)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	if (s1->Pflag == LINE_MACRO_OUTPUT_FORMAT_NONE) { MCC_TRACE("br\n");
 		;
@@ -4388,7 +4388,7 @@ static void define_print(MCCState *s1, int v) { MCC_TRACE("enter\n");
 
 	s = define_find(v);
 	if (NULL == s || NULL == s->d)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	fp = s1->ppfp;
 	fprintf(fp, "#define %s", get_tok_str(v, NULL));
@@ -4396,12 +4396,12 @@ static void define_print(MCCState *s1, int v) { MCC_TRACE("enter\n");
 		Sym *a = s->next;
 		fprintf(fp, "(");
 		if (a)
-			for (;;) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (;;) { MCC_TRACE("br\n");
 				fprintf(fp, "%s", get_tok_str(a->v, NULL));
 				if (!(a = a->next))
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				fprintf(fp, ",");
-			}
+			} }
 		fprintf(fp, ")");
 	}
 	tok_print(s->d, "");
@@ -4413,9 +4413,9 @@ static void pp_write_toks(FILE *f, const int *str) { MCC_TRACE("enter\n");
 	while (str) { MCC_TRACE("br\n");
 		TOK_GET(&t, &str, &cval);
 		if (t == 0 || t == TOK_EOF)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (pp_need_space(t0, t))
-			sp = 0;
+			{ MCC_TRACE("br\n"); sp = 0; }
 		fprintf(f, &" %s"[sp], t == TOK_PLCHLDR ? "" : get_tok_str(t, &cval));
 		sp = 1, t0 = t;
 	}
@@ -4427,12 +4427,12 @@ static void pp_write_define(FILE *f, Sym *s) { MCC_TRACE("enter\n");
 		Sym *a = s->next;
 		fprintf(f, "(");
 		if (a)
-			for (;;) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (;;) { MCC_TRACE("br\n");
 				fprintf(f, "%s", get_tok_str(a->v, NULL));
 				if (!(a = a->next))
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				fprintf(f, ",");
-			}
+			} }
 		fprintf(f, ")");
 	}
 	fprintf(f, " ");
@@ -4455,22 +4455,22 @@ ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res) {
 	const char *argv[6];
 
 	if (!m || !m->d || !(m->type.t & MACRO_FUNC))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	for (n = 0, a = m->next; a; a = a->next, n++)
 		if (a->type.t)
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 	if (n != nargs)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (host_exe_path(exe, sizeof exe) < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	f = host_temp_c_file(path, sizeof path);
 	if (!f)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 
 	for (d = define_stack; d; d = d->prev)
 		if (d->d && !(d->v & SYM_FIELD) && d->v != v && d->v >= TOK_IDENT &&
 				!is_predef_macro(d->v))
-			dynarray_add((void ***)&older, &nolder, d);
+			{ MCC_TRACE("br\n"); dynarray_add((void ***)&older, &nolder, d); }
 	for (i = nolder; i-- > 0;)
 		pp_write_define(f, older[i]);
 	mcc_free(older);
@@ -4503,7 +4503,7 @@ ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res) {
 		if (host_spawn_ex(argv, &o) == 0 && out && *out) { MCC_TRACE("br\n");
 			*res = strtoll(out, &end, 10);
 			if (end != out)
-				ret = 0;
+				{ MCC_TRACE("br\n"); ret = 0; }
 		}
 	}
 	mcc_free(out);
@@ -4518,7 +4518,7 @@ static void pp_debug_defines(MCCState *s1) { MCC_TRACE("enter\n");
 
 	t = pp_debug_tok;
 	if (t == 0)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	file->line_num--;
 	pp_line(s1, file, 0);
@@ -4553,7 +4553,7 @@ static int pp_need_space(int a, int b) { MCC_TRACE("enter\n");
 
 static int pp_check_he0xE(int t, const char *p) { MCC_TRACE("enter\n");
 	if (t == TOK_PPNUM && toup(strchr(p, 0)[-1]) == 'E')
-		return 'E';
+		{ MCC_TRACE("br\n"); return 'E'; }
 	return t;
 }
 
@@ -4563,7 +4563,7 @@ static void pp_pragma_operator(MCCState *s1, int *ptoken_seen) { MCC_TRACE("ente
 
 	next();
 	if (tok != '(')
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	next();
 	if (tok != TOK_PPSTR && tok != TOK_STR) { MCC_TRACE("br\n");
 		while (tok != ')' && tok != TOK_EOF && tok != TOK_LINEFEED)
@@ -4574,19 +4574,19 @@ static void pp_pragma_operator(MCCState *s1, int *ptoken_seen) { MCC_TRACE("ente
 	while (*raw && *raw != '"')
 		raw++;
 	if (*raw == '"')
-		raw++;
+		{ MCC_TRACE("br\n"); raw++; }
 	content = mcc_malloc(strlen(raw) + 1);
 	q = content;
 	while (*raw && *raw != '"') { MCC_TRACE("br\n");
 		if (*raw == '\\' && (raw[1] == '"' || raw[1] == '\\'))
-			raw++;
+			{ MCC_TRACE("br\n"); raw++; }
 		*q++ = *raw++;
 	}
 	*q = 0;
 	next();
 
 	if (*ptoken_seen != TOK_LINEFEED)
-		fputc('\n', s1->ppfp);
+		{ MCC_TRACE("br\n"); fputc('\n', s1->ppfp); }
 	fputs("#pragma ", s1->ppfp);
 	fputs(content, s1->ppfp);
 	fputc('\n', s1->ppfp);
@@ -4603,7 +4603,7 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 
 	parse_flags = PARSE_FLAG_PREPROCESS | (parse_flags & PARSE_FLAG_ASM_FILE) | PARSE_FLAG_LINEFEED | PARSE_FLAG_SPACES | PARSE_FLAG_ACCEPT_STRAYS;
 	if (s1->Pflag == LINE_MACRO_OUTPUT_FORMAT_P10)
-		parse_flags |= PARSE_FLAG_TOK_NUM, s1->Pflag = 1;
+		{ MCC_TRACE("br\n"); parse_flags |= PARSE_FLAG_TOK_NUM, s1->Pflag = 1; }
 
 	if (s1->do_bench) { MCC_TRACE("br\n");
 		do
@@ -4614,25 +4614,25 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 
 	token_seen = TOK_LINEFEED, spcs = 0, level = 0;
 	if (file->prev)
-		pp_line(s1, file->prev, level++);
+		{ MCC_TRACE("br\n"); pp_line(s1, file->prev, level++); }
 	pp_line(s1, file, level);
 
 	for (;;) { MCC_TRACE("br\n");
 		iptr = s1->include_stack_ptr;
 		next();
 		if (tok == TOK_EOF)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 
 		level = s1->include_stack_ptr - iptr;
 		if (level) { MCC_TRACE("br\n");
 			if (level > 0)
-				pp_line(s1, *iptr, 0);
+				{ MCC_TRACE("br\n"); pp_line(s1, *iptr, 0); }
 			pp_line(s1, file, level);
 		}
 		if (s1->dflag & 7) { MCC_TRACE("br\n");
 			pp_debug_defines(s1);
 			if (s1->dflag & 4)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 		}
 
 		if (tok == TOK__Pragma) { MCC_TRACE("br\n");
@@ -4643,12 +4643,12 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 
 		if (is_space(tok)) { MCC_TRACE("br\n");
 			if (spcs < sizeof white - 1)
-				white[spcs++] = tok;
+				{ MCC_TRACE("br\n"); white[spcs++] = tok; }
 			continue;
 		} else if (tok == TOK_LINEFEED) { MCC_TRACE("br\n");
 			spcs = 0;
 			if (token_seen == TOK_LINEFEED)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			++file->line_ref;
 		} else if (token_seen == TOK_LINEFEED) { MCC_TRACE("br\n");
 			pp_line(s1, file, 0);

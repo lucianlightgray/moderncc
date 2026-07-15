@@ -92,7 +92,7 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
@@ -102,8 +102,8 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 		uint64_t got = s1->got->sh_addr + 16;
 		uint64_t off = (got >> 12) - (plt >> 12);
 		if ((off + ((uint32_t)1 << 20)) >> 21)
-			mcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got,
-												(long)plt);
+			{ MCC_TRACE("br\n"); mcc_error_noabort("Failed relocating PLT (off=0x%lx, got=0x%lx, plt=0x%lx)", (long)off, (long)got,
+												(long)plt); }
 		write32le(p, ARM64_STP_X_PRE | ARM64_RT(16) | ARM64_RT2(30) |
 										 ARM64_RN(31) | ARM64_IMM7(-2));
 		write32le(p + 4, (ARM64_ADRP | ARM64_RD(16) |
@@ -123,8 +123,8 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 			uint64_t addr = got + read64le(p);
 			uint64_t off = (addr >> 12) - (pc >> 12);
 			if ((off + ((uint32_t)1 << 20)) >> 21)
-				mcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr,
-													(long)pc);
+				{ MCC_TRACE("br\n"); mcc_error_noabort("Failed relocating PLT (off=0x%lx, addr=0x%lx, pc=0x%lx)", (long)off, (long)addr,
+													(long)pc); }
 			write32le(p, (ARM64_ADRP | ARM64_RD(16) |
 										(off & 0x1ffffc) << 3 | (off & 3) << 29));
 			write32le(p + 4, (ARM64_LDR_X | ARM64_RT(17) | ARM64_RN(16) |
@@ -217,7 +217,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		}
 #else
 		if ((off + ((uint64_t)1 << 20)) >> 21)
-			mcc_error_noabort("R_AARCH64_ADR_PREL_PG_HI21 relocation failed");
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_ADR_PREL_PG_HI21 relocation failed"); }
 #endif
 		write32le(ptr, ((read32le(ptr) & 0x9f00001f) |
 										(off & 0x1ffffc) << 3 | (off & 3) << 29));
@@ -246,23 +246,23 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_AARCH64_CONDBR19:
 		if (g_debug & MCC_DBG_RELOC)
-			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
-						 (char *)symtab_section->link->data + sym->st_name);
+			{ MCC_TRACE("br\n"); printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
+						 (char *)symtab_section->link->data + sym->st_name); }
 		if (((val - addr) + ((uint64_t)1 << 20)) & ~(uint64_t)0x1ffffc)
-			mcc_error_noabort("R_AARCH64_CONDBR19 relocation failed"
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_CONDBR19 relocation failed"
 												" (val=%lx, addr=%lx)",
-												(long)val, (long)addr);
+												(long)val, (long)addr); }
 		write32le(ptr, ((read32le(ptr) & 0xff00001f) |
 										(((val - addr) >> 2 & 0x7ffff) << 5)));
 		return;
 	case R_AARCH64_TSTBR14:
 		if (g_debug & MCC_DBG_RELOC)
-			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
-						 (char *)symtab_section->link->data + sym->st_name);
+			{ MCC_TRACE("br\n"); printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
+						 (char *)symtab_section->link->data + sym->st_name); }
 		if (((val - addr) + ((uint64_t)1 << 15)) & ~(uint64_t)0xfffc)
-			mcc_error_noabort("R_AARCH64_TSTBR14 relocation failed"
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_TSTBR14 relocation failed"
 												" (val=%lx, addr=%lx)",
-												(long)val, (long)addr);
+												(long)val, (long)addr); }
 		write32le(ptr, ((read32le(ptr) & 0xfff8001f) |
 										(((val - addr) >> 2 & 0x3fff) << 5)));
 		return;
@@ -270,8 +270,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_CALL26: {
 		const char *name;
 		if (g_debug & MCC_DBG_RELOC)
-			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
-						 (char *)symtab_section->link->data + sym->st_name);
+			{ MCC_TRACE("br\n"); printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr, (long)val,
+						 (char *)symtab_section->link->data + sym->st_name); }
 		if (((val - addr) + ((uint64_t)1 << 27)) & ~(uint64_t)0xffffffc) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
 			if (sym->st_shndx == SHN_UNDEF && ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
@@ -297,7 +297,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 					12) -
 				 (addr >> 12));
 		if ((off + ((uint64_t)1 << 20)) >> 21)
-			mcc_error_noabort("R_AARCH64_ADR_GOT_PAGE relocation failed");
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_ADR_GOT_PAGE relocation failed"); }
 		write32le(ptr, ((read32le(ptr) & 0x9f00001f) |
 										(off & 0x1ffffc) << 3 | (off & 3) << 29));
 		return;
@@ -315,9 +315,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_GLOB_DAT:
 	case R_AARCH64_JUMP_SLOT:
 		if (g_debug & MCC_DBG_RELOC)
-			printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr,
+			{ MCC_TRACE("br\n"); printf("reloc %d @ 0x%lx: val=0x%lx name=%s\n", type, (long)addr,
 						 (long)(val - rel->r_addend),
-						 (char *)symtab_section->link->data + sym->st_name);
+						 (char *)symtab_section->link->data + sym->st_name); }
 		write64le(ptr, val - rel->r_addend);
 		return;
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
@@ -329,7 +329,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
-					tls_start = s->sh_addr;
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 			}
 		}
 #ifdef MCC_TARGET_PE
@@ -341,9 +341,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #endif
 		int64_t imm;
 		if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)
-			imm = (tp_offset >> 12) & 0xfff;
+			{ MCC_TRACE("br\n"); imm = (tp_offset >> 12) & 0xfff; }
 		else
-			imm = tp_offset & 0xfff;
+			{ MCC_TRACE("br\n"); imm = tp_offset & 0xfff; }
 		write32le(ptr, ((read32le(ptr) & 0xffc003ff) | (imm << 10)));
 		return;
 	}

@@ -118,7 +118,7 @@ static void modrm(Dis *d, int size, int xmm_rm) { MCC_TRACE("enter\n");
 			int br = bse | (d->rex_b ? 8 : 0);
 			scale = 1 << ss;
 			if (ir != 4)
-				snprintf(index, sizeof index, ",%s,%d", gpr(d, 8, ir), scale);
+				{ MCC_TRACE("br\n"); snprintf(index, sizeof index, ",%s,%d", gpr(d, 8, ir), scale); }
 			if (bse == 5 && mod == 0) { MCC_TRACE("br\n");
 				have_base = 0;
 				have_disp = 1;
@@ -135,9 +135,9 @@ static void modrm(Dis *d, int size, int xmm_rm) { MCC_TRACE("enter\n");
 			disp = get32(d);
 			sym = disasm_reloc(d->dc, disp_off, 4, &rtype);
 			if (sym)
-				snprintf(d->rm, sizeof d->rm, "%s(%%rip)", sym);
+				{ MCC_TRACE("br\n"); snprintf(d->rm, sizeof d->rm, "%s(%%rip)", sym); }
 			else
-				snprintf(d->rm, sizeof d->rm, "0x%llx(%%rip)", disp);
+				{ MCC_TRACE("br\n"); snprintf(d->rm, sizeof d->rm, "0x%llx(%%rip)", disp); }
 			return;
 		} else { MCC_TRACE("br\n");
 			snprintf(base, sizeof base, "%s", gpr(d, 8, rm | (d->rex_b ? 8 : 0)));
@@ -162,12 +162,12 @@ static void modrm(Dis *d, int size, int xmm_rm) { MCC_TRACE("enter\n");
 														: NULL;
 			char dbuf[288];
 			if (sym)
-				snprintf(dbuf, sizeof dbuf, "%s", sym);
+				{ MCC_TRACE("br\n"); snprintf(dbuf, sizeof dbuf, "%s", sym); }
 			else if (have_disp && disp)
-				snprintf(dbuf, sizeof dbuf, disp < 0 ? "-0x%llx" : "0x%llx",
-								 disp < 0 ? -disp : disp);
+				{ MCC_TRACE("br\n"); snprintf(dbuf, sizeof dbuf, disp < 0 ? "-0x%llx" : "0x%llx",
+								 disp < 0 ? -disp : disp); }
 			else
-				dbuf[0] = 0;
+				{ MCC_TRACE("br\n"); dbuf[0] = 0; }
 
 			snprintf(d->rm, sizeof d->rm, "%s%s%s%s%s",
 							 dbuf,
@@ -176,7 +176,7 @@ static void modrm(Dis *d, int size, int xmm_rm) { MCC_TRACE("enter\n");
 							 index,
 							 (have_base || index[0]) ? ")" : "");
 			if (!have_base && !index[0] && !dbuf[0])
-				snprintf(d->rm, sizeof d->rm, "0x0");
+				{ MCC_TRACE("br\n"); snprintf(d->rm, sizeof d->rm, "0x0"); }
 		}
 		(void)scale;
 	}
@@ -185,7 +185,7 @@ static void modrm(Dis *d, int size, int xmm_rm) { MCC_TRACE("enter\n");
 static void P(Dis *d, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	if (d->dc->collect)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	va_start(ap, fmt);
 	vfprintf(d->dc->out, fmt, ap);
 	va_end(ap);
@@ -217,13 +217,13 @@ static void imm_ext(Dis *d, int size, int opsize, char *out, int outsz) { MCC_TR
 	long long v;
 	unsigned long long mask;
 	if (size == 1)
-		v = (signed char)get8(d);
+		{ MCC_TRACE("br\n"); v = (signed char)get8(d); }
 	else if (size == 2)
-		v = (short)get16(d);
+		{ MCC_TRACE("br\n"); v = (short)get16(d); }
 	else if (size == 8)
-		v = get64(d);
+		{ MCC_TRACE("br\n"); v = get64(d); }
 	else
-		v = get32(d);
+		{ MCC_TRACE("br\n"); v = get32(d); }
 	if (sym) { MCC_TRACE("br\n");
 		snprintf(out, outsz, "$%s", sym);
 		return;
@@ -248,9 +248,9 @@ static const char *alu8[8] =
 static void alu_rm(Dis *d, const char *name, int size, int dbit) { MCC_TRACE("enter\n");
 	modrm(d, size, 0);
 	if (dbit)
-		P(d, "%s\t%s, %s", name, d->rm, gpr(d, size, d->reg));
+		{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", name, d->rm, gpr(d, size, d->reg)); }
 	else
-		P(d, "%s\t%s, %s", name, gpr(d, size, d->reg), d->rm);
+		{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", name, gpr(d, size, d->reg), d->rm); }
 }
 
 static const char *cc[16] = {
@@ -288,7 +288,7 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 			d->seg = "%gs:";
 			d->len++;
 		} else
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 
 	{
@@ -385,10 +385,10 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		signed char rel = get8(d);
 		sym = disasm_reloc(d->dc, off, 1, &rtype);
 		if (sym)
-			P(d, "j%s\t%s", cc[op & 15], sym);
+			{ MCC_TRACE("br\n"); P(d, "j%s\t%s", cc[op & 15], sym); }
 		else
-			P(d, "j%s\t%s", cc[op & 15],
-				disasm_label(d->dc, d->pc0 + d->len + rel));
+			{ MCC_TRACE("br\n"); P(d, "j%s\t%s", cc[op & 15],
+				disasm_label(d->dc, d->pc0 + d->len + rel)); }
 		return d->len;
 	}
 	case 0x80:
@@ -402,9 +402,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		isz = (op == 0x81) ? (size == 8 ? 4 : size) : 1;
 		imm_ext(d, isz, size, i1, sizeof i1);
 		if (d->rm_is_mem)
-			P(d, "%s%c\t%s, %s", nm, sfx(size), i1, d->rm);
+			{ MCC_TRACE("br\n"); P(d, "%s%c\t%s, %s", nm, sfx(size), i1, d->rm); }
 		else
-			P(d, "%s\t%s, %s", nm, i1, d->rm);
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, i1, d->rm); }
 		return d->len;
 	}
 	case 0x84:
@@ -472,9 +472,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 												 ? "lods"
 												 : "scas";
 		if (d->rep)
-			P(d, "rep ");
+			{ MCC_TRACE("br\n"); P(d, "rep "); }
 		else if (d->repne)
-			P(d, "repnz ");
+			{ MCC_TRACE("br\n"); P(d, "repnz "); }
 		P(d, "%s%c", nm, sfx(sz));
 		return d->len;
 	}
@@ -545,9 +545,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		modrm(d, size, 0);
 		imm_ext(d, size == 8 ? 4 : size, size, i1, sizeof i1);
 		if (d->rm_is_mem)
-			P(d, "mov%c\t%s, %s", sfx(size), i1, d->rm);
+			{ MCC_TRACE("br\n"); P(d, "mov%c\t%s, %s", sfx(size), i1, d->rm); }
 		else
-			P(d, "mov\t%s, %s", i1, d->rm);
+			{ MCC_TRACE("br\n"); P(d, "mov\t%s, %s", i1, d->rm); }
 		return d->len;
 	case 0xc9:
 		P(d, "leave");
@@ -563,10 +563,10 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		long long rel = get32(d);
 		sym = disasm_reloc(d->dc, off, 4, &rtype);
 		if (sym)
-			P(d, "%s\t%s", op == 0xe8 ? "call" : "jmp", sym);
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s", op == 0xe8 ? "call" : "jmp", sym); }
 		else
-			P(d, "%s\t%s", op == 0xe8 ? "call" : "jmp",
-				disasm_label(d->dc, d->pc0 + d->len + rel));
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s", op == 0xe8 ? "call" : "jmp",
+				disasm_label(d->dc, d->pc0 + d->len + rel)); }
 		return d->len;
 	}
 	case 0xeb: {
@@ -583,9 +583,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		if ((d->reg & 7) < 2) { MCC_TRACE("br\n");
 			imm_ext(d, size == 8 ? 4 : size, size, i1, sizeof i1);
 			if (d->rm_is_mem)
-				P(d, "test%c\t%s, %s", sfx(size), i1, d->rm);
+				{ MCC_TRACE("br\n"); P(d, "test%c\t%s, %s", sfx(size), i1, d->rm); }
 			else
-				P(d, "test\t%s, %s", i1, d->rm);
+				{ MCC_TRACE("br\n"); P(d, "test\t%s, %s", i1, d->rm); }
 		} else { MCC_TRACE("br\n");
 			P(d, "%s%s\t%s", g3[d->reg & 7],
 				d->rm_is_mem ? (char[2]){sfx(size), 0} : "", d->rm);
@@ -598,9 +598,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 
 		r = (peek(d, 0) >> 3) & 7;
 		if (op == 0xfe)
-			size = 1;
+			{ MCC_TRACE("br\n"); size = 1; }
 		else
-			size = (r <= 1) ? vsize(d) : 8;
+			{ MCC_TRACE("br\n"); size = (r <= 1) ? vsize(d) : 8; }
 		modrm(d, size, 0);
 		r = d->reg & 7;
 		if (op == 0xfe) { MCC_TRACE("br\n");
@@ -650,11 +650,11 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 			switch (op) { MCC_TRACE("br\n");
 			case 0xd9:
 				if (mb >= 0xc0 && mb <= 0xc7)
-					P(d, "fld\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fld\t%s", st[r]); }
 				else if (mb >= 0xc8 && mb <= 0xcf)
-					P(d, "fxch\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fxch\t%s", st[r]); }
 				else
-					switch (mb) { MCC_TRACE("br\n");
+					{ MCC_TRACE("br\n"); switch (mb) { MCC_TRACE("br\n");
 					case 0xe0:
 						P(d, "fchs");
 						break;
@@ -679,104 +679,104 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 					default:
 						P(d, "fnop");
 						break;
-					}
+					} }
 				break;
 			case 0xd8:
 				if (mb <= 0xc7)
-					P(d, "fadd\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fadd\t%s", st[r]); }
 				else if (mb <= 0xcf)
-					P(d, "fmul\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fmul\t%s", st[r]); }
 				else if (mb <= 0xe7)
-					P(d, "fsub\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fsub\t%s", st[r]); }
 				else if (mb <= 0xef)
-					P(d, "fsubr\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fsubr\t%s", st[r]); }
 				else if (mb <= 0xf7)
-					P(d, "fdiv\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fdiv\t%s", st[r]); }
 				else
-					P(d, "fdivr\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fdivr\t%s", st[r]); }
 				break;
 			case 0xdc:
 
 				if (mb <= 0xc7)
-					P(d, "fadd\t%%st, %s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fadd\t%%st, %s", st[r]); }
 				else if (mb <= 0xcf)
-					P(d, "fmul\t%%st, %s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fmul\t%%st, %s", st[r]); }
 				else if (mb >= 0xe0 && mb <= 0xe7)
-					P(d, "fsub\t%%st, %s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fsub\t%%st, %s", st[r]); }
 				else if (mb >= 0xe8 && mb <= 0xef)
-					P(d, "fsubr\t%%st, %s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fsubr\t%%st, %s", st[r]); }
 				else if (mb >= 0xf0 && mb <= 0xf7)
-					P(d, "fdiv\t%%st, %s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fdiv\t%%st, %s", st[r]); }
 				else
-					P(d, "fdivr\t%%st, %s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fdivr\t%%st, %s", st[r]); }
 				break;
 			case 0xdd:
 				if (mb >= 0xd8 && mb <= 0xdf)
-					P(d, "fstp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fstp\t%s", st[r]); }
 				else if (mb <= 0xc7)
-					P(d, "ffree\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "ffree\t%s", st[r]); }
 				else
-					P(d, "fucom\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fucom\t%s", st[r]); }
 				break;
 			case 0xde:
 				if (mb <= 0xc7)
-					P(d, "faddp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "faddp\t%s", st[r]); }
 				else if (mb <= 0xcf)
-					P(d, "fmulp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fmulp\t%s", st[r]); }
 				else if (mb == 0xd9)
-					P(d, "fcompp");
+					{ MCC_TRACE("br\n"); P(d, "fcompp"); }
 				else if (mb >= 0xe0 && mb <= 0xe7)
-					P(d, "fsubp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fsubp\t%s", st[r]); }
 				else if (mb >= 0xe8 && mb <= 0xef)
-					P(d, "fsubrp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fsubrp\t%s", st[r]); }
 				else if (mb >= 0xf0 && mb <= 0xf7)
-					P(d, "fdivp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fdivp\t%s", st[r]); }
 				else
-					P(d, "fdivrp\t%s", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fdivrp\t%s", st[r]); }
 				break;
 			case 0xda:
 				if (mb == 0xe9)
-					P(d, "fucompp");
+					{ MCC_TRACE("br\n"); P(d, "fucompp"); }
 				else if (mb <= 0xc7)
-					P(d, "fcmovb\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovb\t%s, %%st", st[r]); }
 				else if (mb <= 0xcf)
-					P(d, "fcmove\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmove\t%s, %%st", st[r]); }
 				else if (mb <= 0xd7)
-					P(d, "fcmovbe\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovbe\t%s, %%st", st[r]); }
 				else if (mb <= 0xdf)
-					P(d, "fcmovu\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovu\t%s, %%st", st[r]); }
 				else
-					P(d, ".byte\t0x%02x, 0x%02x", op, mb);
+					{ MCC_TRACE("br\n"); P(d, ".byte\t0x%02x, 0x%02x", op, mb); }
 				break;
 			case 0xdb:
 				if (mb == 0xe2)
-					P(d, "fnclex");
+					{ MCC_TRACE("br\n"); P(d, "fnclex"); }
 				else if (mb == 0xe3)
-					P(d, "fninit");
+					{ MCC_TRACE("br\n"); P(d, "fninit"); }
 				else if (mb >= 0xc0 && mb <= 0xc7)
-					P(d, "fcmovnb\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovnb\t%s, %%st", st[r]); }
 				else if (mb >= 0xc8 && mb <= 0xcf)
-					P(d, "fcmovne\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovne\t%s, %%st", st[r]); }
 				else if (mb >= 0xd0 && mb <= 0xd7)
-					P(d, "fcmovnbe\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovnbe\t%s, %%st", st[r]); }
 				else if (mb >= 0xd8 && mb <= 0xdf)
-					P(d, "fcmovnu\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcmovnu\t%s, %%st", st[r]); }
 				else if (mb >= 0xe8 && mb <= 0xef)
-					P(d, "fucomi\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fucomi\t%s, %%st", st[r]); }
 				else if (mb >= 0xf0 && mb <= 0xf7)
-					P(d, "fcomi\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcomi\t%s, %%st", st[r]); }
 				else
-					P(d, ".byte\t0x%02x, 0x%02x", op, mb);
+					{ MCC_TRACE("br\n"); P(d, ".byte\t0x%02x, 0x%02x", op, mb); }
 				break;
 			case 0xdf:
 				if (mb == 0xe0)
-					P(d, "fnstsw\t%%ax");
+					{ MCC_TRACE("br\n"); P(d, "fnstsw\t%%ax"); }
 				else if (mb >= 0xe8 && mb <= 0xef)
-					P(d, "fucomip\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fucomip\t%s, %%st", st[r]); }
 				else if (mb >= 0xf0 && mb <= 0xf7)
-					P(d, "fcomip\t%s, %%st", st[r]);
+					{ MCC_TRACE("br\n"); P(d, "fcomip\t%s, %%st", st[r]); }
 				else
-					P(d, ".byte\t0x%02x, 0x%02x", op, mb);
+					{ MCC_TRACE("br\n"); P(d, ".byte\t0x%02x, 0x%02x", op, mb); }
 				break;
 			default:
 				P(d, ".byte\t0x%02x, 0x%02x", op, mb);
@@ -803,9 +803,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 			const char *nm = tab[op - 0xd8][rf];
 			modrm(d, 4, 0);
 			if (nm)
-				P(d, "%s\t%s", nm, d->rm);
+				{ MCC_TRACE("br\n"); P(d, "%s\t%s", nm, d->rm); }
 			else
-				P(d, "fx87.%x/%d\t%s", op, rf, d->rm);
+				{ MCC_TRACE("br\n"); P(d, "fx87.%x/%d\t%s", op, rf, d->rm); }
 		}
 		return d->len;
 	}
@@ -845,9 +845,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 												 : "movups";
 		modrm(d, 8, 1);
 		if (op == 0x10)
-			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg)); }
 		else
-			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm); }
 		return d->len;
 	}
 	case 0x12:
@@ -859,9 +859,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 												 : (d->opsz ? "movhpd" : "movhps");
 		modrm(d, 8, 1);
 		if (op & 1)
-			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm); }
 		else
-			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg)); }
 		return d->len;
 	}
 	case 0x14:
@@ -878,9 +878,9 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		const char *nm = d->opsz ? "movapd" : "movaps";
 		modrm(d, 8, 1);
 		if (op == 0x28)
-			P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg)); }
 		else
-			P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm);
+			{ MCC_TRACE("br\n"); P(d, "%s\t%s, %s", nm, xmm(d, d->reg), d->rm); }
 		return d->len;
 	}
 	case 0x2a: {
@@ -988,16 +988,16 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 			break;
 		}
 		if (op == 0x54 || op == 0x55 || op == 0x56 || op == 0x57)
-			snprintf(nm, sizeof nm, "%sp%c", base, d->opsz ? 'd' : 's');
+			{ MCC_TRACE("br\n"); snprintf(nm, sizeof nm, "%sp%c", base, d->opsz ? 'd' : 's'); }
 		else
-			snprintf(nm, sizeof nm, "%s%s", base,
+			{ MCC_TRACE("br\n"); snprintf(nm, sizeof nm, "%s%s", base,
 							 d->rep
 									 ? "ss"
 							 : d->repne
 									 ? "sd"
 							 : d->opsz
 									 ? "pd"
-									 : "ps");
+									 : "ps"); }
 		modrm(d, 8, 1);
 		P(d, "%s\t%s, %s", nm, d->rm, xmm(d, d->reg));
 		return d->len;
@@ -1065,10 +1065,10 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		long long rel = get32(d);
 		sym = disasm_reloc(d->dc, off, 4, &rtype);
 		if (sym)
-			P(d, "j%s\t%s", cc[op & 15], sym);
+			{ MCC_TRACE("br\n"); P(d, "j%s\t%s", cc[op & 15], sym); }
 		else
-			P(d, "j%s\t%s", cc[op & 15],
-				disasm_label(d->dc, d->pc0 + d->len + rel));
+			{ MCC_TRACE("br\n"); P(d, "j%s\t%s", cc[op & 15],
+				disasm_label(d->dc, d->pc0 + d->len + rel)); }
 		return d->len;
 	}
 	case 0x90:
@@ -1161,7 +1161,7 @@ ST_FUNC int mcc_disasm_reloc_size(int type) { MCC_TRACE("enter\n");
 ST_FUNC int mcc_disasm_reloc_addend_bias(int type, int size) { MCC_TRACE("enter\n");
 	if (type == R_X86_64_PC32 || type == R_X86_64_PLT32 || type == R_X86_64_GOTPCREL || type == R_X86_64_GOTPCRELX ||
 			type == R_X86_64_REX_GOTPCRELX)
-		return size;
+		{ MCC_TRACE("br\n"); return size; }
 	return 0;
 }
 

@@ -22,7 +22,7 @@ ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 #if MCC_PTR_SIZE == 8
 ST_FUNC void gen_addr64(int r, Sym *sym, int64_t c) { MCC_TRACE("enter\n");
 	if (r & VT_SYM)
-		greloca(cur_text_section, sym, ind, R_DATA_PTR, c), c = 0;
+		{ MCC_TRACE("br\n"); greloca(cur_text_section, sym, ind, R_DATA_PTR, c), c = 0; }
 	gen_le32(c);
 	gen_le32(c >> 32);
 }
@@ -46,10 +46,10 @@ static int asm2cname(int v, int *addeddot) { MCC_TRACE("enter\n");
 	const char *name;
 	*addeddot = 0;
 	if (!mcc_state->leading_underscore)
-		return v;
+		{ MCC_TRACE("br\n"); return v; }
 	name = get_tok_str(v, NULL);
 	if (!name)
-		return v;
+		{ MCC_TRACE("br\n"); return v; }
 	if (name[0] == '_') { MCC_TRACE("br\n");
 		v = tok_alloc_const(name + 1);
 	} else if (!strchr(name, '.')) { MCC_TRACE("br\n");
@@ -75,7 +75,7 @@ static Sym *asm_label_push(int v) { MCC_TRACE("enter\n");
 	int addeddot, v2 = asm2cname(v, &addeddot);
 	Sym *sym = global_identifier_push(v2, VT_ASM | VT_EXTERN | VT_STATIC, 0);
 	if (addeddot)
-		sym->asm_label = v;
+		{ MCC_TRACE("br\n"); sym->asm_label = v; }
 	return sym;
 }
 
@@ -84,7 +84,7 @@ ST_FUNC Sym *get_asm_sym(int name, Sym *csym) { MCC_TRACE("enter\n");
 	if (!sym) { MCC_TRACE("br\n");
 		sym = asm_label_push(name);
 		if (csym)
-			sym->c = csym->c;
+			{ MCC_TRACE("br\n"); sym->c = csym->c; }
 	}
 	return sym;
 }
@@ -114,9 +114,9 @@ static void asm_expr_unary(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
 			sym = asm_label_find(label);
 			if (*p == 'b') { MCC_TRACE("br\n");
 				if (sym && (!sym->c || elfsym(sym)->st_shndx == SHN_UNDEF))
-					sym = sym->prev_tok;
+					{ MCC_TRACE("br\n"); sym = sym->prev_tok; }
 				if (!sym)
-					mcc_error("local label '%d' not found backward", (int)n);
+					{ MCC_TRACE("br\n"); mcc_error("local label '%d' not found backward", (int)n); }
 			} else { MCC_TRACE("br\n");
 				if (!sym || (sym->c && elfsym(sym)->st_shndx != SHN_UNDEF)) { MCC_TRACE("br\n");
 					sym = asm_label_push(label);
@@ -144,11 +144,11 @@ static void asm_expr_unary(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
 		next();
 		asm_expr_unary(s1, pe);
 		if (pe->sym)
-			mcc_error("invalid operation with label");
+			{ MCC_TRACE("br\n"); mcc_error("invalid operation with label"); }
 		if (op == '-')
-			pe->v = -pe->v;
+			{ MCC_TRACE("br\n"); pe->v = -pe->v; }
 		else
-			pe->v = ~pe->v;
+			{ MCC_TRACE("br\n"); pe->v = ~pe->v; }
 		break;
 	case TOK_CCHAR:
 	case TOK_LCHAR:
@@ -199,11 +199,11 @@ static void asm_expr_prod(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
 		op = tok;
 		if (op != '*' && op != '/' && op != '%' &&
 				op != TOK_SHL && op != TOK_SAR)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		next();
 		asm_expr_unary(s1, &e2);
 		if (pe->sym || e2.sym)
-			mcc_error("invalid operation with label");
+			{ MCC_TRACE("br\n"); mcc_error("invalid operation with label"); }
 		switch (op) { MCC_TRACE("br\n");
 		case '*':
 			pe->v *= e2.v;
@@ -217,7 +217,7 @@ static void asm_expr_prod(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
 			break;
 		case '%':
 			if (e2.v == 0)
-				goto div_error;
+				{ MCC_TRACE("br\n"); goto div_error; }
 			pe->v %= e2.v;
 			break;
 		case TOK_SHL:
@@ -239,11 +239,11 @@ static void asm_expr_logic(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\n");
 	for (;;) { MCC_TRACE("br\n");
 		op = tok;
 		if (op != '&' && op != '|' && op != '^')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		next();
 		asm_expr_prod(s1, &e2);
 		if (pe->sym || e2.sym)
-			mcc_error("invalid operation with label");
+			{ MCC_TRACE("br\n"); mcc_error("invalid operation with label"); }
 		switch (op) { MCC_TRACE("br\n");
 		case '&':
 			pe->v &= e2.v;
@@ -267,15 +267,15 @@ static inline void asm_expr_sum(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\
 	for (;;) { MCC_TRACE("br\n");
 		op = tok;
 		if (op != '+' && op != '-')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		next();
 		asm_expr_logic(s1, &e2);
 		if (op == '+') { MCC_TRACE("br\n");
 			if (pe->sym != NULL && e2.sym != NULL)
-				goto cannot_relocate;
+				{ MCC_TRACE("br\n"); goto cannot_relocate; }
 			pe->v += e2.v;
 			if (pe->sym == NULL && e2.sym != NULL)
-				pe->sym = e2.sym;
+				{ MCC_TRACE("br\n"); pe->sym = e2.sym; }
 		} else { MCC_TRACE("br\n");
 			pe->v -= e2.v;
 			if (!e2.sym) { MCC_TRACE("br\n");
@@ -286,7 +286,7 @@ static inline void asm_expr_sum(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\
 				esym1 = elfsym(pe->sym);
 				esym2 = elfsym(e2.sym);
 				if (!esym2)
-					goto cannot_relocate;
+					{ MCC_TRACE("br\n"); goto cannot_relocate; }
 				if (esym1 && esym1->st_shndx == esym2->st_shndx && esym1->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 					pe->v += (int)(esym1->st_value - esym2->st_value);
 					pe->sym = NULL;
@@ -311,11 +311,11 @@ static inline void asm_expr_cmp(MCCState *s1, ExprValue *pe) { MCC_TRACE("enter\
 	for (;;) { MCC_TRACE("br\n");
 		op = tok;
 		if (op != TOK_EQ && op != TOK_NE && (op > TOK_GT || op < TOK_ULE))
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		next();
 		asm_expr_sum(s1, &e2);
 		if (pe->sym || e2.sym)
-			mcc_error("invalid operation with label");
+			{ MCC_TRACE("br\n"); mcc_error("invalid operation with label"); }
 		switch (op) { MCC_TRACE("br\n");
 		case TOK_EQ:
 			pe->v = pe->v == e2.v;
@@ -350,9 +350,9 @@ ST_FUNC int asm_int_expr(MCCState *s1) { MCC_TRACE("enter\n");
 	ExprValue e;
 	asm_expr(s1, &e);
 	if (e.sym)
-		expect("constant");
+		{ MCC_TRACE("br\n"); expect("constant"); }
 	if ((int)e.v != e.v)
-		mcc_error("integer out of range %lld", (long long)e.v);
+		{ MCC_TRACE("br\n"); mcc_error("integer out of range %lld", (long long)e.v); }
 	return e.v;
 }
 
@@ -366,22 +366,22 @@ static Sym *asm_new_label1(MCCState *s1, int label, int is_local,
 		esym = elfsym(sym);
 		if (esym && esym->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			if (IS_ASM_SYM(sym) && (is_local == 1 || (sym->type.t & VT_EXTERN)))
-				goto new_label;
+				{ MCC_TRACE("br\n"); goto new_label; }
 			if (!(sym->type.t & VT_EXTERN))
-				mcc_error("assembler label '%s' already defined",
-									get_tok_str(label, NULL));
+				{ MCC_TRACE("br\n"); mcc_error("assembler label '%s' already defined",
+									get_tok_str(label, NULL)); }
 		}
 	} else { MCC_TRACE("br\n");
 	new_label:
 		sym = asm_label_push(label);
 	}
 	if (!sym->c)
-		put_extern_sym2(sym, SHN_UNDEF, 0, 0, 1);
+		{ MCC_TRACE("br\n"); put_extern_sym2(sym, SHN_UNDEF, 0, 0, 1); }
 	esym = elfsym(sym);
 	esym->st_shndx = sh_num;
 	esym->st_value = value;
 	if (is_local != 2)
-		sym->type.t &= ~VT_EXTERN;
+		{ MCC_TRACE("br\n"); sym->type.t &= ~VT_EXTERN; }
 	return sym;
 }
 
@@ -399,7 +399,7 @@ static Sym *set_symbol(MCCState *s1, int label) { MCC_TRACE("enter\n");
 	n = e.v;
 	esym = elfsym(e.sym);
 	if (esym)
-		n += esym->st_value;
+		{ MCC_TRACE("br\n"); n += esym->st_value; }
 	sym = asm_new_label1(s1, label, 2, esym ? esym->st_shndx : SHN_ABS, n);
 	elfsym(sym)->st_other |= ST_ASM_SET;
 	return sym;
@@ -426,7 +426,7 @@ static void push_section(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
 static void pop_section(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *prev = cur_text_section->prev;
 	if (!prev)
-		mcc_error(".popsection without .pushsection");
+		{ MCC_TRACE("br\n"); mcc_error(".popsection without .pushsection"); }
 	cur_text_section->prev = NULL;
 	use_section1(s1, prev);
 }
@@ -448,21 +448,21 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		n = asm_int_expr(s1);
 		if (tok1 == TOK_ASMDIR_p2align) { MCC_TRACE("br\n");
 			if (n < 0 || n > 30)
-				mcc_error("invalid p2align, must be between 0 and 30");
+				{ MCC_TRACE("br\n"); mcc_error("invalid p2align, must be between 0 and 30"); }
 			n = 1 << n;
 			tok1 = TOK_ASMDIR_align;
 		}
 		if (tok1 == TOK_ASMDIR_align || tok1 == TOK_ASMDIR_balign) { MCC_TRACE("br\n");
 			if (n <= 0 || (n & (n - 1)) != 0)
-				mcc_error("alignment must be a positive power of two");
+				{ MCC_TRACE("br\n"); mcc_error("alignment must be a positive power of two"); }
 			offset = (ind + n - 1) & -n;
 			size = offset - ind;
 			if (sec->sh_addralign < n)
-				sec->sh_addralign = n;
+				{ MCC_TRACE("br\n"); sec->sh_addralign = n; }
 			c = sec->sh_flags & SHF_EXECINSTR;
 		} else { MCC_TRACE("br\n");
 			if (n < 0)
-				n = 0;
+				{ MCC_TRACE("br\n"); n = 0; }
 			size = n, c = 0;
 		}
 		v = 0;
@@ -472,7 +472,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		}
 	zero_pad:
 		if ((uint64_t)ind + size >= 1 << 30)
-			mcc_error("too much data");
+			{ MCC_TRACE("br\n"); mcc_error("too much data"); }
 		if (sec->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
 			if (c) { MCC_TRACE("br\n");
 				gen_fill_nops(size);
@@ -501,7 +501,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			}
 			vl = strtoll(p, (char **)&p, 0);
 			if (*p != '\0')
-				goto error_constant;
+				{ MCC_TRACE("br\n"); goto error_constant; }
 			next();
 			if (sec->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
 				gen_le32(vl);
@@ -510,7 +510,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 				ind += 8;
 			}
 			if (tok != ',')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			next();
 		}
 		break;
@@ -539,17 +539,17 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 #endif
 				} else { MCC_TRACE("br\n");
 					if (e.sym)
-						expect("constant");
+						{ MCC_TRACE("br\n"); expect("constant"); }
 					if (size == 1)
-						g(e.v);
+						{ MCC_TRACE("br\n"); g(e.v); }
 					else
-						gen_le16(e.v);
+						{ MCC_TRACE("br\n"); gen_le16(e.v); }
 				}
 			} else { MCC_TRACE("br\n");
 				ind += size;
 			}
 			if (tok != ',')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			next();
 		}
 		break;
@@ -572,7 +572,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 				break;
 			}
 			if (size > 8)
-				size = 8;
+				{ MCC_TRACE("br\n"); size = 8; }
 			if (tok == ',') { MCC_TRACE("br\n");
 				next();
 				val = asm_int_expr(s1);
@@ -600,7 +600,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		init_str = tok_str_alloc();
 		while (next(), tok != TOK_ASMDIR_endr) { MCC_TRACE("br\n");
 			if (tok == CH_EOF)
-				mcc_error("we at end of file, .endr not found");
+				{ MCC_TRACE("br\n"); mcc_error("we at end of file, .endr not found"); }
 			tok_str_add_tok(init_str);
 		}
 		tok_str_add(init_str, TOK_EOF);
@@ -623,11 +623,11 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		esym = elfsym(e.sym);
 		if (esym) { MCC_TRACE("br\n");
 			if (esym->st_shndx != cur_text_section->sh_num)
-				expect("constant or same-section symbol");
+				{ MCC_TRACE("br\n"); expect("constant or same-section symbol"); }
 			n += esym->st_value;
 		}
 		if (n < ind)
-			mcc_error("attempt to .org backwards");
+			{ MCC_TRACE("br\n"); mcc_error("attempt to .org backwards"); }
 		v = c = 0;
 		size = n - ind;
 		goto zero_pad;
@@ -637,7 +637,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		tok1 = tok;
 		next();
 		if (tok == ',')
-			set_symbol(s1, tok1);
+			{ MCC_TRACE("br\n"); set_symbol(s1, tok1); }
 		break;
 	case TOK_ASMDIR_globl:
 	case TOK_ASMDIR_global:
@@ -648,14 +648,14 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			Sym *sym;
 			next();
 			if (tok < TOK_IDENT)
-				expect("identifier");
+				{ MCC_TRACE("br\n"); expect("identifier"); }
 			sym = get_asm_sym(tok, NULL);
 			if (tok1 != TOK_ASMDIR_hidden)
-				sym->type.t &= ~VT_STATIC;
+				{ MCC_TRACE("br\n"); sym->type.t &= ~VT_STATIC; }
 			if (tok1 == TOK_ASMDIR_weak)
-				sym->a.weak = 1;
+				{ MCC_TRACE("br\n"); sym->a.weak = 1; }
 			else if (tok1 == TOK_ASMDIR_hidden)
-				sym->a.visibility = STV_HIDDEN;
+				{ MCC_TRACE("br\n"); sym->a.visibility = STV_HIDDEN; }
 			update_storage(sym);
 			next();
 		} while (tok == ',');
@@ -670,11 +670,11 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		next();
 		for (;;) { MCC_TRACE("br\n");
 			if (tok != TOK_STR)
-				expect("string constant");
+				{ MCC_TRACE("br\n"); expect("string constant"); }
 			p = tokc.str.data;
 			size = tokc.str.size;
 			if (t == TOK_ASMDIR_ascii && size > 0)
-				size--;
+				{ MCC_TRACE("br\n"); size--; }
 			for (int i = 0; i < size; i++)
 				g(p[i]);
 			next();
@@ -697,9 +697,9 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			next();
 		}
 		if (n)
-			snprintf(sname, sizeof(sname), "%s%d", get_tok_str(tok1, NULL), n);
+			{ MCC_TRACE("br\n"); snprintf(sname, sizeof(sname), "%s%d", get_tok_str(tok1, NULL), n); }
 		else
-			snprintf(sname, sizeof(sname), "%s", get_tok_str(tok1, NULL));
+			{ MCC_TRACE("br\n"); snprintf(sname, sizeof(sname), "%s", get_tok_str(tok1, NULL)); }
 		use_section(s1, sname);
 	} break;
 	case TOK_ASMDIR_file: {
@@ -707,7 +707,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		parse_flags &= ~PARSE_FLAG_TOK_STR;
 		next();
 		if (tok == TOK_PPNUM)
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		if (tok == TOK_PPSTR && tokc.str.data[0] == '"') { MCC_TRACE("br\n");
 			tokc.str.data[tokc.str.size - 2] = 0;
 			p = tokc.str.data + 1;
@@ -729,9 +729,9 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		ident[0] = '\0';
 		next();
 		if (tok == TOK_STR)
-			pstrcat(ident, sizeof(ident), tokc.str.data);
+			{ MCC_TRACE("br\n"); pstrcat(ident, sizeof(ident), tokc.str.data); }
 		else
-			pstrcat(ident, sizeof(ident), get_tok_str(tok, &tokc));
+			{ MCC_TRACE("br\n"); pstrcat(ident, sizeof(ident), get_tok_str(tok, &tokc)); }
 		mcc_warning_c(warn_unsupported)("ignoring .ident %s", ident);
 		next();
 	} break;
@@ -741,10 +741,10 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 
 		next();
 		if (tok < TOK_IDENT)
-			expect("identifier");
+			{ MCC_TRACE("br\n"); expect("identifier"); }
 		sym = asm_label_find(tok);
 		if (!sym)
-			mcc_error("label not found: %s", get_tok_str(tok, NULL));
+			{ MCC_TRACE("br\n"); mcc_error("label not found: %s", get_tok_str(tok, NULL)); }
 		mcc_warning_c(warn_unsupported)("ignoring .size %s,*", get_tok_str(tok, NULL));
 		next();
 		skip(',');
@@ -761,7 +761,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 
 		next();
 		if (tok < TOK_IDENT)
-			expect("identifier");
+			{ MCC_TRACE("br\n"); expect("identifier"); }
 		sym = get_asm_sym(tok, NULL);
 		next();
 		skip(',');
@@ -769,13 +769,13 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			newtype = tokc.str.data;
 		} else { MCC_TRACE("br\n");
 			if (tok == '@' || tok == '%')
-				next();
+				{ MCC_TRACE("br\n"); next(); }
 			newtype = get_tok_str(tok, NULL);
 		}
 
 		if (!strcmp(newtype, "function") || !strcmp(newtype, "STT_FUNC")) { MCC_TRACE("br\n");
 			if (IS_ASM_SYM(sym))
-				sym->type.t |= VT_ASM_FUNC;
+				{ MCC_TRACE("br\n"); sym->type.t |= VT_ASM_FUNC; }
 			st_type = STT_FUNC;
 		set_st_type:
 			if (sym->c) { MCC_TRACE("br\n");
@@ -786,8 +786,8 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			st_type = STT_OBJECT;
 			goto set_st_type;
 		} else
-			mcc_warning_c(warn_unsupported)("change type of '%s' from 0x%x to '%s' ignored",
-																			get_tok_str(sym->v, NULL), sym->type.t, newtype);
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_unsupported)("change type of '%s' from 0x%x to '%s' ignored",
+																			get_tok_str(sym->v, NULL), sym->type.t, newtype); }
 
 		next();
 	} break;
@@ -802,39 +802,39 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		sname[0] = '\0';
 		while (tok != ';' && tok != TOK_LINEFEED && tok != ',') { MCC_TRACE("br\n");
 			if (tok == TOK_STR)
-				pstrcat(sname, sizeof(sname), tokc.str.data);
+				{ MCC_TRACE("br\n"); pstrcat(sname, sizeof(sname), tokc.str.data); }
 			else
-				pstrcat(sname, sizeof(sname), get_tok_str(tok, NULL));
+				{ MCC_TRACE("br\n"); pstrcat(sname, sizeof(sname), get_tok_str(tok, NULL)); }
 			next();
 		}
 		if (tok == ',') { MCC_TRACE("br\n");
 			const char *p;
 			next();
 			if (tok != TOK_STR)
-				expect("string constant");
+				{ MCC_TRACE("br\n"); expect("string constant"); }
 			for (p = tokc.str.data; *p; ++p) { MCC_TRACE("br\n");
 				if (*p == 'w')
-					flags |= SHF_WRITE;
+					{ MCC_TRACE("br\n"); flags |= SHF_WRITE; }
 				if (*p == 'x')
-					flags |= SHF_EXECINSTR;
+					{ MCC_TRACE("br\n"); flags |= SHF_EXECINSTR; }
 			}
 			next();
 			if (tok == ',') { MCC_TRACE("br\n");
 				next();
 				if (tok == '@' || tok == '%')
-					next();
+					{ MCC_TRACE("br\n"); next(); }
 				next();
 			}
 		}
 		last_text_section = cur_text_section;
 		if (tok1 == TOK_ASMDIR_section)
-			use_section(s1, sname);
+			{ MCC_TRACE("br\n"); use_section(s1, sname); }
 		else
-			push_section(s1, sname);
+			{ MCC_TRACE("br\n"); push_section(s1, sname); }
 		if (old_nb_section != s1->nb_sections) { MCC_TRACE("br\n");
 			cur_text_section->sh_addralign = 1;
 			if (!strcmp(sname, ".init") || !strcmp(sname, ".fini"))
-				flags |= SHF_EXECINSTR;
+				{ MCC_TRACE("br\n"); flags |= SHF_EXECINSTR; }
 			cur_text_section->sh_flags = flags;
 		}
 	} break;
@@ -842,7 +842,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		Section *sec;
 		next();
 		if (!last_text_section)
-			mcc_error("no previous section referenced");
+			{ MCC_TRACE("br\n"); mcc_error("no previous section referenced"); }
 		sec = cur_text_section;
 		use_section1(s1, last_text_section);
 		last_text_section = sec;
@@ -908,29 +908,29 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		reloc_name = get_tok_str(tok, NULL);
 #if defined(MCC_TARGET_ARM64)
 		if (!strcmp(reloc_name, "R_AARCH64_CALL26"))
-			reloc_type = R_AARCH64_CALL26;
+			{ MCC_TRACE("br\n"); reloc_type = R_AARCH64_CALL26; }
 #elif defined(MCC_TARGET_RISCV64)
 		if (!strcmp(reloc_name, "R_RISCV_CALL") || !strcmp(reloc_name, "R_RISCV_CALL_PLT"))
-			reloc_type = R_RISCV_CALL;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_CALL; }
 		else if (!strcmp(reloc_name, "R_RISCV_BRANCH"))
-			reloc_type = R_RISCV_BRANCH;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_BRANCH; }
 		else if (!strcmp(reloc_name, "R_RISCV_JAL"))
-			reloc_type = R_RISCV_JAL;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_JAL; }
 		else if (!strcmp(reloc_name, "R_RISCV_PCREL_HI20"))
-			reloc_type = R_RISCV_PCREL_HI20;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_PCREL_HI20; }
 		else if (!strcmp(reloc_name, "R_RISCV_PCREL_LO12_I"))
-			reloc_type = R_RISCV_PCREL_LO12_I;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_PCREL_LO12_I; }
 		else if (!strcmp(reloc_name, "R_RISCV_PCREL_LO12_S"))
-			reloc_type = R_RISCV_PCREL_LO12_S;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_PCREL_LO12_S; }
 		else if (!strcmp(reloc_name, "R_RISCV_32_PCREL"))
-			reloc_type = R_RISCV_32_PCREL;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_32_PCREL; }
 		else if (!strcmp(reloc_name, "R_RISCV_32"))
-			reloc_type = R_RISCV_32;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_32; }
 		else if (!strcmp(reloc_name, "R_RISCV_64"))
-			reloc_type = R_RISCV_64;
+			{ MCC_TRACE("br\n"); reloc_type = R_RISCV_64; }
 #endif
 		if (reloc_type < 0)
-			mcc_error("unimp: reloc '%s' unknown", reloc_name);
+			{ MCC_TRACE("br\n"); mcc_error("unimp: reloc '%s' unknown", reloc_name); }
 		next();
 		skip(',');
 		greloca(cur_text_section, get_asm_sym(tok, NULL), e.v, reloc_type, 0);
@@ -950,7 +950,7 @@ static void asm_cfi_factors(MCCState *s1) { MCC_TRACE("enter\n");
 	unsigned char *p, *end;
 
 	if (asm_cfi.have_factors)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	asm_cfi.code_align = 1;
 	asm_cfi.data_align = -MCC_PTR_SIZE;
 	p = eh_frame_section->data + s1->eh_start;
@@ -963,9 +963,9 @@ static void asm_cfi_factors(MCCState *s1) { MCC_TRACE("enter\n");
 	asm_cfi.code_align = dwarf_read_uleb128(&p, end);
 	asm_cfi.data_align = dwarf_read_sleb128(&p, end);
 	if (!asm_cfi.code_align)
-		asm_cfi.code_align = 1;
+		{ MCC_TRACE("br\n"); asm_cfi.code_align = 1; }
 	if (!asm_cfi.data_align)
-		asm_cfi.data_align = -MCC_PTR_SIZE;
+		{ MCC_TRACE("br\n"); asm_cfi.data_align = -MCC_PTR_SIZE; }
 	asm_cfi.have_factors = 1;
 }
 
@@ -983,12 +983,12 @@ static void asm_cfi_advance(MCCState *s1) { MCC_TRACE("enter\n");
 	unsigned long pc, delta;
 
 	if (cur_text_section != asm_cfi.sec)
-		mcc_error(".cfi directive outside its function's section");
+		{ MCC_TRACE("br\n"); mcc_error(".cfi directive outside its function's section"); }
 	pc = ind;
 	delta = pc - asm_cfi.last;
 	if (asm_cfi.code_align > 1) { MCC_TRACE("br\n");
 		if (delta % asm_cfi.code_align)
-			mcc_error(".cfi advance not a multiple of the code alignment factor");
+			{ MCC_TRACE("br\n"); mcc_error(".cfi advance not a multiple of the code alignment factor"); }
 		delta /= asm_cfi.code_align;
 	}
 	asm_cfi_room(5);
@@ -1009,9 +1009,9 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 	if (!strcmp(dir, "startproc")) { MCC_TRACE("br\n");
 		if (tok >= TOK_IDENT)
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		if (asm_cfi.active)
-			mcc_error("previous .cfi_startproc not closed");
+			{ MCC_TRACE("br\n"); mcc_error("previous .cfi_startproc not closed"); }
 		asm_cfi.active = 1;
 		asm_cfi.sec = cur_text_section;
 		asm_cfi.start = asm_cfi.last = ind;
@@ -1020,10 +1020,10 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (!asm_cfi.active)
-		mcc_error(".cfi_%s without .cfi_startproc", dir);
+		{ MCC_TRACE("br\n"); mcc_error(".cfi_%s without .cfi_startproc", dir); }
 	if (!strcmp(dir, "endproc")) { MCC_TRACE("br\n");
 		if (cur_text_section != asm_cfi.sec)
-			mcc_error(".cfi_endproc outside its function's section");
+			{ MCC_TRACE("br\n"); mcc_error(".cfi_endproc outside its function's section"); }
 		mcc_eh_frame_fde(s1, asm_cfi.sec, asm_cfi.start, ind - asm_cfi.start,
 										 asm_cfi.buf, asm_cfi.len);
 		asm_cfi.nfde++;
@@ -1035,7 +1035,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 		skip(',');
 		b = asm_int_expr(s1);
 		if (a < 0 || b < 0)
-			mcc_error("unsupported .cfi_def_cfa operands");
+			{ MCC_TRACE("br\n"); mcc_error("unsupported .cfi_def_cfa operands"); }
 		asm_cfi_advance(s1);
 		asm_cfi_room(1 + 2 * DWARF_MAX_128);
 		asm_cfi.buf[asm_cfi.len++] = DW_CFA_def_cfa;
@@ -1044,7 +1044,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 	} else if (!strcmp(dir, "def_cfa_offset")) { MCC_TRACE("br\n");
 		a = asm_int_expr(s1);
 		if (a < 0)
-			mcc_error("unsupported negative .cfi_def_cfa_offset");
+			{ MCC_TRACE("br\n"); mcc_error("unsupported negative .cfi_def_cfa_offset"); }
 		asm_cfi_advance(s1);
 		asm_cfi_room(1 + DWARF_MAX_128);
 		asm_cfi.buf[asm_cfi.len++] = DW_CFA_def_cfa_offset;
@@ -1052,7 +1052,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 	} else if (!strcmp(dir, "def_cfa_register")) { MCC_TRACE("br\n");
 		a = asm_int_expr(s1);
 		if (a < 0)
-			mcc_error("bad .cfi_def_cfa_register operand");
+			{ MCC_TRACE("br\n"); mcc_error("bad .cfi_def_cfa_register operand"); }
 		asm_cfi_advance(s1);
 		asm_cfi_room(1 + DWARF_MAX_128);
 		asm_cfi.buf[asm_cfi.len++] = DW_CFA_def_cfa_register;
@@ -1062,7 +1062,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 		skip(',');
 		b = asm_int_expr(s1);
 		if (a < 0 || b % asm_cfi.data_align || b / asm_cfi.data_align < 0)
-			mcc_error("unsupported .cfi_offset operands");
+			{ MCC_TRACE("br\n"); mcc_error("unsupported .cfi_offset operands"); }
 		b /= asm_cfi.data_align;
 		asm_cfi_advance(s1);
 		asm_cfi_room(1 + 2 * DWARF_MAX_128);
@@ -1076,7 +1076,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 	} else if (!strcmp(dir, "restore")) { MCC_TRACE("br\n");
 		a = asm_int_expr(s1);
 		if (a < 0)
-			mcc_error("bad .cfi_restore operand");
+			{ MCC_TRACE("br\n"); mcc_error("bad .cfi_restore operand"); }
 		asm_cfi_advance(s1);
 		asm_cfi_room(1 + DWARF_MAX_128);
 		if (a < 0x40) { MCC_TRACE("br\n");
@@ -1099,11 +1099,11 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 
 	parse_flags = PARSE_FLAG_ASM_FILE | PARSE_FLAG_TOK_STR;
 	if (do_preprocess)
-		parse_flags |= PARSE_FLAG_PREPROCESS;
+		{ MCC_TRACE("br\n"); parse_flags |= PARSE_FLAG_PREPROCESS; }
 	for (;;) { MCC_TRACE("br\n");
 		next();
 		if (tok == TOK_EOF)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		mcc_debug_line(s1);
 		parse_flags |= PARSE_FLAG_LINEFEED;
 	redo:
@@ -1121,7 +1121,7 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 			p = tokc.str.data;
 			n = strtoul(p, (char **)&p, 10);
 			if (*p != '\0')
-				expect("':'");
+				{ MCC_TRACE("br\n"); expect("':'"); }
 			asm_new_label(s1, asm_get_local_label_name(s1, n), 1);
 			next();
 			skip(':');
@@ -1150,7 +1150,7 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 	cfi_done:
 #endif
 		if (tok != ';' && tok != TOK_LINEFEED)
-			expect("end of line");
+			{ MCC_TRACE("br\n"); expect("end of line"); }
 		parse_flags &= ~PARSE_FLAG_LINEFEED;
 	}
 
@@ -1172,10 +1172,10 @@ ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess) { MCC_TRACE("enter\n")
 	cur_text_section->data_offset = ind;
 #if MCC_EH_FRAME
 	if (asm_cfi.active)
-		mcc_error_noabort("open .cfi_startproc at end of file");
+		{ MCC_TRACE("br\n"); mcc_error_noabort("open .cfi_startproc at end of file"); }
 
 	if (asm_cfi.nfde)
-		mcc_eh_frame_end(s1);
+		{ MCC_TRACE("br\n"); mcc_eh_frame_end(s1); }
 #endif
 	mcc_debug_end(s1);
 	return ret;
@@ -1220,7 +1220,7 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
 			name++;
 		}
 		if ((unsigned)index >= nb_operands)
-			index = -1;
+			{ MCC_TRACE("br\n"); index = -1; }
 	} else if (*name == '[') { MCC_TRACE("br\n");
 		name++;
 		p = strchr(name, ']');
@@ -1228,7 +1228,7 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
 			ts = tok_alloc(name, p - name);
 			for (index = 0; index < nb_operands; index++) { MCC_TRACE("br\n");
 				if (operands[index].id == ts->tok)
-					goto found;
+					{ MCC_TRACE("br\n"); goto found; }
 			}
 			index = -1;
 		found:
@@ -1240,7 +1240,7 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
 		index = -1;
 	}
 	if (pp)
-		*pp = name;
+		{ MCC_TRACE("br\n"); *pp = name; }
 	return index;
 }
 
@@ -1271,19 +1271,19 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 				modifier = *str++;
 			index = find_constraint(operands, nb_operands, str, &str);
 			if (index < 0)
-			error:
-				mcc_error("invalid operand reference after %%");
+			{ MCC_TRACE("br\n"); error:
+				mcc_error("invalid operand reference after %%"); }
 			op = &operands[index];
 			if (modifier == 'l') { MCC_TRACE("br\n");
 				cstr_cat(out_str, get_tok_str(op->is_label, NULL), -1);
 			} else { MCC_TRACE("br\n");
 				if (op->vt == NULL)
-					goto error;
+					{ MCC_TRACE("br\n"); goto error; }
 				sv = *op->vt;
 				if (op->reg >= 0) { MCC_TRACE("br\n");
 					sv.r = op->reg;
 					if (op->is_memory)
-						sv.r |= VT_LVAL;
+						{ MCC_TRACE("br\n"); sv.r |= VT_LVAL; }
 				}
 				subst_asm_operand(out_str, &sv, modifier);
 			}
@@ -1291,7 +1291,7 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 		add_char:
 			cstr_ccat(out_str, c);
 			if (c == '\0')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 	}
 }
@@ -1306,13 +1306,13 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 		nb_operands = *nb_operands_ptr;
 		for (;;) { MCC_TRACE("br\n");
 			if (nb_operands >= MAX_ASM_OPERANDS)
-				mcc_error("too many asm operands");
+				{ MCC_TRACE("br\n"); mcc_error("too many asm operands"); }
 			op = &operands[nb_operands++];
 			op->id = 0;
 			if (tok == '[') { MCC_TRACE("br\n");
 				next();
 				if (tok < TOK_IDENT)
-					expect("identifier");
+					{ MCC_TRACE("br\n"); expect("identifier"); }
 				op->id = tok;
 				next();
 				skip(']');
@@ -1325,7 +1325,7 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 			asm_lvalue_cast--;
 			if (is_output) { MCC_TRACE("br\n");
 				if (!(vtop->type.t & VT_ARRAY))
-					test_lvalue();
+					{ MCC_TRACE("br\n"); test_lvalue(); }
 			} else { MCC_TRACE("br\n");
 				if ((vtop->r & VT_LVAL) &&
 						((vtop->r & VT_VALMASK) == VT_LLOCAL ||
@@ -1384,9 +1384,9 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 					next();
 					for (;;) { MCC_TRACE("br\n");
 						if (tok == ':')
-							break;
+							{ MCC_TRACE("br\n"); break; }
 						if (tok != TOK_STR)
-							expect("string constant");
+							{ MCC_TRACE("br\n"); expect("string constant"); }
 						asm_clobber(clobber_regs, tokc.str.data);
 						next();
 						if (tok == ',') { MCC_TRACE("br\n");
@@ -1402,9 +1402,9 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 						Sym *csym;
 						int asmname;
 						if (nb_operands + nb_labels >= MAX_ASM_OPERANDS)
-							mcc_error("too many asm operands");
+							{ MCC_TRACE("br\n"); mcc_error("too many asm operands"); }
 						if (tok < TOK_UIDENT)
-							expect("label identifier");
+							{ MCC_TRACE("br\n"); expect("label identifier"); }
 						memset(operands + nb_operands + nb_labels, 0,
 									 sizeof(operands[0]));
 						operands[nb_operands + nb_labels++].id = tok;
@@ -1415,18 +1415,18 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 																LABEL_FORWARD);
 						} else { MCC_TRACE("br\n");
 							if (csym->r == LABEL_DECLARED)
-								csym->r = LABEL_FORWARD;
+								{ MCC_TRACE("br\n"); csym->r = LABEL_FORWARD; }
 						}
 						next();
 						asmname = asm_get_prefix_name(mcc_state, "LG.",
 																					++asmgoto_n);
 						if (!csym->c)
-							put_extern_sym2(csym, SHN_UNDEF, 0, 0, 1);
+							{ MCC_TRACE("br\n"); put_extern_sym2(csym, SHN_UNDEF, 0, 0, 1); }
 						get_asm_sym(asmname, csym);
 						operands[nb_operands + nb_labels - 1].is_label = asmname;
 
 						if (tok != ',')
-							break;
+							{ MCC_TRACE("br\n"); break; }
 						next();
 					}
 				}
@@ -1435,7 +1435,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	}
 	skip(')');
 	if (tok != ';')
-		expect("';'");
+		{ MCC_TRACE("br\n"); expect("';'"); }
 
 	save_regs(0);
 
@@ -1443,7 +1443,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 													clobber_regs, &out_reg);
 
 	if (g_debug & MCC_DBG_ASM)
-		printf("asm: \"%s\"\n", (char *)astr.data);
+		{ MCC_TRACE("br\n"); printf("asm: \"%s\"\n", (char *)astr.data); }
 	if (must_subst) { MCC_TRACE("br\n");
 		cstr_reset(astr1);
 		cstr_cat(astr1, astr.data, astr.size);
@@ -1452,7 +1452,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	}
 
 	if (g_debug & MCC_DBG_ASM)
-		printf("subst_asm: \"%s\"\n", (char *)astr.data);
+		{ MCC_TRACE("br\n"); printf("subst_asm: \"%s\"\n", (char *)astr.data); }
 
 	asm_gen_code(operands, nb_operands, nb_outputs, 0,
 							 clobber_regs, out_reg);
@@ -1484,10 +1484,10 @@ ST_FUNC void asm_global_instr(void) { MCC_TRACE("enter\n");
 	astr = parse_asm_str();
 	skip(')');
 	if (tok != ';')
-		expect("';'");
+		{ MCC_TRACE("br\n"); expect("';'"); }
 
 	if (g_debug & MCC_DBG_ASM)
-		printf("asm_global: \"%s\"\n", (char *)astr->data);
+		{ MCC_TRACE("br\n"); printf("asm_global: \"%s\"\n", (char *)astr->data); }
 	cur_text_section = text_section;
 	ind = cur_text_section->data_offset;
 

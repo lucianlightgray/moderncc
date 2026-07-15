@@ -23,7 +23,7 @@ MCCJIT_LOCAL void mccjit_buf_free(MccjitBuf *b) { MCC_TRACE("enter\n");
 
 static void mccjit_buf_put(MccjitBuf *b, const void *p, size_t n) { MCC_TRACE("enter\n");
 	if (b->oom)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (b->len + n > b->cap) { MCC_TRACE("br\n");
 		size_t ncap = b->cap ? b->cap * 2 : 256;
 		unsigned char *nd;
@@ -66,7 +66,7 @@ static void mccjit_put_str(MccjitBuf *b, const char *s) { MCC_TRACE("enter\n");
 	uint32_t n = s ? (uint32_t)strlen(s) : 0;
 	mccjit_put_u32(b, n);
 	if (n)
-		mccjit_buf_put(b, s, n);
+		{ MCC_TRACE("br\n"); mccjit_buf_put(b, s, n); }
 }
 
 typedef struct MccjitReader {
@@ -132,7 +132,7 @@ static char *mccjit_get_str(MccjitReader *r) { MCC_TRACE("enter\n");
 		return NULL;
 	}
 	if (n)
-		memcpy(s, r->data + r->pos, n);
+		{ MCC_TRACE("br\n"); memcpy(s, r->data + r->pos, n); }
 	s[n] = 0;
 	r->pos += n;
 	return s;
@@ -165,11 +165,11 @@ static void mccjit_handles_free(MccjitHandles *h) { MCC_TRACE("enter\n");
 static uint32_t mccjit_handles_intern(MccjitHandles *h, uint64_t raw, unsigned role) { MCC_TRACE("enter\n");
 	uint32_t i;
 	if (raw == 0)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	for (i = 0; i < h->count; i++)
 		if (h->raw[i] == raw) { MCC_TRACE("br\n");
 			if (role != MCCJIT_ROLE_PLAIN && h->role[i] == MCCJIT_ROLE_PLAIN)
-				h->role[i] = (uint8_t)role;
+				{ MCC_TRACE("br\n"); h->role[i] = (uint8_t)role; }
 			return i + 1;
 		}
 	if (h->count == h->cap) { MCC_TRACE("br\n");
@@ -178,11 +178,11 @@ static uint32_t mccjit_handles_intern(MccjitHandles *h, uint64_t raw, unsigned r
 		int64_t *nv = mcc_realloc(h->token_v, ncap * sizeof *nv);
 		uint8_t *no = mcc_realloc(h->role, ncap * sizeof *no);
 		if (nr)
-			h->raw = nr;
+			{ MCC_TRACE("br\n"); h->raw = nr; }
 		if (nv)
-			h->token_v = nv;
+			{ MCC_TRACE("br\n"); h->token_v = nv; }
 		if (no)
-			h->role = no;
+			{ MCC_TRACE("br\n"); h->role = no; }
 		if (!nr || !nv || !no) { MCC_TRACE("br\n");
 			h->oom = 1;
 			return 0;
@@ -200,32 +200,32 @@ static void mccjit_handles_expand(MccjitHandles *h, uint32_t i) { MCC_TRACE("ent
 	Sym *s = (Sym *)(uintptr_t)h->raw[i];
 	Sym *p;
 	if (!s)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	switch (h->role[i]) { MCC_TRACE("br\n");
 	case MCCJIT_ROLE_PTR:
 		if (s->type.ref)
-			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
-														mccjit_role_for_base(s->type.t));
+			{ MCC_TRACE("br\n"); mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
+														mccjit_role_for_base(s->type.t)); }
 		break;
 	case MCCJIT_ROLE_FUNC:
 		if (s->type.ref)
-			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
-														mccjit_role_for_base(s->type.t));
+			{ MCC_TRACE("br\n"); mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
+														mccjit_role_for_base(s->type.t)); }
 		for (p = s->next; p; p = p->next)
 			if (p->type.ref)
-				mccjit_handles_intern(h, (uint64_t)(uintptr_t)p->type.ref,
-															mccjit_role_for_base(p->type.t));
+				{ MCC_TRACE("br\n"); mccjit_handles_intern(h, (uint64_t)(uintptr_t)p->type.ref,
+															mccjit_role_for_base(p->type.t)); }
 		break;
 	case MCCJIT_ROLE_NAMED:
 		if (s->type.ref)
-			mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
-														mccjit_role_for_base(s->type.t));
+			{ MCC_TRACE("br\n"); mccjit_handles_intern(h, (uint64_t)(uintptr_t)s->type.ref,
+														mccjit_role_for_base(s->type.t)); }
 		break;
 	case MCCJIT_ROLE_STRUCT:
 		for (p = s->next; p; p = p->next)
 			if (p->type.ref)
-				mccjit_handles_intern(h, (uint64_t)(uintptr_t)p->type.ref,
-															mccjit_role_for_base(p->type.t));
+				{ MCC_TRACE("br\n"); mccjit_handles_intern(h, (uint64_t)(uintptr_t)p->type.ref,
+															mccjit_role_for_base(p->type.t)); }
 		break;
 	default:
 		break;
@@ -236,18 +236,18 @@ static int mccjit_data_sym_info(Sym *s, unsigned long *poff, unsigned long *psiz
 	MCCState *s1 = mcc_state;
 	ElfSym *es;
 	if (!s1 || !s || !(s->r & VT_SYM))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!rodata_section)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	es = elfsym(s);
 	if (!es || es->st_shndx == SHN_UNDEF || es->st_size == 0)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (es->st_shndx != rodata_section->sh_num)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (es->st_size > MCCJIT_DATA_MAX)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if ((unsigned long)es->st_value + es->st_size > rodata_section->data_offset)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (rodata_section->reloc) { MCC_TRACE("br\n");
 		Section *rel = rodata_section->reloc;
 		unsigned long n = rel->data_offset / sizeof(ElfW_Rel), k;
@@ -255,7 +255,7 @@ static int mccjit_data_sym_info(Sym *s, unsigned long *poff, unsigned long *psiz
 		for (k = 0; k < n; k++)
 			if (r[k].r_offset >= (addr_t)es->st_value &&
 					r[k].r_offset < (addr_t)es->st_value + es->st_size)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 	}
 	*poff = es->st_value;
 	*psize = es->st_size;
@@ -344,7 +344,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	AstLocal count, n;
 	uint32_t k;
 	if (!a || !buf)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	count = ast_count(a);
 	mccjit_handles_init(&handles);
 
@@ -352,12 +352,12 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		uint64_t tref = ast_type_ref(a, n);
 		uint64_t nsym = ast_sym(a, n);
 		if (tref)
-			mccjit_handles_intern(&handles, tref,
-														mccjit_role_for_base(ast_type_t(a, n)));
+			{ MCC_TRACE("br\n"); mccjit_handles_intern(&handles, tref,
+														mccjit_role_for_base(ast_type_t(a, n))); }
 		if (nsym)
-			mccjit_handles_intern(&handles, nsym,
+			{ MCC_TRACE("br\n"); mccjit_handles_intern(&handles, nsym,
 														(ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
-																										: MCCJIT_ROLE_PLAIN);
+																										: MCCJIT_ROLE_PLAIN); }
 	}
 	for (k = 0; k < handles.count; k++)
 		mccjit_handles_expand(&handles, k);
@@ -394,9 +394,9 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		mccjit_put_u64(buf, handles.raw[k]);
 		mccjit_put_u64(buf, (uint64_t)tv);
 		if (tv >= TOK_IDENT && tv < SYM_FIRST_ANOM)
-			mccjit_put_str(buf, get_tok_str((int)tv, NULL));
+			{ MCC_TRACE("br\n"); mccjit_put_str(buf, get_tok_str((int)tv, NULL)); }
 		else
-			mccjit_put_str(buf, "");
+			{ MCC_TRACE("br\n"); mccjit_put_str(buf, ""); }
 		mccjit_emit_type_record(buf, &handles, k);
 	}
 
@@ -457,27 +457,27 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n");
 	uint32_t i;
 	if (!it)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (it->arena)
-		ast_arena_free(it->arena);
+		{ MCC_TRACE("br\n"); ast_arena_free(it->arena); }
 	if (it->handle_name)
-		for (i = 0; i < it->handle_count; i++)
-			mcc_free(it->handle_name[i]);
+		{ MCC_TRACE("br\n"); for (i = 0; i < it->handle_count; i++)
+			mcc_free(it->handle_name[i]); }
 	if (it->param_name)
-		for (i = 0; i < it->nparam; i++)
-			mcc_free(it->param_name[i]);
+		{ MCC_TRACE("br\n"); for (i = 0; i < it->nparam; i++)
+			mcc_free(it->param_name[i]); }
 	if (it->recs)
-		for (i = 0; i < it->handle_count; i++) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); for (i = 0; i < it->handle_count; i++) { MCC_TRACE("br\n");
 			uint32_t j;
 			if (it->recs[i].fnm)
-				for (j = 0; j < it->recs[i].nparam; j++)
-					mcc_free(it->recs[i].fnm[j]);
+				{ MCC_TRACE("br\n"); for (j = 0; j < it->recs[i].nparam; j++)
+					mcc_free(it->recs[i].fnm[j]); }
 			mcc_free(it->recs[i].fnm);
 			mcc_free(it->recs[i].foff);
 			mcc_free(it->recs[i].pt);
 			mcc_free(it->recs[i].pr);
 			mcc_free(it->recs[i].data);
-		}
+		} }
 	mcc_free(it->recs);
 	mcc_free(it->handle_raw);
 	mcc_free(it->handle_token_v);
@@ -499,7 +499,7 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n")
 
 static int mccjit_strip_enum(int t) {
 	if (IS_ENUM(t) || IS_ENUM_VAL(t))
-		return t & ~VT_STRUCT_MASK;
+		{ MCC_TRACE("br\n"); return t & ~VT_STRUCT_MASK; }
 	return t;
 }
 
@@ -509,13 +509,13 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 	MccjitTypeRec *r;
 	Sym *res = NULL;
 	if (!id1 || id1 > it->handle_count || !it->recs)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	i = id1 - 1;
 	r = &it->recs[i];
 	if (r->done)
-		return r->built;
+		{ MCC_TRACE("br\n"); return r->built; }
 	if (r->building)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	r->building = 1;
 	switch (r->role) { MCC_TRACE("br\n");
 	case MCCJIT_ROLE_PTR: {
@@ -581,14 +581,14 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 		unsigned long off, pad;
 		unsigned char *p;
 		if (!rodata_section)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		pad = (16 - (rodata_section->data_offset & 15)) & 15;
 		if (pad)
-			section_ptr_add(rodata_section, pad);
+			{ MCC_TRACE("br\n"); section_ptr_add(rodata_section, pad); }
 		off = rodata_section->data_offset;
 		p = section_ptr_add(rodata_section, r->datalen ? r->datalen : 1);
 		if (r->datalen && r->data)
-			memcpy(p, r->data, r->datalen);
+			{ MCC_TRACE("br\n"); memcpy(p, r->data, r->datalen); }
 		res = get_sym_ref(&char_pointer_type, rodata_section, off, r->datalen);
 		break;
 	}
@@ -611,7 +611,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	int rc = -1;
 
 	if (!buf || !out)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	memset(out, 0, sizeof *out);
 	r.data = buf;
 	r.len = len;
@@ -619,9 +619,9 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	r.err = 0;
 
 	if (mccjit_get_u32(&r) != MCCJIT_INTENT_MAGIC)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (mccjit_get_u32(&r) != MCCJIT_INTENT_FORMAT)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	out->salt = mccjit_get_u64(&r);
 	out->anchor_sym_v = (int64_t)mccjit_get_u64(&r);
 	count = mccjit_get_u32(&r);
@@ -629,7 +629,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 
 	hc = mccjit_get_u32(&r);
 	if (r.err)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (hc) { MCC_TRACE("br\n");
 		out->handle_raw = mcc_malloc(hc * sizeof *out->handle_raw);
 		out->handle_token_v = mcc_malloc(hc * sizeof *out->handle_token_v);
@@ -637,7 +637,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		out->recs = mcc_mallocz(hc * sizeof *out->recs);
 		if (!out->handle_raw || !out->handle_token_v || !out->handle_name ||
 				!out->recs)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 	}
 	out->handle_count = hc;
 	for (i = 0; i < hc; i++) { MCC_TRACE("br\n");
@@ -646,15 +646,15 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		char *nm = mccjit_get_str(&r);
 		MccjitTypeRec *rec = &out->recs[i];
 		if (r.err)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 		out->handle_raw[i] = raw;
 		out->handle_name[i] = nm;
 		if (nm && nm[0] && mcc_state)
-			tv = tok_alloc(nm, (int)strlen(nm))->tok;
+			{ MCC_TRACE("br\n"); tv = tok_alloc(nm, (int)strlen(nm))->tok; }
 		out->handle_token_v[i] = tv;
 		rec->role = mccjit_get_u8(&r);
 		if (rec->role == MCCJIT_ROLE_NAMED)
-			out->has_external = 1;
+			{ MCC_TRACE("br\n"); out->has_external = 1; }
 		switch (rec->role) { MCC_TRACE("br\n");
 		case MCCJIT_ROLE_NAMED:
 		case MCCJIT_ROLE_PTR:
@@ -669,12 +669,12 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 			rec->d = mccjit_get_u32(&r);
 			rec->nparam = mccjit_get_u32(&r);
 			if (r.err)
-				goto done;
+				{ MCC_TRACE("br\n"); goto done; }
 			if (rec->nparam) { MCC_TRACE("br\n");
 				rec->pt = mcc_mallocz(rec->nparam * sizeof *rec->pt);
 				rec->pr = mcc_mallocz(rec->nparam * sizeof *rec->pr);
 				if (!rec->pt || !rec->pr)
-					goto done;
+					{ MCC_TRACE("br\n"); goto done; }
 			}
 			for (k = 0; k < rec->nparam; k++) { MCC_TRACE("br\n");
 				rec->pt[k] = mccjit_get_u32(&r);
@@ -689,14 +689,14 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 			rec->d = mccjit_get_u32(&r);
 			rec->nparam = mccjit_get_u32(&r);
 			if (r.err)
-				goto done;
+				{ MCC_TRACE("br\n"); goto done; }
 			if (rec->nparam) { MCC_TRACE("br\n");
 				rec->pt = mcc_mallocz(rec->nparam * sizeof *rec->pt);
 				rec->pr = mcc_mallocz(rec->nparam * sizeof *rec->pr);
 				rec->foff = mcc_mallocz(rec->nparam * sizeof *rec->foff);
 				rec->fnm = mcc_mallocz(rec->nparam * sizeof *rec->fnm);
 				if (!rec->pt || !rec->pr || !rec->foff || !rec->fnm)
-					goto done;
+					{ MCC_TRACE("br\n"); goto done; }
 			}
 			for (k = 0; k < rec->nparam; k++) { MCC_TRACE("br\n");
 				rec->fnm[k] = mccjit_get_str(&r);
@@ -710,11 +710,11 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 			uint32_t bi;
 			rec->datalen = mccjit_get_u32(&r);
 			if (r.err || rec->datalen > MCCJIT_DATA_MAX)
-				goto done;
+				{ MCC_TRACE("br\n"); goto done; }
 			if (rec->datalen) { MCC_TRACE("br\n");
 				rec->data = mcc_malloc(rec->datalen);
 				if (!rec->data)
-					goto done;
+					{ MCC_TRACE("br\n"); goto done; }
 				for (bi = 0; bi < rec->datalen; bi++)
 					rec->data[bi] = mccjit_get_u8(&r);
 			}
@@ -724,25 +724,25 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 			break;
 		}
 		if (r.err)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 	}
 	if (r.err)
-		goto done;
+		{ MCC_TRACE("br\n"); goto done; }
 
 	if (mcc_state)
-		for (i = 0; i < hc; i++)
-			mccjit_build_rec(out, i + 1);
+		{ MCC_TRACE("br\n"); for (i = 0; i < hc; i++)
+			mccjit_build_rec(out, i + 1); }
 
 	a = ast_arena_new();
 	if (!a)
-		goto done;
+		{ MCC_TRACE("br\n"); goto done; }
 	out->arena = a;
 
 	if (count) { MCC_TRACE("br\n");
 		nc_of = mcc_mallocz((count) * (sizeof *nc_of));
 		kids = mcc_mallocz((count) * (sizeof *kids));
 		if (!nc_of || !kids)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 	}
 
 	for (i = 0; i < count; i++) { MCC_TRACE("br\n");
@@ -762,9 +762,9 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		uint64_t tref_raw = (uint64_t)(uintptr_t)tref_new;
 		AstLocal node;
 		if (r.err)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 		if ((op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM))
-			sym_raw = 0;
+			{ MCC_TRACE("br\n"); sym_raw = 0; }
 		node = ast_node(a, kind);
 		ast_set_op(a, node, op);
 		ast_set_type(a, node, type_t, tref_raw);
@@ -776,19 +776,19 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		if (nc) { MCC_TRACE("br\n");
 			kids[i] = mcc_malloc(nc * sizeof **kids);
 			if (!kids[i])
-				goto done;
+				{ MCC_TRACE("br\n"); goto done; }
 			for (j = 0; j < nc; j++)
 				kids[i][j] = mccjit_get_u32(&r);
 		}
 	}
 	if (r.err)
-		goto done;
+		{ MCC_TRACE("br\n"); goto done; }
 
 	for (i = 0; i < count; i++) { MCC_TRACE("br\n");
 		uint32_t j;
 		for (j = 0; j < nc_of[i]; j++)
 			if (kids[i][j] < count)
-				ast_add_child(a, i, kids[i][j]);
+				{ MCC_TRACE("br\n"); ast_add_child(a, i, kids[i][j]); }
 	}
 
 	out->fn_name = mccjit_get_str(&r);
@@ -796,31 +796,31 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	out->func_type = mccjit_get_u32(&r);
 	out->nparam = mccjit_get_u32(&r);
 	if (r.err)
-		goto done;
+		{ MCC_TRACE("br\n"); goto done; }
 	if (out->nparam) { MCC_TRACE("br\n");
 		out->param_type_t = mcc_mallocz(out->nparam * sizeof *out->param_type_t);
 		out->param_off = mcc_mallocz(out->nparam * sizeof *out->param_off);
 		out->param_name = mcc_mallocz(out->nparam * sizeof *out->param_name);
 		if (!out->param_type_t || !out->param_off || !out->param_name)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 	}
 	for (i = 0; i < out->nparam; i++) { MCC_TRACE("br\n");
 		out->param_type_t[i] = mccjit_get_u32(&r);
 		out->param_off[i] = (int64_t)mccjit_get_u64(&r);
 		out->param_name[i] = mccjit_get_str(&r);
 		if (r.err)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 	}
 	rc = 0;
 
 done:
 	if (kids)
-		for (i = 0; i < count; i++)
-			mcc_free(kids[i]);
+		{ MCC_TRACE("br\n"); for (i = 0; i < count; i++)
+			mcc_free(kids[i]); }
 	mcc_free(kids);
 	mcc_free(nc_of);
 	if (rc != 0)
-		mccjit_intent_release(out);
+		{ MCC_TRACE("br\n"); mccjit_intent_release(out); }
 	return rc;
 }
 
@@ -829,7 +829,7 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) { MCC_TRACE("enter\
 	Sym *sr, *first = NULL, **plast = &first, *p;
 	uint32_t i;
 	if (!it || !it->fn_name || !it->fn_name[0])
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 
 	sr = sym_push2(&global_stack, SYM_FIELD, 0, 0);
 	sr->type.t = mccjit_strip_enum((int)it->ret_type_t);

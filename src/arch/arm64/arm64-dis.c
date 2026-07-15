@@ -14,7 +14,7 @@ static char *rpool(disasm_ctx *dc) { MCC_TRACE("enter\n");
 static const char *ir(disasm_ctx *dc, int sf, int r) { MCC_TRACE("enter\n");
 	char *b;
 	if ((r &= 31) == 31)
-		return sf ? "xzr" : "wzr";
+		{ MCC_TRACE("br\n"); return sf ? "xzr" : "wzr"; }
 	b = rpool(dc);
 	snprintf(b, 24, "%c%d", sf ? 'x' : 'w', r);
 	return b;
@@ -22,7 +22,7 @@ static const char *ir(disasm_ctx *dc, int sf, int r) { MCC_TRACE("enter\n");
 
 static const char *irsp(disasm_ctx *dc, int sf, int r) { MCC_TRACE("enter\n");
 	if ((r &= 31) == 31)
-		return sf ? "sp" : "wsp";
+		{ MCC_TRACE("br\n"); return sf ? "sp" : "wsp"; }
 	return ir(dc, sf, r);
 }
 
@@ -41,53 +41,53 @@ static int dis_encode_bimm64(uint64_t x) { MCC_TRACE("enter\n");
 	int rep, pos, len;
 
 	if (neg)
-		x = ~x;
+		{ MCC_TRACE("br\n"); x = ~x; }
 	if (!x)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 
 	if (x >> 2 == (x & (((uint64_t)1 << 62) - 1)))
-		rep = 2, x &= 3;
+		{ MCC_TRACE("br\n"); rep = 2, x &= 3; }
 	else if (x >> 4 == (x & (((uint64_t)1 << 60) - 1)))
-		rep = 4, x &= 15;
+		{ MCC_TRACE("br\n"); rep = 4, x &= 15; }
 	else if (x >> 8 == (x & (((uint64_t)1 << 56) - 1)))
-		rep = 8, x &= 255;
+		{ MCC_TRACE("br\n"); rep = 8, x &= 255; }
 	else if (x >> 16 == (x & (((uint64_t)1 << 48) - 1)))
-		rep = 16, x &= 0xffff;
+		{ MCC_TRACE("br\n"); rep = 16, x &= 0xffff; }
 	else if (x >> 32 == (x & (((uint64_t)1 << 32) - 1)))
-		rep = 32, x &= 0xffffffff;
+		{ MCC_TRACE("br\n"); rep = 32, x &= 0xffffffff; }
 	else
-		rep = 64;
+		{ MCC_TRACE("br\n"); rep = 64; }
 
 	pos = 0;
 	if (!(x & 0xffffffff))
-		x >>= 32, pos += 32;
+		{ MCC_TRACE("br\n"); x >>= 32, pos += 32; }
 	if (!(x & 0xffff))
-		x >>= 16, pos += 16;
+		{ MCC_TRACE("br\n"); x >>= 16, pos += 16; }
 	if (!(x & 0xff))
-		x >>= 8, pos += 8;
+		{ MCC_TRACE("br\n"); x >>= 8, pos += 8; }
 	if (!(x & 0xf))
-		x >>= 4, pos += 4;
+		{ MCC_TRACE("br\n"); x >>= 4, pos += 4; }
 	if (!(x & 0x3))
-		x >>= 2, pos += 2;
+		{ MCC_TRACE("br\n"); x >>= 2, pos += 2; }
 	if (!(x & 0x1))
-		x >>= 1, pos += 1;
+		{ MCC_TRACE("br\n"); x >>= 1, pos += 1; }
 
 	len = 0;
 	if (!(~x & 0xffffffff))
-		x >>= 32, len += 32;
+		{ MCC_TRACE("br\n"); x >>= 32, len += 32; }
 	if (!(~x & 0xffff))
-		x >>= 16, len += 16;
+		{ MCC_TRACE("br\n"); x >>= 16, len += 16; }
 	if (!(~x & 0xff))
-		x >>= 8, len += 8;
+		{ MCC_TRACE("br\n"); x >>= 8, len += 8; }
 	if (!(~x & 0xf))
-		x >>= 4, len += 4;
+		{ MCC_TRACE("br\n"); x >>= 4, len += 4; }
 	if (!(~x & 0x3))
-		x >>= 2, len += 2;
+		{ MCC_TRACE("br\n"); x >>= 2, len += 2; }
 	if (!(~x & 0x1))
-		x >>= 1, len += 1;
+		{ MCC_TRACE("br\n"); x >>= 1, len += 1; }
 
 	if (x)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (neg) { MCC_TRACE("br\n");
 		pos = (pos + len) & (rep - 1);
 		len = rep - len;
@@ -106,14 +106,14 @@ static uint64_t dis_decode_bimm(int n, int immr, int imms) { MCC_TRACE("enter\n"
 			;
 	}
 	if (len < 1)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	esize = 1 << len;
 	imms &= esize - 1;
 	immr &= esize - 1;
 	welem = (imms + 1 == 64) ? ~(uint64_t)0 : (((uint64_t)1 << (imms + 1)) - 1);
 
 	if (immr)
-		welem = (welem >> immr | welem << (esize - immr)) & (esize == 64 ? ~(uint64_t)0 : (((uint64_t)1 << esize) - 1));
+		{ MCC_TRACE("br\n"); welem = (welem >> immr | welem << (esize - immr)) & (esize == 64 ? ~(uint64_t)0 : (((uint64_t)1 << esize) - 1)); }
 	pattern = 0;
 	for (i = 0; i < 64; i += esize)
 		pattern |= welem << i;
@@ -143,9 +143,9 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 	}
 	if ((w & 0xfffffc1f) == 0xd65f0000) { MCC_TRACE("br\n");
 		if (rn == 30)
-			snprintf(out, osz, "ret");
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "ret"); }
 		else
-			snprintf(out, osz, "ret\t%s", ir(dc, 1, rn));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "ret\t%s", ir(dc, 1, rn)); }
 		return D_ASM;
 	}
 	if ((w & 0xfffffc1f) == 0xd61f0000) { MCC_TRACE("br\n");
@@ -180,9 +180,9 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 												 : 0;
 		if (nm) { MCC_TRACE("br\n");
 			if (opt[o])
-				snprintf(out, osz, "%s\t%s", nm, opt[o]);
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s", nm, opt[o]); }
 			else
-				snprintf(out, osz, "%s\t#%d", nm, o);
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t#%d", nm, o); }
 			return D_ASM;
 		}
 	}
@@ -267,7 +267,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 			snprintf(out, osz, "%s\t%s, %s%s", nm, ir(dc, 1, rd), pfx, sym);
 
 			if ((w >> 31) && !(w & 0x60ffffe0) && (rtype == R_AARCH64_ADR_GOT_PAGE || rtype == R_AARCH64_ADR_PREL_PG_HI21))
-				return D_ASM;
+				{ MCC_TRACE("br\n"); return D_ASM; }
 			return D_CMT;
 		}
 		snprintf(out, osz, "%s\t%s, 0x%llx", nm, ir(dc, 1, rd),
@@ -288,10 +288,10 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 												 : 0;
 		if (nm && (sf || hw <= 1)) { MCC_TRACE("br\n");
 			if (hw)
-				snprintf(out, osz, "%s\t%s, #0x%x, lsl #%d",
-								 nm, ir(dc, sf, rd), imm, hw * 16);
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, #0x%x, lsl #%d",
+								 nm, ir(dc, sf, rd), imm, hw * 16); }
 			else
-				snprintf(out, osz, "%s\t%s, #0x%x", nm, ir(dc, sf, rd), imm);
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, #0x%x", nm, ir(dc, sf, rd), imm); }
 			return sym ? D_CMT : D_ASM;
 		}
 		return D_UNK;
@@ -316,11 +316,11 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 							 pfx, sym);
 
 			if (*pfx && !op && !S && !((w >> 10) & 0xfff) && sh == (rtype == R_AARCH64_TLSLE_ADD_TPREL_HI12) && (sf || (rd != 31 && rn != 31)))
-				return D_ASM;
+				{ MCC_TRACE("br\n"); return D_ASM; }
 			return D_CMT;
 		}
 		if (!sf && (rd == 31 || rn == 31) && !S)
-			return D_UNK;
+			{ MCC_TRACE("br\n"); return D_UNK; }
 		snprintf(out, osz, "%s\t%s, %s, #%llu", nm, d, irsp(dc, sf, rn), val);
 		return D_ASM;
 	}
@@ -351,13 +351,13 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		int option = (w >> 13) & 7, imm3 = (w >> 10) & 7;
 		const char *nm = op ? (S ? "subs" : "sub") : (S ? "adds" : "add");
 		if (imm3)
-			snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm,
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm,
 							 S ? ir(dc, sf, rd) : irsp(dc, sf, rd), irsp(dc, sf, rn),
-							 ir(dc, sf && (option & 3) == 3, rm), ext[option], imm3);
+							 ir(dc, sf && (option & 3) == 3, rm), ext[option], imm3); }
 		else
-			snprintf(out, osz, "%s\t%s, %s, %s, %s", nm,
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s, %s", nm,
 							 S ? ir(dc, sf, rd) : irsp(dc, sf, rd), irsp(dc, sf, rn),
-							 ir(dc, sf && (option & 3) == 3, rm), ext[option]);
+							 ir(dc, sf && (option & 3) == 3, rm), ext[option]); }
 		return D_CMT;
 	}
 
@@ -369,14 +369,14 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		static const char *shnm[4] = {"lsl", "lsr", "asr", "ror"};
 		if (N) { MCC_TRACE("br\n");
 			if (opc == 1 && rn == 31 && !shift && !imm6)
-				snprintf(out, osz, "mvn\t%s, %s", ir(dc, sf, rd), ir(dc, sf, rm));
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "mvn\t%s, %s", ir(dc, sf, rd), ir(dc, sf, rm)); }
 			else if (!shift && !imm6)
-				snprintf(out, osz, "%s\t%s, %s, %s", nm4n[opc],
-								 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s", nm4n[opc],
+								 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm)); }
 			else
-				snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm4n[opc],
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s, %s #%d", nm4n[opc],
 								 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm),
-								 shnm[shift], imm6);
+								 shnm[shift], imm6); }
 			return D_CMT;
 		}
 		if (!shift && !imm6) { MCC_TRACE("br\n");
@@ -399,15 +399,15 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		int N = (w >> 22) & 1, immr = (w >> 16) & 0x3f, imms = (w >> 10) & 0x3f;
 		uint64_t val;
 		if (!sf && N)
-			return D_UNK;
+			{ MCC_TRACE("br\n"); return D_UNK; }
 		val = dis_decode_bimm(N, immr, imms);
 		if (!sf)
-			val &= 0xffffffff;
+			{ MCC_TRACE("br\n"); val &= 0xffffffff; }
 
 		{
 			int e = dis_encode_bimm64(sf ? val : val | val << 32);
 			if (e != (N << 12 | immr << 6 | imms))
-				return D_UNK;
+				{ MCC_TRACE("br\n"); return D_UNK; }
 		}
 		snprintf(out, osz, "%s\t%s, %s, #0x%llx", nm4[opc],
 						 opc == 3 ? ir(dc, sf, rd) : irsp(dc, sf, rd), ir(dc, sf, rn),
@@ -420,7 +420,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		int N = (w >> 22) & 1, immr = (w >> 16) & 0x3f, imms = (w >> 10) & 0x3f;
 		int nbits = sf ? 64 : 32;
 		if (N != sf)
-			return D_UNK;
+			{ MCC_TRACE("br\n"); return D_UNK; }
 		if (opc == 2) { MCC_TRACE("br\n");
 			if (imms == nbits - 1) { MCC_TRACE("br\n");
 				snprintf(out, osz, "lsr\t%s, %s, #%d",
@@ -502,18 +502,18 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		int o0 = (w >> 15) & 1, ra = (w >> 10) & 31;
 		if (!o0 && ra == 31)
 
-			snprintf(out, osz, "mul\t%s, %s, %s",
-							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "mul\t%s, %s, %s",
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm)); }
 		else
-			snprintf(out, osz, "%s\t%s, %s, %s, %s", o0 ? "msub" : "madd",
-							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), ir(dc, sf, ra));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s, %s", o0 ? "msub" : "madd",
+							 ir(dc, sf, rd), ir(dc, sf, rn), ir(dc, sf, rm), ir(dc, sf, ra)); }
 		return D_CMT;
 	}
 
 	if ((w & 0x1fe00800) == 0x1a800000 || (w & 0x1fe00800) == 0x1a800800) { MCC_TRACE("br\n");
 		int op = (w >> 30) & 1, o2 = (w >> 10) & 1, cond = (w >> 12) & 15;
 		if (!op && o2 && rn == 31 && rm == 31 && cond < 14)
-			snprintf(out, osz, "cset\t%s, %s", ir(dc, sf, rd), cc[cond ^ 1]);
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "cset\t%s, %s", ir(dc, sf, rd), cc[cond ^ 1]); }
 		else { MCC_TRACE("br\n");
 			static const char *nm[4] = {"csel", "csinc", "csinv", "csneg"};
 			snprintf(out, osz, "%s\t%s, %s, %s, %s", nm[op << 1 | o2],
@@ -529,7 +529,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		char addr[64];
 		const char *nm = L ? "ldp" : "stp";
 		if (enc == 0)
-			return D_UNK;
+			{ MCC_TRACE("br\n"); return D_UNK; }
 		if (V) { MCC_TRACE("br\n");
 			kind = opcv == 0
 								 ? 's'
@@ -544,32 +544,32 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 									? 3
 									: 4;
 			if (!kind)
-				return D_UNK;
+				{ MCC_TRACE("br\n"); return D_UNK; }
 		} else { MCC_TRACE("br\n");
 			if (opcv == 0)
-				psf = 0, scale = 2;
+				{ MCC_TRACE("br\n"); psf = 0, scale = 2; }
 			else if (opcv == 2)
-				scale = 3;
+				{ MCC_TRACE("br\n"); scale = 3; }
 			else
-				return D_UNK;
+				{ MCC_TRACE("br\n"); return D_UNK; }
 		}
 		off = simm(w, 15, 7) << scale;
 		if (enc == 2) { MCC_TRACE("br\n");
 			if (off)
-				snprintf(addr, sizeof addr, "[%s, #%d]", irsp(dc, 1, rn), off);
+				{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s, #%d]", irsp(dc, 1, rn), off); }
 			else
-				snprintf(addr, sizeof addr, "[%s]", irsp(dc, 1, rn));
+				{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s]", irsp(dc, 1, rn)); }
 		} else if (enc == 3) { MCC_TRACE("br\n");
 			snprintf(addr, sizeof addr, "[%s, #%d]!", irsp(dc, 1, rn), off);
 		} else { MCC_TRACE("br\n");
 			snprintf(addr, sizeof addr, "[%s], #%d", irsp(dc, 1, rn), off);
 		}
 		if (V)
-			snprintf(out, osz, "%s\t%s, %s, %s", nm,
-							 fr(dc, kind, rd), fr(dc, kind, rt2), addr);
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s", nm,
+							 fr(dc, kind, rd), fr(dc, kind, rt2), addr); }
 		else
-			snprintf(out, osz, "%s\t%s, %s, %s", nm,
-							 ir(dc, psf, rd), ir(dc, psf, rt2), addr);
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, %s, %s", nm,
+							 ir(dc, psf, rd), ir(dc, psf, rt2), addr); }
 
 		return (V ? kind == 'd' : psf) ? D_ASM : D_CMT;
 	}
@@ -583,7 +583,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 			int kind, load;
 			if (opc & 2) { MCC_TRACE("br\n");
 				if (size)
-					return D_UNK;
+					{ MCC_TRACE("br\n"); return D_UNK; }
 				kind = 'q', scale = 4, load = opc & 1;
 			} else { MCC_TRACE("br\n");
 				kind = size == 0
@@ -603,9 +603,9 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 				return D_CMT;
 			}
 			if (off)
-				snprintf(addr, sizeof addr, "[%s, #%llu]", irsp(dc, 1, rn), off);
+				{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s, #%llu]", irsp(dc, 1, rn), off); }
 			else
-				snprintf(addr, sizeof addr, "[%s]", irsp(dc, 1, rn));
+				{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s]", irsp(dc, 1, rn)); }
 			snprintf(out, osz, "%s\t%s, %s", load ? "ldr" : "str",
 							 fr(dc, kind, rd), addr);
 			return kind == 'd' ? D_ASM : D_CMT;
@@ -618,9 +618,9 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 			int tsf = (size == 3);
 			const char *nm;
 			if (opc == 0)
-				nm = stnm[size];
+				{ MCC_TRACE("br\n"); nm = stnm[size]; }
 			else if (opc == 1)
-				nm = ldnm[size];
+				{ MCC_TRACE("br\n"); nm = ldnm[size]; }
 			else { MCC_TRACE("br\n");
 				const char *snm = size == 0
 															? "ldrsb"
@@ -630,17 +630,17 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 															? "ldrsw"
 															: 0;
 				if (!snm)
-					return D_UNK;
+					{ MCC_TRACE("br\n"); return D_UNK; }
 				tsf = (opc == 2);
 				if (sym)
-					snprintf(out, osz, "%s\t%s, [%s, #:lo12:%s]", snm,
-									 ir(dc, tsf, rd), irsp(dc, 1, rn), sym);
+					{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, [%s, #:lo12:%s]", snm,
+									 ir(dc, tsf, rd), irsp(dc, 1, rn), sym); }
 				else if (off)
-					snprintf(out, osz, "%s\t%s, [%s, #%llu]", snm,
-									 ir(dc, tsf, rd), irsp(dc, 1, rn), off);
+					{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, [%s, #%llu]", snm,
+									 ir(dc, tsf, rd), irsp(dc, 1, rn), off); }
 				else
-					snprintf(out, osz, "%s\t%s, [%s]", snm,
-									 ir(dc, tsf, rd), irsp(dc, 1, rn));
+					{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, [%s]", snm,
+									 ir(dc, tsf, rd), irsp(dc, 1, rn)); }
 				return D_CMT;
 			}
 			if (sym) { MCC_TRACE("br\n");
@@ -655,15 +655,15 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 								 ir(dc, tsf, rd), irsp(dc, 1, rn), pfx, sym);
 
 				if (!((w >> 10) & 0xfff) && (rtype == lo12_type[size] || (rtype == R_AARCH64_LD64_GOT_LO12_NC && size == 3 && opc == 1)))
-					return D_ASM;
+					{ MCC_TRACE("br\n"); return D_ASM; }
 				return D_CMT;
 			}
 			if (off)
-				snprintf(out, osz, "%s\t%s, [%s, #%llu]", nm,
-								 ir(dc, tsf, rd), irsp(dc, 1, rn), off);
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, [%s, #%llu]", nm,
+								 ir(dc, tsf, rd), irsp(dc, 1, rn), off); }
 			else
-				snprintf(out, osz, "%s\t%s, [%s]", nm,
-								 ir(dc, tsf, rd), irsp(dc, 1, rn));
+				{ MCC_TRACE("br\n"); snprintf(out, osz, "%s\t%s, [%s]", nm,
+								 ir(dc, tsf, rd), irsp(dc, 1, rn)); }
 			return D_ASM;
 		}
 	}
@@ -674,16 +674,16 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		int off = simm(w, 12, 9);
 		char addr[64];
 		if (idx == 0)
-			snprintf(addr, sizeof addr, "[%s, #%d]", irsp(dc, 1, rn), off);
+			{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s, #%d]", irsp(dc, 1, rn), off); }
 		else if (idx == 3)
-			snprintf(addr, sizeof addr, "[%s, #%d]!", irsp(dc, 1, rn), off);
+			{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s, #%d]!", irsp(dc, 1, rn), off); }
 		else
-			snprintf(addr, sizeof addr, "[%s], #%d", irsp(dc, 1, rn), off);
+			{ MCC_TRACE("br\n"); snprintf(addr, sizeof addr, "[%s], #%d", irsp(dc, 1, rn), off); }
 		if (V) { MCC_TRACE("br\n");
 			int kind, load;
 			if (opc & 2) { MCC_TRACE("br\n");
 				if (size)
-					return D_UNK;
+					{ MCC_TRACE("br\n"); return D_UNK; }
 				kind = 'q', load = opc & 1;
 			} else { MCC_TRACE("br\n");
 				kind = size == 0
@@ -724,7 +724,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 															? "ldursw"
 															: 0;
 				if (!snm)
-					return D_UNK;
+					{ MCC_TRACE("br\n"); return D_UNK; }
 				snprintf(out, osz, "%s\t%s, %s", snm,
 								 ir(dc, opc == 2, rd), addr);
 				return D_CMT;
@@ -786,7 +786,7 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		int type = (w >> 22) & 1, op = (w >> 12) & 15;
 		int kind = type ? 'd' : 's';
 		if (!nm[op])
-			return D_UNK;
+			{ MCC_TRACE("br\n"); return D_UNK; }
 		snprintf(out, osz, "%s\t%s, %s, %s", nm[op],
 						 fr(dc, kind, rd), fr(dc, kind, rn), fr(dc, kind, rm));
 		return D_CMT;
@@ -822,9 +822,9 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 	if ((w & 0xffa0fc17) == 0x1e202000) { MCC_TRACE("br\n");
 		int kind = (w & 0x400000) ? 'd' : 's';
 		if (w & 8)
-			snprintf(out, osz, "fcmp\t%s, #0.0", fr(dc, kind, rn));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "fcmp\t%s, #0.0", fr(dc, kind, rn)); }
 		else
-			snprintf(out, osz, "fcmp\t%s, %s", fr(dc, kind, rn), fr(dc, kind, rm));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "fcmp\t%s, %s", fr(dc, kind, rn), fr(dc, kind, rm)); }
 		return D_CMT;
 	}
 	if ((w & 0x7fbefc00) == 0x1e220000) { MCC_TRACE("br\n");
@@ -862,11 +862,11 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 	}
 	if ((w & 0xffe0fc00) == 0x4ea01c00) { MCC_TRACE("br\n");
 		if (rn == rm)
-			snprintf(out, osz, "mov\t%s.16b, %s.16b", fr(dc, 'v', rd),
-							 fr(dc, 'v', rn));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "mov\t%s.16b, %s.16b", fr(dc, 'v', rd),
+							 fr(dc, 'v', rn)); }
 		else
-			snprintf(out, osz, "orr\t%s.16b, %s.16b, %s.16b", fr(dc, 'v', rd),
-							 fr(dc, 'v', rn), fr(dc, 'v', rm));
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "orr\t%s.16b, %s.16b, %s.16b", fr(dc, 'v', rd),
+							 fr(dc, 'v', rn), fr(dc, 'v', rm)); }
 		return D_CMT;
 	}
 	if ((w & 0xbfbf0000) == 0x0c000000 || (w & 0xbf9f0000) == 0x0d000000) { MCC_TRACE("br\n");
@@ -885,18 +885,18 @@ ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 
 	if (dc->pc + 4 > dc->size) { MCC_TRACE("br\n");
 		if (!dc->collect)
-			fprintf(dc->out, ".byte\t0x%02x", dc->data[dc->pc]);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, ".byte\t0x%02x", dc->data[dc->pc]); }
 		return 1;
 	}
 	w = read32le(dc->data + dc->pc);
 	r = decode(dc, w, text, sizeof text);
 	if (!dc->collect) { MCC_TRACE("br\n");
 		if (r == D_ASM)
-			fputs(text, dc->out);
+			{ MCC_TRACE("br\n"); fputs(text, dc->out); }
 		else if (r == D_CMT)
-			fprintf(dc->out, ".long\t0x%08x\t// %s", w, text);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, ".long\t0x%08x\t// %s", w, text); }
 		else
-			fprintf(dc->out, ".long\t0x%08x", w);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, ".long\t0x%08x", w); }
 	}
 	return 4;
 }

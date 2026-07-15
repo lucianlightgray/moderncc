@@ -16,7 +16,7 @@ static const char *const frn[32] = {
 static void P(disasm_ctx *dc, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	if (dc->collect)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	va_start(ap, fmt);
 	vfprintf(dc->out, fmt, ap);
 	va_end(ap);
@@ -52,13 +52,13 @@ static const char *sym_esc(const char *s) { MCC_TRACE("enter\n");
 			"cycleh", "instreth", "timeh", "pc", NULL};
 	int i;
 	if ((s[0] == 'x' || s[0] == 'f') && s[1] >= '0' && s[1] <= '9')
-		return "0+";
+		{ MCC_TRACE("br\n"); return "0+"; }
 	for (i = 0; i < 32; i++)
 		if (!strcmp(s, xrn[i]) || !strcmp(s, frn[i]))
-			return "0+";
+			{ MCC_TRACE("br\n"); return "0+"; }
 	for (i = 0; csr[i]; i++)
 		if (!strcmp(s, csr[i]))
-			return "0+";
+			{ MCC_TRACE("br\n"); return "0+"; }
 	return "";
 }
 
@@ -66,10 +66,10 @@ static ElfW(Sym) * reloc_sym_at(disasm_ctx *dc, addr_t off, int type) { MCC_TRAC
 	Section *sr = dc->sec->reloc;
 	ElfW_Rel *rel;
 	if (!sr)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	for_each_elem(sr, 0, rel, ElfW_Rel) {
 		if (rel->r_offset == off && (int)ELFW(R_TYPE)(rel->r_info) == type)
-			return &((ElfW(Sym) *)dc->symtab->data)[ELFW(R_SYM)(rel->r_info)];
+			{ MCC_TRACE("br\n"); return &((ElfW(Sym) *)dc->symtab->data)[ELFW(R_SYM)(rel->r_info)]; }
 	}
 	return NULL;
 }
@@ -81,7 +81,7 @@ static int defined_before(disasm_ctx *dc, ElfW(Sym) * s, addr_t pc) { MCC_TRACE(
 static addr_t pcrel_lo_target(disasm_ctx *dc, addr_t off, int type) { MCC_TRACE("enter\n");
 	ElfW(Sym) *s = reloc_sym_at(dc, off, type);
 	if (!s || s->st_shndx != dc->sec->sh_num)
-		return (addr_t)-1;
+		{ MCC_TRACE("br\n"); return (addr_t)-1; }
 	return s->st_value;
 }
 
@@ -91,16 +91,16 @@ static int auipc_spelling(disasm_ctx *dc, addr_t A) { MCC_TRACE("enter\n");
 	char relbuf[256];
 
 	if (A == (addr_t)-1 || A + 4 > dc->size || (read32le(dc->data + A) & 0x7f) != 0x17)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	rel = disasm_reloc(dc, A, 4, &rtype);
 	if (!rel)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	snprintf(relbuf, sizeof relbuf, "%s", rel);
 	lo = A + 4 < dc->size ? disasm_reloc(dc, A + 4, 4, &lotype) : NULL;
 	if (lo && lotype == R_RISCV_PCREL_LO12_I && plain_sym(relbuf) && (rtype == R_RISCV_PCREL_HI20 || (rtype == R_RISCV_GOT_HI20 && !defined_before(dc, reloc_sym_at(dc, A, rtype), A))))
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if (rtype == R_RISCV_PCREL_HI20 || rtype == R_RISCV_GOT_HI20)
-		return 2;
+		{ MCC_TRACE("br\n"); return 2; }
 	return 0;
 }
 
@@ -170,26 +170,26 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) { MCC_TRACE("enter\n");
 	case 0x0c: {
 		static const char *const nm[4] = {"fadd", "fsub", "fmul", "fdiv"};
 		if (rm != 7)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		P(dc, "%s.%c\t%s, %s, %s", nm[(f7 >> 2) & 3], fc,
 			frn[rd], frn[rs1], frn[rs2]);
 		return 4;
 	}
 	case 0x10:
 		if (rm == 0 && rs1 == rs2)
-			P(dc, "fmv.%c\t%s, %s", fc, frn[rd], frn[rs1]);
+			{ MCC_TRACE("br\n"); P(dc, "fmv.%c\t%s, %s", fc, frn[rd], frn[rs1]); }
 		else if (rm == 0)
-			P(dc, "fsgnj.%c\t%s, %s, %s", fc, frn[rd], frn[rs1], frn[rs2]);
+			{ MCC_TRACE("br\n"); P(dc, "fsgnj.%c\t%s, %s, %s", fc, frn[rd], frn[rs1], frn[rs2]); }
 		else if (rm == 1 && rs1 == rs2)
-			P(dc, "fneg.%c\t%s, %s", fc, frn[rd], frn[rs1]);
+			{ MCC_TRACE("br\n"); P(dc, "fneg.%c\t%s, %s", fc, frn[rd], frn[rs1]); }
 		else if (rm == 2 && rs1 == rs2)
-			P(dc, "fabs.%c\t%s, %s", fc, frn[rd], frn[rs1]);
+			{ MCC_TRACE("br\n"); P(dc, "fabs.%c\t%s, %s", fc, frn[rd], frn[rs1]); }
 		else
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		return 4;
 	case 0x14:
 		if (rm > 1)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		P(dc, "%s.%c\t%s, %s, %s", rm ? "fmax" : "fmin", fc,
 			frn[rd], frn[rs1], frn[rs2]);
 		return 4;
@@ -198,41 +198,41 @@ static int dis_op_fp(disasm_ctx *dc, uint32_t w) { MCC_TRACE("enter\n");
 				{"rne", "rtz", "rdn", "rup", "rmm"};
 		const char *nm;
 		if (f7 == 0x20 && rs2 == 1)
-			nm = "fcvt.s.d";
+			{ MCC_TRACE("br\n"); nm = "fcvt.s.d"; }
 		else if (f7 == 0x21 && rs2 == 0)
-			nm = "fcvt.d.s";
+			{ MCC_TRACE("br\n"); nm = "fcvt.d.s"; }
 		else
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (rm == 7)
-			P(dc, "%s\t%s, %s", nm, frn[rd], frn[rs1]);
+			{ MCC_TRACE("br\n"); P(dc, "%s\t%s, %s", nm, frn[rd], frn[rs1]); }
 		else if (rm <= 4)
-			P(dc, "%s\t%s, %s, %s", nm, frn[rd], frn[rs1], rmn[rm]);
+			{ MCC_TRACE("br\n"); P(dc, "%s\t%s, %s, %s", nm, frn[rd], frn[rs1], rmn[rm]); }
 		else
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		return 4;
 	}
 	case 0x2c:
 		if (rm != 7 || rs2 != 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		P(dc, "fsqrt.%c\t%s, %s", fc, frn[rd], frn[rs1]);
 		return 4;
 	case 0x50: {
 		static const char *const nm[3] = {"fle", "flt", "feq"};
 		if (rm > 2)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		P(dc, "%s.%c\t%s, %s, %s", nm[rm], fc,
 			xrn[rd], frn[rs1], frn[rs2]);
 		return 4;
 	}
 	case 0x60:
 		if (rs2 > 3 || (rm != 1 && rm != 7))
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		P(dc, "fcvt.%s.%c\t%s, %s%s", cvt[rs2], fc, xrn[rd], frn[rs1],
 			rm == 1 ? ", rtz" : "");
 		return 4;
 	case 0x68:
 		if (rs2 > 3 || rm != 7)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		P(dc, "fcvt.%c.%s\t%s, %s", fc, cvt[rs2], frn[rd], xrn[rs1]);
 		return 4;
 	case 0x70:
@@ -281,7 +281,7 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	switch (w & 0x7f) { MCC_TRACE("br\n");
 	case 0x37:
 		if (disasm_reloc(dc, pc, 4, &rtype))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		P(dc, "lui\t%s, 0x%x", xrn[rd], (w >> 12) & 0xfffff);
 		return 4;
 
@@ -292,21 +292,21 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 		int32_t off = imm_j(w);
 		disasm_label(dc, pc + off);
 		if (rd == 0)
-			P(dc, "j\t%d", off);
+			{ MCC_TRACE("br\n"); P(dc, "j\t%d", off); }
 		else if (rd == 1)
-			P(dc, "jal\t%d", off);
+			{ MCC_TRACE("br\n"); P(dc, "jal\t%d", off); }
 		else
-			P(dc, "jal\t%s, %d", xrn[rd], off);
+			{ MCC_TRACE("br\n"); P(dc, "jal\t%s, %d", xrn[rd], off); }
 		return 4;
 	}
 
 	case 0x67:
 		if (f3 != 0 || disasm_reloc(dc, pc, 4, &rtype))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (rd == 0 && rs1 == 1 && imm_i(w) == 0)
-			P(dc, "ret");
+			{ MCC_TRACE("br\n"); P(dc, "ret"); }
 		else
-			P(dc, "jalr\t%s, %d(%s)", xrn[rd], imm_i(w), xrn[rs1]);
+			{ MCC_TRACE("br\n"); P(dc, "jalr\t%s, %d(%s)", xrn[rd], imm_i(w), xrn[rs1]); }
 		return 4;
 
 	case 0x63: {
@@ -314,7 +314,7 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 				{"beq", "bne", 0, 0, "blt", "bge", "bltu", "bgeu"};
 		int32_t off = imm_b(w);
 		if (!nm[f3] || disasm_reloc(dc, pc, 4, &rtype))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		disasm_label(dc, pc + off);
 		P(dc, "%s\t%s, %s, %d", nm[f3], xrn[rs1], xrn[rs2], off);
 		return 4;
@@ -326,7 +326,7 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (!nm[f3] || (rel && rtype != R_RISCV_PCREL_LO12_I))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
@@ -343,7 +343,7 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 		static const char *const nm[8] = {"sb", "sh", "sw", "sd"};
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (f3 > 3 || (rel && rtype != R_RISCV_PCREL_LO12_S))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
@@ -359,7 +359,7 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	case 0x07:
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if ((f3 != 2 && f3 != 3) || (rel && rtype != R_RISCV_PCREL_LO12_I))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
@@ -376,7 +376,7 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	case 0x27:
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if ((f3 != 2 && f3 != 3) || (rel && rtype != R_RISCV_PCREL_LO12_S))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (rel) { MCC_TRACE("br\n");
 			addr_t A = pcrel_lo_target(dc, pc, rtype);
 			if (auipc_spelling(dc, A) == 2) { MCC_TRACE("br\n");
@@ -396,17 +396,17 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 		int32_t imm = imm_i(w);
 		rel = disasm_reloc(dc, pc, 4, &rtype);
 		if (rel && rtype != R_RISCV_PCREL_LO12_I && rtype != R_RISCV_TPREL_LO12_I)
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (f3 == 1 || f3 == 5) { MCC_TRACE("br\n");
 			int top6 = w >> 26;
 			if (f3 == 1 && top6 == 0)
-				P(dc, "slli\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63);
+				{ MCC_TRACE("br\n"); P(dc, "slli\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63); }
 			else if (f3 == 5 && top6 == 0)
-				P(dc, "srli\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63);
+				{ MCC_TRACE("br\n"); P(dc, "srli\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63); }
 			else if (f3 == 5 && top6 == 0x10)
-				P(dc, "srai\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63);
+				{ MCC_TRACE("br\n"); P(dc, "srai\t%s, %s, %d", xrn[rd], xrn[rs1], imm & 63); }
 			else
-				return raw32(dc, w);
+				{ MCC_TRACE("br\n"); return raw32(dc, w); }
 			return 4;
 		}
 		if (f3 == 0 && rel && rtype == R_RISCV_PCREL_LO12_I) { MCC_TRACE("br\n");
@@ -418,27 +418,27 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 			}
 		}
 		if (f3 == 0 && w == 0x13)
-			P(dc, "nop");
+			{ MCC_TRACE("br\n"); P(dc, "nop"); }
 		else if (f3 == 0 && imm == 0 && !rel)
-			P(dc, "mv\t%s, %s", xrn[rd], xrn[rs1]);
+			{ MCC_TRACE("br\n"); P(dc, "mv\t%s, %s", xrn[rd], xrn[rs1]); }
 		else
-			P(dc, "%s\t%s, %s, %d", nm[f3], xrn[rd], xrn[rs1], imm);
+			{ MCC_TRACE("br\n"); P(dc, "%s\t%s, %s, %d", nm[f3], xrn[rd], xrn[rs1], imm); }
 		return 4;
 	}
 
 	case 0x1b:
 		if (disasm_reloc(dc, pc, 4, &rtype))
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (f3 == 0)
-			P(dc, "addiw\t%s, %s, %d", xrn[rd], xrn[rs1], imm_i(w));
+			{ MCC_TRACE("br\n"); P(dc, "addiw\t%s, %s, %d", xrn[rd], xrn[rs1], imm_i(w)); }
 		else if (f3 == 1 && (w >> 25) == 0)
-			P(dc, "slliw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2);
+			{ MCC_TRACE("br\n"); P(dc, "slliw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2); }
 		else if (f3 == 5 && (w >> 25) == 0)
-			P(dc, "srliw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2);
+			{ MCC_TRACE("br\n"); P(dc, "srliw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2); }
 		else if (f3 == 5 && (w >> 25) == 0x20)
-			P(dc, "sraiw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2);
+			{ MCC_TRACE("br\n"); P(dc, "sraiw\t%s, %s, %d", xrn[rd], xrn[rs1], rs2); }
 		else
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		return 4;
 
 	case 0x33:
@@ -451,20 +451,20 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 		int f7 = w >> 25;
 		const char *nm = NULL;
 		if (f7 == 0x00)
-			nm = base[f3];
+			{ MCC_TRACE("br\n"); nm = base[f3]; }
 		else if (f7 == 0x20 && f3 == 0)
-			nm = "sub";
+			{ MCC_TRACE("br\n"); nm = "sub"; }
 		else if (f7 == 0x20 && f3 == 5)
-			nm = "sra";
+			{ MCC_TRACE("br\n"); nm = "sra"; }
 		else if (f7 == 0x01)
-			nm = muldiv[f3];
+			{ MCC_TRACE("br\n"); nm = muldiv[f3]; }
 		if (!nm)
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		if (w32) { MCC_TRACE("br\n");
 			if (strcmp(nm, "add") && strcmp(nm, "sub") && strcmp(nm, "sll") && strcmp(nm, "srl") &&
 					strcmp(nm, "sra") && strcmp(nm, "mul") && strcmp(nm, "div") && strcmp(nm, "divu") &&
 					strcmp(nm, "rem") && strcmp(nm, "remu"))
-				return raw32(dc, w);
+				{ MCC_TRACE("br\n"); return raw32(dc, w); }
 			P(dc, "%sw\t%s, %s, %s", nm, xrn[rd], xrn[rs1], xrn[rs2]);
 		} else { MCC_TRACE("br\n");
 			P(dc, "%s\t%s, %s, %s", nm, xrn[rd], xrn[rs1], xrn[rs2]);
@@ -477,20 +477,20 @@ static int dis_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 
 	case 0x0f:
 		if (w == 0x0ff0000f)
-			P(dc, "fence");
+			{ MCC_TRACE("br\n"); P(dc, "fence"); }
 		else if (w == 0x0000100f)
-			P(dc, "fence.i");
+			{ MCC_TRACE("br\n"); P(dc, "fence.i"); }
 		else
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		return 4;
 
 	case 0x73:
 		if (w == 0x00000073)
-			P(dc, "ecall");
+			{ MCC_TRACE("br\n"); P(dc, "ecall"); }
 		else if (w == 0x00100073)
-			P(dc, "ebreak");
+			{ MCC_TRACE("br\n"); P(dc, "ebreak"); }
 		else
-			return raw32(dc, w);
+			{ MCC_TRACE("br\n"); return raw32(dc, w); }
 		return 4;
 	}
 	return raw32(dc, w);

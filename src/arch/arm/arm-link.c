@@ -102,7 +102,7 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
@@ -114,7 +114,7 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 		while (p < p_end) { MCC_TRACE("br\n");
 			unsigned off = x + read32le(p + 4) + (s1->plt->data - p) + 4;
 			if (read32le(p) == 0x46c04778)
-				p += 4;
+				{ MCC_TRACE("br\n"); p += 4; }
 			write32le(p, 0xe28fc200 | ((off >> 28) & 0xf));
 			write32le(p + 4, 0xe28cc600 | ((off >> 20) & 0xff));
 			write32le(p + 8, 0xe28cca00 | ((off >> 12) & 0xff));
@@ -148,23 +148,23 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		unsigned code = read32le(ptr);
 		x = code & 0x00ffffff;
 		if (g_debug & MCC_DBG_RELOC)
-			printf("reloc %d: x=0x%x val=0x%x ", type, x, (unsigned)val);
+			{ MCC_TRACE("br\n"); printf("reloc %d: x=0x%x val=0x%x ", type, x, (unsigned)val); }
 		code &= 0xff000000;
 		x <<= 2;
 		if (x & 0x2000000)
-			x -= 0x4000000;
+			{ MCC_TRACE("br\n"); x -= 0x4000000; }
 		blx_avail = (MCC_CONFIG_CPUVER >= 5);
 		is_thumb = val & 1;
 		is_bl = code == 0xeb000000;
 		is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));
 		x += val - addr;
 		if (g_debug & MCC_DBG_RELOC)
-			printf(" newx=0x%x name=%s\n", x,
-						 (char *)symtab_section->link->data + sym->st_name);
+			{ MCC_TRACE("br\n"); printf(" newx=0x%x name=%s\n", x,
+						 (char *)symtab_section->link->data + sym->st_name); }
 		h = x & 2;
 		th_ko = (x & 3) && (!blx_avail || !is_call);
 		if (th_ko || x >= 0x2000000 || x < -0x2000000)
-			mcc_error_noabort("can't relocate value at %x,%d", addr, type);
+			{ MCC_TRACE("br\n"); mcc_error_noabort("can't relocate value at %x,%d", addr, type); }
 		x >>= 2;
 		x &= 0xffffff;
 		if (is_thumb) { MCC_TRACE("br\n");
@@ -182,7 +182,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
 		if (sym->st_shndx == SHN_UNDEF &&
 				ELFW(ST_BIND)(sym->st_info) == STB_WEAK)
-			return;
+			{ MCC_TRACE("br\n"); return; }
 
 		hi = read16le(ptr);
 		lo = read16le(ptr + 2);
@@ -196,7 +196,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		x = (s << 24) | (i1 << 23) | (i2 << 22) |
 				(imm10 << 12) | (imm11 << 1);
 		if (x & 0x01000000)
-			x -= 0x02000000;
+			{ MCC_TRACE("br\n"); x -= 0x02000000; }
 
 		to_thumb = val & 1;
 		plt = s1->plt;
@@ -236,8 +236,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		}
 
 		if (!to_thumb || x >= 0x1000000 || x < -0x1000000)
-			if (to_thumb || (val & 2) || (!is_call && !to_plt))
-				mcc_error_noabort("can't relocate value at %x,%d", addr, type);
+			{ MCC_TRACE("br\n"); if (to_thumb || (val & 2) || (!is_call && !to_plt))
+				{ MCC_TRACE("br\n"); mcc_error_noabort("can't relocate value at %x,%d", addr, type); } }
 
 		s = (x >> 24) & 1;
 		i1 = (x >> 23) & 1;
@@ -257,14 +257,14 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_ARM_MOVW_ABS_NC: {
 		int x, imm4, imm12;
 		if (type == R_ARM_MOVT_ABS)
-			val >>= 16;
+			{ MCC_TRACE("br\n"); val >>= 16; }
 		imm12 = val & 0xfff;
 		imm4 = (val >> 12) & 0xf;
 		x = (imm4 << 16) | imm12;
 		if (type == R_ARM_THM_MOVT_ABS)
-			write32le(ptr, read32le(ptr) | x);
+			{ MCC_TRACE("br\n"); write32le(ptr, read32le(ptr) | x); }
 		else
-			add32le(ptr, x);
+			{ MCC_TRACE("br\n"); add32le(ptr, x); }
 	}
 		return;
 	case R_ARM_MOVT_PREL:
@@ -275,7 +275,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		addend = (addend ^ 0x8000) - 0x8000;
 		val += addend - addr;
 		if (type == R_ARM_MOVT_PREL)
-			val >>= 16;
+			{ MCC_TRACE("br\n"); val >>= 16; }
 		write32le(ptr, (insn & 0xfff0f000) |
 											 ((val & 0xf000) << 4) | (val & 0xfff));
 	}
@@ -284,16 +284,16 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_ARM_THM_MOVW_ABS_NC: {
 		int x, i, imm4, imm3, imm8;
 		if (type == R_ARM_THM_MOVT_ABS)
-			val >>= 16;
+			{ MCC_TRACE("br\n"); val >>= 16; }
 		imm8 = val & 0xff;
 		imm3 = (val >> 8) & 0x7;
 		i = (val >> 11) & 1;
 		imm4 = (val >> 12) & 0xf;
 		x = (imm3 << 28) | (imm8 << 16) | (i << 10) | imm4;
 		if (type == R_ARM_THM_MOVT_ABS)
-			write32le(ptr, read32le(ptr) | x);
+			{ MCC_TRACE("br\n"); write32le(ptr, read32le(ptr) | x); }
 		else
-			add32le(ptr, x);
+			{ MCC_TRACE("br\n"); add32le(ptr, x); }
 	}
 		return;
 	case R_ARM_PREL31: {
@@ -303,7 +303,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		x = (x * 2) / 2;
 		x += val - addr;
 		if ((x ^ (x >> 1)) & 0x40000000)
-			mcc_error_noabort("can't relocate value at %x,%d", addr, type);
+			{ MCC_TRACE("br\n"); mcc_error_noabort("can't relocate value at %x,%d", addr, type); }
 		write32le(ptr, read32le(ptr) | (x & 0x7fffffff));
 	}
 		return;
@@ -344,7 +344,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_ARM_V4BX:
 		if ((0x0ffffff0 & read32le(ptr)) == 0x012FFF10)
-			write32le(ptr, read32le(ptr) ^ 0xE12FFF10 ^ 0xE1A0F000);
+			{ MCC_TRACE("br\n"); write32le(ptr, read32le(ptr) ^ 0xE12FFF10 ^ 0xE1A0F000); }
 		return;
 	case R_ARM_GLOB_DAT:
 	case R_ARM_JUMP_SLOT:
@@ -370,11 +370,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			Section *s = s1->sections[i];
 			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
-					tls_start = s->sh_addr;
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 				if (s->sh_addr + s->sh_size > tls_end)
-					tls_end = s->sh_addr + s->sh_size;
+					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + s->sh_size; }
 				if (s->sh_addralign > tls_align)
-					tls_align = s->sh_addralign;
+					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
 		if (tls_end > tls_start) { MCC_TRACE("br\n");

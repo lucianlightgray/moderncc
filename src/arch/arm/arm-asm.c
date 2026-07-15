@@ -34,10 +34,10 @@ typedef struct Operand {
 static int asm_parse_vfp_regvar(int t, int double_precision) { MCC_TRACE("enter\n");
 	if (double_precision) { MCC_TRACE("br\n");
 		if (t >= TOK_ASM_d0 && t <= TOK_ASM_d15)
-			return t - TOK_ASM_d0;
+			{ MCC_TRACE("br\n"); return t - TOK_ASM_d0; }
 	} else { MCC_TRACE("br\n");
 		if (t >= TOK_ASM_s0 && t <= TOK_ASM_s31)
-			return t - TOK_ASM_s0;
+			{ MCC_TRACE("br\n"); return t - TOK_ASM_s0; }
 	}
 	return -1;
 }
@@ -57,14 +57,14 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 			if (reg == -1) { MCC_TRACE("br\n");
 				expect("register");
 			} else
-				next();
+				{ MCC_TRACE("br\n"); next(); }
 
 			if ((1 << reg) < regset)
-				mcc_warning(
-						"registers will be processed in ascending order by hardware--but are not specified in ascending order here");
+				{ MCC_TRACE("br\n"); mcc_warning(
+						"registers will be processed in ascending order by hardware--but are not specified in ascending order here"); }
 			regset |= 1 << reg;
 			if (tok != ',')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			next();
 		}
 		skip('}');
@@ -100,22 +100,22 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 	op->e = e;
 	if (!op->e.sym) { MCC_TRACE("br\n");
 		if ((int)op->e.v < 0 && (int)op->e.v >= -255)
-			op->type = OP_IM8N;
+			{ MCC_TRACE("br\n"); op->type = OP_IM8N; }
 		else if (op->e.v == 0 && minus_zero)
-			op->type = OP_IM8N;
+			{ MCC_TRACE("br\n"); op->type = OP_IM8N; }
 		else if (op->e.v == (uint8_t)op->e.v)
-			op->type = OP_IM8;
+			{ MCC_TRACE("br\n"); op->type = OP_IM8; }
 	} else
-		expect("operand");
+		{ MCC_TRACE("br\n"); expect("operand"); }
 }
 
 ST_FUNC void gen_le32(int i) { MCC_TRACE("enter\n");
 	int ind1;
 	if (nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	ind1 = ind + 4;
 	if (ind1 > cur_text_section->data_allocated)
-		section_realloc(cur_text_section, ind1);
+		{ MCC_TRACE("br\n"); section_realloc(cur_text_section, ind1); }
 	cur_text_section->data[ind++] = i & 0xFF;
 	cur_text_section->data[ind++] = (i >> 8) & 0xFF;
 	cur_text_section->data[ind++] = (i >> 16) & 0xFF;
@@ -124,7 +124,7 @@ ST_FUNC void gen_le32(int i) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_expr32(ExprValue *pe) { MCC_TRACE("enter\n");
 	if (pe->sym)
-		greloc(cur_text_section, pe->sym, ind, R_DATA_32);
+		{ MCC_TRACE("br\n"); greloc(cur_text_section, pe->sym, ind, R_DATA_32); }
 	gen_le32(pe->v);
 }
 
@@ -132,7 +132,7 @@ static uint32_t condition_code_of_token(int token) { MCC_TRACE("enter\n");
 	if (token < TOK_ASM_nopeq) { MCC_TRACE("br\n");
 		expect("condition-enabled instruction");
 	} else
-		return (token - TOK_ASM_nopeq) & 15;
+		{ MCC_TRACE("br\n"); return (token - TOK_ASM_nopeq) & 15; }
 }
 
 static void asm_emit_opcode(int token, uint32_t opcode) { MCC_TRACE("enter\n");
@@ -148,7 +148,7 @@ static void asm_emit_coprocessor_opcode(uint32_t high_nibble, uint8_t cp_number,
 																				uint8_t cp_m_operand_register, uint8_t cp_opcode2, int inter_processor_transfer) { MCC_TRACE("enter\n");
 	uint32_t opcode = 0xe000000;
 	if (inter_processor_transfer)
-		opcode |= 1 << 4;
+		{ MCC_TRACE("br\n"); opcode |= 1 << 4; }
 	opcode |= cp_opcode << 20;
 	opcode |= cp_n_operand_register << 16;
 	opcode |= cp_destination_register << 12;
@@ -182,7 +182,7 @@ static void asm_unary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	case TOK_ASM_swieq:
 	case TOK_ASM_svceq:
 		if (op.type != OP_IM8)
-			expect("immediate 8-bit unsigned integer");
+			{ MCC_TRACE("br\n"); expect("immediate 8-bit unsigned integer"); }
 		else { MCC_TRACE("br\n");
 			asm_emit_opcode(token, (0xf << 24) | op.e.v);
 		}
@@ -209,7 +209,7 @@ static void asm_binary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	}
 
 	if (ops[0].reg == 13)
-		mcc_warning("Using 'sp' as operand with '%s' is deprecated by ARM", get_tok_str(token, NULL));
+		{ MCC_TRACE("br\n"); mcc_warning("Using 'sp' as operand with '%s' is deprecated by ARM", get_tok_str(token, NULL)); }
 
 	if (ops[1].type != OP_REG32) { MCC_TRACE("br\n");
 		switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
@@ -231,9 +231,9 @@ static void asm_binary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 						break;
 					}
 				} else
-					expect("(source operand) immediate 16 bit value");
+					{ MCC_TRACE("br\n"); expect("(source operand) immediate 16 bit value"); }
 			} else
-				expect("(source operand) immediate");
+				{ MCC_TRACE("br\n"); expect("(source operand) immediate"); }
 			break;
 		default:
 			expect("(source operand) register");
@@ -246,7 +246,7 @@ static void asm_binary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	}
 
 	if (ops[1].reg == 13)
-		mcc_warning("Using 'sp' as operand with '%s' is deprecated by ARM", get_tok_str(token, NULL));
+		{ MCC_TRACE("br\n"); mcc_warning("Using 'sp' as operand with '%s' is deprecated by ARM", get_tok_str(token, NULL)); }
 
 	if (tok == ',') { MCC_TRACE("br\n");
 		next();
@@ -276,7 +276,7 @@ static void asm_binary_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 	case TOK_ASM_clzeq:
 		if (encoded_rotation)
-			mcc_error("clz does not support rotation");
+			{ MCC_TRACE("br\n"); mcc_error("clz does not support rotation"); }
 		asm_emit_opcode(token, 0x16f0f10 | (ops[0].reg << 12) | ops[1].reg);
 		break;
 	case TOK_ASM_sxtbeq:
@@ -351,7 +351,7 @@ static void asm_coprocessor_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n
 																opcode2.e.v, 0);
 		return;
 	} else
-		high_nibble = condition_code_of_token(token);
+		{ MCC_TRACE("br\n"); high_nibble = condition_code_of_token(token); }
 
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 	case TOK_ASM_cdpeq:
@@ -411,15 +411,15 @@ static void asm_block_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE(
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 	case TOK_ASM_pusheq:
 		if (nb_ops != 1)
-			expect("exactly one operand");
+			{ MCC_TRACE("br\n"); expect("exactly one operand"); }
 		else
-			asm_emit_opcode(token, (0x92d << 16) | ops[0].regset);
+			{ MCC_TRACE("br\n"); asm_emit_opcode(token, (0x92d << 16) | ops[0].regset); }
 		break;
 	case TOK_ASM_popeq:
 		if (nb_ops != 1)
-			expect("exactly one operand");
+			{ MCC_TRACE("br\n"); expect("exactly one operand"); }
 		else
-			asm_emit_opcode(token, (0x8bd << 16) | ops[0].regset);
+			{ MCC_TRACE("br\n"); asm_emit_opcode(token, (0x8bd << 16) | ops[0].regset); }
 		break;
 	case TOK_ASM_stmdaeq:
 	case TOK_ASM_ldmdaeq:
@@ -462,12 +462,12 @@ static void asm_block_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE(
 			mcc_error("internal error: This place should not be reached (fallback in asm_block_data_transfer_opcode)");
 		}
 		if (nb_ops != 2)
-			expect("exactly two operands");
+			{ MCC_TRACE("br\n"); expect("exactly two operands"); }
 		else if (ops[0].type != OP_REG32)
-			expect("(first operand) register");
+			{ MCC_TRACE("br\n"); expect("(first operand) register"); }
 		else { MCC_TRACE("br\n");
 			if (op0_exclam)
-				opcode |= 1 << 21;
+				{ MCC_TRACE("br\n"); opcode |= 1 << 21; }
 			asm_emit_opcode(token, opcode | ENCODE_RN(ops[0].reg) | ops[1].regset);
 		}
 		break;
@@ -518,7 +518,7 @@ static uint32_t asm_encode_shift(Operand *shift) { MCC_TRACE("enter\n");
 	switch (shift->type) { MCC_TRACE("br\n");
 	case OP_REG32:
 		if (shift->reg == 15)
-			mcc_error("r15 cannot be used as a shift count");
+			{ MCC_TRACE("br\n"); mcc_error("r15 cannot be used as a shift count"); }
 		else { MCC_TRACE("br\n");
 			operands = ENCODE_BARREL_SHIFTER_SHIFT_BY_REGISTER;
 			operands |= ENCODE_BARREL_SHIFTER_REGISTER(shift->reg);
@@ -527,9 +527,9 @@ static uint32_t asm_encode_shift(Operand *shift) { MCC_TRACE("enter\n");
 	case OP_IM8:
 		amount = shift->e.v;
 		if (amount > 0 && amount < 32)
-			operands = ENCODE_BARREL_SHIFTER_IMMEDIATE(amount);
+			{ MCC_TRACE("br\n"); operands = ENCODE_BARREL_SHIFTER_IMMEDIATE(amount); }
 		else
-			mcc_error("shift count out of range");
+			{ MCC_TRACE("br\n"); mcc_error("shift count out of range"); }
 		break;
 	default:
 		mcc_error("unknown shift amount");
@@ -549,18 +549,18 @@ static void asm_data_processing_opcode(MCCState *s1, int token) { MCC_TRACE("ent
 
 	for (nb_ops = 0; nb_ops < sizeof(ops) / sizeof(ops[0]);) { MCC_TRACE("br\n");
 		if (tok == TOK_ASM_asl || tok == TOK_ASM_lsl || tok == TOK_ASM_lsr || tok == TOK_ASM_asr || tok == TOK_ASM_ror || tok == TOK_ASM_rrx)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		parse_operand(s1, &ops[nb_ops]);
 		++nb_ops;
 		if (tok != ',')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		next();
 	}
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	operands |= asm_parse_optional_shift(s1, &nb_shift, &shift);
 	if (nb_ops < 2)
-		expect("at least two operands");
+		{ MCC_TRACE("br\n"); expect("at least two operands"); }
 	else if (nb_ops == 2) { MCC_TRACE("br\n");
 		memcpy(&ops[2], &ops[1], sizeof(ops[1]));
 		memcpy(&ops[1], &ops[0], sizeof(ops[0]));
@@ -587,15 +587,15 @@ static void asm_data_processing_opcode(MCCState *s1, int token) { MCC_TRACE("ent
 
 		opcode = opcode_nos << 21;
 		if (ops[0].type != OP_REG32)
-			expect("(destination operand) register");
+			{ MCC_TRACE("br\n"); expect("(destination operand) register"); }
 		else if (opcode_nos == 0xa || opcode_nos == 0xb || opcode_nos == 0x8 || opcode_nos == 0x9)
-			operands |= ENCODE_SET_CONDITION_CODES;
+			{ MCC_TRACE("br\n"); operands |= ENCODE_SET_CONDITION_CODES; }
 		else
-			operands |= ENCODE_RD(ops[0].reg);
+			{ MCC_TRACE("br\n"); operands |= ENCODE_RD(ops[0].reg); }
 		if (ops[1].type != OP_REG32)
-			expect("(first source operand) register");
+			{ MCC_TRACE("br\n"); expect("(first source operand) register"); }
 		else if (!(opcode_nos == 0xd || opcode_nos == 0xf))
-			operands |= ENCODE_RN(ops[1].reg);
+			{ MCC_TRACE("br\n"); operands |= ENCODE_RN(ops[1].reg); }
 		switch (ops[2].type) { MCC_TRACE("br\n");
 		case OP_REG32:
 			operands |= ops[2].reg;
@@ -606,7 +606,7 @@ static void asm_data_processing_opcode(MCCState *s1, int token) { MCC_TRACE("ent
 			immediate_value = ops[2].e.v;
 			for (half_immediate_rotation = 0; half_immediate_rotation < 16; ++half_immediate_rotation) { MCC_TRACE("br\n");
 				if (immediate_value >= 0x00 && immediate_value < 0x100)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				immediate_value = ((immediate_value & 0x3FFFFFFF) << 2) | ((immediate_value & 0xC0000000) >> 30);
 			}
 			if (half_immediate_rotation >= 16) { MCC_TRACE("br\n");
@@ -664,7 +664,7 @@ static void asm_data_processing_opcode(MCCState *s1, int token) { MCC_TRACE("ent
 			}
 			for (half_immediate_rotation = 0; half_immediate_rotation < 16; ++half_immediate_rotation) { MCC_TRACE("br\n");
 				if (immediate_value >= 0x00 && immediate_value < 0x100)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				immediate_value = ((immediate_value & 0x3FFFFFFF) << 2) | ((immediate_value & 0xC0000000) >> 30);
 			}
 			if (half_immediate_rotation >= 16) { MCC_TRACE("br\n");
@@ -688,9 +688,9 @@ static void asm_data_processing_opcode(MCCState *s1, int token) { MCC_TRACE("ent
 
 		if (nb_shift) { MCC_TRACE("br\n");
 			if (operands & ENCODE_IMMEDIATE_FLAG)
-				mcc_error("immediate rotation not implemented");
+				{ MCC_TRACE("br\n"); mcc_error("immediate rotation not implemented"); }
 			else
-				operands |= asm_encode_shift(&shift);
+				{ MCC_TRACE("br\n"); operands |= asm_encode_shift(&shift); }
 		}
 
 		opcode |= (opcode_idx & 1) ? ENCODE_SET_CONDITION_CODES : 0;
@@ -720,7 +720,7 @@ static void asm_shift_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	if (ops[0].type != OP_REG32) { MCC_TRACE("br\n");
 		expect("(destination operand) register");
 	} else
-		operands |= ENCODE_RD(ops[0].reg);
+		{ MCC_TRACE("br\n"); operands |= ENCODE_RD(ops[0].reg); }
 
 	if (nb_ops == 2) { MCC_TRACE("br\n");
 		switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
@@ -732,7 +732,7 @@ static void asm_shift_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 				operands |= ENCODE_BARREL_SHIFTER_MODE_ROR;
 				asm_emit_opcode(token, opcode | operands);
 			} else
-				mcc_error("(first source operand) register");
+				{ MCC_TRACE("br\n"); mcc_error("(first source operand) register"); }
 			return;
 		default:
 			memcpy(&ops[2], &ops[1], sizeof(ops[1]));
@@ -775,14 +775,14 @@ static void asm_shift_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 		break;
 	case OP_IM8:
 		if (ops[2].e.v)
-			operands |= asm_encode_shift(&ops[2]);
+			{ MCC_TRACE("br\n"); operands |= asm_encode_shift(&ops[2]); }
 		else
-			definitely_neutral = 1;
+			{ MCC_TRACE("br\n"); definitely_neutral = 1; }
 		break;
 	}
 
 	if (!definitely_neutral)
-		switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 		case TOK_ASM_lslseq:
 		case TOK_ASM_lsleq:
 			operands |= ENCODE_BARREL_SHIFTER_MODE_LSL;
@@ -801,7 +801,7 @@ static void asm_shift_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 			break;
 		default:
 			expect("shift instruction");
-		}
+		} }
 	asm_emit_opcode(token, opcode | operands);
 }
 
@@ -819,7 +819,7 @@ static void asm_multiplication_opcode(MCCState *s1, int token) { MCC_TRACE("ente
 		next();
 	}
 	if (nb_ops < 2)
-		expect("at least two operands");
+		{ MCC_TRACE("br\n"); expect("at least two operands"); }
 	else if (nb_ops == 2) { MCC_TRACE("br\n");
 		switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 		case TOK_ASM_mulseq:
@@ -833,22 +833,22 @@ static void asm_multiplication_opcode(MCCState *s1, int token) { MCC_TRACE("ente
 	}
 
 	if (ops[0].type == OP_REG32)
-		opcode |= ops[0].reg << 16;
+		{ MCC_TRACE("br\n"); opcode |= ops[0].reg << 16; }
 	else
-		expect("(destination operand) register");
+		{ MCC_TRACE("br\n"); expect("(destination operand) register"); }
 	if (ops[1].type == OP_REG32)
-		opcode |= ops[1].reg;
+		{ MCC_TRACE("br\n"); opcode |= ops[1].reg; }
 	else
-		expect("(first source operand) register");
+		{ MCC_TRACE("br\n"); expect("(first source operand) register"); }
 	if (ops[2].type == OP_REG32)
-		opcode |= ops[2].reg << 8;
+		{ MCC_TRACE("br\n"); opcode |= ops[2].reg << 8; }
 	else
-		expect("(second source operand) register");
+		{ MCC_TRACE("br\n"); expect("(second source operand) register"); }
 	if (nb_ops > 3) { MCC_TRACE("br\n");
 		if (ops[3].type == OP_REG32)
-			opcode |= ops[3].reg << 12;
+			{ MCC_TRACE("br\n"); opcode |= ops[3].reg << 12; }
 		else
-			expect("(third source operand) register");
+			{ MCC_TRACE("br\n"); expect("(third source operand) register"); }
 	}
 
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
@@ -856,7 +856,7 @@ static void asm_multiplication_opcode(MCCState *s1, int token) { MCC_TRACE("ente
 		opcode |= 1 << 20;
 	case TOK_ASM_muleq:
 		if (nb_ops != 3)
-			expect("three operands");
+			{ MCC_TRACE("br\n"); expect("three operands"); }
 		else { MCC_TRACE("br\n");
 			asm_emit_opcode(token, opcode);
 		}
@@ -866,7 +866,7 @@ static void asm_multiplication_opcode(MCCState *s1, int token) { MCC_TRACE("ente
 	case TOK_ASM_mlaeq:
 	case_TOK_ASM_mlaeq:
 		if (nb_ops != 4)
-			expect("four operands");
+			{ MCC_TRACE("br\n"); expect("four operands"); }
 		else { MCC_TRACE("br\n");
 			opcode |= 1 << 21;
 			asm_emit_opcode(token, opcode);
@@ -903,21 +903,21 @@ static void asm_long_multiplication_opcode(MCCState *s1, int token) { MCC_TRACE(
 	}
 
 	if (ops[0].type == OP_REG32)
-		opcode |= ops[0].reg << 12;
+		{ MCC_TRACE("br\n"); opcode |= ops[0].reg << 12; }
 	else
-		expect("(destination lo accumulator) register");
+		{ MCC_TRACE("br\n"); expect("(destination lo accumulator) register"); }
 	if (ops[1].type == OP_REG32)
-		opcode |= ops[1].reg << 16;
+		{ MCC_TRACE("br\n"); opcode |= ops[1].reg << 16; }
 	else
-		expect("(destination hi accumulator) register");
+		{ MCC_TRACE("br\n"); expect("(destination hi accumulator) register"); }
 	if (ops[2].type == OP_REG32)
-		opcode |= ops[2].reg;
+		{ MCC_TRACE("br\n"); opcode |= ops[2].reg; }
 	else
-		expect("(first source operand) register");
+		{ MCC_TRACE("br\n"); expect("(first source operand) register"); }
 	if (ops[3].type == OP_REG32)
-		opcode |= ops[3].reg << 8;
+		{ MCC_TRACE("br\n"); opcode |= ops[3].reg << 8; }
 	else
-		expect("(second source operand) register");
+		{ MCC_TRACE("br\n"); expect("(second source operand) register"); }
 
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 	case TOK_ASM_smullseq:
@@ -961,12 +961,12 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE
 
 	parse_operand(s1, &ops[0]);
 	if (ops[0].type == OP_REG32)
-		opcode |= ENCODE_RD(ops[0].reg);
+		{ MCC_TRACE("br\n"); opcode |= ENCODE_RD(ops[0].reg); }
 	else { MCC_TRACE("br\n");
 		expect("(destination operand) register");
 	}
 	if (tok != ',')
-		expect("at least two arguments");
+		{ MCC_TRACE("br\n"); expect("at least two arguments"); }
 	next();
 
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
@@ -978,16 +978,16 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE
 			expect("register");
 		}
 		if (tok != ',')
-			expect("at least three arguments");
+			{ MCC_TRACE("br\n"); expect("at least three arguments"); }
 		else
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		break;
 	}
 
 	skip('[');
 	parse_operand(s1, &ops[1]);
 	if (ops[1].type == OP_REG32)
-		opcode |= ENCODE_RN(ops[1].reg);
+		{ MCC_TRACE("br\n"); opcode |= ENCODE_RN(ops[1].reg); }
 	else { MCC_TRACE("br\n");
 		expect("(first source operand) register");
 	}
@@ -1010,7 +1010,7 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE
 				next();
 				opcode |= asm_parse_optional_shift(s1, &nb_shift, &shift);
 				if (opcode == 0)
-					expect("shift directive, or no comma");
+					{ MCC_TRACE("br\n"); expect("shift directive, or no comma"); }
 			}
 		}
 	} else { MCC_TRACE("br\n");
@@ -1028,31 +1028,31 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE
 	}
 
 	if (exclam)
-		opcode |= 1 << 21;
+		{ MCC_TRACE("br\n"); opcode |= 1 << 21; }
 
 	if (ops[2].type == OP_IM32 || ops[2].type == OP_IM8 || ops[2].type == OP_IM8N) { MCC_TRACE("br\n");
 		int v = ops[2].e.v;
 		if (op2_minus)
-			mcc_error("minus before '#' not supported for immediate values");
+			{ MCC_TRACE("br\n"); mcc_error("minus before '#' not supported for immediate values"); }
 		if (v >= 0 && ops[2].type != OP_IM8N) { MCC_TRACE("br\n");
 			opcode |= 1 << 23;
 			if (v >= 0x1000)
-				mcc_error("offset out of range for '%s'", get_tok_str(token, NULL));
+				{ MCC_TRACE("br\n"); mcc_error("offset out of range for '%s'", get_tok_str(token, NULL)); }
 			else
-				opcode |= v;
+				{ MCC_TRACE("br\n"); opcode |= v; }
 		} else { MCC_TRACE("br\n");
 			if (v <= -0x1000)
-				mcc_error("offset out of range for '%s'", get_tok_str(token, NULL));
+				{ MCC_TRACE("br\n"); mcc_error("offset out of range for '%s'", get_tok_str(token, NULL)); }
 			else
-				opcode |= -v;
+				{ MCC_TRACE("br\n"); opcode |= -v; }
 		}
 	} else if (ops[2].type == OP_REG32) { MCC_TRACE("br\n");
 		if (!op2_minus)
-			opcode |= 1 << 23;
+			{ MCC_TRACE("br\n"); opcode |= 1 << 23; }
 		opcode |= ENCODE_IMMEDIATE_FLAG;
 		opcode |= ops[2].reg;
 	} else
-		expect("register");
+		{ MCC_TRACE("br\n"); expect("register"); }
 
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 	case TOK_ASM_strbeq:
@@ -1060,7 +1060,7 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE
 	case TOK_ASM_streq:
 		opcode |= 1 << 26;
 		if (nb_shift)
-			opcode |= asm_encode_shift(&shift);
+			{ MCC_TRACE("br\n"); opcode |= asm_encode_shift(&shift); }
 		asm_emit_opcode(token, opcode);
 		break;
 	case TOK_ASM_ldrbeq:
@@ -1069,7 +1069,7 @@ static void asm_single_data_transfer_opcode(MCCState *s1, int token) { MCC_TRACE
 		opcode |= 1 << 20;
 		opcode |= 1 << 26;
 		if (nb_shift)
-			opcode |= asm_encode_shift(&shift);
+			{ MCC_TRACE("br\n"); opcode |= asm_encode_shift(&shift); }
 		asm_emit_opcode(token, opcode);
 		break;
 	case TOK_ASM_strexheq:
@@ -1121,33 +1121,33 @@ static void asm_emit_coprocessor_data_transfer(uint32_t high_nibble, uint8_t cp_
 	opcode |= 1 << 27;
 
 	if (long_transfer)
-		opcode |= 1 << 22;
+		{ MCC_TRACE("br\n"); opcode |= 1 << 22; }
 
 	if (load)
-		opcode |= 1 << 20;
+		{ MCC_TRACE("br\n"); opcode |= 1 << 20; }
 
 	opcode |= cp_number << 8;
 
 	opcode |= ENCODE_RD(CRd);
 
 	if (Rn->type != OP_REG32)
-		expect("register");
+		{ MCC_TRACE("br\n"); expect("register"); }
 
 	opcode |= ENCODE_RN(Rn->reg);
 	if (preincrement)
-		opcode |= 1 << 24;
+		{ MCC_TRACE("br\n"); opcode |= 1 << 24; }
 
 	if (writeback)
-		opcode |= 1 << 21;
+		{ MCC_TRACE("br\n"); opcode |= 1 << 21; }
 
 	if (offset->type == OP_IM8 || offset->type == OP_IM8N || offset->type == OP_IM32) { MCC_TRACE("br\n");
 		int v = offset->e.v;
 		if (offset_minus)
-			mcc_error("minus before '#' not supported for immediate values");
+			{ MCC_TRACE("br\n"); mcc_error("minus before '#' not supported for immediate values"); }
 		if (offset->type == OP_IM8N || v < 0)
-			v = -v;
+			{ MCC_TRACE("br\n"); v = -v; }
 		else
-			opcode |= 1 << 23;
+			{ MCC_TRACE("br\n"); opcode |= 1 << 23; }
 		if (v & 3) { MCC_TRACE("br\n");
 			mcc_error("immediate offset must be a multiple of 4");
 		}
@@ -1158,7 +1158,7 @@ static void asm_emit_coprocessor_data_transfer(uint32_t high_nibble, uint8_t cp_
 		opcode |= v;
 	} else if (offset->type == OP_REG32) { MCC_TRACE("br\n");
 		if (!offset_minus)
-			opcode |= 1 << 23;
+			{ MCC_TRACE("br\n"); opcode |= 1 << 23; }
 		opcode |= ENCODE_IMMEDIATE_FLAG;
 		opcode |= offset->reg;
 		mcc_error("Using register offset to register address is not possible here");
@@ -1166,7 +1166,7 @@ static void asm_emit_coprocessor_data_transfer(uint32_t high_nibble, uint8_t cp_
 		opcode |= 16;
 		opcode |= offset->reg;
 	} else
-		expect("immediate or register");
+		{ MCC_TRACE("br\n"); expect("immediate or register"); }
 
 	asm_emit_unconditional_opcode((high_nibble << 28) | opcode);
 }
@@ -1251,7 +1251,7 @@ static void asm_coprocessor_data_transfer_opcode(MCCState *s1, int token) { MCC_
 			break;
 		}
 	} else
-		switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 		case TOK_ASM_stcleq:
 			long_transfer = 1;
 		case TOK_ASM_stceq:
@@ -1268,7 +1268,7 @@ static void asm_coprocessor_data_transfer_opcode(MCCState *s1, int token) { MCC_
 			break;
 		default:
 			expect("coprocessor data transfer instruction");
-		}
+		} }
 }
 
 #if defined(MCC_ARM_VFP)
@@ -1370,12 +1370,12 @@ static void asm_floating_point_block_data_transfer_opcode(MCCState *s1, int toke
 	if (tok == '-') { MCC_TRACE("br\n");
 		next();
 		if ((last_regset_register = asm_parse_vfp_regvar(tok, coprocessor == CP_DOUBLE_PRECISION_FLOAT)) != -1)
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		else { MCC_TRACE("br\n");
 			expect("floating-point register");
 		}
 	} else
-		last_regset_register = first_regset_register;
+		{ MCC_TRACE("br\n"); last_regset_register = first_regset_register; }
 
 	if (last_regset_register < first_regset_register) { MCC_TRACE("br\n");
 		mcc_error(
@@ -1384,7 +1384,7 @@ static void asm_floating_point_block_data_transfer_opcode(MCCState *s1, int toke
 	skip('}');
 	regset_item_count = last_regset_register - first_regset_register + 1;
 	if (coprocessor == CP_DOUBLE_PRECISION_FLOAT)
-		regset_item_count <<= 1;
+		{ MCC_TRACE("br\n"); regset_item_count <<= 1; }
 	else { MCC_TRACE("br\n");
 		extra_register_bit = first_regset_register & 1;
 		first_regset_register >>= 1;
@@ -1412,14 +1412,14 @@ static void asm_floating_point_block_data_transfer_opcode(MCCState *s1, int toke
 		expect("floating point block data transfer instruction");
 	}
 	if (ops[0].type != OP_REG32)
-		expect("(first operand) register");
+		{ MCC_TRACE("br\n"); expect("(first operand) register"); }
 	else if (ops[0].reg == 15)
-		mcc_error("'%s' does not support 'pc' as operand", get_tok_str(token, NULL));
+		{ MCC_TRACE("br\n"); mcc_error("'%s' does not support 'pc' as operand", get_tok_str(token, NULL)); }
 	else if (!op0_exclam && ARM_INSTRUCTION_GROUP(token) != TOK_ASM_vldmeq && ARM_INSTRUCTION_GROUP(token) != TOK_ASM_vldmiaeq && ARM_INSTRUCTION_GROUP(token) != TOK_ASM_vstmeq && ARM_INSTRUCTION_GROUP(token) != TOK_ASM_vstmiaeq)
-		mcc_error("first operand of '%s' should have an exclamation mark", get_tok_str(token, NULL));
+		{ MCC_TRACE("br\n"); mcc_error("first operand of '%s' should have an exclamation mark", get_tok_str(token, NULL)); }
 	else
-		asm_emit_coprocessor_data_transfer(condition_code_of_token(token), coprocessor, first_regset_register, &ops[0],
-																			 &offset, 0, preincrement, op0_exclam, extra_register_bit, load);
+		{ MCC_TRACE("br\n"); asm_emit_coprocessor_data_transfer(condition_code_of_token(token), coprocessor, first_regset_register, &ops[0],
+																			 &offset, 0, preincrement, op0_exclam, extra_register_bit, load); }
 }
 
 #define VMOV_FRACTIONAL_DIGITS 7
@@ -1436,7 +1436,7 @@ static uint32_t vmov_parse_fractional_part(const char *s) { MCC_TRACE("enter\n")
 		}
 	}
 	if (*s)
-		expect("decimal numeral");
+		{ MCC_TRACE("br\n"); expect("decimal numeral"); }
 	return result;
 }
 
@@ -1448,7 +1448,7 @@ static int vmov_linear_approx_index(uint32_t beginning, uint32_t end, uint32_t v
 	k = (end - beginning) / 16;
 	for (xvalue = beginning, i = 0; i < 16; ++i, xvalue += k) { MCC_TRACE("br\n");
 		if (value == xvalue)
-			return i;
+			{ MCC_TRACE("br\n"); return i; }
 	}
 	return -1;
 }
@@ -1493,7 +1493,7 @@ static uint8_t vmov_encode_immediate_value(uint32_t value) { MCC_TRACE("enter\n"
 			beginning = limit;
 			r = i;
 		} else
-			limit >>= 1;
+			{ MCC_TRACE("br\n"); limit >>= 1; }
 	}
 	if (r == -1 || value < beginning || value > end) { MCC_TRACE("br\n");
 		mcc_error("invalid decimal number for vmov: %d", value);
@@ -1544,9 +1544,9 @@ static void asm_floating_point_immediate_data_processing_opcode_tail(MCCState *s
 	case TOK_ASM_vmoveq_f64:
 		opcode2 = 0;
 		if (op_minus)
-			operands[1] = 0x8;
+			{ MCC_TRACE("br\n"); operands[1] = 0x8; }
 		else
-			operands[1] = 0x0;
+			{ MCC_TRACE("br\n"); operands[1] = 0x0; }
 		code = vmov_encode_immediate_value(immediate_value);
 		operands[1] |= code >> 4;
 		operands[2] = code & 0xF;
@@ -1557,7 +1557,7 @@ static void asm_floating_point_immediate_data_processing_opcode_tail(MCCState *s
 
 	if (coprocessor == CP_SINGLE_PRECISION_FLOAT) { MCC_TRACE("br\n");
 		if (operands[0] & 1)
-			opcode1 |= 4;
+			{ MCC_TRACE("br\n"); opcode1 |= 4; }
 		operands[0] >>= 1;
 	}
 
@@ -1579,17 +1579,17 @@ static void asm_floating_point_reg_arm_reg_transfer_opcode_tail(MCCState *s1, in
 			memcpy(&ops[1], &ops[0], sizeof(ops[1]));
 			memcpy(&ops[0], &ops[2], sizeof(ops[0]));
 		} else
-			opcode1 |= 1;
+			{ MCC_TRACE("br\n"); opcode1 |= 1; }
 
 		if (ops[1].type == OP_VREG32) { MCC_TRACE("br\n");
 			if (ops[1].reg & 1)
-				opcode2 |= 4;
+				{ MCC_TRACE("br\n"); opcode2 |= 4; }
 			ops[1].reg >>= 1;
 		}
 
 		if (ops[0].type == OP_VREG32) { MCC_TRACE("br\n");
 			if (ops[0].reg & 1)
-				opcode1 |= 4;
+				{ MCC_TRACE("br\n"); opcode1 |= 4; }
 			ops[0].reg >>= 1;
 		}
 
@@ -1720,12 +1720,12 @@ static void asm_floating_point_vcvt_data_processing_opcode(MCCState *s1, int tok
 
 	if (ops[2].type == OP_VREG32) { MCC_TRACE("br\n");
 		if (ops[2].reg & 1)
-			opcode2 |= 1;
+			{ MCC_TRACE("br\n"); opcode2 |= 1; }
 		ops[2].reg >>= 1;
 	}
 	if (ops[0].type == OP_VREG32) { MCC_TRACE("br\n");
 		if (ops[0].reg & 1)
-			opcode1 |= 4;
+			{ MCC_TRACE("br\n"); opcode1 |= 4; }
 		ops[0].reg >>= 1;
 	}
 	asm_emit_coprocessor_opcode(condition_code_of_token(token), coprocessor, opcode1, ops[0].reg,
@@ -1791,9 +1791,9 @@ static void asm_floating_point_data_processing_opcode(MCCState *s1, int token) {
 		}
 		++nb_ops;
 		if (tok == ',')
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		else
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 
 	if (nb_arm_regs == 0) { MCC_TRACE("br\n");
@@ -1907,19 +1907,19 @@ static void asm_floating_point_data_processing_opcode(MCCState *s1, int token) {
 	if (coprocessor == CP_SINGLE_PRECISION_FLOAT) { MCC_TRACE("br\n");
 		if (ops[2].type == OP_VREG32) { MCC_TRACE("br\n");
 			if (ops[2].reg & 1)
-				opcode2 |= 1;
+				{ MCC_TRACE("br\n"); opcode2 |= 1; }
 			ops[2].reg >>= 1;
 		}
 
 		if (ops[1].type == OP_VREG32) { MCC_TRACE("br\n");
 			if (ops[1].reg & 1)
-				opcode2 |= 4;
+				{ MCC_TRACE("br\n"); opcode2 |= 4; }
 			ops[1].reg >>= 1;
 		}
 
 		if (ops[0].type == OP_VREG32) { MCC_TRACE("br\n");
 			if (ops[0].reg & 1)
-				opcode1 |= 4;
+				{ MCC_TRACE("br\n"); opcode1 |= 4; }
 			ops[0].reg >>= 1;
 		}
 	}
@@ -2002,18 +2002,18 @@ static void asm_misc_single_data_transfer_opcode(MCCState *s1, int token) { MCC_
 
 	parse_operand(s1, &ops[0]);
 	if (ops[0].type == OP_REG32)
-		opcode |= ENCODE_RD(ops[0].reg);
+		{ MCC_TRACE("br\n"); opcode |= ENCODE_RD(ops[0].reg); }
 	else { MCC_TRACE("br\n");
 		expect("(destination operand) register");
 	}
 	if (tok != ',')
-		expect("at least two arguments");
+		{ MCC_TRACE("br\n"); expect("at least two arguments"); }
 	else
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	skip('[');
 	parse_operand(s1, &ops[1]);
 	if (ops[1].type == OP_REG32)
-		opcode |= ENCODE_RN(ops[1].reg);
+		{ MCC_TRACE("br\n"); opcode |= ENCODE_RN(ops[1].reg); }
 	else { MCC_TRACE("br\n");
 		expect("(first source operand) register");
 	}
@@ -2052,18 +2052,18 @@ static void asm_misc_single_data_transfer_opcode(MCCState *s1, int token) { MCC_
 	if (ops[2].type == OP_IM32 || ops[2].type == OP_IM8 || ops[2].type == OP_IM8N) { MCC_TRACE("br\n");
 		int v = ops[2].e.v;
 		if (op2_minus)
-			mcc_error("minus before '#' not supported for immediate values");
+			{ MCC_TRACE("br\n"); mcc_error("minus before '#' not supported for immediate values"); }
 		if (v >= 0 && ops[2].type != OP_IM8N) { MCC_TRACE("br\n");
 			opcode |= 1 << 23;
 			if (v >= 0x100)
-				mcc_error("offset out of range for '%s'", get_tok_str(token, NULL));
+				{ MCC_TRACE("br\n"); mcc_error("offset out of range for '%s'", get_tok_str(token, NULL)); }
 			else { MCC_TRACE("br\n");
 				opcode |= (v & 0xF0) << 4;
 				opcode |= v & 0xF;
 			}
 		} else { MCC_TRACE("br\n");
 			if (v <= -0x100)
-				mcc_error("offset out of range for '%s'", get_tok_str(token, NULL));
+				{ MCC_TRACE("br\n"); mcc_error("offset out of range for '%s'", get_tok_str(token, NULL)); }
 			else { MCC_TRACE("br\n");
 				v = -v;
 				opcode |= (v & 0xF0) << 4;
@@ -2073,10 +2073,10 @@ static void asm_misc_single_data_transfer_opcode(MCCState *s1, int token) { MCC_
 		opcode |= 1 << 22;
 	} else if (ops[2].type == OP_REG32) { MCC_TRACE("br\n");
 		if (!op2_minus)
-			opcode |= 1 << 23;
+			{ MCC_TRACE("br\n"); opcode |= 1 << 23; }
 		opcode |= ops[2].reg;
 	} else
-		expect("register");
+		{ MCC_TRACE("br\n"); expect("register"); }
 
 	switch (ARM_INSTRUCTION_GROUP(token)) { MCC_TRACE("br\n");
 	case TOK_ASM_ldrsheq:
@@ -2103,7 +2103,7 @@ static uint32_t encbranchoffset(int pos, int addr, int fail) { MCC_TRACE("enter\
 	addr /= 4;
 	if (addr >= 0x7fffff || addr < -0x800000) { MCC_TRACE("br\n");
 		if (fail)
-			mcc_error("branch offset is too far");
+			{ MCC_TRACE("br\n"); mcc_error("branch offset is too far"); }
 		return 0;
 	}
 	return (addr & 0xffffff);
@@ -2146,15 +2146,15 @@ static void asm_branch_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 		break;
 	case TOK_ASM_bxeq:
 		if (op.type != OP_REG32)
-			expect("register");
+			{ MCC_TRACE("br\n"); expect("register"); }
 		else
-			asm_emit_opcode(token, (0x12fff1 << 4) | op.reg);
+			{ MCC_TRACE("br\n"); asm_emit_opcode(token, (0x12fff1 << 4) | op.reg); }
 		break;
 	case TOK_ASM_blxeq:
 		if (op.type != OP_REG32)
-			expect("register");
+			{ MCC_TRACE("br\n"); expect("register"); }
 		else
-			asm_emit_opcode(token, (0x12fff3 << 4) | op.reg);
+			{ MCC_TRACE("br\n"); asm_emit_opcode(token, (0x12fff3 << 4) | op.reg); }
 		break;
 	default:
 		expect("branch instruction");
@@ -2167,7 +2167,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 		token = tok;
 	}
 	if (token == TOK_EOF)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (token < TOK_ASM_nopeq) { MCC_TRACE("br\n");
 		switch (token) { MCC_TRACE("br\n");
 		case TOK_ASM_cdp2:
@@ -2407,22 +2407,22 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 	if ((r & VT_VALMASK) == VT_CONST) { MCC_TRACE("br\n");
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
 				modifier != 'P')
-			cstr_ccat(add_str, '#');
+			{ MCC_TRACE("br\n"); cstr_ccat(add_str, '#'); }
 		if (r & VT_SYM) { MCC_TRACE("br\n");
 			const char *name = get_tok_str(sv->sym->v, NULL);
 			if (sv->sym->v >= SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 				get_asm_sym(tok_alloc(name, strlen(name))->tok, sv->sym);
 			}
 			if (mcc_state->leading_underscore)
-				cstr_ccat(add_str, '_');
+				{ MCC_TRACE("br\n"); cstr_ccat(add_str, '_'); }
 			cstr_cat(add_str, name, -1);
 			if ((uint32_t)sv->c.i == 0)
-				goto no_offset;
+				{ MCC_TRACE("br\n"); goto no_offset; }
 			cstr_ccat(add_str, '+');
 		}
 		val = sv->c.i;
 		if (modifier == 'n')
-			val = -val;
+			{ MCC_TRACE("br\n"); val = -val; }
 		cstr_printf(add_str, "%d", (int)sv->c.i);
 	no_offset:;
 	} else if ((r & VT_VALMASK) == VT_LOCAL) { MCC_TRACE("br\n");
@@ -2430,21 +2430,21 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 	} else if (r & VT_LVAL) { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
-			mcc_internal_error("");
+			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 		cstr_printf(add_str, "[%s]",
 								get_tok_str(TOK_ASM_r0 + reg, NULL));
 	} else { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
-			mcc_internal_error("");
+			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 
 		if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
 				(sv->type.t & VT_BTYPE) == VT_BOOL)
-			size = 1;
+			{ MCC_TRACE("br\n"); size = 1; }
 		else if ((sv->type.t & VT_BTYPE) == VT_SHORT)
-			size = 2;
+			{ MCC_TRACE("br\n"); size = 2; }
 		else
-			size = 4;
+			{ MCC_TRACE("br\n"); size = 4; }
 
 		if (modifier == 'b') { MCC_TRACE("br\n");
 			size = 1;
@@ -2478,17 +2478,17 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		op = &operands[i];
 		if (op->reg >= 0)
-			regs_allocated[op->reg] = 1;
+			{ MCC_TRACE("br\n"); regs_allocated[op->reg] = 1; }
 	}
 	for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) { MCC_TRACE("br\n");
 		reg = reg_saved[i];
 		if (regs_allocated[reg])
-			saved_regset |= 1 << reg;
+			{ MCC_TRACE("br\n"); saved_regset |= 1 << reg; }
 	}
 
 	if (!is_output) { MCC_TRACE("br\n");
 		if (saved_regset)
-			gen_le32(0xe92d0000 | saved_regset);
+			{ MCC_TRACE("br\n"); gen_le32(0xe92d0000 | saved_regset); }
 
 		for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 			op = &operands[i];
@@ -2503,7 +2503,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 				} else if (i >= nb_outputs || op->is_rw) { MCC_TRACE("br\n");
 					load(op->reg, op->vt);
 					if (op->is_llong)
-						mcc_error("long long not implemented");
+						{ MCC_TRACE("br\n"); mcc_error("long long not implemented"); }
 				}
 			}
 		}
@@ -2526,13 +2526,13 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 				} else { MCC_TRACE("br\n");
 					store(op->reg, op->vt);
 					if (op->is_llong)
-						mcc_error("long long not implemented");
+						{ MCC_TRACE("br\n"); mcc_error("long long not implemented"); }
 				}
 			}
 		}
 
 		if (saved_regset)
-			gen_le32(0xe8bd0000 | saved_regset);
+			{ MCC_TRACE("br\n"); gen_le32(0xe8bd0000 | saved_regset); }
 	}
 }
 
@@ -2543,7 +2543,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 	for (;;) { MCC_TRACE("br\n");
 		c = *str;
 		if (c == '\0')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		str++;
 		switch (c) { MCC_TRACE("br\n");
 		case 'l':
@@ -2564,7 +2564,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 			mcc_error("unknown constraint '%c'", c);
 		}
 		if (pr > priority)
-			priority = pr;
+			{ MCC_TRACE("br\n"); priority = pr; }
 	}
 	return priority;
 }
@@ -2596,7 +2596,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		op = &operands[j];
 		str = op->constraint;
 		if (op->ref_index >= 0)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		if (op->input_index >= 0) { MCC_TRACE("br\n");
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 		} else if (j < nb_outputs) { MCC_TRACE("br\n");
@@ -2606,7 +2606,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		}
 		if (op->reg >= 0) { MCC_TRACE("br\n");
 			if (is_reg_allocated(op->reg))
-				mcc_error("asm regvar requests register that's taken already");
+				{ MCC_TRACE("br\n"); mcc_error("asm regvar requests register that's taken already"); }
 			reg = op->reg;
 		}
 	try_next:
@@ -2618,20 +2618,20 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			op->is_rw = 1;
 		case '&':
 			if (j >= nb_outputs)
-				mcc_error("'%c' modifier can only be applied to outputs",
-									c);
+				{ MCC_TRACE("br\n"); mcc_error("'%c' modifier can only be applied to outputs",
+									c); }
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 			goto try_next;
 		case 'l':
 		case 'r':
 		case 'p':
 			if ((reg = op->reg) >= 0)
-				goto reg_found;
+				{ MCC_TRACE("br\n"); goto reg_found; }
 			else
-				for (reg = 0; reg <= 8; reg++) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); for (reg = 0; reg <= 8; reg++) { MCC_TRACE("br\n");
 					if (!is_reg_allocated(reg))
-						goto reg_found;
-				}
+						{ MCC_TRACE("br\n"); goto reg_found; }
+				} }
 			goto try_next;
 		reg_found:
 			op->is_llong = 0;
@@ -2644,12 +2644,12 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		case 'L':
 		case 'i':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'M':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) ==
 						VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'm':
 		case 'g':
@@ -2657,7 +2657,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
 					for (reg = 0; reg <= 8; reg++) { MCC_TRACE("br\n");
 						if (!(regs_allocated[reg] & REG_IN_MASK))
-							goto reg_found1;
+							{ MCC_TRACE("br\n"); goto reg_found1; }
 					}
 					goto try_next;
 				reg_found1:
@@ -2685,7 +2685,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 				(op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) { MCC_TRACE("br\n");
 			for (reg = 0; reg <= 8; reg++) { MCC_TRACE("br\n");
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
-					goto reg_found2;
+					{ MCC_TRACE("br\n"); goto reg_found2; }
 			}
 			mcc_error("could not find free output register for reloading");
 		reg_found2:
@@ -2704,7 +2704,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 						 op->constraint, op->vt->r, op->reg);
 		}
 		if (*pout_reg >= 0)
-			printf("out_reg=%d\n", *pout_reg);
+			{ MCC_TRACE("br\n"); printf("out_reg=%d\n", *pout_reg); }
 	}
 }
 
@@ -2715,7 +2715,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 	if (!strcmp(str, "memory") ||
 			!strcmp(str, "cc") ||
 			!strcmp(str, "flags"))
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	ts = tok_alloc(str, strlen(str));
 	reg = asm_parse_regvar(ts->tok);
 	if (reg == -1) { MCC_TRACE("br\n");
@@ -2726,13 +2726,13 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 
 ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	if (t < TOK_ASM_r0 || t > TOK_ASM_pc)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 
 	if (t <= TOK_ASM_r15)
-		return t - TOK_ASM_r0;
+		{ MCC_TRACE("br\n"); return t - TOK_ASM_r0; }
 
 	if (t <= TOK_ASM_v8)
-		return t - TOK_ASM_a1;
+		{ MCC_TRACE("br\n"); return t - TOK_ASM_a1; }
 
 	return t - TOK_ASM_sb + (TOK_ASM_r9 - TOK_ASM_r0);
 }

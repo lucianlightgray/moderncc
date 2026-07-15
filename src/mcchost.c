@@ -37,7 +37,7 @@ ST_FUNC char *host_path_normalize(char *path) { MCC_TRACE("enter\n");
 	char *p;
 	for (p = path; *p; ++p)
 		if (*p == '\\')
-			*p = '/';
+			{ MCC_TRACE("br\n"); *p = '/'; }
 #endif
 	return path;
 }
@@ -79,7 +79,7 @@ ST_FUNC MAYBE_UNUSED void host_set_exec_bits(const char *file) { MCC_TRACE("ente
 static HMODULE mcc_module;
 BOOL WINAPI DllMain(HINSTANCE hDll, DWORD dwReason, LPVOID lpReserved) { MCC_TRACE("enter\n");
 	if (DLL_PROCESS_ATTACH == dwReason)
-		mcc_module = hDll;
+		{ MCC_TRACE("br\n"); mcc_module = hDll; }
 	return TRUE;
 }
 #else
@@ -94,7 +94,7 @@ ST_FUNC int host_exe_path(char *buf, int size) { MCC_TRACE("enter\n");
 #if defined _WIN32
 	n = GetModuleFileNameA(mcc_module, buf, size);
 	if (n <= 0 || n >= size)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	host_path_normalize(buf);
 	return n;
 #else
@@ -108,11 +108,11 @@ ST_FUNC int host_exe_path(char *buf, int size) { MCC_TRACE("enter\n");
 	{
 		unsigned int sz = size;
 		if (_NSGetExecutablePath(buf, &sz) == 0)
-			n = (int)strlen(buf);
+			{ MCC_TRACE("br\n"); n = (int)strlen(buf); }
 	}
 #endif
 	if (n <= 0 || n >= size)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	buf[n] = 0;
 	return n;
 #endif
@@ -123,7 +123,7 @@ ST_FUNC FILE *host_temp_c_file(char *path, int size) { MCC_TRACE("enter\n");
 	char dir[MAX_PATH];
 	static unsigned serial;
 	if (!GetTempPathA(sizeof dir, dir))
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	snprintf(path, size, "%smcc-me-%u-%u.c", dir,
 					 (unsigned)GetCurrentProcessId(), ++serial);
 	return fopen(path, "wb");
@@ -132,7 +132,7 @@ ST_FUNC FILE *host_temp_c_file(char *path, int size) { MCC_TRACE("enter\n");
 	snprintf(path, size, "/tmp/.mccmeXXXXXX.c");
 	fd = mkstemps(path, 2);
 	if (fd < 0)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	return fdopen(fd, "w");
 #endif
 }
@@ -141,10 +141,10 @@ ST_FUNC FILE *host_temp_c_file(char *path, int size) { MCC_TRACE("enter\n");
 ST_FUNC char *host_w32_mccdir(char *path) { MCC_TRACE("enter\n");
 	char *p;
 	if (host_exe_path(path, MAX_PATH) < 0)
-		path[0] = 0;
+		{ MCC_TRACE("br\n"); path[0] = 0; }
 	p = mcc_basename(strlwr(path));
 	if (p > path)
-		--p;
+		{ MCC_TRACE("br\n"); --p; }
 	*p = 0;
 	return path;
 }
@@ -171,9 +171,9 @@ static char *host_quote_w32(const char *s) { MCC_TRACE("enter\n");
 	for (o = r; *s; *o++ = *s++) { MCC_TRACE("br\n");
 		quoted |= *s == ' ' || *s == '\t';
 		if (*s == '\\' || *s == '"')
-			*o++ = '\\';
+			{ MCC_TRACE("br\n"); *o++ = '\\'; }
 		else
-			o -= cbs;
+			{ MCC_TRACE("br\n"); o -= cbs; }
 		cbs = *s == '\\' ? cbs + 1 : 0;
 	}
 	if (quoted) { MCC_TRACE("br\n");
@@ -210,7 +210,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_wait(const char *const *argv) { MCC_TRACE("e
 		_exit(127);
 	}
 	if (pid < 0 || waitpid(pid, &status, 0) != pid || !WIFEXITED(status))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	return WEXITSTATUS(status);
 #endif
 }
@@ -223,7 +223,7 @@ ST_FUNC MAYBE_UNUSED int host_exec_replace(char **argv) { MCC_TRACE("enter\n");
 		*p = host_quote_w32(*p);
 	ret = _spawnvp(_P_NOWAIT, argv[0], (const char *const *)argv);
 	if (-1 == ret)
-		return ret;
+		{ MCC_TRACE("br\n"); return ret; }
 	_cwait(&ret, ret, _WAIT_CHILD);
 	exit(ret);
 #else
@@ -248,7 +248,7 @@ ST_FUNC MAYBE_UNUSED int host_find_tool(const char *name, const char *ext, char 
 	}
 	path = getenv("PATH");
 	if (!path)
-		path = "/usr/local/bin:/usr/bin:/bin";
+		{ MCC_TRACE("br\n"); path = "/usr/local/bin:/usr/bin:/bin"; }
 	for (p = path;;) { MCC_TRACE("br\n");
 		const char *e = p;
 		int dl;
@@ -256,17 +256,17 @@ ST_FUNC MAYBE_UNUSED int host_find_tool(const char *name, const char *ext, char 
 			++e;
 		dl = (int)(e - p);
 		if (dl == 0)
-			snprintf(cand, sizeof cand, "%s", name);
+			{ MCC_TRACE("br\n"); snprintf(cand, sizeof cand, "%s", name); }
 		else
-			snprintf(cand, sizeof cand, "%.*s/%s", dl, p, name);
+			{ MCC_TRACE("br\n"); snprintf(cand, sizeof cand, "%.*s/%s", dl, p, name); }
 		if (access(cand, X_OK) == 0) { MCC_TRACE("br\n");
 			if ((int)strlen(cand) >= size)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			strcpy(buf, cand);
 			return 1;
 		}
 		if (!*e)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		p = e + 1;
 	}
 	return 0;
@@ -277,7 +277,7 @@ ST_FUNC MAYBE_UNUSED int host_find_tool_any(const char *const *names, const char
 	int i;
 	for (i = 0; names[i]; ++i)
 		if (host_find_tool(names[i], ext, buf, size))
-			return 1;
+			{ MCC_TRACE("br\n"); return 1; }
 	return 0;
 }
 
@@ -295,7 +295,7 @@ static char *host_slurp_fd(int fd) { MCC_TRACE("enter\n");
 	char *buf = malloc(cap), *nb;
 	ssize_t r;
 	if (!buf)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	for (;;) { MCC_TRACE("br\n");
 		if (len + 1 >= cap) { MCC_TRACE("br\n");
 			cap *= 2;
@@ -308,12 +308,12 @@ static char *host_slurp_fd(int fd) { MCC_TRACE("enter\n");
 		r = read(fd, buf + len, cap - len - 1);
 		if (r < 0) { MCC_TRACE("br\n");
 			if (errno == EINTR)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			free(buf);
 			return NULL;
 		}
 		if (r == 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		len += (size_t)r;
 	}
 	buf[len] = 0;
@@ -353,8 +353,8 @@ static const char **host_build_argv(const char *const *argv, const HostSpawnOpts
 	int n = 0, l = 0, i, j = 0;
 	const char **out;
 	if (o && o->launcher)
-		while (o->launcher[l])
-			++l;
+		{ MCC_TRACE("br\n"); while (o->launcher[l])
+			++l; }
 	while (argv[n])
 		++n;
 	out = mcc_malloc((l + n + 1) * sizeof *out);
@@ -371,7 +371,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 	const char **full;
 	int ret = -1;
 	if (!o)
-		o = &nopts;
+		{ MCC_TRACE("br\n"); o = &nopts; }
 	full = host_build_argv(argv, o);
 #ifdef _WIN32
 	{
@@ -390,7 +390,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 		for (p = cmd, i = 0; full[i]; ++i) { MCC_TRACE("br\n");
 			char *q = host_quote_w32(full[i]);
 			if (i)
-				*p++ = ' ';
+				{ MCC_TRACE("br\n"); *p++ = ' '; }
 			strcpy(p, q);
 			p += strlen(q);
 			mcc_free(q);
@@ -422,7 +422,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 			si.hStdError = wpe;
 		} else if (o->stderr_file) { MCC_TRACE("br\n");
 			if (o->stdout_file && !strcmp(o->stderr_file, o->stdout_file) && hout != INVALID_HANDLE_VALUE)
-				si.hStdError = hout;
+				{ MCC_TRACE("br\n"); si.hStdError = hout; }
 			else { MCC_TRACE("br\n");
 				herr = CreateFileA(o->stderr_file, GENERIC_WRITE, FILE_SHARE_READ,
 													 &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -479,17 +479,17 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 			ret = (int)ec;
 		}
 		if (hout != INVALID_HANDLE_VALUE)
-			CloseHandle(hout);
+			{ MCC_TRACE("br\n"); CloseHandle(hout); }
 		if (herr != INVALID_HANDLE_VALUE)
-			CloseHandle(herr);
+			{ MCC_TRACE("br\n"); CloseHandle(herr); }
 		if (rpo)
-			CloseHandle(rpo);
+			{ MCC_TRACE("br\n"); CloseHandle(rpo); }
 		if (rpe)
-			CloseHandle(rpe);
+			{ MCC_TRACE("br\n"); CloseHandle(rpe); }
 		if (wpo)
-			CloseHandle(wpo);
+			{ MCC_TRACE("br\n"); CloseHandle(wpo); }
 		if (wpe)
-			CloseHandle(wpe);
+			{ MCC_TRACE("br\n"); CloseHandle(wpe); }
 		mcc_free(cmd);
 		mcc_free(envblk);
 	}
@@ -506,9 +506,9 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 		if (pid == 0) { MCC_TRACE("br\n");
 			int fo, fe;
 			if (o->timeout_ms)
-				setpgid(0, 0);
+				{ MCC_TRACE("br\n"); setpgid(0, 0); }
 			if (o->cwd && chdir(o->cwd))
-				_exit(127);
+				{ MCC_TRACE("br\n"); _exit(127); }
 			if (want_po) { MCC_TRACE("br\n");
 				dup2(po[1], 1);
 				close(po[0]);
@@ -524,7 +524,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 				close(pe[1]);
 			} else if (o->stderr_file) { MCC_TRACE("br\n");
 				if (o->stdout_file && !strcmp(o->stderr_file, o->stdout_file))
-					dup2(1, 2);
+					{ MCC_TRACE("br\n"); dup2(1, 2); }
 				else if ((fe = open(o->stderr_file, O_WRONLY | O_CREAT | O_TRUNC, 0666)) >= 0) { MCC_TRACE("br\n");
 					dup2(fe, 2);
 					close(fe);
@@ -550,18 +550,18 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 			return -1;
 		}
 		if (want_po)
-			close(po[1]);
+			{ MCC_TRACE("br\n"); close(po[1]); }
 		if (want_pe)
-			close(pe[1]);
+			{ MCC_TRACE("br\n"); close(pe[1]); }
 
 		if (want_po)
-			*o->stdout_buf = host_slurp_fd(po[0]);
+			{ MCC_TRACE("br\n"); *o->stdout_buf = host_slurp_fd(po[0]); }
 		if (want_po)
-			close(po[0]);
+			{ MCC_TRACE("br\n"); close(po[0]); }
 		if (want_pe)
-			*o->stderr_buf = host_slurp_fd(pe[0]);
+			{ MCC_TRACE("br\n"); *o->stderr_buf = host_slurp_fd(pe[0]); }
 		if (want_pe)
-			close(pe[0]);
+			{ MCC_TRACE("br\n"); close(pe[0]); }
 		{
 			int status;
 			if (o->timeout_ms) { MCC_TRACE("br\n");
@@ -570,12 +570,12 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 					pid_t r = waitpid(pid, &status, WNOHANG);
 					if (r == pid) { MCC_TRACE("br\n");
 						if (WIFEXITED(status))
-							ret = WEXITSTATUS(status);
+							{ MCC_TRACE("br\n"); ret = WEXITSTATUS(status); }
 						break;
 					}
 					if (r < 0) { MCC_TRACE("br\n");
 						if (errno == EINTR)
-							continue;
+							{ MCC_TRACE("br\n"); continue; }
 						break;
 					}
 					if (host_clock_ms() - t0 >= o->timeout_ms) { MCC_TRACE("br\n");
@@ -602,12 +602,12 @@ ST_FUNC MAYBE_UNUSED int host_mkdirs(const char *path) { MCC_TRACE("enter\n");
 	char *p;
 	size_t n = strlen(path);
 	if (n >= sizeof buf)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	memcpy(buf, path, n + 1);
 	host_path_normalize(buf);
 	for (p = buf + 1; *p; ++p) { MCC_TRACE("br\n");
 		if (*p != '/')
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		*p = 0;
 #ifdef _WIN32
 		_mkdir(buf);
@@ -618,10 +618,10 @@ ST_FUNC MAYBE_UNUSED int host_mkdirs(const char *path) { MCC_TRACE("enter\n");
 	}
 #ifdef _WIN32
 	if (_mkdir(buf) && errno != EEXIST)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 #else
 	if (mkdir(buf, 0777) && errno != EEXIST)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 #endif
 	return 0;
 }
@@ -632,33 +632,33 @@ ST_FUNC MAYBE_UNUSED int host_cache_dir(char *buf, int size) { MCC_TRACE("enter\
 #if MCC_HOST_WIN32
 	base = getenv("LOCALAPPDATA");
 	if (base && base[0])
-		snprintf(tmp, sizeof tmp, "%s/mcc", base);
+		{ MCC_TRACE("br\n"); snprintf(tmp, sizeof tmp, "%s/mcc", base); }
 	else { MCC_TRACE("br\n");
 		base = getenv("USERPROFILE");
 		if (!base || !base[0])
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		snprintf(tmp, sizeof tmp, "%s/AppData/Local/mcc", base);
 	}
 #elif MCC_HOST_DARWIN
 	base = getenv("HOME");
 	if (!base || !base[0])
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	snprintf(tmp, sizeof tmp, "%s/Library/Caches/mcc", base);
 #else
 	base = getenv("XDG_CACHE_HOME");
 	if (base && base[0])
-		snprintf(tmp, sizeof tmp, "%s/mcc", base);
+		{ MCC_TRACE("br\n"); snprintf(tmp, sizeof tmp, "%s/mcc", base); }
 	else { MCC_TRACE("br\n");
 		base = getenv("HOME");
 		if (!base || !base[0])
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		snprintf(tmp, sizeof tmp, "%s/.cache/mcc", base);
 	}
 #endif
 	if ((int)strlen(tmp) >= size)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (host_mkdirs(tmp) != 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	strcpy(buf, tmp);
 	return 0;
 }
@@ -673,7 +673,7 @@ ST_FUNC MAYBE_UNUSED int host_rmrf(const char *path) { MCC_TRACE("enter\n");
 		char child[4096];
 		while ((e = readdir(d))) { MCC_TRACE("br\n");
 			if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			snprintf(child, sizeof child, "%s/%s", path, e->d_name);
 			host_rmrf(child);
 		}
@@ -690,7 +690,7 @@ ST_FUNC MAYBE_UNUSED int host_copy_file(const char *src, const char *dst, int pr
 	size_t r;
 	int ok = 1;
 	if (!fi)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (!(fo = fopen(dst, "wb"))) { MCC_TRACE("br\n");
 		fclose(fi);
 		return -1;
@@ -701,17 +701,17 @@ ST_FUNC MAYBE_UNUSED int host_copy_file(const char *src, const char *dst, int pr
 			break;
 		}
 	if (ferror(fi))
-		ok = 0;
+		{ MCC_TRACE("br\n"); ok = 0; }
 	fclose(fi);
 	if (fclose(fo))
-		ok = 0;
+		{ MCC_TRACE("br\n"); ok = 0; }
 	if (!ok)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 #ifndef _WIN32
 	if (preserve_exec) { MCC_TRACE("br\n");
 		struct stat st;
 		if (!stat(src, &st))
-			chmod(dst, st.st_mode & 0777);
+			{ MCC_TRACE("br\n"); chmod(dst, st.st_mode & 0777); }
 	}
 #else
 	(void)preserve_exec;
@@ -723,18 +723,18 @@ ST_FUNC MAYBE_UNUSED int host_stat(const char *path, int *is_dir, long long *siz
 #ifdef _WIN32
 	struct _stat64 st;
 	if (_stat64(path, &st))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 #else
 	struct stat st;
 	if (stat(path, &st))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 #endif
 	if (is_dir)
-		*is_dir = (st.st_mode & S_IFMT) == S_IFDIR;
+		{ MCC_TRACE("br\n"); *is_dir = (st.st_mode & S_IFMT) == S_IFDIR; }
 	if (size)
-		*size = (long long)st.st_size;
+		{ MCC_TRACE("br\n"); *size = (long long)st.st_size; }
 	if (mtime)
-		*mtime = (long long)st.st_mtime;
+		{ MCC_TRACE("br\n"); *mtime = (long long)st.st_mtime; }
 	return 0;
 }
 
@@ -746,17 +746,17 @@ ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk
 	int rc = 0, is_dir;
 	snprintf(pat, sizeof pat, "%s/*", dir);
 	if ((h = FindFirstFileA(pat, &fd)) == INVALID_HANDLE_VALUE)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	do { MCC_TRACE("br\n");
 		if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		snprintf(child, sizeof child, "%s/%s", dir, fd.cFileName);
 		host_path_normalize(child);
 		is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 		if ((rc = fn(child, is_dir, ud)))
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (recursive && is_dir && (rc = host_dir_walk(child, 1, fn, ud)))
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	} while (FindNextFileA(h, &fd));
 	FindClose(h);
 	return rc;
@@ -766,17 +766,17 @@ ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk
 	char child[4096];
 	int rc = 0, is_dir;
 	if (!d)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	while ((e = readdir(d))) { MCC_TRACE("br\n");
 		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		snprintf(child, sizeof child, "%s/%s", dir, e->d_name);
 		if (host_stat(child, &is_dir, NULL, NULL))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		if ((rc = fn(child, is_dir, ud)))
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (recursive && is_dir && (rc = host_dir_walk(child, 1, fn, ud)))
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 	closedir(d);
 	return rc;
@@ -823,16 +823,16 @@ ST_FUNC MAYBE_UNUSED void host_sys_info(char *sysname, int ssz, char *release, i
 																				char *machine, int msz) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	if (sysname && ssz)
-		snprintf(sysname, ssz, "WIN32");
+		{ MCC_TRACE("br\n"); snprintf(sysname, ssz, "WIN32"); }
 	if (release && rsz) { MCC_TRACE("br\n");
 		OSVERSIONINFOA vi;
 		memset(&vi, 0, sizeof vi);
 		vi.dwOSVersionInfoSize = sizeof vi;
 		if (GetVersionExA(&vi))
-			snprintf(release, rsz, "%lu.%lu.%lu", (unsigned long)vi.dwMajorVersion,
-							 (unsigned long)vi.dwMinorVersion, (unsigned long)vi.dwBuildNumber);
+			{ MCC_TRACE("br\n"); snprintf(release, rsz, "%lu.%lu.%lu", (unsigned long)vi.dwMajorVersion,
+							 (unsigned long)vi.dwMinorVersion, (unsigned long)vi.dwBuildNumber); }
 		else
-			release[0] = 0;
+			{ MCC_TRACE("br\n"); release[0] = 0; }
 	}
 	if (machine && msz) { MCC_TRACE("br\n");
 		SYSTEM_INFO si;
@@ -858,19 +858,19 @@ ST_FUNC MAYBE_UNUSED void host_sys_info(char *sysname, int ssz, char *release, i
 	struct utsname u;
 	if (uname(&u)) { MCC_TRACE("br\n");
 		if (sysname && ssz)
-			sysname[0] = 0;
+			{ MCC_TRACE("br\n"); sysname[0] = 0; }
 		if (release && rsz)
-			release[0] = 0;
+			{ MCC_TRACE("br\n"); release[0] = 0; }
 		if (machine && msz)
-			machine[0] = 0;
+			{ MCC_TRACE("br\n"); machine[0] = 0; }
 		return;
 	}
 	if (sysname && ssz)
-		snprintf(sysname, ssz, "%s", u.sysname);
+		{ MCC_TRACE("br\n"); snprintf(sysname, ssz, "%s", u.sysname); }
 	if (release && rsz)
-		snprintf(release, rsz, "%s", u.release);
+		{ MCC_TRACE("br\n"); snprintf(release, rsz, "%s", u.release); }
 	if (machine && msz)
-		snprintf(machine, msz, "%s", u.machine);
+		{ MCC_TRACE("br\n"); snprintf(machine, msz, "%s", u.machine); }
 #endif
 }
 
@@ -936,7 +936,7 @@ static void *host_static_sym(const char *symbol) { MCC_TRACE("enter\n");
 	MCCSyms *p = mcc_syms;
 	while (p->str != NULL) { MCC_TRACE("br\n");
 		if (!strcmp(p->str, symbol))
-			return p->ptr;
+			{ MCC_TRACE("br\n"); return p->ptr; }
 		p++;
 	}
 	return NULL;
@@ -1022,11 +1022,11 @@ ST_FUNC MAYBE_UNUSED const char *host_macos_sdk_root(void) { MCC_TRACE("enter\n"
 		xcs = host_dlopen("libxcselect.dylib");
 		f = xcs ? host_dlsym(xcs, "xcselect_host_sdk_path") : NULL;
 		if (f)
-			f(1, &sdkroot);
+			{ MCC_TRACE("br\n"); f(1, &sdkroot); }
 		if (sdkroot)
-			pos = strstr(sdkroot, "SDKs/MacOSX");
+			{ MCC_TRACE("br\n"); pos = strstr(sdkroot, "SDKs/MacOSX"); }
 		if (pos)
-			snprintf(buf, sizeof buf, "%.*s.sdk", (int)(pos - sdkroot + 11), sdkroot);
+			{ MCC_TRACE("br\n"); snprintf(buf, sizeof buf, "%.*s.sdk", (int)(pos - sdkroot + 11), sdkroot); }
 #pragma push_macro("free")
 #undef free
 		free(sdkroot);
@@ -1077,7 +1077,7 @@ ST_FUNC int host_runmem_dual(void) { MCC_TRACE("enter\n");
 			if (host_runmem_protect(p, page,
 															HOST_RUNMEM_RO ? HOST_PROT_RX : HOST_PROT_RWX) < 0
 					&& (errno == EACCES || errno == EPERM))
-				dual = 1;
+				{ MCC_TRACE("br\n"); dual = 1; }
 			munmap(p, page);
 		}
 #endif
@@ -1104,7 +1104,7 @@ ST_FUNC void *host_runmem_alloc(unsigned *psize, int *ptr_diff) { MCC_TRACE("ent
 		prw = mmap((char *)ptr + size, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
 		close(fd);
 		if (ptr == MAP_FAILED || prw == MAP_FAILED)
-			return NULL;
+			{ MCC_TRACE("br\n"); return NULL; }
 		*ptr_diff = (char *)prw - (char *)ptr;
 		size *= 2;
 	} else { MCC_TRACE("br\n");
@@ -1151,7 +1151,7 @@ ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode) { MCC
 			PAGE_EXECUTE_READWRITE};
 	DWORD old;
 	if (!VirtualProtect(ptr, length, protect[mode], &old))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 #else
 	static const unsigned char protect[] = {
 			PROT_READ | PROT_EXEC,
@@ -1159,9 +1159,9 @@ ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode) { MCC
 			PROT_READ | PROT_WRITE,
 			PROT_READ | PROT_WRITE | PROT_EXEC};
 	if (mprotect(ptr, length, protect[mode]))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (mode == HOST_PROT_RX || mode == HOST_PROT_RWX)
-		host_icache_flush(ptr, length);
+		{ MCC_TRACE("br\n"); host_icache_flush(ptr, length); }
 #endif
 	return 0;
 }
@@ -1170,7 +1170,7 @@ ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes
 #ifdef _WIN64
 	if (!RtlAddFunctionTable((RUNTIME_FUNCTION *)table,
 													 size_bytes / sizeof(RUNTIME_FUNCTION), base))
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	return table;
 #else
 	(void)table;
@@ -1183,7 +1183,7 @@ ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes
 ST_FUNC void host_unwind_unregister(void *table) { MCC_TRACE("enter\n");
 #ifdef _WIN64
 	if (table)
-		RtlDeleteFunctionTable((RUNTIME_FUNCTION *)table);
+		{ MCC_TRACE("br\n"); RtlDeleteFunctionTable((RUNTIME_FUNCTION *)table); }
 #else
 	(void)table;
 #endif
@@ -1386,7 +1386,7 @@ static long __stdcall host_seh_handler(EXCEPTION_POINTERS *ex_info) { MCC_TRACE(
 		break;
 	}
 	if (host_fault_cb(fc, code, &r))
-		return EXCEPTION_CONTINUE_SEARCH;
+		{ MCC_TRACE("br\n"); return EXCEPTION_CONTINUE_SEARCH; }
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 

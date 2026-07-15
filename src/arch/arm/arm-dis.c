@@ -32,12 +32,12 @@ static void sb(SB *b, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	int n;
 	if (b->p >= b->end)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	va_start(ap, fmt);
 	n = vsnprintf(b->p, b->end - b->p, fmt, ap);
 	va_end(ap);
 	if (n > 0)
-		b->p += (n < b->end - b->p) ? n : (int)(b->end - b->p);
+		{ MCC_TRACE("br\n"); b->p += (n < b->end - b->p) ? n : (int)(b->end - b->p); }
 }
 
 static uint32_t ror32(uint32_t v, unsigned r) { MCC_TRACE("enter\n");
@@ -55,32 +55,32 @@ static int imm_canonical(uint32_t rot, uint32_t imm8) { MCC_TRACE("enter\n");
 	uint32_t r;
 	for (r = 0; r < 16; r++)
 		if (rol32(v, 2 * r) < 0x100)
-			return r == rot;
+			{ MCC_TRACE("br\n"); return r == rot; }
 	return 0;
 }
 
 static void sb_imm(SB *b, uint32_t v) { MCC_TRACE("enter\n");
 	if (v < 1024)
-		sb(b, "#%u", v);
+		{ MCC_TRACE("br\n"); sb(b, "#%u", v); }
 	else
-		sb(b, "#0x%x", v);
+		{ MCC_TRACE("br\n"); sb(b, "#0x%x", v); }
 }
 
 static int sb_shift_op(SB *b, uint32_t w, int allow_regshift) { MCC_TRACE("enter\n");
 	int rm = w & 15, ty = (w >> 5) & 3;
 	if (w & 0x10) { MCC_TRACE("br\n");
 		if (!allow_regshift || (w & 0x80))
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb(b, "%s, %s %s", regnm[rm], shnm[ty], regnm[(w >> 8) & 15]);
 	} else { MCC_TRACE("br\n");
 		int amt = (w >> 7) & 31;
 		if (amt == 0) { MCC_TRACE("br\n");
 			if (ty == 0)
-				sb(b, "%s", regnm[rm]);
+				{ MCC_TRACE("br\n"); sb(b, "%s", regnm[rm]); }
 			else if (ty == 3)
-				sb(b, "%s, rrx", regnm[rm]);
+				{ MCC_TRACE("br\n"); sb(b, "%s, rrx", regnm[rm]); }
 			else
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 		} else { MCC_TRACE("br\n");
 			sb(b, "%s, %s #%d", regnm[rm], shnm[ty], amt);
 		}
@@ -106,24 +106,24 @@ static int dis_branch(disasm_ctx *dc, uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	int rtype = 0;
 	const char *rel;
 	if (off & 0x800000)
-		off -= 0x1000000;
+		{ MCC_TRACE("br\n"); off -= 0x1000000; }
 	rel = disasm_reloc(dc, dc->pc, 4, &rtype);
 	if (rel && (rtype == R_ARM_PC24 || rtype == R_ARM_CALL || rtype == R_ARM_JUMP24 || rtype == R_ARM_PLT32)) { MCC_TRACE("br\n");
 		long v = (long)off * 4 + 8;
 		if (v == 0)
-			sb(b, "%s%s\t%s", nm, cc, rel);
+			{ MCC_TRACE("br\n"); sb(b, "%s%s\t%s", nm, cc, rel); }
 		else if (v > 0)
-			sb(b, "%s%s\t%s+%ld", nm, cc, rel, v);
+			{ MCC_TRACE("br\n"); sb(b, "%s%s\t%s+%ld", nm, cc, rel, v); }
 		else
-			sb(b, "%s%s\t%s-%ld", nm, cc, rel, -v);
+			{ MCC_TRACE("br\n"); sb(b, "%s%s\t%s-%ld", nm, cc, rel, -v); }
 		return 1;
 	}
 	if (rel)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	{
 		addr_t target = dc->pc + 8 + (addr_t)((long)off * 4);
 		if (target >= dc->size || (target & 3))
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb(b, "%s%s\t%s", nm, cc, disasm_label(dc, target));
 	}
 	return 1;
@@ -144,41 +144,41 @@ static int dis_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	}
 
 	if (!S && opc >= 8 && opc <= 11)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	sb_init(&o2, o2buf, sizeof o2buf);
 	if (I) { MCC_TRACE("br\n");
 		uint32_t rot = (w >> 8) & 15, imm8 = w & 0xff;
 		if (!imm_canonical(rot, imm8))
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb_imm(&o2, ror32(imm8, 2 * rot));
 	} else { MCC_TRACE("br\n");
 		if (!sb_shift_op(&o2, w, 1))
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 	}
 
 	if (!I && (w & 0x10)) { MCC_TRACE("br\n");
 		int bad = ((w >> 8) & 15) == 15;
 		if (opc == 13)
-			bad |= rd == 15 || (w & 15) == 15;
+			{ MCC_TRACE("br\n"); bad |= rd == 15 || (w & 15) == 15; }
 		else if (opc == 15)
-			bad |= rd == 15;
+			{ MCC_TRACE("br\n"); bad |= rd == 15; }
 		else if (opc >= 8 && opc <= 11)
-			bad |= rn == 15;
+			{ MCC_TRACE("br\n"); bad |= rn == 15; }
 		else
-			bad |= rd == 15 || rn == 15;
+			{ MCC_TRACE("br\n"); bad |= rd == 15 || rn == 15; }
 		if (bad)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 	}
 
 	if (opc == 13 || opc == 15) { MCC_TRACE("br\n");
 		if (rn)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		if (opc == 13 && !I) { MCC_TRACE("br\n");
 			int rm = w & 15, ty = (w >> 5) & 3;
 			if (w & 0x10) { MCC_TRACE("br\n");
 				if (w & 0x80)
-					return 0;
+					{ MCC_TRACE("br\n"); return 0; }
 				sb(b, "%s%s%s\t%s, %s, %s", shnm[ty], S ? "s" : "", cc,
 					 regnm[rd], regnm[rm], regnm[(w >> 8) & 15]);
 				return 1;
@@ -195,7 +195,7 @@ static int dis_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 					return 1;
 				}
 				if (ty)
-					return 0;
+					{ MCC_TRACE("br\n"); return 0; }
 			}
 		}
 		sb(b, "%s%s%s\t%s, %s", dpnm[opc], S ? "s" : "", cc, regnm[rd], o2buf);
@@ -203,7 +203,7 @@ static int dis_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	}
 	if (opc >= 8 && opc <= 11) { MCC_TRACE("br\n");
 		if (rd)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb(b, "%s%s\t%s, %s", dpnm[opc], cc, regnm[rn], o2buf);
 		return 1;
 	}
@@ -218,11 +218,11 @@ static int dis_mul(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	int rd = (w >> 16) & 15, ra = (w >> 12) & 15;
 	int rs = (w >> 8) & 15, rm = w & 15;
 	if (A)
-		sb(b, "mla%s%s\t%s, %s, %s, %s", S ? "s" : "", cc,
-			 regnm[rd], regnm[rm], regnm[rs], regnm[ra]);
+		{ MCC_TRACE("br\n"); sb(b, "mla%s%s\t%s, %s, %s, %s", S ? "s" : "", cc,
+			 regnm[rd], regnm[rm], regnm[rs], regnm[ra]); }
 	else { MCC_TRACE("br\n");
 		if (ra)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb(b, "mul%s%s\t%s, %s, %s", S ? "s" : "", cc,
 			 regnm[rd], regnm[rm], regnm[rs]);
 	}
@@ -243,14 +243,14 @@ static int dis_mull(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 static int sb_addr(SB *b, int rn, const char *off, int Pb, int W) { MCC_TRACE("enter\n");
 	if (Pb) { MCC_TRACE("br\n");
 		if (off[0])
-			sb(b, "[%s, %s]%s", regnm[rn], off, W ? "!" : "");
+			{ MCC_TRACE("br\n"); sb(b, "[%s, %s]%s", regnm[rn], off, W ? "!" : ""); }
 		else if (W)
-			sb(b, "[%s, #0]!", regnm[rn]);
+			{ MCC_TRACE("br\n"); sb(b, "[%s, #0]!", regnm[rn]); }
 		else
-			sb(b, "[%s]", regnm[rn]);
+			{ MCC_TRACE("br\n"); sb(b, "[%s]", regnm[rn]); }
 	} else { MCC_TRACE("br\n");
 		if (W)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb(b, "[%s], %s", regnm[rn], off[0] ? off : "#0");
 	}
 	return 1;
@@ -267,17 +267,17 @@ static int dis_mem(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	sb_init(&off, offbuf, sizeof offbuf);
 	if (I) { MCC_TRACE("br\n");
 		if (w & 0x10)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		if (!U)
-			sb(&off, "-");
+			{ MCC_TRACE("br\n"); sb(&off, "-"); }
 		if (!sb_shift_op(&off, w, 0))
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 	} else { MCC_TRACE("br\n");
 		uint32_t imm = w & 0xfff;
 		if (imm)
-			sb(&off, "#%s%u", U ? "" : "-", imm);
+			{ MCC_TRACE("br\n"); sb(&off, "#%s%u", U ? "" : "-", imm); }
 		else if (!U)
-			sb(&off, "#-0");
+			{ MCC_TRACE("br\n"); sb(&off, "#-0"); }
 	}
 	sb(b, "%s%s%s\t%s, ", L ? "ldr" : "str", B ? "b" : "", cc, regnm[rd]);
 	return sb_addr(b, rn, offbuf, Pb, W);
@@ -293,26 +293,26 @@ static int dis_hmem(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	SB off;
 
 	if (L)
-		nm = SH == 1
+		{ MCC_TRACE("br\n"); nm = SH == 1
 						 ? "ldrh"
 				 : SH == 2
 						 ? "ldrsb"
-						 : "ldrsh";
+						 : "ldrsh"; }
 	else if (SH == 1)
-		nm = "strh";
+		{ MCC_TRACE("br\n"); nm = "strh"; }
 	else
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	sb_init(&off, offbuf, sizeof offbuf);
 	if (I) { MCC_TRACE("br\n");
 		uint32_t imm = ((w >> 4) & 0xf0) | (w & 15);
 		if (imm)
-			sb(&off, "#%s%u", U ? "" : "-", imm);
+			{ MCC_TRACE("br\n"); sb(&off, "#%s%u", U ? "" : "-", imm); }
 		else if (!U)
-			sb(&off, "#-0");
+			{ MCC_TRACE("br\n"); sb(&off, "#-0"); }
 	} else { MCC_TRACE("br\n");
 		if (w & 0xf00)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		sb(&off, "%s%s", U ? "" : "-", regnm[w & 15]);
 	}
 	sb(b, "%s%s\t%s, ", nm, cc, regnm[rd]);
@@ -328,14 +328,14 @@ static int dis_ldm(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	static const char *const sfx[4] = {"da", "ia", "db", "ib"};
 
 	if (S || !list)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (rn == 13 && W && L && !Pb && U)
-		sb(b, "pop%s\t", cc);
+		{ MCC_TRACE("br\n"); sb(b, "pop%s\t", cc); }
 	else if (rn == 13 && W && !L && Pb && !U)
-		sb(b, "push%s\t", cc);
+		{ MCC_TRACE("br\n"); sb(b, "push%s\t", cc); }
 	else
-		sb(b, "%s%s%s\t%s%s, ", L ? "ldm" : "stm", sfx[(Pb << 1) | U], cc,
-			 regnm[rn], W ? "!" : "");
+		{ MCC_TRACE("br\n"); sb(b, "%s%s%s\t%s%s, ", L ? "ldm" : "stm", sfx[(Pb << 1) | U], cc,
+			 regnm[rn], W ? "!" : ""); }
 	sb_reglist(b, list);
 	return 1;
 }
@@ -346,10 +346,10 @@ static void sb_sreg(SB *b, int base4, int lowbit) { MCC_TRACE("enter\n");
 
 static void sb_vlist(SB *b, int dbl, int first, int count) { MCC_TRACE("enter\n");
 	if (count == 1)
-		sb(b, "{%c%d}", dbl ? 'd' : 's', first);
+		{ MCC_TRACE("br\n"); sb(b, "{%c%d}", dbl ? 'd' : 's', first); }
 	else
-		sb(b, "{%c%d-%c%d}", dbl ? 'd' : 's', first,
-			 dbl ? 'd' : 's', first + count - 1);
+		{ MCC_TRACE("br\n"); sb(b, "{%c%d-%c%d}", dbl ? 'd' : 's', first,
+			 dbl ? 'd' : 's', first + count - 1); }
 }
 
 static int dis_cpmem(uint32_t w, SB *b) { MCC_TRACE("enter\n");
@@ -364,33 +364,33 @@ static int dis_cpmem(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	if (vfp && Pb && !W && !(dbl && D)) { MCC_TRACE("br\n");
 		sb(b, "%s%s\t", L ? "vldr" : "vstr", cc);
 		if (dbl)
-			sb(b, "d%d", crd);
+			{ MCC_TRACE("br\n"); sb(b, "d%d", crd); }
 		else
-			sb_sreg(b, crd, D);
+			{ MCC_TRACE("br\n"); sb_sreg(b, crd, D); }
 		if (imm8)
-			sb(b, ", [%s, #%s%d]", regnm[rn], U ? "" : "-", off);
+			{ MCC_TRACE("br\n"); sb(b, ", [%s, #%s%d]", regnm[rn], U ? "" : "-", off); }
 		else if (!U)
-			sb(b, ", [%s, #-0]", regnm[rn]);
+			{ MCC_TRACE("br\n"); sb(b, ", [%s, #-0]", regnm[rn]); }
 		else
-			sb(b, ", [%s]", regnm[rn]);
+			{ MCC_TRACE("br\n"); sb(b, ", [%s]", regnm[rn]); }
 		return 1;
 	} else if (vfp && imm8 && !(Pb && !W) && !(dbl && ((imm8 & 1) || D))) { MCC_TRACE("br\n");
 		int count = dbl ? imm8 >> 1 : imm8;
 		int first = dbl ? crd : (crd << 1) | D;
 		if (Pb && !U && W) { MCC_TRACE("br\n");
 			if (rn == 13 && !L)
-				sb(b, "vpush%s\t", cc);
+				{ MCC_TRACE("br\n"); sb(b, "vpush%s\t", cc); }
 			else
-				sb(b, "%s%s\t%s!, ", L ? "vldmdb" : "vstmdb", cc, regnm[rn]);
+				{ MCC_TRACE("br\n"); sb(b, "%s%s\t%s!, ", L ? "vldmdb" : "vstmdb", cc, regnm[rn]); }
 			sb_vlist(b, dbl, first, count);
 			return 1;
 		}
 		if (!Pb && U) { MCC_TRACE("br\n");
 			if (rn == 13 && W && L)
-				sb(b, "vpop%s\t", cc);
+				{ MCC_TRACE("br\n"); sb(b, "vpop%s\t", cc); }
 			else
-				sb(b, "%s%s\t%s%s, ", L ? "vldmia" : "vstmia", cc,
-					 regnm[rn], W ? "!" : "");
+				{ MCC_TRACE("br\n"); sb(b, "%s%s\t%s%s, ", L ? "vldmia" : "vstmia", cc,
+					 regnm[rn], W ? "!" : ""); }
 			sb_vlist(b, dbl, first, count);
 			return 1;
 		}
@@ -401,9 +401,9 @@ static int dis_cpmem(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 		SB ob;
 		sb_init(&ob, offbuf, sizeof offbuf);
 		if (imm8)
-			sb(&ob, "#%s%d", U ? "" : "-", off);
+			{ MCC_TRACE("br\n"); sb(&ob, "#%s%d", U ? "" : "-", off); }
 		else if (!U)
-			sb(&ob, "#-0");
+			{ MCC_TRACE("br\n"); sb(&ob, "#-0"); }
 		sb(b, "%s%s%s\tp%d, c%d, ", L ? "ldc" : "stc", D ? "l" : "", cc,
 			 cp, crd);
 		return sb_addr(b, rn, offbuf, Pb, W);
@@ -422,7 +422,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 
 	if (dbl) { MCC_TRACE("br\n");
 		if (D)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		snprintf(d, sizeof d, "d%d", Fd);
 		snprintf(m, sizeof m, "d%d", Fm);
 	} else { MCC_TRACE("br\n");
@@ -432,7 +432,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 
 	if (sel == 0xb) { MCC_TRACE("br\n");
 		if (!op6)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		switch (Fn) { MCC_TRACE("br\n");
 		case 0:
 		case 1:
@@ -440,26 +440,26 @@ static int dis_vfp_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 			static const char *const enm[3][2] = {
 					{"vmov", "vabs"}, {"vneg", "vsqrt"}, {"vcmp", "vcmpe"}};
 			if (dbl && M)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			sb(b, "%s%s.%s\t%s, %s",
 				 enm[Fn == 4 ? 2 : Fn][N], cc, pr, d, m);
 			return 1;
 		}
 		case 5:
 			if (Fm || M)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			sb(b, "%s%s.%s\t%s, #0", N ? "vcmpe" : "vcmp", cc, pr, d);
 			return 1;
 		case 7:
 			if (!N)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			if (dbl) { MCC_TRACE("br\n");
 				if (M)
-					return 0;
+					{ MCC_TRACE("br\n"); return 0; }
 				sb(b, "vcvt%s.f32.f64\ts%d, d%d", cc, (Fd << 1) | D, Fm);
 			} else { MCC_TRACE("br\n");
 				if (D)
-					return 0;
+					{ MCC_TRACE("br\n"); return 0; }
 				sb(b, "vcvt%s.f64.f32\td%d, s%d", cc, Fd, (Fm << 1) | M);
 			}
 			return 1;
@@ -471,7 +471,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 		case 0xd:
 
 			if (dbl && M)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			sb(b, "%s%s.%s.%s\ts%d, %s", N ? "vcvt" : "vcvtr", cc,
 				 (Fn & 1) ? "s32" : "u32", pr, (Fd << 1) | D, m);
 			return 1;
@@ -483,7 +483,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 		char n[8];
 		if (dbl) { MCC_TRACE("br\n");
 			if (N || M)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			snprintf(n, sizeof n, "d%d", Fn);
 		} else { MCC_TRACE("br\n");
 			snprintf(n, sizeof n, "s%d", (Fn << 1) | N);
@@ -499,7 +499,7 @@ static int dis_vfp_dp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 			return 1;
 		case 0x8:
 			if (op6)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			sb(b, "vdiv%s.%s\t%s, %s, %s", cc, pr, d, n, m);
 			return 1;
 		}
@@ -511,7 +511,7 @@ static int dis_cdp(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	const char *cc = cc_sfx[w >> 28];
 	int cp = (w >> 8) & 15;
 	if ((cp == 10 || cp == 11) && dis_vfp_dp(w, b))
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 
 	sb(b, "cdp%s\tp%d, %d, c%d, c%d, c%d, %d", cc, cp,
 		 (w >> 20) & 15, (w >> 12) & 15, (w >> 16) & 15, w & 15, (w >> 5) & 7);
@@ -536,9 +536,9 @@ static int dis_mrc(uint32_t w, SB *b) { MCC_TRACE("enter\n");
 			int sn = (((w >> 16) & 15) << 1) | ((w >> 7) & 1);
 			if (rt != 15) { MCC_TRACE("br\n");
 				if (L)
-					sb(b, "vmov%s.f32\t%s, s%d", cc, regnm[rt], sn);
+					{ MCC_TRACE("br\n"); sb(b, "vmov%s.f32\t%s, s%d", cc, regnm[rt], sn); }
 				else
-					sb(b, "vmov%s.f32\ts%d, %s", cc, sn, regnm[rt]);
+					{ MCC_TRACE("br\n"); sb(b, "vmov%s.f32\ts%d, %s", cc, sn, regnm[rt]); }
 				return 1;
 			}
 		}
@@ -553,7 +553,7 @@ static int decode(disasm_ctx *dc, uint32_t w, SB *b) { MCC_TRACE("enter\n");
 	uint32_t cond = w >> 28;
 
 	if (cond == 15)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	switch ((w >> 25) & 7) { MCC_TRACE("br\n");
 	case 0:
@@ -571,11 +571,11 @@ static int decode(disasm_ctx *dc, uint32_t w, SB *b) { MCC_TRACE("enter\n");
 			return 1;
 		}
 		if ((w & 0x0FC000F0) == 0x00000090)
-			return dis_mul(w, b);
+			{ MCC_TRACE("br\n"); return dis_mul(w, b); }
 		if ((w & 0x0F8000F0) == 0x00800090)
-			return dis_mull(w, b);
+			{ MCC_TRACE("br\n"); return dis_mull(w, b); }
 		if ((w & 0x00000090) == 0x00000090 && (w & 0x60))
-			return dis_hmem(w, b);
+			{ MCC_TRACE("br\n"); return dis_hmem(w, b); }
 		return dis_dp(w, b);
 	case 1:
 		return dis_dp(w, b);
@@ -592,12 +592,12 @@ static int decode(disasm_ctx *dc, uint32_t w, SB *b) { MCC_TRACE("enter\n");
 		if (w & 0x01000000) { MCC_TRACE("br\n");
 			uint32_t imm = w & 0xffffff;
 			if (imm > 255)
-				return 0;
+				{ MCC_TRACE("br\n"); return 0; }
 			sb(b, "svc%s\t#%u", cc_sfx[cond], imm);
 			return 1;
 		}
 		if (w & 0x10)
-			return dis_mrc(w, b);
+			{ MCC_TRACE("br\n"); return dis_mrc(w, b); }
 		return dis_cdp(w, b);
 	}
 	return 0;
@@ -612,7 +612,7 @@ ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 
 	if (dc->pc + 4 > dc->size) { MCC_TRACE("br\n");
 		if (!dc->collect)
-			fprintf(dc->out, ".byte\t0x%02x", dc->data[dc->pc]);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, ".byte\t0x%02x", dc->data[dc->pc]); }
 		return 1;
 	}
 	w = read32le(dc->data + dc->pc);
@@ -620,17 +620,17 @@ ST_FUNC int mcc_disasm_insn(disasm_ctx *dc) { MCC_TRACE("enter\n");
 	rel = disasm_reloc(dc, dc->pc, 4, &rtype);
 	if (rel && mcc_disasm_reloc_size(rtype) == 4) { MCC_TRACE("br\n");
 		if (!dc->collect)
-			fprintf(dc->out, ".long\t%s", rel);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, ".long\t%s", rel); }
 		return 4;
 	}
 
 	sb_init(&b, line, sizeof line);
 	if (decode(dc, w, &b)) { MCC_TRACE("br\n");
 		if (!dc->collect)
-			fprintf(dc->out, "%s", line);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, "%s", line); }
 	} else { MCC_TRACE("br\n");
 		if (!dc->collect)
-			fprintf(dc->out, ".long\t0x%08x", w);
+			{ MCC_TRACE("br\n"); fprintf(dc->out, ".long\t0x%08x", w); }
 	}
 	return 4;
 }

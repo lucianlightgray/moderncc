@@ -62,7 +62,7 @@ static void get_pc_thunk(int r, int add) { MCC_TRACE("enter\n");
 			"__x86.get_pc_thunk.dx",
 			"__x86.get_pc_thunk.bx"};
 	if (nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	gen_static_call(tok_alloc_const(pc_thunk_name[r]));
 	if (add) { MCC_TRACE("br\n");
 		Sym label = {0};
@@ -70,9 +70,9 @@ static void get_pc_thunk(int r, int add) { MCC_TRACE("enter\n");
 		put_extern_sym(&label, cur_text_section, ind, 0);
 		r = REG_VALUE(r);
 		if (r == 0)
-			oad(0x05, 1);
+			{ MCC_TRACE("br\n"); oad(0x05, 1); }
 		else
-			oad(0xc081 + r * 0x100, 2);
+			{ MCC_TRACE("br\n"); oad(0xc081 + r * 0x100, 2); }
 		greloc(cur_text_section, &label, ind - 4, R_386_GOTPC);
 	}
 }
@@ -83,9 +83,9 @@ ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	if (c) { MCC_TRACE("br\n");
 		r = REG_VALUE(r);
 		if (r == 0)
-			oad(0x05, c);
+			{ MCC_TRACE("br\n"); oad(0x05, c); }
 		else
-			oad(0xc081 + r * 0x100, c);
+			{ MCC_TRACE("br\n"); oad(0xc081 + r * 0x100, c); }
 	}
 }
 
@@ -93,13 +93,13 @@ ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_addr32(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	if (r & VT_SYM)
-		greloc(cur_text_section, sym, ind, R_386_32);
+		{ MCC_TRACE("br\n"); greloc(cur_text_section, sym, ind, R_386_32); }
 	gen_le32(c);
 }
 
 ST_FUNC void gen_addrpc32(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 	if (r & VT_SYM)
-		greloc(cur_text_section, sym, ind, R_386_PC32);
+		{ MCC_TRACE("br\n"); greloc(cur_text_section, sym, ind, R_386_PC32); }
 	gen_le32(c - 4);
 }
 
@@ -187,16 +187,16 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			int dst_reg = REG_VALUE(r);
 			int opc;
 			if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL)
-				opc = 0xbe0f;
+				{ MCC_TRACE("br\n"); opc = 0xbe0f; }
 			else if ((ft & VT_TYPE) == (VT_BYTE | VT_UNSIGNED) ||
 							 (ft & VT_TYPE) == (VT_BOOL | VT_UNSIGNED))
-				opc = 0xb60f;
+				{ MCC_TRACE("br\n"); opc = 0xb60f; }
 			else if ((ft & VT_TYPE) == VT_SHORT)
-				opc = 0xbf0f;
+				{ MCC_TRACE("br\n"); opc = 0xbf0f; }
 			else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED))
-				opc = 0xb70f;
+				{ MCC_TRACE("br\n"); opc = 0xb70f; }
 			else
-				opc = 0x8b;
+				{ MCC_TRACE("br\n"); opc = 0x8b; }
 #ifdef MCC_TARGET_PE
 			gen_pe_tls_base(dst_reg);
 			o(opc);
@@ -220,7 +220,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			v1.sym = NULL;
 			fr = r;
 			if (!(reg_classes[fr] & MCC_RC_INT))
-				fr = get_reg(MCC_RC_INT);
+				{ MCC_TRACE("br\n"); fr = get_reg(MCC_RC_INT); }
 			load(fr, &v1);
 		}
 		if ((ft & VT_BTYPE) == VT_FLOAT) { MCC_TRACE("br\n");
@@ -412,7 +412,7 @@ static int fastcall_arg_inreg(CType *type) { MCC_TRACE("enter\n");
 static int fastcall_arg_slots(CType *type) { MCC_TRACE("enter\n");
 	int align, words;
 	if (is_float(type->t))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	words = (type_size(type, &align) + 3) >> 2;
 	return words > 2 ? 2 : words;
 }
@@ -430,16 +430,16 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 	*regsize = 4;
 	size = type_size(vt, &align);
 	if (size > 8 || (size & (size - 1)))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	nregs = 1;
 	if (size == 8)
-		ret->t = VT_INT, nregs = 2;
+		{ MCC_TRACE("br\n"); ret->t = VT_INT, nregs = 2; }
 	else if (size == 4)
-		ret->t = VT_INT;
+		{ MCC_TRACE("br\n"); ret->t = VT_INT; }
 	else if (size == 2)
-		ret->t = VT_SHORT;
+		{ MCC_TRACE("br\n"); ret->t = VT_SHORT; }
 	else
-		ret->t = VT_BYTE;
+		{ MCC_TRACE("br\n"); ret->t = VT_BYTE; }
 	ret->ref = NULL;
 	return nregs;
 #else
@@ -462,7 +462,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		gbound_args(nb_args);
+		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
 #endif
 
 	func_sym = vtop[-nb_args].type.ref;
@@ -483,14 +483,14 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			CType *t = &vtop[-nb_args + 1 + s].type;
 			if (fastcall_arg_inreg(t) && slots < fastcall_nb_regs) { MCC_TRACE("br\n");
 				if (spilled)
-					mcc_error("fastcall with a non-register argument before an "
-										"integer register argument is not supported");
+					{ MCC_TRACE("br\n"); mcc_error("fastcall with a non-register argument before an "
+										"integer register argument is not supported"); }
 				n_reg_pop++, slots++;
 			} else { MCC_TRACE("br\n");
 				spilled = 1;
 				slots += fastcall_arg_slots(t);
 				if (slots >= fastcall_nb_regs)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 			}
 		}
 	}
@@ -523,16 +523,16 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		} else if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
 			gv(MCC_RC_FLOAT);
 			if ((vtop->type.t & VT_BTYPE) == VT_FLOAT)
-				size = 4;
+				{ MCC_TRACE("br\n"); size = 4; }
 			else if ((vtop->type.t & VT_BTYPE) == VT_DOUBLE)
-				size = 8;
+				{ MCC_TRACE("br\n"); size = 8; }
 			else
-				size = 12;
+				{ MCC_TRACE("br\n"); size = 12; }
 			oad(0xec81, size);
 			if (size == 12)
-				o(0x7cdb);
+				{ MCC_TRACE("br\n"); o(0x7cdb); }
 			else
-				o(0x5cd9 + size - 4);
+				{ MCC_TRACE("br\n"); o(0x5cd9 + size - 4); }
 			g(0x24);
 			g(0x00);
 			args_size += size;
@@ -553,20 +553,20 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	if (fastcall_nb_regs) { MCC_TRACE("br\n");
 		for (int i = 0; i < n_reg_pop; i++) { MCC_TRACE("br\n");
 			if (args_size <= 0)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			o(0x58 + fastcall_regs_ptr[i]);
 			args_size -= 4;
 		}
 	}
 #if !defined(MCC_TARGET_PE) && !MCC_TARGETOS_FreeBSD || MCC_TARGETOS_OpenBSD
 	else if ((vtop->type.ref->type.t & VT_BTYPE) == VT_STRUCT)
-		args_size -= 4;
+		{ MCC_TRACE("br\n"); args_size -= 4; }
 #endif
 
 	gcall_or_jmp(0);
 
 	if (args_size && func_call != FUNC_STDCALL && func_call != FUNC_THISCALL && func_call != FUNC_FASTCALLW)
-		gadd_sp(args_size);
+		{ MCC_TRACE("br\n"); gadd_sp(args_size); }
 	vtop--;
 }
 
@@ -616,7 +616,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		func_vc = addr;
 		addr += 4;
 		if (fastcall_nb_regs)
-			fastcall_used++;
+			{ MCC_TRACE("br\n"); fastcall_used++; }
 	}
 	while ((sym = sym->next) != NULL) { MCC_TRACE("br\n");
 		type = &sym->type;
@@ -637,21 +637,21 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 			addr += size;
 			fastcall_used += fastcall_arg_slots(type);
 			if (fastcall_used > fastcall_nb_regs)
-				fastcall_used = fastcall_nb_regs;
+				{ MCC_TRACE("br\n"); fastcall_used = fastcall_nb_regs; }
 		}
 		gfunc_set_param(sym, param_addr, 0);
 	}
 	func_ret_sub = 0;
 	if (func_call == FUNC_STDCALL || func_call == FUNC_FASTCALLW || func_call == FUNC_THISCALL)
-		func_ret_sub = addr - 8;
+		{ MCC_TRACE("br\n"); func_ret_sub = addr - 8; }
 #if !defined(MCC_TARGET_PE) && !MCC_TARGETOS_FreeBSD || MCC_TARGETOS_OpenBSD
 	else if (func_vc)
-		func_ret_sub = 4;
+		{ MCC_TRACE("br\n"); func_ret_sub = 4; }
 #endif
 
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		gen_bounds_prolog();
+		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
 }
 
@@ -660,13 +660,13 @@ ST_FUNC void gfunc_epilog(void) {
 
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		gen_bounds_epilog();
+		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
 
 	v = (-loc + 3) & -4;
 
 	if (mcc_state->pic)
-		gen_modrm(0x8b, MCC_TREG_EBX, VT_LOCAL, NULL, -(v + 4));
+		{ MCC_TRACE("br\n"); gen_modrm(0x8b, MCC_TREG_EBX, VT_LOCAL, NULL, -(v + 4)); }
 
 	o(0xc9);
 	if (func_ret_sub == 0) { MCC_TRACE("br\n");
@@ -752,7 +752,7 @@ ST_FUNC void gen_opi(int op) {
 		}
 		vtop--;
 		if (op >= TOK_ULT && op <= TOK_GT)
-			vset_VT_CMP(op);
+			{ MCC_TRACE("br\n"); vset_VT_CMP(op); }
 		break;
 	case '-':
 	case TOK_SUBC1:
@@ -833,9 +833,9 @@ ST_FUNC void gen_opi(int op) {
 				o(0xf8 + fr);
 			}
 			if (op == '%' || op == TOK_UMOD)
-				r = MCC_TREG_EDX;
+				{ MCC_TRACE("br\n"); r = MCC_TREG_EDX; }
 			else
-				r = MCC_TREG_EAX;
+				{ MCC_TRACE("br\n"); r = MCC_TREG_EAX; }
 		}
 		vtop->r = r;
 		break;
@@ -860,7 +860,7 @@ ST_FUNC void gen_opf(int op) {
 		vswap();
 	}
 	if ((vtop[0].r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
-		gv(MCC_RC_FLOAT);
+		{ MCC_TRACE("br\n"); gv(MCC_RC_FLOAT); }
 
 	if ((vtop[-1].r & VT_LVAL) &&
 			(vtop[0].r & VT_LVAL)) { MCC_TRACE("br\n");
@@ -877,15 +877,15 @@ ST_FUNC void gen_opf(int op) {
 		load(MCC_TREG_ST0, vtop);
 		save_reg(MCC_TREG_EAX);
 		if (op == TOK_GE || op == TOK_GT)
-			swapped = !swapped;
+			{ MCC_TRACE("br\n"); swapped = !swapped; }
 		else if (op == TOK_EQ || op == TOK_NE)
-			swapped = 0;
+			{ MCC_TRACE("br\n"); swapped = 0; }
 		if (swapped)
-			o(0xc9d9);
+			{ MCC_TRACE("br\n"); o(0xc9d9); }
 		if (op == TOK_EQ || op == TOK_NE)
-			o(0xe9da);
+			{ MCC_TRACE("br\n"); o(0xe9da); }
 		else
-			o(0xd9de);
+			{ MCC_TRACE("br\n"); o(0xd9de); }
 		o(0xe0df);
 		if (op == TOK_EQ) { MCC_TRACE("br\n");
 			o(0x45e480);
@@ -917,7 +917,7 @@ ST_FUNC void gen_opf(int op) {
 		case '-':
 			a = 4;
 			if (swapped)
-				a++;
+				{ MCC_TRACE("br\n"); a++; }
 			break;
 		case '*':
 			a = 1;
@@ -925,7 +925,7 @@ ST_FUNC void gen_opf(int op) {
 		case '/':
 			a = 6;
 			if (swapped)
-				a++;
+				{ MCC_TRACE("br\n"); a++; }
 			break;
 		}
 		ft = vtop->type.t;
@@ -981,17 +981,17 @@ ST_FUNC void gen_cvt_itof(int t) {
 ST_FUNC void gen_cvt_ftoi(int t) {
 	int bt = vtop->type.t & VT_BTYPE;
 	if (bt == VT_FLOAT)
-		vpush_helper_func(TOK___fixsfdi);
+		{ MCC_TRACE("br\n"); vpush_helper_func(TOK___fixsfdi); }
 	else if (bt == VT_LDOUBLE)
-		vpush_helper_func(TOK___fixxfdi);
+		{ MCC_TRACE("br\n"); vpush_helper_func(TOK___fixxfdi); }
 	else
-		vpush_helper_func(TOK___fixdfdi);
+		{ MCC_TRACE("br\n"); vpush_helper_func(TOK___fixdfdi); }
 	vswap();
 	gfunc_call(1);
 	vpushi(0);
 	vtop->r = REG_IRET;
 	if ((t & VT_BTYPE) == VT_LLONG)
-		vtop->r2 = REG_IRE2;
+		{ MCC_TRACE("br\n"); vtop->r2 = REG_IRE2; }
 }
 
 ST_FUNC void gen_cvt_ftof(int t) {
@@ -1074,7 +1074,7 @@ static void gen_bounds_epilog(void) {
 	int offset_modified = func_bound_offset != lbounds_section->data_offset;
 
 	if (!offset_modified && !func_bound_add_epilog)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	bounds_ptr = section_ptr_add(lbounds_section, sizeof(addr_t));
 	*bounds_ptr = 0;

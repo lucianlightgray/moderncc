@@ -105,11 +105,11 @@ static const char *mccstats_walk_name(int w) { MCC_TRACE("enter\n");
 
 static void mccstats_fmt_u(unsigned long v, char *out, int cap) { MCC_TRACE("enter\n");
 	if (v < 100000)
-		snprintf(out, cap, "%lu", v);
+		{ MCC_TRACE("br\n"); snprintf(out, cap, "%lu", v); }
 	else if (v < 100000000ul)
-		snprintf(out, cap, "%lu.%luk", v / 1000, (v % 1000) / 100);
+		{ MCC_TRACE("br\n"); snprintf(out, cap, "%lu.%luk", v / 1000, (v % 1000) / 100); }
 	else
-		snprintf(out, cap, "%lu.%luM", v / 1000000, (v % 1000000) / 100000);
+		{ MCC_TRACE("br\n"); snprintf(out, cap, "%lu.%luM", v / 1000000, (v % 1000000) / 100000); }
 }
 
 static void mccstats_gate_names(uint64_t g, char *out, int cap) { MCC_TRACE("enter\n");
@@ -117,7 +117,7 @@ static void mccstats_gate_names(uint64_t g, char *out, int cap) { MCC_TRACE("ent
 	out[0] = '\0';
 	for (b = 0; b < MCCSTATS_GATE_N; b++) { MCC_TRACE("br\n");
 		if (!(g & ((uint64_t)1 << b)))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		p += snprintf(out + p, cap - p, "%s%s", p ? "," : "", mccstats_gate_name[b]);
 		if (p >= cap - 8) { MCC_TRACE("br\n");
 			snprintf(out + p, cap - p, "..");
@@ -140,9 +140,9 @@ static void mccstats_spark(char *out, int cap) { MCC_TRACE("enter\n");
 		long v = mcs.spark[(mcs.spark_head - mcs.spark_n + i + MCCSTATS_SPARK_N * 2) %
 											 MCCSTATS_SPARK_N];
 		if (first || v < lo)
-			lo = v;
+			{ MCC_TRACE("br\n"); lo = v; }
 		if (first || v > hi)
-			hi = v;
+			{ MCC_TRACE("br\n"); hi = v; }
 		first = 0;
 	}
 	for (i = 0; i < mcs.spark_n; i++) { MCC_TRACE("br\n");
@@ -150,12 +150,12 @@ static void mccstats_spark(char *out, int cap) { MCC_TRACE("enter\n");
 											 MCCSTATS_SPARK_N];
 		int idx = (hi > lo) ? (int)((v - lo) * 7 / (hi - lo)) : 0;
 		if (idx < 0)
-			idx = 0;
+			{ MCC_TRACE("br\n"); idx = 0; }
 		if (idx > 7)
-			idx = 7;
+			{ MCC_TRACE("br\n"); idx = 7; }
 		p += snprintf(out + p, cap - p, "%s", bars[idx]);
 		if (p >= cap - 4)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 }
 
@@ -167,7 +167,7 @@ typedef struct McccRows {
 static void mccstats_row(McccRows *r, const char *fmt, ...) { MCC_TRACE("enter\n");
 	va_list ap;
 	if (r->n >= MCCSTATS_MAXROWS)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	va_start(ap, fmt);
 	vsnprintf(r->buf[r->n], MCCSTATS_COLW, fmt, ap);
 	va_end(ap);
@@ -237,7 +237,7 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 			uint64_t bit = (uint64_t)1 << bcol;
 			int on, mark;
 			if (!(mcs.searchable & bit))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			on = (mcs.best_gates & bit) != 0;
 			mark = on;
 			p += snprintf(line + p, sizeof line - p, "%s%s ",
@@ -250,7 +250,7 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 			}
 		}
 		if (p)
-			mccstats_row(r, "          %s", line);
+			{ MCC_TRACE("br\n"); mccstats_row(r, "          %s", line); }
 	}
 
 	if (mcc_stats_on(MCC_STATS_JIT)) { MCC_TRACE("br\n");
@@ -275,23 +275,23 @@ static void mccstats_paint(int force) { MCC_TRACE("enter\n");
 	int i;
 	unsigned now;
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	now = mccstats_now_ms();
 	if (!force && mcs.prev_lines && (now - mcs.last_paint_ms) < 50)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.last_paint_ms = now;
 	if (!mcs.tty && !force)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mccstats_build(&rows);
 	if (mcs.tty) { MCC_TRACE("br\n");
 		if (mcs.prev_lines)
-			fprintf(stderr, "\033[%dA", mcs.prev_lines);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "\033[%dA", mcs.prev_lines); }
 		for (i = 0; i < rows.n; i++)
 			fprintf(stderr, "\r\033[2K%s\n", rows.buf[i]);
 		for (i = rows.n; i < mcs.prev_lines; i++)
 			fprintf(stderr, "\r\033[2K\n");
 		if (rows.n < mcs.prev_lines)
-			fprintf(stderr, "\033[%dA", mcs.prev_lines - rows.n);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "\033[%dA", mcs.prev_lines - rows.n); }
 		mcs.prev_lines = rows.n;
 	} else { MCC_TRACE("br\n");
 		for (i = 0; i < rows.n; i++)
@@ -303,7 +303,7 @@ static void mccstats_paint(int force) { MCC_TRACE("enter\n");
 void mcc_stats_enable(unsigned mask) { MCC_TRACE("enter\n");
 	mcc_stats_mask = mask;
 	if (!mask)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	memset(&mcs, 0, sizeof mcs);
 	mcs.active = 1;
 	mcs.fn_best_score = -1;
@@ -315,7 +315,7 @@ void mcc_stats_enable(unsigned mask) { MCC_TRACE("enter\n");
 	mcs.tty = 0;
 #endif
 	if (getenv("MCC_STATS_FORCE"))
-		mcs.tty = 1;
+		{ MCC_TRACE("br\n"); mcs.tty = 1; }
 }
 
 void mcc_stats_env_init(void) { MCC_TRACE("enter\n");
@@ -323,26 +323,26 @@ void mcc_stats_env_init(void) { MCC_TRACE("enter\n");
 	const char *e;
 	unsigned m;
 	if (done)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	done = 1;
 	if (mcc_stats_mask)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	e = getenv("MCC_STATS");
 	if (!e || !e[0])
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	m = (unsigned)strtoul(e, NULL, 0);
 	if (m <= 1)
-		m = MCC_STATS_ALL;
+		{ MCC_TRACE("br\n"); m = MCC_STATS_ALL; }
 	mcc_stats_enable(m);
 	atexit(mcc_stats_finish);
 }
 
 void mcc_stats_finish(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mccstats_paint(1);
 	if (mcs.tty)
-		fprintf(stderr, "\n");
+		{ MCC_TRACE("br\n"); fprintf(stderr, "\n"); }
 	fflush(stderr);
 	mcs.active = 0;
 }
@@ -351,7 +351,7 @@ void mcc_stats_search_begin(const char *func, uint64_t hash, uint64_t base,
 													 uint64_t searchable, int nitems, int walk,
 													 int ordered) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	snprintf(mcs.func, sizeof mcs.func, "%s", func ? func : "-");
 	mcs.hash = hash;
 	mcs.base = base;
@@ -370,7 +370,7 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 													unsigned expect_ms) { MCC_TRACE("enter\n");
 	int i, p = 0;
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.cand_gates = gates;
 	mcs.cand_k = k;
 	mcs.cand_score = score;
@@ -391,13 +391,13 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 		p += snprintf(mcs.cand_names + p, sizeof mcs.cand_names - p, "%s%s",
 									i ? "," : "", idx >= 0 ? mccstats_gate_name[idx] : "?");
 		if (p >= (int)sizeof mcs.cand_names - 8)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 	if (score >= 0) { MCC_TRACE("br\n");
 		mcs.spark[mcs.spark_head] = score >> 12;
 		mcs.spark_head = (mcs.spark_head + 1) % MCCSTATS_SPARK_N;
 		if (mcs.spark_n < MCCSTATS_SPARK_N)
-			mcs.spark_n++;
+			{ MCC_TRACE("br\n"); mcs.spark_n++; }
 		if (mcs.fn_best_score < 0 || score < mcs.fn_best_score) { MCC_TRACE("br\n");
 			mcs.fn_best_score = score;
 			mcs.fn_best_gates = gates;
@@ -409,7 +409,7 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
 													int memo_n) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.funcs_searched++;
 	mcs.memo_n = memo_n;
 	if (best_score >= 0 && (mcs.best_score < 0 || best_score < mcs.best_score)) { MCC_TRACE("br\n");
@@ -423,9 +423,9 @@ void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
 void mcc_stats_strat_hits(const int *sf, int n) { MCC_TRACE("enter\n");
 	int i;
 	if (!mcs.active || !sf)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (n > MCCSTATS_STRAT_N)
-		n = MCCSTATS_STRAT_N;
+		{ MCC_TRACE("br\n"); n = MCCSTATS_STRAT_N; }
 	mcs.strat_calls++;
 	for (i = 0; i < n; i++)
 		mcs.strat_hits[i] += (unsigned long)(sf[i] > 0 ? sf[i] : 0);
@@ -433,38 +433,38 @@ void mcc_stats_strat_hits(const int *sf, int n) { MCC_TRACE("enter\n");
 
 void mcc_stats_jit_recompile(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_recompiles++;
 	mccstats_paint(0);
 }
 
 void mcc_stats_jit_kgc_hit(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_kgc_hits++;
 	mccstats_paint(0);
 }
 
 void mcc_stats_jit_kgc_miss(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_kgc_misses++;
 	mccstats_paint(0);
 }
 
 void mcc_stats_jit_poison(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_poison++;
 	mccstats_paint(0);
 }
 
 void mcc_stats_jit_promote(int async) { MCC_TRACE("enter\n");
 	if (!mcs.active)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (async)
-		mcs.jit_promote_async++;
+		{ MCC_TRACE("br\n"); mcs.jit_promote_async++; }
 	else
-		mcs.jit_promote_sync++;
+		{ MCC_TRACE("br\n"); mcs.jit_promote_sync++; }
 	mccstats_paint(0);
 }

@@ -113,7 +113,7 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	uint8_t *p, *p_end;
 
 	if (!s1->plt)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	p = s1->plt->data;
 	p_end = p + s1->plt->data_offset;
@@ -148,15 +148,15 @@ static addr_t x86_64_tpoff(MCCState *s1, addr_t val) { MCC_TRACE("enter\n");
 		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 		if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 			if (!tls_start || s->sh_addr < tls_start)
-				tls_start = s->sh_addr;
+				{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 			if (s->sh_addr + ssz > tls_end)
-				tls_end = s->sh_addr + ssz;
+				{ MCC_TRACE("br\n"); tls_end = s->sh_addr + ssz; }
 			if (s->sh_addralign > tls_align)
-				tls_align = s->sh_addralign;
+				{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 		}
 	}
 	if (tls_end <= tls_start)
-		return val;
+		{ MCC_TRACE("br\n"); return val; }
 	aligned = (tls_end - tls_start + tls_align - 1) & ~(tls_align - 1);
 	return val - (tls_start + aligned);
 }
@@ -273,11 +273,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			ptr[-3] = (rex & ~4) | (reg >= 8 ? 1 : 0);
 			ptr[-1] = 0xc0 | (reg & 7);
 			if (op == 0x8b)
-				ptr[-2] = 0xc7;
+				{ MCC_TRACE("br\n"); ptr[-2] = 0xc7; }
 			else if (op == 0x03)
-				ptr[-2] = 0x81;
+				{ MCC_TRACE("br\n"); ptr[-2] = 0x81; }
 			else
-				mcc_error_noabort("unexpected R_X86_64_GOTTPOFF instruction");
+				{ MCC_TRACE("br\n"); mcc_error_noabort("unexpected R_X86_64_GOTTPOFF instruction"); }
 			write32le(ptr, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
 		} else { MCC_TRACE("br\n");
 			add32le(ptr, val - s1->got->sh_addr);
@@ -305,7 +305,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
 			add32le(ptr + 8, (int32_t)x86_64_tpoff(s1, val - rel->r_addend));
 		} else
-			mcc_error_noabort("unexpected R_X86_64_TLSGD pattern");
+			{ MCC_TRACE("br\n"); mcc_error_noabort("unexpected R_X86_64_TLSGD pattern"); }
 	} break;
 	case R_X86_64_TLSLD: {
 		static const unsigned char expect[] = {
@@ -319,7 +319,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			memcpy(ptr - 3, replace, sizeof(replace));
 			rel[1].r_info = ELFW(R_INFO)(0, R_X86_64_NONE);
 		} else
-			mcc_error_noabort("unexpected R_X86_64_TLSLD pattern");
+			{ MCC_TRACE("br\n"); mcc_error_noabort("unexpected R_X86_64_TLSLD pattern"); }
 	} break;
 	case R_X86_64_DTPOFF32:
 	case R_X86_64_TPOFF32: {
@@ -336,11 +336,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
-					tls_start = s->sh_addr;
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 				if (s->sh_addr + ssz > tls_end)
-					tls_end = s->sh_addr + ssz;
+					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + ssz; }
 				if (s->sh_addralign > tls_align)
-					tls_align = s->sh_addralign;
+					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
 		if (tls_end > tls_start) { MCC_TRACE("br\n");
@@ -372,11 +372,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
 				if (!tls_start || s->sh_addr < tls_start)
-					tls_start = s->sh_addr;
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 				if (s->sh_addr + ssz > tls_end)
-					tls_end = s->sh_addr + ssz;
+					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + ssz; }
 				if (s->sh_addralign > tls_align)
-					tls_align = s->sh_addralign;
+					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
 		if (tls_end > tls_start) { MCC_TRACE("br\n");

@@ -259,27 +259,27 @@ static int asm_parse_numeric_reg(int t, unsigned int *type) { MCC_TRACE("enter\n
 			*type = OP_CR;
 		}
 		if (*s++ != 'r')
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		if ((c = *s++) >= '1' && c <= '9')
-			reg = c - '0';
+			{ MCC_TRACE("br\n"); reg = c - '0'; }
 		else
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		if ((c = *s) >= '0' && c <= '5')
-			s++, reg = reg * 10 + c - '0';
+			{ MCC_TRACE("br\n"); s++, reg = reg * 10 + c - '0'; }
 		if (reg > 15)
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		if ((c = *s) == 0)
-			;
+			{ MCC_TRACE("br\n"); ; }
 		else if (*type != OP_REG64)
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		else if (c == 'b' && !s[1])
-			*type = OP_REG8;
+			{ MCC_TRACE("br\n"); *type = OP_REG8; }
 		else if (c == 'w' && !s[1])
-			*type = OP_REG16;
+			{ MCC_TRACE("br\n"); *type = OP_REG16; }
 		else if (c == 'd' && !s[1])
-			*type = OP_REG32;
+			{ MCC_TRACE("br\n"); *type = OP_REG32; }
 		else
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 	}
 	return reg;
 }
@@ -289,7 +289,7 @@ static int asm_parse_reg(unsigned int *type) { MCC_TRACE("enter\n");
 	int reg = 0;
 	*type = 0;
 	if (tok != '%')
-		goto error_32;
+		{ MCC_TRACE("br\n"); goto error_32; }
 	next();
 	if (tok >= TOK_ASM_eax && tok <= TOK_ASM_edi) { MCC_TRACE("br\n");
 		reg = tok - TOK_ASM_eax;
@@ -316,11 +316,11 @@ static int asm_parse_reg(unsigned int *type) { MCC_TRACE("enter\n");
 
 static int asm_parse_ntpoff(void) { MCC_TRACE("enter\n");
 	if (tok != '@')
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	next();
 	if (tok < TOK_IDENT || strcmp(get_tok_str(tok, NULL), "ntpoff"))
-		mcc_error("unsupported relocation operator '@%s'",
-							get_tok_str(tok, &tokc));
+		{ MCC_TRACE("br\n"); mcc_error("unsupported relocation operator '@%s'",
+							get_tok_str(tok, &tokc)); }
 	next();
 	return 1;
 }
@@ -347,11 +347,11 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 			op->type = 1 << (reg >> 3);
 			op->reg = reg & 7;
 			if ((op->type & OP_REG) && op->reg == MCC_TREG_XAX)
-				op->type |= OP_EAX;
+				{ MCC_TRACE("br\n"); op->type |= OP_EAX; }
 			else if (op->type == OP_REG8 && op->reg == MCC_TREG_XCX)
-				op->type |= OP_CL;
+				{ MCC_TRACE("br\n"); op->type |= OP_CL; }
 			else if (op->type == OP_REG16 && op->reg == MCC_TREG_XDX)
-				op->type |= OP_DX;
+				{ MCC_TRACE("br\n"); op->type |= OP_DX; }
 		} else if (tok >= TOK_ASM_dr0 && tok <= TOK_ASM_dr7) { MCC_TRACE("br\n");
 			op->type = OP_DB;
 			op->reg = tok - TOK_ASM_dr0;
@@ -365,17 +365,17 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 			if (tok == '(') { MCC_TRACE("br\n");
 				next();
 				if (tok != TOK_PPNUM)
-					goto reg_error;
+					{ MCC_TRACE("br\n"); goto reg_error; }
 				p = tokc.str.data;
 				reg = p[0] - '0';
 				if ((unsigned)reg >= 8 || p[1] != '\0')
-					goto reg_error;
+					{ MCC_TRACE("br\n"); goto reg_error; }
 				op->reg = reg;
 				next();
 				skip(')');
 			}
 			if (op->reg == 0)
-				op->type |= OP_ST0;
+				{ MCC_TRACE("br\n"); op->type |= OP_ST0; }
 			goto no_skip;
 #ifdef MCC_TARGET_X86_64
 		} else if (tok >= TOK_ASM_spl && tok <= TOK_ASM_dil) { MCC_TRACE("br\n");
@@ -396,17 +396,17 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 		op->type = OP_IM32;
 		op->e = e;
 		if (op->e.sym)
-			op->ntpoff = asm_parse_ntpoff();
+			{ MCC_TRACE("br\n"); op->ntpoff = asm_parse_ntpoff(); }
 		if (!op->e.sym) { MCC_TRACE("br\n");
 			if (op->e.v == (uint8_t)op->e.v)
-				op->type |= OP_IM8;
+				{ MCC_TRACE("br\n"); op->type |= OP_IM8; }
 			if (op->e.v == (int8_t)op->e.v)
-				op->type |= OP_IM8S;
+				{ MCC_TRACE("br\n"); op->type |= OP_IM8S; }
 			if (op->e.v == (uint16_t)op->e.v)
-				op->type |= OP_IM16;
+				{ MCC_TRACE("br\n"); op->type |= OP_IM16; }
 #ifdef MCC_TARGET_X86_64
 			if (op->e.v != (int32_t)op->e.v && op->e.v != (uint32_t)op->e.v)
-				op->type = OP_IM64;
+				{ MCC_TRACE("br\n"); op->type = OP_IM64; }
 #endif
 		}
 	} else { MCC_TRACE("br\n");
@@ -418,7 +418,7 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 			asm_expr(s1, &e);
 			op->e = e;
 			if (op->e.sym)
-				op->ntpoff = asm_parse_ntpoff();
+				{ MCC_TRACE("br\n"); op->ntpoff = asm_parse_ntpoff(); }
 		} else { MCC_TRACE("br\n");
 			next();
 			if (tok == '%') { MCC_TRACE("br\n");
@@ -428,7 +428,7 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 			} else { MCC_TRACE("br\n");
 				asm_expr(s1, &e);
 				if (tok != ')')
-					expect(")");
+					{ MCC_TRACE("br\n"); expect(")"); }
 				next();
 				op->e.v = e.v;
 				op->e.sym = e.sym;
@@ -452,20 +452,20 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 				}
 			}
 			if (type & OP_REG32)
-				op->type |= OP_EA32;
+				{ MCC_TRACE("br\n"); op->type |= OP_EA32; }
 			skip(')');
 		}
 		if (op->reg == -1 && op->reg2 == -1)
-			op->type |= OP_ADDR;
+			{ MCC_TRACE("br\n"); op->type |= OP_ADDR; }
 	}
 	op->type |= indir;
 }
 
 ST_FUNC void gen_expr32(ExprValue *pe) { MCC_TRACE("enter\n");
 	if (pe->pcrel)
-		gen_addrpc32(VT_SYM, pe->sym, pe->v + (ind + 4));
+		{ MCC_TRACE("br\n"); gen_addrpc32(VT_SYM, pe->sym, pe->v + (ind + 4)); }
 	else
-		gen_addr32(pe->sym ? VT_SYM : 0, pe->sym, pe->v);
+		{ MCC_TRACE("br\n"); gen_addr32(pe->sym ? VT_SYM : 0, pe->sym, pe->v); }
 }
 
 static void gen_disp32(ExprValue *pe) { MCC_TRACE("enter\n");
@@ -512,7 +512,7 @@ static inline int asm_modrm(int reg, Operand *op) { MCC_TRACE("enter\n");
 			g(0x04 + (reg << 3));
 			g(0x25);
 		} else
-			g(0x05 + (reg << 3));
+			{ MCC_TRACE("br\n"); g(0x05 + (reg << 3)); }
 #endif
 		gen_op32(op);
 #ifdef MCC_TARGET_X86_64
@@ -536,12 +536,12 @@ static inline int asm_modrm(int reg, Operand *op) { MCC_TRACE("enter\n");
 		}
 		reg1 = op->reg;
 		if (op->reg2 != -1)
-			reg1 = 4;
+			{ MCC_TRACE("br\n"); reg1 = 4; }
 		g(mod + (reg << 3) + reg1);
 		if (reg1 == 4) { MCC_TRACE("br\n");
 			reg2 = op->reg2;
 			if (reg2 == -1)
-				reg2 = 4;
+				{ MCC_TRACE("br\n"); reg2 = 4; }
 			g((op->shift << 6) + (reg2 << 3) + sib_reg1);
 		}
 		if (mod == 0x40) { MCC_TRACE("br\n");
@@ -570,9 +570,9 @@ static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
 					rex |= REX_B;
 					ops[i].reg -= 8;
 				} else if (ops[i].type & OP_REG8_LOW)
-					rex |= 0x40;
+					{ MCC_TRACE("br\n"); rex |= 0x40; }
 				else if (ops[i].type & OP_REG8 && ops[i].reg >= 4)
-					saw_high_8bit = ops[i].reg;
+					{ MCC_TRACE("br\n"); saw_high_8bit = ops[i].reg; }
 				break;
 			}
 		}
@@ -582,18 +582,18 @@ static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
 				rex |= REX_R;
 				ops[regi].reg -= 8;
 			} else if (ops[regi].type & OP_REG8_LOW)
-				rex |= 0x40;
+				{ MCC_TRACE("br\n"); rex |= 0x40; }
 			else if (ops[regi].type & OP_REG8 && ops[regi].reg >= 4)
-				saw_high_8bit = ops[regi].reg;
+				{ MCC_TRACE("br\n"); saw_high_8bit = ops[regi].reg; }
 		}
 		if (ops[rmi].type & (OP_REG | OP_MMX | OP_SSE | OP_CR | OP_EA)) { MCC_TRACE("br\n");
 			if (ops[rmi].reg >= 8) { MCC_TRACE("br\n");
 				rex |= REX_B;
 				ops[rmi].reg -= 8;
 			} else if (ops[rmi].type & OP_REG8_LOW)
-				rex |= 0x40;
+				{ MCC_TRACE("br\n"); rex |= 0x40; }
 			else if (ops[rmi].type & OP_REG8 && ops[rmi].reg >= 4)
-				saw_high_8bit = ops[rmi].reg;
+				{ MCC_TRACE("br\n"); saw_high_8bit = ops[rmi].reg; }
 		}
 		if (ops[rmi].type & OP_EA && ops[rmi].reg2 >= 8) { MCC_TRACE("br\n");
 			rex |= REX_X;
@@ -602,8 +602,8 @@ static void asm_rex(int width64, Operand *ops, int nb_ops, int *op_type,
 	}
 	if (rex) { MCC_TRACE("br\n");
 		if (saw_high_8bit)
-			mcc_error("can't encode register %%%ch when REX prefix is required",
-								"acdb"[saw_high_8bit - 4]);
+			{ MCC_TRACE("br\n"); mcc_error("can't encode register %%%ch when REX prefix is required",
+								"acdb"[saw_high_8bit - 4]); }
 		g(rex);
 	}
 }
@@ -625,7 +625,7 @@ static void maybe_print_stats(void) { MCC_TRACE("enter\n");
 			freq[pa->nb_ops]++;
 			for (j = 0; j < nb_op_vals; j++) { MCC_TRACE("br\n");
 				if (pa->instr_type == op_vals[j])
-					goto found;
+					{ MCC_TRACE("br\n"); goto found; }
 			}
 			op_vals[nb_op_vals++] = pa->instr_type;
 		found:;
@@ -656,7 +656,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode) { MCC_TRACE("enter\n");
 
 	maybe_print_stats();
 	if (opcode >= TOK_ASM_wait && opcode <= TOK_ASM_repnz)
-		unget_tok(';');
+		{ MCC_TRACE("br\n"); unget_tok(';'); }
 
 	pop = ops;
 	nb_ops = 0;
@@ -664,14 +664,14 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode) { MCC_TRACE("enter\n");
 	alltypes = 0;
 	for (;;) { MCC_TRACE("br\n");
 		if (tok == ';' || tok == TOK_LINEFEED)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		if (nb_ops >= MAX_OPERANDS) { MCC_TRACE("br\n");
 			mcc_error("incorrect number of operands");
 		}
 		parse_operand(s1, pop);
 		if (tok == ':') { MCC_TRACE("br\n");
 			if (!(pop->type & OP_SEG) || seg_prefix)
-				mcc_error("incorrect prefix");
+				{ MCC_TRACE("br\n"); mcc_error("incorrect prefix"); }
 			seg_prefix = segment_prefixes[pop->reg];
 			next();
 			parse_operand(s1, pop);
@@ -682,7 +682,7 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode) { MCC_TRACE("enter\n");
 		pop++;
 		nb_ops++;
 		if (tok != ',')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		next();
 	}
 
@@ -695,46 +695,46 @@ again:
 		if (it == OPC_FARITH) { MCC_TRACE("br\n");
 			v = opcode - pa->sym;
 			if (!((unsigned)v < 8 * 6 && (v % 6) == 0))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 		} else if (it == OPC_ARITH) { MCC_TRACE("br\n");
 			if (!(opcode >= pa->sym && opcode < pa->sym + 8 * NBWLX))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			s = (opcode - pa->sym) % NBWLX;
 			if ((pa->instr_type & OPC_BWLX) == OPC_WLX) { MCC_TRACE("br\n");
 				if (((opcode - pa->sym + 1) % NBWLX) == 0)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				s++;
 			}
 		} else if (it == OPC_SHIFT) { MCC_TRACE("br\n");
 			if (!(opcode >= pa->sym && opcode < pa->sym + 7 * NBWLX))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			s = (opcode - pa->sym) % NBWLX;
 		} else if (it == OPC_TEST) { MCC_TRACE("br\n");
 			if (!(opcode >= pa->sym && opcode < pa->sym + NB_TEST_OPCODES))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			if (pa->instr_type & OPC_WLX)
-				s = NBWLX - 1;
+				{ MCC_TRACE("br\n"); s = NBWLX - 1; }
 		} else if (pa->instr_type & OPC_B) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_X86_64
 			if ((pa->instr_type & OPC_WLQ) != OPC_WLQ && !(opcode >= pa->sym && opcode < pa->sym + NBWLX - 1))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 #endif
 			if (!(opcode >= pa->sym && opcode < pa->sym + NBWLX))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			s = opcode - pa->sym;
 		} else if (pa->instr_type & OPC_WLX) { MCC_TRACE("br\n");
 			if (!(opcode >= pa->sym && opcode < pa->sym + NBWLX - 1))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			s = opcode - pa->sym + 1;
 		} else { MCC_TRACE("br\n");
 			if (pa->sym != opcode)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 		}
 		if (pa->nb_ops != nb_ops)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 #ifdef MCC_TARGET_X86_64
 		if (pa->opcode == 0xb0 && ops[0].type != OP_IM64 && (ops[1].type & OP_REG) == OP_REG64 && !(pa->instr_type & OPC_0F))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 #endif
 		alltypes = 0;
 		for (i = 0; i < nb_ops; i++) { MCC_TRACE("br\n");
@@ -766,10 +766,10 @@ again:
 				break;
 			}
 			if (op1 & OPT_EA)
-				v |= OP_EA;
+				{ MCC_TRACE("br\n"); v |= OP_EA; }
 			op_type[i] = v;
 			if ((ops[i].type & v) == 0)
-				goto next;
+				{ MCC_TRACE("br\n"); goto next; }
 			alltypes |= ops[i].type;
 		}
 #ifndef MCC_TARGET_X86_64
@@ -777,7 +777,7 @@ again:
 		if (!(pa->instr_type & OPC_MODRM)) { MCC_TRACE("br\n");
 			for (i = 0; i < nb_ops; i++)
 				if (ops[i].ntpoff)
-					goto next;
+					{ MCC_TRACE("br\n"); goto next; }
 		}
 #endif
 		(void)alltypes;
@@ -789,7 +789,7 @@ again:
 			int b;
 			b = op0_codes[opcode - TOK_ASM_first];
 			if (b & 0xff00)
-				g(b >> 8);
+				{ MCC_TRACE("br\n"); g(b >> 8); }
 			g(b);
 			return;
 		} else if (opcode <= TOK_ASM_alllast) { MCC_TRACE("br\n");
@@ -807,29 +807,29 @@ again:
 	autosize = NBWLX - 1;
 #ifdef MCC_TARGET_X86_64
 	if ((pa->instr_type & OPC_BWLQ) == OPC_B)
-		autosize = NBWLX - 2;
+		{ MCC_TRACE("br\n"); autosize = NBWLX - 2; }
 #endif
 	if (s == autosize) { MCC_TRACE("br\n");
 		for (i = nb_ops - 1; s == autosize && i >= 0; i--) { MCC_TRACE("br\n");
 			if ((ops[i].type & OP_REG) && !(op_type[i] & (OP_CL | OP_DX)))
-				s = reg_to_size[ops[i].type & OP_REG];
+				{ MCC_TRACE("br\n"); s = reg_to_size[ops[i].type & OP_REG]; }
 		}
 		if (s == autosize) { MCC_TRACE("br\n");
 			if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
 					(ops[0].type & (OP_SEG | OP_IM8S | OP_IM32)))
-				s = 2;
+				{ MCC_TRACE("br\n"); s = 2; }
 			else if ((opcode == TOK_ASM_push || opcode == TOK_ASM_pop) &&
 							 (ops[0].type & OP_EA))
-				s = NBWLX - 2;
+				{ MCC_TRACE("br\n"); s = NBWLX - 2; }
 			else
-				mcc_error("cannot infer opcode suffix");
+				{ MCC_TRACE("br\n"); mcc_error("cannot infer opcode suffix"); }
 		}
 	}
 
 #ifdef MCC_TARGET_X86_64
 	rex64 = 0;
 	if (pa->instr_type & OPC_48)
-		rex64 = 1;
+		{ MCC_TRACE("br\n"); rex64 = 1; }
 	else if (s == 3 || (alltypes & OP_REG64)) { MCC_TRACE("br\n");
 		int default64 = 0;
 		for (i = 0; i < nb_ops; i++) { MCC_TRACE("br\n");
@@ -842,14 +842,14 @@ again:
 					opcode != TOK_ASM_pushq && opcode != TOK_ASM_popw && opcode != TOK_ASM_popl && opcode != TOK_ASM_popq &&
 					opcode != TOK_ASM_call && opcode != TOK_ASM_jmp)) &&
 				!default64)
-			rex64 = 1;
+			{ MCC_TRACE("br\n"); rex64 = 1; }
 	}
 #endif
 
 	if (OPCT_IS(pa->instr_type, OPC_FWAIT))
-		g(0x9b);
+		{ MCC_TRACE("br\n"); g(0x9b); }
 	if (seg_prefix)
-		g(seg_prefix);
+		{ MCC_TRACE("br\n"); g(seg_prefix); }
 #ifdef MCC_TARGET_X86_64
 	for (i = 0; i < nb_ops; i++) { MCC_TRACE("br\n");
 		if (ops[i].type & OP_EA32) { MCC_TRACE("br\n");
@@ -860,14 +860,14 @@ again:
 #endif
 	p66 = 0;
 	if (s == 1)
-		p66 = 1;
+		{ MCC_TRACE("br\n"); p66 = 1; }
 	else { MCC_TRACE("br\n");
 		for (i = 0; i < nb_ops; i++)
 			if ((op_type[i] & (OP_MMX | OP_SSE)) == (OP_MMX | OP_SSE) && ops[i].type & OP_SSE)
-				p66 = 1;
+				{ MCC_TRACE("br\n"); p66 = 1; }
 	}
 	if (p66)
-		g(0x66);
+		{ MCC_TRACE("br\n"); g(0x66); }
 
 	v = pa->opcode;
 	p = v >> 8;
@@ -900,7 +900,7 @@ again:
 		break;
 	}
 	if (pa->instr_type & OPC_0F)
-		v = ((v & ~0xff) << 8) | 0x0f00 | (v & 0xff);
+		{ MCC_TRACE("br\n"); v = ((v & ~0xff) << 8) | 0x0f00 | (v & 0xff); }
 	if ((v == 0x69 || v == 0x6b) && nb_ops == 2) { MCC_TRACE("br\n");
 		nb_ops = 3;
 		ops[2] = ops[1];
@@ -929,24 +929,24 @@ again:
 			ops[i].type = OP_REG;
 #ifdef MCC_TARGET_X86_64
 			if (pa->sym == TOK_ASM_endbr64)
-				ops[i].reg = 2;
+				{ MCC_TRACE("br\n"); ops[i].reg = 2; }
 			else if (pa->sym >= TOK_ASM_lfence && pa->sym <= TOK_ASM_sfence)
-				ops[i].reg = 0;
+				{ MCC_TRACE("br\n"); ops[i].reg = 0; }
 #else
 			if (pa->sym == TOK_ASM_endbr32)
-				ops[i].reg = 3;
+				{ MCC_TRACE("br\n"); ops[i].reg = 3; }
 #endif
 			else
-				mcc_error("bad MODR/M opcode without operands");
+				{ MCC_TRACE("br\n"); mcc_error("bad MODR/M opcode without operands"); }
 			goto modrm_found;
 		}
 		for (i = 0; i < nb_ops; i++) { MCC_TRACE("br\n");
 			if (op_type[i] & OP_EA)
-				goto modrm_found;
+				{ MCC_TRACE("br\n"); goto modrm_found; }
 		}
 		for (i = 0; i < nb_ops; i++) { MCC_TRACE("br\n");
 			if (op_type[i] & (OP_REG | OP_MMX | OP_SSE | OP_INDIR))
-				goto modrm_found;
+				{ MCC_TRACE("br\n"); goto modrm_found; }
 		}
 		mcc_error("bad op table");
 	modrm_found:
@@ -966,7 +966,7 @@ again:
 
 	if (pa->instr_type & OPC_REG) { MCC_TRACE("br\n");
 		if (v == 0xb0 && s >= 1)
-			v += 7;
+			{ MCC_TRACE("br\n"); v += 7; }
 		for (i = 0; i < nb_ops; i++) { MCC_TRACE("br\n");
 			if (op_type[i] & (OP_REG | OP_ST)) { MCC_TRACE("br\n");
 				v += ops[i].reg;
@@ -975,14 +975,14 @@ again:
 		}
 	}
 	if (pa->instr_type & OPC_B)
-		v += s >= 1;
+		{ MCC_TRACE("br\n"); v += s >= 1; }
 	if (nb_ops == 1 && pa->op_type[0] == OPT_DISP8) { MCC_TRACE("br\n");
 		ElfSym *esym;
 		int jmp_disp;
 
 		esym = elfsym(ops[0].e.sym);
 		if (!esym || esym->st_shndx != cur_text_section->sh_num)
-			goto no_short_jump;
+			{ MCC_TRACE("br\n"); goto no_short_jump; }
 		jmp_disp = ops[0].e.v + esym->st_value - ind - 2 - (v >= 0xff);
 		if (jmp_disp == (int8_t)jmp_disp) { MCC_TRACE("br\n");
 			ops[0].e.sym = 0;
@@ -991,29 +991,29 @@ again:
 		} else { MCC_TRACE("br\n");
 		no_short_jump:
 			if (v == 0xeb)
-				v = 0xe9;
+				{ MCC_TRACE("br\n"); v = 0xe9; }
 			else if (v == 0x70)
-				v += 0x0f10;
+				{ MCC_TRACE("br\n"); v += 0x0f10; }
 			else
-				mcc_error("invalid displacement");
+				{ MCC_TRACE("br\n"); mcc_error("invalid displacement"); }
 		}
 	}
 	if (OPCT_IS(pa->instr_type, OPC_TEST))
-		v += test_bits[opcode - pa->sym];
+		{ MCC_TRACE("br\n"); v += test_bits[opcode - pa->sym]; }
 	else if (OPCT_IS(pa->instr_type, OPC_0F01))
-		v |= 0x0f0100;
+		{ MCC_TRACE("br\n"); v |= 0x0f0100; }
 	op1 = v >> 16;
 	if (op1)
-		g(op1);
+		{ MCC_TRACE("br\n"); g(op1); }
 	op1 = (v >> 8) & 0xff;
 	if (op1)
-		g(op1);
+		{ MCC_TRACE("br\n"); g(op1); }
 	g(v);
 
 	if (OPCT_IS(pa->instr_type, OPC_SHIFT)) { MCC_TRACE("br\n");
 		reg = (opcode - pa->sym) / NBWLX;
 		if (reg == 6)
-			reg = 7;
+			{ MCC_TRACE("br\n"); reg = 7; }
 	} else if (OPCT_IS(pa->instr_type, OPC_ARITH)) { MCC_TRACE("br\n");
 		reg = (opcode - pa->sym) / NBWLX;
 	} else if (OPCT_IS(pa->instr_type, OPC_FARITH)) { MCC_TRACE("br\n");
@@ -1025,7 +1025,7 @@ again:
 	pc = 0;
 	if (pa->instr_type & OPC_MODRM) { MCC_TRACE("br\n");
 		if (modreg_index >= 0)
-			reg = ops[modreg_index].reg;
+			{ MCC_TRACE("br\n"); reg = ops[modreg_index].reg; }
 		pc = asm_modrm(reg, &ops[modrm_index]);
 	}
 
@@ -1033,7 +1033,7 @@ again:
 	if (!(pa->instr_type & OPC_0F) && (pa->opcode == 0x9a || pa->opcode == 0xea)) { MCC_TRACE("br\n");
 		gen_expr32(&ops[1].e);
 		if (ops[0].e.sym)
-			mcc_error("cannot relocate");
+			{ MCC_TRACE("br\n"); mcc_error("cannot relocate"); }
 		gen_le16(ops[0].e.v);
 		return;
 	}
@@ -1043,17 +1043,17 @@ again:
 		if (v & (OP_IM8 | OP_IM16 | OP_IM32 | OP_IM64 | OP_IM8S | OP_ADDR)) { MCC_TRACE("br\n");
 			if ((v | OP_IM8 | OP_IM64) == (OP_IM8 | OP_IM16 | OP_IM32 | OP_IM64)) { MCC_TRACE("br\n");
 				if (s == 0)
-					v = OP_IM8;
+					{ MCC_TRACE("br\n"); v = OP_IM8; }
 				else if (s == 1)
-					v = OP_IM16;
+					{ MCC_TRACE("br\n"); v = OP_IM16; }
 				else if (s == 2 || (v & OP_IM64) == 0)
-					v = OP_IM32;
+					{ MCC_TRACE("br\n"); v = OP_IM32; }
 				else
-					v = OP_IM64;
+					{ MCC_TRACE("br\n"); v = OP_IM64; }
 			}
 
 			if ((v & (OP_IM8 | OP_IM8S | OP_IM16)) && ops[i].e.sym)
-				mcc_error("cannot relocate");
+				{ MCC_TRACE("br\n"); mcc_error("cannot relocate"); }
 
 			if (v & (OP_IM8 | OP_IM8S)) { MCC_TRACE("br\n");
 				g(ops[i].e.v);
@@ -1072,7 +1072,7 @@ again:
 	}
 
 	if (pc)
-		add32le(cur_text_section->data + pc - 4, pc - ind);
+		{ MCC_TRACE("br\n"); add32le(cur_text_section->data + pc - 4, pc - ind); }
 }
 
 static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
@@ -1082,7 +1082,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 	for (;;) { MCC_TRACE("br\n");
 		c = *str;
 		if (c == '\0')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		str++;
 		switch (c) { MCC_TRACE("br\n");
 		case 'A':
@@ -1119,7 +1119,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 			pr = 0;
 		}
 		if (pr > priority)
-			priority = pr;
+			{ MCC_TRACE("br\n"); priority = pr; }
 	}
 	return priority;
 }
@@ -1128,18 +1128,18 @@ ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	const char *s;
 	Operand op;
 	if (t < TOK_IDENT || (t & SYM_FIELD))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	s = table_ident[t - TOK_IDENT]->str;
 	if (s[0] == '%')
-		++s;
+		{ MCC_TRACE("br\n"); ++s; }
 	t = tok_alloc_const(s);
 	unget_tok(t);
 	unget_tok('%');
 	parse_operand(mcc_state, &op);
 	if (op.type & OP_REG)
-		return op.reg;
+		{ MCC_TRACE("br\n"); return op.reg; }
 	else
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 }
 
 #define REG_OUT_MASK 0x01
@@ -1169,7 +1169,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		op = &operands[j];
 		str = op->constraint;
 		if (op->ref_index >= 0)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		if (op->input_index >= 0) { MCC_TRACE("br\n");
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 		} else if (j < nb_outputs) { MCC_TRACE("br\n");
@@ -1179,7 +1179,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		}
 		if (op->reg >= 0) { MCC_TRACE("br\n");
 			if (is_reg_allocated(op->reg))
-				mcc_error("asm regvar requests register that's taken already");
+				{ MCC_TRACE("br\n"); mcc_error("asm regvar requests register that's taken already"); }
 			reg = op->reg;
 		}
 	try_next:
@@ -1192,20 +1192,20 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			FALLTHROUGH;
 		case '&':
 			if (j >= nb_outputs)
-				mcc_error("'%c' modifier can only be applied to outputs", c);
+				{ MCC_TRACE("br\n"); mcc_error("'%c' modifier can only be applied to outputs", c); }
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 			goto try_next;
 		case 'A':
 #ifdef MCC_TARGET_X86_64
 			if (is_reg_allocated(MCC_TREG_XAX))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			op->is_llong = 0;
 			op->reg = MCC_TREG_XAX;
 			regs_allocated[MCC_TREG_XAX] |= reg_mask;
 #else
 			if (is_reg_allocated(MCC_TREG_XAX) ||
 					is_reg_allocated(MCC_TREG_XDX))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			op->is_llong = 1;
 			op->reg = MCC_TREG_XAX;
 			regs_allocated[MCC_TREG_XAX] |= reg_mask;
@@ -1231,31 +1231,31 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			reg = 7;
 		alloc_reg:
 			if (op->reg >= 0 && reg != op->reg)
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (is_reg_allocated(reg))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			goto reg_found;
 		case 'q':
 		case 'Q':
 			if (op->reg >= 0) { MCC_TRACE("br\n");
 				if ((reg = op->reg) < 4)
-					goto reg_found;
+					{ MCC_TRACE("br\n"); goto reg_found; }
 			} else
-				for (reg = 0; reg < 4; reg++) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); for (reg = 0; reg < 4; reg++) { MCC_TRACE("br\n");
 					if (!is_reg_allocated(reg))
-						goto reg_found;
-				}
+						{ MCC_TRACE("br\n"); goto reg_found; }
+				} }
 			goto try_next;
 		case 'r':
 		case 'R':
 		case 'p':
 			if ((reg = op->reg) >= 0)
-				goto reg_found;
+				{ MCC_TRACE("br\n"); goto reg_found; }
 			else
-				for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) { MCC_TRACE("br\n");
 					if (!is_reg_allocated(reg))
-						goto reg_found;
-				}
+						{ MCC_TRACE("br\n"); goto reg_found; }
+				} }
 			goto try_next;
 		reg_found:
 			op->is_llong = 0;
@@ -1265,13 +1265,13 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		case 'e':
 		case 'i':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'I':
 		case 'N':
 		case 'M':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'm':
 		case 'g':
@@ -1279,7 +1279,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
 					for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) { MCC_TRACE("br\n");
 						if (!(regs_allocated[reg] & REG_IN_MASK))
-							goto reg_found1;
+							{ MCC_TRACE("br\n"); goto reg_found1; }
 					}
 					goto try_next;
 				reg_found1:
@@ -1308,7 +1308,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 				!op->is_memory) { MCC_TRACE("br\n");
 			for (reg = 0; reg < MCC_NB_ASM_REGS; reg++) { MCC_TRACE("br\n");
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
-					goto reg_found2;
+					{ MCC_TRACE("br\n"); goto reg_found2; }
 			}
 			mcc_error("could not find free output register for reloading");
 		reg_found2:
@@ -1329,7 +1329,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 						 op->reg);
 		}
 		if (*pout_reg >= 0)
-			printf("out_reg=%d\n", *pout_reg);
+			{ MCC_TRACE("br\n"); printf("out_reg=%d\n", *pout_reg); }
 	}
 }
 
@@ -1341,62 +1341,62 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 	if ((r & VT_VALMASK) == VT_CONST) { MCC_TRACE("br\n");
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
 				modifier != 'P')
-			cstr_ccat(add_str, '$');
+			{ MCC_TRACE("br\n"); cstr_ccat(add_str, '$'); }
 		if (r & VT_SYM) { MCC_TRACE("br\n");
 			const char *name = get_tok_str(sv->sym->v, NULL);
 			if (sv->sym->v >= SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 				get_asm_sym(tok_alloc_const(name), sv->sym);
 			}
 			if (mcc_state->leading_underscore)
-				cstr_ccat(add_str, '_');
+				{ MCC_TRACE("br\n"); cstr_ccat(add_str, '_'); }
 			cstr_cat(add_str, name, -1);
 			if ((uint32_t)sv->c.i == 0)
-				goto no_offset;
+				{ MCC_TRACE("br\n"); goto no_offset; }
 			cstr_ccat(add_str, '+');
 		}
 		val = sv->c.i;
 		if (modifier == 'n')
-			val = -val;
+			{ MCC_TRACE("br\n"); val = -val; }
 		cstr_printf(add_str, "%d", (int)sv->c.i);
 	no_offset:;
 #ifdef MCC_TARGET_X86_64
 		if (r & VT_LVAL)
-			cstr_cat(add_str, "(%rip)", -1);
+			{ MCC_TRACE("br\n"); cstr_cat(add_str, "(%rip)", -1); }
 #endif
 	} else if ((r & VT_VALMASK) == VT_LOCAL) { MCC_TRACE("br\n");
 		cstr_printf(add_str, "%d(%%%s)", (int)sv->c.i, get_tok_str(TOK_ASM_xax + 5, NULL));
 	} else if (r & VT_LVAL) { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
-			mcc_internal_error("");
+			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 		cstr_printf(add_str, "(%%%s)", get_tok_str(TOK_ASM_xax + reg, NULL));
 	} else { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
-			mcc_internal_error("");
+			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 
 		if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
 				(sv->type.t & VT_BTYPE) == VT_BOOL)
-			size = 1;
+			{ MCC_TRACE("br\n"); size = 1; }
 		else if ((sv->type.t & VT_BTYPE) == VT_SHORT)
-			size = 2;
+			{ MCC_TRACE("br\n"); size = 2; }
 #ifdef MCC_TARGET_X86_64
 		else if ((sv->type.t & VT_BTYPE) == VT_LLONG ||
 						 (sv->type.t & VT_BTYPE) == VT_PTR)
-			size = 8;
+			{ MCC_TRACE("br\n"); size = 8; }
 #endif
 		else
-			size = 4;
+			{ MCC_TRACE("br\n"); size = 4; }
 		if (size == 1 && reg >= 4)
-			size = 4;
+			{ MCC_TRACE("br\n"); size = 4; }
 
 		if (modifier == 'b') { MCC_TRACE("br\n");
 			if (reg >= 4)
-				mcc_error("cannot use byte register");
+				{ MCC_TRACE("br\n"); mcc_error("cannot use byte register"); }
 			size = 1;
 		} else if (modifier == 'h') { MCC_TRACE("br\n");
 			if (reg >= 4)
-				mcc_error("cannot use byte register");
+				{ MCC_TRACE("br\n"); mcc_error("cannot use byte register"); }
 			size = -1;
 		} else if (modifier == 'w') { MCC_TRACE("br\n");
 			size = 2;
@@ -1457,14 +1457,14 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		op = &operands[i];
 		if (op->reg >= 0)
-			regs_allocated[op->reg] = 1;
+			{ MCC_TRACE("br\n"); regs_allocated[op->reg] = 1; }
 	}
 	if (!is_output) { MCC_TRACE("br\n");
 		for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) { MCC_TRACE("br\n");
 			reg = reg_saved[i];
 			if (regs_allocated[reg]) { MCC_TRACE("br\n");
 				if (reg >= 8)
-					g(0x41), reg -= 8;
+					{ MCC_TRACE("br\n"); g(0x41), reg -= 8; }
 				g(0x50 + reg);
 			}
 		}
@@ -1521,7 +1521,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			reg = reg_saved[i];
 			if (regs_allocated[reg]) { MCC_TRACE("br\n");
 				if (reg >= 8)
-					g(0x41), reg -= 8;
+					{ MCC_TRACE("br\n"); g(0x41), reg -= 8; }
 				g(0x58 + reg);
 			}
 		}
@@ -1537,7 +1537,7 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 	if (!strcmp(str, "memory") ||
 			!strcmp(str, "cc") ||
 			!strcmp(str, "flags"))
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	reg = tok_alloc_const(str);
 	if (reg >= TOK_ASM_eax && reg <= TOK_ASM_edi) { MCC_TRACE("br\n");
 		reg -= TOK_ASM_eax;

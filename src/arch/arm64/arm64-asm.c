@@ -101,58 +101,58 @@ ST_FUNC void gen_le32(int c) { MCC_TRACE("enter\n");
 ST_FUNC void gen_expr32(ExprValue *pe) { MCC_TRACE("enter\n");
 	uint32_t v = pe->v;
 	if (pe->sym)
-		greloca(cur_text_section, pe->sym, ind, R_DATA_32, v), v = 0;
+		{ MCC_TRACE("br\n"); greloca(cur_text_section, pe->sym, ind, R_DATA_32, v), v = 0; }
 	gen_le32(v);
 }
 
 static void emit_instr32(uint32_t val) { MCC_TRACE("enter\n");
 	if (nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (ind + 4 > cur_text_section->data_allocated)
-		section_realloc(cur_text_section, ind + 4);
+		{ MCC_TRACE("br\n"); section_realloc(cur_text_section, ind + 4); }
 	write32le(cur_text_section->data + ind, val);
 	ind += 4;
 }
 
 static int arm64_parse_asm_reg(int t) { MCC_TRACE("enter\n");
 	if (t >= TOK_ASM_x0 && t <= TOK_ASM_x30)
-		return t - TOK_ASM_x0;
+		{ MCC_TRACE("br\n"); return t - TOK_ASM_x0; }
 	if (t >= TOK_ASM_w0 && t <= TOK_ASM_w30)
-		return t - TOK_ASM_w0;
+		{ MCC_TRACE("br\n"); return t - TOK_ASM_w0; }
 	if (t >= TOK_ASM_v0 && t <= TOK_ASM_v31)
-		return (t - TOK_ASM_v0) + 32;
+		{ MCC_TRACE("br\n"); return (t - TOK_ASM_v0) + 32; }
 	if (t >= TOK_ASM_d0 && t <= TOK_ASM_d31)
-		return (t - TOK_ASM_d0) + 32;
+		{ MCC_TRACE("br\n"); return (t - TOK_ASM_d0) + 32; }
 	if (t >= TOK_ASM_s0 && t <= TOK_ASM_s31)
-		return (t - TOK_ASM_s0) + 32;
+		{ MCC_TRACE("br\n"); return (t - TOK_ASM_s0) + 32; }
 	if (t >= TOK_ASM_h0 && t <= TOK_ASM_h31)
-		return (t - TOK_ASM_h0) + 32;
+		{ MCC_TRACE("br\n"); return (t - TOK_ASM_h0) + 32; }
 	if (t >= TOK_ASM_b0 && t <= TOK_ASM_b31)
-		return (t - TOK_ASM_b0) + 32;
+		{ MCC_TRACE("br\n"); return (t - TOK_ASM_b0) + 32; }
 	if (t == TOK_ASM_sp || t == TOK_ASM_xzr || t == TOK_ASM_wzr)
-		return 31;
+		{ MCC_TRACE("br\n"); return 31; }
 	return -1;
 }
 
 static uint8_t get_reg_type(int t) { MCC_TRACE("enter\n");
 	if (t >= TOK_ASM_x0 && t <= TOK_ASM_x30)
-		return REG_X;
+		{ MCC_TRACE("br\n"); return REG_X; }
 	if (t >= TOK_ASM_w0 && t <= TOK_ASM_w30)
-		return REG_W;
+		{ MCC_TRACE("br\n"); return REG_W; }
 	if (t >= TOK_ASM_v0 && t <= TOK_ASM_v31)
-		return REG_V;
+		{ MCC_TRACE("br\n"); return REG_V; }
 	if (t >= TOK_ASM_d0 && t <= TOK_ASM_d31)
-		return REG_D;
+		{ MCC_TRACE("br\n"); return REG_D; }
 	if (t >= TOK_ASM_s0 && t <= TOK_ASM_s31)
-		return REG_S;
+		{ MCC_TRACE("br\n"); return REG_S; }
 	if (t >= TOK_ASM_h0 && t <= TOK_ASM_h31)
-		return REG_H;
+		{ MCC_TRACE("br\n"); return REG_H; }
 	if (t >= TOK_ASM_b0 && t <= TOK_ASM_b31)
-		return REG_B;
+		{ MCC_TRACE("br\n"); return REG_B; }
 	if (t == TOK_ASM_sp || t == TOK_ASM_xzr)
-		return REG_X;
+		{ MCC_TRACE("br\n"); return REG_X; }
 	if (t == TOK_ASM_wzr)
-		return REG_W;
+		{ MCC_TRACE("br\n"); return REG_W; }
 	return REG_X;
 }
 
@@ -199,48 +199,48 @@ static int parse_barrier_option_name(int t) { MCC_TRACE("enter\n");
 	const char *name;
 
 	if (t < TOK_IDENT)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	name = get_tok_str(t, NULL);
 	if (!strcmp(name, "oshld"))
-		return 0x1;
+		{ MCC_TRACE("br\n"); return 0x1; }
 	if (!strcmp(name, "oshst"))
-		return 0x2;
+		{ MCC_TRACE("br\n"); return 0x2; }
 	if (!strcmp(name, "osh"))
-		return 0x3;
+		{ MCC_TRACE("br\n"); return 0x3; }
 	if (!strcmp(name, "nshld"))
-		return 0x5;
+		{ MCC_TRACE("br\n"); return 0x5; }
 	if (!strcmp(name, "nshst"))
-		return 0x6;
+		{ MCC_TRACE("br\n"); return 0x6; }
 	if (!strcmp(name, "nsh"))
-		return 0x7;
+		{ MCC_TRACE("br\n"); return 0x7; }
 	if (!strcmp(name, "ishld"))
-		return 0x9;
+		{ MCC_TRACE("br\n"); return 0x9; }
 	if (!strcmp(name, "ishst"))
-		return 0xA;
+		{ MCC_TRACE("br\n"); return 0xA; }
 	if (!strcmp(name, "ish"))
-		return 0xB;
+		{ MCC_TRACE("br\n"); return 0xB; }
 	if (!strcmp(name, "ld"))
-		return 0xD;
+		{ MCC_TRACE("br\n"); return 0xD; }
 	if (!strcmp(name, "st"))
-		return 0xE;
+		{ MCC_TRACE("br\n"); return 0xE; }
 	if (!strcmp(name, "sy"))
-		return 0xF;
+		{ MCC_TRACE("br\n"); return 0xF; }
 	return -1;
 }
 
 static int arm64_parse_regvar(int t) { MCC_TRACE("enter\n");
 	if (t >= TOK_ASM_x0 && t <= TOK_ASM_x30)
-		return t - TOK_ASM_x0;
+		{ MCC_TRACE("br\n"); return t - TOK_ASM_x0; }
 	if (t >= TOK_ASM_v0 && t <= TOK_ASM_v7)
-		return ARM64_FREG_BASE + (t - TOK_ASM_v0);
+		{ MCC_TRACE("br\n"); return ARM64_FREG_BASE + (t - TOK_ASM_v0); }
 	if (t >= TOK_ASM_d0 && t <= TOK_ASM_d7)
-		return ARM64_FREG_BASE + (t - TOK_ASM_d0);
+		{ MCC_TRACE("br\n"); return ARM64_FREG_BASE + (t - TOK_ASM_d0); }
 	if (t >= TOK_ASM_s0 && t <= TOK_ASM_s7)
-		return ARM64_FREG_BASE + (t - TOK_ASM_s0);
+		{ MCC_TRACE("br\n"); return ARM64_FREG_BASE + (t - TOK_ASM_s0); }
 	if (t >= TOK_ASM_h0 && t <= TOK_ASM_h7)
-		return ARM64_FREG_BASE + (t - TOK_ASM_h0);
+		{ MCC_TRACE("br\n"); return ARM64_FREG_BASE + (t - TOK_ASM_h0); }
 	if (t >= TOK_ASM_b0 && t <= TOK_ASM_b7)
-		return ARM64_FREG_BASE + (t - TOK_ASM_b0);
+		{ MCC_TRACE("br\n"); return ARM64_FREG_BASE + (t - TOK_ASM_b0); }
 	return -1;
 }
 
@@ -249,21 +249,21 @@ static int parse_reloc_spec(void) { MCC_TRACE("enter\n");
 	int spec = RS_NONE;
 
 	if (tok != ':')
-		return RS_NONE;
+		{ MCC_TRACE("br\n"); return RS_NONE; }
 	next();
 	if (tok < TOK_IDENT)
-		return RS_NONE;
+		{ MCC_TRACE("br\n"); return RS_NONE; }
 	name = get_tok_str(tok, NULL);
 	if (!strcmp(name, "got"))
-		spec = RS_GOT;
+		{ MCC_TRACE("br\n"); spec = RS_GOT; }
 	else if (!strcmp(name, "lo12"))
-		spec = RS_LO12;
+		{ MCC_TRACE("br\n"); spec = RS_LO12; }
 	else if (!strcmp(name, "got_lo12"))
-		spec = RS_GOT_LO12;
+		{ MCC_TRACE("br\n"); spec = RS_GOT_LO12; }
 	else if (!strcmp(name, "tprel_hi12"))
-		spec = RS_TPREL_HI12;
+		{ MCC_TRACE("br\n"); spec = RS_TPREL_HI12; }
 	else if (!strcmp(name, "tprel_lo12"))
-		spec = RS_TPREL_LO12;
+		{ MCC_TRACE("br\n"); spec = RS_TPREL_LO12; }
 	if (spec != RS_NONE) { MCC_TRACE("br\n");
 		next();
 		skip(':');
@@ -308,7 +308,7 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 
 	if (tok == '#' || tok == ':' || tok == '@' || tok == '$') { MCC_TRACE("br\n");
 		if (tok != ':')
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		op->reloc_spec = parse_reloc_spec();
 		asm_expr(s1, &op->e);
 		op->type = OP_IM;
@@ -331,7 +331,7 @@ static void parse_expr_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n")
 	op->reg_tok = 0;
 
 	if (tok == '#' || tok == '@' || tok == '$')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	op->reloc_spec = parse_reloc_spec();
 	asm_expr(s1, &op->e);
 }
@@ -360,7 +360,7 @@ static void parse_addr_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n")
 	if (tok == ',') { MCC_TRACE("br\n");
 		next();
 		if (tok == '#' || tok == '@' || tok == '$')
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		op->reloc_spec = parse_reloc_spec();
 		asm_expr(s1, &op->e);
 	}
@@ -372,7 +372,7 @@ static void parse_addr_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n")
 		op->addr_mode = ADDR_POST;
 		next();
 		if (tok == '#' || tok == '@' || tok == '$')
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		asm_expr(s1, &op->e);
 	}
 }
@@ -381,7 +381,7 @@ static void gen_mov_with_base(int rd, uint16_t imm, int shift,
 															int is_64bit, uint32_t base_opcode) { MCC_TRACE("enter\n");
 	uint32_t instr = base_opcode;
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	instr |= ARM64_IMM_HW(imm, shift);
 	instr |= ARM64_RD(rd);
 	emit_instr32(instr);
@@ -404,9 +404,9 @@ static void gen_add_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
 	uint32_t imm12;
 
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	if (setflags)
-		instr |= ARM64_S(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_S(1); }
 
 	if (imm <= 0xFFF) { MCC_TRACE("br\n");
 		imm12 = imm;
@@ -429,9 +429,9 @@ static void gen_sub_imm(int rd, int rn, uint32_t imm, int is_64bit, int setflags
 	uint32_t imm12;
 
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	if (setflags)
-		instr |= ARM64_S(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_S(1); }
 
 	if (imm <= 0xFFF) { MCC_TRACE("br\n");
 		imm12 = imm;
@@ -473,7 +473,7 @@ static void gen_add_reloc_imm(int rd, int rn, Operand *op, int is_64bit) { MCC_T
 		return;
 	}
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	emit_instr32(instr);
 	greloca(cur_text_section, op->e.sym, ind - 4, rtype, op->e.v);
 }
@@ -481,7 +481,7 @@ static void gen_add_reloc_imm(int rd, int rn, Operand *op, int is_64bit) { MCC_T
 static void gen_dp_reg(uint32_t opcode, int rd, int rn, int rm, int is_64bit) { MCC_TRACE("enter\n");
 	uint32_t instr = opcode;
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	instr |= ARM64_RM(rm);
 	instr |= ARM64_RN(rn);
 	instr |= ARM64_RD(rd);
@@ -548,7 +548,7 @@ static void gen_ldst_imm(uint32_t base_opcode, int rt, int rn,
 	}
 
 	if (offset & ((1 << size_log2) - 1))
-		mcc_error("invalid load/store offset");
+		{ MCC_TRACE("br\n"); mcc_error("invalid load/store offset"); }
 	mcc_error("load/store offset out of range");
 }
 
@@ -588,10 +588,10 @@ static void gen_ldst_pair(uint32_t base_opcode, int rt, int rt2, int rn,
 	uint32_t instr = base_opcode;
 
 	if (offset & ((1 << size_log2) - 1))
-		mcc_error("invalid pair load/store offset");
+		{ MCC_TRACE("br\n"); mcc_error("invalid pair load/store offset"); }
 	imm7 = offset >> size_log2;
 	if (imm7 < -64 || imm7 > 63)
-		mcc_error("pair load/store offset out of range");
+		{ MCC_TRACE("br\n"); mcc_error("pair load/store offset out of range"); }
 
 	instr |= ARM64_IMM7(imm7);
 	instr |= ARM64_RT2(rt2);
@@ -642,7 +642,7 @@ static void gen_b_cond(int cond, int32_t offset) { MCC_TRACE("enter\n");
 static void gen_cbz_or_cbnz(int rt, int32_t offset, int is_64bit, uint32_t base_opcode) { MCC_TRACE("enter\n");
 	uint32_t instr = base_opcode;
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	instr |= ARM64_OFFSET19(offset);
 	instr |= ARM64_RT(rt);
 	emit_instr32(instr);
@@ -659,7 +659,7 @@ static void gen_cbnz(int rt, int32_t offset, int is_64bit) { MCC_TRACE("enter\n"
 static void gen_mov_reg(int rd, int rm, int is_64bit) { MCC_TRACE("enter\n");
 	uint32_t instr = ARM64_MOV_REG;
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	instr |= ARM64_RM(rm);
 	instr |= ARM64_RD(rd);
 	emit_instr32(instr);
@@ -670,53 +670,53 @@ static int arm64_asm_encode_bimm64(uint64_t x) { MCC_TRACE("enter\n");
 
 	neg = x & 1;
 	if (neg)
-		x = ~x;
+		{ MCC_TRACE("br\n"); x = ~x; }
 	if (!x)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 
 	if (x >> 2 == (x & ((((uint64_t)1) << (64 - 2)) - 1)))
-		rep = 2, x &= (((uint64_t)1) << 2) - 1;
+		{ MCC_TRACE("br\n"); rep = 2, x &= (((uint64_t)1) << 2) - 1; }
 	else if (x >> 4 == (x & ((((uint64_t)1) << (64 - 4)) - 1)))
-		rep = 4, x &= (((uint64_t)1) << 4) - 1;
+		{ MCC_TRACE("br\n"); rep = 4, x &= (((uint64_t)1) << 4) - 1; }
 	else if (x >> 8 == (x & ((((uint64_t)1) << (64 - 8)) - 1)))
-		rep = 8, x &= (((uint64_t)1) << 8) - 1;
+		{ MCC_TRACE("br\n"); rep = 8, x &= (((uint64_t)1) << 8) - 1; }
 	else if (x >> 16 == (x & ((((uint64_t)1) << (64 - 16)) - 1)))
-		rep = 16, x &= (((uint64_t)1) << 16) - 1;
+		{ MCC_TRACE("br\n"); rep = 16, x &= (((uint64_t)1) << 16) - 1; }
 	else if (x >> 32 == (x & ((((uint64_t)1) << (64 - 32)) - 1)))
-		rep = 32, x &= (((uint64_t)1) << 32) - 1;
+		{ MCC_TRACE("br\n"); rep = 32, x &= (((uint64_t)1) << 32) - 1; }
 	else
-		rep = 64;
+		{ MCC_TRACE("br\n"); rep = 64; }
 
 	pos = 0;
 	if (!(x & ((((uint64_t)1) << 32) - 1)))
-		x >>= 32, pos += 32;
+		{ MCC_TRACE("br\n"); x >>= 32, pos += 32; }
 	if (!(x & ((((uint64_t)1) << 16) - 1)))
-		x >>= 16, pos += 16;
+		{ MCC_TRACE("br\n"); x >>= 16, pos += 16; }
 	if (!(x & ((((uint64_t)1) << 8) - 1)))
-		x >>= 8, pos += 8;
+		{ MCC_TRACE("br\n"); x >>= 8, pos += 8; }
 	if (!(x & ((((uint64_t)1) << 4) - 1)))
-		x >>= 4, pos += 4;
+		{ MCC_TRACE("br\n"); x >>= 4, pos += 4; }
 	if (!(x & ((((uint64_t)1) << 2) - 1)))
-		x >>= 2, pos += 2;
+		{ MCC_TRACE("br\n"); x >>= 2, pos += 2; }
 	if (!(x & ((((uint64_t)1) << 1) - 1)))
-		x >>= 1, pos += 1;
+		{ MCC_TRACE("br\n"); x >>= 1, pos += 1; }
 
 	len = 0;
 	if (!(~x & ((((uint64_t)1) << 32) - 1)))
-		x >>= 32, len += 32;
+		{ MCC_TRACE("br\n"); x >>= 32, len += 32; }
 	if (!(~x & ((((uint64_t)1) << 16) - 1)))
-		x >>= 16, len += 16;
+		{ MCC_TRACE("br\n"); x >>= 16, len += 16; }
 	if (!(~x & ((((uint64_t)1) << 8) - 1)))
-		x >>= 8, len += 8;
+		{ MCC_TRACE("br\n"); x >>= 8, len += 8; }
 	if (!(~x & ((((uint64_t)1) << 4) - 1)))
-		x >>= 4, len += 4;
+		{ MCC_TRACE("br\n"); x >>= 4, len += 4; }
 	if (!(~x & ((((uint64_t)1) << 2) - 1)))
-		x >>= 2, len += 2;
+		{ MCC_TRACE("br\n"); x >>= 2, len += 2; }
 	if (!(~x & ((((uint64_t)1) << 1) - 1)))
-		x >>= 1, len += 1;
+		{ MCC_TRACE("br\n"); x >>= 1, len += 1; }
 
 	if (x)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (neg) { MCC_TRACE("br\n");
 		pos = (pos + len) & (rep - 1);
 		len = rep - len;
@@ -732,7 +732,7 @@ static void gen_logical_imm(uint32_t opcode, int rd, int rn,
 	int enc;
 
 	if (is_64bit)
-		val = imm;
+		{ MCC_TRACE("br\n"); val = imm; }
 	else { MCC_TRACE("br\n");
 		val = (uint32_t)imm;
 		val |= val << 32;
@@ -746,7 +746,7 @@ static void gen_logical_imm(uint32_t opcode, int rd, int rn,
 
 	instr = opcode;
 	if (is_64bit)
-		instr |= ARM64_SF(1);
+		{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 	instr |= ARM64_N(enc >> 12);
 	instr |= ARM64_IMM_R(enc >> 6);
 	instr |= ARM64_IMM_S(enc);
@@ -762,7 +762,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 	for (;;) { MCC_TRACE("br\n");
 		c = *str++;
 		if (c == '\0')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		switch (c) { MCC_TRACE("br\n");
 		case '=':
 		case '+':
@@ -815,7 +815,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 			break;
 		}
 		if (pr > priority)
-			priority = pr;
+			{ MCC_TRACE("br\n"); priority = pr; }
 	}
 	return priority;
 }
@@ -839,22 +839,22 @@ static int is_valid_movw_imm(int64_t val) { MCC_TRACE("enter\n");
 	uint64_t uval = (uint64_t)val;
 
 	if (uval <= 0xFFFF)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if (uval >= 0xFFFF0000 && (uval & 0xFFFF) == 0)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if (uval >= 0xFFFF00000000ULL && (uval & 0xFFFFFFFFULL) == 0)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if ((uval & 0xFFFFFFFF00000000ULL) == 0)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 
 	return 0;
 }
 
 static int is_valid_movw_shift(int shift, int is_64bit) { MCC_TRACE("enter\n");
 	if (shift < 0 || (shift & 15))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (shift > (is_64bit ? 48 : 16))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	return 1;
 }
 
@@ -863,13 +863,13 @@ static int arm64_memory_is_base_only(const SValue *sv) { MCC_TRACE("enter\n");
 
 	r = sv->r;
 	if ((r & VT_VALMASK) == VT_CONST)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if ((r & VT_VALMASK) == VT_LOCAL)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if ((r & VT_VALMASK) == VT_LLOCAL)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if (r & VT_LVAL)
-		return (r & VT_VALMASK) < VT_CONST;
+		{ MCC_TRACE("br\n"); return (r & VT_VALMASK) < VT_CONST; }
 	return 0;
 }
 
@@ -877,9 +877,9 @@ static int arm64_memory_is_pair_suitable(const SValue *sv) { MCC_TRACE("enter\n"
 	int64_t offset;
 
 	if (arm64_memory_is_base_only(sv))
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if ((sv->r & VT_VALMASK) != VT_LOCAL)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	offset = (int64_t)sv->c.i;
 	return (offset & 7) == 0 && offset >= -512 && offset <= 504;
@@ -898,7 +898,7 @@ static int arm64_memory_needs_address_reg(const SValue *sv) { MCC_TRACE("enter\n
 
 	r = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL);
 	if (!(r & VT_LVAL))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	switch (r & VT_VALMASK) { MCC_TRACE("br\n");
 	case VT_LOCAL:
 	case VT_LLOCAL:
@@ -910,7 +910,7 @@ static int arm64_memory_needs_address_reg(const SValue *sv) { MCC_TRACE("enter\n
 
 static int arm64_prepare_memory_operand(ASMOperand *op, uint8_t *regs_allocated) { MCC_TRACE("enter\n");
 	if (!arm64_memory_needs_address_reg(op->vt))
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 
 	for (int reg = 0; reg < 31; reg++) { MCC_TRACE("br\n");
 		if (arm64_int_reg_is_allocatable(reg) && !(regs_allocated[reg] & REG_IN_MASK)) { MCC_TRACE("br\n");
@@ -948,12 +948,12 @@ static int parse_sysreg_name(int t) { MCC_TRACE("enter\n");
 	const char *name;
 
 	if (t < TOK_IDENT)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	name = get_tok_str(t, NULL);
 	if (!strcmp(name, "FPCR") || !strcmp(name, "fpcr"))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!strcmp(name, "FPSR") || !strcmp(name, "fpsr"))
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	return -1;
 }
 
@@ -1066,7 +1066,7 @@ static void gen_shift(int rd, int rn, int rm_or_imm, int shift_type, int is_imm,
 			return;
 		}
 		if (is_64bit)
-			instr |= ARM64_SF(1);
+			{ MCC_TRACE("br\n"); instr |= ARM64_SF(1); }
 		instr |= ARM64_RM(rm_or_imm);
 		instr |= ARM64_RN(rn);
 		instr |= ARM64_RD(rd);
@@ -1100,7 +1100,7 @@ static void asm_shift(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op2);
 
 	if (!(op1.type & OP_REG)) { MCC_TRACE("br\n");
@@ -1230,7 +1230,7 @@ static void asm_mov(MCCState *s1) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op2);
 	rd = op1.reg;
 	is_64bit = (op1.reg_type & REG_X);
@@ -1244,9 +1244,9 @@ static void asm_mov(MCCState *s1) { MCC_TRACE("enter\n");
 	} else if (op2.type & OP_REG) { MCC_TRACE("br\n");
 		rn = op2.reg;
 		if (operand_is_sp(&op1) || operand_is_sp(&op2))
-			gen_add_imm(rd, rn, 0, 1, 0);
+			{ MCC_TRACE("br\n"); gen_add_imm(rd, rn, 0, 1, 0); }
 		else
-			gen_mov_reg(rd, rn, is_64bit);
+			{ MCC_TRACE("br\n"); gen_mov_reg(rd, rn, is_64bit); }
 	} else { MCC_TRACE("br\n");
 		mcc_error("invalid operand for mov");
 	}
@@ -1287,7 +1287,7 @@ static void asm_data_proc(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op2);
 
 	if (!(op1.type & OP_REG)) { MCC_TRACE("br\n");
@@ -1313,25 +1313,25 @@ static void asm_data_proc(MCCState *s1, int token) { MCC_TRACE("enter\n");
 		if (op3.type & OP_IM) { MCC_TRACE("br\n");
 			if (op3.reloc_spec) { MCC_TRACE("br\n");
 				if (token == TOK_ASM_add)
-					gen_add_reloc_imm(rd, rn, &op3, is_64bit);
+					{ MCC_TRACE("br\n"); gen_add_reloc_imm(rd, rn, &op3, is_64bit); }
 				else
-					mcc_error("relocated immediate only valid for add");
+					{ MCC_TRACE("br\n"); mcc_error("relocated immediate only valid for add"); }
 			} else if (token == TOK_ASM_add || token == TOK_ASM_adds)
-				gen_add_imm(rd, rn, op3.e.v, is_64bit,
-										token == TOK_ASM_adds);
+				{ MCC_TRACE("br\n"); gen_add_imm(rd, rn, op3.e.v, is_64bit,
+										token == TOK_ASM_adds); }
 			else if (token == TOK_ASM_sub || token == TOK_ASM_subs)
-				gen_sub_imm(rd, rn, op3.e.v, is_64bit,
-										token == TOK_ASM_subs);
+				{ MCC_TRACE("br\n"); gen_sub_imm(rd, rn, op3.e.v, is_64bit,
+										token == TOK_ASM_subs); }
 			else if (token == TOK_ASM_and)
-				gen_logical_imm(ARM64_AND_IMM, rd, rn, op3.e.v, is_64bit);
+				{ MCC_TRACE("br\n"); gen_logical_imm(ARM64_AND_IMM, rd, rn, op3.e.v, is_64bit); }
 			else if (token == TOK_ASM_ands)
-				gen_logical_imm(ARM64_ANDS_IMM, rd, rn, op3.e.v, is_64bit);
+				{ MCC_TRACE("br\n"); gen_logical_imm(ARM64_ANDS_IMM, rd, rn, op3.e.v, is_64bit); }
 			else if (token == TOK_ASM_orr)
-				gen_logical_imm(ARM64_ORR_IMM_BASE, rd, rn, op3.e.v, is_64bit);
+				{ MCC_TRACE("br\n"); gen_logical_imm(ARM64_ORR_IMM_BASE, rd, rn, op3.e.v, is_64bit); }
 			else if (token == TOK_ASM_eor)
-				gen_logical_imm(ARM64_EOR_IMM, rd, rn, op3.e.v, is_64bit);
+				{ MCC_TRACE("br\n"); gen_logical_imm(ARM64_EOR_IMM, rd, rn, op3.e.v, is_64bit); }
 			else
-				mcc_error("immediate operand not valid for this instruction");
+				{ MCC_TRACE("br\n"); mcc_error("immediate operand not valid for this instruction"); }
 		} else { MCC_TRACE("br\n");
 			if (!(op3.type & OP_REG)) { MCC_TRACE("br\n");
 				mcc_error("expected register in third operand");
@@ -1360,7 +1360,7 @@ static void asm_ldst(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op2);
 
 	if (!(op1.type & OP_REG)) { MCC_TRACE("br\n");
@@ -1429,7 +1429,7 @@ static void asm_ldst(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	}
 
 	if (op2.addr_mode != ADDR_OFF)
-		mcc_error("only offset addressing is implemented for ldr/str");
+		{ MCC_TRACE("br\n"); mcc_error("only offset addressing is implemented for ldr/str"); }
 	if (op2.reloc_spec) { MCC_TRACE("br\n");
 		gen_ldst_reloc_imm(base_opcode, rt, &op2, size_log2);
 		return;
@@ -1443,7 +1443,7 @@ static void asm_adrp(MCCState *s1) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_expr_operand(s1, &op2);
 
 	if (!(op1.type & OP_REG) || !(op1.reg_type & REG_X)) { MCC_TRACE("br\n");
@@ -1476,10 +1476,10 @@ static void asm_ldst_pair(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op2);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op3);
 
 	if (!(op1.type & OP_REG)) { MCC_TRACE("br\n");
@@ -1491,7 +1491,7 @@ static void asm_ldst_pair(MCCState *s1, int token) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (!(op3.type & OP_ADDR))
-		mcc_error("pair load/store requires an address operand");
+		{ MCC_TRACE("br\n"); mcc_error("pair load/store requires an address operand"); }
 
 	if ((op1.reg_type & REG_X) && (op2.reg_type & REG_X)) { MCC_TRACE("br\n");
 		if (token == TOK_ASM_stp) { MCC_TRACE("br\n");
@@ -1536,10 +1536,10 @@ static void asm_sysreg(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	if (token == TOK_ASM_mrs) { MCC_TRACE("br\n");
 		parse_operand(s1, &op);
 		if (tok == ',')
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		sysreg = parse_sysreg_name(tok);
 		if (sysreg < 0)
-			mcc_error("unsupported system register");
+			{ MCC_TRACE("br\n"); mcc_error("unsupported system register"); }
 		next();
 		gen_mrs(op.reg, sysreg);
 		return;
@@ -1547,10 +1547,10 @@ static void asm_sysreg(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	sysreg = parse_sysreg_name(tok);
 	if (sysreg < 0)
-		mcc_error("unsupported system register");
+		{ MCC_TRACE("br\n"); mcc_error("unsupported system register"); }
 	next();
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op);
 	gen_msr(op.reg, sysreg);
 }
@@ -1622,9 +1622,9 @@ static void asm_branch(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	}
 
 	if (token == TOK_ASM_br || token == TOK_ASM_blr || token == TOK_ASM_ret)
-		parse_operand(s1, &op);
+		{ MCC_TRACE("br\n"); parse_operand(s1, &op); }
 	else
-		parse_expr_operand(s1, &op);
+		{ MCC_TRACE("br\n"); parse_expr_operand(s1, &op); }
 
 	if (op.type & OP_IM) { MCC_TRACE("br\n");
 		sym = op.e.sym;
@@ -1693,7 +1693,7 @@ static void asm_cb(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_expr_operand(s1, &op2);
 
 	rt = op1.reg;
@@ -1712,9 +1712,9 @@ static void asm_cb(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		offset = (int32_t)op2.e.v - ind;
 		if (token == TOK_ASM_cbz)
-			gen_cbz(rt, offset, is_64bit);
+			{ MCC_TRACE("br\n"); gen_cbz(rt, offset, is_64bit); }
 		else
-			gen_cbnz(rt, offset, is_64bit);
+			{ MCC_TRACE("br\n"); gen_cbnz(rt, offset, is_64bit); }
 	}
 }
 
@@ -1726,7 +1726,7 @@ static void asm_move_wide(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	parse_operand(s1, &op1);
 	if (tok == ',')
-		next();
+		{ MCC_TRACE("br\n"); next(); }
 	parse_operand(s1, &op2);
 
 	if (!(op1.type & OP_REG)) { MCC_TRACE("br\n");
@@ -1754,7 +1754,7 @@ static void asm_move_wide(MCCState *s1, int token) { MCC_TRACE("enter\n");
 		}
 		next();
 		if (tok == '#')
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		asm_expr(s1, &op2.e);
 		if (op2.e.sym || !is_valid_movw_shift((int)op2.e.v, is_64bit)) { MCC_TRACE("br\n");
 			mcc_error("move wide shift out of range");
@@ -1891,16 +1891,16 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 		}
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
 				modifier != 'P')
-			cstr_ccat(add_str, '#');
+			{ MCC_TRACE("br\n"); cstr_ccat(add_str, '#'); }
 		if (r & VT_SYM) { MCC_TRACE("br\n");
 			const char *name = get_tok_str(sv->sym->v, NULL);
 			if (sv->sym->v >= SYM_FIRST_ANOM)
-				get_asm_sym(tok_alloc(name, strlen(name))->tok, sv->sym);
+				{ MCC_TRACE("br\n"); get_asm_sym(tok_alloc(name, strlen(name))->tok, sv->sym); }
 			if (mcc_state->leading_underscore)
-				cstr_ccat(add_str, '_');
+				{ MCC_TRACE("br\n"); cstr_ccat(add_str, '_'); }
 			cstr_cat(add_str, name, -1);
 			if ((uint32_t)sv->c.i == 0)
-				goto no_offset;
+				{ MCC_TRACE("br\n"); goto no_offset; }
 			cstr_ccat(add_str, '+');
 		}
 		uval = sv->c.i;
@@ -1919,23 +1919,23 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 	} else if (r & VT_LVAL) { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
-			mcc_internal_error("");
+			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 		cstr_printf(add_str, "[x%d]", reg);
 	} else { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
 		if (reg >= VT_CONST)
-			mcc_internal_error("");
+			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 
 		if (ARM64_FREG_BASE <= reg && reg <= ARM64_FREG_LAST) { MCC_TRACE("br\n");
 			fp_reg = reg - ARM64_FREG_BASE;
 			size = type_size(&sv->type, &align);
 
 			if (modifier == 0)
-				modifier = size <= 4
+				{ MCC_TRACE("br\n"); modifier = size <= 4
 											 ? 's'
 									 : size == 8
 											 ? 'd'
-											 : 'q';
+											 : 'q'; }
 
 			switch (modifier) { MCC_TRACE("br\n");
 			case 'b':
@@ -1955,14 +1955,14 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 
 		if ((sv->type.t & VT_BTYPE) == VT_BYTE ||
 				(sv->type.t & VT_BTYPE) == VT_BOOL)
-			size = 1;
+			{ MCC_TRACE("br\n"); size = 1; }
 		else if ((sv->type.t & VT_BTYPE) == VT_SHORT)
-			size = 2;
+			{ MCC_TRACE("br\n"); size = 2; }
 		else if ((sv->type.t & VT_BTYPE) == VT_LLONG ||
 						 (sv->type.t & VT_BTYPE) == VT_PTR)
-			size = 8;
+			{ MCC_TRACE("br\n"); size = 8; }
 		else
-			size = 4;
+			{ MCC_TRACE("br\n"); size = 4; }
 
 		if (modifier == 'x') { MCC_TRACE("br\n");
 			size = 8;
@@ -2000,14 +2000,14 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		op = &operands[i];
 		if (op->reg >= 0)
-			regs_allocated[op->reg] = 1;
+			{ MCC_TRACE("br\n"); regs_allocated[op->reg] = 1; }
 	}
 
 	saved_count = 0;
 	for (int i = 0; i < sizeof(reg_saved) / sizeof(reg_saved[0]); i++) { MCC_TRACE("br\n");
 		reg = reg_saved[i];
 		if (regs_allocated[reg])
-			saved_regs[saved_count++] = reg;
+			{ MCC_TRACE("br\n"); saved_regs[saved_count++] = reg; }
 	}
 	stack_size = ((saved_count + 1) / 2) * 16;
 
@@ -2044,7 +2044,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 			op = &operands[i];
 			if (op->reg >= 0) { MCC_TRACE("br\n");
 				if (op->is_memory)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				if ((op->vt->r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
 					if (!op->is_memory) { MCC_TRACE("br\n");
 						SValue sv;
@@ -2101,7 +2101,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		op = &operands[j];
 		str = op->constraint;
 		if (op->ref_index >= 0)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		if (op->input_index >= 0) { MCC_TRACE("br\n");
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 		} else if (j < nb_outputs) { MCC_TRACE("br\n");
@@ -2111,7 +2111,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		}
 		if (op->reg >= 0) { MCC_TRACE("br\n");
 			if (is_reg_allocated(op->reg))
-				mcc_error("asm regvar requests register that's taken already");
+				{ MCC_TRACE("br\n"); mcc_error("asm regvar requests register that's taken already"); }
 			reg = op->reg;
 			goto reg_found;
 		}
@@ -2124,99 +2124,99 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			op->is_rw = 1;
 		case '&':
 			if (j >= nb_outputs)
-				mcc_error("'%c' modifier can only be applied to outputs", c);
+				{ MCC_TRACE("br\n"); mcc_error("'%c' modifier can only be applied to outputs", c); }
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 			goto try_next;
 		case 'r':
 			for (reg = 0; reg < 31; reg++) { MCC_TRACE("br\n");
 				if (arm64_int_reg_is_allocatable(reg) && !is_reg_allocated(reg))
-					goto reg_found;
+					{ MCC_TRACE("br\n"); goto reg_found; }
 			}
 			goto try_next;
 		case 'w':
 		case 'f':
 			for (reg = ARM64_FREG_BASE; reg <= ARM64_FREG_LAST; reg++) { MCC_TRACE("br\n");
 				if (!is_reg_allocated(reg))
-					goto reg_found;
+					{ MCC_TRACE("br\n"); goto reg_found; }
 			}
 			goto try_next;
 		case 'x':
 		case 'y':
 			for (reg = ARM64_FREG_BASE; reg <= ARM64_FREG_LAST; reg++) { MCC_TRACE("br\n");
 				if (!is_reg_allocated(reg))
-					goto reg_found;
+					{ MCC_TRACE("br\n"); goto reg_found; }
 			}
 			goto try_next;
 		case 'm':
 		case 'g':
 			if (j < nb_outputs || c == 'm') { MCC_TRACE("br\n");
 				if (!arm64_prepare_memory_operand(op, regs_allocated))
-					goto try_next;
+					{ MCC_TRACE("br\n"); goto try_next; }
 			}
 			break;
 		case 'Q':
 			if (!arm64_memory_is_base_only(op->vt))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!arm64_prepare_memory_operand(op, regs_allocated))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'S':
 			if ((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != (VT_CONST | VT_SYM))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'U':
 			if (str[0] != 'm' || str[1] != 'p')
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			str += 2;
 			if (!arm64_memory_is_pair_suitable(op->vt))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!arm64_prepare_memory_operand(op, regs_allocated))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'i':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'I':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!is_valid_add_imm(op->vt->c.i))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'J':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!is_valid_add_imm(-op->vt->c.i))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'K':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!is_valid_logical_imm(op->vt->c.i, 32))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'L':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!is_valid_logical_imm(op->vt->c.i, 64))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'M':
 		case 'N':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!is_valid_movw_imm(op->vt->c.i))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'Z':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			if (op->vt->c.i != 0)
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		case 'n':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
-				goto try_next;
+				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
 		default:
 			mcc_error("asm constraint %d ('%s') could not be satisfied",
@@ -2246,7 +2246,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 				!op->is_memory) { MCC_TRACE("br\n");
 			for (reg = 0; reg < 31; reg++) { MCC_TRACE("br\n");
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
-					goto reg_found2;
+					{ MCC_TRACE("br\n"); goto reg_found2; }
 			}
 			mcc_error("could not find free output register for reloading");
 		reg_found2:
@@ -2262,11 +2262,11 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 	if (!strcmp(str, "memory") ||
 			!strcmp(str, "cc") ||
 			!strcmp(str, "flags"))
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	reg = arm64_parse_regvar(tok_alloc_const(str));
 	if (reg == -1)
-		mcc_error("invalid clobber register '%s'", str);
+		{ MCC_TRACE("br\n"); mcc_error("invalid clobber register '%s'", str); }
 	clobber_regs[reg] = 1;
 }
 

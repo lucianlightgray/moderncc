@@ -68,20 +68,20 @@ ST_DATA int g_debug;
 static void mcc_add_systemdir(MCCState *s) { MCC_TRACE("enter\n");
 	char buf[1000];
 	if (host_system_dir(buf, sizeof buf) == 0)
-		mcc_add_library_path(s, buf);
+		{ MCC_TRACE("br\n"); mcc_add_library_path(s, buf); }
 }
 #endif
 
 PUB_FUNC void mcc_enter_state(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->error_set_jmp_enabled)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	HOST_SEM_WAIT(&mcc_compile_sem);
 	mcc_state = s1;
 }
 
 PUB_FUNC void mcc_exit_state(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->error_set_jmp_enabled)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	mcc_state = NULL;
 	HOST_SEM_POST(&mcc_compile_sem);
 }
@@ -96,7 +96,7 @@ ST_FUNC char *pstrcpy(char *buf, size_t buf_size, const char *s) { MCC_TRACE("en
 		while (q < q_end) { MCC_TRACE("br\n");
 			c = *s++;
 			if (c == '\0')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			*q++ = c;
 		}
 		*q = '\0';
@@ -108,13 +108,13 @@ ST_FUNC char *pstrcat(char *buf, size_t buf_size, const char *s) { MCC_TRACE("en
 	size_t len;
 	len = strlen(buf);
 	if (len < buf_size)
-		pstrcpy(buf + len, buf_size - len, s);
+		{ MCC_TRACE("br\n"); pstrcpy(buf + len, buf_size - len, s); }
 	return buf;
 }
 
 ST_FUNC char *pstrncpy(char *out, size_t buf_size, const char *s, size_t num) { MCC_TRACE("enter\n");
 	if (num >= buf_size)
-		num = buf_size - 1;
+		{ MCC_TRACE("br\n"); num = buf_size - 1; }
 	memcpy(out, s, num);
 	out[num] = '\0';
 	return out;
@@ -149,7 +149,7 @@ static void mcc_concat_str(char **pp, const char *str, int sep) { MCC_TRACE("ent
 	int l = *pp ? strlen(*pp) + !!sep : 0;
 	*pp = mcc_realloc(*pp, l + strlen(str) + 1);
 	if (l && sep)
-		((*pp)[l - 1] = sep);
+		{ MCC_TRACE("br\n"); ((*pp)[l - 1] = sep); }
 	strcpy(*pp + l, str);
 }
 
@@ -205,7 +205,7 @@ PUB_FUNC void *mcc_realloc(void *ptr, unsigned long size) { MCC_TRACE("enter\n")
 ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
 																				unsigned long min_cap) { MCC_TRACE("enter\n");
 	if (cur < min_cap)
-		cur = min_cap;
+		{ MCC_TRACE("br\n"); cur = min_cap; }
 	while (cur < need)
 		cur = cur * 2;
 	return cur;
@@ -261,7 +261,7 @@ PUB_FUNC void *mcc_mallocz(unsigned long size) { MCC_TRACE("enter\n");
 	void *ptr;
 	ptr = mcc_malloc(size);
 	if (size)
-		memset(ptr, 0, size);
+		{ MCC_TRACE("br\n"); memset(ptr, 0, size); }
 	return ptr;
 }
 
@@ -313,8 +313,8 @@ static mem_debug_header_t *malloc_check(void *ptr, const char *msg) { MCC_TRACE(
 			header->size == (unsigned)-1) { MCC_TRACE("br\n");
 		fprintf(stderr, "%s check failed\n", msg);
 		if (header->magic1 == MCC_MEM_DEBUG_MAGIC1)
-			fprintf(stderr, "%s:%u: block allocated here.\n",
-							header->file_name, header->line_num);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "%s:%u: block allocated here.\n",
+							header->file_name, header->line_num); }
 		exit(1);
 	}
 	return header;
@@ -324,7 +324,7 @@ PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line) 
 	int ofs;
 	mem_debug_header_t *header;
 	if (!size)
-		return NULL;
+		{ MCC_TRACE("br\n"); return NULL; }
 	header = mcc_malloc(sizeof(mem_debug_header_t) + size);
 	header->magic1 = MCC_MEM_DEBUG_MAGIC1;
 	header->magic2 = MCC_MEM_DEBUG_MAGIC2;
@@ -337,11 +337,11 @@ PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line) 
 	header->next = mem_debug_chain;
 	header->prev = NULL;
 	if (header->next)
-		header->next->prev = header;
+		{ MCC_TRACE("br\n"); header->next->prev = header; }
 	mem_debug_chain = header;
 	mem_cur_size += size;
 	if (mem_cur_size > mem_max_size)
-		mem_max_size = mem_cur_size;
+		{ MCC_TRACE("br\n"); mem_max_size = mem_cur_size; }
 	HOST_SEM_POST(&mem_sem);
 	return MEM_USER_PTR(header);
 }
@@ -349,17 +349,17 @@ PUB_FUNC void *mcc_malloc_debug(unsigned long size, const char *file, int line) 
 PUB_FUNC void mcc_free_debug(void *ptr) { MCC_TRACE("enter\n");
 	mem_debug_header_t *header;
 	if (!ptr)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	header = malloc_check(ptr, "mcc_free");
 	HOST_SEM_WAIT(&mem_sem);
 	mem_cur_size -= header->size;
 	header->size = (unsigned)-1;
 	if (header->next)
-		header->next->prev = header->prev;
+		{ MCC_TRACE("br\n"); header->next->prev = header->prev; }
 	if (header->prev)
-		header->prev->next = header->next;
+		{ MCC_TRACE("br\n"); header->prev->next = header->next; }
 	if (header == mem_debug_chain)
-		mem_debug_chain = header->next;
+		{ MCC_TRACE("br\n"); mem_debug_chain = header->next; }
 	HOST_SEM_POST(&mem_sem);
 	mcc_free(header);
 }
@@ -368,7 +368,7 @@ PUB_FUNC void *mcc_mallocz_debug(unsigned long size, const char *file, int line)
 	void *ptr;
 	ptr = mcc_malloc_debug(size, file, line);
 	if (size)
-		memset(ptr, 0, size);
+		{ MCC_TRACE("br\n"); memset(ptr, 0, size); }
 	return ptr;
 }
 
@@ -377,7 +377,7 @@ PUB_FUNC void *mcc_realloc_debug(void *ptr, unsigned long size, const char *file
 	int mem_debug_chain_update = 0;
 
 	if (!ptr)
-		return mcc_malloc_debug(size, file, line);
+		{ MCC_TRACE("br\n"); return mcc_malloc_debug(size, file, line); }
 	if (!size) { MCC_TRACE("br\n");
 		mcc_free_debug(ptr);
 		return NULL;
@@ -390,14 +390,14 @@ PUB_FUNC void *mcc_realloc_debug(void *ptr, unsigned long size, const char *file
 	header->size = size;
 	write32le(MCC_MEM_DEBUG_CHECK3(header), MCC_MEM_DEBUG_MAGIC3);
 	if (header->next)
-		header->next->prev = header;
+		{ MCC_TRACE("br\n"); header->next->prev = header; }
 	if (header->prev)
-		header->prev->next = header;
+		{ MCC_TRACE("br\n"); header->prev->next = header; }
 	if (mem_debug_chain_update)
-		mem_debug_chain = header;
+		{ MCC_TRACE("br\n"); mem_debug_chain = header; }
 	mem_cur_size += size;
 	if (mem_cur_size > mem_max_size)
-		mem_max_size = mem_cur_size;
+		{ MCC_TRACE("br\n"); mem_max_size = mem_cur_size; }
 	HOST_SEM_POST(&mem_sem);
 	return MEM_USER_PTR(header);
 }
@@ -462,9 +462,9 @@ ST_FUNC void dynarray_add(void *ptab, int *nb_ptr, void *data) { MCC_TRACE("ente
 	pp = *(void ***)ptab;
 	if ((nb & (nb - 1)) == 0) { MCC_TRACE("br\n");
 		if (!nb)
-			nb_alloc = 1;
+			{ MCC_TRACE("br\n"); nb_alloc = 1; }
 		else
-			nb_alloc = nb * 2;
+			{ MCC_TRACE("br\n"); nb_alloc = nb * 2; }
 		pp = mcc_realloc(pp, nb_alloc * sizeof(void *));
 		*(void ***)ptab = pp;
 	}
@@ -476,7 +476,7 @@ ST_FUNC void dynarray_reset(void *pp, int *n) { MCC_TRACE("enter\n");
 	void **p;
 	for (p = *(void ***)pp; *n; ++p, --*n)
 		if (*p)
-			mcc_free(*p);
+			{ MCC_TRACE("br\n"); mcc_free(*p); }
 	mcc_free(*(void **)pp);
 	*(void **)pp = NULL;
 }
@@ -488,14 +488,14 @@ static void dynarray_split(char ***argv, int *argc, const char *p, int sep) { MC
 		while (c = (unsigned char)*p, c <= ' ' && c != '\0')
 			++p;
 		if (c == '\0')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		cstr_new(&str);
 		qot = 0;
 		do { MCC_TRACE("br\n");
 			++p;
 			if (sep) { MCC_TRACE("br\n");
 				if (c == sep)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 			} else { MCC_TRACE("br\n");
 				if (c == '\\' && (*p == '"' || *p == '\\')) { MCC_TRACE("br\n");
 					c = *p++;
@@ -524,16 +524,16 @@ static void mcc_split_path(MCCState *s, void *p_ary, int *p_nb_ary, const char *
 			if (c == '{' && p[1] && p[2] == '}') { MCC_TRACE("br\n");
 				c = p[1], p += 2;
 				if (c == 'B')
-					cstr_cat(&str, s->mcc_lib_path, -1);
+					{ MCC_TRACE("br\n"); cstr_cat(&str, s->mcc_lib_path, -1); }
 				if (c == 'R')
-					cstr_cat(&str, (s->sysroot && s->sysroot[0]) ? s->sysroot : MCC_CONFIG_SYSROOT, -1);
+					{ MCC_TRACE("br\n"); cstr_cat(&str, (s->sysroot && s->sysroot[0]) ? s->sysroot : MCC_CONFIG_SYSROOT, -1); }
 				if (c == 'f' && file) { MCC_TRACE("br\n");
 					const char *f = file->true_filename;
 					const char *b = mcc_basename(f);
 					if (b > f)
-						cstr_cat(&str, f, b - f - 1);
+						{ MCC_TRACE("br\n"); cstr_cat(&str, f, b - f - 1); }
 					else
-						cstr_cat(&str, ".", 1);
+						{ MCC_TRACE("br\n"); cstr_cat(&str, ".", 1); }
 				}
 			} else { MCC_TRACE("br\n");
 				cstr_ccat(&str, c);
@@ -559,7 +559,7 @@ enum {
 
 static int diag_want_color(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->error_func)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	switch (s1->diag_color) { MCC_TRACE("br\n");
 	case 1:
 		return 1;
@@ -577,21 +577,21 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 	char numbuf[16];
 
 	if (s1->diag_no_caret || !f || line <= 0)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	start = f->buffer;
 	end = f->buf_end;
 	p = f->buf_ptr;
 	if (!start || !end || !p || end < start || p < start || p > end)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	cpos = p;
 	if (bol_adj) { MCC_TRACE("br\n");
 		if (cpos <= start || cpos[-1] != '\n')
-			return;
+			{ MCC_TRACE("br\n"); return; }
 		cpos--;
 	} else if (cpos == end) { MCC_TRACE("br\n");
 		if (cpos <= start)
-			return;
+			{ MCC_TRACE("br\n"); return; }
 		cpos--;
 	}
 
@@ -604,15 +604,15 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 
 	n = (int)(le - ls);
 	if (n > 0 && ls[n - 1] == '\r')
-		n--;
+		{ MCC_TRACE("br\n"); n--; }
 	if (n <= 0 || n > 512)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	col = (int)(cpos - ls);
 	if (col < 0)
-		col = 0;
+		{ MCC_TRACE("br\n"); col = 0; }
 	if (col > n)
-		col = n;
+		{ MCC_TRACE("br\n"); col = n; }
 
 	snprintf(numbuf, sizeof(numbuf), "%d", line);
 
@@ -628,9 +628,9 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 	for (i = 0; i < col; i++)
 		cstr_ccat(cs, ls[i] == '\t' ? '\t' : ' ');
 	if (use_color)
-		cstr_cat(cs, "\033[1;32m^\033[0m", 12);
+		{ MCC_TRACE("br\n"); cstr_cat(cs, "\033[1;32m^\033[0m", 12); }
 	else
-		cstr_ccat(cs, '^');
+		{ MCC_TRACE("br\n"); cstr_ccat(cs, '^'); }
 
 	cstr_ccat(cs, '\0');
 	cs->size--;
@@ -656,25 +656,25 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 			for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
 				;
 			if (wf && wf->system_header)
-				return;
+				{ MCC_TRACE("br\n"); return; }
 		}
 		if (s1->warn_error)
-			mode = ERROR_ERROR;
+			{ MCC_TRACE("br\n"); mode = ERROR_ERROR; }
 		if (wopt >= 0) { MCC_TRACE("br\n");
 			if (0 == (wopt & WARN_ON))
-				return;
+				{ MCC_TRACE("br\n"); return; }
 			if (wopt & WARN_ERR)
-				mode = ERROR_ERROR;
+				{ MCC_TRACE("br\n"); mode = ERROR_ERROR; }
 			if (wopt & WARN_NOE)
-				mode = ERROR_WARN;
+				{ MCC_TRACE("br\n"); mode = ERROR_WARN; }
 		}
 		if (s1->warn_none)
-			return;
+			{ MCC_TRACE("br\n"); return; }
 	}
 
 	cstr_new(&cs);
 	if (fmt[0] == '%' && fmt[1] == 'i' && fmt[2] == ':')
-		line = va_arg(ap, int), fmt += 3, explicit_line = 1;
+		{ MCC_TRACE("br\n"); line = va_arg(ap, int), fmt += 3, explicit_line = 1; }
 	f = NULL;
 	if (s1->error_set_jmp_enabled) { MCC_TRACE("br\n");
 		for (f = file; f && f->filename[0] == ':'; f = f->prev)
@@ -696,18 +696,18 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 	}
 	int use_color = diag_want_color(s1);
 	if (use_color)
-		cstr_printf(&cs, mode == ERROR_WARN ? "\033[1;35mwarning:\033[0m " : "\033[1;31merror:\033[0m ");
+		{ MCC_TRACE("br\n"); cstr_printf(&cs, mode == ERROR_WARN ? "\033[1;35mwarning:\033[0m " : "\033[1;31merror:\033[0m "); }
 	else
-		cstr_printf(&cs, mode == ERROR_WARN ? "warning: " : "error: ");
+		{ MCC_TRACE("br\n"); cstr_printf(&cs, mode == ERROR_WARN ? "warning: " : "error: "); }
 	if (pp_expr > 1)
-		pp_error(&cs);
+		{ MCC_TRACE("br\n"); pp_error(&cs); }
 	else
-		cstr_vprintf(&cs, fmt, ap);
+		{ MCC_TRACE("br\n"); cstr_vprintf(&cs, fmt, ap); }
 	if (f && !explicit_line && !macro_ptr)
-		append_caret_context(s1, &cs, f, line, bol_adj, use_color);
+		{ MCC_TRACE("br\n"); append_caret_context(s1, &cs, f, line, bol_adj, use_color); }
 	if (!s1->error_func) { MCC_TRACE("br\n");
 		if (s1 && s1->output_type == MCC_OUTPUT_PREPROCESS && s1->ppfp == stdout)
-			printf("\n");
+			{ MCC_TRACE("br\n"); printf("\n"); }
 		fflush(stdout);
 		fprintf(stderr, "%s\n", (char *)cs.data);
 		fflush(stderr);
@@ -716,9 +716,9 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 	}
 	cstr_free(&cs);
 	if (mode != ERROR_WARN)
-		s1->nb_errors++;
+		{ MCC_TRACE("br\n"); s1->nb_errors++; }
 	if (mode == ERROR_NOABORT && s1->error_set_jmp_enabled && (s1->warn_fatal_errors || (s1->max_errors && s1->nb_errors >= s1->max_errors)))
-		mode = ERROR_ERROR;
+		{ MCC_TRACE("br\n"); mode = ERROR_ERROR; }
 	if (mode == ERROR_ERROR && s1->error_set_jmp_enabled) { MCC_TRACE("br\n");
 		while (nb_stk_data > stk_data_floor)
 			mcc_free(*(void **)stk_data[--nb_stk_data]);
@@ -784,7 +784,7 @@ ST_FUNC void mcc_close(void) { MCC_TRACE("enter\n");
 		total_lines += bf->line_num - 1;
 	}
 	if (bf->true_filename != bf->filename)
-		mcc_free(bf->true_filename);
+		{ MCC_TRACE("br\n"); mcc_free(bf->true_filename); }
 	file = bf->prev;
 	tok_flags = bf->prev_tok_flags;
 	mcc_free(bf);
@@ -793,20 +793,20 @@ ST_FUNC void mcc_close(void) { MCC_TRACE("enter\n");
 static int _mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	int fd;
 	if (strcmp(filename, "-") == 0)
-		fd = 0, filename = "<stdin>";
+		{ MCC_TRACE("br\n"); fd = 0, filename = "<stdin>"; }
 	else
-		fd = open(filename, O_RDONLY | O_BINARY);
+		{ MCC_TRACE("br\n"); fd = open(filename, O_RDONLY | O_BINARY); }
 	if ((MCC_VTIER(s1->verbose) == MCC_V2 && fd >= 0) ||
 			MCC_VTIER(s1->verbose) == MCC_V3)
-		printf("%s %*s%s\n", fd < 0 ? "nf" : "->",
-					 (int)(s1->include_stack_ptr - s1->include_stack), "", filename);
+		{ MCC_TRACE("br\n"); printf("%s %*s%s\n", fd < 0 ? "nf" : "->",
+					 (int)(s1->include_stack_ptr - s1->include_stack), "", filename); }
 	return fd;
 }
 
 ST_FUNC int mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	int fd = _mcc_open(s1, filename);
 	if (fd < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	mcc_open_bf(s1, filename, 0);
 	file->fd = fd;
 	return 0;
@@ -832,7 +832,7 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MC
 									s1->output_type != MCC_OUTPUT_PREPROCESS &&
 									!(filetype & (AFF_TYPE_ASM | AFF_TYPE_ASMPP)));
 		if (cst_on)
-			cst_capture_begin(str);
+			{ MCC_TRACE("br\n"); cst_capture_begin(str); }
 #endif
 
 		preprocess_start(s1, filetype);
@@ -852,7 +852,7 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MC
 				mccgen_compile(s1);
 #if MCC_CONFIG_LSP
 				if (cst_on)
-					cst_capture_end();
+					{ MCC_TRACE("br\n"); cst_capture_end(); }
 #endif
 			}
 			mccelf_end_file(s1);
@@ -872,9 +872,9 @@ LIBMCCAPI int mcc_compile_string(MCCState *s, const char *str) { MCC_TRACE("ente
 LIBMCCAPI void mcc_define_symbol(MCCState *s1, const char *sym, const char *value) { MCC_TRACE("enter\n");
 	const char *eq;
 	if (NULL == (eq = strchr(sym, '=')))
-		eq = strchr(sym, 0);
+		{ MCC_TRACE("br\n"); eq = strchr(sym, 0); }
 	if (NULL == value)
-		value = *eq ? eq + 1 : "1";
+		{ MCC_TRACE("br\n"); value = *eq ? eq + 1 : "1"; }
 	cstr_printf(&s1->cmdline_defs, "#define %.*s %s\n", (int)(eq - sym), sym, value);
 }
 
@@ -890,7 +890,7 @@ static int mcc_dir_has_include(const char *base) { MCC_TRACE("enter\n");
 	char probe[1024];
 	struct stat st;
 	if (!base || !base[0])
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	pstrcpy(probe, sizeof probe, base);
 	pstrcat(probe, sizeof probe, "/include");
 	return stat(probe, &st) == 0 && S_ISDIR(st.st_mode);
@@ -913,17 +913,17 @@ static const char *mcc_auto_mccdir(void) { MCC_TRACE("enter\n");
 	if (host_exe_path(exe, sizeof exe) > 0) { MCC_TRACE("br\n");
 		p = mcc_basename(exe);
 		if (p > exe)
-			--p;
+			{ MCC_TRACE("br\n"); --p; }
 		*p = 0;
 		for (i = 0; exe_rel[i]; i++)
 			if ((hit = mcc_auto_mccdir_rel(exe, exe_rel[i])))
-				return hit;
+				{ MCC_TRACE("br\n"); return hit; }
 	}
 	if (mcc_dir_has_include(MCC_CONFIG_MCCDIR))
-		return MCC_CONFIG_MCCDIR;
+		{ MCC_TRACE("br\n"); return MCC_CONFIG_MCCDIR; }
 	for (i = 0; sys_dirs[i]; i++)
 		if (mcc_dir_has_include(sys_dirs[i]))
-			return sys_dirs[i];
+			{ MCC_TRACE("br\n"); return sys_dirs[i]; }
 	return MCC_CONFIG_MCCDIR;
 }
 
@@ -981,7 +981,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 
 	mcc_set_lib_path(s, MCC_MCCDIR_DEFAULT);
 	if (mcc_target_defaults.switches)
-		mcc_set_options(s, mcc_target_defaults.switches);
+		{ MCC_TRACE("br\n"); mcc_set_options(s, mcc_target_defaults.switches); }
 	return s;
 }
 
@@ -1040,10 +1040,10 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 		if (pie < 0) { MCC_TRACE("br\n");
 			pie = mcc_target_defaults.pie;
 			if (s->static_link)
-				pie = 0;
+				{ MCC_TRACE("br\n"); pie = 0; }
 		}
 		if (pie)
-			output_type |= MCC_OUTPUT_DYN;
+			{ MCC_TRACE("br\n"); output_type |= MCC_OUTPUT_DYN; }
 	}
 	s->output_type = output_type;
 
@@ -1067,7 +1067,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 	}
 
 	if (!s->nostdlib_paths)
-		mcc_add_library_path(s, mcc_target_defaults.libpaths);
+		{ MCC_TRACE("br\n"); mcc_add_library_path(s, mcc_target_defaults.libpaths); }
 
 #ifdef MCC_TARGET_PE
 #ifdef MCC_TARGET_IS_HOST
@@ -1082,7 +1082,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 #else
 	mcc_split_path(s, &s->crt_paths, &s->nb_crt_paths, mcc_target_defaults.crtprefix);
 	if (output_type != MCC_OUTPUT_MEMORY && !s->nostdlib)
-		mccelf_add_crtbegin(s);
+		{ MCC_TRACE("br\n"); mccelf_add_crtbegin(s); }
 #endif
 	return s->nb_errors ? -1 : 0;
 }
@@ -1129,10 +1129,10 @@ ST_FUNC DLLReference *mcc_add_dllref(MCCState *s1, const char *dllname, int leve
 			break;
 		}
 	if (level == -1)
-		return ref;
+		{ MCC_TRACE("br\n"); return ref; }
 	if (ref) { MCC_TRACE("br\n");
 		if (level < ref->level)
-			ref->level = level;
+			{ MCC_TRACE("br\n"); ref->level = level; }
 		ref->found = 1;
 		return ref;
 	}
@@ -1172,13 +1172,13 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 #else
 			void *dl = host_dlopen(filename);
 			if (dl)
-				mcc_add_dllref(s1, filename, 0)->handle = dl;
+				{ MCC_TRACE("br\n"); mcc_add_dllref(s1, filename, 0)->handle = dl; }
 			else
-				ret = FILE_NOT_RECOGNIZED;
+				{ MCC_TRACE("br\n"); ret = FILE_NOT_RECOGNIZED; }
 #endif
 #endif
 		} else
-			ret = mcc_load_dll(s1, fd, filename, (flags & AFF_REFERENCED_DLL) != 0);
+			{ MCC_TRACE("br\n"); ret = mcc_load_dll(s1, fd, filename, (flags & AFF_REFERENCED_DLL) != 0); }
 		break;
 
 	default:
@@ -1196,13 +1196,13 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 			if (obj_type != AFF_BINTYPE_DYN) { MCC_TRACE("br\n");
 				tmp = macho_tbd_soname(fd);
 				if (tmp)
-					soname = tmp;
+					{ MCC_TRACE("br\n"); soname = tmp; }
 			}
 			dl = host_dlopen(soname);
 			if (dl)
-				mcc_add_dllref(s1, soname, 0)->handle = dl;
+				{ MCC_TRACE("br\n"); mcc_add_dllref(s1, soname, 0)->handle = dl; }
 			else
-				ret = FILE_NOT_RECOGNIZED;
+				{ MCC_TRACE("br\n"); ret = FILE_NOT_RECOGNIZED; }
 			mcc_free(tmp);
 #endif
 		} else if (obj_type == AFF_BINTYPE_DYN) { MCC_TRACE("br\n");
@@ -1211,13 +1211,13 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 			ret = macho_load_tbd(s1, fd, filename, (flags & AFF_REFERENCED_DLL) != 0);
 		}
 		if (ret)
-			ret = FILE_NOT_RECOGNIZED;
+			{ MCC_TRACE("br\n"); ret = FILE_NOT_RECOGNIZED; }
 		break;
 
 	default: {
 		const char *ext = mcc_fileextension(filename);
 		if (!strcmp(ext, ".tbd"))
-			goto case_dyn_or_tbd;
+			{ MCC_TRACE("br\n"); goto case_dyn_or_tbd; }
 		if (!strcmp(ext, ".dylib")) { MCC_TRACE("br\n");
 			obj_type = AFF_BINTYPE_DYN;
 			goto case_dyn_or_tbd;
@@ -1229,7 +1229,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 #elif defined MCC_TARGET_PE
 	default:
 		if (pe_load_file(s1, fd, filename))
-			ret = FILE_NOT_RECOGNIZED;
+			{ MCC_TRACE("br\n"); ret = FILE_NOT_RECOGNIZED; }
 		break;
 #endif
 	}
@@ -1237,7 +1237,7 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 	close(fd);
 	s1->current_filename = saved_filename;
 	if (ret == FILE_NOT_RECOGNIZED)
-		return mcc_error_noabort("%s: unrecognized file type", filename);
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("%s: unrecognized file type", filename); }
 	return ret;
 }
 
@@ -1251,13 +1251,13 @@ static int mcc_glob_so(MCCState *s1, const char *pattern, char *buf, int size) {
 
 	star = strchr(pattern, '*');
 	if (!star || glob(pattern, 0, NULL, &g))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	for (v = -1, i = 0; i < g.gl_pathc; ++i) { MCC_TRACE("br\n");
 		p = g.gl_pathv[i];
 		if (2 != sscanf(p + (star - pattern), "%d.%d.%d", &v1, &v2, &v3))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		if ((v1 = v1 * 1000 + v2) > v)
-			v = v1, pstrcpy(buf, size, p);
+			{ MCC_TRACE("br\n"); v = v1, pstrcpy(buf, size, p); }
 	}
 	globfree(&g);
 	return v;
@@ -1271,13 +1271,13 @@ static int guess_filetype(const char *filename) { MCC_TRACE("enter\n");
 		if (ext[0]) { MCC_TRACE("br\n");
 			ext++;
 			if (!strcmp(ext, "S"))
-				filetype = AFF_TYPE_ASMPP;
+				{ MCC_TRACE("br\n"); filetype = AFF_TYPE_ASMPP; }
 			else if (!strcmp(ext, "s"))
-				filetype = AFF_TYPE_ASM;
+				{ MCC_TRACE("br\n"); filetype = AFF_TYPE_ASM; }
 			else if (!HOST_PATHCMP(ext, "c") || !HOST_PATHCMP(ext, "h") || !HOST_PATHCMP(ext, "i"))
-				filetype = AFF_TYPE_C;
+				{ MCC_TRACE("br\n"); filetype = AFF_TYPE_C; }
 			else
-				filetype |= AFF_TYPE_BIN;
+				{ MCC_TRACE("br\n"); filetype |= AFF_TYPE_BIN; }
 		} else { MCC_TRACE("br\n");
 			filetype = AFF_TYPE_C;
 		}
@@ -1291,24 +1291,24 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 #if defined MCC_TARGETOS_OpenBSD && MCC_HOST_POSIX
 	char buf[1024];
 	if (mcc_glob_so(s1, filename, buf, sizeof buf) >= 0)
-		filename = buf;
+		{ MCC_TRACE("br\n"); filename = buf; }
 #endif
 
 	if (0 == (flags & AFF_TYPE_MASK))
-		flags |= guess_filetype(filename);
+		{ MCC_TRACE("br\n"); flags |= guess_filetype(filename); }
 
 	if (s1->output_type == MCC_OUTPUT_PREPROCESS && (flags & AFF_TYPE_BIN))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	fd = _mcc_open(s1, filename);
 	if (fd < 0) { MCC_TRACE("br\n");
 		if (flags & AFF_PRINT_ERROR)
-			mcc_error_noabort("file '%s' not found", filename);
+			{ MCC_TRACE("br\n"); mcc_error_noabort("file '%s' not found", filename); }
 		return FILE_NOT_FOUND;
 	}
 
 	if (flags & AFF_TYPE_BIN)
-		return mcc_add_binary(s1, flags, filename, fd);
+		{ MCC_TRACE("br\n"); return mcc_add_binary(s1, flags, filename, fd); }
 
 	dynarray_add(&s1->target_deps, &s1->nb_target_deps, mcc_strdup(filename));
 	return mcc_compile(s1, flags, filename, fd);
@@ -1327,11 +1327,11 @@ static int mcc_add_library_internal(MCCState *s1, const char *fmt,
 		snprintf(buf, sizeof(buf), fmt, paths[i], filename);
 		ret = mcc_add_file_internal(s1, buf, flags & ~AFF_PRINT_ERROR);
 		if (ret != FILE_NOT_FOUND)
-			return ret;
+			{ MCC_TRACE("br\n"); return ret; }
 	}
 	if (flags & AFF_PRINT_ERROR)
-		mcc_error_noabort("%s '%s' not found",
-											flags & AFF_TYPE_LIB ? "library" : "file", filename);
+		{ MCC_TRACE("br\n"); mcc_error_noabort("%s '%s' not found",
+											flags & AFF_TYPE_LIB ? "library" : "file", filename); }
 	return FILE_NOT_FOUND;
 }
 
@@ -1343,7 +1343,7 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) { MCC_TRAC
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	char buf[100];
 	if (MCC_CONFIG_CROSSPREFIX[0])
-		filename = strcat(strcpy(buf, MCC_CONFIG_CROSSPREFIX), filename);
+		{ MCC_TRACE("br\n"); filename = strcat(strcpy(buf, MCC_CONFIG_CROSSPREFIX), filename); }
 	return mcc_add_dll(s1, filename, AFF_PRINT_ERROR);
 }
 
@@ -1358,7 +1358,7 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 
 	fd = mkstemp(tmp);
 	if (fd < 0)
-		return mcc_error_noabort("embedded " MCC_MCCRT ": cannot create temp fd");
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("embedded " MCC_MCCRT ": cannot create temp fd"); }
 	unlink(tmp);
 	for (off = 0; off < mccrt_blob_len;) { MCC_TRACE("br\n");
 		ssize_t w = write(fd, mccrt_blob + off, mccrt_blob_len - off);
@@ -1385,7 +1385,7 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 
 	fd = mkstemp(tmp);
 	if (fd < 0)
-		return mcc_error_noabort("embedded jit engine: cannot create temp fd");
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("embedded jit engine: cannot create temp fd"); }
 	unlink(tmp);
 	for (off = 0; off < mccjit_blob_len;) { MCC_TRACE("br\n");
 		ssize_t w = write(fd, mccjit_blob + off, mccjit_blob_len - off);
@@ -1407,8 +1407,8 @@ ST_FUNC int mcc_add_crt(MCCState *s1, const char *filename) { MCC_TRACE("enter\n
 	int ret = mcc_add_library_internal(s1, "%s/%s",
 																		 filename, 0, s1->crt_paths, s1->nb_crt_paths);
 	if (ret == FILE_NOT_FOUND)
-		ret = mcc_add_library_internal(s1, "%s/%s",
-																	 filename, AFF_PRINT_ERROR, s1->library_paths, s1->nb_library_paths);
+		{ MCC_TRACE("br\n"); ret = mcc_add_library_internal(s1, "%s/%s",
+																	 filename, AFF_PRINT_ERROR, s1->library_paths, s1->nb_library_paths); }
 	return ret;
 }
 #endif
@@ -1429,19 +1429,19 @@ LIBMCCAPI int mcc_add_library(MCCState *s, const char *libraryname) { MCC_TRACE(
 	int flags = AFF_TYPE_LIB | (s->filetype & AFF_WHOLE_ARCHIVE);
 #if defined MCC_TARGET_PE
 	if (!strcmp(libraryname, "m"))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 #endif
 	if (*libraryname == ':') { MCC_TRACE("br\n");
 		libraryname++;
 	} else { MCC_TRACE("br\n");
 		const char *const *pp = libs;
 		if (s->static_link)
-			pp += sizeof(libs) / sizeof(*libs) - 2;
+			{ MCC_TRACE("br\n"); pp += sizeof(libs) / sizeof(*libs) - 2; }
 		while (*pp) { MCC_TRACE("br\n");
 			int ret = mcc_add_library_internal(s, *pp,
 																				 libraryname, flags, s->library_paths, s->nb_library_paths);
 			if (ret != FILE_NOT_FOUND)
-				return ret;
+				{ MCC_TRACE("br\n"); return ret; }
 			++pp;
 		}
 	}
@@ -1463,7 +1463,7 @@ LIBMCCAPI int mcc_add_framework(MCCState *s1, const char *name) { MCC_TRACE("ent
 			snprintf(buf, sizeof(buf), *pp, s1->framework_paths[i], name, name);
 			ret = mcc_add_file_internal(s1, buf, AFF_TYPE_BIN | whole);
 			if (ret != FILE_NOT_FOUND)
-				return ret;
+				{ MCC_TRACE("br\n"); return ret; }
 		}
 	}
 	return mcc_error_noabort("framework '%s' not found", name);
@@ -1483,7 +1483,7 @@ static int strstart(const char *val, const char **str) { MCC_TRACE("enter\n");
 	q = val;
 	while (*q) { MCC_TRACE("br\n");
 		if (*p != *q)
-			return 0;
+			{ MCC_TRACE("br\n"); return 0; }
 		p++;
 		q++;
 	}
@@ -1503,20 +1503,20 @@ static int link_option(struct lopt *o, const char *q) { MCC_TRACE("enter\n");
 redo:
 	p = o->opt;
 	if (*p++ != '-')
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (*p == '-')
-		p++;
+		{ MCC_TRACE("br\n"); p++; }
 	while ((c = *q) == *p) { MCC_TRACE("br\n");
 		if (c == '\0')
-			goto succ;
+			{ MCC_TRACE("br\n"); goto succ; }
 		++p;
 		if (c == '=')
-			goto succ;
+			{ MCC_TRACE("br\n"); goto succ; }
 		++q;
 	}
 	if (*p == '\0') { MCC_TRACE("br\n");
 		if (c == '|')
-			goto succ;
+			{ MCC_TRACE("br\n"); goto succ; }
 		if (c == '=' || c == ':') { MCC_TRACE("br\n");
 			if (o->s->link_optind + 1 < o->s->link_argc) { MCC_TRACE("br\n");
 				p = o->s->link_argv[++o->s->link_optind];
@@ -1526,10 +1526,10 @@ redo:
 			return 0;
 		}
 	} else if (c == ':')
-		goto succ;
+		{ MCC_TRACE("br\n"); goto succ; }
 	while (*q)
 		if (*q++ == '|')
-			goto redo;
+			{ MCC_TRACE("br\n"); goto redo; }
 	return 0;
 succ:
 	o->arg = p;
@@ -1590,9 +1590,9 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 #endif
 				s->output_format = MCC_OUTPUT_FORMAT_ELF;
 			else if (0 == strcmp("binary", o.arg))
-				s->output_format = MCC_OUTPUT_FORMAT_BINARY;
+				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_BINARY; }
 			else
-				goto err;
+				{ MCC_TRACE("br\n"); goto err; }
 		} else if (link_option(&o, "export-all-symbols|export-dynamic|E")) { MCC_TRACE("br\n");
 			s->rdynamic = 1;
 		} else if (link_option(&o, "rpath=")) { MCC_TRACE("br\n");
@@ -1646,7 +1646,7 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 			s->pe_stack_size = strtoul(o.arg, &end, 10);
 		} else if (link_option(&o, "subsystem=")) { MCC_TRACE("br\n");
 			if (pe_setsubsy(s, o.arg) < 0)
-				goto err;
+				{ MCC_TRACE("br\n"); goto err; }
 #elif defined MCC_TARGET_MACHO
 		} else if (link_option(&o, "all_load")) { MCC_TRACE("br\n");
 			s->filetype |= AFF_WHOLE_ARCHIVE;
@@ -1672,7 +1672,7 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 			return mcc_error_noabort("unsupported linker option '%s'", o.opt);
 		}
 		if (ignoring)
-			mcc_warning_c(warn_unsupported)("unsupported linker option '%s'", o.opt);
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_unsupported)("unsupported linker option '%s'", o.opt); }
 		++s->link_optind;
 	}
 	return 0;
@@ -1972,15 +1972,15 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_T
 	r = name, value = !strstart("no-", &r), mask = 0;
 
 	if ((flags->flags & WD_ALL) && strstart("error=", &r))
-		value = value ? WARN_ON | WARN_ERR : WARN_NOE, mask = WARN_ON;
+		{ MCC_TRACE("br\n"); value = value ? WARN_ON | WARN_ERR : WARN_NOE, mask = WARN_ON; }
 
 	for (ret = -1, p = flags; p->name; ++p) { MCC_TRACE("br\n");
 		if (ret) { MCC_TRACE("br\n");
 			if (strcmp(r, p->name))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 		} else { MCC_TRACE("br\n");
 			if (0 == (p->flags & WD_ALL))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 		}
 
 		f = (unsigned char *)s + p->offset;
@@ -1989,7 +1989,7 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_T
 		if (ret) { MCC_TRACE("br\n");
 			ret = 0;
 			if (strcmp(r, "all"))
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 	}
 	return ret;
@@ -2036,10 +2036,10 @@ static uint32_t parse_version(MCCState *s1, const char *version) { MCC_TRACE("en
 	if (*last == '.') { MCC_TRACE("br\n");
 		b = strtoul(&last[1], &last, 10);
 		if (*last == '.')
-			c = strtoul(&last[1], &last, 10);
+			{ MCC_TRACE("br\n"); c = strtoul(&last[1], &last, 10); }
 	}
 	if (*last || a > 0xffff || b > 0xff || c > 0xff)
-		mcc_error_noabort("version a.b.c not correct: %s", version);
+		{ MCC_TRACE("br\n"); mcc_error_noabort("version a.b.c not correct: %s", version); }
 	return (a << 16) | (b << 8) | c;
 }
 #endif
@@ -2049,9 +2049,9 @@ static void insert_args(MCCState *s1, char ***pargv, int *pargc, int optind, con
 	char **argv = NULL;
 	for (int i = 0; i < *pargc; ++i)
 		if (i == optind)
-			dynarray_split(&argv, &argc, p, sep);
+			{ MCC_TRACE("br\n"); dynarray_split(&argv, &argc, p, sep); }
 		else
-			dynarray_add(&argv, &argc, mcc_strdup((*pargv)[i]));
+			{ MCC_TRACE("br\n"); dynarray_add(&argv, &argc, mcc_strdup((*pargv)[i])); }
 	dynarray_reset(&s1->argv, &s1->argc);
 	*pargc = s1->argc = argc;
 	*pargv = s1->argv = argv;
@@ -2063,7 +2063,7 @@ static void args_parser_add_file(MCCState *s, const char *filename, int filetype
 	strcpy(f->name, filename);
 	dynarray_add(&s->files, &s->nb_files, f);
 	if (filetype & (AFF_TYPE_LIB | AFF_TYPE_FRAMEWORK))
-		++s->nb_libraries;
+		{ MCC_TRACE("br\n"); ++s->nb_libraries; }
 }
 
 PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE("enter\n");
@@ -2084,7 +2084,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			char *p;
 			fd = open(++r, O_RDONLY | O_BINARY);
 			if (fd < 0)
-				return mcc_error_noabort("listfile '%s' not found", r);
+				{ MCC_TRACE("br\n"); return mcc_error_noabort("listfile '%s' not found", r); }
 			p = mcc_load_text(fd);
 			insert_args(s1, &argv, &argc, optind, p, 0);
 			close(fd), mcc_free(p);
@@ -2096,28 +2096,28 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			empty = 0;
 		dorun:
 			if (run)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			continue;
 		}
 		if (r[1] == '-' && r[2] == '\0')
-			goto dorun;
+			{ MCC_TRACE("br\n"); goto dorun; }
 
 		for (popt = mcc_options;; ++popt) { MCC_TRACE("br\n");
 			const char *p1 = popt->name;
 			const char *r1 = r + 1;
 			if (p1 == NULL)
-				return mcc_error_noabort("invalid option -- '%s'", r);
+				{ MCC_TRACE("br\n"); return mcc_error_noabort("invalid option -- '%s'", r); }
 			if (!strstart(p1, &r1))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			optarg = r1;
 			if (popt->flags & MCC_OPTION_HAS_ARG) { MCC_TRACE("br\n");
 				if (*r1 == '\0' && !(popt->flags & MCC_OPTION_NOSEP)) { MCC_TRACE("br\n");
 					if (optind >= argc)
-						return mcc_error_noabort("argument to '%s' is missing", r);
+						{ MCC_TRACE("br\n"); return mcc_error_noabort("argument to '%s' is missing", r); }
 					optarg = argv[optind++];
 				}
 			} else if (*r1 != '\0')
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			break;
 		}
 
@@ -2178,7 +2178,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #if MCC_CONFIG_DIAG_RT >= 1
 			s->do_backtrace = 1;
 			if (0 == s->do_debug)
-				s->do_debug = 1;
+				{ MCC_TRACE("br\n"); s->do_debug = 1; }
 			s->dwarf = MCC_CONFIG_DWARF_VERSION;
 #else
 			return mcc_error_noabort("backtrace (-bt) support was not built into this mcc");
@@ -2210,7 +2210,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			break;
 		case MCC_OPTION_stats:
 			if (optarg[0] == '=')
-				optarg++;
+				{ MCC_TRACE("br\n"); optarg++; }
 			s->stats = optarg[0] ? (unsigned)strtoul(optarg, NULL, 0) : MCC_STATS_ALL;
 			mcc_stats_enable(s->stats);
 			break;
@@ -2248,20 +2248,20 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			x = MCC_OUTPUT_OBJ;
 		set_output_type:
 			if (s->output_type)
-				mcc_warning("-%s: overriding compiler action already specified", popt->name);
+				{ MCC_TRACE("br\n"); mcc_warning("-%s: overriding compiler action already specified", popt->name); }
 			s->output_type = x;
 			break;
 		case MCC_OPTION_d:
 			if (*optarg == 'D')
-				s->dflag = 3;
+				{ MCC_TRACE("br\n"); s->dflag = 3; }
 			else if (*optarg == 'M')
-				s->dflag = 7;
+				{ MCC_TRACE("br\n"); s->dflag = 7; }
 			else if (*optarg == 't')
-				s->dflag = 16;
+				{ MCC_TRACE("br\n"); s->dflag = 16; }
 			else if (isnum(*optarg))
-				g_debug |= atoi(optarg);
+				{ MCC_TRACE("br\n"); g_debug |= atoi(optarg); }
 			else
-				goto unsupported_option;
+				{ MCC_TRACE("br\n"); goto unsupported_option; }
 			break;
 		case MCC_OPTION_debug: {
 			static const struct {
@@ -2281,13 +2281,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				for (i = 0; i < countof(debug_cats); i++)
 					if (strlen(debug_cats[i].name) == n &&
 							!memcmp(debug_cats[i].name, p, n))
-						break;
+						{ MCC_TRACE("br\n"); break; }
 				if (i == countof(debug_cats))
-					return mcc_error_noabort("unknown debug category '%.*s'", (int)n, p);
+					{ MCC_TRACE("br\n"); return mcc_error_noabort("unknown debug category '%.*s'", (int)n, p); }
 				g_debug |= debug_cats[i].bit;
 				p += n;
 				if (*p)
-					p++;
+					{ MCC_TRACE("br\n"); p++; }
 			}
 			break;
 		}
@@ -2297,45 +2297,45 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_std: {
 			const char *std = optarg;
 			if (*std == '=')
-				std++;
+				{ MCC_TRACE("br\n"); std++; }
 			const char *disp = std;
 			int strict_iso = 0;
 			if (strstart("gnu", &std))
-				;
+				{ MCC_TRACE("br\n"); ; }
 			else if (strstart("c", &std))
-				strict_iso = 1;
+				{ MCC_TRACE("br\n"); strict_iso = 1; }
 			else if (strstart("iso9899:", &std)) { MCC_TRACE("br\n");
 				strict_iso = 1;
 				if (!strcmp(std, "1990"))
-					std = "90";
+					{ MCC_TRACE("br\n"); std = "90"; }
 				else if (!strcmp(std, "199409"))
-					std = "94";
+					{ MCC_TRACE("br\n"); std = "94"; }
 				else if (!strcmp(std, "1999") || !strcmp(std, "199901"))
-					std = "99";
+					{ MCC_TRACE("br\n"); std = "99"; }
 				else if (!strcmp(std, "2011"))
-					std = "11";
+					{ MCC_TRACE("br\n"); std = "11"; }
 				else if (!strcmp(std, "2017") || !strcmp(std, "2018"))
-					std = "17";
+					{ MCC_TRACE("br\n"); std = "17"; }
 			} else { MCC_TRACE("br\n");
 				mcc_warning("unsupported language standard '%s'", disp);
 				break;
 			}
 			if (!strcmp(std, "89") || !strcmp(std, "90"))
-				s->cversion = 0;
+				{ MCC_TRACE("br\n"); s->cversion = 0; }
 			else if (!strcmp(std, "94"))
-				s->cversion = 199409;
+				{ MCC_TRACE("br\n"); s->cversion = 199409; }
 			else if (!strcmp(std, "99"))
-				s->cversion = 199901;
+				{ MCC_TRACE("br\n"); s->cversion = 199901; }
 			else if (!strcmp(std, "11"))
-				s->cversion = 201112;
+				{ MCC_TRACE("br\n"); s->cversion = 201112; }
 			else if (!strcmp(std, "17") || !strcmp(std, "18"))
-				s->cversion = 201710;
+				{ MCC_TRACE("br\n"); s->cversion = 201710; }
 			else if (!strcmp(std, "23") || !strcmp(std, "2x"))
-				s->cversion = 202311;
+				{ MCC_TRACE("br\n"); s->cversion = 202311; }
 			else
-				mcc_warning("unsupported language standard '%s'", disp);
+				{ MCC_TRACE("br\n"); mcc_warning("unsupported language standard '%s'", disp); }
 			if (strict_iso)
-				s->trigraphs = !(s->cversion >= 202311);
+				{ MCC_TRACE("br\n"); s->trigraphs = !(s->cversion >= 202311); }
 		} break;
 		case MCC_OPTION_shared:
 			x = MCC_OUTPUT_DLL;
@@ -2365,7 +2365,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_sysroot:
 		case MCC_OPTION_isysroot:
 			if (*optarg == '=')
-				optarg++;
+				{ MCC_TRACE("br\n"); optarg++; }
 			mcc_set_str(&s->sysroot, optarg);
 			break;
 		case MCC_OPTION_include:
@@ -2414,15 +2414,15 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->max_errors = atoi(vis);
 			} else if (strstart("visibility=", &vis)) { MCC_TRACE("br\n");
 				if (!strcmp(vis, "default"))
-					s->visibility = STV_DEFAULT;
+					{ MCC_TRACE("br\n"); s->visibility = STV_DEFAULT; }
 				else if (!strcmp(vis, "hidden"))
-					s->visibility = STV_HIDDEN;
+					{ MCC_TRACE("br\n"); s->visibility = STV_HIDDEN; }
 				else if (!strcmp(vis, "internal"))
-					s->visibility = STV_INTERNAL;
+					{ MCC_TRACE("br\n"); s->visibility = STV_INTERNAL; }
 				else if (!strcmp(vis, "protected"))
-					s->visibility = STV_PROTECTED;
+					{ MCC_TRACE("br\n"); s->visibility = STV_PROTECTED; }
 				else
-					mcc_warning("unsupported visibility '%s'", vis);
+					{ MCC_TRACE("br\n"); mcc_warning("unsupported visibility '%s'", vis); }
 			} else if (!strcmp(optarg, "PIC") || !strcmp(optarg, "PIE")) { MCC_TRACE("br\n");
 				s->pic = 2;
 			} else if (!strcmp(optarg, "pic") || !strcmp(optarg, "pie")) { MCC_TRACE("br\n");
@@ -2469,7 +2469,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 						s->do_sanitize_address = 1;
 						s->do_backtrace = 1;
 						if (0 == s->do_debug)
-							s->do_debug = 1;
+							{ MCC_TRACE("br\n"); s->do_debug = 1; }
 						s->dwarf = MCC_CONFIG_DWARF_VERSION;
 #else
 						return mcc_error_noabort(
@@ -2501,16 +2501,16 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			} else if (!strcmp(optarg, "diagnostics-color=auto")) { MCC_TRACE("br\n");
 				s->diag_color = 0;
 			} else if (set_flag(s, options_f, optarg) < 0)
-				goto unsupported_option;
+				{ MCC_TRACE("br\n"); goto unsupported_option; }
 		} break;
 #ifdef MCC_TARGET_ARM
 		case MCC_OPTION_mfloat_abi:
 			if (!strcmp(optarg, "softfp")) { MCC_TRACE("br\n");
 				s->float_abi = ARM_SOFTFP_FLOAT;
 			} else if (!strcmp(optarg, "hard"))
-				s->float_abi = ARM_HARD_FLOAT;
+				{ MCC_TRACE("br\n"); s->float_abi = ARM_HARD_FLOAT; }
 			else
-				return mcc_error_noabort("unsupported float abi '%s'", optarg);
+				{ MCC_TRACE("br\n"); return mcc_error_noabort("unsupported float abi '%s'", optarg); }
 			continue;
 #endif
 		case MCC_OPTION_m:
@@ -2518,11 +2518,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				const char *marg = optarg;
 				if (strstart("arch=", &marg) || strstart("tune=", &marg) || strstart("cpu=", &marg) ||
 						strstart("cmodel=", &marg) || strstart("fpmath=", &marg))
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				if (x = atoi(optarg), x != 32 && x != 64)
-					goto unsupported_option;
+					{ MCC_TRACE("br\n"); goto unsupported_option; }
 				if (MCC_PTR_SIZE != x / 8)
-					return x;
+					{ MCC_TRACE("br\n"); return x; }
 				continue;
 			}
 			break;
@@ -2534,7 +2534,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				break;
 			}
 			if (optarg[0] && set_flag(s, options_W, optarg) < 0)
-				goto unsupported_option;
+				{ MCC_TRACE("br\n"); goto unsupported_option; }
 			break;
 		case MCC_OPTION_w:
 			s->warn_none = 1;
@@ -2544,11 +2544,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			break;
 		case MCC_OPTION_Wl:
 			if (mcc_set_linker(s, optarg) < 0)
-				return -1;
+				{ MCC_TRACE("br\n"); return -1; }
 			break;
 		case MCC_OPTION_Wp:
 			if (argv[0])
-				insert_args(s, &argv, &argc, --optind, optarg, ',');
+				{ MCC_TRACE("br\n"); insert_args(s, &argv, &argc, --optind, optarg, ','); }
 			break;
 		case MCC_OPTION_E:
 			x = MCC_OUTPUT_PREPROCESS;
@@ -2564,7 +2564,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			s->just_deps = 1;
 			s->gen_deps = 1;
 			if (!s->deps_outfile)
-				mcc_set_str(&s->deps_outfile, "-");
+				{ MCC_TRACE("br\n"); mcc_set_str(&s->deps_outfile, "-"); }
 			break;
 		case MCC_OPTION_MD:
 			s->include_sys_deps = 1;
@@ -2572,7 +2572,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_MMD:
 			s->gen_deps = 1;
 			if (*optarg != ',')
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			++optarg;
 			FALLTHROUGH;
 		case MCC_OPTION_MF:
@@ -2589,9 +2589,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			const char *src = optarg;
 			int extra = 0, sep = s->dep_target ? 1 : 0;
 			if (popt->index == MCC_OPTION_MQ)
-				for (const char *q = src; *q; q++)
+				{ MCC_TRACE("br\n"); for (const char *q = src; *q; q++)
 					if (*q == '$')
-						extra++;
+						{ MCC_TRACE("br\n"); extra++; } }
 			{
 				int oldlen = s->dep_target ? (int)strlen(s->dep_target) : 0;
 				char *nt = mcc_malloc(oldlen + sep + (int)strlen(src) + extra + 1);
@@ -2603,7 +2603,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				}
 				for (const char *q = src; *q; q++) { MCC_TRACE("br\n");
 					if (popt->index == MCC_OPTION_MQ && *q == '$')
-						*d++ = '$';
+						{ MCC_TRACE("br\n"); *d++ = '$'; }
 					*d++ = *q;
 				}
 				*d = '\0';
@@ -2622,36 +2622,36 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_x:
 			x = 0;
 			if (*optarg == 'c')
-				x = AFF_TYPE_C;
+				{ MCC_TRACE("br\n"); x = AFF_TYPE_C; }
 			else if (*optarg == 'a')
-				x = AFF_TYPE_ASMPP;
+				{ MCC_TRACE("br\n"); x = AFF_TYPE_ASMPP; }
 			else if (*optarg == 'b')
-				x = AFF_TYPE_BIN;
+				{ MCC_TRACE("br\n"); x = AFF_TYPE_BIN; }
 			else if (*optarg == 'n')
-				x = AFF_TYPE_NONE;
+				{ MCC_TRACE("br\n"); x = AFF_TYPE_NONE; }
 			else
-				mcc_warning("unsupported language '%s'", optarg);
+				{ MCC_TRACE("br\n"); mcc_warning("unsupported language '%s'", optarg); }
 			s->filetype = x | (s->filetype & ~AFF_TYPE_MASK);
 			break;
 		case MCC_OPTION_O:
 			s->optimize_size = 0;
 			s->optimize_search_seconds = 0;
 			if (optarg[0] == '\0')
-				s->optimize = 1;
+				{ MCC_TRACE("br\n"); s->optimize = 1; }
 			else if (isnum(optarg[0])) { MCC_TRACE("br\n");
 				unsigned lvl = (unsigned)atoi(optarg);
 				if (lvl > 3) { MCC_TRACE("br\n");
 					s->optimize_search_seconds = lvl;
 					s->optimize = 3;
 				} else
-					s->optimize = (unsigned char)lvl;
+					{ MCC_TRACE("br\n"); s->optimize = (unsigned char)lvl; }
 			} else if (!strcmp(optarg, "s") || !strcmp(optarg, "z")) { MCC_TRACE("br\n");
 				s->optimize = 2;
 				s->optimize_size = 1;
 			} else if (!strcmp(optarg, "g"))
-				s->optimize = 1;
+				{ MCC_TRACE("br\n"); s->optimize = 1; }
 			else if (!strcmp(optarg, "fast"))
-				s->optimize = 3;
+				{ MCC_TRACE("br\n"); s->optimize = 3; }
 			else { MCC_TRACE("br\n");
 				mcc_warning("unsupported optimization level '-O%s'", optarg);
 				s->optimize = 1;
@@ -2703,9 +2703,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			x = OPT_AR;
 		extra_action:
 			if (NULL == argv[0])
-				return -1;
+				{ MCC_TRACE("br\n"); return -1; }
 			if (!empty && x)
-				return mcc_error_noabort("cannot parse %s here", r);
+				{ MCC_TRACE("br\n"); return mcc_error_noabort("cannot parse %s here", r); }
 			--optind;
 			*pargc = argc - optind;
 			*pargv = argv + optind;
@@ -2718,19 +2718,19 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		empty = 0;
 	}
 	if (s->link_optind < s->link_argc)
-		return mcc_error_noabort("argument to '-Wl,%s' is missing", s->link_argv[s->link_optind]);
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("argument to '-Wl,%s' is missing", s->link_argv[s->link_optind]); }
 	if (run) { MCC_TRACE("br\n");
 		if (*run && mcc_set_options(s, run) < 0)
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		x = 0, r = 0;
 		goto extra_action;
 	}
 	if (!empty)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (MCC_VTIER(s->verbose) == MCC_V2)
-		return OPT_PRINT_DIRS;
+		{ MCC_TRACE("br\n"); return OPT_PRINT_DIRS; }
 	if (s->verbose)
-		return OPT_V;
+		{ MCC_TRACE("br\n"); return OPT_V; }
 	return OPT_HELP;
 }
 
@@ -2759,7 +2759,7 @@ LIBMCCAPI unsigned long long mcc_intention_hash(MCCState *s) { MCC_TRACE("enter\
 
 PUB_FUNC void mcc_print_stats(MCCState *s1, unsigned total_time) { MCC_TRACE("enter\n");
 	if (!total_time)
-		total_time = 1;
+		{ MCC_TRACE("br\n"); total_time = 1; }
 	fprintf(stderr, "# %d idents, %d lines, %d functions, %u bytes\n"
 									"# %0.3f s, %u lines/s, %0.1f MB/s\n",
 					total_idents, total_lines, total_funcs, total_bytes,

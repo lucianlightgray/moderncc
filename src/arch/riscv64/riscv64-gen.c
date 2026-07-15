@@ -51,9 +51,9 @@ ST_DATA int func_bound_add_epilog;
 
 static int ireg(int r) { MCC_TRACE("enter\n");
 	if (r == MCC_TREG_RA)
-		return 1;
+		{ MCC_TRACE("br\n"); return 1; }
 	if (r == MCC_TREG_SP)
-		return 2;
+		{ MCC_TRACE("br\n"); return 2; }
 	assert(r >= 0 && r < 8);
 	return r + 10;
 }
@@ -74,9 +74,9 @@ static int is_freg(int r) { MCC_TRACE("enter\n");
 ST_FUNC void o(unsigned int c) { MCC_TRACE("enter\n");
 	int ind1 = ind + 4;
 	if (nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (ind1 > cur_text_section->data_allocated)
-		section_realloc(cur_text_section, ind1);
+		{ MCC_TRACE("br\n"); section_realloc(cur_text_section, ind1); }
 	write32le(cur_text_section->data + ind, c);
 	ind = ind1;
 }
@@ -111,7 +111,7 @@ ST_FUNC void gsym_addr(int t_, int a_) { MCC_TRACE("enter\n");
 		uint32_t next = read32le(ptr);
 		uint32_t r = a - t, imm;
 		if ((r + (1 << 21)) & ~((1U << 22) - 2))
-			mcc_error("out-of-range branch chain");
+			{ MCC_TRACE("br\n"); mcc_error("out-of-range branch chain"); }
 		imm = (((r >> 12) & 0xff) << 12) | (((r >> 11) & 1) << 20) | (((r >> 1) & 0x3ff) << 21) | (((r >> 20) & 1) << 31);
 		write32le(ptr, r == 4 ? 0x33 : 0x6f | imm);
 		t = next;
@@ -150,7 +150,7 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE
 		}
 		label.type.t = VT_VOID | VT_STATIC;
 		if (!nocode_wanted)
-			put_extern_sym(&label, cur_text_section, ind, 0);
+			{ MCC_TRACE("br\n"); put_extern_sym(&label, cur_text_section, ind, 0); }
 		rr = is_ireg(r) ? ireg(r) : 5;
 		o(0x17 | (rr << 7));
 		greloca(cur_text_section, &label, ind,
@@ -169,7 +169,7 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE
 	} else if (v == VT_LOCAL || v == VT_LLOCAL) { MCC_TRACE("br\n");
 		rr = 8;
 		if (fc != sv->c.i)
-			mcc_error("unimp: store(giant local off) (0x%lx)", (long)sv->c.i);
+			{ MCC_TRACE("br\n"); mcc_error("unimp: store(giant local off) (0x%lx)", (long)sv->c.i); }
 		if (LOW_OVERFLOW(fc)) { MCC_TRACE("br\n");
 			rr = is_ireg(r) ? ireg(r) : 5;
 			o(0x37 | (rr << 7) | UPPER(fc));
@@ -177,13 +177,13 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE
 			*new_fc = SIGN11(fc);
 		}
 	} else
-		mcc_error("uhh");
+		{ MCC_TRACE("br\n"); mcc_error("uhh"); }
 	return rr;
 }
 
 static void load_large_constant(int rr, int fc, uint32_t pi) { MCC_TRACE("enter\n");
 	if (fc < 0)
-		pi++;
+		{ MCC_TRACE("br\n"); pi++; }
 	o(0x37 | (rr << 7) | UPPER(pi));
 	EI(0x13, 0, rr, rr, SIGN11(pi));
 	EI(0x13, 1, rr, rr, 12);
@@ -205,7 +205,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		size = type_size(&sv->type, &align);
 		assert(!is_freg(r) || bt == VT_FLOAT || bt == VT_DOUBLE);
 		if (bt == VT_PTR || bt == VT_FUNC)
-			size = MCC_PTR_SIZE;
+			{ MCC_TRACE("br\n"); size = MCC_PTR_SIZE; }
 		func3 = size == 1
 								? 0
 						: size == 2
@@ -214,7 +214,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 								? 2
 								: 3;
 		if (size < 4 && !is_float(sv->type.t) && (sv->type.t & VT_UNSIGNED))
-			func3 |= 4;
+			{ MCC_TRACE("br\n"); func3 |= 4; }
 		if (v == VT_LOCAL || (fr & VT_SYM)) { MCC_TRACE("br\n");
 			br = load_symofs(r, sv, 0, &fc);
 		} else if (v < VT_CONST) { MCC_TRACE("br\n");
@@ -254,7 +254,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 				load_large_constant(6, (int)val, (int)(val >> 32));
 			} else { MCC_TRACE("br\n");
 				if (LOW_OVERFLOW(fc))
-					o(0x37 | (6 << 7) | UPPER(fc));
+					{ MCC_TRACE("br\n"); o(0x37 | (6 << 7) | UPPER(fc)); }
 				EI(0x13 | 8, 0, 6, LOW_OVERFLOW(fc) ? 6 : 0, SIGN11(fc));
 			}
 			o(0x53 | (rr << 7) | (6 << 15) | ((unsigned)(0x78 | is_dbl) << 25));
@@ -278,9 +278,9 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			}
 		}
 		if (LOW_OVERFLOW(fc))
-			o(0x37 | (rr << 7) | UPPER(fc)), rb = rr;
+			{ MCC_TRACE("br\n"); o(0x37 | (rr << 7) | UPPER(fc)), rb = rr; }
 		if (fc || (rr != rb) || do32bit || (fr & VT_SYM))
-			EI(0x13 | do32bit, 0, rr, rb, SIGN11(fc));
+			{ MCC_TRACE("br\n"); EI(0x13 | do32bit, 0, rr, rb, SIGN11(fc)); }
 		if (zext) { MCC_TRACE("br\n");
 			EI(0x13, 1, rr, rr, 32);
 			EI(0x13, 5, rr, rr, 32);
@@ -295,14 +295,14 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		EI(0x03, 3, rr, br, fc);
 	} else if (v < VT_CONST) { MCC_TRACE("br\n");
 		if (is_freg(r) && is_freg(v))
-			ER(0x53, 0, rr, freg(v), freg(v), bt == VT_DOUBLE ? 0x11 : 0x10);
+			{ MCC_TRACE("br\n"); ER(0x53, 0, rr, freg(v), freg(v), bt == VT_DOUBLE ? 0x11 : 0x10); }
 		else if (is_ireg(r) && is_ireg(v))
-			EI(0x13, 0, rr, ireg(v), 0);
+			{ MCC_TRACE("br\n"); EI(0x13, 0, rr, ireg(v), 0); }
 		else { MCC_TRACE("br\n");
 			int func7 = is_ireg(r) ? 0x70 : 0x78;
 			size = type_size(&sv->type, &align);
 			if (size == 8)
-				func7 |= 1;
+				{ MCC_TRACE("br\n"); func7 |= 1; }
 			assert(size == 4 || size == 8);
 			o(0x53 | (rr << 7) | ((is_freg(v) ? freg(v) : ireg(v)) << 15) | ((unsigned)func7 << 25));
 		}
@@ -332,16 +332,16 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			}
 			ER(0x33, (op > TOK_UGT) ? 2 : 3, rr, a, b, 0);
 			if (inv)
-				EI(0x13, 4, rr, rr, 1);
+				{ MCC_TRACE("br\n"); EI(0x13, 4, rr, rr, 1); }
 			break;
 		case TOK_NE:
 		case TOK_EQ:
 			if (rr != a || b)
-				ER(0x33, 0, rr, a, b, 0x20);
+				{ MCC_TRACE("br\n"); ER(0x33, 0, rr, a, b, 0x20); }
 			if (op == TOK_NE)
-				ER(0x33, 3, rr, 0, rr, 0);
+				{ MCC_TRACE("br\n"); ER(0x33, 3, rr, 0, rr, 0); }
 			else
-				EI(0x13, 3, rr, rr, 1);
+				{ MCC_TRACE("br\n"); EI(0x13, 3, rr, rr, 1); }
 			break;
 		}
 	} else if ((v & ~1) == VT_JMP) { MCC_TRACE("br\n");
@@ -352,7 +352,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		gsym(fc);
 		EI(0x13, 0, rr, 0, t ^ 1);
 	} else
-		mcc_error("unimp: load(non-const)");
+		{ MCC_TRACE("br\n"); mcc_error("unimp: load(non-const)"); }
 }
 
 ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
@@ -363,11 +363,11 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 	int align, size = type_size(&sv->type, &align);
 	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE);
 	if (bt == VT_LDOUBLE)
-		size = align = 8;
+		{ MCC_TRACE("br\n"); size = align = 8; }
 	if (bt == VT_STRUCT)
-		mcc_error("unimp: store(struct)");
+		{ MCC_TRACE("br\n"); mcc_error("unimp: store(struct)"); }
 	if (size > 8)
-		mcc_error("unimp: large sized store");
+		{ MCC_TRACE("br\n"); mcc_error("unimp: large sized store"); }
 	assert(sv->r & VT_LVAL);
 	if (fr == VT_LOCAL || (sv->r & VT_SYM)) { MCC_TRACE("br\n");
 		ptrreg = load_symofs(-1, sv, 1, &fc);
@@ -386,7 +386,7 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 			fc = SIGN11(fc);
 		}
 	} else
-		mcc_error("implement me: %s(!local)", __FUNCTION__);
+		{ MCC_TRACE("br\n"); mcc_error("implement me: %s(!local)", __FUNCTION__); }
 	ES(is_freg(r) ? 0x27 : 0x23,
 		 size == 1
 				 ? 0
@@ -444,7 +444,7 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 	Sym label = {0};
 
 	if (!gen_bounds_epilog_head(func_bound_offset, &sym_data, &offset_modified))
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	label.type.t = VT_VOID | VT_STATIC;
 	if (offset_modified) { MCC_TRACE("br\n");
@@ -477,31 +477,31 @@ static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRA
 	if ((type->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 		Sym *f;
 		if (type->ref->type.t == VT_UNION)
-			rc[0] = -1;
+			{ MCC_TRACE("br\n"); rc[0] = -1; }
 		else
-			for (f = type->ref->next; f; f = f->next)
-				reg_pass_rec(&f->type, rc, fieldofs, ofs + f->c);
+			{ MCC_TRACE("br\n"); for (f = type->ref->next; f; f = f->next)
+				reg_pass_rec(&f->type, rc, fieldofs, ofs + f->c); }
 	} else if (type->t & VT_ARRAY) { MCC_TRACE("br\n");
 		if (type->ref->c < 0 || type->ref->c > 2)
-			rc[0] = -1;
+			{ MCC_TRACE("br\n"); rc[0] = -1; }
 		else { MCC_TRACE("br\n");
 			int a, sz = type_size(&type->ref->type, &a);
 			reg_pass_rec(&type->ref->type, rc, fieldofs, ofs);
 			if (rc[0] > 2 || (rc[0] == 2 && type->ref->c > 1))
-				rc[0] = -1;
+				{ MCC_TRACE("br\n"); rc[0] = -1; }
 			else if (type->ref->c == 2 && rc[0] && rc[1] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 				rc[++rc[0]] = MCC_RC_FLOAT;
 				fieldofs[rc[0]] = ((ofs + sz) << 4) | (type->ref->type.t & VT_BTYPE);
 			} else if (type->ref->c == 2)
-				rc[0] = -1;
+				{ MCC_TRACE("br\n"); rc[0] = -1; }
 		}
 	} else if (rc[0] == 2 || rc[0] < 0 || (type->t & VT_BTYPE) == VT_LDOUBLE)
-		rc[0] = -1;
+		{ MCC_TRACE("br\n"); rc[0] = -1; }
 	else if (!rc[0] || rc[1] == MCC_RC_FLOAT || is_float(type->t)) { MCC_TRACE("br\n");
 		rc[++rc[0]] = is_float(type->t) ? MCC_RC_FLOAT : MCC_RC_INT;
 		fieldofs[rc[0]] = (ofs << 4) | ((type->t & VT_BTYPE) == VT_PTR ? VT_LLONG : type->t & VT_BTYPE);
 	} else
-		rc[0] = -1;
+		{ MCC_TRACE("br\n"); rc[0] = -1; }
 }
 
 static void reg_pass(CType *type, int *prc, int *fieldofs, int named) { MCC_TRACE("enter\n");
@@ -539,7 +539,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_DIAG_RT >= 2
 	int bc_save = mcc_state->do_bounds_check;
 	if (mcc_state->do_bounds_check)
-		gbound_args(nb_args);
+		{ MCC_TRACE("br\n"); gbound_args(nb_args); }
 #endif
 
 	areg[0] = 0;
@@ -553,7 +553,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		size = type_size(&sv->type, &align);
 		if (size > 16) { MCC_TRACE("br\n");
 			if (align < XLEN)
-				align = XLEN;
+				{ MCC_TRACE("br\n"); align = XLEN; }
 			tempspace = (tempspace + align - 1) & -align;
 			tempofs = tempspace;
 			tempspace += size;
@@ -562,25 +562,25 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		}
 		reg_pass(&sv->type, prc, fieldofs, old || sa != 0);
 		if (!old && !sa && align == 2 * XLEN && size <= 2 * XLEN)
-			areg[0] = (areg[0] + 1) & ~1;
+			{ MCC_TRACE("br\n"); areg[0] = (areg[0] + 1) & ~1; }
 		nregs = prc[0];
 		if (size == 0)
-			info[i] = 0;
+			{ MCC_TRACE("br\n"); info[i] = 0; }
 		else if ((prc[1] == MCC_RC_INT && areg[0] >= 8) || (prc[1] == MCC_RC_FLOAT && areg[1] >= 16) || (nregs == 2 && prc[1] == MCC_RC_FLOAT && prc[2] == MCC_RC_FLOAT && areg[1] >= 15) || (nregs == 2 && prc[1] != prc[2] && (areg[1] >= 16 || areg[0] >= 8))) { MCC_TRACE("br\n");
 			info[i] = 32;
 			if (align < XLEN)
-				align = XLEN;
+				{ MCC_TRACE("br\n"); align = XLEN; }
 			stack_adj += (size + align - 1) & -align;
 			if (!old && !sa)
-				areg[0] = 8, areg[1] = 16;
+				{ MCC_TRACE("br\n"); areg[0] = 8, areg[1] = 16; }
 		} else { MCC_TRACE("br\n");
 			info[i] = areg[prc[1] - 1]++;
 			if (!byref)
-				info[i] |= (fieldofs[1] & VT_BTYPE) << 12;
+				{ MCC_TRACE("br\n"); info[i] |= (fieldofs[1] & VT_BTYPE) << 12; }
 			assert(!(fieldofs[1] >> 4));
 			if (nregs == 2) { MCC_TRACE("br\n");
 				if (prc[2] == MCC_RC_FLOAT || areg[0] < 8)
-					info[i] |= (1 + areg[prc[2] - 1]++) << 7;
+					{ MCC_TRACE("br\n"); info[i] |= (1 + areg[prc[2] - 1]++) << 7; }
 				else { MCC_TRACE("br\n");
 					info[i] |= 16;
 					stack_adj += 8;
@@ -593,7 +593,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		}
 		info[i] |= byref;
 		if (sa)
-			sa = sa->next;
+			{ MCC_TRACE("br\n"); sa = sa->next; }
 	}
 	stack_adj = (stack_adj + 15) & -16;
 	tempspace = (tempspace + 15) & -16;
@@ -605,7 +605,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			EI(0x13, 0, 5, 5, SIGN11(-stack_add));
 			ER(0x33, 0, 2, 2, 5, 0);
 		} else
-			EI(0x13, 0, 2, 2, -stack_add);
+			{ MCC_TRACE("br\n"); EI(0x13, 0, 2, 2, -stack_add); }
 		for (int i = 0, ofs = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 			if (info[i] & (64 | 32)) { MCC_TRACE("br\n");
 				vrotb(nb_args - i);
@@ -625,7 +625,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				}
 				if (info[i] & 32) { MCC_TRACE("br\n");
 					if (align < XLEN)
-						align = XLEN;
+						{ MCC_TRACE("br\n"); align = XLEN; }
 					vset(&char_pointer_type, MCC_TREG_SP, 0);
 					ofs = (ofs + align - 1) & -align;
 					vpushi(ofs);
@@ -657,7 +657,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			origtype = vtop->type;
 			size = type_size(&vtop->type, &align);
 			if (size == 0)
-				goto done;
+				{ MCC_TRACE("br\n"); goto done; }
 			loadt = vtop->type.t & VT_BTYPE;
 			if (loadt == VT_STRUCT) { MCC_TRACE("br\n");
 				loadt = (ii >> 12) & VT_BTYPE;
@@ -686,7 +686,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				vpushi(ii >> 20);
 #if MCC_CONFIG_DIAG_RT >= 2
 				if ((origtype.t & VT_BTYPE) == VT_STRUCT)
-					mcc_state->do_bounds_check = 0;
+					{ MCC_TRACE("br\n"); mcc_state->do_bounds_check = 0; }
 #endif
 				gen_op('+');
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -727,7 +727,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			EI(0x13, 0, 5, 5, SIGN11(stack_add));
 			ER(0x33, 0, 2, 2, 5, 0);
 		} else
-			EI(0x13, 0, 2, 2, stack_add);
+			{ MCC_TRACE("br\n"); EI(0x13, 0, 2, 2, stack_add); }
 	}
 	mcc_free(info);
 }
@@ -771,7 +771,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		regcount = prc[0];
 		if (areg[prc[1] - 1] >= 8 || (regcount == 2 && ((prc[1] == MCC_RC_FLOAT && prc[2] == MCC_RC_FLOAT && areg[1] >= 7) || (prc[1] != prc[2] && (areg[1] >= 8 || areg[0] >= 8))))) { MCC_TRACE("br\n");
 			if (align < XLEN)
-				align = XLEN;
+				{ MCC_TRACE("br\n"); align = XLEN; }
 			addr = (addr + align - 1) & -align;
 			param_addr = addr;
 			addr += size;
@@ -803,7 +803,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	}
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		gen_bounds_prolog();
+		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
 }
 
@@ -814,11 +814,11 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
 	*ret_align = 1;
 	*regsize = 8;
 	if (size > 16)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	reg_pass(vt, prc, fieldofs, 1);
 	nregs = prc[0];
 	if (nregs == 2 && prc[1] != prc[2])
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (prc[1] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 		*regsize = size / nregs;
 	}
@@ -846,7 +846,7 @@ ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		gen_bounds_epilog();
+		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
 
 	loc = (loc - num_va_regs * 8);
@@ -873,11 +873,11 @@ ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	ES(0x23, 3, 2, 1, d - 8 - num_va_regs * 8);
 	ES(0x23, 3, 2, 8, d - 16 - num_va_regs * 8);
 	if (v < (1 << 11))
-		EI(0x13, 0, 8, 2, d - num_va_regs * 8);
+		{ MCC_TRACE("br\n"); EI(0x13, 0, 8, 2, d - num_va_regs * 8); }
 	else
-		gjmp_addr(large_ofs_ind);
+		{ MCC_TRACE("br\n"); gjmp_addr(large_ofs_ind); }
 	if ((ind - func_sub_sp_offset) != 5 * 4)
-		EI(0x13, 0, 0, 0, 0);
+		{ MCC_TRACE("br\n"); EI(0x13, 0, 0, 0, 0); }
 	ind = saved_ind;
 }
 
@@ -888,7 +888,7 @@ ST_FUNC void gen_va_start(void) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_fill_nops(int bytes) { MCC_TRACE("enter\n");
 	if ((bytes & 3))
-		mcc_error("alignment of code section not multiple of 4");
+		{ MCC_TRACE("br\n"); mcc_error("alignment of code section not multiple of 4"); }
 	while (bytes > 0) { MCC_TRACE("br\n");
 		EI(0x13, 0, 0, 0, 0);
 		bytes -= 4;
@@ -897,7 +897,7 @@ ST_FUNC void gen_fill_nops(int bytes) { MCC_TRACE("enter\n");
 
 ST_FUNC int gjmp(int t) { MCC_TRACE("enter\n");
 	if (nocode_wanted)
-		return t;
+		{ MCC_TRACE("br\n"); return t; }
 	o(t);
 	return ind - 4;
 }
@@ -968,23 +968,23 @@ ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 
 static void riscv64_ubsan_div0(int b) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	o(0x63 | 1u << 12 | (uint32_t)b << 15 | 8u << 7);
 	o(0x00100073);
 }
 
 void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if ((vtop->r & VT_VALMASK) >= VT_CONST)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	o(0x63 | 1u << 12 | (uint32_t)ireg(vtop->r & VT_VALMASK) << 15 | 8u << 7);
 	o(0x00100073);
 }
 
 static void riscv64_ubsan_shift(int cnt, uint32_t width) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	o(0x13 | 3u << 12 | 5u << 7 | (uint32_t)cnt << 15 | width << 20);
 	o(0x63 | 1u << 12 | 5u << 15 | 8u << 7);
 	o(0x00100073);
@@ -999,7 +999,7 @@ static void riscv64_ubsan_addsub_post(int op, int d) { MCC_TRACE("enter\n");
 	o(0x33 | 4u << 12 | 7u << 7 | 5u << 15 | (uint32_t)d << 20);
 	o(0x33 | 4u << 12 | 5u << 7 | 5u << 15 | 6u << 20);
 	if (op == '+')
-		o(0x13 | 4u << 12 | 5u << 7 | 5u << 15 | 0xfffu << 20);
+		{ MCC_TRACE("br\n"); o(0x13 | 4u << 12 | 5u << 7 | 5u << 15 | 0xfffu << 20); }
 	o(0x33 | 7u << 12 | 5u << 7 | 5u << 15 | 7u << 20);
 	o(0x63 | 5u << 12 | 5u << 15 | 8u << 7);
 	o(0x00100073);
@@ -1036,7 +1036,7 @@ static void gen_opil(int op, int ll) { MCC_TRACE("enter\n");
 			switch (op) { MCC_TRACE("br\n");
 			case '-':
 				if (fc <= -(1 << 11))
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				fc = -fc;
 			case '+':
 				func3 = 0;
@@ -1048,18 +1048,18 @@ static void gen_opil(int op, int ll) { MCC_TRACE("enter\n");
 					vset_VT_CMP(TOK_NE);
 					vtop->cmp_r = ireg(d) | 0 << 8;
 				} else
-					vtop[0].r = d;
+					{ MCC_TRACE("br\n"); vtop[0].r = d; }
 				return;
 			case TOK_LE:
 				if (fc >= (1 << 11) - 1)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				++fc;
 			case TOK_LT:
 				func3 = 2;
 				goto do_cop;
 			case TOK_ULE:
 				if (fc >= (1 << 11) - 1 || fc == -1)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				++fc;
 			case TOK_ULT:
 				func3 = 3;
@@ -1100,7 +1100,7 @@ static void gen_opil(int op, int ll) { MCC_TRACE("enter\n");
 			case TOK_NE:
 			case TOK_EQ:
 				if (fc)
-					gen_opil('-', !ll), a = ireg(vtop++->r);
+					{ MCC_TRACE("br\n"); gen_opil('-', !ll), a = ireg(vtop++->r); }
 				--vtop;
 				vset_VT_CMP(op);
 				vtop->cmp_r = a | 0 << 8;
@@ -1130,19 +1130,19 @@ static void gen_opil(int op, int ll) { MCC_TRACE("enter\n");
 	case '+': {
 		int chk = !uns && mcc_state->do_sanitize_undefined && !nocode_wanted;
 		if (chk)
-			riscv64_ubsan_addsub_pre(a, b);
+			{ MCC_TRACE("br\n"); riscv64_ubsan_addsub_pre(a, b); }
 		ER(0x33 | ll, 0, d, a, b, 0);
 		if (chk)
-			riscv64_ubsan_addsub_post('+', d);
+			{ MCC_TRACE("br\n"); riscv64_ubsan_addsub_post('+', d); }
 		break;
 	}
 	case '-': {
 		int chk = !uns && mcc_state->do_sanitize_undefined && !nocode_wanted;
 		if (chk)
-			riscv64_ubsan_addsub_pre(a, b);
+			{ MCC_TRACE("br\n"); riscv64_ubsan_addsub_pre(a, b); }
 		ER(0x33 | ll, 0, d, a, b, 0x20);
 		if (chk)
-			riscv64_ubsan_addsub_post('-', d);
+			{ MCC_TRACE("br\n"); riscv64_ubsan_addsub_post('-', d); }
 		break;
 	}
 	case TOK_SAR:
@@ -1160,10 +1160,10 @@ static void gen_opil(int op, int ll) { MCC_TRACE("enter\n");
 	case '*': {
 		int chk = !uns && mcc_state->do_sanitize_undefined && !nocode_wanted;
 		if (chk)
-			riscv64_ubsan_addsub_pre(a, b);
+			{ MCC_TRACE("br\n"); riscv64_ubsan_addsub_pre(a, b); }
 		ER(0x33 | ll, 0, d, a, b, 1);
 		if (chk)
-			riscv64_ubsan_mul_ovf(ll, d);
+			{ MCC_TRACE("br\n"); riscv64_ubsan_mul_ovf(ll, d); }
 		break;
 	}
 	case '/':
@@ -1257,7 +1257,7 @@ ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 		vtop->r = REG_IRET;
 		vtop->r2 = cond < 0 ? MCC_TREG_R(1) : VT_CONST;
 		if (cond < 0)
-			vtop->type = type;
+			{ MCC_TRACE("br\n"); vtop->type = type; }
 		else { MCC_TRACE("br\n");
 			vpushi(0);
 			gen_opil(op, 1);
@@ -1300,7 +1300,7 @@ ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 		rd = ireg(rd);
 		ER(0x53, op, rd, rs1, rs2, dbl | 0x50);
 		if (invert)
-			EI(0x13, 4, rd, rd, 1);
+			{ MCC_TRACE("br\n"); EI(0x13, 4, rd, rd, 1); }
 
 		vset_VT_CMP(TOK_NE);
 		vtop->cmp_r = rd | (0 << 8);
@@ -1401,14 +1401,14 @@ ST_FUNC void gen_cvt_ftof(int dt) { MCC_TRACE("enter\n");
 	int st = vtop->type.t & VT_BTYPE, rs, rd;
 	dt &= VT_BTYPE;
 	if (st == dt)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	if (dt == VT_LDOUBLE || st == VT_LDOUBLE) { MCC_TRACE("br\n");
 		int func = (dt == VT_LDOUBLE)
 									 ? (st == VT_FLOAT ? TOK___extendsftf2 : TOK___extenddftf2)
 									 : (dt == VT_FLOAT ? TOK___trunctfsf2 : TOK___trunctfdf2);
 		save_regs(1);
 		if (dt == VT_LDOUBLE)
-			gv(MCC_RC_F(0));
+			{ MCC_TRACE("br\n"); gv(MCC_RC_F(0)); }
 		else { MCC_TRACE("br\n");
 			gv(MCC_RC_R(0));
 			assert(vtop->r2 < 7);
@@ -1423,18 +1423,18 @@ ST_FUNC void gen_cvt_ftof(int dt) { MCC_TRACE("enter\n");
 		vpushi(0);
 		vtop->type.t = dt;
 		if (dt == VT_LDOUBLE)
-			vtop->r = REG_IRET, vtop->r2 = REG_IRET + 1;
+			{ MCC_TRACE("br\n"); vtop->r = REG_IRET, vtop->r2 = REG_IRET + 1; }
 		else
-			vtop->r = REG_FRET;
+			{ MCC_TRACE("br\n"); vtop->r = REG_FRET; }
 	} else { MCC_TRACE("br\n");
 		assert(dt == VT_FLOAT || dt == VT_DOUBLE);
 		assert(st == VT_FLOAT || st == VT_DOUBLE);
 		rs = gv(MCC_RC_FLOAT);
 		rd = get_reg(MCC_RC_FLOAT);
 		if (dt == VT_DOUBLE)
-			EI(0x53, 0, freg(rd), freg(rs), 0x21 << 5);
+			{ MCC_TRACE("br\n"); EI(0x53, 0, freg(rd), freg(rs), 0x21 << 5); }
 		else
-			EI(0x53, 7, freg(rd), freg(rs), (0x20 << 5) | 1);
+			{ MCC_TRACE("br\n"); EI(0x53, 7, freg(rd), freg(rs), (0x20 << 5) | 1); }
 		vtop->r = rd;
 	}
 }
@@ -1475,7 +1475,7 @@ ST_FUNC void gen_vla_sp_save(int addr) { MCC_TRACE("enter\n");
 		ER(0x33, 0, 5, 5, 8, 0);
 		ES(0x23, 3, 5, 2, SIGN11(addr));
 	} else
-		ES(0x23, 3, 8, 2, addr);
+		{ MCC_TRACE("br\n"); ES(0x23, 3, 8, 2, addr); }
 }
 
 ST_FUNC void gen_vla_sp_restore(int addr) { MCC_TRACE("enter\n");
@@ -1484,19 +1484,19 @@ ST_FUNC void gen_vla_sp_restore(int addr) { MCC_TRACE("enter\n");
 		ER(0x33, 0, 5, 5, 8, 0);
 		EI(0x03, 3, 2, 5, SIGN11(addr));
 	} else
-		EI(0x03, 3, 2, 8, addr);
+		{ MCC_TRACE("br\n"); EI(0x03, 3, 2, 8, addr); }
 }
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	int rr;
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		vpushv(vtop);
+		{ MCC_TRACE("br\n"); vpushv(vtop); }
 #endif
 	rr = ireg(gv(MCC_RC_INT));
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
-		EI(0x13, 0, rr, rr, 15 + 1);
+		{ MCC_TRACE("br\n"); EI(0x13, 0, rr, rr, 15 + 1); }
 	else
 #endif
 		EI(0x13, 0, rr, rr, 15);

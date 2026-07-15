@@ -381,14 +381,14 @@ struct pe_info {
 static const char *pe_export_name(MCCState *s1, ElfW(Sym) * sym) { MCC_TRACE("enter\n");
 	const char *name = (char *)symtab_section->link->data + sym->st_name;
 	if (s1->leading_underscore && name[0] == '_' && !(sym->st_other & ST_PE_STDCALL))
-		return name + 1;
+		{ MCC_TRACE("br\n"); return name + 1; }
 	return name;
 }
 
 static int dynarray_assoc(void **pp, int n, int key) { MCC_TRACE("enter\n");
 	for (int i = 0; i < n; ++i, ++pp)
 		if (key == **(int **)pp)
-			return i;
+			{ MCC_TRACE("br\n"); return i; }
 	return -1;
 }
 
@@ -411,7 +411,7 @@ static ADDR3264 pe_virtual_align(struct pe_info *pe, ADDR3264 n) { MCC_TRACE("en
 static void pe_align_section(Section *s, int a) { MCC_TRACE("enter\n");
 	int i = s->data_offset & (a - 1);
 	if (i)
-		section_ptr_add(s, a - i);
+		{ MCC_TRACE("br\n"); section_ptr_add(s, a - i); }
 }
 
 static void pe_set_datadir(struct pe_header *hdr, int dir, DWORD addr, DWORD size) { MCC_TRACE("enter\n");
@@ -427,25 +427,25 @@ static void pe_set_tls(struct pe_info *pe, struct pe_header *hdr) { MCC_TRACE("e
 	int i;
 
 	if (!pe->has_tls)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	ds = pe->tls_dir_sec;
 	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[i];
 		ADDR3264 ssz = s->sh_size ? s->sh_size : s->data_offset;
 		if ((s->sh_flags & SHF_TLS) && ssz) { MCC_TRACE("br\n");
 			if (!tls_start || s->sh_addr < tls_start)
-				tls_start = s->sh_addr;
+				{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
 			if (s->sh_addr + ssz > mem_end)
-				mem_end = s->sh_addr + ssz;
+				{ MCC_TRACE("br\n"); mem_end = s->sh_addr + ssz; }
 			if (s->sh_type != SHT_NOBITS && s->sh_addr + ssz > raw_end)
-				raw_end = s->sh_addr + ssz;
+				{ MCC_TRACE("br\n"); raw_end = s->sh_addr + ssz; }
 		}
 	}
 	if (!raw_end)
-		raw_end = tls_start;
+		{ MCC_TRACE("br\n"); raw_end = tls_start; }
 
 	if (mem_end > raw_end)
-		raw_end = mem_end;
+		{ MCC_TRACE("br\n"); raw_end = mem_end; }
 
 	p = ds->data + pe->tls_dir_offset;
 	if (sizeof(ADDR3264) == 8) { MCC_TRACE("br\n");
@@ -545,9 +545,9 @@ static void pe_add_coffsym(struct pe_info *pe) { MCC_TRACE("enter\n");
 			se->n_scnum = shnum;
 			se->n_sclass = 2;
 			if (nl <= 8)
-				memcpy(se->n_name, name, nl);
+				{ MCC_TRACE("br\n"); memcpy(se->n_name, name, nl); }
 			else
-				se->n_offset = put_elf_str(pe->coffstr, name);
+				{ MCC_TRACE("br\n"); se->n_offset = put_elf_str(pe->coffstr, name); }
 		}
 	}
 	write32le(pe->coffstr->data, pe->coffstr->data_offset);
@@ -756,11 +756,11 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 	MCCState *s1 = pe->s1;
 
 	if (s1->do_debug)
-		pe_add_coffsym(pe);
+		{ MCC_TRACE("br\n"); pe_add_coffsym(pe); }
 
 	pe->op = fopen(pe->filename, "wb");
 	if (NULL == pe->op)
-		return mcc_error_noabort("could not write '%s': %s", pe->filename, strerror(errno));
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("could not write '%s': %s", pe->filename, strerror(errno)); }
 
 	pe->sizeofheaders = pe_file_align(pe,
 																		sizeof(struct pe_header) + pe->sec_count * sizeof(IMAGE_SECTION_HEADER));
@@ -768,9 +768,9 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 	file_offset = pe->sizeofheaders;
 
 	if (2 == s1->verbose)
-		printf("-------------------------------"
+		{ MCC_TRACE("br\n"); printf("-------------------------------"
 					 "\n  virt   file   size  section"
-					 "\n");
+					 "\n"); }
 	for (int i = 0; i < pe->sec_count; ++i) { MCC_TRACE("br\n");
 		DWORD addr, size;
 		const char *sh_name;
@@ -782,19 +782,19 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 		psh = &si->ish;
 
 		if (2 == s1->verbose)
-			printf("%6x %6x %6x  %s\n",
-						 (unsigned)addr, (unsigned)file_offset, (unsigned)size, sh_name);
+			{ MCC_TRACE("br\n"); printf("%6x %6x %6x  %s\n",
+						 (unsigned)addr, (unsigned)file_offset, (unsigned)size, sh_name); }
 
 		switch (si->cls) { MCC_TRACE("br\n");
 		case sec_text:
 			if (!pe_header.opthdr.BaseOfCode)
-				pe_header.opthdr.BaseOfCode = addr;
+				{ MCC_TRACE("br\n"); pe_header.opthdr.BaseOfCode = addr; }
 			break;
 
 		case sec_data:
 #if !defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_ARM64)
 			if (!pe_header.opthdr.BaseOfData)
-				pe_header.opthdr.BaseOfData = addr;
+				{ MCC_TRACE("br\n"); pe_header.opthdr.BaseOfData = addr; }
 #endif
 			break;
 
@@ -841,9 +841,9 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 			file_offset = pe_file_align(pe, file_offset + si->data_size);
 			psh->SizeOfRawData = file_offset - psh->PointerToRawData;
 			if (si->cls == sec_text)
-				pe_header.opthdr.SizeOfCode += psh->SizeOfRawData;
+				{ MCC_TRACE("br\n"); pe_header.opthdr.SizeOfCode += psh->SizeOfRawData; }
 			else
-				pe_header.opthdr.SizeOfInitializedData += psh->SizeOfRawData;
+				{ MCC_TRACE("br\n"); pe_header.opthdr.SizeOfInitializedData += psh->SizeOfRawData; }
 		}
 	}
 
@@ -856,12 +856,12 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 	pe_header.opthdr.Subsystem = pe->subsystem;
 	pe_header.opthdr.DllCharacteristics = pe_get_dll_characteristics(s1);
 	if (s1->pe_stack_size)
-		pe_header.opthdr.SizeOfStackReserve = s1->pe_stack_size;
+		{ MCC_TRACE("br\n"); pe_header.opthdr.SizeOfStackReserve = s1->pe_stack_size; }
 	if (PE_DLL == pe->type)
-		pe_header.filehdr.Characteristics = CHARACTERISTICS_DLL;
+		{ MCC_TRACE("br\n"); pe_header.filehdr.Characteristics = CHARACTERISTICS_DLL; }
 	pe_header.filehdr.Characteristics |= s1->pe_characteristics;
 	if (pe->reloc)
-		pe_header.filehdr.Characteristics &= ~PE_IMAGE_FILE_RELOCS_STRIPPED;
+		{ MCC_TRACE("br\n"); pe_header.filehdr.Characteristics &= ~PE_IMAGE_FILE_RELOCS_STRIPPED; }
 
 	if (pe->coffsym) { MCC_TRACE("br\n");
 		pe_add_coffsym(pe);
@@ -878,12 +878,12 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 		Section *s;
 		si = pe->sec_info[i];
 		if (!si->data_size)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		for (s = si->sec; s; s = s->prev) { MCC_TRACE("br\n");
 			pe_fpad(pe, file_offset);
 			pe_fwrite(pe, s->data, s->data_offset);
 			if (s->prev)
-				file_offset += s->prev->sh_addr - s->sh_addr;
+				{ MCC_TRACE("br\n"); file_offset += s->prev->sh_addr - s->sh_addr; }
 		}
 		file_offset = si->ish.PointerToRawData + si->ish.SizeOfRawData;
 		pe_fpad(pe, file_offset);
@@ -903,12 +903,12 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 	host_set_exec_bits(pe->filename);
 
 	if (2 == s1->verbose)
-		printf("-------------------------------\n");
+		{ MCC_TRACE("br\n"); printf("-------------------------------\n"); }
 	if (s1->verbose)
-		printf("<- %s (%u bytes)\n", pe->filename, (unsigned)file_offset);
+		{ MCC_TRACE("br\n"); printf("<- %s (%u bytes)\n", pe->filename, (unsigned)file_offset); }
 
 	if (s1->do_debug & 16)
-		pe_create_pdb(s1, pe->filename);
+		{ MCC_TRACE("br\n"); pe_create_pdb(s1, pe->filename); }
 	return 0;
 }
 
@@ -934,7 +934,7 @@ static struct import_symbol *pe_add_import(struct pe_info *pe, int sym_index) { 
 found_dll:
 	i = dynarray_assoc((void **)p->symbols, p->sym_count, sym_index);
 	if (-1 != i)
-		return p->symbols[i];
+		{ MCC_TRACE("br\n"); return p->symbols[i]; }
 
 	s = mcc_mallocz(sizeof *s);
 	dynarray_add(&p->symbols, &p->sym_count, s);
@@ -960,7 +960,7 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 		sym_cnt += pe->imp_info[i]->sym_count;
 
 	if (0 == sym_cnt)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	pe_align_section(pe->thunk, 16);
 	pe->imp_size = (ndlls + 1) * sizeof(IMAGE_IMPORT_DESCRIPTOR);
@@ -982,9 +982,9 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 
 		dllindex = p->dll_index;
 		if (dllindex)
-			name = mcc_basename((dllref = s1->loaded_dlls[dllindex - 1])->name);
+			{ MCC_TRACE("br\n"); name = mcc_basename((dllref = s1->loaded_dlls[dllindex - 1])->name); }
 		else
-			name = "", dllref = NULL;
+			{ MCC_TRACE("br\n"); name = "", dllref = NULL; }
 
 		v = put_elf_str(pe->thunk, name);
 		hdr = (IMAGE_IMPORT_DESCRIPTOR *)(pe->thunk->data + dll_ptr);
@@ -1008,19 +1008,19 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 				} while (iat_index);
 
 				if (dllref)
-					v = 0, ordinal = imp_sym->st_value;
+					{ MCC_TRACE("br\n"); v = 0, ordinal = imp_sym->st_value; }
 				else
-					ordinal = 0, v = imp_sym->st_value;
+					{ MCC_TRACE("br\n"); ordinal = 0, v = imp_sym->st_value; }
 
 #ifdef MCC_TARGET_IS_HOST
 				if (pe->type == PE_RUN) { MCC_TRACE("br\n");
 					if (dllref) { MCC_TRACE("br\n");
 						if (!dllref->handle)
-							dllref->handle = host_dlopen(dllref->name);
+							{ MCC_TRACE("br\n"); dllref->handle = host_dlopen(dllref->name); }
 						v = (ADDR3264)host_dlsym(dllref->handle, ordinal ? (char *)0 + ordinal : name);
 					}
 					if (!v)
-						mcc_error_noabort("could not resolve symbol '%s'", name);
+						{ MCC_TRACE("br\n"); mcc_error_noabort("could not resolve symbol '%s'", name); }
 				} else
 #endif
 						if (ordinal) { MCC_TRACE("br\n");
@@ -1084,7 +1084,7 @@ static void pe_build_exports(struct pe_info *pe) { MCC_TRACE("enter\n");
 	}
 
 	if (0 == sym_count)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	qsort(sorted, sym_count, sizeof *sorted, sym_cmp);
 
@@ -1116,7 +1116,7 @@ static void pe_build_exports(struct pe_info *pe) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		fprintf(op, "LIBRARY %s\n\nEXPORTS\n", dllname);
 		if (s1->verbose)
-			printf("<- %s (%d symbol%s)\n", buf, sym_count, &"s"[sym_count < 2]);
+			{ MCC_TRACE("br\n"); printf("<- %s (%d symbol%s)\n", buf, sym_count, &"s"[sym_count < 2]); }
 	}
 
 	for (int ord = 0; ord < sym_count; ++ord) { MCC_TRACE("br\n");
@@ -1130,14 +1130,14 @@ static void pe_build_exports(struct pe_info *pe) { MCC_TRACE("enter\n");
 		name_o += sizeof(DWORD);
 		ord_o += sizeof(WORD);
 		if (op)
-			fprintf(op, "%s\n", name);
+			{ MCC_TRACE("br\n"); fprintf(op, "%s\n", name); }
 	}
 
 	pe->exp_offs = base_o + rva_base;
 	pe->exp_size = pe->thunk->data_offset - base_o;
 	dynarray_reset(&sorted, &sym_count);
 	if (op)
-		fclose(op);
+		{ MCC_TRACE("br\n"); fclose(op); }
 }
 
 static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
@@ -1158,11 +1158,11 @@ static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
 			addr = rel->r_offset + sh_addr;
 			++rel;
 			if (type != REL_TYPE_DIRECT)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			if (dwarf) { MCC_TRACE("br\n");
 				n = ((ElfSym *)s1->symtab->data + ELFW(R_SYM)(rel[-1].r_info))->st_shndx;
 				if (n >= s1->dwlo && n < s1->dwhi)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 			}
 			if (count == 0) { MCC_TRACE("br\n");
 				block_ptr = pe->reloc->data_offset;
@@ -1190,10 +1190,10 @@ static void pe_build_reloc(struct pe_info *pe) { MCC_TRACE("enter\n");
 			s = pe->sec_info[i]->sec, ++i;
 			continue;
 		} else if (!count)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 
 		if (count & 1)
-			section_ptr_add(pe->reloc, sizeof(WORD)), ++count;
+			{ MCC_TRACE("br\n"); section_ptr_add(pe->reloc, sizeof(WORD)), ++count; }
 		hdr = (struct pe_reloc_header *)(pe->reloc->data + block_ptr);
 		hdr->offset = offset - pe->imagebase;
 		hdr->size = count * sizeof(WORD) + sizeof(struct pe_reloc_header);
@@ -1213,15 +1213,15 @@ static int pe_section_class(Section *s) { MCC_TRACE("enter\n");
 	} else if (flags & SHF_ALLOC) { MCC_TRACE("br\n");
 		if (type == SHT_PROGBITS || type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY) { MCC_TRACE("br\n");
 			if (flags & SHF_EXECINSTR)
-				return sec_text;
+				{ MCC_TRACE("br\n"); return sec_text; }
 			if (flags & SHF_WRITE)
-				return sec_data;
+				{ MCC_TRACE("br\n"); return sec_data; }
 			if (0 == strcmp(name, ".rsrc"))
-				return sec_rsrc;
+				{ MCC_TRACE("br\n"); return sec_rsrc; }
 			if (0 == strcmp(name, ".iedat"))
-				return sec_idata;
+				{ MCC_TRACE("br\n"); return sec_idata; }
 			if (0 == strcmp(name, ".pdata"))
-				return sec_pdata;
+				{ MCC_TRACE("br\n"); return sec_pdata; }
 			return sec_rdata;
 		} else if (type == SHT_NOBITS) { MCC_TRACE("br\n");
 			return sec_bss;
@@ -1229,7 +1229,7 @@ static int pe_section_class(Section *s) { MCC_TRACE("enter\n");
 		return sec_other;
 	} else { MCC_TRACE("br\n");
 		if (0 == strcmp(name, ".reloc"))
-			return sec_reloc;
+			{ MCC_TRACE("br\n"); return sec_reloc; }
 	}
 	return sec_last;
 }
@@ -1244,7 +1244,7 @@ static int pe_assign_addresses(struct pe_info *pe) { MCC_TRACE("enter\n");
 
 	if (PE_DLL == pe->type ||
 			(pe_get_dll_characteristics(s1) & PE_DLLCHARACTERISTICS_DYNAMIC_BASE))
-		pe->reloc = new_section(s1, ".reloc", SHT_PROGBITS, 0);
+		{ MCC_TRACE("br\n"); pe->reloc = new_section(s1, ".reloc", SHT_PROGBITS, 0); }
 
 	nbs = s1->nb_sections;
 	sec_order = mcc_mallocz(2 * sizeof(int) * nbs);
@@ -1263,7 +1263,7 @@ static int pe_assign_addresses(struct pe_info *pe) { MCC_TRACE("enter\n");
 		s = s1->sections[sec_order[i]];
 
 		if (PE_MERGE_DATA && c == sec_bss)
-			c = sec_data;
+			{ MCC_TRACE("br\n"); c = sec_data; }
 
 		if (si && c == si->cls && c != sec_debug) { MCC_TRACE("br\n");
 			int a = s->sh_addralign < 16 ? 16 : s->sh_addralign;
@@ -1274,20 +1274,20 @@ static int pe_assign_addresses(struct pe_info *pe) { MCC_TRACE("enter\n");
 		}
 
 		if (NULL == pe->thunk && c == (data_section == rodata_section ? sec_data : sec_rdata))
-			pe->thunk = s;
+			{ MCC_TRACE("br\n"); pe->thunk = s; }
 
 		if (s == pe->thunk) { MCC_TRACE("br\n");
 			pe_build_imports(pe);
 			pe_build_exports(pe);
 		}
 		if (s == pe->reloc)
-			pe_build_reloc(pe);
+			{ MCC_TRACE("br\n"); pe_build_reloc(pe); }
 
 		if (0 == s->data_offset)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 
 		if (si)
-			goto add_section;
+			{ MCC_TRACE("br\n"); goto add_section; }
 
 		si = mcc_mallocz(sizeof *si);
 		dynarray_add(&pe->sec_info, &pe->sec_count, si);
@@ -1298,15 +1298,15 @@ static int pe_assign_addresses(struct pe_info *pe) { MCC_TRACE("enter\n");
 
 		si->pe_flags = IMAGE_SCN_MEM_READ;
 		if (s->sh_flags & SHF_EXECINSTR)
-			si->pe_flags |= IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE;
+			{ MCC_TRACE("br\n"); si->pe_flags |= IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE; }
 		else if (s->sh_type == SHT_NOBITS)
-			si->pe_flags |= IMAGE_SCN_CNT_UNINITIALIZED_DATA;
+			{ MCC_TRACE("br\n"); si->pe_flags |= IMAGE_SCN_CNT_UNINITIALIZED_DATA; }
 		else
-			si->pe_flags |= IMAGE_SCN_CNT_INITIALIZED_DATA;
+			{ MCC_TRACE("br\n"); si->pe_flags |= IMAGE_SCN_CNT_INITIALIZED_DATA; }
 		if (s->sh_flags & SHF_WRITE)
-			si->pe_flags |= IMAGE_SCN_MEM_WRITE;
+			{ MCC_TRACE("br\n"); si->pe_flags |= IMAGE_SCN_MEM_WRITE; }
 		if (0 == (s->sh_flags & SHF_ALLOC))
-			si->pe_flags |= IMAGE_SCN_MEM_DISCARDABLE;
+			{ MCC_TRACE("br\n"); si->pe_flags |= IMAGE_SCN_MEM_DISCARDABLE; }
 
 	add_section:
 		s->sh_info = pe->sec_count;
@@ -1369,14 +1369,14 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 
 			n = _imp_ = 0;
 			if (sym->st_other & ST_PE_IMPORT)
-				_imp_ = 1;
+				{ MCC_TRACE("br\n"); _imp_ = 1; }
 			do { MCC_TRACE("br\n");
 				s = pe_export_name(s1, sym);
 				if (n) { MCC_TRACE("br\n");
 					if (sym->st_other & ST_PE_STDCALL) { MCC_TRACE("br\n");
 						p = strrchr(s, '@');
 						if (!p || s[0] != '_')
-							break;
+							{ MCC_TRACE("br\n"); break; }
 						strcpy(buffer, s + 1)[p - s - 1] = 0, s = buffer;
 					} else if (s[0] != '_') { MCC_TRACE("br\n");
 						buffer[0] = '_', strcpy(buffer + 1, s), s = buffer;
@@ -1392,7 +1392,7 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 			} while (0 == imp_sym && ++n < 2);
 
 			if (0 == imp_sym)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 
 			is = pe_add_import(pe, imp_sym);
 
@@ -1441,7 +1441,7 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 				sym->st_other &= ~ST_PE_EXPORT;
 			} else { MCC_TRACE("br\n");
 				if (0 == _imp_)
-					ret = mcc_error_noabort("symbol '%s' is missing __declspec(dllimport)", name);
+					{ MCC_TRACE("br\n"); ret = mcc_error_noabort("symbol '%s' is missing __declspec(dllimport)", name); }
 				sym->st_value = is->iat_index;
 				is->iat_index = sym_index;
 			}
@@ -1461,25 +1461,25 @@ static void pe_print_section(FILE *f, Section *s) { MCC_TRACE("enter\n");
 
 	fprintf(f, "section  \"%s\"", s->name);
 	if (s->link)
-		fprintf(f, "\nlink     \"%s\"", s->link->name);
+		{ MCC_TRACE("br\n"); fprintf(f, "\nlink     \"%s\"", s->link->name); }
 	if (s->reloc)
-		fprintf(f, "\nreloc    \"%s\"", s->reloc->name);
+		{ MCC_TRACE("br\n"); fprintf(f, "\nreloc    \"%s\"", s->reloc->name); }
 	fprintf(f, "\nv_addr   %08X", (unsigned)s->sh_addr);
 	fprintf(f, "\ncontents %08X", (unsigned)l);
 	fprintf(f, "\n\n");
 
 	if (s->sh_type == SHT_NOBITS)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	if (0 == l)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	if (s->sh_type == SHT_SYMTAB)
-		m = sizeof(ElfW(Sym));
+		{ MCC_TRACE("br\n"); m = sizeof(ElfW(Sym)); }
 	else if (s->sh_type == SHT_RELX)
-		m = sizeof(ElfW_Rel);
+		{ MCC_TRACE("br\n"); m = sizeof(ElfW_Rel); }
 	else
-		m = 16;
+		{ MCC_TRACE("br\n"); m = 16; }
 
 	fprintf(f, "%-8s", "offset");
 	for (i = 0; i < m; ++i)
@@ -1506,9 +1506,9 @@ static void pe_print_section(FILE *f, Section *s) { MCC_TRACE("enter\n");
 		const char **p;
 
 		if (s->sh_type == SHT_SYMTAB)
-			p = fields1, n = 106;
+			{ MCC_TRACE("br\n"); p = fields1, n = 106; }
 		else
-			p = fields2, n = 58;
+			{ MCC_TRACE("br\n"); p = fields2, n = 58; }
 
 		for (i = 0; p[i]; ++i)
 			fprintf(f, "%6s", p[i]);
@@ -1524,9 +1524,9 @@ static void pe_print_section(FILE *f, Section *s) { MCC_TRACE("enter\n");
 		fprintf(f, "%08X", i);
 		for (n = 0; n < m; ++n) { MCC_TRACE("br\n");
 			if (n + i < l)
-				fprintf(f, " %02X", p[i + n]);
+				{ MCC_TRACE("br\n"); fprintf(f, " %02X", p[i + n]); }
 			else
-				fprintf(f, "   ");
+				{ MCC_TRACE("br\n"); fprintf(f, "   "); }
 		}
 
 		if (s->sh_type == SHT_SYMTAB) { MCC_TRACE("br\n");
@@ -1557,7 +1557,7 @@ static void pe_print_section(FILE *f, Section *s) { MCC_TRACE("enter\n");
 				if (n + i < l) { MCC_TRACE("br\n");
 					b = p[i + n];
 					if (b < 32 || b >= 127)
-						b = '.';
+						{ MCC_TRACE("br\n"); b = '.'; }
 					fprintf(f, "%c", b);
 				}
 			}
@@ -1616,60 +1616,60 @@ static int get_dllexports(int fd, char **pp) { MCC_TRACE("enter\n");
 	p = NULL;
 	ret = 1;
 	if (!read_mem(fd, 0, &dh, sizeof dh))
-		goto the_end;
+		{ MCC_TRACE("br\n"); goto the_end; }
 	if (!read_mem(fd, dh.e_lfanew, &sig, sizeof sig))
-		goto the_end;
+		{ MCC_TRACE("br\n"); goto the_end; }
 	if (sig != 0x00004550)
-		goto the_end;
+		{ MCC_TRACE("br\n"); goto the_end; }
 	pef_hdroffset = dh.e_lfanew + sizeof sig;
 	if (!read_mem(fd, pef_hdroffset, &ih, sizeof ih))
-		goto the_end;
+		{ MCC_TRACE("br\n"); goto the_end; }
 	opt_hdroffset = pef_hdroffset + sizeof ih;
 	if (ih.Machine == 0x014C) { MCC_TRACE("br\n");
 		IMAGE_OPTIONAL_HEADER32 oh;
 		sec_hdroffset = opt_hdroffset + sizeof oh;
 		if (!read_mem(fd, opt_hdroffset, &oh, sizeof oh))
-			goto the_end;
+			{ MCC_TRACE("br\n"); goto the_end; }
 		if (IMAGE_DIRECTORY_ENTRY_EXPORT >= oh.NumberOfRvaAndSizes)
-			goto the_end_0;
+			{ MCC_TRACE("br\n"); goto the_end_0; }
 		addr = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
 	} else if (ih.Machine == 0x8664 || ih.Machine == IMAGE_FILE_MACHINE_ARM64) { MCC_TRACE("br\n");
 		IMAGE_OPTIONAL_HEADER64 oh;
 		sec_hdroffset = opt_hdroffset + sizeof oh;
 		if (!read_mem(fd, opt_hdroffset, &oh, sizeof oh))
-			goto the_end;
+			{ MCC_TRACE("br\n"); goto the_end; }
 		if (IMAGE_DIRECTORY_ENTRY_EXPORT >= oh.NumberOfRvaAndSizes)
-			goto the_end_0;
+			{ MCC_TRACE("br\n"); goto the_end_0; }
 		addr = oh.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
 	} else
-		goto the_end;
+		{ MCC_TRACE("br\n"); goto the_end; }
 
 	for (i = 0; i < ih.NumberOfSections; ++i) { MCC_TRACE("br\n");
 		if (!read_mem(fd, sec_hdroffset + i * sizeof ish, &ish, sizeof ish))
-			goto the_end;
+			{ MCC_TRACE("br\n"); goto the_end; }
 		if (addr >= ish.VirtualAddress && addr < ish.VirtualAddress + ish.SizeOfRawData)
-			goto found;
+			{ MCC_TRACE("br\n"); goto found; }
 	}
 	goto the_end_0;
 found:
 	ref = ish.VirtualAddress - ish.PointerToRawData;
 	if (!read_mem(fd, addr - ref, &ied, sizeof ied))
-		goto the_end;
+		{ MCC_TRACE("br\n"); goto the_end; }
 	k = ied.NumberOfNames;
 	if (k) { MCC_TRACE("br\n");
 		namep = mcc_malloc(l = k * sizeof *namep);
 		if (!read_mem(fd, ied.AddressOfNames - ref, namep, l))
-			goto the_end;
+			{ MCC_TRACE("br\n"); goto the_end; }
 		for (i = l = 0; i < k; ++i) { MCC_TRACE("br\n");
 			p1 = namep[i] - ref;
 			if (p1 != p0)
-				lseek(fd, p0 = p1, SEEK_SET), l = 0;
+				{ MCC_TRACE("br\n"); lseek(fd, p0 = p1, SEEK_SET), l = 0; }
 			do { MCC_TRACE("br\n");
 				if (0 == l) { MCC_TRACE("br\n");
 					if (n + 1000 >= n0)
-						p = mcc_realloc(p, n0 += 1000);
+						{ MCC_TRACE("br\n"); p = mcc_realloc(p, n0 += 1000); }
 					if ((l = read(fd, p + n, 1000 - 1)) <= 0)
-						goto the_end;
+						{ MCC_TRACE("br\n"); goto the_end; }
 				}
 				--l, ++p0;
 			} while (p[n++]);
@@ -1681,7 +1681,7 @@ the_end_0:
 the_end:
 	mcc_free(namep);
 	if (ret && p)
-		mcc_free(p), p = NULL;
+		{ MCC_TRACE("br\n"); mcc_free(p), p = NULL; }
 	*pp = p;
 	return ret;
 }
@@ -1694,24 +1694,24 @@ static int pe_load_res(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 	unsigned offs;
 
 	if (!read_mem(fd, 0, &hdr, sizeof hdr))
-		goto quit;
+		{ MCC_TRACE("br\n"); goto quit; }
 
 	if (hdr.filehdr.Machine != IMAGE_FILE_MACHINE || hdr.filehdr.NumberOfSections != 1 || strcmp((char *)hdr.sectionhdr.Name, ".rsrc") != 0)
-		goto quit;
+		{ MCC_TRACE("br\n"); goto quit; }
 
 	rsrc_section = new_section(s1, ".rsrc", SHT_PROGBITS, SHF_ALLOC);
 	ptr = section_ptr_add(rsrc_section, hdr.sectionhdr.SizeOfRawData);
 	offs = hdr.sectionhdr.PointerToRawData;
 	if (!read_mem(fd, offs, ptr, hdr.sectionhdr.SizeOfRawData))
-		goto quit;
+		{ MCC_TRACE("br\n"); goto quit; }
 	offs = hdr.sectionhdr.PointerToRelocations;
 	sym_index = put_elf_sym(symtab_section, 0, 0, 0, 0, rsrc_section->sh_num, ".rsrc");
 	for (int i = 0; i < hdr.sectionhdr.NumberOfRelocations; ++i) { MCC_TRACE("br\n");
 		struct pe_rsrc_reloc rel;
 		if (!read_mem(fd, offs, &rel, sizeof rel))
-			goto quit;
+			{ MCC_TRACE("br\n"); goto quit; }
 		if (rel.type != RSRC_RELTYPE)
-			goto quit;
+			{ MCC_TRACE("br\n"); goto quit; }
 		put_elf_reloc(symtab_section, rsrc_section,
 									rel.offset, R_XXX_RELATIVE, sym_index);
 		offs += sizeof rel;
@@ -1744,22 +1744,22 @@ static int pe_load_def(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 
 	buf = mcc_load_text(fd);
 	if (!buf)
-		return ret;
+		{ MCC_TRACE("br\n"); return ret; }
 
 	for (line = buf;; ++line) { MCC_TRACE("br\n");
 		p = get_token(&line, &next);
 		if (!(*p && *p != ';'))
-			goto skip;
+			{ MCC_TRACE("br\n"); goto skip; }
 		switch (state) { MCC_TRACE("br\n");
 		case 0:
 			if (0 != stricmp(p, "LIBRARY") || next == '\n')
-				goto quit;
+				{ MCC_TRACE("br\n"); goto quit; }
 			pstrcpy(dllname, sizeof dllname, get_token(&line, &next));
 			++state;
 			break;
 		case 1:
 			if (0 != stricmp(p, "EXPORTS"))
-				goto quit;
+				{ MCC_TRACE("br\n"); goto quit; }
 			++state;
 			break;
 		case 2:
@@ -1779,7 +1779,7 @@ static int pe_load_def(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 		while ((unsigned char)next > ' ')
 			get_token(&line, &next);
 		if (next != '\n')
-			break;
+			{ MCC_TRACE("br\n"); break; }
 	}
 	ret = 0;
 quit:
@@ -1791,9 +1791,9 @@ static int pe_load_dll(MCCState *s1, int fd, const char *filename) { MCC_TRACE("
 	char *p, *q;
 	DLLReference *ref = mcc_add_dllref(s1, filename, 0);
 	if (ref->found)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 	if (get_dllexports(fd, &p))
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (p) { MCC_TRACE("br\n");
 		for (q = p; *q; q += 1 + strlen(q))
 			pe_putimport(s1, ref->index, q, 0);
@@ -1806,18 +1806,18 @@ ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename) { MC
 	int ret = -1;
 	char buf[10];
 	if (0 == strcmp(mcc_fileextension(filename), ".def"))
-		ret = pe_load_def(s1, fd);
+		{ MCC_TRACE("br\n"); ret = pe_load_def(s1, fd); }
 	else if (pe_load_res(s1, fd) == 0)
-		ret = 0;
+		{ MCC_TRACE("br\n"); ret = 0; }
 	else if (read_mem(fd, 0, buf, 4) && 0 == memcmp(buf, "MZ", 2))
-		ret = pe_load_dll(s1, fd, filename);
+		{ MCC_TRACE("br\n"); ret = pe_load_dll(s1, fd, filename); }
 	return ret;
 }
 
 PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp) { MCC_TRACE("enter\n");
 	int ret, fd = open(filename, O_RDONLY | O_BINARY);
 	if (fd < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	ret = get_dllexports(fd, pp);
 	close(fd);
 	return ret;
@@ -1830,7 +1830,7 @@ static unsigned pe_add_unwind_info(MCCState *s1) { MCC_TRACE("enter\n");
 		s1->uw_pdata->sh_addralign = 4;
 	}
 	if (0 == s1->uw_sym)
-		s1->uw_sym = put_elf_sym(symtab_section, 0, 0, 0, 0, text_section->sh_num, ".uw_base");
+		{ MCC_TRACE("br\n"); s1->uw_sym = put_elf_sym(symtab_section, 0, 0, 0, 0, text_section->sh_num, ".uw_base"); }
 	if (0 == s1->uw_offs) { MCC_TRACE("br\n");
 		static const unsigned char uw_info[] = {
 				0x01,
@@ -1890,11 +1890,11 @@ static Section *pe_add_unwind_info(MCCState *s1) { MCC_TRACE("enter\n");
 	s = find_section(s1, ".xdata");
 	s->sh_addralign = 4;
 	if (0 == s1->uw_sym)
-		s1->uw_sym = put_elf_sym(symtab_section, 0, 0, 0, 0,
-														 text_section->sh_num, ".uw_text_base");
+		{ MCC_TRACE("br\n"); s1->uw_sym = put_elf_sym(symtab_section, 0, 0, 0, 0,
+														 text_section->sh_num, ".uw_text_base"); }
 	if (0 == s1->uw_xsym)
-		s1->uw_xsym = put_elf_sym(symtab_section, 0, 0, 0, 0,
-															s->sh_num, ".uw_base");
+		{ MCC_TRACE("br\n"); s1->uw_xsym = put_elf_sym(symtab_section, 0, 0, 0, 0,
+															s->sh_num, ".uw_base"); }
 	return s;
 }
 
@@ -1960,7 +1960,7 @@ static void pe_add_tls(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\n");
 		}
 	}
 	if (!used)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 
 	pe_align_section(ds, 4);
 	pe->tls_index_offset = ds->data_offset;
@@ -2008,32 +2008,32 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 			run_symbol = "__runmain";
 			pe_type = PE_EXE;
 			if (s1->pe_subsystem == 2)
-				pe_type = PE_GUI;
+				{ MCC_TRACE("br\n"); pe_type = PE_GUI; }
 		}
 
 		if (MCC_OUTPUT_MEMORY == s1->output_type && !s1->nostdlib)
-			start_symbol = run_symbol;
+			{ MCC_TRACE("br\n"); start_symbol = run_symbol; }
 	}
 	if (s1->elf_entryname) { MCC_TRACE("br\n");
 		pe->start_symbol = start_symbol = s1->elf_entryname;
 	} else { MCC_TRACE("br\n");
 		pe->start_symbol = start_symbol + 1;
 		if (!s1->leading_underscore || strchr(start_symbol, '@'))
-			++start_symbol;
+			{ MCC_TRACE("br\n"); ++start_symbol; }
 	}
 
 #if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace) { MCC_TRACE("br\n");
 #if MCC_CONFIG_DIAG_RT >= 2
 		if (s1->do_bounds_check && s1->output_type != MCC_OUTPUT_DLL)
-			mcc_add_support(s1, "bcheck.o");
+			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bcheck.o"); }
 #endif
 		if (s1->output_type == MCC_OUTPUT_EXE)
-			mcc_add_support(s1, "bt-exe.o");
+			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bt-exe.o"); }
 		if (s1->output_type == MCC_OUTPUT_DLL)
-			mcc_add_support(s1, "bt-dll.o");
+			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bt-dll.o"); }
 		if (s1->output_type != MCC_OUTPUT_DLL)
-			mcc_add_support(s1, "bt-log.o");
+			{ MCC_TRACE("br\n"); mcc_add_support(s1, "bt-log.o"); }
 		mcc_add_btstub(s1);
 	}
 #endif
@@ -2051,21 +2051,21 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 		mcc_add_mccrt_embedded(s1);
 #else
 		if (MCC_MCCRT[0])
-			mcc_add_support(s1, MCC_MCCRT);
+			{ MCC_TRACE("br\n"); mcc_add_support(s1, MCC_MCCRT); }
 #endif
 		s1->static_link = 0;
 		for (pp = libs; 0 != (p = *pp); ++pp) { MCC_TRACE("br\n");
 			if (*p)
-				mcc_add_library(s1, p);
+				{ MCC_TRACE("br\n"); mcc_add_library(s1, p); }
 			else if (PE_DLL != pe_type && PE_GUI != pe_type)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 	}
 
 	if (MCC_OUTPUT_DLL == s1->output_type)
-		s1->output_type = MCC_OUTPUT_EXE;
+		{ MCC_TRACE("br\n"); s1->output_type = MCC_OUTPUT_EXE; }
 	if (MCC_OUTPUT_MEMORY == s1->output_type)
-		pe_type = PE_RUN;
+		{ MCC_TRACE("br\n"); pe_type = PE_RUN; }
 	pe->type = pe_type;
 }
 
@@ -2091,7 +2091,7 @@ ST_FUNC int pe_setsubsy(MCCState *s1, const char *arg) { MCC_TRACE("enter\n");
 	const struct subsy *y;
 	for (y = x;; ++y) { MCC_TRACE("br\n");
 		if (!y->p)
-			return -1;
+			{ MCC_TRACE("br\n"); return -1; }
 		if (0 == strcmp(y->p, arg)) { MCC_TRACE("br\n");
 			s1->pe_subsystem = y->v;
 			return 0;
@@ -2120,12 +2120,12 @@ static void pe_set_options(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	pe->subsystem = 9;
 #else
 	if (PE_DLL == pe->type || PE_GUI == pe->type)
-		pe->subsystem = 2;
+		{ MCC_TRACE("br\n"); pe->subsystem = 2; }
 	else
-		pe->subsystem = 3;
+		{ MCC_TRACE("br\n"); pe->subsystem = 3; }
 #endif
 	if (s1->pe_subsystem != 0)
-		pe->subsystem = s1->pe_subsystem;
+		{ MCC_TRACE("br\n"); pe->subsystem = s1->pe_subsystem; }
 
 	if (pe->subsystem == 1) { MCC_TRACE("br\n");
 		pe->section_align = 0x20;
@@ -2136,15 +2136,15 @@ static void pe_set_options(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	}
 
 	if (s1->section_align != 0)
-		pe->section_align = s1->section_align;
+		{ MCC_TRACE("br\n"); pe->section_align = s1->section_align; }
 	if (s1->pe_file_align != 0)
-		pe->file_align = s1->pe_file_align;
+		{ MCC_TRACE("br\n"); pe->file_align = s1->pe_file_align; }
 
 	if ((pe->subsystem >= 10) && (pe->subsystem <= 12))
-		pe->imagebase = 0;
+		{ MCC_TRACE("br\n"); pe->imagebase = 0; }
 
 	if (s1->has_text_addr)
-		pe->imagebase = s1->text_addr;
+		{ MCC_TRACE("br\n"); pe->imagebase = s1->text_addr; }
 }
 
 ST_FUNC int pe_output_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
@@ -2165,17 +2165,17 @@ ST_FUNC int pe_output_file(MCCState *s1, const char *filename) { MCC_TRACE("ente
 	pe_set_options(s1, &pe);
 	pe_check_symbols(&pe);
 	if (s1->nb_errors)
-		goto done;
+		{ MCC_TRACE("br\n"); goto done; }
 	if (filename) { MCC_TRACE("br\n");
 		pe_assign_addresses(&pe);
 		relocate_syms(s1, s1->symtab, 0);
 		if (s1->nb_errors)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 		s1->pe_imagebase = pe.imagebase;
 		relocate_sections(s1);
 		pe.start_addr = (DWORD)(get_sym_addr(s1, pe.start_symbol, 1, 1) - pe.imagebase);
 		if (s1->nb_errors)
-			goto done;
+			{ MCC_TRACE("br\n"); goto done; }
 		pe_write(&pe);
 	} else { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_IS_HOST
@@ -2191,6 +2191,6 @@ done:
 	dynarray_reset(&pe.sec_info, &pe.sec_count);
 	pe_free_imports(&pe);
 	if (g_debug & MCC_DBG_PE)
-		pe_print_sections(s1, "mcc.log");
+		{ MCC_TRACE("br\n"); pe_print_sections(s1, "mcc.log"); }
 	return s1->nb_errors ? -1 : 0;
 }

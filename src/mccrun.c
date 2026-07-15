@@ -71,7 +71,7 @@ static int rt_mem(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	int ptr_diff = 0;
 	void *ptr = host_runmem_alloc(&sz, &ptr_diff);
 	if (!ptr)
-		return mcc_error_noabort("mccrun: could not allocate memory");
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("mccrun: could not allocate memory"); }
 	s1->run_ptr = ptr;
 	s1->run_size = sz;
 	return ptr_diff;
@@ -81,20 +81,20 @@ LIBMCCAPI int mcc_relocate(MCCState *s1) { MCC_TRACE("enter\n");
 	int size, ret, ptr_diff;
 
 	if (s1->run_ptr)
-		exit(mcc_error_noabort("'mcc_relocate()' twice is no longer supported"));
+		{ MCC_TRACE("br\n"); exit(mcc_error_noabort("'mcc_relocate()' twice is no longer supported")); }
 #if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->do_backtrace)
-		mcc_add_symbol(s1, "_mcc_backtrace", _mcc_backtrace);
+		{ MCC_TRACE("br\n"); mcc_add_symbol(s1, "_mcc_backtrace", _mcc_backtrace); }
 #endif
 	size = mcc_relocate_ex(s1, NULL, 0);
 	if (size < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	ptr_diff = rt_mem(s1, size);
 	if (ptr_diff < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	ret = mcc_relocate_ex(s1, s1->run_ptr, ptr_diff);
 	if (ret == 0)
-		st_link(s1);
+		{ MCC_TRACE("br\n"); st_link(s1); }
 	return ret;
 }
 
@@ -105,11 +105,11 @@ ST_FUNC void mcc_run_free(MCCState *s1) { MCC_TRACE("enter\n");
 	for (int i = 0; i < s1->nb_loaded_dlls; i++) { MCC_TRACE("br\n");
 		DLLReference *ref = s1->loaded_dlls[i];
 		if (ref->handle)
-			host_dlclose(ref->handle);
+			{ MCC_TRACE("br\n"); host_dlclose(ref->handle); }
 	}
 	ptr = s1->run_ptr;
 	if (NULL == ptr)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	st_unlink(s1);
 	size = s1->run_size;
 	host_unwind_unregister(s1->run_function_table);
@@ -126,20 +126,20 @@ LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) { MCC_TRACE("enter\n"
 	char **envp = host_environ();
 
 	if ((s1->dflag & 16) && (addr_t)-1 == get_sym_addr(s1, "main", 0, 1))
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	mcc_add_symbol(s1, "__rt_exit", rt_exit);
 	s1->run_main = "_runmain", top_sym = "main";
 	if (s1->elf_entryname)
-		s1->run_main = top_sym = s1->elf_entryname;
+		{ MCC_TRACE("br\n"); s1->run_main = top_sym = s1->elf_entryname; }
 	mcc_add_support(s1, "runmain.o");
 
 	if (mcc_relocate(s1) < 0)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 
 	prog_main = (void *)get_sym_addr(s1, s1->run_main, 1, 1);
 	if ((addr_t)-1 == (addr_t)prog_main)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 
 	if (s1->run_stdin && !freopen(s1->run_stdin, "r", stdin)) { MCC_TRACE("br\n");
 		mcc_error_noabort("failed to reopen stdin from '%s'", s1->run_stdin);
@@ -158,7 +158,7 @@ LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) { MCC_TRACE("enter\n"
 	}
 
 	if (s1->dflag & 16 && ret)
-		fprintf(s1->ppfp, "[returns %d]\n", ret), fflush(s1->ppfp);
+		{ MCC_TRACE("br\n"); fprintf(s1->ppfp, "[returns %d]\n", ret), fflush(s1->ppfp); }
 	return ret;
 }
 
@@ -171,7 +171,7 @@ static void cleanup_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 		ElfW(Sym) *sym = &((ElfW(Sym) *)s->data)[sym_index];
 		const char *name = (char *)s->link->data + sym->st_name;
 		if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL)
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 		put_elf_sym(s, sym->st_value, sym->st_size, sym->st_info, sym->st_other, sym->st_shndx, name);
 	}
 }
@@ -216,11 +216,11 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 	mem = (addr_t)ptr;
 redo:
 	if (MCC_VTIER(s1->verbose) == MCC_V2 && copy)
-		printf(&"-----------------------------------------------------\n"[MCC_PTR_SIZE * 2 - 8]);
+		{ MCC_TRACE("br\n"); printf(&"-----------------------------------------------------\n"[MCC_PTR_SIZE * 2 - 8]); }
 	if (s1->nb_errors)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	if (copy == 3)
-		return 0;
+		{ MCC_TRACE("br\n"); return 0; }
 
 	for (k = 0; k < 3; ++k) { MCC_TRACE("br\n");
 		n = 0;
@@ -230,25 +230,25 @@ redo:
 					SHF_ALLOC | SHF_EXECINSTR, SHF_ALLOC, SHF_ALLOC | SHF_WRITE};
 			s = s1->sections[i];
 			if (shf[k] != (s->sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR)))
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			length = s->data_offset;
 			if (copy == 2) { MCC_TRACE("br\n");
 				if (addr == 0)
-					addr = s->sh_addr;
+					{ MCC_TRACE("br\n"); addr = s->sh_addr; }
 				n = (s->sh_addr - addr) + length;
 				continue;
 			}
 			if (copy) { MCC_TRACE("br\n");
 				if (MCC_VTIER(s1->verbose) == MCC_V2)
-					printf("%d: %-16s %p  len %05x  align %04x\n",
-								 k, s->name, (void *)s->sh_addr, length, s->sh_addralign);
+					{ MCC_TRACE("br\n"); printf("%d: %-16s %p  len %05x  align %04x\n",
+								 k, s->name, (void *)s->sh_addr, length, s->sh_addralign); }
 				ptr = (void *)s->sh_addr;
 				if (k == 0)
-					ptr = (void *)(s->sh_addr + ptr_diff);
+					{ MCC_TRACE("br\n"); ptr = (void *)(s->sh_addr + ptr_diff); }
 				if (NULL == s->data || s->sh_type == SHT_NOBITS)
-					memset(ptr, 0, length);
+					{ MCC_TRACE("br\n"); memset(ptr, 0, length); }
 				else
-					memcpy(ptr, s->data, length);
+					{ MCC_TRACE("br\n"); memcpy(ptr, s->data, length); }
 				continue;
 			}
 
@@ -256,10 +256,10 @@ redo:
 			if (++n == 1) { MCC_TRACE("br\n");
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
 				if (align < 64)
-					align = 64;
+					{ MCC_TRACE("br\n"); align = 64; }
 #endif
 				if (k <= HOST_RUNMEM_RO)
-					align = PAGESIZE;
+					{ MCC_TRACE("br\n"); align = PAGESIZE; }
 			}
 			s->sh_addralign = align;
 			addr = k ? mem + ptr_diff : mem;
@@ -269,13 +269,13 @@ redo:
 		}
 		if (copy == 2) { MCC_TRACE("br\n");
 			if (n == 0)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			if (k == 0 && host_runmem_dual())
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			f = k;
 			if (f >= HOST_RUNMEM_RO) { MCC_TRACE("br\n");
 				if (f != 0)
-					continue;
+					{ MCC_TRACE("br\n"); continue; }
 				f = 3;
 			}
 			n = PAGEALIGN(n);
@@ -284,12 +284,12 @@ redo:
 							 &"rx\0ro\0rw\0rwx"[f * 3], (void *)addr, (unsigned)n);
 			}
 			if (host_runmem_protect((void *)addr, n, f) < 0)
-				return mcc_error_noabort(HOST_MPROTECT_FAILMSG);
+				{ MCC_TRACE("br\n"); return mcc_error_noabort(HOST_MPROTECT_FAILMSG); }
 		}
 	}
 
 	if (0 == mem)
-		return PAGEALIGN(offset);
+		{ MCC_TRACE("br\n"); return PAGEALIGN(offset); }
 
 	if (++copy == 2) { MCC_TRACE("br\n");
 		goto redo;
@@ -302,7 +302,7 @@ redo:
 					(unsigned)s1->uw_pdata->data_offset,
 					s1->pe_imagebase);
 			if (!s1->run_function_table)
-				mcc_error_noabort("RtlAddFunctionTable failed");
+				{ MCC_TRACE("br\n"); mcc_error_noabort("RtlAddFunctionTable failed"); }
 			s1->uw_pdata = NULL;
 		}
 #endif
@@ -313,7 +313,7 @@ redo:
 
 	relocate_syms(s1, s1->symtab, 1);
 	if (s1->nb_errors)
-		goto redo;
+		{ MCC_TRACE("br\n"); goto redo; }
 #ifdef MCC_TARGET_PE
 	s1->pe_imagebase = mem;
 #else
@@ -327,25 +327,25 @@ static void bt_link(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_DIAG_RT >= 1
 	rt_context *rc;
 	if (!s1->do_backtrace)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	rc = mcc_get_symbol(s1, "__rt_info");
 	if (!rc)
-		return;
+		{ MCC_TRACE("br\n"); return; }
 	rc->esym_start = (ElfW(Sym) *)(symtab_section->data);
 	rc->esym_end = (ElfW(Sym) *)(symtab_section->data + symtab_section->data_offset);
 	rc->elf_str = (char *)symtab_section->link->data;
 	if (MCC_PTR_SIZE == 8 && !s1->dwarf)
-		rc->prog_base &= 0xffffffff00000000ULL;
+		{ MCC_TRACE("br\n"); rc->prog_base &= 0xffffffff00000000ULL; }
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (s1->do_bounds_check) { MCC_TRACE("br\n");
 		void *p;
 		if ((p = mcc_get_symbol(s1, "__bound_init")))
-			((void (*)(void *, int))p)(rc->bounds_start, 1);
+			{ MCC_TRACE("br\n"); ((void (*)(void *, int))p)(rc->bounds_start, 1); }
 	}
 #endif
 	rc->next = g_rc, g_rc = rc, s1->rc = rc;
 	if (0 == signal_set)
-		set_exception_handler(), signal_set = 1;
+		{ MCC_TRACE("br\n"); set_exception_handler(), signal_set = 1; }
 #endif
 }
 
@@ -381,7 +381,7 @@ LIBMCCAPI void *_mcc_setjmp(MCCState *s1, void *p_jmp_buf, void *func, void *p_l
 	s1->run_jb = p_jmp_buf;
 #if MCC_CONFIG_DIAG_RT >= 1
 	if (s1->rc)
-		s1->rc->top_func = func;
+		{ MCC_TRACE("br\n"); s1->rc->top_func = func; }
 #endif
 	return p_jmp_buf;
 }
@@ -401,10 +401,10 @@ static MCCState *rt_find_state(rt_frame *f) { MCC_TRACE("enter\n");
 	}
 	for (int level = 0; level < 8; ++level) { MCC_TRACE("br\n");
 		if (rt_get_caller_pc(&pc, f, level) < 0)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		for (s = g_s1; s; s = s->next) { MCC_TRACE("br\n");
 			if (pc >= (addr_t)s->run_ptr && pc < (addr_t)s->run_ptr + s->run_size)
-				return s;
+				{ MCC_TRACE("br\n"); return s; }
 		}
 	}
 	return NULL;
@@ -420,11 +420,11 @@ static void rt_exit(rt_frame *f, int code) { MCC_TRACE("enter\n");
 		if (f->fp) { MCC_TRACE("br\n");
 			void *p = mcc_get_symbol(s, "__bound_exit");
 			if (p)
-				((void (*)(void))p)();
+				{ MCC_TRACE("br\n"); ((void (*)(void))p)(); }
 		}
 #endif
 		if (code == 0)
-			code = RT_EXIT_ZERO;
+			{ MCC_TRACE("br\n"); code = RT_EXIT_ZERO; }
 		((void (*)(void *, int))s->run_lj)(s->run_jb, code);
 	}
 	exit(code);
@@ -493,13 +493,13 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) { MCC_
 		switch (sym->n_type) { MCC_TRACE("br\n");
 		case N_SLINE:
 			if (func_addr)
-				goto rel_pc;
+				{ MCC_TRACE("br\n"); goto rel_pc; }
 		case N_SO:
 		case N_SOL:
 			goto abs_pc;
 		case N_FUN:
 			if (sym->n_strx == 0)
-				goto rel_pc;
+				{ MCC_TRACE("br\n"); goto rel_pc; }
 		abs_pc:
 #if MCC_PTR_SIZE == 8
 			pc += rc->prog_base;
@@ -509,17 +509,17 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) { MCC_
 			pc += func_addr;
 		check_pc:
 			if (pc >= wanted_pc && wanted_pc >= last_pc)
-				goto found;
+				{ MCC_TRACE("br\n"); goto found; }
 			break;
 		}
 
 		switch (sym->n_type) { MCC_TRACE("br\n");
 		case N_FUN:
 			if (sym->n_strx == 0)
-				goto reset_func;
+				{ MCC_TRACE("br\n"); goto reset_func; }
 			p = strchr(str, ':');
 			if (0 == p || (len = p - str + 1, len > sizeof func_name))
-				len = sizeof func_name;
+				{ MCC_TRACE("br\n"); len = sizeof func_name; }
 			pstrcpy(func_name, len, str);
 			func_addr = pc;
 			break;
@@ -530,18 +530,18 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) { MCC_
 			break;
 		case N_BINCL:
 			if (incl_index < INCLUDE_STACK_SIZE)
-				incl_files[incl_index++] = str;
+				{ MCC_TRACE("br\n"); incl_files[incl_index++] = str; }
 			break;
 		case N_EINCL:
 			if (incl_index > 1)
-				incl_index--;
+				{ MCC_TRACE("br\n"); incl_index--; }
 			break;
 		case N_SO:
 			incl_index = 0;
 			if (sym->n_strx) { MCC_TRACE("br\n");
 				len = strlen(str);
 				if (len > 0 && str[len - 1] != '/')
-					incl_files[incl_index++] = str;
+					{ MCC_TRACE("br\n"); incl_files[incl_index++] = str; }
 			}
 		reset_func:
 			func_name[0] = '\0';
@@ -550,7 +550,7 @@ static addr_t rt_printline(rt_context *rc, addr_t wanted_pc, bt_info *bi) { MCC_
 			break;
 		case N_SOL:
 			if (incl_index)
-				incl_files[incl_index - 1] = str;
+				{ MCC_TRACE("br\n"); incl_files[incl_index - 1] = str; }
 			break;
 		}
 	}
@@ -653,20 +653,20 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 		length = 4;
 		size = dwarf_read_4(ln, rc->dwarf_line_end);
 		if (size == 0xffffffffu)
-			length = 8, size = dwarf_read_8(ln, rc->dwarf_line_end);
+			{ MCC_TRACE("br\n"); length = 8, size = dwarf_read_8(ln, rc->dwarf_line_end); }
 		end = ln + size;
 		if (end < ln || end > rc->dwarf_line_end)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		version = dwarf_read_2(ln, end);
 		if (version >= 5)
-			ln += length + 2;
+			{ MCC_TRACE("br\n"); ln += length + 2; }
 		else
-			ln += length;
+			{ MCC_TRACE("br\n"); ln += length; }
 		min_insn_length = dwarf_read_1(ln, end);
 		if (version >= 4)
-			max_ops_per_insn = dwarf_read_1(ln, end);
+			{ MCC_TRACE("br\n"); max_ops_per_insn = dwarf_read_1(ln, end); }
 		else
-			max_ops_per_insn = 1;
+			{ MCC_TRACE("br\n"); max_ops_per_insn = 1; }
 		ln++;
 		line_base = dwarf_read_1(ln, end);
 		line_base |= line_base >= 0x80 ? ~0xff : 0;
@@ -686,14 +686,14 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				for (j = 0; j < col; j++) { MCC_TRACE("br\n");
 					if (entry_format[j].type == DW_LNCT_path) { MCC_TRACE("br\n");
 						if (entry_format[j].form != DW_FORM_line_strp)
-							goto next_line;
+							{ MCC_TRACE("br\n"); goto next_line; }
 						value = length == 4
 												? dwarf_read_4(ln, end)
 												: dwarf_read_8(ln, end);
 						if (i < DIR_TABLE_SIZE)
-							dirs[i] = (char *)rc->dwarf_line_str + value;
+							{ MCC_TRACE("br\n"); dirs[i] = (char *)rc->dwarf_line_str + value; }
 					} else
-						dwarf_ignore_type(ln, end);
+						{ MCC_TRACE("br\n"); dwarf_ignore_type(ln, end); }
 				}
 			}
 			col = dwarf_read_1(ln, end);
@@ -708,13 +708,13 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				for (j = 0; j < col; j++) { MCC_TRACE("br\n");
 					if (entry_format[j].type == DW_LNCT_path) { MCC_TRACE("br\n");
 						if (entry_format[j].form != DW_FORM_line_strp)
-							goto next_line;
+							{ MCC_TRACE("br\n"); goto next_line; }
 						value = length == 4
 												? dwarf_read_4(ln, end)
 												: dwarf_read_8(ln, end);
 						if (i < FILE_TABLE_SIZE)
-							filename_table[i].name =
-									(char *)rc->dwarf_line_str + value;
+							{ MCC_TRACE("br\n"); filename_table[i].name =
+									(char *)rc->dwarf_line_str + value; }
 					} else if (entry_format[j].type == DW_LNCT_directory_index) { MCC_TRACE("br\n");
 						switch (entry_format[j].form) { MCC_TRACE("br\n");
 						case DW_FORM_data1:
@@ -733,14 +733,14 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 							goto next_line;
 						}
 						if (i < FILE_TABLE_SIZE)
-							filename_table[i].dir_entry = value;
+							{ MCC_TRACE("br\n"); filename_table[i].dir_entry = value; }
 					} else
-						dwarf_ignore_type(ln, end);
+						{ MCC_TRACE("br\n"); dwarf_ignore_type(ln, end); }
 				}
 		} else { MCC_TRACE("br\n");
 			while ((dwarf_read_1(ln, end))) { MCC_TRACE("br\n");
 				if (++dir_size < DIR_TABLE_SIZE)
-					dirs[dir_size] = (char *)ln - 1;
+					{ MCC_TRACE("br\n"); dirs[dir_size] = (char *)ln - 1; }
 				while (dwarf_read_1(ln, end)) { MCC_TRACE("br\n");
 				}
 			}
@@ -769,7 +769,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 			i = dwarf_read_1(ln, end);
 			if (i >= opcode_base) { MCC_TRACE("br\n");
 				if (max_ops_per_insn == 1)
-					pc += ((i - opcode_base) / line_range) * min_insn_length;
+					{ MCC_TRACE("br\n"); pc += ((i - opcode_base) / line_range) * min_insn_length; }
 				else { MCC_TRACE("br\n");
 					pc += (opindex + (i - opcode_base) / line_range) /
 								max_ops_per_insn * min_insn_length;
@@ -779,7 +779,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 				i = (int)((i - opcode_base) % line_range) + line_base;
 			check_pc:
 				if (pc >= wanted_pc && wanted_pc >= last_pc)
-					goto found;
+					{ MCC_TRACE("br\n"); goto found; }
 				line += i;
 			} else { MCC_TRACE("br\n");
 				switch (i) { MCC_TRACE("br\n");
@@ -788,7 +788,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					cp = ln;
 					ln += len;
 					if (len == 0)
-						goto next_line;
+						{ MCC_TRACE("br\n"); goto next_line; }
 					switch (dwarf_read_1(cp, end)) { MCC_TRACE("br\n");
 					case DW_LNE_end_sequence:
 						break;
@@ -828,7 +828,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					break;
 				case DW_LNS_advance_pc:
 					if (max_ops_per_insn == 1)
-						pc += dwarf_read_uleb128(&ln, end) * min_insn_length;
+						{ MCC_TRACE("br\n"); pc += dwarf_read_uleb128(&ln, end) * min_insn_length; }
 					else { MCC_TRACE("br\n");
 						unsigned long long off = dwarf_read_uleb128(&ln, end);
 
@@ -851,7 +851,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					break;
 				case DW_LNS_const_add_pc:
 					if (max_ops_per_insn == 1)
-						pc += ((255 - opcode_base) / line_range) * min_insn_length;
+						{ MCC_TRACE("br\n"); pc += ((255 - opcode_base) / line_range) * min_insn_length; }
 					else { MCC_TRACE("br\n");
 						unsigned int off = (255 - opcode_base) / line_range;
 
@@ -882,14 +882,14 @@ found:
 	if (filename) { MCC_TRACE("br\n");
 		if (file_dir && file_dir < DIR_TABLE_SIZE &&
 				file_dir < dir_size + (version < 5) && filename[0] != '/')
-			snprintf(bi->file, sizeof bi->file, "%s/%s",
-							 dirs[file_dir], filename);
+			{ MCC_TRACE("br\n"); snprintf(bi->file, sizeof bi->file, "%s/%s",
+							 dirs[file_dir], filename); }
 		else
-			pstrcpy(bi->file, sizeof bi->file, filename);
+			{ MCC_TRACE("br\n"); pstrcpy(bi->file, sizeof bi->file, filename); }
 		bi->line = line;
 	}
 	if (function)
-		pstrcpy(bi->func, sizeof bi->func, function);
+		{ MCC_TRACE("br\n"); pstrcpy(bi->func, sizeof bi->func, function); }
 	bi->func_pc = func_addr;
 	return (addr_t)func_addr;
 }
@@ -912,7 +912,7 @@ static
 	}
 	one = 0;
 	if (fmt[0] == '\001')
-		++fmt, one = 1;
+		{ MCC_TRACE("br\n"); ++fmt, one = 1; }
 	vsnprintf(msg, sizeof msg, fmt, ap);
 
 	rt_wait_sem();
@@ -920,29 +920,29 @@ static
 	getinfo = rt_printline, n = 6;
 	if (rc) { MCC_TRACE("br\n");
 		if (rc->dwarf)
-			getinfo = rt_printline_dwarf;
+			{ MCC_TRACE("br\n"); getinfo = rt_printline_dwarf; }
 		if (rc->num_callers)
-			n = rc->num_callers;
+			{ MCC_TRACE("br\n"); n = rc->num_callers; }
 	}
 
 	for (i = level = 0; level < n; i++) { MCC_TRACE("br\n");
 		ret = rt_get_caller_pc(&pc, f, i);
 		if (ret == -1)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		memset(&bi, 0, sizeof bi);
 		for (rc2 = rc; rc2; rc2 = rc2->next) { MCC_TRACE("br\n");
 			if (getinfo(rc2, pc, &bi))
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			if (!!(a = rt_elfsym(rc2, pc, &bi.func_pc))) { MCC_TRACE("br\n");
 				pstrcpy(bi.func, sizeof bi.func, a);
 				break;
 			}
 		}
 		if (skip[0] && strstr(bi.file, skip))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 
 		if (skip[0] && !bi.file[0] && !strncmp(bi.func, "__bound_", 8))
-			continue;
+			{ MCC_TRACE("br\n"); continue; }
 #ifndef MCC_CONFIG_BACKTRACE_ONLY
 		{
 			MCCState *s = rt_find_state(f);
@@ -955,7 +955,7 @@ static
 						bi.func[0] ? bi.func : NULL,
 						level == 0 ? msg : NULL);
 				if (ret == 0)
-					break;
+					{ MCC_TRACE("br\n"); break; }
 				goto check_break;
 			}
 		}
@@ -969,7 +969,7 @@ static
 		if (level == 0) { MCC_TRACE("br\n");
 			rt_printf(": %s", msg);
 			if (one)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 		}
 		rt_printf("\n");
 
@@ -977,7 +977,7 @@ static
 	check_break:
 #endif
 		if (rc2 && bi.func_pc && bi.func_pc == (addr_t)rc2->top_func)
-			break;
+			{ MCC_TRACE("br\n"); break; }
 		++level;
 	}
 	rt_post_sem();
@@ -1043,9 +1043,9 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE(
 		addr_t fp = rc->fp;
 		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
-				return -1;
+				{ MCC_TRACE("br\n"); return -1; }
 			if (0 == --level)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			fp = ((addr_t *)fp)[0];
 		}
 		*paddr = ((addr_t *)fp)[1];
@@ -1061,9 +1061,9 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE(
 		addr_t fp = rc->fp;
 		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
-				return -1;
+				{ MCC_TRACE("br\n"); return -1; }
 			if (0 == --level)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			fp = ((addr_t *)fp)[0];
 		}
 		*paddr = ((addr_t *)fp)[2];
@@ -1079,9 +1079,9 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE(
 		addr_t fp = rc->fp;
 		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
-				return -1;
+				{ MCC_TRACE("br\n"); return -1; }
 			if (0 == --level)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			fp = ((addr_t *)fp)[0];
 		}
 		*paddr = ((addr_t *)fp)[1];
@@ -1097,9 +1097,9 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE(
 		addr_t fp = rc->fp;
 		while (1) { MCC_TRACE("br\n");
 			if (fp < 0x1000)
-				return -1;
+				{ MCC_TRACE("br\n"); return -1; }
 			if (0 == --level)
-				break;
+				{ MCC_TRACE("br\n"); break; }
 			fp = ((addr_t *)fp)[-2];
 		}
 		*paddr = ((addr_t *)fp)[-1];
@@ -1117,7 +1117,7 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *rc, int level) { MCC_TRACE(
 #else
 static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level) { MCC_TRACE("enter\n");
 	if (level)
-		return -1;
+		{ MCC_TRACE("br\n"); return -1; }
 	*paddr = f->ip;
 	return 0;
 }

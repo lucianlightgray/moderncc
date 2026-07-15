@@ -61,30 +61,30 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 	for (int i = 1; i < argc; i++) { MCC_TRACE("br\n");
 		const char *a = argv[i];
 		if (*a == '-' && strchr(a, '.'))
-			ret = 1;
+			{ MCC_TRACE("br\n"); ret = 1; }
 		if ((*a == '-') || (i == 1 && !strchr(a, '.'))) { MCC_TRACE("br\n");
 			if (strpbrk(a, ops_conflict))
-				ret = 1;
+				{ MCC_TRACE("br\n"); ret = 1; }
 			if (strchr(a, 'x'))
-				extract = 1;
+				{ MCC_TRACE("br\n"); extract = 1; }
 			if (strchr(a, 't'))
-				table = 1;
+				{ MCC_TRACE("br\n"); table = 1; }
 			if (strchr(a, 'v'))
-				verbose = 1;
+				{ MCC_TRACE("br\n"); verbose = 1; }
 		} else { MCC_TRACE("br\n");
 			if (!i_lib)
-				i_lib = i;
+				{ MCC_TRACE("br\n"); i_lib = i; }
 			else if (!i_obj)
-				i_obj = i;
+				{ MCC_TRACE("br\n"); i_obj = i; }
 		}
 	}
 
 	if (!i_lib)
-		ret = 1;
+		{ MCC_TRACE("br\n"); ret = 1; }
 	i_obj = i_obj ? i_obj : argc;
 
 	if (ret == 1)
-		return ar_usage(ret);
+		{ MCC_TRACE("br\n"); return ar_usage(ret); }
 
 	if (extract || table) { MCC_TRACE("br\n");
 		if ((fh = fopen(argv[i_lib], "rb")) == NULL) { MCC_TRACE("br\n");
@@ -101,7 +101,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 			char *p, *e;
 
 			if (memcmp(arhdr.ar_fmag, ARFMAG, 2))
-				goto no_ar;
+				{ MCC_TRACE("br\n"); goto no_ar; }
 			p = arhdr.ar_name;
 			for (e = p + sizeof arhdr.ar_name; e > p && e[-1] == ' ';)
 				e--;
@@ -112,9 +112,9 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 			fread(buf, fsize, 1, fh);
 			if (strcmp(arhdr.ar_name, "/") && strcmp(arhdr.ar_name, "/SYM64/")) { MCC_TRACE("br\n");
 				if (e > p && e[-1] == '/')
-					e[-1] = '\0';
+					{ MCC_TRACE("br\n"); e[-1] = '\0'; }
 				if (table || verbose)
-					printf("%s%s\n", extract ? "x - " : "", arhdr.ar_name);
+					{ MCC_TRACE("br\n"); printf("%s%s\n", extract ? "x - " : "", arhdr.ar_name); }
 				if (extract) { MCC_TRACE("br\n");
 					if ((fo = fopen(arhdr.ar_name, "wb")) == NULL) { MCC_TRACE("br\n");
 						fprintf(stderr, "mcc: ar: can't create file %s\n",
@@ -127,13 +127,13 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 				}
 			}
 			if (fsize & 1)
-				fgetc(fh);
+				{ MCC_TRACE("br\n"); fgetc(fh); }
 			mcc_free(buf);
 		}
 		ret = 0;
 	finish:
 		if (fh)
-			fclose(fh);
+			{ MCC_TRACE("br\n"); fclose(fh); }
 		return ret;
 	}
 
@@ -163,7 +163,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 			goto the_end;
 		}
 		if (verbose)
-			printf("a - %s\n", argv[i_obj]);
+			{ MCC_TRACE("br\n"); printf("a - %s\n", argv[i_obj]); }
 
 		fseek(fi, 0, SEEK_END);
 		fsize = ftell(fi);
@@ -184,7 +184,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 		for (int i = 0; i < ehdr->e_shnum; i++) { MCC_TRACE("br\n");
 			shdr = (ElfW(Shdr) *)(buf + ehdr->e_shoff + i * ehdr->e_shentsize);
 			if (!shdr->sh_offset)
-				continue;
+				{ MCC_TRACE("br\n"); continue; }
 			if (shdr->sh_type == SHT_SYMTAB) { MCC_TRACE("br\n");
 				symtab = (char *)(buf + shdr->sh_offset);
 				symtabsize = shdr->sh_size;
@@ -222,7 +222,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 			;
 		istrlen = strlen(name);
 		if (istrlen >= sizeof(arhdro.ar_name))
-			istrlen = sizeof(arhdro.ar_name) - 1;
+			{ MCC_TRACE("br\n"); istrlen = sizeof(arhdro.ar_name) - 1; }
 		memset(arhdro.ar_name, ' ', sizeof(arhdro.ar_name));
 		memcpy(arhdro.ar_name, name, istrlen);
 		arhdro.ar_name[istrlen] = '/';
@@ -234,12 +234,12 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 		i_obj++;
 		fpos += (fsize + sizeof(arhdro));
 		if (fpos & 1)
-			fputc(0, fo), ++fpos;
+			{ MCC_TRACE("br\n"); fputc(0, fo), ++fpos; }
 	}
 	hofs = 8 + sizeof(arhdr) + strpos + (funccnt + 1) * sizeof(int);
 	fpos = 0;
 	if ((hofs & 1))
-		hofs++, fpos = 1;
+		{ MCC_TRACE("br\n"); hofs++, fpos = 1; }
 	fwrite(ARMAG, 8, 1, fh);
 	if (!funccnt) { MCC_TRACE("br\n");
 		ret = 0;
@@ -254,7 +254,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 	fwrite(afpos, (funccnt + 1) * sizeof(int), 1, fh);
 	fwrite(anames, strpos, 1, fh);
 	if (fpos)
-		fwrite("", 1, 1, fh);
+		{ MCC_TRACE("br\n"); fwrite("", 1, 1, fh); }
 	fseek(fo, 0, SEEK_END);
 	fsize = ftell(fo);
 	fseek(fo, 0, SEEK_SET);
@@ -265,15 +265,15 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 	ret = 0;
 the_end:
 	if (anames)
-		mcc_free(anames);
+		{ MCC_TRACE("br\n"); mcc_free(anames); }
 	if (afpos)
-		mcc_free(afpos);
+		{ MCC_TRACE("br\n"); mcc_free(afpos); }
 	if (fh)
-		fclose(fh);
+		{ MCC_TRACE("br\n"); fclose(fh); }
 	if (created_file && ret != 0)
-		remove(created_file);
+		{ MCC_TRACE("br\n"); remove(created_file); }
 	if (fo)
-		fclose(fo), remove(tfile);
+		{ MCC_TRACE("br\n"); fclose(fo), remove(tfile); }
 	return ret;
 }
 
@@ -302,14 +302,14 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv) { MCC_TRACE("enter\n");
 				v = 1;
 			} else if (0 == strcmp(a, "-o")) { MCC_TRACE("br\n");
 				if (++i == argc)
-					goto usage;
+					{ MCC_TRACE("br\n"); goto usage; }
 				pstrcpy(outfile, sizeof outfile, argv[i]);
 			} else
-				goto usage;
+				{ MCC_TRACE("br\n"); goto usage; }
 		} else if (0 == infile[0])
-			pstrcpy(infile, sizeof infile, a);
+			{ MCC_TRACE("br\n"); pstrcpy(infile, sizeof infile, a); }
 		else
-			goto usage;
+			{ MCC_TRACE("br\n"); goto usage; }
 	}
 
 	if (0 == infile[0]) { MCC_TRACE("br\n");
@@ -324,13 +324,13 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv) { MCC_TRACE("enter\n");
 		pstrcpy(outfile, sizeof outfile, mcc_basename(infile));
 		q = strrchr(outfile, '.');
 		if (NULL == q)
-			q = strchr(outfile, 0);
+			{ MCC_TRACE("br\n"); q = strchr(outfile, 0); }
 		pstrcpy(q, sizeof outfile - (q - outfile), ".def");
 	}
 
 	file = infile;
 	if (host_find_tool(file, ".dll", path, sizeof path))
-		file = path;
+		{ MCC_TRACE("br\n"); file = path; }
 	ret = mcc_get_dllexports(file, &p);
 	if (ret || !p) { MCC_TRACE("br\n");
 		fprintf(stderr, "mcc: impdef: %s '%s'\n",
@@ -347,7 +347,7 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv) { MCC_TRACE("enter\n");
 	}
 
 	if (v)
-		printf("-> %s\n", file);
+		{ MCC_TRACE("br\n"); printf("-> %s\n", file); }
 
 	op = fopen(outfile, "wb");
 	if (NULL == op) { MCC_TRACE("br\n");
@@ -362,17 +362,17 @@ ST_FUNC int mcc_tool_impdef(int argc, char **argv) { MCC_TRACE("enter\n");
 	}
 
 	if (v)
-		printf("<- %s (%d symbol%s)\n", outfile, i, &"s"[i < 2]);
+		{ MCC_TRACE("br\n"); printf("<- %s (%d symbol%s)\n", outfile, i, &"s"[i < 2]); }
 
 	ret = 0;
 
 the_end:
 	if (p)
-		mcc_free(p);
+		{ MCC_TRACE("br\n"); mcc_free(p); }
 	if (fp)
-		fclose(fp);
+		{ MCC_TRACE("br\n"); fclose(fp); }
 	if (op)
-		fclose(op);
+		{ MCC_TRACE("br\n"); fclose(op); }
 	return ret;
 }
 
@@ -443,23 +443,23 @@ ST_FUNC int gen_makedeps(MCCState *s1, const char *target, const char *filename)
 	}
 
 	if (s1->dep_target)
-		target = s1->dep_target;
+		{ MCC_TRACE("br\n"); target = s1->dep_target; }
 
 	if (!strcmp(filename, "-"))
-		depout = fdopen(1, "w");
+		{ MCC_TRACE("br\n"); depout = fdopen(1, "w"); }
 	else
-		depout = fopen(filename, "w");
+		{ MCC_TRACE("br\n"); depout = fopen(filename, "w"); }
 	if (!depout)
-		return mcc_error_noabort("could not open '%s'", filename);
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("could not open '%s'", filename); }
 	if (s1->verbose)
-		printf("<- %s\n", filename);
+		{ MCC_TRACE("br\n"); printf("<- %s\n", filename); }
 
 	escaped_targets = mcc_malloc(s1->nb_target_deps * sizeof(*escaped_targets));
 	num_targets = 0;
 	for (int i = 0; i < s1->nb_target_deps; ++i) { MCC_TRACE("br\n");
 		for (int k = 0; k < i; ++k)
 			if (0 == strcmp(s1->target_deps[i], s1->target_deps[k]))
-				goto next;
+				{ MCC_TRACE("br\n"); goto next; }
 		escaped_targets[num_targets++] = escape_target_dep(s1->target_deps[i]);
 	next:;
 	}

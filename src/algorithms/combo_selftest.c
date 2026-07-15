@@ -72,9 +72,9 @@ static void fill(unsigned char *b, long n, int mode) { MCC_TRACE("enter\n");
 	unsigned long r = 0x2545f491u;
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		if (mode == 0)
-			b[i] = (unsigned char)('A' + (i % 7)); /* repetitive text */
+			{ MCC_TRACE("br\n"); b[i] = (unsigned char)('A' + (i % 7)); } /* repetitive text */
 		else if (mode == 1)
-			b[i] = 0x5a; /* one long run */
+			{ MCC_TRACE("br\n"); b[i] = 0x5a; } /* one long run */
 		else { MCC_TRACE("br\n");
 			r = r * 1103515245u + 12345u;
 			b[i] = (unsigned char)(r >> 16); /* pseudo-random */
