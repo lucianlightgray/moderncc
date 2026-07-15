@@ -805,6 +805,47 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 	p[o++] = 0xe0;
 	return p;
 }
+#elif defined(__aarch64__)
+static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter\n");
+	void *tick = (void *)mccjit_counter_tick;
+	size_t page = host_pagesize();
+	unsigned char *p;
+	static const uint32_t code[22] = {
+			0xd10103ffu, /* sub  sp,sp,#64 */
+			0xf90017e0u, /* str  x0,[sp,#40] */
+			0xf90013e1u, /* str  x1,[sp,#32] */
+			0xf9000fe2u, /* str  x2,[sp,#24] */
+			0xf9000be3u, /* str  x3,[sp,#16] */
+			0xf90007e4u, /* str  x4,[sp,#8] */
+			0xf90003e5u, /* str  x5,[sp,#0] */
+			0xf9001bfeu, /* str  x30,[sp,#48] */
+			0x580001c0u, /* ldr  x0,#56   (state @ +88) */
+			0x910003e1u, /* mov  x1,sp */
+			0x580001d0u, /* ldr  x16,#56  (tick @ +96) */
+			0xd63f0200u, /* blr  x16 */
+			0xaa0003f0u, /* mov  x16,x0 */
+			0xf9401bfeu, /* ldr  x30,[sp,#48] */
+			0xf94017e0u, /* ldr  x0,[sp,#40] */
+			0xf94013e1u, /* ldr  x1,[sp,#32] */
+			0xf9400fe2u, /* ldr  x2,[sp,#24] */
+			0xf9400be3u, /* ldr  x3,[sp,#16] */
+			0xf94007e4u, /* ldr  x4,[sp,#8] */
+			0xf94003e5u, /* ldr  x5,[sp,#0] */
+			0x910103ffu, /* add  sp,sp,#64 */
+			0xd61f0200u, /* br   x16 */
+	};
+	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		{ MCC_TRACE("br\n"); return NULL; }
+	memcpy(p, code, sizeof code);
+	memcpy(p + 88, &st, 8);
+	memcpy(p + 96, &tick, 8);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		return NULL;
+	}
+	return p;
+}
 #else
 static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter\n");
 	(void)st;
@@ -853,6 +894,24 @@ static int mccjit_lazy_enabled(void) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_probe_exec_mem(void) { MCC_TRACE("enter\n");
+#if defined(__aarch64__)
+	size_t page = host_pagesize();
+	void *p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	uint32_t code[2];
+	int got;
+	if (p == MAP_FAILED)
+		{ MCC_TRACE("br\n"); return 0; }
+	code[0] = 0x52800b40u; /* mov w0, #0x5a */
+	code[1] = 0xd65f03c0u; /* ret */
+	memcpy(p, code, sizeof code);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		return 0;
+	}
+	got = ((int (*)(void))p)();
+	munmap(p, page);
+	return got == 0x5a;
+#else
 	void *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 								 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
@@ -869,6 +928,7 @@ static int mccjit_probe_exec_mem(void) { MCC_TRACE("enter\n");
 #else
 	munmap(p, 4096);
 	return 1;
+#endif
 #endif
 }
 
@@ -2472,6 +2532,168 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 	memcpy(p + 106, &calln, 8);
 	return p;
 }
+#elif defined(__aarch64__)
+#define MCCJIT_A64_W(word) do { uint32_t w_ = (uint32_t)(word); memcpy(p + o, &w_, 4); o += 4; } while (0)
+#define MCCJIT_A64_LDR(T, slotoff) \
+	MCCJIT_A64_W(0x58000000u | ((((uint32_t)((slotoff) - o) / 4) & 0x7ffffu) << 5) | (T))
+static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
+																		const uint32_t *param_t, uint32_t nargs,
+																		int ret_wide) { MCC_TRACE("enter\n");
+	void *calln = (void *)mccjit_kgc_calln;
+	size_t page = host_pagesize();
+	const uint32_t D = 256;
+	unsigned char *p;
+	MccjitKgc *kgc;
+	int *flag;
+	uint64_t flagaddr, kp, vp, bp, cp;
+	uint32_t i, o = 0;
+	if (nargs < 1 || nargs > MCCJIT_KGC_MAXARG)
+		{ MCC_TRACE("br\n"); return NULL; }
+	kgc = mcc_mallocz(sizeof *kgc);
+	flag = mcc_mallocz(sizeof *flag);
+	if (!kgc || !flag) { MCC_TRACE("br\n");
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) { MCC_TRACE("br\n");
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	kgc->memoize_ok = memoize_ok;
+	kgc->ret_wide = ret_wide;
+	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	MCCJIT_A64_W(0xa9bf7bfdu); /* stp x29,x30,[sp,#-16]! */
+	MCCJIT_A64_W(0xd100c3ffu); /* sub sp,sp,#48 */
+	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
+		if (mccjit_type_wide((int)param_t[i]))
+			{ MCC_TRACE("br\n"); MCCJIT_A64_W(0xf90003e0u | (i << 10) | i); } /* str x_i,[sp,#i*8] */
+		else { MCC_TRACE("br\n");
+			MCCJIT_A64_W(0x93407c00u | (i << 5) | 8); /* sxtw x8,w_i */
+			MCCJIT_A64_W(0xf90003e8u | (i << 10));    /* str x8,[sp,#i*8] */
+		}
+	}
+	MCCJIT_A64_LDR(0, D + 0);  /* ldr x0,[kgc] */
+	MCCJIT_A64_LDR(1, D + 8);  /* ldr x1,[variant] */
+	MCCJIT_A64_LDR(2, D + 16); /* ldr x2,[baseline] */
+	MCCJIT_A64_W(0x910003e3u); /* mov x3,sp */
+	MCCJIT_A64_W(0x52800004u | (nargs << 5)); /* mov w4,#nargs */
+	MCCJIT_A64_LDR(5, D + 24);  /* ldr x5,[&flag] */
+	MCCJIT_A64_LDR(16, D + 32); /* ldr x16,[verify] */
+	MCCJIT_A64_W(0xd63f0200u);  /* blr x16 */
+	MCCJIT_A64_W(0x9100c3ffu);  /* add sp,sp,#48 */
+	MCCJIT_A64_W(0xa8c17bfdu);  /* ldp x29,x30,[sp],#16 */
+	MCCJIT_A64_W(0xd65f03c0u);  /* ret */
+	*flag = 0;
+	flagaddr = (uint64_t)(uintptr_t)flag;
+	kp = (uint64_t)(uintptr_t)kgc;
+	vp = (uint64_t)(uintptr_t)variant;
+	bp = (uint64_t)(uintptr_t)baseline;
+	cp = (uint64_t)(uintptr_t)calln;
+	memcpy(p + D + 0, &kp, 8);
+	memcpy(p + D + 8, &vp, 8);
+	memcpy(p + D + 16, &bp, 8);
+	memcpy(p + D + 24, &flagaddr, 8);
+	memcpy(p + D + 32, &cp, 8);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	return p;
+}
+static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
+																		 int memoize_ok, uint32_t nargs) { MCC_TRACE("enter\n");
+	void *calln = (void *)mccjit_kgc_calln_fp;
+	size_t page = host_pagesize();
+	const uint32_t D = 256;
+	unsigned char *p;
+	MccjitKgc *kgc;
+	int *flag;
+	uint64_t flagaddr, kp, vp, bp, cp;
+	uint32_t i, o = 0;
+	if (nargs < 1 || nargs > MCCJIT_KGC_MAXARG)
+		{ MCC_TRACE("br\n"); return NULL; }
+	kgc = mcc_mallocz(sizeof *kgc);
+	flag = mcc_mallocz(sizeof *flag);
+	if (!kgc || !flag) { MCC_TRACE("br\n");
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) { MCC_TRACE("br\n");
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	kgc->memoize_ok = memoize_ok;
+	kgc->ret_wide = 1;
+	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	MCCJIT_A64_W(0xa9bf7bfdu); /* stp x29,x30,[sp,#-16]! */
+	MCCJIT_A64_W(0xd100c3ffu); /* sub sp,sp,#48 */
+	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
+		MCCJIT_A64_W(0xfd0003e0u | (i << 10) | i); /* str d_i,[sp,#i*8] */
+	}
+	MCCJIT_A64_LDR(0, D + 0);  /* ldr x0,[kgc] */
+	MCCJIT_A64_LDR(1, D + 8);  /* ldr x1,[variant] */
+	MCCJIT_A64_LDR(2, D + 16); /* ldr x2,[baseline] */
+	MCCJIT_A64_W(0x910003e3u); /* mov x3,sp (argv of doubles by pointer) */
+	MCCJIT_A64_W(0x52800004u | (nargs << 5)); /* mov w4,#nargs */
+	MCCJIT_A64_LDR(5, D + 24);  /* ldr x5,[&flag] */
+	MCCJIT_A64_LDR(16, D + 32); /* ldr x16,[verify] */
+	MCCJIT_A64_W(0xd63f0200u);  /* blr x16 */
+	MCCJIT_A64_W(0x9100c3ffu);  /* add sp,sp,#48 */
+	MCCJIT_A64_W(0xa8c17bfdu);  /* ldp x29,x30,[sp],#16 */
+	MCCJIT_A64_W(0xd65f03c0u);  /* ret */
+	*flag = 0;
+	flagaddr = (uint64_t)(uintptr_t)flag;
+	kp = (uint64_t)(uintptr_t)kgc;
+	vp = (uint64_t)(uintptr_t)variant;
+	bp = (uint64_t)(uintptr_t)baseline;
+	cp = (uint64_t)(uintptr_t)calln;
+	memcpy(p + D + 0, &kp, 8);
+	memcpy(p + D + 8, &vp, 8);
+	memcpy(p + D + 16, &bp, 8);
+	memcpy(p + D + 24, &flagaddr, 8);
+	memcpy(p + D + 32, &cp, 8);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	return p;
+}
+static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
+																				int memoize_ok, uint32_t ngp,
+																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
+	(void)variant;
+	(void)baseline;
+	(void)memoize_ok;
+	(void)ngp;
+	(void)nsse;
+	(void)ret_fp;
+	(void)ret_wide;
+	return NULL;
+}
+#undef MCCJIT_A64_W
+#undef MCCJIT_A64_LDR
 #else
 static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_ok,
 																		const uint32_t *param_t, uint32_t nargs,
