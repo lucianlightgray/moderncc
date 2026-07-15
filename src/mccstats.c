@@ -435,28 +435,24 @@ void mcc_stats_jit_recompile(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_recompiles++;
-	mccstats_paint(0);
 }
 
 void mcc_stats_jit_kgc_hit(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_kgc_hits++;
-	mccstats_paint(0);
 }
 
 void mcc_stats_jit_kgc_miss(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_kgc_misses++;
-	mccstats_paint(0);
 }
 
 void mcc_stats_jit_poison(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_poison++;
-	mccstats_paint(0);
 }
 
 void mcc_stats_jit_promote(int async) { MCC_TRACE("enter\n");
@@ -466,5 +462,4 @@ void mcc_stats_jit_promote(int async) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcs.jit_promote_async++; }
 	else
 		{ MCC_TRACE("br\n"); mcs.jit_promote_sync++; }
-	mccstats_paint(0);
 }
