@@ -1633,6 +1633,8 @@ ST_FUNC void gen_opi(int op);
 ST_FUNC void gen_opf(int op);
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 void gen_ubsan_nullptr(void);
+ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll);
+ST_FUNC void gen_select(CType *type);
 #endif
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64
 void gen_asan_shadow_check(int sz);
@@ -1696,6 +1698,7 @@ ST_FUNC void gen_increment_tcov(SValue *sv);
 
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
+ST_FUNC void gen_mulh(int sign);
 #ifdef MCC_TARGET_PE
 ST_FUNC void gen_vla_result(int addr);
 #endif
@@ -1713,6 +1716,7 @@ ST_FUNC void gen_increment_tcov(SValue *sv);
 
 #ifdef MCC_TARGET_ARM64
 ST_FUNC void gen_opl(int op);
+ST_FUNC void gen_mulh(int sign);
 ST_FUNC void gfunc_return(CType *func_type);
 ST_FUNC void gen_va_start(void);
 ST_FUNC void gen_va_arg(CType *t);
@@ -1724,6 +1728,7 @@ ST_FUNC void gen_increment_tcov(SValue *sv);
 
 #ifdef MCC_TARGET_RISCV64
 ST_FUNC void gen_opl(int op);
+ST_FUNC void gen_mulh(int sign);
 ST_FUNC void gen_va_start(void);
 ST_FUNC void arch_transfer_ret_regs(int);
 ST_FUNC void gen_cvt_sxtw(void);

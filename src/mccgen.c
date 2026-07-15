@@ -9836,16 +9836,79 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 #endif
 }
 
-static int is_cond_bool(SValue *sv) { MCC_TRACE("enter\n");
-	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST && (sv->type.t & VT_BTYPE) == VT_INT)
-		{ MCC_TRACE("br\n"); return (unsigned)sv->c.i < 2; }
-	if (sv->r == VT_CMP)
-		{ MCC_TRACE("br\n"); return 1; }
-	return 0;
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		defined(MCC_TARGET_RISCV64)
+static int gen_select_regok(SValue *v) { MCC_TRACE("enter\n");
+	return (v->r & VT_VALMASK) < VT_CONST && !(v->r & VT_LVAL);
 }
 
+static void gen_select_branch(CType *type) { MCC_TRACE("enter\n");
+	SValue vf = vtop[0], vt = vtop[-1], vc = vtop[-2];
+	int rc = MCC_RC_TYPE(type->t);
+	int r1, r2, u, tt;
+	vtop -= 3;
+	vpushv(&vc);
+	save_regs(1);
+	tt = gvtst(1, 0);
+	vpushv(&vt);
+	gen_cast(type);
+	SValue sv = *vtop;
+	vtop--;
+	u = gjmp(0);
+	gsym(tt);
+	vpushv(&vf);
+	gen_cast(type);
+	r2 = gv(rc);
+	tt = gjmp(0);
+	gsym(u);
+	*vtop = sv;
+	gen_cast(type);
+	r1 = gv(rc);
+	move_reg(r2, r1, type->t);
+	vtop->r = r2;
+	gsym(tt);
+}
+
+ST_FUNC void gen_select(CType *type) { MCC_TRACE("enter\n");
+	int rc = MCC_RC_TYPE(type->t);
+	int bt = type->t & VT_BTYPE;
+	int ll = bt == VT_LLONG || bt == VT_PTR || bt == VT_FUNC;
+	int rt, rf, rb, rd, pass;
+	gen_cast(type);
+	vswap();
+	gen_cast(type);
+	vswap();
+	for (pass = 0; pass < 4; pass++) { MCC_TRACE("br\n");
+		int spilled = 0;
+		if (!gen_select_regok(vtop))
+			{ MCC_TRACE("br\n"); gv(rc); spilled = 1; }
+		if (!gen_select_regok(vtop - 1))
+			{ MCC_TRACE("br\n"); vswap(); gv(rc); vswap(); spilled = 1; }
+		if (!gen_select_regok(vtop - 2))
+			{ MCC_TRACE("br\n"); vrotb(3); gv(MCC_RC_INT); vrott(3); spilled = 1; }
+		if (!spilled)
+			{ MCC_TRACE("br\n"); break; }
+	}
+	if (gen_select_regok(vtop) && gen_select_regok(vtop - 1) &&
+			gen_select_regok(vtop - 2)) { MCC_TRACE("br\n");
+		rf = vtop[0].r & VT_VALMASK;
+		rt = vtop[-1].r & VT_VALMASK;
+		rb = vtop[-2].r & VT_VALMASK;
+		rd = gen_cmov(rt, rf, rb, ll);
+		vtop -= 2;
+		vtop->type = *type;
+		vtop->r = rd;
+		vtop->r2 = VT_CONST;
+		vtop->sym = NULL;
+		vtop->c.i = 0;
+		return;
+	}
+	gen_select_branch(type);
+}
+#endif
+
 static void expr_cond(void) { MCC_TRACE("enter\n");
-	int tt, u, r1, r2, rc, t1, t2, islv, c, g;
+	int tt, u, r1, r2, rc, islv, c, g;
 	SValue sv;
 	CType type;
 
@@ -9939,17 +10002,6 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 			SValue *dead = (c == 1) ? vtop : &sv;
 			if ((dead->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
 				{ MCC_TRACE("br\n"); ice_nonconst = 1; }
-		}
-
-		if (c < 0 && is_cond_bool(vtop) && is_cond_bool(&sv)) { MCC_TRACE("br\n");
-			t1 = gvtst(0, 0);
-			t2 = gjmp(0);
-			gsym(u);
-			vpushv(&sv);
-			gvtst_set(0, t1);
-			gvtst_set(1, t2);
-			gen_cast(&type);
-			return;
 		}
 
 		islv = VT_STRUCT == (type.t & VT_BTYPE);

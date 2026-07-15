@@ -1648,6 +1648,14 @@ void gjmp_addr(int a) { MCC_TRACE("enter\n");
 	}
 }
 
+ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
+	orex(ll, rb, rb, 0x85);
+	o(0xc0 + REG_VALUE(rb) + REG_VALUE(rb) * 8);
+	orex(ll, rt, rf, 0x450f);
+	o(0xc0 + REG_VALUE(rt) + REG_VALUE(rf) * 8);
+	return rf;
+}
+
 ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	if (op & 0x100) { MCC_TRACE("br\n");
 		int v = vtop->cmp_r;
@@ -1865,6 +1873,18 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 
 void gen_opl(int op) { MCC_TRACE("enter\n");
 	gen_opi(op);
+}
+
+void gen_mulh(int sign) { MCC_TRACE("enter\n");
+	int fr, ll;
+	ll = is64_type(vtop[-1].type.t);
+	gv2(MCC_RC_RAX, MCC_RC_RCX);
+	fr = vtop[0].r;
+	vtop--;
+	save_reg(MCC_TREG_RDX);
+	orex(ll, fr, 0, 0xf7);
+	o((sign ? 0xe8 : 0xe0) + REG_VALUE(fr));
+	vtop->r = MCC_TREG_RDX;
 }
 
 void gen_opf(int op) { MCC_TRACE("enter\n");

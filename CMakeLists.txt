@@ -3384,6 +3384,22 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_VLAT=1")
         endforeach()
 
+        # 4B-A branchless select: force MCC_AST_SELECT on across the exec corpus so every
+        # min/max/sign/clamp ternary with side-effect-free arms is lowered to a branchless
+        # cmov/csel/mask select and its runtime output validated (a wrong condition sense,
+        # swapped arm, or clobbered register would surface as a wrong result). Byte-changing,
+        # so it lives as an exec (runtime) variant, not a golden.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-select/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-select-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-select/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_SELECT=1")
+        endforeach()
+
         # M6z: force zero-init .bss placement ON across the whole exec corpus, so every
         # all-zero writable static that qualifies is relocated .data -> .bss and the program's
         # runtime behavior is validated (a dropped relocation or wrong address would surface as

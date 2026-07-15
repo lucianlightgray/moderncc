@@ -125,4 +125,133 @@ static int32_t mcc_divs_apply(int32_t n, int32_t d, MccMagicS mag) {
 	return q;
 }
 
+static uint64_t mcc_mulhu64(uint64_t u, uint64_t v) {
+	uint64_t u0 = u & 0xFFFFFFFFull, u1 = u >> 32;
+	uint64_t v0 = v & 0xFFFFFFFFull, v1 = v >> 32;
+	uint64_t t = u0 * v0;
+	uint64_t w1, w2, k;
+	k = t >> 32;
+	t = u1 * v0 + k;
+	w1 = t & 0xFFFFFFFFull;
+	w2 = t >> 32;
+	t = u0 * v1 + w1;
+	k = t >> 32;
+	return u1 * v1 + w2 + k;
+}
+
+static int64_t mcc_mulhs64(int64_t a, int64_t b) {
+	uint64_t hi = mcc_mulhu64((uint64_t)a, (uint64_t)b);
+	if (a < 0)
+		hi -= (uint64_t)b;
+	if (b < 0)
+		hi -= (uint64_t)a;
+	return (int64_t)hi;
+}
+
+typedef struct {
+	uint64_t M;
+	int a;
+	int s;
+} MccMagicU64;
+
+static MccMagicU64 mcc_magicu64(uint64_t d) {
+	int p;
+	uint64_t nc, delta, q1, r1, q2, r2;
+	const uint64_t two63 = 0x8000000000000000ull;
+	MccMagicU64 mag;
+	mag.a = 0;
+	nc = 0xFFFFFFFFFFFFFFFFull - (0ull - d) % d;
+	p = 63;
+	q1 = two63 / nc;
+	r1 = two63 - q1 * nc;
+	q2 = (two63 - 1) / d;
+	r2 = (two63 - 1) - q2 * d;
+	do {
+		p++;
+		if (r1 >= nc - r1) {
+			q1 = 2 * q1 + 1;
+			r1 = 2 * r1 - nc;
+		} else {
+			q1 = 2 * q1;
+			r1 = 2 * r1;
+		}
+		if (r2 + 1 >= d - r2) {
+			if (q2 >= two63 - 1)
+				mag.a = 1;
+			q2 = 2 * q2 + 1;
+			r2 = 2 * r2 + 1 - d;
+		} else {
+			if (q2 >= two63)
+				mag.a = 1;
+			q2 = 2 * q2;
+			r2 = 2 * r2 + 1;
+		}
+		delta = d - 1 - r2;
+	} while (p < 128 && (q1 < delta || (q1 == delta && r1 == 0)));
+	mag.M = q2 + 1;
+	mag.s = p - 64;
+	return mag;
+}
+
+static uint64_t mcc_divu64_apply(uint64_t n, MccMagicU64 mag) {
+	uint64_t q = mcc_mulhu64(mag.M, n);
+	if (mag.a) {
+		uint64_t t = ((n - q) >> 1) + q;
+		return t >> (mag.s - 1);
+	}
+	return q >> mag.s;
+}
+
+typedef struct {
+	int64_t M;
+	int s;
+} MccMagicS64;
+
+static MccMagicS64 mcc_magics64(int64_t d) {
+	int p;
+	uint64_t ad, anc, delta, q1, r1, q2, r2, t;
+	const uint64_t two63 = 0x8000000000000000ull;
+	MccMagicS64 mag;
+	ad = (d < 0) ? (0ull - (uint64_t)d) : (uint64_t)d;
+	t = two63 + ((uint64_t)d >> 63);
+	anc = t - 1 - t % ad;
+	p = 63;
+	q1 = two63 / anc;
+	r1 = two63 - q1 * anc;
+	q2 = two63 / ad;
+	r2 = two63 - q2 * ad;
+	do {
+		p++;
+		q1 = 2 * q1;
+		r1 = 2 * r1;
+		if (r1 >= anc) {
+			q1++;
+			r1 -= anc;
+		}
+		q2 = 2 * q2;
+		r2 = 2 * r2;
+		if (r2 >= ad) {
+			q2++;
+			r2 -= ad;
+		}
+		delta = ad - r2;
+	} while (q1 < delta || (q1 == delta && r1 == 0));
+	mag.M = (int64_t)(q2 + 1);
+	if (d < 0)
+		mag.M = -mag.M;
+	mag.s = p - 64;
+	return mag;
+}
+
+static int64_t mcc_divs64_apply(int64_t n, int64_t d, MccMagicS64 mag) {
+	int64_t q = mcc_mulhs64(mag.M, n);
+	if (d > 0 && mag.M < 0)
+		q += n;
+	else if (d < 0 && mag.M > 0)
+		q -= n;
+	q >>= mag.s;
+	q += (int64_t)((uint64_t)q >> 63);
+	return q;
+}
+
 #endif /* MCC_MAGIC_H */

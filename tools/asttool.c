@@ -449,6 +449,65 @@ static void suite_magic(void) {
 				sok = 0;
 	}
 	CHECK(sok, "signed magic division matches native / over divisors +-2..20000");
+
+	{
+		static const uint64_t u64d[] = {3ull, 5ull, 7ull, 10ull, 100ull, 1000ull,
+																		641ull, 6700417ull, 0x100000001ull,
+																		0xFFFFFFFFull, 0x8000000000000001ull,
+																		0xFFFFFFFFFFFFFFFFull};
+		static const uint64_t u64n[] = {0ull, 1ull, 2ull, 3ull, 0x7FFFFFFFFFFFFFFFull,
+																		0x8000000000000000ull, 0x8000000000000001ull,
+																		0xFFFFFFFFFFFFFFFEull, 0xFFFFFFFFFFFFFFFFull,
+																		0x0123456789ABCDEFull, 0xFEDCBA9876543210ull,
+																		0xAAAAAAAAAAAAAAAAull, 0xDEADBEEFCAFEBABEull};
+		static const int64_t s64d[] = {3, 5, 7, 10, 100, 1000, 641, 6700417,
+																	 0x100000001ll, 0x7FFFFFFFFFFFFFFFll};
+		static const int64_t s64n[] = {0, 1, -1, 2, -2, 0x7FFFFFFFFFFFFFFFll,
+																	 (-0x7FFFFFFFFFFFFFFFll - 1), 0x0123456789ABCDEFll,
+																	 -0x0123456789ABCDEFll, 1234567890123456789ll,
+																	 -1234567890123456789ll};
+		int u64ok = 1, s64ok = 1;
+		size_t di, ni;
+		for (di = 0; di < sizeof u64d / sizeof u64d[0]; di++) {
+			MccMagicU64 mu = mcc_magicu64(u64d[di]);
+			for (ni = 0; ni < sizeof u64n / sizeof u64n[0]; ni++)
+				if (mcc_divu64_apply(u64n[ni], mu) != u64n[ni] / u64d[di])
+					u64ok = 0;
+			for (uint64_t k = 0; k < 4096; k++) {
+				uint64_t n = k * u64d[di];
+				if (mcc_divu64_apply(n, mu) != n / u64d[di] ||
+						mcc_divu64_apply(n + 1, mu) != (n + 1) / u64d[di] ||
+						mcc_divu64_apply(n - 1, mu) != (n - 1) / u64d[di])
+					u64ok = 0;
+			}
+			for (uint64_t n = 0; n < 60000; n++)
+				if (mcc_divu64_apply(n, mu) != n / u64d[di])
+					u64ok = 0;
+		}
+		CHECK(u64ok, "unsigned 64-bit magic division matches native /");
+		for (di = 0; di < sizeof s64d / sizeof s64d[0]; di++) {
+			MccMagicS64 mp = mcc_magics64(s64d[di]);
+			MccMagicS64 mn = mcc_magics64(-s64d[di]);
+			for (ni = 0; ni < sizeof s64n / sizeof s64n[0]; ni++) {
+				int64_t x = s64n[ni];
+				if (mcc_divs64_apply(x, s64d[di], mp) != x / s64d[di])
+					s64ok = 0;
+				if (mcc_divs64_apply(x, -s64d[di], mn) != x / -s64d[di])
+					s64ok = 0;
+			}
+			for (int64_t v = -60000; v < 60000; v++)
+				if (mcc_divs64_apply(v, s64d[di], mp) != v / s64d[di] ||
+						mcc_divs64_apply(v, -s64d[di], mn) != v / -s64d[di])
+					s64ok = 0;
+			for (uint64_t k = 0; k < 4096; k++) {
+				int64_t n = (int64_t)(k * (uint64_t)s64d[di]);
+				if (mcc_divs64_apply(n, s64d[di], mp) != n / s64d[di] ||
+						mcc_divs64_apply(-n, s64d[di], mp) != (-n) / s64d[di])
+					s64ok = 0;
+			}
+		}
+		CHECK(s64ok, "signed 64-bit magic division matches native /");
+	}
 }
 
 static void suite_vlat(void) {

@@ -777,6 +777,8 @@ static int ast_cse_comm_env;
 static int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned compare */
 static int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
 static int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
+static int ast_select_env;
+#define AST_SEL_MARK ((uint64_t)0x5E1EC7)
 static int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
 static int ast_reassoc_assoc_env;
 static int ast_reassoc_shlshr_env;
@@ -1212,6 +1214,8 @@ void ast_hook_inc_end(void);
 #define AST_OP_IMAG 0x40003
 #define AST_OP_VLA 0x40004
 #define AST_OP_VLA_RESTORE 0x40005
+#define AST_OP_MULHU 0x40006
+#define AST_OP_MULHS 0x40007
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -1322,6 +1326,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_range_env = ast_env_gate("MCC_AST_RANGE", s1->optimize >= 2);
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", 0);
+	ast_select_env = ast_env_gate("MCC_AST_SELECT", 0);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", 0);
 	ast_reassoc_assoc_env = ast_env_gate("MCC_AST_REASSOC_ASSOC", 1);
 	ast_reassoc_shlshr_env = ast_env_gate("MCC_AST_REASSOC_SHLSHR", 1);
@@ -4119,6 +4124,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+		if (bop == AST_OP_MULHU || bop == AST_OP_MULHS) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			gen_mulh(bop == AST_OP_MULHS);
+			vtop->type.t = ast_type_t(a, n);
+			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			break;
+		}
+#endif
 		if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
@@ -4179,6 +4194,21 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		SValue sv;
 		CType type;
 		int tt, u, rc, r1, r2;
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		defined(MCC_TARGET_RISCV64)
+		if (ast_select_env && ast_ival(a, n) == AST_SEL_MARK) { MCC_TRACE("br\n");
+			CType stype;
+			SValue svt;
+			ast_replay_value(a, ast_child(a, n, 0));
+			gv(MCC_RC_INT);
+			ast_replay_value(a, ast_child(a, n, 1));
+			svt = *vtop;
+			ast_replay_value(a, ast_child(a, n, 2));
+			combine_types(&stype, &svt, vtop, '?');
+			gen_select(&stype);
+			break;
+		}
+#endif
 		ast_replay_value(a, ast_child(a, n, 0));
 		save_regs(1);
 		tt = gvtst(1, 0);
@@ -8433,6 +8463,179 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	return 1;
 }
 
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+static int ast_divmagic_try_u64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int op = ast_op(a, n), nt, ct, xt;
+	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), hi, inner;
+	uint64_t nref, xref, cv, shamt;
+	uint64_t C;
+	MccMagicU64 mag;
+	const int U64 = VT_LLONG | VT_UNSIGNED;
+	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != U64)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
+		{ MCC_TRACE("br\n"); return 0; }
+	C = cv;
+	if (C < 3 || (C & (C - 1)) == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != U64)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_pure(a, x))
+		{ MCC_TRACE("br\n"); return 0; }
+	mag = mcc_magicu64(C);
+	if (mag.a && mag.s < 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	hi = ast_bf_bin(a, AST_OP_MULHU, U64, ast_dup_sub(a, x), ast_bf_lit(a, U64, mag.M));
+	if (!mag.a) { MCC_TRACE("br\n");
+		inner = hi;
+		shamt = (uint64_t)mag.s;
+	} else { MCC_TRACE("br\n");
+		AstLocal sub = ast_bf_bin(a, '-', U64, ast_dup_sub(a, x), hi);
+		AstLocal shr1 = ast_bf_bin(a, TOK_SHR, U64, sub, ast_bf_lit(a, U64, 1));
+		inner = ast_bf_bin(a, '+', U64, shr1, ast_dup_sub(a, hi));
+		shamt = (uint64_t)(mag.s - 1);
+	}
+	MCC_TRACE("divmagic u64 %s C=%llu M=0x%llx s=%d add=%d\n", op == '/' ? "div" : "rem",
+						(unsigned long long)C, (unsigned long long)mag.M, mag.s, mag.a);
+	ast_set_type(a, n, U64, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	if (op == '/') { MCC_TRACE("br\n");
+		ast_set_op(a, n, TOK_SHR);
+		ast_add_child(a, n, inner);
+		ast_add_child(a, n, ast_bf_lit(a, U64, shamt));
+	} else { MCC_TRACE("br\n");
+		AstLocal q = ast_bf_bin(a, TOK_SHR, U64, inner, ast_bf_lit(a, U64, shamt));
+		AstLocal qC = ast_bf_bin(a, '*', U64, q, ast_bf_lit(a, U64, C));
+		ast_set_op(a, n, '-');
+		ast_add_child(a, n, ast_dup_sub(a, x));
+		ast_add_child(a, n, qC);
+	}
+	return 1;
+}
+
+static int ast_divmagic_try_s64_pow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int op = ast_op(a, n), nt, ct, xt, k, neg;
+	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), bias, sum;
+	uint64_t nref, xref, cv, t, ac;
+	int64_t C;
+	const int S64 = VT_LLONG;
+	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != VT_LLONG)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
+		{ MCC_TRACE("br\n"); return 0; }
+	C = (int64_t)cv;
+	neg = C < 0;
+	ac = (uint64_t)(neg ? -C : C);
+	if (ac < 2 || (ac & (ac - 1)) != 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != VT_LLONG)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_pure(a, x))
+		{ MCC_TRACE("br\n"); return 0; }
+	for (k = 0, t = ac; t > 1; t >>= 1)
+		{ MCC_TRACE("br\n"); k++; }
+	bias = ast_bf_bin(a, '&', S64,
+										ast_bf_bin(a, TOK_SAR, S64, ast_dup_sub(a, x), ast_bf_lit(a, S64, 63)),
+										ast_bf_lit(a, S64, ac - 1));
+	sum = ast_bf_bin(a, '+', S64, ast_dup_sub(a, x), bias);
+	MCC_TRACE("divmagic s64 spow2 %s C=%lld k=%d neg=%d\n", op == '/' ? "div" : "rem",
+						(long long)C, k, neg);
+	if (op == '/') { MCC_TRACE("br\n");
+		ast_set_type(a, n, S64, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_fbits(a, n, 0);
+		ast_set_sym(a, n, 0);
+		ast_set_cst(a, n, 0);
+		ast_clear_children(a, n);
+		if (neg) { MCC_TRACE("br\n");
+			AstLocal q = ast_bf_bin(a, TOK_SAR, S64, sum, ast_bf_lit(a, S64, (uint64_t)k));
+			ast_set_op(a, n, '-');
+			ast_add_child(a, n, ast_bf_lit(a, S64, 0));
+			ast_add_child(a, n, q);
+		} else { MCC_TRACE("br\n");
+			ast_set_op(a, n, TOK_SAR);
+			ast_add_child(a, n, sum);
+			ast_add_child(a, n, ast_bf_lit(a, S64, (uint64_t)k));
+		}
+	} else { MCC_TRACE("br\n");
+		AstLocal quot = ast_bf_bin(a, TOK_SAR, S64, sum, ast_bf_lit(a, S64, (uint64_t)k));
+		AstLocal shl = ast_bf_bin(a, TOK_SHL, S64, quot, ast_bf_lit(a, S64, (uint64_t)k));
+		AstLocal xdup = ast_dup_sub(a, x);
+		ast_set_op(a, n, '-');
+		ast_set_type(a, n, S64, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_fbits(a, n, 0);
+		ast_set_sym(a, n, 0);
+		ast_set_cst(a, n, 0);
+		ast_clear_children(a, n);
+		ast_add_child(a, n, xdup);
+		ast_add_child(a, n, shl);
+	}
+	return 1;
+}
+
+static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int op = ast_op(a, n), nt, ct, xt;
+	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1);
+	AstLocal q0, q1, q2, cvt, signbit;
+	uint64_t nref, xref, cv, ac;
+	int64_t C;
+	MccMagicS64 mag;
+	const int S64 = VT_LLONG, U64 = VT_LLONG | VT_UNSIGNED;
+	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != VT_LLONG)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
+		{ MCC_TRACE("br\n"); return 0; }
+	C = (int64_t)cv;
+	if (C >= -1 && C <= 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	ac = (uint64_t)(C < 0 ? -C : C);
+	if ((ac & (ac - 1)) == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != VT_LLONG)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_pure(a, x))
+		{ MCC_TRACE("br\n"); return 0; }
+	mag = mcc_magics64(C);
+	q0 = ast_bf_bin(a, AST_OP_MULHS, S64, ast_bf_lit(a, S64, (uint64_t)mag.M), ast_dup_sub(a, x));
+	if (C > 0 && mag.M < 0)
+		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '+', S64, q0, ast_dup_sub(a, x)); }
+	else if (C < 0 && mag.M > 0)
+		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '-', S64, q0, ast_dup_sub(a, x)); }
+	else
+		{ MCC_TRACE("br\n"); q1 = q0; }
+	q2 = ast_bf_bin(a, TOK_SAR, S64, q1, ast_bf_lit(a, S64, (uint64_t)mag.s));
+	cvt = ast_node(a, AST_Convert);
+	ast_set_type(a, cvt, U64, 0);
+	ast_add_child(a, cvt, ast_dup_sub(a, q2));
+	signbit = ast_bf_bin(a, TOK_SHR, U64, cvt, ast_bf_lit(a, U64, 63));
+	MCC_TRACE("divmagic s64 %s C=%lld M=0x%llx s=%d\n", op == '/' ? "div" : "rem",
+						(long long)C, (unsigned long long)mag.M, mag.s);
+	ast_set_type(a, n, S64, 0);
+	ast_set_ival(a, n, 0);
+	ast_set_fbits(a, n, 0);
+	ast_set_sym(a, n, 0);
+	ast_set_cst(a, n, 0);
+	ast_clear_children(a, n);
+	if (op == '/') { MCC_TRACE("br\n");
+		ast_set_op(a, n, '+');
+		ast_add_child(a, n, q2);
+		ast_add_child(a, n, signbit);
+	} else { MCC_TRACE("br\n");
+		AstLocal qexpr = ast_bf_bin(a, '+', S64, q2, signbit);
+		AstLocal qC = ast_bf_bin(a, '*', S64, qexpr, ast_bf_lit(a, S64, (uint64_t)C));
+		ast_set_op(a, n, '-');
+		ast_add_child(a, n, ast_dup_sub(a, x));
+		ast_add_child(a, n, qC);
+	}
+	return 1;
+}
+#endif
+
 static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	ast_divmagic_folds = 0;
@@ -8444,6 +8647,14 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_spow2(a, n); } /* signed power-of-two */
 			if (!f)
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_signed(a, n); } /* signed non-power-of-two division */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+			if (!f)
+				{ MCC_TRACE("br\n"); f = ast_divmagic_try_u64(a, n); }
+			if (!f)
+				{ MCC_TRACE("br\n"); f = ast_divmagic_try_s64_pow2(a, n); }
+			if (!f)
+				{ MCC_TRACE("br\n"); f = ast_divmagic_try_s64(a, n); }
+#endif
 			ast_divmagic_folds += f;
 		} }
 	return ast_divmagic_folds;
@@ -8593,6 +8804,106 @@ static int ast_abs_run(AstArena *a) { MCC_TRACE("enter\n");
 			ast_abs_folds += ast_abs_try(a, n);
 		} }
 	return ast_abs_folds;
+}
+
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		defined(MCC_TARGET_RISCV64)
+#define AST_SELECT_ARCH 1
+#else
+#define AST_SELECT_ARCH 0
+#endif
+
+static int ast_select_folds;
+
+static int ast_sel_relop(int op) { MCC_TRACE("enter\n");
+	switch (op) { MCC_TRACE("br\n");
+	case TOK_LT:
+	case TOK_GT:
+	case TOK_LE:
+	case TOK_GE:
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_ULT:
+	case TOK_UGE:
+	case TOK_ULE:
+	case TOK_UGT:
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_sel_safe(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (ast_type_t(a, n) & VT_VOLATILE)
+		{ MCC_TRACE("br\n"); return 0; }
+	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+	case AST_Literal:
+	case AST_Ref:
+		return 1;
+	case AST_Convert:
+		break;
+	case AST_Binary:
+		switch (ast_op(a, n)) { MCC_TRACE("br\n");
+		case '+':
+		case '-':
+		case '*':
+		case '&':
+		case '|':
+		case '^':
+		case TOK_SHL:
+		case TOK_SHR:
+		case TOK_SAR:
+			break;
+		default:
+			if (!ast_sel_relop(ast_op(a, n)))
+				{ MCC_TRACE("br\n"); return 0; }
+		}
+		break;
+	default:
+		return 0;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (!ast_sel_safe(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
+	return 1;
+}
+
+static int ast_sel_gpr(int tt) { MCC_TRACE("enter\n");
+	return ast_ident_intt(tt) || (tt & VT_BTYPE) == VT_PTR;
+}
+
+static int ast_select_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal cond, tval, fval;
+	int tt1, tt2;
+	uint64_t r1, r2;
+	if (!AST_SELECT_ARCH)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) != AST_If || ast_op(a, n) != 5 || ast_nchild(a, n) != 3)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_ival(a, n) == AST_SEL_MARK)
+		{ MCC_TRACE("br\n"); return 0; }
+	cond = ast_child(a, n, 0);
+	tval = ast_child(a, n, 1);
+	fval = ast_child(a, n, 2);
+	if (ast_kind(a, cond) != AST_Binary || !ast_sel_relop(ast_op(a, cond)))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_sel_safe(a, tval) || !ast_sel_safe(a, fval))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_etype(a, tval, &tt1, &r1) || !ast_ident_etype(a, fval, &tt2, &r2))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_sel_gpr(tt1) || !ast_sel_gpr(tt2))
+		{ MCC_TRACE("br\n"); return 0; }
+	MCC_TRACE("select mark n=%u\n", (unsigned)n);
+	ast_set_ival(a, n, AST_SEL_MARK);
+	return 1;
+}
+
+static int ast_select_run(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	ast_select_folds = 0;
+	for (AstLocal n = 0; n < nn; n++)
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_If && ast_op(a, n) == 5 && ast_nchild(a, n) == 3)
+			{ MCC_TRACE("br\n"); ast_select_folds += ast_select_try(a, n); } }
+	return ast_select_folds;
 }
 
 /* Constant reassociation: `(x OP c1) OP c2` -> `x OP combine(c1,c2)` for a same-op nest with
@@ -11191,6 +11502,7 @@ static int ast_strat_bf(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; re
 static int ast_strat_range(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_range_run(a); }
 static int ast_strat_divmagic(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_divmagic_run(a); }
 static int ast_strat_abs(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_abs_run(a); }
+static int ast_strat_select(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_select_run(a); }
 static int ast_strat_reassoc(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_reassoc_run(a); }
 static int ast_strat_sethi(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_sethi_run(a); }
 static int ast_strat_tco(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); return ast_tco_run(a, s); }
@@ -11213,6 +11525,7 @@ enum {
 	AST_STRAT_RANGE,
 	AST_STRAT_DIVMAGIC,
 	AST_STRAT_ABS,
+	AST_STRAT_SELECT,
 	AST_STRAT_REASSOC,
 	AST_STRAT_SETHI,
 	AST_STRAT_TCO,
@@ -11238,6 +11551,7 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"range", &ast_range_env, ast_strat_range},
 	{"divmagic", &ast_divmagic_env, ast_strat_divmagic},
 	{"abs", &ast_abs_env, ast_strat_abs},
+	{"select", &ast_select_env, ast_strat_select},
 	{"reassoc", &ast_reassoc_env, ast_strat_reassoc},
 	{"sethi", &ast_sethi_env, ast_strat_sethi},
 	{"tco", &ast_templates_env, ast_strat_tco},
@@ -12827,6 +13141,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int sethis = 0;
 			int tcos = 0;
 			int narrows = 0;
+			int divmagics = 0;
+			int selects = 0;
 			int interchanged = 0;
 			int fused = 0;
 			int tiled = 0;
@@ -12912,8 +13228,11 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					bfs = sf[AST_STRAT_BF];
 					sethis = sf[AST_STRAT_SETHI];
 					tcos = sf[AST_STRAT_TCO];
+					divmagics = sf[AST_STRAT_DIVMAGIC];
+					selects = sf[AST_STRAT_SELECT];
 				}
 				ast_search_gates_set(ast_search_sv_gates);
+				int do_divmagic = divmagics > 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_narrow = narrows > 0;
@@ -12926,6 +13245,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				int do_bf = bfs > 0;
 				int do_sethi = sethis > 0;
 				int do_tco = tcos > 0;
+				int do_select = selects > 0;
 				int do_inline = faithful && !do_tco && !ast_inline_pass_env &&
 												ast_has_graftable_call(ast_cur);
 				if (ast_search_axis_ran && !ast_search_pick_inline)
@@ -12945,16 +13265,18 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					do_inline = do_promote = do_bfold = do_ident = do_cprop = 0;
 					do_cse = do_licm = do_dse = do_sccp = do_jt = do_bf = do_sethi = do_tco = 0;
 					do_narrow = 0;
+					do_divmagic = 0;
+					do_select = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || interchanged || fused || tiled)
+						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
-						!do_bf && !do_sethi && !do_tco && !do_narrow && !interchanged && !fused &&
-						!tiled)
+						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
+						!interchanged && !fused && !tiled)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && faithful) { MCC_TRACE("br\n");
 					ind = ast_body_ind_sv;
@@ -12971,7 +13293,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										(int)rel_len);
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || interchanged || fused || tiled) { MCC_TRACE("br\n");
+						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -12985,8 +13307,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		anon_sym = saved_anon;                                                        \
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
-										do_tco || do_narrow || interchanged || fused || tiled ||    \
-										(ui))                                                        \
+										do_tco || do_narrow || do_divmagic || do_select ||          \
+										interchanged || fused || tiled || (ui))                      \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \

@@ -1754,6 +1754,13 @@ static void arm64_load_cmp(int r, SValue *sv) { MCC_TRACE("enter\n");
 	}
 }
 
+ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
+	uint32_t l = ll ? 1u : 0u;
+	o(0x7100001f | l << 31 | intr(rb) << 5);
+	o(0x1a800000 | l << 31 | intr(rt) | intr(rt) << 5 | intr(rf) << 16 | (1u << 12));
+	return rt;
+}
+
 ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 
@@ -2102,6 +2109,19 @@ ST_FUNC void gen_opi(int op) { MCC_TRACE("enter\n");
 ST_FUNC void gen_opl(int op) { MCC_TRACE("enter\n");
 	arm64_gen_opil(op, 1);
 	arm64_vset_VT_CMP(op);
+}
+
+ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
+	uint32_t x, a, b;
+	gv2(MCC_RC_INT, MCC_RC_INT);
+	a = intr(vtop[-1].r);
+	b = intr(vtop[0].r);
+	vtop -= 2;
+	x = get_reg(MCC_RC_INT);
+	++vtop;
+	vtop[0].r = x;
+	x = intr(x);
+	o((sign ? 0x9b407c00u : 0x9bc07c00u) | x | a << 5 | b << 16);
 }
 
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");

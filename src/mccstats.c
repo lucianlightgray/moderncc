@@ -16,7 +16,7 @@
 
 unsigned mcc_stats_mask = 0;
 
-#define MCCSTATS_STRAT_N 20
+#define MCCSTATS_STRAT_N 21
 #define MCCSTATS_GATE_N 42
 #define MCCSTATS_SPARK_N 40
 #define MCCSTATS_MAXROWS 48
@@ -25,7 +25,7 @@ unsigned mcc_stats_mask = 0;
 static const char *const mccstats_strat_name[MCCSTATS_STRAT_N] = {
 		"bfold", "ident", "narrow", "cprop", "cse", "ltemp", "ivsr",
 		"pre", "licm", "dse", "sccp", "jt", "bf", "range",
-		"divmagic", "abs", "reassoc", "sethi", "tco", "inline"};
+		"divmagic", "abs", "select", "reassoc", "sethi", "tco", "inline"};
 
 static const char *const mccstats_gate_name[MCCSTATS_GATE_N] = {
 		"templ", "narrow", "bflag", "sethi", "nrwfix", "shleaf", "promo",

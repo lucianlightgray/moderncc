@@ -914,6 +914,16 @@ ST_FUNC void gjmp_addr(int a) { MCC_TRACE("enter\n");
 	}
 }
 
+ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
+	uint32_t t = ireg(rt), f = ireg(rf), b = ireg(rb);
+	(void)ll;
+	ER(0x33, 0, b, 0, b, 0x20);
+	ER(0x33, 4, t, t, f, 0);
+	ER(0x33, 7, t, t, b, 0);
+	ER(0x33, 4, f, f, t, 0);
+	return rf;
+}
+
 ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	int tmp;
 	int a = vtop->cmp_r & 0xff;
@@ -1201,6 +1211,19 @@ ST_FUNC void gen_opi(int op) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_opl(int op) { MCC_TRACE("enter\n");
 	gen_opil(op, 1);
+}
+
+ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
+	int a, b, d;
+	gv2(MCC_RC_INT, MCC_RC_INT);
+	a = ireg(vtop[-1].r);
+	b = ireg(vtop[0].r);
+	vtop -= 2;
+	d = get_reg(MCC_RC_INT);
+	vtop++;
+	vtop[0].r = d;
+	d = ireg(d);
+	ER(0x33, sign ? 1 : 3, d, a, b, 1);
 }
 
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
