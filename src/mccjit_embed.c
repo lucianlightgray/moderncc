@@ -3873,118 +3873,242 @@ static unsigned char *mccjit_patch_make_tramp(void *target,
 static int mccjit_patch_t1(int x) { MCC_TRACE("enter\n"); return x * 2 + 1; }
 static int mccjit_patch_t2(int x) { MCC_TRACE("enter\n"); return x * 3 + 7; }
 
-int mccjit_selftest_patch(void) { MCC_TRACE("enter\n");
-	int fails = 0;
-#if !defined(__x86_64__)
-	printf("mccjit-selftest-patch: non-x86_64 SKIP\n");
-	return 0;
-#else
-	unsigned char *slotd, *trampd;
-	void **slot = NULL;
-	void *imm = NULL;
-	int (*sf)(int);
-	int (*tf)(int);
-	long iters = 2000000;
-	const char *e = getenv("MCC_JIT_PATCH_ITERS");
-	int i;
-	int64_t acc = 0;
-	struct timespec t0;
-	double dsm, dslot, dtramp, dswap_ptr, dswap_inplace;
+typedef struct MccjitPatchStrategy {
+	const char *name;
+	unsigned footprint;
+	int (*available)(void);
+	void *(*make)(void *target, void **handle);
+	void (*swap)(void *handle, void *target);
+	int (*call_i)(void *entry, int arg);
+	void (*dispose)(void *entry);
+} MccjitPatchStrategy;
 
-	printf("mccjit-selftest-patch: begin (hot-patch strategy family)\n");
+static int mccjit_patch_avail_yes(void) { MCC_TRACE("enter\n"); return 1; }
+static int mccjit_patch_avail_no(void) { MCC_TRACE("enter\n"); return 0; }
+
+static void mccjit_patch_swap_store(void *handle, void *target) { MCC_TRACE("enter\n");
+	__atomic_store_n((void **)handle, target, __ATOMIC_RELEASE);
+}
+
+static void *mccjit_patch_mk_cell(void *target, void **handle) { MCC_TRACE("enter\n");
+	void **cell = mcc_malloc(sizeof(void *));
+	if (!cell)
+		{ MCC_TRACE("br\n"); return NULL; }
+	*cell = target;
+	if (handle)
+		{ MCC_TRACE("br\n"); *handle = cell; }
+	return cell;
+}
+
+static int mccjit_patch_call_cell(void *entry, int arg) { MCC_TRACE("enter\n");
+	return (*(int (**)(int))entry)(arg);
+}
+
+static void mccjit_patch_free_cell(void *entry) { MCC_TRACE("enter\n");
+	mcc_free(entry);
+}
+
+#if defined(__x86_64__)
+static void mccjit_patch_swap_imm(void *handle, void *target) { MCC_TRACE("enter\n");
+	memcpy(handle, &target, 8);
+}
+
+static int mccjit_patch_call_code(void *entry, int arg) { MCC_TRACE("enter\n");
+	return ((int (*)(int))entry)(arg);
+}
+
+static void *mccjit_patch_mk_slot(void *target, void **handle) { MCC_TRACE("enter\n");
+	void **slot = NULL;
+	void *entry = mccjit_patch_make_slot(target, &slot);
+	if (!entry)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (handle)
+		{ MCC_TRACE("br\n"); *handle = slot; }
+	return entry;
+}
+
+static void *mccjit_patch_mk_tramp(void *target, void **handle) { MCC_TRACE("enter\n");
+	void *imm = NULL;
+	void *entry = mccjit_patch_make_tramp(target, &imm);
+	if (!entry)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (handle)
+		{ MCC_TRACE("br\n"); *handle = imm; }
+	return entry;
+}
+
+static void mccjit_patch_free_page(void *entry) { MCC_TRACE("enter\n");
+	munmap(entry, 4096);
+}
+#endif
+
+static const MccjitPatchStrategy mccjit_patch_reg[] = {
+		{"c-indirect", (unsigned)sizeof(void *), mccjit_patch_avail_yes,
+		 mccjit_patch_mk_cell, mccjit_patch_swap_store, mccjit_patch_call_cell,
+		 mccjit_patch_free_cell},
+#if defined(__x86_64__)
+		{"ptr-swap-slot", 16, mccjit_patch_avail_yes, mccjit_patch_mk_slot,
+		 mccjit_patch_swap_store, mccjit_patch_call_code, mccjit_patch_free_page},
+		{"inplace-tramp", 12, mccjit_patch_avail_yes, mccjit_patch_mk_tramp,
+		 mccjit_patch_swap_imm, mccjit_patch_call_code, mccjit_patch_free_page},
+#endif
+		{"nop-pad-d3b", 8, mccjit_patch_avail_no, NULL, NULL, NULL, NULL},
+};
+
+#define MCCJIT_PATCH_NREG (int)(sizeof mccjit_patch_reg / sizeof mccjit_patch_reg[0])
+
+static long mccjit_patch_iters(void) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_JIT_PATCH_ITERS");
 	if (e && e[0]) { MCC_TRACE("br\n");
 		long v = strtol(e, NULL, 10);
 		if (v > 0)
-			{ MCC_TRACE("br\n"); iters = v; }
+			{ MCC_TRACE("br\n"); return v; }
+	}
+	return 500000;
+}
+
+static int mccjit_patch_benchmarkable(const MccjitPatchStrategy *s) { MCC_TRACE("enter\n");
+	return s->available() && s->make && s->call_i;
+}
+
+static int mccjit_patch_bench_rank(void *target, int *order, double *nspc,
+																	 int cap) { MCC_TRACE("enter\n");
+	long iters = mccjit_patch_iters();
+	int cnt = 0, i, j;
+	for (i = 0; i < MCCJIT_PATCH_NREG && cnt < cap; i++) { MCC_TRACE("br\n");
+		const MccjitPatchStrategy *s = &mccjit_patch_reg[i];
+		void *handle = NULL, *entry;
+		double best = 1e300;
+		int64_t acc = 0;
+		int rep;
+		if (!mccjit_patch_benchmarkable(s))
+			{ MCC_TRACE("br\n"); continue; }
+		entry = s->make(target, &handle);
+		if (!entry)
+			{ MCC_TRACE("br\n"); continue; }
+		for (rep = 0; rep < 3; rep++) { MCC_TRACE("br\n");
+			struct timespec t0;
+			double d;
+			long k;
+			clock_gettime(CLOCK_MONOTONIC, &t0);
+			for (k = 0; k < iters; k++)
+				{ MCC_TRACE("br\n"); acc += s->call_i(entry, (int)k); }
+			d = mccjit_elapsed(&t0);
+			if (d < best)
+				{ MCC_TRACE("br\n"); best = d; }
+		}
+		mccjit_bench_sink ^= acc;
+		if (s->dispose)
+			{ MCC_TRACE("br\n"); s->dispose(entry); }
+		order[cnt] = i;
+		nspc[cnt] = best / iters * 1e9;
+		cnt++;
+	}
+	for (i = 1; i < cnt; i++) { MCC_TRACE("br\n");
+		int oi = order[i];
+		double on = nspc[i];
+		j = i - 1;
+		while (j >= 0 && nspc[j] > on) { MCC_TRACE("br\n");
+			order[j + 1] = order[j];
+			nspc[j + 1] = nspc[j];
+			j--;
+		}
+		order[j + 1] = oi;
+		nspc[j + 1] = on;
+	}
+	return cnt;
+}
+
+int mccjit_selftest_patch(void) { MCC_TRACE("enter\n");
+	int fails = 0, i, avail = 0, nrank;
+	int order[MCCJIT_PATCH_NREG];
+	double nspc[MCCJIT_PATCH_NREG];
+
+	printf("mccjit-selftest-patch: begin (hot-patch strategy registry, %d rows)\n",
+				 MCCJIT_PATCH_NREG);
+
+	for (i = 0; i < MCCJIT_PATCH_NREG; i++) { MCC_TRACE("br\n");
+		const MccjitPatchStrategy *s = &mccjit_patch_reg[i];
+		if (!s->name || !s->available) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: row %d malformed FAIL\n", i);
+			fails++;
+		}
 	}
 
-	slotd = mccjit_patch_make_slot((void *)mccjit_patch_t1, &slot);
-	trampd = mccjit_patch_make_tramp((void *)mccjit_patch_t1, &imm);
-	if (!slotd || !trampd) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-patch: stub alloc failed FAIL\n");
-		return 1;
-	}
-	sf = (int (*)(int))slotd;
-	tf = (int (*)(int))trampd;
-
-	/* Functional: both dispatch shapes forward correctly, and a swap
-	   (pointer-swap slot store / in-place immediate rewrite) redirects them. */
-	if (sf(5) != mccjit_patch_t1(5) || tf(5) != mccjit_patch_t1(5)) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-patch: initial dispatch wrong FAIL\n");
-		fails++;
-	}
-	__atomic_store_n(slot, (void *)mccjit_patch_t2, __ATOMIC_RELEASE);
-	memcpy(imm, &(void *){(void *)mccjit_patch_t2}, 8);
-	if (sf(5) != mccjit_patch_t2(5)) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-patch: pointer-swap did not redirect FAIL\n");
-		fails++;
-	}
-	if (tf(5) != mccjit_patch_t2(5)) { MCC_TRACE("br\n");
-		printf("mccjit-selftest-patch: in-place patch did not redirect FAIL\n");
-		fails++;
-	}
-	/* restore t1 for the steady-state benchmark */
-	__atomic_store_n(slot, (void *)mccjit_patch_t1, __ATOMIC_RELEASE);
-	memcpy(imm, &(void *){(void *)mccjit_patch_t1}, 8);
-
-	/* steady-state per-call overhead: direct vs slot vs trampoline (best of 3) */
-	dsm = dslot = dtramp = 1e300;
-	for (i = 0; i < 3; i++) { MCC_TRACE("br\n");
-		long k;
-		double d;
-		clock_gettime(CLOCK_MONOTONIC, &t0);
-		for (k = 0; k < iters; k++)
-			{ MCC_TRACE("br\n"); acc += mccjit_patch_t1((int)k); }
-		d = mccjit_elapsed(&t0);
-		if (d < dsm)
-			{ MCC_TRACE("br\n"); dsm = d; }
-		clock_gettime(CLOCK_MONOTONIC, &t0);
-		for (k = 0; k < iters; k++)
-			{ MCC_TRACE("br\n"); acc += sf((int)k); }
-		d = mccjit_elapsed(&t0);
-		if (d < dslot)
-			{ MCC_TRACE("br\n"); dslot = d; }
-		clock_gettime(CLOCK_MONOTONIC, &t0);
-		for (k = 0; k < iters; k++)
-			{ MCC_TRACE("br\n"); acc += tf((int)k); }
-		d = mccjit_elapsed(&t0);
-		if (d < dtramp)
-			{ MCC_TRACE("br\n"); dtramp = d; }
+	for (i = 0; i < MCCJIT_PATCH_NREG; i++) { MCC_TRACE("br\n");
+		const MccjitPatchStrategy *s = &mccjit_patch_reg[i];
+		void *handle = NULL, *entry;
+		int r1, r2;
+		if (!s->available()) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: %-14s deferred/unavailable SKIP\n", s->name);
+			continue;
+		}
+		avail++;
+		if (!s->make || !s->swap || !s->call_i) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: %-14s incomplete FAIL\n", s->name);
+			fails++;
+			continue;
+		}
+		entry = s->make((void *)mccjit_patch_t1, &handle);
+		if (!entry) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: %-14s make failed FAIL\n", s->name);
+			fails++;
+			continue;
+		}
+		r1 = s->call_i(entry, 5);
+		s->swap(handle, (void *)mccjit_patch_t2);
+		r2 = s->call_i(entry, 5);
+		if (r1 != mccjit_patch_t1(5) || r2 != mccjit_patch_t2(5)) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: %-14s dispatch=%d redirect=%d FAIL\n",
+						 s->name, r1, r2);
+			fails++;
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: %-14s dispatch=%d redirect=%d OK\n", s->name,
+						 r1, r2);
+		}
+		if (s->dispose)
+			{ MCC_TRACE("br\n"); s->dispose(entry); }
 	}
 
-	/* swap latency: pointer-swap (atomic store) vs in-place (imm rewrite) */
-	{
-		long k;
-		void *a = (void *)mccjit_patch_t1, *b = (void *)mccjit_patch_t2;
-		clock_gettime(CLOCK_MONOTONIC, &t0);
-		for (k = 0; k < iters; k++)
-			{ MCC_TRACE("br\n"); __atomic_store_n(slot, (k & 1) ? a : b, __ATOMIC_RELEASE); }
-		dswap_ptr = mccjit_elapsed(&t0);
-		clock_gettime(CLOCK_MONOTONIC, &t0);
-		for (k = 0; k < iters; k++)
-			{ MCC_TRACE("br\n"); memcpy(imm, (k & 1) ? &a : &b, 8); }
-		dswap_inplace = mccjit_elapsed(&t0);
-		__atomic_store_n(slot, (void *)mccjit_patch_t1, __ATOMIC_RELEASE);
-		memcpy(imm, &(void *){(void *)mccjit_patch_t1}, 8);
+	nrank = mccjit_patch_bench_rank((void *)mccjit_patch_t1, order, nspc,
+																	MCCJIT_PATCH_NREG);
+	if (nrank < 1) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-patch: no benchmarkable strategy SKIP\n");
+	} else { MCC_TRACE("br\n");
+		int nb = 0;
+		for (i = 0; i < MCCJIT_PATCH_NREG; i++)
+			{ MCC_TRACE("br\n"); if (mccjit_patch_benchmarkable(&mccjit_patch_reg[i]))
+				{ MCC_TRACE("br\n"); nb++; } }
+		printf("mccjit-selftest-patch: benchmark ranking (best-first):\n");
+		for (i = 0; i < nrank; i++)
+			{ MCC_TRACE("br\n"); printf("mccjit-selftest-patch:   #%d %-14s %.2f ns/call "
+																	"footprint=%uB\n",
+																	i + 1, mccjit_patch_reg[order[i]].name, nspc[i],
+																	mccjit_patch_reg[order[i]].footprint); }
+		if (nrank != nb) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-patch: rank count %d != benchmarkable %d FAIL\n",
+						 nrank, nb);
+			fails++;
+		}
+		for (i = 1; i < nrank; i++)
+			{ MCC_TRACE("br\n"); if (nspc[i] < nspc[i - 1]) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-patch: ranking not sorted FAIL\n");
+				fails++;
+				break;
+			} }
+		for (i = 0; i < nrank; i++)
+			{ MCC_TRACE("br\n"); if (nspc[i] <= 0.0) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-patch: nonpositive ns/call FAIL\n");
+				fails++;
+				break;
+			} }
 	}
 
-	printf("mccjit-selftest-patch: steady-state ns/call over %ld iters: "
-				 "direct=%.2f slot=%.2f trampoline=%.2f\n",
-				 iters, dsm / iters * 1e9, dslot / iters * 1e9, dtramp / iters * 1e9);
-	printf("mccjit-selftest-patch: swap latency ns/swap: pointer-swap=%.2f "
-				 "in-place=%.2f\n",
-				 dswap_ptr / iters * 1e9, dswap_inplace / iters * 1e9);
-	printf("mccjit-selftest-patch: footprint bytes/dispatch: slot=%d trampoline=%d "
-				 "(page-backed)\n",
-				 16, 12);
-	mccjit_bench_sink ^= acc;
-
-	munmap(slotd, 4096);
-	munmap(trampd, 4096);
+	printf("mccjit-selftest-patch: %d strategy row(s) available, %d row(s) total\n",
+				 avail, MCCJIT_PATCH_NREG);
 	printf("mccjit-selftest-patch: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
-#endif
 }
 
 static void *mccjit_qsbr_thread(void *arg) { MCC_TRACE("enter\n");
