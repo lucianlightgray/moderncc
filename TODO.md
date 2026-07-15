@@ -126,18 +126,28 @@ Found 2026-07-14 while implementing self-JIT of mcc's own functions (`--embed-ji
 re-emit the body fresh and are unaffected. A switch's data-section jump-table then references
 undefined case labels → `unresolved reference to 'L.N'` at link (`L.N` = anon sym named in
 `mccpp.c:691`).
-**Switch subclass FIXED (commit 407df3a8):** switch functions bail from JIT (`ast_fn_switch`).
-This cut embed-all-of-mcc.c unresolved-label errors from ~40 to **8 residual**.
-The **residual 8 are a DISTINCT mechanism, still open**: verified that all 459 mode-6 functions
-in the embed-all build have NO orphaned labels (a cross-section-reloc-to-anon-text-label scan
-returns 0 for every one), and disabling the inline/reemit passes (`MCC_AST_INLINE_PASS=0`,
-`MCC_AST_REEMIT=0`, `MCC_AST_INLINE=0`) does not change the count — so it is neither the mode-6
-splice nor the forward-inline re-emission. Next: find which section references each residual
-`L.N` and which pass drops its definition (fix `relocate_syms` in `src/objfmt/mccelf.c` to scan
-`sh_type==SHT_RELX && link==symtab_section` sections — note `symtab` local there differs from the
-`symtab_section` macro — and print the referencing section + defining function). Repro:
-`mcc -B<build> --embed-jit <mcc defines/includes> -O1 src/mcc.c <blobs> -o mcc2` in amd64 docker.
-Impact: only full embed-all; targeted `--jit-functions <non-switch fn>` and `-run` work.
+**Both subclasses now FIXED.** (1) Switch functions bail from JIT (`ast_fn_switch`, commit
+407df3a8) — cut embed-all unresolved-label errors ~40→8. (2) The residual 8 (commit 68e6d384):
+the mode-6 dispatch created the anon `slot_sym` (referenced by the baked `jmp *slot(%rip)`)
+BEFORE running `set_global_sym`/`mccjit_embed_note`/the `ind` rewind; for 8 functions one of
+those left `slot_sym` UND while the `__mccjit_slot_<fn>` alias stayed defined at the same offset.
+Fix = mint `slot_sym` immediately before the `greloca` that uses it. **Confirmed our bug, not
+qemu:** emitting `-r` and `readelf -s` showed 8 `GLOBAL UND` L.N symbols in mcc's own object —
+deterministic output, qemu-independent. embed-all of mcc.c now LINKS with 0 unresolved labels.
+
+### BUG 1c — embed-all self-host binary segfaults at startup (mass mode-6 dispatch) — OPEN
+Exposed once BUG 1b let embed-all link (commit 68e6d384). `mcc --embed-jit … src/mcc.c` (all
+~459 KGC-eligible functions get a mode-6 dispatch stub) now produces a binary that **SIGSEGVs at
+startup even with `MCC_JIT=0`** (so it is NOT the runtime recompile — the AOT baseline reached via
+the dispatch stubs is itself broken at this scale). Isolation done: a PLAIN self-host (no
+`--embed-jit`) of the same mcc.c runs correctly (rc=22); small embed-jit programs (int and the
+foldm_acos-class double) run correctly with `recompiles=2`; jit selftests 29/29; exec 296/296. So
+the bug is specific to applying mode-6 dispatch across the full self-host function set. Next:
+bisect by embedding a growing subset (`--jit-functions a,b,c…`) to find the function whose stub
+breaks startup, then compare its dispatch/baseline-splice codegen against a working one. Repro:
+`mcc -B<build> --embed-jit <mcc defines/includes> -O1 src/mcc.c <blobs> -o mccFull` then run
+`MCC_JIT=0 mccFull -c t.c` in amd64 docker → rc=139.
+Impact: only full embed-all self-JIT of mcc; targeted `--jit-functions` and `-run` work fine.
 
 ### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS)
 Pre-existing, config-specific; documented in memory [[embedjit-arm64-vla-o1-crash]].
