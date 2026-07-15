@@ -497,6 +497,12 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n")
 	it->param_name = NULL;
 }
 
+static int mccjit_strip_enum(int t) {
+	if (IS_ENUM(t) || IS_ENUM_VAL(t))
+		return t & ~VT_STRUCT_MASK;
+	return t;
+}
+
 static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\n");
 	MCCState *s1 = mcc_state;
 	uint32_t i;
@@ -742,7 +748,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	for (i = 0; i < count; i++) { MCC_TRACE("br\n");
 		uint16_t kind = mccjit_get_u16(&r);
 		int32_t op = (int32_t)mccjit_get_u32(&r);
-		int32_t type_t = (int32_t)mccjit_get_u32(&r);
+		int32_t type_t = mccjit_strip_enum((int32_t)mccjit_get_u32(&r));
 		uint64_t ival = mccjit_get_u64(&r);
 		uint64_t fbits = mccjit_get_u64(&r);
 		uint32_t sym_id = mccjit_get_u32(&r);
@@ -826,7 +832,7 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) { MCC_TRACE("enter\
 		return NULL;
 
 	sr = sym_push2(&global_stack, SYM_FIELD, 0, 0);
-	sr->type.t = (int)it->ret_type_t;
+	sr->type.t = mccjit_strip_enum((int)it->ret_type_t);
 	sr->type.ref = NULL;
 	sr->f.func_call = FUNC_CDECL;
 	sr->f.func_type = it->func_type ? (int)it->func_type : FUNC_NEW;
@@ -835,7 +841,7 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) { MCC_TRACE("enter\
 	for (i = 0; i < it->nparam; i++) { MCC_TRACE("br\n");
 		const char *pn = it->param_name ? it->param_name[i] : NULL;
 		int ptok = (pn && pn[0]) ? tok_alloc(pn, (int)strlen(pn))->tok : SYM_FIELD;
-		p = sym_push2(&global_stack, ptok, (int)it->param_type_t[i], 0);
+		p = sym_push2(&global_stack, ptok, mccjit_strip_enum((int)it->param_type_t[i]), 0);
 		p->type.ref = NULL;
 		p->r = VT_LOCAL | VT_LVAL;
 		p->a.inited = 1;
