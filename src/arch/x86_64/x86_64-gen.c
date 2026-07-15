@@ -2287,9 +2287,28 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	use_call = 1;
 #endif
 	if (use_call) { MCC_TRACE("br\n");
+#ifdef MCC_TARGET_PE
+		/* Over-aligned (_Alignas > 16): win64 alloca only 16-aligns and returns
+		   the block in rax ABOVE its 32-byte shadow (rsp = block - 32). Ask for
+		   `align` extra bytes so the returned block can be rounded UP to `align`
+		   without overrunning; rsp/shadow are left intact (the caller saves the
+		   rounded rax via gen_vla_result, and rsp separately for the vla chain). */
+		if (align > 16) { MCC_TRACE("br\n");
+			vpushi(align);
+			gen_op('+');
+		}
+#endif
 		vpush_helper_func(TOK_alloca);
 		vswap();
 		gfunc_call(1);
+#ifdef MCC_TARGET_PE
+		if (align > 16) { MCC_TRACE("br\n");
+			o(0x0548); /* add rax, imm32 */
+			gen_le32(align - 1);
+			o(0x2548); /* and rax, imm32 */
+			gen_le32(-align);
+		}
+#endif
 	} else { MCC_TRACE("br\n");
 		int r;
 		int a = align < 16 ? 16 : align;

@@ -2454,8 +2454,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 							san_tok_eq(tok, n, "shift") ||
 							san_tok_eq(tok, n, "shift-exponent") ||
 							san_tok_eq(tok, n, "shift-base")) { MCC_TRACE("br\n");
-#if (defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE) || \
-		defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || \
+		defined MCC_TARGET_RISCV64
+						/* Trap mode (ud2/brk/ebreak) is pure arch instruction emission with no
+						   runtime handler, so it works on PE too — the trap crashes the process
+						   with EXCEPTION_ILLEGAL_INSTRUCTION on Windows just as it raises SIGILL
+						   on ELF. */
 						s->do_sanitize_undefined = 1;
 #else
 						mcc_warning_c(warn_unsupported)(

@@ -1175,12 +1175,18 @@ first real consumer.** Sequence: slice-G stitching (the tree-completeness prereq
   `decl_initializer_alloc` is gated off when `asan_g`/`bcheck` is active (native-shadow stack instrumentation
   and the bcheck redzone both assume an rbp-relative slot), so `alignas(32+)` autos are under-aligned there.
   Needs the shadow/redzone bookkeeping to follow the runtime-aligned pointer, or a separate slot scheme.
-- [ ] **Extend auto over-alignment to the PE (Windows) targets** — x86_64/arm64/i386 PE are gated off
-  (`STACK_OVERALIGN_MAX` undefined) because PE routes VLA alloc through `__chkstk`/alloca (align-16 only);
-  needs the helper parameterized on alignment + a bare-`VT_LLOCAL` load case. Validate on a Windows-arm64/x64
-  cell. (Verified this session: `STACK_OVERALIGN_MAX` is defined only for `x86_64 && !PE` at `mccgen.c:11193`;
-  the `__chkstk` path is `x86_64-gen.c:984` / `i386-gen.c:681` / `arm64-gen.c:1050`, all align-16; the
-  `decl_initializer_alloc` over-align gate at `mccgen.c:12012` is also off under asan/bcheck.)
+- [~] **Extend auto over-alignment to the PE (Windows) targets** — **x86_64-PE DONE this session** (17
+  `exec*/alignas_over` variants + `diff3/alignas_over` green on the native mingw host). `STACK_OVERALIGN_MAX`
+  now defined for `x86_64` incl. PE (`mccgen.c:11193`, dropped `&& !MCC_TARGET_PE`). The real subtlety was the
+  win64 `alloca` ABI: it 16-aligns and returns the block in **rax ABOVE its 32-byte shadow** (rsp = block-32),
+  so a naive `and rsp,-align` + `gen_vla_sp_save` places the object below the shadow and the next call/alloca
+  corrupts it. Fix: `gen_vla_alloc` (x86_64-gen.c) asks alloca for `align` extra bytes and rounds **rax** up
+  (`add rax,align-1; and rax,-align`), rsp/shadow untouched; the over-align decl path (`decl_initializer_alloc`)
+  saves rax via `gen_vla_result` + rsp in a separate chain slot on PE-x86_64, mirroring the plain-VLA path.
+  **Remaining:** `i386`/`arm64` PE already had `STACK_OVERALIGN_MAX` defined (untouched by the x86_64-specific
+  fix) but are unvalidated on Windows — `alignas_over` stays gated to `__x86_64__` on `_WIN32`; needs an
+  i386-WOW64 run + an arm64-Windows cell to confirm (i386-gen.c:~1137 `and esp,-align`; arm64 gen_vla_alloc)
+  and ungate.
 - [ ] **Root-cause the string-literal `L.N`/anon-symbol layout sensitivity** — 3 exec files (atomic_aggregate,
   c11_freestanding_headers, c11_threads) shift internal `L.N`/anon-symbol numbering under ANY source change;
   currently excluded from the object-diff oracle.
@@ -1346,9 +1352,13 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   region").
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap mode ships (`ud2` x86_64,
   `brk` arm64/riscv64); no handler ABI exists.
-- [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only (verified: `libmcc.c:2457`
-  gates `do_sanitize_undefined` on `!defined MCC_TARGET_PE`; the `ud2`/`brk` emit is arch- not format-gated,
-  so the block is purely the PE exclusion + no PE trap-handler wiring; `CMakeLists.txt` skips `ubsan-suite`).
+- [x] **Implement a PE/mingw trap-mode UBSan** — DONE this session (x86_64-PE; `ubsan-suite` 11/11 on the
+  native mingw host). Trap mode is pure `ud2` with no runtime handler, so it just works on PE: the trap
+  crashes the process with `EXCEPTION_ILLEGAL_INSTRUCTION` (0xC000001D) exactly as it raises SIGILL on ELF.
+  Dropped the `!defined MCC_TARGET_PE` from the `do_sanitize_undefined` gate (`libmcc.c:2457`); removed the
+  `NOT WIN32` from the `ubsan-suite` CMake gate; and taught `run_ubsan.cmake` that a fired trap = "not a clean
+  0..127 exit" (Windows reports the exception code as negative/>2^31, not 128+signo). No SEH handler or
+  `.pdata` change needed — the trap is meant to abort. (arm64/riscv64 already had no PE exclusion.)
 - [x] **[Windows JIT] Port the hand-written x86_64 JIT stubs to the Windows x64 ABI** — DONE.
   `mccjit_make_counter_stub` + `mccjit_make_kgc_stub_{n,fp}` got Microsoft-x64-ABI `#if MCC_HOST_WIN32`
   branches (spill rcx/rdx/r8/r9 [+xmm0-3 for fp], 32-byte shadow, calln stack args); `MCC_EMBED_JIT` is

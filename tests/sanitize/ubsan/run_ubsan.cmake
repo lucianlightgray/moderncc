@@ -17,10 +17,14 @@ foreach(_opt IN LISTS _levels)
 		RESULT_VARIABLE _rrc OUTPUT_VARIABLE _rout ERROR_VARIABLE _rerr)
 
 	if(MODE STREQUAL "trap")
-		if(_rrc LESS 128)
+		# A fired trap crashes the process: POSIX raises SIGILL/SIGTRAP (exit
+		# 128+signo); Windows raises EXCEPTION_ILLEGAL_INSTRUCTION (0xC000001D,
+		# reported by CMake as a negative / >2^31 code). Only a clean small exit
+		# (0..127) means the check did NOT fire.
+		if(_rrc GREATER_EQUAL 0 AND _rrc LESS 128)
 			message(FATAL_ERROR
 				"UB check did NOT fire at ${_opt}: exit=${_rrc}, output=[${_rout}] "
-				"(expected a trap signal, exit >= 128)")
+				"(expected a trap: POSIX exit >= 128 or a Windows exception code)")
 		endif()
 	else()
 		if(NOT _rrc EQUAL 0)

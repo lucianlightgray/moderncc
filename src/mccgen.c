@@ -11190,7 +11190,7 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 #define DIF_HAVE_ELEM 4
 #define DIF_CLEAR 8
 
-#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
+#if defined MCC_TARGET_X86_64
 #define STACK_OVERALIGN_MAX 16
 #elif defined MCC_TARGET_RISCV64
 #define STACK_OVERALIGN_MAX 16
@@ -12036,8 +12036,20 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			ptr_slot = (loc -= MCC_PTR_SIZE);
 			vpushs(size);
 			gen_vla_alloc(type, align);
+#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
+			/* win64 alloca returns the (rounded) block in rax above its shadow
+			   space, not at rsp — save rax as the object pointer, and rsp in a
+			   separate slot for the vla chain (mirrors the plain-VLA path). */
+			gen_vla_result(ptr_slot);
+			{
+				int sp_slot = (loc -= MCC_PTR_SIZE);
+				gen_vla_sp_save(sp_slot);
+				cur_scope->vla.loc = sp_slot;
+			}
+#else
 			gen_vla_sp_save(ptr_slot);
 			cur_scope->vla.loc = ptr_slot;
+#endif
 			cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
 			ast_hook_vla_alloc_end(type, ptr_slot, vla_new_save, cur_scope->vla.locorig);
