@@ -116,7 +116,7 @@ static uint64_t dis_decode_bimm(int n, int immr, int imms) { MCC_TRACE("enter\n"
 		{ MCC_TRACE("br\n"); welem = (welem >> immr | welem << (esize - immr)) & (esize == 64 ? ~(uint64_t)0 : (((uint64_t)1 << esize) - 1)); }
 	pattern = 0;
 	for (i = 0; i < 64; i += esize)
-		pattern |= welem << i;
+		{ MCC_TRACE("br\n"); pattern |= welem << i; }
 	return pattern;
 }
 

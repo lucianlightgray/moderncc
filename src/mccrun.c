@@ -703,9 +703,9 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 			}
 			filename_size = dwarf_read_uleb128(&ln, end);
 			for (i = 0; i < filename_size && i < FILE_TABLE_SIZE; i++)
-				filename_table[i].dir_entry = 0;
+				{ MCC_TRACE("br\n"); filename_table[i].dir_entry = 0; }
 			for (i = 0; i < filename_size; i++)
-				for (j = 0; j < col; j++) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); for (j = 0; j < col; j++) { MCC_TRACE("br\n");
 					if (entry_format[j].type == DW_LNCT_path) { MCC_TRACE("br\n");
 						if (entry_format[j].form != DW_FORM_line_strp)
 							{ MCC_TRACE("br\n"); goto next_line; }
@@ -736,7 +736,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 							{ MCC_TRACE("br\n"); filename_table[i].dir_entry = value; }
 					} else
 						{ MCC_TRACE("br\n"); dwarf_ignore_type(ln, end); }
-				}
+				} }
 		} else { MCC_TRACE("br\n");
 			while ((dwarf_read_1(ln, end))) { MCC_TRACE("br\n");
 				if (++dir_size < DIR_TABLE_SIZE)
@@ -869,7 +869,7 @@ static addr_t rt_printline_dwarf(rt_context *rc, addr_t wanted_pc, bt_info *bi) 
 					goto check_pc;
 				default:
 					for (j = 0; j < opcode_length[i - 1]; j++)
-						dwarf_read_uleb128(&ln, end);
+						{ MCC_TRACE("br\n"); dwarf_read_uleb128(&ln, end); }
 					break;
 				}
 			}

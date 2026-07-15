@@ -721,10 +721,10 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 		}
 	}
 	for (i = 0, j = 0; i < mo->n_bind_rebase; i++)
-		if (mo->bind_rebase[i].bind == 2)
+		{ MCC_TRACE("br\n"); if (mo->bind_rebase[i].bind == 2)
 			{ MCC_TRACE("br\n"); mo->n_bind--; }
 		else
-			{ MCC_TRACE("br\n"); mo->bind_rebase[j++] = mo->bind_rebase[i]; }
+			{ MCC_TRACE("br\n"); mo->bind_rebase[j++] = mo->bind_rebase[i]; } }
 	mo->n_bind_rebase = j;
 	pi = section_ptr_add(mo->indirsyms, mo->n_got * sizeof(*pi));
 	memcpy(pi, goti, mo->n_got * sizeof(*pi));
@@ -1054,7 +1054,7 @@ static void mcc_qsort(void *base, size_t nel, size_t width,
 
 	wnel = width * nel;
 	for (gap = 0; ++gap < nel;)
-		gap *= 3;
+		{ MCC_TRACE("br\n"); gap *= 3; }
 	while (gap /= 3) { MCC_TRACE("br\n");
 		wgap = width * gap;
 		for (i = wgap; i < wnel; i += width) { MCC_TRACE("br\n");
@@ -1352,8 +1352,8 @@ static void create_trie(struct trie_node *node,
 		cur = trie[i].name[index_start];
 		start = i++;
 		for (; i < to; i++)
-			if (cur != trie[i].name[index_start])
-				{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); if (cur != trie[i].name[index_start])
+				{ MCC_TRACE("br\n"); break; } }
 		end = i;
 		if (start == end - 1 ||
 				(trie[start].name[index_start] &&
@@ -1364,8 +1364,8 @@ static void create_trie(struct trie_node *node,
 			for (;;) { MCC_TRACE("br\n");
 				cur = trie[start].name[index_end];
 				for (i = start + 1; i < end; i++)
-					if (cur != trie[i].name[index_end])
-						{ MCC_TRACE("br\n"); break; }
+					{ MCC_TRACE("br\n"); if (cur != trie[i].name[index_end])
+						{ MCC_TRACE("br\n"); break; } }
 				if (trie[start].name[index_end] &&
 						trie[start].name[index_end + 1] == 0) { MCC_TRACE("br\n");
 					end = start + 1;
@@ -1422,7 +1422,7 @@ static int create_seq(int *offset, int *n_seq, struct trie_seq **seq,
 
 static void node_free(struct trie_node *node) { MCC_TRACE("enter\n");
 	for (int i = 0; i < node->n_child; i++)
-		node_free(&node->child[i]);
+		{ MCC_TRACE("br\n"); node_free(&node->child[i]); }
 	mcc_free(node->child);
 }
 
@@ -1539,7 +1539,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 	char *str;
 
 	for (i = 0; i < N_SEGMENT; i++)
-		used_segment[i] = all_segment[i].used;
+		{ MCC_TRACE("br\n"); used_segment[i] = all_segment[i].used; }
 
 	memset(mo->sk_to_sect, 0, sizeof(mo->sk_to_sect));
 	for (i = s1->nb_sections; i-- > 1;) { MCC_TRACE("br\n");
@@ -1627,7 +1627,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 		{ MCC_TRACE("br\n"); used_segment[0] = 0; }
 
 	for (i = 0; i < N_SEGMENT; i++)
-		if (used_segment[i]) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (used_segment[i]) { MCC_TRACE("br\n");
 			seg = add_segment(mo, all_segment[i].name);
 			if (i == 1 && s1->output_type != MCC_OUTPUT_EXE)
 				{ MCC_TRACE("br\n"); seg->vmaddr = 0; }
@@ -1638,9 +1638,9 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 			seg->initprot = all_segment[i].initprot;
 			seg->flags = all_segment[i].flags;
 			for (sk = sk_unknown; sk < sk_last; sk++)
-				if (skinfo[sk].seg_initial == i)
-					{ MCC_TRACE("br\n"); mo->segment[sk] = mo->nseg - 1; }
-		}
+				{ MCC_TRACE("br\n"); if (skinfo[sk].seg_initial == i)
+					{ MCC_TRACE("br\n"); mo->segment[sk] = mo->nseg - 1; } }
+		} }
 
 	if (s1->output_type != MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
 		const char *name = s1->install_name ? s1->install_name : filename;
@@ -1911,7 +1911,7 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) { MCC_TRACE("e
 	mo->mh.mh.ncmds = mo->nlc;
 	mo->mh.mh.sizeofcmds = 0;
 	for (int i = 0; i < mo->nlc; i++)
-		mo->mh.mh.sizeofcmds += mo->lc[i]->cmdsize;
+		{ MCC_TRACE("br\n"); mo->mh.mh.sizeofcmds += mo->lc[i]->cmdsize; }
 
 	fwrite(&mo->mh, 1, sizeof(mo->mh), fp);
 	fileofs += sizeof(mo->mh);
@@ -1929,7 +1929,7 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) { MCC_TRACE("e
 		for (s = mo->sk_to_sect[sk].s; s; s = s->prev) { MCC_TRACE("br\n");
 			if (s->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
 				while (fileofs < s->sh_offset)
-					fputc(0, fp), fileofs++;
+					{ MCC_TRACE("br\n"); fputc(0, fp), fileofs++; }
 				if (s->sh_size) { MCC_TRACE("br\n");
 					fwrite(s->data, 1, s->sh_size, fp);
 					fileofs += s->sh_size;
@@ -1968,7 +1968,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) { MCC_TRACE("ent
 	mcc_qsort(mo->bind_rebase, mo->n_bind_rebase, sizeof(struct bind_rebase),
 						bind_rebase_cmp, s1);
 	for (i = 0; i < mo->n_bind_rebase - 1; i++)
-		if (mo->bind_rebase[i].section == mo->bind_rebase[i + 1].section &&
+		{ MCC_TRACE("br\n"); if (mo->bind_rebase[i].section == mo->bind_rebase[i + 1].section &&
 				mo->bind_rebase[i].rel.r_offset == mo->bind_rebase[i + 1].rel.r_offset) { MCC_TRACE("br\n");
 			sym_index = ELFW(R_SYM)(mo->bind_rebase[i].rel.r_info);
 			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
@@ -1977,7 +1977,7 @@ ST_FUNC void bind_rebase_import(MCCState *s1, struct macho *mo) { MCC_TRACE("ent
 								mo->bind_rebase[i].bind ? "bind" : "rebase",
 								mo->bind_rebase[i + 1].bind ? "bind" : "rebase",
 								s1->sections[mo->bind_rebase[i].section]->name, name);
-		}
+		} }
 	header = (struct dyld_chained_fixups_header *)data;
 	data += (sizeof(struct dyld_chained_fixups_header) + 7) & -8;
 	header->starts_offset = data - mo->chained_fixups->data;
@@ -2230,7 +2230,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) { MCC_TRACE("e
 
 do_ret:
 	for (int i = 0; i < mo.nlc; i++)
-		mcc_free(mo.lc[i]);
+		{ MCC_TRACE("br\n"); mcc_free(mo.lc[i]); }
 	mcc_free(mo.seg2lc);
 	mcc_free(mo.lc);
 	mcc_free(mo.elfsectomacho);

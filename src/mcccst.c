@@ -83,7 +83,7 @@ static void cst_grow(CstArena *a, CstLocal need) { MCC_TRACE("enter\n");
 	if (cap == 0)
 		{ MCC_TRACE("br\n"); cap = 64; }
 	while (cap < need)
-		cap *= 2;
+		{ MCC_TRACE("br\n"); cap *= 2; }
 #define G(field) a->field = cst_xrealloc(a->field, (size_t)cap * sizeof *a->field)
 	G(kind);
 	G(parent);
@@ -271,7 +271,7 @@ uint32_t cst_own_file(CstArena *a, const char *name, const uint8_t *bytes,
 	if (a->src_len + n > a->src_cap) { MCC_TRACE("br\n");
 		a->src_cap = a->src_cap ? a->src_cap : 1024;
 		while (a->src_len + n > a->src_cap)
-			a->src_cap *= 2;
+			{ MCC_TRACE("br\n"); a->src_cap *= 2; }
 		a->src = cst_xrealloc(a->src, a->src_cap);
 	}
 	memcpy(a->src + a->src_len, bytes, n);
@@ -309,7 +309,7 @@ static uint64_t cst_hash_bytes(uint64_t seed, const uint8_t *p, uint32_t len) { 
 		uint64_t v = 0;
 		uint32_t i;
 		for (i = 0; i < len; i++)
-			v |= (uint64_t)p[i] << (i * 8);
+			{ MCC_TRACE("br\n"); v |= (uint64_t)p[i] << (i * 8); }
 		h = cst_mix64(h, v);
 	}
 	return h;
@@ -426,7 +426,7 @@ CstHash cst_trivia_hash(const CstArena *a, CstLocal n) { MCC_TRACE("enter\n");
 static void cst_rehash_dirty(CstArena *a, CstLocal n, const uint8_t *dirty) { MCC_TRACE("enter\n");
 	CstLocal c;
 	for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c])
-		cst_rehash_dirty(a, c, dirty);
+		{ MCC_TRACE("br\n"); cst_rehash_dirty(a, c, dirty); }
 	if (!dirty[n])
 		{ MCC_TRACE("br\n"); return; }
 	if (a->kind[n] == CST_Comment) { MCC_TRACE("br\n");
@@ -483,7 +483,7 @@ uint32_t cst_abs_offset(const CstArena *a, CstLocal n) { MCC_TRACE("enter\n");
 		if (parent != CST_NONE) { MCC_TRACE("br\n");
 			CstLocal c;
 			for (c = a->first_child[parent]; c != n; c = a->next_sib[c])
-				off += a->width[c];
+				{ MCC_TRACE("br\n"); off += a->width[c]; }
 		}
 		n = parent;
 	}
@@ -509,8 +509,8 @@ static void cst_index_walk(CstArena *a, CstLocal n, uint32_t base,
 void cst_index_build(CstArena *a) { MCC_TRACE("enter\n");
 	uint32_t leaves = 0, i;
 	for (i = 0; i < a->count; i++)
-		if (cst_is_leaf_kind(a->kind[i]))
-			{ MCC_TRACE("br\n"); leaves++; }
+		{ MCC_TRACE("br\n"); if (cst_is_leaf_kind(a->kind[i]))
+			{ MCC_TRACE("br\n"); leaves++; } }
 	a->index = cst_xrealloc(a->index, (leaves ? leaves : 1) * sizeof *a->index);
 	uint32_t pos = 0;
 	if (a->count)
@@ -586,7 +586,7 @@ void cst_store_free(CstStore *s) { MCC_TRACE("enter\n");
 	if (!s)
 		{ MCC_TRACE("br\n"); return; }
 	for (uint32_t i = 0; i < s->count; i++)
-		cst_arena_free(s->ent[i].tmpl);
+		{ MCC_TRACE("br\n"); cst_arena_free(s->ent[i].tmpl); }
 	free(s->ent);
 	free(s);
 }
@@ -665,7 +665,7 @@ void cst_binding_free(CstBinding *b) { MCC_TRACE("enter\n");
 	if (!b)
 		{ MCC_TRACE("br\n"); return; }
 	for (uint32_t i = 0; i < b->ninc; i++)
-		cst_binding_free(b->inc[i]);
+		{ MCC_TRACE("br\n"); cst_binding_free(b->inc[i]); }
 	free(b->inc);
 	free(b->sel);
 	free(b);
@@ -677,10 +677,10 @@ uint32_t cst_binding_template(const CstBinding *b) { MCC_TRACE("enter\n");
 
 void cst_binding_select(CstBinding *b, CstLocal cond, uint32_t which) { MCC_TRACE("enter\n");
 	for (uint32_t i = 0; i < b->nsel; i++)
-		if (b->sel[i].cond == cond) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (b->sel[i].cond == cond) { MCC_TRACE("br\n");
 			b->sel[i].which = which;
 			return;
-		}
+		} }
 	if (b->nsel >= b->selcap) { MCC_TRACE("br\n");
 		b->selcap = b->selcap ? b->selcap * 2 : 8;
 		b->sel = cst_xrealloc(b->sel, b->selcap * sizeof *b->sel);
@@ -692,8 +692,8 @@ void cst_binding_select(CstBinding *b, CstLocal cond, uint32_t which) { MCC_TRAC
 
 uint32_t cst_binding_selected(const CstBinding *b, CstLocal cond) { MCC_TRACE("enter\n");
 	for (uint32_t i = 0; i < b->nsel; i++)
-		if (b->sel[i].cond == cond)
-			{ MCC_TRACE("br\n"); return b->sel[i].which; }
+		{ MCC_TRACE("br\n"); if (b->sel[i].cond == cond)
+			{ MCC_TRACE("br\n"); return b->sel[i].which; } }
 	return 0;
 }
 
@@ -742,7 +742,7 @@ static size_t cst_render_node(const CstStore *s, const CstArena *a, CstLocal n,
 	}
 
 	for (CstLocal c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c])
-		pos = cst_render_node(s, a, c, b, inc_cursor, out, cap, pos);
+		{ MCC_TRACE("br\n"); pos = cst_render_node(s, a, c, b, inc_cursor, out, cap, pos); }
 	return pos;
 }
 
@@ -772,7 +772,7 @@ static size_t cst_reflect_walk(const CstArena *a, CstLocal n, uint8_t *out,
 	}
 	CstLocal c;
 	for (c = a->first_child[n]; c != CST_NONE; c = a->next_sib[c])
-		pos = cst_reflect_walk(a, c, out, cap, pos);
+		{ MCC_TRACE("br\n"); pos = cst_reflect_walk(a, c, out, cap, pos); }
 	return pos;
 }
 
@@ -995,10 +995,10 @@ void cst_hook_def(int v, uint32_t off) { MCC_TRACE("enter\n");
 	if ((uint32_t)v >= cst_defoff_cap) { MCC_TRACE("br\n");
 		uint32_t nc = cst_defoff_cap ? cst_defoff_cap : 1024;
 		while ((uint32_t)v >= nc)
-			nc *= 2;
+			{ MCC_TRACE("br\n"); nc *= 2; }
 		cst_defoff = cst_xrealloc(cst_defoff, nc * sizeof *cst_defoff);
 		for (uint32_t i = cst_defoff_cap; i < nc; i++)
-			cst_defoff[i] = CST_OFF_NONE;
+			{ MCC_TRACE("br\n"); cst_defoff[i] = CST_OFF_NONE; }
 		cst_defoff_cap = nc;
 	}
 	cst_defoff[v] = off;
@@ -1026,7 +1026,7 @@ static int cst_slurp(CstArena *a, const char *filename) { MCC_TRACE("enter\n");
 	uint8_t buf[8192];
 	size_t n;
 	while ((n = fread(buf, 1, sizeof buf, f)) > 0)
-		cst_own_file(a, filename, buf, n);
+		{ MCC_TRACE("br\n"); cst_own_file(a, filename, buf, n); }
 	fclose(f);
 	return 0;
 }
@@ -1047,15 +1047,15 @@ CstStore *cst_hook_store(void) { MCC_TRACE("enter\n");
 static int cst_line_cond(const uint8_t *s, uint32_t a, uint32_t b) { MCC_TRACE("enter\n");
 	uint32_t i = a;
 	while (i < b && (s[i] == ' ' || s[i] == '\t'))
-		i++;
+		{ MCC_TRACE("br\n"); i++; }
 	if (i >= b || s[i] != '#')
 		{ MCC_TRACE("br\n"); return 0; }
 	i++;
 	while (i < b && (s[i] == ' ' || s[i] == '\t'))
-		i++;
+		{ MCC_TRACE("br\n"); i++; }
 	uint32_t w = i;
 	while (i < b && s[i] >= 'a' && s[i] <= 'z')
-		i++;
+		{ MCC_TRACE("br\n"); i++; }
 	uint32_t n = i - w;
 #define CST_KW(str) (n == sizeof(str) - 1 && memcmp(s + w, str, n) == 0)
 	if (CST_KW("if") || CST_KW("ifdef") || CST_KW("ifndef"))
@@ -1081,7 +1081,7 @@ static void cst_build_sourcefile(CstArena *a, const uint8_t *src, uint32_t len) 
 	while (p < len) { MCC_TRACE("br\n");
 		uint32_t ls = p;
 		while (p < len && src[p] != '\n')
-			p++;
+			{ MCC_TRACE("br\n"); p++; }
 		if (p < len)
 			{ MCC_TRACE("br\n"); p++; }
 		uint32_t n = p - ls;
@@ -1135,8 +1135,8 @@ void cst_hook_include(const char *path, int from_main_file) { MCC_TRACE("enter\n
 		{ MCC_TRACE("br\n"); cst_session_store = cst_store_new(); }
 	uint32_t i, id;
 	for (i = 0; i < cst_inc_seen_count; i++)
-		if (0 == strcmp(cst_inc_seen[i].path, path))
-			{ MCC_TRACE("br\n"); break; }
+		{ MCC_TRACE("br\n"); if (0 == strcmp(cst_inc_seen[i].path, path))
+			{ MCC_TRACE("br\n"); break; } }
 	if (i < cst_inc_seen_count) { MCC_TRACE("br\n");
 		id = cst_inc_seen[i].id;
 	} else { MCC_TRACE("br\n");
@@ -1206,10 +1206,10 @@ void cst_hook_begin(const char *filename) { MCC_TRACE("enter\n");
 		cst_session_store = NULL;
 	}
 	while (cst_inc_seen_count)
-		free(cst_inc_seen[--cst_inc_seen_count].path);
+		{ MCC_TRACE("br\n"); free(cst_inc_seen[--cst_inc_seen_count].path); }
 	cst_inc_count = 0;
 	for (uint32_t i = 0; i < cst_defoff_cap; i++)
-		cst_defoff[i] = CST_OFF_NONE;
+		{ MCC_TRACE("br\n"); cst_defoff[i] = CST_OFF_NONE; }
 	cst_spec_push(CST_TranslationUnit, 0);
 }
 
@@ -1272,11 +1272,11 @@ static uint32_t cst_leading_trivia(const uint8_t *src, uint32_t off, uint32_t le
 		} else if (c == '/' && i + 1 < len && src[off + i + 1] == '/') { MCC_TRACE("br\n");
 			i += 2;
 			while (i < len && src[off + i] != '\n')
-				i++;
+				{ MCC_TRACE("br\n"); i++; }
 		} else if (c == '/' && i + 1 < len && src[off + i + 1] == '*') { MCC_TRACE("br\n");
 			i += 2;
 			while (i + 1 < len && !(src[off + i] == '*' && src[off + i + 1] == '/'))
-				i++;
+				{ MCC_TRACE("br\n"); i++; }
 			if (i + 1 < len)
 				{ MCC_TRACE("br\n"); i += 2; }
 		} else { MCC_TRACE("br\n");
@@ -1298,13 +1298,13 @@ static void cst_emit_leaf(uint32_t i) { MCC_TRACE("enter\n");
 		if (c == '/' && p + 1 < end && src[p + 1] == '/') { MCC_TRACE("br\n");
 			p += 2;
 			while (p < end && src[p] != '\n')
-				p++;
+				{ MCC_TRACE("br\n"); p++; }
 			cst_leaf_kinded(cst_current, CST_Comment, 0, seg, p - seg, NULL, 0);
 			seg = p;
 		} else if (c == '/' && p + 1 < end && src[p + 1] == '*') { MCC_TRACE("br\n");
 			p += 2;
 			while (p + 1 < end && !(src[p] == '*' && src[p + 1] == '/'))
-				p++;
+				{ MCC_TRACE("br\n"); p++; }
 			if (p + 1 < end)
 				{ MCC_TRACE("br\n"); p += 2; }
 			cst_leaf_kinded(cst_current, CST_Comment, 0, seg, p - seg, NULL, 0);
@@ -1387,14 +1387,14 @@ static CstLocal cst_materialize(int32_t si) { MCC_TRACE("enter\n");
 	while (cj >= 0) { MCC_TRACE("br\n");
 		uint32_t cfirst = cst_sbuf[cj].first_leaf;
 		for (; i < cfirst && i < s->last_leaf; i++)
-			cst_emit_leaf(i);
+			{ MCC_TRACE("br\n"); cst_emit_leaf(i); }
 		cst_materialize(cj);
 		if (cst_sbuf[cj].last_leaf > i)
 			{ MCC_TRACE("br\n"); i = cst_sbuf[cj].last_leaf; }
 		cj = cst_sbuf[cj].sib;
 	}
 	for (; i < s->last_leaf; i++)
-		cst_emit_leaf(i);
+		{ MCC_TRACE("br\n"); cst_emit_leaf(i); }
 	cst_node_close(cst_current, node);
 	return node;
 }
@@ -1404,7 +1404,7 @@ CstArena *cst_hook_end(void) { MCC_TRACE("enter\n");
 	if (a) { MCC_TRACE("br\n");
 		CST_ASSERT(cst_sstop == 1);
 		while (cst_sstop > 1)
-			cst_hook_close();
+			{ MCC_TRACE("br\n"); cst_hook_close(); }
 		cst_sbuf[0].last_leaf = cst_lcount;
 		uint32_t tail = cst_lcount
 												? cst_lbuf[cst_lcount - 1].off +
@@ -1427,8 +1427,8 @@ CstArena *cst_hook_end(void) { MCC_TRACE("enter\n");
 		}
 		uint32_t ki = 0, nn;
 		for (nn = 0; nn < a->count && ki < cst_inc_count; nn++)
-			if (a->kind[nn] == CST_IncludeDirective)
-				{ MCC_TRACE("br\n"); cst_set_include_target(a, nn, cst_inc_tmpl[ki++]); }
+			{ MCC_TRACE("br\n"); if (a->kind[nn] == CST_IncludeDirective)
+				{ MCC_TRACE("br\n"); cst_set_include_target(a, nn, cst_inc_tmpl[ki++]); } }
 	}
 	cst_current = NULL;
 	return a;

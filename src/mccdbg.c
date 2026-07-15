@@ -435,7 +435,7 @@ ST_FUNC void mcc_debug_new(MCCState *s1) { MCC_TRACE("enter\n");
 		dwarf_aranges_section =
 				new_section(s1, ".debug_aranges", SHT_PROGBITS, shf);
 		for (int i = 0; i < sizeof(debug) / sizeof(debug[0]); i++)
-			new_section(s1, debug[i], SHT_PROGBITS, 0)->sh_addralign = 1;
+			{ MCC_TRACE("br\n"); new_section(s1, debug[i], SHT_PROGBITS, 0)->sh_addralign = 1; }
 		shf |= SHF_MERGE | SHF_STRINGS;
 		dwarf_str_section =
 				new_section(s1, ".debug_str", SHT_PROGBITS, shf);
@@ -533,7 +533,7 @@ static unsigned str_hash(const char *s) { MCC_TRACE("enter\n");
 	unsigned h = 5381;
 
 	while (*s)
-		h += (*s++ & 0xffu) + h * 31;
+		{ MCC_TRACE("br\n"); h += (*s++ & 0xffu) + h * 31; }
 	return h;
 }
 
@@ -615,12 +615,12 @@ static void dwarf_file(MCCState *s1) { MCC_TRACE("enter\n");
 	filename = strrchr(file->filename, '/');
 	if (filename == NULL) { MCC_TRACE("br\n");
 		for (i = 1; i < dwarf_line.filename_size; i++)
-			if (dwarf_line.filename_table[i].dir_entry == 0 &&
+			{ MCC_TRACE("br\n"); if (dwarf_line.filename_table[i].dir_entry == 0 &&
 					strcmp(dwarf_line.filename_table[i].name,
 								 file->filename) == 0) { MCC_TRACE("br\n");
 				dwarf_line.cur_file = i + index_offset;
 				return;
-			}
+			} }
 		i = -index_offset;
 		filename = file->filename;
 	} else { MCC_TRACE("br\n");
@@ -629,17 +629,17 @@ static void dwarf_file(MCCState *s1) { MCC_TRACE("enter\n");
 
 		*filename++ = '\0';
 		for (i = 0; i < dwarf_line.dir_size; i++)
-			if (strcmp(dwarf_line.dir_table[i], dir) == 0) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (strcmp(dwarf_line.dir_table[i], dir) == 0) { MCC_TRACE("br\n");
 				for (j = 1; j < dwarf_line.filename_size; j++)
-					if (dwarf_line.filename_table[j].dir_entry - index_offset == i &&
+					{ MCC_TRACE("br\n"); if (dwarf_line.filename_table[j].dir_entry - index_offset == i &&
 							strcmp(dwarf_line.filename_table[j].name,
 										 filename) == 0) { MCC_TRACE("br\n");
 						*undo = '/';
 						dwarf_line.cur_file = j + index_offset;
 						return;
-					}
+					} }
 				break;
-			}
+			} }
 		if (i == dwarf_line.dir_size) { MCC_TRACE("br\n");
 			dwarf_line.dir_size++;
 			dwarf_line.dir_table =
@@ -759,7 +759,7 @@ ST_FUNC void mcc_eh_frame_start(MCCState *s1) { MCC_TRACE("enter\n");
 	dwarf_uleb128(eh_frame_section, 0);
 #endif
 	while ((eh_frame_section->data_offset - s1->eh_start) & 3)
-		dwarf_data1(eh_frame_section, DW_CFA_nop);
+		{ MCC_TRACE("br\n"); dwarf_data1(eh_frame_section, DW_CFA_nop); }
 	write32le(eh_frame_section->data + s1->eh_start,
 						eh_frame_section->data_offset - s1->eh_start - 4);
 }
@@ -826,9 +826,9 @@ ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 	dwarf_data4(eh_frame_section, func_size);
 	dwarf_data1(eh_frame_section, 0);
 	for (i = 0; i < nops; i++)
-		dwarf_data1(eh_frame_section, ops[i]);
+		{ MCC_TRACE("br\n"); dwarf_data1(eh_frame_section, ops[i]); }
 	while ((eh_frame_section->data_offset - fde_start) & 3)
-		dwarf_data1(eh_frame_section, DW_CFA_nop);
+		{ MCC_TRACE("br\n"); dwarf_data1(eh_frame_section, DW_CFA_nop); }
 	write32le(eh_frame_section->data + fde_start,
 						eh_frame_section->data_offset - fde_start - 4);
 }
@@ -908,7 +908,7 @@ static void mcc_debug_frame_end(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	n += mcc_cfi_uleb(cfi + n, 0);
 	while (size >= 4 &&
 				 read32le(cur_text_section->data + func_ind + size - 4) != 0x00008067)
-		size -= 4;
+		{ MCC_TRACE("br\n"); size -= 4; }
 	n += mcc_cfi_advance(cfi + n, (uint32_t)(size - 36));
 	cfi[n++] = DW_CFA_def_cfa;
 	n += mcc_cfi_uleb(cfi + n, 2);
@@ -1169,7 +1169,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) { MCC_TRACE("enter\n");
 			dwarf_uleb128_op(s1, 1 + MCC_PTR_SIZE);
 			dwarf_line_op(s1, DW_LNE_set_address);
 			for (int i = 0; i < MCC_PTR_SIZE; i++)
-				dwarf_line_op(s1, 0);
+				{ MCC_TRACE("br\n"); dwarf_line_op(s1, 0); }
 			memset(&dwarf_info.base_type_used, 0, sizeof(dwarf_info.base_type_used));
 		} else { MCC_TRACE("br\n");
 			pstrcat(buf, sizeof(buf), "/");
@@ -1181,7 +1181,7 @@ ST_FUNC void mcc_debug_start(MCCState *s1) { MCC_TRACE("enter\n");
 			put_stabs_r(s1, filename, N_SO, 0, 0,
 									text_section->data_offset, text_section, section_sym);
 			for (int i = 0; i < N_DEFAULT_DEBUG; i++)
-				put_stabs(s1, default_debug[i].name, N_LSYM, 0, 0, 0);
+				{ MCC_TRACE("br\n"); put_stabs(s1, default_debug[i].name, N_LSYM, 0, 0, 0); }
 		}
 		mcc_debug_bincl(s1);
 	}
@@ -1242,7 +1242,7 @@ ST_FUNC void mcc_debug_end(MCCState *s1) { MCC_TRACE("enter\n");
 			dwarf_uleb128(dwarf_line_section, DW_FORM_line_strp);
 			dwarf_uleb128(dwarf_line_section, dwarf_line.dir_size);
 			for (i = 0; i < dwarf_line.dir_size; i++)
-				dwarf_line_strp(dwarf_line_section, dwarf_line.dir_table[i]);
+				{ MCC_TRACE("br\n"); dwarf_line_strp(dwarf_line_section, dwarf_line.dir_table[i]); }
 			dwarf_data1(dwarf_line_section, 2);
 			dwarf_uleb128(dwarf_line_section, DW_LNCT_path);
 			dwarf_uleb128(dwarf_line_section, DW_FORM_line_strp);
@@ -1276,10 +1276,10 @@ ST_FUNC void mcc_debug_end(MCCState *s1) { MCC_TRACE("enter\n");
 			dwarf_data1(dwarf_line_section, 0);
 		}
 		for (i = 0; i < dwarf_line.dir_size; i++)
-			mcc_free(dwarf_line.dir_table[i]);
+			{ MCC_TRACE("br\n"); mcc_free(dwarf_line.dir_table[i]); }
 		mcc_free(dwarf_line.dir_table);
 		for (i = 0; i < dwarf_line.filename_size; i++)
-			mcc_free(dwarf_line.filename_table[i].name);
+			{ MCC_TRACE("br\n"); mcc_free(dwarf_line.filename_table[i].name); }
 		mcc_free(dwarf_line.filename_table);
 
 		dwarf_line_op(s1, 0);
@@ -1457,9 +1457,9 @@ static void fix_debug_forw_hash(MCCState *s1, int global, int start) { MCC_TRACE
 			dwarf_uleb128(dwarf_info_section, dwarf_line.cur_file);
 			dwarf_uleb128(dwarf_info_section, file->line_num);
 			for (j = 0; j < hash[i].n_debug_type; j++)
-				write32le(dwarf_info_section->data +
+				{ MCC_TRACE("br\n"); write32le(dwarf_info_section->data +
 											hash[i].debug_type[j],
-									pos - dwarf_info.start);
+									pos - dwarf_info.start); }
 			mcc_free(hash[i].debug_type);
 		}
 	}
@@ -1518,8 +1518,8 @@ static int mcc_debug_find(MCCState *s1, Sym *t, int dwarf) { MCC_TRACE("enter\n"
 		forw_hash = g ? &debug_forw_hash_global : &debug_forw_hash_local;
 		n_forw_hash = g ? &n_debug_forw_hash_global : &n_debug_forw_hash_local;
 		for (i = 0; i < *n_forw_hash; i++)
-			if (t == (*forw_hash)[i].type)
-				{ MCC_TRACE("br\n"); return 0; }
+			{ MCC_TRACE("br\n"); if (t == (*forw_hash)[i].type)
+				{ MCC_TRACE("br\n"); return 0; } }
 		*forw_hash = (struct _debug_forw_hash *)
 				mcc_realloc(*forw_hash,
 										(*n_forw_hash + 1) * sizeof(**forw_hash));
@@ -1531,8 +1531,8 @@ static int mcc_debug_find(MCCState *s1, Sym *t, int dwarf) { MCC_TRACE("enter\n"
 	hash = g ? debug_hash_global : debug_hash_local;
 	n_hash = g ? n_debug_hash_global : n_debug_hash_local;
 	for (i = 0; i < n_hash; i++)
-		if (t == hash[i].type)
-			{ MCC_TRACE("br\n"); return hash[i].debug_type; }
+		{ MCC_TRACE("br\n"); if (t == hash[i].type)
+			{ MCC_TRACE("br\n"); return hash[i].debug_type; } }
 	return -1;
 }
 
@@ -1548,14 +1548,14 @@ static void mcc_debug_check_forw(MCCState *s1, Sym *t, int debug_type) { MCC_TRA
 			forw_hash = i ? &debug_forw_hash_global : &debug_forw_hash_local;
 			n_forw_hash = i ? n_debug_forw_hash_global : n_debug_forw_hash_local;
 			for (j = 0; j < n_forw_hash; j++)
-				if (t->type.ref == (*forw_hash)[j].type) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (t->type.ref == (*forw_hash)[j].type) { MCC_TRACE("br\n");
 					(*forw_hash)[j].debug_type =
 							mcc_realloc((*forw_hash)[j].debug_type,
 													((*forw_hash)[j].n_debug_type + 1) * sizeof(int));
 					(*forw_hash)[j].debug_type[(*forw_hash)[j].n_debug_type++] =
 							debug_type;
 					return;
-				}
+				} }
 		}
 	}
 }
@@ -1576,22 +1576,22 @@ ST_FUNC void mcc_debug_fix_forw(MCCState *s1, CType *t) { MCC_TRACE("enter\n");
 		forw_hash = g ? &debug_forw_hash_global : &debug_forw_hash_local;
 		n_forw_hash = g ? &n_debug_forw_hash_global : &n_debug_forw_hash_local;
 		for (i = 0; i < *n_forw_hash; i++)
-			if (t->ref == (*forw_hash)[i].type) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (t->ref == (*forw_hash)[i].type) { MCC_TRACE("br\n");
 				if (s1->dwarf) { MCC_TRACE("br\n");
 					Sym sym = {0};
 					sym.type = *t;
 
 					debug_type = mcc_get_dwarf_info(s1, &sym);
 					for (j = 0; j < (*forw_hash)[i].n_debug_type; j++)
-						write32le(dwarf_info_section->data +
+						{ MCC_TRACE("br\n"); write32le(dwarf_info_section->data +
 													(*forw_hash)[i].debug_type[j],
-											debug_type - dwarf_info.start);
+											debug_type - dwarf_info.start); }
 					mcc_free((*forw_hash)[i].debug_type);
 				}
 				(*n_forw_hash)--;
 				for (; i < *n_forw_hash; i++)
-					(*forw_hash)[i] = (*forw_hash)[i + 1];
-			}
+					{ MCC_TRACE("br\n"); (*forw_hash)[i] = (*forw_hash)[i + 1]; }
+			} }
 	}
 }
 
@@ -1718,8 +1718,8 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) { MCC_TRAC
 	} else if ((type & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 		type &= ~VT_STRUCT_MASK;
 		for (debug_type = 1; debug_type <= N_DEFAULT_DEBUG; debug_type++)
-			if (default_debug[debug_type - 1].type == type)
-				{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); if (default_debug[debug_type - 1].type == type)
+				{ MCC_TRACE("br\n"); break; } }
 		if (debug_type > N_DEFAULT_DEBUG)
 			{ MCC_TRACE("br\n"); return; }
 	}
@@ -1893,8 +1893,8 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 	} else if ((type & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 		type &= ~VT_STRUCT_MASK;
 		for (i = 1; i <= N_DEFAULT_DEBUG; i++)
-			if (default_debug[i - 1].type == type)
-				{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); if (default_debug[i - 1].type == type)
+				{ MCC_TRACE("br\n"); break; } }
 		if (i > N_DEFAULT_DEBUG)
 			{ MCC_TRACE("br\n"); return 0; }
 		debug_type = dwarf_info.base_type_used[i - 1];
@@ -2164,7 +2164,7 @@ ST_FUNC void mcc_debug_funcstart(MCCState *s1, Sym *sym) { MCC_TRACE("enter\n");
 			dwarf_line_op(s1, DW_LNE_hi_user - 1);
 			len = strlen(funcname) + 1;
 			for (i = 0; i < len; i++)
-				dwarf_line_op(s1, funcname[i]);
+				{ MCC_TRACE("br\n"); dwarf_line_op(s1, funcname[i]); }
 		}
 	} else { MCC_TRACE("br\n");
 		cstr_new(&debug_str);

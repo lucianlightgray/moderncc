@@ -200,13 +200,13 @@ static void arm64_movimm(int r, uint64_t x) { MCC_TRACE("enter\n");
 			mov1 = ARM64_MOVN64;
 		}
 		for (i = 0; i < 64; i += 16)
-			if (x1 >> i & 0xffff) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (x1 >> i & 0xffff) { MCC_TRACE("br\n");
 				o(mov1 | r | (x1 >> i & 0xffff) << 5 | i << 17);
 				break;
-			}
+			} }
 		for (i += 16; i < 64; i += 16)
-			if (x1 >> i & 0xffff)
-				{ MCC_TRACE("br\n"); o(ARM64_MOVK | ARM64_SF(1) | r | (x >> i & 0xffff) << 5 | i << 17); }
+			{ MCC_TRACE("br\n"); if (x1 >> i & 0xffff)
+				{ MCC_TRACE("br\n"); o(ARM64_MOVK | ARM64_SF(1) | r | (x >> i & 0xffff) << 5 | i << 17); } }
 	}
 }
 
@@ -1040,7 +1040,7 @@ static int n_func_args(CType *type) { MCC_TRACE("enter\n");
 	Sym *arg;
 
 	for (arg = type->ref->next; arg; arg = arg->next)
-		n_args++;
+		{ MCC_TRACE("br\n"); n_args++; }
 	return n_args;
 }
 
@@ -1102,7 +1102,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 
 	t[0] = return_type;
 	for (int i = 0; i < nb_args; i++)
-		t[nb_args - i] = &vtop[-i].type;
+		{ MCC_TRACE("br\n"); t[nb_args - i] = &vtop[-i].type; }
 
 	stack = arm64_pcs(
 #ifdef MCC_TARGET_PE
@@ -1112,14 +1112,14 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			nb_args + 1, t, a);
 
 	for (int i = nb_args; i; i--)
-		if (a[i] & 1) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (a[i] & 1) { MCC_TRACE("br\n");
 			SValue *arg = &vtop[i - nb_args];
 			int align, size = type_size(&arg->type, &align);
 			assert((arg->type.t & VT_BTYPE) == VT_STRUCT);
 			stack = (stack + align - 1) & -align;
 			a1[i] = stack;
 			stack += size;
-		}
+		} }
 
 	stack = (stack + 15) >> 4 << 4;
 
@@ -1186,10 +1186,10 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				if (n > 0) { MCC_TRACE("br\n");
 					gv_addr(MCC_RC_R30);
 					for (uint32_t j = 0; j < n; j++)
-						o(0x3d4003c0 |
+						{ MCC_TRACE("br\n"); o(0x3d4003c0 |
 							(sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
 							(a[i] / 2 - 8 + j) |
-							j << 10);
+							j << 10); }
 				} else { MCC_TRACE("br\n");
 					gv(MCC_RC_F(a[i] / 2 - 8));
 				}
@@ -1234,10 +1234,10 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			} else if (a[0] == 16) { MCC_TRACE("br\n");
 				uint32_t sz, n = arm64_hfa(return_type, &sz);
 				for (uint32_t j = 0; j < n; j++)
-					o(0x3d000100 |
+					{ MCC_TRACE("br\n"); o(0x3d000100 |
 						(sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
 						(fltr(REG_FRET) + j) |
-						j << 10);
+						j << 10); }
 			}
 		}
 	}
@@ -1317,7 +1317,7 @@ static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
 	arm64_asan_off = asan_lstack_section->data_offset;
 	arm64_asan_ind = ind;
 	for (int i = 0; i < ARM64_ASAN_ENTER_SLOTS; i++)
-		o(ARM64_NOP);
+		{ MCC_TRACE("br\n"); o(ARM64_NOP); }
 }
 
 static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
@@ -1359,7 +1359,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	func_vc = 144;
 
 	for (sym = func_type->ref; sym; sym = sym->next)
-		++n;
+		{ MCC_TRACE("br\n"); ++n; }
 
 #ifdef MCC_TARGET_PE
 	n += variadic;
@@ -1368,7 +1368,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	t = mcc_malloc(n * sizeof(*t));
 	a = mcc_malloc(n * sizeof(*a));
 	for (sym = func_type->ref; sym; sym = sym->next)
-		t[i++] = &sym->type;
+		{ MCC_TRACE("br\n"); t[i++] = &sym->type; }
 
 #ifdef MCC_TARGET_PE
 	if (variadic)
@@ -1412,11 +1412,11 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	o(0x910003fd);
 
 	for (i = 0; i < last_float; i++)
-		o(0xad0087e0 + i * 0x10000 + (i << 11) + (i << 1));
+		{ MCC_TRACE("br\n"); o(0xad0087e0 + i * 0x10000 + (i << 11) + (i << 1)); }
 	if (use_x8)
 		{ MCC_TRACE("br\n"); o(0xa90923e8); }
 	for (i = 0; i < last_int; i++)
-		o(0xa90a07e0 + i * 0x10000 + (i << 11) + (i << 1));
+		{ MCC_TRACE("br\n"); o(0xa90a07e0 + i * 0x10000 + (i << 11) + (i << 1)); }
 
 	arm64_func_va_list_gr_offs = -64;
 	arm64_func_va_list_vr_offs = -128;
@@ -1457,7 +1457,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 
 	arm64_func_sub_sp_offset = ind;
 	for (i = 0; i < ARM64_FUNC_STACK_SETUP_SLOTS; ++i)
-		o(ARM64_NOP);
+		{ MCC_TRACE("br\n"); o(ARM64_NOP); }
 	loc = 0;
 	gen_asan_stack_prolog();
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -1668,9 +1668,9 @@ ST_FUNC void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 			uint32_t sz, n = arm64_hfa(func_type, &sz);
 			gv_addr(MCC_RC_R(0));
 			for (uint32_t j = 0; j < n; j++)
-				o(0x3d400000 |
+				{ MCC_TRACE("br\n"); o(0x3d400000 |
 					(sz & 16) << 19 | -(sz & 8) << 27 | (sz & 4) << 29 |
-					(fltr(REG_FRET) + j) | j << 10);
+					(fltr(REG_FRET) + j) | j << 10); }
 		} else
 			{ MCC_TRACE("br\n"); gv(MCC_RC_FRET); }
 		break;
@@ -1698,7 +1698,7 @@ ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 		ind = arm64_func_sub_sp_offset;
 		arm64_sub_sp(diff);
 		for (int i = ind; i < patch_end; i += 4)
-			write32le(cur_text_section->data + i, ARM64_NOP);
+			{ MCC_TRACE("br\n"); write32le(cur_text_section->data + i, ARM64_NOP); }
 		ind = saved_ind;
 	}
 	o(0x910003bf);

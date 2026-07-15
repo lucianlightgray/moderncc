@@ -123,7 +123,7 @@ ST_FUNC char *pstrncpy(char *out, size_t buf_size, const char *s, size_t num) { 
 PUB_FUNC char *mcc_basename(const char *name) { MCC_TRACE("enter\n");
 	char *p = (char *)strchr(name, 0);
 	while (p > name && !HOST_IS_DIRSEP(p[-1]))
-		--p;
+		{ MCC_TRACE("br\n"); --p; }
 	return p;
 }
 
@@ -207,7 +207,7 @@ ST_FUNC unsigned long mcc_grow_capacity(unsigned long cur, unsigned long need,
 	if (cur < min_cap)
 		{ MCC_TRACE("br\n"); cur = min_cap; }
 	while (cur < need)
-		cur = cur * 2;
+		{ MCC_TRACE("br\n"); cur = cur * 2; }
 	return cur;
 }
 
@@ -475,8 +475,8 @@ ST_FUNC void dynarray_add(void *ptab, int *nb_ptr, void *data) { MCC_TRACE("ente
 ST_FUNC void dynarray_reset(void *pp, int *n) { MCC_TRACE("enter\n");
 	void **p;
 	for (p = *(void ***)pp; *n; ++p, --*n)
-		if (*p)
-			{ MCC_TRACE("br\n"); mcc_free(*p); }
+		{ MCC_TRACE("br\n"); if (*p)
+			{ MCC_TRACE("br\n"); mcc_free(*p); } }
 	mcc_free(*(void **)pp);
 	*(void **)pp = NULL;
 }
@@ -486,7 +486,7 @@ static void dynarray_split(char ***argv, int *argc, const char *p, int sep) { MC
 	CString str;
 	for (;;) { MCC_TRACE("br\n");
 		while (c = (unsigned char)*p, c <= ' ' && c != '\0')
-			++p;
+			{ MCC_TRACE("br\n"); ++p; }
 		if (c == '\0')
 			{ MCC_TRACE("br\n"); break; }
 		cstr_new(&str);
@@ -597,10 +597,10 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 
 	ls = cpos;
 	while (ls > start && ls[-1] != '\n')
-		ls--;
+		{ MCC_TRACE("br\n"); ls--; }
 	le = cpos;
 	while (le < end && *le != '\n')
-		le++;
+		{ MCC_TRACE("br\n"); le++; }
 
 	n = (int)(le - ls);
 	if (n > 0 && ls[n - 1] == '\r')
@@ -623,10 +623,10 @@ static void append_caret_context(MCCState *s1, CString *cs, BufferedFile *f,
 
 	cstr_ccat(cs, '\n');
 	for (i = 0; numbuf[i]; i++)
-		cstr_ccat(cs, ' ');
+		{ MCC_TRACE("br\n"); cstr_ccat(cs, ' '); }
 	cstr_cat(cs, " | ", 3);
 	for (i = 0; i < col; i++)
-		cstr_ccat(cs, ls[i] == '\t' ? '\t' : ' ');
+		{ MCC_TRACE("br\n"); cstr_ccat(cs, ls[i] == '\t' ? '\t' : ' '); }
 	if (use_color)
 		{ MCC_TRACE("br\n"); cstr_cat(cs, "\033[1;32m^\033[0m", 12); }
 	else
@@ -682,8 +682,8 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 	}
 	if (f) { MCC_TRACE("br\n");
 		for (pf = s1->include_stack; pf < s1->include_stack_ptr; pf++)
-			cstr_printf(&cs, "In file included from %s:%d:\n",
-									(*pf)->filename, (*pf)->line_num - 1);
+			{ MCC_TRACE("br\n"); cstr_printf(&cs, "In file included from %s:%d:\n",
+									(*pf)->filename, (*pf)->line_num - 1); }
 		if (0 == line) { MCC_TRACE("br\n");
 			bol_adj = (tok_flags & TOK_FLAG_BOL) && !macro_ptr;
 			line = f->line_num - bol_adj;
@@ -721,7 +721,7 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); mode = ERROR_ERROR; }
 	if (mode == ERROR_ERROR && s1->error_set_jmp_enabled) { MCC_TRACE("br\n");
 		while (nb_stk_data > stk_data_floor)
-			mcc_free(*(void **)stk_data[--nb_stk_data]);
+			{ MCC_TRACE("br\n"); mcc_free(*(void **)stk_data[--nb_stk_data]); }
 		longjmp(s1->error_jmp_buf, 1);
 	}
 }
@@ -916,14 +916,14 @@ static const char *mcc_auto_mccdir(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); --p; }
 		*p = 0;
 		for (i = 0; exe_rel[i]; i++)
-			if ((hit = mcc_auto_mccdir_rel(exe, exe_rel[i])))
-				{ MCC_TRACE("br\n"); return hit; }
+			{ MCC_TRACE("br\n"); if ((hit = mcc_auto_mccdir_rel(exe, exe_rel[i])))
+				{ MCC_TRACE("br\n"); return hit; } }
 	}
 	if (mcc_dir_has_include(MCC_CONFIG_MCCDIR))
 		{ MCC_TRACE("br\n"); return MCC_CONFIG_MCCDIR; }
 	for (i = 0; sys_dirs[i]; i++)
-		if (mcc_dir_has_include(sys_dirs[i]))
-			{ MCC_TRACE("br\n"); return sys_dirs[i]; }
+		{ MCC_TRACE("br\n"); if (mcc_dir_has_include(sys_dirs[i]))
+			{ MCC_TRACE("br\n"); return sys_dirs[i]; } }
 	return MCC_CONFIG_MCCDIR;
 }
 
@@ -1124,10 +1124,10 @@ LIBMCCAPI void mcc_set_lib_path(MCCState *s, const char *path) { MCC_TRACE("ente
 ST_FUNC DLLReference *mcc_add_dllref(MCCState *s1, const char *dllname, int level) { MCC_TRACE("enter\n");
 	DLLReference *ref = NULL;
 	for (int i = 0; i < s1->nb_loaded_dlls; i++)
-		if (0 == strcmp(s1->loaded_dlls[i]->name, dllname)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (0 == strcmp(s1->loaded_dlls[i]->name, dllname)) { MCC_TRACE("br\n");
 			ref = s1->loaded_dlls[i];
 			break;
-		}
+		} }
 	if (level == -1)
 		{ MCC_TRACE("br\n"); return ref; }
 	if (ref) { MCC_TRACE("br\n");
@@ -1474,7 +1474,7 @@ LIBMCCAPI int mcc_add_framework(MCCState *s1, const char *name) { MCC_TRACE("ent
 
 ST_FUNC void mcc_add_pragma_libs(MCCState *s1) { MCC_TRACE("enter\n");
 	for (int i = 0; i < s1->nb_pragma_libs; i++)
-		mcc_add_library(s1, s1->pragma_libs[i]);
+		{ MCC_TRACE("br\n"); mcc_add_library(s1, s1->pragma_libs[i]); }
 }
 
 static int strstart(const char *val, const char **str) { MCC_TRACE("enter\n");
@@ -1528,8 +1528,8 @@ redo:
 	} else if (c == ':')
 		{ MCC_TRACE("br\n"); goto succ; }
 	while (*q)
-		if (*q++ == '|')
-			{ MCC_TRACE("br\n"); goto redo; }
+		{ MCC_TRACE("br\n"); if (*q++ == '|')
+			{ MCC_TRACE("br\n"); goto redo; } }
 	return 0;
 succ:
 	o->arg = p;
@@ -2048,10 +2048,10 @@ static void insert_args(MCCState *s1, char ***pargv, int *pargc, int optind, con
 	int argc = 0;
 	char **argv = NULL;
 	for (int i = 0; i < *pargc; ++i)
-		if (i == optind)
+		{ MCC_TRACE("br\n"); if (i == optind)
 			{ MCC_TRACE("br\n"); dynarray_split(&argv, &argc, p, sep); }
 		else
-			{ MCC_TRACE("br\n"); dynarray_add(&argv, &argc, mcc_strdup((*pargv)[i])); }
+			{ MCC_TRACE("br\n"); dynarray_add(&argv, &argc, mcc_strdup((*pargv)[i])); } }
 	dynarray_reset(&s1->argv, &s1->argc);
 	*pargc = s1->argc = argc;
 	*pargv = s1->argv = argv;
@@ -2279,9 +2279,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				size_t n = strcspn(p, ",");
 				unsigned i;
 				for (i = 0; i < countof(debug_cats); i++)
-					if (strlen(debug_cats[i].name) == n &&
+					{ MCC_TRACE("br\n"); if (strlen(debug_cats[i].name) == n &&
 							!memcmp(debug_cats[i].name, p, n))
-						{ MCC_TRACE("br\n"); break; }
+						{ MCC_TRACE("br\n"); break; } }
 				if (i == countof(debug_cats))
 					{ MCC_TRACE("br\n"); return mcc_error_noabort("unknown debug category '%.*s'", (int)n, p); }
 				g_debug |= debug_cats[i].bit;
@@ -2404,7 +2404,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			} else { MCC_TRACE("br\n");
 				/* each -v sets the lowest clear tier bit: x | (x+1). */
 				do
-					s->verbose = (unsigned char)(s->verbose | (s->verbose + 1));
+					{ MCC_TRACE("br\n"); s->verbose = (unsigned char)(s->verbose | (s->verbose + 1)); }
 				while (*optarg++ == 'v');
 			}
 			continue;
@@ -2446,7 +2446,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 					const char *end = tok;
 					int n;
 					while (*end && *end != ',')
-						end++;
+						{ MCC_TRACE("br\n"); end++; }
 					n = (int)(end - tok);
 					if (san_tok_eq(tok, n, "undefined") ||
 							san_tok_eq(tok, n, "signed-integer-overflow") ||
@@ -2590,8 +2590,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			int extra = 0, sep = s->dep_target ? 1 : 0;
 			if (popt->index == MCC_OPTION_MQ)
 				{ MCC_TRACE("br\n"); for (const char *q = src; *q; q++)
-					if (*q == '$')
-						{ MCC_TRACE("br\n"); extra++; } }
+					{ MCC_TRACE("br\n"); if (*q == '$')
+						{ MCC_TRACE("br\n"); extra++; } } }
 			{
 				int oldlen = s->dep_target ? (int)strlen(s->dep_target) : 0;
 				char *nt = mcc_malloc(oldlen + sep + (int)strlen(src) + extra + 1);

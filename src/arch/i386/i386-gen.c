@@ -50,7 +50,7 @@ ST_FUNC void gsym_addr(int t, int a) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_fill_nops(int bytes) { MCC_TRACE("enter\n");
 	while (bytes--)
-		g(0x90);
+		{ MCC_TRACE("br\n"); g(0x90); }
 }
 
 static void gen_static_call(int v);

@@ -54,11 +54,11 @@ static const char *sym_esc(const char *s) { MCC_TRACE("enter\n");
 	if ((s[0] == 'x' || s[0] == 'f') && s[1] >= '0' && s[1] <= '9')
 		{ MCC_TRACE("br\n"); return "0+"; }
 	for (i = 0; i < 32; i++)
-		if (!strcmp(s, xrn[i]) || !strcmp(s, frn[i]))
-			{ MCC_TRACE("br\n"); return "0+"; }
+		{ MCC_TRACE("br\n"); if (!strcmp(s, xrn[i]) || !strcmp(s, frn[i]))
+			{ MCC_TRACE("br\n"); return "0+"; } }
 	for (i = 0; csr[i]; i++)
-		if (!strcmp(s, csr[i]))
-			{ MCC_TRACE("br\n"); return "0+"; }
+		{ MCC_TRACE("br\n"); if (!strcmp(s, csr[i]))
+			{ MCC_TRACE("br\n"); return "0+"; } }
 	return "";
 }
 

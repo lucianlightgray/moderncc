@@ -87,11 +87,11 @@ MCCJIT_LOCAL uint64_t mccjit_salt_witness(void) { MCC_TRACE("enter\n");
 	(void)s;
 #ifdef MCC_VERSION_STR
 	for (s = MCC_VERSION_STR; *s; s++)
-		h = (h ^ (unsigned char)*s) * 0x100000001b3ull;
+		{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 #endif
 #ifdef MCC_CONFIG_TRIPLET
 	for (s = MCC_CONFIG_TRIPLET; *s; s++)
-		h = (h ^ (unsigned char)*s) * 0x100000001b3ull;
+		{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 #endif
 	return h;
 }
@@ -165,11 +165,11 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		allfp = (it.nparam >= 1 && it.nparam <= MCCJIT_KGC_MAXARG &&
 						 ((int)it.ret_type_t & VT_BTYPE) == VT_DOUBLE);
 		for (qi = 0; allfp && qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++)
-			if (((int)it.param_type_t[qi] & VT_BTYPE) != VT_DOUBLE)
-				{ MCC_TRACE("br\n"); allfp = 0; }
+			{ MCC_TRACE("br\n"); if (((int)it.param_type_t[qi] & VT_BTYPE) != VT_DOUBLE)
+				{ MCC_TRACE("br\n"); allfp = 0; } }
 		mccjit_last_allfp = allfp;
 		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
-			mccjit_last_param_t[qi] = 0;
+			{ MCC_TRACE("br\n"); mccjit_last_param_t[qi] = 0; }
 		/* K4A/L12A scalar mixed GP+FP: each param and the return is either a GP
 			 (int/ptr, non-bitfield) or a scalar double. SysV assigns GP args to
 			 rdi.. and SSE args to xmm0.. with independent counters, so the two
@@ -274,8 +274,8 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("e
 	if (!name || !name[0] || !ast || !sym || mccjit_internal_compile)
 		{ MCC_TRACE("br\n"); return; }
 	for (e = mccjit_embed_fns; e; e = e->next)
-		if (!strcmp(e->name, name))
-			{ MCC_TRACE("br\n"); return; }
+		{ MCC_TRACE("br\n"); if (!strcmp(e->name, name))
+			{ MCC_TRACE("br\n"); return; } }
 	mccjit_buf_init(&b);
 	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
@@ -359,7 +359,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 			uint32_t ptypes[MCCJIT_KGC_MAXARG];
 			uint32_t qi;
 			for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
-				ptypes[qi] = mccjit_last_param_t[qi];
+				{ MCC_TRACE("br\n"); ptypes[qi] = mccjit_last_param_t[qi]; }
 			baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 			memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 			if (baseline) { MCC_TRACE("br\n");
@@ -427,7 +427,7 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 		void *baseline;
 		int memoize_ok;
 		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
-			ptypes[qi] = mccjit_last_param_t[qi];
+			{ MCC_TRACE("br\n"); ptypes[qi] = mccjit_last_param_t[qi]; }
 		baseline = mcc_jit_recompile_blob(blob, (size_t)len);
 		memoize_ok = (mccjit_last_purity == AST_PURITY_TIER0);
 		if (baseline) { MCC_TRACE("br\n");
@@ -501,7 +501,7 @@ static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) 
 	}
 	if (st->nsample < MCCJIT_PROFILE_SAMPLES) { MCC_TRACE("br\n");
 		for (i = 0; i < MCCJIT_KGC_MAXARG; i++)
-			st->sample[st->nsample][i] = regs[MCCJIT_KGC_MAXARG - 1 - i];
+			{ MCC_TRACE("br\n"); st->sample[st->nsample][i] = regs[MCCJIT_KGC_MAXARG - 1 - i]; }
 		st->nsample++;
 	}
 	st->argseen++;
@@ -600,7 +600,7 @@ static void *mccjit_pool_worker(void *arg) { MCC_TRACE("enter\n");
 		MccjitSwapJob *job;
 		pthread_mutex_lock(&mccjit_pool.qlock);
 		while (!mccjit_pool.head)
-			pthread_cond_wait(&mccjit_pool.qcond, &mccjit_pool.qlock);
+			{ MCC_TRACE("br\n"); pthread_cond_wait(&mccjit_pool.qcond, &mccjit_pool.qlock); }
 		job = mccjit_pool.head;
 		mccjit_pool.head = job->next;
 		if (!mccjit_pool.head)
@@ -922,12 +922,12 @@ static int mccjit_qsbr_register(void) { MCC_TRACE("enter\n");
 	int i, slot = -1;
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++)
-		if (!mccjit_qsbr.used[i]) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (!mccjit_qsbr.used[i]) { MCC_TRACE("br\n");
 			slot = i;
 			mccjit_qsbr.used[i] = 1;
 			mccjit_qsbr.local[i] = mccjit_qsbr.global;
 			break;
-		}
+		} }
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 	return slot;
 }
@@ -954,11 +954,11 @@ static uint64_t mccjit_qsbr_min_local(void) { MCC_TRACE("enter\n");
 	int i;
 	uint64_t m = __atomic_load_n(&mccjit_qsbr.global, __ATOMIC_ACQUIRE);
 	for (i = 0; i < MCCJIT_QSBR_SLOTS; i++)
-		if (mccjit_qsbr.used[i]) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (mccjit_qsbr.used[i]) { MCC_TRACE("br\n");
 			uint64_t l = __atomic_load_n(&mccjit_qsbr.local[i], __ATOMIC_ACQUIRE);
 			if (l < m)
 				{ MCC_TRACE("br\n"); m = l; }
-		}
+		} }
 	return m;
 }
 
@@ -1006,8 +1006,8 @@ static void mccjit_qsbr_reset(void) { MCC_TRACE("enter\n");
 	int i;
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	for (i = 0; i < mccjit_qsbr.nlimbo; i++)
-		if (mccjit_qsbr.limbo[i].ptr && mccjit_qsbr.limbo[i].size)
-			{ MCC_TRACE("br\n"); munmap(mccjit_qsbr.limbo[i].ptr, mccjit_qsbr.limbo[i].size); }
+		{ MCC_TRACE("br\n"); if (mccjit_qsbr.limbo[i].ptr && mccjit_qsbr.limbo[i].size)
+			{ MCC_TRACE("br\n"); munmap(mccjit_qsbr.limbo[i].ptr, mccjit_qsbr.limbo[i].size); } }
 	mccjit_qsbr.nlimbo = 0;
 	mccjit_qsbr.global = 1;
 	mccjit_qsbr.reclaimed = 0;
@@ -1100,8 +1100,8 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 							"static struct __mccjit_reg { void **slot; const unsigned char *blob; "
 							"unsigned long len; } __mccjit_registry[] = {\n");
 	for (e = mccjit_embed_fns; e; e = e->next)
-		cstr_printf(&cs, "{&__mccjit_slot_%s, __mccjit_blob_%s, %luUL},\n", e->name,
-								e->name, (unsigned long)e->len);
+		{ MCC_TRACE("br\n"); cstr_printf(&cs, "{&__mccjit_slot_%s, __mccjit_blob_%s, %luUL},\n", e->name,
+								e->name, (unsigned long)e->len); }
 	cstr_printf(&cs, "};\n");
 	{
 		int def_on = (s1->output_type == MCC_OUTPUT_MEMORY && s1->jit >= 0)
@@ -1774,7 +1774,7 @@ static int mccjit_kgc_grow(MccjitKgc *k, uint64_t need) { MCC_TRACE("enter\n");
 	uint64_t ncap = k->hdr->cap ? k->hdr->cap : 1;
 	size_t nbytes;
 	while (ncap < need)
-		ncap *= 2;
+		{ MCC_TRACE("br\n"); ncap *= 2; }
 	nbytes = mccjit_kgc_bytes(ncap, k->arity);
 	if (k->anon) { MCC_TRACE("br\n");
 		void *nm = mmap(0, nbytes, PROT_READ | PROT_WRITE,
@@ -1829,7 +1829,7 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	int64_t bval, vval;
 	uint32_t i;
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
-		tuple[i] = 0;
+		{ MCC_TRACE("br\n"); tuple[i] = 0; }
 	tuple[0] = x;
 	pthread_mutex_lock(&k->lock);
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
@@ -1938,8 +1938,8 @@ static double mccjit_bench_run(void *fn, const int64_t *tuples, uint32_t ntuples
 	if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0)
 		{ MCC_TRACE("br\n"); return 1e300; }
 	for (r = 0; r < reps; r++)
-		for (i = 0; i < ntuples; i++)
-			sink += mccjit_invoke(fn, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+		{ MCC_TRACE("br\n"); for (i = 0; i < ntuples; i++)
+			{ MCC_TRACE("br\n"); sink += mccjit_invoke(fn, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide); } }
 	mccjit_bench_sink ^= sink;
 	return mccjit_elapsed(&t0);
 }
@@ -1991,8 +1991,8 @@ MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 	if (nt > MCCJIT_PROFILE_SAMPLES)
 		{ MCC_TRACE("br\n"); nt = MCCJIT_PROFILE_SAMPLES; }
 	for (i = 0; i < nt; i++)
-		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
-			tuples[i * MCCJIT_KGC_ARITY + j] = st->sample[i][j];
+		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = st->sample[i][j]; } }
 	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide);
 }
 
@@ -2004,9 +2004,9 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	int64_t bval, vval;
 	uint32_t i;
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
-		tuple[i] = 0;
+		{ MCC_TRACE("br\n"); tuple[i] = 0; }
 	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
-		tuple[i] = argv[i];
+		{ MCC_TRACE("br\n"); tuple[i] = argv[i]; }
 	pthread_mutex_lock(&k->lock);
 	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
@@ -2057,9 +2057,9 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 	uint64_t bbits = 0, vbits = 0;
 	uint32_t i;
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
-		tuple[i] = 0;
+		{ MCC_TRACE("br\n"); tuple[i] = 0; }
 	for (i = 0; i < nargs && i < MCCJIT_KGC_ARITY; i++)
-		memcpy(&tuple[i], &argv[i], sizeof tuple[i]);
+		{ MCC_TRACE("br\n"); memcpy(&tuple[i], &argv[i], sizeof tuple[i]); }
 	pthread_mutex_lock(&k->lock);
 	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
@@ -2148,11 +2148,11 @@ static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 														 const double *fpv, int64_t *tuple) { MCC_TRACE("enter\n");
 	uint32_t i, a = 0;
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
-		tuple[i] = 0;
+		{ MCC_TRACE("br\n"); tuple[i] = 0; }
 	for (i = 0; i < k->mx_ngp && a < MCCJIT_KGC_ARITY; i++, a++)
-		tuple[a] = gpv[i];
+		{ MCC_TRACE("br\n"); tuple[a] = gpv[i]; }
 	for (i = 0; i < k->mx_nsse && a < MCCJIT_KGC_ARITY; i++, a++)
-		memcpy(&tuple[a], &fpv[i], sizeof tuple[a]);
+		{ MCC_TRACE("br\n"); memcpy(&tuple[a], &fpv[i], sizeof tuple[a]); }
 }
 
 static void mccjit_mixed_poison_update(MccjitKgc *k) { MCC_TRACE("enter\n");
@@ -2577,7 +2577,7 @@ int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 		int bv = baseline((int)x);
 		uint32_t j;
 		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
-			tuple[j] = 0;
+			{ MCC_TRACE("br\n"); tuple[j] = 0; }
 		tuple[0] = x;
 		hit = mccjit_kgc_contains(&kgc, tuple);
 		returned = mccjit_kgc_call1(&kgc, variant, baseline, x, &flagged);
@@ -2604,7 +2604,7 @@ int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 		int64_t t7[MCCJIT_KGC_ARITY];
 		uint32_t j;
 		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
-			t7[j] = 0;
+			{ MCC_TRACE("br\n"); t7[j] = 0; }
 		t7[0] = 7;
 		if (!mccjit_kgc_contains(&kgc, t7)) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-kgc: x=7 not cached after verify\n");
@@ -2631,7 +2631,7 @@ int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 				int64_t t[MCCJIT_KGC_ARITY];
 				uint32_t m;
 				for (m = 0; m < MCCJIT_KGC_ARITY; m++)
-					t[m] = 0;
+					{ MCC_TRACE("br\n"); t[m] = 0; }
 				t[0] = vals[j];
 				mccjit_kgc_insert(&p, t);
 			}
@@ -2648,7 +2648,7 @@ int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 					int64_t t[MCCJIT_KGC_ARITY];
 					uint32_t m;
 					for (m = 0; m < MCCJIT_KGC_ARITY; m++)
-						t[m] = 0;
+						{ MCC_TRACE("br\n"); t[m] = 0; }
 					t[0] = vals[j];
 					if (!mccjit_kgc_contains(&p, t))
 						{ MCC_TRACE("br\n"); survived = 0; }
@@ -3777,7 +3777,7 @@ static long mccjit_bench_fast_fn(long x) { MCC_TRACE("enter\n");
 	long s = 0;
 	int i;
 	for (i = 0; i < 30; i++)
-		s += (x ^ (long)i) * 2654435761L;
+		{ MCC_TRACE("br\n"); s += (x ^ (long)i) * 2654435761L; }
 	return s;
 }
 
@@ -3785,7 +3785,7 @@ static long mccjit_bench_slow_fn(long x) { MCC_TRACE("enter\n");
 	long s = 0;
 	int i;
 	for (i = 0; i < 900; i++)
-		s += (x ^ (long)i) * 2654435761L;
+		{ MCC_TRACE("br\n"); s += (x ^ (long)i) * 2654435761L; }
 	return s;
 }
 
@@ -3799,8 +3799,8 @@ int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 	setenv("MCC_JIT_BENCH_ITERS", "3000", 1);
 	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
 	for (i = 0; i < nt; i++)
-		for (j = 0; j < MCCJIT_KGC_ARITY; j++)
-			tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1);
+		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1); } }
 
 	r_win = mccjit_bench_pair((void *)mccjit_bench_fast_fn,
 													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1);
@@ -3934,19 +3934,19 @@ int mccjit_selftest_patch(void) { MCC_TRACE("enter\n");
 		double d;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		for (k = 0; k < iters; k++)
-			acc += mccjit_patch_t1((int)k);
+			{ MCC_TRACE("br\n"); acc += mccjit_patch_t1((int)k); }
 		d = mccjit_elapsed(&t0);
 		if (d < dsm)
 			{ MCC_TRACE("br\n"); dsm = d; }
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		for (k = 0; k < iters; k++)
-			acc += sf((int)k);
+			{ MCC_TRACE("br\n"); acc += sf((int)k); }
 		d = mccjit_elapsed(&t0);
 		if (d < dslot)
 			{ MCC_TRACE("br\n"); dslot = d; }
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		for (k = 0; k < iters; k++)
-			acc += tf((int)k);
+			{ MCC_TRACE("br\n"); acc += tf((int)k); }
 		d = mccjit_elapsed(&t0);
 		if (d < dtramp)
 			{ MCC_TRACE("br\n"); dtramp = d; }
@@ -3958,11 +3958,11 @@ int mccjit_selftest_patch(void) { MCC_TRACE("enter\n");
 		void *a = (void *)mccjit_patch_t1, *b = (void *)mccjit_patch_t2;
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		for (k = 0; k < iters; k++)
-			__atomic_store_n(slot, (k & 1) ? a : b, __ATOMIC_RELEASE);
+			{ MCC_TRACE("br\n"); __atomic_store_n(slot, (k & 1) ? a : b, __ATOMIC_RELEASE); }
 		dswap_ptr = mccjit_elapsed(&t0);
 		clock_gettime(CLOCK_MONOTONIC, &t0);
 		for (k = 0; k < iters; k++)
-			memcpy(imm, (k & 1) ? &a : &b, 8);
+			{ MCC_TRACE("br\n"); memcpy(imm, (k & 1) ? &a : &b, 8); }
 		dswap_inplace = mccjit_elapsed(&t0);
 		__atomic_store_n(slot, (void *)mccjit_patch_t1, __ATOMIC_RELEASE);
 		memcpy(imm, &(void *){(void *)mccjit_patch_t1}, 8);
@@ -4067,8 +4067,8 @@ int mccjit_selftest_qsbr(void) { MCC_TRACE("enter\n");
 		int rounds = 200;
 		int i, n = 0;
 		for (i = 0; i < 3; i++)
-			if (pthread_create(&th[i], NULL, mccjit_qsbr_thread, &rounds) == 0)
-				{ MCC_TRACE("br\n"); n++; }
+			{ MCC_TRACE("br\n"); if (pthread_create(&th[i], NULL, mccjit_qsbr_thread, &rounds) == 0)
+				{ MCC_TRACE("br\n"); n++; } }
 		for (i = 0; i < 8; i++) { MCC_TRACE("br\n");
 			void *pg =
 					mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -4077,7 +4077,7 @@ int mccjit_selftest_qsbr(void) { MCC_TRACE("enter\n");
 			mccjit_pool_nap();
 		}
 		for (i = 0; i < n; i++)
-			pthread_join(th[i], NULL);
+			{ MCC_TRACE("br\n"); pthread_join(th[i], NULL); }
 		mccjit_qsbr_reclaim();
 		printf("mccjit-selftest-qsbr: MT smoke (%d threads) after join nlimbo=%d "
 					 "reclaimed=%llu leaked=%llu %s\n",
@@ -4599,7 +4599,7 @@ int mccjit_selftest_vrange(void) { MCC_TRACE("enter\n");
 		return 0;
 	}
 	for (i = 1; i <= 5; i++)
-		((int (*)(int, int))stub)(7, i);
+		{ MCC_TRACE("br\n"); ((int (*)(int, int))stub)(7, i); }
 
 	if (!mccjit_profile_pick_const(&st, 2, 3, &pidx, &pval) || pidx != 0 ||
 			pval != 7) { MCC_TRACE("br\n");
@@ -4655,7 +4655,7 @@ int mccjit_selftest_vrange(void) { MCC_TRACE("enter\n");
 		stub2 = mccjit_make_counter_stub(&st2);
 		if (stub2) { MCC_TRACE("br\n");
 			for (i = 0; i < 5; i++)
-				((int (*)(int, int))stub2)(i + 1, i * 2);
+				{ MCC_TRACE("br\n"); ((int (*)(int, int))stub2)(i + 1, i * 2); }
 			if (mccjit_profile_pick_const(&st2, 2, 3, NULL, NULL)) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-vrange: false-positive const on varying params "
 							 "FAIL\n");
@@ -4729,11 +4729,11 @@ int mccjit_selftest_profile(void) { MCC_TRACE("enter\n");
 		fails++;
 	} else { MCC_TRACE("br\n");
 		for (i = 0; i < 5; i++)
-			if (st.sample[i][0] != inputs[i]) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (st.sample[i][0] != inputs[i]) { MCC_TRACE("br\n");
 				printf("mccjit-selftest-profile: sample[%d][0]=%lld (expect %lld) FAIL\n",
 							 i, (long long)st.sample[i][0], (long long)inputs[i]);
 				fails++;
-			}
+			} }
 	}
 	pthread_mutex_destroy(&st.lock);
 
@@ -4908,7 +4908,7 @@ int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 		return 0;
 	}
 	for (i = 0; i < 6; i++)
-		((long (*)(long))stub)((long)inputs[i]);
+		{ MCC_TRACE("br\n"); ((long (*)(long))stub)((long)inputs[i]); }
 	printf("mccjit-selftest-l4a: captured nsample=%d from the hot counter\n",
 				 st.nsample);
 	if (st.nsample <= 0)
@@ -4953,7 +4953,7 @@ int mccjit_selftest_benchwire(void) { MCC_TRACE("enter\n");
 	pthread_mutex_init(&st.lock, NULL);
 	st.nsample = 4;
 	for (i = 0; i < st.nsample; i++)
-		st.sample[i][0] = 11 + i;
+		{ MCC_TRACE("br\n"); st.sample[i][0] = 11 + i; }
 	memset(&empty, 0, sizeof empty);
 	pthread_mutex_init(&empty.lock, NULL);
 

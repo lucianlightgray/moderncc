@@ -57,10 +57,10 @@ int main(void) { MCC_TRACE("enter\n");
 		buf[0] = 42;
 		roundtrip(codecs[ci].codec, "one", codecs[ci].enc, codecs[ci].dec, buf, 1);
 		for (i = 0; i < 40000; i++)
-			buf[i] = 0xAB;
+			{ MCC_TRACE("br\n"); buf[i] = 0xAB; }
 		roundtrip(codecs[ci].codec, "runs", codecs[ci].enc, codecs[ci].dec, buf, 40000);
 		for (i = 0; i < 40000; i++)
-			buf[i] = "ABCABCDABCDE this is highly repetitive text. "[i % 45];
+			{ MCC_TRACE("br\n"); buf[i] = "ABCABCDABCDE this is highly repetitive text. "[i % 45]; }
 		roundtrip(codecs[ci].codec, "text", codecs[ci].enc, codecs[ci].dec, buf, 40000);
 		{
 			unsigned long r = 0x9e3779b9UL;
@@ -72,7 +72,7 @@ int main(void) { MCC_TRACE("enter\n");
 		roundtrip(codecs[ci].codec, "random", codecs[ci].enc, codecs[ci].dec, buf, 40000);
 		/* KwKwK stressor: repeated short cycles that trigger self-referential codes */
 		for (i = 0; i < 40000; i++)
-			buf[i] = (unsigned char)('a' + (i % 3));
+			{ MCC_TRACE("br\n"); buf[i] = (unsigned char)('a' + (i % 3)); }
 		roundtrip(codecs[ci].codec, "cycle", codecs[ci].enc, codecs[ci].dec, buf, 40000);
 	}
 	printf("\n%d checks, %d failures\n", checks, fails);

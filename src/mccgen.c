@@ -168,11 +168,11 @@ static void seqp_check(void) { MCC_TRACE("enter\n");
 		if (!o || seqp_ev[i].kind != SEQP_WRITE)
 			{ MCC_TRACE("br\n"); continue; }
 		for (j = i; j < nb_seqp; j++)
-			if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff && seqp_ev[j].kind == SEQP_WRITE)
-				{ MCC_TRACE("br\n"); writes++; }
+			{ MCC_TRACE("br\n"); if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff && seqp_ev[j].kind == SEQP_WRITE)
+				{ MCC_TRACE("br\n"); writes++; } }
 		for (j = i + 1; j < nb_seqp; j++)
-			if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff)
-				{ MCC_TRACE("br\n"); seqp_ev[j].obj = NULL; }
+			{ MCC_TRACE("br\n"); if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff)
+				{ MCC_TRACE("br\n"); seqp_ev[j].obj = NULL; } }
 		if (writes >= 2)
 			{ MCC_TRACE("br\n"); mcc_warning_c(warn_sequence_point)(
 					"operation on '%s' may be undefined", get_tok_str(o->v, NULL)); }
@@ -248,7 +248,7 @@ static int struct_has_flexible_member(CType *type) { MCC_TRACE("enter\n");
 	if ((type->t & VT_BTYPE) != VT_STRUCT)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (f = type->ref->next; f; f = f->next)
-		last = f;
+		{ MCC_TRACE("br\n"); last = f; }
 	return last && (last->type.t & VT_ARRAY) && type_size(&last->type, &align) < 0;
 }
 
@@ -274,7 +274,7 @@ ST_FUNC int gjmp_append(int n, int t) { MCC_TRACE("enter\n");
 	if (n) { MCC_TRACE("br\n");
 		uint32_t n1 = n, n2;
 		while ((n2 = read32le(p = cur_text_section->data + n1)))
-			n1 = n2;
+			{ MCC_TRACE("br\n"); n1 = n2; }
 		write32le(p, t);
 		t = n;
 	}
@@ -434,13 +434,13 @@ static int fold_bit_builtin(int op, int W, int64_t s) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
 	case BB_CLZ:
 		for (i = W - 1; i >= 0 && !((u >> i) & 1); i--)
-			n++;
+			{ MCC_TRACE("br\n"); n++; }
 		return n;
 	case BB_CTZ:
 		if (u == 0)
 			{ MCC_TRACE("br\n"); return W; }
 		for (i = 0; i < W && !((u >> i) & 1); i++)
-			n++;
+			{ MCC_TRACE("br\n"); n++; }
 		return n;
 	case BB_FFS:
 		if (u == 0)
@@ -450,16 +450,16 @@ static int fold_bit_builtin(int op, int W, int64_t s) { MCC_TRACE("enter\n");
 		return i + 1;
 	case BB_POPCOUNT:
 		for (i = 0; i < W; i++)
-			n += (u >> i) & 1;
+			{ MCC_TRACE("br\n"); n += (u >> i) & 1; }
 		return n;
 	case BB_PARITY:
 		for (i = 0; i < W; i++)
-			n += (u >> i) & 1;
+			{ MCC_TRACE("br\n"); n += (u >> i) & 1; }
 		return n & 1;
 	case BB_CLRSB: {
 		int sign = (u >> (W - 1)) & 1;
 		for (i = W - 2; i >= 0 && (int)((u >> i) & 1) == sign; i--)
-			n++;
+			{ MCC_TRACE("br\n"); n++; }
 		return n;
 	}
 	}
@@ -663,7 +663,7 @@ ST_FUNC void mccgen_finish(MCCState *s1) { MCC_TRACE("enter\n");
 	cstr_free(&initstr);
 	dynarray_reset(&stk_data, &nb_stk_data);
 	while (cur_switch)
-		end_switch();
+		{ MCC_TRACE("br\n"); end_switch(); }
 	local_scope = 0;
 	loop_scope = NULL;
 	all_cleanups = NULL;
@@ -801,7 +801,7 @@ ST_FUNC void greloca(Section *s, Sym *sym, unsigned long offset, int type,
 			if (sym->sym_scope && (sym->type.t & (VT_STATIC | VT_EXTERN)) == (VT_STATIC | VT_EXTERN)) { MCC_TRACE("br\n");
 				Sym *s = sym;
 				while (s->prev_tok)
-					s = s->prev_tok;
+					{ MCC_TRACE("br\n"); s = s->prev_tok; }
 				s->c = sym->c;
 			}
 		}
@@ -942,7 +942,7 @@ ST_FUNC Sym *global_identifier_push(int v, int t, int c) { MCC_TRACE("enter\n");
 	if (v < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 		ps = &table_ident[v - TOK_IDENT]->sym_identifier;
 		while (*ps != NULL && (*ps)->sym_scope)
-			ps = &(*ps)->prev_tok;
+			{ MCC_TRACE("br\n"); ps = &(*ps)->prev_tok; }
 		s->prev_tok = *ps;
 		*ps = s;
 	}
@@ -983,7 +983,7 @@ ST_FUNC Sym *label_push(Sym **ptop, int v, int flags) { MCC_TRACE("enter\n");
 	ps = &table_ident[v - TOK_IDENT]->sym_label;
 	if (ptop == &global_label_stack) { MCC_TRACE("br\n");
 		while (*ps != NULL)
-			ps = &(*ps)->prev_tok;
+			{ MCC_TRACE("br\n"); ps = &(*ps)->prev_tok; }
 	}
 	s->prev_tok = *ps;
 	*ps = s;
@@ -1142,7 +1142,7 @@ ST_FUNC void vrev(int n) { MCC_TRACE("enter\n");
 	SValue tmp;
 	vcheck_cmp();
 	for (i = 0, n = -n; i > ++n; --i)
-		tmp = vtop[i], vtop[i] = vtop[n], vtop[n] = tmp;
+		{ MCC_TRACE("br\n"); tmp = vtop[i], vtop[i] = vtop[n], vtop[n] = tmp; }
 }
 
 ST_FUNC void vset_VT_CMP(int op) { MCC_TRACE("enter\n");
@@ -1429,7 +1429,7 @@ static Sym *external_sym(int v, CType *type, int r, AttributeDef *ad) { MCC_TRAC
 
 	s = sym_find(v);
 	while (s && s->sym_scope)
-		s = s->prev_tok;
+		{ MCC_TRACE("br\n"); s = s->prev_tok; }
 
 	if (!s) { MCC_TRACE("br\n");
 		s = global_identifier_push(v, type->t, 0);
@@ -1450,7 +1450,7 @@ static Sym *external_sym(int v, CType *type, int r, AttributeDef *ad) { MCC_TRAC
 ST_FUNC void save_regs(int n) { MCC_TRACE("enter\n");
 	SValue *p, *p1;
 	for (p = vstack, p1 = vtop - n; p <= p1; p++)
-		save_reg(p->r);
+		{ MCC_TRACE("br\n"); save_reg(p->r); }
 }
 
 ST_FUNC void save_reg(int r) { MCC_TRACE("enter\n");
@@ -1712,11 +1712,11 @@ ST_FUNC void gbound_args(int nb_args) { MCC_TRACE("enter\n");
 	SValue *sv;
 
 	for (i = 1; i <= nb_args; ++i)
-		if (vtop[1 - i].r & VT_MUSTBOUND) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (vtop[1 - i].r & VT_MUSTBOUND) { MCC_TRACE("br\n");
 			vrotb(i);
 			gbound();
 			vrott(i);
-		}
+		} }
 
 	sv = vtop - nb_args;
 	if (sv->r & VT_SYM) { MCC_TRACE("br\n");
@@ -2159,7 +2159,7 @@ static void gen_opl(int op) { MCC_TRACE("enter\n");
 			gen_op(TOK_UMULL);
 			lexpand();
 			for (i = 0; i < 4; i++)
-				vrotb(6);
+				{ MCC_TRACE("br\n"); vrotb(6); }
 			tmp = vtop[0];
 			vtop[0] = vtop[-2];
 			vtop[-2] = tmp;
@@ -3918,7 +3918,7 @@ ST_FUNC int exact_log2p1(int i) { MCC_TRACE("enter\n");
 	if (!i)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (ret = 1; i >= 1 << 8; ret += 8)
-		i >>= 8;
+		{ MCC_TRACE("br\n"); i >>= 8; }
 	if (i >= 1 << 4)
 		{ MCC_TRACE("br\n"); ret += 4, i >>= 4; }
 	if (i >= 1 << 2)
@@ -4280,7 +4280,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); f->type.t = (f->type.t & ~VT_BTYPE) | VT_INT, size = 4; }
 
 				while (bit_pos >= align * 8)
-					c += align, bit_pos -= align * 8;
+					{ MCC_TRACE("br\n"); c += align, bit_pos -= align * 8; }
 				offset = c;
 
 				if (f->v & SYM_FIRST_ANOM)
@@ -5912,8 +5912,8 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) { MCC_TRA
 	rc.nb = 0;
 	ret = type_decl_1(type, ad, v, td, &rc);
 	while (rc.nb)
-		if ((rc.pointee[--rc.nb]->type.t & VT_BTYPE) == VT_FUNC)
-			{ MCC_TRACE("br\n"); bad = 1; }
+		{ MCC_TRACE("br\n"); if ((rc.pointee[--rc.nb]->type.t & VT_BTYPE) == VT_FUNC)
+			{ MCC_TRACE("br\n"); bad = 1; } }
 	if (bad)
 		{ MCC_TRACE("br\n"); mcc_error("pointer to function type may not be "
 							"'restrict'-qualified"); }
@@ -6589,12 +6589,12 @@ static int format_func_spec(const char *name, int *is_scanf,
 	if (!name)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (i = 0; i < sizeof tbl / sizeof tbl[0]; i++)
-		if (!strcmp(name, tbl[i].n)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (!strcmp(name, tbl[i].n)) { MCC_TRACE("br\n");
 			*is_scanf = tbl[i].scanf;
 			*fmt_arg = tbl[i].fmt;
 			*first_vararg = tbl[i].va;
 			return 1;
-		}
+		} }
 	return 0;
 }
 
@@ -6648,7 +6648,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 			continue;
 		}
 		while (i < favail && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '#' || fmt[i] == '0'))
-			i++;
+			{ MCC_TRACE("br\n"); i++; }
 		if (is_scanf && i < favail && fmt[i] == '*') { MCC_TRACE("br\n");
 			i++;
 		}
@@ -6659,7 +6659,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 			i++;
 		} else
 			{ MCC_TRACE("br\n"); while (i < favail && fmt[i] >= '0' && fmt[i] <= '9')
-				i++; }
+				{ MCC_TRACE("br\n"); i++; } }
 		if (i < favail && fmt[i] == '.') { MCC_TRACE("br\n");
 			i++;
 			if (!is_scanf && i < favail && fmt[i] == '*') { MCC_TRACE("br\n");
@@ -6669,10 +6669,10 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 				i++;
 			} else
 				{ MCC_TRACE("br\n"); while (i < favail && fmt[i] >= '0' && fmt[i] <= '9')
-					i++; }
+					{ MCC_TRACE("br\n"); i++; } }
 		}
 		while (i < favail && (fmt[i] == 'h' || fmt[i] == 'l' || fmt[i] == 'L' || fmt[i] == 'j' || fmt[i] == 'z' || fmt[i] == 't'))
-			i++;
+			{ MCC_TRACE("br\n"); i++; }
 		if (i >= favail || !fmt[i])
 			{ MCC_TRACE("br\n"); break; }
 		conv = fmt[i++];
@@ -7084,7 +7084,7 @@ static double foldm_powi(double x, int n) { MCC_TRACE("enter\n");
 	int neg = n < 0, i, m = neg ? -n : n;
 	double r = 1.0;
 	for (i = 0; i < m; i++)
-		r *= x;
+		{ MCC_TRACE("br\n"); r *= x; }
 	return neg ? 1.0 / r : r;
 }
 
@@ -8326,8 +8326,8 @@ static int foldmath_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	nm = get_tok_str(cs->v, NULL);
 	nfn = (int)(sizeof foldmath_tab / sizeof *foldmath_tab);
 	for (bi = 0; bi < nfn; bi++)
-		if (!strcmp(nm, foldmath_tab[bi].name))
-			{ MCC_TRACE("br\n"); break; }
+		{ MCC_TRACE("br\n"); if (!strcmp(nm, foldmath_tab[bi].name))
+			{ MCC_TRACE("br\n"); break; } }
 	if (bi == nfn)
 		{ MCC_TRACE("br\n"); return 0; }
 	id = foldmath_tab[bi].id;
@@ -8431,10 +8431,10 @@ static int foldfc_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	nm = get_tok_str(cs->v, NULL);
 	nfc = (int)(sizeof foldfc_tab / sizeof *foldfc_tab);
 	for (i = 0; i < nfc; i++)
-		if (!strcmp(nm, foldfc_tab[i].name)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (!strcmp(nm, foldfc_tab[i].name)) { MCC_TRACE("br\n");
 			model = foldfc_tab[i].model;
 			break;
-		}
+		} }
 	if (model == -2)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
@@ -8445,7 +8445,7 @@ static int foldfc_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	}
 	pred = model < 0 ? ast_fc_forecast(y, nb_args) : ast_fc_call(model, y, nb_args);
 	for (i = 0; i < nb_args; i++)
-		vpop();
+		{ MCC_TRACE("br\n"); vpop(); }
 	vpop();
 	foldm_push(VT_DOUBLE, 0, pred);
 	return 1;
@@ -9096,7 +9096,7 @@ tok_next:
 											? 4
 											: 8;
 			for (i = 0; i < nb; i++)
-				r2 |= ((u >> (i * 8)) & 0xff) << ((nb - 1 - i) * 8);
+				{ MCC_TRACE("br\n"); r2 |= ((u >> (i * 8)) & 0xff) << ((nb - 1 - i) * 8); }
 			vtop->c.i = r2;
 			vtop->r = VT_CONST;
 		} else { MCC_TRACE("br\n");
@@ -9334,8 +9334,8 @@ tok_next:
 												 "with an incomplete type"); }
 				}
 				for (i = 0; i < nb_assoc; i++)
-					if (compare_types(&assoc_types[i], &type, 0))
-						{ MCC_TRACE("br\n"); mcc_error("_Generic specifies two compatible types"); }
+					{ MCC_TRACE("br\n"); if (compare_types(&assoc_types[i], &type, 0))
+						{ MCC_TRACE("br\n"); mcc_error("_Generic specifies two compatible types"); } }
 				assoc_types = mcc_realloc(assoc_types,
 																	(nb_assoc + 1) * sizeof(CType));
 				assoc_types[nb_assoc++] = type;
@@ -9537,7 +9537,7 @@ tok_next:
 #ifdef MCC_TARGET_ARM64
 					if (size < 16)
 						{ MCC_TRACE("br\n"); while (size & (size - 1))
-							size = (size | (size - 1)) + 1; }
+							{ MCC_TRACE("br\n"); size = (size | (size - 1)) + 1; } }
 #endif
 #if MCC_CONFIG_OPTIMIZER
 					loc = ast_alloc_loc(size, align);
@@ -9647,8 +9647,8 @@ tok_next:
 					int rc = reg_classes[ret.r] & ~(MCC_RC_INT | MCC_RC_FLOAT);
 					rc <<= --n;
 					for (r = 0; r < MCC_NB_REGS; ++r)
-						if (reg_classes[r] & rc)
-							{ MCC_TRACE("br\n"); break; }
+						{ MCC_TRACE("br\n"); if (reg_classes[r] & rc)
+							{ MCC_TRACE("br\n"); break; } }
 					vsetc(&ret.type, r, &ret.c);
 				}
 				vsetc(&ret.type, ret.r, &ret.c);
@@ -9760,7 +9760,7 @@ static int precedence(int tok) { MCC_TRACE("enter\n");
 
 static void init_prec(void) { MCC_TRACE("enter\n");
 	for (int i = 0; i < 256; i++)
-		prec[i] = precedence(i);
+		{ MCC_TRACE("br\n"); prec[i] = precedence(i); }
 }
 
 #define precedence(i) ((unsigned)i < 256 ? prec[i] : 0)
@@ -10346,8 +10346,8 @@ static int vla_scope_open(int id) { MCC_TRACE("enter\n");
 	if (vla_track_ovf)
 		{ MCC_TRACE("br\n"); return 1; }
 	for (i = 0; i < nb_vla_open; i++)
-		if (vla_open_birth[i] == id)
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (vla_open_birth[i] == id)
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -10358,8 +10358,8 @@ static int vla_inner_scope(void) { MCC_TRACE("enter\n");
 static void vla_leave(struct scope *o) { MCC_TRACE("enter\n");
 	struct scope *c = cur_scope, *v = NULL;
 	for (; c != o && c; c = c->prev)
-		if (c->vla.num)
-			{ MCC_TRACE("br\n"); v = c; }
+		{ MCC_TRACE("br\n"); if (c->vla.num)
+			{ MCC_TRACE("br\n"); v = c; } }
 	if (v)
 		{ MCC_TRACE("br\n"); vla_restore(v->vla.locorig); }
 }
@@ -10875,10 +10875,10 @@ again:
 				int64_t val = ev->enum_val;
 				int i, covered = 0;
 				for (i = 0; i < sw->n; i++)
-					if (val >= sw->p[i]->v1 && val <= sw->p[i]->v2) { MCC_TRACE("br\n");
+					{ MCC_TRACE("br\n"); if (val >= sw->p[i]->v1 && val <= sw->p[i]->v2) { MCC_TRACE("br\n");
 						covered = 1;
 						break;
-					}
+					} }
 				if (!covered)
 					{ MCC_TRACE("br\n"); mcc_warning_c(warn_switch)(
 							"enumeration value '%s' not handled in switch",
@@ -11007,7 +11007,7 @@ again:
 				if (s->next) { MCC_TRACE("br\n");
 					Sym *pcl;
 					for (pcl = s->next; pcl; pcl = pcl->prev)
-						gsym(pcl->jnext);
+						{ MCC_TRACE("br\n"); gsym(pcl->jnext); }
 					sym_pop(&s->next, NULL, 0);
 				} else
 					{ MCC_TRACE("br\n"); gsym(s->jnext); }
@@ -11316,7 +11316,7 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 			f = *cur_field;
 			while (f && (f->v & SYM_FIRST_ANOM) &&
 						 is_integer_btype(f->type.t & VT_BTYPE))
-				*cur_field = f = f->next;
+				{ MCC_TRACE("br\n"); *cur_field = f = f->next; }
 			if (!f)
 				{ MCC_TRACE("br\n"); mcc_error("too many initializers"); }
 			type = &f->type;
@@ -11375,7 +11375,7 @@ static void write_ldouble(unsigned char *d, void *s) { MCC_TRACE("enter\n");
 			if (0 == m)
 				{ MCC_TRACE("br\n"); goto set; }
 			for (f = 1; !(m & 1ULL << 63); --f)
-				m <<= 1;
+				{ MCC_TRACE("br\n"); m <<= 1; }
 		}
 		if (f == 0x7ff)
 			{ MCC_TRACE("br\n"); f = 0x43FF; }
@@ -11913,7 +11913,7 @@ static TokenString *gather_string_run(CType *type, int has_init) {
 			{ MCC_TRACE("br\n"); type->ref->type.t = wet | (type->ref->type.t & VT_CONSTANT); }
 	}
 	for (int j = 0; j < nparts; j++)
-		cstr_free(&parts[j]);
+		{ MCC_TRACE("br\n"); cstr_free(&parts[j]); }
 	mcc_free(parts);
 	mcc_free(pkinds);
 	return istr;
@@ -11961,7 +11961,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		Sym *field = type->ref->next;
 		if (field) { MCC_TRACE("br\n");
 			while (field->next)
-				field = field->next;
+				{ MCC_TRACE("br\n"); field = field->next; }
 			if (field->type.t & VT_ARRAY && field->type.ref->c < 0) { MCC_TRACE("br\n");
 				flexible_array = field;
 				p.flex_array_ref = field->type.ref;
@@ -12108,7 +12108,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		if (!sec) { MCC_TRACE("br\n");
 			CType *tp = type;
 			while ((tp->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY))
-				tp = &tp->ref->type;
+				{ MCC_TRACE("br\n"); tp = &tp->ref->type; }
 			if (type->t & VT_TLS) { MCC_TRACE("br\n");
 				if (has_init)
 					{ MCC_TRACE("br\n"); sec = tdata_section; }
@@ -12372,7 +12372,7 @@ ST_FUNC Sym *gfunc_set_param(Sym *s, int c, int byref) {
 static void sym_push_params(Sym *ref) {
 	Sym *s = ref;
 	while (s->next)
-		s = s->next;
+		{ MCC_TRACE("br\n"); s = s->next; }
 	while (s != ref) { MCC_TRACE("br\n");
 		if ((s->v & ~SYM_STRUCT) < SYM_FIRST_ANOM)
 			{ MCC_TRACE("br\n"); sym_copy(s, &local_stack); }
@@ -12403,7 +12403,7 @@ static void gen_function(Sym *sym) {
 	if (func_var) { MCC_TRACE("br\n");
 		Sym *pa;
 		for (pa = sym->type.ref->next; pa; pa = pa->next)
-			cur_func_last_param = pa->v & ~SYM_FIELD;
+			{ MCC_TRACE("br\n"); cur_func_last_param = pa->v & ~SYM_FIELD; }
 	}
 	func_old = sym->type.ref->f.func_type == FUNC_OLD;
 	cur_func_noreturn = sym->type.ref->f.func_noreturn;
@@ -12805,8 +12805,8 @@ static int decl(int l) {
 					{ MCC_TRACE("br\n"); mcc_error("parameter names (without types) in function declaration"); }
 				if (l == VT_CMP) { MCC_TRACE("br\n");
 					for (sym = func_vt.ref->next; sym; sym = sym->next)
-						if ((sym->v & ~SYM_FIELD) == v)
-							{ MCC_TRACE("br\n"); goto found; }
+						{ MCC_TRACE("br\n"); if ((sym->v & ~SYM_FIELD) == v)
+							{ MCC_TRACE("br\n"); goto found; } }
 					mcc_error("declaration for parameter '%s' but no such parameter",
 										get_tok_str(v, NULL));
 				found:

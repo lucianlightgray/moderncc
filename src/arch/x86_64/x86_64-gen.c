@@ -1062,7 +1062,7 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 
 		mode = x86_64_mode_none;
 		for (f = f->next; f; f = f->next)
-			mode = classify_x86_64_merge(mode, classify_x86_64_inner(&f->type));
+			{ MCC_TRACE("br\n"); mode = classify_x86_64_merge(mode, classify_x86_64_inner(&f->type)); }
 
 		return mode;
 	}
@@ -1630,7 +1630,7 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_fill_nops(int bytes) { MCC_TRACE("enter\n");
 	while (bytes--)
-		g(0x90);
+		{ MCC_TRACE("br\n"); g(0x90); }
 }
 
 int gjmp(int t) { MCC_TRACE("enter\n");
@@ -2314,7 +2314,7 @@ ST_FUNC void gen_struct_copy(int size) { MCC_TRACE("enter\n");
 	gv2(MCC_RC_RDI, MCC_RC_RSI);
 	if (n <= 4) { MCC_TRACE("br\n");
 		while (n)
-			o(0xa548), --n;
+			{ MCC_TRACE("br\n"); o(0xa548), --n; }
 	} else { MCC_TRACE("br\n");
 		vpushi(n);
 		gv(MCC_RC_RCX);

@@ -387,8 +387,8 @@ static const char *pe_export_name(MCCState *s1, ElfW(Sym) * sym) { MCC_TRACE("en
 
 static int dynarray_assoc(void **pp, int n, int key) { MCC_TRACE("enter\n");
 	for (int i = 0; i < n; ++i, ++pp)
-		if (key == **(int **)pp)
-			{ MCC_TRACE("br\n"); return i; }
+		{ MCC_TRACE("br\n"); if (key == **(int **)pp)
+			{ MCC_TRACE("br\n"); return i; } }
 	return -1;
 }
 
@@ -871,7 +871,7 @@ static int pe_write(struct pe_info *pe) { MCC_TRACE("enter\n");
 
 	pe_fwrite(pe, &pe_header, sizeof pe_header);
 	for (int i = 0; i < pe->sec_count; ++i)
-		pe_fwrite(pe, &pe->sec_info[i]->ish, sizeof(IMAGE_SECTION_HEADER));
+		{ MCC_TRACE("br\n"); pe_fwrite(pe, &pe->sec_info[i]->ish, sizeof(IMAGE_SECTION_HEADER)); }
 
 	file_offset = pe->sizeofheaders;
 	for (int i = 0; i < pe->sec_count; ++i) { MCC_TRACE("br\n");
@@ -957,7 +957,7 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 	MCCState *s1 = pe->s1;
 
 	for (sym_cnt = i = 0; i < ndlls; ++i)
-		sym_cnt += pe->imp_info[i]->sym_count;
+		{ MCC_TRACE("br\n"); sym_cnt += pe->imp_info[i]->sym_count; }
 
 	if (0 == sym_cnt)
 		{ MCC_TRACE("br\n"); return; }
@@ -1253,7 +1253,7 @@ static int pe_assign_addresses(struct pe_info *pe) { MCC_TRACE("enter\n");
 		s = s1->sections[i];
 		k = pe_section_class(s);
 		for (n = i; n > 1 && k < (c = sec_cls[n - 1]); --n)
-			sec_cls[n] = c, sec_order[n] = sec_order[n - 1];
+			{ MCC_TRACE("br\n"); sec_cls[n] = c, sec_order[n] = sec_order[n - 1]; }
 		sec_cls[n] = k, sec_order[n] = i;
 	}
 	si = NULL;
@@ -1315,7 +1315,7 @@ static int pe_assign_addresses(struct pe_info *pe) { MCC_TRACE("enter\n");
 		if (s->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
 			Section **ps = &si->sec;
 			while (*ps)
-				ps = &(*ps)->prev;
+				{ MCC_TRACE("br\n"); ps = &(*ps)->prev; }
 			*ps = s, s->prev = NULL;
 			si->data_size = si->sh_size;
 		}
@@ -1483,7 +1483,7 @@ static void pe_print_section(FILE *f, Section *s) { MCC_TRACE("enter\n");
 
 	fprintf(f, "%-8s", "offset");
 	for (i = 0; i < m; ++i)
-		fprintf(f, " %02x", i);
+		{ MCC_TRACE("br\n"); fprintf(f, " %02x", i); }
 	n = 56;
 
 	if (s->sh_type == SHT_SYMTAB || s->sh_type == SHT_RELX) { MCC_TRACE("br\n");
@@ -1511,13 +1511,13 @@ static void pe_print_section(FILE *f, Section *s) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); p = fields2, n = 58; }
 
 		for (i = 0; p[i]; ++i)
-			fprintf(f, "%6s", p[i]);
+			{ MCC_TRACE("br\n"); fprintf(f, "%6s", p[i]); }
 		fprintf(f, "  symbol");
 	}
 
 	fprintf(f, "\n");
 	for (i = 0; i < n; ++i)
-		fprintf(f, "-");
+		{ MCC_TRACE("br\n"); fprintf(f, "-"); }
 	fprintf(f, "\n");
 
 	for (i = 0; i < l;) { MCC_TRACE("br\n");
@@ -1723,7 +1723,7 @@ quit:
 
 static char *trimfront(char *p) { MCC_TRACE("enter\n");
 	while ((unsigned char)*p <= ' ' && *p && *p != '\n')
-		++p;
+		{ MCC_TRACE("br\n"); ++p; }
 	return p;
 }
 
@@ -1731,7 +1731,7 @@ static char *get_token(char **s, char *f) { MCC_TRACE("enter\n");
 	char *p = *s, *e;
 	p = e = trimfront(p);
 	while ((unsigned char)*e > ' ')
-		++e;
+		{ MCC_TRACE("br\n"); ++e; }
 	*s = trimfront(e);
 	*f = **s;
 	*e = 0;
@@ -1777,7 +1777,7 @@ static int pe_load_def(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 		}
 	skip:
 		while ((unsigned char)next > ' ')
-			get_token(&line, &next);
+			{ MCC_TRACE("br\n"); get_token(&line, &next); }
 		if (next != '\n')
 			{ MCC_TRACE("br\n"); break; }
 	}
@@ -1796,7 +1796,7 @@ static int pe_load_dll(MCCState *s1, int fd, const char *filename) { MCC_TRACE("
 		{ MCC_TRACE("br\n"); return -1; }
 	if (p) { MCC_TRACE("br\n");
 		for (q = p; *q; q += 1 + strlen(q))
-			pe_putimport(s1, ref->index, q, 0);
+			{ MCC_TRACE("br\n"); pe_putimport(s1, ref->index, q, 0); }
 		mcc_free(p);
 	}
 	return 0;
@@ -1876,7 +1876,7 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	p->UnwindData = d;
 
 	for (n = o + sizeof *p; o < n; o += sizeof p->BeginAddress)
-		put_elf_reloc(symtab_section, pd, o, R_XXX_RELATIVE, s1->uw_sym);
+		{ MCC_TRACE("br\n"); put_elf_reloc(symtab_section, pd, o, R_XXX_RELATIVE, s1->uw_sym); }
 }
 
 #elif defined(MCC_TARGET_ARM64)
@@ -1932,7 +1932,7 @@ ST_FUNC void pe_add_unwind_data(unsigned start, unsigned end, unsigned stack) { 
 	*q++ = 0x9B;
 	*q++ = 0xE4;
 	while ((unsigned)(q - (xd->data + d + 4)) < code_bytes)
-		*q++ = 0xE3;
+		{ MCC_TRACE("br\n"); *q++ = 0xE3; }
 
 	o = pd->data_offset;
 	p = section_ptr_add(pd, sizeof *p);

@@ -19,10 +19,10 @@ static void build_unique_names(MCCState *s1) { MCC_TRACE("enter\n");
 		if (!name[0])
 			{ MCC_TRACE("br\n"); continue; }
 		for (int j = 1; j < i; j++)
-			if (syms[j].st_name && !strcmp(strtab + syms[j].st_name, name)) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (syms[j].st_name && !strcmp(strtab + syms[j].st_name, name)) { MCC_TRACE("br\n");
 				dup = 1;
 				break;
-			}
+			} }
 		if (dup) { MCC_TRACE("br\n");
 			char buf[256];
 			snprintf(buf, sizeof buf, "%s.%d", name, i);
@@ -34,7 +34,7 @@ static void build_unique_names(MCCState *s1) { MCC_TRACE("enter\n");
 static void free_unique_names(MCCState *s1) { MCC_TRACE("enter\n");
 	int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
 	for (int i = 0; i < n; i++)
-		mcc_free(g_uniq[i]);
+		{ MCC_TRACE("br\n"); mcc_free(g_uniq[i]); }
 	mcc_free(g_uniq);
 	g_uniq = NULL;
 }
@@ -106,8 +106,8 @@ ST_FUNC const char *disasm_label(disasm_ctx *dc, addr_t target) { MCC_TRACE("ent
 	if (dc->collect && target < dc->size) { MCC_TRACE("br\n");
 		int i;
 		for (i = 0; i < dc->nlabels; i++)
-			if (dc->labels[i] == target)
-				{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); if (dc->labels[i] == target)
+				{ MCC_TRACE("br\n"); break; } }
 		if (i == dc->nlabels) { MCC_TRACE("br\n");
 			if (dc->nlabels == dc->labels_cap) { MCC_TRACE("br\n");
 				dc->labels_cap = dc->labels_cap ? dc->labels_cap * 2 : 16;
@@ -436,14 +436,14 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 		if (ci) { MCC_TRACE("br\n");
 			if (in_proc && pc >= ci->fdes[fi].end) { MCC_TRACE("br\n");
 				while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
-					fprintf(f, "\t%s\n", ci->notes[ni++].text);
+					{ MCC_TRACE("br\n"); fprintf(f, "\t%s\n", ci->notes[ni++].text); }
 				fprintf(f, "\t.cfi_endproc\n");
 				in_proc = 0;
 				fi++;
 			}
 			if (!in_proc)
 				{ MCC_TRACE("br\n"); while (fi < ci->nfdes && (ci->fdes[fi].shndx != dc->sec->sh_num || ci->fdes[fi].start < pc))
-					fi++; }
+					{ MCC_TRACE("br\n"); fi++; } }
 		}
 		while (si < nsym && syms[si].value == pc) { MCC_TRACE("br\n");
 			emit_sym_decl(f, syms[si].sym, syms[si].name);
@@ -455,7 +455,7 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 			li++;
 		}
 		while (li < dc->nlabels && dc->labels[li] < pc)
-			li++;
+			{ MCC_TRACE("br\n"); li++; }
 		if (ci) { MCC_TRACE("br\n");
 			if (!in_proc && fi < ci->nfdes && ci->fdes[fi].shndx == dc->sec->sh_num && ci->fdes[fi].start == pc) { MCC_TRACE("br\n");
 				fprintf(f, "\t.cfi_startproc\n");
@@ -464,7 +464,7 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 			}
 			if (in_proc)
 				{ MCC_TRACE("br\n"); while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes && ci->notes[ni].pc <= pc)
-					fprintf(f, "\t%s\n", ci->notes[ni++].text); }
+					{ MCC_TRACE("br\n"); fprintf(f, "\t%s\n", ci->notes[ni++].text); } }
 		}
 #ifdef MCC_HAVE_DISASM
 		{
@@ -482,7 +482,7 @@ static void emit_text(disasm_ctx *dc, struct secsym *syms, int nsym,
 	}
 	if (ci && in_proc) { MCC_TRACE("br\n");
 		while (ni < ci->fdes[fi].note0 + ci->fdes[fi].nnotes)
-			fprintf(f, "\t%s\n", ci->notes[ni++].text);
+			{ MCC_TRACE("br\n"); fprintf(f, "\t%s\n", ci->notes[ni++].text); }
 		fprintf(f, "\t.cfi_endproc\n");
 	}
 }
@@ -551,8 +551,8 @@ static int section_is_output(Section *s) { MCC_TRACE("enter\n");
 	if (s->data_offset == 0 && s->sh_type != SHT_NOBITS)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (i = 0; skip[i]; i++)
-		if (!strncmp(s->name, skip[i], strlen(skip[i])))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!strncmp(s->name, skip[i], strlen(skip[i])))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 

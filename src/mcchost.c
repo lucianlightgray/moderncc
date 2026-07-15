@@ -36,8 +36,8 @@ ST_FUNC char *host_path_normalize(char *path) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	char *p;
 	for (p = path; *p; ++p)
-		if (*p == '\\')
-			{ MCC_TRACE("br\n"); *p = '/'; }
+		{ MCC_TRACE("br\n"); if (*p == '\\')
+			{ MCC_TRACE("br\n"); *p = '/'; } }
 #endif
 	return path;
 }
@@ -196,11 +196,11 @@ ST_FUNC MAYBE_UNUSED int host_spawn_wait(const char *const *argv) { MCC_TRACE("e
 		;
 	qv = mcc_malloc((n + 1) * sizeof *qv);
 	for (i = 0; i < n; ++i)
-		qv[i] = host_quote_w32(argv[i]);
+		{ MCC_TRACE("br\n"); qv[i] = host_quote_w32(argv[i]); }
 	qv[n] = NULL;
 	ret = _spawnvp(_P_WAIT, argv[0], (const char *const *)qv);
 	for (i = 0; i < n; ++i)
-		mcc_free(qv[i]);
+		{ MCC_TRACE("br\n"); mcc_free(qv[i]); }
 	mcc_free(qv);
 	return ret;
 #else
@@ -220,7 +220,7 @@ ST_FUNC MAYBE_UNUSED int host_exec_replace(char **argv) { MCC_TRACE("enter\n");
 	int ret;
 	char **p;
 	for (p = argv; *p; ++p)
-		*p = host_quote_w32(*p);
+		{ MCC_TRACE("br\n"); *p = host_quote_w32(*p); }
 	ret = _spawnvp(_P_NOWAIT, argv[0], (const char *const *)argv);
 	if (-1 == ret)
 		{ MCC_TRACE("br\n"); return ret; }
@@ -253,7 +253,7 @@ ST_FUNC MAYBE_UNUSED int host_find_tool(const char *name, const char *ext, char 
 		const char *e = p;
 		int dl;
 		while (*e && *e != ':')
-			++e;
+			{ MCC_TRACE("br\n"); ++e; }
 		dl = (int)(e - p);
 		if (dl == 0)
 			{ MCC_TRACE("br\n"); snprintf(cand, sizeof cand, "%s", name); }
@@ -276,8 +276,8 @@ ST_FUNC MAYBE_UNUSED int host_find_tool(const char *name, const char *ext, char 
 ST_FUNC MAYBE_UNUSED int host_find_tool_any(const char *const *names, const char *ext, char *buf, int size) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; names[i]; ++i)
-		if (host_find_tool(names[i], ext, buf, size))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (host_find_tool(names[i], ext, buf, size))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -354,14 +354,14 @@ static const char **host_build_argv(const char *const *argv, const HostSpawnOpts
 	const char **out;
 	if (o && o->launcher)
 		{ MCC_TRACE("br\n"); while (o->launcher[l])
-			++l; }
+			{ MCC_TRACE("br\n"); ++l; } }
 	while (argv[n])
-		++n;
+		{ MCC_TRACE("br\n"); ++n; }
 	out = mcc_malloc((l + n + 1) * sizeof *out);
 	for (i = 0; i < l; ++i)
-		out[j++] = o->launcher[i];
+		{ MCC_TRACE("br\n"); out[j++] = o->launcher[i]; }
 	for (i = 0; i < n; ++i)
-		out[j++] = argv[i];
+		{ MCC_TRACE("br\n"); out[j++] = argv[i]; }
 	out[j] = NULL;
 	return out;
 }
@@ -385,7 +385,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 		char *envblk = NULL;
 
 		for (i = 0; full[i]; ++i)
-			len += 2 * (int)strlen(full[i]) + 3;
+			{ MCC_TRACE("br\n"); len += 2 * (int)strlen(full[i]) + 3; }
 		cmd = mcc_malloc(len);
 		for (p = cmd, i = 0; full[i]; ++i) { MCC_TRACE("br\n");
 			char *q = host_quote_w32(full[i]);
@@ -432,7 +432,7 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 		if (o->env) { MCC_TRACE("br\n");
 			int tot = 1, k;
 			for (k = 0; o->env[k]; ++k)
-				tot += (int)strlen(o->env[k]) + 1;
+				{ MCC_TRACE("br\n"); tot += (int)strlen(o->env[k]) + 1; }
 			envblk = mcc_malloc(tot);
 			for (p = envblk, k = 0; o->env[k]; ++k) { MCC_TRACE("br\n");
 				strcpy(p, o->env[k]);
@@ -696,10 +696,10 @@ ST_FUNC MAYBE_UNUSED int host_copy_file(const char *src, const char *dst, int pr
 		return -1;
 	}
 	while ((r = fread(buf, 1, sizeof buf, fi)) > 0)
-		if (fwrite(buf, 1, r, fo) != r) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (fwrite(buf, 1, r, fo) != r) { MCC_TRACE("br\n");
 			ok = 0;
 			break;
-		}
+		} }
 	if (ferror(fi))
 		{ MCC_TRACE("br\n"); ok = 0; }
 	fclose(fi);

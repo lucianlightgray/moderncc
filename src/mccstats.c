@@ -219,7 +219,7 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 			char *bufs[4] = {a, b, c, d};
 			char cnt[24];
 			for (j = 0; j < 4; j++)
-				bufs[j][0] = '\0';
+				{ MCC_TRACE("br\n"); bufs[j][0] = '\0'; }
 			for (j = 0; j < more; j++) { MCC_TRACE("br\n");
 				mccstats_fmt_u(mcs.strat_hits[i + j], cnt, sizeof cnt);
 				snprintf(bufs[j], 64, "%-8s %6s", mccstats_strat_name[i + j], cnt);
@@ -287,15 +287,15 @@ static void mccstats_paint(int force) { MCC_TRACE("enter\n");
 		if (mcs.prev_lines)
 			{ MCC_TRACE("br\n"); fprintf(stderr, "\033[%dA", mcs.prev_lines); }
 		for (i = 0; i < rows.n; i++)
-			fprintf(stderr, "\r\033[2K%s\n", rows.buf[i]);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "\r\033[2K%s\n", rows.buf[i]); }
 		for (i = rows.n; i < mcs.prev_lines; i++)
-			fprintf(stderr, "\r\033[2K\n");
+			{ MCC_TRACE("br\n"); fprintf(stderr, "\r\033[2K\n"); }
 		if (rows.n < mcs.prev_lines)
 			{ MCC_TRACE("br\n"); fprintf(stderr, "\033[%dA", mcs.prev_lines - rows.n); }
 		mcs.prev_lines = rows.n;
 	} else { MCC_TRACE("br\n");
 		for (i = 0; i < rows.n; i++)
-			fprintf(stderr, "%s\n", rows.buf[i]);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "%s\n", rows.buf[i]); }
 	}
 	fflush(stderr);
 }
@@ -384,10 +384,10 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 		int b, idx = -1;
 		uint64_t bit = item_bits[sel[i]];
 		for (b = 0; b < MCCSTATS_GATE_N; b++)
-			if (bit == ((uint64_t)1 << b)) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (bit == ((uint64_t)1 << b)) { MCC_TRACE("br\n");
 				idx = b;
 				break;
-			}
+			} }
 		p += snprintf(mcs.cand_names + p, sizeof mcs.cand_names - p, "%s%s",
 									i ? "," : "", idx >= 0 ? mccstats_gate_name[idx] : "?");
 		if (p >= (int)sizeof mcs.cand_names - 8)
@@ -428,7 +428,7 @@ void mcc_stats_strat_hits(const int *sf, int n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); n = MCCSTATS_STRAT_N; }
 	mcs.strat_calls++;
 	for (i = 0; i < n; i++)
-		mcs.strat_hits[i] += (unsigned long)(sf[i] > 0 ? sf[i] : 0);
+		{ MCC_TRACE("br\n"); mcs.strat_hits[i] += (unsigned long)(sf[i] > 0 ? sf[i] : 0); }
 }
 
 void mcc_stats_jit_recompile(void) { MCC_TRACE("enter\n");

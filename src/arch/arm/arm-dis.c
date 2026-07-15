@@ -54,8 +54,8 @@ static int imm_canonical(uint32_t rot, uint32_t imm8) { MCC_TRACE("enter\n");
 	uint32_t v = ror32(imm8, 2 * rot);
 	uint32_t r;
 	for (r = 0; r < 16; r++)
-		if (rol32(v, 2 * r) < 0x100)
-			{ MCC_TRACE("br\n"); return r == rot; }
+		{ MCC_TRACE("br\n"); if (rol32(v, 2 * r) < 0x100)
+			{ MCC_TRACE("br\n"); return r == rot; } }
 	return 0;
 }
 
@@ -92,10 +92,10 @@ static void sb_reglist(SB *b, uint32_t mask) { MCC_TRACE("enter\n");
 	int i, first = 1;
 	sb(b, "{");
 	for (i = 0; i < 16; i++)
-		if (mask & (1u << i)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (mask & (1u << i)) { MCC_TRACE("br\n");
 			sb(b, "%s%s", first ? "" : ", ", regnm[i]);
 			first = 0;
-		}
+		} }
 	sb(b, "}");
 }
 

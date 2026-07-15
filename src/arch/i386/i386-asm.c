@@ -776,8 +776,8 @@ again:
 
 		if (!(pa->instr_type & OPC_MODRM)) { MCC_TRACE("br\n");
 			for (i = 0; i < nb_ops; i++)
-				if (ops[i].ntpoff)
-					{ MCC_TRACE("br\n"); goto next; }
+				{ MCC_TRACE("br\n"); if (ops[i].ntpoff)
+					{ MCC_TRACE("br\n"); goto next; } }
 		}
 #endif
 		(void)alltypes;
@@ -863,8 +863,8 @@ again:
 		{ MCC_TRACE("br\n"); p66 = 1; }
 	else { MCC_TRACE("br\n");
 		for (i = 0; i < nb_ops; i++)
-			if ((op_type[i] & (OP_MMX | OP_SSE)) == (OP_MMX | OP_SSE) && ops[i].type & OP_SSE)
-				{ MCC_TRACE("br\n"); p66 = 1; }
+			{ MCC_TRACE("br\n"); if ((op_type[i] & (OP_MMX | OP_SSE)) == (OP_MMX | OP_SSE) && ops[i].type & OP_SSE)
+				{ MCC_TRACE("br\n"); p66 = 1; } }
 	}
 	if (p66)
 		{ MCC_TRACE("br\n"); g(0x66); }

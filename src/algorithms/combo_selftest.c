@@ -28,7 +28,7 @@ static long sum_score(const int *sel, int k, void *user) { MCC_TRACE("enter\n");
 	int i;
 	(void)user;
 	for (i = 0; i < k; i++)
-		s += sel[i];
+		{ MCC_TRACE("br\n"); s += sel[i]; }
 	return s;
 }
 
@@ -94,7 +94,7 @@ static void test_pipeline(void) { MCC_TRACE("enter\n");
 	{
 		int i;
 		for (i = 0; i < best.k; i++)
-			printf("%s%s", i ? "->" : "", combo_codecs[best.sel[i]].name);
+			{ MCC_TRACE("br\n"); printf("%s%s", i ? "->" : "", combo_codecs[best.sel[i]].name); }
 		printf("  size %ld/%ld (%.0f%%)\n", best.score, (long)sizeof data,
 					 100.0 * best.score / (double)sizeof data);
 	}

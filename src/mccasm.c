@@ -67,7 +67,7 @@ static Sym *asm_label_find(int v) { MCC_TRACE("enter\n");
 	v = asm2cname(v, &addeddot);
 	sym = sym_find(v);
 	while (sym && sym->sym_scope && !(sym->type.t & VT_STATIC))
-		sym = sym->prev_tok;
+		{ MCC_TRACE("br\n"); sym = sym->prev_tok; }
 	return sym;
 }
 
@@ -676,7 +676,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			if (t == TOK_ASMDIR_ascii && size > 0)
 				{ MCC_TRACE("br\n"); size--; }
 			for (int i = 0; i < size; i++)
-				g(p[i]);
+				{ MCC_TRACE("br\n"); g(p[i]); }
 			next();
 			if (tok == ',') { MCC_TRACE("br\n");
 				next();
@@ -958,7 +958,7 @@ static void asm_cfi_factors(MCCState *s1) { MCC_TRACE("enter\n");
 	p += 8;
 	p += 1;
 	while (p < end && *p)
-		p++;
+		{ MCC_TRACE("br\n"); p++; }
 	p++;
 	asm_cfi.code_align = dwarf_read_uleb128(&p, end);
 	asm_cfi.data_align = dwarf_read_sleb128(&p, end);
@@ -973,7 +973,7 @@ static void asm_cfi_room(int n) { MCC_TRACE("enter\n");
 	if (asm_cfi.len + n > asm_cfi.cap) { MCC_TRACE("br\n");
 		int newcap = asm_cfi.cap ? asm_cfi.cap * 2 : 1024;
 		while (asm_cfi.len + n > newcap)
-			newcap *= 2;
+			{ MCC_TRACE("br\n"); newcap *= 2; }
 		asm_cfi.buf = mcc_realloc(asm_cfi.buf, newcap);
 		asm_cfi.cap = newcap;
 	}
@@ -1004,7 +1004,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 	next();
 	if (!eh_frame_section) { MCC_TRACE("br\n");
 		while (tok != ';' && tok != TOK_LINEFEED && tok != TOK_EOF)
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 		return;
 	}
 	if (!strcmp(dir, "startproc")) { MCC_TRACE("br\n");
@@ -1088,7 +1088,7 @@ static void asm_parse_cfi_directive(MCCState *s1) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		mcc_warning_c(warn_unsupported)("ignoring .cfi_%s", dir);
 		while (tok != ';' && tok != TOK_LINEFEED && tok != TOK_EOF)
-			next();
+			{ MCC_TRACE("br\n"); next(); }
 	}
 }
 #endif
@@ -1110,7 +1110,7 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 #if !defined(MCC_TARGET_ARM64)
 		if (tok == '#') { MCC_TRACE("br\n");
 			while (tok != TOK_LINEFEED)
-				next();
+				{ MCC_TRACE("br\n"); next(); }
 		} else
 #endif
 				if (tok >= TOK_ASMDIR_FIRST && tok <= TOK_ASMDIR_LAST) { MCC_TRACE("br\n");
@@ -1203,7 +1203,7 @@ static void mcc_assemble_inline(MCCState *s1, const char *str, int len, int glob
 
 ST_FUNC const char *skip_constraint_modifiers(const char *p) { MCC_TRACE("enter\n");
 	while (*p == '=' || *p == '&' || *p == '+' || *p == '%')
-		p++;
+		{ MCC_TRACE("br\n"); p++; }
 	return p;
 }
 

@@ -163,44 +163,44 @@ void stuff_const_harder(uint32_t op, uint32_t v) { MCC_TRACE("enter\n");
 		o2 = (op & 0xfff0ffff) | ((op & 0xf000) << 4);
 		;
 		for (int i = 1; i < 16; i++)
-			a[i] = (a[i - 1] >> 2) | (a[i - 1] << 30);
+			{ MCC_TRACE("br\n"); a[i] = (a[i - 1] >> 2) | (a[i - 1] << 30); }
 		for (int i = 0; i < 12; i++)
-			for (int j = i < 4 ? i + 12 : 15; j >= i + 4; j--)
-				if ((v & (a[i] | a[j])) == v) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (int j = i < 4 ? i + 12 : 15; j >= i + 4; j--)
+				{ MCC_TRACE("br\n"); if ((v & (a[i] | a[j])) == v) { MCC_TRACE("br\n");
 					o(stuff_const(op, v & a[i]));
 					o(stuff_const(o2, v & a[j]));
 					return;
-				}
+				} } }
 		no = op ^ 0xC00000;
 		n2 = o2 ^ 0xC00000;
 		nv = -v;
 		for (int i = 0; i < 12; i++)
-			for (int j = i < 4 ? i + 12 : 15; j >= i + 4; j--)
-				if ((nv & (a[i] | a[j])) == nv) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (int j = i < 4 ? i + 12 : 15; j >= i + 4; j--)
+				{ MCC_TRACE("br\n"); if ((nv & (a[i] | a[j])) == nv) { MCC_TRACE("br\n");
 					o(stuff_const(no, nv & a[i]));
 					o(stuff_const(n2, nv & a[j]));
 					return;
-				}
+				} } }
 		for (int i = 0; i < 8; i++)
-			for (int j = i + 4; j < 12; j++)
-				for (int k = i < 4 ? i + 12 : 15; k >= j + 4; k--)
-					if ((v & (a[i] | a[j] | a[k])) == v) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (int j = i + 4; j < 12; j++)
+				{ MCC_TRACE("br\n"); for (int k = i < 4 ? i + 12 : 15; k >= j + 4; k--)
+					{ MCC_TRACE("br\n"); if ((v & (a[i] | a[j] | a[k])) == v) { MCC_TRACE("br\n");
 						o(stuff_const(op, v & a[i]));
 						o(stuff_const(o2, v & a[j]));
 						o(stuff_const(o2, v & a[k]));
 						return;
-					}
+					} } } }
 		no = op ^ 0xC00000;
 		nv = -v;
 		for (int i = 0; i < 8; i++)
-			for (int j = i + 4; j < 12; j++)
-				for (int k = i < 4 ? i + 12 : 15; k >= j + 4; k--)
-					if ((nv & (a[i] | a[j] | a[k])) == nv) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (int j = i + 4; j < 12; j++)
+				{ MCC_TRACE("br\n"); for (int k = i < 4 ? i + 12 : 15; k >= j + 4; k--)
+					{ MCC_TRACE("br\n"); if ((nv & (a[i] | a[j] | a[k])) == nv) { MCC_TRACE("br\n");
 						o(stuff_const(no, nv & a[i]));
 						o(stuff_const(n2, nv & a[j]));
 						o(stuff_const(n2, nv & a[k]));
 						return;
-					}
+					} } } }
 		o(stuff_const(op, v & a[0]));
 		o(stuff_const(o2, v & a[4]));
 		o(stuff_const(o2, v & a[8]));
@@ -881,7 +881,7 @@ static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
 			ncrn = (ncrn + (align - 1) / 4) & ~((align / 4) - 1);
 			if (ncrn + size / 4 <= 4 || (ncrn < 4 && start_vfpreg != -1)) { MCC_TRACE("br\n");
 				for (j = ncrn; j < 4 && j < ncrn + size / 4; j++)
-					*todo |= (1 << j);
+					{ MCC_TRACE("br\n"); *todo |= (1 << j); }
 				add_param_plan(plan, CORE_STRUCT_CLASS, ncrn, j, &vtop[-i]);
 				ncrn += size / 4;
 				if (ncrn > 4)

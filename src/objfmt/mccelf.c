@@ -143,11 +143,11 @@ ST_FUNC void mccelf_delete(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 
 	for (int i = 1; i < s1->nb_sections; i++)
-		free_section(s1->sections[i]);
+		{ MCC_TRACE("br\n"); free_section(s1->sections[i]); }
 	dynarray_reset(&s1->sections, &s1->nb_sections);
 
 	for (int i = 0; i < s1->nb_priv_sections; i++)
-		free_section(s1->priv_sections[i]);
+		{ MCC_TRACE("br\n"); free_section(s1->priv_sections[i]); }
 	dynarray_reset(&s1->priv_sections, &s1->nb_priv_sections);
 
 	mcc_free(s1->sym_attrs);
@@ -711,7 +711,7 @@ ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc) { MCC_
 			{ MCC_TRACE("br\n"); return s1->sym_attrs; }
 		n = 1;
 		while (index >= n)
-			n *= 2;
+			{ MCC_TRACE("br\n"); n *= 2; }
 		tab = mcc_realloc(s1->sym_attrs, n * sizeof(*s1->sym_attrs));
 		s1->sym_attrs = tab;
 		memset(s1->sym_attrs + s1->nb_sym_attrs, 0,
@@ -797,14 +797,14 @@ static Section *create_gnu_hash(MCCState *s1) { MCC_TRACE("enter\n");
 	ndef = 0;
 	p = (ElfW(Sym) *)dynsym->data;
 	for (int i = 0; i < nb_syms; i++, p++)
-		ndef += p->st_shndx != SHN_UNDEF;
+		{ MCC_TRACE("br\n"); ndef += p->st_shndx != SHN_UNDEF; }
 
 	nbuckets = ndef / 4 + 1;
 	symoffset = nb_syms - ndef;
 	bloom_shift = MCC_PTR_SIZE == 8 ? 6 : 5;
 	bloom_size = 1;
 	while (ndef >= bloom_size * (1 << (bloom_shift - 3)))
-		bloom_size *= 2;
+		{ MCC_TRACE("br\n"); bloom_size *= 2; }
 	ptr = section_ptr_add(gnu_hash, 4 * 4 +
 																			MCC_PTR_SIZE * bloom_size +
 																			nbuckets * 4 +
@@ -821,7 +821,7 @@ static Elf32_Word elf_gnu_hash(const unsigned char *name) { MCC_TRACE("enter\n")
 	unsigned char c;
 
 	while ((c = *name++))
-		h = h * 33 + c;
+		{ MCC_TRACE("br\n"); h = h * 33 + c; }
 	return h;
 }
 
@@ -874,11 +874,11 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) { MCC_TRACE("enter\
 		{ MCC_TRACE("br\n"); mcc_error_noabort("gnu_hash size incorrect"); }
 
 	for (int i = 0; i < nbuckets; i++)
-		buck[i].first = -1;
+		{ MCC_TRACE("br\n"); buck[i].first = -1; }
 
 	p = (ElfW(Sym) *)dynsym->data;
 	for (int i = 0; i < nb_syms; i++, p++)
-		if (p->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (p->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
 			int bucket = hash[i] % nbuckets;
 
 			if (buck[bucket].first == -1)
@@ -887,7 +887,7 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) { MCC_TRACE("enter\
 				nextbuck[buck[bucket].last] = i;
 				buck[bucket].last = i;
 			}
-		}
+		} }
 
 	p = (ElfW(Sym) *)dynsym->data;
 	for (int i = 0; i < nbuckets; i++) { MCC_TRACE("br\n");
@@ -925,7 +925,7 @@ static void update_gnu_hash(MCCState *s1, Section *gnu_hash) { MCC_TRACE("enter\
 		if (1) { MCC_TRACE("br\n");
 			newver = mcc_malloc(nb_syms * sizeof(*newver));
 			for (int i = 0; i < nb_syms; i++)
-				newver[old_to_new_syms[i]] = versym[i];
+				{ MCC_TRACE("br\n"); newver[old_to_new_syms[i]] = versym[i]; }
 			memcpy(vs->data, newver, nb_syms * sizeof(*newver));
 			mcc_free(newver);
 		}
@@ -971,8 +971,8 @@ ST_FUNC void relocate_syms(MCCState *s1, Section *symtab, int do_resolve) { MCC_
 					{ MCC_TRACE("br\n"); addr = host_dlsym_process(name_ud); }
 				if (addr == NULL) { MCC_TRACE("br\n");
 					for (int i = 0; i < s1->nb_loaded_dlls; i++)
-						if ((addr = host_dlsym(s1->loaded_dlls[i]->handle, name_ud)))
-							{ MCC_TRACE("br\n"); break; }
+						{ MCC_TRACE("br\n"); if ((addr = host_dlsym(s1->loaded_dlls[i]->handle, name_ud)))
+							{ MCC_TRACE("br\n"); break; } }
 				}
 				if (addr) { MCC_TRACE("br\n");
 					sym->st_value = (addr_t)addr;
@@ -1395,8 +1395,8 @@ static void set_local_sym(MCCState *s1, const char *name, Section *s, int offset
 		ElfW(Sym) *syms = (ElfW(Sym) *)s1->symtab->data;
 		int n = s1->symtab->data_offset / sizeof(ElfW(Sym));
 		for (int i = 1; i < n; i++)
-			if (!strcmp((char *)s1->symtab->link->data + syms[i].st_name, name))
-				{ MCC_TRACE("br\n"); c = i; }
+			{ MCC_TRACE("br\n"); if (!strcmp((char *)s1->symtab->link->data + syms[i].st_name, name))
+				{ MCC_TRACE("br\n"); c = i; } }
 	}
 	if (c) { MCC_TRACE("br\n");
 		ElfW(Sym) *esym = (ElfW(Sym) *)s1->symtab->data + c;
@@ -2094,7 +2094,7 @@ static int sort_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MCC_
 			k += 0x100, s->sh_flags |= SHF_WRITE;
 		}
 		for (n = i; n > 1 && k < (f = sec_cls[n - 1]); --n)
-			sec_cls[n] = f, sec_order[n] = sec_order[n - 1];
+			{ MCC_TRACE("br\n"); sec_cls[n] = f, sec_order[n] = sec_order[n - 1]; }
 		sec_cls[n] = k, sec_order[n] = i;
 	}
 	sec_order[0] = 0;
@@ -3308,7 +3308,7 @@ typedef struct ArchiveHeader {
 static unsigned long long get_be(const uint8_t *b, int n) { MCC_TRACE("enter\n");
 	unsigned long long ret = 0;
 	while (n)
-		ret = (ret << 8) | *b++, --n;
+		{ MCC_TRACE("br\n"); ret = (ret << 8) | *b++, --n; }
 	return ret;
 }
 
@@ -3323,7 +3323,7 @@ static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) { MCC_TRACE("e
 		{ MCC_TRACE("br\n"); return -1; }
 	p = hdr->ar_name;
 	for (e = p + sizeof hdr->ar_name; e > p && e[-1] == ' ';)
-		--e;
+		{ MCC_TRACE("br\n"); --e; }
 	*e = '\0';
 	hdr->ar_size[sizeof hdr->ar_size - 1] = 0;
 	return len;
@@ -3585,8 +3585,8 @@ ST_FUNC int mcc_load_dll(MCCState *s1, int fd, const char *filename, int level) 
 
 	soname = mcc_basename(filename);
 	for (i = 0, dt = dynamic; i < nb_dts; i++, dt++)
-		if (dt->d_tag == DT_SONAME)
-			{ MCC_TRACE("br\n"); soname = dynstr + dt->d_un.d_val; }
+		{ MCC_TRACE("br\n"); if (dt->d_tag == DT_SONAME)
+			{ MCC_TRACE("br\n"); soname = dynstr + dt->d_un.d_val; } }
 
 	if (mcc_add_dllref(s1, soname, level)->found)
 		{ MCC_TRACE("br\n"); goto ret_success; }

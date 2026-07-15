@@ -63,7 +63,7 @@ static void ast_grow(AstArena *a, AstLocal need) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal ncap = a->cap ? a->cap * 2 : 64;
 	while (ncap < need)
-		ncap *= 2;
+		{ MCC_TRACE("br\n"); ncap *= 2; }
 #define AST_REGROW(field) \
 	a->field = realloc(a->field, ncap * sizeof *a->field)
 	AST_REGROW(kind);
@@ -277,7 +277,7 @@ AstLocal ast_root(const AstArena *a) { MCC_TRACE("enter\n");
 AstLocal ast_child(const AstArena *a, AstLocal n, uint32_t i) { MCC_TRACE("enter\n");
 	AstLocal c = a->first_child[n];
 	while (c != AST_NONE && i--)
-		c = a->next_sib[c];
+		{ MCC_TRACE("br\n"); c = a->next_sib[c]; }
 	return c;
 }
 
@@ -333,7 +333,7 @@ static void dump_emit(DumpBuf *d, const char *s) { MCC_TRACE("enter\n");
 static void dump_rec(const AstArena *a, AstLocal n, int depth, DumpBuf *d) { MCC_TRACE("enter\n");
 	char line[128], ops[32];
 	for (int i = 0; i < depth; i++)
-		dump_emit(d, "  ");
+		{ MCC_TRACE("br\n"); dump_emit(d, "  "); }
 	op_str(a->op[n], ops, sizeof ops);
 	switch (a->kind[n]) { MCC_TRACE("br\n");
 	case AST_Literal:
@@ -361,7 +361,7 @@ static void dump_rec(const AstArena *a, AstLocal n, int depth, DumpBuf *d) { MCC
 	dump_emit(d, line);
 	dump_emit(d, "\n");
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
-		dump_rec(a, c, depth + 1, d);
+		{ MCC_TRACE("br\n"); dump_rec(a, c, depth + 1, d); }
 }
 
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap) { MCC_TRACE("enter\n");
@@ -418,8 +418,8 @@ static uint64_t ast_ih_fold(uint64_t h, uint64_t v) { MCC_TRACE("enter\n");
 
 static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) { MCC_TRACE("enter\n");
 	for (uint32_t i = 0; i < m->nsym; i++)
-		if (m->syms[i] == sym)
-			{ MCC_TRACE("br\n"); return i + 1; }
+		{ MCC_TRACE("br\n"); if (m->syms[i] == sym)
+			{ MCC_TRACE("br\n"); return i + 1; } }
 	if (m->nsym == m->cap) { MCC_TRACE("br\n");
 		uint32_t ncap = m->cap ? m->cap * 2 : 32;
 		uint64_t *ns = realloc(m->syms, ncap * sizeof *ns);
@@ -445,7 +445,7 @@ static uint64_t ast_ih_node(const AstArena *a, AstLocal n, AstIhSyms *m,
 	h = ast_ih_fold(h, a->fbits[n]);
 	h = ast_ih_fold(h, a->nchild[n]);
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
-		h = ast_ih_node(a, c, m, h);
+		{ MCC_TRACE("br\n"); h = ast_ih_node(a, c, m, h); }
 	return h;
 }
 
@@ -479,7 +479,7 @@ static int ast_popcount64(uint64_t x) { MCC_TRACE("enter\n");
 
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *color) { MCC_TRACE("enter\n");
 	for (int i = 0; i < n; i++)
-		color[i] = -1;
+		{ MCC_TRACE("br\n"); color[i] = -1; }
 	if (n <= 0 || k <= 0 || n > AST_COLOR_MAX)
 		{ MCC_TRACE("br\n"); return 0; }
 	int deg[AST_COLOR_MAX];
@@ -494,36 +494,36 @@ int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k, int *col
 	for (int cnt = 0; cnt < n; cnt++) { MCC_TRACE("br\n");
 		int pick = -1;
 		for (int i = 0; i < n; i++)
-			if (!(removed & ((uint64_t)1 << i)) && deg[i] < k) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (!(removed & ((uint64_t)1 << i)) && deg[i] < k) { MCC_TRACE("br\n");
 				pick = i;
 				break;
-			}
+			} }
 		if (pick < 0)
 			{ MCC_TRACE("br\n"); for (int i = 0; i < n; i++)
-				if (!(removed & ((uint64_t)1 << i)) &&
+				{ MCC_TRACE("br\n"); if (!(removed & ((uint64_t)1 << i)) &&
 						(pick < 0 || cost[i] < cost[pick]))
-					{ MCC_TRACE("br\n"); pick = i; } }
+					{ MCC_TRACE("br\n"); pick = i; } } }
 		if (pick < 0)
 			{ MCC_TRACE("br\n"); break; }
 		removed |= (uint64_t)1 << pick;
 		order[top++] = pick;
 		for (int j = 0; j < n; j++)
-			if (!(removed & ((uint64_t)1 << j)) && (adj[pick] & ((uint64_t)1 << j)))
-				{ MCC_TRACE("br\n"); deg[j]--; }
+			{ MCC_TRACE("br\n"); if (!(removed & ((uint64_t)1 << j)) && (adj[pick] & ((uint64_t)1 << j)))
+				{ MCC_TRACE("br\n"); deg[j]--; } }
 	}
 	int ncol = 0;
 	for (int idx = top - 1; idx >= 0; idx--) { MCC_TRACE("br\n");
 		int i = order[idx];
 		uint64_t used = 0;
 		for (int j = 0; j < n; j++)
-			if (color[j] >= 0 && (adj[i] & ((uint64_t)1 << j)))
-				{ MCC_TRACE("br\n"); used |= (uint64_t)1 << color[j]; }
+			{ MCC_TRACE("br\n"); if (color[j] >= 0 && (adj[i] & ((uint64_t)1 << j)))
+				{ MCC_TRACE("br\n"); used |= (uint64_t)1 << color[j]; } }
 		int c = -1;
 		for (int cc = 0; cc < k; cc++)
-			if (!(used & ((uint64_t)1 << cc))) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (!(used & ((uint64_t)1 << cc))) { MCC_TRACE("br\n");
 				c = cc;
 				break;
-			}
+			} }
 		color[i] = c;
 		if (c >= 0)
 			{ MCC_TRACE("br\n"); ncol++; }
@@ -780,7 +780,7 @@ static void ast_fncfg_parse(void) { MCC_TRACE("enter\n");
 		const char *name = s;
 		int nlen, bits;
 		while (*s && *s != '=' && *s != ';')
-			s++;
+			{ MCC_TRACE("br\n"); s++; }
 		if (*s != '=')
 			{ MCC_TRACE("br\n"); break; }
 		nlen = (int)(s - name);
@@ -788,7 +788,7 @@ static void ast_fncfg_parse(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); nlen = 79; }
 		bits = atoi(s + 1);
 		while (*s && *s != ';')
-			s++;
+			{ MCC_TRACE("br\n"); s++; }
 		if (*s == ';')
 			{ MCC_TRACE("br\n"); s++; }
 		memcpy(ast_fncfg[ast_fncfg_n].name, name, nlen);
@@ -805,8 +805,8 @@ static int ast_fncfg_find(const char *fn) { MCC_TRACE("enter\n");
 	if (!fn)
 		{ MCC_TRACE("br\n"); return -1; }
 	for (i = 0; i < ast_fncfg_n; i++)
-		if (!strcmp(ast_fncfg[i].name, fn))
-			{ MCC_TRACE("br\n"); return i; }
+		{ MCC_TRACE("br\n"); if (!strcmp(ast_fncfg[i].name, fn))
+			{ MCC_TRACE("br\n"); return i; } }
 	return -1;
 }
 
@@ -828,7 +828,7 @@ static void ast_jit_fns_parse(const char *csv) { MCC_TRACE("enter\n");
 		const char *name = csv;
 		int nlen;
 		while (*csv && *csv != ',')
-			csv++;
+			{ MCC_TRACE("br\n"); csv++; }
 		nlen = (int)(csv - name);
 		if (nlen >= 80)
 			{ MCC_TRACE("br\n"); nlen = 79; }
@@ -851,8 +851,8 @@ static int ast_jit_selected(const char *fn) { MCC_TRACE("enter\n");
 	if (ast_jit_fns_n == 0)
 		{ MCC_TRACE("br\n"); return 1; }
 	for (i = 0; i < ast_jit_fns_n; i++)
-		if (!strcmp(ast_jit_fns[i], fn))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (!strcmp(ast_jit_fns[i], fn))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -947,7 +947,7 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 	int i, p = 0;
 	(void)user;
 	for (i = 0; i < k && p < (int)sizeof seq - 8; i++)
-		p += sprintf(seq + p, "%s%d", i ? "," : "", sel[i]);
+		{ MCC_TRACE("br\n"); p += sprintf(seq + p, "%s%d", i ? "," : "", sel[i]); }
 	seq[p] = '\0';
 	MCC_TRACE("combo walk=%s depth=%d k=%d seq=%s\n", combo_walk_name(walk), depth, k,
 						seq);
@@ -963,14 +963,14 @@ static int ast_strat_order_forced;
 static void ast_strat_order_reset(void) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; i < AST_STRAT_COUNT_MAX; i++)
-		ast_strat_order[i] = i;
+		{ MCC_TRACE("br\n"); ast_strat_order[i] = i; }
 	ast_strat_order_n = AST_STRAT_COUNT_MAX;
 }
 
 static void ast_order_seq_str(const int *seq, int n, char *out) { MCC_TRACE("enter\n");
 	int i, p = 0;
 	for (i = 0; i < n && p < AST_STRAT_COUNT_MAX * 4 - 8; i++)
-		p += sprintf(out + p, "%s%d", i ? "," : "", seq[i]);
+		{ MCC_TRACE("br\n"); p += sprintf(out + p, "%s%d", i ? "," : "", seq[i]); }
 	out[p] = '\0';
 }
 
@@ -2217,10 +2217,10 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 		return;
 	}
 	for (int i = 0; i < need; i++)
-		ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i);
+		{ MCC_TRACE("br\n"); ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i); }
 	AstLocal inv = ast_node(ast_cur, AST_Invoke);
 	for (int i = 0; i < need; i++)
-		ast_add_child(ast_cur, inv, ast_vs[ast_vn - need + i]);
+		{ MCC_TRACE("br\n"); ast_add_child(ast_cur, inv, ast_vs[ast_vn - need + i]); }
 	ast_vn -= need;
 	ast_call_pending = inv;
 	ast_in_call = 1;
@@ -2453,8 +2453,8 @@ static int ast_argfwd_read_count(AstArena *a, int off) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	int cnt = 0;
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Ref && ast_ref_is_local_off(a, n, off))
-			{ MCC_TRACE("br\n"); cnt++; }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Ref && ast_ref_is_local_off(a, n, off))
+			{ MCC_TRACE("br\n"); cnt++; } }
 	return cnt;
 }
 #define AST_INLINE_MAX 512
@@ -2490,8 +2490,8 @@ static int ast_inline_cap_ok;
 
 static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_inline_n; i++)
-		if (ast_inline_pool[i].sym == sym)
-			{ MCC_TRACE("br\n"); return ast_inline_pool[i].ast; }
+		{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == sym)
+			{ MCC_TRACE("br\n"); return ast_inline_pool[i].ast; } }
 	return NULL;
 }
 
@@ -2604,10 +2604,10 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	void *csym = (void *)(uintptr_t)ast_sym(a, cref);
 	struct AstInlineFn *e = NULL;
 	for (int i = 0; i < ast_inline_n; i++)
-		if (ast_inline_pool[i].sym == csym) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == csym) { MCC_TRACE("br\n");
 			e = &ast_inline_pool[i];
 			break;
-		}
+		} }
 	if (!e || !e->graftable)
 		{ MCC_TRACE("br\n"); return 0; }
 	int nargs = (int)ast_nchild(a, n) - 1;
@@ -2617,8 +2617,8 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_inline_depth >= ast_inline_depth_max)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (int i = 0; i < ast_inline_depth; i++)
-		if (ast_inline_stack[i] == csym)
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (ast_inline_stack[i] == csym)
+			{ MCC_TRACE("br\n"); return 0; } }
 	if (ast_graft_budget < (int)ast_count(e->ast))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_graft_limit >= 0 && ast_graft_total >= ast_graft_limit)
@@ -2646,7 +2646,7 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		AstLocal arg = ast_child(a, n, hidden + i + 1);
 		AstLocal cbase = arg;
 		while (ast_kind(a, cbase) == AST_Convert && ast_nchild(a, cbase) == 1)
-			cbase = ast_first_child(a, cbase);
+			{ MCC_TRACE("br\n"); cbase = ast_first_child(a, cbase); }
 		int pbt = e->param_typ[i] & VT_BTYPE, cbt = ast_type_t(a, cbase) & VT_BTYPE;
 		if (ast_templates_env && ast_kind(a, cbase) == AST_Literal &&
 				(ast_op(a, cbase) & VT_VALMASK) == VT_CONST && !(ast_op(a, cbase) & VT_SYM) &&
@@ -2776,8 +2776,8 @@ static int ast_has_graftable_call(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		void *csym = (void *)(uintptr_t)ast_sym(a, cref);
 		for (int i = 0; i < ast_inline_n; i++)
-			if (ast_inline_pool[i].sym == csym && ast_inline_pool[i].graftable)
-				{ MCC_TRACE("br\n"); return 1; }
+			{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == csym && ast_inline_pool[i].graftable)
+				{ MCC_TRACE("br\n"); return 1; } }
 	}
 	return 0;
 }
@@ -2929,8 +2929,8 @@ static int ast_reemit_has_forward(struct AstReemitFn *f) { MCC_TRACE("enter\n");
 		if (!cs)
 			{ MCC_TRACE("br\n"); continue; }
 		for (int i = f->inline_n_at_gen; i < ast_inline_n; i++)
-			if (ast_inline_pool[i].sym == cs && ast_inline_pool[i].graftable)
-				{ MCC_TRACE("br\n"); return 1; }
+			{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == cs && ast_inline_pool[i].graftable)
+				{ MCC_TRACE("br\n"); return 1; } }
 	}
 	return 0;
 }
@@ -3019,8 +3019,8 @@ int ast_data_all_zero(void *sec, long off, long size) { MCC_TRACE("enter\n");
 	const unsigned char *bytes = ((Section *)sec)->data + off;
 	long i;
 	for (i = 0; i < size; i++)
-		if (bytes[i])
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (bytes[i])
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -3140,7 +3140,7 @@ static void ast_data_estimate(void *sec, long off, long size, int is_ro) { MCC_T
 	if (ast_data_report_env) { MCC_TRACE("br\n");
 		fprintf(stderr, "mcc: const-data:   ^ compressible %ld->%ld chain=", size, best.score);
 		for (i = 0; i < best.k; i++)
-			fprintf(stderr, "%s%s", i ? "+" : "", combo_codecs[best.sel[i]].name);
+			{ MCC_TRACE("br\n"); fprintf(stderr, "%s%s", i ? "+" : "", combo_codecs[best.sel[i]].name); }
 		fprintf(stderr, " (M6 candidate, round-trip OK; est saved=%ld)\n", ast_data_saved);
 	}
 }
@@ -3213,8 +3213,8 @@ static uint8_t ast_du_flags[AST_DU_CAP];
 
 static uint8_t *ast_du_find(int off, int create) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_du_n; i++)
-		if (ast_du_off[i] == off)
-			{ MCC_TRACE("br\n"); return &ast_du_flags[i]; }
+		{ MCC_TRACE("br\n"); if (ast_du_off[i] == off)
+			{ MCC_TRACE("br\n"); return &ast_du_flags[i]; } }
 	if (!create || ast_du_n >= AST_DU_CAP)
 		{ MCC_TRACE("br\n"); return NULL; }
 	ast_du_off[ast_du_n] = off;
@@ -3331,13 +3331,13 @@ static void ast_memo_sync(const AstArena *a) { MCC_TRACE("enter\n");
 	if (ast_memo_cap < cnt) { MCC_TRACE("br\n");
 		int ncap = cnt ? cnt : 1;
 		for (int i = 0; i < AST_MEMO_PRED_COUNT; i++)
-			ast_memo[i] =
-					mcc_realloc(ast_memo[i], (size_t)ncap * sizeof *ast_memo[i]);
+			{ MCC_TRACE("br\n"); ast_memo[i] =
+					mcc_realloc(ast_memo[i], (size_t)ncap * sizeof *ast_memo[i]); }
 		ast_memo_cap = ncap;
 	}
 	for (int i = 0; i < AST_MEMO_PRED_COUNT; i++)
-		if (ast_memo[i])
-			{ MCC_TRACE("br\n"); memset(ast_memo[i], 0, (size_t)ast_memo_cap * sizeof *ast_memo[i]); }
+		{ MCC_TRACE("br\n"); if (ast_memo[i])
+			{ MCC_TRACE("br\n"); memset(ast_memo[i], 0, (size_t)ast_memo_cap * sizeof *ast_memo[i]); } }
 	ast_memo_arena = a;
 	ast_memo_epoch = a->epoch;
 }
@@ -3446,7 +3446,7 @@ static uint64_t ast_hash_of(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	v = ast_hash_mix(v, a->sym[n]);
 	v = ast_hash_mix(v, a->nchild[n]);
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
-		v = ast_hash_mix(v, ast_hash_of(a, c));
+		{ MCC_TRACE("br\n"); v = ast_hash_mix(v, ast_hash_of(a, c)); }
 	ast_hash[n] = v;
 	ast_hash_done[n] = 1;
 	return v;
@@ -3476,7 +3476,7 @@ static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) { MCC_TR
 	if ((int)n > *hi)
 		{ MCC_TRACE("br\n"); *hi = (int)n; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_subtree_span(a, c, lo, hi);
+		{ MCC_TRACE("br\n"); ast_subtree_span(a, c, lo, hi); }
 }
 
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
@@ -3488,8 +3488,8 @@ static int ast_promo_reg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return -1; }
 	int off = (int)(int64_t)ast_ival(a, n);
 	for (int i = 0; i < ast_promo_n; i++)
-		if (ast_promo_off[i] == off)
-			{ MCC_TRACE("br\n"); return ast_promo_reg[i]; }
+		{ MCC_TRACE("br\n"); if (ast_promo_off[i] == off)
+			{ MCC_TRACE("br\n"); return ast_promo_reg[i]; } }
 	return -1;
 }
 
@@ -3504,8 +3504,8 @@ static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) { MCC_TRACE(
 	}
 	uint32_t nc = ast_nchild(a, n);
 	for (uint32_t i = 0; i < nc; i++)
-		if (ast_subtree_refs_local(a, ast_child(a, n, i), off))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_subtree_refs_local(a, ast_child(a, n, i), off))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -3519,15 +3519,15 @@ static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff,
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) { MCC_TRACE("br\n");
 			int off = (int)(int64_t)ast_ival(a, n);
 			for (int j = 0; j < nc; j++)
-				if (coff[j] == off) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (coff[j] == off) { MCC_TRACE("br\n");
 					cweight[j] += 1 << (depth < 12 ? depth : 12);
 					break;
-				}
+				} }
 		}
 	}
 	int cd = (k == AST_If && ast_op(a, n) == 2) ? depth + 1 : depth;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_promo_weigh(a, c, cd, coff, nc, cweight);
+		{ MCC_TRACE("br\n"); ast_promo_weigh(a, c, cd, coff, nc, cweight); }
 }
 
 static int ast_subtree_reads_local(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\n");
@@ -3540,8 +3540,8 @@ static int ast_subtree_reads_local(AstArena *a, AstLocal n, int off) { MCC_TRACE
 			{ MCC_TRACE("br\n"); return 1; }
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_subtree_reads_local(a, c, off))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_subtree_reads_local(a, c, off))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -3595,8 +3595,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 								 !(tt & (VT_ARRAY | VT_BITFIELD | VT_VOLATILE));
 		int j;
 		for (j = 0; j < nc; j++)
-			if (coff[j] == off)
-				{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); if (coff[j] == off)
+				{ MCC_TRACE("br\n"); break; } }
 		if (j == nc) { MCC_TRACE("br\n");
 			if (nc >= (int)(sizeof coff / sizeof *coff))
 				{ MCC_TRACE("br\n"); continue; }
@@ -3628,8 +3628,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			}
 		}
 		for (int j = 0; j < nc; j++)
-			if (coff[j] == off || (sz > 0 && coff[j] >= off && coff[j] < off + sz))
-				{ MCC_TRACE("br\n"); cpoison[j] = 1; }
+			{ MCC_TRACE("br\n"); if (coff[j] == off || (sz > 0 && coff[j] >= off && coff[j] < off + sz))
+				{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
 	}
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_kind(a, n) != AST_Ref)
@@ -3649,8 +3649,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		if (sz <= 0)
 			{ MCC_TRACE("br\n"); sz = 8; }
 		for (int j = 0; j < nc; j++)
-			if (coff[j] >= off && coff[j] < off + sz)
-				{ MCC_TRACE("br\n"); cpoison[j] = 1; }
+			{ MCC_TRACE("br\n"); if (coff[j] >= off && coff[j] < off + sz)
+				{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
 	}
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_kind(a, n) != AST_Ref)
@@ -3668,17 +3668,17 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); size = 8; }
 		int base = (int)(int64_t)ast_ival(a, n);
 		for (int j = 0; j < nc; j++)
-			if (coff[j] >= base && coff[j] < base + size)
-				{ MCC_TRACE("br\n"); cpoison[j] = 1; }
+			{ MCC_TRACE("br\n"); if (coff[j] >= base && coff[j] < base + size)
+				{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
 	}
 	for (int j = 0; j < nc; j++)
-		for (int t = 0; t < ast_ltemp_n; t++)
-			if (coff[j] == ast_ltemp_off[t]) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); for (int t = 0; t < ast_ltemp_n; t++)
+			{ MCC_TRACE("br\n"); if (coff[j] == ast_ltemp_off[t]) { MCC_TRACE("br\n");
 				cpoison[j] = 1;
 				break;
-			}
+			} } }
 	for (int j = 0; j < nc; j++)
-		cweight[j] = 0;
+		{ MCC_TRACE("br\n"); cweight[j] = 0; }
 	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
 	ast_promo_callful = has_call;
 	const int *gp_pool = has_call ? ast_promo_callee : ast_promo_caller;
@@ -3689,7 +3689,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		int cfirst[AST_PROMO_MAX * 8], clast[AST_PROMO_MAX * 8];
 		int cdeffirst[AST_PROMO_MAX * 8];
 		for (int j = 0; j < nc; j++)
-			cfirst[j] = -1, clast[j] = -1, cdeffirst[j] = 0;
+			{ MCC_TRACE("br\n"); cfirst[j] = -1, clast[j] = -1, cdeffirst[j] = 0; }
 		for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 			if (ast_kind(a, n) != AST_Ref)
 				{ MCC_TRACE("br\n"); continue; }
@@ -3698,12 +3698,12 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); continue; }
 			int off = (int)(int64_t)ast_ival(a, n);
 			for (int j = 0; j < nc; j++)
-				if (coff[j] == off) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (coff[j] == off) { MCC_TRACE("br\n");
 					if (cfirst[j] < 0)
 						{ MCC_TRACE("br\n"); cfirst[j] = (int)n; }
 					clast[j] = (int)n;
 					break;
-				}
+				} }
 		}
 		int first_branch = (int)nn;
 		for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
@@ -3723,8 +3723,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			if ((int)n >= first_branch || ast_subtree_reads_local(a, ast_child(a, n, 1), off))
 				{ MCC_TRACE("br\n"); continue; }
 			for (int j = 0; j < nc; j++)
-				if (coff[j] == off && cfirst[j] == (int)tgt)
-					{ MCC_TRACE("br\n"); cdeffirst[j] = 1; }
+				{ MCC_TRACE("br\n"); if (coff[j] == off && cfirst[j] == (int)tgt)
+					{ MCC_TRACE("br\n"); cdeffirst[j] = 1; } }
 		}
 		int lo[AST_PROMO_MAX * 8], hi[AST_PROMO_MAX * 8];
 		for (int j = 0; j < nc; j++) { MCC_TRACE("br\n");
@@ -3758,7 +3758,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		}
 		int careg[AST_PROMO_MAX * 8];
 		for (int j = 0; j < nc; j++)
-			careg[j] = -1;
+			{ MCC_TRACE("br\n"); careg[j] = -1; }
 		for (int cls = 0; cls < 2; cls++) { MCC_TRACE("br\n");
 			const int *pool = cls == 0 ? gp_pool : ast_promo_xmm;
 			int kcol = cls == 0 ? gp_max : xmm_max;
@@ -3777,30 +3777,30 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				cost[i] = cweight[idx[i]];
 			}
 			for (int i = 0; i < m; i++)
-				for (int j = i + 1; j < m; j++) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); for (int j = i + 1; j < m; j++) { MCC_TRACE("br\n");
 					int a1 = idx[i], b1 = idx[j];
 					int disjoint = (hi[a1] < lo[b1]) || (hi[b1] < lo[a1]);
 					if (!disjoint) { MCC_TRACE("br\n");
 						adj[i] |= (uint64_t)1 << j;
 						adj[j] |= (uint64_t)1 << i;
 					}
-				}
+				} }
 			ast_color_graph(m, adj, cost, kcol, col);
 			for (int i = 0; i < m; i++)
-				if (col[i] >= 0)
-					{ MCC_TRACE("br\n"); careg[idx[i]] = pool[col[i]]; }
+				{ MCC_TRACE("br\n"); if (col[i] >= 0)
+					{ MCC_TRACE("br\n"); careg[idx[i]] = pool[col[i]]; } }
 		}
 		int ord[AST_PROMO_MAX * 8], no = 0;
 		for (int j = 0; j < nc; j++)
-			if (careg[j] >= 0)
-				{ MCC_TRACE("br\n"); ord[no++] = j; }
+			{ MCC_TRACE("br\n"); if (careg[j] >= 0)
+				{ MCC_TRACE("br\n"); ord[no++] = j; } }
 		for (int i = 0; i < no; i++)
-			for (int j = i + 1; j < no; j++)
-				if (lo[ord[j]] < lo[ord[i]]) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (int j = i + 1; j < no; j++)
+				{ MCC_TRACE("br\n"); if (lo[ord[j]] < lo[ord[i]]) { MCC_TRACE("br\n");
 					int t = ord[i];
 					ord[i] = ord[j];
 					ord[j] = t;
-				}
+				} } }
 		for (int i = 0; i < no; i++) { MCC_TRACE("br\n");
 			ast_promo_off[ast_promo_n] = coff[ord[i]];
 			ast_promo_typ[ast_promo_n] = ctyp[ord[i]];
@@ -3811,7 +3811,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	}
 	int colorable[AST_PROMO_MAX * 8];
 	for (int j = 0; j < nc; j++)
-		colorable[j] = 1;
+		{ MCC_TRACE("br\n"); colorable[j] = 1; }
 	if (ast_color_env) { MCC_TRACE("br\n");
 		for (int cls = 0; cls < 2; cls++) { MCC_TRACE("br\n");
 			int idx[AST_COLOR_MAX], m = 0;
@@ -3832,8 +3832,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			}
 			ast_color_graph(m, adj, cost, kcol, col);
 			for (int i = 0; i < m; i++)
-				if (col[i] < 0)
-					{ MCC_TRACE("br\n"); colorable[idx[i]] = 0; }
+				{ MCC_TRACE("br\n"); if (col[i] < 0)
+					{ MCC_TRACE("br\n"); colorable[idx[i]] = 0; } }
 		}
 	}
 	for (;;) { MCC_TRACE("br\n");
@@ -3868,17 +3868,17 @@ static void ast_promo_save_plan(void) { MCC_TRACE("enter\n");
 		for (int i = 0; i < ast_promo_n; i++) { MCC_TRACE("br\n");
 			int s = -1;
 			for (int p = 0; p < i; p++)
-				if (ast_promo_reg[p] == ast_promo_reg[i]) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (ast_promo_reg[p] == ast_promo_reg[i]) { MCC_TRACE("br\n");
 					s = ast_promo_save_slot[p];
 					break;
-				}
+				} }
 			ast_promo_save_slot[i] = s >= 0 ? s : ast_promo_save_n++;
 		}
 		if (ast_promo_callful && ast_promo_save_n < ast_promo_n)
 			{ MCC_TRACE("br\n"); MCC_TRACE("spillshare slots=%d->%d\n", ast_promo_n, ast_promo_save_n); }
 	} else { MCC_TRACE("br\n");
 		for (int i = 0; i < ast_promo_n; i++)
-			ast_promo_save_slot[i] = i;
+			{ MCC_TRACE("br\n"); ast_promo_save_slot[i] = i; }
 		ast_promo_save_n = ast_promo_n;
 	}
 }
@@ -3916,10 +3916,10 @@ static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 		for (int i = 0; i < ast_promo_n; i++) { MCC_TRACE("br\n");
 			int dup = 0;
 			for (int p = 0; p < i; p++)
-				if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) { MCC_TRACE("br\n");
 					dup = 1;
 					break;
-				}
+				} }
 			if (dup)
 				{ MCC_TRACE("br\n"); continue; }
 			ast_promo_save_sv(&sv, i);
@@ -3930,10 +3930,10 @@ static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 		int reg = ast_promo_reg[i];
 		int shared = 0;
 		for (int p = 0; p < i; p++)
-			if (ast_promo_reg[p] == reg) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ast_promo_reg[p] == reg) { MCC_TRACE("br\n");
 				shared = 1;
 				break;
-			}
+			} }
 		if (shared)
 			{ MCC_TRACE("br\n"); continue; }
 		SValue sv;
@@ -3960,10 +3960,10 @@ static void ast_promo_exit_restore(void) { MCC_TRACE("enter\n");
 	for (int i = ast_promo_n - 1; i >= 0; i--) { MCC_TRACE("br\n");
 		int dup = 0;
 		for (int p = i + 1; p < ast_promo_n; p++)
-			if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) { MCC_TRACE("br\n");
 				dup = 1;
 				break;
-			}
+			} }
 		if (dup)
 			{ MCC_TRACE("br\n"); continue; }
 		ast_promo_save_sv(&sv, i);
@@ -4014,11 +4014,11 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				(ast_inline_bias || ast_argsub_n)) { MCC_TRACE("br\n");
 			int off = (int)sv.c.i, subst = 0;
 			for (int j = 0; j < ast_argsub_n; j++)
-				if (ast_argsub_off[j] == off) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (ast_argsub_off[j] == off) { MCC_TRACE("br\n");
 					sv = ast_argsub_val[j];
 					subst = 1;
 					break;
-				}
+				} }
 			if (!subst)
 				{ MCC_TRACE("br\n"); sv.c.i += ast_inline_bias; }
 		}
@@ -4125,7 +4125,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); break; }
 		uint32_t nc = ast_nchild(a, n);
 		for (uint32_t i = 0; i < nc; i++)
-			ast_replay_value(a, ast_child(a, n, i));
+			{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, n, i)); }
 		vcheck_cmp();
 		gfunc_call((int)nc - 1);
 		if (ast_type_t(a, n) == VT_VOID)
@@ -4145,7 +4145,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_ARM64
 					if (ssz < 16)
 						{ MCC_TRACE("br\n"); while (ssz & (ssz - 1))
-							ssz = (ssz | (ssz - 1)) + 1; }
+							{ MCC_TRACE("br\n"); ssz = (ssz | (ssz - 1)) + 1; } }
 #endif
 					ast_alloc_loc(ssz, sal);
 					SValue sv;
@@ -4174,8 +4174,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				int rc = reg_classes[ret.r] & ~(MCC_RC_INT | MCC_RC_FLOAT);
 				rc <<= --nn;
 				for (r = 0; r < MCC_NB_REGS; ++r)
-					if (reg_classes[r] & rc)
-						{ MCC_TRACE("br\n"); break; }
+					{ MCC_TRACE("br\n"); if (reg_classes[r] & rc)
+						{ MCC_TRACE("br\n"); break; } }
 				vsetc(&ret.type, r, &ret.c);
 			}
 			vsetc(&ret.type, ret.r, &ret.c);
@@ -4218,8 +4218,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 
 static struct ast_rp_label *ast_rp_label_get(int v) { MCC_TRACE("enter\n");
 	for (int i = ast_rp_label_floor; i < ast_rp_nlabel; i++)
-		if (ast_rp_labels[i].v == v)
-			{ MCC_TRACE("br\n"); return &ast_rp_labels[i]; }
+		{ MCC_TRACE("br\n"); if (ast_rp_labels[i].v == v)
+			{ MCC_TRACE("br\n"); return &ast_rp_labels[i]; } }
 	if (ast_rp_nlabel == ast_rp_caplabel) { MCC_TRACE("br\n");
 		ast_rp_caplabel = ast_rp_caplabel ? ast_rp_caplabel * 2 : 8;
 		ast_rp_labels =
@@ -4541,7 +4541,7 @@ static uint64_t ast_fold_eval(int op, int tt, uint64_t l1, uint64_t l2,
 
 static void ast_fold_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_fold_rec(a, c);
+		{ MCC_TRACE("br\n"); ast_fold_rec(a, c); }
 	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
 		{ MCC_TRACE("br\n"); return; }
 	int op = ast_op(a, n);
@@ -4649,7 +4649,7 @@ static double ast_bfold_sqrt(double x) { MCC_TRACE("enter\n");
 	g = (g >> 1) + 0x1ff8000000000000ull;
 	memcpy(&r, &g, sizeof r);
 	for (int i = 0; i < 5; i++)
-		r = 0.5 * (r + dm / r);
+		{ MCC_TRACE("br\n"); r = 0.5 * (r + dm / r); }
 	uint64_t S = (uint64_t)(r * 67108864.0);
 	uint64_t hi = m >> 10, lo = m << 54;
 	if (S < (1ull << 52))
@@ -4657,9 +4657,9 @@ static double ast_bfold_sqrt(double x) { MCC_TRACE("enter\n");
 	if (S > (1ull << 53) - 1)
 		{ MCC_TRACE("br\n"); S = (1ull << 53) - 1; }
 	while (!ast_bfold_sq_gt(2 * S + 1, hi, lo))
-		S++;
+		{ MCC_TRACE("br\n"); S++; }
 	while (ast_bfold_sq_gt(2 * S - 1, hi, lo))
-		S--;
+		{ MCC_TRACE("br\n"); S--; }
 	uint64_t rbits = ((uint64_t)(E / 2 - 26 + 52 + 1023) << 52) + (S - (1ull << 52));
 	memcpy(&r, &rbits, sizeof r);
 	return r;
@@ -4782,7 +4782,7 @@ static int ast_bfold_eval_d(int id, uint64_t b0, uint64_t b1, uint64_t *out) { M
 static AstLocal ast_bfold_arg(AstArena *a, AstLocal arg, int bt) { MCC_TRACE("enter\n");
 	while (ast_kind(a, arg) == AST_Convert && ast_nchild(a, arg) == 1 &&
 				 (ast_type_t(a, arg) & VT_BTYPE) == bt)
-		arg = ast_first_child(a, arg);
+		{ MCC_TRACE("br\n"); arg = ast_first_child(a, arg); }
 	if (ast_kind(a, arg) != AST_Literal ||
 			(ast_op(a, arg) & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST ||
 			(ast_type_t(a, arg) & VT_BTYPE) != bt)
@@ -4834,8 +4834,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 		int nfn = (int)(sizeof ast_bfold_tab / sizeof *ast_bfold_tab);
 		int bi;
 		for (bi = 0; bi < nfn; bi++)
-			if (!strcmp(nm, ast_bfold_tab[bi].name))
-				{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); if (!strcmp(nm, ast_bfold_tab[bi].name))
+				{ MCC_TRACE("br\n"); break; } }
 		if (bi == nfn)
 			{ MCC_TRACE("br\n"); continue; }
 		int bid = ast_bfold_tab[bi].id;
@@ -5081,8 +5081,8 @@ static int ast_ident_pure_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 		return 0;
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_ident_pure(a, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_ident_pure(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -5142,8 +5142,8 @@ static int ast_ident_same_scan(const AstArena *a, AstLocal x, AstLocal y) { MCC_
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal cx = a->first_child[x], cy = a->first_child[y];
 	for (; cx != AST_NONE; cx = a->next_sib[cx], cy = a->next_sib[cy])
-		if (!ast_ident_same_scan(a, cx, cy))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_ident_same_scan(a, cx, cy))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -5203,7 +5203,7 @@ static void ast_ident_adopt(AstArena *a, AstLocal n, AstLocal x) { MCC_TRACE("en
 	a->last_child[n] = a->last_child[x];
 	a->nchild[n] = a->nchild[x];
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
-		a->parent[c] = n;
+		{ MCC_TRACE("br\n"); a->parent[c] = n; }
 	a->first_child[x] = AST_NONE;
 	a->last_child[x] = AST_NONE;
 	a->nchild[x] = 0;
@@ -5483,7 +5483,7 @@ static int ast_ident_folds;
 static int ast_ident_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int sig = 0;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		sig += ast_ident_rec(a, c);
+		{ MCC_TRACE("br\n"); sig += ast_ident_rec(a, c); }
 	int r = ast_ident_node(a, n);
 	if (r) { MCC_TRACE("br\n");
 		ast_ident_folds++;
@@ -5801,7 +5801,7 @@ static int ast_narrow_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int sig = 0;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
 			 c = ast_next_sib(a, c))
-		sig += ast_narrow_rec(a, c);
+		{ MCC_TRACE("br\n"); sig += ast_narrow_rec(a, c); }
 	sig += ast_narrow_node(a, n);
 	return sig;
 }
@@ -5906,15 +5906,15 @@ static int ast_cprop_safe_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 		return 0;
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_cprop_safe(a, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_cprop_safe(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
 static int ast_cprop_find(int off) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_cprop_kn; i++)
-		if (ast_cprop_koff[i] == off)
-			{ MCC_TRACE("br\n"); return i; }
+		{ MCC_TRACE("br\n"); if (ast_cprop_koff[i] == off)
+			{ MCC_TRACE("br\n"); return i; } }
 	return -1;
 }
 
@@ -5975,7 +5975,7 @@ static void ast_cprop_rewrite(AstArena *a, AstLocal n, int lval) { MCC_TRACE("en
 	}
 	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_cprop_rewrite(a, c, clval);
+		{ MCC_TRACE("br\n"); ast_cprop_rewrite(a, c, clval); }
 }
 
 static void ast_cprop_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
@@ -6040,11 +6040,11 @@ static void ast_cprop_state_meet(const AstCpropState *st) { MCC_TRACE("enter\n")
 	while (i < ast_cprop_kn) { MCC_TRACE("br\n");
 		int j, keep = 0;
 		for (j = 0; j < st->kn; j++)
-			if (st->koff[j] == ast_cprop_koff[i]) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (st->koff[j] == ast_cprop_koff[i]) { MCC_TRACE("br\n");
 				keep = st->ktt[j] == ast_cprop_ktt[i] &&
 							 st->kval[j] == ast_cprop_kval[i];
 				break;
-			}
+			} }
 		if (keep)
 			{ MCC_TRACE("br\n"); i++; }
 		else
@@ -6058,8 +6058,8 @@ static int ast_cprop_opaque(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_kind(a, n) == AST_Jump)
 		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_cprop_opaque(a, c))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_cprop_opaque(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -6074,7 +6074,7 @@ static void ast_cprop_stmts(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	ast_cprop_vis[bb] = 1;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s))
-		ast_cprop_stmt(a, s);
+		{ MCC_TRACE("br\n"); ast_cprop_stmt(a, s); }
 }
 
 static int ast_cprop_arm_clean(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -6086,8 +6086,8 @@ static int ast_cprop_arm_clean(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (k == AST_If && ast_op(a, n) >= 2 && ast_op(a, n) <= 6)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_cprop_arm_clean(a, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_cprop_arm_clean(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -6233,10 +6233,10 @@ static void ast_cprop_stmt(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 		if (ast_op(a, s) == 6 && ast_cprop_switch_meet(a, s))
 			{ MCC_TRACE("br\n"); return; }
 		for (int i = 0; i < ast_cprop_kn;)
-			if (ast_licm_written(a, s, ast_cprop_koff[i]))
+			{ MCC_TRACE("br\n"); if (ast_licm_written(a, s, ast_cprop_koff[i]))
 				{ MCC_TRACE("br\n"); ast_cprop_kill(ast_cprop_koff[i]); }
 			else
-				{ MCC_TRACE("br\n"); i++; }
+				{ MCC_TRACE("br\n"); i++; } }
 		if (ast_sccp_has_label(a, s)) { MCC_TRACE("br\n");
 			ast_cprop_kn = 0;
 			return;
@@ -6254,11 +6254,11 @@ static void ast_cprop_stmt(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 		}
 	} else if (k == AST_Invoke && ast_call_window_env) { MCC_TRACE("br\n");
 		for (int i = 0; i < ast_cprop_kn;)
-			if (ast_cprop_escapes(a, ast_cprop_koff[i]) ||
+			{ MCC_TRACE("br\n"); if (ast_cprop_escapes(a, ast_cprop_koff[i]) ||
 					ast_licm_written(a, s, ast_cprop_koff[i]))
 				{ MCC_TRACE("br\n"); ast_cprop_kill(ast_cprop_koff[i]); }
 			else
-				{ MCC_TRACE("br\n"); i++; }
+				{ MCC_TRACE("br\n"); i++; } }
 	} else { MCC_TRACE("br\n");
 		ast_cprop_kn = 0;
 	}
@@ -6272,15 +6272,15 @@ static int ast_cprop_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_cprop_kn = 0;
 		ast_cprop_stmts(a, ast_root(a));
 		for (AstLocal n = 0; n < nn; n++)
-			if (ast_kind(a, n) == AST_BasicBlock && !ast_cprop_vis[n])
-				{ MCC_TRACE("br\n"); ast_cprop_block(a, n); }
+			{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_BasicBlock && !ast_cprop_vis[n])
+				{ MCC_TRACE("br\n"); ast_cprop_block(a, n); } }
 		mcc_free(ast_cprop_vis);
 		ast_cprop_vis = NULL;
 		return ast_cprop_folds;
 	}
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_BasicBlock)
-			{ MCC_TRACE("br\n"); ast_cprop_block(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_BasicBlock)
+			{ MCC_TRACE("br\n"); ast_cprop_block(a, n); } }
 	return ast_cprop_folds;
 }
 
@@ -6292,8 +6292,8 @@ static int ast_dse_folds;
 
 static int ast_dse_find(int off) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_dse_kn; i++)
-		if (ast_dse_koff[i] == off)
-			{ MCC_TRACE("br\n"); return i; }
+		{ MCC_TRACE("br\n"); if (ast_dse_koff[i] == off)
+			{ MCC_TRACE("br\n"); return i; } }
 	return -1;
 }
 
@@ -6315,7 +6315,7 @@ static void ast_dse_kill_reads(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); ast_dse_kill((int)(int64_t)ast_ival(a, n)); }
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_dse_kill_reads(a, c);
+		{ MCC_TRACE("br\n"); ast_dse_kill_reads(a, c); }
 }
 
 static void ast_dse_gen(int off, AstLocal store) { MCC_TRACE("enter\n");
@@ -6374,8 +6374,8 @@ static int ast_dse_run(AstArena *a) { MCC_TRACE("enter\n");
 	ast_dse_folds = 0;
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_BasicBlock)
-			{ MCC_TRACE("br\n"); ast_dse_block(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_BasicBlock)
+			{ MCC_TRACE("br\n"); ast_dse_block(a, n); } }
 	return ast_dse_folds;
 }
 
@@ -6387,8 +6387,8 @@ static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) { MCC_TRACE("ente
 	if (ast_kind(a, n) == AST_Jump && ast_op(a, n) == 4)
 		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_sccp_has_label(a, c))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_sccp_has_label(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -6433,8 +6433,8 @@ static int ast_nonnull_ref(AstArena *a, AstLocal op, const int *offs, int noff) 
 		{ MCC_TRACE("br\n"); return 0; }
 	off = (int)(int64_t)ast_ival(a, op);
 	for (int i = 0; i < noff; i++)
-		if (offs[i] == off)
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (offs[i] == off)
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -6564,13 +6564,13 @@ static int ast_constparam_fold(AstArena *a, const int *offs, const int64_t *vals
 			{ MCC_TRACE("br\n"); continue; }
 		off = (int)(int64_t)ast_ival(a, n);
 		for (int i = 0; i < noff; i++)
-			if (offs[i] == off) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (offs[i] == off) { MCC_TRACE("br\n");
 				if (!ast_ident_etype(a, n, &tt, &ref))
 					{ MCC_TRACE("br\n"); tt = VT_INT; }
 				ast_ident_setlit(a, n, tt, (uint64_t)vals[i]);
 				folds++;
 				break;
-			}
+			} }
 	}
 	return folds;
 }
@@ -6680,8 +6680,8 @@ static int ast_tco_reads_off(AstArena *a, AstLocal n, int off) { MCC_TRACE("ente
 			{ MCC_TRACE("br\n"); return 1; }
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_tco_reads_off(a, c, off))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_tco_reads_off(a, c, off))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -6720,8 +6720,8 @@ static int ast_tco_run(AstArena *a, Sym *fsym) { MCC_TRACE("enter\n");
 	if (np < 1)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (int i = 0; i < np; i++)
-		if (ast_cprop_escapes(a, poff[i]))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (ast_cprop_escapes(a, poff[i]))
+			{ MCC_TRACE("br\n"); return 0; } }
 
 	int converted = 0;
 	AstLocal nn = ast_count(a);
@@ -6890,8 +6890,8 @@ static int ast_cse_regpure_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		return 0;
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_cse_regpure(a, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_cse_regpure(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -6957,7 +6957,7 @@ static void ast_cse_subst(AstArena *a, AstLocal n, int lval) { MCC_TRACE("enter\
 	}
 	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_cse_subst(a, c, clval);
+		{ MCC_TRACE("br\n"); ast_cse_subst(a, c, clval); }
 }
 
 static void ast_cse_kill(AstArena *a, int off) { MCC_TRACE("enter\n");
@@ -6984,8 +6984,8 @@ static int ast_licm_written(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter
 	if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
 		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_licm_written(a, c, off))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_licm_written(a, c, off))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -7000,8 +7000,8 @@ static int ast_licm_operands_ok(AstArena *a, AstLocal loop, AstLocal e) { MCC_TR
 			{ MCC_TRACE("br\n"); return 0; }
 	}
 	for (AstLocal c = ast_first_child(a, e); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_licm_operands_ok(a, loop, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_licm_operands_ok(a, loop, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -7022,7 +7022,7 @@ static void ast_licm_subst(AstArena *a, AstLocal n, AstLocal e, AstLocal ref,
 	}
 	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_licm_subst(a, c, e, ref, clval);
+		{ MCC_TRACE("br\n"); ast_licm_subst(a, c, e, ref, clval); }
 }
 
 static int ast_licm_is_loop(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
@@ -7041,8 +7041,8 @@ static long ast_cost_score(AstArena *a) { MCC_TRACE("enter\n");
 		if (ast_licm_is_loop(a, n)) { MCC_TRACE("br\n");
 			int d = 1;
 			for (p = ast_parent(a, n); p != AST_NONE; p = ast_parent(a, p))
-				if (ast_licm_is_loop(a, p))
-					{ MCC_TRACE("br\n"); d++; }
+				{ MCC_TRACE("br\n"); if (ast_licm_is_loop(a, p))
+					{ MCC_TRACE("br\n"); d++; } }
 			if (d > maxdepth)
 				{ MCC_TRACE("br\n"); maxdepth = d; }
 		}
@@ -7059,8 +7059,8 @@ static void ast_fn_cost(AstArena *a, const char *fn) { MCC_TRACE("enter\n");
 		if (ast_licm_is_loop(a, n)) { MCC_TRACE("br\n");
 			int d = 1;
 			for (p = ast_parent(a, n); p != AST_NONE; p = ast_parent(a, p))
-				if (ast_licm_is_loop(a, p))
-					{ MCC_TRACE("br\n"); d++; }
+				{ MCC_TRACE("br\n"); if (ast_licm_is_loop(a, p))
+					{ MCC_TRACE("br\n"); d++; } }
 			if (d > maxdepth)
 				{ MCC_TRACE("br\n"); maxdepth = d; }
 		}
@@ -7128,7 +7128,7 @@ static AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_cst(a, d, ast_cst(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
 			 c = ast_next_sib(a, c))
-		ast_add_child(a, d, ast_dup_sub(a, c));
+		{ MCC_TRACE("br\n"); ast_add_child(a, d, ast_dup_sub(a, c)); }
 	return d;
 }
 
@@ -7175,8 +7175,8 @@ static int ast_inline_expr_pure(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (!ast_inline_type_ok(a, n) || !ast_inline_node_allowed(a, n))
 		{ MCC_TRACE("br\n"); return 0; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_inline_expr_pure(a, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_inline_expr_pure(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -7203,10 +7203,10 @@ static int ast_inline_pass_simple(struct AstInlineFn *e) { MCC_TRACE("enter\n");
 			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) { MCC_TRACE("br\n");
 				int off = (int)(int64_t)ast_ival(a, n), isparam = 0;
 				for (int i = 0; i < e->nparams; i++)
-					if (e->param_off[i] == off) { MCC_TRACE("br\n");
+					{ MCC_TRACE("br\n"); if (e->param_off[i] == off) { MCC_TRACE("br\n");
 						isparam = 1;
 						break;
-					}
+					} }
 				if (!isparam)
 					{ MCC_TRACE("br\n"); return 0; }
 			}
@@ -7223,12 +7223,12 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) { MCC_TRACE("br\n");
 			int off = (int)(int64_t)ast_ival(src, n);
 			for (int i = 0; i < nparams; i++)
-				if (param_off[i] == off) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (param_off[i] == off) { MCC_TRACE("br\n");
 					AstLocal cv = ast_node(dst, AST_Convert);
 					ast_set_type(dst, cv, ast_type_t(src, n), ast_type_ref(src, n));
 					ast_add_child(dst, cv, ast_dup_sub(dst, argmap[i]));
 					return cv;
-				}
+				} }
 			AST_ASSERT(0);
 		}
 	}
@@ -7240,7 +7240,7 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 	ast_set_sym(dst, d, ast_sym(src, n));
 	ast_set_cst(dst, d, ast_cst(src, n));
 	for (AstLocal c = ast_first_child(src, n); c != AST_NONE; c = ast_next_sib(src, c))
-		ast_add_child(dst, d, ast_inline_copy_expr(dst, src, c, argmap, param_off, nparams));
+		{ MCC_TRACE("br\n"); ast_add_child(dst, d, ast_inline_copy_expr(dst, src, c, argmap, param_off, nparams)); }
 	return d;
 }
 
@@ -7268,10 +7268,10 @@ static int ast_inline_graft_node(AstArena *a, AstLocal call, struct AstInlineFn 
 	AstArena *ca = e->ast;
 	AstLocal cnn = ast_count(ca), rv = AST_NONE;
 	for (AstLocal n = 0; n < cnn; n++)
-		if (ast_kind(ca, n) == AST_Return && ast_nchild(ca, n) == 1) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (ast_kind(ca, n) == AST_Return && ast_nchild(ca, n) == 1) { MCC_TRACE("br\n");
 			rv = ast_first_child(ca, n);
 			break;
-		}
+		} }
 	if (rv == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	ast_graft_total++;
@@ -7305,10 +7305,10 @@ static int ast_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		void *csym = (void *)(uintptr_t)ast_sym(a, cref);
 		struct AstInlineFn *e = NULL;
 		for (int i = 0; i < ast_inline_n; i++)
-			if (ast_inline_pool[i].sym == csym) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ast_inline_pool[i].sym == csym) { MCC_TRACE("br\n");
 				e = &ast_inline_pool[i];
 				break;
-			}
+			} }
 		if (!e || !e->graftable || !ast_inline_pass_simple(e))
 			{ MCC_TRACE("br\n"); continue; }
 		if (ast_inline_graft_node(a, n, e)) { MCC_TRACE("br\n");
@@ -7400,8 +7400,8 @@ static int ast_bf_window(const uint64_t *vals, int cnt, uint64_t *mask,
 	int64_t b = (int64_t)vals[0];
 	uint64_t m = 0;
 	for (i = 1; i < cnt; i++)
-		if ((int64_t)vals[i] < b)
-			{ MCC_TRACE("br\n"); b = (int64_t)vals[i]; }
+		{ MCC_TRACE("br\n"); if ((int64_t)vals[i] < b)
+			{ MCC_TRACE("br\n"); b = (int64_t)vals[i]; } }
 	for (i = 0; i < cnt; i++) { MCC_TRACE("br\n");
 		uint64_t d = vals[i] - (uint64_t)b;
 		if (d > 63)
@@ -7423,8 +7423,8 @@ static int ast_bf_has_label(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
 			 c = ast_next_sib(a, c))
-		if (ast_bf_has_label(a, c))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_bf_has_label(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -7534,7 +7534,7 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_add_child(a, s, tail); }
 	ast_bf_drop(a, cond0);
 	for (int i = 0; i < ndrop; i++)
-		ast_bf_drop(a, drop[i]);
+		{ MCC_TRACE("br\n"); ast_bf_drop(a, drop[i]); }
 	return 1;
 }
 
@@ -7584,7 +7584,7 @@ static int ast_bf_try_ifne(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	ast_add_child(a, s, body);
 	ast_bf_drop(a, cond0);
 	for (int i = 0; i < ndrop; i++)
-		ast_bf_drop(a, drop[i]);
+		{ MCC_TRACE("br\n"); ast_bf_drop(a, drop[i]); }
 	return 1;
 }
 
@@ -7641,20 +7641,20 @@ static int ast_bf_run(AstArena *a) { MCC_TRACE("enter\n");
 	ast_bf_folds = 0;
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
-			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_if(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
+			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_if(a, n); } }
 	nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
-			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_ifne(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_If && ast_op(a, n) == 0)
+			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_ifne(a, n); } }
 	nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR)
-			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_lor(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR)
+			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_lor(a, n); } }
 	nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LAND)
-			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_land(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LAND)
+			{ MCC_TRACE("br\n"); ast_bf_folds += ast_bf_try_land(a, n); } }
 	return ast_bf_folds;
 }
 
@@ -7738,8 +7738,8 @@ static AstVLat ast_vlat_slot[AST_VLAT_CAP];
 
 static AstVLat *ast_vlat_find(int off, int create) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_vlat_n; i++)
-		if (ast_vlat_off[i] == off)
-			{ MCC_TRACE("br\n"); return &ast_vlat_slot[i]; }
+		{ MCC_TRACE("br\n"); if (ast_vlat_off[i] == off)
+			{ MCC_TRACE("br\n"); return &ast_vlat_slot[i]; } }
 	if (!create || ast_vlat_n >= AST_VLAT_CAP)
 		{ MCC_TRACE("br\n"); return NULL; }
 	ast_vlat_off[ast_vlat_n] = off;
@@ -7869,7 +7869,7 @@ static int ast_vlat_build(AstArena *a) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); MCC_TRACE("vlat build slots=%d iters=%d\n", ast_vlat_n, iters); }
 #if MCC_CONFIG_AST_SHADOW
 	for (int i = 0; i < ast_vlat_n; i++)
-		ast_vlat_check_sound("build", a, ast_vlat_off[i], &ast_vlat_slot[i]);
+		{ MCC_TRACE("br\n"); ast_vlat_check_sound("build", a, ast_vlat_off[i], &ast_vlat_slot[i]); }
 #endif
 	return ast_vlat_n;
 }
@@ -8128,14 +8128,14 @@ static int ast_range_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	ast_range_folds = 0;
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LAND &&
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LAND &&
 				ast_nchild(a, n) == 2)
-			{ MCC_TRACE("br\n"); ast_range_folds += ast_range_try(a, n); }
+			{ MCC_TRACE("br\n"); ast_range_folds += ast_range_try(a, n); } }
 	nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR &&
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && ast_op(a, n) == TOK_LOR &&
 				ast_nchild(a, n) == 2)
-			{ MCC_TRACE("br\n"); ast_range_folds += ast_range_try_lor(a, n); }
+			{ MCC_TRACE("br\n"); ast_range_folds += ast_range_try_lor(a, n); } }
 	return ast_range_folds;
 }
 
@@ -8238,7 +8238,7 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	if (!ast_ident_pure(a, x))
 		{ MCC_TRACE("br\n"); return 0; }
 	for (k = 0, t = ac; t > 1; t >>= 1)
-		k++;
+		{ MCC_TRACE("br\n"); k++; }
 	/* bias = (x >> 31) & (|C|-1); sum = x + bias */
 	bias = ast_bf_bin(a, '&', S32,
 										ast_bf_bin(a, TOK_SAR, S32, ast_dup_sub(a, x), ast_bf_lit(a, S32, 31)),
@@ -8353,7 +8353,7 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	ast_divmagic_folds = 0;
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Binary && (ast_op(a, n) == '/' || ast_op(a, n) == '%') &&
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && (ast_op(a, n) == '/' || ast_op(a, n) == '%') &&
 				ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
 			int f = ast_divmagic_try(a, n); /* unsigned magic */
 			if (!f)
@@ -8361,7 +8361,7 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 			if (!f)
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_signed(a, n); } /* signed non-power-of-two division */
 			ast_divmagic_folds += f;
-		}
+		} }
 	return ast_divmagic_folds;
 }
 
@@ -8505,9 +8505,9 @@ static int ast_abs_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	ast_abs_folds = 0;
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_If && ast_op(a, n) == 5 && ast_nchild(a, n) == 3) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_If && ast_op(a, n) == 5 && ast_nchild(a, n) == 3) { MCC_TRACE("br\n");
 			ast_abs_folds += ast_abs_try(a, n);
-		}
+		} }
 	return ast_abs_folds;
 }
 
@@ -8756,7 +8756,7 @@ static int ast_reassoc_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a);
 	ast_reassoc_folds = 0;
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_Binary && ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
 			int f = ast_reassoc_assoc_env ? ast_reassoc_try(a, n) : 0;
 			if (!f && ast_reassoc_shlshr_env)
 				{ MCC_TRACE("br\n"); f = ast_reassoc_shlshr(a, n); }
@@ -8765,7 +8765,7 @@ static int ast_reassoc_run(AstArena *a) { MCC_TRACE("enter\n");
 			if (!f && ast_reassoc_muldist_env)
 				{ MCC_TRACE("br\n"); f = ast_reassoc_muldist(a, n); }
 			ast_reassoc_folds += f;
-		}
+		} }
 	return ast_reassoc_folds;
 }
 
@@ -8856,9 +8856,9 @@ static int ast_sethi_nary_chain(AstArena *a, AstLocal top) { MCC_TRACE("enter\n"
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal order[AST_SETHI_NARY_MAX + 1];
 	for (int i = 0; i <= nnodes; i++)
-		order[i] = leaves[nnodes - i];
+		{ MCC_TRACE("br\n"); order[i] = leaves[nnodes - i]; }
 	for (int i = 0; i <= nnodes; i++)
-		keys[i] = ast_sethi_num(a, order[i]);
+		{ MCC_TRACE("br\n"); keys[i] = ast_sethi_num(a, order[i]); }
 	int changed = 0;
 	for (int i = 1; i <= nnodes; i++) { MCC_TRACE("br\n");
 		AstLocal v = order[i];
@@ -8971,7 +8971,7 @@ static void ast_ltemp_count_occ(AstArena *a, AstLocal n, AstLocal e, int lval,
 	}
 	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_ltemp_count_occ(a, c, e, clval, cnt);
+		{ MCC_TRACE("br\n"); ast_ltemp_count_occ(a, c, e, clval, cnt); }
 }
 
 static AstLocal ast_ltemp_cand;
@@ -9000,7 +9000,7 @@ static void ast_ltemp_scan(AstArena *a, AstLocal loop, AstLocal n, int lval) { M
 	}
 	int clval = k == AST_Unary && ast_cprop_lval_op(ast_op(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_ltemp_scan(a, loop, c, clval);
+		{ MCC_TRACE("br\n"); ast_ltemp_scan(a, loop, c, clval); }
 }
 
 static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
@@ -9014,13 +9014,13 @@ static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
 		return 1;
 	}
 	for (AstLocal c = a->first_child[parent]; c != AST_NONE; c = a->next_sib[c])
-		if (a->next_sib[c] == pivot) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (a->next_sib[c] == pivot) { MCC_TRACE("br\n");
 			a->parent[node] = parent;
 			a->next_sib[node] = pivot;
 			a->next_sib[c] = node;
 			a->nchild[parent]++;
 			return 1;
-		}
+		} }
 	return 0;
 }
 
@@ -9156,7 +9156,7 @@ static int ast_ivsr_count_writes(AstArena *a, AstLocal n, int off) { MCC_TRACE("
 	if (k == AST_Unary && ast_ref_is_local_off(a, ast_first_child(a, n), off))
 		{ MCC_TRACE("br\n"); cnt++; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		cnt += ast_ivsr_count_writes(a, c, off);
+		{ MCC_TRACE("br\n"); cnt += ast_ivsr_count_writes(a, c, off); }
 	return cnt;
 }
 
@@ -9194,7 +9194,7 @@ static void ast_ivsr_scan(AstArena *a, AstLocal loop, AstLocal n, int ivoff,
 		return;
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_ivsr_scan(a, loop, c, ivoff, ivtt);
+		{ MCC_TRACE("br\n"); ast_ivsr_scan(a, loop, c, ivoff, ivtt); }
 }
 
 static int ast_ivsr_run(AstArena *a) { MCC_TRACE("enter\n");
@@ -9222,10 +9222,10 @@ static int ast_ivsr_run(AstArena *a) { MCC_TRACE("enter\n");
 		int64_t stride = 0;
 		for (AstLocal s = ast_first_child(a, incrbb); s != AST_NONE;
 				 s = ast_next_sib(a, s))
-			if (ast_ivsr_incr_of(a, s, &ivoff, &ivtt, &stride)) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ast_ivsr_incr_of(a, s, &ivoff, &ivtt, &stride)) { MCC_TRACE("br\n");
 				found = 1;
 				break;
-			}
+			} }
 		if (!found)
 			{ MCC_TRACE("br\n"); continue; }
 		if (ast_cprop_escapes(a, ivoff))
@@ -9374,8 +9374,8 @@ static int ast_loop_has_unstructured(AstArena *a, AstLocal n) { MCC_TRACE("enter
 			(ast_op(a, n) == 4 || ast_op(a, n) == 5))
 		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_loop_has_unstructured(a, c))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_loop_has_unstructured(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -9384,11 +9384,11 @@ static void ast_loop_ancestry(AstArena *a, AstLocal loop, AstLocal *parent,
 	int d = 0;
 	AstLocal par = AST_NONE;
 	for (AstLocal p = ast_parent(a, loop); p != AST_NONE; p = ast_parent(a, p))
-		if (ast_licm_is_loop(a, p)) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (ast_licm_is_loop(a, p)) { MCC_TRACE("br\n");
 			if (par == AST_NONE)
 				{ MCC_TRACE("br\n"); par = p; }
 			d++;
-		}
+		} }
 	*parent = par;
 	*depth = d;
 }
@@ -9457,8 +9457,8 @@ static int ast_loop_classify_bound(AstArena *a, AstLocal cond, int iv_off,
 		return AST_LOOP_BOUND_CONST;
 	}
 	for (int i = 0; i < nparts; i++)
-		if (ast_loop_part_uses_iv(a, parts[i], iv_off))
-			{ MCC_TRACE("br\n"); return AST_LOOP_BOUND_SYMBOLIC; }
+		{ MCC_TRACE("br\n"); if (ast_loop_part_uses_iv(a, parts[i], iv_off))
+			{ MCC_TRACE("br\n"); return AST_LOOP_BOUND_SYMBOLIC; } }
 	return AST_LOOP_BOUND_NONE;
 }
 
@@ -9515,8 +9515,8 @@ static void ast_loopnest_sync(AstArena *a) { MCC_TRACE("enter\n");
 static AstLoopInfo *ast_loop_find(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n");
 	ast_loopnest_sync(a);
 	for (int i = 0; i < ast_loopnest_n; i++)
-		if (ast_loopnest[i].header == loop)
-			{ MCC_TRACE("br\n"); return &ast_loopnest[i]; }
+		{ MCC_TRACE("br\n"); if (ast_loopnest[i].header == loop)
+			{ MCC_TRACE("br\n"); return &ast_loopnest[i]; } }
 	return NULL;
 }
 
@@ -9638,7 +9638,7 @@ typedef struct AstDepRef {
 static AstLocal ast_dep_strip(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	while (n != AST_NONE && ast_kind(a, n) == AST_Convert &&
 				 ast_nchild(a, n) == 1)
-		n = ast_first_child(a, n);
+		{ MCC_TRACE("br\n"); n = ast_first_child(a, n); }
 	return n;
 }
 
@@ -9658,10 +9658,10 @@ static int ast_dep_affine_acc(AstArena *a, AstLocal E, const int *ivs, int niv,
 			{ MCC_TRACE("br\n"); return 0; }
 		int off = (int)(int64_t)ast_ival(a, E);
 		for (int i = 0; i < niv; i++)
-			if (ivs[i] == off) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ivs[i] == off) { MCC_TRACE("br\n");
 				coeff[i] += mul;
 				return 1;
-			}
+			} }
 		return 0;
 	}
 	if (k == AST_Binary && ast_nchild(a, E) == 2) { MCC_TRACE("br\n");
@@ -9691,7 +9691,7 @@ static int ast_dep_affine_acc(AstArena *a, AstLocal E, const int *ivs, int niv,
 static int ast_dep_affine(AstArena *a, AstLocal E, const int *ivs, int niv,
 													int64_t *coeff, int64_t *cst) { MCC_TRACE("enter\n");
 	for (int i = 0; i < niv; i++)
-		coeff[i] = 0;
+		{ MCC_TRACE("br\n"); coeff[i] = 0; }
 	*cst = 0;
 	return ast_dep_affine_acc(a, E, ivs, niv, coeff, cst, 1);
 }
@@ -9733,7 +9733,7 @@ static void ast_dep_decode(AstArena *a, AstLocal E, const int *ivs, int niv,
 			if (nd >= AST_DEP_MAXDIM)
 				{ MCC_TRACE("br\n"); return; }
 			for (int i = 0; i < niv; i++)
-				tmp[nd].coeff[i] = sign * co[i];
+				{ MCC_TRACE("br\n"); tmp[nd].coeff[i] = sign * co[i]; }
 			tmp[nd].cst = sign * cst;
 			nd++;
 			E = chain;
@@ -9758,7 +9758,7 @@ static void ast_dep_decode(AstArena *a, AstLocal E, const int *ivs, int niv,
 				return;
 			}
 			for (int i = 0; i < nd; i++)
-				r->sub[i] = tmp[nd - 1 - i];
+				{ MCC_TRACE("br\n"); r->sub[i] = tmp[nd - 1 - i]; }
 			r->ndim = nd;
 			r->ok = 1;
 			return;
@@ -9804,7 +9804,7 @@ static void ast_dep_collect_rec(AstArena *a, AstLocal n, const int *ivs,
 		}
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		ast_dep_collect_rec(a, c, ivs, niv, refs, nref, overflow, consumed, nn);
+		{ MCC_TRACE("br\n"); ast_dep_collect_rec(a, c, ivs, niv, refs, nref, overflow, consumed, nn); }
 }
 
 static AstDepRef *ast_dep_collect(AstArena *a, AstLocal body, const int *ivs,
@@ -9840,7 +9840,7 @@ static int ast_dep_base_distinct(const AstDepRef *r1, const AstDepRef *r2) { MCC
 static int ast_dep_direction(const AstDepRef *r1, const AstDepRef *r2, int niv,
 														 char *dir) { MCC_TRACE("enter\n");
 	for (int k = 0; k < niv; k++)
-		dir[k] = '*';
+		{ MCC_TRACE("br\n"); dir[k] = '*'; }
 	if (!r1->ok || !r2->ok || r1->ndim != r2->ndim)
 		{ MCC_TRACE("br\n"); return AST_DEP_CONSERV; }
 	int64_t D[AST_DEP_MAXIV];
@@ -9882,7 +9882,7 @@ static int ast_dep_direction(const AstDepRef *r1, const AstDepRef *r2, int niv,
 		Dset[u1] = 1;
 	}
 	for (int k = 0; k < niv; k++)
-		dir[k] = Dset[k] ? (D[k] > 0 ? '<' : (D[k] < 0 ? '>' : '=')) : '*';
+		{ MCC_TRACE("br\n"); dir[k] = Dset[k] ? (D[k] > 0 ? '<' : (D[k] < 0 ? '>' : '=')) : '*'; }
 	return AST_DEP_YES;
 }
 
@@ -9939,7 +9939,7 @@ static int ast_dep_adjacent(AstArena *a, AstLocal l1, AstLocal l2) { MCC_TRACE("
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal c = ast_first_child(a, bb);
 	while (c != AST_NONE && c != l1)
-		c = ast_next_sib(a, c);
+		{ MCC_TRACE("br\n"); c = ast_next_sib(a, c); }
 	if (c != l1)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (c = ast_next_sib(a, c); c != AST_NONE && c != l2; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
@@ -9996,7 +9996,7 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 	if (overflow)
 		{ MCC_TRACE("br\n"); legal = 0; }
 	for (int i = 0; i < nref && legal; i++)
-		for (int j = i; j < nref && legal; j++) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); for (int j = i; j < nref && legal; j++) { MCC_TRACE("br\n");
 			if (!(refs[i].is_store || refs[j].is_store))
 				{ MCC_TRACE("br\n"); continue; }
 			if (ast_dep_base_distinct(&refs[i], &refs[j]))
@@ -10015,10 +10015,10 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 			}
 			int lead = -1;
 			for (int k = 0; k < 2; k++)
-				if (dir[k] != '=') { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (dir[k] != '=') { MCC_TRACE("br\n");
 					lead = k;
 					break;
-				}
+				} }
 			if (lead < 0)
 				{ MCC_TRACE("br\n"); continue; }
 			if (dir[lead] == '*') { MCC_TRACE("br\n");
@@ -10040,7 +10040,7 @@ int ast_loop_interchange_legal(AstArena *a, AstLocal outer, AstLocal inner) { MC
 				legal = 0;
 				break;
 			}
-		}
+		} }
 	mcc_free(refs);
 	return legal;
 }
@@ -10107,14 +10107,14 @@ int ast_loop_fusion_legal(AstArena *a, AstLocal loop1, AstLocal loop2) { MCC_TRA
 	if (ov1 || ov2)
 		{ MCC_TRACE("br\n"); legal = 0; }
 	for (int i = 0; i < n1 && legal; i++)
-		for (int j = 0; j < n2 && legal; j++) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); for (int j = 0; j < n2 && legal; j++) { MCC_TRACE("br\n");
 			if (!(r1[i].is_store || r2[j].is_store))
 				{ MCC_TRACE("br\n"); continue; }
 			if (ast_dep_fusion_pair_illegal(&r1[i], &r2[j])) { MCC_TRACE("br\n");
 				legal = 0;
 				break;
 			}
-		}
+		} }
 	mcc_free(r1);
 	mcc_free(r2);
 	return legal;
@@ -10130,7 +10130,7 @@ static void ast_dep_nest_ivs(AstArena *a, AstLocal loop, int *ivs, int *niv) { M
 			{ MCC_TRACE("br\n"); tmp[n++] = off; }
 	}
 	for (int i = 0; i < n; i++)
-		ivs[i] = tmp[n - 1 - i];
+		{ MCC_TRACE("br\n"); ivs[i] = tmp[n - 1 - i]; }
 	*niv = n;
 }
 
@@ -10158,11 +10158,11 @@ static void ast_dep_dump_refs(AstArena *a, AstLocal loop) { MCC_TRACE("enter\n")
 			fprintf(stderr, "[");
 			int first = 1;
 			for (int k = 0; k < niv; k++)
-				if (r->sub[d].coeff[k]) { MCC_TRACE("br\n");
+				{ MCC_TRACE("br\n"); if (r->sub[d].coeff[k]) { MCC_TRACE("br\n");
 					fprintf(stderr, "%s%lld*@%d", first ? "" : "+",
 									(long long)r->sub[d].coeff[k], ivs[k]);
 					first = 0;
-				}
+				} }
 			if (r->sub[d].cst || first)
 				{ MCC_TRACE("br\n"); fprintf(stderr, "%s%lld", first ? "" : "+", (long long)r->sub[d].cst); }
 			fprintf(stderr, "]");
@@ -10193,7 +10193,7 @@ void ast_loopdep_dump(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 						lg ? "legal" : "ILLEGAL");
 	}
 	for (int i = 0; i < ast_loopnest_n; i++)
-		for (int j = 0; j < ast_loopnest_n; j++) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); for (int j = 0; j < ast_loopnest_n; j++) { MCC_TRACE("br\n");
 			if (i == j)
 				{ MCC_TRACE("br\n"); continue; }
 			if (ast_dep_adjacent(a, ast_loopnest[i].header, ast_loopnest[j].header)) { MCC_TRACE("br\n");
@@ -10203,7 +10203,7 @@ void ast_loopdep_dump(AstArena *a, const char *fname) { MCC_TRACE("enter\n");
 								(unsigned)ast_loopnest[i].header,
 								(unsigned)ast_loopnest[j].header, lg ? "legal" : "ILLEGAL");
 			}
-		}
+		} }
 }
 
 static AstLocal ast_li_prev_sib(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -10249,12 +10249,12 @@ static void ast_li_list_insert_before(AstArena *a, AstLocal parent, AstLocal ref
 		return;
 	}
 	for (AstLocal c = a->first_child[parent]; c != AST_NONE; c = a->next_sib[c])
-		if (a->next_sib[c] == ref) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (a->next_sib[c] == ref) { MCC_TRACE("br\n");
 			a->next_sib[node] = ref;
 			a->next_sib[c] = node;
 			a->nchild[parent]++;
 			return;
-		}
+		} }
 	a->next_sib[node] = AST_NONE;
 	if (a->first_child[parent] == AST_NONE)
 		{ MCC_TRACE("br\n"); a->first_child[parent] = node; }
@@ -10301,8 +10301,8 @@ static int ast_interchange_body_ok(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		return 0; /* Invoke, If (nested loop/branch), Jump, Return, InitList, ... */
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (!ast_interchange_body_ok(a, c))
-			{ MCC_TRACE("br\n"); return 0; }
+		{ MCC_TRACE("br\n"); if (!ast_interchange_body_ok(a, c))
+			{ MCC_TRACE("br\n"); return 0; } }
 	return 1;
 }
 
@@ -10419,8 +10419,8 @@ static int ast_li_refs_off(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\
 	if (ast_kind(a, n) == AST_Ref && ast_ref_is_local_off(a, n, off))
 		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_li_refs_off(a, c, off))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_li_refs_off(a, c, off))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -10505,7 +10505,7 @@ static int ast_fusion_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_loopnest_sync(a);
 		int applied = 0;
 		for (int i = 0; i < ast_loopnest_n && !applied; i++)
-			for (int j = 0; j < ast_loopnest_n && !applied; j++) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); for (int j = 0; j < ast_loopnest_n && !applied; j++) { MCC_TRACE("br\n");
 				if (i == j)
 					{ MCC_TRACE("br\n"); continue; }
 				AstLocal l1 = ast_loopnest[i].header, l2 = ast_loopnest[j].header;
@@ -10519,7 +10519,7 @@ static int ast_fusion_run(AstArena *a) { MCC_TRACE("enter\n");
 					total++;
 					applied = 1;
 				}
-			}
+			} }
 		if (!applied)
 			{ MCC_TRACE("br\n"); break; }
 	}
@@ -10693,7 +10693,7 @@ static int ast_pre_arm_store(AstArena *a, AstLocal bb, AstLocal *store) { MCC_TR
 static AstLocal ast_pre_binary_of(AstArena *a, AstLocal store) { MCC_TRACE("enter\n");
 	AstLocal e = ast_child(a, store, 1);
 	while (e != AST_NONE && ast_kind(a, e) == AST_Convert && ast_nchild(a, e) == 1)
-		e = ast_first_child(a, e);
+		{ MCC_TRACE("br\n"); e = ast_first_child(a, e); }
 	if (e == AST_NONE || ast_kind(a, e) != AST_Binary)
 		{ MCC_TRACE("br\n"); return AST_NONE; }
 	return e;
@@ -10705,8 +10705,8 @@ static int ast_pre_occurs(AstArena *a, AstLocal n, AstLocal e) { MCC_TRACE("ente
 	if (n != e && ast_ident_same(a, e, n))
 		{ MCC_TRACE("br\n"); return 1; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		if (ast_pre_occurs(a, c, e))
-			{ MCC_TRACE("br\n"); return 1; }
+		{ MCC_TRACE("br\n"); if (ast_pre_occurs(a, c, e))
+			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
 
@@ -10829,7 +10829,7 @@ static void ast_cse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			ast_cse_n = 0;
 		} else if (k == AST_Invoke) { MCC_TRACE("br\n");
 			for (AstLocal c = ast_first_child(a, s); c != AST_NONE; c = ast_next_sib(a, c))
-				ast_cse_subst(a, c, 0);
+				{ MCC_TRACE("br\n"); ast_cse_subst(a, c, 0); }
 			ast_cse_n = 0;
 		} else if (ast_licm_is_loop(a, s)) { MCC_TRACE("br\n");
 			ast_licm_at_loop(a, s);
@@ -10866,11 +10866,11 @@ static void ast_cse_state_meet(const AstCseState *st) { MCC_TRACE("enter\n");
 	while (i < ast_cse_n) { MCC_TRACE("br\n");
 		int j, keep = 0;
 		for (j = 0; j < st->n; j++)
-			if (st->expr[j] == ast_cse_expr[i] && st->ref[j] == ast_cse_ref[i] &&
+			{ MCC_TRACE("br\n"); if (st->expr[j] == ast_cse_expr[i] && st->ref[j] == ast_cse_ref[i] &&
 					st->off[j] == ast_cse_off[i]) { MCC_TRACE("br\n");
 				keep = 1;
 				break;
-			}
+			} }
 		if (keep) { MCC_TRACE("br\n");
 			i++;
 		} else { MCC_TRACE("br\n");
@@ -10938,26 +10938,26 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			ast_cse_state_meet(&tout);
 		} else if (k == AST_Invoke) { MCC_TRACE("br\n");
 			for (AstLocal c = ast_first_child(a, s); c != AST_NONE; c = ast_next_sib(a, c))
-				ast_cse_subst(a, c, 0);
+				{ MCC_TRACE("br\n"); ast_cse_subst(a, c, 0); }
 			if (ast_call_window_env) { MCC_TRACE("br\n");
 				for (int i = 0; i < ast_cse_n;)
-					if (ast_cprop_escapes(a, ast_cse_off[i]) ||
+					{ MCC_TRACE("br\n"); if (ast_cprop_escapes(a, ast_cse_off[i]) ||
 							ast_licm_written(a, s, ast_cse_off[i]) ||
 							!ast_licm_operands_ok(a, s, ast_cse_expr[i]))
 						{ MCC_TRACE("br\n"); ast_cse_kill(a, ast_cse_off[i]); }
 					else
-						{ MCC_TRACE("br\n"); i++; }
+						{ MCC_TRACE("br\n"); i++; } }
 			} else { MCC_TRACE("br\n");
 				ast_cse_n = 0;
 			}
 		} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 4) { MCC_TRACE("br\n");
 			ast_licm_at_loop(a, s);
 			for (int i = 0; i < ast_cse_n;)
-				if (ast_licm_written(a, s, ast_cse_off[i]) ||
+				{ MCC_TRACE("br\n"); if (ast_licm_written(a, s, ast_cse_off[i]) ||
 						!ast_licm_operands_ok(a, s, ast_cse_expr[i]))
 					{ MCC_TRACE("br\n"); ast_cse_kill(a, ast_cse_off[i]); }
 				else
-					{ MCC_TRACE("br\n"); i++; }
+					{ MCC_TRACE("br\n"); i++; } }
 			if (ast_sccp_has_label(a, s)) { MCC_TRACE("br\n");
 				ast_cse_n = 0;
 				continue;
@@ -10991,15 +10991,15 @@ static int ast_cse_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_cse_n = 0;
 		ast_cse_stmts(a, ast_root(a));
 		for (AstLocal n = 0; n < nn; n++)
-			if (ast_kind(a, n) == AST_BasicBlock && !ast_cse_vis[n])
-				{ MCC_TRACE("br\n"); ast_cse_block(a, n); }
+			{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_BasicBlock && !ast_cse_vis[n])
+				{ MCC_TRACE("br\n"); ast_cse_block(a, n); } }
 		mcc_free(ast_cse_vis);
 		ast_cse_vis = NULL;
 		return ast_cse_folds;
 	}
 	for (AstLocal n = 0; n < nn; n++)
-		if (ast_kind(a, n) == AST_BasicBlock)
-			{ MCC_TRACE("br\n"); ast_cse_block(a, n); }
+		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_BasicBlock)
+			{ MCC_TRACE("br\n"); ast_cse_block(a, n); } }
 	return ast_cse_folds;
 }
 
@@ -11019,7 +11019,7 @@ static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 	int lim = blen < rlen ? blen : rlen;
 	int d = 0;
 	while (d < lim && base[d] == repl[d])
-		d++;
+		{ MCC_TRACE("br\n"); d++; }
 	fprintf(stderr, "[ast-diff] %s: baseline %d B, replay %d B", fn, blen, rlen);
 	if (d == lim && blen == rlen)
 		{ MCC_TRACE("br\n"); fprintf(stderr, " (code identical — relocation/length divergence)\n"); }
@@ -11028,10 +11028,10 @@ static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 	int lo = d - 8 < 0 ? 0 : d - 8;
 	fprintf(stderr, "  base @+%d:", lo);
 	for (int i = lo; i < lo + 96 && i < blen; i++)
-		fprintf(stderr, " %02x", base[i]);
+		{ MCC_TRACE("br\n"); fprintf(stderr, " %02x", base[i]); }
 	fprintf(stderr, "\n  repl @+%d:", lo);
 	for (int i = lo; i < lo + 96 && i < rlen; i++)
-		fprintf(stderr, " %02x", repl[i]);
+		{ MCC_TRACE("br\n"); fprintf(stderr, " %02x", repl[i]); }
 	fprintf(stderr, "\n");
 }
 
@@ -11259,7 +11259,7 @@ static uint64_t ast_order_pack(const int *seq, int n) { MCC_TRACE("enter\n");
 	if (n > AST_STRAT_COUNT_MAX)
 		{ MCC_TRACE("br\n"); n = AST_STRAT_COUNT_MAX; }
 	for (i = 0; i < n; i++)
-		p |= (uint64_t)(seq[i] & 0xf) << (i * 4);
+		{ MCC_TRACE("br\n"); p |= (uint64_t)(seq[i] & 0xf) << (i * 4); }
 	return p;
 }
 
@@ -11268,7 +11268,7 @@ static void ast_order_unpack(uint64_t p, int n, int *seq) { MCC_TRACE("enter\n")
 	if (n > AST_STRAT_COUNT_MAX)
 		{ MCC_TRACE("br\n"); n = AST_STRAT_COUNT_MAX; }
 	for (i = 0; i < n; i++)
-		seq[i] = (int)((p >> (i * 4)) & 0xf);
+		{ MCC_TRACE("br\n"); seq[i] = (int)((p >> (i * 4)) & 0xf); }
 }
 
 #define AST_SEARCH_MEMO_CAP 4096
@@ -11315,11 +11315,11 @@ static uint64_t ast_search_key_salt(uint64_t h) { MCC_TRACE("enter\n");
 	(void)s;
 #ifdef MCC_VERSION_STR
 	for (s = MCC_VERSION_STR; *s; s++)
-		h = (h ^ (unsigned char)*s) * 0x100000001b3ull;
+		{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 #endif
 #ifdef MCC_CONFIG_TRIPLET
 	for (s = MCC_CONFIG_TRIPLET; *s; s++)
-		h = (h ^ (unsigned char)*s) * 0x100000001b3ull;
+		{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 #endif
 	return h;
 }
@@ -11386,7 +11386,7 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 															 uint64_t order_packed, uint64_t order_n) { MCC_TRACE("enter\n");
 	int i, changed = 0;
 	for (i = 0; i < ast_search_memo_n; i++)
-		if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
 			if (ast_search_memo[i].gates != gates) { MCC_TRACE("br\n");
 				ast_search_memo[i].gates = gates;
 				changed = 1;
@@ -11410,7 +11410,7 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 				changed = 1;
 			}
 			return changed;
-		}
+		} }
 	if (ast_search_memo_n < AST_SEARCH_MEMO_CAP) { MCC_TRACE("br\n");
 		ast_search_memo[ast_search_memo_n].hash = h;
 		ast_search_memo[ast_search_memo_n].gates = gates;
@@ -11634,7 +11634,7 @@ static unsigned ast_search_expect_ms(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	start = (ast_search_durwin_head - n + AST_SEARCH_WIN * 2) % AST_SEARCH_WIN;
 	for (i = 0; i < n; i++)
-		y[i] = (double)ast_search_durwin[(start + i) % AST_SEARCH_WIN];
+		{ MCC_TRACE("br\n"); y[i] = (double)ast_search_durwin[(start + i) % AST_SEARCH_WIN]; }
 	pred = ast_fc_forecast(y, n);
 	if (pred < 0)
 		{ MCC_TRACE("br\n"); pred = 0; }
@@ -12012,7 +12012,7 @@ static long ast_search_order_combo_score(const int *sel, int k, void *user) { MC
 		{ MCC_TRACE("br\n"); cx->tried |= (uint64_t)1 << cx->ord; }
 	cx->ord++;
 	for (i = 0; i < k; i++)
-		seq[i] = cx->rows[sel[i]];
+		{ MCC_TRACE("br\n"); seq[i] = cx->rows[sel[i]]; }
 	t0 = ast_now_ms();
 	sc = ast_search_score_order(cx->pristine, cx->sym, cx->faithful, seq, k, cx->saved_loc,
 															cx->saved_anon);
@@ -12056,7 +12056,7 @@ static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRAC
 		{ MCC_TRACE("br\n"); cx->tried |= (uint64_t)1 << cx->ord; } /* record that this candidate was measured */
 	cx->ord++;
 	for (i = 0; i < k; i++)
-		gates |= cx->items[sel[i]];
+		{ MCC_TRACE("br\n"); gates |= cx->items[sel[i]]; }
 	t0 = ast_now_ms();
 	sc = ast_search_score_one(cx->pristine, cx->sym, cx->faithful, gates,
 														cx->saved_loc, cx->saved_anon);
@@ -12134,10 +12134,10 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 	}
 	close(pipefd[0]);
 	for (w = 0; w < nw; w++)
-		if (pids[w] > 0) { MCC_TRACE("br\n");
+		{ MCC_TRACE("br\n"); if (pids[w] > 0) { MCC_TRACE("br\n");
 			int st;
 			waitpid(pids[w], &st, 0);
-		}
+		} }
 	if (!done)
 		{ MCC_TRACE("br\n"); return 0; } /* every fork failed: fall back to serial */
 	*best_out = best;
@@ -12154,11 +12154,11 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 	long best_score;
 	char sq[AST_STRAT_COUNT_MAX * 4];
 	for (si = 0; si < AST_STRAT_COUNT; si++)
-		if (faithful && *ast_strategies[si].gate)
-			{ MCC_TRACE("br\n"); rows[nrows++] = si; }
+		{ MCC_TRACE("br\n"); if (faithful && *ast_strategies[si].gate)
+			{ MCC_TRACE("br\n"); rows[nrows++] = si; } }
 	if (h) { MCC_TRACE("br\n");
 		for (i = 0; i < ast_search_memo_n; i++)
-			if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
 				if (ast_search_memo[i].order_n > 0) { MCC_TRACE("br\n");
 					int useq[AST_STRAT_COUNT_MAX], un = (int)ast_search_memo[i].order_n, j, kk = 0;
 					if (un > AST_STRAT_COUNT_MAX)
@@ -12182,14 +12182,14 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 					return;
 				}
 				break;
-			}
+			} }
 	}
 	g0 = ast_graft_total;
 	p0 = ast_promo_total;
 	o0 = ast_opt_total;
 	best_k = nrows;
 	for (i = 0; i < nrows; i++)
-		best_seq[i] = rows[i];
+		{ MCC_TRACE("br\n"); best_seq[i] = rows[i]; }
 	best_score = ast_search_score_order(pristine, sym, faithful, best_seq, nrows,
 																			saved_loc, saved_anon);
 	if (nrows > 0 && !ast_search_should_stop()) { MCC_TRACE("br\n");
@@ -12216,7 +12216,7 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 		if (combo_run(&spec, &cbest) && cbest.score >= 0 && cbest.score < best_score) { MCC_TRACE("br\n");
 			best_k = cbest.k;
 			for (i = 0; i < cbest.k; i++)
-				best_seq[i] = rows[cbest.sel[i]];
+				{ MCC_TRACE("br\n"); best_seq[i] = rows[cbest.sel[i]]; }
 			best_score = cbest.score;
 		}
 	}
@@ -12224,7 +12224,7 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 	ast_promo_total = p0;
 	ast_opt_total = o0;
 	for (i = 0; i < best_k; i++)
-		ast_strat_order[i] = best_seq[i];
+		{ MCC_TRACE("br\n"); ast_strat_order[i] = best_seq[i]; }
 	ast_strat_order_n = best_k;
 	ast_order_seq_str(best_seq, best_k, sq);
 	MCC_TRACE("combo winner order n=%d seq=%s score=%ld nitems=%d walk=%s\n", best_k, sq,
@@ -12334,7 +12334,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	}
 	if (h) { MCC_TRACE("br\n");
 		for (int i = 0; i < ast_search_memo_n; i++)
-			if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
+			{ MCC_TRACE("br\n"); if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
 				/* hit: bump this permutation's refcount and persist it (also triggers
 				 * the shared-disk eviction check). intersect gates with `searchable`
 				 * (base + this build's opt-in knobs): a winner cached under a different -O
@@ -12357,7 +12357,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															ast_search_memo[i].order_n);
 				ast_arena_free(pristine);
 				return;
-			}
+			} }
 	}
 	g0 = ast_graft_total;
 	p0 = ast_promo_total;
@@ -12374,8 +12374,8 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		AstGateMask items[64];
 		int nitems = 0, b;
 		for (b = 0; b < 64; b++)
-			if (searchable & ((AstGateMask)1 << b))
-				{ MCC_TRACE("br\n"); items[nitems++] = (AstGateMask)1 << b; }
+			{ MCC_TRACE("br\n"); if (searchable & ((AstGateMask)1 << b))
+				{ MCC_TRACE("br\n"); items[nitems++] = (AstGateMask)1 << b; } }
 		if (mcc_stats_mask)
 			{ MCC_TRACE("br\n"); mcc_stats_search_begin(funcname, h, base, searchable, nitems,
 														 ast_search_walk_env, ast_search_ordered_env ? 1 : 0); }
@@ -12477,7 +12477,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				AstGateMask g = 0;
 				int i;
 				for (i = 0; i < cbest.k; i++)
-					g |= items[cbest.sel[i]];
+					{ MCC_TRACE("br\n"); g |= items[cbest.sel[i]]; }
 				if (cbest.score >= 0 && (best_score < 0 || cbest.score < best_score)) { MCC_TRACE("br\n");
 					best = g;
 					best_score = cbest.score;
@@ -12647,7 +12647,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					{
 						AstLocal ast_vlat_nn = ast_count(ast_cur);
 						for (AstLocal ast_vlat_u = 0; ast_vlat_u < ast_vlat_nn; ast_vlat_u++)
-							(void)ast_vlat_context_at(ast_cur, ast_vlat_u, &ast_vlat_ctx);
+							{ MCC_TRACE("br\n"); (void)ast_vlat_context_at(ast_cur, ast_vlat_u, &ast_vlat_ctx); }
 					}
 #endif
 				}
@@ -12669,7 +12669,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				{
 					int sf[AST_STRAT_COUNT];
 					for (int si = 0; si < AST_STRAT_COUNT; si++)
-						sf[si] = 0;
+						{ MCC_TRACE("br\n"); sf[si] = 0; }
 					ast_run_strat_cycle(ast_cur, sym, faithful, ast_strat_order,
 															ast_strat_order_n, sf);
 					if (mcc_stats_mask)
@@ -13020,7 +13020,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					nocode_wanted = 0;
 					rsym = gjmp(rsym);
 					for (int i = 0; i < ast_guard_n; i++)
-						gsym(ast_guard_slots[i]);
+						{ MCC_TRACE("br\n"); gsym(ast_guard_slots[i]); }
 					ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base, aot_chain);
 					if (saved_loc < loc)
 						{ MCC_TRACE("br\n"); loc = saved_loc; }
@@ -13274,8 +13274,8 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 
 void ast_reemit_forward_inlines(void) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_reemit_n; i++)
-		if (ast_reemit_has_forward(&ast_reemit_pool[i]))
-			{ MCC_TRACE("br\n"); ast_reemit(ast_reemit_pool[i].sym, ast_reemit_pool[i].ast); }
+		{ MCC_TRACE("br\n"); if (ast_reemit_has_forward(&ast_reemit_pool[i]))
+			{ MCC_TRACE("br\n"); ast_reemit(ast_reemit_pool[i].sym, ast_reemit_pool[i].ast); } }
 }
 
 #ifdef MCC_EMBED_JIT

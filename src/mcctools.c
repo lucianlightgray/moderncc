@@ -104,7 +104,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); goto no_ar; }
 			p = arhdr.ar_name;
 			for (e = p + sizeof arhdr.ar_name; e > p && e[-1] == ' ';)
-				e--;
+				{ MCC_TRACE("br\n"); e--; }
 			*e = '\0';
 			arhdr.ar_size[sizeof arhdr.ar_size - 1] = 0;
 			fsize = atoi(arhdr.ar_size);
@@ -250,7 +250,7 @@ ST_FUNC int mcc_tool_ar(int argc, char **argv) { MCC_TRACE("enter\n");
 	fwrite(&arhdr, sizeof(arhdr), 1, fh);
 	afpos[0] = le2belong(funccnt);
 	for (int i = 1; i <= funccnt; i++)
-		afpos[i] = le2belong(afpos[i] + hofs);
+		{ MCC_TRACE("br\n"); afpos[i] = le2belong(afpos[i] + hofs); }
 	fwrite(afpos, (funccnt + 1) * sizeof(int), 1, fh);
 	fwrite(anames, strpos, 1, fh);
 	if (fpos)
@@ -458,22 +458,22 @@ ST_FUNC int gen_makedeps(MCCState *s1, const char *target, const char *filename)
 	num_targets = 0;
 	for (int i = 0; i < s1->nb_target_deps; ++i) { MCC_TRACE("br\n");
 		for (int k = 0; k < i; ++k)
-			if (0 == strcmp(s1->target_deps[i], s1->target_deps[k]))
-				{ MCC_TRACE("br\n"); goto next; }
+			{ MCC_TRACE("br\n"); if (0 == strcmp(s1->target_deps[i], s1->target_deps[k]))
+				{ MCC_TRACE("br\n"); goto next; } }
 		escaped_targets[num_targets++] = escape_target_dep(s1->target_deps[i]);
 	next:;
 	}
 
 	fprintf(depout, "%s:", target);
 	for (int i = 0; i < num_targets; ++i)
-		fprintf(depout, " \\\n  %s", escaped_targets[i]);
+		{ MCC_TRACE("br\n"); fprintf(depout, " \\\n  %s", escaped_targets[i]); }
 	fprintf(depout, "\n");
 	if (s1->gen_phony_deps) { MCC_TRACE("br\n");
 		for (int i = 1; i < num_targets; ++i)
-			fprintf(depout, "%s:\n", escaped_targets[i]);
+			{ MCC_TRACE("br\n"); fprintf(depout, "%s:\n", escaped_targets[i]); }
 	}
 	for (int i = 0; i < num_targets; ++i)
-		mcc_free(escaped_targets[i]);
+		{ MCC_TRACE("br\n"); mcc_free(escaped_targets[i]); }
 	mcc_free(escaped_targets);
 	fclose(depout);
 	return 0;
