@@ -809,6 +809,7 @@ static int ast_fncfg_find(const char *fn) { MCC_TRACE("enter\n");
 
 static char ast_jit_fns[AST_FNCFG_MAX][80];
 static int ast_jit_fns_n;
+static int ast_fn_switch;
 
 static void ast_jit_fns_default(void) { MCC_TRACE("enter\n");
 	ast_jit_fns_n = 0;
@@ -881,7 +882,11 @@ static int ast_jit_eligible(Sym *sym) { MCC_TRACE("enter\n");
 		return 0;
 	if (sig->f.func_type == FUNC_ELLIPSIS)
 		return 0;
+	if (ast_fn_switch)
+		return 0;
 	if (!ast_jit_type_scalar(sig->type.t))
+		return 0;
+	if ((sig->type.t & VT_BTYPE) == VT_PTR)
 		return 0;
 	for (p = sig->next; p; p = p->next) { MCC_TRACE("br\n");
 		if (++np > 6)
@@ -1901,6 +1906,7 @@ void ast_hook_switch_body_end(void) { MCC_TRACE("enter\n");
 void ast_hook_switch_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		return;
+	ast_fn_switch = 1;
 	if (ast_in_call > 0)
 		ast_in_call--;
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -10986,6 +10992,7 @@ static addr_t ast_reloc0_sv;
 
 void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
+	ast_fn_switch = 0;
 	ast_inline_capture(sym);
 	int ast_ret_bad = ast_bad_type(func_vt.t) &&
 										(func_vt.t & VT_BTYPE) != VT_STRUCT;
