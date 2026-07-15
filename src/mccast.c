@@ -11801,6 +11801,39 @@ int ast_slice_live_ins(AstArena *a, AstLocal root, int32_t *offs,
 	return -1;
 #endif
 }
+
+static AstLocal ast_slice_copy_into(AstArena *dst, const AstArena *src,
+																		AstLocal snode) { MCC_TRACE("enter\n");
+	AstLocal c, cc, n = ast_node(dst, ast_kind(src, snode));
+	ast_set_op(dst, n, ast_op(src, snode));
+	ast_set_type(dst, n, ast_type_t(src, snode), ast_type_ref(src, snode));
+	ast_set_ival(dst, n, ast_ival(src, snode));
+	ast_set_fbits(dst, n, ast_fbits(src, snode));
+	ast_set_sym(dst, n, ast_sym(src, snode));
+	ast_set_cst(dst, n, ast_cst(src, snode));
+	for (c = ast_first_child(src, snode); c != AST_NONE; c = ast_next_sib(src, c)) {
+		MCC_TRACE("br\n");
+		cc = ast_slice_copy_into(dst, src, c);
+		ast_add_child(dst, n, cc);
+	}
+	return n;
+}
+
+AstArena *ast_slice_wrap_kernel(const AstArena *a, AstLocal root) { MCC_TRACE("enter\n");
+	AstArena *k;
+	AstLocal bb, ret, e;
+	if (!a || root >= a->count)
+		{ MCC_TRACE("br\n"); return NULL; }
+	k = ast_arena_new();
+	if (!k)
+		{ MCC_TRACE("br\n"); return NULL; }
+	bb = ast_node(k, AST_BasicBlock);
+	ret = ast_node(k, AST_Return);
+	e = ast_slice_copy_into(k, a, root);
+	ast_add_child(k, ret, e);
+	ast_add_child(k, bb, ret);
+	return k;
+}
 #endif
 
 static AstGateMask ast_search_gates_now(void) { MCC_TRACE("enter\n");

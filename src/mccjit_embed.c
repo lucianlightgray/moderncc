@@ -5328,15 +5328,85 @@ static int mccjit_livein_one(const char *src, const char *fn, int want_n,
 	return fails;
 }
 
+static int mccjit_wrap_one(const char *src, const char *fn) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicekernel: %s wrap stash failed\n", fn);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			AstLocal ret = mccjit_ret_expr(it.arena);
+			AstArena *k = (ret != AST_NONE) ? ast_slice_wrap_kernel(it.arena, ret) : NULL;
+			if (!k) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-slicekernel: %s wrap failed\n", fn);
+				fails++;
+			} else { MCC_TRACE("br\n");
+				char vmsg[128];
+				AstLocal kbb = ast_root(k);
+				AstLocal kret = (kbb != AST_NONE) ? ast_first_child(k, kbb) : AST_NONE;
+				AstLocal kexpr = (kret != AST_NONE) ? ast_first_child(k, kret) : AST_NONE;
+				int32_t o1[16], o2[16];
+				int shape = (kbb != AST_NONE && ast_kind(k, kbb) == AST_BasicBlock &&
+										 kret != AST_NONE && ast_kind(k, kret) == AST_Return &&
+										 kexpr != AST_NONE);
+				int valid = ast_validate(k, vmsg, sizeof vmsg) == 0;
+				int cert = shape ? ast_slice_certifiable(k, kexpr) : -1;
+				int eq = shape ? ast_slice_equiv(it.arena, ret, k, kexpr) : 0;
+				int nk = shape ? ast_slice_live_ins(k, kexpr, o1, 16) : -2;
+				int no = ast_slice_live_ins(it.arena, ret, o2, 16);
+				int ok = shape && valid && cert == 1 && eq == 1 && nk == no;
+				printf("mccjit-selftest-slicekernel: %-3s wrap shape=%d valid=%d cert=%d "
+							 "equiv=%d live-ins=%d(orig %d) %s\n",
+							 fn, shape, valid, cert, eq, nk, no, ok ? "OK" : "FAIL");
+				if (!ok)
+					{ MCC_TRACE("br\n"); fails++; }
+				ast_arena_free(k);
+			}
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-slicekernel: %s wrap deserialize failed\n", fn);
+			fails++;
+		}
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
 int mccjit_selftest_slicekernel(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 
-	printf("mccjit-selftest-slicekernel: begin (B2b live-in kernel signature)\n");
+	printf("mccjit-selftest-slicekernel: begin (B2b live-in signature + D3a kernel wrap)\n");
 	fails += mccjit_livein_one("int f(int x){return x*2+1;}", "f", 1, 1);
 	fails += mccjit_livein_one("int c(int x){return 41;}", "c", 0, 1);
 	fails += mccjit_livein_one("int g(int a, int b){return a*b+a;}", "g", 2, 1);
 	fails += mccjit_livein_one("int t(int a, int b, int c){return a*b+c;}", "t", 3, 1);
 	fails += mccjit_livein_one("int r(int *p, int x){return *p + x;}", "r", 2, 0);
+
+	fails += mccjit_wrap_one("int f(int x){return x*2+1;}", "f");
+	fails += mccjit_wrap_one("int g(int a, int b){return a*b+a;}", "g");
+	fails += mccjit_wrap_one("int t(int a, int b, int c){return (a+b)*c-1;}", "t");
 
 	printf("mccjit-selftest-slicekernel: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
