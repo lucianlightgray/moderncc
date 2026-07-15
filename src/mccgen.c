@@ -8779,8 +8779,12 @@ tok_next:
 		break;
 
 	case TOK_builtin_expect:
-		parse_builtin_params(0, "ee");
-		vpop();
+		next();
+		skip('(');
+		expr_eq();
+		skip(',');
+		expr_const64();
+		skip(')');
 		break;
 	case TOK_builtin_types_compatible_p:
 		parse_builtin_params(0, "tt");

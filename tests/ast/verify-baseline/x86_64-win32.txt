@@ -15,7 +15,6 @@ bounds/bound_test.c	mul	desync
 bounds/stack_safe.c	main	desync
 codegen/codeopt.c	bla	desync
 codegen/codeopt.c	broken_jumpopt	desync
-codegen/codeopt.c	extend_brk	unfaithful
 codegen/dead_code.c	kb_wait_1	desync
 codegen/dead_code.c	main	desync
 codegen/dead_code.c	nondead_after_dead_return	desync
