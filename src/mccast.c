@@ -11834,6 +11834,74 @@ AstArena *ast_slice_wrap_kernel(const AstArena *a, AstLocal root) { MCC_TRACE("e
 	ast_add_child(k, bb, ret);
 	return k;
 }
+
+static int ast_slice_subtree_size(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal c;
+	int k = 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); k += ast_slice_subtree_size(a, c); }
+	return k;
+}
+
+static void ast_slice_maximal_rec(AstArena *a, AstLocal n, AstLocal *roots,
+																	int *sizes, int *cnt, int max) { MCC_TRACE("enter\n");
+	AstLocal c;
+	if (n == AST_NONE || *cnt >= max)
+		{ MCC_TRACE("br\n"); return; }
+#ifdef AST_EVAL_SLICE_PROVIDED
+	if (ast_eval_slice_kind_ok(a, n, 0) && ast_nchild(a, n) > 0) { MCC_TRACE("br\n");
+		roots[*cnt] = n;
+		sizes[*cnt] = ast_slice_subtree_size(a, n);
+		(*cnt)++;
+		return;
+	}
+#endif
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); ast_slice_maximal_rec(a, c, roots, sizes, cnt, max); }
+}
+
+typedef struct AstSliceSearchCtx {
+	const int *sizes;
+} AstSliceSearchCtx;
+
+static long ast_slice_search_score(const int *sel, int k, void *user) { MCC_TRACE("enter\n");
+	AstSliceSearchCtx *c = (AstSliceSearchCtx *)user;
+	long tot = 0;
+	int i;
+	for (i = 0; i < k; i++)
+		{ MCC_TRACE("br\n"); tot += c->sizes[sel[i]]; }
+	return -tot;
+}
+
+int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out,
+										 int max) { MCC_TRACE("enter\n");
+	AstLocal roots[COMBO_MAX];
+	int sizes[COMBO_MAX];
+	int cnt = 0, i, sel_n = 0;
+	AstSliceSearchCtx ctx;
+	ComboSpec spec;
+	ComboBest best;
+	if (!a || root >= a->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_slice_maximal_rec(a, root, roots, sizes, &cnt, COMBO_MAX);
+	if (cnt == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	ctx.sizes = sizes;
+	spec.nitems = cnt;
+	spec.min_k = 1;
+	spec.max_k = budget < 1 ? 1 : (budget > cnt ? cnt : budget);
+	spec.ordered = 0;
+	spec.walk = COMBO_WALK_LINEAR;
+	spec.budget = 0;
+	spec.score = ast_slice_search_score;
+	spec.visit = NULL;
+	spec.user = &ctx;
+	if (!combo_run(&spec, &best))
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < best.k && sel_n < max; i++)
+		{ MCC_TRACE("br\n"); out[sel_n++] = roots[best.sel[i]]; }
+	return sel_n;
+}
 #endif
 
 static AstGateMask ast_search_gates_now(void) { MCC_TRACE("enter\n");

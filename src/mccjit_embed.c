@@ -5645,6 +5645,72 @@ int mccjit_selftest_sliceinstall(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static int mccjit_search_one(const char *src, const char *fn, int budget,
+														 int want_n) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicesearch: %s stash failed\n", fn);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			AstLocal ret = mccjit_ret_expr(it.arena);
+			AstLocal out[16];
+			int n = (ret != AST_NONE) ? ast_slice_search(it.arena, ret, budget, out, 16)
+															 : -1;
+			int ok = (n == want_n);
+			printf("mccjit-selftest-slicesearch: %-3s budget=%d -> %d kernel(s)"
+						 "(want %d) %s\n",
+						 fn, budget, n, want_n, ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-slicesearch: %s deserialize failed\n", fn);
+			fails++;
+		}
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
+int mccjit_selftest_slicesearch(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+
+	printf("mccjit-selftest-slicesearch: begin (H1b perm x comb slice-region search)\n");
+	fails += mccjit_search_one("int q(int *p, int a, int b){return *p + a*2 + b*3;}",
+														 "q", 2, 2);
+	fails += mccjit_search_one("int q(int *p, int a, int b){return *p + a*2 + b*3;}",
+														 "q", 1, 1);
+	fails += mccjit_search_one("int f(int x){return x*2+1;}", "f", 2, 1);
+	fails += mccjit_search_one("int r(int *p, int x){return *p + x;}", "r", 2, 0);
+
+	printf("mccjit-selftest-slicesearch: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;
