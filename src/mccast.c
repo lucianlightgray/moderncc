@@ -1016,6 +1016,8 @@ static AstLocal ast_vs[AST_VS_MAX];
 static int ast_vn;
 static int ast_capture;
 static int ast_desync;
+static int ast_desync_line;
+#define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; } } while (0)
 static int ast_base_depth;
 int ast_in_op;
 static int ast_in_call;
@@ -1343,17 +1345,20 @@ void ast_hook_vpush(void) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel - 1 || rel > AST_VS_MAX) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	int r = vtop->r, tt = vtop->type.t;
 	int is_const = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int is_sym = (r & VT_VALMASK) == VT_CONST && (r & VT_SYM);
 	int is_local = (r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM);
+	int is_llocal_lval =
+			(r & VT_VALMASK) == VT_LLOCAL && (r & VT_LVAL) && !(r & VT_SYM);
 	int agg_lval = (tt & VT_BTYPE) == VT_STRUCT && !(tt & VT_BITFIELD) &&
-								 (is_local || is_sym);
-	if ((ast_bad_type(tt) && !agg_lval) || (!is_const && !is_sym && !is_local)) { MCC_TRACE("br\n");
-		ast_desync = 1;
+								 (is_local || is_sym || is_llocal_lval);
+	if ((ast_bad_type(tt) && !agg_lval) ||
+			(!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval))) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal n = ast_node(ast_cur, is_const ? AST_Literal : AST_Ref);
@@ -1431,7 +1436,7 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2 ||
 			(ast_bad_type(vtop->type.t) && !bf0 && !cx0) ||
 			(ast_bad_type(vtop[-1].type.t) && !bf1 && !cx1)) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
@@ -1451,7 +1456,7 @@ void ast_hook_genop_end(void) { MCC_TRACE("enter\n");
 	if (ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call) { MCC_TRACE("br\n");
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_vn != rel)
-			ast_desync = 1;
+			AST_SET_DESYNC();
 	}
 }
 
@@ -1459,7 +1464,7 @@ void ast_hook_convert(CType *type) { MCC_TRACE("enter\n");
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (ast_vn < 1) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -1475,7 +1480,7 @@ void ast_hook_inc(int post, int c) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn < 1 || ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -1497,7 +1502,7 @@ void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 }
 
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
@@ -1505,7 +1510,7 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 		return;
 	if (c >= 0 || g || ast_in_call || ast_in_op || ast_tern_top >= 16 ||
 			ast_vn < 1) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -1529,7 +1534,7 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
 		return;
 	if (ast_vn < 1) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -1546,13 +1551,13 @@ void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
 	if (ast_desync || ast_bail)
 		return;
 	if (ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_vs[ast_vn++] = cn;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 }
 
 void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
@@ -1561,7 +1566,7 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 	if (first) { MCC_TRACE("br\n");
 		if (c >= 0 || ast_in_call || ast_in_op || ast_lor_top >= 16 ||
 				ast_vn < 1) { MCC_TRACE("br\n");
-			ast_desync = 1;
+			AST_SET_DESYNC();
 			return;
 		}
 		AstLocal nd = ast_node(ast_cur, AST_Binary);
@@ -1571,12 +1576,12 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 	if (ast_lor_top < 1)
 		return;
 	if (c >= 0 || ast_vn < 1) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal opnd = ast_vs[ast_vn - 1];
 	if (ast_kind(ast_cur, opnd) == AST_If && ast_op(ast_cur, opnd) == 5) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -1599,17 +1604,17 @@ void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 	if (ast_desync || ast_bail)
 		return;
 	if (materialized) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	if (ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_vs[ast_vn++] = nd;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 }
 
 void ast_hook_if_begin(void) { MCC_TRACE("enter\n");
@@ -1642,7 +1647,7 @@ void ast_hook_if_gvtst_done(void) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 }
 
 void ast_hook_if_else(void) { MCC_TRACE("enter\n");
@@ -1759,7 +1764,7 @@ void ast_hook_break_continue(int is_continue) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		return;
 	if (ast_vn != 0) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal j = ast_node(ast_cur, AST_Jump);
@@ -1885,7 +1890,7 @@ void ast_hook_case(int64_t v1, int64_t v2, int type) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal m = ast_node(ast_cur, AST_Jump);
@@ -1933,7 +1938,7 @@ void ast_hook_label(int v) { MCC_TRACE("enter\n");
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal m = ast_node(ast_cur, AST_Jump);
@@ -1951,7 +1956,7 @@ void ast_hook_goto(int v) { MCC_TRACE("enter\n");
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal m = ast_node(ast_cur, AST_Jump);
@@ -1968,7 +1973,7 @@ void ast_hook_indir(void) { MCC_TRACE("enter\n");
 									ast_bad_type(pointed_type(&vtop->type)->t) &&
 									(pointed_type(&vtop->type)->t & VT_BTYPE) != VT_STRUCT;
 	if (ast_vn < 1 || ast_vn != rel || bad_deref) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -1982,7 +1987,7 @@ void ast_hook_gaddrof(void) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn < 1 || ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -2004,7 +2009,7 @@ void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
 			ast_member_cap = 1;
 			ast_member_arrow = is_arrow;
 		} else { MCC_TRACE("br\n");
-			ast_desync = 1;
+			AST_SET_DESYNC();
 		}
 	}
 	ast_in_call++;
@@ -2023,12 +2028,12 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 		return;
 	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
 	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal m = ast_node(ast_cur, AST_Unary);
@@ -2051,7 +2056,7 @@ void ast_hook_imag_begin(void) { MCC_TRACE("enter\n");
 			ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 			ast_imag_cap = 1;
 		} else { MCC_TRACE("br\n");
-			ast_desync = 1;
+			AST_SET_DESYNC();
 		}
 	}
 	ast_in_op++;
@@ -2069,7 +2074,7 @@ void ast_hook_imag_end(int t) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal m = ast_node(ast_cur, AST_Unary);
@@ -2088,7 +2093,7 @@ void ast_hook_builtin_complex_begin(void) { MCC_TRACE("enter\n");
 		if (ast_vn == rel)
 			ast_bcplx_cap = 1;
 		else
-			ast_desync = 1;
+			AST_SET_DESYNC();
 	}
 	ast_in_op++;
 }
@@ -2105,12 +2110,12 @@ void ast_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel - 1 || rel > AST_VS_MAX) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	int r = vtop->r;
 	if (!((r & VT_VALMASK) == VT_CONST && (r & VT_SYM) && (r & VT_LVAL))) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal n = ast_node(ast_cur, AST_Ref);
@@ -2133,7 +2138,7 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 	if (ast_active && ast_in_op > 0)
 		ast_in_op--;
 	if (ast_active)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 	(void)type, (void)addr, (void)new_save, (void)locorig;
 #else
 	if (!ast_active)
@@ -2144,7 +2149,7 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 		return;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal n = ast_node(ast_cur, AST_Unary);
@@ -2164,7 +2169,7 @@ void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
 		return;
 	if (ast_last_return != AST_NONE) { MCC_TRACE("br\n");
 		if (ast_ival(ast_cur, ast_last_return) != 0) { MCC_TRACE("br\n");
-			ast_desync = 1;
+			AST_SET_DESYNC();
 			return;
 		}
 		ast_set_ival(ast_cur, ast_last_return, (uint64_t)(int64_t)loc);
@@ -2182,33 +2187,33 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (nocode_wanted) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	(void)variadic;
 	int need = nb_args + 1;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel || ast_vn < need) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 		CType *at = &(vtop - nb_args + 1 + i)->type;
 		if (ast_bad_type(at->t) &&
 				((at->t & VT_BTYPE) != VT_STRUCT || is_complex_type(at))) { MCC_TRACE("br\n");
-			ast_desync = 1;
+			AST_SET_DESYNC();
 			return;
 		}
 		AstLocal an = ast_vs[ast_vn - nb_args + i];
 		int ak = ast_op(ast_cur, an);
 		if (ast_kind(ast_cur, an) == AST_Binary &&
 				(ak == TOK_LAND || ak == TOK_LOR)) { MCC_TRACE("br\n");
-			ast_desync = 1;
+			AST_SET_DESYNC();
 			return;
 		}
 	}
 	if (ast_kind(ast_cur, ast_vs[ast_vn - need]) != AST_Ref) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	for (int i = 0; i < need; i++)
@@ -2230,7 +2235,7 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 	if (!ast_capture || ast_desync)
 		return;
 	if (vtop->r2 != VT_CONST) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_set_op(ast_cur, inv, vtop->r);
@@ -2238,13 +2243,13 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 	ast_set_ival(ast_cur, inv, (uint64_t)vtop->c.i);
 	ast_set_sym(ast_cur, inv, (uint64_t)(uintptr_t)vtop->sym);
 	if (ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	ast_vs[ast_vn++] = inv;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
@@ -2259,14 +2264,14 @@ void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, ast_cur_bb, inv);
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
-		ast_desync = 1;
+		AST_SET_DESYNC();
 }
 
 void ast_hook_vswap(void) { MCC_TRACE("enter\n");
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (ast_vn < 2) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal t = ast_vs[ast_vn - 1];
@@ -2278,7 +2283,7 @@ void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		return;
 	if (ast_vn < 1) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal top = ast_vs[ast_vn - 1];
@@ -2304,8 +2309,20 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	if (ast_vn != rel || ast_vn < 2 ||
 			((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
 			 !agg_store && !bf_store)) { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 		return;
+	}
+	AstLocal lhs = ast_vs[ast_vn - 2];
+	if (ast_kind(ast_cur, lhs) == AST_Unary) { MCC_TRACE("br\n");
+		int lop = ast_op(ast_cur, lhs);
+		if (lop == AST_OP_MEMBER || lop == AST_OP_MEMBER_ARROW) { MCC_TRACE("br\n");
+			AstLocal mb = ast_first_child(ast_cur, lhs);
+			if (mb != AST_NONE && ast_kind(ast_cur, mb) == AST_Ref &&
+					(ast_op(ast_cur, mb) & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
+				AST_SET_DESYNC();
+				return;
+			}
+		}
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -2326,7 +2343,7 @@ void ast_hook_vstore_end(void) { MCC_TRACE("enter\n");
 	if (ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call) { MCC_TRACE("br\n");
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_vn != rel)
-			ast_desync = 1;
+			AST_SET_DESYNC();
 	}
 }
 
@@ -2340,7 +2357,7 @@ void ast_hook_ret_expr_done(void) { MCC_TRACE("enter\n");
 		ast_ret_val = ast_vs[0];
 		ast_vn = 0;
 	} else { MCC_TRACE("br\n");
-		ast_desync = 1;
+		AST_SET_DESYNC();
 	}
 }
 
@@ -2370,7 +2387,7 @@ void ast_hook_return_jmp(int jumps) { MCC_TRACE("enter\n");
 	if (!ast_desync && !ast_bail) { MCC_TRACE("br\n");
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_vn != rel)
-			ast_desync = 1;
+			AST_SET_DESYNC();
 	}
 }
 
@@ -13091,11 +13108,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		}
 		if (ast_verify_env) {
 			const char *ast_verdict;
+			char ast_verdict_buf[32];
 			int ast_gap = 0;
 			if (ast_fn_faithful) {
 				ast_verdict = "faithful";
 			} else if (ast_desync) {
-				ast_verdict = "desync";
+				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "desync:%d",
+								ast_desync_line);
+				ast_verdict = ast_verdict_buf;
 				ast_gap = 1;
 			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) {
 				ast_verdict = "empty";
