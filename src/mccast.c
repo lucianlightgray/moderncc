@@ -13082,6 +13082,46 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						MCC_TRACE("jit-slot %s (slot@sec+%d, body+6)\n", funcname, slot_off);
 						goto ast_jit_dispatch_done;
 					}
+#elif defined(MCC_TARGET_ARM64)
+					if (ast_jit_dispatch_env == 6) { MCC_TRACE("br\n");
+						int slot_off = data_section->data_offset;
+						unsigned char *slotp = section_ptr_add(data_section, 8);
+						Sym *slot_sym, *body_sym;
+						memset(slotp, 0, 8);
+#ifdef MCC_EMBED_JIT
+						if (mcc_state && (mcc_state->embed_jit ||
+															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+							char slotname[256];
+							snprintf(slotname, sizeof slotname, "__mccjit_slot_%s", funcname);
+							set_global_sym(mcc_state, slotname, data_section, slot_off);
+							mccjit_embed_note(funcname, ast_cur, sym);
+						}
+#endif
+						ind = aot_base;
+						rsym = 0;
+						if (rs)
+							{ MCC_TRACE("br\n"); rs->data_offset = ast_reloc0_sv; }
+						nocode_wanted = 0;
+						slot_sym =
+							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
+						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADR_GOT_PAGE, 0);
+						gen_le32(0x90000010); /* adrp x16, slot@GOTPAGE */
+						greloca(cur_text_section, slot_sym, ind, R_AARCH64_LD64_GOT_LO12_NC, 0);
+						gen_le32(0xf9400210); /* ldr x16,[x16,#:got_lo12:slot] -> x16 = &slot */
+						gen_le32(0xf9400210); /* ldr x16,[x16] -> x16 = *slot */
+						gen_le32(0xd61f0200); /* br x16 */
+						body_sym = get_sym_ref(&char_pointer_type, cur_text_section,
+																	 aot_base + 16, MCC_PTR_SIZE);
+						greloca(data_section, body_sym, slot_off, R_AARCH64_ABS64, 0);
+						ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base,
+																aot_chain);
+						if (saved_loc < loc)
+							{ MCC_TRACE("br\n"); loc = saved_loc; }
+						mcc_free(aot_code);
+						mcc_free(aot_rel);
+						MCC_TRACE("jit-slot %s (slot@sec+%d, body+16)\n", funcname, slot_off);
+						goto ast_jit_dispatch_done;
+					}
 #endif
 					int specmode = ast_jit_dispatch_env;
 					int poffs[AST_TCO_MAXP];
