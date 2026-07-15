@@ -2979,6 +2979,15 @@ static void alloc_sec_names(MCCState *s1, int is_obj) { MCC_TRACE("enter\n");
 
 	strsec = new_section(s1, ".shstrtab", SHT_STRTAB, 0);
 	put_elf_str(strsec, "");
+	/* Executables normally drop .symtab (its sh_size is never set for the
+	   non-obj path). Retain it for embed-JIT `-g` outputs so the runtime
+	   engine's crashes are symbolizable in gdb/perf. */
+	if (!is_obj && s1->embed_jit && s1->do_debug && !s1->do_strip &&
+			s1->symtab) { MCC_TRACE("br\n");
+		s1->symtab->sh_size = s1->symtab->data_offset;
+		if (s1->symtab->link)
+			{ MCC_TRACE("br\n"); s1->symtab->link->sh_size = s1->symtab->link->data_offset; }
+	}
 	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
 		if (is_obj)
