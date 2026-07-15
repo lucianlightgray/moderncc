@@ -79,17 +79,20 @@ validate the aarch64/armv7 memory model.
 | Cross-session re-emit / embed self-swap | ~ (M4) | intent serialize + `.init_array` ctor; **remaining:** bitfields, static-link, per-sym registry, Tier-B size |
 | Mode-6 slot + in-process hot-swap loop | ~ (M5) | recompile→publish→atomic-swap works; **remaining:** in-*program* slot→recompile wiring, QSBR |
 | Known-good cache + differential deopt-verify | ~ (M5b) | `MccjitKgc` mmap tuple set; **remaining:** FP/struct args, mismatch policy, oracle-skip |
-| Purity classifier | ~ (M5c) | `ast_fn_purity` whole-fn; **remaining:** statement-level slicing, off-C-ABI register kernels |
+| Purity classifier + C-ABI slice pipeline | ~ (M5c) | `ast_fn_purity` + the full extract→certify→wrap→reemit→execute→install→search pipeline (`ast_slice_*`); **remaining:** off-C-ABI register kernels (K7), inline/shim (K8), float/memory slices |
 | N-worker pool + hot-counter trigger | L (M6) | shared queue + async lazy promotion |
-| `jit-patchpoint` (D3B) | ✗ (M7) | deferred; pointer-swap is primary |
+| `jit-patchpoint` (D3B) | ✗ (M7) | deferred; pointer-swap is primary (registry-selectable, `mccjit_patch_reg[]`) |
 | `eval_slice` hard-gate | ~ (M8) | oracle bites in shadow mode; hard-gate promotion deferred |
 
-**Coverage boundary (the sharp one):** the recompile *engine* (`mcc_run`/`mcc_relocate`/`host_runmem`,
-incl. arm64/macOS `MAP_JIT` W^X) is **cross-arch**; the dispatch/stub *tail* (mode-6 slot, KGC stub,
-trampoline, counter) is **hand-emitted x86_64-ELF-only machine bytes** (`__x86_64__`), validated on Linux/x86
-CI only — not the arm64-macOS dev host. Signatures restricted to **1–6 GP int/ptr args, non-FP/non-struct
-return** (KGC stub emits only `mov64`/`movsxd`; FP/struct fall back to the direct trampoline, no verify).
-Build gate `MCC_EMBED_JIT` off; runtime `MCC_AST_JIT` off.
+**Coverage boundary (updated this session):** the recompile *engine* (`mcc_run`/`mcc_relocate`/`host_runmem`) is
+cross-arch. The dispatch/stub *tail* (mode-6 slot, KGC stubs, trampoline, counter, ptr-swap-slot) is now ported
+to **arm64 macOS** as well (native, not qemu — [2B] done, 30/30 selftests): x86 uses RWX/`movabs`; arm64 uses
+the **split-page W^X** pattern (`mmap` RW → `host_runmem_protect` RX; writable slots/flags in separate heap
+allocs) — **not** `MAP_JIT` (that needs a codesign entitlement on Apple Silicon), and `host_runmem_dual()` is
+false because `mprotect RW→RX` works. Open arch gaps: arm64 mode-6 for *object* output, and the arm64 mixed
+GP+FP KGC stub (see "[DEFER] — JIT arm64 + slicing residuals"). Signatures restricted to **1–6 GP int/ptr args
+or all-double, non-struct return**; other FP/struct fall back to baseline (no verify). Build gate
+`MCC_EMBED_JIT` off by default; runtime `MCC_AST_JIT` off.
 
 ### Cross-subsystem overlap (the intersections)
 
@@ -208,7 +211,11 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
    self-recompile → slot hot-swap, all in-process. Verified end-to-end on both disk (`route=kgc … swapped`,
    correct result) and `mcc -run`. Test: `jit/selftest-liverun` (in-process `mcc_run`; perf-map presence proves
    the recompile fired in the ctor — teeth-verified). Standalone disk exe still needs `libmcc` on the loader
-   path — that's the deferred **[J4A]** static-link (step 7), not J3A.
+   path — that's the deferred **[J4A]** static-link (step 7), not J3A. ✅ **Mach-O fix (this session):** the
+   registry symbols (`__mccjit_slot_*`/`__mccjit_blob_*`) were defined raw by `set_global_sym` but referenced by
+   the generated ctor as `___mccjit_*` under `leading_underscore`, so J3A had only ever resolved on x86 ELF; the
+   definitions now prepend `_` when `mcc_state->leading_underscore`, so `-run` fires on arm64/x86 Mach-O too
+   (`jit/selftest-liverun` green on arm64). Commit `15deb92d`.
 5. **[J1A/K1C/K2/L6A/L7A]** mismatch policy — ⏳ CORE DONE (runtime poison/deopt), search-side deferred.
    ✅ **[J1A+K1C] DONE:** `mccjit_kgc_calln` now tracks per-variant `hits`/`misses`; on a mismatch/hit *ratio*
    (default ≥50% over ≥8 verified calls, `MCC_JIT_POISON_PCT`/`MCC_JIT_POISON_MIN`) it flips the variant to
@@ -293,7 +300,10 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     GP/FP verify, divergent→flag, and **end-to-end `mcc -run` dispatch** (`f(long,double,long)→10`, mixed-stub
     swapped). All stub/thunk bytes are llvm-mc-verified. **DEFERRED:** small struct-by-value (≤16B) — needs the
     real per-eightbyte ABI classifier (a struct with a float field is SSE-class); the clean enabler is promoting
-    mcc's own `classify_x86_64_arg` (x86_64-gen.c) from `static` to `ST_FUNC`. ✅ **FIXED — the FP-constant
+    mcc's own `classify_x86_64_arg` (x86_64-gen.c) from `static` to `ST_FUNC`. (*Wording caveat:* the "structs/
+    unions … landed" claim elsewhere in this doc refers to `MCCJIT_ROLE_STRUCT` type-handle **dep-interning** in
+    the intent serializer — a different subsystem from this struct-by-value **marshalling** stub, which is still
+    the deferred half. Don't purge this on the strength of that.) ✅ **FIXED — the FP-constant
     re-emit bug** (discovered while validating mixed): the JIT recompile re-emitted FP *constants* as `0.0`
     because `ast_fconst_reuse` (a replay opt that skips `init_putv` and reuses a recorded `.rodata` offset)
     referenced stale offsets from the original compile against the recompile's FRESH empty rodata section. Fix:
@@ -315,9 +325,11 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     deferred. Hot-patch is now a search-enumerable **registry** `mccjit_patch_reg[]` (`src/mccjit_embed.c`): each
     row is `{name, footprint, available(), make(target,&handle)→entry, swap(handle,target), call_i, dispose}` — a
     uniform interface over any patch mechanism. Rows: **c-indirect** (portable data-pointer dispatch — a swappable
-    `void*` cell; runs on every arch incl. arm64), **ptr-swap-slot** (`jmp *[rip+slot]`, x86), **inplace-tramp**
-    (`movabs rax,imm; jmp rax`, x86), and a deferred **nop-pad-d3b** row (`available()==0`, present so the table
-    documents the family). `mccjit_patch_bench_rank` measures steady-state ns/call per available row (best-of-3) →
+    `void*` cell; runs on every arch incl. arm64), **ptr-swap-slot** (`jmp *[rip+slot]` on x86; on arm64
+    `movz/movk x17,<&slot>; ldr x16,[x17]; br x16` with an RX code page + separate RW heap slot — landed this
+    session, `01950395`), **inplace-tramp** (`movabs rax,imm; jmp rax`, x86 only — the arm64 in-place code-patch
+    row is deferred), and a deferred **nop-pad-d3b** row (`available()==0`, present so the table documents the
+    family). `mccjit_patch_bench_rank` measures steady-state ns/call per available row (best-of-3) →
     best-first ordering — the benchmark-always-wins scorer over the patch axis. `jit/selftest-patch` drives the
     registry (well-formedness + functional redirect + sorted ranking); `jit/selftest-sliceinstall` installs a
     reemitted slice kernel behind a row (call→11) and hot-swaps to another kernel (call→22), mechanism chosen by
@@ -355,36 +367,28 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     boundary ABI harness); **[K8]** inline-vs-shim as a benchmarked axis; float slices (C2b) and memory-boundary
     slices via bound C-ABI ops (C2c/A2b). (Landed this session: `0c510232`, `90e706e4`, `5a203ce7`, `0127653e`,
     `7e12755a`, `02afb6ef`, `79dba029`.)
-14. **[2B]** port the dispatch/stub tail to arm64 — ⏳ MECHANISM VALIDATED + pipeline established; libmcc port
-    remaining. Proved the core arm64 JIT dispatch end-to-end under `qemu-aarch64`: a hand-emitted AArch64
-    pointer-swap dispatch (`ldr x16,[pc+8]; br x16` reading a swappable data slot) + the **arm64 icache
-    maintenance an arm64 JIT MUST do** (`dc cvau; dsb ish; ic ivau; dsb ish; isb` — the reason the tail is a
-    per-arch hand-emitted primitive, not shared with x86). Test `jit/arm64-dispatch` (freestanding, built with a
-    cross `clang --target=aarch64 -fuse-ld=lld -nostdlib -static`, run under `qemu-aarch64`; self-skips without
-    the toolchain). Validation infra now ready: **llvm-mc** for byte-exact AArch64 encodings + **clang/lld/qemu**
-    for execution. ✅ **counter/profiling-stub mechanism also validated** (`jit/arm64-counter`, same freestanding
-    qemu pipeline): the AArch64 hot-counter stub spills x0-x5 + LR, calls the C tick with `x0=state`, `x1=&regs`
-    in the profiler's `regs[MCCJIT_KGC_MAXARG-1-i]==param i` layout (regs[0]=x5 … regs[5]=x0), restores x0-x5 so
-    the tick-returned target sees the original args, and tail-`br`s to it (the target's `ret` uses the restored
-    LR — the arm64 analogue of x86 `jmp rax`). Asserts both the surviving-args result and the capture layout under
-    qemu. ✅ **KGC differential-verify stub mechanism also validated** (`jit/arm64-kgc`): the AArch64 known-good-
-    cache stub gathers x0-x5 into a FORWARD-order argv frame (`argv[i]==arg i`, unlike the reversed counter
-    layout), **sign-extends narrow args with `sxtw`** (the arm64 analogue of x86 `movsxd` — a zero-extend would
-    corrupt a negative arg and fail the arithmetic assert), calls the C verifier `(kgc,variant,baseline,argv,
-    nargs,*flagged)`, and returns its result; asserts both the match path (flag 0) and the mismatch→baseline
-    deopt path (flag 1) under qemu. ✅ **all-double (K4A SSE-class) KGC variant also validated** (`jit/arm64-kgcfp`):
-    the FP stub spills the FP arg regs (d0-d1, the arm64 analogue of the x86 `movsd` xmm spill) into a double argv
-    frame, calls the verifier with the GP arg regs (the double argv passed by POINTER in x3, exactly as
-    `mccjit_kgc_calln_fp` expects), which compares RAW return bits and returns the baseline double on mismatch, and
-    the stub returns leaving d0 untouched so the double return propagates to the caller. Asserts match (flag 0) +
-    mismatch→baseline deopt (flag 1) on a 2-double signature under qemu. **So ALL FOUR data-path stub mechanisms
-    (dispatch + counter + KGC-verify GP + KGC-verify FP) are now byte-level proven** — the remaining port is the
-    `src/mccast.c` mode-6 slot emission + folding these four validated byte sequences into the `mccjit_embed.c`
-    `#elif __aarch64__` stub branches, then an arm64 libmcc build running the jit selftests under qemu.
-    **DEFERRED — the interdependent libmcc port** (all one arm64 convention): the mode-6 slot
-    emission in `src/mccast.c` (the arm64 `ldr x16,[slot]; br x16` prologue + slot in `.data` + icache flush) and
-    the `mccjit_embed.c` stubs (`mccjit_make_trampoline`/`_counter_stub`/`_kgc_stub_n`/`_kgc_stub_fp`, currently
-    `#if __x86_64__`-only) as `#elif __aarch64__` branches, then run the jit selftests on an arm64 libmcc build.
+14. ✅ **[2B]** port the dispatch/stub tail to arm64 — DONE (native arm64 macOS, no longer qemu-only). All five
+    runtime stub emitters + the mode-6 in-program dispatch slot are live on arm64 via the **split-page W^X**
+    pattern: `mmap` RW → write → `host_runmem_protect(...,HOST_PROT_RX)`; any data that gets written after protect
+    (KGC flags, swap slots) lives in a **separate heap alloc** because the RX code page is read-only. (Key finding:
+    `host_runmem_dual()` is *false* on Apple Silicon — `mprotect RW→RX` works — and `MAP_JIT` needs a codesign
+    entitlement, so the qemu tests' Linux-RWX assumption did not carry over.) Landed:
+    - `mccjit_probe_exec_mem` arm64 branch (RW+mprotect-RX probe → `mccjit_feasible()` finally true, unblocking the
+      whole auto-dispatch layer that was silently off on arm64).
+    - `mccjit_make_counter_stub` (the qemu-validated 22-word sequence), `mccjit_make_kgc_stub_n` (generated
+      per-signature: forward-order `str x_i,[sp,#i*8]` argv + `sxtw` for narrow params, PC-relative `ldr` to a
+      fixed data region for kgc/variant/baseline/&flag/verify, heap-allocated flag), `mccjit_make_kgc_stub_fp`
+      (`str d_i` spills + `mccjit_kgc_calln_fp`). The trampoline `#else` already returns the variant, which the
+      arm64 dispatch `br`s to.
+    - ptr-swap-slot hot-patch registry row (`movz/movk x17,<&slot>; ldr x16,[x17]; br x16` — RX code + a separate
+      always-writable heap slot, since a code-adjacent slot can't be in the RX page).
+    - mode-6 in-program dispatch slot in `src/mccast.c` (`adrp x16,slot@GOTPAGE; ldr @GOTLO12; ldr; br` +
+      `R_AARCH64_ABS64` body reloc), plus a **Mach-O leading-underscore fix** on the J3A registry symbols
+      (`__mccjit_slot_*`/`__mccjit_blob_*` were defined raw but referenced as `___mccjit_slot_*` — this is why J3A
+      had only ever worked on x86 ELF).
+    Result: arm64 `jit/selftest-*` **30/30** (lazy/pool/observability/liverun/fparg/l4a/vrange/profile all green;
+    only pre-existing `evalgate` fails), exec-search-threads 296/296. Commits `01950395`, `9b8bf53d`, `8d0a2646`,
+    `15deb92d`, `77bd8ba8`. **Residual gaps captured below** (arm64 mode-6 object-output; arm64 kgc-mixed stub).
 15. ✅ **[7A]** promote `eval_slice` to a hard per-strategy gate — DONE (opt-in; default-on flip awaits the soak).
     The UB-soundness oracle now runs in **production** (not just shadow builds) and, under the opt-in
     `MCC_AST_JIT_EVAL_GATE`, **refuses** an unsound spec-slice — discards the speculative clone and falls back to
@@ -398,13 +402,27 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
 
 **Phase 4 — shared foundations the JIT default-on + AOT-convergence need** *(also the standalone optimizer gains)*
 16. **[6A]** close the riscv64 Tier-3 self-host gap → makes the M8 cross-arch gate real (validation-infra unblock).
-17. **[3A]** fix the emit-time value-axis framework (keystone: unblocks §22/§23/inline-promote/M1 scoring).
+17. **[3A]** emit-time value-axis framework — ⚠️ *reframe: the framework is LANDED, the work is enablement.* The
+    scratch-measure/emit machinery exists (`AstScratchSave`, `ast_scratch_enter`/`_measure_exit`, the `AST_PF_EMIT`
+    trial in `src/mccast.c`), and register-promotion (`ast_promo_*`, `ast_promote_env` default-on at -O2) is live.
+    What's still open is the **search-side value axes**: the inline axis is hard-gated off
+    (`ast_search_inline_env = ast_env_gate("MCC_AST_SEARCH_INLINE", 0)`) and the emit-time PROMOTE search axis is
+    deferred — because `AstScratchSave` doesn't fully restore interior emit/regalloc state (leak measured). So the
+    remaining work is soundness + enabling the gated axes, not building the framework.
 18. **[4B]** backend-parity session (cmov/csel + temp-materialization) → clears ABS, DIVMAGIC, 64-bit div-magic,
-    branchless-select; then flip the held P0 items.
-19. **[5A]** memo unification (`ComboMemo` + disk) — the one content-addressed store the AOT and JIT searches share.
-20. **[P1]** the unified value lattice → feeds the **AOT-static sink scorer**.
+    branchless-select; then flip the held P0 items. (Confirmed still open: **no** code generator emits cmov/csel —
+    grep is clean across `src/*-gen.c`; `ast_divmagic_env`/`ast_abs_env` both default `0` in `ast_configure`.)
+19. **[5A]** memo unification (`ComboMemo` + disk) — the one content-addressed store the AOT and JIT searches
+    share. *Design wrinkle (see "[DEFER] — JIT arm64 + slicing residuals"): `ComboMemo` compresses per-value while
+    the current memo compresses the whole MSZ1 image — a mechanical repoint would regress compression.*
+20. **[P1]** the unified value lattice → feeds the **AOT-static sink scorer**. Mostly landed: `AstVLat` + both
+    projections are live and **`MCC_AST_VLAT` is now default-on at -O2** (one of the flipped P0 batch). The only
+    open piece is **PR-C** (loop-IV monotonicity widening — miscompile-sensitive, held; validator is
+    x86_64-Linux-only).
 21. **[AOT-static sink scorer / L1B]** deterministic cost/size scoring + static-analysis ranges + gain-ordered,
     memo-pinned search — the AOT side of "AOT `-O4` *is* the JIT" (`-O4` stays off the byte-identity bar).
+    *Unstarted as specced:* only a basic `ast_cost_score` stub exists (behind `MCC_AST_COST`, default `0`); the
+    range-fed, gain-ordered, memo-pinned sink scorer is not built.
 
 **Phase 5 — const-data + the JIT data path**
 22. **[P2]** const-data rewrite (M5 → M6).
@@ -513,6 +531,32 @@ Finish M1–M3 / M7 leftovers: `ComboMemo` + MSZ1 as the one memo, one eviction,
 - Rolled-in sub-decisions: the int-axis vocabulary (budgets/levels with no gate bit) — quantize into
   `AstGateMask` bits vs. a new `combo_run` parameter dimension; M7b `jit.h` graduation stays `[DEFER]`.
 
+### [DEFER] — JIT arm64 + slicing residuals (opened this session by [2B]/M5c)
+
+These are the gaps left by the arm64 JIT port + the C-ABI slice pipeline — captured so they aren't lost:
+
+- **arm64 mode-6 dispatch for object output.** The mode-6 slot works for `MCC_OUTPUT_MEMORY` (`mcc -run`, embed)
+  but is gated `&& !ast_search_env && (embed_jit || MEMORY)` on arm64 because the `adrp+GOT/ABS64` slot path
+  corrupts the function symbol at **external link** ("unresolved reference to `_test`"). Consequences: a
+  standalone `--embed-jit` **exe** on arm64 gets no in-program mode-6 dispatch, and `-O4` (which turns JIT
+  dispatch on and re-emits candidates to MEMORY for scoring) had to be excluded (`77bd8ba8`). Fix = harden the
+  arm64 object-output GOT/ABS64 slot emission so the function symbol survives the link, then drop the
+  `!ast_search_env` guard. x86 tolerates this today; arm64 does not.
+- **arm64 `mccjit_make_kgc_stub_mixed`** stays NULL — the mixed GP+FP marshalling stub + its SysV-reconstructing
+  forwarding thunk have **no qemu validation** (only dispatch/counter/kgc-n/kgc-fp were byte-proven). A mixed
+  scalar signature on arm64 therefore refuses to JIT (keeps the AOT baseline — safe). Derive + validate the
+  arm64 `movz/movk`-into-x0..x5 + `ldr d0..d7` thunk.
+- **arm64 in-place trampoline patch row** (`inplace-tramp`) is x86-only; the arm64 in-place code-patch variant
+  (rewrite an immediate + `__clear_cache`, W^X-toggled) is deferred — c-indirect + ptr-swap-slot cover arm64.
+- **M5c slice backend residuals** (from item 13): **[K7]** non-ABI register calling convention (C-ABI path D1a
+  works), **[K8]** inline-vs-shim search axis, **C2b** float-slice certifiability (oracle is integer-only),
+  **C2c** memory-boundary slices via bound C-ABI ops. Multi-week, miscompile-risky — dedicated session.
+- **[5A] compression fit** (from the memo-unification analysis): `ComboMemo` compresses each *value*
+  individually, while the current search memo compresses the whole image at once (MSZ1) — far better for many
+  small structurally-similar 56-byte records. A mechanical repoint would *regress* compression; [5A] needs a
+  bulk-value mode on `ComboMemo` (or a design decision) first, so it's a small design task, not a mechanical
+  port. (Opt-in, `-O4` only — off the M8 byte-identity bar.)
+
 ### [DEFER] — after P1–P3 land
 
 - **Backend parity vs gcc** — cmov/csel branchless select, 64-bit div-magic (needs `mulh`/`__int128`),
@@ -531,7 +575,10 @@ the pass — confirm via `-v128` TRACE or an object-diff) plus correctness vs gc
   cross-function budget *allocation* exists — needs §22 emit isolation; do §22/M2 first) · §32a widening
   dataflow · §30 value-table dispatch (needs the P2 `.rodata` project) · FLOAT combo M2/M3 (search-infra) ·
   V-* strategy-decomposition follow-ons · the §26 marginal tail (float/struct KGC args, static-link E1a,
-  bitfields, M7 patchpoint). (**Host note:** the §26 JIT tail is x86_64-ELF-only, D7.)
+  bitfields, M7 patchpoint). (**Host note (updated this session):** the §26 JIT runtime tail now runs natively
+  on **arm64 macOS** too — all stubs + mode-6 dispatch ported ([2B] done, 30/30 selftests). Remaining
+  arch-specific gaps are in the "[DEFER] — JIT arm64 + slicing residuals" section; mixed GP+FP KGC and the
+  arm64 object-output dispatch slot are the open ones.)
 - [ ] **2. Endgame:** flip the validated gates default-on — the P0 "next default-on batch" item.
 
 ---
