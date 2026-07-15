@@ -80,6 +80,11 @@ Memory: [[mcc-jit-unification]] updated with all of the above.
 ### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit`
 Discovered 2026-07-14 while validating the `MCCJIT_ROLE_DATA` feature above. Independent of
 that feature (reproduces with no string literal involved).
+**MITIGATED (commit 407df3a8):** `ast_jit_eligible` now rejects a `VT_PTR` return, so
+pointer-returning functions bail to plain AOT and are never recompiled through the normal
+path — the crash is no longer reachable via eligibility. The underlying `ast_reemit` fault
+is still latent for a forced `mcc_jit_recompile_blob` on such a function; root-cause and fix
+below still stand as the real bug.
 
 Repro (in-process, e.g. from a selftest calling the internal API in `src/mccjit_embed.c`):
 ```
@@ -113,6 +118,26 @@ Next steps to fix:
 - Suspect the replayed node's type/`type.ref` for the returned pointer, or the sret/return
   handling in the reemit epilogue path, not the DATA symbol (the DATA sym is only a reloc
   target). Compare the AST-node stream for a pointer-return vs an int-return leaf.
+
+### BUG 1b — mode-6 dispatch raw-splice orphans anon labels (switch case FIXED; ~8 residual)
+Found 2026-07-14 while implementing self-JIT of mcc's own functions (`--embed-jit` over
+`src/mcc.c`). The mode-6 dispatch transform rewinds `ind` and raw-splices the saved AOT body
+(`ast_baseline_splice`) without redefining a function's anonymous label symbols; modes 1-3
+re-emit the body fresh and are unaffected. A switch's data-section jump-table then references
+undefined case labels → `unresolved reference to 'L.N'` at link (`L.N` = anon sym named in
+`mccpp.c:691`).
+**Switch subclass FIXED (commit 407df3a8):** switch functions bail from JIT (`ast_fn_switch`).
+This cut embed-all-of-mcc.c unresolved-label errors from ~40 to **8 residual**.
+The **residual 8 are a DISTINCT mechanism, still open**: verified that all 459 mode-6 functions
+in the embed-all build have NO orphaned labels (a cross-section-reloc-to-anon-text-label scan
+returns 0 for every one), and disabling the inline/reemit passes (`MCC_AST_INLINE_PASS=0`,
+`MCC_AST_REEMIT=0`, `MCC_AST_INLINE=0`) does not change the count — so it is neither the mode-6
+splice nor the forward-inline re-emission. Next: find which section references each residual
+`L.N` and which pass drops its definition (fix `relocate_syms` in `src/objfmt/mccelf.c` to scan
+`sh_type==SHT_RELX && link==symtab_section` sections — note `symtab` local there differs from the
+`symtab_section` macro — and print the referencing section + defining function). Repro:
+`mcc -B<build> --embed-jit <mcc defines/includes> -O1 src/mcc.c <blobs> -o mcc2` in amd64 docker.
+Impact: only full embed-all; targeted `--jit-functions <non-switch fn>` and `-run` work.
 
 ### BUG 2 — `MCC_EMBED_JIT=1` build segfaults compiling `vla/basic.c` at `-O1` (arm64/macOS)
 Pre-existing, config-specific; documented in memory [[embedjit-arm64-vla-o1-crash]].
