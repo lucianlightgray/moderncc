@@ -1986,6 +1986,18 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	const char *start_symbol;
 	int pe_type;
 
+#ifdef MCC_EMBED_JIT
+	/* Emit the runtime-JIT registry + `.init_array` boot ctor. The ELF/Mach-O
+	   mcc_add_runtime does this; PE has its own runtime path, so mirror it here
+	   (before the .init_array bounds are taken) or -run/--embed-jit programs get
+	   no JIT machinery on Windows. */
+	{
+		extern void mccjit_embed_finalize(MCCState * s);
+		if (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY)
+			{ MCC_TRACE("br\n"); mccjit_embed_finalize(s1); }
+	}
+#endif
+
 	if (MCC_OUTPUT_DLL == s1->output_type) { MCC_TRACE("br\n");
 		pe_type = PE_DLL;
 		start_symbol = PE_STDSYM("__dllstart", "@12");

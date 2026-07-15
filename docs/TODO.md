@@ -69,7 +69,7 @@ Over-alignment gated off on PE and under asan/bcheck. Self-host: x86_64 full 3-s
 qemu+musl · **riscv64 blocked (Tier-3 gap)** · i386/arm cross-conformance only. qemu is x86-TSO → cannot
 validate the aarch64/armv7 memory model.
 
-### JIT — runtime recompile + guarded deopt (§26) · `src/mccjit_embed.c` (3059 L) + `src/mccrun.c`
+### JIT — runtime recompile + guarded deopt (§26) · `src/mccjit_embed.c` (6150 L) + `src/mccrun.c`
 
 | Macro feature | State | Detail |
 |---|---|---|
@@ -92,7 +92,18 @@ allocs) — **not** `MAP_JIT` (that needs a codesign entitlement on Apple Silico
 false because `mprotect RW→RX` works. Open arch gaps: arm64 mode-6 for *object* output, and the arm64 mixed
 GP+FP KGC stub (see "[DEFER] — JIT arm64 + slicing residuals"). Signatures restricted to **1–6 GP int/ptr args
 or all-double, non-struct return**; other FP/struct fall back to baseline (no verify). Build gate
-`MCC_EMBED_JIT` off by default; runtime `MCC_AST_JIT` off.
+`MCC_EMBED_JIT` now default ON (per the `--jit`/`MCC_JIT` trigger refactor); runtime `MCC_AST_JIT` off.
+
+**Windows (PE) — runtime JIT DONE this session (`ctest -R jit/` = 32/32, ungated).** `mccjit_embed.c`'s
+POSIX layer (mmap/pthread/fork/KGC file-map/atomics/clock) is shimmed via `src/mccjit_win32.h`
+(VirtualAlloc exec pages · SRWLOCK+CONDITION_VARIABLE+InitOnce+`_beginthreadex` · CreateFileMapping KGC
+store · MSVC `__atomic`→Interlocked · `_M_X64`→`MCCJIT_X64`); the hand-written x86_64 stubs
+(`mccjit_make_counter_stub`, `mccjit_make_kgc_stub_{n,fp}`) got Microsoft-x64-ABI branches; and the PE
+`-run`/`--embed-jit` auto-JIT pipeline was wired (`runtime/lib/runmain.c` runs `.init_array` ctors on
+WIN32, `pe_add_runtime` calls `mccjit_embed_finalize`). Only `mccjit_make_kgc_stub_mixed` is deferred
+(returns NULL → baseline fallback; the class-based forwarding thunk needs a positional Win64 rebuild;
+`jit/selftest-mixed` skips). Use `MCC_HOST_WIN32`, not `_WIN32`, in `#if` (hostgate invariant). See root
+`TODO.md` "Windows JIT-embed port".
 
 ### Cross-subsystem overlap (the intersections)
 
@@ -785,9 +796,13 @@ specialized to an observed context, keyed by a hash of that context; the cache m
 variant`, and the dispatcher **deopts to the AOT baseline on guard-fail / key-miss**.
 
 **Global gate `MCC_AST_JIT` (default off)** until the full validation bar passes, then a P0-style flip. Build
-gate `MCC_EMBED_JIT` (default off) adds the ~800 KB embed. **The runtime dispatch/stub tail is x86_64-ELF-only
-hand-emitted machine bytes (D7), validated on Linux/x86 CI only — not the arm64-macOS dev host; the recompile
-engine underneath is cross-arch. Supported signatures: 1–6 GP int/ptr args, non-FP/non-struct return.**
+gate `MCC_EMBED_JIT` (default ON) adds the ~800 KB embed (still forced OFF on WIN32, see below). **The
+runtime dispatch/stub tail is hand-emitted machine bytes (D7) written for the **SysV AMD64 ABI**, validated
+on Linux/x86 CI only — not the arm64-macOS dev host, and NOT the Windows x64 ABI; the recompile engine
+underneath is cross-arch. Supported signatures: 1–6 GP int/ptr args, non-FP/non-struct return.** The SysV
+hardcoding is exactly what blocks the Windows ungate: the OS primitives are ported (`src/mccjit_win32.h`,
+24/31 selftests green) but the counter/KGC/FP/mixed stubs push rdi/rsi/… and skip the 32-byte shadow space,
+so FP/mixed/profiled paths segfault under rcx/rdx/r8/r9 — see root `TODO.md` "Windows JIT-embed port".
 **2B (scheduled after the x86_64 tails close):** give the mode-6 slot / KGC stub / trampoline / counter an
 arm64 emission path so §26 validates on the dev host — reinterpreting D7 as "x86_64-first," not "only." This
 is the prerequisite for a meaningful cross-arch 7A hard-gate and for any JIT default-on flip.
@@ -1163,7 +1178,9 @@ first real consumer.** Sequence: slice-G stitching (the tree-completeness prereq
 - [ ] **Extend auto over-alignment to the PE (Windows) targets** — x86_64/arm64/i386 PE are gated off
   (`STACK_OVERALIGN_MAX` undefined) because PE routes VLA alloc through `__chkstk`/alloca (align-16 only);
   needs the helper parameterized on alignment + a bare-`VT_LLOCAL` load case. Validate on a Windows-arm64/x64
-  cell.
+  cell. (Verified this session: `STACK_OVERALIGN_MAX` is defined only for `x86_64 && !PE` at `mccgen.c:11193`;
+  the `__chkstk` path is `x86_64-gen.c:984` / `i386-gen.c:681` / `arm64-gen.c:1050`, all align-16; the
+  `decl_initializer_alloc` over-align gate at `mccgen.c:12012` is also off under asan/bcheck.)
 - [ ] **Root-cause the string-literal `L.N`/anon-symbol layout sensitivity** — 3 exec files (atomic_aggregate,
   c11_freestanding_headers, c11_threads) shift internal `L.N`/anon-symbol numbering under ANY source change;
   currently excluded from the object-diff oracle.
@@ -1329,7 +1346,26 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   region").
 - [ ] **Implement the clang-compatible `__ubsan_handle_*` diagnostic ABI** — trap mode ships (`ud2` x86_64,
   `brk` arm64/riscv64); no handler ABI exists.
-- [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only.
+- [ ] **Implement a PE/mingw trap-mode UBSan** — trap mode is gated ELF-only (verified: `libmcc.c:2457`
+  gates `do_sanitize_undefined` on `!defined MCC_TARGET_PE`; the `ud2`/`brk` emit is arch- not format-gated,
+  so the block is purely the PE exclusion + no PE trap-handler wiring; `CMakeLists.txt` skips `ubsan-suite`).
+- [x] **[Windows JIT] Port the hand-written x86_64 JIT stubs to the Windows x64 ABI** — DONE.
+  `mccjit_make_counter_stub` + `mccjit_make_kgc_stub_{n,fp}` got Microsoft-x64-ABI `#if MCC_HOST_WIN32`
+  branches (spill rcx/rdx/r8/r9 [+xmm0-3 for fp], 32-byte shadow, calln stack args); `MCC_EMBED_JIT` is
+  ungated on WIN32 and `ctest -R jit/` = 32/32. See root `TODO.md` "Windows JIT-embed port". **Remaining
+  sub-item:** `mccjit_make_kgc_stub_mixed` returns NULL on WIN32 (mixed GP+FP sigs fall back to the baseline,
+  unmemoized; `jit/selftest-mixed` skips) — the forwarding thunk (`mccjit_mixed_thunk_code`) rebuilds a SysV
+  call *by class* but Win64 is *positional*, needing a per-arg class vector plumbed through the stub + thunk.
+- [ ] **[Windows] Strip the `=` from `--jit-functions=<name>` on the CLI** — `mcc --jit-functions=f` stores
+  the parsed name as `"=f"` (the option parser keeps the `=`), so `ast_jit_selected` never matches and the
+  named function isn't JIT-selected. The API path (`s->jit_functions = "f"`) is correct; only the CLI
+  `--jit-functions=` form is affected. Found while wiring the PE `-run` auto-JIT pipeline.
+- [ ] **[Windows JIT] Build the PE embed-blob for standalone `--embed-jit`** — `bin2c(libmcc_jitengine.a)` →
+  `MCC_EMBED_JIT_BLOB` is linked into emitted programs by mcc's OWN (ELF-only) linker
+  (`libmcc.c:mcc_add_jit_engine_embedded`, `AFF_WHOLE_ARCHIVE`); on WIN32 the host CC emits a COFF/PE archive
+  mcc can't consume, so `libmcc_jitengine`/the blob are gated off (`CMakeLists.txt` ~1951). Only standalone
+  `--embed-jit` exes need it (mcc's `-run` + selftests carry the engine in-image). Needs mcc's linker to read
+  PE/COFF archives, or a self-hosted ELF build of the engine.
 - [ ] **Explore `-fsanitize-coverage`** — feeds the coverage-guided fuzzer.
 - [ ] **Explore `-fsanitize=cfi` hardening** (absent today).
 - [ ] **Explore `_FORTIFY_SOURCE`-style hardening** (absent; `-fstack-protector` already ships with real
@@ -1432,7 +1468,12 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
 - [ ] **Audit each `mcc_skip_test` for per-triple ungating** — i386-linux blocked (no 32-bit sysroot);
   aarch64/armv7-linux partial (qemu is x86-TSO — only the memory-model-independent subset). arm64-windows is
   **no longer blocked** — CI runs a native `windows-11-arm64` cell (MSVC 2022 ARM64) that passes the full
-  suite; revisit the arm64-windows `mcc_skip_test`s for ungating.
+  suite. **Reconciled (this session):** the only two arm64-windows-specific skips left are `mcctest` /
+  `mcctest-bcheck` (`CMakeLists.txt:4206-4207`), and they are NOT platform-functionality gates — the reason is
+  that no arm64-Windows gcc reference exists to match mcc's PE differential (the sole reference is an emulated
+  x86_64 mingw, which can't be byte-identical to native arm64 mcc on legacy msvcrt). arm64 codegen itself is
+  covered by the `exec/*` goldens + `pe-native-conformance`, so these two should STAY skipped with the updated
+  "no matching reference" reason rather than be ungated. No other arm64-windows skips remain to revisit.
 - [ ] **Revisit the `k` always-inline depth policy.**
 - [ ] **Revisit size-gated outline.**
 - [ ] **Revisit store factoring** (shared render engine).

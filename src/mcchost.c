@@ -1132,8 +1132,16 @@ ST_FUNC void host_runmem_free(void *ptr, unsigned size) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void host_icache_flush(void *ptr, unsigned long length) { MCC_TRACE("enter\n");
-#if !defined _WIN32 && \
-		((defined MCC_TARGET_ARM && !MCC_TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64)
+#if defined _WIN32
+#if defined MCC_TARGET_ARM64 || defined MCC_TARGET_ARM
+	/* Windows does not flush the I-cache on VirtualProtect; arm/arm64 need it
+	   explicitly after writing JIT code. x86/x64 are I-cache coherent. */
+	FlushInstructionCache(GetCurrentProcess(), ptr, length);
+#else
+	(void)ptr;
+	(void)length;
+#endif
+#elif (defined MCC_TARGET_ARM && !MCC_TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 	void __clear_cache(void *beginning, void *end);
 	__clear_cache(ptr, (char *)ptr + length);
 #else
@@ -1152,6 +1160,8 @@ ST_FUNC int host_runmem_protect(void *ptr, unsigned long length, int mode) { MCC
 	DWORD old;
 	if (!VirtualProtect(ptr, length, protect[mode], &old))
 		{ MCC_TRACE("br\n"); return -1; }
+	if (mode == HOST_PROT_RX || mode == HOST_PROT_RWX)
+		{ MCC_TRACE("br\n"); host_icache_flush(ptr, length); }
 #else
 	static const unsigned char protect[] = {
 			PROT_READ | PROT_EXEC,

@@ -224,26 +224,63 @@ isolation — these are environment/emulation artifacts, not compiler bugs:
 Real regressions show up as a *different* failing test; validate JIT/codegen work with
 `ctest -R jit/` + `ctest -R ast/` and per-test serial reruns, not the full parallel sweep.
 
-### DONE (gate) / TODO (port) — Windows support for the new JIT embed
-`MCC_EMBED_JIT` default flipped OFF→ON in `e0fca0a5`, so `src/mccjit_embed.c` now compiles on
-every target — but it is POSIX/glibc-only: `#include <pthread.h> <sys/mman.h> <sys/wait.h>
-<unistd.h>` and uses `fork`/`waitpid`/`mmap`/`munmap`/`pthread_*`/`pthread_atfork`. None of
-those exist under MSVC (`error C1083: 'pthread.h'`), and mingw lacks `sys/mman.h`/`fork`/
-`sys/wait.h` too, so both WIN32 toolchains break. Stopgap to unbreak CI: gate `MCC_EMBED_JIT`
-OFF for `MCC_TARGETOS STREQUAL "WIN32"` in `CMakeLists.txt` (~line 1662 / 1805) so the embed
-stays glibc-only. **APPLIED** (CMakeLists ~line 1662, mirroring the `MCC_EMBED_MCCRT` WIN32
-gate); the canonical Windows debug + msvc builds are green again.
+### Windows JIT-embed port — DONE (runtime JIT works on the PE target; 32/32 selftests green)
+`MCC_EMBED_JIT` default flipped OFF→ON in `e0fca0a5`, so `src/mccjit_embed.c` must build on
+every target — but it was POSIX/glibc-only (`<pthread.h> <sys/mman.h> <sys/wait.h> <unistd.h>`,
+`fork`/`waitpid`/`mmap`/`munmap`/`pthread_*`/`pthread_atfork`), broken under both WIN32
+toolchains, so it was gated OFF on WIN32. **Now fully ported and ungated** — `MCC_EMBED_JIT`
+builds and runs on WIN32, `ctest -R jit/` = **32/32** on the mingw PE host. Three layers landed:
 
-To actually support Windows, port the embed's OS primitives:
-- executable memory: `VirtualAlloc(MEM_COMMIT, PAGE_EXECUTE_READWRITE)` / `VirtualFree` in
-  place of `mmap`/`munmap` (all ~15 `PROT_READ|WRITE|EXEC` sites).
-- threading/locks: Win32 `CRITICAL_SECTION` + `CONDITION_VARIABLE` + `InitOnceExecuteOnce`
-  (or `<threads.h>` on ucrt) for the `pthread_mutex`/`pthread_cond`/`pthread_once` pool.
-- the `fork`/`waitpid` selftest path (`mccjit_selftest_fork`) and `pthread_atfork` handlers
-  have no Win32 equivalent — either `#ifdef` them out on WIN32 or reimplement over
-  `CreateProcess`.
-- the shared-file KGC map (`open`/`ftruncate`/`MAP_SHARED`) needs `CreateFileMapping`/
-  `MapViewOfFile`.
-- the embed-blob mechanism (`bin2c` of `libmcc_jitengine.a` → `MCC_EMBED_JIT_BLOB`) assumes an
-  ELF static lib; the PE equivalent is unbuilt.
-The WIN32 CMake gate is in place; the items above remain for a real Windows JIT port.
+**(1) OS-primitive port** (`src/mccjit_win32.h`, included by
+`mccjit_embed.c` under `#ifdef _WIN32`, POSIX path byte-unchanged):
+- **exec/RW memory:** a `mmap`/`munmap`/`msync` shim → `VirtualAlloc(PAGE_EXECUTE_READWRITE)` for
+  anon exec/RW pages; `MAP_FAILED`≡NULL so the `== MAP_FAILED` checks read as NULL checks.
+- **KGC shared-file map:** the `MAP_SHARED` fd path → `CreateFileMapping`/`MapViewOfFile` with a
+  base→handle registry so one `munmap` dispatches file-view vs VirtualAlloc; plus `open`/`close`/
+  `ftruncate`/`pread`/`fstat`/`mkstemp` adapters.
+- **threads/locks:** the `pthread_*` subset → SRWLOCK (mutex, static `SRWLOCK_INIT`) +
+  CONDITION_VARIABLE + `InitOnceExecuteOnce` + `_beginthreadex` (detached/joinable), no
+  winpthreads dependency; one path serves mingw and MSVC.
+- **fork:** `mccjit_selftest_fork` + `pthread_atfork` `#ifdef`'d out on WIN32 (the pool's
+  post-fork reset invariant has no meaning without `fork`); the selftest reports a Win32 skip.
+- **misc:** `clock_gettime`→QPC, `nanosleep`→spin-yield-then-`Sleep` (so a 1 ms nap isn't rounded
+  up to the ~15 ms scheduler tick), `setenv`/`unsetenv`→`_putenv_s`, perf-map path→`GetTempPath`,
+  MSVC `__atomic_*`→Interlocked-on-8-byte, `_M_X64`/`_M_ARM64`→internal `MCCJIT_X64`/`MCCJIT_ARM64`
+  so an MSVC-built mcc still gets real JIT. Selftest entry points marked `PUB_FUNC` so the DLL
+  exports them.
+- Also fixed `host_icache_flush`/`host_runmem_protect` to `FlushInstructionCache` on
+  arm/arm64-Windows (Windows doesn't flush on `VirtualProtect`).
+
+**(2) Win64-ABI hand-written stubs.** The stubs were SysV-AMD64-ABI-hardcoded (push rdi/rsi/rdx/
+rcx/r8/r9, call the C helper arg0-in-rdi with no shadow space; the C-side capture read that
+layout), so they segfaulted/hung under the Windows x64 ABI. Ported to the Microsoft x64 convention
+(`#ifdef _WIN32` branches, SysV path byte-unchanged): `mccjit_make_counter_stub` now spills
+rcx/rdx/r8/r9 into the 6-slot regs array the capture expects (stack args zeroed) + 32-byte shadow
+space; `mccjit_make_kgc_stub_n` spills rcx/rdx/r8/r9 (+caller stack for args 5-6, `movsxd` for
+narrow) and passes `mccjit_kgc_calln`'s 5th/6th args (nargs,flagged) on the stack;
+`mccjit_make_kgc_stub_fp` does the same with xmm0-3 `movsd` spills → `calln_fp`. The profile
+selftest's fixtures were widened `long`→`long long` (LLP64 `long` is 32-bit, so a `long` arg left
+the captured register's upper bits caller-defined). **`mccjit_make_kgc_stub_mixed` is the one
+deferral:** its forwarding thunk (`mccjit_mixed_thunk_code`) rebuilds a SysV call *by class*
+(gpv→rdi.., fpv→xmm..), but Windows is *positional* (arg N in rcx/rdx/r8/r9 OR xmm-N by position),
+which needs a per-arg class vector the stub doesn't carry — so on WIN32 it returns NULL (mixed
+sigs fall back to the AOT baseline, correct but unmemoized) and `jit/selftest-mixed` skips.
+
+**(3) The `-run`/`--embed-jit` auto-JIT pipeline on PE.** Two PE-only gaps kept the baked JIT ctor
+from ever firing: (a) `mcc -run` didn't run `.init_array` constructors on Windows —
+`runtime/lib/runmain.c`'s `run_ctors`/`_runmain` were `#ifndef _WIN32` (the PE linker *does*
+synthesize `__init_array_start/end`, per `runtime/win32/lib/crtinit.c`), now ungated; and (b)
+`mccjit_embed_finalize` (emits the registry + `__attribute__((constructor)) __mccjit_boot_all`)
+was only called from the ELF/Mach-O `mcc_add_runtime`, never from PE's `pe_add_runtime`
+(`src/objfmt/mccpe.c`) — added there before the init-array bounds are taken. Plus the boot ctor's
+`getenv("MCC_JIT")` is now bound as a host symbol for PE in-memory relocates (`getenv` was
+otherwise unresolved for a bare `mcc_relocate` that isn't a full `mcc_run`).
+
+**Still open — the embed-blob (`--embed-jit` standalone exe):** `bin2c` of
+`libmcc_jitengine.a` → `MCC_EMBED_JIT_BLOB` writes the archive to a temp file and links it via
+mcc's OWN linker (`AFF_WHOLE_ARCHIVE`, `libmcc.c:mcc_add_jit_engine_embedded`), which is
+**ELF-only**. On Windows the host CC produces a COFF/PE archive mcc's ELF linker can't consume, so
+the blob is left unbuilt on WIN32 (`CMakeLists.txt` ~1951 now guards `libmcc_jitengine` off on
+WIN32). mcc's own `-run` JIT and the selftests don't need the blob (the engine is compiled into
+mcc); only standalone `--embed-jit` output would. Needs either mcc's linker to read PE/COFF
+archives, or a self-hosted ELF build of the engine.

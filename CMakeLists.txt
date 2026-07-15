@@ -1659,10 +1659,6 @@ endif()
 if(MCC_CONFIG_OPTIMIZER)
     list(APPEND _mccdefs "MCC_CONFIG_OPTIMIZER=1")
 endif()
-if(MCC_EMBED_JIT AND MCC_TARGETOS STREQUAL "WIN32")
-    set(MCC_EMBED_JIT OFF)
-    message(STATUS "mcc: MCC_EMBED_JIT not supported on WIN32 (src/mccjit_embed.c is glibc-only); building without the runtime-JIT embed")
-endif()
 if(MCC_EMBED_JIT)
     list(APPEND _mccdefs "MCC_EMBED_JIT=1")
 endif()
@@ -1948,7 +1944,12 @@ if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
     set(_libmcc_shared libmcc_shared)
 endif()
 
-if(MCC_EMBED_JIT AND NOT MCC_BUILD_STATIC_LIB)
+if(MCC_EMBED_JIT AND NOT MCC_BUILD_STATIC_LIB AND NOT MCC_TARGETOS STREQUAL "WIN32")
+    # The embed-blob (libmcc_jitengine.a → bin2c → linked into emitted programs
+    # by mcc's OWN linker) is ELF-only: on WIN32 the host CC produces a COFF/PE
+    # archive mcc's ELF linker cannot consume. mcc's own -run JIT and the JIT
+    # selftests do not need the blob (the engine is compiled into mcc itself);
+    # only standalone --embed-jit output would, so it stays gated off here.
     mcc_add_libmcc(libmcc_jitengine STATIC FALSE)
 endif()
 
