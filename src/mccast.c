@@ -2301,6 +2301,10 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	ast_in_op++;
 	if (!model)
 		{ MCC_TRACE("br\n"); return; }
+	if (ast_tern_top > 0 || ast_lor_top > 0) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	int agg_store = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
 									(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;

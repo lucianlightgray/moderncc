@@ -129,8 +129,8 @@ preprocessor/variadic_macros.c	sum_impl	desync
 programs/grep.c	cclass	unfaithful
 programs/grep.c	compile	desync
 programs/grep.c	main	desync
-programs/grep.c	pmatch	unfaithful
-programs/led.c	print_led	unfaithful
+programs/grep.c	pmatch	desync
+programs/led.c	print_led	desync
 programs/math_library.c	fabs	unfaithful
 programs/math_library.c	round	unfaithful
 programs/random_stuff.c	tst_adr	desync
