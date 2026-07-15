@@ -156,6 +156,88 @@ AstArena *ast_arena_clone(const AstArena *src) { MCC_TRACE("enter\n");
 	return a;
 }
 
+#if MCC_EMBED_JIT
+static void ast_slice_walk(const AstArena *src, AstLocal node, AstLocal *map,
+													 AstLocal *order, AstLocal *cnt) { MCC_TRACE("enter\n");
+	AstLocal c;
+	map[node] = *cnt;
+	order[(*cnt)++] = node;
+	for (c = src->first_child[node]; c != AST_NONE; c = src->next_sib[c])
+		{ MCC_TRACE("br\n"); ast_slice_walk(src, c, map, order, cnt); }
+}
+
+AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("enter\n");
+	AstLocal n, i, s, cnt = 0;
+	AstLocal *map, *order;
+	AstArena *a;
+	if (!src || root >= src->count)
+		{ MCC_TRACE("br\n"); return NULL; }
+	n = src->count;
+	map = malloc((size_t)n * sizeof *map);
+	order = malloc((size_t)n * sizeof *order);
+	if (!map || !order) { MCC_TRACE("br\n");
+		free(map);
+		free(order);
+		return NULL;
+	}
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); map[i] = AST_NONE; }
+	ast_slice_walk(src, root, map, order, &cnt);
+	a = calloc(1, sizeof *a);
+	if (!a) { MCC_TRACE("br\n");
+		free(map);
+		free(order);
+		return NULL;
+	}
+	a->count = cnt;
+	a->cap = cnt;
+#define AST_SLICE_ALLOC(field) a->field = malloc((size_t)cnt * sizeof *a->field)
+	AST_SLICE_ALLOC(kind);
+	AST_SLICE_ALLOC(parent);
+	AST_SLICE_ALLOC(first_child);
+	AST_SLICE_ALLOC(last_child);
+	AST_SLICE_ALLOC(next_sib);
+	AST_SLICE_ALLOC(nchild);
+	AST_SLICE_ALLOC(op);
+	AST_SLICE_ALLOC(type_t);
+	AST_SLICE_ALLOC(type_ref);
+	AST_SLICE_ALLOC(ival);
+	AST_SLICE_ALLOC(fbits);
+	AST_SLICE_ALLOC(sym);
+	AST_SLICE_ALLOC(cst);
+#undef AST_SLICE_ALLOC
+	if (!a->kind || !a->parent || !a->first_child || !a->last_child ||
+			!a->next_sib || !a->nchild || !a->op || !a->type_t || !a->type_ref ||
+			!a->ival || !a->fbits || !a->sym || !a->cst) { MCC_TRACE("br\n");
+		free(map);
+		free(order);
+		ast_arena_free(a);
+		return NULL;
+	}
+#define AST_SLICE_LINK(x) ((x) == AST_NONE ? AST_NONE : map[(x)])
+	for (i = 0; i < cnt; i++) { MCC_TRACE("br\n");
+		s = order[i];
+		a->kind[i] = src->kind[s];
+		a->parent[i] = AST_SLICE_LINK(src->parent[s]);
+		a->first_child[i] = AST_SLICE_LINK(src->first_child[s]);
+		a->last_child[i] = AST_SLICE_LINK(src->last_child[s]);
+		a->next_sib[i] = AST_SLICE_LINK(src->next_sib[s]);
+		a->nchild[i] = src->nchild[s];
+		a->op[i] = src->op[s];
+		a->type_t[i] = src->type_t[s];
+		a->type_ref[i] = src->type_ref[s];
+		a->ival[i] = src->ival[s];
+		a->fbits[i] = src->fbits[s];
+		a->sym[i] = src->sym[s];
+		a->cst[i] = src->cst[s];
+	}
+#undef AST_SLICE_LINK
+	free(map);
+	free(order);
+	return a;
+}
+#endif
+
 AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 	ast_grow(a, a->count + 1);
 	AstLocal n = a->count++;

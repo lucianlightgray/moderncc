@@ -102,6 +102,7 @@ typedef struct AstSliceProfile {
 } AstSliceProfile;
 
 void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out);
+AstArena *ast_slice_extract(const AstArena *src, AstLocal root);
 
 /* 7A eval-slice hard gate: cumulative count of speculative spec-slices refused
    because the UB-soundness oracle flagged them (opt-in `MCC_AST_JIT_EVAL_GATE`). */

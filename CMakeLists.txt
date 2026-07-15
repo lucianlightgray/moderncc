@@ -3889,6 +3889,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-slice COMMAND jit_selftest_slice)
             set_tests_properties(jit/selftest-slice PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_sliceextract tests/embed/jit_selftest_sliceextract.c)
+            target_link_libraries(jit_selftest_sliceextract PRIVATE libmcc)
+            target_include_directories(jit_selftest_sliceextract PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-sliceextract COMMAND jit_selftest_sliceextract)
+            set_tests_properties(jit/selftest-sliceextract PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_evalgate tests/embed/jit_selftest_evalgate.c)
             target_link_libraries(jit_selftest_evalgate PRIVATE libmcc)
             target_include_directories(jit_selftest_evalgate PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

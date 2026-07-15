@@ -4872,6 +4872,121 @@ int mccjit_selftest_slice(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static AstLocal mccjit_subtree_count(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal c, k = 1;
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); k += mccjit_subtree_count(a, c); }
+	return k;
+}
+
+static int mccjit_slice_walk_eq(const AstArena *A, AstLocal na, const AstArena *B,
+																AstLocal nb) { MCC_TRACE("enter\n");
+	AstLocal ca, cb;
+	if (ast_kind(A, na) != ast_kind(B, nb) || ast_op(A, na) != ast_op(B, nb) ||
+			ast_type_t(A, na) != ast_type_t(B, nb) ||
+			ast_type_ref(A, na) != ast_type_ref(B, nb) ||
+			ast_ival(A, na) != ast_ival(B, nb) || ast_fbits(A, na) != ast_fbits(B, nb) ||
+			ast_sym(A, na) != ast_sym(B, nb) || ast_cst(A, na) != ast_cst(B, nb) ||
+			ast_nchild(A, na) != ast_nchild(B, nb))
+		{ MCC_TRACE("br\n"); return 0; }
+	ca = ast_first_child(A, na);
+	cb = ast_first_child(B, nb);
+	while (ca != AST_NONE && cb != AST_NONE) { MCC_TRACE("br\n");
+		if (!mccjit_slice_walk_eq(A, ca, B, cb))
+			{ MCC_TRACE("br\n"); return 0; }
+		ca = ast_next_sib(A, ca);
+		cb = ast_next_sib(B, cb);
+	}
+	return ca == AST_NONE && cb == AST_NONE;
+}
+
+static int mccjit_slice_extract_blob(const void *buf, size_t len,
+																		 int *checked) { MCC_TRACE("enter\n");
+	MccjitIntent it;
+	MCCState *js;
+	int fails = 0, chk = 0;
+	AstLocal r, nn;
+	js = mcc_new();
+	if (!js)
+		{ MCC_TRACE("br\n"); return -1; }
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
+		mcc_exit_state(js);
+		mcc_delete(js);
+		return -1;
+	}
+	nn = ast_count(it.arena);
+	for (r = 0; r < nn; r++) { MCC_TRACE("br\n");
+		AstArena *sl = ast_slice_extract(it.arena, r);
+		AstLocal want = mccjit_subtree_count(it.arena, r);
+		int ok;
+		chk++;
+		if (!sl) { MCC_TRACE("br\n"); fails++; continue; }
+		ok = ast_count(sl) == want && ast_root(sl) == 0 &&
+				 ast_parent(sl, 0) == AST_NONE && ast_next_sib(sl, 0) == AST_NONE &&
+				 mccjit_slice_walk_eq(it.arena, r, sl, 0) &&
+				 ast_intention_hash(sl, 0) == ast_intention_hash(it.arena, r);
+		if (!ok)
+			{ MCC_TRACE("br\n"); fails++; }
+		ast_arena_free(sl);
+	}
+	mccjit_intent_release(&it);
+	mcc_exit_state(js);
+	mcc_delete(js);
+	*checked = chk;
+	return fails;
+}
+
+int mccjit_selftest_sliceextract(void) { MCC_TRACE("enter\n");
+	static const struct {
+		const char *src;
+		const char *fn;
+	} cases[5] = {
+			{"int f(int x){return x*2+1;}", "f"},
+			{"int r(int *p, int x){return *p + x;}", "r"},
+			{"int s(int *p, int x){*p = x; return x;}", "s"},
+			{"int s2(int *p, int *q, int x){*p = x; *q = x + 1; return x;}", "s2"},
+			{"int mabs(int); int h(int x){return mabs(x) + 1;}", "h"},
+	};
+	int fails = 0, i, total = 0;
+
+	printf("mccjit-selftest-sliceextract: begin (K7 slice-extraction primitive)\n");
+	for (i = 0; i < 5; i++) { MCC_TRACE("br\n");
+		unsigned char *blob;
+		size_t blen;
+		MCCState *s1;
+		int chk = 0, f;
+		blob = mccjit_stash_one(cases[i].src, cases[i].fn, 1, &blen, &s1);
+		if (!s1 || !blob) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-sliceextract: %s stash failed\n", cases[i].fn);
+			if (s1)
+				{ MCC_TRACE("br\n"); mcc_delete(s1); }
+			mcc_free(blob);
+			fails++;
+			continue;
+		}
+		f = mccjit_slice_extract_blob(blob, blen, &chk);
+		total += chk;
+		printf("mccjit-selftest-sliceextract: %-3s slices=%d %s\n", cases[i].fn, chk,
+					 f == 0 ? "OK" : "FAIL");
+		if (f != 0)
+			{ MCC_TRACE("br\n"); fails++; }
+		mcc_free(blob);
+		mcc_delete(s1);
+	}
+	printf("mccjit-selftest-sliceextract: %s (%d failure%s, %d slices checked)\n",
+				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s", total);
+	return fails ? 1 : 0;
+}
+
 int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;
