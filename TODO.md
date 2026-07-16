@@ -58,15 +58,14 @@ with `MCC_JIT=0` (pure AOT) — if it passes, the fault is in the PE JIT path.
   the **winlibs UCRT x86_64** toolchain (reproduced the failure, then 624/624
   exec+replay+jit green); byte-neutral elsewhere (same-CRT hosts already flushed).
   Same mechanism should clear the msvc-arm64 rows (unverified on that host).
-- [ ] **`jit/selftest-{lazy,pool,eligibility,liverun,fparg}` — mingw i686 only**
-  (x86_64 mingw passes all 32). Symptom (`selftest-lazy`): the 7 cold/baseline
-  calls return correct values, then `PROMOTE at call 8 promoted=00000000
-  slot=01d60000 FAIL` — promotion hands back a NULL code pointer and every hot
-  call stays `stable=no`. So the i386/PE JIT-promotion path (KGC stub build +
-  dispatch-slot patch) yields no promoted body. This is specific to the 32-bit
-  x86 Microsoft ABI stub path (`mccjit_make_kgc_stub` / i386 slot install),
-  distinct from the x86_64 stubs that work. Repro: `ctest -R jit/selftest-lazy`
-  on the i686 host; trace why `promoted` is NULL at the promotion threshold.
+- 🚧 **IN PROGRESS (i686 JIT selftests).** `jit/selftest-{lazy,pool,eligibility,liverun,fparg}`
+  — mingw i686 only (x86_64 mingw passes all 32). Two root causes: (A) the i386/PE
+  JIT-**promotion** path returns `promoted=NULL` — the variant builds and runs
+  correct values, but the KGC-stub/dispatch-slot install yields no code pointer
+  (`selftest-lazy` PROMOTE `promoted=00000000`; `pool` async never lands; likely
+  `liverun`); (B) i386 **FP-arg** handling — `selftest-eligibility` shows
+  `FP arg (mixed) want=jit got=refuse`, and `fparg` presumably follows. Repro on
+  the vendored winlibs i686 toolchain.
 - [ ] **`ckconfig.exe(.rsrc) is too large (0x200 bytes)` — mingw i686 link.**
   The winlibs i686 `ld.exe` rejects `ckconfig.exe`'s `.rsrc` section at link
   time. Likely a toolchain/manifest-embedding quirk of the 32-bit winlibs
