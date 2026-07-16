@@ -1,5 +1,21 @@
 # TODO
 
+## Working conventions (status markers)
+
+Each slice/phase of work carries a status marker so the board stays legible when
+picked up cold. Mark a slice with exactly one of:
+
+- **🚧 IN PROGRESS** — actively being worked *right now*. Add this marker (with a
+  one-line note on what's underway + who/when) the moment you start a slice, and
+  remove it when you land it (→ DONE/FIXED) or park it (→ WIP/BLOCKER). At most a
+  few of these should be live at once. Never leave a slice IN PROGRESS across a
+  hand-off without a note on where it stands.
+- **WIP** — started but parked between sessions; not actively being worked.
+- **BLOCKER** — cannot proceed until the noted dependency/decision is resolved.
+- **Still open** — scoped but not started.
+- **DONE / FIXED / RESOLVED / AUDITED** — landed and validated; keep the
+  validation note (what was run, what passed) with it.
+
 ## JIT trigger refactor: `--jit` / runtime `MCC_JIT` / CMake `MCC_CONFIG_JIT` (WIP)
 
 Replaces the compile-time `MCC_JIT`/`MCC_AST_JIT` env gate with a runtime model:
@@ -276,7 +292,12 @@ was only called from the ELF/Mach-O `mcc_add_runtime`, never from PE's `pe_add_r
 `getenv("MCC_JIT")` is now bound as a host symbol for PE in-memory relocates (`getenv` was
 otherwise unresolved for a bare `mcc_relocate` that isn't a full `mcc_run`).
 
-**Still open — the embed-blob (`--embed-jit` standalone exe):** `bin2c` of
+**🚧 IN PROGRESS (2026-07-16) — the embed-blob (`--embed-jit` standalone exe) on Windows.**
+Picked up as the sole remaining open slice. Scoping the two paths below; blocked on validation
+because this host is macOS/arm64 and the fix is WIN32-only (needs mingw/MSVC to build+test the PE
+target). See the direction decision pending with the user before implementing.
+
+Prior status: `bin2c` of
 `libmcc_jitengine.a` → `MCC_EMBED_JIT_BLOB` writes the archive to a temp file and links it via
 mcc's OWN linker (`AFF_WHOLE_ARCHIVE`, `libmcc.c:mcc_add_jit_engine_embedded`), which is
 **ELF-only**. On Windows the host CC produces a COFF/PE archive mcc's ELF linker can't consume, so
