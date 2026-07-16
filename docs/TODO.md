@@ -1171,6 +1171,40 @@ first real consumer.** Sequence: slice-G stitching (the tree-completeness prereq
 
 ## Bugs — surfaced by the conformance-test expansion (concrete repros)
 
+### CI #846/#847 recovery — status (JIT-default-on batch; first CI over the whole §26 batch)
+
+**Landed (commits `f5cdcce9` + follow-up; verified x86_64 via amd64 container, arm64 native):**
+- [x] Build breaks in optimizer-off / cross / non-amalgamated jobs — `MCC_EMBED_JIT` now requires
+  `MCC_CONFIG_OPTIMIZER`, `MCC_CONFIG_JIT` requires `MCC_EMBED_JIT` (autocorrect); `gfunc_return`'s
+  `ast_alloc_loc` guarded under `#if MCC_CONFIG_OPTIMIZER` with the plain loc-decrement fallback.
+- [x] `config-defines` drift — `mccbuild --emit-defines` now emits `MCC_JIT_DEFAULT` (`--config-jit`).
+- [x] `ast-verify-ratchet` CMP0057 abort — `cmake_minimum_required` in `verify_ratchet.cmake`; x86_64-linux
+  + x86_64-win32 baselines refreshed for the cond?1:0 desync-fix reclassification; ratchet skipped on MSVC
+  (its gap set diverges from the mingw-generated win32 baseline — needs a separate msvc baseline).
+- [x] `exec-replay/{run_atexit,errors_and_warnings}` on ELF/x86_64 + mingw/x86_64 — best-effort JIT recompile
+  of a fn referencing an unresolvable in-program symbol leaked a hard diagnostic; global `mccjit_error_quiet`
+  suppresses recompile-internal error output (nb_errors still increments → relocate fails → AOT fallback).
+- [x] `-dt` slot leak (`__mccjit_slot_*`) — `mccjit_embed_reset()` at each driver `redo`.
+- [x] `jit/selftest-bench` (Release) — pure fixed-count kernels optimized to closed-form → measurement
+  artifact; kernels now do volatile-barriered count-proportional work (test-only).
+- [x] `jit/selftest-stage2` (MSVC) — call-bearing callee-binding unsupported on MS x64 ABI; documented skip.
+
+**Open — arm64 / Mac (ACTIVE focus):**
+- [ ] **arm64 `-run` far-libc `R_AARCH64_(JUMP|CALL)26` failure** — native arm64 `mcc -run` emits a direct
+  CALL26 to libc (`printf`/`memcpy`/…) which is >±128MB away → `relocation failed`. Hits `exec/*` on macOS/arm64
+  (all `macos*/arm64` jobs) and now `ast/arm64` (build fixed → reached exec). CALL26 is `AUTO_GOTPLT_ENTRY`
+  (arm64-link.c) so a near PLT veneer *should* absorb the far target, but the reloc resolves directly to the
+  far symbol — the PLT stub isn't created/used for host-libc symbols in MEMORY (`-run`) output. Root-cause the
+  PLT/veneer path in `mcc_relocate_ex`/`build_got_entries` for MEMORY output on arm64. Reproduces locally
+  (`ctest -R '^exec/builtins$'` on cmake-build-debug/arm64-macOS). Was memory-noted "pre-existing, don't chase";
+  now in scope.
+- [ ] **arm64 W^X JIT-execute selftests** (`jit/selftest-{stage2,kgc,liverun,fparg}` on macOS/arm64) — fail
+  identically on pre-batch code (RWX blocked on Apple Silicon; needs the `host_runmem_alloc` dual-map path).
+
+**Deferred — non-arm64 (out of current scope):** mingw/x86_64 `errors_and_warnings` test_func_1 (JIT recompile
+produces non-running code on PE — pre-existing in #846), mingw/i686 jit-selftests + `enum`, msvc/arm64
+`exec-replay/*` — all Windows/PE JIT-recompile-correctness gaps needing a Windows environment.
+
 - [ ] **Honor auto over-alignment under `-fsanitize=address` / `-b`** — the over-align indirect path in
   `decl_initializer_alloc` is gated off when `asan_g`/`bcheck` is active (native-shadow stack instrumentation
   and the bcheck redzone both assume an rbp-relative slot), so `alignas(32+)` autos are under-aligned there.
