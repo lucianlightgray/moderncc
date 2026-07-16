@@ -128,7 +128,7 @@ The exe grows from ~3 KB (non-embed) to ~1 MB with the JIT engine embedded. Land
 - **kernel32.def SRW exports — FIXED.** Added `InitializeSRWLock` + the SRW/InitOnce
   family the JIT win32 shim uses (the shipped def had only the Acquire/Release subset).
 
-- [ ] **RUNTIME: the embedded engine crashes at startup — a PE import (IAT) that
+- 🚧 **IN PROGRESS: the embedded engine crashes at startup — a PE import (IAT) that
   the loader never binds.** The `--embed-jit` exe links but SIGSEGVs before `main`
   (both `MCC_JIT=0`/`=1`). Diagnosed via gdb: a `memset(buf,0,4)` call goes to the
   import thunk `jmp *[0x4eed9c]`, but the IAT slot at `0x4eed9c` still holds the
