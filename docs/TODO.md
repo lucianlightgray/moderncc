@@ -37,7 +37,7 @@ unconsumed · **✗** not built.
 architecture-independent (pure byte-offset logic, no arch `#ifdef`). `CST_Error`/`CST_Missing` kinds are
 declared but never emitted (no error-recovery CST).
 
-### AST — side-car substrate + unified optimizer + search · `src/mccast.c` (13049 L)
+### AST — side-car substrate + unified optimizer + search · `src/mccast.c` (13921 L)
 
 | Macro feature | State | Detail |
 |---|---|---|
@@ -52,7 +52,7 @@ declared but never emitted (no error-recovery CST).
 
 **Coverage:** replay on `-O1+`; register-promote is **x86_64-only** (`opt_promote`); validation = the M8
 7-gate bar. **Held** (default-off pending soak/backend): `DIVMAGIC` (x86_64 self-host mul-high miscompile),
-`ABS` (needs cmov), `REASSOC` (order-non-confluent), `VLAT` PR-C IV-widening only (parent default-on),
+`ABS` (perf tradeoff; cmov backend landed fe1f7303, soak/flip pending), `REASSOC` (order-non-confluent), `VLAT` PR-C IV-widening only (parent default-on),
 §27 passes. (`COLOR` and the VLAT parent are now default-on at `-O2+` — the P0 batch flip; see the gating
 ledger.) §26 runtime JIT: `MCC_AST_JIT` gate still off, but the engine now ships default-on via
 `MCC_EMBED_JIT`/`MCC_CONFIG_JIT` (see top-level `TODO.md`).
@@ -70,13 +70,14 @@ ledger.) §26 runtime JIT: `MCC_AST_JIT` gate still off, but the engine now ship
 | Sanitizers | ~ | ASan native-shadow **x86_64/ELF-only**; bcheck ELF+PE; UBSan trap x86_64/arm64/riscv64 non-PE; stack-protector x86_64+arm64 |
 | Reg alloc / promote / color | ~ | AST-level analysis (arch-agnostic); promote wired x86_64; arm64 x19–x28 gap, riscv64 gap |
 
-**Coverage boundaries (measured):** **cmov/csel emitted on NO arch** (codegen has none; only asm/disasm
-know the mnemonics). div-magic is a 32-bit **AST fold**; 64-bit needs a per-arch `mulh`/`__int128` primitive.
+**Coverage boundaries (measured):** **cmov/csel emission landed** (commit fe1f7303, opt-in `MCC_AST_SELECT`,
+default-off) on x86_64 (cmovne) / arm64 (csel) / riscv64 (base-ISA mask); i386/arm 32-bit still branch-only.
+div-magic covers 32-bit and now **64-bit** (`gen_mulh`, opt-in `MCC_AST_DIVMAGIC`, default-off).
 Over-alignment gated off on PE and under asan/bcheck. Self-host: x86_64 full 3-stage fixpoint · arm64 via
 qemu+musl · **riscv64 blocked (Tier-3 gap)** · i386/arm cross-conformance only. qemu is x86-TSO → cannot
 validate the aarch64/armv7 memory model.
 
-### JIT — runtime recompile + guarded deopt (§26) · `src/mccjit_embed.c` (6150 L) + `src/mccrun.c`
+### JIT — runtime recompile + guarded deopt (§26) · `src/mccjit_embed.c` (6525 L) + `src/mccrun.c`
 
 | Macro feature | State | Detail |
 |---|---|---|
@@ -168,7 +169,7 @@ modes 1–6 remain the internal compile-time seam. See top-level `TODO.md` for t
 | ASan native-shadow | ✅ **only** | ✗ | ✗ | ✗ | ✗ |
 | Stack protector | ✅ | ✅ (Mach-O) | ✗ | ✗ | ✗ |
 | TLS GD/LDM | ✅ | LE only | **untested** | — | — |
-| cmov/csel codegen | ✗ | ✗ | ✗ | ✗ | ✗ |
+| cmov/csel codegen (opt-in) | ✅ | ✅ | ✗ | ✗ | ✅ |
 | div-magic (32-bit fold) | ✅* | ✅* | ✅* | ✅* | ✅* |
 | JIT dispatch/stub tail | ✅ **only** | ✗ | ✗ | ✗ | ✗ |
 
@@ -430,9 +431,10 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
     (`ast_search_inline_env = ast_env_gate("MCC_AST_SEARCH_INLINE", 0)`) and the emit-time PROMOTE search axis is
     deferred — because `AstScratchSave` doesn't fully restore interior emit/regalloc state (leak measured). So the
     remaining work is soundness + enabling the gated axes, not building the framework.
-18. **[4B]** backend-parity session (cmov/csel + temp-materialization) → clears ABS, DIVMAGIC, 64-bit div-magic,
-    branchless-select; then flip the held P0 items. (Confirmed still open: **no** code generator emits cmov/csel —
-    grep is clean across `src/*-gen.c`; `ast_divmagic_env`/`ast_abs_env` both default `0` in `ast_configure`.)
+18. **[4B]** backend-parity session — **mechanisms LANDED** (commit fe1f7303): per-arch `gen_cmov` (x86 cmovne /
+    arm64 csel / riscv64 base-ISA mask), 64-bit div-magic (`gen_mulh`), and the cond?1:0 desync fix. Remaining:
+    the default-on flip of `MCC_AST_SELECT`/`MCC_AST_ABS`/`MCC_AST_DIVMAGIC` after soak (all still default `0` in
+    `ast_configure`; DIVMAGIC still blocked by the separate x86_64 self-host mul-high miscompile) + i386/arm cmov.
 19. **[5A]** memo unification (`ComboMemo` + disk) — the one content-addressed store the AOT and JIT searches
     share. *Design wrinkle (see "[DEFER] — JIT arm64 + slicing residuals"): `ComboMemo` compresses per-value while
     the current memo compresses the whole MSZ1 image — a mechanical repoint would regress compression.*
@@ -471,8 +473,8 @@ tiers (J*/K*/L*) in §26, or a phase bucket. Guardrail (M8 bar) applies to every
   `#elif __aarch64__` stub branches (then an arm64 libmcc build) are the remaining port.
 - **3A — fix the emit-time value-axis framework** (step 17). Keystone: clears §22 promotion, §23 inline budgets,
   M1 scoring, inline/promote in the search.
-- **4B — backend-parity session** (step 18): cmov/csel + temp-materialization; clears ABS/DIVMAGIC/64-bit-divmagic/
-  branchless-select together.
+- **4B — backend-parity session** (step 18): cmov/csel + 64-bit div-magic + cond?1:0 mechanisms **LANDED**
+  (fe1f7303); remaining is the default-on flip of ABS/DIVMAGIC/SELECT after soak.
 - **5A — memo unification** (step 19): one `ComboMemo` + disk store, retiring the out-of-process superopt engine.
 - **6A — riscv64 Tier-3 self-host** (step 16): validation-infra unblock; makes the cross-arch gate real.
 - **7A — `eval_slice` hard gate** (step 15): N := 3 soaks, rides 2B. — ✅ gate DONE (opt-in
@@ -491,8 +493,8 @@ code, only golden churn. Also shakes out the search vocabulary before P1..P3.
     clean). Fix the 64-bit/mul-high x86_64 register allocation (the "optimal 1×-multiply form" — needs a real
     temp-materialization mechanism) before flipping — **scheduled as the 4B backend-parity session**.
   - `MCC_AST_ABS` — held on a perf judgment: its branchless bit-trick (`(x^(x>>31))-(x>>31)`) vs a
-    well-predicted branch is a genuine tradeoff, and gcc's chosen form is `neg;cmovs` (cmov), which mcc lacks.
-    Revisit when the cmov backend lands — **the 4B backend-parity session** (cmov/csel emission).
+    well-predicted branch is a genuine tradeoff, and gcc's chosen form is `neg;cmovs` (cmov). The cmov backend
+    has since landed (fe1f7303, `gen_cmov`), so ABS is now a soak/flip decision, not a missing-primitive block.
 - [x] **Next default-on batch (campaign endgame)** — ✅ **DONE** (see "P0 ready-batch flip" above): the 8 cleared
   gates (`NARROW_ELIM`, `VLAT`, `ARGFWD`, `SETHI_NARY`, `SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`) are now
   default-on at `-O2+` (`ast_configure`, each `ast_env_gate("MCC_AST_*", s1->optimize >= 2)`). `COLOR`'s self-host
@@ -509,7 +511,7 @@ reads the narrowing-residue projection, `context_in` reads the reaching-context 
 side-car predicate-vector reads a third view later). Hooks the existing `ast_du_*` / `ast_hash_*` epoch
 machinery. The side-car (`AstVLat`), both projections (`ast_vlat_narrowing`/`ast_vlat_context`), the
 region-scoped per-use projection (`ast_vlat_context_at`), and the first value-changing consumer (path-
-sensitive narrowing) are landed gated `MCC_AST_VLAT`, byte-neutral by default.
+sensitive narrowing) are default-on at `-O2+` (`MCC_AST_VLAT`); PR-C loop-IV widening is the one held piece.
 
 **Remaining:** the memo-key context consumer, the predicate-vector 4th index, and **PR-C** (loop-IV
 monotonicity widening, the §32a core) — spec'd + **held** (miscompile-sensitive; its validator, the
@@ -580,9 +582,8 @@ These are the gaps left by the arm64 JIT port + the C-ABI slice pipeline — cap
 
 ### [DEFER] — after P1–P3 land
 
-- **Backend parity vs gcc** — cmov/csel branchless select, 64-bit div-magic (needs `mulh`/`__int128`),
-  boolean-normalizing ternary. High per-compile gain but a 5-backend grind + a missing primitive; pick up
-  opportunistically per-backend.
+- **Backend parity vs gcc** — cmov/csel branchless select + 64-bit div-magic + cond?1:0 fix all **LANDED**
+  (fe1f7303) as opt-in gates; remaining is the default-on flip after soak and i386/arm 32-bit cmov.
 - **§28 rewrite-rule IR** — Explore-tier; gate behind P1–P3.
 
 ### Campaign queue — JIT/AST autonomous campaign
@@ -648,7 +649,7 @@ the strategy engine and search. These have no symbol in `src/` today:
   conditions, O(fixpoint) first / O(1) warm. It is the checker's enumeration bound (`eval_slice`, §26 Stage 4)
   and the memo's *context* key. The unified `AstVLat` side-car, the whole-function projection
   (`ast_vlat_context`), the region-scoped per-use projection (`ast_vlat_context_at`), and the first region-
-  scoped consumer (path-sensitive narrowing) are landed gated `MCC_AST_VLAT`. **Remaining (PR-C — the §32a
+  scoped consumer (path-sensitive narrowing) are default-on at `-O2+` (`MCC_AST_VLAT`). **Remaining (PR-C — the §32a
   core, MISCOMPILE-SENSITIVE, held):** admit loop-carried IVs to `ast_vlat_context_at` so a body use of
   induction var `i` gets the guard-derived range (`i < N` → `i ≤ N-1`). **Soundness precondition:** apply the
   loop bound to an IV body use ONLY for op-3/op-5 for-loops (single IV write is the `incr` clause → body has
@@ -731,7 +732,7 @@ call-sites already exist. Order is dependency order (M4 before M6; M5 before M6)
 
 ### Strategy-variation catalog — widen the search vocabulary · [P0 default-on candidates + FLOAT]
 
-Of the 20 `ast_strategies[]` rows, most implement a single algorithmic variation. Each variation below is a
+Of the 21 `ast_strategies[]` rows, most implement a single algorithmic variation. Each variation below is a
 candidate **search knob** — a distinct `AstStrategy` row or a per-strategy parameter. The M1(c) precondition
 applies to any *ordering*/*pipeline* variant: the emit path must honor the discovered per-fn order.
 
@@ -748,7 +749,7 @@ whole-arena pass.
 - [ ] **V-ident** — a) strength reduction backend-redundant — skip; b) fast-math-gated float identities; d) a
   worklist/BFS ordering variant.
 - [ ] **V-narrow** — b) replace the type-width heuristic with demanded-bits/known-bits; c) comparisons DROPPED
-  (backend-redundant). (`/ % << >>` narrowing landed gated `MCC_AST_VLAT`.)
+  (backend-redundant). (`/ % << >>` narrowing is default-on at `-O2+` under `MCC_AST_VLAT`.)
 - [ ] **V-cprop** — a) promote the join/per-block choice to a first-class strategy pair; b) copy propagation;
   c) known-bits/range lattice variant.
 - [ ] **V-cse** — a) hash-based value-numbering (LVN/GVN); c) redundant-load elimination (needs the §29 lattice).
@@ -770,27 +771,28 @@ whole-arena pass.
 
 ### Confirmed backend codegen gaps vs gcc · [4B — SCHEDULED: one backend-parity session]
 
-**4B bundles these three into one dedicated per-backend session**, because they share two missing primitives —
-**conditional-move emission** (cmov/csel, absent from every backend's codegen) and a **temp-materialization
-mechanism** (Store-to-fresh-local + Loads). Landing those clears branchless-select, the signed/`a==1` divmagic
-form, and — with the x86_64 mul-high regalloc fix — unblocks `MCC_AST_ABS` and `MCC_AST_DIVMAGIC` default-on.
-Grind = 5 backends (x86 `cmov`, arm64 `csel`, riscv branchless-arith fallback; per-arch `mulh` for 64-bit).
+**4B LANDED (commit fe1f7303)** — the three items shared two primitives, now built: per-arch **conditional-move
+emission** (`gen_cmov`: x86 cmovne, arm64 csel, riscv64 base-ISA mask) and per-arch 64-bit `gen_mulh`. This
+cleared branchless-select and the 64-bit divmagic form. Remaining: the default-on flip of `MCC_AST_SELECT`/
+`MCC_AST_ABS`/`MCC_AST_DIVMAGIC` after soak (DIVMAGIC still blocked by the x86_64 self-host mul-high
+miscompile) + i386/arm 32-bit cmov.
 
-- [ ] **Branchless select for min/max/abs/sign** (`cmov`/`csel`). **Measured:** mcc emits compare + branch;
-  gcc emits `cmovle`/`cmovge`/`neg;cmovs`. **mcc's code GENERATOR emits no `cmov` on any arch** — `cmov`
-  appears only in the disassembler/assembler. Needs new conditional-move emission per backend (x86 `cmov`,
-  arm64 `csel`, riscv branchless-arith fallback), plus a safe-to-cmov analysis. Also blocks re-enabling
-  `MCC_AST_ABS`.
-- [ ] **Branchless boolean-normalizing ternary `cond?1:0`** (frontend codegen, NOT an AST fold). `expr_cond`'s
-  `is_cond_bool` fast path lowers via branches AND returns before `ast_hook_ternary_end` — so these ternaries
-  DESYNC and the AST optimizer never captures them. Fix: materialize the condition branchlessly (`setCC`/`cset`).
-  Target-sensitive, churns goldens; incidentally fixes the AST-desync.
+- [x] **Branchless select for min/max/abs/sign** (`cmov`/`csel`) — **LANDED** (fe1f7303). `gen_cmov` +
+  `gen_select` behind a strict purity gate (cmov evaluates both arms, so only side-effect-free non-faulting
+  arms qualify) emit x86 cmovne / arm64 csel / riscv64 base-ISA mask; strategy row `select`, gated
+  `MCC_AST_SELECT` (default-off → byte-neutral), `exec-select` fixture. Remaining: default-on flip after soak;
+  i386/arm 32-bit cmov.
+- [x] **`cond?1:0` AST desync** — **FIXED** (fe1f7303 part B). `expr_cond`'s `is_cond_bool` fast path returned
+  before `ast_hook_ternary_end`, permanently desyncing the side-car for exactly these ternaries; the fast path
+  was removed so every runtime ternary reaches the hook (previously-desynced use_in_expr/nested/`x?1:0` now
+  capture faithfully). Not gated (all compiles); gate-off exec goldens unchanged.
 - [ ] **Constant integer division/remainder strength reduction** (magic-number multiply). 32-bit landed
-  (`src/mccmagic.h` + `ast_divmagic_run`, `MCC_AST_DIVMAGIC` opt-in; ⚠ NOT default-on-ready — P0). **Open:**
-  (a) **64-bit** — needs the HIGH 64 bits of a 64×64→128 product (`mulh`), which mcc's type system can't
-  express (`__int128` is a parse error) — a per-backend primitive (x86_64 `mulq`, arm64 `umulh`/`smulh`, riscv
-  `mulhu`, i386→runtime helper). (b) the **optimal 1×-multiply form** for the signed / `a==1` cases → needs a
-  real temp-materialization mechanism. **⚠ Cross-arch validation caveat:** `cmake-qemu-*` emit native x86_64;
+  (`src/mccmagic.h` + `ast_divmagic_run`, `MCC_AST_DIVMAGIC` opt-in; ⚠ NOT default-on-ready — P0).
+  **(a) 64-bit — LANDED** (fe1f7303): Granlund-Montgomery 64-bit magic (`mcc_magicu64`/`mcc_magics64`) + per-arch
+  `gen_mulh` for the HIGH 64 bits (x86_64 mul/imul r/m64, arm64 `umulh`/`smulh`, riscv64 `mulhu`/`mulh`) via
+  synthetic `AST_OP_MULH{U,S}`; exhaustive self-check 336904 u64/s64 cases, 0 failures. **Remaining:** the
+  default-on flip (still held by the x86_64 self-host mul-high miscompile), and i386→runtime-helper for 64-bit.
+  **⚠ Cross-arch validation caveat:** `cmake-qemu-*` emit native x86_64;
   use `cmake-cross/mcc-i386` and `cmake-cross/mcc-arm64` for real cross-arch checks.
 
 ## NEXT MILESTONE — runtime JIT + guarded deopt (§26) · [core COMPLETE — M1–M3 + M6 done · remaining = tails + M7]
@@ -1004,7 +1006,7 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
 - [~] **M5 — dispatch (mode 6) + full in-process hot-swap loop landed; in-program wiring DONE (J3A)** —
   `MCC_AST_JIT_DISPATCH=6` emits the indirect variant-slot entry (`jmp *SLOT(%rip)` → 8-byte writable `.data`
   slot). The complete recompile→publish→swap loop works (`mcc_jit_recompile_blob` + `mcc_jit_publish` aligned
-  `__ATOMIC_RELEASE` swap), including a genuine const-param-specialized variant. x86_64 ELF only (D7).
+  `__ATOMIC_RELEASE` swap), including a genuine const-param-specialized variant. x86_64 + arm64 (D7 + 2B); ELF/Mach-O/PE.
   ✅ **[J3A] DONE:** the in-*program* mode-6 slot is now connected to the runtime recompile via the per-sym blob
   registry + one generic ctor; an in-memory `-run` program self-recompiles + hot-swaps its own slot at startup
   (`_runmain` `.init_array` → `__mccjit_boot_all` → `mccjit_boot_swap`). **[J5→K9: un-deferred]** old-variant
@@ -1048,7 +1050,7 @@ emission wired; C11 `<threads.h>` is a real pthread shim; entry-prepend prior ar
   (permute × combine, benchmark wins); how a pure slice's live-ins key the M5b cache; interaction with inlining;
   partial-specializing an impure bound call without losing ABI compliance.
 - [~] **M6 — trigger/pool: LANDED** (commit 457ca8a1) — N-worker shared queue + async lazy promotion +
-  hot-counter (`MccjitCounterState`, threshold default 1000, `MCC_JIT_HOT_THRESHOLD`). x86_64-only counter stub.
+  hot-counter (`MccjitCounterState`, threshold default 1000, `MCC_JIT_HOT_THRESHOLD`). Counter stub on x86_64 + arm64.
 - [~] **[J10·ACTIVE] M7 — hot-patch strategy FAMILY: REGISTRY LANDED** (see item 12 above). Hot-patching is
   now a search-enumerable `mccjit_patch_reg[]` table with `mccjit_patch_bench_rank`; rows: c-indirect (portable),
   ptr-swap-slot + inplace-tramp (x86), nop-pad-d3b (deferred, `available()==0`). A reemitted slice kernel installs
@@ -1153,10 +1155,11 @@ pool**. Deopt-arm mechanism = **B (machine-byte splice)**, not AST-level. Tier-2
 in the blocks above; the AOT↔JIT unification (**AOT `-O4` *is* the JIT**, sink-dependent scorer) is in the
 Architecture/Unifying-principle paragraphs.
 
-## CST — concrete syntax tree · [1A — ACTIVE: slice-G stitching → `-g`-from-provenance]
+## CST — concrete syntax tree · [1A — designed-only: slice-G stitching → `-g`-from-provenance NOT started]
 
 The CST is a byte-exact lossless side-car (`src/mcccst.c`) built during the normal parse and **discarded
-immediately** (`cst_capture_end` → `cst_arena_free`, returns NULL). Every downstream capability is latent.
+immediately**: `cst_capture_end` (`src/mccpp.c`) returns the arena, but the driver at `src/libmcc.c:858`
+ignores the return value, so the tree is freed on the next capture round. Every downstream capability is latent.
 The engine, store, snapshot, hashing, and sym-xref all pass their unit + round-trip tests (`tools/csttool.c`,
 `tests/cst/*`), but no driver path consumes the tree. **1A promotes CST to an active workstream: wire the
 first real consumer.** Sequence: slice-G stitching (the tree-completeness prerequisite) → `-g`-from-provenance
@@ -1188,7 +1191,8 @@ first real consumer.** Sequence: slice-G stitching (the tree-completeness prereq
 - [x] `config-defines` drift — `mccbuild --emit-defines` now emits `MCC_JIT_DEFAULT` (`--config-jit`).
 - [x] `ast-verify-ratchet` CMP0057 abort — `cmake_minimum_required` in `verify_ratchet.cmake`; x86_64-linux
   + x86_64-win32 baselines refreshed for the cond?1:0 desync-fix reclassification; ratchet skipped on MSVC
-  (its gap set diverges from the mingw-generated win32 baseline — needs a separate msvc baseline).
+  (its gap set diverges from the mingw-generated win32 baseline — needs a separate msvc baseline) and under
+  `NOT MCC_CONFIG_ASM` (ASM=off has its own gap set).
 - [x] `exec-replay/{run_atexit,errors_and_warnings}` on ELF/x86_64 + mingw/x86_64 — best-effort JIT recompile
   of a fn referencing an unresolvable in-program symbol leaked a hard diagnostic; global `mccjit_error_quiet`
   suppresses recompile-internal error output (nb_errors still increments → relocate fails → AOT fallback).
