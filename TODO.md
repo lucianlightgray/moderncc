@@ -293,9 +293,11 @@ was only called from the ELF/Mach-O `mcc_add_runtime`, never from PE's `pe_add_r
 otherwise unresolved for a bare `mcc_relocate` that isn't a full `mcc_run`).
 
 **🚧 IN PROGRESS (2026-07-16) — the embed-blob (`--embed-jit` standalone exe) on Windows.**
-Picked up as the sole remaining open slice. Scoping the two paths below; blocked on validation
-because this host is macOS/arm64 and the fix is WIN32-only (needs mingw/MSVC to build+test the PE
-target). See the direction decision pending with the user before implementing.
+Picked up as the sole remaining open slice. **Direction chosen (user, 2026-07-16): path (a) —
+teach mcc's linker to read COFF/PE object archives** (a real COFF object reader mapping COFF
+sections/symbols/relocs into mcc's internal ELF structures, wired into `mcc_load_archive`).
+Implementing blind on this macOS/arm64 host; validation on the PE target is deferred to a
+mingw/MSVC box (build+`ctest -R jit/`, and a standalone `--embed-jit` exe smoke test).
 
 Prior status: `bin2c` of
 `libmcc_jitengine.a` → `MCC_EMBED_JIT_BLOB` writes the archive to a temp file and links it via
