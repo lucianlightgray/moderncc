@@ -21,13 +21,14 @@ which clashes with full_language.c's opaque `mcclib.h` `FILE`.
 
 ## Kinds of unit
 
-- **Dual-use C9911 units** (`s04.h`, `s6_*.h`, `s7_*.h`, `s7_libm.h`,
-  `coherency.h`) — self-contained; both a 3-way parts-suite unit *and* aggregated.
+- **Dual-use C99/C11 units** (`s04.h`, `s6_*.h`, `s7_*.h`, `s7_libm.h`,
+  `s_*.h` — e.g. `s_annCDE.h`, `s_annFGK.h`, `s_stddef.h` —, `coherency.h`) —
+  self-contained; both a 3-way parts-suite unit *and* aggregated.
 - **Aggregate-only legacy units** (`legacy_*.h`) — the historical tcctest body,
   split into ordered thematic chunks. They share file-scope macros/globals with
   each other and with full_language.c's prelude, so they are `#include`d **in
   order** (never reordered — chunk boundaries only fall where the preprocessor
   `#if` depth is 0) and are not standalone parts-suite units. This reduced
-  full_language.c from ~7100 to under 400 lines: it is now the prelude/harness
+  full_language.c from ~7100 to ~415 lines: it is now the prelude/harness
   (including the `#include`-mechanism preprocessor tests) + the ordered part
   `#include`s + `main`.

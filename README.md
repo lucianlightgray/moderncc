@@ -57,7 +57,7 @@ cmake --build cmake-release -j
 | `MCC_BUILD_DYNAMIC_LIB` | OFF                            | Also build shared `libmcc-dynamic.so` alongside `libmcc-static.a`           |
 | `MCC_SINGLE_SOURCE`     | ON                             | Amalgamate the compiler into one TU (`mcc` is self-contained)               |
 | `MCC_BUILD_STATIC_EXE`  | OFF                            | Also build `mcc-static` (fully static `-static`; forced off on macOS)       |
-| `MCC_BUILD_DYNAMIC_EXE` | ON                             | Also build `mcc-dynamic` (not single-source; links the shared `libmcc.so`)  |
+| `MCC_BUILD_DYNAMIC_EXE` | ON                             | Also build `mcc-dynamic` (single-source; dynamically linked to libc, not `libmcc` — dynamic counterpart to `mcc-static`) |
 | `MCC_BUILD_MUSL`        | OFF                            | Also build musl-targeting variants (`*-musl`, Linux only)                   |
 | `MCC_BUILD_STRIP`       | ON for Release/MinSizeRel      | Strip symbols during link                                                   |
 | `MCC_QEMU_TESTS`        | OFF                            | qemu-user cross-conformance matrix (below)                                  |
@@ -67,8 +67,9 @@ All compiler binaries follow one suffix convention:
 then the link/single-source shape, with `-musl` always last. `mcc` — the default,
 installed binary — is a self-contained amalgamated build linked only to libc,
 with no `libmcc.so` dependency. `mcc-static` is the same, statically linked
-(`-static`). `mcc-dynamic` is a non-amalgamated driver linked against the shared
-`libmcc.so`. Cross compilers (`MCC_ENABLE_CROSS`) are self-contained host
+(`-static`). `mcc-dynamic` is the same amalgamated build, dynamically linked
+against libc (the dynamic counterpart to `mcc-static`; it does not link
+`libmcc`). Cross compilers (`MCC_ENABLE_CROSS`) are self-contained host
 binaries, so they take `-static` (with `MCC_BUILD_STATIC_EXE`) but not
 `-dynamic`. Each shape has a `-musl` sibling. Examples: `mcc`, `mcc-static`,
 `mcc-dynamic`, `mcc-musl`, `mcc-arm64`, `mcc-x86_64-static`,

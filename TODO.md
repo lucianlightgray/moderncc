@@ -22,8 +22,9 @@ picked up cold. Mark a slice with exactly one of:
 
 Audited every git-tracked doc against current `src/`/CMake/CLI state (6-way parallel validation:
 README CLI, README build/CMake, README libmcc API, README testing, docs/TODO backlog, tests READMEs).
-**No documented claim was found WRONG** — README's flag/feature/API/CMake/label tables are all accurate.
-The findings were omissions and drift; all concrete fixes below landed this session.
+The findings were mostly omissions and drift; all concrete fixes below landed this session. (A second,
+independent audit pass then caught one genuinely WRONG claim the first pass missed — see the follow-up
+bullets — so the earlier "no claim was wrong" read was itself slightly optimistic.)
 
 Fixed:
 - `README.md`: added `MCC_EMBED_JIT`/`MCC_CONFIG_JIT` (both default-ON) to the CMake options table;
@@ -43,9 +44,17 @@ Fixed:
 - `tests/qemu/apple-libc/PROVENANCE.md`: `run_macho_apple_libc.cmake` doesn't exist — the test is driven by
   `mccharness machoapplelibc`; corrected.
 
+Follow-up pass (second independent audit) — two misses corrected:
+- `README.md`: the `MCC_BUILD_DYNAMIC_EXE` row + prose described `mcc-dynamic` **inverted** — it is *not* a
+  "non-amalgamated driver linked against `libmcc.so`". The CMake target (`CMakeLists.txt:2037`) compiles
+  `src/mcc.c` directly (single-source) and links only `m`/Threads/dl, never `libmcc` — it's the dynamic
+  counterpart to `mcc-static`. Table + prose corrected. (This was a genuinely WRONG claim, not drift; memory
+  [[mcc-dynamic-onesource]] refreshed — the target was refactored since that note.)
+- `tests/diff/parts/README.md`: "under 400 lines" → `full_language.c` is ~415; the dual-use unit list omitted
+  the `s_*.h` family (`s_annCDE.h`/`s_annFGK.h`/`s_stddef.h`) — both fixed. (So it was NOT "validated clean".)
+
 Validated clean (no change needed): `include/libmcc.h` (every README-named symbol present), README's
-option/label/qemu-grid/repo-layout tables, `tests/fuzz/NOTES.md`, `tests/fuzz/corpus/README.md`,
-`tests/diff/parts/README.md`.
+option/label/qemu-grid/repo-layout tables, `tests/fuzz/NOTES.md`, `tests/fuzz/corpus/README.md`.
 
 ## Documentation gaps (open)
 
