@@ -209,6 +209,9 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 		mcc_add_runtime(s1);
 		resolve_common_syms(s1);
 		build_got_entries(s1, 0);
+#if defined(MCC_TARGET_ARM64)
+		arm64_veneer_memory_calls(s1);
+#endif
 #endif
 	}
 

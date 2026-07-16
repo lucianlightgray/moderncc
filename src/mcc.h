@@ -1610,6 +1610,9 @@ enum gotplt_entry {
 
 ST_FUNC unsigned create_plt_entry(MCCState *s1, unsigned got_offset, struct sym_attr *attr);
 ST_FUNC void relocate_plt(MCCState *s1);
+#if defined(MCC_TARGET_ARM64)
+ST_FUNC void arm64_veneer_memory_calls(MCCState *s1);
+#endif
 ST_FUNC void build_got_entries(MCCState *s1, int got_sym);
 
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val);
