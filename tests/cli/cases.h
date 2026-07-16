@@ -137,8 +137,9 @@ static const cli_case_t cli_cases[] = {
 		{"embed_jit_manifest", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/mf.c && "
 		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --embed-jit --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
+		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --embed-jit --jit-functions=main,helper --jit-max-duration=120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
 		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O4 -v --no-embed-jit -c {W}/mf.c -o {W}/mf2.o 2>&1 | grep -c 'embed-jit manifest'",
-		 "embed-jit manifest: functions=main,helper max-duration=120s\n0\n"},
+		 "embed-jit manifest: functions=main,helper max-duration=120s\nembed-jit manifest: functions=main,helper max-duration=120s\n0\n"},
 
 		{"bitflag_detect", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int classify(int x){if(x==1)return 10;else if(x==3)return 30;else if(x==5)return 50;else if(x==7)return 70;return 0;}int two(int y){if(y==2)return 1;if(y==4)return 2;return 0;}int main(void){return classify(5)+two(4);}\\n' > {W}/bf.c && "
@@ -2049,7 +2050,7 @@ static const cli_case_t cli_cases[] = {
 		 "at main: RUNTIME ERROR: invalid memory access\n"},
 
 		{"sanitize_address_heap_overflow", "bcheck",
-		 "printf 'void *malloc(unsigned long);\\nint main(void){char *p=malloc(10);p[12]=1;return 0;}\\n' > {W}/asan.c && "
+		 "printf 'void *malloc(__SIZE_TYPE__);\\nint main(void){char *p=malloc(10);p[12]=1;return 0;}\\n' > {W}/asan.c && "
 		 "{MCC} -B{B} -fsanitize=address {W}/asan.c -o {W}/asan && {W}/asan 2>&1 | grep -oE 'is outside of the region'",
 		 "is outside of the region\n"},
 		{"sanitize_address_macro", "bcheck",
@@ -2057,7 +2058,7 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -fsanitize=address {W}/asm.c -o {W}/asm && {W}/asm; echo rc=$?",
 		 "rc=5\n"},
 		{"sanitize_address_use_after_free", "bcheck",
-		 "printf 'void *malloc(unsigned long);void free(void*);\\nint main(void){int*p=malloc(4);*p=5;free(p);return *p;}\\n' > {W}/uaf.c && "
+		 "printf 'void *malloc(__SIZE_TYPE__);void free(void*);\\nint main(void){int*p=malloc(4);*p=5;free(p);return *p;}\\n' > {W}/uaf.c && "
 		 "{MCC} -B{B} -fsanitize=address {W}/uaf.c -o {W}/uaf && {W}/uaf 2>&1 | grep -oE 'invalid memory access' | head -1",
 		 "invalid memory access\n"},
 		{"asan_shadow_native_overflow", "cpu=x86_64,os=linux",

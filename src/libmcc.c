@@ -2200,12 +2200,18 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			s->jit = 0;
 			break;
 		case MCC_OPTION_jit_max_duration:
+			if (optarg[0] == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
 			s->jit_max_duration = (unsigned)atoi(optarg);
 			break;
 		case MCC_OPTION_jit_threads:
+			if (optarg[0] == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
 			s->jit_threads = (unsigned)atoi(optarg);
 			break;
 		case MCC_OPTION_jit_functions:
+			if (optarg[0] == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
 			mcc_set_str(&s->jit_functions, optarg);
 			break;
 		case MCC_OPTION_clear_cache:

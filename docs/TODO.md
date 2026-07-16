@@ -1393,6 +1393,14 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   `NOT WIN32` from the `ubsan-suite` CMake gate; and taught `run_ubsan.cmake` that a fired trap = "not a clean
   0..127 exit" (Windows reports the exception code as negative/>2^31, not 128+signo). No SEH handler or
   `.pdata` change needed — the trap is meant to abort. (arm64/riscv64 already had no PE exclusion.)
+- [x] **[Windows] Fix the two `bcheck` cli cases that fail on LLP64** — DONE. `cli/sanitize_address_{heap_overflow,
+  use_after_free}` (gated `bcheck`, so they run on PE — bcheck works on PE, unlike native-shadow ASan) declared
+  their own `void *malloc(unsigned long)`, which conflicts with the real `malloc(size_t)` on LLP64 Windows
+  (`size_t` = `unsigned long long`) → "incompatible types for redefinition of 'malloc'" compile error before
+  bcheck ever runs. Fix (`tests/cli/cases.h`): declare the prototype with `__SIZE_TYPE__` (portable across
+  LP64/LLP64). bcheck then fires correctly on PE (`is outside of the region` / `invalid memory access`). Both
+  green on the mingw host; byte-neutral on Linux (`unsigned long` == `size_t` there). Not previously caught
+  because the last full Windows sweep predated these two cases being added.
 - [x] **[Windows JIT] Port the hand-written x86_64 JIT stubs to the Windows x64 ABI** — DONE.
   `mccjit_make_counter_stub` + `mccjit_make_kgc_stub_{n,fp}` got Microsoft-x64-ABI `#if MCC_HOST_WIN32`
   branches (spill rcx/rdx/r8/r9 [+xmm0-3 for fp], 32-byte shadow, calln stack args); `MCC_EMBED_JIT` is
@@ -1400,10 +1408,16 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   sub-item:** `mccjit_make_kgc_stub_mixed` returns NULL on WIN32 (mixed GP+FP sigs fall back to the baseline,
   unmemoized; `jit/selftest-mixed` skips) — the forwarding thunk (`mccjit_mixed_thunk_code`) rebuilds a SysV
   call *by class* but Win64 is *positional*, needing a per-arg class vector plumbed through the stub + thunk.
-- [ ] **[Windows] Strip the `=` from `--jit-functions=<name>` on the CLI** — `mcc --jit-functions=f` stores
-  the parsed name as `"=f"` (the option parser keeps the `=`), so `ast_jit_selected` never matches and the
-  named function isn't JIT-selected. The API path (`s->jit_functions = "f"`) is correct; only the CLI
-  `--jit-functions=` form is affected. Found while wiring the PE `-run` auto-JIT pipeline.
+- [x] **[Windows] Strip the `=` from `--jit-functions=<name>` on the CLI** — DONE. The long options
+  `--jit-functions`/`--jit-max-duration`/`--jit-threads` don't declare a trailing `=` in `mcc_options[]`
+  and aren't `NOSEP`, so only the space form (`--jit-functions main`) parsed; `--jit-functions=main` left
+  `optarg` as `"=main"` (→ `ast_jit_fns[0]="=main"`, never matches). Fix (`src/libmcc.c`): strip a stray
+  leading `=` in each of the three case handlers, mirroring the `MCC_OPTION_stats` precedent. Applied to all
+  three since they share the identical defect (`--jit-max-duration=120` was `atoi("=120")==0`). Verified
+  Windows-natively via a `mcc_set_options` harness reading back `s->jit_functions` (before: `=main,helper`/
+  `0`/`0`; after: `main,helper`/`120`/`4` for both `=` and space forms). Regression: the CI-observable
+  `embed_jit_manifest` cli case (`os=linux`, greps the POSIX-only `-v` manifest) now also asserts the `=` form
+  matches the space form. `ctest -R jit/|cli` = 302/302 on the mingw PE host.
 - [ ] **[Windows JIT] Build the PE embed-blob for standalone `--embed-jit`** — `bin2c(libmcc_jitengine.a)` →
   `MCC_EMBED_JIT_BLOB` is linked into emitted programs by mcc's OWN (ELF-only) linker
   (`libmcc.c:mcc_add_jit_engine_embedded`, `AFF_WHOLE_ARCHIVE`); on WIN32 the host CC emits a COFF/PE archive
