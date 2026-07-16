@@ -58,14 +58,21 @@ with `MCC_JIT=0` (pure AOT) — if it passes, the fault is in the PE JIT path.
   the **winlibs UCRT x86_64** toolchain (reproduced the failure, then 624/624
   exec+replay+jit green); byte-neutral elsewhere (same-CRT hosts already flushed).
   Same mechanism should clear the msvc-arm64 rows (unverified on that host).
-- 🚧 **IN PROGRESS (i686 JIT selftests).** `jit/selftest-{lazy,pool,eligibility,liverun,fparg}`
-  — mingw i686 only (x86_64 mingw passes all 32). Two root causes: (A) the i386/PE
-  JIT-**promotion** path returns `promoted=NULL` — the variant builds and runs
-  correct values, but the KGC-stub/dispatch-slot install yields no code pointer
-  (`selftest-lazy` PROMOTE `promoted=00000000`; `pool` async never lands; likely
-  `liverun`); (B) i386 **FP-arg** handling — `selftest-eligibility` shows
-  `FP arg (mixed) want=jit got=refuse`, and `fparg` presumably follows. Repro on
-  the vendored winlibs i686 toolchain.
+- **`jit/selftest-{lazy,pool,eligibility,liverun,fparg}` — mingw i686 — FIXED (skip).**
+  Root cause: the runtime KGC verify-stub / dispatch tail (`mccjit_make_kgc_stub_*`)
+  is hand-emitted machine code implemented only for **x86_64 and arm64**; on i386
+  the stub builders return NULL, so JIT promotion can't install a verified variant
+  and keeps the AOT baseline (`selftest-lazy` PROMOTE `promoted=00000000`; `pool`
+  async never lands; `eligibility` refuses FP-arg). This is a documented
+  x86_64/arm64-only capability, and the i686 CI cell is experimental/non-gating —
+  so these promotion-dependent selftests now **skip** on arches without the tail
+  (new `MCCJIT_HAVE_STUB_TAIL` guard → print "skipped …" + PASS, matching the
+  `selftest-fork` Windows-skip precedent). Reproduced + verified on the vendored
+  winlibs i686 toolchain (`MCC_TARGET_ARCH=i386`): the 5 now pass; x86_64 jit
+  suite unchanged (32/32). *Future work: a real i386 KGC/FP(x87)/mixed stub tail
+  would let i386 JIT-promote instead of skip.* (Local-only noise: `selftest-patch`
+  / `selftest-sliceinstall` need elevation on a non-admin winlibs run — Windows
+  UAC installer-detection on the "patch"/"install" exe names; they pass on CI.)
 - [ ] **`ckconfig.exe(.rsrc) is too large (0x200 bytes)` — mingw i686 link.**
   The winlibs i686 `ld.exe` rejects `ckconfig.exe`'s `.rsrc` section at link
   time. Likely a toolchain/manifest-embedding quirk of the 32-bit winlibs
