@@ -128,17 +128,22 @@ The exe grows from ~3 KB (non-embed) to ~1 MB with the JIT engine embedded. Land
 - **kernel32.def SRW exports — FIXED.** Added `InitializeSRWLock` + the SRW/InitOnce
   family the JIT win32 shim uses (the shipped def had only the Acquire/Release subset).
 
-- [ ] **RUNTIME: the embedded engine crashes in a startup ctor (COFF reloc bug).**
-  The `--embed-jit` exe links but SIGSEGVs before `main` under both `MCC_JIT=0`
-  and `=1`. gdb: a ctor (`0x4cd…`) calls through a function pointer that lands at
-  a `.rdata` string ("memset") — i.e. a **function pointer is mis-relocated** to a
-  string literal. This is a COFF relocation-correctness bug in `coff_map_reloc`/
-  the reader, exposed only by the ~1 MB engine object (thousands of relocs); the
-  small isolated COFF tests + the 2 MB whole-archive symbol-resolution all pass.
-  Suspects: `IMAGE_REL_AMD64_ADDR32NB` (RVA, currently mapped to absolute
-  `R_X86_64_32`), the REL32_N addend bias, or a COMDAT-remap edge. Next: dump the
-  engine object's relocs for the crashing ctor's pointer table and diff mcc's
-  emitted value vs the intended target.
+- [ ] **RUNTIME: the embedded engine crashes at startup — a PE import (IAT) that
+  the loader never binds.** The `--embed-jit` exe links but SIGSEGVs before `main`
+  (both `MCC_JIT=0`/`=1`). Diagnosed via gdb: a `memset(buf,0,4)` call goes to the
+  import thunk `jmp *[0x4eed9c]`, but the IAT slot at `0x4eed9c` still holds the
+  by-name pointer `0x4eedac` (the "memset" `IMAGE_IMPORT_BY_NAME` string, 16 bytes
+  away) — i.e. the Windows loader **did not bind this import**, so the thunk jumps
+  into the name string. This is a **PE import-table generation** issue in mcc,
+  exposed by the engine importing hundreds of libc/mingw functions (a scale never
+  hit before, since the blob couldn't link on Windows). NOT a COFF reloc bug (the
+  reloc types check out: REL32/ADDR64 in code/data; the 5589 ADDR32NB are all in
+  `.pdata` (SEH, unexecuted) and the 4806 SECREL all in skipped `.debug`).
+  Suspects: a malformed/oversized import descriptor, or memset resolved from a
+  static archive (`libmsvcrt.a`/`libmingwex.a`) whose thunk was emitted without a
+  matching import-directory entry so the loader skips it. *Separate follow-up:*
+  ADDR32NB is currently mapped to absolute `R_X86_64_32` (wrong — it's an RVA);
+  harmless today (`.pdata`-only) but should be RVA-correct or `.pdata` skipped.
 
 ## qemu-amd64 emulation noise (not compiler defects)
 
