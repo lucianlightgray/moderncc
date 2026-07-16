@@ -95,7 +95,7 @@ Memory: [[mcc-jit-unification]] updated with all of the above.
 
 ## Known bugs (to fix)
 
-### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit` — FIXED (2026-07-15) — IN PROGRESS: pruning stale "Next steps" text
+### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit` — FIXED (2026-07-15)
 Discovered 2026-07-14 while validating the `MCCJIT_ROLE_DATA` feature above. Independent of
 that feature (reproduces with no string literal involved).
 **FIXED (2026-07-15):** Root cause = `mccjit_rebuild_sym` (`src/mccjit_intent.c`) hardcoding the
@@ -121,41 +121,8 @@ keys off `VT_BTYPE` (=`VT_INT`) so the ref is classified PLAIN and never rebuilt
 `mccjit_rebuild_sym` sets `type.ref=NULL` on the enum-flagged type → any `IS_ENUM` path
 dereferences NULL and crashes in `rebuild_sym`/`ast_reemit`. Fix: `mccjit_strip_enum()` clears
 the enum struct-mask bits at rebuild (return, params, every AST node) so enums recompile as
-their integer base. The pointer-return `ast_reemit` fault is likely the same family (NULL
-`type.ref`) and remains latent behind the eligibility gate.
-
-Repro (in-process, e.g. from a selftest calling the internal API in `src/mccjit_embed.c`):
-```
-char *h(char *p, int i){ return p + i; }        // pointer arithmetic + pointer return
-// stash: mccjit_stash_one(src, "h", 1, &len, &state)  -> blob is produced OK
-// recompile: mcc_jit_recompile_blob(blob, len)        -> SIGSEGV
-```
-Also crashes with a string base (`char *h(int i){ return "world" + i; }`).
-
-What is known:
-- The function *stashes* fine (`mccjit_intent_serialize` succeeds, blob non-NULL) and
-  `mccjit_rebuild_sym` returns a non-NULL sym.
-- The crash is inside `ast_reemit_extern` → `ast_reemit` → `ast_replay_body`
-  (`src/mccast.c`): instrumentation printed "after rebuild_sym" but never "after reemit".
-  So it faults while replaying the body of a function whose return type is a pointer and
-  whose body is pointer arithmetic.
-- NOT hit by the exec suite: `exec-*/function_pointer`, `func_pointers`,
-  `func_arg_struct_compare` all pass under JIT. Likely the runtime promotion/eligibility gate
-  does not recompile pointer-returning functions, OR they never get hot; the selftests hit it
-  only because `mcc_jit_recompile_blob` bypasses that gate.
-- Latent-severity note: the `MCCJIT_ROLE_DATA` feature widened what serializes, so a
-  string-using function that *also* returns a pointer now serializes (instead of bailing) and
-  would hit this crash on recompile rather than falling back to AOT. Not observed in the exec
-  suite, but a reason to fix this rather than leave it latent.
-
-Next steps to fix:
-- Get the exact fault: build the `linux-gcc-sanitize` preset (ASan) under amd64 docker and run
-  a minimal harness that recompiles `char *h(char*,int){return p+i;}`; gdb does NOT work under
-  qemu emulation (exits 127), so ASan is the way to get a stack. Or add fine-grained markers
-  through `ast_replay_body`'s `AST_Ref`/`AST_Literal`/binary-op cases (`src/mccast.c` ~4170).
-- Suspect the replayed node's type/`type.ref` for the returned pointer, or the sret/return
-  handling in the reemit epilogue path, not the DATA symbol (the DATA sym is only a reloc
-  target). Compare the AST-node stream for a pointer-return vs an int-return leaf.
+their integer base. Both the enum family and the pointer-return `ast_reemit` fault (NULL
+`type.ref`) are now fixed per the FIXED note above.
 
 ### BUG 1b — mode-6 dispatch orphans anon slot symbols — FIXED (switch + residual 8)
 Found 2026-07-14 while implementing self-JIT of mcc's own functions (`--embed-jit` over
