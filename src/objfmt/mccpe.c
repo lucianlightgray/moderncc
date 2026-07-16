@@ -1802,6 +1802,372 @@ static int pe_load_dll(MCCState *s1, int fd, const char *filename) { MCC_TRACE("
 	return 0;
 }
 
+/* ---- COFF/PE object + archive-member reader ------------------------------
+   Lets mcc's own linker consume native COFF objects (host-CC output on
+   Windows), so `--embed-jit` can whole-archive-link the JIT engine archive.
+   Maps COFF sections/symbols/relocs onto mcc's internal ELF structures. */
+
+/* Uniquely-tagged records so they never collide with winnt.h's IMAGE_SYMBOL /
+   IMAGE_RELOCATION (present when the host is mingw). The constants below are
+   #ifndef-guarded for the same reason: winnt.h supplies them on a Windows host,
+   and mcc supplies them when cross-building to PE from a non-Windows host. */
+#pragma pack(push, 1)
+typedef struct _mcc_coff_sym {
+	union {
+		BYTE ShortName[8];
+		struct { DWORD Zeroes; DWORD Offset; } Name;
+	} N;
+	DWORD Value;
+	short SectionNumber;
+	WORD Type;
+	BYTE StorageClass;
+	BYTE NumberOfAuxSymbols;
+} MccCoffSym;
+
+typedef struct _mcc_coff_rel {
+	DWORD VirtualAddress;
+	DWORD SymbolTableIndex;
+	WORD Type;
+} MccCoffRel;
+#pragma pack(pop)
+
+#define COFF_SIZEOF_SYMBOL 18
+#define COFF_SIZEOF_RELOC 10
+#define COFF_DTYPE_FUNCTION 2
+#define COFF_SCN_ALIGN_MASK 0x00F00000
+
+#ifndef IMAGE_SYM_UNDEFINED
+#define IMAGE_SYM_UNDEFINED 0
+#endif
+#ifndef IMAGE_SYM_ABSOLUTE
+#define IMAGE_SYM_ABSOLUTE (-1)
+#endif
+#ifndef IMAGE_SYM_DEBUG
+#define IMAGE_SYM_DEBUG (-2)
+#endif
+#ifndef IMAGE_SYM_CLASS_EXTERNAL
+#define IMAGE_SYM_CLASS_EXTERNAL 2
+#endif
+#ifndef IMAGE_SYM_CLASS_STATIC
+#define IMAGE_SYM_CLASS_STATIC 3
+#endif
+#ifndef IMAGE_SYM_CLASS_LABEL
+#define IMAGE_SYM_CLASS_LABEL 6
+#endif
+#ifndef IMAGE_SYM_CLASS_FUNCTION
+#define IMAGE_SYM_CLASS_FUNCTION 101
+#endif
+#ifndef IMAGE_SYM_CLASS_FILE
+#define IMAGE_SYM_CLASS_FILE 103
+#endif
+#ifndef IMAGE_SYM_CLASS_SECTION
+#define IMAGE_SYM_CLASS_SECTION 104
+#endif
+#ifndef IMAGE_SYM_CLASS_WEAK_EXTERNAL
+#define IMAGE_SYM_CLASS_WEAK_EXTERNAL 105
+#endif
+#ifndef IMAGE_SCN_LNK_INFO
+#define IMAGE_SCN_LNK_INFO 0x00000200
+#endif
+#ifndef IMAGE_SCN_LNK_REMOVE
+#define IMAGE_SCN_LNK_REMOVE 0x00000800
+#endif
+
+#ifndef IMAGE_REL_AMD64_ADDR64
+#define IMAGE_REL_AMD64_ABSOLUTE 0x0000
+#define IMAGE_REL_AMD64_ADDR64 0x0001
+#define IMAGE_REL_AMD64_ADDR32 0x0002
+#define IMAGE_REL_AMD64_ADDR32NB 0x0003
+#define IMAGE_REL_AMD64_REL32 0x0004
+#define IMAGE_REL_AMD64_REL32_1 0x0005
+#define IMAGE_REL_AMD64_REL32_5 0x0009
+#endif
+#ifndef IMAGE_REL_I386_DIR32
+#define IMAGE_REL_I386_ABSOLUTE 0x0000
+#define IMAGE_REL_I386_DIR32 0x0006
+#define IMAGE_REL_I386_DIR32NB 0x0007
+#define IMAGE_REL_I386_REL32 0x0014
+#endif
+#ifndef IMAGE_REL_ARM64_BRANCH26
+#define IMAGE_REL_ARM64_ABSOLUTE 0x0000
+#define IMAGE_REL_ARM64_ADDR32 0x0001
+#define IMAGE_REL_ARM64_ADDR32NB 0x0002
+#define IMAGE_REL_ARM64_BRANCH26 0x0003
+#define IMAGE_REL_ARM64_PAGEBASE_REL21 0x0004
+#define IMAGE_REL_ARM64_PAGEOFFSET_12A 0x0006
+#define IMAGE_REL_ARM64_PAGEOFFSET_12L 0x0007
+#define IMAGE_REL_ARM64_ADDR64 0x000E
+#endif
+
+static int coff_rd32(const unsigned char *p) { MCC_TRACE("enter\n");
+	int v;
+	memcpy(&v, p, 4);
+	return v;
+}
+static long long coff_rd64(const unsigned char *p) { MCC_TRACE("enter\n");
+	long long v;
+	memcpy(&v, p, 8);
+	return v;
+}
+
+/* Translate a COFF object reloc into an mcc internal reloc type + RELA addend.
+   For RELA targets (x86_64/arm64) the in-field value becomes the addend (the
+   final value is written over the field); for REL targets (i386) the addend
+   stays in the field and 0 is passed. Returns 0 on an unsupported type, and a
+   negative sentinel (-1 mapped to *skip=1) for a no-op ABSOLUTE reloc. */
+static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend, int *skip) { MCC_TRACE("enter\n");
+	*addend = 0;
+	*skip = 0;
+#if defined MCC_TARGET_X86_64
+	switch (t) { MCC_TRACE("br\n");
+	case IMAGE_REL_AMD64_ABSOLUTE: *skip = 1; return 1;
+	case IMAGE_REL_AMD64_ADDR64: *etype = R_X86_64_64; *addend = coff_rd64(fld); return 1;
+	case IMAGE_REL_AMD64_ADDR32: *etype = R_X86_64_32; *addend = coff_rd32(fld); return 1;
+	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_32; *addend = coff_rd32(fld); return 1;
+	default:
+		if (t >= IMAGE_REL_AMD64_REL32 && t <= IMAGE_REL_AMD64_REL32_5) { MCC_TRACE("br\n");
+			*etype = R_X86_64_PC32;
+			*addend = coff_rd32(fld) - (4 + (t - IMAGE_REL_AMD64_REL32));
+			return 1;
+		}
+		return 0;
+	}
+#elif defined MCC_TARGET_I386
+	switch (t) { MCC_TRACE("br\n");
+	case IMAGE_REL_I386_ABSOLUTE: *skip = 1; return 1;
+	case IMAGE_REL_I386_DIR32: *etype = R_386_32; return 1;
+	case IMAGE_REL_I386_DIR32NB: *etype = R_386_32; return 1;
+	case IMAGE_REL_I386_REL32:
+		/* COFF REL32 is relative to the field end (P+4); R_386_PC32 is relative
+		   to P. On a REL target the addend lives in the field, so pre-bias it. */
+		{ int v = coff_rd32(fld) - 4; memcpy(fld, &v, 4); }
+		*etype = R_386_PC32;
+		return 1;
+	default:
+		return 0;
+	}
+#elif defined MCC_TARGET_ARM64
+	switch (t) { MCC_TRACE("br\n");
+	case IMAGE_REL_ARM64_ABSOLUTE: *skip = 1; return 1;
+	case IMAGE_REL_ARM64_ADDR64: *etype = R_AARCH64_ABS64; *addend = coff_rd64(fld); return 1;
+	case IMAGE_REL_ARM64_ADDR32: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); return 1;
+	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); return 1;
+	case IMAGE_REL_ARM64_BRANCH26: *etype = R_AARCH64_CALL26; return 1;
+	case IMAGE_REL_ARM64_PAGEBASE_REL21: *etype = R_AARCH64_ADR_PREL_PG_HI21; return 1;
+	case IMAGE_REL_ARM64_PAGEOFFSET_12A: *etype = R_AARCH64_ADD_ABS_LO12_NC; return 1;
+	case IMAGE_REL_ARM64_PAGEOFFSET_12L: *etype = R_AARCH64_LDST64_ABS_LO12_NC; return 1;
+	default:
+		return 0;
+	}
+#else
+	(void)fld;
+	(void)etype;
+	return 0;
+#endif
+}
+
+/* True iff the file at file_offset begins with a native COFF object header for
+   this target (a regular object; import/anon objects report machine 0). */
+ST_FUNC int coff_object_type(int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
+	WORD machine = 0;
+	lseek(fd, file_offset, SEEK_SET);
+	if (full_read(fd, &machine, sizeof machine) != sizeof machine)
+		{ MCC_TRACE("br\n"); return 0; }
+	return machine == (WORD)IMAGE_FILE_MACHINE;
+}
+
+ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
+	IMAGE_FILE_HEADER fh;
+	IMAGE_SECTION_HEADER *shdr = NULL;
+	unsigned char *symtab = NULL;
+	char *strtab = NULL;
+	int *old_to_new = NULL;
+	struct coff_sm { Section *s; unsigned long offset; } *smap = NULL;
+	unsigned long symtab_off, strtab_off, strtab_size = 0;
+	int i, nsec, nsym, ret = -1;
+
+	lseek(fd, file_offset, SEEK_SET);
+	if (full_read(fd, &fh, sizeof fh) != sizeof fh)
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("invalid COFF object"); }
+	if (fh.Machine != (WORD)IMAGE_FILE_MACHINE)
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("COFF object: wrong machine 0x%x", fh.Machine); }
+	nsec = fh.NumberOfSections;
+	nsym = fh.NumberOfSymbols;
+
+	shdr = load_data(fd, file_offset + IMAGE_SIZEOF_FILE_HEADER + fh.SizeOfOptionalHeader,
+									 (unsigned long)nsec * sizeof(IMAGE_SECTION_HEADER));
+	smap = mcc_mallocz((nsec + 1) * sizeof *smap);
+
+	if (fh.PointerToSymbolTable && nsym) { MCC_TRACE("br\n");
+		DWORD ssz = 0;
+		symtab_off = file_offset + fh.PointerToSymbolTable;
+		symtab = load_data(fd, symtab_off, (unsigned long)nsym * COFF_SIZEOF_SYMBOL);
+		strtab_off = symtab_off + (unsigned long)nsym * COFF_SIZEOF_SYMBOL;
+		lseek(fd, strtab_off, SEEK_SET);
+		full_read(fd, &ssz, 4);
+		strtab_size = ssz < 4 ? 4 : ssz;
+		strtab = load_data(fd, strtab_off, strtab_size);
+	}
+
+	/* pass 1: sections -> internal Sections (merge by name, like the ELF path) */
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		IMAGE_SECTION_HEADER *sh = &shdr[i];
+		DWORD ch = sh->Characteristics;
+		char nbuf[32];
+		const char *name;
+		char *dollar;
+		int j, sh_type, sh_flags, align;
+		unsigned long size, offset;
+		Section *s = NULL;
+
+		if (sh->Name[0] == '/') { MCC_TRACE("br\n");
+			long o = atol((const char *)sh->Name + 1);
+			name = (strtab && (unsigned long)o < strtab_size) ? strtab + o : ".coffx";
+		} else { MCC_TRACE("br\n");
+			int k;
+			for (k = 0; k < 8 && sh->Name[k]; k++)
+				{ MCC_TRACE("br\n"); nbuf[k] = sh->Name[k]; }
+			nbuf[k] = 0;
+			name = nbuf;
+		}
+		dollar = strchr(name, '$');		/* merge grouped ".text$mn" -> ".text" */
+		if (dollar) { MCC_TRACE("br\n");
+			int k = (int)(dollar - name);
+			if (k > 31) k = 31;
+			memcpy(nbuf, name, k);
+			nbuf[k] = 0;
+			name = nbuf;
+		}
+
+		if ((ch & (IMAGE_SCN_LNK_INFO | IMAGE_SCN_LNK_REMOVE)) ||
+				0 == strncmp(name, ".debug", 6))
+			{ MCC_TRACE("br\n"); continue; }
+
+		sh_type = (ch & IMAGE_SCN_CNT_UNINITIALIZED_DATA) ? SHT_NOBITS : SHT_PROGBITS;
+		sh_flags = SHF_ALLOC;
+		if (ch & (IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE))
+			{ MCC_TRACE("br\n"); sh_flags |= SHF_EXECINSTR; }
+		if (ch & IMAGE_SCN_MEM_WRITE)
+			{ MCC_TRACE("br\n"); sh_flags |= SHF_WRITE; }
+		align = (ch & COFF_SCN_ALIGN_MASK) ? (1 << (((ch >> 20) & 0xf) - 1)) : 1;
+
+		for (j = 1; j < s1->nb_sections; j++) { MCC_TRACE("br\n");
+			if (!strcmp(s1->sections[j]->name, name))
+				{ MCC_TRACE("br\n"); s = s1->sections[j]; break; }
+		}
+		if (!s)
+			{ MCC_TRACE("br\n"); s = new_section(s1, name, sh_type, sh_flags); }
+		size = (sh_type == SHT_NOBITS) ? sh->Misc.VirtualSize : sh->SizeOfRawData;
+		offset = section_add(s, size, align);
+		smap[i + 1].s = s;
+		smap[i + 1].offset = offset;
+		if (sh_type != SHT_NOBITS && size && sh->PointerToRawData) { MCC_TRACE("br\n");
+			lseek(fd, file_offset + sh->PointerToRawData, SEEK_SET);
+			full_read(fd, s->data + offset, size);
+		}
+	}
+
+	/* pass 2: symbols -> internal symtab (aux records consume indices) */
+	if (nsym) { MCC_TRACE("br\n");
+		old_to_new = mcc_mallocz(nsym * sizeof(int));
+		for (i = 0; i < nsym;) { MCC_TRACE("br\n");
+			MccCoffSym *sy = (MccCoffSym *)(symtab + (size_t)i * COFF_SIZEOF_SYMBOL);
+			int naux = sy->NumberOfAuxSymbols;
+			int scls = sy->StorageClass;
+			short secnum = sy->SectionNumber;
+			char nb[9];
+			const char *name;
+			int shndx, bind, type = STT_NOTYPE;
+			addr_t value = sy->Value;
+			unsigned long size = 0;
+
+			if (scls == IMAGE_SYM_CLASS_FILE || scls == IMAGE_SYM_CLASS_FUNCTION ||
+					secnum == IMAGE_SYM_DEBUG)
+				{ MCC_TRACE("br\n"); goto next_sym; }
+
+			if (sy->N.Name.Zeroes == 0) { MCC_TRACE("br\n");
+				name = (strtab && sy->N.Name.Offset < strtab_size) ? strtab + sy->N.Name.Offset : "";
+			} else { MCC_TRACE("br\n");
+				memcpy(nb, sy->N.ShortName, 8);
+				nb[8] = 0;
+				name = nb;
+			}
+			if (!name[0])
+				{ MCC_TRACE("br\n"); goto next_sym; }
+
+			if ((sy->Type >> 4) == COFF_DTYPE_FUNCTION)
+				{ MCC_TRACE("br\n"); type = STT_FUNC; }
+
+			if (secnum == IMAGE_SYM_UNDEFINED) { MCC_TRACE("br\n");
+				bind = STB_GLOBAL;
+				if (value != 0) { MCC_TRACE("br\n"); shndx = SHN_COMMON; size = value; value = 0; }
+				else { MCC_TRACE("br\n"); shndx = SHN_UNDEF; }
+			} else if (secnum == IMAGE_SYM_ABSOLUTE) { MCC_TRACE("br\n");
+				shndx = SHN_ABS;
+				bind = (scls == IMAGE_SYM_CLASS_EXTERNAL) ? STB_GLOBAL : STB_LOCAL;
+			} else { MCC_TRACE("br\n");
+				if (secnum < 1 || secnum > nsec || !smap[secnum].s)
+					{ MCC_TRACE("br\n"); goto next_sym; }
+				shndx = smap[secnum].s->sh_num;
+				value += smap[secnum].offset;
+				bind = (scls == IMAGE_SYM_CLASS_EXTERNAL) ? STB_GLOBAL : STB_LOCAL;
+				if (scls == IMAGE_SYM_CLASS_SECTION || scls == IMAGE_SYM_CLASS_LABEL)
+					{ MCC_TRACE("br\n"); bind = STB_LOCAL; type = STT_NOTYPE; }
+			}
+			if (scls == IMAGE_SYM_CLASS_WEAK_EXTERNAL)
+				{ MCC_TRACE("br\n"); bind = STB_WEAK; }
+
+			old_to_new[i] = set_elf_sym(symtab_section, value, size,
+																	ELFW(ST_INFO)(bind, type), 0, shndx, name);
+		next_sym:
+			i += 1 + naux;
+		}
+	}
+
+	/* pass 3: relocations */
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		IMAGE_SECTION_HEADER *sh = &shdr[i];
+		Section *s = smap[i + 1].s;
+		unsigned char *rels;
+		int nr = sh->NumberOfRelocations, r;
+
+		if (!s || !nr || !sh->PointerToRelocations)
+			{ MCC_TRACE("br\n"); continue; }
+		rels = load_data(fd, file_offset + sh->PointerToRelocations,
+										 (unsigned long)nr * COFF_SIZEOF_RELOC);
+		for (r = 0; r < nr; r++) { MCC_TRACE("br\n");
+			MccCoffRel *rl = (MccCoffRel *)(rels + (size_t)r * COFF_SIZEOF_RELOC);
+			unsigned long roff = rl->VirtualAddress + smap[i + 1].offset;
+			int sym = (rl->SymbolTableIndex < (DWORD)nsym) ? old_to_new[rl->SymbolTableIndex] : 0;
+			int etype = 0, skip = 0;
+			addr_t addend = 0;
+
+			if (!coff_map_reloc(rl->Type, s->data + roff, &etype, &addend, &skip)) { MCC_TRACE("br\n");
+				mcc_free(rels);
+				mcc_error_noabort("COFF: unsupported reloc type 0x%x in %s", rl->Type, s->name);
+				goto the_end;
+			}
+			if (skip)
+				{ MCC_TRACE("br\n"); continue; }
+			if (!sym) { MCC_TRACE("br\n");
+				mcc_free(rels);
+				mcc_error_noabort("COFF: relocation against dropped symbol in %s", s->name);
+				goto the_end;
+			}
+			put_elf_reloca(symtab_section, s, roff, etype, sym, addend);
+		}
+		mcc_free(rels);
+	}
+	ret = 0;
+the_end:
+	mcc_free(old_to_new);
+	mcc_free(smap);
+	mcc_free(symtab);
+	mcc_free(strtab);
+	mcc_free(shdr);
+	return ret;
+}
+
 ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename) { MCC_TRACE("enter\n");
 	int ret = -1;
 	char buf[10];

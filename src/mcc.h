@@ -1771,6 +1771,8 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 
 #ifdef MCC_TARGET_PE
 ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename);
+ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
+ST_FUNC int coff_object_type(int fd, unsigned long file_offset);
 ST_FUNC int pe_output_file(MCCState *s1, const char *filename);
 ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t value);
 ST_FUNC int pe_setsubsy(MCCState *s1, const char *arg);

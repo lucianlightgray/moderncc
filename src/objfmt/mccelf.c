@@ -3401,6 +3401,12 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 			off += len;
 			if (s1->verbose == 2)
 				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
+#ifdef MCC_TARGET_PE
+			if (coff_object_type(fd, off)) { MCC_TRACE("br\n");
+				if (coff_load_object_file(s1, fd, off) < 0)
+					{ MCC_TRACE("br\n"); goto the_end; }
+			} else
+#endif
 			if (mcc_load_object_file(s1, fd, off) < 0)
 				{ MCC_TRACE("br\n"); goto the_end; }
 			++bound;
@@ -3438,6 +3444,13 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) { MCC_TRACE("en
 				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
 			if (mcc_load_object_file(s1, fd, file_offset) < 0)
 				{ MCC_TRACE("br\n"); return -1; }
+#ifdef MCC_TARGET_PE
+		} else if (coff_object_type(fd, file_offset)) { MCC_TRACE("br\n");
+			if (s1->verbose == 2)
+				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
+			if (coff_load_object_file(s1, fd, file_offset) < 0)
+				{ MCC_TRACE("br\n"); return -1; }
+#endif
 		}
 		file_offset = (file_offset + size + 1) & ~1;
 	}

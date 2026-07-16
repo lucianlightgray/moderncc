@@ -78,47 +78,44 @@ with `MCC_JIT=0` (pure AOT) — if it passes, the fault is in the PE JIT path.
   the emitted `.rsrc`/manifest and whether a resource/manifest strip or a
   linker flag avoids it.
 
-### Windows embed-blob (`--embed-jit` standalone exe) — 🚧 IN PROGRESS
+### Windows embed-blob (`--embed-jit` standalone exe)
 
-Implementing the COFF/PE object + archive reader in mcc's linker (native Windows
-mingw host, so build + validate happen here).
+**COFF/PE object + archive reader — DONE and validated (native x86_64 mingw host).**
+mcc's linker now reads native COFF objects and COFF `!<arch>` archives, so the
+host-CC-produced JIT engine archive links into `--embed-jit` output on Windows.
+- `coff_load_object_file` + `coff_object_type` + `coff_map_reloc` in
+  `src/objfmt/mccpe.c` (PE-only): reads `IMAGE_FILE_HEADER`/`IMAGE_SECTION_HEADER[]`,
+  merges sections by name (`.text$mn`→`.text`), maps `IMAGE_SCN_*`→sh_flags/type
+  + alignment, parses the 18-byte symbol records (+aux, +string table) via
+  `set_elf_sym` (UNDEF/ABS/COMMON/section-number handling), and translates the
+  AMD64/I386/ARM64 reloc families into internal `R_*` + RELA addends (REL32_N
+  bias handled). Records use unique tags and `#ifndef`-guarded constants so they
+  coexist with mingw's `winnt.h`.
+- Wired into `mcc_load_archive` (whole-archive loop + à-la-carte member pull) and
+  the bare-object dispatch in `mcc_add_binary` (`libmcc.c`), all `#ifdef MCC_TARGET_PE`.
+- CMake ungated: `libmcc_jitengine` now builds on WIN32 (`CMakeLists.txt`), so the
+  engine archive is bin2c'd into mcc.
+- Validated on this host: bare COFF object, à-la-carte archive, and whole-archive
+  links all compile+run correctly; a whole-archive link of the **real 2 MB
+  `libmcc-static.a`** parses every member cleanly and reaches symbol resolution
+  (only external mingw/msvcrt symbols remain — a runtime-lib issue, not COFF).
+  `ctest -R jit/` = 32/32, no regressions.
 
-mcc's linker reads only ELF and `!<arch>` archives, so the JIT engine archive
-(`libmcc_jitengine.a` — a COFF/PE archive from the host CC on Windows) does not
-link into standalone `--embed-jit` output there. mcc's own `-run` JIT and the
-selftests do not need the blob (the engine is compiled into mcc); only standalone
-`--embed-jit` output does. The path is a COFF/PE object-archive reader in mcc's
-linker that maps COFF sections, symbols, and relocs into mcc's internal ELF
-structures, wired into `mcc_load_archive`. The reader is compile-guarded for
-WIN32 and validated on a mingw/MSVC host.
-
-- [ ] **COFF-object magic dispatch.** In the `mcc_add_file`/`mcc_load_file`
-  sniff (`src/libmcc.c`, alongside the ELF/`!<arch>`/`pe_load_file` checks),
-  detect a native COFF object by `IMAGE_FILE_HEADER.Machine` (AMD64/I386/ARM64)
-  and route it to the new loader.
-- [ ] **COFF object loader** (`coff_load_object_file`, parallel to
-  `mcc_load_object_file`): read `IMAGE_FILE_HEADER` + `IMAGE_SECTION_HEADER[]`,
-  create internal `Section`s, copy section data, map `IMAGE_SCN_*`
-  characteristics to mcc section flags/align.
-- [ ] **COFF symbol table → internal `Sym`.** Parse the 18-byte `IMAGE_SYMBOL`
-  records + aux records + the COFF string table; map storage classes
-  (`IMAGE_SYM_CLASS_EXTERNAL`/`STATIC`/…) and section numbers
-  (`IMAGE_SYM_UNDEFINED`/`ABSOLUTE`/`DEBUG`) through `set_elf_sym`.
-- [ ] **COFF relocation mapping.** Translate `IMAGE_RELOCATION` +
-  `IMAGE_REL_AMD64_*` / `IMAGE_REL_I386_*` / `IMAGE_REL_ARM64_*` into mcc's
-  internal `R_*` constants per arch (AMD64 REL32/ADDR64/ADDR32NB, the ARM64
-  branch/page/pageoff family).
-- [ ] **COFF archive loader.** Parse a COFF `!<arch>` in `mcc_load_archive` —
-  the first/second linker members (symbol directory) and the `//` longnames
-  member — and dispatch each member to the object loader (whole-archive +
-  on-demand pull).
-- [ ] **Reuse audit.** Reuse the COFF/PE structs/constants in
-  `src/objfmt/mccpe.c` (`IMAGE_FILE_HEADER` et al.); define only the missing
-  `IMAGE_REL_*`/`IMAGE_SCN_*`/`IMAGE_SYM_*` constants.
-- [ ] **Ungate the build.** Drop the WIN32 guard on `libmcc_jitengine`
-  (`CMakeLists.txt`) once the reader works.
-- [ ] **Validate on a WIN32 box** (mingw + MSVC): `ctest -R jit/` = 32/32 and a
-  standalone `mcc --embed-jit hello.c` running under `MCC_JIT=1` (self-recompile).
+**Remaining for a self-recompiling `--embed-jit` exe on Windows (downstream of
+the reader, not COFF):**
+- [ ] **Embed function-selection is inert on WIN32.** `mccjit_embed_have_fns()`
+  returns false after a normal `--embed-jit` compile (even `--jit-functions=busy`),
+  so `mcc_add_jit_engine_embedded` is never called and the engine is not linked
+  (the emitted exe is byte-for-byte a non-embed build). The manifest that marks
+  functions for embedding (`mccjit_embed_manifest`) is only called inside the
+  `#if MCC_HOST_POSIX` superopt-dispatch block in `mcc.c` (~1345); wire it (and
+  the embed-stash path) for the non-POSIX host.
+- [ ] **mingw runtime deps of the embedded engine.** The engine archive is
+  compiled by the host mingw gcc, so it references mingw runtime + import symbols
+  (`__mingw_vfprintf`, `ldexpl`, `strtold`, `__chkstk_ms`, `__imp___acrt_iob_func`,
+  `__imp_InitializeSRWLock`, …) that mcc's default msvcrt PE link does not
+  provide. Embedding must also pull the needed mingw support libs
+  (`libmingwex.a` + the right import libs) so the whole-archive engine resolves.
 
 ## qemu-amd64 emulation noise (not compiler defects)
 

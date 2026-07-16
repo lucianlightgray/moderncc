@@ -1953,12 +1953,13 @@ if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
     set(_libmcc_shared libmcc_shared)
 endif()
 
-if(MCC_EMBED_JIT AND NOT MCC_BUILD_STATIC_LIB AND NOT MCC_TARGETOS STREQUAL "WIN32")
+if(MCC_EMBED_JIT AND NOT MCC_BUILD_STATIC_LIB)
     # The embed-blob (libmcc_jitengine.a → bin2c → linked into emitted programs
-    # by mcc's OWN linker) is ELF-only: on WIN32 the host CC produces a COFF/PE
-    # archive mcc's ELF linker cannot consume. mcc's own -run JIT and the JIT
-    # selftests do not need the blob (the engine is compiled into mcc itself);
-    # only standalone --embed-jit output would, so it stays gated off here.
+    # by mcc's OWN linker). On WIN32 the host CC produces a COFF/PE archive; mcc's
+    # linker now reads COFF objects/archives (coff_load_object_file in mccpe.c),
+    # so the blob links on Windows too. mcc's own -run JIT and the selftests do
+    # not need the blob (the engine is compiled into mcc itself); only standalone
+    # --embed-jit output does.
     mcc_add_libmcc(libmcc_jitengine STATIC FALSE)
 endif()
 

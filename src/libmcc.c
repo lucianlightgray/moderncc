@@ -1231,6 +1231,10 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 
 #elif defined MCC_TARGET_PE
 	default:
+		if (coff_object_type(fd, 0)) { MCC_TRACE("br\n");
+			ret = coff_load_object_file(s1, fd, 0);
+			break;
+		}
 		if (pe_load_file(s1, fd, filename))
 			{ MCC_TRACE("br\n"); ret = FILE_NOT_RECOGNIZED; }
 		break;
