@@ -18,6 +18,13 @@ picked up cold. Mark a slice with exactly one of:
 - **DONE / FIXED / RESOLVED / AUDITED** — landed and validated; keep the
   validation note (what was run, what passed) with it.
 
+## Documentation validation & refresh — 🚧 IN PROGRESS (2026-07-16)
+
+Auditing all git-tracked docs against current `src/`/CMake/CLI state, updating stale text,
+and filing TODO items for gaps. Scope: `README.md`, `docs/TODO.md`, `tests/fuzz/{README,NOTES}.md`,
+`tests/diff/parts/README.md`, `tests/qemu/{docker/README,apple-libc/PROVENANCE}.md`. Findings +
+new gap items land under "## Documentation gaps" below.
+
 ## JIT trigger refactor: `--jit` / runtime `MCC_JIT` / CMake `MCC_CONFIG_JIT` (WIP)
 
 Replaces the compile-time `MCC_JIT`/`MCC_AST_JIT` env gate with a runtime model:
