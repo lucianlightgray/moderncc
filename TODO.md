@@ -2,6 +2,8 @@
 
 ## Working conventions (status markers)
 
+Always mark TODO items as in progress, and commit and push to main, before doing any work.
+
 Each slice/phase of work carries a status marker so the board stays legible when
 picked up cold. Mark a slice with exactly one of:
 
@@ -93,7 +95,7 @@ Memory: [[mcc-jit-unification]] updated with all of the above.
 
 ## Known bugs (to fix)
 
-### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit` — FIXED (2026-07-15)
+### BUG 1 — JIT recompile of a pointer-*returning* function segfaults in `ast_reemit` — FIXED (2026-07-15) — IN PROGRESS: pruning stale "Next steps" text
 Discovered 2026-07-14 while validating the `MCCJIT_ROLE_DATA` feature above. Independent of
 that feature (reproduces with no string literal involved).
 **FIXED (2026-07-15):** Root cause = `mccjit_rebuild_sym` (`src/mccjit_intent.c`) hardcoding the
