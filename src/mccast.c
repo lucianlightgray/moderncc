@@ -1253,7 +1253,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_X86_64
 	opt_promote = s1->optimize >= 2;
 #endif
-	ast_replay_env = s1->optimize >= 1;
+	ast_replay_env = s1->optimize >= 1 || s1->embed_jit;
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_verify_env = ast_env_int("MCC_AST_VERIFY", 0);
 	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");

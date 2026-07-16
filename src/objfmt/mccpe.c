@@ -1872,6 +1872,9 @@ typedef struct _mcc_coff_rel {
 #ifndef IMAGE_SCN_LNK_REMOVE
 #define IMAGE_SCN_LNK_REMOVE 0x00000800
 #endif
+#ifndef IMAGE_SCN_LNK_COMDAT
+#define IMAGE_SCN_LNK_COMDAT 0x00001000
+#endif
 
 #ifndef IMAGE_REL_AMD64_ADDR64
 #define IMAGE_REL_AMD64_ABSOLUTE 0x0000
@@ -1976,13 +1979,33 @@ ST_FUNC int coff_object_type(int fd, unsigned long file_offset) { MCC_TRACE("ent
 	return machine == (WORD)IMAGE_FILE_MACHINE;
 }
 
+/* The external symbol that identifies a COMDAT (link-once) section, so
+   duplicate copies across archive members can be deduplicated (SELECT_ANY). */
+static const char *coff_comdat_extsym(const unsigned char *symtab, int nsym,
+																			const char *strtab, unsigned long strtab_size,
+																			int secidx, char *nb) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < nsym;) { MCC_TRACE("br\n");
+		const MccCoffSym *sy = (const MccCoffSym *)(symtab + (size_t)i * COFF_SIZEOF_SYMBOL);
+		if (sy->SectionNumber == secidx && sy->StorageClass == IMAGE_SYM_CLASS_EXTERNAL) { MCC_TRACE("br\n");
+			if (sy->N.Name.Zeroes == 0)
+				{ MCC_TRACE("br\n"); return (strtab && sy->N.Name.Offset < strtab_size) ? strtab + sy->N.Name.Offset : NULL; }
+			memcpy(nb, sy->N.ShortName, 8);
+			nb[8] = 0;
+			return nb;
+		}
+		i += 1 + sy->NumberOfAuxSymbols;
+	}
+	return NULL;
+}
+
 ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
 	IMAGE_FILE_HEADER fh;
 	IMAGE_SECTION_HEADER *shdr = NULL;
 	unsigned char *symtab = NULL;
 	char *strtab = NULL;
 	int *old_to_new = NULL;
-	struct coff_sm { Section *s; unsigned long offset; } *smap = NULL;
+	struct coff_sm { Section *s; unsigned long offset; int skip; } *smap = NULL;
 	unsigned long symtab_off, strtab_off, strtab_size = 0;
 	int i, nsec, nsym, ret = -1;
 
@@ -2042,6 +2065,21 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		if ((ch & (IMAGE_SCN_LNK_INFO | IMAGE_SCN_LNK_REMOVE)) ||
 				0 == strncmp(name, ".debug", 6))
 			{ MCC_TRACE("br\n"); continue; }
+
+		/* COMDAT (link-once): if a prior member already defined this section's
+		   external symbol, this copy is a duplicate — drop it and remap its
+		   symbols to the kept copy (mirrors the ELF .gnu.linkonce path). */
+		if (ch & IMAGE_SCN_LNK_COMDAT) { MCC_TRACE("br\n");
+			char kb[9];
+			const char *key = coff_comdat_extsym(symtab, nsym, strtab, strtab_size, i + 1, kb);
+			if (key && key[0]) { MCC_TRACE("br\n");
+				int ex = find_elf_sym(symtab_section, key);
+				if (ex && ((ElfW(Sym) *)symtab_section->data)[ex].st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");
+					smap[i + 1].skip = 1;
+					continue;
+				}
+			}
+		}
 
 		sh_type = (ch & IMAGE_SCN_CNT_UNINITIALIZED_DATA) ? SHT_NOBITS : SHT_PROGBITS;
 		sh_flags = SHF_ALLOC;
@@ -2106,6 +2144,14 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 				shndx = SHN_ABS;
 				bind = (scls == IMAGE_SYM_CLASS_EXTERNAL) ? STB_GLOBAL : STB_LOCAL;
 			} else { MCC_TRACE("br\n");
+				if (secnum >= 1 && secnum <= nsec && smap[secnum].skip) { MCC_TRACE("br\n");
+					if (scls == IMAGE_SYM_CLASS_EXTERNAL) { MCC_TRACE("br\n");
+						int ex = find_elf_sym(symtab_section, name);
+						if (ex)
+							{ MCC_TRACE("br\n"); old_to_new[i] = ex; }
+					}
+					goto next_sym;
+				}
 				if (secnum < 1 || secnum > nsec || !smap[secnum].s)
 					{ MCC_TRACE("br\n"); goto next_sym; }
 				shndx = smap[secnum].s->sh_num;

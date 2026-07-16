@@ -73,13 +73,15 @@ with `MCC_JIT=0` (pure AOT) — if it passes, the fault is in the PE JIT path.
   would let i386 JIT-promote instead of skip.* (Local-only noise: `selftest-patch`
   / `selftest-sliceinstall` need elevation on a non-admin winlibs run — Windows
   UAC installer-detection on the "patch"/"install" exe names; they pass on CI.)
-- [ ] **`ckconfig.exe(.rsrc) is too large (0x200 bytes)` — mingw i686 link.**
-  The winlibs i686 `ld.exe` rejects `ckconfig.exe`'s `.rsrc` section at link
-  time. Likely a toolchain/manifest-embedding quirk of the 32-bit winlibs
-  bundle rather than an mcc defect (ckconfig is built by the host CC), but it
-  fails the mingw/i686 job's build step. Investigate on the i686 host: inspect
-  the emitted `.rsrc`/manifest and whether a resource/manifest strip or a
-  linker flag avoids it.
+- **`ckconfig.exe(.rsrc) is too large` — mingw i686 — RESOLVED (no longer reproduces).**
+  `ckconfig` is a host-CC-built config-drift linter (`tools/ckconfig.c`); the
+  `.rsrc` is mingw's default application manifest (`default-manifest.o`), a pure
+  host-toolchain artifact (a trivial `int main(){}` built by the same gcc has the
+  identical 0x1e0 `.rsrc`, under the cited 0x200). Verified: clean full rebuild of
+  `ckconfig` on the vendored winlibs i686 gcc/binutils 2.46.1 links fine; the
+  latest CI i686 job also built (5433 tests ran). It was a transient older-binutils
+  bug, fixed upstream. If it recurs on a toolchain bump, the fix is toolchain-side
+  (`-Wl,--disable-auto-manifest` / drop the default manifest), not mcc code.
 
 ### Windows embed-blob (`--embed-jit` standalone exe)
 
@@ -104,21 +106,39 @@ host-CC-produced JIT engine archive links into `--embed-jit` output on Windows.
   (only external mingw/msvcrt symbols remain — a runtime-lib issue, not COFF).
   `ctest -R jit/` = 32/32, no regressions.
 
-**Remaining for a self-recompiling `--embed-jit` exe on Windows (downstream of
-the reader, not COFF):**
-- [ ] **Embed function-selection is inert on WIN32.** `mccjit_embed_have_fns()`
-  returns false after a normal `--embed-jit` compile (even `--jit-functions=busy`),
-  so `mcc_add_jit_engine_embedded` is never called and the engine is not linked
-  (the emitted exe is byte-for-byte a non-embed build). The manifest that marks
-  functions for embedding (`mccjit_embed_manifest`) is only called inside the
-  `#if MCC_HOST_POSIX` superopt-dispatch block in `mcc.c` (~1345); wire it (and
-  the embed-stash path) for the non-POSIX host.
-- [ ] **mingw runtime deps of the embedded engine.** The engine archive is
-  compiled by the host mingw gcc, so it references mingw runtime + import symbols
-  (`__mingw_vfprintf`, `ldexpl`, `strtold`, `__chkstk_ms`, `__imp___acrt_iob_func`,
-  `__imp_InitializeSRWLock`, …) that mcc's default msvcrt PE link does not
-  provide. Embedding must also pull the needed mingw support libs
-  (`libmingwex.a` + the right import libs) so the whole-archive engine resolves.
+**`--embed-jit` on Windows now LINKS the engine end-to-end (DONE this session).**
+The exe grows from ~3 KB (non-embed) to ~1 MB with the JIT engine embedded. Landed:
+- **Embed function-selection — FIXED.** Not the POSIX-gated manifest (a red
+  herring: `mccjit_embed_manifest` is a no-op). Real cause: `--embed-jit` defaults
+  to `-O0`, which never arms the AST recorder (`ast_replay_env = optimize>=1`),
+  so the mode-6 stash never runs and nothing is stashed. Fix: `ast_replay_env`
+  also true for `embed_jit` (`src/mccast.c`). Host-independent (Linux `-O0
+  --embed-jit` was silently non-embedding too).
+- **Portable temp file — FIXED.** `mcc_add_jit_engine_embedded` hardcoded
+  `/tmp/.mccjitXXXXXX` (mkstemp), which fails on Windows. New `host_temp_file`
+  (`mcchost.c`, GetTempPath+O_BINARY on WIN32) + unlink-after-close.
+- **mingw runtime deps — FIXED.** After the whole-archive engine link,
+  `mcc_add_jit_engine_embedded` now adds the toolchain support archives alacarte
+  (`libmingwex.a`→`__mingw_*`/`ldexpl`/`strtold`, `libgcc.a`→`__chkstk_ms`,
+  `libucrt.a`/`libmsvcrt.a`→`__imp_*`/`strtoll`, `libkernel32.a`); lib dirs baked
+  from `gcc -print-*` (`MCC_EMBED_JIT_{MINGW,GCC}_LIBDIR`, CMake, WIN32 only).
+- **COFF COMDAT dedup — FIXED.** libmingwex uses link-once (COMDAT) sections
+  heavily; the COFF reader now deduplicates them (`IMAGE_SCN_LNK_COMDAT` →
+  drop-and-remap, mirroring the ELF `.gnu.linkonce` path) — was "defined twice".
+- **kernel32.def SRW exports — FIXED.** Added `InitializeSRWLock` + the SRW/InitOnce
+  family the JIT win32 shim uses (the shipped def had only the Acquire/Release subset).
+
+- [ ] **RUNTIME: the embedded engine crashes in a startup ctor (COFF reloc bug).**
+  The `--embed-jit` exe links but SIGSEGVs before `main` under both `MCC_JIT=0`
+  and `=1`. gdb: a ctor (`0x4cd…`) calls through a function pointer that lands at
+  a `.rdata` string ("memset") — i.e. a **function pointer is mis-relocated** to a
+  string literal. This is a COFF relocation-correctness bug in `coff_map_reloc`/
+  the reader, exposed only by the ~1 MB engine object (thousands of relocs); the
+  small isolated COFF tests + the 2 MB whole-archive symbol-resolution all pass.
+  Suspects: `IMAGE_REL_AMD64_ADDR32NB` (RVA, currently mapped to absolute
+  `R_X86_64_32`), the REL32_N addend bias, or a COMDAT-remap edge. Next: dump the
+  engine object's relocs for the crashing ctor's pointer table and diff mcc's
+  emitted value vs the intended target.
 
 ## qemu-amd64 emulation noise (not compiler defects)
 

@@ -137,6 +137,25 @@ ST_FUNC FILE *host_temp_c_file(char *path, int size) { MCC_TRACE("enter\n");
 #endif
 }
 
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
+
+ST_FUNC int host_temp_file(char *path, int size) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	char dir[MAX_PATH];
+	static unsigned serial;
+	if (!GetTempPathA(sizeof dir, dir))
+		{ MCC_TRACE("br\n"); return -1; }
+	snprintf(path, size, "%smcc-tmp-%u-%u.tmp", dir,
+					 (unsigned)GetCurrentProcessId(), ++serial);
+	return open(path, O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0600);
+#else
+	snprintf(path, size, "/tmp/.mcctmpXXXXXX");
+	return mkstemp(path);
+#endif
+}
+
 #ifdef MCC_HOST_AUTO_MCCDIR_W32
 ST_FUNC char *host_w32_mccdir(char *path) { MCC_TRACE("enter\n");
 	char *p;

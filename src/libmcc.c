@@ -1386,18 +1386,18 @@ extern const unsigned char mccjit_blob[];
 extern const unsigned int mccjit_blob_len;
 
 ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
-	char tmp[] = "/tmp/.mccjitXXXXXX";
+	char tmp[1024];
 	size_t off;
 	int fd, ret;
 
-	fd = mkstemp(tmp);
+	fd = host_temp_file(tmp, sizeof tmp);
 	if (fd < 0)
 		{ MCC_TRACE("br\n"); return mcc_error_noabort("embedded jit engine: cannot create temp fd"); }
-	unlink(tmp);
 	for (off = 0; off < mccjit_blob_len;) { MCC_TRACE("br\n");
 		ssize_t w = write(fd, mccjit_blob + off, mccjit_blob_len - off);
 		if (w <= 0) { MCC_TRACE("br\n");
 			close(fd);
+			unlink(tmp);
 			return mcc_error_noabort("embedded jit engine: write failed");
 		}
 		off += (size_t)w;
@@ -1405,6 +1405,24 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 	lseek(fd, 0, SEEK_SET);
 	ret = mcc_add_binary(s1, AFF_PRINT_ERROR | AFF_WHOLE_ARCHIVE,
 											 "<embedded jit engine>", fd);
+	unlink(tmp);
+#if defined MCC_HOST_WIN32 && defined MCC_EMBED_JIT_MINGW_LIBDIR
+	if (ret == 0) { MCC_TRACE("br\n");
+		int saved = s1->filetype;
+		s1->filetype &= ~AFF_WHOLE_ARCHIVE;
+		mcc_add_library_path(s1, MCC_EMBED_JIT_MINGW_LIBDIR);
+#ifdef MCC_EMBED_JIT_GCC_LIBDIR
+		mcc_add_library_path(s1, MCC_EMBED_JIT_GCC_LIBDIR);
+#endif
+		mcc_add_library(s1, "mingwex");
+		mcc_add_library(s1, "mingw32");
+		mcc_add_library(s1, "gcc");
+		mcc_add_library(s1, "ucrt");
+		mcc_add_library(s1, "msvcrt");
+		mcc_add_library(s1, "kernel32");
+		s1->filetype = saved;
+	}
+#endif
 	return ret;
 }
 #endif

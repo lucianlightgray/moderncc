@@ -2555,6 +2555,27 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         VERBATIM)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccjit_blob.c")
     target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_BLOB=1)
+    if(MCC_TARGETOS STREQUAL "WIN32")
+        # The blob is the JIT engine compiled by the host mingw gcc, so it
+        # references that toolchain's runtime (libmingwex __mingw_*/ldexpl,
+        # libgcc __chkstk_ms, ucrt/kernel32 import stubs). Bake the toolchain lib
+        # dirs (queried from the compiler) so mcc can resolve them when it links
+        # the blob into --embed-jit output.
+        execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libmingwex.a
+            OUTPUT_VARIABLE _mccjit_mingwex OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-libgcc-file-name
+            OUTPUT_VARIABLE _mccjit_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
+        get_filename_component(_mccjit_mingw_libdir "${_mccjit_mingwex}" DIRECTORY)
+        get_filename_component(_mccjit_gcc_libdir "${_mccjit_libgcc}" DIRECTORY)
+        file(TO_CMAKE_PATH "${_mccjit_mingw_libdir}" _mccjit_mingw_libdir)
+        file(TO_CMAKE_PATH "${_mccjit_gcc_libdir}" _mccjit_gcc_libdir)
+        if(_mccjit_mingw_libdir AND _mccjit_gcc_libdir)
+            target_compile_definitions(mcc PRIVATE
+                "MCC_EMBED_JIT_MINGW_LIBDIR=\"${_mccjit_mingw_libdir}\""
+                "MCC_EMBED_JIT_GCC_LIBDIR=\"${_mccjit_gcc_libdir}\"")
+            message(STATUS "mcc: embed-jit runtime libs: ${_mccjit_mingw_libdir} + ${_mccjit_gcc_libdir}")
+        endif()
+    endif()
 endif()
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
