@@ -48,6 +48,8 @@ cmake --build cmake-release -j
 | `MCC_BUILD_TESTS`       | ON                             | Register the CTest suite                                                    |
 | `MCC_CONFIG_ASM`        | ON                             | Integrated assembler                                                        |
 | `MCC_CONFIG_OPTIMIZER`  | ON                             | The `-O1`+ AST-replay optimizer                                             |
+| `MCC_EMBED_JIT`         | ON                             | Bake the runtime-JIT engine into `mcc` and the programs it builds           |
+| `MCC_CONFIG_JIT`        | ON                             | Built programs JIT by default (runtime `MCC_JIT` / `--jit` override it)     |
 | `MCC_CONFIG_LSP`        | ON                             | `--lsp` concrete-syntax-tree capture                                        |
 | `MCC_CONFIG_DIAG_RT`    | `bounds` in Debug, else `off`  | Runtime diagnostics: `off` / `backtrace` (`-bt`) / `bounds` (adds `-b`)     |
 | `MCC_ENABLE_CROSS`      | OFF                            | Also build `mcc-<arch>` cross compilers                                     |
@@ -100,6 +102,23 @@ mcc-arm64 --sysroot=/path/to/rootfs hello.c -o hello   # or mcc-arm64-musl
 qemu-aarch64 -L /path/to/rootfs ./hello
 ```
 
+### Runtime JIT
+
+`mcc -run` and the programs mcc builds recompile hot functions at runtime by
+default (build option `MCC_CONFIG_JIT`, requires `MCC_EMBED_JIT`). Control it
+per run:
+
+```sh
+MCC_JIT=0 ./a.out             # force pure AOT for a built program (env override)
+mcc --no-jit -run hello.c     # disable JIT for this -run (--jit re-enables)
+mcc --embed-jit prog.c -o prog # bake the JIT engine into standalone output
+```
+
+Precedence is `MCC_JIT` env > `--jit`/`--no-jit` flag (for `-run`) > the
+`MCC_CONFIG_JIT` build default. Tuning knobs (see `mcc -hh`):
+`--jit-functions=`, `--jit-max-duration=`, `--jit-threads=`, and `--stats[=N]`
+for a live optimizer/JIT panel.
+
 ## Embedding (`libmcc`)
 
 `include/libmcc.h` exposes a TinyCC-style C API: `mcc_new` / `mcc_delete`,
@@ -126,6 +145,8 @@ ctest --test-dir cmake-debug -j"$(nproc)"
 | Directory            | Covers                                                                                   |
 |----------------------|------------------------------------------------------------------------------------------|
 | `tests/exec/`        | Golden run-and-diff, by topic (statements, expressions, types, structs, preprocessor, …) |
+| `tests/cst/`         | Concrete-syntax-tree roundtrip / symbol-reference capture (`--lsp` substrate)             |
+| `tests/ast/`         | AST-replay / template optimizer cases (registers as `ast/<name>`)                        |
 | `tests/preprocess/`  | `-E` preprocessor-only (expansion, pasting, variadic, …)                                 |
 | `tests/diff/`        | Differential vs. a reference compiler (`full_language.c` + per-unit `parts/` wrappers)   |
 | `tests/diff3/`       | Three-way differential (mcc vs. gcc **and** clang) over the exec corpus                  |
@@ -134,6 +155,8 @@ ctest --test-dir cmake-debug -j"$(nproc)"
 | `tests/diagnostics/` | Expected errors/warnings                                                                 |
 | `tests/asm/`         | Standalone assembler / asm↔C linkage                                                     |
 | `tests/behavior/`    | Self-checking runtime drivers (FP, bounds, VLA)                                          |
+| `tests/sanitize/`    | UBSan / self-check runtime (`-fsanitize=undefined`, registers as `ubsan/<name>`)         |
+| `tests/fuzz/`        | Differential miscompile fuzzer (`fuzz/smoke`, `fuzz/matrix-0..3`, `fuzz/corpus`)         |
 | `tests/qemu/`        | Cross-target conformance (matrix below)                                                  |
 
 ## Cross-target × libc matrix (qemu-user)

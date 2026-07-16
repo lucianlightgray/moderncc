@@ -1176,7 +1176,7 @@ mcc_config_node(MCC_MCCRT_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
 mcc_config_node(MCC_EMBED_MCCRT TYPE BOOL DEFAULT ON GROUP "Build targets"
     HELP "Bake libmccrt.a into the mcc binary (self-contained; no sidecar .a needed). Forces the native mccrt to be host-CC built to break the build cycle. ELF/Mach-O only.")
 mcc_config_node(MCC_EMBED_JIT TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
-    HELP "Link the §26 Tier-B runtime-JIT engine slice + intention serializer/recompile seam (src/mccjit_embed.c) into mcc, and enable --embed-jit's real effect. Default OFF keeps the build byte-identical; ON adds the ~800KB embed.")
+    HELP "Link the §26 Tier-B runtime-JIT engine slice + intention serializer/recompile seam (src/mccjit_embed.c) into mcc, and enable --embed-jit's real effect. Default ON adds the ~800KB embed; OFF keeps the build byte-identical (no runtime JIT machinery baked into mcc or the programs it builds).")
 mcc_config_node(MCC_CONFIG_JIT TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     HELP "Default runtime-JIT activation baked into every program mcc builds (and mcc's own -run). ON = programs JIT by default; the MCC_JIT env var (0/1) overrides at runtime, and mcc's --jit/--no-jit flags override for -run. Requires MCC_EMBED_JIT for any effect.")
 mcc_config_node(MCC_CONFIG_AUTOCORRECT TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED

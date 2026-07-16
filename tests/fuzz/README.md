@@ -34,8 +34,9 @@ if the program has UB it is dropped, keeping the oracle sound.
 
 ```sh
 # from the build dir; mcc, bdir, idir as the other suites pass them
-fuzz_runner <mcc> <bdir> <idir> <work> <gcc> <clang> [opts]
+fuzz_runner <mcc> <bdir> <idir> <work> --ref <label> <path> [--ref ...] [opts]
 
+  --ref LABEL P  a reference compiler (>=2 distinct needed for majority consensus)
   --seed N       base seed          (env MCC_FUZZ_SEED, default 1)
   --count N      programs to try     (env MCC_FUZZ_COUNT, default 20)
   --gates        also sweep MCC_AST_* pass gates per program (env MCC_FUZZ_GATES)
@@ -51,8 +52,8 @@ tests/fuzz/corpus`; runs are fully seed-reproducible. The `campaign`
 subcommand automates this as a budgeted batch loop:
 
 ```sh
-fuzz_runner campaign <mcc> <bdir> <idir> <gcc> <clang> <corpus> <work> \
-    [budget_secs] [batch] [stop_k]
+fuzz_runner campaign <mcc> <bdir> <idir> <corpus> <work> \
+    [budget_secs] [batch] [stop_k] --ref <label> <path> [--ref ...]
 ```
 
 It loops the batch runner over fresh seed windows until the wall-clock budget
@@ -77,9 +78,10 @@ pass that flips it. `fuzz_runner bisect <repro.c> [preset]` extends this to
 
 ## ctest wiring
 
-Three tests, all gated on a native x86_64 host with both `gcc` and `clang`
+Six tests, all gated on a native x86_64 host with both `gcc` and `clang`
 (they SKIP otherwise, reusing `MCC_DIFF3_GCC` / `MCC_DIFF3_CLANG`):
 
 - `fuzz/smoke` — fixed seed band, `-O0..-O3`.
-- `fuzz/matrix` — fixed seed band with the `MCC_AST_*` gate sweep (the §41 matrix).
+- `fuzz/matrix-0`..`fuzz/matrix-3` — the `MCC_AST_*` gate sweep (the §41 matrix),
+  sharded into 4 seed bands (6 seeds each) that run in parallel.
 - `fuzz/corpus` — replays the graduated corpus as a regression lock.

@@ -8,6 +8,11 @@ partially-landed backlog and the long tail, retagged with the phase that consume
 (`[P0]`/`[P1]`/`[P2]`/`[P3]`/`[FLOAT]`/`[DEFER]`). Completed items are pruned; a still-open item is
 reduced to what is left. When path and library disagree, the path wins.
 
+> **Live status lives in the root `TODO.md`.** This file is the *strategic* matrix + long-tail backlog;
+> the root `TODO.md` is the operational board (current-session work, the JIT status, the known-bugs
+> ledger). For anything JIT/§26, the root board is authoritative — this file's JIT sections are
+> reconciled to it periodically, not per-commit.
+
 ---
 
 ## System matrix — CST · AST · AOT · JIT
@@ -38,7 +43,7 @@ declared but never emitted (no error-recovery CST).
 |---|---|---|
 | 20-row strategy pipeline `ast_strategies[]` | L | `ast_func_end` runs the frozen table (cycled to fixpoint under `MCC_AST_CYCLE`) |
 | Side-car indices (epoch-invalidated) | ~ | `ast_hash_*` / `ast_du_*` / `ast_memo_*` built; **4th index (predicate-vector) NOT built** |
-| Value lattice `AstVLat` | L | interval + known-bits, region-scoped per-use projection; gated `MCC_AST_VLAT` (off) |
+| Value lattice `AstVLat` | L | interval + known-bits, region-scoped per-use projection; `MCC_AST_VLAT` default-on at `-O2+` (PR-C IV-widening sub-feature still held) |
 | `combo_run` `-O4+` search | L | subset/order lattice over baseline gates; opt-in `MCC_AST_SEARCH`; fork-pool scoring |
 | Memo | ~ | in-mem `AstSearchMemo[4096]` + disk `MSZ1`; **3 memos not yet unified** (+ `ComboMemo`, out-of-proc `SoPfCkpt`) — M2/M3 |
 | Loop-nest §27 (interchange/fusion/tile) | L | `AstLoopInfo` + dep test; all gated off |
@@ -47,8 +52,10 @@ declared but never emitted (no error-recovery CST).
 
 **Coverage:** replay on `-O1+`; register-promote is **x86_64-only** (`opt_promote`); validation = the M8
 7-gate bar. **Held** (default-off pending soak/backend): `DIVMAGIC` (x86_64 self-host mul-high miscompile),
-`ABS` (needs cmov), `COLOR` (fix landed, soaking), `REASSOC` (order-non-confluent), `VLAT` (queued; PR-C
-IV-widening held), §27 passes, §26 JIT.
+`ABS` (needs cmov), `REASSOC` (order-non-confluent), `VLAT` PR-C IV-widening only (parent default-on),
+§27 passes. (`COLOR` and the VLAT parent are now default-on at `-O2+` — the P0 batch flip; see the gating
+ledger.) §26 runtime JIT: `MCC_AST_JIT` gate still off, but the engine now ships default-on via
+`MCC_EMBED_JIT`/`MCC_CONFIG_JIT` (see top-level `TODO.md`).
 
 ### AOT — codegen backend · `src/mccgen.c` (12955 L) + `src/arch/*` + `src/objfmt/*`
 
@@ -144,7 +151,10 @@ Defaults set in `ast_configure()` (`mccast.c:1097+`). Three postures:
 
 **CST:** build `MCC_CONFIG_LSP` (default ON) + runtime `--lsp` (opt-in) + `MCC_CST_*` env probes (all off,
 result discarded). No gate bit.
-**JIT build:** `MCC_EMBED_JIT` (default OFF); runtime `MCC_AST_JIT` (off), `MCC_AST_JIT_DISPATCH` modes 1–6.
+**JIT build:** `MCC_EMBED_JIT` (default **ON**) bakes the engine; `MCC_CONFIG_JIT` (default ON) → `MCC_JIT_DEFAULT`
+makes built programs JIT-on by default. Runtime activation precedence: `MCC_JIT` env (0/1) > `--jit`/`--no-jit`
+flag (for `-run`) > `MCC_CONFIG_JIT` build default. The AST-level `MCC_AST_JIT` gate (off) + `MCC_AST_JIT_DISPATCH`
+modes 1–6 remain the internal compile-time seam. See top-level `TODO.md` for the live JIT status board.
 
 ## Coverage ledger — arch × capability
 
@@ -483,10 +493,10 @@ code, only golden churn. Also shakes out the search vocabulary before P1..P3.
   - `MCC_AST_ABS` — held on a perf judgment: its branchless bit-trick (`(x^(x>>31))-(x>>31)`) vs a
     well-predicted branch is a genuine tradeoff, and gcc's chosen form is `neg;cmovs` (cmov), which mcc lacks.
     Revisit when the cmov backend lands — **the 4B backend-parity session** (cmov/csel emission).
-- [ ] **Next default-on batch (campaign endgame)** — after broad exposure/soak, flip the opt-in gates that
-  already cleared the full bar: `MCC_AST_NARROW_ELIM`, `MCC_AST_VLAT`, `MCC_AST_ARGFWD`, `MCC_AST_SETHI_NARY`,
-  `MCC_AST_SPILL_SHARE`, `MCC_AST_INLINE_PASS`, `MCC_AST_CYCLE`, and `MCC_AST_COLOR` (its self-host miscompile
-  is fixed, 556de5c2, but it needs a post-fix soak). DIVMAGIC/ABS stay held.
+- [x] **Next default-on batch (campaign endgame)** — ✅ **DONE** (see "P0 ready-batch flip" above): the 8 cleared
+  gates (`NARROW_ELIM`, `VLAT`, `ARGFWD`, `SETHI_NARY`, `SPILL_SHARE`, `INLINE_PASS`, `CYCLE`, `COLOR`) are now
+  default-on at `-O2+` (`ast_configure`, each `ast_env_gate("MCC_AST_*", s1->optimize >= 2)`). `COLOR`'s self-host
+  miscompile fix (556de5c2) has soaked. Only `DIVMAGIC`/`ABS` stay held (step 18 / 4B).
 - Not in P0: the inline/promote value axes — they want emit-size scoring (needs §22 scratch-`Section`
   isolation) **and the emit-time value-axis framework is currently unsound** (both inline and promote axes
   fail 4/296 and 3–12/296 on the corpus — see the §22 promotion-axis item). They stay `[FLOAT]`, blocked.
@@ -796,16 +806,14 @@ specialized to an observed context, keyed by a hash of that context; the cache m
 variant`, and the dispatcher **deopts to the AOT baseline on guard-fail / key-miss**.
 
 **Global gate `MCC_AST_JIT` (default off)** until the full validation bar passes, then a P0-style flip. Build
-gate `MCC_EMBED_JIT` (default ON) adds the ~800 KB embed (still forced OFF on WIN32, see below). **The
-runtime dispatch/stub tail is hand-emitted machine bytes (D7) written for the **SysV AMD64 ABI**, validated
-on Linux/x86 CI only — not the arm64-macOS dev host, and NOT the Windows x64 ABI; the recompile engine
-underneath is cross-arch. Supported signatures: 1–6 GP int/ptr args, non-FP/non-struct return.** The SysV
-hardcoding is exactly what blocks the Windows ungate: the OS primitives are ported (`src/mccjit_win32.h`,
-24/31 selftests green) but the counter/KGC/FP/mixed stubs push rdi/rsi/… and skip the 32-byte shadow space,
-so FP/mixed/profiled paths segfault under rcx/rdx/r8/r9 — see root `TODO.md` "Windows JIT-embed port".
-**2B (scheduled after the x86_64 tails close):** give the mode-6 slot / KGC stub / trampoline / counter an
-arm64 emission path so §26 validates on the dev host — reinterpreting D7 as "x86_64-first," not "only." This
-is the prerequisite for a meaningful cross-arch 7A hard-gate and for any JIT default-on flip.
+gate `MCC_EMBED_JIT` (default ON) adds the ~800 KB embed. **The runtime dispatch/stub tail is hand-emitted
+machine bytes (D7).** The original SysV-AMD64-only tail has since been ported: **Windows is DONE** (Win64-ABI
+stubs, OS-primitive shim `src/mccjit_win32.h`, `-run`/`--embed-jit` PE pipeline; `ctest -R jit/` 32/32 on the
+mingw host — only mixed-sig stubs defer to AOT), and the **arm64 2B port is DONE** (mode-6 slot + all four
+data-path stubs validated under qemu-aarch64, far-call veneer landed). Supported signatures: 1–6 GP int/ptr
+args, non-FP/non-struct return. See root `TODO.md` ("Windows JIT-embed port", arm64 backlog) for the live
+status. Remaining open: the standalone `--embed-jit` blob on Windows (mcc's ELF-only linker can't consume a
+PE/COFF engine archive) and the JIT default-on validation-bar flip for `MCC_AST_JIT`.
 
 **Architecture — the JIT is mostly Strategy objects, not a separate subsystem.** The compile-time pieces are
 (optionally) new rows in the same `ast_strategies[]` table the search consumes; only a thin runtime remains.

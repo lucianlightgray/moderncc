@@ -18,12 +18,45 @@ picked up cold. Mark a slice with exactly one of:
 - **DONE / FIXED / RESOLVED / AUDITED** — landed and validated; keep the
   validation note (what was run, what passed) with it.
 
-## Documentation validation & refresh — 🚧 IN PROGRESS (2026-07-16)
+## Documentation validation & refresh — DONE (2026-07-16)
 
-Auditing all git-tracked docs against current `src/`/CMake/CLI state, updating stale text,
-and filing TODO items for gaps. Scope: `README.md`, `docs/TODO.md`, `tests/fuzz/{README,NOTES}.md`,
-`tests/diff/parts/README.md`, `tests/qemu/{docker/README,apple-libc/PROVENANCE}.md`. Findings +
-new gap items land under "## Documentation gaps" below.
+Audited every git-tracked doc against current `src/`/CMake/CLI state (6-way parallel validation:
+README CLI, README build/CMake, README libmcc API, README testing, docs/TODO backlog, tests READMEs).
+**No documented claim was found WRONG** — README's flag/feature/API/CMake/label tables are all accurate.
+The findings were omissions and drift; all concrete fixes below landed this session.
+
+Fixed:
+- `README.md`: added `MCC_EMBED_JIT`/`MCC_CONFIG_JIT` (both default-ON) to the CMake options table;
+  added `tests/{cst,ast,sanitize,fuzz}/` to the test-directory table; added a "Runtime JIT" section
+  documenting `MCC_JIT` env / `--jit`/`--no-jit` / `--embed-jit` / `--jit-*` / `--stats` (previously
+  only in `-hh`, absent from README).
+- `CMakeLists.txt`: `MCC_EMBED_JIT` help string said "Default OFF … byte-identical" while the default is
+  ON — corrected.
+- `docs/TODO.md`: purged pre-JIT-unification staleness — VLAT/COLOR mislabeled "held/off" (both default-on
+  at `-O2+`); `MCC_EMBED_JIT (default OFF)` → ON; the "Next default-on batch" item duped the DONE P0 flip
+  (marked done); the §26 milestone still said Windows JIT forced-off / 24-31 selftests / arm64 2B pending
+  (all now DONE) → rewritten; added the JIT runtime-activation layer to the gating ledger; added a
+  cross-reference header naming root `TODO.md` as the live status source.
+- `tests/fuzz/README.md`: runner + campaign signatures were stale (gcc/clang are now `--ref <label> <path>`,
+  not positional); the matrix test is sharded `fuzz/matrix-0..3` (6 tests, not 3) — both fixed.
+- `tests/qemu/docker/README.md`: dropped the `JOBS` env row (honored nowhere; parallelism is `host_nproc()`).
+- `tests/qemu/apple-libc/PROVENANCE.md`: `run_macho_apple_libc.cmake` doesn't exist — the test is driven by
+  `mccharness machoapplelibc`; corrected.
+
+Validated clean (no change needed): `include/libmcc.h` (every README-named symbol present), README's
+option/label/qemu-grid/repo-layout tables, `tests/fuzz/NOTES.md`, `tests/fuzz/corpus/README.md`,
+`tests/diff/parts/README.md`.
+
+## Documentation gaps (open)
+
+- **docs/TODO.md full reconciliation.** Only the head (System matrix / gating ledger / strategic path) and the
+  JIT/§26 sections were reconciled this session; the 1554-line reference-library tail below §26 was only
+  spot-checked and may carry more pre-unification staleness. A full line-by-line pass against `src/` is
+  deferred (low urgency — it's an internal strategic doc, not user-facing).
+- **Missing `docs/JIT-PLAN.md`.** Memory [[mcc-jit-runtime-plan]] points to `docs/JIT-PLAN.md` (the 8-milestone
+  runtime-JIT plan) but no such file is tracked in the repo. Either restore it or update the memory pointer.
+- **Stale prebuilt binary (not a doc bug).** `cmake-release/mcc` (Jul 14) predates `--jit`/`--no-jit` and
+  rejects them; rebuild before using it to sanity-check documented JIT flags.
 
 ## JIT trigger refactor: `--jit` / runtime `MCC_JIT` / CMake `MCC_CONFIG_JIT` (WIP)
 

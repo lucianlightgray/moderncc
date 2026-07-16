@@ -76,7 +76,6 @@ docker run --rm -v "$PWD":/work -v "$PWD/vendor:/vendor" -v "$PWD/dist:/dist" \
 | `PRESET` | `qemu`                           | CMake preset (`qemu`, `qemu-<arch>`) |
 | `ARCHS`  | *(preset)*                       | override architectures to exercise |
 | `LIBCS`  | *(preset: `glibc;musl`)*         | override C libraries to exercise |
-| `JOBS`   | `$(nproc)`                       | build parallelism                |
 
 First run downloads ~250 MB per cell into `vendor/gentoo-stage3-*`; subsequent
 runs (and your host) reuse them through the `/vendor` mount.
