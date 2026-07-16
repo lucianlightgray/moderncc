@@ -13452,11 +13452,11 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						slot_sym =
 							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
 						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADR_GOT_PAGE, 0);
-						gen_le32(0x90000010); /* adrp x16, slot@GOTPAGE */
+						o(0x90000010); /* adrp x16, slot@GOTPAGE */
 						greloca(cur_text_section, slot_sym, ind, R_AARCH64_LD64_GOT_LO12_NC, 0);
-						gen_le32(0xf9400210); /* ldr x16,[x16,#:got_lo12:slot] -> x16 = &slot */
-						gen_le32(0xf9400210); /* ldr x16,[x16] -> x16 = *slot */
-						gen_le32(0xd61f0200); /* br x16 */
+						o(0xf9400210); /* ldr x16,[x16,#:got_lo12:slot] -> x16 = &slot */
+						o(0xf9400210); /* ldr x16,[x16] -> x16 = *slot */
+						o(0xd61f0200); /* br x16 */
 						body_sym = get_sym_ref(&char_pointer_type, cur_text_section,
 																	 aot_base + 16, MCC_PTR_SIZE);
 						greloca(data_section, body_sym, slot_off, R_AARCH64_ABS64, 0);
