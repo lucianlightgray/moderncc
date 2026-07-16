@@ -1167,6 +1167,7 @@ enum mcc_token {
 #define TOK_UIDENT TOK_DEFINE
 
 ST_DATA struct MCCState *mcc_state;
+ST_DATA int mccjit_error_quiet;
 
 #include "mcclog.h"
 

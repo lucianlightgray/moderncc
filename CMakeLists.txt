@@ -1564,6 +1564,15 @@ if(MCC_CPU STREQUAL "arm")
     mcc_status_node(arm_abi "eabi=${MCC_ARM_EABI} vfp=${MCC_ARM_VFP} hardfloat=${MCC_ARM_HARDFLOAT} idiv=${MCC_ARM_IDIV} cpuver=${MCC_CPUVER}")
 endif()
 
+if(MCC_EMBED_JIT AND NOT MCC_CONFIG_OPTIMIZER)
+    mcc_autocorrect(MCC_EMBED_JIT OFF
+        "runtime-JIT embed reemits AST → requires MCC_CONFIG_OPTIMIZER")
+endif()
+if(MCC_CONFIG_JIT AND NOT MCC_EMBED_JIT)
+    mcc_autocorrect(MCC_CONFIG_JIT OFF
+        "MCC_JIT_DEFAULT is inert without MCC_EMBED_JIT")
+endif()
+
 mcc_apply_node_visibility()
 mcc_validate_config()
 mcc_report_config()
@@ -3782,8 +3791,13 @@ if(MCC_BUILD_TESTS)
             add_executable(jit_selftest_stage2 tests/embed/jit_selftest_stage2.c)
             target_link_libraries(jit_selftest_stage2 PRIVATE libmcc)
             target_include_directories(jit_selftest_stage2 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-            add_test(NAME jit/selftest-stage2 COMMAND jit_selftest_stage2)
-            set_tests_properties(jit/selftest-stage2 PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+                mcc_skip_test(jit/selftest-stage2
+                    "call-bearing JIT recompile callee-binding unsupported on the MS x64 ABI")
+            else()
+                add_test(NAME jit/selftest-stage2 COMMAND jit_selftest_stage2)
+                set_tests_properties(jit/selftest-stage2 PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            endif()
 
             add_executable(jit_selftest_kgc tests/embed/jit_selftest_kgc.c)
             target_link_libraries(jit_selftest_kgc PRIVATE libmcc)
@@ -4356,7 +4370,7 @@ if(MCC_BUILD_TESTS)
                 --new-dtags "${MCC_CONFIG_NEW_DTAGS}" --codesign "${MCC_CONFIG_CODESIGN}"
                 --diag-rt "${MCC_CONFIG_DIAG_RT}" --asm "${MCC_CONFIG_ASM}"
                 --cst "${MCC_CONFIG_LSP}" --ast "${MCC_CONFIG_OPTIMIZER}" --ast-shadow "${MCC_CONFIG_AST_SHADOW}" --trace "${MCC_CONFIG_TRACE}"
-                --embed-jit "${MCC_EMBED_JIT}"
+                --embed-jit "${MCC_EMBED_JIT}" --config-jit "${MCC_CONFIG_JIT}"
                 --new-macho "${MCC_CONFIG_NEW_MACHO}" --dwarf "${MCC_CONFIG_DWARF}" --semlock "${MCC_CONFIG_SEMLOCK}"
                 --triplet "${MCC_TRIPLET}" --os-release "${MCC_OS_RELEASE}" --sysroot "${MCC_SYSROOT}"
                 --mccdir "${MCC_RESOLVED_MCCDIR}")

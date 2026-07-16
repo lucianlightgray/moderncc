@@ -548,6 +548,7 @@ static int cmd_emit_defines(int argc, char **argv) {
 		EMIT("MCC_CONFIG_OPTIMIZER=1");
 	if (truthy(fopt(argc, argv, "--embed-jit", "")))
 		EMIT("MCC_EMBED_JIT=1");
+	EMIT("MCC_JIT_DEFAULT=%d", truthy(fopt(argc, argv, "--config-jit", "1")) ? 1 : 0);
 	if (truthy(fopt(argc, argv, "--ast-shadow", "")))
 		EMIT("MCC_CONFIG_AST_SHADOW=1");
 	if (truthy(fopt(argc, argv, "--trace", "")))

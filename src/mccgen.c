@@ -10203,7 +10203,12 @@ static void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); size = ret_nregs * regsize; }
 				if (ret_align > align)
 					{ MCC_TRACE("br\n"); align = ret_align; }
+#if MCC_CONFIG_OPTIMIZER
 				addr = ast_alloc_loc(size, align);
+#else
+				loc = (loc - size) & -align;
+				addr = loc;
+#endif
 				type = *func_type;
 				vset(&type, VT_LOCAL | VT_LVAL, addr);
 				vswap();

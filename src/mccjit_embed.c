@@ -238,8 +238,10 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	}
 	mcc_exit_state(js);
 
+	mccjit_error_quiet = 1;
 	if (sym && mcc_relocate(js) == 0)
 		{ MCC_TRACE("br\n"); entry = mcc_get_symbol(js, it.fn_name); }
+	mccjit_error_quiet = 0;
 	mccjit_internal_compile = 0;
 
 	if (entry)
@@ -1223,6 +1225,23 @@ int mccjit_embed_have_fns(void) { MCC_TRACE("enter\n");
 	return mccjit_embed_fns != NULL;
 }
 
+void mccjit_embed_reset(void) { MCC_TRACE("enter\n");
+	MccjitEmbedFn *e, *nx;
+	int i;
+	for (e = mccjit_embed_fns; e; e = nx) { MCC_TRACE("br\n");
+		nx = e->next;
+		mcc_free(e->name);
+		mcc_free(e->blob);
+		mcc_free(e);
+	}
+	mccjit_embed_fns = NULL;
+	for (i = 0; i < mccjit_export_n; i++)
+		{ MCC_TRACE("br\n"); mcc_free(mccjit_export_names[i]); }
+	mcc_free(mccjit_export_names);
+	mccjit_export_names = NULL;
+	mccjit_export_n = mccjit_export_cap = 0;
+}
+
 void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 	MccjitEmbedFn *e, *nx;
 	CString cs;
@@ -1301,21 +1320,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 								"mccjit_boot_swap(__mccjit_registry[__i].slot, __mccjit_registry[__i].blob, __mccjit_registry[__i].len);\n}\n"); }
 	mcc_compile_string(s1, cs.data);
 	cstr_free(&cs);
-	for (e = mccjit_embed_fns; e; e = nx) { MCC_TRACE("br\n");
-		nx = e->next;
-		mcc_free(e->name);
-		mcc_free(e->blob);
-		mcc_free(e);
-	}
-	mccjit_embed_fns = NULL;
-	{
-		int i;
-		for (i = 0; i < mccjit_export_n; i++)
-			{ MCC_TRACE("br\n"); mcc_free(mccjit_export_names[i]); }
-		mcc_free(mccjit_export_names);
-		mccjit_export_names = NULL;
-		mccjit_export_n = mccjit_export_cap = 0;
-	}
+	mccjit_embed_reset();
 }
 
 PUB_FUNC int mccjit_selftest(void) { MCC_TRACE("enter\n");
@@ -4358,19 +4363,21 @@ PUB_FUNC int mccjit_selftest_poison(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static volatile long mccjit_bench_barrier;
+
 static long mccjit_bench_fast_fn(long x) { MCC_TRACE("enter\n");
-	long s = 0;
+	long s = x;
 	int i;
 	for (i = 0; i < 30; i++)
-		{ MCC_TRACE("br\n"); s += (x ^ (long)i) * 2654435761L; }
+		{ MCC_TRACE("br\n"); s = s * 2654435761L + mccjit_bench_barrier; }
 	return s;
 }
 
 static long mccjit_bench_slow_fn(long x) { MCC_TRACE("enter\n");
-	long s = 0;
+	long s = x;
 	int i;
 	for (i = 0; i < 900; i++)
-		{ MCC_TRACE("br\n"); s += (x ^ (long)i) * 2654435761L; }
+		{ MCC_TRACE("br\n"); s = s * 2654435761L + mccjit_bench_barrier; }
 	return s;
 }
 
@@ -6089,8 +6096,10 @@ static void *mccjit_reemit_arena_blob(const void *buf, size_t len, AstArena *are
 		ast_fconst_reuse_disable(0);
 	}
 	mcc_exit_state(js);
+	mccjit_error_quiet = 1;
 	if (sym && mcc_relocate(js) == 0)
 		{ MCC_TRACE("br\n"); entry = mcc_get_symbol(js, it.fn_name); }
+	mccjit_error_quiet = 0;
 	mccjit_internal_compile = 0;
 	mccjit_intent_release(&it);
 	if (entry)

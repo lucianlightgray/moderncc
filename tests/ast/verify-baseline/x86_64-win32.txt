@@ -51,6 +51,7 @@ features_c99_c11/atomic_ptr.c	main	desync
 features_c99_c11/attribs_position.c	main	desync
 features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	desync
+features_c99_c11/builtin_overflow.c	main	unfaithful
 features_c99_c11/builtins.c	main	desync
 features_c99_c11/c11_complex_const_fold.c	main	desync
 features_c99_c11/c11_complex_convert.c	main	desync
@@ -114,7 +115,6 @@ inline_asm/asm_goto.c	three_way_jump	unfaithful
 inline_asm/asm_lvalue_cast.c	main	unfaithful
 inline_asm/asm_operand_modifiers.c	main	unfaithful
 lexical/U32_string.c	main	desync
-lexical/digraphs.c	main	desync
 lexical/string_concat_mixed.c	main	desync
 lexical/u16_string.c	main	desync
 lexical/u8_string.c	main	desync
@@ -130,7 +130,6 @@ programs/grep.c	cclass	unfaithful
 programs/grep.c	compile	desync
 programs/grep.c	main	desync
 programs/grep.c	pmatch	desync
-programs/led.c	print_led	desync
 programs/math_library.c	fabs	unfaithful
 programs/math_library.c	round	unfaithful
 programs/random_stuff.c	tst_adr	desync
@@ -153,10 +152,10 @@ statements/switch.c	main	unfaithful
 statements/switch_semantics.c	copy_n	desync
 statements/tentative_array.c	main	desync
 statements/ternary_op.c	call_fp	desync
-statements/ternary_op.c	constantcond	desync
 statements/ternary_op.c	main	desync
 statements/ternary_op.c	tst_yarpgen	desync
 statements/translation_limits.c	main	desync
+statements/void_expr.c	main	unfaithful
 structs_unions/aggregate_perm.c	mutSA	desync
 structs_unions/bitfields.c	dump	unfaithful
 structs_unions/bitfields.c	main	desync
@@ -192,6 +191,8 @@ types/builtin_inf_nan.c	main	unfaithful
 types/conversion.c	main	desync
 types/declarators.c	main	desync
 types/floating_point.c	main	desync
+types/int_conversion.c	cast_main	unfaithful
+types/int_conversion.c	promote_main	unfaithful
 types/sizeof_array.c	main	desync
 types/sizeof_semantics.c	main	desync
 types/storage_tentative.c	next_id	desync

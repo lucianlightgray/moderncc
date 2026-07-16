@@ -58,6 +58,7 @@
 #include "mccstats.h"
 
 ST_DATA struct MCCState *mcc_state;
+ST_DATA int mccjit_error_quiet;
 HOST_SEM(mcc_compile_sem);
 ST_DATA void **stk_data;
 ST_DATA int nb_stk_data;
@@ -705,7 +706,9 @@ static void error1(int mode, const char *fmt, va_list ap) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); cstr_vprintf(&cs, fmt, ap); }
 	if (f && !explicit_line && !macro_ptr)
 		{ MCC_TRACE("br\n"); append_caret_context(s1, &cs, f, line, bol_adj, use_color); }
-	if (!s1->error_func) { MCC_TRACE("br\n");
+	if (mccjit_error_quiet) { MCC_TRACE("br\n");
+		;
+	} else if (!s1->error_func) { MCC_TRACE("br\n");
 		if (s1 && s1->output_type == MCC_OUTPUT_PREPROCESS && s1->ppfp == stdout)
 			{ MCC_TRACE("br\n"); printf("\n"); }
 		fflush(stdout);

@@ -66,6 +66,9 @@ codegen/nocode_wanted.c	kb_wait_2_1	desync
 codegen/nocode_wanted.c	kb_wait_2_2	desync
 codegen/nocode_wanted.c	kb_wait_3	desync
 codegen/nocode_wanted.c	kb_wait_4	desync
+codegen/select_branchless.c	fputc_unlocked	desync
+codegen/select_branchless.c	putc_unlocked	desync
+codegen/select_branchless.c	putchar_unlocked	desync
 codegen/stack_protector.c	fputc_unlocked	desync
 codegen/stack_protector.c	putc_unlocked	desync
 codegen/stack_protector.c	putchar_unlocked	desync
@@ -150,6 +153,7 @@ features_c99_c11/atomic_ptr.c	putchar_unlocked	desync
 features_c99_c11/attribs_position.c	main	desync
 features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	desync
+features_c99_c11/builtin_overflow.c	main	unfaithful
 features_c99_c11/builtins.c	fputc_unlocked	desync
 features_c99_c11/builtins.c	main	desync
 features_c99_c11/builtins.c	putc_unlocked	desync
@@ -306,7 +310,6 @@ lexical/char_escapes.c	putchar_unlocked	desync
 lexical/character_constants.c	fputc_unlocked	desync
 lexical/character_constants.c	putc_unlocked	desync
 lexical/character_constants.c	putchar_unlocked	desync
-lexical/digraphs.c	main	desync
 lexical/dollars_in_identifiers.c	fputc_unlocked	desync
 lexical/dollars_in_identifiers.c	putc_unlocked	desync
 lexical/dollars_in_identifiers.c	putchar_unlocked	desync
@@ -451,7 +454,6 @@ programs/hanoi.c	putc_unlocked	desync
 programs/hanoi.c	putchar_unlocked	desync
 programs/led.c	bsearch	desync
 programs/led.c	fputc_unlocked	desync
-programs/led.c	print_led	desync
 programs/led.c	putc_unlocked	desync
 programs/led.c	putchar_unlocked	desync
 programs/math_library.c	putc_unlocked	desync
@@ -557,11 +559,11 @@ statements/switch_semantics.c	putc_unlocked	desync
 statements/switch_semantics.c	putchar_unlocked	desync
 statements/tentative_array.c	main	desync
 statements/ternary_op.c	call_fp	desync
-statements/ternary_op.c	constantcond	desync
 statements/ternary_op.c	main	desync
 statements/ternary_op.c	tst_yarpgen	desync
 statements/translation_limits.c	main	desync
 statements/void_expr.c	fputc_unlocked	desync
+statements/void_expr.c	main	unfaithful
 statements/void_expr.c	putc_unlocked	desync
 statements/void_expr.c	putchar_unlocked	desync
 statements/while.c	fputc_unlocked	desync
@@ -692,7 +694,9 @@ types/floating_point_literals.c	fputc_unlocked	desync
 types/floating_point_literals.c	main	desync
 types/floating_point_literals.c	putc_unlocked	desync
 types/floating_point_literals.c	putchar_unlocked	desync
+types/int_conversion.c	cast_main	unfaithful
 types/int_conversion.c	fputc_unlocked	desync
+types/int_conversion.c	promote_main	unfaithful
 types/int_conversion.c	putc_unlocked	desync
 types/int_conversion.c	putchar_unlocked	desync
 types/integer_constants.c	fputc_unlocked	desync

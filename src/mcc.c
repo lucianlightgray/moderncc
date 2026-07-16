@@ -1257,6 +1257,12 @@ int main(int argc, char **argv) { MCC_TRACE("enter\n");
 redo:
 	argc = argc0, argv = argv0;
 	s = s1 = mcc_new();
+#ifdef MCC_EMBED_JIT
+	{
+		extern void mccjit_embed_reset(void);
+		mccjit_embed_reset();
+	}
+#endif
 	opt = mcc_parse_args(s, &argc, &argv);
 
 	if (n == 0) { MCC_TRACE("br\n");
