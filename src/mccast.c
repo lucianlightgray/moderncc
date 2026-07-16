@@ -12380,37 +12380,26 @@ static int ast_scratch_measure_exit(AstScratchSave *sv) { MCC_TRACE("enter\n");
 
 /*
  * Emitted-byte-size scoring (MCC_AST_SEARCH_EMITSIZE). Replay the fully-folded
- * candidate into the live text section — the same in-place emit-and-rewind the
- * inline on/off trial (AST_PF_EMIT) already does — with inline and promotion off
- * (so the promotion save/restore desync never arises), read the byte length, then
- * rewind every emit cursor. Correctness is unaffected: this only produces a score;
- * the winning gate config is emitted by the normal pipeline on the untouched
- * captured tree, and a mis-emit here reverts through ast_func_end's faithful
- * revert. Used only in the run-to-completion path below (the fair-interleave tick
+ * candidate into the private scratch Section (ast_scratch_enter/measure_exit,
+ * always — never the live text section, whose partial-rewind was an unbounded
+ * state-leak surface: measuring in-place had to hand-restore every shared codegen
+ * cursor and any miss corrupted the subsequent real emit), with promotion off (so
+ * the promotion save/restore desync never arises) and inline gated on
+ * ast_search_want_inline only under EMITISO, read the byte length, then discard
+ * the scratch. Correctness is unaffected: this only produces a score; the winning
+ * gate config is emitted by the normal pipeline on the untouched captured tree.
+ * Used only in the run-to-completion path below (the fair-interleave tick
  * scheduler thrashes the shared ltemp/fconst emit state across candidates, so a
  * candidate is only emit-measurable right after it folds to completion). */
 static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MCC_TRACE("enter\n");
 	AstScratchSave scr;
 	Section *rsec;
 	AstArena *save_cur = ast_cur;
-	int save_ind, save_rsym, save_loc, save_anon;
-	addr_t save_reloc, save_doff, save_roff;
+	addr_t save_doff, save_roff;
 	addr_t ddelta, rodelta;
 	int size;
-	Sym *save_ls = local_stack;
-	SValue *save_vtop = vtop;
-	uint64_t save_pinned = ast_pinned_regs;
-	int save_promo_n = ast_promo_n, save_promo_callful = ast_promo_callful;
-	int save_promo_save_loc = ast_promo_save_loc, save_promo_total = ast_promo_total;
-	int save_graft_total = ast_graft_total, save_opt_total = ast_opt_total;
-	if (ast_search_emitiso_env)
-		{ MCC_TRACE("br\n"); ast_scratch_enter(&scr); }
+	ast_scratch_enter(&scr);
 	rsec = cur_text_section->reloc;
-	save_ind = ind;
-	save_rsym = rsym;
-	save_loc = loc;
-	save_anon = anon_sym;
-	save_reloc = rsec ? rsec->data_offset : 0;
 	save_doff = data_section ? data_section->data_offset : 0;
 	save_roff = rodata_section ? rodata_section->data_offset : 0;
 	ind = ast_body_ind_sv;
@@ -12443,25 +12432,7 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MC
 		{ MCC_TRACE("br\n"); MCC_TRACE("emit-size data delta text=%d data=%lld rodata=%lld\n", size,
 							(long long)ddelta, (long long)rodelta); }
 	ast_cur = save_cur;
-	if (ast_search_emitiso_env) { MCC_TRACE("br\n");
-		size = ast_scratch_measure_exit(&scr);
-	} else { MCC_TRACE("br\n");
-		sym_pop(&local_stack, save_ls, 0);
-		ind = save_ind;
-		rsym = save_rsym;
-		if (rsec)
-			{ MCC_TRACE("br\n"); rsec->data_offset = save_reloc; }
-		loc = save_loc;
-		anon_sym = save_anon;
-		vtop = save_vtop;
-		ast_pinned_regs = save_pinned;
-		ast_promo_n = save_promo_n;
-		ast_promo_callful = save_promo_callful;
-		ast_promo_save_loc = save_promo_save_loc;
-		ast_promo_total = save_promo_total;
-		ast_graft_total = save_graft_total;
-		ast_opt_total = save_opt_total;
-	}
+	size = ast_scratch_measure_exit(&scr);
 	return size;
 }
 
