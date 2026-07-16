@@ -12397,6 +12397,12 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MC
 	addr_t save_reloc, save_doff, save_roff;
 	addr_t ddelta, rodelta;
 	int size;
+	Sym *save_ls = local_stack;
+	SValue *save_vtop = vtop;
+	uint64_t save_pinned = ast_pinned_regs;
+	int save_promo_n = ast_promo_n, save_promo_callful = ast_promo_callful;
+	int save_promo_save_loc = ast_promo_save_loc, save_promo_total = ast_promo_total;
+	int save_graft_total = ast_graft_total, save_opt_total = ast_opt_total;
 	if (ast_search_emitiso_env)
 		{ MCC_TRACE("br\n"); ast_scratch_enter(&scr); }
 	rsec = cur_text_section->reloc;
@@ -12440,12 +12446,21 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MC
 	if (ast_search_emitiso_env) { MCC_TRACE("br\n");
 		size = ast_scratch_measure_exit(&scr);
 	} else { MCC_TRACE("br\n");
+		sym_pop(&local_stack, save_ls, 0);
 		ind = save_ind;
 		rsym = save_rsym;
 		if (rsec)
 			{ MCC_TRACE("br\n"); rsec->data_offset = save_reloc; }
 		loc = save_loc;
 		anon_sym = save_anon;
+		vtop = save_vtop;
+		ast_pinned_regs = save_pinned;
+		ast_promo_n = save_promo_n;
+		ast_promo_callful = save_promo_callful;
+		ast_promo_save_loc = save_promo_save_loc;
+		ast_promo_total = save_promo_total;
+		ast_graft_total = save_graft_total;
+		ast_opt_total = save_opt_total;
 	}
 	return size;
 }
