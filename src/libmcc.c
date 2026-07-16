@@ -2345,6 +2345,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				{ MCC_TRACE("br\n"); mcc_warning("unsupported language standard '%s'", disp); }
 			if (strict_iso)
 				{ MCC_TRACE("br\n"); s->trigraphs = !(s->cversion >= 202311); }
+			s->std_strict_ansi = (unsigned char)strict_iso;
 		} break;
 		case MCC_OPTION_shared:
 			x = MCC_OUTPUT_DLL;

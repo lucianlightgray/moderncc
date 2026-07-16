@@ -1224,9 +1224,17 @@ produces non-running code on PE — pre-existing in #846), mingw/i686 jit-selfte
 - [ ] **Root-cause the string-literal `L.N`/anon-symbol layout sensitivity** — 3 exec files (atomic_aggregate,
   c11_freestanding_headers, c11_threads) shift internal `L.N`/anon-symbol numbering under ANY source change;
   currently excluded from the object-diff oracle.
-- [ ] **Add a strict-c89-vs-gnu89 discriminator** — `gnu_ext` is a hardcoded `1` in `mcc_new` (`libmcc.c`),
-  never cleared, so pedantic diags fire under both `-std=c89` and `-std=gnu89` with `-pedantic-errors`; a true
-  split needs a new state field.
+- [~] **Add a strict-c89-vs-gnu89 discriminator** — new `MCCState.std_strict_ansi` field (`mcc.h`), set from
+  the `-std` parser's `strict_iso` (`libmcc.c`: 1 for `c*`/`iso9899:`, 0 for `gnu*`/default). Wired to emit
+  **`__STRICT_ANSI__`** (`mccpp.c` `mcc_predefs`) — mcc previously never defined it; now matches gcc exactly
+  (defined under `-std=c89/c99/c11`, absent under `gnu*`/default; verified across 7 stds + new
+  `cli/strict_ansi_std_gate`). This is the header-gating lever (glibc/system headers hide GNU/POSIX decls on it).
+  **Correction to the original premise:** `gnu_ext` is NOT the right lever and `-pedantic` GNU-extension diags
+  fire under BOTH modes in gcc too (`case 1..5`, `({...})`, empty-struct all warn identically under c89/gnu89
+  `-pedantic-errors` — confirmed against gcc 15.3), so those were already correct. **Remaining sub-item:** the
+  plain `asm`/`typeof` keywords should be rejected under strict mode (gcc: `typeof x;` errors under `-std=c89`,
+  mcc still accepts) — needs gating `TOK_ASM1`/`TOK_TYPEOF1` recognition on `!std_strict_ansi` in `mccgen.c`
+  (parser restructuring; the `__typeof__`/`__asm__` forms stay unconditional). Deferred: churn risk.
 - [ ] **Research the §28 rewrite-rule IR** — match→rewrite templates over the captured arena that the §22/§24
   search composes into compound transforms, scored by §25, cached by §21, each rule differential-tested against
   the faithful replay before it may fire. (IR form? how does the search compose rules? scoring hook? cache key?

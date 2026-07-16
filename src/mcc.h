@@ -618,6 +618,7 @@ struct MCCState {
 	unsigned char reverse_funcargs;
 	unsigned char macro_eval;
 	unsigned char gnu89_inline;
+	unsigned char std_strict_ansi;
 	unsigned char unwind_tables;
 	unsigned char short_enums;
 	unsigned char nobuiltin;

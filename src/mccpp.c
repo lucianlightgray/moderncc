@@ -4194,6 +4194,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_LONG__ %d\n", LONG_SIZE);
 	if (!is_asm) { MCC_TRACE("br\n");
 		putdef(cs, "__STDC__");
+		if (s1->std_strict_ansi)
+			{ MCC_TRACE("br\n"); putdef(cs, "__STRICT_ANSI__"); }
 		cstr_printf(cs, "#define __STDC_HOSTED__ %d\n",
 								(s1->nostdlib || s1->freestanding) ? 0 : 1);
 		if (s1->cversion)

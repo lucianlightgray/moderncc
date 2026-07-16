@@ -325,6 +325,13 @@ static const cli_case_t cli_cases[] = {
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},
 
+		{"strict_ansi_std_gate", "",
+		 "printf '\\n' > {W}/sa.c && echo "
+		 "$({MCC} -B{B} -std=c89 -E -dM {W}/sa.c | grep -cE '^#define __STRICT_ANSI__ 1$') "
+		 "$({MCC} -B{B} -std=gnu89 -E -dM {W}/sa.c | grep -cE '^#define __STRICT_ANSI__') "
+		 "$({MCC} -B{B} -E -dM {W}/sa.c | grep -cE '^#define __STRICT_ANSI__')",
+		 "1 0 0\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
