@@ -36,7 +36,10 @@ ctors on WIN32; `pe_add_runtime` calls `mccjit_embed_finalize`).
 `mccjit_make_kgc_stub_mixed` returns NULL on WIN32 — mixed int+FP signatures
 fall to the AOT baseline and `jit/selftest-mixed` skips.
 
-### Windows embed-blob (`--embed-jit` standalone exe)
+### Windows embed-blob (`--embed-jit` standalone exe) — 🚧 IN PROGRESS
+
+Implementing the COFF/PE object + archive reader in mcc's linker (native Windows
+mingw host, so build + validate happen here).
 
 mcc's linker reads only ELF and `!<arch>` archives, so the JIT engine archive
 (`libmcc_jitengine.a` — a COFF/PE archive from the host CC on Windows) does not
