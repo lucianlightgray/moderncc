@@ -78,7 +78,10 @@ WIN32 and validated on a mingw/MSVC host.
 - [ ] **Validate on a WIN32 box** (mingw + MSVC): `ctest -R jit/` = 32/32 and a
   standalone `mcc --embed-jit hello.c` running under `MCC_JIT=1` (self-recompile).
 
-## Documentation gaps
+## Documentation gaps — 🚧 IN PROGRESS (2026-07-16)
+
+Resolving both: reconciling docs/TODO.md's reference-library tail against `src/`,
+and rebuilding the stale `cmake-release/mcc`.
 
 - **docs/TODO.md reconciliation.** The reference-library tail below §26 needs a
   line-by-line pass against `src/`; only the head (System matrix / gating ledger
