@@ -1189,17 +1189,17 @@ first real consumer.** Sequence: slice-G stitching (the tree-completeness prereq
   artifact; kernels now do volatile-barriered count-proportional work (test-only).
 - [x] `jit/selftest-stage2` (MSVC) — call-bearing callee-binding unsupported on MS x64 ABI; documented skip.
 
-**Open — arm64 / Mac (ACTIVE focus):**
-- [ ] **arm64 `-run` far-libc `R_AARCH64_(JUMP|CALL)26` failure** — native arm64 `mcc -run` emits a direct
-  CALL26 to libc (`printf`/`memcpy`/…) which is >±128MB away → `relocation failed`. Hits `exec/*` on macOS/arm64
-  (all `macos*/arm64` jobs) and now `ast/arm64` (build fixed → reached exec). CALL26 is `AUTO_GOTPLT_ENTRY`
-  (arm64-link.c) so a near PLT veneer *should* absorb the far target, but the reloc resolves directly to the
-  far symbol — the PLT stub isn't created/used for host-libc symbols in MEMORY (`-run`) output. Root-cause the
-  PLT/veneer path in `mcc_relocate_ex`/`build_got_entries` for MEMORY output on arm64. Reproduces locally
-  (`ctest -R '^exec/builtins$'` on cmake-build-debug/arm64-macOS). Was memory-noted "pre-existing, don't chase";
-  now in scope.
-- [ ] **arm64 W^X JIT-execute selftests** (`jit/selftest-{stage2,kgc,liverun,fparg}` on macOS/arm64) — fail
-  identically on pre-batch code (RWX blocked on Apple Silicon; needs the `host_runmem_alloc` dual-map path).
+**Landed — arm64 / Mac (commit `95980d3a`):**
+- [x] **arm64 `-run` far-libc `R_AARCH64_(JUMP|CALL)26` failure** — run-memory mmap lands tens of GB from libc,
+  so direct CALL26 (±128MB) to `printf`/`memcpy`/`___rt_exit`/… overflows. `build_got_entries` skips GOT/PLT
+  for MEMORY output (fine on x86_64 rel32±2GB). Added `arm64_veneer_memory_calls` (arm64-link.c): for MEMORY
+  output, redirect every CALL26/JUMP26 to an out-of-run-memory target (SHN_UNDEF via dlsym or SHN_ABS host
+  addr) to a 16-byte `.mcc.veneer` stub (`ldr x16,[pc,#8]; br x16; .quad target`) whose `.quad` carries an
+  ABS64 reloc with the resolved far address. arm64-only, MEMORY-only. Local: exec/ 297/297 (was 7 fails),
+  replay/vlat/diff/basic 593/593, jit-selftests 32/32 — all green on arm64-macOS. Also clears `ast/arm64`
+  (ELF) exec on CI.
+- [x] **arm64 W^X JIT-execute selftests** (`jit/selftest-{stage2,kgc,liverun,fparg}`) — were hitting the SAME
+  far-call issue in recompiled code; the veneer fix greens them (32/32).
 
 **Deferred — non-arm64 (out of current scope):** mingw/x86_64 `errors_and_warnings` test_func_1 (JIT recompile
 produces non-running code on PE — pre-existing in #846), mingw/i686 jit-selftests + `enum`, msvc/arm64
