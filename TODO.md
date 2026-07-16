@@ -128,22 +128,31 @@ The exe grows from ~3 KB (non-embed) to ~1 MB with the JIT engine embedded. Land
 - **kernel32.def SRW exports — FIXED.** Added `InitializeSRWLock` + the SRW/InitOnce
   family the JIT win32 shim uses (the shipped def had only the Acquire/Release subset).
 
-- 🚧 **IN PROGRESS: the embedded engine crashes at startup — a PE import (IAT) that
-  the loader never binds.** The `--embed-jit` exe links but SIGSEGVs before `main`
-  (both `MCC_JIT=0`/`=1`). Diagnosed via gdb: a `memset(buf,0,4)` call goes to the
-  import thunk `jmp *[0x4eed9c]`, but the IAT slot at `0x4eed9c` still holds the
-  by-name pointer `0x4eedac` (the "memset" `IMAGE_IMPORT_BY_NAME` string, 16 bytes
-  away) — i.e. the Windows loader **did not bind this import**, so the thunk jumps
-  into the name string. This is a **PE import-table generation** issue in mcc,
-  exposed by the engine importing hundreds of libc/mingw functions (a scale never
-  hit before, since the blob couldn't link on Windows). NOT a COFF reloc bug (the
-  reloc types check out: REL32/ADDR64 in code/data; the 5589 ADDR32NB are all in
-  `.pdata` (SEH, unexecuted) and the 4806 SECREL all in skipped `.debug`).
-  Suspects: a malformed/oversized import descriptor, or memset resolved from a
-  static archive (`libmsvcrt.a`/`libmingwex.a`) whose thunk was emitted without a
-  matching import-directory entry so the loader skips it. *Separate follow-up:*
-  ADDR32NB is currently mapped to absolute `R_X86_64_32` (wrong — it's an RVA);
-  harmless today (`.pdata`-only) but should be RVA-correct or `.pdata` skipped.
+- [ ] **RUNTIME: the embedded engine crashes at startup — mcc has no PE
+  import-LIBRARY support.** The `--embed-jit` exe links but SIGSEGVs before `main`
+  (both `MCC_JIT=0`/`=1`). Root-caused via gdb: a `memset(buf,0,4)` call goes to
+  the import thunk `jmp *[IAT]`, but the IAT slot still holds the
+  `IMAGE_IMPORT_BY_NAME` string pointer (the "memset" name, 16 bytes away) — the
+  Windows loader **never bound the import**, so the thunk jumps into the name
+  string. Deeper cause: mcc (like TinyCC) resolves DLL imports **only from `.def`
+  files** (`pe_load_def`→`pe_putimport`); it has no import-library handling. The
+  mingw import archives (`libmsvcrt.a`/`libucrt.a`/`libkernel32.a`) satisfy the
+  engine's libc refs with import members that mcc mishandles: **short-import**
+  members (`IMPORT_OBJECT_HEADER`, sig `00 00 FF FF`) are skipped by
+  `coff_object_type`, and **long-import** members (regular COFF with `.idata$`
+  sections) are loaded as inert data — neither assembles a bound PE import
+  directory, so the IAT is never filled. (This is why the engine links but its
+  imports are dead.) There is also a **UCRT-vs-msvcrt** dimension: the winlibs
+  engine is UCRT-compiled, so `__imp___acrt_iob_func` et al. are not in mcc's
+  msvcrt `.def` and carry an ABI mismatch.
+  **Fix path (a real linker feature):** teach mcc to consume PE import libraries —
+  parse short-import members (`IMPORT_OBJECT_HEADER` → `mcc_add_dllref` +
+  `pe_putimport`, mirroring `pe_load_def`) and recognize long-import `.idata$`
+  members (extract name/DLL, register via `pe_putimport` instead of loading the
+  `.idata`), plus a UCRT export set. Non-COFF-reloc (reloc types verified:
+  ADDR32NB is `.pdata`-only, SECREL is `.debug`-only).
+  *Separate minor follow-up:* ADDR32NB is mapped to absolute `R_X86_64_32` (should
+  be RVA); harmless today (`.pdata`-only) but wrong.
 
 ## qemu-amd64 emulation noise (not compiler defects)
 
