@@ -34,7 +34,49 @@ hand-written x86_64 stubs carry Microsoft-x64-ABI branches, and the
 `-run`/`--embed-jit` auto-JIT pipeline fires on PE (`runmain.c` runs `.init_array`
 ctors on WIN32; `pe_add_runtime` calls `mccjit_embed_finalize`).
 `mccjit_make_kgc_stub_mixed` returns NULL on WIN32 — mixed int+FP signatures
-fall to the AOT baseline and `jit/selftest-mixed` skips.
+fall to the AOT baseline and `jit/selftest-mixed` skips. (32/32 selftests hold
+on the **x86_64** mingw host; the **i686** 32-bit host regressed — see below.)
+
+### Windows/PE CI failures — fix on a Windows host ⛔ (need mingw/MSVC to reproduce)
+
+These regressed with the batched §26 JIT work (JIT now default-on, plus the
+fresh PE embed-JIT port `f2a65333`). All are Windows/PE-only; the non-Windows
+CI is green. None reproduce on this arm64/macOS host — they need a mingw
+(i686 + x86_64) and MSVC (arm64) box. First diagnostic for every item: re-run
+with `MCC_JIT=0` (pure AOT) — if it passes, the fault is in the PE JIT path.
+
+- [ ] **`exec-replay/run_atexit` + `exec-replay/errors_and_warnings` — all 4 PE
+  jobs** (mingw i686, mingw x86_64, msvc arm64, sanitize-msvc arm64). Symptoms:
+  `errors_and_warnings` emits only ~125 of the ~297 expected diagnostic lines —
+  mcc aborts partway through diagnostics (output is *truncated*, not extended);
+  `run_atexit` produces empty output where the atexit-handler text is expected.
+  Root cause: JIT-default-on (`MCC_CONFIG_JIT`/`MCC_JIT_DEFAULT`) drives the
+  embed-JIT recompile during these compiles. `f5cdcce9` suppressed the same
+  best-effort-recompile diagnostic leak on ELF via `mccjit_error_quiet`
+  (`error1`), but the PE path still diverges. Leads: `errors_and_warnings` has
+  hard errors + unresolvable in-program symbols the JIT tries to recompile —
+  check that `mccjit_error_quiet` actually wraps the PE recompile call
+  (`mccjit_recompile_common`) and that `mccjit_embed_note`/`mccjit_embed_finalize`
+  tolerate a translation unit that errored; the truncation suggests an abort/
+  longjmp during compile, not just extra stderr. Repro:
+  `ctest -R "exec-replay/(run_atexit|errors_and_warnings)$"` on each PE host,
+  then diff `MCC_JIT=0` vs default output.
+- [ ] **`jit/selftest-{lazy,pool,eligibility,liverun,fparg}` — mingw i686 only**
+  (x86_64 mingw passes all 32). Symptom (`selftest-lazy`): the 7 cold/baseline
+  calls return correct values, then `PROMOTE at call 8 promoted=00000000
+  slot=01d60000 FAIL` — promotion hands back a NULL code pointer and every hot
+  call stays `stable=no`. So the i386/PE JIT-promotion path (KGC stub build +
+  dispatch-slot patch) yields no promoted body. This is specific to the 32-bit
+  x86 Microsoft ABI stub path (`mccjit_make_kgc_stub` / i386 slot install),
+  distinct from the x86_64 stubs that work. Repro: `ctest -R jit/selftest-lazy`
+  on the i686 host; trace why `promoted` is NULL at the promotion threshold.
+- [ ] **`ckconfig.exe(.rsrc) is too large (0x200 bytes)` — mingw i686 link.**
+  The winlibs i686 `ld.exe` rejects `ckconfig.exe`'s `.rsrc` section at link
+  time. Likely a toolchain/manifest-embedding quirk of the 32-bit winlibs
+  bundle rather than an mcc defect (ckconfig is built by the host CC), but it
+  fails the mingw/i686 job's build step. Investigate on the i686 host: inspect
+  the emitted `.rsrc`/manifest and whether a resource/manifest strip or a
+  linker flag avoids it.
 
 ### Windows embed-blob (`--embed-jit` standalone exe) — 🚧 IN PROGRESS
 
