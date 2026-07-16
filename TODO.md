@@ -45,22 +45,19 @@ CI is green. None reproduce on this arm64/macOS host — they need a mingw
 (i686 + x86_64) and MSVC (arm64) box. First diagnostic for every item: re-run
 with `MCC_JIT=0` (pure AOT) — if it passes, the fault is in the PE JIT path.
 
-- [ ] **`exec-replay/run_atexit` + `exec-replay/errors_and_warnings` — all 4 PE
-  jobs** (mingw i686, mingw x86_64, msvc arm64, sanitize-msvc arm64). Symptoms:
-  `errors_and_warnings` emits only ~125 of the ~297 expected diagnostic lines —
-  mcc aborts partway through diagnostics (output is *truncated*, not extended);
-  `run_atexit` produces empty output where the atexit-handler text is expected.
-  Root cause: JIT-default-on (`MCC_CONFIG_JIT`/`MCC_JIT_DEFAULT`) drives the
-  embed-JIT recompile during these compiles. `f5cdcce9` suppressed the same
-  best-effort-recompile diagnostic leak on ELF via `mccjit_error_quiet`
-  (`error1`), but the PE path still diverges. Leads: `errors_and_warnings` has
-  hard errors + unresolvable in-program symbols the JIT tries to recompile —
-  check that `mccjit_error_quiet` actually wraps the PE recompile call
-  (`mccjit_recompile_common`) and that `mccjit_embed_note`/`mccjit_embed_finalize`
-  tolerate a translation unit that errored; the truncation suggests an abort/
-  longjmp during compile, not just extra stderr. Repro:
-  `ctest -R "exec-replay/(run_atexit|errors_and_warnings)$"` on each PE host,
-  then diff `MCC_JIT=0` vs default output.
+- **`exec-replay/run_atexit` + `exec-replay/errors_and_warnings` (+ every exec-*
+  variant) — FIXED.** NOT JIT-related and not truncation — it was **cross-CRT
+  stdout buffering**. `-dt -run` runs each test snippet in one mcc process; the
+  snippet's `printf` resolves to `msvcrt.dll`, but a winlibs/msvc mcc links
+  **UCRT** — two independent stdout buffers on fd 1. `[test]` headers/diagnostics
+  go to mcc's (flushed) stream while snippet output sits in msvcrt's buffer,
+  unflushed until mcc's own process exit, so all run-output lands at the end
+  (reordered) — a mismatch, not truncation. Fix: `_runmain`/`exit` in
+  `runtime/lib/runmain.c` (compiled with the *snippet's* CRT) now `fflush(0)`
+  after the program completes, flushing the snippet's stdio in order. Verified on
+  the **winlibs UCRT x86_64** toolchain (reproduced the failure, then 624/624
+  exec+replay+jit green); byte-neutral elsewhere (same-CRT hosts already flushed).
+  Same mechanism should clear the msvc-arm64 rows (unverified on that host).
 - [ ] **`jit/selftest-{lazy,pool,eligibility,liverun,fparg}` — mingw i686 only**
   (x86_64 mingw passes all 32). Symptom (`selftest-lazy`): the 7 cold/baseline
   calls return correct values, then `PROMOTE at call 8 promoted=00000000

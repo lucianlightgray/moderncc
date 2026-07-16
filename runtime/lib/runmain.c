@@ -56,10 +56,13 @@ typedef struct rt_frame {
 
 __attribute__((noreturn)) void __rt_exit(rt_frame *, int);
 
+int fflush(void *);
+
 void exit(int code) {
 	rt_frame f;
 	run_dtors();
 	__run_on_exit(code);
+	fflush(0);
 	f.fp = 0;
 	f.ip = exit;
 	__rt_exit(&f, code);
@@ -73,5 +76,6 @@ int _runmain(int argc, char **argv, char **envp) {
 	ret = main(argc, argv, envp);
 	run_dtors();
 	__run_on_exit(ret);
+	fflush(0);
 	return ret;
 }
