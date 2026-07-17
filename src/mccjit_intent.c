@@ -276,6 +276,10 @@ static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i
 																 h, (uint64_t)(uintptr_t)s->type.ref,
 																 mccjit_role_for_base(s->type.t))
 													 : 0);
+		/* s->c carries the array element count for a VT_ARRAY ref (and -1 for a
+			 plain pointer, per mk_pointer); without it type_size() sees a bogus
+			 negative count on replay and aborts with "unknown type size". */
+		mccjit_put_u32(buf, (uint32_t)s->c);
 		break;
 	case MCCJIT_ROLE_FUNC: {
 		Sym *p;
@@ -540,7 +544,7 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 		CType pc;
 		pc.t = (int)r->a;
 		pc.ref = mccjit_build_rec(it, r->b);
-		res = sym_push(SYM_FIELD, &pc, 0, -1);
+		res = sym_push(SYM_FIELD, &pc, 0, (int)r->c);
 		break;
 	}
 	case MCCJIT_ROLE_FUNC: {
@@ -678,6 +682,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		case MCCJIT_ROLE_PTR:
 			rec->a = mccjit_get_u32(&r);
 			rec->b = mccjit_get_u32(&r);
+			rec->c = mccjit_get_u32(&r);
 			break;
 		case MCCJIT_ROLE_FUNC: {
 			uint32_t k;

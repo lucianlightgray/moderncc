@@ -113,6 +113,35 @@ WIN32, `pe_add_runtime` calls `mccjit_embed_finalize`). Only `mccjit_make_kgc_st
 `jit/selftest-mixed` skips). Use `MCC_HOST_WIN32`, not `_WIN32`, in `#if` (hostgate invariant). See root
 `TODO.md` "Windows JIT-embed port".
 
+**✅ Self-host JIT correctness — the amalgamation self-recompile no longer crashes/miscompiles (DONE this session).**
+An embed-JIT `mcc` recompiling its own hot functions (`MCC_JIT=1 mcc-jit -c src/mcc.c`) segfaulted or aborted
+"unknown type size". Two independent root causes, both in the intent serialize/replay + recompile teardown (the
+finalize/ctor path was a red herring — that only ever fails because `-g`/`-ftest-coverage`/`-O0` disable the AST
+replay optimizer, so **0 functions bake**; added a `mcc_warning` in `mccjit_embed_finalize` for that silent no-op):
+1. **Array element-count dropped in intent serialization** (`mccjit_intent.c`). `MCCJIT_ROLE_NAMED`/`ROLE_PTR`
+   records serialized only `type.t`+`type.ref`, never `s->c`, and the `ROLE_PTR` rebuild hardcoded
+   `sym_push(...,-1)`. Fine for a plain pointer (`mk_pointer` sets ref->c=-1) but an array's ref->c is the element
+   **count** → `type_size()` saw a negative count and aborted while recompiling any fn subscripting a global array
+   (repro `--jit-functions=ast_jit_selected`, indexing `char ast_jit_fns[256][80]`). Fix: serialize `s->c`, read
+   into `rec->c`, rebuild with `sym_push(...,(int)r->c)`; `MCCJIT_INTENT_FORMAT` 6u→7u.
+2. **Recompile leaked parser symbols onto the process-shared `global_stack`/`local_stack`** (`mccjit_embed.c`
+   `mccjit_recompile_common`). It pushes parser Syms (`mccjit_rebuild_sym`+`ast_reemit_extern`) but skipped the
+   normal `mccgen_finish` teardown, and `mcc_enter_state` is a flat non-saving swap. Leftover Syms sat on the
+   shared stack; the host's own `mccgen_finish→sym_pop→sym_link` later unlinked one whose token's `table_ident`
+   slot was gone → NULL-base store SEGV (emergent, needed ≥2 fns e.g. `{_mcc_open,_mcc_setjmp}`). Fix: snapshot the
+   stack tops after `mccgen_init`, `sym_pop(...,0)` back to them before `mcc_exit_state` (variant already relocated
+   via js's ELF symtab, so draining the transient Syms is safe). Validated: `-O2`/`-O4` self-host JIT-on ==
+   JIT-off byte-identical; `-O4 --stats` self-host shows **kgc hits ~133k / miss=0**; `busy.c -run` correct, 37
+   swaps; 36/36 jit+embed+standalone+cli+**fixpoint-invariant** ctests. Debug technique: temporarily relax the
+   symtab-retention gate (`mccelf.c:2985` `embed_jit && do_debug` → `|| getenv("MCC_KEEP_SYMTAB")`) so a baked
+   non-`-g` build keeps `.symtab` → gdb resolves the mcc-built binary's frames.
+
+- [ ] **`MCC_AST_SEARCH=1 -O4` on `src/mcc.c` segfaults — pre-existing, JIT-INDEPENDENT** (reproduces with
+  `MCC_JIT=0`, so it is *not* the recompile path). Blocks the live SEARCH/COMBO section of `--stats` on the
+  self-host TU; the STRATEGY + JIT panel sections populate without it. Surfaced while validating the self-host JIT
+  above. First diagnostic: `MCC_JIT=0 MCC_AST_SEARCH=1 MCC_SEARCH_WORKER=1 mcc -O4 -c src/mcc.c` vs a small TU
+  (small TUs are fine → likely a scale/emit-size-measurement fault in the in-process combo search).
+
 ### Cross-subsystem overlap (the intersections)
 
 - **AST↔AOT — one replay path.** `ast_reemit_retain` stashes byte-faithful bodies serving **three** consumers:

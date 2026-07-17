@@ -163,6 +163,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	MccjitIntent it;
 	MCCState *js;
 	Sym *sym;
+	Sym *sav_global, *sav_local;
 	void *entry = NULL;
 
 	if (mcc_stats_mask)
@@ -180,6 +181,13 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
+	/* global_stack/local_stack are process-shared, not per-MCCState, and this
+		 recompile skips the normal mccgen_finish teardown. Snapshot the tops so we
+		 can drain exactly the parser symbols this recompile pushes; leaving them on
+		 the shared stack corrupts the host compiler's own sym_pop at mccgen_finish
+		 (it later unlinks a stale token → NULL table_ident deref). */
+	sav_global = global_stack;
+	sav_local = local_stack;
 
 	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
 		mcc_exit_state(js);
@@ -246,6 +254,12 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		ast_reemit_extern(sym, it.arena);
 		ast_fconst_reuse_disable(0);
 	}
+	/* Drain the parser symbols pushed above (rebuild_sym + reemit) — unlinks them
+		 from the shared token buckets and returns them to the sym pool, exactly as
+		 mccgen_finish would. The variant's code is already relocated via js's ELF
+		 symtab, so these transient C-level symbols are no longer needed. */
+	sym_pop(&local_stack, sav_local, 0);
+	sym_pop(&global_stack, sav_global, 0);
 	mcc_exit_state(js);
 
 	mccjit_error_quiet = 1;
@@ -1259,7 +1273,12 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 	int async = 0;
 	if (!s1 || !(s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY) ||
 			!mccjit_embed_fns || mccjit_internal_compile)
-		{ MCC_TRACE("br\n"); return; }
+		{ MCC_TRACE("br\n");
+			if (s1 && s1->embed_jit && !mccjit_embed_fns && !mccjit_internal_compile)
+				{ MCC_TRACE("br\n"); mcc_warning(
+						"--embed-jit: no functions were JIT-baked, so the output carries no runtime "
+						"JIT engine (baking needs -O1+ and is disabled by -g/-ftest-coverage)"); }
+			return; }
 	async = s1->jit_threads > 0;
 	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
 		mcc_add_symbol(s1, "mccjit_boot_swap", (void *)mccjit_boot_swap);
