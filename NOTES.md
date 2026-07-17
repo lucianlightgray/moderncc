@@ -1,0 +1,37 @@
+# NOTES
+
+Design rationale that does not belong in code comments (project style: no code
+comments) or in TODO.md (open work). Newest first.
+
+## AST-replay: separate frontier for replay-time scratch (ast_alloc_temp_loc)
+
+`ast_alloc_loc` records each AST-local's stack offset during the pre-transform
+record pass and stores it *in the AST node*, so replay must hand back the exact
+same offset (`ast_locrec[ast_locrec_i++]`). But AST transforms that run between
+record and replay can *add* stack allocations that the record never saw:
+
+- register promotion (`ast_promo_entry_init`) reserves a callee-save spill area
+  for callful functions;
+- backend spills (`get_temp_local_var`) can differ in count/size/order because
+  the post-transform body emits different code (e.g. DIVMAGIC's 64-bit MULHU).
+
+The pre-fix code allocated both of those from the shared `loc` frontier, which
+at replay start sits just under the frame base — exactly where the recorded
+AST-local offsets live. Result: a replay-time scratch slot (or the promo save
+area) overlapped a recorded 8-byte local, and a later narrow store clobbered its
+high dword. Concretely this corrupted the `AstArena*` arg of `ast_divmagic_try*`
+with a stray bit-34, crashing in `ast_node` ~3300 candidates into an
+`MCC_AST_SEARCH` self-host run. Layout-sensitive (only SEGVs when the corrupt
+pointer hits an unmapped page), invisible to ASan (wrong-width access of valid
+memory), and hidden by `-g` (which disables AST-replay).
+
+Fix: replay-time scratch gets its own frontier, `ast_temp_frontier`, seeded at
+each replay entry to `ast_locrec_min` (the lowest recorded AST offset) and only
+ever decreasing. `ast_alloc_temp_loc` serves both the promo save area and
+`get_temp_local_var`, so all replay-added slots live strictly below every
+recorded AST slot and can never overlap them regardless of order/size drift.
+`ast_alloc_loc` (AST slots) is unchanged except to track `ast_locrec_min`.
+Ordering matters: the frontier reset + `ast_loc_low = loc` seed must run *before*
+`ast_promo_entry_init` in the replay macro, else the promo allocation is wiped.
+Validated: repro no longer SEGVs, self-host search evaluates ~26k like gcc-mcc,
+`fixpoint-invariant` byte-identical, `ast/` + `jit/` ctests green.

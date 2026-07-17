@@ -1125,6 +1125,8 @@ int ast_replaying;
 static int *ast_locrec;
 static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 static int ast_loc_low;
+static int ast_locrec_min;
+static int ast_temp_frontier;
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
@@ -1145,7 +1147,22 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 			ast_locrec = mcc_realloc(ast_locrec, ast_locrec_cap * sizeof *ast_locrec);
 		}
 		ast_locrec[ast_locrec_n++] = loc;
+		if (loc < ast_locrec_min)
+			{ MCC_TRACE("br\n"); ast_locrec_min = loc; }
 	}
+	return loc;
+}
+
+int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
+	if (ast_replaying) { MCC_TRACE("br\n");
+		if (ast_temp_frontier > 0)
+			{ MCC_TRACE("br\n"); ast_temp_frontier = ast_locrec_min < loc ? ast_locrec_min : loc; }
+		ast_temp_frontier = (ast_temp_frontier - size) & -align;
+		if (ast_temp_frontier < ast_loc_low)
+			{ MCC_TRACE("br\n"); ast_loc_low = ast_temp_frontier; }
+		return ast_temp_frontier;
+	}
+	loc = (loc - size) & -align;
 	return loc;
 }
 
@@ -4000,8 +4017,7 @@ static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 	ast_promo_save_plan();
 	if (ast_promo_callful) { MCC_TRACE("br\n");
 		SValue sv;
-		loc = (loc - 8 * ast_promo_save_n) & -8;
-		ast_promo_save_loc = loc;
+		ast_promo_save_loc = ast_alloc_temp_loc(8 * ast_promo_save_n, 8);
 		for (int i = 0; i < ast_promo_n; i++) { MCC_TRACE("br\n");
 			int dup = 0;
 			for (int p = 0; p < i; p++)
@@ -11460,6 +11476,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
 		ast_locrec_n = 0;
+		ast_locrec_min = 0;
 		ast_replaying = 0;
 		ast_switch_node = AST_NONE;
 		ast_func_has_asm = 0;
@@ -12419,6 +12436,7 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MC
 	ast_inline_active = ast_search_emitiso_env ? ast_search_want_inline : 0;
 	ast_graft_budget = ast_graft_budget_max;
 	ast_loc_low = loc;
+	ast_temp_frontier = 1;
 	ast_cur = a;
 	ast_replay_body(a);
 	if (ast_loc_low < loc)
@@ -13105,6 +13123,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); ast_run_templates(ast_cur); }
 			ast_fconst_i = 0;
 			ast_locrec_i = 0;
+			ast_temp_frontier = 1;
 			ast_replaying = 1;
 			ast_rp_switch = NULL;
 			ast_rp_nlabel = 0;
@@ -13305,11 +13324,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_pinned_regs = 0;                                                          \
 		ast_inline_active = (ui);                                                     \
 		ast_graft_budget = ast_graft_budget_max;                                     \
+		ast_loc_low = loc;                                                            \
+		ast_temp_frontier = 1;                                                        \
 		for (int pi = 0; pi < ast_promo_n; pi++)                                      \
 			ast_pinned_regs |= ((uint64_t)1 << ast_promo_regpool_at(pi));               \
 		if (do_promote)                                                              \
 			ast_promo_entry_init();                                                    \
-		ast_loc_low = loc;                                                            \
 		ast_replay_body(ast_cur);                                                     \
 		if (ast_loc_low < loc)                                                        \
 			loc = ast_loc_low;                                                         \
@@ -13595,6 +13615,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						ast_promo_n = 0;
 						ast_graft_budget = ast_graft_budget_max;
 						ast_loc_low = loc;
+						ast_temp_frontier = 1;
 						ast_replay_body(ast_spec);
 						if (ast_loc_low < loc)
 							{ MCC_TRACE("br\n"); loc = ast_loc_low; }
@@ -13826,6 +13847,7 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	ast_rp_bsym = ast_rp_csym = NULL;
 	ast_fconst_i = 0;
 	ast_locrec_i = 0;
+	ast_temp_frontier = 1;
 	ast_promo_n = 0;
 	ast_pinned_regs = 0;
 	ast_inline_active = 1;

@@ -1574,11 +1574,14 @@ ST_FUNC int get_reg(int rc) { MCC_TRACE("enter\n");
 	return -1;
 }
 
+int ast_alloc_temp_loc(int size, int align);
+
 static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n");
 	int i;
 	struct temp_local_variable *temp_var;
 	SValue *p;
 	int r;
+	int tmploc;
 	unsigned used = 0;
 
 	for (p = vstack; p <= vtop; p++) { MCC_TRACE("br\n");
@@ -1597,17 +1600,22 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 			return temp_var->location;
 		}
 	}
+#if MCC_CONFIG_OPTIMIZER
+	tmploc = ast_alloc_temp_loc(size, align);
+#else
 	loc = (loc - size) & -align;
+	tmploc = loc;
+#endif
 	if (nb_temp_local_vars < MAX_TEMP_LOCAL_VARIABLE_NUMBER) { MCC_TRACE("br\n");
 		temp_var = &arr_temp_local_vars[i];
-		temp_var->location = loc;
+		temp_var->location = tmploc;
 		temp_var->size = size;
 		temp_var->align = align;
 		nb_temp_local_vars++;
 		goto ret_tmp;
 	}
 	*r2 = VT_CONST;
-	return loc;
+	return tmploc;
 }
 
 static void move_reg(int r, int s, int t) { MCC_TRACE("enter\n");

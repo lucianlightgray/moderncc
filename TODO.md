@@ -152,8 +152,19 @@ A real regression shows up as a *different* failing test. Validate JIT/codegen
 work with `ctest -R jit/` + `ctest -R ast/` and per-test serial reruns, not the
 full parallel sweep.
 
-## OPEN BUG: AST-replay frame desync overlaps stack slots (self-host DIVMAGIC crash)
+## FIXED: AST-replay frame desync overlaps stack slots (self-host DIVMAGIC crash)
 
+FIXED 2026-07-17 (see NOTES.md for rationale). Replay-time scratch allocations
+(the register-promotion save area + `get_temp_local_var` backend temps) now use a
+dedicated replay frontier `ast_temp_frontier` seeded below `ast_locrec_min` (the
+lowest recorded AST-local offset), so they can never overlap a replayed AST slot.
+New `ast_alloc_temp_loc` (mccast.c) serves both; `ast_promo_entry_init` and
+`get_temp_local_var` call it; the frontier reset + `ast_loc_low` seed were moved
+before `ast_promo_entry_init` in the replay macro. Validated: repro no longer
+SEGVs, self-host search evaluates ~26k like gcc-mcc, `fixpoint-invariant`
+byte-identical, `ast/`+`jit/`+`fixpoint` ctests 98/98 green.
+
+### Original root cause (kept for reference)
 FULLY ROOT-CAUSED 2026-07-17. NOT a JIT bug (reproduces with `MCC_JIT=0`). When an
 *mcc-compiled* mcc runs the in-process `MCC_AST_SEARCH` gate search over a heavy TU
 (`src/mcc.c`), a stack-slot overlap in the DIVMAGIC helpers corrupts a pointer's high
@@ -188,7 +199,7 @@ Rebuildable repro (no JIT, no embed):
   ranges overlap; build with $DEFS (NOT plain -c: the overlap needs the optimizer/replay).
 
 ### FIX TASKS (in order)
-- [ ] T1. During replay, allocate backend temps (`get_temp_local_var`) BELOW the recorded
+- [x] T1. During replay, allocate backend temps (`get_temp_local_var`) BELOW the recorded
       frame low-water (`ast_loc_low`) so they can never overlap a recorded `ast_alloc_loc`
       AST slot. AST-slot offsets must stay stable (AST nodes encode them); backend temps
       are scratch and may move. Decouple the temp frontier from the `ast_alloc_loc`-rewound
@@ -196,10 +207,10 @@ Rebuildable repro (no JIT, no embed):
       `ast_loc_low`, monotonically decreasing). Touches: `ast_alloc_loc` (mccast.c:1132),
       `get_temp_local_var` (mccgen.c:1577/1600), and the ~5 `loc = ast_alloc_loc(...)` call
       sites (mccgen.c:4783,9545,9667,10209; mccast.c:4301).
-- [ ] T2. The replay emits its own `gfunc_prolog`/epilog, so the reserved frame grows to
+- [x] T2. The replay emits its own `gfunc_prolog`/epilog, so the reserved frame grows to
       include the scratch region — verify the epilog frame-size patch uses the post-replay
       `ast_loc_low` (relates to the earlier `ast_loc_low` clamp fix, mcc-inline-c-o1).
-- [ ] T3. VALIDATE: repro no longer SEGVs AND self-host search evaluates like gcc-mcc
+- [x] T3. VALIDATE: repro no longer SEGVs AND self-host search evaluates like gcc-mcc
       (~28k candidates); `fixpoint-invariant` byte-identical; exec differential
       (`ctest -R exec`) unchanged; `ctest -R ast/` + `ctest -R jit/` green; re-run the
       store-overlap detector -> 0 overlaps in the divmagic functions.
