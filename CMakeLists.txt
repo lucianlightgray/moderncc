@@ -1480,6 +1480,27 @@ if(MCC_CC_NAME STREQUAL "gcc" AND MCC_GCC_MAJOR EQUAL 4
     add_compile_options(-D_FORTIFY_SOURCE=0)
 endif()
 
+# MSVC's ARM64 optimizer miscompiles mcc. Building src/mcc.c (the single-TU
+# amalgamation) with cl 19.51 for ARM64 at /O1 or /O2 produces wrong code in the
+# type_size / AST-replay / embedded-JIT paths: it surfaces as spurious
+# "unknown type size" compile errors and as runtime crashes in the programs mcc
+# emits. On the msvc/arm64 CI cell this is the whole of the exec-replay
+# run_atexit + errors_and_warnings failures and the jit/selftest-* SEGFAULTs;
+# x86_64 MSVC and every gcc/clang build of the same source are unaffected.
+# Proven in a docker repro: a gcc-cross mcc-arm64-win32 emits byte-identical,
+# working arm64-PE code with replay on or off, and an MSVC-arm64 mcc built at
+# /Od is likewise correct end-to-end, while the same source at /O1//O2 is not.
+# Disable optimization for this one host toolchain until the cl bug is fixed;
+# arm64-Windows is a niche cell and per-file compile times stay small.
+if(MSVC AND MCC_CPU STREQUAL "arm64")
+    foreach(_ocfg CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
+                  CMAKE_C_FLAGS_RELWITHDEBINFO CMAKE_C_FLAGS_MINSIZEREL)
+        string(REGEX REPLACE "/O[0-9A-Za-z]+" "" ${_ocfg} "${${_ocfg}}")
+    endforeach()
+    add_compile_options(/Od)
+    message(STATUS "mcc: MSVC/ARM64 — forcing /Od (cl ARM64 optimizer miscompiles mcc)")
+endif()
+
 set(MCC_DIAG_FLAGS "")
 if(MCC_ALL_DIAGNOSTICS)
     if(MSVC)

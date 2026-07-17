@@ -1581,6 +1581,14 @@ The `## 5 … ## 0` buckets below are the reference backlog, ordered most-open-f
   x86_64 mingw, which can't be byte-identical to native arm64 mcc on legacy msvcrt). arm64 codegen itself is
   covered by the `exec/*` goldens + `pe-native-conformance`, so these two should STAY skipped with the updated
   "no matching reference" reason rather than be ungated. No other arm64-windows skips remain to revisit.
+- [x] **MSVC-ARM64 optimizer miscompiles mcc → build the msvc/arm64 cell with `/Od`** (CMakeLists.txt, the
+  `if(MSVC AND MCC_CPU STREQUAL "arm64")` block after the gcc `_FORTIFY` guard). cl 19.51.36248 for ARM64 at
+  `/O1`/`/O2` mis-optimizes the single-TU `src/mcc.c` (wrong codegen in `type_size`, initializer sizing
+  ~`init_assert:11195`, AST-replay, the embedded JIT) → the 29 `msvc/arm64` + `sanitize-msvc/arm64` CI
+  failures (exec-replay `run_atexit`/`errors_and_warnings` crashes + 7 `jit/selftest-*` SEGFAULTs). Proven in
+  a docker repro with the exact CI toolset + wine-arm64: `/O2` reproduces every symptom, `/Od` (and any
+  gcc/clang build) is correct end-to-end; `/O1` is insufficient. Not a test gate — the tests stay live; only
+  mcc's own optimization on this niche host is dropped. Remove once the cl ARM64 optimizer bug is fixed.
 - [ ] **Revisit the `k` always-inline depth policy.**
 - [ ] **Revisit size-gated outline.**
 - [ ] **Revisit store factoring** (shared render engine).
