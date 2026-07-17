@@ -2145,6 +2145,16 @@ static int mccjit_bench_margin_pct(void) { MCC_TRACE("enter\n");
 	return 6;
 }
 
+static int mccjit_bench_rounds(void) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_JIT_BENCH_ROUNDS");
+	if (e && e[0]) { MCC_TRACE("br\n");
+		long v = strtol(e, NULL, 10);
+		if (v >= 1 && v <= 1024)
+			{ MCC_TRACE("br\n"); return (int)v; }
+	}
+	return 3;
+}
+
 static double mccjit_bench_run(void *fn, const int64_t *tuples, uint32_t ntuples,
 															uint32_t nargs, int wide, uint32_t reps) { MCC_TRACE("enter\n");
 	struct timespec t0;
@@ -2170,15 +2180,16 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	double cb = 1e300, ib = 1e300;
 	uint32_t k, reps;
 	long iters;
-	int margin;
+	int margin, rounds;
 	if (!cand || !incumbent || !tuples || ntuples == 0 || nargs == 0)
 		{ MCC_TRACE("br\n"); return 1; }
 	iters = mccjit_bench_iters();
 	margin = mccjit_bench_margin_pct();
+	rounds = mccjit_bench_rounds();
 	reps = (uint32_t)(iters / (long)ntuples);
 	if (reps < 1)
 		{ MCC_TRACE("br\n"); reps = 1; }
-	for (k = 0; k < 3; k++) { MCC_TRACE("br\n");
+	for (k = 0; k < (uint32_t)rounds; k++) { MCC_TRACE("br\n");
 		double c = mccjit_bench_run(cand, tuples, ntuples, nargs, wide, reps);
 		double i2 = mccjit_bench_run(incumbent, tuples, ntuples, nargs, wide, reps);
 		if (c < cb)
@@ -4437,8 +4448,9 @@ PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 	int r_win, r_lose, r_tie;
 
 	printf("mccjit-selftest-bench: begin\n");
-	setenv("MCC_JIT_BENCH_ITERS", "60000", 1);
+	setenv("MCC_JIT_BENCH_ITERS", "4000", 1);
 	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
+	setenv("MCC_JIT_BENCH_ROUNDS", "25", 1);
 	for (i = 0; i < nt; i++)
 		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
 			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1); } }
@@ -4451,6 +4463,7 @@ PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1);
 	unsetenv("MCC_JIT_BENCH_ITERS");
 	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+	unsetenv("MCC_JIT_BENCH_ROUNDS");
 
 	printf("mccjit-selftest-bench: faster candidate promoted=%d (expect 1) %s\n",
 				 r_win, r_win == 1 ? "OK" : "FAIL");
