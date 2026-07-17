@@ -1478,9 +1478,7 @@ ST_FUNC int expr_const(void);
 ST_FUNC void cst_capture_begin(const char *filename);
 ST_FUNC CstArena *cst_capture_end(void);
 #endif
-#if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC Sym *get_sym_ref(CType *type, Section *sec, unsigned long offset, unsigned long size);
-#endif
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 ST_FUNC int classify_x86_64_va_arg(CType *ty);
 #endif
