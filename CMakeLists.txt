@@ -1493,11 +1493,18 @@ endif()
 # Disable optimization for this one host toolchain until the cl bug is fixed;
 # arm64-Windows is a niche cell and per-file compile times stay small.
 if(MSVC AND MCC_CPU STREQUAL "arm64")
+    # Put /Od directly into the per-config flag strings (not add_compile_options):
+    # for the Visual Studio generator CMake maps a /O flag found in CMAKE_C_FLAGS*
+    # to the vcxproj <Optimization> element, so replacing /O2 with /Od yields
+    # <Optimization>Disabled</Optimization>. A /Od handed to add_compile_options
+    # lands in <AdditionalOptions> instead and does NOT override the property, so
+    # the earlier attempt built at /O2 anyway. For Ninja both forms work (last /O
+    # wins), so keeping it in the flags is correct there too.
     foreach(_ocfg CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
                   CMAKE_C_FLAGS_RELWITHDEBINFO CMAKE_C_FLAGS_MINSIZEREL)
         string(REGEX REPLACE "/O[0-9A-Za-z]+" "" ${_ocfg} "${${_ocfg}}")
+        string(APPEND ${_ocfg} " /Od")
     endforeach()
-    add_compile_options(/Od)
     message(STATUS "mcc: MSVC/ARM64 — forcing /Od (cl ARM64 optimizer miscompiles mcc)")
 endif()
 
