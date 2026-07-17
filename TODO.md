@@ -154,6 +154,48 @@ The exe grows from ~3 KB (non-embed) to ~1 MB with the JIT engine embedded. Land
   *Separate minor follow-up:* ADDR32NB is mapped to absolute `R_X86_64_32` (should
   be RVA); harmless today (`.pdata`-only) but wrong.
 
+  **Implementation guide (everything mapped this session):**
+  - *Repro/build (native Windows host).* winlibs x86_64 UCRT at
+    `vendor/winlibs-mingw-w64-16.1.0-ucrt-x86_64/mingw64/bin` (prepend to PATH in
+    PowerShell so gcc finds `as`; Git Bash mangles `C:/…` PATH). Build dir
+    `cmake-winlibs` (configured `-DCMAKE_C_COMPILER=<winlibs gcc>`). Repro:
+    `mcc --embed-jit hello.c -o h.exe` (hello with an eligible fn like
+    `int busy(int)`), then `MCC_JIT=0 ./h.exe` → SIGSEGV. gdb: `jmp *[IAT]` thunk,
+    IAT holds the `IMAGE_IMPORT_BY_NAME` string ptr. (i686 repro: `cmake-i686`,
+    `-DMCC_TARGET_ARCH=i386`.)
+  - *Pattern to mirror.* `pe_load_def` (`mccpe.c:1741`): `dllindex =
+    mcc_add_dllref(s1, dllname, 0)->index;` then `pe_putimport(s1, dllindex, name,
+    ord);` per export. mcc's `__imp_` handling already exists (`mccpe.c:1385`
+    strips `__imp_`/`_imp__`), so one `pe_putimport(name)` serves both the thunk
+    (`name`) and IAT (`__imp_name`) references.
+  - *Short-import member* = 20-byte `IMPORT_OBJECT_HEADER`: `WORD Sig1(=0),
+    Sig2(=0xFFFF), Version, Machine; DWORD TimeDateStamp, SizeOfData; WORD
+    Ordinal/Hint, Type` (Type: bits 0-1 = CODE/DATA/CONST, bits 2-4 = NameType),
+    then `name\0` then `dllname\0` (within `SizeOfData`). Add a
+    `coff_load_short_import(s1,fd,off)` in `mccpe.c` + detect (`Sig1==0 &&
+    Sig2==0xFFFF`) in `mcc_load_archive`'s member dispatch (`mccelf.c` — the same
+    two spots as the COFF-object dispatch: whole-archive loop + `mcc_load_alacarte`
+    member pull). NameType may prefix-strip (`?`/`@`/`_`) — handle IMPORT_OBJECT_NAME
+    (as-is) first; ordinal-only imports are rare here.
+  - *Long-import member* = regular COFF object (machine `64 86…`, so it currently
+    loads via `coff_load_object_file`) carrying `.text` thunk + `.idata$2/$4/$5/$6`.
+    Detect these (member defines `X` + `__imp_X` and has `.idata$` sections) and
+    route to `pe_putimport` instead of loading the `.idata` as data. The DLL name is
+    in `.idata$7` (or derivable). *Note the archives are MIXED:* `libmsvcrt.a`/
+    `libucrt.a` also hold real code members (e.g. `lib64_libucrt_extra_a-*.o` math
+    fns) that must still load normally — dispatch on member shape, not archive.
+    `nm libmsvcrt.a` shows `T memset` (thunk) + `I __imp_memset` per import.
+  - *UCRT export set.* `__imp___acrt_iob_func`/`__imp__open`/`_read`/`fstat64i32`/
+    `strtoll`/`strtoull`/`__p__environ` are UCRT (not in mcc's `msvcrt.def`).
+    Once import-lib parsing works they come from `libucrt.a` with the right DLL
+    (`api-ms-win-crt-*` / `ucrtbase.dll`); no separate def needed. Beware UCRT vs
+    msvcrt `FILE`/stdio ABI if any FILE-typed import is exercised.
+  - *After it works:* re-check whether the `kernel32.def` SRW additions and the
+    `mcc_add_jit_engine_embedded` static-lib list are still all needed (imports may
+    then resolve straight from `libkernel32.a`). Validate: `mcc --embed-jit hello.c`
+    runs correct under `MCC_JIT=0` and `=1` (self-recompile), and `ctest -R jit/`
+    = 32/32 on winlibs.
+
 ## qemu-amd64 emulation noise (not compiler defects)
 
 Under an amd64 Ubuntu container on qemu/Apple Silicon, a recurring set of ctest
