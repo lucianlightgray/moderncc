@@ -151,3 +151,115 @@ HEAD and/or pass when run serially in isolation:
 A real regression shows up as a *different* failing test. Validate JIT/codegen
 work with `ctest -R jit/` + `ctest -R ast/` and per-test serial reruns, not the
 full parallel sweep.
+
+## OPEN BUG: AST-replay frame desync overlaps stack slots (self-host DIVMAGIC crash)
+
+FULLY ROOT-CAUSED 2026-07-17. NOT a JIT bug (reproduces with `MCC_JIT=0`). When an
+*mcc-compiled* mcc runs the in-process `MCC_AST_SEARCH` gate search over a heavy TU
+(`src/mcc.c`), a stack-slot overlap in the DIVMAGIC helpers corrupts a pointer's high
+dword and SIGSEGVs (crash frame is `ast_node` deref of a bit-34-corrupt `AstArena*`,
+`0x7d4170` -> `0x4007d4170`). gcc-built mcc emits the same buggy output but only crashes
+when the buggy function actually runs (the search exercises it); gcc laid out gcc-mcc's
+own frames fine, so gcc-mcc "works" while its OUTPUT is buggy.
+
+Root cause (store-level trace confirmed, 269 overlaps, ALL in `ast_divmagic_try`,
+`_signed`, `_u64`, `_s64`): the AST-replay optimizer records stack-slot offsets
+(`ast_alloc_loc`, mccast.c:1132) during the PRE-transform codegen pass and stores them
+IN the AST nodes (must stay stable). It then TRANSFORMS the AST (DIVMAGIC -> 64-bit
+magic multiply `MULHU`, needing an extra 8-byte temp). On REPLAY (re-emit of the
+transformed AST via `ast_reemit`), `ast_alloc_loc` replays the recorded pre-transform
+offsets, but the transformed code allocates DIFFERENT backend temps via
+`get_temp_local_var` (mccgen.c:1577), which is NOT recorded/replayed. Both allocators
+share the global `loc` frontier — `ast_alloc_loc` rewinds it to recorded absolute
+offsets, `get_temp_local_var` decrements it freshly — so they DESYNC: a fresh 4-byte
+temp lands at `-124`, overlapping the recorded 8-byte `uint64_t` slot at `-128`. A
+4-byte store then clobbers the 8-byte value's high dword. Trace proof: record makes one
+4-byte temp at `-132`; replay makes an 8-byte temp at `-136` + a 4-byte at `-140`
+(different count/size) -> `[STORE-OVERLAP] [-128,+8) vs [-124,+4)`.
+
+Rebuildable repro (no JIT, no embed):
+  DEFS='-DMCC_CONFIG_OPTIMIZER=1 -DMCC_CONFIG_PREDEFS=1 -DMCC_CONFIG_DIAG_RT=2 \
+    -DMCC_TARGET_X86_64=1 -DMCC_CONFIG_TRIPLET="x86_64-pc-linux-gnu" \
+    -DMCC_CONFIG_AUTO_MCCDIR=1 -DMCC_CONFIG_LSP=1 -DMCC_JIT_DEFAULT=1'
+  cmake-embedjit/mcc -O2 $DEFS <full src/formats/objfmt/arch includes> src/mcc.c -o self
+  MCC_JIT=0 MCC_AST_SEARCH=1 MCC_SEARCH_WORKER=1 self -O8 <includes> -c src/mcc.c -o /dev/null
+  -> SIGSEGV in the search. Store-overlap detector (temporary): log VT_LOCAL stores in
+  `store()` (x86_64-gen.c:480) per funcname, flag two different-offset stores whose byte
+  ranges overlap; build with $DEFS (NOT plain -c: the overlap needs the optimizer/replay).
+
+### FIX TASKS (in order)
+- [ ] T1. During replay, allocate backend temps (`get_temp_local_var`) BELOW the recorded
+      frame low-water (`ast_loc_low`) so they can never overlap a recorded `ast_alloc_loc`
+      AST slot. AST-slot offsets must stay stable (AST nodes encode them); backend temps
+      are scratch and may move. Decouple the temp frontier from the `ast_alloc_loc`-rewound
+      `loc` (e.g. a separate `ast_temp_loc` frontier used during `ast_replaying`, seeded to
+      `ast_loc_low`, monotonically decreasing). Touches: `ast_alloc_loc` (mccast.c:1132),
+      `get_temp_local_var` (mccgen.c:1577/1600), and the ~5 `loc = ast_alloc_loc(...)` call
+      sites (mccgen.c:4783,9545,9667,10209; mccast.c:4301).
+- [ ] T2. The replay emits its own `gfunc_prolog`/epilog, so the reserved frame grows to
+      include the scratch region — verify the epilog frame-size patch uses the post-replay
+      `ast_loc_low` (relates to the earlier `ast_loc_low` clamp fix, mcc-inline-c-o1).
+- [ ] T3. VALIDATE: repro no longer SEGVs AND self-host search evaluates like gcc-mcc
+      (~28k candidates); `fixpoint-invariant` byte-identical; exec differential
+      (`ctest -R exec`) unchanged; `ctest -R ast/` + `ctest -R jit/` green; re-run the
+      store-overlap detector -> 0 overlaps in the divmagic functions.
+
+### Dead ends (do not repeat)
+- Layout-luck: `-O2` self-host SEGVs, `-O1`/`-O0` "pass" but are still corrupt. NOT a clean bisect.
+- Disabling every `-O2` AST pass + `MCC_AST_TEMPLATES` does NOT remove it -> it's the replay
+  frame machinery, not any single strategy pass.
+- Clamping `get_temp_local_var` to 8-byte size/align: changed the binary, did NOT fix -> the
+  slots are individually disjoint; it's a cross-allocator record/replay desync, not undersize.
+- Allocation-level overlap detectors on plain `-c` (no $DEFS): 0 hits -> MUST use $DEFS.
+- ASan: only benign arena leaks (wrong-width access of valid memory, not OOB/UAF). valgrind
+  dead on this host (SIGILL in `_dl_start`). `-g` hides it (disables AST-replay).
+- The `rbx=0x20c49ba5` (÷1000 magic) at the fault is a red herring (`ast_now_ms`), not the cause.
+
+## Refactor: always-on JIT + runtime perm x combo x strategy search to jit_max_duration
+
+Decisions (settled): D1 = Both (compile-time search picks the AOT baseline the JIT
+deopts to + bakes the engine; runtime JIT continues searching). D2 = timeout is the
+existing `--jit-max-duration` (`s->jit_max_duration`, default 600s); `-O4`/`-O<sec>`
+stays the compile-time search budget. No new `--jit-timeout` flag.
+
+Phase 1 (always-on) — STATUS: the in-process `-run`/MEMORY JIT is ALREADY default-on
+(`MCC_JIT_DEFAULT=1`; `mccjit-boot` fires with no `MCC_JIT` set; `MCC_JIT=0` disables).
+Remaining "always-on" = the file-embed slice (`s->embed_jit` default 0 -> 1 at
+libmcc.c:962 + `ast_jit_env` at mccast.c:1347), which links the ~800KB engine into
+every EXE/.o and historically breaks ~25 tests (KGC variants segfault on real
+programs). Gate behind validation; keep `MCC_JIT=0` / `--no-jit` / `--no-embed-jit`.
+
+Phase 3 (the heart) — runtime JIT drives the search. KEY FINDING: `ast_reemit`
+(mccast.c:13773) is a PURE REPLAY of the recorded AST; it does NOT run
+`ast_run_strat_cycle`, so varying `ast_*_env` gates does nothing to a recompile.
+Variant diversity therefore needs new wiring:
+  1. Expose from mccast.c a helper like `ast_reemit_with_gates(sym, arena, gate_mask)`:
+     clone `arena` (the pristine intent arena), `ast_search_gates_set(mask)`,
+     `ast_run_strat_cycle(clone, sym, ...)`, then `ast_reemit(sym, clone)` — i.e.
+     `ast_search_score_one`'s transform but emitting a variant instead of scoring.
+  2. In `mccjit_recompile_common` (mccjit_embed.c:161): it deserializes `MccjitIntent`
+     which carries `it.arena`; before `ast_reemit_extern`, apply a gate config via the
+     new helper. Thread a gate mask param down `mcc_jit_recompile_blob` ->
+     `mccjit_recompile_common`.
+  3. Promote seam (`mccjit_counter_tick` mccjit_embed.c:790 + async
+     `mccjit_job_run_lazy`:758): replace one-shot-then-freeze with a loop that walks
+     the searchable gate/strategy vocabulary (reuse `combo_run` / the `AST_SG_*`
+     searchable set from mccast.c:12826), builds a variant per candidate, runs the
+     EXISTING `mccjit_bench_admit` as fitness, keeps the best; bound by
+     `st`-carried `jit_max_duration` on a WALL clock (`clock_gettime(CLOCK_MONOTONIC)`,
+     not `ast_now_ms`'s `clock()`). Today `jit_max_duration` is only a skip-if-over
+     guard (mccjit_embed.c:432,466); repurpose it as the search budget.
+  4. Stats: add candidates-evaluated / best-kept counters in mccstats.c mirroring
+     `mcc_stats_search_end`; surface under `--stats=2`.
+  KGC differential verification stays the correctness net (wrong variants refused).
+
+Phase 2 (compile-time picks baseline): auto-engage the search when JIT is on and
+`optimize_search_seconds>0` without requiring `MCC_AST_SEARCH`; tie the search
+winner's gate config into `ast_baseline_retain` so the deopt baseline is the
+searched-best. NOTE the in-process `MCC_AST_SEARCH` path currently SEGVs on
+self-host (see arg-spill bug above) — prefer the out-of-process fork pool for
+file outputs, or fix the arg-spill bug first.
+
+Validation gate for any phase: `fixpoint-invariant` byte-identical, exec
+differential JIT-on == `MCC_JIT=0`, cross-arch goldens, no crashes on real
+programs (the historical default-on failure mode).
