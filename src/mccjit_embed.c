@@ -358,6 +358,35 @@ MCCJIT_LOCAL void *mcc_jit_recompile_blob_gated(const void *buf, size_t len,
 	return r;
 }
 
+static double mccjit_elapsed(const struct timespec *t0);
+
+MCCJIT_LOCAL void *mccjit_search_masks(const void *blob, size_t len,
+																			 const uint64_t *masks, int nmask,
+																			 double budget_s, uint64_t *best_mask_out,
+																			 int *tried_out) { MCC_TRACE("enter\n");
+	struct timespec t0;
+	void *best = NULL;
+	int tried = 0, i;
+	int timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
+	for (i = 0; i < nmask; i++) { MCC_TRACE("br\n");
+		void *v;
+		if (timed && budget_s > 0 && mccjit_elapsed(&t0) > budget_s)
+			{ MCC_TRACE("br\n"); break; }
+		v = mcc_jit_recompile_blob_gated(blob, len, masks[i]);
+		if (!v)
+			{ MCC_TRACE("br\n"); continue; }
+		tried++;
+		if (!best) { MCC_TRACE("br\n");
+			best = v;
+			if (best_mask_out)
+				{ MCC_TRACE("br\n"); *best_mask_out = masks[i]; }
+		}
+	}
+	if (tried_out)
+		{ MCC_TRACE("br\n"); *tried_out = tried; }
+	return best;
+}
+
 MCCJIT_LOCAL void *mcc_jit_recompile_blob_spec(const void *buf, size_t len,
 																							 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
 	return mccjit_recompile_common(buf, len, 1, param_index, const_val);
@@ -6198,6 +6227,53 @@ PUB_FUNC int mccjit_selftest_gated(void) { MCC_TRACE("enter\n");
 	}
 	printf("mccjit-selftest-gated: variant diversity %s (%d fail%s)\n",
 				 fails ? "FAIL" : "OK", fails, fails == 1 ? "" : "s");
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails ? 1 : 0;
+}
+
+PUB_FUNC int mccjit_selftest_search(void) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	uint64_t masks[128];
+	int inputs[4] = {5, 0, -3, 100};
+	int fails = 0, i, tried = 0, tried2 = 0;
+	uint64_t bm = 0, bm2 = 0;
+	void *best, *best2;
+	for (i = 0; i < 128; i++)
+		{ MCC_TRACE("br\n"); masks[i] = (uint64_t)i; }
+	blob = mccjit_stash_one("int f(int x){return x*2+1;}", "f", 1, &blen, &s1);
+	if (!blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search: stash failed\n");
+		if (s1) { MCC_TRACE("br\n"); mcc_delete(s1); }
+		return 1;
+	}
+	best = mccjit_search_masks(blob, blen, masks, 128, 0.0, &bm, &tried);
+	if (!best || tried != 128) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search: enum best=%p tried=%d(want 128) FAIL\n", best, tried);
+		fails++;
+	} else { MCC_TRACE("br\n");
+		for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+			int got = ((int (*)(int))best)(inputs[i]);
+			if (got != inputs[i] * 2 + 1) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-search: winner(mask %#llx) f(%d)=%d want %d FAIL\n",
+							 (unsigned long long)bm, inputs[i], got, inputs[i] * 2 + 1);
+				fails++;
+			}
+		}
+	}
+	best2 = mccjit_search_masks(blob, blen, masks, 128, 0.003, &bm2, &tried2);
+	if (tried2 >= 128 || tried2 < 1) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search: budget tried=%d(want 1..127) FAIL\n", tried2);
+		fails++;
+	}
+	if (best2 && ((int (*)(int))best2)(5) != 11) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search: budget winner incorrect FAIL\n");
+		fails++;
+	}
+	printf("mccjit-selftest-search: enum tried=%d budget tried=%d %s (%d fail%s)\n",
+				 tried, tried2, fails ? "FAIL" : "OK", fails, fails == 1 ? "" : "s");
 	mcc_free(blob);
 	mcc_delete(s1);
 	return fails ? 1 : 0;

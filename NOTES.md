@@ -51,3 +51,19 @@ end-to-end correctness is covered by jit/selftest-fold-consts, which forces the
 fold through every recompile (including the vspec/spec-fold path) and requires all
 selftests to stay correct; the consteval unit test only asserts it is a safe
 no-op on an already-folded intent.
+
+## Runtime search loop (mccjit_search_masks)
+
+The heart of "the JIT running perm x combo x strategy optimizations until its
+timeout": recompile the hot blob under each candidate gate mask
+(mcc_jit_recompile_blob_gated -> ast_reemit_with_gates), bounded by a wall-clock
+budget (CLOCK_MONOTONIC via mccjit_elapsed). jit/selftest-search validates the
+loop: 128 masks all built with no budget; a 3ms budget stops early (~13 built);
+every winner still computes f(x)=x*2+1. SELECTION is currently first-valid — a
+placeholder — because the two natural fitnesses aren't cleanly available in a
+standalone helper: emit size needs mccjit_last_state->text_section but
+`text_section` is a state-macro (MCC_STATE_VAR) that can't deref an arbitrary
+state; runtime bench (mccjit_bench_admit) needs a live MccjitCounterState. Both
+ARE available at the promote seam (mccjit_counter_tick, st in hand), so the
+fitness-driven selection lands when the loop is wired there (next), reusing the
+existing bench_admit as the fitness and jit_max_duration as budget_s.
