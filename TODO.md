@@ -322,9 +322,10 @@ REMAINING (each needs a decision or a host mcc lacks — none are mechanical loo
 - STEP 2 (iii): dispatch the AOT eval/JIT-exec jobs on `mccjit_pool`. The heavy work
   (recompile from the override AST) is ALREADY threaded via the runtime promote seam;
   only the (nonexistent yet) AOT eval jobs of (i)/(ii) would need pool dispatch.
-- STEP 3: live partial-slice hot-swap wiring at the promote seam. Machinery + 9 slice
-  selftests DONE; only the live wiring remains — deferred as lowest-ROI (whole-
-  function live search already delivers the runtime search + hot-swap).
+- STEP 3: live partial-slice hot path DELIVERED 2026-07-18 (opt-in
+  MCC_JIT_SLICE_SEARCH; jit/selftest-slice-live). RESIDUAL: true in-arena
+  sub-region splice for slice ⊊ body (C2b reconcile) — needs a node-identity-
+  stable arena-splice primitive; deferred as lowest-ROI. See the STEP 3 block below.
 - Windows PE import-library RUNTIME crash (see "Windows embed-blob" above): needs a
   native Windows host + a PE import-library loader. Cannot be built/validated on Linux.
 
