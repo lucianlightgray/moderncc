@@ -13893,6 +13893,20 @@ void ast_reemit_extern(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	ast_reemit(sym, ast);
 }
 
+void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask) { MCC_TRACE("enter\n");
+	AstArena *saved_cur = ast_cur;
+	AstGateMask saved_gates = ast_search_gates_now();
+	AstArena *trial = ast_arena_clone(ast);
+	if (!trial) { MCC_TRACE("br\n"); ast_reemit(sym, ast); return; }
+	ast_search_gates_set((AstGateMask)gate_mask);
+	ast_cur = trial;
+	ast_run_strat_cycle(trial, sym, 1, ast_strat_order, ast_strat_order_n, NULL);
+	ast_search_gates_set(saved_gates);
+	ast_cur = saved_cur;
+	ast_reemit(sym, trial);
+	ast_arena_free(trial);
+}
+
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val) { MCC_TRACE("enter\n");
 	AstArena *sv = ast_cur;
 	int folds;
