@@ -300,6 +300,48 @@ Group C — runtime hot path (permute + partial-slice hot-swap + reconcile):
      b) ast_slice_equiv structural check + KGC
      c) deopt-to-baseline on any mismatch (never keep an unverified slice)
 
+### SETTLED direction (2026-07-17, author-chosen)
+
+Picked cells: A1c, A2a, A3a · B1a/B2a (baseline stays) · C1c, C2b, C3c, C4b.
+Two overriding requirements on top:
+
+- **THREADED.** All AOT const-eval / JIT-execute and all runtime permute+recompile
+  work runs on worker THREADS (the existing `mccjit_pool` pthread pool:
+  `mccjit_pool_start`/`_enqueue`/`mccjit_job_run_lazy`, mccjit_embed.c:711/741/758),
+  never blocking the driver's main compile-or-run thread. A2a "in-process during the
+  -O4 search" therefore means: the AOT `-O4` search dispatches eval/JIT-exec jobs to
+  the pool and joins, not a synchronous inline call and not the out-of-process fork
+  pool. The runtime hot path is already async on this pool; the AOT side reuses it.
+
+- **BACKEND OVERRIDE API — backend hands a dynamic AST to the engine.** Today the
+  engine's cold path deserializes the compiled-in `MccjitIntent` shipped with the
+  program (`mccjit_recompile_common` -> `mccjit_intent_deserialize` -> `it.arena`).
+  Add an API so the AOT backend can OVERRIDE that and submit a live, dynamically
+  compiled `AstArena` (e.g. the const-eval-refined / partially-specialized AST it
+  built at -O4) directly to the engine for a symbol. The engine then optimizes /
+  hot-swaps from the backend's AST instead of the baked intent.
+  Sketch (names provisional):
+    `int mcc_jit_submit_ast(Sym *sym, AstArena *ast, unsigned gate_mask, int flags);`
+      - enqueues a pool job that runs the C-hot-path (slice -> permute -> reconcile ->
+        KGC/slice_equiv verify -> pointer-swap via `mcc_jit_publish`) on `ast`;
+      - PRECEDENCE: a backend-submitted AST for a sym wins over the shipped
+        `MccjitIntent` for that sym; symbols the backend does not submit keep the
+        deserialize-shipped path (B1a). Store submissions in a per-sym override table
+        checked at the top of `mccjit_recompile_common`.
+    `void mcc_jit_engine_config(...);` — backend registers the const-evaluator/eval
+      hooks (ast_eval_slice + `MCC_AST_JIT_EVAL_GATE` oracle, A3a) the engine may call.
+  This is the seam that lets pillar A (AOT eval) feed pillar C (runtime hot path)
+  without going through serialization: the backend's dynamic AST is the engine's
+  working AST. Serialization stays only for the ship-to-disk cold baseline (B).
+
+Implementation ordering (revised): (0) land the arg-spill fix — DONE. (1) the
+backend-override API + per-sym override table + pool-threaded submit, on the
+existing whole-function recompile (proves the seam end to end, KGC-verified).
+(2) AOT `-O4` dispatches eval/JIT-exec jobs to the pool and feeds results into the
+submitted AST (pillar A). (3) partial-slice granularity + neighbour reconciliation
+(C1c/C2b/C3c) on top of the working whole-function seam. Each step gated by
+fixpoint-invariant byte-identical + exec differential + KGC.
+
 Phase 1 (always-on) — STATUS: the in-process `-run`/MEMORY JIT is ALREADY default-on
 (`MCC_JIT_DEFAULT=1`; `mccjit-boot` fires with no `MCC_JIT` set; `MCC_JIT=0` disables).
 Remaining "always-on" = the file-embed slice (`s->embed_jit` default 0 -> 1 at
