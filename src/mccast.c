@@ -21,6 +21,7 @@
 #include "algorithms/jit.h"
 void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym);
 void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym);
+int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #endif
 #include "mcccombo.h"
 #include "mccmagic.h" /* constant-division magic (selftested in tools/asttool.c:suite_magic) */
@@ -13130,6 +13131,16 @@ search_done:
 	ast_arena_free(pristine);
 }
 
+#ifdef MCC_EMBED_JIT
+static void ast_jit_submit_aot(Sym *sym) { MCC_TRACE("enter\n");
+	if (!sym || !ast_cur || !getenv("MCC_JIT_SUBMIT_AOT"))
+		{ MCC_TRACE("br\n"); return; }
+	if (mcc_jit_submit_ast(sym, ast_cur, 0, 0) == 0 && getenv("MCC_JIT_VERBOSE"))
+		fprintf(stderr, "mccjit-aot-submit[%s]: submitted sym->v=%ld\n",
+						funcname, (long)sym->v);
+}
+#endif
+
 #if MCC_HOST_WIN32 && defined(__GNUC__) && !defined(__clang__)
 __attribute__((optimize("O0")))
 #endif
@@ -13464,6 +13475,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
 							mccjit_embed_note(funcname, ast_cur, sym);
+							ast_jit_submit_aot(sym);
 						}
 #endif
 						ind = aot_base;
@@ -13505,6 +13517,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
 							mccjit_embed_note(funcname, ast_cur, sym);
+							ast_jit_submit_aot(sym);
 						}
 #endif
 						ind = aot_base;

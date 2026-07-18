@@ -31,21 +31,24 @@ awk "BEGIN{exit !($wall > 3.0 && $wall < 8.0)}" || { echo "Part1 FAIL: wall ${wa
 [ "${range_on:-0}" -ge 1 ] || { echo "Part1 FAIL: RANGE gate (const-guided ranges) not shown active"; fail=1; }
 [ "$fail" = 0 ] && echo "Part1 PASS: 4s AOT search engaged, $evald candidates, const-guided ranges active"
 
-echo "== Part 2: JIT on + -O4 recompiles hot functions and hot-swaps the AST =="
+echo "== Part 2: JIT on + -O4, backend hands its compiled AST to the JIT (mcc_jit_submit_ast override) =="
 printf '%s\n' \
-	'static unsigned busy(unsigned x){ unsigned s=0,i; for(i=0;i<64;i++) s += (x+i)/7u + (x*i)%13u; return s; }' \
+	'__attribute__((noinline)) static unsigned busy(unsigned x){ unsigned s=0,i; for(i=0;i<64;i++) s += (x+i)/7u + (x*i)%13u; return s; }' \
 	'#include <stdio.h>' \
 	'int main(void){ unsigned long t=0; int i; for(i=0;i<400000;i++) t+=busy((unsigned)i); printf("%lu\n", t); return 0; }' \
 	> "$TMP/hot.c"
-out2=$(env XDG_CACHE_HOME="$TMP/c2" MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=200 MCC_JIT_VERBOSE=1 \
+ref=$(env MCC_JIT=0 "$MCC" -O2 -run "$TMP/hot.c" 2>/dev/null | tr -dc '0-9')
+out2=$(env XDG_CACHE_HOME="$TMP/c2" MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=200 MCC_JIT_VERBOSE=1 \
 	"$MCC" -O4 -run "$TMP/hot.c" 2>&1) || { echo "$out2" | tail -5; echo "Part2: run FAILED"; exit 1; }
-prog=$(printf '%s' "$out2" | grep -vE 'mccjit-|mccstat' | tail -1)
-swaps=$(printf '%s' "$out2" | grep -cE 'swapped|-> entry=|route=(kgc|direct)' || true)
-recompiles=$(printf '%s' "$out2" | grep -cE 'mccjit-(boot|lazy).*(swapped|entry=)' || true)
-echo "Part2: prog_output=${prog} swap/recompile_lines=${swaps}"
+prog=$(printf '%s' "$out2" | grep -vE 'mccjit-|mccstat' | tr -dc '0-9')
+submitted=$(printf '%s' "$out2" | grep -cE 'mccjit-aot-submit\[busy\]' || true)
+overrode=$(printf '%s' "$out2" | grep -cE 'mccjit-override\[busy\]' || true)
+echo "Part2: prog_output=${prog} ref=${ref} busy_submitted=${submitted} busy_override_used=${overrode}"
 [ -n "$prog" ] || { echo "Part2 FAIL: program produced no output"; fail=1; }
-[ "${swaps:-0}" -ge 1 ] || { echo "Part2 FAIL: no JIT recompile/hot-swap observed (AST not replaced by backend recompile)"; fail=1; }
-[ "$fail" = 0 ] && echo "Part2 PASS: JIT recompiled + hot-swapped the AST under -O4"
+[ "$prog" = "$ref" ] || { echo "Part2 FAIL: JIT output $prog != reference $ref (override miscompiled)"; fail=1; }
+[ "${submitted:-0}" -ge 1 ] || { echo "Part2 FAIL: backend did not submit busy's AST (mcc_jit_submit_ast not called)"; fail=1; }
+[ "${overrode:-0}" -ge 1 ] || { echo "Part2 FAIL: JIT did not use the backend-submitted AST (override path did not fire)"; fail=1; }
+[ "$fail" = 0 ] && echo "Part2 PASS: backend submitted busy's AST; JIT recompiled from it (override), correct result"
 
 [ "$fail" = 0 ] && echo "regression_o4: ALL PASS" || echo "regression_o4: FAIL"
 exit $fail

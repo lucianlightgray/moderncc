@@ -167,7 +167,8 @@ static unsigned long mccjit_search_budget_baked_s;
 
 typedef struct MccjitOverride {
 	int64_t tokv;
-	AstArena *ast;
+	unsigned char *blob;
+	size_t len;
 	uint64_t gate_mask;
 	int flags;
 } MccjitOverride;
@@ -175,12 +176,14 @@ static MccjitOverride *mccjit_overrides;
 static int mccjit_override_n, mccjit_override_cap;
 static pthread_mutex_t mccjit_override_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static int mccjit_override_get(int64_t tokv, AstArena **ast, uint64_t *mask) { MCC_TRACE("enter\n");
+static int mccjit_override_get(int64_t tokv, unsigned char **blob, size_t *len,
+															uint64_t *mask) { MCC_TRACE("enter\n");
 	int i, found = 0;
 	pthread_mutex_lock(&mccjit_override_lock);
 	for (i = 0; i < mccjit_override_n; i++)
 		if (mccjit_overrides[i].tokv == tokv) { MCC_TRACE("br\n");
-			*ast = mccjit_overrides[i].ast;
+			*blob = mccjit_overrides[i].blob;
+			*len = mccjit_overrides[i].len;
 			*mask = mccjit_overrides[i].gate_mask;
 			found = 1;
 			break;
@@ -189,13 +192,12 @@ static int mccjit_override_get(int64_t tokv, AstArena **ast, uint64_t *mask) { M
 	return found;
 }
 
-int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) { MCC_TRACE("enter\n");
+static void mccjit_override_put(int64_t tokv, unsigned char *blob, size_t len,
+																uint64_t gate_mask, int flags) { MCC_TRACE("enter\n");
 	int i;
-	if (!sym || !ast)
-		{ MCC_TRACE("br\n"); return -1; }
 	pthread_mutex_lock(&mccjit_override_lock);
 	for (i = 0; i < mccjit_override_n; i++)
-		{ MCC_TRACE("br\n"); if (mccjit_overrides[i].tokv == sym->v) { MCC_TRACE("br\n"); break; } }
+		{ MCC_TRACE("br\n"); if (mccjit_overrides[i].tokv == tokv) { MCC_TRACE("br\n"); break; } }
 	if (i == mccjit_override_n) { MCC_TRACE("br\n");
 		if (mccjit_override_n == mccjit_override_cap) { MCC_TRACE("br\n");
 			mccjit_override_cap = mccjit_override_cap ? mccjit_override_cap * 2 : 8;
@@ -203,12 +205,27 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) {
 																		 mccjit_override_cap * sizeof *mccjit_overrides);
 		}
 		mccjit_override_n++;
+	} else { MCC_TRACE("br\n");
+		mcc_free(mccjit_overrides[i].blob);
 	}
-	mccjit_overrides[i].tokv = sym->v;
-	mccjit_overrides[i].ast = ast;
+	mccjit_overrides[i].tokv = tokv;
+	mccjit_overrides[i].blob = blob;
+	mccjit_overrides[i].len = len;
 	mccjit_overrides[i].gate_mask = gate_mask;
 	mccjit_overrides[i].flags = flags;
 	pthread_mutex_unlock(&mccjit_override_lock);
+}
+
+int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) { MCC_TRACE("enter\n");
+	MccjitBuf b;
+	if (!sym || !ast)
+		{ MCC_TRACE("br\n"); return -1; }
+	mccjit_buf_init(&b);
+	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
+		mccjit_buf_free(&b);
+		return -1;
+	}
+	mccjit_override_put(sym->v, b.data, b.len, gate_mask, flags);
 	return 0;
 }
 
@@ -219,6 +236,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	Sym *sym;
 	Sym *sav_global, *sav_local;
 	void *entry = NULL;
+	uint64_t override_mask = 0;
+	int have_override = 0;
 
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_recompile(); }
@@ -247,6 +266,25 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mcc_exit_state(js);
 		mcc_delete(js);
 		return NULL;
+	}
+
+	if (!mccjit_recompile_use_gates && mccjit_override_n) { MCC_TRACE("br\n");
+		unsigned char *ov_blob = NULL;
+		size_t ov_len = 0;
+		uint64_t ov_mask = 0;
+		if (mccjit_override_get(it.anchor_sym_v, &ov_blob, &ov_len, &ov_mask)) { MCC_TRACE("br\n");
+			MccjitIntent ov_it;
+			if (mccjit_intent_deserialize(ov_blob, ov_len, &ov_it) == 0) { MCC_TRACE("br\n");
+				if (getenv("MCC_JIT_VERBOSE"))
+					fprintf(stderr,
+									"mccjit-override[%s]: using backend-submitted AST (%lu bytes)\n",
+									ov_it.fn_name ? ov_it.fn_name : "?", (unsigned long)ov_len);
+				mccjit_intent_release(&it);
+				it = ov_it;
+				override_mask = ov_mask;
+				have_override = 1;
+			}
+		}
 	}
 
 	if (it.has_external)
@@ -304,15 +342,13 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	sym = mccjit_rebuild_sym(&it);
 	mccjit_internal_compile = 1;
 	if (sym) { MCC_TRACE("br\n");
-		AstArena *ov_ast = NULL;
-		uint64_t ov_mask = 0;
 		ast_fconst_reuse_disable(1);
 		if (getenv("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
 		if (mccjit_recompile_use_gates)
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
-		else if (mccjit_override_n && mccjit_override_get(it.anchor_sym_v, &ov_ast, &ov_mask))
-			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, ov_ast, ov_mask); }
+		else if (have_override && override_mask)
+			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, override_mask); }
 		else if (getenv("MCC_JIT_SELFTEST_REEMIT_GATES"))
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
 		else
@@ -4212,35 +4248,65 @@ PUB_FUNC int mccjit_selftest_eligibility(void) { MCC_TRACE("enter\n");
 }
 
 PUB_FUNC int mccjit_selftest_submit(void) { MCC_TRACE("enter\n");
-	Sym s1, s2;
-	AstArena *a1 = ast_arena_new(), *a2 = ast_arena_new();
-	AstArena *got = NULL;
+	unsigned char *base = NULL, *ovr = NULL, *ovcopy = NULL;
+	size_t base_len = 0, ov_len = 0;
+	MCCState *sb = NULL, *so = NULL;
+	MccjitIntent it_base;
+	int64_t anchor;
+	int fails = 0;
+	int (*e)(int) = NULL;
+	unsigned char *gb = NULL;
+	size_t gl = 0;
 	uint64_t gm = 0;
-	int fails = 0, before;
-	if (!a1 || !a2) { MCC_TRACE("br\n"); printf("mccjit-selftest-submit: arena alloc FAIL\n"); return 1; }
-	memset(&s1, 0, sizeof s1); s1.v = 0x51a;
-	memset(&s2, 0, sizeof s2); s2.v = 0x52b;
-	before = mccjit_override_n;
-	mcc_jit_submit_ast(&s1, a1, 0x7, 0);
-	if (!mccjit_override_get(0x51a, &got, &gm) || got != a1 || gm != 0x7)
-		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: get(s1) FAIL\n"); fails++; }
-	mcc_jit_submit_ast(&s2, a2, 0x9, 0);
-	if (!mccjit_override_get(0x52b, &got, &gm) || got != a2 || gm != 0x9)
-		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: get(s2) FAIL\n"); fails++; }
-	if (mccjit_override_n != before + 2)
-		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: count FAIL\n"); fails++; }
-	mcc_jit_submit_ast(&s1, a2, 0x3, 0); /* dedup: same tok updates in place */
-	if (!mccjit_override_get(0x51a, &got, &gm) || got != a2 || gm != 0x3)
-		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: dedup FAIL\n"); fails++; }
-	if (mccjit_override_n != before + 2)
-		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: dedup count FAIL\n"); fails++; }
-	if (mccjit_override_get(0xdead, &got, &gm))
-		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: miss FAIL\n"); fails++; }
-	if (mcc_jit_submit_ast(NULL, a1, 0, 0) != -1 || mcc_jit_submit_ast(&s1, NULL, 0, 0) != -1)
+	Sym snull;
+	memset(&it_base, 0, sizeof it_base);
+	memset(&snull, 0, sizeof snull);
+
+	base = mccjit_stash_one("int f(int x){return x+1000;}", "f", 1, &base_len, &sb);
+	ovr = mccjit_stash_one("int f(int x){return x*3;}", "f", 1, &ov_len, &so);
+	if (!base || !ovr || mccjit_intent_deserialize(base, base_len, &it_base) != 0) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-submit: stash FAIL\n");
+		fails = 1;
+		goto done;
+	}
+	anchor = it_base.anchor_sym_v;
+
+	e = (int (*)(int))mcc_jit_recompile_blob(base, base_len);
+	if (!e || e(5) != 1005)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: baseline f(5)!=1005 FAIL\n"); fails++; }
+
+	ovcopy = mcc_malloc(ov_len ? ov_len : 1);
+	memcpy(ovcopy, ovr, ov_len);
+	mccjit_override_put(anchor, ovcopy, ov_len, 0, 0);
+	if (!mccjit_override_get(anchor, &gb, &gl, &gm) || gb != ovcopy || gl != ov_len)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: table store FAIL\n"); fails++; }
+
+	e = (int (*)(int))mcc_jit_recompile_blob(base, base_len);
+	if (!e || e(5) != 15)
+		{ MCC_TRACE("br\n");
+			printf("mccjit-selftest-submit: override f(5)=%d want 15 FAIL\n", e ? e(5) : -1);
+			fails++; }
+
+	mccjit_override_n = 0;
+	mcc_free(ovcopy);
+	ovcopy = NULL;
+	e = (int (*)(int))mcc_jit_recompile_blob(base, base_len);
+	if (!e || e(5) != 1005)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: post-clear f(5)!=1005 FAIL\n"); fails++; }
+
+	if (mcc_jit_submit_ast(NULL, it_base.arena, 0, 0) != -1 ||
+			mcc_jit_submit_ast(&snull, NULL, 0, 0) != -1)
 		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: null-guard FAIL\n"); fails++; }
-	ast_arena_free(a1);
-	ast_arena_free(a2);
-	printf("mccjit-selftest-submit: override table %s\n", fails ? "FAIL" : "OK");
+
+done:
+	mccjit_override_n = 0;
+	mcc_free(ovcopy);
+	mccjit_intent_release(&it_base);
+	mcc_free(base);
+	mcc_free(ovr);
+	if (sb) { MCC_TRACE("br\n"); mcc_delete(sb); }
+	if (so) { MCC_TRACE("br\n"); mcc_delete(so); }
+	printf("mccjit-selftest-submit: backend override %s\n", fails ? "FAIL" : "OK");
 	return fails ? 1 : 0;
 }
 

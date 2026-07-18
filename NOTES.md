@@ -111,9 +111,33 @@ from two sides. tests/ci/regression_o4_aot_jit.sh:
    AOT combo/strategy search for ~4s (the -O4 => optimize_search_seconds=4 budget;
    libmcc.c:2680), evaluating ~29k candidates with the RANGE gate (`●range`, the
    const-guided value ranges) active. Asserts wall in 3..8s + evaluated>1000 + range
-   gate shown. (MCC_JIT=0 makes it AOT-only; the search code is JIT-independent.)
- - Part 2 (JIT on, MCC_JIT=1 + -O4 -run): a hot division/mod loop gets JIT-recompiled
-   from its captured AST (backend ast_reemit) and hot-swapped in (verbose
-   swapped/route=kgc|direct), while the program output stays correct — i.e. the JIT
-   replaces the running baseline with the backend-recompiled AST variant.
+   gate shown. (MCC_JIT=0 makes it AOT-only; the search code is JIT-independent. A
+   genuine -DMCC_CONFIG_JIT=OFF -DMCC_EMBED_JIT=OFF build — zero mccjit_* symbols —
+   was separately confirmed to engage the same 4s AOT search: wall=4.03s, evaluated
+   59614, range=75, proving the AOT optimizer is not JIT-dependent.)
+ - Part 2 (JIT on, MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 + -O4 -run): the backend hands its
+   live compiled AST for the hot function to the engine via mcc_jit_submit_ast (the
+   backend-override API), and the JIT recompiles the hot function FROM THAT submitted
+   AST — not from the shipped MccjitIntent. Asserts busy is submitted
+   (mccjit-aot-submit[busy]) AND the override path fires (mccjit-override[busy]: using
+   backend-submitted AST) AND the JIT output equals the MCC_JIT=0 reference.
 Registered under MCC_EMBED_JIT with TIMEOUT 90.
+
+## Backend override API (mcc_jit_submit_ast) — why it stores a serialized blob
+
+The backend hands a dynamically-compiled AST to the engine so the runtime JIT
+optimizes/hot-swaps from the backend's AST instead of the baked MccjitIntent. The
+override wins over the shipped intent per-symbol (keyed by anchor_sym_v; B1a keeps the
+deserialize path for un-submitted syms). CRITICAL: a raw AstArena clone is NOT portable
+across MCCState contexts. Every function references its PARAM syms (and callees/globals)
+as live Sym* POINTERS; those are freed by the time the runtime hot-recompile builds a
+fresh MCCState, so reemitting a cloned arena dereferences dead pointers and segfaults
+(observed: full-mask reemit of glibc stdio inline stubs crashed). The Sym*->name-handle
+remap that makes an arena portable is exactly what mccjit_intent_serialize/_deserialize
+already perform. So mcc_jit_submit_ast SERIALIZES the arena at submit time (while the
+Sym*s are still live) into the override table (mccjit_override_put), and
+mccjit_recompile_common re-deserializes the override blob in place of the shipped intent
+on a match. A true zero-serialization live-AST hand-off would require recompiling in the
+origin MCCState or replicating the remap on the live arena — deferred; serialize-on-
+submit is the sound path and reuses the ship-to-disk machinery. Default OFF
+(MCC_JIT_SUBMIT_AOT unset) => no submissions => fixpoint byte-identical.
