@@ -408,7 +408,7 @@ existing whole-function recompile; proves the seam end to end).
       byte-identical unchanged. Add `jit/selftest-submit-ast` (submit an AST, assert
       the swap + a correct result).
 
-STEP 2 — AOT `-O4`+ JIT-evaluator-guided backend, threaded (pillar A, A1c/A2a/A3a).
+STEP 2 [in progress: ast_jit_const_fn DONE — compile-time const-eval primitive (single pure return, empty-env ast_eval_slice) folding a free-var-free return to a constant; validated by jit/selftest-consteval (6*7+1->43, x+1 refused, etc). REMAINING: (i) an AOT -O4 pass that walks pure slices and folds const results into the working arena; (ii) JIT-execute non-trivial pure slices (A1c) via ast_slice_extract+compile+run; (iii) dispatch these on mccjit_pool (A2a threaded); (iv) hand the refined arena to the engine via mcc_jit_submit_ast.] — AOT `-O4`+ JIT-evaluator-guided backend, threaded (pillar A, A1c/A2a/A3a).
   In the `-O4` search, for each certifiable pure slice (`ast_slice_certifiable`)
   dispatch a POOL job that either runs `ast_eval_slice` (cheap, A1c) or JIT-EXECUTES
   the slice for a concrete constant (expensive, A1c), UB-gated by

@@ -12102,6 +12102,20 @@ int ast_slice_certifiable(AstArena *a, AstLocal root) { MCC_TRACE("enter\n");
 #endif
 }
 
+int ast_jit_const_fn(AstArena *a, int64_t *out) { MCC_TRACE("enter\n");
+#ifdef AST_EVAL_SLICE_PROVIDED
+	AstLocal rets[AST_EVAL_SLICE_MAXRET];
+	int nr = ast_eval_slice_returns(a, rets, AST_EVAL_SLICE_MAXRET);
+	if (nr != 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_eval_slice(a, rets[0], NULL, NULL, 0, out);
+#else
+	(void)a;
+	(void)out;
+	return 0;
+#endif
+}
+
 int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 										AstLocal broot) { MCC_TRACE("enter\n");
 #ifdef AST_EVAL_SLICE_PROVIDED

@@ -6046,6 +6046,62 @@ static int mccjit_certify_one(const char *src, const char *fn, int want,
 	return fails;
 }
 
+static int mccjit_consteval_one(const char *src, const char *fn, int want_ok,
+																int64_t want_val) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-consteval: %s stash failed\n", fn);
+		if (s1) { MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			int64_t v = 0;
+			int got = ast_jit_const_fn(it.arena, &v);
+			int ok = (got == want_ok) && (!want_ok || v == want_val);
+			printf("mccjit-selftest-consteval: %-3s const=%d(want %d) val=%lld(want %lld) %s\n",
+						 fn, got, want_ok, (long long)v, (long long)want_val, ok ? "OK" : "FAIL");
+			if (!ok) { MCC_TRACE("br\n"); fails++; }
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-consteval: %s deserialize failed\n", fn);
+			fails++;
+		}
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
+PUB_FUNC int mccjit_selftest_consteval(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+	fails += mccjit_consteval_one("int f(int x){(void)x;return 6*7+1;}", "f", 1, 43);
+	fails += mccjit_consteval_one("int f(int x){(void)x;return 5;}", "f", 1, 5);
+	fails += mccjit_consteval_one("int f(int x){return x+1;}", "f", 0, 0);
+	fails += mccjit_consteval_one("long f(long x){(void)x;return (3<<4)|1;}", "f", 1, 49);
+	printf("mccjit-selftest-consteval: %s (%d fail%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 PUB_FUNC int mccjit_selftest_sliceoracle(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 	AstArena *sc1, *sc2, *sc3;
