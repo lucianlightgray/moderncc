@@ -2056,7 +2056,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		dollar = strchr(name, '$');		/* merge grouped ".text$mn" -> ".text" */
 		if (dollar) { MCC_TRACE("br\n");
 			int k = (int)(dollar - name);
-			if (k > 31) k = 31;
+			if (k > 31) { MCC_TRACE("br\n"); k = 31; }
 			memcpy(nbuf, name, k);
 			nbuf[k] = 0;
 			name = nbuf;

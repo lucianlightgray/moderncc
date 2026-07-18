@@ -13181,8 +13181,8 @@ static void ast_jit_submit_aot(Sym *sym) { MCC_TRACE("enter\n");
 	if (!sym || !ast_cur || !getenv("MCC_JIT_SUBMIT_AOT"))
 		{ MCC_TRACE("br\n"); return; }
 	if (mcc_jit_submit_ast(sym, ast_cur, 0, 0) == 0 && getenv("MCC_JIT_VERBOSE"))
-		fprintf(stderr, "mccjit-aot-submit[%s]: submitted sym->v=%ld\n",
-						funcname, (long)sym->v);
+		{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-aot-submit[%s]: submitted sym->v=%ld\n",
+						funcname, (long)sym->v); }
 }
 #endif
 
@@ -13845,38 +13845,38 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
-		if (ast_verify_env) {
+		if (ast_verify_env) { MCC_TRACE("br\n");
 			const char *ast_verdict;
 			char ast_verdict_buf[32];
 			int ast_gap = 0;
-			if (ast_fn_faithful) {
+			if (ast_fn_faithful) { MCC_TRACE("br\n");
 				ast_verdict = "faithful";
-			} else if (ast_desync) {
+			} else if (ast_desync) { MCC_TRACE("br\n");
 				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "desync:%d",
 								ast_desync_line);
 				ast_verdict = ast_verdict_buf;
 				ast_gap = 1;
-			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) {
+			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) { MCC_TRACE("br\n");
 				ast_verdict = "empty";
-			} else if (ast_bail) {
+			} else if (ast_bail) { MCC_TRACE("br\n");
 				ast_verdict = "bail";
-			} else if (ast_vn != 0 || ast_cf_top != 0) {
+			} else if (ast_vn != 0 || ast_cf_top != 0) { MCC_TRACE("br\n");
 				ast_verdict = "stackresidue";
 				ast_gap = 1;
-			} else {
+			} else { MCC_TRACE("br\n");
 				ast_verdict = "unfaithful";
 				ast_gap = 1;
 			}
 			const char *ast_vfile = mcc_state && mcc_state->current_filename
 																	? mcc_state->current_filename
 																	: "?";
-			if (ast_verify_out && ast_verify_out[0]) {
+			if (ast_verify_out && ast_verify_out[0]) { MCC_TRACE("br\n");
 				FILE *ast_vf = fopen(ast_verify_out, "a");
-				if (ast_vf) {
+				if (ast_vf) { MCC_TRACE("br\n");
 					fprintf(ast_vf, "%s\t%s\t%s\n", ast_verdict, ast_vfile, funcname);
 					fclose(ast_vf);
 				}
-			} else {
+			} else { MCC_TRACE("br\n");
 				fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", ast_verdict, ast_vfile,
 								funcname);
 			}

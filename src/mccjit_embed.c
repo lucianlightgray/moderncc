@@ -276,9 +276,9 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 			MccjitIntent ov_it;
 			if (mccjit_intent_deserialize(ov_blob, ov_len, &ov_it) == 0) { MCC_TRACE("br\n");
 				if (getenv("MCC_JIT_VERBOSE"))
-					fprintf(stderr,
+					{ MCC_TRACE("br\n"); fprintf(stderr,
 									"mccjit-override[%s]: using backend-submitted AST (%lu bytes)\n",
-									ov_it.fn_name ? ov_it.fn_name : "?", (unsigned long)ov_len);
+									ov_it.fn_name ? ov_it.fn_name : "?", (unsigned long)ov_len); }
 				mccjit_intent_release(&it);
 				it = ov_it;
 				override_mask = ov_mask;
