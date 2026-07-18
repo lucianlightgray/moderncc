@@ -519,7 +519,7 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it) { MCC_TRACE("enter\n")
 	it->param_name = NULL;
 }
 
-static int mccjit_strip_enum(int t) {
+static int mccjit_strip_enum(int t) { MCC_TRACE("enter\n");
 	if (IS_ENUM(t) || IS_ENUM_VAL(t))
 		{ MCC_TRACE("br\n"); return t & ~VT_STRUCT_MASK; }
 	return t;

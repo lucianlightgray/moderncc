@@ -11472,7 +11472,7 @@ static addr_t ast_reloc0_sv;
 
 static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 																 int blen, const unsigned char *repl,
-																 int rlen) {
+																 int rlen) { MCC_TRACE("enter\n");
 	int lim = blen < rlen ? blen : rlen;
 	int d = 0;
 	while (d < lim && base[d] == repl[d])

@@ -6,6 +6,9 @@ static int is_id(int c) {
 	return isalnum((unsigned char)c) || c == '_';
 }
 
+/* Blank comments, string/char literals, and preprocessor logical lines to
+   spaces (length-preserving, newlines kept) so a stripped offset maps 1:1 back
+   to the raw text. */
 static void strip(char *s) {
 	char *w = s;
 	int at_bol = 1;
@@ -68,7 +71,6 @@ static const char *skip_ws(const char *p) {
 	return p;
 }
 
-/* word starting at p equals kw (already known no id-char precedes p) */
 static int word_is(const char *p, const char *kw) {
 	size_t n = strlen(kw);
 	return !strncmp(p, kw, n) && !is_id(p[n]);
@@ -84,14 +86,41 @@ static int lineno(const char *base, const char *p) {
 	return ln;
 }
 
-static void report(const char *path, const char *base, const char *at,
-									 const char *kw) {
-	printf("  %s:%d: %s block does not open with MCC_TRACE\n", path,
-				 lineno(base, at), kw);
-	g_violations++;
+/* raw+off begins "MCC_TRACE"; verify its format arg starts with `want`
+   ("enter" for functions, "br" for branches). */
+static int arg_is(const char *rawtok, const char *want) {
+	const char *p = rawtok + 9; /* past "MCC_TRACE" */
+	while (*p == ' ' || *p == '\t')
+		++p;
+	if (*p != '(')
+		return 0;
+	++p;
+	while (*p == ' ' || *p == '\t')
+		++p;
+	if (*p != '"')
+		return 0;
+	++p;
+	return !strncmp(p, want, strlen(want));
 }
 
-/* returns pointer just past the matching ')' for a '(' at *p == '(' */
+/* `brace` points at '{' in the stripped buffer; `raw` is the untouched text at
+   the same base. Require the block to open with MCC_TRACE(`want`...). */
+static void check_open(const char *path, const char *s, const char *raw,
+											 const char *brace, const char *kind, const char *want) {
+	const char *t = skip_ws(brace + 1);
+	if (!word_is(t, "MCC_TRACE")) {
+		printf("  %s:%d: %s does not open with MCC_TRACE\n", path,
+					 lineno(s, brace), kind);
+		g_violations++;
+		return;
+	}
+	if (!arg_is(raw + (t - s), want)) {
+		printf("  %s:%d: %s opens with MCC_TRACE but not (\"%s...\")\n", path,
+					 lineno(s, brace), kind, want);
+		g_violations++;
+	}
+}
+
 static const char *match_paren(const char *p) {
 	int d = 0;
 	while (*p) {
@@ -106,11 +135,12 @@ static const char *match_paren(const char *p) {
 	return p;
 }
 
-static void scan(const char *path, char *text) {
-	const char *p = text;
-	const char *prev = "";
+/* Control-flow branches: every braced if/else/for/while/switch/do block opens
+   with MCC_TRACE("br\n"). */
+static void scan_branches(const char *path, const char *s, const char *raw) {
+	const char *p = s;
 	while (*p) {
-		if (is_id(*p) && (p == text || !is_id(p[-1]))) {
+		if (is_id(*p) && (p == s || !is_id(p[-1]))) {
 			const char *kw = NULL;
 			if (word_is(p, "if"))
 				kw = "if";
@@ -125,45 +155,60 @@ static void scan(const char *path, char *text) {
 			else if (word_is(p, "do"))
 				kw = "do";
 			if (kw) {
-				const char *at = p;
 				const char *q = p + strlen(kw);
 				const char *body;
-				if (kw[0] != 'e' && kw[0] != 'd') { /* if/for/while/switch */
+				if (kw[0] != 'e' && kw[0] != 'd') {
 					q = skip_ws(q);
 					if (*q != '(') {
 						p += strlen(kw);
-						prev = kw;
 						continue;
 					}
 					q = match_paren(q);
 					body = skip_ws(q);
-				} else if (kw[0] == 'e') { /* else */
+				} else if (kw[0] == 'e') {
 					body = skip_ws(q);
-					if (word_is(body, "if")) { /* else if -> handled by the if */
+					if (word_is(body, "if")) {
 						p += strlen(kw);
-						prev = kw;
 						continue;
 					}
-				} else { /* do */
+				} else {
 					body = skip_ws(q);
 				}
-				if (*body == '{') {
-					const char *t = skip_ws(body + 1);
-					if (!word_is(t, "MCC_TRACE"))
-						report(path, text, at, kw);
-				}
+				if (*body == '{')
+					check_open(path, s, raw, body, kw, "br");
 				p += strlen(kw);
-				prev = kw;
 				continue;
 			}
 		}
 		++p;
 	}
-	(void)prev;
+}
+
+/* Function definitions: a top-level `) {` opens a function body, which must
+   open with MCC_TRACE("enter\n"). */
+static void scan_functions(const char *path, const char *s, const char *raw) {
+	const char *p;
+	int depth = 0;
+	for (p = s; *p; ++p) {
+		if (*p == '{') {
+			if (depth == 0) {
+				const char *b = p;
+				while (b > s && (b[-1] == ' ' || b[-1] == '\t' || b[-1] == '\r' ||
+												 b[-1] == '\n'))
+					--b;
+				if (b > s && b[-1] == ')')
+					check_open(path, s, raw, p, "function", "enter");
+			}
+			++depth;
+		} else if (*p == '}') {
+			if (depth > 0)
+				--depth;
+		}
+	}
 }
 
 static int scan_file(const char *path, int is_dir, void *ud) {
-	char *text;
+	char *raw, *s;
 	int elen;
 	(void)ud;
 	if (is_dir)
@@ -173,15 +218,24 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 				(path[elen - 1] == 'c' || path[elen - 1] == 'h')) &&
 			!(elen >= 4 && !strcmp(path + elen - 4, ".inc")))
 		return 0;
-	if (!(text = ts_read_file(path, NULL)))
+	if (!(raw = ts_read_file(path, NULL)))
 		return 0;
-	/* opt-in: only files that use the br-idiom are held to it (raw text — the
-	   literal is blanked by strip). */
-	if (strstr(text, "MCC_TRACE(\"br")) {
-		strip(text);
-		scan(path, text);
+	{
+		size_t len = strlen(raw);
+		s = malloc(len + 1);
+		if (s) {
+			memcpy(s, raw, len + 1);
+			strip(s);
+			/* opt-in: only files that actually call MCC_TRACE (a real call
+				 survives strip; a #define or a comment mention does not). */
+			if (strstr(s, "MCC_TRACE(")) {
+				scan_branches(path, s, raw);
+				scan_functions(path, s, raw);
+			}
+			free(s);
+		}
 	}
-	free(text);
+	free(raw);
 	return 0;
 }
 
@@ -201,13 +255,13 @@ int main(int argc, char **argv) {
 
 	if (g_violations) {
 		fprintf(stderr,
-						"trace-gate invariant violated - a braced control block in an\n"
-						"MCC_TRACE-instrumented file does not open with MCC_TRACE(\"br\\n\"):\n"
-						"%d violation(s) above\n",
+						"trace-gate invariant violated - a function body or braced branch in\n"
+						"an MCC_TRACE-instrumented file does not open with the expected\n"
+						"MCC_TRACE(\"enter\\n\")/MCC_TRACE(\"br\\n\"): %d violation(s) above\n",
 						g_violations);
 		return 1;
 	}
-	printf("trace-gate invariant OK: every braced branch in instrumented files "
-				 "opens with MCC_TRACE\n");
+	printf("trace-gate invariant OK: every function and braced branch in "
+				 "instrumented files opens with MCC_TRACE\n");
 	return 0;
 }
