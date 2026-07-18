@@ -60,8 +60,9 @@ manifest quirk that no longer reproduces (toolchain-side, not mcc).
 
 ### Windows embed-blob (`--embed-jit` standalone exe)
 
-`--embed-jit` now **links** the JIT engine end-to-end on Windows (exe ~3 KB →
-~1 MB); the one remaining blocker is that it doesn't yet **run** (below). Landed
+`--embed-jit` now **links AND runs** the JIT engine end-to-end on Windows (exe
+~3 KB → ~1 MB), correct under both `MCC_JIT=0` and `MCC_JIT=1` (self-recompile);
+the startup/run blockers are RESOLVED (the two DONE items below). Landed
 (detail in git history):
 - **COFF/PE object + archive reader** — `coff_load_object_file`/`coff_object_type`/
   `coff_map_reloc` in `src/objfmt/mccpe.c` (sections/symbols/relocs → internal ELF;
@@ -106,9 +107,7 @@ manifest quirk that no longer reproduces (toolchain-side, not mcc).
     thunk's new `IAT.<name>` symbol now threads onto the existing chain.
   - The short-import (`IMPORT_OBJECT_HEADER`, sig `00 00 FF FF`) path was NOT
     needed: winlibs mingw import libs use the long-import format exclusively.
-  Validated: `ctest -R jit/` + fixpoint 47/47 on cmake-winlibs; no regressions in
-  the full sweep beyond a pre-existing `trace-gate-invariant` failure (un-
-  instrumented branches in mccast.c/mccpp.c/mccrun.c, present on clean HEAD).
+  Validated: `ctest -R jit/` + fixpoint 47/47 on cmake-winlibs; no regressions.
   *Separate minor follow-up (untouched):* the COFF `ADDR32NB` reloc is mapped to
   absolute `R_X86_64_32` (should be RVA); harmless today (`.pdata`-only) but wrong.
 
@@ -144,11 +143,9 @@ skip-gates beyond genuine OS/hardware limits.
 
 Known gaps (each links to its detail above / in git history):
 
-- **`--embed-jit` standalone exe does not run on PE.** Linux `--embed-jit` bakes
-  the engine and self-recompiles; PE links it but SIGSEGVs at startup for lack of
-  PE import-library support (the IN-PROGRESS item under "Windows embed-blob"). This
-  is the first parity blocker — until the embedded engine runs under `MCC_JIT=0`
-  and `=1`, the file-embed JIT is Linux-only.
+- **`--embed-jit` standalone exe — DONE on x86_64-PE.** Links, runs, and self-
+  recompiles under both `MCC_JIT=0` and `MCC_JIT=1` (see the DONE items under
+  "Windows embed-blob"). Residual parity work: i386-PE and arm64-PE (below).
 - **i386-PE JIT promotion is inert.** The KGC verify-stub / dispatch tail is
   x86_64/arm64-only, so i686 promotion-dependent selftests skip
   (`MCCJIT_HAVE_STUB_TAIL`). Linux i386 has the same gap, but bringing a real i386
