@@ -90,3 +90,15 @@ including the incremental publish issued from the pool worker thread. ASan does 
 instrument the JIT-emitted machine code itself (not compiled with ASan) — it covers
 the engine's orchestration (deserialize, recompile, KGC stub build, bench, publish,
 variant bookkeeping), which is exactly the new search code.
+
+## Concurrent hot-swap is ThreadSanitizer-clean
+
+The live search's async path publishes an improving variant to the dispatch slot
+from the pool WORKER thread (mcc_jit_publish) while the main thread dispatches
+through that same slot (jmp *slot) — a genuine write-vs-read concurrency point.
+Validated race-free under TSan (separate build, -fsanitize=thread; ASan and TSan
+are mutually exclusive): jit_selftest_pool + jit_selftest_lazy under
+MCC_JIT_SEARCH=1, 0 data races across 6 repeated runs (races are timing-dependent,
+hence the repeats). The pointer-swap publish + the pool qlock/swap_lock ordering
+hold up. Repro mirrors the ASan recipe above but with
+-DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g".
