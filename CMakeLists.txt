@@ -4014,16 +4014,19 @@ if(MCC_BUILD_TESTS)
 
             # The runtime-JIT backend-override path (mcc_jit_submit_ast /
             # MCC_JIT_SUBMIT_AOT) only fires-and-is-correct where the runtime -run
-            # JIT is fully functional: x86_64 with a non-MSVC toolchain (Linux +
-            # mingw-x86_64 are green). Everywhere else it is gated off or broken:
+            # JIT is fully functional: x86_64 non-MSVC (Linux + mingw-x86_64) and
+            # arm64-Linux (ELF). arm64-Linux was fixed by emitting the dispatch stub
+            # before the prologue so every swapped-in target is entered with a clean
+            # frame (the frameless-leaf return corruption; see git history / TODO).
+            # Everywhere else it is gated off or broken:
             #   - arm64-macOS: -run JIT is off (Apple W^X) -> override never fires
-            #   - arm64-Linux: override fires but the search/override codegen path
-            #     miscompiles some programs (tracked in TODO — real bug)
             #   - MSVC (x86_64 + arm64): -run is non-functional (empty output)
             #   - i686: correct output but the override never fires
             # Run these two differential guards only on the cells where the path
             # is exercised for real; skip (not fail) the rest.
-            if(MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+            if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC") OR
+               (MCC_CPU STREQUAL "arm64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC"
+                AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NOT WIN32))
                 add_test(NAME regression/o4-aot-jit COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/regression_o4_aot_jit.sh" "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
                 set_tests_properties(regression/o4-aot-jit PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 90)
                 add_test(NAME regression/jit-submit-aot-diff COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/regression_jit_submit_aot_diff.sh" "$<TARGET_FILE:mcc>")

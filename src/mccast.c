@@ -13497,7 +13497,11 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64) || \
 		defined(MCC_TARGET_ARM64)
+#if defined(MCC_TARGET_ARM64)
+					int aot_base = (int)mcc_state->cg_arm64_func_start_offset;
+#else
 					int aot_base = ast_body_ind_sv;
+#endif
 					int aot_len = ind - aot_base;
 					Section *rs = cur_text_section->reloc;
 					int aot_rlen = rs ? (int)(rs->data_offset - ast_reloc0_sv) : 0;
@@ -13583,6 +13587,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						greloca(data_section, body_sym, slot_off, R_AARCH64_ABS64, 0);
 						ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base,
 																aot_chain);
+						mcc_state->cg_arm64_func_sub_sp_offset += 16;
 						if (saved_loc < loc)
 							{ MCC_TRACE("br\n"); loc = saved_loc; }
 						mcc_free(aot_code);
