@@ -3,6 +3,63 @@
 Design rationale that does not belong in code comments (project style: no code
 comments) or in TODO.md (open work). Newest first.
 
+## PE import libraries — why mcc consumes mingw long-import members
+
+`--embed-jit` links the host-CC-built JIT engine, which references UCRT/msvcrt
+symbols that mcc's curated `.def` files don't cover (`__acrt_iob_func`, `_errno`,
+`strerror`, `__intrinsic_setjmp`, …). Those come from the mingw import archives
+(`libucrt.a`/`libmsvcrt.a`/`libkernel32.a`), which mcc previously loaded as inert
+COFF data — the `.idata$*` sections were dropped and the IAT never bound, so at
+startup a thunk `jmp *[IAT]` jumped into the `IMAGE_IMPORT_BY_NAME` string and
+SIGSEGV'd. mcc builds its PE import directory from `pe_putimport` (→
+`pe_check_symbols` → `pe_build_imports`), NOT from `.idata` sections, so an import
+member must be recognised and converted to a `pe_putimport`, not loaded.
+
+Winlibs mingw uses the LONG-import format exclusively (a regular COFF member: a
+`.text` `jmp *__imp_X` thunk + `.idata$4/$5/$6/$7`), so the short-import
+(`IMPORT_OBJECT_HEADER`) path was unnecessary. A long-import member DEFINES the
+external `__imp_<X>` (in `.idata$5`) and references an undefined `_head_<X>`
+descriptor. `coff_import_func_info` detects that shape and extracts three names:
+`impname` (`__imp_` stripped — what mcc matches references against), `expname`
+(the `.idata$6` hint/name — the real DLL export), and `headsym`.
+
+Three subtleties made this a real linker feature, not a one-liner:
+
+1. **DLL name is indirect.** A function member's `.idata$7` only relocs to
+   `_head_<X>`; the DLL string lives in a *different* member, `__<X>_iname`, whose
+   `.idata$7` holds it. Since import libs are pulled à-la-carte and the armap
+   indexes the iname symbol, `coff_resolve_import_dll` derives the iname name from
+   the head name (`_head_<X>` ↔ `__<X>_iname`), finds that member via the armap,
+   and reads its `.idata$7`. Registering unused imports is harmless — like a
+   `.def`, `pe_check_symbols` only builds IAT entries for referenced symbols.
+
+2. **Symbol ≠ DLL export name (aliases).** Members alias mingw wrappers to the
+   real UCRT export: `_setjmp`→`__intrinsic_setjmp`, `__msvcrt_assert`→`_assert`.
+   mcc's model tied the IMAGE_IMPORT_BY_NAME to the dynsym name, so binding used
+   the wrong (non-exported) name → STATUS_ENTRYPOINT_NOT_FOUND. The decoupled
+   `pe_imp_alias` table lets `pe_build_imports` emit `expname` while `pe_check`
+   still matches `impname`. Crucially `pe_putimport` resets any stale alias for a
+   symbol (its `name` is authoritative), so when a later `.def` re-registers a
+   symbol an import member had aliased (mcc's `msvcrt.def` also provides `_setjmp`,
+   → msvcrt.dll which *does* export `_setjmp`), the def wins cleanly and the stale
+   apiset alias is dropped. Without the reset the DLL flipped to msvcrt.dll but the
+   alias persisted → `msvcrt.dll!__intrinsic_setjmp` (nonexistent) → crash.
+
+3. **Both `X` and `__imp_X` referenced.** The foreign, dllimport-compiled engine
+   references a symbol both as `X` (direct call → thunk) and `__imp_X` (indirect
+   IAT). `pe_check_symbols` chains all referencing symtab symbols for one import
+   through `is->iat_index` (walked by `pe_build_imports` via `st_value`), but the
+   thunk branch OVERWROTE `is->iat_index` with its fresh `IAT.<name>` symbol,
+   orphaning any `__imp_X` link already chained (the `__imp_` forms are processed
+   first). Fix: the new `IAT.<name>` symbol threads onto the existing chain
+   (`st_value = prev_chain`) so every reference resolves to the one IAT slot. This
+   is pre-existing linker code; it only manifested because normal mcc-compiled
+   programs never reference both forms of one import.
+
+Result: the embedded exe runs correctly under `MCC_JIT=0`. `MCC_JIT=1` (the baked
+engine self-recompiling at runtime) still faults — a separate, embed-specific
+runtime-JIT issue tracked in TODO.md (in-process `-run` self-recompile works).
+
 ## Escape-aware purity (ast_fn_purity_noescape) — why a separate function
 
 `ast_fn_purity` returns IMPURE on the first `AST_Store`, which is correct for its

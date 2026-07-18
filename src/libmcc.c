@@ -1031,6 +1031,9 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	mcc_run_free(s1);
 #endif
 	dynarray_reset(&s1->loaded_dlls, &s1->nb_loaded_dlls);
+#ifdef MCC_TARGET_PE
+	dynarray_reset(&s1->pe_imp_alias, &s1->nb_pe_imp_alias);
+#endif
 	mcc_free(s1);
 #ifdef MCC_MEM_DEBUG
 	mcc_memcheck(-1);

@@ -997,7 +997,7 @@ static void pe_build_imports(struct pe_info *pe) { MCC_TRACE("enter\n");
 				int iat_index = p->symbols[k]->iat_index;
 				int sym_index = p->symbols[k]->sym_index;
 				ElfW(Sym) *imp_sym = (ElfW(Sym) *)s1->dynsymtab_section->data + sym_index;
-				const char *name = (char *)s1->dynsymtab_section->link->data + imp_sym->st_name;
+				const char *name = pe_import_bindname(s1, (char *)s1->dynsymtab_section->link->data + imp_sym->st_name);
 				int ordinal;
 
 				do { MCC_TRACE("br\n");
@@ -1401,12 +1401,16 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 				if (offset) { MCC_TRACE("br\n");
 				} else { MCC_TRACE("br\n");
 					unsigned char *p;
+					int prev_chain = is->iat_index;
 
 					snprintf(buffer, sizeof(buffer), "IAT.%s", name);
 					is->iat_index = put_elf_sym(
 							symtab_section, 0, sizeof(DWORD),
 							ELFW(ST_INFO)(STB_LOCAL, STT_OBJECT),
 							0, SHN_UNDEF, buffer);
+
+					if (prev_chain)
+						{ MCC_TRACE("br\n"); ((ElfW(Sym) *)symtab_section->data + is->iat_index)->st_value = prev_chain; }
 
 					offset = text_section->data_offset;
 					is->thk_offset = offset;
@@ -1581,7 +1585,29 @@ static void pe_print_sections(MCCState *s1, const char *fname) { MCC_TRACE("ente
 	fclose(f);
 }
 
+ST_FUNC void pe_import_set_alias(MCCState *s1, const char *sym, const char *bind) { MCC_TRACE("enter\n");
+	for (int i = 0; i < s1->nb_pe_imp_alias; i += 2) { MCC_TRACE("br\n");
+		if (!strcmp(s1->pe_imp_alias[i], sym)) { MCC_TRACE("br\n");
+			mcc_free(s1->pe_imp_alias[i + 1]);
+			s1->pe_imp_alias[i + 1] = mcc_strdup(bind);
+			return;
+		}
+	}
+	if (!strcmp(sym, bind))
+		{ MCC_TRACE("br\n"); return; }
+	dynarray_add(&s1->pe_imp_alias, &s1->nb_pe_imp_alias, mcc_strdup(sym));
+	dynarray_add(&s1->pe_imp_alias, &s1->nb_pe_imp_alias, mcc_strdup(bind));
+}
+
+ST_FUNC const char *pe_import_bindname(MCCState *s1, const char *sym) { MCC_TRACE("enter\n");
+	for (int i = 0; i < s1->nb_pe_imp_alias; i += 2)
+		{ MCC_TRACE("br\n"); if (!strcmp(s1->pe_imp_alias[i], sym))
+			{ MCC_TRACE("br\n"); return s1->pe_imp_alias[i + 1]; } }
+	return sym;
+}
+
 ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t value) { MCC_TRACE("enter\n");
+	pe_import_set_alias(s1, name, name);
 	return set_elf_sym(
 			s1->dynsymtab_section,
 			value,
@@ -2210,6 +2236,124 @@ the_end:
 	mcc_free(smap);
 	mcc_free(symtab);
 	mcc_free(strtab);
+	mcc_free(shdr);
+	return ret;
+}
+
+ST_FUNC int coff_import_func_info(int fd, unsigned long off,
+																	char *impname, size_t impsz,
+																	char *expname, size_t expsz,
+																	char *headsym, size_t headsz) { MCC_TRACE("enter\n");
+	IMAGE_FILE_HEADER fh;
+	IMAGE_SECTION_HEADER *shdr = NULL;
+	unsigned char *symtab = NULL;
+	char *strtab = NULL;
+	unsigned long symtab_off, strtab_off, strtab_size = 0;
+	int i, nsec, nsym, have_imp = 0, have_head = 0;
+	DWORD ssz = 0;
+
+	expname[0] = 0;
+	lseek(fd, off, SEEK_SET);
+	if (full_read(fd, &fh, sizeof fh) != sizeof fh)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (fh.Machine != (WORD)IMAGE_FILE_MACHINE)
+		{ MCC_TRACE("br\n"); return 0; }
+	nsec = fh.NumberOfSections;
+	nsym = fh.NumberOfSymbols;
+	if (!fh.PointerToSymbolTable || !nsym)
+		{ MCC_TRACE("br\n"); return 0; }
+
+	shdr = load_data(fd, off + IMAGE_SIZEOF_FILE_HEADER + fh.SizeOfOptionalHeader,
+									 (unsigned long)nsec * sizeof(IMAGE_SECTION_HEADER));
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		char nb[9];
+		int k;
+		unsigned long sz;
+		char buf[512];
+		for (k = 0; k < 8 && shdr[i].Name[k]; k++)
+			{ MCC_TRACE("br\n"); nb[k] = shdr[i].Name[k]; }
+		nb[k] = 0;
+		if (strcmp(nb, ".idata$6") || shdr[i].SizeOfRawData <= 2 || !shdr[i].PointerToRawData)
+			{ MCC_TRACE("br\n"); continue; }
+		sz = shdr[i].SizeOfRawData;
+		if (sz >= sizeof buf)
+			{ MCC_TRACE("br\n"); sz = sizeof buf - 1; }
+		lseek(fd, off + shdr[i].PointerToRawData, SEEK_SET);
+		if (full_read(fd, buf, sz) == (ssize_t)sz) { MCC_TRACE("br\n");
+			buf[sz] = 0;
+			pstrcpy(expname, expsz, buf + 2);
+		}
+		break;
+	}
+
+	symtab_off = off + fh.PointerToSymbolTable;
+	symtab = load_data(fd, symtab_off, (unsigned long)nsym * COFF_SIZEOF_SYMBOL);
+	strtab_off = symtab_off + (unsigned long)nsym * COFF_SIZEOF_SYMBOL;
+	lseek(fd, strtab_off, SEEK_SET);
+	full_read(fd, &ssz, 4);
+	strtab_size = ssz < 4 ? 4 : ssz;
+	strtab = load_data(fd, strtab_off, strtab_size);
+
+	for (i = 0; i < nsym;) { MCC_TRACE("br\n");
+		MccCoffSym *sy = (MccCoffSym *)(symtab + (size_t)i * COFF_SIZEOF_SYMBOL);
+		char nb[9];
+		const char *name;
+
+		if (sy->N.Name.Zeroes == 0)
+			{ MCC_TRACE("br\n"); name = (strtab && sy->N.Name.Offset < strtab_size) ? strtab + sy->N.Name.Offset : ""; }
+		else { MCC_TRACE("br\n"); memcpy(nb, sy->N.ShortName, 8); nb[8] = 0; name = nb; }
+
+		if (sy->StorageClass == IMAGE_SYM_CLASS_EXTERNAL && sy->SectionNumber > 0 &&
+				0 == memcmp(name, "__imp_", 6)) { MCC_TRACE("br\n");
+			pstrcpy(impname, impsz, name + 6);
+			have_imp = 1;
+		} else if (0 == memcmp(name, "_head_", 6)) { MCC_TRACE("br\n");
+			pstrcpy(headsym, headsz, name);
+			have_head = 1;
+		}
+		i += 1 + sy->NumberOfAuxSymbols;
+	}
+	if (!expname[0])
+		{ MCC_TRACE("br\n"); pstrcpy(expname, expsz, impname); }
+	mcc_free(shdr);
+	mcc_free(symtab);
+	mcc_free(strtab);
+	return have_imp && have_head;
+}
+
+ST_FUNC int coff_import_dllname(int fd, unsigned long off, char *dll, size_t dsz) { MCC_TRACE("enter\n");
+	IMAGE_FILE_HEADER fh;
+	IMAGE_SECTION_HEADER *shdr = NULL;
+	int i, nsec, ret = 0;
+
+	lseek(fd, off, SEEK_SET);
+	if (full_read(fd, &fh, sizeof fh) != sizeof fh)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (fh.Machine != (WORD)IMAGE_FILE_MACHINE)
+		{ MCC_TRACE("br\n"); return 0; }
+	nsec = fh.NumberOfSections;
+	shdr = load_data(fd, off + IMAGE_SIZEOF_FILE_HEADER + fh.SizeOfOptionalHeader,
+									 (unsigned long)nsec * sizeof(IMAGE_SECTION_HEADER));
+
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		char nb[9];
+		int k;
+		unsigned long sz;
+		for (k = 0; k < 8 && shdr[i].Name[k]; k++)
+			{ MCC_TRACE("br\n"); nb[k] = shdr[i].Name[k]; }
+		nb[k] = 0;
+		if (strcmp(nb, ".idata$7") || !shdr[i].SizeOfRawData || !shdr[i].PointerToRawData)
+			{ MCC_TRACE("br\n"); continue; }
+		sz = shdr[i].SizeOfRawData;
+		if (sz >= dsz)
+			{ MCC_TRACE("br\n"); sz = dsz - 1; }
+		lseek(fd, off + shdr[i].PointerToRawData, SEEK_SET);
+		if (full_read(fd, dll, sz) == (ssize_t)sz) { MCC_TRACE("br\n");
+			dll[sz] = 0;
+			ret = dll[0] != 0;
+		}
+		break;
+	}
 	mcc_free(shdr);
 	return ret;
 }

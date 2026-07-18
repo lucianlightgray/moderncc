@@ -3365,6 +3365,30 @@ static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) { MCC_TRACE("e
 	return len;
 }
 
+#ifdef MCC_TARGET_PE
+static int coff_resolve_import_dll(MCCState *s1, int fd, const char *headsym,
+																	 const uint8_t *ar_index, const char *ar_names,
+																	 int nsyms, int entrysize, char *dll, size_t dsz) { MCC_TRACE("enter\n");
+	char iname[512];
+	const char *p;
+	int i;
+	(void)s1;
+
+	snprintf(iname, sizeof iname, "__%s_iname", headsym + 6);
+	for (p = ar_names, i = 0; i < nsyms; i++, p += strlen(p) + 1) { MCC_TRACE("br\n");
+		if (!strcmp(p, iname)) { MCC_TRACE("br\n");
+			unsigned long long moff = get_be(ar_index + i * entrysize, entrysize);
+			ArchiveHeader hdr;
+			int len = read_ar_header(fd, moff, &hdr);
+			if (len <= 0)
+				{ MCC_TRACE("br\n"); return 0; }
+			return coff_import_dllname(fd, moff + len, dll, dsz);
+		}
+	}
+	return 0;
+}
+#endif
+
 static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MCC_TRACE("enter\n");
 	int i, bound, nsyms, sym_index, len, ret = -1;
 	unsigned long long off;
@@ -3403,6 +3427,18 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
 #ifdef MCC_TARGET_PE
 			if (coff_object_type(fd, off)) { MCC_TRACE("br\n");
+				char impname[512], expname[512], headsym[512], dll[512];
+				if (coff_import_func_info(fd, off, impname, sizeof impname, expname, sizeof expname, headsym, sizeof headsym)) { MCC_TRACE("br\n");
+					if (!find_elf_sym(s1->dynsymtab_section, impname)) { MCC_TRACE("br\n");
+						if (coff_resolve_import_dll(s1, fd, headsym, ar_index, ar_names, nsyms, entrysize, dll, sizeof dll)) { MCC_TRACE("br\n");
+							pe_putimport(s1, mcc_add_dllref(s1, dll, 0)->index, impname, 0);
+							pe_import_set_alias(s1, impname, expname);
+						} else if (s1->verbose) { MCC_TRACE("br\n");
+							printf("   (import '%s': unresolved DLL via %s)\n", impname, headsym);
+						}
+					}
+					continue;
+				}
 				if (coff_load_object_file(s1, fd, off) < 0)
 					{ MCC_TRACE("br\n"); goto the_end; }
 			} else
@@ -3446,10 +3482,14 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) { MCC_TRACE("en
 				{ MCC_TRACE("br\n"); return -1; }
 #ifdef MCC_TARGET_PE
 		} else if (coff_object_type(fd, file_offset)) { MCC_TRACE("br\n");
-			if (s1->verbose == 2)
-				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
-			if (coff_load_object_file(s1, fd, file_offset) < 0)
-				{ MCC_TRACE("br\n"); return -1; }
+			char impname[512], expname[512], headsym[512];
+			if (coff_import_func_info(fd, file_offset, impname, sizeof impname, expname, sizeof expname, headsym, sizeof headsym)) { MCC_TRACE("br\n");
+			} else { MCC_TRACE("br\n");
+				if (s1->verbose == 2)
+					{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
+				if (coff_load_object_file(s1, fd, file_offset) < 0)
+					{ MCC_TRACE("br\n"); return -1; }
+			}
 #endif
 		}
 		file_offset = (file_offset + size + 1) & ~1;

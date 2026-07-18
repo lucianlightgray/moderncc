@@ -116,73 +116,52 @@ manifest quirk that no longer reproduces (toolchain-side, not mcc).
 - **kernel32.def** — added `InitializeSRWLock` + the SRW/InitOnce exports the JIT
   win32 shim uses.
 
-- [~] **IN PROGRESS: RUNTIME: the embedded engine crashes at startup — mcc has no PE
-  import-LIBRARY support.** The `--embed-jit` exe links but SIGSEGVs before `main`
-  (both `MCC_JIT=0`/`=1`). Root-caused via gdb: a `memset(buf,0,4)` call goes to
-  the import thunk `jmp *[IAT]`, but the IAT slot still holds the
-  `IMAGE_IMPORT_BY_NAME` string pointer (the "memset" name, 16 bytes away) — the
-  Windows loader **never bound the import**, so the thunk jumps into the name
-  string. Deeper cause: mcc (like TinyCC) resolves DLL imports **only from `.def`
-  files** (`pe_load_def`→`pe_putimport`); it has no import-library handling. The
-  mingw import archives (`libmsvcrt.a`/`libucrt.a`/`libkernel32.a`) satisfy the
-  engine's libc refs with import members that mcc mishandles: **short-import**
-  members (`IMPORT_OBJECT_HEADER`, sig `00 00 FF FF`) are skipped by
-  `coff_object_type`, and **long-import** members (regular COFF with `.idata$`
-  sections) are loaded as inert data — neither assembles a bound PE import
-  directory, so the IAT is never filled. (This is why the engine links but its
-  imports are dead.) There is also a **UCRT-vs-msvcrt** dimension: the winlibs
-  engine is UCRT-compiled, so `__imp___acrt_iob_func` et al. are not in mcc's
-  msvcrt `.def` and carry an ABI mismatch.
-  **Fix path (a real linker feature):** teach mcc to consume PE import libraries —
-  parse short-import members (`IMPORT_OBJECT_HEADER` → `mcc_add_dllref` +
-  `pe_putimport`, mirroring `pe_load_def`) and recognize long-import `.idata$`
-  members (extract name/DLL, register via `pe_putimport` instead of loading the
-  `.idata`), plus a UCRT export set. Non-COFF-reloc (reloc types verified:
-  ADDR32NB is `.pdata`-only, SECREL is `.debug`-only).
-  *Separate minor follow-up:* ADDR32NB is mapped to absolute `R_X86_64_32` (should
-  be RVA); harmless today (`.pdata`-only) but wrong.
+- **DONE (startup crash fixed): PE import-LIBRARY support landed.** `mcc
+  --embed-jit hello.c -o h.exe` now LINKS and RUNS correctly under `MCC_JIT=0`
+  (output byte-matches gcc; ~1 MB exe). The startup SIGSEGV (IAT never bound → a
+  thunk `jmp *[IAT]` jumped into the `IMAGE_IMPORT_BY_NAME` string) is gone. What
+  landed (detail in git history + NOTES.md "PE import libraries"):
+  - **Long-import member consumption** (`coff_import_func_info` in mccpe.c): a
+    mingw long-import COFF member (defines `__imp_<X>` in `.idata$5`, references
+    undefined `_head_<X>`) is recognised and converted to `mcc_add_dllref` +
+    `pe_putimport` instead of being loaded as inert `.idata` data — wired into both
+    à-la-carte (`mcc_load_alacarte`) and whole-archive dispatch in mccelf.c.
+  - **DLL-name resolution** (`coff_resolve_import_dll` + `coff_import_dllname`):
+    the DLL name is indirect (`_head_<X>` ↔ archive `__<X>_iname` member, whose
+    `.idata$7` holds the string); resolved via the armap in the à-la-carte path.
+  - **Aliased imports** (`pe_import_set_alias`/`pe_import_bindname`, MCCState
+    `pe_imp_alias`): a member decouples the linker symbol from the DLL export name
+    (`.idata$6` hint/name), e.g. `_setjmp`→`__intrinsic_setjmp`,
+    `__msvcrt_assert`→`_assert`. `pe_build_imports` now emits the export name while
+    `pe_check` matches the symbol. `pe_putimport` resets a stale alias so a later
+    `.def` re-registration wins cleanly (fixed a `_setjmp`→msvcrt.dll + stale
+    `__intrinsic_setjmp` alias mismatch that crashed with STATUS_ENTRYPOINT_NOT_FOUND).
+  - **pe_check_symbols chain fix**: a symbol imported BOTH as `X` (thunk) and
+    `__imp_X` (data/IAT) — as the foreign UCRT-compiled engine does — had its
+    `__imp_X` chain link clobbered by the thunk branch and left unresolved; the
+    thunk's new `IAT.<name>` symbol now threads onto the existing chain.
+  - The short-import (`IMPORT_OBJECT_HEADER`, sig `00 00 FF FF`) path was NOT
+    needed: winlibs mingw import libs use the long-import format exclusively.
+  Validated: `ctest -R jit/` + fixpoint 47/47 on cmake-winlibs; no regressions in
+  the full sweep beyond a pre-existing `trace-gate-invariant` failure (un-
+  instrumented branches in mccast.c/mccpp.c/mccrun.c, present on clean HEAD).
+  *Separate minor follow-up (untouched):* the COFF `ADDR32NB` reloc is mapped to
+  absolute `R_X86_64_32` (should be RVA); harmless today (`.pdata`-only) but wrong.
 
-  **Implementation guide (everything mapped this session):**
-  - *Repro/build (native Windows host).* winlibs x86_64 UCRT at
-    `vendor/winlibs-mingw-w64-16.1.0-ucrt-x86_64/mingw64/bin` (prepend to PATH in
-    PowerShell so gcc finds `as`; Git Bash mangles `C:/…` PATH). Build dir
-    `cmake-winlibs` (configured `-DCMAKE_C_COMPILER=<winlibs gcc>`). Repro:
-    `mcc --embed-jit hello.c -o h.exe` (hello with an eligible fn like
-    `int busy(int)`), then `MCC_JIT=0 ./h.exe` → SIGSEGV. gdb: `jmp *[IAT]` thunk,
-    IAT holds the `IMAGE_IMPORT_BY_NAME` string ptr. (i686 repro: `cmake-i686`,
-    `-DMCC_TARGET_ARCH=i386`.)
-  - *Pattern to mirror.* `pe_load_def` (`mccpe.c:1741`): `dllindex =
-    mcc_add_dllref(s1, dllname, 0)->index;` then `pe_putimport(s1, dllindex, name,
-    ord);` per export. mcc's `__imp_` handling already exists (`mccpe.c:1385`
-    strips `__imp_`/`_imp__`), so one `pe_putimport(name)` serves both the thunk
-    (`name`) and IAT (`__imp_name`) references.
-  - *Short-import member* = 20-byte `IMPORT_OBJECT_HEADER`: `WORD Sig1(=0),
-    Sig2(=0xFFFF), Version, Machine; DWORD TimeDateStamp, SizeOfData; WORD
-    Ordinal/Hint, Type` (Type: bits 0-1 = CODE/DATA/CONST, bits 2-4 = NameType),
-    then `name\0` then `dllname\0` (within `SizeOfData`). Add a
-    `coff_load_short_import(s1,fd,off)` in `mccpe.c` + detect (`Sig1==0 &&
-    Sig2==0xFFFF`) in `mcc_load_archive`'s member dispatch (`mccelf.c` — the same
-    two spots as the COFF-object dispatch: whole-archive loop + `mcc_load_alacarte`
-    member pull). NameType may prefix-strip (`?`/`@`/`_`) — handle IMPORT_OBJECT_NAME
-    (as-is) first; ordinal-only imports are rare here.
-  - *Long-import member* = regular COFF object (machine `64 86…`, so it currently
-    loads via `coff_load_object_file`) carrying `.text` thunk + `.idata$2/$4/$5/$6`.
-    Detect these (member defines `X` + `__imp_X` and has `.idata$` sections) and
-    route to `pe_putimport` instead of loading the `.idata` as data. The DLL name is
-    in `.idata$7` (or derivable). *Note the archives are MIXED:* `libmsvcrt.a`/
-    `libucrt.a` also hold real code members (e.g. `lib64_libucrt_extra_a-*.o` math
-    fns) that must still load normally — dispatch on member shape, not archive.
-    `nm libmsvcrt.a` shows `T memset` (thunk) + `I __imp_memset` per import.
-  - *UCRT export set.* `__imp___acrt_iob_func`/`__imp__open`/`_read`/`fstat64i32`/
-    `strtoll`/`strtoull`/`__p__environ` are UCRT (not in mcc's `msvcrt.def`).
-    Once import-lib parsing works they come from `libucrt.a` with the right DLL
-    (`api-ms-win-crt-*` / `ucrtbase.dll`); no separate def needed. Beware UCRT vs
-    msvcrt `FILE`/stdio ABI if any FILE-typed import is exercised.
-  - *After it works:* re-check whether the `kernel32.def` SRW additions and the
-    `mcc_add_jit_engine_embedded` static-lib list are still all needed (imports may
-    then resolve straight from `libkernel32.a`). Validate: `mcc --embed-jit hello.c`
-    runs correct under `MCC_JIT=0` and `=1` (self-recompile), and `ctest -R jit/`
-    = 32/32 on winlibs.
+- [ ] **REMAINING: `--embed-jit` exe SIGSEGVs under `MCC_JIT=1` (runtime
+  self-recompile).** With the engine dormant (`MCC_JIT=0`) the embedded exe runs;
+  with `MCC_JIT=1` it faults (0xC0000005) once the baked `.init_array` JIT starts
+  recompiling the hot function. This is EMBED-SPECIFIC: in-process `-run` JIT
+  self-recompile works on this host (`MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 mcc -O4
+  -run hello.c` → correct; `ctest -R jit/` 47/47). So the import-lib work is not
+  the cause — the runtime JIT machinery running INSIDE the baked standalone PE is
+  the open issue (crash is in JIT-generated/engine `.text`, stripped, no symbols).
+  Likely candidates to probe next: the baked engine's KGC/exec-page setup under
+  the standalone image (vs the libmcc-hosted `-run` process), or a UCRT-vs-msvcrt
+  runtime hazard when the engine (UCRT) and the base program (mcc msvcrt.def) both
+  touch CRT state during a live recompile. Repro: `mcc --embed-jit hello.c -o
+  h.exe` then `MCC_JIT=1 ./h.exe` (cmake-winlibs; hello with an eligible
+  `int busy(int)` hot loop).
 
 ## Bring Windows AOT + JIT to full parity with the Linux implementation
 

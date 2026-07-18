@@ -835,6 +835,8 @@ struct MCCState {
 #endif
 
 #ifdef MCC_TARGET_PE
+	char **pe_imp_alias;
+	int nb_pe_imp_alias;
 	int pe_subsystem;
 	unsigned pe_characteristics;
 	unsigned pe_dll_characteristics;
@@ -1771,6 +1773,10 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str);
 ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename);
 ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
 ST_FUNC int coff_object_type(int fd, unsigned long file_offset);
+ST_FUNC int coff_import_func_info(int fd, unsigned long off, char *impname, size_t impsz, char *expname, size_t expsz, char *headsym, size_t headsz);
+ST_FUNC int coff_import_dllname(int fd, unsigned long off, char *dll, size_t dsz);
+ST_FUNC void pe_import_set_alias(MCCState *s1, const char *sym, const char *bind);
+ST_FUNC const char *pe_import_bindname(MCCState *s1, const char *sym);
 ST_FUNC int pe_output_file(MCCState *s1, const char *filename);
 ST_FUNC int pe_putimport(MCCState *s1, int dllindex, const char *name, addr_t value);
 ST_FUNC int pe_setsubsy(MCCState *s1, const char *arg);
