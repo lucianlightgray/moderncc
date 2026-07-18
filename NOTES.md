@@ -67,3 +67,26 @@ state; runtime bench (mccjit_bench_admit) needs a live MccjitCounterState. Both
 ARE available at the promote seam (mccjit_counter_tick, st in hand), so the
 fitness-driven selection lands when the loop is wired there (next), reusing the
 existing bench_admit as the fitness and jit_max_duration as budget_s.
+
+## Runtime search path is ASan+UBSan clean
+
+The live perm x combo x strategy search (combinatorial recompiles, per-improvement
+mcc_jit_publish incremental hot-swap, mccjit_bench_admit selection, variant
+lifetime) was validated memory-safe + UB-free. MCC_BUILD_SANITIZE only builds a
+separate mcc_s, NOT the selftests, so a fully-instrumented build is needed:
+
+  cmake -S . -B <dir> -G Ninja -DMCC_EMBED_JIT=ON -DMCC_CONFIG_JIT=ON \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+  cmake --build <dir> --target jit_selftest jit_selftest_kgc jit_selftest_pool \
+    jit_selftest_struct jit_selftest_purity
+  ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1 \
+    MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 ./jit_selftest_...
+
+detect_leaks=0 is required: the search leaks losing variants by design
+(pointer-swap-and-cap; QSBR never frees a possibly-live variant). Result: 0
+AddressSanitizer/UBSan reports across int/kgc/struct/purity/async-pool shapes,
+including the incremental publish issued from the pool worker thread. ASan does not
+instrument the JIT-emitted machine code itself (not compiled with ASan) — it covers
+the engine's orchestration (deserialize, recompile, KGC stub build, bench, publish,
+variant bookkeeping), which is exactly the new search code.
