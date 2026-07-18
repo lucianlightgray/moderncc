@@ -754,6 +754,13 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	return best;
 }
 
+/* STEP 3 live wiring: choose the hot-recompile entry. Default path (no env) is
+   byte-identical to the historical inline ternary. MCC_JIT_SLICE_SEARCH engages
+   the partial-slice pillar (ast_slice_search -> kernel wrap -> reemit -> live-in
+   differential verify) on the async pool path; on any miss it falls back to the
+   whole-function search / faithful build, so it never regresses. */
+static void *mccjit_lazy_entry(MccjitCounterState *st, int *routed, int async);
+
 /* J6A jit-profile: runtime live-in capture riding the D5 hot counter. The
    counter stub spills the 6 GP arg registers and hands their address to the
    tick as `regs`; regs[MCCJIT_KGC_MAXARG-1-i] is param i (rdi..r9 pushed in
@@ -945,9 +952,7 @@ static void mccjit_job_run_eager(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	MccjitCounterState *st = job->cst;
 	int routed = 0;
-	void *entry = getenv("MCC_JIT_SEARCH")
-										? mccjit_lazy_search(st, &routed, 1)
-										: mccjit_lazy_build(st->blob, st->len, &routed);
+	void *entry = mccjit_lazy_entry(st, &routed, 1);
 	uint32_t nargs = mccjit_last_nparam;
 	int wide = mccjit_last_ret_wide;
 	int allfp = mccjit_last_allfp;
@@ -1009,9 +1014,7 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 		target = st->baseline;
 	} else { MCC_TRACE("br\n");
 		int routed = 0;
-		void *entry = getenv("MCC_JIT_SEARCH")
-										? mccjit_lazy_search(st, &routed, 0)
-										: mccjit_lazy_build(st->blob, st->len, &routed);
+		void *entry = mccjit_lazy_entry(st, &routed, 0);
 		if (entry) { MCC_TRACE("br\n");
 			void *incumbent = st->promoted ? st->promoted : st->baseline;
 			if (!mccjit_bench_admit(entry, incumbent, st, mccjit_last_nparam,
@@ -4176,6 +4179,111 @@ PUB_FUNC int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+/* STEP 3 live-wiring selftest: drive a TIER0-pure int fn through the async pool
+   promote seam under MCC_JIT_SLICE_SEARCH with captured live-ins seeded, so the
+   partial-slice hot path (mccjit_slice_search: ast_slice_search -> kernel wrap ->
+   reemit -> live-in differential verify) actually fires and publishes, and the
+   promoted slice-kernel entry computes correct results. */
+PUB_FUNC int mccjit_selftest_slicelive(void) { MCC_TRACE("enter\n");
+	static const char src[] = "int f(int x){return x*2+1;}";
+	static void *slot;
+	static MccjitCounterState st;
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	int (*baseline)(int) = NULL;
+	int inputs[6] = {5, 0, -3, 100, 7, -40};
+	int fails = 0, i, nw, spins = 0;
+	void *promoted = NULL;
+
+	printf("mccjit-selftest-slicelive: begin (STEP 3 live slice hot-swap)\n");
+#if !MCCJIT_HAVE_STUB_TAIL
+	printf("mccjit-selftest-slicelive: skipped — no KGC stub tail on this arch (x86_64/arm64 only)\n");
+	printf("mccjit-selftest-slicelive: PASS (0 failures)\n");
+	return 0;
+#endif
+	setenv("MCC_JIT_SLICE_SEARCH", "1", 1);
+
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicelive: stash failed FAIL\n");
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+	mccjit_last_state = NULL;
+	if (!baseline) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicelive: baseline recompile NULL FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+
+	nw = mccjit_pool_start(2);
+	if (nw <= 0) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicelive: pool start failed FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+
+	slot = (void *)baseline;
+	memset(&st, 0, sizeof st);
+	st.slot = &slot;
+	st.blob = blob;
+	st.len = blen;
+	st.baseline = (void *)baseline;
+	st.threshold = 4;
+	pthread_mutex_init(&st.lock, NULL);
+	/* seed captured live-ins as the KGC counter stub would (mccjit_slice_search
+	   requires nsample>0 to differential-verify) */
+	st.nsample = 6;
+	for (i = 0; i < 6; i++)
+		{ MCC_TRACE("br\n"); st.sample[i][0] = inputs[i]; }
+	st.argseen = 6;
+
+	for (i = 0; i < 3; i++)
+		{ MCC_TRACE("br\n"); (void)mccjit_counter_tick(&st, NULL); }
+	(void)mccjit_counter_tick(&st, NULL);
+
+	while (spins++ < 5000) { MCC_TRACE("br\n");
+		pthread_mutex_lock(&st.lock);
+		promoted = st.promoted;
+		pthread_mutex_unlock(&st.lock);
+		if (promoted)
+			{ MCC_TRACE("br\n"); break; }
+		mccjit_pool_nap();
+	}
+	if (!promoted || promoted == (void *)baseline) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-slicelive: slice promote never landed (promoted=%p baseline=%p) FAIL\n",
+					 promoted, (void *)baseline);
+		fails++;
+	} else { MCC_TRACE("br\n");
+		void *disp = mccjit_dispatch_entry(&slot, promoted);
+		printf("mccjit-selftest-slicelive: slice-kernel promoted=%p slot=%p\n", promoted,
+					 (void *)slot);
+		for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
+			int x = inputs[i];
+			int got = ((int (*)(int))disp)(x);
+			int want = x * 2 + 1;
+			int ok = got == want;
+			printf("mccjit-selftest-slicelive: f(%d)=%d expect=%d %s\n", x, got, want,
+						 ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+		}
+	}
+
+	pthread_mutex_destroy(&st.lock);
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-slicelive: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 PUB_FUNC int mccjit_selftest_eligibility(void) { MCC_TRACE("enter\n");
 	static const struct {
 		const char *src;
@@ -6649,6 +6757,119 @@ static AstArena *mccjit_kernel_from_blob(const void *buf, size_t len) { MCC_TRAC
 	mcc_exit_state(js);
 	mcc_delete(js);
 	return k;
+}
+
+/* STEP 3 slice localizer: deserialize the shipped intent, run the H1b region
+   search (ast_slice_search) to confirm a certifiable pure slice exists, and
+   wrap the function's return slice as a standalone kernel. Gated to TIER0
+   purity (no loads/stores/invoke/volatile) so the kernel reemit is the whole
+   function by construction and can be differential-verified by direct call
+   without executing any side effect. Returns NULL (no slice path) otherwise. */
+static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
+	MccjitIntent it;
+	MCCState *js;
+	AstArena *k = NULL;
+	js = mcc_new();
+	if (!js)
+		{ MCC_TRACE("br\n"); return NULL; }
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(buf, len, &it) == 0) { MCC_TRACE("br\n");
+		AstLocal ret = mccjit_ret_expr(it.arena);
+		AstLocal roots[16];
+		int n = (ret != AST_NONE) ? ast_slice_search(it.arena, ret, 2, roots, 16) : 0;
+		if (n >= 1 && ast_fn_purity(it.arena) == AST_PURITY_TIER0
+				&& ast_slice_certifiable(it.arena, ret))
+			{ MCC_TRACE("br\n"); k = ast_slice_wrap_kernel(it.arena, ret); }
+		mccjit_intent_release(&it);
+	}
+	mcc_exit_state(js);
+	mcc_delete(js);
+	return k;
+}
+
+/* STEP 3 slice hot path (async only). For a TIER0-pure, int-returning fn of
+   1..3 int params with captured live-ins, localize+wrap the return slice and
+   reemit the whole function from that kernel. Correctness net: reemit the same
+   intent FAITHFULLY (whole function) as ground truth and require the slice
+   kernel to match it on EVERY captured live-in tuple before the variant is
+   offered. A mismatch discards it (deopt) so an unverified slice never
+   promotes. Both entries come from mccjit_reemit_arena_blob (mcc_get_symbol),
+   so they are directly callable — we never direct-call the shipped baseline,
+   which is a dispatch-only KGC stub. Async only: the recompile runs on the
+   pool worker, mirroring the whole-function search. */
+static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
+	uint32_t np = mccjit_last_nparam;
+	AstArena *k;
+	MCCState *keepk = NULL, *keepf = NULL;
+	void *kern, *faithful;
+	int i, mism = 0;
+	if (routed)
+		{ MCC_TRACE("br\n"); *routed = 0; }
+	if (!async || mccjit_last_allfp || mccjit_last_ret_wide || np < 1 || np > 3
+			|| st->nsample <= 0 || !st->blob)
+		{ MCC_TRACE("br\n"); return NULL; }
+	k = mccjit_kernel_search_from_blob(st->blob, st->len);
+	if (!k)
+		{ MCC_TRACE("br\n"); return NULL; }
+	faithful = mccjit_reemit_arena_blob(st->blob, st->len, NULL, &keepf);
+	kern = faithful ? mccjit_reemit_arena_blob(st->blob, st->len, k, &keepk) : NULL;
+	ast_arena_free(k);
+	if (!faithful || !kern) { MCC_TRACE("br\n");
+		if (keepf)
+			{ MCC_TRACE("br\n"); mcc_delete(keepf); }
+		if (keepk)
+			{ MCC_TRACE("br\n"); mcc_delete(keepk); }
+		return NULL;
+	}
+	for (i = 0; i < st->nsample; i++) { MCC_TRACE("br\n");
+		const int64_t *a = st->sample[i];
+		int rf, rk;
+		if (np == 1) { MCC_TRACE("br\n");
+			rf = ((int (*)(int))faithful)((int)a[0]);
+			rk = ((int (*)(int))kern)((int)a[0]);
+		} else if (np == 2) { MCC_TRACE("br\n");
+			rf = ((int (*)(int, int))faithful)((int)a[0], (int)a[1]);
+			rk = ((int (*)(int, int))kern)((int)a[0], (int)a[1]);
+		} else { MCC_TRACE("br\n");
+			rf = ((int (*)(int, int, int))faithful)((int)a[0], (int)a[1], (int)a[2]);
+			rk = ((int (*)(int, int, int))kern)((int)a[0], (int)a[1], (int)a[2]);
+		}
+		if (rf != rk)
+			{ MCC_TRACE("br\n"); mism = 1; break; }
+	}
+	mcc_delete(keepf);
+	if (mism) { MCC_TRACE("br\n");
+		mcc_delete(keepk);
+		return NULL;
+	}
+	if (getenv("MCC_JIT_VERBOSE"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+						"mccjit-slice[promote]: slot=%p slice-kernel verified over %d live-ins\n",
+						(void *)st->slot, st->nsample); }
+	/* Publish through the leading-`leave` trampoline so the entry is
+	   slot-enterable (jmp*slot from the counter stub), exactly like the
+	   whole-function search path wraps its winner. The raw kernel is only
+	   safe to CALL directly (as the verify loop above does). */
+	return mccjit_make_trampoline(kern);
+}
+
+static void *mccjit_lazy_entry(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
+	if (async && getenv("MCC_JIT_SLICE_SEARCH")) { MCC_TRACE("br\n");
+		void *e = mccjit_slice_search(st, routed, async);
+		if (e)
+			{ MCC_TRACE("br\n"); return e; }
+	}
+	if (getenv("MCC_JIT_SEARCH"))
+		{ MCC_TRACE("br\n"); return mccjit_lazy_search(st, routed, async); }
+	return mccjit_lazy_build(st->blob, st->len, routed);
 }
 
 static int mccjit_reemit_one(const char *src, const char *fn, int arity,

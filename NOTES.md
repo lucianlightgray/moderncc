@@ -3,6 +3,43 @@
 Design rationale that does not belong in code comments (project style: no code
 comments) or in TODO.md (open work). Newest first.
 
+## STEP 3 live slice hot path (mccjit_slice_search) — two non-obvious traps
+
+The partial-slice pillar's primitives were all built + selftested in isolation;
+wiring them into the live promote seam surfaced two traps that the isolated
+selftests never hit because they call reemitted kernels *directly*.
+
+1. **Never direct-call the shipped baseline to build a correctness oracle.**
+   The first cut verified the slice kernel by comparing it against
+   `st->baseline(args)`. `st->baseline` is the value returned by
+   `mcc_jit_recompile_blob`, which for a routed (int-arg) function is a
+   *dispatch-only KGC stub* — its entry begins with a frame-unwinding sequence
+   and is only valid when entered via `jmp *slot` from the counter stub, never
+   via a plain `call` (see [[mcc-jit-kgc-stub-dispatch-only]]). Direct-calling
+   it corrupted the stack and the process later jumped to a stack address
+   (`0x7fffffff…`). Fix: the oracle is a *faithful whole-function reemit* of the
+   same intent (`mccjit_reemit_arena_blob(blob,len,NULL,&keep)`), which returns a
+   raw `mcc_get_symbol` entry that IS directly callable; compare kernel-vs-
+   faithful over the captured live-ins. No live baseline call, so no stub hazard
+   and no re-entrancy/deadlock on the slot's counter.
+
+2. **A variant published to a slot must carry the leading-`leave` trampoline.**
+   `mccjit_dispatch_entry` (and the real counter stub) enter a slot's variant via
+   `push rbp; mov rbp,rsp; jmp *slot` — so the variant must begin with `leave`
+   (`0xc9`) to rebalance that frame. `mccjit_make_trampoline` prepends exactly
+   that; the whole-function search wraps its winner with it. A raw
+   `mcc_get_symbol` kernel has no leading `leave`, so publishing it verbatim
+   imbalanced the stack. Fix: verify on the *raw* kernel (direct calls are
+   correct), but `return mccjit_make_trampoline(kern)` so the published entry is
+   slot-enterable, identical in shape to the whole-function path.
+
+Soundness rests on gating the slice path to `AST_PURITY_TIER0` (no
+load/store/invoke/volatile): there the function body IS `return <pure expr>`, so
+the wrapped return slice reemit equals the whole function by construction, and
+the live-in differential is defense-in-depth. Anything else falls back to the
+whole-function search. Default-off (`MCC_JIT_SLICE_SEARCH` unset) ⇒ both seams
+behave exactly as the prior inline ternary ⇒ fixpoint byte-identical.
+
 ## AST-replay: separate frontier for replay-time scratch (ast_alloc_temp_loc)
 
 `ast_alloc_loc` records each AST-local's stack offset during the pre-transform
