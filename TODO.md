@@ -114,7 +114,7 @@ manifest quirk that no longer reproduces (toolchain-side, not mcc).
 - **kernel32.def** — added `InitializeSRWLock` + the SRW/InitOnce exports the JIT
   win32 shim uses.
 
-- [ ] **RUNTIME: the embedded engine crashes at startup — mcc has no PE
+- [~] **IN PROGRESS: RUNTIME: the embedded engine crashes at startup — mcc has no PE
   import-LIBRARY support.** The `--embed-jit` exe links but SIGSEGVs before `main`
   (both `MCC_JIT=0`/`=1`). Root-caused via gdb: a `memset(buf,0,4)` call goes to
   the import thunk `jmp *[IAT]`, but the IAT slot still holds the
@@ -181,6 +181,39 @@ manifest quirk that no longer reproduces (toolchain-side, not mcc).
     then resolve straight from `libkernel32.a`). Validate: `mcc --embed-jit hello.c`
     runs correct under `MCC_JIT=0` and `=1` (self-recompile), and `ctest -R jit/`
     = 32/32 on winlibs.
+
+## Bring Windows AOT + JIT to full parity with the Linux implementation
+
+The Linux (ELF) target is the reference implementation for both the AOT backend
+search and the runtime/embedded JIT. Windows (PE) trails it in several concrete
+places that this item tracks to closure. Parity = a Windows PE build passes the
+same JIT/AOT-exercising suites the Linux build does, with no target-specific
+skip-gates beyond genuine OS/hardware limits.
+
+Known gaps (each links to its detail above / in git history):
+
+- **`--embed-jit` standalone exe does not run on PE.** Linux `--embed-jit` bakes
+  the engine and self-recompiles; PE links it but SIGSEGVs at startup for lack of
+  PE import-library support (the IN-PROGRESS item under "Windows embed-blob"). This
+  is the first parity blocker — until the embedded engine runs under `MCC_JIT=0`
+  and `=1`, the file-embed JIT is Linux-only.
+- **i386-PE JIT promotion is inert.** The KGC verify-stub / dispatch tail is
+  x86_64/arm64-only, so i686 promotion-dependent selftests skip
+  (`MCCJIT_HAVE_STUB_TAIL`). Linux i386 has the same gap, but bringing a real i386
+  KGC/FP(x87)/mixed stub tail online is required for full-arch parity.
+- **`mccjit_make_kgc_stub_mixed` returns NULL on WIN32.** Mixed int+FP signatures
+  fall back to the AOT baseline (`jit/selftest-mixed` skips) because the Win64 ABI
+  is positional; Linux SysV handles it. Needs a per-arg class vector for Win64.
+- **arm64-PE runtime-JIT bugs are skip-gated.** The frameless-leaf return
+  corruption + the MSVC-arm64 JIT-exec miscompile (both in the skip-gate section
+  at the top of this file) keep `-run`/`MCC_JIT` promotion off on arm64-Windows.
+- **The `-run` backend-override differential path** (`regression/o4-aot-jit`,
+  `regression/jit-submit-aot-diff`) is skip-gated to x86_64-non-MSVC; PE parity
+  needs those green on the PE cells once the runtime-JIT bugs above are fixed.
+
+Definition of done: on x86_64-PE, the same `ctest -R jit/` + `regression/*` +
+`exec-replay/*` set runs (not skips) and matches the Linux goldens; the remaining
+skips are arm64-HW / i386-x87 items with a filed sub-task, not silent gaps.
 
 ## qemu-amd64 emulation noise (not compiler defects)
 
