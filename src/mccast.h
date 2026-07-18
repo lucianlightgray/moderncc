@@ -114,6 +114,7 @@ int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out, int 
 int ast_jit_eval_refused_count(void);
 int ast_jit_const_fn(AstArena *a, int64_t *out);
 int ast_jit_fold_consts(AstArena *a);
+int ast_jit_search_vocab(uint64_t *out, int max);
 #endif
 
 #ifdef __cplusplus

@@ -71,6 +71,7 @@ MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) { MCC_TRACE("enter\n");
 void ast_reemit_extern(Sym *sym, AstArena *ast);
 void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask);
 int ast_jit_fold_consts(AstArena *ast);
+int ast_jit_search_vocab(uint64_t *out, int max);
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
 void mcc_jit_publish(void **slot, void *variant);
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
@@ -678,10 +679,8 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
 }
 
 static void *mccjit_lazy_search(MccjitCounterState *st, int *routed) { MCC_TRACE("enter\n");
-	static const uint64_t vocab[] = {
-			0, 1, 3, (uint64_t)0x20001, (uint64_t)0x131073,
-			(uint64_t)0xffffULL, (uint64_t)0xffffffffffffULL };
-	int nv = (int)(sizeof vocab / sizeof vocab[0]);
+	uint64_t vocab[16];
+	int nv = ast_jit_search_vocab(vocab, (int)(sizeof vocab / sizeof vocab[0]));
 	double budget_s = 0.05;
 	const char *e = getenv("MCC_JIT_SEARCH_MS");
 	struct timespec t0;

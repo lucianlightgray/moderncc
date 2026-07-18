@@ -12116,6 +12116,31 @@ int ast_jit_const_fn(AstArena *a, int64_t *out) { MCC_TRACE("enter\n");
 #endif
 }
 
+int ast_jit_search_vocab(uint64_t *out, int max) { MCC_TRACE("enter\n");
+	const AstGateMask base = AST_SG_TEMPLATES | AST_SG_NARROW | AST_SG_SETHI |
+													 AST_SG_BITFLAG | AST_SG_RANGE | AST_SG_DSECALL |
+													 AST_SG_TCOPTR | AST_SG_CSECOMM;
+	const AstGateMask extras[] = {
+			0,
+			AST_SG_DIVMAGIC,
+			AST_SG_ABS,
+			AST_SG_REASSOC | AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR |
+					AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST,
+			AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 |
+					AST_SG_NARROW_C3,
+			AST_SG_SETHILEAF,
+			AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE };
+	int ne = (int)(sizeof extras / sizeof extras[0]);
+	int n = 0, i;
+	if (n < max)
+		{ MCC_TRACE("br\n"); out[n++] = 0; }
+	if (n < max)
+		{ MCC_TRACE("br\n"); out[n++] = (uint64_t)base; }
+	for (i = 0; i < ne && n < max; i++)
+		{ MCC_TRACE("br\n"); out[n++] = (uint64_t)(base | extras[i]); }
+	return n;
+}
+
 int ast_jit_fold_consts(AstArena *a) { MCC_TRACE("enter\n");
 #ifdef AST_EVAL_SLICE_PROVIDED
 	AstLocal n, cnt = ast_count(a);
