@@ -7,49 +7,13 @@ it. Completed items are pruned once verified; the detail lives in git history.
 
 ## Skip-gated: runtime-JIT backend-override differential guards
 
-`regression/o4-aot-jit` + `regression/jit-submit-aot-diff` (and 6 `jit/selftest-*`
-on MSVC-arm64) are skip-gated in CMakeLists to x86_64-non-MSVC, the only cells
-where the runtime `-run` JIT override path (`mcc_jit_submit_ast` /
-`MCC_JIT_SUBMIT_AOT`) both fires and is correct. Two real bugs hide behind the
-gate and must be root-caused (repros run the differential scripts directly):
+`regression/o4-aot-jit` + `regression/jit-submit-aot-diff` now run on **x86_64
+non-MSVC AND arm64-Linux (ELF)** — the cells where the runtime `-run` JIT override
+path (`mcc_jit_submit_ast` / `MCC_JIT_SUBMIT_AOT`) both fires and is correct. Still
+skip-gated: arm64-macOS (`-run` JIT off under Apple W^X), MSVC (x86_64 + arm64,
+`-run` non-functional), i686 (correct output but override never fires). One real
+bug remains behind the MSVC arm64 gate (the 6 `jit/selftest-*`):
 
-- **arm64 runtime-JIT frameless-leaf return corruption.** IN PROGRESS (2026-07-18,
-  implementing the CORRECT FIX below: emit the arm64 dispatch stub before the
-  prologue). ROOT-CAUSED, fix
-  pending (not a search/gate/DIVMAGIC bug; plain `MCC_JIT=1` reproduces). On
-  arm64-**Linux** a hot function that is a *frameless leaf* — no callee-saved
-  spill, no stack locals, no loop — comes back miscompiled: the caller's control
-  flow breaks (its post-return code, e.g. `printf`, re-executes every iteration)
-  and the accumulator is garbage. Minimal repro:
-  `int f(int x){return x+1;} … for(i…)s+=f(i); printf("%ld",s);` →
-  `MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 mcc -O4 -run` emits one garbage line per
-  iteration; `MCC_JIT=0 mcc -O2 -run` is correct. Adding any frame (a `volatile`
-  local, an array, or a loop) masks it — which is why `gcd`/p3-popcount (loops)
-  survive and only straight-line KGC-verified `poly` fails.
-  Mechanism (verified by disasm): the arm64 mode-6 dispatch prepends a **fixed
-  224-byte callee frame** at the entry (`stp x29,x30,[sp,#-224]!; mov x29,sp;
-  spill args`) then tail-`br`s through `*slot` (src/mccast.c ~13504, `body+16`).
-  The teardown `mov sp,x29; ldp x29,x30,[sp],#224` lives ONLY in the AOT baseline
-  body, so any swapped-in target leaks that frame → caller resumes with corrupt
-  sp/x29. (x86's frame is a single `push rbp` its stubs undo with `leave`;
-  arm64's is a big spill frame with no generic undo.)
-  DEAD END — do not retry: adding the leave to the arm64 KGC stubs + framing
-  `mccjit_dispatch_entry` (reflog `7d592c01`, dropped) fixes the KGC path and all
-  49/45 jit selftests + both regression scripts, but BREAKS `jit/selftest-slice-
-  live`: slot targets are a MIX — mode-6 stubs (KGC, AOT body) AND self-contained
-  ones (direct/trampoline variants, STEP-3 slice kernels via `route=direct`) —
-  and are also called frameless directly by `mccjit_bench_admit` + the verbose
-  probe. No per-stub leave satisfies all entry paths.
-  CORRECT FIX: emit the arm64 dispatch stub BEFORE the prologue so `*slot`
-  initially points at the full function (prologue included) and every swapped-in
-  target is entered CLEAN (no leave anywhere) — use `arm64_func_start_offset` as
-  the splice base instead of `ast_body_ind_sv`, `body_sym` → start+16, rebase the
-  prologue's relocs through `ast_baseline_splice`. Overlaps the STEP-3 slice
-  promote seam. Repro env: arm64-Linux Docker (native on Apple Silicon),
-  `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja mcc`, then
-  `sh tests/ci/regression_jit_submit_aot_diff.sh build/mcc`; the minimal
-  `int f(int x){return x+1;}` loop is the fastest check. (arm64-macOS can't repro
-  — `-run` JIT off under Apple W^X; validate there via `ctest -R jit/`.)
 - **MSVC-arm64 JIT-exec miscompile.** The 6 selftests (reemit-gates, fold-consts,
   search-live{,-kgc,-struct,-purity}) JIT-compile a fn and call it; on the
   arm64-Windows runner the called code faults/miscompiles. Same family as the
