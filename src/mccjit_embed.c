@@ -679,8 +679,8 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
 	return mccjit_promote_by_profile(cand, incumbent, st, nargs, wide);
 }
 
-static void *mccjit_lazy_search(MccjitCounterState *st, int *routed) { MCC_TRACE("enter\n");
-	uint64_t vocab[16];
+static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
+	uint64_t vocab[64];
 	int nv = ast_jit_search_vocab(vocab, (int)(sizeof vocab / sizeof vocab[0]));
 	double budget_s;
 	const char *e = getenv("MCC_JIT_SEARCH_MS");
@@ -693,6 +693,8 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed) { MCC_TRACE
 		{ MCC_TRACE("br\n"); budget_s = (double)mccjit_search_budget_baked_s; }
 	else
 		{ MCC_TRACE("br\n"); budget_s = 0.05; }
+	if (!async && budget_s > 0.1)
+		{ MCC_TRACE("br\n"); budget_s = 0.1; }
 	timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
 	for (i = 0; i < nv; i++) { MCC_TRACE("br\n");
 		int r = 0;
@@ -904,7 +906,7 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	MccjitCounterState *st = job->cst;
 	int routed = 0;
 	void *entry = getenv("MCC_JIT_SEARCH")
-										? mccjit_lazy_search(st, &routed)
+										? mccjit_lazy_search(st, &routed, 1)
 										: mccjit_lazy_build(st->blob, st->len, &routed);
 	uint32_t nargs = mccjit_last_nparam;
 	int wide = mccjit_last_ret_wide;
@@ -968,7 +970,7 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 	} else { MCC_TRACE("br\n");
 		int routed = 0;
 		void *entry = getenv("MCC_JIT_SEARCH")
-										? mccjit_lazy_search(st, &routed)
+										? mccjit_lazy_search(st, &routed, 0)
 										: mccjit_lazy_build(st->blob, st->len, &routed);
 		if (entry) { MCC_TRACE("br\n");
 			void *incumbent = st->promoted ? st->promoted : st->baseline;
