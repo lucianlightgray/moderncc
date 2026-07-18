@@ -5,6 +5,25 @@
 Mark an item in progress, then commit and push to main, before starting work on
 it. Completed items are pruned once verified; the detail lives in git history.
 
+## Skip-gated: runtime-JIT backend-override differential guards
+
+`regression/o4-aot-jit` + `regression/jit-submit-aot-diff` (and 6 `jit/selftest-*`
+on MSVC-arm64) are skip-gated in CMakeLists to x86_64-non-MSVC, the only cells
+where the runtime `-run` JIT override path (`mcc_jit_submit_ast` /
+`MCC_JIT_SUBMIT_AOT`) both fires and is correct. Two real bugs hide behind the
+gate and must be root-caused (repros run the differential scripts directly):
+
+- **arm64 search/override miscompile.** On arm64-**Linux** the override fires
+  (`overrides=8..10`) but `jit-submit-aot-diff` p2 (`gcd`+`poly`) produces garbage
+  (`jit=[187922138441531\n92851]` vs `ref=[24336139]`); p1/p3 are correct. The
+  runtime search/override codegen path miscompiles that shape on arm64. Repro:
+  `sh tests/ci/regression_jit_submit_aot_diff.sh <arm64-linux mcc>`. (On arm64-
+  macOS the `-run` JIT is off — Apple W^X — so the override never fires there.)
+- **MSVC-arm64 JIT-exec miscompile.** The 6 selftests (reemit-gates, fold-consts,
+  search-live{,-kgc,-struct,-purity}) JIT-compile a fn and call it; on the
+  arm64-Windows runner the called code faults/miscompiles. Same family as the
+  d6755098 skip-gate (unreproducible off real arm64-Windows HW; wine masks it).
+
 ## Runtime JIT: `--jit` / `MCC_JIT` / `MCC_CONFIG_JIT`
 
 mcc activates the runtime JIT through a layered model: the `--jit`/`--no-jit`

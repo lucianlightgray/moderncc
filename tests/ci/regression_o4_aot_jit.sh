@@ -9,7 +9,7 @@ ROOT="$2"
 BLD="$3"
 [ -x "$MCC" ] || { echo "regression_o4: mcc not executable: $MCC"; exit 1; }
 
-INCS="-I$BLD -I$ROOT -I$ROOT/src -I$ROOT/src/formats -I$ROOT/src/objfmt -I$ROOT/src/arch/i386 -I$ROOT/src/arch/x86_64 -I$ROOT/include -B$ROOT -B$BLD"
+INCS="-I$BLD -I$ROOT -I$ROOT/src -I$ROOT/src/formats -I$ROOT/src/objfmt -I$ROOT/src/arch/i386 -I$ROOT/src/arch/x86_64 -I$ROOT/src/arch/arm64 -I$ROOT/src/arch/arm -I$ROOT/src/arch/riscv64 -I$ROOT/include -B$ROOT -B$BLD"
 TMP="${TMPDIR:-/tmp}/regr_o4_$$"
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
