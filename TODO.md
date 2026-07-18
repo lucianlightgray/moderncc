@@ -300,25 +300,15 @@ path and reuses the ship-to-disk machinery. See NOTES.md "Backend override API".
 
 REMAINING (each needs a decision or a host mcc lacks — none are mechanical loop work):
 - STEP 2 (i)/(ii): fold / JIT-execute pure slices INTO the submitted arena so the
-  override delivers an OPTIMIZED AST, not an equal copy.
-  ESCAPE-ANALYSIS BLOCKER REMOVED 2026-07-18: `ast_fn_purity_noescape` (mccast.c,
-  exported in mccast.h) reclassifies a function whose only writes are to
-  NON-ESCAPING local scalars (target is a direct VT_LOCAL|VT_LVAL !VT_SYM ref) as
-  pure (TIER0/TIER1) where the conservative `ast_fn_purity` returns IMPURE; any
-  pointer/global store, address-of-local (VT_LOCAL !VT_LVAL !VT_SYM), Invoke, or
-  volatile still forfeits purity. `ast_fn_purity` is left UNTOUCHED (it gates KGC
-  memoization + fixpoint), so this is purely additive: default path byte-identical.
-  Validated by jit/selftest-noescape (7 shapes: loop-accumulator + straight-line
-  temp flip IMPURE->pure, the unblocking delta; pointer/global/address-taken/call
-  correctly stay IMPURE; pure fn pure on both). 116/116 jit/embed/ast/fixpoint.
-  REMAINING (still a subproject): the compile-time slice interpreter that
-  CONSUMES this — evaluate/JIT-execute a no-escape-pure slice (incl. a bounded
-  loop) to a concrete constant and splice it into the submitted arena before
-  `ast_jit_submit_aot`. `ast_eval_slice` has no loop evaluator today (Literal/Ref/
-  Load/Convert/Unary/Binary/If only), so folding a LOOP to a constant needs a
-  bounded, UB-sound loop interpreter (the risky, historical-miscompile-prone
-  piece) — that is the real subproject, gated on the full validation sweep. Today
-  the submitted arena == the faithful arena (seam proven; the fold is the refinement).
+  override delivers an OPTIMIZED AST, not an equal copy. The ESCAPE-ANALYSIS half is
+  DONE (b5fff356): `ast_fn_purity_noescape` (mccast.h) treats a store to a
+  non-escaping local scalar as pure where `ast_fn_purity` returns IMPURE — additive,
+  `ast_fn_purity` untouched, default byte-identical; jit/selftest-noescape. REMAINING
+  (the real subproject): a bounded, UB-sound compile-time loop interpreter that
+  CONSUMES the analysis to fold a no-escape-pure slice (incl. a loop) to a constant
+  and splice it into the submitted arena before `ast_jit_submit_aot` — `ast_eval_slice`
+  evaluates no loops yet. Today the submitted arena == the faithful arena (seam
+  proven; the fold is the refinement).
 - STEP 2 (iii): dispatch the AOT eval/JIT-exec jobs on `mccjit_pool`. The heavy work
   (recompile from the override AST) is ALREADY threaded via the runtime promote seam;
   only the (nonexistent yet) AOT eval jobs of (i)/(ii) would need pool dispatch.
@@ -504,7 +494,7 @@ existing whole-function recompile; proves the seam end to end).
       byte-identical unchanged. Add `jit/selftest-submit-ast` (submit an AST, assert
       the swap + a correct result).
 
-STEP 2 [in progress: ast_jit_const_fn DONE + ast_jit_fold_consts DONE (walks arena, rewrites free-var-free int Binary/Unary nodes to VT_CONST literals; Convert excluded=void-eval trap; validated end-to-end by jit/selftest-fold-consts forcing it through every recompile incl spec-fold, all selftests correct; note: compiler pre-folds plain source so it fires only post-transform e.g. after spec-fold). (iv) DONE — AOT->engine submit seam: ast_jit_submit_aot (mccast.c, at the mccjit_embed_note site in ast_func_end) hands the live per-function arena to the engine via mcc_jit_submit_ast when MCC_JIT_SUBMIT_AOT is set (default OFF -> fixpoint byte-identical, dormant). CRITICAL FINDING: a raw AstArena clone is NOT portable across MCCState contexts — every function references its PARAM syms (and any callees/globals) as live Sym* POINTERS, dead by runtime-recompile time; a naive reemit of a cloned arena segfaults (validated: full-mask reemit of glibc stdio inline stubs crashed). The Sym*->name-handle remap that makes an arena portable is EXACTLY what mccjit_intent_serialize/_deserialize already do. So the override table now stores a SERIALIZED BLOB (mcc_jit_submit_ast serializes at submit time, when the Sym*s are live; mccjit_override_put stores the blob; mccjit_recompile_common re-deserializes the override blob in place of the shipped intent when it.anchor_sym_v matches, override wins per B1a). Zero-serialization live-AST hand-off would require recompiling in the ORIGIN state or replicating the remap — deferred; serialize-on-submit is the sound path and reuses the ship-to-disk machinery. Validated: jit/selftest-submit (baseline f(5)=1005 -> submit x*3 override -> f(5)=15 -> clear -> 1005) + regression/o4-aot-jit Part 2 (busy submitted + mccjit-override[busy] fires + correct 731672571124) + fixpoint byte-identical + 52/52 jit/embed/regression. NOTE for the AOT-eval pillar: because serialize needs live Sym*s, the arena MUST be submitted during compilation (ast_func_end), not reconstructed later. REMAINING: (i) an AOT -O4 pass that const-folds pure slices INTO the submitted arena before submit (today the submitted arena == the faithful arena, so the override is behaviorally equal to the shipped path — the seam is proven, the refinement is the fold); (ii) JIT-execute non-trivial pure slices needs ESCAPE ANALYSIS (ast_fn_purity flags any local Store as impure, too strict — loops need no-escaping-side-effect analysis); (iii) pool dispatch (threaded A2a).] — AOT `-O4`+ JIT-evaluator-guided backend, threaded (pillar A, A1c/A2a/A3a).
+STEP 2 [in progress: ast_jit_const_fn DONE + ast_jit_fold_consts DONE (walks arena, rewrites free-var-free int Binary/Unary nodes to VT_CONST literals; Convert excluded=void-eval trap; validated end-to-end by jit/selftest-fold-consts forcing it through every recompile incl spec-fold, all selftests correct; note: compiler pre-folds plain source so it fires only post-transform e.g. after spec-fold). (iv) DONE — AOT->engine submit seam: ast_jit_submit_aot (mccast.c, at the mccjit_embed_note site in ast_func_end) hands the live per-function arena to the engine via mcc_jit_submit_ast when MCC_JIT_SUBMIT_AOT is set (default OFF -> fixpoint byte-identical, dormant). CRITICAL FINDING: a raw AstArena clone is NOT portable across MCCState contexts — every function references its PARAM syms (and any callees/globals) as live Sym* POINTERS, dead by runtime-recompile time; a naive reemit of a cloned arena segfaults (validated: full-mask reemit of glibc stdio inline stubs crashed). The Sym*->name-handle remap that makes an arena portable is EXACTLY what mccjit_intent_serialize/_deserialize already do. So the override table now stores a SERIALIZED BLOB (mcc_jit_submit_ast serializes at submit time, when the Sym*s are live; mccjit_override_put stores the blob; mccjit_recompile_common re-deserializes the override blob in place of the shipped intent when it.anchor_sym_v matches, override wins per B1a). Zero-serialization live-AST hand-off would require recompiling in the ORIGIN state or replicating the remap — deferred; serialize-on-submit is the sound path and reuses the ship-to-disk machinery. Validated: jit/selftest-submit (baseline f(5)=1005 -> submit x*3 override -> f(5)=15 -> clear -> 1005) + regression/o4-aot-jit Part 2 (busy submitted + mccjit-override[busy] fires + correct 731672571124) + fixpoint byte-identical + 52/52 jit/embed/regression. NOTE for the AOT-eval pillar: because serialize needs live Sym*s, the arena MUST be submitted during compilation (ast_func_end), not reconstructed later. REMAINING: (i) an AOT -O4 pass that const-folds pure slices INTO the submitted arena before submit (today the submitted arena == the faithful arena, so the override is behaviorally equal to the shipped path — the seam is proven, the refinement is the fold); (ii) JIT-execute non-trivial pure slices — the ESCAPE-ANALYSIS half is now DONE (ast_fn_purity_noescape, b5fff356: non-escaping local stores no longer force IMPURE, so loop accumulators certify; jit/selftest-noescape); what remains is the bounded UB-sound loop interpreter that consumes it (ast_eval_slice evaluates no loops yet); (iii) pool dispatch (threaded A2a).] — AOT `-O4`+ JIT-evaluator-guided backend, threaded (pillar A, A1c/A2a/A3a).
   In the `-O4` search, for each certifiable pure slice (`ast_slice_certifiable`)
   dispatch a POOL job that either runs `ast_eval_slice` (cheap, A1c) or JIT-EXECUTES
   the slice for a concrete constant (expensive, A1c), UB-gated by
