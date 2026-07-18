@@ -69,8 +69,10 @@ MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) { MCC_TRACE("enter\n");
 }
 
 void ast_reemit_extern(Sym *sym, AstArena *ast);
+void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask);
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
 void mcc_jit_publish(void **slot, void *variant);
+int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 void mcc_jit_export_local(MCCState *s1, const char *name);
 
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
@@ -157,6 +159,53 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) { M
 }
 
 static int mccjit_internal_compile;
+
+typedef struct MccjitOverride {
+	int64_t tokv;
+	AstArena *ast;
+	uint64_t gate_mask;
+	int flags;
+} MccjitOverride;
+static MccjitOverride *mccjit_overrides;
+static int mccjit_override_n, mccjit_override_cap;
+static pthread_mutex_t mccjit_override_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static int mccjit_override_get(int64_t tokv, AstArena **ast, uint64_t *mask) { MCC_TRACE("enter\n");
+	int i, found = 0;
+	pthread_mutex_lock(&mccjit_override_lock);
+	for (i = 0; i < mccjit_override_n; i++)
+		if (mccjit_overrides[i].tokv == tokv) { MCC_TRACE("br\n");
+			*ast = mccjit_overrides[i].ast;
+			*mask = mccjit_overrides[i].gate_mask;
+			found = 1;
+			break;
+		}
+	pthread_mutex_unlock(&mccjit_override_lock);
+	return found;
+}
+
+int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) { MCC_TRACE("enter\n");
+	int i;
+	if (!sym || !ast)
+		{ MCC_TRACE("br\n"); return -1; }
+	pthread_mutex_lock(&mccjit_override_lock);
+	for (i = 0; i < mccjit_override_n; i++)
+		{ MCC_TRACE("br\n"); if (mccjit_overrides[i].tokv == sym->v) { MCC_TRACE("br\n"); break; } }
+	if (i == mccjit_override_n) { MCC_TRACE("br\n");
+		if (mccjit_override_n == mccjit_override_cap) { MCC_TRACE("br\n");
+			mccjit_override_cap = mccjit_override_cap ? mccjit_override_cap * 2 : 8;
+			mccjit_overrides = mcc_realloc(mccjit_overrides,
+																		 mccjit_override_cap * sizeof *mccjit_overrides);
+		}
+		mccjit_override_n++;
+	}
+	mccjit_overrides[i].tokv = sym->v;
+	mccjit_overrides[i].ast = ast;
+	mccjit_overrides[i].gate_mask = gate_mask;
+	mccjit_overrides[i].flags = flags;
+	pthread_mutex_unlock(&mccjit_override_lock);
+	return 0;
+}
 
 static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 																		 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
@@ -250,8 +299,13 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	sym = mccjit_rebuild_sym(&it);
 	mccjit_internal_compile = 1;
 	if (sym) { MCC_TRACE("br\n");
+		AstArena *ov_ast = NULL;
+		uint64_t ov_mask = 0;
 		ast_fconst_reuse_disable(1);
-		ast_reemit_extern(sym, it.arena);
+		if (mccjit_override_n && mccjit_override_get(it.anchor_sym_v, &ov_ast, &ov_mask))
+			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, ov_ast, ov_mask); }
+		else
+			{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
 		ast_fconst_reuse_disable(0);
 	}
 	/* Drain the parser symbols pushed above (rebuild_sym + reemit) — unlinks them
