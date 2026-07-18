@@ -233,6 +233,52 @@ deopts to + bakes the engine; runtime JIT continues searching). D2 = timeout is 
 existing `--jit-max-duration` (`s->jit_max_duration`, default 600s); `-O4`/`-O<sec>`
 stays the compile-time search budget. No new `--jit-timeout` flag.
 
+### STATUS (present state, 2026-07-18)
+
+The core refactor is DELIVERED. What ships today:
+- Runtime perm x combo x strategy search on hot functions, threaded (async
+  `mccjit_pool`), live incremental hot-swap per improving variant, bounded by
+  `jit_max_duration` — opt-in `MCC_JIT_SEARCH`; default path fixpoint byte-identical.
+  (STEP 0 enabler + the ENABLER/LIVE block under STEP 2.)
+- Backend override API `mcc_jit_submit_ast(Sym*, AstArena*, gate_mask, flags)`
+  (STEP 1 + STEP 2 (iv)): the backend hands its live compiled AST to the engine; the
+  runtime JIT recompiles/hot-swaps FROM that AST, override winning per-symbol over
+  the shipped `MccjitIntent`. Opt-in `MCC_JIT_SUBMIT_AOT` (default OFF -> dormant ->
+  fixpoint byte-identical). Wired at `ast_jit_submit_aot` (mccast.c, in
+  `ast_func_end` at the `mccjit_embed_note` site).
+- Proof + hardening: `regression/o4-aot-jit` (Part 1 AOT 4s search + Part 2
+  backend-AST override fires, output == JIT-off reference) and
+  `regression/jit-submit-aot-diff` (3 real programs x {JIT=0, JIT, JIT+submit} all
+  agree, override actually fires). `jit/selftest-submit` end-to-end (1005 -> override
+  15 -> clear -> 1005). 52/52 jit/embed/regression + fixpoint byte-identical.
+
+CORRECTION to the north-star sketch below (line ~333, "without going through
+serialization"): a live-AST hand-off is NOT serialization-free. A raw `AstArena`
+clone is not portable across `MCCState` contexts — functions reference their param
+syms / callees / globals as live `Sym*` POINTERS that are dead by runtime-recompile
+time, so reemitting a clone segfaults. The `Sym*`->name-handle remap that makes an
+arena portable IS `mccjit_intent_serialize/_deserialize`. So the override table
+stores a SERIALIZED BLOB (serialized at submit time while the pointers are live). A
+truly serialization-free seam would need recompiling in the origin `MCCState` or
+replicating the remap on the live arena — deferred; serialize-on-submit is the sound
+path and reuses the ship-to-disk machinery. See NOTES.md "Backend override API".
+
+REMAINING (each needs a decision or a host mcc lacks — none are mechanical loop work):
+- STEP 2 (i)/(ii): fold / JIT-execute pure slices INTO the submitted arena so the
+  override delivers an OPTIMIZED AST, not an equal copy. Blocked on ESCAPE ANALYSIS
+  (`ast_fn_purity` flags any local Store as impure — too strict for loops). This is a
+  subproject, not an increment. Today the submitted arena == the faithful arena, so
+  the override is behaviorally equal to the shipped path (seam proven, refinement is
+  the fold).
+- STEP 2 (iii): dispatch the AOT eval/JIT-exec jobs on `mccjit_pool`. The heavy work
+  (recompile from the override AST) is ALREADY threaded via the runtime promote seam;
+  only the (nonexistent yet) AOT eval jobs of (i)/(ii) would need pool dispatch.
+- STEP 3: live partial-slice hot-swap wiring at the promote seam. Machinery + 9 slice
+  selftests DONE; only the live wiring remains — deferred as lowest-ROI (whole-
+  function live search already delivers the runtime search + hot-swap).
+- Windows PE import-library RUNTIME crash (see "Windows embed-blob" above): needs a
+  native Windows host + a PE import-library loader. Cannot be built/validated on Linux.
+
 ### Target architecture (north star — 2026-07-17)
 
 Three interacting roles for the one embedded engine:
