@@ -680,7 +680,7 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
 }
 
 static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
-	uint64_t vocab[64];
+	uint64_t vocab[256];
 	int nv = ast_jit_search_vocab(vocab, (int)(sizeof vocab / sizeof vocab[0]));
 	double budget_s;
 	const char *e = getenv("MCC_JIT_SEARCH_MS");
@@ -708,6 +708,10 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		else if (mccjit_bench_admit(cand, best, st, mccjit_last_nparam,
 																mccjit_last_ret_wide, mccjit_last_allfp, r))
 			{ MCC_TRACE("br\n"); best = cand; best_routed = r; }
+		else
+			{ MCC_TRACE("br\n"); continue; }
+		if (async)
+			{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
 	}
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = best_routed; }

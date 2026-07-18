@@ -12128,13 +12128,16 @@ int ast_jit_search_vocab(uint64_t *out, int max) { MCC_TRACE("enter\n");
 			AST_SG_NARROWFIX, AST_SG_SETHILEAF, AST_SG_LTEMP, AST_SG_IVSR,
 			AST_SG_PRE };
 	int nt = (int)(sizeof toggles / sizeof toggles[0]);
-	int n = 0, i;
+	int n = 0, i, j;
 	if (n < max)
 		{ MCC_TRACE("br\n"); out[n++] = 0; }
 	if (n < max)
 		{ MCC_TRACE("br\n"); out[n++] = (uint64_t)base; }
 	for (i = 0; i < nt && n < max; i++)
 		{ MCC_TRACE("br\n"); out[n++] = (uint64_t)(base ^ toggles[i]); }
+	for (i = 0; i < nt && n < max; i++)
+		for (j = i + 1; j < nt && n < max; j++)
+			{ MCC_TRACE("br\n"); out[n++] = (uint64_t)(base ^ toggles[i] ^ toggles[j]); }
 	return n;
 }
 
