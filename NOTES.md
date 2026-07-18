@@ -3,6 +3,29 @@
 Design rationale that does not belong in code comments (project style: no code
 comments) or in TODO.md (open work). Newest first.
 
+## Escape-aware purity (ast_fn_purity_noescape) — why a separate function
+
+`ast_fn_purity` returns IMPURE on the first `AST_Store`, which is correct for its
+job (gating KGC memoization: a memoized variant must have no writes the caller
+could observe) but too strict for the const-fold pillar — a loop that accumulates
+into a plain local (`for(...) s+=i;`) is a pure function of its inputs, yet every
+`s=…`/`i++` is an `AST_Store`. `ast_fn_purity_noescape` makes the one distinction
+that matters: a store is a non-escaping side effect iff its target is a *direct
+local scalar lvalue* — an `AST_Ref` with `(r & VT_VALMASK)==VT_LOCAL`, `VT_LVAL`,
+and `!VT_SYM`. A store through a pointer (target isn't that shape), a store to a
+global (`VT_SYM`), any *address-of-local* anywhere in the body (`VT_LOCAL`,
+`!VT_LVAL`, `!VT_SYM` — the address escaped, so an alias could store), an
+`AST_Invoke`, or a `VT_VOLATILE` type all forfeit the guarantee and return
+IMPURE. Loads still demote to TIER1 exactly as `ast_fn_purity` does.
+
+It is deliberately a **new** function, not a change to `ast_fn_purity`: touching
+the latter would move KGC-memoization eligibility and break fixpoint. Additive
+⇒ default path byte-identical. This is the analysis half of the AOT const-fold
+pillar (STEP 2(i)); the loop interpreter that turns a certified no-escape slice
+into a constant is the remaining subproject — `ast_eval_slice` evaluates no loops
+yet, and a compile-time loop evaluator must be bounded + UB-sound to avoid the
+historical fold-miscompile failure mode.
+
 ## STEP 3 live slice hot path (mccjit_slice_search) — two non-obvious traps
 
 The partial-slice pillar's primitives were all built + selftested in isolation;

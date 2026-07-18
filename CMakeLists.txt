@@ -4068,6 +4068,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-slice-live COMMAND jit_selftest_slicelive)
             set_tests_properties(jit/selftest-slice-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_noescape tests/embed/jit_selftest_noescape.c)
+            target_link_libraries(jit_selftest_noescape PRIVATE libmcc)
+            target_include_directories(jit_selftest_noescape PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-noescape COMMAND jit_selftest_noescape)
+            set_tests_properties(jit/selftest-noescape PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_evalgate tests/embed/jit_selftest_evalgate.c)
             target_link_libraries(jit_selftest_evalgate PRIVATE libmcc)
             target_include_directories(jit_selftest_evalgate PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

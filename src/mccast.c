@@ -5263,6 +5263,51 @@ void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out) { MCC_TRACE("
 		}
 	}
 }
+
+/* Escape-aware purity: like ast_fn_purity, but a Store to a NON-ESCAPING local
+   scalar is not treated as an observable side effect, so loop bodies that
+   accumulate into a plain local (the common case ast_fn_purity rejects
+   outright) can still be pure. A store counts as non-escaping only when its
+   target is a direct local lvalue (VT_LOCAL|VT_LVAL, !VT_SYM) — a pointer store
+   or a global (VT_SYM) store is externally observable. Any address-of-local
+   (VT_LOCAL, !VT_LVAL, !VT_SYM) or Invoke forfeits the guarantee (an escaped
+   address could be aliased; a call may do anything), returning IMPURE. Loads
+   still demote to TIER1 as in ast_fn_purity. This is intentionally a separate
+   function: ast_fn_purity gates KGC memoization and must stay conservative. */
+int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a), n;
+	int has_load = 0;
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_type_t(a, n) & VT_VOLATILE)
+			{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
+		switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+		case AST_Invoke:
+			return AST_PURITY_IMPURE;
+		case AST_Store: { MCC_TRACE("br\n");
+			AstLocal tgt = ast_child(a, n, 0);
+			int r;
+			if (tgt == AST_NONE || ast_kind(a, tgt) != AST_Ref)
+				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
+			r = ast_op(a, tgt);
+			if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
+			break;
+		}
+		case AST_Ref: { MCC_TRACE("br\n");
+			int r = ast_op(a, n);
+			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_LVAL) && !(r & VT_SYM))
+				{ MCC_TRACE("br\n"); return AST_PURITY_IMPURE; }
+			break;
+		}
+		case AST_Load:
+			has_load = 1;
+			break;
+		default:
+			break;
+		}
+	}
+	return has_load ? AST_PURITY_TIER1 : AST_PURITY_TIER0;
+}
 #endif
 
 static int ast_ident_same_scan(const AstArena *a, AstLocal x, AstLocal y) { MCC_TRACE("enter\n");

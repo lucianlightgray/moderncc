@@ -7099,6 +7099,90 @@ PUB_FUNC int mccjit_selftest_slicesearch(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+static int mccjit_noescape_one(const char *src, const char *fn,
+															 int expect_ne_impure, int expect_base_impure) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-noescape: %s stash failed FAIL\n", fn);
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			int ne = ast_fn_purity_noescape(it.arena);
+			int base = ast_fn_purity(it.arena);
+			int ne_impure = (ne == AST_PURITY_IMPURE);
+			int base_impure = (base == AST_PURITY_IMPURE);
+			int ok = (ne_impure == expect_ne_impure) && (base_impure == expect_base_impure);
+			printf("mccjit-selftest-noescape: %-4s noescape=%d(impure=%d want %d) "
+						 "base=%d(impure=%d want %d) %s\n",
+						 fn, ne, ne_impure, expect_ne_impure, base, base_impure,
+						 expect_base_impure, ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n");
+			printf("mccjit-selftest-noescape: %s deserialize failed FAIL\n", fn);
+			fails++;
+		}
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
+/* STEP 2(i) escape-analysis foundation: ast_fn_purity_noescape reclassifies a
+   function whose only writes are to non-escaping local scalars as pure
+   (TIER0/TIER1), where the conservative ast_fn_purity returns IMPURE. The delta
+   is what unblocks const-folding a loop that accumulates into a local. */
+PUB_FUNC int mccjit_selftest_noescape(void) { MCC_TRACE("enter\n");
+	int fails = 0;
+
+	printf("mccjit-selftest-noescape: begin (escape-aware purity vs conservative purity)\n");
+	/* loop accumulating into local scalars: base says IMPURE (Store), noescape
+	   says pure — THE unblocking delta */
+	fails += mccjit_noescape_one(
+			"int acc(int n){int s=0,i; for(i=0;i<n;i++)s=s+i; return s;}", "acc", 0, 1);
+	/* straight-line local temp: same delta */
+	fails += mccjit_noescape_one("int t(int x){int a=x+1; int b=a*2; return b-3;}", "t",
+															 0, 1);
+	/* no stores at all: pure on both */
+	fails += mccjit_noescape_one("int p(int x){return x*x+3;}", "p", 0, 0);
+	/* store THROUGH a pointer: externally observable -> impure on both */
+	fails += mccjit_noescape_one("int wp(int *p){*p=5; return 0;}", "wp", 1, 1);
+	/* store to a GLOBAL: externally observable -> impure on both */
+	fails += mccjit_noescape_one("int G; int wg(int x){G=x; return G;}", "wg", 1, 1);
+	/* address-of-local escapes -> impure on noescape (an alias could store) */
+	fails += mccjit_noescape_one("int at(int x){int a=x; int *q=&a; *q=7; return a;}",
+															 "at", 1, 1);
+	/* a call may have arbitrary side effects -> impure on both */
+	fails += mccjit_noescape_one("extern int ext(int); int cl(int x){return ext(x)+1;}",
+															 "cl", 1, 1);
+
+	printf("mccjit-selftest-noescape: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 PUB_FUNC int mccjit_selftest_l4a(void) { MCC_TRACE("enter\n");
 	MccjitCounterState st;
 	void *stub;

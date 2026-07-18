@@ -300,15 +300,25 @@ path and reuses the ship-to-disk machinery. See NOTES.md "Backend override API".
 
 REMAINING (each needs a decision or a host mcc lacks — none are mechanical loop work):
 - STEP 2 (i)/(ii): fold / JIT-execute pure slices INTO the submitted arena so the
-  override delivers an OPTIMIZED AST, not an equal copy. [IN PROGRESS 2026-07-18 —
-  escape-analysis increment underway: a NEW non-escaping-local-store purity
-  classifier (leaves `ast_fn_purity` untouched so KGC memoize gating + fixpoint are
-  unaffected) that lets a pure slice containing only address-not-taken local scalar
-  stores certify for const-fold. Default-off AOT fold path.] Blocked on ESCAPE
-  ANALYSIS (`ast_fn_purity` flags any local Store as impure — too strict for loops).
-  This is a subproject, not an increment. Today the submitted arena == the faithful
-  arena, so the override is behaviorally equal to the shipped path (seam proven,
-  refinement is the fold).
+  override delivers an OPTIMIZED AST, not an equal copy.
+  ESCAPE-ANALYSIS BLOCKER REMOVED 2026-07-18: `ast_fn_purity_noescape` (mccast.c,
+  exported in mccast.h) reclassifies a function whose only writes are to
+  NON-ESCAPING local scalars (target is a direct VT_LOCAL|VT_LVAL !VT_SYM ref) as
+  pure (TIER0/TIER1) where the conservative `ast_fn_purity` returns IMPURE; any
+  pointer/global store, address-of-local (VT_LOCAL !VT_LVAL !VT_SYM), Invoke, or
+  volatile still forfeits purity. `ast_fn_purity` is left UNTOUCHED (it gates KGC
+  memoization + fixpoint), so this is purely additive: default path byte-identical.
+  Validated by jit/selftest-noescape (7 shapes: loop-accumulator + straight-line
+  temp flip IMPURE->pure, the unblocking delta; pointer/global/address-taken/call
+  correctly stay IMPURE; pure fn pure on both). 116/116 jit/embed/ast/fixpoint.
+  REMAINING (still a subproject): the compile-time slice interpreter that
+  CONSUMES this — evaluate/JIT-execute a no-escape-pure slice (incl. a bounded
+  loop) to a concrete constant and splice it into the submitted arena before
+  `ast_jit_submit_aot`. `ast_eval_slice` has no loop evaluator today (Literal/Ref/
+  Load/Convert/Unary/Binary/If only), so folding a LOOP to a constant needs a
+  bounded, UB-sound loop interpreter (the risky, historical-miscompile-prone
+  piece) — that is the real subproject, gated on the full validation sweep. Today
+  the submitted arena == the faithful arena (seam proven; the fold is the refinement).
 - STEP 2 (iii): dispatch the AOT eval/JIT-exec jobs on `mccjit_pool`. The heavy work
   (recompile from the override AST) is ALREADY threaded via the runtime promote seam;
   only the (nonexistent yet) AOT eval jobs of (i)/(ii) would need pool dispatch.

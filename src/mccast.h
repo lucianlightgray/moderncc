@@ -88,6 +88,7 @@ typedef enum AstPurity {
 } AstPurity;
 
 int ast_fn_purity(const AstArena *a);
+int ast_fn_purity_noescape(const AstArena *a);
 
 /* M5c slicing foundation: partition a function into a pure register/value
    computation kernel + the impure "bound" ops (Store / Invoke / volatile)
