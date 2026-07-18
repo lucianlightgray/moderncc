@@ -163,6 +163,7 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) { M
 static int mccjit_internal_compile;
 static uint64_t mccjit_recompile_gate_mask;
 static int mccjit_recompile_use_gates;
+static unsigned long mccjit_search_budget_baked_s;
 
 typedef struct MccjitOverride {
 	int64_t tokv;
@@ -681,13 +682,17 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
 static void *mccjit_lazy_search(MccjitCounterState *st, int *routed) { MCC_TRACE("enter\n");
 	uint64_t vocab[16];
 	int nv = ast_jit_search_vocab(vocab, (int)(sizeof vocab / sizeof vocab[0]));
-	double budget_s = 0.05;
+	double budget_s;
 	const char *e = getenv("MCC_JIT_SEARCH_MS");
 	struct timespec t0;
 	void *best = NULL;
 	int best_routed = 0, i, timed;
 	if (e && e[0])
 		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
+	else if (mccjit_search_budget_baked_s)
+		{ MCC_TRACE("br\n"); budget_s = (double)mccjit_search_budget_baked_s; }
+	else
+		{ MCC_TRACE("br\n"); budget_s = 0.05; }
 	timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
 	for (i = 0; i < nv; i++) { MCC_TRACE("br\n");
 		int r = 0;
@@ -1349,6 +1354,10 @@ static void mccjit_qsbr_reset(void) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
+void mccjit_set_search_budget(unsigned long secs) { MCC_TRACE("enter\n");
+	mccjit_search_budget_baked_s = secs;
+}
+
 void mccjit_boot_swap(void **slot, const void *blob, unsigned long len) { MCC_TRACE("enter\n");
 	mcc_stats_env_init();
 	if (!mccjit_feasible())
@@ -1426,6 +1435,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 	async = s1->jit_threads > 0;
 	if (s1->output_type == MCC_OUTPUT_MEMORY) { MCC_TRACE("br\n");
 		mcc_add_symbol(s1, "mccjit_boot_swap", (void *)mccjit_boot_swap);
+		mcc_add_symbol(s1, "mccjit_set_search_budget", (void *)mccjit_set_search_budget);
 		mcc_add_symbol(s1, "mccjit_boot_swap_async",
 									 (void *)mccjit_boot_swap_async);
 #if MCC_HOST_WIN32
@@ -1473,6 +1483,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 										 ? s1->jit
 										 : (MCC_JIT_DEFAULT ? 1 : 0);
 		cstr_printf(&cs, "extern char *getenv(const char*);\n");
+		cstr_printf(&cs, "extern void mccjit_set_search_budget(unsigned long);\n");
 		cstr_printf(
 				&cs,
 				"__attribute__((constructor)) static void __mccjit_boot_all(void){\n"
@@ -1480,8 +1491,9 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 				"int __on = __e ? (__e[0] != '0') : %d;\n"
 				"int __i;\n"
 				"if(!__on) return;\n"
+				"mccjit_set_search_budget(%luUL);\n"
 				"for(__i=0;__i<%d;__i++)\n",
-				def_on, n);
+				def_on, (unsigned long)s1->jit_max_duration, n);
 	}
 	if (async)
 		{ MCC_TRACE("br\n"); cstr_printf(&cs,
