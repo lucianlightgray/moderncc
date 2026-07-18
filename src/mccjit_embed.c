@@ -304,6 +304,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		ast_fconst_reuse_disable(1);
 		if (mccjit_override_n && mccjit_override_get(it.anchor_sym_v, &ov_ast, &ov_mask))
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, ov_ast, ov_mask); }
+		else if (getenv("MCC_JIT_SELFTEST_REEMIT_GATES"))
+			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
 		else
 			{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
 		ast_fconst_reuse_disable(0);
