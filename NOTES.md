@@ -102,3 +102,18 @@ MCC_JIT_SEARCH=1, 0 data races across 6 repeated runs (races are timing-dependen
 hence the repeats). The pointer-swap publish + the pool qlock/swap_lock ordering
 hold up. Repro mirrors the ASan recipe above but with
 -DCMAKE_C_FLAGS="-fsanitize=thread -fno-omit-frame-pointer -g".
+
+## Two-part -O4 regression (regression/o4-aot-jit)
+
+Proves the AOT optimizer and the embedded JIT are the same optimization engine seen
+from two sides. tests/ci/regression_o4_aot_jit.sh:
+ - Part 1 (JIT off, MCC_JIT=0): `mcc -O4 -c src/mcc.c` with MCC_AST_SEARCH engages the
+   AOT combo/strategy search for ~4s (the -O4 => optimize_search_seconds=4 budget;
+   libmcc.c:2680), evaluating ~29k candidates with the RANGE gate (`●range`, the
+   const-guided value ranges) active. Asserts wall in 3..8s + evaluated>1000 + range
+   gate shown. (MCC_JIT=0 makes it AOT-only; the search code is JIT-independent.)
+ - Part 2 (JIT on, MCC_JIT=1 + -O4 -run): a hot division/mod loop gets JIT-recompiled
+   from its captured AST (backend ast_reemit) and hot-swapped in (verbose
+   swapped/route=kgc|direct), while the program output stays correct — i.e. the JIT
+   replaces the running baseline with the backend-recompiled AST variant.
+Registered under MCC_EMBED_JIT with TIMEOUT 90.
