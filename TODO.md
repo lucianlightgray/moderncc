@@ -13,7 +13,9 @@ where the runtime `-run` JIT override path (`mcc_jit_submit_ast` /
 `MCC_JIT_SUBMIT_AOT`) both fires and is correct. Two real bugs hide behind the
 gate and must be root-caused (repros run the differential scripts directly):
 
-- **arm64 runtime-JIT frameless-leaf return corruption.** ROOT-CAUSED, fix
+- **arm64 runtime-JIT frameless-leaf return corruption.** IN PROGRESS (2026-07-18,
+  implementing the CORRECT FIX below: emit the arm64 dispatch stub before the
+  prologue). ROOT-CAUSED, fix
   pending (not a search/gate/DIVMAGIC bug; plain `MCC_JIT=1` reproduces). On
   arm64-**Linux** a hot function that is a *frameless leaf* — no callee-saved
   spill, no stack locals, no loop — comes back miscompiled: the caller's control
