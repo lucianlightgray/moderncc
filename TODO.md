@@ -342,43 +342,99 @@ submitted AST (pillar A). (3) partial-slice granularity + neighbour reconciliati
 (C1c/C2b/C3c) on top of the working whole-function seam. Each step gated by
 fixpoint-invariant byte-identical + exec differential + KGC.
 
-Phase 1 (always-on) — STATUS: the in-process `-run`/MEMORY JIT is ALREADY default-on
-(`MCC_JIT_DEFAULT=1`; `mccjit-boot` fires with no `MCC_JIT` set; `MCC_JIT=0` disables).
-Remaining "always-on" = the file-embed slice (`s->embed_jit` default 0 -> 1 at
-libmcc.c:962 + `ast_jit_env` at mccast.c:1347), which links the ~800KB engine into
-every EXE/.o and historically breaks ~25 tests (KGC variants segfault on real
-programs). Gate behind validation; keep `MCC_JIT=0` / `--no-jit` / `--no-embed-jit`.
+### Implementation guide (finalized 2026-07-17 — anchors, data, integration)
 
-Phase 3 (the heart) — runtime JIT drives the search. KEY FINDING: `ast_reemit`
-(mccast.c:13773) is a PURE REPLAY of the recorded AST; it does NOT run
-`ast_run_strat_cycle`, so varying `ast_*_env` gates does nothing to a recompile.
-Variant diversity therefore needs new wiring:
-  1. Expose from mccast.c a helper like `ast_reemit_with_gates(sym, arena, gate_mask)`:
-     clone `arena` (the pristine intent arena), `ast_search_gates_set(mask)`,
-     `ast_run_strat_cycle(clone, sym, ...)`, then `ast_reemit(sym, clone)` — i.e.
-     `ast_search_score_one`'s transform but emitting a variant instead of scoring.
-  2. In `mccjit_recompile_common` (mccjit_embed.c:161): it deserializes `MccjitIntent`
-     which carries `it.arena`; before `ast_reemit_extern`, apply a gate config via the
-     new helper. Thread a gate mask param down `mcc_jit_recompile_blob` ->
-     `mccjit_recompile_common`.
-  3. Promote seam (`mccjit_counter_tick` mccjit_embed.c:790 + async
-     `mccjit_job_run_lazy`:758): replace one-shot-then-freeze with a loop that walks
-     the searchable gate/strategy vocabulary (reuse `combo_run` / the `AST_SG_*`
-     searchable set from mccast.c:12826), builds a variant per candidate, runs the
-     EXISTING `mccjit_bench_admit` as fitness, keeps the best; bound by
-     `st`-carried `jit_max_duration` on a WALL clock (`clock_gettime(CLOCK_MONOTONIC)`,
-     not `ast_now_ms`'s `clock()`). Today `jit_max_duration` is only a skip-if-over
-     guard (mccjit_embed.c:432,466); repurpose it as the search budget.
-  4. Stats: add candidates-evaluated / best-kept counters in mccstats.c mirroring
-     `mcc_stats_search_end`; surface under `--stats=2`.
-  KGC differential verification stays the correctness net (wrong variants refused).
+Anchors below are post-arg-spill-fix (commit a7c38f1a) line numbers.
 
-Phase 2 (compile-time picks baseline): auto-engage the search when JIT is on and
-`optimize_search_seconds>0` without requiring `MCC_AST_SEARCH`; tie the search
-winner's gate config into `ast_baseline_retain` so the deopt baseline is the
-searched-best. NOTE the in-process `MCC_AST_SEARCH` path currently SEGVs on
-self-host (see arg-spill bug above) — prefer the out-of-process fork pool for
-file outputs, or fix the arg-spill bug first.
+DATA / SEAMS
+- `MccjitIntent` (mccjit_internal.h:59-77): the deserialized shipped AST unit.
+  `.arena` = the AST; plus salt, `handle_*`, `recs`, `fn_name`, `ret_type_t/ref`,
+  `func_type`, `nparam`, `param_type_t/off/name`. This is pillar-B cold data.
+- `MccjitCounterState` (mccjit_embed.c:539-554): per-slot runtime hot state —
+  `slot,blob,len,baseline,threshold,count,promoted,building` + KGC profile
+  (`argseen,nsample,argmin[],argmax[],sample[][]`, `lock`). The hot path + the
+  profile that localizes a hot slice (C1c) both live here.
+- `MccjitSwapJob` (mccjit_embed.c:636-646): pool work item.
+- Recompile entry: `mcc_jit_recompile_blob(buf,len)` (mccjit_embed.c:284) ->
+  `mccjit_recompile_common` (161) -> `mccjit_intent_deserialize` (192) ->
+  `ast_reemit_extern(sym, it.arena)` (mccjit_embed.c:71 decl; mccast.c:13892 def).
+- `ast_reemit` (mccast.c:13794) is a PURE REPLAY — it does NOT run
+  `ast_run_strat_cycle` (mccast.c:11596), so varying `ast_*_env` gates alone changes
+  nothing. Optimized variants must transform the arena first.
+- Transform-and-score primitive already exists: `ast_search_score_one`
+  (mccast.c:12497) = clone pristine arena -> `ast_search_gates_set(mask)` (12274) ->
+  `ast_run_strat_cycle` -> cost. The searchable `AST_SG_*` vocabulary is built in
+  `ast_search_select` at mccast.c:12844 (`combo_run` enumerates it).
+- Slice kit (M5c): `ast_slice_extract` (mccast.c:169), `ast_slice_certifiable`
+  (12095), `ast_slice_equiv` (12105), `ast_slice_live_ins`, `ast_slice_copy_into`.
+- Const-evaluator: `src/ast_eval_slice.h` (`ast_eval_binop`, `ast_eval_slice`,
+  UB-soundness gated by `MCC_AST_JIT_EVAL_GATE`, refusals via
+  `ast_jit_eval_refused_count`). Partial param->const fold: `mccjit_ast_spec_fold`
+  (mccast.c:13896).
+- Thread pool: `mccjit_pool_start` (mccjit_embed.c:711), `mccjit_pool_enqueue`
+  (741), `mccjit_job_run_lazy` (758), promote seam `mccjit_counter_tick` (790).
+- Fitness / swap / budget: `mccjit_bench_admit` (560), `mcc_jit_publish` (73/488),
+  `jit_max_duration` currently a skip-if-over guard (mccjit_embed.c:432,466; passed
+  from `s1->jit_max_duration` at 1345) — REPURPOSE as the CLOCK_MONOTONIC search
+  budget for the pool loop (NOT `ast_now_ms`'s `clock()`).
+
+STEP 0 — always-on JIT. `-run`/MEMORY JIT is already default-on (`MCC_JIT_DEFAULT=1`;
+`mccjit-boot` fires with no `MCC_JIT`; `MCC_JIT=0` disables). Remaining: file-embed
+slice (`s->embed_jit` 0->1 at libmcc.c:962 + `ast_jit_env` at mccast.c:1347) links the
+~800KB engine into every EXE/.o and historically broke ~25 tests (KGC variants
+segfault on real programs) — gate behind the full validation sweep; keep `MCC_JIT=0`
+/`--no-jit`/`--no-embed-jit`. The in-process `MCC_AST_SEARCH` self-host SEGV that
+blocked Phase 2 is FIXED (a7c38f1a), so the in-process search path is usable now.
+
+STEP 1 — backend override API + per-sym override table + threaded submit (on the
+existing whole-function recompile; proves the seam end to end).
+  1a. New `ast_reemit_with_gates(Sym *sym, AstArena *arena, unsigned gate_mask)` in
+      mccast.c: clone `arena`, `ast_search_gates_set(gate_mask)`, `ast_run_strat_cycle`,
+      then emit to `cur_text_section` like `ast_reemit` (factor the shared tail out of
+      `ast_search_score_one`, but emit instead of score). Exported via mccast.h.
+  2a. Per-sym override table in mccjit_embed.c: `struct { int64_t tokv; AstArena *ast;
+      unsigned gate_mask; int flags; }` array + rwlock. Public:
+      `int mcc_jit_submit_ast(Sym *sym, AstArena *ast, unsigned gate_mask, int flags);`
+      dedup-insert (key = sym token v) then `mccjit_pool_enqueue` a job carrying the
+      slot for `sym`. `void mcc_jit_engine_config(...)` registers the eval hooks
+      (ast_eval_slice + MCC_AST_JIT_EVAL_GATE oracle, A3a) the engine may call.
+  3a. In `mccjit_recompile_common` before the deserialize at :192, look up the sym in
+      the override table; on hit use the submitted `ast` (skip deserialize) and route
+      through `ast_reemit_with_gates(sym, ast, gate_mask)`; on miss keep the shipped
+      `MccjitIntent` path (B1a). PRECEDENCE: override > shipped intent, per sym.
+  4a. Threading: the submit job runs on the pool (mirror `mccjit_job_run_lazy`),
+      verifies via `mccjit_bench_admit` + KGC, swaps via `mcc_jit_publish`. Never
+      blocks the driver. Default OFF (no submissions) => `fixpoint-invariant`
+      byte-identical unchanged. Add `jit/selftest-submit-ast` (submit an AST, assert
+      the swap + a correct result).
+
+STEP 2 — AOT `-O4`+ JIT-evaluator-guided backend, threaded (pillar A, A1c/A2a/A3a).
+  In the `-O4` search, for each certifiable pure slice (`ast_slice_certifiable`)
+  dispatch a POOL job that either runs `ast_eval_slice` (cheap, A1c) or JIT-EXECUTES
+  the slice for a concrete constant (expensive, A1c), UB-gated by
+  MCC_AST_JIT_EVAL_GATE (A3a). Fold results into the working arena
+  (mccjit_ast_spec_fold-style), then hand the refined arena to the engine via
+  `mcc_jit_submit_ast` so ONE dynamic AST drives both the AOT baseline and the runtime
+  hot path (no serialization on this seam; serialization stays only for the
+  ship-to-disk cold baseline). Reuse `mccjit_pool` for the eval jobs.
+
+STEP 3 — partial-slice hot-swap + reconcile (pillar C, C1c/C2b/C3c/C4b) on the
+working whole-function seam.
+  C1c adaptive: use the `MccjitCounterState` profile (sample/argmin/argmax) to localize
+      a hot sub-region; `ast_slice_extract` that kernel; else whole function.
+  C3c strategy: slice-local `combo_run` over the searchable set (mccast.c:12844),
+      seeded from the function's current-best gate mask.
+  C2b reconcile: after optimizing the slice, `ast_slice_equiv`-verify the boundary and
+      splice with fixups (`ast_slice_copy_into` + `ast_slice_live_ins`) — no neighbour
+      re-opt.
+  C4b correctness: `ast_slice_equiv` structural check + KGC differential per swapped
+      slice; deopt-to-baseline (`mcc_jit_publish(slot, baseline)`) on any mismatch.
+  Budget: `jit_max_duration` on CLOCK_MONOTONIC bounds the pool search loop. Stats:
+  candidates-evaluated / best-kept counters in mccstats.c mirroring
+  `mcc_stats_search_end`, surfaced under `--stats=2`.
+
+Every step gated by the validation sweep below. Serialization is retained ONLY for
+the ship-to-disk cold baseline (pillar B); the AOT->runtime hot seam is live AST.
 
 Validation gate for any phase: `fixpoint-invariant` byte-identical, exec
 differential JIT-on == `MCC_JIT=0`, cross-arch goldens, no crashes on real
