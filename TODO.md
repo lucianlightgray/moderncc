@@ -300,11 +300,15 @@ path and reuses the ship-to-disk machinery. See NOTES.md "Backend override API".
 
 REMAINING (each needs a decision or a host mcc lacks — none are mechanical loop work):
 - STEP 2 (i)/(ii): fold / JIT-execute pure slices INTO the submitted arena so the
-  override delivers an OPTIMIZED AST, not an equal copy. Blocked on ESCAPE ANALYSIS
-  (`ast_fn_purity` flags any local Store as impure — too strict for loops). This is a
-  subproject, not an increment. Today the submitted arena == the faithful arena, so
-  the override is behaviorally equal to the shipped path (seam proven, refinement is
-  the fold).
+  override delivers an OPTIMIZED AST, not an equal copy. [IN PROGRESS 2026-07-18 —
+  escape-analysis increment underway: a NEW non-escaping-local-store purity
+  classifier (leaves `ast_fn_purity` untouched so KGC memoize gating + fixpoint are
+  unaffected) that lets a pure slice containing only address-not-taken local scalar
+  stores certify for const-fold. Default-off AOT fold path.] Blocked on ESCAPE
+  ANALYSIS (`ast_fn_purity` flags any local Store as impure — too strict for loops).
+  This is a subproject, not an increment. Today the submitted arena == the faithful
+  arena, so the override is behaviorally equal to the shipped path (seam proven,
+  refinement is the fold).
 - STEP 2 (iii): dispatch the AOT eval/JIT-exec jobs on `mccjit_pool`. The heavy work
   (recompile from the override AST) is ALREADY threaded via the runtime promote seam;
   only the (nonexistent yet) AOT eval jobs of (i)/(ii) would need pool dispatch.
