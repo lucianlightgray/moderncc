@@ -233,6 +233,73 @@ deopts to + bakes the engine; runtime JIT continues searching). D2 = timeout is 
 existing `--jit-max-duration` (`s->jit_max_duration`, default 600s); `-O4`/`-O<sec>`
 stays the compile-time search budget. No new `--jit-timeout` flag.
 
+### Target architecture (north star — 2026-07-17)
+
+Three interacting roles for the one embedded engine:
+
+- **(A) AOT `-O4`+ uses the JIT as a compile-time evaluator.** The backend does not
+  just statically search gate permutations — it drives the embedded engine over the
+  target program's AST guided by *const evaluators* (`ast_eval_slice.h`:
+  `ast_eval_binop`/`ast_eval_slice`, UB-soundness-gated by `MCC_AST_JIT_EVAL_GATE`,
+  refusals counted by `ast_jit_eval_refused_count`) to fold/specialize pure slices
+  and feed concrete facts back into codegen. Foundation exists (eval-slice + the
+  M5c slice kit `ast_slice_extract`/`_certifiable`/`_equiv`/`_live_ins`); using it to
+  *guide AOT backend compilation* at `-O4`+ is NEW.
+- **(B) Runtime JIT cold path = deserialize the shipped AST.** The baked program
+  ships its `MccjitIntent` AST; the engine deserializes and re-emits it
+  (`mccjit_recompile_common` -> `ast_reemit`). This is today's behavior and the
+  cold/deopt baseline. Mostly settled.
+- **(C) Runtime JIT hot path = permute, hot-swap a partial slice, reconcile.** As the
+  engine finds an optimization permutation it hot-swaps *a partial slice* of the AST
+  (not necessarily the whole function; `ast_slice_extract` kernel), then the
+  surrounding slices are reconciled/revised to accommodate it — ideally each slice
+  running its own permuted optimization strategy. Phase 3 below currently plans
+  WHOLE-FUNCTION swap; partial-slice swap + neighbour reconciliation is NEW and the
+  main open design (see "Open decisions" table). `mccjit_ast_spec_fold` (param->const
+  partial fold) is the closest existing primitive.
+
+### Open decisions — guide with cell refs like A1a (author will pick)
+
+Group A — AOT `-O4`+ JIT-evaluator-guided backend:
+  A1 what the engine computes at AOT time:
+     a) run `ast_eval_slice` const-evaluators to fold/specialize pure slices (cheap, sound-gated)
+     b) JIT-EXECUTE pure slices of the target to get concrete constants (compile-time function exec)
+     c) both — eval-slice for cheap cases, JIT-execute for expensive pure slices
+  A2 how it is invoked:
+     a) in-process during the -O4 search (AOT compiler links the engine, calls it)
+     b) the out-of-process fork-pool workers each call the engine
+     c) a dedicated const-eval pass gated on -O4+ (separate from the gate search)
+  A3 soundness gate:
+     a) reuse the existing MCC_AST_JIT_EVAL_GATE UB oracle (refuse unsound)
+     b) purity-only: restrict to AST_PURITY_TIER0 slices
+     c) both + a value memo keyed by slice hash
+
+Group B — runtime cold baseline:
+  B1 baseline source:
+     a) keep deserialize-shipped-AST as-is (settled)
+     b) also ship the AOT search-winner gate config so cold start = best AOT baseline
+  B2 when the hot path is disabled (jit off / infeasible / over budget):
+     a) run the shipped AOT baseline (settled)
+     b) run the AOT search-winner variant baked as a second baseline
+
+Group C — runtime hot path (permute + partial-slice hot-swap + reconcile):
+  C1 swap granularity:
+     a) whole function (current Phase 3 plan; simplest)
+     b) partial AST slice via ast_slice_extract kernel, rest untouched
+     c) adaptive: slice a hot sub-region if the profile localizes it, else whole fn
+  C2 reconcile the surrounding slices after a slice is optimized:
+     a) re-run ast_run_strat_cycle on the boundary neighbours (re-optimize edges)
+     b) ast_slice_equiv-verify the boundary + splice with fixups only (no re-opt)
+     c) full-function re-emit but pin the optimized slice
+  C3 strategy permutation scope:
+     a) each slice searches its own gate/strategy permutation (independent)
+     b) one global permutation per function
+     c) slice-local search seeded from the function's current best
+  C4 correctness net for a swapped slice:
+     a) KGC differential verify per slice (existing net)
+     b) ast_slice_equiv structural check + KGC
+     c) deopt-to-baseline on any mismatch (never keep an unverified slice)
+
 Phase 1 (always-on) — STATUS: the in-process `-run`/MEMORY JIT is ALREADY default-on
 (`MCC_JIT_DEFAULT=1`; `mccjit-boot` fires with no `MCC_JIT` set; `MCC_JIT=0` disables).
 Remaining "always-on" = the file-embed slice (`s->embed_jit` default 0 -> 1 at
