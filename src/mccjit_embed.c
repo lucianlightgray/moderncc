@@ -70,6 +70,7 @@ MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) { MCC_TRACE("enter\n");
 
 void ast_reemit_extern(Sym *sym, AstArena *ast);
 void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask);
+int ast_jit_fold_consts(AstArena *ast);
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
 void mcc_jit_publish(void **slot, void *variant);
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
@@ -302,6 +303,8 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		AstArena *ov_ast = NULL;
 		uint64_t ov_mask = 0;
 		ast_fconst_reuse_disable(1);
+		if (getenv("MCC_JIT_SELFTEST_FOLD_CONSTS"))
+			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
 		if (mccjit_override_n && mccjit_override_get(it.anchor_sym_v, &ov_ast, &ov_mask))
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, ov_ast, ov_mask); }
 		else if (getenv("MCC_JIT_SELFTEST_REEMIT_GATES"))
@@ -6091,12 +6094,53 @@ static int mccjit_consteval_one(const char *src, const char *fn, int want_ok,
 	return fails;
 }
 
+static int mccjit_foldcheck_one(const char *src, const char *fn, int want_min) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *js;
+	MccjitIntent it;
+	int fails = 0;
+	blob = mccjit_stash_one(src, fn, 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-consteval: %s fold stash failed\n", fn);
+		if (s1) { MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	js = mcc_new();
+	if (js) { MCC_TRACE("br\n");
+		js->optimize = 0;
+		js->nostdlib = 1;
+		mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+		mcc_enter_state(js);
+		mccpp_new(js);
+		mccgen_init(js);
+		anon_sym = SYM_FIRST_ANOM;
+		funcname = "";
+		func_ind = -1;
+		if (mccjit_intent_deserialize(blob, blen, &it) == 0) { MCC_TRACE("br\n");
+			int folded = ast_jit_fold_consts(it.arena);
+			int ok = folded >= want_min;
+			printf("mccjit-selftest-consteval: %-3s folded=%d(want>=%d) %s\n", fn, folded,
+						 want_min, ok ? "OK" : "FAIL");
+			if (!ok) { MCC_TRACE("br\n"); fails++; }
+			mccjit_intent_release(&it);
+		} else { MCC_TRACE("br\n"); fails++; }
+		mcc_exit_state(js);
+		mcc_delete(js);
+	}
+	mcc_free(blob);
+	mcc_delete(s1);
+	return fails;
+}
+
 PUB_FUNC int mccjit_selftest_consteval(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 	fails += mccjit_consteval_one("int f(int x){(void)x;return 6*7+1;}", "f", 1, 43);
 	fails += mccjit_consteval_one("int f(int x){(void)x;return 5;}", "f", 1, 5);
 	fails += mccjit_consteval_one("int f(int x){return x+1;}", "f", 0, 0);
 	fails += mccjit_consteval_one("long f(long x){(void)x;return (3<<4)|1;}", "f", 1, 49);
+	fails += mccjit_foldcheck_one("int f(int x){return x + 6*7;}", "f", 0);
 	printf("mccjit-selftest-consteval: %s (%d fail%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;

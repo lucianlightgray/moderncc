@@ -113,6 +113,7 @@ int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out, int 
    because the UB-soundness oracle flagged them (opt-in `MCC_AST_JIT_EVAL_GATE`). */
 int ast_jit_eval_refused_count(void);
 int ast_jit_const_fn(AstArena *a, int64_t *out);
+int ast_jit_fold_consts(AstArena *a);
 #endif
 
 #ifdef __cplusplus

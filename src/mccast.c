@@ -12116,6 +12116,39 @@ int ast_jit_const_fn(AstArena *a, int64_t *out) { MCC_TRACE("enter\n");
 #endif
 }
 
+int ast_jit_fold_consts(AstArena *a) { MCC_TRACE("enter\n");
+#ifdef AST_EVAL_SLICE_PROVIDED
+	AstLocal n, cnt = ast_count(a);
+	int folded = 0;
+	for (n = 0; n < cnt; n++) { MCC_TRACE("br\n");
+		int64_t v;
+		uint16_t k = ast_kind(a, n);
+		int bt;
+		if (k != AST_Binary && k != AST_Unary)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_nchild(a, n) == 0)
+			{ MCC_TRACE("br\n"); continue; }
+		bt = ast_type_t(a, n) & VT_BTYPE;
+		if (bt != VT_BOOL && bt != VT_BYTE && bt != VT_SHORT && bt != VT_INT &&
+				bt != VT_LLONG)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_eval_slice(a, n, NULL, NULL, 0, &v)) { MCC_TRACE("br\n");
+			ast_clear_children(a, n);
+			ast_set_kind(a, n, AST_Literal);
+			ast_set_op(a, n, VT_CONST);
+			ast_set_ival(a, n, (uint64_t)v);
+			ast_set_fbits(a, n, 0);
+			ast_set_sym(a, n, 0);
+			folded++;
+		}
+	}
+	return folded;
+#else
+	(void)a;
+	return 0;
+#endif
+}
+
 int ast_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 										AstLocal broot) { MCC_TRACE("enter\n");
 #ifdef AST_EVAL_SLICE_PROVIDED

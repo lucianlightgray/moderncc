@@ -35,3 +35,19 @@ Ordering matters: the frontier reset + `ast_loc_low = loc` seed must run *before
 `ast_promo_entry_init` in the replay macro, else the promo allocation is wiped.
 Validated: repro no longer SEGVs, self-host search evaluates ~26k like gcc-mcc,
 `fixpoint-invariant` byte-identical, `ast/` + `jit/` ctests green.
+
+## Step 2 const-eval / const-fold (ast_jit_const_fn, ast_jit_fold_consts)
+
+`ast_jit_const_fn` reduces a single-pure-return function whose return has no free
+variables to a constant (empty-env `ast_eval_slice`). `ast_jit_fold_consts` walks
+the arena and rewrites free-var-free integer Binary/Unary nodes to literals
+(op=VT_CONST, keep type). Convert nodes are excluded — a void-typed conversion
+"evaluates" but folding it to a VT_CONST literal yields "operation on void value"
+at codegen. The compiler already const-folds plain source during compile, so a
+fresh deserialized intent has nothing to fold; `ast_jit_fold_consts` earns its
+keep only on ASTs where a later transform materializes new constants (e.g.
+spec-fold turning a param into a const, so `param*2+1` becomes `3*2+1`). Its
+end-to-end correctness is covered by jit/selftest-fold-consts, which forces the
+fold through every recompile (including the vspec/spec-fold path) and requires all
+selftests to stay correct; the consteval unit test only asserts it is a safe
+no-op on an already-folded intent.
