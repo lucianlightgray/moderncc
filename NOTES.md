@@ -3,6 +3,40 @@
 Design rationale that does not belong in code comments (project style: no code
 comments) or in TODO.md (open work). Newest first.
 
+## COFF .bss + section-relative relocs — why `--embed-jit` MCC_JIT=1 crashed
+
+Making the `--embed-jit` standalone exe self-recompile at runtime (`MCC_JIT=1`)
+exposed two long-standing bugs in `coff_load_object_file` (mccpe.c) that only bite
+a COFF object with a large `.bss` and static-local globals — which the baked
+~1.9 MB JIT engine is, and which mcc's own ELF-emitting compiler never produces:
+
+1. **NOBITS size from the wrong header field.** COFF section size for `.bss`
+   (`IMAGE_SCN_CNT_UNINITIALIZED_DATA`) lives in `SizeOfRawData`; `Misc.VirtualSize`
+   is a PE-*image* field and is 0 in a relocatable *object*. mcc read
+   `Misc.VirtualSize` for NOBITS, so the engine's `.bss` got 0 bytes, no mapped VA,
+   and its globals resolved past `SizeOfImage`. Fixed to `SizeOfRawData` (max with
+   VirtualSize so the image case still works).
+
+2. **Section-relative relocs double-counted the in-field offset.** mcc's x86_64
+   `relocate()` applies `R_X86_64_PC32/32/64` with `add32le/add64le` — the on-disk
+   field is an *implicit addend* that the final value is ADDED to (REL semantics),
+   even though the reloc also carries an explicit `r_addend`. `coff_map_reloc`
+   captured the COFF field as the explicit addend but left the field in place, so
+   for a reloc against a *section* symbol — where gcc puts the target's in-section
+   offset in the field (e.g. `mov %eax, .bss+0x1e2024(%rip)`) — that offset was
+   counted twice (`field + (S + addend)`), landing ~one `.bss` past the real global.
+   Named-symbol relocs carry field 0, so calls/extern refs (all `MCC_JIT=0`
+   exercises, and every prior COFF-load test) were unaffected — only the engine's
+   static-global stores in the JIT-boot path (`mccjit_set_search_budget` writing the
+   600 s default) hit it. Fix: `coff_map_reloc` now zeroes the 4/8-byte field after
+   capturing the addend, for the x86_64/arm64 ADDR/REL cases (RELA-correct: the
+   addend is the authoritative value, the field must be 0 for the add to be exact).
+   The i386 REL path already pre-biases the field and is left as-is.
+
+Together these make the baked engine's globals map and address correctly, so the
+runtime JIT boots and self-recompiles inside the standalone PE. See "PE import
+libraries" below for the import side of the same `--embed-jit` work.
+
 ## PE import libraries — why mcc consumes mingw long-import members
 
 `--embed-jit` links the host-CC-built JIT engine, which references UCRT/msvcrt

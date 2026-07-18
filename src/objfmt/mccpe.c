@@ -1950,13 +1950,14 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 #if defined MCC_TARGET_X86_64
 	switch (t) { MCC_TRACE("br\n");
 	case IMAGE_REL_AMD64_ABSOLUTE: *skip = 1; return 1;
-	case IMAGE_REL_AMD64_ADDR64: *etype = R_X86_64_64; *addend = coff_rd64(fld); return 1;
-	case IMAGE_REL_AMD64_ADDR32: *etype = R_X86_64_32; *addend = coff_rd32(fld); return 1;
-	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_32; *addend = coff_rd32(fld); return 1;
+	case IMAGE_REL_AMD64_ADDR64: *etype = R_X86_64_64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
+	case IMAGE_REL_AMD64_ADDR32: *etype = R_X86_64_32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
+	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	default:
 		if (t >= IMAGE_REL_AMD64_REL32 && t <= IMAGE_REL_AMD64_REL32_5) { MCC_TRACE("br\n");
 			*etype = R_X86_64_PC32;
 			*addend = coff_rd32(fld) - (4 + (t - IMAGE_REL_AMD64_REL32));
+			memset(fld, 0, 4);
 			return 1;
 		}
 		return 0;
@@ -1978,9 +1979,9 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 #elif defined MCC_TARGET_ARM64
 	switch (t) { MCC_TRACE("br\n");
 	case IMAGE_REL_ARM64_ABSOLUTE: *skip = 1; return 1;
-	case IMAGE_REL_ARM64_ADDR64: *etype = R_AARCH64_ABS64; *addend = coff_rd64(fld); return 1;
-	case IMAGE_REL_ARM64_ADDR32: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); return 1;
-	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); return 1;
+	case IMAGE_REL_ARM64_ADDR64: *etype = R_AARCH64_ABS64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
+	case IMAGE_REL_ARM64_ADDR32: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
+	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_ARM64_BRANCH26: *etype = R_AARCH64_CALL26; return 1;
 	case IMAGE_REL_ARM64_PAGEBASE_REL21: *etype = R_AARCH64_ADR_PREL_PG_HI21; return 1;
 	case IMAGE_REL_ARM64_PAGEOFFSET_12A: *etype = R_AARCH64_ADD_ABS_LO12_NC; return 1;
@@ -2121,7 +2122,9 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		}
 		if (!s)
 			{ MCC_TRACE("br\n"); s = new_section(s1, name, sh_type, sh_flags); }
-		size = (sh_type == SHT_NOBITS) ? sh->Misc.VirtualSize : sh->SizeOfRawData;
+		size = sh->SizeOfRawData;
+		if (sh_type == SHT_NOBITS && sh->Misc.VirtualSize > size)
+			{ MCC_TRACE("br\n"); size = sh->Misc.VirtualSize; }
 		offset = section_add(s, size, align);
 		smap[i + 1].s = s;
 		smap[i + 1].offset = offset;

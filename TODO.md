@@ -112,20 +112,27 @@ manifest quirk that no longer reproduces (toolchain-side, not mcc).
   *Separate minor follow-up (untouched):* the COFF `ADDR32NB` reloc is mapped to
   absolute `R_X86_64_32` (should be RVA); harmless today (`.pdata`-only) but wrong.
 
-- [ ] **REMAINING: `--embed-jit` exe SIGSEGVs under `MCC_JIT=1` (runtime
-  self-recompile).** With the engine dormant (`MCC_JIT=0`) the embedded exe runs;
-  with `MCC_JIT=1` it faults (0xC0000005) once the baked `.init_array` JIT starts
-  recompiling the hot function. This is EMBED-SPECIFIC: in-process `-run` JIT
-  self-recompile works on this host (`MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 mcc -O4
-  -run hello.c` → correct; `ctest -R jit/` 47/47). So the import-lib work is not
-  the cause — the runtime JIT machinery running INSIDE the baked standalone PE is
-  the open issue (crash is in JIT-generated/engine `.text`, stripped, no symbols).
-  Likely candidates to probe next: the baked engine's KGC/exec-page setup under
-  the standalone image (vs the libmcc-hosted `-run` process), or a UCRT-vs-msvcrt
-  runtime hazard when the engine (UCRT) and the base program (mcc msvcrt.def) both
-  touch CRT state during a live recompile. Repro: `mcc --embed-jit hello.c -o
-  h.exe` then `MCC_JIT=1 ./h.exe` (cmake-winlibs; hello with an eligible
-  `int busy(int)` hot loop).
+- **DONE: `--embed-jit` exe now runs under BOTH `MCC_JIT=0` and `MCC_JIT=1`
+  (runtime self-recompile) on Windows.** Two COFF-loader bugs in
+  `coff_load_object_file` (mccpe.c), exposed by the ~1.9 MB engine `.bss`, are
+  fixed (detail in git history + NOTES.md "COFF .bss + section-relative relocs"):
+  1. **NOBITS section size read from the wrong field.** `.bss` size was taken from
+     `Misc.VirtualSize`, which is 0 in a COFF *object* (the size lives in
+     `SizeOfRawData`) — so the engine's `.bss` was allocated 0 bytes and its
+     zero-init globals landed past the image. Now uses `SizeOfRawData` (max with
+     VirtualSize for the image case).
+  2. **Section-relative relocs double-counted the in-field offset.** mcc's
+     `relocate()` applies `R_X86_64_{PC32,32,64}` with `add32le/add64le` (field +=
+     S + addend), so `coff_map_reloc` must ZERO the field after capturing it as the
+     addend. It didn't — a reloc against the `.bss` (or any) section symbol whose
+     field holds the in-section offset added that offset twice. (Named-symbol relocs
+     have field 0, so `MCC_JIT=0` and prior COFF tests were unaffected — that's why
+     only the static-global stores in the JIT-boot path crashed.) Now zeroes the
+     4/8-byte field for the x86_64/arm64 ADDR/REL cases.
+  Validated: `mcc --embed-jit hello.c` → `MCC_JIT=0` and `MCC_JIT=1` both print
+  the correct result (byte-matches gcc); `ctest -R jit/` + fixpoint + objcheck
+  green on cmake-winlibs. This closes the Windows `--embed-jit` standalone-exe
+  work; the i386-PE / arm64 items below remain for full-arch parity.
 
 ## Bring Windows AOT + JIT to full parity with the Linux implementation
 
