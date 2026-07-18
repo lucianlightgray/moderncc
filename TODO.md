@@ -13,12 +13,28 @@ where the runtime `-run` JIT override path (`mcc_jit_submit_ast` /
 `MCC_JIT_SUBMIT_AOT`) both fires and is correct. Two real bugs hide behind the
 gate and must be root-caused (repros run the differential scripts directly):
 
-- **arm64 search/override miscompile.** On arm64-**Linux** the override fires
-  (`overrides=8..10`) but `jit-submit-aot-diff` p2 (`gcd`+`poly`) produces garbage
-  (`jit=[187922138441531\n92851]` vs `ref=[24336139]`); p1/p3 are correct. The
-  runtime search/override codegen path miscompiles that shape on arm64. Repro:
-  `sh tests/ci/regression_jit_submit_aot_diff.sh <arm64-linux mcc>`. (On arm64-
-  macOS the `-run` JIT is off — Apple W^X — so the override never fires there.)
+- **arm64 runtime-JIT frameless-leaf return corruption.** ROOT-CAUSED (not a
+  search/gate/DIVMAGIC bug; plain `MCC_JIT=1` reproduces). On arm64-**Linux** a
+  hot function that is a *frameless leaf* — no callee-saved spill, no stack
+  locals, no loop — comes back miscompiled: the caller's control flow breaks
+  (its post-return code, e.g. `printf`, re-executes every iteration) and the
+  accumulator is garbage. Minimal repro:
+  `int f(int x){return x+1;} … for(i…)s+=f(i); printf("%ld",s);` →
+  `MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 mcc -O4 -run` emits one garbage line per
+  iteration; `MCC_JIT=0 mcc -O2 -run` is correct. Adding any frame (a `volatile`
+  local, an array, or a loop) masks it — which is why `gcd`/p3-popcount (loops)
+  survive and only straight-line `poly` fails. Mechanism: the mode-6 dispatch
+  convention (src/mccjit_embed.c:4000) enters a variant expecting the caller/stub
+  to have framed it; `mccjit_make_trampoline` emits the compensating `leave` on
+  x86 (:526) but is a **no-op on arm64** (:540). A framed callee self-saves
+  x29/x30 and masks the missing compensation; a frameless leaf keeps its return
+  addr only in x30, so the dispatch clobbers it and `ret` lands wrong. Fix lives
+  in the arm64 trampoline/mode-6 entry (make the arm64 direct path save/restore
+  x30 like the KGC stubs at :3056/:3145 already do, or force a frame on JIT-
+  dispatched arm64 leaves). Repro env: arm64-Linux Docker (native on Apple
+  Silicon), `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && ninja mcc`,
+  then `sh tests/ci/regression_jit_submit_aot_diff.sh build/mcc`. (arm64-macOS
+  can't repro — `-run` JIT off under Apple W^X.)
 - **MSVC-arm64 JIT-exec miscompile.** The 6 selftests (reemit-gates, fold-consts,
   search-live{,-kgc,-struct,-purity}) JIT-compile a fn and call it; on the
   arm64-Windows runner the called code faults/miscompiles. Same family as the
