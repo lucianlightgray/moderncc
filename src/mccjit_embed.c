@@ -4105,6 +4105,39 @@ PUB_FUNC int mccjit_selftest_eligibility(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+PUB_FUNC int mccjit_selftest_submit(void) { MCC_TRACE("enter\n");
+	Sym s1, s2;
+	AstArena *a1 = ast_arena_new(), *a2 = ast_arena_new();
+	AstArena *got = NULL;
+	uint64_t gm = 0;
+	int fails = 0, before;
+	if (!a1 || !a2) { MCC_TRACE("br\n"); printf("mccjit-selftest-submit: arena alloc FAIL\n"); return 1; }
+	memset(&s1, 0, sizeof s1); s1.v = 0x51a;
+	memset(&s2, 0, sizeof s2); s2.v = 0x52b;
+	before = mccjit_override_n;
+	mcc_jit_submit_ast(&s1, a1, 0x7, 0);
+	if (!mccjit_override_get(0x51a, &got, &gm) || got != a1 || gm != 0x7)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: get(s1) FAIL\n"); fails++; }
+	mcc_jit_submit_ast(&s2, a2, 0x9, 0);
+	if (!mccjit_override_get(0x52b, &got, &gm) || got != a2 || gm != 0x9)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: get(s2) FAIL\n"); fails++; }
+	if (mccjit_override_n != before + 2)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: count FAIL\n"); fails++; }
+	mcc_jit_submit_ast(&s1, a2, 0x3, 0); /* dedup: same tok updates in place */
+	if (!mccjit_override_get(0x51a, &got, &gm) || got != a2 || gm != 0x3)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: dedup FAIL\n"); fails++; }
+	if (mccjit_override_n != before + 2)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: dedup count FAIL\n"); fails++; }
+	if (mccjit_override_get(0xdead, &got, &gm))
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: miss FAIL\n"); fails++; }
+	if (mcc_jit_submit_ast(NULL, a1, 0, 0) != -1 || mcc_jit_submit_ast(&s1, NULL, 0, 0) != -1)
+		{ MCC_TRACE("br\n"); printf("mccjit-selftest-submit: null-guard FAIL\n"); fails++; }
+	ast_arena_free(a1);
+	ast_arena_free(a2);
+	printf("mccjit-selftest-submit: override table %s\n", fails ? "FAIL" : "OK");
+	return fails ? 1 : 0;
+}
+
 PUB_FUNC int mccjit_selftest_fork(void) { MCC_TRACE("enter\n");
 #if MCC_HOST_WIN32
 	/* fork()/pthread_atfork are POSIX-only; the pool's post-fork reset invariant

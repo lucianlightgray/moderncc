@@ -3888,6 +3888,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-eligibility COMMAND jit_selftest_eligibility)
             set_tests_properties(jit/selftest-eligibility PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_submit tests/embed/jit_selftest_submit.c)
+            target_link_libraries(jit_selftest_submit PRIVATE libmcc)
+            target_include_directories(jit_selftest_submit PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-submit COMMAND jit_selftest_submit)
+            set_tests_properties(jit/selftest-submit PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_fork tests/embed/jit_selftest_fork.c)
             target_link_libraries(jit_selftest_fork PRIVATE libmcc)
             target_include_directories(jit_selftest_fork PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

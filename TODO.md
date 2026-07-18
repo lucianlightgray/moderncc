@@ -386,7 +386,7 @@ segfault on real programs) — gate behind the full validation sweep; keep `MCC_
 /`--no-jit`/`--no-embed-jit`. The in-process `MCC_AST_SEARCH` self-host SEGV that
 blocked Phase 2 is FIXED (a7c38f1a), so the in-process search path is usable now.
 
-STEP 1 [in progress: 1a ast_reemit_with_gates DONE (42fded0e); override table + mcc_jit_submit_ast + recompile integration DONE (597afebb); emit-primitive validated by jit/selftest-reemit-gates (forces every recompile through ast_reemit_with_gates, mask=0, all selftests pass); NOTE override table is SAME-PROCESS (-run/MEMORY) — file outputs ship via serialization; REMAINING: pool-triggered swap so a submit immediately recompiles+hot-swaps (needs sym->slot map)] — backend override API + per-sym override table + threaded submit (on the
+STEP 1 [DONE — backend override seam: ast_reemit_with_gates (42fded0e) + mcc_jit_submit_ast/per-sym table/recompile integration (597afebb) + validation jit/selftest-reemit-gates (c6e9f952) + jit/selftest-submit; default-off, fixpoint byte-identical. Same-process (-run/MEMORY); file outputs ship via serialization. Immediate pool-triggered swap-on-submit DEFERRED as non-primary: for the AOT-backend flow the compile-time submit precedes the runtime .init_array install, so the override applies on the natural hot-recompile — only a runtime-resubmit case needs immediate swap.] — backend override API + per-sym override table + threaded submit (on the
 existing whole-function recompile; proves the seam end to end).
   1a. New `ast_reemit_with_gates(Sym *sym, AstArena *arena, unsigned gate_mask)` in
       mccast.c: clone `arena`, `ast_search_gates_set(gate_mask)`, `ast_run_strat_cycle`,
