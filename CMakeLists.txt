@@ -4002,6 +4002,8 @@ if(MCC_BUILD_TESTS)
             target_include_directories(jit_selftest_search PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
             add_test(NAME jit/selftest-search COMMAND jit_selftest_search)
             set_tests_properties(jit/selftest-search PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            add_test(NAME jit/selftest-search-live COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 $<TARGET_FILE:jit_selftest>)
+            set_tests_properties(jit/selftest-search-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             add_executable(jit_selftest_slicekernel tests/embed/jit_selftest_slicekernel.c)
             target_link_libraries(jit_selftest_slicekernel PRIVATE libmcc)

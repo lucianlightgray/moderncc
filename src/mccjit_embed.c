@@ -595,12 +595,16 @@ static int mccjit_bench_enabled(void) { MCC_TRACE("enter\n");
 	return e && e[0] && e[0] != '0';
 }
 
-static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed) { MCC_TRACE("enter\n");
+static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
+																			uint64_t gate_mask, int use_gates,
+																			int *routed) { MCC_TRACE("enter\n");
 	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
 	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
 	void *variant = spec_wrong
 											? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
-											: mcc_jit_recompile_blob(blob, (size_t)len);
+											: use_gates
+													? mcc_jit_recompile_blob_gated(blob, (size_t)len, gate_mask)
+													: mcc_jit_recompile_blob(blob, (size_t)len);
 	void *entry = NULL;
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = 0; }
@@ -636,6 +640,10 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 	return entry;
 }
 
+static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed) { MCC_TRACE("enter\n");
+	return mccjit_lazy_build_masked(blob, len, 0, 0, routed);
+}
+
 #define MCCJIT_PROFILE_SAMPLES 8
 
 typedef struct MccjitCounterState {
@@ -667,6 +675,37 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
 	if (!routed || allfp || !cand || !incumbent || nargs == 0)
 		{ MCC_TRACE("br\n"); return 1; }
 	return mccjit_promote_by_profile(cand, incumbent, st, nargs, wide);
+}
+
+static void *mccjit_lazy_search(MccjitCounterState *st, int *routed) { MCC_TRACE("enter\n");
+	static const uint64_t vocab[] = {
+			0, 1, 3, (uint64_t)0x20001, (uint64_t)0x131073,
+			(uint64_t)0xffffULL, (uint64_t)0xffffffffffffULL };
+	int nv = (int)(sizeof vocab / sizeof vocab[0]);
+	double budget_s = 0.05;
+	const char *e = getenv("MCC_JIT_SEARCH_MS");
+	struct timespec t0;
+	void *best = NULL;
+	int best_routed = 0, i, timed;
+	if (e && e[0])
+		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
+	timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
+	for (i = 0; i < nv; i++) { MCC_TRACE("br\n");
+		int r = 0;
+		void *cand;
+		if (best && timed && budget_s > 0 && mccjit_elapsed(&t0) > budget_s)
+			{ MCC_TRACE("br\n"); break; }
+		cand = mccjit_lazy_build_masked(st->blob, st->len, vocab[i], 1, &r);
+		if (!cand)
+			{ MCC_TRACE("br\n"); continue; }
+		if (!best) { MCC_TRACE("br\n"); best = cand; best_routed = r; }
+		else if (mccjit_bench_admit(cand, best, st, mccjit_last_nparam,
+																mccjit_last_ret_wide, mccjit_last_allfp, r))
+			{ MCC_TRACE("br\n"); best = cand; best_routed = r; }
+	}
+	if (routed)
+		{ MCC_TRACE("br\n"); *routed = best_routed; }
+	return best;
 }
 
 /* J6A jit-profile: runtime live-in capture riding the D5 hot counter. The
@@ -860,7 +899,9 @@ static void mccjit_job_run_eager(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 	MccjitCounterState *st = job->cst;
 	int routed = 0;
-	void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
+	void *entry = getenv("MCC_JIT_SEARCH")
+										? mccjit_lazy_search(st, &routed)
+										: mccjit_lazy_build(st->blob, st->len, &routed);
 	uint32_t nargs = mccjit_last_nparam;
 	int wide = mccjit_last_ret_wide;
 	int allfp = mccjit_last_allfp;
@@ -922,7 +963,9 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 		target = st->baseline;
 	} else { MCC_TRACE("br\n");
 		int routed = 0;
-		void *entry = mccjit_lazy_build(st->blob, st->len, &routed);
+		void *entry = getenv("MCC_JIT_SEARCH")
+										? mccjit_lazy_search(st, &routed)
+										: mccjit_lazy_build(st->blob, st->len, &routed);
 		if (entry) { MCC_TRACE("br\n");
 			void *incumbent = st->promoted ? st->promoted : st->baseline;
 			if (!mccjit_bench_admit(entry, incumbent, st, mccjit_last_nparam,
