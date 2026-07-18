@@ -160,6 +160,8 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) { M
 }
 
 static int mccjit_internal_compile;
+static uint64_t mccjit_recompile_gate_mask;
+static int mccjit_recompile_use_gates;
 
 typedef struct MccjitOverride {
 	int64_t tokv;
@@ -305,7 +307,9 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		ast_fconst_reuse_disable(1);
 		if (getenv("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
-		if (mccjit_override_n && mccjit_override_get(it.anchor_sym_v, &ov_ast, &ov_mask))
+		if (mccjit_recompile_use_gates)
+			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
+		else if (mccjit_override_n && mccjit_override_get(it.anchor_sym_v, &ov_ast, &ov_mask))
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, ov_ast, ov_mask); }
 		else if (getenv("MCC_JIT_SELFTEST_REEMIT_GATES"))
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
@@ -342,6 +346,16 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 MCCJIT_LOCAL void *mcc_jit_recompile_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
 	return mccjit_recompile_common(buf, len, 0, -1, 0);
+}
+
+MCCJIT_LOCAL void *mcc_jit_recompile_blob_gated(const void *buf, size_t len,
+																								uint64_t gate_mask) { MCC_TRACE("enter\n");
+	void *r;
+	mccjit_recompile_use_gates = 1;
+	mccjit_recompile_gate_mask = gate_mask;
+	r = mccjit_recompile_common(buf, len, 0, -1, 0);
+	mccjit_recompile_use_gates = 0;
+	return r;
 }
 
 MCCJIT_LOCAL void *mcc_jit_recompile_blob_spec(const void *buf, size_t len,
@@ -6143,6 +6157,49 @@ PUB_FUNC int mccjit_selftest_consteval(void) { MCC_TRACE("enter\n");
 	fails += mccjit_foldcheck_one("int f(int x){return x + 6*7;}", "f", 0);
 	printf("mccjit-selftest-consteval: %s (%d fail%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+PUB_FUNC int mccjit_selftest_gated(void) { MCC_TRACE("enter\n");
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1;
+	uint64_t masks[4];
+	int inputs[4] = {5, 0, -3, 100};
+	int fails = 0, m, i;
+	masks[0] = 0;
+	masks[1] = 1;                    /* AST_SG_TEMPLATES */
+	masks[2] = (uint64_t)0x20001;    /* RANGE + a fold gate */
+	masks[3] = (uint64_t)0xffffffffffffULL; /* all 48 gate bits */
+	blob = mccjit_stash_one("int f(int x){return x*2+1;}", "f", 1, &blen, &s1);
+	if (!blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-gated: stash failed\n");
+		if (s1) { MCC_TRACE("br\n"); mcc_delete(s1); }
+		return 1;
+	}
+	for (m = 0; m < 4; m++) { MCC_TRACE("br\n");
+		int (*jitf)(int) =
+				(int (*)(int))mcc_jit_recompile_blob_gated(blob, blen, masks[m]);
+		if (!jitf) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-gated: mask %#llx recompile NULL\n",
+						 (unsigned long long)masks[m]);
+			fails++;
+			continue;
+		}
+		for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+			int got = jitf(inputs[i]);
+			int want = inputs[i] * 2 + 1;
+			if (got != want) { MCC_TRACE("br\n");
+				printf("mccjit-selftest-gated: mask %#llx f(%d)=%d want %d FAIL\n",
+							 (unsigned long long)masks[m], inputs[i], got, want);
+				fails++;
+			}
+		}
+	}
+	printf("mccjit-selftest-gated: variant diversity %s (%d fail%s)\n",
+				 fails ? "FAIL" : "OK", fails, fails == 1 ? "" : "s");
+	mcc_free(blob);
+	mcc_delete(s1);
 	return fails ? 1 : 0;
 }
 

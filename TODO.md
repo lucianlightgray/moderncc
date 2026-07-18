@@ -418,6 +418,8 @@ STEP 2 [in progress: ast_jit_const_fn DONE + ast_jit_fold_consts DONE (walks are
   hot path (no serialization on this seam; serialization stays only for the
   ship-to-disk cold baseline). Reuse `mccjit_pool` for the eval jobs.
 
+ENABLER DONE (runtime search foundation): mcc_jit_recompile_blob_gated(blob,len,gate_mask) recompiles applying a gate mask via ast_reemit_with_gates (globals mccjit_recompile_use_gates/gate_mask; recompiles are serialized by the global compiler state so no lock needed). jit/selftest-gated proves variant diversity: f recompiled under masks {0,1,0x20001,all-48-bits} all correct. This is what the runtime perm x combo x strategy loop calls per candidate. REMAINING for the loop: enumerate gate masks (reuse combo_run / searchable set mccast.c:12844) at the promote seam, mccjit_bench_admit as fitness, keep best, bound by jit_max_duration on CLOCK_MONOTONIC.
+
 STEP 3 — partial-slice hot-swap + reconcile (pillar C, C1c/C2b/C3c/C4b) on the
 working whole-function seam.
   C1c adaptive: use the `MccjitCounterState` profile (sample/argmin/argmax) to localize
