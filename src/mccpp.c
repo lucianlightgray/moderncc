@@ -1339,8 +1339,12 @@ static void maybe_run_test(MCCState *s) { MCC_TRACE("enter\n");
 ST_FUNC void skip_to_eol(int warn) { MCC_TRACE("enter\n");
 	if (tok == TOK_LINEFEED)
 		{ MCC_TRACE("br\n"); return; }
-	if (warn)
-		{ MCC_TRACE("br\n"); mcc_warning("extra tokens after directive"); }
+	if (warn) { MCC_TRACE("br\n");
+		if (mcc_state->pedantic_errors && !pp_in_system_header())
+			{ MCC_TRACE("br\n"); mcc_error("extra tokens after directive"); }
+		else
+			{ MCC_TRACE("br\n"); mcc_warning("extra tokens after directive"); }
+	}
 	while (macro_stack)
 		{ MCC_TRACE("br\n"); end_macro(); }
 	file->buf_ptr = parse_line_comment(file->buf_ptr - 1);

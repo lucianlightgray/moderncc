@@ -395,6 +395,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ols.c -o {W}/ols.o 2>&1 >/dev/null && echo DEFAULT_OK; echo END",
 		 "string literal of length 510 exceeds maximum length 509\nLEN509_OK\nDEFAULT_OK\nEND\n"},
 
+		{"extra_tokens_directive_pedantic", "",
+		 "printf '#if 1\\n#endif junk\\nint x;\\nint main(void){return 0;}\\n' > {W}/et.c && "
+		 "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/et.c -o {W}/et.o 2>&1 | "
+		 "grep -oE 'error: extra tokens after directive'; "
+		 "{MCC} -B{B} -I{I} -c {W}/et.c -o {W}/et.o 2>&1 | "
+		 "grep -oE 'warning: extra tokens after directive'; "
+		 "{MCC} -B{B} -I{I} -c {W}/et.c -o {W}/et.o 2>/dev/null && echo DEFAULT_OK; "
+		 "printf '#include <stdio.h>\\nint main(void){return 0;}\\n' > {W}/eth.c && "
+		 "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/eth.c -o {W}/eth.o 2>/dev/null && echo HDR_OK; echo END",
+		 "error: extra tokens after directive\nwarning: extra tokens after directive\nDEFAULT_OK\nHDR_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
