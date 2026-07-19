@@ -1952,7 +1952,7 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_AMD64_ABSOLUTE: *skip = 1; return 1;
 	case IMAGE_REL_AMD64_ADDR64: *etype = R_X86_64_64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
 	case IMAGE_REL_AMD64_ADDR32: *etype = R_X86_64_32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
-	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
+	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_RELATIVE; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	default:
 		if (t >= IMAGE_REL_AMD64_REL32 && t <= IMAGE_REL_AMD64_REL32_5) { MCC_TRACE("br\n");
 			*etype = R_X86_64_PC32;
@@ -1981,7 +1981,7 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_ARM64_ABSOLUTE: *skip = 1; return 1;
 	case IMAGE_REL_ARM64_ADDR64: *etype = R_AARCH64_ABS64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
 	case IMAGE_REL_ARM64_ADDR32: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
-	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
+	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_RELATIVE; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_ARM64_BRANCH26: *etype = R_AARCH64_CALL26; return 1;
 	case IMAGE_REL_ARM64_PAGEBASE_REL21: *etype = R_AARCH64_ADR_PREL_PG_HI21; return 1;
 	case IMAGE_REL_ARM64_PAGEOFFSET_12A: *etype = R_AARCH64_ADD_ABS_LO12_NC; return 1;

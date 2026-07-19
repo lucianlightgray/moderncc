@@ -115,8 +115,14 @@ the startup/run blockers are RESOLVED (the two DONE items below). Landed
   - The short-import (`IMPORT_OBJECT_HEADER`, sig `00 00 FF FF`) path was NOT
     needed: winlibs mingw import libs use the long-import format exclusively.
   Validated: `ctest -R jit/` + fixpoint 47/47 on cmake-winlibs; no regressions.
-  *Separate minor follow-up (untouched):* the COFF `ADDR32NB` reloc is mapped to
-  absolute `R_X86_64_32` (should be RVA); harmless today (`.pdata`-only) but wrong.
+  *Follow-up now DONE:* the COFF `ADDR32NB` reloc mapped to absolute `R_X86_64_32`
+  (should be RVA) is fixed — mapped to `R_X86_64_RELATIVE` (x86_64) /
+  `R_AARCH64_RELATIVE` (arm64) in `coff_map_reloc`, the reloc case the PE backend
+  already uses for its own `.pdata`/export RVAs (`add32le(ptr, val - pe_imagebase)`;
+  field zeroed, offset captured as addend). Verified: the `--embed-jit` exe's
+  `.pdata` now holds proper RVAs (BeginAddress `0x1000`, not VA `0x401000`) and the
+  exe still links+runs under `MCC_JIT=0`/`MCC_JIT=1`; 50/50 jit/embed/regression/
+  fixpoint/objcheck.
 
 - **DONE: `--embed-jit` exe now runs under BOTH `MCC_JIT=0` and `MCC_JIT=1`
   (runtime self-recompile) on Windows.** Two COFF-loader bugs in
@@ -165,13 +171,19 @@ Known gaps (each links to its detail above / in git history):
 - **arm64-PE runtime-JIT bugs are skip-gated.** The frameless-leaf return
   corruption + the MSVC-arm64 JIT-exec miscompile (both in the skip-gate section
   at the top of this file) keep `-run`/`MCC_JIT` promotion off on arm64-Windows.
-- **The `-run` backend-override differential path** (`regression/o4-aot-jit`,
-  `regression/jit-submit-aot-diff`) is skip-gated to x86_64-non-MSVC; PE parity
-  needs those green on the PE cells once the runtime-JIT bugs above are fixed.
+- **The `-run` backend-override differential path — RUNS+PASSES on x86_64-PE.**
+  `regression/o4-aot-jit` + `regression/jit-submit-aot-diff` gate on `x86_64 AND
+  NOT MSVC` (CMakeLists ~4029), so the mingw x86_64-PE cell already runs (not skips)
+  and passes them. Skip stays only for MSVC (x86_64+arm64) and arm64-PE (the
+  runtime-JIT bugs above). Verified this host 2026-07-19: both green.
 
-Definition of done: on x86_64-PE, the same `ctest -R jit/` + `regression/*` +
-`exec-replay/*` set runs (not skips) and matches the Linux goldens; the remaining
-skips are arm64-HW / i386-x87 items with a filed sub-task, not silent gaps.
+Definition of done — **MET on x86_64-PE (mingw), 2026-07-19.** The full
+`ctest -R jit/` (47/47), `regression/*` (o4-aot-jit + jit-submit-aot-diff, 2/2),
+and `exec-replay/*` (889 run, 0 fail) all RUN (not skip) and pass on x86_64-PE;
+`--embed-jit` links/runs/self-recompiles (JIT=0 and JIT=1) and the mixed KGC stub
+promotes (`jit/selftest-mixed`). The only remaining Windows-parity skips are the
+**arm64-PE / MSVC-arm64 hardware-gated** items (top-of-file skip-gate section) and
+the **i386-PE x87 stub tail** — each a filed sub-task above, not a silent gap.
 
 ## qemu-amd64 emulation noise (not compiler defects)
 
