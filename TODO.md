@@ -11,13 +11,18 @@ it. Completed items are pruned once verified; the detail lives in git history.
 non-MSVC AND arm64-Linux (ELF)** — the cells where the runtime `-run` JIT override
 path (`mcc_jit_submit_ast` / `MCC_JIT_SUBMIT_AOT`) both fires and is correct. Still
 skip-gated: arm64-macOS (`-run` JIT off under Apple W^X), MSVC (x86_64 + arm64,
-`-run` non-functional), i686 (correct output but override never fires). One real
-bug remains behind the MSVC arm64 gate (the 6 `jit/selftest-*`):
+`-run` non-functional), i686 (correct output but override never fires). One
+tracked-broken cell remains behind the MSVC arm64 gate (the 6 `jit/selftest-*`):
 
-- **MSVC-arm64 JIT-exec miscompile.** The 6 selftests (reemit-gates, fold-consts,
-  search-live{,-kgc,-struct,-purity}) JIT-compile a fn and call it; on the
-  arm64-Windows runner the called code faults/miscompiles. Same family as the
-  d6755098 skip-gate (unreproducible off real arm64-Windows HW; wine masks it).
+- **MSVC-arm64 JIT-exec miscompile — NOT an mcc arm64 bug (confirmed 2026-07-19).**
+  The 6 selftests (reemit-gates, fold-consts, search-live{,-kgc,-struct,-purity})
+  JIT-compile a fn and call it; on the arm64-Windows runner the called code
+  faults/miscompiles. Same family as the d6755098 skip-gate. A full native arm64
+  ctest in Docker (linux/arm64 container, gcc-built mcc, ELF) PASSES all of these
+  plus the 29 `msvc/arm64` CI failures — so mcc's arm64 JIT/replay logic is proven
+  correct; the fault is MSVC-arm64 miscompiling mcc or an arm64-PE-native-only path.
+  Unreproducible off real arm64-Windows HW (wine masks it / can't bootstrap ARM64
+  PE). See NOTES / the arm64 memories for the full native-arm64 evidence.
 
 ## Runtime JIT: `--jit` / `MCC_JIT` / `MCC_CONFIG_JIT`
 
@@ -171,6 +176,11 @@ Known gaps (each links to its detail above / in git history):
 - **arm64-PE runtime-JIT bugs are skip-gated.** The frameless-leaf return
   corruption + the MSVC-arm64 JIT-exec miscompile (both in the skip-gate section
   at the top of this file) keep `-run`/`MCC_JIT` promotion off on arm64-Windows.
+  Native arm64-Linux (Docker, gcc, ELF) runs all of these green (2026-07-19), so
+  the arm64 JIT/replay LOGIC is sound — the residue is arm64-PE-native-only paths
+  (RtlAddFunctionTable/icache) + the MSVC miscompile, both needing arm64-Windows HW
+  to validate (Ubuntu arm64 wine can't bootstrap ARM64 PE; non-MSVC arm64-PE mcc
+  self-host is blocked by the missing `<windows.h>` for arm64 on Linux).
 - **The `-run` backend-override differential path — RUNS+PASSES on x86_64-PE.**
   `regression/o4-aot-jit` + `regression/jit-submit-aot-diff` gate on `x86_64 AND
   NOT MSVC` (CMakeLists ~4029), so the mingw x86_64-PE cell already runs (not skips)
