@@ -1637,6 +1637,12 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 				if (varg == TOK_DOTS) { MCC_TRACE("br\n");
 					varg = TOK___VA_ARGS__;
 					is_vaargs = 1;
+					if (mcc_state->warn_pedantic && mcc_state->cversion < 199901 && !pp_in_system_header()) { MCC_TRACE("br\n");
+						if (mcc_state->pedantic_errors)
+							{ MCC_TRACE("br\n"); mcc_error("variadic macros are a C99 feature"); }
+						else
+							{ MCC_TRACE("br\n"); mcc_warning("variadic macros are a C99 feature"); }
+					}
 				} else if (tok == TOK_DOTS && gnu_ext) { MCC_TRACE("br\n");
 					is_vaargs = 1;
 					next_nomacro();

@@ -5337,9 +5337,13 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			next();
 			break;
 		case TOK_BOOL:
+			if (mcc_state->cversion < 199901)
+				{ MCC_TRACE("br\n"); mcc_pedantic("'_Bool' is a C99 feature"); }
 			u = VT_BOOL;
 			goto basic_type;
 		case TOK_COMPLEX:
+			if (mcc_state->cversion < 199901)
+				{ MCC_TRACE("br\n"); mcc_pedantic("'_Complex' is a C99 feature"); }
 			complex_seen = 1;
 			next();
 			typespec_found = 1;
@@ -9312,6 +9316,8 @@ tok_next:
 		int saved_nocode_wanted = nocode_wanted;
 		nocode_wanted &= ~CONST_WANTED_MASK;
 
+		if (mcc_state->cversion < 201112)
+			{ MCC_TRACE("br\n"); mcc_pedantic("'_Generic' is a C11 feature"); }
 		next();
 		skip('(');
 		expr_type(&controlling_type, expr_eq);

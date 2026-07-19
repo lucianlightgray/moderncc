@@ -362,6 +362,22 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -std=gnu89 -c {W}/ge1.c -o {W}/ge1.o 2>&1 >/dev/null && echo GNU_OK; echo END",
 		 "ISO C forbids braced-groups within expressions\ncase ranges are a GNU extension\ntaking the address of a label is a GNU extension\nISO C forbids omitting the middle term of a ?: expression\nGNU_OK\nEND\n"},
 
+		{"c99_c11_feature_pedantic_gate", "",
+		 "printf '_Bool b;\\nint main(void){return 0;}\\n' > {W}/cf1.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/cf1.c -o {W}/cf1.o 2>&1 | "
+		 "grep -oE \"'_Bool' is a C99 feature\"; "
+		 "printf '_Complex double z;\\nint main(void){return 0;}\\n' > {W}/cf2.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/cf2.c -o {W}/cf2.o 2>&1 | "
+		 "grep -oE \"'_Complex' is a C99 feature\"; "
+		 "printf '#define M(...) __VA_ARGS__\\nint x;\\n' > {W}/cf3.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/cf3.c -o {W}/cf3.o 2>&1 | "
+		 "grep -oE 'variadic macros are a C99 feature'; "
+		 "printf 'int x=_Generic(1,int:2,default:0);\\nint main(void){return x-2;}\\n' > {W}/cf4.c && "
+		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/cf4.c -o {W}/cf4.o 2>&1 | "
+		 "grep -oE \"'_Generic' is a C11 feature\"; "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/cf4.c -o {W}/cf4.o 2>&1 >/dev/null && echo C11_OK; echo END",
+		 "'_Bool' is a C99 feature\n'_Complex' is a C99 feature\nvariadic macros are a C99 feature\n'_Generic' is a C11 feature\nC11_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
