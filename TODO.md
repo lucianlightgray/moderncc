@@ -45,8 +45,15 @@ Windows runtime JIT works: `ctest -R jit/` = 32/32 on the x86_64 mingw host.
 CreateFileMapping KGC store · SRWLOCK + CONDITION_VARIABLE + InitOnce +
 `_beginthreadex` · QPC clock · Interlocked atomics); the x86_64 stubs carry
 Microsoft-x64-ABI branches; the `-run`/`--embed-jit` pipeline fires on PE.
-`mccjit_make_kgc_stub_mixed` returns NULL on WIN32 (mixed int+FP → AOT baseline,
-`jit/selftest-mixed` skips). The KGC verify-stub/dispatch tail is x86_64/arm64-only;
+`mccjit_make_kgc_stub_mixed` now works on Win64 (mixed int+FP JIT-promotes;
+`jit/selftest-mixed` PASSES, was SKIP). The Win64 ABI is positional (arg N in
+(rcx/rdx/r8/r9)[N] OR xmm-N by position), so the stub spills BOTH register files
+positionally into gp[4]/fp[4], keys by a per-position class bitmask (`mx_argclass`),
+and re-issues the call through a fixed positional reload thunk; the shared calln
+verify logic is unchanged. Capped at 4 register args (>4 ⇒ stack args, bails to AOT).
+Verified end-to-end under wine (x86_64-PE): classification, positional thunk,
+faithful/divergent stub-exec, and FP-return all green. The KGC verify-stub/dispatch
+tail is x86_64/arm64-only;
 i686 promotion-dependent selftests skip via `MCCJIT_HAVE_STUB_TAIL` (a real i386
 KGC/FP(x87)/mixed stub tail is the future work to make i386 JIT-promote).
 
@@ -150,9 +157,11 @@ Known gaps (each links to its detail above / in git history):
   x86_64/arm64-only, so i686 promotion-dependent selftests skip
   (`MCCJIT_HAVE_STUB_TAIL`). Linux i386 has the same gap, but bringing a real i386
   KGC/FP(x87)/mixed stub tail online is required for full-arch parity.
-- **`mccjit_make_kgc_stub_mixed` returns NULL on WIN32.** Mixed int+FP signatures
-  fall back to the AOT baseline (`jit/selftest-mixed` skips) because the Win64 ABI
-  is positional; Linux SysV handles it. Needs a per-arg class vector for Win64.
+- **DONE: `mccjit_make_kgc_stub_mixed` works on Win64.** Mixed int+FP signatures
+  now JIT-promote (`jit/selftest-mixed` PASSES, was SKIP). Positional spill of both
+  register files (gp[4]/fp[4]) + per-position class bitmask (`mx_argclass`) + a
+  fixed positional reload thunk; shared calln verify unchanged. ≤4 register args
+  (>4 bails to AOT). Verified under wine (x86_64-PE): all checks green.
 - **arm64-PE runtime-JIT bugs are skip-gated.** The frameless-leaf return
   corruption + the MSVC-arm64 JIT-exec miscompile (both in the skip-gate section
   at the top of this file) keep `-run`/`MCC_JIT` promotion off on arm64-Windows.

@@ -2027,6 +2027,8 @@ typedef struct MccjitKgc {
 	void *mx_baseline;
 	uint32_t mx_ngp;
 	uint32_t mx_nsse;
+	uint32_t mx_nargs;    /* Win64: total scalar args (positional layout) */
+	uint32_t mx_argclass; /* Win64: bit i set => arg position i is FP (xmm-i), else GP */
 	int mx_ret_fp;
 	int *mx_flag;
 	pthread_mutex_t lock;
@@ -2529,6 +2531,30 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
    reconstruct the call — no per-arg class vector is needed. Unused registers are
    loaded with harmless garbage the callee ignores. Same bytes, cast to a GP-int
    or a double return per the callee's return class. */
+#if MCC_HOST_WIN32
+/* Win64 positional reload-and-call thunk. Unlike SysV (class-based), the Win64
+   ABI assigns the Nth scalar arg to (rcx/rdx/r8/r9)[N] if GP OR (xmm0..3)[N] if
+   FP — by POSITION. The stub captures both files positionally (gp[N], fp[N]),
+   and this thunk reloads all four positional slots of each file before the call
+   (unused slots carry harmless garbage the callee ignores). Win64 args: rcx=fn,
+   rdx=gp(int64*), r8=fp(double*). Same bytes for int (rax) or double (xmm0)
+   return. rsp stays 16-aligned (leaf: entry rsp%16==8, +0x28 shadow => call at
+   aligned). */
+static const unsigned char mccjit_mixed_thunk_code[] = {
+		0x49, 0x89, 0xca,                   /* mov r10, rcx (fn) */
+		0xf2, 0x41, 0x0f, 0x10, 0x00,       /* movsd xmm0,[r8]    */
+		0xf2, 0x41, 0x0f, 0x10, 0x48, 0x08, /* movsd xmm1,[r8+8]  */
+		0xf2, 0x41, 0x0f, 0x10, 0x50, 0x10, /* movsd xmm2,[r8+16] */
+		0xf2, 0x41, 0x0f, 0x10, 0x58, 0x18, /* movsd xmm3,[r8+24] */
+		0x48, 0x8b, 0x0a,                   /* mov rcx,[rdx]      */
+		0x4c, 0x8b, 0x4a, 0x18,             /* mov r9, [rdx+24]   */
+		0x4c, 0x8b, 0x42, 0x10,             /* mov r8, [rdx+16]   */
+		0x48, 0x8b, 0x52, 0x08,             /* mov rdx,[rdx+8]    */
+		0x48, 0x83, 0xec, 0x28,             /* sub rsp,0x28       */
+		0x41, 0xff, 0xd2,                   /* call r10           */
+		0x48, 0x83, 0xc4, 0x28,             /* add rsp,0x28       */
+		0xc3};                              /* ret                */
+#else
 static const unsigned char mccjit_mixed_thunk_code[] = {
 		0x55, 0x48, 0x89, 0xe5, 0x49, 0x89, 0xfb, 0x49, 0x89, 0xd2, 0xf2, 0x41,
 		0x0f, 0x10, 0x02, 0xf2, 0x41, 0x0f, 0x10, 0x4a, 0x08, 0xf2, 0x41, 0x0f,
@@ -2538,6 +2564,7 @@ static const unsigned char mccjit_mixed_thunk_code[] = {
 		0x48, 0x8b, 0x56, 0x10, 0x48, 0x8b, 0x4e, 0x18, 0x4c, 0x8b, 0x46, 0x20,
 		0x4c, 0x8b, 0x4e, 0x28, 0x48, 0x8b, 0x76, 0x08, 0xb0, 0x08, 0x41, 0xff,
 		0xd3, 0xc9, 0xc3};
+#endif
 
 typedef int64_t (*MccjitThunkI)(void *fn, const int64_t *gpv, const double *fpv);
 typedef double (*MccjitThunkD)(void *fn, const int64_t *gpv, const double *fpv);
@@ -2576,10 +2603,22 @@ static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 	uint32_t i, a = 0;
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
 		{ MCC_TRACE("br\n"); tuple[i] = 0; }
+#if MCC_HOST_WIN32
+	/* Win64: gpv/fpv are POSITIONAL (index = arg position). Key each position
+	   from its own file per the class bitmask, preserving arg order. */
+	for (i = 0; i < k->mx_nargs && a < MCCJIT_KGC_ARITY; i++, a++) { MCC_TRACE("br\n");
+		if (k->mx_argclass & (1u << i))
+			{ MCC_TRACE("br\n"); memcpy(&tuple[a], &fpv[i], sizeof tuple[a]); }
+		else
+			{ MCC_TRACE("br\n"); tuple[a] = gpv[i]; }
+	}
+#else
+	/* SysV: gpv/fpv are CLASS-ordered (independent GP/SSE counters). */
 	for (i = 0; i < k->mx_ngp && a < MCCJIT_KGC_ARITY; i++, a++)
 		{ MCC_TRACE("br\n"); tuple[a] = gpv[i]; }
 	for (i = 0; i < k->mx_nsse && a < MCCJIT_KGC_ARITY; i++, a++)
 		{ MCC_TRACE("br\n"); memcpy(&tuple[a], &fpv[i], sizeof tuple[a]); }
+#endif
 }
 
 static void mccjit_mixed_poison_update(MccjitKgc *k) { MCC_TRACE("enter\n");
@@ -2952,19 +2991,77 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
 																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
 #if MCC_HOST_WIN32
-	/* The scalar mixed GP+FP marshalling thunk (mccjit_mixed_thunk_code) rebuilds
-	   a SysV call by class (gpv->rdi.., fpv->xmm..); the Win64 positional rebuild
-	   (arg N in rcx/rdx/r8/r9 OR xmm-N by position) plus LLP64 `long` widths are a
-	   deferred rework. Returning NULL falls the mixed KGC route back to the AOT
-	   baseline — correct, just unmemoized. See docs/TODO.md "Windows JIT-embed". */
-	(void)variant;
-	(void)baseline;
-	(void)memoize_ok;
-	(void)ngp;
-	(void)nsse;
-	(void)ret_fp;
-	(void)ret_wide;
-	return NULL;
+	/* Win64 positional mixed stub. Entered AS the recompiled function, so the args
+	   are already in the Win64 register slots: position N in (rcx/rdx/r8/r9)[N] if
+	   GP or (xmm0..3)[N] if FP. Spill BOTH files positionally into gp[4]/fp[4],
+	   then call the shared C verifier calln_mixed_{i,d}(kgc, gp, fp) — which keys
+	   by class bitmask and re-issues the call through the positional reload thunk.
+	   Only the 4 register-arg slots are captured, so >4 args bail to the AOT
+	   baseline. `leave` is the mode-6 dispatch-entry quirk (dispatch did push rbp;
+	   mov rbp,rsp). Frame 0x60: [0,0x20) callee shadow · [0x20,0x40) gp[4] ·
+	   [0x40,0x60) fp[4]. */
+	{
+		unsigned char *p;
+		MccjitKgc *kgc;
+		int *flag;
+		void *calln = ret_fp ? (void *)mccjit_kgc_calln_mixed_d
+												 : (void *)mccjit_kgc_calln_mixed_i;
+		uint32_t nargs = ngp + nsse, argclass = 0, qi;
+		size_t o = 0;
+		if (nargs < 1 || nargs > 4)
+			{ MCC_TRACE("br\n"); return NULL; } /* >4 => stack args, unsupported */
+		if (!mccjit_mixed_thunk_get())
+			{ MCC_TRACE("br\n"); return NULL; }
+		for (qi = 0; qi < nargs && qi < MCCJIT_KGC_MAXARG; qi++)
+			{ MCC_TRACE("br\n"); if (mccjit_type_fp((int)mccjit_last_param_t[qi]))
+				{ MCC_TRACE("br\n"); argclass |= (1u << qi); } }
+		kgc = mcc_mallocz(sizeof *kgc);
+		if (!kgc)
+			{ MCC_TRACE("br\n"); return NULL; }
+		if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), nargs) != 0) { MCC_TRACE("br\n");
+			mcc_free(kgc);
+			return NULL;
+		}
+		kgc->memoize_ok = memoize_ok;
+		kgc->ret_wide = ret_wide;
+		kgc->mx_variant = variant;
+		kgc->mx_baseline = baseline;
+		kgc->mx_ngp = ngp;
+		kgc->mx_nsse = nsse;
+		kgc->mx_nargs = nargs;
+		kgc->mx_argclass = argclass;
+		kgc->mx_ret_fp = ret_fp;
+		p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
+						 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (p == MAP_FAILED) { MCC_TRACE("br\n");
+			mccjit_kgc_close(kgc);
+			mcc_free(kgc);
+			return NULL;
+		}
+		flag = (int *)(p + 256);
+		*flag = 0;
+		kgc->mx_flag = flag;
+		p[o++] = 0xc9;                                              /* leave */
+		p[o++] = 0x55;                                              /* push rbp */
+		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60; /* sub rsp,0x60 */
+		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x20; /* mov [rsp+0x20],rcx */
+		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x28; /* mov [rsp+0x28],rdx */
+		p[o++] = 0x4c; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x30; /* mov [rsp+0x30],r8 */
+		p[o++] = 0x4c; p[o++] = 0x89; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x38; /* mov [rsp+0x38],r9 */
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x40; /* movsd [rsp+0x40],xmm0 */
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x48; /* movsd [rsp+0x48],xmm1 */
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x50; /* movsd [rsp+0x50],xmm2 */
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x5c; p[o++] = 0x24; p[o++] = 0x58; /* movsd [rsp+0x58],xmm3 */
+		p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8;              /* mov rcx,kgc */
+		p[o++] = 0x48; p[o++] = 0x8d; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x20; /* lea rdx,[rsp+0x20] */
+		p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x40; /* lea r8,[rsp+0x40] */
+		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8;            /* mov rax,calln */
+		p[o++] = 0xff; p[o++] = 0xd0;                              /* call rax */
+		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60; /* add rsp,0x60 */
+		p[o++] = 0x5d;                                             /* pop rbp */
+		p[o++] = 0xc3;                                             /* ret */
+		return p;
+	}
 #else
 	static const unsigned char tmpl[] = {
 			0xc9, 0x55, 0x48, 0x81, 0xec, 0x80, 0x00, 0x00, 0x00, 0x48, 0x89, 0x3c,
@@ -5493,17 +5590,182 @@ PUB_FUNC int mccjit_selftest_fparg(const char *libpath, const char *incpath) { M
 }
 
 PUB_FUNC int mccjit_selftest_mixed(const char *libpath, const char *incpath) { MCC_TRACE("enter\n");
-#if !defined(MCCJIT_X64) || MCC_HOST_WIN32
+#if !defined(MCCJIT_X64)
 	(void)libpath;
 	(void)incpath;
-#if defined(MCCJIT_X64) && MCC_HOST_WIN32
-	printf("mccjit-selftest-mixed: Win64 SKIP (mixed GP+FP marshalling thunk is "
-				 "SysV-class-based; positional Win64 rebuild deferred — mixed sigs fall "
-				 "back to baseline)\n");
-#else
 	printf("mccjit-selftest-mixed: non-x86_64 SKIP\n");
-#endif
 	return 0;
+#elif MCC_HOST_WIN32
+	/* Win64 positional mixed KGC path. gpv/fpv are POSITIONAL here (index = arg
+	   position); mx_argclass marks which positions are FP. The emitted stub is
+	   entered via the mode-6 dispatch (which does push rbp;mov rbp,rsp) so it
+	   opens with `leave`; the selftest enters at stub+1 (past the leave) to drive
+	   it as an ordinary function, and reads the divergence flag the stub parks at
+	   stub+256. */
+	static const char src_f[] =
+			"long f(long a, double b, long c){ return a + (long)b + c; }";
+	static const char src_g[] =
+			"long g(long a, double b, long c){ return a + (long)b + c + 1; }";
+	static const char src_h[] =
+			"double h(long a, double b){ return (double)a + b*2.0; }";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1, *fbstate = NULL;
+	long (*fbase)(long, double, long) = NULL;
+	int fails = 0;
+	int mixed_seen, ngp_seen, nsse_seen, retfp_seen, retwide_seen;
+	(void)libpath;
+	(void)incpath;
+	printf("mccjit-selftest-mixed: begin (Win64 positional mixed GP+FP)\n");
+
+	blob = mccjit_stash_one(src_f, "f", 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-mixed: stash failed\n");
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	fbase = (long (*)(long, double, long))mcc_jit_recompile_blob(blob, blen);
+	mixed_seen = mccjit_last_mixed;
+	ngp_seen = (int)mccjit_last_ngp;
+	nsse_seen = (int)mccjit_last_nsse;
+	retfp_seen = mccjit_last_ret_fp;
+	retwide_seen = mccjit_last_ret_wide;
+	fbstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!fbase) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-mixed: baseline recompile NULL FAIL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+	printf("mccjit-selftest-mixed: f(long,double,long)->long classified mixed=%d "
+				 "ngp=%d nsse=%d ret_fp=%d (expect 1,2,1,0) %s\n",
+				 mixed_seen, ngp_seen, nsse_seen, retfp_seen,
+				 (mixed_seen && ngp_seen == 2 && nsse_seen == 1 && !retfp_seen) ? "OK"
+																																				: "FAIL");
+	if (!mixed_seen || ngp_seen != 2 || nsse_seen != 1 || retfp_seen)
+		{ MCC_TRACE("br\n"); fails++; }
+
+	{
+		int64_t gp[4] = {5, 0, 3, 0};
+		double fp[4] = {0, 2.5, 0, 0};
+		long direct = fbase(5, 2.5, 3);
+		int64_t thunked = mccjit_invoke_mixed_i((void *)fbase, gp, fp);
+		printf("mccjit-selftest-mixed: positional thunk direct=%ld thunk=%lld "
+					 "(expect 10,10) %s\n",
+					 direct, (long long)thunked,
+					 (direct == 10 && thunked == 10) ? "OK" : "FAIL");
+		if (direct != 10 || thunked != 10)
+			{ MCC_TRACE("br\n"); fails++; }
+	}
+
+	{
+		unsigned char *stub =
+				mccjit_make_kgc_stub_mixed((void *)fbase, (void *)fbase, 0, 2, 1, 0,
+																	 retwide_seen);
+		if (!stub) { MCC_TRACE("br\n");
+			printf("mccjit-selftest-mixed: faithful stub NULL FAIL\n");
+			fails++;
+		} else { MCC_TRACE("br\n");
+			long r = ((long (*)(long, double, long))(stub + 1))(5, 2.5, 3);
+			int fl = *(int *)(stub + 256);
+			printf("mccjit-selftest-mixed: stub-exec faithful r=%ld flag=%d "
+						 "(expect 10,0) %s\n",
+						 r, fl, (r == 10 && !fl) ? "OK" : "FAIL");
+			if (r != 10 || fl)
+				{ MCC_TRACE("br\n"); fails++; }
+		}
+	}
+
+	{
+		unsigned char *gblob;
+		size_t glen;
+		MCCState *sg;
+		gblob = mccjit_stash_one(src_g, "g", 1, &glen, &sg);
+		if (sg && gblob) { MCC_TRACE("br\n");
+			long (*gv)(long, double, long) =
+					(long (*)(long, double, long))mcc_jit_recompile_blob(gblob, glen);
+			MCCState *gstate = mccjit_last_state;
+			int gretwide = mccjit_last_ret_wide;
+			mccjit_last_state = NULL;
+			if (gv) { MCC_TRACE("br\n");
+				unsigned char *stub =
+						mccjit_make_kgc_stub_mixed((void *)gv, (void *)fbase, 0, 2, 1, 0,
+																			 gretwide);
+				if (!stub) { MCC_TRACE("br\n");
+					printf("mccjit-selftest-mixed: divergent stub NULL FAIL\n");
+					fails++;
+				} else { MCC_TRACE("br\n");
+					long r = ((long (*)(long, double, long))(stub + 1))(5, 2.5, 3);
+					int fl = *(int *)(stub + 256);
+					printf("mccjit-selftest-mixed: stub-exec divergent r=%ld flag=%d "
+								 "(expect 10,1) %s\n",
+								 r, fl, (r == 10 && fl) ? "OK" : "FAIL");
+					if (r != 10 || !fl)
+						{ MCC_TRACE("br\n"); fails++; }
+				}
+			}
+			if (gstate)
+				{ MCC_TRACE("br\n"); mcc_delete(gstate); }
+		}
+		mcc_free(gblob);
+		if (sg)
+			{ MCC_TRACE("br\n"); mcc_delete(sg); }
+	}
+
+	{
+		unsigned char *hblob;
+		size_t hlen;
+		MCCState *sh;
+		hblob = mccjit_stash_one(src_h, "h", 1, &hlen, &sh);
+		if (sh && hblob) { MCC_TRACE("br\n");
+			double (*hb)(long, double) =
+					(double (*)(long, double))mcc_jit_recompile_blob(hblob, hlen);
+			MCCState *hstate = mccjit_last_state;
+			int h_mixed = mccjit_last_mixed, h_retfp = mccjit_last_ret_fp;
+			int h_ngp = (int)mccjit_last_ngp, h_nsse = (int)mccjit_last_nsse;
+			int h_retwide = mccjit_last_ret_wide;
+			mccjit_last_state = NULL;
+			printf("mccjit-selftest-mixed: h(long,double)->double classified mixed=%d "
+						 "ngp=%d nsse=%d ret_fp=%d (expect 1,1,1,1) %s\n",
+						 h_mixed, h_ngp, h_nsse, h_retfp,
+						 (h_mixed && h_ngp == 1 && h_nsse == 1 && h_retfp) ? "OK" : "FAIL");
+			if (!h_mixed || h_ngp != 1 || h_nsse != 1 || !h_retfp)
+				{ MCC_TRACE("br\n"); fails++; }
+			if (hb) { MCC_TRACE("br\n");
+				unsigned char *stub =
+						mccjit_make_kgc_stub_mixed((void *)hb, (void *)hb, 0, 1, 1, 1,
+																			 h_retwide);
+				if (!stub) { MCC_TRACE("br\n");
+					printf("mccjit-selftest-mixed: FP-ret stub NULL FAIL\n");
+					fails++;
+				} else { MCC_TRACE("br\n");
+					double r = ((double (*)(long, double))(stub + 1))(3, 1.5);
+					int fl = *(int *)(stub + 256);
+					printf("mccjit-selftest-mixed: stub-exec FP-ret faithful r=%g flag=%d "
+								 "(expect 6,0) %s\n",
+								 r, fl, (r == 6.0 && !fl) ? "OK" : "FAIL");
+					if (r != 6.0 || fl)
+						{ MCC_TRACE("br\n"); fails++; }
+				}
+			}
+			if (hstate)
+				{ MCC_TRACE("br\n"); mcc_delete(hstate); }
+		}
+		mcc_free(hblob);
+		if (sh)
+			{ MCC_TRACE("br\n"); mcc_delete(sh); }
+	}
+
+	if (fbstate)
+		{ MCC_TRACE("br\n"); mcc_delete(fbstate); }
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-mixed: %s (%d checks failed)\n",
+				 fails ? "FAIL" : "PASS", fails);
+	return fails ? 1 : 0;
 #else
 	static const char src_f[] =
 			"long f(long a, double b, long c){ return a + (long)b + c; }";
