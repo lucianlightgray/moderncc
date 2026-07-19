@@ -4013,27 +4013,29 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(jit/selftest-search-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             # The runtime-JIT backend-override path (mcc_jit_submit_ast /
-            # MCC_JIT_SUBMIT_AOT) only fires-and-is-correct where the runtime -run
-            # JIT is fully functional: x86_64 non-MSVC (Linux + mingw-x86_64) and
-            # arm64-Linux (ELF). arm64-Linux was fixed by emitting the dispatch stub
-            # before the prologue so every swapped-in target is entered with a clean
-            # frame (the frameless-leaf return corruption; see git history / TODO).
-            # Everywhere else it is gated off or broken:
-            #   - arm64-macOS: -run JIT is off (Apple W^X) -> override never fires
+            # MCC_JIT_SUBMIT_AOT) fires-and-is-correct wherever the runtime -run
+            # JIT is fully functional: x86_64 non-MSVC (Linux + mingw-x86_64),
+            # arm64-Linux (ELF), and arm64-macOS (Mach-O). arm64-Linux was fixed
+            # by emitting the dispatch stub before the prologue so every swapped-in
+            # target is entered with a clean frame (the frameless-leaf return
+            # corruption; see git history / TODO). arm64-macOS runs the JIT under
+            # split-page W^X (mmap RW -> mprotect RX; the executable-memory probe
+            # succeeds), so the override fires there too. Still gated off/broken:
             #   - MSVC (x86_64 + arm64): -run is non-functional (empty output)
+            #   - arm64-Windows (PE): frameless-leaf corruption + MSVC-arm64 miscompile
             #   - i686: correct output but the override never fires
             # Run these two differential guards only on the cells where the path
             # is exercised for real; skip (not fail) the rest.
             if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC") OR
                (MCC_CPU STREQUAL "arm64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC"
-                AND NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND NOT WIN32))
+                AND NOT WIN32))
                 add_test(NAME regression/o4-aot-jit COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/regression_o4_aot_jit.sh" "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
                 set_tests_properties(regression/o4-aot-jit PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 90)
                 add_test(NAME regression/jit-submit-aot-diff COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/regression_jit_submit_aot_diff.sh" "$<TARGET_FILE:mcc>")
                 set_tests_properties(regression/jit-submit-aot-diff PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 90)
             else()
-                mcc_skip_test(regression/o4-aot-jit "runtime-JIT override path fires+correct only on x86_64 non-MSVC (arm64/MSVC/i686 gated or tracked-broken)")
-                mcc_skip_test(regression/jit-submit-aot-diff "runtime-JIT override path fires+correct only on x86_64 non-MSVC (arm64/MSVC/i686 gated or tracked-broken)")
+                mcc_skip_test(regression/o4-aot-jit "runtime-JIT override path fires+correct on x86_64/arm64 non-MSVC non-Windows; MSVC/arm64-PE/i686 gated or tracked-broken")
+                mcc_skip_test(regression/jit-submit-aot-diff "runtime-JIT override path fires+correct on x86_64/arm64 non-MSVC non-Windows; MSVC/arm64-PE/i686 gated or tracked-broken")
             endif()
             add_test(NAME jit/selftest-search-live-kgc COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 MCC_JIT_SEARCH_MS=25 $<TARGET_FILE:jit_selftest_kgc>)
             set_tests_properties(jit/selftest-search-live-kgc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
