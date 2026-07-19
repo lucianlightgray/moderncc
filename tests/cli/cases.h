@@ -346,6 +346,22 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 && echo ASM_RSVD_OK; echo END",
 		 "'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
 
+		{"gnu_ext_pedantic_gate", "",
+		 "printf 'int f(void){ return ({int x=3; x;}); }\\n' > {W}/ge1.c && "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/ge1.c -o {W}/ge1.o 2>&1 | "
+		 "grep -oE 'ISO C forbids braced-groups within expressions'; "
+		 "printf 'int f(int x){ switch(x){ case 1 ... 5: return 1;} return 0;}\\n' > {W}/ge2.c && "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/ge2.c -o {W}/ge2.o 2>&1 | "
+		 "grep -oE 'case ranges are a GNU extension'; "
+		 "printf 'int f(void){ void*p=&&L; goto *p; L: return 0;}\\n' > {W}/ge3.c && "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/ge3.c -o {W}/ge3.o 2>&1 | "
+		 "grep -oE 'taking the address of a label is a GNU extension'; "
+		 "printf 'int f(int x){ return x?:1;}\\n' > {W}/ge4.c && "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/ge4.c -o {W}/ge4.o 2>&1 | "
+		 "grep -oE 'ISO C forbids omitting the middle term of a .: expression'; "
+		 "{MCC} -B{B} -std=gnu89 -c {W}/ge1.c -o {W}/ge1.o 2>&1 >/dev/null && echo GNU_OK; echo END",
+		 "ISO C forbids braced-groups within expressions\ncase ranges are a GNU extension\ntaking the address of a label is a GNU extension\nISO C forbids omitting the middle term of a ?: expression\nGNU_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},

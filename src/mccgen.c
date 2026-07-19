@@ -8671,6 +8671,7 @@ tok_next:
 			}
 		} else if (tok == '{') { MCC_TRACE("br\n");
 			int saved_nocode_wanted = nocode_wanted;
+			mcc_pedantic("ISO C forbids braced-groups within expressions");
 			if (CONST_WANTED && !NOEVAL_WANTED)
 				{ MCC_TRACE("br\n"); expect("constant"); }
 			if (0 == local_scope)
@@ -9280,6 +9281,7 @@ tok_next:
 	case TOK_LAND:
 		if (!gnu_ext)
 			{ MCC_TRACE("br\n"); goto tok_identifier; }
+		mcc_pedantic("taking the address of a label is a GNU extension");
 		next();
 		if (tok < TOK_UIDENT)
 			{ MCC_TRACE("br\n"); expect("label identifier"); }
@@ -9939,6 +9941,8 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 		c = condition_3way();
 		seqp_flush();
 		g = (tok == ':' && gnu_ext);
+		if (g)
+			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids omitting the middle term of a ?: expression"); }
 #if MCC_CONFIG_OPTIMIZER
 		ast_hook_ternary_begin(c, g);
 #endif
@@ -10983,6 +10987,7 @@ again:
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a case label that is not an integer "
 									 "constant expression"); }
 		if (tok == TOK_DOTS && gnu_ext) { MCC_TRACE("br\n");
+			mcc_pedantic("case ranges are a GNU extension");
 			next();
 			cr->v2 = value64(expr_const64(), t);
 			if (case_cmp(cr->v2, cr->v1) < 0)
