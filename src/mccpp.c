@@ -3139,6 +3139,12 @@ redo_no_start:
 				{ MCC_TRACE("br\n"); validate_utf8_identifier((const char *)p1, p - p1); }
 		}
 		len = p - p1;
+		if (mcc_state->warn_pedantic && !pp_in_system_header() && memchr(p1, '$', len)) { MCC_TRACE("br\n");
+			if (mcc_state->pedantic_errors)
+				{ MCC_TRACE("br\n"); mcc_error("'$' in identifier"); }
+			else
+				{ MCC_TRACE("br\n"); mcc_warning("'$' in identifier"); }
+		}
 		if (c != '\\') { MCC_TRACE("br\n");
 			TokenSym **pts;
 

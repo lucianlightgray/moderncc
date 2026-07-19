@@ -378,6 +378,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/cf4.c -o {W}/cf4.o 2>&1 >/dev/null && echo C11_OK; echo END",
 		 "'_Bool' is a C99 feature\n'_Complex' is a C99 feature\nvariadic macros are a C99 feature\n'_Generic' is a C11 feature\nC11_OK\nEND\n"},
 
+		{"dollar_in_identifier_pedantic", "",
+		 "printf 'int a$b;\\nint main(void){return 0;}\\n' > {W}/di.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/di.c -o {W}/di.o 2>&1 | "
+		 "grep -oE \"'.' in identifier\"; "
+		 "printf 'int main(void){int a$b=7;return a$b-7;}\\n' > {W}/di2.c && "
+		 "{MCC} -B{B} -I{I} {W}/di2.c -o {W}/di2 2>&1 >/dev/null && {W}/di2 && echo DOLLAR_RUN_OK; echo END",
+		 "'$' in identifier\nDOLLAR_RUN_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
