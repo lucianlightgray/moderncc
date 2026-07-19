@@ -97,7 +97,6 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 
 ## Tests / infra
 - Root-cause string-literal `L.N`/anon-symbol layout sensitivity (3 exec files, excluded from object-diff).
-- Reject plain `asm`/`typeof` keywords under strict-c89 (gate `TOK_ASM1`/`TOK_TYPEOF1` on `!std_strict_ansi`).
 - Broaden the dg-error diagnostic tier toward gcc C99/C11.
 - Test i386 TLS `R_386_TLS_GD/LDM` (needs i386 cross + 32-bit sysroot).
 - Ungate `i386-fastcall-abi` (build the `mcc-i386` cross target).

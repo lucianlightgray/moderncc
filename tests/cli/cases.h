@@ -332,6 +332,20 @@ static const cli_case_t cli_cases[] = {
 		 "$({MCC} -B{B} -E -dM {W}/sa.c | grep -cE '^#define __STRICT_ANSI__')",
 		 "1 0 0\n"},
 
+		{"strict_ansi_gnu_keyword_gate", "",
+		 "printf 'int x;\\ntypeof(x) y;\\n' > {W}/gk1.c && "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 | "
+		 "grep -oE \"'typeof' is a GNU extension\"; "
+		 "printf 'int x;\\n__typeof__(x) y;\\nint main(void){return 0;}\\n' > {W}/gk2.c && "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk2.c -o {W}/gk2.o 2>&1 && echo TYPEOF_RSVD_OK; "
+		 "{MCC} -B{B} -std=gnu89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_GNU_OK; "
+		 "printf 'int main(void){ asm(\\\"\\\"); return 0; }\\n' > {W}/gk3.c && "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk3.c -o {W}/gk3.o 2>&1 | "
+		 "grep -oE \"'asm' is a GNU extension\"; "
+		 "printf 'int main(void){ __asm__(\\\"\\\"); return 0; }\\n' > {W}/gk4.c && "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 && echo ASM_RSVD_OK; echo END",
+		 "'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
