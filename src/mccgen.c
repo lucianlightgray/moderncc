@@ -11941,6 +11941,21 @@ static TokenString *gather_string_run(CType *type, int has_init) {
 		next();
 	}
 	tok_str_add(istr, TOK_EOF);
+	if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
+		long total = 0;
+		int j;
+		for (j = 0; j < nparts; j++)
+			total += (long)parts[j].size / MCC_STRSZ(pkinds[j]) - 1;
+		int limit = mcc_state->cversion < 199901 ? 509 : 4095;
+		if (total > limit) { MCC_TRACE("br\n");
+			char msg[160];
+			snprintf(msg, sizeof msg,
+							 "string literal of length %ld exceeds maximum length %d "
+							 "that ISO C%s compilers are required to support",
+							 total, limit, mcc_state->cversion < 199901 ? "90" : "99");
+			mcc_pedantic(msg);
+		}
+	}
 	if (firstsz && wsz > firstsz) { MCC_TRACE("br\n");
 		int wet = wkind == TOK_U16STR
 									? (VT_SHORT | VT_UNSIGNED)

@@ -386,6 +386,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/di2.c -o {W}/di2 2>&1 >/dev/null && {W}/di2 && echo DOLLAR_RUN_OK; echo END",
 		 "'$' in identifier\nDOLLAR_RUN_OK\nEND\n"},
 
+		{"overlength_string_pedantic", "",
+		 "{ printf 'char s[]=\"'; printf 'a%.0s' $(seq 510); printf '\";\\nint main(void){return 0;}\\n'; } > {W}/ols.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/ols.c -o {W}/ols.o 2>&1 | "
+		 "grep -oE 'string literal of length 510 exceeds maximum length 509'; "
+		 "{ printf 'char s[]=\"'; printf 'a%.0s' $(seq 509); printf '\";\\nint main(void){return 0;}\\n'; } > {W}/ok.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/ok.c -o {W}/ok.o 2>&1 >/dev/null && echo LEN509_OK; "
+		 "{MCC} -B{B} -I{I} -c {W}/ols.c -o {W}/ols.o 2>&1 >/dev/null && echo DEFAULT_OK; echo END",
+		 "string literal of length 510 exceeds maximum length 509\nLEN509_OK\nDEFAULT_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
