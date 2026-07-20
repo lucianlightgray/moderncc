@@ -9979,7 +9979,8 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 }
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
-		defined(MCC_TARGET_RISCV64)
+		defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386) ||                 \
+		defined(MCC_TARGET_ARM)
 static int gen_select_regok(SValue *v) { MCC_TRACE("enter\n");
 	return (v->r & VT_VALMASK) < VT_CONST && !(v->r & VT_LVAL);
 }
@@ -10016,6 +10017,8 @@ ST_FUNC void gen_select(CType *type) { MCC_TRACE("enter\n");
 	int bt = type->t & VT_BTYPE;
 	int ll = bt == VT_LLONG || bt == VT_PTR || bt == VT_FUNC;
 	int rt, rf, rb, rd, pass;
+	if (USING_TWO_WORDS(type->t))
+		{ MCC_TRACE("br\n"); gen_select_branch(type); return; }
 	gen_cast(type);
 	vswap();
 	gen_cast(type);

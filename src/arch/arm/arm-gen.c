@@ -1275,6 +1275,13 @@ ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	return r;
 }
 
+ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
+	(void)ll;
+	o(0xE3500000 | (intr(rb) << 16));
+	o(mapcc(TOK_NE) | 0x01A00000 | (intr(rf) << 12) | intr(rt));
+	return rf;
+}
+
 ST_FUNC int gjmp_append(int n, int t) { MCC_TRACE("enter\n");
 	uint32_t *x;
 	int p, lp;

@@ -721,6 +721,15 @@ ST_FUNC int gjmp_cond(int op, int t) {
 	return t;
 }
 
+ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
+	(void)ll;
+	o(0x85);
+	o(0xc0 + REG_VALUE(rb) + REG_VALUE(rb) * 8);
+	o(0x450f);
+	o(0xc0 + REG_VALUE(rt) + REG_VALUE(rf) * 8);
+	return rf;
+}
+
 ST_FUNC void gen_opi(int op) {
 	int r, fr, opc, c;
 

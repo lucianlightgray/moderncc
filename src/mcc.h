@@ -1645,6 +1645,10 @@ ST_FUNC void gen_opf(int op);
 void gen_trap(void);
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 void gen_ubsan_nullptr(void);
+#endif
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 ||                    \
+		defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386 ||                    \
+		defined MCC_TARGET_ARM
 ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll);
 ST_FUNC void gen_select(CType *type);
 #endif

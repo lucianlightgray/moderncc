@@ -4213,7 +4213,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		CType type;
 		int tt, u, rc, r1, r2;
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
-		defined(MCC_TARGET_RISCV64)
+		defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386) ||                 \
+		defined(MCC_TARGET_ARM)
 		if (ast_select_env && ast_ival(a, n) == AST_SEL_MARK) { MCC_TRACE("br\n");
 			CType stype;
 			SValue svt;
@@ -8870,7 +8871,8 @@ static int ast_abs_run(AstArena *a) { MCC_TRACE("enter\n");
 }
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
-		defined(MCC_TARGET_RISCV64)
+		defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386) ||                 \
+		defined(MCC_TARGET_ARM)
 #define AST_SELECT_ARCH 1
 #else
 #define AST_SELECT_ARCH 0
