@@ -10729,6 +10729,18 @@ static uint16_t cst_stmt_kind(int t) { MCC_TRACE("enter\n");
 }
 #endif
 
+static void warn_return_local_addr(void) { MCC_TRACE("enter\n");
+	SValue *v = vtop;
+	if (!(mcc_state->warn_return_local_addr & WARN_ON))
+		{ MCC_TRACE("br\n"); return; }
+	if ((v->r & VT_VALMASK) != VT_LOCAL || (v->r & VT_SYM))
+		{ MCC_TRACE("br\n"); return; }
+	if (v->type.t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_return_local_addr)("function returns address of local variable"); }
+	else if (!(v->r & VT_LVAL) && (v->type.t & VT_BTYPE) == VT_PTR)
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_return_local_addr)("function returns address of local variable"); }
+}
+
 static void block(int flags) { MCC_TRACE("enter\n");
 	int a, b, c, d, e, t;
 	struct scope o;
@@ -10870,6 +10882,7 @@ again:
 #endif
 			seqp_check();
 			if (b) { MCC_TRACE("br\n");
+				warn_return_local_addr();
 				gen_assign_cast(&func_vt);
 			} else { MCC_TRACE("br\n");
 				if (vtop->type.t != VT_VOID)
