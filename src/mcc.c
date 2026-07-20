@@ -1040,11 +1040,11 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	}
 	i = so_copy(cand, outfile);
 	remove(cand);
-	if (mcc_log_enabled_st(s, MCC_LOG_DEBUG)) { MCC_TRACE("br\n");
+	if (mcc_log_enabled_v(s->verbose, MCC_LOG_DEBUG)) { MCC_TRACE("br\n");
 		long tot = 0;
 		for (fi = 0; fi < nf; fi++)
 			{ MCC_TRACE("br\n"); tot += best_size[fi]; }
-		mcc_logf_st(s, MCC_LOG_DEBUG,
+		mcc_logf_v(s->verbose, MCC_LOG_DEBUG,
 								"superopt-perfn: %d functions (%d cached) in %ums, total .text %ld\n",
 								nf, cached, host_clock_ms() - start, tot);
 	}
@@ -1223,15 +1223,15 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	}
 	i = so_copy(cand_tmp, outfile);
 	remove(cand_tmp);
-	if (mcc_log_enabled_st(s, MCC_LOG_DEBUG)) { MCC_TRACE("br\n");
+	if (mcc_log_enabled_v(s->verbose, MCC_LOG_DEBUG)) { MCC_TRACE("br\n");
 		if (so_jitscore)
-			{ MCC_TRACE("br\n"); mcc_logf_st(s, MCC_LOG_DEBUG,
+			{ MCC_TRACE("br\n"); mcc_logf_v(s->verbose, MCC_LOG_DEBUG,
 									"superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
 									"%ld us/run, peak RSS %ld KiB\n",
 									tried, host_clock_ms() - start, best_gate, best_budget,
 									best_limit, best, so_last_rss); }
 		else
-			{ MCC_TRACE("br\n"); mcc_logf_st(s, MCC_LOG_DEBUG,
+			{ MCC_TRACE("br\n"); mcc_logf_v(s->verbose, MCC_LOG_DEBUG,
 									"superopt: %u evals in %ums, best gate %u budget %u limit %u -> "
 									"%ld .text\n",
 									tried, host_clock_ms() - start, best_gate, best_budget,
@@ -1363,7 +1363,7 @@ redo:
 #endif
 		if (!s->outfile)
 			{ MCC_TRACE("br\n"); s->outfile = default_outputfile(s, s->files[0]->name); }
-		MCC_TRACE_ST(s, "superopt dispatch %s -> %s\n", s->files[0]->name, s->outfile);
+		MCC_TRACE_V(s->verbose, "superopt dispatch %s -> %s\n", s->files[0]->name, s->outfile);
 		if (so(argc0, argv0, s, s->outfile) == 0) { MCC_TRACE("br\n");
 			mcc_delete(s);
 			return 0;
@@ -1460,7 +1460,7 @@ redo:
 		} else { MCC_TRACE("br\n");
 			if (!s->outfile)
 				{ MCC_TRACE("br\n"); s->outfile = default_outputfile(s, first_file); }
-			MCC_TRACE_ST(s, "output_file %s type=%d\n", s->outfile, s->output_type);
+			MCC_TRACE_V(s->verbose, "output_file %s type=%d\n", s->outfile, s->output_type);
 			if (!s->just_deps)
 				{ MCC_TRACE("br\n"); ret = mcc_output_file(s, s->outfile); }
 			if (!ret && s->gen_deps)

@@ -2,8 +2,8 @@
 #define MCCLOG_H
 
 /*
- * Leveled diagnostic logging over the verbosity BITMASK (MCCState.verbose, an
- * unsigned char). Each category is an independent power-of-two bit, so categories
+ * Leveled diagnostic logging over the verbosity BITMASK (the mcc_log_verbose
+ * global, an unsigned char). Each category is an independent power-of-two bit, so categories
  * can be enabled/disabled independently; a message tagged with category C is
  * emitted to stderr only when that bit is set in verbose.
  *
@@ -22,20 +22,24 @@
  *                                               // the TRACE bit is set; compiled out
  *                                               // unless the build sets MCC_CONFIG_TRACE.
  *
- * The plain macros read the mcc_state global, so they are silent in driver/link
- * phases that run before mcc_enter_state (mcc_state == NULL there). The _st
- * variants take an explicit MCCState* so tracing fires in those phases too:
+ * The plain macros read the mcc_log_verbose global (mirrored from the active
+ * state's verbose in mcc_enter_state). The _v variants take an explicit verbose
+ * byte so tracing fires in driver/link phases that run before mcc_enter_state,
+ * or against a specific state:
  *
- *   mcc_logf_st(s, MCC_LOG_DEBUG, "%d evals\n", n);   // reads s->verbose
- *   MCC_TRACE_ST(s, "output %s\n", file);             // fires pre-mcc_enter_state
+ *   mcc_logf_v(s->verbose, MCC_LOG_DEBUG, "%d evals\n", n);
+ *   MCC_TRACE_V(s->verbose, "output %s\n", file);       // pre-mcc_enter_state
  *
- * Requires MCCState (for ->verbose) and the mcc_state global; include after mcc.h.
+ * Self-contained: no MCCState dependency; the sole global (mcc_log_verbose) is
+ * defined in mcchost.c (standalone builds define their own copy).
  */
 
 #include <stdarg.h>
 #include <stdio.h>
 
 typedef unsigned char MccLogMask;
+
+extern unsigned char mcc_log_verbose;
 
 enum {
 	MCC_LOG_CMD = 1u << 0,
@@ -73,11 +77,11 @@ static inline const char *mcc_log_tag(MccLogMask bit) {
 }
 
 static inline int mcc_log_enabled(MccLogMask bit) {
-	return mcc_state && (mcc_state->verbose & bit) != 0;
+	return (mcc_log_verbose & bit) != 0;
 }
 
-static inline int mcc_log_enabled_st(const MCCState *st, MccLogMask bit) {
-	return st && (st->verbose & bit) != 0;
+static inline int mcc_log_enabled_v(unsigned char verbose, MccLogMask bit) {
+	return (verbose & bit) != 0;
 }
 
 static inline void mcc_logf(MccLogMask bit, const char *fmt, ...) {
@@ -90,10 +94,10 @@ static inline void mcc_logf(MccLogMask bit, const char *fmt, ...) {
 	va_end(ap);
 }
 
-static inline void mcc_logf_st(const MCCState *st, MccLogMask bit,
+static inline void mcc_logf_v(unsigned char verbose, MccLogMask bit,
 															 const char *fmt, ...) {
 	va_list ap;
-	if (!mcc_log_enabled_st(st, bit))
+	if (!mcc_log_enabled_v(verbose, bit))
 		return;
 	fputs(mcc_log_tag(bit), stderr);
 	va_start(ap, fmt);
@@ -112,10 +116,10 @@ static inline void mcc_trace_at(const char *file, int line, const char *func,
 	va_end(ap);
 }
 
-static inline void mcc_trace_at_st(const MCCState *st, const char *file, int line,
+static inline void mcc_trace_at_v(unsigned char verbose, const char *file, int line,
 																	 const char *func, const char *fmt, ...) {
 	va_list ap;
-	if (!mcc_log_enabled_st(st, MCC_LOG_TRACE))
+	if (!mcc_log_enabled_v(verbose, MCC_LOG_TRACE))
 		return;
 	fprintf(stderr, "%s%s:%d %s: ", mcc_log_tag(MCC_LOG_TRACE), file, line, func);
 	va_start(ap, fmt);
@@ -124,15 +128,15 @@ static inline void mcc_trace_at_st(const MCCState *st, const char *file, int lin
 }
 
 #define MCC_DEBUG(...) mcc_logf(MCC_LOG_DEBUG, __VA_ARGS__)
-#define MCC_DEBUG_ST(st, ...) mcc_logf_st(st, MCC_LOG_DEBUG, __VA_ARGS__)
+#define MCC_DEBUG_V(verbose, ...) mcc_logf_v(verbose, MCC_LOG_DEBUG, __VA_ARGS__)
 
 #if defined(MCC_CONFIG_TRACE) && MCC_CONFIG_TRACE
 #define MCC_TRACE(...) mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__)
-#define MCC_TRACE_ST(st, ...)                                                  \
-	mcc_trace_at_st(st, __FILE__, __LINE__, __func__, __VA_ARGS__)
+#define MCC_TRACE_V(verbose, ...)                                              \
+	mcc_trace_at_v(verbose, __FILE__, __LINE__, __func__, __VA_ARGS__)
 #else
 #define MCC_TRACE(...) ((void)0)
-#define MCC_TRACE_ST(st, ...) ((void)0)
+#define MCC_TRACE_V(verbose, ...) ((void)0)
 #endif
 
 #endif

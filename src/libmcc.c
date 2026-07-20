@@ -78,12 +78,14 @@ PUB_FUNC void mcc_enter_state(MCCState *s1) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	HOST_SEM_WAIT(&mcc_compile_sem);
 	mcc_state = s1;
+	mcc_log_verbose = s1->verbose;
 }
 
 PUB_FUNC void mcc_exit_state(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->error_set_jmp_enabled)
 		{ MCC_TRACE("br\n"); return; }
 	mcc_state = NULL;
+	mcc_log_verbose = 0;
 	HOST_SEM_POST(&mcc_compile_sem);
 }
 

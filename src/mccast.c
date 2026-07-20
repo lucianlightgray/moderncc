@@ -4,7 +4,8 @@
 #include "mccstats.h"
 
 #ifndef MCC_TRACE
-#define MCC_TRACE(...) ((void)0)
+#include "mcclog.h"
+unsigned char mcc_log_verbose = 0;
 #endif
 
 #include <stdio.h>

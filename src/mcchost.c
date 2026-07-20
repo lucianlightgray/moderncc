@@ -8,6 +8,8 @@
 #define MCC_TRACE(...) ((void)0)
 #endif
 
+unsigned char mcc_log_verbose = 0;
+
 #ifndef MCC_CONFIG_BACKTRACE_ONLY
 
 #ifdef _WIN32

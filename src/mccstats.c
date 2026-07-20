@@ -1,7 +1,7 @@
 #include "mccstats.h"
 
 #ifndef MCC_TRACE
-#define MCC_TRACE(...) ((void)0)
+#include "mcclog.h"
 #endif
 
 #include <stdarg.h>

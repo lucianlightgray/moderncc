@@ -488,7 +488,7 @@ MCCJIT_LOCAL void mccjit_note_export_name(const char *name) { MCC_TRACE("enter\n
 static int mccjit_engine_internal(const char *name) { MCC_TRACE("enter\n");
 	if (!strncmp(name, "mccjit_", 7) || !strncmp(name, "mcc_jit_", 8))
 		{ MCC_TRACE("br\n"); return 1; }
-	if (!strcmp(name, "mcc_log_enabled") || !strcmp(name, "mcc_log_enabled_st") ||
+	if (!strcmp(name, "mcc_log_enabled") || !strcmp(name, "mcc_log_enabled_v") ||
 			!strcmp(name, "mcc_trace_at") || !strcmp(name, "mcc_logf") ||
 			!strcmp(name, "mcc_log_tag"))
 		{ MCC_TRACE("br\n"); return 1; }
