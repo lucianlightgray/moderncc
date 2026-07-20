@@ -1675,7 +1675,7 @@ ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 enum { UBK_OVERFLOW, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
 
 static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
-	switch (kind) {
+	switch (kind) { MCC_TRACE("br\n");
 	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
 	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
 	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
