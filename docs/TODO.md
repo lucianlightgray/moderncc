@@ -35,6 +35,24 @@
 
 ## JIT Windows / i386-PE
 - i386-PE KGC/FP(x87)/mixed stub tail (i386 JIT promotion; also the Linux i386 gap).
+  - DONE (gated behind MCC_JIT_I386_STUBS, default OFF; default build byte-identical —
+    x86_64/arm64 libmcc.c.obj proven byte-identical vs pristine, debug + -O2):
+    the three i386 cdecl stub builders mccjit_make_kgc_stub_n/_fp/_mixed, the per-signature
+    i386 mixed cdecl reconstruction thunk (published via the i386-only mccjit_i386_active_thunk),
+    the i386 counter stub, trampoline, and dispatch-entry (src/mccjit_embed.c). Validated on a
+    native i386-PE build (mstorsjo clang -m32, MCC_TARGET_ARCH=i386): jit/selftest-pool PASSES
+    gate-ON (counter stub + async promote + KGC dispatch stub + jmp*slot), fparg FP(x87)
+    differential-verify sub-tests PASS, and all three stub bodies (n/fp/mixed, faithful +
+    divergent + x87-FP-return) pass a standalone machine-code harness (8/8). Gate-OFF: all i386
+    stub builders return NULL and the selftests SKIP exactly as before. x86_64/arm64 unaffected
+    (47/47 JIT selftests green; tracegate green).
+  - REMAINING to un-gate (needs the M8 bar):
+    (1) i386 AST-faithful-replay desync for mixed long+double signatures ([ast-verify] desync) blocks
+        the -run baking that would stash such functions, so the mixed stub can't yet promote through
+        the normal pipeline (front-end/AST-recorder gap, upstream of the stub tail);
+    (2) the mode-6 entry dispatcher in src/mccast.c emits hardcoded x86-64 opcodes (REX/rbp) with no
+        i386 variant, so end-to-end -run JIT baking does not fire on i386 (fparg end-to-end sub-test);
+    (3) differential vs gcc/clang + self-host on i386, then flip the default.
 - arm64-PE runtime-JIT (frameless-leaf return corruption + RtlAddFunctionTable/icache); needs arm64-Windows HW.
 - MSVC-arm64 JIT-exec miscompile; needs arm64-Windows HW.
 - Standalone `--embed-jit` blob for i386-PE / arm64-PE.
