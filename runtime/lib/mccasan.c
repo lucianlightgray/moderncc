@@ -113,8 +113,7 @@ __attribute__((constructor)) static void asan_init(void){
        brk -> SIGTRAP, and w17/w16 (shadow/granule) map to regs[17]/regs[16]. */
     mmap((void*)0x7fff8000UL,(size_t)(0x210000000000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #else
-    mmap((void*)0x7fff8000UL,(size_t)(0x8fff7000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    mmap((void*)0x2008fff7000UL,(size_t)(0x10007fff8000UL-0x2008fff7000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
     struct sigaction sa; for(size_t i=0;i<sizeof sa;i++) ((char*)&sa)[i]=0;
     sa.sa_sigaction=on_sigill; sa.sa_flags=SA_SIGINFO;
