@@ -43,7 +43,7 @@ EOF
 cat > "$WORK_ABS/d3.c" <<'EOF'
 int main(void){ unsigned s=0; int i; double d=1.0; float f;
   for(i=1;i<=20;i++){ f=(float)i/3.0f; d=d*1.0000001+f; s+=(unsigned)(d*1000.0)%9973; }
-  s+=(unsigned)(-1.5f); s+=(unsigned)(2147483647.0/3.0);
+  s+=(unsigned)(int)(-1.5f); s+=(unsigned)(2147483647.0/3.0);
   return (int)(s%251); }
 EOF
 cat > "$WORK_ABS/d4.c" <<'EOF'
