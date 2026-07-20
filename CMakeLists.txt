@@ -3750,10 +3750,17 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(diff3-suite "needs native host + >=2 distinct reference compilers (gcc/clang, or add -DMCC_DIFF3_EXTRA_REFS=label=path; build the clang-toolchain target for a self-contained clang)")
     endif()
 
-    # Differential random-program miscompile fuzzer (TODO.md §0). x86_64-Linux
-    # only: the oracle needs gcc AND clang executing mcc's own target ISA.
+    # Differential random-program miscompile fuzzer (TODO.md §0). Native
+    # x86_64/arm64-Linux: the oracle is a pure gcc+clang majority-vote
+    # differential (UBSan/ASan-gated), so it is arch-portable — it only needs
+    # two distinct reference compilers executing mcc's own target ISA natively
+    # (hence NOT MCC_EMULATOR and a same-ISA host). It is not the x86-only
+    # shadow-IV oracle (MCC_CONFIG_AST_SHADOW), which is a separate mechanism.
+    # arm64 makes the real-silicon runner a weak-memory-model backstop for all
+    # arm64 codegen (TODO.md cross-arch parity: "a linux-arm64 CI fuzz cell").
     if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok
-       AND MCC_CPU STREQUAL "x86_64" AND NOT MCC_TARGETOS STREQUAL "WIN32")
+       AND (MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
+       AND NOT MCC_TARGETOS STREQUAL "WIN32")
         add_executable(fuzz_runner tests/fuzz/runner.c)
         add_test(NAME "fuzz/smoke"
             COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
@@ -3777,7 +3784,7 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("fuzz/corpus" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
     else()
-        mcc_skip_test(fuzz-suite "needs native x86_64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
+        mcc_skip_test(fuzz-suite "needs native x86_64/arm64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
     endif()
 
     if(MCC_TARGETOS STREQUAL "WIN32")

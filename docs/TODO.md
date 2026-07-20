@@ -75,7 +75,7 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 - arm (armv7): raise from Tier-2 — self-host, cmov, UBSan trap, ASan native-shadow, stack-protector, JIT stub tail, replay-inline.
 - arm64: TLS GD/LDM (currently LE only), mode-6 object-output dispatch, kgc-mixed stub, in-place patch row, flip `opt_promote` on.
 - PE targets: UBSan handler ABI, asan-shadow, standalone embed-jit blob, arm64-PE runtime JIT. (over-align on i386-PE/arm64-PE validated + ungated — no compiler gate existed; codegen matches ELF oracle byte-for-byte modulo LLP64 type sizes; i386-PE runs the alignas_over test natively.)
-- Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO); a linux-arm64 CI fuzz cell.
+- Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO). DONE for the linux-arm64 CI fuzz cell: the differential fuzzer (portable gcc+clang majority-vote oracle, not the x86-only shadow-IV oracle) now runs on native `ubuntu-24.04-arm` — the small default band per-push (ci.yml `linux`/arm64) plus a time-boxed nightly `campaign` soak (matrix.yml `fuzz-arm64`). Still open: an armv7 cell and a dedicated concurrency/litmus validator.
 
 ## Const-data (P2)
 - Size-changing datacomp: `.init_array` decompress ctor (all 5 arches) + `__mcc_decompress` runtime (M6).
