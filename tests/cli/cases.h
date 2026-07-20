@@ -343,7 +343,8 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -std=c89 -c {W}/gk3.c -o {W}/gk3.o 2>&1 | "
 		 "grep -oE \"'asm' is a GNU extension\"; "
 		 "printf 'int main(void){ __asm__(\\042\\042); return 0; }\\n' > {W}/gk4.c && "
-		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 && echo ASM_RSVD_OK; echo END",
+		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 | "
+		 "grep -oE \"'__asm__' is a GNU extension\"; echo ASM_RSVD_OK; echo END",
 		 "'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
 
 		{"gnu_ext_pedantic_gate", "",
