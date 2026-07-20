@@ -3660,7 +3660,7 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_BINARY_DIR}/cli-gran-${_cn}"
                             "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli" --only "${_cn}")
                 set_tests_properties("cli/${_cn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_cli_env}")
+                    SKIP_RETURN_CODE 77 TIMEOUT 90 ENVIRONMENT "${_cli_env}")
                 if(_win_sh_pathmod)
                     set_tests_properties("cli/${_cn}" PROPERTIES
                         ENVIRONMENT_MODIFICATION "${_win_sh_pathmod}")
