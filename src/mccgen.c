@@ -5405,6 +5405,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_CONST1:
 		case TOK_CONST2:
 		case TOK_CONST3:
+			if ((t & VT_CONSTANT) && mcc_state->cversion < 199901)
+				{ MCC_TRACE("br\n"); mcc_pedantic("duplicate 'const' declaration specifier"); }
 			type->t = t;
 			parse_btype_qualify(type, VT_CONSTANT);
 			t = type->t;
@@ -5413,6 +5415,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_VOLATILE1:
 		case TOK_VOLATILE2:
 		case TOK_VOLATILE3:
+			if ((t & VT_VOLATILE) && mcc_state->cversion < 199901)
+				{ MCC_TRACE("br\n"); mcc_pedantic("duplicate 'volatile' declaration specifier"); }
 			type->t = t;
 			parse_btype_qualify(type, VT_VOLATILE);
 			t = type->t;

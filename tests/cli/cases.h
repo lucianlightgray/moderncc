@@ -430,6 +430,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/sa.c -o {W}/sa.o 2>/dev/null && echo C23_OK; echo END",
 		 "'_Static_assert' with no message is a C23 feature\nWITHMSG_OK\nC23_OK\nEND\n"},
 
+		{"duplicate_qualifier_c89", "",
+		 "printf 'const const int x=1;\\nint main(void){return x-1;}\\n' > {W}/dq.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dq.c -o {W}/dq.o 2>&1 | "
+		 "grep -oE \"duplicate 'const' declaration specifier\"; "
+		 "printf 'volatile volatile int y;\\nint main(void){return 0;}\\n' > {W}/dv.c && "
+		 "{MCC} -B{B} -I{I} -std=c89 -pedantic-errors -c {W}/dv.c -o {W}/dv.o 2>&1 | "
+		 "grep -oE \"duplicate 'volatile' declaration specifier\"; "
+		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/dq.c -o {W}/dq.o 2>/dev/null && echo C99_ALLOWED; "
+		 "{MCC} -B{B} -I{I} -c {W}/dq.c -o {W}/dq.o 2>/dev/null && echo DEFAULT_OK; echo END",
+		 "duplicate 'const' declaration specifier\nduplicate 'volatile' declaration specifier\nC99_ALLOWED\nDEFAULT_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
