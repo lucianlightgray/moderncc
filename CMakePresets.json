@@ -6,7 +6,11 @@
     {
       "name": "_base",
       "hidden": true,
-      "binaryDir": "${sourceDir}/cmake-${presetName}"
+      "binaryDir": "${sourceDir}/cmake-${presetName}",
+      "cacheVariables": {
+        "MCC_DIFF3_GCC": "$env{MCC_DIFF3_GCC}",
+        "MCC_DIFF3_CLANG": "$env{MCC_DIFF3_CLANG}"
+      }
     },
     {
       "name": "_ninja",
@@ -200,9 +204,7 @@
       "inherits": "_base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "MCC_TOOLCHAIN_PROFILE": "msvc",
-        "MCC_DIFF3_GCC": "$env{MCC_DIFF3_GCC}",
-        "MCC_DIFF3_CLANG": "$env{MCC_DIFF3_CLANG}"
+        "MCC_TOOLCHAIN_PROFILE": "msvc"
       }
     },
     {
