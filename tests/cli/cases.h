@@ -406,7 +406,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/eth.c -o {W}/eth.o 2>/dev/null && echo HDR_OK; echo END",
 		 "error: extra tokens after directive\nwarning: extra tokens after directive\nDEFAULT_OK\nHDR_OK\nEND\n"},
 
-		{"shift_count_warnings", "",
+		{"undefined_internal_warning", "",
+		 "printf 'static int helper(int);\\nint use(int y){ return helper(y); }\\nstatic int never_used(void);\\nint main(void){return use(0);}\\n' > {W}/ui.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/ui.c -o {W}/ui.o 2>&1 | "
+		 "grep -oE \"'[a-z_]+' used but never defined\"; "
+		 "{MCC} -B{B} -I{I} -Wno-undefined-internal -c {W}/ui.c -o {W}/ui.o 2>&1 | "
+		 "grep -oE \"'[a-z_]+' used but never defined\"; echo END",
+		 "'helper' used but never defined\nEND\n"},
+
+	{"shift_count_warnings", "",
 		 "printf 'int a=1<<40;\\nint b=1<<-1;\\nlong long c=1LL<<40;\\nunsigned e=1u>>33;\\nint main(void){return 0;}\\n' > {W}/sh.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/sh.c -o {W}/sh.o 2>&1 | "
 		 "grep -oE 'left shift count >= width of type|left shift count is negative|right shift count >= width of type'; "

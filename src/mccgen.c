@@ -607,7 +607,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) { MCC_TRACE("enter\n");
 					fs->vla_inner_id, get_tok_str(fs->v, NULL));
 		}
 	}
-	if (mcc_state->warn_all & WARN_ON) { MCC_TRACE("br\n");
+	if (mcc_state->warn_undefined_internal & WARN_ON) { MCC_TRACE("br\n");
 		Sym *fs;
 		for (fs = global_stack; fs; fs = fs->prev) { MCC_TRACE("br\n");
 			ElfSym *es;
@@ -616,7 +616,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) { MCC_TRACE("enter\n");
 			es = elfsym(fs);
 			if (es && es->st_shndx != SHN_UNDEF)
 				{ MCC_TRACE("br\n"); continue; }
-			mcc_warning_c(warn_all)("'%s' used but never defined",
+			mcc_warning_c(warn_undefined_internal)("'%s' used but never defined",
 															get_tok_str(fs->v, NULL));
 		}
 	}
