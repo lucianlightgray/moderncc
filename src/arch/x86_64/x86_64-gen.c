@@ -1692,6 +1692,10 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	gen_ubsan_check(0x85);
 }
 
+void gen_trap(void) { MCC_TRACE("enter\n");
+	o(0x0b0f);
+}
+
 void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	int r, t = 0;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)

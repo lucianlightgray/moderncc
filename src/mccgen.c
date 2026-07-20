@@ -8904,6 +8904,14 @@ tok_next:
 		vpush(&type);
 		CODE_OFF();
 		break;
+	case TOK_builtin_trap:
+		parse_builtin_params(0, "");
+		if (!nocode_wanted)
+			{ MCC_TRACE("br\n"); gen_trap(); }
+		type.t = VT_VOID;
+		vpush(&type);
+		CODE_OFF();
+		break;
 	case TOK_builtin_prefetch:
 		next();
 		skip('(');

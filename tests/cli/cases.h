@@ -449,6 +449,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ta.c -o {W}/ta.o 2>/dev/null && echo DEFAULT_OK; echo END",
 		 "tentative array definition assumed to have one element\nNO_ESCALATE_OK\nDEFAULT_OK\nEND\n"},
 
+		{"builtin_trap", "",
+		 "printf 'int main(int c,char**v){ (void)v; if(c>100) return 1; __builtin_trap(); return 0; }\\n' > {W}/tr.c && "
+		 "{MCC} -B{B} -I{I} {W}/tr.c -o {W}/tr 2>&1 >/dev/null && "
+		 "{ {W}/tr 2>/dev/null; [ $? -gt 128 ] && echo TRAPPED; }; echo END",
+		 "TRAPPED\nEND\n"},
+
 		{"builtin_prefetch_assume_aligned", "",
 		 "printf 'int main(void){ int a[4]={1,2,3,4}; int i=0; __builtin_prefetch(&a[i++]); __builtin_prefetch(&a[0],1,3);"
 		 " int *p=(int*)__builtin_assume_aligned(a,16); int *q=(int*)__builtin_assume_aligned(a,16,0);"

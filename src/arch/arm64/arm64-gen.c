@@ -1902,6 +1902,10 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	o(0xd4200000);
 }
 
+void gen_trap(void) { MCC_TRACE("enter\n");
+	o(0xd4200000);
+}
+
 static void arm64_ubsan_trap_cond(uint32_t skip_cond) { MCC_TRACE("enter\n");
 	o(0x54000000 | (2u << 5) | skip_cond);
 	o(0xd4200000);

@@ -1125,6 +1125,10 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 	gen_modrm(0x8b, MCC_TREG_ESP, VT_LOCAL, NULL, addr);
 }
 
+void gen_trap(void) { MCC_TRACE("enter\n");
+	o(0x0b0f);
+}
+
 ST_FUNC void gen_vla_alloc(CType *type, int align) {
 	int use_call = 0;
 

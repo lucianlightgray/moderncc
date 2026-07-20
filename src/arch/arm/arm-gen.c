@@ -1238,6 +1238,10 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	}
 }
 
+void gen_trap(void) { MCC_TRACE("enter\n");
+	o(0xe7f000f0);
+}
+
 ST_FUNC void gen_fill_nops(int bytes) { MCC_TRACE("enter\n");
 	if ((bytes & 3))
 		{ MCC_TRACE("br\n"); mcc_error("alignment of code section not multiple of 4"); }

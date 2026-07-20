@@ -1636,6 +1636,7 @@ ST_FUNC int gjmp_cond(int op, int t);
 ST_FUNC int gjmp_append(int n, int t);
 ST_FUNC void gen_opi(int op);
 ST_FUNC void gen_opf(int op);
+void gen_trap(void);
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 void gen_ubsan_nullptr(void);
 ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll);

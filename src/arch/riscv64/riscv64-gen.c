@@ -992,6 +992,10 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	o(0x00100073);
 }
 
+void gen_trap(void) { MCC_TRACE("enter\n");
+	o(0x00100073);
+}
+
 static void riscv64_ubsan_shift(int cnt, uint32_t width) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
