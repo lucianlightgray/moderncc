@@ -99,7 +99,7 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 - Root-cause string-literal `L.N`/anon-symbol layout sensitivity (3 exec files, excluded from object-diff).
 - Broaden the dg-error diagnostic tier toward gcc C99/C11.
 - Test i386 TLS `R_386_TLS_GD/LDM` (needs i386 cross + 32-bit sysroot).
-- Ungate `i386-fastcall-abi` in CMake/CI: the ABI itself is now validated on non-i386 hosts by `tools/i386fastcall-docker.sh` — mcc-i386 emits the i386 objects on the host, a `linux/386` Docker container does the reference gcc build + 3-way cross-link (mcc↔gcc both directions + mcc↔mcc) + exec, plus the float-before-reg reject check. All pass with `cmake-cross/mcc-i386`. Remaining: wire the script into CMake as a Docker-gated test (skip 77 when docker/mcc-i386 absent) and, if desired, teach `suite_i386fastcall` a Docker execution backend so the native harness path works off-i386 too.
+- i386-fastcall-abi off-i386 residual: the ABI is now validated by the docker-gated `i386-fastcall-abi-docker` ctest (added inside the `TARGET mcc-i386` block; runs `tools/i386fastcall-docker.sh`, skips 77 when docker/mcc-i386 absent) — passes in `cmake-cross`. Optional leftover: teach the native `suite_i386fastcall` (tools/mccharness.c) a Docker execution backend so the mingw/`-m32` harness path also works off-i386, and confirm the project CI actually provides `linux/386` docker (else the new test just skips there).
 - Audit `mcc_skip_test` per-triple ungating (i386-linux, aarch64/armv7-linux).
 - Normalize CMake incrementally (autodetect + fold `.cmake` files, verifiable target).
 - Cut CI wall-clock: gate `bench`, shard macOS ctest, prune matrix re-runs, profile Windows jobs.

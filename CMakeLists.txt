@@ -4553,6 +4553,12 @@ if(MCC_BUILD_TESTS)
             --work ${CMAKE_BINARY_DIR}/i386-fastcall-abi)
         set_tests_properties(i386-fastcall-abi PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_REGULAR_EXPRESSION "SKIP:")
+
+        add_test(NAME i386-fastcall-abi-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386fastcall-docker.sh"
+                "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-fastcall-abi-docker")
+        set_tests_properties(i386-fastcall-abi-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(i386-fastcall-abi
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
