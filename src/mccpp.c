@@ -4252,6 +4252,8 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 		mcc_predefs(s1, &cstr, is_asm);
 		if (s1->cmdline_defs.size)
 			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_defs.data, s1->cmdline_defs.size); }
+		if (!is_asm)
+			{ MCC_TRACE("br\n"); cstr_cat(&cstr, "#undef _FORTIFY_SOURCE\n#define _FORTIFY_SOURCE 0\n", -1); }
 		if (s1->cmdline_incl.size)
 			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_incl.data, s1->cmdline_incl.size); }
 		*s1->include_stack_ptr++ = file;

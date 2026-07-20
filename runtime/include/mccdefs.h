@@ -109,7 +109,6 @@
 	#else
 	#define __LDBL_MIN__ 3.36210314311209350626e-4932L
 	#endif
-	#define _FORTIFY_SOURCE 0
 	#define _Float16 short unsigned int
 
 #elif defined __ANDROID__ //@

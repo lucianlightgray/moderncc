@@ -4887,7 +4887,7 @@ if(MCC_BUILD_TESTS)
                 add_test(NAME ${_tn} COMMAND "$<TARGET_FILE:mccharness>" qemurun
                     --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"
                     --sysroot "${_root}" --qemu "${_QEMU_${_arch}}"
-                    --srcdir "${_qsrc}"
+                    --srcdir "${_qsrc}" --arch "${_arch}"
                     --workdir "${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}")
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)

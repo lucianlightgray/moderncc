@@ -2097,6 +2097,7 @@ static int suite_qemurun(int argc, char **argv) {
 	const char *qemu = opt(argc, argv, "--qemu", NULL);
 	const char *srcdir = opt(argc, argv, "--srcdir", NULL);
 	const char *workdir = opt(argc, argv, "--workdir", NULL);
+	const char *arch = opt(argc, argv, "--arch", "");
 	char Bf[4200], sysf[4200], isysinc[4200], L1[4200], L2[4200], L3[4200], L4[4200];
 	const char *launcher[4];
 	char *files[4096];
@@ -2130,6 +2131,11 @@ static int suite_qemurun(int argc, char **argv) {
 			char out[4200];
 			char *err = NULL;
 			Argv v = {{0}, 0};
+			if (m && !strcmp(arch, "i386")
+					&& (!strcmp(n, "tls") || !strcmp(n, "tls_aggr"))) {
+				printf("  %s [pic]: SKIP -- i386 -fPIC TLS unsupported (mcc emits no GD/LDM TLS; errors by design)\n", n);
+				continue;
+			}
 			ts_path(out, sizeof out, workdir, "%s.%s", n, m ? "pic" : "default");
 			A(&v, mcc);
 			A(&v, Bf);
