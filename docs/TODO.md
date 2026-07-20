@@ -46,6 +46,14 @@
     divergent + x87-FP-return) pass a standalone machine-code harness (8/8). Gate-OFF: all i386
     stub builders return NULL and the selftests SKIP exactly as before. x86_64/arm64 unaffected
     (47/47 JIT selftests green; tracegate green).
+  - FIXED (63bc90e9): the native mingw/i686 CI cell was FAILING 4 JIT selftests gate-OFF —
+    jit/selftest-{lazy,eligibility,liverun} and search-live-lazy (reuses jit_selftest_lazy). They
+    were missing the `#if defined(MCCJIT_I386) if(!mccjit_stub_tail_active())` skip guard that
+    pool/fparg already had, so they ran the full promotion path and hit promoted=NULL / no
+    dispatch slot / FP-arg refuse. Now they SKIP→PASS gate-OFF (so the "SKIP exactly as before"
+    claim above is finally true for every i386 selftest); guard is i386-only so x86_64/arm64 stay
+    byte-identical. Verified native i686 winlibs GCC 16.1.0: all four skip gate-OFF, body still
+    runs gate-ON.
   - REMAINING to un-gate (needs the M8 bar):
     (1) i386 AST-faithful-replay desync for mixed long+double signatures ([ast-verify] desync) blocks
         the -run baking that would stash such functions, so the mixed stub can't yet promote through
