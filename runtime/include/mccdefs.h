@@ -224,6 +224,19 @@
 	#define __builtin_copysignf(x, y) (__builtin_signbit(y) ? -__builtin_fabsf(x) : __builtin_fabsf(x))
 	#define __builtin_copysign(x, y)  (__builtin_signbit(y) ? -__builtin_fabs(x)  : __builtin_fabs(x))
 	#define __builtin_copysignl(x, y) (__builtin_signbit(y) ? -__builtin_fabsl(x) : __builtin_fabsl(x))
+	#ifndef __FLT_MIN__
+	#define __FLT_MIN__ 1.17549435082228750797e-38F
+	#endif
+	#ifndef __DBL_MIN__
+	#define __DBL_MIN__ 2.2250738585072014e-308
+	#endif
+	#ifndef __LDBL_MIN__
+	#if defined _WIN32 || defined __arm__ || (defined __aarch64__ && (defined __APPLE__ || defined _WIN32))
+	#define __LDBL_MIN__ 2.2250738585072014e-308L
+	#else
+	#define __LDBL_MIN__ 3.36210314311209350626e-4932L
+	#endif
+	#endif
 	#define __builtin_isnormal(x) (__builtin_isfinite(x) && (x) != 0 && _Generic((x), \
 		float:       __builtin_fabsf(x) >= __FLT_MIN__, \
 		long double: __builtin_fabsl(x) >= __LDBL_MIN__, \
