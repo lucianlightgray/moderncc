@@ -12995,8 +12995,12 @@ static int decl(int l) {
 								!(type.t & VT_EXTERN) && (type.t & VT_ARRAY) && !has_init && l == VT_CONST && type.ref->c < 0;
 						type.t |= VT_EXTERN;
 						sym = external_sym(v, &type, r, &ad);
-						if (was_tentative_flex && sym)
-							{ MCC_TRACE("br\n"); sym->a.tentative_array = 1; }
+						if (was_tentative_flex && sym) { MCC_TRACE("br\n");
+							sym->a.tentative_array = 1;
+							if (mcc_state->warn_pedantic)
+								{ MCC_TRACE("br\n"); mcc_warning("tentative array definition assumed to "
+													"have one element"); }
+						}
 					} else { MCC_TRACE("br\n");
 						if (cur_func_inline_extern && l != VT_CONST && (type.t & VT_STATIC) && !(type.t & VT_CONSTANT) && v)
 							{ MCC_TRACE("br\n"); mcc_warning("'%s' is static but declared in inline "
