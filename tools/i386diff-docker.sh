@@ -61,19 +61,24 @@ int main(void){ signed char sc=-1; unsigned char uc=200; short sh=-30000; unsign
 EOF
 
 PROGS="d1 d2 d3 d4 d5 d6"
-echo "== host: mcc-i386 -> i386 ELF objects =="
-for t in $PROGS; do "$MCC" -c "$WORK_ABS/$t.c" -o "$WORK_ABS/${t}_m.o"; done
+echo "== host: mcc-i386 -> i386 ELF objects at -O0 and -O2 =="
+for t in $PROGS; do
+	"$MCC" -O0 -c "$WORK_ABS/$t.c" -o "$WORK_ABS/${t}_m0.o"
+	"$MCC" -O2 -c "$WORK_ABS/$t.c" -o "$WORK_ABS/${t}_m2.o"
+done
 
-echo "== docker linux/386: run mcc (mcc.o + runtime) vs gcc (from source), diff exit codes =="
+echo "== docker linux/386: run mcc (-O0 and -O2, mcc.o + runtime) vs gcc, diff exit codes =="
 docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
 	fail=0
 	for t in '"$PROGS"'; do
-		if ! gcc -m32 ${t}_m.o librt.a -o ${t}_me 2>/dev/null; then echo "FAIL  $t (mcc-object link)"; fail=1; continue; fi
-		if ! gcc -m32 -O0 ${t}.c    -o ${t}_ge 2>/dev/null; then echo "FAIL  $t (gcc build)"; fail=1; continue; fi
-		mrc=0; ./${t}_me || mrc=$?
+		if ! gcc -m32 -O2 ${t}.c -o ${t}_ge 2>/dev/null; then echo "FAIL  $t (gcc build)"; fail=1; continue; fi
 		grc=0; ./${t}_ge || grc=$?
-		if [ "$mrc" = "$grc" ]; then echo "OK    $t (mcc=gcc=$mrc)"; else echo "DIFF  $t mcc=$mrc gcc=$grc"; fail=1; fi
+		for o in 0 2; do
+			if ! gcc -m32 ${t}_m${o}.o librt.a -o ${t}_me${o} 2>/dev/null; then echo "FAIL  $t -O$o (mcc-object link)"; fail=1; continue; fi
+			mrc=0; ./${t}_me${o} || mrc=$?
+			if [ "$mrc" = "$grc" ]; then echo "OK    $t -O$o (mcc=gcc=$mrc)"; else echo "DIFF  $t -O$o mcc=$mrc gcc=$grc"; fail=1; fi
+		done
 	done
 	exit $fail
 '
