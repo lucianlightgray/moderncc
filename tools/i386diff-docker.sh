@@ -111,7 +111,7 @@ docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
 	fail=0
 	for t in '"$PROGS"'; do
-		if ! gcc -m32 -O2 ${t}.c -o ${t}_ge 2>/dev/null; then echo "FAIL  $t (gcc build)"; fail=1; continue; fi
+		if ! gcc -m32 -msse2 -mfpmath=sse -O2 ${t}.c -o ${t}_ge 2>/dev/null; then echo "FAIL  $t (gcc build)"; fail=1; continue; fi
 		grc=0; ./${t}_ge || grc=$?
 		for o in 0 2; do
 			if ! gcc -m32 ${t}_m${o}.o librt.a -o ${t}_me${o} 2>/dev/null; then echo "FAIL  $t -O$o (mcc-object link)"; fail=1; continue; fi
