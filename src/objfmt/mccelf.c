@@ -1654,6 +1654,10 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 		if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_DLL)
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccasan.o"); }
 #endif
+#if defined MCC_TARGET_X86_64
+		if (s1->do_sanitize_recover && s1->output_type != MCC_OUTPUT_DLL)
+			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccubsan.o"); }
+#endif
 #if MCC_CONFIG_DIAG_RT >= 1
 		if (s1->do_backtrace) { MCC_TRACE("br\n");
 			if (s1->output_type & MCC_OUTPUT_EXE)

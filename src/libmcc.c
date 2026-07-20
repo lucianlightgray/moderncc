@@ -2536,9 +2536,24 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->do_sanitize_address = 0;
 			} else if (!strcmp(optarg, "sanitize-undefined-trap-on-error") ||
 								 !strcmp(optarg, "sanitize-trap=undefined") ||
-								 !strcmp(optarg, "sanitize-recover=undefined") ||
-								 !strcmp(optarg, "no-sanitize-recover=undefined")) { MCC_TRACE("br\n");
-				;
+								 !strcmp(optarg, "no-sanitize-recover=undefined") ||
+								 !strcmp(optarg, "no-sanitize-recover=all") ||
+								 !strcmp(optarg, "no-sanitize-recover")) { MCC_TRACE("br\n");
+				s->do_sanitize_recover = 0;
+			} else if (!strcmp(optarg, "sanitize-recover=undefined") ||
+								 !strcmp(optarg, "sanitize-recover=all") ||
+								 !strcmp(optarg, "sanitize-recover") ||
+								 !strcmp(optarg, "no-sanitize-trap=undefined") ||
+								 !strcmp(optarg, "no-sanitize-trap=all") ||
+								 !strcmp(optarg, "no-sanitize-trap")) { MCC_TRACE("br\n");
+#if defined MCC_TARGET_X86_64
+				s->do_sanitize_recover = 1;
+#else
+				mcc_warning_c(warn_unsupported)(
+						"-f%s: UBSan recover (diagnostic handlers) is only implemented "
+						"on x86_64; keeping trap-on-error",
+						optarg);
+#endif
 			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) { MCC_TRACE("br\n");
 				s->diag_color = 1;
 			} else if (!strcmp(optarg, "diagnostics-color=never") || !strcmp(optarg, "no-diagnostics-color") || !strcmp(optarg, "no-color-diagnostics")) { MCC_TRACE("br\n");
