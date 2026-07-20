@@ -449,6 +449,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ta.c -o {W}/ta.o 2>/dev/null && echo DEFAULT_OK; echo END",
 		 "tentative array definition assumed to have one element\nNO_ESCALATE_OK\nDEFAULT_OK\nEND\n"},
 
+		{"builtin_prefetch_assume_aligned", "",
+		 "printf 'int main(void){ int a[4]={1,2,3,4}; int i=0; __builtin_prefetch(&a[i++]); __builtin_prefetch(&a[0],1,3);"
+		 " int *p=(int*)__builtin_assume_aligned(a,16); int *q=(int*)__builtin_assume_aligned(a,16,0);"
+		 " return (i==1 && p[2]==3 && q[0]==1)?0:1; }\\n' > {W}/bi.c && "
+		 "{MCC} -B{B} -I{I} {W}/bi.c -o {W}/bi 2>&1 >/dev/null && {W}/bi && echo BUILTIN_OK; echo END",
+		 "BUILTIN_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},

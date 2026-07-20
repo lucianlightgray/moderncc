@@ -8904,6 +8904,31 @@ tok_next:
 		vpush(&type);
 		CODE_OFF();
 		break;
+	case TOK_builtin_prefetch:
+		next();
+		skip('(');
+		expr_eq();
+		vpop();
+		while (tok == ',') { MCC_TRACE("br\n");
+			next();
+			expr_const64();
+		}
+		skip(')');
+		type.t = VT_VOID;
+		vpush(&type);
+		break;
+	case TOK_builtin_assume_aligned:
+		next();
+		skip('(');
+		expr_eq();
+		skip(',');
+		expr_const64();
+		if (tok == ',') { MCC_TRACE("br\n");
+			next();
+			expr_const64();
+		}
+		skip(')');
+		break;
 	case TOK_builtin_nan:
 	case TOK_builtin_nanf:
 	case TOK_builtin_nanl:
