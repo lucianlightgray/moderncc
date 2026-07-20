@@ -53,8 +53,9 @@
     (2) the mode-6 entry dispatcher in src/mccast.c emits hardcoded x86-64 opcodes (REX/rbp) with no
         i386 variant, so end-to-end -run JIT baking does not fire on i386 (fparg end-to-end sub-test);
     (3) differential vs gcc/clang + self-host on i386, then flip the default.
-- arm64-PE runtime-JIT (frameless-leaf return corruption + RtlAddFunctionTable/icache); needs arm64-Windows HW.
-- MSVC-arm64 JIT-exec miscompile; needs arm64-Windows HW.
+- arm64-PE runtime-JIT (frameless-leaf return corruption + RtlAddFunctionTable/icache); the native-fault class needs arm64-Windows HW (see NOTE below).
+- MSVC-arm64 JIT-exec miscompile; needs arm64-Windows HW for the wild-jump fault (see NOTE below).
+- NOTE (2026-07-20): wine-arm64 in Docker now boots + runs mcc arm64-PE exes on this x86_64 host (the `wineboot c0000135` is only the non-fatal ARM32/WoW `rundll32` stub, not the native ARM64 loader). So **codegen/logic**-class arm64-PE bugs ARE debuggable without arm64-Windows HW: build the gcc-cross `mcc-arm64-win32`, stage the win32 sysroot, run its emitted PE under wine (recipe validated the arm64-PE over-align change — `alignas_over.exe` → OK rc=0, plus switch/import-thunk/LLP64 corpus). Only the **native-fault / weak-memory** class genuinely needs HW — `RtlAddFunctionTable` unwind, icache coherence, the frameless-leaf return corruption, and MSVC-arm64's wild-jump all *spin-not-fault* under qemu/wine (x86-TSO masks them). So the two items above may be partially reproducible under wine for the codegen portion; the fault portion is not.
 - Standalone `--embed-jit` blob for i386-PE / arm64-PE.
 
 ## AOT foundations
@@ -92,8 +93,8 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 - i386: UBSan trap, ASan native-shadow, stack-protector, TLS GD/LDM, 32-bit cmov, 64-bit div-magic helper, JIT stub tail, Tier-4 replay-inline.
 - arm (armv7): raise from Tier-2 — self-host, cmov, UBSan trap, ASan native-shadow, stack-protector, JIT stub tail, replay-inline.
 - arm64: TLS GD/LDM (currently LE only), mode-6 object-output dispatch, kgc-mixed stub, in-place patch row, flip `opt_promote` on.
-- PE targets: UBSan handler ABI, asan-shadow, standalone embed-jit blob, arm64-PE runtime JIT. (over-align on i386-PE/arm64-PE validated + ungated — no compiler gate existed; codegen matches ELF oracle byte-for-byte modulo LLP64 type sizes; i386-PE runs the alignas_over test natively.)
-- Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO). DONE for the linux-arm64 CI fuzz cell: the differential fuzzer (portable gcc+clang majority-vote oracle, not the x86-only shadow-IV oracle) now runs on native `ubuntu-24.04-arm` — the small default band per-push (ci.yml `linux`/arm64) plus a time-boxed nightly `campaign` soak (matrix.yml `fuzz-arm64`). Still open: an armv7 cell and a dedicated concurrency/litmus validator.
+- PE targets: UBSan handler ABI, asan-shadow, standalone embed-jit blob, arm64-PE runtime JIT. (over-align on i386-PE/arm64-PE validated + ungated — no compiler gate existed; codegen matches ELF oracle byte-for-byte modulo LLP64 type sizes; i386-PE runs the alignas_over test natively; arm64-PE alignas_over runs OK under wine-arm64 in Docker.)
+- Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO). The linux-arm64 CI fuzz **band** is DONE and live: the differential fuzzer (portable gcc+clang majority-vote oracle, not the x86-only shadow-IV oracle) runs on native `ubuntu-24.04-arm` per-push — the CMakeLists guard (~3777) registers `fuzz/smoke`+`fuzz/matrix-*` on arm64 and the ci.yml `linux`/arm64 cell's ctest runs them (the fuzz-exclude at ci.yml ~128 is macOS-x86/Rosetta-only). NOTE: an extra nightly `campaign` soak was hand-added to matrix.yml and then dropped by commit `4abbede5` ("regenerate matrix.yml") — **matrix.yml is a GENERATED file**, so re-adding the soak must go through the generator source (`tools/ci.c` / the ci-emit templates), not a hand-edit. Still open: re-land the nightly soak via the generator; an armv7 cell; a dedicated concurrency/litmus validator (qemu x86-TSO can't catch weak-memory reordering).
 
 ## Const-data (P2)
 - Size-changing datacomp: `.init_array` decompress ctor (all 5 arches) + `__mcc_decompress` runtime (M6).
