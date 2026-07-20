@@ -2619,7 +2619,7 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 	return bval;
 }
 
-#if defined(MCCJIT_X64) || defined(MCCJIT_I386)
+#if defined(MCCJIT_X64) || defined(MCCJIT_I386) || defined(MCCJIT_ARM64)
 /* K4A/L12A scalar mixed GP+FP marshalling. One signature-agnostic forwarding
    thunk reconstructs any scalar SysV call: it loads gpv[0..5] into rdi..r9 and
    fpv[0..7] into xmm0..7 and tail-calls the target. Because SysV assigns
@@ -2695,6 +2695,68 @@ static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
 																		const double *fpv) { MCC_TRACE("enter\n");
 	return ((MccjitThunkD)mccjit_mixed_thunk_get())(fn, gpv, fpv);
 }
+#elif defined(MCCJIT_ARM64)
+/* AAPCS64 reconstruction thunk (fn=x0, gpv=x1, fpv=x2). AArch64 assigns
+   INTEGER-class args to x0..x7 and FP-class args to v0..v7 with independent
+   counters, exactly like SysV — so class-ordered gpv/fpv fully reconstruct the
+   call. Save fn to x16, reload d0..d5 from fpv (still in x2) and x0..x5 from gpv
+   (x1 loaded last so the base survives), then tail-branch fn. Unused arg regs
+   carry harmless garbage the callee ignores. sp is untouched so the callee's
+   ret returns straight to mccjit_invoke_mixed_*; same bytes for int (x0) or
+   double (d0) return. */
+static const unsigned char mccjit_mixed_thunk_code[] = {
+		0xf0, 0x03, 0x00, 0xaa, /* mov x16, x0        */
+		0x40, 0x00, 0x40, 0xfd, /* ldr d0, [x2]       */
+		0x41, 0x04, 0x40, 0xfd, /* ldr d1, [x2, #8]   */
+		0x42, 0x08, 0x40, 0xfd, /* ldr d2, [x2, #16]  */
+		0x43, 0x0c, 0x40, 0xfd, /* ldr d3, [x2, #24]  */
+		0x44, 0x10, 0x40, 0xfd, /* ldr d4, [x2, #32]  */
+		0x45, 0x14, 0x40, 0xfd, /* ldr d5, [x2, #40]  */
+		0x20, 0x00, 0x40, 0xf9, /* ldr x0, [x1]       */
+		0x22, 0x08, 0x40, 0xf9, /* ldr x2, [x1, #16]  */
+		0x23, 0x0c, 0x40, 0xf9, /* ldr x3, [x1, #24]  */
+		0x24, 0x10, 0x40, 0xf9, /* ldr x4, [x1, #32]  */
+		0x25, 0x14, 0x40, 0xf9, /* ldr x5, [x1, #40]  */
+		0x21, 0x04, 0x40, 0xf9, /* ldr x1, [x1, #8]   */
+		0x00, 0x02, 0x1f, 0xd6  /* br x16             */
+};
+
+typedef int64_t (*MccjitThunkI)(void *fn, const int64_t *gpv, const double *fpv);
+typedef double (*MccjitThunkD)(void *fn, const int64_t *gpv, const double *fpv);
+
+static void *mccjit_mixed_thunk;
+static pthread_once_t mccjit_mixed_thunk_once = PTHREAD_ONCE_INIT;
+
+static void mccjit_mixed_thunk_build(void) { MCC_TRACE("enter\n");
+	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE,
+													MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
+		mccjit_mixed_thunk = NULL;
+		return;
+	}
+	memcpy(p, mccjit_mixed_thunk_code, sizeof mccjit_mixed_thunk_code);
+	if (host_runmem_protect(p, 4096, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, 4096);
+		mccjit_mixed_thunk = NULL;
+		return;
+	}
+	mccjit_mixed_thunk = p;
+}
+
+static void *mccjit_mixed_thunk_get(void) { MCC_TRACE("enter\n");
+	pthread_once(&mccjit_mixed_thunk_once, mccjit_mixed_thunk_build);
+	return mccjit_mixed_thunk;
+}
+
+static int64_t mccjit_invoke_mixed_i(void *fn, const int64_t *gpv,
+																		 const double *fpv) { MCC_TRACE("enter\n");
+	return ((MccjitThunkI)mccjit_mixed_thunk_get())(fn, gpv, fpv);
+}
+
+static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
+																		const double *fpv) { MCC_TRACE("enter\n");
+	return ((MccjitThunkD)mccjit_mixed_thunk_get())(fn, gpv, fpv);
+}
 #else /* MCCJIT_I386 */
 /* i386 has a single cdecl arg stack (not separate GP/FP files), so the
    reconstruction thunk is signature-specific: it is built per-kgc by
@@ -2726,7 +2788,7 @@ static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
 																		const double *fpv) { MCC_TRACE("enter\n");
 	return ((MccjitI386ThunkD)mccjit_i386_active_thunk)(fn, gpv, fpv);
 }
-#endif /* MCCJIT_X64 / MCCJIT_I386 */
+#endif /* MCCJIT_X64 / MCCJIT_ARM64 / MCCJIT_I386 */
 
 static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 														 const double *fpv, int64_t *tuple) { MCC_TRACE("enter\n");
@@ -2835,7 +2897,7 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 		{ MCC_TRACE("br\n"); *k->mx_flag = 1; }
 	return bval;
 }
-#endif /* mixed helpers: MCCJIT_X64 || MCCJIT_I386 */
+#endif /* mixed helpers: MCCJIT_X64 || MCCJIT_ARM64 || MCCJIT_I386 */
 
 /* -------------------------------------------------------------- stub tail --
    The hand-emitted KGC verify-stub / dispatch tail, one arch per branch. */
@@ -3409,14 +3471,76 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
 																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
-	(void)variant;
-	(void)baseline;
-	(void)memoize_ok;
-	(void)ngp;
-	(void)nsse;
-	(void)ret_fp;
-	(void)ret_wide;
-	return NULL;
+	void *calln = ret_fp ? (void *)mccjit_kgc_calln_mixed_d
+											 : (void *)mccjit_kgc_calln_mixed_i;
+	size_t page = host_pagesize();
+	const uint32_t D = 256;
+	unsigned char *p;
+	MccjitKgc *kgc;
+	int *flag;
+	uint32_t arity = ngp + nsse;
+	uint64_t kp, cp;
+	uint32_t i, o = 0;
+	if (arity < 1 || arity > MCCJIT_KGC_ARITY)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (!mccjit_mixed_thunk_get())
+		{ MCC_TRACE("br\n"); return NULL; }
+	kgc = mcc_mallocz(sizeof *kgc);
+	flag = mcc_mallocz(sizeof *flag);
+	if (!kgc || !flag) { MCC_TRACE("br\n");
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	if (mccjit_kgc_open(kgc, NULL, mccjit_salt_witness(), arity) != 0) { MCC_TRACE("br\n");
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	kgc->memoize_ok = memoize_ok;
+	kgc->ret_wide = ret_wide;
+	kgc->mx_variant = variant;
+	kgc->mx_baseline = baseline;
+	kgc->mx_ngp = ngp;
+	kgc->mx_nsse = nsse;
+	kgc->mx_ret_fp = ret_fp;
+	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) { MCC_TRACE("br\n");
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	*flag = 0;
+	kgc->mx_flag = flag;
+	MCCJIT_A64_W(0xa9bf7bfdu); /* stp x29,x30,[sp,#-16]! */
+	MCCJIT_A64_W(0xd10183ffu); /* sub sp,sp,#96 */
+	for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
+		MCCJIT_A64_W(0xf90003e0u | (i << 10) | i); /* str x_i,[sp,#i*8] */
+	}
+	for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
+		MCCJIT_A64_W(0xfd0003e0u | ((6 + i) << 10) | i); /* str d_i,[sp,#(6+i)*8] */
+	}
+	MCCJIT_A64_LDR(0, D + 0);  /* ldr x0,[kgc] */
+	MCCJIT_A64_W(0x910003e1u);  /* mov x1,sp (gpv) */
+	MCCJIT_A64_W(0x9100c3e2u);  /* add x2,sp,#48 (fpv) */
+	MCCJIT_A64_LDR(16, D + 8); /* ldr x16,[calln] */
+	MCCJIT_A64_W(0xd63f0200u);  /* blr x16 */
+	MCCJIT_A64_W(0x910183ffu);  /* add sp,sp,#96 */
+	MCCJIT_A64_W(0xa8c17bfdu);  /* ldp x29,x30,[sp],#16 */
+	MCCJIT_A64_W(0xd65f03c0u);  /* ret */
+	kp = (uint64_t)(uintptr_t)kgc;
+	cp = (uint64_t)(uintptr_t)calln;
+	memcpy(p + D + 0, &kp, 8);
+	memcpy(p + D + 8, &cp, 8);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		mccjit_kgc_close(kgc);
+		mcc_free(kgc);
+		mcc_free(flag);
+		return NULL;
+	}
+	return p;
 }
 #undef MCCJIT_A64_W
 #undef MCCJIT_A64_LDR

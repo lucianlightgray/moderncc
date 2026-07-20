@@ -30,7 +30,6 @@
 
 ## JIT arm64
 - arm64 mode-6 dispatch for object output: harden the GOT/ABS64 slot so the function symbol survives external link, then drop the `!ast_search_env` guard.
-- arm64 `mccjit_make_kgc_stub_mixed` (mixed GP+FP thunk: `movz/movk`→x0..x5 + `ldr d0..d7`).
 - arm64 in-place trampoline patch row.
 
 ## JIT Windows / i386-PE
