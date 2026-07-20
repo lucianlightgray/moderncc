@@ -3371,7 +3371,7 @@ again:
 			} else { MCC_TRACE("br\n");
 				if (sf) { MCC_TRACE("br\n");
 					if (dbt & VT_UNSIGNED)
-						{ MCC_TRACE("br\n"); vtop->c.i = (uint64_t)vtop->c.ld; }
+						{ MCC_TRACE("br\n"); vtop->c.i = vtop->c.ld < 0 ? (uint64_t)(int64_t)vtop->c.ld : (uint64_t)vtop->c.ld; }
 					else
 						{ MCC_TRACE("br\n"); vtop->c.i = (int64_t)vtop->c.ld; }
 				} else if (sbt_bt == VT_LLONG || (MCC_PTR_SIZE == 8 && sbt == VT_PTR))
