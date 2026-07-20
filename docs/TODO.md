@@ -74,7 +74,7 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 - i386: UBSan trap, ASan native-shadow, stack-protector, TLS GD/LDM, 32-bit cmov, 64-bit div-magic helper, JIT stub tail, Tier-4 replay-inline.
 - arm (armv7): raise from Tier-2 — self-host, cmov, UBSan trap, ASan native-shadow, stack-protector, JIT stub tail, replay-inline.
 - arm64: TLS GD/LDM (currently LE only), mode-6 object-output dispatch, kgc-mixed stub, in-place patch row, flip `opt_promote` on.
-- PE targets: UBSan handler ABI, asan-shadow, over-align on i386-PE/arm64-PE, standalone embed-jit blob, arm64-PE runtime JIT.
+- PE targets: UBSan handler ABI, asan-shadow, standalone embed-jit blob, arm64-PE runtime JIT. (over-align on i386-PE/arm64-PE validated + ungated — no compiler gate existed; codegen matches ELF oracle byte-for-byte modulo LLP64 type sizes; i386-PE runs the alignas_over test natively.)
 - Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO); a linux-arm64 CI fuzz cell.
 
 ## Const-data (P2)
@@ -91,7 +91,7 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 
 ## Sanitizers
 - Honor auto over-alignment under `-fsanitize=address` / `-b`.
-- Validate + ungate `alignas` over-align on i386-PE / arm64-PE.
+- DONE: Validate + ungate `alignas` over-align on i386-PE / arm64-PE. No compiler gate ever existed (`STACK_OVERALIGN_MAX` is defined for every arch; the `overalign_indirect` path in `mccgen.c` `decl_initializer_alloc` is arch-neutral and the win64 `rax`/shadow-space split is `#if PE && X86_64` only). i386-PE: `and esp,-N` masks ESP down after the 16-align `alloca` (no shadow space on Win32) — verified by disasm, runs the full `alignas_over.c` natively (OK), matches i686 clang/msvcrt. arm64-PE: inline `and sp,sp,-N` — the `.text` is byte-identical to the native-arm64 (ELF) oracle except the 3 expected LLP64-vs-LP64 words (`sizeof(long)` 4-vs-8, `str w`/`str x`). Ungating was test-only (`alignas_over.c` `#if` now enables the runtime block for `__i386__`/`__aarch64__` on `_WIN32`); default build stays byte-identical.
 - UBSan `-recover` mode (parsed, ignored). mcc's UBSan is trap-only — a violation emits `brk #0`/`ud2` (verified: `gen_ubsan_*` in mccgen.c), never a callable handler, so it always aborts on the first UB. clang's `-fsanitize=undefined` *defaults to recover* (log + continue), so mcc already diverges by default, and `-fsanitize-recover=undefined` (parsed+ignored at libmcc.c ~2536) can't be honored without returnable handlers. Hence recover is blocked on the "clang-compatible `__ubsan_handle_*` ABI" item below — implement those (non-abort variants that log via the runtime and return) first, then wire `-f[no-]sanitize-recover`/`-fsanitize-trap` to pick handler-vs-trap. The trap/`-fno-sanitize-recover` requests are already satisfied by the current trap behavior (the fuzzer passes `-fno-sanitize-recover=all`).
 - clang-compatible `__ubsan_handle_*` diagnostic ABI.
 - Port native-shadow ASan to riscv64; 39-bit-VA/bottom-up-mmap shadow-layout robustness; access-type READ/WRITE + region-relative locator; riscv64 stack-redzone.
