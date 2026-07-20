@@ -78,6 +78,10 @@ static void get_pc_thunk(int r, int add) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
+	if (sym->type.t & VT_TLS)
+		{ MCC_TRACE("br\n"); mcc_error("-fPIC access to thread-local '%s' requires "
+							"global/local-dynamic TLS, which mcc does not emit for i386",
+							get_tok_str(sym->v, NULL)); }
 	greloc(cur_text_section, sym, ind, R_386_GOT32X);
 	gen_le32(0);
 	if (c) { MCC_TRACE("br\n");
