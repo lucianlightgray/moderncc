@@ -152,6 +152,10 @@
 
 	#define __builtin_offsetof(type, field) ((__SIZE_TYPE__)&((type*)0)->field)
 	#define __builtin_extract_return_addr(x) x
+	#define __builtin_frob_return_addr(x) x
+	#define __builtin_memcpy_inline(d, s, n)  __builtin_memcpy((d), (s), (n))
+	#define __builtin_memset_inline(d, c, n)  __builtin_memset((d), (c), (n))
+	#define __builtin_memmove_inline(d, s, n) __builtin_memmove((d), (s), (n))
 	#define __sync_fetch_and_add(p,v) __atomic_fetch_add((p),(v),__ATOMIC_SEQ_CST)
 	#define __sync_fetch_and_sub(p,v) __atomic_fetch_sub((p),(v),__ATOMIC_SEQ_CST)
 	#define __sync_fetch_and_or(p,v)  __atomic_fetch_or((p),(v),__ATOMIC_SEQ_CST)

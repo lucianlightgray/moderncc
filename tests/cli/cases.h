@@ -456,6 +456,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
 		 "LOC_OK\nEND\n"},
 
+		{"builtin_inline_mem_and_retaddr", "",
+		 "printf 'int main(void){ char a[8]={0}, b[8]={1,2,3,4,5,6,7,8}, c[8], d[4];"
+		 " __builtin_memcpy_inline(a,b,8); __builtin_memmove_inline(c,a,8); __builtin_memset_inline(d,9,4);"
+		 " void *r=__builtin_frob_return_addr(__builtin_extract_return_addr(__builtin_return_address(0)));"
+		 " return (a[0]==1 && a[7]==8 && c[3]==4 && d[0]==9 && d[3]==9 && r!=0)?0:1; }\\n' > {W}/mi.c && "
+		 "{MCC} -B{B} -I{I} {W}/mi.c -o {W}/mi 2>/dev/null && {W}/mi && echo MI_OK; echo END",
+		 "MI_OK\nEND\n"},
+
 		{"builtin_integer_abs", "",
 		 "printf 'int main(void){ volatile int i=-7; volatile long l=-1234567L; volatile long long ll=-9876543210LL;"
 		 " static const int fs=__builtin_abs(-42);"
