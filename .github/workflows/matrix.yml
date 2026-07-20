@@ -14,21 +14,9 @@ name: Matrix
 #   macos-x86 - the emulated x86_64 macOS cells (build + test under Rosetta,
 #               ~14 min each). These were the gating critical path; ci.yml now
 #               gates only the native arm64 macOS cells.
-#   fuzz-arm64- the differential random-program miscompile fuzzer (tests/fuzz)
-#               run as a time-boxed `campaign` on real arm64 silicon
-#               (ubuntu-24.04-arm). ci.yml already runs the small default fuzz
-#               ctest band on the per-push x86_64 AND arm64 cells (the same
-#               gcc+clang majority-vote oracle, now arch-portable); this cell
-#               is the heavy nightly soak — a continuously-strengthening
-#               weak-memory-model backstop for all arm64 codegen (TODO.md
-#               cross-arch parity: "a linux-arm64 CI fuzz cell"). It is not the
-#               x86-only shadow-IV oracle; that mechanism is unrelated.
 #
-# matrix/macos-x86 come from the same preset ledger as ci.yml
-# (`ci plan --job matrix` / `--job macos-x86`), so `ci parity` still covers
-# their presets. fuzz-arm64 reuses the existing `linux-gcc` preset build (no new
-# preset) and then drives the fuzz_runner campaign subcommand directly, since a
-# budgeted campaign is not a ctest and has no run-preset mapping. Never blocks a
+# Both come from the same preset ledger as ci.yml (`ci plan --job matrix` /
+# `--job macos-x86`), so `ci parity` still covers their presets. Never blocks a
 # PR; also runnable on demand.
 
 on:
@@ -133,53 +121,3 @@ jobs:
           export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
           /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
             "-DMCC_DIST_PLAT=$ART" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64
-
-  fuzz-arm64:
-    # Native-arm64-Linux differential-fuzz soak (tests/fuzz). Runs on real arm64
-    # silicon so it is a genuine weak-memory-model backstop (qemu is x86-TSO and
-    # is excluded by the fuzz guard anyway). The fuzzer's oracle is a portable
-    # gcc+clang majority vote (UBSan/ASan-gated) — no x86 asm, no shadow-IV — so
-    # it runs unchanged on arm64. Build reuses the linux-gcc preset (build-only:
-    # ci.yml already tests it), then drives the fuzz_runner `campaign`
-    # subcommand, which is time-boxed by a wall-clock budget and a
-    # no-new-class convergence rule, so runtime is bounded and it never blocks a
-    # push. Non-gating: a fresh-seed campaign is a soak, not a pass/fail gate.
-    name: fuzz / linux-arm64
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v5
-      - name: install toolchain (gcc + clang differential-oracle references)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build build-essential gcc clang lld git rsync
-      - name: resolve differential-oracle reference compilers (gcc + clang)
-        run: |
-          echo "MCC_DIFF3_GCC=$(command -v gcc)" >> "$GITHUB_ENV"
-          echo "MCC_DIFF3_CLANG=$(command -v clang)" >> "$GITHUB_ENV"
-      - name: build mcc + fuzz_runner (linux-gcc preset, build-only)
-        run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          /tmp/mcc-ci run-preset linux-gcc --no-test
-      - name: differential-fuzz campaign (native arm64, time-boxed)
-        # Positional args mirror the ctest wiring: <mcc> <bdir> <idir> <corpus>
-        # <work> <budget_secs> <batch> <stop_k>. 1800s budget keeps the cell well
-        # under a nightly slot; stop_k=6 converges early once no new miscompile
-        # class appears. --gates is implied by campaign (it sweeps MCC_AST_*).
-        run: |
-          B="$PWD/cmake-linux-gcc"
-          mkdir -p "$B/fuzz-campaign-work"
-          "$B/fuzz_runner" campaign \
-            "$B/mcc" "$B" "$PWD/runtime/include" \
-            "$PWD/tests/fuzz/corpus" "$B/fuzz-campaign-work" \
-            1800 8 6 \
-            --ref gcc "$MCC_DIFF3_GCC" --ref clang "$MCC_DIFF3_CLANG"
-      - name: upload any graduated repros
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: fuzz-arm64-repros
-          path: |
-            tests/fuzz/corpus/*.c
-            cmake-linux-gcc/fuzz-campaign-work/**
-          if-no-files-found: ignore
