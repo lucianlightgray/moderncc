@@ -12676,6 +12676,8 @@ static void do_Static_assert(void) {
 	if (tok == ',') { MCC_TRACE("br\n");
 		next();
 		msg = parse_mult_str("string constant")->data;
+	} else if (mcc_state->cversion >= 201112 && mcc_state->cversion < 202311) { MCC_TRACE("br\n");
+		mcc_pedantic("'_Static_assert' with no message is a C23 feature");
 	}
 	skip(')');
 	if (c == 0)

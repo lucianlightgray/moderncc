@@ -421,6 +421,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/k1.c -o {W}/k1.o 2>/dev/null && echo C11_OK; echo END",
 		 "'_Alignas' is a C11 feature\n'_Alignof' is a C11 feature\n'_Noreturn' is a C11 feature\nGNU_ALIGNOF_OK\nC11_OK\nEND\n"},
 
+		{"static_assert_no_message_c23", "",
+		 "printf '_Static_assert(1);\\nint main(void){return 0;}\\n' > {W}/sa.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/sa.c -o {W}/sa.o 2>&1 | "
+		 "grep -oE \"'_Static_assert' with no message is a C23 feature\"; "
+		 "printf '_Static_assert(1,\"m\");\\nint main(void){return 0;}\\n' > {W}/sa2.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic-errors -c {W}/sa2.c -o {W}/sa2.o 2>/dev/null && echo WITHMSG_OK; "
+		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/sa.c -o {W}/sa.o 2>/dev/null && echo C23_OK; echo END",
+		 "'_Static_assert' with no message is a C23 feature\nWITHMSG_OK\nC23_OK\nEND\n"},
+
 		{"stdc_utf_encoding_macros", "",
 		 "printf '\\n' > {W}/utf.c && {MCC} -B{B} -E -dM {W}/utf.c | grep -cE '^#define __STDC_UTF_(16|32)__ 1$'",
 		 "2\n"},
