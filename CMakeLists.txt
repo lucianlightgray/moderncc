@@ -4559,6 +4559,12 @@ if(MCC_BUILD_TESTS)
                 "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-fastcall-abi-docker")
         set_tests_properties(i386-fastcall-abi-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+
+        add_test(NAME i386-tls-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386tls-docker.sh"
+                "$<TARGET_FILE:mcc-i386>" "${CMAKE_BINARY_DIR}/i386-tls-docker")
+        set_tests_properties(i386-tls-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(i386-fastcall-abi
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
