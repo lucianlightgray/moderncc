@@ -79,8 +79,27 @@ cat > "$WORK_ABS/d10.c" <<'EOF'
 int main(void){ _Complex double z=1.0+2.0*1.0i; int i; for(i=0;i<10;i++) z=z*z/(0.9+0.1*1.0i);
   double re=__real__ z, im=__imag__ z; long long r=(long long)((re+im)*1000.0); return (int)(r%251<0?-(r%251):r%251); }
 EOF
+cat > "$WORK_ABS/d11.c" <<'EOF'
+struct P{int x,y,z;};
+int main(void){ struct P a={.z=3,.x=1}; int arr[10]={[5]=50,[2]=20,[9]=90};
+  int s=a.x+a.y+a.z,i; for(i=0;i<10;i++) s+=arr[i]; return (s&0x7fffffff)%251; }
+EOF
+cat > "$WORK_ABS/d12.c" <<'EOF'
+struct M{ int a; struct { int b,c; } inner; int d[3]; };
+int main(void){ struct M m={.a=1,.inner.c=5,.d[1]=9,.d={7,8}};
+  int s=m.a*100000+m.inner.b*10000+m.inner.c*1000+m.d[0]*100+m.d[1]*10+m.d[2]; return (s&0x7fffffff)%251; }
+EOF
+cat > "$WORK_ABS/d13.c" <<'EOF'
+int main(void){ int *p=(int[]){1,2,3,4,5}; struct S{int a,b;} s=(struct S){.a=10,.b=20};
+  int sum=0,i; for(i=0;i<5;i++) sum+=p[i]; return ((sum+s.a*s.b)&0x7fffffff)%251; }
+EOF
+cat > "$WORK_ABS/d14.c" <<'EOF'
+struct B{ unsigned a:1, b:2, c:3, :2, d:8; signed e:4; unsigned f:15; };
+int main(void){ struct B x={0}; x.a=1;x.b=3;x.c=5;x.d=200;x.e=-6;x.f=30000;
+  int s=x.a+x.b*10+x.c*100+x.d*1000+x.e*7+(int)x.f; return (s&0x7fffffff)%251; }
+EOF
 
-PROGS="d1 d2 d3 d4 d5 d6 d7 d8 d9 d10"
+PROGS="d1 d2 d3 d4 d5 d6 d7 d8 d9 d10 d11 d12 d13 d14"
 echo "== host: mcc-i386 -> i386 ELF objects at -O0 and -O2 =="
 for t in $PROGS; do
 	"$MCC" -O0 -c "$WORK_ABS/$t.c" -o "$WORK_ABS/${t}_m0.o"
