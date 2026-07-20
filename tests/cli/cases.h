@@ -456,6 +456,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
 		 "LOC_OK\nEND\n"},
 
+		{"builtin_integer_abs", "",
+		 "printf 'int main(void){ volatile int i=-7; volatile long l=-1234567L; volatile long long ll=-9876543210LL;"
+		 " static const int fs=__builtin_abs(-42);"
+		 " return (__builtin_abs(i)==7 && __builtin_abs(5)==5 && __builtin_labs(l)==1234567L"
+		 " && __builtin_llabs(ll)==9876543210LL && fs==42)?0:1; }\\n' > {W}/ab.c && "
+		 "{MCC} -B{B} -I{I} {W}/ab.c -o {W}/ab 2>/dev/null && {W}/ab && echo ABS_OK; echo END",
+		 "ABS_OK\nEND\n"},
+
 		{"builtin_isnormal_fpclassify", "",
 		 "printf '#define C(x) __builtin_fpclassify(0,1,4,3,2,(x))\\n"
 		 "int main(void){ volatile double n=1.5,z=0.0,sub=5e-320,big=1e308; double inf=big*10, nan=z; nan=nan/z;\\n"
