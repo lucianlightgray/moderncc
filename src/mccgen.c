@@ -2109,6 +2109,8 @@ static void gv_dup(void) { MCC_TRACE("enter\n");
 	vtop->r = r;
 }
 
+static int gen_opl_depth;
+
 #if MCC_PTR_SIZE == 4
 static void gen_opl(int op) { MCC_TRACE("enter\n");
 	int t, a, b, op1, c, i;
@@ -2117,6 +2119,7 @@ static void gen_opl(int op) { MCC_TRACE("enter\n");
 	unsigned short reg_lret = REG_IRE2;
 	SValue tmp;
 
+	gen_opl_depth++;
 	switch (op) { MCC_TRACE("br\n");
 	case '/':
 	case TOK_PDIV:
@@ -2304,6 +2307,7 @@ static void gen_opl(int op) { MCC_TRACE("enter\n");
 		gvtst_set(0, b);
 		break;
 	}
+	gen_opl_depth--;
 }
 #endif
 
@@ -2355,7 +2359,7 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 	int shm = (t1 == VT_LLONG) ? 63 : 31;
 	int r;
 
-	if (c2 && !pp_expr && (op == TOK_SHL || op == TOK_SHR || op == TOK_SAR)) { MCC_TRACE("br\n");
+	if (c2 && !pp_expr && !gen_opl_depth && (op == TOK_SHL || op == TOK_SHR || op == TOK_SAR)) { MCC_TRACE("br\n");
 		const char *dir = (op == TOK_SHL) ? "left" : "right";
 		if (!(v2->type.t & VT_UNSIGNED) && (int64_t)l2 < 0)
 			{ MCC_TRACE("br\n"); mcc_warning_c(warn_shift_count_negative)("%s shift count is negative", dir); }
