@@ -456,6 +456,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
 		 "LOC_OK\nEND\n"},
 
+		{"builtin_isnormal_fpclassify", "",
+		 "printf '#define C(x) __builtin_fpclassify(0,1,4,3,2,(x))\\n"
+		 "int main(void){ volatile double n=1.5,z=0.0,sub=5e-320,big=1e308; double inf=big*10, nan=z; nan=nan/z;\\n"
+		 " volatile float f=2.0f;\\n"
+		 " int ok=__builtin_isnormal(n) && !__builtin_isnormal(z) && !__builtin_isnormal(sub)"
+		 " && !__builtin_isnormal(inf) && !__builtin_isnormal(nan) && __builtin_isnormal(f);\\n"
+		 " int c=C(n)*10000+C(z)*1000+C(sub)*100+C(inf)*10+C(nan);\\n"
+		 " return (ok && c==42310)?0:1; }\\n' > {W}/fc.c && "
+		 "{MCC} -B{B} -I{I} {W}/fc.c -o {W}/fc 2>/dev/null && {W}/fc && echo FC_OK; echo END",
+		 "FC_OK\nEND\n"},
+
 		{"builtin_object_size", "",
 		 "printf 'int main(void){ char b[8];"
 		 " unsigned long s0=__builtin_object_size(b,0), s2=__builtin_object_size(b,2);"

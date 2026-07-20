@@ -217,6 +217,13 @@
 	#define __builtin_copysignf(x, y) (__builtin_signbit(y) ? -__builtin_fabsf(x) : __builtin_fabsf(x))
 	#define __builtin_copysign(x, y)  (__builtin_signbit(y) ? -__builtin_fabs(x)  : __builtin_fabs(x))
 	#define __builtin_copysignl(x, y) (__builtin_signbit(y) ? -__builtin_fabsl(x) : __builtin_fabsl(x))
+	#define __builtin_isnormal(x) (__builtin_isfinite(x) && (x) != 0 && _Generic((x), \
+		float:       __builtin_fabsf(x) >= __FLT_MIN__, \
+		long double: __builtin_fabsl(x) >= __LDBL_MIN__, \
+		default:     __builtin_fabs(x)  >= __DBL_MIN__))
+	#define __builtin_fpclassify(nan, inf, norm, sub, zero, x) \
+		(__builtin_isnan(x) ? (nan) : __builtin_isinf(x) ? (inf) \
+		 : (x) == 0 ? (zero) : __builtin_isnormal(x) ? (norm) : (sub))
 
 	struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
 	#define __int128_t struct __uint128__
