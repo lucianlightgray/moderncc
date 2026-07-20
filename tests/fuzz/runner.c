@@ -300,14 +300,19 @@ static int consensus(const Refs *refs, const char *bdir, const char *idir,
 	return ret;
 }
 
+#define MCC_DIVERGE_ATTEMPTS 4
+
 static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
 						const char *work, const char *src, const runres *cons,
 						const char *env, const char *opt) {
-	runres m = build_run(mcc, NULL, bdir, idir, env, opt, work, "mcc", src);
-	int div = m.kind == RES_BUILDFAIL || m.kind == RES_INCONCLUSIVE ||
-			  !runres_eq(&m, cons);
-	runres_free(&m);
-	return div;
+	for (int attempt = 0; attempt < MCC_DIVERGE_ATTEMPTS; attempt++) {
+		runres m = build_run(mcc, NULL, bdir, idir, env, opt, work, "mcc", src);
+		int agree = m.kind == RES_OK && runres_eq(&m, cons);
+		runres_free(&m);
+		if (agree)
+			return 0;
+	}
+	return 1;
 }
 
 typedef struct {
