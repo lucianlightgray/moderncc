@@ -91,7 +91,7 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 ## Sanitizers
 - Honor auto over-alignment under `-fsanitize=address` / `-b`.
 - Validate + ungate `alignas` over-align on i386-PE / arm64-PE.
-- UBSan `-recover` mode (parsed, ignored).
+- UBSan `-recover` mode (parsed, ignored). mcc's UBSan is trap-only — a violation emits `brk #0`/`ud2` (verified: `gen_ubsan_*` in mccgen.c), never a callable handler, so it always aborts on the first UB. clang's `-fsanitize=undefined` *defaults to recover* (log + continue), so mcc already diverges by default, and `-fsanitize-recover=undefined` (parsed+ignored at libmcc.c ~2536) can't be honored without returnable handlers. Hence recover is blocked on the "clang-compatible `__ubsan_handle_*` ABI" item below — implement those (non-abort variants that log via the runtime and return) first, then wire `-f[no-]sanitize-recover`/`-fsanitize-trap` to pick handler-vs-trap. The trap/`-fno-sanitize-recover` requests are already satisfied by the current trap behavior (the fuzzer passes `-fno-sanitize-recover=all`).
 - clang-compatible `__ubsan_handle_*` diagnostic ABI.
 - Port native-shadow ASan to riscv64; 39-bit-VA/bottom-up-mmap shadow-layout robustness; access-type READ/WRITE + region-relative locator; riscv64 stack-redzone.
 - Decide compiler-rt-interop vs `libmccsan`.
