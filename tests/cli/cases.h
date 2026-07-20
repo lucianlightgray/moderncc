@@ -456,6 +456,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
 		 "LOC_OK\nEND\n"},
 
+		{"builtin_object_size", "",
+		 "printf 'int main(void){ char b[8];"
+		 " unsigned long s0=__builtin_object_size(b,0), s2=__builtin_object_size(b,2);"
+		 " unsigned long d0=__builtin_dynamic_object_size(b,0);"
+		 " int v=__builtin_speculation_safe_value(42), v2=__builtin_speculation_safe_value(7,0);"
+		 " return (s0==(unsigned long)-1 && s2==0 && d0==(unsigned long)-1 && v==42 && v2==7)?0:1; }\\n' > {W}/os.c && "
+		 "{MCC} -B{B} -I{I} {W}/os.c -o {W}/os 2>/dev/null && {W}/os && echo OS_OK; "
+		 "printf '#include <string.h>\\nint main(void){ char d[16]; memcpy(d,\"hi\",3); return d[0]!=104; }\\n' > {W}/ft.c && "
+		 "{MCC} -B{B} -I{I} -D_FORTIFY_SOURCE=2 -O2 {W}/ft.c -o {W}/ft 2>/dev/null && {W}/ft && echo FORTIFY_OK; echo END",
+		 "OS_OK\nFORTIFY_OK\nEND\n"},
+
 		{"builtin_trap", "",
 		 "printf 'int main(int c,char**v){ (void)v; if(c>100) return 1; __builtin_trap(); return 0; }\\n' > {W}/tr.c && "
 		 "{MCC} -B{B} -I{I} {W}/tr.c -o {W}/tr 2>&1 >/dev/null && "

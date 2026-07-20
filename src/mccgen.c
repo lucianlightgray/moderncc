@@ -8943,6 +8943,26 @@ tok_next:
 		vpop();
 		skip(')');
 		break;
+	case TOK_builtin_object_size:
+	case TOK_builtin_dynamic_object_size:
+		parse_builtin_params(1, "ei");
+		n = 0;
+		if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
+			{ MCC_TRACE("br\n"); n = (int)vtop->c.i; }
+		vtop -= 2;
+		vpushs((n & 2) ? 0 : (addr_t)-1);
+		break;
+	case TOK_builtin_speculation_safe_value:
+		next();
+		skip('(');
+		expr_eq();
+		if (tok == ',') { MCC_TRACE("br\n");
+			next();
+			expr_eq();
+			vpop();
+		}
+		skip(')');
+		break;
 	case TOK_builtin_trap:
 		parse_builtin_params(0, "");
 		if (!nocode_wanted)
