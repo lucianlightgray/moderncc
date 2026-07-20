@@ -5304,6 +5304,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_ALIGNAS: {
 			int n;
 			AttributeDef ad1;
+			if (mcc_state->cversion < 201112)
+				{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignas' is a C11 feature"); }
 			next();
 			skip('(');
 			memset(&ad1, 0, sizeof(AttributeDef));
@@ -5472,6 +5474,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			next();
 			break;
 		case TOK_NORETURN3:
+			if (mcc_state->cversion < 201112)
+				{ MCC_TRACE("br\n"); mcc_pedantic("'_Noreturn' is a C11 feature"); }
 			next();
 			ad->f.func_noreturn = 1;
 			ad->storage_class |= 128;
@@ -8758,6 +8762,8 @@ tok_next:
 	case TOK_ALIGNOF2:
 	case TOK_ALIGNOF3:
 		t = tok;
+		if (t == TOK_ALIGNOF3 && mcc_state->cversion < 201112)
+			{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignof' is a C11 feature"); }
 		next();
 		sizeof_parsed_type = 0;
 		if (tok == '(')
