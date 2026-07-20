@@ -59,8 +59,28 @@ int main(void){ signed char sc=-1; unsigned char uc=200; short sh=-30000; unsign
   int s=0; s+=sc; s+=uc; s+=sh; s+=uh; s+=(int)sc*(int)uc; s+=(unsigned)sh; s+=(long long)sh*uh%97;
   s+=(sc<<3); s+=(uh>>2); return (s&0x7fffffff)%251; }
 EOF
+cat > "$WORK_ABS/d7.c" <<'EOF'
+int main(void){ long double x=1.0L, s=0; int i; for(i=1;i<=25;i++){ x=x*1.1L+0.5L; s+=x/(long double)i; }
+  long long r=(long long)(s*1000.0L); return (int)(r%251<0?-r%251:r%251); }
+EOF
+cat > "$WORK_ABS/d8.c" <<'EOF'
+#include <stdarg.h>
+int isum(int n, ...){ va_list ap; va_start(ap,n); long long s=0; int i; for(i=0;i<n;i++) s+=va_arg(ap,int); va_end(ap); return (int)(s%251); }
+double dsum(int n, ...){ va_list ap; va_start(ap,n); double s=0; int i; for(i=0;i<n;i++) s+=va_arg(ap,double); va_end(ap); return s; }
+int main(void){ int a=isum(6,10,20,30,40,50,60); int b=(int)(dsum(3,1.5,2.5,3.0)*10); return (a+b)%251; }
+EOF
+cat > "$WORK_ABS/d9.c" <<'EOF'
+struct Big{ long long a[8]; };
+struct Big mk(int x){ struct Big b; int i; for(i=0;i<8;i++) b.a[i]=(long long)x*i*100003; return b; }
+int use(struct Big b){ long long s=0; int i; for(i=0;i<8;i++) s+=b.a[i]; return (int)(s%251); }
+int main(void){ int s=0,i; for(i=1;i<=10;i++){ struct Big b=mk(i); s+=use(b); } return (s&0x7fffffff)%251; }
+EOF
+cat > "$WORK_ABS/d10.c" <<'EOF'
+int main(void){ _Complex double z=1.0+2.0*1.0i; int i; for(i=0;i<10;i++) z=z*z/(0.9+0.1*1.0i);
+  double re=__real__ z, im=__imag__ z; long long r=(long long)((re+im)*1000.0); return (int)(r%251<0?-(r%251):r%251); }
+EOF
 
-PROGS="d1 d2 d3 d4 d5 d6"
+PROGS="d1 d2 d3 d4 d5 d6 d7 d8 d9 d10"
 echo "== host: mcc-i386 -> i386 ELF objects at -O0 and -O2 =="
 for t in $PROGS; do
 	"$MCC" -O0 -c "$WORK_ABS/$t.c" -o "$WORK_ABS/${t}_m0.o"
