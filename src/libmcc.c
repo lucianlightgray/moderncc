@@ -958,6 +958,8 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->warn_sequence_point = 1;
 	s->warn_implicit_int = 1;
 	s->warn_return_type = WARN_ON | WARN_ERR;
+	s->warn_shift_count_negative = WARN_ON;
+	s->warn_shift_count_overflow = WARN_ON;
 	s->warn_varargs = 1;
 	s->ms_extensions = 1;
 	s->unwind_tables = 1;
@@ -1952,6 +1954,8 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_strict_prototypes), 0, "strict-prototypes"},
 		{offsetof(MCCState, warn_return_type), WD_ALL, "return-type"},
 		{offsetof(MCCState, warn_return_type), WD_ALL, "return-mismatch"},
+		{offsetof(MCCState, warn_shift_count_negative), 0, "shift-count-negative"},
+		{offsetof(MCCState, warn_shift_count_overflow), 0, "shift-count-overflow"},
 		{0, 0, NULL}};
 
 static const FlagDef options_f[] = {

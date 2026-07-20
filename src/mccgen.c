@@ -2355,6 +2355,14 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 	int shm = (t1 == VT_LLONG) ? 63 : 31;
 	int r;
 
+	if (c2 && !pp_expr && (op == TOK_SHL || op == TOK_SHR || op == TOK_SAR)) { MCC_TRACE("br\n");
+		const char *dir = (op == TOK_SHL) ? "left" : "right";
+		if (!(v2->type.t & VT_UNSIGNED) && (int64_t)l2 < 0)
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_shift_count_negative)("%s shift count is negative", dir); }
+		else if (l2 >= (uint64_t)(shm + 1))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_shift_count_overflow)("%s shift count >= width of type", dir); }
+	}
+
 	if (c1 && c2) { MCC_TRACE("br\n");
 		if (pp_expr && t1 == VT_LLONG && !(v1->type.t & VT_UNSIGNED) && (op == '+' || op == '-' || op == '*') &&
 				pp_signed_ovf(op, l1, l2)) { MCC_TRACE("br\n");

@@ -665,6 +665,8 @@ struct MCCState {
 	unsigned char warn_varargs;
 	unsigned char warn_strict_prototypes;
 	unsigned char warn_return_type;
+	unsigned char warn_shift_count_negative;
+	unsigned char warn_shift_count_overflow;
 	int max_errors;
 	unsigned char warn_pedantic;
 	unsigned char pedantic_errors;
