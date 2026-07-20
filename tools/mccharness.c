@@ -58,6 +58,28 @@ static int run_to_retry(const char *const *argv, const char *const *launcher,
 	return rc;
 }
 
+static int transient_spawn_fail(const char *err) {
+	return !err || !*err || strstr(err, "Resource temporarily unavailable") ||
+				 strstr(err, "posix_spawn") || strstr(err, "fork failed") ||
+				 strstr(err, "Cannot allocate memory") || strstr(err, "cannot execute");
+}
+
+static int compile_retry(const char *const *argv, char **err, const char *what) {
+	int rc = -1, attempt;
+	for (attempt = 1; attempt <= 4; attempt++) {
+		rc = compile(argv, err);
+		if (rc == 0 || !transient_spawn_fail(*err))
+			return rc;
+		if (attempt < 4) {
+			fprintf(stderr, "  %s: transient spawn failure, attempt %d/4\n", what,
+							attempt);
+			free(*err);
+			*err = NULL;
+		}
+	}
+	return rc;
+}
+
 static const char *opt(int argc, char **argv, const char *key, const char *dflt) {
 	int i;
 	for (i = 2; i < argc - 1; i++)
@@ -278,7 +300,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, eg);
-			if (compile(Z(&v), &err)) {
+			if (compile_retry(Z(&v), &err, "gcc build")) {
 				report_err("gcc build", name, err);
 				free(err);
 				fail++;
@@ -289,7 +311,7 @@ static int suite_parts(int argc, char **argv) {
 		}
 		{
 			const char *r[] = {eg, 0};
-			run_to(r, og);
+			run_to_retry(r, NULL, og, "gcc run");
 		}
 
 		{
@@ -303,7 +325,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, ec);
-			if (compile(Z(&v), &err)) {
+			if (compile_retry(Z(&v), &err, "clang build")) {
 				report_err("clang build", name, err);
 				free(err);
 				fail++;
@@ -314,7 +336,7 @@ static int suite_parts(int argc, char **argv) {
 		}
 		{
 			const char *r[] = {ec, 0};
-			run_to(r, oc);
+			run_to_retry(r, NULL, oc, "clang run");
 		}
 
 		{
@@ -327,7 +349,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, em);
-			if (compile(Z(&v), &err)) {
+			if (compile_retry(Z(&v), &err, "mcc build")) {
 				report_err("mcc build", name, err);
 				free(err);
 				fail++;
@@ -338,7 +360,7 @@ static int suite_parts(int argc, char **argv) {
 		}
 		{
 			const char *r[] = {em, 0};
-			run_to(r, om);
+			run_to_retry(r, NULL, om, "mcc run");
 		}
 
 		if (ts_file_equal(og, oc) != 1) {
