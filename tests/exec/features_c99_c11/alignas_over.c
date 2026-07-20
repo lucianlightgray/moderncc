@@ -96,7 +96,8 @@ int main(void) {
 
 #if (defined(__x86_64__) || defined(__riscv) || defined(__aarch64__) || \
 		 defined(__i386__) || defined(__arm__)) &&                          \
-		(!defined(_WIN32) || defined(__x86_64__))
+		(!defined(_WIN32) || defined(__x86_64__) || defined(__i386__) ||     \
+		 defined(__aarch64__))
 	{
 		_Alignas(16) char la16;
 		_Alignas(32) int la32;

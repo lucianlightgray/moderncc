@@ -2305,7 +2305,7 @@ if(MCC_BUILD_STATIC_EXE AND NOT MSVC AND NOT APPLE
     endforeach()
 endif()
 
-set(MCC_MCCRT_EXTRA_O runmain bt-exe bt-dll bt-log bcheck mccasan)
+set(MCC_MCCRT_EXTRA_O runmain bt-exe bt-dll bt-log bcheck mccasan mccubsan)
 
 function(_mcc_mccrt_src obj outvar)
     set(_lib "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib")
@@ -2352,6 +2352,9 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
         list(APPEND _objs runmain tcov)
         if((cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64") AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
             list(APPEND _objs mccasan)
+        endif()
+        if(cpu STREQUAL "x86_64")
+            list(APPEND _objs mccubsan)
         endif()
         if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off")
             list(APPEND _objs bt-exe bt-log)
@@ -2996,6 +2999,18 @@ if(MCC_BUILD_TESTS)
             "-DEXPECT=3705032704 1983905792 2147483648"
             -P "${_ubsan_dir}/run_ubsan.cmake")
         set_tests_properties("ubsan/clean_unsigned_wrap" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        # NEW recover/diagnostic path (do_sanitize_recover, gated OFF by default):
+        # -fsanitize-recover=undefined swaps the trapping ud2 for a call to the
+        # minimal-ABI __ubsan_handle_*_minimal runtime handler (runtime/lib/
+        # mccubsan.c) which logs to stderr and RETURNS -> the program survives.
+        add_test(NAME "ubsan/recover_signed_add" COMMAND "${CMAKE_COMMAND}"
+            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+            "-DSRC=${_ubsan_dir}/recover_signed_add.c"
+            "-DOUT=${CMAKE_BINARY_DIR}/ubsan-recover_signed_add${MCC_EXESUF}"
+            "-DMODE=recover"
+            "-DEXPECT=survived"
+            -P "${_ubsan_dir}/run_ubsan.cmake")
+        set_tests_properties("ubsan/recover_signed_add" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
         mcc_skip_test(ubsan-suite "-fsanitize=undefined trap-mode instrumentation is native x86_64 only (ELF/Mach-O/PE)")
     endif()
@@ -3750,10 +3765,17 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(diff3-suite "needs native host + >=2 distinct reference compilers (gcc/clang, or add -DMCC_DIFF3_EXTRA_REFS=label=path; build the clang-toolchain target for a self-contained clang)")
     endif()
 
-    # Differential random-program miscompile fuzzer (TODO.md §0). x86_64-Linux
-    # only: the oracle needs gcc AND clang executing mcc's own target ISA.
+    # Differential random-program miscompile fuzzer (TODO.md §0). Native
+    # x86_64/arm64-Linux: the oracle is a pure gcc+clang majority-vote
+    # differential (UBSan/ASan-gated), so it is arch-portable — it only needs
+    # two distinct reference compilers executing mcc's own target ISA natively
+    # (hence NOT MCC_EMULATOR and a same-ISA host). It is not the x86-only
+    # shadow-IV oracle (MCC_CONFIG_AST_SHADOW), which is a separate mechanism.
+    # arm64 makes the real-silicon runner a weak-memory-model backstop for all
+    # arm64 codegen (TODO.md cross-arch parity: "a linux-arm64 CI fuzz cell").
     if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok
-       AND MCC_CPU STREQUAL "x86_64" AND NOT MCC_TARGETOS STREQUAL "WIN32")
+       AND (MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
+       AND NOT MCC_TARGETOS STREQUAL "WIN32")
         add_executable(fuzz_runner tests/fuzz/runner.c)
         add_test(NAME "fuzz/smoke"
             COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
@@ -3777,7 +3799,7 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("fuzz/corpus" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
     else()
-        mcc_skip_test(fuzz-suite "needs native x86_64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
+        mcc_skip_test(fuzz-suite "needs native x86_64/arm64 host + >=2 distinct reference compilers (differential oracle executes mcc's own target ISA; add -DMCC_DIFF3_EXTRA_REFS=label=path to widen)")
     endif()
 
     if(MCC_TARGETOS STREQUAL "WIN32")

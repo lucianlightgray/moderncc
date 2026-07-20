@@ -1672,12 +1672,47 @@ ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	return t;
 }
 
-static void gen_ubsan_check(int cc) { MCC_TRACE("enter\n");
+enum { UBK_OVERFLOW, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
+
+static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
+	switch (kind) {
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
+	default:          { MCC_TRACE("br\n"); return "__ubsan_handle_add_overflow_minimal"; }
+	}
+}
+
+static void gen_ubsan_trap_or_call(int kind) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+		Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
+		g(0x50); g(0x51); g(0x52); g(0x56); g(0x57);
+		g(0x41); g(0x50); g(0x41); g(0x51); g(0x41); g(0x52); g(0x41); g(0x53);
+		g(0x53);
+		g(0x48); g(0x89); g(0xe3);
+		g(0x48); g(0x83); g(0xe4); g(0xf0);
+		g(0x48); g(0x83); g(0xec); g(0x20);
+		oad(0xe8, 0);
+		greloca(cur_text_section, sym, ind - 4, R_X86_64_PLT32, -4);
+		g(0x48); g(0x89); g(0xdc);
+		g(0x5b);
+		g(0x41); g(0x5b); g(0x41); g(0x5a); g(0x41); g(0x59); g(0x41); g(0x58);
+		g(0x5f); g(0x5e); g(0x5a); g(0x59); g(0x58);
+		return;
+	}
+	o(0x0b0f);
+}
+
+static void gen_ubsan_check_k(int cc, int kind) { MCC_TRACE("enter\n");
 	int t;
 	g(0x0f);
 	t = gjmp2(cc, 0);
-	o(0x0b0f);
+	gen_ubsan_trap_or_call(kind);
 	gsym(t);
+}
+
+static void gen_ubsan_check(int cc) { MCC_TRACE("enter\n");
+	gen_ubsan_check_k(cc, UBK_OVERFLOW);
 }
 
 void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
@@ -1689,7 +1724,7 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	r = vtop->r & VT_VALMASK;
 	orex(1, r, r, 0x85);
 	o(0xc0 + REG_VALUE(r) * 9);
-	gen_ubsan_check(0x85);
+	gen_ubsan_check_k(0x85, UBK_NULLPTR);
 }
 
 void gen_trap(void) { MCC_TRACE("enter\n");
@@ -1834,7 +1869,7 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 				orex(0, MCC_TREG_RCX, 0, 0x83);
 				o((0xc0 | (7 << 3)) + REG_VALUE(MCC_TREG_RCX));
 				g(ll ? 64 : 32);
-				gen_ubsan_check(0x82);
+				gen_ubsan_check_k(0x82, UBK_SHIFT);
 			}
 			orex(ll, r, 0, 0xd3);
 			o(opc | REG_VALUE(r));
@@ -1858,7 +1893,7 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
 			orex(ll, fr, fr, 0x85);
 			o(0xc0 + REG_VALUE(fr) * 9);
-			gen_ubsan_check(0x85);
+			gen_ubsan_check_k(0x85, UBK_DIVREM);
 		}
 		orex(ll, 0, 0, uu ? 0xd231 : 0x99);
 		orex(ll, fr, 0, 0xf7);

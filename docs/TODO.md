@@ -35,6 +35,24 @@
 
 ## JIT Windows / i386-PE
 - i386-PE KGC/FP(x87)/mixed stub tail (i386 JIT promotion; also the Linux i386 gap).
+  - DONE (gated behind MCC_JIT_I386_STUBS, default OFF; default build byte-identical —
+    x86_64/arm64 libmcc.c.obj proven byte-identical vs pristine, debug + -O2):
+    the three i386 cdecl stub builders mccjit_make_kgc_stub_n/_fp/_mixed, the per-signature
+    i386 mixed cdecl reconstruction thunk (published via the i386-only mccjit_i386_active_thunk),
+    the i386 counter stub, trampoline, and dispatch-entry (src/mccjit_embed.c). Validated on a
+    native i386-PE build (mstorsjo clang -m32, MCC_TARGET_ARCH=i386): jit/selftest-pool PASSES
+    gate-ON (counter stub + async promote + KGC dispatch stub + jmp*slot), fparg FP(x87)
+    differential-verify sub-tests PASS, and all three stub bodies (n/fp/mixed, faithful +
+    divergent + x87-FP-return) pass a standalone machine-code harness (8/8). Gate-OFF: all i386
+    stub builders return NULL and the selftests SKIP exactly as before. x86_64/arm64 unaffected
+    (47/47 JIT selftests green; tracegate green).
+  - REMAINING to un-gate (needs the M8 bar):
+    (1) i386 AST-faithful-replay desync for mixed long+double signatures ([ast-verify] desync) blocks
+        the -run baking that would stash such functions, so the mixed stub can't yet promote through
+        the normal pipeline (front-end/AST-recorder gap, upstream of the stub tail);
+    (2) the mode-6 entry dispatcher in src/mccast.c emits hardcoded x86-64 opcodes (REX/rbp) with no
+        i386 variant, so end-to-end -run JIT baking does not fire on i386 (fparg end-to-end sub-test);
+    (3) differential vs gcc/clang + self-host on i386, then flip the default.
 - arm64-PE runtime-JIT (frameless-leaf return corruption + RtlAddFunctionTable/icache); needs arm64-Windows HW.
 - MSVC-arm64 JIT-exec miscompile; needs arm64-Windows HW.
 - Standalone `--embed-jit` blob for i386-PE / arm64-PE.
@@ -74,8 +92,8 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 - i386: UBSan trap, ASan native-shadow, stack-protector, TLS GD/LDM, 32-bit cmov, 64-bit div-magic helper, JIT stub tail, Tier-4 replay-inline.
 - arm (armv7): raise from Tier-2 — self-host, cmov, UBSan trap, ASan native-shadow, stack-protector, JIT stub tail, replay-inline.
 - arm64: TLS GD/LDM (currently LE only), mode-6 object-output dispatch, kgc-mixed stub, in-place patch row, flip `opt_promote` on.
-- PE targets: UBSan handler ABI, asan-shadow, over-align on i386-PE/arm64-PE, standalone embed-jit blob, arm64-PE runtime JIT.
-- Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO); a linux-arm64 CI fuzz cell.
+- PE targets: UBSan handler ABI, asan-shadow, standalone embed-jit blob, arm64-PE runtime JIT. (over-align on i386-PE/arm64-PE validated + ungated — no compiler gate existed; codegen matches ELF oracle byte-for-byte modulo LLP64 type sizes; i386-PE runs the alignas_over test natively.)
+- Provide a weak-memory-model validator for aarch64/armv7 (qemu is x86-TSO). DONE for the linux-arm64 CI fuzz cell: the differential fuzzer (portable gcc+clang majority-vote oracle, not the x86-only shadow-IV oracle) now runs on native `ubuntu-24.04-arm` — the small default band per-push (ci.yml `linux`/arm64) plus a time-boxed nightly `campaign` soak (matrix.yml `fuzz-arm64`). Still open: an armv7 cell and a dedicated concurrency/litmus validator.
 
 ## Const-data (P2)
 - Size-changing datacomp: `.init_array` decompress ctor (all 5 arches) + `__mcc_decompress` runtime (M6).
@@ -91,9 +109,10 @@ Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, J
 
 ## Sanitizers
 - Honor auto over-alignment under `-fsanitize=address` / `-b`.
-- Validate + ungate `alignas` over-align on i386-PE / arm64-PE.
-- UBSan `-recover` mode (parsed, ignored). mcc's UBSan is trap-only — a violation emits `brk #0`/`ud2` (verified: `gen_ubsan_*` in mccgen.c), never a callable handler, so it always aborts on the first UB. clang's `-fsanitize=undefined` *defaults to recover* (log + continue), so mcc already diverges by default, and `-fsanitize-recover=undefined` (parsed+ignored at libmcc.c ~2536) can't be honored without returnable handlers. Hence recover is blocked on the "clang-compatible `__ubsan_handle_*` ABI" item below — implement those (non-abort variants that log via the runtime and return) first, then wire `-f[no-]sanitize-recover`/`-fsanitize-trap` to pick handler-vs-trap. The trap/`-fno-sanitize-recover` requests are already satisfied by the current trap behavior (the fuzzer passes `-fno-sanitize-recover=all`).
-- clang-compatible `__ubsan_handle_*` diagnostic ABI.
+- DONE: Validate + ungate `alignas` over-align on i386-PE / arm64-PE. No compiler gate ever existed (`STACK_OVERALIGN_MAX` is defined for every arch; the `overalign_indirect` path in `mccgen.c` `decl_initializer_alloc` is arch-neutral and the win64 `rax`/shadow-space split is `#if PE && X86_64` only). i386-PE: `and esp,-N` masks ESP down after the 16-align `alloca` (no shadow space on Win32) — verified by disasm, runs the full `alignas_over.c` natively (OK), matches i686 clang/msvcrt. arm64-PE: inline `and sp,sp,-N` — the `.text` is byte-identical to the native-arm64 (ELF) oracle except the 3 expected LLP64-vs-LP64 words (`sizeof(long)` 4-vs-8, `str w`/`str x`). Ungating was test-only (`alignas_over.c` `#if` now enables the runtime block for `__i386__`/`__aarch64__` on `_WIN32`); default build stays byte-identical.
+- UBSan `-recover` mode — **x86_64 landed (gated OFF), ELF+PE validated**. New `do_sanitize_recover` gate (mcc.h) is set by `-fsanitize-recover=undefined|all` / `-fno-sanitize-trap=undefined|all` and cleared by `-fno-sanitize-recover=…` / `-fsanitize-trap=…` (libmcc.c ~2533, last-flag-wins). When ON, x86_64-gen.c `gen_ubsan_trap_or_call` swaps the trapping `ud2` for a PLT32 `call __ubsan_handle_<kind>_minimal` (kinds: add_overflow / divrem_overflow / shift_out_of_bounds / type_mismatch_v1 for nullptr); the minimal-ABI handlers (runtime/lib/mccubsan.c, auto-linked via mcc_add_support in mccpe.c + mccelf.c) log to stderr and RETURN. Default build is byte-identical (verified: `-fsanitize=undefined` object cmp'd clean-vs-patched). Test: `ubsan/recover_signed_add` (MODE=recover in run_ubsan.cmake, -O0..-O3). Remaining: (1) arm64/riscv64 emit the call (currently x86_64-only, else a warning keeps trap); (2) per-check recover sets (`-fsanitize-recover=shift` only) — today it's all-or-nothing per TU; (3) upgrade minimal→full ABI (emit `struct {SourceLocation,TypeDescriptor}` tables + operand values so the diagnostic names file:line and values) — large, needs `.rodata` descriptor emission; (4) sub/mul currently reuse the add_overflow symbol (cc-only dispatch can't tell +/-/* apart at the check site) — thread the op through for precise naming; (5) an atexit summary + exit-nonzero-on-any-UB option (the `mcc_ubsan_seen` flag is stubbed).
+- clang-compatible `__ubsan_handle_*` diagnostic ABI — minimal-runtime variants DONE (see above). Full-runtime ABI (Data-pointer + ValueHandle args, SourceLocation/TypeDescriptor tables) is the remaining increment.
+- **ASan on PE (x86_64-PE / i386-PE)** — native-shadow ASan is currently ELF/Mach-O-Linux-only and BROKEN if forced on PE: `-fasan-shadow` compiles+links on PE and emits the inline shadow probe (`movsbl 0x7fff8000(rax)`), but (a) the `mccasan.o` runtime is excluded on WIN32 (CMakeLists ~2353) so no shadow is mapped and no SIGILL handler is installed, and (b) stack/global redzone emission (`gen_asan_stack_prolog/epilog`, `.asan_lstack`, `__asan_globals`) is `#ifndef MCC_TARGET_PE` in x86_64-gen.c/mccgen.c. Net: an instrumented deref reads unmapped 0x7fff8000 and **segfaults on the probe itself** (verified: OOB `a[6]=1` under `-fasan-shadow` → raw segfault, not an ASan report). PE port plan: (1) new `runtime/win32/lib/mccasan_win32.c` that reserves shadow via `VirtualAlloc(MEM_RESERVE)` + commits lazily, installs an `AddVectoredExceptionHandler` for `EXCEPTION_ILLEGAL_INSTRUCTION` (reading rax/rdx/rcx from the `CONTEXT`, mirroring the POSIX `on_sigill`), and hooks malloc/free via the msvcrt CRT (or `HeapAlloc`); (2) resolve the fixed-offset collision — the Linux 0x7fff8000 offset + high-shadow ranges overlap Win64 user address space, so pick a PE-specific offset and MEM_RESERVE the shadow range up-front; (3) replace the ELF section-bracket symbols `__start/__stop___asan_globals` with a PE-compatible grouped-section (`.asan$a`/`.asan$z` COFF `$`-ordered sections) or an explicit registration table; drop the `#ifndef MCC_TARGET_PE` guards on the stack/global emitters and adapt reloc types (PC32 in-TU); (4) COFF section-name length: `.asan_lstack`/`__asan_globals` exceed 8 chars → use `/n`-longname or short names. Until then, `-fasan-shadow` should hard-error on PE instead of silently miscompiling. (The shipped `-fsanitize=address` on PE goes through the separate bcheck runtime, which works.)
 - Port native-shadow ASan to riscv64; 39-bit-VA/bottom-up-mmap shadow-layout robustness; access-type READ/WRITE + region-relative locator; riscv64 stack-redzone.
 - Decide compiler-rt-interop vs `libmccsan`.
 - Explore `-fsanitize-coverage`, `-fsanitize=cfi`, `_FORTIFY_SOURCE`, freestanding/KASAN-style runtime sanitizer.

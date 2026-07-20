@@ -2609,6 +2609,18 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	}
 #endif
 
+	if (s1->do_sanitize_recover)
+		{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccubsan.o"); }
+
+	if (s1->do_asan_shadow) { MCC_TRACE("br\n");
+		mcc_error_noabort(
+				"-fasan-shadow (native-shadow AddressSanitizer) is not yet ported to "
+				"PE targets: the shadow runtime + stack/global redzones are "
+				"ELF/Mach-O only, so an instrumented access would fault on the shadow "
+				"probe itself. Use -fsanitize=address (bcheck runtime) on Windows.");
+		return;
+	}
+
 #ifdef MCC_TARGET_IS_HOST
 	if (MCC_OUTPUT_MEMORY != s1->output_type || s1->run_main)
 #endif
