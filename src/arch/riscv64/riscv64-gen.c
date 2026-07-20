@@ -976,11 +976,62 @@ ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	return gjmp(t);
 }
 
+enum { UBK_OVERFLOW, UBK_SUB, UBK_MUL, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
+
+static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SUB:     { MCC_TRACE("br\n"); return "__ubsan_handle_sub_overflow_minimal"; }
+	case UBK_MUL:     { MCC_TRACE("br\n"); return "__ubsan_handle_mul_overflow_minimal"; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
+	default:          { MCC_TRACE("br\n"); return "__ubsan_handle_add_overflow_minimal"; }
+	}
+}
+
+#define RISCV64_UBSAN_RECOVER_INSNS 22
+
+static uint32_t riscv64_btype_imm(int off) { MCC_TRACE("enter\n");
+	uint32_t u = (uint32_t)off;
+	return ((u >> 12 & 1u) << 31) | ((u >> 5 & 0x3fu) << 25) |
+		((u >> 1 & 0xfu) << 8) | ((u >> 11 & 1u) << 7);
+}
+
+static const uint8_t riscv64_ubsan_save_regs[9] = {1, 10, 11, 12, 13, 14, 15, 16, 17};
+
+static void riscv64_ubsan_emit_recover(int kind) { MCC_TRACE("enter\n");
+	Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
+	int i;
+	EIu(0x13, 0, 2, 2, (uint32_t)(-80) & 0xfff);
+	for (i = 0; i < 9; i++)
+		ES(0x23, 3, 2, riscv64_ubsan_save_regs[i], (uint32_t)i * 8u);
+	greloca(cur_text_section, sym, ind, R_RISCV_CALL_PLT, 0);
+	o(0x17 | (1 << 7));
+	EI(0x67, 0, 1, 1, 0);
+	for (i = 0; i < 9; i++)
+		EI(0x03, 3, riscv64_ubsan_save_regs[i], 2, (uint32_t)i * 8u);
+	EIu(0x13, 0, 2, 2, 80);
+}
+
+static uint32_t riscv64_ubsan_skip_imm(void) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover)
+		{ MCC_TRACE("br\n"); return riscv64_btype_imm(4 + 4 * RISCV64_UBSAN_RECOVER_INSNS); }
+	return riscv64_btype_imm(8);
+}
+
+static void riscv64_ubsan_body(int kind) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+		riscv64_ubsan_emit_recover(kind);
+		return;
+	}
+	o(0x00100073);
+}
+
 static void riscv64_ubsan_div0(int b) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
-	o(0x63 | 1u << 12 | (uint32_t)b << 15 | 8u << 7);
-	o(0x00100073);
+	o(0x63 | 1u << 12 | (uint32_t)b << 15 | riscv64_ubsan_skip_imm());
+	riscv64_ubsan_body(UBK_DIVREM);
 }
 
 void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
@@ -988,8 +1039,8 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if ((vtop->r & VT_VALMASK) >= VT_CONST)
 		{ MCC_TRACE("br\n"); return; }
-	o(0x63 | 1u << 12 | (uint32_t)ireg(vtop->r & VT_VALMASK) << 15 | 8u << 7);
-	o(0x00100073);
+	o(0x63 | 1u << 12 | (uint32_t)ireg(vtop->r & VT_VALMASK) << 15 | riscv64_ubsan_skip_imm());
+	riscv64_ubsan_body(UBK_NULLPTR);
 }
 
 void gen_trap(void) { MCC_TRACE("enter\n");
@@ -1000,8 +1051,8 @@ static void riscv64_ubsan_shift(int cnt, uint32_t width) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
 	o(0x13 | 3u << 12 | 5u << 7 | (uint32_t)cnt << 15 | width << 20);
-	o(0x63 | 1u << 12 | 5u << 15 | 8u << 7);
-	o(0x00100073);
+	o(0x63 | 1u << 12 | 5u << 15 | riscv64_ubsan_skip_imm());
+	riscv64_ubsan_body(UBK_SHIFT);
 }
 
 static void riscv64_ubsan_addsub_pre(int a, int b) { MCC_TRACE("enter\n");
@@ -1015,20 +1066,20 @@ static void riscv64_ubsan_addsub_post(int op, int d) { MCC_TRACE("enter\n");
 	if (op == '+')
 		{ MCC_TRACE("br\n"); o(0x13 | 4u << 12 | 5u << 7 | 5u << 15 | 0xfffu << 20); }
 	o(0x33 | 7u << 12 | 5u << 7 | 5u << 15 | 7u << 20);
-	o(0x63 | 5u << 12 | 5u << 15 | 8u << 7);
-	o(0x00100073);
+	o(0x63 | 5u << 12 | 5u << 15 | riscv64_ubsan_skip_imm());
+	riscv64_ubsan_body(op == '+' ? UBK_OVERFLOW : UBK_SUB);
 }
 
 static void riscv64_ubsan_mul_ovf(int ll, int d) { MCC_TRACE("enter\n");
 	if (ll == 8) { MCC_TRACE("br\n");
 		o(0x33 | 0u << 12 | 7u << 7 | 5u << 15 | 6u << 20 | 1u << 25);
-		o(0x63 | 0u << 12 | 7u << 15 | (uint32_t)d << 20 | 8u << 7);
+		o(0x63 | 0u << 12 | 7u << 15 | (uint32_t)d << 20 | riscv64_ubsan_skip_imm());
 	} else { MCC_TRACE("br\n");
 		o(0x33 | 1u << 12 | 7u << 7 | 5u << 15 | 6u << 20 | 1u << 25);
 		o(0x13 | 5u << 12 | 5u << 7 | (uint32_t)d << 15 | 0x43fu << 20);
-		o(0x63 | 0u << 12 | 7u << 15 | 5u << 20 | 8u << 7);
+		o(0x63 | 0u << 12 | 7u << 15 | 5u << 20 | riscv64_ubsan_skip_imm());
 	}
-	o(0x00100073);
+	riscv64_ubsan_body(UBK_MUL);
 }
 
 static void gen_opil(int op, int ll) { MCC_TRACE("enter\n");

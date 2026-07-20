@@ -2550,12 +2550,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 								 !strcmp(optarg, "no-sanitize-trap=undefined") ||
 								 !strcmp(optarg, "no-sanitize-trap=all") ||
 								 !strcmp(optarg, "no-sanitize-trap")) { MCC_TRACE("br\n");
-#if defined MCC_TARGET_X86_64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 				s->do_sanitize_recover = 1;
 #else
 				mcc_warning_c(warn_unsupported)(
 						"-f%s: UBSan recover (diagnostic handlers) is only implemented "
-						"on x86_64; keeping trap-on-error",
+						"on x86_64, arm64 and riscv64; keeping trap-on-error",
 						optarg);
 #endif
 			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) { MCC_TRACE("br\n");

@@ -1882,11 +1882,57 @@ static int arm64_gen_opic(int op, uint32_t l, int rev, uint64_t val,
 	return 0;
 }
 
-static void arm64_ubsan_trap_if_zero(uint32_t reg, uint32_t l) { MCC_TRACE("enter\n");
+enum { UBK_OVERFLOW, UBK_SUB, UBK_MUL, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
+
+static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SUB:     { MCC_TRACE("br\n"); return "__ubsan_handle_sub_overflow_minimal"; }
+	case UBK_MUL:     { MCC_TRACE("br\n"); return "__ubsan_handle_mul_overflow_minimal"; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
+	default:          { MCC_TRACE("br\n"); return "__ubsan_handle_add_overflow_minimal"; }
+	}
+}
+
+#define ARM64_UBSAN_RECOVER_INSNS 21
+
+static const uint8_t arm64_ubsan_save_pairs[10][2] = {
+		{0, 1}, {2, 3}, {4, 5}, {6, 7}, {8, 9},
+		{10, 11}, {12, 13}, {14, 15}, {16, 17}, {18, 30}};
+
+static void arm64_ubsan_emit_recover(int kind) { MCC_TRACE("enter\n");
+	Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
+	int i;
+	for (i = 0; i < 10; i++)
+		o(0xa9bf0000 | (uint32_t)arm64_ubsan_save_pairs[i][1] << 10 |
+			(31u << 5) | arm64_ubsan_save_pairs[i][0]);
+	greloca(cur_text_section, sym, ind, R_AARCH64_CALL26, 0);
+	o(ARM64_BL);
+	for (i = 9; i >= 0; i--)
+		o(0xa8c10000 | (uint32_t)arm64_ubsan_save_pairs[i][1] << 10 |
+			(31u << 5) | arm64_ubsan_save_pairs[i][0]);
+}
+
+static uint32_t arm64_ubsan_skip(void) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover)
+		{ MCC_TRACE("br\n"); return 1u + ARM64_UBSAN_RECOVER_INSNS; }
+	return 2u;
+}
+
+static void arm64_ubsan_body(int kind) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+		arm64_ubsan_emit_recover(kind);
+		return;
+	}
+	o(0xd4200000);
+}
+
+static void arm64_ubsan_trap_if_zero(uint32_t reg, uint32_t l, int kind) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
-	o(0x35000000 | l << 31 | (2u << 5) | reg);
-	o(0xd4200000);
+	o(0x35000000 | l << 31 | (arm64_ubsan_skip() << 5) | reg);
+	arm64_ubsan_body(kind);
 }
 
 static int arm64_ubsan_on(void) { MCC_TRACE("enter\n");
@@ -1898,17 +1944,17 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if ((vtop->r & VT_VALMASK) >= VT_CONST)
 		{ MCC_TRACE("br\n"); return; }
-	o(0xb5000000 | (2u << 5) | intr(vtop->r));
-	o(0xd4200000);
+	o(0xb5000000 | (arm64_ubsan_skip() << 5) | intr(vtop->r));
+	arm64_ubsan_body(UBK_NULLPTR);
 }
 
 void gen_trap(void) { MCC_TRACE("enter\n");
 	o(0xd4200000);
 }
 
-static void arm64_ubsan_trap_cond(uint32_t skip_cond) { MCC_TRACE("enter\n");
-	o(0x54000000 | (2u << 5) | skip_cond);
-	o(0xd4200000);
+static void arm64_ubsan_trap_cond(uint32_t skip_cond, int kind) { MCC_TRACE("enter\n");
+	o(0x54000000 | (arm64_ubsan_skip() << 5) | skip_cond);
+	arm64_ubsan_body(kind);
 }
 
 static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) { MCC_TRACE("enter\n");
@@ -1916,7 +1962,7 @@ static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) { MCC_TRACE("enter
 		{ MCC_TRACE("br\n"); return; }
 	uint32_t width = l ? 64 : 32;
 	o(0x7100001f | l << 31 | (width << 10) | (cnt << 5));
-	arm64_ubsan_trap_cond(3);
+	arm64_ubsan_trap_cond(3, UBK_SHIFT);
 }
 
 /* Inline ASan shadow probe for -fasan-shadow (mirrors x86_64 gen_asan_shadow_check):
@@ -1990,7 +2036,7 @@ static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");
 
 	switch (op) { MCC_TRACE("br\n");
 	case '%':
-		arm64_ubsan_trap_if_zero(b, l);
+		arm64_ubsan_trap_if_zero(b, l, UBK_DIVREM);
 		o(0x1ac00c00 | l << 31 | 30 | a << 5 | b << 16);
 		o(0x1b008000 | l << 31 | x | (uint32_t)30 << 5 |
 			b << 16 | a << 10);
@@ -2009,27 +2055,27 @@ static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");
 				o(0x1b007c00 | x | (uint32_t)a << 5 | (uint32_t)b << 16);
 				o(0xeb200000 | 30u << 16 | 6u << 13 | 30u << 5 | 31u);
 			}
-			arm64_ubsan_trap_cond(0);
+			arm64_ubsan_trap_cond(0, UBK_MUL);
 		} else
 			{ MCC_TRACE("br\n"); o(0x1b007c00 | l << 31 | x | a << 5 | b << 16); }
 		break;
 	case '+':
 		if (arm64_ubsan_on() && !uns) { MCC_TRACE("br\n");
 			o(0x2b000000 | l << 31 | x | a << 5 | b << 16);
-			arm64_ubsan_trap_cond(7);
+			arm64_ubsan_trap_cond(7, UBK_OVERFLOW);
 		} else
 			{ MCC_TRACE("br\n"); o(0x0b000000 | l << 31 | x | a << 5 | b << 16); }
 		break;
 	case '-':
 		if (arm64_ubsan_on() && !uns) { MCC_TRACE("br\n");
 			o(0x6b000000 | l << 31 | x | a << 5 | b << 16);
-			arm64_ubsan_trap_cond(7);
+			arm64_ubsan_trap_cond(7, UBK_SUB);
 		} else
 			{ MCC_TRACE("br\n"); o(0x4b000000 | l << 31 | x | a << 5 | b << 16); }
 		break;
 	case '/':
 	case TOK_PDIV:
-		arm64_ubsan_trap_if_zero(b, l);
+		arm64_ubsan_trap_if_zero(b, l, UBK_DIVREM);
 		o(0x1ac00c00 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '^':
@@ -2075,7 +2121,7 @@ static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");
 		o(0x1ac02400 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case TOK_UDIV:
-		arm64_ubsan_trap_if_zero(b, l);
+		arm64_ubsan_trap_if_zero(b, l, UBK_DIVREM);
 		o(0x1ac00800 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case TOK_UGE:
@@ -2095,7 +2141,7 @@ static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");
 		o(0x1a9f87e0 | x);
 		break;
 	case TOK_UMOD:
-		arm64_ubsan_trap_if_zero(b, l);
+		arm64_ubsan_trap_if_zero(b, l, UBK_DIVREM);
 		o(0x1ac00800 | l << 31 | 30 | a << 5 | b << 16);
 		o(0x1b008000 | l << 31 | x | (uint32_t)30 << 5 |
 			b << 16 | a << 10);
