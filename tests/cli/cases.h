@@ -449,6 +449,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ta.c -o {W}/ta.o 2>/dev/null && echo DEFAULT_OK; echo END",
 		 "tentative array definition assumed to have one element\nNO_ESCALATE_OK\nDEFAULT_OK\nEND\n"},
 
+		{"builtin_source_location", "",
+		 "printf 'int main(void){ int l=__builtin_LINE(); const char *f=__builtin_FILE();"
+		 " const char *fn=__builtin_FUNCTION(); long e=__builtin_expect_with_probability(l,0,0.9);"
+		 " return (l==1 && f[0]!=0 && fn[0]!=0 && e==l)?0:1; }\\n' > {W}/loc.c && "
+		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
+		 "LOC_OK\nEND\n"},
+
 		{"builtin_trap", "",
 		 "printf 'int main(int c,char**v){ (void)v; if(c>100) return 1; __builtin_trap(); return 0; }\\n' > {W}/tr.c && "
 		 "{MCC} -B{B} -I{I} {W}/tr.c -o {W}/tr 2>&1 >/dev/null && "

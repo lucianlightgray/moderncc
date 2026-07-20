@@ -8904,6 +8904,45 @@ tok_next:
 		vpush(&type);
 		CODE_OFF();
 		break;
+	case TOK_builtin_LINE:
+		next();
+		skip('(');
+		skip(')');
+		vpushi(file->line_num);
+		break;
+	case TOK_builtin_FILE:
+		next();
+		skip('(');
+		if (tok != ')')
+			{ MCC_TRACE("br\n"); expect("')'"); }
+		tok = TOK_STR;
+		cstr_reset(&tokcstr);
+		cstr_cat(&tokcstr, file->filename, 0);
+		tokc.str.size = tokcstr.size;
+		tokc.str.data = tokcstr.data;
+		goto case_TOK_STR;
+	case TOK_builtin_FUNCTION:
+		next();
+		skip('(');
+		if (tok != ')')
+			{ MCC_TRACE("br\n"); expect("')'"); }
+		tok = TOK_STR;
+		cstr_reset(&tokcstr);
+		cstr_cat(&tokcstr, funcname, 0);
+		tokc.str.size = tokcstr.size;
+		tokc.str.data = tokcstr.data;
+		goto case_TOK_STR;
+	case TOK_builtin_expect_with_probability:
+		next();
+		skip('(');
+		expr_eq();
+		skip(',');
+		expr_const64();
+		skip(',');
+		expr_eq();
+		vpop();
+		skip(')');
+		break;
 	case TOK_builtin_trap:
 		parse_builtin_params(0, "");
 		if (!nocode_wanted)
