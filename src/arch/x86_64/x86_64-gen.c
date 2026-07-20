@@ -1672,13 +1672,15 @@ ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
 	return t;
 }
 
-enum { UBK_OVERFLOW, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
+enum { UBK_OVERFLOW, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR, UBK_SUB, UBK_MUL };
 
 static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
 	switch (kind) { MCC_TRACE("br\n");
 	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
 	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
 	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
+	case UBK_SUB:     { MCC_TRACE("br\n"); return "__ubsan_handle_sub_overflow_minimal"; }
+	case UBK_MUL:     { MCC_TRACE("br\n"); return "__ubsan_handle_mul_overflow_minimal"; }
 	default:          { MCC_TRACE("br\n"); return "__ubsan_handle_add_overflow_minimal"; }
 	}
 }
@@ -1709,10 +1711,6 @@ static void gen_ubsan_check_k(int cc, int kind) { MCC_TRACE("enter\n");
 	t = gjmp2(cc, 0);
 	gen_ubsan_trap_or_call(kind);
 	gsym(t);
-}
-
-static void gen_ubsan_check(int cc) { MCC_TRACE("enter\n");
-	gen_ubsan_check_k(cc, UBK_OVERFLOW);
 }
 
 void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
@@ -1811,7 +1809,7 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		}
 		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu &&
 				(op == '+' || op == '-'))
-			{ MCC_TRACE("br\n"); gen_ubsan_check(0x81); }
+			{ MCC_TRACE("br\n"); gen_ubsan_check_k(0x81, op == '-' ? UBK_SUB : UBK_OVERFLOW); }
 		vtop--;
 		if (op >= TOK_ULT && op <= TOK_GT)
 			{ MCC_TRACE("br\n"); vset_VT_CMP(op); }
@@ -1842,7 +1840,7 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		orex(ll, fr, r, 0xaf0f);
 		o(0xc0 + REG_VALUE(fr) + REG_VALUE(r) * 8);
 		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu)
-			{ MCC_TRACE("br\n"); gen_ubsan_check(0x81); }
+			{ MCC_TRACE("br\n"); gen_ubsan_check_k(0x81, UBK_MUL); }
 		vtop--;
 		break;
 	case TOK_SHL:
