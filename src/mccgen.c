@@ -2926,6 +2926,11 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 #define CMP_OP 'C'
 #define SHIFT_OP 'S'
 
+static int is_ordered_cmp(int op) { MCC_TRACE("enter\n");
+	return op == TOK_LT || op == TOK_GT || op == TOK_LE || op == TOK_GE ||
+				 op == TOK_ULT || op == TOK_UGT || op == TOK_ULE || op == TOK_UGE;
+}
+
 static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TRACE("enter\n");
 	CType *type1, *type2, type;
 	int t1, t2, bt1, bt2;
@@ -3083,6 +3088,11 @@ redo:
 		mcc_error("invalid operand types for binary operation");
 	} else if (bt1 == VT_PTR || bt2 == VT_PTR) { MCC_TRACE("br\n");
 		int align;
+		if (op_class == CMP_OP && is_ordered_cmp(op) && (mcc_state->warn_extra_ptr_zero_cmp & WARN_ON)) { MCC_TRACE("br\n");
+			SValue *iv = (bt1 != VT_PTR) ? vtop - 1 : (bt2 != VT_PTR ? vtop : NULL);
+			if (iv && is_integer_btype(iv->type.t & VT_BTYPE) && is_null_pointer(iv))
+				{ MCC_TRACE("br\n"); mcc_warning("ordered comparison of pointer with integer zero"); }
+		}
 		if (op_class == CMP_OP)
 			{ MCC_TRACE("br\n"); goto std_op; }
 		if (op == '+' || op == '-') { MCC_TRACE("br\n");

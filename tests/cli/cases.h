@@ -406,7 +406,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/eth.c -o {W}/eth.o 2>/dev/null && echo HDR_OK; echo END",
 		 "error: extra tokens after directive\nwarning: extra tokens after directive\nDEFAULT_OK\nHDR_OK\nEND\n"},
 
-		{"return_local_addr_warning", "",
+		{"ordered_ptr_zero_warning", "",
+		 "printf 'int a(int *p){ return p > 0; }\\nint b(int *p){ return p == 0; }\\nint main(void){return 0;}\\n' > {W}/pz.c && "
+		 "{MCC} -B{B} -I{I} -Wextra -c {W}/pz.c -o {W}/pz.o 2>&1 | "
+		 "grep -oE 'ordered comparison of pointer with integer zero'; "
+		 "{MCC} -B{B} -I{I} -c {W}/pz.c -o {W}/pz.o 2>&1 | "
+		 "grep -c 'integer zero'; echo END",
+		 "ordered comparison of pointer with integer zero\n0\nEND\n"},
+
+	{"return_local_addr_warning", "",
 		 "printf 'int *f(void){ int x; return &x; }\\nint *g(int *b){ return &b[0]; }\\nint main(void){return 0;}\\n' > {W}/rl.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/rl.c -o {W}/rl.o 2>&1 | "
 		 "grep -oE 'function returns address of local variable'; "

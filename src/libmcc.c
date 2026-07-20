@@ -2595,6 +2595,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				unsigned char on = optarg[0] == 'e' ? WARN_ON : 0;
 				s->warn_sign_compare = on;
 				s->warn_unused_parameter = on;
+				s->warn_extra_ptr_zero_cmp = on;
 				break;
 			}
 			if (optarg[0] && set_flag(s, options_W, optarg) < 0)
