@@ -4466,7 +4466,13 @@ PUB_FUNC int mccjit_selftest_lazy(void) { MCC_TRACE("enter\n");
 	int i;
 
 	printf("mccjit-selftest-lazy: begin (threshold=%ld)\n", threshold);
-#if !MCCJIT_HAVE_STUB_TAIL
+#if defined(MCCJIT_I386)
+	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-lazy: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-lazy: PASS (0 failures)\n");
+		return 0;
+	}
+#elif !MCCJIT_HAVE_STUB_TAIL
 	printf("mccjit-selftest-lazy: skipped — no KGC stub tail on this arch (x86_64/arm64 only)\n");
 	printf("mccjit-selftest-lazy: PASS (0 failures)\n");
 	return 0;
@@ -4914,7 +4920,13 @@ PUB_FUNC int mccjit_selftest_eligibility(void) { MCC_TRACE("enter\n");
 	int i;
 
 	printf("mccjit-selftest-eligibility: begin (%d cases)\n", n);
-#if !MCCJIT_HAVE_STUB_TAIL
+#if defined(MCCJIT_I386)
+	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-eligibility: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-eligibility: PASS (0 failures)\n");
+		return 0;
+	}
+#elif !MCCJIT_HAVE_STUB_TAIL
 	printf("mccjit-selftest-eligibility: skipped — no KGC stub tail on this arch (x86_64/arm64 only)\n");
 	printf("mccjit-selftest-eligibility: PASS (0 failures)\n");
 	return 0;
@@ -5235,7 +5247,13 @@ PUB_FUNC int mccjit_selftest_liverun(const char *libpath, const char *incpath) {
 	int perf_found = 0;
 
 	printf("mccjit-selftest-liverun: begin\n");
-#if !MCCJIT_HAVE_STUB_TAIL
+#if defined(MCCJIT_I386)
+	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-liverun: skipped — i386 stub tail gated off (set MCC_JIT_I386_STUBS)\n");
+		printf("mccjit-selftest-liverun: PASS (0 failures)\n");
+		return 0;
+	}
+#elif !MCCJIT_HAVE_STUB_TAIL
 	printf("mccjit-selftest-liverun: skipped — no KGC stub tail on this arch (x86_64/arm64 only)\n");
 	printf("mccjit-selftest-liverun: PASS (0 failures)\n");
 	return 0;
