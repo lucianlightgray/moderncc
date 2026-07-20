@@ -131,8 +131,9 @@ static void timeout_wrap(const char *cmd, char *out, size_t n) {
 	else
 
 		snprintf(out, n,
-						 "{ %s & __p=$!; ( sleep %d; kill -9 $__p ) >/dev/null 2>&1 & __w=$!; "
-						 "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
+						 "{ %s & __p=$!; sleep %d & __s=$!; "
+						 "{ wait $__s 2>/dev/null; kill -9 $__p 2>/dev/null; } & __w=$!; "
+						 "wait $__p; __r=$?; kill $__s $__w 2>/dev/null; exit $__r; }",
 						 cmd, DIFF3_RUN_TIMEOUT);
 }
 
