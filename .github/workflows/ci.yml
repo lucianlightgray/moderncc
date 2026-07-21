@@ -169,8 +169,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: vendor/winlibs-mingw-w64-*
-          key: winlibs-${{ hashFiles('CMakeLists.txt') }}
-          restore-keys: winlibs-
+          key: winlibs-${{ matrix.arch }}-${{ hashFiles('cmake/winlibs.cmake') }}
       - name: resolve diff3 reference compilers (prefer preinstalled mingw gcc + clang)
         continue-on-error: true
         shell: pwsh
