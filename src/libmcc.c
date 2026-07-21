@@ -2001,6 +2001,62 @@ static int san_tok_eq(const char *tok, int n, const char *name) { MCC_TRACE("ent
 	return (int)strlen(name) == n && !memcmp(tok, name, n);
 }
 
+static unsigned san_recover_bits(const char *tok, int n) { MCC_TRACE("enter\n");
+	if (san_tok_eq(tok, n, "undefined") || san_tok_eq(tok, n, "all"))
+		{ MCC_TRACE("br\n"); return MCC_SANR_ALL; }
+	if (san_tok_eq(tok, n, "signed-integer-overflow"))
+		{ MCC_TRACE("br\n"); return MCC_SANR_OVERFLOW; }
+	if (san_tok_eq(tok, n, "shift") || san_tok_eq(tok, n, "shift-exponent") ||
+			san_tok_eq(tok, n, "shift-base"))
+		{ MCC_TRACE("br\n"); return MCC_SANR_SHIFT; }
+	if (san_tok_eq(tok, n, "integer-divide-by-zero") ||
+			san_tok_eq(tok, n, "divide-by-zero"))
+		{ MCC_TRACE("br\n"); return MCC_SANR_DIVREM; }
+	if (san_tok_eq(tok, n, "null") || san_tok_eq(tok, n, "alignment") ||
+			san_tok_eq(tok, n, "object-size"))
+		{ MCC_TRACE("br\n"); return MCC_SANR_NULLPTR; }
+	return 0;
+}
+
+static void san_recover_apply(MCCState *s1, const char *arg, int enable) { MCC_TRACE("enter\n");
+	unsigned bits;
+	if (*arg == '=')
+		{ MCC_TRACE("br\n"); arg++; }
+	if (!*arg) { MCC_TRACE("br\n");
+		bits = MCC_SANR_ALL;
+	} else { MCC_TRACE("br\n");
+		const char *tok = arg;
+		bits = 0;
+		while (*tok) { MCC_TRACE("br\n");
+			const char *end = tok;
+			unsigned b;
+			int n;
+			while (*end && *end != ',')
+				{ MCC_TRACE("br\n"); end++; }
+			n = (int)(end - tok);
+			b = san_recover_bits(tok, n);
+			if (!b)
+				{ MCC_TRACE("br\n");
+					mcc_warning_c(warn_unsupported)(
+							"-fsanitize-recover: unknown check '%.*s'", n, tok); }
+			bits |= b;
+			tok = *end ? end + 1 : end;
+		}
+	}
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || \
+		((defined MCC_TARGET_I386 || defined MCC_TARGET_ARM) && !defined MCC_TARGET_PE)
+	if (enable) { MCC_TRACE("br\n"); s1->do_sanitize_recover |= bits; }
+	else { MCC_TRACE("br\n"); s1->do_sanitize_recover &= ~bits; }
+#else
+	if (enable && bits)
+		{ MCC_TRACE("br\n");
+			mcc_warning_c(warn_unsupported)(
+					"UBSan recover (diagnostic handlers) is not implemented on this "
+					"target (i386/arm recover is ELF-only); keeping trap-on-error"); }
+	(void)s1;
+#endif
+}
+
 static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_TRACE("enter\n");
 	int value, mask, ret;
 	const FlagDef *p;
@@ -2539,27 +2595,14 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			} else if (!strcmp(optarg, "no-sanitize") || strstart("no-sanitize=", &vis)) { MCC_TRACE("br\n");
 				s->do_sanitize_undefined = 0;
 				s->do_sanitize_address = 0;
-			} else if (!strcmp(optarg, "sanitize-undefined-trap-on-error") ||
-								 !strcmp(optarg, "sanitize-trap=undefined") ||
-								 !strcmp(optarg, "no-sanitize-recover=undefined") ||
-								 !strcmp(optarg, "no-sanitize-recover=all") ||
-								 !strcmp(optarg, "no-sanitize-recover")) { MCC_TRACE("br\n");
+			} else if (!strcmp(optarg, "sanitize-undefined-trap-on-error")) { MCC_TRACE("br\n");
 				s->do_sanitize_recover = 0;
-			} else if (!strcmp(optarg, "sanitize-recover=undefined") ||
-								 !strcmp(optarg, "sanitize-recover=all") ||
-								 !strcmp(optarg, "sanitize-recover") ||
-								 !strcmp(optarg, "no-sanitize-trap=undefined") ||
-								 !strcmp(optarg, "no-sanitize-trap=all") ||
-								 !strcmp(optarg, "no-sanitize-trap")) { MCC_TRACE("br\n");
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || \
-		((defined MCC_TARGET_I386 || defined MCC_TARGET_ARM) && !defined MCC_TARGET_PE)
-				s->do_sanitize_recover = 1;
-#else
-				mcc_warning_c(warn_unsupported)(
-						"-f%s: UBSan recover (diagnostic handlers) is not implemented on "
-						"this target (i386/arm recover is ELF-only); keeping trap-on-error",
-						optarg);
-#endif
+			} else if (strstart("sanitize-recover", &vis) ||
+								 strstart("no-sanitize-trap", &vis)) { MCC_TRACE("br\n");
+				san_recover_apply(s, vis, 1);
+			} else if (strstart("no-sanitize-recover", &vis) ||
+								 strstart("sanitize-trap", &vis)) { MCC_TRACE("br\n");
+				san_recover_apply(s, vis, 0);
 			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) { MCC_TRACE("br\n");
 				s->diag_color = 1;
 			} else if (!strcmp(optarg, "diagnostics-color=never") || !strcmp(optarg, "no-diagnostics-color") || !strcmp(optarg, "no-color-diagnostics")) { MCC_TRACE("br\n");

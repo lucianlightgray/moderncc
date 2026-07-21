@@ -1319,14 +1319,24 @@ static void arm_ubsan_emit_recover(int kind) { MCC_TRACE("enter\n");
 	o(0xE8BD500F);
 }
 
-static uint32_t arm_ubsan_skip_words(void) { MCC_TRACE("enter\n");
-	if (mcc_state->do_sanitize_recover)
+static int ubsan_kind_recovers(int kind) { MCC_TRACE("enter\n");
+	unsigned m = mcc_state->do_sanitize_recover;
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return (m & MCC_SANR_SHIFT) != 0; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return (m & MCC_SANR_DIVREM) != 0; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return (m & MCC_SANR_NULLPTR) != 0; }
+	default:          { MCC_TRACE("br\n"); return (m & MCC_SANR_OVERFLOW) != 0; }
+	}
+}
+
+static uint32_t arm_ubsan_skip_words(int kind) { MCC_TRACE("enter\n");
+	if (ubsan_kind_recovers(kind))
 		{ MCC_TRACE("br\n"); return 3u; }
 	return 1u;
 }
 
 static void arm_ubsan_body(int kind) { MCC_TRACE("enter\n");
-	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+	if (ubsan_kind_recovers(kind)) { MCC_TRACE("br\n");
 		arm_ubsan_emit_recover(kind);
 		return;
 	}
@@ -1334,7 +1344,7 @@ static void arm_ubsan_body(int kind) { MCC_TRACE("enter\n");
 }
 
 static void arm_ubsan_guard(uint32_t cond, int kind) { MCC_TRACE("enter\n");
-	o(cond | 0x0A000000 | ((arm_ubsan_skip_words() - 1u) & 0xffffffu));
+	o(cond | 0x0A000000 | ((arm_ubsan_skip_words(kind) - 1u) & 0xffffffu));
 	arm_ubsan_body(kind);
 }
 

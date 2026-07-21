@@ -1914,14 +1914,24 @@ static void arm64_ubsan_emit_recover(int kind) { MCC_TRACE("enter\n");
 			(31u << 5) | arm64_ubsan_save_pairs[i][0]);
 }
 
-static uint32_t arm64_ubsan_skip(void) { MCC_TRACE("enter\n");
-	if (mcc_state->do_sanitize_recover)
+static int ubsan_kind_recovers(int kind) { MCC_TRACE("enter\n");
+	unsigned m = mcc_state->do_sanitize_recover;
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return (m & MCC_SANR_SHIFT) != 0; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return (m & MCC_SANR_DIVREM) != 0; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return (m & MCC_SANR_NULLPTR) != 0; }
+	default:          { MCC_TRACE("br\n"); return (m & MCC_SANR_OVERFLOW) != 0; }
+	}
+}
+
+static uint32_t arm64_ubsan_skip(int kind) { MCC_TRACE("enter\n");
+	if (ubsan_kind_recovers(kind))
 		{ MCC_TRACE("br\n"); return 1u + ARM64_UBSAN_RECOVER_INSNS; }
 	return 2u;
 }
 
 static void arm64_ubsan_body(int kind) { MCC_TRACE("enter\n");
-	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+	if (ubsan_kind_recovers(kind)) { MCC_TRACE("br\n");
 		arm64_ubsan_emit_recover(kind);
 		return;
 	}
@@ -1931,7 +1941,7 @@ static void arm64_ubsan_body(int kind) { MCC_TRACE("enter\n");
 static void arm64_ubsan_trap_if_zero(uint32_t reg, uint32_t l, int kind) { MCC_TRACE("enter\n");
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
-	o(0x35000000 | l << 31 | (arm64_ubsan_skip() << 5) | reg);
+	o(0x35000000 | l << 31 | (arm64_ubsan_skip(kind) << 5) | reg);
 	arm64_ubsan_body(kind);
 }
 
@@ -1944,7 +1954,7 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if ((vtop->r & VT_VALMASK) >= VT_CONST)
 		{ MCC_TRACE("br\n"); return; }
-	o(0xb5000000 | (arm64_ubsan_skip() << 5) | intr(vtop->r));
+	o(0xb5000000 | (arm64_ubsan_skip(UBK_NULLPTR) << 5) | intr(vtop->r));
 	arm64_ubsan_body(UBK_NULLPTR);
 }
 
@@ -1953,7 +1963,7 @@ void gen_trap(void) { MCC_TRACE("enter\n");
 }
 
 static void arm64_ubsan_trap_cond(uint32_t skip_cond, int kind) { MCC_TRACE("enter\n");
-	o(0x54000000 | (arm64_ubsan_skip() << 5) | skip_cond);
+	o(0x54000000 | (arm64_ubsan_skip(kind) << 5) | skip_cond);
 	arm64_ubsan_body(kind);
 }
 

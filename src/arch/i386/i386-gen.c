@@ -743,8 +743,18 @@ static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
 	}
 }
 
+static int ubsan_kind_recovers(int kind) { MCC_TRACE("enter\n");
+	unsigned m = mcc_state->do_sanitize_recover;
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return (m & MCC_SANR_SHIFT) != 0; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return (m & MCC_SANR_DIVREM) != 0; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return (m & MCC_SANR_NULLPTR) != 0; }
+	default:          { MCC_TRACE("br\n"); return (m & MCC_SANR_OVERFLOW) != 0; }
+	}
+}
+
 static void gen_ubsan_trap_or_call(int kind) { MCC_TRACE("enter\n");
-	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+	if (ubsan_kind_recovers(kind)) { MCC_TRACE("br\n");
 		Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
 		g(0x50); g(0x51); g(0x52);
 		g(0x53);

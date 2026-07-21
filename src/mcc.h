@@ -583,6 +583,13 @@ struct asm_cfi_state {
 	unsigned char *buf;
 };
 
+#define MCC_SANR_OVERFLOW 0x1u
+#define MCC_SANR_DIVREM   0x2u
+#define MCC_SANR_SHIFT    0x4u
+#define MCC_SANR_NULLPTR  0x8u
+#define MCC_SANR_ALL \
+	(MCC_SANR_OVERFLOW | MCC_SANR_DIVREM | MCC_SANR_SHIFT | MCC_SANR_NULLPTR)
+
 struct MCCState {
 	unsigned char verbose;
 	unsigned char nostdinc;
@@ -634,7 +641,7 @@ struct MCCState {
 	unsigned char visibility;
 	unsigned char stack_protector;
 	unsigned char do_sanitize_undefined;
-	unsigned char do_sanitize_recover;
+	unsigned do_sanitize_recover;
 	unsigned char do_sanitize_address;
 	unsigned char do_asan_shadow;
 	unsigned char do_strip;
