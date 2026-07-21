@@ -2054,7 +2054,7 @@ static void san_recover_apply(MCCState *s1, const char *arg, int enable) { MCC_T
 		}
 	}
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || \
-		defined MCC_TARGET_I386 || (defined MCC_TARGET_ARM && !defined MCC_TARGET_PE)
+		defined MCC_TARGET_I386 || defined MCC_TARGET_ARM
 	if (enable) { MCC_TRACE("br\n"); s1->do_sanitize_recover |= bits; }
 	else { MCC_TRACE("br\n"); s1->do_sanitize_recover &= ~bits; }
 #else
@@ -2062,7 +2062,7 @@ static void san_recover_apply(MCCState *s1, const char *arg, int enable) { MCC_T
 		{ MCC_TRACE("br\n");
 			mcc_warning_c(warn_unsupported)(
 					"UBSan recover (diagnostic handlers) is not implemented on this "
-					"target (arm recover is ELF-only); keeping trap-on-error"); }
+					"target; keeping trap-on-error"); }
 	(void)s1;
 #endif
 }
