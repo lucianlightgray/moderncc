@@ -36,6 +36,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 
 #define cg_float_abi (mcc_state->cg_arm_float_abi)
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
+#define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #define last_itod_magic (mcc_state->cg_last_itod_magic)
 #define leaffunc (mcc_state->cg_leaffunc)
 
@@ -1093,6 +1094,42 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	cg_float_abi = def_float_abi;
 }
 
+static void arm_load_stack_guard(int r) { MCC_TRACE("enter\n");
+	SValue sv;
+	sv.type.t = VT_PTR;
+	sv.r = VT_CONST | VT_SYM;
+	sv.c.i = 0;
+	sv.sym = external_helper_sym(TOK___stack_chk_guard);
+	load_value(&sv, r);
+	o(0xE5900000 | (intr(r) << 12) | (intr(r) << 16));
+}
+
+static void gen_stack_chk_prolog(void) { MCC_TRACE("enter\n");
+	SValue sv;
+	func_stack_chk_loc = (loc -= 4);
+	arm_load_stack_guard(MCC_TREG_R3);
+	sv.type.t = VT_PTR;
+	sv.r = VT_LOCAL;
+	sv.c.i = func_stack_chk_loc;
+	sv.sym = NULL;
+	store(MCC_TREG_R3, &sv);
+}
+
+static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
+	SValue sv;
+	Sym *fail = external_helper_sym(TOK___stack_chk_fail);
+	sv.type.t = VT_PTR;
+	sv.r = VT_LOCAL | VT_LVAL;
+	sv.c.i = func_stack_chk_loc;
+	sv.sym = NULL;
+	load(MCC_TREG_R3, &sv);
+	arm_load_stack_guard(MCC_TREG_R2);
+	o(0xE1530002);
+	o(0x0A000000);
+	greloc(cur_text_section, fail, ind, R_ARM_PC24);
+	o(0xEBFFFFFE);
+}
+
 void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	Sym *sym, *sym2;
@@ -1195,6 +1232,9 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
+	func_stack_chk_loc = 0;
+	if (mcc_state->stack_protector)
+		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
 }
 
 void gfunc_epilog(void) { MCC_TRACE("enter\n");
@@ -1215,6 +1255,8 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 		}
 	}
 #endif
+	if (func_stack_chk_loc)
+		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 	o(0xE89BAC00);
 	diff = (-loc + 3) & -4;
 #ifdef MCC_ARM_EABI

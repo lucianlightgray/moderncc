@@ -735,6 +735,37 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define num_va_regs (mcc_state->cg_num_va_regs)
 #define func_va_list_ofs (mcc_state->cg_func_va_list_ofs)
+#define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
+
+static uint32_t riscv64_btype_imm(int off);
+
+static void riscv64_load_stack_guard(int rr) { MCC_TRACE("enter\n");
+	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
+	Sym label = {0};
+	label.type.t = VT_VOID | VT_STATIC;
+	put_extern_sym(&label, cur_text_section, ind, 0);
+	greloca(cur_text_section, guard, ind, R_RISCV_GOT_HI20, 0);
+	o(0x17 | (rr << 7));
+	greloca(cur_text_section, &label, ind, R_RISCV_PCREL_LO12_I, 0);
+	EI(0x03, 3, rr, rr, 0);
+	EI(0x03, 3, rr, rr, 0);
+}
+
+static void gen_stack_chk_prolog(void) { MCC_TRACE("enter\n");
+	func_stack_chk_loc = (loc -= 8);
+	riscv64_load_stack_guard(5);
+	ES(0x23, 3, 8, 5, (uint32_t)func_stack_chk_loc);
+}
+
+static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
+	Sym *fail = external_helper_sym(TOK___stack_chk_fail);
+	EI(0x03, 3, 5, 8, (uint32_t)func_stack_chk_loc);
+	riscv64_load_stack_guard(6);
+	o(0x63 | riscv64_btype_imm(12) | (5 << 15) | (6 << 20));
+	greloca(cur_text_section, fail, ind, R_RISCV_CALL_PLT, 0);
+	o(0x17 | (1 << 7));
+	EI(0x67, 0, 1, 1, 0);
+}
 
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
@@ -805,6 +836,9 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
+	func_stack_chk_loc = 0;
+	if (mcc_state->stack_protector)
+		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
 }
 
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
@@ -848,6 +882,8 @@ ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
+	if (func_stack_chk_loc)
+		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 
 	loc = (loc - num_va_regs * 8);
 	d = v = (-loc + 15) & -16;

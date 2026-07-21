@@ -17,6 +17,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
 #define func_ret_sub (mcc_state->cg_func_ret_sub)
+#define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
 #define func_bound_ind (mcc_state->cg_func_bound_ind)
@@ -634,6 +635,53 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 #define FUNC_PROLOG_SIZE (9 + !!USE_EBX)
 #endif
 
+#ifndef MCC_TARGET_PE
+static void gen_stack_chk_prolog(void) { MCC_TRACE("enter\n");
+	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
+	func_stack_chk_loc = (loc -= 4);
+	if (mcc_state->pic) { MCC_TRACE("br\n");
+		get_pc_thunk(MCC_TREG_EAX, 1);
+		o(0x808b);
+		gen_gotpcrel(MCC_TREG_EAX, guard, 0);
+		o(0x008b);
+	} else { MCC_TRACE("br\n");
+		g(0xa1);
+		greloc(cur_text_section, guard, ind, R_386_32);
+		gen_le32(0);
+	}
+	gen_modrm(0x89, MCC_TREG_EAX, VT_LOCAL, NULL, func_stack_chk_loc);
+}
+
+static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
+	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
+	Sym *fail = external_helper_sym(TOK___stack_chk_fail);
+	gen_modrm(0x8b, MCC_TREG_ECX, VT_LOCAL, NULL, func_stack_chk_loc);
+	if (mcc_state->pic) { MCC_TRACE("br\n");
+		get_pc_thunk(MCC_TREG_EBX, 1);
+		g(0x8b);
+		g(0x8b);
+		greloc(cur_text_section, guard, ind, R_386_GOT32X);
+		gen_le32(0);
+		g(0x8b);
+		g(0x09);
+		gen_modrm(0x33, MCC_TREG_ECX, VT_LOCAL, NULL, func_stack_chk_loc);
+		g(0x74);
+		g(0x05);
+		oad(0xe8, -4);
+		greloc(cur_text_section, fail, ind - 4, R_386_PLT32);
+	} else { MCC_TRACE("br\n");
+		g(0x33);
+		g(0x0d);
+		greloc(cur_text_section, guard, ind, R_386_32);
+		gen_le32(0);
+		g(0x74);
+		g(0x05);
+		oad(0xe8, -4);
+		greloc(cur_text_section, fail, ind - 4, R_386_PC32);
+	}
+}
+#endif
+
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	int addr, align, size, func_call, fastcall_nb_regs;
@@ -711,6 +759,11 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
+#ifndef MCC_TARGET_PE
+	func_stack_chk_loc = 0;
+	if (mcc_state->stack_protector)
+		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
+#endif
 }
 
 ST_FUNC void gfunc_epilog(void) {
@@ -719,6 +772,10 @@ ST_FUNC void gfunc_epilog(void) {
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
+#endif
+#ifndef MCC_TARGET_PE
+	if (func_stack_chk_loc)
+		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 #endif
 
 	v = (-loc + 3) & -4;
