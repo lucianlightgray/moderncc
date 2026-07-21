@@ -8505,6 +8505,12 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	ast_set_type(a, cvt, U32, 0);
 	ast_add_child(a, cvt, ast_dup_sub(a, q2));
 	signbit = ast_bf_bin(a, TOK_SHR, U32, cvt, ast_bf_lit(a, U32, 31));
+	{
+		AstLocal sbs = ast_node(a, AST_Convert);
+		ast_set_type(a, sbs, S32, 0);
+		ast_add_child(a, sbs, signbit);
+		signbit = sbs;
+	}
 	MCC_TRACE("divmagic signed %s C=%lld M=0x%x s=%d\n", op == '/' ? "div" : "rem",
 						(long long)C, (unsigned)mag.M, mag.s);
 	ast_set_type(a, n, S32, 0);
