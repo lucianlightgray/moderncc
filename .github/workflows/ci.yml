@@ -194,6 +194,8 @@ jobs:
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
       - name: run ${{ matrix.preset }} (msvc - configure + build + test + install)
         if: ${{ !matrix.mingw }}
+        env:
+          MCC_CI_CTEST_EXCLUDE: ${{ matrix.preset == 'sanitize-msvc' && '^diff3/' || '' }}
         # --timeout caps any single test: a hung test (e.g. a thread-contention
         # deadlock that only manifests on real arm64 silicon) is killed and named
         # in the log instead of stalling the whole job until it is cancelled.

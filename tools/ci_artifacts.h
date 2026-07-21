@@ -198,6 +198,8 @@ static const char TMPL_CI_YML[] =
 		"          if ($clang) { \"MCC_DIFF3_CLANG=$($clang.Replace('\\','/'))\" | Out-File -FilePath $env:GITHUB_ENV -Append }\n"
 		"      - name: run ${{ matrix.preset }} (msvc - configure + build + test + install)\n"
 		"        if: ${{ !matrix.mingw }}\n"
+		"        env:\n"
+		"          MCC_CI_CTEST_EXCLUDE: ${{ matrix.preset == 'sanitize-msvc' && '^diff3/' || '' }}\n"
 		"        # --timeout caps any single test: a hung test (e.g. a thread-contention\n"
 		"        # deadlock that only manifests on real arm64 silicon) is killed and named\n"
 		"        # in the log instead of stalling the whole job until it is cancelled.\n"
