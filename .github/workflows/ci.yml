@@ -49,12 +49,27 @@ jobs:
       ART: mcc-${{ matrix.preset }}-${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v5
+      # Cache the downloaded .debs so a slow/flaky apt mirror can't turn a
+      # ~40s install into a multi-minute stall (observed 6m17s once). The
+      # run_id key always saves the freshest debs; restore-keys prefix always
+      # finds the most recent cache, and a miss just falls back to a full
+      # mirror download (no correctness dependency).
+      - name: cache apt archives
+        uses: actions/cache@v5
+        with:
+          path: ~/.apt-cache
+          key: apt-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
       - name: install toolchain (everything the platform offers)
         run: |
+          sudo mkdir -p /var/cache/apt/archives
+          if [ -d ~/.apt-cache ]; then sudo cp -n ~/.apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true; fi
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o APT::Keep-Downloaded-Packages=true install -y --no-install-recommends \
             cmake ninja-build build-essential gcc clang lld wine64 git rsync \
             mingw-w64
+          mkdir -p ~/.apt-cache
+          cp -n /var/cache/apt/archives/*.deb ~/.apt-cache/ 2>/dev/null || true
       - name: run ${{ matrix.preset }}
         run: |
           cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
