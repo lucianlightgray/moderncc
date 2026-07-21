@@ -397,7 +397,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		int32_t d;
 		addr_t tls_start = 0, tls_end = 0;
 
-		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+		if ((s1->output_type & MCC_OUTPUT_DLL) && !(s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
 			mcc_error_noabort("R_ARM_TLS dynamic relocation type %d to shared object not supported", type);
 			return;
 		}
