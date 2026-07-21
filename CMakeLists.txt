@@ -182,6 +182,43 @@ function(mcc_find_gnu_gcc outvar)
         set(${outvar} "${MCC_VENDOR_GCC}" PARENT_SCOPE)
         return()
     endif()
+    set(_gnu_probe_dirs "")
+    if(WIN32)
+        if(CMAKE_C_COMPILER MATCHES "[Gg][Cc][Cc]")
+            get_filename_component(_cc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
+            list(APPEND _gnu_probe_dirs "${_cc_dir}")
+        endif()
+        foreach(_r
+            "$ENV{LOCALAPPDATA}/Programs/CLion"
+            "$ENV{LOCALAPPDATA}/JetBrains/Toolbox/apps/CLion"
+            "$ENV{USERPROFILE}/scoop/persist/jetbrains-toolbox/apps/CLion"
+            "$ENV{USERPROFILE}/scoop/apps/clion/current"
+            "$ENV{ProgramFiles}/JetBrains"
+            "$ENV{ProgramW6432}/JetBrains")
+            if(_r AND EXISTS "${_r}")
+                file(GLOB _clion_gccs "${_r}/*/bin/mingw/bin/gcc.exe"
+                     "${_r}/bin/mingw/bin/gcc.exe" "${_r}/mingw/bin/gcc.exe")
+                foreach(_g IN LISTS _clion_gccs)
+                    get_filename_component(_g_dir "${_g}" DIRECTORY)
+                    list(APPEND _gnu_probe_dirs "${_g_dir}")
+                endforeach()
+            endif()
+        endforeach()
+    endif()
+    if(_gnu_probe_dirs)
+        list(REMOVE_DUPLICATES _gnu_probe_dirs)
+        find_program(MCC_CLION_GCC NAMES gcc PATHS ${_gnu_probe_dirs} NO_DEFAULT_PATH)
+        if(MCC_CLION_GCC)
+            execute_process(COMMAND "${MCC_CLION_GCC}" --version
+                OUTPUT_VARIABLE _v ERROR_QUIET RESULT_VARIABLE _rc
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if(_rc EQUAL 0 AND _v MATCHES "Free Software Foundation"
+               AND NOT _v MATCHES "clang")
+                set(${outvar} "${MCC_CLION_GCC}" PARENT_SCOPE)
+                return()
+            endif()
+        endif()
+    endif()
     foreach(_n gcc-16 gcc-15 gcc-14 gcc-13 gcc-12 gcc-11 gcc-10 gcc cc)
         find_program(MCC_GNUGCC_${_n} NAMES ${_n})
         if(MCC_GNUGCC_${_n})

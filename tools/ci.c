@@ -1,4 +1,17 @@
 #include "toolsupport.h"
+#include <time.h>
+
+static int ci_phase(const char *label, const char *const *argz) {
+	time_t t0 = time(NULL), t1;
+	int rc;
+	printf("==> %s\n", label);
+	fflush(stdout);
+	rc = ts_run(argz);
+	t1 = time(NULL);
+	printf("==> %s: %ld s (rc=%d)\n", label, (long)(t1 - t0), rc);
+	fflush(stdout);
+	return rc;
+}
 
 static const char *EXCL_PREFIX[] = {"cmake-", "build-", 0};
 static const char *EXCL_EXACT[] = {"vendor", "dist", ".git", 0};
@@ -136,13 +149,17 @@ static int do_run_preset(int argc, char **argv) {
 		for (i = 0; i < extra_start; i++)
 			if (!strncmp(argv[i], "-D", 2))
 				ts_arg(&v, argv[i]);
-		printf("==> configuring (preset=%s)\n", preset);
-		if (ts_run(ts_argz(&v)))
-			return 1;
+		{
+			char lbl[128];
+			snprintf(lbl, sizeof lbl, "configuring (preset=%s)", preset);
+			if (ci_phase(lbl, ts_argz(&v)))
+				return 1;
+		}
 	}
 
 	{
 		Argv v = {{0}, 0};
+		char lbl[128];
 		ts_arg(&v, "cmake");
 		ts_arg(&v, "--build");
 		ts_arg(&v, "--preset");
@@ -152,8 +169,8 @@ static int do_run_preset(int argc, char **argv) {
 			ts_arg(&v, "--config");
 			ts_arg(&v, config);
 		}
-		printf("==> building (%s)\n", jflag);
-		if (ts_run(ts_argz(&v)))
+		snprintf(lbl, sizeof lbl, "building (%s)", jflag);
+		if (ci_phase(lbl, ts_argz(&v)))
 			return 1;
 	}
 
@@ -180,9 +197,12 @@ static int do_run_preset(int argc, char **argv) {
 		}
 		for (i = extra_start; i < argc; i++)
 			ts_arg(&v, argv[i]);
-		printf("==> testing (preset=%s)\n", preset);
-		if (ts_run(ts_argz(&v)))
-			return 1;
+		{
+			char lbl[128];
+			snprintf(lbl, sizeof lbl, "testing (preset=%s)", preset);
+			if (ci_phase(lbl, ts_argz(&v)))
+				return 1;
+		}
 	}
 
 	if (bench) {
@@ -1785,6 +1805,10 @@ static int do_junit_summary(int argc, char **argv) {
 	char *x, *p;
 	int total = 0, fail = 0, skip = 0;
 	char fails[8192] = "", skips[16384] = "";
+	double total_time = 0.0;
+	struct { char name[256]; double t; } slow[10];
+	int nslow = 0, si;
+	memset(slow, 0, sizeof slow);
 	if (!xml) {
 		fprintf(stderr, "usage: ci junit-summary <xml> [title]\n");
 		return 2;
@@ -1796,7 +1820,8 @@ static int do_junit_summary(int argc, char **argv) {
 	for (p = x; (p = strstr(p, "<testcase"));) {
 		const char *gt = strchr(p, '>');
 		const char *tagend, *extent;
-		char name[256] = "?", st[32] = "";
+		char name[256] = "?", st[32] = "", tm[32] = "";
+		double tsec;
 		int skipped, failed;
 		if (!gt)
 			break;
@@ -1809,6 +1834,9 @@ static int do_junit_summary(int argc, char **argv) {
 		}
 		js_attr(name, sizeof name, p, gt, "name=\"");
 		js_attr(st, sizeof st, p, gt, "status=\"");
+		js_attr(tm, sizeof tm, p, gt, "time=\"");
+		tsec = tm[0] ? atof(tm) : 0.0;
+		total_time += tsec;
 		skipped = (strstr(tagend, "<skipped") &&
 							 strstr(tagend, "<skipped") < extent) ||
 							!strcmp(st, "notrun");
@@ -1831,16 +1859,39 @@ static int do_junit_summary(int argc, char **argv) {
 				strncat(fails, "` ", sizeof fails - strlen(fails) - 1);
 			}
 		}
+		if (!skipped && tsec > 0.0) {
+			int cap = (int)(sizeof slow / sizeof slow[0]);
+			int pos = nslow < cap ? nslow : cap - 1;
+			if (nslow < cap)
+				nslow++;
+			else if (tsec <= slow[cap - 1].t)
+				pos = -1;
+			if (pos >= 0) {
+				while (pos > 0 && tsec > slow[pos - 1].t) {
+					slow[pos] = slow[pos - 1];
+					pos--;
+				}
+				snprintf(slow[pos].name, sizeof slow[pos].name, "%s", name);
+				slow[pos].t = tsec;
+			}
+		}
 		p = (char *)extent;
 	}
 	printf("### tests — %s\n\n", title);
-	printf("**%d tests · %d passed · %d failed · %d skipped**\n\n",
-				 total, total - fail - skip, fail, skip);
+	printf("**%d tests · %d passed · %d failed · %d skipped · %.1fs cpu**\n\n",
+				 total, total - fail - skip, fail, skip, total_time);
 	if (fail)
 		printf("Failed: %s\n\n", fails);
 	if (skip)
 		printf("<details><summary>%d skipped</summary>\n\n%s\n\n</details>\n\n",
 					 skip, skips);
+	if (nslow > 0) {
+		printf("<details><summary>slowest %d tests</summary>\n\n", nslow);
+		printf("| test | seconds |\n| --- | --- |\n");
+		for (si = 0; si < nslow; si++)
+			printf("| `%s` | %.2f |\n", slow[si].name, slow[si].t);
+		printf("\n</details>\n\n");
+	}
 	free(x);
 	return 0;
 }
