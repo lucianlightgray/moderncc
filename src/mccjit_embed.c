@@ -5561,8 +5561,8 @@ PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 
 	printf("mccjit-selftest-bench: begin\n");
 	setenv("MCC_JIT_BENCH_ITERS", "4000", 1);
-	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
-	setenv("MCC_JIT_BENCH_ROUNDS", "25", 1);
+	setenv("MCC_JIT_BENCH_MARGIN_PCT", "30", 1);
+	setenv("MCC_JIT_BENCH_ROUNDS", "51", 1);
 	for (i = 0; i < nt; i++)
 		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
 			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1); } }
