@@ -57,12 +57,6 @@
       "cacheVariables": { "MCC_CONFIG_LSP": "OFF" }
     },
     {
-      "name": "ast",
-      "displayName": "Optimizer feature off (-O1+ degrades to -O0-equivalent output)",
-      "inherits": "debug",
-      "cacheVariables": { "MCC_CONFIG_OPTIMIZER": "OFF" }
-    },
-    {
       "name": "cross",
       "displayName": "Native + all cross compilers",
       "inherits": "debug",
@@ -345,7 +339,6 @@
     { "name": "sanitize", "configurePreset": "sanitize" },
     { "name": "diagnostics", "configurePreset": "diagnostics" },
     { "name": "cst", "configurePreset": "cst" },
-    { "name": "ast", "configurePreset": "ast" },
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
     { "name": "local-ci", "configurePreset": "local-ci" },
@@ -411,7 +404,6 @@
     { "name": "sanitize", "configurePreset": "sanitize", "inherits": "_test-native" },
     { "name": "diagnostics", "configurePreset": "diagnostics", "inherits": "_test-native" },
     { "name": "cst", "configurePreset": "cst", "inherits": "_test-native" },
-    { "name": "ast", "configurePreset": "ast", "inherits": "_test-native" },
     { "name": "cross", "configurePreset": "cross", "inherits": "_test-native" },
 
     { "name": "linux-gcc", "configurePreset": "linux-gcc", "inherits": "_test-native" },

@@ -368,7 +368,7 @@ static const char *PS_LINUX_GCC[] = {
 static const char *PS_LINUX_CLANG[] = {
 		"linux-clang", "linux-clang-cross",
 		"linux-clang-release", 0};
-static const char *PS_DEV[] = {"release", "ast", 0};
+static const char *PS_DEV[] = {"release", 0};
 static const char *PS_SUPER[] = {"matrix", 0};
 static const char *PS_DARWIN[] = {"macos", "macos-cross", 0};
 static const char *PS_WIN_MSVC[] = {"msvc", "sanitize-msvc", 0};
