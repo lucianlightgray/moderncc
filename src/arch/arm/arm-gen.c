@@ -393,14 +393,42 @@ static void load_value(SValue *sv, int r) { MCC_TRACE("enter\n");
 }
 
 static void arm_tls_addr(Sym *sym, int coff) { MCC_TRACE("enter\n");
-	o(0xe52dc004);
-	o(0xee1def70);
-	o(0xe59fc000);
+	if (!mcc_state->pic) { MCC_TRACE("br\n");
+		o(0xe52dc004);
+		o(0xee1def70);
+		o(0xe59fc000);
+		o(0xea000000);
+		greloca(cur_text_section, sym, ind, R_ARM_TLS_LE32, 0);
+		o(coff);
+		o(0xe08ee00c);
+		o(0xe49dc004);
+		return;
+	}
+	(void)coff;
+	o(0xe92d500f);
+	o(0xe59f0000);
 	o(0xea000000);
-	greloca(cur_text_section, sym, ind, R_ARM_TLS_LE32, 0);
-	o(coff);
-	o(0xe08ee00c);
-	o(0xe49dc004);
+	if (sym->type.t & VT_STATIC) { MCC_TRACE("br\n");
+		greloca(cur_text_section, sym, ind, R_ARM_TLS_LDM32, 0);
+	} else { MCC_TRACE("br\n");
+		greloca(cur_text_section, sym, ind, R_ARM_TLS_GD32, 0);
+	}
+	o(-12);
+	o(0xe08f0000);
+	greloc(cur_text_section, external_helper_sym(tok_alloc_const("__tls_get_addr")),
+				 ind, R_ARM_CALL);
+	o(0xebfffffe);
+	if (sym->type.t & VT_STATIC) { MCC_TRACE("br\n");
+		o(0xe59fc000);
+		o(0xea000000);
+		greloca(cur_text_section, sym, ind, R_ARM_TLS_LDO32, 0);
+		o(0);
+		o(0xe080e00c);
+	} else { MCC_TRACE("br\n");
+		o(0xe1a0e000);
+	}
+	o(0xe8bd100f);
+	o(0xe28dd004);
 }
 
 void load(int r, SValue *sv) { MCC_TRACE("enter\n");
@@ -425,7 +453,8 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 			arm_tls_addr(sv->sym, sv->c.i);
 			base = 14;
-			fc = sign = 0;
+			if (!mcc_state->pic)
+				{ MCC_TRACE("br\n"); fc = sign = 0; }
 			v = VT_LOCAL;
 		} else if (v == VT_LLOCAL) { MCC_TRACE("br\n");
 			v1.type.t = VT_PTR;
@@ -497,6 +526,8 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			if ((fr & VT_SYM) && sv->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 				arm_tls_addr(sv->sym, sv->c.i);
 				o(0xe1a0000e | (intr(r) << 12));
+				if (mcc_state->pic && sv->c.i)
+					{ MCC_TRACE("br\n"); stuff_const_harder(0xe2800000 | (intr(r) << 12) | (intr(r) << 16), sv->c.i); }
 				return;
 			}
 			op = stuff_const(0xE3A00000 | (intr(r) << 12), sv->c.i);
@@ -569,7 +600,8 @@ void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 			arm_tls_addr(sv->sym, sv->c.i);
 			base = 14;
 			v = VT_LOCAL;
-			fc = sign = 0;
+			if (!mcc_state->pic)
+				{ MCC_TRACE("br\n"); fc = sign = 0; }
 		} else if (v < VT_CONST) { MCC_TRACE("br\n");
 			base = intr(v);
 			v = VT_LOCAL;

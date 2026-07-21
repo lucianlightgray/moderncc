@@ -19,6 +19,9 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_ARM_MOVT_PREL:
 	case R_ARM_MOVW_PREL_NC:
 	case R_ARM_TLS_LE32:
+	case R_ARM_TLS_GD32:
+	case R_ARM_TLS_LDM32:
+	case R_ARM_TLS_LDO32:
 		return 0;
 
 	case R_ARM_PC24:
@@ -42,6 +45,9 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	case R_ARM_GLOB_DAT:
 	case R_ARM_JUMP_SLOT:
 	case R_ARM_TLS_LE32:
+	case R_ARM_TLS_GD32:
+	case R_ARM_TLS_LDM32:
+	case R_ARM_TLS_LDO32:
 		return NO_GOTPLT_ENTRY;
 
 	case R_ARM_PC24:
@@ -383,6 +389,46 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			x = val - sec->sh_addr - sec->data_offset + 8;
 		}
 		add32le(ptr, x);
+	}
+		return;
+	case R_ARM_TLS_GD32:
+	case R_ARM_TLS_LDM32:
+	case R_ARM_TLS_LDO32: {
+		int32_t d;
+		addr_t tls_start = 0, tls_end = 0;
+
+		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+			mcc_error_noabort("R_ARM_TLS dynamic relocation type %d to shared object not supported", type);
+			return;
+		}
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+			Section *s = s1->sections[i];
+			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
+				if (!tls_start || s->sh_addr < tls_start)
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
+				if (s->sh_addr + s->sh_size > tls_end)
+					{ MCC_TRACE("br\n"); tls_end = s->sh_addr + s->sh_size; }
+			}
+		}
+		if (tls_end > tls_start) { MCC_TRACE("br\n");
+			d = val - tls_start;
+		} else { MCC_TRACE("br\n");
+			Section *sec = s1->sections[sym->st_shndx];
+			d = val - sec->sh_addr - sec->data_offset;
+		}
+		if (type == R_ARM_TLS_LDO32) { MCC_TRACE("br\n");
+			add32le(ptr, d);
+			return;
+		}
+		if (type == R_ARM_TLS_GD32) { MCC_TRACE("br\n");
+			write32le(ptr, d + 8);
+		} else { MCC_TRACE("br\n");
+			write32le(ptr, 8);
+		}
+		write32le(ptr - 8, 0xee1d0f70);
+		write32le(ptr + 4, 0xe51fc00c);
+		write32le(ptr + 8, 0xe080000c);
+		rel[1].r_info = ELFW(R_INFO)(0, R_ARM_NONE);
 	}
 		return;
 	default:
