@@ -639,48 +639,26 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 
 #ifndef MCC_TARGET_PE
 static void gen_stack_chk_prolog(void) { MCC_TRACE("enter\n");
-	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
 	func_stack_chk_loc = (loc -= 4);
-	if (mcc_state->pic) { MCC_TRACE("br\n");
-		get_pc_thunk(MCC_TREG_EAX, 1);
-		o(0x808b);
-		gen_gotpcrel(MCC_TREG_EAX, guard, 0);
-		o(0x008b);
-	} else { MCC_TRACE("br\n");
-		g(0xa1);
-		greloc(cur_text_section, guard, ind, R_386_32);
-		gen_le32(0);
-	}
+	g(0x65);
+	g(0x8b);
+	g(0x05);
+	gen_le32(0x14);
 	gen_modrm(0x89, MCC_TREG_EAX, VT_LOCAL, NULL, func_stack_chk_loc);
 }
 
 static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
-	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
 	Sym *fail = external_helper_sym(TOK___stack_chk_fail);
 	gen_modrm(0x8b, MCC_TREG_ECX, VT_LOCAL, NULL, func_stack_chk_loc);
-	if (mcc_state->pic) { MCC_TRACE("br\n");
-		get_pc_thunk(MCC_TREG_EBX, 1);
-		g(0x8b);
-		g(0x8b);
-		greloc(cur_text_section, guard, ind, R_386_GOT32X);
-		gen_le32(0);
-		g(0x8b);
-		g(0x09);
-		gen_modrm(0x33, MCC_TREG_ECX, VT_LOCAL, NULL, func_stack_chk_loc);
-		g(0x74);
-		g(0x05);
-		oad(0xe8, -4);
-		greloc(cur_text_section, fail, ind - 4, R_386_PLT32);
-	} else { MCC_TRACE("br\n");
-		g(0x33);
-		g(0x0d);
-		greloc(cur_text_section, guard, ind, R_386_32);
-		gen_le32(0);
-		g(0x74);
-		g(0x05);
-		oad(0xe8, -4);
-		greloc(cur_text_section, fail, ind - 4, R_386_PC32);
-	}
+	g(0x65);
+	g(0x33);
+	g(0x0d);
+	gen_le32(0x14);
+	g(0x74);
+	g(0x05);
+	oad(0xe8, -4);
+	greloc(cur_text_section, fail, ind - 4,
+				 mcc_state->pic ? R_386_PLT32 : R_386_PC32);
 }
 
 #define I386_ASAN_ENTER_NPIC 14
