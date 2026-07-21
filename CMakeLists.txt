@@ -3030,13 +3030,26 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 600)
     endif()
 
-    if(NOT MCC_EMULATOR AND MCC_CPU STREQUAL "x86_64")
+    # UBSan trap + -fsanitize-recover land on x86_64 (ELF/Mach-O/PE, native) and
+    # on the four ELF cross arches (arm64/i386/arm/riscv64), validated natively +
+    # under qemu (docs/TODO.md Sanitizers). run_ubsan.cmake prefixes both the mcc
+    # invocation and the produced binary with ${EMU} (== MCC_EMULATOR), so a cross
+    # ELF target runs under its emulator; EMU is empty (byte-identical) natively.
+    set(_ubsan_run OFF)
+    if(MCC_CPU STREQUAL "x86_64" AND NOT MCC_EMULATOR)
+        set(_ubsan_run ON)
+    elseif((NOT MCC_TARGETOS STREQUAL "WIN32") AND (NOT MCC_TARGETOS STREQUAL "Darwin")
+           AND MCC_CPU MATCHES "^(x86_64|arm64|i386|arm|riscv64)$"
+           AND (MCC_EMULATOR OR NOT CMAKE_CROSSCOMPILING))
+        set(_ubsan_run ON)
+    endif()
+    if(_ubsan_run)
         set(_ubsan_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/sanitize/ubsan")
         file(GLOB _ubsan_traps RELATIVE "${_ubsan_dir}" "${_ubsan_dir}/trap_*.c")
         foreach(_uf IN LISTS _ubsan_traps)
             string(REGEX REPLACE "\\.c$" "" _un "${_uf}")
             add_test(NAME "ubsan/${_un}" COMMAND "${CMAKE_COMMAND}"
-                "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+                "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DEMU=${MCC_EMULATOR}"
                 "-DSRC=${_ubsan_dir}/${_uf}"
                 "-DOUT=${CMAKE_BINARY_DIR}/ubsan-${_un}${MCC_EXESUF}"
                 "-DMODE=trap"
@@ -3044,7 +3057,7 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ubsan/${_un}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
         add_test(NAME "ubsan/clean_arith" COMMAND "${CMAKE_COMMAND}"
-            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DEMU=${MCC_EMULATOR}"
             "-DSRC=${_ubsan_dir}/clean_arith.c"
             "-DOUT=${CMAKE_BINARY_DIR}/ubsan-clean_arith${MCC_EXESUF}"
             "-DMODE=clean"
@@ -3052,7 +3065,7 @@ if(MCC_BUILD_TESTS)
             -P "${_ubsan_dir}/run_ubsan.cmake")
         set_tests_properties("ubsan/clean_arith" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "ubsan/clean_unsigned_wrap" COMMAND "${CMAKE_COMMAND}"
-            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DEMU=${MCC_EMULATOR}"
             "-DSRC=${_ubsan_dir}/clean_unsigned_wrap.c"
             "-DOUT=${CMAKE_BINARY_DIR}/ubsan-clean_unsigned_wrap${MCC_EXESUF}"
             "-DMODE=clean"
@@ -3064,7 +3077,7 @@ if(MCC_BUILD_TESTS)
         # minimal-ABI __ubsan_handle_*_minimal runtime handler (runtime/lib/
         # mccubsan.c) which logs to stderr and RETURNS -> the program survives.
         add_test(NAME "ubsan/recover_signed_add" COMMAND "${CMAKE_COMMAND}"
-            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+            "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DEMU=${MCC_EMULATOR}"
             "-DSRC=${_ubsan_dir}/recover_signed_add.c"
             "-DOUT=${CMAKE_BINARY_DIR}/ubsan-recover_signed_add${MCC_EXESUF}"
             "-DMODE=recover"
@@ -3072,7 +3085,7 @@ if(MCC_BUILD_TESTS)
             -P "${_ubsan_dir}/run_ubsan.cmake")
         set_tests_properties("ubsan/recover_signed_add" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
-        mcc_skip_test(ubsan-suite "-fsanitize=undefined trap-mode instrumentation is native x86_64 only (ELF/Mach-O/PE)")
+        mcc_skip_test(ubsan-suite "-fsanitize=undefined trap/recover validated on x86_64 (ELF/Mach-O/PE) + ELF arm64/i386/arm/riscv64 (native or qemu); this target/format not covered or lacks an emulator")
     endif()
 
     if(NOT CMAKE_CROSSCOMPILING)

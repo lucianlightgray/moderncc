@@ -13,16 +13,20 @@ if(MODE STREQUAL "recover")
 	set(_recover_flags -fsanitize-recover=undefined)
 endif()
 
+# EMU (optional) is the cross emulator launch prefix (== MCC_EMULATOR /
+# CMAKE_CROSSCOMPILING_EMULATOR, a possibly-multi-token list). Empty on a
+# native host, so the ${EMU} expansion below is byte-identical to running
+# mcc / the produced binary directly.
 foreach(_opt IN LISTS _levels)
 	execute_process(
-		COMMAND "${MCC}" "-B${BDIR}" -fsanitize=undefined ${_recover_flags} ${_opt} "${SRC}" -o "${OUT}"
+		COMMAND ${EMU} "${MCC}" "-B${BDIR}" -fsanitize=undefined ${_recover_flags} ${_opt} "${SRC}" -o "${OUT}"
 		RESULT_VARIABLE _crc OUTPUT_VARIABLE _cout ERROR_VARIABLE _cerr)
 	if(NOT _crc EQUAL 0)
 		message(FATAL_ERROR "compile failed at ${_opt} (${_crc}):\n${_cout}${_cerr}")
 	endif()
 
 	execute_process(
-		COMMAND "${OUT}"
+		COMMAND ${EMU} "${OUT}"
 		RESULT_VARIABLE _rrc OUTPUT_VARIABLE _rout ERROR_VARIABLE _rerr)
 
 	if(MODE STREQUAL "recover")
