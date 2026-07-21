@@ -1422,6 +1422,17 @@ static void arm_ubsan_guard(uint32_t cond, int kind) { MCC_TRACE("enter\n");
 	arm_ubsan_body(kind);
 }
 
+void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
+	int r;
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+	if ((vtop->r & VT_VALMASK) >= VT_CONST)
+		{ MCC_TRACE("br\n"); return; }
+	r = intr(vtop->r & VT_VALMASK);
+	o(0xE3500000 | ((uint32_t)r << 16));
+	arm_ubsan_guard(0x10000000, UBK_NULLPTR);
+}
+
 void gen_opi(int op) { MCC_TRACE("enter\n");
 	int c, func = 0, ubovf = 0;
 	uint32_t opc = 0, r, fr;
