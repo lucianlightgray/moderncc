@@ -152,7 +152,8 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE
 		if (sv->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 			rr = is_ireg(r) ? ireg(r) : 5;
 #ifndef MCC_TARGET_PE
-			if (mcc_state->pic) { MCC_TRACE("br\n");
+			if (mcc_state->pic && (mcc_state->output_type & MCC_OUTPUT_DLL) &&
+					!(mcc_state->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
 				int i;
 				riscv64_tls_gd_a0(sv->sym, sv->c.i);
 				if (rr >= 10 && rr <= 17)

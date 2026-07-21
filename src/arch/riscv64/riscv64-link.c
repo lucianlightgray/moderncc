@@ -370,7 +370,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_RISCV_TLS_GD_HI20: {
 		addr_t tls_start = 0;
 		int64_t tp_offset;
-		if ((s1->output_type & MCC_OUTPUT_DLL) && !(s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
+		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_error_noabort("R_RISCV_TLS_GD_HI20 to shared object not supported");
 			return;
 		}
