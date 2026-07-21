@@ -49,6 +49,8 @@ static void wstr(const char*s){ long n=0; while(s[n])n++; (void)!write(2,s,(size
 static void whexn(uintptr_t v,int nyb,int nl){ char b[19]; int i; for(i=0;i<nyb;i++){int d=(int)((v>>((nyb-1-i)*4))&0xf); b[i]=(char)(d<10?'0'+d:'a'+d-10);} if(nl)b[nyb]='\n'; (void)!write(2,b,(size_t)(nyb+(nl?1:0))); }
 #define PW ((int)(2*sizeof(uintptr_t)))
 static void whex(uintptr_t v){ wstr("0x"); whexn(v,PW,1); }
+static void whexa(uintptr_t v){ wstr("0x"); whexn(v,PW,0); }
+static void wdec(uintptr_t v){ char b[24]; int i=24; if(!v){ (void)!write(2,"0",1); return; } while(v){ b[--i]=(char)('0'+(int)(v%10)); v/=10; } (void)!write(2,b+i,(size_t)(24-i)); }
 static const char *asan_class(int sh){
     switch(sh&0xff){
     case 0xfa: return "heap-buffer-overflow";
@@ -57,6 +59,28 @@ static const char *asan_class(int sh){
     case GRZ:  return "global-buffer-overflow";
     default:   return (sh>=1&&sh<=7) ? "buffer-overflow" : "bad memory access";
     }
+}
+/* Walk the shadow outward from the faulting granule to find the nearest run of
+   addressable bytes (shadow 0 or a 1..7 partial) that is bounded by poison (a
+   redzone) on its far side: that run is a K-byte region, and the fault's offset
+   from the nearer edge gives the gcc/clang-style locator line (right/left/
+   inside). Walks are bounded so a wild address can't loop; a run that reaches
+   the bound without hitting a redzone is treated as unbounded (not a region)
+   so untouched shadow-0 memory and freed blocks fall back to no locator. */
+static int asan_locate(uintptr_t addr,uintptr_t*rbeg,uintptr_t*rend,uintptr_t*roff,int*rdir){
+    uintptr_t g=addr&~(uintptr_t)7; const int MAXG=1<<16;
+    int fd=0,fu=0; uintptr_t dg=0; int dv=0; uintptr_t ug=0;
+    for(int i=0;i<MAXG;i++){ uintptr_t gg=g-(uintptr_t)i*8; unsigned v=*shadow((void*)gg); if(v==0||(v>=1&&v<=7)){ dg=gg; dv=(int)v; fd=1; break; } if(gg<8) break; }
+    for(int i=0;i<MAXG;i++){ uintptr_t gg=g+(uintptr_t)i*8; unsigned v=*shadow((void*)gg); if(v==0||(v>=1&&v<=7)){ ug=gg; fu=1; break; } }
+    uintptr_t begL=0,endL=0,begR=0,endR=0;
+    if(fd){ endL=dg+(uintptr_t)(dv?dv:8); uintptr_t b=dg; int i; for(i=0;i<MAXG&&b>=8;i++){ if(*shadow((void*)(b-8))==0) b-=8; else break; } begL=b; if(b<8||i>=MAXG) fd=0; }
+    if(fu){ begR=ug; uintptr_t e=ug; int i,bnd=0; for(i=0;i<MAXG;i++){ unsigned v=*shadow((void*)e); if(v==0){ e+=8; continue; } if(v<=7) e+=v; bnd=1; break; } endR=e; if(!bnd) fu=0; }
+    if(fd && addr<endL){ *rbeg=begL; *rend=endL; *roff=addr-begL; *rdir=2; return 1; }
+    uintptr_t db=fd?(addr-endL):(uintptr_t)-1, da=fu?(begR-addr):(uintptr_t)-1;
+    if(!fd&&!fu) return 0;
+    if(db<=da){ *rbeg=begL; *rend=endL; *roff=db; *rdir=0; }
+    else { *rbeg=begR; *rend=endR; *roff=da; *rdir=1; }
+    return 1;
 }
 static void on_sigill(int sig,siginfo_t*si,void*ucv){
     ucontext_t *uc=(ucontext_t*)ucv; (void)sig;
@@ -90,6 +114,12 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
         unsigned char *s = shadow((void*)addr);
         wstr("    at faulting address "); whex(addr);
         wstr("    access size "); whexn((uintptr_t)(asz>0?asz:0),2,1);
+        { uintptr_t rb,re,ro; int rd;
+          if(asan_locate(addr,&rb,&re,&ro,&rd)){
+            wstr("    "); whexa(addr); wstr(" is located "); wdec(ro);
+            wstr(rd==0?" bytes to the right of a ":rd==1?" bytes to the left of a ":" bytes inside a ");
+            wdec(re-rb); wstr("-byte region ["); whexa(rb); wstr(", "); whexa(re); wstr(")\n");
+          } }
         wstr("  shadow bytes around 0x"); whexn((uintptr_t)s,PW,1);
         wstr("   ");
         for(int c=-8;c<8;c++){ if(c==0)wstr("["); whexn((uintptr_t)(s[c]&0xff),2,0); if(c==0)wstr("]"); else wstr(" "); }
