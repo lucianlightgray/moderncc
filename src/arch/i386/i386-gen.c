@@ -78,10 +78,6 @@ static void get_pc_thunk(int r, int add) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
-	if (sym->type.t & VT_TLS)
-		{ MCC_TRACE("br\n"); mcc_error("-fPIC access to thread-local '%s' requires "
-							"global/local-dynamic TLS, which mcc does not emit for i386",
-							get_tok_str(sym->v, NULL)); }
 	greloc(cur_text_section, sym, ind, R_386_GOT32X);
 	gen_le32(0);
 	if (c) { MCC_TRACE("br\n");
@@ -92,6 +88,24 @@ ST_FUNC void gen_gotpcrel(int r, Sym *sym, int c) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); oad(0xc081 + r * 0x100, c); }
 	}
 }
+
+#ifndef MCC_TARGET_PE
+static void gen_tls_addr(Sym *sym) { MCC_TRACE("enter\n");
+	get_pc_thunk(MCC_TREG_EBX, 1);
+	if (sym->type.t & VT_STATIC) { MCC_TRACE("br\n");
+		o(0x838d);
+		greloc(cur_text_section, sym, ind, R_386_TLS_LDM);
+		gen_le32(0);
+	} else { MCC_TRACE("br\n");
+		o(0x1d048d);
+		greloc(cur_text_section, sym, ind, R_386_TLS_GD);
+		gen_le32(0);
+	}
+	oad(0xe8, -4);
+	greloc(cur_text_section, external_helper_sym(tok_alloc_const("___tls_get_addr")),
+				 ind - 4, R_386_PLT32);
+}
+#endif
 
 #define gjmp2(instr, lbl) oad(instr, lbl)
 
@@ -177,7 +191,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	ft &= ~VT_QUALIFY;
 	v = fr & VT_VALMASK;
 
-	if (mcc_state->pic && (fr & (VT_VALMASK | VT_SYM | VT_LVAL)) == (VT_CONST | VT_SYM | VT_LVAL) && !(sv->sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
+	if (mcc_state->pic && (fr & (VT_VALMASK | VT_SYM | VT_LVAL)) == (VT_CONST | VT_SYM | VT_LVAL) && !(sv->sym->type.t & VT_STATIC) && !(sv->sym->type.t & VT_TLS)) { MCC_TRACE("br\n");
 		int tr = r | MCC_TREG_MEM;
 		if (is_float(ft)) { MCC_TRACE("br\n");
 			tr = get_reg(MCC_RC_INT) | MCC_TREG_MEM;
@@ -201,6 +215,18 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); opc = 0xb70f; }
 			else
 				{ MCC_TRACE("br\n"); opc = 0x8b; }
+#ifndef MCC_TARGET_PE
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				save_reg(MCC_TREG_EAX);
+				gen_tls_addr(sv->sym);
+				o(opc);
+				o(0x80 | (dst_reg << 3));
+				if (sv->sym->type.t & VT_STATIC)
+					{ MCC_TRACE("br\n"); greloc(cur_text_section, sv->sym, ind, R_386_TLS_LDO_32); }
+				gen_le32(fc);
+				return;
+			}
+#endif
 #ifdef MCC_TARGET_PE
 			gen_pe_tls_base(dst_reg);
 			o(opc);
@@ -259,14 +285,24 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
 			gen_le32(fc);
 #else
-			o(0x65);
-			o(0x8b);
-			o(0x05 | (dst << 3));
-			gen_le32(0);
-			o(0x81);
-			o(0xc0 | dst);
-			greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
-			gen_le32(fc);
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				save_reg(MCC_TREG_EAX);
+				gen_tls_addr(sv->sym);
+				o(0x8d);
+				o(0x80 | (dst << 3));
+				if (sv->sym->type.t & VT_STATIC)
+					{ MCC_TRACE("br\n"); greloc(cur_text_section, sv->sym, ind, R_386_TLS_LDO_32); }
+				gen_le32(fc);
+			} else { MCC_TRACE("br\n");
+				o(0x65);
+				o(0x8b);
+				o(0x05 | (dst << 3));
+				gen_le32(0);
+				o(0x81);
+				o(0xc0 | dst);
+				greloca(cur_text_section, sv->sym, ind, R_386_TLS_LE, 0);
+				gen_le32(fc);
+			}
 #endif
 		} else if (mcc_state->pic && (fr & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM)) { MCC_TRACE("br\n");
 			if (sv->sym->type.t & VT_STATIC) { MCC_TRACE("br\n");
@@ -333,7 +369,7 @@ ST_FUNC void store(int r, SValue *v) { MCC_TRACE("enter\n");
 	fc = v->c.i;
 	fr = v->r & VT_VALMASK;
 
-	if (mcc_state->pic && (v->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) && !(v->sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
+	if (mcc_state->pic && (v->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) && !(v->sym->type.t & VT_STATIC) && !(v->sym->type.t & VT_TLS)) { MCC_TRACE("br\n");
 		get_pc_thunk(MCC_TREG_EBX, 1);
 		o(0x9b8b);
 		gen_gotpcrel(MCC_TREG_EBX, v->sym, v->c.i);
@@ -352,12 +388,30 @@ ST_FUNC void store(int r, SValue *v) { MCC_TRACE("enter\n");
 			o(0x58 + base);
 		}
 #else
-		o(0x65);
-		o(opc);
-		o(0x04 | (REG_VALUE(r) << 3));
-		o(0x25);
-		greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, 0);
-		gen_le32(fc);
+		if (mcc_state->pic) { MCC_TRACE("br\n");
+			if (bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE || REG_VALUE(r) != MCC_TREG_EAX) { MCC_TRACE("br\n");
+				save_reg(MCC_TREG_EAX);
+				gen_tls_addr(v->sym);
+				o(opc);
+				o(0x80 | (REG_VALUE(r) << 3));
+			} else { MCC_TRACE("br\n");
+				o(0x50);
+				gen_tls_addr(v->sym);
+				o(0x5b);
+				o(opc);
+				o(0x80 | (MCC_TREG_EBX << 3));
+			}
+			if (v->sym->type.t & VT_STATIC)
+				{ MCC_TRACE("br\n"); greloc(cur_text_section, v->sym, ind, R_386_TLS_LDO_32); }
+			gen_le32(fc);
+		} else { MCC_TRACE("br\n");
+			o(0x65);
+			o(opc);
+			o(0x04 | (REG_VALUE(r) << 3));
+			o(0x25);
+			greloca(cur_text_section, v->sym, ind, R_386_TLS_LE, 0);
+			gen_le32(fc);
+		}
 #endif
 		return;
 	}

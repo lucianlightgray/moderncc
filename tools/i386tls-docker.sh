@@ -6,9 +6,9 @@
 # Two checks:
 #   1. non-PIC __thread: mcc emits R_386_TLS_LE; the linked exe must run and see
 #      correct per-thread values (exit 0).
-#   2. -fPIC __thread: mcc has no i386 GD/LDM codegen, so it must fail loudly at
-#      compile time rather than emit a segfaulting binary (see
-#      i386-gen.c gen_gotpcrel). A silent success here is a regression.
+#   2. -fPIC __thread: mcc emits global-dynamic (GD) for globals and local-dynamic
+#      (LDM) for statics; the linked PIE must run and see correct per-thread
+#      values (exit 0). A compile-time error or a runtime mismatch is a regression.
 #
 # mcc runs on the host and emits i386 ELF; everything i386-native happens in the
 # container. Lets non-i386 hosts (arm64 macOS: no qemu-i386 user-mode, no viable
@@ -52,17 +52,13 @@ int main(void){
 }
 EOF
 
-echo "== host: mcc-i386 -fPIC __thread must fail loudly (no GD/LDM codegen) =="
-if "$MCC" -fPIC -c "$WORK_ABS/tls.c" -o "$WORK_ABS/pic.o" >/dev/null 2>&1; then
-	echo "FAIL  -fPIC __thread compiled silently (regression: emits crashing GOT32X code)"
-	exit 1
-fi
-echo "PASS  -fPIC __thread rejected at compile time"
+echo "== host: mcc-i386 -fPIC __thread -> i386 ELF object (GD globals, LDM statics) =="
+"$MCC" -fPIC -c "$WORK_ABS/tls.c" -o "$WORK_ABS/pic.o"
 
 echo "== host: mcc-i386 non-PIC __thread -> i386 ELF object (R_386_TLS_LE) =="
 "$MCC" -c "$WORK_ABS/tls.c" -o "$WORK_ABS/def.o"
 
-echo "== docker linux/386: link + run the LE object =="
+echo "== docker linux/386: link + run both objects =="
 docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	set -e
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
@@ -71,5 +67,11 @@ docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 		echo "PASS  non-PIC __thread links and runs with correct per-thread values"
 	else
 		echo "FAIL  non-PIC __thread runtime check (exit $?)"; exit 1
+	fi
+	gcc -m32 -pie pic.o -o prog_pic
+	if ./prog_pic; then
+		echo "PASS  -fPIC __thread (GD/LDM) links and runs with correct per-thread values"
+	else
+		echo "FAIL  -fPIC __thread runtime check (exit $?)"; exit 1
 	fi
 '
