@@ -5976,7 +5976,7 @@ ST_FUNC void indir(void) { MCC_TRACE("enter\n");
 	}
 	if (vtop->r & VT_LVAL)
 		{ MCC_TRACE("br\n"); gv(MCC_RC_INT); }
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386
 	if (mcc_state->do_sanitize_undefined)
 		{ MCC_TRACE("br\n"); gen_ubsan_nullptr(); }
 #endif

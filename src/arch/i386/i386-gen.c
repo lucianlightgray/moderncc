@@ -889,6 +889,18 @@ static void gen_ubsan_check_k(int cc, int kind) { MCC_TRACE("enter\n");
 	gsym(t);
 }
 
+void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
+	int r;
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+	if ((vtop->r & VT_VALMASK) >= VT_CONST)
+		{ MCC_TRACE("br\n"); return; }
+	r = vtop->r & VT_VALMASK;
+	o(0x85);
+	o(0xc0 + r * 9);
+	gen_ubsan_check_k(0x85, UBK_NULLPTR);
+}
+
 ST_FUNC void gen_opi(int op) {
 	int r, fr, opc, c, uu;
 

@@ -1650,7 +1650,7 @@ ST_FUNC int gjmp_append(int n, int t);
 ST_FUNC void gen_opi(int op);
 ST_FUNC void gen_opf(int op);
 void gen_trap(void);
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386
 void gen_ubsan_nullptr(void);
 #endif
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 ||                    \
