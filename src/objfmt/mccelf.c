@@ -2915,8 +2915,11 @@ static int elf_output_file(MCCState *s1, const char *filename) { MCC_TRACE("ente
 		if (file_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
 			if (s1->soname)
 				{ MCC_TRACE("br\n"); put_dt(dynamic, DT_SONAME, put_elf_str(dynstr, s1->soname)); }
-			if (textrel)
-				{ MCC_TRACE("br\n"); put_dt(dynamic, DT_TEXTREL, 0); }
+			if (textrel) { MCC_TRACE("br\n");
+				put_dt(dynamic, DT_TEXTREL, 0);
+				if (file_type & MCC_OUTPUT_EXE)
+					{ MCC_TRACE("br\n"); mcc_warning("creating DT_TEXTREL in a PIE; musl maps text read-only and will SIGSEGV at startup -- rebuild the input objects with -fPIC"); }
+			}
 			if (file_type & MCC_OUTPUT_EXE)
 				{ MCC_TRACE("br\n"); dt_flags_1 = DF_1_NOW | DF_1_PIE; }
 			if (s1->znodelete)
