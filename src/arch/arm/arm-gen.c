@@ -1393,6 +1393,19 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		break;
 	case '*':
 		gv2(MCC_RC_INT, MCC_RC_INT);
+		ubovf = mcc_state->do_sanitize_undefined && !nocode_wanted &&
+				!(vtop[-1].type.t & VT_UNSIGNED);
+		if (ubovf) { MCC_TRACE("br\n");
+			uint32_t rl, rn, rh;
+			rh = intr(get_reg(MCC_RC_INT));
+			rl = intr(vtop[-1].r);
+			rn = intr(vtop[0].r);
+			vtop--;
+			o(0xE0C00090 | (rh << 16) | (rl << 12) | (rl << 8) | rn);
+			o(0xE1500000 | (rh << 16) | (31 << 7) | (2 << 5) | rl);
+			arm_ubsan_guard(0x00000000, UBK_MUL);
+			return;
+		}
 		r = vtop[-1].r;
 		fr = vtop[0].r;
 		vtop--;
@@ -1530,9 +1543,18 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		break;
 	case 3:
 		if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
-			r = intr(gv(MCC_RC_INT));
-			o(0xE3500000 | (r << 16));
+			uint32_t rdiv, rdvd;
+			rdiv = intr(gv(MCC_RC_INT));
+			o(0xE3500000 | (rdiv << 16));
 			arm_ubsan_guard(0x10000000, UBK_DIVREM);
+			if (!(vtop[-1].type.t & VT_UNSIGNED)) { MCC_TRACE("br\n");
+				vswap();
+				rdvd = intr(gv(MCC_RC_INT));
+				vswap();
+				o(0xE3500000 | (rdvd << 16) | (1 << 8) | 2);
+				o(0x03700000 | (rdiv << 16) | 1);
+				arm_ubsan_guard(0x10000000, UBK_DIVREM);
+			}
 		}
 		vpush_helper_func(func);
 		vrott(3);
