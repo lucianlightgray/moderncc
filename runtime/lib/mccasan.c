@@ -72,6 +72,10 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_EAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_EDX] : 0;
     uintptr_t addr = uc ? (uintptr_t)(unsigned)uc->uc_mcontext.gregs[REG_ECX] : 0;
+#elif defined(__arm__)
+    long sh = uc ? (long)uc->uc_mcontext.arm_r0 : 0;
+    long off = uc ? (long)uc->uc_mcontext.arm_r1 : 0;
+    uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.arm_r2 : 0;
 #else
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
@@ -131,13 +135,14 @@ __attribute__((constructor)) static void asan_init(void){
        an ebreak -> SIGTRAP, and t0/t1/t2 (x5/x6/x7 = shadow/granule/faulting-addr)
        map to __gregs[5]/[6]/[7]. */
     mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-#elif defined(__i386__)
-    /* i386/Linux (32-bit VA): shadow((a>>3)+OFF) of the whole 4GB space [0,2^32)
-       lands in [OFF, 2^29+OFF) = [0x7fff8000, 0x9fff8000), a single 512MB window
-       at ~2GB that qemu-i386 leaves empty (program/heap sit low, stack near the
-       3-4GB top). One sparse NORESERVE region covers all of heap/stack/global.
-       The trap is ud2 -> SIGILL, and eax/edx/ecx (shadow/granule/faulting-addr)
-       map to gregs[REG_EAX]/[REG_EDX]/[REG_ECX]. */
+#elif defined(__i386__) || defined(__arm__)
+    /* i386/arm Linux (32-bit VA): shadow((a>>3)+OFF) of the whole 4GB space
+       [0,2^32) lands in [OFF, 2^29+OFF) = [0x7fff8000, 0x9fff8000), a single 512MB
+       window at ~2GB that qemu-i386/qemu-arm leaves empty (program/heap sit low,
+       stack near the 3-4GB top). One sparse NORESERVE region covers all of heap/
+       stack/global. The trap is ud2/udf -> SIGILL; on i386 eax/edx/ecx and on arm
+       r0/r1/r2 (shadow/granule/faulting-addr) map to gregs[REG_EAX]/[REG_EDX]/
+       [REG_ECX] and uc_mcontext.arm_r0/arm_r1/arm_r2 respectively. */
     mmap((void*)0x7fff8000UL,(size_t)(0x9fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #else
     mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
