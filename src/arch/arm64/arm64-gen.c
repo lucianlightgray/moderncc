@@ -499,6 +499,27 @@ static void arm64_tls_base_x30(void) { MCC_TRACE("enter\n");
 	o(0xd53bd05e);
 #endif
 }
+
+#ifndef MCC_TARGET_PE
+static void arm64_tls_desc_x30(Sym *sym) { MCC_TRACE("enter\n");
+	o(ARM64_SUB_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(16)); /* sub sp, sp, #16 */
+	arm64_strx(3, 0, 31, 0);                                                        /* str x0, [sp]      */
+	arm64_strx(3, 1, 31, 8);                                                        /* str x1, [sp, #8]  */
+	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_ADR_PAGE21, 0);
+	o(ARM64_ADRP | ARM64_RD(0));                     /* adrp x0, :tlsdesc:sym            */
+	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_LD64_LO12, 0);
+	o(ARM64_LDR_X | ARM64_RN(0) | ARM64_RT(1));      /* ldr  x1, [x0, :tlsdesc_lo12:sym] */
+	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_ADD_LO12, 0);
+	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(0) | ARM64_RD(0)); /* add x0, x0, :tlsdesc_lo12:sym */
+	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_CALL, 0);
+	o(ARM64_BLR | ARM64_RN(1));                       /* blr  x1                          */
+	o(0xd53bd041);                                    /* mrs  x1, tpidr_el0               */
+	o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(0) | ARM64_RN(1) | ARM64_RD(30)); /* add x30, x1, x0 */
+	arm64_ldrx(0, 3, 0, 31, 0);                       /* ldr  x0, [sp]                    */
+	arm64_ldrx(0, 3, 1, 31, 8);                       /* ldr  x1, [sp, #8]                */
+	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(16)); /* add sp, sp, #16 */
+}
+#endif
 #endif
 
 ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
@@ -555,6 +576,17 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
 									 intr(r), 30, 0); }
 #else
+#ifndef MCC_TARGET_PE
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				arm64_tls_desc_x30(sv->sym);
+				if (IS_FREG(r))
+					{ MCC_TRACE("br\n"); arm64_ldrv(arm64_type_size(svtt), fltr(r), 30, svcoff); }
+				else
+					{ MCC_TRACE("br\n"); arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
+										 intr(r), 30, svcoff); }
+				return;
+			}
+#endif
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
 							R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
@@ -589,6 +621,19 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			arm64_macho_tls_addr(sv->sym, svcul);
 			o(ARM64_MOV_REG | ARM64_SF(1) | ARM64_RM(30) | ARM64_RD(intr(r)));
 #else
+#ifndef MCC_TARGET_PE
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				arm64_tls_desc_x30(sv->sym);
+				if (svcul & 0xfff)
+					{ MCC_TRACE("br\n"); o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(30) |
+						ARM64_RD(30) | ARM64_IMM12(svcul)); }
+				if (svcul & 0xfff000ul)
+					{ MCC_TRACE("br\n"); o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_SH(1) | ARM64_RN(30) |
+						ARM64_RD(30) | ARM64_IMM12(svcul >> 12)); }
+				o(ARM64_MOV_REG | ARM64_SF(1) | ARM64_RM(30) | ARM64_RD(intr(r)));
+				return;
+			}
+#endif
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
 							R_AARCH64_TLSLE_ADD_TPREL_HI12, svcul);
@@ -692,6 +737,16 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 			else
 				{ MCC_TRACE("br\n"); arm64_strx(arm64_type_size(svtt), intr(r), 30, 0); }
 #else
+#ifndef MCC_TARGET_PE
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				arm64_tls_desc_x30(sv->sym);
+				if (IS_FREG(r))
+					{ MCC_TRACE("br\n"); arm64_strv(arm64_type_size(svtt), fltr(r), 30, i); }
+				else
+					{ MCC_TRACE("br\n"); arm64_strx(arm64_type_size(svtt), intr(r), 30, i); }
+				return;
+			}
+#endif
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
 							R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
@@ -739,6 +794,16 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 			else
 				{ MCC_TRACE("br\n"); arm64_strx(arm64_type_size(svtt), intr(r), 30, 0); }
 #else
+#ifndef MCC_TARGET_PE
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				arm64_tls_desc_x30(sv->sym);
+				if (IS_FREG(r))
+					{ MCC_TRACE("br\n"); arm64_strv(arm64_type_size(svtt), fltr(r), 30, svcoff); }
+				else
+					{ MCC_TRACE("br\n"); arm64_strx(arm64_type_size(svtt), intr(r), 30, svcoff); }
+				return;
+			}
+#endif
 			arm64_tls_base_x30();
 			greloca(cur_text_section, sv->sym, ind,
 							R_AARCH64_TLSLE_ADD_TPREL_HI12, 0);
