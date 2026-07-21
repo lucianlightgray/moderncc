@@ -2386,7 +2386,9 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
         if((cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64" OR cpu STREQUAL "i386" OR cpu STREQUAL "arm") AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin")
             list(APPEND _objs mccasan)
         endif()
-        if(cpu STREQUAL "x86_64")
+        if(cpu STREQUAL "x86_64"
+           OR ((cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64" OR cpu STREQUAL "i386" OR cpu STREQUAL "arm")
+               AND NOT os STREQUAL "WIN32" AND NOT os STREQUAL "Darwin"))
             list(APPEND _objs mccubsan)
         endif()
         if(NOT MCC_CONFIG_DIAG_RT STREQUAL "off")
