@@ -950,6 +950,21 @@ ST_FUNC void gen_opi(int op) {
 			o(0x85);
 			o(0xc0 + fr * 9);
 			gen_ubsan_check_k(0x85, UBK_DIVREM);
+			if (op != TOK_UDIV && op != TOK_UMOD && !uu) { MCC_TRACE("br\n");
+				int t1, t2;
+				o(0x81);
+				oad(0xf8 + r, 0x80000000);
+				g(0x0f);
+				t1 = gjmp2(0x85, 0);
+				o(0x83);
+				o(0xf8 + fr);
+				g(0xff);
+				g(0x0f);
+				t2 = gjmp2(0x85, 0);
+				gen_ubsan_trap_or_call(UBK_DIVREM);
+				gsym(t1);
+				gsym(t2);
+			}
 		}
 		if (op == TOK_UMULL) { MCC_TRACE("br\n");
 			o(0xf7);
