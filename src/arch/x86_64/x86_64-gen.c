@@ -1749,6 +1749,8 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	g(0x50);                         /* push rax                     */
 	g(0x52);                         /* push rdx                     */
 	g(0x51);                         /* push rcx                     */
+	orex(1, 1, r, 0x89);             /* mov rcx, r  (fault addr)     */
+	o(0xc0 | REG_VALUE(r) << 3 | 1);
 	orex(1, 2, r, 0x89);             /* mov rdx, r                   */
 	o(0xc0 | REG_VALUE(r) << 3 | 2);
 	orex(1, 0, r, 0x89);             /* mov rax, r                   */
@@ -1775,8 +1777,6 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	g(0xc2);
 	g(0x0f);                         /* jl ok                        */
 	t = gjmp2(0x8c, t);
-	orex(1, 1, r, 0x89);             /* mov rcx, r  (fault addr)     */
-	o(0xc0 | REG_VALUE(r) << 3 | 1);
 	o(0x0b0f);                       /* ud2 (rax=shadow,rdx=gran,rcx=addr) */
 	gsym(t);                         /* ok:                          */
 	g(0x59);                         /* pop rcx                      */
