@@ -118,6 +118,31 @@ ST_FUNC void gsym_addr(int t_, int a_) { MCC_TRACE("enter\n");
 	}
 }
 
+#ifndef MCC_TARGET_PE
+static void riscv64_tls_gd_a0(Sym *sym, int addend) { MCC_TRACE("enter\n");
+	int i, lbl_ind;
+	Sym label = {0};
+	EIu(0x13, 0, 2, 2, (uint32_t)(-144) & 0xfff);
+	for (i = 0; i < 8; i++)
+		ES(0x23, 3, 2, 10 + i, (uint32_t)i * 8u);
+	ES(0x23, 3, 2, 1, 64u);
+	for (i = 0; i < 8; i++)
+		ES(0x27, 3, 2, 10 + i, 72u + (uint32_t)i * 8u);
+	lbl_ind = ind;
+	greloca(cur_text_section, sym, ind, R_RISCV_TLS_GD_HI20, addend);
+	o(0x17 | (10 << 7));
+	label.type.t = VT_VOID | VT_STATIC;
+	if (!nocode_wanted)
+		{ MCC_TRACE("br\n"); put_extern_sym(&label, cur_text_section, lbl_ind, 0); }
+	greloca(cur_text_section, &label, ind, R_RISCV_PCREL_LO12_I, 0);
+	EI(0x13, 0, 10, 10, 0);
+	greloca(cur_text_section, external_helper_sym(tok_alloc_const("__tls_get_addr")),
+					ind, R_RISCV_CALL_PLT, 0);
+	o(0x17 | (1 << 7));
+	EI(0x67, 0, 1, 1, 0);
+}
+#endif
+
 static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE("enter\n");
 	int rr, doload = 0, large_addend = 0;
 	int fc = sv->c.i, v = sv->r & VT_VALMASK;
@@ -126,6 +151,26 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE
 		assert(v == VT_CONST);
 		if (sv->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 			rr = is_ireg(r) ? ireg(r) : 5;
+#ifndef MCC_TARGET_PE
+			if (mcc_state->pic) { MCC_TRACE("br\n");
+				int i;
+				riscv64_tls_gd_a0(sv->sym, sv->c.i);
+				if (rr >= 10 && rr <= 17)
+					{ MCC_TRACE("br\n"); ES(0x23, 3, 2, 10, (uint32_t)(rr - 10) * 8u); }
+				else if (rr == 1)
+					{ MCC_TRACE("br\n"); ES(0x23, 3, 2, 10, 64u); }
+				else if (rr != 10)
+					{ MCC_TRACE("br\n"); EI(0x13, 0, rr, 10, 0); }
+				for (i = 0; i < 8; i++)
+					EI(0x03, 3, 10 + i, 2, (uint32_t)i * 8u);
+				EI(0x03, 3, 1, 2, 64u);
+				for (i = 0; i < 8; i++)
+					EI(0x07, 3, 10 + i, 2, 72u + (uint32_t)i * 8u);
+				EIu(0x13, 0, 2, 2, 144u);
+				*new_fc = 0;
+				return rr;
+			}
+#endif
 			greloca(cur_text_section, sv->sym, ind,
 							R_RISCV_TPREL_HI20, sv->c.i);
 			o(0x37 | (rr << 7));

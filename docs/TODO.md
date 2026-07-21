@@ -77,7 +77,7 @@ Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate go
 
 ## Cross-arch parity (raise every arch to the x86_64 Tier-4 reference)
 Goal: each arch matches x86_64 for self-host, promotion, cmov/csel, div-magic, JIT stub tail, ASan native-shadow, stack-protector, UBSan trap, TLS GD/LDM, Tier-4 replay-inline, over-align. Per-arch rollup (detail in the JIT/Sanitizers/AOT sections):
-- riscv64: raise to Tier-4 — self-host, promotion, replay-inline, cmov, JIT stub tail, ASan native-shadow, stack-redzone (ASan). (stack-protector canary DONE.)
+- riscv64: raise to Tier-4 — self-host, promotion, replay-inline, cmov, JIT stub tail, ASan native-shadow, stack-redzone (ASan). (stack-protector canary DONE; -fPIC TLS global-dynamic + riscv64-link GD→LE relaxation DONE, mcc self-links + runs under qemu-riscv64.)
 - i386: ASan native-shadow, 64-bit div-magic helper, JIT stub tail, Tier-4 replay-inline.
 - arm (armv7): raise from Tier-2 — self-host, ASan native-shadow, JIT stub tail, replay-inline.
 - arm64: mode-6 object-output dispatch, in-place patch row, flip `opt_promote` on. (TLS DONE: `-fPIC`/`-fPIE` emits TLSDESC and mcc's own `arm64-link.c` relaxes it to local-exec for non-shared output — mcc self-links + runs global/static `__thread` under qemu-aarch64, relaxation byte-identical to lld; LE unchanged. Shared/DLL dynamic-TLS output still errors.)

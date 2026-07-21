@@ -29,6 +29,7 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_RISCV_SUB_ULEB128:
 	case R_RISCV_TPREL_HI20:
 	case R_RISCV_TPREL_LO12_I:
+	case R_RISCV_TLS_GD_HI20:
 		return 0;
 
 	case R_RISCV_CALL_PLT:
@@ -76,6 +77,7 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 
 	case R_RISCV_TPREL_HI20:
 	case R_RISCV_TPREL_LO12_I:
+	case R_RISCV_TLS_GD_HI20:
 		return NO_GOTPLT_ENTRY;
 	}
 	return -1;
@@ -196,6 +198,14 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_RISCV_CALL:
 	case R_RISCV_CALL_PLT:
+		if (type == R_RISCV_CALL_PLT && !(s1->output_type & MCC_OUTPUT_DLL)) { MCC_TRACE("br\n");
+			const char *nm = (char *)symtab_section->link->data + sym->st_name;
+			if (!strncmp(nm, "__tls_get_addr", 14) || !strncmp(nm, "___tls_get_addr", 15)) { MCC_TRACE("br\n");
+				write32le(ptr, 0x00450533);
+				write32le(ptr + 4, 0x00000013);
+				return;
+			}
+		}
 		write32le(ptr, (read32le(ptr) & 0xfff) | ((val - addr + 0x800) & ~0xfff));
 		write32le(ptr + 4, (read32le(ptr + 4) & 0xfffff) | (((val - addr) & 0xfff) << 20));
 		return;
@@ -354,6 +364,29 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		} else { MCC_TRACE("br\n");
 			write32le(ptr, (read32le(ptr) & 0xfffff) | (((tp_offset) & 0xfff) << 20));
 		}
+		return;
+	}
+
+	case R_RISCV_TLS_GD_HI20: {
+		addr_t tls_start = 0;
+		int64_t tp_offset;
+		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+			mcc_error_noabort("R_RISCV_TLS_GD_HI20 to shared object not supported");
+			return;
+		}
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+			Section *s = s1->sections[i];
+			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
+				if (!tls_start || s->sh_addr < tls_start)
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
+			}
+		}
+		tp_offset = val - tls_start;
+		off64 = (int64_t)(tp_offset + 0x800) >> 12;
+		if ((off64 + ((uint64_t)1 << 20)) >> 21)
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_RISCV_TLS_GD_HI20 relocation failed"); }
+		write32le(ptr, 0x37 | (10 << 7) | ((off64 & 0xfffff) << 12));
+		riscv64_record_pcrel_hi(s1, addr, addr + tp_offset);
 		return;
 	}
 
