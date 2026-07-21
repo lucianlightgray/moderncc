@@ -3417,6 +3417,10 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 		for (p = ar_names, i = 0; i < nsyms; i++, p += strlen(p) + 1) { MCC_TRACE("br\n");
 			Section *s = symtab_section;
 			sym_index = find_elf_sym(s, p);
+#if defined MCC_TARGET_PE && defined MCC_TARGET_I386
+			if (!sym_index && p[0] == '_' && !strchr(p, '@'))
+				{ MCC_TRACE("br\n"); sym_index = find_elf_sym(s, p + 1); }
+#endif
 			if (!sym_index)
 				{ MCC_TRACE("br\n"); continue; }
 			sym = &((ElfW(Sym) *)s->data)[sym_index];

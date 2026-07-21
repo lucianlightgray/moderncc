@@ -1125,4 +1125,18 @@ static int rt_get_caller_pc(addr_t *paddr, rt_frame *f, int level) { MCC_TRACE("
 	return 0;
 }
 #endif
+
+#elif defined MCC_EMBED_JIT
+LIBMCCAPI int mcc_relocate(MCCState *s1) { MCC_TRACE("enter\n");
+	(void)s1;
+	mcc_error_noabort("internal: mcc_relocate unavailable in a cross-target build");
+	return -1;
+}
+
+LIBMCCAPI int mcc_run(MCCState *s1, int argc, char **argv) { MCC_TRACE("enter\n");
+	(void)s1;
+	(void)argc;
+	(void)argv;
+	return mcc_error_noabort("internal: mcc_run unavailable in a cross-target build");
+}
 #endif

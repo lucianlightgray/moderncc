@@ -2162,6 +2162,11 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			if (!name[0])
 				{ MCC_TRACE("br\n"); goto next_sym; }
 
+#ifdef MCC_TARGET_I386
+			if (name[0] == '_' && !strchr(name, '@'))
+				{ MCC_TRACE("br\n"); name++; }
+#endif
+
 			if ((sy->Type >> 4) == COFF_DTYPE_FUNCTION)
 				{ MCC_TRACE("br\n"); type = STT_FUNC; }
 
