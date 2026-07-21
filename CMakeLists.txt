@@ -4408,6 +4408,30 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(abitest-cc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # Short-import (IMPORT_OBJECT_HEADER) COFF-reader regression (MSVC/LLVM/SDK libs).
+    if(MCC_TARGETOS STREQUAL "WIN32" AND MCC_TARGET_IS_HOST AND NOT MCC_EMULATOR
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/pe/shortimport_main.c")
+        if(MCC_CPU STREQUAL "x86_64")
+            set(_shortimp_mach 8664)
+        elseif(MCC_CPU STREQUAL "arm64")
+            set(_shortimp_mach AA64)
+        else()
+            set(_shortimp_mach "")
+        endif()
+        if(_shortimp_mach)
+            add_executable(mkshortimp tools/mkshortimp.c)
+            add_test(NAME pe/short-import COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+                "-DGEN=$<TARGET_FILE:mkshortimp>" "-DMACHINE=${_shortimp_mach}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/pe/shortimport_main.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/pe_short_import${MCC_EXESUF}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/pe/run_shortimport.cmake")
+            set_tests_properties(pe/short-import PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(pe/short-import "short-import gate: x86_64/arm64 PE host only")
+        endif()
+    endif()
+
     set(MCC_REF_CC "" CACHE FILEPATH
         "GCC-compatible reference compiler for the differential tests (mcctest/\
 -bcheck). Defaults to the host compiler; on an MSVC host, auto-detected from PATH.")

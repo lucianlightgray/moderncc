@@ -1928,6 +1928,9 @@ typedef struct _mcc_coff_rel {
 #define IMAGE_REL_ARM64_ADDR64 0x000E
 #endif
 
+static unsigned coff_rd16(const unsigned char *p) { MCC_TRACE("enter\n");
+	return p[0] | (p[1] << 8);
+}
 static int coff_rd32(const unsigned char *p) { MCC_TRACE("enter\n");
 	int v;
 	memcpy(&v, p, 4);
@@ -2364,6 +2367,88 @@ ST_FUNC int coff_import_dllname(int fd, unsigned long off, char *dll, size_t dsz
 	}
 	mcc_free(shdr);
 	return ret;
+}
+
+#define MCC_IMPORT_NAMETYPE_ORDINAL 0
+#define MCC_IMPORT_NAMETYPE_NAME 1
+#define MCC_IMPORT_NAMETYPE_NOPREFIX 2
+#define MCC_IMPORT_NAMETYPE_UNDECORATE 3
+#define MCC_IMPORT_NAMETYPE_EXPORTAS 4
+
+ST_FUNC int coff_short_import_info(int fd, unsigned long off,
+																	 char *impname, size_t impsz,
+																	 char *expname, size_t expsz,
+																	 char *dll, size_t dsz,
+																	 int *ordinal) { MCC_TRACE("enter\n");
+	unsigned char hdr[20];
+	char *blob;
+	const char *name, *dllname, *exportas;
+	unsigned sizeofdata, ordhint, nametype;
+	size_t nlen, dlen;
+
+	impname[0] = expname[0] = dll[0] = 0;
+	*ordinal = 0;
+
+	lseek(fd, off, SEEK_SET);
+	if (full_read(fd, hdr, sizeof hdr) != sizeof hdr)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (coff_rd16(hdr) != 0 || coff_rd16(hdr + 2) != 0xFFFF)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (coff_rd16(hdr + 6) != (WORD)IMAGE_FILE_MACHINE)
+		{ MCC_TRACE("br\n"); return 0; }
+	sizeofdata = (unsigned)coff_rd32(hdr + 12);
+	ordhint = coff_rd16(hdr + 16);
+	nametype = (coff_rd16(hdr + 18) >> 2) & 7;
+	if (!sizeofdata)
+		{ MCC_TRACE("br\n"); return 0; }
+
+	blob = mcc_malloc(sizeofdata + 1);
+	lseek(fd, off + sizeof hdr, SEEK_SET);
+	if (full_read(fd, blob, sizeofdata) != (ssize_t)sizeofdata)
+		{ MCC_TRACE("br\n"); mcc_free(blob); return 0; }
+	blob[sizeofdata] = 0;
+
+	name = blob;
+	nlen = strlen(name);
+	if (nlen + 1 >= sizeofdata)
+		{ MCC_TRACE("br\n"); mcc_free(blob); return 0; }
+	dllname = name + nlen + 1;
+	dlen = strlen(dllname);
+	if (!dlen)
+		{ MCC_TRACE("br\n"); mcc_free(blob); return 0; }
+	exportas = dllname + dlen + 1;
+
+	pstrcpy(impname, impsz, name);
+	pstrcpy(dll, dsz, dllname);
+
+	switch (nametype) { MCC_TRACE("br\n");
+	case MCC_IMPORT_NAMETYPE_ORDINAL:
+		*ordinal = (int)ordhint;
+		break;
+	case MCC_IMPORT_NAMETYPE_EXPORTAS:
+		if ((size_t)(exportas - blob) < sizeofdata && exportas[0])
+			{ MCC_TRACE("br\n"); pstrcpy(expname, expsz, exportas); }
+		else
+			{ MCC_TRACE("br\n"); pstrcpy(expname, expsz, name); }
+		break;
+	case MCC_IMPORT_NAMETYPE_NOPREFIX:
+	case MCC_IMPORT_NAMETYPE_UNDECORATE: {
+		const char *e = name;
+		char *at;
+		if (*e == '?' || *e == '@' || *e == '_')
+			{ MCC_TRACE("br\n"); ++e; }
+		pstrcpy(expname, expsz, e);
+		if (nametype == MCC_IMPORT_NAMETYPE_UNDECORATE && (at = strchr(expname, '@')))
+			{ MCC_TRACE("br\n"); *at = 0; }
+		break;
+	}
+	case MCC_IMPORT_NAMETYPE_NAME:
+	default:
+		pstrcpy(expname, expsz, name);
+		break;
+	}
+	mcc_free(blob);
+	return 1;
 }
 
 ST_FUNC int pe_load_file(struct MCCState *s1, int fd, const char *filename) { MCC_TRACE("enter\n");

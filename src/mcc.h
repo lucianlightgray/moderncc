@@ -1793,6 +1793,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 ST_FUNC int coff_object_type(int fd, unsigned long file_offset);
 ST_FUNC int coff_import_func_info(int fd, unsigned long off, char *impname, size_t impsz, char *expname, size_t expsz, char *headsym, size_t headsz);
 ST_FUNC int coff_import_dllname(int fd, unsigned long off, char *dll, size_t dsz);
+ST_FUNC int coff_short_import_info(int fd, unsigned long off, char *impname, size_t impsz, char *expname, size_t expsz, char *dll, size_t dsz, int *ordinal);
 ST_FUNC void pe_import_set_alias(MCCState *s1, const char *sym, const char *bind);
 ST_FUNC const char *pe_import_bindname(MCCState *s1, const char *sym);
 ST_FUNC int pe_output_file(MCCState *s1, const char *filename);

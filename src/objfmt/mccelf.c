@@ -3452,10 +3452,24 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 				}
 				if (coff_load_object_file(s1, fd, off) < 0)
 					{ MCC_TRACE("br\n"); goto the_end; }
-			} else
-#endif
+			} else { MCC_TRACE("br\n");
+				char impname[512], expname[512], dll[512];
+				int ordinal;
+				if (coff_short_import_info(fd, off, impname, sizeof impname, expname, sizeof expname, dll, sizeof dll, &ordinal)) { MCC_TRACE("br\n");
+					if (!find_elf_sym(s1->dynsymtab_section, impname)) { MCC_TRACE("br\n");
+						pe_putimport(s1, mcc_add_dllref(s1, dll, 0)->index, impname, ordinal);
+						if (!ordinal)
+							{ MCC_TRACE("br\n"); pe_import_set_alias(s1, impname, expname); }
+					}
+					continue;
+				}
+				if (mcc_load_object_file(s1, fd, off) < 0)
+					{ MCC_TRACE("br\n"); goto the_end; }
+			}
+#else
 			if (mcc_load_object_file(s1, fd, off) < 0)
 				{ MCC_TRACE("br\n"); goto the_end; }
+#endif
 			++bound;
 		}
 	} while (bound);
