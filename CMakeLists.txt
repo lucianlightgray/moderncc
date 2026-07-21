@@ -914,6 +914,12 @@ if(_tc_count GREATER 1 OR _tg_count GREATER 1 OR NOT MCC_TARGETS STREQUAL "nativ
 endif()
 if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
     include(ExternalProject)
+    cmake_host_system_information(RESULT _sb_ncore QUERY NUMBER_OF_LOGICAL_CORES)
+    if(NOT _sb_ncore GREATER 0)
+        set(_sb_ncore 1)
+    endif()
+    set(MCC_SUPERBUILD_CTEST_JOBS "${_sb_ncore}" CACHE STRING
+        "ctest --parallel level for each superbuild cell's test step (1 = serial)")
     set(_order "parallel")
     if(MCC_SUPERBUILD_SEQUENTIAL)
         set(_order "toolchains in order, targets parallel")
@@ -1038,7 +1044,8 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
                     endif()
                 endif()
                 ExternalProject_Add_Step(${_cell} ctest
-                    COMMAND "${CMAKE_CTEST_COMMAND}" ${_cell_ctest_cfg} --output-on-failure
+                    COMMAND "${CMAKE_CTEST_COMMAND}" ${_cell_ctest_cfg}
+                            --parallel ${MCC_SUPERBUILD_CTEST_JOBS} --output-on-failure
                             --output-junit ctest-junit.xml
                     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/${_cell}"
                     DEPENDEES build ALWAYS ON USES_TERMINAL ON)
