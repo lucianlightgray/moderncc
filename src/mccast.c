@@ -13553,6 +13553,45 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						MCC_TRACE("jit-slot %s (slot@sec+%d, body+6)\n", funcname, slot_off);
 						goto ast_jit_dispatch_done;
 					}
+#elif defined(MCC_TARGET_I386)
+					if (ast_jit_dispatch_env == 6) { MCC_TRACE("br\n");
+						int slot_off = data_section->data_offset;
+						unsigned char *slotp = section_ptr_add(data_section, MCC_PTR_SIZE);
+						memset(slotp, 0, MCC_PTR_SIZE);
+#ifdef MCC_EMBED_JIT
+						if (mcc_state && (mcc_state->embed_jit ||
+															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+							char slotname[256];
+							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
+											 mcc_state->leading_underscore ? "_" : "", funcname);
+							set_global_sym(mcc_state, slotname, data_section, slot_off);
+							mccjit_embed_note(funcname, ast_cur, sym);
+							ast_jit_submit_aot(sym);
+						}
+#endif
+						ind = aot_base;
+						rsym = 0;
+						if (rs)
+							{ MCC_TRACE("br\n"); rs->data_offset = ast_reloc0_sv; }
+						nocode_wanted = 0;
+						g(0xff);
+						g(0x25);
+						Sym *slot_sym =
+							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
+						greloca(cur_text_section, slot_sym, ind, R_386_32, 0);
+						gen_le32(0);
+						Sym *body_sym =
+							get_sym_ref(&char_pointer_type, cur_text_section, aot_base + 6, MCC_PTR_SIZE);
+						greloca(data_section, body_sym, slot_off, R_386_32, 0);
+						ast_baseline_splice(aot_code, aot_len, aot_rel, aot_rlen, aot_base,
+																aot_chain);
+						if (saved_loc < loc)
+							{ MCC_TRACE("br\n"); loc = saved_loc; }
+						mcc_free(aot_code);
+						mcc_free(aot_rel);
+						MCC_TRACE("jit-slot %s (slot@sec+%d, body+6)\n", funcname, slot_off);
+						goto ast_jit_dispatch_done;
+					}
 #elif defined(MCC_TARGET_ARM64)
 					if (ast_jit_dispatch_env == 6 && mcc_state &&
 							(mcc_state->embed_jit ||
@@ -13775,7 +13814,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					MCC_TRACE("jit-dispatch %s mode=%d spec=%d np=%d (%d code, %d rel)\n", funcname,
 										ast_jit_dispatch_env, spec, npoff, aot_len, aot_rlen);
 #endif
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || \
+		defined(MCC_TARGET_I386)
 				ast_jit_dispatch_done:;
 #endif
 #endif

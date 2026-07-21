@@ -35,11 +35,28 @@
 ## JIT Windows / i386-PE
 > **[WIP 2026-07-21]** Whole Windows/PE track picked up — items below marked `[WIP]` are actively being worked via agents.
 - [WIP] Un-gate the i386-PE KGC/FP(x87)/mixed stub tail (landed gated behind MCC_JIT_I386_STUBS, default OFF). Needs the M8 bar:
-  (1) i386 AST-faithful-replay desync for mixed long+double signatures ([ast-verify] desync) blocks
-      the -run baking that would stash such functions, so the mixed stub can't yet promote through
-      the normal pipeline (front-end/AST-recorder gap, upstream of the stub tail);
-  (2) the mode-6 entry dispatcher in src/mccast.c emits hardcoded x86-64 opcodes (REX/rbp) with no
-      i386 variant, so end-to-end -run JIT baking does not fire on i386 (fparg end-to-end sub-test);
+  (1) i386 AST-faithful-replay desync — ROOT-CAUSED 2026-07-21: NOT the mixed signature per se, it is
+      specifically the `double→long` (float→int) conversion. Bisected: `(double)a` int→float and pure
+      long+double adds are faithful; any function containing a float→int cast desyncs at
+      `ast_hook_vpush` (mccast.c:1452, `ast_vn != rel-1`). Cause: on i386, `gen_cvt_ftoi`
+      (i386-gen.c:1241) + the unsigned/llong `gen_cvt_ftoi1` (mccgen.c:3253) lower float→int as a
+      helper libcall (`__fixdfdi` etc.) that churns the vstack, but the recorder logs the cast as a
+      depth-neutral Convert node and the internal libcall's push/call/push is not bracketed by
+      `ast_in_op`/the call hooks (scalar ftoi/itof at mccgen.c:3423/3428 lack the `ast_in_op++/--`
+      guard the adjacent complex-cast path uses). x86_64/arm64/riscv64 do float→int in one hw insn, so
+      they stay synced (hence x86_64 faithful, i386 not). A trial `ast_in_op` bracket fixes all four
+      repro sigs BUT regresses 3 x86_64 ratchet goldens (its unsigned/llong itof is also a libcall) —
+      so the clean fix must hook these codegen-internal libcalls symmetrically + resync `ast_vn`, then
+      regenerate the ratchet under a full AST-verify soak. DEFERRED (cross-cutting/risky); still blocks
+      the -run baking that stashes such functions;
+  (2) DONE 2026-07-21: the mode-6 entry dispatcher now has an i386 branch (mccast.c ~13556, `#elif
+      MCC_TARGET_I386`) — 4-byte `.data` slot, `ff 25 disp32` = `jmp dword ptr [disp32]` (absolute
+      indirect on i386, not RIP-relative), slot addr via `R_386_32` addend 0, body ptr via `R_386_32`;
+      6-byte entry unchanged. Validated: mcc-i386 + mcc-i386-win32 (PE) build clean; host x86_64
+      JIT/verify/AOT suite 54/54 (no regression); capstone disasm of an i386-ELF object confirms the
+      `jmp [slot]` + `__mccjit_slot_f` in `.data` + spliced baseline body + correct relocs. Live `-run`
+      swap (fparg end-to-end `swapped=1`) still needs an i386-native host (this x86_64/mingw box has no
+      32-bit multilib) — validated by object-emission+disasm only;
   (3) differential vs gcc/clang + self-host on i386, then flip the default.
 - [WIP] arm64-PE runtime-JIT (frameless-leaf return corruption + RtlAddFunctionTable/icache); the native-fault class needs arm64-Windows HW (see NOTE below).
 - [WIP] MSVC-arm64 JIT-exec miscompile; needs arm64-Windows HW for the wild-jump fault (see NOTE below).
