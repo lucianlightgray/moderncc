@@ -934,7 +934,11 @@ static void gen_ubsan_trap_or_call(int kind) { MCC_TRACE("enter\n");
 		g(0x89); g(0xe3);
 		g(0x83); g(0xe4); g(0xf0);
 		oad(0xe8, -4);
+#ifdef MCC_TARGET_PE
+		greloc(cur_text_section, sym, ind - 4, R_386_PC32);
+#else
 		greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
+#endif
 		g(0x89); g(0xdc);
 		g(0x5b);
 		g(0x5a); g(0x59); g(0x58);
