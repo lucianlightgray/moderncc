@@ -195,6 +195,16 @@ static int do_run_preset(int argc, char **argv) {
 				ts_arg(&v, excl);
 			}
 		}
+		{
+			const char *sh = getenv("MCC_CI_CTEST_SHARD");
+			const char *ns = getenv("MCC_CI_CTEST_NSHARDS");
+			if (sh && *sh && ns && *ns && strcmp(ns, "1") != 0) {
+				char ispec[64];
+				snprintf(ispec, sizeof ispec, "%s,,%s", sh, ns);
+				ts_arg(&v, "-I");
+				ts_arg(&v, ispec);
+			}
+		}
 		for (i = extra_start; i < argc; i++)
 			ts_arg(&v, argv[i]);
 		{
@@ -1287,11 +1297,16 @@ static int do_plan(int argc, char **argv) {
 								PS_DARWIN[i]);
 	} else if (!strcmp(job, "windows")) {
 		for (i = 0; PS_WIN_MSVC[i]; i++)
-			for (k = 0; PLAN_WIN[k].arch; k++)
-				plan_cell(&first,
-									"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\",\"msvcarch\":\"%s\"",
-									PS_WIN_MSVC[i], PLAN_WIN[k].arch,
-									PLAN_WIN[k].runner, PLAN_WIN[k].msvcarch);
+			for (k = 0; PLAN_WIN[k].arch; k++) {
+				int nsh = strcmp(PLAN_WIN[k].arch, "arm64") == 0 ? 2 : 1;
+				int sh;
+				for (sh = 1; sh <= nsh; sh++)
+					plan_cell(&first,
+										"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
+										"\"msvcarch\":\"%s\",\"shard\":%d,\"nshards\":%d",
+										PS_WIN_MSVC[i], PLAN_WIN[k].arch,
+										PLAN_WIN[k].runner, PLAN_WIN[k].msvcarch, sh, nsh);
+			}
 		for (i = 0; PS_WIN_MINGW[i]; i++)
 			for (k = 0; PLAN_MINGW[k].arch; k++)
 				plan_cell(&first,

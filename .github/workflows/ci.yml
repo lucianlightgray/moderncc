@@ -140,13 +140,17 @@ jobs:
     # msvc and mingw are both Windows toolchains, so they share one job: the
     # matrix (`ci plan --job windows`) carries msvc cells (cl, VS generator,
     # native x86_64 + arm64) alongside mingw cells (winlibs GCC superbuild,
-    # Ninja, x86_64 + i686), distinguished by matrix.mingw. Every cell runs
-    # the full ctest suite and diffs mcc against whatever reference compilers
-    # (gcc/clang) the image offers, so side-by-side coverage is maximal. The
-    # 32-bit mingw cell is experimental (matrix.experimental), so it reports
-    # but does not gate until i386-Windows codegen is proven green.
+    # Ninja, x86_64 + i686), distinguished by matrix.mingw. Each cell diffs
+    # mcc against whatever reference compilers (gcc/clang) the image offers,
+    # so side-by-side coverage is maximal. The 32-bit mingw cell is
+    # experimental (matrix.experimental), so it reports but does not gate
+    # until i386-Windows codegen is proven green. The arm64-msvc cell is the
+    # CI wall-clock tail (slow per-core runner + x86-emulated diff3 gcc), so
+    # `ci plan` splits its ctest into matrix.nshards round-robin shards
+    # (ctest -I) and drops the redundant emulated diff3 suite there (full
+    # diff3 still runs on x86_64-msvc); only shard 1 packs/uploads the dist.
     needs: plan
-    name: ${{ matrix.preset }} / ${{ matrix.arch }}
+    name: ${{ matrix.preset }} / ${{ matrix.arch }}${{ matrix.nshards > 1 && format(' ({0}/{1})', matrix.shard, matrix.nshards) || '' }}
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.experimental || false }}
     strategy:
@@ -195,7 +199,9 @@ jobs:
       - name: run ${{ matrix.preset }} (msvc - configure + build + test + install)
         if: ${{ !matrix.mingw }}
         env:
-          MCC_CI_CTEST_EXCLUDE: ${{ matrix.preset == 'sanitize-msvc' && '^diff3/' || '' }}
+          MCC_CI_CTEST_EXCLUDE: ${{ (matrix.preset == 'sanitize-msvc' || matrix.arch == 'arm64') && '^diff3/' || '' }}
+          MCC_CI_CTEST_SHARD: ${{ matrix.shard }}
+          MCC_CI_CTEST_NSHARDS: ${{ matrix.nshards }}
         # --timeout caps any single test: a hung test (e.g. a thread-contention
         # deadlock that only manifests on real arm64 silicon) is killed and named
         # in the log instead of stalling the whole job until it is cancelled.
@@ -216,10 +222,12 @@ jobs:
         run: |
           if (-not (Test-Path ci.exe)) { exit 0 }
           $xml = if ("${{ matrix.mingw }}" -eq "true") { "cmake-mingw/mingw-native/ctest-junit.xml" } else { "cmake-${{ matrix.preset }}/ctest-junit.xml" }
-          .\ci.exe junit-summary "$xml" "${{ matrix.preset }} / ${{ matrix.arch }}" | Out-File -FilePath "${env:GITHUB_STEP_SUMMARY}" -Append -Encoding utf8
+          .\ci.exe junit-summary "$xml" "${{ matrix.preset }} / ${{ matrix.arch }}${{ matrix.nshards > 1 && format(' ({0}/{1})', matrix.shard, matrix.nshards) || '' }}" | Out-File -FilePath "${env:GITHUB_STEP_SUMMARY}" -Append -Encoding utf8
       - name: pack build targets
+        if: ${{ matrix.shard == 1 || !matrix.nshards }}
         run: tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
       - uses: actions/upload-artifact@v7
+        if: ${{ matrix.shard == 1 || !matrix.nshards }}
         with:
           name: ${{ env.ART }}
           path: ${{ env.ART }}.tar.xz
