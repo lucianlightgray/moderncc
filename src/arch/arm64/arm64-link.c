@@ -22,6 +22,10 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_LDST8_ABS_LO12_NC:
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	case R_AARCH64_TLSDESC_ADR_PAGE21:
+	case R_AARCH64_TLSDESC_LD64_LO12:
+	case R_AARCH64_TLSDESC_ADD_LO12:
+	case R_AARCH64_TLSDESC_CALL:
 	case R_AARCH64_GLOB_DAT:
 	case R_AARCH64_COPY:
 		return 0;
@@ -57,6 +61,10 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_TSTBR14:
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	case R_AARCH64_TLSDESC_ADR_PAGE21:
+	case R_AARCH64_TLSDESC_LD64_LO12:
+	case R_AARCH64_TLSDESC_ADD_LO12:
+	case R_AARCH64_TLSDESC_CALL:
 		return NO_GOTPLT_ENTRY;
 
 	case R_AARCH64_ABS32:
@@ -397,6 +405,37 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		else
 			{ MCC_TRACE("br\n"); imm = tp_offset & 0xfff; }
 		write32le(ptr, ((read32le(ptr) & 0xffc003ff) | (imm << 10)));
+		return;
+	}
+	case R_AARCH64_TLSDESC_ADR_PAGE21:
+	case R_AARCH64_TLSDESC_LD64_LO12:
+	case R_AARCH64_TLSDESC_ADD_LO12:
+	case R_AARCH64_TLSDESC_CALL: {
+		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+			mcc_error_noabort("R_AARCH64_TLSDESC relocation type 0x%x to shared object not supported",
+												(unsigned)type);
+			return;
+		}
+		addr_t tls_start = 0;
+		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+			Section *s = s1->sections[i];
+			addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+			if (s->sh_flags & SHF_TLS && ssz) { MCC_TRACE("br\n");
+				if (!tls_start || s->sh_addr < tls_start)
+					{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
+			}
+		}
+#ifdef MCC_TARGET_PE
+		int64_t tp_offset = val - tls_start;
+#else
+		int64_t tp_offset = val - tls_start + AARCH64_TLS_TCB_SIZE;
+#endif
+		if (type == R_AARCH64_TLSDESC_ADR_PAGE21)
+			{ MCC_TRACE("br\n"); write32le(ptr, 0xd2a00000 | ((uint32_t)(tp_offset >> 16 & 0xffff) << 5)); }
+		else if (type == R_AARCH64_TLSDESC_LD64_LO12)
+			{ MCC_TRACE("br\n"); write32le(ptr, 0xf2800000 | ((uint32_t)(tp_offset & 0xffff) << 5)); }
+		else
+			{ MCC_TRACE("br\n"); write32le(ptr, ARM64_NOP); }
 		return;
 	}
 	case R_AARCH64_RELATIVE:
