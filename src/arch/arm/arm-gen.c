@@ -1163,6 +1163,7 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 }
 
 #define ARM_ASAN_ENTER_SLOTS 4
+#define ARM_ASAN_ENTER_SLOTS_PIC 6
 static addr_t arm_asan_off;
 static addr_t arm_asan_ind;
 
@@ -1173,6 +1174,14 @@ static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
 }
 
 static void gen_asan_stack_tab(Sym *tab) { MCC_TRACE("enter\n");
+	if (mcc_state->pic) { MCC_TRACE("br\n");
+		o(0xE59F0000);
+		o(0xEA000000);
+		greloc(cur_text_section, tab, ind, R_ARM_REL32);
+		o(-12);
+		o(0xE080000F);
+		return;
+	}
 	greloc(cur_text_section, tab, ind, R_ARM_MOVW_ABS_NC);
 	o(0xE3000000);
 	greloc(cur_text_section, tab, ind, R_ARM_MOVT_ABS);
@@ -1180,13 +1189,14 @@ static void gen_asan_stack_tab(Sym *tab) { MCC_TRACE("enter\n");
 }
 
 static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
-	int i;
+	int i, slots;
 	if (!asan_lstack_section)
 		{ MCC_TRACE("br\n"); asan_lstack_section =
 			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC); }
 	arm_asan_off = asan_lstack_section->data_offset;
 	arm_asan_ind = ind;
-	for (i = 0; i < ARM_ASAN_ENTER_SLOTS; i++)
+	slots = mcc_state->pic ? ARM_ASAN_ENTER_SLOTS_PIC : ARM_ASAN_ENTER_SLOTS;
+	for (i = 0; i < slots; i++)
 		{ MCC_TRACE("br\n"); o(0xE1A00000); }
 }
 
