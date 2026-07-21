@@ -2323,7 +2323,7 @@ function(_mcc_mccrt_src obj outvar)
     endif()
 endfunction()
 
-function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
+function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir out_extra)
     set(_common stdatomic atomic builtin alloca alloca-bt complex)
     set(_rt_gcc OFF)
     if(native AND (MCC_MCCRT_USE_HOSTCC OR MCC_EMBED_MCCRT)
@@ -2364,6 +2364,14 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
             if(MCC_CONFIG_DIAG_RT STREQUAL "bounds")
                 list(APPEND _objs bcheck)
             endif()
+        endif()
+    elseif(san AND NOT _win AND NOT _osx)
+        if(cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64")
+            list(APPEND _objs mccasan)
+        endif()
+        if(cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64"
+           OR cpu STREQUAL "i386" OR cpu STREQUAL "arm")
+            list(APPEND _objs mccubsan)
         endif()
     endif()
 
@@ -2466,7 +2474,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native archive objdir out_extra)
             endif()
         endif()
         if(obj IN_LIST MCC_MCCRT_EXTRA_O)
-            set(_out "${_extra_dir}/${obj}.o")
+            set(_out "${_extra_dir}/${prefix}${obj}.o")
             list(APPEND _extra "${_out}")
         else()
             set(_out "${objdir}/${obj}.o")
@@ -2514,7 +2522,7 @@ if(MCC_TARGETOS STREQUAL "WIN32")
 else()
     set(MCC_MCCRT_ARCHIVE "${CMAKE_BINARY_DIR}/libmccrt.a")
 endif()
-mcc_build_mccrt(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON
+mcc_build_mccrt(mccrt mcc "${MCC_CPU}" "${MCC_TARGETOS}" ON "" ON
     "${MCC_MCCRT_ARCHIVE}" "${CMAKE_BINARY_DIR}/lib"
     MCCRT_EXTRA_OBJS)
 
@@ -2762,11 +2770,20 @@ if(MCC_ENABLE_CROSS)
         mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
                           mcc-${_t}-static "mcc-${_t}-static" _cross_defs)
 
-        mcc_build_mccrt(${_t}-mccrt mcc-${_t} "${_ccpu}" "${_cos}" OFF
+        set(_csan OFF)
+        if(NOT _ctriplet STREQUAL "" AND _cos STREQUAL "Linux"
+           AND EXISTS "/usr/${_ctriplet}/include/stdio.h")
+            set(_csan ON)
+        endif()
+        mcc_build_mccrt(${_t}-mccrt mcc-${_t} "${_ccpu}" "${_cos}" OFF "${_t}-" ${_csan}
             "${CMAKE_BINARY_DIR}/${_t}-libmccrt.a"
             "${CMAKE_BINARY_DIR}/lib-${_t}" _cross_extra)
         install(FILES "${CMAKE_BINARY_DIR}/${_t}-libmccrt.a"
             DESTINATION "${_mccdir_install}")
+        if(NOT "${_cross_extra}" STREQUAL "")
+            install(FILES ${_cross_extra}
+                DESTINATION "${_mccdir_install}")
+        endif()
 
         if(MCC_BUILD_MUSL AND NOT _ctriplet STREQUAL "" AND _cos STREQUAL "Linux")
             mcc_musl_target("${_ccpu}" ON _cmi _cmt)
