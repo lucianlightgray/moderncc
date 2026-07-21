@@ -2500,7 +2500,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 							san_tok_eq(tok, n, "shift-exponent") ||
 							san_tok_eq(tok, n, "shift-base")) { MCC_TRACE("br\n");
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || \
-		defined MCC_TARGET_RISCV64
+		defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386 || \
+		defined MCC_TARGET_ARM
 						/* Trap mode (ud2/brk/ebreak) is pure arch instruction emission with no
 						   runtime handler, so it works on PE too — the trap crashes the process
 						   with EXCEPTION_ILLEGAL_INSTRUCTION on Windows just as it raises SIGILL
@@ -2509,7 +2510,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #else
 						mcc_warning_c(warn_unsupported)(
 								"-fsanitize=undefined is only implemented on x86_64, arm64, "
-								"and riscv64");
+								"riscv64, i386, and arm");
 #endif
 					} else if (san_tok_eq(tok, n, "address") ||
 										 san_tok_eq(tok, n, "bounds")) { MCC_TRACE("br\n");
@@ -2550,12 +2551,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 								 !strcmp(optarg, "no-sanitize-trap=undefined") ||
 								 !strcmp(optarg, "no-sanitize-trap=all") ||
 								 !strcmp(optarg, "no-sanitize-trap")) { MCC_TRACE("br\n");
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || \
+		((defined MCC_TARGET_I386 || defined MCC_TARGET_ARM) && !defined MCC_TARGET_PE)
 				s->do_sanitize_recover = 1;
 #else
 				mcc_warning_c(warn_unsupported)(
-						"-f%s: UBSan recover (diagnostic handlers) is only implemented "
-						"on x86_64, arm64 and riscv64; keeping trap-on-error",
+						"-f%s: UBSan recover (diagnostic handlers) is not implemented on "
+						"this target (i386/arm recover is ELF-only); keeping trap-on-error",
 						optarg);
 #endif
 			} else if (!strcmp(optarg, "diagnostics-color") || !strcmp(optarg, "diagnostics-color=always") || !strcmp(optarg, "color-diagnostics")) { MCC_TRACE("br\n");

@@ -730,9 +730,48 @@ ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	return rf;
 }
 
-ST_FUNC void gen_opi(int op) {
-	int r, fr, opc, c;
+enum { UBK_OVERFLOW, UBK_SUB, UBK_MUL, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
 
+static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SUB:     { MCC_TRACE("br\n"); return "__ubsan_handle_sub_overflow_minimal"; }
+	case UBK_MUL:     { MCC_TRACE("br\n"); return "__ubsan_handle_mul_overflow_minimal"; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
+	default:          { MCC_TRACE("br\n"); return "__ubsan_handle_add_overflow_minimal"; }
+	}
+}
+
+static void gen_ubsan_trap_or_call(int kind) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+		Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
+		g(0x50); g(0x51); g(0x52);
+		g(0x53);
+		g(0x89); g(0xe3);
+		g(0x83); g(0xe4); g(0xf0);
+		oad(0xe8, -4);
+		greloc(cur_text_section, sym, ind - 4, R_386_PLT32);
+		g(0x89); g(0xdc);
+		g(0x5b);
+		g(0x5a); g(0x59); g(0x58);
+		return;
+	}
+	o(0x0b0f);
+}
+
+static void gen_ubsan_check_k(int cc, int kind) { MCC_TRACE("enter\n");
+	int t;
+	g(0x0f);
+	t = gjmp2(cc, 0);
+	gen_ubsan_trap_or_call(kind);
+	gsym(t);
+}
+
+ST_FUNC void gen_opi(int op) {
+	int r, fr, opc, c, uu;
+
+	uu = (vtop[-1].type.t & VT_UNSIGNED) != 0;
 	switch (op) { MCC_TRACE("br\n");
 	case '+':
 	case TOK_ADDC1:
@@ -763,6 +802,9 @@ ST_FUNC void gen_opi(int op) {
 			o((opc << 3) | 0x01);
 			o(0xc0 + r + fr * 8);
 		}
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu &&
+				(op == '+' || op == '-'))
+			{ MCC_TRACE("br\n"); gen_ubsan_check_k(0x81, op == '-' ? UBK_SUB : UBK_OVERFLOW); }
 		vtop--;
 		if (op >= TOK_ULT && op <= TOK_GT)
 			{ MCC_TRACE("br\n"); vset_VT_CMP(op); }
@@ -793,6 +835,8 @@ ST_FUNC void gen_opi(int op) {
 		vtop--;
 		o(0xaf0f);
 		o(0xc0 + fr + r * 8);
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu)
+			{ MCC_TRACE("br\n"); gen_ubsan_check_k(0x81, UBK_MUL); }
 		break;
 	case TOK_SHL:
 		opc = 4;
@@ -815,6 +859,12 @@ ST_FUNC void gen_opi(int op) {
 		} else { MCC_TRACE("br\n");
 			gv2(MCC_RC_INT, MCC_RC_ECX);
 			r = vtop[-1].r;
+			if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
+				o(0x83);
+				o(0xf9);
+				g(32);
+				gen_ubsan_check_k(0x82, UBK_SHIFT);
+			}
 			o(0xd3);
 			o(opc | r);
 		}
@@ -832,6 +882,11 @@ ST_FUNC void gen_opi(int op) {
 		vtop--;
 		save_reg(MCC_TREG_EDX);
 		save_reg_upstack(MCC_TREG_EAX, 1);
+		if (op != TOK_UMULL && mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
+			o(0x85);
+			o(0xc0 + fr * 9);
+			gen_ubsan_check_k(0x85, UBK_DIVREM);
+		}
 		if (op == TOK_UMULL) { MCC_TRACE("br\n");
 			o(0xf7);
 			o(0xe0 + fr);

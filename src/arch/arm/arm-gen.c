@@ -1298,8 +1298,48 @@ ST_FUNC int gjmp_append(int n, int t) { MCC_TRACE("enter\n");
 	return t;
 }
 
+enum { UBK_OVERFLOW, UBK_SUB, UBK_MUL, UBK_DIVREM, UBK_SHIFT, UBK_NULLPTR };
+
+static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
+	switch (kind) { MCC_TRACE("br\n");
+	case UBK_SUB:     { MCC_TRACE("br\n"); return "__ubsan_handle_sub_overflow_minimal"; }
+	case UBK_MUL:     { MCC_TRACE("br\n"); return "__ubsan_handle_mul_overflow_minimal"; }
+	case UBK_DIVREM:  { MCC_TRACE("br\n"); return "__ubsan_handle_divrem_overflow_minimal"; }
+	case UBK_SHIFT:   { MCC_TRACE("br\n"); return "__ubsan_handle_shift_out_of_bounds_minimal"; }
+	case UBK_NULLPTR: { MCC_TRACE("br\n"); return "__ubsan_handle_type_mismatch_v1_minimal"; }
+	default:          { MCC_TRACE("br\n"); return "__ubsan_handle_add_overflow_minimal"; }
+	}
+}
+
+static void arm_ubsan_emit_recover(int kind) { MCC_TRACE("enter\n");
+	Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
+	o(0xE92D500F);
+	greloc(cur_text_section, sym, ind, R_ARM_PC24);
+	o(0xebfffffe);
+	o(0xE8BD500F);
+}
+
+static uint32_t arm_ubsan_skip_words(void) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover)
+		{ MCC_TRACE("br\n"); return 3u; }
+	return 1u;
+}
+
+static void arm_ubsan_body(int kind) { MCC_TRACE("enter\n");
+	if (mcc_state->do_sanitize_recover) { MCC_TRACE("br\n");
+		arm_ubsan_emit_recover(kind);
+		return;
+	}
+	o(0xe7f000f0);
+}
+
+static void arm_ubsan_guard(uint32_t cond, int kind) { MCC_TRACE("enter\n");
+	o(cond | 0x0A000000 | ((arm_ubsan_skip_words() - 1u) & 0xffffffu));
+	arm_ubsan_body(kind);
+}
+
 void gen_opi(int op) { MCC_TRACE("enter\n");
-	int c, func = 0;
+	int c, func = 0, ubovf = 0;
 	uint32_t opc = 0, r, fr;
 	unsigned short retreg = REG_IRET;
 
@@ -1412,6 +1452,11 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		c = intr(gv(MCC_RC_INT));
 		vswap();
 		opc = 0xE0000000 | (opc << 20);
+		ubovf = mcc_state->do_sanitize_undefined && !nocode_wanted &&
+				(op == '+' || op == '-') &&
+				!(vtop[-1].type.t & VT_UNSIGNED);
+		if (ubovf)
+			{ MCC_TRACE("br\n"); opc |= 0x00100000; }
 		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
 			uint32_t x;
 			x = stuff_const(opc | 0x2000000 | (c << 16), vtop->c.i);
@@ -1440,6 +1485,8 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 			o(opc | (c << 16) | (r << 12) | fr);
 		}
 	done:
+		if (ubovf)
+			{ MCC_TRACE("br\n"); arm_ubsan_guard(0x70000000, op == '-' ? UBK_SUB : UBK_OVERFLOW); }
 		vtop--;
 		if (op >= TOK_ULT && op <= TOK_GT)
 			{ MCC_TRACE("br\n"); vset_VT_CMP(op); }
@@ -1462,12 +1509,21 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 				vswap();
 			}
 #endif
+			if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
+				o(0xE3500000 | (fr << 16) | 32);
+				arm_ubsan_guard(0x30000000, UBK_SHIFT);
+			}
 			c = intr(vtop[-1].r = get_reg_ex(MCC_RC_INT, two2mask(vtop->r, vtop[-1].r)));
 			o(opc | r | (c << 12) | (fr << 8) | 0x10);
 		}
 		vtop--;
 		break;
 	case 3:
+		if (mcc_state->do_sanitize_undefined && !nocode_wanted) { MCC_TRACE("br\n");
+			r = intr(gv(MCC_RC_INT));
+			o(0xE3500000 | (r << 16));
+			arm_ubsan_guard(0x10000000, UBK_DIVREM);
+		}
 		vpush_helper_func(func);
 		vrott(3);
 		gfunc_call(2);
