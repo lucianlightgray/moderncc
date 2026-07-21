@@ -411,7 +411,7 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
 	case R_AARCH64_TLSDESC_CALL: {
-		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+		if ((s1->output_type & MCC_OUTPUT_DLL) && !(s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
 			mcc_error_noabort("R_AARCH64_TLSDESC relocation type 0x%x to shared object not supported",
 												(unsigned)type);
 			return;
