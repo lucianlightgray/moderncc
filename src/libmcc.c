@@ -2531,12 +2531,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			} else if (!strcmp(optarg, "no-pic") || !strcmp(optarg, "no-PIC") || !strcmp(optarg, "no-pie") || !strcmp(optarg, "no-PIE")) { MCC_TRACE("br\n");
 				s->pic = 0;
 			} else if (!strcmp(optarg, "stack-protector") || !strcmp(optarg, "stack-protector-strong") || !strcmp(optarg, "stack-protector-all")) { MCC_TRACE("br\n");
-#if (defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE) || (defined MCC_TARGET_ARM64 && defined MCC_TARGET_MACHO) || (defined MCC_TARGET_I386 && !defined MCC_TARGET_PE) || defined MCC_TARGET_ARM || defined MCC_TARGET_RISCV64
+#if (defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE) || (defined MCC_TARGET_ARM64 && !defined MCC_TARGET_PE) || (defined MCC_TARGET_I386 && !defined MCC_TARGET_PE) || defined MCC_TARGET_ARM || defined MCC_TARGET_RISCV64
 				s->stack_protector = 1;
 #else
 				mcc_warning_c(warn_unsupported)(
 						"-f%s: stack protection is only implemented on x86_64 (ELF/Mach-O), "
-						"arm64 Mach-O, i386 ELF, arm ELF and riscv64",
+						"arm64 (ELF/Mach-O), i386 ELF, arm ELF and riscv64",
 						optarg);
 #endif
 			} else if (!strcmp(optarg, "no-stack-protector")) { MCC_TRACE("br\n");

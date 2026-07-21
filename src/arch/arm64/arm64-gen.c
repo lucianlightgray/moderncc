@@ -59,7 +59,7 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 ST_DATA int func_bound_add_epilog;
 #endif
 
-#ifdef MCC_TARGET_MACHO
+#ifndef MCC_TARGET_PE
 #define func_stack_chk_loc (mcc_state->cg_func_stack_chk_loc)
 #endif
 
@@ -1330,7 +1330,7 @@ static unsigned long arm64_pe_param_off(unsigned long a) { MCC_TRACE("enter\n");
 }
 #endif
 
-#ifdef MCC_TARGET_MACHO
+#ifndef MCC_TARGET_PE
 
 static void arm64_load_stack_guard(void) { MCC_TRACE("enter\n");
 	Sym *guard = external_helper_sym(TOK___stack_chk_guard);
@@ -1529,7 +1529,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
-#ifdef MCC_TARGET_MACHO
+#ifndef MCC_TARGET_PE
 	func_stack_chk_loc = 0;
 	if (mcc_state->stack_protector)
 		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
@@ -1751,7 +1751,7 @@ ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
-#ifdef MCC_TARGET_MACHO
+#ifndef MCC_TARGET_PE
 	if (func_stack_chk_loc)
 		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 #endif
