@@ -657,13 +657,52 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 }
 #endif
 
-#ifndef MCC_TARGET_PE
 static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(tok_alloc_const(name));
 	oad(0xe8, 0);
 	greloca(cur_text_section, sym, ind - 4, R_X86_64_PLT32, -4);
 }
 
+#ifdef MCC_TARGET_PE
+static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
+	if (!asan_lstack_section)
+		{ MCC_TRACE("br\n"); asan_lstack_section =
+			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC); }
+	func_asan_offset = asan_lstack_section->data_offset;
+	func_asan_ind = ind;
+	o(0x20ec8348);
+	o(0x0d8d48);
+	gen_le32(0);
+	o(0xea8948);
+	oad(0xb8, 0);
+	o(0x20c48348);
+}
+
+static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
+	addr_t saved_ind;
+	Sym *sym_data;
+
+	if (!gen_asan_stack_epilog_head(func_asan_offset, &sym_data))
+		{ MCC_TRACE("br\n"); return; }
+
+	saved_ind = ind;
+	ind = func_asan_ind + 4;
+	greloca(cur_text_section, sym_data, ind + 3, R_X86_64_PC32, -4);
+	ind = ind + 10;
+	gen_asan_stack_call("__asan_stack_enter");
+	ind = saved_ind;
+
+	o(0x5050);
+	o(0x20ec8348);
+	greloca(cur_text_section, sym_data, ind + 3, R_X86_64_PC32, -4);
+	o(0x0d8d48);
+	gen_le32(0);
+	o(0xea8948);
+	gen_asan_stack_call("__asan_stack_leave");
+	o(0x20c48348);
+	o(0x5858);
+}
+#else
 static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
 	if (!asan_lstack_section)
 		{ MCC_TRACE("br\n"); asan_lstack_section =
@@ -953,6 +992,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
+	if (mcc_state->do_asan_shadow)
+		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 }
 
 void gfunc_epilog(void) { MCC_TRACE("enter\n");
@@ -965,6 +1006,8 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
+	if (mcc_state->do_asan_shadow)
+		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
 
 	o(0xc9);
 	if (func_ret_sub == 0) { MCC_TRACE("br\n");
