@@ -25,6 +25,8 @@ ST_DATA int func_bound_add_epilog;
 static void gen_bounds_prolog(void);
 static void gen_bounds_epilog(void);
 #endif
+#define func_asan_offset (mcc_state->cg_func_asan_offset)
+#define func_asan_ind (mcc_state->cg_func_asan_ind)
 
 ST_FUNC void o(unsigned int c) { MCC_TRACE("enter\n");
 	while (c) { MCC_TRACE("br\n");
@@ -680,6 +682,62 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 		greloc(cur_text_section, fail, ind - 4, R_386_PC32);
 	}
 }
+
+#define I386_ASAN_ENTER_NPIC 14
+#define I386_ASAN_ENTER_PIC 27
+
+static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
+	Sym *sym = external_helper_sym(tok_alloc_const(name));
+	oad(0xe8, -4);
+	greloc(cur_text_section, sym, ind - 4,
+				 mcc_state->pic ? R_386_PLT32 : R_386_PC32);
+}
+
+static void gen_asan_stack_seq(Sym *tab, const char *name) { MCC_TRACE("enter\n");
+	g(0x55);
+	if (mcc_state->pic) { MCC_TRACE("br\n");
+		get_pc_thunk(MCC_TREG_EBX, 1);
+		g(0x8d);
+		g(0x83);
+		greloc(cur_text_section, tab, ind, R_386_GOTOFF);
+		gen_le32(0);
+		g(0x50);
+	} else { MCC_TRACE("br\n");
+		g(0x68);
+		greloc(cur_text_section, tab, ind, R_386_32);
+		gen_le32(0);
+	}
+	gen_asan_stack_call(name);
+	o(0x08c483);
+}
+
+static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
+	int n, i;
+	if (!asan_lstack_section)
+		{ MCC_TRACE("br\n"); asan_lstack_section =
+			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC); }
+	func_asan_offset = asan_lstack_section->data_offset;
+	func_asan_ind = ind;
+	n = mcc_state->pic ? I386_ASAN_ENTER_PIC : I386_ASAN_ENTER_NPIC;
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); g(0x90); }
+}
+
+static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
+	addr_t saved_ind;
+	Sym *sym_data;
+	if (!gen_asan_stack_epilog_head(func_asan_offset, &sym_data))
+		{ MCC_TRACE("br\n"); return; }
+	saved_ind = ind;
+	ind = func_asan_ind;
+	gen_asan_stack_seq(sym_data, "__asan_stack_enter");
+	ind = saved_ind;
+	g(0x50);
+	g(0x52);
+	gen_asan_stack_seq(sym_data, "__asan_stack_leave");
+	g(0x5a);
+	g(0x58);
+}
 #endif
 
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
@@ -760,6 +818,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
 #ifndef MCC_TARGET_PE
+	if (mcc_state->do_asan_shadow)
+		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 	func_stack_chk_loc = 0;
 	if (mcc_state->stack_protector)
 		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
@@ -774,6 +834,8 @@ ST_FUNC void gfunc_epilog(void) {
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
 #ifndef MCC_TARGET_PE
+	if (mcc_state->do_asan_shadow)
+		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
 	if (func_stack_chk_loc)
 		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 #endif
@@ -1339,6 +1401,50 @@ ST_FUNC void gen_vla_sp_restore(int addr) {
 
 void gen_trap(void) { MCC_TRACE("enter\n");
 	o(0x0b0f);
+}
+
+void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
+	int r, t = 0;
+	if (!mcc_state->do_asan_shadow || nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
+		{ MCC_TRACE("br\n"); return; }
+	r = REG_VALUE(vtop->r & VT_VALMASK);
+	g(0x50);
+	g(0x52);
+	g(0x51);
+	g(0x89);
+	g(0xc0 | r << 3 | 1);
+	g(0x89);
+	g(0xc0 | r << 3 | 2);
+	g(0x89);
+	g(0xc0 | r << 3 | 0);
+	g(0xc1);
+	g(0xe8);
+	g(0x03);
+	g(0x0f);
+	g(0xbe);
+	g(0x80);
+	gen_le32(0x7fff8000);
+	g(0x85);
+	g(0xc0);
+	g(0x0f);
+	t = gjmp2(0x84, t);
+	g(0x83);
+	g(0xe2);
+	g(0x07);
+	g(0x83);
+	g(0xc2);
+	g(sz - 1);
+	g(0x39);
+	g(0xc2);
+	g(0x0f);
+	t = gjmp2(0x8c, t);
+	o(0x0b0f);
+	gsym(t);
+	g(0x59);
+	g(0x5a);
+	g(0x58);
 }
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {

@@ -1650,7 +1650,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 			lpthread = 1;
 		}
 #endif
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386
 		if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_DLL)
 			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccasan.o"); }
 #endif

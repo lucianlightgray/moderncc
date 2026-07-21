@@ -47,7 +47,8 @@ static void set_sh(void*a,size_t n,unsigned char v){ uintptr_t p=(uintptr_t)a; f
 static void unpoison(void*a,long n){ uintptr_t p=(uintptr_t)a; size_t full=((size_t)n/8)*8; set_sh(a,full,0); if((size_t)n%8) *shadow((void*)(p+full))=(unsigned char)((size_t)n%8); }
 static void wstr(const char*s){ long n=0; while(s[n])n++; (void)!write(2,s,(size_t)n); }
 static void whexn(uintptr_t v,int nyb,int nl){ char b[19]; int i; for(i=0;i<nyb;i++){int d=(int)((v>>((nyb-1-i)*4))&0xf); b[i]=(char)(d<10?'0'+d:'a'+d-10);} if(nl)b[nyb]='\n'; (void)!write(2,b,(size_t)(nyb+(nl?1:0))); }
-static void whex(uintptr_t v){ wstr("0x"); whexn(v,16,1); }
+#define PW ((int)(2*sizeof(uintptr_t)))
+static void whex(uintptr_t v){ wstr("0x"); whexn(v,PW,1); }
 static const char *asan_class(int sh){
     switch(sh&0xff){
     case 0xfa: return "heap-buffer-overflow";
@@ -67,6 +68,10 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
     long sh = uc ? (long)uc->uc_mcontext.__gregs[5] : 0;
     long off = uc ? (long)uc->uc_mcontext.__gregs[6] : 0;
     uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.__gregs[7] : 0;
+#elif defined(__i386__)
+    long sh = uc ? (long)uc->uc_mcontext.gregs[REG_EAX] : 0;
+    long off = uc ? (long)uc->uc_mcontext.gregs[REG_EDX] : 0;
+    uintptr_t addr = uc ? (uintptr_t)(unsigned)uc->uc_mcontext.gregs[REG_ECX] : 0;
 #else
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
@@ -81,7 +86,7 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
         unsigned char *s = shadow((void*)addr);
         wstr("    at faulting address "); whex(addr);
         wstr("    access size "); whexn((uintptr_t)(asz>0?asz:0),2,1);
-        wstr("  shadow bytes around 0x"); whexn((uintptr_t)s,16,1);
+        wstr("  shadow bytes around 0x"); whexn((uintptr_t)s,PW,1);
         wstr("   ");
         for(int c=-8;c<8;c++){ if(c==0)wstr("["); whexn((uintptr_t)(s[c]&0xff),2,0); if(c==0)wstr("]"); else wstr(" "); }
         wstr("\n");
@@ -126,6 +131,14 @@ __attribute__((constructor)) static void asan_init(void){
        an ebreak -> SIGTRAP, and t0/t1/t2 (x5/x6/x7 = shadow/granule/faulting-addr)
        map to __gregs[5]/[6]/[7]. */
     mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+#elif defined(__i386__)
+    /* i386/Linux (32-bit VA): shadow((a>>3)+OFF) of the whole 4GB space [0,2^32)
+       lands in [OFF, 2^29+OFF) = [0x7fff8000, 0x9fff8000), a single 512MB window
+       at ~2GB that qemu-i386 leaves empty (program/heap sit low, stack near the
+       3-4GB top). One sparse NORESERVE region covers all of heap/stack/global.
+       The trap is ud2 -> SIGILL, and eax/edx/ecx (shadow/granule/faulting-addr)
+       map to gregs[REG_EAX]/[REG_EDX]/[REG_ECX]. */
+    mmap((void*)0x7fff8000UL,(size_t)(0x9fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #else
     mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
