@@ -113,7 +113,7 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
         long asz = off - (long)(addr&7) + 1;
         unsigned char *s = shadow((void*)addr);
         wstr("    at faulting address "); whex(addr);
-        wstr("    access size "); whexn((uintptr_t)(asz>0?asz:0),2,1);
+        wstr("    access size "); wdec((uintptr_t)(asz>0?asz:0)); wstr("\n");
         { uintptr_t rb,re,ro; int rd;
           if(asan_locate(addr,&rb,&re,&ro,&rd)){
             wstr("    "); whexa(addr); wstr(" is located "); wdec(ro);
