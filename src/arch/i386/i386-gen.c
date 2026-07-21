@@ -444,6 +444,15 @@ static void gen_static_call(int v) { MCC_TRACE("enter\n");
 	greloc(cur_text_section, sym, ind - 4, R_386_PC32);
 }
 
+ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
+	vpush_helper_func(sign ? TOK___mcc_smulh64 : TOK___mcc_umulh64);
+	vrott(3);
+	gfunc_call(2);
+	vpushi(0);
+	vtop->r = REG_IRET;
+	vtop->r2 = REG_IRE2;
+}
+
 static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 	int r;
 	if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM)) { MCC_TRACE("br\n");

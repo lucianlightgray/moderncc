@@ -1719,6 +1719,10 @@ ST_FUNC void gen_cvt_csti(int t);
 ST_FUNC void gen_increment_tcov(SValue *sv);
 #endif
 
+#ifdef MCC_TARGET_I386
+ST_FUNC void gen_mulh(int sign);
+#endif
+
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_mulh(int sign);

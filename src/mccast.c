@@ -4142,7 +4142,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 		if (bop == AST_OP_MULHU || bop == AST_OP_MULHS) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, 0));
 			ast_replay_value(a, ast_child(a, n, 1));
@@ -8533,7 +8533,7 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	return 1;
 }
 
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 static int ast_divmagic_try_u64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, ct, xt;
 	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), hi, inner;
@@ -8717,7 +8717,7 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_spow2(a, n); } /* signed power-of-two */
 			if (!f)
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_signed(a, n); } /* signed non-power-of-two division */
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 			if (!f)
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_u64(a, n); }
 			if (!f)

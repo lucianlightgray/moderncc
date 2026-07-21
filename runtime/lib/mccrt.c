@@ -317,6 +317,26 @@ unsigned long long __umoddi3(unsigned long long u, unsigned long long v) {
 	return w;
 }
 
+UDWtype __mcc_umulh64(UDWtype a, UDWtype b) {
+	UWtype al = (UWtype)a, ah = (UWtype)(a >> 32);
+	UWtype bl = (UWtype)b, bh = (UWtype)(b >> 32);
+	UDWtype ll = (UDWtype)al * bl;
+	UDWtype lh = (UDWtype)al * bh;
+	UDWtype hl = (UDWtype)ah * bl;
+	UDWtype hh = (UDWtype)ah * bh;
+	UDWtype cross = (ll >> 32) + (UWtype)lh + (UWtype)hl;
+	return hh + (lh >> 32) + (hl >> 32) + (cross >> 32);
+}
+
+DWtype __mcc_smulh64(DWtype a, DWtype b) {
+	UDWtype hi = __mcc_umulh64((UDWtype)a, (UDWtype)b);
+	if (a < 0)
+		hi -= (UDWtype)b;
+	if (b < 0)
+		hi -= (UDWtype)a;
+	return (DWtype)hi;
+}
+
 long long __ashrdi3(long long a, int b) {
 
 #ifdef __MCC__
