@@ -63,6 +63,10 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
     long sh = uc ? (long)uc->uc_mcontext.regs[17] : 0;
     long off = uc ? (long)uc->uc_mcontext.regs[16] : 0;
     uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.regs[15] : 0;
+#elif defined(__riscv)
+    long sh = uc ? (long)uc->uc_mcontext.__gregs[5] : 0;
+    long off = uc ? (long)uc->uc_mcontext.__gregs[6] : 0;
+    uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.__gregs[7] : 0;
 #else
     long sh = uc ? (long)uc->uc_mcontext.gregs[REG_RAX] : 0;
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
@@ -112,12 +116,22 @@ __attribute__((constructor)) static void asan_init(void){
        (Robustness for 39-bit VA / bottom-up mmap is a follow-up.) The trap is a
        brk -> SIGTRAP, and w17/w16 (shadow/granule) map to regs[17]/regs[16]. */
     mmap((void*)0x7fff8000UL,(size_t)(0x210000000000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+#elif defined(__riscv)
+    /* riscv64/Linux (Sv48-class user VA): qemu-riscv64 user mode places libc/heap/
+       stack/mmap near the top of a 47-bit space (~0x7effffffffff), so shadow
+       ((a>>3)+OFF) of the accessible user range lands in [OFF, 2^44+OFF), the same
+       LowShadow+HighShadow span the x86_64 ASan layout reserves; one sparse
+       NORESERVE region covers it (the low 2GB..16TB guest window is otherwise
+       empty). (Sv39-only / bottom-up-mmap tightening is a follow-up.) The trap is
+       an ebreak -> SIGTRAP, and t0/t1/t2 (x5/x6/x7 = shadow/granule/faulting-addr)
+       map to __gregs[5]/[6]/[7]. */
+    mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #else
     mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
     struct sigaction sa; for(size_t i=0;i<sizeof sa;i++) ((char*)&sa)[i]=0;
     sa.sa_sigaction=on_sigill; sa.sa_flags=SA_SIGINFO;
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__riscv)
     sigaction(SIGTRAP,&sa,0);
 #else
     sigaction(SIGILL,&sa,0);

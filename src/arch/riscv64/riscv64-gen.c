@@ -1134,6 +1134,33 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	riscv64_ubsan_body(UBK_NULLPTR);
 }
 
+void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
+	uint32_t a;
+	if (!mcc_state->do_asan_shadow || nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
+		{ MCC_TRACE("br\n"); return; }
+	a = (uint32_t)ireg(vtop->r & VT_VALMASK);
+	EIu(0x13, 0, 2, 2, (uint32_t)(-32) & 0xfff);
+	ES(0x23, 3, 2, 5, 0);
+	ES(0x23, 3, 2, 6, 8);
+	ES(0x23, 3, 2, 7, 16);
+	EI(0x13, 0, 7, a, 0);
+	EIu(0x13, 5, 5, a, 3);
+	o(0x37 | (6u << 7) | 0x7fff8000u);
+	ER(0x33, 0, 5, 5, 6, 0);
+	EI(0x03, 0, 5, 5, 0);
+	o(0x63 | 0u << 12 | 5u << 15 | 0u << 20 | riscv64_btype_imm(20));
+	EI(0x13, 7, 6, a, 7);
+	EI(0x13, 0, 6, 6, (uint32_t)(sz - 1));
+	o(0x63 | 4u << 12 | 6u << 15 | 5u << 20 | riscv64_btype_imm(8));
+	o(0x00100073);
+	EI(0x03, 3, 5, 2, 0);
+	EI(0x03, 3, 6, 2, 8);
+	EI(0x03, 3, 7, 2, 16);
+	EIu(0x13, 0, 2, 2, 32);
+}
+
 void gen_trap(void) { MCC_TRACE("enter\n");
 	o(0x00100073);
 }

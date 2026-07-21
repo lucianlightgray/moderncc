@@ -5980,7 +5980,7 @@ ST_FUNC void indir(void) { MCC_TRACE("enter\n");
 	if (mcc_state->do_sanitize_undefined)
 		{ MCC_TRACE("br\n"); gen_ubsan_nullptr(); }
 #endif
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 	if (mcc_state->do_asan_shadow) { MCC_TRACE("br\n");
 		int asz, aal;
 		asz = type_size(pointed_type(&vtop->type), &aal);
