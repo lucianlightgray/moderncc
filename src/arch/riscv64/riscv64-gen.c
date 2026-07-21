@@ -812,6 +812,62 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 	EI(0x67, 0, 1, 1, 0);
 }
 
+#define RISCV64_ASAN_ENTER_SLOTS 5
+static addr_t riscv64_asan_off;
+static addr_t riscv64_asan_ind;
+
+static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
+	Sym *sym = external_helper_sym(tok_alloc_const(name));
+	greloca(cur_text_section, sym, ind, R_RISCV_CALL_PLT, 0);
+	o(0x17 | (1 << 7));
+	EI(0x67, 0, 1, 1, 0);
+}
+
+static void gen_asan_stack_tab(Sym *tab) { MCC_TRACE("enter\n");
+	Sym label = {0};
+	label.type.t = VT_VOID | VT_STATIC;
+	put_extern_sym(&label, cur_text_section, ind, 0);
+	greloca(cur_text_section, tab, ind, R_RISCV_GOT_HI20, 0);
+	o(0x17 | (10 << 7));
+	greloca(cur_text_section, &label, ind, R_RISCV_PCREL_LO12_I, 0);
+	EI(0x03, 3, 10, 10, 0);
+	EI(0x13, 0, 11, 8, 0);
+}
+
+static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
+	if (!asan_lstack_section)
+		{ MCC_TRACE("br\n"); asan_lstack_section =
+			new_section(mcc_state, ".asan_lstack", SHT_PROGBITS, SHF_ALLOC); }
+	riscv64_asan_off = asan_lstack_section->data_offset;
+	riscv64_asan_ind = ind;
+	for (int i = 0; i < RISCV64_ASAN_ENTER_SLOTS; i++)
+		{ MCC_TRACE("br\n"); o(0x00000013); }
+}
+
+static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
+	addr_t saved_ind;
+	Sym *tab;
+	if (!gen_asan_stack_epilog_head(riscv64_asan_off, &tab))
+		{ MCC_TRACE("br\n"); return; }
+	saved_ind = ind;
+	ind = riscv64_asan_ind;
+	gen_asan_stack_tab(tab);
+	gen_asan_stack_call("__asan_stack_enter");
+	ind = saved_ind;
+	EIu(0x13, 0, 2, 2, (uint32_t)(-32) & 0xfff);
+	ES(0x23, 3, 2, 10, 0);
+	ES(0x23, 3, 2, 11, 8);
+	ES(0x27, 3, 2, 10, 16);
+	ES(0x27, 3, 2, 11, 24);
+	gen_asan_stack_tab(tab);
+	gen_asan_stack_call("__asan_stack_leave");
+	EI(0x03, 3, 10, 2, 0);
+	EI(0x03, 3, 11, 2, 8);
+	EI(0x07, 3, 10, 2, 16);
+	EI(0x07, 3, 11, 2, 24);
+	EIu(0x13, 0, 2, 2, 32);
+}
+
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	int addr, align, size;
@@ -881,6 +937,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
+	if (mcc_state->do_asan_shadow)
+		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
 	func_stack_chk_loc = 0;
 	if (mcc_state->stack_protector)
 		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
@@ -927,6 +985,8 @@ ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
+	if (mcc_state->do_asan_shadow)
+		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
 	if (func_stack_chk_loc)
 		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 
