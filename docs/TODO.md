@@ -44,7 +44,7 @@
 ## AOT foundations
 - Close the riscv64 Tier-3 self-host gap (6A; makes the M8 cross-arch gate real).
 - Fix the emit-time value-axis framework full-state save/restore (promotion-plan arrays + `nocode_wanted` + register-allocator/`vtop` state); then enable the inline + promote search axes (3A).
-- Fix the x86_64 mul-high register-allocation self-host miscompile, then flip `MCC_AST_DIVMAGIC` default-on; i386 64-bit divmagic runtime helper (4B).
+- Flip `MCC_AST_DIVMAGIC` default-on after the full M8 soak; i386 64-bit divmagic runtime helper (4B). (The signed-32 divmagic miscompile that blocked the flip is FIXED — `a1df06c1`: `ast_divmagic_try_signed` built the quotient as `q2(S32) + signbit(U32)`, whose usual-arithmetic-conversion result is *unsigned*, so a widening of `x/C` zero-extended a negative quotient instead of sign-extending; arch-neutral, reproduced+fixed on x86_64 + arm64. Remaining before the flip: regenerate every arch's `-O2+` byte-goldens and run the tens-of-thousands-of-seeds differential-fuzz/self-host/cross-arch soak.)
 - Memo unification: migrate to `ComboMemo` + disk backing with a bulk-value compression mode; subsume the out-of-process superopt (5A/M2/M3).
 - PR-C loop-IV monotonicity widening into `ast_vlat_context_at`, op-3/op-5 for-loops only; held until x86 fuzz soaks clean (P1/§32a).
 - Predicate-vector 4th side-car index (P1).
@@ -87,7 +87,7 @@ Classification of every arch/host-scoped gate by how much work stands between it
 - **Class 2 — bounded backend work, no HW needed (fully reproducible under qemu):**
   - riscv64 register promotion — the `#if MCC_CONFIG_OPTIMIZER && (X86_64||ARM64)` at `mccast.c:2516` excludes it (recipe already in AOT foundations: `MCC_TREG_SAVED` aux idx → `s1..s11`/`fs0..fs11`).
   - arm64 `opt_promote` default-on flip (pool exists `mccast.c:2538`; needs the seed soak).
-  - i386 64-bit div-magic helper + fix the x86_64 mul-high self-host miscompile blocking the `MCC_AST_DIVMAGIC` flip.
+  - i386 64-bit div-magic helper (the x86_64 signed-32 divmagic miscompile blocking the `MCC_AST_DIVMAGIC` flip is FIXED, `a1df06c1`; the flip itself now only needs the golden-regen + M8 soak).
   - riscv64 Tier-4 (self-host gap + replay-inline ungate + JIT stub tail) — the last non-x86 arch; largest single lift.
   - i386/arm JIT stub tail + Tier-4 replay-inline.
   - i386-PE / arm64-PE ASan shadow (`!X86_64` guard at `libmcc.c:843`, `mccpe.c:2620`): per-arch shadow layout + Win-ABI stack emitter.
