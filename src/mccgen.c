@@ -10023,6 +10023,16 @@ ST_FUNC void gen_select(CType *type) { MCC_TRACE("enter\n");
 	vswap();
 	gen_cast(type);
 	vswap();
+#if MCC_CONFIG_OPTIMIZER
+	{
+		int fr = vtop[0].r & VT_VALMASK;
+		if (fr < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << fr))) { MCC_TRACE("br\n");
+			int rtmp = get_reg(rc);
+			move_reg(rtmp, fr, type->t);
+			vtop[0].r = (vtop[0].r & ~(uint32_t)VT_VALMASK) | rtmp;
+		}
+	}
+#endif
 	for (pass = 0; pass < 4; pass++) { MCC_TRACE("br\n");
 		int spilled = 0;
 		if (!gen_select_regok(vtop))
