@@ -107,6 +107,7 @@ for t in $PROGS; do
 done
 
 echo "== docker linux/386: run mcc (-O0 and -O2, mcc.o + runtime) vs gcc, diff exit codes =="
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
 	fail=0

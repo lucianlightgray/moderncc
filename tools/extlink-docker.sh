@@ -77,6 +77,7 @@ if [ -n "$CROSS" ]; then
 else
 	echo "== docker $PLAT: link mcc objects with GNU ld (gcc), run, check DWARF =="
 fi
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm --platform "$PLAT" -e CROSS="$CROSS" -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	GCC="${CROSS}gcc"; READELF="${CROSS}readelf"
 	if [ -n "$CROSS" ]; then t=$(echo "$CROSS" | sed "s/-$//"); PKG="gcc-$t binutils-$t"; else PKG="gcc binutils"; fi

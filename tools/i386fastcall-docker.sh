@@ -79,6 +79,7 @@ fi
 echo "PASS  unsupported float-before-reg fastcall rejected"
 
 echo "== docker linux/386: gcc reference build + cross-link + run =="
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	set -e
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }

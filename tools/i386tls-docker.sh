@@ -59,6 +59,7 @@ echo "== host: mcc-i386 non-PIC __thread -> i386 ELF object (R_386_TLS_LE) =="
 "$MCC" -c "$WORK_ABS/tls.c" -o "$WORK_ABS/def.o"
 
 echo "== docker linux/386: link + run both objects =="
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	set -e
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
