@@ -55,13 +55,24 @@ int compute(int x, int y){
   int prod = x * y;
   return sum + prod;
 }
-int main(void){ int r = compute(3, 4); printf("%d\n", r); return 0; }
+long getval(int a, int b){ long r = (long)a * b + a; return r; }
+int main(void){ int r = compute(3, 4); long g = getval(11, 20); printf("%d %ld\n", r, g); return 0; }
 EOF
 cat > /w/c.gdb <<EOF
 set pagination off
 break compute
 run
 bt
+quit
+EOF
+# getval is a SINGLE-LINE function: its declaration line == its statement line, so
+# without a prologue-end line-table row gdb break-skip overshoots into the next
+# function. Assert break lands IN getval and reads its args correctly.
+cat > /w/g.gdb <<EOF
+set pagination off
+break getval
+run
+info args
 quit
 EOF
 
@@ -71,19 +82,29 @@ gcc -g /w/t.o -o /w/t
 echo "== gdb backtrace on mcc -gdwarf output =="
 BT=$(gdb -q -batch -x /w/c.gdb /w/t 2>&1 | grep -E "^#[0-9]")
 echo "$BT" | sed "s/^/   /"
-
-# The innermost frame (#0 compute) and the caller frame (#1 main) must BOTH
-# report a source location. Before the fix, main had no line-table coverage so
-# its frame printed "main ()" with no "at t.c:N".
 n0=$(echo "$BT" | grep -c "compute .* at .*t.c:")
 n1=$(echo "$BT" | grep -c "main () at .*t.c:")
+
+echo "== break single-line function getval (must stop IN getval with a=11 b=20) =="
+GV=$(gdb -q -batch -x /w/g.gdb /w/t 2>&1)
+echo "$GV" | grep -E "Breakpoint 1,|a = |b = " | sed "s/^/   /"
+g_in=$(echo "$GV" | grep -c "Breakpoint 1, getval ")
+g_a=$(echo "$GV" | grep -c "a = 11")
+g_b=$(echo "$GV" | grep -c "b = 20")
+
 echo "== decoded line table (last-function coverage) =="
 objdump --dwarf=decodedline /w/t 2>/dev/null | grep "t.c *[0-9]" | tail -4 | sed "s/^/   /"
 
-if [ "$n0" -ge 1 ] && [ "$n1" -ge 1 ]; then
-  echo "PASS: every backtrace frame has a source line (compute + main)"
+fail=0
+if [ "$n0" -lt 1 ] || [ "$n1" -lt 1 ]; then
+  echo "FAIL: a backtrace frame is missing its source line (n0=$n0 n1=$n1) -- .debug_line last-function coverage regressed"; fail=1
+fi
+if [ "$g_in" -lt 1 ] || [ "$g_a" -lt 1 ] || [ "$g_b" -lt 1 ]; then
+  echo "FAIL: break getval did not stop in getval with correct args (in=$g_in a=$g_a b=$g_b) -- single-line prologue-end row regressed"; fail=1
+fi
+if [ "$fail" = 0 ]; then
+  echo "PASS: backtrace frames have source lines AND break lands correctly in a single-line function"
 else
-  echo "FAIL: a backtrace frame is missing its source line (n0=$n0 n1=$n1) -- .debug_line last-function coverage regressed"
   exit 1
 fi
 '

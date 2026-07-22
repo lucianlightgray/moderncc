@@ -354,6 +354,7 @@ struct _mccdbg {
 		int last_file;
 		int last_pc;
 		int last_line;
+		int prologue_end;
 	} dwarf_line;
 
 	struct
@@ -1382,9 +1383,10 @@ ST_FUNC void mcc_debug_line(MCCState *s1) { MCC_TRACE("enter\n");
 	f = put_new_file(s1);
 	if (!f)
 		{ MCC_TRACE("br\n"); return; }
-	if (last_line_num == f->line_num)
+	if (last_line_num == f->line_num && !dwarf_line.prologue_end)
 		{ MCC_TRACE("br\n"); return; }
 	last_line_num = f->line_num;
+	dwarf_line.prologue_end = 0;
 
 	if (s1->dwarf) { MCC_TRACE("br\n");
 		int len_pc = (ind - dwarf_line.last_pc) / DWARF_MIN_INSTR_LEN;
@@ -2208,6 +2210,8 @@ ST_FUNC void mcc_debug_prolog_epilog(MCCState *s1, int value) { MCC_TRACE("enter
 		dwarf_line_op(s1, value == 0
 													? DW_LNS_set_prologue_end
 													: DW_LNS_set_epilogue_begin);
+		if (value == 0)
+			{ MCC_TRACE("br\n"); dwarf_line.prologue_end = 1; }
 	}
 }
 
