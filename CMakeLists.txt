@@ -4725,6 +4725,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(extlink-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     endif()
+    # riscv64 has no user-mode emulator here, so link+DWARF only (no exec) in a
+    # host-native container with the riscv64 cross toolchain.
+    if(TARGET mcc-riscv64)
+        if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            set(_extlink_host_plat "linux/arm64")
+        else()
+            set(_extlink_host_plat "linux/amd64")
+        endif()
+        add_test(NAME extlink-riscv64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
+                "$<TARGET_FILE:mcc-riscv64>" "${_extlink_host_plat}"
+                "${CMAKE_BINARY_DIR}/extlink-riscv64-docker" "riscv64-linux-gnu-")
+        set_tests_properties(extlink-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    endif()
 
     add_custom_target(gcctestsuite
         COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>

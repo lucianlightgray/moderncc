@@ -17,8 +17,13 @@
 # external linker. The program is freestanding (exit code = self-check result)
 # so mcc needs no libc headers on the host.
 #
-# Usage:  tools/extlink-docker.sh <mcc> <docker-platform> [workdir]
+# Usage:  tools/extlink-docker.sh <mcc> <docker-platform> [workdir] [cross-prefix]
 #           docker-platform: linux/amd64 | linux/arm64
+#           cross-prefix:    optional binutils/gcc triplet prefix (e.g.
+#                            riscv64-linux-gnu-). When given, the container runs
+#                            a NATIVE-platform image with that cross toolchain
+#                            and the test is link-only + DWARF (no execution),
+#                            for arches with no user-mode emulator here.
 # Exit:   0 pass · 1 a failure · 77 skipped (no docker / mcc / platform)
 
 set -eu
@@ -26,6 +31,7 @@ set -eu
 MCC="${1:-}"
 PLAT="${2:-}"
 WORK="${3:-./w-extlink}"
+CROSS="${4:-}"
 
 case "$PLAT" in
 	linux/amd64) IMAGE="${MCC_EXTLINK_AMD64_IMAGE:-debian:bookworm-slim}" ;;
@@ -66,22 +72,29 @@ echo "== host: mcc -> ELF objects (-O0, -O2, -gdwarf-4) =="
 "$MCC" -O2 -c "$WORK_ABS/m.c" -o "$WORK_ABS/m2.o"
 "$MCC" -gdwarf-4 -O0 -c "$WORK_ABS/m.c" -o "$WORK_ABS/mg.o"
 
-echo "== docker $PLAT: link mcc objects with GNU ld (gcc), run, check DWARF =="
-docker run --rm --platform "$PLAT" -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
-	command -v gcc >/dev/null 2>&1 || { apt-get update >/dev/null 2>&1; apt-get install -y gcc binutils >/dev/null 2>&1; }
+if [ -n "$CROSS" ]; then
+	echo "== docker $PLAT ($CROSS cross): link mcc objects with GNU ld, check DWARF (no exec) =="
+else
+	echo "== docker $PLAT: link mcc objects with GNU ld (gcc), run, check DWARF =="
+fi
+docker run --rm --platform "$PLAT" -e CROSS="$CROSS" -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
+	GCC="${CROSS}gcc"; READELF="${CROSS}readelf"
+	if [ -n "$CROSS" ]; then t=$(echo "$CROSS" | sed "s/-$//"); PKG="gcc-$t binutils-$t"; else PKG="gcc binutils"; fi
+	command -v "$GCC" >/dev/null 2>&1 || { apt-get update >/dev/null 2>&1; apt-get install -y $PKG >/dev/null 2>&1; }
 	fail=0
 	for o in 0 2; do
-		if ! gcc m${o}.o -o m${o} 2>gcc_err; then
+		if ! "$GCC" m${o}.o -o m${o} 2>gcc_err; then
 			echo "FAIL  -O$o external link:"; sed "s/^/    /" gcc_err; fail=1; continue
 		fi
+		if [ -n "$CROSS" ]; then echo "OK    -O$o external link (no exec: cross target)"; continue; fi
 		rc=0; ./m${o} || rc=$?
 		if [ "$rc" = 0 ]; then echo "OK    -O$o link+run (exit 0)"; else echo "FAIL  -O$o run exit=$rc (should be 0)"; fail=1; fi
 	done
 	# -gdwarf: link and require distinct per-function DW_AT_low_pc
-	if ! gcc -g mg.o -o mg 2>gcc_err; then
+	if ! "$GCC" -g mg.o -o mg 2>gcc_err; then
 		echo "FAIL  -gdwarf external link:"; sed "s/^/    /" gcc_err; fail=1
 	else
-		n=$(readelf --debug-dump=info mg 2>/dev/null | awk "/DW_TAG_subprogram/{p=1} p&&/DW_AT_low_pc/{print \$NF; p=0}" | sort -u | wc -l)
+		n=$("$READELF" --debug-dump=info mg 2>/dev/null | awk "/DW_TAG_subprogram/{p=1} p&&/DW_AT_low_pc/{print \$NF; p=0}" | sort -u | wc -l)
 		if [ "$n" -ge 5 ]; then echo "OK    -gdwarf $n distinct subprogram low_pc"; else echo "FAIL  -gdwarf only $n distinct low_pc (collapsed onto .text+0)"; fail=1; fi
 	fi
 	exit $fail
