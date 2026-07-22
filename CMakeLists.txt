@@ -4871,6 +4871,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(arm64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
+        # arm64 divmagic soak: build an optimizer-enabled arm64 cross mcc
+        # in-container, compile a constant-divide soak with MCC_AST_DIVMAGIC=1
+        # (native smulh/umulh — no runtime helpers, unlike i386), and run it
+        # under qemu-aarch64 against a volatile-divisor hardware-div oracle.
+        # The arm64 half of the divmagic flip's cross-arch soak (see the
+        # MCC_AST_DIVMAGIC item in docs/TODO.md); sibling of i386-divmagic-soak.
+        add_test(NAME arm64-divmagic-soak-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64divmagic-docker.sh"
+                "$<TARGET_FILE:mcc-arm64>"
+                "${CMAKE_BINARY_DIR}/arm64-divmagic-soak-docker")
+        set_tests_properties(arm64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+
         # mcc<->gcc mixed-object ABI differential (arm64): compile a self-
         # contained ABI corpus (reg-pair/padded/indirect/INTEGER+SSE/HFA-float/
         # HFA-double structs, struct returns, stack args, float/double args,
