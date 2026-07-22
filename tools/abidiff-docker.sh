@@ -41,7 +41,7 @@ case "$ARCH" in
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED -DABI_SKIP_PACKED" ;;
 	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
-	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"; MAINDEF="-DABI_SKIP_OVERALIGN"
+	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
 	     PKG="$PKG gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static" ;;
 	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64|riscv64|arm)"; exit 77 ;;
 esac
@@ -258,15 +258,13 @@ int main(void){
      GP path (gfunc_call + func prolog), matching gcc. */
   { struct Ten r=ten_make(1,2,3,4,5,6,7,8,9,10); k++;
     if(r.a!=1||r.b!=2||r.c!=3||r.d!=4||r.e!=5||r.f!=6||r.g!=7||r.h!=8||r.i!=9||r.j!=10) return k; }
-#ifndef ABI_SKIP_OVERALIGN
   /* Over-aligned struct by value after an odd reg: gcc AND clang pass a
-     __attribute__((aligned(16))) struct in consecutive regs (x1,x2 here) -- the
-     AAPCS64 16-byte NGRN even-rounding tracks NATURAL 16-alignment (__int128),
-     not an artificial aligned attribute. mcc-arm64 FIXED (arm64_pcs_aux now gates
-     the rounding on arm64_natural_align16). armv7 (arm-gen.c) still over-rounds --
-     ABI_SKIP_OVERALIGN keeps it guarded there. riscv64/x86_64 agree with gcc. */
+     __attribute__((aligned(16))) struct in consecutive regs (x1,x2 on arm64) --
+     the PCS register even-rounding tracks NATURAL alignment (__int128 on arm64;
+     the 8-aligned member on armv7), not an artificial aligned attribute. FIXED on
+     arm64 (arm64_natural_align16) and armv7 (arm_pcs_natural_align). riscv64/
+     x86_64 agree with gcc. */
   { struct A16 s; s.a=10; s.b=20; k++; if(a16_after_int(1, s)!=31) return k; }
-#endif
   /* Narrow-type return extension: callee-vs-caller extension responsibility
      differs by arch (AAPCS64: caller extends; RISC-V: callee sign/zero-extends
      to XLEN). Values chosen so the high bits matter. */

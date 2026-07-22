@@ -876,6 +876,23 @@ static void add_param_plan(struct plan *plan, int cls, int start, int end, SValu
 	p->start = start, p->end = end, p->sval = v;
 }
 
+static int arm_pcs_natural_align(CType *type) { MCC_TRACE("enter\n");
+	int bt = type->t & VT_BTYPE;
+	if (bt == VT_STRUCT) { MCC_TRACE("br\n");
+		int m = 4;
+		for (Sym *f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
+			int a = arm_pcs_natural_align(&f->type);
+			if (a > m)
+				{ MCC_TRACE("br\n"); m = a; } }
+		return m;
+	}
+	if (type->t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); return arm_pcs_natural_align(&type->ref->type); }
+	int a;
+	type_size(type, &a);
+	return a;
+}
+
 static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo) { MCC_TRACE("enter\n");
 	int size, align;
 	int ncrn, nsaa;
@@ -912,7 +929,17 @@ static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
 						{ MCC_TRACE("br\n"); break; }
 				}
 			}
-			ncrn = (ncrn + (align - 1) / 4) & ~((align / 4) - 1);
+			{
+				int ralign = align;
+				if (ralign > 8) { MCC_TRACE("br\n");
+					ralign = arm_pcs_natural_align(&vtop[-i].type);
+					if (ralign > 8)
+						{ MCC_TRACE("br\n"); ralign = 8; }
+					if (ralign < 4)
+						{ MCC_TRACE("br\n"); ralign = 4; }
+				}
+				ncrn = (ncrn + (ralign - 1) / 4) & ~((ralign / 4) - 1);
+			}
 			if (ncrn + size / 4 <= 4 || (ncrn < 4 && start_vfpreg != -1)) { MCC_TRACE("br\n");
 				for (j = ncrn; j < 4 && j < ncrn + size / 4; j++)
 					{ MCC_TRACE("br\n"); *todo |= (1 << j); }
@@ -1298,7 +1325,17 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 #endif
 				if (pn < 4) { MCC_TRACE("br\n");
 #ifdef MCC_ARM_EABI
-			pn = (pn + (align - 1) / 4) & -(align / 4);
+			{
+				int ralign = align;
+				if (ralign > 8) { MCC_TRACE("br\n");
+					ralign = arm_pcs_natural_align(type);
+					if (ralign > 8)
+						{ MCC_TRACE("br\n"); ralign = 8; }
+					if (ralign < 4)
+						{ MCC_TRACE("br\n"); ralign = 4; }
+				}
+				pn = (pn + (ralign - 1) / 4) & -(ralign / 4);
+			}
 #endif
 			addr = (nf + pn) * 4;
 			pn += size;
