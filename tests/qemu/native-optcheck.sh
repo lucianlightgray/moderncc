@@ -55,7 +55,23 @@ if ! command -v cmake >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
     apt-get install -y --no-install-recommends cmake ninja-build gcc g++ make git ca-certificates >>/tmp/apt.log 2>&1 \
         || { echo PROVISION-FAIL; tail -20 /tmp/apt.log; exit 1; }
 fi
-cmake -G Ninja -S /work -B "$B" -DCMAKE_BUILD_TYPE=Debug \
+# Build from a container-LOCAL copy of the source, never the RO bind mount.
+# On Docker Desktop for Windows the Windows->Linux 9p mount makes cmake's
+# thousands of small configure-time reads glacial (configure stuck in D-state
+# for >11 min). Copying only what the build needs into a container-local /src
+# turns those reads into fast tmpfs/overlay reads. We deliberately skip .git
+# (huge/slow, and the MCC_GITHASH step already ERROR_QUIETs / EXISTS-guards on
+# its absence) and the host build-*/cmake-* trees. On Linux/macOS the bind
+# mount is fast so this copy is cheap and the RO mount keeps the host tree
+# pristine either way.
+SRC=/src; rm -rf "$SRC"; mkdir -p "$SRC"
+echo "=== staging source copy into $SRC (skipping .git / build dirs) ==="
+for item in CMakeLists.txt CMakePresets.json config-extra.cmake \
+            .clang-format .gitattributes \
+            cmake src include runtime tools tests examples; do
+    [ -e "/work/$item" ] && cp -a "/work/$item" "$SRC/" || true
+done
+cmake -G Ninja -S "$SRC" -B "$B" -DCMAKE_BUILD_TYPE=Debug \
     -DMCC_CONFIG_OPTIMIZER=ON -DMCC_BUILD_TESTS=ON >/tmp/cfg.log 2>&1 \
     || { echo CONFIG-FAIL; tail -30 /tmp/cfg.log; exit 1; }
 cmake --build "$B" --target mcc -j"$(nproc)" >/tmp/bld.log 2>&1 \
