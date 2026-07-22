@@ -11,6 +11,10 @@ IMAGE="debian:bookworm-slim"
 
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
 if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
+if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+     docker run --rm --platform linux/amd64 "$IMAGE" true >/dev/null 2>&1; then
+	echo "SKIP: cannot run linux/amd64 containers ($IMAGE)"; exit 77
+fi
 
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm --platform linux/amd64 \
