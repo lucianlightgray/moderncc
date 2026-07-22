@@ -4692,6 +4692,16 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}")
             set_tests_properties(selfhost-fixpoint PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
+
+            add_test(NAME selfhost-fixpoint-gates
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
+                        "${CMAKE_BINARY_DIR}"
+                        MCC_AST_PROMOTE=1 MCC_AST_COLOR=1 MCC_AST_LICM_TEMP=1
+                        MCC_AST_IVSR=1 MCC_AST_PRE=1 MCC_AST_REASSOC=1
+                        MCC_AST_SETHI_LEAF=1 MCC_AST_NARROW_ELIM=1 MCC_AST_ARGFWD=1
+                        MCC_AST_SPILL_SHARE=1 MCC_AST_VLAT=1 MCC_AST_DIVMAGIC=1)
+            set_tests_properties(selfhost-fixpoint-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
         endif()
 
         if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
