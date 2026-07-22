@@ -8,6 +8,9 @@ cmake_minimum_required(VERSION 3.22)
 #   - a function that regressed into a gap not in the baseline (a real regression)
 #   - a baseline gap that is now faithful but still listed (regenerate to record the win)
 #
+# A short _flaky allow-list below exempts (file, func) keys whose verdict is
+# nondeterministic on native x86_64 from both comparisons -- see the note there.
+#
 # Regenerate the baseline after intentionally changing the gap set:
 #   ctest -R ast-verify-ratchet ...            (fails, prints the diff)
 #   cmake -DMCC=<mcc> -DCORPUS=<dir> -DEXTRA=<file;...> -DBASELINE=<file> \
@@ -68,6 +71,20 @@ if(NOT _base_raw STREQUAL "")
 endif()
 list(SORT _baseline)
 
+# Known-flaky keys: (file<TAB>func) whose ast-verify verdict is nondeterministic
+# on native x86_64 -- the reemit byte-compare in the AST recorder reads
+# heap/pointer-dependent state on this shape, so the sweep records the gap on some
+# runs and a faithful reemit on others with no code change at all. Confirmed for
+# bounds/stack_safe.c:main: CI #1065 observed desync (matched baseline, green),
+# #1082/#1086 observed faithful (drift, red) with zero intervening x86_64 codegen
+# change. Exempt such keys from BOTH the regression (new-gap) and win (fixed-gap)
+# comparisons so an oscillating verdict cannot flip CI red in either direction.
+# Every other function keeps strict two-sided banking.
+string(ASCII 9 _tab)
+set(_flaky
+    "bounds/stack_safe.c${_tab}main"
+)
+
 # Compare on the (file, func) key only, not the verdict: a gap being reclassified
 # (e.g. unfaithful -> desync as the recorder learns to decline a shape it cannot
 # model) is not a regression. The verdict stays in the baseline as information.
@@ -84,14 +101,14 @@ endforeach()
 set(_new_gaps "")
 foreach(_g ${_gaps})
     string(REGEX REPLACE "\t[^\t]+$" "" _k "${_g}")
-    if(NOT _k IN_LIST _base_keys)
+    if(NOT _k IN_LIST _base_keys AND NOT _k IN_LIST _flaky)
         list(APPEND _new_gaps "${_g}")
     endif()
 endforeach()
 set(_fixed "")
 foreach(_b ${_baseline})
     string(REGEX REPLACE "\t[^\t]+$" "" _k "${_b}")
-    if(NOT _k IN_LIST _gap_keys)
+    if(NOT _k IN_LIST _gap_keys AND NOT _k IN_LIST _flaky)
         list(APPEND _fixed "${_b}")
     endif()
 endforeach()
