@@ -4937,6 +4937,17 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(riscv64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
+        # riscv64 64-bit constant-materialization differential vs gcc under
+        # qemu-riscv64. RISC-V builds 64-bit immediates from a lui + shifted-addi
+        # chain (load_large_constant); this guards the top-piece-carry fix by
+        # sweeping constants across the low-32 boundary region + random values.
+        add_test(NAME riscv64-const-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64const-docker.sh"
+                "$<TARGET_FILE:mcc-riscv64>"
+                "${CMAKE_BINARY_DIR}/riscv64-const-docker")
+        set_tests_properties(riscv64-const-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+
         # mcc<->gcc mixed-object ABI differential (riscv64 LP64D): same corpus and
         # cross-mix strategy as abi-diff-arm64-docker, but compiled/linked with the
         # riscv64 cross toolchain and run under qemu-riscv64 (LP64D struct/vararg
