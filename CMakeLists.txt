@@ -4841,6 +4841,19 @@ if(MCC_BUILD_TESTS)
     set_tests_properties(dwarf-gdb-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
         SKIP_RETURN_CODE 77)
 
+    # Runtime .eh_frame CFI: a C++ exception (g++) must unwind THROUGH an
+    # mcc-compiled C frame -- the mcc-C-in-a-C++-codebase interop scenario that
+    # extlink (link-only) never exercises. CFI is per-arch; arm64 runs native,
+    # riscv64 uses a cross g++ + qemu. (armv7 uses ARM EHABI not .eh_frame and its
+    # C default has no unwind tables in both mcc and gcc -> the harness SKIPs it.)
+    foreach(_eharch arm64 riscv64 amd64)
+        add_test(NAME eh-unwind-${_eharch}-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/ehunwind-docker.sh"
+                "${_eharch}" "${CMAKE_BINARY_DIR}/eh-unwind-${_eharch}-docker")
+        set_tests_properties(eh-unwind-${_eharch}-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    endforeach()
+
     # External-linker interop for the 64-bit ELF (RELA) targets: link an mcc
     # object with GNU ld (not mcc's own linker) and require it to link+run and
     # to keep distinct per-function DWARF low_pc. Regression guard for the RELA
