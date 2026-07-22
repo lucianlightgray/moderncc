@@ -4802,6 +4802,16 @@ if(MCC_BUILD_TESTS)
                 "${CMAKE_BINARY_DIR}/extlink-x86_64-docker")
         set_tests_properties(extlink-x86_64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+
+        # mcc<->gcc mixed-object ABI differential (x86_64 SysV): see the arm64
+        # variant below. Crosses the SysV calling-convention boundary (INTEGER/
+        # SSE class merge, MEMORY indirect >16B, varargs AL). Builds its own
+        # in-container mcc; runs under linux/amd64.
+        add_test(NAME abi-diff-amd64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
+                "amd64" "${CMAKE_BINARY_DIR}/abi-diff-amd64-docker")
+        set_tests_properties(abi-diff-amd64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     endif()
     if(TARGET mcc-arm64)
         add_test(NAME extlink-arm64-docker
@@ -4821,6 +4831,19 @@ if(MCC_BUILD_TESTS)
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64inline-docker.sh"
                 "${CMAKE_BINARY_DIR}/arm64-inline-docker")
         set_tests_properties(arm64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+
+        # mcc<->gcc mixed-object ABI differential (arm64): compile a self-
+        # contained ABI corpus (reg-pair/padded/indirect/INTEGER+SSE/HFA-float/
+        # HFA-double structs, struct returns, stack args, float/double args,
+        # varargs) with both mcc and gcc, link every cross mix, and require the
+        # exit code to match the all-gcc reference. Unlike extlink (single mcc
+        # object) this crosses the AAPCS64 calling-convention boundary. Runs
+        # natively on an arm64 host (no qemu). Builds its own in-container mcc.
+        add_test(NAME abi-diff-arm64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
+                "arm64" "${CMAKE_BINARY_DIR}/abi-diff-arm64-docker")
+        set_tests_properties(abi-diff-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     endif()
     # riscv64 has no user-mode emulator here, so link+DWARF only (no exec) in a
