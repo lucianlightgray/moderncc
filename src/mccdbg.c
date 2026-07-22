@@ -811,18 +811,25 @@ ST_FUNC void mcc_eh_frame_fde(MCCState *s1, Section *code_sec,
 	dwarf_data4(eh_frame_section, 0);
 	dwarf_data4(eh_frame_section,
 							fde_start - s1->eh_start + 4);
+	{
+		int fde_rel = 0;
 #if defined MCC_TARGET_I386
-	dwarf_reloc(eh_frame_section, eh_section_sym, R_386_PC32);
+		fde_rel = R_386_PC32;
 #elif defined MCC_TARGET_X86_64
-	dwarf_reloc(eh_frame_section, eh_section_sym, R_X86_64_PC32);
+		fde_rel = R_X86_64_PC32;
 #elif defined MCC_TARGET_ARM
-	dwarf_reloc(eh_frame_section, eh_section_sym, R_ARM_REL32);
+		fde_rel = R_ARM_REL32;
 #elif defined MCC_TARGET_ARM64
-	dwarf_reloc(eh_frame_section, eh_section_sym, R_AARCH64_PREL32);
+		fde_rel = R_AARCH64_PREL32;
 #elif defined MCC_TARGET_RISCV64
-	dwarf_reloc(eh_frame_section, eh_section_sym, R_RISCV_32_PCREL);
+		fde_rel = R_RISCV_32_PCREL;
 #endif
-	dwarf_data4(eh_frame_section, func_start);
+		put_elf_reloca(symtab_section, eh_frame_section,
+									 eh_frame_section->data_offset, fde_rel, eh_section_sym,
+									 (SHT_RELX == SHT_RELA) ? (addr_t)func_start : 0);
+	}
+	dwarf_data4(eh_frame_section,
+							(SHT_RELX == SHT_RELA) ? 0 : (unsigned)func_start);
 	dwarf_data4(eh_frame_section, func_size);
 	dwarf_data1(eh_frame_section, 0);
 	for (i = 0; i < nops; i++)
