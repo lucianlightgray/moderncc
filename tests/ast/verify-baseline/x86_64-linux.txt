@@ -50,7 +50,6 @@ bounds/bound_test.c	fputc_unlocked	desync
 bounds/bound_test.c	mul	desync
 bounds/bound_test.c	putc_unlocked	desync
 bounds/bound_test.c	putchar_unlocked	desync
-bounds/stack_safe.c	main	desync
 codegen/codeopt.c	bla	desync
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/dead_code.c	kb_wait_1	desync
