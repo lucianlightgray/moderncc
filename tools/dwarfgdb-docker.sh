@@ -56,7 +56,13 @@ int compute(int x, int y){
   return sum + prod;
 }
 long getval(int a, int b){ long r = (long)a * b + a; return r; }
-int main(void){ int r = compute(3, 4); long g = getval(11, 20); printf("%d %ld\n", r, g); return 0; }
+int steps(int x){
+  int a = x + 1;
+  int b = a * 2;
+  int c = b - 3;
+  return a + b + c;
+}
+int main(void){ int r = compute(3, 4); long g = getval(11, 20); int s = steps(10); printf("%d %ld %d\n", r, g, s); return 0; }
 EOF
 cat > /w/c.gdb <<EOF
 set pagination off
@@ -73,6 +79,22 @@ set pagination off
 break getval
 run
 info args
+quit
+EOF
+# Line stepping + variable-location accuracy: single-step past the three
+# assignments in steps(10) (x=10 -> a=11, b=22, c=19) and read the locals; a
+# wrong line table (stepping to the wrong line) or wrong DW_AT_location would
+# read wrong values.
+cat > /w/st.gdb <<EOF
+set pagination off
+break steps
+run
+next
+next
+next
+print a
+print b
+print c
 quit
 EOF
 
@@ -92,6 +114,13 @@ g_in=$(echo "$GV" | grep -c "Breakpoint 1, getval ")
 g_a=$(echo "$GV" | grep -c "a = 11")
 g_b=$(echo "$GV" | grep -c "b = 20")
 
+echo "== single-step steps(10) and read locals (a=11 b=22 c=19) =="
+ST=$(gdb -q -batch -x /w/st.gdb /w/t 2>&1)
+echo "$ST" | grep -E "^\\\$[0-9]|= 11|= 22|= 19" | sed "s/^/   /"
+s_a=$(echo "$ST" | grep -c "= 11")
+s_b=$(echo "$ST" | grep -c "= 22")
+s_c=$(echo "$ST" | grep -c "= 19")
+
 echo "== decoded line table (last-function coverage) =="
 objdump --dwarf=decodedline /w/t 2>/dev/null | grep "t.c *[0-9]" | tail -4 | sed "s/^/   /"
 
@@ -102,8 +131,11 @@ fi
 if [ "$g_in" -lt 1 ] || [ "$g_a" -lt 1 ] || [ "$g_b" -lt 1 ]; then
   echo "FAIL: break getval did not stop in getval with correct args (in=$g_in a=$g_a b=$g_b) -- single-line prologue-end row regressed"; fail=1
 fi
+if [ "$s_a" -lt 1 ] || [ "$s_b" -lt 1 ] || [ "$s_c" -lt 1 ]; then
+  echo "FAIL: stepping steps(10) read wrong locals (a=$s_a b=$s_b c=$s_c, want 11/22/19) -- line table or DW_AT_location regressed"; fail=1
+fi
 if [ "$fail" = 0 ]; then
-  echo "PASS: backtrace frames have source lines AND break lands correctly in a single-line function"
+  echo "PASS: backtrace frames have source lines, break lands correctly in a single-line function, and stepping reads correct locals"
 else
   exit 1
 fi
