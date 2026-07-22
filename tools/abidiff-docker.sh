@@ -45,11 +45,6 @@ case "$ARCH" in
 	     PKG="$PKG gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static" ;;
 	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64|riscv64|arm)"; exit 77 ;;
 esac
-# mcc emits an extern __thread reference as an STT_NOTYPE undef symbol (not
-# STT_TLS), so GNU ld rejects linking mcc objects that reference external TLS
-# against a TLS definition ("TLS definition ... mismatches non-TLS reference").
-# Arch-independent (put_extern_sym2); guarded on every arch. See docs/TODO.
-MAINDEF="$MAINDEF -DABI_SKIP_TLS"
 
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
 if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
@@ -312,16 +307,13 @@ int main(void){
   /* Global initialized-data layout across the boundary: reader (mcc or gcc)
      accesses fields of a global struct+array defined in the other TU. */
   { k++; if(g_data.a!=7||g_data.b!=88||g_data.c!=2.5||g_data.d[0]!=100||g_data.d[2]!=300||g_data.e!=-99) return k; }
-#ifndef ABI_SKIP_TLS
   /* Cross-object TLS: the main-side direct extern-__thread access, the lib
      tls_get, and the lib tls_set must all refer to the SAME thread-local slot.
-     Currently guarded: mcc emits the extern __thread reference as STT_NOTYPE (not
-     STT_TLS), so GNU ld refuses to link main_mcc.o against a TLS definition (see
-     docs/TODO "extern __thread STT_TLS"). Un-guard by dropping -DABI_SKIP_TLS. */
+     Guards the STT_TLS undef-symbol fix -- mcc used to reset extern __thread refs
+     to STT_NOTYPE at object write, so GNU ld rejected linking against a TLS def. */
   { k++; if(g_tls!=555) return k; }
   { tls_set(999); k++; if(g_tls!=999) return k; }
   { g_tls = 314; k++; if(tls_get()!=314) return k; }
-#endif
   return 0;
 }
 EOF

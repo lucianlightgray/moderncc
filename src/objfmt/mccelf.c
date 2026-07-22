@@ -188,7 +188,8 @@ ST_FUNC void mccelf_end_file(MCCState *s1) { MCC_TRACE("enter\n");
 			if (sym_bind == STB_LOCAL)
 				{ MCC_TRACE("br\n"); sym_bind = STB_GLOBAL; }
 #ifndef MCC_TARGET_PE
-			if (sym_bind == STB_GLOBAL && s1->output_type == MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
+			if (sym_bind == STB_GLOBAL && s1->output_type == MCC_OUTPUT_OBJ &&
+					sym_type != STT_TLS) { MCC_TRACE("br\n");
 				sym_type = STT_NOTYPE;
 			}
 #endif
