@@ -3420,12 +3420,30 @@ again:
 			if (sf && df) { MCC_TRACE("br\n");
 				gen_cvt_ftof(dbt);
 			} else if (df) { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+				int sup_itof = ast_active && !ast_replaying;
+				if (sup_itof)
+					{ MCC_TRACE("br\n"); ast_in_op++; }
 				gen_cvt_itof1(dbt);
+				if (sup_itof)
+					{ MCC_TRACE("br\n"); ast_in_op--; }
+#else
+				gen_cvt_itof1(dbt);
+#endif
 			} else { MCC_TRACE("br\n");
 				sbt = dbt;
 				if (dbt_bt != VT_LLONG && dbt_bt != VT_INT)
 					{ MCC_TRACE("br\n"); sbt = VT_INT; }
+#if MCC_CONFIG_OPTIMIZER
+				int sup_ftoi = ast_active && !ast_replaying;
+				if (sup_ftoi)
+					{ MCC_TRACE("br\n"); ast_in_op++; }
 				gen_cvt_ftoi1(sbt);
+				if (sup_ftoi)
+					{ MCC_TRACE("br\n"); ast_in_op--; }
+#else
+				gen_cvt_ftoi1(sbt);
+#endif
 				goto again;
 			}
 			goto done;

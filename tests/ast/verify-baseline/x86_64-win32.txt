@@ -12,7 +12,6 @@ bounds/bound_setjmp.c	stack	desync
 bounds/bound_signal.c	__mcc_once_tramp	desync
 bounds/bound_signal.c	__mcc_pthread_trampoline	desync
 bounds/bound_test.c	mul	desync
-bounds/stack_safe.c	main	desync
 codegen/codeopt.c	bla	desync
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/dead_code.c	kb_wait_1	desync
@@ -188,7 +187,6 @@ structs_unions/struct_union_members.c	main	desync
 structs_unions/union_byval.c	main	desync
 types/bool.c	main	desync
 types/builtin_inf_nan.c	main	unfaithful
-types/conversion.c	main	desync
 types/declarators.c	main	desync
 types/floating_point.c	main	desync
 types/int_conversion.c	cast_main	unfaithful
