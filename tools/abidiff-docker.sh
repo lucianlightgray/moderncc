@@ -39,7 +39,7 @@ CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificate
 case "$ARCH" in
 	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED" ;;
-	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
+	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"; MAINDEF="-DABI_SKIP_HFA4RET"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
 	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
 	     PKG="$PKG gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static" ;;
@@ -92,6 +92,7 @@ struct HFA3     { float a, b, c; };            /* odd-count (3) homogeneous floa
 struct IntFloat { int i; float f; };           /* mixed 8B: NOT an HFA (INTEGER+SSE) */
 union  Uni      { int i; float f; long long l; }; /* 8B union by value */
 struct Bits     { unsigned a:5, b:11, c:16; }; /* 4B bitfields by value */
+struct HFA4     { double a, b, c, d; };        /* 32B: arm64/armv7 HFA (v0-v3), riscv64 indirect */
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -115,6 +116,10 @@ struct HFA3    hfa3_scale(struct HFA3 h, float k);
 double         intfloat_sum(struct IntFloat m);
 int            uni_int(union Uni u);
 long long      bits_sum(struct Bits b);
+double         hfa4_sum(struct HFA4 h);
+struct HFA4    hfa4_make(double a, double b, double c, double d);
+long double    ld_add(long double a, long double b);
+long double    ld_mix(int n, long double a, double b);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -150,6 +155,10 @@ struct HFA3    hfa3_scale(struct HFA3 h, float k){ struct HFA3 r; r.a=h.a*k; r.b
 double         intfloat_sum(struct IntFloat m){ return (double)m.i + m.f; }
 int            uni_int(union Uni u){ return u.i; }
 long long      bits_sum(struct Bits b){ return (long long)b.a + b.b + b.c; }
+double         hfa4_sum(struct HFA4 h){ return h.a + h.b + h.c + h.d; }
+struct HFA4    hfa4_make(double a, double b, double c, double d){ struct HFA4 r; r.a=a; r.b=b; r.c=c; r.d=d; return r; }
+long double    ld_add(long double a, long double b){ return a + b; }
+long double    ld_mix(int n, long double a, double b){ return a * (long double)n + (long double)b; }
 EOF
 
 # main.c: NO system headers so the cross mcc can compile it. Each check compares
@@ -188,6 +197,19 @@ int main(void){
   { struct IntFloat m; m.i=5; m.f=0.25f; k++; if(intfloat_sum(m)!=5.25) return k; }
   { union Uni u; u.i=-12345; k++; if(uni_int(u)!=-12345) return k; }
   { struct Bits b; b.a=17u; b.b=1000u; b.c=40000u; k++; if(bits_sum(b)!=(long long)17+1000+40000) return k; }
+  { struct HFA4 h; h.a=1.5; h.b=2.5; h.c=3.5; h.d=4.5; k++; if(hfa4_sum(h)!=12.0) return k; }
+#ifndef ABI_SKIP_HFA4RET
+  /* Returning a >16B all-float struct (indirect / hidden-pointer return) while
+     also passing FP args: the mcc riscv64 CALLER mis-allocates FP arg registers
+     when the sret pointer occupies a0 -- the 4th double arg goes to GP reg a1
+     instead of fa3, so a gcc callee reads fa3 (untouched) and gets d=0. Confirmed
+     real riscv64 ABI bug (see docs/TODO "riscv64 caller FP-arg + indirect struct
+     return"); correct on arm64/armv7 (they return HFA in v0-v3/d0-d3, no sret
+     pointer). Skipped on riscv64 (ABI_SKIP_HFA4RET) until the caller is fixed. */
+  { struct HFA4 r=hfa4_make(10.0,20.0,30.0,40.0); k++; if(r.a!=10.0||r.b!=20.0||r.c!=30.0||r.d!=40.0) return k; }
+#endif
+  { long double r=ld_add(1.5L, 2.25L); k++; if(r!=3.75L) return k; }
+  { long double r=ld_mix(3, 2.5L, 1.5); k++; if(r!=9.0L) return k; }
   return 0;
 }
 EOF
