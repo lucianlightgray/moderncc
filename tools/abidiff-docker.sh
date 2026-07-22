@@ -100,6 +100,7 @@ struct Packed   { char a; long long b; int c; } __attribute__((packed)); /* 13B,
 struct GData    { int a; char b; double c; long long d[3]; long e; }; /* global init-data layout */
 extern struct GData g_data;   /* defined in lib.c, read cross-object */
 struct P16      { long long a, b; };           /* 16B struct straddling reg/stack after 7 GP args */
+struct BF       { unsigned a:3; int b:5; unsigned c:20; long long d:40; int e:12; }; /* bitfield insert/extract codegen */
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -273,6 +274,12 @@ int main(void){
      x86_64 agree with gcc. */
   { struct A16 s; s.a=10; s.b=20; k++; if(a16_after_int(1, s)!=31) return k; }
   { struct P16 s; s.a=100; s.b=200; k++; if(straddle(1,2,3,4,5,6,7,s)!=328) return k; }
+  /* Bitfield insert/extract codegen: signed (b,e) test sign-extension, unsigned
+     (a,c) zero-extension, d is a 40-bit field straddling the 32-bit boundary. */
+  { struct BF x; x.a=5; x.b=-10; x.c=1000000; x.d=-500000000000LL; x.e=-100;
+    k++; if(x.a!=5u||x.b!=-10||x.c!=1000000u||x.d!=-500000000000LL||x.e!=-100) return k; }
+  { struct BF x; x.a=7; x.b=15; x.c=1048575; x.d=549755813887LL; x.e=2047;
+    k++; if(x.a!=7u||x.b!=15||x.c!=1048575u||x.d!=549755813887LL||x.e!=2047) return k; }
   /* Narrow-type return extension: callee-vs-caller extension responsibility
      differs by arch (AAPCS64: caller extends; RISC-V: callee sign/zero-extends
      to XLEN). Values chosen so the high bits matter. */
