@@ -71,7 +71,7 @@ static const char TMPL_CI_YML[] =
 		"          sudo apt-get update\n"
 		"          sudo apt-get -o APT::Keep-Downloaded-Packages=true install -y --no-install-recommends \\\n"
 		"            cmake ninja-build build-essential gcc clang lld wine64 git rsync \\\n"
-		"            mingw-w64\n"
+		"            mingw-w64 python3\n"
 		"          mkdir -p ~/.apt-cache\n"
 		"          cp -n /var/cache/apt/archives/*.deb ~/.apt-cache/ 2>/dev/null || true\n"
 		"      - name: run ${{ matrix.preset }}\n"

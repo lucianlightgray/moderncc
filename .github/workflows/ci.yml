@@ -67,7 +67,7 @@ jobs:
           sudo apt-get update
           sudo apt-get -o APT::Keep-Downloaded-Packages=true install -y --no-install-recommends \
             cmake ninja-build build-essential gcc clang lld wine64 git rsync \
-            mingw-w64
+            mingw-w64 python3
           mkdir -p ~/.apt-cache
           cp -n /var/cache/apt/archives/*.deb ~/.apt-cache/ 2>/dev/null || true
       - name: run ${{ matrix.preset }}
