@@ -1133,6 +1133,9 @@ endif()
 
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
+mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
+    VISIBLE_WHEN "MCC_ENABLE_CROSS"
+    HELP "Compile MCC_CONFIG_OPTIMIZER=1 into the cross compilers (mcc-<arch>). OFF (default) builds them without the AST reemit optimizer, so divmagic/select/promotion/replay-inline are compiled out and the per-triple reemit-parity axes silently no-op. ON makes the cross reemit differentials real (at the cost of cross build time/size). Kept OFF by default so the standard cross build stays byte-identical.")
 
 mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
@@ -2809,6 +2812,9 @@ if(MCC_ENABLE_CROSS)
 
         set(_cross_defs ${_cdefs} ${_cpath_defs}
             "MCC_CONFIG_CROSSPREFIX=\"${_t}-\"")
+        if(MCC_CROSS_OPTIMIZER)
+            list(APPEND _cross_defs "MCC_CONFIG_OPTIMIZER=1")
+        endif()
         if(_cos STREQUAL "WIN32")
             list(APPEND _cross_defs "MCC_CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
         endif()
