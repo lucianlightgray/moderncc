@@ -101,6 +101,7 @@ long long      odd_sum(struct Odd o);
 long long      big_sum(struct Big b);
 struct Big     big_scale(struct Big b, long long k);
 double         mixed_sum(struct Mixed m);
+struct Mixed   mixed_make(int i, double d);
 float          float4_sum(struct Float4 f);
 struct DblPair dbl_swap(struct DblPair p);
 long long      stack_args(char c, short s, int i, long long l,
@@ -132,6 +133,7 @@ long long      odd_sum(struct Odd o){ return (long long)o.c + o.i + o.s; }
 long long      big_sum(struct Big b){ return b.a + b.b + b.c + b.d; }
 struct Big     big_scale(struct Big b, long long k){ struct Big r; r.a=b.a*k; r.b=b.b*k; r.c=b.c*k; r.d=b.d*k; return r; }
 double         mixed_sum(struct Mixed m){ return (double)m.i + m.d; }
+struct Mixed   mixed_make(int i, double d){ struct Mixed r; r.i=i; r.d=d; return r; }
 float          float4_sum(struct Float4 f){ return f.a + f.b + f.c + f.d; }
 struct DblPair dbl_swap(struct DblPair p){ struct DblPair r; r.x=p.y; r.y=p.x; return r; }
 long long      stack_args(char c, short s, int i, long long l,
@@ -185,6 +187,9 @@ int main(void){
      INTEGER+SSE small-struct"); exercised on arm64/riscv64/armv7 (correct there),
      skipped on x86_64 (ABI_SKIP_MIXED) until mcc does per-eightbyte classification. */
   { struct Mixed m; m.i=3; m.d=0.5; k++; if(mixed_sum(m)!=3.5) return k; }
+  /* Hybrid 2-field return: riscv64 returns {int;double} in a0(int)+fa0(double);
+     arm64 in a GP reg pair (x0,x1); x86_64 in rax+xmm0 (same mixed-SSE bug). */
+  { struct Mixed r=mixed_make(7, 1.25); k++; if(r.i!=7||r.d!=1.25) return k; }
 #endif
   { struct Float4 f; f.a=1.5f; f.b=2.25f; f.c=-0.75f; f.d=4.0f; k++; if(float4_sum(f)!=7.0f) return k; }
   { struct DblPair p,r; p.x=2.0; p.y=8.0; r=dbl_swap(p); k++; if(r.x!=8.0||r.y!=2.0) return k; }
