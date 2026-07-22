@@ -4924,6 +4924,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
+        # riscv64 divmagic soak: build an optimizer-enabled riscv64 cross mcc
+        # in-container, compile a constant-divide soak with MCC_AST_DIVMAGIC=1
+        # (native mulh/mulhu/mulhsu — no runtime helpers, like arm64), and run it
+        # under qemu-riscv64 against a volatile-divisor hardware-div oracle.
+        # Completes the divmagic flip's cross-arch soak across every
+        # optimizer-capable arch; sibling of i386/arm64-divmagic-soak.
+        add_test(NAME riscv64-divmagic-soak-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64divmagic-docker.sh"
+                "$<TARGET_FILE:mcc-riscv64>"
+                "${CMAKE_BINARY_DIR}/riscv64-divmagic-soak-docker")
+        set_tests_properties(riscv64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+
         # mcc<->gcc mixed-object ABI differential (riscv64 LP64D): same corpus and
         # cross-mix strategy as abi-diff-arm64-docker, but compiled/linked with the
         # riscv64 cross toolchain and run under qemu-riscv64 (LP64D struct/vararg

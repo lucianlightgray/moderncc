@@ -247,6 +247,8 @@ static int load_symofs(int r, SValue *sv, int forstore, int *new_fc) { MCC_TRACE
 static void load_large_constant(int rr, int fc, uint32_t pi) { MCC_TRACE("enter\n");
 	if (fc < 0)
 		{ MCC_TRACE("br\n"); pi++; }
+	else if (((unsigned)fc + (1 << 19)) >> 20 >= 0x800)
+		{ MCC_TRACE("br\n"); pi++; }
 	o(0x37 | (rr << 7) | UPPER(pi));
 	EI(0x13, 0, rr, rr, SIGN11(pi));
 	EI(0x13, 1, rr, rr, 12);
