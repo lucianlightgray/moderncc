@@ -2585,6 +2585,7 @@ static struct AstInlineFn {
 	void *param_ref[AST_INLINE_MAX_PARAMS];
 	int param_size[AST_INLINE_MAX_PARAMS];
 	int param_stack[AST_INLINE_MAX_PARAMS];
+	int param_indirect[AST_INLINE_MAX_PARAMS];
 	int graftable;
 } ast_inline_pool[AST_INLINE_MAX];
 static int ast_inline_n;
@@ -2602,6 +2603,7 @@ static int ast_inline_cap_typ[AST_INLINE_MAX_PARAMS];
 static void *ast_inline_cap_ref[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_size[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_stack[AST_INLINE_MAX_PARAMS];
+static int ast_inline_cap_ind[AST_INLINE_MAX_PARAMS];
 static int ast_inline_cap_ok;
 
 static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
@@ -2652,9 +2654,16 @@ static void ast_inline_capture(Sym *fnsym) { MCC_TRACE("enter\n");
 		if (v < TOK_IDENT || n >= AST_INLINE_MAX_PARAMS)
 			{ MCC_TRACE("br\n"); return; }
 		Sym *ls = sym_find(v);
-		if (!ls || (ls->r & VT_VALMASK) != VT_LOCAL)
+		if (!ls)
 			{ MCC_TRACE("br\n"); return; }
 		int bt = ls->type.t & VT_BTYPE;
+		int indirect = 0;
+		if ((ls->r & VT_VALMASK) == VT_LLOCAL && (ls->r & VT_LVAL) &&
+				bt == VT_STRUCT) { MCC_TRACE("br\n");
+			indirect = 1;
+		} else if ((ls->r & VT_VALMASK) != VT_LOCAL) { MCC_TRACE("br\n");
+			return;
+		}
 		if ((bt != VT_INT && bt != VT_LLONG && bt != VT_PTR &&
 				 bt != VT_FLOAT && bt != VT_DOUBLE && bt != VT_STRUCT) ||
 				(ls->type.t & (VT_ARRAY | VT_VLA)))
@@ -2673,6 +2682,7 @@ static void ast_inline_capture(Sym *fnsym) { MCC_TRACE("enter\n");
 		ast_inline_cap_ref[n] = ls->type.ref;
 		ast_inline_cap_size[n] = psize;
 		ast_inline_cap_stack[n] = (int)ls->c >= 0;
+		ast_inline_cap_ind[n] = indirect;
 		n++;
 	}
 	ast_inline_cap_np = n;
@@ -2760,6 +2770,51 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	for (int i = 0; i < e->nparams; i++) { MCC_TRACE("br\n");
 		int dst = e->param_off[i] + bias;
 		AstLocal arg = ast_child(a, n, hidden + i + 1);
+		if (e->param_indirect[i]) { MCC_TRACE("br\n");
+			CType st;
+			st.t = e->param_typ[i];
+			st.ref = (Sym *)e->param_ref[i];
+			int sal, ssz = type_size(&st, &sal);
+			if (ssz < 1)
+				{ MCC_TRACE("br\n"); ssz = 1; }
+			if (sal < 1)
+				{ MCC_TRACE("br\n"); sal = 1; }
+			loc = (loc - ssz) & -sal;
+			int copy_off = loc;
+			ast_replay_value(a, arg);
+			SValue cslot;
+			memset(&cslot, 0, sizeof cslot);
+			cslot.type.t = e->param_typ[i];
+			cslot.type.ref = e->param_ref[i];
+			cslot.r = VT_LOCAL | VT_LVAL;
+			cslot.r2 = VT_CONST;
+			cslot.c.i = copy_off;
+			vpushv(&cslot);
+			vswap();
+			vstore();
+			vpop();
+			SValue aslot;
+			memset(&aslot, 0, sizeof aslot);
+			aslot.type.t = e->param_typ[i];
+			aslot.type.ref = e->param_ref[i];
+			aslot.r = VT_LOCAL | VT_LVAL;
+			aslot.r2 = VT_CONST;
+			aslot.c.i = copy_off;
+			vpushv(&aslot);
+			gaddrof();
+			vtop->type = char_pointer_type;
+			SValue pslot;
+			memset(&pslot, 0, sizeof pslot);
+			pslot.type = char_pointer_type;
+			pslot.r = VT_LOCAL | VT_LVAL;
+			pslot.r2 = VT_CONST;
+			pslot.c.i = dst;
+			vpushv(&pslot);
+			vswap();
+			vstore();
+			vpop();
+			continue;
+		}
 		AstLocal cbase = arg;
 		while (ast_kind(a, cbase) == AST_Convert && ast_nchild(a, cbase) == 1)
 			{ MCC_TRACE("br\n"); cbase = ast_first_child(a, cbase); }
@@ -2913,6 +2968,7 @@ static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 		e->param_ref[i] = ast_inline_cap_ref[i];
 		e->param_size[i] = ast_inline_cap_size[i];
 		e->param_stack[i] = ast_inline_cap_stack[i];
+		e->param_indirect[i] = ast_inline_cap_ind[i];
 	}
 	e->graftable = ast_inline_cap_ok && !ast_fn_tco && ast_inline_graftable(a);
 	if (ast_replay_dump)
@@ -4136,6 +4192,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				} }
 			if (!subst)
 				{ MCC_TRACE("br\n"); sv.c.i += ast_inline_bias; }
+		} else if ((sv.r & VT_VALMASK) == VT_LLOCAL && !(sv.r & VT_SYM) &&
+							 ast_in_graft) { MCC_TRACE("br\n");
+			sv.c.i += ast_inline_bias;
 		}
 		if (ast_promo_n && !ast_in_graft) { MCC_TRACE("br\n");
 			int preg = ast_promo_reg_of(a, n);

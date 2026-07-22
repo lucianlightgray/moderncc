@@ -3387,7 +3387,7 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("ast/inline-frame" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             elseif(MCC_CPU STREQUAL "riscv64")
                 mcc_skip_test("ast/replay-inline"
-                    "Tier-4 graft-inline is qemu-validated on riscv64 (ctest riscv64-inline-docker: scalar/pointer/double/8-byte-reg-pair-struct all graft, generated code runs RC=42, differential 42429/0 vs gcc -O2); the MCC_CPU-gated inline.c fixture stays skipped here because its main() body desyncs on the riscv64 psABI (the >16B use_sumbig struct-by-value passes indirectly), so REPLAYED=main and the full graft list do not fire (matches the arm64 sumbig limitation, one level up)")
+                    "Tier-4 graft-inline is qemu-validated on riscv64 (ctest riscv64-inline-docker: scalar/pointer/double/8-byte-reg-pair-struct AND the >16B indirect-ABI struct sumbig all graft, generated code runs RC=42, differential 42429/0 vs gcc -O2 — the indirect-param capture now models the riscv64 hidden-pointer class); the MCC_CPU-gated inline.c fixture stays skipped here because no riscv64-host CI exercises it and inline.c's main() replay in that exact fixture context is not yet arch-verified for riscv64")
                 mcc_skip_test("ast/replay-inline-spec"
                     "per-site specialization grafts+specializes choose/clampk/mul/addk on riscv64 and main replays there (RC=42, qemu-validated), so this fixture's assertions do hold; it stays skipped only because no riscv64-host CI exercises the MCC_CPU-gated build path -- live coverage is via ctest riscv64-inline-docker")
             else()
@@ -4809,6 +4809,18 @@ if(MCC_BUILD_TESTS)
                 "$<TARGET_FILE:mcc-arm64>" "linux/arm64"
                 "${CMAKE_BINARY_DIR}/extlink-arm64-docker")
         set_tests_properties(extlink-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+
+        # AAPCS64 Tier-4 graft-inline validation: build an optimizer-enabled arm64
+        # cross mcc in-container, prove graft via the compiler's [ast-inline]
+        # grafted marker + objdump (0 residual R_AARCH64_CALL26 call relocs,
+        # including the >16B struct sumbig now that the indirect-param capture
+        # models the AAPCS64 hidden-pointer class), and run a differential vs
+        # aarch64-linux-gnu-gcc -O2 under qemu-aarch64.
+        add_test(NAME arm64-inline-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64inline-docker.sh"
+                "${CMAKE_BINARY_DIR}/arm64-inline-docker")
+        set_tests_properties(arm64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     endif()
     # riscv64 has no user-mode emulator here, so link+DWARF only (no exec) in a

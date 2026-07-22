@@ -48,8 +48,10 @@ grep -E "\[ast-inline\] candidate (sumpt|addpt|sumbig|mkpair|add) " /w/fxdump.tx
 
 echo "== graft-fires objdump evidence: leaf caller programs, OFF vs ON =="
 # Each caller is a REPLAYED leaf whose callee is a static helper. arm AAPCS
-# passes small structs (<=16B = up to 4 words) in r0-r3, larger structs via a
-# hidden pointer (like arm64/riscv64 >16B). We test which cases graft.
+# passes small structs (<=16B = up to 4 words) in r0-r3; on this mcc arm backend
+# a larger struct-by-value arg is a direct stack copy (NOT the VT_LLOCAL hidden-
+# pointer class the indirect-param capture models), so it stays a retained gap
+# like i386. We test which cases graft.
 cat > /w/gate.c <<EOF
 extern int printf(const char*,...);
 struct Pair { int a, b; };
@@ -106,10 +108,13 @@ marker_graft derefsum yes "(pointer + loop)"
 # AAPCS; the Tier-4 slot capture does not model the split 64-bit param, so llmul
 # stays retained-only, mirroring the i386 long-long hazard. Correct finding.
 marker_graft llmul    no  "(long long args: 64-bit reg pair not modeled -- retained)"
-# EMPIRICAL arm desync #2: >16B struct passes via a hidden pointer on AAPCS;
-# Tier-4 capture does not model it, so sumbigf stays retained-only, mirroring
-# arm64/riscv64 sumbig.
-marker_graft sumbigf  no  "(32-byte struct-by-value: indirect ABI, not modeled -- retained)"
+# EMPIRICAL arm desync #2: on this mcc arm backend a >16B struct-by-value arg is
+# NOT captured as the VT_LLOCAL|VT_LVAL|VT_STRUCT indirect class (the class the
+# Tier-4 indirect-param capture now models for arm64/riscv64); it is a direct
+# stack copy, exactly like i386. So sumbigf stays retained-only here -- this is a
+# direct-copy gap, NOT the hidden-pointer indirect case, and is unaffected by the
+# indirect-param change. Confirmed by objdump: 1 residual R_ARM call reloc below.
+marker_graft sumbigf  no  "(32-byte struct-by-value: direct stack copy, not indirect -- retained gap like i386)"
 echo "-- objdump: residual R_ARM call reloc to each grafted callee (must be 0) --"
 for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_floatf fmixf" "c_smallstruct sumpair" "c_pointer derefsum"; do
   set -- $pair
