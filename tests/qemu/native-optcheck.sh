@@ -42,6 +42,7 @@ if [ "$IMAGE" = "mcc-qemu" ] && ! docker image inspect ${PLATFORM_ARG[@]+"${PLAT
     IMAGE="debian:bookworm-slim"
 fi
 
+MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm -i ${PLATFORM_ARG[@]+"${PLATFORM_ARG[@]}"} --entrypoint bash \
     -v "$REPO":/work:ro -e GATES="$GATES" -e CTR="$CTR" "$IMAGE" -s <<'INNER'
 set -uo pipefail
