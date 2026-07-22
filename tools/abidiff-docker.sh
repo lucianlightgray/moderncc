@@ -97,6 +97,8 @@ struct Wide     { double a; long b; double c; long d; }; /* 32B mixed non-HFA: i
 struct Ten      { double a,b,c,d,e,f,g,h,i,j; }; /* 80B indirect return; maker spills FP args past fa0-fa7 */
 struct A16      { long long a, b; } __attribute__((aligned(16))); /* 16B, 16-aligned: even reg-pair rule */
 struct Packed   { char a; long long b; int c; } __attribute__((packed)); /* 13B, unaligned members */
+struct GData    { int a; char b; double c; long long d[3]; long e; }; /* global init-data layout */
+extern struct GData g_data;   /* defined in lib.c, read cross-object */
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -140,6 +142,7 @@ EOF
 
 cat > /w/lib.c <<EOF
 #include "shared.h"
+struct GData   g_data = { 7, 88, 2.5, {100, 200, 300}, -99 };
 int            small_sum(struct Small p){ return p.a + p.b; }
 struct Small   small_make(int a, int b){ struct Small r; r.a=a; r.b=b; return r; }
 long long      odd_sum(struct Odd o){ return (long long)o.c + o.i + o.s; }
@@ -290,6 +293,9 @@ int main(void){
   { struct Packed p; p.a=5; p.b=1000000000000LL; p.c=-7; k++; if(packed_sum(p)!=(long long)5+1000000000000LL-7) return k; }
   { struct Packed r=packed_make(9, 123456789012LL, 42); k++; if(r.a!=9||r.b!=123456789012LL||r.c!=42) return k; }
 #endif
+  /* Global initialized-data layout across the boundary: reader (mcc or gcc)
+     accesses fields of a global struct+array defined in the other TU. */
+  { k++; if(g_data.a!=7||g_data.b!=88||g_data.c!=2.5||g_data.d[0]!=100||g_data.d[2]!=300||g_data.e!=-99) return k; }
   return 0;
 }
 EOF
