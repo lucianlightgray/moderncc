@@ -4875,6 +4875,17 @@ if(MCC_BUILD_TESTS)
                 "${CMAKE_BINARY_DIR}/riscv64-inline-docker")
         set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+
+        # mcc<->gcc mixed-object ABI differential (riscv64 LP64D): same corpus and
+        # cross-mix strategy as abi-diff-arm64-docker, but compiled/linked with the
+        # riscv64 cross toolchain and run under qemu-riscv64 (LP64D struct/vararg
+        # ABI boundary vs gcc). Builds its own in-container mcc; static-links so
+        # qemu-user needs no target sysroot.
+        add_test(NAME abi-diff-riscv64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
+                "riscv64" "${CMAKE_BINARY_DIR}/abi-diff-riscv64-docker")
+        set_tests_properties(abi-diff-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     endif()
 
     # armv7 (AAPCS) Tier-4 graft-inline validation: build an optimizer-enabled

@@ -28,10 +28,20 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 WORK_ABS="$(cd "$WORK" && pwd)"
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 
+# Native-run arches (arm64/amd64) run the linked program directly on a matching
+# container. Cross arches (riscv64) have no native execution here, so they build
+# mcc with the container's native gcc (mcc runs on the host arch but EMITS the
+# target ISA), compile/link the gcc side with a cross toolchain, and run under
+# qemu-user in a HOST-NATIVE container (arm64 on Apple Silicon, amd64 on CI x86).
+HOSTM="$(uname -m)"
+case "$HOSTM" in aarch64|arm64) NPLAT="linux/arm64"; NIMG="arm64v8/debian:bookworm-slim" ;; *) NPLAT="linux/amd64"; NIMG="debian:bookworm-slim" ;; esac
+CROSS=""; RUNNER=""; LINKFLAGS=""; PKG="gcc libc6-dev ca-certificates"
 case "$ARCH" in
 	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1" ;;
-	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64)"; exit 77 ;;
+	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
+	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
+	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64|riscv64)"; exit 77 ;;
 esac
 
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
@@ -43,17 +53,19 @@ fi
 
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
 docker run --rm --platform "$PLAT" -e MDEF="$MDEF" -e ARCH="$ARCH" \
+  -e CROSS="$CROSS" -e RUNNER="$RUNNER" -e LINKFLAGS="$LINKFLAGS" -e PKG="$PKG" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update >/dev/null 2>&1 || { echo "SKIP: apt update failed (no network?)"; exit 77; }
-apt-get install -y --no-install-recommends gcc libc6-dev ca-certificates >/dev/null 2>&1 \
-  || { echo "SKIP: apt install of gcc failed"; exit 77; }
+apt-get install -y --no-install-recommends $PKG >/dev/null 2>&1 \
+  || { echo "SKIP: apt install of toolchain failed"; exit 77; }
 
+GCC="${CROSS}gcc"
 mkdir -p /b; cp -a /repo/src /repo/include /repo/runtime /b/
 INC="-I src -I src/arch/i386 -I src/arch/x86_64 -I src/arch/arm -I src/arch/arm64 -I src/arch/riscv64 -I src/objfmt -I src/formats -I include"
 cd /b
-echo "== build native-arch cross mcc ($MDEF) =="
+echo "== build cross mcc ($MDEF) with the container native gcc =="
 gcc -O1 -w -DMCC_CONFIG_OPTIMIZER=1 $MDEF $INC src/mcc.c -o /w/mcc
 echo "   built /w/mcc"
 
@@ -130,17 +142,17 @@ int main(void){
 EOF
 
 RD=/b/runtime/include
-echo "== compile each TU with mcc and gcc =="
+echo "== compile each TU with mcc and $GCC =="
 /w/mcc  -O1 -I $RD -I /w -c /w/lib.c  -o /w/lib_mcc.o
 /w/mcc  -O1 -I $RD -I /w -c /w/main.c -o /w/main_mcc.o
-gcc     -O2       -I /w -c /w/lib.c  -o /w/lib_gcc.o
-gcc     -O2       -I /w -c /w/main.c -o /w/main_gcc.o
+"$GCC"  -O2       -I /w -c /w/lib.c  -o /w/lib_gcc.o
+"$GCC"  -O2       -I /w -c /w/main.c -o /w/main_gcc.o
 
 link_run() { # lib.o main.o -> prints exit code on stdout, "LINKFAIL" if link fails
-  if ! gcc "$1" "$2" -o /w/prog 2>/w/lderr; then
+  if ! "$GCC" $LINKFLAGS "$1" "$2" -o /w/prog 2>/w/lderr; then
     sed "s/^/      /" /w/lderr >&2; echo LINKFAIL; return
   fi
-  rc=0; /w/prog || rc=$?
+  rc=0; $RUNNER /w/prog || rc=$?
   echo "$rc"
 }
 
