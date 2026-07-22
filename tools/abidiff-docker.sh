@@ -39,7 +39,7 @@ CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificate
 case "$ARCH" in
 	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED" ;;
-	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
+	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"; MAINDEF="-DABI_SKIP_FPSPILL"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
 	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
 	     PKG="$PKG gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static" ;;
@@ -94,6 +94,7 @@ union  Uni      { int i; float f; long long l; }; /* 8B union by value */
 struct Bits     { unsigned a:5, b:11, c:16; }; /* 4B bitfields by value */
 struct HFA4     { double a, b, c, d; };        /* 32B: arm64/armv7 HFA (v0-v3), riscv64 indirect */
 struct Wide     { double a; long b; double c; long d; }; /* 32B mixed non-HFA: indirect return + FP+INT args */
+struct Ten      { double a,b,c,d,e,f,g,h,i,j; }; /* 80B indirect return; maker spills FP args past fa0-fa7 */
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -125,6 +126,7 @@ long double    ld_mix(int n, long double a, double b);
 struct Wide    wide_make(double a, long b, double c, long d);
 double         vsum_d(int count, ...);
 double         vmix_id(int count, ...);
+struct Ten     ten_make(double a,double b,double c,double d,double e,double f,double g,double h,double i,double j);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -175,6 +177,9 @@ double         vmix_id(int count, ...){
   double s=0; int i; va_list ap; va_start(ap,count);
   for(i=0;i<count;i++){ int n=va_arg(ap,int); double d=va_arg(ap,double); s += (double)n*d; }
   va_end(ap); return s;
+}
+struct Ten     ten_make(double a,double b,double c,double d,double e,double f,double g,double h,double i,double j){
+  struct Ten r; r.a=a; r.b=b; r.c=c; r.d=d; r.e=e; r.f=f; r.g=g; r.h=h; r.i=i; r.j=j; return r;
 }
 EOF
 
@@ -228,6 +233,17 @@ int main(void){
   { struct Wide r=wide_make(1.5, 100L, 2.5, 200L); k++; if(r.a!=1.5||r.b!=100||r.c!=2.5||r.d!=200) return k; }
   { k++; if(vsum_d(4, 1.5, 2.25, 4.0, 8.0)!=15.75) return k; }
   { k++; if(vmix_id(3, 2, 1.5, 5, 2.0, 10, 0.5)!=(double)(2*1.5+5*2.0+10*0.5)) return k; }
+#ifndef ABI_SKIP_FPSPILL
+  /* 10 double args: a-h fill fa0-fa7, then i,j spill. riscv64 LP64D requires
+     exhausted FP args to go to GP arg regs first (a1,a2 here) then stack; mcc
+     sends them straight to the stack (gfunc_call ~632 has no FP-in-GP path, and
+     riscv64-gen.c emits no fmv), so a gcc caller/callee disagrees -> i,j read 0.
+     Real riscv64 ABI bug (see docs/TODO "riscv64 FP-arg spill to GP"); arm64/
+     armv7/x86_64 spill excess FP to the stack, so they are correct. Skipped on
+     riscv64 (ABI_SKIP_FPSPILL) until FP-arg-in-GP passing is implemented. */
+  { struct Ten r=ten_make(1,2,3,4,5,6,7,8,9,10); k++;
+    if(r.a!=1||r.b!=2||r.c!=3||r.d!=4||r.e!=5||r.f!=6||r.g!=7||r.h!=8||r.i!=9||r.j!=10) return k; }
+#endif
   return 0;
 }
 EOF
