@@ -608,6 +608,12 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	areg[0] = 0;
 	areg[1] = 8;
 	sa = vtop[-nb_args].type.ref->next;
+	int sret_arg = 0;
+	{ Sym *frefs = vtop[-nb_args].type.ref;
+	  int ssz, sal;
+	  if ((frefs->type.t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+	    ssz = type_size(&frefs->type, &sal);
+	    if (ssz > 16) { MCC_TRACE("br\n"); sret_arg = 1; } } }
 	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 		int nregs, byref = 0, tempofs;
 		int prc[3], fieldofs[3];
@@ -655,7 +661,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			}
 		}
 		info[i] |= byref;
-		if (sa)
+		if (sa && !(sret_arg && i == 0))
 			{ MCC_TRACE("br\n"); sa = sa->next; }
 	}
 	stack_adj = (stack_adj + 15) & -16;

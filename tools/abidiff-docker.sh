@@ -39,7 +39,7 @@ CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificate
 case "$ARCH" in
 	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED" ;;
-	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"; MAINDEF="-DABI_SKIP_HFA4RET"
+	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
 	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
 	     PKG="$PKG gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static" ;;
@@ -198,16 +198,11 @@ int main(void){
   { union Uni u; u.i=-12345; k++; if(uni_int(u)!=-12345) return k; }
   { struct Bits b; b.a=17u; b.b=1000u; b.c=40000u; k++; if(bits_sum(b)!=(long long)17+1000+40000) return k; }
   { struct HFA4 h; h.a=1.5; h.b=2.5; h.c=3.5; h.d=4.5; k++; if(hfa4_sum(h)!=12.0) return k; }
-#ifndef ABI_SKIP_HFA4RET
   /* Returning a >16B all-float struct (indirect / hidden-pointer return) while
-     also passing FP args: the mcc riscv64 CALLER mis-allocates FP arg registers
-     when the sret pointer occupies a0 -- the 4th double arg goes to GP reg a1
-     instead of fa3, so a gcc callee reads fa3 (untouched) and gets d=0. Confirmed
-     real riscv64 ABI bug (see docs/TODO "riscv64 caller FP-arg + indirect struct
-     return"); correct on arm64/armv7 (they return HFA in v0-v3/d0-d3, no sret
-     pointer). Skipped on riscv64 (ABI_SKIP_HFA4RET) until the caller is fixed. */
+     also passing FP args exercised the riscv64 caller sret-pointer + FP-arg
+     accounting bug (fixed: gfunc_call no longer advances the param walk for the
+     implicit sret arg). Correct on arm64/armv7 (HFA returned in v0-v3/d0-d3). */
   { struct HFA4 r=hfa4_make(10.0,20.0,30.0,40.0); k++; if(r.a!=10.0||r.b!=20.0||r.c!=30.0||r.d!=40.0) return k; }
-#endif
   { long double r=ld_add(1.5L, 2.25L); k++; if(r!=3.75L) return k; }
   { long double r=ld_mix(3, 2.5L, 1.5); k++; if(r!=9.0L) return k; }
   return 0;
