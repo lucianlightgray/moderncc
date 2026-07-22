@@ -1298,6 +1298,12 @@ ST_FUNC void mcc_debug_end(MCCState *s1) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mcc_free(dwarf_line.filename_table[i].name); }
 		mcc_free(dwarf_line.filename_table);
 
+		if (text_section->data_offset > dwarf_line.last_pc) { MCC_TRACE("br\n");
+			dwarf_line_op(s1, DW_LNS_advance_pc);
+			dwarf_uleb128_op(s1, (text_section->data_offset - dwarf_line.last_pc) /
+															 DWARF_MIN_INSTR_LEN);
+			dwarf_line.last_pc = text_section->data_offset;
+		}
 		dwarf_line_op(s1, 0);
 		dwarf_uleb128_op(s1, 1);
 		dwarf_line_op(s1, DW_LNE_end_sequence);

@@ -4828,6 +4828,19 @@ if(MCC_BUILD_TESTS)
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
     endif()
 
+    # DWARF debug-info correctness through gdb: build a host-native mcc, compile
+    # with -gdwarf, link with gcc, and require gdb to report a source line for
+    # EVERY backtrace frame. Regression guard for the .debug_line end_sequence
+    # bug (last function got a zero-length final line range -> "main ()" with no
+    # "at file:line" in a backtrace). Self-builds mcc; runs host-native (gdb needs
+    # ptrace, unavailable under qemu-user); the line table is arch-independent
+    # (mccdbg.c) so one native arch covers all.
+    add_test(NAME dwarf-gdb-docker
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/dwarfgdb-docker.sh"
+            "${CMAKE_BINARY_DIR}/dwarf-gdb-docker")
+    set_tests_properties(dwarf-gdb-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+        SKIP_RETURN_CODE 77)
+
     # External-linker interop for the 64-bit ELF (RELA) targets: link an mcc
     # object with GNU ld (not mcc's own linker) and require it to link+run and
     # to keep distinct per-function DWARF low_pc. Regression guard for the RELA
