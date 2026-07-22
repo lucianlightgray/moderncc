@@ -42,6 +42,42 @@
 #include <intrin.h>
 #endif
 
+/* ----------------------------------------------- Vista sync primitives --
+   mcc's own curated <windows.h> (runtime/win32/include/winapi) is a pre-Vista
+   mingw snapshot: it carries VirtualAlloc/CreateFileMapping/HeapAlloc/QPC but
+   NOT the slim reader/writer lock, condition variable, or one-time-init types.
+   Without them an mcc-self-hosted embed-JIT build (mcc compiling mcc.c) can't
+   parse this header, forcing a dependency on an external toolchain's windows.h.
+   Provide the exact subset used below when absent, so the self-host is
+   self-contained. Every real toolchain windows.h (mingw/MSVC) defines the
+   matching *_INIT macros, so these blocks are skipped verbatim there — no
+   redefinition, zero change to the normal gcc/cl build. kernel32 exports the
+   entry points (runtime/win32/lib/kernel32.def), so the link resolves. */
+#ifndef SRWLOCK_INIT
+typedef struct _MCCJIT_SRWLOCK { PVOID Ptr; } SRWLOCK, *PSRWLOCK;
+#define SRWLOCK_INIT {0}
+WINBASEAPI VOID WINAPI InitializeSRWLock(PSRWLOCK);
+WINBASEAPI VOID WINAPI AcquireSRWLockExclusive(PSRWLOCK);
+WINBASEAPI VOID WINAPI ReleaseSRWLockExclusive(PSRWLOCK);
+#endif
+#ifndef CONDITION_VARIABLE_INIT
+typedef struct _MCCJIT_CONDVAR { PVOID Ptr; } CONDITION_VARIABLE, *PCONDITION_VARIABLE;
+#define CONDITION_VARIABLE_INIT {0}
+WINBASEAPI VOID WINAPI InitializeConditionVariable(PCONDITION_VARIABLE);
+WINBASEAPI BOOL WINAPI SleepConditionVariableSRW(PCONDITION_VARIABLE, PSRWLOCK,
+																								 DWORD, ULONG);
+WINBASEAPI VOID WINAPI WakeConditionVariable(PCONDITION_VARIABLE);
+WINBASEAPI VOID WINAPI WakeAllConditionVariable(PCONDITION_VARIABLE);
+#endif
+#ifndef INIT_ONCE_STATIC_INIT
+typedef union _MCCJIT_INIT_ONCE { PVOID Ptr; } INIT_ONCE, *PINIT_ONCE;
+#define INIT_ONCE_STATIC_INIT {0}
+WINBASEAPI BOOL WINAPI InitOnceExecuteOnce(PINIT_ONCE,
+																					 BOOL(WINAPI *)(PINIT_ONCE, PVOID,
+																													PVOID *),
+																					 PVOID, LPVOID *);
+#endif
+
 /* ------------------------------------------------------------------ arch --
    The exec-memory / stub builders in mccjit_embed.c are host-arch specific
    (they emit raw machine code for the machine mcc itself runs on). GCC/Clang
