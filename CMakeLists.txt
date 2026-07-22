@@ -4669,6 +4669,15 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(qemu-fetch-parse PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        find_program(MCC_PYTHON3 NAMES python3 python)
+        if(MCC_PYTHON3 AND MCC_EMBED_MCCRT)
+            add_test(NAME selfhost-smoke
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
+                        "${CMAKE_BINARY_DIR}")
+            set_tests_properties(selfhost-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+        endif()
+
         if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
             add_test(NAME git-stamp COMMAND "$<TARGET_FILE:mccbuild>" --githash)
             set_tests_properties(git-stamp PROPERTIES FIXTURES_REQUIRED MCC_BUILT

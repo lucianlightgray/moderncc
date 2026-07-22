@@ -37,6 +37,13 @@ def main():
     flags = [a for a in shlex.split(rec["command"])[1:]
              if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
+    link_objs = [blob]
+    if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
+        jitblob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c.o")
+        if not os.path.exists(jitblob):
+            sys.exit(f"no JIT blob at {jitblob} (build the mcc target first)")
+        link_objs.append(jitblob)
+
     with tempfile.TemporaryDirectory() as work:
         print(f"self-host: compiling src/mcc.c with {mcc}  knobs={sys.argv[2:] or '(none)'}")
         obj = os.path.join(work, "mcc-sh.o")
@@ -45,7 +52,7 @@ def main():
 
         print("self-host: linking (mcc as linker for the x87 long-double helpers)")
         shbin = os.path.join(work, "mcc-sh")
-        subprocess.run([mcc, obj, blob, "-o", shbin, "-lm", "-ldl"], cwd=root, check=True)
+        subprocess.run([mcc, obj, *link_objs, "-o", shbin, "-lm", "-ldl"], cwd=root, check=True)
 
         inc = os.path.join(root, "runtime/include")
         tc = os.path.join(work, "t.c")
