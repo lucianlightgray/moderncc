@@ -1,6 +1,14 @@
 #include "toolsupport.h"
 #include <time.h>
 
+static const char *ci_cwd(char *buf, size_t n) {
+#if MCC_HOST_WIN32
+	return _getcwd(buf, (int)n);
+#else
+	return getcwd(buf, n);
+#endif
+}
+
 static int ci_phase(const char *label, const char *const *argz) {
 	time_t t0 = time(NULL), t1;
 	int rc;
@@ -185,7 +193,15 @@ static int do_run_preset(int argc, char **argv) {
 			ts_arg(&v, "--build-config");
 			ts_arg(&v, config);
 		}
-		snprintf(junit, sizeof junit, "cmake-%s/ctest-junit.xml", preset);
+		{
+			char cwd[4096];
+			if (ci_cwd(cwd, sizeof cwd))
+				snprintf(junit, sizeof junit,
+						"%s/cmake-%s/ctest-junit.xml", cwd, preset);
+			else
+				snprintf(junit, sizeof junit,
+						"cmake-%s/ctest-junit.xml", preset);
+		}
 		ts_arg(&v, "--output-junit");
 		ts_arg(&v, junit);
 		{
@@ -337,7 +353,14 @@ static int do_qemu(int argc, char **argv) {
 		ts_arg(&v, "ctest");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
-		snprintf(junit, sizeof junit, "%s/ctest-junit.xml", build);
+		{
+			char cwd[4096];
+			if (ci_cwd(cwd, sizeof cwd))
+				snprintf(junit, sizeof junit, "%s/%s/ctest-junit.xml",
+						cwd, build);
+			else
+				snprintf(junit, sizeof junit, "%s/ctest-junit.xml", build);
+		}
 		ts_arg(&v, "--output-junit");
 		ts_arg(&v, junit);
 		for (i = 0; i < argc; i++)
