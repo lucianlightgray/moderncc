@@ -99,6 +99,7 @@ struct A16      { long long a, b; } __attribute__((aligned(16))); /* 16B, 16-ali
 struct Packed   { char a; long long b; int c; } __attribute__((packed)); /* 13B, unaligned members */
 struct GData    { int a; char b; double c; long long d[3]; long e; }; /* global init-data layout */
 extern struct GData g_data;   /* defined in lib.c, read cross-object */
+struct P16      { long long a, b; };           /* 16B struct straddling reg/stack after 7 GP args */
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -132,6 +133,8 @@ double         vsum_d(int count, ...);
 double         vmix_id(int count, ...);
 struct Ten     ten_make(double a,double b,double c,double d,double e,double f,double g,double h,double i,double j);
 long long      a16_after_int(int pad, struct A16 s);
+long long      straddle(long long a, long long b, long long c, long long d,
+                        long long e, long long f, long long g, struct P16 s);
 signed char    sc_make(int x);
 unsigned char  uc_make(int x);
 short          sh_make(int x);
@@ -194,6 +197,10 @@ struct Ten     ten_make(double a,double b,double c,double d,double e,double f,do
   struct Ten r; r.a=a; r.b=b; r.c=c; r.d=d; r.e=e; r.f=f; r.g=g; r.h=h; r.i=i; r.j=j; return r;
 }
 long long      a16_after_int(int pad, struct A16 s){ return pad + s.a + s.b; }
+long long      straddle(long long a, long long b, long long c, long long d,
+                        long long e, long long f, long long g, struct P16 s){
+  return a+b+c+d+e+f+g + s.a + s.b;
+}
 signed char    sc_make(int x){ return (signed char)x; }
 unsigned char  uc_make(int x){ return (unsigned char)x; }
 short          sh_make(int x){ return (short)x; }
@@ -265,6 +272,7 @@ int main(void){
      arm64 (arm64_natural_align16) and armv7 (arm_pcs_natural_align). riscv64/
      x86_64 agree with gcc. */
   { struct A16 s; s.a=10; s.b=20; k++; if(a16_after_int(1, s)!=31) return k; }
+  { struct P16 s; s.a=100; s.b=200; k++; if(straddle(1,2,3,4,5,6,7,s)!=328) return k; }
   /* Narrow-type return extension: callee-vs-caller extension responsibility
      differs by arch (AAPCS64: caller extends; RISC-V: callee sign/zero-extends
      to XLEN). Values chosen so the high bits matter. */
