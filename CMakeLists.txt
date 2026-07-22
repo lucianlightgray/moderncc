@@ -4704,6 +4704,28 @@ if(MCC_BUILD_TESTS)
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
     endif()
 
+    # External-linker interop for the 64-bit ELF (RELA) targets: link an mcc
+    # object with GNU ld (not mcc's own linker) and require it to link+run and
+    # to keep distinct per-function DWARF low_pc. Regression guard for the RELA
+    # addend-0 FDE/DW_AT_low_pc bugs; nothing else in the suite links a 64-bit
+    # mcc object externally. i386/arm are REL and structurally immune.
+    if(TARGET mcc-x86_64)
+        add_test(NAME extlink-x86_64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
+                "$<TARGET_FILE:mcc-x86_64>" "linux/amd64"
+                "${CMAKE_BINARY_DIR}/extlink-x86_64-docker")
+        set_tests_properties(extlink-x86_64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    endif()
+    if(TARGET mcc-arm64)
+        add_test(NAME extlink-arm64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
+                "$<TARGET_FILE:mcc-arm64>" "linux/arm64"
+                "${CMAKE_BINARY_DIR}/extlink-arm64-docker")
+        set_tests_properties(extlink-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    endif()
+
     add_custom_target(gcctestsuite
         COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>
                 --bdir "${CMAKE_BINARY_DIR}" --idir "${CMAKE_CURRENT_SOURCE_DIR}"
