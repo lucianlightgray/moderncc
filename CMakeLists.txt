@@ -2650,6 +2650,63 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     endif()
 endif()
 
+# --- JIT self-host bootstrap (EXPERIMENTAL) ------------------------------
+# mcc-jit: a stage-2 mcc produced by mcc compiling its OWN source with
+# --embed-jit, so the resulting binary carries the JIT engine and, at runtime
+# under MCC_JIT=1, profile-guided-recompiles and hot-swaps its own hot
+# functions in-process. Requires the reemit optimizer + the engine blob.
+# Baking needs -O1+ (never -O0). The Apple Mach-O and PE bake paths have their
+# own open blockers, so those triples build the tool but skip the self-host.
+# STATUS (2026-07-22): builds + self-JITs on linux/arm64 (MCC_JIT=0 output is
+# correct; MCC_JIT=1 does 59 runtime recompiles + live hot-swaps of its own
+# functions, all logged), but full self-host still SIGBUSes when a JIT'd
+# variant of a complex mcc function corrupts the frame — an open JIT-codegen
+# robustness bug tracked in docs/TODO.md. Default OFF; opt-in only.
+mcc_config_node(MCC_BUILD_JIT_SELFHOST TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
+    VISIBLE_WHEN "MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER"
+    HELP "EXPERIMENTAL. Build mcc-jit: a stage-2 mcc self-compiled with --embed-jit (JITs its own hot functions at runtime). ELF only; Apple/PE bake paths gated off. Full self-host has an open SIGBUS (a JIT'd variant corrupts the frame) — self-JITs + logs stats but is not yet crash-free.")
+
+function(mcc_add_jit_selfhost out_path stage0_mcc)
+    # Reconstruct the exact compile flags the stage-0 mcc target was built with:
+    # directory-level defs (add_compile_definitions) + the target's own defs +
+    # its include dirs. The string defines (e.g. MCC_CONFIG_MCCDIR="...") carry
+    # their quotes verbatim through VERBATIM/COMMAND_EXPAND_LISTS.
+    get_directory_property(_dirdefs COMPILE_DEFINITIONS)
+    set(_dflags "")
+    foreach(_d IN LISTS _dirdefs)
+        list(APPEND _dflags "-D${_d}")
+    endforeach()
+    set(_blobs "${CMAKE_BINARY_DIR}/mccjit_blob.c")
+    if(EXISTS "${CMAKE_BINARY_DIR}/mccrt_blob.c" OR MCC_EMBED_MCCRT)
+        list(APPEND _blobs "${CMAKE_BINARY_DIR}/mccrt_blob.c")
+    endif()
+    add_custom_command(OUTPUT "${out_path}"
+        COMMAND "$<TARGET_FILE:${stage0_mcc}>" --embed-jit -O1
+            ${_dflags}
+            "-D$<JOIN:$<TARGET_PROPERTY:${stage0_mcc},COMPILE_DEFINITIONS>,;-D>"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}" "-I${CMAKE_BINARY_DIR}"
+            "-I$<JOIN:$<TARGET_PROPERTY:${stage0_mcc},INCLUDE_DIRECTORIES>,;-I>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c" ${_blobs}
+            -lm -lpthread -ldl
+            -o "${out_path}"
+        DEPENDS ${stage0_mcc} "${CMAKE_BINARY_DIR}/mccjit_blob.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
+        COMMENT "JIT self-host: ${stage0_mcc} --embed-jit -> ${out_path}"
+        VERBATIM COMMAND_EXPAND_LISTS)
+endfunction()
+
+if(MCC_BUILD_JIT_SELFHOST AND MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER AND TARGET libmcc_jitengine)
+    if(APPLE)
+        message(STATUS "mcc: JIT self-host (native) skipped — Apple Mach-O --embed-jit bake is unresolved (_mccjit_boot_swap)")
+    elseif(MCC_TARGETOS STREQUAL "WIN32")
+        message(STATUS "mcc: JIT self-host (native) skipped — PE --embed-jit needs the mingw-runtime embed path")
+    else()
+        mcc_add_jit_selfhost("${CMAKE_BINARY_DIR}/mcc-jit" mcc)
+        add_custom_target(mcc-jit-selfhost ALL DEPENDS "${CMAKE_BINARY_DIR}/mcc-jit")
+        message(STATUS "mcc: JIT self-host target 'mcc-jit-selfhost' -> mcc-jit enabled (native ${MCC_CPU})")
+    endif()
+endif()
+
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
     DESTINATION "${CMAKE_BINARY_DIR}/include" FILES_MATCHING PATTERN "*.h")
 
