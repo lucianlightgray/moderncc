@@ -1,13 +1,16 @@
 #ifndef MCC_RISCV64_GEN_H
 #define MCC_RISCV64_GEN_H
 
-#define MCC_NB_REGS 19
+#define MCC_NB_REGS 30
 #ifndef MCC_CONFIG_ASM
 #define MCC_CONFIG_ASM 1
 #endif
 
 #define MCC_TREG_R(x) (x)
 #define MCC_TREG_F(x) (x + 8)
+
+#define MCC_TREG_SAVED(x) (19 + (x))
+#define MCC_NB_SAVED 11
 
 #define MCC_RC_INT (1 << 0)
 #define MCC_RC_FLOAT (1 << 1)

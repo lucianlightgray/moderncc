@@ -2513,9 +2513,17 @@ void ast_hook_implicit_return(void) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, bb, ret);
 }
 
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 #define AST_PROMO_MAX 5
-#if defined(MCC_TARGET_X86_64)
+#if defined(MCC_TARGET_RISCV64)
+#define AST_PROMO_CALLER_N 6
+#define AST_PROMO_CALLEE_N 11
+#define AST_PROMO_XMM_N 4
+static const int ast_promo_caller[AST_PROMO_CALLER_N] = {2, 3, 4, 5, 6, 7};
+static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {19, 20, 21, 22, 23,
+																												 24, 25, 26, 27, 28, 29};
+static const int ast_promo_xmm[AST_PROMO_XMM_N] = {10, 11, 12, 13};
+#elif defined(MCC_TARGET_X86_64)
 #define AST_PROMO_CALLER_N 3
 #define AST_PROMO_CALLEE_N 5
 #define AST_PROMO_XMM_N 2
@@ -3587,7 +3595,7 @@ static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) { MCC_TR
 		{ MCC_TRACE("br\n"); ast_subtree_span(a, c, lo, hi); }
 }
 
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 static int ast_promo_reg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		{ MCC_TRACE("br\n"); return -1; }
@@ -3677,7 +3685,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); has_loop = 1; }
 			}
 		}
-#if defined(MCC_TARGET_ARM64)
+#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 		if ((ast_type_t(a, n) & VT_BTYPE) == VT_LDOUBLE)
 			{ MCC_TRACE("br\n"); has_call = 1; }
 #endif
@@ -4369,7 +4377,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			 s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
 		switch (ast_kind(a, s)) { MCC_TRACE("br\n");
 		case AST_Store: {
-#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 			int preg = (ast_promo_n && !ast_in_graft)
 										 ? ast_promo_reg_of(a, ast_child(a, s, 0))
 										 : -1;

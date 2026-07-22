@@ -41,7 +41,18 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_FLOAT | MCC_RC_F(7),
 		0,
 		1 << MCC_TREG_RA,
-		1 << MCC_TREG_SP};
+		1 << MCC_TREG_SP,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0};
 
 #if MCC_CONFIG_DIAG_RT >= 2
 #define func_bound_offset (mcc_state->cg_func_bound_offset)
@@ -49,17 +60,23 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 ST_DATA int func_bound_add_epilog;
 #endif
 
+static const int riscv64_saved_phys[MCC_NB_SAVED] = {
+		9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
+
 static int ireg(int r) { MCC_TRACE("enter\n");
 	if (r == MCC_TREG_RA)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (r == MCC_TREG_SP)
 		{ MCC_TRACE("br\n"); return 2; }
+	if (r >= MCC_TREG_SAVED(0) && r <= MCC_TREG_SAVED(MCC_NB_SAVED - 1))
+		{ MCC_TRACE("br\n"); return riscv64_saved_phys[r - MCC_TREG_SAVED(0)]; }
 	assert(r >= 0 && r < 8);
 	return r + 10;
 }
 
 static int is_ireg(int r) { MCC_TRACE("enter\n");
-	return (unsigned)r < 8 || r == MCC_TREG_RA || r == MCC_TREG_SP;
+	return (unsigned)r < 8 || r == MCC_TREG_RA || r == MCC_TREG_SP ||
+				 (r >= MCC_TREG_SAVED(0) && r <= MCC_TREG_SAVED(MCC_NB_SAVED - 1));
 }
 
 static int freg(int r) { MCC_TRACE("enter\n");

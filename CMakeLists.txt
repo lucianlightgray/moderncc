@@ -4814,6 +4814,12 @@ if(MCC_BUILD_TESTS)
                 "${CMAKE_BINARY_DIR}/extlink-riscv64-docker" "riscv64-linux-gnu-")
         set_tests_properties(extlink-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+
+        add_test(NAME riscv64-promote-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64promo-docker.sh"
+                "${CMAKE_BINARY_DIR}/riscv64-promote-docker")
+        set_tests_properties(riscv64-promote-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     endif()
 
     add_custom_target(gcctestsuite
