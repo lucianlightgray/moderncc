@@ -20,3 +20,6 @@ qemu_*.core
 
 # persistent fuzz miscompile-class scoreboard (written by `runner.c campaign`)
 /tests/fuzz/corpus/scoreboard.tsv
+
+# CTest scratch written when ctest runs from the repo root (not a build dir)
+/Testing/
