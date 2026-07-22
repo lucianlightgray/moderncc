@@ -4779,6 +4779,12 @@ if(MCC_BUILD_TESTS)
                 "${CMAKE_BINARY_DIR}/i386-divmagic-soak-docker")
         set_tests_properties(i386-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+
+        add_test(NAME i386-inline-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/i386inline-docker.sh"
+                "${CMAKE_BINARY_DIR}/i386-inline-docker")
+        set_tests_properties(i386-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(i386-fastcall-abi
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
@@ -4830,6 +4836,19 @@ if(MCC_BUILD_TESTS)
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64inline-docker.sh"
                 "${CMAKE_BINARY_DIR}/riscv64-inline-docker")
         set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    endif()
+
+    # armv7 (AAPCS) Tier-4 graft-inline validation: build an optimizer-enabled
+    # arm cross mcc in-container, prove graft via the compiler's [ast-inline]
+    # grafted marker + objdump (0 residual R_ARM_PC24 call relocs), and run a
+    # differential vs arm-linux-gnueabihf-gcc -O2 under qemu-arm. The script is
+    # self-contained (builds its own opt mcc); the TARGET gate only registers it.
+    if(TARGET mcc-arm)
+        add_test(NAME arm-inline-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arminline-docker.sh"
+                "${CMAKE_BINARY_DIR}/arm-inline-docker")
+        set_tests_properties(arm-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     endif()
 
