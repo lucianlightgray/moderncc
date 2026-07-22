@@ -33,11 +33,27 @@ PLATFORM_ARG=()
 GATES="${MCC_GATES:-MCC_AST_PROMOTE=1}"
 CTR="${CTEST_R:-^exec/}"
 
+# The mcc-qemu image ships build tools but is single-arch (built for the dev
+# host). When it is unavailable for the requested platform (e.g. running
+# PLATFORM=linux/amd64 from an arm64 host), fall back to a plain debian image;
+# INNER self-provisions the toolchain there. Any explicit IMAGE= is honoured.
+if [ "$IMAGE" = "mcc-qemu" ] && ! docker image inspect ${PLATFORM_ARG[@]+"${PLATFORM_ARG[@]}"} "$IMAGE" >/dev/null 2>&1; then
+    echo "note: '$IMAGE' unavailable for ${PLATFORM:-native}; falling back to debian:bookworm-slim"
+    IMAGE="debian:bookworm-slim"
+fi
+
 docker run --rm -i ${PLATFORM_ARG[@]+"${PLATFORM_ARG[@]}"} --entrypoint bash \
     -v "$REPO":/work:ro -e GATES="$GATES" -e CTR="$CTR" "$IMAGE" -s <<'INNER'
 set -uo pipefail
 B=/tmp/b; rm -rf "$B"; mkdir -p "$B"
 echo "=== container arch: $(uname -m) ==="
+# Self-provision on a bare image (mcc-qemu already has these).
+if ! command -v cmake >/dev/null 2>&1 || ! command -v gcc >/dev/null 2>&1; then
+    echo "=== installing build toolchain ==="
+    apt-get update >/tmp/apt.log 2>&1 && \
+    apt-get install -y --no-install-recommends cmake ninja-build gcc g++ make git ca-certificates >>/tmp/apt.log 2>&1 \
+        || { echo PROVISION-FAIL; tail -20 /tmp/apt.log; exit 1; }
+fi
 cmake -G Ninja -S /work -B "$B" -DCMAKE_BUILD_TYPE=Debug \
     -DMCC_CONFIG_OPTIMIZER=ON -DMCC_BUILD_TESTS=ON >/tmp/cfg.log 2>&1 \
     || { echo CONFIG-FAIL; tail -30 /tmp/cfg.log; exit 1; }
@@ -45,9 +61,21 @@ cmake --build "$B" --target mcc -j"$(nproc)" >/tmp/bld.log 2>&1 \
     || { echo BUILD-FAIL; tail -40 /tmp/bld.log; exit 1; }
 "$B/mcc" -v 2>&1 | head -1
 
+# "N tests passed, M tests failed out of T" -> echo the failed count.
+failcount() { sed -nE 's/.*tests passed, ([0-9]+) tests failed.*/\1/p' | tail -1; }
 echo "=== exec suite: default ==="
-ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" 2>&1 | grep -iE '% tests passed'
+d_out=$(ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" 2>&1); echo "$d_out" | grep -iE '% tests passed'
+d_fail=$(printf '%s\n' "$d_out" | failcount); d_fail=${d_fail:-0}
 echo "=== exec suite: with gates [$GATES] ==="
-env $GATES ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" 2>&1 | grep -iE '% tests passed'
+g_out=$(env $GATES ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" 2>&1); echo "$g_out" | grep -iE '% tests passed'
+g_fail=$(printf '%s\n' "$g_out" | failcount); g_fail=${g_fail:-0}
+
+# A gate that regresses correctness fails more exec tests than the default build.
+if [ "$g_fail" -gt "$d_fail" ]; then
+    echo "GATE-REGRESSION: gated failures=$g_fail > default failures=$d_fail"
+    echo "$g_out" | grep -iE 'failed|\*\*\*' | grep -viE 'Skipped|tests failed out' | head -20
+    echo "=== DONE ==="; exit 1
+fi
+echo "OK: gated failures=$g_fail (not worse than default=$d_fail)"
 echo "=== DONE ==="
 INNER

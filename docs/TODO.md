@@ -62,6 +62,7 @@
 
 ## Ungate campaign (flip every default-off feature on)
 Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate goldens. Beyond the per-gate flips in AOT foundations:
+- Validation status (2026-07-21): `tests/qemu/native-optcheck.sh` ran the full `^exec/` suite under all flip-pending gates at once (`PROMOTE COLOR LICM_TEMP IVSR PRE REASSOC SETHI_LEAF NARROW_ELIM ARGFWD SPILL_SHARE VLAT DIVMAGIC`) on **arm64-Linux: 297/297, gated == default, zero regressions**; a 10-program mcc-vs-gcc differential battery (divmagic/select/reassoc/narrow/PRE/promotion-spill) also matched gcc on x86_64 + arm64. This is an all-gates smoke, NOT the per-gate tens-of-thousands-of-seeds soak the flips still require. **TODO (run on an x86 host — e.g. the Windows/x86 machine):** `MCC_GATES="MCC_AST_PROMOTE=1 MCC_AST_COLOR=1 MCC_AST_LICM_TEMP=1 MCC_AST_IVSR=1 MCC_AST_PRE=1 MCC_AST_REASSOC=1 MCC_AST_SETHI_LEAF=1 MCC_AST_NARROW_ELIM=1 MCC_AST_ARGFWD=1 MCC_AST_SPILL_SHARE=1 MCC_AST_VLAT=1 MCC_AST_DIVMAGIC=1" bash tests/qemu/native-optcheck.sh` — couldn't run here (the `mcc-qemu` image is arm64-only; the harness now falls back to `debian:bookworm-slim` + self-provisions cmake/gcc/ninja, so it runs on any x86 Docker host and now asserts gated-fail ≤ default-fail, exiting non-zero on a gate regression).
 - Flip `MCC_AST_LICM_TEMP`, `MCC_AST_IVSR`, `MCC_AST_PRE`, `MCC_AST_SETHI_LEAF` default-on after soak.
 - Resolve order-non-confluence, then flip `MCC_AST_REASSOC` default-on.
 - Flip §27 `MCC_AST_INTERCHANGE`/`_FUSION`/`_TILE` default-on after soak.
