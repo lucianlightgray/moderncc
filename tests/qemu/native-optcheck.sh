@@ -81,8 +81,12 @@ cmake --build "$B" --target mcc -j"$(nproc)" >/tmp/bld.log 2>&1 \
 # "N tests passed, M tests failed out of T" -> echo the failed count.
 failcount() { sed -nE 's/.*tests passed, ([0-9]+) tests failed.*/\1/p' | tail -1; }
 echo "=== exec suite: default ==="
-d_out=$(ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" 2>&1); echo "$d_out" | grep -iE '% tests passed'
+d_out=$(ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" --output-on-failure 2>&1); echo "$d_out" | grep -iE '% tests passed'
 d_fail=$(printf '%s\n' "$d_out" | failcount); d_fail=${d_fail:-0}
+if [ "${d_fail:-0}" -gt 0 ]; then
+    echo "=== DEFAULT FAILURES (names) ==="
+    printf '%s\n' "$d_out" | grep -iE '\*\*\*Failed|\*\*\*Exception|Failed ' | grep -viE 'tests failed out|Skipped' | head -20
+fi
 echo "=== exec suite: with gates [$GATES] ==="
 g_out=$(env $GATES ctest --test-dir "$B" -R "$CTR" -j"$(nproc)" 2>&1); echo "$g_out" | grep -iE '% tests passed'
 g_fail=$(printf '%s\n' "$g_out" | failcount); g_fail=${g_fail:-0}
