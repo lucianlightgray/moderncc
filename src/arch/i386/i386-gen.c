@@ -660,6 +660,7 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 	greloc(cur_text_section, fail, ind - 4,
 				 mcc_state->pic ? R_386_PLT32 : R_386_PC32);
 }
+#endif
 
 #define I386_ASAN_ENTER_NPIC 14
 #define I386_ASAN_ENTER_PIC 27
@@ -716,7 +717,6 @@ static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
 	g(0x5a);
 	g(0x58);
 }
-#endif
 
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
@@ -795,9 +795,9 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_prolog(); }
 #endif
-#ifndef MCC_TARGET_PE
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_prolog(); }
+#ifndef MCC_TARGET_PE
 	func_stack_chk_loc = 0;
 	if (mcc_state->stack_protector)
 		{ MCC_TRACE("br\n"); gen_stack_chk_prolog(); }
@@ -811,9 +811,9 @@ ST_FUNC void gfunc_epilog(void) {
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
-#ifndef MCC_TARGET_PE
 	if (mcc_state->do_asan_shadow)
 		{ MCC_TRACE("br\n"); gen_asan_stack_epilog(); }
+#ifndef MCC_TARGET_PE
 	if (func_stack_chk_loc)
 		{ MCC_TRACE("br\n"); gen_stack_chk_epilog(); }
 #endif

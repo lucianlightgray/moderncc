@@ -2702,17 +2702,14 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	if (s1->do_sanitize_recover)
 		{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccubsan.o"); }
 
-	if (s1->do_asan_shadow) { MCC_TRACE("br\n");
+	if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_X86_64)
-		if (s1->output_type != MCC_OUTPUT_DLL)
-			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccasan_win32.o"); }
-#else
-		mcc_error_noabort(
-				"-fasan-shadow (native-shadow AddressSanitizer) is not yet ported to "
-				"this PE target: the shadow runtime + stack/global redzones are "
-				"ELF/Mach-O/x86_64-PE only, so an instrumented access would fault on the "
-				"shadow probe itself. Use -fsanitize=address (bcheck runtime) on Windows.");
-		return;
+		mcc_add_support(s1, "mccasan_win32.o");
+#elif defined(MCC_TARGET_I386)
+		s1->pe_characteristics |= PE_IMAGE_FILE_LARGE_ADDRESS_AWARE;
+		mcc_add_support(s1, "mccasan_i386_win32.o");
+#elif defined(MCC_TARGET_ARM64)
+		mcc_add_support(s1, "mccasan_arm64_win32.o");
 #endif
 	}
 
