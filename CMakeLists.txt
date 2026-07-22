@@ -3385,6 +3385,11 @@ if(MCC_BUILD_TESTS)
                     "-DOUT=${CMAKE_BINARY_DIR}/ast-inline-frame" "-DEXPECT_RC=42"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/frame_regress.cmake")
                 set_tests_properties("ast/inline-frame" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            elseif(MCC_CPU STREQUAL "riscv64")
+                mcc_skip_test("ast/replay-inline"
+                    "Tier-4 graft-inline is qemu-validated on riscv64 (ctest riscv64-inline-docker: scalar/pointer/double/8-byte-reg-pair-struct all graft, generated code runs RC=42, differential 42429/0 vs gcc -O2); the MCC_CPU-gated inline.c fixture stays skipped here because its main() body desyncs on the riscv64 psABI (the >16B use_sumbig struct-by-value passes indirectly), so REPLAYED=main and the full graft list do not fire (matches the arm64 sumbig limitation, one level up)")
+                mcc_skip_test("ast/replay-inline-spec"
+                    "per-site specialization grafts+specializes choose/clampk/mul/addk on riscv64 and main replays there (RC=42, qemu-validated), so this fixture's assertions do hold; it stays skipped only because no riscv64-host CI exercises the MCC_CPU-gated build path -- live coverage is via ctest riscv64-inline-docker")
             else()
                 mcc_skip_test("ast/replay-inline"
                     "virtual-inline is arch-independent and compiles on ${MCC_CPU}, but the fixture assertion is only verified on x86_64/arm64 so far")
@@ -4819,6 +4824,12 @@ if(MCC_BUILD_TESTS)
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64promo-docker.sh"
                 "${CMAKE_BINARY_DIR}/riscv64-promote-docker")
         set_tests_properties(riscv64-promote-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+
+        add_test(NAME riscv64-inline-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64inline-docker.sh"
+                "${CMAKE_BINARY_DIR}/riscv64-inline-docker")
+        set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     endif()
 
