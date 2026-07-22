@@ -4899,6 +4899,17 @@ if(MCC_BUILD_TESTS)
                 "${CMAKE_BINARY_DIR}/arm-inline-docker")
         set_tests_properties(arm-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
+
+        # mcc<->gcc mixed-object ABI differential (armv7 AAPCS/hardfloat) under
+        # qemu-arm. Same corpus/cross-mix strategy as the other arches; also
+        # stresses ARM/Thumb interworking at the call boundary (mcc emits A32,
+        # gcc-armhf is Thumb -> R_ARM_CALL/BLX substitution, cf. e74fe22a). Builds
+        # its own in-container mcc; static-links so qemu needs no target sysroot.
+        add_test(NAME abi-diff-arm-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
+                "arm" "${CMAKE_BINARY_DIR}/abi-diff-arm-docker")
+        set_tests_properties(abi-diff-arm-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
     endif()
 
     # arm Thumb-interworking guard: assert mcc emits R_ARM_CALL (not the deprecated

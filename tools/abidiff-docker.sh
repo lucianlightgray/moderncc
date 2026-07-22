@@ -41,7 +41,9 @@ case "$ARCH" in
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1" ;;
 	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
-	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64|riscv64)"; exit 77 ;;
+	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
+	     PKG="$PKG gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static" ;;
+	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64|riscv64|arm)"; exit 77 ;;
 esac
 
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
