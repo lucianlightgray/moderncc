@@ -3578,6 +3578,14 @@ static int suite_machostructural(int argc, char **argv) {
 	return status ? 1 : 0;
 }
 
+static const char *pkg_cmake(void) {
+	const char *e;
+	if (((e = getenv("MCC_CMAKE")) && *e) ||
+			((e = getenv("CMAKE_COMMAND")) && *e))
+		return e;
+	return "cmake";
+}
+
 static int suite_pkgsmoke(int argc, char **argv) {
 	const char *ci = opt(argc, argv, "--ci", NULL);
 	const char *work = opt(argc, argv, "--work", NULL);
@@ -3597,7 +3605,7 @@ static int suite_pkgsmoke(int argc, char **argv) {
 	ts_path(stage, sizeof stage, work, "stage");
 	ts_path(out, sizeof out, work, "out");
 	{
-		const char *rm[] = {"cmake", "-E", "rm", "-rf", stage, out, 0};
+		const char *rm[] = {pkg_cmake(), "-E", "rm", "-rf", stage, out, 0};
 		run_quiet(rm);
 	}
 	ts_path(p, sizeof p, stage, "bin");
@@ -3658,7 +3666,7 @@ static int suite_pkgsmoke(int argc, char **argv) {
 	{
 		char arc[4400], *o = NULL, *e = NULL;
 		ts_path(arc, sizeof arc, out, "mcc-cross-1.2.3-test.tar.gz");
-		const char *t[] = {"cmake", "-E", "tar", "tzf", arc, 0};
+		const char *t[] = {pkg_cmake(), "-E", "tar", "tzf", arc, 0};
 		if (run_cap(t, NULL, &o, &e) == 0 && o) {
 			if (!ci_contains(o, "bin/mcc-arm64")) {
 				printf("FAIL cross bundle missing mcc-arm64\n");

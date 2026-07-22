@@ -3006,6 +3006,8 @@ if(NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(mccbuild ${CMAKE_DL_LIBS})
     add_executable(ci tools/ci.c tools/toolsupport.c)
     target_link_libraries(ci ${CMAKE_DL_LIBS})
+    target_compile_definitions(ci PRIVATE
+        "MCC_CMAKE_COMMAND=\"${CMAKE_COMMAND}\"")
 
     set(MCC_DIST_VERSION "v0.0.0" CACHE STRING
         "Version tag for the `package-dist` target (leading 'v' is stripped)")
@@ -4660,7 +4662,8 @@ if(MCC_BUILD_TESTS)
             add_test(NAME ci-pkg-smoke COMMAND "$<TARGET_FILE:mccharness>" pkgsmoke
                 --ci "$<TARGET_FILE:ci>" --work "${CMAKE_BINARY_DIR}/pkgsmoke-work")
             set_tests_properties(ci-pkg-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77)
+                SKIP_RETURN_CODE 77
+                ENVIRONMENT "CMAKE_COMMAND=${CMAKE_COMMAND}")
 
             add_test(NAME qemu-fetch-parse COMMAND "$<TARGET_FILE:mccharness>" qemufetch --selftest)
             set_tests_properties(qemu-fetch-parse PROPERTIES FIXTURES_REQUIRED MCC_BUILT)

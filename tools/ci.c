@@ -9,6 +9,30 @@ static const char *ci_cwd(char *buf, size_t n) {
 #endif
 }
 
+static const char *ci_cmake(void) {
+	static char resolved[8192];
+	static int done = 0;
+	const char *e;
+	int isd;
+	if (done)
+		return resolved;
+	done = 1;
+	if (((e = getenv("MCC_CMAKE")) && *e) ||
+			((e = getenv("CMAKE_COMMAND")) && *e)) {
+		snprintf(resolved, sizeof resolved, "%s", e);
+		return resolved;
+	}
+#ifdef MCC_CMAKE_COMMAND
+	if (host_stat(MCC_CMAKE_COMMAND, &isd, NULL, NULL) == 0 && !isd) {
+		snprintf(resolved, sizeof resolved, "%s", MCC_CMAKE_COMMAND);
+		return resolved;
+	}
+#endif
+	(void)isd;
+	snprintf(resolved, sizeof resolved, "cmake");
+	return resolved;
+}
+
 static int ci_phase(const char *label, const char *const *argz) {
 	time_t t0 = time(NULL), t1;
 	int rc;
@@ -147,7 +171,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	{
 		Argv v = {{0}, 0};
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
 		if (out) {
@@ -168,7 +192,7 @@ static int do_run_preset(int argc, char **argv) {
 	{
 		Argv v = {{0}, 0};
 		char lbl[128];
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--build");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -233,7 +257,7 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (bench) {
 		Argv v = {{0}, 0};
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--build");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -251,7 +275,7 @@ static int do_run_preset(int argc, char **argv) {
 	if (out || do_install) {
 		Argv v = {{0}, 0};
 		snprintf(instdir, sizeof instdir, "cmake-%s", preset);
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--install");
 		ts_arg(&v, instdir);
 		if (config) {
@@ -305,7 +329,7 @@ static int do_qemu(int argc, char **argv) {
 
 	{
 		Argv v = {{0}, 0};
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
 		if (dldir && *dldir) {
@@ -326,7 +350,7 @@ static int do_qemu(int argc, char **argv) {
 	}
 	{
 		Argv v = {{0}, 0};
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--build");
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
@@ -538,14 +562,14 @@ static int loc_vendor_dir(const char *pat) {
 static int loc_fetch_clang(void) {
 	int isd;
 	if (host_stat("cmake-local-ci/CMakeCache.txt", &isd, NULL, NULL)) {
-		const char *cfg[] = {"cmake", "--preset", "local-ci", 0};
+		const char *cfg[] = {ci_cmake(), "--preset", "local-ci", 0};
 		printf("==> vendoring clang: configuring local-ci driver\n");
 		if (ts_run(cfg))
 			return 1;
 	}
 	{
 		const char *a[] = {
-				"cmake", "--build", "cmake-local-ci",
+				ci_cmake(), "--build", "cmake-local-ci",
 				"--target", "clang-toolchain", 0};
 		printf("==> vendoring clang: fetching LLVM release into vendor/llvm-clang\n");
 		return ts_run(a);
@@ -562,7 +586,7 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 	snprintf(bdir, sizeof bdir, "cmake-%.63s", preset);
 	{
 		Argv v = {{0}, 0};
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
 		ts_arg(&v, pdv);
@@ -574,13 +598,13 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 			return 1;
 	}
 	{
-		const char *a[] = {"cmake", "--build", "--preset", preset, "-j", 0};
+		const char *a[] = {ci_cmake(), "--build", "--preset", preset, "-j", 0};
 		if (ts_run(a))
 			return 1;
 	}
 	{
 		const char *a[] = {
-				"cmake", "--install", bdir,
+				ci_cmake(), "--install", bdir,
 				"--config", "Release", 0};
 		if (!msvc)
 			a[3] = 0;
@@ -600,14 +624,14 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 #endif
 	if (!no_bench) {
 		const char *a[] = {
-				"cmake", "--build", "--preset",
+				ci_cmake(), "--build", "--preset",
 				preset, "--target", "bench", 0};
 		if (ts_run(a))
 			return 1;
 	}
 	{
 		const char *a[] = {
-				"cmake", "--build", "--preset",
+				ci_cmake(), "--build", "--preset",
 				preset, "--target", "package-dist", 0};
 		if (ts_run(a))
 			return 1;
@@ -1593,7 +1617,7 @@ static int pkg_archive(const char *pkg, const char *out, const char *d,
 	char target[8192], *nm;
 	HostSpawnOpts o;
 	ts_path(target, sizeof target, out, "%s.%s", d, ext);
-	ts_arg(&v, "cmake");
+	ts_arg(&v, ci_cmake());
 	ts_arg(&v, "-E");
 	ts_arg(&v, "tar");
 	if (!strcmp(ext, "zip")) {
@@ -1673,7 +1697,7 @@ static int do_pkg(int argc, char **argv) {
 	ts_path(pkgscratch, sizeof pkgscratch, out, ".pkg");
 	pkg = pkgscratch;
 	{
-		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, 0};
+		const char *rm[] = {ci_cmake(), "-E", "rm", "-rf", pkg, 0};
 		ts_run(rm);
 	}
 	host_mkdirs(pkg);
@@ -1787,7 +1811,7 @@ static int do_pkg(int argc, char **argv) {
 		Argv v = {{0}, 0};
 		HostSpawnOpts o;
 		char *sout = NULL, csum[8192];
-		ts_arg(&v, "cmake");
+		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "-E");
 		ts_arg(&v, "sha256sum");
 		for (i = 0; i < names.n; i++)
@@ -1807,7 +1831,7 @@ static int do_pkg(int argc, char **argv) {
 	}
 
 	{
-		const char *rm[] = {"cmake", "-E", "rm", "-rf", pkg, 0};
+		const char *rm[] = {ci_cmake(), "-E", "rm", "-rf", pkg, 0};
 		ts_run(rm);
 	}
 
