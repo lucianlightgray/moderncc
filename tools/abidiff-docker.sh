@@ -129,6 +129,10 @@ double         vsum_d(int count, ...);
 double         vmix_id(int count, ...);
 struct Ten     ten_make(double a,double b,double c,double d,double e,double f,double g,double h,double i,double j);
 long long      a16_after_int(int pad, struct A16 s);
+signed char    sc_make(int x);
+unsigned char  uc_make(int x);
+short          sh_make(int x);
+unsigned short ush_make(int x);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -184,6 +188,10 @@ struct Ten     ten_make(double a,double b,double c,double d,double e,double f,do
   struct Ten r; r.a=a; r.b=b; r.c=c; r.d=d; r.e=e; r.f=f; r.g=g; r.h=h; r.i=i; r.j=j; return r;
 }
 long long      a16_after_int(int pad, struct A16 s){ return pad + s.a + s.b; }
+signed char    sc_make(int x){ return (signed char)x; }
+unsigned char  uc_make(int x){ return (unsigned char)x; }
+short          sh_make(int x){ return (short)x; }
+unsigned short ush_make(int x){ return (unsigned short)x; }
 EOF
 
 # main.c: NO system headers so the cross mcc can compile it. Each check compares
@@ -258,6 +266,16 @@ int main(void){
      riscv64/x86_64 agree with gcc. Skipped on arm64/armv7 (ABI_SKIP_OVERALIGN). */
   { struct A16 s; s.a=10; s.b=20; k++; if(a16_after_int(1, s)!=31) return k; }
 #endif
+  /* Narrow-type return extension: callee-vs-caller extension responsibility
+     differs by arch (AAPCS64: caller extends; RISC-V: callee sign/zero-extends
+     to XLEN). Values chosen so the high bits matter. */
+  { k++; if(sc_make(-1)!=-1) return k; }
+  { k++; if(sc_make(200)!=-56) return k; }
+  { k++; if(uc_make(300)!=44) return k; }
+  { k++; if(sh_make(70000)!=4464) return k; }
+  { k++; if(ush_make(-1)!=65535) return k; }
+  { long long r=sc_make(200); k++; if(r!=-56) return k; }
+  { unsigned long long r=uc_make(-1); k++; if(r!=255) return k; }
   return 0;
 }
 EOF
