@@ -518,6 +518,17 @@ static void dwarf_reloc(Section *s, int sym, int rel) { MCC_TRACE("enter\n");
 	put_elf_reloca(symtab_section, s, s->data_offset, rel, sym, 0);
 }
 
+static void dwarf_reloc_addr(Section *s, int sym, int rel, addr_t value) { MCC_TRACE("enter\n");
+	MCCState *s1 = s->s1;
+	put_elf_reloca(symtab_section, s, s->data_offset, rel, sym,
+								 (SHT_RELX == SHT_RELA) ? value : 0);
+#if MCC_PTR_SIZE == 4
+	dwarf_data4(s, (SHT_RELX == SHT_RELA) ? 0 : (unsigned)value);
+#else
+	dwarf_data8(s, (SHT_RELX == SHT_RELA) ? 0 : (uint64_t)value);
+#endif
+}
+
 static void free_str(struct dwarf_str_hash **str) { MCC_TRACE("enter\n");
 	for (int i = 0; i < N_STR_HASH; i++) { MCC_TRACE("br\n");
 		while (str[i]) { MCC_TRACE("br\n");
@@ -1114,12 +1125,10 @@ ST_FUNC void mcc_debug_start(MCCState *s1) { MCC_TRACE("enter\n");
 			dwarf_data1(dwarf_info_section, s1->cversion >= 201112 ? DW_LANG_C11 : DW_LANG_C99);
 			dwarf_line_strp(dwarf_info_section, filename);
 			dwarf_line_strp(dwarf_info_section, buf);
-			dwarf_reloc(dwarf_info_section, section_sym, R_DATA_PTR);
+			dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR, ind);
 #if MCC_PTR_SIZE == 4
-			dwarf_data4(dwarf_info_section, ind);
 			dwarf_data4(dwarf_info_section, 0);
 #else
-			dwarf_data8(dwarf_info_section, ind);
 			dwarf_data8(dwarf_info_section, 0);
 #endif
 			dwarf_reloc(dwarf_info_section, dwarf_sym.line, R_DATA_32DW);
@@ -2069,12 +2078,16 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) { MCC_TRACE(
 					dwarf_data1(dwarf_info_section, MCC_PTR_SIZE + 1);
 					dwarf_data1(dwarf_info_section, DW_OP_addr);
 					if (s->type == N_STSYM)
-						{ MCC_TRACE("br\n"); dwarf_reloc(dwarf_info_section, section_sym, R_DATA_PTR); }
+						{ MCC_TRACE("br\n");
+							dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR,
+															 s->value); }
+					else {
 #if MCC_PTR_SIZE == 4
-					dwarf_data4(dwarf_info_section, s->value);
+						dwarf_data4(dwarf_info_section, s->value);
 #else
-					dwarf_data8(dwarf_info_section, s->value);
+						dwarf_data8(dwarf_info_section, s->value);
 #endif
+					}
 				} else { MCC_TRACE("br\n");
 					dwarf_data1(dwarf_info_section, mcc_sleb128_size((long)s->value) + 1);
 					dwarf_data1(dwarf_info_section, DW_OP_fbreg);
@@ -2086,12 +2099,11 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) { MCC_TRACE(
 			dwarf_data1(dwarf_info_section,
 									cur->child ? DWARF_ABBREV_LEXICAL_BLOCK
 														 : DWARF_ABBREV_LEXICAL_EMPTY_BLOCK);
-			dwarf_reloc(dwarf_info_section, section_sym, R_DATA_PTR);
+			dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR,
+										 func_ind + cur->start);
 #if MCC_PTR_SIZE == 4
-			dwarf_data4(dwarf_info_section, func_ind + cur->start);
 			dwarf_data4(dwarf_info_section, cur->end - cur->start);
 #else
-			dwarf_data8(dwarf_info_section, func_ind + cur->start);
 			dwarf_data8(dwarf_info_section, cur->end - cur->start);
 #endif
 			mcc_debug_finish(s1, cur->child);
@@ -2221,12 +2233,10 @@ ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) { MCC_TRACE("enter\n");
 		dwarf_uleb128(dwarf_info_section, dwarf_info.line);
 		mcc_debug_check_forw(s1, sym->type.ref, dwarf_info_section->data_offset);
 		dwarf_data4(dwarf_info_section, n_debug_info - dwarf_info.start);
-		dwarf_reloc(dwarf_info_section, section_sym, R_DATA_PTR);
+		dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR, func_ind);
 #if MCC_PTR_SIZE == 4
-		dwarf_data4(dwarf_info_section, func_ind);
 		dwarf_data4(dwarf_info_section, size);
 #else
-		dwarf_data8(dwarf_info_section, func_ind);
 		dwarf_data8(dwarf_info_section, size);
 #endif
 		func_sib = dwarf_info_section->data_offset;
