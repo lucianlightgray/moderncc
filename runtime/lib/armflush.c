@@ -43,8 +43,30 @@ void __clear_cache(void *beg, void *end) {
 
 #ifdef __MCC__
 	__arm64_clear_cache(beg, end);
-#else
+#elif defined(__APPLE__)
+	/* Apple clang lowers this to sys_icache_invalidate (not a call to
+	   __clear_cache), so there is no self-recursion here. */
 	__builtin___clear_cache(beg, end);
+#else
+	/* Do NOT implement this with __builtin___clear_cache on ELF AArch64: gcc and
+	   clang lower that builtin to a call to __clear_cache -- i.e. to this very
+	   function -- so it self-recurses to a stack overflow. That detonates in the
+	   --embed-jit runtime the first time the JIT flushes the I-cache after
+	   writing code. Emit the architectural clean+invalidate sequence inline,
+	   reading the D/I line sizes from CTR_EL0 (same shape as libgcc/compiler-rt
+	   and mcc's own __arm64_clear_cache). */
+	unsigned long ctr, addr, dline, iline;
+	__asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+	dline = 4UL << ((ctr >> 16) & 0xf);
+	iline = 4UL << (ctr & 0xf);
+	for (addr = (unsigned long)beg & ~(dline - 1);
+			 addr < (unsigned long)end; addr += dline)
+		__asm__ volatile("dc cvau, %0" : : "r"(addr) : "memory");
+	__asm__ volatile("dsb ish" : : : "memory");
+	for (addr = (unsigned long)beg & ~(iline - 1);
+			 addr < (unsigned long)end; addr += iline)
+		__asm__ volatile("ic ivau, %0" : : "r"(addr) : "memory");
+	__asm__ volatile("dsb ish\n\tisb" : : : "memory");
 #endif
 }
 
