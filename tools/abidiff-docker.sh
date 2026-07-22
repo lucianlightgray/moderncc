@@ -123,6 +123,8 @@ struct HFA4    hfa4_make(double a, double b, double c, double d);
 long double    ld_add(long double a, long double b);
 long double    ld_mix(int n, long double a, double b);
 struct Wide    wide_make(double a, long b, double c, long d);
+double         vsum_d(int count, ...);
+double         vmix_id(int count, ...);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -164,6 +166,16 @@ struct HFA4    hfa4_make(double a, double b, double c, double d){ struct HFA4 r;
 long double    ld_add(long double a, long double b){ return a + b; }
 long double    ld_mix(int n, long double a, double b){ return a * (long double)n + (long double)b; }
 struct Wide    wide_make(double a, long b, double c, long d){ struct Wide r; r.a=a; r.b=b; r.c=c; r.d=d; return r; }
+double         vsum_d(int count, ...){
+  double s=0; int i; va_list ap; va_start(ap,count);
+  for(i=0;i<count;i++) s += va_arg(ap,double);
+  va_end(ap); return s;
+}
+double         vmix_id(int count, ...){
+  double s=0; int i; va_list ap; va_start(ap,count);
+  for(i=0;i<count;i++){ int n=va_arg(ap,int); double d=va_arg(ap,double); s += (double)n*d; }
+  va_end(ap); return s;
+}
 EOF
 
 # main.c: NO system headers so the cross mcc can compile it. Each check compares
@@ -214,6 +226,8 @@ int main(void){
   { long double r=ld_add(1.5L, 2.25L); k++; if(r!=3.75L) return k; }
   { long double r=ld_mix(3, 2.5L, 1.5); k++; if(r!=9.0L) return k; }
   { struct Wide r=wide_make(1.5, 100L, 2.5, 200L); k++; if(r.a!=1.5||r.b!=100||r.c!=2.5||r.d!=200) return k; }
+  { k++; if(vsum_d(4, 1.5, 2.25, 4.0, 8.0)!=15.75) return k; }
+  { k++; if(vmix_id(3, 2, 1.5, 5, 2.0, 10, 0.5)!=(double)(2*1.5+5*2.0+10*0.5)) return k; }
   return 0;
 }
 EOF
