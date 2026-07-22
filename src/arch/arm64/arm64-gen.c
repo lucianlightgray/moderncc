@@ -953,6 +953,21 @@ static int arm64_hfa(CType *type, unsigned *fsize) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+static int arm64_natural_align16(CType *type) { MCC_TRACE("enter\n");
+	int bt = type->t & VT_BTYPE;
+	if (bt == VT_QLONG || bt == VT_QFLOAT || bt == VT_LDOUBLE)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (bt == VT_STRUCT) { MCC_TRACE("br\n");
+		for (Sym *field = type->ref->next; field; field = field->next)
+			{ MCC_TRACE("br\n"); if (arm64_natural_align16(&field->type))
+				{ MCC_TRACE("br\n"); return 1; } }
+		return 0;
+	}
+	if (type->t & VT_ARRAY)
+		{ MCC_TRACE("br\n"); return arm64_natural_align16(&type->ref->type); }
+	return 0;
+}
+
 static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned long *a) { MCC_TRACE("enter\n");
 	int nx = 0;
 	int nv = 0;
@@ -1029,7 +1044,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 			continue;
 		}
 
-		if (align == 16)
+		if (align == 16 && arm64_natural_align16(type[i]))
 			{ MCC_TRACE("br\n"); nx = (nx + 1) & ~1; }
 
 		if (bt != VT_STRUCT && size == 16 && nx < 7) { MCC_TRACE("br\n");

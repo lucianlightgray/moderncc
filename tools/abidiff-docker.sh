@@ -37,7 +37,7 @@ HOSTM="$(uname -m)"
 case "$HOSTM" in aarch64|arm64) NPLAT="linux/arm64"; NIMG="arm64v8/debian:bookworm-slim" ;; *) NPLAT="linux/amd64"; NIMG="debian:bookworm-slim" ;; esac
 CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificates"
 case "$ARCH" in
-	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1"; MAINDEF="-DABI_SKIP_OVERALIGN" ;;
+	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
 	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED -DABI_SKIP_PACKED" ;;
 	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
@@ -262,11 +262,9 @@ int main(void){
   /* Over-aligned struct by value after an odd reg: gcc AND clang pass a
      __attribute__((aligned(16))) struct in consecutive regs (x1,x2 here) -- the
      AAPCS64 16-byte NGRN even-rounding tracks NATURAL 16-alignment (__int128),
-     not an artificial aligned attribute. mcc over-applies the rounding
-     (arm64_pcs_aux ~1032 keys on the struct alignment) and puts it in x2,x3, so
-     an mcc caller diverges from a gcc/clang callee. Real (obscure) arm64/armv7
-     conformance bug (see docs/TODO "arm64/armv7 over-aligned struct rounding");
-     riscv64/x86_64 agree with gcc. Skipped on arm64/armv7 (ABI_SKIP_OVERALIGN). */
+     not an artificial aligned attribute. mcc-arm64 FIXED (arm64_pcs_aux now gates
+     the rounding on arm64_natural_align16). armv7 (arm-gen.c) still over-rounds --
+     ABI_SKIP_OVERALIGN keeps it guarded there. riscv64/x86_64 agree with gcc. */
   { struct A16 s; s.a=10; s.b=20; k++; if(a16_after_int(1, s)!=31) return k; }
 #endif
   /* Narrow-type return extension: callee-vs-caller extension responsibility
