@@ -93,6 +93,7 @@ struct IntFloat { int i; float f; };           /* mixed 8B: NOT an HFA (INTEGER+
 union  Uni      { int i; float f; long long l; }; /* 8B union by value */
 struct Bits     { unsigned a:5, b:11, c:16; }; /* 4B bitfields by value */
 struct HFA4     { double a, b, c, d; };        /* 32B: arm64/armv7 HFA (v0-v3), riscv64 indirect */
+struct Wide     { double a; long b; double c; long d; }; /* 32B mixed non-HFA: indirect return + FP+INT args */
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -120,6 +121,7 @@ double         hfa4_sum(struct HFA4 h);
 struct HFA4    hfa4_make(double a, double b, double c, double d);
 long double    ld_add(long double a, long double b);
 long double    ld_mix(int n, long double a, double b);
+struct Wide    wide_make(double a, long b, double c, long d);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -159,6 +161,7 @@ double         hfa4_sum(struct HFA4 h){ return h.a + h.b + h.c + h.d; }
 struct HFA4    hfa4_make(double a, double b, double c, double d){ struct HFA4 r; r.a=a; r.b=b; r.c=c; r.d=d; return r; }
 long double    ld_add(long double a, long double b){ return a + b; }
 long double    ld_mix(int n, long double a, double b){ return a * (long double)n + (long double)b; }
+struct Wide    wide_make(double a, long b, double c, long d){ struct Wide r; r.a=a; r.b=b; r.c=c; r.d=d; return r; }
 EOF
 
 # main.c: NO system headers so the cross mcc can compile it. Each check compares
@@ -205,6 +208,7 @@ int main(void){
   { struct HFA4 r=hfa4_make(10.0,20.0,30.0,40.0); k++; if(r.a!=10.0||r.b!=20.0||r.c!=30.0||r.d!=40.0) return k; }
   { long double r=ld_add(1.5L, 2.25L); k++; if(r!=3.75L) return k; }
   { long double r=ld_mix(3, 2.5L, 1.5); k++; if(r!=9.0L) return k; }
+  { struct Wide r=wide_make(1.5, 100L, 2.5, 200L); k++; if(r.a!=1.5||r.b!=100||r.c!=2.5||r.d!=200) return k; }
   return 0;
 }
 EOF
