@@ -2081,7 +2081,7 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) { MCC_TRACE(
 						{ MCC_TRACE("br\n");
 							dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR,
 															 s->value); }
-					else {
+					else { MCC_TRACE("br\n");
 #if MCC_PTR_SIZE == 4
 						dwarf_data4(dwarf_info_section, s->value);
 #else

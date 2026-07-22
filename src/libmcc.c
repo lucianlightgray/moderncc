@@ -840,16 +840,6 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MC
 			{ MCC_TRACE("br\n"); cst_capture_begin(str); }
 #endif
 
-#if defined(MCC_TARGET_PE) && !defined(MCC_TARGET_X86_64)
-		if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_PREPROCESS) { MCC_TRACE("br\n");
-			mcc_error_noabort(
-					"-fasan-shadow (native-shadow AddressSanitizer) is not yet ported to "
-					"this PE target: the shadow runtime + stack/global redzones are "
-					"ELF/Mach-O/x86_64-PE only, so an instrumented access would fault on the "
-					"shadow probe itself. Use -fsanitize=address (bcheck runtime) on Windows.");
-		}
-#endif
-
 		preprocess_start(s1, filetype);
 		mccgen_init(s1);
 

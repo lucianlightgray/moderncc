@@ -1370,7 +1370,30 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 			n = _imp_ = 0;
 			if (sym->st_other & ST_PE_IMPORT)
 				{ MCC_TRACE("br\n"); _imp_ = 1; }
-			do { MCC_TRACE("br\n");
+			if (0 == memcmp(name, "__imp_", 6)) { MCC_TRACE("br\n");
+				const char *raw = name + 6;
+				const char *cand[4];
+				int nc = 0, ci;
+				cand[nc++] = raw;
+				if (raw[0] == '_')
+					{ MCC_TRACE("br\n"); cand[nc++] = raw + 1; }
+				p = strrchr(raw, '@');
+				if (p && p > raw) { MCC_TRACE("br\n");
+					size_t len = (size_t)(p - raw);
+					if (len >= sizeof buffer)
+						{ MCC_TRACE("br\n"); len = sizeof buffer - 1; }
+					memcpy(buffer, raw, len);
+					buffer[len] = 0;
+					cand[nc++] = buffer;
+					if (buffer[0] == '_')
+						{ MCC_TRACE("br\n"); cand[nc++] = buffer + 1; }
+				}
+				for (ci = 0; 0 == imp_sym && ci < nc; ++ci)
+					{ MCC_TRACE("br\n"); imp_sym = find_elf_sym(s1->dynsymtab_section, cand[ci]); }
+				if (imp_sym)
+					{ MCC_TRACE("br\n"); _imp_ = 1; }
+			}
+			while (0 == imp_sym && n < 2) { MCC_TRACE("br\n");
 				s = pe_export_name(s1, sym);
 				if (n) { MCC_TRACE("br\n");
 					if (sym->st_other & ST_PE_STDCALL) { MCC_TRACE("br\n");
@@ -1389,7 +1412,8 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 					}
 				}
 				imp_sym = find_elf_sym(s1->dynsymtab_section, s);
-			} while (0 == imp_sym && ++n < 2);
+				++n;
+			}
 
 			if (0 == imp_sym)
 				{ MCC_TRACE("br\n"); continue; }
@@ -2702,17 +2726,14 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	if (s1->do_sanitize_recover)
 		{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccubsan.o"); }
 
-	if (s1->do_asan_shadow) { MCC_TRACE("br\n");
+	if (s1->do_asan_shadow && s1->output_type != MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_X86_64)
-		if (s1->output_type != MCC_OUTPUT_DLL)
-			{ MCC_TRACE("br\n"); mcc_add_support(s1, "mccasan_win32.o"); }
-#else
-		mcc_error_noabort(
-				"-fasan-shadow (native-shadow AddressSanitizer) is not yet ported to "
-				"this PE target: the shadow runtime + stack/global redzones are "
-				"ELF/Mach-O/x86_64-PE only, so an instrumented access would fault on the "
-				"shadow probe itself. Use -fsanitize=address (bcheck runtime) on Windows.");
-		return;
+		mcc_add_support(s1, "mccasan_win32.o");
+#elif defined(MCC_TARGET_I386)
+		s1->pe_characteristics |= PE_IMAGE_FILE_LARGE_ADDRESS_AWARE;
+		mcc_add_support(s1, "mccasan_i386_win32.o");
+#elif defined(MCC_TARGET_ARM64)
+		mcc_add_support(s1, "mccasan_arm64_win32.o");
 #endif
 	}
 

@@ -1911,6 +1911,81 @@ static int do_junit_summary(int argc, char **argv) {
 	return 0;
 }
 
+static int do_junit_assert(int argc, char **argv) {
+	const char *xml = NULL;
+	struct { const char *prefix; int min; int ran; } req[32];
+	int nreq = 0, i, bad = 0;
+	char *x, *p;
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--expect") && i + 1 < argc) {
+			const char *spec = argv[++i];
+			const char *eq = strchr(spec, '=');
+			if (!eq || nreq >= (int)(sizeof req / sizeof req[0])) {
+				fprintf(stderr, "ci junit-assert: bad --expect '%s'\n", spec);
+				return 2;
+			}
+			req[nreq].prefix = spec;
+			req[nreq].min = atoi(eq + 1);
+			req[nreq].ran = 0;
+			nreq++;
+		} else if (!xml) {
+			xml = argv[i];
+		}
+	}
+	if (!xml || nreq == 0) {
+		fprintf(stderr,
+						"usage: ci junit-assert <xml> --expect <prefix>=<min> [--expect ...]\n");
+		return 2;
+	}
+	x = ts_read_file(xml, NULL);
+	if (!x) {
+		fprintf(stderr, "ci junit-assert: cannot read %s\n", xml);
+		return 1;
+	}
+	for (p = x; (p = strstr(p, "<testcase"));) {
+		const char *gt = strchr(p, '>');
+		const char *tagend, *extent;
+		char name[256] = "?", st[32] = "";
+		int skipped;
+		if (!gt)
+			break;
+		tagend = gt + 1;
+		if (gt > p && gt[-1] == '/')
+			extent = tagend;
+		else {
+			const char *c = strstr(tagend, "</testcase>");
+			extent = c ? c + 11 : x + strlen(x);
+		}
+		js_attr(name, sizeof name, p, gt, "name=\"");
+		js_attr(st, sizeof st, p, gt, "status=\"");
+		skipped = (strstr(tagend, "<skipped") &&
+							 strstr(tagend, "<skipped") < extent) ||
+							!strcmp(st, "notrun");
+		if (!skipped) {
+			for (i = 0; i < nreq; i++) {
+				size_t plen = strchr(req[i].prefix, '=') - req[i].prefix;
+				if (!strncmp(name, req[i].prefix, plen))
+					req[i].ran++;
+			}
+		}
+		p = (char *)extent;
+	}
+	for (i = 0; i < nreq; i++) {
+		int plen = (int)(strchr(req[i].prefix, '=') - req[i].prefix);
+		if (req[i].ran < req[i].min) {
+			fprintf(stderr,
+							"ci junit-assert: FAIL %s: expected >= %d test(s) that ran, saw %d in %s\n",
+							req[i].prefix, req[i].min, req[i].ran, xml);
+			bad = 1;
+		} else {
+			printf("ci junit-assert: ok %.*s ran %d test(s) (>= %d)\n", plen,
+						 req[i].prefix, req[i].ran, req[i].min);
+		}
+	}
+	free(x);
+	return bad ? 1 : 0;
+}
+
 typedef struct {
 	char *p;
 	size_t n, cap;
@@ -2039,6 +2114,8 @@ int main(int argc, char **argv) {
 		return do_sha256sums(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "junit-summary"))
 		return do_junit_summary(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "junit-assert"))
+		return do_junit_assert(argc - 2, argv + 2);
 	fprintf(stderr, "ci: unknown verb '%s'\n", argv[1]);
 	return 2;
 }
