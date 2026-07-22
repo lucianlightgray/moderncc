@@ -1370,7 +1370,30 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 			n = _imp_ = 0;
 			if (sym->st_other & ST_PE_IMPORT)
 				{ MCC_TRACE("br\n"); _imp_ = 1; }
-			do { MCC_TRACE("br\n");
+			if (0 == memcmp(name, "__imp_", 6)) { MCC_TRACE("br\n");
+				const char *raw = name + 6;
+				const char *cand[4];
+				int nc = 0, ci;
+				cand[nc++] = raw;
+				if (raw[0] == '_')
+					{ MCC_TRACE("br\n"); cand[nc++] = raw + 1; }
+				p = strrchr(raw, '@');
+				if (p && p > raw) { MCC_TRACE("br\n");
+					size_t len = (size_t)(p - raw);
+					if (len >= sizeof buffer)
+						{ MCC_TRACE("br\n"); len = sizeof buffer - 1; }
+					memcpy(buffer, raw, len);
+					buffer[len] = 0;
+					cand[nc++] = buffer;
+					if (buffer[0] == '_')
+						{ MCC_TRACE("br\n"); cand[nc++] = buffer + 1; }
+				}
+				for (ci = 0; 0 == imp_sym && ci < nc; ++ci)
+					{ MCC_TRACE("br\n"); imp_sym = find_elf_sym(s1->dynsymtab_section, cand[ci]); }
+				if (imp_sym)
+					{ MCC_TRACE("br\n"); _imp_ = 1; }
+			}
+			while (0 == imp_sym && n < 2) { MCC_TRACE("br\n");
 				s = pe_export_name(s1, sym);
 				if (n) { MCC_TRACE("br\n");
 					if (sym->st_other & ST_PE_STDCALL) { MCC_TRACE("br\n");
@@ -1389,7 +1412,8 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 					}
 				}
 				imp_sym = find_elf_sym(s1->dynsymtab_section, s);
-			} while (0 == imp_sym && ++n < 2);
+				++n;
+			}
 
 			if (0 == imp_sym)
 				{ MCC_TRACE("br\n"); continue; }

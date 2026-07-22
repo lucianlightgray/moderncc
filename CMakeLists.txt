@@ -2820,6 +2820,12 @@ if(MCC_ENABLE_CROSS)
         if(_cos STREQUAL "WIN32")
             list(APPEND _cross_defs "MCC_CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
         endif()
+        if(MCC_CONFIG_OPTIMIZER)
+            list(APPEND _cross_defs "MCC_CONFIG_OPTIMIZER=1")
+        endif()
+        if(MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER)
+            list(APPEND _cross_defs "MCC_EMBED_JIT=1")
+        endif()
         mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
                           mcc-${_t}-static "mcc-${_t}-static" _cross_defs)
 
