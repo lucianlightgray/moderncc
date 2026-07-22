@@ -11,13 +11,12 @@ IMAGE="debian:bookworm-slim"
 
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
 if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/amd64 "$IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/amd64 containers ($IMAGE)"; exit 77
-fi
 
+# Run on the host-native platform (amd64 on CI x86, arm64 on Apple Silicon).
+# On Apple Silicon `--platform linux/amd64` breaks qemu-arm's 32-bit VA
+# reservation, so we never force it -- qemu-arm-static works either way.
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/amd64 \
+docker run --rm \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -206,26 +205,16 @@ EOF
 echo "-- compile tested.c with mcc graft ON --"
 env $INLENV /w/mcc-arm-opt -O1 -I $RD -c /w/tested.c -o /w/tested.o >/dev/null 2>&1
 # mcc emits A32 (ARM) code and references __aeabi_memmove/memcpy for struct-by-
-# value marshalling via non-interworking bl (R_ARM_PC24). The gcc-armhf libc is
-# Thumb, so GNU ld would synthesize a Thumb veneer that faults (SIGILL) when
-# entered from mcc ARM code. Provide ARM-mode aeabi mem shims so ld resolves
-# these to A32 directly and inserts no veneer. This is an mcc-arm ARM/Thumb
-# interworking limitation (present ON and OFF); it does not affect graft.
-cat > /w/shim.c <<EOF
-typedef unsigned long usz;
-void *__aeabi_memmove4(void*d,const void*s,usz n){char*D=d;const char*S=s;if(D<S){while(n--)*D++=*S++;}else{D+=n;S+=n;while(n--)*--D=*--S;}return d;}
-void *__aeabi_memmove8(void*d,const void*s,usz n){return __aeabi_memmove4(d,s,n);}
-void *__aeabi_memmove(void*d,const void*s,usz n){return __aeabi_memmove4(d,s,n);}
-void *__aeabi_memcpy4(void*d,const void*s,usz n){char*D=d;const char*S=s;while(n--)*D++=*S++;return d;}
-void *__aeabi_memcpy8(void*d,const void*s,usz n){return __aeabi_memcpy4(d,s,n);}
-void *__aeabi_memcpy(void*d,const void*s,usz n){return __aeabi_memcpy4(d,s,n);}
-EOF
-echo "-- compile ref + main + arm-mode aeabi shim with gcc -marm -O2 --"
-arm-linux-gnueabihf-gcc -marm -O2 -c /w/shim.c    -o /w/shim.o
+# value marshalling via bl. With the R_ARM_CALL/R_ARM_JUMP24 interworking fix
+# ld performs the standard BL<->BLX substitution, so these resolve directly to
+# the real (Thumb) armhf libc helpers -- no ARM-mode shim needed. Linking
+# against the genuine Thumb helpers also implicitly guards interworking: a reloc
+# regression would SIGILL here (cf. arminterwork-docker.sh).
+echo "-- compile ref + main with gcc -marm -O2 --"
 arm-linux-gnueabihf-gcc -marm -O2 -c /w/refimpl.c -o /w/refimpl.o
 arm-linux-gnueabihf-gcc -marm -O2 -c /w/main.c    -o /w/main.o
 echo "-- link static + run under qemu (graft ON) --"
-arm-linux-gnueabihf-gcc -marm -static /w/main.o /w/tested.o /w/refimpl.o /w/shim.o -o /w/difftest
+arm-linux-gnueabihf-gcc -marm -static /w/main.o /w/tested.o /w/refimpl.o -o /w/difftest
 rc=0
 qemu-arm-static /w/difftest || rc=$?
 echo "difftest(ON) exit=$rc"
@@ -233,7 +222,7 @@ echo "difftest(ON) exit=$rc"
 echo "== control: tested.c with graft OFF, same differential (sanity) =="
 env MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=0 MCC_AST_INLINE=0 \
   /w/mcc-arm-opt -O1 -I $RD -c /w/tested.c -o /w/tested_off.o >/dev/null 2>&1
-arm-linux-gnueabihf-gcc -marm -static /w/main.o /w/tested_off.o /w/refimpl.o /w/shim.o -o /w/difftest_off
+arm-linux-gnueabihf-gcc -marm -static /w/main.o /w/tested_off.o /w/refimpl.o -o /w/difftest_off
 rc2=0
 qemu-arm-static /w/difftest_off || rc2=$?
 echo "difftest(OFF) exit=$rc2"
