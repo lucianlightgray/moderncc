@@ -101,6 +101,9 @@ struct GData    { int a; char b; double c; long long d[3]; long e; }; /* global 
 extern struct GData g_data;   /* defined in lib.c, read cross-object */
 extern __thread long g_tls;   /* thread-local, defined in lib.c: cross-object TLS interop */
 long tls_get(void); void tls_set(long v);
+extern __thread long g_tls_z; /* zero-init __thread -> .tbss */
+extern int the_alias;         /* __attribute__((alias)) in lib.c */
+long get_wk(void); long get_alias(void); long get_tlsz(void);
 struct P16      { long long a, b; };           /* 16B struct straddling reg/stack after 7 GP args */
 struct BF       { unsigned a:3; int b:5; unsigned c:20; long long d:40; int e:12; }; /* bitfield insert/extract codegen */
 
@@ -152,6 +155,13 @@ struct GData   g_data = { 7, 88, 2.5, {100, 200, 300}, -99 };
 __thread long  g_tls = 555;
 long           tls_get(void){ return g_tls; }
 void           tls_set(long v){ g_tls = v; }
+__thread long  g_tls_z;        /* zero-init -> .tbss */
+long           get_tlsz(void){ return g_tls_z; }
+__attribute__((weak)) int wk_ovr = 111; /* main.c defines it strong -> override */
+int            alias_target = 42;
+extern int     the_alias __attribute__((alias("alias_target")));
+long           get_wk(void){ return wk_ovr; }
+long           get_alias(void){ return the_alias; }
 int            small_sum(struct Small p){ return p.a + p.b; }
 struct Small   small_make(int a, int b){ struct Small r; r.a=a; r.b=b; return r; }
 long long      odd_sum(struct Odd o){ return (long long)o.c + o.i + o.s; }
@@ -220,6 +230,7 @@ EOF
 # main returns the 1-based index of the first mismatch (0 = all pass).
 cat > /w/main.c <<EOF
 #include "shared.h"
+int wk_ovr = 999;   /* strong def overrides the weak one in lib.c */
 int main(void){
   int k=0;
   { struct Small p; p.a=111; p.b=-40; k++; if(small_sum(p)!=71) return k; }
@@ -314,6 +325,12 @@ int main(void){
   { k++; if(g_tls!=555) return k; }
   { tls_set(999); k++; if(g_tls!=999) return k; }
   { g_tls = 314; k++; if(tls_get()!=314) return k; }
+  /* zero-init __thread (.tbss): default 0, and shared slot across the boundary. */
+  { k++; if(g_tls_z!=0) return k; }
+  { g_tls_z = 777; k++; if(get_tlsz()!=777) return k; }
+  /* weak-def override (main strong wk_ovr=999 beats lib weak 111) + alias. */
+  { k++; if(get_wk()!=999) return k; }
+  { k++; if(get_alias()!=42) return k; }
   return 0;
 }
 EOF
