@@ -4864,6 +4864,17 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77)
     endif()
 
+    # arm Thumb-interworking guard: assert mcc emits R_ARM_CALL (not the deprecated
+    # R_ARM_PC24) for `bl`, and that an mcc object calling a THUMB __aeabi helper
+    # runs under qemu-arm (a regression to R_ARM_PC24 SIGILLs via ld's veneer).
+    if(TARGET mcc-arm)
+        add_test(NAME arm-interwork-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arminterwork-docker.sh"
+                "${CMAKE_BINARY_DIR}/arm-interwork-docker")
+        set_tests_properties(arm-interwork-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77)
+    endif()
+
     add_custom_target(gcctestsuite
         COMMAND "$<TARGET_FILE:mccharness>" gcctestsuite --mcc $<TARGET_FILE:mcc>
                 --bdir "${CMAKE_BINARY_DIR}" --idir "${CMAKE_CURRENT_SOURCE_DIR}"

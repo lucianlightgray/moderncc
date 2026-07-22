@@ -671,7 +671,8 @@ static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 		if (vtop->r & VT_SYM) { MCC_TRACE("br\n");
 			x = encbranch(ind, ind + vtop->c.i, 0);
 			if (x) { MCC_TRACE("br\n");
-				greloc(cur_text_section, vtop->sym, ind, R_ARM_PC24);
+				greloc(cur_text_section, vtop->sym, ind,
+							 is_jmp ? R_ARM_JUMP24 : R_ARM_CALL);
 				o(x | (is_jmp ? 0xE0000000 : 0xE1000000));
 			} else { MCC_TRACE("br\n");
 				r = MCC_TREG_LR;
@@ -703,7 +704,7 @@ static void gcall_or_jmp(int is_jmp) { MCC_TRACE("enter\n");
 static void gen_bounds_call(int v) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(v);
 
-	greloc(cur_text_section, sym, ind, R_ARM_PC24);
+	greloc(cur_text_section, sym, ind, R_ARM_CALL);
 	o(0xebfffffe);
 }
 
@@ -1158,7 +1159,7 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 	arm_load_stack_guard(MCC_TREG_R2);
 	o(0xE1530002);
 	o(0x0A000000);
-	greloc(cur_text_section, fail, ind, R_ARM_PC24);
+	greloc(cur_text_section, fail, ind, R_ARM_CALL);
 	o(0xEBFFFFFE);
 }
 
@@ -1169,7 +1170,7 @@ static addr_t arm_asan_ind;
 
 static void gen_asan_stack_call(const char *name) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(tok_alloc_const(name));
-	greloc(cur_text_section, sym, ind, R_ARM_PC24);
+	greloc(cur_text_section, sym, ind, R_ARM_CALL);
 	o(0xEBFFFFFE);
 }
 
@@ -1473,7 +1474,7 @@ static const char *ubsan_recover_sym(int kind) { MCC_TRACE("enter\n");
 static void arm_ubsan_emit_recover(int kind) { MCC_TRACE("enter\n");
 	Sym *sym = external_helper_sym(tok_alloc_const(ubsan_recover_sym(kind)));
 	o(0xE92D500F);
-	greloc(cur_text_section, sym, ind, R_ARM_PC24);
+	greloc(cur_text_section, sym, ind, R_ARM_CALL);
 	o(0xebfffffe);
 	o(0xE8BD500F);
 }
