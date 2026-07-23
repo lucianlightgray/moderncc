@@ -12,8 +12,18 @@ IMAGE="debian:bookworm-slim"
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
 if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
 
+# Build+run on the host-native platform: linux/amd64 on x86 CI, linux/arm64 on
+# an arm64 runner (Apple Silicon or GitHub arm64). Forcing linux/amd64 on an
+# arm64 host makes the container's amd64 bash fail with "exec format error"
+# (no amd64 binfmt), so we never pin amd64 -- native gcc + qemu-user work either way.
+case "$(uname -m)" in
+  x86_64|amd64)  HP_PLAT=linux/amd64 ;;
+  aarch64|arm64) HP_PLAT=linux/arm64 ;;
+  *)             HP_PLAT=linux/amd64 ;;
+esac
+
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/amd64 \
+docker run --rm --platform "$HP_PLAT" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive

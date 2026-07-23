@@ -29,8 +29,16 @@ IMAGE="debian:bookworm-slim"
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
 if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
 
+# Pin the host-native platform (amd64 on x86 CI, arm64 on an arm64 runner) so a
+# prior amd64-pinned run's cached debian image can't poison this one with an
+# amd64 variant that fails "exec format error" on arm64.
+case "$(uname -m)" in
+  x86_64|amd64)  HP_PLAT=linux/amd64 ;;
+  aarch64|arm64) HP_PLAT=linux/arm64 ;;
+  *)             HP_PLAT=linux/amd64 ;;
+esac
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm \
+docker run --rm --platform "$HP_PLAT" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive

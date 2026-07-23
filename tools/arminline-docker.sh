@@ -12,11 +12,18 @@ IMAGE="debian:bookworm-slim"
 if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
 if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
 
-# Run on the host-native platform (amd64 on CI x86, arm64 on Apple Silicon).
-# On Apple Silicon `--platform linux/amd64` breaks qemu-arm's 32-bit VA
-# reservation, so we never force it -- qemu-arm-static works either way.
+# Run on the host-native platform (amd64 on CI x86, arm64 on Apple Silicon or an
+# arm64 runner). On arm64 `--platform linux/amd64` breaks qemu-arm's 32-bit VA
+# reservation AND a prior amd64-pinned run (e.g. arm64inline) may have cached the
+# amd64 debian variant under this tag, so we PIN the host-native platform to avoid
+# picking up that amd64 image (which would fail with "exec format error").
+case "$(uname -m)" in
+  x86_64|amd64)  HP_PLAT=linux/amd64 ;;
+  aarch64|arm64) HP_PLAT=linux/arm64 ;;
+  *)             HP_PLAT=linux/amd64 ;;
+esac
 MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm \
+docker run --rm --platform "$HP_PLAT" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive
