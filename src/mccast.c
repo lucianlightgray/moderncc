@@ -13589,9 +13589,9 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						{ MCC_TRACE("br\n"); memcpy(aot_rel, rs->data + ast_reloc0_sv, aot_rlen); }
 #if defined(MCC_TARGET_X86_64)
 					if (ast_jit_dispatch_env == 6) { MCC_TRACE("br\n");
-						int slot_off = data_section->data_offset;
-						unsigned char *slotp = section_ptr_add(data_section, 8);
-						memset(slotp, 0, 8);
+						int slot_off = (int)section_add(data_section, MCC_PTR_SIZE, MCC_PTR_SIZE);
+						unsigned char *slotp = data_section->data + slot_off;
+						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
 															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
@@ -13628,8 +13628,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					}
 #elif defined(MCC_TARGET_I386)
 					if (ast_jit_dispatch_env == 6) { MCC_TRACE("br\n");
-						int slot_off = data_section->data_offset;
-						unsigned char *slotp = section_ptr_add(data_section, MCC_PTR_SIZE);
+						int slot_off = (int)section_add(data_section, MCC_PTR_SIZE, MCC_PTR_SIZE);
+						unsigned char *slotp = data_section->data + slot_off;
 						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
@@ -13669,10 +13669,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					if (ast_jit_dispatch_env == 6 && mcc_state &&
 							(mcc_state->embed_jit ||
 							 mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
-						int slot_off = data_section->data_offset;
-						unsigned char *slotp = section_ptr_add(data_section, 8);
+						int slot_off = (int)section_add(data_section, MCC_PTR_SIZE, MCC_PTR_SIZE);
+						unsigned char *slotp = data_section->data + slot_off;
 						Sym *slot_sym, *body_sym;
-						memset(slotp, 0, 8);
+						memset(slotp, 0, MCC_PTR_SIZE);
 #ifdef MCC_EMBED_JIT
 						if (mcc_state && (mcc_state->embed_jit ||
 															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
