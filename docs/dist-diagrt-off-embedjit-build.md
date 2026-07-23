@@ -15,4 +15,4 @@ Failure mode: a helper whose **definition** is unconditional (e.g. `get_sym_ref`
 - Fast single-file: take libmcc.c's compile command from `cmake-build-embedjit/compile_commands.json`, flip `MCC_CONFIG_DIAG_RT=2`→`=0`, compile the suspect file standalone with `-fsyntax-only`.
 - Full: `cmake -S . -B cmake-build-distrepro -G Ninja -DCMAKE_BUILD_TYPE=Release -DMCC_EMBED_JIT=ON -DMCC_CONFIG_OPTIMIZER=ON -DMCC_CONFIG_DIAG_RT=off` then `cmake --build cmake-build-distrepro`.
 
-See [[build-dir-prefix]], [[ci-workflows-generated]], [[mcc-jit-unification]].
+See [[build-dir-prefix]], [[ci-workflows-canonical]], [[mcc-jit-unification]].

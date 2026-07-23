@@ -136,4 +136,4 @@ is the other big workstream.
 Related recurring build fact: **`MCC_EMBED_JIT` defaults ON but is glibc-only**
 (`src/mccjit_embed.c` needs sys/mman.h/pthread/fork) — gated OFF on WIN32 in this
 commit (`CMakeLists.txt` ~1662, mirrors `MCC_EMBED_MCCRT`). A real Windows JIT
-port is still TODO (see TODO.md). [[always-commit-and-push-after-green]]
+port is still TODO (see TODO.md). [[commit-push-main]]

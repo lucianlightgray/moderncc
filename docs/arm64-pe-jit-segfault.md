@@ -79,4 +79,4 @@ faulting when the freshly-generated function is called. Not confirmed on hardwar
 selftests on arm64+WIN32-MSVC (matches the `exec/tls` precedent); (b) build mcc.exe FOR
 arm64 with the local portable MSVC arm64 cross tools (see [[windows-reference-toolchains]])
 + run under wine-arm64 to get the real repro, then bisect the miscompiled construct.
-The `/O` bisect + reduced-opt probe is the tls playbook. [[always-commit-and-push-after-green]]
+The `/O` bisect + reduced-opt probe is the tls playbook. [[commit-push-main]]

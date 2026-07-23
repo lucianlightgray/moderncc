@@ -126,5 +126,5 @@ Verified `/Od` is correct on the EXACT CI compiler: downloaded cl **14.44.35207*
 (portable-msvc `--msvc-version 14.44 --vs 2022`; coexists with 14.51 under
 `VC/Tools/MSVC/`), hand-built mcc at /Od, ran under wine-arm64 → compiles+runs
 run_atexit correctly (at /O2 it fails identically to CI). Revisit if/when the cl ARM64
-optimizer bug is fixed. [[always-commit-and-push-after-green]] [[ci-log-zip-commit-ahead]]
+optimizer bug is fixed. [[commit-push-main]] [[ci-log-zip-commit-ahead]]
 [[windows-reference-toolchains]]
