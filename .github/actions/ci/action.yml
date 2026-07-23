@@ -14,8 +14,12 @@ runs:
       shell: bash
       run: |
         # -ldl is a Linux-only dependency (host plugin dlopen); macOS folds it
-        # into libSystem, so passing it there fails the link.
-        ldl=$([ "$RUNNER_OS" = Linux ] && echo -ldl)
+        # into libSystem, so passing it there fails the link. Compute it with an
+        # `if` (not `x=$(... && ...)` or `A && B`): under the `-e` that GitHub
+        # runs composite bash with, a false test in either of those aborts the
+        # step before cc runs — which broke every macOS cell.
+        ldl=""
+        if [ "$RUNNER_OS" = Linux ]; then ldl="-ldl"; fi
         cc -O2 -o "$RUNNER_TEMP/mcc-ci" tools/ci.c tools/toolsupport.c $ldl
         echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
     - name: compile ci tool (windows)
