@@ -1403,10 +1403,11 @@ ST_FUNC void mcc_debug_line(MCCState *s1) { MCC_TRACE("enter\n");
 				n >= DWARF_OPCODE_BASE && n <= 255)
 			{ MCC_TRACE("br\n"); dwarf_line_op(s1, n); }
 		else { MCC_TRACE("br\n");
+			int row_emitted = 0;
 			if (len_pc) { MCC_TRACE("br\n");
 				n = len_pc * DWARF_LINE_RANGE + 0 + DWARF_OPCODE_BASE - DWARF_LINE_BASE;
 				if (n >= DWARF_OPCODE_BASE && n <= 255)
-					{ MCC_TRACE("br\n"); dwarf_line_op(s1, n); }
+					{ MCC_TRACE("br\n"); dwarf_line_op(s1, n); row_emitted = 1; }
 				else { MCC_TRACE("br\n");
 					dwarf_line_op(s1, DW_LNS_advance_pc);
 					dwarf_uleb128_op(s1, len_pc);
@@ -1422,7 +1423,9 @@ ST_FUNC void mcc_debug_line(MCCState *s1) { MCC_TRACE("enter\n");
 					dwarf_sleb128_op(s1, len_line);
 					dwarf_line_op(s1, DWARF_OPCODE_BASE - DWARF_LINE_BASE);
 				}
+				row_emitted = 1;
 			}
+			if (!row_emitted) { MCC_TRACE("br\n"); dwarf_line_op(s1, DW_LNS_copy); }
 		}
 		dwarf_line.last_pc = ind;
 		dwarf_line.last_line = f->line_num;
