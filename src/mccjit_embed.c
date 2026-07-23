@@ -2180,6 +2180,9 @@ static void mccjit_kgc_init_hdr(MccjitKgc *k, uint64_t salt, uint64_t cap) { MCC
 	k->hdr->cap = cap;
 }
 
+static void mccjit_kgc_register(MccjitKgc *k);
+static void mccjit_kgc_unregister(MccjitKgc *k);
+
 static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 													 uint32_t arity) { MCC_TRACE("enter\n");
 	uint64_t initcap = 64;
@@ -2202,6 +2205,7 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 		k->map_len = initbytes;
 		mccjit_kgc_bind(k);
 		mccjit_kgc_init_hdr(k, salt, initcap);
+		mccjit_kgc_register(k);
 		return 0;
 	}
 	k->path = mcc_strdup(path);
@@ -2231,12 +2235,221 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 			msync(k->map, k->map_len, MS_SYNC);
 		}
 	}
+	mccjit_kgc_register(k);
 	return 0;
+}
+
+static void mccjit_vput(unsigned char **p, uint64_t v) { MCC_TRACE("enter\n");
+	while (v >= 0x80) { MCC_TRACE("br\n"); *(*p)++ = (unsigned char)(v | 0x80); v >>= 7; }
+	*(*p)++ = (unsigned char)v;
+}
+
+static uint64_t mccjit_vget(const unsigned char **p, const unsigned char *end) { MCC_TRACE("enter\n");
+	uint64_t v = 0;
+	int shift = 0;
+	while (*p < end) { MCC_TRACE("br\n");
+		unsigned char c = *(*p)++;
+		v |= (uint64_t)(c & 0x7f) << shift;
+		if (!(c & 0x80))
+			{ MCC_TRACE("br\n"); break; }
+		shift += 7;
+	}
+	return v;
+}
+
+static uint64_t mccjit_zz(int64_t x) { MCC_TRACE("enter\n");
+	return ((uint64_t)x << 1) ^ (uint64_t)(x >> 63);
+}
+
+static int64_t mccjit_unzz(uint64_t v) { MCC_TRACE("enter\n");
+	return (int64_t)(v >> 1) ^ -(int64_t)(v & 1);
+}
+
+/* Serialize the sorted KGC memo (a lexicographically-sorted array of observed
+   argument-value tuples) as a compressed byte stream: per-column delta against
+   the previous tuple, zig-zag mapped, LEB128 varint packed. Sorted input makes
+   the leading-column deltas small and non-negative, so the array shrinks hard.
+   Returns a malloc'd buffer in *out (caller frees) and its length in *outlen. */
+static int mccjit_kgc_encode_compressed(const MccjitKgc *k, unsigned char **out,
+																				size_t *outlen) { MCC_TRACE("enter\n");
+	uint64_t count, i;
+	uint32_t arity, j;
+	unsigned char *buf, *p;
+	int64_t prev[MCCJIT_KGC_ARITY];
+	*out = NULL;
+	*outlen = 0;
+	if (!k || !k->hdr || !k->tuples)
+		{ MCC_TRACE("br\n"); return -1; }
+	count = k->hdr->count;
+	arity = k->arity;
+	if (count == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	buf = mcc_malloc((size_t)32 + (size_t)count * arity * 10);
+	if (!buf)
+		{ MCC_TRACE("br\n"); return -1; }
+	p = buf;
+	mccjit_vput(&p, count);
+	mccjit_vput(&p, arity);
+	for (j = 0; j < arity; j++)
+		{ MCC_TRACE("br\n"); prev[j] = 0; }
+	for (i = 0; i < count; i++) { MCC_TRACE("br\n");
+		const int64_t *t = k->tuples + i * arity;
+		for (j = 0; j < arity; j++) { MCC_TRACE("br\n");
+			mccjit_vput(&p, mccjit_zz(t[j] - prev[j]));
+			prev[j] = t[j];
+		}
+	}
+	*out = buf;
+	*outlen = (size_t)(p - buf);
+	return 0;
+}
+
+/* Inverse of mccjit_kgc_encode_compressed: reconstruct the sorted tuple array.
+   Fills up to maxtuples rows into dst and returns the decoded tuple count, or
+   -1 on a malformed/oversized stream. Used by the round-trip self-check. */
+static int64_t mccjit_kgc_decode_compressed(const unsigned char *buf, size_t len,
+																						int64_t *dst, uint64_t maxtuples,
+																						uint32_t *parity) { MCC_TRACE("enter\n");
+	const unsigned char *p = buf, *end = buf + len;
+	uint64_t count, i;
+	uint32_t arity, j;
+	int64_t prev[MCCJIT_KGC_ARITY];
+	if (!buf || len == 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	count = mccjit_vget(&p, end);
+	arity = (uint32_t)mccjit_vget(&p, end);
+	if (arity == 0 || arity > MCCJIT_KGC_ARITY || count > maxtuples)
+		{ MCC_TRACE("br\n"); return -1; }
+	for (j = 0; j < arity; j++)
+		{ MCC_TRACE("br\n"); prev[j] = 0; }
+	for (i = 0; i < count; i++) { MCC_TRACE("br\n");
+		for (j = 0; j < arity; j++) { MCC_TRACE("br\n");
+			if (p >= end)
+				{ MCC_TRACE("br\n"); return -1; }
+			prev[j] += mccjit_unzz(mccjit_vget(&p, end));
+			dst[i * arity + j] = prev[j];
+		}
+	}
+	if (parity)
+		{ MCC_TRACE("br\n"); *parity = arity; }
+	return (int64_t)count;
+}
+
+/* Save the sorted memo as a compressed array and account it in stats. Always
+   runs when stats are active (feeds the JIT "memo" line); additionally writes
+   the compressed blob to $MCC_JIT_KGC_SAVE/kgc-<salt>-<arity>-<seq>.z when that
+   directory is set, so the observed value set persists across runs. */
+static void mccjit_kgc_flush_compressed(MccjitKgc *k) { MCC_TRACE("enter\n");
+	static unsigned long seq;
+	const char *dir = getenv("MCC_JIT_KGC_SAVE");
+	unsigned char *buf;
+	size_t n;
+	if (!k || !k->hdr || k->hdr->count == 0)
+		{ MCC_TRACE("br\n"); return; }
+	if (!mcc_stats_mask && !(dir && dir[0]))
+		{ MCC_TRACE("br\n"); return; }
+	if (mccjit_kgc_encode_compressed(k, &buf, &n) != 0 || !buf)
+		{ MCC_TRACE("br\n"); return; }
+	if (getenv("MCC_JIT_KGC_SELFTEST")) { MCC_TRACE("br\n");
+		int64_t *chk = mcc_malloc((size_t)k->hdr->count * k->arity * sizeof(int64_t));
+		uint32_t da = 0;
+		int64_t dc = chk ? mccjit_kgc_decode_compressed(buf, n, chk, k->hdr->count, &da)
+										 : -1;
+		if (!chk || dc != (int64_t)k->hdr->count || da != k->arity ||
+				memcmp(chk, k->tuples,
+							 (size_t)k->hdr->count * k->arity * sizeof(int64_t)) != 0)
+			{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit: KGC compressed round-trip MISMATCH\n"); }
+		mcc_free(chk);
+	}
+	if (mcc_stats_mask)
+		{ MCC_TRACE("br\n"); mcc_stats_jit_memo(
+				(unsigned long)k->hdr->count,
+				(unsigned long)((size_t)k->hdr->count * k->arity * sizeof(int64_t)),
+				(unsigned long)n); }
+	if (dir && dir[0]) { MCC_TRACE("br\n");
+		char path[1024];
+		int fd;
+		snprintf(path, sizeof path, "%s/kgc-%016llx-%u-%lu.z", dir,
+						 (unsigned long long)k->hdr->salt, (unsigned)k->arity, seq++);
+		fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (fd >= 0) { MCC_TRACE("br\n");
+			ssize_t w = write(fd, buf, n);
+			(void)w;
+			close(fd);
+		}
+	}
+	mcc_free(buf);
+}
+
+/* Persistent per-variant KGC guards live for the whole process and are never
+   closed, so their observed-value arrays are flushed here at exit (ordered
+   before the atexit'd stats print, which is registered earlier at JIT boot).
+   Closed KGCs unregister themselves, so each array is flushed exactly once. */
+typedef struct MccjitKgcReg {
+	MccjitKgc *k;
+	int flushed;
+	struct MccjitKgcReg *next;
+} MccjitKgcReg;
+
+static MccjitKgcReg *mccjit_kgc_reg_head;
+static pthread_mutex_t mccjit_kgc_reg_lock = PTHREAD_MUTEX_INITIALIZER;
+static int mccjit_kgc_reg_hooked;
+
+/* Flush every still-live guard once. Invoked both as the stats pre-finish hook
+   (so the memo line is populated before the block is painted) and via atexit
+   (so a stats-off, save-on run still persists) — the per-node flushed flag makes
+   whichever fires second a no-op. */
+static void mccjit_kgc_flush_all(void) { MCC_TRACE("enter\n");
+	MccjitKgcReg *r;
+	pthread_mutex_lock(&mccjit_kgc_reg_lock);
+	for (r = mccjit_kgc_reg_head; r; r = r->next) { MCC_TRACE("br\n");
+		if (r->flushed)
+			{ MCC_TRACE("br\n"); continue; }
+		r->flushed = 1;
+		mccjit_kgc_flush_compressed(r->k);
+	}
+	pthread_mutex_unlock(&mccjit_kgc_reg_lock);
+}
+
+static void mccjit_kgc_register(MccjitKgc *k) { MCC_TRACE("enter\n");
+	MccjitKgcReg *r;
+	if (!k)
+		{ MCC_TRACE("br\n"); return; }
+	pthread_mutex_lock(&mccjit_kgc_reg_lock);
+	if (!mccjit_kgc_reg_hooked) { MCC_TRACE("br\n");
+		atexit(mccjit_kgc_flush_all);
+		mcc_stats_set_flush_hook(mccjit_kgc_flush_all);
+		mccjit_kgc_reg_hooked = 1;
+	}
+	r = mcc_malloc(sizeof *r);
+	if (r) { MCC_TRACE("br\n");
+		r->k = k;
+		r->flushed = 0;
+		r->next = mccjit_kgc_reg_head;
+		mccjit_kgc_reg_head = r;
+	}
+	pthread_mutex_unlock(&mccjit_kgc_reg_lock);
+}
+
+static void mccjit_kgc_unregister(MccjitKgc *k) { MCC_TRACE("enter\n");
+	MccjitKgcReg **pp;
+	pthread_mutex_lock(&mccjit_kgc_reg_lock);
+	for (pp = &mccjit_kgc_reg_head; *pp; pp = &(*pp)->next) { MCC_TRACE("br\n");
+		if ((*pp)->k == k) { MCC_TRACE("br\n");
+			MccjitKgcReg *d = *pp;
+			*pp = d->next;
+			mcc_free(d);
+			break;
+		}
+	}
+	pthread_mutex_unlock(&mccjit_kgc_reg_lock);
 }
 
 static void mccjit_kgc_close(MccjitKgc *k) { MCC_TRACE("enter\n");
 	if (!k)
 		{ MCC_TRACE("br\n"); return; }
+	mccjit_kgc_flush_compressed(k);
+	mccjit_kgc_unregister(k);
 	if (k->map && k->map != MAP_FAILED) { MCC_TRACE("br\n");
 		if (!k->anon)
 			{ MCC_TRACE("br\n"); msync(k->map, k->map_len, MS_SYNC); }

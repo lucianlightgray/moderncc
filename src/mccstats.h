@@ -37,5 +37,8 @@ void mcc_stats_jit_kgc_hit(void);
 void mcc_stats_jit_kgc_miss(void);
 void mcc_stats_jit_poison(void);
 void mcc_stats_jit_promote(int async);
+void mcc_stats_jit_memo(unsigned long tuples, unsigned long raw_bytes,
+											 unsigned long comp_bytes);
+void mcc_stats_set_flush_hook(void (*fn)(void));
 
 #endif

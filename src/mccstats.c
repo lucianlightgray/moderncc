@@ -16,6 +16,12 @@
 
 unsigned mcc_stats_mask = 0;
 
+static void (*mcc_stats_flush_hook)(void);
+
+void mcc_stats_set_flush_hook(void (*fn)(void)) { MCC_TRACE("enter\n");
+	mcc_stats_flush_hook = fn;
+}
+
 #define MCCSTATS_STRAT_N 21
 #define MCCSTATS_GATE_N 42
 #define MCCSTATS_SPARK_N 40
@@ -80,6 +86,10 @@ typedef struct McccStats {
 	unsigned long jit_poison;
 	unsigned long jit_promote_sync;
 	unsigned long jit_promote_async;
+	unsigned long jit_memo_arrays;
+	unsigned long jit_memo_tuples;
+	unsigned long jit_memo_raw;
+	unsigned long jit_memo_comp;
 } McccStats;
 
 static McccStats mcs;
@@ -260,6 +270,15 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 								 mcs.jit_recompiles, mcs.jit_promote_sync,
 								 mcs.jit_promote_async, mcs.jit_poison);
 		mccstats_row(r, "          kgc hits=%s  miss=%s", a, b);
+		if (mcs.jit_memo_arrays) { MCC_TRACE("br\n");
+			unsigned pct = mcs.jit_memo_raw
+											 ? (unsigned)(mcs.jit_memo_comp * 100 / mcs.jit_memo_raw)
+											 : 0;
+			mccstats_fmt_u(mcs.jit_memo_tuples, a, sizeof a);
+			mccstats_row(r, "          memo arrays=%lu  values=%s  %lu->%luB (%u%%)",
+									 mcs.jit_memo_arrays, a, mcs.jit_memo_raw, mcs.jit_memo_comp,
+									 pct);
+		}
 	}
 
 	mccstats_gate_names(mcs.best_gates, a, sizeof a);
@@ -338,6 +357,11 @@ void mcc_stats_env_init(void) { MCC_TRACE("enter\n");
 }
 
 void mcc_stats_finish(void) { MCC_TRACE("enter\n");
+	if (mcc_stats_flush_hook) { MCC_TRACE("br\n");
+		void (*h)(void) = mcc_stats_flush_hook;
+		mcc_stats_flush_hook = NULL;
+		h();
+	}
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mccstats_paint(1);
@@ -453,6 +477,15 @@ void mcc_stats_jit_poison(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_poison++;
+}
+void mcc_stats_jit_memo(unsigned long tuples, unsigned long raw_bytes,
+												unsigned long comp_bytes) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_memo_arrays++;
+	mcs.jit_memo_tuples += tuples;
+	mcs.jit_memo_raw += raw_bytes;
+	mcs.jit_memo_comp += comp_bytes;
 }
 
 void mcc_stats_jit_promote(int async) { MCC_TRACE("enter\n");
