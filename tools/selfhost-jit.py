@@ -47,16 +47,20 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = bdir if os.path.isabs(bdir) else os.path.join(root, bdir)
 
-    mcc = find_mcc(bdir)
-    if not mcc:
-        sys.exit(f"no mcc in {bdir}")
     # The PE (Windows) runtime-JIT self-host still faults (0xC0000005) inside the
     # in-memory `-run` recompile of src/mcc.c; that crash needs Windows HW to debug
     # and is tracked separately. This gate meaningfully covers the ELF/Mach-O
-    # self-host, so skip on PE (mcc.exe) rather than fail the whole Windows cell.
-    if mcc.endswith(".exe"):
+    # self-host, so skip on Windows/PE. Checked before locating the binary because
+    # the MSVC multi-config layout doesn't place mcc.exe directly in the build dir
+    # (find_mcc would `no mcc in ...`-fail before any .exe check). The ctest is also
+    # CMake-gated `NOT WIN32`, so this is a belt-and-suspenders for manual runs.
+    if os.name == "nt" or sys.platform.startswith("win"):
         print("selfhost-jit: SKIP (PE runtime-JIT self-host is HW/platform-fragile; tracked separately)")
         sys.exit(SKIP)
+
+    mcc = find_mcc(bdir)
+    if not mcc:
+        sys.exit(f"no mcc in {bdir}")
     if not os.path.exists(os.path.join(bdir, "mccjit_blob.c")):
         print("selfhost-jit: SKIP (build has no baked JIT engine)")
         sys.exit(SKIP)
