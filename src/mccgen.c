@@ -1975,7 +1975,12 @@ ST_FUNC int gv(int rc) { MCC_TRACE("enter\n");
 
 		if (!r_ok || !r2_ok) { MCC_TRACE("br\n");
 			if (!r_ok) { MCC_TRACE("br\n");
-				if (1 && r < VT_CONST && (reg_classes[r] & rc) && !rc2)
+				int reuse = r < VT_CONST && (reg_classes[r] & rc) && !rc2;
+#if MCC_CONFIG_OPTIMIZER
+				if (reuse && (ast_pinned_regs & ((uint64_t)1 << r)))
+					{ MCC_TRACE("br\n"); reuse = 0; }
+#endif
+				if (reuse)
 					{ MCC_TRACE("br\n"); save_reg_upstack(r, 1); }
 				else
 					{ MCC_TRACE("br\n"); r = get_reg(rc); }
