@@ -634,6 +634,8 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		reg_pass(&sv->type, prc, fieldofs, old || sa != 0);
 		if (prc[0] == 1 && prc[1] == MCC_RC_FLOAT && areg[1] >= 16 && areg[0] < 8)
 			{ MCC_TRACE("br\n"); prc[1] = MCC_RC_INT; }
+		if (prc[0] == 2 && !byref && prc[1] == MCC_RC_FLOAT && prc[2] == MCC_RC_FLOAT && areg[1] >= 15)
+			{ MCC_TRACE("br\n"); reg_pass(&sv->type, prc, fieldofs, 0); }
 		if (!old && !sa && align == 2 * XLEN && size <= 2 * XLEN)
 			{ MCC_TRACE("br\n"); areg[0] = (areg[0] + 1) & ~1; }
 		nregs = prc[0];
@@ -930,6 +932,8 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		reg_pass(type, prc, fieldofs, 1);
 		if (prc[0] == 1 && prc[1] == MCC_RC_FLOAT && areg[1] >= 8 && areg[0] < 8)
 			{ MCC_TRACE("br\n"); prc[1] = MCC_RC_INT; }
+		if (prc[0] == 2 && !byref && prc[1] == MCC_RC_FLOAT && prc[2] == MCC_RC_FLOAT && areg[1] >= 7)
+			{ MCC_TRACE("br\n"); reg_pass(type, prc, fieldofs, 0); }
 		regcount = prc[0];
 		if (areg[prc[1] - 1] >= 8 || (regcount == 2 && ((prc[1] == MCC_RC_FLOAT && prc[2] == MCC_RC_FLOAT && areg[1] >= 7) || (prc[1] != prc[2] && (areg[1] >= 8 || areg[0] >= 8))))) { MCC_TRACE("br\n");
 			if (align < XLEN)

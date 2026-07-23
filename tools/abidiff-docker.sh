@@ -147,6 +147,10 @@ short          sh_make(int x);
 unsigned short ush_make(int x);
 long long      packed_sum(struct Packed p);
 struct Packed  packed_make(char a, long long b, int c);
+float _Complex  cx_cf_id(float _Complex z);
+double _Complex cx_cd_id(double _Complex z);
+double _Complex cx_cd_after7(double a,double b,double c,double d,double e,double f,double g, double _Complex z);
+float _Complex  cx_cf_after7(float a,float b,float c,float d,float e,float f,float g, float _Complex z);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -223,6 +227,10 @@ short          sh_make(int x){ return (short)x; }
 unsigned short ush_make(int x){ return (unsigned short)x; }
 long long      packed_sum(struct Packed p){ return (long long)p.a + p.b + p.c; }
 struct Packed  packed_make(char a, long long b, int c){ struct Packed r; r.a=a; r.b=b; r.c=c; return r; }
+float _Complex  cx_cf_id(float _Complex z){ return z; }
+double _Complex cx_cd_id(double _Complex z){ return z; }
+double _Complex cx_cd_after7(double a,double b,double c,double d,double e,double f,double g, double _Complex z){ return z + (a+b+c+d+e+f+g); }
+float _Complex  cx_cf_after7(float a,float b,float c,float d,float e,float f,float g, float _Complex z){ return z + (a+b+c+d+e+f+g); }
 EOF
 
 # main.c: NO system headers so the cross mcc can compile it. Each check compares
@@ -331,6 +339,24 @@ int main(void){
   /* weak-def override (main strong wk_ovr=999 beats lib weak 111) + alias. */
   { k++; if(get_wk()!=999) return k; }
   { k++; if(get_alias()!=42) return k; }
+  /* _Complex arg/return ABI (float/double, pass+return). The cx_*_after7 cases
+     pass a _Complex after 7 same-size FP args, exhausting the FP arg regs: the
+     RISC-V LP64D rule then passes the 2-FP-member complex via the INTEGER
+     convention (double _Complex -> 2 GP regs a_n,a_n+1; float _Complex -> 1 GP
+     reg packed), not the stack. mcc used to send it to the stack (self-consistent
+     but non-conformant), so a gcc peer disagreed -- FIXED in riscv64-gen.c by
+     re-classifying a 2-FP aggregate as integer when FP regs are insufficient.
+     arm64/armv7/x86_64 were already conformant; no runtime helper (mul/div) used. */
+  { float _Complex z=__builtin_complex(1.5f,-2.5f); float _Complex r=cx_cf_id(z);
+    k++; if(__real__ r!=1.5f || __imag__ r!=-2.5f) return k; }
+  { double _Complex z=__builtin_complex(3.5,4.5); double _Complex r=cx_cd_id(z);
+    k++; if(__real__ r!=3.5 || __imag__ r!=4.5) return k; }
+  { double _Complex z=__builtin_complex(0.5,1.5);
+    double _Complex r=cx_cd_after7(1,2,3,4,5,6,7,z);
+    k++; if(__real__ r!=28.5 || __imag__ r!=1.5) return k; }
+  { float _Complex z=__builtin_complex(0.25f,-0.5f);
+    float _Complex r=cx_cf_after7(1,2,3,4,5,6,7,z);
+    k++; if(__real__ r!=28.25f || __imag__ r!=-0.5f) return k; }
   return 0;
 }
 EOF
