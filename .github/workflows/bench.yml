@@ -3,12 +3,12 @@ name: Bench
 # Compile-speed benchmark (self-hosted mcc per -O level vs gcc/clang/mingw/msvc
 # via mccbench). Split out of the per-push/PR CI matrix — where it was ~50% of
 # every macOS/MSVC/mingw job's wall-clock and gated the critical path — into its
-# own push-to-main trigger. It rebuilds mcc (no tests; ci.yml already tests) and
-# runs the `bench` target on one representative native cell per OS family, so
-# the reference compilers (gcc+clang+mingw on Linux, msvc on Windows) are all
-# covered without re-running the whole build matrix. Runs nightly (it was
-# per-push-to-main, but as a non-gating check it competed with the gating CI
-# matrix for the shared runner-concurrency cap). Also runnable on demand.
+# own nightly trigger. One representative native cell per OS family, generated
+# from the same preset ledger as ci.yml (`ci plan --job bench`), so the
+# reference compilers (gcc+clang+mingw on Linux, clang+gcc on macOS, msvc on
+# Windows) are covered without re-running the whole build matrix. Non-gating (it
+# competed with the gating CI matrix for the shared runner-concurrency cap when
+# it ran per-push-to-main). Also runnable on demand.
 
 on:
   schedule:
@@ -23,80 +23,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
-    name: bench / linux-x86_64
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      bench: ${{ steps.gen.outputs.bench }}
     steps:
       - uses: actions/checkout@v5
-      - name: install toolchain (gcc + clang + mingw references)
+      - uses: ./.github/actions/ci
+      - id: gen
+        run: echo "bench=$(mcc-ci plan --job bench)" >> "$GITHUB_OUTPUT"
+
+  bench:
+    needs: plan
+    name: bench / ${{ matrix.plat }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.bench) }}
+    # The macos preset resolves its build compiler from $CC (the bench cell pins
+    # it to clang); the linux/windows presets pin their own compiler, so an
+    # empty CC there is harmless.
+    env:
+      CC: ${{ matrix.cc }}
+    # cl is on PATH via setup-msvc-dev (exported to the job env), so the Windows
+    # cell drives the MSVC build from the same bash step as the others.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain (linux - gcc + clang + mingw references)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential gcc clang lld mingw-w64
-      - name: build + benchmark (linux-gcc)
-        run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          /tmp/mcc-ci run-preset linux-gcc --no-test --bench \
-            -DMCC_BENCH=ON -DMCC_DIST_PLAT=linux-x86_64
-      - name: benchmark summary
-        if: always()
-        run: /tmp/mcc-ci bench-summary --plat linux-x86_64 --append "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: bench-linux-x86_64
-          path: dist/bench-*.txt
-          if-no-files-found: ignore
-
-  macos:
-    name: bench / macos-arm64
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v5
       - name: cache Homebrew downloads (gcc bottle + deps)
+        if: runner.os == 'macOS'
         uses: actions/cache@v5
         with:
           path: ~/Library/Caches/Homebrew/downloads
           key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja-gcc
-      - name: install toolchain (clang + gcc references)
+      - name: install toolchain (macos - clang native + gcc reference)
+        if: runner.os == 'macOS'
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja gcc
-      - name: build + benchmark (macos, native arm64)
-        # The `macos` preset takes its build compiler from $env{CC} (ci.yml
-        # resolves it per matrix cell); bench builds mcc with the native clang.
-        env:
-          CC: clang
-        run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
-          /tmp/mcc-ci run-preset macos --no-test --bench \
-            -DMCC_BENCH=ON -DMCC_DIST_PLAT=macos-arm64
-      - name: benchmark summary
-        if: always()
-        run: /tmp/mcc-ci bench-summary --plat macos-arm64 --append "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: bench-macos-arm64
-          path: dist/bench-*.txt
-          if-no-files-found: ignore
-
-  windows:
-    name: bench / windows-x86_64-msvc
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
       - name: set up MSVC dev shell (cl reference + ci bootstrap)
+        if: runner.os == 'Windows'
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
-          arch: x64
-      - name: build + benchmark (msvc)
+          arch: ${{ matrix.msvcarch }}
+      - uses: ./.github/actions/ci
+      - name: build + benchmark (${{ matrix.preset }})
         run: |
-          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
-          .\ci.exe run-preset msvc --config Release --no-test --bench "-DMCC_BENCH=ON" "-DMCC_DIST_PLAT=windows-x86_64-msvc"
+          mcc-ci run-preset ${{ matrix.preset }} --no-test --bench \
+            ${{ runner.os == 'Windows' && '--config Release' || '' }} \
+            -DMCC_BENCH=ON -DMCC_DIST_PLAT=${{ matrix.plat }}
       - name: benchmark summary
         if: always()
-        run: .\ci.exe bench-summary --plat windows-x86_64-msvc --append "${env:GITHUB_STEP_SUMMARY}"
+        run: mcc-ci bench-summary --plat ${{ matrix.plat }} --append "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
-          name: bench-windows-x86_64-msvc
+          name: bench-${{ matrix.plat }}
           path: dist/bench-*.txt
           if-no-files-found: ignore

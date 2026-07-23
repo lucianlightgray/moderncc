@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
@@ -9,8 +10,7 @@ WORK_ABS="$(cd "$WORK" && pwd)"
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 IMAGE="debian:bookworm-slim"
 
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
+dg_need_docker
 
 # Run on the host-native platform (amd64 on CI x86, arm64 on Apple Silicon or an
 # arm64 runner). On arm64 `--platform linux/amd64` breaks qemu-arm's 32-bit VA
@@ -22,8 +22,7 @@ case "$(uname -m)" in
   aarch64|arm64) HP_PLAT=linux/arm64 ;;
   *)             HP_PLAT=linux/amd64 ;;
 esac
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform "$HP_PLAT" \
+dg_docker run --rm --platform "$HP_PLAT" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive

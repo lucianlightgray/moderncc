@@ -21,6 +21,7 @@
 #          cannot run linux/386).
 
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 MCC="${1:-}"
 RT="${2:-}"
@@ -28,17 +29,11 @@ WORK="${3:-./w-i386divmagic}"
 IMAGE_BUILD="${MCC_DIVMAGIC_BUILD_IMAGE:-ubuntu:24.04}"
 IMAGE_386="${MCC_I386_DOCKER_IMAGE:-i386/debian:bullseye-slim}"
 
-if [ -z "$MCC" ] || [ ! -x "$MCC" ]; then echo "SKIP: i386 mcc not found at '${MCC:-<unset>}'"; exit 77; fi
+dg_need_bin "$MCC" "i386 mcc"
 if [ -z "$RT" ] || [ ! -f "$RT" ]; then echo "SKIP: i386 runtime not found at '${RT:-<unset>}'"; exit 77; fi
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/amd64 "$IMAGE_BUILD" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/amd64 containers ($IMAGE_BUILD)"; exit 77
-fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/386 "$IMAGE_386" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/386 containers ($IMAGE_386)"; exit 77
-fi
+dg_need_docker
+dg_need_platform linux/amd64 "$IMAGE_BUILD"
+dg_need_platform linux/386 "$IMAGE_386"
 
 # Repo root is the parent of this script's tools/ dir.
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -154,8 +149,7 @@ GEN
 #     container. Mount the repo RO (slow bind), copy the needed sources into the
 #     container fs (fast) before building, then compile the soak with divmagic. ---
 echo "== docker linux/amd64: build optimizer-enabled i386 cross mcc + compile soak =="
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/amd64 \
+dg_docker run --rm --platform linux/amd64 \
 	-v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
 	set -e
 	export DEBIAN_FRONTEND=noninteractive
@@ -190,8 +184,7 @@ docker run --rm --platform linux/amd64 \
 
 # --- stage 2: link + run under linux/386 against the mcc i386 runtime ---
 echo "== docker linux/386: link soak.o + i386-libmccrt.a and run =="
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/386 -v "$WP":/w -w /w "$IMAGE_386" sh -c '
+dg_docker run --rm --platform linux/386 -v "$WP":/w -w /w "$IMAGE_386" sh -c '
 	set -e
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
 	gcc -m32 soak.o i386-libmccrt.a -o soak

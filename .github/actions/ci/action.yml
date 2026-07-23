@@ -1,0 +1,26 @@
+name: build-ci-tool
+description: >
+  Compile tools/ci.c for the host and put `mcc-ci` on PATH. Every workflow
+  bootstraps the ci driver this way, so the per-host compile line lives in
+  exactly one place instead of being copy-pasted into each run: block. On
+  Windows the MSVC dev shell (setup-msvc-dev) must already be active — `cl`
+  is resolved from the environment it exports.
+
+runs:
+  using: composite
+  steps:
+    - name: compile ci tool (unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        # -ldl is a Linux-only dependency (host plugin dlopen); macOS folds it
+        # into libSystem, so passing it there fails the link.
+        ldl=$([ "$RUNNER_OS" = Linux ] && echo -ldl)
+        cc -O2 -o "$RUNNER_TEMP/mcc-ci" tools/ci.c tools/toolsupport.c $ldl
+        echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+    - name: compile ci tool (windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        cl /nologo /O2 /Fe:"$env:RUNNER_TEMP\mcc-ci.exe" tools\ci.c tools\toolsupport.c
+        Add-Content -Path $env:GITHUB_PATH -Value $env:RUNNER_TEMP

@@ -14,6 +14,7 @@
 #           arch: arm64 | amd64 | riscv64 | arm
 # Exit:   0 pass · 1 an unwind failure · 77 skipped (no docker / toolchain / plat)
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
@@ -37,15 +38,10 @@ case "$ARCH" in
 	*) echo "SKIP: unsupported arch '$ARCH' (arm64|amd64|riscv64)"; exit 77 ;;
 esac
 
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform "$PLAT" "$IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run $PLAT containers ($IMAGE)"; exit 77
-fi
+dg_need_docker
+dg_need_platform "$PLAT" "$IMAGE"
 
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform "$PLAT" -e MDEF="$MDEF" -e ARCH="$ARCH" \
+dg_docker run --rm --platform "$PLAT" -e MDEF="$MDEF" -e ARCH="$ARCH" \
   -e CROSS="$CROSS" -e RUNNER="$RUNNER" -e LINKFLAGS="$LINKFLAGS" -e PKG="$PKG" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e

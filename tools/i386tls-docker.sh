@@ -18,23 +18,15 @@
 # Exit:   0 all checks pass · 1 a check failed · 77 skipped (no docker/mcc-i386)
 
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 MCC="${1:-}"
 WORK="${2:-./w-i386tls}"
 IMAGE="${MCC_I386_DOCKER_IMAGE:-i386/debian:bullseye-slim}"
 
-if [ -z "$MCC" ] || [ ! -x "$MCC" ]; then
-	echo "SKIP: i386 mcc not found at '${MCC:-<unset>}'"
-	exit 77
-fi
-if ! command -v docker >/dev/null 2>&1; then
-	echo "SKIP: docker not available"
-	exit 77
-fi
-if ! docker run --rm --platform linux/386 "$IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/386 containers ($IMAGE)"
-	exit 77
-fi
+dg_need_bin "$MCC" "i386 mcc"
+dg_need_docker
+dg_need_platform linux/386 "$IMAGE"
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
@@ -59,8 +51,7 @@ echo "== host: mcc-i386 non-PIC __thread -> i386 ELF object (R_386_TLS_LE) =="
 "$MCC" -c "$WORK_ABS/tls.c" -o "$WORK_ABS/def.o"
 
 echo "== docker linux/386: link + run both objects =="
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
+dg_docker run --rm --platform linux/386 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	set -e
 	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
 	gcc -m32 def.o -o prog

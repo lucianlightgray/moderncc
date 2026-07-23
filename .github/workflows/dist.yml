@@ -36,11 +36,11 @@ jobs:
       windows: ${{ steps.gen.outputs.windows }}
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci
       - id: gen
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          echo "unix=$(/tmp/mcc-ci plan --job dist-unix)" >> "$GITHUB_OUTPUT"
-          echo "windows=$(/tmp/mcc-ci plan --job dist-windows)" >> "$GITHUB_OUTPUT"
+          echo "unix=$(mcc-ci plan --job dist-unix)" >> "$GITHUB_OUTPUT"
+          echo "windows=$(mcc-ci plan --job dist-windows)" >> "$GITHUB_OUTPUT"
 
   unix:
     needs: plan
@@ -67,23 +67,23 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
+      - uses: ./.github/actions/ci
       - name: dist (configure + build + install + strip + package; bench on release)
         # `ci dist` runs the whole flow (the macOS local-symbol strip is
         # folded in); Rosetta's cross flags pass through after `--`. The
         # compile-speed bench is skipped (--no-bench) unless inputs.bench.
         run: |
           set -eux
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c $([ "$RUNNER_OS" = Linux ] && echo -ldl)
           extra=""
           if [ "${{ matrix.rosetta }}" = "true" ]; then
             extra="-- -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
           fi
-          /tmp/mcc-ci dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} \
+          mcc-ci dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} \
             --version "${VERSION:-ci-${GITHUB_SHA::12}}" \
             $([ "${{ inputs.bench }}" = true ] || echo --no-bench) $extra
       - name: benchmark summary
         if: ${{ inputs.bench }}
-        run: /tmp/mcc-ci bench-summary --plat "${{ matrix.plat }}" --append "$GITHUB_STEP_SUMMARY"
+        run: mcc-ci bench-summary --plat "${{ matrix.plat }}" --append "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-${{ matrix.plat }}
@@ -117,15 +117,15 @@ jobs:
         with:
           path: vendor/winlibs-mingw-w64-*
           key: winlibs-x86_64-${{ hashFiles('cmake/winlibs.cmake') }}
+      - uses: ./.github/actions/ci
       - name: dist (configure + build + install + package)
         run: |
-          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
           if (-not $env:VERSION) { $env:VERSION = "ci-" + $env:GITHUB_SHA.Substring(0,12) }
           $bench = if ("${{ inputs.bench }}" -eq "true") { @() } else { ,"--no-bench" }
-          .\ci.exe dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "$env:VERSION" @bench
+          mcc-ci dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "$env:VERSION" @bench
       - name: benchmark summary
         if: ${{ inputs.bench }}
-        run: .\ci.exe bench-summary --plat "${{ matrix.plat }}" --append "${env:GITHUB_STEP_SUMMARY}"
+        run: mcc-ci bench-summary --plat "${{ matrix.plat }}" --append "${env:GITHUB_STEP_SUMMARY}"
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-${{ matrix.plat }}

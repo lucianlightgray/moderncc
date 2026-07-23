@@ -39,11 +39,11 @@ jobs:
       macos: ${{ steps.gen.outputs.macos }}
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci
       - id: gen
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          echo "matrix=$(/tmp/mcc-ci plan --job matrix)" >> "$GITHUB_OUTPUT"
-          echo "macos=$(/tmp/mcc-ci plan --job macos-x86)" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(mcc-ci plan --job matrix)" >> "$GITHUB_OUTPUT"
+          echo "macos=$(mcc-ci plan --job macos-x86)" >> "$GITHUB_OUTPUT"
 
   matrix:
     needs: plan
@@ -63,11 +63,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential gcc clang lld wine64 git rsync \
             mingw-w64
+      - uses: ./.github/actions/ci
       - name: run ${{ matrix.profile }} x ${{ matrix.target }} (single-cell build, build-only)
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p "dist/$ART"
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" --no-test \
+          mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" --no-test \
             -DMCC_TOOLCHAIN_PROFILE=${{ matrix.profile }} -DMCC_TARGETS=${{ matrix.target }}
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
@@ -112,12 +112,12 @@ jobs:
       - name: install wine (drives pe-wine-conformance in macos-cross)
         continue-on-error: true
         run: HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable
+      - uses: ./.github/actions/ci
       - name: run ${{ matrix.preset }} x86_64 under Rosetta (configure + build + test)
         # x86_64 cells are clang-only; the Rosetta translation lock serializes a
         # handful of arch-independent probes, so drop those (fully covered by the
         # native arm64 macOS and Linux cells).
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
           export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
+          mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
             "-DMCC_DIST_PLAT=$ART" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64

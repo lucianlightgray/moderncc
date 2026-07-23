@@ -27,6 +27,7 @@
 # Exit:   0 pass · 1 a failure · 77 skipped (no docker / mcc / platform)
 
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 MCC="${1:-}"
 PLAT="${2:-}"
@@ -39,11 +40,9 @@ case "$PLAT" in
 	*) echo "SKIP: unsupported platform '${PLAT:-<unset>}'"; exit 77 ;;
 esac
 
-if [ -z "$MCC" ] || [ ! -x "$MCC" ]; then echo "SKIP: mcc not found at '${MCC:-<unset>}'"; exit 77; fi
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! docker run --rm --platform "$PLAT" "$IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run $PLAT containers ($IMAGE)"; exit 77
-fi
+dg_need_bin "$MCC" "mcc"
+dg_need_docker
+dg_need_platform "$PLAT" "$IMAGE"
 
 rm -rf "$WORK"; mkdir -p "$WORK"
 WORK_ABS=$(cd "$WORK" && pwd)
@@ -77,8 +76,7 @@ if [ -n "$CROSS" ]; then
 else
 	echo "== docker $PLAT: link mcc objects with GNU ld (gcc), run, check DWARF =="
 fi
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform "$PLAT" -e CROSS="$CROSS" -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
+dg_docker run --rm --platform "$PLAT" -e CROSS="$CROSS" -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	GCC="${CROSS}gcc"; READELF="${CROSS}readelf"
 	if [ -n "$CROSS" ]; then t=$(echo "$CROSS" | sed "s/-$//"); PKG="gcc-$t binutils-$t"; else PKG="gcc binutils"; fi
 	command -v "$GCC" >/dev/null 2>&1 || { apt-get update >/dev/null 2>&1; apt-get install -y $PKG >/dev/null 2>&1; }

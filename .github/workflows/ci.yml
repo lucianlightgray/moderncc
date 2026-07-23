@@ -29,13 +29,13 @@ jobs:
       qemu: ${{ steps.gen.outputs.qemu }}
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci
       - id: gen
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          echo "linux=$(/tmp/mcc-ci plan --job linux)" >> "$GITHUB_OUTPUT"
-          echo "macos=$(/tmp/mcc-ci plan --job macos)" >> "$GITHUB_OUTPUT"
-          echo "windows=$(/tmp/mcc-ci plan --job windows)" >> "$GITHUB_OUTPUT"
-          echo "qemu=$(/tmp/mcc-ci plan --job qemu)" >> "$GITHUB_OUTPUT"
+          echo "linux=$(mcc-ci plan --job linux)" >> "$GITHUB_OUTPUT"
+          echo "macos=$(mcc-ci plan --job macos)" >> "$GITHUB_OUTPUT"
+          echo "windows=$(mcc-ci plan --job windows)" >> "$GITHUB_OUTPUT"
+          echo "qemu=$(mcc-ci plan --job qemu)" >> "$GITHUB_OUTPUT"
 
   linux:
     needs: plan
@@ -70,15 +70,15 @@ jobs:
             mingw-w64 python3
           mkdir -p ~/.apt-cache
           cp -n /var/cache/apt/archives/*.deb ~/.apt-cache/ 2>/dev/null || true
+      - uses: ./.github/actions/ci
       - name: run ${{ matrix.preset }}
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p "dist/$ART"
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" ${{ matrix.flags }}
+          mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" ${{ matrix.flags }}
       - name: test summary
         if: always()
         run: |
-          /tmp/mcc-ci junit-summary "cmake-${{ matrix.preset }}/ctest-junit.xml" \
+          mcc-ci junit-summary "cmake-${{ matrix.preset }}/ctest-junit.xml" \
             "${{ matrix.preset }} / ${{ matrix.arch }}" >> "$GITHUB_STEP_SUMMARY" || true
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
@@ -128,11 +128,11 @@ jobs:
           else
             echo "CC=clang" >> "$GITHUB_ENV"
           fi
+      - uses: ./.github/actions/ci
       - name: run ${{ matrix.preset }} (configure + build + test + install)
         # The benchmark lives in its own workflow (bench.yml, push-to-main
         # only) so per-push/PR CI is not gated on a ~10-min compile-speed run.
         run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c
           extra=""
           if [ "${{ matrix.arch }}" = x86_64 ]; then
             extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
@@ -142,7 +142,7 @@ jobs:
             # are fully covered by the native arm64 macOS and Linux cells.
             export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
           fi
-          /tmp/mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
+          mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
             "-DMCC_DIST_PLAT=$ART" $extra
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
@@ -212,6 +212,7 @@ jobs:
           if ($gcc)   { "MCC_DIFF3_GCC=$($gcc.Replace('\','/'))"     | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($clang) { "MCC_DIFF3_CLANG=$($clang.Replace('\','/'))" | Out-File -FilePath $env:GITHUB_ENV -Append }
           if ($gcc -and $clang) { "MCC_DIFF3_READY=1" | Out-File -FilePath $env:GITHUB_ENV -Append }
+      - uses: ./.github/actions/ci
       - name: run ${{ matrix.preset }} (msvc - configure + build + test + install)
         if: ${{ !matrix.mingw }}
         env:
@@ -223,28 +224,26 @@ jobs:
         # in the log instead of stalling the whole job until it is cancelled.
         # Benchmark runs in bench.yml (push-to-main only), not here.
         run: |
-          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
-          .\ci.exe run-preset ${{ matrix.preset }} --config Release --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_DIST_PLAT=${env:ART}" -- --timeout 300
+          mcc-ci run-preset ${{ matrix.preset }} --config Release --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_DIST_PLAT=${env:ART}" -- --timeout 300
       - name: run ${{ matrix.preset }} (mingw superbuild - fetches winlibs GCC; each cell builds + ctest)
         if: matrix.mingw
         # --no-test suppresses only the empty top-level ctest; the winlibs cell
         # runs the full suite (and emits ctest-junit.xml) inside the superbuild.
         run: |
-          cl /nologo /O2 /Fe:ci.exe tools\ci.c tools\toolsupport.c
-          .\ci.exe run-preset mingw --no-test --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_DIST_PLAT=${env:ART}" "-DMCC_MINGW_ARCH=${{ matrix.arch }}"
+          mcc-ci run-preset mingw --no-test --out "$($PWD.Path.Replace('\','/'))/dist/${env:ART}" "-DMCC_DIST_PLAT=${env:ART}" "-DMCC_MINGW_ARCH=${{ matrix.arch }}"
       - name: test summary
         if: always()
         shell: pwsh
         run: |
-          if (-not (Test-Path ci.exe)) { exit 0 }
+          if (-not (Get-Command mcc-ci -ErrorAction SilentlyContinue)) { exit 0 }
           $xml = if ("${{ matrix.mingw }}" -eq "true") { "cmake-mingw/mingw-native/ctest-junit.xml" } else { "cmake-${{ matrix.preset }}/ctest-junit.xml" }
-          .\ci.exe junit-summary "$xml" "${{ matrix.preset }} / ${{ matrix.arch }}${{ matrix.nshards > 1 && format(' ({0}/{1})', matrix.shard, matrix.nshards) || '' }}" | Out-File -FilePath "${env:GITHUB_STEP_SUMMARY}" -Append -Encoding utf8
+          mcc-ci junit-summary "$xml" "${{ matrix.preset }} / ${{ matrix.arch }}${{ matrix.nshards > 1 && format(' ({0}/{1})', matrix.shard, matrix.nshards) || '' }}" | Out-File -FilePath "${env:GITHUB_STEP_SUMMARY}" -Append -Encoding utf8
       - name: assert diff3 suite ran (guard against a silent no-op when refs resolved)
         if: env.MCC_DIFF3_READY == '1' && !matrix.mingw && matrix.preset != 'sanitize-msvc' && matrix.arch != 'arm64'
         shell: pwsh
         run: |
-          if (-not (Test-Path ci.exe)) { exit 0 }
-          .\ci.exe junit-assert "cmake-${{ matrix.preset }}/ctest-junit.xml" --expect diff3/=1
+          if (-not (Get-Command mcc-ci -ErrorAction SilentlyContinue)) { exit 0 }
+          mcc-ci junit-assert "cmake-${{ matrix.preset }}/ctest-junit.xml" --expect diff3/=1
       - name: pack build targets
         if: ${{ matrix.shard == 1 || !matrix.nshards }}
         run: tar cJf "${env:ART}.tar.xz" -C dist "${env:ART}"
@@ -283,15 +282,14 @@ jobs:
           path: vendor/gentoo-stage3-*
           key: gentoo-stage3-${{ matrix.batch }}
           restore-keys: gentoo-stage3-
+      - uses: ./.github/actions/ci
       - name: run qemu batch ${{ matrix.batch }} (${{ matrix.label }})
         env:
           ARCHS: ${{ matrix.archs }}
           LIBCS: glibc;musl
-        run: |
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
-          /tmp/mcc-ci qemu
+        run: mcc-ci qemu
       - name: test summary
         if: always()
         run: |
-          /tmp/mcc-ci junit-summary "cmake-qemu/ctest-junit.xml" \
+          mcc-ci junit-summary "cmake-qemu/ctest-junit.xml" \
             "qemu / ${{ matrix.host }} / ${{ matrix.label }}" >> "$GITHUB_STEP_SUMMARY" || true

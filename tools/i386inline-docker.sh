@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
@@ -10,18 +11,13 @@ WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 IMAGE_BUILD="debian:bookworm-slim"
 IMAGE_386="${MCC_I386_DOCKER_IMAGE:-i386/debian:bullseye-slim}"
 
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/386 "$IMAGE_386" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/386 containers ($IMAGE_386)"; exit 77
-fi
+dg_need_docker
+dg_need_platform linux/386 "$IMAGE_386"
 
 # --- stage 1: build optimizer-enabled i386 cross mcc in linux/amd64, prove
 #     graft via the compiler's own marker + objdump, and emit tested/ref/main
 #     C sources for the qemu differential (run in stage 2 under linux/386). ---
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/amd64 \
+dg_docker run --rm --platform linux/amd64 \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive
@@ -216,8 +212,7 @@ if [ "$GRAFT_OK" != 1 ]; then echo "I386INLINE FAIL (graft evidence)"; exit 1; f
 '
 
 echo "== docker linux/386: compile ref+main with gcc -m32, link, run differential =="
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/386 -v "$WP":/w -w /w "$IMAGE_386" sh -c '
+dg_docker run --rm --platform linux/386 -v "$WP":/w -w /w "$IMAGE_386" sh -c '
 set -e
 if ! command -v gcc >/dev/null || [ ! -e /usr/lib/i386-linux-gnu/crti.o ] && [ ! -e /usr/lib/crti.o ]; then
   apt-get update >/dev/null 2>&1 || { echo "SKIP: apt update failed in linux/386"; exit 77; }

@@ -29,6 +29,7 @@
 # Exit:  0 all pass · 1 a check failed · 77 skipped (no docker / arm64 / inputs)
 
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 MCC="${1:-}"
 MCCDIR="${2:-}"
@@ -36,25 +37,16 @@ WORK="${3:-./w-arm64pe-wine}"
 IMAGE="${MCC_ARM64_WINE_IMAGE:-mcc-wine-arm64:local}"
 BASE_IMAGE="${MCC_ARM64_WINE_BASE:-debian:bookworm-slim}"
 
-if [ -z "$MCC" ] || [ ! -x "$MCC" ]; then
-	echo "SKIP: arm64-win32 mcc not found at '${MCC:-<unset>}'"
-	exit 77
-fi
+dg_need_bin "$MCC" "arm64-win32 mcc"
 if [ -z "$MCCDIR" ] || [ ! -d "$MCCDIR" ]; then
 	echo "SKIP: arm64-win32 mccdir sysroot not found at '${MCCDIR:-<unset>}'"
 	exit 77
 fi
-if ! command -v docker >/dev/null 2>&1; then
-	echo "SKIP: docker not available"
-	exit 77
-fi
-if ! docker run --rm --platform linux/arm64 "$BASE_IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/arm64 containers ($BASE_IMAGE)"
-	exit 77
-fi
+dg_need_docker
+dg_need_platform linux/arm64 "$BASE_IMAGE"
 
 # Build (once) a cached wine-arm64 image so re-runs don't re-apt under emulation.
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+if ! dg_docker image inspect "$IMAGE" >/dev/null 2>&1; then
 	echo "== building cached wine-arm64 image $IMAGE (first run; slow under emulation) =="
 	tmpd=$(mktemp -d)
 	cat > "$tmpd/Dockerfile" <<EOF
@@ -63,7 +55,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y -qq wine && rm -rf /var/lib/apt/lists/*
 ENV WINEDEBUG=-all
 EOF
-	if ! docker buildx build --platform linux/arm64 --load -t "$IMAGE" "$tmpd" >/dev/null 2>&1; then
+	if ! dg_docker buildx build --platform linux/arm64 --load -t "$IMAGE" "$tmpd" >/dev/null 2>&1; then
 		rm -rf "$tmpd"
 		echo "SKIP: could not build wine-arm64 image (no wine for arm64?)"
 		exit 77
@@ -138,8 +130,7 @@ echo "== host: mcc-arm64-win32 -> arm64 PE (hello + jit-dispatch) =="
 echo "== docker linux/arm64: run both under wine-arm64 =="
 # Git-Bash on Windows rewrites the container-side `/w` of `-v`/`-w`; disable its
 # POSIX->Win path munging for just this command (a no-op on real POSIX hosts).
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/arm64 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
+dg_docker run --rm --platform linux/arm64 -v "$WORK_ABS":/w -w /w "$IMAGE" sh -c '
 	export WINEPREFIX=/tmp/wp
 	wineboot -i >/dev/null 2>&1 || true
 	fail=0

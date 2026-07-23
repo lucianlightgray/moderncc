@@ -31,16 +31,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
           path: dl
       - name: collect + combine checksums
         run: |
           set -eux
-          cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl
           mkdir -p out
           find dl -type f ! -name 'checksums-*.txt' -exec cp {} out/ \;
-          /tmp/mcc-ci sha256sums dl --out out/SHA256SUMS.txt
+          mcc-ci sha256sums dl --out out/SHA256SUMS.txt
           ls -l out
       - name: publish GitHub Release
         uses: softprops/action-gh-release@v3

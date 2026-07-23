@@ -478,6 +478,18 @@ static const struct {
 		{PS_DIST_MINGW, "windows-x86_64-mingw", "windows-latest", "x64", 1},
 		{0, 0, 0, 0, 0}};
 
+/* One compile-speed benchmark cell per OS family: a representative native
+ * preset whose reference compilers (gcc+clang+mingw on Linux, native clang+gcc
+ * on macOS, msvc on Windows) cover the differential without re-running the
+ * build matrix. Same ledger as the rest so `ci parity` sees the presets. */
+static const struct {
+	const char *preset, *plat, *runner, *cc, *msvcarch;
+} PLAN_BENCH[] = {
+		{"linux-gcc", "linux-x86_64", "ubuntu-latest", "", ""},
+		{"macos", "macos-arm64", "macos-15", "clang", ""},
+		{"msvc", "windows-x86_64-msvc", "windows-latest", "", "x64"},
+		{0, 0, 0, 0, 0}};
+
 static const struct {
 	const char *name, *why;
 } PS_EXEMPT[] = {
@@ -489,8 +501,6 @@ static const struct {
 		{"diagnostics", "alias: = linux-gcc-diagnostics with unpinned cc"},
 		{"cross", "alias: = linux-gcc-cross with unpinned cc"},
 		{0, 0}};
-
-#include "ci_artifacts.h"
 
 static int loc_have(const char *name) {
 	char buf[4096];
@@ -1273,6 +1283,9 @@ static void plan_presets(const char *job, StrSet *s) {
 		for (i = 0; PLAN_DIST_WIN[i].preset; i++)
 			set_add(s, PLAN_DIST_WIN[i].preset,
 							(int)strlen(PLAN_DIST_WIN[i].preset));
+	} else if (!strcmp(job, "bench")) {
+		for (i = 0; PLAN_BENCH[i].preset; i++)
+			set_add(s, PLAN_BENCH[i].preset, (int)strlen(PLAN_BENCH[i].preset));
 	}
 }
 
@@ -1310,7 +1323,7 @@ static int do_plan(int argc, char **argv) {
 			job = argv[++i];
 	if (!job) {
 		fprintf(stderr,
-						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|dist-unix|dist-windows>\n");
+						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|bench|dist-unix|dist-windows>\n");
 		return 2;
 	}
 	printf("[");
@@ -1382,6 +1395,14 @@ static int do_plan(int argc, char **argv) {
 								PLAN_DIST_WIN[i].preset, PLAN_DIST_WIN[i].plat,
 								PLAN_DIST_WIN[i].runner, PLAN_DIST_WIN[i].msvcarch,
 								PLAN_DIST_WIN[i].mingw ? ",\"mingw\":true" : "");
+	} else if (!strcmp(job, "bench")) {
+		for (i = 0; PLAN_BENCH[i].preset; i++)
+			plan_cell(&first,
+								"\"preset\":\"%s\",\"plat\":\"%s\",\"runner\":\"%s\","
+								"\"cc\":\"%s\",\"msvcarch\":\"%s\"",
+								PLAN_BENCH[i].preset, PLAN_BENCH[i].plat,
+								PLAN_BENCH[i].runner, PLAN_BENCH[i].cc,
+								PLAN_BENCH[i].msvcarch);
 	} else {
 		fprintf(stderr, "ci plan: unknown job '%s'\n", job);
 		return 2;
@@ -1405,7 +1426,9 @@ static int do_parity(int argc, char **argv) {
 			".github/workflows/ci.yml",
 			".github/workflows/matrix.yml",
 			".github/workflows/release.yml",
-			".github/workflows/dist.yml", 0};
+			".github/workflows/dist.yml",
+			".github/workflows/bench.yml",
+			".github/workflows/fuzz-nightly.yml", 0};
 	const char *root = ".";
 	char *text, *wf_vals[8] = {0};
 	StrSet all, loc, wfplan;
@@ -2033,110 +2056,97 @@ static int do_junit_assert(int argc, char **argv) {
 	return bad ? 1 : 0;
 }
 
-typedef struct {
-	char *p;
-	size_t n, cap;
-} EmitBuf;
-
-static void eb_put(EmitBuf *b, const char *s, size_t n) {
-	if (b->n + n + 1 > b->cap) {
-		while (b->n + n + 1 > b->cap)
-			b->cap = b->cap ? b->cap * 2 : 8192;
-		b->p = realloc(b->p, b->cap);
-	}
-	memcpy(b->p + b->n, s, n);
-	b->n += n;
-	b->p[b->n] = 0;
-}
-
-static void eb_puts(EmitBuf *b, const char *s) {
-	eb_put(b, s, strlen(s));
-}
-
-static void emit_expand(EmitBuf *b, const char *tmpl) {
-	const char *p = tmpl;
-	while (*p) {
-		if (*p == '@') {
-			if (!strncmp(p, "@BOOT@", 6)) {
-				eb_puts(b, "cc -O2 -o /tmp/mcc-ci tools/ci.c tools/toolsupport.c -ldl");
-				p += 6;
-				continue;
-			}
-			if (!strncmp(p, "@QEMUBINS@", 10)) {
-				int i;
-				for (i = 0; QBIN[i]; i++) {
-					if (i)
-						eb_put(b, " ", 1);
-					eb_puts(b, QBIN[i]);
-				}
-				p += 10;
-				continue;
-			}
-		}
-		eb_put(b, p, 1);
-		p++;
-	}
-}
-
-static int do_emit(int argc, char **argv) {
-	const char *root = ".";
-	int i, check = 0, write = 0, drift = 0;
+/* Differential-fuzz campaign (fuzz-nightly.yml). Configures the debug preset
+ * with gcc+clang as the same-ISA oracle, builds mcc + fuzz_runner, and runs the
+ * whole-pipeline miscompile campaign. The campaign's exit code is this verb's
+ * status (nonzero = a new miscompile class), so the workflow gates on it. */
+static int do_fuzz(int argc, char **argv) {
+	const char *budget = "5400", *batch = "50", *stopclass = "20";
+	const char *builddir = "cmake-debug", *work = NULL;
+	char gcc[4096], clang[4096], mccbin[4200], fuzzbin[4200];
+	char dgcc[4200], dclang[4200], jflag[32], workbuf[4096];
+	int i, jobs = host_nproc();
 
 	for (i = 0; i < argc; i++) {
-		if (!strcmp(argv[i], "--check"))
-			check = 1;
-		else if (!strcmp(argv[i], "--write"))
-			write = 1;
-		else if (!strcmp(argv[i], "--srcroot") && i + 1 < argc)
-			root = argv[++i];
+		if (!strcmp(argv[i], "--budget") && i + 1 < argc)
+			budget = argv[++i];
+		else if (!strcmp(argv[i], "--batch") && i + 1 < argc)
+			batch = argv[++i];
+		else if (!strcmp(argv[i], "--stop-classes") && i + 1 < argc)
+			stopclass = argv[++i];
+		else if (!strcmp(argv[i], "--work") && i + 1 < argc)
+			work = argv[++i];
 	}
-	if (check == write) {
-		fprintf(stderr, "usage: ci emit <--check|--write> [--srcroot DIR]\n");
+	if (!work) {
+		const char *tmp = getenv("RUNNER_TEMP");
+		snprintf(workbuf, sizeof workbuf, "%s/fuzz-work",
+						 (tmp && *tmp) ? tmp : ".");
+		work = workbuf;
+	}
+	if (!host_find_tool("gcc", NULL, gcc, sizeof gcc) ||
+			!host_find_tool("clang", NULL, clang, sizeof clang)) {
+		fprintf(stderr,
+						"ci fuzz: need both gcc and clang on PATH (same-ISA oracle)\n");
 		return 2;
 	}
-	for (i = 0; EMIT_FILES[i].path; i++) {
-		EmitBuf b = {0, 0, 0};
-		char path[4096];
-		emit_expand(&b, EMIT_FILES[i].tmpl);
-		ts_path(path, sizeof path, root, "%s", EMIT_FILES[i].path);
-		if (check) {
-			char *cur = ts_read_file(path, NULL);
-			if (!cur || strcmp(cur, b.p)) {
-				fprintf(stderr, "ci emit: DRIFT %s\n", EMIT_FILES[i].path);
-				drift = 1;
-			}
-			free(cur);
-		} else {
-			FILE *f = fopen(path, "wb");
-			if (!f) {
-				fprintf(stderr, "ci emit: cannot write %s\n", path);
-				free(b.p);
-				return 1;
-			}
-			fwrite(b.p, 1, b.n, f);
-			fclose(f);
-			printf("ci emit: wrote %s\n", EMIT_FILES[i].path);
-		}
-		free(b.p);
+	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
+
+	{
+		Argv v = {{0}, 0};
+		snprintf(dgcc, sizeof dgcc, "-DMCC_DIFF3_GCC=%s", gcc);
+		snprintf(dclang, sizeof dclang, "-DMCC_DIFF3_CLANG=%s", clang);
+		ts_arg(&v, ci_cmake());
+		ts_arg(&v, "--preset");
+		ts_arg(&v, "debug");
+		ts_arg(&v, dgcc);
+		ts_arg(&v, dclang);
+		if (ci_phase("configuring (preset=debug)", ts_argz(&v)))
+			return 1;
 	}
-	if (check && drift) {
-		fprintf(stderr,
-						"ci emit: checked-in artifacts diverge from the tools/ci.c templates;"
-						" run `ci emit --write` to regenerate\n");
-		return 1;
+	{
+		Argv v = {{0}, 0};
+		ts_arg(&v, ci_cmake());
+		ts_arg(&v, "--build");
+		ts_arg(&v, builddir);
+		ts_arg(&v, jflag);
+		ts_arg(&v, "--target");
+		ts_arg(&v, "mcc");
+		ts_arg(&v, "fuzz_runner");
+		if (ci_phase("building (mcc fuzz_runner)", ts_argz(&v)))
+			return 1;
 	}
-	if (check)
-		printf("ci emit: all %d artifact(s) up to date\n", i);
-	return 0;
+	{
+		Argv v = {{0}, 0};
+		snprintf(fuzzbin, sizeof fuzzbin, "%s/fuzz_runner", builddir);
+		snprintf(mccbin, sizeof mccbin, "%s/mcc", builddir);
+		ts_arg(&v, fuzzbin);
+		ts_arg(&v, "campaign");
+		ts_arg(&v, mccbin);
+		ts_arg(&v, builddir);
+		ts_arg(&v, "runtime/include");
+		ts_arg(&v, "tests/fuzz/corpus");
+		ts_arg(&v, work);
+		ts_arg(&v, budget);
+		ts_arg(&v, batch);
+		ts_arg(&v, stopclass);
+		ts_arg(&v, "--ref");
+		ts_arg(&v, "gcc");
+		ts_arg(&v, gcc);
+		ts_arg(&v, "--ref");
+		ts_arg(&v, "clang");
+		ts_arg(&v, clang);
+		printf("==> fuzz campaign (budget=%ss batch=%s)\n", budget, batch);
+		return ts_run(ts_argz(&v));
+	}
 }
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|plan|parity|emit|bench-summary|pkg|sha256sums> ...\n");
+		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|plan|parity|fuzz|bench-summary|pkg|sha256sums> ...\n");
 		return 2;
 	}
-	if (!strcmp(argv[1], "emit"))
-		return do_emit(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "fuzz"))
+		return do_fuzz(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "stage"))
 		return do_stage(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "run-preset"))

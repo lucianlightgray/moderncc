@@ -35,25 +35,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build build-essential gcc clang git
-      - name: build mcc + fuzz runner
-        run: |
-          cmake --preset debug \
-            -DMCC_DIFF3_GCC="$(command -v gcc)" \
-            -DMCC_DIFF3_CLANG="$(command -v clang)"
-          cmake --build cmake-debug -j"$(nproc)" --target mcc fuzz_runner
+      - uses: ./.github/actions/ci
       - name: run campaign
+        # `ci fuzz` configures the debug preset with gcc+clang as the same-ISA
+        # oracle, builds mcc + fuzz_runner, and runs the campaign; its exit code
+        # (nonzero = a new miscompile class) is captured for the gate below.
         env:
           MCC_FUZZ_SEED: ${{ github.run_number }}0000
         run: |
           budget='${{ github.event.inputs.budget }}'; budget="${budget:-5400}"
           batch='${{ github.event.inputs.batch }}';   batch="${batch:-50}"
           set +e
-          cmake-debug/fuzz_runner campaign \
-            cmake-debug/mcc cmake-debug runtime/include \
-            tests/fuzz/corpus "$RUNNER_TEMP/fuzz-work" \
-            "$budget" "$batch" 20 \
-            --ref gcc "$(command -v gcc)" --ref clang "$(command -v clang)" \
-            | tee "$RUNNER_TEMP/campaign.log"
+          mcc-ci fuzz --budget "$budget" --batch "$batch" | tee "$RUNNER_TEMP/campaign.log"
           echo "campaign_rc=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
       - name: summary
         if: always()

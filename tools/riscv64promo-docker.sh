@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
@@ -9,15 +10,10 @@ WORK_ABS="$(cd "$WORK" && pwd)"
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 IMAGE="debian:bookworm-slim"
 
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/amd64 "$IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/amd64 containers ($IMAGE)"; exit 77
-fi
+dg_need_docker
+dg_need_platform linux/amd64 "$IMAGE"
 
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/amd64 \
+dg_docker run --rm --platform linux/amd64 \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive

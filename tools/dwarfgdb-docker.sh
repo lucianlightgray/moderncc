@@ -15,6 +15,7 @@
 # Usage:  tools/dwarfgdb-docker.sh [workdir]
 # Exit:   0 pass · 1 a failure · 77 skipped (no docker / gdb / platform)
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
@@ -29,15 +30,10 @@ case "$HOSTM" in
 	*)             IMAGE="debian:bookworm-slim";          MDEF="-DMCC_TARGET_X86_64=1" ;;
 esac
 
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! docker info >/dev/null 2>&1; then echo "SKIP: docker daemon not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm "$IMAGE" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run Linux containers ($IMAGE)"; exit 77
-fi
+dg_need_docker
+dg_need_platform "" "$IMAGE"
 
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm -e MDEF="$MDEF" \
+dg_docker run --rm -e MDEF="$MDEF" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive

@@ -19,19 +19,16 @@
 #         (no docker / no mcc-riscv64 / cannot run linux/amd64 / no qemu-riscv64).
 
 set -eu
+. "$(dirname "$0")/dockergate.sh"
 
 MCC="${1:-}"
 WORK="${2:-./w-riscv64const}"
 IMAGE_BUILD="${MCC_DIVMAGIC_BUILD_IMAGE:-debian:bookworm-slim}"
 
-if [ -z "$MCC" ] || [ ! -x "$MCC" ]; then echo "SKIP: riscv64 mcc not found at '${MCC:-<unset>}'"; exit 77; fi
-if ! command -v docker >/dev/null 2>&1; then echo "SKIP: docker not available"; exit 77; fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/amd64 "$IMAGE_BUILD" true >/dev/null 2>&1; then
-	echo "SKIP: cannot run linux/amd64 containers ($IMAGE_BUILD)"; exit 77
-fi
-if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-     docker run --rm --platform linux/amd64 "$IMAGE_BUILD" sh -c '
+dg_need_bin "$MCC" "riscv64 mcc"
+dg_need_docker
+dg_need_platform linux/amd64 "$IMAGE_BUILD"
+if ! dg_docker run --rm --platform linux/amd64 "$IMAGE_BUILD" sh -c '
        export DEBIAN_FRONTEND=noninteractive
        apt-get update -qq >/dev/null 2>&1
        apt-get install -y -qq gcc-riscv64-linux-gnu qemu-user-static >/dev/null 2>&1
@@ -68,8 +65,7 @@ print('int main(){int n=sizeof C/sizeof C[0];for(int i=0;i<n;i++)printf("%016llx
 GEN
 
 echo "== docker linux/amd64: build riscv64 cross mcc + constant sweep + qemu diff vs gcc =="
-MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
-docker run --rm --platform linux/amd64 \
+dg_docker run --rm --platform linux/amd64 \
 	-v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
 	set -e
 	export DEBIAN_FRONTEND=noninteractive
