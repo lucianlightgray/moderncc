@@ -2668,18 +2668,38 @@ static int mccjit_bench_rounds(void) { MCC_TRACE("enter\n");
 	return 3;
 }
 
-static double mccjit_bench_run(void *fn, const int64_t *tuples, uint32_t ntuples,
-															uint32_t nargs, int wide, uint32_t reps) { MCC_TRACE("enter\n");
-	struct timespec t0;
+static double mccjit_ts_delta(const struct timespec *a,
+															const struct timespec *b) { MCC_TRACE("enter\n");
+	return (double)(b->tv_sec - a->tv_sec) +
+				 (double)(b->tv_nsec - a->tv_nsec) / 1000000000.0;
+}
+
+static void mccjit_bench_run_pair(void *cand, void *incumbent,
+																	const int64_t *tuples, uint32_t ntuples,
+																	uint32_t nargs, int wide, uint32_t reps,
+																	double *cand_s, double *inc_s) { MCC_TRACE("enter\n");
 	int64_t sink = 0;
+	double c = 0.0, ic = 0.0;
 	uint32_t r, i;
-	if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0)
-		{ MCC_TRACE("br\n"); return 1e300; }
-	for (r = 0; r < reps; r++)
-		{ MCC_TRACE("br\n"); for (i = 0; i < ntuples; i++)
-			{ MCC_TRACE("br\n"); sink += mccjit_invoke(fn, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide); } }
+	struct timespec t0, t1, t2;
+	*cand_s = *inc_s = 1e300;
+	for (r = 0; r < reps; r++) { MCC_TRACE("br\n");
+		if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0)
+			{ MCC_TRACE("br\n"); return; }
+		for (i = 0; i < ntuples; i++)
+			{ MCC_TRACE("br\n"); sink += mccjit_invoke(cand, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide); }
+		if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0)
+			{ MCC_TRACE("br\n"); return; }
+		for (i = 0; i < ntuples; i++)
+			{ MCC_TRACE("br\n"); sink += mccjit_invoke(incumbent, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide); }
+		if (clock_gettime(CLOCK_MONOTONIC, &t2) != 0)
+			{ MCC_TRACE("br\n"); return; }
+		c += mccjit_ts_delta(&t0, &t1);
+		ic += mccjit_ts_delta(&t1, &t2);
+	}
 	mccjit_bench_sink ^= sink;
-	return mccjit_elapsed(&t0);
+	*cand_s = c;
+	*inc_s = ic;
 }
 
 /* K5/L4A/L5A promotion scorer: best-of-3 wall-clock benchmark of a candidate
@@ -2703,8 +2723,9 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	if (reps < 1)
 		{ MCC_TRACE("br\n"); reps = 1; }
 	for (k = 0; k < (uint32_t)rounds; k++) { MCC_TRACE("br\n");
-		double c = mccjit_bench_run(cand, tuples, ntuples, nargs, wide, reps);
-		double i2 = mccjit_bench_run(incumbent, tuples, ntuples, nargs, wide, reps);
+		double c, i2;
+		mccjit_bench_run_pair(cand, incumbent, tuples, ntuples, nargs, wide, reps,
+													&c, &i2);
 		if (c < cb)
 			{ MCC_TRACE("br\n"); cb = c; }
 		if (i2 < ib)
