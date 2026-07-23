@@ -168,7 +168,6 @@ Classification of every arch/host-scoped gate by how much work stands between it
 
 - Regenerate the `ast-verify-ratchet` baselines for the non-win32/linux targets — they SKIP until regenned.
 - Model the AST recorder's `desync` bucket shapes (struct-by-value ABI, bitfields, VLAs, C11 atomics, `__attribute__((cleanup))`, `_Complex`, `_Noreturn`, inline asm) — the recorder currently declines these, each an unmodeled construct that can silently miscompile once the fidelity net is retired.
-- Fix the pre-existing red `build-md-nodes` test (`MCC_BENCH` missing from `BUILD.md`; drift from the benchmark merge `74ea1f8d`).
 - Provide a runnable test for the kernel-fused libSystem path (`MCC_DARWIN_HOST=ON`) — nothing exercises it currently.
 - Promote the `mingw i686` CI cell off `continue-on-error`/`matrix.experimental` (ci.c PLAN_MINGW `{"i686", 1}`) once i386-Windows codegen is proven.
 - Confirm the `-fexcess-precision=standard` i386 WIN32 refflags fix (CMakeLists.txt ~3799) on the `windows-2025-vs2026` UCRT CI image — speculative, only reproduces there.
