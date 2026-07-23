@@ -2655,16 +2655,18 @@ endif()
 # --embed-jit, so the resulting binary carries the JIT engine and, at runtime
 # under MCC_JIT=1, profile-guided-recompiles and hot-swaps its own hot
 # functions in-process. Requires the reemit optimizer + the engine blob.
-# Baking needs -O1+ (never -O0). The Apple Mach-O and PE bake paths have their
-# own open blockers, so those triples build the tool but skip the self-host.
-# STATUS (2026-07-22): builds + self-JITs on linux/arm64 (MCC_JIT=0 output is
-# correct; MCC_JIT=1 does 59 runtime recompiles + live hot-swaps of its own
-# functions, all logged), but full self-host still SIGBUSes when a JIT'd
-# variant of a complex mcc function corrupts the frame — an open JIT-codegen
-# robustness bug tracked in docs/TODO.md. Default OFF; opt-in only.
+# Baking needs -O1+ (never -O0). The PE bake path still has an open blocker, so
+# that triple builds the tool but skips the self-host; ELF and Apple Mach-O are
+# wired up. STATUS (2026-07-22): builds + self-JITs on linux/arm64 and
+# arm64/macOS (MCC_JIT=0 output is correct; MCC_JIT=1 re-JITs its baked
+# search-optimized variants at boot via the KGC cache — 57 recompiles + 717 KGC
+# hits/run on macOS — and self-compiles the amalgamation crash-free). A JIT'd
+# variant of a complex mcc function can still SIGBUS on the runtime hot-swap
+# path under heavier promotion (open JIT-codegen robustness bug, docs/TODO.md).
+# Default OFF; opt-in only.
 mcc_config_node(MCC_BUILD_JIT_SELFHOST TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER"
-    HELP "EXPERIMENTAL. Build mcc-jit: a stage-2 mcc self-compiled with --embed-jit (JITs its own hot functions at runtime). ELF only; Apple/PE bake paths gated off. Full self-host has an open SIGBUS (a JIT'd variant corrupts the frame) — self-JITs + logs stats but is not yet crash-free.")
+    HELP "EXPERIMENTAL. Build mcc-jit: a stage-2 mcc self-compiled with --embed-jit (JITs its own hot functions at runtime). ELF + Apple Mach-O; PE bake path still gated off. The runtime hot-swap path can still SIGBUS on a complex JIT'd variant under heavier promotion — boots + self-compiles crash-free but is not yet proven crash-free under full runtime promotion.")
 
 function(mcc_add_jit_selfhost out_path stage0_mcc)
     # Reconstruct the exact compile flags the stage-0 mcc target was built with:
@@ -2696,9 +2698,7 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
 endfunction()
 
 if(MCC_BUILD_JIT_SELFHOST AND MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER AND TARGET libmcc_jitengine)
-    if(APPLE)
-        message(STATUS "mcc: JIT self-host (native) skipped — Apple Mach-O --embed-jit bake is unresolved (_mccjit_boot_swap)")
-    elseif(MCC_TARGETOS STREQUAL "WIN32")
+    if(MCC_TARGETOS STREQUAL "WIN32")
         message(STATUS "mcc: JIT self-host (native) skipped — PE --embed-jit needs the mingw-runtime embed path")
     else()
         mcc_add_jit_selfhost("${CMAKE_BINARY_DIR}/mcc-jit" mcc)
