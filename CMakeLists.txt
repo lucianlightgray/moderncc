@@ -4712,11 +4712,11 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 300)
         endif()
 
-        # NOT WIN32: the PE runtime-JIT self-host still faults (0xC0000005) in the
-        # in-memory -run recompile (needs Windows HW to debug; tracked in docs/TODO).
-        # The MSVC multi-config layout also hides mcc.exe from the script's build-dir
-        # lookup, so registering it there only ever red/errors. Skip on Windows.
-        if(MCC_PYTHON3 AND MCC_EMBED_JIT AND NOT WIN32)
+        # Covers the ELF/Mach-O AND PE self-host JIT: the earlier PE 0xC0000005
+        # (an ast_reemit-pool use-after-free) is fixed; verified byte-identical on
+        # this host with mingw-gcc + MSVC cl at HEAD. selfhost-jit.py locates
+        # mcc.exe in both the single-config (Ninja) and multi-config (VS) layouts.
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT)
             add_test(NAME selfhost-jit
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")
