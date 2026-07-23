@@ -2756,6 +2756,19 @@ add_custom_target(mcc-stats
     VERBATIM USES_TERMINAL
     COMMENT "mcc -O10 --stats: 10s live optimizer/JIT search stats panel over src/mcc.c")
 
+if(MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER)
+    find_program(MCC_PYTHON3 NAMES python3 python)
+    if(MCC_PYTHON3)
+        add_custom_target(mcc-jit-selfcheck
+            COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
+                    "${CMAKE_BINARY_DIR}" "${MCC_CPU}"
+            DEPENDS mcc mccrt
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            VERBATIM USES_TERMINAL
+            COMMENT "JIT self-host self-check: mcc --jit -O4 -run src/mcc.c, assert byte-identical to AOT")
+    endif()
+endif()
+
 function(mcc_add_cross_mcc base_tgt base_out static_tgt static_out defs)
     set(_variants "${base_tgt}|${base_out}|dynamic")
     if(MCC_BUILD_STATIC_EXE AND NOT MCC_CC_NAME STREQUAL "msvc")
@@ -4697,6 +4710,14 @@ if(MCC_BUILD_TESTS)
                         MCC_AST_SPILL_SHARE=1 MCC_AST_VLAT=1 MCC_AST_DIVMAGIC=1)
             set_tests_properties(selfhost-fixpoint-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
+        endif()
+
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT)
+            add_test(NAME selfhost-jit
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
+                        "${CMAKE_BINARY_DIR}" "${MCC_CPU}")
+            set_tests_properties(selfhost-jit PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 TIMEOUT 300)
         endif()
 
         if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
