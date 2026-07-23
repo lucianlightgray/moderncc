@@ -2690,7 +2690,7 @@ static int mccjit_bench_cores(void) { MCC_TRACE("enter\n");
 	long n = 0;
 	if (e && e[0]) { MCC_TRACE("br\n");
 		n = strtol(e, NULL, 10);
-	} else {
+	} else { MCC_TRACE("br\n");
 #if defined _SC_NPROCESSORS_ONLN
 		n = sysconf(_SC_NPROCESSORS_ONLN);
 #endif
