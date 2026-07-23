@@ -151,6 +151,8 @@ float _Complex  cx_cf_id(float _Complex z);
 double _Complex cx_cd_id(double _Complex z);
 double _Complex cx_cd_after7(double a,double b,double c,double d,double e,double f,double g, double _Complex z);
 float _Complex  cx_cf_after7(float a,float b,float c,float d,float e,float f,float g, float _Complex z);
+double hfx_nsrn(double a,double b,double c,double d,double e,double f,double g, struct DblPair s, double x);
+double hfx_full(double a,double b,double c,double d,double e,double f,double g,double h, struct Float4 s, double x);
 EOF
 
 cat > /w/lib.c <<EOF
@@ -231,6 +233,8 @@ float _Complex  cx_cf_id(float _Complex z){ return z; }
 double _Complex cx_cd_id(double _Complex z){ return z; }
 double _Complex cx_cd_after7(double a,double b,double c,double d,double e,double f,double g, double _Complex z){ return z + (a+b+c+d+e+f+g); }
 float _Complex  cx_cf_after7(float a,float b,float c,float d,float e,float f,float g, float _Complex z){ return z + (a+b+c+d+e+f+g); }
+double hfx_nsrn(double a,double b,double c,double d,double e,double f,double g, struct DblPair s, double x){ return a+b+c+d+e+f+g+s.x+s.y+x; }
+double hfx_full(double a,double b,double c,double d,double e,double f,double g,double h, struct Float4 s, double x){ return a+b+c+d+e+f+g+h+s.a+s.b+s.c+s.d+x; }
 EOF
 
 # main.c: NO system headers so the cross mcc can compile it. Each check compares
@@ -357,6 +361,16 @@ int main(void){
   { float _Complex z=__builtin_complex(0.25f,-0.5f);
     float _Complex r=cx_cf_after7(1,2,3,4,5,6,7,z);
     k++; if(__real__ r!=28.25f || __imag__ r!=-0.5f) return k; }
+  /* HFA argument-register EXHAUSTION. AAPCS64 rule C.3: an HFA that does not fit
+     in the remaining SIMD regs goes on the STACK and sets NSRN=8, so the trailing
+     scalar double x must ALSO go on the stack (no backfill of the leftover reg).
+     hfx_nsrn: 7 doubles fill v0-v6, DblPair needs 2 (only v7 free) -> stack; x on
+     stack. hfx_full: 8 doubles fill v0-v7, Float4 -> stack; x on stack. riscv64
+     puts the exhausted 2-FP DblPair in GP regs per the integer convention (same
+     path as the _Complex fix); x86_64 SysV overflows to memory. Conformant on all
+     four arches. */
+  { struct DblPair s; s.x=100; s.y=200; k++; if(hfx_nsrn(1,2,3,4,5,6,7,s,1000)!=1328.0) return k; }
+  { struct Float4 s; s.a=10; s.b=20; s.c=40; s.d=80; k++; if(hfx_full(1,2,3,4,5,6,7,8,s,1000)!=1186.0) return k; }
   return 0;
 }
 EOF
