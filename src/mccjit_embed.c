@@ -2677,7 +2677,8 @@ static double mccjit_ts_delta(const struct timespec *a,
 static void mccjit_bench_run_pair(void *cand, void *incumbent,
 																	const int64_t *tuples, uint32_t ntuples,
 																	uint32_t nargs, int wide, uint32_t reps,
-																	double *cand_s, double *inc_s) { MCC_TRACE("enter\n");
+																	double *cand_s, double *inc_s,
+																	int64_t *sink_out) { MCC_TRACE("enter\n");
 	int64_t sink = 0;
 	double c = 0.0, ic = 0.0;
 	uint32_t r, i;
@@ -2697,23 +2698,82 @@ static void mccjit_bench_run_pair(void *cand, void *incumbent,
 		c += mccjit_ts_delta(&t0, &t1);
 		ic += mccjit_ts_delta(&t1, &t2);
 	}
-	mccjit_bench_sink ^= sink;
+	*sink_out ^= sink;
 	*cand_s = c;
 	*inc_s = ic;
 }
 
-/* K5/L4A/L5A promotion scorer: best-of-3 wall-clock benchmark of a candidate
-   vs the incumbent over a caller-supplied live-in set (the real observed
-   distribution, provided by J6A once it lands). Returns 1 only if the
-   candidate is faster by more than a hysteresis margin — the incumbent wins
-   ties (L5A). Work is bounded by a deterministic inner-iteration cap, not
-   wall-clock, so the decision is reproducible. */
+#define MCCJIT_BENCH_MAXCORES 16
+
+static int mccjit_bench_cores(void) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_JIT_BENCH_CORES");
+	long n = 0;
+	if (e && e[0]) { MCC_TRACE("br\n");
+		n = strtol(e, NULL, 10);
+	} else {
+#if defined _SC_NPROCESSORS_ONLN
+		n = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+	}
+	if (n < 1)
+		{ MCC_TRACE("br\n"); n = 1; }
+	if (n > MCCJIT_BENCH_MAXCORES)
+		{ MCC_TRACE("br\n"); n = MCCJIT_BENCH_MAXCORES; }
+	return (int)n;
+}
+
+typedef struct MccjitBenchSib {
+	void *cand, *incumbent;
+	const int64_t *tuples;
+	uint32_t ntuples, nargs, reps;
+	int wide, rounds, margin;
+	double cb, ib;
+	int64_t sink;
+	int verdict;
+} MccjitBenchSib;
+
+/* One benchmarking sibling: best-of-rounds interleaved race of the two
+   strategies (candidate + incumbent), yielding this core's promote verdict. */
+static void mccjit_bench_sibling_run(MccjitBenchSib *w) { MCC_TRACE("enter\n");
+	double cb = 1e300, ib = 1e300;
+	int k;
+	w->sink = 0;
+	for (k = 0; k < w->rounds; k++) { MCC_TRACE("br\n");
+		double c, i2;
+		mccjit_bench_run_pair(w->cand, w->incumbent, w->tuples, w->ntuples, w->nargs,
+													w->wide, w->reps, &c, &i2, &w->sink);
+		if (c < cb)
+			{ MCC_TRACE("br\n"); cb = c; }
+		if (i2 < ib)
+			{ MCC_TRACE("br\n"); ib = i2; }
+	}
+	w->cb = cb;
+	w->ib = ib;
+	w->verdict = cb * (100.0 + (double)w->margin) < ib * 100.0;
+}
+
+static void *mccjit_bench_sibling_thread(void *arg) { MCC_TRACE("enter\n");
+	mccjit_bench_sibling_run((MccjitBenchSib *)arg);
+	return NULL;
+}
+
+/* K5/L4A/L5A promotion scorer. The two strategies (candidate + incumbent) race
+   as siblings under mccjit_bench_run_pair; that race is run REDUNDANTLY on every
+   available core (each core an independent best-of-rounds sibling over the same
+   observed live-in set) and the promote decision is the MAJORITY consensus of
+   the per-core verdicts, so one throttled or noisy core cannot flip the result.
+   The incumbent still wins ties (a non-majority stays put). Each core runs the
+   full deterministic invocation count, so the decision is reproducible; the
+   siblings run concurrently, so N-core redundancy costs ~one core's wall-time. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 														 uint32_t ntuples, uint32_t nargs, int wide) { MCC_TRACE("enter\n");
-	double cb = 1e300, ib = 1e300;
-	uint32_t k, reps;
+	MccjitBenchSib sib[MCCJIT_BENCH_MAXCORES];
+	pthread_t th[MCCJIT_BENCH_MAXCORES];
+	char started[MCCJIT_BENCH_MAXCORES];
+	uint32_t reps;
 	long iters;
-	int margin, rounds;
+	int margin, rounds, cores, i, votes = 0;
+	int64_t sinkacc = 0;
 	if (!cand || !incumbent || !tuples || ntuples == 0 || nargs == 0)
 		{ MCC_TRACE("br\n"); return 1; }
 	iters = mccjit_bench_iters();
@@ -2722,16 +2782,36 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	reps = (uint32_t)(iters / (long)ntuples);
 	if (reps < 1)
 		{ MCC_TRACE("br\n"); reps = 1; }
-	for (k = 0; k < (uint32_t)rounds; k++) { MCC_TRACE("br\n");
-		double c, i2;
-		mccjit_bench_run_pair(cand, incumbent, tuples, ntuples, nargs, wide, reps,
-													&c, &i2);
-		if (c < cb)
-			{ MCC_TRACE("br\n"); cb = c; }
-		if (i2 < ib)
-			{ MCC_TRACE("br\n"); ib = i2; }
+	cores = mccjit_bench_cores();
+	for (i = 0; i < cores; i++) { MCC_TRACE("br\n");
+		sib[i].cand = cand;
+		sib[i].incumbent = incumbent;
+		sib[i].tuples = tuples;
+		sib[i].ntuples = ntuples;
+		sib[i].nargs = nargs;
+		sib[i].reps = reps;
+		sib[i].wide = wide;
+		sib[i].rounds = rounds;
+		sib[i].margin = margin;
+		sib[i].verdict = 0;
+		sib[i].sink = 0;
+		started[i] = 0;
 	}
-	return cb * (100.0 + (double)margin) < ib * 100.0;
+	for (i = 1; i < cores; i++) { MCC_TRACE("br\n");
+		if (pthread_create(&th[i], NULL, mccjit_bench_sibling_thread, &sib[i]) == 0)
+			{ MCC_TRACE("br\n"); started[i] = 1; }
+		else
+			{ MCC_TRACE("br\n"); mccjit_bench_sibling_run(&sib[i]); }
+	}
+	mccjit_bench_sibling_run(&sib[0]);
+	for (i = 1; i < cores; i++)
+		{ MCC_TRACE("br\n"); if (started[i]) { MCC_TRACE("br\n"); pthread_join(th[i], NULL); } }
+	for (i = 0; i < cores; i++) { MCC_TRACE("br\n");
+		votes += sib[i].verdict;
+		sinkacc ^= sib[i].sink;
+	}
+	mccjit_bench_sink ^= sinkacc;
+	return votes * 2 > cores;
 }
 
 /* L4A — the K5 promotion scorer over the REAL observed distribution: benchmark
