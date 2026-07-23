@@ -79,10 +79,16 @@ def main():
 
         out = os.path.join(work, "jit.o")
         mccsrc = os.path.join(src, "mcc.c")
+        # The in-memory (-run) mcc is built without MCC_CONFIG_PREDEFS, so it
+        # injects `#include <mccdefs.h>` when it compiles the workload. That inner
+        # compile only sees the argv after `-run src/mcc.c`, not the outer -I set,
+        # so point it at the generated mccdefs.h (build tree, then source fallback).
+        inner_inc = ["-I" + os.path.join(bdir, "include"),
+                     "-I" + os.path.join(root, "runtime", "include")]
         print(f"selfhost-jit: {mcc} --jit -O4 -run src/mcc.c -> inner -c workload  "
               f"knobs={sys.argv[3:] or '(none)'}")
         r = subprocess.run([mcc, "--jit", "-O4", *incs, *brt,
-                            "-run", mccsrc, "-c", wl, "-o", out],
+                            "-run", mccsrc, *inner_inc, "-c", wl, "-o", out],
                            cwd=root, env=env)
         if r.returncode != 0:
             sys.exit(f"FAIL: JIT self-host -run crashed/errored (exit {r.returncode})")
