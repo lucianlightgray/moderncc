@@ -52,6 +52,7 @@
 - Fix CLI `--jit-functions=f` storing `"=f"` (leading `=` not stripped; API path unaffected).
 - Port a real Windows JIT runtime for `MCC_EMBED_JIT` — glibc-only, gated OFF on WIN32 (needs `sys/mman.h`/pthread/fork equivalents).
 - Fix the AST_INLINE `-O3` codegen regression: self-hosted stage2 mcc SIGSEGVs compiling `src/mcc.c` at `-O3` on PE ⇒ CI `mcc` bench rows go all-n/a.
+- PE runtime-JIT self-host (`mcc.exe --jit -O4 -run src/mcc.c`) faults `0xC0000005` inside the in-memory recompile — the `selfhost-jit` ctest currently SKIPs on PE (`tools/selfhost-jit.py`, `.exe`→exit 77) because the crash needs Windows HW to debug; un-skip once fixed (distinct from the earlier, already-fixed `ast_reemit_pool` reset crash — this is a live fault the header-path fix un-masked).
 
 ## AOT foundations
 - Close the riscv64 Tier-3 self-host gap (6A; makes the M8 cross-arch gate real).
