@@ -2265,11 +2265,6 @@ static int64_t mccjit_unzz(uint64_t v) { MCC_TRACE("enter\n");
 	return (int64_t)(v >> 1) ^ -(int64_t)(v & 1);
 }
 
-/* Serialize the sorted KGC memo (a lexicographically-sorted array of observed
-   argument-value tuples) as a compressed byte stream: per-column delta against
-   the previous tuple, zig-zag mapped, LEB128 varint packed. Sorted input makes
-   the leading-column deltas small and non-negative, so the array shrinks hard.
-   Returns a malloc'd buffer in *out (caller frees) and its length in *outlen. */
 static int mccjit_kgc_encode_compressed(const MccjitKgc *k, unsigned char **out,
 																				size_t *outlen) { MCC_TRACE("enter\n");
 	uint64_t count, i;
@@ -2304,9 +2299,6 @@ static int mccjit_kgc_encode_compressed(const MccjitKgc *k, unsigned char **out,
 	return 0;
 }
 
-/* Inverse of mccjit_kgc_encode_compressed: reconstruct the sorted tuple array.
-   Fills up to maxtuples rows into dst and returns the decoded tuple count, or
-   -1 on a malformed/oversized stream. Used by the round-trip self-check. */
 static int64_t mccjit_kgc_decode_compressed(const unsigned char *buf, size_t len,
 																						int64_t *dst, uint64_t maxtuples,
 																						uint32_t *parity) { MCC_TRACE("enter\n");
@@ -2335,10 +2327,6 @@ static int64_t mccjit_kgc_decode_compressed(const unsigned char *buf, size_t len
 	return (int64_t)count;
 }
 
-/* Save the sorted memo as a compressed array and account it in stats. Always
-   runs when stats are active (feeds the JIT "memo" line); additionally writes
-   the compressed blob to $MCC_JIT_KGC_SAVE/kgc-<salt>-<arity>-<seq>.z when that
-   directory is set, so the observed value set persists across runs. */
 static void mccjit_kgc_flush_compressed(MccjitKgc *k) { MCC_TRACE("enter\n");
 	static unsigned long seq;
 	const char *dir = getenv("MCC_JIT_KGC_SAVE");
@@ -2381,10 +2369,6 @@ static void mccjit_kgc_flush_compressed(MccjitKgc *k) { MCC_TRACE("enter\n");
 	mcc_free(buf);
 }
 
-/* Persistent per-variant KGC guards live for the whole process and are never
-   closed, so their observed-value arrays are flushed here at exit (ordered
-   before the atexit'd stats print, which is registered earlier at JIT boot).
-   Closed KGCs unregister themselves, so each array is flushed exactly once. */
 typedef struct MccjitKgcReg {
 	MccjitKgc *k;
 	int flushed;
@@ -2395,10 +2379,6 @@ static MccjitKgcReg *mccjit_kgc_reg_head;
 static pthread_mutex_t mccjit_kgc_reg_lock = PTHREAD_MUTEX_INITIALIZER;
 static int mccjit_kgc_reg_hooked;
 
-/* Flush every still-live guard once. Invoked both as the stats pre-finish hook
-   (so the memo line is populated before the block is painted) and via atexit
-   (so a stats-off, save-on run still persists) — the per-node flushed flag makes
-   whichever fires second a no-op. */
 static void mccjit_kgc_flush_all(void) { MCC_TRACE("enter\n");
 	MccjitKgcReg *r;
 	pthread_mutex_lock(&mccjit_kgc_reg_lock);
@@ -2732,8 +2712,6 @@ typedef struct MccjitBenchSib {
 	int verdict;
 } MccjitBenchSib;
 
-/* One benchmarking sibling: best-of-rounds interleaved race of the two
-   strategies (candidate + incumbent), yielding this core's promote verdict. */
 static void mccjit_bench_sibling_run(MccjitBenchSib *w) { MCC_TRACE("enter\n");
 	double cb = 1e300, ib = 1e300;
 	int k;
@@ -2757,14 +2735,6 @@ static void *mccjit_bench_sibling_thread(void *arg) { MCC_TRACE("enter\n");
 	return NULL;
 }
 
-/* K5/L4A/L5A promotion scorer. The two strategies (candidate + incumbent) race
-   as siblings under mccjit_bench_run_pair; that race is run REDUNDANTLY on every
-   available core (each core an independent best-of-rounds sibling over the same
-   observed live-in set) and the promote decision is the MAJORITY consensus of
-   the per-core verdicts, so one throttled or noisy core cannot flip the result.
-   The incumbent still wins ties (a non-majority stays put). Each core runs the
-   full deterministic invocation count, so the decision is reproducible; the
-   siblings run concurrently, so N-core redundancy costs ~one core's wall-time. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 														 uint32_t ntuples, uint32_t nargs, int wide) { MCC_TRACE("enter\n");
 	MccjitBenchSib sib[MCCJIT_BENCH_MAXCORES];
