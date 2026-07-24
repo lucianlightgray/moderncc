@@ -94,19 +94,45 @@ Audit tooling (committed, default-off): `ast_search_pool_pthreads` +
 reproducible with a unique never-compiled function (the search memo is disk-backed on a fixed
 path, so a repeated function is a memo hit and never re-searches).
 
-## Approach options
+## ⛔ Blocker found: `_Thread_local` is unavailable under the 10.6 deployment target
 
-- **A. `_Thread_local` the scored-path globals.** Mechanical, localized. Each worker thread
-  gets its own `ast_cur`, gate flags, counters, scratch. Lowest code churn; cost is memory ×
-  nthreads for the pools, and every `_Thread_local` access is slightly slower on the hot main
-  path (measure). **Recommended** for stage 1a — smallest diff that preserves the single
-  invariant.
-- **B. Per-context struct threaded through the scorer.** Cleaner long-term (an explicit
-  `AstOptCtx*` argument), but touches the 251 `ast_cur` sites and every strategy signature —
-  a very large diff. Defer; A can evolve into B incrementally.
-- **C. Keep fork, unify the API only.** No thread-safety work: wrap the fork pool behind a
-  `trigger→join` API and route the funnel stats through it. Delivers the *shape* (and item 2's
-  stats) without the "multi-threaded" substance. Fallback if A proves too invasive.
+Marking the 64 audited globals `_Thread_local` (approach A) **does not compile**:
+
+```
+src/mccast.c:762: error: thread-local storage is not supported for the current target
+```
+
+The build pins `CMAKE_OSX_DEPLOYMENT_TARGET "10.6"` (CMakeLists.txt:1561, FORCE) for broad
+macOS compatibility. macOS 10.6 predates the TLS runtime (`__tlv_bootstrap`, 10.7+), so Apple
+clang rejects `_Thread_local` — and `-femulated-tls` does **not** rescue it on Apple either.
+Plain `cc` with no deployment flag accepts TLS fine, confirming the target is the cause.
+
+**This is almost certainly the real reason the search uses `fork`:** the code comment frames
+fork as avoiding "the whole per-context state refactor", but the deeper truth is that
+thread-local storage — the mechanical way to do that refactor — is simply not on the menu
+under the shipped deployment target. There is also a second-order problem even if it were:
+`_Thread_local` in `mccast.c` must be codegen'd by **mcc itself** during self-host, requiring
+macho-arm64 TLS lowering in mcc's own backend.
+
+Approach A is therefore off the table unless the deployment-target policy changes. The
+revised, portable options:
+
+## Approach options (revised)
+
+- **A. `_Thread_local`.** ⛔ **Blocked** by the 10.6 target (above). Only viable if the project
+  bumps `CMAKE_OSX_DEPLOYMENT_TARGET` to 10.7+ *and* mcc gains macho-arm64 TLS codegen for
+  self-host. Smallest diff if the policy changes — otherwise dead.
+- **B. Per-*arena* state (portable, recommended if we thread at all).** The dominant races are
+  the epoch-keyed analysis caches (`ast_hash_*`, `ast_du_*`, `ast_memo_*`) — which already key
+  on "the current arena". Move them *into* the `AstArena` struct (`a->hash`, `a->du`, `a->memo`)
+  so each trial clone owns its cache and concurrent scoring on distinct clones cannot race —
+  **no TLS, portable to every target.** Gate flags / fold counters ride the same context. Large
+  but mechanical, and it aligns with the isolation the clones already provide. This is the
+  honest path to real multithreading here.
+- **C. Keep fork, unify the API only (portable, low-risk).** Wrap the existing fork pool behind
+  a `trigger→join` API and route the funnel stats (item 2) through it. Delivers the *shape* and
+  the observability without any thread-safety refactor — but it stays multi-*process*, not
+  multi-threaded. Fastest to ship; least matches the literal "threads" ask.
 
 ## Staging (each stage gated, independently revertible)
 
