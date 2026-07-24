@@ -1063,7 +1063,12 @@ ST_FUNC MAYBE_UNUSED const char *host_elf_interp_override(void) { MCC_TRACE("ent
 	return getenv("LD_SO");
 }
 
-#ifdef MCC_TARGET_IS_HOST
+/* The host runmem/JIT-memory primitives execute on the *host* regardless of
+   the compile target: the -run engine (MCC_TARGET_IS_HOST) and, since the
+   cross-optimizer ungate, the embedded JIT baked into every cross triple
+   (MCC_EMBED_JIT — it emits host-arch code, keying off __aarch64__/__x86_64__/
+   etc, not MCC_TARGET_*). Compile them whenever either consumer is present. */
+#if defined MCC_TARGET_IS_HOST || defined MCC_EMBED_JIT
 
 #ifndef _WIN32
 #include <sys/mman.h>
@@ -1153,8 +1158,11 @@ ST_FUNC void host_runmem_free(void *ptr, unsigned size) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void host_icache_flush(void *ptr, unsigned long length) { MCC_TRACE("enter\n");
+	/* Keys off the *host* CPU (compiler-predefined macros), not MCC_TARGET_*:
+	   the JIT writes host-arch code, so in a cross build the flush must follow
+	   the host, not the compile target. For a host build the two coincide. */
 #if defined _WIN32
-#if defined MCC_TARGET_ARM64 || defined MCC_TARGET_ARM
+#if defined __aarch64__ || defined _M_ARM64 || defined __arm__ || defined _M_ARM
 	/* Windows does not flush the I-cache on VirtualProtect; arm/arm64 need it
 	   explicitly after writing JIT code. x86/x64 are I-cache coherent. */
 	FlushInstructionCache(GetCurrentProcess(), ptr, length);
@@ -1162,7 +1170,7 @@ ST_FUNC void host_icache_flush(void *ptr, unsigned long length) { MCC_TRACE("ent
 	(void)ptr;
 	(void)length;
 #endif
-#elif (defined MCC_TARGET_ARM && !MCC_TARGETOS_BSD) || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
+#elif (defined __arm__ && !MCC_TARGETOS_BSD) || defined __aarch64__ || (defined __riscv && defined __LP64__)
 	void __clear_cache(void *beginning, void *end);
 	__clear_cache(ptr, (char *)ptr + length);
 #else
