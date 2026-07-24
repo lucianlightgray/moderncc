@@ -144,6 +144,13 @@ void ast_func_epilog(void);
 void ast_reemit_forward_inlines(void);
 void ast_reemit_with_gates(struct Sym *sym, AstArena *ast, uint64_t gate_mask);
 
+/* Read an integer from an environment variable, falling back to dflt when unset
+   or empty. Shared with the JIT search/tuning code (mccjit_embed.c). */
+int ast_env_int(const char *name, int dflt);
+/* Static cost-model score of an AST arena; used by the JIT recompile/search
+   loop to detect plateaus without re-timing every candidate. */
+long ast_cost_score(AstArena *a);
+
 int ast_sym_defer(struct Sym *sym);
 int ast_alloc_loc(int size, int align);
 int ast_alloc_temp_loc(int size, int align);

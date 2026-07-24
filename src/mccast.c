@@ -729,7 +729,7 @@ static int ast_env_gate(const char *name, int dflt) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return dflt; }
 	return strcmp(v, "0") != 0;
 }
-static int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
+int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
 	const char *v = getenv(name);
 	int n;
 	if (!v || !v[0])
@@ -7292,7 +7292,7 @@ static int ast_licm_is_loop(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	return op == 2 || op == 3 || op == 4 || op == 5;
 }
 
-static long ast_cost_score(AstArena *a) { MCC_TRACE("enter\n");
+long ast_cost_score(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n, p;
 	int nodes = (int)nn, calls = 0, maxdepth = 0;
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
