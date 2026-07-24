@@ -4712,13 +4712,13 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 300)
         endif()
 
-        # NOT WIN32: the PE runtime-JIT self-host still faults (0xC0000005) in the
-        # in-memory -run recompile on the CI Windows cells (msvc, sanitize-msvc,
-        # mingw x86_64+i686 all crash deterministically), even though it runs
-        # byte-identical on a local mingw-msvcrt / MSVC build — a layout/toolchain-
-        # sensitive memory fault beyond b55ba957's ast_reemit-pool fix. Tracked in
-        # docs/TODO. selfhost-jit.py also self-skips on Windows as a backstop.
-        if(MCC_PYTHON3 AND MCC_EMBED_JIT AND NOT WIN32)
+        # Covers the ELF/Mach-O AND PE self-host JIT. The PE 0xC0000005 fault is
+        # fixed: the graft-inliner under-sized the stack frame (replay-time grafted
+        # locals/temps weren't folded into loc), so on i386 (push-based calls, no
+        # red zone) an outgoing call clobbered a below-esp temp — deterministic on
+        # winlibs-ucrt i686, layout-sensitive on x86_64. selfhost-jit.py locates
+        # mcc.exe in both single-config (Ninja) and multi-config (VS) layouts.
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT)
             add_test(NAME selfhost-jit
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")

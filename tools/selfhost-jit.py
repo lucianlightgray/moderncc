@@ -53,17 +53,6 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = bdir if os.path.isabs(bdir) else os.path.join(root, bdir)
 
-    # The PE (Windows) runtime-JIT self-host still faults (0xC0000005) inside the
-    # in-memory `-run` recompile of src/mcc.c on the CI Windows cells; it does NOT
-    # reproduce on a local mingw-msvcrt / MSVC build, so it is a layout/toolchain-
-    # sensitive memory fault (tracked in docs/TODO) rather than something this gate
-    # can meaningfully cover. Skip on Windows — checked before locating the binary
-    # so the MSVC multi-config layout can't `no mcc in ...`-error first. The ctest
-    # is also CMake-gated `NOT WIN32`; this is a backstop for manual runs.
-    if os.name == "nt" or sys.platform.startswith("win"):
-        print("selfhost-jit: SKIP (PE runtime-JIT self-host is HW/platform-fragile; tracked separately)")
-        sys.exit(SKIP)
-
     mcc = find_mcc(bdir)
     if not mcc:
         sys.exit(f"no mcc in {bdir}")

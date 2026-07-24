@@ -14108,7 +14108,17 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	ast_pinned_regs = 0;
 	ast_inline_active = 1;
 	ast_graft_budget = ast_graft_budget_max;
+	ast_loc_low = loc;
 	ast_replay_body(ast);
+	/* Grafted inlining synthesizes locals/temps at replay time (the callee frame
+	 * and call-spilled temporaries) that are not in `ast`, so the AST-local scan
+	 * above never widened `loc` for them. Fold in the replay low-water mark so
+	 * gfunc_epilog sizes the frame to cover them; without this the deepest grafted
+	 * temp lands below %esp and an outgoing call's pushed args clobber it (i386,
+	 * push-based calls + no red zone, deterministically; x86_64 only under some
+	 * stack layouts). Mirrors the search-trial path. */
+	if (ast_loc_low < loc)
+		{ MCC_TRACE("br\n"); loc = ast_loc_low; }
 	ast_inline_active = 0;
 	ast_replaying = 0;
 	sym_free_first = saved_free;
