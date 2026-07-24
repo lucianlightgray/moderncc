@@ -550,6 +550,8 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("e
 	e->len = b.len;
 	e->next = mccjit_embed_fns;
 	mccjit_embed_fns = e;
+	if (mcc_stats_mask)
+		{ MCC_TRACE("br\n"); mcc_stats_jit_capture((unsigned long)e->len); }
 }
 
 #if defined(MCCJIT_X64)
@@ -617,9 +619,12 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 	int routed = 0;
 	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
 	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
+	struct timespec cstart;
+	int ctimed = 0;
 	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) { MCC_TRACE("br\n");
 		skipped = 1;
 	} else { MCC_TRACE("br\n");
+		ctimed = mcc_stats_mask && clock_gettime(CLOCK_MONOTONIC, &cstart) == 0;
 		variant = spec_wrong
 									? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
 									: mcc_jit_recompile_blob(blob, (size_t)len);
@@ -654,11 +659,25 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		}
 		if (!entry && no_kgc)
 			{ MCC_TRACE("br\n"); entry = variant ? mccjit_make_trampoline(variant) : NULL; }
+		if (ctimed) { MCC_TRACE("br\n");
+			double dt = mccjit_elapsed(&cstart);
+			if (dt >= 0)
+				{ MCC_TRACE("br\n"); mcc_stats_jit_compile((unsigned)(dt * 1000.0)); }
+		}
 		if (timed && max_duration && entry &&
 				mccjit_elapsed(t0) > (double)max_duration) { MCC_TRACE("br\n");
 			over = 1;
 			entry = NULL;
 		}
+	}
+	if (mcc_stats_mask) { MCC_TRACE("br\n");
+		int outcome = skipped						? MCC_JIT_OUT_BUDGET_SKIP
+									: over							? MCC_JIT_OUT_OVER_BUDGET
+									: entry							? MCC_JIT_OUT_SWAPPED
+									: (variant && !no_kgc && !mccjit_last_kgc_ok)
+											? MCC_JIT_OUT_REFUSED
+											: MCC_JIT_OUT_KEPT_AOT;
+		mcc_stats_jit_outcome(outcome);
 	}
 	if (getenv("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
 		int probeable = variant && mccjit_last_nparam == 1 &&
@@ -778,6 +797,9 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	struct timespec t0;
 	void *best = NULL;
 	int best_routed = 0, i, timed;
+	long gs_cands = 0, gs_admits = 0;
+	int gs_budget_hit = 0;
+	uint64_t gs_best_mask = 0;
 	if (e && e[0])
 		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
 	else if (mccjit_search_budget_baked_s)
@@ -791,14 +813,15 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		int r = 0;
 		void *cand;
 		if (best && timed && budget_s > 0 && mccjit_elapsed(&t0) > budget_s)
-			{ MCC_TRACE("br\n"); break; }
+			{ MCC_TRACE("br\n"); gs_budget_hit = 1; break; }
 		cand = mccjit_lazy_build_masked(st->blob, st->len, vocab[i], 1, &r);
+		gs_cands++;
 		if (!cand)
 			{ MCC_TRACE("br\n"); continue; }
-		if (!best) { MCC_TRACE("br\n"); best = cand; best_routed = r; }
+		if (!best) { MCC_TRACE("br\n"); best = cand; best_routed = r; gs_admits++; gs_best_mask = vocab[i]; }
 		else if (mccjit_bench_admit(cand, best, st, mccjit_last_nparam,
 																mccjit_last_ret_wide, mccjit_last_allfp, r))
-			{ MCC_TRACE("br\n"); best = cand; best_routed = r; }
+			{ MCC_TRACE("br\n"); best = cand; best_routed = r; gs_admits++; gs_best_mask = vocab[i]; }
 		else
 			{ MCC_TRACE("br\n"); continue; }
 		if (async)
@@ -806,6 +829,8 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	}
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = best_routed; }
+	if (mcc_stats_mask)
+		{ MCC_TRACE("br\n"); mcc_stats_jit_gsearch(gs_cands, gs_admits, gs_budget_hit, gs_best_mask); }
 	return best;
 }
 
@@ -877,8 +902,11 @@ MCCJIT_LOCAL void *mccjit_recompile_profiled(const void *blob, size_t len,
 																						 uint32_t nargs, long min_samples) { MCC_TRACE("enter\n");
 	int pidx = -1;
 	int64_t pval = 0;
-	if (mccjit_profile_pick_const(st, nargs, min_samples, &pidx, &pval))
-		{ MCC_TRACE("br\n"); return mcc_jit_recompile_blob_spec(blob, len, pidx, pval); }
+	if (mccjit_profile_pick_const(st, nargs, min_samples, &pidx, &pval)) { MCC_TRACE("br\n");
+		if (mcc_stats_mask)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_prof_spec(); }
+		return mcc_jit_recompile_blob_spec(blob, len, pidx, pval);
+	}
 	return mcc_jit_recompile_blob(blob, (size_t)len);
 }
 
@@ -1042,6 +1070,8 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 	int verbose = getenv("MCC_JIT_VERBOSE") != NULL;
 	pthread_mutex_lock(&st->lock);
 	n = ++st->count;
+	if (n == st->threshold && mcc_stats_mask)
+		{ MCC_TRACE("br\n"); mcc_stats_jit_hot(); }
 	if (regs && !st->promoted)
 		{ MCC_TRACE("br\n"); mccjit_counter_capture(st, regs); }
 	if (st->promoted) { MCC_TRACE("br\n");
@@ -2231,8 +2261,11 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 				peek.magic == MCCJIT_KGC_MAGIC && peek.salt == salt &&
 				peek.arity == arity && peek.cap >= 1 && peek.count <= peek.cap &&
 				(size_t)st.st_size >= mccjit_kgc_bytes(peek.cap, arity)) { MCC_TRACE("br\n");
-			if (mccjit_kgc_map_shared(k, mccjit_kgc_bytes(peek.cap, arity)) == 0)
-				{ MCC_TRACE("br\n"); valid = 1; }
+			if (mccjit_kgc_map_shared(k, mccjit_kgc_bytes(peek.cap, arity)) == 0) { MCC_TRACE("br\n");
+				valid = 1;
+				if (mcc_stats_mask)
+					{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_warm((unsigned long)peek.count); }
+			}
 		}
 		if (!valid) { MCC_TRACE("br\n");
 			if (ftruncate(k->fd, (off_t)initbytes) != 0 ||

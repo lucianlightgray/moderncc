@@ -18,6 +18,10 @@ unsigned mcc_stats_mask = 0;
 
 static void (*mcc_stats_flush_hook)(void);
 
+#if MCC_HOST_POSIX
+static long mcc_stats_owner_pid = -1; /* process that owns the panel; forks never flush */
+#endif
+
 void mcc_stats_set_flush_hook(void (*fn)(void)) { MCC_TRACE("enter\n");
 	mcc_stats_flush_hook = fn;
 }
@@ -112,6 +116,31 @@ typedef struct McccStats {
 	unsigned long jit_specfold_events;
 	unsigned long jit_specfold_nodes;
 	unsigned long jit_kgc_stubs;
+
+	unsigned long jit_out_swapped;
+	unsigned long jit_out_refused;
+	unsigned long jit_out_kept_aot;
+	unsigned long jit_out_budget_skip;
+	unsigned long jit_out_over_budget;
+
+	unsigned long jit_compile_n;
+	unsigned long jit_compile_ms;
+	unsigned long jit_compile_ms_max;
+
+	unsigned long jit_capture_fns;
+	unsigned long jit_capture_bytes;
+
+	unsigned long jit_gs_searches;
+	unsigned long jit_gs_cands;
+	unsigned long jit_gs_admits;
+	unsigned long jit_gs_budget_hit;
+	uint64_t jit_gs_best_mask;
+
+	unsigned long jit_kgc_warm_files;
+	unsigned long jit_kgc_warm_tuples;
+
+	unsigned long jit_hot_funcs;
+	unsigned long jit_prof_specs;
 
 	unsigned long fold_cycles;
 	unsigned long fold_cycle_iters;
@@ -333,6 +362,40 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 									 mcs.jit_memo_arrays, a, mcs.jit_memo_raw, mcs.jit_memo_comp,
 									 pct);
 		}
+		if (mcs.jit_out_swapped || mcs.jit_out_refused || mcs.jit_out_kept_aot ||
+				mcs.jit_out_budget_skip || mcs.jit_out_over_budget) { MCC_TRACE("br\n");
+			mccstats_row(r, "          dispatch: swapped=%lu  refused=%lu  kept-aot=%lu  skip=%lu  over=%lu",
+									 mcs.jit_out_swapped, mcs.jit_out_refused,
+									 mcs.jit_out_kept_aot, mcs.jit_out_budget_skip,
+									 mcs.jit_out_over_budget);
+		}
+		if (mcs.jit_compile_n) { MCC_TRACE("br\n");
+			mccstats_row(r, "          compile: %lu fns  %lums total  avg %lums  max %lums",
+									 mcs.jit_compile_n, mcs.jit_compile_ms,
+									 mcs.jit_compile_ms / mcs.jit_compile_n,
+									 mcs.jit_compile_ms_max);
+		}
+		if (mcs.jit_capture_fns) { MCC_TRACE("br\n");
+			mccstats_fmt_u(mcs.jit_capture_bytes, a, sizeof a);
+			mccstats_row(r, "          captured: %lu fns  %sB intent", mcs.jit_capture_fns,
+									 a);
+		}
+		if (mcs.jit_gs_searches) { MCC_TRACE("br\n");
+			mccstats_fmt_u(mcs.jit_gs_cands, a, sizeof a);
+			mccstats_row(r, "          gate-search: %lu runs  %s cands  admits=%lu  budget-hit=%lu  best=0x%08llx",
+									 mcs.jit_gs_searches, a, mcs.jit_gs_admits,
+									 mcs.jit_gs_budget_hit,
+									 (unsigned long long)mcs.jit_gs_best_mask);
+		}
+		if (mcs.jit_kgc_warm_files) { MCC_TRACE("br\n");
+			mccstats_fmt_u(mcs.jit_kgc_warm_tuples, a, sizeof a);
+			mccstats_row(r, "          kgc warm: %lu files  %s tuples reloaded",
+									 mcs.jit_kgc_warm_files, a);
+		}
+		if (mcs.jit_hot_funcs || mcs.jit_prof_specs) { MCC_TRACE("br\n");
+			mccstats_row(r, "          tiering: %lu hot funcs  %lu profile specs",
+									 mcs.jit_hot_funcs, mcs.jit_prof_specs);
+		}
 	}
 
 	mccstats_gate_names(mcs.best_gates, a, sizeof a);
@@ -374,11 +437,18 @@ static void mccstats_paint(int force) { MCC_TRACE("enter\n");
 }
 
 void mcc_stats_enable(unsigned mask) { MCC_TRACE("enter\n");
+	static int started = 0;
 	mcc_stats_mask = mask;
 	if (!mask)
 		{ MCC_TRACE("br\n"); return; }
+	if (started)
+		{ MCC_TRACE("br\n"); return; } /* one stats session per process: never wipe accumulators */
+	started = 1;
 	memset(&mcs, 0, sizeof mcs);
 	mcs.active = 1;
+#if MCC_HOST_POSIX
+	mcc_stats_owner_pid = (long)getpid();
+#endif
 	mcs.fn_best_score = -1;
 	mcs.best_score = -1;
 	mcs.cand_score = -1;
@@ -411,13 +481,19 @@ void mcc_stats_env_init(void) { MCC_TRACE("enter\n");
 }
 
 void mcc_stats_finish(void) { MCC_TRACE("enter\n");
+	static int finished = 0;
 	if (mcc_stats_flush_hook) { MCC_TRACE("br\n");
 		void (*h)(void) = mcc_stats_flush_hook;
 		mcc_stats_flush_hook = NULL;
 		h();
 	}
-	if (!mcs.active)
-		{ MCC_TRACE("br\n"); return; }
+	if (finished || !mcs.active)
+		{ MCC_TRACE("br\n"); return; } /* exactly one final flush per process */
+#if MCC_HOST_POSIX
+	if (mcc_stats_owner_pid >= 0 && (long)getpid() != mcc_stats_owner_pid)
+		{ MCC_TRACE("br\n"); return; } /* forked search/JIT child: never paint the panel */
+#endif
+	finished = 1;
 	mccstats_paint(1);
 	if (mcs.tty)
 		{ MCC_TRACE("br\n"); fprintf(stderr, "\n"); }
@@ -562,6 +638,77 @@ void mcc_stats_jit_kgc_stub(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_kgc_stubs++;
+}
+
+void mcc_stats_jit_outcome(int outcome) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	switch (outcome) { MCC_TRACE("br\n");
+	case MCC_JIT_OUT_SWAPPED:
+		mcs.jit_out_swapped++;
+		break;
+	case MCC_JIT_OUT_REFUSED:
+		mcs.jit_out_refused++;
+		break;
+	case MCC_JIT_OUT_KEPT_AOT:
+		mcs.jit_out_kept_aot++;
+		break;
+	case MCC_JIT_OUT_BUDGET_SKIP:
+		mcs.jit_out_budget_skip++;
+		break;
+	case MCC_JIT_OUT_OVER_BUDGET:
+		mcs.jit_out_over_budget++;
+		break;
+	default:
+		break;
+	}
+}
+
+void mcc_stats_jit_compile(unsigned ms) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_compile_n++;
+	mcs.jit_compile_ms += ms;
+	if (ms > mcs.jit_compile_ms_max)
+		{ MCC_TRACE("br\n"); mcs.jit_compile_ms_max = ms; }
+}
+
+void mcc_stats_jit_capture(unsigned long intent_bytes) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_capture_fns++;
+	mcs.jit_capture_bytes += intent_bytes;
+}
+
+void mcc_stats_jit_gsearch(long cands, long admits, int budget_hit,
+													 uint64_t best_mask) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_gs_searches++;
+	mcs.jit_gs_cands += (unsigned long)(cands > 0 ? cands : 0);
+	mcs.jit_gs_admits += (unsigned long)(admits > 0 ? admits : 0);
+	if (budget_hit)
+		{ MCC_TRACE("br\n"); mcs.jit_gs_budget_hit++; }
+	mcs.jit_gs_best_mask = best_mask;
+}
+
+void mcc_stats_jit_kgc_warm(unsigned long tuples) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_kgc_warm_files++;
+	mcs.jit_kgc_warm_tuples += tuples;
+}
+
+void mcc_stats_jit_hot(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_hot_funcs++;
+}
+
+void mcc_stats_jit_prof_spec(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_prof_specs++;
 }
 
 void mcc_stats_fold_cycle(const int *delta, int n, int iter) { MCC_TRACE("enter\n");

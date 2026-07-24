@@ -42,6 +42,23 @@ void mcc_stats_jit_memo(unsigned long tuples, unsigned long raw_bytes,
 void mcc_stats_jit_specfold(int folds);
 void mcc_stats_jit_kgc_stub(void);
 
+/* Runtime JIT dispatch outcome for one boot/hot swap attempt. */
+enum {
+	MCC_JIT_OUT_SWAPPED = 0, /* variant installed into the slot */
+	MCC_JIT_OUT_REFUSED,		 /* built but KGC-unverifiable, kept AOT */
+	MCC_JIT_OUT_KEPT_AOT,		 /* no variant, kept the AOT init */
+	MCC_JIT_OUT_BUDGET_SKIP, /* over time budget before compiling */
+	MCC_JIT_OUT_OVER_BUDGET	 /* compiled but over budget, dropped */
+};
+void mcc_stats_jit_outcome(int outcome);
+void mcc_stats_jit_compile(unsigned ms);              /* one recompile, wall ms */
+void mcc_stats_jit_capture(unsigned long intent_bytes); /* one fn stashed for JIT */
+void mcc_stats_jit_gsearch(long cands, long admits, int budget_hit,
+													 uint64_t best_mask);
+void mcc_stats_jit_kgc_warm(unsigned long tuples);   /* persisted memo reloaded */
+void mcc_stats_jit_hot(void);                         /* fn crossed hot threshold */
+void mcc_stats_jit_prof_spec(void);                   /* profile-const speculation */
+
 /* Per-iteration strategy deltas for one committed optimizer fixpoint cycle.
    `delta` is a snapshot of how many times each strategy fired in this pass only
    (indexed like mccstats_strat_name / the AST_STRAT_* enum); `iter` is 1-based.
