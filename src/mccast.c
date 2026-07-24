@@ -752,44 +752,51 @@ static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
-static int ast_sethi_env;
-static int ast_sethi_leaf_env;
+/* Item-1 (docs/jit-optimizer-threading.md): scored-path globals marked MCC_OPT_TLS are
+   thread-local so the pthread search pool scores candidates concurrently without racing.
+   Single-threaded (the main compile) this is identical to a plain global. Enabled now that
+   the -run/JIT engine executes _Thread_local (10.7 target + runmem TLS setup). */
+#ifndef MCC_OPT_TLS
+#define MCC_OPT_TLS _Thread_local
+#endif
+static MCC_OPT_TLS int ast_sethi_env;
+static MCC_OPT_TLS int ast_sethi_leaf_env;
 static int ast_sethi_nary_env;
-static int ast_bitflag_env;
+static MCC_OPT_TLS int ast_bitflag_env;
 static int ast_bitflag_report_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
-static int ast_narrow_env;
-static int ast_narrow_fix_env;
-static int ast_narrow_c0_env;
-static int ast_narrow_c1_env;
-static int ast_narrow_c2_env;
-static int ast_narrow_c3_env;
+static MCC_OPT_TLS int ast_narrow_env;
+static MCC_OPT_TLS int ast_narrow_fix_env;
+static MCC_OPT_TLS int ast_narrow_c0_env;
+static MCC_OPT_TLS int ast_narrow_c1_env;
+static MCC_OPT_TLS int ast_narrow_c2_env;
+static MCC_OPT_TLS int ast_narrow_c3_env;
 static int ast_narrow_elim_env;
-static int ast_sccp_fix_env;
-static int ast_ident_conv_env;
-static int ast_ident_shift_env;
-static int ast_ident_arith_env;
-static int ast_ident_bit_env;
-static int ast_ident_rel_env;
-static int ast_ident_urange_env;
-static int ast_dse_call_env;
-static int ast_tco_ptr_env;
-static int ast_cse_comm_env;
-static int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned compare */
-static int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
-static int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
+static MCC_OPT_TLS int ast_sccp_fix_env;
+static MCC_OPT_TLS int ast_ident_conv_env;
+static MCC_OPT_TLS int ast_ident_shift_env;
+static MCC_OPT_TLS int ast_ident_arith_env;
+static MCC_OPT_TLS int ast_ident_bit_env;
+static MCC_OPT_TLS int ast_ident_rel_env;
+static MCC_OPT_TLS int ast_ident_urange_env;
+static MCC_OPT_TLS int ast_dse_call_env;
+static MCC_OPT_TLS int ast_tco_ptr_env;
+static MCC_OPT_TLS int ast_cse_comm_env;
+static MCC_OPT_TLS int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned compare */
+static MCC_OPT_TLS int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
+static MCC_OPT_TLS int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
 static int ast_select_env;
 #define AST_SEL_MARK ((uint64_t)0x5E1EC7)
-static int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
-static int ast_reassoc_assoc_env;
-static int ast_reassoc_shlshr_env;
-static int ast_reassoc_shrshl_env;
-static int ast_reassoc_muldist_env;
-static int ast_bfold_sqrt_env;
-static int ast_bfold_sign_env;
-static int ast_bfold_round_env;
-static int ast_bfold_minmax_env;
+static MCC_OPT_TLS int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
+static MCC_OPT_TLS int ast_reassoc_assoc_env;
+static MCC_OPT_TLS int ast_reassoc_shlshr_env;
+static MCC_OPT_TLS int ast_reassoc_shrshl_env;
+static MCC_OPT_TLS int ast_reassoc_muldist_env;
+static MCC_OPT_TLS int ast_bfold_sqrt_env;
+static MCC_OPT_TLS int ast_bfold_sign_env;
+static MCC_OPT_TLS int ast_bfold_round_env;
+static MCC_OPT_TLS int ast_bfold_minmax_env;
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
@@ -827,9 +834,9 @@ static int ast_inline_depth_max = 8;
 static int ast_tco_maxp = 16;
 static int ast_cse_join_env;
 static int ast_call_window_env;
-static int ast_licm_temp_env;
-static int ast_ivsr_env;
-static int ast_pre_env;
+static MCC_OPT_TLS int ast_licm_temp_env;
+static MCC_OPT_TLS int ast_ivsr_env;
+static MCC_OPT_TLS int ast_pre_env;
 static int ast_loopnest_dump_env;
 static int ast_loopdep_dump_env;
 static int ast_perfn_inproc_env;
@@ -838,8 +845,8 @@ static int ast_argfwd_env;
 #define AST_LTEMP_MAX 32
 #define AST_LTEMP_PER_LOOP 8
 static int ast_ltemp_off[AST_LTEMP_MAX];
-static int ast_ltemp_n;
-static int ast_ltemp_cur;
+static MCC_OPT_TLS int ast_ltemp_n;
+static MCC_OPT_TLS int ast_ltemp_cur;
 static int ast_color_env;
 static int ast_spill_share_env;
 static int ast_search_worker;
@@ -999,7 +1006,7 @@ static int ast_jit_want(const char *fn, Sym *sym) { MCC_TRACE("enter\n");
 static int ast_jit_eval_refused;
 int ast_jit_eval_refused_count(void) { MCC_TRACE("enter\n"); return ast_jit_eval_refused; }
 
-static int ast_templates_env;
+static MCC_OPT_TLS int ast_templates_env;
 static int ast_search_env;
 static int ast_search_emitsize_env;
 static int ast_search_emitiso_env;
@@ -1090,7 +1097,7 @@ static int ast_no_callful_env;
 static int ast_no_callful_promo;
 static int ast_inline_env;
 static int ast_tmpl_folds;
-static AstArena *ast_cur;
+static MCC_OPT_TLS AstArena *ast_cur;
 int ast_bail;
 static int ast_reemit_poison;
 static AstLocal ast_ret_val;
@@ -2733,8 +2740,8 @@ static CType ast_graft_rt;
 static int ast_inline_ret_sym;
 static int ast_inline_ret_slot;
 static void *ast_inline_stack[AST_INLINE_MAX_DEPTH];
-static int ast_graft_budget;
-static int ast_inline_depth;
+static MCC_OPT_TLS int ast_graft_budget;
+static MCC_OPT_TLS int ast_inline_depth;
 
 static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (!ast_inline_active)
@@ -3391,12 +3398,12 @@ void ast_hook_data(void *sec, long off, long size, int is_ro) { MCC_TRACE("enter
 #define AST_DU_CAP 2048
 #define AST_DU_WRITTEN 1u
 #define AST_DU_ESCAPED 2u
-static const AstArena *ast_du_arena;
-static uint64_t ast_du_epoch;
-static int ast_du_state; /* 0 = must build, 1 = valid, -1 = overflowed */
-static int ast_du_n;
-static int ast_du_off[AST_DU_CAP];
-static uint8_t ast_du_flags[AST_DU_CAP];
+static MCC_OPT_TLS const AstArena *ast_du_arena;
+static MCC_OPT_TLS uint64_t ast_du_epoch;
+static MCC_OPT_TLS int ast_du_state; /* 0 = must build, 1 = valid, -1 = overflowed */
+static MCC_OPT_TLS int ast_du_n;
+static MCC_OPT_TLS int ast_du_off[AST_DU_CAP];
+static MCC_OPT_TLS uint8_t ast_du_flags[AST_DU_CAP];
 
 static uint8_t *ast_du_find(int off, int create) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_du_n; i++)
@@ -3506,10 +3513,10 @@ enum {
 	AST_MEMO_REGPURE,
 	AST_MEMO_PRED_COUNT
 };
-static const AstArena *ast_memo_arena;
-static uint64_t ast_memo_epoch;
-static int ast_memo_cap;
-static int8_t *ast_memo[AST_MEMO_PRED_COUNT];
+static MCC_OPT_TLS const AstArena *ast_memo_arena;
+static MCC_OPT_TLS uint64_t ast_memo_epoch;
+static MCC_OPT_TLS int ast_memo_cap;
+static MCC_OPT_TLS int8_t *ast_memo[AST_MEMO_PRED_COUNT];
 
 static void ast_memo_sync(const AstArena *a) { MCC_TRACE("enter\n");
 	int cnt = (int)ast_count(a);
@@ -3583,11 +3590,11 @@ AST_MEMO_QUERY(cse_regpure, AST_MEMO_REGPURE)
  * (confirm-on-fire), so a collision can never make it report a false equality.
  * The side-car is filled lazily per node and cleared when a->epoch changes.
  */
-static const AstArena *ast_hash_arena;
-static uint64_t ast_hash_epoch;
-static int ast_hash_cap;
-static uint64_t *ast_hash;
-static uint8_t *ast_hash_done;
+static MCC_OPT_TLS const AstArena *ast_hash_arena;
+static MCC_OPT_TLS uint64_t ast_hash_epoch;
+static MCC_OPT_TLS int ast_hash_cap;
+static MCC_OPT_TLS uint64_t *ast_hash;
+static MCC_OPT_TLS uint8_t *ast_hash_done;
 
 static void ast_hash_sync(const AstArena *a) { MCC_TRACE("enter\n");
 	int cnt = (int)ast_count(a);
@@ -7233,7 +7240,7 @@ static void ast_cse_kill(AstArena *a, int off) { MCC_TRACE("enter\n");
 	}
 }
 
-static int ast_licm_folds;
+static MCC_OPT_TLS int ast_licm_folds;
 
 static int ast_licm_written(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
@@ -7923,7 +7930,7 @@ static int ast_bf_run(AstArena *a) { MCC_TRACE("enter\n");
  * `(unsigned)(x - lo) <= (hi - lo)`. Correct-by-construction for constant lo <= hi and a
  * pure integer key x (standard unsigned-subtract range identity); gcc emits this as
  * `sub; cmp; setbe`, mcc otherwise leaves two signed compares + two branches. */
-static int ast_range_folds;
+static MCC_OPT_TLS int ast_range_folds;
 
 /* Parse one signed relational `x REL const` (literal on either side) into an inclusive
  * bound on the pure integer key: *is_lower=1 => x >= *bound, else x <= *bound. */
@@ -8407,7 +8414,7 @@ static int ast_range_run(AstArena *a) { MCC_TRACE("enter\n");
  * arithmetic is trusted (selftested); the remaining risk is only this AST construction,
  * which the full M8 regimen validates. Signed division and the add-correction case are
  * deferred (they need a shared-quotient temp / duplication). */
-static int ast_divmagic_folds;
+static MCC_OPT_TLS int ast_divmagic_folds;
 
 static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, ct, xt;
@@ -8815,7 +8822,7 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 /* Branchless abs/-abs: mcc lowers `x < 0 ? -x : x` to a compare + branch; the identity
  * `abs(x) = (x ^ (x>>31)) - (x>>31)` (arithmetic shift) is branchless and target-independent,
  * duplicating only the pure x (cheap, no temp/cmov). A strict win over the branch. */
-static int ast_abs_folds;
+static MCC_OPT_TLS int ast_abs_folds;
 
 /* `0 - k` -> k, else AST_NONE. Unary minus is lowered to `0 - x` (mccgen `vpushi(0);gen_op('-')`). */
 static AstLocal ast_abs_neg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -8966,7 +8973,7 @@ static int ast_abs_run(AstArena *a) { MCC_TRACE("enter\n");
 #define AST_SELECT_ARCH 0
 #endif
 
-static int ast_select_folds;
+static MCC_OPT_TLS int ast_select_folds;
 
 static int ast_sel_relop(int op) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
@@ -9064,7 +9071,7 @@ static int ast_select_run(AstArena *a) { MCC_TRACE("enter\n");
  * Correct-by-construction: &/|/^ combine exactly; +/* are modular (machine-equivalent); shifts
  * combine only when the summed count stays below the type width (else the double shift ≠ a
  * single one). x is duplicated so it must be pure. */
-static int ast_reassoc_folds;
+static MCC_OPT_TLS int ast_reassoc_folds;
 
 static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), c1t, c2t, xt, nt, iop, additive, result_op;
@@ -9317,7 +9324,7 @@ static int ast_reassoc_run(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_reassoc_folds;
 }
 
-static int ast_sethi_folds;
+static MCC_OPT_TLS int ast_sethi_folds;
 
 static int ast_sethi_commutative(int op) { MCC_TRACE("enter\n");
 	return op == '+' || op == '*' || op == '&' || op == '|' || op == '^';
@@ -9522,7 +9529,7 @@ static void ast_ltemp_count_occ(AstArena *a, AstLocal n, AstLocal e, int lval,
 		{ MCC_TRACE("br\n"); ast_ltemp_count_occ(a, c, e, clval, cnt); }
 }
 
-static AstLocal ast_ltemp_cand;
+static MCC_OPT_TLS AstLocal ast_ltemp_cand;
 
 static void ast_ltemp_scan(AstArena *a, AstLocal loop, AstLocal n, int lval) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_ltemp_cand != AST_NONE)
@@ -9708,7 +9715,7 @@ static int ast_ivsr_count_writes(AstArena *a, AstLocal n, int off) { MCC_TRACE("
 	return cnt;
 }
 
-static AstLocal ast_ivsr_target;
+static MCC_OPT_TLS AstLocal ast_ivsr_target;
 
 static AstLocal ast_ivsr_cofactor(AstArena *a, AstLocal loop, AstLocal mul,
 																	int ivoff, int ivtt) { MCC_TRACE("enter\n");
@@ -11636,9 +11643,24 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
  */
 typedef struct AstStrategy {
 	const char *name;
-	const int *gate;
+	int (*gate)(void); /* accessor, not &flag: the gate flags are MCC_OPT_TLS (per-thread),
+	                      whose address is not a compile-time constant for a static table */
 	int (*apply)(AstArena *a, Sym *sym);
 } AstStrategy;
+
+static int sg_templates(void) { MCC_TRACE("enter\n"); return ast_templates_env; }
+static int sg_narrow(void) { MCC_TRACE("enter\n"); return ast_narrow_env; }
+static int sg_ltemp(void) { MCC_TRACE("enter\n"); return ast_licm_temp_env; }
+static int sg_ivsr(void) { MCC_TRACE("enter\n"); return ast_ivsr_env; }
+static int sg_pre(void) { MCC_TRACE("enter\n"); return ast_pre_env; }
+static int sg_bitflag(void) { MCC_TRACE("enter\n"); return ast_bitflag_env; }
+static int sg_range(void) { MCC_TRACE("enter\n"); return ast_range_env; }
+static int sg_divmagic(void) { MCC_TRACE("enter\n"); return ast_divmagic_env; }
+static int sg_abs(void) { MCC_TRACE("enter\n"); return ast_abs_env; }
+static int sg_select(void) { MCC_TRACE("enter\n"); return ast_select_env; }
+static int sg_reassoc(void) { MCC_TRACE("enter\n"); return ast_reassoc_env; }
+static int sg_sethi(void) { MCC_TRACE("enter\n"); return ast_sethi_env; }
+static int sg_inline(void) { MCC_TRACE("enter\n"); return ast_inline_pass_env; }
 
 static int ast_strat_bfold(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_bfold_run(a); }
 static int ast_strat_ident(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_ident_run(a); }
@@ -11689,27 +11711,27 @@ enum {
 typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
 
 static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
-	{"bfold", &ast_templates_env, ast_strat_bfold},
-	{"ident", &ast_templates_env, ast_strat_ident},
-	{"narrow", &ast_narrow_env, ast_strat_narrow},
-	{"cprop", &ast_templates_env, ast_strat_cprop},
-	{"cse", &ast_templates_env, ast_strat_cse},
-	{"ltemp", &ast_licm_temp_env, ast_strat_ltemp},
-	{"ivsr", &ast_ivsr_env, ast_strat_ivsr},
-	{"pre", &ast_pre_env, ast_strat_pre},
-	{"licm", &ast_templates_env, ast_strat_licm},
-	{"dse", &ast_templates_env, ast_strat_dse},
-	{"sccp", &ast_templates_env, ast_strat_sccp},
-	{"jt", &ast_templates_env, ast_strat_jt},
-	{"bf", &ast_bitflag_env, ast_strat_bf},
-	{"range", &ast_range_env, ast_strat_range},
-	{"divmagic", &ast_divmagic_env, ast_strat_divmagic},
-	{"abs", &ast_abs_env, ast_strat_abs},
-	{"select", &ast_select_env, ast_strat_select},
-	{"reassoc", &ast_reassoc_env, ast_strat_reassoc},
-	{"sethi", &ast_sethi_env, ast_strat_sethi},
-	{"tco", &ast_templates_env, ast_strat_tco},
-	{"inline", &ast_inline_pass_env, ast_strat_inline},
+	{"bfold", sg_templates, ast_strat_bfold},
+	{"ident", sg_templates, ast_strat_ident},
+	{"narrow", sg_narrow, ast_strat_narrow},
+	{"cprop", sg_templates, ast_strat_cprop},
+	{"cse", sg_templates, ast_strat_cse},
+	{"ltemp", sg_ltemp, ast_strat_ltemp},
+	{"ivsr", sg_ivsr, ast_strat_ivsr},
+	{"pre", sg_pre, ast_strat_pre},
+	{"licm", sg_templates, ast_strat_licm},
+	{"dse", sg_templates, ast_strat_dse},
+	{"sccp", sg_templates, ast_strat_sccp},
+	{"jt", sg_templates, ast_strat_jt},
+	{"bf", sg_bitflag, ast_strat_bf},
+	{"range", sg_range, ast_strat_range},
+	{"divmagic", sg_divmagic, ast_strat_divmagic},
+	{"abs", sg_abs, ast_strat_abs},
+	{"select", sg_select, ast_strat_select},
+	{"reassoc", sg_reassoc, ast_strat_reassoc},
+	{"sethi", sg_sethi, ast_strat_sethi},
+	{"tco", sg_templates, ast_strat_tco},
+	{"inline", sg_inline, ast_strat_inline},
 };
 
 static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
@@ -11720,7 +11742,7 @@ static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
 		int si = seq[oi];
 		if (si < 0 || si >= AST_STRAT_COUNT)
 			{ MCC_TRACE("br\n"); continue; }
-		if (faithful && *ast_strategies[si].gate) { MCC_TRACE("br\n");
+		if (faithful && ast_strategies[si].gate()) { MCC_TRACE("br\n");
 			int h = ast_strategies[si].apply(a, sym);
 			hits += h;
 			if (sf)
@@ -13014,7 +13036,7 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 	long best_score;
 	char sq[AST_STRAT_COUNT_MAX * 4];
 	for (si = 0; si < AST_STRAT_COUNT; si++)
-		{ MCC_TRACE("br\n"); if (faithful && *ast_strategies[si].gate)
+		{ MCC_TRACE("br\n"); if (faithful && ast_strategies[si].gate())
 			{ MCC_TRACE("br\n"); rows[nrows++] = si; } }
 	if (h) { MCC_TRACE("br\n");
 		for (i = 0; i < ast_search_memo_n; i++)
@@ -13026,7 +13048,7 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 					ast_order_unpack(ast_search_memo[i].order_packed, un, useq);
 					for (j = 0; j < un; j++) { MCC_TRACE("br\n");
 						int r = useq[j];
-						if (r >= 0 && r < AST_STRAT_COUNT && *ast_strategies[r].gate)
+						if (r >= 0 && r < AST_STRAT_COUNT && ast_strategies[r].gate())
 							{ MCC_TRACE("br\n"); ast_strat_order[kk++] = r; }
 					}
 					ast_strat_order_n = kk;

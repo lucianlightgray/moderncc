@@ -1090,7 +1090,7 @@ ST_FUNC size_t host_pagesize(void) { MCC_TRACE("enter\n");
 /* Compiler-owned TLS slab for the -run Local-Exec model: emitted TPOFF
    relocations are retargeted into this slab (mccrun.c / *-link.c) so the CPU's
    thread-pointer add resolves to real memory. Sized generously for -run TLS. */
-#define MCC_JIT_TLS_MAX 8192
+#define MCC_JIT_TLS_MAX 65536 /* headroom for a JIT'd mcc's own ~12KB of _Thread_local optimizer state */
 static _Alignas(64) __thread unsigned char mcc_jit_tls_slab[MCC_JIT_TLS_MAX];
 
 ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void) { MCC_TRACE("enter\n");
