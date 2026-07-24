@@ -1205,6 +1205,8 @@ mcc_config_node(MCC_BUILD_COVERAGE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_c (coverage instrumentation)")
 mcc_config_node(MCC_BUILD_SANITIZE TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
     HELP "Also build mcc_s (sanitized: GCC/Clang ASan+UBSan, MSVC ASan, mingw trap-UBSan)")
+mcc_config_node(MCC_BUILD_TSAN TYPE BOOL DEFAULT OFF GROUP "Diagnostics"
+    HELP "Also build mcc_t (ThreadSanitizer: GCC/Clang -fsanitize=thread) for the item-1 optimizer-threading audit")
 mcc_config_node(MCC_MCCRT_USE_HOSTCC TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build the native mccrt with the host CC instead of mcc (faster bcheck)")
 mcc_config_node(MCC_EMBED_MCCRT TYPE BOOL DEFAULT ON GROUP "Build targets"
@@ -2324,7 +2326,35 @@ if(MCC_BUILD_SANITIZE)
     endif()
 endif()
 
-foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s)
+# ThreadSanitizer variant (mcc_t) — separate from mcc_s because TSan and ASan
+# cannot be combined. Used to drive the item-1 optimizer-threading data-race
+# audit (docs/jit-optimizer-threading.md). GCC/Clang only.
+if(MCC_BUILD_TSAN)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT MCC_TARGETOS STREQUAL "WIN32")
+        message(STATUS "mcc tsan (mcc_t): ThreadSanitizer (-fsanitize=thread)")
+        add_executable(mcc_t src/mcc.c)
+        set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/mcctools.c")
+        target_include_directories(mcc_t PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        target_compile_options(mcc_t PRIVATE -fsanitize=thread -g -O1)
+        target_link_options(mcc_t PRIVATE -fsanitize=thread)
+        target_link_libraries(mcc_t PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_t PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+        endif()
+        if(MCC_GITHASH)
+            target_compile_definitions(mcc_t PRIVATE "MCC_GITHASH=\"${MCC_GITHASH}\"")
+        endif()
+        if(TARGET mcc_mccdefs)
+            add_dependencies(mcc_t mcc_mccdefs)
+        endif()
+    else()
+        message(STATUS "mcc tsan (mcc_t): skipped (needs GCC/Clang on a non-Win32 host)")
+    endif()
+endif()
+
+foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s mcc_t)
     if(TARGET ${_nt})
         target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
     endif()
