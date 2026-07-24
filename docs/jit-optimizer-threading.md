@@ -128,9 +128,30 @@ revised, portable options:
    per-thread isolation, self-host byte-identical); Linux LE + x86_64 trampoline are
    build-clean, pending CI on those triples.
 
-Approach A is therefore unblocked. Remaining item-1 work: mark the 64-global scored-path
-surface `_Thread_local`, route `ast_search_score_one` onto `mccjit_pool`, verify TSan-clean +
-`opt-determinism` byte-identical. (Detail retained below for reference.)
+Approach A is therefore unblocked.
+
+### ✅ Stages 1a + 1b done (commit `feat(optimizer): thread-safe concurrent gate-search scoring`)
+
+The 64-global scored-path surface is now `_Thread_local` (via `MCC_OPT_TLS`), so the pthread
+scorer (`ast_search_pool_pthreads`, `MCC_AST_SEARCH_PTHREADS`) scores candidates concurrently
+**race-free**. The `ast_strategies[]` table's `&gate_flag` pointers became per-flag accessor
+functions (a static table can't hold TLS addresses). Verified on macOS arm64:
+- builds clean at 10.7 (debug/embedjit/tsan); non-TLS codegen **byte-identical** (TLS is a
+  no-op single-threaded); self-host AOT + `mcc --jit -O4 -run src/mcc.c` byte-identical to AOT;
+- the pthread scorer is **TSan-clean (0 races, down from ~47,281)** and produces
+  **byte-identical output across runs** (deterministic select preserved reproducibility);
+- 372/372 exec+optimizer, 47/47 JIT selftests.
+
+Concurrent optimizer scoring works and is **opt-in** (`MCC_AST_SEARCH_PTHREADS`).
+
+### Remaining (stage 1c, deferred)
+- Route the workers through the shared `mccjit_pool` instead of per-search `pthread_create`
+  (avoids thread-churn per function).
+- Make the threaded path the **default** — only after Linux + x86_64 CI validates the LE-slab
+  TLS path and the x86_64 trampoline (build-clean but not runtime-exercised on arm64 macOS).
+- Wire the capture→score→select funnel stats (item 2) through the joined workers.
+
+(Detail retained below for reference.)
 
 ## Second blocker (approach A) — RESOLVED: mcc's `-run`/JIT can now execute TLS
 
