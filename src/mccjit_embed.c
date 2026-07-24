@@ -363,8 +363,11 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mccjit_last_kgc_ok = scalar_ok && mccjit_last_purity != AST_PURITY_IMPURE;
 	}
 
-	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam)
-		{ MCC_TRACE("br\n"); mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val); }
+	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam) { MCC_TRACE("br\n");
+		int spec_folds = mccjit_ast_spec_fold(it.arena, (int)it.param_off[param_index], const_val);
+		if (mcc_stats_mask)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_specfold(spec_folds); }
+	}
 
 	sym = mccjit_rebuild_sym(&it);
 	mccjit_internal_compile = 1;
@@ -642,8 +645,11 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 																								 nargs)
 											 : mccjit_make_kgc_stub_n(variant, baseline, memoize_ok,
 																								ptypes, nargs, ret_wide);
-				if (entry)
-					{ MCC_TRACE("br\n"); routed = 1; }
+				if (entry) { MCC_TRACE("br\n");
+					routed = 1;
+					if (mcc_stats_mask)
+						{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_stub(); }
+				}
 			}
 		}
 		if (!entry && no_kgc)
@@ -714,8 +720,12 @@ static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 									? mccjit_make_kgc_stub_fp(variant, baseline, memoize_ok, nargs)
 									: mccjit_make_kgc_stub_n(variant, baseline, memoize_ok, ptypes,
 																					 nargs, ret_wide);
-			if (entry && routed)
-				{ MCC_TRACE("br\n"); *routed = 1; }
+			if (entry) { MCC_TRACE("br\n");
+				if (routed)
+					{ MCC_TRACE("br\n"); *routed = 1; }
+				if (mcc_stats_mask)
+					{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_stub(); }
+			}
 		}
 	}
 	if (!entry && no_kgc)

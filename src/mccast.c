@@ -11733,9 +11733,21 @@ static long ast_run_strat_cycle(AstArena *a, Sym *sym, int faithful,
 	long total = 0, chits;
 	int citer = 0;
 	do { MCC_TRACE("br\n");
+		int stat_before[AST_STRAT_COUNT];
+		int need_stats = sf && mcc_stats_mask;
+		if (need_stats) { MCC_TRACE("br\n");
+			for (int si = 0; si < AST_STRAT_COUNT; si++)
+				{ MCC_TRACE("br\n"); stat_before[si] = sf[si]; }
+		}
 		chits = ast_run_strat_seq(a, sym, faithful, seq, k, sf);
 		total += chits;
 		citer++;
+		if (need_stats) { MCC_TRACE("br\n");
+			int stat_delta[AST_STRAT_COUNT];
+			for (int si = 0; si < AST_STRAT_COUNT; si++)
+				{ MCC_TRACE("br\n"); stat_delta[si] = sf[si] - stat_before[si]; }
+			mcc_stats_fold_cycle(stat_delta, AST_STRAT_COUNT, citer);
+		}
 		MCC_TRACE("cycle iter=%d hits=%ld\n", citer, chits);
 	} while (chits > 0 && citer < AST_CYCLE_MAX && ast_cycle_env);
 	if (ast_cycle_env && citer >= AST_CYCLE_MAX && chits > 0)

@@ -39,6 +39,15 @@ void mcc_stats_jit_poison(void);
 void mcc_stats_jit_promote(int async);
 void mcc_stats_jit_memo(unsigned long tuples, unsigned long raw_bytes,
 											 unsigned long comp_bytes);
+void mcc_stats_jit_specfold(int folds);
+void mcc_stats_jit_kgc_stub(void);
+
+/* Per-iteration strategy deltas for one committed optimizer fixpoint cycle.
+   `delta` is a snapshot of how many times each strategy fired in this pass only
+   (indexed like mccstats_strat_name / the AST_STRAT_* enum); `iter` is 1-based.
+   Attributes constant producers (bfold/cprop/sccp) to the downstream consumers
+   (jt/dse/divmagic/... in iter>1) their new constants unlocked. */
+void mcc_stats_fold_cycle(const int *delta, int n, int iter);
 void mcc_stats_set_flush_hook(void (*fn)(void));
 
 #endif

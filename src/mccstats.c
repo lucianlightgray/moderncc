@@ -33,6 +33,25 @@ static const char *const mccstats_strat_name[MCCSTATS_STRAT_N] = {
 		"pre", "licm", "dse", "sccp", "jt", "bf", "range",
 		"divmagic", "abs", "select", "reassoc", "sethi", "tco", "inline"};
 
+/* Strategy slot indices into the delta vector passed to mcc_stats_fold_cycle.
+   These MUST stay aligned with mccstats_strat_name above and the AST_STRAT_*
+   enum in mccast.c (the same fixed order the strat_hits path already relies on). */
+enum {
+	MCCSTATS_S_BFOLD = 0,
+	MCCSTATS_S_IDENT = 1,
+	MCCSTATS_S_NARROW = 2,
+	MCCSTATS_S_CPROP = 3,
+	MCCSTATS_S_DSE = 9,
+	MCCSTATS_S_SCCP = 10,
+	MCCSTATS_S_JT = 11,
+	MCCSTATS_S_RANGE = 13,
+	MCCSTATS_S_DIVMAGIC = 14,
+	MCCSTATS_S_ABS = 15,
+	MCCSTATS_S_SELECT = 16,
+	MCCSTATS_S_REASSOC = 17,
+	MCCSTATS_S_SETHI = 18
+};
+
 static const char *const mccstats_gate_name[MCCSTATS_GATE_N] = {
 		"templ", "narrow", "bflag", "sethi", "nrwfix", "shleaf", "promo",
 		"inline", "nocall", "cprpjn", "csejn", "ltemp", "ivsr", "pre",
@@ -90,6 +109,20 @@ typedef struct McccStats {
 	unsigned long jit_memo_tuples;
 	unsigned long jit_memo_raw;
 	unsigned long jit_memo_comp;
+	unsigned long jit_specfold_events;
+	unsigned long jit_specfold_nodes;
+	unsigned long jit_kgc_stubs;
+
+	unsigned long fold_cycles;
+	unsigned long fold_cycle_iters;
+	unsigned long fold_producer_fires;
+	unsigned long fold_enabled_consumers;
+	unsigned long fold_branches_killed;
+	unsigned long fold_dead_removed;
+	unsigned long fold_strength_reduced;
+	unsigned long fold_idents_unlocked;
+	unsigned long fold_narrowed;
+	int fold_seen_producer; /* transient: producer fired earlier in this cycle */
 } McccStats;
 
 static McccStats mcs;
@@ -238,6 +271,22 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 		}
 	}
 
+	if (mcc_stats_on(MCC_STATS_STRATEGY) && mcs.fold_cycles) { MCC_TRACE("br\n");
+		char avg[24];
+		unsigned long tenths = mcs.fold_cycles
+			? (mcs.fold_cycle_iters * 10 + mcs.fold_cycles / 2) / mcs.fold_cycles
+			: 0;
+		snprintf(avg, sizeof avg, "%lu.%lu", tenths / 10, tenths % 10);
+		mccstats_fmt_u(mcs.fold_producer_fires, a, sizeof a);
+		mccstats_fmt_u(mcs.fold_enabled_consumers, b, sizeof b);
+		mccstats_row(r, " \033[36mFOLD\033[0m     producers=%s  enabled %s downstream opts  (%s avg cycles)",
+								 a, b, avg);
+		mccstats_row(r, "          branch=%lu  dead=%lu  strength=%lu  ident=%lu  narrow=%lu",
+								 mcs.fold_branches_killed, mcs.fold_dead_removed,
+								 mcs.fold_strength_reduced, mcs.fold_idents_unlocked,
+								 mcs.fold_narrowed);
+	}
+
 	if (mcc_stats_on(MCC_STATS_STRATEGY)) { MCC_TRACE("br\n");
 		int bcol, p = 0;
 		char line[MCCSTATS_COLW];
@@ -270,6 +319,11 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 								 mcs.jit_recompiles, mcs.jit_promote_sync,
 								 mcs.jit_promote_async, mcs.jit_poison);
 		mccstats_row(r, "          kgc hits=%s  miss=%s", a, b);
+		if (mcs.jit_specfold_events || mcs.jit_kgc_stubs) { MCC_TRACE("br\n");
+			mccstats_fmt_u(mcs.jit_specfold_nodes, a, sizeof a);
+			mccstats_row(r, "          const-eval: folded %s nodes over %lu fns  kgc stubs=%lu",
+									 a, mcs.jit_specfold_events, mcs.jit_kgc_stubs);
+		}
 		if (mcs.jit_memo_arrays) { MCC_TRACE("br\n");
 			unsigned pct = mcs.jit_memo_raw
 											 ? (unsigned)(mcs.jit_memo_comp * 100 / mcs.jit_memo_raw)
@@ -495,4 +549,53 @@ void mcc_stats_jit_promote(int async) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcs.jit_promote_async++; }
 	else
 		{ MCC_TRACE("br\n"); mcs.jit_promote_sync++; }
+}
+
+void mcc_stats_jit_specfold(int folds) { MCC_TRACE("enter\n");
+	if (!mcs.active || folds <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_specfold_events++;
+	mcs.jit_specfold_nodes += (unsigned long)folds;
+}
+
+void mcc_stats_jit_kgc_stub(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_kgc_stubs++;
+}
+
+void mcc_stats_fold_cycle(const int *delta, int n, int iter) { MCC_TRACE("enter\n");
+	long producers, consumers, br, dead, str, id, nrw;
+	if (!mcs.active || !delta)
+		{ MCC_TRACE("br\n"); return; }
+#define MCCSTATS_D(i) ((i) < n ? (long)(delta[i] > 0 ? delta[i] : 0) : 0)
+	if (iter <= 1) { MCC_TRACE("br\n");
+		mcs.fold_cycles++;
+		mcs.fold_seen_producer = 0;
+	}
+	mcs.fold_cycle_iters++;
+	producers = MCCSTATS_D(MCCSTATS_S_BFOLD) + MCCSTATS_D(MCCSTATS_S_CPROP) +
+							MCCSTATS_D(MCCSTATS_S_SCCP);
+	mcs.fold_producer_fires += (unsigned long)producers;
+	/* Attribute consumer fires to folding once a producer has run in this cycle.
+	   The frozen strategy order runs producers (bfold/cprop/sccp) before consumers,
+	   so same-pass consumer fires already act on the freshly folded constants;
+	   later-iteration fires are cross-round enablement. */
+	if (!mcs.fold_seen_producer && producers <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.fold_seen_producer = 1;
+	br = MCCSTATS_D(MCCSTATS_S_JT);
+	dead = MCCSTATS_D(MCCSTATS_S_DSE);
+	str = MCCSTATS_D(MCCSTATS_S_DIVMAGIC) + MCCSTATS_D(MCCSTATS_S_SETHI);
+	id = MCCSTATS_D(MCCSTATS_S_IDENT);
+	nrw = MCCSTATS_D(MCCSTATS_S_NARROW) + MCCSTATS_D(MCCSTATS_S_RANGE);
+	consumers = br + dead + str + id + nrw + MCCSTATS_D(MCCSTATS_S_SELECT) +
+							MCCSTATS_D(MCCSTATS_S_ABS) + MCCSTATS_D(MCCSTATS_S_REASSOC);
+	mcs.fold_branches_killed += (unsigned long)br;
+	mcs.fold_dead_removed += (unsigned long)dead;
+	mcs.fold_strength_reduced += (unsigned long)str;
+	mcs.fold_idents_unlocked += (unsigned long)id;
+	mcs.fold_narrowed += (unsigned long)nrw;
+	mcs.fold_enabled_consumers += (unsigned long)consumers;
+#undef MCCSTATS_D
 }
