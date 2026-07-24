@@ -117,6 +117,35 @@ macho-arm64 TLS lowering in mcc's own backend.
 Approach A is therefore off the table unless the deployment-target policy changes. The
 revised, portable options:
 
+## Second blocker (approach A): mcc's `-run`/JIT can't execute TLS
+
+Even with the host deployment target bumped so clang accepts `_Thread_local`, a TLS-laden
+`mccast.c` breaks the JIT path:
+
+- `mcc file.c -o bin` (AOT + system linker + dyld): **works** — prints `42`.
+- `mcc -run file.c` (in-memory JIT): **SIGBUS** (exit 138). Isolated: `-run` on a plain
+  global works; only `_Thread_local` crashes.
+
+Diagnosis: the `-run` engine relocates through the ELF path (`relocate_syms`, mccelf.c:956;
+`R_AARCH64_TLSLE/TLSDESC`, arm64-link.c) and executes in mcc's own macOS process. The ELF TLS
+model does not match the macOS host `tlv` runtime, and mcc's own lowering degrades the
+thread-local to a plain `D` (data) symbol (`nm` shows `_tlsv` as `D`, not a thread var). So the
+JIT neither sets up macho `tlv` descriptors nor computes a host-correct thread-pointer offset.
+`_tlv_bootstrap` *is* resolvable in-process (`dlsym(RTLD_DEFAULT,"_tlv_bootstrap")` ≠ 0), so a
+descriptor-bootstrap fix is feasible — but it is a real backend feature, not a config tweak.
+
+**This matters because item 1's premise is "optimizations run in the JIT."** With `_Thread_local`
+optimizer state, the JIT-hosted compiler (`selfhost-jit.py`: `mcc --jit -O4 -run src/mcc.c`)
+would crash. Approach A therefore requires, as a prerequisite: **implement host-compatible TLS
+in mcc's `-run`/runmem engine** (bootstrap macho `tlv` descriptors via the in-process
+`_tlv_bootstrap`, or map ELF TLS onto the host thread pointer), then verify `mcc -run` on the
+1-line `_Thread_local` repro prints `42`.
+
+Decided path (user): **stay on A** — bump the deployment target (done: 10.6 → 10.7,
+CMakeLists.txt) and build the JIT TLS support. Status: target bumped; JIT TLS backend feature
+is the next work unit (scoped above); the 64-global `_Thread_local` marking and the threaded
+scorer follow once `mcc -run` executes TLS correctly.
+
 ## Approach options (revised)
 
 - **A. `_Thread_local`.** ⛔ **Blocked** by the 10.6 target (above). Only viable if the project

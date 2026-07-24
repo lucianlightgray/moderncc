@@ -1558,7 +1558,10 @@ if(MCC_TARGETOS STREQUAL "Darwin" AND NOT MCC_CC_NAME STREQUAL "mcc")
         add_link_options(-undefined warning)
     endif()
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.6" CACHE STRING
+        # 10.7 (was 10.6): macOS 10.6 predates the TLS runtime (__tlv_bootstrap), so
+        # clang rejects _Thread_local under a 10.6 min. 10.7 is the floor for the
+        # thread-local optimizer state (docs/jit-optimizer-threading.md, item 1).
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.7" CACHE STRING
             "Makefile: MACOSX_DEPLOYMENT_TARGET" FORCE)
     endif()
     if(MCC_CPU STREQUAL "x86_64" AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
