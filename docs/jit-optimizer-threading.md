@@ -66,12 +66,33 @@ inventory is stage-0's deliverable**; this is the framework and the known entrie
 | **Emit-only pools** | `ast_inline_pool`, `ast_reemit_pool`, `ast_promo_n/save_n`, emit cursors | ❓ **must confirm NOT reached by the no-emit cycle** (`mccast.c:11783` claims the score path avoids emit-cursor/promo hazards) |
 | **Read-only shared** | `ast_strat_order[]`, `ast_strat_order_n`, `ast_strategies[]`, env config read once | ✅ safe if frozen before fan-out |
 
-Two open questions stage 0 must answer with certainty:
-1. **Which scratch pools does `ast_run_strat_cycle` (no emit) actually touch** vs. which are
-   emit-only? This sizes the thread-local surface (memory = surface × nthreads).
-2. **Any hidden statics inside individual strategies** (static scratch buffers, memo tables,
-   `ast_now_ms` forecasting window `ast_search_durwin_push`)? A TSan run over the threaded
-   scorer is the ground truth here.
+### Empirical audit result (resolved via `mcc_t` + the pthread scorer)
+
+Running `MCC_AST_SEARCH_PTHREADS=1` under ThreadSanitizer on a cold search of a unique
+function reported **~47k races across 64 distinct globals**. The dominant surface was **not**
+the statically-obvious `ast_cur`/gate flags — it was the strategies' **lazily-built analysis
+arenas**, which the static read missed entirely. The full thread-local surface:
+
+| Group | Globals (mccast.c) | ~races | Note |
+|---|---|---|---|
+| **Hash-cons cache** | `ast_hash`, `ast_hash_arena`, `ast_hash_cap`, `ast_hash_done`, `ast_hash_epoch` | ~2090 | epoch-invalidated; dominant |
+| **Def-use analysis** | `ast_du_arena`, `ast_du_epoch`, `ast_du_flags`, `ast_du_n`, `ast_du_off`, `ast_du_state` | ~640 | rebuilt per function |
+| **Predicate memo** | `ast_memo`, `ast_memo_arena`, `ast_memo_cap`, `ast_memo_epoch` | ~240 | epoch-invalidated |
+| **Gate flags** | 35 × `ast_*_env` | ~35 | set per-candidate by `ast_search_gates_set` — safe once TLS (score path always sets before read) |
+| **Fold counters** | `ast_{abs,divmagic,licm,range,reassoc,select,sethi}_folds` | ~20 | pass hit counts |
+| **Loop-temp scratch** | `ast_ltemp_n`, `ast_ltemp_cur`, `ast_ltemp_cand` | ~10 | |
+| **Misc** | `ast_cur`, `ast_graft_budget`, `ast_inline_depth`, `ast_ivsr_target` | ~10 | |
+
+**Implication:** the epoch-keyed analysis arenas (`ast_hash_*`, `ast_du_*`, `ast_memo_*`) are
+the real cost. `_Thread_local` gives each worker its own arena — correct, but each worker
+leaks its arena at thread exit (C `_Thread_local` pointers have no destructor); the pool must
+either reuse a fixed worker set or add explicit per-thread teardown. This is the single most
+important design consequence the empirical audit surfaced.
+
+Audit tooling (committed, default-off): `ast_search_pool_pthreads` +
+`MCC_AST_SEARCH_PTHREADS` (mccast.c), driven under the `mcc_t` TSan build. The race list is
+reproducible with a unique never-compiled function (the search memo is disk-backed on a fixed
+path, so a repeated function is a memo hit and never re-searches).
 
 ## Approach options
 

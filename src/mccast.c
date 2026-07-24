@@ -1008,6 +1008,7 @@ static int ast_search_want_inline;
 static int ast_search_axis_ran;
 static int ast_search_pick_inline;
 static int ast_search_threads_env;
+static int ast_search_pthreads_env; /* item-1: pthread scoring fan-out (audit; default off) */
 static int ast_search_ordered_env;
 static int ast_search_walk_env;
 static unsigned ast_search_seconds;
@@ -1288,6 +1289,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_emitiso_env = ast_env_gate("MCC_AST_SEARCH_EMITISO", 0);
 	ast_search_inline_env = ast_env_gate("MCC_AST_SEARCH_INLINE", 0);
 	ast_search_threads_env = ast_env_gate("MCC_AST_SEARCH_THREADS", 0);
+	ast_search_pthreads_env = ast_env_gate("MCC_AST_SEARCH_PTHREADS", 0);
 	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
 	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
@@ -12913,6 +12915,95 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 	*best_score_out = best_score;
 	return 1;
 }
+
+/* Item-1 pthread scoring fan-out (docs/jit-optimizer-threading.md). Same shape as
+   the fork pool, but workers are threads sharing one address space — so unlike the
+   fork pool it is NOT yet correct: ast_search_score_one still mutates process-global
+   optimizer state (ast_cur, the ast_*_env gate flags, fold counters, scratch pools).
+   Gated off by default and used under mcc_t (TSan) to enumerate exactly those races
+   before they are made _Thread_local. Selection is deterministic (by index,
+   strict-less -> lowest index) regardless of thread completion order. */
+#include <pthread.h>
+typedef struct AstScoreThreadArg {
+	AstArena *pristine;
+	Sym *sym;
+	int faithful;
+	const AstGateMask *gatelist;
+	int nc;
+	int saved_loc;
+	int saved_anon;
+	int wid;
+	int nw;
+	long *results; /* shared; each thread writes only its disjoint i == wid (mod nw) */
+} AstScoreThreadArg;
+
+static void *ast_search_thread_fn(void *p) { MCC_TRACE("enter\n");
+	AstScoreThreadArg *a = (AstScoreThreadArg *)p;
+	int i;
+	for (i = a->wid; i < a->nc; i += a->nw)
+		{ MCC_TRACE("br\n"); a->results[i] = ast_search_score_one(
+				a->pristine, a->sym, a->faithful, a->gatelist[i], a->saved_loc,
+				a->saved_anon); }
+	return NULL;
+}
+
+static int ast_search_pool_pthreads(AstArena *pristine, Sym *sym, int faithful,
+																		const AstGateMask *gatelist, int nc,
+																		int saved_loc, int saved_anon,
+																		AstGateMask *best_out,
+																		long *best_score_out) { MCC_TRACE("enter\n");
+	int nw = host_nproc() - 1, w, i;
+	pthread_t th[64];
+	AstScoreThreadArg args[64];
+	long *results;
+	AstGateMask best = gatelist[0];
+	long best_score = -1;
+	if (getenv("MCC_AST_PTHREADS_DIAG"))
+		{ MCC_TRACE("br\n"); fprintf(stderr, "[pthreads-pool] entry nw=%d nc=%d\n", nw, nc); }
+	if (nw < 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (nw > nc)
+		{ MCC_TRACE("br\n"); nw = nc; }
+	if (nw > 64)
+		{ MCC_TRACE("br\n"); nw = 64; }
+	results = mcc_malloc((size_t)nc * sizeof *results);
+	if (!results)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < nc; i++)
+		{ MCC_TRACE("br\n"); results[i] = -1; }
+	for (w = 0; w < nw; w++) { MCC_TRACE("br\n");
+		args[w].pristine = pristine;
+		args[w].sym = sym;
+		args[w].faithful = faithful;
+		args[w].gatelist = gatelist;
+		args[w].nc = nc;
+		args[w].saved_loc = saved_loc;
+		args[w].saved_anon = saved_anon;
+		args[w].wid = w;
+		args[w].nw = nw;
+		args[w].results = results;
+		if (pthread_create(&th[w], NULL, ast_search_thread_fn, &args[w]) != 0) { MCC_TRACE("br\n");
+			int j;
+			for (j = 0; j < w; j++)
+				{ MCC_TRACE("br\n"); pthread_join(th[j], NULL); }
+			mcc_free(results);
+			return 0;
+		}
+	}
+	for (w = 0; w < nw; w++)
+		{ MCC_TRACE("br\n"); pthread_join(th[w], NULL); }
+	for (i = 0; i < nc; i++) /* deterministic select: lowest index wins ties */
+		{ MCC_TRACE("br\n"); if (results[i] >= 0 && (best_score < 0 || results[i] < best_score)) { MCC_TRACE("br\n");
+			best_score = results[i];
+			best = gatelist[i];
+		} }
+	mcc_free(results);
+	if (best_score < 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	*best_out = best;
+	*best_score_out = best_score;
+	return 1;
+}
 #endif
 
 static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
@@ -13153,8 +13244,9 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			{ MCC_TRACE("br\n"); mcc_stats_search_begin(funcname, h, base, searchable, nitems,
 														 ast_search_walk_env, ast_search_ordered_env ? 1 : 0); }
 #if MCC_HOST_POSIX
-		if (ast_search_threads_env) { MCC_TRACE("br\n");
+		if (ast_search_threads_env || ast_search_pthreads_env) { MCC_TRACE("br\n");
 			AstGateMask sub = searchable;
+			int pooled;
 			for (;;) { MCC_TRACE("br\n");
 				if (nc < AST_SEARCH_MAX_CAND)
 					{ MCC_TRACE("br\n"); gatelist[nc++] = sub; }
@@ -13167,8 +13259,14 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					{ MCC_TRACE("br\n"); break; }
 				sub = (sub - 1) & searchable;
 			}
-			if (ast_search_pool(pristine, sym, faithful, gatelist, nc, saved_loc,
-													saved_anon, &best, &best_score))
+			/* pthreads is the item-1 audit path (default off); fork pool is the shipping
+			 * default when MCC_AST_SEARCH_THREADS is set. */
+			pooled = ast_search_pthreads_env
+									 ? ast_search_pool_pthreads(pristine, sym, faithful, gatelist, nc,
+																							saved_loc, saved_anon, &best, &best_score)
+									 : ast_search_pool(pristine, sym, faithful, gatelist, nc, saved_loc,
+																		 saved_anon, &best, &best_score);
+			if (pooled)
 				{ MCC_TRACE("br\n"); goto search_done; }
 			best_score = -1; /* pool declined (too few cores / all forks failed) */
 		}
