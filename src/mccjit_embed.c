@@ -253,7 +253,7 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) {
 	if (!sym || !ast)
 		{ MCC_TRACE("br\n"); return -1; }
 	mccjit_buf_init(&b);
-	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
+	if (mccjit_intent_serialize(ast, sym, &b, 0) != 0) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
 		return -1;
 	}
@@ -481,7 +481,7 @@ void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast || !sym)
 		{ MCC_TRACE("br\n"); return; }
 	mccjit_buf_init(&b);
-	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
+	if (mccjit_intent_serialize(ast, sym, &b, 0) != 0) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
 		return;
 	}
@@ -533,7 +533,7 @@ static int mccjit_engine_internal(const char *name) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("enter\n");
+void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_gates) { MCC_TRACE("enter\n");
 	MccjitBuf b;
 	MccjitEmbedFn *e;
 	if (!name || !name[0] || !ast || !sym || mccjit_internal_compile)
@@ -544,7 +544,7 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym) { MCC_TRACE("e
 		{ MCC_TRACE("br\n"); if (!strcmp(e->name, name))
 			{ MCC_TRACE("br\n"); return; } }
 	mccjit_buf_init(&b);
-	if (mccjit_intent_serialize(ast, sym, &b) != 0) { MCC_TRACE("br\n");
+	if (mccjit_intent_serialize(ast, sym, &b, warm_gates) != 0) { MCC_TRACE("br\n");
 		mccjit_buf_free(&b);
 		return;
 	}
@@ -825,6 +825,26 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	if (stale_max < 1)
 		{ MCC_TRACE("br\n"); stale_max = 1; }
 	timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
+	/* Warm start: seed the search with the AOT-selected gate mask baked into the
+	   intent, so the vocab sweep only has to beat a known-good config (and the
+	   plateau stop can short-circuit immediately when it cannot). */
+	{
+		uint64_t warm = mccjit_intent_peek_warm_gates(st->blob, st->len);
+		if (warm) { MCC_TRACE("br\n");
+			int r = 0;
+			void *cand = mccjit_lazy_build_masked(st->blob, st->len, warm, 1, &r);
+			gs_cands++;
+			if (cand) { MCC_TRACE("br\n");
+				best = cand;
+				best_routed = r;
+				gs_admits++;
+				gs_best_mask = warm;
+				best_cost = mccjit_variant_cost;
+				if (async)
+					{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
+			}
+		}
+	}
 	for (i = 0; i < nv; i++) { MCC_TRACE("br\n");
 		int r = 0;
 		void *cand;

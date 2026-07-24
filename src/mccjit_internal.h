@@ -20,7 +20,7 @@
 #define MCCJIT_KGC_MAXARG 6
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
-#define MCCJIT_INTENT_FORMAT 7u
+#define MCCJIT_INTENT_FORMAT 8u /* 8: header carries the AOT warm-start gate mask */
 
 #define MCCJIT_ROLE_PLAIN 0u
 #define MCCJIT_ROLE_NAMED 1u
@@ -74,6 +74,7 @@ typedef struct MccjitIntent {
 	uint32_t *param_type_t;
 	int64_t *param_off;
 	char **param_name;
+	uint64_t warm_gates; /* AOT-selected gate mask to warm-start the JIT search (0 = none) */
 } MccjitIntent;
 
 MCCJIT_LOCAL unsigned mccjit_role_for_base(int t);
@@ -81,8 +82,10 @@ MCCJIT_LOCAL uint64_t mccjit_salt_witness(void);
 
 MCCJIT_LOCAL void mccjit_buf_init(MccjitBuf *b);
 MCCJIT_LOCAL void mccjit_buf_free(MccjitBuf *b);
-MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf);
+MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf,
+																				 uint64_t warm_gates);
 MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len, MccjitIntent *it);
+MCCJIT_LOCAL uint64_t mccjit_intent_peek_warm_gates(const void *buf, size_t len);
 MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it);
 MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it);
 MCCJIT_LOCAL void mccjit_note_export_name(const char *name);

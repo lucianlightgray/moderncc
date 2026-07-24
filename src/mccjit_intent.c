@@ -343,7 +343,8 @@ static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i
 	}
 }
 
-MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf) { MCC_TRACE("enter\n");
+MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf,
+																				 uint64_t warm_gates) { MCC_TRACE("enter\n");
 	MccjitHandles handles;
 	AstLocal count, n;
 	uint32_t k;
@@ -406,6 +407,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	mccjit_put_u64(buf, sym ? (uint64_t)(int64_t)sym->v : 0);
 	mccjit_put_u32(buf, (uint32_t)count);
 	mccjit_put_u32(buf, (uint32_t)ast_root(a));
+	mccjit_put_u64(buf, warm_gates);
 
 	mccjit_put_u32(buf, handles.count);
 	for (k = 0; k < handles.count; k++) { MCC_TRACE("br\n");
@@ -623,6 +625,29 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 	return res;
 }
 
+/* Read only the fixed header prefix to recover the warm-start gate mask without a
+   full deserialize. Returns 0 on any mismatch (bad magic/format/truncation). */
+MCCJIT_LOCAL uint64_t mccjit_intent_peek_warm_gates(const void *buf, size_t len) { MCC_TRACE("enter\n");
+	MccjitReader r;
+	uint64_t warm;
+	if (!buf)
+		{ MCC_TRACE("br\n"); return 0; }
+	r.data = buf;
+	r.len = len;
+	r.pos = 0;
+	r.err = 0;
+	if (mccjit_get_u32(&r) != MCCJIT_INTENT_MAGIC)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (mccjit_get_u32(&r) != MCCJIT_INTENT_FORMAT)
+		{ MCC_TRACE("br\n"); return 0; }
+	(void)mccjit_get_u64(&r); /* salt */
+	(void)mccjit_get_u64(&r); /* anchor_sym_v */
+	(void)mccjit_get_u32(&r); /* count */
+	(void)mccjit_get_u32(&r); /* ast_root */
+	warm = mccjit_get_u64(&r);
+	return r.err ? 0 : warm;
+}
+
 MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 																					 MccjitIntent *out) { MCC_TRACE("enter\n");
 	MccjitReader r;
@@ -648,6 +673,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	out->anchor_sym_v = (int64_t)mccjit_get_u64(&r);
 	count = mccjit_get_u32(&r);
 	(void)mccjit_get_u32(&r);
+	out->warm_gates = mccjit_get_u64(&r);
 
 	hc = mccjit_get_u32(&r);
 	if (r.err)

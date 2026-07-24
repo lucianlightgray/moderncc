@@ -21,7 +21,7 @@ unsigned char mcc_log_verbose = 0;
 #ifdef MCC_EMBED_JIT
 #include "algorithms/jit.h"
 void mccjit_embed_stash_leaf(AstArena *ast, Sym *sym);
-void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym);
+void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_gates);
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #endif
 #include "mcccombo.h"
@@ -13624,7 +13624,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
-							mccjit_embed_note(funcname, ast_cur, sym);
+							mccjit_embed_note(funcname, ast_cur, sym,
+																(uint64_t)ast_search_gates_now());
 							ast_jit_submit_aot(sym);
 						}
 #endif
@@ -13663,7 +13664,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
-							mccjit_embed_note(funcname, ast_cur, sym);
+							mccjit_embed_note(funcname, ast_cur, sym,
+																(uint64_t)ast_search_gates_now());
 							ast_jit_submit_aot(sym);
 						}
 #endif
@@ -13705,7 +13707,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
-							mccjit_embed_note(funcname, ast_cur, sym);
+							mccjit_embed_note(funcname, ast_cur, sym,
+																(uint64_t)ast_search_gates_now());
 							ast_jit_submit_aot(sym);
 						}
 #endif
