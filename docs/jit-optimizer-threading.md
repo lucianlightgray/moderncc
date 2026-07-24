@@ -117,7 +117,22 @@ macho-arm64 TLS lowering in mcc's own backend.
 Approach A is therefore off the table unless the deployment-target policy changes. The
 revised, portable options:
 
-## Second blocker (approach A): mcc's `-run`/JIT can't execute TLS
+## ✅ Both approach-A blockers are now resolved
+
+1. **10.6 target** → bumped to 10.7 (host clang accepts `_Thread_local`).
+2. **`-run`/JIT couldn't execute TLS** → **implemented** (commit `feat(run): cross-platform
+   TLS in the -run/JIT engine`). `mcc -run` now runs `_Thread_local` correctly: macOS via a
+   synthesized tlv descriptor + a `pthread_key`-backed register-preserving thunk trampoline
+   (since `_tlv_bootstrap` is an abort-stub on modern macOS); Linux via a `static __thread`
+   slab with the LE relocation retargeted into it. Verified on macOS arm64 (42 + true
+   per-thread isolation, self-host byte-identical); Linux LE + x86_64 trampoline are
+   build-clean, pending CI on those triples.
+
+Approach A is therefore unblocked. Remaining item-1 work: mark the 64-global scored-path
+surface `_Thread_local`, route `ast_search_score_one` onto `mccjit_pool`, verify TSan-clean +
+`opt-determinism` byte-identical. (Detail retained below for reference.)
+
+## Second blocker (approach A) — RESOLVED: mcc's `-run`/JIT can now execute TLS
 
 Even with the host deployment target bumped so clang accepts `_Thread_local`, a TLS-laden
 `mccast.c` breaks the JIT path:
