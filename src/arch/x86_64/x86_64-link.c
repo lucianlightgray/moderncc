@@ -157,6 +157,8 @@ static addr_t x86_64_tpoff(MCCState *s1, addr_t val) { MCC_TRACE("enter\n");
 	}
 	if (tls_end <= tls_start)
 		{ MCC_TRACE("br\n"); return val; }
+	if (s1->run_tls_active)
+		{ MCC_TRACE("br\n"); return s1->run_tls_slab_tpoff + (val - tls_start); }
 	aligned = (tls_end - tls_start + tls_align - 1) & ~(tls_align - 1);
 	return val - (tls_start + aligned);
 }
@@ -343,7 +345,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
-		if (tls_end > tls_start) { MCC_TRACE("br\n");
+		if (s1->run_tls_active) { MCC_TRACE("br\n");
+			x = (int32_t)(s1->run_tls_slab_tpoff + (val - tls_start));
+		} else if (tls_end > tls_start) { MCC_TRACE("br\n");
 			addr_t tls_size = tls_end - tls_start;
 			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE
@@ -379,7 +383,9 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
-		if (tls_end > tls_start) { MCC_TRACE("br\n");
+		if (s1->run_tls_active) { MCC_TRACE("br\n");
+			x = (int32_t)(s1->run_tls_slab_tpoff + (val - tls_start));
+		} else if (tls_end > tls_start) { MCC_TRACE("br\n");
 			addr_t tls_size = tls_end - tls_start;
 			addr_t aligned_size = (tls_size + tls_align - 1) & ~(tls_align - 1);
 #ifdef MCC_TARGET_PE

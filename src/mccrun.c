@@ -195,6 +195,341 @@ static void cleanup_sections(MCCState *s1) { MCC_TRACE("enter\n");
 	} while (++p, f);
 }
 
+/* ------------------------------------------------------------------------ */
+/* _Thread_local support for the in-memory (-run) JIT engine.                */
+
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__x86_64__))
+#define MCC_RUN_TLS_MACHO 1
+#endif
+
+#if defined(MCC_RUN_TLS_MACHO) || defined(__linux__)
+#include <pthread.h>
+#endif
+
+#ifdef MCC_RUN_TLS_MACHO
+
+#if defined(__APPLE__)
+#define MCC_ASM_SYM(x) "_" #x
+#else
+#define MCC_ASM_SYM(x) #x
+#endif
+
+/* Layout mirrors the AOT Mach-O tlv descriptor (mccmacho.c): a 3-pointer
+   record {thunk, key, off}. In -run we supply our own thunk instead of the
+   dyld __tlv_bootstrap import, so the descriptor is self-contained. */
+struct mcc_tlv_desc {
+	void *(*thunk)(struct mcc_tlv_desc *);
+	unsigned long key;
+	unsigned long off;
+};
+
+struct mcc_tls_img {
+	pthread_key_t key;
+	const void *init;
+	unsigned long filesz, memsz;
+	int used;
+};
+
+struct mcc_tls_var {
+	int desc_off;
+	int orig_sec;
+	addr_t orig_val;
+};
+
+/* Process-global registry mapping a pthread key -> its TLS init image. Guarded
+   by its own mutex; mirrors how st_link/st_unlink serialize shared state. */
+#define MCC_TLS_IMG_MAX 64
+static struct mcc_tls_img mcc_tls_imgs[MCC_TLS_IMG_MAX];
+static int mcc_tls_img_count;
+static pthread_mutex_t mcc_tls_img_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+static struct mcc_tls_img *mcc_tls_img_lookup(pthread_key_t key) { MCC_TRACE("enter\n");
+	struct mcc_tls_img *r = NULL;
+	pthread_mutex_lock(&mcc_tls_img_mtx);
+	for (int i = 0; i < mcc_tls_img_count; i++) { MCC_TRACE("br\n");
+		if (mcc_tls_imgs[i].used && mcc_tls_imgs[i].key == key)
+			{ MCC_TRACE("br\n"); r = &mcc_tls_imgs[i]; break; }
+	}
+	pthread_mutex_unlock(&mcc_tls_img_mtx);
+	return r;
+}
+
+/* Descriptor thunk body. Lazily allocates a per-thread TLS block for the
+   calling thread, seeds it from the init image, and returns &block[off]. Called
+   only through the register-preserving trampoline below. */
+__attribute__((used)) void *mcc_tlv_get_addr(struct mcc_tlv_desc *d) { MCC_TRACE("enter\n");
+	void *blk = pthread_getspecific((pthread_key_t)d->key);
+	if (!blk) { MCC_TRACE("br\n");
+		struct mcc_tls_img *img = mcc_tls_img_lookup((pthread_key_t)d->key);
+		blk = calloc(1, img->memsz);
+		if (img->filesz)
+			{ MCC_TRACE("br\n"); memcpy(blk, img->init, img->filesz); }
+		pthread_setspecific((pthread_key_t)d->key, blk);
+	}
+	return (char *)blk + d->off;
+}
+
+extern void mcc_tlv_thunk(void);
+
+/* Register-preserving trampoline. The tlv access ABI (arm64-gen.c /
+   x86_64-gen.c) spills only x0/x16/x17 (arm64) or rax/rdi (x86_64) around the
+   indirect call, so the thunk must preserve every other register that mcc's
+   own codegen can hold live across the access. mcc allocates only x0-x18/x30
+   and v0-v7 (arm64) or the general regs and xmm0-7 (x86_64), all scalar; the
+   C helper preserves the callee-saved set per the platform ABI, so we save
+   the caller-saved regs mcc uses. Register names/mnemonics here stay within
+   what mcc's own assembler accepts (no 128-bit q/xmm8-15), so mccrun.c still
+   self-hosts through mcc. */
+#if defined(__aarch64__)
+__asm__(
+	".text\n"
+	".p2align 2\n"
+	".globl " MCC_ASM_SYM(mcc_tlv_thunk) "\n"
+	MCC_ASM_SYM(mcc_tlv_thunk) ":\n"
+	"	stp x1, x2, [sp, #-16]!\n"
+	"	stp x3, x4, [sp, #-16]!\n"
+	"	stp x5, x6, [sp, #-16]!\n"
+	"	stp x7, x8, [sp, #-16]!\n"
+	"	stp x9, x10, [sp, #-16]!\n"
+	"	stp x11, x12, [sp, #-16]!\n"
+	"	stp x13, x14, [sp, #-16]!\n"
+	"	stp x15, x16, [sp, #-16]!\n"
+	"	stp x17, x18, [sp, #-16]!\n"
+	"	stp x29, x30, [sp, #-16]!\n"
+	"	stp d0, d1, [sp, #-16]!\n"
+	"	stp d2, d3, [sp, #-16]!\n"
+	"	stp d4, d5, [sp, #-16]!\n"
+	"	stp d6, d7, [sp, #-16]!\n"
+	"	bl " MCC_ASM_SYM(mcc_tlv_get_addr) "\n"
+	"	ldp d6, d7, [sp], #16\n"
+	"	ldp d4, d5, [sp], #16\n"
+	"	ldp d2, d3, [sp], #16\n"
+	"	ldp d0, d1, [sp], #16\n"
+	"	ldp x29, x30, [sp], #16\n"
+	"	ldp x17, x18, [sp], #16\n"
+	"	ldp x15, x16, [sp], #16\n"
+	"	ldp x13, x14, [sp], #16\n"
+	"	ldp x11, x12, [sp], #16\n"
+	"	ldp x9, x10, [sp], #16\n"
+	"	ldp x7, x8, [sp], #16\n"
+	"	ldp x5, x6, [sp], #16\n"
+	"	ldp x3, x4, [sp], #16\n"
+	"	ldp x1, x2, [sp], #16\n"
+	"	ret\n");
+#elif defined(__x86_64__)
+__asm__(
+	".text\n"
+	".p2align 4\n"
+	".globl " MCC_ASM_SYM(mcc_tlv_thunk) "\n"
+	MCC_ASM_SYM(mcc_tlv_thunk) ":\n"
+	"	push %rbp\n"
+	"	mov %rsp, %rbp\n"
+	"	and $-16, %rsp\n"
+	"	sub $128, %rsp\n"
+	"	movaps %xmm0, 0(%rsp)\n"
+	"	movaps %xmm1, 16(%rsp)\n"
+	"	movaps %xmm2, 32(%rsp)\n"
+	"	movaps %xmm3, 48(%rsp)\n"
+	"	movaps %xmm4, 64(%rsp)\n"
+	"	movaps %xmm5, 80(%rsp)\n"
+	"	movaps %xmm6, 96(%rsp)\n"
+	"	movaps %xmm7, 112(%rsp)\n"
+	"	push %rcx\n"
+	"	push %rdx\n"
+	"	push %rsi\n"
+	"	push %r8\n"
+	"	push %r9\n"
+	"	push %r10\n"
+	"	call " MCC_ASM_SYM(mcc_tlv_get_addr) "\n"
+	"	pop %r10\n"
+	"	pop %r9\n"
+	"	pop %r8\n"
+	"	pop %rsi\n"
+	"	pop %rdx\n"
+	"	pop %rcx\n"
+	"	movaps 0(%rsp), %xmm0\n"
+	"	movaps 16(%rsp), %xmm1\n"
+	"	movaps 32(%rsp), %xmm2\n"
+	"	movaps 48(%rsp), %xmm3\n"
+	"	movaps 64(%rsp), %xmm4\n"
+	"	movaps 80(%rsp), %xmm5\n"
+	"	movaps 96(%rsp), %xmm6\n"
+	"	movaps 112(%rsp), %xmm7\n"
+	"	mov %rbp, %rsp\n"
+	"	pop %rbp\n"
+	"	ret\n");
+#endif
+
+/* Called during size computation (ptr==NULL). Synthesizes the descriptor
+   section and rewrites each STT_TLS symbol so the existing adrp/add (or
+   lea) of the variable lands on its descriptor instead. */
+static void tls_setup_macho(MCCState *s1) { MCC_TRACE("enter\n");
+	int i, sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
+	Section *desc = NULL;
+	struct mcc_tls_var *recs = NULL;
+	int nrecs = 0;
+
+	for (i = 1; i < sym_end; i++) { MCC_TRACE("br\n");
+		ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + i;
+		int desc_off;
+
+		if (ELFW(ST_TYPE)(sym->st_info) != STT_TLS)
+			{ MCC_TRACE("br\n"); continue; }
+		if (sym->st_shndx != tdata_section->sh_num &&
+				sym->st_shndx != tbss_section->sh_num) { MCC_TRACE("br\n");
+			if (sym->st_shndx == SHN_UNDEF)
+				{ MCC_TRACE("br\n"); mcc_error_noabort("TLS import unsupported in -run: '%s'",
+									(char *)symtab_section->link->data + sym->st_name); }
+			continue;
+		}
+
+		if (!desc) { MCC_TRACE("br\n");
+			desc = new_section(s1, ".tlv_run_desc", SHT_PROGBITS,
+												 SHF_ALLOC | SHF_WRITE);
+			desc->sh_addralign = MCC_PTR_SIZE;
+			sym = (ElfW(Sym) *)symtab_section->data + i;
+		}
+
+		desc_off = desc->data_offset;
+		memset(section_ptr_add(desc, 3 * MCC_PTR_SIZE), 0, 3 * MCC_PTR_SIZE);
+
+		recs = mcc_realloc(recs, (nrecs + 1) * sizeof(*recs));
+		recs[nrecs].desc_off = desc_off;
+		recs[nrecs].orig_sec = sym->st_shndx;
+		recs[nrecs].orig_val = sym->st_value;
+		nrecs++;
+
+		sym->st_shndx = desc->sh_num;
+		sym->st_value = desc_off;
+		sym->st_size = 3 * MCC_PTR_SIZE;
+		sym->st_info = ELFW(ST_INFO)(ELFW(ST_BIND)(sym->st_info), STT_OBJECT);
+	}
+
+	s1->run_tls_desc = desc;
+	s1->run_tls_recs = recs;
+	s1->run_tls_nrecs = nrecs;
+}
+
+/* Called after relocate_sections, once section addresses are assigned but
+   before the section data is copied into run memory. Registers the TLS init
+   image under a fresh pthread key and fills in each descriptor. */
+static void tls_finalize_macho(MCCState *s1) { MCC_TRACE("enter\n");
+	struct mcc_tls_var *recs = s1->run_tls_recs;
+	Section *desc = s1->run_tls_desc;
+	addr_t base = (addr_t)-1;
+	unsigned long td_sz, tb_sz, filesz, memsz;
+	pthread_key_t key;
+	int i;
+
+	if (!desc || !s1->run_tls_nrecs)
+		{ MCC_TRACE("br\n"); return; }
+
+	/* sh_size is unset in the -run layout; the actual span is data_offset. */
+	td_sz = tdata_section->sh_size ? tdata_section->sh_size : tdata_section->data_offset;
+	tb_sz = tbss_section->sh_size ? tbss_section->sh_size : tbss_section->data_offset;
+
+	if (td_sz && tdata_section->sh_addr < base)
+		{ MCC_TRACE("br\n"); base = tdata_section->sh_addr; }
+	if (tb_sz && tbss_section->sh_addr < base)
+		{ MCC_TRACE("br\n"); base = tbss_section->sh_addr; }
+
+	filesz = td_sz ? (unsigned long)(tdata_section->sh_addr + td_sz - base) : 0;
+	memsz = filesz;
+	if (tb_sz) { MCC_TRACE("br\n");
+		unsigned long end = (unsigned long)(tbss_section->sh_addr + tb_sz - base);
+		if (end > memsz)
+			{ MCC_TRACE("br\n"); memsz = end; }
+	}
+
+	if (pthread_key_create(&key, free) != 0)
+		{ MCC_TRACE("br\n"); mcc_error_noabort("mccrun: pthread_key_create failed for TLS"); return; }
+
+	pthread_mutex_lock(&mcc_tls_img_mtx);
+	if (mcc_tls_img_count < MCC_TLS_IMG_MAX) { MCC_TRACE("br\n");
+		struct mcc_tls_img *img = &mcc_tls_imgs[mcc_tls_img_count++];
+		img->key = key;
+		img->init = (const void *)(addr_t)tdata_section->sh_addr;
+		img->filesz = filesz;
+		img->memsz = memsz;
+		img->used = 1;
+	} else { MCC_TRACE("br\n");
+		pthread_mutex_unlock(&mcc_tls_img_mtx);
+		mcc_error_noabort("mccrun: too many TLS images");
+		return;
+	}
+	pthread_mutex_unlock(&mcc_tls_img_mtx);
+
+	for (i = 0; i < s1->run_tls_nrecs; i++) { MCC_TRACE("br\n");
+		Section *os = s1->sections[recs[i].orig_sec];
+		addr_t var_addr = os->sh_addr + recs[i].orig_val;
+		unsigned char *p = desc->data + recs[i].desc_off;
+		write64le(p, (uint64_t)(addr_t)&mcc_tlv_thunk);
+		write64le(p + MCC_PTR_SIZE, (uint64_t)key);
+		write64le(p + 2 * MCC_PTR_SIZE, (uint64_t)(var_addr - base));
+	}
+
+	mcc_free(recs);
+	s1->run_tls_recs = NULL;
+	s1->run_tls_nrecs = 0;
+}
+#endif /* MCC_RUN_TLS_MACHO */
+
+#ifdef __linux__
+/* Local-Exec model for -run on Linux. mcc emits TPOFF relocations resolved
+   against the run-memory TLS layout, but the CPU adds the host thread pointer.
+   We reserve a compiler-owned slab (mcchost.c) and retarget the emitted TPOFF
+   into it (see x86_64-link.c / arm64-link.c), then seed the running thread's
+   slab with the section's initial bytes. */
+static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
+	int i;
+	int have_tls = 0;
+	unsigned long total = 0;
+
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		if (!(s->sh_flags & SHF_TLS))
+			{ MCC_TRACE("br\n"); continue; }
+		have_tls = 1;
+		total += s->data_offset;
+	}
+	if (!have_tls)
+		{ MCC_TRACE("br\n"); return; }
+	if (total > host_run_tls_slab_size()) { MCC_TRACE("br\n");
+		mcc_error_noabort("mccrun: TLS size %lu exceeds -run slab", total);
+		return;
+	}
+	s1->run_tls_slab_tpoff = host_run_tls_slab_tpoff();
+	s1->run_tls_active = 1;
+}
+
+/* Copy each TLS section's initial image into the running thread's slab so the
+   -run thread observes correct initial values. Program-spawned threads receive
+   a zeroed slab (documented first-cut limitation). Called after section data is
+   laid into run memory. */
+static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
+	int i;
+	addr_t base = (addr_t)-1;
+	unsigned char *slab;
+
+	if (!s1->run_tls_active)
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if ((s->sh_flags & SHF_TLS) && ssz && s->sh_addr < base)
+			{ MCC_TRACE("br\n"); base = s->sh_addr; }
+	}
+	slab = host_run_tls_slab_base();
+	memset(slab, 0, host_run_tls_slab_size());
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		if (!(s->sh_flags & SHF_TLS) || s->sh_type == SHT_NOBITS || !s->data)
+			{ MCC_TRACE("br\n"); continue; }
+		memcpy(slab + (s->sh_addr - base), s->data, s->data_offset);
+	}
+}
+#endif /* __linux__ */
+
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRACE("enter\n");
 	Section *s;
 	unsigned offset, length, align, i, k, f;
@@ -211,6 +546,11 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 		build_got_entries(s1, 0);
 #if defined(MCC_TARGET_ARM64)
 		arm64_veneer_memory_calls(s1);
+#endif
+#if defined(MCC_RUN_TLS_MACHO)
+		tls_setup_macho(s1);
+#elif defined(__linux__)
+		tls_setup_linux(s1);
 #endif
 #endif
 	}
@@ -323,6 +663,11 @@ redo:
 	relocate_plt(s1);
 #endif
 	relocate_sections(s1);
+#if defined(MCC_RUN_TLS_MACHO)
+	tls_finalize_macho(s1);
+#elif defined(__linux__)
+	tls_seed_linux(s1);
+#endif
 	goto redo;
 }
 

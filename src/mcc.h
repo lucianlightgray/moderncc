@@ -893,7 +893,19 @@ struct MCCState {
 	void *run_lj, *run_jb;
 	MCCBtFunc *bt_func;
 	void *bt_data;
+	/* -run TLS (Mach-O descriptor model): the synthesized .tlv_run_desc
+	   section plus per-variable bookkeeping recorded at setup and consumed at
+	   finalize (see tls_setup_macho/tls_finalize_macho in mccrun.c). */
+	Section *run_tls_desc;
+	void *run_tls_recs;
+	int run_tls_nrecs;
 #endif
+
+	/* -run TLS (in-memory JIT): on Linux the Local-Exec model retargets the
+	   emitted TPOFF into a compiler-owned slab; these fields carry the slab's
+	   thread-pointer offset and whether retargeting is active for this state. */
+	addr_t run_tls_slab_tpoff;
+	int run_tls_active;
 
 #if MCC_CONFIG_DIAG_RT >= 1
 	int rt_num_callers;

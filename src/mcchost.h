@@ -273,6 +273,12 @@ ST_FUNC MAYBE_UNUSED void host_runmem_free(void *ptr, unsigned size);
 ST_FUNC MAYBE_UNUSED int host_runmem_protect(void *ptr, unsigned long length, int mode);
 ST_FUNC MAYBE_UNUSED void host_icache_flush(void *ptr, unsigned long length);
 
+#if defined(__linux__)
+ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void);
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void);
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void);
+#endif
+
 ST_FUNC MAYBE_UNUSED void *host_unwind_register(void *table, unsigned size_bytes, size_t base);
 ST_FUNC MAYBE_UNUSED void host_unwind_unregister(void *table);
 

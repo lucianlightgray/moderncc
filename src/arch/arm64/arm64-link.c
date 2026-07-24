@@ -399,6 +399,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 
 		int64_t tp_offset = val - tls_start + AARCH64_TLS_TCB_SIZE;
 #endif
+		if (s1->run_tls_active)
+			{ MCC_TRACE("br\n"); tp_offset = s1->run_tls_slab_tpoff + (val - tls_start); }
 		int64_t imm;
 		if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)
 			{ MCC_TRACE("br\n"); imm = (tp_offset >> 12) & 0xfff; }
@@ -430,6 +432,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 #else
 		int64_t tp_offset = val - tls_start + AARCH64_TLS_TCB_SIZE;
 #endif
+		if (s1->run_tls_active)
+			{ MCC_TRACE("br\n"); tp_offset = s1->run_tls_slab_tpoff + (val - tls_start); }
 		if (type == R_AARCH64_TLSDESC_ADR_PAGE21)
 			{ MCC_TRACE("br\n"); write32le(ptr, 0xd2a00000 | ((uint32_t)(tp_offset >> 16 & 0xffff) << 5)); }
 		else if (type == R_AARCH64_TLSDESC_LD64_LO12)

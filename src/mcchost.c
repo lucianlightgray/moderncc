@@ -1086,6 +1086,32 @@ ST_FUNC size_t host_pagesize(void) { MCC_TRACE("enter\n");
 #endif
 }
 
+#if defined(__linux__)
+/* Compiler-owned TLS slab for the -run Local-Exec model: emitted TPOFF
+   relocations are retargeted into this slab (mccrun.c / *-link.c) so the CPU's
+   thread-pointer add resolves to real memory. Sized generously for -run TLS. */
+#define MCC_JIT_TLS_MAX 8192
+static _Alignas(64) __thread unsigned char mcc_jit_tls_slab[MCC_JIT_TLS_MAX];
+
+ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void) { MCC_TRACE("enter\n");
+	return mcc_jit_tls_slab;
+}
+
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void) { MCC_TRACE("enter\n");
+	return MCC_JIT_TLS_MAX;
+}
+
+ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("enter\n");
+	unsigned long tp = 0;
+#if defined(__x86_64__)
+	__asm__ volatile("mov %%fs:0, %0" : "=r"(tp));
+#elif defined(__aarch64__)
+	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(tp));
+#endif
+	return (unsigned long)mcc_jit_tls_slab - tp;
+}
+#endif /* __linux__ */
+
 ST_FUNC int host_runmem_dual(void) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	return 0;
