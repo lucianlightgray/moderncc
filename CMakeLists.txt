@@ -1133,9 +1133,9 @@ endif()
 
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
-mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
+mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_ENABLE_CROSS"
-    HELP "Compile MCC_CONFIG_OPTIMIZER=1 into the cross compilers (mcc-<arch>). OFF (default) builds them without the AST reemit optimizer, so divmagic/select/promotion/replay-inline are compiled out and the per-triple reemit-parity axes silently no-op. ON makes the cross reemit differentials real (at the cost of cross build time/size). Kept OFF by default so the standard cross build stays byte-identical.")
+    HELP "Compile MCC_CONFIG_OPTIMIZER=1 into the cross compilers (mcc-<arch>). ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
 
 mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")

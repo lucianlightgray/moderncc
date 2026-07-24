@@ -1322,7 +1322,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
 	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", s1->optimize >= 2);
-	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", 0);
+	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", s1->optimize >= 2);
 	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", s1->optimize >= 2);
 	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", s1->optimize >= 2);
 	ast_bitflag_report_env = ast_env_gate("MCC_AST_BITFLAG_REPORT", 0);
@@ -1348,10 +1348,18 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", s1->optimize >= 2);
 	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", s1->optimize >= 2);
 	ast_range_env = ast_env_gate("MCC_AST_RANGE", s1->optimize >= 2);
+#ifdef MCC_TARGET_I386
+	/* i386 divmagic is default-OFF pending a real interaction bug: -O2 divmagic +
+	 * large-struct-by-value in the same function miscompiles (see the i386-codegen-diff
+	 * `d9` repro / TODO). Isolated i386 divmagic is soak-proven (i386-divmagic-soak),
+	 * so the flip stays opt-in on i386 until the struct-ABI interaction is root-caused. */
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
+#else
+	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", s1->optimize >= 2);
+#endif
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", s1->optimize >= 2);
 	ast_select_env = ast_env_gate("MCC_AST_SELECT", s1->optimize >= 2);
-	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", 0);
+	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", s1->optimize >= 2);
 	ast_reassoc_assoc_env = ast_env_gate("MCC_AST_REASSOC_ASSOC", 1);
 	ast_reassoc_shlshr_env = ast_env_gate("MCC_AST_REASSOC_SHLSHR", 1);
 	ast_reassoc_shrshl_env = ast_env_gate("MCC_AST_REASSOC_SHRSHL", 1);
@@ -1398,9 +1406,9 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_tco_maxp = AST_TCO_MAXP; }
 	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", s1->optimize >= 2);
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
-	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", 0);
-	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", 0);
-	ast_pre_env = ast_env_gate("MCC_AST_PRE", 0);
+	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", s1->optimize >= 2);
+	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", s1->optimize >= 2);
+	ast_pre_env = ast_env_gate("MCC_AST_PRE", s1->optimize >= 2);
 	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
 	ast_loopdep_dump_env = ast_env_gate("MCC_AST_LOOPDEP_DUMP", 0);
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
