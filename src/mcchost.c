@@ -1103,10 +1103,18 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void) { MCC_TRACE("ent
 
 ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("enter\n");
 	unsigned long tp = 0;
+	/* The thread-pointer read is inline asm, which mcc rejects when built
+	   without MCC_CONFIG_ASM. Emit it whenever the compiling compiler can parse
+	   asm: any non-mcc host cc (the shipped binary is built by one, so exec/tls
+	   works on both presets), or an mcc that itself has asm enabled (full-preset
+	   self-host keeps a correct tpoff). Only the asm-off self-hosted mcc falls to
+	   tp=0, and its -run TLS path is never exercised. */
+#if !defined(__MCC__) || MCC_CONFIG_ASM
 #if defined(__x86_64__)
 	__asm__ volatile("mov %%fs:0, %0" : "=r"(tp));
 #elif defined(__aarch64__)
 	__asm__ volatile("mrs %0, tpidr_el0" : "=r"(tp));
+#endif
 #endif
 	return (unsigned long)mcc_jit_tls_slab - tp;
 }

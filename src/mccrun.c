@@ -198,17 +198,17 @@ static void cleanup_sections(MCCState *s1) { MCC_TRACE("enter\n");
 /* ------------------------------------------------------------------------ */
 /* _Thread_local support for the in-memory (-run) JIT engine.                */
 
-#if defined(__APPLE__) && (defined(__aarch64__) || defined(__x86_64__))
+#if MCC_HOST_DARWIN && (defined(__aarch64__) || defined(__x86_64__))
 #define MCC_RUN_TLS_MACHO 1
 #endif
 
-#if defined(MCC_RUN_TLS_MACHO) || defined(__linux__)
+#if defined(MCC_RUN_TLS_MACHO) || MCC_HOST_LINUX
 #include <pthread.h>
 #endif
 
 #ifdef MCC_RUN_TLS_MACHO
 
-#if defined(__APPLE__)
+#if MCC_HOST_DARWIN
 #define MCC_ASM_SYM(x) "_" #x
 #else
 #define MCC_ASM_SYM(x) #x
@@ -474,7 +474,7 @@ static void tls_finalize_macho(MCCState *s1) { MCC_TRACE("enter\n");
 }
 #endif /* MCC_RUN_TLS_MACHO */
 
-#ifdef __linux__
+#if MCC_HOST_LINUX
 /* Local-Exec model for -run on Linux. mcc emits TPOFF relocations resolved
    against the run-memory TLS layout, but the CPU adds the host thread pointer.
    We reserve a compiler-owned slab (mcchost.c) and retarget the emitted TPOFF
@@ -528,7 +528,7 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 		memcpy(slab + (s->sh_addr - base), s->data, s->data_offset);
 	}
 }
-#endif /* __linux__ */
+#endif /* MCC_HOST_LINUX */
 
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRACE("enter\n");
 	Section *s;
@@ -549,7 +549,7 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 #endif
 #if defined(MCC_RUN_TLS_MACHO)
 		tls_setup_macho(s1);
-#elif defined(__linux__)
+#elif MCC_HOST_LINUX
 		tls_setup_linux(s1);
 #endif
 #endif
@@ -665,7 +665,7 @@ redo:
 	relocate_sections(s1);
 #if defined(MCC_RUN_TLS_MACHO)
 	tls_finalize_macho(s1);
-#elif defined(__linux__)
+#elif MCC_HOST_LINUX
 	tls_seed_linux(s1);
 #endif
 	goto redo;
