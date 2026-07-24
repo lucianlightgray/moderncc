@@ -12805,6 +12805,7 @@ typedef struct AstComboCtx {
 	const AstGateMask *items;
 	uint64_t tried; /* bit per candidate actually measured (M3 blocker A progress) */
 	int ord;        /* running candidate ordinal, capped at 63 */
+	long best_score; /* running best across measured candidates (-1 = none yet) */
 } AstComboCtx;
 
 static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRACE("enter\n");
@@ -12825,10 +12826,15 @@ static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRAC
 														cx->saved_loc, cx->saved_anon);
 	ast_search_durwin_push(ast_now_ms() - t0);
 	MCC_TRACE("combo cand gates=%llx k=%d score=%ld\n", (unsigned long long)gates, k, sc);
-	if (mcc_stats_mask)
-		{ MCC_TRACE("br\n"); mcc_stats_combo_cand(gates, sel, k, cx->items, sc, cx->ord,
+	if (mcc_stats_mask) { MCC_TRACE("br\n");
+		int improved = sc >= 0 && (cx->best_score < 0 || sc < cx->best_score);
+		mcc_stats_combo_cand(gates, sel, k, cx->items, sc, cx->ord,
 												 ast_now_ms() - ast_search_start_ms, ast_search_budget_ms,
-												 ast_search_expect_ms()); }
+												 ast_search_expect_ms());
+		mcc_stats_combo_outcome(improved, sc < 0, ast_search_ordered_env ? 1 : 0);
+		if (improved)
+			{ MCC_TRACE("br\n"); cx->best_score = sc; }
+	}
 	if (sc < 0)
 		{ MCC_TRACE("br\n"); return COMBO_REJECT; }
 	return sc;
@@ -13112,6 +13118,8 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 									(unsigned long long)searchable,
 									(unsigned long long)(ast_search_memo[i].gates & searchable),
 									ast_search_memo[i].refcount, ast_search_memo[i].refcount + 1);
+				if (mcc_stats_mask)
+					{ MCC_TRACE("br\n"); mcc_stats_search_memo(1); }
 				ast_search_gates_set(ast_search_memo[i].gates & searchable);
 				ast_search_disk_store(ast_search_memo[i].hash, ast_search_memo[i].gates,
 															ast_search_memo[i].refcount + 1,
@@ -13122,6 +13130,8 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				return;
 			} }
 	}
+	if (h && mcc_stats_mask)
+		{ MCC_TRACE("br\n"); mcc_stats_search_memo(0); }
 	g0 = ast_graft_total;
 	p0 = ast_promo_total;
 	o0 = ast_opt_total;
@@ -13175,6 +13185,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			cx.items = items;
 			cx.tried = 0;
 			cx.ord = 0;
+			cx.best_score = -1;
 			spec.nitems = nitems;
 			spec.min_k = 1;
 			spec.max_k = nitems;

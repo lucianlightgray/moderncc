@@ -96,6 +96,14 @@ typedef struct McccStats {
 	unsigned budget_ms;
 	unsigned expect_ms;
 
+	unsigned long combo_perm;    /* candidates enumerated in permutation (ordered) mode */
+	unsigned long combo_subset;  /* candidates enumerated in combination (subset) mode */
+	unsigned long combo_hits;    /* candidates that improved the running best */
+	unsigned long combo_misses;  /* candidates measured but no improvement */
+	unsigned long combo_rejects; /* candidates that scored invalid (budget/unfaithful) */
+	unsigned long search_memo_hits;
+	unsigned long search_memo_misses;
+
 	long spark[MCCSTATS_SPARK_N];
 	int spark_n;
 	int spark_head;
@@ -265,6 +273,22 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 		mccstats_row(r, "          walk=%s%s  budget=%ums  next~%ums",
 								 mccstats_walk_name(mcs.walk),
 								 mcs.ordered ? "/ordered" : "", mcs.budget_ms, mcs.expect_ms);
+		if (mcs.combo_perm || mcs.combo_subset) { MCC_TRACE("br\n");
+			unsigned long tot = mcs.combo_hits + mcs.combo_misses + mcs.combo_rejects;
+			unsigned long meas = mcs.combo_hits + mcs.combo_misses;
+			unsigned hr = meas ? (unsigned)(mcs.combo_hits * 100 / meas) : 0;
+			mccstats_fmt_u(tot, a, sizeof a);
+			mccstats_fmt_u(mcs.combo_perm, b, sizeof b);
+			mccstats_fmt_u(mcs.combo_subset, c, sizeof c);
+			mccstats_row(r, "          cands=%s (perm=%s combo=%s)  hit=%lu miss=%lu rej=%lu (%u%% hit)",
+									 a, b, c, mcs.combo_hits, mcs.combo_misses, mcs.combo_rejects, hr);
+		}
+		if (mcs.search_memo_hits || mcs.search_memo_misses) { MCC_TRACE("br\n");
+			unsigned long mtot = mcs.search_memo_hits + mcs.search_memo_misses;
+			unsigned mhr = mtot ? (unsigned)(mcs.search_memo_hits * 100 / mtot) : 0;
+			mccstats_row(r, "          memo: hit=%lu miss=%lu (%u%% reuse)",
+									 mcs.search_memo_hits, mcs.search_memo_misses, mhr);
+		}
 	}
 
 	if (mcc_stats_on(MCC_STATS_COMBO)) { MCC_TRACE("br\n");
@@ -572,6 +596,30 @@ void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
 	}
 	(void)evaluated;
 	mccstats_paint(0);
+}
+
+void mcc_stats_combo_outcome(int improved, int rejected, int ordered) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	if (ordered)
+		{ MCC_TRACE("br\n"); mcs.combo_perm++; }
+	else
+		{ MCC_TRACE("br\n"); mcs.combo_subset++; }
+	if (rejected)
+		{ MCC_TRACE("br\n"); mcs.combo_rejects++; }
+	else if (improved)
+		{ MCC_TRACE("br\n"); mcs.combo_hits++; }
+	else
+		{ MCC_TRACE("br\n"); mcs.combo_misses++; }
+}
+
+void mcc_stats_search_memo(int hit) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	if (hit)
+		{ MCC_TRACE("br\n"); mcs.search_memo_hits++; }
+	else
+		{ MCC_TRACE("br\n"); mcs.search_memo_misses++; }
 }
 
 void mcc_stats_strat_hits(const int *sf, int n) { MCC_TRACE("enter\n");

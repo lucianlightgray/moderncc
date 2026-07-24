@@ -30,6 +30,11 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 													unsigned expect_ms);
 void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
 													int memo_n);
+/* One enumerated perm/combo candidate: improved=new running best, rejected=invalid
+   score, ordered=permutation mode (else combination/subset mode). */
+void mcc_stats_combo_outcome(int improved, int rejected, int ordered);
+/* One per-function search-memo lookup: hit=served from memo, else a fresh search. */
+void mcc_stats_search_memo(int hit);
 void mcc_stats_strat_hits(const int *sf, int n);
 
 void mcc_stats_jit_recompile(void);
