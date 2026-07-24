@@ -108,6 +108,11 @@ MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
 MCCJIT_LOCAL MCCState *mccjit_last_state;
 MCCJIT_LOCAL int mccjit_last_purity;
+/* Static cost-model score of the just-recompiled AST (ast_cost_score); -1 when
+   unavailable. mccjit_variant_cost snapshots it for the gated variant only, so a
+   following baseline recompile in the same lazy build does not clobber it. */
+MCCJIT_LOCAL long mccjit_last_cost = -1;
+MCCJIT_LOCAL long mccjit_variant_cost = -1;
 
 MCCJIT_LOCAL uint32_t mccjit_last_nparam;
 MCCJIT_LOCAL uint32_t mccjit_last_param_t[MCCJIT_KGC_MAXARG];
@@ -384,6 +389,9 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		else
 			{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
 		ast_fconst_reuse_disable(0);
+		mccjit_last_cost = ast_cost_score(it.arena);
+	} else { MCC_TRACE("br\n");
+		mccjit_last_cost = -1;
 	}
 	/* Drain the parser symbols pushed above (rebuild_sym + reemit) — unlinks them
 		 from the shared token buckets and returns them to the sym pool, exactly as
@@ -714,6 +722,7 @@ static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 													? mcc_jit_recompile_blob_gated(blob, (size_t)len, gate_mask)
 													: mcc_jit_recompile_blob(blob, (size_t)len);
 	void *entry = NULL;
+	mccjit_variant_cost = mccjit_last_cost; /* before the KGC baseline recompile clobbers it */
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = 0; }
 	if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
@@ -800,6 +809,11 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	long gs_cands = 0, gs_admits = 0;
 	int gs_budget_hit = 0;
 	uint64_t gs_best_mask = 0;
+	long best_cost = -1; /* static cost-model score of the current best */
+	int stale = 0;       /* consecutive candidates with no static-cost improvement */
+	/* Stop once the static cost model has plateaued for this many candidates,
+	   instead of relying purely on the wall-clock budget. Env override for tuning. */
+	int stale_max = ast_env_int("MCC_JIT_SEARCH_PLATEAU", 3);
 	if (e && e[0])
 		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
 	else if (mccjit_search_budget_baked_s)
@@ -808,24 +822,46 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		{ MCC_TRACE("br\n"); budget_s = 0.05; }
 	if (!async && budget_s > 0.1)
 		{ MCC_TRACE("br\n"); budget_s = 0.1; }
+	if (stale_max < 1)
+		{ MCC_TRACE("br\n"); stale_max = 1; }
 	timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
 	for (i = 0; i < nv; i++) { MCC_TRACE("br\n");
 		int r = 0;
 		void *cand;
+		long cc;
+		int admit, improved;
 		if (best && timed && budget_s > 0 && mccjit_elapsed(&t0) > budget_s)
 			{ MCC_TRACE("br\n"); gs_budget_hit = 1; break; }
 		cand = mccjit_lazy_build_masked(st->blob, st->len, vocab[i], 1, &r);
+		cc = mccjit_variant_cost; /* static cost of this candidate's gated variant */
 		gs_cands++;
 		if (!cand)
 			{ MCC_TRACE("br\n"); continue; }
-		if (!best) { MCC_TRACE("br\n"); best = cand; best_routed = r; gs_admits++; gs_best_mask = vocab[i]; }
-		else if (mccjit_bench_admit(cand, best, st, mccjit_last_nparam,
-																mccjit_last_ret_wide, mccjit_last_allfp, r))
-			{ MCC_TRACE("br\n"); best = cand; best_routed = r; gs_admits++; gs_best_mask = vocab[i]; }
+		improved = (cc >= 0 && (best_cost < 0 || cc < best_cost));
+		/* Admission: with MCC_JIT_BENCH the runtime differential decides; otherwise
+		   keep the statically-cheapest variant (strictly better than last-wins). */
+		if (!best)
+			{ MCC_TRACE("br\n"); admit = 1; }
+		else if (mccjit_bench_enabled())
+			{ MCC_TRACE("br\n"); admit = mccjit_bench_admit(cand, best, st, mccjit_last_nparam,
+																	mccjit_last_ret_wide, mccjit_last_allfp, r); }
 		else
-			{ MCC_TRACE("br\n"); continue; }
-		if (async)
-			{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
+			{ MCC_TRACE("br\n"); admit = improved; }
+		if (admit) { MCC_TRACE("br\n");
+			best = cand;
+			best_routed = r;
+			gs_admits++;
+			gs_best_mask = vocab[i];
+			if (async)
+				{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
+		}
+		if (improved)
+			{ MCC_TRACE("br\n"); best_cost = cc; stale = 0; }
+		else
+			{ MCC_TRACE("br\n"); stale++; }
+		/* Flatten stop: only when static costs are meaningful (else fall back to budget). */
+		if (best && best_cost >= 0 && stale >= stale_max)
+			{ MCC_TRACE("br\n"); break; }
 	}
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = best_routed; }
