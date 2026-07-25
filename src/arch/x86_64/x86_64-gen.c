@@ -1134,6 +1134,47 @@ static int x86_64_has_unaligned_field(CType *ty, int base) { MCC_TRACE("enter\n"
 	return 0;
 }
 
+/* Fill cls[0..1] with the per-eightbyte register class of a <=16B aggregate, per
+   SysV AMD64 3.2.3 (each field marks the eightbyte(s) it spans; SSE for
+   float/double, INTEGER otherwise). off is ty's byte offset within the top
+   aggregate. Unlike classify_x86_64_inner (one whole-aggregate mode), this keeps
+   the two eightbytes distinct so a {INTEGER,SSE} struct is not collapsed. */
+static void classify_x86_64_eb(CType *ty, int off, X86_64_Mode cls[2]) { MCC_TRACE("enter\n");
+	if ((ty->t & VT_BTYPE) == VT_STRUCT && !(ty->t & VT_ARRAY)) { MCC_TRACE("br\n");
+		Sym *f;
+		for (f = ty->ref->next; f; f = f->next)
+			{ MCC_TRACE("br\n"); classify_x86_64_eb(&f->type, off + f->c, cls); }
+		return;
+	}
+	{
+		X86_64_Mode m = classify_x86_64_inner(ty);
+		int align, sz = type_size(ty, &align);
+		int e, e1 = (off + sz - 1) >> 3;
+		for (e = off >> 3; e <= e1 && e < 2; e++)
+			{ MCC_TRACE("br\n"); cls[e] = classify_x86_64_merge(cls[e], m); }
+	}
+}
+
+/* True iff ty is a 9..16B struct whose two eightbytes have DIFFERENT register
+   classes (one INTEGER, one SSE) — the SysV case that classify_x86_64_inner
+   collapses to a single class (INTEGER wins), miscompiling both the argument
+   (should be {GP,XMM}, not two GP) and the return ({rax,xmm0}). Fills cls[0..1].
+   Excludes the unaligned-field case (that is MEMORY, handled separately). */
+static int x86_64_mixed_class(CType *ty, X86_64_Mode cls[2]) { MCC_TRACE("enter\n");
+	int align, sz;
+	if ((ty->t & VT_BTYPE) != VT_STRUCT || (ty->t & VT_ARRAY))
+		{ MCC_TRACE("br\n"); return 0; }
+	sz = type_size(ty, &align);
+	if (sz <= 8 || sz > 16 || x86_64_has_unaligned_field(ty, 0))
+		{ MCC_TRACE("br\n"); return 0; }
+	cls[0] = cls[1] = x86_64_mode_none;
+	classify_x86_64_eb(ty, 0, cls);
+	if ((cls[0] != x86_64_mode_integer && cls[0] != x86_64_mode_sse) ||
+			(cls[1] != x86_64_mode_integer && cls[1] != x86_64_mode_sse))
+		{ MCC_TRACE("br\n"); return 0; }
+	return cls[0] != cls[1];
+}
+
 static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;
@@ -1235,6 +1276,19 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 		ret->ref = NULL;
 		return -1;
 	}
+	{
+		X86_64_Mode cls[2];
+		if (x86_64_mixed_class(vt, cls)) { MCC_TRACE("br\n");
+			/* {INTEGER,SSE} eightbytes -> rax/rdx + xmm0/xmm1 can't be expressed by
+			   the shared same-class multi-reg return glue; route through the
+			   arch_transfer_ret_regs escape hatch (like complex long double). */
+			*ret_align = 1;
+			*regsize = 8;
+			ret->t = 0;
+			ret->ref = NULL;
+			return -1;
+		}
+	}
 	if (classify_x86_64_arg(vt, ret, &size, &align, &reg_count) == x86_64_mode_memory)
 		{ MCC_TRACE("br\n"); return 0; }
 	*ret_align = 1;
@@ -1244,9 +1298,32 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 
 ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 	SValue *sv = vtop;
-	Sym *re = sv->type.ref->next;
+	Sym *re;
 	int fr = sv->r & VT_VALMASK;
 	int fc = sv->c.i;
+	X86_64_Mode cls[2];
+	if (x86_64_mixed_class(&sv->type, cls)) { MCC_TRACE("br\n");
+		/* Move each eightbyte between its return register (INTEGER->rax,
+		   SSE->xmm0) and the in-memory struct slot at that eightbyte offset,
+		   reusing load()/store() so the mov/movsd encodings are shared. */
+		int e;
+		for (e = 0; e < 2; e++) { MCC_TRACE("br\n");
+			SValue s;
+			int reg = (cls[e] == x86_64_mode_sse) ? MCC_TREG_XMM0 : MCC_TREG_RAX;
+			s.type.ref = NULL;
+			s.type.t = (cls[e] == x86_64_mode_sse) ? VT_DOUBLE : VT_LLONG;
+			s.r = sv->r;
+			s.r2 = VT_CONST;
+			s.c.i = fc + e * 8;
+			s.sym = sv->sym;
+			if (aftercall)
+				{ MCC_TRACE("br\n"); store(reg, &s); }
+			else
+				{ MCC_TRACE("br\n"); load(reg, &s); }
+		}
+		return;
+	}
+	re = sv->type.ref->next;
 	if (aftercall) { MCC_TRACE("br\n");
 		o(0xdb);
 		gen_modrm(7, fr, sv->sym, fc + re->c);
@@ -1273,6 +1350,7 @@ static int arg_prepare_reg(int idx) { MCC_TRACE("enter\n");
 
 void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
+	X86_64_Mode cls[2];
 	CType type;
 	int size, align, r, args_size, stack_adjust, reg_count;
 	int nb_reg_args = 0;
@@ -1292,7 +1370,21 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		mode = classify_x86_64_arg(&vtop[-i].type, NULL, &size, &align, &reg_count);
 		if (size == 0)
 			{ MCC_TRACE("br\n"); continue; }
-		if (mode == x86_64_mode_sse && nb_sse_args + reg_count <= 8) { MCC_TRACE("br\n");
+		if (x86_64_mixed_class(&vtop[-i].type, cls)) { MCC_TRACE("br\n");
+			/* one INTEGER + one SSE eightbyte: needs one GP AND one SSE reg */
+			if (nb_reg_args + 1 <= REGN && nb_sse_args + 1 <= 8) { MCC_TRACE("br\n");
+				nb_reg_args++;
+				nb_sse_args++;
+				onstack[i] = 0;
+			} else { MCC_TRACE("br\n");
+				if (align == 16 && (stack_adjust &= 15)) { MCC_TRACE("br\n");
+					onstack[i] = 2;
+					stack_adjust = 0;
+				} else
+					{ MCC_TRACE("br\n"); onstack[i] = 1; }
+				stack_adjust += size;
+			}
+		} else if (mode == x86_64_mode_sse && nb_sse_args + reg_count <= 8) { MCC_TRACE("br\n");
 			nb_sse_args += reg_count;
 			onstack[i] = 0;
 		} else if (mode == x86_64_mode_integer && nb_reg_args + reg_count <= REGN) { MCC_TRACE("br\n");
@@ -1394,6 +1486,26 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		mode = classify_x86_64_arg(&vtop->type, &type, &size, &align, &reg_count);
 		if (size == 0)
 			{ MCC_TRACE("br\n"); continue; }
+		if (x86_64_mixed_class(&vtop->type, cls)) { MCC_TRACE("br\n");
+			/* load the INTEGER eightbyte into its GP arg reg and the SSE eightbyte
+			   into its XMM arg reg directly from the struct's memory slots. */
+			int ebint = (cls[0] == x86_64_mode_integer) ? 0 : 1;
+			SValue s;
+			s.type.ref = NULL;
+			s.r = vtop->r;
+			s.r2 = VT_CONST;
+			s.sym = vtop->sym;
+			--gen_reg;
+			s.type.t = VT_LLONG;
+			s.c.i = vtop->c.i + ebint * 8;
+			load(arg_prepare_reg(gen_reg), &s);
+			--sse_reg;
+			s.type.t = VT_DOUBLE;
+			s.c.i = vtop->c.i + (1 - ebint) * 8;
+			load(MCC_TREG_XMM0 + sse_reg, &s);
+			vtop--;
+			continue;
+		}
 		vtop->type = type;
 		if (mode == x86_64_mode_sse) { MCC_TRACE("br\n");
 			if (reg_count == 2) { MCC_TRACE("br\n");
@@ -1521,6 +1633,7 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	X86_64_Mode mode, ret_mode;
+	X86_64_Mode cls[2];
 	int addr, align, size, reg_count;
 	int param_addr = 0, reg_param_index, sse_param_index;
 	Sym *sym;
@@ -1543,6 +1656,13 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		while ((sym = sym->next) != NULL) { MCC_TRACE("br\n");
 			type = &sym->type;
 			mode = classify_x86_64_arg(type, NULL, &size, &align, &reg_count);
+			if (x86_64_mixed_class(type, cls)) { MCC_TRACE("br\n");
+				if (seen_reg_num + 1 > REGN || seen_sse_num + 1 > 8)
+					{ MCC_TRACE("br\n"); goto stack_arg; }
+				seen_reg_num += 1;
+				seen_sse_num += 1;
+				continue;
+			}
 			switch (mode) { MCC_TRACE("br\n");
 			default:
 			stack_arg:
@@ -1602,6 +1722,26 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	while ((sym = sym->next) != NULL) { MCC_TRACE("br\n");
 		type = &sym->type;
 		mode = classify_x86_64_arg(type, NULL, &size, &align, &reg_count);
+		if (x86_64_mixed_class(type, cls)) { MCC_TRACE("br\n");
+			/* store the incoming GP + XMM regs into the struct's home slots at
+			   their eightbyte offsets (mirrors gfunc_call's split placement). */
+			if (reg_param_index + 1 <= REGN && sse_param_index + 1 <= 8) { MCC_TRACE("br\n");
+				int ebint = (cls[0] == x86_64_mode_integer) ? 0 : 1;
+				loc -= 16;
+				param_addr = loc;
+				gen_modrm64(0x89, arg_regs[reg_param_index], VT_LOCAL, NULL, param_addr + ebint * 8);
+				++reg_param_index;
+				o(0xd60f66);
+				gen_modrm(sse_param_index, VT_LOCAL, NULL, param_addr + (1 - ebint) * 8);
+				++sse_param_index;
+			} else { MCC_TRACE("br\n");
+				addr = (addr + align - 1) & -align;
+				param_addr = addr;
+				addr += size;
+			}
+			gfunc_set_param(sym, param_addr, 0);
+			continue;
+		}
 		switch (mode) { MCC_TRACE("br\n");
 		case x86_64_mode_sse:
 			if (mcc_state->nosse)

@@ -39,7 +39,7 @@ case "$HOSTM" in aarch64|arm64) NPLAT="linux/arm64"; NIMG="arm64v8/debian:bookwo
 CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificates"
 case "$ARCH" in
 	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
-	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED" ;;
+	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1" ;;
 	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
 	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
@@ -80,6 +80,8 @@ struct Small    { int a, b; };                 /* 8B reg-pair */
 struct Odd      { char c; int i; short s; };   /* padded */
 struct Big      { long long a, b, c, d; };     /* 32B indirect */
 struct Mixed    { int i; double d; };          /* INTEGER+SSE (x86_64) */
+struct Mixed2   { double d; int i; };          /* SSE+INTEGER (eightbyte order swapped) */
+struct M3       { float f; long l; };          /* SSE(low4)+INTEGER: mixed 16B */
 struct Float4   { float a, b, c, d; };          /* homogeneous float aggregate (arm64 HFA) */
 struct DblPair  { double x, y; };               /* 2xSSE / HFA-double */
 struct Three    { int a, b, c; };              /* 12B: crosses arm64 2-reg / SysV split */
@@ -112,6 +114,10 @@ long long      big_sum(struct Big b);
 struct Big     big_scale(struct Big b, long long k);
 double         mixed_sum(struct Mixed m);
 struct Mixed   mixed_make(int i, double d);
+double         mixed2_sum(struct Mixed2 m);
+struct Mixed2  mixed2_make(double d, int i);
+long           m3_sum(struct M3 m);
+struct Mixed   mixed_after(int a,int b,int c,int d,int e, struct Mixed m);
 float          float4_sum(struct Float4 f);
 struct DblPair dbl_swap(struct DblPair p);
 long long      stack_args(char c, short s, int i, long long l,
@@ -176,6 +182,10 @@ long long      big_sum(struct Big b){ return b.a + b.b + b.c + b.d; }
 struct Big     big_scale(struct Big b, long long k){ struct Big r; r.a=b.a*k; r.b=b.b*k; r.c=b.c*k; r.d=b.d*k; return r; }
 double         mixed_sum(struct Mixed m){ return (double)m.i + m.d; }
 struct Mixed   mixed_make(int i, double d){ struct Mixed r; r.i=i; r.d=d; return r; }
+double         mixed2_sum(struct Mixed2 m){ return m.d + (double)m.i; }
+struct Mixed2  mixed2_make(double d, int i){ struct Mixed2 r; r.d=d; r.i=i; return r; }
+long           m3_sum(struct M3 m){ return (long)m.f + m.l; }
+struct Mixed   mixed_after(int a,int b,int c,int d,int e, struct Mixed m){ struct Mixed r; r.i=m.i+a+b+c+d+e; r.d=m.d; return r; }
 float          float4_sum(struct Float4 f){ return f.a + f.b + f.c + f.d; }
 struct DblPair dbl_swap(struct DblPair p){ struct DblPair r; r.x=p.y; r.y=p.x; return r; }
 long long      stack_args(char c, short s, int i, long long l,
@@ -254,19 +264,22 @@ int main(void){
   { struct Odd o; o.c=(char)5; o.i=100000; o.s=(short)-30000; k++; if(odd_sum(o)!=(long long)5+100000-30000) return k; }
   { struct Big b; b.a=1; b.b=2; b.c=3; b.d=4; k++; if(big_sum(b)!=10) return k; }
   { struct Big b,r; b.a=1; b.b=2; b.c=3; b.d=4; r=big_scale(b,10); k++; if(r.a!=10||r.b!=20||r.c!=30||r.d!=40) return k; }
-#ifndef ABI_SKIP_MIXED
-  /* struct Mixed{int;double} is INTEGER in eightbyte-0, pure SSE in eightbyte-1.
-     The mcc classify_x86_64_merge collapses the aggregate to a single whole-struct
-     class (INTEGER), so it passes both eightbytes in GP regs (rdi,rsi) instead of
-     {rdi, xmm0} -- a gcc caller (d in xmm0) reaching an mcc callee yields the
-     wrong value. Confirmed real x86_64 ABI bug (see docs/TODO "x86_64 mixed
-     INTEGER+SSE small-struct"); exercised on arm64/riscv64/armv7 (correct there),
-     skipped on x86_64 (ABI_SKIP_MIXED) until mcc does per-eightbyte classification. */
+  /* Mixed-class small structs: a <=16B aggregate whose two eightbytes have
+     DIFFERENT classes (one INTEGER, one SSE). SysV passes them in {GP,XMM} (not
+     two GP) and returns them in {rax,xmm0}. mcc used to collapse the aggregate to
+     a single whole-struct class (INTEGER wins) -- caller AND callee diverged from
+     gcc/clang. FIXED via per-eightbyte classification (x86_64_mixed_class) in
+     gfunc_call/gfunc_prolog + the arch_transfer_ret_regs return path. Covers
+     {int;double}, the eightbyte-order swap {double;int}, {float;long}, and a
+     mixed arg after 5 GP args (register-pressure). arm64/riscv64/armv7 were
+     conformant all along (they return/pass these per their own rules). */
   { struct Mixed m; m.i=3; m.d=0.5; k++; if(mixed_sum(m)!=3.5) return k; }
-  /* Hybrid 2-field return: riscv64 returns {int;double} in a0(int)+fa0(double);
-     arm64 in a GP reg pair (x0,x1); x86_64 in rax+xmm0 (same mixed-SSE bug). */
   { struct Mixed r=mixed_make(7, 1.25); k++; if(r.i!=7||r.d!=1.25) return k; }
-#endif
+  { struct Mixed2 m; m.d=2.5; m.i=4; k++; if(mixed2_sum(m)!=6.5) return k; }
+  { struct Mixed2 r=mixed2_make(3.5, 9); k++; if(r.d!=3.5||r.i!=9) return k; }
+  { struct M3 m; m.f=1.5f; m.l=100; k++; if(m3_sum(m)!=101) return k; }
+  { struct Mixed m; m.i=1; m.d=2.0; struct Mixed r=mixed_after(1,2,3,4,5,m);
+    k++; if(r.i!=16||r.d!=2.0) return k; }
   { struct Float4 f; f.a=1.5f; f.b=2.25f; f.c=-0.75f; f.d=4.0f; k++; if(float4_sum(f)!=7.0f) return k; }
   { struct DblPair p,r; p.x=2.0; p.y=8.0; r=dbl_swap(p); k++; if(r.x!=8.0||r.y!=2.0) return k; }
   { k++; if(stack_args((char)1,(short)2,3,4LL,5,6,7,8,9,10)!=55LL) return k; }
