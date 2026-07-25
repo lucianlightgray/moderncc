@@ -1266,6 +1266,7 @@ static MCC_OPT_TLS int ast_bfold_round_env;
 static MCC_OPT_TLS int ast_bfold_minmax_env;
 static MCC_OPT_TLS int ast_math_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
+static MCC_OPT_TLS int ast_round_inline_env;
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
@@ -1742,6 +1743,9 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_FABS 0x40008
 #define AST_OP_SQRT 0x40009
 #define AST_OP_OPASSIGN 0x4000A /* tags a Store recorded from a compound assignment (`op=`) */
+#define AST_OP_FLOOR 0x4000B
+#define AST_OP_CEIL  0x4000C
+#define AST_OP_TRUNC 0x4000D
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -1911,6 +1915,12 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * reverts to a `call sqrt` libcall at -O4. Idempotent with the bfold strategy;
 	 * byte-identical at -O2 (bfold does the same rewrite there anyway). */
 	ast_math_inline_prepass_env = ast_env_gate("MCC_AST_MATH_INLINE_PREPASS", 0);
+	/* MCC_AST_ROUND_INLINE (default OFF, opt-in): inline floor/ceil/trunc to a
+	 * single `roundsd`/`roundss` (imm floor=0x9/ceil=0xA/trunc=0xB, bit3 suppresses
+	 * the precision exception to match libm). Default OFF because roundsd is SSE4.1,
+	 * not the SSE2 baseline — the user opts in for an SSE4.1 target (like gcc's
+	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only. */
+	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
 	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
 	 * pending a correctness proof). Each still runs only on `faithful` functions
@@ -4898,6 +4908,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_cast(&ct);
 			gen_sqrt();
 			vtop->type = ct;
+		} else if (uop == AST_OP_FLOOR || uop == AST_OP_CEIL ||
+							 uop == AST_OP_TRUNC) { MCC_TRACE("br\n");
+			CType ct;
+			ct.t = ast_type_t(a, n);
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			gen_cast(&ct);
+			gen_round(uop == AST_OP_FLOOR ? 0 : uop == AST_OP_CEIL ? 1 : 2);
+			vtop->type = ct;
 #endif
 		} else { MCC_TRACE("br\n");
 			inc((int)ast_ival(a, n), uop);
@@ -5871,6 +5889,25 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
+			/* floor/ceil/trunc(x) with a runtime x: single roundsd/ss (bit-exact
+			 * vs libm, incl. NaN/inf/large). Opt-in (roundsd is SSE4.1, not the
+			 * SSE2 baseline) via MCC_AST_ROUND_INLINE. bid 2=floor,3=ceil,4=trunc. */
+			if ((bid == 2 || bid == 3 || bid == 4) && nargs == 1 &&
+					ast_round_inline_env) { MCC_TRACE("br\n");
+				AstLocal arg = ast_child(a, n, 1);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Unary);
+				ast_set_op(a, n, bid == 2 ? AST_OP_FLOOR
+										: bid == 3 ? AST_OP_CEIL
+															 : AST_OP_TRUNC);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, arg);
+				MCC_TRACE("math-inline round bid=%d flt=%d\n", bid, (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
 #endif
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&
@@ -5934,9 +5971,13 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (bi == nfn)
 			{ MCC_TRACE("br\n"); continue; }
 		int bid = ast_bfold_tab[bi].id;
-		if (bid != 0 && bid != 1) /* only sqrt(0) and fabs(1) inline here */
+		/* sqrt(0), fabs(1); floor(2)/ceil(3)/trunc(4) only when opt-in */
+		int is_round = (bid == 2 || bid == 3 || bid == 4) && ast_round_inline_env;
+		if (bid != 0 && bid != 1 && !is_round)
 			{ MCC_TRACE("br\n"); continue; }
-		int bgate = bid == 0 ? ast_bfold_sqrt_env : ast_bfold_sign_env;
+		int bgate = bid == 0 ? ast_bfold_sqrt_env
+							: bid == 1 ? ast_bfold_sign_env
+												 : ast_bfold_round_env;
 		if (!bgate)
 			{ MCC_TRACE("br\n"); continue; }
 		int bt = ast_bfold_tab[bi].flt ? VT_FLOAT : VT_DOUBLE;
@@ -5951,7 +5992,11 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		AstLocal arg = ast_child(a, n, 1);
 		ast_clear_children(a, n);
 		ast_set_kind(a, n, AST_Unary);
-		ast_set_op(a, n, bid == 0 ? AST_OP_SQRT : AST_OP_FABS);
+		ast_set_op(a, n, bid == 0 ? AST_OP_SQRT
+						: bid == 1 ? AST_OP_FABS
+						: bid == 2 ? AST_OP_FLOOR
+						: bid == 3 ? AST_OP_CEIL
+											 : AST_OP_TRUNC);
 		ast_set_type(a, n, bt, 0);
 		ast_set_ival(a, n, 0);
 		ast_set_sym(a, n, 0);

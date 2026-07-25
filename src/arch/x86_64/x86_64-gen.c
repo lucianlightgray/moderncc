@@ -2180,6 +2180,23 @@ void gen_sqrt(void) { MCC_TRACE("enter\n");
 	o(0xc0 + r + r * 8); /* sqrt xmm_r, xmm_r */
 }
 
+/* floor(0)/ceil(1)/trunc(2) -> single roundsd/roundss. imm = mode | 0x8
+ * (bit3 suppresses the precision/inexact exception, matching libm). SSE4.1;
+ * mcc only allocates xmm0-7 so no REX is needed (as in gen_sqrt). */
+void gen_round(int mode) { MCC_TRACE("enter\n");
+	int bt = vtop->type.t & VT_BTYPE;
+	int imm = (mode == 0 ? 0x1 : mode == 1 ? 0x2 : 0x3) | 0x8;
+	int r;
+	gv(MCC_RC_FLOAT);
+	r = REG_VALUE(vtop->r);
+	o(0x66);
+	o(0x0f);
+	o(0x3a);
+	o(bt == VT_DOUBLE ? 0x0b : 0x0a); /* 0B=roundsd, 0A=roundss */
+	o(0xc0 + r * 8 + r);              /* modrm: dst=r, src=r */
+	g(imm);
+}
+
 void gen_opf(int op) { MCC_TRACE("enter\n");
 	int a, ft, fc, swapped, r;
 	int bt = vtop->type.t & VT_BTYPE;
