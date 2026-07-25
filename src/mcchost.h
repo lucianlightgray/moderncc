@@ -49,6 +49,11 @@ extern float strtof(const char *__nptr, char **__endptr);
 extern long double strtold(const char *__nptr, char **__endptr);
 #endif
 
+/* Self-contained: host_sem_wait() below reads errno/EINTR. The mcc.h include
+   chain pulls <errno.h> first, but standalone includers (e.g. mccast.c in the
+   multisource/asm-off builds) don't, so include it here. */
+#include <errno.h>
+
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN 1
 #ifndef _WIN32_WINNT
