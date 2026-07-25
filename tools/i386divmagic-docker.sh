@@ -101,6 +101,24 @@ cat <<'EOF'
 static int in32[]={0,1,-1,2,-2,3,-3,7,-7,8,-8,15,16,100,-100,127,128,255,256,1000,-1000,12345,-12345,65535,65536,65537,-65536,1000000,-1000000,IMAX,IMIN,IMAX-1,IMIN+1};
 static ll in64[]={0,1,-1,7,-7,1000,-1000,100000,-100000,4294967295LL,4294967296LL,4294967297LL,-4294967296LL,1000000000000LL,-1000000000000LL,LMAX,LMIN,LMAX-1,LMIN+1};
 
+/* Regression for the i386 temp-slot-aliasing miscompile (get_temp_local_var):
+ * a 32-bit signed constant `%C` whose operand is a SPILLED expression
+ * `(s&0x7fffffff)`, living in a function that ALSO passes/returns a >16B struct by
+ * value. The struct raises temp/frame pressure so the divmagic-spilled operand's
+ * slot got reused -> `_m` (constant divisor, divmagic fires) diverged from `_r`
+ * (volatile divisor, hardware idiv). See the `MCC_AST_DIVMAGIC` i386 item in TODO. */
+struct BigDM { long long a[8]; };
+static struct BigDM bdm_make(int x){ struct BigDM b; int i; for(i=0;i<8;i++) b.a[i]=(long long)x*i*100003; return b; }
+static int bdm_use(struct BigDM b){ int s=0,i; for(i=0;i<8;i++) s+=(int)b.a[i]; return s; } /* pass-by-value: sub esp copy */
+/* mirrors the d9 repro: a loop making + PASSING a >16B struct by value, then a
+ * 32-bit signed constant %C on the accumulated int. */
+#define BIGDM(C) \
+	static int bdm_m_##C(int x){ int s=0,i; for(i=1;i<=10;i++){ struct BigDM b=bdm_make(x+i); s+=bdm_use(b); } return (s&0x7fffffff)%(C); } \
+	static int bdm_r_##C(int x){ int s=0,i; for(i=1;i<=10;i++){ struct BigDM b=bdm_make(x+i); s+=bdm_use(b); } volatile int vd=(C); return (s&0x7fffffff)%vd; }
+BIGDM(251)
+BIGDM(7)
+BIGDM(65537)
+
 int main(void){
 	int i,k; long x;
 	int n32=(int)(sizeof s32/sizeof s32[0]);
@@ -136,6 +154,12 @@ int main(void){
 	for(i=0;i<nu64;i++) for(x=0L;x<=6000000L;x+=139){ ull xv=(ull)x*100003ULL;
 		checks++; if(u64[i].d(xv)!=rU64(xv,u64[i].c)) rep("sw-u64/",(ll)u64[i].c,(ll)xv,(ll)u64[i].d(xv),(ll)rU64(xv,u64[i].c));
 		checks++; if(u64[i].m(xv)!=rU64m(xv,u64[i].c)) rep("sw-u64%",(ll)u64[i].c,(ll)xv,(ll)u64[i].m(xv),(ll)rU64m(xv,u64[i].c)); }
+
+	/* large-struct-by-value + constant %C (temp-slot-aliasing regression) */
+	for(x=-200000L;x<=200000L;x+=7){ int xv=(int)x;
+		checks++; if(bdm_m_251(xv)!=bdm_r_251(xv)) rep("big%251",251,xv,bdm_m_251(xv),bdm_r_251(xv));
+		checks++; if(bdm_m_7(xv)!=bdm_r_7(xv)) rep("big%7",7,xv,bdm_m_7(xv),bdm_r_7(xv));
+		checks++; if(bdm_m_65537(xv)!=bdm_r_65537(xv)) rep("big%65537",65537,xv,bdm_m_65537(xv),bdm_r_65537(xv)); }
 
 	printf("checks=%ld fails=%ld\n",checks,fails);
 	return fails?1:0;
