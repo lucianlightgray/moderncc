@@ -1113,6 +1113,27 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+/* SysV AMD64 psABI 3.2.3 argument classification: "if the aggregate [...]
+   contains unaligned fields, it has class MEMORY." A packed struct places a
+   member at an offset that is not a multiple of that member's natural
+   alignment; gcc and clang both then pass/return the whole aggregate in memory
+   (verified via the mcc/gcc/clang differential). Recurse so a nested packed
+   struct is caught even when its own base offset is aligned. */
+static int x86_64_has_unaligned_field(CType *ty, int base) { MCC_TRACE("enter\n");
+	Sym *f;
+	if ((ty->t & VT_BTYPE) != VT_STRUCT)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (f = ty->ref->next; f; f = f->next) { MCC_TRACE("br\n");
+		int align, off = base + f->c;
+		type_size(&f->type, &align);
+		if (align > 1 && (off & (align - 1)))
+			{ MCC_TRACE("br\n"); return 1; }
+		if ((f->type.t & VT_BTYPE) == VT_STRUCT && x86_64_has_unaligned_field(&f->type, off))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;
@@ -1130,6 +1151,8 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 		*reg_count = 0;
 
 		if (size > 16) { MCC_TRACE("br\n");
+			mode = x86_64_mode_memory;
+		} else if ((ty->t & VT_BTYPE) == VT_STRUCT && x86_64_has_unaligned_field(ty, 0)) { MCC_TRACE("br\n");
 			mode = x86_64_mode_memory;
 		} else { MCC_TRACE("br\n");
 			mode = classify_x86_64_inner(ty);

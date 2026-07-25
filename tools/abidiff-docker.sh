@@ -39,7 +39,7 @@ case "$HOSTM" in aarch64|arm64) NPLAT="linux/arm64"; NIMG="arm64v8/debian:bookwo
 CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificates"
 case "$ARCH" in
 	arm64) IMAGE="arm64v8/debian:bookworm-slim"; PLAT="linux/arm64"; MDEF="-DMCC_TARGET_ARM64=1" ;;
-	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED -DABI_SKIP_PACKED" ;;
+	amd64) IMAGE="debian:bookworm-slim";         PLAT="linux/amd64"; MDEF="-DMCC_TARGET_X86_64=1"; MAINDEF="-DABI_SKIP_MIXED" ;;
 	riscv64) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_RISCV64=1"; CROSS="riscv64-linux-gnu-"; RUNNER="qemu-riscv64-static"; LINKFLAGS="-static"
 	         PKG="$PKG gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static" ;;
 	arm) IMAGE="$NIMG"; PLAT="$NPLAT"; MDEF="-DMCC_TARGET_ARM=1 -DMCC_ARM_VFP=1 -DMCC_ARM_EABI=1 -DMCC_ARM_HARDFLOAT=1"; CROSS="arm-linux-gnueabihf-"; RUNNER="qemu-arm-static"; LINKFLAGS="-static"
@@ -93,6 +93,8 @@ struct Wide     { double a; long b; double c; long d; }; /* 32B mixed non-HFA: i
 struct Ten      { double a,b,c,d,e,f,g,h,i,j; }; /* 80B indirect return; maker spills FP args past fa0-fa7 */
 struct A16      { long long a, b; } __attribute__((aligned(16))); /* 16B, 16-aligned: even reg-pair rule */
 struct Packed   { char a; long long b; int c; } __attribute__((packed)); /* 13B, unaligned members */
+struct PackS    { char a; int b; } __attribute__((packed));              /* 5B: <=8B packed (would be 1 reg) */
+struct PackN    { char x; struct PackS s; } __attribute__((packed));     /* nested packed */
 struct GData    { int a; char b; double c; long long d[3]; long e; }; /* global init-data layout */
 extern struct GData g_data;   /* defined in lib.c, read cross-object */
 extern __thread long g_tls;   /* thread-local, defined in lib.c: cross-object TLS interop */
@@ -143,6 +145,9 @@ short          sh_make(int x);
 unsigned short ush_make(int x);
 long long      packed_sum(struct Packed p);
 struct Packed  packed_make(char a, long long b, int c);
+long long      packs_sum(struct PackS p);
+struct PackS   packs_make(char a, int b);
+long long      packn_sum(struct PackN p);
 float _Complex  cx_cf_id(float _Complex z);
 double _Complex cx_cd_id(double _Complex z);
 double _Complex cx_cd_after7(double a,double b,double c,double d,double e,double f,double g, double _Complex z);
@@ -225,6 +230,9 @@ short          sh_make(int x){ return (short)x; }
 unsigned short ush_make(int x){ return (unsigned short)x; }
 long long      packed_sum(struct Packed p){ return (long long)p.a + p.b + p.c; }
 struct Packed  packed_make(char a, long long b, int c){ struct Packed r; r.a=a; r.b=b; r.c=c; return r; }
+long long      packs_sum(struct PackS p){ return (long long)p.a + p.b; }
+struct PackS   packs_make(char a, int b){ struct PackS r; r.a=a; r.b=b; return r; }
+long long      packn_sum(struct PackN p){ return (long long)p.x + p.s.a + p.s.b; }
 float _Complex  cx_cf_id(float _Complex z){ return z; }
 double _Complex cx_cd_id(double _Complex z){ return z; }
 double _Complex cx_cd_after7(double a,double b,double c,double d,double e,double f,double g, double _Complex z){ return z + (a+b+c+d+e+f+g); }
@@ -314,15 +322,21 @@ int main(void){
   { k++; if(ush_make(-1)!=65535) return k; }
   { long long r=sc_make(200); k++; if(r!=-56) return k; }
   { unsigned long long r=uc_make(-1); k++; if(r!=255) return k; }
-#ifndef ABI_SKIP_PACKED
-  /* Packed struct by value (13B, unaligned members). Conformant on arm64/riscv64/
-     armv7; on x86_64 an mcc caller/callee diverges from gcc (both cross-mixes
-     fail, both-mcc passes) -- an x86_64 packed-struct passing divergence, tracked
-     (docs/TODO "x86_64 packed struct") pending a clang cross-check. Skipped on
-     amd64 (ABI_SKIP_PACKED). */
+  /* Packed struct by value (unaligned members). The SysV AMD64 psABI 3.2.3 rule
+     "an aggregate with unaligned fields has class MEMORY" applies -- gcc AND clang
+     both pass/return such a struct in memory (verified via an mcc/gcc/clang
+     differential). mcc used to classify it as INTEGER and pass it in GP regs
+     (caller AND callee diverged from gcc; both-mcc self-consistent-but-wrong);
+     FIXED by x86_64_has_unaligned_field in classify_x86_64_arg (memory class),
+     which also routes the struct RETURN through the indirect sret path. Covers
+     the 13B, the <=8B (would otherwise be 1 reg), and the nested-packed shapes.
+     Conformant on arm64/riscv64/armv7 all along (no unaligned->memory rule there;
+     gcc agrees), and now on x86_64. */
   { struct Packed p; p.a=5; p.b=1000000000000LL; p.c=-7; k++; if(packed_sum(p)!=(long long)5+1000000000000LL-7) return k; }
   { struct Packed r=packed_make(9, 123456789012LL, 42); k++; if(r.a!=9||r.b!=123456789012LL||r.c!=42) return k; }
-#endif
+  { struct PackS p; p.a=3; p.b=1000000; k++; if(packs_sum(p)!=1000003) return k; }
+  { struct PackS r=packs_make(7,-9); k++; if(r.a!=7||r.b!=-9) return k; }
+  { struct PackN p; p.x=1; p.s.a=2; p.s.b=30000; k++; if(packn_sum(p)!=30003) return k; }
   /* Global initialized-data layout across the boundary: reader (mcc or gcc)
      accesses fields of a global struct+array defined in the other TU. */
   { k++; if(g_data.a!=7||g_data.b!=88||g_data.c!=2.5||g_data.d[0]!=100||g_data.d[2]!=300||g_data.e!=-99) return k; }
