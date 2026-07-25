@@ -1789,7 +1789,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * unit apply-time on a clone and order the round-robin by that ROI, high first.
 	 * Every strategy still ticks (full-set order). Off by default pending the plb
 	 * soak + the phase-2 runtime (JIT-score) benefit signal. */
-	ast_roi_env = ast_env_gate("MCC_AST_ROI", 0);
+	/* ROI scheduler is the default search-order mode whenever the -O search runs
+	 * (-O4+); it replaces the emit-size combo order search with a benefit/time sort
+	 * (full strategy coverage retained). The gate/subset search still runs for the
+	 * other axes. Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
+	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
 	ast_search_walk_env = ast_search_walk_from_env();
@@ -1873,9 +1877,14 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * (bit-exact, SSE2-baseline, x86_64 only). On at -O2+. */
 	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", s1->optimize >= 2);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
-	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", 0);
-	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", 0);
-	ast_tile_env = ast_env_gate("MCC_AST_TILE", 0);
+	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
+	 * pending a correctness proof). Each still runs only on `faithful` functions
+	 * and its rewrite is re-verified downstream; validated bit-identical to gcc on
+	 * the plb loop benchmarks + the full x86_64 ctest. Revert an individual one to 0
+	 * if a differential regression surfaces. */
+	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", s1->optimize >= 2);
+	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", s1->optimize >= 2);
+	ast_tile_env = ast_env_gate("MCC_AST_TILE", s1->optimize >= 2);
 	ast_tile_size = ast_env_int("MCC_AST_TILE_SIZE", 32);
 	if (ast_tile_size < 2)
 		{ MCC_TRACE("br\n"); ast_tile_size = 32; }
@@ -14308,10 +14317,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		}
 	}
 #endif
-	if (ast_roi_env) { MCC_TRACE("br\n");
-		ast_search_roi_order(sym, faithful, saved_loc, saved_anon, pristine);
-		return;
-	}
 	if (ast_search_order_env) { MCC_TRACE("br\n");
 		ast_search_select_order(sym, faithful, saved_loc, saved_anon, pristine, h);
 		return;
@@ -14725,6 +14730,17 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (faithful && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
 					ast_search_select(sym, faithful, saved_loc, saved_anon);
 					ast_search_axis_pick(sym, faithful, saved_loc, saved_anon);
+				}
+				/* ROI strategy scheduler (MCC_AST_ROI): after the gate search fixes the
+				 * gate config, reorder the round-robin by measured benefit/time. This
+				 * composes with — does not replace — the gate/subset search; it measures
+				 * on a clone of the gate-selected AST so the order reflects the gates in
+				 * effect, then sets ast_strat_order (full strategy coverage retained). */
+				if (faithful && ast_roi_env) { MCC_TRACE("br\n");
+					AstArena *roi_pr = ast_arena_clone(ast_cur);
+					if (roi_pr)
+						{ MCC_TRACE("br\n"); ast_search_roi_order(sym, faithful, saved_loc,
+																								saved_anon, roi_pr); }
 				}
 				/* Slice cache (MCC_AST_SLICE), BEFORE the strategy cycle rewrites ast_cur:
 				   Phase 3 CONSUME first — warm-start this function's gate config from the
