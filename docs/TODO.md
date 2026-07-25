@@ -111,8 +111,7 @@ Classification of every arch/host-scoped gate by how much work stands between it
   - i386-PE / arm64-PE ASan shadow — DONE (`d8f9d844`; runtime-proven i386 native + arm64 wine). Detail in the Sanitizers §.
 - **Class 3 — blocked on a specific named bug (fix first):**
   - i386-PE embed-jit: the two named bugs are FIXED — the stdcall `__imp__NAME@N` matching in `pe_check_symbols` (`27d256b1`) and the float→int AST-replay desync (`b100da94`), both detailed in the JIT Windows/i386-PE §. What remains is NOT a code bug: the per-arch baked engine blob is toolchain-gated (needs an i386/arm64-compiled engine archive; this host's mingw is x86_64-only). (Short-import COFF reader for MSVC/LLVM/SDK libs landed separately — `coff_short_import_info`.)
-  - True `-shared`/`.so` dynamic-TLS on arm/arm64/riscv64 — errors on all three; riscv64's `riscv64-link.c:373` GD→LE relaxation is a deliberately-incomplete stub.
-  - i386 `-fPIC` TLS codegen — mcc emits `R_386_GOT32X` for a global `__thread` under PIC (crashes at runtime); emit a proper GD/LDM sequence, fall back to IE, or hard-error.
+  - True `-shared`/`.so` dynamic-TLS on arm/arm64/riscv64 — errors on all three; riscv64's `riscv64-link.c:373` GD→LE relaxation is a deliberately-incomplete stub. (The i386 `-fPIC` TLS entry formerly here is RESOLVED — mcc emits proper GD/LDM, not GOT32X; guarded by the `i386-tls-docker` ctest.)
 - **Class 4 — hard ceiling, cannot open without arm64-Windows silicon (qemu/wine mask via x86-TSO):** arm64-Windows MSVC JIT-exec miscompile; arm64-PE JIT native-fault subset (SEH/icache/frameless-leaf, codegen already wine-validated); the aarch64/armv7 weak-memory validator. Keep these explicitly `experimental`/skip-marked so they never false-green.
 - **Cross-cutting enablers (each unblocks several parity axes at once):**
   - `.rodata` data-emission → full `__ubsan_handle_*` ABI (Sanitizers §) + §30 value-table dispatch.
