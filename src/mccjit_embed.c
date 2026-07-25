@@ -2747,7 +2747,7 @@ static int mccjit_corr_insert(MccjitKgc *k, const int64_t *tuple, int64_t out) {
    (near-match accepted), 0 to let the caller's poison logic run. Caller holds lock. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 														 uint32_t ntuples, uint32_t nargs, int wide,
-														 int max_cores);
+														 int max_cores, int fp);
 
 /* The "benchmarks better" gate: does the variant beat the baseline on the observed
    hot inputs? Sample the memo (the verified-correct inputs the hot distribution is
@@ -2778,7 +2778,15 @@ static uint32_t mccjit_nearmatch_build_sample(MccjitKgc *k, int64_t *sample,
    before latching the verdict. While dropped, other threads see nm_benching and skip the
    re-bench, falling through to the normal verify/corr path (novel inputs stay verified, so
    the composite is still 100%% correct); only one bench ever runs. */
-static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline) { MCC_TRACE("enter\n");
+/* fp!=0 => all-double KGC (bench via the FP ABI). benchable==0 => the caller has no
+   ABI-correct way to bench this variant (the MIXED GP+FP path: a faithful bench would
+   need a per-arg GP/FP class vector the sample rows do not carry, and benching mixed
+   doubles through the int signature would call the wrong ABI). Rather than risk a wrong
+   verdict, an un-benchable variant is REJECTED (poisoned) once its mismatch set is
+   stable — corrections are still recorded and served on the path leading here, but the
+   variant is never ACCEPTED without a valid faster-than-baseline bench. */
+static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline,
+																		int fp, int benchable) { MCC_TRACE("enter\n");
 	int64_t *sample;
 	uint32_t n, cap = 64;
 	int win;
@@ -2798,6 +2806,13 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline)
 		{ MCC_TRACE("br\n"); return; } /* mismatch set not yet closed */
 	if (k->nm_benching)
 		{ MCC_TRACE("br\n"); return; } /* another thread is already benching this variant */
+	if (!benchable) { MCC_TRACE("br\n"); /* no ABI-correct bench (mixed) -> never accept */
+		k->nm_decided = 1;
+		if (mcc_stats_mask && !k->poisoned)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
+		k->poisoned = 1;
+		return;
+	}
 	if (!variant || !baseline || k->hdr->count == 0) { MCC_TRACE("br\n"); /* nothing to bench */
 		k->nm_decided = 1;
 		if (mcc_stats_mask && !k->poisoned)
@@ -2816,7 +2831,7 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline)
 	   siblings faults on arm64 Windows (incomplete W^X dual-map, docs/TODO) — the crash
 	   that took down jit/selftest-nearmatch on the arm64 CI cells. Single-threaded JIT
 	   execution is proven safe (the warmup dispatch already ran thousands of calls). */
-	win = mccjit_bench_pair(variant, baseline, sample, n, k->arity, k->ret_wide, 1);
+	win = mccjit_bench_pair(variant, baseline, sample, n, k->arity, k->ret_wide, 1, fp);
 	pthread_mutex_lock(&k->lock);
 	mcc_free(sample);
 	if (!k->nm_decided) { MCC_TRACE("br\n"); /* we own the verdict */
@@ -2868,7 +2883,7 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
 		int64_t *co;
 		k->nm_total++;
-		mccjit_nearmatch_decide(k, variant, baseline);
+		mccjit_nearmatch_decide(k, variant, baseline, 0, 1);
 		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
 			pthread_mutex_unlock(&k->lock);
 			return (int64_t)bf((int)x);
@@ -2999,11 +3014,15 @@ static double mccjit_ts_delta(const struct timespec *a,
 				 (double)(b->tv_nsec - a->tv_nsec) / 1000000000.0;
 }
 
+/* When fp!=0 the sample rows are raw double bit-patterns (all-double KGC) and the
+   candidate/incumbent are double(double,...) functions: invoke through the FP ABI
+   (mccjit_invoke_fp), reinterpreting the int64 row as the double args it encodes.
+   The result double is folded into the int64 sink via its bits (timing only). */
 static void mccjit_bench_run_pair(void *cand, void *incumbent,
 																	const int64_t *tuples, uint32_t ntuples,
 																	uint32_t nargs, int wide, uint32_t reps,
 																	double *cand_s, double *inc_s,
-																	int64_t *sink_out) { MCC_TRACE("enter\n");
+																	int64_t *sink_out, int fp) { MCC_TRACE("enter\n");
 	int64_t sink = 0;
 	double c = 0.0, ic = 0.0;
 	uint32_t r, i;
@@ -3012,12 +3031,26 @@ static void mccjit_bench_run_pair(void *cand, void *incumbent,
 	for (r = 0; r < reps; r++) { MCC_TRACE("br\n");
 		if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0)
 			{ MCC_TRACE("br\n"); return; }
-		for (i = 0; i < ntuples; i++)
-			{ MCC_TRACE("br\n"); sink += mccjit_invoke(cand, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide); }
+		for (i = 0; i < ntuples; i++) { MCC_TRACE("br\n");
+			if (fp) { MCC_TRACE("br\n");
+				double d = mccjit_invoke_fp(cand,
+						(const double *)(tuples + (size_t)i * MCCJIT_KGC_ARITY), nargs);
+				int64_t b; memcpy(&b, &d, sizeof b); sink += b;
+			} else { MCC_TRACE("br\n");
+				sink += mccjit_invoke(cand, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+			}
+		}
 		if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0)
 			{ MCC_TRACE("br\n"); return; }
-		for (i = 0; i < ntuples; i++)
-			{ MCC_TRACE("br\n"); sink += mccjit_invoke(incumbent, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide); }
+		for (i = 0; i < ntuples; i++) { MCC_TRACE("br\n");
+			if (fp) { MCC_TRACE("br\n");
+				double d = mccjit_invoke_fp(incumbent,
+						(const double *)(tuples + (size_t)i * MCCJIT_KGC_ARITY), nargs);
+				int64_t b; memcpy(&b, &d, sizeof b); sink += b;
+			} else { MCC_TRACE("br\n");
+				sink += mccjit_invoke(incumbent, tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+			}
+		}
 		if (clock_gettime(CLOCK_MONOTONIC, &t2) != 0)
 			{ MCC_TRACE("br\n"); return; }
 		c += mccjit_ts_delta(&t0, &t1);
@@ -3051,7 +3084,7 @@ typedef struct MccjitBenchSib {
 	void *cand, *incumbent;
 	const int64_t *tuples;
 	uint32_t ntuples, nargs, reps;
-	int wide, rounds, margin;
+	int wide, rounds, margin, fp;
 	double cb, ib;
 	int64_t sink;
 	int verdict;
@@ -3064,7 +3097,7 @@ static void mccjit_bench_sibling_run(MccjitBenchSib *w) { MCC_TRACE("enter\n");
 	for (k = 0; k < w->rounds; k++) { MCC_TRACE("br\n");
 		double c, i2;
 		mccjit_bench_run_pair(w->cand, w->incumbent, w->tuples, w->ntuples, w->nargs,
-													w->wide, w->reps, &c, &i2, &w->sink);
+													w->wide, w->reps, &c, &i2, &w->sink, w->fp);
 		if (c < cb)
 			{ MCC_TRACE("br\n"); cb = c; }
 		if (i2 < ib)
@@ -3080,9 +3113,13 @@ static void *mccjit_bench_sibling_thread(void *arg) { MCC_TRACE("enter\n");
 	return NULL;
 }
 
+/* fp!=0 => all-double KGC: bench through the FP ABI (mccjit_invoke_fp) with the
+   sample rows read as raw double bits. Passing fp=1 through an int signature (or
+   vice versa) would call the function through the wrong ABI, so callers MUST set
+   fp to match the KGC's return/arg class. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 														 uint32_t ntuples, uint32_t nargs, int wide,
-														 int max_cores) { MCC_TRACE("enter\n");
+														 int max_cores, int fp) { MCC_TRACE("enter\n");
 	MccjitBenchSib sib[MCCJIT_BENCH_MAXCORES];
 	pthread_t th[MCCJIT_BENCH_MAXCORES];
 	char started[MCCJIT_BENCH_MAXCORES];
@@ -3113,6 +3150,7 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 		sib[i].wide = wide;
 		sib[i].rounds = rounds;
 		sib[i].margin = margin;
+		sib[i].fp = fp;
 		sib[i].verdict = 0;
 		sib[i].sink = 0;
 		started[i] = 0;
@@ -3153,7 +3191,7 @@ MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 	for (i = 0; i < nt; i++)
 		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
 			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = st->sample[i][j]; } }
-	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide, 0);
+	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide, 0, 0);
 }
 
 static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
@@ -3175,7 +3213,7 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
 		int64_t *co;
 		k->nm_total++;
-		mccjit_nearmatch_decide(k, variant, baseline);
+		mccjit_nearmatch_decide(k, variant, baseline, 0, 1);
 		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
 			pthread_mutex_unlock(&k->lock);
 			return mccjit_invoke(baseline, argv, nargs, wide);
@@ -3244,7 +3282,27 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_fp(baseline, argv, nargs);
 	}
+	/* K-patch near-match (all-double): the correction table stores the baseline
+	   output as raw double BITS (an int64), and the accept/reject bench is FP-aware
+	   (fp=1 -> mccjit_invoke_fp through the double ABI). */
+	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
+		int64_t *co;
+		k->nm_total++;
+		mccjit_nearmatch_decide(k, variant, baseline, 1, 1);
+		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
+			pthread_mutex_unlock(&k->lock);
+			return mccjit_invoke_fp(baseline, argv, nargs);
+		}
+		co = mccjit_corr_find(k, tuple);
+		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched (stored double bits) */
+			double v;
+			memcpy(&v, co, sizeof v);
+			pthread_mutex_unlock(&k->lock);
+			return v;
+		}
+	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
+		k->nm_match++; /* memo hit = variant verified correct for this input */
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_fp(variant, argv, nargs);
 	}
@@ -3254,13 +3312,16 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 	memcpy(&vbits, &vval, sizeof vbits);
 	if (vbits == bbits) { MCC_TRACE("br\n");
 		k->hits++;
+		k->nm_match++;
 		if (k->memoize_ok)
 			{ MCC_TRACE("br\n"); mccjit_kgc_insert(k, tuple); }
 		pthread_mutex_unlock(&k->lock);
 		return bval;
 	}
 	k->misses++;
-	{
+	/* Record the (args -> baseline output bits) patch; when near-match is off this
+	   returns 0 and the legacy miss-rate poison runs. bbits is the raw double bits. */
+	if (!mccjit_nearmatch_miss(k, tuple, (int64_t)bbits)) { MCC_TRACE("br\n");
 		uint64_t total = k->hits + k->misses;
 		if (total >= (uint64_t)mccjit_poison_min() &&
 				k->misses * 100 >= total * (uint64_t)mccjit_poison_pct())
@@ -3490,7 +3551,28 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_i(baseline, gpv, fpv);
 	}
+	/* K-patch near-match (mixed GP+FP, int return): record + patch mismatches, but
+	   NEVER accept — a faithful bench of a mixed variant needs a per-arg GP/FP class
+	   vector the flat sample rows do not carry (benching through either the pure-int
+	   or pure-fp ABI would misplace args), so decide is called benchable=0 and rejects
+	   once the mismatch set stabilizes. Known mismatches are still served from corr. */
+	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
+		int64_t *co;
+		k->nm_total++;
+		mccjit_nearmatch_decide(k, variant, baseline, 0, 0);
+		if (k->poisoned) { MCC_TRACE("br\n");
+			pthread_mutex_unlock(&k->lock);
+			return mccjit_invoke_mixed_i(baseline, gpv, fpv);
+		}
+		co = mccjit_corr_find(k, tuple);
+		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched from the correction table */
+			int64_t v = *co;
+			pthread_mutex_unlock(&k->lock);
+			return v;
+		}
+	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
+		k->nm_match++;
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_i(variant, gpv, fpv);
 	}
@@ -3500,13 +3582,17 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 	vc = k->ret_wide ? vval : (int64_t)(int32_t)vval;
 	if (vc == bc) { MCC_TRACE("br\n");
 		k->hits++;
+		k->nm_match++;
 		if (k->memoize_ok)
 			{ MCC_TRACE("br\n"); mccjit_kgc_insert(k, tuple); }
 		pthread_mutex_unlock(&k->lock);
 		return bval;
 	}
 	k->misses++;
-	mccjit_mixed_poison_update(k);
+	/* Record the (args -> baseline output) patch; when near-match is off, run the
+	   legacy poison update. bc is the ABI-correct (ret-width) baseline value. */
+	if (!mccjit_nearmatch_miss(k, tuple, bc))
+		{ MCC_TRACE("br\n"); mccjit_mixed_poison_update(k); }
 	pthread_mutex_unlock(&k->lock);
 	if (k->mx_flag)
 		{ MCC_TRACE("br\n"); *k->mx_flag = 1; }
@@ -3528,7 +3614,27 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_d(baseline, gpv, fpv);
 	}
+	/* K-patch near-match (mixed GP+FP, double return): the correction stores the
+	   baseline output as raw double BITS. As in calln_mixed_i, decide is benchable=0
+	   (no ABI-correct bench for a mixed signature) -> record+patch, never accept. */
+	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
+		int64_t *co;
+		k->nm_total++;
+		mccjit_nearmatch_decide(k, variant, baseline, 0, 0);
+		if (k->poisoned) { MCC_TRACE("br\n");
+			pthread_mutex_unlock(&k->lock);
+			return mccjit_invoke_mixed_d(baseline, gpv, fpv);
+		}
+		co = mccjit_corr_find(k, tuple);
+		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched (stored double bits) */
+			double v;
+			memcpy(&v, co, sizeof v);
+			pthread_mutex_unlock(&k->lock);
+			return v;
+		}
+	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
+		k->nm_match++;
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_d(variant, gpv, fpv);
 	}
@@ -3538,13 +3644,16 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 	memcpy(&vbits, &vval, sizeof vbits);
 	if (vbits == bbits) { MCC_TRACE("br\n");
 		k->hits++;
+		k->nm_match++;
 		if (k->memoize_ok)
 			{ MCC_TRACE("br\n"); mccjit_kgc_insert(k, tuple); }
 		pthread_mutex_unlock(&k->lock);
 		return bval;
 	}
 	k->misses++;
-	mccjit_mixed_poison_update(k);
+	/* Record (args -> baseline output bits); off => legacy poison. */
+	if (!mccjit_nearmatch_miss(k, tuple, (int64_t)bbits))
+		{ MCC_TRACE("br\n"); mccjit_mixed_poison_update(k); }
 	pthread_mutex_unlock(&k->lock);
 	if (k->mx_flag)
 		{ MCC_TRACE("br\n"); *k->mx_flag = 1; }
@@ -4782,6 +4891,27 @@ static int mccjit_nm_drive(MccjitKgc *k, void *variant, int (*baseline)(int),
 	return wrong;
 }
 
+/* All-double analogue of mccjit_nm_drive: drives calls through mccjit_kgc_calln_fp
+   with a hot value (7.0) + off-profile doubles, asserting EVERY returned double is
+   bit-identical to the baseline (soundness). Returns wrong count. */
+static int mccjit_nm_drive_fp(MccjitKgc *k, void *variant, void *baseline,
+															double (*base_fn)(double), int calls, int period,
+															const double *offv, int noff) { MCC_TRACE("enter\n");
+	int i, wrong = 0;
+	for (i = 0; i < calls; i++) { MCC_TRACE("br\n");
+		double x = (i % period == 0) ? offv[(i / period) % noff] : 7.0;
+		int flagged = 0;
+		double got = mccjit_kgc_calln_fp(k, variant, baseline, &x, 1, &flagged);
+		double want = base_fn(x);
+		uint64_t gb, wb;
+		memcpy(&gb, &got, sizeof gb);
+		memcpy(&wb, &want, sizeof wb);
+		if (gb != wb)
+			{ MCC_TRACE("br\n"); wrong++; }
+	}
+	return wrong;
+}
+
 /* K-patch near-match selftest for the DEFAULT-ON, benchmark-gated feature. Scenarios:
    ACCEPT  — expensive baseline + a cheap constant variant that agrees only on the hot
              value x==7: small mismatch set + benchmarks faster -> KEPT, mismatches
@@ -4791,16 +4921,24 @@ static int mccjit_nm_drive(MccjitKgc *k, void *variant, int (*baseline)(int),
              it is NOT faster -> rejected (poisoned).
    BIGTABLE— cheap-enough variant but the mismatch set overflows the small-jump-table
              budget -> rejected (poisoned).
-   All four keep returning the correct baseline value on every call. */
+   FPACCEPT— the ACCEPT scenario for the ALL-DOUBLE path: an expensive double baseline
+             + a cheap constant double variant driven through mccjit_kgc_calln_fp; the
+             FP-aware bench (invoke_fp) accepts it and off-profile inputs are patched
+             from raw double bits, every returned double bit-identical to the baseline.
+   All keep returning the correct baseline value on every call. */
 PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 	int (*base_slow)(int) = NULL; /* expensive baseline */
 	int (*base_fast)(int) = NULL; /* cheap baseline */
+	double (*base_dslow)(double) = NULL; /* expensive all-double baseline */
 	MCCState *sbs = NULL, *sbf = NULL, *svc = NULL, *svs = NULL;
+	MCCState *sbds = NULL, *svdc = NULL;
 	void *var_const = NULL; /* cheap constant variant (== base_slow only at x==7) */
 	void *var_slow = NULL;  /* slow constant variant  (== base_fast only at x==7) */
+	void *var_dconst = NULL; /* cheap constant double variant (== base_dslow only at 7.0) */
 	MccjitKgc kgc;
 	int fails = 0, wrong;
 	int64_t offv[4] = {5, 0, 3, 100};
+	double offd[4] = {5.5, 0.25, -3.0, 100.0};
 	char vsrc[128];
 
 	printf("mccjit-selftest-nearmatch: begin\n");
@@ -4822,6 +4960,21 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 	var_slow = mccjit_nm_compile(vsrc, "v", &svs);
 	if (!var_const || !var_slow) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-nearmatch: variant build failed\n");
+		fails = 1;
+		goto done;
+	}
+	/* All-double baseline (expensive loop) + a cheap constant double variant that
+	   agrees only at the hot value 7.0. %.17g round-trips the constant exactly. */
+	base_dslow = (double (*)(double))mccjit_nm_compile(
+			"double f(double x){double a=x;int k;for(k=0;k<160;k++)a=a*1.0000001+0.5;return a;}",
+			"f", &sbds);
+	if (base_dslow) { MCC_TRACE("br\n");
+		snprintf(vsrc, sizeof vsrc, "double v(double x){(void)x;return %.17g;}",
+						 base_dslow(7.0));
+		var_dconst = mccjit_nm_compile(vsrc, "v", &svdc);
+	}
+	if (!base_dslow || !var_dconst) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-nearmatch: fp variant build failed\n");
 		fails = 1;
 		goto done;
 	}
@@ -4879,11 +5032,45 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		mccjit_kgc_close(&kgc);
 	}
 
+	/* FPACCEPT: all-double path. Expensive double baseline, cheap constant double
+	   variant, 98/2 hot/off-profile mix (period=50). The FP-aware bench accepts the
+	   variant; off-profile doubles are patched from raw bits; every returned double
+	   is bit-identical to the baseline. ret_wide=1 matches make_kgc_stub_fp. */
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
+		kgc.ret_wide = 1;
+		wrong = mccjit_nm_drive_fp(&kgc, var_dconst, (void *)base_dslow, base_dslow,
+															 4000, 50, offd, 4);
+		printf("mccjit-selftest-nearmatch: FPACCEPT wrong=%d nearmatch=%d poisoned=%d "
+					 "corrections=%llu nm=%llu/%llu\n",
+					 wrong, kgc.nearmatch, kgc.poisoned, (unsigned long long)kgc.corr_n,
+					 (unsigned long long)kgc.nm_match, (unsigned long long)kgc.nm_total);
+		if (wrong || !kgc.nearmatch || kgc.poisoned || kgc.corr_n != 4) { MCC_TRACE("br\n"); fails++; }
+		{
+			int j;
+			for (j = 0; j < 4; j++) { MCC_TRACE("br\n");
+				int64_t t[MCCJIT_KGC_ARITY], *co;
+				uint32_t m;
+				double want = base_dslow(offd[j]);
+				uint64_t wb;
+				for (m = 0; m < MCCJIT_KGC_ARITY; m++)
+					{ MCC_TRACE("br\n"); t[m] = 0; }
+				memcpy(&t[0], &offd[j], sizeof t[0]);
+				memcpy(&wb, &want, sizeof wb);
+				co = mccjit_corr_find(&kgc, t);
+				if (!co || (uint64_t)*co != wb)
+					{ MCC_TRACE("br\n"); fails++; }
+			}
+		}
+		mccjit_kgc_close(&kgc);
+	}
+
 done:
 	if (svc) { MCC_TRACE("br\n"); mcc_delete(svc); }
 	if (svs) { MCC_TRACE("br\n"); mcc_delete(svs); }
+	if (svdc) { MCC_TRACE("br\n"); mcc_delete(svdc); }
 	if (sbs) { MCC_TRACE("br\n"); mcc_delete(sbs); }
 	if (sbf) { MCC_TRACE("br\n"); mcc_delete(sbf); }
+	if (sbds) { MCC_TRACE("br\n"); mcc_delete(sbds); }
 	printf("mccjit-selftest-nearmatch: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
@@ -6368,11 +6555,11 @@ PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1); } }
 
 	r_win = mccjit_bench_pair((void *)mccjit_bench_fast_fn,
-													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1, 0);
+													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1, 0, 0);
 	r_lose = mccjit_bench_pair((void *)mccjit_bench_slow_fn,
-														(void *)mccjit_bench_fast_fn, tuples, nt, 1, 1, 0);
+														(void *)mccjit_bench_fast_fn, tuples, nt, 1, 1, 0, 0);
 	r_tie = mccjit_bench_pair((void *)mccjit_bench_slow_fn,
-													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1, 0);
+													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1, 0, 0);
 	unsetenv("MCC_JIT_BENCH_ITERS");
 	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
 	unsetenv("MCC_JIT_BENCH_ROUNDS");
