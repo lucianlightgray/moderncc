@@ -548,9 +548,474 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root) { MCC_TRACE("enter
 	return m.oom ? 0 : h;
 }
 
+/* VT_* value-storage flags (source of truth: mcc.h:1026-1034), reachable here in
+   the amalgamated / MCC_INTERNAL build. Provide the same constants for the
+   standalone asttool compile (it includes mccast.c without mcc.h) so the local-Ref
+   detection below is identical in both; skipped whenever mcc.h already defined them. */
+#ifndef VT_VALMASK
+#define VT_VALMASK 0x003f
+#endif
+#ifndef VT_LOCAL
+#define VT_LOCAL 0x0032
+#endif
+#ifndef VT_SYM
+#define VT_SYM 0x0200
+#endif
+
+/* Positional intern of a slice's live-in local offsets: distinct offsets map to
+   dense ordinals (1,2,...) in first-seen order, a repeat returns its prior ordinal.
+   Fixed capacity (live-ins are few); overflow poisons the hash to 0 rather than
+   silently colliding. Mirrors ast_ih_sym for syms so identity is alpha-invariant
+   in BOTH symbols and frame offsets while preserving the input-sharing pattern. */
+#define AST_SID_MAXOFF 64
+typedef struct {
+	int32_t off[AST_SID_MAXOFF];
+	int n;
+	int over;
+} AstSidOffs;
+
+static uint64_t ast_sid_off(AstSidOffs *m, int32_t off) { MCC_TRACE("enter\n");
+	for (int i = 0; i < m->n; i++)
+		{ MCC_TRACE("br\n"); if (m->off[i] == off)
+			{ MCC_TRACE("br\n"); return (uint64_t)(i + 1); } }
+	if (m->n >= AST_SID_MAXOFF)
+		{ MCC_TRACE("br\n"); m->over = 1; return 0; }
+	m->off[m->n++] = off;
+	return (uint64_t)m->n;
+}
+
+static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
+														 AstSidOffs *om, uint64_t h) { MCC_TRACE("enter\n");
+	int is_local = a->kind[n] == AST_Ref &&
+								 ((uint32_t)a->op[n] & VT_VALMASK) == VT_LOCAL &&
+								 !((uint32_t)a->op[n] & VT_SYM);
+	h = ast_ih_fold(h, a->kind[n]);
+	h = ast_ih_fold(h, (uint32_t)a->op[n]);
+	h = ast_ih_fold(h, (uint32_t)a->type_t[n]);
+	h = ast_ih_fold(h, a->sym[n] ? ast_ih_sym(sm, a->sym[n]) : 0);
+	if (is_local)
+		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_off(om, (int32_t)(int64_t)a->ival[n])); }
+	else if (a->kind[n] != AST_Ref)
+		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, a->ival[n]); }
+	h = ast_ih_fold(h, a->fbits[n]);
+	h = ast_ih_fold(h, a->nchild[n]);
+	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
+		{ MCC_TRACE("br\n"); h = ast_sid_node(a, c, sm, om, h); }
+	return h;
+}
+
+uint64_t ast_slice_ident_hash(const AstArena *a, AstLocal root) { MCC_TRACE("enter\n");
+	if (!a || !a->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (root == AST_NONE)
+		{ MCC_TRACE("br\n"); root = ast_root(a); }
+	if (root >= a->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstIhSyms sm = {NULL, 0, 0, 0};
+	AstSidOffs om = {{0}, 0, 0};
+	uint64_t h = ast_sid_node(a, root, &sm, &om, 0xcbf29ce484222325u);
+	free(sm.syms);
+	return (sm.oom || om.over) ? 0 : h;
+}
+
 #pragma pop_macro("malloc")
 #pragma pop_macro("realloc")
 #pragma pop_macro("free")
+
+/* ---- Growing-window slice cache (MCC_AST_SLICE) ---------------------------
+ * A leaf-first rolling window over the captured arena records each maximal
+ * compute slice under its context-free identity (ast_slice_ident_hash). Arena
+ * index order IS post-order, so scanning n=0..count-1 closes subtrees bottom-up
+ * (leaf-most first) and the window "grows" as larger enclosing slices close.
+ * The cached value is the enclosing function's chosen gate config + a size proxy,
+ * so a recurring slice -- in another function, TU, or a later AOT build -- is
+ * found by identity alone (the JIT<->AOT bridge, consumed in Phase 3).
+ *
+ * Phase 2 only POPULATES this table; nothing reads it to steer codegen yet, so
+ * MCC_AST_SLICE=1 stays byte-identical. Kept in the non-MCC_INTERNAL region (so
+ * tools/asttool.c can unit-test it) => plain `static` (no MCC_OPT_TLS here) and
+ * uint64_t for the gate mask (AstGateMask is a uint64_t defined later). The
+ * populate call runs only on the single-threaded main-compile path, never in a
+ * search-pool worker, so plain static is race-free for now; TLS is a threading
+ * follow-up alongside the pool. Gate string keyed by the MCC_AST_SLICE env. */
+#define AST_SLICE_MEMO_CAP 8192
+#define AST_SLICE_MIN_NODES 3   /* skip trivial leaves / single ops */
+#define AST_SLICE_MAX_NODES 65536
+
+typedef struct AstSliceMemo {
+	uint64_t ident;    /* ast_slice_ident_hash of the slice (context-free key) */
+	uint64_t gates;    /* enclosing function's chosen gate config (AstGateMask) */
+	int64_t size;      /* slice node count as a cheap cost proxy (-1 = unknown) */
+	unsigned refcount; /* how many times this identity has been recorded */
+	unsigned proven;   /* 1 = benchmark-proven by a JIT run (Phase 4); 0 = static-size-best */
+} AstSliceMemo;
+
+static AstSliceMemo ast_slice_memo[AST_SLICE_MEMO_CAP];
+static int ast_slice_memo_n;
+static long ast_slice_seen;   /* stats: total slices scanned (all functions) */
+static long ast_slice_reuse;  /* stats: scans whose identity was already cached */
+
+static const AstSliceMemo *ast_slice_memo_get(uint64_t ident) { MCC_TRACE("enter\n");
+	for (int i = 0; i < ast_slice_memo_n; i++)
+		{ MCC_TRACE("br\n"); if (ast_slice_memo[i].ident == ident)
+			{ MCC_TRACE("br\n"); return &ast_slice_memo[i]; } }
+	return NULL;
+}
+
+static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { MCC_TRACE("enter\n");
+	for (int i = 0; i < ast_slice_memo_n; i++) { MCC_TRACE("br\n");
+		if (ast_slice_memo[i].ident == ident) { MCC_TRACE("br\n");
+			ast_slice_memo[i].refcount++;
+			/* keep the lower-cost config once cost is known (Phase 3 scoring). */
+			if (size >= 0 && (ast_slice_memo[i].size < 0 || size < ast_slice_memo[i].size)) {
+				MCC_TRACE("br\n");
+				ast_slice_memo[i].size = size;
+				ast_slice_memo[i].gates = gates;
+			}
+			return;
+		}
+	}
+	if (ast_slice_memo_n >= AST_SLICE_MEMO_CAP)
+		{ MCC_TRACE("br\n"); return; } /* bounded; silently drop on overflow (Phase 3 evicts) */
+	ast_slice_memo[ast_slice_memo_n].ident = ident;
+	ast_slice_memo[ast_slice_memo_n].gates = gates;
+	ast_slice_memo[ast_slice_memo_n].size = size;
+	ast_slice_memo[ast_slice_memo_n].refcount = 1;
+	ast_slice_memo[ast_slice_memo_n].proven = 0; /* populate side is static (Phase 2/3) */
+	ast_slice_memo_n++;
+}
+
+static int ast_slice_win_nodes(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	int k = 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); k += ast_slice_win_nodes(a, c); }
+	return k;
+}
+
+/* A slice root is a value-producing compute node with operands. Purely
+   structural (no eval-slice / JIT dependency) so AOT with the JIT off enumerates
+   exactly the same slices as a JIT run -- required for cross-mode cache hits. */
+static int ast_slice_win_root_ok(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	uint16_t k = ast_kind(a, n);
+	return (k == AST_Binary || k == AST_Unary || k == AST_Convert || k == AST_Load) &&
+				 ast_first_child(a, n) != AST_NONE;
+}
+
+/* Shared slice enumerator: walk arena `a` in post-order and invoke `visit` on
+   every maximal compute slice (structural root, node count in bounds, hashable
+   identity). Populate (window_scan) and probe (Phase 3 consume) MUST see the
+   exact same slice set so a JIT-populated slice is hit by a later AOT probe, so
+   both funnel through here. Returns the number of slices visited. */
+typedef void (*AstSliceVisitFn)(uint64_t ident, int size, uint64_t gates, void *ctx);
+
+static long ast_slice_enum(const AstArena *a, uint64_t gates,
+													 AstSliceVisitFn visit, void *ctx) { MCC_TRACE("enter\n");
+	long recorded = 0;
+	AstLocal nn;
+	if (!a)
+		{ MCC_TRACE("br\n"); return 0; }
+	nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		int sz;
+		uint64_t id;
+		if (!ast_slice_win_root_ok(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		sz = ast_slice_win_nodes(a, n);
+		if (sz < AST_SLICE_MIN_NODES || sz > AST_SLICE_MAX_NODES)
+			{ MCC_TRACE("br\n"); continue; }
+		id = ast_slice_ident_hash(a, n);
+		if (!id)
+			{ MCC_TRACE("br\n"); continue; }
+		visit(id, sz, gates, ctx);
+		recorded++;
+	}
+	return recorded;
+}
+
+/* Populate visitor: record each slice into the in-memory memo under `gates`. */
+static void ast_slice_visit_put(uint64_t ident, int size, uint64_t gates, void *ctx) { MCC_TRACE("enter\n");
+	(void)ctx;
+	ast_slice_seen++;
+	if (ast_slice_memo_get(ident))
+		{ MCC_TRACE("br\n"); ast_slice_reuse++; }
+	ast_slice_memo_put(ident, gates, (int64_t)size);
+}
+
+/* Populate the slice cache from one function's captured arena `a`, tagging each
+   slice with the function's chosen `gates`. Returns the number of slices recorded. */
+static long ast_slice_window_scan(const AstArena *a, uint64_t gates) { MCC_TRACE("enter\n");
+	return ast_slice_enum(a, gates, ast_slice_visit_put, NULL);
+}
+
+/* ---- Slice-record (de)serialization -------------------------------------
+   A slice record persists as 4 little-endian-agnostic uint64 words (the same
+   host writes and reads): {ident, gates, (u64)size, refcount | proven<<32 |
+   MAGIC<<48}. The MAGIC tag in the high 16 bits of the refcount word lets a
+   torn or foreign record be skipped without a global header (mirrors the search
+   memo). Word 3 layout: bits 0..31 refcount, bit 32 the Phase-4 `proven` flag
+   (a JIT bench-proven config outranks a static-size-best one), bits 33..47
+   reserved, bits 48..63 MAGIC. The proven bit reuses previously-zero bits, so
+   an old (proven-less) file deserializes cleanly as all-static — no MAGIC bump.
+   Pure logic in the non-MCC_INTERNAL region so tools/asttool can unit-test it. */
+#define AST_SLICE_REC_PROVEN_BIT ((uint64_t)1 << 32)
+#define AST_SLICE_RECWORDS 4
+#define AST_SLICE_RECBYTES (AST_SLICE_RECWORDS * 8)
+#define AST_SLICE_REC_MAGIC 0x534cu /* 'SL' */
+
+/* Serialize `n` records into `buf`; returns bytes written or -1 if `cap` is too
+   small. */
+static long ast_slice_rec_serialize(const AstSliceMemo *recs, int n,
+																		unsigned char *buf, long cap) { MCC_TRACE("enter\n");
+	long off = 0;
+	int i;
+	if (!recs || !buf)
+		{ MCC_TRACE("br\n"); return -1; }
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		uint64_t rec[AST_SLICE_RECWORDS];
+		if (off + AST_SLICE_RECBYTES > cap)
+			{ MCC_TRACE("br\n"); return -1; }
+		rec[0] = recs[i].ident;
+		rec[1] = recs[i].gates;
+		rec[2] = (uint64_t)recs[i].size;
+		rec[3] = ((uint64_t)recs[i].refcount) |
+						 (recs[i].proven ? AST_SLICE_REC_PROVEN_BIT : 0) |
+						 ((uint64_t)AST_SLICE_REC_MAGIC << 48);
+		memcpy(buf + off, rec, sizeof rec);
+		off += AST_SLICE_RECBYTES;
+	}
+	return off;
+}
+
+/* Parse up to `cap` records from `buf[0..len)`, skipping any word quad missing
+   the MAGIC tag (torn/foreign). Returns the number written to `out`. */
+static int ast_slice_rec_deserialize(const unsigned char *buf, long len,
+																		 AstSliceMemo *out, int cap) { MCC_TRACE("enter\n");
+	long off = 0;
+	int n = 0;
+	if (!buf || !out)
+		{ MCC_TRACE("br\n"); return 0; }
+	while (off + AST_SLICE_RECBYTES <= len && n < cap) { MCC_TRACE("br\n");
+		uint64_t rec[AST_SLICE_RECWORDS];
+		memcpy(rec, buf + off, sizeof rec);
+		off += AST_SLICE_RECBYTES;
+		if ((rec[3] >> 48) != AST_SLICE_REC_MAGIC)
+			{ MCC_TRACE("br\n"); continue; }
+		out[n].ident = rec[0];
+		out[n].gates = rec[1];
+		out[n].size = (int64_t)rec[2];
+		out[n].refcount = (unsigned)(rec[3] & 0xffffffffu);
+		out[n].proven = (rec[3] & AST_SLICE_REC_PROVEN_BIT) ? 1u : 0u;
+		n++;
+	}
+	return n;
+}
+
+/* ---- Slice-record merge (shared by disk merge-store and JIT graduate) -----
+   Merge one record `rec` into table `tab[0..*n)` (capacity `cap`), keyed by
+   ident. Refcounts sum. Config preference (Phase 4):
+     - a benchmark-PROVEN record always wins over a static one (proven wins,
+       regardless of size — a live-bench verdict outranks the static cost proxy);
+     - between two records of equal proven-ness, the lower `size` (cheaper proxy)
+       config is kept, matching the Phase-3 static rule.
+   Pure logic in the non-MCC_INTERNAL region so tools/asttool can unit-test the
+   proven-preference directly. */
+static void ast_slice_merge_one(AstSliceMemo *tab, int *n, int cap,
+																const AstSliceMemo *rec) { MCC_TRACE("enter\n");
+	int j;
+	for (j = 0; j < *n; j++) { MCC_TRACE("br\n");
+		if (tab[j].ident != rec->ident)
+			{ MCC_TRACE("br\n"); continue; }
+		tab[j].refcount += rec->refcount;
+		if (rec->proven && !tab[j].proven) { MCC_TRACE("br\n");
+			/* first proof for this slice: adopt the proven config outright. */
+			tab[j].proven = 1;
+			tab[j].gates = rec->gates;
+			tab[j].size = rec->size;
+		} else if (rec->proven == tab[j].proven &&
+							 rec->size >= 0 && (tab[j].size < 0 || rec->size < tab[j].size)) {
+			MCC_TRACE("br\n");
+			/* same class (both static or both proven): cheaper proxy wins. */
+			tab[j].size = rec->size;
+			tab[j].gates = rec->gates;
+		}
+		/* else: incoming static cannot override an existing proven record. */
+		return;
+	}
+	if (*n < cap)
+		{ MCC_TRACE("br\n"); tab[(*n)++] = *rec; }
+}
+
+/* ---- Slice probe (Phase 3 consume decision) -----------------------------
+   Enumerate arena `a`'s slices and look each up in `table`; the DOMINANT slice
+   drives the function-level warm-start. Ranking (Phase 4): a PROVEN match
+   outranks any static match; within the same proven-ness the LARGEST recurring
+   slice wins. Pure (no host I/O), so the consume decision is unit-testable.
+   Returns 1 and sets *out_gates to the dominant match's cached gate config. */
+typedef struct AstSliceProbeCtx {
+	const AstSliceMemo *table;
+	int table_n;
+	int64_t best_size;
+	uint64_t best_gates;
+	int best_proven;
+	int found;
+} AstSliceProbeCtx;
+
+static void ast_slice_visit_probe(uint64_t ident, int size, uint64_t gates, void *ctx) { MCC_TRACE("enter\n");
+	AstSliceProbeCtx *p = (AstSliceProbeCtx *)ctx;
+	int i;
+	(void)gates;
+	for (i = 0; i < p->table_n; i++) { MCC_TRACE("br\n");
+		if (p->table[i].ident == ident) { MCC_TRACE("br\n");
+			int prov = p->table[i].proven ? 1 : 0;
+			/* rank by (proven desc, size desc): a proven match always outranks a
+			   static one, and within a class the largest recurring slice wins. */
+			int better = !p->found || prov > p->best_proven ||
+									 (prov == p->best_proven && (int64_t)size > p->best_size);
+			if (better) { MCC_TRACE("br\n");
+				p->found = 1;
+				p->best_proven = prov;
+				p->best_size = size;
+				p->best_gates = p->table[i].gates;
+			}
+			break;
+		}
+	}
+}
+
+static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
+																 int table_n, uint64_t *out_gates) { MCC_TRACE("enter\n");
+	AstSliceProbeCtx p;
+	p.table = table;
+	p.table_n = table_n;
+	p.best_size = -1;
+	p.best_gates = 0;
+	p.best_proven = 0;
+	p.found = 0;
+	if (!a || !table || table_n <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_slice_enum(a, 0, ast_slice_visit_probe, &p);
+	if (p.found && out_gates)
+		{ MCC_TRACE("br\n"); *out_gates = p.best_gates; }
+	return p.found;
+}
+
+/* ---- Node-stable in-arena splice (roadmap 14) ----------------------------
+   Inverse of ast_slice_extract: replace the subtree rooted at `site_root` in
+   arena `a` with a deep copy of the (optimized) kernel subtree rooted at
+   `kernel_root` in `kernel_src`. Kept in the non-MCC_INTERNAL region (plain
+   extern, no MCC_EMBED_JIT guard) so tools/asttool can unit-test it and both
+   the AOT-visible API and the JIT wiring can call it.
+
+   NODE-STABILITY GUARANTEE (what the SoA arena lets us keep):
+     - The site_root slot is RE-USED as the spliced kernel's root, so its
+       parent[], next_sib[], and its position in the parent's child list are
+       left bit-for-bit unchanged. Only site_root's own payload columns (kind,
+       op, type, ival, fbits, sym, cst) and its child links are overwritten.
+     - Therefore EVERY live node index OUTSIDE the replaced subtree keeps its
+       index AND all of its SoA field values unchanged -- ancestors, siblings,
+       and unrelated subtrees are untouched (no renumbering / compaction).
+     - The kernel's NON-root nodes are appended at fresh indices at the tail.
+     - The old subtree's descendant slots are left in place as unreferenced
+       "dead" nodes (the arena is deliberately not compacted); they stay
+       self-consistent so ast_validate still passes, but no LIVE index moves.
+   CONTRACT: `kernel_src` must be a distinct arena from `a` (or at least the
+   kernel subtree must not overlap site_root's subtree) -- the site's children
+   are cleared before the kernel is read. In practice the kernel is always a
+   standalone ast_slice_extract()/wrap result, so this always holds.
+   Returns the number of nodes in the spliced-in subtree (>=1), or 0 on error. */
+static AstLocal ast_slice_graft_rec(AstArena *a, const AstArena *k,
+																		AstLocal ksrc) { MCC_TRACE("enter\n");
+	AstLocal c, cc, n = ast_node(a, ast_kind(k, ksrc));
+	ast_set_op(a, n, ast_op(k, ksrc));
+	ast_set_type(a, n, ast_type_t(k, ksrc), ast_type_ref(k, ksrc));
+	ast_set_ival(a, n, ast_ival(k, ksrc));
+	ast_set_fbits(a, n, ast_fbits(k, ksrc));
+	ast_set_sym(a, n, ast_sym(k, ksrc));
+	ast_set_cst(a, n, ast_cst(k, ksrc));
+	for (c = ast_first_child(k, ksrc); c != AST_NONE; c = ast_next_sib(k, c)) { MCC_TRACE("br\n");
+		cc = ast_slice_graft_rec(a, k, c);
+		ast_add_child(a, n, cc);
+	}
+	return n;
+}
+
+int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src,
+										 AstLocal kernel_root) { MCC_TRACE("enter\n");
+	AstLocal c, cc;
+	int spliced;
+	if (!a || !kernel_src || !a->count || !kernel_src->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (site_root >= a->count || kernel_root >= kernel_src->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	/* Re-use site_root's slot for the kernel root (preserves its parent/sibling
+	   links); orphan the old descendants in place; append the kernel body. */
+	ast_clear_children(a, site_root);
+	ast_set_kind(a, site_root, ast_kind(kernel_src, kernel_root));
+	ast_set_op(a, site_root, ast_op(kernel_src, kernel_root));
+	ast_set_type(a, site_root, ast_type_t(kernel_src, kernel_root),
+							 ast_type_ref(kernel_src, kernel_root));
+	ast_set_ival(a, site_root, ast_ival(kernel_src, kernel_root));
+	ast_set_fbits(a, site_root, ast_fbits(kernel_src, kernel_root));
+	ast_set_sym(a, site_root, ast_sym(kernel_src, kernel_root));
+	ast_set_cst(a, site_root, ast_cst(kernel_src, kernel_root));
+	spliced = 1;
+	for (c = ast_first_child(kernel_src, kernel_root); c != AST_NONE;
+			 c = ast_next_sib(kernel_src, c)) { MCC_TRACE("br\n");
+		cc = ast_slice_graft_rec(a, kernel_src, c);
+		ast_add_child(a, site_root, cc);
+		spliced += ast_slice_win_nodes(a, cc);
+	}
+	return spliced;
+}
+
+/* ---- Hierarchical locator (roadmap 15) -----------------------------------
+   Fill `sites[0..min(return,max))` with every node index in `a` whose slice
+   identity (ast_slice_ident_hash) equals `ident`, so a single cached/optimized
+   kernel can be spliced at ALL of its occurrences. Uses the exact same slice
+   membership filter as ast_slice_enum so a located site is always splice-able.
+   Returns the TOTAL number of matching occurrences (may exceed `max`; only the
+   first `max` are written). Non-MCC_INTERNAL so asttool can unit-test it. */
+int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites,
+										 int max) { MCC_TRACE("enter\n");
+	int found = 0;
+	AstLocal n, nn;
+	if (!a || !ident || !sites || max <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	nn = ast_count(a);
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		int sz;
+		uint64_t id;
+		if (!ast_slice_win_root_ok(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		sz = ast_slice_win_nodes(a, n);
+		if (sz < AST_SLICE_MIN_NODES || sz > AST_SLICE_MAX_NODES)
+			{ MCC_TRACE("br\n"); continue; }
+		id = ast_slice_ident_hash(a, n);
+		if (id != ident)
+			{ MCC_TRACE("br\n"); continue; }
+		if (found < max)
+			{ MCC_TRACE("br\n"); sites[found] = n; }
+		found++;
+	}
+	return found;
+}
+
+/* ---- Benchmark-gated promotion, static (AOT / no-runtime) fallback -------
+   The TERMINAL accept decision for a spliced/optimized slice, static-cost arm.
+   `baseline_cost`/`candidate_cost` are the cost-model scores (ast_cost_score /
+   node-count proxy; lower is cheaper). Keep (1) the candidate iff it is a
+   strict win; ties and unmeasurable candidates reject (0), preserving the
+   incumbent -- the same incumbent-wins-on-tie hysteresis the search scorer and
+   mccjit_bench_pair use. The JIT/runtime arm instead uses mccjit_bench_pair's
+   live differential verdict; this is the "no runtime available" fallback. One
+   shared decision helper so AOT and JIT agree on the keep/reject semantics. */
+int ast_slice_promote_static(int64_t baseline_cost, int64_t candidate_cost) { MCC_TRACE("enter\n");
+	if (candidate_cost < 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (baseline_cost < 0)
+		{ MCC_TRACE("br\n"); return 1; }
+	return candidate_cost < baseline_cost ? 1 : 0;
+}
 
 #define AST_COLOR_MAX 64
 
@@ -1010,6 +1475,7 @@ int ast_jit_eval_refused_count(void) { MCC_TRACE("enter\n"); return ast_jit_eval
 
 static MCC_OPT_TLS int ast_templates_env;
 static int ast_search_env;
+static int ast_slice_env; /* MCC_AST_SLICE: growing-window slice cache (Phase 2 populate) */
 static int ast_search_emitsize_env;
 static int ast_search_emitiso_env;
 static int ast_search_inline_env;
@@ -1294,6 +1760,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
+	ast_slice_env = ast_env_gate("MCC_AST_SLICE", 0);
 	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
 	ast_search_emitiso_env = ast_env_gate("MCC_AST_SEARCH_EMITISO", 0);
 	ast_search_inline_env = ast_env_gate("MCC_AST_SEARCH_INLINE", 0);
@@ -12274,6 +12741,231 @@ static void ast_search_disk_store(uint64_t h, AstGateMask gates, unsigned refcou
 	ast_search_disk_evict();
 }
 
+/* ---- Slice cache disk substrate (MCC_AST_SLICE, Phase 3) -------------------
+ * The slice memo is the shared JIT<->AOT substrate on disk: persisted across
+ * builds/runs in the per-user cache dir, partitioned by version+triplet via the
+ * filename salt (sl-<key>.ck, distinct from mcc-search.memo so the two coexist),
+ * and merged across concurrent processes under an flock (refcount summed, lower
+ * `size` kept). AOT at -O4+ LOADS it (once, lazily) into a read-only disk view
+ * and warm-starts each function from its dominant recurring slice -- with the
+ * JIT off. Consumption reads ONLY the disk view, never this run's populate
+ * table, so an empty/absent cache is a strict no-op (byte-identical) and only a
+ * warm cache from a prior run can steer codegen. The write side is flushed once
+ * at process exit (atexit), so parent + every -O4 search worker contributes. */
+static AstSliceMemo ast_slice_disk[AST_SLICE_MEMO_CAP]; /* read-only loaded view */
+static int ast_slice_disk_n;
+static int ast_slice_disk_loaded;
+static int ast_slice_flush_armed;
+static unsigned char ast_slice_io_raw[AST_SLICE_MEMO_CAP * AST_SLICE_RECBYTES];
+
+/* sl-<salt>.ck in the per-user cache dir; the salt folds version + triplet so a
+ * config cached by an incompatible build/target is never reused. */
+static int ast_slice_disk_path(char *buf, int cap) { MCC_TRACE("enter\n");
+	char dir[1024];
+	uint64_t key = ast_search_key_salt(0xcbf29ce484222325ULL);
+	if (host_cache_dir(dir, sizeof dir) != 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (snprintf(buf, cap, "%s/sl-%016llx.ck", dir, (unsigned long long)key) >= cap)
+		{ MCC_TRACE("br\n"); return -1; }
+	return 0;
+}
+
+/* Read the whole slice file into ast_slice_io_raw; returns its length (0 if
+ * absent/empty), clamped to the buffer. */
+static long ast_slice_disk_slurp(const char *path) { MCC_TRACE("enter\n");
+	FILE *f = fopen(path, "rb");
+	long len;
+	if (!f)
+		{ MCC_TRACE("br\n"); return 0; }
+	fseek(f, 0, SEEK_END);
+	len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (len < 0)
+		{ MCC_TRACE("br\n"); len = 0; }
+	if (len > (long)sizeof ast_slice_io_raw)
+		{ MCC_TRACE("br\n"); len = (long)sizeof ast_slice_io_raw; }
+	if (len > 0 && fread(ast_slice_io_raw, 1, (size_t)len, f) != (size_t)len)
+		{ MCC_TRACE("br\n"); len = 0; }
+	fclose(f);
+	return len;
+}
+
+/* Lazy-once load of the on-disk slice view (mirrors ast_search_disk_load's
+ * load-once-per-process pattern). Consumption probes this view only. */
+static void ast_slice_disk_load(void) { MCC_TRACE("enter\n");
+	char path[1152];
+	long len;
+	if (ast_slice_disk_loaded)
+		{ MCC_TRACE("br\n"); return; }
+	ast_slice_disk_loaded = 1;
+	if (ast_slice_disk_path(path, sizeof path) != 0)
+		{ MCC_TRACE("br\n"); return; }
+	len = ast_slice_disk_slurp(path);
+	ast_slice_disk_n =
+			ast_slice_rec_deserialize(ast_slice_io_raw, len, ast_slice_disk, AST_SLICE_MEMO_CAP);
+	MCC_TRACE("slice disk load: %s -> %d records\n", path, ast_slice_disk_n);
+}
+
+#if MCC_HOST_POSIX
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+static int ast_slice_lock(const char *path) { MCC_TRACE("enter\n");
+	char lockp[1200];
+	int fd;
+	if (snprintf(lockp, sizeof lockp, "%s.lock", path) >= (int)sizeof lockp)
+		{ MCC_TRACE("br\n"); return -1; }
+	fd = open(lockp, O_CREAT | O_RDWR, 0644);
+	if (fd >= 0)
+		{ MCC_TRACE("br\n"); flock(fd, LOCK_EX); }
+	return fd;
+}
+static void ast_slice_unlock(int fd) { MCC_TRACE("enter\n");
+	if (fd >= 0) { MCC_TRACE("br\n");
+		flock(fd, LOCK_UN);
+		close(fd);
+	}
+}
+#else
+static int ast_slice_lock(const char *path) { MCC_TRACE("enter\n");
+	(void)path;
+	return -1; /* no interprocess lock off POSIX; tmp+rename still keeps files intact */
+}
+static void ast_slice_unlock(int fd) { MCC_TRACE("enter\n"); (void)fd; }
+#endif
+
+/* Commit `n` local records into the on-disk file under an flock: re-read the
+ * current file (a concurrent process may have written since our load), merge
+ * each record via ast_slice_merge_one (refcounts sum, proven wins, cheaper proxy
+ * wins within a class), then atomically replace via tmp + rename. Shared by the
+ * populate flush (static records) and the JIT graduate (proven records). */
+static void ast_slice_disk_commit(const AstSliceMemo *recs, int n) { MCC_TRACE("enter\n");
+	char path[1152], tmpp[1200];
+	int lockfd, i;
+	FILE *f;
+	long len, wl;
+	static AstSliceMemo merged[AST_SLICE_MEMO_CAP];
+	int merged_n = 0;
+	if (!recs || n <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_slice_disk_path(path, sizeof path) != 0)
+		{ MCC_TRACE("br\n"); return; }
+	lockfd = ast_slice_lock(path);
+	len = ast_slice_disk_slurp(path);
+	merged_n = ast_slice_rec_deserialize(ast_slice_io_raw, len, merged, AST_SLICE_MEMO_CAP);
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); ast_slice_merge_one(merged, &merged_n, AST_SLICE_MEMO_CAP, &recs[i]); }
+	wl = ast_slice_rec_serialize(merged, merged_n, ast_slice_io_raw,
+															 (long)sizeof ast_slice_io_raw);
+	if (wl > 0 && snprintf(tmpp, sizeof tmpp, "%s.tmp", path) < (int)sizeof tmpp &&
+			(f = fopen(tmpp, "wb"))) { MCC_TRACE("br\n");
+		int fd;
+		fwrite(ast_slice_io_raw, 1, (size_t)wl, f);
+		fflush(f);
+#if MCC_HOST_POSIX
+		if ((fd = fileno(f)) >= 0)
+			{ MCC_TRACE("br\n"); fsync(fd); }
+#else
+		(void)fd;
+#endif
+		fclose(f);
+		if (rename(tmpp, path) != 0)
+			{ MCC_TRACE("br\n"); remove(tmpp); }
+	}
+	ast_slice_unlock(lockfd);
+	MCC_TRACE("slice disk commit: %s <- %d local -> %d total\n", path, n, merged_n);
+}
+
+/* Merge this process's populate table (ast_slice_memo, all static) into the
+ * on-disk file. */
+static void ast_slice_disk_merge_store(void) { MCC_TRACE("enter\n");
+	if (ast_slice_memo_n <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	ast_slice_disk_commit(ast_slice_memo, ast_slice_memo_n);
+}
+
+#if MCC_EMBED_JIT
+/* ---- Phase 4 JIT graduation (WRITE side) ----------------------------------
+ * The runtime JIT is the only writer of benchmark-PROVEN records: this whole
+ * block is compiled solely under MCC_EMBED_JIT and only fires at JIT runtime, so
+ * a pure-AOT -c/-o compile (which never benchmarks) cannot write a proven record
+ * and stays byte-identical. Gated additionally by ast_slice_env so MCC_AST_SLICE
+ * unset means no disk writes at all. */
+
+/* Merge one benchmark-PROVEN record (marked proven) into the on-disk slice
+ * store, so a later AOT ast_slice_consume prefers this config over any merely
+ * static-size-best one for the same slice identity. Non-static so the JIT
+ * engine TU can graduate a single slice directly by identity if it wants. */
+void ast_slice_graduate(uint64_t ident, uint64_t gates, int64_t size) { MCC_TRACE("enter\n");
+	AstSliceMemo rec;
+	if (!ast_slice_env || !ident)
+		{ MCC_TRACE("br\n"); return; }
+	rec.ident = ident;
+	rec.gates = gates;
+	rec.size = size;
+	rec.refcount = 1;
+	rec.proven = 1;
+	ast_slice_disk_commit(&rec, 1);
+}
+
+/* Collect every slice of a graduated function arena into a local proven table
+ * (deduped via merge_one), keyed under the winning gate config. */
+typedef struct AstSliceGradCtx {
+	AstSliceMemo *tab;
+	int n;
+	int cap;
+	uint64_t gates;
+} AstSliceGradCtx;
+
+static void ast_slice_visit_graduate(uint64_t ident, int size, uint64_t gates, void *ctx) { MCC_TRACE("enter\n");
+	AstSliceGradCtx *g = (AstSliceGradCtx *)ctx;
+	AstSliceMemo rec;
+	(void)gates;
+	rec.ident = ident;
+	rec.gates = g->gates;
+	rec.size = size;
+	rec.refcount = 1;
+	rec.proven = 1;
+	ast_slice_merge_one(g->tab, &g->n, g->cap, &rec);
+}
+
+/* Phase 4 graduate entry point for the JIT: a variant of the function `a` has
+ * just been benchmark-proven under gate config `gate_mask`. Record every slice
+ * of `a` as PROVEN under that config, so a later AOT compile that hits the same
+ * slice identity warm-starts from the bench-winning config (ast_slice_consume
+ * prefers proven over static). One flock/commit for the whole function. Strict
+ * no-op when the slice cache is off (byte-identity preserved). Non-static so the
+ * JIT engine TU (mccjit_embed.c) can call it. */
+void ast_slice_graduate_arena(const AstArena *a, uint64_t gate_mask) { MCC_TRACE("enter\n");
+	static AstSliceMemo grad[AST_SLICE_MEMO_CAP];
+	AstSliceGradCtx g;
+	if (!ast_slice_env || !a)
+		{ MCC_TRACE("br\n"); return; }
+	g.tab = grad;
+	g.n = 0;
+	g.cap = AST_SLICE_MEMO_CAP;
+	g.gates = gate_mask;
+	ast_slice_enum(a, gate_mask, ast_slice_visit_graduate, &g);
+	if (g.n > 0)
+		{ MCC_TRACE("br\n"); ast_slice_disk_commit(grad, g.n); }
+	MCC_TRACE("slice graduate-arena: %d proven slices gates=%llx\n", g.n,
+						(unsigned long long)gate_mask);
+}
+
+/* Read-side accessor for the JIT engine TU: is the slice cache enabled this
+ * run? Lets the JIT skip the (heavy) blob-deserialize graduation path entirely
+ * when MCC_AST_SLICE is unset. */
+int ast_slice_enabled(void) { MCC_TRACE("enter\n");
+	return ast_slice_env;
+}
+#endif /* MCC_EMBED_JIT */
+
+/* atexit flush: persist this process's observations once, at exit, so parent +
+ * every -O4 search worker (which run ast_func_end then exit) contribute. */
+static void ast_slice_flush_atexit(void) { MCC_TRACE("enter\n");
+	ast_slice_disk_merge_store();
+}
+
 /* Round-robin time accounting (see the block comment above). Durations are in
  * milliseconds of CPU time (clock()), an accurate wall-clock proxy for the
  * single-threaded CPU-bound search and portable to every host — including the
@@ -13243,6 +13935,54 @@ static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
 	MCC_TRACE("search picks inline=%d\n", bi);
 }
 
+/* searchable = base plus the opt-in enablement knobs the search may ADD this
+ * build. These are off in every -O baseline, so the subset lattice can never
+ * reach them by dropping bits — the search enables them. narrow-fixpoint only
+ * bites when narrow itself is enabled, so gate it on AST_SG_NARROW. Factored so
+ * the Phase 3 slice warm-start intersects a cached config with the exact same
+ * set (never enabling a knob unsound at this build's -O). */
+static AstGateMask ast_search_searchable(AstGateMask base) { MCC_TRACE("enter\n");
+	return base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC | /* standalone */
+				 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
+				 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
+				 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
+				 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
+					* when templates is in base. Safe to add now that the candidate count is
+					* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
+				 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX | AST_SG_IDENT_CONV | AST_SG_IDENT_SHIFT | AST_SG_IDENT_ARITH | AST_SG_IDENT_BIT | AST_SG_IDENT_REL | AST_SG_IDENT_URANGE | AST_SG_BFOLD_SQRT | AST_SG_BFOLD_SIGN | AST_SG_BFOLD_ROUND | AST_SG_BFOLD_MINMAX)
+																			 : 0);
+}
+
+/* Phase 3 consume: generalizes the per-function jit_graduated_find seam to a
+ * per-slice lookup, and — unlike that seam — is compiled and active with the
+ * JIT OFF. Lazy-loads the on-disk slice substrate, probes it for ast_cur's
+ * slices, and if the dominant recurring slice has a cached gate config, applies
+ * it as this function's config (intersected with `searchable`, so a config
+ * cached under a different -O never enables a knob unsound here). Function-level
+ * warm-start via the existing whole-function gate machinery (per-slice
+ * differential application is Phase 5). Strict no-op on an empty/absent cache,
+ * preserving byte-identity; only a warm cache from a prior run steers codegen.
+ * Arms the atexit write-back so this run's observations persist. */
+static void ast_slice_consume(void) { MCC_TRACE("enter\n");
+	AstGateMask base, searchable, warm;
+	uint64_t cached = 0;
+	if (!ast_slice_flush_armed) { MCC_TRACE("br\n");
+		ast_slice_flush_armed = 1;
+		atexit(ast_slice_flush_atexit);
+	}
+	ast_slice_disk_load();
+	if (ast_slice_disk_n <= 0)
+		{ MCC_TRACE("br\n"); return; } /* empty/absent cache: strict no-op (byte-identical) */
+	if (!ast_slice_probe_table(ast_cur, ast_slice_disk, ast_slice_disk_n, &cached))
+		{ MCC_TRACE("br\n"); return; }
+	base = ast_search_gates_now();
+	searchable = ast_search_searchable(base);
+	warm = (AstGateMask)cached & searchable;
+	MCC_TRACE("slice warm-start gates=%llx&%llx->%llx\n", (unsigned long long)cached,
+						(unsigned long long)searchable, (unsigned long long)warm);
+	ast_search_gates_set(warm);
+}
+
 static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															int saved_anon) { MCC_TRACE("enter\n");
 	AstArena *pristine;
@@ -13267,19 +14007,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		ast_search_disk_load();
 	}
 	base = ast_search_gates_now();
-	/* searchable = base plus the opt-in enablement knobs the search may ADD this
-	 * build. These are off in every -O baseline, so the subset lattice can never
-	 * reach them by dropping bits — the search enables them. narrow-fixpoint only
-	 * bites when narrow itself is enabled, so gate it on AST_SG_NARROW. */
-	searchable = base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC | /* standalone */
-							 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
-							 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
-							 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
-							 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
-								* when templates is in base. Safe to add now that the candidate count is
-								* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
-							 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX | AST_SG_IDENT_CONV | AST_SG_IDENT_SHIFT | AST_SG_IDENT_ARITH | AST_SG_IDENT_BIT | AST_SG_IDENT_REL | AST_SG_IDENT_URANGE | AST_SG_BFOLD_SQRT | AST_SG_BFOLD_SIGN | AST_SG_BFOLD_ROUND | AST_SG_BFOLD_MINMAX)
-																				 : 0);
+	searchable = ast_search_searchable(base);
 	if (ast_search_should_stop())
 		{ MCC_TRACE("br\n"); return; } /* budget spent / aborted: keep the frozen order */
 	pristine = ast_arena_clone(ast_cur);
@@ -13666,6 +14394,16 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (faithful && ast_search_env && ast_search_seconds > 0) { MCC_TRACE("br\n");
 					ast_search_select(sym, faithful, saved_loc, saved_anon);
 					ast_search_axis_pick(sym, faithful, saved_loc, saved_anon);
+				}
+				/* Slice cache (MCC_AST_SLICE), BEFORE the strategy cycle rewrites ast_cur:
+				   Phase 3 CONSUME first — warm-start this function's gate config from the
+				   on-disk substrate if its dominant slice recurs (no-op on an empty cache,
+				   so output stays byte-identical until a prior run has warmed it) — then
+				   Phase 2 POPULATE, recording this function's input slices under the config
+				   now in effect. Gated off by default. */
+				if (faithful && ast_slice_env) { MCC_TRACE("br\n");
+					ast_slice_consume();
+					(void)ast_slice_window_scan(ast_cur, (uint64_t)ast_search_gates_now());
 				}
 				{
 					int sf[AST_STRAT_COUNT];

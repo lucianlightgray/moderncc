@@ -77,6 +77,35 @@ const char *ast_kind_name(uint16_t kind);
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 uint64_t ast_intention_hash(const AstArena *a, AstLocal root);
+/* Context-free normalized identity of the slice rooted at `root` (the rolling-
+   window slice cache key). Refines ast_intention_hash: it stays invariant to the
+   surrounding frame layout, inlining, and prior passes (like the intention hash,
+   Ref frame offsets are excluded) but ADDS live-in sharing-pattern sensitivity --
+   each distinct local-Ref offset is positionally interned, so `x+x` and `x+y`
+   differ while the actual slot offsets do not. This is the "purest input/output
+   form" identity a slice keeps wherever it appears, so a variant a JIT run proved
+   good can be found and reused by a later AOT compile. Declared outside the
+   MCC_EMBED_JIT guard so AOT (-O4+) can key the cache with the JIT off. */
+uint64_t ast_slice_ident_hash(const AstArena *a, AstLocal root);
+
+/* Phase 5 per-slice hot-patch primitives (roadmap 14/15). Declared outside the
+   MCC_EMBED_JIT guard so tools/asttool (no MCC_EMBED_JIT) can unit-test them and
+   AOT can use them with the JIT off.
+   - ast_slice_splice: node-stable in-arena replacement of the subtree at
+     `site_root` in `a` with a copy of `kernel_src`@`kernel_root` (inverse of
+     ast_slice_extract). Every live index outside the replaced subtree keeps its
+     index and fields; the site_root slot is re-used as the new root. Returns the
+     spliced node count (>=1), 0 on error. `kernel_src` must be a distinct arena.
+   - ast_slice_locate: every node index in `a` whose slice identity == `ident`
+     (so one optimized kernel can be spliced at all occurrences). Returns the
+     total match count; writes up to `max`.
+   - ast_slice_promote_static: static-cost keep/reject gate (lower cost wins,
+     ties reject) -- the AOT / no-runtime arm of the benchmark-gated promotion. */
+int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src,
+										 AstLocal kernel_root);
+int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites, int max);
+int ast_slice_promote_static(int64_t baseline_cost, int64_t candidate_cost);
+
 int ast_color_graph(int n, const uint64_t *adj, const int *cost, int k,
 										int *color);
 

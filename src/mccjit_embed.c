@@ -103,6 +103,11 @@ int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
 void mcc_jit_publish(void **slot, void *variant);
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 void mcc_jit_export_local(MCCState *s1, const char *name);
+/* Phase 4 slice-cache graduation (WRITE side, mccast.c, MCC_EMBED_JIT only):
+   record a benchmark-proven function AST's slices as PROVEN under the winning
+   gate config, and query whether the slice cache is enabled this run. */
+void ast_slice_graduate_arena(const AstArena *ast, uint64_t gate_mask);
+int ast_slice_enabled(void);
 
 MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
@@ -261,6 +266,92 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) {
 	return 0;
 }
 
+/* Phase 5 per-slice hot-patch (roadmap 14/15): optimize one maximal slice of a
+   hot function IN ISOLATION and splice the optimized kernel back, promoting only
+   if it wins the cost gate. Wired ONLY here, on the JIT recompile-from-scratch
+   path, where mccjit_recompile_common re-derives EVERY emit cursor (stack-slot
+   record, float-const pool, relocation offsets) after this returns -- so a
+   reshaped subtree is safe. Deliberately NOT wired into the AOT in-place
+   ast_func_end replay: that path re-emits from three whole-function ordered
+   cursors captured during parsing, and splicing a differently-shaped subtree
+   there would desync them (ast_desync) and miscompile or fail the faithful
+   check. The AOT side keeps only its Phase-3 function-level warm-start.
+
+   Two-gate design: ast_slice_enabled() (MCC_AST_SLICE) is the hard gate that
+   keeps an off run byte-identical; MCC_AST_SLICE_SPLICE is an additional opt-in
+   so that a plain MCC_AST_SLICE=1 exec/JIT run stays on the validated Phase-1..4
+   paths and this experimental first-increment splice never perturbs them.
+
+   Promotion oracle: the static cost model (ast_cost_score) via the shared
+   ast_slice_promote_static decision helper -- the "no runtime available" arm of
+   the benchmark-gated promotion. The live differential bench (mccjit_bench_pair)
+   remains the whole-function oracle in mccjit_lazy_search. Returns nodes spliced. */
+static AstLocal mccjit_slice_ret_expr(const AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal n, nn = ast_count(a);
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_kind(a, n) == AST_Return && ast_nchild(a, n) == 1) { MCC_TRACE("br\n");
+			AstLocal e = ast_first_child(a, n);
+			return ast_first_child(a, e) != AST_NONE ? e : AST_NONE;
+		}
+	}
+	return AST_NONE;
+}
+
+static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
+	AstLocal site, opt_expr = AST_NONE, sites[64];
+	AstArena *base_wrap = NULL, *opt_wrap = NULL, *opt_k = NULL;
+	uint64_t ident;
+	int nsites, i, keep, spliced = 0;
+	int64_t base_cost, cand_cost;
+	if (!ast_slice_enabled() || !getenv("MCC_AST_SLICE_SPLICE") || !arena)
+		{ MCC_TRACE("br\n"); return 0; }
+	site = mccjit_slice_ret_expr(arena);
+	if (site == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	/* Optimize the slice in isolation: wrap as a mini-function and constant-fold. */
+	base_wrap = ast_slice_wrap_kernel(arena, site);
+	opt_wrap = ast_slice_wrap_kernel(arena, site);
+	if (!base_wrap || !opt_wrap)
+		{ MCC_TRACE("br\n"); goto done; }
+	ast_jit_fold_consts(opt_wrap);
+	base_cost = ast_cost_score(base_wrap);
+	cand_cost = ast_cost_score(opt_wrap);
+	keep = ast_slice_promote_static(base_cost, cand_cost);
+	if (getenv("MCC_JIT_VERBOSE"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+					"mccjit-slice-splice: site=%u base_cost=%lld cand_cost=%lld -> %s\n",
+					(unsigned)site, (long long)base_cost, (long long)cand_cost,
+					keep ? "KEEP" : "REJECT"); }
+	if (!keep)
+		{ MCC_TRACE("br\n"); goto done; }
+	opt_expr = mccjit_slice_ret_expr(opt_wrap);
+	if (opt_expr == AST_NONE)
+		{ MCC_TRACE("br\n"); goto done; }
+	opt_k = ast_slice_extract(opt_wrap, opt_expr); /* standalone splice source */
+	if (!opt_k)
+		{ MCC_TRACE("br\n"); goto done; }
+	/* Splice the optimized kernel at EVERY occurrence of the slice identity
+	   (roadmap 15 hierarchical locator). */
+	ident = ast_slice_ident_hash(arena, site);
+	nsites = ast_slice_locate(arena, ident, sites, 64);
+	if (nsites <= 0)
+		{ MCC_TRACE("br\n"); nsites = 1; sites[0] = site; }
+	for (i = 0; i < nsites && i < 64; i++) { MCC_TRACE("br\n");
+		int s = ast_slice_splice(arena, sites[i], opt_k, ast_root(opt_k));
+		if (s > 0)
+			{ MCC_TRACE("br\n"); spliced += s; }
+	}
+	if (getenv("MCC_JIT_VERBOSE"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+					"mccjit-slice-splice: spliced %d node(s) across %d site(s)\n", spliced,
+					nsites); }
+done:
+	ast_arena_free(base_wrap);
+	ast_arena_free(opt_wrap);
+	ast_arena_free(opt_k);
+	return spliced;
+}
+
 static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 																		 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
 	MccjitIntent it;
@@ -380,6 +471,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		ast_fconst_reuse_disable(1);
 		if (getenv("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
+		mccjit_slice_hotpatch(it.arena); /* Phase 5 per-slice hot-patch (gated) */
 		if (mccjit_recompile_use_gates)
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
 		else if (have_override && override_mask)
@@ -711,6 +803,47 @@ static int mccjit_bench_enabled(void) { MCC_TRACE("enter\n");
 	return e && e[0] && e[0] != '0';
 }
 
+/* Phase 4: a gate-config variant of the function in `blob` has just been proven
+   faster than its baseline by the live differential benchmark. Deserialize the
+   function AST (same standalone recipe as mccjit_slice_profile_blob — a throwaway
+   MCCState so rebuild/arena allocation has a valid parser context) and graduate
+   every slice of it into the on-disk slice cache as PROVEN under `gate_mask`, so
+   a later AOT compile that hits the same slice identity warm-starts from this
+   bench-winning config. No-op unless the slice cache (MCC_AST_SLICE) is on, so an
+   off run never deserializes here and never writes. Runtime-JIT only. */
+static void mccjit_graduate_slices_blob(const void *blob, size_t len,
+																				uint64_t gate_mask) { MCC_TRACE("enter\n");
+	MccjitIntent it;
+	MCCState *js;
+	if (!ast_slice_enabled() || !blob)
+		{ MCC_TRACE("br\n"); return; }
+	js = mcc_new();
+	if (!js)
+		{ MCC_TRACE("br\n"); return; }
+	js->optimize = 0;
+	js->nostdlib = 1;
+	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
+	mcc_enter_state(js);
+	mccpp_new(js);
+	mccgen_init(js);
+	anon_sym = SYM_FIRST_ANOM;
+	funcname = "";
+	func_ind = -1;
+	if (mccjit_intent_deserialize(blob, len, &it) != 0) { MCC_TRACE("br\n");
+		mcc_exit_state(js);
+		mcc_delete(js);
+		return;
+	}
+	ast_slice_graduate_arena(it.arena, gate_mask);
+	if (getenv("MCC_JIT_VERBOSE"))
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+					"mccjit-graduate[%s]: slice-cache proven gates=%llx\n",
+					it.fn_name ? it.fn_name : "?", (unsigned long long)gate_mask); }
+	mccjit_intent_release(&it);
+	mcc_exit_state(js);
+	mcc_delete(js);
+}
+
 static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 																			uint64_t gate_mask, int use_gates,
 																			int *routed) { MCC_TRACE("enter\n");
@@ -809,6 +942,8 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	long gs_cands = 0, gs_admits = 0;
 	int gs_budget_hit = 0;
 	uint64_t gs_best_mask = 0;
+	int gs_bench_won = 0; /* set once a live differential bench admitted a variant over
+													 a real incumbent — the Phase-4 graduation trigger */
 	long best_cost = -1; /* static cost-model score of the current best */
 	int stale = 0;       /* consecutive candidates with no static-cost improvement */
 	/* Stop once the static cost model has plateaued for this many candidates,
@@ -868,6 +1003,12 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		else
 			{ MCC_TRACE("br\n"); admit = improved; }
 		if (admit) { MCC_TRACE("br\n");
+			/* A genuine bench win: MCC_JIT_BENCH on, an incumbent (`best`) existed,
+			   and this candidate is benchable (routed, not all-fp, has args) — i.e.
+			   mccjit_bench_admit actually ran mccjit_promote_by_profile, not the
+			   can't-bench passthrough. Marks the winning config as PROVEN-worthy. */
+			if (mccjit_bench_enabled() && best && r && !mccjit_last_allfp &&
+					mccjit_last_nparam > 0) { MCC_TRACE("br\n"); gs_bench_won = 1; }
 			best = cand;
 			best_routed = r;
 			gs_admits++;
@@ -887,6 +1028,12 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		{ MCC_TRACE("br\n"); *routed = best_routed; }
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_gsearch(gs_cands, gs_admits, gs_budget_hit, gs_best_mask); }
+	/* Phase 4: persist the bench-winning gate config into the shared slice cache
+	   as PROVEN, so a later AOT compile of a function sharing any slice identity
+	   warm-starts from this runtime-proven config. Only when a live bench actually
+	   picked the winner (gs_bench_won) and the slice cache is on (checked inside). */
+	if (gs_bench_won && best)
+		{ MCC_TRACE("br\n"); mccjit_graduate_slices_blob(st->blob, st->len, gs_best_mask); }
 	return best;
 }
 
