@@ -35,13 +35,20 @@ EOF
 
 san() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | tr -d '\r' | sed 's/[[:space:]]*$//'; }
 
+# The MCC_JIT_SUBMIT_AOT / override path is the runtime mode-6 JIT dispatch. On
+# arm64 that path is mutually exclusive with the -O4 superoptimizer search (the
+# search's MEMORY re-emit corrupts the arm64 dispatch slot's symbol), so the arm64
+# mode-6 entry is gated on !ast_search_env (mccast.c, commit 77bd8ba8). Since the
+# -O search became default-ON at -O4 (commit 672b4ffb), pin MCC_AST_SEARCH=0 on the
+# -O4 JIT runs below so the override actually fires on arm64. The -O2 MCC_JIT=0
+# reference never runs the search regardless.
 for p in p1 p2 p3; do
 	ref=$(env MCC_JIT=0 "$MCC" -O2 -run "$TMP/$p.c" 2>/dev/null | san)
-	nos=$(env XDG_CACHE_HOME="$TMP/n-$p" MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 \
+	nos=$(env XDG_CACHE_HOME="$TMP/n-$p" MCC_AST_SEARCH=0 MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 \
 		"$MCC" -O4 -run "$TMP/$p.c" 2>/dev/null | san)
-	sub=$(env XDG_CACHE_HOME="$TMP/s-$p" MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=50 \
+	sub=$(env XDG_CACHE_HOME="$TMP/s-$p" MCC_AST_SEARCH=0 MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=50 \
 		"$MCC" -O4 -run "$TMP/$p.c" 2>/dev/null | san)
-	ov=$(env XDG_CACHE_HOME="$TMP/v-$p" MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=50 MCC_JIT_VERBOSE=1 \
+	ov=$(env XDG_CACHE_HOME="$TMP/v-$p" MCC_AST_SEARCH=0 MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=50 MCC_JIT_VERBOSE=1 \
 		"$MCC" -O4 -run "$TMP/$p.c" 2>&1 >/dev/null | grep -cE 'mccjit-override' || true)
 	m="OK"
 	[ "$ref" = "$nos" ] || { m="FAIL(jit!=ref)"; fail=1; }

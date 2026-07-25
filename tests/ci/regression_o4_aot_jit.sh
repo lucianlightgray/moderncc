@@ -46,13 +46,22 @@ awk "BEGIN{exit !($wall > 3.0 && $wall < 60.0)}" || { echo "Part1 FAIL: wall ${w
 [ "$fail" = 0 ] && echo "Part1 PASS: 4s AOT search engaged, $evald candidates, const-guided ranges active"
 
 echo "== Part 2: JIT on + -O4, backend hands its compiled AST to the JIT (mcc_jit_submit_ast override) =="
+# This part exercises the runtime mode-6 JIT dispatch/submit path, which on arm64
+# is MUTUALLY EXCLUSIVE with the -O4 superoptimizer search: the search re-emits
+# each candidate to MEMORY for scoring, and the arm64 GOT/ABS64 dispatch slot
+# corrupts the function symbol in that re-emit context, so the arm64 mode-6 entry
+# is gated on !ast_search_env (mccast.c, commit 77bd8ba8 -- "-O4 IS the JIT: the
+# search produces optimized static code, not a runtime-swapped slot"). Since the
+# -O search became default-ON at -O4 (commit 672b4ffb), we must explicitly turn it
+# OFF here so the runtime submit/override path this part validates actually fires.
+# (Part 1 above tests the search itself, with MCC_AST_SEARCH=1.)
 printf '%s\n' \
 	'__attribute__((noinline)) static unsigned busy(unsigned x){ unsigned s=0,i; for(i=0;i<64;i++) s += (x+i)/7u + (x*i)%13u; return s; }' \
 	'#include <stdio.h>' \
 	'int main(void){ unsigned long t=0; int i; for(i=0;i<400000;i++) t+=busy((unsigned)i); printf("%lu\n", t); return 0; }' \
 	> "$TMP/hot.c"
 ref=$(env MCC_JIT=0 "$MCC" -O2 -run "$TMP/hot.c" 2>/dev/null | tr -dc '0-9')
-out2=$(env $CACHE_ISO MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=200 MCC_JIT_VERBOSE=1 \
+out2=$(env $CACHE_ISO MCC_AST_SEARCH=0 MCC_JIT=1 MCC_JIT_SUBMIT_AOT=1 MCC_JIT_HOT_THRESHOLD=200 MCC_JIT_VERBOSE=1 \
 	"$MCC" -O4 -run "$TMP/hot.c" 2>&1) || { echo "$out2" | tail -5; echo "Part2: run FAILED"; exit 1; }
 prog=$(printf '%s' "$out2" | grep -vE 'mccjit-|mccstat' | tr -dc '0-9')
 submitted=$(printf '%s' "$out2" | grep -cE 'mccjit-aot-submit\[busy\]' || true)
