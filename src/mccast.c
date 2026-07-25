@@ -1264,6 +1264,7 @@ static MCC_OPT_TLS int ast_bfold_sqrt_env;
 static MCC_OPT_TLS int ast_bfold_sign_env;
 static MCC_OPT_TLS int ast_bfold_round_env;
 static MCC_OPT_TLS int ast_bfold_minmax_env;
+static MCC_OPT_TLS int ast_math_inline_env;
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
@@ -1711,6 +1712,7 @@ void ast_hook_inc_end(void);
 #define AST_OP_VLA_RESTORE 0x40005
 #define AST_OP_MULHU 0x40006
 #define AST_OP_MULHS 0x40007
+#define AST_OP_FABS 0x40008
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -1846,6 +1848,9 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", 1);
 	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", 1);
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
+	/* Runtime math-builtin -> inline SSE. First cut: fabs -> andpd sign-clear
+	 * (bit-exact, SSE2-baseline, x86_64 only). On at -O2+. */
+	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", s1->optimize >= 2);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
 	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", 0);
 	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", 0);
@@ -4757,6 +4762,15 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
+#ifdef MCC_TARGET_X86_64
+		} else if (uop == AST_OP_FABS) { MCC_TRACE("br\n");
+			CType ct;
+			ct.t = ast_type_t(a, n);
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			gen_cast(&ct);
+			gen_fabs();
+			vtop->type = ct;
+#endif
 		} else { MCC_TRACE("br\n");
 			inc((int)ast_ival(a, n), uop);
 		}
@@ -5550,6 +5564,24 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 			ab[i] = ast_ival(a, lit);
 		}
 		if (i < nargs) { MCC_TRACE("br\n");
+#ifdef MCC_TARGET_X86_64
+			/* fabs(x) with a runtime x: lower to an inline sign-clear (andpd)
+			 * instead of a libcall. Bit-exact, SSE2-baseline. The parser already
+			 * coerced the arg to bt, and the replay re-casts to bt before emit. */
+			if (bid == 1 && nargs == 1 && ast_math_inline_env) { MCC_TRACE("br\n");
+				AstLocal arg = ast_child(a, n, 1);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Unary);
+				ast_set_op(a, n, AST_OP_FABS);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, arg);
+				MCC_TRACE("math-inline fabs flt=%d\n", (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
+#endif
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&
 					ast_bfold_minmax_inf(a, n, bid, bt, &pres)) { MCC_TRACE("br\n");

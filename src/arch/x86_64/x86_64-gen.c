@@ -2146,6 +2146,25 @@ void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	vtop->r = MCC_TREG_RDX;
 }
 
+/* fabs(x): clear the IEEE-754 sign bit in place. Mirrors the SSE float-negate
+   path in gen_opf (spill, byte-op the sign byte, reload) but ANDs the sign byte
+   with 0x7f (group-1 /4) instead of XORing with 0x80 (/6). Bit-exact for every
+   input (normals, +/-0, inf, NaN), needs no rodata constant, SSE2-baseline. */
+void gen_fabs(void) { MCC_TRACE("enter\n");
+	int bt = vtop->type.t & VT_BTYPE;
+	if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
+		gv(MCC_RC_ST0);
+		o(0xe1d9); /* D9 E1 = fabs (x87) */
+		return;
+	}
+	gv(MCC_RC_FLOAT);
+	save_reg(vtop->r);
+	o(0x80); /* group-1 r/m8, imm8 */
+	gen_modrm(4, vtop->r, NULL, vtop->c.i + (bt == VT_DOUBLE ? 7 : 3)); /* /4 = AND */
+	o(0x7f); /* clear the sign bit */
+	gv(MCC_RC_FLOAT);
+}
+
 void gen_opf(int op) { MCC_TRACE("enter\n");
 	int a, ft, fc, swapped, r;
 	int bt = vtop->type.t & VT_BTYPE;

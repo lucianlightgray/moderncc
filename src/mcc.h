@@ -1738,6 +1738,7 @@ ST_FUNC void gen_mulh(int sign);
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_mulh(int sign);
+ST_FUNC void gen_fabs(void);
 #ifdef MCC_TARGET_PE
 ST_FUNC void gen_vla_result(int addr);
 #endif
