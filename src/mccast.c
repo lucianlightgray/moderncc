@@ -1580,6 +1580,23 @@ static AstLocal ast_last_return;
 static AstLocal ast_vs[AST_VS_MAX];
 static int ast_vn;
 static int ast_capture;
+/* MCC_AST_OPASSIGN (default OFF): model compound assignment (`lval op= rhs`)
+ * through a pointer to a struct member. Codegen does `vdup()` on the member
+ * lvalue to reload it (mccgen.c expr_eq), which pushes a register-resident
+ * lvalue (r=VT_LVAL|reg). ast_hook_vpush cannot model that leaf, so the whole
+ * function desyncs and ast_replay_ok rejects it — leaving hot functions like
+ * nbody's advance() entirely un-optimized (they never enter the replay/optimizer
+ * path). When the gate is ON, ast_hook_vdup recognizes the compound-assign vdup
+ * (guarded to a PURE lval so the re-emit is sound) and duplicates the top ast_vs
+ * AST node instead of desyncing; the recorded shape is the ordinary
+ * Store(lval, Binary(op, lval_copy, rhs)) — transparent to every optimizer pass —
+ * and the Store is tagged AST_OP_OPASSIGN so replay re-emits the byte-faithful
+ * vdup form (one address computation) instead of the naive two-computation form.
+ * Default OFF ⇒ byte-identical; ON changes only which functions become
+ * replayable/optimizable (validated by exec/self-host parity, not byte-identity). */
+static int ast_opassign_env;
+static int ast_vdup_pending;         /* one-shot: ast_hook_vdup -> ast_hook_vpush */
+static int ast_opassign_store_pending; /* one-shot: tag the next Store as op-assign */
 static int ast_desync;
 static int ast_desync_line;
 #define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; } } while (0)
@@ -1708,6 +1725,10 @@ void ast_hook_label(int v);
 void ast_hook_goto(int v);
 void ast_hook_inc(int post, int c);
 void ast_hook_inc_end(void);
+void ast_hook_vdup(void);
+static AstLocal ast_dup_sub(AstArena *a, AstLocal n);
+static int ast_expr_pure(AstArena *a, AstLocal n, int depth);
+static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_ADDR 0x40000
 #define AST_OP_MEMBER 0x40001
 #define AST_OP_MEMBER_ARROW 0x40002
@@ -1718,6 +1739,7 @@ void ast_hook_inc_end(void);
 #define AST_OP_MULHS 0x40007
 #define AST_OP_FABS 0x40008
 #define AST_OP_SQRT 0x40009
+#define AST_OP_OPASSIGN 0x4000A /* tags a Store recorded from a compound assignment (`op=`) */
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -1796,6 +1818,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
 	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
+	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", 0);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
@@ -1973,6 +1996,23 @@ void ast_hook_stmt(int t) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vpush(void) { MCC_TRACE("enter\n");
+	if (ast_vdup_pending) { MCC_TRACE("br\n");
+		/* This push is the compound-assignment vdup (ast_hook_vdup validated the
+		 * state and LHS purity just before vdup ran). Duplicate the top ast_vs AST
+		 * node via a deep copy so the model stays a tree — Store's target keeps the
+		 * original lval, the op's operand gets the copy — and arm the Store tag. */
+		ast_vdup_pending = 0;
+		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_capture && !ast_desync && !ast_in_op && !ast_in_call &&
+				ast_vn >= 1 && ast_vn == rel - 1 && rel <= AST_VS_MAX) { MCC_TRACE("br\n");
+			ast_vs[ast_vn] = ast_dup_sub(ast_cur, ast_vs[ast_vn - 1]);
+			ast_vn++;
+			ast_opassign_store_pending = 1;
+			return;
+		}
+		AST_SET_DESYNC();
+		return;
+	}
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -2135,6 +2175,27 @@ void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+}
+
+/* Called from vdup() in the compound-assignment path (mccgen.c expr_eq). At this
+ * point the LHS lvalue is the modeled top of ast_vs and vdup is about to push a
+ * register-resident copy of it. When MCC_AST_OPASSIGN is on and the state is in
+ * sync AND the LHS is PURE (so re-emitting its address twice is sound), arm a
+ * one-shot so the immediately-following ast_hook_vpush duplicates the top ast_vs
+ * node (deep copy) instead of desyncing on the reg-lvalue leaf. Otherwise leave
+ * ast_vdup_pending clear ⇒ the normal vpush desync fires (current safe behavior,
+ * function falls back to its un-optimized baseline). */
+void ast_hook_vdup(void) { MCC_TRACE("enter\n");
+	ast_vdup_pending = 0;
+	if (!ast_opassign_env || !ast_active || !ast_capture || ast_desync ||
+			ast_in_op || ast_in_call)
+		{ MCC_TRACE("br\n"); return; }
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn < 1 || ast_vn != rel)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_expr_pure(ast_cur, ast_vs[ast_vn - 1], 16))
+		{ MCC_TRACE("br\n"); return; }
+	ast_vdup_pending = 1;
 }
 
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
@@ -2965,6 +3026,13 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	AstLocal value = ast_vs[ast_vn - 1];
 	AstLocal lval = ast_vs[ast_vn - 2];
 	AstLocal st = ast_node(ast_cur, AST_Store);
+	if (ast_opassign_store_pending) { MCC_TRACE("br\n");
+		/* the first store after a compound-assign vdup: tag it so replay re-emits
+		 * the byte-faithful vdup form. Correctness does not rely on the tag alone —
+		 * replay also structurally verifies value == Binary(op, pure-equal-lval, …). */
+		ast_set_op(ast_cur, st, AST_OP_OPASSIGN);
+		ast_opassign_store_pending = 0;
+	}
 	ast_add_child(ast_cur, st, lval);
 	ast_add_child(ast_cur, st, value);
 	ast_add_child(ast_cur, ast_cur_bb, st);
@@ -4992,6 +5060,29 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ast_promo_write(preg, &tct);
 				vpop();
 				break;
+			}
+#endif
+#if MCC_CONFIG_OPTIMIZER
+			/* Compound assignment (`lval op= rhs`, MCC_AST_OPASSIGN): re-emit the
+			 * byte-faithful vdup form — compute the lval address ONCE, dup it, load,
+			 * apply the op, store — matching the baseline codegen (mccgen.c expr_eq),
+			 * instead of the naive form below which would compute the address twice.
+			 * The tag is a hint; correctness is guaranteed here by structurally
+			 * requiring value == Binary(op, X, rhs) with X == lval and lval pure. */
+			if (ast_op(a, s) == AST_OP_OPASSIGN) { MCC_TRACE("br\n");
+				AstLocal c0 = ast_child(a, s, 0), c1 = ast_child(a, s, 1);
+				if (c1 != AST_NONE && ast_kind(a, c1) == AST_Binary &&
+						ast_nchild(a, c1) == 2 &&
+						ast_struct_eq(a, c0, ast_child(a, c1, 0), 16) &&
+						ast_expr_pure(a, c0, 16)) { MCC_TRACE("br\n");
+					ast_replay_value(a, c0);
+					vpushv(vtop); /* vdup: duplicate the lval descriptor (one addr compute) */
+					ast_replay_value(a, ast_child(a, c1, 1));
+					gen_op(ast_op(a, c1));
+					vstore();
+					vpop();
+					break;
+				}
 			}
 #endif
 			ast_replay_value(a, ast_child(a, s, 0));
@@ -12356,6 +12447,8 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_in_call = 0;
 		ast_call_pending = AST_NONE;
 		ast_inc_pending = AST_NONE;
+		ast_vdup_pending = 0;
+		ast_opassign_store_pending = 0;
 		ast_vn = 0;
 		ast_ret_val = AST_NONE;
 		ast_last_return = AST_NONE;

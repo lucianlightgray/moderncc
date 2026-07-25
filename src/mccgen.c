@@ -10295,6 +10295,9 @@ static void expr_eq(void) { MCC_TRACE("enter\n");
 		if (t == '=') { MCC_TRACE("br\n");
 			expr_eq();
 		} else { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_vdup();
+#endif
 			vdup();
 			expr_eq();
 			gen_op(TOK_ASSIGN_OP(t));

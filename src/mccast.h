@@ -232,6 +232,7 @@ void ast_hook_label(int v);
 void ast_hook_goto(int v);
 void ast_hook_inc(int post, int c);
 void ast_hook_inc_end(void);
+void ast_hook_vdup(void);
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
