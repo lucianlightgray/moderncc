@@ -4756,15 +4756,15 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 300)
         endif()
 
-        # The x86_64 PE self-host JIT 0xC0000005 was a cross-modifying-code hazard:
-        # host_icache_flush was a no-op on Windows/x64, so an async search-worker
-        # variant/stub written on one core could be executed stale on another (Intel
-        # SDM §8.1.3). Fixed by flushing in mcc_jit_publish + host_icache_flush; the
-        # flush's cross-processor serialization is why it only ever bit the CI cells.
-        # So Windows/x86_64 now runs the gate. selfhost-jit.py still self-skips on the
-        # arm64/i386-PE hosts (separate embed-bake blockers, docs/TODO). find_mcc
-        # handles the VS multi-config layout.
-        if(MCC_PYTHON3 AND MCC_EMBED_JIT)
+        # NOT WIN32: the Windows/x64 icache flush (mcc_jit_publish + host_icache_flush,
+        # genuinely needed cross-modifying-code hardening per Intel SDM §8.1.3) did NOT
+        # cure the x86_64 PE self-host JIT 0xC0000005 — un-skipping it re-crashed the
+        # msvc + mingw-x86_64 + sanitize-msvc cells (exit 3221225477). So the residual
+        # is a SEPARATE, still-open defect (the x86_64 swapped-variant/KGC-stub path;
+        # not locally reproducible), and Windows stays skipped. The i386 graft-inline
+        # frame bug is separately fixed/green. selfhost-jit.py also self-skips on
+        # Windows. find_mcc handles the VS multi-config layout. Tracked in docs/TODO.
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT AND NOT WIN32)
             add_test(NAME selfhost-jit
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")

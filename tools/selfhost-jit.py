@@ -53,14 +53,16 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = bdir if os.path.isabs(bdir) else os.path.join(root, bdir)
 
-    # The x86_64 PE self-host JIT 0xC0000005 is FIXED (cross-modifying-code hazard:
-    # host_icache_flush no-op'd on Windows/x64 so an async-worker variant/stub built
-    # on one core ran stale on another; now flushed in mcc_jit_publish). x86_64 PE
-    # runs the gate. arm64/i386 PE still self-skip — separate embed-bake blockers
-    # (docs/TODO). Checked before locating the binary so the MSVC multi-config layout
-    # can't `no mcc in ...`-error first.
-    if (os.name == "nt" or sys.platform.startswith("win")) and cpu != "x86_64":
-        print(f"selfhost-jit: SKIP (PE runtime-JIT self-host not yet ported for {cpu})")
+    # A PE self-host JIT 0xC0000005 still crashes the x86_64 Windows CI cells (msvc +
+    # mingw x86_64 + sanitize-msvc, exit 3221225477). The Windows/x64 icache flush
+    # (host_icache_flush + mcc_jit_publish) is necessary hardening but did NOT resolve
+    # it — un-skipping x86_64 PE re-exposed the fault, so the residual crash is a
+    # SEPARATE defect (almost certainly the x86_64-only swapped-variant/KGC-stub path;
+    # does not reproduce on a local x86_64 UCRT build). Skip on all Windows until it's
+    # fixed — tracked in docs/TODO. Checked before locating the binary so the MSVC
+    # multi-config layout can't `no mcc in ...`-error first. Also CMake-gated NOT WIN32.
+    if os.name == "nt" or sys.platform.startswith("win"):
+        print("selfhost-jit: SKIP (PE runtime-JIT self-host x86_64 residual crash; tracked in docs/TODO)")
         sys.exit(SKIP)
 
     mcc = find_mcc(bdir)

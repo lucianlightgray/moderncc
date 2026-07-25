@@ -1207,10 +1207,11 @@ ST_FUNC void host_icache_flush(void *ptr, unsigned long length) { MCC_TRACE("ent
 	   on the executing core. On multiprocessor Windows FlushInstructionCache issues
 	   that cross-processor serialization (IPI) for the whole process, so calling it
 	   on the writer before the variant pointer is published covers the executor
-	   core. Skipping it here is exactly what MSDN warns against for generated code
-	   and is the root of the async search-worker PE JIT fault (host_icache_flush
-	   was a no-op on x64, so a worker-built variant/stub could be run stale on
-	   another core). Cheap (once per hot-function promotion), so unconditional. */
+	   core. Skipping it here is exactly what MSDN warns against for generated code.
+	   (This flush is necessary hardening but did NOT cure the x86_64 PE self-host JIT
+	   0xC0000005 — un-skipping selfhost-jit with it in place still crashed the CI
+	   Windows cells, so that residual fault is a separate defect; see docs/TODO.)
+	   Cheap (once per hot-function promotion), so unconditional. */
 	FlushInstructionCache(GetCurrentProcess(), ptr, length);
 #elif (defined __arm__ && !MCC_TARGETOS_BSD) || defined __aarch64__ || (defined __riscv && defined __LP64__)
 	void __clear_cache(void *beginning, void *end);
