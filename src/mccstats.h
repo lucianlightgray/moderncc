@@ -47,6 +47,10 @@ void mcc_stats_jit_recompile(void);
 void mcc_stats_jit_kgc_hit(void);
 void mcc_stats_jit_kgc_miss(void);
 void mcc_stats_jit_poison(void);
+/* K-patch near-match: one recorded (input->baseline) correction, and one variant
+   accepted via near-match (kept + patched instead of poisoned). */
+void mcc_stats_jit_kgc_correction(void);
+void mcc_stats_jit_nearmatch(void);
 void mcc_stats_jit_promote(int async);
 void mcc_stats_jit_memo(unsigned long tuples, unsigned long raw_bytes,
 											 unsigned long comp_bytes);

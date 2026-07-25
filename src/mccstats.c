@@ -120,6 +120,8 @@ typedef struct McccStats {
 	unsigned long jit_kgc_hits;
 	unsigned long jit_kgc_misses;
 	unsigned long jit_poison;
+	unsigned long jit_kgc_corrections; /* K-patch: (input->baseline) entries recorded */
+	unsigned long jit_nearmatch;       /* K-patch: variants kept via near-match */
 	unsigned long jit_promote_sync;
 	unsigned long jit_promote_async;
 	unsigned long jit_memo_arrays;
@@ -402,6 +404,10 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 								 mcs.jit_recompiles, mcs.jit_promote_sync,
 								 mcs.jit_promote_async, mcs.jit_poison);
 		mccstats_row(r, "          kgc hits=%s  miss=%s", a, b);
+		if (mcs.jit_nearmatch || mcs.jit_kgc_corrections) { MCC_TRACE("br\n");
+			mccstats_row(r, "          near-match: %lu variants kept  %lu corrections patched",
+									 mcs.jit_nearmatch, mcs.jit_kgc_corrections);
+		}
 		if (mcs.jit_specfold_events || mcs.jit_kgc_stubs) { MCC_TRACE("br\n");
 			mccstats_fmt_u(mcs.jit_specfold_nodes, a, sizeof a);
 			mccstats_row(r, "          const-eval: folded %s nodes over %lu fns  kgc stubs=%lu",
@@ -702,6 +708,18 @@ void mcc_stats_jit_poison(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_poison++;
+}
+
+void mcc_stats_jit_kgc_correction(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_kgc_corrections++;
+}
+
+void mcc_stats_jit_nearmatch(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_nearmatch++;
 }
 void mcc_stats_jit_memo(unsigned long tuples, unsigned long raw_bytes,
 												unsigned long comp_bytes) { MCC_TRACE("enter\n");

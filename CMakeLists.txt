@@ -4077,6 +4077,12 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-kgc COMMAND jit_selftest_kgc)
             set_tests_properties(jit/selftest-kgc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+            add_executable(jit_selftest_nearmatch tests/embed/jit_selftest_nearmatch.c)
+            target_link_libraries(jit_selftest_nearmatch PRIVATE libmcc)
+            target_include_directories(jit_selftest_nearmatch PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-nearmatch COMMAND jit_selftest_nearmatch)
+            set_tests_properties(jit/selftest-nearmatch PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
             add_executable(jit_selftest_purity tests/embed/jit_selftest_purity.c)
             target_link_libraries(jit_selftest_purity PRIVATE libmcc)
             target_include_directories(jit_selftest_purity PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

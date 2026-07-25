@@ -2210,6 +2210,22 @@ typedef struct MccjitKgc {
 	uint64_t hits;
 	uint64_t misses;
 	int poisoned;
+	/* K-patch (near-match) state. When enabled (default) and the variant mismatches
+	   the baseline only on a SMALL input set that ALSO benchmarks slower than the
+	   variant, the variant is KEPT instead of poisoned and those mismatching inputs
+	   are served from `corr` — a sorted (arity inputs -> baseline output) correction
+	   table, the "jmp table that fills the gaps". Novel (never-verified) inputs still
+	   go through the differential verify below, so the composite stays 100%% correct.
+	   corr is anonymous/in-memory and (arity+1) int64 wide: arity keys then output. */
+	int nearmatch_on;     /* feature enabled for this KGC (default on) */
+	int nearmatch;        /* accepted: keep + patch (set once the bench gate passes) */
+	int nm_decided;       /* the accept/reject bench has been run (latched) */
+	uint64_t nm_total;    /* near-match: total dispatched calls (call-frequency weighted) */
+	uint64_t nm_match;    /* near-match: calls the variant got right (memo-hit + verify-match) */
+	uint64_t nm_last_corr; /* nm_total at the last NEW correction (stability clock) */
+	int64_t *corr;
+	uint64_t corr_n;
+	uint64_t corr_cap;
 	void *mx_variant;
 	void *mx_baseline;
 	uint32_t mx_ngp;
@@ -2246,6 +2262,25 @@ static int mccjit_poison_pct(void) { MCC_TRACE("enter\n");
 	}
 	return 50;
 }
+
+/* K-patch near-match acceptance. DEFAULT ON (disable with MCC_JIT_NEARMATCH=0).
+   A variant that mismatches the baseline only on a SMALL set of inputs (one that
+   fits a small jump table, MCCJIT_NEARMATCH_CORR_MAX) is KEPT rather than poisoned
+   IFF it also benchmarks faster than the baseline it would replace; its minority of
+   mismatching inputs are then served from the correction table. Novel inputs still
+   go through the differential verify, so the composite is always 100%% correct. */
+static int mccjit_nearmatch_on(void) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_JIT_NEARMATCH");
+	if (e && e[0] && (e[0] == '0' || e[0] == 'n' || e[0] == 'N'))
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+/* "Small jump table": the mismatch set must fit this many entries or the variant is
+   rejected (not resolvable by a small patch). */
+#define MCCJIT_NEARMATCH_CORR_MAX ((uint64_t)64)
+#define MCCJIT_NEARMATCH_WARMUP 64 /* min dispatched calls before deciding */
+#define MCCJIT_NEARMATCH_STABLE 64 /* calls with no NEW correction => mismatch domain closed */
 
 #define MCCJIT_KGC_MAX ((uint64_t)1 << 16)
 
@@ -2286,6 +2321,7 @@ static int mccjit_kgc_open(MccjitKgc *k, const char *path, uint64_t salt,
 	memset(k, 0, sizeof *k);
 	k->fd = -1;
 	k->memoize_ok = 1;
+	k->nearmatch_on = mccjit_nearmatch_on();
 	pthread_mutex_init(&k->lock, NULL);
 	if (arity == 0 || arity > MCCJIT_KGC_ARITY)
 		{ MCC_TRACE("br\n"); return -1; }
@@ -2537,6 +2573,7 @@ static void mccjit_kgc_close(MccjitKgc *k) { MCC_TRACE("enter\n");
 	if (k->fd >= 0)
 		{ MCC_TRACE("br\n"); close(k->fd); }
 	mcc_free(k->path);
+	mcc_free(k->corr);
 	memset(k, 0, sizeof *k);
 	k->fd = -1;
 }
@@ -2628,6 +2665,162 @@ static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) { MCC_TRACE("en
 	return 1;
 }
 
+/* --- K-patch correction table: sorted array of (arity keys + 1 output) int64,
+   binary-searched on the keys. Anonymous/in-memory; caller holds k->lock. --- */
+static int mccjit_nearmatch_active(const MccjitKgc *k) { MCC_TRACE("enter\n");
+	return k->nearmatch_on && k->memoize_ok;
+}
+
+static uint64_t mccjit_corr_lower(const MccjitKgc *k, const int64_t *tuple,
+																	int *found) { MCC_TRACE("enter\n");
+	uint64_t lo = 0, hi = k->corr_n, stride = (uint64_t)k->arity + 1;
+	*found = 0;
+	while (lo < hi) { MCC_TRACE("br\n");
+		uint64_t mid = lo + (hi - lo) / 2;
+		int c = mccjit_kgc_cmp(k->corr + mid * stride, tuple, k->arity);
+		if (c < 0) { MCC_TRACE("br\n");
+			lo = mid + 1;
+		} else if (c > 0) { MCC_TRACE("br\n");
+			hi = mid;
+		} else { MCC_TRACE("br\n");
+			*found = 1;
+			return mid;
+		}
+	}
+	return lo;
+}
+
+/* Return a pointer to the stored baseline output for `tuple`, or NULL if unrecorded. */
+static int64_t *mccjit_corr_find(MccjitKgc *k, const int64_t *tuple) { MCC_TRACE("enter\n");
+	int found;
+	uint64_t at;
+	if (!k->corr)
+		{ MCC_TRACE("br\n"); return NULL; }
+	at = mccjit_corr_lower(k, tuple, &found);
+	if (!found)
+		{ MCC_TRACE("br\n"); return NULL; }
+	return k->corr + at * ((uint64_t)k->arity + 1) + k->arity;
+}
+
+/* Record tuple -> out. Returns 1 on insert, 0 if already present / full / OOM. */
+static int mccjit_corr_insert(MccjitKgc *k, const int64_t *tuple, int64_t out) { MCC_TRACE("enter\n");
+	uint64_t stride = (uint64_t)k->arity + 1;
+	int found;
+	uint64_t at;
+	int64_t *dst;
+	if (k->corr) { MCC_TRACE("br\n");
+		at = mccjit_corr_lower(k, tuple, &found);
+		if (found) { MCC_TRACE("br\n");
+			k->corr[at * stride + k->arity] = out; /* refresh (baseline is deterministic) */
+			return 0;
+		}
+	} else { MCC_TRACE("br\n");
+		at = 0;
+	}
+	if (k->corr_n >= MCCJIT_NEARMATCH_CORR_MAX)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (k->corr_n + 1 > k->corr_cap) { MCC_TRACE("br\n");
+		uint64_t ncap = k->corr_cap ? k->corr_cap * 2 : 32;
+		int64_t *nb = mcc_mallocz((size_t)ncap * stride * sizeof(int64_t));
+		if (!nb)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (k->corr) { MCC_TRACE("br\n");
+			memcpy(nb, k->corr, (size_t)k->corr_n * stride * sizeof(int64_t));
+			mcc_free(k->corr);
+		}
+		k->corr = nb;
+		k->corr_cap = ncap;
+	}
+	dst = k->corr + at * stride;
+	if (at < k->corr_n)
+		{ MCC_TRACE("br\n"); memmove(dst + stride, dst,
+						(size_t)(k->corr_n - at) * stride * sizeof(int64_t)); }
+	memcpy(dst, tuple, (size_t)k->arity * sizeof(int64_t));
+	dst[k->arity] = out;
+	k->corr_n++;
+	return 1;
+}
+
+/* On a verified mismatch under near-match mode: record the correction and decide
+   whether the variant is still worth keeping. Returns 1 to SUPPRESS poisoning
+   (near-match accepted), 0 to let the caller's poison logic run. Caller holds lock. */
+static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
+														 uint32_t ntuples, uint32_t nargs, int wide);
+
+/* The "benchmarks better" gate: does the variant beat the baseline on the observed
+   hot inputs? Sample the memo (the verified-correct inputs the hot distribution is
+   made of); a win there means the 98%-common variant path wins, and the rare patched
+   path is a table lookup that is <= a baseline call, so the composite wins too. */
+static int mccjit_nearmatch_bench_wins(MccjitKgc *k, void *variant,
+																			 void *baseline) { MCC_TRACE("enter\n");
+	int64_t *sample;
+	uint32_t n = 0, cap = 64, i;
+	int win;
+	if (!variant || !baseline || k->hdr->count == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	sample = mcc_mallocz((size_t)cap * MCCJIT_KGC_ARITY * sizeof(int64_t));
+	if (!sample)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < k->hdr->count && n < cap; i++) { MCC_TRACE("br\n");
+		uint32_t j;
+		for (j = 0; j < k->arity; j++)
+			{ MCC_TRACE("br\n"); sample[n * MCCJIT_KGC_ARITY + j] = k->tuples[i * k->arity + j]; }
+		n++;
+	}
+	win = mccjit_bench_pair(variant, baseline, sample, n, k->arity, k->ret_wide);
+	mcc_free(sample);
+	return win;
+}
+
+/* Run once per dispatched call (near-match active, not yet decided) — placed on the
+   common path so the verdict can fire even when the mismatch domain has closed and no
+   further misses occur. Latches: mismatch set overflows the small-jump-table budget ->
+   REJECT (poison); a stable small table (no new correction for STABLE calls, past the
+   warmup floor) -> BENCH -> accept iff the variant is faster, else poison. Caller holds
+   k->lock. Faithful variants (no corrections) are never decided and pay only this guard. */
+static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline) { MCC_TRACE("enter\n");
+	if (k->nm_decided)
+		{ MCC_TRACE("br\n"); return; }
+	if (k->corr_n >= MCCJIT_NEARMATCH_CORR_MAX) { MCC_TRACE("br\n"); /* open/large domain */
+		k->nm_decided = 1;
+		if (mcc_stats_mask && !k->poisoned)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
+		k->poisoned = 1;
+		return;
+	}
+	if (k->corr_n == 0)
+		{ MCC_TRACE("br\n"); return; } /* faithful so far: nothing to patch, nothing to decide */
+	if (k->nm_total < MCCJIT_NEARMATCH_WARMUP ||
+			k->nm_total - k->nm_last_corr < MCCJIT_NEARMATCH_STABLE)
+		{ MCC_TRACE("br\n"); return; } /* mismatch set not yet closed */
+	k->nm_decided = 1;
+	if (mccjit_nearmatch_bench_wins(k, variant, baseline)) { MCC_TRACE("br\n");
+		k->nearmatch = 1; /* small stable table + benchmarks better -> keep and patch */
+		if (mcc_stats_mask)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_nearmatch(); }
+	} else { MCC_TRACE("br\n"); /* not faster: near-match cannot help -> poison */
+		if (mcc_stats_mask && !k->poisoned)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
+		k->poisoned = 1;
+	}
+}
+
+/* On a verified mismatch under near-match mode: record the (tuple -> baseline) patch
+   and reset the stability clock. The accept/reject verdict is owned by _decide above.
+   Returns 1 to suppress the caller's legacy miss-rate poison, 0 when the feature is off. */
+static int mccjit_nearmatch_miss(MccjitKgc *k, const int64_t *tuple, int64_t bval) { MCC_TRACE("enter\n");
+	if (!mccjit_nearmatch_active(k))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (k->corr_n < MCCJIT_NEARMATCH_CORR_MAX) { MCC_TRACE("br\n");
+		if (mccjit_corr_insert(k, tuple, bval)) { MCC_TRACE("br\n");
+			k->nm_last_corr = k->nm_total;
+			if (mcc_stats_mask)
+				{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_correction(); }
+		}
+	}
+	return 1;
+}
+
 static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 																int64_t x, int *flagged) { MCC_TRACE("enter\n");
 	int (*vf)(int) = (int (*)(int))variant;
@@ -2639,18 +2832,42 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 		{ MCC_TRACE("br\n"); tuple[i] = 0; }
 	tuple[0] = x;
 	pthread_mutex_lock(&k->lock);
+	if (k->poisoned) { MCC_TRACE("br\n");
+		pthread_mutex_unlock(&k->lock);
+		return (int64_t)bf((int)x);
+	}
+	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
+		int64_t *co;
+		k->nm_total++;
+		mccjit_nearmatch_decide(k, variant, baseline);
+		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
+			pthread_mutex_unlock(&k->lock);
+			return (int64_t)bf((int)x);
+		}
+		co = mccjit_corr_find(k, tuple);
+		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched from the correction table */
+			int64_t v = *co;
+			pthread_mutex_unlock(&k->lock);
+			return v;
+		}
+	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
+		k->nm_match++; /* memo hit = variant verified correct for this input */
 		pthread_mutex_unlock(&k->lock);
 		return (int64_t)vf((int)x);
 	}
 	bval = (int64_t)bf((int)x);
 	vval = (int64_t)vf((int)x);
 	if (vval == bval) { MCC_TRACE("br\n");
+		k->hits++;
+		k->nm_match++;
 		if (k->memoize_ok)
 			{ MCC_TRACE("br\n"); mccjit_kgc_insert(k, tuple); }
 		pthread_mutex_unlock(&k->lock);
 		return bval;
 	}
+	k->misses++;
+	mccjit_nearmatch_miss(k, tuple, bval);
 	pthread_mutex_unlock(&k->lock);
 	if (flagged)
 		{ MCC_TRACE("br\n"); *flagged = 1; }
@@ -2921,7 +3138,23 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(baseline, argv, nargs, wide);
 	}
+	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
+		int64_t *co;
+		k->nm_total++;
+		mccjit_nearmatch_decide(k, variant, baseline);
+		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
+			pthread_mutex_unlock(&k->lock);
+			return mccjit_invoke(baseline, argv, nargs, wide);
+		}
+		co = mccjit_corr_find(k, tuple);
+		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched from the correction table */
+			int64_t v = *co;
+			pthread_mutex_unlock(&k->lock);
+			return v;
+		}
+	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
+		k->nm_match++; /* memo hit = variant verified correct for this input */
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(variant, argv, nargs, wide);
 	}
@@ -2929,6 +3162,7 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	vval = mccjit_invoke(variant, argv, nargs, wide);
 	if (vval == bval) { MCC_TRACE("br\n");
 		k->hits++;
+		k->nm_match++;
 		if (mcc_stats_mask)
 			{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_hit(); }
 		if (k->memoize_ok)
@@ -2939,7 +3173,9 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	k->misses++;
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_miss(); }
-	{
+	/* Near-match: record the patch (verdict is owned by _decide on the common path);
+	   when the feature is off this returns 0 and the legacy miss-rate poison runs. */
+	if (!mccjit_nearmatch_miss(k, tuple, bval)) { MCC_TRACE("br\n");
 		uint64_t total = k->hits + k->misses;
 		if (total >= (uint64_t)mccjit_poison_min() &&
 				k->misses * 100 >= total * (uint64_t)mccjit_poison_pct()) { MCC_TRACE("br\n");
@@ -4476,6 +4712,149 @@ PUB_FUNC int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
+/* Compile one `int NAME(int){...}` to a callable pointer; keeps its state alive. */
+static void *mccjit_nm_compile(const char *src, const char *name, MCCState **out) { MCC_TRACE("enter\n");
+	MCCState *s = mcc_new();
+	void *fn = NULL;
+	*out = NULL;
+	if (!s)
+		{ MCC_TRACE("br\n"); return NULL; }
+	s->optimize = 1;
+	s->nostdlib = 1;
+	mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
+	if (mcc_compile_string(s, src) == 0 && mcc_relocate(s) == 0)
+		{ MCC_TRACE("br\n"); fn = mcc_get_symbol(s, name); }
+	if (!fn) { MCC_TRACE("br\n"); mcc_delete(s); return NULL; }
+	*out = s;
+	return fn;
+}
+
+/* Drive `calls` through a KGC with a hot value + a chooser for the off-profile input,
+   asserting EVERY returned value equals the baseline (soundness). Returns wrong count. */
+static int mccjit_nm_drive(MccjitKgc *k, void *variant, int (*baseline)(int),
+													 int calls, int period, const int64_t *offv, int noff,
+													 int distinct) { MCC_TRACE("enter\n");
+	int i, wrong = 0;
+	for (i = 0; i < calls; i++) { MCC_TRACE("br\n");
+		int64_t x = (i % period == 0)
+									? (distinct ? (int64_t)(1000 + i)
+											: offv[(i / period) % noff])
+									: 7;
+		int flagged = 0;
+		int64_t got = mccjit_kgc_call1(k, variant, (void *)baseline, x, &flagged);
+		if (got != (int64_t)baseline((int)x))
+			{ MCC_TRACE("br\n"); wrong++; }
+	}
+	return wrong;
+}
+
+/* K-patch near-match selftest for the DEFAULT-ON, benchmark-gated feature. Scenarios:
+   ACCEPT  — expensive baseline + a cheap constant variant that agrees only on the hot
+             value x==7: small mismatch set + benchmarks faster -> KEPT, mismatches
+             patched, zero wrong results.
+   OFF     — MCC_JIT_NEARMATCH disabled -> dormant (no corrections, never accepted).
+   SLOW    — cheap baseline + a slower variant: mismatch set small but the bench says
+             it is NOT faster -> rejected (poisoned).
+   BIGTABLE— cheap-enough variant but the mismatch set overflows the small-jump-table
+             budget -> rejected (poisoned).
+   All four keep returning the correct baseline value on every call. */
+PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
+	int (*base_slow)(int) = NULL; /* expensive baseline */
+	int (*base_fast)(int) = NULL; /* cheap baseline */
+	MCCState *sbs = NULL, *sbf = NULL, *svc = NULL, *svs = NULL;
+	void *var_const = NULL; /* cheap constant variant (== base_slow only at x==7) */
+	void *var_slow = NULL;  /* slow constant variant  (== base_fast only at x==7) */
+	MccjitKgc kgc;
+	int fails = 0, wrong;
+	int64_t offv[4] = {5, 0, 3, 100};
+	char vsrc[128];
+
+	printf("mccjit-selftest-nearmatch: begin\n");
+	base_slow = (int (*)(int))mccjit_nm_compile(
+			"int f(int x){int a=x,k;for(k=0;k<160;k++)a=(a*1103515245+12345)&0x7fffffff;return a;}",
+			"f", &sbs);
+	base_fast = (int (*)(int))mccjit_nm_compile("int f(int x){return x*2+1;}", "f", &sbf);
+	if (!base_slow || !base_fast) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-nearmatch: baseline build failed\n");
+		if (sbs) { MCC_TRACE("br\n"); mcc_delete(sbs); }
+		if (sbf) { MCC_TRACE("br\n"); mcc_delete(sbf); }
+		return 1;
+	}
+	snprintf(vsrc, sizeof vsrc, "int v(int x){(void)x;return %d;}", base_slow(7));
+	var_const = mccjit_nm_compile(vsrc, "v", &svc);
+	snprintf(vsrc, sizeof vsrc,
+					 "int v(int x){volatile int a=0;int k;for(k=0;k<600;k++)a++;(void)x;return %d;}",
+					 base_fast(7));
+	var_slow = mccjit_nm_compile(vsrc, "v", &svs);
+	if (!var_const || !var_slow) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-nearmatch: variant build failed\n");
+		fails = 1;
+		goto done;
+	}
+
+	/* ACCEPT: expensive baseline, cheap constant variant, 4 distinct off-profile. */
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
+		wrong = mccjit_nm_drive(&kgc, var_const, base_slow, 4000, 50, offv, 4, 0);
+		printf("mccjit-selftest-nearmatch: ACCEPT wrong=%d nearmatch=%d poisoned=%d "
+					 "corrections=%llu nm=%llu/%llu\n",
+					 wrong, kgc.nearmatch, kgc.poisoned, (unsigned long long)kgc.corr_n,
+					 (unsigned long long)kgc.nm_match, (unsigned long long)kgc.nm_total);
+		if (wrong || !kgc.nearmatch || kgc.poisoned || kgc.corr_n != 4) { MCC_TRACE("br\n"); fails++; }
+		{
+			int j;
+			for (j = 0; j < 4; j++) { MCC_TRACE("br\n");
+				int64_t t[MCCJIT_KGC_ARITY], *co;
+				uint32_t m;
+				for (m = 0; m < MCCJIT_KGC_ARITY; m++)
+					{ MCC_TRACE("br\n"); t[m] = 0; }
+				t[0] = offv[j];
+				co = mccjit_corr_find(&kgc, t);
+				if (!co || *co != (int64_t)base_slow((int)offv[j]))
+					{ MCC_TRACE("br\n"); fails++; }
+			}
+		}
+		mccjit_kgc_close(&kgc);
+	}
+
+	/* OFF: same as ACCEPT but feature disabled -> dormant. */
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
+		kgc.nearmatch_on = 0;
+		wrong = mccjit_nm_drive(&kgc, var_const, base_slow, 4000, 50, offv, 4, 0);
+		printf("mccjit-selftest-nearmatch: OFF wrong=%d corrections=%llu nearmatch=%d (expect 0/0/0)\n",
+					 wrong, (unsigned long long)kgc.corr_n, kgc.nearmatch);
+		if (wrong || kgc.corr_n != 0 || kgc.nearmatch) { MCC_TRACE("br\n"); fails++; }
+		mccjit_kgc_close(&kgc);
+	}
+
+	/* SLOW: small mismatch set but the variant is slower -> rejected/poisoned. */
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
+		wrong = mccjit_nm_drive(&kgc, var_slow, base_fast, 4000, 50, offv, 4, 0);
+		printf("mccjit-selftest-nearmatch: SLOW wrong=%d nearmatch=%d poisoned=%d (expect 0/0/1)\n",
+					 wrong, kgc.nearmatch, kgc.poisoned);
+		if (wrong || kgc.nearmatch || !kgc.poisoned) { MCC_TRACE("br\n"); fails++; }
+		mccjit_kgc_close(&kgc);
+	}
+
+	/* BIGTABLE: cheap+fast variant but the mismatch set is large (distinct each call)
+	   -> not a small jump table -> rejected/poisoned. */
+	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
+		wrong = mccjit_nm_drive(&kgc, var_const, base_slow, 4000, 2, offv, 4, 1);
+		printf("mccjit-selftest-nearmatch: BIGTABLE wrong=%d nearmatch=%d poisoned=%d corr=%llu (expect 0/0/1)\n",
+					 wrong, kgc.nearmatch, kgc.poisoned, (unsigned long long)kgc.corr_n);
+		if (wrong || kgc.nearmatch || !kgc.poisoned) { MCC_TRACE("br\n"); fails++; }
+		mccjit_kgc_close(&kgc);
+	}
+
+done:
+	if (svc) { MCC_TRACE("br\n"); mcc_delete(svc); }
+	if (svs) { MCC_TRACE("br\n"); mcc_delete(svs); }
+	if (sbs) { MCC_TRACE("br\n"); mcc_delete(sbs); }
+	if (sbf) { MCC_TRACE("br\n"); mcc_delete(sbf); }
+	printf("mccjit-selftest-nearmatch: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
+				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
 static int mccjit_classify_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
@@ -5873,6 +6252,10 @@ PUB_FUNC int mccjit_selftest_poison(void) { MCC_TRACE("enter\n");
 		printf("mccjit-selftest-poison: kgc open failed FAIL\n");
 		fails++;
 	} else { MCC_TRACE("br\n");
+		/* This exercises the LEGACY miss-rate poison path in isolation; near-match
+		   (default on) would instead patch the repeated mismatch from the correction
+		   table and never let the miss rate climb, so disable it here. */
+		kgc.nearmatch_on = 0;
 		for (i = 0; i < 10; i++) { MCC_TRACE("br\n");
 			int64_t args[1];
 			int flagged = 0;
