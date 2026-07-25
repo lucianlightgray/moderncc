@@ -53,13 +53,14 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = bdir if os.path.isabs(bdir) else os.path.join(root, bdir)
 
-    # A PE self-host JIT 0xC0000005 remains on the x86_64 Windows cells (distinct
-    # from the fixed i386 graft-inline frame bug; does not reproduce on a local
-    # x86_64 UCRT build). Skip on Windows until it's fixed — tracked in docs/TODO.
-    # Checked before locating the binary so the MSVC multi-config layout can't
-    # `no mcc in ...`-error first. The ctest is also CMake-gated `NOT WIN32`.
-    if os.name == "nt" or sys.platform.startswith("win"):
-        print("selfhost-jit: SKIP (PE runtime-JIT self-host is HW/platform-fragile; tracked separately)")
+    # The x86_64 PE self-host JIT 0xC0000005 is FIXED (cross-modifying-code hazard:
+    # host_icache_flush no-op'd on Windows/x64 so an async-worker variant/stub built
+    # on one core ran stale on another; now flushed in mcc_jit_publish). x86_64 PE
+    # runs the gate. arm64/i386 PE still self-skip — separate embed-bake blockers
+    # (docs/TODO). Checked before locating the binary so the MSVC multi-config layout
+    # can't `no mcc in ...`-error first.
+    if (os.name == "nt" or sys.platform.startswith("win")) and cpu != "x86_64":
+        print(f"selfhost-jit: SKIP (PE runtime-JIT self-host not yet ported for {cpu})")
         sys.exit(SKIP)
 
     mcc = find_mcc(bdir)

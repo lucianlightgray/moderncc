@@ -13162,6 +13162,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	uint64_t h;
 	AstGateMask base, best, searchable;
 	long best_score = -1;
+	long base_cost = -1; /* baseline (pre-search) cost, for the stats cost-saved outcome */
 	uint64_t tried_mask = 0; /* which candidates were measured (M3 blocker A progress) */
 	int g0, p0, o0, nc = 0;
 	/* Budget-scaling the candidate count: the subset lattice of `searchable` can be as
@@ -13170,6 +13171,8 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	 * at AST_SEARCH_MAX_CAND. The per-tick time budget (ast_search_should_stop) remains the
 	 * primary bound; this cap prevents pathological enumeration and gatelist overflow. */
 	AstGateMask gatelist[AST_SEARCH_MAX_CAND];
+	if (mcc_stats_mask)
+		{ MCC_TRACE("br\n"); mcc_stats_search_enter(); } /* count before any budget/memo early-out */
 	if (!ast_search_started) { MCC_TRACE("br\n");
 		ast_search_started = 1;
 		ast_search_start_ms = ast_now_ms();
@@ -13324,6 +13327,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			best = base;
 			best_score = ast_search_score_one(pristine, sym, faithful, base, saved_loc,
 																				saved_anon);
+			base_cost = best_score; /* snapshot before combo_run lowers best_score */
 			/* Best-first frontier + forecast-driven ordering (est_cost_delta): when the
 			 * vocabulary is large enough that the AST_SEARCH_MAX_CAND budget truncates the
 			 * enumeration, combo_run's ascending-mask order can miss base's single-toggle
@@ -13401,7 +13405,8 @@ search_done:
 	ast_opt_total = o0;
 	ast_search_gates_set(best);
 	if (mcc_stats_mask)
-		{ MCC_TRACE("br\n"); mcc_stats_search_end(best, best_score, (long)nc, ast_search_memo_n); }
+		{ MCC_TRACE("br\n"); mcc_stats_search_end(best, best_score, base_cost, (long)nc,
+																								ast_search_memo_n); }
 	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file.
 					* score = the winning config's search score; tried = the bitmask of candidates
 					* actually measured before the budget ran out (M3 blocker A progress fields).

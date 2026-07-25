@@ -1199,14 +1199,19 @@ ST_FUNC void host_icache_flush(void *ptr, unsigned long length) { MCC_TRACE("ent
 	   the JIT writes host-arch code, so in a cross build the flush must follow
 	   the host, not the compile target. For a host build the two coincide. */
 #if defined _WIN32
-#if defined __aarch64__ || defined _M_ARM64 || defined __arm__ || defined _M_ARM
-	/* Windows does not flush the I-cache on VirtualProtect; arm/arm64 need it
-	   explicitly after writing JIT code. x86/x64 are I-cache coherent. */
+	/* Windows does not flush the I-cache on VirtualProtect. arm/arm64 obviously
+	   need it, but x86/x64 do too when the code is published to *another* thread:
+	   x86 keeps the L1i coherent by snooping, yet a core that already prefetched or
+	   decoded (uop-cache) the OLD bytes at a *reused* address won't re-fetch on its
+	   own — the Intel SDM cross-modifying-code protocol requires a serializing event
+	   on the executing core. On multiprocessor Windows FlushInstructionCache issues
+	   that cross-processor serialization (IPI) for the whole process, so calling it
+	   on the writer before the variant pointer is published covers the executor
+	   core. Skipping it here is exactly what MSDN warns against for generated code
+	   and is the root of the async search-worker PE JIT fault (host_icache_flush
+	   was a no-op on x64, so a worker-built variant/stub could be run stale on
+	   another core). Cheap (once per hot-function promotion), so unconditional. */
 	FlushInstructionCache(GetCurrentProcess(), ptr, length);
-#else
-	(void)ptr;
-	(void)length;
-#endif
 #elif (defined __arm__ && !MCC_TARGETOS_BSD) || defined __aarch64__ || (defined __riscv && defined __LP64__)
 	void __clear_cache(void *beginning, void *end);
 	__clear_cache(ptr, (char *)ptr + length);

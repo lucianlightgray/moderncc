@@ -91,6 +91,11 @@ typedef struct McccStats {
 	long evaluated;
 	long total_evaluated;
 	int funcs_searched;
+	unsigned long funcs_eligible;   /* entered the search driver (coverage denominator) */
+	unsigned long funcs_scored;     /* searches whose baseline cost was known */
+	unsigned long funcs_improved;   /* searches whose winner beat the baseline */
+	unsigned long long cost_base;   /* summed baseline cost over scored searches (raw) */
+	unsigned long long cost_best;   /* summed winning cost over scored searches (raw) */
 	int memo_n;
 	unsigned elapsed_ms;
 	unsigned budget_ms;
@@ -288,6 +293,31 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 			unsigned mhr = mtot ? (unsigned)(mcs.search_memo_hits * 100 / mtot) : 0;
 			mccstats_row(r, "          memo: hit=%lu miss=%lu (%u%% reuse)",
 									 mcs.search_memo_hits, mcs.search_memo_misses, mhr);
+		}
+		if (mcs.funcs_eligible) { MCC_TRACE("br\n");
+			unsigned long covered =
+					(unsigned long)mcs.funcs_searched + mcs.search_memo_hits;
+			unsigned cov = mcs.funcs_eligible
+											 ? (unsigned)(covered * 100 / mcs.funcs_eligible)
+											 : 0;
+			mccstats_row(r, "          coverage: %lu/%lu funcs (%u%%)  searched=%d memoized=%lu",
+									 covered, mcs.funcs_eligible, cov, mcs.funcs_searched,
+									 mcs.search_memo_hits);
+		}
+		if (mcs.funcs_scored) { MCC_TRACE("br\n");
+			unsigned long long saved = mcs.cost_base > mcs.cost_best
+																		 ? mcs.cost_base - mcs.cost_best
+																		 : 0;
+			unsigned pct = mcs.cost_base
+											 ? (unsigned)(saved * 100 / mcs.cost_base)
+											 : 0;
+			unsigned long ir = mcs.funcs_scored
+													 ? (unsigned long)(mcs.funcs_improved * 100 /
+																						 mcs.funcs_scored)
+													 : 0;
+			mccstats_fmt_u((unsigned long)(saved >> 12), a, sizeof a);
+			mccstats_row(r, "          outcome: cost -%s (%u%%)  improved %lu/%lu funcs (%lu%%)",
+									 a, pct, mcs.funcs_improved, mcs.funcs_scored, ir);
 		}
 	}
 
@@ -584,8 +614,14 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 	mccstats_paint(0);
 }
 
-void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
-													int memo_n) { MCC_TRACE("enter\n");
+void mcc_stats_search_enter(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.funcs_eligible++;
+}
+
+void mcc_stats_search_end(uint64_t best_gates, long best_score, long base_score,
+													long evaluated, int memo_n) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.funcs_searched++;
@@ -593,6 +629,17 @@ void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
 	if (best_score >= 0 && (mcs.best_score < 0 || best_score < mcs.best_score)) { MCC_TRACE("br\n");
 		mcs.best_score = best_score;
 		mcs.best_gates = best_gates;
+	}
+	/* Outcome: how much cost the search removed. Winner is base when it found nothing
+	   better (best_score<0 = no valid candidate, or worse than base). Clamp so a
+	   budget-starved search counts as unchanged, never as a spurious gain. */
+	if (base_score >= 0) { MCC_TRACE("br\n");
+		long win = (best_score >= 0 && best_score < base_score) ? best_score : base_score;
+		mcs.funcs_scored++;
+		mcs.cost_base += (unsigned long long)base_score;
+		mcs.cost_best += (unsigned long long)win;
+		if (win < base_score)
+			{ MCC_TRACE("br\n"); mcs.funcs_improved++; }
 	}
 	(void)evaluated;
 	mccstats_paint(0);

@@ -28,8 +28,14 @@ void mcc_stats_combo_cand(uint64_t gates, const int *sel, int k,
 													const uint64_t *item_bits, long score, long evaluated,
 													unsigned elapsed_ms, unsigned budget_ms,
 													unsigned expect_ms);
-void mcc_stats_search_end(uint64_t best_gates, long best_score, long evaluated,
-													int memo_n);
+/* base_score is the cost of the baseline (pre-search) config for this function, or
+   -1 when the search path did not score it; it lets the panel report how much cost
+   the search actually removed (WINNER cost vs. where it started), not just activity. */
+void mcc_stats_search_end(uint64_t best_gates, long best_score, long base_score,
+													long evaluated, int memo_n);
+/* One function entering the gate-search driver (before any memo/budget early-out):
+   the denominator for coverage — searched+memoized vs. eligible. */
+void mcc_stats_search_enter(void);
 /* One enumerated perm/combo candidate: improved=new running best, rejected=invalid
    score, ordered=permutation mode (else combination/subset mode). */
 void mcc_stats_combo_outcome(int improved, int rejected, int ordered);

@@ -8659,6 +8659,16 @@ PUB_FUNC int mccjit_selftest_benchwire(void) { MCC_TRACE("enter\n");
 void mcc_jit_publish(void **slot, void *variant) { MCC_TRACE("enter\n");
 	if (!slot)
 		{ MCC_TRACE("br\n"); return; }
+	/* Cross-thread code publication: the async search worker / hot-recompile writes
+	   variant bodies (mccrun protect path) and raw-RWX stubs/trampolines (this file's
+	   mmap emitters, which never hit host_runmem_protect) on one core, then hands the
+	   entry to a caller that runs it on another. Serialize the instruction stream on
+	   the writer here — BEFORE the release store makes the pointer observable — so an
+	   executor core cannot fetch stale bytes at a reused address (see host_icache_flush).
+	   Bodies are already flushed at RX-protect time; this additionally covers the
+	   single-page stubs. No-op on hosts that don't need it. */
+	if (variant)
+		{ MCC_TRACE("br\n"); host_icache_flush(variant, (unsigned long)host_pagesize()); }
 	__atomic_store_n(slot, variant, __ATOMIC_RELEASE);
 }
 
