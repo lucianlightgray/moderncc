@@ -7714,6 +7714,18 @@ static AstLocal ast_bf_bin(AstArena *a, int op, int tt, AstLocal l, AstLocal r) 
 	return n;
 }
 
+#ifdef MCC_TARGET_I386
+/* A fresh Ref to a local frame slot at `off` (lvalue; read yields the stored value).
+ * Used by the i386 divmagic operand-materialization below. */
+static AstLocal ast_bf_localref(AstArena *a, int off, int tt, uint64_t tref) { MCC_TRACE("enter\n");
+	AstLocal r = ast_node(a, AST_Ref);
+	ast_set_op(a, r, VT_LOCAL | VT_LVAL);
+	ast_set_ival(a, r, (uint64_t)off);
+	ast_set_type(a, r, tt, tref);
+	return r;
+}
+#endif
+
 static AstLocal ast_bf_ucast(AstArena *a, int tt, AstLocal key) { MCC_TRACE("enter\n");
 	AstLocal n = ast_node(a, AST_Convert);
 	ast_set_type(a, n, tt, 0);
@@ -8553,6 +8565,44 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
  * magic, mirroring mcc_divs_apply. The sign-bit correction reuses the shifted quotient, so
  * the mul-high is duplicated once (CSE runs earlier in the pipeline, so it isn't merged) — a
  * 2× multiply for `/` (3× for `% = x - (x/C)*C`), still a clear win over `idiv`. */
+#ifdef MCC_TARGET_I386
+static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
+																	 AstLocal node);
+
+/* Materialize a PURE divmagic operand `x` (of node `n`) ONCE into a reserved
+ * (non-reuse-pool) ltemp slot: insert `store(slot, x)` before n's enclosing
+ * statement, so the several x-reads the magic sequence emits all read the stable
+ * slot rather than re-reading x's SOURCE (which the temp allocator can hand back
+ * out as scratch between reads — the i386 struct-loop `%C` miscompile, v_251).
+ * Only needed on i386 (5-register model spills the operand); other backends keep
+ * `x` in a register across the reads, so this is i386-gated to stay byte-identical
+ * there. Returns 1 + `*off_out` on success; 0 if it cannot materialize (caller
+ * then keeps the hardware divide). */
+static int ast_divmagic_materialize(AstArena *a, AstLocal n, AstLocal x, int xt,
+																		uint64_t xref, int *off_out) { MCC_TRACE("enter\n");
+	if (ast_ltemp_n >= AST_LTEMP_MAX)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal stmt = n, bb = ast_parent(a, n);
+	while (bb != AST_NONE && ast_kind(a, bb) != AST_BasicBlock) { MCC_TRACE("br\n");
+		stmt = bb;
+		bb = ast_parent(a, stmt);
+	}
+	if (bb == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	int off = (ast_ltemp_cur - 8) & -8;
+	AstLocal sref = ast_bf_localref(a, off, xt, xref);
+	AstLocal st = ast_node(a, AST_Store);
+	ast_add_child(a, st, sref);
+	ast_add_child(a, st, ast_dup_sub(a, x));
+	if (!ast_ltemp_insert_before(a, bb, stmt, st))
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_ltemp_cur = off;
+	ast_ltemp_off[ast_ltemp_n++] = off;
+	*off_out = off;
+	return 1;
+}
+#endif /* MCC_TARGET_I386 */
+
 static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, ct, xt;
 	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1);
@@ -8575,19 +8625,35 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_pure(a, x))
 		{ MCC_TRACE("br\n"); return 0; }
+#ifdef MCC_TARGET_I386
+	/* i386: materialize x once into a reserved slot so the magic sequence's several
+	 * x-reads don't re-read x's source (which the 5-reg allocator reuses as scratch
+	 * between reads -> the struct-loop `%C` miscompile). Bail to hw-divide if we
+	 * can't. Other backends keep the dup-based form (byte-identical). */
+	int xoff;
+	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
+		{ MCC_TRACE("br\n"); return 0; }
+#define DMX() ast_bf_localref(a, xoff, xt, xref)
+#else
+#define DMX() ast_dup_sub(a, x)
+#endif
 	mag = mcc_magics((int32_t)C);
 	/* q0 = (int32)((int64)M * (int64)x >> 32) */
 	Mi = ast_bf_lit(a, S64, (uint64_t)(int64_t)mag.M);
+#ifdef MCC_TARGET_I386
+	xi = ast_bf_ucast(a, S64, ast_bf_localref(a, xoff, xt, xref)); /* read materialized x */
+#else
 	xi = ast_bf_ucast(a, S64, x); /* Convert to i64, dups x (sign-extends: signed dest) */
+#endif
 	prod = ast_bf_bin(a, '*', S64, Mi, xi);
 	hi = ast_bf_bin(a, TOK_SAR, S64, prod, ast_bf_lit(a, S64, 32));
 	q0 = ast_node(a, AST_Convert);
 	ast_set_type(a, q0, S32, 0);
 	ast_add_child(a, q0, hi);
 	if (C > 0 && mag.M < 0)
-		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '+', S32, q0, ast_dup_sub(a, x)); }
+		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '+', S32, q0, DMX()); }
 	else if (C < 0 && mag.M > 0)
-		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '-', S32, q0, ast_dup_sub(a, x)); }
+		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '-', S32, q0, DMX()); }
 	else
 		{ MCC_TRACE("br\n"); q1 = q0; }
 	q2 = ast_bf_bin(a, TOK_SAR, S32, q1, ast_bf_lit(a, S32, (uint64_t)mag.s));
@@ -8618,9 +8684,10 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		AstLocal qexpr = ast_bf_bin(a, '+', S32, q2, signbit);
 		AstLocal qC = ast_bf_bin(a, '*', S32, qexpr, ast_bf_lit(a, S32, (uint64_t)(uint32_t)C));
 		ast_set_op(a, n, '-');
-		ast_add_child(a, n, ast_dup_sub(a, x));
+		ast_add_child(a, n, DMX());
 		ast_add_child(a, n, qC);
 	}
+#undef DMX
 	return 1;
 }
 
