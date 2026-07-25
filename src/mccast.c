@@ -1265,6 +1265,7 @@ static MCC_OPT_TLS int ast_bfold_sign_env;
 static MCC_OPT_TLS int ast_bfold_round_env;
 static MCC_OPT_TLS int ast_bfold_minmax_env;
 static MCC_OPT_TLS int ast_math_inline_env;
+static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
@@ -1901,6 +1902,13 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	/* Runtime math-builtin -> inline SSE. First cut: fabs -> andpd sign-clear
 	 * (bit-exact, SSE2-baseline, x86_64 only). On at -O2+. */
 	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", s1->optimize >= 2);
+	/* MCC_AST_MATH_INLINE_PREPASS (default OFF): also run the fabs/sqrt(nonneg)
+	 * math-inline rewrites as an UNCONDITIONAL pre-pass (ast_math_inline_run),
+	 * before the -O>=4 strategy search. Fixes an -O4-vs-O2 regression: the search's
+	 * winning order can drop `bfold`, so sqrt(x*x) inlines to sqrtsd at -O2/-O3 but
+	 * reverts to a `call sqrt` libcall at -O4. Idempotent with the bfold strategy;
+	 * byte-identical at -O2 (bfold does the same rewrite there anyway). */
+	ast_math_inline_prepass_env = ast_env_gate("MCC_AST_MATH_INLINE_PREPASS", 0);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
 	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
 	 * pending a correctness proof). Each still runs only on `faithful` functions
@@ -5828,6 +5836,73 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 	}
 	return folds;
 }
+
+/* Unconditional math-inline pre-pass (MCC_AST_MATH_INLINE_PREPASS). Applies the
+ * SAME fabs/sqrt(nonneg) Invoke->Unary rewrites ast_bfold_run does (kept in sync
+ * with the two blocks there), but as a standalone pass runnable BEFORE the
+ * -O>=4 strategy search — which can otherwise drop `bfold` from its winning
+ * order, regressing -O4 below -O2 (sqrt(x*x) -> sqrtsd at -O2/-O3 becomes a
+ * `call sqrt` libcall at -O4). The rewrites are always a strict improvement and
+ * independent of emit-size scoring. Idempotent with ast_bfold_run (which skips
+ * the already-rewritten AST_Unary nodes). Only RUNTIME args are rewritten;
+ * constant args are left for bfold's compile-time fold. x86_64 only (mirrors the
+ * ast_bfold_run math-inline, which is under #ifdef MCC_TARGET_X86_64). */
+#ifdef MCC_TARGET_X86_64
+static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
+	if (!ast_math_inline_env)
+		{ MCC_TRACE("br\n"); return 0; }
+	int folds = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_kind(a, n) != AST_Invoke)
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal cref = ast_first_child(a, n);
+		if (cref == AST_NONE || ast_kind(a, cref) != AST_Ref)
+			{ MCC_TRACE("br\n"); continue; }
+		Sym *cs = (Sym *)(uintptr_t)ast_sym(a, cref);
+		if (!cs || (cs->type.t & VT_BTYPE) != VT_FUNC || (cs->type.t & VT_STATIC))
+			{ MCC_TRACE("br\n"); continue; }
+		ElfSym *es = elfsym(cs);
+		if (es && es->st_shndx != SHN_UNDEF)
+			{ MCC_TRACE("br\n"); continue; }
+		const char *nm = get_tok_str(cs->v, NULL);
+		int nfn = (int)(sizeof ast_bfold_tab / sizeof *ast_bfold_tab), bi;
+		for (bi = 0; bi < nfn; bi++)
+			{ MCC_TRACE("br\n"); if (!strcmp(nm, ast_bfold_tab[bi].name))
+				{ MCC_TRACE("br\n"); break; } }
+		if (bi == nfn)
+			{ MCC_TRACE("br\n"); continue; }
+		int bid = ast_bfold_tab[bi].id;
+		if (bid != 0 && bid != 1) /* only sqrt(0) and fabs(1) inline here */
+			{ MCC_TRACE("br\n"); continue; }
+		int bgate = bid == 0 ? ast_bfold_sqrt_env : ast_bfold_sign_env;
+		if (!bgate)
+			{ MCC_TRACE("br\n"); continue; }
+		int bt = ast_bfold_tab[bi].flt ? VT_FLOAT : VT_DOUBLE;
+		if ((ast_type_t(a, n) & VT_BTYPE) != bt || (int)ast_nchild(a, n) != 2)
+			{ MCC_TRACE("br\n"); continue; }
+		/* constant arg -> leave for bfold's compile-time fold */
+		if (ast_bfold_arg(a, ast_child(a, n, 1), bt) != AST_NONE)
+			{ MCC_TRACE("br\n"); continue; }
+		/* sqrt only inlines with a provably-nonnegative arg (errno-EDOM elision) */
+		if (bid == 0 && !ast_expr_nonneg(a, ast_child(a, n, 1), 24))
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal arg = ast_child(a, n, 1);
+		ast_clear_children(a, n);
+		ast_set_kind(a, n, AST_Unary);
+		ast_set_op(a, n, bid == 0 ? AST_OP_SQRT : AST_OP_FABS);
+		ast_set_type(a, n, bt, 0);
+		ast_set_ival(a, n, 0);
+		ast_set_sym(a, n, 0);
+		ast_add_child(a, n, arg);
+		MCC_TRACE("math-inline-prepass %s\n", nm);
+		folds++;
+	}
+	return folds;
+}
+#else
+static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n"); (void)a; return 0; }
+#endif
 
 static int ast_ident_intt(int tt) { MCC_TRACE("enter\n");
 	if (tt & VT_BITFIELD)
@@ -14808,6 +14883,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int interchanged = 0;
 			int fused = 0;
 			int tiled = 0;
+			int math_inlined = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -14856,6 +14932,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 				}
 				if (faithful && (ast_opt_limit < 0 || ast_opt_total < ast_opt_limit)) { MCC_TRACE("br\n");
+					if (ast_math_inline_prepass_env)
+						{ MCC_TRACE("br\n"); math_inlined = ast_math_inline_run(ast_cur); }
 					if (ast_interchange_env)
 						{ MCC_TRACE("br\n"); interchanged = ast_interchange_run(ast_cur); }
 					if (ast_fusion_env)
@@ -14954,12 +15032,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled)
+						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled ||
+						math_inlined)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
-						!interchanged && !fused && !tiled)
+						!interchanged && !fused && !tiled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && faithful) { MCC_TRACE("br\n");
 					ind = ast_body_ind_sv;
@@ -14976,7 +15055,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										(int)rel_len);
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled) { MCC_TRACE("br\n");
+						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled ||
+						math_inlined) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -14991,7 +15071,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
 										do_tco || do_narrow || do_divmagic || do_select ||          \
-										interchanged || fused || tiled || (ui))                      \
+										interchanged || fused || tiled || math_inlined || (ui))      \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \
