@@ -1789,11 +1789,14 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * unit apply-time on a clone and order the round-robin by that ROI, high first.
 	 * Every strategy still ticks (full-set order). Off by default pending the plb
 	 * soak + the phase-2 runtime (JIT-score) benefit signal. */
-	/* ROI scheduler is the default search-order mode whenever the -O search runs
-	 * (-O4+); it replaces the emit-size combo order search with a benefit/time sort
-	 * (full strategy coverage retained). The gate/subset search still runs for the
-	 * other axes. Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
-	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
+	/* ROI scheduler: OPT-IN only (default OFF). It cannot be a default yet because
+	 * the benefit/time sort uses wall-clock (clock()) timing, which is
+	 * NON-DETERMINISTIC — the strategy order then differs between the AOT and JIT
+	 * compile of the same function, breaking the AOT==JIT invariant (CI arm64
+	 * regression/o4-aot-jit + jit-submit-aot-diff, run 30169564603). Re-enabling by
+	 * default requires a DETERMINISTIC cost-of-applying proxy (e.g. nodes visited),
+	 * NOT clock(). See the strategy-scheduler TODO item. */
+	ast_roi_env = ast_env_gate("MCC_AST_ROI", 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
 	ast_search_walk_env = ast_search_walk_from_env();
