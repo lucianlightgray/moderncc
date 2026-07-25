@@ -1784,19 +1784,17 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * the search's size-optimized order leads, the omitted passes (bfold/ivsr/…)
 	 * still get a turn in the fixpoint cycle. On by default. */
 	ast_search_fullset_env = ast_env_gate("MCC_AST_SEARCH_FULLSET", 1);
-	/* ROI/time strategy scheduler (MCC_AST_ROI): instead of the emit-size combo
-	 * search, measure each strategy's benefit (cost- or emit-size reduction) per
-	 * unit apply-time on a clone and order the round-robin by that ROI, high first.
-	 * Every strategy still ticks (full-set order). Off by default pending the plb
-	 * soak + the phase-2 runtime (JIT-score) benefit signal. */
-	/* ROI scheduler: OPT-IN only (default OFF). It cannot be a default yet because
-	 * the benefit/time sort uses wall-clock (clock()) timing, which is
-	 * NON-DETERMINISTIC — the strategy order then differs between the AOT and JIT
-	 * compile of the same function, breaking the AOT==JIT invariant (CI arm64
-	 * regression/o4-aot-jit + jit-submit-aot-diff, run 30169564603). Re-enabling by
-	 * default requires a DETERMINISTIC cost-of-applying proxy (e.g. nodes visited),
-	 * NOT clock(). See the strategy-scheduler TODO item. */
-	ast_roi_env = ast_env_gate("MCC_AST_ROI", 0);
+	/* ROI strategy scheduler (MCC_AST_ROI): instead of the emit-size combo search,
+	 * measure each strategy's benefit (cost- or emit-size reduction) per unit
+	 * apply-cost on a clone and order the round-robin by that ROI, high first. Every
+	 * strategy still ticks (full-set order). DEFAULT ON whenever the -O search runs
+	 * (-O>=4). Safe to default now that the apply-cost is a DETERMINISTIC transform
+	 * count (graft/promo/opt deltas), not wall-clock clock(): the strategy order — and
+	 * therefore codegen — is identical across the AOT and JIT compile of a function,
+	 * so the AOT==JIT invariant holds. (The earlier clock() timing was the reason this
+	 * was reverted to opt-in in 9c3d3930; ast_search_roi_order now removes it.)
+	 * Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
+	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
 	ast_search_walk_env = ast_search_walk_from_env();
@@ -14213,14 +14211,17 @@ static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	ast_search_gates_set(warm);
 }
 
-/* ROI/time strategy scheduler. For each eligible strategy, measure its marginal
- * benefit (reduction in the emit-size or static-cost metric) and its apply-time on
- * a fresh clone of the pristine AST, then order the round-robin cycle by ROI =
- * benefit/time, highest first. Every strategy is still included exactly once (full
- * coverage); ROI only sorts them. Replaces the emit-size combo search under
- * MCC_AST_ROI. Phase 1 benefit is a static proxy (cost or emit size); phase 2 will
- * fold in a measured runtime (JIT-score) signal so strength-reduction-class passes
- * that grow static size but cut runtime rank by real speed rather than sinking. */
+/* ROI strategy scheduler. For each eligible strategy, measure its marginal benefit
+ * (reduction in the emit-size or static-cost metric) and its DETERMINISTIC apply-cost
+ * (transforms applied: graft/promo/opt counter deltas, not wall-clock time) on a
+ * fresh clone of the pristine AST, then order the round-robin cycle by ROI =
+ * benefit/cost, highest first. Every strategy is still included exactly once (full
+ * coverage); ROI only sorts them. Because both benefit and cost are pure functions of
+ * the cloned AST, the order is identical across the AOT and JIT compile of a function
+ * (AOT==JIT safe). Replaces the emit-size combo search under MCC_AST_ROI. Phase 1
+ * benefit is a static proxy (cost or emit size); phase 2 will fold in a measured
+ * runtime (JIT-score) signal so strength-reduction-class passes that grow static size
+ * but cut runtime rank by real speed rather than sinking. */
 static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 																 int saved_anon, AstArena *pristine) { MCC_TRACE("enter\n");
 	int rows[AST_STRAT_COUNT_MAX], nrows = 0, i, j;
@@ -14234,17 +14235,26 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 		{ MCC_TRACE("br\n"); ast_arena_free(pristine); return; }
 	for (i = 0; i < nrows; i++) { MCC_TRACE("br\n");
 		AstArena *trial = ast_arena_clone(pristine), *saved_cur;
-		long m0, m1, b;
-		unsigned t0;
+		long m0, m1, b, work;
+		int wg, wp, wo;
 		if (!trial)
 			{ MCC_TRACE("br\n"); roi[i] = 0; ben[i] = 0; tim[i] = 0; continue; }
 		saved_cur = ast_cur;
 		ast_cur = trial;
 		m0 = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
 																 : ast_cost_score(trial);
-		t0 = ast_now_ms();
+		/* DETERMINISTIC cost-of-applying proxy: the number of transforms this strategy
+		 * applies (graft/promo/opt counter deltas), NOT wall-clock time. clock() timing
+		 * made the benefit/time sort non-deterministic — the strategy order, and thus
+		 * codegen, could then differ between the AOT and JIT compile of the same
+		 * function, threatening the AOT==JIT invariant. The transform-count delta is a
+		 * pure function of the (identical) cloned AST, so it is stable across runs. */
+		wg = ast_graft_total; wp = ast_promo_total; wo = ast_opt_total;
 		(void)ast_strategies[rows[i]].apply(trial, sym);
-		tim[i] = ast_now_ms() - t0;
+		work = (long)(ast_graft_total - wg) + (ast_promo_total - wp) + (ast_opt_total - wo);
+		if (work < 0)
+			{ MCC_TRACE("br\n"); work = 0; }
+		tim[i] = (unsigned)work; /* reused as the deterministic apply-cost (transforms) */
 		m1 = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
 																 : ast_cost_score(trial);
 		ast_cur = saved_cur;
@@ -14253,8 +14263,8 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 		if (b < 0)
 			{ MCC_TRACE("br\n"); b = 0; } /* a pass that grows the static metric ranks last */
 		ben[i] = b;
-		/* ROI = benefit per ms; floor time at 1 so a free win isn't a div-by-0 and
-		 * a fast pass outranks an equally-beneficial slower one. */
+		/* ROI = benefit per unit apply-cost; floor cost at 1 so a free win isn't a
+		 * div-by-0 and a cheaper pass outranks an equally-beneficial costlier one. */
 		roi[i] = (b * 1000L) / (long)(tim[i] + 1u);
 	}
 	/* measurement is side-effect-free: undo any budget-counter drift from the trial
@@ -14284,7 +14294,7 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 	if (ast_roi_dump) { MCC_TRACE("br\n");
 		fprintf(stderr, "[roi] %s:", funcname ? funcname : "?");
 		for (i = 0; i < nrows; i++)
-			{ MCC_TRACE("br\n"); fprintf(stderr, " %s(roi=%ld b=%ld t=%ums)",
+			{ MCC_TRACE("br\n"); fprintf(stderr, " %s(roi=%ld b=%ld cost=%u)",
 									ast_strategies[rows[i]].name, roi[i], ben[i], tim[i]); }
 		fprintf(stderr, "\n");
 	}
