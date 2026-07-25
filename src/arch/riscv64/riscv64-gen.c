@@ -1496,6 +1496,26 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	ER(0x33, sign ? 1 : 3, d, a, b, 1);
 }
 
+/* math-builtin hardware inlines (RV64 F/D baseline). fabs = fsgnjx.d rd,rs,rs
+ * (func3=2, func7=0x11 double / 0x10 single); fsqrt.d rd,rs (func3=rm=7 dynamic,
+ * rs2=0, func7=0x2D double / 0x2C single). Bit-exact vs libm; fsqrt sets no
+ * errno (caller gates on a provably-nonneg arg). No floor/ceil/trunc: RV64
+ * baseline has no round-to-integral insn (gcc keeps the libcall too), so
+ * gen_round is not provided here and never referenced on riscv64. */
+ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
+	int bt = vtop->type.t & VT_BTYPE, r;
+	gv(MCC_RC_FLOAT);
+	r = freg(vtop->r);
+	ER(0x53, 2, r, r, r, bt == VT_DOUBLE ? 0x11 : 0x10);
+}
+
+ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
+	int bt = vtop->type.t & VT_BTYPE, r;
+	gv(MCC_RC_FLOAT);
+	r = freg(vtop->r);
+	ER(0x53, 7, r, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c);
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	int rs1, rs2, rd, dbl, invert;
 	if (vtop[0].type.t == VT_LDOUBLE) { MCC_TRACE("br\n");

@@ -4899,7 +4899,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 		} else if (uop == AST_OP_FABS) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
@@ -4914,6 +4914,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_cast(&ct);
 			gen_sqrt();
 			vtop->type = ct;
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 		} else if (uop == AST_OP_FLOOR || uop == AST_OP_CEIL ||
 							 uop == AST_OP_TRUNC) { MCC_TRACE("br\n");
 			CType ct;
@@ -4922,6 +4923,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_cast(&ct);
 			gen_round(uop == AST_OP_FLOOR ? 0 : uop == AST_OP_CEIL ? 1 : 2);
 			vtop->type = ct;
+#endif
 #endif
 		} else { MCC_TRACE("br\n");
 			inc((int)ast_ival(a, n), uop);
@@ -5861,7 +5863,7 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 			ab[i] = ast_ival(a, lit);
 		}
 		if (i < nargs) { MCC_TRACE("br\n");
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 			/* fabs(x) with a runtime x: lower to an inline sign-clear (andpd)
 			 * instead of a libcall. Bit-exact, SSE2-baseline. The parser already
 			 * coerced the arg to bt, and the replay re-casts to bt before emit. */
@@ -5897,7 +5899,10 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 			}
 			/* floor/ceil/trunc(x) with a runtime x: single roundsd/ss (bit-exact
 			 * vs libm, incl. NaN/inf/large). Opt-in (roundsd is SSE4.1, not the
-			 * SSE2 baseline) via MCC_AST_ROUND_INLINE. bid 2=floor,3=ceil,4=trunc. */
+			 * SSE2 baseline) via MCC_AST_ROUND_INLINE. bid 2=floor,3=ceil,4=trunc.
+			 * x86_64/arm64 only — riscv64 baseline has no round-to-integral insn
+			 * (gcc keeps the libcall too). */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 			if ((bid == 2 || bid == 3 || bid == 4) && nargs == 1 &&
 					ast_round_inline_env) { MCC_TRACE("br\n");
 				AstLocal arg = ast_child(a, n, 1);
@@ -5914,7 +5919,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-#endif
+#endif /* round: x86_64 || arm64 */
+#endif /* fabs/sqrt: x86_64 || arm64 || riscv64 */
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&
 					ast_bfold_minmax_inf(a, n, bid, bt, &pres)) { MCC_TRACE("br\n");
@@ -5949,9 +5955,9 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
  * `call sqrt` libcall at -O4). The rewrites are always a strict improvement and
  * independent of emit-size scoring. Idempotent with ast_bfold_run (which skips
  * the already-rewritten AST_Unary nodes). Only RUNTIME args are rewritten;
- * constant args are left for bfold's compile-time fold. x86_64 + arm64 (mirrors
- * the ast_bfold_run math-inline guard). */
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+ * constant args are left for bfold's compile-time fold. x86_64 + arm64 + riscv64
+ * (mirrors the ast_bfold_run math-inline guard; round is x86_64/arm64-only). */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_math_inline_env)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -5977,8 +5983,13 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (bi == nfn)
 			{ MCC_TRACE("br\n"); continue; }
 		int bid = ast_bfold_tab[bi].id;
-		/* sqrt(0), fabs(1); floor(2)/ceil(3)/trunc(4) only when opt-in */
+		/* sqrt(0), fabs(1); floor(2)/ceil(3)/trunc(4) only when opt-in AND on an
+		 * arch with a round-to-integral instruction (x86_64/arm64, not riscv64). */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 		int is_round = (bid == 2 || bid == 3 || bid == 4) && ast_round_inline_env;
+#else
+		int is_round = 0;
+#endif
 		if (bid != 0 && bid != 1 && !is_round)
 			{ MCC_TRACE("br\n"); continue; }
 		int bgate = bid == 0 ? ast_bfold_sqrt_env
