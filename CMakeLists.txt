@@ -1559,7 +1559,7 @@ if(MCC_TARGETOS STREQUAL "Darwin" AND NOT MCC_CC_NAME STREQUAL "mcc")
     endif()
     # 10.7 (was 10.6): macOS 10.6 predates the TLS runtime (__tlv_bootstrap), so
     # clang rejects _Thread_local under a 10.6 min. 10.7 is the floor for the
-    # thread-local optimizer state (docs/jit-optimizer-threading.md, item 1).
+    # thread-local optimizer state (docs/TODO.md, JIT runtime §).
     # Bump when unset OR when a stale sub-10.7 value was seeded: some SDK/clang
     # combos pre-seed CMAKE_OSX_DEPLOYMENT_TARGET=10.6 before this point, which a
     # plain `if(NOT ...)` would leave in place and break the local clang build.
@@ -2335,8 +2335,8 @@ if(MCC_BUILD_SANITIZE)
 endif()
 
 # ThreadSanitizer variant (mcc_t) — separate from mcc_s because TSan and ASan
-# cannot be combined. Used to drive the item-1 optimizer-threading data-race
-# audit (docs/jit-optimizer-threading.md). GCC/Clang only.
+# cannot be combined. Used to drive the multi-threaded-optimizer data-race
+# audit (docs/TODO.md, JIT runtime §). GCC/Clang only.
 if(MCC_BUILD_TSAN)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT MCC_TARGETOS STREQUAL "WIN32")
         message(STATUS "mcc tsan (mcc_t): ThreadSanitizer (-fsanitize=thread)")

@@ -1219,7 +1219,7 @@ static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
-/* Item-1 (docs/jit-optimizer-threading.md): scored-path globals marked MCC_OPT_TLS are
+/* Multi-threaded optimizer (docs/TODO.md, JIT runtime §): scored-path globals marked MCC_OPT_TLS are
    thread-local so the pthread search pool scores candidates concurrently without racing.
    Single-threaded (the main compile) this is identical to a plain global. Enabled now that
    the -run/JIT engine executes _Thread_local (10.7 target + runmem TLS setup). */
@@ -14150,7 +14150,7 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 	return 1;
 }
 
-/* Item-1 pthread scoring fan-out (docs/jit-optimizer-threading.md). Same shape as
+/* Multi-threaded optimizer pthread scoring fan-out (docs/TODO.md, JIT runtime §). Same shape as
    the fork pool, but workers are threads sharing one address space — so unlike the
    fork pool it is NOT yet correct: ast_search_score_one still mutates process-global
    optimizer state (ast_cur, the ast_*_env gate flags, fold counters, scratch pools).
