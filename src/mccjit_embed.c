@@ -2220,6 +2220,7 @@ typedef struct MccjitKgc {
 	int nearmatch_on;     /* feature enabled for this KGC (default on) */
 	int nearmatch;        /* accepted: keep + patch (set once the bench gate passes) */
 	int nm_decided;       /* the accept/reject bench has been run (latched) */
+	int nm_benching;      /* a thread is running the accept/reject bench OFF the lock */
 	uint64_t nm_total;    /* near-match: total dispatched calls (call-frequency weighted) */
 	uint64_t nm_match;    /* near-match: calls the variant got right (memo-hit + verify-match) */
 	uint64_t nm_last_corr; /* nm_total at the last NEW correction (stability clock) */
@@ -2745,31 +2746,25 @@ static int mccjit_corr_insert(MccjitKgc *k, const int64_t *tuple, int64_t out) {
    whether the variant is still worth keeping. Returns 1 to SUPPRESS poisoning
    (near-match accepted), 0 to let the caller's poison logic run. Caller holds lock. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
-														 uint32_t ntuples, uint32_t nargs, int wide);
+														 uint32_t ntuples, uint32_t nargs, int wide,
+														 int max_cores);
 
 /* The "benchmarks better" gate: does the variant beat the baseline on the observed
    hot inputs? Sample the memo (the verified-correct inputs the hot distribution is
    made of); a win there means the 98%-common variant path wins, and the rare patched
    path is a table lookup that is <= a baseline call, so the composite wins too. */
-static int mccjit_nearmatch_bench_wins(MccjitKgc *k, void *variant,
-																			 void *baseline) { MCC_TRACE("enter\n");
-	int64_t *sample;
-	uint32_t n = 0, cap = 64, i;
-	int win;
-	if (!variant || !baseline || k->hdr->count == 0)
-		{ MCC_TRACE("br\n"); return 0; }
-	sample = mcc_mallocz((size_t)cap * MCCJIT_KGC_ARITY * sizeof(int64_t));
-	if (!sample)
-		{ MCC_TRACE("br\n"); return 0; }
+/* Copy up to `cap` memo tuples into `sample` (MCCJIT_KGC_ARITY-wide rows). MUST be called
+   with k->lock held (reads the memo). Returns the number of rows built. */
+static uint32_t mccjit_nearmatch_build_sample(MccjitKgc *k, int64_t *sample,
+																							uint32_t cap) { MCC_TRACE("enter\n");
+	uint32_t n = 0, i;
 	for (i = 0; i < k->hdr->count && n < cap; i++) { MCC_TRACE("br\n");
 		uint32_t j;
 		for (j = 0; j < k->arity; j++)
 			{ MCC_TRACE("br\n"); sample[n * MCCJIT_KGC_ARITY + j] = k->tuples[i * k->arity + j]; }
 		n++;
 	}
-	win = mccjit_bench_pair(variant, baseline, sample, n, k->arity, k->ret_wide);
-	mcc_free(sample);
-	return win;
+	return n;
 }
 
 /* Run once per dispatched call (near-match active, not yet decided) — placed on the
@@ -2777,8 +2772,16 @@ static int mccjit_nearmatch_bench_wins(MccjitKgc *k, void *variant,
    further misses occur. Latches: mismatch set overflows the small-jump-table budget ->
    REJECT (poison); a stable small table (no new correction for STABLE calls, past the
    warmup floor) -> BENCH -> accept iff the variant is faster, else poison. Caller holds
-   k->lock. Faithful variants (no corrections) are never decided and pay only this guard. */
+   k->lock. Faithful variants (no corrections) are never decided and pay only this guard.
+   Returns with k->lock HELD: to keep the ~100k-iteration bench off the lock, the sample is
+   built under the lock, then the lock is DROPPED across mccjit_bench_pair and RE-ACQUIRED
+   before latching the verdict. While dropped, other threads see nm_benching and skip the
+   re-bench, falling through to the normal verify/corr path (novel inputs stay verified, so
+   the composite is still 100%% correct); only one bench ever runs. */
 static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline) { MCC_TRACE("enter\n");
+	int64_t *sample;
+	uint32_t n, cap = 64;
+	int win;
 	if (k->nm_decided)
 		{ MCC_TRACE("br\n"); return; }
 	if (k->corr_n >= MCCJIT_NEARMATCH_CORR_MAX) { MCC_TRACE("br\n"); /* open/large domain */
@@ -2793,16 +2796,42 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline)
 	if (k->nm_total < MCCJIT_NEARMATCH_WARMUP ||
 			k->nm_total - k->nm_last_corr < MCCJIT_NEARMATCH_STABLE)
 		{ MCC_TRACE("br\n"); return; } /* mismatch set not yet closed */
-	k->nm_decided = 1;
-	if (mccjit_nearmatch_bench_wins(k, variant, baseline)) { MCC_TRACE("br\n");
-		k->nearmatch = 1; /* small stable table + benchmarks better -> keep and patch */
-		if (mcc_stats_mask)
-			{ MCC_TRACE("br\n"); mcc_stats_jit_nearmatch(); }
-	} else { MCC_TRACE("br\n"); /* not faster: near-match cannot help -> poison */
+	if (k->nm_benching)
+		{ MCC_TRACE("br\n"); return; } /* another thread is already benching this variant */
+	if (!variant || !baseline || k->hdr->count == 0) { MCC_TRACE("br\n"); /* nothing to bench */
+		k->nm_decided = 1;
 		if (mcc_stats_mask && !k->poisoned)
 			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
 		k->poisoned = 1;
+		return;
 	}
+	sample = mcc_mallocz((size_t)cap * MCCJIT_KGC_ARITY * sizeof(int64_t));
+	if (!sample)
+		{ MCC_TRACE("br\n"); return; } /* retry on a later call */
+	n = mccjit_nearmatch_build_sample(k, sample, cap); /* memo read: under lock */
+	k->nm_benching = 1;
+	pthread_mutex_unlock(&k->lock); /* run the bench OFF the lock */
+	/* SINGLE-THREADED (max_cores=1): a one-shot accept/reject decision does not need a
+	   sibling thread pool, and running the JIT'd variant/baseline concurrently from bench
+	   siblings faults on arm64 Windows (incomplete W^X dual-map, docs/TODO) — the crash
+	   that took down jit/selftest-nearmatch on the arm64 CI cells. Single-threaded JIT
+	   execution is proven safe (the warmup dispatch already ran thousands of calls). */
+	win = mccjit_bench_pair(variant, baseline, sample, n, k->arity, k->ret_wide, 1);
+	pthread_mutex_lock(&k->lock);
+	mcc_free(sample);
+	if (!k->nm_decided) { MCC_TRACE("br\n"); /* we own the verdict */
+		k->nm_decided = 1;
+		if (win) { MCC_TRACE("br\n");
+			k->nearmatch = 1; /* small stable table + benchmarks better -> keep and patch */
+			if (mcc_stats_mask)
+				{ MCC_TRACE("br\n"); mcc_stats_jit_nearmatch(); }
+		} else { MCC_TRACE("br\n"); /* not faster: near-match cannot help -> poison */
+			if (mcc_stats_mask && !k->poisoned)
+				{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
+			k->poisoned = 1;
+		}
+	}
+	k->nm_benching = 0;
 }
 
 /* On a verified mismatch under near-match mode: record the (tuple -> baseline) patch
@@ -3052,7 +3081,8 @@ static void *mccjit_bench_sibling_thread(void *arg) { MCC_TRACE("enter\n");
 }
 
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
-														 uint32_t ntuples, uint32_t nargs, int wide) { MCC_TRACE("enter\n");
+														 uint32_t ntuples, uint32_t nargs, int wide,
+														 int max_cores) { MCC_TRACE("enter\n");
 	MccjitBenchSib sib[MCCJIT_BENCH_MAXCORES];
 	pthread_t th[MCCJIT_BENCH_MAXCORES];
 	char started[MCCJIT_BENCH_MAXCORES];
@@ -3069,6 +3099,10 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	if (reps < 1)
 		{ MCC_TRACE("br\n"); reps = 1; }
 	cores = mccjit_bench_cores();
+	/* max_cores>0 caps the sibling pool (1 = single-threaded, no concurrent execution
+	   of the candidate/incumbent). 0 = auto (use every core). */
+	if (max_cores > 0 && cores > max_cores)
+		{ MCC_TRACE("br\n"); cores = max_cores; }
 	for (i = 0; i < cores; i++) { MCC_TRACE("br\n");
 		sib[i].cand = cand;
 		sib[i].incumbent = incumbent;
@@ -3119,7 +3153,7 @@ MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 	for (i = 0; i < nt; i++)
 		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
 			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = st->sample[i][j]; } }
-	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide);
+	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide, 0);
 }
 
 static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
@@ -6334,11 +6368,11 @@ PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1); } }
 
 	r_win = mccjit_bench_pair((void *)mccjit_bench_fast_fn,
-													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1);
+													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1, 0);
 	r_lose = mccjit_bench_pair((void *)mccjit_bench_slow_fn,
-														(void *)mccjit_bench_fast_fn, tuples, nt, 1, 1);
+														(void *)mccjit_bench_fast_fn, tuples, nt, 1, 1, 0);
 	r_tie = mccjit_bench_pair((void *)mccjit_bench_slow_fn,
-													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1);
+													 (void *)mccjit_bench_slow_fn, tuples, nt, 1, 1, 0);
 	unsetenv("MCC_JIT_BENCH_ITERS");
 	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
 	unsetenv("MCC_JIT_BENCH_ROUNDS");
