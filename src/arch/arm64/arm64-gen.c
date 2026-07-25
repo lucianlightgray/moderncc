@@ -2264,6 +2264,38 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	o((sign ? 0x9b407c00u : 0x9bc07c00u) | x | a << 5 | b << 16);
 }
 
+/* Scalar FP data-processing (1 source): 0x1E204000 | ftype<<22 | opcode<<15
+ * | Rn<<5 | Rd. Mirrors gen_opf's FNEG. ftype: single=0, double=1 (bit22).
+ * FABS opcode=1, FSQRT=3, FRINTP(ceil)=9, FRINTM(floor)=10, FRINTZ(trunc)=11.
+ * All bit-exact vs libm (incl. NaN/inf); FSQRT sets no errno (caller gates on
+ * a provably-nonneg arg, like x86_64). ARMv8 baseline — no feature gate. */
+ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
+	uint32_t a, dbl;
+	gv(MCC_RC_FLOAT);
+	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
+	a = fltr(vtop->r);
+	o(0x1e20c000u | dbl << 22 | a | a << 5); /* FABS */
+}
+
+ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
+	uint32_t a, dbl;
+	gv(MCC_RC_FLOAT);
+	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
+	a = fltr(vtop->r);
+	o(0x1e21c000u | dbl << 22 | a | a << 5); /* FSQRT */
+}
+
+ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
+	uint32_t a, dbl, base;
+	base = mode == 0 ? 0x1e254000u   /* FRINTM floor */
+			 : mode == 1 ? 0x1e24c000u   /* FRINTP ceil  */
+									 : 0x1e25c000u;  /* FRINTZ trunc */
+	gv(MCC_RC_FLOAT);
+	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
+	a = fltr(vtop->r);
+	o(base | dbl << 22 | a | a << 5);
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;

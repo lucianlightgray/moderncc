@@ -1735,12 +1735,13 @@ ST_FUNC void gen_increment_tcov(SValue *sv);
 ST_FUNC void gen_mulh(int sign);
 #endif
 
-#ifdef MCC_TARGET_X86_64
-ST_FUNC void gen_opl(int op);
-ST_FUNC void gen_mulh(int sign);
+/* math-builtin hardware inlines: x86_64 (SSE) + arm64 (native FP) */
 ST_FUNC void gen_fabs(void);
 ST_FUNC void gen_sqrt(void);
 ST_FUNC void gen_round(int mode);
+#ifdef MCC_TARGET_X86_64
+ST_FUNC void gen_opl(int op);
+ST_FUNC void gen_mulh(int sign);
 #ifdef MCC_TARGET_PE
 ST_FUNC void gen_vla_result(int addr);
 #endif

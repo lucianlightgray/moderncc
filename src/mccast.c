@@ -1905,9 +1905,15 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", 1);
 	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", 1);
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
-	/* Runtime math-builtin -> inline SSE. First cut: fabs -> andpd sign-clear
-	 * (bit-exact, SSE2-baseline, x86_64 only). On at -O2+. */
+	/* Runtime math-builtin -> inline hardware FP (fabs/sqrt-nonneg). x86_64:
+	 * default-on at -O2+ (soaked/shipped). arm64: same rewrites via native
+	 * FABS/FSQRT, but default-OFF (opt-in `MCC_AST_MATH_INLINE=1`) pending the
+	 * arm64 golden-regen + soak, so default arm64 codegen stays byte-identical. */
+#ifdef MCC_TARGET_X86_64
 	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", s1->optimize >= 2);
+#else
+	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", 0);
+#endif
 	/* MCC_AST_MATH_INLINE_PREPASS (default OFF): also run the fabs/sqrt(nonneg)
 	 * math-inline rewrites as an UNCONDITIONAL pre-pass (ast_math_inline_run),
 	 * before the -O>=4 strategy search. Fixes an -O4-vs-O2 regression: the search's
@@ -4893,7 +4899,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 		} else if (uop == AST_OP_FABS) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
@@ -5855,7 +5861,7 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 			ab[i] = ast_ival(a, lit);
 		}
 		if (i < nargs) { MCC_TRACE("br\n");
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 			/* fabs(x) with a runtime x: lower to an inline sign-clear (andpd)
 			 * instead of a libcall. Bit-exact, SSE2-baseline. The parser already
 			 * coerced the arg to bt, and the replay re-casts to bt before emit. */
@@ -5943,9 +5949,9 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
  * `call sqrt` libcall at -O4). The rewrites are always a strict improvement and
  * independent of emit-size scoring. Idempotent with ast_bfold_run (which skips
  * the already-rewritten AST_Unary nodes). Only RUNTIME args are rewritten;
- * constant args are left for bfold's compile-time fold. x86_64 only (mirrors the
- * ast_bfold_run math-inline, which is under #ifdef MCC_TARGET_X86_64). */
-#ifdef MCC_TARGET_X86_64
+ * constant args are left for bfold's compile-time fold. x86_64 + arm64 (mirrors
+ * the ast_bfold_run math-inline guard). */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_math_inline_env)
 		{ MCC_TRACE("br\n"); return 0; }
