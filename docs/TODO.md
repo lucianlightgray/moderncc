@@ -173,8 +173,6 @@ Classification of every arch/host-scoped gate by how much work stands between it
 - Provide a runnable test for the kernel-fused libSystem path (`MCC_DARWIN_HOST=ON`) — nothing exercises it currently.
 - Promote the `mingw i686` CI cell off `continue-on-error`/`matrix.experimental` (ci.c PLAN_MINGW `{"i686", 1}`) once i386-Windows codegen is proven.
 - Confirm the `-fexcess-precision=standard` i386 WIN32 refflags fix (CMakeLists.txt ~3799) on the `windows-2025-vs2026` UCRT CI image — speculative, only reproduces there.
-- Fix the `linux-clang`/`-cross`/`-release` mccrt-embed build break: host clang rejects `runtime/lib/builtin.c` (`__builtin_bswap64` alias) + `runtime/lib/atomic.c` (`__atomic_*` redeclare); `-fno-builtin` is insufficient — pick `#pragma redefine_extname` or force `MCC_EMBED_MCCRT=OFF` on clang hosts.
-- Wire `tools/i386fastcall-docker.sh` into CMake as a docker-gated ctest (SKIP 77 when docker/`mcc-i386` absent) — committed but not integrated into ctest.
 - Validate stack auto over-alignment on i386-PE and arm64-PE (the test stays x86_64-gated).
 
 ### Failing tests observed on this Windows host (build-win, 2026-07-22) — pre-existing, host-environment, unrelated to the win-open-work changes; logged for completeness regardless of history
