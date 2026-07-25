@@ -755,17 +755,28 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 static int is_hgen_float_aggr(CType *type) { MCC_TRACE("enter\n");
 	if ((type->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 		struct Sym *ref;
-		int btype, nb_fields = 0;
+		int btype = 0, nb_fields = 0;
 
-		ref = type->ref->next;
-		if (ref) { MCC_TRACE("br\n");
-			btype = ref->type.t & VT_BTYPE;
-			if (btype == VT_FLOAT || btype == VT_DOUBLE) { MCC_TRACE("br\n");
-				for (; ref && btype == (ref->type.t & VT_BTYPE); ref = ref->next, nb_fields++)
-					;
-				return !ref && nb_fields <= 4;
+		for (ref = type->ref->next; ref; ref = ref->next) { MCC_TRACE("br\n");
+			/* An array member is VT_PTR|VT_ARRAY; unwrap it to the element type
+			   and count its elements as that many HFA members (float f[4] is a
+			   4-member float HFA). All members must share one float base type. */
+			CType *ft = &ref->type;
+			int count = 1;
+			while ((ft->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY)) { MCC_TRACE("br\n");
+				count *= ft->ref->c;
+				ft = &ft->ref->type;
 			}
+			int fb = ft->t & VT_BTYPE;
+			if (fb != VT_FLOAT && fb != VT_DOUBLE)
+				{ MCC_TRACE("br\n"); return 0; }
+			if (nb_fields == 0)
+				{ MCC_TRACE("br\n"); btype = fb; }
+			else if (fb != btype)
+				{ MCC_TRACE("br\n"); return 0; }
+			nb_fields += count;
 		}
+		return nb_fields > 0 && nb_fields <= 4;
 	}
 	return 0;
 }

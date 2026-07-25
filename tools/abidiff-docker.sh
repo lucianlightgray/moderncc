@@ -82,6 +82,9 @@ struct Big      { long long a, b, c, d; };     /* 32B indirect */
 struct Mixed    { int i; double d; };          /* INTEGER+SSE (x86_64) */
 struct Mixed2   { double d; int i; };          /* SSE+INTEGER (eightbyte order swapped) */
 struct M3       { float f; long l; };          /* SSE(low4)+INTEGER: mixed 16B */
+struct FA       { float f[2]; int i; };        /* array eightbyte: EB0 SSE(float[2]), EB1 INTEGER */
+struct F4A      { float f[4]; };               /* HFA via array (all SSE) */
+struct D2A      { double d[2]; };              /* HFA via array (all SSE) */
 struct Float4   { float a, b, c, d; };          /* homogeneous float aggregate (arm64 HFA) */
 struct DblPair  { double x, y; };               /* 2xSSE / HFA-double */
 struct Three    { int a, b, c; };              /* 12B: crosses arm64 2-reg / SysV split */
@@ -118,6 +121,11 @@ double         mixed2_sum(struct Mixed2 m);
 struct Mixed2  mixed2_make(double d, int i);
 long           m3_sum(struct M3 m);
 struct Mixed   mixed_after(int a,int b,int c,int d,int e, struct Mixed m);
+double         fa_sum(struct FA x);
+float          f4a_sum(struct F4A x);
+struct F4A     f4a_mk(float a,float b,float c,float d);
+double         d2a_sum(struct D2A x);
+struct D2A     d2a_mk(double a,double b);
 float          float4_sum(struct Float4 f);
 struct DblPair dbl_swap(struct DblPair p);
 long long      stack_args(char c, short s, int i, long long l,
@@ -186,6 +194,11 @@ double         mixed2_sum(struct Mixed2 m){ return m.d + (double)m.i; }
 struct Mixed2  mixed2_make(double d, int i){ struct Mixed2 r; r.d=d; r.i=i; return r; }
 long           m3_sum(struct M3 m){ return (long)m.f + m.l; }
 struct Mixed   mixed_after(int a,int b,int c,int d,int e, struct Mixed m){ struct Mixed r; r.i=m.i+a+b+c+d+e; r.d=m.d; return r; }
+double         fa_sum(struct FA x){ return (double)x.f[0]+x.f[1]+x.i; }
+float          f4a_sum(struct F4A x){ return x.f[0]+x.f[1]+x.f[2]+x.f[3]; }
+struct F4A     f4a_mk(float a,float b,float c,float d){ struct F4A r; r.f[0]=a;r.f[1]=b;r.f[2]=c;r.f[3]=d; return r; }
+double         d2a_sum(struct D2A x){ return x.d[0]+x.d[1]; }
+struct D2A     d2a_mk(double a,double b){ struct D2A r; r.d[0]=a;r.d[1]=b; return r; }
 float          float4_sum(struct Float4 f){ return f.a + f.b + f.c + f.d; }
 struct DblPair dbl_swap(struct DblPair p){ struct DblPair r; r.x=p.y; r.y=p.x; return r; }
 long long      stack_args(char c, short s, int i, long long l,
@@ -280,6 +293,15 @@ int main(void){
   { struct M3 m; m.f=1.5f; m.l=100; k++; if(m3_sum(m)!=101) return k; }
   { struct Mixed m; m.i=1; m.d=2.0; struct Mixed r=mixed_after(1,2,3,4,5,m);
     k++; if(r.i!=16||r.d!=2.0) return k; }
+  /* Array-typed eightbytes: a struct member that is an array is VT_PTR|VT_ARRAY
+     internally; it must be classified by its ELEMENT type, not as a pointer.
+     FA{float[2];int} is mixed SSE+INTEGER; F4A{float[4]}/D2A{double[2]} are HFAs
+     passed/returned entirely in SSE regs (mcc used to put them in GP regs). */
+  { struct FA x; x.f[0]=1.5f; x.f[1]=2.5f; x.i=10; k++; if(fa_sum(x)!=14.0) return k; }
+  { struct F4A x; x.f[0]=1.5f;x.f[1]=2.5f;x.f[2]=3.0f;x.f[3]=4.0f; k++; if(f4a_sum(x)!=11.0f) return k; }
+  { struct F4A r=f4a_mk(1,2,3,4); k++; if(r.f[0]!=1||r.f[3]!=4) return k; }
+  { struct D2A x; x.d[0]=2.5;x.d[1]=8.0; k++; if(d2a_sum(x)!=10.5) return k; }
+  { struct D2A r=d2a_mk(3.5,4.5); k++; if(r.d[0]!=3.5||r.d[1]!=4.5) return k; }
   { struct Float4 f; f.a=1.5f; f.b=2.25f; f.c=-0.75f; f.d=4.0f; k++; if(float4_sum(f)!=7.0f) return k; }
   { struct DblPair p,r; p.x=2.0; p.y=8.0; r=dbl_swap(p); k++; if(r.x!=8.0||r.y!=2.0) return k; }
   { k++; if(stack_args((char)1,(short)2,3,4LL,5,6,7,8,9,10)!=55LL) return k; }

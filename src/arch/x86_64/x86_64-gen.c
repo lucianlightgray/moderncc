@@ -1080,6 +1080,12 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	Sym *f;
 
+	/* An array member is represented as VT_PTR|VT_ARRAY; classify it by its
+	   ELEMENT type, not as a pointer (which would wrongly make a float array
+	   INTEGER). Descend multi-dimensional arrays to the base element. */
+	while ((ty->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY))
+		{ MCC_TRACE("br\n"); ty = &ty->ref->type; }
+
 	switch (ty->t & VT_BTYPE) { MCC_TRACE("br\n");
 	case VT_VOID:
 		return x86_64_mode_none;
