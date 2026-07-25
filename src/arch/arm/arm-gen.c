@@ -752,31 +752,45 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 }
 #endif
 
+/* Count the homogeneous float/double members of an HFA-eligible type, recursing
+   into nested structs and arrays (AAPCS: an HFA is an aggregate all of whose
+   members are the same floating-point type). *pbt latches that base type across
+   the whole aggregate. Returns the member count, or -1 if a non-float member or a
+   second float type is seen. array f[4] => 4 members; struct{struct In2 p; float c}
+   => 3 members. */
+static int arm_hfa_members(CType *type, int *pbt) { MCC_TRACE("enter\n");
+	CType *ft = type;
+	int count = 1;
+	while ((ft->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY)) { MCC_TRACE("br\n");
+		count *= ft->ref->c;
+		ft = &ft->ref->type;
+	}
+	int fb = ft->t & VT_BTYPE;
+	if (fb == VT_FLOAT || fb == VT_DOUBLE) { MCC_TRACE("br\n");
+		if (*pbt == 0)
+			{ MCC_TRACE("br\n"); *pbt = fb; }
+		else if (*pbt != fb)
+			{ MCC_TRACE("br\n"); return -1; }
+		return count;
+	}
+	if (fb == VT_STRUCT) { MCC_TRACE("br\n");
+		int total = 0;
+		for (struct Sym *f = ft->ref->next; f; f = f->next) { MCC_TRACE("br\n");
+			int n = arm_hfa_members(&f->type, pbt);
+			if (n < 0)
+				{ MCC_TRACE("br\n"); return -1; }
+			total += n;
+		}
+		return total * count;
+	}
+	return -1;
+}
+
 static int is_hgen_float_aggr(CType *type) { MCC_TRACE("enter\n");
 	if ((type->t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
-		struct Sym *ref;
-		int btype = 0, nb_fields = 0;
-
-		for (ref = type->ref->next; ref; ref = ref->next) { MCC_TRACE("br\n");
-			/* An array member is VT_PTR|VT_ARRAY; unwrap it to the element type
-			   and count its elements as that many HFA members (float f[4] is a
-			   4-member float HFA). All members must share one float base type. */
-			CType *ft = &ref->type;
-			int count = 1;
-			while ((ft->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY)) { MCC_TRACE("br\n");
-				count *= ft->ref->c;
-				ft = &ft->ref->type;
-			}
-			int fb = ft->t & VT_BTYPE;
-			if (fb != VT_FLOAT && fb != VT_DOUBLE)
-				{ MCC_TRACE("br\n"); return 0; }
-			if (nb_fields == 0)
-				{ MCC_TRACE("br\n"); btype = fb; }
-			else if (fb != btype)
-				{ MCC_TRACE("br\n"); return 0; }
-			nb_fields += count;
-		}
-		return nb_fields > 0 && nb_fields <= 4;
+		int btype = 0;
+		int n = arm_hfa_members(type, &btype);
+		return n > 0 && n <= 4;
 	}
 	return 0;
 }

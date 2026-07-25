@@ -85,6 +85,11 @@ struct M3       { float f; long l; };          /* SSE(low4)+INTEGER: mixed 16B *
 struct FA       { float f[2]; int i; };        /* array eightbyte: EB0 SSE(float[2]), EB1 INTEGER */
 struct F4A      { float f[4]; };               /* HFA via array (all SSE) */
 struct D2A      { double d[2]; };              /* HFA via array (all SSE) */
+struct In2      { float a, b; };
+struct NHFA     { struct In2 p; float c; };    /* nested HFA: 3 float members */
+struct DNest    { struct { double x; } a; double b; }; /* nested double HFA: 2 members */
+struct SArr     { struct In2 v[2]; };          /* array-of-struct HFA: 4 float members */
+struct BoolM    { _Bool ok; double d; };       /* _Bool + double (mixed on x86_64) */
 struct Float4   { float a, b, c, d; };          /* homogeneous float aggregate (arm64 HFA) */
 struct DblPair  { double x, y; };               /* 2xSSE / HFA-double */
 struct Three    { int a, b, c; };              /* 12B: crosses arm64 2-reg / SysV split */
@@ -126,6 +131,11 @@ float          f4a_sum(struct F4A x);
 struct F4A     f4a_mk(float a,float b,float c,float d);
 double         d2a_sum(struct D2A x);
 struct D2A     d2a_mk(double a,double b);
+float          nhfa_sum(struct NHFA x);
+struct NHFA    nhfa_mk(float a,float b,float c);
+double         dnest_sum(struct DNest x);
+float          sarr_sum(struct SArr x);
+double         boolm_sum(struct BoolM x);
 float          float4_sum(struct Float4 f);
 struct DblPair dbl_swap(struct DblPair p);
 long long      stack_args(char c, short s, int i, long long l,
@@ -199,6 +209,11 @@ float          f4a_sum(struct F4A x){ return x.f[0]+x.f[1]+x.f[2]+x.f[3]; }
 struct F4A     f4a_mk(float a,float b,float c,float d){ struct F4A r; r.f[0]=a;r.f[1]=b;r.f[2]=c;r.f[3]=d; return r; }
 double         d2a_sum(struct D2A x){ return x.d[0]+x.d[1]; }
 struct D2A     d2a_mk(double a,double b){ struct D2A r; r.d[0]=a;r.d[1]=b; return r; }
+float          nhfa_sum(struct NHFA x){ return x.p.a+x.p.b+x.c; }
+struct NHFA    nhfa_mk(float a,float b,float c){ struct NHFA r; r.p.a=a;r.p.b=b;r.c=c; return r; }
+double         dnest_sum(struct DNest x){ return x.a.x+x.b; }
+float          sarr_sum(struct SArr x){ return x.v[0].a+x.v[0].b+x.v[1].a+x.v[1].b; }
+double         boolm_sum(struct BoolM x){ return (x.ok?1.0:0.0)+x.d; }
 float          float4_sum(struct Float4 f){ return f.a + f.b + f.c + f.d; }
 struct DblPair dbl_swap(struct DblPair p){ struct DblPair r; r.x=p.y; r.y=p.x; return r; }
 long long      stack_args(char c, short s, int i, long long l,
@@ -302,6 +317,15 @@ int main(void){
   { struct F4A r=f4a_mk(1,2,3,4); k++; if(r.f[0]!=1||r.f[3]!=4) return k; }
   { struct D2A x; x.d[0]=2.5;x.d[1]=8.0; k++; if(d2a_sum(x)!=10.5) return k; }
   { struct D2A r=d2a_mk(3.5,4.5); k++; if(r.d[0]!=3.5||r.d[1]!=4.5) return k; }
+  /* Nested / array-of-struct HFAs: an HFA is homogeneous float/double RECURSIVELY
+     (AAPCS). NHFA{struct In2;float}=3 floats, DNest=2 doubles, SArr{In2[2]}=4
+     floats -- all passed in VFP/SSE regs. BoolM{_Bool;double} is mixed on x86_64.
+     The armv7 is_hgen_float_aggr now recurses nested structs + arrays. */
+  { struct NHFA x; x.p.a=1.5f;x.p.b=2.5f;x.c=3.0f; k++; if(nhfa_sum(x)!=7.0f) return k; }
+  { struct NHFA r=nhfa_mk(2,3,4); k++; if(r.p.a!=2||r.p.b!=3||r.c!=4) return k; }
+  { struct DNest x; x.a.x=2.5;x.b=8.0; k++; if(dnest_sum(x)!=10.5) return k; }
+  { struct SArr x; x.v[0].a=1;x.v[0].b=2;x.v[1].a=3;x.v[1].b=4; k++; if(sarr_sum(x)!=10.0f) return k; }
+  { struct BoolM x; x.ok=1;x.d=4.5; k++; if(boolm_sum(x)!=5.5) return k; }
   { struct Float4 f; f.a=1.5f; f.b=2.25f; f.c=-0.75f; f.d=4.0f; k++; if(float4_sum(f)!=7.0f) return k; }
   { struct DblPair p,r; p.x=2.0; p.y=8.0; r=dbl_swap(p); k++; if(r.x!=8.0||r.y!=2.0) return k; }
   { k++; if(stack_args((char)1,(short)2,3,4LL,5,6,7,8,9,10)!=55LL) return k; }
