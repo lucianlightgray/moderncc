@@ -90,6 +90,11 @@ struct NHFA     { struct In2 p; float c; };    /* nested HFA: 3 float members */
 struct DNest    { struct { double x; } a; double b; }; /* nested double HFA: 2 members */
 struct SArr     { struct In2 v[2]; };          /* array-of-struct HFA: 4 float members */
 struct BoolM    { _Bool ok; double d; };       /* _Bool + double (mixed on x86_64) */
+struct S3       { char a,b,c; };               /* 3B odd-size struct */
+struct S7       { char a,b,c,d,e,f,g; };       /* 7B odd-size struct */
+struct SF1      { float f; };                  /* single-float HFA (1 member) */
+struct LD1      { long double ld; };           /* struct wrapping long double */
+struct FB       { float f; int b:20; };        /* float + bitfield (riscv64 FP-struct flatten) */
 struct Float4   { float a, b, c, d; };          /* homogeneous float aggregate (arm64 HFA) */
 struct DblPair  { double x, y; };               /* 2xSSE / HFA-double */
 struct Three    { int a, b, c; };              /* 12B: crosses arm64 2-reg / SysV split */
@@ -136,6 +141,12 @@ struct NHFA    nhfa_mk(float a,float b,float c);
 double         dnest_sum(struct DNest x);
 float          sarr_sum(struct SArr x);
 double         boolm_sum(struct BoolM x);
+long           s3_sum(struct S3 x);
+long           s7_sum(struct S7 x);
+float          sf1_sum(struct SF1 x);
+struct SF1     sf1_mk(float f);
+long double    ld1_sum(struct LD1 x);
+double         fb_sum(struct FB x);
 float          float4_sum(struct Float4 f);
 struct DblPair dbl_swap(struct DblPair p);
 long long      stack_args(char c, short s, int i, long long l,
@@ -214,6 +225,12 @@ struct NHFA    nhfa_mk(float a,float b,float c){ struct NHFA r; r.p.a=a;r.p.b=b;
 double         dnest_sum(struct DNest x){ return x.a.x+x.b; }
 float          sarr_sum(struct SArr x){ return x.v[0].a+x.v[0].b+x.v[1].a+x.v[1].b; }
 double         boolm_sum(struct BoolM x){ return (x.ok?1.0:0.0)+x.d; }
+long           s3_sum(struct S3 x){ return (long)x.a+x.b+x.c; }
+long           s7_sum(struct S7 x){ return (long)x.a+x.b+x.c+x.d+x.e+x.f+x.g; }
+float          sf1_sum(struct SF1 x){ return x.f; }
+struct SF1     sf1_mk(float f){ struct SF1 r; r.f=f; return r; }
+long double    ld1_sum(struct LD1 x){ return x.ld; }
+double         fb_sum(struct FB x){ return (double)x.f + x.b; }
 float          float4_sum(struct Float4 f){ return f.a + f.b + f.c + f.d; }
 struct DblPair dbl_swap(struct DblPair p){ struct DblPair r; r.x=p.y; r.y=p.x; return r; }
 long long      stack_args(char c, short s, int i, long long l,
@@ -326,6 +343,17 @@ int main(void){
   { struct DNest x; x.a.x=2.5;x.b=8.0; k++; if(dnest_sum(x)!=10.5) return k; }
   { struct SArr x; x.v[0].a=1;x.v[0].b=2;x.v[1].a=3;x.v[1].b=4; k++; if(sarr_sum(x)!=10.0f) return k; }
   { struct BoolM x; x.ok=1;x.d=4.5; k++; if(boolm_sum(x)!=5.5) return k; }
+  /* Odd-size small structs, a single-float HFA, a long-double-wrapping struct,
+     and a float+bitfield struct. FB{float f; int b:20} exercised a riscv64 callee
+     bug: the flattened integer field of a hardware-FP struct was homed at i*8
+     instead of its real byte offset, so a packed int (offset 4, not 8) was stored
+     to the wrong slot -- fixed in reg-pass prolog to use fieldofs. */
+  { struct S3 x; x.a=1;x.b=2;x.c=3; k++; if(s3_sum(x)!=6) return k; }
+  { struct S7 x; x.a=1;x.b=2;x.c=3;x.d=4;x.e=5;x.f=6;x.g=7; k++; if(s7_sum(x)!=28) return k; }
+  { struct SF1 x; x.f=3.5f; k++; if(sf1_sum(x)!=3.5f) return k; }
+  { struct SF1 r=sf1_mk(1.25f); k++; if(r.f!=1.25f) return k; }
+  { struct LD1 x; x.ld=2.5L; k++; if(ld1_sum(x)!=2.5L) return k; }
+  { struct FB x; x.f=1.5f; x.b=100; k++; if(fb_sum(x)!=101.5) return k; }
   { struct Float4 f; f.a=1.5f; f.b=2.25f; f.c=-0.75f; f.d=4.0f; k++; if(float4_sum(f)!=7.0f) return k; }
   { struct DblPair p,r; p.x=2.0; p.y=8.0; r=dbl_swap(p); k++; if(r.x!=8.0||r.y!=2.0) return k; }
   { k++; if(stack_args((char)1,(short)2,3,4LL,5,6,7,8,9,10)!=55LL) return k; }

@@ -953,7 +953,10 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 				} else if (prc[1 + i] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 					ES(0x27, (size / regcount) == 4 ? 2 : 3, 8, 10 + areg[1]++, loc + (fieldofs[i + 1] >> 4));
 				} else { MCC_TRACE("br\n");
-					ES(0x23, 3, 8, 10 + areg[0]++, loc + i * 8);
+					/* store at the field's real byte offset (fieldofs), not i*8 -- a
+					   packed integer field (e.g. the int in {float@0; int@4}) is not
+					   8-byte spaced. Mirrors the FLOAT branch above. */
+					ES(0x23, 3, 8, 10 + areg[0]++, loc + (fieldofs[i + 1] >> 4));
 				}
 			}
 		}
