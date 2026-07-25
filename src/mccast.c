@@ -1567,6 +1567,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 	}
 }
 static int ast_promote_env;
+static int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
 static int ast_inline_env;
@@ -1830,6 +1831,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
+	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
 	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
 																s1->optimize >= 3 && !s1->optimize_size);
@@ -4403,8 +4405,19 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				sz = type_size(&ct.ref->type, &al);
 			}
 		}
+		/* MCC_AST_PROMO_ARROW: a pointer local read via `->` (AST_OP_MEMBER_ARROW)
+		 * does NOT escape — the pointer VALUE is loaded and dereferenced to other
+		 * memory; the pointer's own slot is neither addressed nor aliased. The base
+		 * poison loop conservatively poisons the local for ANY unary with a
+		 * local-Ref child (via coff[j]==off, sz==0 for non-ADDR ops), which blocks
+		 * promoting hot pointers like nbody advance()'s p=&b[i]/q=&b[j] (reloaded
+		 * from the stack on every field access). Skipping the poison here lets them
+		 * promote. AST_OP_ADDR (real address escape) and its sz-range poison are
+		 * unaffected. Gated, default OFF ⇒ byte-identical. */
+		int skip_arrow = ast_promo_arrow_env && ast_op(a, n) == AST_OP_MEMBER_ARROW;
 		for (int j = 0; j < nc; j++)
-			{ MCC_TRACE("br\n"); if (coff[j] == off || (sz > 0 && coff[j] >= off && coff[j] < off + sz))
+			{ MCC_TRACE("br\n"); if (!skip_arrow &&
+					(coff[j] == off || (sz > 0 && coff[j] >= off && coff[j] < off + sz)))
 				{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
 	}
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
