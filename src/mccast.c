@@ -8430,6 +8430,11 @@ static int ast_range_run(AstArena *a) { MCC_TRACE("enter\n");
  * deferred (they need a shared-quotient temp / duplication). */
 static MCC_OPT_TLS int ast_divmagic_folds;
 
+#ifdef MCC_TARGET_I386
+static int ast_divmagic_materialize(AstArena *a, AstLocal n, AstLocal x, int xt,
+																		uint64_t xref, int *off_out);
+#endif
+
 static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, ct, xt;
 	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), xu, prod, hi, hi32;
@@ -8451,11 +8456,25 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	mag = mcc_magicu(C);
 	if (mag.a && mag.s < 1) /* add-correction needs s>=1 for the (s-1) shift; skip degenerate */
 		{ MCC_TRACE("br\n"); return 0; }
+#ifdef MCC_TARGET_I386
+	/* i386: materialize x once (see ast_divmagic_try_signed) so the several x-reads
+	 * don't re-read x's source slot, which the 5-reg allocator reuses as scratch. */
+	int xoff;
+	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
+		{ MCC_TRACE("br\n"); return 0; }
+#define DMX() ast_bf_localref(a, xoff, xt, xref)
+#else
+#define DMX() ast_dup_sub(a, x)
+#endif
 	{
 		AstLocal inner;
 		uint64_t shamt;
 		/* hi32 = (uint32)(((uint64)x * M) >> 32)  — the mul-high, mirrors mcc_divu_apply */
+#ifdef MCC_TARGET_I386
+		xu = ast_bf_ucast(a, U64, ast_bf_localref(a, xoff, xt, xref)); /* read materialized x */
+#else
 		xu = ast_bf_ucast(a, U64, x); /* (u64)x, dups x */
+#endif
 		prod = ast_bf_bin(a, '*', U64, xu, ast_bf_lit(a, U64, mag.M));
 		hi = ast_bf_bin(a, TOK_SHR, U64, prod, ast_bf_lit(a, U64, 32));
 		hi32 = ast_node(a, AST_Convert);
@@ -8465,7 +8484,7 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			inner = hi32;
 			shamt = (uint64_t)mag.s;
 		} else { MCC_TRACE("br\n"); /* add-correction: t = ((x - hi32) >> 1) + hi32; quotient = t >> (s-1) */
-			AstLocal sub = ast_bf_bin(a, '-', U32, ast_dup_sub(a, x), hi32);
+			AstLocal sub = ast_bf_bin(a, '-', U32, DMX(), hi32);
 			AstLocal shr1 = ast_bf_bin(a, TOK_SHR, U32, sub, ast_bf_lit(a, U32, 1));
 			inner = ast_bf_bin(a, '+', U32, shr1, ast_dup_sub(a, hi32)); /* dup -> 2x mul-high */
 			shamt = (uint64_t)(mag.s - 1);
@@ -8486,10 +8505,11 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			AstLocal q = ast_bf_bin(a, TOK_SHR, U32, inner, ast_bf_lit(a, U32, shamt));
 			AstLocal qC = ast_bf_bin(a, '*', U32, q, ast_bf_lit(a, U32, C));
 			ast_set_op(a, n, '-');
-			ast_add_child(a, n, ast_dup_sub(a, x));
+			ast_add_child(a, n, DMX());
 			ast_add_child(a, n, qC);
 		}
 	}
+#undef DMX
 	return 1;
 }
 
