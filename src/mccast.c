@@ -5699,12 +5699,22 @@ static int ast_expr_pure(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\
  * sqrt(n) can be a bare sqrtsd with no errno=EDOM branch (gcc does the same
  * elision under VRP). A false negative just keeps the libcall; a false positive
  * would only drop errno on a domain error, never corrupt the numeric result. */
+static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth);
+
 static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || depth <= 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	while (ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
 		{ MCC_TRACE("br\n"); n = ast_first_child(a, n); }
 	int k = ast_kind(a, n);
+	/* A local whose single reaching def is a nonneg expr (and whose address is
+	 * never taken) reads nonneg at every use — lets sqrt(d2) inline when d2 is a
+	 * temp holding e.g. dx*dx+dy*dy+dz*dz (nbody advance). Gated with the
+	 * math-inline pre-pass so default -O2/-O4 stays byte-identical; the failure
+	 * mode is safe regardless (a false positive only drops errno on a domain
+	 * error, never corrupts the sqrt result). */
+	if (k == AST_Ref && ast_math_inline_prepass_env)
+		{ MCC_TRACE("br\n"); return ast_local_nonneg(a, n, depth); }
 	if (k == AST_Literal) { MCC_TRACE("br\n");
 		int bt = ast_type_t(a, n) & VT_BTYPE;
 		uint64_t v = ast_ival(a, n);
@@ -5730,6 +5740,44 @@ static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("ente
 		return 0;
 	}
 	return 0;
+}
+
+/* `ref` is a Ref. Return 1 if it refers to a local (VT_LOCAL, non-SYM) that
+ * (a) has its address NEVER taken anywhere in the function (no aliasing writes),
+ * and (b) has EXACTLY ONE defining Store whose value is provably nonneg. Then
+ * every load of the local reads a nonneg value. Whole-arena scan; bounded by
+ * `depth` recursion. Used only under MCC_AST_MATH_INLINE_PREPASS. */
+static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth) { MCC_TRACE("enter\n");
+	if (depth <= 0 || ast_kind(a, ref) != AST_Ref)
+		{ MCC_TRACE("br\n"); return 0; }
+	int rop = ast_op(a, ref);
+	if ((rop & VT_VALMASK) != VT_LOCAL || (rop & VT_SYM))
+		{ MCC_TRACE("br\n"); return 0; }
+	int64_t off = (int64_t)ast_ival(a, ref);
+	AstLocal nn = ast_count(a), def = AST_NONE;
+	int ndefs = 0;
+	for (AstLocal m = 0; m < nn; m++) { MCC_TRACE("br\n");
+		int mk = ast_kind(a, m);
+		if (mk == AST_Unary && ast_op(a, m) == AST_OP_ADDR) { MCC_TRACE("br\n");
+			AstLocal c = ast_first_child(a, m);
+			if (c != AST_NONE && ast_kind(a, c) == AST_Ref &&
+					(ast_op(a, c) & VT_VALMASK) == VT_LOCAL && !(ast_op(a, c) & VT_SYM) &&
+					(int64_t)ast_ival(a, c) == off)
+				{ MCC_TRACE("br\n"); return 0; } /* address taken -> may alias */
+		}
+		if (mk == AST_Store) { MCC_TRACE("br\n");
+			AstLocal tgt = ast_child(a, m, 0);
+			if (tgt != AST_NONE && ast_kind(a, tgt) == AST_Ref &&
+					(ast_op(a, tgt) & VT_VALMASK) == VT_LOCAL && !(ast_op(a, tgt) & VT_SYM) &&
+					(int64_t)ast_ival(a, tgt) == off) { MCC_TRACE("br\n");
+				ndefs++;
+				def = m;
+			}
+		}
+	}
+	if (ndefs != 1 || def == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_expr_nonneg(a, ast_child(a, def, 1), depth - 1);
 }
 
 static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
