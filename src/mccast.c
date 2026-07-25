@@ -1517,6 +1517,9 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 #define AST_STRAT_COUNT_MAX 24
 #define AST_CYCLE_MAX 8
 static int ast_search_order_env;
+static int ast_search_fullset_env;
+static int ast_roi_env;
+static int ast_roi_dump;
 static int ast_cycle_env;
 static int ast_strat_order[AST_STRAT_COUNT_MAX];
 static int ast_strat_order_n;
@@ -1776,6 +1779,18 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_pthreads_env = ast_env_gate("MCC_AST_SEARCH_PTHREADS", 0);
 	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
 	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
+	/* After the emit-size combo search picks its (possibly subset) winning order,
+	 * append every remaining gated strategy so each ticks >=1x within the budget —
+	 * the search's size-optimized order leads, the omitted passes (bfold/ivsr/…)
+	 * still get a turn in the fixpoint cycle. On by default. */
+	ast_search_fullset_env = ast_env_gate("MCC_AST_SEARCH_FULLSET", 1);
+	/* ROI/time strategy scheduler (MCC_AST_ROI): instead of the emit-size combo
+	 * search, measure each strategy's benefit (cost- or emit-size reduction) per
+	 * unit apply-time on a clone and order the round-robin by that ROI, high first.
+	 * Every strategy still ticks (full-set order). Off by default pending the plb
+	 * soak + the phase-2 runtime (JIT-score) benefit signal. */
+	ast_roi_env = ast_env_gate("MCC_AST_ROI", 0);
+	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
@@ -13984,6 +13999,18 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 						if (r >= 0 && r < AST_STRAT_COUNT && ast_strategies[r].gate())
 							{ MCC_TRACE("br\n"); ast_strat_order[kk++] = r; }
 					}
+					/* Same coverage guarantee for a cached (possibly subset) order:
+					 * append any gated strategy missing from the memo so each ticks. */
+					if (ast_search_fullset_env) { MCC_TRACE("br\n");
+						int rj, mm;
+						for (rj = 0; rj < nrows && kk < AST_STRAT_COUNT_MAX; rj++) { MCC_TRACE("br\n");
+							int rr = rows[rj], present = 0;
+							for (mm = 0; mm < kk; mm++)
+								{ MCC_TRACE("br\n"); if (ast_strat_order[mm] == rr) { MCC_TRACE("br\n"); present = 1; break; } }
+							if (!present)
+								{ MCC_TRACE("br\n"); ast_strat_order[kk++] = rr; }
+						}
+					}
 					ast_strat_order_n = kk;
 					ast_order_seq_str(ast_strat_order, kk, sq);
 					MCC_TRACE("memo hit order %s hash=%016llx n=%d seq=%s\n", funcname,
@@ -14038,6 +14065,20 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 	ast_graft_total = g0;
 	ast_promo_total = p0;
 	ast_opt_total = o0;
+	/* Coverage guarantee: append any gated strategy the size search dropped, so
+	 * every strategy ticks at least once within the budget (see ast_search_fullset_env).
+	 * best_seq is sized AST_STRAT_COUNT_MAX and nrows <= AST_STRAT_COUNT < that, so
+	 * this never overflows regardless of combo_run's COMBO_MAX subset cap. */
+	if (ast_search_fullset_env) { MCC_TRACE("br\n");
+		int j, m;
+		for (j = 0; j < nrows && best_k < AST_STRAT_COUNT_MAX; j++) { MCC_TRACE("br\n");
+			int r = rows[j], present = 0;
+			for (m = 0; m < best_k; m++)
+				{ MCC_TRACE("br\n"); if (best_seq[m] == r) { MCC_TRACE("br\n"); present = 1; break; } }
+			if (!present)
+				{ MCC_TRACE("br\n"); best_seq[best_k++] = r; }
+		}
+	}
 	for (i = 0; i < best_k; i++)
 		{ MCC_TRACE("br\n"); ast_strat_order[i] = best_seq[i]; }
 	ast_strat_order_n = best_k;
@@ -14135,6 +14176,84 @@ static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	ast_search_gates_set(warm);
 }
 
+/* ROI/time strategy scheduler. For each eligible strategy, measure its marginal
+ * benefit (reduction in the emit-size or static-cost metric) and its apply-time on
+ * a fresh clone of the pristine AST, then order the round-robin cycle by ROI =
+ * benefit/time, highest first. Every strategy is still included exactly once (full
+ * coverage); ROI only sorts them. Replaces the emit-size combo search under
+ * MCC_AST_ROI. Phase 1 benefit is a static proxy (cost or emit size); phase 2 will
+ * fold in a measured runtime (JIT-score) signal so strength-reduction-class passes
+ * that grow static size but cut runtime rank by real speed rather than sinking. */
+static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
+																 int saved_anon, AstArena *pristine) { MCC_TRACE("enter\n");
+	int rows[AST_STRAT_COUNT_MAX], nrows = 0, i, j;
+	long roi[AST_STRAT_COUNT_MAX], ben[AST_STRAT_COUNT_MAX];
+	unsigned tim[AST_STRAT_COUNT_MAX];
+	int g0 = ast_graft_total, p0 = ast_promo_total, o0 = ast_opt_total;
+	for (i = 0; i < AST_STRAT_COUNT; i++)
+		{ MCC_TRACE("br\n"); if (faithful && ast_strategies[i].gate())
+			{ MCC_TRACE("br\n"); rows[nrows++] = i; } }
+	if (nrows == 0)
+		{ MCC_TRACE("br\n"); ast_arena_free(pristine); return; }
+	for (i = 0; i < nrows; i++) { MCC_TRACE("br\n");
+		AstArena *trial = ast_arena_clone(pristine), *saved_cur;
+		long m0, m1, b;
+		unsigned t0;
+		if (!trial)
+			{ MCC_TRACE("br\n"); roi[i] = 0; ben[i] = 0; tim[i] = 0; continue; }
+		saved_cur = ast_cur;
+		ast_cur = trial;
+		m0 = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
+																 : ast_cost_score(trial);
+		t0 = ast_now_ms();
+		(void)ast_strategies[rows[i]].apply(trial, sym);
+		tim[i] = ast_now_ms() - t0;
+		m1 = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
+																 : ast_cost_score(trial);
+		ast_cur = saved_cur;
+		ast_arena_free(trial);
+		b = m0 - m1; /* positive == metric reduced (a win) */
+		if (b < 0)
+			{ MCC_TRACE("br\n"); b = 0; } /* a pass that grows the static metric ranks last */
+		ben[i] = b;
+		/* ROI = benefit per ms; floor time at 1 so a free win isn't a div-by-0 and
+		 * a fast pass outranks an equally-beneficial slower one. */
+		roi[i] = (b * 1000L) / (long)(tim[i] + 1u);
+	}
+	/* measurement is side-effect-free: undo any budget-counter drift from the trial
+	 * applies so the real compile's graft/promo/opt budgets are unchanged. */
+	ast_graft_total = g0;
+	ast_promo_total = p0;
+	ast_opt_total = o0;
+	/* insertion sort rows by ROI descending (stable, nrows <= AST_STRAT_COUNT) */
+	for (i = 1; i < nrows; i++) { MCC_TRACE("br\n");
+		int kr = rows[i];
+		long kv = roi[i], kb = ben[i];
+		unsigned kt = tim[i];
+		for (j = i - 1; j >= 0 && roi[j] < kv; j--) { MCC_TRACE("br\n");
+			rows[j + 1] = rows[j];
+			roi[j + 1] = roi[j];
+			ben[j + 1] = ben[j];
+			tim[j + 1] = tim[j];
+		}
+		rows[j + 1] = kr;
+		roi[j + 1] = kv;
+		ben[j + 1] = kb;
+		tim[j + 1] = kt;
+	}
+	for (i = 0; i < nrows; i++)
+		{ MCC_TRACE("br\n"); ast_strat_order[i] = rows[i]; }
+	ast_strat_order_n = nrows;
+	if (ast_roi_dump) { MCC_TRACE("br\n");
+		fprintf(stderr, "[roi] %s:", funcname ? funcname : "?");
+		for (i = 0; i < nrows; i++)
+			{ MCC_TRACE("br\n"); fprintf(stderr, " %s(roi=%ld b=%ld t=%ums)",
+									ast_strategies[rows[i]].name, roi[i], ben[i], tim[i]); }
+		fprintf(stderr, "\n");
+	}
+	ast_arena_free(pristine);
+}
+
 static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 															int saved_anon) { MCC_TRACE("enter\n");
 	AstArena *pristine;
@@ -14189,6 +14308,10 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 		}
 	}
 #endif
+	if (ast_roi_env) { MCC_TRACE("br\n");
+		ast_search_roi_order(sym, faithful, saved_loc, saved_anon, pristine);
+		return;
+	}
 	if (ast_search_order_env) { MCC_TRACE("br\n");
 		ast_search_select_order(sym, faithful, saved_loc, saved_anon, pristine, h);
 		return;
