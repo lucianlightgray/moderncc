@@ -4176,6 +4176,13 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 #endif
 	if (is_asm)
 		{ MCC_TRACE("br\n"); putdef(cs, "__ASSEMBLER__"); }
+#if MCC_CONFIG_ASM
+	/* This mcc has the integrated assembler compiled in, so the code it builds
+	   may keep inline asm. Sources that must strip asm when built by an asm-off
+	   mcc (e.g. mcchost.c's thread-pointer read) key off this predef rather than
+	   MCC_CONFIG_ASM, which would otherwise re-default to 1 in the compiled unit. */
+	putdef(cs, "__MCC_ASM__");
+#endif
 	if (s1->output_type == MCC_OUTPUT_PREPROCESS)
 		{ MCC_TRACE("br\n"); putdef(cs, "__MCC_PP__"); }
 	if (s1->output_type == MCC_OUTPUT_MEMORY)

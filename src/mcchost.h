@@ -119,12 +119,16 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define ALIGNED(x) __declspec(align(x))
 #define PRINTF_LIKE(x, y)
 #define MAYBE_UNUSED
+/* MSVC's C frontend doesn't accept the C11 keyword _Thread_local; its
+   thread-local storage-class is __declspec(thread). */
+#define MCC_THREAD_LOCAL __declspec(thread)
 #else
 #define NORETURN __attribute__((noreturn))
 #define ALIGNED(x) __attribute__((aligned(x)))
 #define PRINTF_LIKE(x, y) __attribute__((format(printf, (x), (y))))
 
 #define MAYBE_UNUSED __attribute__((unused))
+#define MCC_THREAD_LOCAL _Thread_local
 #endif
 
 #if defined(__GNUC__) && __GNUC__ >= 7

@@ -1107,9 +1107,12 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("en
 	   without MCC_CONFIG_ASM. Emit it whenever the compiling compiler can parse
 	   asm: any non-mcc host cc (the shipped binary is built by one, so exec/tls
 	   works on both presets), or an mcc that itself has asm enabled (full-preset
-	   self-host keeps a correct tpoff). Only the asm-off self-hosted mcc falls to
+	   self-host keeps a correct tpoff). Key off __MCC_ASM__ — the predef mcc emits
+	   only when its own assembler is compiled in — not MCC_CONFIG_ASM, which
+	   re-defaults to 1 inside this unit under the -run/JIT self-host (mccpp
+	   doesn't pass -DMCC_CONFIG_ASM=0). Only the asm-off self-hosted mcc falls to
 	   tp=0, and its -run TLS path is never exercised. */
-#if !defined(__MCC__) || MCC_CONFIG_ASM
+#if !defined(__MCC__) || defined(__MCC_ASM__)
 #if defined(__x86_64__)
 	__asm__ volatile("mov %%fs:0, %0" : "=r"(tp));
 #elif defined(__aarch64__)

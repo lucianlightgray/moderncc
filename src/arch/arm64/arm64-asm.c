@@ -954,6 +954,8 @@ static int parse_sysreg_name(int t) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!strcmp(name, "FPSR") || !strcmp(name, "fpsr"))
 		{ MCC_TRACE("br\n"); return 1; }
+	if (!strcmp(name, "TPIDR_EL0") || !strcmp(name, "tpidr_el0"))
+		{ MCC_TRACE("br\n"); return 2; }
 	return -1;
 }
 
@@ -966,6 +968,9 @@ static void gen_mrs(int rt, int sysreg) { MCC_TRACE("enter\n");
 		break;
 	case 1:
 		instr = ARM64_MRS_FPSR;
+		break;
+	case 2:
+		instr = ARM64_MRS_TPIDR_EL0;
 		break;
 	default:
 		mcc_error("unsupported system register");
@@ -983,6 +988,9 @@ static void gen_msr(int rt, int sysreg) { MCC_TRACE("enter\n");
 		break;
 	case 1:
 		instr = ARM64_MSR_FPSR;
+		break;
+	case 2:
+		instr = ARM64_MSR_TPIDR_EL0;
 		break;
 	default:
 		mcc_error("unsupported system register");

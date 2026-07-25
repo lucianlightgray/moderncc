@@ -13,6 +13,8 @@ unsigned char mcc_log_verbose = 0;
 #include <string.h>
 #include <time.h>
 
+#include "mcchost.h" /* MCC_THREAD_LOCAL (MSVC __declspec(thread) vs _Thread_local); needs FILE */
+
 #include "mccforecast.h"
 
 #include "algorithms/lzss.h"
@@ -757,7 +759,7 @@ static int ast_cost_env;
    Single-threaded (the main compile) this is identical to a plain global. Enabled now that
    the -run/JIT engine executes _Thread_local (10.7 target + runmem TLS setup). */
 #ifndef MCC_OPT_TLS
-#define MCC_OPT_TLS _Thread_local
+#define MCC_OPT_TLS MCC_THREAD_LOCAL
 #endif
 static MCC_OPT_TLS int ast_sethi_env;
 static MCC_OPT_TLS int ast_sethi_leaf_env;
