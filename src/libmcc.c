@@ -897,8 +897,16 @@ static int mcc_dir_has_include(const char *base) { MCC_TRACE("enter\n");
 	if (!base || !base[0])
 		{ MCC_TRACE("br\n"); return 0; }
 	pstrcpy(probe, sizeof probe, base);
-	pstrcat(probe, sizeof probe, "/include");
-	return stat(probe, &st) == 0 && S_ISDIR(st.st_mode);
+	/* Require the freestanding compiler headers (probe for the always-present
+	 * `mccdefs.h` marker), NOT merely an `include/` directory: a `cmake --install`
+	 * tree has BOTH `<prefix>/include` (public API — libmcc.h, no `stddef.h`) and
+	 * `<prefix>/lib/mcc/include` (the real compiler headers). Checking the marker
+	 * makes the `<exe>/../lib/mcc` candidate win instead of the header-less
+	 * `<exe>/..`, so an installed mcc auto-discovers its headers without `-B`. The
+	 * build tree copies runtime/include (incl. mccdefs.h) to `<builddir>/include`,
+	 * so the `<exe>` candidate still matches there — no regression. */
+	pstrcat(probe, sizeof probe, "/include/mccdefs.h");
+	return stat(probe, &st) == 0 && S_ISREG(st.st_mode);
 }
 
 static const char *mcc_auto_mccdir_rel(const char *exedir, const char *suffix) { MCC_TRACE("enter\n");
