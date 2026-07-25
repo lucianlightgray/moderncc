@@ -1991,6 +1991,7 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, trigraphs), 0, "trigraphs"},
 		{offsetof(MCCState, cx_limited_range), 0, "cx-limited-range"},
 		{offsetof(MCCState, fold_math), 0, "fold-math"},
+		{offsetof(MCCState, no_math_errno), FD_INVERT, "math-errno"},
 		{offsetof(MCCState, do_asan_shadow), 0, "asan-shadow"},
 		{offsetof(MCCState, freestanding), 0, "freestanding"},
 		{offsetof(MCCState, freestanding), FD_INVERT, "hosted"},

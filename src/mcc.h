@@ -792,6 +792,7 @@ struct MCCState {
 
 	unsigned char cx_limited_range;
 	unsigned char fold_math;
+	unsigned char no_math_errno; /* -fno-math-errno: don't preserve errno for math builtins (lets sqrt of any sign inline) */
 
 	struct InlineFunc **inline_fns;
 	int nb_inline_fns;

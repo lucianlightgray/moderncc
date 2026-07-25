@@ -1267,6 +1267,7 @@ static MCC_OPT_TLS int ast_bfold_minmax_env;
 static MCC_OPT_TLS int ast_math_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
+static MCC_OPT_TLS int ast_no_math_errno; /* -fno-math-errno: inline sqrt of ANY sign */
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
 static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
@@ -1927,6 +1928,12 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * not the SSE2 baseline — the user opts in for an SSE4.1 target (like gcc's
 	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only. */
 	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
+	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
+	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
+	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
+	 * matches gcc -fno-math-errno. Default: honor errno (nonneg-only inline). */
+	ast_no_math_errno = ast_env_gate("MCC_AST_NO_MATH_ERRNO",
+																	 s1 && s1->no_math_errno);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
 	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
 	 * pending a correctness proof). Each still runs only on `faithful` functions
@@ -5884,7 +5891,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 			 * errno branch (matches gcc's VRP elision). Negative/unknown args
 			 * keep the libcall so errno=EDOM is still set. */
 			if (bid == 0 && nargs == 1 && ast_math_inline_env &&
-					ast_expr_nonneg(a, ast_child(a, n, 1), 24)) { MCC_TRACE("br\n");
+					(ast_no_math_errno ||
+					 ast_expr_nonneg(a, ast_child(a, n, 1), 24))) { MCC_TRACE("br\n");
 				AstLocal arg = ast_child(a, n, 1);
 				ast_clear_children(a, n);
 				ast_set_kind(a, n, AST_Unary);
@@ -6003,8 +6011,10 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		/* constant arg -> leave for bfold's compile-time fold */
 		if (ast_bfold_arg(a, ast_child(a, n, 1), bt) != AST_NONE)
 			{ MCC_TRACE("br\n"); continue; }
-		/* sqrt only inlines with a provably-nonnegative arg (errno-EDOM elision) */
-		if (bid == 0 && !ast_expr_nonneg(a, ast_child(a, n, 1), 24))
+		/* sqrt only inlines with a provably-nonnegative arg (errno-EDOM elision),
+		 * unless -fno-math-errno drops the errno requirement (any-sign inline). */
+		if (bid == 0 && !ast_no_math_errno &&
+				!ast_expr_nonneg(a, ast_child(a, n, 1), 24))
 			{ MCC_TRACE("br\n"); continue; }
 		AstLocal arg = ast_child(a, n, 1);
 		ast_clear_children(a, n);
