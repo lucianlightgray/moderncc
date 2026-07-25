@@ -1516,6 +1516,18 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 	ER(0x53, 7, r, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c);
 }
 
+/* copysign(x,y) = fsgnj.d/.s rd, x, y  (rd = {sign(y), magnitude(x)}).
+ * vtop[-1]=x, vtop=y; result overwrites x's reg, y popped. func3=0 (fsgnj),
+ * func7=0x11 double / 0x10 single. */
+ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
+	int bt = vtop[-1].type.t & VT_BTYPE, a, b;
+	gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
+	a = freg(vtop[-1].r);
+	b = freg(vtop[0].r);
+	vtop--;
+	ER(0x53, 0, a, a, b, bt == VT_DOUBLE ? 0x11 : 0x10);
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	int rs1, rs2, rd, dbl, invert;
 	if (vtop[0].type.t == VT_LDOUBLE) { MCC_TRACE("br\n");

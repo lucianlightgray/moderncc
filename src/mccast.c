@@ -1747,6 +1747,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_FLOOR 0x4000B
 #define AST_OP_CEIL  0x4000C
 #define AST_OP_TRUNC 0x4000D
+#define AST_OP_COPYSIGN 0x4000E /* binary: |arg0| with sign of arg1 */
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -4859,6 +4860,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			break;
 		}
 #endif
+#if defined(MCC_TARGET_RISCV64)
+		if (bop == AST_OP_COPYSIGN) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0)); /* x (magnitude) */
+			ast_replay_value(a, ast_child(a, n, 1)); /* y (sign)      */
+			gen_copysign();
+			vtop->type.t = ast_type_t(a, n);
+			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			break;
+		}
+#endif
 		if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
@@ -5928,6 +5939,26 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				continue;
 			}
 #endif /* round: x86_64 || arm64 */
+#if defined(MCC_TARGET_RISCV64)
+			/* copysign(x,y): single fsgnj.d/.s (result = |x| with sign of y).
+			 * riscv64 only for now — x86_64/arm64 need a mask/round-trip sequence
+			 * (TODO). id 5, nargs 2; gated by the sign-family bfold gate. */
+			if (bid == 5 && nargs == 2 && ast_math_inline_env &&
+					ast_bfold_sign_env) { MCC_TRACE("br\n");
+				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Binary);
+				ast_set_op(a, n, AST_OP_COPYSIGN);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, x);
+				ast_add_child(a, n, y);
+				MCC_TRACE("math-inline copysign flt=%d\n", (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
+#endif /* copysign: riscv64 */
 #endif /* fabs/sqrt: x86_64 || arm64 || riscv64 */
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&

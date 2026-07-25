@@ -1740,6 +1740,7 @@ ST_FUNC void gen_mulh(int sign);
 ST_FUNC void gen_fabs(void);
 ST_FUNC void gen_sqrt(void);
 ST_FUNC void gen_round(int mode);
+ST_FUNC void gen_copysign(void); /* riscv64: fsgnj.d; result=|vtop[-1]| with sign(vtop) */
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_mulh(int sign);
