@@ -1486,6 +1486,7 @@ static int ast_search_pick_inline;
 static int ast_search_threads_env;
 static int ast_search_pthreads_env; /* item-1: pthread scoring fan-out (audit; default off) */
 static int ast_search_ordered_env;
+static int ast_search_verbose_env; /* MCC_AST_SEARCH_VERBOSE: one line per continue/store */
 static int ast_search_walk_env;
 static unsigned ast_search_seconds;
 
@@ -1762,7 +1763,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
-	ast_search_env = ast_env_gate("MCC_AST_SEARCH", 0);
+	/* Default ON whenever the user asked for a search budget (-O>=4). The per-tick
+	 * budget and memo still bound it; at -O0..3 optimize_search_seconds==0 so the
+	 * search never runs and codegen is byte-identical regardless of this default. */
+	ast_search_env = ast_env_gate("MCC_AST_SEARCH", s1->optimize_search_seconds > 0);
+	ast_search_verbose_env = ast_env_gate("MCC_AST_SEARCH_VERBOSE", 0);
 	ast_slice_env = ast_env_gate("MCC_AST_SLICE", 0);
 	ast_search_emitsize_env = ast_env_gate("MCC_AST_SEARCH_EMITSIZE", 0);
 	ast_search_emitiso_env = ast_env_gate("MCC_AST_SEARCH_EMITISO", 0);
@@ -12549,6 +12554,10 @@ static void ast_order_unpack(uint64_t p, int n, int *seq) { MCC_TRACE("enter\n")
  * of `searchable`; the per-tick time budget is the primary bound). Also sizes the fork
  * pool's gatelist. 128 comfortably covers 4 fold gates + the opt-in knobs (<=2^9). */
 #define AST_SEARCH_MAX_CAND 128
+/* The combo enumeration is capped here (not at AST_SEARCH_MAX_CAND) so the whole
+ * candidate space fits the 64-bit `tried`/`skip` bitmask — the precondition for the
+ * resumable per-function search to converge to COMPLETE across continued runs. */
+#define AST_SEARCH_CAND_MAX 64
 static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
@@ -13740,6 +13749,10 @@ typedef struct AstComboCtx {
 	int saved_anon;
 	const AstGateMask *items;
 	uint64_t tried; /* bit per candidate actually measured (M3 blocker A progress) */
+	uint64_t skip;  /* CONTINUE: ordinals measured in a PRIOR run (from the memo's
+									 * `tried`); combo_score skips re-measuring these and re-marks them
+									 * tried, so a budget-truncated per-function search picks up at its
+									 * first unmeasured candidate instead of restarting. */
 	int ord;        /* running candidate ordinal, capped at 63 */
 	long best_score; /* running best across measured candidates (-1 = none yet) */
 } AstComboCtx;
@@ -13752,6 +13765,14 @@ static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRAC
 	int i;
 	if (ast_search_should_stop())
 		{ MCC_TRACE("br\n"); return COMBO_REJECT; } /* budget spent: this candidate is NOT measured/tried */
+	if (cx->ord < 64 && (cx->skip & ((uint64_t)1 << cx->ord))) { MCC_TRACE("br\n");
+		/* CONTINUE: this ordinal was already measured in a prior run; the seeded
+		 * best already reflects it. Re-mark tried (so the persisted set stays whole),
+		 * advance the ordinal to keep alignment, and skip re-scoring. */
+		cx->tried |= (uint64_t)1 << cx->ord;
+		cx->ord++;
+		return COMBO_REJECT;
+	}
 	if (cx->ord < 64)
 		{ MCC_TRACE("br\n"); cx->tried |= (uint64_t)1 << cx->ord; } /* record that this candidate was measured */
 	cx->ord++;
@@ -14122,6 +14143,13 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	long best_score = -1;
 	long base_cost = -1; /* baseline (pre-search) cost, for the stats cost-saved outcome */
 	uint64_t tried_mask = 0; /* which candidates were measured (M3 blocker A progress) */
+	/* CONTINUE/RESUME: when a prior run left this function's search INCOMPLETE
+	 * (order_n==0 in the memo) and budget remains, we don't just replay the winner —
+	 * we seed `best` from it and continue measuring the untried candidates. */
+	uint64_t resume_skip = 0;      /* ordinals a prior run already measured */
+	AstGateMask resume_best = 0;   /* prior winner, re-scored + used as the seed */
+	int resume_active = 0;         /* 1 = continuing an incomplete search */
+	int search_complete = 0;       /* 1 = the candidate space was fully enumerated */
 	int g0, p0, o0, nc = 0;
 	/* Budget-scaling the candidate count: the subset lattice of `searchable` can be as
 	 * large as 2^(fold gates + opt-in knobs) (up to 2^9 once ltemp/ivsr/pre are offered),
@@ -14176,12 +14204,29 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				 * reaches here — `& base` alone would wrongly strip it. The refcount bump is
 				 * applied by ast_search_disk_store -> ast_search_memo_add (refcount+1 >
 				 * current), so the store sees a real change and rewrites the container. */
-				MCC_TRACE("memo hit %s hash=%016llx gates=%llx&%llx->%llx refcount=%u->%u\n",
+				MCC_TRACE("memo hit %s hash=%016llx gates=%llx&%llx->%llx refcount=%u->%u complete=%llu\n",
 									funcname, (unsigned long long)h,
 									(unsigned long long)ast_search_memo[i].gates,
 									(unsigned long long)searchable,
 									(unsigned long long)(ast_search_memo[i].gates & searchable),
-									ast_search_memo[i].refcount, ast_search_memo[i].refcount + 1);
+									ast_search_memo[i].refcount, ast_search_memo[i].refcount + 1,
+									(unsigned long long)ast_search_memo[i].order_n);
+				if (ast_search_memo[i].order_n == 0 && !ast_search_should_stop()) { MCC_TRACE("br\n");
+					/* CONTINUE: the prior run's search was budget-truncated (not marked
+					 * complete) and we still have budget — seed from its winner and resume
+					 * the enumeration below at the first unmeasured candidate. */
+					resume_active = 1;
+					resume_best = ast_search_memo[i].gates;
+					resume_skip = ast_search_memo[i].tried;
+					MCC_TRACE("search continue %s hash=%016llx seed-gates=%llx tried=%llx\n",
+										funcname, (unsigned long long)h,
+										(unsigned long long)resume_best, (unsigned long long)resume_skip);
+					if (ast_search_verbose_env)
+						{ MCC_TRACE("br\n"); fprintf(stderr,
+							"[search] continue %s: seed=0x%llx already-tried=0x%llx\n", funcname,
+							(unsigned long long)resume_best, (unsigned long long)resume_skip); }
+					break;
+				}
 				if (mcc_stats_mask)
 					{ MCC_TRACE("br\n"); mcc_stats_search_memo(1); }
 				ast_search_gates_set(ast_search_memo[i].gates & searchable);
@@ -14255,6 +14300,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			cx.saved_anon = saved_anon;
 			cx.items = items;
 			cx.tried = 0;
+			cx.skip = resume_active ? resume_skip : 0; /* CONTINUE: don't re-measure prior ordinals */
 			cx.ord = 0;
 			cx.best_score = -1;
 			spec.nitems = nitems;
@@ -14262,7 +14308,11 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			spec.max_k = nitems;
 			spec.ordered = ast_search_ordered_env ? 1 : 0;
 			spec.walk = ast_search_walk_env;
-			spec.budget = AST_SEARCH_MAX_CAND; /* budget-cap the enumerated candidates */
+			/* Cap the enumerated candidates at the width of the `tried` bitmask (64) so
+			 * every candidate the search will ever consider is trackable — this makes the
+			 * per-function search finish in a bounded number of continued runs (RESUME)
+			 * and latch COMPLETE, after which the winner is replayed deterministically. */
+			spec.budget = AST_SEARCH_CAND_MAX;
 			spec.score = ast_search_combo_score;
 			spec.visit = ast_search_walk_trace;
 			spec.user = &cx;
@@ -14274,6 +14324,18 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			best_score = ast_search_score_one(pristine, sym, faithful, base, saved_loc,
 																				saved_anon);
 			base_cost = best_score; /* snapshot before combo_run lowers best_score */
+			if (resume_active) { MCC_TRACE("br\n");
+				/* Seed from the prior run's winner. Re-score it now (rather than trust the
+				 * stored score, which may come from a different -O base) so the keep-rule
+				 * compares apples to apples; intersect with `searchable` for this build. */
+				AstGateMask rg = resume_best & searchable;
+				long rs = ast_search_score_one(pristine, sym, faithful, rg, saved_loc,
+																			 saved_anon);
+				if (rs >= 0 && (best_score < 0 || rs < best_score)) { MCC_TRACE("br\n");
+					best = rg;
+					best_score = rs;
+				}
+			}
 			/* Best-first frontier + forecast-driven ordering (est_cost_delta): when the
 			 * vocabulary is large enough that the AST_SEARCH_MAX_CAND budget truncates the
 			 * enumeration, combo_run's ascending-mask order can miss base's single-toggle
@@ -14284,7 +14346,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			 * promising gate combinations first. Scheduling only (any order → correct
 			 * winner); skipped when the whole space fits under the cap, so small-vocabulary
 			 * searches are byte-identical. */
-			if (((AstGateMask)1 << nitems) > AST_SEARCH_MAX_CAND) { MCC_TRACE("br\n");
+			if (((AstGateMask)1 << nitems) > AST_SEARCH_CAND_MAX) { MCC_TRACE("br\n");
 				long idelta[64];
 				int i, j;
 				for (i = 0; i < nitems; i++) { MCC_TRACE("br\n");
@@ -14338,6 +14400,13 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				}
 			}
 			tried_mask = cx.tried;
+			/* COMPLETE iff the whole candidate space was enumerated (combo count-budget
+			 * not hit) AND the time budget did not cut scoring short. A complete search
+			 * latches in the memo (order_n=1) so future runs replay its winner instead of
+			 * re-searching; an incomplete one stays resumable (order_n=0) and is continued
+			 * from its first unmeasured candidate on the next run. */
+			search_complete = (cbest.exhausted || cbest.evaluated >= spec.budget) &&
+												!ast_search_should_stop();
 			MCC_TRACE("combo winner gates=%llx base=%llx searchable=%llx score=%ld "
 								"ordered=%d nitems=%d tried=%llx\n",
 								(unsigned long long)best, (unsigned long long)base,
@@ -14355,9 +14424,17 @@ search_done:
 																								ast_search_memo_n); }
 	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file.
 					* score = the winning config's search score; tried = the bitmask of candidates
-					* actually measured before the budget ran out (M3 blocker A progress fields).
-					* A future resumable / unified search reads both to skip re-measuring. */
-		{ MCC_TRACE("br\n"); ast_search_disk_store(h, best, 1, best_score, tried_mask, 0, 0); }
+					* measured so far (accumulated across runs); order_n = the COMPLETE latch
+					* (1 once the whole space has been enumerated). A later run reads tried to
+					* skip re-measuring and order_n to know whether to keep searching. */
+		{ MCC_TRACE("br\n"); ast_search_disk_store(h, best, 1, best_score, tried_mask, 0,
+																								search_complete ? 1 : 0);
+			if (ast_search_verbose_env)
+				{ MCC_TRACE("br\n"); fprintf(stderr,
+					"[search] store %s: gates=0x%llx score=%ld tried=0x%llx %s%s\n", funcname,
+					(unsigned long long)best, best_score, (unsigned long long)tried_mask,
+					search_complete ? "COMPLETE" : "incomplete",
+					resume_active ? " (continued)" : ""); } }
 	ast_arena_free(pristine);
 }
 
