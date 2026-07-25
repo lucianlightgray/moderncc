@@ -1853,15 +1853,16 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", s1->optimize >= 2);
 	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", s1->optimize >= 2);
 	ast_range_env = ast_env_gate("MCC_AST_RANGE", s1->optimize >= 2);
-#ifdef MCC_TARGET_I386
-	/* i386 divmagic is default-OFF pending a real interaction bug: -O2 divmagic +
-	 * large-struct-by-value in the same function miscompiles (see the i386-codegen-diff
-	 * `d9` repro / TODO). Isolated i386 divmagic is soak-proven (i386-divmagic-soak),
-	 * so the flip stays opt-in on i386 until the struct-ABI interaction is root-caused. */
-	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
-#else
+	/* i386 carve-out REMOVED 2026-07-25: the struct-pressure temp-slot-reuse
+	 * miscompiles (after-loop `%C` d9 + in-loop v_251/v_7/h1 + unsigned u1/u2, and
+	 * the now-materialized 64-bit u64/s64 paths) are all fixed by the i386-gated
+	 * real temp-materialization of x (ast_divmagic_materialize) — x is stored once
+	 * into a dedicated non-reuse-pool slot and every magic-sequence x-read loads it,
+	 * so the 5-register allocator can't recycle x's slot as scratch between reads.
+	 * Validated by i386-divmagic-soak (32- + 64-bit, incl. struct-loop cases) vs a
+	 * hardware-idiv oracle under qemu-i386; on by default at -O2+ like the other
+	 * optimizer-capable arches. */
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", s1->optimize >= 2);
-#endif
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", s1->optimize >= 2);
 	ast_select_env = ast_env_gate("MCC_AST_SELECT", s1->optimize >= 2);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", s1->optimize >= 2);
@@ -9360,12 +9361,24 @@ static int ast_divmagic_try_u64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	mag = mcc_magicu64(C);
 	if (mag.a && mag.s < 1)
 		{ MCC_TRACE("br\n"); return 0; }
-	hi = ast_bf_bin(a, AST_OP_MULHU, U64, ast_dup_sub(a, x), ast_bf_lit(a, U64, mag.M));
+#ifdef MCC_TARGET_I386
+	/* i386: materialize x once (see ast_divmagic_try_signed) so the 64-bit magic
+	 * sequence's several x-reads don't re-read x's source slot, which the 5-register
+	 * allocator recycles as scratch between reads. Other backends keep the dup form
+	 * (byte-identical). */
+	int xoff;
+	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
+		{ MCC_TRACE("br\n"); return 0; }
+#define DMX() ast_bf_localref(a, xoff, xt, xref)
+#else
+#define DMX() ast_dup_sub(a, x)
+#endif
+	hi = ast_bf_bin(a, AST_OP_MULHU, U64, DMX(), ast_bf_lit(a, U64, mag.M));
 	if (!mag.a) { MCC_TRACE("br\n");
 		inner = hi;
 		shamt = (uint64_t)mag.s;
 	} else { MCC_TRACE("br\n");
-		AstLocal sub = ast_bf_bin(a, '-', U64, ast_dup_sub(a, x), hi);
+		AstLocal sub = ast_bf_bin(a, '-', U64, DMX(), hi);
 		AstLocal shr1 = ast_bf_bin(a, TOK_SHR, U64, sub, ast_bf_lit(a, U64, 1));
 		inner = ast_bf_bin(a, '+', U64, shr1, ast_dup_sub(a, hi));
 		shamt = (uint64_t)(mag.s - 1);
@@ -9386,9 +9399,10 @@ static int ast_divmagic_try_u64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		AstLocal q = ast_bf_bin(a, TOK_SHR, U64, inner, ast_bf_lit(a, U64, shamt));
 		AstLocal qC = ast_bf_bin(a, '*', U64, q, ast_bf_lit(a, U64, C));
 		ast_set_op(a, n, '-');
-		ast_add_child(a, n, ast_dup_sub(a, x));
+		ast_add_child(a, n, DMX());
 		ast_add_child(a, n, qC);
 	}
+#undef DMX
 	return 1;
 }
 
@@ -9476,11 +9490,21 @@ static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (!ast_ident_pure(a, x))
 		{ MCC_TRACE("br\n"); return 0; }
 	mag = mcc_magics64(C);
-	q0 = ast_bf_bin(a, AST_OP_MULHS, S64, ast_bf_lit(a, S64, (uint64_t)mag.M), ast_dup_sub(a, x));
+#ifdef MCC_TARGET_I386
+	/* i386: materialize x once (see ast_divmagic_try_signed) so the several x-reads
+	 * don't re-read x's source slot (recycled as scratch). Byte-identical elsewhere. */
+	int xoff;
+	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
+		{ MCC_TRACE("br\n"); return 0; }
+#define DMX() ast_bf_localref(a, xoff, xt, xref)
+#else
+#define DMX() ast_dup_sub(a, x)
+#endif
+	q0 = ast_bf_bin(a, AST_OP_MULHS, S64, ast_bf_lit(a, S64, (uint64_t)mag.M), DMX());
 	if (C > 0 && mag.M < 0)
-		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '+', S64, q0, ast_dup_sub(a, x)); }
+		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '+', S64, q0, DMX()); }
 	else if (C < 0 && mag.M > 0)
-		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '-', S64, q0, ast_dup_sub(a, x)); }
+		{ MCC_TRACE("br\n"); q1 = ast_bf_bin(a, '-', S64, q0, DMX()); }
 	else
 		{ MCC_TRACE("br\n"); q1 = q0; }
 	q2 = ast_bf_bin(a, TOK_SAR, S64, q1, ast_bf_lit(a, S64, (uint64_t)mag.s));
@@ -9504,9 +9528,10 @@ static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		AstLocal qexpr = ast_bf_bin(a, '+', S64, q2, signbit);
 		AstLocal qC = ast_bf_bin(a, '*', S64, qexpr, ast_bf_lit(a, S64, (uint64_t)C));
 		ast_set_op(a, n, '-');
-		ast_add_child(a, n, ast_dup_sub(a, x));
+		ast_add_child(a, n, DMX());
 		ast_add_child(a, n, qC);
 	}
+#undef DMX
 	return 1;
 }
 #endif
