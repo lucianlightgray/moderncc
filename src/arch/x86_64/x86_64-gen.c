@@ -2165,6 +2165,21 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+/* sqrt(x): single hardware sqrtsd/sqrtss, computed in place (src==dst). Only
+   emitted when the caller proved x >= 0 (so the IEEE result can never be a NaN
+   that would set errno=EDOM), matching gcc's VRP-driven bare-sqrtsd elision.
+   The MCC_RC_FLOAT class is xmm0-7, so no REX is needed for the reg-reg form. */
+void gen_sqrt(void) { MCC_TRACE("enter\n");
+	int bt = vtop->type.t & VT_BTYPE;
+	int r;
+	gv(MCC_RC_FLOAT);
+	r = REG_VALUE(vtop->r);
+	o(bt == VT_DOUBLE ? 0xf2 : 0xf3); /* F2=sqrtsd, F3=sqrtss */
+	o(0x0f);
+	o(0x51);
+	o(0xc0 + r + r * 8); /* sqrt xmm_r, xmm_r */
+}
+
 void gen_opf(int op) { MCC_TRACE("enter\n");
 	int a, ft, fc, swapped, r;
 	int bt = vtop->type.t & VT_BTYPE;

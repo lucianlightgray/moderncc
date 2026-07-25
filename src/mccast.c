@@ -1713,6 +1713,7 @@ void ast_hook_inc_end(void);
 #define AST_OP_MULHU 0x40006
 #define AST_OP_MULHS 0x40007
 #define AST_OP_FABS 0x40008
+#define AST_OP_SQRT 0x40009
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -4770,6 +4771,13 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_cast(&ct);
 			gen_fabs();
 			vtop->type = ct;
+		} else if (uop == AST_OP_SQRT) { MCC_TRACE("br\n");
+			CType ct;
+			ct.t = ast_type_t(a, n);
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			gen_cast(&ct);
+			gen_sqrt();
+			vtop->type = ct;
 #endif
 		} else { MCC_TRACE("br\n");
 			inc((int)ast_ival(a, n), uop);
@@ -5520,6 +5528,80 @@ static int ast_bfold_minmax_inf(AstArena *a, AstLocal n, int bid, int bt,
 	return 0;
 }
 
+/* Structural equality of two AST subtrees (bounded). Used to spot a square
+ * x*x where both operands are the same expression. */
+static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth) { MCC_TRACE("enter\n");
+	if (x == y)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (x == AST_NONE || y == AST_NONE || depth <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, x) != ast_kind(a, y) || ast_op(a, x) != ast_op(a, y) ||
+			ast_type_t(a, x) != ast_type_t(a, y) ||
+			ast_type_ref(a, x) != ast_type_ref(a, y) ||
+			ast_ival(a, x) != ast_ival(a, y) || ast_sym(a, x) != ast_sym(a, y))
+		{ MCC_TRACE("br\n"); return 0; }
+	uint32_t nx = ast_nchild(a, x);
+	if (nx != ast_nchild(a, y))
+		{ MCC_TRACE("br\n"); return 0; }
+	for (uint32_t i = 0; i < nx; i++)
+		if (!ast_struct_eq(a, ast_child(a, x, i), ast_child(a, y, i), depth - 1))
+			{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+/* An expression is "pure" here if evaluating it twice yields the same value:
+ * no calls, no volatile access. Conservative — unknown nodes are still walked. */
+static int ast_expr_pure(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (depth <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Invoke || (ast_type_t(a, n) & VT_VOLATILE))
+		{ MCC_TRACE("br\n"); return 0; }
+	uint32_t nc = ast_nchild(a, n);
+	for (uint32_t i = 0; i < nc; i++)
+		if (!ast_expr_pure(a, ast_child(a, n, i), depth - 1))
+			{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+/* Conservatively decide whether n is provably >= 0 (never a negative real), so
+ * sqrt(n) can be a bare sqrtsd with no errno=EDOM branch (gcc does the same
+ * elision under VRP). A false negative just keeps the libcall; a false positive
+ * would only drop errno on a domain error, never corrupt the numeric result. */
+static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
+	if (n == AST_NONE || depth <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	while (ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
+		{ MCC_TRACE("br\n"); n = ast_first_child(a, n); }
+	int k = ast_kind(a, n);
+	if (k == AST_Literal) { MCC_TRACE("br\n");
+		int bt = ast_type_t(a, n) & VT_BTYPE;
+		uint64_t v = ast_ival(a, n);
+		if (bt == VT_DOUBLE) /* sign bit clear and not a NaN */
+			{ MCC_TRACE("br\n"); return !(v >> 63) &&
+				!((v & 0x7ff0000000000000ull) == 0x7ff0000000000000ull &&
+					(v & 0x000fffffffffffffull)); }
+		if (bt == VT_FLOAT)
+			{ MCC_TRACE("br\n"); uint32_t f = (uint32_t)v; return !(f >> 31) &&
+				!((f & 0x7f800000u) == 0x7f800000u && (f & 0x007fffffu)); }
+		return 0;
+	}
+	if (k == AST_Unary && ast_op(a, n) == AST_OP_FABS)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (k == AST_Binary) { MCC_TRACE("br\n");
+		int op = ast_op(a, n);
+		AstLocal l = ast_child(a, n, 0), r = ast_child(a, n, 1);
+		if (op == '*' && ast_struct_eq(a, l, r, 12) && ast_expr_pure(a, l, 16))
+			{ MCC_TRACE("br\n"); return 1; } /* a square of a repeatable expr */
+		if (op == '+' || op == '*' || op == '/')
+			{ MCC_TRACE("br\n"); return ast_expr_nonneg(a, l, depth - 1) &&
+				ast_expr_nonneg(a, r, depth - 1); }
+		return 0;
+	}
+	return 0;
+}
+
 static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 	int folds = 0;
 	AstLocal nn = ast_count(a);
@@ -5578,6 +5660,23 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				ast_set_sym(a, n, 0);
 				ast_add_child(a, n, arg);
 				MCC_TRACE("math-inline fabs flt=%d\n", (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
+			/* sqrt(x) with a provably-nonnegative runtime x: bare sqrtsd, no
+			 * errno branch (matches gcc's VRP elision). Negative/unknown args
+			 * keep the libcall so errno=EDOM is still set. */
+			if (bid == 0 && nargs == 1 && ast_math_inline_env &&
+					ast_expr_nonneg(a, ast_child(a, n, 1), 24)) { MCC_TRACE("br\n");
+				AstLocal arg = ast_child(a, n, 1);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Unary);
+				ast_set_op(a, n, AST_OP_SQRT);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, arg);
+				MCC_TRACE("math-inline sqrt(nonneg) flt=%d\n", (int)ast_bfold_tab[bi].flt);
 				folds++;
 				continue;
 			}
