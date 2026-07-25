@@ -14241,8 +14241,17 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 			{ MCC_TRACE("br\n"); roi[i] = 0; ben[i] = 0; tim[i] = 0; continue; }
 		saved_cur = ast_cur;
 		ast_cur = trial;
-		m0 = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
-																 : ast_cost_score(trial);
+		/* Benefit is ALWAYS the pure static cost (ast_cost_score), never the emit-size
+		 * probe, EVEN under MCC_AST_SEARCH_EMITSIZE. ast_search_emit_size replays the
+		 * fully-folded function to MEMORY and is NOT side-effect-free when invoked
+		 * speculatively here — it perturbs the shared emit cursors, so ROI+emitsize
+		 * MISCOMPILED (a struct-free int loop returned 1163150798 vs the correct
+		 * 1126360398). ast_cost_score is a pure function of the clone. This is
+		 * byte-identical for every non-emitsize config (the default ROI path already
+		 * took the cost branch since MCC_AST_SEARCH_EMITSIZE defaults off); it only
+		 * changes the previously-broken ROI+emitsize combination, now made sound. */
+		(void)saved_loc; (void)saved_anon;
+		m0 = ast_cost_score(trial);
 		/* DETERMINISTIC cost-of-applying proxy: the number of transforms this strategy
 		 * applies (graft/promo/opt counter deltas), NOT wall-clock time. clock() timing
 		 * made the benefit/time sort non-deterministic — the strategy order, and thus
@@ -14255,8 +14264,7 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 		if (work < 0)
 			{ MCC_TRACE("br\n"); work = 0; }
 		tim[i] = (unsigned)work; /* reused as the deterministic apply-cost (transforms) */
-		m1 = ast_search_emitsize_env ? ast_search_emit_size(trial, saved_loc, saved_anon)
-																 : ast_cost_score(trial);
+		m1 = ast_cost_score(trial); /* pure metric — see the m0 note above */
 		ast_cur = saved_cur;
 		ast_arena_free(trial);
 		b = m0 - m1; /* positive == metric reduced (a win) */
