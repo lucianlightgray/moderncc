@@ -1557,10 +1557,15 @@ if(MCC_TARGETOS STREQUAL "Darwin" AND NOT MCC_CC_NAME STREQUAL "mcc")
     if(MCC_CC_NAME STREQUAL "clang" AND MCC_GCC_MAJOR LESS 15)
         add_link_options(-undefined warning)
     endif()
-    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-        # 10.7 (was 10.6): macOS 10.6 predates the TLS runtime (__tlv_bootstrap), so
-        # clang rejects _Thread_local under a 10.6 min. 10.7 is the floor for the
-        # thread-local optimizer state (docs/jit-optimizer-threading.md, item 1).
+    # 10.7 (was 10.6): macOS 10.6 predates the TLS runtime (__tlv_bootstrap), so
+    # clang rejects _Thread_local under a 10.6 min. 10.7 is the floor for the
+    # thread-local optimizer state (docs/jit-optimizer-threading.md, item 1).
+    # Bump when unset OR when a stale sub-10.7 value was seeded: some SDK/clang
+    # combos pre-seed CMAKE_OSX_DEPLOYMENT_TARGET=10.6 before this point, which a
+    # plain `if(NOT ...)` would leave in place and break the local clang build.
+    # The gcc-on-macOS path (top of file) pins this to the host OS version
+    # (>= 10.7), so it is never < 10.7 here and is left untouched.
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.7")
         set(CMAKE_OSX_DEPLOYMENT_TARGET "10.7" CACHE STRING
             "Makefile: MACOSX_DEPLOYMENT_TARGET" FORCE)
     endif()
