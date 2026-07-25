@@ -1602,6 +1602,23 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	}
 #if MCC_CONFIG_OPTIMIZER
 	tmploc = ast_alloc_temp_loc(size, align);
+	/* The replay temp frontier (ast_alloc_temp_loc) seeds its floor from loc/locrec_min.
+	 * When a replay subtree (e.g. a divmagic-rewritten `x%C`) is emitted inside an otherwise
+	 * non-replayed function, that floor can sit ABOVE a temp slot allocated via the non-replay
+	 * `loc -= size` path whose spilled value is still live (marked in `used`) — so the frontier
+	 * re-hands-out that offset, aliasing two temp slots onto one stack word and corrupting the
+	 * live value (the i386 divmagic + large-struct-by-value miscompile). Never return an offset
+	 * that overlaps a live temp slot: keep allocating lower (ast_alloc_temp_loc is monotonic)
+	 * until it is clear. Inert when no aliasing occurs (byte-identical on unaffected arches). */
+	for (i = 0; i < nb_temp_local_vars; i++) { MCC_TRACE("br\n");
+		if (!(used & (1u << i)))
+			{ MCC_TRACE("br\n"); continue; }
+		int lo = arr_temp_local_vars[i].location, sz = arr_temp_local_vars[i].size;
+		if (tmploc < lo + sz && lo < tmploc + size) { MCC_TRACE("br\n");
+			tmploc = ast_alloc_temp_loc(size, align);
+			i = -1; /* restart the overlap scan against the new, lower offset */
+		}
+	}
 #else
 	loc = (loc - size) & -align;
 	tmploc = loc;
