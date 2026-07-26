@@ -502,8 +502,49 @@ static int so_gate_dead(unsigned gate) { MCC_TRACE("enter\n");
 	return !((gate >> 2) & 1) && (gate >> 4) != 0;
 }
 
+typedef struct {
+	const char *name;
+	char *user;
+} SoEnvAxis;
+
+static SoEnvAxis so_axes[] = {
+		{"MCC_AST_TEMPLATES", NULL},		 {"MCC_AST_PROMOTE", NULL},
+		{"MCC_AST_INLINE", NULL},				 {"MCC_AST_NO_CALLFUL", NULL},
+		{"MCC_AST_INLINE_LIMIT", NULL},	 {"MCC_AST_INLINE_NODES", NULL},
+		{"MCC_AST_GRAFT", NULL},				 {"MCC_AST_BITFLAG", NULL},
+		{"MCC_AST_CPROP_JOIN", NULL},		 {"MCC_AST_CSE_JOIN", NULL},
+		{"MCC_AST_PROMOTE_LIMIT", NULL}, {"MCC_AST_OPT_LIMIT", NULL}};
+
+#define SO_NAXES ((int)(sizeof so_axes / sizeof *so_axes))
+
+static int so_axes_snapped;
+
+static void so_axes_snapshot(void) { MCC_TRACE("enter\n");
+	if (so_axes_snapped)
+		{ MCC_TRACE("br\n"); return; }
+	so_axes_snapped = 1;
+	for (int i = 0; i < SO_NAXES; i++) { MCC_TRACE("br\n");
+		const char *v = getenv(so_axes[i].name);
+		if (v && *v) { MCC_TRACE("br\n");
+			so_axes[i].user = mcc_strdup(v);
+			MCC_TRACE("superopt: axis %s pinned by user to %s\n", so_axes[i].name, v);
+		}
+	}
+}
+
+static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter\n");
+	for (int i = 0; i < SO_NAXES; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(so_axes[i].name, name)) { MCC_TRACE("br\n");
+			if (so_axes[i].user)
+				{ MCC_TRACE("br\n"); val = so_axes[i].user; }
+			break;
+		} }
+	setenv(name, val, 1);
+}
+
 static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) { MCC_TRACE("enter\n");
 	char buf[32];
+	so_axes_snapshot();
 	unsigned limit = gate >> 4;
 	int inl = (gate >> 2) & 1;
 	int nsel = (int)(budget % SO_NNODE);
@@ -513,23 +554,23 @@ static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) { 
 	int csesel = (int)((budget / (SO_NNODE * SO_NGRAFT * SO_NBF * 2)) % 2);
 	int lv = so_limits[limit_lvl % SO_LIMIT_SPACE];
 	setenv("MCC_SEARCH_WORKER", "1", 1);
-	setenv("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0", 1);
-	setenv("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0", 1);
-	setenv("MCC_AST_INLINE", inl ? "1" : "0", 1);
-	setenv("MCC_AST_NO_CALLFUL", (gate >> 3) & 1 ? "1" : "0", 1);
+	so_setenv_axis("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0");
+	so_setenv_axis("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0");
+	so_setenv_axis("MCC_AST_INLINE", inl ? "1" : "0");
+	so_setenv_axis("MCC_AST_NO_CALLFUL", (gate >> 3) & 1 ? "1" : "0");
 	snprintf(buf, sizeof buf, "%u", inl ? limit : 0u);
-	setenv("MCC_AST_INLINE_LIMIT", buf, 1);
+	so_setenv_axis("MCC_AST_INLINE_LIMIT", buf);
 	snprintf(buf, sizeof buf, "%d", so_nodes[nsel]);
-	setenv("MCC_AST_INLINE_NODES", buf, 1);
+	so_setenv_axis("MCC_AST_INLINE_NODES", buf);
 	snprintf(buf, sizeof buf, "%d", so_graft[gsel]);
-	setenv("MCC_AST_GRAFT", buf, 1);
+	so_setenv_axis("MCC_AST_GRAFT", buf);
 	snprintf(buf, sizeof buf, "%d", so_bf[bfsel]);
-	setenv("MCC_AST_BITFLAG", buf, 1);
-	setenv("MCC_AST_CPROP_JOIN", cpsel ? "1" : "0", 1);
-	setenv("MCC_AST_CSE_JOIN", csesel ? "1" : "0", 1);
+	so_setenv_axis("MCC_AST_BITFLAG", buf);
+	so_setenv_axis("MCC_AST_CPROP_JOIN", cpsel ? "1" : "0");
+	so_setenv_axis("MCC_AST_CSE_JOIN", csesel ? "1" : "0");
 	snprintf(buf, sizeof buf, "%d", lv);
-	setenv("MCC_AST_PROMOTE_LIMIT", buf, 1);
-	setenv("MCC_AST_OPT_LIMIT", buf, 1);
+	so_setenv_axis("MCC_AST_PROMOTE_LIMIT", buf);
+	so_setenv_axis("MCC_AST_OPT_LIMIT", buf);
 }
 
 static long so_filesize(const char *p) { MCC_TRACE("enter\n");
@@ -951,7 +992,8 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	signal(SIGINT, so_on_stop);
 	signal(SIGHUP, so_on_stop);
 	setenv("MCC_SEARCH_WORKER", "1", 1);
-	setenv("MCC_AST_TEMPLATES", "1", 1);
+	so_axes_snapshot();
+	so_setenv_axis("MCC_AST_TEMPLATES", "1");
 	setenv("MCC_AST_FN_CONFIG", "", 1);
 	remove(hashp);
 	setenv("MCC_AST_HASH_OUT", hashp, 1);
