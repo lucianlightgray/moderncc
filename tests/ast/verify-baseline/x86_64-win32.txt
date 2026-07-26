@@ -120,6 +120,7 @@ lexical/u8_string.c	main	desync
 lexical/uU_char_constants.c	main	desync
 lexical/utf8_string_literal.c	main	desync
 optimizer/redundant_cast.c	mixed	unfaithful
+pointers_arrays/array_2d_iv.c	diag_compound	desync
 pointers_arrays/flexarray.c	main	desync
 pointers_arrays/ptr_longlong_arith32.c	main	desync
 preprocess/pragma_operator.c	main	desync
