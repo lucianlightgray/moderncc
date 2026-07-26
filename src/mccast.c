@@ -11191,6 +11191,26 @@ static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
 	return n;
 }
 
+/* Replace every occurrence of the pointer-add `e` (structurally) with `ref`.
+ * Unlike ast_licm_subst this has NO lvalue guard: a pointer-add `base + i` is
+ * ALWAYS an rvalue (a computed address), so substituting it is safe even when it
+ * sits inside a store target's address computation (e.g. `p[i].vx -= …`) — the
+ * store still writes the same location. That is what ast_licm_subst's coarse
+ * lval propagation would (wrongly) skip, blocking LSR on write/compound-assign
+ * loops. */
+static void ast_ivsr_ptr_subst(AstArena *a, AstLocal n, AstLocal e,
+															 AstLocal ref) { MCC_TRACE("enter\n");
+	if (n == AST_NONE || n == ref)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_ident_same(a, e, n)) { MCC_TRACE("br\n");
+		ast_cse_setref(a, n, ref);
+		ast_licm_folds++;
+		return;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); ast_ivsr_ptr_subst(a, c, e, ref); }
+}
+
 static void ast_ivsr_ptr_scan(AstArena *a, AstLocal loop, AstLocal n,
 															int ivoff) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_ivsr_ptr_target != AST_NONE)
@@ -11296,8 +11316,7 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_set_op(a, uref, VT_LOCAL | VT_LVAL);
 		ast_set_ival(a, uref, (uint64_t)off);
 		ast_set_type(a, uref, et, er);
-		ast_licm_subst(a, body, padd, uref, 0);
-		ast_cse_setref(a, padd, uref);
+		ast_ivsr_ptr_subst(a, body, padd, uref);
 		ast_licm_folds++;
 		ast_ltemp_cur = off;
 		ast_ltemp_off[ast_ltemp_n++] = off;
