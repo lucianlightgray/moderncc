@@ -2355,6 +2355,26 @@ ST_FUNC void gen_fminmax(int is_max) { MCC_TRACE("enter\n");
 	o((is_max ? 0x1e206800u : 0x1e207800u) | dbl << 22 | x | a << 5 | b << 16);
 }
 
+/* fma(x,y,z) = x*y+z with a SINGLE rounding: FMADD Dd,Dn,Dm,Da (Dd = Dn*Dm+Da),
+ * FP data-processing 3-source (0x1F400000 double / 0x1F000000 single |
+ * Rm<<16 | Ra<<10 | Rn<<5 | Rd). vtop[-2]=x, vtop[-1]=y, vtop=z. Force all three
+ * into FP regs (each gv while the others are protected by being on the vstack,
+ * rotating the target to the top), then emit into a fresh reg; pop to one value. */
+ST_FUNC void gen_fma(void) { MCC_TRACE("enter\n");
+	uint32_t rx, ry, rz, rd, dbl;
+	int k;
+	dbl = (vtop[-2].type.t & VT_BTYPE) == VT_DOUBLE;
+	for (k = 0; k < 3; k++) { MCC_TRACE("br\n"); gv(MCC_RC_FLOAT); vrott(3); }
+	rx = fltr(vtop[-2].r);
+	ry = fltr(vtop[-1].r);
+	rz = fltr(vtop[0].r);
+	rd = get_reg(MCC_RC_FLOAT);
+	vtop -= 2;
+	vtop[0].r = rd;
+	rd = fltr(rd);
+	o((dbl ? 0x1f400000u : 0x1f000000u) | ry << 16 | rz << 10 | rx << 5 | rd);
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;

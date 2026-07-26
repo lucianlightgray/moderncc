@@ -1269,6 +1269,7 @@ static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
 static MCC_OPT_TLS int ast_copysign_env; /* MCC_AST_COPYSIGN_INLINE: inline copysign (default off, opt-in, all arches) */
 static MCC_OPT_TLS int ast_minmax_inline_env; /* MCC_AST_MINMAX_INLINE: inline fmin/fmax via FMINNM/FMAXNM (arm64 only, default off) */
+static MCC_OPT_TLS int ast_fma_env; /* MCC_AST_FMA_INLINE: inline fma via FMADD/fmadd.d (arm64/riscv64, default off) */
 static MCC_OPT_TLS int ast_no_math_errno; /* -fno-math-errno: inline sqrt of ANY sign */
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
@@ -1755,6 +1756,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_FMAX 0x40011 /* binary fmax (arm64 FMAXNM only) */
 #define AST_OP_RINT 0x40012 /* rint() — current rounding mode, raises inexact */
 #define AST_OP_NEARBYINT 0x40013 /* nearbyint() — current mode, no inexact */
+#define AST_OP_FMA 0x40014 /* ternary fma(x,y,z)=x*y+z single-rounding (arm64/riscv64) */
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -1945,6 +1947,10 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * NaN/±0 semantics so fmin/fmax stay libcalls there). Default OFF (opt-in) so
 	 * default codegen is byte-identical. */
 	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", 0);
+	/* fma inline via FMADD (arm64) / fmadd.d/.s (riscv64) — single-rounding, both
+	 * baseline; matches gcc default. x86 needs FMA3 (not baseline) so it stays a
+	 * libcall. Default OFF (opt-in) ⇒ byte-identical default. */
+	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", 0);
 	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
 	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
 	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
@@ -4896,6 +4902,17 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			break;
 		}
 #endif
+#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+		if (bop == AST_OP_FMA) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0)); /* x */
+			ast_replay_value(a, ast_child(a, n, 1)); /* y */
+			ast_replay_value(a, ast_child(a, n, 2)); /* z */
+			gen_fma();
+			vtop->type.t = ast_type_t(a, n);
+			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			break;
+		}
+#endif
 		if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
@@ -5546,6 +5563,7 @@ static const struct {
 		{"round", 8, 1, 0},    {"roundf", 8, 1, 1},
 		{"rint", 9, 1, 0},     {"rintf", 9, 1, 1},
 		{"nearbyint", 10, 1, 0}, {"nearbyintf", 10, 1, 1},
+		{"fma", 11, 3, 0},     {"fmaf", 11, 3, 1},
 };
 
 static uint64_t ast_bfold_mul128(uint64_t a, uint64_t b, uint64_t *lo) { MCC_TRACE("enter\n");
@@ -5924,6 +5942,34 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 		if ((ast_type_t(a, n) & VT_BTYPE) != bt ||
 				(int)ast_nchild(a, n) != nargs + 1)
 			{ MCC_TRACE("br\n"); continue; }
+		/* fma(x,y,z) is the only 3-arg builtin — intercept it BEFORE the 2-slot
+		 * ab[] const-fold machinery below (which would overflow at nargs==3). It is
+		 * never const-folded (correctly-rounded fma is host-mode-dependent) — always
+		 * either the runtime FMADD inline (arm64/riscv64, gate on) or the libcall. */
+		if (bid == 11) { MCC_TRACE("br\n");
+#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+			/* fused x*y+z: single-rounding FMADD, faster AND more accurate than
+			 * x*y+z. Baseline on arm64 (FMADD) and riscv64 (fmadd.d/.s) — matches
+			 * gcc default. Opt-in MCC_AST_FMA_INLINE. x86 needs FMA3 (not baseline)
+			 * so it stays a libcall there. */
+			if (nargs == 3 && ast_fma_env) { MCC_TRACE("br\n");
+				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2),
+								 z = ast_child(a, n, 3);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Binary);
+				ast_set_op(a, n, AST_OP_FMA);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, x);
+				ast_add_child(a, n, y);
+				ast_add_child(a, n, z);
+				MCC_TRACE("math-inline fma flt=%d\n", (int)ast_bfold_tab[bi].flt);
+				folds++;
+			}
+#endif
+			continue;
+		}
 		uint64_t ab[2] = {0, 0};
 		int i;
 		for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");

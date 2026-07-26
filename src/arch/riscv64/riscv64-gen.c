@@ -1528,6 +1528,26 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	ER(0x53, 0, a, a, b, bt == VT_DOUBLE ? 0x11 : 0x10);
 }
 
+/* fma(x,y,z) = x*y+z single-rounding: fmadd.d/.s rd, rs1(x), rs2(y), rs3(z).
+ * R4-type (rs3[31:27], funct2[26:25], rm[14:12]) reuses ER() with
+ * func7 = (rs3<<2)|funct2 (so func7<<25 == rs3<<27 | funct2<<25); opcode 0x43
+ * (FMADD), rm=7 (dynamic mode). vtop[-2]=x, vtop[-1]=y, vtop=z. Force all three
+ * into FP regs (rotating each to the top; others stay protected on the vstack),
+ * emit into a fresh reg, pop to one value. */
+ST_FUNC void gen_fma(void) { MCC_TRACE("enter\n");
+	int rs1, rs2, rs3, rd, dbl, k;
+	dbl = (vtop[-2].type.t & VT_BTYPE) == VT_DOUBLE;
+	for (k = 0; k < 3; k++) { MCC_TRACE("br\n"); gv(MCC_RC_FLOAT); vrott(3); }
+	rs1 = freg(vtop[-2].r);
+	rs2 = freg(vtop[-1].r);
+	rs3 = freg(vtop[0].r);
+	rd = get_reg(MCC_RC_FLOAT);
+	vtop -= 2;
+	vtop->r = rd;
+	rd = freg(rd);
+	ER(0x43, 7, rd, rs1, rs2, ((uint32_t)rs3 << 2) | (dbl ? 1 : 0));
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	int rs1, rs2, rd, dbl, invert;
 	if (vtop[0].type.t == VT_LDOUBLE) { MCC_TRACE("br\n");

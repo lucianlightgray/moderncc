@@ -1742,6 +1742,7 @@ ST_FUNC void gen_sqrt(void);
 ST_FUNC void gen_round(int mode);
 ST_FUNC void gen_copysign(void); /* riscv64: fsgnj.d; result=|vtop[-1]| with sign(vtop) */
 ST_FUNC void gen_fminmax(int is_max); /* arm64: FMINNM/FMAXNM; result=fmin/fmax(vtop[-1],vtop) */
+ST_FUNC void gen_fma(void); /* arm64 FMADD / riscv64 fmadd.d; vtop[-2]*vtop[-1]+vtop, single rounding */
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_mulh(int sign);
