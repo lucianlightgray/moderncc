@@ -2342,14 +2342,14 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	ast_pinned_regs &= ~((uint64_t)1 << gyr);
 	gx = intr(gxr);
 	gy = intr(gyr);
-	if (dbl) {
+	if (dbl) { MCC_TRACE("br\n");
 		o(0x9e660000u | fx << 5 | gx);        /* fmov Xgx, Dfx           */
 		o(0x9e660000u | fy << 5 | gy);        /* fmov Xgy, Dfy           */
 		o(0x9240f800u | gx << 5 | gx);        /* and  Xgx, Xgx, #0x7fff..(|x|) */
 		o(0x92410000u | gy << 5 | gy);        /* and  Xgy, Xgy, #0x8000..(sgn y) */
 		o(0xaa000000u | gy << 16 | gx << 5 | gx); /* orr Xgx, Xgx, Xgy   */
 		o(0x9e670000u | gx << 5 | fx);        /* fmov Dfx, Xgx           */
-	} else {
+	} else { MCC_TRACE("br\n");
 		o(0x1e260000u | fx << 5 | gx);        /* fmov Wgx, Sfx           */
 		o(0x1e260000u | fy << 5 | gy);        /* fmov Wgy, Sfy           */
 		o(0x12007800u | gx << 5 | gx);        /* and  Wgx, Wgx, #0x7fffffff */
