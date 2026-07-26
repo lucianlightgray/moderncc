@@ -1310,6 +1310,7 @@ static int ast_cse_join_env;
 static int ast_call_window_env;
 static MCC_OPT_TLS int ast_licm_temp_env;
 static MCC_OPT_TLS int ast_ivsr_env;
+static MCC_OPT_TLS int ast_ivsr_ptr_env; /* MCC_AST_IVSR_PTR: strength-reduce the pointer-index address `base + i` (a[i], the codegen-implicit element-size scaling that the mul-based ivsr can't see) to a pointer advanced each iteration */
 static MCC_OPT_TLS int ast_pre_env;
 static int ast_loopnest_dump_env;
 static int ast_loopdep_dump_env;
@@ -2009,6 +2010,15 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", s1->optimize >= 2);
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", s1->optimize >= 2);
+	/* Pointer-index LSR. The mul-based ivsr only matches an explicit `Binary('*',
+	 * iv, C)`, but the common `a[i]` case is `Binary('+', ptr, iv)` where the
+	 * element-size scaling is IMPLICIT in the pointer-add's codegen — no AST mul
+	 * node exists, so the mul-ivsr scan never finds a target. This pass reduces
+	 * that pointer-add to a pointer advanced by the stride each iteration (what
+	 * gcc does; mcc otherwise re-`imul`s the index every iteration for a
+	 * non-power-of-2 element size). Default OFF ⇒ byte-identical (it changes
+	 * addressing codegen; validate value-equivalence vs gcc, not byte-identity). */
+	ast_ivsr_ptr_env = ast_env_gate("MCC_AST_IVSR_PTR", 0);
 	ast_pre_env = ast_env_gate("MCC_AST_PRE", s1->optimize >= 2);
 	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
 	ast_loopdep_dump_env = ast_env_gate("MCC_AST_LOOPDEP_DUMP", 0);
@@ -11140,6 +11150,162 @@ static int ast_ivsr_run(AstArena *a) { MCC_TRACE("enter\n");
 	return did;
 }
 
+/* Is `n` a reference to the IV local (off `ivoff`), possibly through a widening
+ * Convert (int index → 64-bit pointer arithmetic)? */
+static int ast_ivsr_is_iv_ref(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("enter\n");
+	while (n != AST_NONE && ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
+		{ MCC_TRACE("br\n"); n = ast_first_child(a, n); }
+	return ast_ref_is_local_off(a, n, ivoff);
+}
+
+static MCC_OPT_TLS AstLocal ast_ivsr_ptr_target;
+
+/* Match `Binary('+', base_invariant, iv)` whose result is a POINTER (so codegen
+ * scales the index by the element size). Returns the '+' node, else AST_NONE. */
+static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
+																			int ivoff) { MCC_TRACE("enter\n");
+	int et;
+	uint64_t er;
+	/* NOTE: no whole-node regpure check — a pointer-index address `base + i` isn't
+	 * "register-pure" (it feeds a Load), but it's still safe to strength-reduce as
+	 * long as the base is pure + loop-invariant (checked below) and the other
+	 * operand is the IV. */
+	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != '+' ||
+			ast_nchild(a, n) != 2)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	if (!ast_ident_etype(a, n, &et, &er) || (et & VT_BTYPE) != VT_PTR)
+		{ MCC_TRACE("br\n"); return AST_NONE; } /* must be a pointer add (implicit scale) */
+	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1), base;
+	if (ast_ivsr_is_iv_ref(a, y, ivoff))
+		{ MCC_TRACE("br\n"); base = x; }
+	else if (ast_ivsr_is_iv_ref(a, x, ivoff))
+		{ MCC_TRACE("br\n"); base = y; }
+	else
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	/* base must be loop-invariant (safe to evaluate once at the preheader). We use
+	 * the LICM hoistability check, NOT ast_cse_regpure — the base is typically a
+	 * pointer local/param (a memory-load Ref) which isn't "register-pure" but is
+	 * perfectly safe to re-read outside the loop. */
+	if (!ast_licm_operands_ok(a, loop, base) || !ast_expr_pure(a, base, 16))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	return n;
+}
+
+static void ast_ivsr_ptr_scan(AstArena *a, AstLocal loop, AstLocal n,
+															int ivoff) { MCC_TRACE("enter\n");
+	if (n == AST_NONE || ast_ivsr_ptr_target != AST_NONE)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_ivsr_ptr_cofactor(a, loop, n, ivoff) != AST_NONE) { MCC_TRACE("br\n");
+		ast_ivsr_ptr_target = n;
+		return;
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); ast_ivsr_ptr_scan(a, loop, c, ivoff); }
+}
+
+/* Pointer-index strength reduction: replace a loop-invariant-base `base + i`
+ * pointer-add (a[i]) with a pointer `p` initialized to `base + i` before the
+ * loop and advanced by the IV stride each iteration (pointer-add scales by the
+ * element size). Mirrors ast_ivsr_run's materialize/init/increment/subst, but
+ * the increment is a pointer-add by `stride` (no explicit *cofactor). */
+static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
+	int did = 0;
+	AstLocal nn = ast_count(a);
+	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_kind(a, n) != AST_If)
+			{ MCC_TRACE("br\n"); continue; }
+		int op = ast_op(a, n);
+		if (op != 3 && op != 5)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_sccp_has_label(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal parent = ast_parent(a, n);
+		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal incrbb = ast_child(a, n, op == 3 ? 1 : 0);
+		AstLocal body = ast_child(a, n, op == 3 ? 2 : 1);
+		if (incrbb == AST_NONE || body == AST_NONE ||
+				ast_kind(a, incrbb) != AST_BasicBlock ||
+				ast_kind(a, body) != AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
+		int ivoff = 0, ivtt = 0, found = 0;
+		int64_t stride = 0;
+		for (AstLocal s = ast_first_child(a, incrbb); s != AST_NONE;
+				 s = ast_next_sib(a, s))
+			{ MCC_TRACE("br\n"); if (ast_ivsr_incr_of(a, s, &ivoff, &ivtt, &stride)) { MCC_TRACE("br\n");
+				found = 1;
+				break;
+			} }
+		if (!found)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_cprop_escapes(a, ivoff))
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_ivsr_count_writes(a, n, ivoff) != 1)
+			{ MCC_TRACE("br\n"); continue; }
+		ast_ivsr_ptr_target = AST_NONE;
+		ast_ivsr_ptr_scan(a, n, body, ivoff);
+		if (ast_ivsr_ptr_target == AST_NONE)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_ltemp_n >= AST_LTEMP_MAX)
+			{ MCC_TRACE("br\n"); break; }
+		AstLocal padd = ast_ivsr_ptr_target;
+		int et;
+		uint64_t er;
+		ast_ident_etype(a, padd, &et, &er);
+		int off = (ast_ltemp_cur - 8) & -8;
+		/* init: p = base + i  (dup the whole pointer-add, evaluated at loop entry) */
+		AstLocal lref = ast_node(a, AST_Ref);
+		ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, lref, (uint64_t)off);
+		ast_set_type(a, lref, et, er);
+		AstLocal cvt = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt, et, er);
+		ast_add_child(a, cvt, ast_dup_sub(a, padd));
+		AstLocal st = ast_node(a, AST_Store);
+		ast_add_child(a, st, lref);
+		ast_add_child(a, st, cvt);
+		if (!ast_ltemp_insert_before(a, parent, n, st))
+			{ MCC_TRACE("br\n"); continue; }
+		/* back-edge: p = p + stride  (pointer-add; codegen scales by elemsize) */
+		AstLocal iref = ast_node(a, AST_Ref);
+		ast_set_op(a, iref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, iref, (uint64_t)off);
+		ast_set_type(a, iref, et, er);
+		AstLocal lit = ast_node(a, AST_Literal);
+		ast_set_op(a, lit, VT_CONST);
+		ast_set_type(a, lit, ivtt, 0);
+		ast_set_ival(a, lit, (uint64_t)stride);
+		AstLocal add = ast_node(a, AST_Binary);
+		ast_set_op(a, add, '+');
+		ast_set_type(a, add, et, er);
+		ast_add_child(a, add, iref);
+		ast_add_child(a, add, lit);
+		AstLocal cvt2 = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt2, et, er);
+		ast_add_child(a, cvt2, add);
+		AstLocal iwref = ast_node(a, AST_Ref);
+		ast_set_op(a, iwref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, iwref, (uint64_t)off);
+		ast_set_type(a, iwref, et, er);
+		AstLocal ist = ast_node(a, AST_Store);
+		ast_add_child(a, ist, iwref);
+		ast_add_child(a, ist, cvt2);
+		ast_add_child(a, incrbb, ist);
+		/* body: replace every `base + i` with p */
+		AstLocal uref = ast_node(a, AST_Ref);
+		ast_set_op(a, uref, VT_LOCAL | VT_LVAL);
+		ast_set_ival(a, uref, (uint64_t)off);
+		ast_set_type(a, uref, et, er);
+		ast_licm_subst(a, body, padd, uref, 0);
+		ast_cse_setref(a, padd, uref);
+		ast_licm_folds++;
+		ast_ltemp_cur = off;
+		ast_ltemp_off[ast_ltemp_n++] = off;
+		did++;
+	}
+	return did;
+}
+
 #define AST_LOOPNEST_CAP 256
 
 enum {
@@ -12954,7 +13120,11 @@ static int ast_strat_narrow(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s
 static int ast_strat_cprop(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_cprop_run(a); }
 static int ast_strat_cse(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_cse_run(a); }
 static int ast_strat_ltemp(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_ltemp_run(a); }
-static int ast_strat_ivsr(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_ivsr_run(a); }
+static int ast_strat_ivsr(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s;
+	int d = ast_ivsr_run(a);
+	if (ast_ivsr_ptr_env) { MCC_TRACE("br\n"); d += ast_ivsr_ptr_run(a); }
+	return d;
+}
 static int ast_strat_pre(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_pre_run(a); }
 static int ast_strat_licm(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)a; (void)s; return ast_licm_folds; }
 static int ast_strat_dse(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_dse_run(a); }
