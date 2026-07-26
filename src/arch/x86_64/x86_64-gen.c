@@ -181,7 +181,7 @@ static void gen_modrm_impl(int op_reg, int r, Sym *sym, int c, int is_got) { MCC
 		}
 	} else { MCC_TRACE("br\n");
 		int rv = REG_VALUE(r);
-		int indirect = (r & MCC_TREG_MEM) != 0;
+		int indirect = (r & (MCC_TREG_MEM | VT_REGDISP)) != 0;
 		int disp32 = indirect && c;
 		if (disp32) { MCC_TRACE("br\n");
 			g(0x80 | op_reg | rv);

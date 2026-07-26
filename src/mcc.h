@@ -1031,6 +1031,7 @@ struct filespec {
 #define VT_CMP 0x0033
 #define VT_JMP 0x0034
 #define VT_JMPI 0x0035
+#define VT_REGDISP 0x0080
 #define VT_LVAL 0x0100
 #define VT_SYM 0x0200
 #define VT_MUSTCAST 0x0C00

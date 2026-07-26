@@ -1510,7 +1510,7 @@ ST_FUNC void save_reg_upstack(int r, int n) { MCC_TRACE("enter\n");
 				}
 			}
 			if (p->r & VT_LVAL) { MCC_TRACE("br\n");
-				p->r = (p->r & ~(VT_VALMASK | VT_BOUNDED)) | VT_LLOCAL;
+				p->r = (p->r & ~(VT_VALMASK | VT_BOUNDED | VT_REGDISP)) | VT_LLOCAL;
 			} else { MCC_TRACE("br\n");
 				p->r = VT_LVAL | VT_LOCAL;
 				p->type.t &= ~VT_ARRAY;
@@ -1669,6 +1669,16 @@ static void move_reg(int r, int s, int t) { MCC_TRACE("enter\n");
 ST_FUNC void gaddrof(void) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_gaddrof();
+	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
+		CType sv_type = vtop->type;
+		vtop->r &= ~(VT_LVAL | VT_REGDISP);
+		vtop->type = char_pointer_type;
+		vpushi(vtop->c.i);
+		vtop[-1].c.i = 0;
+		gen_op('+');
+		vtop->type = sv_type;
+		vtop->r |= VT_LVAL;
+	}
 #endif
 	vtop->r &= ~VT_LVAL;
 	if ((vtop->r & VT_VALMASK) == VT_LLOCAL)
@@ -9665,8 +9675,18 @@ tok_next:
 			s = find_field(&vtop->type, tok, &cumofs);
 			gaddrof();
 			vtop->type = char_pointer_type;
-			vpushi(cumofs);
-			gen_op('+');
+#if MCC_CONFIG_OPTIMIZER
+			if (ast_regdisp_env && cumofs && !(s->type.t & VT_ARRAY) &&
+					(vtop->r & VT_VALMASK) < VT_CONST &&
+					!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))) { MCC_TRACE("br\n");
+				vtop->c.i = cumofs;
+				vtop->r |= VT_REGDISP;
+			} else
+#endif
+			{ MCC_TRACE("br\n");
+				vpushi(cumofs);
+				gen_op('+');
+			}
 			vtop->type = s->type;
 			if (qualifiers)
 				{ MCC_TRACE("br\n"); parse_btype_qualify(&vtop->type, qualifiers); }

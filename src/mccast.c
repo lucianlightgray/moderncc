@@ -1578,6 +1578,7 @@ static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP 
 #ifdef MCC_TARGET_X86_64
 static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
 #endif
+int ast_regdisp_env; /* MCC_AST_REGDISP: keep a member/array constant offset as a register-base displacement instead of materialising an add */
 static int ast_cost_spill_env; /* MCC_AST_COST_SPILL: add a loop register-pressure term to ast_cost_score so spill-reducing passes score a real benefit */
 static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
 static int ast_no_callful_env;
@@ -1856,6 +1857,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
+	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
 #ifdef MCC_TARGET_X86_64
 	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", 0);
 	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
