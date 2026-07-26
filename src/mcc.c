@@ -813,18 +813,47 @@ static long so_run_score(unsigned timeout_ms) { MCC_TRACE("enter\n");
 	return best;
 }
 
+#define SO_SPILL_W 48
+
+static char so_spill_path[1216];
+
+static long so_spill_read(void) { MCC_TRACE("enter\n");
+	FILE *f;
+	long v = -1;
+	if (!so_spill_path[0])
+		{ MCC_TRACE("br\n"); return -1; }
+	f = host_fopen(so_spill_path, "r");
+	if (!f)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (fscanf(f, "%ld", &v) != 1)
+		{ MCC_TRACE("br\n"); v = -1; }
+	fclose(f);
+	remove(so_spill_path);
+	return v;
+}
+
 static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
 										unsigned budget, unsigned limit_lvl,
 										unsigned timeout_ms) { MCC_TRACE("enter\n");
+	long sz, sp;
 	so_setenv_cfg(gate, budget, limit_lvl);
+	if (so_spill_path[0])
+		{ MCC_TRACE("br\n"); setenv("MCC_AST_SPILL_OUT", so_spill_path, 1); }
 	if (so_spawn_timeout(cv, timeout_ms) != 0)
 		{ MCC_TRACE("br\n"); return -1; }
 	if (so_jitscore && so_run_cv) { MCC_TRACE("br\n");
 		long sc = so_run_score(timeout_ms);
 		if (sc >= 0)
-			{ MCC_TRACE("br\n"); return sc; }
+			{ MCC_TRACE("br\n"); so_spill_read();
+			return sc; }
 	}
-	return so_textsize(cand_tmp);
+	sz = so_textsize(cand_tmp);
+	sp = so_spill_read();
+	if (sz >= 0 && sp > 0) { MCC_TRACE("br\n");
+		MCC_TRACE("superopt: gate %u text %ld spills %ld\n", gate, sz, sp);
+		sz += sp * SO_SPILL_W;
+	}
+	return sz;
 }
 
 static void so_ckpt_save(const char *ckpt, uint64_t key, unsigned best_gate,
@@ -1119,6 +1148,12 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	if (host_exe_path(exe, sizeof exe) <= 0)
 		{ MCC_TRACE("br\n"); pstrcpy(exe, sizeof exe, argv[0]); }
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
+	{
+		const char *sw = getenv("MCC_SO_SPILL_SCORE");
+		if (sw && sw[0] && strcmp(sw, "0"))
+			{ MCC_TRACE("br\n"); snprintf(so_spill_path, sizeof so_spill_path,
+																		"%s.mcc-so-spill", outfile); }
+	}
 	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
 	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) { MCC_TRACE("br\n");
 		best_gate = ck.best_gate;
@@ -1507,6 +1542,16 @@ redo:
 				{ MCC_TRACE("br\n"); ret = mcc_output_file(s, s->outfile); }
 			if (!ret && s->gen_deps)
 				{ MCC_TRACE("br\n"); gen_makedeps(s, s->outfile, s->deps_outfile); }
+			{
+				const char *sp = getenv("MCC_AST_SPILL_OUT");
+				if (!ret && sp && sp[0]) { MCC_TRACE("br\n");
+					FILE *sf = host_fopen(sp, "w");
+					if (sf) { MCC_TRACE("br\n");
+						fprintf(sf, "%ld\n", mcc_stackref_count);
+						fclose(sf);
+					}
+				}
+			}
 		}
 	}
 
