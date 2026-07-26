@@ -237,6 +237,8 @@ void ast_hook_inc_end(void);
 void ast_hook_vdup(void);
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
+void ast_hook_synth_begin(void);
+void ast_hook_synth_end(void);
 void ast_hook_member_begin(int is_arrow);
 void ast_hook_member_end(int cumofs, struct CType *mtype, int nonlval,
 												 int qual, int bcheck);

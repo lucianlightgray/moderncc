@@ -1671,6 +1671,7 @@ ST_FUNC void gaddrof(void) { MCC_TRACE("enter\n");
 	ast_hook_gaddrof();
 	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
 		CType sv_type = vtop->type;
+		ast_hook_synth_begin();
 		vtop->r &= ~(VT_LVAL | VT_REGDISP);
 		vtop->type = char_pointer_type;
 		vpushi(vtop->c.i);
@@ -1678,6 +1679,7 @@ ST_FUNC void gaddrof(void) { MCC_TRACE("enter\n");
 		gen_op('+');
 		vtop->type = sv_type;
 		vtop->r |= VT_LVAL;
+		ast_hook_synth_end();
 	}
 #endif
 	vtop->r &= ~VT_LVAL;

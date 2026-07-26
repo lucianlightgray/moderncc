@@ -2787,6 +2787,19 @@ void ast_hook_gaddrof(void) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn - 1] = u;
 }
 
+void ast_hook_synth_begin(void) { MCC_TRACE("enter\n");
+	if (!ast_active)
+		{ MCC_TRACE("br\n"); return; }
+	ast_in_op++;
+}
+
+void ast_hook_synth_end(void) { MCC_TRACE("enter\n");
+	if (!ast_active)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_in_op > 0)
+		{ MCC_TRACE("br\n"); ast_in_op--; }
+}
+
 void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
 	ast_member_cap = 0;
 	if (!ast_active)
