@@ -2270,19 +2270,37 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
  * All bit-exact vs libm (incl. NaN/inf); FSQRT sets no errno (caller gates on
  * a provably-nonneg arg, like x86_64). ARMv8 baseline — no feature gate. */
 ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
-	uint32_t a, dbl;
+	uint32_t a, d, dbl;
 	gv(MCC_RC_FLOAT);
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
-	o(0x1e20c000u | dbl << 22 | a | a << 5); /* FABS */
+	d = a;
+#if MCC_CONFIG_OPTIMIZER
+	/* FABS is destructive (Rd==Rn). Don't clobber a PINNED (promoted) source whose
+	 * value is still live — write to a fresh reg (see x86_64 gen_sqrt). */
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = fltr(nr);
+	}
+#endif
+	o(0x1e20c000u | dbl << 22 | d | a << 5); /* FABS Rd=d, Rn=a */
 }
 
 ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
-	uint32_t a, dbl;
+	uint32_t a, d, dbl;
 	gv(MCC_RC_FLOAT);
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
-	o(0x1e21c000u | dbl << 22 | a | a << 5); /* FSQRT */
+	d = a;
+#if MCC_CONFIG_OPTIMIZER
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = fltr(nr);
+	}
+#endif
+	o(0x1e21c000u | dbl << 22 | d | a << 5); /* FSQRT Rd=d, Rn=a */
 }
 
 ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
@@ -2296,7 +2314,15 @@ ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
-	o(base | dbl << 22 | a | a << 5);
+	uint32_t d = a;
+#if MCC_CONFIG_OPTIMIZER
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = fltr(nr);
+	}
+#endif
+	o(base | dbl << 22 | d | a << 5); /* FRINT* Rd=d, Rn=a */
 }
 
 /* copysign(x,y) = |x| with sign(y). No single insn on arm64: GP round-trip —

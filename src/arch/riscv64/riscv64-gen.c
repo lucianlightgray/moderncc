@@ -1503,17 +1503,35 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
  * baseline has no round-to-integral insn (gcc keeps the libcall too), so
  * gen_round is not provided here and never referenced on riscv64. */
 ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
-	int bt = vtop->type.t & VT_BTYPE, r;
+	int bt = vtop->type.t & VT_BTYPE, r, d;
 	gv(MCC_RC_FLOAT);
 	r = freg(vtop->r);
-	ER(0x53, 2, r, r, r, bt == VT_DOUBLE ? 0x11 : 0x10);
+	d = r;
+#if MCC_CONFIG_OPTIMIZER
+	/* fsgnjx.d is destructive (rd==rs1==rs2). Don't clobber a PINNED (promoted)
+	 * source still live — write to a fresh reg (see x86_64 gen_sqrt). */
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = freg(nr);
+	}
+#endif
+	ER(0x53, 2, d, r, r, bt == VT_DOUBLE ? 0x11 : 0x10); /* fabs.d rd=d, rs1=r */
 }
 
 ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
-	int bt = vtop->type.t & VT_BTYPE, r;
+	int bt = vtop->type.t & VT_BTYPE, r, d;
 	gv(MCC_RC_FLOAT);
 	r = freg(vtop->r);
-	ER(0x53, 7, r, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c);
+	d = r;
+#if MCC_CONFIG_OPTIMIZER
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = freg(nr);
+	}
+#endif
+	ER(0x53, 7, d, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c); /* fsqrt.d rd=d, rs1=r */
 }
 
 /* copysign(x,y) = fsgnj.d/.s rd, x, y  (rd = {sign(y), magnitude(x)}).
