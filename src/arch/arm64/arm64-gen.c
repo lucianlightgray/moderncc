@@ -2339,9 +2339,18 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	fx = fltr(vtop[-1].r);
 	fy = fltr(vtop[0].r);
 	gyr = get_reg(MCC_RC_INT);
+	/* Pin the first scratch so the second get_reg differs. ast_pinned_regs (and
+	 * get_reg's honoring of it) only exists under MCC_CONFIG_OPTIMIZER; gen_copysign
+	 * is itself dispatched solely from the AST optimizer (mccast.c, MCC_AST_COPYSIGN_INLINE),
+	 * so it is never reached in a non-optimizer build. Guard to match every other
+	 * ast_pinned_regs use and to keep the non-optimizer self-compile building. */
+#if MCC_CONFIG_OPTIMIZER
 	ast_pinned_regs |= (uint64_t)1 << gyr;
+#endif
 	gxr = get_reg(MCC_RC_INT);
+#if MCC_CONFIG_OPTIMIZER
 	ast_pinned_regs &= ~((uint64_t)1 << gyr);
+#endif
 	gx = intr(gxr);
 	gy = intr(gyr);
 	if (dbl) { MCC_TRACE("br\n");
