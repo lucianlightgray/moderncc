@@ -45,7 +45,7 @@ SR="$root/vendor/gentoo-stage3-riscv64-glibc"
 RTA="$root/cmake-cross/riscv64-libmccrt.a"
 if command -v qemu-riscv64 >/dev/null 2>&1 && command -v cc >/dev/null 2>&1 \
    && [ -d "$SR" ] && [ -f "$RTA" ]; then
-    exec "$(dirname "$0")/selfhost-riscv64-native.sh" "$@"
+    exec "$(dirname "$0")/selfhost-cross-native.sh" riscv64 "$@"
 fi
 
 command -v docker >/dev/null 2>&1 || { echo "docker not available"; exit 77; }

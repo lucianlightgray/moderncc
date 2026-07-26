@@ -5044,6 +5044,14 @@ if(MCC_BUILD_TESTS)
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-riscv64-docker.sh")
         set_tests_properties(selfhost-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 1800)
+
+        # arm64 leg of the same gate. Native-only (no docker path): it needs the
+        # vendored arm64 stage3 sysroot + arm64-libmccrt.a + qemu-aarch64, and
+        # skips 77 when any is missing.
+        add_test(NAME selfhost-arm64-native
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-cross-native.sh" arm64)
+        set_tests_properties(selfhost-arm64-native PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 TIMEOUT 1800)
     endif()
 
     if(TARGET mcc-riscv64)
