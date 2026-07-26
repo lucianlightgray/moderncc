@@ -11350,6 +11350,23 @@ static int ast_ivsr_is_iv_ref(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("e
 
 static MCC_OPT_TLS AstLocal ast_ivsr_ptr_target;
 
+/* Does the subtree read the IV local (off `ivoff`), or any pointer this pass has
+ * already materialised (an ast_ltemp slot)? Either makes the "base" a function
+ * of the loop counter rather than a loop invariant. */
+static int ast_ivsr_ptr_refs_iv(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_ref_is_local_off(a, n, ivoff))
+		{ MCC_TRACE("br\n"); return 1; }
+	for (int t = 0; t < ast_ltemp_n; t++)
+		{ MCC_TRACE("br\n"); if (ast_ref_is_local_off(a, n, ast_ltemp_off[t]))
+			{ MCC_TRACE("br\n"); return 1; } }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_ivsr_ptr_refs_iv(a, c, ivoff))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 /* Match `Binary('+', base_invariant, iv)` whose result is a POINTER (so codegen
  * scales the index by the element size). Returns the '+' node, else AST_NONE. */
 static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
@@ -11377,6 +11394,17 @@ static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
 	 * pointer local/param (a memory-load Ref) which isn't "register-pure" but is
 	 * perfectly safe to re-read outside the loop. */
 	if (!ast_licm_operands_ok(a, loop, base) || !ast_expr_pure(a, base, 16))
+		{ MCC_TRACE("br\n"); return AST_NONE; }
+	/* …and it must not be a function of the loop counter. `a[i][i]` is the case
+	 * that breaks: the pass runs to fixpoint, so after the inner `&a + i` has
+	 * been strength-reduced to a pointer p, the OUTER add reappears next cycle as
+	 * `p + i` — which looks exactly like "invariant base + IV" even though p is
+	 * itself an induction pointer. Hoisting that to the preheader and stepping it
+	 * yields a[i][0]. ast_licm_operands_ok does not catch it: it asks whether the
+	 * base's memory operands are WRITTEN in the loop, and both the IV and p are
+	 * locals updated in the increment block, so the base reads as invariant.
+	 * Only the READ of a[i][i] is wrong, which is what makes it hard to spot. */
+	if (ast_ivsr_ptr_refs_iv(a, base, ivoff))
 		{ MCC_TRACE("br\n"); return AST_NONE; }
 	return n;
 }
