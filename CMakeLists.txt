@@ -5003,6 +5003,18 @@ if(MCC_BUILD_TESTS)
     endif()
     # riscv64 has no user-mode emulator here, so link+DWARF only (no exec) in a
     # host-native container with the riscv64 cross toolchain.
+    # Runtime (generated-code speed) gate. CI runs --check-only: wall-clock on a
+    # shared runner is noise, so only the output check against the reference
+    # compiler is a pass/fail condition. Run it by hand with --runs/--gates to
+    # compare configurations when deciding a flip.
+    if(MCC_PYTHON3)
+        add_test(NAME runtime-bench-check
+            COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-bench.py"
+                --mcc "$<TARGET_FILE:mcc>" --check-only)
+        set_tests_properties(runtime-bench-check PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 TIMEOUT 900)
+    endif()
+
     # 3-stage riscv64 self-host fixpoint: stages 2 and 3 run the mcc-built
     # riscv64 mcc under qemu, so o1 == o2 == o3 is a real cross-arch gate
     # rather than a host-arch one. Deliberately NOT inside if(TARGET
