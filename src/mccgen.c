@@ -10497,14 +10497,16 @@ static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
 	}
 }
 
-#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)) && MCC_CONFIG_OPTIMIZER
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)) && MCC_CONFIG_OPTIMIZER
 /* MCC_SWITCH_JUMPTABLE (default off): dense switch -> O(1) rodata jump table
- * (x86_64 + arm64 + riscv64), vs gcase's O(log n) compare tree. Emits `idx=val-lo;
- * if ((unsigned)idx > hi-lo) goto default; jmp table[idx]`, with an
+ * (x86_64 + arm64 + riscv64 + i386), vs gcase's O(log n) compare tree. Emits
+ * `idx=val-lo; if ((unsigned)idx > hi-lo) goto default; jmp table[idx]`, with an
  * (hi-lo+1)-entry rodata table (gaps -> a default trampoline). Bails the AST
  * recorder for the function (ast_hook_bail) so the baseline table is kept
  * without a faithfulness mismatch vs the gcase-based replay. x86_64 uses an
  * absolute 8-byte pointer table (or, under PIC, a 32-bit self-relative offset
+ * table); i386 uses an absolute 4-byte pointer table (non-PIC only -- i386 PIC
+ * bails to gcase, since i386 has no PC-relative addressing for a self-relative
  * table); arm64 and riscv64 always use a 32-bit self-relative offset table
  * (their adrp/add resp. auipc/addi symbol addressing is PC-relative, so no
  * separate PIC path is needed). */
@@ -10527,6 +10529,10 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int i;
 	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG)
 		{ MCC_TRACE("br\n"); return 0; } /* PIC handled: gcase_jumptable emits a PC-relative offset table */
+#if defined(MCC_TARGET_I386)
+	if (mcc_state->pic)
+		{ MCC_TRACE("br\n"); return 0; } /* i386 PIC jump table unimplemented (no PC-relative addressing) */
+#endif
 	lo = sw->p[0]->v1;
 	hi = sw->p[sw->n - 1]->v2;
 	if (hi < lo)
@@ -10549,6 +10555,9 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 	 * self-relative offset table (see the per-entry reloc note below). */
 	int pic = mcc_state->pic;
 	int elt = pic ? 4 : MCC_PTR_SIZE;
+#elif defined(MCC_TARGET_I386)
+	/* i386: absolute 4-byte pointer table (non-PIC only; PIC bailed in switch_jt_dense). */
+	int elt = MCC_PTR_SIZE;
 #else
 	/* arm64: always a 32-bit self-relative offset table (adrp/add is PC-relative). */
 	int elt = 4;
@@ -10604,6 +10613,15 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 		if (r >= 8) { MCC_TRACE("br\n"); g(0x41); }
 		g(0xff); g(0xe0 | (r & 7));
 	}
+#elif defined(MCC_TARGET_I386)
+	/* i386 non-PIC dispatch: jmp *tab(,idx,4). The idx reg (r) is a full 32-bit
+	 * register already constrained to [0,span-1] by the range check, so no
+	 * zero-extension is needed. FF /4, ModRM 0x24 (mod=00, reg=4, rm=4 SIB),
+	 * SIB scale4/index=r/no-base(5) -> disp32 = R_386_32 (REL, addend 0 inline)
+	 * to the table symbol. */
+	g(0xff); g(0x24); g((2 << 6) | ((r & 7) << 3) | 5);
+	greloc(cur_text_section, tab_sym, ind, R_386_32);
+	gen_le32(0);
 #elif defined(MCC_TARGET_ARM64)
 	{
 		/* arm64 dispatch: mov w_idx,w_idx (zero-extend); adrp base,tab;
@@ -10675,6 +10693,12 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 							get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
 							tab_off + i * elt, R_X86_64_PC32, (int)(i * elt));
 		}
+#elif defined(MCC_TARGET_I386)
+		/* i386 non-PIC: absolute 4-byte pointer (R_386_32, REL, addend 0 inline
+		 * from the zero-filled rodata). */
+		greloc(rodata_section,
+					 get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
+					 tab_off + i * elt, R_386_32);
 #elif defined(MCC_TARGET_ARM64)
 		greloca(rodata_section,
 						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
@@ -11376,7 +11400,7 @@ again:
 		sw->bsym = NULL;
 		vpushv(&sw->sv);
 		gv(MCC_RC_INT);
-#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)) && MCC_CONFIG_OPTIMIZER
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)) && MCC_CONFIG_OPTIMIZER
 		if (switch_jt_env() && switch_jt_dense(sw))
 			{ MCC_TRACE("br\n"); d = gcase_jumptable(sw); }
 		else
