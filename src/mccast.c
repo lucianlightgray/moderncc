@@ -1574,6 +1574,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 }
 static int ast_promote_env;
 static int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
+static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP promotion pool (x86_64 xmm6,7 -> xmm2..7) for spill-heavy leaves; safe now that gen_sqrt/gen_round don't clobber promoted FP regs */
 static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
@@ -1849,6 +1850,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
+	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	/* Let leaf functions (no calls) tap the callee-saved GP pool too — a leaf
 	 * otherwise only gets the tiny caller-saved pool (3 GP on x86_64), which is
 	 * the regalloc cliff a function falls off once its last call (e.g. sqrt) is
@@ -3192,6 +3194,8 @@ static const int ast_promo_caller[AST_PROMO_CALLER_N] = {2, 3, 4, 5, 6, 7};
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {19, 20, 21, 22, 23,
 																												 24, 25, 26, 27, 28, 29};
 static const int ast_promo_xmm[AST_PROMO_XMM_N] = {10, 11, 12, 13};
+#define AST_PROMO_XMM_LEAF_N AST_PROMO_XMM_N
+#define ast_promo_xmm_leaf ast_promo_xmm
 #elif defined(MCC_TARGET_X86_64)
 #define AST_PROMO_CALLER_N 3
 #define AST_PROMO_CALLEE_N 5
@@ -3199,6 +3203,11 @@ static const int ast_promo_xmm[AST_PROMO_XMM_N] = {10, 11, 12, 13};
 static const int ast_promo_caller[AST_PROMO_CALLER_N] = {10, 9, 8};
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {3, 12, 13, 14, 15};
 static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23};
+/* widened leaf FP pool (MCC_AST_PROMO_LEAF_XMM): xmm6,7,5,4,3,2 (xmm0/1 kept for
+ * ret + scratch). Safe now that the destructive FP ops don't clobber promoted
+ * regs; helps spill-heavy leaves (e.g. a sqrt-inlined nbody advance: 60→49 spills). */
+#define AST_PROMO_XMM_LEAF_N 6
+static const int ast_promo_xmm_leaf[AST_PROMO_XMM_LEAF_N] = {22, 23, 21, 20, 19, 18};
 #else
 /* arm64 (PR-2): callful functions promote into the callee-saved pool x19..x28
    (indices 28..37, mapped by intr()); their incoming values are saved/restored
@@ -3216,6 +3225,8 @@ static const int ast_promo_caller[AST_PROMO_CALLER_N] = {9, 10, 11, 12, 13, 14, 
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {28, 29, 30, 31, 32,
 																												 33, 34, 35, 36, 37};
 static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23, 24, 25};
+#define AST_PROMO_XMM_LEAF_N AST_PROMO_XMM_N
+#define ast_promo_xmm_leaf ast_promo_xmm
 #endif
 #define AST_PROMO_SLOTS (AST_PROMO_MAX * 8)
 static int ast_promo_off[AST_PROMO_SLOTS];
@@ -4549,7 +4560,12 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_callful = has_call;
 	const int *gp_pool = has_call ? ast_promo_callee : ast_promo_caller;
 	int gp_max = has_call ? AST_PROMO_CALLEE_N : AST_PROMO_CALLER_N;
+	const int *xmm_pool = ast_promo_xmm;
 	int xmm_max = has_call ? 0 : AST_PROMO_XMM_N;
+	if (!has_call && ast_promo_leaf_xmm_env) { MCC_TRACE("br\n");
+		xmm_pool = ast_promo_xmm_leaf;
+		xmm_max = AST_PROMO_XMM_LEAF_N;
+	}
 	if (!has_call && ast_promo_leaf_callee_env) { MCC_TRACE("br\n");
 		/* leaf may overflow past caller-saved into the callee-saved pool
 		 * (saved/restored per-reg); caller-saved first so they're preferred. */
@@ -4637,7 +4653,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		for (int j = 0; j < nc; j++)
 			{ MCC_TRACE("br\n"); careg[j] = -1; }
 		for (int cls = 0; cls < 2; cls++) { MCC_TRACE("br\n");
-			const int *pool = cls == 0 ? gp_pool : ast_promo_xmm;
+			const int *pool = cls == 0 ? gp_pool : xmm_pool;
 			int kcol = cls == 0 ? gp_max : xmm_max;
 			int idx[AST_COLOR_MAX], m = 0;
 			for (int j = 0; j < nc && m < AST_COLOR_MAX; j++) { MCC_TRACE("br\n");
@@ -4728,7 +4744,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		ast_promo_off[ast_promo_n] = coff[best];
 		ast_promo_typ[ast_promo_n] = ctyp[best];
 		ast_promo_reg[ast_promo_n] =
-				is_float(ctyp[best]) ? ast_promo_xmm[xmm_n++] : gp_pool[gp_n++];
+				is_float(ctyp[best]) ? xmm_pool[xmm_n++] : gp_pool[gp_n++];
 		ast_promo_n++;
 		cpoison[best] = 1;
 	}
