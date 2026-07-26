@@ -11237,8 +11237,6 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		int op = ast_op(a, n);
 		if (op != 3 && op != 5)
 			{ MCC_TRACE("br\n"); continue; }
-		if (ast_sccp_has_label(a, n))
-			{ MCC_TRACE("br\n"); continue; }
 		AstLocal parent = ast_parent(a, n);
 		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
 			{ MCC_TRACE("br\n"); continue; }
@@ -11247,6 +11245,15 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (incrbb == AST_NONE || body == AST_NONE ||
 				ast_kind(a, incrbb) != AST_BasicBlock ||
 				ast_kind(a, body) != AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
+		/* Only bail on a label DEFINITION inside the loop BODY (op-4) — that is a
+		 * potential external goto-into-loop target that could bypass the `p` init.
+		 * A `continue`/`break` compiles to a goto (op-5) in the body targeting the
+		 * loop's own increment/exit label (which lives in incrbb/after the loop,
+		 * NOT in the body), so those are safe: the increment does `p += stride` in
+		 * lockstep with `i++`, keeping p == base+i at every body use regardless of
+		 * intra-loop control flow. (The mul-based ivsr stays fully conservative.) */
+		if (ast_sccp_has_label(a, body))
 			{ MCC_TRACE("br\n"); continue; }
 		int ivoff = 0, ivtt = 0, found = 0;
 		int64_t stride = 0;
