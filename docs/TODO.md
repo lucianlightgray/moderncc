@@ -233,6 +233,17 @@ Each arch should match x86_64 for self-host, promotion, cmov/csel, div-magic, JI
 ## Tests / infra
 - **Runtime (generated-code speed) benchmark harness — LANDED 2026-07-26.** `tools/runtime-bench.py` + ctest `runtime-bench-check`. It builds each kernel with mcc and with a reference compiler, runs min-of-N, and **verifies mcc's output against the reference on every run** — a fast result that miscompiles fails instead of scoring well. CI runs `--check-only` (one run, correctness only): wall-clock on a shared runner is noise, so timing is advisory and never a pass/fail condition. `--gates "K=V …"` is repeatable, so a flip decision is one command — the first config is the baseline and later ones print as a delta, with numbered columns and a legend (gate strings are far too long to be headers). Skips 77 without a reference compiler or kernels.
   **Superseded by the instruction-ratio baseline below — wall-clock ratios conflate real work with layout and cache effects, so prioritise on `insn/ref`.**
+  **CONSOLIDATED 2026-07-26 — effect of the whole day's gate set vs stock defaults** (`MCC_AST_CHAINSTORE=1 MCC_AST_OPASSIGN=1 MCC_AST_PROMO_INCDEC=1 MCC_AST_IVSR_PTR=1`, `--runs 5`, spectral also gets `-fc99-inline-body`):
+
+  | kernel | insns vs defaults | time vs defaults | resulting insn/ref |
+  |---|---|---|---|
+  | matmul | **−24.9%** | −20.9% | 10.22x → ~7.7x |
+  | spectral | **−23.8%** | −32.1% | 7.41x → ~5.6x |
+  | nbody | −6.9% | −19.0% | 2.46x → ~2.29x |
+  | mandelbrot | −0.1% | −0.7% | 2.05x |
+  | nsieve | **+1.5%** | −9.1% | 3.04x → ~3.09x |
+
+  Two honest readings: **nsieve is a small real instruction REGRESSION** (+1.5%) that the wall-clock column hides behind a −9.1% that is layout noise — it is memory-bound (3.04x instructions but only 1.6x time), so it should not drive decisions either way; and mandelbrot is untouched, consistent with its residue being cache/layout rather than emitted work. None of these gates is flipped — they remain default-OFF pending the shared soak and the layout-sensitivity call.
   **x86_64 INSTRUCTION baseline captured 2026-07-26** (`--gates "MCC_AST_OPASSIGN=1 MCC_AST_PROMO_INCDEC=1 MCC_AST_IVSR_PTR=1"`, reference gcc -O2 `-ffp-contract=off`, `insn/ref` = mcc instructions retired / gcc's):
 
   | kernel | time vs ref | **insn/ref** | mcc insns |
