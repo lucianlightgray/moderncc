@@ -84,6 +84,37 @@ def run_once(exe, argv):
     return p.returncode, p.stdout.strip(), dt
 
 
+def perf_available():
+    """perf works only if the binary exists AND the kernel lets us count.
+    Both checks matter: a container with perf installed but
+    perf_event_paranoid locked down fails at run time, not at which()."""
+    if not shutil.which("perf"):
+        return False
+    p = subprocess.run(["perf", "stat", "-e", "instructions", "-x,", "true"],
+                       capture_output=True, text=True)
+    return p.returncode == 0 and "instructions" in p.stderr
+
+
+def instructions_retired(exe, argv):
+    """Dynamic instruction count -- the metric that separates 'emits less work'
+    from 'got lucky on code layout'. nsieve showed why this belongs here:
+    +8.5% cycles with the instruction count unchanged to within 36 out of 4.6
+    billion, i.e. a front-end effect and not a codegen regression. Returns None
+    when perf cannot count."""
+    p = subprocess.run(["perf", "stat", "-e", "instructions:u", "-x,",
+                        exe] + argv, capture_output=True, text=True)
+    if p.returncode != 0:
+        return None
+    for line in p.stderr.splitlines():
+        f = line.split(",")
+        if len(f) > 2 and f[2].startswith("instructions"):
+            try:
+                return int(f[0])
+            except ValueError:
+                return None
+    return None
+
+
 def parse_gates(s):
     env = {}
     for tok in (s or "").split():
@@ -102,6 +133,8 @@ def main():
                     help="one run per kernel, correctness only, no timing table")
     ap.add_argument("--gates", action="append", default=None)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--no-perf", action="store_true",
+                    help="skip the instructions-retired column even if perf works")
     args = ap.parse_args()
 
     cc = find_cc(args.cc)
@@ -116,6 +149,7 @@ def main():
         print("no benchmark kernels present; skipping")
         return 77
 
+    use_perf = (not args.check_only) and (not args.no_perf) and perf_available()
     gate_sets = args.gates if args.gates else [""]
     runs = 1 if args.check_only else args.runs
     failures, results = [], {}
@@ -155,6 +189,10 @@ def main():
                 if not bad:
                     results.setdefault(name, {})["ref"] = ref_ms
                     results[name][gates or "defaults"] = best
+                    if use_perf:
+                        ins = instructions_retired(exe, argv)
+                        if ins is not None:
+                            results[name].setdefault("ins", {})[gates or "defaults"] = ins
 
     if not args.check_only and results:
         # gate strings are far too long to use as column headers, so number them
@@ -163,6 +201,8 @@ def main():
         labels = ["cfg%d" % i for i in range(len(cols))]
         hdr = f"\n{'kernel':<12}{'ref(ms)':>9}" + "".join(f"{l:>9}" for l in labels)
         hdr += f"{'vs ref':>9}" + ("".join(f"{'d'+l:>9}" for l in labels[1:]) if len(cols) > 1 else "")
+        if any(r.get("ins") for r in results.values()):
+            hdr += f"{'insns':>10}" + "".join(f"{'d'+l:>9}" for l in labels[1:])
         print(hdr)
         for name, _, _, _ in kernels:
             if name not in results:
@@ -176,12 +216,22 @@ def main():
             line += f"{first / r['ref']:>8.2f}x" if first and r["ref"] else f"{'-':>9}"
             for c in cols[1:]:
                 line += f"{(r[c] - first) / first * 100:>+8.1f}%" if r.get(c) and first else f"{'-':>9}"
+            ins = r.get("ins", {})
+            base_ins = ins.get(cols[0])
+            if base_ins:
+                line += f"{base_ins / 1e9:>9.2f}G"
+                for c in cols[1:]:
+                    line += (f"{(ins[c] - base_ins) / base_ins * 100:>+8.1f}%"
+                             if ins.get(c) else f"{'-':>9}")
             print(line)
         print()
         for l, c in zip(labels, cols):
             print(f"  {l} = {c}")
         print("\ntiming is advisory: wall-clock varies with load, and only the")
         print("output check above is a pass/fail gate")
+        if any(r.get("ins") for r in results.values()):
+            print("insns = instructions retired (perf). A time delta with NO insn")
+            print("delta is code layout, not codegen -- judge flips on the insn column")
 
     if args.json:
         print(json.dumps({"results": results, "failures": failures}, indent=2))
