@@ -1114,6 +1114,21 @@ ST_FUNC void gen_opi(int op) {
 	}
 }
 
+/* math-builtin hardware inlines (x87): fabs = D9 E1, fsqrt = D9 FA, operating
+ * on st0 in place (mirrors the fchs negate above). Bit-exact vs gcc -m32 (both
+ * use x87 fabs/fsqrt); fsqrt sets no errno (caller gates on a provably-nonneg
+ * arg). No floor/ceil/trunc (x87 frndint needs rounding-control juggling — gcc
+ * keeps the libcall too). */
+ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
+	gv(MCC_RC_FLOAT);
+	o(0xe1d9); /* D9 E1 = fabs (st0) */
+}
+
+ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
+	gv(MCC_RC_FLOAT);
+	o(0xfad9); /* D9 FA = fsqrt (st0) */
+}
+
 ST_FUNC void gen_opf(int op) {
 	int a, ft, fc, swapped, r;
 

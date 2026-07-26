@@ -4917,7 +4917,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 		} else if (uop == AST_OP_FABS) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
@@ -5881,7 +5881,7 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 			ab[i] = ast_ival(a, lit);
 		}
 		if (i < nargs) { MCC_TRACE("br\n");
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 			/* fabs(x) with a runtime x: lower to an inline sign-clear (andpd)
 			 * instead of a libcall. Bit-exact, SSE2-baseline. The parser already
 			 * coerced the arg to bt, and the replay re-casts to bt before emit. */
@@ -5995,8 +5995,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
  * independent of emit-size scoring. Idempotent with ast_bfold_run (which skips
  * the already-rewritten AST_Unary nodes). Only RUNTIME args are rewritten;
  * constant args are left for bfold's compile-time fold. x86_64 + arm64 + riscv64
- * (mirrors the ast_bfold_run math-inline guard; round is x86_64/arm64-only). */
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+ * + i386 (mirrors the ast_bfold_run math-inline guard; round is x86_64/arm64-only). */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_math_inline_env)
 		{ MCC_TRACE("br\n"); return 0; }
