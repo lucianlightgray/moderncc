@@ -231,7 +231,22 @@ typedef struct HostSpawnOpts {
 
 ST_FUNC int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o);
 
+ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned timeout_ms,
+																						const volatile int *stop);
+ST_FUNC MAYBE_UNUSED int host_spawn_retry(const char *const *cv, unsigned timeout_ms,
+																					int tries, const volatile int *stop);
+ST_FUNC MAYBE_UNUSED int host_spawn_run(const char *const *cv, unsigned timeout_ms,
+																				long *usec, long *rss_kb, const volatile int *stop);
+
 ST_FUNC int host_find_tool_any(const char *const *names, const char *ext, char *buf, int size);
+
+ST_FUNC MAYBE_UNUSED void host_install_interrupt(void (*fn)(int));
+ST_FUNC MAYBE_UNUSED int host_setenv(const char *name, const char *val);
+ST_FUNC MAYBE_UNUSED int host_unsetenv(const char *name);
+ST_FUNC MAYBE_UNUSED void *host_file_lock(const char *path);
+ST_FUNC MAYBE_UNUSED void host_file_unlock(void *h);
+ST_FUNC MAYBE_UNUSED void host_fsync(FILE *f);
+ST_FUNC MAYBE_UNUSED int host_rename(const char *src, const char *dst);
 
 ST_FUNC int host_mkdirs(const char *path);
 ST_FUNC int host_cache_dir(char *buf, int size);

@@ -20,7 +20,10 @@ unsigned char mcc_log_verbose = 0;
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/utsname.h>
+#include <sys/resource.h>
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
@@ -327,6 +330,117 @@ ST_FUNC MAYBE_UNUSED int host_find_tool_any(const char *const *names, const char
 		{ MCC_TRACE("br\n"); if (host_find_tool(names[i], ext, buf, size))
 			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
+}
+
+#ifdef _WIN32
+static void (*host_interrupt_fn)(int);
+static BOOL WINAPI host_console_ctrl(DWORD type) { MCC_TRACE("enter\n");
+	(void)type;
+	if (host_interrupt_fn)
+		{ MCC_TRACE("br\n"); host_interrupt_fn(0); }
+	return TRUE;
+}
+#endif
+
+/* Install a handler for interactive interruption (Ctrl-C / terminate). Used by
+   the superopt search to checkpoint-and-exit on cancellation. */
+ST_FUNC MAYBE_UNUSED void host_install_interrupt(void (*fn)(int)) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	host_interrupt_fn = fn;
+	SetConsoleCtrlHandler(host_console_ctrl, TRUE);
+#else
+	signal(SIGTERM, fn);
+	signal(SIGINT, fn);
+#endif
+}
+
+ST_FUNC MAYBE_UNUSED int host_setenv(const char *name, const char *val) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	return _putenv_s(name, val);
+#else
+	return setenv(name, val, 1);
+#endif
+}
+
+ST_FUNC MAYBE_UNUSED int host_unsetenv(const char *name) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	return _putenv_s(name, "");
+#else
+	return unsetenv(name);
+#endif
+}
+
+/* Exclusive advisory lock on a lock file (created if absent). Returns an opaque
+   non-NULL handle on success, NULL on failure. */
+ST_FUNC MAYBE_UNUSED void *host_file_lock(const char *path) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	HANDLE h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
+												 FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+												 OPEN_ALWAYS, 0, NULL);
+	OVERLAPPED ov;
+	if (h == INVALID_HANDLE_VALUE)
+		{ MCC_TRACE("br\n"); return NULL; }
+	memset(&ov, 0, sizeof ov);
+	if (!LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &ov)) { MCC_TRACE("br\n");
+		CloseHandle(h);
+		return NULL;
+	}
+	return (void *)h;
+#else
+	int fd = open(path, O_CREAT | O_RDWR, 0644);
+	if (fd < 0)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (flock(fd, LOCK_EX) != 0) { MCC_TRACE("br\n");
+		close(fd);
+		return NULL;
+	}
+	return (void *)(intptr_t)(fd + 1);
+#endif
+}
+
+ST_FUNC MAYBE_UNUSED void host_file_unlock(void *h) { MCC_TRACE("enter\n");
+	if (!h)
+		{ MCC_TRACE("br\n"); return; }
+#ifdef _WIN32
+	{
+		OVERLAPPED ov;
+		memset(&ov, 0, sizeof ov);
+		UnlockFileEx((HANDLE)h, 0, MAXDWORD, MAXDWORD, &ov);
+		CloseHandle((HANDLE)h);
+	}
+#else
+	{
+		int fd = (int)(intptr_t)h - 1;
+		flock(fd, LOCK_UN);
+		close(fd);
+	}
+#endif
+}
+
+ST_FUNC MAYBE_UNUSED void host_fsync(FILE *f) { MCC_TRACE("enter\n");
+	fflush(f);
+#ifdef _WIN32
+	{
+		int fd = _fileno(f);
+		if (fd >= 0)
+			{ MCC_TRACE("br\n"); _commit(fd); }
+	}
+#else
+	{
+		int fd = fileno(f);
+		if (fd >= 0)
+			{ MCC_TRACE("br\n"); fsync(fd); }
+	}
+#endif
+}
+
+/* Atomic replace-existing rename. Returns 0 on success. */
+ST_FUNC MAYBE_UNUSED int host_rename(const char *src, const char *dst) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) ? 0 : -1;
+#else
+	return rename(src, dst);
+#endif
 }
 
 #pragma push_macro("malloc")
@@ -643,6 +757,248 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 #endif
 	mcc_free((void *)full);
 	return ret;
+}
+
+#ifdef _WIN32
+/* Build a CreateProcess command-line from an argv, using the same
+   backslash/quote rules as host_spawn_ex. Caller mcc_free()s the result. */
+static char *host_w32_cmdline(const char *const *argv) { MCC_TRACE("enter\n");
+	char *cmd, *p;
+	int i, len = 1;
+	for (i = 0; argv[i]; ++i)
+		{ MCC_TRACE("br\n"); len += 2 * (int)strlen(argv[i]) + 3; }
+	cmd = mcc_malloc(len);
+	for (p = cmd, i = 0; argv[i]; ++i) { MCC_TRACE("br\n");
+		char *q = host_quote_w32(argv[i]);
+		if (i)
+			{ MCC_TRACE("br\n"); *p++ = ' '; }
+		strcpy(p, q);
+		p += strlen(q);
+		mcc_free(q);
+	}
+	*p = 0;
+	return cmd;
+}
+
+/* K32GetProcessMemoryInfo is exported from kernel32 (unlike GetProcessMemoryInfo
+   which needs psapi). Declare it here so no extra header/link is required. */
+typedef struct host_w32_pmc {
+	DWORD cb;
+	DWORD PageFaultCount;
+	SIZE_T PeakWorkingSetSize;
+	SIZE_T WorkingSetSize;
+	SIZE_T QuotaPeakPagedPoolUsage;
+	SIZE_T QuotaPagedPoolUsage;
+	SIZE_T QuotaPeakNonPagedPoolUsage;
+	SIZE_T QuotaNonPagedPoolUsage;
+	SIZE_T PagefileUsage;
+	SIZE_T PeakPagefileUsage;
+} host_w32_pmc;
+__declspec(dllimport) BOOL WINAPI K32GetProcessMemoryInfo(HANDLE, host_w32_pmc *, DWORD);
+#endif
+
+/* Spawn cv, poll to the deadline honoring *stop, kill on timeout/abort.
+   Returns the child's exit code (>=0) or -1. */
+ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned timeout_ms,
+																						const volatile int *stop) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	char *cmd = host_w32_cmdline(cv);
+	STARTUPINFOA si;
+	PROCESS_INFORMATION pi;
+	unsigned t0;
+	int ret = -1;
+	memset(&si, 0, sizeof si);
+	si.cb = sizeof si;
+	if (!CreateProcessA(NULL, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) { MCC_TRACE("br\n");
+		mcc_free(cmd);
+		return -1;
+	}
+	t0 = host_clock_ms();
+	for (;;) { MCC_TRACE("br\n");
+		DWORD w = WaitForSingleObject(pi.hProcess, 1);
+		if (w == WAIT_OBJECT_0) { MCC_TRACE("br\n");
+			DWORD ec = (DWORD)-1;
+			GetExitCodeProcess(pi.hProcess, &ec);
+			ret = (int)ec;
+			break;
+		}
+		if ((stop && *stop) || host_clock_ms() - t0 >= timeout_ms) { MCC_TRACE("br\n");
+			TerminateProcess(pi.hProcess, 1);
+			WaitForSingleObject(pi.hProcess, INFINITE);
+			ret = -1;
+			break;
+		}
+	}
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+	mcc_free(cmd);
+	return ret;
+#else
+	unsigned t0;
+	pid_t pid = fork();
+	if (pid < 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (pid == 0) { MCC_TRACE("br\n");
+		execvp(cv[0], (char *const *)cv);
+		_exit(127);
+	}
+	t0 = host_clock_ms();
+	for (;;) { MCC_TRACE("br\n");
+		int status;
+		pid_t r = waitpid(pid, &status, WNOHANG);
+		if (r == pid)
+			{ MCC_TRACE("br\n"); return WIFEXITED(status) ? WEXITSTATUS(status) : -1; }
+		if (r < 0) { MCC_TRACE("br\n");
+			if (errno == EINTR)
+				{ MCC_TRACE("br\n"); continue; }
+			return -1;
+		}
+		if ((stop && *stop) || host_clock_ms() - t0 >= timeout_ms) { MCC_TRACE("br\n");
+			kill(pid, SIGKILL);
+			waitpid(pid, &status, 0);
+			return -1;
+		}
+		usleep(1000);
+	}
+#endif
+}
+
+/* Retry host_spawn_timeout up to `tries` times with a small linear backoff,
+   honoring *stop. Returns the last exit code (>=0) or -1. */
+ST_FUNC MAYBE_UNUSED int host_spawn_retry(const char *const *cv, unsigned timeout_ms,
+																					int tries, const volatile int *stop) { MCC_TRACE("enter\n");
+	int rc = -1, k;
+	for (k = 0; k < tries && !(stop && *stop); k++) { MCC_TRACE("br\n");
+		rc = host_spawn_timeout(cv, timeout_ms, stop);
+		if (rc >= 0)
+			{ MCC_TRACE("br\n"); return rc; }
+#ifdef _WIN32
+		Sleep((DWORD)(k + 1) * 5u);
+#else
+		usleep((unsigned)(k + 1) * 5000u);
+#endif
+	}
+	return rc;
+}
+
+/* Spawn cv with stdout/stderr suppressed, measuring wall-clock microseconds and
+   peak RSS in KB. Returns 0 iff the child exited 0. */
+ST_FUNC MAYBE_UNUSED int host_spawn_run(const char *const *cv, unsigned timeout_ms,
+																				long *usec, long *rss_kb, const volatile int *stop) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	char *cmd = host_w32_cmdline(cv);
+	STARTUPINFOA si;
+	PROCESS_INFORMATION pi;
+	SECURITY_ATTRIBUTES sa;
+	HANDLE hnul;
+	LARGE_INTEGER freq, c0, c1;
+	unsigned t0;
+	int ret = -1;
+	memset(&sa, 0, sizeof sa);
+	sa.nLength = sizeof sa;
+	sa.bInheritHandle = TRUE;
+	hnul = CreateFileA("NUL", GENERIC_READ | GENERIC_WRITE,
+										 FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+										 OPEN_EXISTING, 0, NULL);
+	memset(&si, 0, sizeof si);
+	si.cb = sizeof si;
+	si.dwFlags = STARTF_USESTDHANDLES;
+	si.hStdInput = hnul;
+	si.hStdOutput = hnul;
+	si.hStdError = hnul;
+	if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) { MCC_TRACE("br\n");
+		if (hnul != INVALID_HANDLE_VALUE)
+			{ MCC_TRACE("br\n"); CloseHandle(hnul); }
+		mcc_free(cmd);
+		return -1;
+	}
+	QueryPerformanceFrequency(&freq);
+	QueryPerformanceCounter(&c0);
+	t0 = host_clock_ms();
+	for (;;) { MCC_TRACE("br\n");
+		DWORD w = WaitForSingleObject(pi.hProcess, 1);
+		if (w == WAIT_OBJECT_0) { MCC_TRACE("br\n");
+			DWORD ec = (DWORD)-1;
+			host_w32_pmc pmc;
+			QueryPerformanceCounter(&c1);
+			GetExitCodeProcess(pi.hProcess, &ec);
+			if (ec == 0) { MCC_TRACE("br\n");
+				*usec = freq.QuadPart
+										? (long)((c1.QuadPart - c0.QuadPart) * 1000000
+														 / freq.QuadPart)
+										: 0;
+				memset(&pmc, 0, sizeof pmc);
+				pmc.cb = sizeof pmc;
+				if (K32GetProcessMemoryInfo(pi.hProcess, &pmc, sizeof pmc))
+					{ MCC_TRACE("br\n"); *rss_kb = (long)(pmc.PeakWorkingSetSize / 1024); }
+				else
+					{ MCC_TRACE("br\n"); *rss_kb = 0; }
+				ret = 0;
+			}
+			break;
+		}
+		if ((stop && *stop) || host_clock_ms() - t0 >= timeout_ms) { MCC_TRACE("br\n");
+			TerminateProcess(pi.hProcess, 1);
+			WaitForSingleObject(pi.hProcess, INFINITE);
+			break;
+		}
+	}
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+	if (hnul != INVALID_HANDLE_VALUE)
+		{ MCC_TRACE("br\n"); CloseHandle(hnul); }
+	mcc_free(cmd);
+	return ret;
+#else
+	struct timeval t0, t1;
+	struct rusage ru;
+	pid_t pid = fork();
+	if (pid < 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (pid == 0) { MCC_TRACE("br\n");
+		int nul = open("/dev/null", O_RDWR);
+		if (nul >= 0) { MCC_TRACE("br\n");
+			dup2(nul, 1);
+			dup2(nul, 2);
+			if (nul > 2)
+				{ MCC_TRACE("br\n"); close(nul); }
+		}
+		execvp(cv[0], (char *const *)cv);
+		_exit(127);
+	}
+	gettimeofday(&t0, NULL);
+	{
+		unsigned tstart = host_clock_ms();
+		for (;;) { MCC_TRACE("br\n");
+			int status;
+			pid_t r = wait4(pid, &status, WNOHANG, &ru);
+			if (r == pid) { MCC_TRACE("br\n");
+				int rc = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+				gettimeofday(&t1, NULL);
+				if (rc != 0)
+					{ MCC_TRACE("br\n"); return -1; }
+				*usec = (long)(t1.tv_sec - t0.tv_sec) * 1000000L +
+								(long)(t1.tv_usec - t0.tv_usec);
+				*rss_kb = (long)ru.ru_maxrss;
+#if MCC_HOST_DARWIN
+				*rss_kb /= 1024;
+#endif
+				return 0;
+			}
+			if (r < 0) { MCC_TRACE("br\n");
+				if (errno == EINTR)
+					{ MCC_TRACE("br\n"); continue; }
+				return -1;
+			}
+			if ((stop && *stop) || host_clock_ms() - tstart >= timeout_ms) { MCC_TRACE("br\n");
+				kill(pid, SIGKILL);
+				wait4(pid, &status, 0, &ru);
+				return -1;
+			}
+			usleep(1000);
+		}
+	}
+#endif
 }
 
 ST_FUNC MAYBE_UNUSED int host_mkdirs(const char *path) { MCC_TRACE("enter\n");
