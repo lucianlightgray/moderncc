@@ -1578,6 +1578,7 @@ static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP 
 #ifdef MCC_TARGET_X86_64
 static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
 #endif
+int ast_reloc_equiv_env; /* MCC_AST_RELOC_EQUIV: judge replay faithfulness by structural relocation equality instead of raw bytes, so an anonymous local label re-emitted at a new symbol index does not read as divergence */
 int ast_regdisp_env; /* MCC_AST_REGDISP: keep a member/array constant offset as a register-base displacement instead of materialising an add */
 static int ast_cost_spill_env; /* MCC_AST_COST_SPILL: add a loop register-pressure term to ast_cost_score so spill-reducing passes score a real benefit */
 static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
@@ -1857,6 +1858,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
+	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 0);
 #ifdef MCC_TARGET_X86_64
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
 #else
@@ -13210,6 +13212,70 @@ static int ast_try_active;
 static int ast_body_ind_sv;
 static addr_t ast_reloc0_sv;
 
+/* Two symbol indices denote the same thing when their symbol-table entries are
+   indistinguishable: both LOCAL, same name text, type, visibility, section,
+   value and size. riscv64's PC-relative pair anchors its R_RISCV_PCREL_LO12_*
+   to a fresh label put at the AUIPC site (riscv64-gen.c load_symofs), and that
+   label is anonymous, so baseline and replay emit two separate symbols that
+   carry the same placeholder name at different strtab offsets — a byte-equal
+   re-emit therefore references a different index for the same address. The
+   comparison is on the name TEXT, not st_name, for exactly that reason. */
+static int ast_reloc_sym_equiv(unsigned s1, unsigned s2) { MCC_TRACE("enter\n");
+	ElfSym *e1, *e2;
+	const char *n1, *n2;
+	unsigned long n;
+	if (s1 == s2)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (!s1 || !s2 || !symtab_section || !symtab_section->link)
+		{ MCC_TRACE("br\n"); return 0; }
+	n = symtab_section->data_offset / sizeof(ElfSym);
+	if (s1 >= n || s2 >= n)
+		{ MCC_TRACE("br\n"); return 0; }
+	e1 = &((ElfSym *)symtab_section->data)[s1];
+	e2 = &((ElfSym *)symtab_section->data)[s2];
+	if (ELFW(ST_BIND)(e1->st_info) != STB_LOCAL ||
+			ELFW(ST_BIND)(e2->st_info) != STB_LOCAL)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (e1->st_info != e2->st_info || e1->st_other != e2->st_other ||
+			e1->st_shndx != e2->st_shndx || e1->st_value != e2->st_value ||
+			e1->st_size != e2->st_size)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (e1->st_name >= symtab_section->link->data_offset ||
+			e2->st_name >= symtab_section->link->data_offset)
+		{ MCC_TRACE("br\n"); return 0; }
+	n1 = (const char *)symtab_section->link->data + e1->st_name;
+	n2 = (const char *)symtab_section->link->data + e2->st_name;
+	return strcmp(n1, n2) == 0;
+}
+
+/* Structural equality of a body's relocation range: identical offsets, types
+   and addends, with symbol indices compared through ast_reloc_sym_equiv. */
+static int ast_reloc_range_equiv(const unsigned char *ra, const unsigned char *rb,
+																 int len) { MCC_TRACE("enter\n");
+	int i, n;
+	if (len >= 0 && memcmp(ra, rb, (size_t)len) == 0)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (!ast_reloc_equiv_env)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (len < 0 || (size_t)len % sizeof(ElfW_Rel))
+		{ MCC_TRACE("br\n"); return 0; }
+	n = (int)((size_t)len / sizeof(ElfW_Rel));
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		const ElfW_Rel *r1 = &((const ElfW_Rel *)ra)[i];
+		const ElfW_Rel *r2 = &((const ElfW_Rel *)rb)[i];
+		if (r1->r_offset != r2->r_offset)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (ELFW(R_TYPE)(r1->r_info) != ELFW(R_TYPE)(r2->r_info))
+			{ MCC_TRACE("br\n"); return 0; }
+		if (ELFW_R_ADDEND(r1) != ELFW_R_ADDEND(r2))
+			{ MCC_TRACE("br\n"); return 0; }
+		if (!ast_reloc_sym_equiv((unsigned)ELFW(R_SYM)(r1->r_info),
+														 (unsigned)ELFW(R_SYM)(r2->r_info)))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	return 1;
+}
+
 static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 																 int blen, const unsigned char *repl,
 																 int rlen) { MCC_TRACE("enter\n");
@@ -15644,7 +15710,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 									 memcmp(cur_text_section->data + ast_body_ind_sv, orig, body_len) == 0 &&
 									 new_rel - ast_reloc0_sv == rel_len &&
 									 (rel_len == 0 ||
-										memcmp(rsec2->data + ast_reloc0_sv, orig_rel, rel_len) == 0);
+										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
+																					(int)rel_len));
 				ast_fn_faithful = faithful;
 
 				if (ast_verify_diff && ast_verify_diff[0] && !faithful &&
