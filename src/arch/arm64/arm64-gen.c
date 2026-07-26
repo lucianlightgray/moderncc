@@ -2296,6 +2296,41 @@ ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
 	o(base | dbl << 22 | a | a << 5);
 }
 
+/* copysign(x,y) = |x| with sign(y). No single insn on arm64: GP round-trip —
+ * fmov x/y to GP, `and` off the sign of x (0x7fff.. imm) and keep the sign of y
+ * (0x8000.. imm), orr, fmov back. Two distinct GP scratch (pin the first so the
+ * second get_reg differs). vtop[-1]=x, vtop=y; result -> x's FP reg, y popped. */
+ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
+	int dbl = (vtop[-1].type.t & VT_BTYPE) == VT_DOUBLE;
+	int gyr, gxr;
+	uint32_t fx, fy, gx, gy;
+	gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
+	fx = fltr(vtop[-1].r);
+	fy = fltr(vtop[0].r);
+	gyr = get_reg(MCC_RC_INT);
+	ast_pinned_regs |= (uint64_t)1 << gyr;
+	gxr = get_reg(MCC_RC_INT);
+	ast_pinned_regs &= ~((uint64_t)1 << gyr);
+	gx = intr(gxr);
+	gy = intr(gyr);
+	if (dbl) {
+		o(0x9e660000u | fx << 5 | gx);        /* fmov Xgx, Dfx           */
+		o(0x9e660000u | fy << 5 | gy);        /* fmov Xgy, Dfy           */
+		o(0x9240f800u | gx << 5 | gx);        /* and  Xgx, Xgx, #0x7fff..(|x|) */
+		o(0x92410000u | gy << 5 | gy);        /* and  Xgy, Xgy, #0x8000..(sgn y) */
+		o(0xaa000000u | gy << 16 | gx << 5 | gx); /* orr Xgx, Xgx, Xgy   */
+		o(0x9e670000u | gx << 5 | fx);        /* fmov Dfx, Xgx           */
+	} else {
+		o(0x1e260000u | fx << 5 | gx);        /* fmov Wgx, Sfx           */
+		o(0x1e260000u | fy << 5 | gy);        /* fmov Wgy, Sfy           */
+		o(0x12007800u | gx << 5 | gx);        /* and  Wgx, Wgx, #0x7fffffff */
+		o(0x12010000u | gy << 5 | gy);        /* and  Wgy, Wgy, #0x80000000 */
+		o(0x2a000000u | gy << 16 | gx << 5 | gx); /* orr Wgx, Wgx, Wgy   */
+		o(0x1e270000u | gx << 5 | fx);        /* fmov Sfx, Wgx           */
+	}
+	vtop--;
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;
