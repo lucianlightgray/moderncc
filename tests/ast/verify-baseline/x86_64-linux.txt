@@ -348,6 +348,10 @@ optimizer/redundant_cast.c	mixed	unfaithful
 pointers_arrays/array.c	fputc_unlocked	desync
 pointers_arrays/array.c	putc_unlocked	desync
 pointers_arrays/array.c	putchar_unlocked	desync
+pointers_arrays/array_2d_iv.c	diag_compound	desync
+pointers_arrays/array_2d_iv.c	fputc_unlocked	desync
+pointers_arrays/array_2d_iv.c	putc_unlocked	desync
+pointers_arrays/array_2d_iv.c	putchar_unlocked	desync
 pointers_arrays/array_address.c	fputc_unlocked	desync
 pointers_arrays/array_address.c	putc_unlocked	desync
 pointers_arrays/array_address.c	putchar_unlocked	desync
