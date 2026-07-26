@@ -3411,7 +3411,15 @@ static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
 static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if ((!ast_inline_env && !ast_inline_pass_env) || ast_bail || ast_desync)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (!(sym->type.t & VT_STATIC))
+	/* A non-static definition is normally off-limits: the linker may bind the call
+	 * to another TU's definition. The exception is a plain C99 `inline` under
+	 * -fc99-inline-body -- 6.7.4p7 leaves it unspecified whether a call uses the
+	 * inline definition or the external one, so using it here is exactly what the
+	 * standard intends, and the weak out-of-line body that flag emits covers the
+	 * address-taken and un-inlined uses. a.weak is the marker: the flag sets it
+	 * when it strips VT_INLINE at declaration time. */
+	if (!(sym->type.t & VT_STATIC) &&
+			!(mcc_state->c99_inline_body && sym->a.weak))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (sym->type.ref->f.func_type != FUNC_NEW)
 		{ MCC_TRACE("br\n"); return 0; }

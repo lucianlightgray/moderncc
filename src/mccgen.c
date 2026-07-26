@@ -13378,6 +13378,19 @@ static int decl(int l) {
 				} else if (mcc_state->gnu89_inline &&
 									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) { MCC_TRACE("br\n");
 					type.t &= ~VT_INLINE;
+				} else if (mcc_state->c99_inline_body &&
+									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) { MCC_TRACE("br\n");
+					/* -fc99-inline-body: drop VT_INLINE here rather than parking the
+					 * body in inline_fns. Parked bodies are generated at the END of the
+					 * TU, long after their callers, so ast_inline_capture never has them
+					 * in the pool and an `inline` function is NEVER inlined -- measured:
+					 * plb spectral-norm calls A() per element and costs 7.29x gcc's
+					 * instructions, while the same function written `static` inlines and
+					 * costs 5.64x. Generating it in place makes it inlinable like any
+					 * other function; a.weak keeps the out-of-line copy mergeable across
+					 * TUs, which is the property the end-of-TU path provided. */
+					type.t &= ~VT_INLINE;
+					ad.a.weak = 1;
 				}
 			} else if (oldint) { MCC_TRACE("br\n");
 				mcc_warning("type defaults to int");
