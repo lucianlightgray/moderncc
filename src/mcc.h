@@ -1645,7 +1645,7 @@ ST_FUNC void build_got_entries(MCCState *s1, int got_sym);
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val);
 
 ST_DATA const char *const target_machine_defs;
-ST_DATA const int reg_classes[MCC_NB_REGS];
+ST_DATA int reg_classes[MCC_NB_REGS];
 
 ST_FUNC void gsym_addr(int t, int a);
 ST_FUNC void gsym(int t);

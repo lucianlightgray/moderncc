@@ -7,7 +7,7 @@ ST_DATA const char *const target_machine_defs =
 		"__x86_64\0"
 		"__amd64__\0";
 
-ST_DATA const int reg_classes[MCC_NB_REGS] = {
+ST_DATA int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_INT | MCC_RC_RAX,
 		MCC_RC_INT | MCC_RC_RCX,
 		MCC_RC_INT | MCC_RC_RDX,
@@ -1483,7 +1483,9 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			assert(mode == x86_64_mode_sse);
 			r = gv(MCC_RC_FLOAT);
 			o(0x50);
-			o(0xd60f66);
+			o(0x66);
+			sse_rex(r, MCC_TREG_RSP);
+			o(0xd60f);
 			o(0x04 + REG_VALUE(r) * 8);
 			o(0x24);
 			break;
@@ -2190,7 +2192,7 @@ void gen_sqrt(void) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	int r, d;
 	gv(MCC_RC_FLOAT);
-	r = REG_VALUE(vtop->r);
+	r = vtop->r & VT_VALMASK;
 	d = r;
 #if MCC_CONFIG_OPTIMIZER
 	/* sqrtsd is destructive (dst==src). If the source is a PINNED (promoted)
@@ -2200,13 +2202,14 @@ void gen_sqrt(void) { MCC_TRACE("enter\n");
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
-		d = REG_VALUE(nr);
+		d = nr;
 	}
 #endif
 	o(bt == VT_DOUBLE ? 0xf2 : 0xf3); /* F2=sqrtsd, F3=sqrtss */
+	sse_rex(d, r);
 	o(0x0f);
 	o(0x51);
-	o(0xc0 + r + d * 8); /* sqrtsd xmm_d, xmm_r  (d = sqrt(r)) */
+	o(0xc0 + REG_VALUE(r) + REG_VALUE(d) * 8); /* sqrtsd xmm_d, xmm_r */
 }
 
 /* floor(0)/ceil(1)/trunc(2) -> single roundsd/roundss. imm = mode | 0x8
@@ -2223,7 +2226,7 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 					 : mode == 4 ? 0x4 : mode == 5 ? 0xc : 0xb;
 	int r, d;
 	gv(MCC_RC_FLOAT);
-	r = REG_VALUE(vtop->r);
+	r = vtop->r & VT_VALMASK;
 	d = r;
 #if MCC_CONFIG_OPTIMIZER
 	/* roundsd is destructive (dst==src). Don't clobber a PINNED (promoted) source
@@ -2232,14 +2235,15 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
-		d = REG_VALUE(nr);
+		d = nr;
 	}
 #endif
 	o(0x66);
+	sse_rex(d, r);
 	o(0x0f);
 	o(0x3a);
 	o(bt == VT_DOUBLE ? 0x0b : 0x0a); /* 0B=roundsd, 0A=roundss */
-	o(0xc0 + d * 8 + r);              /* modrm: dst=d, src=r */
+	o(0xc0 + REG_VALUE(d) * 8 + REG_VALUE(r));
 	g(imm);
 }
 
@@ -2251,16 +2255,22 @@ void gen_copysign(void) { MCC_TRACE("enter\n");
 	int dbl = (vtop[-1].type.t & VT_BTYPE) == VT_DOUBLE;
 	int x, y, mreg, m;
 	gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
-	x = REG_VALUE(vtop[-1].r);
-	y = REG_VALUE(vtop[0].r);
+	int xr = vtop[-1].r & VT_VALMASK;
+	int yr = vtop[0].r & VT_VALMASK;
 	mreg = get_reg(MCC_RC_FLOAT);
+	x = REG_VALUE(xr);
+	y = REG_VALUE(yr);
 	m = REG_VALUE(mreg);
-	o(0x760f66); o(0xc0 | (m << 3) | m);              /* pcmpeqd m,m (all ones) */
-	if (dbl) { o(0x730f66); o(0xf0 | m); o(63); }     /* psllq m,63 -> 0x8000..  */
-	else     { o(0x720f66); o(0xf0 | m); o(31); }     /* pslld m,31 -> 0x80000000 */
-	o(dbl ? 0x540f66 : 0x540f); o(0xc0 | (y << 3) | m); /* and[pd/ps] y,m = sign(y) */
-	o(dbl ? 0x550f66 : 0x550f); o(0xc0 | (m << 3) | x); /* andn[pd/ps] m,x = |x|    */
-	o(dbl ? 0x560f66 : 0x560f); o(0xc0 | (m << 3) | y); /* or[pd/ps] m,y = result   */
+	o(0x66); sse_rex(mreg, mreg); o(0x760f); o(0xc0 | (m << 3) | m);
+	o(0x66); sse_rex(0, mreg);
+	if (dbl) { MCC_TRACE("br\n"); o(0x730f); o(0xf0 | m); o(63); }
+	else     { MCC_TRACE("br\n"); o(0x720f); o(0xf0 | m); o(31); }
+	if (dbl) { MCC_TRACE("br\n"); o(0x66); }
+	sse_rex(yr, mreg); o(0x540f); o(0xc0 | (y << 3) | m);
+	if (dbl) { MCC_TRACE("br\n"); o(0x66); }
+	sse_rex(mreg, xr); o(0x550f); o(0xc0 | (m << 3) | x);
+	if (dbl) { MCC_TRACE("br\n"); o(0x66); }
+	sse_rex(mreg, yr); o(0x560f); o(0xc0 | (m << 3) | y);
 	vtop--;
 	vtop->r = mreg;
 }
@@ -2534,11 +2544,14 @@ void gen_cvt_itof(int t) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		int r = get_reg(MCC_RC_FLOAT);
 		gv(MCC_RC_INT);
+		int w = ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
+										(VT_INT | VT_UNSIGNED) ||
+								(vtop->type.t & VT_BTYPE) == VT_LLONG)
+						? 8
+						: 0;
 		o(0xf2 + ((t & VT_BTYPE) == VT_FLOAT ? 1 : 0));
-		if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
-						(VT_INT | VT_UNSIGNED) ||
-				(vtop->type.t & VT_BTYPE) == VT_LLONG) { MCC_TRACE("br\n");
-			o(0x48);
+		if (w || REX_BASE(r) || REX_BASE(vtop->r & VT_VALMASK)) { MCC_TRACE("br\n");
+			o(0x40 | w | (REX_BASE(r) << 2) | REX_BASE(vtop->r & VT_VALMASK));
 		}
 		o(0x2a0f);
 		o(0xc0 + (vtop->r & VT_VALMASK) + REG_VALUE(r) * 8);
@@ -2556,13 +2569,18 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
 		if (tbt == VT_DOUBLE) { MCC_TRACE("br\n");
+			int v = vtop->r & VT_VALMASK;
+			sse_rex(v, v);
 			o(0x140f);
-			o(0xc0 + REG_VALUE(vtop->r) * 9);
+			o(0xc0 + REG_VALUE(v) * 9);
+			sse_rex(v, v);
 			o(0x5a0f);
-			o(0xc0 + REG_VALUE(vtop->r) * 9);
+			o(0xc0 + REG_VALUE(v) * 9);
 		} else if (tbt == VT_LDOUBLE) { MCC_TRACE("br\n");
 			save_reg(MCC_RC_ST0);
-			o(0x110ff3);
+			o(0xf3);
+			sse_rex(vtop->r & VT_VALMASK, MCC_TREG_RSP);
+			o(0x110f);
 			o(0x44 + REG_VALUE(vtop->r) * 8);
 			o(0xf024);
 			o(0xf02444d9);
@@ -2571,13 +2589,18 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
 		if (tbt == VT_FLOAT) { MCC_TRACE("br\n");
-			o(0x140f66);
-			o(0xc0 + REG_VALUE(vtop->r) * 9);
-			o(0x5a0f66);
-			o(0xc0 + REG_VALUE(vtop->r) * 9);
+			int v = vtop->r & VT_VALMASK;
+			o(0x66); sse_rex(v, v);
+			o(0x140f);
+			o(0xc0 + REG_VALUE(v) * 9);
+			o(0x66); sse_rex(v, v);
+			o(0x5a0f);
+			o(0xc0 + REG_VALUE(v) * 9);
 		} else if (tbt == VT_LDOUBLE) { MCC_TRACE("br\n");
 			save_reg(MCC_RC_ST0);
-			o(0x110ff2);
+			o(0xf2);
+			sse_rex(vtop->r & VT_VALMASK, MCC_TREG_RSP);
+			o(0x110f);
 			o(0x44 + REG_VALUE(vtop->r) * 8);
 			o(0xf024);
 			o(0xf02444dd);
@@ -2589,13 +2612,17 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 		r = get_reg(MCC_RC_FLOAT);
 		if (tbt == VT_DOUBLE) { MCC_TRACE("br\n");
 			o(0xf0245cdd);
-			o(0x100ff2);
+			o(0xf2);
+			sse_rex(r, MCC_TREG_RSP);
+			o(0x100f);
 			o(0x44 + REG_VALUE(r) * 8);
 			o(0xf024);
 			vtop->r = r;
 		} else if (tbt == VT_FLOAT) { MCC_TRACE("br\n");
 			o(0xf0245cd9);
-			o(0x100ff3);
+			o(0xf3);
+			sse_rex(r, MCC_TREG_RSP);
+			o(0x100f);
 			o(0x44 + REG_VALUE(r) * 8);
 			o(0xf024);
 			vtop->r = r;
@@ -2635,7 +2662,7 @@ void gen_cvt_ftoi(int t) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		assert(0);
 	}
-	orex(size == 8, r, 0, 0x2c0f);
+	orex(size == 8, vtop->r & VT_VALMASK, r, 0x2c0f);
 	o(0xc0 + REG_VALUE(vtop->r) + REG_VALUE(r) * 8);
 	vtop->r = r;
 }

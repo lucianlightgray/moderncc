@@ -1575,6 +1575,9 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 static int ast_promote_env;
 static int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
 static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP promotion pool (x86_64 xmm6,7 -> xmm2..7) for spill-heavy leaves; safe now that gen_sqrt/gen_round don't clobber promoted FP regs */
+#ifdef MCC_TARGET_X86_64
+static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
+#endif
 static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
@@ -1851,6 +1854,15 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
+#ifdef MCC_TARGET_X86_64
+	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", 0);
+	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
+		if (ast_xmm_hi_env)
+			{ MCC_TRACE("br\n"); reg_classes[hr] |= MCC_RC_FLOAT; }
+		else
+			{ MCC_TRACE("br\n"); reg_classes[hr] &= ~MCC_RC_FLOAT; }
+	}
+#endif
 	/* Let leaf functions (no calls) tap the callee-saved GP pool too — a leaf
 	 * otherwise only gets the tiny caller-saved pool (3 GP on x86_64), which is
 	 * the regalloc cliff a function falls off once its last call (e.g. sqrt) is

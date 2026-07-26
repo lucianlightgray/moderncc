@@ -7,7 +7,7 @@ ST_DATA const char *const target_machine_defs =
 
 #define USE_EBX 2
 
-ST_DATA const int reg_classes[MCC_NB_REGS] = {
+ST_DATA int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_INT | MCC_RC_EAX,
 		MCC_RC_INT | MCC_RC_ECX,
 		MCC_RC_INT | MCC_RC_EDX,

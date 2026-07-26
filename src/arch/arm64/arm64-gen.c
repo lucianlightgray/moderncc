@@ -9,7 +9,7 @@ ST_DATA const char *const target_machine_defs =
 #endif
 		"__AARCH64EL__\0";
 
-ST_DATA const int reg_classes[MCC_NB_REGS] = {
+ST_DATA int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_INT | MCC_RC_R(0),
 		MCC_RC_INT | MCC_RC_R(1),
 		MCC_RC_INT | MCC_RC_R(2),
