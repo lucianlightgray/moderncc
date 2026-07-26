@@ -3149,9 +3149,21 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 			}
 		}
 	}
-	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
-	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	AstLocal value = ast_vs[ast_vn - 1];
+	/* The copy is taken BEFORE ast_finalize_leaf on purpose. At the outer store of
+	 * `a = b = v` the value node is SHARED with the inner store, and finalizing it
+	 * here would overwrite its recorded SValue with the state vtop has NOW -- the
+	 * register the inner vstore left the value in. The inner store's value would
+	 * then claim to be register-resident, its replay would skip the
+	 * materialisation (`mov $0x0,%eax`), and both stores would read a stale
+	 * register. Copy first and finalize only the copy, so the inner store keeps
+	 * the constant it actually recorded. */
+	int chained = ast_chainstore_env && value != AST_NONE &&
+								ast_parent(ast_cur, value) != AST_NONE;
+	if (chained)
+		{ MCC_TRACE("br\n"); value = ast_dup_sub(ast_cur, value); }
+	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
+	ast_finalize_leaf(value, vtop);
 	/* MCC_AST_CHAINSTORE: an assignment yields its value, so in `a = b = v` the
 	 * inner store's value node is left as the expression result and THIS store
 	 * adopts it -- but ast_add_child reparents, so the node stays in the inner
@@ -3166,9 +3178,6 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	 * separate cause (the parser materialises the value once and chains two
 	 * vstores, the replay emits two independent stores). This is a
 	 * well-formedness repair only. */
-	if (ast_chainstore_env && value != AST_NONE &&
-			ast_parent(ast_cur, value) != AST_NONE)
-		{ MCC_TRACE("br\n"); value = ast_dup_sub(ast_cur, value); }
 	AstLocal lval = ast_vs[ast_vn - 2];
 	AstLocal st = ast_node(ast_cur, AST_Store);
 	if (ast_opassign_store_pending) { MCC_TRACE("br\n");
