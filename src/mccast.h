@@ -224,6 +224,7 @@ void ast_hook_for_no_incr(void);
 void ast_hook_for_body_begin(void);
 void ast_hook_for_end(void);
 void ast_hook_switch_begin(void);
+void ast_hook_bail(void); /* mark the current function un-replayable (skip AST opt) — used when the baseline codegen emits a form the AST replay wouldn't reproduce (e.g. a switch jump table) */
 void ast_hook_case(int64_t v1, int64_t v2, int type);
 void ast_hook_default(void);
 void ast_hook_switch_body_end(void);

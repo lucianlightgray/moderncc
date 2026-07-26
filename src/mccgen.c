@@ -10479,6 +10479,96 @@ static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
 	}
 }
 
+#if defined(MCC_TARGET_X86_64) && MCC_CONFIG_OPTIMIZER
+/* MCC_SWITCH_JUMPTABLE (default off): dense switch -> O(1) rodata jump table on
+ * x86_64 (non-PIC), vs gcase's O(log n) compare tree. Emits `idx=val-lo;
+ * if ((unsigned)idx > hi-lo) goto default; jmp *table[idx]`, with an
+ * (hi-lo+1)-entry rodata table of code addresses (gaps -> a default trampoline).
+ * Bails the AST recorder for the function (ast_hook_bail) so the baseline table
+ * is kept without a faithfulness mismatch vs the gcase-based replay. */
+static int switch_jt_env(void) { MCC_TRACE("enter\n");
+	static int v = -1;
+	if (v < 0)
+		{ MCC_TRACE("br\n"); const char *e = getenv("MCC_SWITCH_JUMPTABLE");
+			v = e && e[0] && e[0] != '0'; }
+	return v;
+}
+static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
+	int64_t lo, hi, covered = 0;
+	uint64_t span;
+	int i;
+	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG || mcc_state->pic)
+		{ MCC_TRACE("br\n"); return 0; }
+	lo = sw->p[0]->v1;
+	hi = sw->p[sw->n - 1]->v2;
+	if (hi < lo)
+		{ MCC_TRACE("br\n"); return 0; }
+	span = (uint64_t)(hi - lo) + 1;
+	if (span > 4096)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < sw->n; i++)
+		{ MCC_TRACE("br\n"); covered += sw->p[i]->v2 - sw->p[i]->v1 + 1; }
+	if ((uint64_t)covered * 2 < span) /* require >= 50% density */
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
+	int64_t lo = sw->p[0]->v1, hi = sw->p[sw->n - 1]->v2;
+	uint64_t span = (uint64_t)(hi - lo) + 1, i;
+	int r, dsym, tramp, j;
+	unsigned long tab_off;
+	Sym *tab_sym;
+	if (lo) { MCC_TRACE("br\n"); vpush64(VT_INT, lo); gen_op('-'); }
+	vdup(); /* [idx, idx] */
+	vtop->type.t = VT_INT | VT_UNSIGNED;
+	vpush64(VT_INT | VT_UNSIGNED, (int64_t)(span - 1));
+	gen_op(TOK_GT); /* (unsigned)idx > span-1 */
+	dsym = gvtst(0, 0); /* -> default when out of range */
+	gv(MCC_RC_INT);
+	r = vtop->r & VT_VALMASK;
+	/* zero-extend idx to 64 bits (clear upper 32) for use as a scaled index */
+	if (r >= 8) { MCC_TRACE("br\n"); g(0x45); }
+	g(0x89); g(0xc0 | ((r & 7) << 3) | (r & 7)); /* mov r32,r32 */
+	/* The switch dispatch is emitted after the body's terminating jump, so mcc's
+	 * linear reachability has nocode_wanted set here even though the dispatch IS
+	 * reached (via the switch value). put_extern_sym() is a no-op for
+	 * cur_text_section symbols while nocode_wanted, which would drop the per-case
+	 * position symbols the table relocs need. Clear it around symbol creation (it
+	 * doesn't gate the raw code bytes, which are already emitted). */
+	int nsave = nocode_wanted;
+	nocode_wanted = 0;
+	tab_off = rodata_section->data_offset;
+	section_ptr_add(rodata_section, span * MCC_PTR_SIZE);
+	tab_sym = get_sym_ref(&char_pointer_type, rodata_section, tab_off,
+												span * MCC_PTR_SIZE);
+	/* jmp *[r*8 + tab] : FF /4, ModRM 0x24 (SIB), SIB scale8/no-base/disp32 */
+	if (r >= 8) { MCC_TRACE("br\n"); g(0x42); } /* REX.X for r8-r15 index */
+	g(0xff); g(0x24); g((3 << 6) | ((r & 7) << 3) | 5);
+	greloca(cur_text_section, tab_sym, ind, R_X86_64_32S, 0);
+	gen_le32(0);
+	tramp = ind; /* gaps land here -> jmp default */
+	dsym = gjmp(dsym);
+	nocode_wanted = 0; /* gjmp set nocode_wanted; re-clear for the entry symbols */
+	j = 0;
+	for (i = 0; i < span; i++) { MCC_TRACE("br\n");
+		int64_t val = lo + (int64_t)i;
+		int target;
+		while (j < sw->n && sw->p[j]->v2 < val)
+			{ MCC_TRACE("br\n"); j++; }
+		if (j < sw->n && sw->p[j]->v1 <= val && val <= sw->p[j]->v2)
+			{ MCC_TRACE("br\n"); target = sw->p[j]->ind; }
+		else
+			{ MCC_TRACE("br\n"); target = tramp; }
+		greloca(rodata_section,
+						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
+						tab_off + i * MCC_PTR_SIZE, R_DATA_PTR, 0);
+	}
+	nocode_wanted = nsave;
+	ast_hook_bail();
+	return dsym;
+}
+#endif
+
 static int gcase(struct case_t **base, int len, int dsym) { MCC_TRACE("enter\n");
 	struct case_t *p;
 	int t, l2, e;
@@ -11161,7 +11251,12 @@ again:
 		sw->bsym = NULL;
 		vpushv(&sw->sv);
 		gv(MCC_RC_INT);
-		d = gcase(sw->p, sw->n, 0);
+#if defined(MCC_TARGET_X86_64) && MCC_CONFIG_OPTIMIZER
+		if (switch_jt_env() && switch_jt_dense(sw))
+			{ MCC_TRACE("br\n"); d = gcase_jumptable(sw); }
+		else
+#endif
+			{ MCC_TRACE("br\n"); d = gcase(sw->p, sw->n, 0); }
 		vpop();
 		if (sw->def_sym)
 			{ MCC_TRACE("br\n"); gsym_addr(d, sw->def_sym); }

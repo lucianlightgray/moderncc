@@ -2622,6 +2622,11 @@ void ast_hook_for_end(void) { MCC_TRACE("enter\n");
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
+void ast_hook_bail(void) { MCC_TRACE("enter\n");
+	if (ast_active)
+		{ MCC_TRACE("br\n"); ast_bail = 1; }
+}
+
 void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	ast_switch_node = AST_NONE;
 	if (!ast_active || ast_desync || ast_bail)
