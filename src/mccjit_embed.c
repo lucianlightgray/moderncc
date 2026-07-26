@@ -6789,6 +6789,39 @@ static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MC
 		{ MCC_TRACE("br\n"); *slotout = slot; }
 	return p;
 }
+
+/* In-place trampoline: the target address lives in the MOVZ/MOVK *instruction
+   immediates* (not a data slot), so a redirect is a genuine code patch — rewrite
+   the four halfword-immediate words in place, then flip RX (which flushes the
+   I-cache). Uses x16 (IP0) as scratch to stay visibly distinct from the
+   ptr-swap-slot row, which parks the slot address in x17. */
+static void mccjit_patch_tramp_words(uint64_t a, uint32_t w[4]) { MCC_TRACE("enter\n");
+	w[0] = 0xd2800010u | (uint32_t)((a & 0xffff) << 5);         /* movz x16,#a0 */
+	w[1] = 0xf2a00010u | (uint32_t)(((a >> 16) & 0xffff) << 5); /* movk x16,#a1,lsl16 */
+	w[2] = 0xf2c00010u | (uint32_t)(((a >> 32) & 0xffff) << 5); /* movk x16,#a2,lsl32 */
+	w[3] = 0xf2e00010u | (uint32_t)(((a >> 48) & 0xffff) << 5); /* movk x16,#a3,lsl48 */
+}
+
+static unsigned char *mccjit_patch_make_tramp(void *target,
+																							unsigned char **codeout) { MCC_TRACE("enter\n");
+	size_t page = host_pagesize();
+	unsigned char *p;
+	uint32_t insns[5];
+	uint64_t a = (uint64_t)(uintptr_t)target;
+	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		{ MCC_TRACE("br\n"); return NULL; }
+	mccjit_patch_tramp_words(a, insns);
+	insns[4] = 0xd61f0200u; /* br x16 */
+	memcpy(p, insns, sizeof insns);
+	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
+		munmap(p, page);
+		return NULL;
+	}
+	if (codeout)
+		{ MCC_TRACE("br\n"); *codeout = p; }
+	return p;
+}
 #endif
 
 static int mccjit_patch_t1(int x) { MCC_TRACE("enter\n"); return x * 2 + 1; }
@@ -6869,6 +6902,28 @@ static void mccjit_patch_free_page(void *entry) { MCC_TRACE("enter\n");
 static void mccjit_patch_free_runmem(void *entry) { MCC_TRACE("enter\n");
 	munmap(entry, host_pagesize());
 }
+
+static void *mccjit_patch_mk_tramp(void *target, void **handle) { MCC_TRACE("enter\n");
+	unsigned char *code = NULL;
+	void *entry = mccjit_patch_make_tramp(target, &code);
+	if (!entry)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (handle)
+		{ MCC_TRACE("br\n"); *handle = code; } /* handle = code page (holds the imms) */
+	return entry;
+}
+
+static void mccjit_patch_swap_imm(void *handle, void *target) { MCC_TRACE("enter\n");
+	unsigned char *p = handle;
+	size_t page = host_pagesize();
+	uint32_t words[4];
+	mccjit_patch_tramp_words((uint64_t)(uintptr_t)target, words);
+	if (host_runmem_protect(p, page, HOST_PROT_RW) != 0)
+		{ MCC_TRACE("br\n"); return; }
+	memcpy(p, words, sizeof words); /* rewrite MOVZ/MOVK imms in place */
+	/* RX transition re-flushes the I-cache (host_runmem_protect does this). */
+	host_runmem_protect(p, page, HOST_PROT_RX);
+}
 #endif
 
 static const MccjitPatchStrategy mccjit_patch_reg[] = {
@@ -6883,6 +6938,8 @@ static const MccjitPatchStrategy mccjit_patch_reg[] = {
 #elif defined(MCCJIT_ARM64)
 		{"ptr-swap-slot", 16, mccjit_patch_avail_yes, mccjit_patch_mk_slot,
 		 mccjit_patch_swap_store, mccjit_patch_call_code, mccjit_patch_free_runmem},
+		{"inplace-tramp", 20, mccjit_patch_avail_yes, mccjit_patch_mk_tramp,
+		 mccjit_patch_swap_imm, mccjit_patch_call_code, mccjit_patch_free_runmem},
 #endif
 		{"nop-pad-d3b", 8, mccjit_patch_avail_no, NULL, NULL, NULL, NULL},
 };
