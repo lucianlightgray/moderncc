@@ -532,6 +532,8 @@ static void so_axes_snapshot(void) { MCC_TRACE("enter\n");
 	}
 }
 
+#define SO_GATE_DEFAULT 0xFFFFFFFFu
+
 static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter\n");
 	for (int i = 0; i < SO_NAXES; i++)
 		{ MCC_TRACE("br\n"); if (!strcmp(so_axes[i].name, name)) { MCC_TRACE("br\n");
@@ -545,6 +547,15 @@ static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter
 static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) { MCC_TRACE("enter\n");
 	char buf[32];
 	so_axes_snapshot();
+	if (gate == SO_GATE_DEFAULT) { MCC_TRACE("br\n");
+		setenv("MCC_SEARCH_WORKER", "1", 1);
+		for (int i = 0; i < SO_NAXES; i++)
+			{ MCC_TRACE("br\n"); if (so_axes[i].user)
+				{ MCC_TRACE("br\n"); setenv(so_axes[i].name, so_axes[i].user, 1); }
+			else
+				{ MCC_TRACE("br\n"); unsetenv(so_axes[i].name); } }
+		return;
+	}
 	unsigned limit = gate >> 4;
 	int inl = (gate >> 2) & 1;
 	int nsel = (int)(budget % SO_NNODE);
@@ -1154,6 +1165,11 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		if (sw && sw[0] && strcmp(sw, "0"))
 			{ MCC_TRACE("br\n"); snprintf(so_spill_path, sizeof so_spill_path,
 																		"%s.mcc-so-spill", outfile); }
+	}
+	{
+		const char *ds = getenv("MCC_SO_DEFAULT_SEED");
+		if (ds && ds[0] && strcmp(ds, "0"))
+			{ MCC_TRACE("br\n"); best_gate = SO_GATE_DEFAULT; }
 	}
 	have_ckpt = so_ckpt_path(ckpt, sizeof ckpt, key) == 0;
 	if (have_ckpt && so_ckpt_read(ckpt, key, &ck) == 0) { MCC_TRACE("br\n");
