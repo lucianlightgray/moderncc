@@ -1749,6 +1749,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_CEIL  0x4000C
 #define AST_OP_TRUNC 0x4000D
 #define AST_OP_COPYSIGN 0x4000E /* binary: |arg0| with sign of arg1 */
+#define AST_OP_ROUND 0x4000F /* round() — nearest, ties away (arm64 FRINTA only) */
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -4948,6 +4949,15 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_round(uop == AST_OP_FLOOR ? 0 : uop == AST_OP_CEIL ? 1 : 2);
 			vtop->type = ct;
 #endif
+#if defined(MCC_TARGET_ARM64)
+		} else if (uop == AST_OP_ROUND) { MCC_TRACE("br\n");
+			CType ct;
+			ct.t = ast_type_t(a, n);
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			gen_cast(&ct);
+			gen_round(3); /* FRINTA */
+			vtop->type = ct;
+#endif
 #endif
 		} else { MCC_TRACE("br\n");
 			inc((int)ast_ival(a, n), uop);
@@ -5945,6 +5955,25 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				continue;
 			}
 #endif /* round: x86_64 || arm64 */
+#if defined(MCC_TARGET_ARM64)
+			/* round/roundf(x): arm64 FRINTA (round-to-nearest, ties AWAY) — an
+			 * EXACT match for C round() and it doesn't raise inexact. x86 roundsd
+			 * can only do ties-to-even, so round stays a libcall there (bid 8 is
+			 * not in the floor/ceil/trunc block above). Opt-in MCC_AST_ROUND_INLINE. */
+			if (bid == 8 && nargs == 1 && ast_round_inline_env) { MCC_TRACE("br\n");
+				AstLocal arg = ast_child(a, n, 1);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Unary);
+				ast_set_op(a, n, AST_OP_ROUND);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, arg);
+				MCC_TRACE("math-inline round(FRINTA) flt=%d\n", (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
+#endif /* round(FRINTA): arm64 */
 #if defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 			/* copysign(x,y): |x| with sign of y. riscv64 = fsgnj.d/.s (1 insn);
 			 * x86_64 = SSE mask sequence; arm64 = GP round-trip (fmov+and+orr).
@@ -6031,7 +6060,11 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		int bid = ast_bfold_tab[bi].id;
 		/* sqrt(0), fabs(1); floor(2)/ceil(3)/trunc(4) only when opt-in AND on an
 		 * arch with a round-to-integral instruction (x86_64/arm64, not riscv64). */
-#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#if defined(MCC_TARGET_ARM64)
+		/* arm64 also inlines round() (bid 8) via FRINTA (ties away) */
+		int is_round = (bid == 2 || bid == 3 || bid == 4 || bid == 8) &&
+				ast_round_inline_env;
+#elif defined(MCC_TARGET_X86_64)
 		int is_round = (bid == 2 || bid == 3 || bid == 4) && ast_round_inline_env;
 #else
 		int is_round = 0;
@@ -6061,7 +6094,8 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 						: bid == 1 ? AST_OP_FABS
 						: bid == 2 ? AST_OP_FLOOR
 						: bid == 3 ? AST_OP_CEIL
-											 : AST_OP_TRUNC);
+						: bid == 4 ? AST_OP_TRUNC
+											 : AST_OP_ROUND); /* bid 8, arm64 only */
 		ast_set_type(a, n, bt, 0);
 		ast_set_ival(a, n, 0);
 		ast_set_sym(a, n, 0);
