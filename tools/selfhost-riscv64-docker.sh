@@ -35,6 +35,19 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 img=debian:bookworm-slim
 name=mcc-selfhost-rv64-$$
 
+# Prefer the no-docker path: mcc can link its own riscv64 output against the
+# in-tree gentoo stage3 sysroot, and the host qemu runs it, so the only real
+# requirements are a host cc, qemu-riscv64, the vendored sysroot and the
+# per-arch runtime archive from cmake-cross. That makes this gate runnable on
+# any dev box instead of only where a docker daemon happens to be up -- it was
+# skipping (77) exactly when it was most wanted.
+SR="$root/vendor/gentoo-stage3-riscv64-glibc"
+RTA="$root/cmake-cross/riscv64-libmccrt.a"
+if command -v qemu-riscv64 >/dev/null 2>&1 && command -v cc >/dev/null 2>&1 \
+   && [ -d "$SR" ] && [ -f "$RTA" ]; then
+    exec "$(dirname "$0")/selfhost-riscv64-native.sh" "$@"
+fi
+
 command -v docker >/dev/null 2>&1 || { echo "docker not available"; exit 77; }
 docker info >/dev/null 2>&1 || { echo "docker not usable"; exit 77; }
 
