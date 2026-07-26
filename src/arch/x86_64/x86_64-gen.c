@@ -2177,6 +2177,15 @@ void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	vtop->r = MCC_TREG_RDX;
 }
 
+void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
+	int rv = REG_VALUE(r);
+	orex(1, r, r, 0x8d);
+	g(0x80 | (rv << 3) | rv);
+	if (rv == 4)
+		{ MCC_TRACE("br\n"); g(0x24); }
+	gen_le32((int)d);
+}
+
 /* fabs(x): clear the IEEE-754 sign bit in place. Mirrors the SSE float-negate
    path in gen_opf (spill, byte-op the sign byte, reload) but ANDs the sign byte
    with 0x7f (group-1 /4) instead of XORing with 0x80 (/6). Bit-exact for every

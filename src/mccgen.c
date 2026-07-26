@@ -1475,6 +1475,46 @@ ST_FUNC void save_reg(int r) { MCC_TRACE("enter\n");
 	save_reg_upstack(r, 0);
 }
 
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+/* Spill one folded-displacement group: every upstack entry whose address is
+   "r + d". The generic spill below stores the bare base register and retags the
+   entry VT_LLOCAL, which would drop d silently, so each distinct d gets its own
+   temp slot holding the already-added address. gen_reg_addi is an LEA, so r is
+   restored afterwards and the flags survive. */
+static void save_regdisp_group(int r, int n, int64_t d) { MCC_TRACE("enter\n");
+	SValue *p, *p1, sv;
+	CType pt;
+	int size, align, r2, l, live;
+
+	pt.t = VT_PTR;
+	pt.ref = NULL;
+	size = type_size(&pt, &align);
+	l = get_temp_local_var(size, align, &r2);
+	gen_reg_addi(r, d);
+	sv.type = pt;
+	sv.r = VT_LOCAL | VT_LVAL;
+	sv.c.i = l;
+	sv.sym = NULL;
+	store(r, &sv);
+	for (p = vstack, p1 = vtop - n; p <= p1; p++) { MCC_TRACE("br\n");
+		if ((p->r & VT_VALMASK) == r && (p->r & VT_REGDISP) &&
+				(int64_t)p->c.i == d) { MCC_TRACE("br\n");
+			p->r = (p->r & ~(VT_VALMASK | VT_BOUNDED | VT_REGDISP)) | VT_LLOCAL;
+			p->sym = NULL;
+			p->r2 = r2;
+			p->c.i = l;
+		}
+	}
+	live = (ast_pinned_regs & ((uint64_t)1 << r)) != 0;
+	for (p = vstack; !live && p <= vtop; p++) { MCC_TRACE("br\n");
+		if ((p->r & VT_VALMASK) == r || p->r2 == r)
+			{ MCC_TRACE("br\n"); live = 1; }
+	}
+	if (live)
+		{ MCC_TRACE("br\n"); gen_reg_addi(r, -d); }
+}
+#endif
+
 ST_FUNC void save_reg_upstack(int r, int n) { MCC_TRACE("enter\n");
 	int l, size, align, bt, r2;
 	SValue *p, *p1, sv;
@@ -1483,6 +1523,20 @@ ST_FUNC void save_reg_upstack(int r, int n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+	for (;;) { MCC_TRACE("br\n");
+		int64_t d = 0;
+		for (p = vstack, p1 = vtop - n; p <= p1; p++) { MCC_TRACE("br\n");
+			if ((p->r & VT_VALMASK) == r && (p->r & VT_REGDISP) && p->c.i) { MCC_TRACE("br\n");
+				d = (int64_t)p->c.i;
+				break;
+			}
+		}
+		if (!d)
+			{ MCC_TRACE("br\n"); break; }
+		save_regdisp_group(r, n, d);
+	}
+#endif
 	l = r2 = 0;
 	for (p = vstack, p1 = vtop - n; p <= p1; p++) { MCC_TRACE("br\n");
 		if ((p->r & VT_VALMASK) == r || p->r2 == r) { MCC_TRACE("br\n");

@@ -1857,7 +1857,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
+#ifdef MCC_TARGET_X86_64
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
+#else
+	ast_regdisp_env = 0;
+#endif
 #ifdef MCC_TARGET_X86_64
 	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", 0);
 	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
