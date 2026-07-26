@@ -3164,6 +3164,12 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); value = ast_dup_sub(ast_cur, value); }
 	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
 	ast_finalize_leaf(value, vtop);
+	/* The copy is finalized with vtop, i.e. it records "the value is in the
+	 * register the inner vstore left it in". That is only true if the inner store
+	 * actually materialises it there -- and a PROMOTED inner target does not: it
+	 * writes straight to its promoted register, leaving the recorded one stale, so
+	 * the outer store reads garbage. Tag the pair here so ast_plan_promotion can
+	 * decline to promote the inner target. */
 	/* MCC_AST_CHAINSTORE: an assignment yields its value, so in `a = b = v` the
 	 * inner store's value node is left as the expression result and THIS store
 	 * adopts it -- but ast_add_child reparents, so the node stays in the inner
@@ -3180,6 +3186,8 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	 * well-formedness repair only. */
 	AstLocal lval = ast_vs[ast_vn - 2];
 	AstLocal st = ast_node(ast_cur, AST_Store);
+	if (chained)
+		{ MCC_TRACE("br\n"); ast_set_fbits(ast_cur, st, ast_fbits(ast_cur, st) | 1u); }
 	if (ast_opassign_store_pending) { MCC_TRACE("br\n");
 		/* the first store after a compound-assign vdup: tag it so replay re-emits
 		 * the byte-faithful vdup form. Correctness does not rely on the tag alone —
@@ -4656,6 +4664,33 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				cpoison[j] = 1;
 				break;
 			} } }
+	/* MCC_AST_CHAINSTORE: the outer store of `a = b = v` reads the value from the
+	 * register the INNER store left it in. Promoting b breaks that -- the inner
+	 * store writes to b's promoted register and never materialises into the
+	 * recorded one, so the outer store reads a stale register (measured: a
+	 * constant +512 offset on a chained-init reduction loop). Decline to promote
+	 * the inner target. */
+	if (ast_chainstore_env) { MCC_TRACE("br\n");
+		for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
+			if (ast_kind(a, n) != AST_Store || !(ast_fbits(a, n) & 1u))
+				{ MCC_TRACE("br\n"); continue; }
+			AstLocal prev = AST_NONE, p = ast_parent(a, n);
+			if (p == AST_NONE)
+				{ MCC_TRACE("br\n"); continue; }
+			for (AstLocal c = ast_first_child(a, p); c != AST_NONE && c != n;
+					 c = ast_next_sib(a, c))
+				{ MCC_TRACE("br\n"); prev = c; }
+			if (prev == AST_NONE || ast_kind(a, prev) != AST_Store)
+				{ MCC_TRACE("br\n"); continue; }
+			AstLocal tgt = ast_child(a, prev, 0);
+			if (tgt == AST_NONE || ast_kind(a, tgt) != AST_Ref)
+				{ MCC_TRACE("br\n"); continue; }
+			int toff = (int)(int64_t)ast_ival(a, tgt);
+			for (int j = 0; j < nc; j++)
+				{ MCC_TRACE("br\n"); if (coff[j] == toff)
+					{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
+		}
+	}
 	for (int j = 0; j < nc; j++)
 		{ MCC_TRACE("br\n"); cweight[j] = 0; }
 	ast_promo_weigh(a, ast_root(a), 0, coff, nc, cweight);
