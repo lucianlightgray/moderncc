@@ -10531,10 +10531,10 @@ static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
  * (their adrp/add resp. auipc/addi symbol addressing is PC-relative, so no
  * separate PIC path is needed). */
 #if defined(MCC_TARGET_ARM64)
-static uint32_t intr(int r); /* reg-id -> hw number; defined later in arm64-gen.c (same TU) */
+ST_FUNC uint32_t intr(int r);
 #endif
 #if defined(MCC_TARGET_RISCV64)
-static int ireg(int r); /* reg-id -> hw number; defined later in riscv64-gen.c (same TU) */
+ST_FUNC int ireg(int r);
 #endif
 static int switch_jt_env(void) { MCC_TRACE("enter\n");
 	static int v = -1;

@@ -65,7 +65,7 @@ ST_DATA int func_bound_add_epilog;
 
 #define IS_FREG(x) ((x) >= MCC_TREG_F(0) && (x) <= MCC_TREG_F(7))
 
-static uint32_t intr(int r) { MCC_TRACE("enter\n");
+ST_FUNC uint32_t intr(int r) { MCC_TRACE("enter\n");
 	if (r >= MCC_TREG_SAVED(0) && r <= MCC_TREG_SAVED(MCC_NB_SAVED - 1))
 		{ MCC_TRACE("br\n"); return (uint32_t)(r - MCC_TREG_SAVED(0) + 19); }
 	assert(MCC_TREG_R(0) <= r && r <= MCC_TREG_R30);

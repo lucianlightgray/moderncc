@@ -5043,11 +5043,19 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); indir(); }
 			gaddrof();
 			vtop->type = char_pointer_type;
-			vpushi((int)ast_ival(a, n));
-			gen_op('+');
 			CType mt;
 			mt.t = ast_type_t(a, n);
 			mt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			int cofs = (int)ast_ival(a, n);
+			if (ast_regdisp_env && cofs && !(mt.t & VT_ARRAY) &&
+					(vtop->r & VT_VALMASK) < VT_CONST &&
+					!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))) { MCC_TRACE("br\n");
+				vtop->c.i = cofs;
+				vtop->r |= VT_REGDISP;
+			} else { MCC_TRACE("br\n");
+				vpushi(cofs);
+				gen_op('+');
+			}
 			vtop->type = mt;
 			if (!(mt.t & VT_ARRAY))
 				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }

@@ -63,7 +63,7 @@ ST_DATA int func_bound_add_epilog;
 static const int riscv64_saved_phys[MCC_NB_SAVED] = {
 		9, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27};
 
-static int ireg(int r) { MCC_TRACE("enter\n");
+ST_FUNC int ireg(int r) { MCC_TRACE("enter\n");
 	if (r == MCC_TREG_RA)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (r == MCC_TREG_SP)
