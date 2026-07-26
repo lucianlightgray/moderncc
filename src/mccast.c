@@ -1573,7 +1573,8 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 	}
 }
 static int ast_promote_env;
-static int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
+static int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
+int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
 static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP promotion pool (x86_64 xmm6,7 -> xmm2..7) for spill-heavy leaves; safe now that gen_sqrt/gen_round don't clobber promoted FP regs */
 #ifdef MCC_TARGET_X86_64
 static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
@@ -1857,6 +1858,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
+	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 0);
@@ -4563,6 +4565,15 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		 * promote. AST_OP_ADDR (real address escape) and its sz-range poison are
 		 * unaffected. Gated, default OFF ⇒ byte-identical. */
 		int skip_arrow = ast_promo_arrow_env && ast_op(a, n) == AST_OP_MEMBER_ARROW;
+		/* ++/-- in STATEMENT context does not escape the local and is handled by
+		 * the promoted-register path in ast_replay_bb; a value-producing ++ still
+		 * needs the old value preserved, which that path does not do, so only the
+		 * statement form is exempted here. */
+		if (ast_promo_incdec_env &&
+				(ast_op(a, n) == TOK_INC || ast_op(a, n) == TOK_DEC) &&
+				ast_parent(a, n) != AST_NONE &&
+				ast_kind(a, ast_parent(a, n)) == AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
 		for (int j = 0; j < nc; j++)
 			{ MCC_TRACE("br\n"); if (!skip_arrow &&
 					(coff[j] == off || (sz > 0 && coff[j] >= off && coff[j] < off + sz)))
@@ -5366,6 +5377,40 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vpop(); }
 			break;
 		case AST_Unary:
+#if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
+			/* MCC_AST_PROMO_INCDEC: `i++;` as a STATEMENT on a promoted local. The
+			 * generic path calls inc(), which begins with test_lvalue() -- but the
+			 * Ref replay rewrites a promoted local to a plain register RVALUE
+			 * (sv.r = preg drops VT_LVAL), so inc() cannot be used and the planner
+			 * poisons any incremented local to avoid producing a plan the backend
+			 * would drop. That poison hits the induction variable of every counted
+			 * loop. Here the result is unused (statement context), so no old-value
+			 * copy is needed and the update is just `reg += 1` -- which is exactly
+			 * the loop-increment case. The value-producing forms (i++ inside an
+			 * expression) still need the copy and stay poisoned. */
+			if ((ast_op(a, s) == TOK_INC || ast_op(a, s) == TOK_DEC) &&
+					ast_promo_incdec_env && ast_promo_n && !ast_in_graft) { MCC_TRACE("br\n");
+				AstLocal ic = ast_first_child(a, s);
+				int preg = ast_promo_reg_of(a, ic);
+				if (preg >= 0) { MCC_TRACE("br\n");
+					CType ict;
+					ict.t = ast_type_t(a, ic) & ~(VT_ARRAY | VT_VLA);
+					ict.ref = (Sym *)(uintptr_t)ast_type_ref(a, ic);
+					SValue isv;
+					isv.type = ict;
+					isv.r = (unsigned short)preg;
+					isv.r2 = VT_CONST;
+					isv.c.i = 0;
+					isv.sym = NULL;
+					vpushv(&isv);
+					vpushi(1);
+					gen_op(ast_op(a, s) == TOK_INC ? '+' : '-');
+					ast_promo_write(preg, &ict);
+					vpop();
+					break;
+				}
+			}
+#endif
 			if (ast_op(a, s) == AST_OP_VLA) { MCC_TRACE("br\n");
 				CType vt;
 				vt.t = ast_type_t(a, s);
