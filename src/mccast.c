@@ -1573,6 +1573,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 }
 static int ast_promote_env;
 static int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
+static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
 static int ast_inline_env;
@@ -1847,6 +1848,12 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_seconds = s1->optimize_search_seconds;
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
+	/* Let leaf functions (no calls) tap the callee-saved GP pool too — a leaf
+	 * otherwise only gets the tiny caller-saved pool (3 GP on x86_64), which is
+	 * the regalloc cliff a function falls off once its last call (e.g. sqrt) is
+	 * inlined away. The callee-saved regs are saved/restored per-reg by
+	 * ast_promo_entry_init/_exit_restore. Default OFF ⇒ byte-identical. */
+	ast_promo_leaf_callee_env = ast_env_gate("MCC_AST_PROMO_LEAF_CALLEE", 0);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
 	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
 																s1->optimize >= 3 && !s1->optimize_size);
@@ -3206,6 +3213,20 @@ static int ast_promo_typ[AST_PROMO_SLOTS];
 static int ast_promo_reg[AST_PROMO_SLOTS];
 static int ast_promo_n;
 static int ast_promo_callful;
+/* Combined leaf pool = caller-saved regs first (no save cost), then callee-saved
+ * (save/restore cost), used when MCC_AST_PROMO_LEAF_CALLEE lets a leaf overflow
+ * past the caller-saved pool. Caller-first ordering makes the graph colorer
+ * prefer the no-save regs. */
+static int ast_promo_leaf_pool[AST_PROMO_CALLER_N + AST_PROMO_CALLEE_N];
+/* Is `reg` a callee-saved reg (i.e. in the callee pool)? Such a reg's incoming
+ * value belongs to the caller and MUST be saved/restored when we promote into
+ * it. Independent of leaf/callful — for a callful fn every promoted reg is
+ * callee-saved (so this is all of them, matching the old behavior). */
+static int ast_promo_reg_is_callee(int reg) { MCC_TRACE("enter\n");
+	for (int i = 0; i < AST_PROMO_CALLEE_N; i++)
+		{ MCC_TRACE("br\n"); if (ast_promo_callee[i] == reg) { MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
 static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 	return ast_promo_reg[i];
 }
@@ -4519,6 +4540,17 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	const int *gp_pool = has_call ? ast_promo_callee : ast_promo_caller;
 	int gp_max = has_call ? AST_PROMO_CALLEE_N : AST_PROMO_CALLER_N;
 	int xmm_max = has_call ? 0 : AST_PROMO_XMM_N;
+	if (!has_call && ast_promo_leaf_callee_env) { MCC_TRACE("br\n");
+		/* leaf may overflow past caller-saved into the callee-saved pool
+		 * (saved/restored per-reg); caller-saved first so they're preferred. */
+		int k = 0;
+		for (int i = 0; i < AST_PROMO_CALLER_N; i++)
+			{ MCC_TRACE("br\n"); ast_promo_leaf_pool[k++] = ast_promo_caller[i]; }
+		for (int i = 0; i < AST_PROMO_CALLEE_N; i++)
+			{ MCC_TRACE("br\n"); ast_promo_leaf_pool[k++] = ast_promo_callee[i]; }
+		gp_pool = ast_promo_leaf_pool;
+		gp_max = k;
+	}
 	int gp_n = 0, xmm_n = 0;
 	if (ast_color_env && !has_goto) { MCC_TRACE("br\n");
 		int cfirst[AST_PROMO_MAX * 8], clast[AST_PROMO_MAX * 8];
@@ -4744,10 +4776,23 @@ static void ast_promo_write(int reg, CType *ct) { MCC_TRACE("enter\n");
 
 static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 	ast_promo_save_plan();
-	if (ast_promo_callful) { MCC_TRACE("br\n");
+	/* Save the INCOMING value of every promoted callee-saved reg (belongs to the
+	 * caller). For a callful fn all promoted regs are callee-saved ⇒ identical to
+	 * the old "if (callful) save all"; for a leaf with only caller-saved regs
+	 * nothing is saved (byte-identical); a leaf that overflowed into the callee
+	 * pool (MCC_AST_PROMO_LEAF_CALLEE) saves just those. */
+	int any_save = 0;
+	for (int i = 0; i < ast_promo_n; i++)
+		{ MCC_TRACE("br\n"); if (ast_promo_reg_is_callee(ast_promo_reg[i])) { MCC_TRACE("br\n");
+			any_save = 1;
+			break;
+		} }
+	if (any_save) { MCC_TRACE("br\n");
 		SValue sv;
 		ast_promo_save_loc = ast_alloc_temp_loc(8 * ast_promo_save_n, 8);
 		for (int i = 0; i < ast_promo_n; i++) { MCC_TRACE("br\n");
+			if (!ast_promo_reg_is_callee(ast_promo_reg[i]))
+				{ MCC_TRACE("br\n"); continue; }
 			int dup = 0;
 			for (int p = 0; p < i; p++)
 				{ MCC_TRACE("br\n"); if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) { MCC_TRACE("br\n");
@@ -4789,9 +4834,12 @@ static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 
 static void ast_promo_exit_restore(void) { MCC_TRACE("enter\n");
 	SValue sv;
-	if (!ast_promo_callful)
-		{ MCC_TRACE("br\n"); return; }
+	/* Restore each promoted callee-saved reg's incoming value. Mirrors
+	 * ast_promo_entry_init's per-reg save condition (callful: all; leaf-gate-off:
+	 * none — same as the old early return; leaf-gate-on: just the callee ones). */
 	for (int i = ast_promo_n - 1; i >= 0; i--) { MCC_TRACE("br\n");
+		if (!ast_promo_reg_is_callee(ast_promo_reg[i]))
+			{ MCC_TRACE("br\n"); continue; }
 		int dup = 0;
 		for (int p = i + 1; p < ast_promo_n; p++)
 			{ MCC_TRACE("br\n"); if (ast_promo_save_slot[p] == ast_promo_save_slot[i]) { MCC_TRACE("br\n");
