@@ -2183,9 +2183,15 @@ void gen_sqrt(void) { MCC_TRACE("enter\n");
 /* floor(0)/ceil(1)/trunc(2) -> single roundsd/roundss. imm = mode | 0x8
  * (bit3 suppresses the precision/inexact exception, matching libm). SSE4.1;
  * mcc only allocates xmm0-7 so no REX is needed (as in gen_sqrt). */
+/* roundsd/ss imm[3:0]: bits[1:0]=direction, bit[2]=use MXCSR mode (ignore
+ * [1:0]), bit[3]=suppress the precision (inexact) exception. mode 0/1/2 =
+ * floor/ceil/trunc (down/up/zero, suppress); 4/5 = rint/nearbyint (MXCSR mode;
+ * rint RAISES inexact, nearbyint suppresses). mode 3 (round ties-away) has no
+ * roundsd form (arm64 FRINTA only) and is never emitted here. */
 void gen_round(int mode) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
-	int imm = (mode == 0 ? 0x1 : mode == 1 ? 0x2 : 0x3) | 0x8;
+	int imm = mode == 0 ? 0x9 : mode == 1 ? 0xa : mode == 2 ? 0xb
+					 : mode == 4 ? 0x4 : mode == 5 ? 0xc : 0xb;
 	int r;
 	gv(MCC_RC_FLOAT);
 	r = REG_VALUE(vtop->r);

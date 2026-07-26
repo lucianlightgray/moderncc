@@ -2287,10 +2287,12 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 
 ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
 	uint32_t a, dbl, base;
-	base = mode == 0 ? 0x1e254000u   /* FRINTM floor            */
-			 : mode == 1 ? 0x1e24c000u   /* FRINTP ceil             */
-			 : mode == 2 ? 0x1e25c000u   /* FRINTZ trunc            */
-									 : 0x1e264000u;  /* FRINTA round (ties away) */
+	base = mode == 0 ? 0x1e254000u   /* FRINTM floor              */
+			 : mode == 1 ? 0x1e24c000u   /* FRINTP ceil               */
+			 : mode == 2 ? 0x1e25c000u   /* FRINTZ trunc              */
+			 : mode == 4 ? 0x1e274000u   /* FRINTX rint (raise inexact) */
+			 : mode == 5 ? 0x1e27c000u   /* FRINTI nearbyint (current mode) */
+									 : 0x1e264000u;  /* FRINTA round (ties away)  */
 	gv(MCC_RC_FLOAT);
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);

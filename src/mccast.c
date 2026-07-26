@@ -1753,6 +1753,8 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_ROUND 0x4000F /* round() — nearest, ties away (arm64 FRINTA only) */
 #define AST_OP_FMIN 0x40010 /* binary fmin (arm64 FMINNM only) */
 #define AST_OP_FMAX 0x40011 /* binary fmax (arm64 FMAXNM only) */
+#define AST_OP_RINT 0x40012 /* rint() — current rounding mode, raises inexact */
+#define AST_OP_NEARBYINT 0x40013 /* nearbyint() — current mode, no inexact */
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -4965,6 +4967,13 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_cast(&ct);
 			gen_round(uop == AST_OP_FLOOR ? 0 : uop == AST_OP_CEIL ? 1 : 2);
 			vtop->type = ct;
+		} else if (uop == AST_OP_RINT || uop == AST_OP_NEARBYINT) { MCC_TRACE("br\n");
+			CType ct;
+			ct.t = ast_type_t(a, n);
+			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			gen_cast(&ct);
+			gen_round(uop == AST_OP_RINT ? 4 : 5); /* FRINTX / FRINTI */
+			vtop->type = ct;
 #endif
 #if defined(MCC_TARGET_ARM64)
 		} else if (uop == AST_OP_ROUND) { MCC_TRACE("br\n");
@@ -5535,6 +5544,8 @@ static const struct {
 		{"fmin", 6, 2, 0},     {"fminf", 6, 2, 1},
 		{"fmax", 7, 2, 0},     {"fmaxf", 7, 2, 1},
 		{"round", 8, 1, 0},    {"roundf", 8, 1, 1},
+		{"rint", 9, 1, 0},     {"rintf", 9, 1, 1},
+		{"nearbyint", 10, 1, 0}, {"nearbyintf", 10, 1, 1},
 };
 
 static uint64_t ast_bfold_mul128(uint64_t a, uint64_t b, uint64_t *lo) { MCC_TRACE("enter\n");
@@ -5661,6 +5672,10 @@ static int ast_bfold_eval_f(int id, uint32_t b0, uint32_t b1, uint64_t *out) { M
 	case 8:
 		r = (float)ast_bfold_round(x0);
 		break;
+	case 9:
+	case 10:
+		/* rint/nearbyint depend on the dynamic rounding mode — don't const-fold */
+		return 0;
 	default:
 		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 31))
 			{ MCC_TRACE("br\n"); return 0; }
@@ -5702,6 +5717,10 @@ static int ast_bfold_eval_d(int id, uint64_t b0, uint64_t b1, uint64_t *out) { M
 	case 8:
 		r = ast_bfold_round(x0);
 		break;
+	case 9:
+	case 10:
+		/* rint/nearbyint depend on the dynamic rounding mode — don't const-fold */
+		return 0;
 	default:
 		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 63))
 			{ MCC_TRACE("br\n"); return 0; }
@@ -5971,6 +5990,23 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
+			/* rint/nearbyint(x): round to integral using the DYNAMIC rounding mode
+			 * (default nearest-even). x86 roundsd imm 0x4 (rint, raises inexact) /
+			 * 0xC (nearbyint, suppresses); arm64 FRINTX / FRINTI. Same opt-in gate. */
+			if ((bid == 9 || bid == 10) && nargs == 1 &&
+					ast_round_inline_env) { MCC_TRACE("br\n");
+				AstLocal arg = ast_child(a, n, 1);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Unary);
+				ast_set_op(a, n, bid == 9 ? AST_OP_RINT : AST_OP_NEARBYINT);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, arg);
+				MCC_TRACE("math-inline rint/nearbyint bid=%d flt=%d\n", bid, (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
 #endif /* round: x86_64 || arm64 */
 #if defined(MCC_TARGET_ARM64)
 			/* round/roundf(x): arm64 FRINTA (round-to-nearest, ties AWAY) — an
@@ -6099,11 +6135,12 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		/* sqrt(0), fabs(1); floor(2)/ceil(3)/trunc(4) only when opt-in AND on an
 		 * arch with a round-to-integral instruction (x86_64/arm64, not riscv64). */
 #if defined(MCC_TARGET_ARM64)
-		/* arm64 also inlines round() (bid 8) via FRINTA (ties away) */
-		int is_round = (bid == 2 || bid == 3 || bid == 4 || bid == 8) &&
-				ast_round_inline_env;
+		/* arm64 also inlines round() (bid 8, FRINTA). rint/nearbyint (9/10) both arches. */
+		int is_round = (bid == 2 || bid == 3 || bid == 4 || bid == 8 ||
+										bid == 9 || bid == 10) && ast_round_inline_env;
 #elif defined(MCC_TARGET_X86_64)
-		int is_round = (bid == 2 || bid == 3 || bid == 4) && ast_round_inline_env;
+		int is_round = (bid == 2 || bid == 3 || bid == 4 ||
+										bid == 9 || bid == 10) && ast_round_inline_env;
 #else
 		int is_round = 0;
 #endif
@@ -6133,7 +6170,9 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 						: bid == 2 ? AST_OP_FLOOR
 						: bid == 3 ? AST_OP_CEIL
 						: bid == 4 ? AST_OP_TRUNC
-											 : AST_OP_ROUND); /* bid 8, arm64 only */
+						: bid == 8 ? AST_OP_ROUND /* arm64 only */
+						: bid == 9 ? AST_OP_RINT
+											 : AST_OP_NEARBYINT); /* bid 10 */
 		ast_set_type(a, n, bt, 0);
 		ast_set_ival(a, n, 0);
 		ast_set_sym(a, n, 0);
