@@ -11350,19 +11350,28 @@ static int ast_ivsr_is_iv_ref(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("e
 
 static MCC_OPT_TLS AstLocal ast_ivsr_ptr_target;
 
-/* Does the subtree read the IV local (off `ivoff`), or any pointer this pass has
- * already materialised (an ast_ltemp slot)? Either makes the "base" a function
- * of the loop counter rather than a loop invariant. */
-static int ast_ivsr_ptr_refs_iv(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("enter\n");
+/* Is the candidate base actually loop-VARYING? `ast_licm_operands_ok` is not
+ * sufficient on its own: it delegates "is this a local?" to ast_cprop_is_local,
+ * a const-propagation helper that also demands an INTEGER type, so a
+ * POINTER-typed local slips through unchecked even when the loop assigns it.
+ * That is how `int *r = g2[i]; … r[i]` was strength-reduced against a base the
+ * body rewrites every iteration. Ask the question directly here, for any local
+ * ref regardless of type, and cover the induction variable itself (whose store
+ * lives in the increment block, not the body). */
+static int ast_ivsr_ptr_base_varies(AstArena *a, AstLocal loop, AstLocal n,
+																		int ivoff) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_ref_is_local_off(a, n, ivoff))
 		{ MCC_TRACE("br\n"); return 1; }
-	for (int t = 0; t < ast_ltemp_n; t++)
-		{ MCC_TRACE("br\n"); if (ast_ref_is_local_off(a, n, ast_ltemp_off[t]))
-			{ MCC_TRACE("br\n"); return 1; } }
+	if (ast_kind(a, n) == AST_Ref) { MCC_TRACE("br\n");
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM) &&
+				ast_licm_written(a, loop, (int)(int64_t)ast_ival(a, n)))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
-		{ MCC_TRACE("br\n"); if (ast_ivsr_ptr_refs_iv(a, c, ivoff))
+		{ MCC_TRACE("br\n"); if (ast_ivsr_ptr_base_varies(a, loop, c, ivoff))
 			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
@@ -11404,7 +11413,7 @@ static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
 	 * base's memory operands are WRITTEN in the loop, and both the IV and p are
 	 * locals updated in the increment block, so the base reads as invariant.
 	 * Only the READ of a[i][i] is wrong, which is what makes it hard to spot. */
-	if (ast_ivsr_ptr_refs_iv(a, base, ivoff))
+	if (ast_ivsr_ptr_base_varies(a, loop, base, ivoff))
 		{ MCC_TRACE("br\n"); return AST_NONE; }
 	return n;
 }

@@ -3641,6 +3641,24 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_NARROW_FIX=1;MCC_AST_SETHI_LEAF=1;MCC_AST_SCCP_FIX=1;MCC_AST_LICM_TEMP=1;MCC_AST_IVSR=1;MCC_AST_PRE=1;MCC_AST_DSE_CALL=1;MCC_AST_TCO_PTR=1;MCC_AST_CSE_COMM=1;MCC_AST_RANGE=1;MCC_AST_DIVMAGIC=1;MCC_AST_ABS=1;MCC_AST_REASSOC=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
         endforeach()
 
+        # Force the pointer-index strength reduction (MCC_AST_IVSR_PTR) ON, together
+        # with MCC_AST_OPASSIGN which is what makes compound-assign loops replayable
+        # enough for it to reach them. Two independent miscompiles hid in this pass
+        # (a[i][i] read a[i][0]; a row pointer taken inside the loop read out of
+        # bounds) precisely because nothing exercised the corpus with it enabled --
+        # its own validation was a fixed 6-pattern differential. Value-changing, so an
+        # exec (runtime) variant rather than a golden.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-ivsrptr/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-ivsrptr-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-ivsrptr/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_OPASSIGN=1;MCC_AST_IVSR_PTR=1")
+        endforeach()
+
         # P1 PR-2: force the value-lattice ranged-narrowing consumer (MCC_AST_VLAT) ON at
         # -O2 across the whole exec corpus, so the non-distributive narrowings (unsigned / %,
         # << const-count) are exercised end-to-end and their runtime output validated. Value-
