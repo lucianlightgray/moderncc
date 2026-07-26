@@ -1811,7 +1811,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
 	ast_reemit_n = 0;
 	ast_inline_n = 0;
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 	opt_promote = s1->optimize >= 2;
 #endif
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit;
