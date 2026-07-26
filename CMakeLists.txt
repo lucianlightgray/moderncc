@@ -5003,6 +5003,19 @@ if(MCC_BUILD_TESTS)
     endif()
     # riscv64 has no user-mode emulator here, so link+DWARF only (no exec) in a
     # host-native container with the riscv64 cross toolchain.
+    # 3-stage riscv64 self-host fixpoint: stages 2 and 3 run the mcc-built
+    # riscv64 mcc under qemu, so o1 == o2 == o3 is a real cross-arch gate
+    # rather than a host-arch one. Deliberately NOT inside if(TARGET
+    # mcc-riscv64) -- the script builds its own riscv64-emitting stage0 from
+    # source in the container, so gating it on the cross build would silently
+    # drop the only cross-arch self-host gate in the common configuration.
+    if(UNIX)
+        add_test(NAME selfhost-riscv64-docker
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-riscv64-docker.sh")
+        set_tests_properties(selfhost-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 TIMEOUT 1800)
+    endif()
+
     if(TARGET mcc-riscv64)
         if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
             set(_extlink_host_plat "linux/arm64")
