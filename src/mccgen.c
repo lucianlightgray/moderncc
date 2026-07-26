@@ -2030,6 +2030,38 @@ ST_FUNC int gv(int rc) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		if (is_float(vtop->type.t) &&
 				(vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_ARM64)
+			/* An FP literal only exists as a value here; by load() time it has
+			   already become a rodata symbol, so this is the one place FMOV #imm
+			   can replace the adrp/ldr (and, in a loop, a per-iteration GOT
+			   round-trip). Restricted to float/double: arm64 long double is
+			   quad, which FMOV cannot encode. */
+			if (ast_fmov_imm_env && !nocode_wanted) { MCC_TRACE("br\n");
+				int fbt = vtop->type.t & VT_BTYPE;
+				if (fbt == VT_DOUBLE || fbt == VT_FLOAT) { MCC_TRACE("br\n");
+					uint64_t fbits;
+					int fr;
+					if (fbt == VT_DOUBLE) { MCC_TRACE("br\n");
+						double dv = vtop->c.d;
+						memcpy(&fbits, &dv, 8);
+					} else { MCC_TRACE("br\n");
+						float fv = (float)vtop->c.f;
+						uint32_t f32;
+						memcpy(&f32, &fv, 4);
+						fbits = f32;
+					}
+					/* rc is MCC_RC_FRET for a return value, which does NOT carry
+					   the MCC_RC_FLOAT bit, so test the register we actually get
+					   rather than the requested class. */
+					fr = get_reg(rc);
+					if ((reg_classes[fr] & MCC_RC_FLOAT) &&
+							arm64_fmov_imm(fr, fbt == VT_DOUBLE, fbits)) { MCC_TRACE("br\n");
+						vtop->r = fr;
+						return fr;
+					}
+				}
+			}
+#endif
 			init_params p = {.sec = rodata_section};
 			unsigned long offset;
 			CType ltype = vtop->type;

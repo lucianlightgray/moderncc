@@ -1743,6 +1743,9 @@ ST_FUNC void gen_mulh(int sign);
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_reg_addi(int r, int64_t d);
 #endif
+#ifdef MCC_TARGET_ARM64
+ST_FUNC int arm64_fmov_imm(int r, int is_dbl, uint64_t bits);
+#endif
 
 /* math-builtin hardware inlines: x86_64 (SSE) + arm64 (native FP) */
 ST_FUNC void gen_fabs(void);

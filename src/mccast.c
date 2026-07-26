@@ -1578,6 +1578,7 @@ static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP 
 #ifdef MCC_TARGET_X86_64
 static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
 #endif
+int ast_fmov_imm_env; /* MCC_AST_FMOV_IMM: arm64 materialises VFPExpandImm-encodable FP constants with FMOV #imm instead of a PC-relative rodata load */
 int ast_reloc_equiv_env; /* MCC_AST_RELOC_EQUIV: judge replay faithfulness by structural relocation equality instead of raw bytes, so an anonymous local label re-emitted at a new symbol index does not read as divergence */
 int ast_regdisp_env; /* MCC_AST_REGDISP: keep a member/array constant offset as a register-base displacement instead of materialising an add */
 static int ast_cost_spill_env; /* MCC_AST_COST_SPILL: add a loop register-pressure term to ast_cost_score so spill-reducing passes score a real benefit */
@@ -1859,6 +1860,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 0);
+#ifdef MCC_TARGET_ARM64
+	ast_fmov_imm_env = ast_env_gate("MCC_AST_FMOV_IMM", 0);
+#else
+	ast_fmov_imm_env = 0;
+#endif
 #ifdef MCC_TARGET_X86_64
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
 #else

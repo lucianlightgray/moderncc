@@ -2266,6 +2266,41 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	o((sign ? 0x9b407c00u : 0x9bc07c00u) | x | a << 5 | b << 16);
 }
 
+/* FMOV (scalar, immediate): 0x1E201000 | ftype<<22 | imm8<<13 | Rd, encoding a
+   VFPExpandImm 8-bit literal instead of a PC-relative rodata load. Only values
+   of the form +/-(1 + m/16) * 2^n (m 0..15, n -3..4) are representable; anything
+   else -- including 0.0, inf, NaN and every denormal -- returns 0 so the caller
+   falls back to the rodata path rather than mis-encoding. The exponent test
+   rejects inf/NaN (biased 0x7ff => 1024) and zero/denormals (biased 0 => -1023)
+   without needing separate cases. Verified against llvm-mc for 1.0/-1.0/0.5/2.0/
+   31.0/-4.75 (double) and 1.0/-0.125 (single). */
+ST_FUNC int arm64_fmov_imm(int r, int is_dbl, uint64_t bits) { MCC_TRACE("enter\n");
+	uint64_t sign, mant;
+	int64_t exp;
+	uint32_t imm8;
+
+	if (is_dbl) { MCC_TRACE("br\n");
+		sign = (bits >> 63) & 1;
+		exp = (int64_t)((bits >> 52) & 0x7ff) - 1023;
+		mant = bits & 0xfffffffffffffULL;
+		if (mant & 0xffffffffffffULL)
+			{ MCC_TRACE("br\n"); return 0; }
+		mant >>= 48;
+	} else { MCC_TRACE("br\n");
+		sign = (bits >> 31) & 1;
+		exp = (int64_t)((bits >> 23) & 0xff) - 127;
+		mant = bits & 0x7fffff;
+		if (mant & 0x7ffff)
+			{ MCC_TRACE("br\n"); return 0; }
+		mant >>= 19;
+	}
+	if (exp < -3 || exp > 4)
+		{ MCC_TRACE("br\n"); return 0; }
+	imm8 = (uint32_t)((sign << 7) | ((uint64_t)(((exp + 3) & 7) ^ 4) << 4) | mant);
+	o(0x1e201000u | (is_dbl ? (1u << 22) : 0u) | (imm8 << 13) | fltr(r));
+	return 1;
+}
+
 /* Scalar FP data-processing (1 source): 0x1E204000 | ftype<<22 | opcode<<15
  * | Rn<<5 | Rd. Mirrors gen_opf's FNEG. ftype: single=0, double=1 (bit22).
  * FABS opcode=1, FSQRT=3, FRINTP(ceil)=9, FRINTM(floor)=10, FRINTZ(trunc)=11.
