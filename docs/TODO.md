@@ -186,9 +186,6 @@ Each arch should match x86_64 for self-host, promotion, cmov/csel, div-magic, JI
 - Add a built-in ad-hoc codesigner — currently shells out to `/usr/bin/codesign`.
 - Wire `machofat` into `dist-macos` packaging.
 
-## Front-end / diagnostics
-- Implement the empty-TU pedantic diagnostic ("ISO C requires a translation unit to contain at least one declaration") by tracking whether any decl was parsed while `file` is not the builtin `<command line>` preamble — deferred as low-value.
-
 ## Recurring codegen review checks (latent-bug-class guards)
 - On any new front-end `r`-field flag, extend the `sv->r & ~(...)` mask in `arm64-gen.c` `load()` and the twin in `arm64-asm.c` `arm64_memory_needs_address_reg` — else arm64 `assert(0)` slips past x86/qemu CI.
 - On any new `ast_func_end` dispatcher work, keep the raw-x86 emission and its x86-only static helpers inside the `#if MCC_TARGET_I386||MCC_TARGET_X86_64` guard.

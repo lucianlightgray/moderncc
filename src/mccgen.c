@@ -12892,8 +12892,22 @@ static void pe_check_linkage(CType *type, AttributeDef *ad) {
 }
 #endif
 
+/* True while the tokens being parsed come from the builtin preamble (the
+ * `<command line>` buffer and the `mccdefs.h` it pulls in — __va_list_tag etc.),
+ * not the user's translation unit. Used so the empty-TU pedantic diagnostic
+ * isn't suppressed by the preamble's own typedefs. The preamble buffer
+ * (`<command line>`) is only on the include stack while it (and its includes)
+ * are being read; a user file / user #include never has it in its prev chain. */
+static int decl_in_preamble(void) { MCC_TRACE("enter\n");
+	BufferedFile *bf;
+	for (bf = file; bf; bf = bf->prev)
+		{ MCC_TRACE("br\n"); if (!strcmp(bf->filename, "<command line>"))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static int decl(int l) {
-	int v, has_init, r, oldint;
+	int v, has_init, r, oldint, got_decl = 0;
 	CType type, btype;
 	Sym *sym, *sa;
 	AttributeDef ad, adbase;
@@ -12918,6 +12932,7 @@ static int decl(int l) {
 				continue;
 			}
 			if (tok == TOK_STATIC_ASSERT) { MCC_TRACE("br\n");
+				if (!decl_in_preamble()) got_decl = 1; /* _Static_assert is a declaration */
 				do_Static_assert();
 				continue;
 			}
@@ -12927,6 +12942,7 @@ static int decl(int l) {
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
 					{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
 #if MCC_CONFIG_ASM
+				if (!decl_in_preamble()) got_decl = 1; /* file-scope asm: don't flag the TU as empty */
 				asm_global_instr();
 				continue;
 #else
@@ -12939,9 +12955,12 @@ static int decl(int l) {
 			} else { MCC_TRACE("br\n");
 				if (tok != TOK_EOF)
 					{ MCC_TRACE("br\n"); expect("declaration"); }
+				else if (l == VT_CONST && !got_decl)
+					{ MCC_TRACE("br\n"); mcc_pedantic("ISO C requires a translation unit to contain at least one declaration"); }
 				break;
 			}
 		}
+		if (!decl_in_preamble()) got_decl = 1; /* committed to parsing a real external declaration */
 
 		if (tok == ';') { MCC_TRACE("br\n");
 			if ((btype.t & VT_BTYPE) == VT_STRUCT && (btype.ref->v & ~SYM_STRUCT) < SYM_FIRST_ANOM)
