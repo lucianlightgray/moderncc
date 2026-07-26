@@ -824,9 +824,10 @@ static long so_run_score(unsigned timeout_ms) { MCC_TRACE("enter\n");
 	return best;
 }
 
-#define SO_SPILL_W 48
+#define SO_SPILL_W_DEFAULT 48
 
 static char so_spill_path[1216];
+static long so_spill_w = SO_SPILL_W_DEFAULT;
 
 static long so_spill_read(void) { MCC_TRACE("enter\n");
 	FILE *f;
@@ -863,7 +864,7 @@ static long so_eval(const char **cv, const char *cand_tmp, unsigned gate,
 	sp = so_spill_read();
 	if (sz >= 0 && sp > 0) { MCC_TRACE("br\n");
 		MCC_TRACE("superopt: gate %u text %ld stackrefs %ld\n", gate, sz, sp);
-		sz += sp * SO_SPILL_W;
+		sz += sp * so_spill_w;
 	}
 	return sz;
 }
@@ -1162,9 +1163,10 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	snprintf(cand_tmp, sizeof cand_tmp, "%s.mcc-so-cand", outfile);
 	{
 		const char *sw = getenv("MCC_SO_SPILL_SCORE");
-		if (sw && sw[0] && strcmp(sw, "0"))
-			{ MCC_TRACE("br\n"); snprintf(so_spill_path, sizeof so_spill_path,
-																		"%s.mcc-so-spill", outfile); }
+		if (sw && sw[0] && strcmp(sw, "0")) { MCC_TRACE("br\n");
+			snprintf(so_spill_path, sizeof so_spill_path, "%s.mcc-so-spill", outfile);
+			so_spill_w = atol(sw) > 1 ? atol(sw) : SO_SPILL_W_DEFAULT;
+		}
 	}
 	{
 		const char *ds = getenv("MCC_SO_DEFAULT_SEED");
