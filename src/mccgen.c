@@ -4,7 +4,6 @@
 #include "mccforecast.h"
 
 ST_DATA int rsym, anon_sym, ind, loc;
-ST_DATA long mcc_stackref_count;
 
 ST_DATA Sym *global_stack;
 ST_DATA Sym *local_stack;
@@ -1994,9 +1993,6 @@ ST_FUNC int gv(int rc) { MCC_TRACE("enter\n");
 		if (!r_ok || !r2_ok) { MCC_TRACE("br\n");
 			if (!r_ok) { MCC_TRACE("br\n");
 				int reuse = r < VT_CONST && (reg_classes[r] & rc) && !rc2;
-				if ((vtop->r & VT_LVAL) && !(vtop->r & VT_SYM) &&
-						(r == VT_LOCAL || r == VT_LLOCAL))
-					{ MCC_TRACE("br\n"); mcc_stackref_count++; }
 #if MCC_CONFIG_OPTIMIZER
 				if (reuse && (ast_pinned_regs & ((uint64_t)1 << r)))
 					{ MCC_TRACE("br\n"); reuse = 0; }
