@@ -13161,6 +13161,22 @@ static void gen_inline_functions(MCCState *s) {
 				{ MCC_TRACE("br\n"); continue; }
 			int emit = !(sym->type.t & VT_INLINE) ||
 								 ((sym->type.t & VT_STATIC) && sym->c);
+			/* A plain `inline` definition (no static, no extern) supplies an
+			   INLINE definition only: C99 6.7.4 leaves the program ill-formed
+			   unless some TU also provides an external definition. mcc inlines
+			   nothing here and emits nothing, so a call that is not inlined ends
+			   as an unresolved reference. Emitting the body WEAK gives the
+			   external definition while letting every TU that does the same
+			   collapse onto one copy at link time. Gated, since programs that
+			   link today must stay byte-identical -- clearing VT_INLINE matters
+			   as much as setting a.weak, because put_extern_sym2 forces
+			   STB_LOCAL for VT_INLINE and would otherwise bury the body. */
+			if (mcc_state->c99_inline_body && !emit && sym->c &&
+					(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
+				sym->type.t &= ~VT_INLINE;
+				sym->a.weak = 1;
+				emit = 1;
+			}
 			int diag_only = !emit && sym->c &&
 											(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
 			if (emit || diag_only) { MCC_TRACE("br\n");

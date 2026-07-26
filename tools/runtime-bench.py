@@ -38,13 +38,19 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLB = os.path.join(ROOT, "vendor", "plb", "bench", "algorithm")
 RT = os.path.join(ROOT, "tests", "runtime")
 
-# (name, source, argv) -- argv sized so each kernel runs ~0.3-0.5s under gcc -O2;
-# anything shorter and process startup dominates, making the timing useless
+# (name, source, argv, mcc_flags) -- argv sized so each kernel runs ~0.3-0.5s
+# under gcc -O2; anything shorter and process startup dominates, making the
+# timing useless. mcc_flags are extra flags only mcc gets (the reference
+# compiler needs no equivalent).
 KERNELS = [
-    ("nbody",      os.path.join(PLB, "nbody", "2.c"),   ["10000000"]),
-    ("nsieve",     os.path.join(PLB, "nsieve", "1.c"),  ["12"]),
-    ("mandelbrot", os.path.join(RT, "mandelbrot.c"),    ["3000"]),
-    ("matmul",     os.path.join(RT, "matmul.c"),        ["600", "8"]),
+    ("nbody",      os.path.join(PLB, "nbody", "2.c"),   ["10000000"], []),
+    ("nsieve",     os.path.join(PLB, "nsieve", "1.c"),  ["12"],       []),
+    ("mandelbrot", os.path.join(RT, "mandelbrot.c"),    ["3000"],     []),
+    ("matmul",     os.path.join(RT, "matmul.c"),        ["600", "8"], []),
+    # plain C99 `inline` with no external definition; mcc needs the weak
+    # out-of-line body to resolve `A` (gcc supplies one by default)
+    ("spectral",   os.path.join(PLB, "spectral-norm", "3.c"), ["3000"],
+                   ["-fc99-inline-body"]),
 ]
 
 
@@ -57,8 +63,8 @@ def find_cc(explicit):
     return None
 
 
-def build(cc, src, out, extra_env=None, mcc=False):
-    cmd = [cc, "-O2", src, "-o", out, "-lm"]
+def build(cc, src, out, extra_env=None, mcc=False, flags=None):
+    cmd = [cc, "-O2"] + (flags or []) + [src, "-o", out, "-lm"]
     if not mcc:
         cmd.insert(1, "-w")
         # keep the reference honest: no FP contraction, so a fused multiply-add
@@ -115,7 +121,7 @@ def main():
     failures, results = [], {}
 
     with tempfile.TemporaryDirectory() as td:
-        for name, src, argv in kernels:
+        for name, src, argv, mflags in kernels:
             ref = os.path.join(td, name + ".ref")
             ok, err = build(cc, src, ref)
             if not ok:
@@ -132,7 +138,7 @@ def main():
             for gi, gates in enumerate(gate_sets):
                 env = parse_gates(gates)
                 exe = os.path.join(td, f"{name}.mcc{gi}")
-                ok, err = build(args.mcc, src, exe, env, mcc=True)
+                ok, err = build(args.mcc, src, exe, env, mcc=True, flags=mflags)
                 if not ok:
                     failures.append(f"{name} [{gates or 'defaults'}]: mcc build failed: {err.strip()[:160]}")
                     continue
@@ -158,7 +164,7 @@ def main():
         hdr = f"\n{'kernel':<12}{'ref(ms)':>9}" + "".join(f"{l:>9}" for l in labels)
         hdr += f"{'vs ref':>9}" + ("".join(f"{'d'+l:>9}" for l in labels[1:]) if len(cols) > 1 else "")
         print(hdr)
-        for name, _, _ in kernels:
+        for name, _, _, _ in kernels:
             if name not in results:
                 continue
             r = results[name]

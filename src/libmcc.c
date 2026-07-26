@@ -1981,6 +1981,7 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, reverse_funcargs), 0, "reverse-funcargs"},
 		{offsetof(MCCState, macro_eval), 0, "macro-eval"},
 		{offsetof(MCCState, gnu89_inline), 0, "gnu89-inline"},
+		{offsetof(MCCState, c99_inline_body), 0, "c99-inline-body"},
 		{offsetof(MCCState, unwind_tables), 0, "asynchronous-unwind-tables"},
 		{offsetof(MCCState, short_enums), 0, "short-enums"},
 		{offsetof(MCCState, nobuiltin), FD_INVERT, "builtin"},

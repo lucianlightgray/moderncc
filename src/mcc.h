@@ -625,6 +625,7 @@ struct MCCState {
 	unsigned char reverse_funcargs;
 	unsigned char macro_eval;
 	unsigned char gnu89_inline;
+	unsigned char c99_inline_body; /* -fc99-inline-body: emit a weak out-of-line body for a referenced plain-inline function */
 	unsigned char std_strict_ansi;
 	unsigned char unwind_tables;
 	unsigned char short_enums;
