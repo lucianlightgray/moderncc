@@ -264,6 +264,9 @@ AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 
 void ast_add_child(AstArena *a, AstLocal parent, AstLocal child) { MCC_TRACE("enter\n");
 	AST_ASSERT(parent < a->count && child < a->count);
+	if (getenv("MCC_REPARENT_DBG") && a->parent[child] != AST_NONE)
+		fprintf(stderr, "[reparent] child=%u(k%u) from %u to %u\n", (unsigned)child,
+						(unsigned)a->kind[child], (unsigned)a->parent[child], (unsigned)parent);
 	a->epoch++;
 	a->parent[child] = parent;
 	a->next_sib[child] = AST_NONE;
@@ -1573,7 +1576,8 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 	}
 }
 static int ast_promote_env;
-static int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
+static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
+int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
 int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
 static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP promotion pool (x86_64 xmm6,7 -> xmm2..7) for spill-heavy leaves; safe now that gen_sqrt/gen_round don't clobber promoted FP regs */
 #ifdef MCC_TARGET_X86_64
@@ -1859,6 +1863,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC", 0);
+	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 0);
@@ -3147,6 +3152,23 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	AstLocal value = ast_vs[ast_vn - 1];
+	/* MCC_AST_CHAINSTORE: an assignment yields its value, so in `a = b = v` the
+	 * inner store's value node is left as the expression result and THIS store
+	 * adopts it -- but ast_add_child reparents, so the node stays in the inner
+	 * store's child list while its parent points here. The model is then not a
+	 * tree. Measurable on unmodified mcc with a print in ast_add_child:
+	 * `k = j = 0` logs one reparent, the equivalent `k = 0, j = 0` logs none, and
+	 * compiling mcc's own amalgamation logs 314. Give this store its own deep
+	 * copy, exactly as ast_hook_vpush does for the compound-assign vdup ("so the
+	 * model stays a tree"). Only a value that ALREADY has a parent is copied, so
+	 * an ordinary `a = expr;` is untouched -- which is why this is byte-identical.
+	 * NOTE this does NOT make the chained-assignment idiom faithful; that has a
+	 * separate cause (the parser materialises the value once and chains two
+	 * vstores, the replay emits two independent stores). This is a
+	 * well-formedness repair only. */
+	if (ast_chainstore_env && value != AST_NONE &&
+			ast_parent(ast_cur, value) != AST_NONE)
+		{ MCC_TRACE("br\n"); value = ast_dup_sub(ast_cur, value); }
 	AstLocal lval = ast_vs[ast_vn - 2];
 	AstLocal st = ast_node(ast_cur, AST_Store);
 	if (ast_opassign_store_pending) { MCC_TRACE("br\n");
