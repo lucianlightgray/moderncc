@@ -3641,6 +3641,23 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_NARROW_FIX=1;MCC_AST_SETHI_LEAF=1;MCC_AST_SCCP_FIX=1;MCC_AST_LICM_TEMP=1;MCC_AST_IVSR=1;MCC_AST_PRE=1;MCC_AST_DSE_CALL=1;MCC_AST_TCO_PTR=1;MCC_AST_CSE_COMM=1;MCC_AST_RANGE=1;MCC_AST_DIVMAGIC=1;MCC_AST_ABS=1;MCC_AST_REASSOC=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
         endforeach()
 
+        # Gate COMBINATION coverage. Single-gate runs are not enough: MCC_AST_CHAINSTORE
+        # and MCC_AST_PROMO_INCDEC each passed the whole corpus alone while the PAIR
+        # miscompiled (the chained store reads the register the inner store left the
+        # value in, which a promoted inner target never writes). Every single-gate
+        # check was green -- corpus, five runtime kernels, three self-host fixpoints --
+        # so the pair is what needs exercising, not the parts.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-chainstore/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-chainstore-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-chainstore/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_OPASSIGN=1")
+        endforeach()
+
         # Force the pointer-index strength reduction (MCC_AST_IVSR_PTR) ON, together
         # with MCC_AST_OPASSIGN which is what makes compound-assign loops replayable
         # enough for it to reach them. Two independent miscompiles hid in this pass

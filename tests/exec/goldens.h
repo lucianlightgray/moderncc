@@ -173,6 +173,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"sizeof_array", "run", "exec/types/sizeof_array.c", "sizeof a : 1 1\nsizeof b : 2 2\nsizeof ii : 0\nsizeof kk : 4\nsizeof cc : 3\nlen-of ll : 6\nsizeof ss : 12\n", "", "", ""},
 		{"array_initialisers", "run", "exec/pointers_arrays/array_initialisers.c", "0: 12\n1: 34\n2: 56\n3: 78\n4: 90\n5: 123\n6: 456\n7: 789\n8: 8642\n9: 9753\n0: 12\n1: 34\n2: 56\n3: 78\n4: 90\n5: 123\n6: 456\n7: 789\n8: 8642\n9: 9753\n0: 12\n1: 34\n2: 0\n3: 0\n4: 0\n5: 0\n6: 0\n7: 0\n8: 0\n9: 0\n", "", "", ""},
 		{"sprintf", "run", "exec/programs/sprintf.c", "->01<-\n->02<-\n->03<-\n->04<-\n->05<-\n->06<-\n->07<-\n->08<-\n->09<-\n->10<-\n->11<-\n->12<-\n->13<-\n->14<-\n->15<-\n->16<-\n->17<-\n->18<-\n->19<-\n->20<-\n", "", "", ""},
+		{"chained_assign", "run", "exec/statements/chained_assign.c", "reduce 34.371945452\nint 5600\ntriple 5983\nexpr 230\nmixed 162.000000\nreassign 380\n", "", "", ""},
 		{"array_2d_iv", "run", "exec/pointers_arrays/array_2d_iv.c", "diag_read 308\ndiag_compound 56\nanti_diag 56\nrow_then_col 104\nthree_d 1326\nlocal_2d 61\nreverse_diag 56\nptr_row_walk 84\n", "", "", ""},
 		{"multiple_array_index", "run", "exec/pointers_arrays/multiple_array_index.c", "x=0: 1 2 3 4\nx=1: 5 6 7 8\nx=2: 9 10 11 12\nx=3: 13 14 15 16 \n", "", "", ""},
 		{"typedef", "run", "exec/types/typedef.c", "1\n12,34\n12,34\n1 2 3 \n1 2 3 4 \n12\n16\n1 2 3 4 5 6 7 \n1 2 3 4 5 6 7 \n", "", "", ""},

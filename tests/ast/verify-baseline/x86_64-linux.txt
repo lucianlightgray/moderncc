@@ -501,6 +501,15 @@ statements/bracket_evaluation.c	putchar_unlocked	desync
 statements/case.c	fputc_unlocked	desync
 statements/case.c	putc_unlocked	desync
 statements/case.c	putchar_unlocked	desync
+statements/chained_assign.c	chain_in_expr	unfaithful
+statements/chained_assign.c	chain_reassign	unfaithful
+statements/chained_assign.c	fputc_unlocked	desync
+statements/chained_assign.c	int_chain	unfaithful
+statements/chained_assign.c	mixed_type_chain	unfaithful
+statements/chained_assign.c	putc_unlocked	desync
+statements/chained_assign.c	putchar_unlocked	desync
+statements/chained_assign.c	reduce_chain	unfaithful
+statements/chained_assign.c	triple_chain	unfaithful
 statements/comma_operator.c	fputc_unlocked	desync
 statements/comma_operator.c	main	unfaithful
 statements/comma_operator.c	putc_unlocked	desync
