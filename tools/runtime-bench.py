@@ -168,6 +168,10 @@ def main():
             for _ in range(runs - 1):
                 _, _, t = run_once(ref, argv)
                 ref_ms = min(ref_ms, t)
+            if use_perf:
+                ref_ins = instructions_retired(ref, argv)
+                if ref_ins is not None:
+                    results.setdefault(name, {})["ref_ins"] = ref_ins
 
             for gi, gates in enumerate(gate_sets):
                 env = parse_gates(gates)
@@ -202,7 +206,7 @@ def main():
         hdr = f"\n{'kernel':<12}{'ref(ms)':>9}" + "".join(f"{l:>9}" for l in labels)
         hdr += f"{'vs ref':>9}" + ("".join(f"{'d'+l:>9}" for l in labels[1:]) if len(cols) > 1 else "")
         if any(r.get("ins") for r in results.values()):
-            hdr += f"{'insns':>10}" + "".join(f"{'d'+l:>9}" for l in labels[1:])
+            hdr += f"{'insn/ref':>9}{'insns':>10}" + "".join(f"{'d'+l:>9}" for l in labels[1:])
         print(hdr)
         for name, _, _, _ in kernels:
             if name not in results:
@@ -219,6 +223,10 @@ def main():
             ins = r.get("ins", {})
             base_ins = ins.get(cols[0])
             if base_ins:
+                ri = r.get("ref_ins")
+                # the number that actually says how much extra work mcc does;
+                # wall-clock ratio conflates it with layout and cache effects
+                line += f"{base_ins / ri:>8.2f}x" if ri else f"{'-':>9}"
                 line += f"{base_ins / 1e9:>9.2f}G"
                 for c in cols[1:]:
                     line += (f"{(ins[c] - base_ins) / base_ins * 100:>+8.1f}%"
@@ -230,8 +238,10 @@ def main():
         print("\ntiming is advisory: wall-clock varies with load, and only the")
         print("output check above is a pass/fail gate")
         if any(r.get("ins") for r in results.values()):
-            print("insns = instructions retired (perf). A time delta with NO insn")
-            print("delta is code layout, not codegen -- judge flips on the insn column")
+            print("insn/ref = mcc instructions retired divided by the reference")
+            print("compiler's: the real work gap, free of layout and cache noise.")
+            print("A time delta with NO insn delta is layout, not codegen --")
+            print("judge flips on the insn columns, not the time columns")
 
     if args.json:
         print(json.dumps({"results": results, "failures": failures}, indent=2))

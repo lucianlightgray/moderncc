@@ -231,7 +231,19 @@ Each arch should match x86_64 for self-host, promotion, cmov/csel, div-magic, JI
 
 ## Tests / infra
 - **Runtime (generated-code speed) benchmark harness — LANDED 2026-07-26.** `tools/runtime-bench.py` + ctest `runtime-bench-check`. It builds each kernel with mcc and with a reference compiler, runs min-of-N, and **verifies mcc's output against the reference on every run** — a fast result that miscompiles fails instead of scoring well. CI runs `--check-only` (one run, correctness only): wall-clock on a shared runner is noise, so timing is advisory and never a pass/fail condition. `--gates "K=V …"` is repeatable, so a flip decision is one command — the first config is the baseline and later ones print as a delta, with numbered columns and a legend (gate strings are far too long to be headers). Skips 77 without a reference compiler or kernels.
-  **x86_64 baseline captured 2026-07-26 (this host, gcc -O2 -ffp-contract=off reference, min-of-3):**
+  **Superseded by the instruction-ratio baseline below — wall-clock ratios conflate real work with layout and cache effects, so prioritise on `insn/ref`.**
+  **x86_64 INSTRUCTION baseline captured 2026-07-26** (`--gates "MCC_AST_OPASSIGN=1 MCC_AST_PROMO_INCDEC=1 MCC_AST_IVSR_PTR=1"`, reference gcc -O2 `-ffp-contract=off`, `insn/ref` = mcc instructions retired / gcc's):
+
+  | kernel | time vs ref | **insn/ref** | mcc insns |
+  |---|---|---|---|
+  | nbody | 1.96x | **2.29x** | 14.61G |
+  | nsieve | 1.44x | **3.09x** | 4.72G |
+  | mandelbrot | 2.84x | **2.05x** | 7.27G |
+  | matmul | 8.17x | **7.67x** | 46.78G |
+  | spectral | 4.34x | **7.41x** | 22.68G |
+
+  Readings that change priorities: (a) **matmul and spectral genuinely execute ~7.5x the instructions gcc does** — that is a real work gap, not layout, and they are where codegen effort pays; (b) **nsieve executes 3.09x the instructions but runs only 1.44x slower**, i.e. it is memory-bound and extra instructions hide in stalls, so optimising it is worth less than the time ratio suggests; (c) mandelbrot is the opposite (2.05x insns but 2.84x time), so its remaining gap is cache/layout rather than emitted work. Note the reference is gcc WITH vectorization, and each packed op does 2 doubles, so of matmul's 7.67x roughly 1.9x is SIMD and the rest (~4x) is scalar inefficiency — vectorization alone would not close it.
+  Older wall-clock-only baseline, kept for the timing figures: (this host, gcc -O2 -ffp-contract=off reference, min-of-3):
 
   | kernel | ref ms | mcc ms | ratio |
   |---|---|---|---|
