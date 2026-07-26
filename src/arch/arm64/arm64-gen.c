@@ -523,6 +523,7 @@ static void arm64_tls_desc_x30(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 
 ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int svtt = sv->type.t;
 	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_MUSTCAST);
 	int svrv = svr & VT_VALMASK;
@@ -713,6 +714,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int svtt = sv->type.t;
 	int svr = sv->r & ~VT_BOUNDED;
 	int svrv = svr & VT_VALMASK;

@@ -259,6 +259,7 @@ static void load_large_constant(int rr, int fc, uint32_t pi) { MCC_TRACE("enter\
 }
 
 ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int fr = sv->r;
 	int v = fr & VT_VALMASK;
 	int rr = is_ireg(r) ? ireg(r) : freg(r);
@@ -421,6 +422,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int fr = sv->r & VT_VALMASK;
 	int rr = is_ireg(r) ? ireg(r) : freg(r), ptrreg;
 	int fc = sv->c.i;

@@ -1423,6 +1423,9 @@ ST_DATA Sym *define_stack;
 ST_DATA CType int_type, func_old_type, char_pointer_type;
 ST_DATA SValue *vtop;
 ST_DATA int rsym, anon_sym, ind, loc;
+ST_DATA long mcc_stackref_count;
+ST_FUNC void mcc_stackref_note(int r);
+ST_FUNC void mcc_stackref_commit(void);
 ST_DATA char debug_modes;
 
 ST_DATA int nocode_wanted;

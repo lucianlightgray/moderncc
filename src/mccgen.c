@@ -4,6 +4,24 @@
 #include "mccforecast.h"
 
 ST_DATA int rsym, anon_sym, ind, loc;
+ST_DATA long mcc_stackref_count;
+static long mcc_stackref_fn;
+static int mcc_stackref_ind;
+
+ST_FUNC void mcc_stackref_note(int r) { MCC_TRACE("enter\n");
+	int v = r & VT_VALMASK;
+	if (ind < mcc_stackref_ind)
+		{ MCC_TRACE("br\n"); mcc_stackref_fn = 0; }
+	mcc_stackref_ind = ind;
+	if ((v == VT_LOCAL || v == VT_LLOCAL) && !(r & VT_SYM))
+		{ MCC_TRACE("br\n"); mcc_stackref_fn++; }
+}
+
+ST_FUNC void mcc_stackref_commit(void) { MCC_TRACE("enter\n");
+	mcc_stackref_count += mcc_stackref_fn;
+	mcc_stackref_fn = 0;
+	mcc_stackref_ind = 0;
+}
 
 ST_DATA Sym *global_stack;
 ST_DATA Sym *local_stack;

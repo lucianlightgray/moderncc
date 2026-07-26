@@ -16302,6 +16302,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_promote_env = ast_sv_promo;
 		ast_inline_env = ast_sv_inl;
 	}
+	mcc_stackref_commit();
 }
 
 void ast_func_epilog(void) { MCC_TRACE("enter\n");

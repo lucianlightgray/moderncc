@@ -185,6 +185,7 @@ static void gen_pe_tls_base(int dst) { MCC_TRACE("enter\n");
 #endif
 
 ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int v, t, ft, fc, fr, opc;
 	SValue v1;
 
@@ -348,6 +349,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void store(int r, SValue *v) { MCC_TRACE("enter\n");
+	mcc_stackref_note(v->r);
 	int fr, bt, fc, opc;
 
 	bt = v->type.t & VT_BTYPE;

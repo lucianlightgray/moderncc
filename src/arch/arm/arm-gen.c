@@ -432,6 +432,7 @@ static void arm_tls_addr(Sym *sym, int coff) { MCC_TRACE("enter\n");
 }
 
 void load(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int v, ft, fc, fr, sign;
 	uint32_t op, base;
 	SValue v1;
@@ -578,6 +579,7 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 }
 
 void store(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	SValue v1;
 	int v, ft, fc, fr, sign;
 	uint32_t op, base;

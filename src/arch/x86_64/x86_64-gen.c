@@ -246,6 +246,7 @@ static void gen_macho_tls_base(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 
 void load(int r, SValue *sv) { MCC_TRACE("enter\n");
+	mcc_stackref_note(sv->r);
 	int v, t, ft, fc, fr;
 	SValue v1;
 
@@ -505,6 +506,7 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 }
 
 void store(int r, SValue *v) { MCC_TRACE("enter\n");
+	mcc_stackref_note(v->r);
 	int fr, bt, ft, fc;
 	int op64 = 0;
 	int pic = 0;
