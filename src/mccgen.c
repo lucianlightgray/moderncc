@@ -10501,8 +10501,8 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int64_t lo, hi, covered = 0;
 	uint64_t span;
 	int i;
-	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG || mcc_state->pic)
-		{ MCC_TRACE("br\n"); return 0; }
+	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG)
+		{ MCC_TRACE("br\n"); return 0; } /* PIC handled: gcase_jumptable emits a PC-relative offset table */
 	lo = sw->p[0]->v1;
 	hi = sw->p[sw->n - 1]->v2;
 	if (hi < lo)
@@ -10520,6 +10520,13 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int64_t lo = sw->p[0]->v1, hi = sw->p[sw->n - 1]->v2;
 	uint64_t span = (uint64_t)(hi - lo) + 1, i;
 	int r, dsym, tramp, j;
+	int pic = mcc_state->pic;
+	/* PIC uses a table of 32-bit self-relative offsets (case - table_base) instead
+	 * of absolute 8-byte pointers; the offsets are position-independent so the
+	 * table stays truly read-only (the case-vs-table difference is a link-time
+	 * constant within the image — no dynamic relocation). Non-PIC keeps the
+	 * absolute pointer table. */
+	int elt = pic ? 4 : MCC_PTR_SIZE;
 	unsigned long tab_off;
 	Sym *tab_sym;
 	if (lo) { MCC_TRACE("br\n"); vpush64(VT_INT, lo); gen_op('-'); }
@@ -10542,14 +10549,34 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int nsave = nocode_wanted;
 	nocode_wanted = 0;
 	tab_off = rodata_section->data_offset;
-	section_ptr_add(rodata_section, span * MCC_PTR_SIZE);
-	tab_sym = get_sym_ref(&char_pointer_type, rodata_section, tab_off,
-												span * MCC_PTR_SIZE);
-	/* jmp *[r*8 + tab] : FF /4, ModRM 0x24 (SIB), SIB scale8/no-base/disp32 */
-	if (r >= 8) { MCC_TRACE("br\n"); g(0x42); } /* REX.X for r8-r15 index */
-	g(0xff); g(0x24); g((3 << 6) | ((r & 7) << 3) | 5);
-	greloca(cur_text_section, tab_sym, ind, R_X86_64_32S, 0);
-	gen_le32(0);
+	section_ptr_add(rodata_section, span * elt);
+	tab_sym = get_sym_ref(&char_pointer_type, rodata_section, tab_off, span * elt);
+	if (!pic) { MCC_TRACE("br\n");
+		/* jmp *[r*8 + tab] : FF /4, ModRM 0x24 (SIB), SIB scale8/no-base/disp32 */
+		if (r >= 8) { MCC_TRACE("br\n"); g(0x42); } /* REX.X for r8-r15 index */
+		g(0xff); g(0x24); g((3 << 6) | ((r & 7) << 3) | 5);
+		greloca(cur_text_section, tab_sym, ind, R_X86_64_32S, 0);
+		gen_le32(0);
+	} else { MCC_TRACE("br\n");
+		/* PIC dispatch (base = a fresh scratch, distinct from the idx reg r which
+		 * still holds vtop): lea tab(%rip),base; movslq 0(base,r,4),r;
+		 * add base,r; jmp *r. The mov r32,r32 above already zero-extended r. */
+		int base = get_reg(MCC_RC_INT) & VT_VALMASK;
+		/* lea tab(%rip), base : REX.W[+REX.R] 8d /5 disp32 (RIP), reloc PC32-4 */
+		g(0x48 | (base >= 8 ? 4 : 0)); g(0x8d); g(0x05 | ((base & 7) << 3));
+		greloca(cur_text_section, tab_sym, ind, R_X86_64_PC32, -4);
+		gen_le32(0);
+		/* movslq 0(base, r*4), r : REX.W|R(dst r)|X(index r)|B(base) 63 /r SIB.
+		 * mod=01 disp8=0 so it is correct for any base (incl. rbp/r13 = base&7==5). */
+		g(0x48 | (r >= 8 ? 4 : 0) | (r >= 8 ? 2 : 0) | (base >= 8 ? 1 : 0));
+		g(0x63); g(0x44 | ((r & 7) << 3)); g(0x80 | ((r & 7) << 3) | (base & 7)); g(0x00);
+		/* add base, r  (r += base) : REX.W|R(base)|B(r) 01 /r mod11 */
+		g(0x48 | (base >= 8 ? 4 : 0) | (r >= 8 ? 1 : 0));
+		g(0x01); g(0xc0 | ((base & 7) << 3) | (r & 7));
+		/* jmp *r : FF /4 mod11 */
+		if (r >= 8) { MCC_TRACE("br\n"); g(0x41); }
+		g(0xff); g(0xe0 | (r & 7));
+	}
 	tramp = ind; /* gaps land here -> jmp default */
 	dsym = gjmp(dsym);
 	nocode_wanted = 0; /* gjmp set nocode_wanted; re-clear for the entry symbols */
@@ -10563,9 +10590,19 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); target = sw->p[j]->ind; }
 		else
 			{ MCC_TRACE("br\n"); target = tramp; }
-		greloca(rodata_section,
-						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
-						tab_off + i * MCC_PTR_SIZE, R_DATA_PTR, 0);
+		/* non-PIC: absolute pointer (R_DATA_PTR). PIC: 32-bit self-relative offset
+		 * (case - table_base) via R_X86_64_PC32 with addend = the entry's own offset
+		 * within the table, so S + A - P = case + i*4 - (tab_base + i*4) = case -
+		 * table_base. */
+		if (!pic) { MCC_TRACE("br\n");
+			greloca(rodata_section,
+							get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
+							tab_off + i * elt, R_DATA_PTR, 0);
+		} else { MCC_TRACE("br\n");
+			greloca(rodata_section,
+							get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
+							tab_off + i * elt, R_X86_64_PC32, (int)(i * elt));
+		}
 	}
 	nocode_wanted = nsave;
 	ast_hook_bail();
