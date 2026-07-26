@@ -159,14 +159,41 @@ ST_FUNC int host_temp_file(char *path, int size) { MCC_TRACE("enter\n");
 }
 
 #ifdef MCC_HOST_AUTO_MCCDIR_W32
+/* True when <base>/include/mccdefs.h exists -- the marker that <base> holds the
+ * freestanding compiler headers, the same probe POSIX auto-mccdir uses. */
+static int w32_mccdir_has_include(const char *base) { MCC_TRACE("enter\n");
+	char probe[MAX_PATH];
+	struct stat st;
+	snprintf(probe, sizeof probe, "%s/include/mccdefs.h", base);
+	return stat(probe, &st) == 0 && (st.st_mode & S_IFMT) == S_IFREG;
+}
+
 ST_FUNC char *host_w32_mccdir(char *path) { MCC_TRACE("enter\n");
+	/* Probe the same candidates POSIX auto-mccdir does, relative to the exe
+	 * dir: the dir itself, its parent, and .../lib/mcc. The parent matters
+	 * because the Visual Studio (multi-config) generator puts mcc.exe in
+	 * <build>/<Config>/ while the bundled headers land in <build>/include, so
+	 * the bare exe dir has no include/ and the win32 stdio.h is invisible
+	 * unless -B is passed by hand. Falls back to the bare exe dir (the prior
+	 * behaviour) when no candidate carries the marker. */
+	static const char *const rel[] = {"", "/..", "/../lib/mcc", NULL};
+	char exedir[MAX_PATH], cand[MAX_PATH];
 	char *p;
-	if (host_exe_path(path, MAX_PATH) < 0)
-		{ MCC_TRACE("br\n"); path[0] = 0; }
-	p = mcc_basename(strlwr(path));
-	if (p > path)
+	int i;
+	if (host_exe_path(exedir, MAX_PATH) < 0)
+		{ MCC_TRACE("br\n"); exedir[0] = 0; }
+	p = mcc_basename(strlwr(exedir));
+	if (p > exedir)
 		{ MCC_TRACE("br\n"); --p; }
 	*p = 0;
+	for (i = 0; rel[i]; i++) { MCC_TRACE("br\n");
+		snprintf(cand, sizeof cand, "%s%s", exedir, rel[i]);
+		if (w32_mccdir_has_include(cand)) { MCC_TRACE("br\n");
+			snprintf(path, MAX_PATH, "%s", cand);
+			return path;
+		}
+	}
+	snprintf(path, MAX_PATH, "%s", exedir);
 	return path;
 }
 #endif
