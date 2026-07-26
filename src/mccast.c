@@ -1267,6 +1267,7 @@ static MCC_OPT_TLS int ast_bfold_minmax_env;
 static MCC_OPT_TLS int ast_math_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
+static MCC_OPT_TLS int ast_copysign_env; /* MCC_AST_COPYSIGN_INLINE: inline copysign (default off, opt-in, all arches) */
 static MCC_OPT_TLS int ast_no_math_errno; /* -fno-math-errno: inline sqrt of ANY sign */
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
@@ -1929,6 +1930,10 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * not the SSE2 baseline — the user opts in for an SSE4.1 target (like gcc's
 	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only. */
 	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
+	/* copysign inline (fsgnj on riscv64, SSE mask on x86_64). Default OFF on ALL
+	 * arches (opt-in) so default codegen is byte-identical everywhere — including
+	 * x86_64, where math-inline (fabs/sqrt) is otherwise default-on. */
+	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", 0);
 	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
 	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
 	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
@@ -4860,7 +4865,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			break;
 		}
 #endif
-#if defined(MCC_TARGET_RISCV64)
+#if defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_X86_64)
 		if (bop == AST_OP_COPYSIGN) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, 0)); /* x (magnitude) */
 			ast_replay_value(a, ast_child(a, n, 1)); /* y (sign)      */
@@ -5939,11 +5944,11 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				continue;
 			}
 #endif /* round: x86_64 || arm64 */
-#if defined(MCC_TARGET_RISCV64)
-			/* copysign(x,y): single fsgnj.d/.s (result = |x| with sign of y).
-			 * riscv64 only for now — x86_64/arm64 need a mask/round-trip sequence
-			 * (TODO). id 5, nargs 2; gated by the sign-family bfold gate. */
-			if (bid == 5 && nargs == 2 && ast_math_inline_env &&
+#if defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_X86_64)
+			/* copysign(x,y): |x| with sign of y. riscv64 = fsgnj.d/.s (1 insn);
+			 * x86_64 = SSE mask sequence (gen_copysign). arm64/i386 keep the
+			 * libcall (TODO). id 5, nargs 2; gated by the sign-family bfold gate. */
+			if (bid == 5 && nargs == 2 && ast_copysign_env &&
 					ast_bfold_sign_env) { MCC_TRACE("br\n");
 				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2);
 				ast_clear_children(a, n);
@@ -5958,8 +5963,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-#endif /* copysign: riscv64 */
-#endif /* fabs/sqrt: x86_64 || arm64 || riscv64 */
+#endif /* copysign: riscv64 || x86_64 */
+#endif /* fabs/sqrt: x86_64 || arm64 || riscv64 || i386 */
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&
 					ast_bfold_minmax_inf(a, n, bid, bt, &pres)) { MCC_TRACE("br\n");

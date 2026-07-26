@@ -2197,6 +2197,28 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 	g(imm);
 }
 
+/* copysign(x,y) = |x| with sign(y), no rodata. Build the sign mask in a scratch
+ * xmm (pcmpeqd all-ones then psllq/pslld the sign bit), then
+ * m=|x| via andnpd(~mask & x), y=sign(y) via andpd, m|=y. MCC_RC_FLOAT is
+ * xmm0-7 so no REX. vtop[-1]=x, vtop=y; result left in the scratch, y popped. */
+void gen_copysign(void) { MCC_TRACE("enter\n");
+	int dbl = (vtop[-1].type.t & VT_BTYPE) == VT_DOUBLE;
+	int x, y, mreg, m;
+	gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
+	x = REG_VALUE(vtop[-1].r);
+	y = REG_VALUE(vtop[0].r);
+	mreg = get_reg(MCC_RC_FLOAT);
+	m = REG_VALUE(mreg);
+	o(0x760f66); o(0xc0 | (m << 3) | m);              /* pcmpeqd m,m (all ones) */
+	if (dbl) { o(0x730f66); o(0xf0 | m); o(63); }     /* psllq m,63 -> 0x8000..  */
+	else     { o(0x720f66); o(0xf0 | m); o(31); }     /* pslld m,31 -> 0x80000000 */
+	o(dbl ? 0x540f66 : 0x540f); o(0xc0 | (y << 3) | m); /* and[pd/ps] y,m = sign(y) */
+	o(dbl ? 0x550f66 : 0x550f); o(0xc0 | (m << 3) | x); /* andn[pd/ps] m,x = |x|    */
+	o(dbl ? 0x560f66 : 0x560f); o(0xc0 | (m << 3) | y); /* or[pd/ps] m,y = result   */
+	vtop--;
+	vtop->r = mreg;
+}
+
 void gen_opf(int op) { MCC_TRACE("enter\n");
 	int a, ft, fc, swapped, r;
 	int bt = vtop->type.t & VT_BTYPE;
