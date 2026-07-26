@@ -10497,18 +10497,22 @@ static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
 	}
 }
 
-#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)) && MCC_CONFIG_OPTIMIZER
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)) && MCC_CONFIG_OPTIMIZER
 /* MCC_SWITCH_JUMPTABLE (default off): dense switch -> O(1) rodata jump table
- * (x86_64 + arm64), vs gcase's O(log n) compare tree. Emits `idx=val-lo;
+ * (x86_64 + arm64 + riscv64), vs gcase's O(log n) compare tree. Emits `idx=val-lo;
  * if ((unsigned)idx > hi-lo) goto default; jmp table[idx]`, with an
  * (hi-lo+1)-entry rodata table (gaps -> a default trampoline). Bails the AST
  * recorder for the function (ast_hook_bail) so the baseline table is kept
  * without a faithfulness mismatch vs the gcase-based replay. x86_64 uses an
  * absolute 8-byte pointer table (or, under PIC, a 32-bit self-relative offset
- * table); arm64 always uses a 32-bit self-relative offset table (adrp/add is
- * PC-relative, so it needs no separate PIC path). */
+ * table); arm64 and riscv64 always use a 32-bit self-relative offset table
+ * (their adrp/add resp. auipc/addi symbol addressing is PC-relative, so no
+ * separate PIC path is needed). */
 #if defined(MCC_TARGET_ARM64)
 static uint32_t intr(int r); /* reg-id -> hw number; defined later in arm64-gen.c (same TU) */
+#endif
+#if defined(MCC_TARGET_RISCV64)
+static int ireg(int r); /* reg-id -> hw number; defined later in riscv64-gen.c (same TU) */
 #endif
 static int switch_jt_env(void) { MCC_TRACE("enter\n");
 	static int v = -1;
@@ -10618,6 +10622,30 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 		o(0x8B000000u | (ir << 16) | (base << 5) | base);    /* add  Xbase,Xbase,Xir */
 		o(0xD61F0000u | (base << 5));                        /* br   Xbase         */
 	}
+#elif defined(MCC_TARGET_RISCV64)
+	{
+		/* riscv64 dispatch: zext.w idx; auipc base,%pcrel_hi(tab);
+		 * addi base,base,%pcrel_lo(label); slli idx,idx,2; add idx,base,idx;
+		 * lw idx,0(idx); add base,base,idx; jr base. base = a fresh scratch (r
+		 * holds vtop); idx reused as &tab[idx] then the loaded 32-bit offset (lw
+		 * sign-extends to 64). Encodings verified with riscv64-as. */
+		Sym label = {0};
+		int idx = ireg(r);
+		int base = ireg(get_reg(MCC_RC_INT));
+		o(0x00001013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (32u << 20)); /* slli idx,idx,32 */
+		o(0x00005013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (32u << 20)); /* srli idx,idx,32 */
+		greloca(cur_text_section, tab_sym, ind, R_RISCV_PCREL_HI20, 0);
+		label.type.t = VT_VOID | VT_STATIC;
+		put_extern_sym(&label, cur_text_section, ind, 0); /* label at the auipc site */
+		o(0x00000017u | ((uint32_t)base << 7));           /* auipc base, %pcrel_hi(tab) */
+		greloca(cur_text_section, &label, ind, R_RISCV_PCREL_LO12_I, 0);
+		o(0x00000013u | ((uint32_t)base << 7) | ((uint32_t)base << 15)); /* addi base,base,%pcrel_lo */
+		o(0x00001013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (2u << 20)); /* slli idx,idx,2 */
+		o(0x00000033u | ((uint32_t)idx << 7) | ((uint32_t)base << 15) | ((uint32_t)idx << 20)); /* add idx,base,idx */
+		o(0x00002003u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15)); /* lw idx,0(idx) */
+		o(0x00000033u | ((uint32_t)base << 7) | ((uint32_t)base << 15) | ((uint32_t)idx << 20)); /* add base,base,idx */
+		o(0x00000067u | ((uint32_t)base << 15)); /* jalr x0,base,0 (jr base) */
+	}
 #endif
 	tramp = ind; /* gaps land here -> jmp default */
 	dsym = gjmp(dsym);
@@ -10651,6 +10679,13 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 		greloca(rodata_section,
 						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
 						tab_off + i * elt, R_AARCH64_PREL32, (int)(i * elt));
+#elif defined(MCC_TARGET_RISCV64)
+		/* riscv64 expresses the cross-section difference case - table_base as an
+		 * ADD32(case) + SUB32(tab_sym) pair at the same table-entry offset. */
+		greloca(rodata_section,
+						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
+						tab_off + i * elt, R_RISCV_ADD32, 0);
+		greloca(rodata_section, tab_sym, tab_off + i * elt, R_RISCV_SUB32, 0);
 #endif
 	}
 	nocode_wanted = nsave;
@@ -11341,7 +11376,7 @@ again:
 		sw->bsym = NULL;
 		vpushv(&sw->sv);
 		gv(MCC_RC_INT);
-#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)) && MCC_CONFIG_OPTIMIZER
+#if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)) && MCC_CONFIG_OPTIMIZER
 		if (switch_jt_env() && switch_jt_dense(sw))
 			{ MCC_TRACE("br\n"); d = gcase_jumptable(sw); }
 		else
