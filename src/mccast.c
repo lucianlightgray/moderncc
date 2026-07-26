@@ -2017,7 +2017,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", s1->optimize >= 2);
 	ast_jit_env = s1 && (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
-	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH", ast_jit_env ? 6 : 0);
+	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH",
+			(ast_jit_env || getenv("MCC_JIT_SUBMIT_AOT")) ? 6 : 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_data_reemit_env = ast_env_gate("MCC_AST_DATA_REEMIT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
@@ -16116,9 +16117,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (ast_jit_dispatch_env && faithful && !ast_jit_splice_env &&
 						ast_jit_want(funcname, sym) &&
 #if defined(MCC_TARGET_ARM64)
-						ast_jit_dispatch_env == 6 && !ast_search_env && mcc_state &&
+						ast_jit_dispatch_env == 6 && mcc_state &&
 						(mcc_state->embed_jit ||
-						 mcc_state->output_type == MCC_OUTPUT_MEMORY)
+						 mcc_state->output_type == MCC_OUTPUT_MEMORY ||
+						 getenv("MCC_JIT_SUBMIT_AOT"))
 #else
 						(ast_jit_dispatch_env != 6 ||
 						 (mcc_state && (mcc_state->embed_jit ||
@@ -16224,18 +16226,25 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #elif defined(MCC_TARGET_ARM64)
 					if (ast_jit_dispatch_env == 6 && mcc_state &&
 							(mcc_state->embed_jit ||
-							 mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+							 mcc_state->output_type == MCC_OUTPUT_MEMORY ||
+							 getenv("MCC_JIT_SUBMIT_AOT"))) { MCC_TRACE("br\n");
 						int slot_off = (int)section_add(data_section, MCC_PTR_SIZE, MCC_PTR_SIZE);
 						unsigned char *slotp = data_section->data + slot_off;
 						Sym *slot_sym, *body_sym;
 						memset(slotp, 0, MCC_PTR_SIZE);
-#ifdef MCC_EMBED_JIT
-						if (mcc_state && (mcc_state->embed_jit ||
-															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
+						/* Name the slot as a global data symbol so it survives an
+						 * EXTERNAL link (object output) and so an embed-JIT engine can
+						 * find __mccjit_slot_<fn> by name. Emitted regardless of
+						 * MCC_EMBED_JIT — object output needs the named slot too. */
+						{ MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
 											 mcc_state->leading_underscore ? "_" : "", funcname);
 							set_global_sym(mcc_state, slotname, data_section, slot_off);
+						}
+#ifdef MCC_EMBED_JIT
+						if (mcc_state && (mcc_state->embed_jit ||
+															mcc_state->output_type == MCC_OUTPUT_MEMORY)) { MCC_TRACE("br\n");
 							mccjit_embed_note(funcname, ast_cur, sym,
 																(uint64_t)ast_search_gates_now());
 							ast_jit_submit_aot(sym);
@@ -16248,10 +16257,16 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						nocode_wanted = 0;
 						slot_sym =
 							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
-						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADR_GOT_PAGE, 0);
-						o(0x90000010); /* adrp x16, slot@GOTPAGE */
-						greloca(cur_text_section, slot_sym, ind, R_AARCH64_LD64_GOT_LO12_NC, 0);
-						o(0xf9400210); /* ldr x16,[x16,#:got_lo12:slot] -> x16 = &slot */
+						/* Self-contained PC-relative address-of-slot (survives external
+						 * static/PIE link; the GOT idiom forced a synthesized GOT entry
+						 * for a local data sym and corrupted the fn symbol under the
+						 * in-memory search re-emit). Same 16-byte footprint as the old
+						 * adrp/ldr/ldr/br. Encodings match the dense-switch jump table:
+						 * adrp x16 = 0x90000010, add x16,x16,#:lo12: = 0x91000210. */
+						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
+						o(0x90000010); /* adrp x16, slot                -> x16 = slot&~0xfff */
+						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
+						o(0x91000210); /* add  x16,x16,#:lo12:slot       -> x16 = &slot */
 						o(0xf9400210); /* ldr x16,[x16] -> x16 = *slot */
 						o(0xd61f0200); /* br x16 */
 						body_sym = get_sym_ref(&char_pointer_type, cur_text_section,
