@@ -101,6 +101,16 @@ static void sse_rex(int reg, int rm) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(rm) | (REX_BASE(reg) << 2)); }
 }
 
+#if MCC_CONFIG_OPTIMIZER
+static void sse_unpin_src(void) { MCC_TRACE("enter\n");
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		load(nr, vtop);
+		vtop->r = nr;
+	}
+}
+#endif
+
 ST_FUNC void gsym_addr(int t, int a) { MCC_TRACE("enter\n");
 	while (t) { MCC_TRACE("br\n");
 		unsigned char *ptr = cur_text_section->data + t;
@@ -2569,7 +2579,11 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
 		if (tbt == VT_DOUBLE) { MCC_TRACE("br\n");
-			int v = vtop->r & VT_VALMASK;
+			int v;
+#if MCC_CONFIG_OPTIMIZER
+			sse_unpin_src();
+#endif
+			v = vtop->r & VT_VALMASK;
 			sse_rex(v, v);
 			o(0x140f);
 			o(0xc0 + REG_VALUE(v) * 9);
@@ -2589,7 +2603,11 @@ void gen_cvt_ftof(int t) { MCC_TRACE("enter\n");
 	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
 		gv(MCC_RC_FLOAT);
 		if (tbt == VT_FLOAT) { MCC_TRACE("br\n");
-			int v = vtop->r & VT_VALMASK;
+			int v;
+#if MCC_CONFIG_OPTIMIZER
+			sse_unpin_src();
+#endif
+			v = vtop->r & VT_VALMASK;
 			o(0x66); sse_rex(v, v);
 			o(0x140f);
 			o(0xc0 + REG_VALUE(v) * 9);
