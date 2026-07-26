@@ -2677,8 +2677,19 @@ void gen_negf(int op) { MCC_TRACE("enter\n");
 	vpushi(0), vswap(), gen_op('-');
 }
 #else
+/* No hardware FP negate on this target, so the sign bit is flipped in memory:
+   spill, XOR 0x80 into the top byte, reload. Those vdup/gen_op/vstore calls are
+   backend-synthesized, but they run through the AST recorder hooks all the same,
+   which records the byte-address sign-flip as if the program had written it. The
+   replay then re-emits that sequence against a value that is no longer an lvalue
+   (riscv64 store() asserts `sv->r & VT_LVAL`), so any function negating a float
+   crashed the compiler at -O1+. Decline to record the function instead; it keeps
+   the byte-faithful baseline and only forgoes AST optimization for it. */
 void gen_negf(int op) { MCC_TRACE("enter\n");
 	int align, size, bt;
+#if MCC_CONFIG_OPTIMIZER
+	ast_hook_bail();
+#endif
 	size = type_size(&vtop->type, &align);
 	bt = vtop->type.t & VT_BTYPE;
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386
