@@ -3227,13 +3227,29 @@ void ast_hook_implicit_return(void) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 #define AST_PROMO_MAX 5
 #if defined(MCC_TARGET_RISCV64)
-#define AST_PROMO_CALLER_N 6
+/* riscv64 has NO leaf (caller-saved) promotion pool, and that is deliberate.
+   The only caller-saved registers mcc models here are a0-a7 (ids 0-7) and
+   fa0-fa7 (ids 8-15) — which are exactly the ABI ARGUMENT registers. A leaf is
+   only call-free as far as the AST can see: a struct copy or return lowers to a
+   hidden memcpy, and gfunc_call materialises each argument with
+   gv(MCC_RC_R(n)) / gv(MCC_RC_F(n)), a class holding exactly ONE register. Pin
+   that register by promotion and get_reg has nothing to hand back, returns -1,
+   and the -1 sentinel reaches load()/store() as a register id — riscv64's
+   freg() then asserts. `struct M { int a; }; struct M u(int d){...return m;}`
+   under MCC_AST_PROMOTE=1 aborted the compiler exactly this way (sizes 4/12/24
+   crash, 8/16 do not, because only the former need the memcpy).
+   So leaves promote only into the callee-saved pool via
+   MCC_AST_PROMO_LEAF_CALLEE, whose per-reg ast_promo_reg_is_callee save/restore
+   already covers a leaf holding s-registers. A real caller-saved pool needs
+   register ids for t0-t6, and an FP pool needs fs0-fs11 (the deferred PR-3
+   callee-saved float pool) — neither is modelled today. */
+#define AST_PROMO_CALLER_N 0
 #define AST_PROMO_CALLEE_N 11
-#define AST_PROMO_XMM_N 4
-static const int ast_promo_caller[AST_PROMO_CALLER_N] = {2, 3, 4, 5, 6, 7};
+#define AST_PROMO_XMM_N 0
+static const int ast_promo_caller[1] = {0};
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {19, 20, 21, 22, 23,
 																												 24, 25, 26, 27, 28, 29};
-static const int ast_promo_xmm[AST_PROMO_XMM_N] = {10, 11, 12, 13};
+static const int ast_promo_xmm[1] = {0};
 #define AST_PROMO_XMM_LEAF_N AST_PROMO_XMM_N
 #define ast_promo_xmm_leaf ast_promo_xmm
 #elif defined(MCC_TARGET_X86_64)
