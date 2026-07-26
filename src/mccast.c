@@ -1578,6 +1578,7 @@ static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP 
 #ifdef MCC_TARGET_X86_64
 static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
 #endif
+static int ast_cost_spill_env; /* MCC_AST_COST_SPILL: add a loop register-pressure term to ast_cost_score so spill-reducing passes score a real benefit */
 static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
@@ -1854,6 +1855,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
+	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 #ifdef MCC_TARGET_X86_64
 	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", 0);
 	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
@@ -8513,6 +8515,109 @@ static int ast_licm_is_loop(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	return op == 2 || op == 3 || op == 4 || op == 5;
 }
 
+#define AST_COST_PRESS_MAX 64
+#define AST_COST_FP_BUDGET 8
+#ifdef AST_PROMO_CALLEE_N
+#define AST_COST_GP_BUDGET AST_PROMO_CALLEE_N
+#else
+#define AST_COST_GP_BUDGET 4
+#endif
+#define AST_COST_SPILL_W 48
+
+static void ast_cost_press_scan(AstArena *a, AstLocal n, int *off, int *flt,
+																int *nc) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_kind(a, n) == AST_Ref) { MCC_TRACE("br\n");
+		int r = ast_op(a, n);
+		if ((r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM)) { MCC_TRACE("br\n");
+			int o = (int)(int64_t)ast_ival(a, n);
+			int tt = ast_type_t(a, n);
+			int bt = tt & VT_BTYPE;
+			int scalar = (bt == VT_INT || bt == VT_LLONG || bt == VT_PTR ||
+										bt == VT_FLOAT || bt == VT_DOUBLE) &&
+									 !(tt & (VT_ARRAY | VT_BITFIELD));
+			int j;
+			for (j = 0; j < *nc; j++)
+				{ MCC_TRACE("br\n"); if (off[j] == o)
+					{ MCC_TRACE("br\n"); break; } }
+			if (scalar && j == *nc && *nc < AST_COST_PRESS_MAX) { MCC_TRACE("br\n");
+				off[*nc] = o;
+				flt[*nc] = (bt == VT_FLOAT || bt == VT_DOUBLE);
+				(*nc)++;
+			}
+		}
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); ast_cost_press_scan(a, c, off, flt, nc); }
+}
+
+static int ast_cost_is_expr(int k) { MCC_TRACE("enter\n");
+	return k == AST_Unary || k == AST_Binary || k == AST_Convert ||
+				 k == AST_Invoke || k == AST_Load || k == AST_Store;
+}
+
+static int ast_cost_su(AstArena *a, AstLocal n, int fp) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	int k = ast_kind(a, n);
+	int bt = ast_type_t(a, n) & VT_BTYPE;
+	int isfp = (bt == VT_FLOAT || bt == VT_DOUBLE);
+	int b1 = 0, b2 = 0, nch = 0;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
+		int v = ast_cost_su(a, c, fp);
+		if (v > b1) { MCC_TRACE("br\n");
+			b2 = b1;
+			b1 = v;
+		} else if (v > b2)
+			{ MCC_TRACE("br\n"); b2 = v; }
+		nch++;
+	}
+	if (!ast_cost_is_expr(k)) { MCC_TRACE("br\n");
+		if (nch == 0)
+			{ MCC_TRACE("br\n"); return (k == AST_Ref || k == AST_Literal) && isfp == fp ? 1 : 0; }
+		return b1;
+	}
+	if (nch == 0)
+		{ MCC_TRACE("br\n"); return isfp == fp ? 1 : 0; }
+	int need = (b1 == b2 && b1 > 0) ? b1 + 1 : b1;
+	if (isfp == fp && need == 0)
+		{ MCC_TRACE("br\n"); need = 1; }
+	return need;
+}
+
+static long ast_cost_spill(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a), n, p;
+	long pen = 0;
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (!ast_licm_is_loop(a, n))
+			{ MCC_TRACE("br\n"); continue; }
+		int d = 1;
+		for (p = ast_parent(a, n); p != AST_NONE; p = ast_parent(a, p))
+			{ MCC_TRACE("br\n"); if (ast_licm_is_loop(a, p))
+				{ MCC_TRACE("br\n"); d++; } }
+		int off[AST_COST_PRESS_MAX], flt[AST_COST_PRESS_MAX], nc = 0;
+		ast_cost_press_scan(a, n, off, flt, &nc);
+		int ni = 0, nf = 0, ex = 0;
+		for (int j = 0; j < nc; j++)
+			{ MCC_TRACE("br\n"); if (flt[j])
+				{ MCC_TRACE("br\n"); nf++; }
+			else
+				{ MCC_TRACE("br\n"); ni++; } }
+		ni += ast_cost_su(a, n, 0);
+		nf += ast_cost_su(a, n, 1);
+		if (ni > AST_COST_GP_BUDGET)
+			{ MCC_TRACE("br\n"); ex += ni - AST_COST_GP_BUDGET; }
+		if (nf > AST_COST_FP_BUDGET)
+			{ MCC_TRACE("br\n"); ex += nf - AST_COST_FP_BUDGET; }
+		if (ex) { MCC_TRACE("br\n");
+			int dd = d > 4 ? 4 : d;
+			pen += (long)ex * AST_COST_SPILL_W * ((long)1 << (2 * (dd - 1)));
+		}
+	}
+	return pen;
+}
+
 long ast_cost_score(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n, p;
 	int nodes = (int)nn, calls = 0, maxdepth = 0;
@@ -8528,7 +8633,10 @@ long ast_cost_score(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); maxdepth = d; }
 		}
 	}
-	return (long)nodes * (maxdepth + 1) * (calls + 1);
+	long s = (long)nodes * (maxdepth + 1) * (calls + 1);
+	if (ast_cost_spill_env)
+		{ MCC_TRACE("br\n"); s += ast_cost_spill(a); }
+	return s;
 }
 
 static void ast_fn_cost(AstArena *a, const char *fn) { MCC_TRACE("enter\n");
