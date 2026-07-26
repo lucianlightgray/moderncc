@@ -2332,6 +2332,27 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	vtop--;
 }
 
+/* fmin/fmax(x,y): FMINNM/FMAXNM — the IEEE-754 minNum/maxNum forms that return
+ * the numeric operand when the other is a quiet NaN (and treat -0 < +0), exactly
+ * matching C fmin/fmax — unlike FMIN/FMAX (and x86 minsd/maxsd) which propagate
+ * NaN and mishandle signed zero. Baseline ARMv8, no ISA-extension gate. Mirrors
+ * gen_opf's FP 2-source path. vtop[-1]=x, vtop=y; result -> a fresh FP reg. */
+ST_FUNC void gen_fminmax(int is_max) { MCC_TRACE("enter\n");
+	uint32_t x, a, b, dbl;
+	int bt = vtop[0].type.t & VT_BTYPE;
+	dbl = bt != VT_FLOAT;
+	gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
+	a = fltr(vtop[-1].r);
+	b = fltr(vtop[0].r);
+	vtop -= 2;
+	x = get_reg(MCC_RC_FLOAT);
+	++vtop;
+	vtop[0].r = x;
+	x = fltr(x);
+	/* FMAXNM=opcode 0110 (0x6800), FMINNM=opcode 0111 (0x7800) */
+	o((is_max ? 0x1e206800u : 0x1e207800u) | dbl << 22 | x | a << 5 | b << 16);
+}
+
 ST_FUNC void gen_opf(int op) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;

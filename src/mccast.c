@@ -1268,6 +1268,7 @@ static MCC_OPT_TLS int ast_math_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
 static MCC_OPT_TLS int ast_copysign_env; /* MCC_AST_COPYSIGN_INLINE: inline copysign (default off, opt-in, all arches) */
+static MCC_OPT_TLS int ast_minmax_inline_env; /* MCC_AST_MINMAX_INLINE: inline fmin/fmax via FMINNM/FMAXNM (arm64 only, default off) */
 static MCC_OPT_TLS int ast_no_math_errno; /* -fno-math-errno: inline sqrt of ANY sign */
 static int ast_inline_pass_env;
 static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
@@ -1750,6 +1751,8 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_TRUNC 0x4000D
 #define AST_OP_COPYSIGN 0x4000E /* binary: |arg0| with sign of arg1 */
 #define AST_OP_ROUND 0x4000F /* round() — nearest, ties away (arm64 FRINTA only) */
+#define AST_OP_FMIN 0x40010 /* binary fmin (arm64 FMINNM only) */
+#define AST_OP_FMAX 0x40011 /* binary fmax (arm64 FMAXNM only) */
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -1936,6 +1939,10 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * arches (opt-in) so default codegen is byte-identical everywhere — including
 	 * x86_64, where math-inline (fabs/sqrt) is otherwise default-on. */
 	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", 0);
+	/* fmin/fmax inline via FMINNM/FMAXNM (arm64 only — x86 minsd/maxsd have wrong
+	 * NaN/±0 semantics so fmin/fmax stay libcalls there). Default OFF (opt-in) so
+	 * default codegen is byte-identical. */
+	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", 0);
 	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
 	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
 	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
@@ -4877,6 +4884,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			break;
 		}
 #endif
+#if defined(MCC_TARGET_ARM64)
+		if (bop == AST_OP_FMIN || bop == AST_OP_FMAX) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			gen_fminmax(bop == AST_OP_FMAX);
+			vtop->type.t = ast_type_t(a, n);
+			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			break;
+		}
+#endif
 		if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
@@ -5995,6 +6012,27 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				continue;
 			}
 #endif /* copysign: riscv64 || x86_64 || arm64 */
+#if defined(MCC_TARGET_ARM64)
+			/* fmin/fmax(x,y): arm64 FMINNM/FMAXNM (IEEE minNum/maxNum — return the
+			 * number vs a quiet NaN, -0<+0), exactly C fmin/fmax. x86 minsd/maxsd
+			 * mishandle NaN/±0 so they stay libcalls. bid 6=fmin, 7=fmax; nargs 2.
+			 * Opt-in MCC_AST_MINMAX_INLINE (fminnm is ARMv8 baseline). */
+			if ((bid == 6 || bid == 7) && nargs == 2 && ast_minmax_inline_env &&
+					ast_bfold_minmax_env) { MCC_TRACE("br\n");
+				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2);
+				ast_clear_children(a, n);
+				ast_set_kind(a, n, AST_Binary);
+				ast_set_op(a, n, bid == 6 ? AST_OP_FMIN : AST_OP_FMAX);
+				ast_set_type(a, n, bt, 0);
+				ast_set_ival(a, n, 0);
+				ast_set_sym(a, n, 0);
+				ast_add_child(a, n, x);
+				ast_add_child(a, n, y);
+				MCC_TRACE("math-inline fmin/fmax bid=%d flt=%d\n", bid, (int)ast_bfold_tab[bi].flt);
+				folds++;
+				continue;
+			}
+#endif /* fmin/fmax(FMINNM/FMAXNM): arm64 */
 #endif /* fabs/sqrt: x86_64 || arm64 || riscv64 || i386 */
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&
