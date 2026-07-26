@@ -8527,7 +8527,24 @@ static int ast_licm_operands_ok(AstArena *a, AstLocal loop, AstLocal e) { MCC_TR
 	if (e == AST_NONE)
 		{ MCC_TRACE("br\n"); return 1; }
 	int off, tt;
-	if (ast_cprop_is_local(a, e, &off, &tt)) { MCC_TRACE("br\n");
+	/* Recognise a local by its Ref form, NOT via ast_cprop_is_local: that helper
+	 * belongs to const-propagation and additionally requires an integer type, so
+	 * routing this test through it silently exempts pointer- and float-typed
+	 * local operands from the "is it written in the loop?" question. Callers that
+	 * also demand ast_cse_regpure never saw the gap (regpure rejects non-integer
+	 * local Refs outright); MCC_AST_IVSR_PTR deliberately drops regpure and was
+	 * miscompiled by it twice. Ask the structural question here so the next
+	 * caller does not inherit the trap. */
+	if (ast_kind(a, e) == AST_Ref) { MCC_TRACE("br\n");
+		int r = ast_op(a, e);
+		if ((r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM)) { MCC_TRACE("br\n");
+			off = (int)(int64_t)ast_ival(a, e);
+			if (ast_cprop_escapes(a, off))
+				{ MCC_TRACE("br\n"); return 0; }
+			if (ast_licm_written(a, loop, off))
+				{ MCC_TRACE("br\n"); return 0; }
+		}
+	} else if (ast_cprop_is_local(a, e, &off, &tt)) { MCC_TRACE("br\n");
 		if (ast_cprop_escapes(a, off))
 			{ MCC_TRACE("br\n"); return 0; }
 		if (ast_licm_written(a, loop, off))
