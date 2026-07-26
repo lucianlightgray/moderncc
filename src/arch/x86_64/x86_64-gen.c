@@ -2171,13 +2171,25 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
    The MCC_RC_FLOAT class is xmm0-7, so no REX is needed for the reg-reg form. */
 void gen_sqrt(void) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
-	int r;
+	int r, d;
 	gv(MCC_RC_FLOAT);
 	r = REG_VALUE(vtop->r);
+	d = r;
+#if MCC_CONFIG_OPTIMIZER
+	/* sqrtsd is destructive (dst==src). If the source is a PINNED (promoted)
+	 * register, its value is still live for other uses — computing in place would
+	 * clobber it (e.g. `d2 * sqrt(d2)` would read sqrt(d2) for both). Emit into a
+	 * fresh scratch reg instead, leaving the promoted source intact. */
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = REG_VALUE(nr);
+	}
+#endif
 	o(bt == VT_DOUBLE ? 0xf2 : 0xf3); /* F2=sqrtsd, F3=sqrtss */
 	o(0x0f);
 	o(0x51);
-	o(0xc0 + r + r * 8); /* sqrt xmm_r, xmm_r */
+	o(0xc0 + r + d * 8); /* sqrtsd xmm_d, xmm_r  (d = sqrt(r)) */
 }
 
 /* floor(0)/ceil(1)/trunc(2) -> single roundsd/roundss. imm = mode | 0x8
@@ -2192,14 +2204,25 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	int imm = mode == 0 ? 0x9 : mode == 1 ? 0xa : mode == 2 ? 0xb
 					 : mode == 4 ? 0x4 : mode == 5 ? 0xc : 0xb;
-	int r;
+	int r, d;
 	gv(MCC_RC_FLOAT);
 	r = REG_VALUE(vtop->r);
+	d = r;
+#if MCC_CONFIG_OPTIMIZER
+	/* roundsd is destructive (dst==src). Don't clobber a PINNED (promoted) source
+	 * whose value is still live — round into a fresh scratch reg instead (see
+	 * gen_sqrt). */
+	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
+		int nr = get_reg(MCC_RC_FLOAT);
+		vtop->r = nr;
+		d = REG_VALUE(nr);
+	}
+#endif
 	o(0x66);
 	o(0x0f);
 	o(0x3a);
 	o(bt == VT_DOUBLE ? 0x0b : 0x0a); /* 0B=roundsd, 0A=roundss */
-	o(0xc0 + r * 8 + r);              /* modrm: dst=r, src=r */
+	o(0xc0 + d * 8 + r);              /* modrm: dst=d, src=r */
 	g(imm);
 }
 
