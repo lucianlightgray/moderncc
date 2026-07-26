@@ -1,7 +1,7 @@
 #ifndef MCC_X86_64_GEN_H
 #define MCC_X86_64_GEN_H
 
-#define MCC_NB_REGS 25
+#define MCC_NB_REGS 33
 #define MCC_NB_ASM_REGS 16
 #ifndef MCC_CONFIG_ASM
 #define MCC_CONFIG_ASM 1
@@ -54,9 +54,18 @@ enum {
 	MCC_TREG_XMM6 = 22,
 	MCC_TREG_XMM7 = 23,
 
-	MCC_TREG_ST0 = 24,
+	MCC_TREG_XMM8 = 24,
+	MCC_TREG_XMM9 = 25,
+	MCC_TREG_XMM10 = 26,
+	MCC_TREG_XMM11 = 27,
+	MCC_TREG_XMM12 = 28,
+	MCC_TREG_XMM13 = 29,
+	MCC_TREG_XMM14 = 30,
+	MCC_TREG_XMM15 = 31,
 
-	MCC_TREG_MEM = 0x20
+	MCC_TREG_ST0 = 32,
+
+	MCC_TREG_MEM = 0x40
 };
 
 #define REX_BASE(reg) (((reg) >> 3) & 1)

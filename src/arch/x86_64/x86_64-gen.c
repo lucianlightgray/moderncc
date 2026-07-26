@@ -32,6 +32,14 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_FLOAT | MCC_RC_XMM5,
 		MCC_RC_XMM6,
 		MCC_RC_XMM7,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
 		MCC_RC_ST0};
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
@@ -79,9 +87,9 @@ ST_FUNC void gen_le64(int64_t c) { MCC_TRACE("enter\n");
 }
 
 static void orex(int ll, int r, int r2, int b) { MCC_TRACE("enter\n");
-	if ((r & VT_VALMASK) >= VT_CONST)
+	if ((r & VT_VALMASK) >= VT_CONST && !(r & MCC_TREG_MEM))
 		{ MCC_TRACE("br\n"); r = 0; }
-	if ((r2 & VT_VALMASK) >= VT_CONST)
+	if ((r2 & VT_VALMASK) >= VT_CONST && !(r2 & MCC_TREG_MEM))
 		{ MCC_TRACE("br\n"); r2 = 0; }
 	if (ll || REX_BASE(r) || REX_BASE(r2))
 		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(r) | (REX_BASE(r2) << 2) | (ll << 3)); }
@@ -158,7 +166,7 @@ static void gen_modrm_impl(int op_reg, int r, Sym *sym, int c, int is_got) { MCC
 		}
 	} else { MCC_TRACE("br\n");
 		int rv = REG_VALUE(r);
-		int indirect = (r & VT_VALMASK) >= MCC_TREG_MEM;
+		int indirect = (r & MCC_TREG_MEM) != 0;
 		int disp32 = indirect && c;
 		if (disp32) { MCC_TRACE("br\n");
 			g(0x80 | op_reg | rv);

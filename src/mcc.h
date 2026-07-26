@@ -1024,7 +1024,7 @@ struct filespec {
 	char name[1];
 };
 
-#define VT_VALMASK 0x003f
+#define VT_VALMASK 0x007f
 #define VT_CONST 0x0030
 #define VT_LLOCAL 0x0031
 #define VT_LOCAL 0x0032
