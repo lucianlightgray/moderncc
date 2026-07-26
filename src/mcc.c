@@ -558,32 +558,92 @@ static long so_filesize(const char *p) { MCC_TRACE("enter\n");
 	return stat(p, &st) == 0 ? (long)st.st_size : -1;
 }
 
+static int so_pe_is_machine(uint16_t m) { MCC_TRACE("enter\n");
+	return m == 0x8664 || m == 0x014c || m == 0xaa64 || m == 0x01c0 ||
+				 m == 0x01c4;
+}
+
+/* Offset of the COFF file header inside `f`: for a PE image ('MZ' + "PE\0\0")
+   it is e_lfanew+4; for a bare COFF object (whose first word is a known machine
+   id) it is 0. Returns -1 when `h` (the first 64 bytes) is neither. Leaves the
+   stream position undefined. */
+static long so_coff_off(FILE *f, const unsigned char *h) { MCC_TRACE("enter\n");
+	if (h[0] == 'M' && h[1] == 'Z') { MCC_TRACE("br\n");
+		uint32_t lfanew;
+		unsigned char sig[4];
+		memcpy(&lfanew, h + 0x3c, 4);
+		if (fseek(f, (long)lfanew, SEEK_SET) != 0 || fread(sig, 1, 4, f) != 4 ||
+				sig[0] != 'P' || sig[1] != 'E' || sig[2] || sig[3])
+			{ MCC_TRACE("br\n"); return -1; }
+		return (long)lfanew + 4;
+	} else { MCC_TRACE("br\n");
+		uint16_t machine;
+		memcpy(&machine, h, 2);
+		return so_pe_is_machine(machine) ? 0 : -1;
+	}
+}
+
+/* Sum of the sizes of executable sections (IMAGE_SCN_CNT_CODE / _MEM_EXECUTE)
+   in a PE image or COFF object; -1 if `f` is not PE/COFF. VirtualSize is the
+   unpadded code size in an image; objects carry it in SizeOfRawData. */
+static long so_pe_textsize(FILE *f, const unsigned char *h) { MCC_TRACE("enter\n");
+	long coff_off = so_coff_off(f, h);
+	unsigned char fh[20];
+	uint16_t nsec, optsz, i;
+	long total = 0;
+	if (coff_off < 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (fseek(f, coff_off, SEEK_SET) != 0 || fread(fh, 1, 20, f) != 20)
+		{ MCC_TRACE("br\n"); return -1; }
+	memcpy(&nsec, fh + 2, 2);
+	memcpy(&optsz, fh + 16, 2);
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		unsigned char sh[40];
+		uint32_t vsize, rawsize, chars;
+		if (fseek(f, coff_off + 20 + (long)optsz + (long)i * 40, SEEK_SET) != 0 ||
+				fread(sh, 1, 40, f) != 40)
+			{ MCC_TRACE("br\n"); break; }
+		memcpy(&vsize, sh + 8, 4);
+		memcpy(&rawsize, sh + 16, 4);
+		memcpy(&chars, sh + 36, 4);
+		if (chars & 0x20000020u)
+			{ MCC_TRACE("br\n"); total += (long)(vsize ? vsize : rawsize); }
+	}
+	return total;
+}
+
 static long so_textsize(const char *p) { MCC_TRACE("enter\n");
 	FILE *f = host_fopen(p, "rb");
 	unsigned char h[64];
 	long total = 0;
-	uint64_t shoff, flags, size;
-	uint16_t shentsize, shnum, i;
 	if (!f)
 		{ MCC_TRACE("br\n"); return -1; }
-	if (fread(h, 1, sizeof h, f) < 64 || h[0] != 0x7f || h[1] != 'E' ||
-			h[2] != 'L' || h[3] != 'F' || h[4] != 2) { MCC_TRACE("br\n");
+	if (fread(h, 1, sizeof h, f) < 64) { MCC_TRACE("br\n");
 		fclose(f);
 		return so_filesize(p);
 	}
-	memcpy(&shoff, h + 40, 8);
-	memcpy(&shentsize, h + 58, 2);
-	memcpy(&shnum, h + 60, 2);
-	for (i = 0; i < shnum; i++) { MCC_TRACE("br\n");
-		unsigned char sh[64];
-		if (fseek(f, (long)(shoff + (uint64_t)i * shentsize), SEEK_SET) != 0)
-			{ MCC_TRACE("br\n"); break; }
-		if (fread(sh, 1, sizeof sh, f) < 40)
-			{ MCC_TRACE("br\n"); break; }
-		memcpy(&flags, sh + 8, 8);
-		memcpy(&size, sh + 32, 8);
-		if (flags & 0x4u)
-			{ MCC_TRACE("br\n"); total += (long)size; }
+	if (h[0] == 0x7f && h[1] == 'E' && h[2] == 'L' && h[3] == 'F' &&
+			h[4] == 2) { MCC_TRACE("br\n");
+		uint64_t shoff, flags, size;
+		uint16_t shentsize, shnum, i;
+		memcpy(&shoff, h + 40, 8);
+		memcpy(&shentsize, h + 58, 2);
+		memcpy(&shnum, h + 60, 2);
+		for (i = 0; i < shnum; i++) { MCC_TRACE("br\n");
+			unsigned char sh[64];
+			if (fseek(f, (long)(shoff + (uint64_t)i * shentsize), SEEK_SET) != 0)
+				{ MCC_TRACE("br\n"); break; }
+			if (fread(sh, 1, sizeof sh, f) < 40)
+				{ MCC_TRACE("br\n"); break; }
+			memcpy(&flags, sh + 8, 8);
+			memcpy(&size, sh + 32, 8);
+			if (flags & 0x4u)
+				{ MCC_TRACE("br\n"); total += (long)size; }
+		}
+	} else { MCC_TRACE("br\n");
+		long pe = so_pe_textsize(f, h);
+		if (pe > 0)
+			{ MCC_TRACE("br\n"); total = pe; }
 	}
 	fclose(f);
 	return total > 0 ? total : so_filesize(p);
@@ -595,6 +655,111 @@ struct so_fn {
 	unsigned cfg;
 };
 
+/* Per-function .text sizes from a COFF object/PE image. COFF symbols carry no
+   size, so it is the gap from each function symbol to the next symbol in the
+   same code section (last one runs to the section end). Best-effort; used only
+   by the opt-in MCC_AST_PERFN mode. */
+static int so_coff_fn_sizes(FILE *f, const unsigned char *h, struct so_fn *out,
+														int max) { MCC_TRACE("enter\n");
+	long coff_off = so_coff_off(f, h);
+	unsigned char fh[20];
+	uint32_t symptr, nsyms, strbase;
+	uint16_t nsec, optsz, si;
+	long secsz[256];
+	unsigned char seccode[256];
+	int n = 0, i, j;
+	if (coff_off < 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (fseek(f, coff_off, SEEK_SET) != 0 || fread(fh, 1, 20, f) != 20)
+		{ MCC_TRACE("br\n"); return -1; }
+	memcpy(&nsec, fh + 2, 2);
+	memcpy(&symptr, fh + 8, 4);
+	memcpy(&nsyms, fh + 12, 4);
+	memcpy(&optsz, fh + 16, 2);
+	if (!symptr || !nsyms || nsec == 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (nsec > 256)
+		{ MCC_TRACE("br\n"); nsec = 256; }
+	for (si = 0; si < nsec; si++) { MCC_TRACE("br\n");
+		unsigned char sh[40];
+		uint32_t vsize, rawsize, chars;
+		if (fseek(f, coff_off + 20 + (long)optsz + (long)si * 40, SEEK_SET) != 0 ||
+				fread(sh, 1, 40, f) != 40)
+			{ MCC_TRACE("br\n"); return -1; }
+		memcpy(&vsize, sh + 8, 4);
+		memcpy(&rawsize, sh + 16, 4);
+		memcpy(&chars, sh + 36, 4);
+		secsz[si] = (long)(vsize ? vsize : rawsize);
+		seccode[si] = (chars & 0x20000020u) ? 1 : 0;
+	}
+	strbase = symptr + nsyms * 18u;
+	for (i = 0; (uint32_t)i < nsyms && n < max;) { MCC_TRACE("br\n");
+		unsigned char sym[18];
+		uint32_t name0, name1, val;
+		int16_t secnum;
+		uint16_t type;
+		unsigned char naux;
+		char nm[80];
+		int k, c;
+		if (fseek(f, symptr + (long)i * 18, SEEK_SET) != 0 ||
+				fread(sym, 1, 18, f) != 18)
+			{ MCC_TRACE("br\n"); break; }
+		memcpy(&name0, sym, 4);
+		memcpy(&name1, sym + 4, 4);
+		memcpy(&val, sym + 8, 4);
+		memcpy(&secnum, sym + 12, 2);
+		memcpy(&type, sym + 14, 2);
+		naux = sym[17];
+		i += 1 + (int)naux;
+		if (secnum < 1 || secnum > (int)nsec || !seccode[secnum - 1])
+			{ MCC_TRACE("br\n"); continue; }
+		if ((type & 0x30) != 0x20) /* IMAGE_SYM_DTYPE_FUNCTION */
+			{ MCC_TRACE("br\n"); continue; }
+		nm[0] = 0;
+		if (name0 == 0) { MCC_TRACE("br\n");
+			long save = ftell(f);
+			k = 0;
+			if (fseek(f, (long)(strbase + name1), SEEK_SET) == 0)
+				while (k < 79 && (c = fgetc(f)) > 0)
+					{ MCC_TRACE("br\n"); nm[k++] = (char)c; }
+			nm[k] = 0;
+			if (save >= 0)
+				{ MCC_TRACE("br\n"); fseek(f, save, SEEK_SET); }
+		} else { MCC_TRACE("br\n");
+			memcpy(nm, sym, 8);
+			nm[8] = 0;
+		}
+		if (!nm[0])
+			{ MCC_TRACE("br\n"); continue; }
+		snprintf(out[n].name, sizeof out[n].name, "%s", nm);
+		out[n].size = (long)val;      /* holds the symbol value for now */
+		out[n].cfg = (unsigned)secnum; /* holds the section for now */
+		n++;
+	}
+	for (i = 1; i < n; i++) { MCC_TRACE("br\n"); /* sort by (section, value) */
+		struct so_fn key = out[i];
+		j = i - 1;
+		while (j >= 0 && (out[j].cfg > key.cfg ||
+											(out[j].cfg == key.cfg && out[j].size > key.size)))
+			{ MCC_TRACE("br\n"); out[j + 1] = out[j]; j--; }
+		out[j + 1] = key;
+	}
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		long end = (i + 1 < n && out[i + 1].cfg == out[i].cfg)
+									 ? out[i + 1].size
+									 : secsz[out[i].cfg - 1];
+		out[i].size = end > out[i].size ? end - out[i].size : 0;
+		out[i].cfg = 0;
+	}
+	{
+		int w = 0;
+		for (i = 0; i < n; i++)
+			{ MCC_TRACE("br\n"); if (out[i].size > 0) out[w++] = out[i]; }
+		n = w;
+	}
+	return n;
+}
+
 static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE("enter\n");
 	FILE *f = host_fopen(path, "rb");
 	unsigned char h[64], sh[64];
@@ -605,9 +770,15 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 	int n = 0, strtab_idx = -1;
 	if (!f)
 		{ MCC_TRACE("br\n"); return -1; }
-	if (fread(h, 1, 64, f) < 64 || h[0] != 0x7f || h[4] != 2) { MCC_TRACE("br\n");
+	if (fread(h, 1, 64, f) < 64) { MCC_TRACE("br\n");
 		fclose(f);
 		return -1;
+	}
+	if (!(h[0] == 0x7f && h[1] == 'E' && h[2] == 'L' && h[3] == 'F' &&
+				h[4] == 2)) { MCC_TRACE("br\n"); /* not 64-bit ELF: try PE/COFF */
+		n = so_coff_fn_sizes(f, h, out, max);
+		fclose(f);
+		return n;
 	}
 	memcpy(&shoff, h + 40, 8);
 	memcpy(&shentsize, h + 58, 2);
@@ -662,6 +833,24 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 
 static int so_copy(const char *src, const char *dst) { MCC_TRACE("enter\n");
 	return host_copy_file(src, dst, 1);
+}
+
+/* Copy argv[1..argc) into cv (advancing *pn), dropping the user's own output
+   option (`-o file` or `-ofile`). The search appends its own `-o <candidate>`,
+   so keeping the user's would make every worker warn "multiple -o option". */
+static void so_copy_args_drop_o(const char **cv, int *pn, int argc,
+																char **argv) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 1; i < argc; i++) { MCC_TRACE("br\n");
+		if (!strcmp(argv[i], "-o")) { MCC_TRACE("br\n");
+			if (i + 1 < argc)
+				{ MCC_TRACE("br\n"); i++; } /* skip the filename operand too */
+			continue;
+		}
+		if (argv[i][0] == '-' && argv[i][1] == 'o' && argv[i][2])
+			{ MCC_TRACE("br\n"); continue; } /* single-token -ofile form */
+		cv[(*pn)++] = argv[i];
+	}
 }
 
 static int so_spawn_timeout(const char **cv, unsigned timeout_ms) { MCC_TRACE("enter\n");
@@ -889,8 +1078,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	cv = mcc_malloc((argc + 4) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
-	for (i = 1; i < argc; i++)
-		{ MCC_TRACE("br\n"); cv[argn++] = argv[i]; }
+	so_copy_args_drop_o(cv, &argn, argc, argv);
 	cv[argn++] = "-o";
 	cv[argn++] = cand;
 	cv[argn] = NULL;
@@ -1049,8 +1237,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	cv = mcc_malloc((argc + 4) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
-	for (i = 1; i < argc; i++)
-		{ MCC_TRACE("br\n"); cv[argn++] = argv[i]; }
+	so_copy_args_drop_o(cv, &argn, argc, argv);
 	cv[argn++] = "-o";
 	cv[argn++] = cand_tmp;
 	cv[argn] = NULL;
