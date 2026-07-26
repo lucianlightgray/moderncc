@@ -3203,11 +3203,9 @@ static const int ast_promo_xmm[AST_PROMO_XMM_N] = {10, 11, 12, 13};
 static const int ast_promo_caller[AST_PROMO_CALLER_N] = {10, 9, 8};
 static const int ast_promo_callee[AST_PROMO_CALLEE_N] = {3, 12, 13, 14, 15};
 static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23};
-/* widened leaf FP pool (MCC_AST_PROMO_LEAF_XMM): xmm6,7,5,4,3,2 (xmm0/1 kept for
- * ret + scratch). Safe now that the destructive FP ops don't clobber promoted
- * regs; helps spill-heavy leaves (e.g. a sqrt-inlined nbody advance: 60→49 spills). */
-#define AST_PROMO_XMM_LEAF_N 6
-static const int ast_promo_xmm_leaf[AST_PROMO_XMM_LEAF_N] = {22, 23, 21, 20, 19, 18};
+#define AST_PROMO_XMM_LEAF_N 14
+static const int ast_promo_xmm_leaf[AST_PROMO_XMM_LEAF_N] = {24, 25, 26, 27, 28, 29, 30, 31,
+			22, 23, 21, 20, 19, 18};
 #else
 /* arm64 (PR-2): callful functions promote into the callee-saved pool x19..x28
    (indices 28..37, mapped by intr()); their incoming values are saved/restored

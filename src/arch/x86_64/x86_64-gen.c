@@ -32,14 +32,14 @@ ST_DATA const int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_FLOAT | MCC_RC_XMM5,
 		MCC_RC_XMM6,
 		MCC_RC_XMM7,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
+		MCC_RC_XMM8,
+		MCC_RC_XMM9,
+		MCC_RC_XMM10,
+		MCC_RC_XMM11,
+		MCC_RC_XMM12,
+		MCC_RC_XMM13,
+		MCC_RC_XMM14,
+		MCC_RC_XMM15,
 		MCC_RC_ST0};
 
 #define func_sub_sp_offset (mcc_state->cg_func_sub_sp_offset)
@@ -94,6 +94,11 @@ static void orex(int ll, int r, int r2, int b) { MCC_TRACE("enter\n");
 	if (ll || REX_BASE(r) || REX_BASE(r2))
 		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(r) | (REX_BASE(r2) << 2) | (ll << 3)); }
 	o(b);
+}
+
+static void sse_rex(int reg, int rm) { MCC_TRACE("enter\n");
+	if (REX_BASE(reg) || REX_BASE(rm))
+		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(rm) | (REX_BASE(reg) << 2)); }
 }
 
 ST_FUNC void gsym_addr(int t, int a) { MCC_TRACE("enter\n");
@@ -335,11 +340,9 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		if ((ft & VT_BTYPE) == VT_FLOAT) { MCC_TRACE("br\n");
 			o(0x66);
 			b = 0x6e0f;
-			r = REG_VALUE(r);
 		} else if ((ft & VT_BTYPE) == VT_DOUBLE) { MCC_TRACE("br\n");
 			o(0xf3);
 			b = 0x7e0f;
-			r = REG_VALUE(r);
 		} else if ((ft & VT_BTYPE) == VT_LDOUBLE) { MCC_TRACE("br\n");
 			b = 0xdb, r = 5;
 		} else if ((ft & VT_TYPE) == VT_BYTE || (ft & VT_TYPE) == VT_BOOL) { MCC_TRACE("br\n");
@@ -455,26 +458,32 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			orex(0, r, 0, 0);
 			oad(0xb8 + REG_VALUE(r), t ^ 1);
 		} else if (v != r) { MCC_TRACE("br\n");
-			if ((r >= MCC_TREG_XMM0) && (r <= MCC_TREG_XMM7)) { MCC_TRACE("br\n");
+			if ((r >= MCC_TREG_XMM0) && (r <= MCC_TREG_XMM15)) { MCC_TRACE("br\n");
 				if (v == MCC_TREG_ST0) { MCC_TRACE("br\n");
 					o(0xf0245cdd);
-					o(0x100ff2);
+					o(0xf2);
+					sse_rex(r, MCC_TREG_RSP);
+					o(0x100f);
 					o(0x44 + REG_VALUE(r) * 8);
 					o(0xf024);
 				} else { MCC_TRACE("br\n");
-					assert((v >= MCC_TREG_XMM0) && (v <= MCC_TREG_XMM7));
+					assert((v >= MCC_TREG_XMM0) && (v <= MCC_TREG_XMM15));
 					if ((ft & VT_BTYPE) == VT_FLOAT) { MCC_TRACE("br\n");
-						o(0x100ff3);
+						o(0xf3);
 					} else { MCC_TRACE("br\n");
 						assert((ft & VT_BTYPE) == VT_DOUBLE);
-						o(0x100ff2);
+						o(0xf2);
 					}
+					sse_rex(r, v);
+					o(0x100f);
 					o(0xc0 + REG_VALUE(v) + REG_VALUE(r) * 8);
 				}
 			} else if (r == MCC_TREG_ST0) { MCC_TRACE("br\n");
-				assert((v >= MCC_TREG_XMM0) && (v <= MCC_TREG_XMM7));
-				o(0x110ff2);
-				o(0x44 + REG_VALUE(r) * 8);
+				assert((v >= MCC_TREG_XMM0) && (v <= MCC_TREG_XMM15));
+				o(0xf2);
+				sse_rex(v, MCC_TREG_RSP);
+				o(0x110f);
+				o(0x44 + REG_VALUE(v) * 8);
 				o(0xf024);
 				o(0xf02444dd);
 			} else { MCC_TRACE("br\n");
@@ -2404,6 +2413,8 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); o(0x66); }
 			if (vtop->r & VT_LVAL)
 				{ MCC_TRACE("br\n"); orex(0, r, vtop[-1].r, 0); }
+			else
+				{ MCC_TRACE("br\n"); sse_rex(vtop[-1].r, vtop[0].r); }
 			if (op == TOK_EQ || op == TOK_NE)
 				{ MCC_TRACE("br\n"); o(0x2e0f); }
 			else
@@ -2466,7 +2477,9 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 				int dr = vtop[-1].r & VT_VALMASK;
 				if (dr < VT_CONST && (ast_pinned_regs & ((uint64_t)1 << dr))) { MCC_TRACE("br\n");
 					int sc = get_reg(MCC_RC_FLOAT);
-					o((ft & VT_BTYPE) == VT_DOUBLE ? 0x100ff2 : 0x100ff3);
+					o((ft & VT_BTYPE) == VT_DOUBLE ? 0xf2 : 0xf3);
+					sse_rex(sc, dr);
+					o(0x100f);
 					o(0xc0 + REG_VALUE(dr) + REG_VALUE(sc) * 8);
 					vtop[-1].r = (vtop[-1].r & ~VT_VALMASK) | sc;
 					fc = vtop->c.i;
@@ -2481,6 +2494,8 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 			}
 			if (vtop->r & VT_LVAL)
 				{ MCC_TRACE("br\n"); orex(0, r, vtop[-1].r, 0); }
+			else
+				{ MCC_TRACE("br\n"); sse_rex(vtop[-1].r, vtop[0].r); }
 			o(0x0f);
 			o(0x58 + a);
 
