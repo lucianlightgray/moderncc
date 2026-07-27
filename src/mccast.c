@@ -536,6 +536,9 @@ static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) { MCC_TRACE("enter\n");
 #ifndef VT_SYM
 #define VT_SYM 0x0200
 #endif
+#ifndef VT_LONG
+#define VT_LONG 0x0800
+#endif
 
 static int ast_ih_sym_dropped(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return ((uint32_t)a->op[n] & VT_VALMASK) == VT_LOCAL &&
@@ -593,6 +596,23 @@ static uint64_t ast_sid_off(AstSidOffs *m, int32_t off) { MCC_TRACE("enter\n");
 	return (uint64_t)m->n;
 }
 
+/* Slice-identity width normalization (MCC_AST_SLICE_WIDTHNORM, default OFF).
+   VT_LONG is a spelling tag, not a width: i386 `long` is VT_INT|VT_LONG (4 bytes)
+   while x86_64 `long` is VT_LLONG|VT_LONG (8). Dropping the tag makes an i386
+   `long` slice hash equal to a 4-byte `int` slice -- the cross-triple match the
+   slice store wants -- while i386 `long` (VT_INT) and x86_64 `long` (VT_LLONG)
+   stay distinct, which is correct because their widths genuinely differ. Loose by
+   design: a hit only warm-starts a gate config, and ast_slice_equiv still gates
+   codegen per reuse. */
+static uint32_t ast_sid_type_norm(uint32_t t) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_AST_SLICE_WIDTHNORM");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on ? (t & ~(uint32_t)VT_LONG) : t;
+}
+
 static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
 														 AstSidOffs *om, uint64_t h) { MCC_TRACE("enter\n");
 	int is_local = a->kind[n] == AST_Ref &&
@@ -600,7 +620,7 @@ static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
 								 !((uint32_t)a->op[n] & VT_SYM);
 	h = ast_ih_fold(h, a->kind[n]);
 	h = ast_ih_fold(h, (uint32_t)a->op[n]);
-	h = ast_ih_fold(h, (uint32_t)a->type_t[n]);
+	h = ast_ih_fold(h, ast_sid_type_norm((uint32_t)a->type_t[n]));
 	h = ast_ih_fold(h, (a->sym[n] && !ast_ih_sym_dropped(a, n)) ? ast_ih_sym(sm, a->sym[n]) : 0);
 	if (is_local)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_off(om, (int32_t)(int64_t)a->ival[n])); }
