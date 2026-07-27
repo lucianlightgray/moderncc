@@ -4842,6 +4842,21 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 TIMEOUT 300)
         endif()
 
+        # PE --embed-jit LINK smoke: bake a small program with the JIT engine and
+        # run it JIT-OFF, exercising mcc's own linker over the COFF engine blob
+        # (native-TLS SECREL reads, a-la-carte loader, __ImageBase, compiler-rt/
+        # libgcc fallback). mingw only — MSVC embed needs the ucrt/vcruntime wiring
+        # (docs/TODO task) — and JIT-OFF only, so it never touches the winlibs
+        # runtime-JIT 0xC0000005 (P0 step 5). Self-skips (77) if the toolchain has
+        # no compiler-support runtime for the engine.
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)
+            add_test(NAME embed-jit-smoke
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed-jit-smoke.py"
+                        "${CMAKE_BINARY_DIR}")
+            set_tests_properties(embed-jit-smoke PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 TIMEOUT 180)
+        endif()
+
         if(TARGET mccbuild AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
             add_test(NAME git-stamp COMMAND "$<TARGET_FILE:mccbuild>" --githash)
             set_tests_properties(git-stamp PROPERTIES FIXTURES_REQUIRED MCC_BUILT
