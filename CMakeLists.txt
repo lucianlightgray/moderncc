@@ -3889,6 +3889,17 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("exec-gatesoff/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3;MCC_AST_OPASSIGN=0;MCC_AST_CHAINSTORE=0")
         endforeach()
+
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-O3/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-O3-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-O3/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3")
+        endforeach()
     endif()
 
     if(MCC_EMULATOR)
