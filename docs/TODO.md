@@ -128,10 +128,10 @@ default OFF, arm64 desyncs rather than mismodels). Both in the Ungate campaign /
    not fire" with "fired and emitted identical bytes" — it produced a false "17 gates are broken on i386" and a false
    "28 gates are inert". And grep the counter anchored (`\b<name> +[0-9]+`); the panel prints many.
 
-**The 26% vstack site bundles two unrelated causes and they need separating before anyone works it** (read 2026-07-27, not yet measured — the split needs instrumentation and a rebuild). `ast_hook_vpush` desyncs on `ast_vn != rel - 1 || rel > AST_VS_MAX`:
+**The 26% vstack site: MEASURED 2026-07-27 — it is 100% the SYNC arm, 0% capacity. Do NOT raise `AST_VS_MAX`.** `ast_hook_vpush` desyncs on `ast_vn != rel - 1 || rel > AST_VS_MAX`:
 - `ast_vn != rel - 1` is a REAL desync — the recorder's node count has lost sync with the codegen vstack.
 - `rel > AST_VS_MAX` is a CAPACITY limit, not a modelling failure. `AST_VS_MAX` is **64** and `ast_vs` is a fixed `AstLocal[64]`, so a sufficiently deep expression is refused for want of table space. Raising it costs 4 bytes per entry.
-If a meaningful share of the 213 are the capacity arm, this is the cheapest coverage win in the whole table — bigger than either gate landed today — and it is a constant, not an algorithm. **Measure the split first**: instrument the guard to report which arm fired, over mcc's own TU. Do not raise the constant blind; if the failures are the sync arm then a larger table changes nothing and would just cost memory.
+Instrumenting both guard sites to report which arm fired, over mcc's own TU at `-O2`: **214 events, all `SYNC`, none `CAPACITY`** — and all from the first site (`ast_hook_vpush`), none from the second. So the 64-entry `ast_vs` table is never the limiter and enlarging it recovers nothing; the whole 26% is the recorder genuinely losing sync with the codegen vstack. That is real modelling work, not a constant bump. This is exactly why the note said to measure before touching the constant — the cheap-win reading was wrong.
 
 Also unexplained: **riscv64 shows ~30x the `unfaithful` rate of every other target** (92 vs 3 over the freestanding
 `optfire` corpus), and it is relocation divergence with byte-identical code. Cross-arch parity section; reserved for the
