@@ -10636,11 +10636,13 @@ ST_FUNC uint32_t intr(int r);
 ST_FUNC int ireg(int r);
 #endif
 static int switch_jt_env(void) { MCC_TRACE("enter\n");
-	static int v = -1;
-	if (v < 0)
+	static int v = -2;
+	if (v == -2)
 		{ MCC_TRACE("br\n"); const char *e = getenv("MCC_SWITCH_JUMPTABLE");
-			v = e && e[0] && e[0] != '0'; }
-	return v;
+			v = (e && e[0]) ? (e[0] != '0') : -1; }
+	if (v >= 0)
+		{ MCC_TRACE("br\n"); return v; }
+	return mcc_state && mcc_state->optimize_search_seconds > 0;
 }
 static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int64_t lo, hi, covered = 0;
@@ -10652,6 +10654,9 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	if (mcc_state->pic)
 		{ MCC_TRACE("br\n"); return 0; } /* i386 PIC jump table unimplemented (no PC-relative addressing) */
 #endif
+	if (mcc_state->output_type == MCC_OUTPUT_MEMORY)
+		{ MCC_TRACE("br\n"); return 0; } /* -run maps code above the 32-bit range: an absolute
+		                                  * table's R_X86_64_32S/R_386_32 entries cannot reach */
 	lo = sw->p[0]->v1;
 	hi = sw->p[sw->n - 1]->v2;
 	if (hi < lo)

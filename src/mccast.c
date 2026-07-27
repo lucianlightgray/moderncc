@@ -1809,6 +1809,10 @@ static int ast_inline_n;
 
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
+	/* -O>=4 means the user asked for a search budget: run EVERY implemented optimizer,
+	 * including the ones no lower -O level reaches. Not a preprocessor gate — one
+	 * runtime term ORed into each default below, so -O0..-O3 stay byte-identical. */
+	int o4 = s1->optimize_search_seconds > 0;
 	ast_reemit_n = 0;
 	ast_inline_n = 0;
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
@@ -1819,7 +1823,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_verify_env = ast_env_int("MCC_AST_VERIFY", 0);
 	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
-	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", s1->optimize >= 1);
+	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
 	/* Default ON whenever the user asked for a search budget (-O>=4). The per-tick
 	 * budget and memo still bound it; at -O0..3 optimize_search_seconds==0 so the
 	 * search never runs and codegen is byte-identical regardless of this default. */
@@ -1850,8 +1854,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
 	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
-	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", 0);
-	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", s1->optimize >= 2);
+	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 3);
+	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", o4 || s1->optimize >= 3);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
 	if (ast_strat_order_forced) { MCC_TRACE("br\n");
@@ -1860,25 +1864,25 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 		MCC_TRACE("strat order forced n=%d seq=%s\n", ast_strat_order_n, sq);
 	}
 	ast_search_seconds = s1->optimize_search_seconds;
-	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", opt_promote);
-	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", 0);
-	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC", 0);
-	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", 0);
-	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", 0);
+	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", o4 || opt_promote);
+	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", o4 || s1->optimize_size);
+	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC", o4 || s1->optimize_size);
+	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 3);
+	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 0);
 #ifdef MCC_TARGET_ARM64
-	ast_fmov_imm_env = ast_env_gate("MCC_AST_FMOV_IMM", 0);
+	ast_fmov_imm_env = ast_env_gate("MCC_AST_FMOV_IMM", o4);
 #else
 	ast_fmov_imm_env = 0;
 #endif
 #ifdef MCC_TARGET_X86_64
-	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
+	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", o4 || s1->optimize_size);
 #else
 	ast_regdisp_env = 0;
 #endif
 #ifdef MCC_TARGET_X86_64
-	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", 0);
+	ast_xmm_hi_env = ast_env_gate("MCC_AST_XMM_HI", o4);
 	for (int hr = MCC_TREG_XMM8; hr <= MCC_TREG_XMM15; hr++) { MCC_TRACE("br\n");
 		if (ast_xmm_hi_env)
 			{ MCC_TRACE("br\n"); reg_classes[hr] |= MCC_RC_FLOAT; }
@@ -1891,7 +1895,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * the regalloc cliff a function falls off once its last call (e.g. sqrt) is
 	 * inlined away. The callee-saved regs are saved/restored per-reg by
 	 * ast_promo_entry_init/_exit_restore. Default OFF ⇒ byte-identical. */
-	ast_promo_leaf_callee_env = ast_env_gate("MCC_AST_PROMO_LEAF_CALLEE", 0);
+	ast_promo_leaf_callee_env = ast_env_gate("MCC_AST_PROMO_LEAF_CALLEE", o4);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
 	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
 																s1->optimize >= 3 && !s1->optimize_size);
@@ -1913,33 +1917,33 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
 	ast_cost_env = ast_env_gate("MCC_AST_COST", 0);
-	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", s1->optimize >= 2);
-	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", s1->optimize >= 2);
-	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", s1->optimize >= 2);
-	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", s1->optimize >= 2);
+	ast_sethi_env = ast_env_gate("MCC_AST_SETHI", o4 || s1->optimize >= 1);
+	ast_sethi_leaf_env = ast_env_gate("MCC_AST_SETHI_LEAF", o4 || s1->optimize >= 1);
+	ast_sethi_nary_env = ast_env_gate("MCC_AST_SETHI_NARY", o4 || s1->optimize >= 1);
+	ast_bitflag_env = ast_env_gate("MCC_AST_BITFLAG", o4 || s1->optimize >= 2);
 	ast_bitflag_report_env = ast_env_gate("MCC_AST_BITFLAG_REPORT", 0);
 	ast_bitflag_min = ast_env_int("MCC_AST_BITFLAG", 5);
 	if (ast_bitflag_min < 3)
 		{ MCC_TRACE("br\n"); ast_bitflag_min = 5; }
-	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", s1->optimize >= 2);
-	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", s1->optimize >= 2);
-	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", s1->optimize >= 2);
+	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", o4 || s1->optimize >= 2);
+	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", o4 || s1->optimize >= 1);
+	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", o4 || s1->optimize >= 2);
 	ast_narrow_c0_env = ast_env_gate("MCC_AST_NARROW_CLASS0", 1);
 	ast_narrow_c1_env = ast_env_gate("MCC_AST_NARROW_CLASS1", 1);
 	ast_narrow_c2_env = ast_env_gate("MCC_AST_NARROW_CLASS2", 1);
 	ast_narrow_c3_env = ast_env_gate("MCC_AST_NARROW_CLASS3", 1);
-	ast_narrow_elim_env = ast_env_gate("MCC_AST_NARROW_ELIM", s1->optimize >= 2);
-	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", s1->optimize >= 2);
-	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", 1);
-	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", 1);
-	ast_ident_arith_env = ast_env_gate("MCC_AST_IDENT_ARITH", 1);
-	ast_ident_bit_env = ast_env_gate("MCC_AST_IDENT_BIT", 1);
-	ast_ident_rel_env = ast_env_gate("MCC_AST_IDENT_REL", 1);
-	ast_ident_urange_env = ast_env_gate("MCC_AST_IDENT_URANGE", 1);
-	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", s1->optimize >= 2);
-	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", s1->optimize >= 2);
-	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", s1->optimize >= 2);
-	ast_range_env = ast_env_gate("MCC_AST_RANGE", s1->optimize >= 2);
+	ast_narrow_elim_env = ast_env_gate("MCC_AST_NARROW_ELIM", o4 || s1->optimize >= 1);
+	ast_sccp_fix_env = ast_env_gate("MCC_AST_SCCP_FIX", o4 || s1->optimize >= 2);
+	ast_ident_conv_env = ast_env_gate("MCC_AST_IDENT_CONV", o4 || 1);
+	ast_ident_shift_env = ast_env_gate("MCC_AST_IDENT_SHIFT", o4 || 1);
+	ast_ident_arith_env = ast_env_gate("MCC_AST_IDENT_ARITH", o4 || 1);
+	ast_ident_bit_env = ast_env_gate("MCC_AST_IDENT_BIT", o4 || 1);
+	ast_ident_rel_env = ast_env_gate("MCC_AST_IDENT_REL", o4 || 1);
+	ast_ident_urange_env = ast_env_gate("MCC_AST_IDENT_URANGE", o4 || 1);
+	ast_dse_call_env = ast_env_gate("MCC_AST_DSE_CALL", o4 || s1->optimize >= 2);
+	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", o4 || s1->optimize >= 2);
+	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", o4 || s1->optimize >= 1);
+	ast_range_env = ast_env_gate("MCC_AST_RANGE", o4 || s1->optimize >= 1);
 	/* i386 carve-out REMOVED 2026-07-25: the struct-pressure temp-slot-reuse
 	 * miscompiles (after-loop `%C` d9 + in-loop v_251/v_7/h1 + unsigned u1/u2, and
 	 * the now-materialized 64-bit u64/s64 paths) are all fixed by the i386-gated
@@ -1949,26 +1953,26 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * Validated by i386-divmagic-soak (32- + 64-bit, incl. struct-loop cases) vs a
 	 * hardware-idiv oracle under qemu-i386; on by default at -O2+ like the other
 	 * optimizer-capable arches. */
-	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", s1->optimize >= 2);
-	ast_abs_env = ast_env_gate("MCC_AST_ABS", s1->optimize >= 2);
-	ast_select_env = ast_env_gate("MCC_AST_SELECT", s1->optimize >= 2);
-	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", s1->optimize >= 2);
-	ast_reassoc_assoc_env = ast_env_gate("MCC_AST_REASSOC_ASSOC", 1);
-	ast_reassoc_shlshr_env = ast_env_gate("MCC_AST_REASSOC_SHLSHR", 1);
-	ast_reassoc_shrshl_env = ast_env_gate("MCC_AST_REASSOC_SHRSHL", 1);
-	ast_reassoc_muldist_env = ast_env_gate("MCC_AST_REASSOC_MULDIST", 1);
-	ast_bfold_sqrt_env = ast_env_gate("MCC_AST_BFOLD_SQRT", 1);
-	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", 1);
-	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", 1);
-	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", 1);
+	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", o4 || s1->optimize >= 2);
+	ast_abs_env = ast_env_gate("MCC_AST_ABS", o4 || s1->optimize >= 2);
+	ast_select_env = ast_env_gate("MCC_AST_SELECT", o4 || s1->optimize >= 2);
+	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", o4 || s1->optimize >= 2);
+	ast_reassoc_assoc_env = ast_env_gate("MCC_AST_REASSOC_ASSOC", o4 || 1);
+	ast_reassoc_shlshr_env = ast_env_gate("MCC_AST_REASSOC_SHLSHR", o4 || 1);
+	ast_reassoc_shrshl_env = ast_env_gate("MCC_AST_REASSOC_SHRSHL", o4 || 1);
+	ast_reassoc_muldist_env = ast_env_gate("MCC_AST_REASSOC_MULDIST", o4 || 1);
+	ast_bfold_sqrt_env = ast_env_gate("MCC_AST_BFOLD_SQRT", o4 || 1);
+	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", o4 || 1);
+	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", o4 || 1);
+	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", o4 || 1);
 	/* Runtime math-builtin -> inline hardware FP (fabs/sqrt-nonneg). x86_64:
 	 * default-on at -O2+ (soaked/shipped). arm64: same rewrites via native
 	 * FABS/FSQRT, but default-OFF (opt-in `MCC_AST_MATH_INLINE=1`) pending the
 	 * arm64 golden-regen + soak, so default arm64 codegen stays byte-identical. */
 #ifdef MCC_TARGET_X86_64
-	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", s1->optimize >= 2);
+	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", o4 || s1->optimize >= 1);
 #else
-	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", 0);
+	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", o4);
 #endif
 	/* MCC_AST_MATH_INLINE_PREPASS (default OFF): also run the fabs/sqrt(nonneg)
 	 * math-inline rewrites as an UNCONDITIONAL pre-pass (ast_math_inline_run),
@@ -1976,53 +1980,53 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * winning order can drop `bfold`, so sqrt(x*x) inlines to sqrtsd at -O2/-O3 but
 	 * reverts to a `call sqrt` libcall at -O4. Idempotent with the bfold strategy;
 	 * byte-identical at -O2 (bfold does the same rewrite there anyway). */
-	ast_math_inline_prepass_env = ast_env_gate("MCC_AST_MATH_INLINE_PREPASS", 0);
+	ast_math_inline_prepass_env = ast_env_gate("MCC_AST_MATH_INLINE_PREPASS", o4);
 	/* MCC_AST_ROUND_INLINE (default OFF, opt-in): inline floor/ceil/trunc to a
 	 * single `roundsd`/`roundss` (imm floor=0x9/ceil=0xA/trunc=0xB, bit3 suppresses
 	 * the precision exception to match libm). Default OFF because roundsd is SSE4.1,
 	 * not the SSE2 baseline — the user opts in for an SSE4.1 target (like gcc's
 	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only. */
-	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
+	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", o4);
 	/* copysign inline (fsgnj on riscv64, SSE mask on x86_64, GP round-trip on
 	 * arm64). Default OFF on ALL
 	 * arches (opt-in) so default codegen is byte-identical everywhere — including
 	 * x86_64, where math-inline (fabs/sqrt) is otherwise default-on. */
-	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", 0);
+	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", o4);
 	/* fmin/fmax inline via FMINNM/FMAXNM (arm64 only — x86 minsd/maxsd have wrong
 	 * NaN/±0 semantics so fmin/fmax stay libcalls there). Default OFF (opt-in) so
 	 * default codegen is byte-identical. */
-	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", 0);
+	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4);
 	/* fma inline via FMADD (arm64) / fmadd.d/.s (riscv64) — single-rounding, both
 	 * baseline; matches gcc default. x86 needs FMA3 (not baseline) so it stays a
 	 * libcall. Default OFF (opt-in) ⇒ byte-identical default. */
-	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", 0);
+	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4);
 	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
 	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
 	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
 	 * matches gcc -fno-math-errno. Default: honor errno (nonneg-only inline). */
 	ast_no_math_errno = ast_env_gate("MCC_AST_NO_MATH_ERRNO",
 																	 s1 && s1->no_math_errno);
-	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", s1->optimize >= 2);
+	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", o4 || s1->optimize >= 2);
 	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
 	 * pending a correctness proof). Each still runs only on `faithful` functions
 	 * and its rewrite is re-verified downstream; validated bit-identical to gcc on
 	 * the plb loop benchmarks + the full x86_64 ctest. Revert an individual one to 0
 	 * if a differential regression surfaces. */
-	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", s1->optimize >= 2);
-	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", s1->optimize >= 2);
-	ast_tile_env = ast_env_gate("MCC_AST_TILE", s1->optimize >= 2);
+	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", o4 || s1->optimize >= 2);
+	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", o4 || s1->optimize >= 2);
+	ast_tile_env = ast_env_gate("MCC_AST_TILE", o4 || s1->optimize >= 2);
 	ast_tile_size = ast_env_int("MCC_AST_TILE_SIZE", 32);
 	if (ast_tile_size < 2)
 		{ MCC_TRACE("br\n"); ast_tile_size = 32; }
-	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", s1->optimize >= 2);
+	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", o4 || s1->optimize >= 2);
 	ast_jit_env = s1 && (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH",
 			(ast_jit_env || getenv("MCC_JIT_SUBMIT_AOT")) ? 6 : 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_data_reemit_env = ast_env_gate("MCC_AST_DATA_REEMIT", 0);
-	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", s1->optimize >= 2);
-	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", s1->optimize >= 2);
+	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", o4 || s1->optimize >= 2);
+	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", o4 || s1->optimize >= 2);
 	ast_strpool_n = 0; /* content pool is per translation unit */
 	ast_cse_window = ast_env_int("MCC_AST_CSE_WINDOW", 64);
 	if (ast_cse_window < 1)
@@ -2044,10 +2048,10 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_tco_maxp = 1; }
 	if (ast_tco_maxp > AST_TCO_MAXP)
 		{ MCC_TRACE("br\n"); ast_tco_maxp = AST_TCO_MAXP; }
-	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", s1->optimize >= 2);
-	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", s1->optimize >= 2);
-	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", s1->optimize >= 2);
-	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", s1->optimize >= 2);
+	ast_cse_join_env = ast_env_gate("MCC_AST_CSE_JOIN", o4 || s1->optimize >= 2);
+	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", o4 || s1->optimize >= 1);
+	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", o4 || s1->optimize >= 2);
+	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", o4 || (s1->optimize >= 1 && !s1->optimize_size));
 	/* Pointer-index LSR. The mul-based ivsr only matches an explicit `Binary('*',
 	 * iv, C)`, but the common `a[i]` case is `Binary('+', ptr, iv)` where the
 	 * element-size scaling is IMPLICIT in the pointer-add's codegen — no AST mul
@@ -2056,14 +2060,14 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * gcc does; mcc otherwise re-`imul`s the index every iteration for a
 	 * non-power-of-2 element size). Default OFF ⇒ byte-identical (it changes
 	 * addressing codegen; validate value-equivalence vs gcc, not byte-identity). */
-	ast_ivsr_ptr_env = ast_env_gate("MCC_AST_IVSR_PTR", 0);
-	ast_pre_env = ast_env_gate("MCC_AST_PRE", s1->optimize >= 2);
+	ast_ivsr_ptr_env = ast_env_gate("MCC_AST_IVSR_PTR", o4);
+	ast_pre_env = ast_env_gate("MCC_AST_PRE", o4 || s1->optimize >= 1);
 	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
 	ast_loopdep_dump_env = ast_env_gate("MCC_AST_LOOPDEP_DUMP", 0);
 	ast_perfn_inproc_env = ast_env_gate("MCC_AST_PERFN_INPROC", 0);
-	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", s1->optimize >= 2);
-	ast_color_env = ast_env_gate("MCC_AST_COLOR", s1->optimize >= 2);
-	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", s1->optimize >= 2);
+	ast_argfwd_env = ast_env_gate("MCC_AST_ARGFWD", o4 || s1->optimize >= 2);
+	ast_color_env = ast_env_gate("MCC_AST_COLOR", o4 || s1->optimize >= 2);
+	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", o4 || s1->optimize >= 2);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
