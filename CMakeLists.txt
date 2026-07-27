@@ -3915,6 +3915,51 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("exec-Os/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-Os")
         endforeach()
+
+        # optfire: assert each optimizer pass ACTUALLY FIRED. Every exec-* family
+        # above asserts only that output is correct, so a pass stubbed to do
+        # nothing passes all 298 goldens. These cells fail when the pass is inert:
+        # a --stats transform counter must be nonzero, or toggling the gate must
+        # change the object. Both modes also require the program's stdout to equal
+        # the -O0 build's, so a pass that fires but miscompiles fails here too.
+        if(UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters.txt")
+            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters.txt" _of_counters)
+            foreach(_ol IN LISTS _of_counters)
+                if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                    string(REPLACE "|" ";" _of "${_ol}")
+                    list(GET _of 0 _ofname)
+                    list(GET _of 1 _ofopt)
+                    list(GET _of 2 _ofctr)
+                    add_test(NAME "optfire/${_ofname}"
+                        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
+                                counter "${_mcc_exe}"
+                                "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c"
+                                "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}" "${_ofctr}")
+                    set_tests_properties("optfire/${_ofname}" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
+                endif()
+            endforeach()
+        endif()
+        if(UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs.txt")
+            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs.txt" _of_differs)
+            foreach(_ol IN LISTS _of_differs)
+                if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                    string(REPLACE "|" ";" _of "${_ol}")
+                    list(GET _of 0 _ofname)
+                    list(GET _of 1 _ofopt)
+                    list(GET _of 2 _ofenv)
+                    list(GET _of 3 _ofextra)
+                    add_test(NAME "optfire/${_ofname}"
+                        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
+                                differ "${_mcc_exe}"
+                                "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c"
+                                "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}"
+                                "${_ofenv}" "${_ofextra}")
+                    set_tests_properties("optfire/${_ofname}" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
+                endif()
+            endforeach()
+        endif()
     endif()
 
     if(MCC_EMULATOR)

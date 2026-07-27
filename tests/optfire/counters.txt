@@ -1,0 +1,2 @@
+# <name>|<olevel>|<--stats counter name>
+smoke_divmagic|-O2|divmagic
