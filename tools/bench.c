@@ -600,6 +600,14 @@ static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
 	b[0] = 0;
 	if (strcmp(ccs[i].key, "mcc") || !cells[i].m.ok || !cells[i].nwall)
 		return;
+	/* -O4 is mcc's out-of-process superopt SEARCH, not a compile. gcc/clang accept
+	   -O4 but treat it as -O3, so the same-opt reference row is an ordinary
+	   compile: the ratio measures a search against a compile and means nothing.
+	   Report the size trade instead, which is what -O4 is actually buying. */
+	if (ccs[i].opt && !strcmp(ccs[i].opt, "-O4")) {
+		snprintf(b, n, "n/a (superopt search, not a compile)");
+		return;
+	}
 	for (j = i + 1; j < nccs; j++) {
 		const char *jg = ccs[j].opt ? ccs[j].opt + 1 : "";
 		struct cell *rc = &cells[j];
@@ -1301,7 +1309,9 @@ int main(int argc, char **argv) {
 						 " mean wall time (B=%d resamples with replacement, deterministic"
 						 " xorshift RNG, distribution-free)\n"
 						 "  vs-ref: wall-time delta of each mcc row against the first"
-						 " reference compiler row in the same -O group and workload\n"
+						 " reference compiler row in the same -O group and workload;"
+						 " n/a at -O4, where mcc runs the superopt search but gcc/clang"
+						 " treat -O4 as -O3, so the rows are not comparable work\n"
 						 "  * = significant, ns = not significant: Welch's t-test,"
 						 " two-tailed alpha=0.05, Welch-Satterthwaite df floored into"
 						 " a critical-value table\n"

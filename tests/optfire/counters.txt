@@ -1,2 +1,22 @@
-# <name>|<olevel>|<--stats counter name>
-smoke_divmagic|-O2|divmagic
+# <name>|<olevel>|<--stats counter>[|<extra link flags>]
+bfold|-O2|bfold|-lm
+ident|-O2|ident
+narrow|-O2|narrow
+cprop|-O2|cprop
+cse|-O2|cse
+ltemp|-O2|ltemp
+ivsr|-O2|ivsr
+pre|-O2|pre
+licm|-O2|licm
+dse|-O2|dse
+sccp|-O2|sccp
+jt|-O2|jt
+bf|-O2|bf
+range|-O2|range
+divmagic|-O2|divmagic
+abs|-O2|abs
+select|-O2|select
+reassoc|-O2|reassoc
+sethi|-O2|sethi
+tco|-O2|tco
+inline|-O2|inline

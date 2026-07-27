@@ -21,7 +21,13 @@ opt=$WORK/$NAME.opt
 strip_ansi() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 
 # -O0 reference behaviour: the oracle every mode compares against.
-"$MCC" -O0 "$SRC" -o "$ref" >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
+case $mode in
+counter) LDF=$8 ;;
+differ)  LDF=$9 ;;
+esac
+[ "$LDF" = "-" ] && LDF=
+# shellcheck disable=SC2086
+"$MCC" -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
 refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; exit 1; }
 
 case $mode in
@@ -35,7 +41,8 @@ counter)
 		echo "FAIL $NAME: pass DID NOT FIRE ($COUNTER=$got at $OLEVEL)"
 		exit 1
 	}
-	"$MCC" "$OLEVEL" "$SRC" -o "$opt" >/dev/null 2>&1 || { echo "FAIL $NAME: $OLEVEL build failed"; exit 1; }
+	# shellcheck disable=SC2086
+	"$MCC" "$OLEVEL" "$SRC" -o "$opt" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: $OLEVEL build failed"; exit 1; }
 	optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; exit 1; }
 	[ "$optout" = "$refout" ] || {
 		echo "FAIL $NAME: output changed under $OLEVEL"
@@ -62,7 +69,7 @@ differ)
 	fi
 	for v in 0 1; do
 		# shellcheck disable=SC2086
-		env $EXTRA "$ENVV=$v" "$MCC" "$OLEVEL" "$SRC" -o "$opt.$v" >/dev/null 2>&1 ||
+		env $EXTRA "$ENVV=$v" "$MCC" "$OLEVEL" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
 			{ echo "FAIL $NAME: $ENVV=$v build failed"; exit 1; }
 		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $ENVV=$v run failed"; exit 1; }
 		[ "$out" = "$refout" ] || {

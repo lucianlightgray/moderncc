@@ -3930,11 +3930,17 @@ if(MCC_BUILD_TESTS)
                     list(GET _of 0 _ofname)
                     list(GET _of 1 _ofopt)
                     list(GET _of 2 _ofctr)
+                    set(_ofldf "-")
+                    list(LENGTH _of _oflen)
+                    if(_oflen GREATER 3)
+                        list(GET _of 3 _ofldf)
+                    endif()
                     add_test(NAME "optfire/${_ofname}"
                         COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
                                 counter "${_mcc_exe}"
                                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c"
-                                "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}" "${_ofctr}")
+                                "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}"
+                                "${_ofctr}" "${_ofldf}")
                     set_tests_properties("optfire/${_ofname}" PROPERTIES
                         FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
                 endif()
@@ -3954,7 +3960,7 @@ if(MCC_BUILD_TESTS)
                                 differ "${_mcc_exe}"
                                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c"
                                 "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}"
-                                "${_ofenv}" "${_ofextra}")
+                                "${_ofenv}" "${_ofextra}" "-")
                     set_tests_properties("optfire/${_ofname}" PROPERTIES
                         FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
                 endif()

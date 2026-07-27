@@ -1,0 +1,18 @@
+# <name>|<olevel>|<gate env>|<extra env or ->
+interchange|-O2|MCC_AST_INTERCHANGE|-
+fusion|-O2|MCC_AST_FUSION|-
+tile|-O2|MCC_AST_TILE|MCC_AST_TILE_SIZE=7
+vlat|-O2|MCC_AST_VLAT|-
+ivsr_ptr|-O2|MCC_AST_IVSR_PTR|-
+chainstore|-O2|MCC_AST_CHAINSTORE|-
+opassign|-O2|MCC_AST_OPASSIGN|-
+promo_arrow|-O2|MCC_AST_PROMO_ARROW|-
+promo_incdec|-O2|MCC_AST_PROMO_INCDEC|-
+spill_share|-O2|MCC_AST_SPILL_SHARE|-
+color|-O2|MCC_AST_COLOR|-
+argfwd|-O3|MCC_AST_ARGFWD|MCC_AST_INLINE_PASS=0
+zero_bss|-O2|MCC_ZERO_BSS|-
+merge_strings|-O2|MCC_MERGE_STRINGS|-
+call_window|-O2|MCC_AST_CALL_WINDOW|-
+cse_join|-O2|MCC_AST_CSE_JOIN|-
+cprop_join|-O2|MCC_AST_CPROP_JOIN|-
