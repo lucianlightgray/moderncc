@@ -539,6 +539,15 @@ static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) { MCC_TRACE("enter\n");
 #ifndef VT_LONG
 #define VT_LONG 0x0800
 #endif
+#ifndef MCC_PTR_SIZE
+#define MCC_PTR_SIZE 8
+#endif
+#ifndef VT_BTYPE
+#define VT_BTYPE 0x000f
+#endif
+#ifndef VT_PTR
+#define VT_PTR 5
+#endif
 
 static int ast_ih_sym_dropped(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return ((uint32_t)a->op[n] & VT_VALMASK) == VT_LOCAL &&
@@ -604,13 +613,30 @@ static uint64_t ast_sid_off(AstSidOffs *m, int32_t off) { MCC_TRACE("enter\n");
    stay distinct, which is correct because their widths genuinely differ. Loose by
    design: a hit only warm-starts a gate config, and ast_slice_equiv still gates
    codegen per reuse. */
-static uint32_t ast_sid_type_norm(uint32_t t) { MCC_TRACE("enter\n");
+static int ast_sid_widthnorm_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_AST_SLICE_WIDTHNORM");
 		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
 	}
-	return on ? (t & ~(uint32_t)VT_LONG) : t;
+	return on;
+}
+
+static uint32_t ast_sid_type_norm(uint32_t t) { MCC_TRACE("enter\n");
+	return ast_sid_widthnorm_on() ? (t & ~(uint32_t)VT_LONG) : t;
+}
+
+/* Companion to ast_sid_type_norm under the same gate. A VT_PTR-typed node's ival
+   is a byte offset already scaled by the target pointer size, so the SAME address
+   computation reads 8/16 on a 64-bit target and 4/8 on a 32-bit one -- measured,
+   that is the entire remaining cross-triple mismatch for pointer-shaped slices.
+   Fold quotient and remainder separately so nothing is lost: a genuinely
+   unscaled value still separates, while scaled offsets align across targets. */
+static uint64_t ast_sid_ival_norm(const AstArena *a, AstLocal n, uint64_t v) { MCC_TRACE("enter\n");
+	if (!ast_sid_widthnorm_on() ||
+			((uint32_t)a->type_t[n] & VT_BTYPE) != VT_PTR)
+		{ MCC_TRACE("br\n"); return v; }
+	return ((v / MCC_PTR_SIZE) * 31u) ^ (v % MCC_PTR_SIZE);
 }
 
 static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
@@ -625,7 +651,7 @@ static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
 	if (is_local)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_off(om, (int32_t)(int64_t)a->ival[n])); }
 	else if (a->kind[n] != AST_Ref)
-		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, a->ival[n]); }
+		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_ival_norm(a, n, a->ival[n])); }
 	h = ast_ih_fold(h, a->fbits[n]);
 	h = ast_ih_fold(h, a->nchild[n]);
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
