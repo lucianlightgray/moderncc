@@ -335,10 +335,25 @@ left failing or satisfied with a guess, because tracing the hook shows the proto
 not simply 'the constant value of operand 1', and the second call's `c=1` needs explaining before any modelling is
 written. Implementing against a misread of that protocol is exactly how the `!!` inversion, the const-member
 relaxation and the search floor each went wrong earlier in this file.
-**Next step is small and specific:** determine what `c` denotes on the non-first call (read the `ast_hook_landor_operand`
-call sites in `mccgen.c`), then model the four cases — `&&` with false operand 1 (result const 0), `&&` with true
-(result is operand 2), `||` with true (const 1), `||` with false (operand 2) — and re-add the reverted cell as the
-acceptance test. It is written and known-red, so it costs nothing to restore.
+**PROTOCOL DECODED 2026-07-27 — and the fix is bigger than this guard.** `expr_landor` (`mccgen.c`) is:
+```c
+int i = op == TOK_LAND, c;              /* i = 1 for &&, 0 for || */
+c = f ? i : condition_3way();           /* -1 = dynamic, else the constant */
+if (c < 0) save_regs(1), cc = 0;
+else if (c != i) nocode_wanted++, f = 1;   /* this operand short-circuits */
+```
+So `c` is NOT 'the constant value of operand 1' on later calls — once `f` latches, `c = i` for every subsequent
+operand. That explains the traced `cf` sequence (`c=0 first=1` then `c=1 first=0`) and `ct` (`c=1` then `c=0`): the
+second value is the latch, not a constant. The decisive test is `c >= 0 && c != i` on the FIRST call.
+**The blocker is dead-code hook traffic, not the guard.** When an operand short-circuits, `nocode_wanted++` and the
+remaining arm is still PARSED — so it keeps calling the recorder's hooks while emitting nothing. The recorder has
+exactly ONE `nocode_wanted` check today (`mccast.c`, the call hook) and it DESYNCS rather than ignoring, so a dead arm
+containing a call desyncs anyway and a dead arm without one pushes phantom nodes onto `ast_vs`. Modelling the landor
+constant therefore requires the recorder to suppress hook EFFECTS under `nocode_wanted` generally — a cross-cutting
+change to every modelling hook, not a local edit here.
+That is worth doing (it likely recovers dead-code desyncs beyond these 32) but it is an architectural change and
+should be scoped as one: add a single shared `nocode_wanted` gate to the hook entry points, prove byte-identity, THEN
+relax the landor guard and restore the acceptance cell. Attempting the landor half alone will not work.
 
 **F5 — The 26% vstack site is real modelling work, with no shortcut.** Measured 100% the `ast_vn != rel - 1` SYNC arm,
 0% capacity, so raising `AST_VS_MAX` recovers nothing. This is the second-largest cause of lost optimization and the
