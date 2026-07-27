@@ -351,9 +351,22 @@ exactly ONE `nocode_wanted` check today (`mccast.c`, the call hook) and it DESYN
 containing a call desyncs anyway and a dead arm without one pushes phantom nodes onto `ast_vs`. Modelling the landor
 constant therefore requires the recorder to suppress hook EFFECTS under `nocode_wanted` generally — a cross-cutting
 change to every modelling hook, not a local edit here.
-That is worth doing (it likely recovers dead-code desyncs beyond these 32) but it is an architectural change and
-should be scoped as one: add a single shared `nocode_wanted` gate to the hook entry points, prove byte-identity, THEN
-relax the landor guard and restore the acceptance cell. Attempting the landor half alone will not work.
+**The obvious implementation of that was TRIED 2026-07-27 and makes things WORSE — do not repeat it.** Adding
+`|| (ast_nocode_gate && nocode_wanted)` to the 8 shared hook guards
+(`!ast_capture || ast_desync || ast_in_op || ast_in_call`) and measuring over mcc's own TU:
+
+| gate | desync | faithful | stackresidue |
+|---|---:|---:|---:|
+| off | 642 | 905 | 0 |
+| on | **732** (+90) | **837** (-68) | **5** (new) |
+
+It is a net loss, and the new `stackresidue` verdicts say why: the hooks come in PAIRS (a push must be matched by its
+pop, an op-begin by its op-end), and a flat entry-guard suppresses whichever side of a pair happens to run while
+`nocode_wanted` is set, leaving the model unbalanced. Suppression has to be balanced — enter dead code once, ignore
+everything until the matching exit, and restore the recorder's stack depth — not decided per hook call.
+So the correct shape is a dead-code DEPTH tracked by the recorder (mirroring `nocode_wanted`'s own nesting), with the
+hooks consulting it only where suppression keeps the push/pop invariant. That is a real design task, not a guard
+edit. Reverted; the tree is unchanged.
 
 **F5 — The 26% vstack site is real modelling work, with no shortcut.** Measured 100% the `ast_vn != rel - 1` SYNC arm,
 0% capacity, so raising `AST_VS_MAX` recovers nothing. This is the second-largest cause of lost optimization and the
