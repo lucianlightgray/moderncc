@@ -3571,8 +3571,21 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (e->param_off[i] + ps > hi)
 			{ MCC_TRACE("br\n"); hi = e->param_off[i] + ps; }
 	}
-	int bias = hi > 0 ? ((loc - hi) & -16) : loc;
+	int gbase = loc;
+	if (ast_replaying && ast_locrec_min < gbase) { MCC_TRACE("br\n");
+		gbase = ast_locrec_min;
+	}
+	if (ast_temp_frontier <= 0 && ast_temp_frontier < gbase) { MCC_TRACE("br\n");
+		gbase = ast_temp_frontier;
+	}
+	int bias = hi > 0 ? ((gbase - hi) & -16) : gbase;
 	loc = bias - e->frame_size;
+	if (loc < ast_loc_low) { MCC_TRACE("br\n");
+		ast_loc_low = loc;
+	}
+	if (ast_temp_frontier <= 0 && ast_temp_frontier > loc) { MCC_TRACE("br\n");
+		ast_temp_frontier = loc;
+	}
 	int nsub = 0, suboff[AST_INLINE_MAX_PARAMS];
 	SValue subval[AST_INLINE_MAX_PARAMS];
 	for (int i = 0; i < e->nparams; i++) { MCC_TRACE("br\n");
