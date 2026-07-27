@@ -174,11 +174,18 @@ disabled, 4.29 s and 0.18 s. `MCC_JIT=1` and `MCC_AST_SEARCH=1` change neither n
 1. **The semantics are surprising and undocumented.** `-O4` is presented as "run every implemented optimizer", and `-Os`
    already exists for size, so a user reasonably expects `-O4` to be the fastest code. It is the smallest. Say so in the
    help text, or make the scoring axis selectable.
-2. **A runtime-scoring mode already exists and did not engage.** `so_jitscore` (`mcc.c`) scores by `so_run_score()`
-   instead of size, enabled when `so_jit_env() && links_exe`. The sweep linked executables and still got the
-   size-scored result even with `MCC_JIT=1`, so either the env predicate is narrower than it looks or it silently
-   disabled itself (`so_jitscore = 0` is assigned in two places). That is the actual "make `-O4` fast" path and it is
-   dark — find out why, before anyone proposes a new speed heuristic.
+2. **The runtime-scoring mode is reachable but does not change the winner (investigated 2026-07-27).** It is enabled
+   by **`MCC_AST_JITSCORE=1`**, not `MCC_JIT` — that is why the sweep never engaged it; I was setting an unrelated
+   variable. With it on and a COLD cache, `-O4` on `nbody` produces a **byte-identical binary** (same md5, same text
+   3636, same 0.29 s runtime) as size scoring, at the same compile time. So on this kernel the search converges on the
+   same configuration either way and the scoring axis is not the lever it appears to be. Before building on it, find a
+   kernel where the two scorings actually diverge; if none exists, the mode is decorative.
+3. **The superopt cache makes `-O4` SLOWER as it fills — 2x, reproducibly.** With 1112 accumulated `so-*` entries in
+   `$XDG_CACHE_HOME/mcc`, `-O4` on `nbody` compiles in **8.4 s**; with a clean cache dir, **4.0 s**. Stable across
+   repeat runs in both states. That is the opposite of what the cache is for — a memo hit is supposed to SKIP search.
+   Suspect a linear scan or per-entry open/lock over the whole directory rather than a keyed lookup. **This also means
+   every `-O4` compile-time number recorded in this file is cache-state-dependent and probably overstated**, including
+   the `tools/bench.c` 420x figure. Re-measure with an isolated `XDG_CACHE_HOME` before quoting any of them.
 3. **8.4 s per compile for ~1-10% size** is the trade `tools/bench.c` already reports as 420x compile time for ~8%
    smaller output. Consistent; no new information, but it belongs next to these numbers.
 
