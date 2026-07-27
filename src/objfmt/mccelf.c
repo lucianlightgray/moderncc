@@ -3548,6 +3548,65 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) { MCC_TRACE("en
 	}
 }
 
+/* Pure architecture probe for mcc_add_support: which of `libmccrt.a` vs
+   `<arch>[-<os>]-libmccrt.a` (a cross build stages both, side by side) is right
+   for THIS target. Searches the library paths for `filename` and returns 1 if it
+   resolves to a bare object -- or an archive whose first relocatable member --
+   targets EM_MCC_TARGET, 0 if it resolves but is the WRONG arch (or is not an ELF
+   object at all, e.g. a Mach-O/COFF archive on a non-ELF target), and -1 if it is
+   not found. Opens read-only and raises no error / touches no link state, so a
+   wrong-arch hit does NOT poison the link the way a load attempt would (a member
+   whose e_machine mismatches trips mcc_error_noabort, and nb_errors != 0 fails
+   the whole link even after a later archive resolves). */
+ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
+	char buf[1024];
+	int i;
+	for (i = 0; i < s1->nb_library_paths; i++) { MCC_TRACE("br\n");
+		int fd, typ, res;
+		ElfW(Ehdr) ehdr;
+		snprintf(buf, sizeof buf, "%s/%s", s1->library_paths[i], filename);
+		fd = open(buf, O_RDONLY | O_BINARY);
+		if (fd < 0)
+			{ MCC_TRACE("br\n"); continue; }
+		typ = mcc_object_type(fd, &ehdr);
+		if (typ == AFF_BINTYPE_REL) { MCC_TRACE("br\n");
+			res = ehdr.e_ident[5] == ELFDATA2LSB &&
+						ehdr.e_machine == EM_MCC_TARGET ? 1 : 0;
+			close(fd);
+			return res;
+		}
+		if (typ == AFF_BINTYPE_AR) { MCC_TRACE("br\n");
+			ArchiveHeader hdr;
+			unsigned long off = sizeof ARMAG - 1;
+			int len;
+			res = 0;
+			for (;;) { MCC_TRACE("br\n");
+				len = read_ar_header(fd, off, &hdr);
+				if (len <= 0)
+					{ MCC_TRACE("br\n"); break; }
+				off += len;
+				/* skip the symbol index ("/", "/SYM64/") and long-name table ("//"),
+				   which are not objects; any other member is a candidate object. */
+				if (strcmp(hdr.ar_name, "/") && strcmp(hdr.ar_name, "//") &&
+						strcmp(hdr.ar_name, "/SYM64/")) { MCC_TRACE("br\n");
+					ElfW(Ehdr) me;
+					lseek(fd, off, SEEK_SET);
+					if (mcc_object_type(fd, &me) == AFF_BINTYPE_REL) { MCC_TRACE("br\n");
+						res = me.e_ident[5] == ELFDATA2LSB &&
+									me.e_machine == EM_MCC_TARGET ? 1 : 0;
+						break;
+					}
+				}
+				off = (off + strtol(hdr.ar_size, NULL, 0) + 1) & ~1UL;
+			}
+			close(fd);
+			return res;
+		}
+		close(fd);
+	}
+	return -1;
+}
+
 #if MCC_TARGET_UNIX
 static void set_ver_to_ver(MCCState *s1, int *n, int **lv, int i, char *lib, char *version) { MCC_TRACE("enter\n");
 	while (i >= *n) { MCC_TRACE("br\n");

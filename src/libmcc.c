@@ -1394,24 +1394,49 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) { MCC_TRAC
 #endif
 
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
-	char buf[128];
-	/* Arch-specific name FIRST. A stage-built mcc has an empty MCC_CONFIG_CROSSPREFIX,
-	   so pointing -B at a directory that stages several targets' archives side by
-	   side made it pick the HOST `libmccrt.a` and fail with "invalid object file"
-	   plus unresolved helpers (__ashldi3, __clear_cache, __floatunsitf). Probing
-	   `<arch>[-<os>]-<name>` first resolves the right one; a miss is silent and
-	   falls through to the historical behaviour, so nothing that already worked
-	   changes. */
-	if (MCC_SUPPORT_ARCH[0]) { MCC_TRACE("br\n");
-		if ((size_t)snprintf(buf, sizeof buf, "%s%s-%s", MCC_SUPPORT_ARCH,
-												 MCC_SUPPORT_OS, filename) < sizeof buf) { MCC_TRACE("br\n");
-			if (mcc_add_dll(s1, buf, 0) == 0)
-				{ MCC_TRACE("br\n"); return 0; }
-		}
-	}
+	char plain[128], arch[128];
+	int arch_ok;
+	/* Two support archives can sit side by side in a `-B` dir: the plain
+	   `[<crossprefix>]libmccrt.a` and the cmake-cross-staged `<arch>[-<os>]-libmccrt.a`.
+	   Which to trust depends on whether the plain one is arch-correct:
+
+	   - Plain ARCH-CORRECT (native / self-host, e.g. cmake's own build dir): it is
+	     authoritative and complete, so add it FIRST -- linking the arch-tagged one
+	     instead is a DIFFERENT build of the runtime and diverges from self-host
+	     byte-identity, breaking the 3-stage fixpoint (fd108bd4's arch-first probe
+	     wrongly overrode this). Then add the arch-tagged archive as an a la carte
+	     SUPPLEMENT: it pulls only members for still-undefined symbols, so a complete
+	     plain archive makes it inert (byte-identity preserved), while a leaner plain
+	     one (a cross-staging dir whose plain `libmccrt.a` happens to match the target
+	     arch but omits some soft-float/atomics helpers) gets the remainder filled in.
+
+	   - Plain ABSENT or WRONG arch (a stage-built cross mcc, empty MCC_CONFIG_CROSSPREFIX,
+	     `-B` at a multi-target dir whose plain `libmccrt.a` is the HOST arch -- the
+	     "invalid object file" + unresolved __ashldi3/__clear_cache/__floatunsitf trap
+	     fd108bd4 fixed): use `<arch>[-<os>]-libmccrt.a`, then the plain name with an
+	     error as the last resort.
+
+	   The plain/arch choice is a pure read-only arch probe, never a load attempt:
+	   loading a wrong-arch member trips mcc_error_noabort, and nb_errors != 0 fails
+	   the whole link even after the arch-specific archive later resolves. */
 	if (MCC_CONFIG_CROSSPREFIX[0])
-		{ MCC_TRACE("br\n"); filename = strcat(strcpy(buf, MCC_CONFIG_CROSSPREFIX), filename); }
-	return mcc_add_dll(s1, filename, AFF_PRINT_ERROR);
+		{ MCC_TRACE("br\n"); strcat(strcpy(plain, MCC_CONFIG_CROSSPREFIX), filename); }
+	else
+		{ MCC_TRACE("br\n"); snprintf(plain, sizeof plain, "%s", filename); }
+	arch_ok = MCC_SUPPORT_ARCH[0] &&
+			(size_t)snprintf(arch, sizeof arch, "%s%s-%s", MCC_SUPPORT_ARCH,
+											 MCC_SUPPORT_OS, filename) < sizeof arch;
+
+	if (mcc_support_arch_match(s1, plain) == 1) { MCC_TRACE("br\n");
+		int ret = mcc_add_dll(s1, plain, AFF_PRINT_ERROR);
+		if (arch_ok)
+			{ MCC_TRACE("br\n"); mcc_add_dll(s1, arch, 0); }
+		return ret;
+	}
+
+	if (arch_ok && mcc_add_dll(s1, arch, 0) == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	return mcc_add_dll(s1, plain, AFF_PRINT_ERROR);
 }
 
 #ifdef MCC_EMBED_MCCRT

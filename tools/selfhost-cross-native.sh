@@ -12,11 +12,13 @@
 # skipping (77) on any box without a running docker daemon.
 #
 # Three things must line up, and each fails loudly rather than subtly:
-#   - -B points straight at cmake-cross. mcc_add_support probes
-#     `<arch>[-<os>]-libmccrt.a` before the plain name, so it picks the right
-#     archive even with the host x86_64 one sitting beside it (it used to fail
-#     with "invalid object file" plus unresolved __clear_cache/__floatunsitf,
-#     which is why this staged a scratch copy before 2026-07-27).
+#   - -B points straight at cmake-cross. mcc_add_support keeps the plain name
+#     only when it is arch-correct; the plain `libmccrt.a` here is the host
+#     x86_64 one (wrong arch for this cross target), so it falls back to
+#     `<arch>[-<os>]-libmccrt.a` and picks the right archive with the host one
+#     sitting beside it (it used to fail with "invalid object file" plus
+#     unresolved __clear_cache/__floatunsitf, which is why this staged a scratch
+#     copy before 2026-07-27).
 #   - --sysroot is required, or mcc picks up the host /usr/lib/crt1.o and again
 #     reports "invalid object file".
 #   - project includes must precede the sysroot includes, or the system elf.h

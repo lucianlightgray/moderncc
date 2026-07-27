@@ -1302,6 +1302,7 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 ST_FUNC int mcc_add_crt(MCCState *s, const char *filename);
 #endif
 ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags);
+ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename);
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename);
 #if MCC_CONFIG_DIAG_RT >= 2
 ST_FUNC void mcc_add_bcheck(MCCState *s1);
