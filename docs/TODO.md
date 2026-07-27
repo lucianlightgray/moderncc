@@ -214,9 +214,24 @@ effect — nbody text goes 3636 -> 3748 with it on — but **runtime stays 0.28 
 7228/7228 with it off.
 So the `-O4` slowdown is NOT the search subtracting `-O3` gates, which was the hypothesis this item was written on.
 Also falsified: the superopt's inline-limit axis — forcing `MCC_AST_INLINE_LIMIT=160` at `-O4` changes neither
-runtime nor text (0.28 s / 3636, identical to plain `-O4`). **The cause of `-O4` being slower than `-O3` is still
-unidentified.** Remaining suspects, untested: the superopt's budget axis, its per-function `best_cfg` encoding, or the
-re-emit path it uses to produce the final object differing from the ordinary `-O3` emit path.
+runtime nor text.
+**CAUSE IDENTIFIED 2026-07-27 — the out-of-process driver DISCARDS a better in-process result.** Clean-cache,
+min-of-5, nbody:
+
+| config | runtime | text |
+|---|---:|---:|
+| `-O3` | 0.24 s | 3596 |
+| `-O4`, driver ON (default) | **0.28 s** | 3636 |
+| `-O4`, driver OFF (`MCC_SEARCH_WORKER=1`) | **0.17 s** | 3766 |
+
+The in-process per-function search alone produces the FASTEST code of the three — **29% faster than `-O3`** — for 4.7%
+more text. The out-of-process driver then replaces that result with its own size-optimal pick: **3.5% smaller and 65%
+slower**. So `-O4` already contains a better answer than it ships; the driver throws it away.
+That reframes the fix. Flooring gates (part 1 above) cannot help, because nothing is being subtracted — a whole
+better configuration is being overridden. The options are: make the driver's scoring axis match the level's intent
+(speed at `-O4`, size at `-Os`), have the driver KEEP the in-process winner unless its own candidate beats it on the
+SAME axis, or leave the driver opt-in and let `-O4` mean the in-process search. Any of the three makes `-O4` faster
+than `-O3` immediately, which is what the request asks for.
 Note the floor costs size for no measured runtime gain here (3748 vs 3636), so adopting it is a decision about
 GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep it off until the real cause is found, or
 it will be credited with a fix it did not make.
