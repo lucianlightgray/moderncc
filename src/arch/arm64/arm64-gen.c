@@ -1839,8 +1839,13 @@ static void arm64_load_cmp(int r, SValue *sv) { MCC_TRACE("enter\n");
 ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	uint32_t l = ll ? 1u : 0u;
 	o(0x7100001f | l << 31 | intr(rb) << 5);
-	o(0x1a800000 | l << 31 | intr(rt) | intr(rt) << 5 | intr(rf) << 16 | (1u << 12));
-	return rt;
+	/* csel rf, rt, rf, ne  — result in rf (the false-value reg), matching the
+	 * x86_64/riscv64 gen_cmov contract that gen_select relies on: the caller
+	 * only relocates the *false* operand (vtop[0]) when it is pinned, so the
+	 * clobbered destination must be rf, never rt.  Clobbering rt here destroyed
+	 * a promoted loop counter held in the true-value reg (select_branchless). */
+	o(0x1a800000 | l << 31 | intr(rf) | intr(rt) << 5 | intr(rf) << 16 | (1u << 12));
+	return rf;
 }
 
 ST_FUNC int gjmp_cond(int op, int t) { MCC_TRACE("enter\n");
