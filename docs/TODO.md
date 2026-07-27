@@ -300,9 +300,15 @@ loose end left by a landed change, with the specific evidence that would close i
 (a) cross-arch validation — arm64 especially, since `CMP_INVERT` measurably behaves differently there (F2);
 (b) `ast-verify-ratchet` baseline regenerated, which currently FAILS gate-on only because the gap set IMPROVED
 (769 vs 776 for `MEMBER_AGG`, 775 vs 776 for `MEMBER_CONST`);
-(c) **a JIT status statement, per the standing P0 rule** that any new optimizer gate must state one. All three were
-validated AOT-only. None has been run under `MCC_JIT=1`, and the recorder is exactly the layer the JIT re-uses, so this
-is not a formality.
+(c) ~~a JIT status statement~~ **DONE 2026-07-27.** All four new gates (`MEMBER_AGG`, `MEMBER_CONST`, `CMP_INVERT`,
+`SEARCH_FLOOR`) hold **`MCC_JIT=1` == `MCC_JIT=0`** across 4 program shapes (int kernel, double kernel,
+snprintf/string, 64-bit math) — 16 of 16 identical. **Non-trivially**: `--stats` reports `recompiles=11 swapped=3
+refused=5` with each gate on, i.e. the JIT really installed 3 dispatch variants rather than the equality being vacuous,
+which is the trap the i386 row records.
+Scope of the claim, stated so it is not over-read: x86_64 only, `-O2`, and the JIT counters are IDENTICAL with each
+gate on or off (11/3/5 throughout). That is expected — these gates change the RECORDER's fidelity while the JIT
+recompiles from the intent blob — but it does mean the test shows 'gate-on does not break JIT parity', not 'the gate
+changes JIT-compiled code'. Cross-arch JIT validation is still part of (a).
 They are independent and can flip separately; `MEMBER_AGG` is the largest and the cleanest (zero regressions from
 `faithful`).
 
