@@ -102,6 +102,36 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
   1. **The KGC verify stub itself costs ~9x per call on small hot functions, and only amortizes via memoization — which requires TIER0.** Measured on a scalar hot loop: `MCC_JIT_PURITY_NOESCAPE=1` gives 2.42s; the same run plus `MCC_JIT_NO_KGC=1` (variant installed unverified) gives **0.27s**, vs 0.19s for `MCC_JIT=0`. So the variant is fine — the verification is the cost. Newly-admitted functions are TIER1 (any load), `memoize_ok` requires strict TIER0, so they double-call baseline+variant and hash a tuple on **every** call, forever. Until verification amortizes, widening admission is a straight loss. The fix is NOT "make the variant different": tried routing the sync path through `mcc_jit_recompile_blob_gated` with the intent's baked warm mask (`warm=0xfffffff83f`, so genuinely gated) and the slowdown was unchanged at 2.48s — **and it broke `regression/o4-aot-jit`**, because `mccjit_recompile_common` only fires the backend-submitted AST override under `!mccjit_recompile_use_gates`, i.e. the gated recompile and `MCC_JIT_SUBMIT_AOT` are mutually exclusive by construction. Reverted. Real options: graduate to direct dispatch after N consecutive verified matches (bounded verification — unsound in the limit, but the design already accepts that stance via poisoning); or find a sound memoization key for TIER1; or keep admission TIER0-only.
   2. **Wider admission exposes near-match acceptance, which breaks `MCC_JIT=1` == `MCC_JIT=0`.** With `MCC_JIT_LAZY=1 MCC_JIT_SEARCH=1` the widened gate changed program output (FP accumulation diverged in the 4th significant digit); conservative gate matched exactly. `MCC_JIT_NEARMATCH` is default-ON and by design KEEPS a variant that mismatches the baseline on a small input set, so admitting more functions admits more divergence. That is a direct P0 parity violation and is the harder of the two.
 
+## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
+Established 2026-07-27 while building `optfire`. **48% of functions get no AST optimization on x86_64** (833 of 1735
+non-faithful over mcc's own TU at `-O2`: 641 desync, 139 unfaithful, 50 bail, 3 empty). An optimizer pass cannot run in
+a function the recorder did not model faithfully, so this bounds every other optimization number in this file.
+
+Causes, largest first (`AST_SET_DESYNC()` stores `__LINE__`, so a `desync:N` must be read against the source the
+measuring compiler was BUILT from — a stale cross compiler reports meaningless lines):
+
+| share | site | cause | where written up |
+|---|---|---|---|
+| 287 (34%) | member access | 214 nested-struct members (`ast_bad_type` rejects `VT_STRUCT`), 73 `const`-qualified | Ungate campaign |
+| 213 (26%) | vstack depth | `ast_vn != rel - 1 \|\| rel > AST_VS_MAX` | not investigated |
+| 83 (13%) | value model | register-resident operand; the 32-bit `int`<->`long long` case | Cross-arch parity |
+| 32 (4%) | `&&`/`\|\|` | non-const operand, in a call/op, or `lor_top >= 16` | not investigated |
+
+Landed against this: `MCC_AST_MEMBER_CONST` (recovers 51, default OFF) and `MCC_AST_CMP_INVERT` (fixes `!!` modelling,
+default OFF, arm64 desyncs rather than mismodels). Both in the Ungate campaign / `-march` sections.
+
+**Two method rules this cost real time to learn — apply them before believing any measurement here:**
+1. **Check the compile exit status before reading a counter or comparing objects.** `--stats` still prints its panel
+   after a failed compile (counters read 0), and `cmp` of two objects that were never written reports "differ". That
+   combination produced a confident, entirely false "the cross compilers run no optimizer" reading.
+2. **Prefer the `--stats` counter to an object diff when asking whether a pass fired.** An object diff conflates "did
+   not fire" with "fired and emitted identical bytes" — it produced a false "17 gates are broken on i386" and a false
+   "28 gates are inert". And grep the counter anchored (`\b<name> +[0-9]+`); the panel prints many.
+
+Also unexplained: **riscv64 shows ~30x the `unfaithful` rate of every other target** (92 vs 3 over the freestanding
+`optfire` corpus), and it is relocation divergence with byte-identical code. Cross-arch parity section; reserved for the
+arm64 machine.
+
 ## Infrastructure parity, CI economics, and a looser slice cache (user-prioritized 2026-07-27)
 Sits ABOVE the non-P0 campaigns: items 1-3 are CI/build hygiene that every later change rides on, and they can proceed in parallel with P0. Items 4-5 are feature work.
 
