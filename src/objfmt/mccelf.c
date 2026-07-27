@@ -3397,6 +3397,23 @@ static int coff_resolve_import_dll(MCCState *s1, int fd, const char *headsym,
 }
 #endif
 
+/* Track archive-member data offsets already pulled by the a la carte loader.
+   A pulled object member defines all its symbols in one load, so re-pulling it
+   is never legitimate — and if a member fails to actually define the armap-
+   claimed symbol (a name-decoration gap in some import archives, e.g. this
+   host's ucrt), the fixpoint below would re-pull it every pass and never
+   terminate. Deduping object pulls bounds the loop by the member count, turning
+   a hang into a clean undefined-symbol error. Returns 1 if already seen. */
+static int alacarte_pulled(unsigned long long **arr, int *n, unsigned long long v) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < *n; i++)
+		if ((*arr)[i] == v)
+			{ MCC_TRACE("br\n"); return 1; }
+	*arr = mcc_realloc(*arr, (unsigned long)(*n + 1) * sizeof **arr);
+	(*arr)[(*n)++] = v;
+	return 0;
+}
+
 static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MCC_TRACE("enter\n");
 	int i, bound, nsyms, sym_index, len, ret = -1;
 	unsigned long long off;
@@ -3405,6 +3422,8 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 	const uint8_t *ar_index;
 	ElfW(Sym) * sym;
 	ArchiveHeader hdr;
+	unsigned long long *pulled = NULL;
+	int npulled = 0;
 
 	data = mcc_malloc(size);
 	if (full_read(fd, data, size) != size)
@@ -3451,6 +3470,8 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 					}
 					continue;
 				}
+				if (alacarte_pulled(&pulled, &npulled, off))
+					{ MCC_TRACE("br\n"); continue; }
 				if (coff_load_object_file(s1, fd, off) < 0)
 					{ MCC_TRACE("br\n"); goto the_end; }
 			} else { MCC_TRACE("br\n");
@@ -3464,10 +3485,14 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 					}
 					continue;
 				}
+				if (alacarte_pulled(&pulled, &npulled, off))
+					{ MCC_TRACE("br\n"); continue; }
 				if (mcc_load_object_file(s1, fd, off) < 0)
 					{ MCC_TRACE("br\n"); goto the_end; }
 			}
 #else
+			if (alacarte_pulled(&pulled, &npulled, off))
+				{ MCC_TRACE("br\n"); continue; }
 			if (mcc_load_object_file(s1, fd, off) < 0)
 				{ MCC_TRACE("br\n"); goto the_end; }
 #endif
@@ -3476,6 +3501,7 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 	} while (bound);
 	ret = 0;
 the_end:
+	mcc_free(pulled);
 	mcc_free(data);
 	return ret;
 }
