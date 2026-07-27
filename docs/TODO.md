@@ -151,37 +151,42 @@ Also unexplained: **riscv64 shows ~30x the `unfaithful` rate of every other targ
 `optfire` corpus), and it is relocation divergence with byte-identical code. Cross-arch parity section; reserved for the
 arm64 machine.
 
-## `-O4`'s out-of-process superopt makes generated code SLOWER — measured 2026-07-27, highest-value open finding
+## `-O4` is a SIZE level, not a speed level — measured 2026-07-27 (corrected)
 Full `vendor/plb` sweep (gcc / clang / mcc x `-O0..-O3`,`-Os`, plus `mcc -O4`), 5 kernels, min-of-3, every cell's stdout
-checked against a `gcc -O2` reference: **0 correctness mismatches anywhere**. But the timings say `-O4` is a net
-negative, and isolating one variable at a time on `nbody` shows exactly why:
+checked against a `gcc -O2` reference: **0 correctness mismatches anywhere**.
 
-| `-O4` config | compile | runtime |
-|---|---:|---:|
-| plain (default) | 8.44 s | 0.28 s |
-| `MCC_SEARCH_WORKER=1` | **4.29 s** | **0.18 s** |
-| `MCC_JIT=1` | 8.47 s | 0.28 s |
-| `MCC_AST_SEARCH=1` | 8.41 s | 0.28 s |
+**CORRECTION — an earlier revision of this entry called the `-O4` result a "correctness-of-optimization bug". It is
+not.** The out-of-process superopt is **scored by emitted SIZE** (`SoPfCkpt.best_size` in `mcc.c`), so producing smaller
+and slower code is it working, not failing. Text sizes confirm it, `-O4` plain versus `-O4` with the driver disabled:
 
-`MCC_JIT` and `MCC_AST_SEARCH` change nothing (the latter is already default-on at `-O4`). The entire difference is
-`MCC_SEARCH_WORKER=1`, which at `mcc.c` **DISABLES the out-of-process superopt driver** (`mcc_superopt_search` is gated
-on `!mcc_env_on("MCC_SEARCH_WORKER")`). So the comparison is *in-process per-function search alone* versus *that plus the
-out-of-process superopt*, and **adding the superopt costs 2x the compile time and yields 36% SLOWER code**.
+| kernel | `-O3` | `-O4` plain | `-O4` `SEARCH_WORKER=1` |
+|---|---:|---:|---:|
+| nbody | 3543 | **3583** | 3945 |
+| spectral | 2722 | **2494** | 2769 |
+| matmul | 2542 | **2276** | 2972 |
 
-Worse, plain `-O4` (0.28 s) is no better than `-O0` (0.30 s) on this kernel — 8.4 s of search buying nothing — while the
-in-process path alone reaches 0.18 s. Reproduced across `nbody`, `matmul` (0.680 -> 0.523) and `spectral`
-(0.383 -> 0.259) in the same sweep, so it is not one kernel.
+`MCC_SEARCH_WORKER=1` at `mcc.c` DISABLES that driver (`mcc_superopt_search` is gated on
+`!mcc_env_on("MCC_SEARCH_WORKER")`), which is why it is both faster to compile and larger. The runtime cost of the size
+win, isolated one variable at a time on `nbody`: plain `-O4` compiles in 8.44 s and runs in 0.28 s; with the driver
+disabled, 4.29 s and 0.18 s. `MCC_JIT=1` and `MCC_AST_SEARCH=1` change neither number.
 
-**Do not treat this as a tuning issue.** Either the out-of-process driver is discarding the in-process winner and
-re-emitting from a worse config, or its own scoring picks a worse one. Both are correctness-of-optimization bugs in the
-headline `-O4` feature. Next step: dump the winning gate mask from both paths for one function and compare — `--stats`
-prints a `WINNER` line, and `MCC_AST_SEARCH_VERBOSE=1` prints per-function `store`/`continue` records.
+**What IS worth acting on:**
+1. **The semantics are surprising and undocumented.** `-O4` is presented as "run every implemented optimizer", and `-Os`
+   already exists for size, so a user reasonably expects `-O4` to be the fastest code. It is the smallest. Say so in the
+   help text, or make the scoring axis selectable.
+2. **A runtime-scoring mode already exists and did not engage.** `so_jitscore` (`mcc.c`) scores by `so_run_score()`
+   instead of size, enabled when `so_jit_env() && links_exe`. The sweep linked executables and still got the
+   size-scored result even with `MCC_JIT=1`, so either the env predicate is narrower than it looks or it silently
+   disabled itself (`so_jitscore = 0` is assigned in two places). That is the actual "make `-O4` fast" path and it is
+   dark — find out why, before anyone proposes a new speed heuristic.
+3. **8.4 s per compile for ~1-10% size** is the trade `tools/bench.c` already reports as 420x compile time for ~8%
+   smaller output. Consistent; no new information, but it belongs next to these numbers.
 
-Secondary from the same sweep, worth its own look: **mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on these
-kernels (nbody 0.298/0.303/0.293 vs 0.299), i.e. the optimizer buys essentially nothing below `-O3` here, while
-gcc/clang gain 2x from `-O0` to `-O1`. `-O3` is the first level that moves (0.246). That is consistent with the 48%
-recorder-fidelity ceiling above — a pass that cannot run in half the functions cannot show up in a benchmark — and is
-the most direct evidence yet that fidelity work is worth more than new passes.
+**Secondary finding from the same sweep, and it stands: mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on
+these kernels (nbody 0.298 / 0.303 / 0.293 versus 0.299), while gcc and clang gain roughly 2x from `-O0` to `-O1`.
+`-O3` is the first level that moves (0.246). That is consistent with the 48% recorder-fidelity ceiling above — a pass
+that cannot run in half the functions cannot show up in a benchmark — and is the most direct evidence yet that fidelity
+work is worth more than new passes.
 
 ## Follow-ups / due diligence from the 2026-07-27 optimizer-fidelity session
 Every item below came out of building `optfire` and following what it found. Nothing here is speculative — each is a
