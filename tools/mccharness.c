@@ -530,13 +530,14 @@ static int suite_mccexe(int argc, char **argv) {
 	const char *out = opt(argc, argv, "--out", NULL);
 	const char *srcs = opt(argc, argv, "--srcs", NULL);
 	const char *runargs = opt(argc, argv, "--runargs", NULL);
+	const char *cflags = opt(argc, argv, "--cflags", NULL);
 	const char *const *emu = make_launcher(opt(argc, argv, "--emu", NULL));
 	char Iinc[4096], Bflag[4096];
 	char *err = NULL;
 	int rc;
 
 	if (!mcc || !bdir || !idir || !out || !srcs) {
-		fprintf(stderr, "usage: mccharness mccexe --mcc --bdir --idir --out --srcs S [--runargs S] [--emu S]\n");
+		fprintf(stderr, "usage: mccharness mccexe --mcc --bdir --idir --out --srcs S [--cflags S] [--runargs S] [--emu S]\n");
 		return 2;
 	}
 	snprintf(Iinc, sizeof Iinc, "-I%s", idir);
@@ -547,6 +548,8 @@ static int suite_mccexe(int argc, char **argv) {
 		A(&v, mcc);
 		A(&v, Bflag);
 		A(&v, Iinc);
+		if (cflags)
+			split_append(&v, cflags);
 		split_append(&v, srcs);
 		A(&v, "-o");
 		A(&v, out);

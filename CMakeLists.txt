@@ -4601,6 +4601,20 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(vla_test-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # -fc99-inline-body weak out-of-line body across two TUs (portable): both TUs
+    # take the address of the same plain-`inline` function, so the flag must emit a
+    # weak copy in each and collapse them at link (else: unresolved reference or a
+    # duplicate-symbol error). Self-checks the values AND the cross-TU address
+    # identity, exit 0 on success. Previously untested on PE (docs/TODO).
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/c99inline_a.c")
+        add_test(NAME c99-inline-body-2tu COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --cflags "-fc99-inline-body"
+            --srcs "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/c99inline_a.c ${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/c99inline_b.c"
+            --out ${CMAKE_BINARY_DIR}/c99inline_2tu${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(c99-inline-body-2tu PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(MCC_TARGET_IS_HOST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/abi.c")
         add_executable(abitest tests/embed/abi.c)
         target_link_libraries(abitest PRIVATE libmcc)
