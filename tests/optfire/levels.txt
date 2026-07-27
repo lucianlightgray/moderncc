@@ -1,0 +1,22 @@
+# <name>|<--stats counter>|<-Olevel>:<on|off>,...   locks the -O curation
+bfold|bfold|-O1:on,-O2:on,-O3:on,-Os:on
+ident|ident|-O1:on,-O2:on,-O3:on,-Os:off
+narrow|narrow|-O1:on,-O2:on,-O3:on,-Os:on
+cprop|cprop|-O1:on,-O2:on,-O3:on,-Os:on
+cse|cse|-O1:on,-O2:on,-O3:on,-Os:on
+ltemp|ltemp|-O1:off,-O2:on,-O3:on,-Os:on
+ivsr|ivsr|-O1:on,-O2:on,-O3:on,-Os:off
+pre|pre|-O1:on,-O2:on,-O3:on,-Os:on
+licm|licm|-O1:off,-O2:on,-O3:on,-Os:on
+dse|dse|-O1:on,-O2:on,-O3:on,-Os:on
+sccp|sccp|-O1:on,-O2:on,-O3:on,-Os:on
+jt|jt|-O1:on,-O2:on,-O3:on,-Os:on
+bf|bf|-O1:off,-O2:on,-O3:on,-Os:on
+range|range|-O1:on,-O2:on,-O3:on,-Os:on
+divmagic|divmagic|-O1:off,-O2:on,-O3:on,-Os:on
+abs|abs|-O1:off,-O2:on,-O3:on,-Os:on
+select|select|-O1:off,-O2:on,-O3:on,-Os:on
+reassoc|reassoc|-O1:off,-O2:on,-O3:on,-Os:on
+sethi|sethi|-O1:on,-O2:on,-O3:on,-Os:on
+tco|tco|-O1:on,-O2:on,-O3:on,-Os:on
+inline|inline|-O1:off,-O2:on,-O3:on,-Os:on

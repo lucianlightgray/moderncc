@@ -1,0 +1,10 @@
+# <name>|<olevel>|<gate env>|<extra env or ->
+# Structural / pipeline-level gates (master gates, promotion, inlining, fixpoint).
+templates|-O2|MCC_AST_TEMPLATES|-
+promote|-O2|MCC_AST_PROMOTE|-
+inline_capture|-O3|MCC_AST_INLINE|MCC_AST_INLINE_PASS=0
+inline_pass|-O2|MCC_AST_INLINE_PASS|-
+cycle|-O3|MCC_AST_CYCLE|-
+math_inline|-O2|MCC_AST_MATH_INLINE|-
+regdisp|-Os|MCC_AST_REGDISP|-
+perfn_inproc|-O3|MCC_AST_PERFN_INPROC|MCC_AST_INLINE_PASS=0

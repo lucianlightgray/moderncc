@@ -3930,10 +3930,13 @@ if(MCC_BUILD_TESTS)
             set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
             file(GLOB _of_cfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters*.txt")
             file(GLOB _of_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
-            foreach(_offile IN LISTS _of_cfiles _of_dfiles)
+            file(GLOB _of_lfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/levels*.txt")
+            foreach(_offile IN LISTS _of_cfiles _of_dfiles _of_lfiles)
                 set(_ofmode "differ")
                 if(_offile MATCHES "/counters[^/]*\\.txt$")
                     set(_ofmode "counter")
+                elseif(_offile MATCHES "/levels[^/]*\\.txt$")
+                    set(_ofmode "level")
                 endif()
                 file(STRINGS "${_offile}" _oflines)
                 foreach(_ol IN LISTS _oflines)
@@ -3948,24 +3951,33 @@ if(MCC_BUILD_TESTS)
                             list(GET _of 3 _ofextra)
                         endif()
                         set(_ofsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
-                        if(_ofname IN_LIST _of_seen)
-                            message(STATUS "optfire: skipping duplicate case ${_ofname}")
+                        set(_ofcell "${_ofname}")
+                        if(_ofmode STREQUAL "level")
+                            set(_ofcell "level-${_ofname}")
+                        endif()
+                        if(_ofcell IN_LIST _of_seen)
+                            message(STATUS "optfire: skipping duplicate case ${_ofcell}")
                         elseif(NOT EXISTS "${_ofsrc}")
                             message(STATUS "optfire: skipping ${_ofname} (no source)")
                         else()
-                            list(APPEND _of_seen "${_ofname}")
+                            list(APPEND _of_seen "${_ofcell}")
                             if(_ofmode STREQUAL "counter")
-                                add_test(NAME "optfire/${_ofname}"
+                                add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" counter "${_mcc_exe}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
                                             "${_ofopt}" "${_ofarg}" "${_ofextra}")
+                            elseif(_ofmode STREQUAL "level")
+                                add_test(NAME "optfire/${_ofcell}"
+                                    COMMAND "${_of_sh}" level "${_mcc_exe}" "${_ofsrc}"
+                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
+                                            "-" "${_ofopt}" "${_ofarg}")
                             else()
-                                add_test(NAME "optfire/${_ofname}"
+                                add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" differ "${_mcc_exe}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
                                             "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
                             endif()
-                            set_tests_properties("optfire/${_ofname}" PROPERTIES
+                            set_tests_properties("optfire/${_ofcell}" PROPERTIES
                                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
                         endif()
                     endif()

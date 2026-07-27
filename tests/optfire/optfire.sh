@@ -3,6 +3,12 @@
 #
 #   counter <mcc> <src.c> <work> <name> <olevel> <counter>
 #   differ  <mcc> <src.c> <work> <name> <olevel> <env> <extra-env|->
+#   level   <mcc> <src.c> <work> <name> <unused> <counter> <spec>
+#
+# level mode locks the -O curation: `spec` is -O1:on,-O2:on,-O3:on,-Os:off and
+# each listed level must have the counter nonzero (on) or zero (off) with NO env
+# set. It catches a default-on condition silently drifting between -O levels,
+# which no other test in the suite would notice.
 #
 # Every mode also re-checks correctness by requiring the optimized program's
 # stdout to equal the -O0 build's stdout, so a pass that fires but miscompiles
@@ -24,6 +30,7 @@ strip_ansi() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 case $mode in
 counter) LDF=$8 ;;
 differ)  LDF=$9 ;;
+level)   LDF=$8 ;;
 esac
 [ "$LDF" = "-" ] && LDF=
 # shellcheck disable=SC2086
@@ -80,6 +87,25 @@ differ)
 		}
 	done
 	echo "PASS $NAME: objects differ with $ENVV toggled at $OLEVEL, both outputs match -O0"
+	;;
+level)
+	COUNTER=$7
+	SPEC=$8
+	[ -n "$COUNTER" ] && [ -n "$SPEC" ] || { echo "FAIL $NAME: level mode needs <counter> <spec>"; exit 2; }
+	LDF=
+	bad=0
+	echo "$SPEC" | tr ',' '\n' | while IFS=: read -r lvl want; do
+		got=$("$MCC" "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" 2>&1 |
+			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
+		[ -n "$got" ] || got=0
+		case $want in
+		on)  [ "$got" -gt 0 ] || { echo "FAIL $NAME: expected $COUNTER ON at $lvl, got $got"; exit 1; } ;;
+		off) [ "$got" -eq 0 ] || { echo "FAIL $NAME: expected $COUNTER OFF at $lvl, got $got"; exit 1; } ;;
+		*)   echo "FAIL $NAME: bad spec token '$lvl:$want'"; exit 2 ;;
+		esac
+	done || bad=1
+	[ "$bad" -eq 0 ] || exit 1
+	echo "PASS $NAME: $COUNTER level map matches $SPEC"
 	;;
 *)
 	echo "unknown mode: $mode" >&2
