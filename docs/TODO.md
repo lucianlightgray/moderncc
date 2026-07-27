@@ -113,7 +113,7 @@ measuring compiler was BUILT from — a stale cross compiler reports meaningless
 | share | site | cause | where written up |
 |---|---|---|---|
 | 287 (34%) | member access | 214 nested-struct members (`ast_bad_type` rejects `VT_STRUCT`), 73 `const`-qualified | Ungate campaign |
-| 213 (26%) | vstack depth | `ast_vn != rel - 1 \|\| rel > AST_VS_MAX` | not investigated |
+| 213 (26%) | vstack depth | `ast_vn != rel - 1 \|\| rel > AST_VS_MAX` | see below — TWO causes bundled |
 | 83 (13%) | value model | register-resident operand; the 32-bit `int`<->`long long` case | Cross-arch parity |
 | 32 (4%) | `&&`/`\|\|` | non-const operand, in a call/op, or `lor_top >= 16` | not investigated |
 
@@ -127,6 +127,11 @@ default OFF, arm64 desyncs rather than mismodels). Both in the Ungate campaign /
 2. **Prefer the `--stats` counter to an object diff when asking whether a pass fired.** An object diff conflates "did
    not fire" with "fired and emitted identical bytes" — it produced a false "17 gates are broken on i386" and a false
    "28 gates are inert". And grep the counter anchored (`\b<name> +[0-9]+`); the panel prints many.
+
+**The 26% vstack site bundles two unrelated causes and they need separating before anyone works it** (read 2026-07-27, not yet measured — the split needs instrumentation and a rebuild). `ast_hook_vpush` desyncs on `ast_vn != rel - 1 || rel > AST_VS_MAX`:
+- `ast_vn != rel - 1` is a REAL desync — the recorder's node count has lost sync with the codegen vstack.
+- `rel > AST_VS_MAX` is a CAPACITY limit, not a modelling failure. `AST_VS_MAX` is **64** and `ast_vs` is a fixed `AstLocal[64]`, so a sufficiently deep expression is refused for want of table space. Raising it costs 4 bytes per entry.
+If a meaningful share of the 213 are the capacity arm, this is the cheapest coverage win in the whole table — bigger than either gate landed today — and it is a constant, not an algorithm. **Measure the split first**: instrument the guard to report which arm fired, over mcc's own TU. Do not raise the constant blind; if the failures are the sync arm then a larger table changes nothing and would just cost memory.
 
 Also unexplained: **riscv64 shows ~30x the `unfaithful` rate of every other target** (92 vs 3 over the freestanding
 `optfire` corpus), and it is relocation divergence with byte-identical code. Cross-arch parity section; reserved for the
