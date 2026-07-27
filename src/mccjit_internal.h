@@ -20,7 +20,19 @@
 #define MCCJIT_KGC_MAXARG 6
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
-#define MCCJIT_INTENT_FORMAT 8u /* 8: header carries the AOT warm-start gate mask */
+#define MCCJIT_INTENT_FORMAT                                                   \
+	9u /* 9: header carries unit_kind (whole-function vs promoted sub-slice) —   \
+			 the marker that used to be implied by the now-removed                  \
+			 AST_TranslationUnit kind. Header-only metadata: it is NEVER folded    \
+			 into the slice-identity hash, so a sub-slice identical to a whole     \
+			 function still hashes equal. 8: header carried the warm-start gate    \
+			 mask. */
+
+/* Whole-unit vs sub-slice, carried in the intent header (not an AST kind, not
+   hashed). WHOLE = a complete function (has the fn_name/nparam signature
+   trailer); KERNEL = a promoted AST sub-slice with no owning function. */
+#define MCCJIT_UNIT_WHOLE 0u
+#define MCCJIT_UNIT_KERNEL 1u
 
 #define MCCJIT_ROLE_PLAIN 0u
 #define MCCJIT_ROLE_NAMED 1u
@@ -75,6 +87,7 @@ typedef struct MccjitIntent {
 	int64_t *param_off;
 	char **param_name;
 	uint64_t warm_gates; /* AOT-selected gate mask to warm-start the JIT search (0 = none) */
+	uint8_t unit_kind; /* MCCJIT_UNIT_WHOLE | MCCJIT_UNIT_KERNEL — header metadata only, never hashed */
 } MccjitIntent;
 
 MCCJIT_LOCAL unsigned mccjit_role_for_base(int t);

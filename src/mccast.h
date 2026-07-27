@@ -7,8 +7,12 @@
 #include "mccname.h"
 
 typedef enum AstKind {
-	AST_TranslationUnit = 0,
-	AST_BasicBlock,
+	/* Whole-unit vs sub-slice is NOT an AST kind — it is metadata on the
+	   serialized intent header (MccjitIntent.unit_kind), so the slice-identity
+	   hash stays context-free: an inline slice identical to a whole function
+	   body hashes equal regardless of which it is. The root of every real arena
+	   is AST_BasicBlock (kind 0); ast_root() is positional (index 0). */
+	AST_BasicBlock = 0,
 	AST_If,
 	AST_Jump,
 	AST_Return,

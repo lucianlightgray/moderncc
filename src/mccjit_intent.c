@@ -412,6 +412,10 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	mccjit_put_u32(buf, (uint32_t)count);
 	mccjit_put_u32(buf, (uint32_t)ast_root(a));
 	mccjit_put_u64(buf, warm_gates);
+	/* Whole function vs promoted sub-slice. Derived from `sym`: a kernel slice
+	   has no owning Sym (and thus no signature trailer). Header-only — it does
+	   not enter any node field or the slice-identity hash. */
+	mccjit_put_u8(buf, sym ? (uint8_t)MCCJIT_UNIT_WHOLE : (uint8_t)MCCJIT_UNIT_KERNEL);
 
 	mccjit_put_u32(buf, handles.count);
 	for (k = 0; k < handles.count; k++) { MCC_TRACE("br\n");
@@ -679,6 +683,7 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	count = mccjit_get_u32(&r);
 	(void)mccjit_get_u32(&r);
 	out->warm_gates = mccjit_get_u64(&r);
+	out->unit_kind = mccjit_get_u8(&r);
 
 	hc = mccjit_get_u32(&r);
 	if (r.err)

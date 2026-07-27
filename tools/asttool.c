@@ -1026,7 +1026,7 @@ static void suite_slice_splice(void) {
 	   `return l(-24) + l(-32);` so there is a well-defined "outside" region whose
 	   node identity we assert is preserved across the splice. */
 	AstArena *a = ast_arena_new();
-	AstLocal tu = ast_node(a, AST_TranslationUnit);
+	AstLocal tu = ast_node(a, AST_BasicBlock); /* synthetic multi-child container root */
 	AstLocal bb1 = ast_node(a, AST_BasicBlock);
 	AstLocal ret1 = ast_node(a, AST_Return);
 	AstLocal site = build_binop(a, '-', -8, -16); /* the slice to replace */
@@ -1102,7 +1102,7 @@ static void suite_slice_splice(void) {
    spliced at all occurrences. */
 static void suite_slice_locate(void) {
 	AstArena *a = ast_arena_new();
-	AstLocal tu = ast_node(a, AST_TranslationUnit);
+	AstLocal tu = ast_node(a, AST_BasicBlock); /* synthetic multi-child container root */
 	/* Three occurrences of `l+l` reading DIFFERENT slots (same identity), plus one
 	   distinct `l-l` slice. */
 	AstLocal s1 = build_binop(a, '+', -8, -16);

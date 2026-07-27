@@ -371,7 +371,6 @@ AstLocal ast_child(const AstArena *a, AstLocal n, uint32_t i) { MCC_TRACE("enter
 }
 
 static const char *const kind_names[AST_KIND_COUNT] = {
-		"TranslationUnit",
 		"BasicBlock",
 		"If",
 		"Jump",
