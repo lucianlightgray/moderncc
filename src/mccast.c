@@ -14290,6 +14290,14 @@ static void ast_slice_unlock(int fd) { MCC_TRACE("enter\n"); (void)fd; }
  * wins within a class), then atomically replace via tmp + rename. Shared by the
  * populate flush (static records) and the JIT graduate (proven records). */
 static void ast_slice_disk_commit(const AstSliceMemo *recs, int n) { MCC_TRACE("enter\n");
+	{ const char *d = getenv("MCC_SLICE_DUMP");
+	  if (d && d[0]) { MCC_TRACE("br\n");
+	    FILE *f = fopen(d, "a"); int q;
+	    if (f) { MCC_TRACE("br\n");
+	      for (q = 0; q < n; q++) { MCC_TRACE("br\n");
+	        fprintf(f, "%016llx %lld %d\n", (unsigned long long)recs[q].ident,
+	                (long long)recs[q].size, recs[q].proven); }
+	      fclose(f); } } }
 	char path[1152], tmpp[1200];
 	int lockfd, i;
 	FILE *f;
