@@ -80,10 +80,21 @@ static void timeout_wrap(const char *cmd, char *out, size_t n) {
 	else if (have_gtimeout)
 		snprintf(out, n, "gtimeout %d %s", RUN_TIMEOUT, cmd);
 	else
+		/* No `timeout`/`gtimeout` (default on the macOS runners). Poll the
+		   command's own PID once a second and SIGKILL it only after N whole
+		   seconds elapse; the watcher self-exits the instant the command is
+		   gone, so its `sleep 1` grandchild never outlives the command by more
+		   than a second. An earlier form backgrounded `sleep N` and had the
+		   watcher `wait` on it, but `$__s` is the watcher's SIBLING, not its
+		   child, so `wait` returned immediately and every compile was killed on
+		   the spot; a still earlier form killed the watcher subshell and orphaned
+		   its `sleep N` for the full N seconds, piling up until RLIMIT_NPROC. */
 		snprintf(out, n,
-				 "{ %s & __p=$!; sleep %d & __s=$!; "
-				 "{ wait $__s 2>/dev/null; kill -9 $__p 2>/dev/null; } & __w=$!; "
-				 "wait $__p; __r=$?; kill $__s $__w 2>/dev/null; exit $__r; }",
+				 "{ %s & __p=$!; "
+				 "{ __i=0; while [ $__i -lt %d ]; do sleep 1; "
+				 "kill -0 $__p 2>/dev/null || exit 0; __i=$((__i+1)); done; "
+				 "kill -9 $__p 2>/dev/null; } & __w=$!; "
+				 "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
 				 cmd, RUN_TIMEOUT);
 }
 
