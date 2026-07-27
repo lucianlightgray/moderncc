@@ -112,13 +112,14 @@ measuring compiler was BUILT from — a stale cross compiler reports meaningless
 
 | share | site | cause | where written up |
 |---|---|---|---|
-| 287 (34%) | member access | 214 nested-struct members (`ast_bad_type` rejects `VT_STRUCT`), 73 `const`-qualified | Ungate campaign |
+| 287 (34%) | member access | 214 nested-struct (all LVALUE — `MCC_AST_MEMBER_AGG` recovers them), 73 `const` (`MCC_AST_MEMBER_CONST` recovers 51) | Ungate campaign |
 | 213 (26%) | vstack depth | `ast_vn != rel - 1 \|\| rel > AST_VS_MAX` | see below — TWO causes bundled |
 | 83 (13%) | value model | register-resident operand; the 32-bit `int`<->`long long` case | Cross-arch parity |
 | 32 (4%) | `&&`/`\|\|` | non-const operand, in a call/op, or `lor_top >= 16` | not investigated |
 
-Landed against this: `MCC_AST_MEMBER_CONST` (recovers 51, default OFF) and `MCC_AST_CMP_INVERT` (fixes `!!` modelling,
-default OFF, arm64 desyncs rather than mismodels). Both in the Ungate campaign / `-march` sections.
+Landed against this, all default OFF: **`MCC_AST_MEMBER_AGG` (+136 faithful, the largest single win)**, `MCC_AST_MEMBER_CONST` (+51), and `MCC_AST_CMP_INVERT` (fixes `!!` modelling; net −8 faithful but closes a latent miscompile path, and arm64 desyncs rather than mismodels).
+
+**`MCC_AST_MEMBER_AGG` detail.** The VALUE-model guard already permits an aggregate LVALUE (`agg_lval`), but the MEMBER guard rejected any `VT_STRUCT`-typed member outright through `ast_bad_type`. Measured: **all 214 struct-member rejections in mcc's own TU are `nonlval=0`**, i.e. lvalues — a nested `a.b.c` path whose intermediate is never loaded as a value, exactly the shape the value site allows. Granting the same escape: **desync 642 -> 504, faithful 1043 -> 1179 (+13%)**, with unfaithful 139 -> 169. Those +30 are caught and excluded from optimization, so there is no miscompile path, but they are a real residue to characterise before the default can flip. Full suite 7228/7228 with the gate OFF; with it ON the only failure is `ast-verify-ratchet` reporting **769 gaps against a 776 baseline** — it fails because the gap set IMPROVED and wants regenerating. Do not regenerate that baseline until the 30 are understood, or it will bank a win and hide them.
 
 **Two method rules this cost real time to learn — apply them before believing any measurement here:**
 1. **Check the compile exit status before reading a counter or comparing objects.** `--stats` still prints its panel
