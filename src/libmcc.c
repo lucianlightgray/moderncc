@@ -1524,6 +1524,41 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 		s1->filetype = saved;
 	}
 #endif
+#if !defined MCC_TARGET_PE && !defined MCC_TARGET_MACHO && defined MCC_EMBED_JIT_GCC_LIBDIR
+	/* ELF/Linux peer of the WIN32 mingw libgcc bake above. The engine blob is
+	   compiled by the host gcc with its default -moutline-atomics, so it
+	   references libgcc outline-atomics / soft-arith helpers
+	   (__aarch64_ldadd8_acq_rel, __divtf3, …). The blob is linked LAST, after
+	   all command-line libs are consumed, so nothing on the search path can
+	   satisfy those refs — the bake would otherwise need the engine forced
+	   -mno-outline-atomics. Add the host libgcc dir to the search path and link
+	   libgcc AFTER the blob so the helpers resolve. gcc ships them in libgcc;
+	   a clang host has the same symbols in compiler-rt
+	   (libclang_rt.builtins-<arch>.a), so disk-probe the baked dir and add
+	   whichever exists (probing avoids a spurious 'library not found'). */
+	if (ret == 0) { MCC_TRACE("br\n");
+		int saved = s1->filetype;
+		char lp[1024];
+		FILE *lf;
+		s1->filetype &= ~AFF_WHOLE_ARCHIVE;
+		mcc_add_library_path(s1, MCC_EMBED_JIT_GCC_LIBDIR);
+		snprintf(lp, sizeof lp, "%s/libgcc.a", MCC_EMBED_JIT_GCC_LIBDIR);
+		if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+			fclose(lf);
+			mcc_add_library(s1, "gcc");
+		} else { MCC_TRACE("br\n");
+			snprintf(lp, sizeof lp,
+					 "%s/libclang_rt.builtins-" MCC_EMBED_RT_ARCH ".a",
+					 MCC_EMBED_JIT_GCC_LIBDIR);
+			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+				fclose(lf);
+				mcc_add_library(s1, "clang_rt.builtins-" MCC_EMBED_RT_ARCH);
+			}
+			/* neither present: leave the link unchanged (no spurious error) */
+		}
+		s1->filetype = saved;
+	}
+#endif
 	return ret;
 }
 #endif

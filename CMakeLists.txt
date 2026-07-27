@@ -2685,6 +2685,24 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
                 "MCC_EMBED_JIT_GCC_LIBDIR=\"${_mccjit_gcc_libdir}\"")
             message(STATUS "mcc: embed-jit runtime libs: ${_mccjit_mingw_libdir} + ${_mccjit_gcc_libdir}")
         endif()
+    elseif(NOT WIN32 AND NOT APPLE)
+        # ELF/Linux peer of the WIN32 mingw bake above. The engine blob is the
+        # JIT engine compiled by the host gcc with its default -moutline-atomics,
+        # so it references libgcc outline-atomics / soft-arith helpers
+        # (__aarch64_ldadd8_acq_rel, __divtf3, …). The blob is linked LAST, so
+        # bake the host libgcc dir (queried from the compiler) into
+        # MCC_EMBED_JIT_GCC_LIBDIR; src/libmcc.c adds it to the search path and
+        # links libgcc AFTER the blob, removing the -mno-outline-atomics
+        # workaround the engine bake would otherwise need.
+        execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-libgcc-file-name
+            OUTPUT_VARIABLE _mccjit_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
+        get_filename_component(_mccjit_gcc_libdir "${_mccjit_libgcc}" DIRECTORY)
+        file(TO_CMAKE_PATH "${_mccjit_gcc_libdir}" _mccjit_gcc_libdir)
+        if(_mccjit_gcc_libdir)
+            target_compile_definitions(mcc PRIVATE
+                "MCC_EMBED_JIT_GCC_LIBDIR=\"${_mccjit_gcc_libdir}\"")
+            message(STATUS "mcc: embed-jit runtime libs: ${_mccjit_gcc_libdir}")
+        endif()
     endif()
 endif()
 
