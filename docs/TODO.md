@@ -324,9 +324,21 @@ Why it desyncs is defensible: with a known condition the front end short-circuit
 so the recorder cannot model what codegen did not produce. But it is also the case where the whole expression is
 trivially foldable — the result is either the constant or the other operand — so **modelling it as that, instead of
 desyncing, looks like the cheapest remaining fidelity win** at 4% of desyncs and a single well-defined shape.
-Verify before building: confirm the un-emitted arm is genuinely absent from the emitted stream (not merely
-branch-eliminated later), since modelling an arm codegen did emit would be a fidelity REGRESSION, and this file
-already has three cases where an obvious-looking recorder fix went the wrong way.
+**Precondition VERIFIED 2026-07-27 — modelling is safe.** `int cf(int a){return 0 && side(a);}` desyncs at the guard
+and emits `mov $0x0,%eax` with **zero relocations to `side`**, so the un-emitted arm really is absent rather than
+branch-eliminated later. `int dyn(int a,int b){return a && b;}` is already `faithful` and is the control.
+**Attempted test-first and STOPPED at red, deliberately.** A `cli/landor_const_faithful` cell was written asserting
+`cf`/`ct` become faithful with `dyn` unchanged; it goes red as expected (`desync:2585`). It was REVERTED rather than
+left failing or satisfied with a guess, because tracing the hook shows the protocol is subtler than the guard reads:
+**both operand calls fire even for a constant condition**, and `c` means different things across them —
+`cf` gets `op=144 c=0 first=1 vn=1` then `op=144 c=1 first=0 vn=1`, while dynamic `dyn` gets `c=-1` on both. So `c` is
+not simply 'the constant value of operand 1', and the second call's `c=1` needs explaining before any modelling is
+written. Implementing against a misread of that protocol is exactly how the `!!` inversion, the const-member
+relaxation and the search floor each went wrong earlier in this file.
+**Next step is small and specific:** determine what `c` denotes on the non-first call (read the `ast_hook_landor_operand`
+call sites in `mccgen.c`), then model the four cases — `&&` with false operand 1 (result const 0), `&&` with true
+(result is operand 2), `||` with true (const 1), `||` with false (operand 2) — and re-add the reverted cell as the
+acceptance test. It is written and known-red, so it costs nothing to restore.
 
 **F5 — The 26% vstack site is real modelling work, with no shortcut.** Measured 100% the `ast_vn != rel - 1` SYNC arm,
 0% capacity, so raising `AST_VS_MAX` recovers nothing. This is the second-largest cause of lost optimization and the
