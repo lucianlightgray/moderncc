@@ -13843,7 +13843,7 @@ static int ast_search_memo_n;
  * version string is only visible when mccast.c is compiled inside the mcc TU
  * (mcc.h present); the asttool unit harness includes it standalone, so guard on
  * the macro and fall back to triplet-only (which is a compile define everywhere). */
-static uint64_t ast_search_key_salt(uint64_t h) { MCC_TRACE("enter\n");
+static uint64_t ast_search_key_salt_ex(uint64_t h, int per_triple) { MCC_TRACE("enter\n");
 	const char *s;
 	(void)s;
 #ifdef MCC_VERSION_STR
@@ -13851,10 +13851,28 @@ static uint64_t ast_search_key_salt(uint64_t h) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 #endif
 #ifdef MCC_CONFIG_TRIPLET
-	for (s = MCC_CONFIG_TRIPLET; *s; s++)
-		{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
+	if (per_triple) { MCC_TRACE("br\n");
+		for (s = MCC_CONFIG_TRIPLET; *s; s++)
+			{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
+	}
 #endif
 	return h;
+}
+
+static uint64_t ast_search_key_salt(uint64_t h) { MCC_TRACE("enter\n");
+	return ast_search_key_salt_ex(h, 1);
+}
+
+/* Slice store only. The stored value is a set of POTENTIAL gates, and every hit
+   is intersected with ast_search_searchable() for the CURRENT target before it
+   reaches codegen, so a foreign-triple entry can only ever select a subset of
+   gates this target already permits -- never enable one it does not. Dropping
+   the triplet therefore lets triples share proven slices instead of each
+   re-deriving them, and the worst a wrong hit can do is pick a suboptimal (but
+   legal) gate subset. The version stays in the salt: it guards the record
+   FORMAT, which is not target-independent. */
+static uint64_t ast_slice_key_salt(uint64_t h) { MCC_TRACE("enter\n");
+	return ast_search_key_salt_ex(h, 0);
 }
 
 static int ast_search_cache_dir(char *buf, int cap) { MCC_TRACE("enter\n");
@@ -14153,7 +14171,7 @@ static unsigned char ast_slice_io_raw[AST_SLICE_MEMO_CAP * AST_SLICE_RECBYTES];
  * config cached by an incompatible build/target is never reused. */
 static int ast_slice_disk_path(char *buf, int cap) { MCC_TRACE("enter\n");
 	char dir[1024];
-	uint64_t key = ast_search_key_salt(0xcbf29ce484222325ULL);
+	uint64_t key = ast_slice_key_salt(0xcbf29ce484222325ULL);
 	if (host_cache_dir(dir, sizeof dir) != 0)
 		{ MCC_TRACE("br\n"); return -1; }
 	if (snprintf(buf, cap, "%s/sl-%016llx.ck", dir, (unsigned long long)key) >= cap)
@@ -15553,7 +15571,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 #ifdef MCC_EMBED_JIT
 	if (h) { MCC_TRACE("br\n");
 		const JitGraduatedRecord *gr =
-				jit_graduated_find(h, ast_search_key_salt(0xcbf29ce484222325ULL));
+				jit_graduated_find(h, ast_slice_key_salt(0xcbf29ce484222325ULL));
 		if (gr) { MCC_TRACE("br\n");
 			MCC_TRACE("jit-graduated hit %s hash=%016llx gates=%llx\n", funcname,
 								(unsigned long long)h,
