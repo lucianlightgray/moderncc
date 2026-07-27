@@ -1402,6 +1402,19 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 extern const unsigned char mccjit_blob[];
 extern const unsigned int mccjit_blob_len;
 
+/* compiler-rt builtins archive suffix for this target (libclang_rt.builtins-<arch>.a) */
+#if defined MCC_TARGET_X86_64
+#define MCC_EMBED_RT_ARCH "x86_64"
+#elif defined MCC_TARGET_I386
+#define MCC_EMBED_RT_ARCH "i386"
+#elif defined MCC_TARGET_ARM64
+#define MCC_EMBED_RT_ARCH "aarch64"
+#elif defined MCC_TARGET_ARM
+#define MCC_EMBED_RT_ARCH "arm"
+#else
+#define MCC_EMBED_RT_ARCH "x86_64"
+#endif
+
 ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 	char tmp[1024];
 	size_t off;
@@ -1433,7 +1446,35 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 		mcc_add_library(s1, "mingwex");
 		mcc_add_library(s1, "mingw32");
+		/* Compiler support library (___chkstk_ms stack probe, __udivti3 soft
+		   arithmetic, …). gcc ships these in libgcc; the llvm/clang-mingw
+		   toolchain has no libgcc but the same symbols live in compiler-rt
+		   (libclang_rt.builtins-<arch>.a). Disk-probe the baked lib dir and add
+		   whichever exists so --embed-jit links out-of-the-box on both
+		   toolchains (probing avoids a spurious 'library not found' error). */
+#ifdef MCC_EMBED_JIT_GCC_LIBDIR
+		{
+			char lp[1024];
+			FILE *lf;
+			snprintf(lp, sizeof lp, "%s/libgcc.a", MCC_EMBED_JIT_GCC_LIBDIR);
+			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+				fclose(lf);
+				mcc_add_library(s1, "gcc");
+			} else { MCC_TRACE("br\n");
+				snprintf(lp, sizeof lp,
+								 "%s/libclang_rt.builtins-" MCC_EMBED_RT_ARCH ".a",
+								 MCC_EMBED_JIT_GCC_LIBDIR);
+				if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+					fclose(lf);
+					mcc_add_library(s1, "clang_rt.builtins-" MCC_EMBED_RT_ARCH);
+				} else { MCC_TRACE("br\n");
+					mcc_add_library(s1, "gcc");	/* neither: surface the honest error */
+				}
+			}
+		}
+#else
 		mcc_add_library(s1, "gcc");
+#endif
 		mcc_add_library(s1, "ucrt");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
