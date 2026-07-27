@@ -17,10 +17,20 @@ import json, os, shlex, subprocess, sys, tempfile
 
 def main():
     if len(sys.argv) < 2:
-        sys.exit("usage: selfhost-fixpoint.py <build-dir> [KNOB=VAL ...]")
+        sys.exit("usage: selfhost-fixpoint.py <build-dir> [--opt=-ON] [KNOB=VAL ...]")
     bdir = sys.argv[1]
     env = dict(os.environ)
-    for kv in sys.argv[2:]:
+    # --opt=<level> picks the -O level under test. Defaults to -O2 for
+    # compatibility, but -O2 alone never exercises the -O3 defaults (CYCLE,
+    # OPASSIGN, CHAINSTORE, INLINE), so the fixpoint gate was blind to them.
+    opt = "-O2"
+    rest = []
+    for a in sys.argv[2:]:
+        if a.startswith("--opt="):
+            opt = a.split("=", 1)[1]
+        else:
+            rest.append(a)
+    for kv in rest:
         k, _, v = kv.partition("=")
         env[k] = v
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,7 +60,7 @@ def main():
         args = [cc_bin, *flags]
         if extra_inc:
             args.append("-I" + inc)
-        args += ["-O2", "-c", src, "-o", obj]
+        args += [opt, "-c", src, "-o", obj]
         subprocess.run(args, cwd=root, env=env, check=True)
 
     def link_mcc(cc_bin, obj, out):
@@ -58,7 +68,7 @@ def main():
                        cwd=root, check=True)
 
     with tempfile.TemporaryDirectory() as work:
-        knobs = sys.argv[2:] or "(none)"
+        knobs = rest or "(none)"
         o1 = os.path.join(work, "o1.o")
         o2 = os.path.join(work, "o2.o")
         o3 = os.path.join(work, "o3.o")

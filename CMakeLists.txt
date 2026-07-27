@@ -4985,6 +4985,21 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(selfhost-fixpoint PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
+            # -O2 alone never exercises the -O3 defaults (CYCLE, OPASSIGN,
+            # CHAINSTORE, INLINE) or the -Os ones (PROMO_ARROW, PROMO_INCDEC,
+            # REGDISP), so the fixpoint gate was blind to both. Both hold.
+            add_test(NAME selfhost-fixpoint-O3
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
+                        "${CMAKE_BINARY_DIR}" --opt=-O3)
+            set_tests_properties(selfhost-fixpoint-O3 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+
+            add_test(NAME selfhost-fixpoint-Os
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
+                        "${CMAKE_BINARY_DIR}" --opt=-Os)
+            set_tests_properties(selfhost-fixpoint-Os PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+
             add_test(NAME selfhost-fixpoint-gates
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}"
