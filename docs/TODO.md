@@ -297,7 +297,14 @@ loose end left by a landed change, with the specific evidence that would close i
 
 **F1 — Flip the three recorder gates, or decide not to.** `MCC_AST_MEMBER_AGG` (+106 faithful), `MCC_AST_MEMBER_CONST`
 (+46) and `MCC_AST_CMP_INVERT` (+9) are all default-OFF and byte-identical off. Each needs, before flipping:
-(a) cross-arch validation — arm64 especially, since `CMP_INVERT` measurably behaves differently there (F2);
+(a) cross-arch validation — **i386 DONE 2026-07-27, arm64/riscv64 still open.** On a real TU (`src/mcc.c` via a
+native 32-bit `mcc32`, rc=0) all three gates reproduce the x86_64 shape: `MEMBER_AGG` desync 715 -> 601 and faithful
+**811 -> 898 (+87** vs +106 on x86_64), `MEMBER_CONST` +38 (vs +46), `CMP_INVERT` +9 (vs +9). So the gates are not
+x86_64-specific. Two caveats: the freestanding `optfire` corpus shows NO difference on ANY target for `MEMBER_AGG`
+(those cases contain no nested-struct member access, so it cannot exercise the gate — do not use it as the cross-arch
+oracle), and arm64/riscv64 cannot compile a large TU on an x86_64 box (`mcchost.c: field not found: pc`, host-shaped
+signal-context fields), so they need a real cross sysroot or a native run. `CMP_INVERT` on arm64 is known BY
+CONSTRUCTION — it desyncs rather than mismodels there (F2);
 (b) `ast-verify-ratchet` baseline regenerated, which currently FAILS gate-on only because the gap set IMPROVED
 (769 vs 776 for `MEMBER_AGG`, 775 vs 776 for `MEMBER_CONST`);
 (c) ~~a JIT status statement~~ **DONE 2026-07-27.** All four new gates (`MEMBER_AGG`, `MEMBER_CONST`, `CMP_INVERT`,
