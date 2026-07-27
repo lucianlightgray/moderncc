@@ -41,6 +41,9 @@ jobs:
     needs: plan
     name: ${{ matrix.preset }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    # Wall-clock cap; the exec harness watchdog (MCC_TEST_TIMEOUT) + ctest
+    # --timeout are the fine-grained guards, this is the last resort.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -95,6 +98,12 @@ jobs:
     needs: plan
     name: ${{ matrix.preset }} / ${{ matrix.cc }} / ${{ matrix.arch }}
     runs-on: macos-15
+    # Hard wall-clock cap: a single wedged test (hung, infinite-looping, or a
+    # crash-suspended process held by macOS ReportCrash) once stalled this job
+    # for ~48 min until it was cancelled by hand. The exec harness now kills a
+    # hung child itself (MCC_TEST_TIMEOUT) and ctest --timeout backstops it;
+    # this is the last-resort ceiling so the runner pool is never starved.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -142,8 +151,11 @@ jobs:
             # are fully covered by the native arm64 macOS and Linux cells.
             export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
           fi
+          # --timeout caps any single ctest test (mirrors the msvc path): a
+          # hung test is killed and named instead of stalling the job until the
+          # timeout-minutes ceiling. Belt to the exec harness's own watchdog.
           mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
-            "-DMCC_DIST_PLAT=$ART" $extra
+            "-DMCC_DIST_PLAT=$ART" $extra -- --timeout 1200
       - name: pack build targets
         run: tar cJf "$ART.tar.xz" -C dist "$ART"
       - uses: actions/upload-artifact@v7
@@ -264,6 +276,9 @@ jobs:
     needs: plan
     name: qemu / ${{ matrix.host }} / ${{ matrix.label }}
     runs-on: ${{ matrix.host == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    # Wall-clock cap; the exec harness watchdog (MCC_TEST_TIMEOUT) is the
+    # fine-grained guard, this is the last resort.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

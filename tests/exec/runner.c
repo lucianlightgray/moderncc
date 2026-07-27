@@ -4,6 +4,14 @@
 #include <errno.h>
 #include "../support/hostcompat.h"
 
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <poll.h>
+#include <time.h>
+#endif
+
 #include "goldens.h"
 
 static char *xstrdup(const char *s) {
@@ -146,7 +154,7 @@ static int glob_eq(const char *pat, const char *str) {
 	return *p == '\0';
 }
 
-static char *slurp(FILE *f, size_t *outlen) {
+HC_UNUSED static char *slurp(FILE *f, size_t *outlen) {
 	size_t cap = 4096, len = 0;
 	char *buf = malloc(cap);
 	size_t n;
@@ -163,6 +171,111 @@ static char *slurp(FILE *f, size_t *outlen) {
 	return buf;
 }
 
+/* Wall-clock cap (seconds) for a single captured command. A wedged child --
+ * infinite-looping from a codegen miscompile, deadlocked, or crash-suspended
+ * by macOS ReportCrash awaiting a report -- keeps the write end of the capture
+ * pipe open, so a bare popen()+fread() would block until the CI job is killed
+ * by hand (observed: a 48-min stall on select_branchless). The default matches
+ * the CI job timeout-minutes and is overridable via MCC_TEST_TIMEOUT; 0 or
+ * negative disables the cap. Belt to ctest's --timeout suspenders. */
+static long run_capture_timeout(void) {
+	const char *s = hc_envv("MCC_TEST_TIMEOUT", "1200");
+	char *end;
+	long v = strtol(s, &end, 10);
+	return (end == s) ? 1200 : v;
+}
+
+#ifndef _WIN32
+/* POSIX capture that can actually kill a hung child: run cmd via /bin/sh in its
+ * OWN process group, poll the output pipe against a deadline, and killpg the
+ * whole group on timeout (SIGKILL reaches grandchildren a bare pclose can't).
+ * On timeout, *status is set nonzero and a marker is appended so the offending
+ * golden fails loudly and by name instead of stalling the suite. */
+static char *run_capture(const char *cmd, int *status) {
+	int pipefd[2];
+	if (pipe(pipefd) != 0) {
+		if (status)
+			*status = -1;
+		return xstrdup("");
+	}
+	pid_t pid = fork();
+	if (pid < 0) {
+		close(pipefd[0]);
+		close(pipefd[1]);
+		if (status)
+			*status = -1;
+		return xstrdup("");
+	}
+	if (pid == 0) {
+		setpgid(0, 0);
+		dup2(pipefd[1], 1);
+		dup2(pipefd[1], 2);
+		close(pipefd[0]);
+		close(pipefd[1]);
+		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
+		_exit(127);
+	}
+	setpgid(pid, pid); /* race-free with the child's own setpgid */
+	close(pipefd[1]);
+
+	long timeout_s = run_capture_timeout();
+	size_t cap = 4096, len = 0;
+	char *buf = malloc(cap);
+	time_t start = time(NULL);
+	int killed = 0;
+	for (;;) {
+		if (timeout_s > 0 && (long)(time(NULL) - start) >= timeout_s) {
+			killpg(pid, SIGKILL);
+			killed = 1;
+			break;
+		}
+		struct pollfd pfd = {pipefd[0], POLLIN, 0};
+		int pr = poll(&pfd, 1, 1000); /* 1s slices; deadline re-checked each loop */
+		if (pr < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (pr == 0)
+			continue;
+		ssize_t n = read(pipefd[0], buf + len, cap - len);
+		if (n > 0) {
+			len += (size_t)n;
+			if (len == cap) {
+				cap *= 2;
+				buf = realloc(buf, cap);
+			}
+		} else if (n == 0) {
+			break; /* EOF: child closed its output */
+		} else if (errno != EINTR) {
+			break;
+		}
+	}
+	buf[len] = 0;
+	close(pipefd[0]);
+
+	int wstat = 0;
+	waitpid(pid, &wstat, 0);
+	if (killed) {
+		char marker[96];
+		int mn = snprintf(marker, sizeof marker,
+						  "\n*** TIMEOUT: killed after %lds (MCC_TEST_TIMEOUT) ***\n",
+						  timeout_s);
+		if (mn > 0) {
+			buf = realloc(buf, len + (size_t)mn + 1);
+			memcpy(buf + len, marker, (size_t)mn + 1);
+		}
+		if (status)
+			*status = -1;
+	} else if (status) {
+		*status = WIFEXITED(wstat) ? WEXITSTATUS(wstat)
+								   : 128 + (WIFSIGNALED(wstat) ? WTERMSIG(wstat) : 0);
+	}
+	return buf;
+}
+#else
+/* Windows keeps the popen path (the ctest --timeout 300 in ci.yml is the guard
+ * there); killable process-group capture is POSIX-only. */
 static char *run_capture(const char *cmd, int *status) {
 	FILE *f = HC_POPEN_CMD(cmd);
 	if (!f) {
@@ -176,6 +289,7 @@ static char *run_capture(const char *cmd, int *status) {
 		*status = rc;
 	return out;
 }
+#endif
 
 static void strip_all(char *s, const char *needle) {
 	size_t nl = strlen(needle);
