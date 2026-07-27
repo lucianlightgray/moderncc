@@ -3972,10 +3972,14 @@ if(MCC_BUILD_TESTS)
                                             "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
                                             "-" "${_ofopt}" "${_ofarg}")
                             else()
+                                set(_ofldf "-")
+                                if(_oflen GREATER 4)
+                                    list(GET _of 4 _ofldf)
+                                endif()
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" differ "${_mcc_exe}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
-                                            "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofldf}")
                             endif()
                             set_tests_properties("optfire/${_ofcell}" PROPERTIES
                                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
