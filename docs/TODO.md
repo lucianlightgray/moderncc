@@ -199,6 +199,30 @@ disabled, 4.29 s and 0.18 s. `MCC_JIT=1` and `MCC_AST_SEARCH=1` change neither n
 3. **8.4 s per compile for ~1-10% size** is the trade `tools/bench.c` already reports as 420x compile time for ~8%
    smaller output. Consistent; no new information, but it belongs next to these numbers.
 
+**REQUESTED 2026-07-27 — `-O4`+ must be a strict SUPERSET of `-O3`, never a regression from it.** Today the `-O4`
+search is free to select a gate configuration that turns OFF optimizations `-O3` applies by default, so `-O4` can and
+does emit worse code than `-O3`. Evidence from the sweep above, same box, same kernel: **`mcc -O3` runs `nbody` in
+0.246 s and `mcc -O4` in 0.285 s** — `-O4` is 16% SLOWER than the level below it, after spending 4-8 s searching. The
+mechanism is already documented elsewhere in this file: at `-O4` the `--stats` STRATEGY counters read all-zero because
+the search picks a config that disables the strategies for small functions (the `divmagic` case is the worked example —
+`MCC_AST_SEARCH=1` keeps `idiv`, `MCC_AST_SEARCH=0` emits the magic-multiply).
+
+Wanted:
+1. **Floor the search at the `-O3` default set.** Every gate that is default-on at `-O3` stays on for `-O4`+; the search
+   may only ADD gates or reorder strategies, never subtract from that floor. `-O4` then cannot be worse than `-O3` by
+   construction, which is the property a user assumes from a higher number.
+2. **Bank the `-O3` baseline in the checkpoint.** The cached record should carry the static `-O3` configuration, not
+   only the searched delta, so a later compile that hits the memo immediately gets the full static optimization set
+   without re-deriving it. This is also the fix for the finding above, where a memo hit currently short-circuits the
+   per-function search and the driver then burns its freed budget to arrive at the identical binary — with a banked
+   floor there is a concrete result to hand back instead.
+3. **Regression-guard it.** A cell asserting `-O4` output is never slower (or larger, per the scoring axis in use) than
+   `-O3` on the plb kernels would have caught this; `optfire`'s level-map mode is the closest existing shape.
+
+Note this interacts with the size/speed question above: if `-O4` remains size-scored, the floor should be stated in the
+scoring axis actually in use (never LARGER than `-O3`), and the same 16% runtime regression should be re-examined once
+the axis is settled.
+
 **Secondary finding from the same sweep, and it stands: mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on
 these kernels (nbody 0.298 / 0.303 / 0.293 versus 0.299), while gcc and clang gain roughly 2x from `-O0` to `-O1`.
 `-O3` is the first level that moves (0.246). That is consistent with the 48% recorder-fidelity ceiling above — a pass
