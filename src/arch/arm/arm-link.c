@@ -138,6 +138,67 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 }
 
+/* In -run (MCC_OUTPUT_MEMORY) the external call target (e.g. printf resolved via
+   dlopen) can land far outside the ±32MB reach of an ARM BL/B, and no PLT is
+   built for AUTO_GOTPLT_ENTRY relocs in MEMORY mode (mccelf.c build_got_entries).
+   Mirror arm64_veneer_memory_calls: for each ARM branch reloc to an undefined or
+   absolute symbol, emit a nearby long-branch veneer
+       ldr pc, [pc, #-4]   ; e51ff004
+       .word <target>      ; R_ARM_ABS32 -> resolved absolute address
+   and retarget the branch to the (in-range) veneer symbol. AOT paths are
+   unaffected because this only runs for MCC_OUTPUT_MEMORY. */
+ST_FUNC void arm_veneer_memory_calls(MCCState *s1) { MCC_TRACE("enter\n");
+	Section *vs = NULL;
+	int i, nsyms, nsec, *vmap;
+
+	if (s1->output_type != MCC_OUTPUT_MEMORY)
+		{ MCC_TRACE("br\n"); return; }
+	nsyms = symtab_section->data_offset / sizeof(ElfW(Sym));
+	nsec = s1->nb_sections;
+	if (nsyms <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	vmap = mcc_mallocz(nsyms * sizeof(int));
+	for (i = 1; i < nsec; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		ElfW_Rel *rel;
+		if (s->sh_type != SHT_RELX || s->link != symtab_section)
+			{ MCC_TRACE("br\n"); continue; }
+		for_each_elem(s, 0, rel, ElfW_Rel) {
+			int type = ELFW(R_TYPE)(rel->r_info);
+			int si = ELFW(R_SYM)(rel->r_info);
+			if (type != R_ARM_CALL && type != R_ARM_JUMP24 &&
+					type != R_ARM_PC24 && type != R_ARM_PLT32)
+				{ MCC_TRACE("br\n"); continue; }
+			if (si <= 0 || si >= nsyms)
+				{ MCC_TRACE("br\n"); continue; }
+			{
+				int shn = ((ElfW(Sym) *)symtab_section->data)[si].st_shndx;
+				if (shn != SHN_UNDEF && shn != SHN_ABS)
+					{ MCC_TRACE("br\n"); continue; }
+			}
+			if (!vmap[si]) { MCC_TRACE("br\n");
+				int off;
+				unsigned char *p;
+				if (!vs) { MCC_TRACE("br\n");
+					vs = new_section(s1, ".mcc.veneer", SHT_PROGBITS,
+													 SHF_ALLOC | SHF_EXECINSTR);
+					vs->sh_addralign = 4;
+				}
+				off = vs->data_offset;
+				p = section_ptr_add(vs, 8);
+				write32le(p, 0xe51ff004);     /* ldr pc, [pc, #-4] */
+				write32le(p + 4, 0);          /* .word <resolved abs> (ABS32 reloc) */
+				put_elf_reloc(symtab_section, vs, off + 4, R_ARM_ABS32, si);
+				vmap[si] = put_elf_sym(symtab_section, off, 8,
+															 ELFW(ST_INFO)(STB_LOCAL, STT_FUNC), 0,
+															 vs->sh_num, NULL);
+			}
+			rel->r_info = ELFW(R_INFO)(vmap[si], type);
+		}
+	}
+	mcc_free(vmap);
+}
+
 ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr, addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	ElfW(Sym) * sym;
 	int sym_index, esym_index;

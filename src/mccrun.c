@@ -547,6 +547,9 @@ static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRA
 #if defined(MCC_TARGET_ARM64)
 		arm64_veneer_memory_calls(s1);
 #endif
+#if defined(MCC_TARGET_ARM)
+		arm_veneer_memory_calls(s1);
+#endif
 #if defined(MCC_RUN_TLS_MACHO)
 		tls_setup_macho(s1);
 #elif MCC_HOST_LINUX
