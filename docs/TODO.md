@@ -207,6 +207,20 @@ mechanism is already documented elsewhere in this file: at `-O4` the `--stats` S
 the search picks a config that disables the strategies for small functions (the `divmagic` case is the worked example —
 `MCC_AST_SEARCH=1` keeps `idiv`, `MCC_AST_SEARCH=0` emits the magic-multiply).
 
+**PART 1 IMPLEMENTED 2026-07-27 as `MCC_AST_SEARCH_FLOOR` (default OFF) — and it does NOT fix the regression.**
+The floor is the gate mask captured at the end of `ast_configure` (at `-O4` that IS the `-O3` default set, since `-O4`
+sets `optimize=3`), OR-ed into every `ast_search_gates_set()`, so the search can only ADD. It demonstrably takes
+effect — nbody text goes 3636 -> 3748 with it on — but **runtime stays 0.28 s against `-O3`'s 0.24 s**. Full suite
+7228/7228 with it off.
+So the `-O4` slowdown is NOT the search subtracting `-O3` gates, which was the hypothesis this item was written on.
+Also falsified: the superopt's inline-limit axis — forcing `MCC_AST_INLINE_LIMIT=160` at `-O4` changes neither
+runtime nor text (0.28 s / 3636, identical to plain `-O4`). **The cause of `-O4` being slower than `-O3` is still
+unidentified.** Remaining suspects, untested: the superopt's budget axis, its per-function `best_cfg` encoding, or the
+re-emit path it uses to produce the final object differing from the ordinary `-O3` emit path.
+Note the floor costs size for no measured runtime gain here (3748 vs 3636), so adopting it is a decision about
+GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep it off until the real cause is found, or
+it will be credited with a fix it did not make.
+
 Wanted:
 1. **Floor the search at the `-O3` default set.** Every gate that is default-on at `-O3` stays on for `-O4`+; the search
    may only ADD gates or reorder strategies, never subtract from that floor. `-O4` then cannot be worse than `-O3` by

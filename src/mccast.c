@@ -1424,6 +1424,16 @@ static MCC_OPT_TLS int ast_ltemp_cur;
 static int ast_color_env;
 static int ast_spill_share_env;
 static int ast_search_worker;
+/* MCC_AST_SEARCH_FLOOR (default OFF). The -O4 search may currently pick a gate
+   config that turns OFF optimizations -O3 applies by default, so -O4 can emit
+   worse code than the level below it (measured: nbody 0.285 s at -O4 vs 0.246 s
+   at -O3). With this on, the config captured at ast_configure -- i.e. exactly the
+   -O3 default set at -O4, since -O4 sets optimize=3 -- becomes a floor the search
+   may only ADD to, never subtract from. */
+typedef unsigned long AstGateMask_fwd_check;
+static unsigned long ast_search_floor;
+static int ast_search_floor_env;
+static unsigned long ast_search_gates_now(void);
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
 
@@ -2186,6 +2196,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
 	ast_search_worker = mcc_env_on("MCC_SEARCH_WORKER");
+	ast_search_floor_env = mcc_env_on("MCC_AST_SEARCH_FLOOR");
+	ast_search_floor = ast_search_floor_env ? ast_search_gates_now() : 0;
 	ast_fncfg_parse();
 	ast_jit_fns_parse(mcc_state ? mcc_state->jit_functions : 0);
 }
@@ -14863,7 +14875,7 @@ int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out,
 }
 #endif
 
-static AstGateMask ast_search_gates_now(void) { MCC_TRACE("enter\n");
+static unsigned long ast_search_gates_now(void) { MCC_TRACE("enter\n");
 	return (ast_templates_env ? AST_SG_TEMPLATES : 0) |
 				 (ast_narrow_env ? AST_SG_NARROW : 0) |
 				 (ast_bitflag_env ? AST_SG_BITFLAG : 0) |
@@ -14902,6 +14914,7 @@ static AstGateMask ast_search_gates_now(void) { MCC_TRACE("enter\n");
 }
 
 static void ast_search_gates_set(AstGateMask g) { MCC_TRACE("enter\n");
+	g |= ast_search_floor;
 	ast_templates_env = (g & AST_SG_TEMPLATES) != 0;
 	ast_narrow_env = (g & AST_SG_NARROW) != 0;
 	ast_bitflag_env = (g & AST_SG_BITFLAG) != 0;
