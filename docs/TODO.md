@@ -228,10 +228,25 @@ The in-process per-function search alone produces the FASTEST code of the three 
 more text. The out-of-process driver then replaces that result with its own size-optimal pick: **3.5% smaller and 65%
 slower**. So `-O4` already contains a better answer than it ships; the driver throws it away.
 That reframes the fix. Flooring gates (part 1 above) cannot help, because nothing is being subtracted — a whole
-better configuration is being overridden. The options are: make the driver's scoring axis match the level's intent
-(speed at `-O4`, size at `-Os`), have the driver KEEP the in-process winner unless its own candidate beats it on the
-SAME axis, or leave the driver opt-in and let `-O4` mean the in-process search. Any of the three makes `-O4` faster
-than `-O3` immediately, which is what the request asks for.
+better configuration is being overridden.
+**Widened to 4 kernels 2026-07-27, and one case is a STRICT regression that needs no axis debate:**
+
+| kernel | `-O4` vs `-O3` time | `-O4` vs `-O3` text |
+|---|---:|---:|
+| nbody | **+17.7%** | **+1.1% LARGER** |
+| spectral | +40.0% | -8.2% |
+| matmul | +1.1% | -10.3% |
+| nsieve | +8.2% | -1.4% |
+
+`-O4` is slower than `-O3` on **all four**. On three it at least buys size, which is a defensible (if surprising)
+trade. **On nbody it is slower AND larger — worse on the driver's OWN scoring axis.** That is not a design tradeoff,
+it is the driver shipping a result it should have rejected.
+The likely mechanism, and the fix: the driver appears to compare candidates only against EACH OTHER, never against
+the plain `-O3` baseline, so when every candidate is worse than baseline it still ships the best-of-bad. **Include the
+unsearched `-O3` result as a candidate and keep it unless something genuinely beats it.** That is unambiguous — it
+needs no decision about whether `-O4` means speed or size, because on either axis `-O4` would then be no worse than
+`-O3` by construction, which is exactly what the request asks for. The axis question (speed at `-O4` vs size at `-Os`)
+remains open and separable, and should be decided on its own once this floor exists.
 Note the floor costs size for no measured runtime gain here (3748 vs 3636), so adopting it is a decision about
 GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep it off until the real cause is found, or
 it will be credited with a fix it did not make.
