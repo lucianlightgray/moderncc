@@ -2007,9 +2007,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_no_math_errno = ast_env_gate("MCC_AST_NO_MATH_ERRNO",
 																	 s1 && s1->no_math_errno);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", o4 || s1->optimize >= 2);
-	if (ast_inline_env && !ast_inline_pass_env) { MCC_TRACE("br\n");
-		ast_inline_pass_env = 1;
-	}
 	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
 	 * pending a correctness proof). Each still runs only on `faithful` functions
 	 * and its rewrite is re-verified downstream; validated bit-identical to gcc on
