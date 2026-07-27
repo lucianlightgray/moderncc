@@ -121,7 +121,13 @@ static void fuzz_expr(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fuel) {
 		fuzz_expr(r, c, o, fuel - 1);
 		fprintf(o, ") %s ((", sh);
 		fuzz_expr(r, c, o, fuel - 1);
-		fputs(") & 63UL))", o);
+		/* Mask the shift amount to the ACTUAL width of unsigned long on the
+		   target, computed at runtime: shifting by >= the operand width is UB.
+		   A literal `& 63` assumes 64-bit long and is UB on i386's 32-bit long
+		   (the same target sees the same sizeof for mcc and every reference
+		   compiler, so this stays a valid differential on any ISA — & 63 on
+		   LP64, & 31 on ILP32). */
+		fputs(") & (8UL * sizeof(unsigned long) - 1UL)))", o);
 		break;
 	}
 	case 5: {

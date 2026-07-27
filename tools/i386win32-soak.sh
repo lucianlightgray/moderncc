@@ -112,9 +112,68 @@ for f in "$root"/tests/embed/jit_selftest_*.c; do
 	printf "  %-4s %-32s %s\n" "$tag" "$n" "$last"
 done
 echo "i386win32-soak: stub-tail selftests PASS=$pass SKIP=$skipn FAIL=$fail"
-[ -n "$failed" ] && echo "i386win32-soak: unresolved (see docs/TODO.md P0 step 4):$failed"
-# Known-remaining before the MCC_JIT_I386_STUBS flip: fparg/liverun need i386
-# runtime staging for the inner -run; mixed + stage2 under investigation. These
-# are tracked, not silent -- the script reports them but does not hard-fail on
-# them so the AOT+30-selftest baseline stays a usable regression signal.
-echo "i386win32-soak: done"
+if [ "$fail" -ne 0 ]; then
+	echo "i386win32-soak: FAIL — stub-tail selftests regressed:$failed"
+	exit 1
+fi
+
+# --- 4. i386 differential fuzz (mcc vs a reference consensus) -----------------
+# Generate random programs with tests/fuzz/gen.h (its shift masks are now
+# width-correct via sizeof(unsigned long), so they are well-defined on i386's
+# 32-bit long — a literal `& 63` was UB there and produced false divergences).
+# All compilers target i386 PE and run on WoW64. The oracle is a gcc-O0 vs gcc-O2
+# consensus (self-contained UB filter: if the two opt levels disagree the program
+# is UB/relies-on-a-gcc-quirk -> skip), widened with a distinct i686 clang when
+# one is found (set MCC_I386_CLANG, or auto-detect an i686 driver reporting
+# "clang"). mcc must match the consensus on every well-defined program.
+FUZZ_N="${MCC_I386_FUZZ_N:-25}"
+CLANG="${MCC_I386_CLANG:-}"
+if [ -z "$CLANG" ]; then
+	for cand in i686-w64-mingw32-gcc i686-w64-mingw32-clang clang; do
+		p=$(command -v "$cand" 2>/dev/null) || continue
+		[ "$p" = "$GCC" ] && continue
+		if "$p" --version 2>&1 | grep -qi clang; then CLANG="$p"; break; fi
+	done
+fi
+echo "== i386 differential fuzz: $FUZZ_N seeds, refs = gcc(O0,O2)${CLANG:+ + clang} =="
+fz="$work/fz"; mkdir -p "$fz"
+cat > "$fz/gendrv.c" <<'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include "gen.h"
+int main(int c, char **v){ fuzz_emit(c>1?strtoul(v[1],0,10):1, stdout); return 0; }
+EOF
+fzagree=0; fzdiv=0; fzskip=0; fzmiss=""
+set +e   # generated programs exit non-zero by design; exec can race the AV lock
+if "$GCC" -w -I"$root/tests/fuzz" "$fz/gendrv.c" -o "$fz/gen.exe" 2>/dev/null; then
+	# run via a stable neutral name (dodges Windows installer-detection on the
+	# exe name) and retry once on rc 126 (fresh-PE exec lock under MSYS/AV).
+	rr(){ cp "$1" "$fz/_x.exe" 2>/dev/null; o=$("$fz/_x.exe" 2>/dev/null); c=$?;
+		[ "$c" -eq 126 ] && { o=$("$fz/_x.exe" 2>/dev/null); c=$?; }
+		printf '%s|%d' "$o" "$c"; }
+	s=1
+	while [ "$s" -le "$FUZZ_N" ]; do
+		"$fz/gen.exe" "$s" > "$fz/p.c" 2>/dev/null || { fzskip=$((fzskip+1)); s=$((s+1)); continue; }
+		ok=1
+		"$GCC" -w -O0 "$fz/p.c" -o "$fz/g0.exe" 2>/dev/null || ok=0
+		"$GCC" -w -O2 "$fz/p.c" -o "$fz/g2.exe" 2>/dev/null || ok=0
+		[ "$ok" = 1 ] || { fzskip=$((fzskip+1)); s=$((s+1)); continue; }
+		r0=$(rr "$fz/g0.exe"); r2=$(rr "$fz/g2.exe")
+		# gcc opt levels disagree -> UB / not a clean oracle -> skip
+		if [ "$r0" != "$r2" ]; then fzskip=$((fzskip+1)); s=$((s+1)); continue; fi
+		if [ -n "$CLANG" ] && "$CLANG" -w -O2 "$fz/p.c" -o "$fz/cl.exe" 2>/dev/null; then
+			[ "$(rr "$fz/cl.exe")" = "$r0" ] || { fzskip=$((fzskip+1)); s=$((s+1)); continue; }
+		fi
+		if "$MCCI" -O2 $BRT "$fz/p.c" -o "$fz/m.exe" $LNK 2>/dev/null; then
+			if [ "$(rr "$fz/m.exe")" = "$r0" ]; then fzagree=$((fzagree+1));
+			else fzdiv=$((fzdiv+1)); fzmiss="$fzmiss $s"; echo "  DIVERGE seed=$s ref=[$r0] mcc=[$(rr "$fz/m.exe")]"; cp "$fz/p.c" "$work/../fuzz_diverge_$s.c" 2>/dev/null; fi
+		else fzskip=$((fzskip+1)); fi
+		s=$((s+1))
+	done
+	echo "i386win32-soak: differential fuzz agree=$fzagree diverge=$fzdiv skip(UB/build)=$fzskip"
+	if [ "$fzdiv" -ne 0 ]; then echo "i386win32-soak: FAIL — fuzz divergence:$fzmiss"; set -e; exit 1; fi
+else
+	echo "i386win32-soak: differential fuzz SKIP (could not build the generator)"
+fi
+set -e
+echo "i386win32-soak: done — ALL GREEN (AOT self-host + $pass stub-tail selftests + $fzagree fuzz)"
