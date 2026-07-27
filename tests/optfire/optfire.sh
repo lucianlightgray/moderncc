@@ -4,6 +4,12 @@
 #   counter <mcc> <src.c> <work> <name> <olevel> <counter>
 #   differ  <mcc> <src.c> <work> <name> <olevel> <env> <extra-env|->
 #   level   <mcc> <src.c> <work> <name> <unused> <counter> <spec>
+#   defstate <mcc> <src.c> <work> <name> <olevel> <env> <on|off>
+#
+# defstate asserts a gate's DEFAULT state at an -O level, which differ mode
+# cannot: it compiles with NO env and again with the gate forced to 0. If those
+# objects differ the gate was default-ON; if identical it was default-OFF. That
+# locks the "flipped default-on at -O2" claims, which nothing else checks.
 #
 # OPTFIRE_NORUN=1 asserts only that the pass FIRED and skips the -O0 oracle and
 # the program runs. That is the cross-compiler mode: a cross mcc cannot link a
@@ -37,12 +43,14 @@ case $mode in
 counter) LDF=$8 ;;
 differ)  LDF=$9 ;;
 level)   LDF=$8 ;;
+defstate) LDF= ;;
 esac
 [ "$LDF" = "-" ] && LDF=
 refout=""
 # level mode only reads counters; it never runs the program, so building the
 # -O0 oracle would just be a way to fail on unrelated link flags.
 [ "$mode" = "level" ] && norun=1
+[ "$mode" = "defstate" ] && norun=1
 if [ "$norun" != "1" ]; then
 	# shellcheck disable=SC2086
 	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
@@ -126,6 +134,25 @@ level)
 	done || bad=1
 	[ "$bad" -eq 0 ] || exit 1
 	echo "PASS $NAME: $COUNTER level map matches $SPEC"
+	;;
+defstate)
+	ENVV=$7
+	WANT=$8
+	[ -n "$ENVV" ] && [ -n "$WANT" ] || { echo "FAIL $NAME: defstate needs <env> <on|off>"; exit 2; }
+	"$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" >/dev/null 2>&1 ||
+		{ echo "FAIL $NAME: default-env compile failed"; exit 1; }
+	env "$ENVV=0" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.zero.o" >/dev/null 2>&1 ||
+		{ echo "FAIL $NAME: ${ENVV}=0 compile failed"; exit 1; }
+	if cmp -s "$WORK/$NAME.def.o" "$WORK/$NAME.zero.o"; then
+		got=off
+	else
+		got=on
+	fi
+	[ "$got" = "$WANT" ] || {
+		echo "FAIL $NAME: $ENVV is default-$got at $OLEVEL, expected default-$WANT"
+		exit 1
+	}
+	echo "PASS $NAME: $ENVV is default-$got at $OLEVEL"
 	;;
 *)
 	echo "unknown mode: $mode" >&2
