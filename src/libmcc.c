@@ -1393,6 +1393,23 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) { MCC_TRAC
 #define MCC_SUPPORT_OS ""
 #endif
 
+/* -run / MCC_OUTPUT_MEMORY variant. Absence is fine there (undefined helpers bind
+   in-process via dlsym), but a WRONG-ARCH archive is not: the loader raises
+   mcc_error_noabort from inside, which no caller flag suppresses, and nb_errors
+   then fails the link. So load only what the read-only probe confirms is this
+   target's, checking the arch-tagged staging name too, and otherwise stay quiet. */
+ST_FUNC int mcc_add_support_opt(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
+	char arch[128];
+	if (mcc_support_arch_match(s1, filename) == 1)
+		{ MCC_TRACE("br\n"); return mcc_add_dll(s1, filename, 0); }
+	if (MCC_SUPPORT_ARCH[0] &&
+			(size_t)snprintf(arch, sizeof arch, "%s%s-%s", MCC_SUPPORT_ARCH,
+											 MCC_SUPPORT_OS, filename) < sizeof arch &&
+			mcc_support_arch_match(s1, arch) == 1)
+		{ MCC_TRACE("br\n"); return mcc_add_dll(s1, arch, 0); }
+	return 0;
+}
+
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	char plain[128], arch[128];
 	int arch_ok;

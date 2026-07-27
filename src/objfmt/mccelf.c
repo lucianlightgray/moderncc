@@ -1688,8 +1688,8 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 #else
 		if (MCC_MCCRT[0]) { MCC_TRACE("br\n");
 			if (s1->output_type == MCC_OUTPUT_MEMORY)
-				{ MCC_TRACE("br\n"); mcc_add_dll(s1, MCC_MCCRT, 0); } /* attempt; silent if absent -> undefined
-																					helpers bind in-process via dlsym */
+				{ MCC_TRACE("br\n"); mcc_add_support_opt(s1, MCC_MCCRT); } /* arch-aware; silent if absent
+																					-> undefined helpers bind in-process via dlsym */
 			else
 				{ MCC_TRACE("br\n"); mcc_add_support(s1, MCC_MCCRT); }
 		}

@@ -2491,6 +2491,10 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
         list(APPEND _objs dsohandle)
     endif()
 
+    if(NOT native)
+        list(APPEND _objs runmain)
+    endif()
+
     set(_arch_incs
         -I${CMAKE_CURRENT_SOURCE_DIR}/src
         -I${CMAKE_CURRENT_SOURCE_DIR}/include
