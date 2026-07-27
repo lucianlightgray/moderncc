@@ -1331,6 +1331,21 @@ static int ast_search_worker;
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
 
+/* Append "<tag:><fn> <hash>" to MCC_AST_HASH_OUT. Exposed so the JIT can record
+   the arena it reconstructs from an intent blob: ast_func_end only runs on the
+   PARSER path, so without this the JIT-shaped identity is never observable and
+   an AOT-vs-JIT ident mismatch cannot be diffed at all. No-op when unset. */
+void ast_hash_out_emit(const char *tag, const char *fn, uint64_t h) { MCC_TRACE("enter\n");
+	FILE *f;
+	if (!ast_hash_out || !ast_hash_out[0] || !fn)
+		{ MCC_TRACE("br\n"); return; }
+	f = fopen(ast_hash_out, "a");
+	if (!f)
+		{ MCC_TRACE("br\n"); return; }
+	fprintf(f, "%s%s %016llx\n", tag ? tag : "", fn, (unsigned long long)h);
+	fclose(f);
+}
+
 uint64_t ast_intention_value(void) { MCC_TRACE("enter\n");
 	return ast_intention_acc;
 }
@@ -15855,14 +15870,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_fn_tco = 0;
 		uint64_t ast_fnh = ast_intention_hash(ast_cur, AST_NONE);
 		ast_intention_acc = ast_intention_acc * 0x100000001b3u ^ ast_fnh;
-		if (ast_hash_out && ast_hash_out[0]) { MCC_TRACE("br\n");
-			FILE *ast_hf = fopen(ast_hash_out, "a");
-			if (ast_hf) { MCC_TRACE("br\n");
-				fprintf(ast_hf, "%s %016llx\n", funcname,
-								(unsigned long long)ast_fnh);
-				fclose(ast_hf);
-			}
-		}
+		ast_hash_out_emit(NULL, funcname, ast_fnh);
 		if (ast_cost_env)
 			{ MCC_TRACE("br\n"); ast_fn_cost(ast_cur, funcname); }
 		if (ast_bitflag_report_env && !ast_search_worker)

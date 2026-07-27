@@ -77,6 +77,7 @@ const char *ast_kind_name(uint16_t kind);
 size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 uint64_t ast_intention_hash(const AstArena *a, AstLocal root);
+void ast_hash_out_emit(const char *tag, const char *fn, uint64_t h);
 /* Context-free normalized identity of the slice rooted at `root` (the rolling-
    window slice cache key). Refines ast_intention_hash: it stays invariant to the
    surrounding frame layout, inlining, and prior passes (like the intention hash,

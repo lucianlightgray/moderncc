@@ -444,6 +444,12 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	mccjit_last_purity = ast_fn_purity(it.arena);
 	mccjit_last_purity_ne = ast_fn_purity_noescape(it.arena);
+	/* Record the identity of the arena the JIT actually reconstructed, so an
+	   AOT-vs-JIT ident mismatch is a diff rather than a hypothesis. ast_func_end
+	   only fires on the parser path, so this is the sole observation point for
+	   the JIT-shaped hash. Tagged to keep both sides in one file. */
+	ast_hash_out_emit("jit:", it.fn_name ? it.fn_name : "?",
+										ast_intention_hash(it.arena, AST_NONE));
 
 	{
 		uint32_t qi;
