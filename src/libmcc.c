@@ -1368,8 +1368,47 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) { MCC_TRAC
 																	s->library_paths, s->nb_library_paths);
 }
 
+/* Support-archive name for THIS target, matching the cmake-cross staging layout
+   (`<arch>[-<os>]-libmccrt.a` beside a host-arch `libmccrt.a`). Deliberately not
+   MCC_EMBED_RT_ARCH, which follows the compiler-rt spelling (aarch64) rather
+   than cmake's (arm64). */
+#if defined MCC_TARGET_X86_64
+#define MCC_SUPPORT_ARCH "x86_64"
+#elif defined MCC_TARGET_I386
+#define MCC_SUPPORT_ARCH "i386"
+#elif defined MCC_TARGET_ARM64
+#define MCC_SUPPORT_ARCH "arm64"
+#elif defined MCC_TARGET_ARM
+#define MCC_SUPPORT_ARCH "arm"
+#elif defined MCC_TARGET_RISCV64
+#define MCC_SUPPORT_ARCH "riscv64"
+#else
+#define MCC_SUPPORT_ARCH ""
+#endif
+#if defined MCC_TARGET_PE
+#define MCC_SUPPORT_OS "-win32"
+#elif defined MCC_TARGET_MACHO
+#define MCC_SUPPORT_OS "-osx"
+#else
+#define MCC_SUPPORT_OS ""
+#endif
+
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
-	char buf[100];
+	char buf[128];
+	/* Arch-specific name FIRST. A stage-built mcc has an empty MCC_CONFIG_CROSSPREFIX,
+	   so pointing -B at a directory that stages several targets' archives side by
+	   side made it pick the HOST `libmccrt.a` and fail with "invalid object file"
+	   plus unresolved helpers (__ashldi3, __clear_cache, __floatunsitf). Probing
+	   `<arch>[-<os>]-<name>` first resolves the right one; a miss is silent and
+	   falls through to the historical behaviour, so nothing that already worked
+	   changes. */
+	if (MCC_SUPPORT_ARCH[0]) { MCC_TRACE("br\n");
+		if ((size_t)snprintf(buf, sizeof buf, "%s%s-%s", MCC_SUPPORT_ARCH,
+												 MCC_SUPPORT_OS, filename) < sizeof buf) { MCC_TRACE("br\n");
+			if (mcc_add_dll(s1, buf, 0) == 0)
+				{ MCC_TRACE("br\n"); return 0; }
+		}
+	}
 	if (MCC_CONFIG_CROSSPREFIX[0])
 		{ MCC_TRACE("br\n"); filename = strcat(strcpy(buf, MCC_CONFIG_CROSSPREFIX), filename); }
 	return mcc_add_dll(s1, filename, AFF_PRINT_ERROR);
