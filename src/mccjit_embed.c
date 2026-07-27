@@ -795,9 +795,10 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 										!mccjit_type_wide((int)mccjit_last_param_t[0]);
 		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
 		fprintf(stderr,
-						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s np=%u probe(7)=%d %s\n",
+						"mccjit-boot[%s]: slot=%p aot=%p blob=%p len=%lu variant=%p baseline=%p entry=%p route=%s np=%u warm=%llx probe(7)=%d %s\n",
 						mode, (void *)slot, aot_init, blob, len, variant, baseline, entry,
-						routed ? "kgc" : "direct", mccjit_last_nparam, probe,
+						routed ? "kgc" : "direct", mccjit_last_nparam,
+						(unsigned long long)mccjit_intent_peek_warm_gates(blob, (size_t)len), probe,
 						skipped				 ? "budget-skip"
 						: over					 ? "over-budget-kept-aot"
 						: entry					 ? "swapped"
