@@ -5,6 +5,7 @@
 #ifndef _WIN32
 #include <signal.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 #endif
 
@@ -74,6 +75,12 @@ static int child_exit_code(void (*fp)(void)) {
 static int child_signal(void (*fp)(void)) {
 	pid_t p = fork();
 	if (p == 0) {
+		int devnull = open("/dev/null", O_WRONLY);
+		if (devnull >= 0) {
+			dup2(devnull, 2);
+			if (devnull != 2)
+				close(devnull);
+		}
 		fp();
 		_exit(0);
 	}
