@@ -490,6 +490,7 @@ runner.c	fputc_unlocked	desync
 runner.c	main	desync
 runner.c	putc_unlocked	desync
 runner.c	putchar_unlocked	desync
+runner.c	run_capture	unfaithful
 runner.c	slurp	unfaithful
 runner.c	strip_all	desync
 statements/assignment.c	fputc_unlocked	desync

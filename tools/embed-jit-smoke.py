@@ -24,9 +24,17 @@ SKIP = 77
 
 # stderr fragments that mean "this toolchain has no compiler-support runtime for
 # the baked engine" — a host limitation, not a mcc regression => SKIP not FAIL.
+# __emutls_get_address is libgcc's emulated-TLS entry point: winlibs GCC lowers
+# the engine's thread-locals to emulated TLS (llvm-mingw uses native SECREL TLS,
+# which the a-la-carte loader handles), so the winlibs cells can't supply it and
+# must SKIP — same category as __chkstk_ms. It co-occurs with the i686 engine's
+# SRW-lock kernel32 imports, so matching it alone SKIPs both winlibs cells; the
+# SRW symbols are deliberately NOT markers (OS imports, not compiler runtime —
+# listing them could mask a genuine import-emission linker regression).
 TOOLCHAIN_LIB_MARKERS = (
-    "___chkstk_ms", "__chkstk_ms", "libgcc", "clang_rt", "mingwex",
-    "mingw32", "library 'gcc' not found", "library 'mingwex' not found",
+    "___chkstk_ms", "__chkstk_ms", "__emutls_get_address", "libgcc",
+    "clang_rt", "mingwex", "mingw32",
+    "library 'gcc' not found", "library 'mingwex' not found",
 )
 
 # A self-contained workload: sum fib(i%15) for i in 0..29 == 1972; return low byte.

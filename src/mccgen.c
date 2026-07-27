@@ -10657,6 +10657,13 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	if (mcc_state->output_type == MCC_OUTPUT_MEMORY)
 		{ MCC_TRACE("br\n"); return 0; } /* -run maps code above the 32-bit range: an absolute
 		                                  * table's R_X86_64_32S/R_386_32 entries cannot reach */
+#if defined(MCC_TARGET_MACHO) && defined(MCC_TARGET_X86_64)
+	if (!mcc_state->pic)
+		{ MCC_TRACE("br\n"); return 0; } /* Mach-O x86_64 execs are PIE (image base above 4 GB),
+		                                  * so the non-PIC dispatch's absolute R_X86_64_32S table
+		                                  * displacement is out of range — same as -run. arm64-osx
+		                                  * is unaffected (adrp/add is PC-relative). */
+#endif
 	lo = sw->p[0]->v1;
 	hi = sw->p[sw->n - 1]->v2;
 	if (hi < lo)
