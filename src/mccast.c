@@ -948,6 +948,7 @@ typedef struct AstSliceProbeCtx {
 	int table_n;
 	int64_t best_size;
 	uint64_t best_gates;
+	uint64_t best_elig;
 	uint64_t allow;
 	int best_proven;
 	int best_surv;
@@ -983,6 +984,7 @@ static void ast_slice_visit_probe(uint64_t ident, int size, uint64_t gates, void
 				p->best_surv = surv;
 				p->best_size = size;
 				p->best_gates = p->table[i].gates;
+				p->best_elig = p->table[i].eligible;
 			}
 			if (!multi)
 				{ MCC_TRACE("br\n"); break; }
@@ -992,12 +994,13 @@ static void ast_slice_visit_probe(uint64_t ident, int size, uint64_t gates, void
 
 static int ast_slice_probe_table_ex(const AstArena *a, const AstSliceMemo *table,
 																		int table_n, uint64_t allow,
-																		uint64_t *out_gates) { MCC_TRACE("enter\n");
+																		uint64_t *out_gates, uint64_t *out_elig) { MCC_TRACE("enter\n");
 	AstSliceProbeCtx p;
 	p.table = table;
 	p.table_n = table_n;
 	p.best_size = -1;
 	p.best_gates = 0;
+	p.best_elig = 0;
 	p.allow = allow;
 	p.best_proven = 0;
 	p.best_surv = -1;
@@ -1007,12 +1010,26 @@ static int ast_slice_probe_table_ex(const AstArena *a, const AstSliceMemo *table
 	ast_slice_enum(a, 0, ast_slice_visit_probe, &p);
 	if (p.found && out_gates)
 		{ MCC_TRACE("br\n"); *out_gates = p.best_gates; }
+	if (p.found && out_elig)
+		{ MCC_TRACE("br\n"); *out_elig = p.best_elig; }
 	return p.found;
+}
+
+/* Consume-side accessor for the runtime: reports the winning record's CHOSEN
+   config and its ELIGIBLE candidate space separately. The chosen config
+   warm-starts codegen exactly as before; the eligible space is what a JIT may
+   benchmark against it, and is meaningless without being intersected with what
+   the consuming target itself permits. */
+static int ast_slice_probe_table_cand(const AstArena *a, const AstSliceMemo *table,
+																			int table_n, uint64_t *out_chosen,
+																			uint64_t *out_elig) { MCC_TRACE("enter\n");
+	return ast_slice_probe_table_ex(a, table, table_n, ~(uint64_t)0, out_chosen,
+																	out_elig);
 }
 
 static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
 																 int table_n, uint64_t *out_gates) { MCC_TRACE("enter\n");
-	return ast_slice_probe_table_ex(a, table, table_n, ~(uint64_t)0, out_gates);
+	return ast_slice_probe_table_ex(a, table, table_n, ~(uint64_t)0, out_gates, 0);
 }
 
 /* ---- Node-stable in-arena splice (roadmap 14) ----------------------------
@@ -15653,7 +15670,7 @@ static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	base = ast_search_gates_now();
 	searchable = ast_search_searchable(base);
 	if (!ast_slice_probe_table_ex(ast_cur, ast_slice_disk, ast_slice_disk_n,
-																(uint64_t)searchable, &cached))
+																(uint64_t)searchable, &cached, 0))
 		{ MCC_TRACE("br\n"); return; }
 	warm = (AstGateMask)cached & searchable;
 	MCC_TRACE("slice warm-start gates=%llx&%llx->%llx\n", (unsigned long long)cached,

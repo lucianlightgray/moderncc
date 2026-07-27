@@ -875,6 +875,22 @@ static void suite_slice_persist(void) {
 	CHECK(ast_slice_probe_table(d, dtab, 2, &g) == 1, "dominant probe hits");
 	CHECK(g == 0x2u, "dominant slice (largest) config wins");
 
+	/* The consume path must hand back the winning record's CANDIDATE SPACE, not
+	   only the config that won. Without this the runtime can replay the AOT
+	   decision but cannot benchmark anything against it, which is the whole point
+	   of recording `eligible`. `chosen` and `eligible` are reported separately so
+	   a caller can intersect the space with what its own target permits. */
+	dtab[0].eligible = 0xF0u;
+	dtab[1].eligible = 0xFFu;
+	{
+		uint64_t chosen = 0, elig = 0;
+		CHECK(ast_slice_probe_table_cand(d, dtab, 2, &chosen, &elig) == 1,
+					"candidate probe hits");
+		CHECK(chosen == 0x2u, "candidate probe reports the winning chosen config");
+		CHECK(elig == 0xFFu, "candidate probe reports the winning eligible space");
+		CHECK((elig & chosen) == chosen, "chosen stays a subset of the space");
+	}
+
 	ast_arena_free(a);
 	ast_arena_free(f);
 	ast_arena_free(m);
