@@ -170,6 +170,25 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 {W}/bfn.c -o {W}/bfn0 && {W}/bfn0 ; echo rc=$?",
 		 "1\nrc=6\nrc=6\nrc=6\n"},
 
+		{"slice_eligible_set", "cpu=x86_64,os=linux,optimizer",
+		 /* AOT must cache the ELIGIBLE optimization set, not only the config it
+		    chose, so a runtime JIT has a candidate space to benchmark. Forcing two
+		    gates OFF makes the distinction observable: `g=` loses those bits while
+		    `e=` still lists them as legal to vary. A plain compile would show g==e
+		    and prove nothing, which is why this forces gates off. XDG_CACHE_HOME is
+		    isolated so an accumulated cache cannot mask the write. */
+		 "printf 'int f(int a){int i,s=0;for(i=1;i<40;i++)s+=i/7+a%%7;return s;}int main(void){return f(3)&1;}\\n' > {W}/el.c && "
+		 /* MCC_SLICE_DUMP APPENDS, so a stale el.txt from an earlier run would make
+		    NR==1 read someone else's record and the check vacuous. Remove it. */
+		 "rm -rf {W}/elc {W}/el.txt && mkdir -p {W}/elc && "
+		 "XDG_CACHE_HOME={W}/elc MCC_AST_SLICE=1 MCC_SLICE_DUMP={W}/el.txt "
+		 "MCC_AST_DIVMAGIC=0 MCC_AST_RANGE=0 {MCC} -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
+		 "awk 'NR==1{ gv=$2; ev=$3; sub(/^g=/,\"\",gv); sub(/^e=/,\"\",ev); "
+		 "           if (index($3,\"e=\")!=1) { print \"NO_ELIGIBLE\"; exit } "
+		 "           if (gv == ev) print \"SAME\"; else print \"WIDER\"; "
+		 "           print \"HAS_ELIGIBLE\" }' {W}/el.txt",
+		 "WIDER\nHAS_ELIGIBLE\n"},
+
 		{"pre_diamond", "cpu=x86_64,os=linux,optimizer",
 		 /* PRE is default-on at -O2 since the optimizer ungate, so the OFF side must
 		    force MCC_AST_PRE=0 to keep this a live "PRE materially changes O2 codegen"
