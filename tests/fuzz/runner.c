@@ -182,7 +182,7 @@ static runres build_run(const char *cc, const char *mcc, const char *bdir,
 				 cc, opt, src, exe);
 	else
 		snprintf(cmd, sizeof cmd,
-				 "%s \"%s\" \"-B%s\" \"-I%s\" %s \"%s\" -o \"%s\" >/dev/null 2>&1",
+				 "%s \"%s\" \"-B%s\" \"-I%s\" %s \"%s\" -o \"%s\" -lm >/dev/null 2>&1",
 				 env ? env : "", mcc, bdir, idir, opt, src, exe);
 	timeout_wrap(cmd, guarded, sizeof guarded);
 	int brc = RUN_SYSTEM(guarded);
@@ -305,13 +305,22 @@ static int consensus(const Refs *refs, const char *bdir, const char *idir,
 
 static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
 						const char *work, const char *src, const runres *cons,
-						const char *env, const char *opt) {
+						const char *env, const char *opt, int *buildfail) {
+	int nbuildfail = 0;
+	if (buildfail)
+		*buildfail = 0;
 	for (int attempt = 0; attempt < MCC_DIVERGE_ATTEMPTS; attempt++) {
 		runres m = build_run(mcc, NULL, bdir, idir, env, opt, work, "mcc", src);
 		int agree = m.kind == RES_OK && runres_eq(&m, cons);
+		nbuildfail += m.kind == RES_BUILDFAIL;
 		runres_free(&m);
 		if (agree)
 			return 0;
+	}
+	if (nbuildfail == MCC_DIVERGE_ATTEMPTS) {
+		if (buildfail)
+			*buildfail = 1;
+		return 0;
 	}
 	return 1;
 }
@@ -332,7 +341,7 @@ static attribution triage(const char *mcc, const Refs *refs,
 	if (!consensus(refs, bdir, idir, work, src, &cons))
 		return a;
 	for (int i = 0; i < NOPTS; i++) {
-		if (mcc_diverges(mcc, bdir, idir, work, src, &cons, NULL, OPTS[i])) {
+		if (mcc_diverges(mcc, bdir, idir, work, src, &cons, NULL, OPTS[i], NULL)) {
 			a.found = 1;
 			snprintf(a.opt, sizeof a.opt, "%s", OPTS[i]);
 			snprintf(a.gate, sizeof a.gate, "(default gates)");
@@ -343,7 +352,7 @@ static attribution triage(const char *mcc, const Refs *refs,
 	for (int g = 0; g < NGATES; g++) {
 		for (int i = 0; i < NOPTS; i++) {
 			if (mcc_diverges(mcc, bdir, idir, work, src, &cons, GATES[g].env,
-							 OPTS[i])) {
+							 OPTS[i], NULL)) {
 				a.found = 1;
 				snprintf(a.opt, sizeof a.opt, "%s", OPTS[i]);
 				snprintf(a.gate, sizeof a.gate, "%s", GATES[g].name);
@@ -410,11 +419,11 @@ static int interesting(const char *mcc, const Refs *refs,
 	}
 	int div = 0;
 	for (int i = 0; i < NOPTS && !div; i++)
-		div = mcc_diverges(mcc, bdir, idir, work, cand, &cons, NULL, OPTS[i]);
+		div = mcc_diverges(mcc, bdir, idir, work, cand, &cons, NULL, OPTS[i], NULL);
 	for (int g = 0; g < NGATES && !div; g++)
 		for (int i = 0; i < NOPTS && !div; i++)
 			div = mcc_diverges(mcc, bdir, idir, work, cand, &cons, GATES[g].env,
-							   OPTS[i]);
+							   OPTS[i], NULL);
 	runres_free(&cons);
 	return div;
 }
@@ -492,7 +501,8 @@ static int replay_corpus(const char *mcc, const Refs *refs,
 		int div = 0;
 		char which[8] = "";
 		for (int i = 0; i < NOPTS; i++)
-			if (mcc_diverges(mcc, bdir, idir, work, ln, &cons, NULL, OPTS[i])) {
+			if (mcc_diverges(mcc, bdir, idir, work, ln, &cons, NULL, OPTS[i],
+							 NULL)) {
 				div = 1;
 				snprintf(which, sizeof which, "%s", OPTS[i]);
 				break;
@@ -908,7 +918,7 @@ int main(int argc, char **argv) {
 
 	char src[2048];
 	snprintf(src, sizeof src, "%s/prog.c", work);
-	int pass = 0, drop = 0, fail = 0;
+	int pass = 0, drop = 0, fail = 0, bfail = 0;
 	for (long i = 0; i < count; i++) {
 		unsigned long s = seed + (unsigned long)i;
 		FILE *f = fopen(src, "wb");
@@ -926,18 +936,24 @@ int main(int argc, char **argv) {
 				printf("drop  seed=%lu -- references disagree / cannot build (latent UB)\n", s);
 			continue;
 		}
-		int diverged = 0;
+		int diverged = 0, nagree = 0, nbuildfail = 0;
 		char confenv[64] = "", confopt[8] = "";
-		for (int oi = 0; oi < NOPTS && !diverged; oi++)
-			if (mcc_diverges(mcc, bdir, idir, work, src, &cons, NULL, OPTS[oi])) {
+		for (int oi = 0; oi < NOPTS && !diverged; oi++) {
+			int bf = 0;
+			if (mcc_diverges(mcc, bdir, idir, work, src, &cons, NULL, OPTS[oi],
+							 &bf)) {
 				diverged = 1;
 				snprintf(confopt, sizeof confopt, "%s", OPTS[oi]);
-			}
+			} else if (bf)
+				nbuildfail++;
+			else
+				nagree++;
+		}
 		if (!diverged && do_gates)
 			for (int g = 0; g < NGATES && !diverged; g++)
 				for (int oi = 0; oi < NOPTS && !diverged; oi++)
 					if (mcc_diverges(mcc, bdir, idir, work, src, &cons,
-									 GATES[g].env, OPTS[oi])) {
+									 GATES[g].env, OPTS[oi], NULL)) {
 						diverged = 1;
 						snprintf(confenv, sizeof confenv, "%s", GATES[g].env);
 						snprintf(confopt, sizeof confopt, "%s", OPTS[oi]);
@@ -945,6 +961,13 @@ int main(int argc, char **argv) {
 		runres_free(&cons);
 
 		if (!diverged) {
+			if (nagree == 0 && nbuildfail) {
+				bfail++;
+				if (verbose)
+					printf("build seed=%lu -- mcc failed to BUILD at every -O level "
+						   "(not a miscompile)\n", s);
+				continue;
+			}
 			pass++;
 			continue;
 		}
@@ -968,10 +991,18 @@ int main(int argc, char **argv) {
 			save_repro(red, corpus, s, &a);
 		}
 	}
-	printf("fuzz: %d agree, %d miscompile, %d dropped(UB/impl-def) over seeds %lu..%lu\n",
-		   pass, fail, drop, seed, seed + (unsigned long)count - 1);
+	printf("fuzz: %d agree, %d miscompile, %d dropped(UB/impl-def), %d mcc-buildfail "
+		   "over seeds %lu..%lu\n",
+		   pass, fail, drop, bfail, seed, seed + (unsigned long)count - 1);
 	if (fail)
 		return 1;
+	if (bfail && pass == 0) {
+		fprintf(stderr,
+				"fuzz: mcc built NOTHING (%d/%d seeds) -- the harness measured no "
+				"codegen. Check -B/-I staging and that mcc targets this arch.\n",
+				bfail, bfail + drop);
+		return 2;
+	}
 	if (pass == 0)
 		return MCC_SKIP_RC;
 	return 0;
