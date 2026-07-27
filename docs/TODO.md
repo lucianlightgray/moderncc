@@ -180,12 +180,22 @@ disabled, 4.29 s and 0.18 s. `MCC_JIT=1` and `MCC_AST_SEARCH=1` change neither n
    3636, same 0.29 s runtime) as size scoring, at the same compile time. So on this kernel the search converges on the
    same configuration either way and the scoring axis is not the lever it appears to be. Before building on it, find a
    kernel where the two scorings actually diverge; if none exists, the mode is decorative.
-3. **The superopt cache makes `-O4` SLOWER as it fills — 2x, reproducibly.** With 1112 accumulated `so-*` entries in
-   `$XDG_CACHE_HOME/mcc`, `-O4` on `nbody` compiles in **8.4 s**; with a clean cache dir, **4.0 s**. Stable across
-   repeat runs in both states. That is the opposite of what the cache is for — a memo hit is supposed to SKIP search.
-   Suspect a linear scan or per-entry open/lock over the whole directory rather than a keyed lookup. **This also means
-   every `-O4` compile-time number recorded in this file is cache-state-dependent and probably overstated**, including
-   the `tools/bench.c` 420x figure. Re-measure with an isolated `XDG_CACHE_HOME` before quoting any of them.
+3. **The superopt cache makes `-O4` 2x SLOWER for a byte-identical result — characterised 2026-07-27.** With 1112
+   accumulated `so-*` entries, `-O4` on `nbody` compiles in **8.4 s**; against a clean `XDG_CACHE_HOME`, **4.0 s**.
+   Stable across repeats in both states, and **both produce the SAME binary** (md5 `c860fa1313`, text 3636, 0.28 s).
+   So the extra 4.4 s buys nothing at all.
+   It is NOT a directory scan — the lookup is keyed (`so-<key>.ck` via `so_ckpt_path`). The mechanism is stranger:
+   `MCC_AST_SEARCH_VERBOSE=1` shows the clean run emitting **16 `[search] store` records, all `COMPLETE`** (the
+   per-function AST search runs and finishes for 16 functions), while the warm run emits **ZERO search lines** — the
+   per-function search is entirely short-circuited by memo hits, and it still takes twice as long. So the extra time is
+   NOT search work; it is the out-of-process superopt driver spending a time budget the memo hits freed up, and
+   arriving at the identical answer.
+   Two things to fix, in order: (a) the driver should stop when the in-process search reports every function COMPLETE,
+   rather than burning its remaining budget on a decided outcome; (b) a memo hit should make `-O4` FASTER, which is
+   the whole point of the checkpoint.
+   **This also invalidates a class of numbers: every `-O4` compile-time figure in this file is cache-state-dependent
+   and probably overstated**, including the `tools/bench.c` 420x claim. Re-measure against an isolated
+   `XDG_CACHE_HOME` before quoting any of them.
 3. **8.4 s per compile for ~1-10% size** is the trade `tools/bench.c` already reports as 420x compile time for ~8%
    smaller output. Consistent; no new information, but it belongs next to these numbers.
 
