@@ -343,6 +343,10 @@ static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i
 	}
 }
 
+static int mccjit_sym_positional(int32_t op) { MCC_TRACE("enter\n");
+	return (op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM);
+}
+
 MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf *buf,
 																				 uint64_t warm_gates) { MCC_TRACE("enter\n");
 	MccjitHandles handles;
@@ -360,7 +364,7 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		if (tref)
 			{ MCC_TRACE("br\n"); mccjit_handles_intern(&handles, tref,
 														mccjit_role_for_base(ast_type_t(a, n))); }
-		if (nsym)
+		if (nsym && !mccjit_sym_positional(ast_op(a, n)))
 			{ MCC_TRACE("br\n"); mccjit_handles_intern(&handles, nsym,
 														(ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
 																										: MCCJIT_ROLE_PLAIN); }
@@ -432,10 +436,11 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		mccjit_put_u32(buf, (uint32_t)ast_type_t(a, n));
 		mccjit_put_u64(buf, ast_ival(a, n));
 		mccjit_put_u64(buf, ast_fbits(a, n));
-		mccjit_put_u32(buf, nsym ? mccjit_handles_intern(
-															 &handles, nsym,
-															 (ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
-																											 : MCCJIT_ROLE_PLAIN)
+		mccjit_put_u32(buf, (nsym && !mccjit_sym_positional(ast_op(a, n)))
+														 ? mccjit_handles_intern(
+																 &handles, nsym,
+																 (ast_op(a, n) & VT_SYM) ? MCCJIT_ROLE_NAMED
+																												 : MCCJIT_ROLE_PLAIN)
 														 : 0);
 		mccjit_put_u32(buf, tref ? mccjit_handles_intern(
 															 &handles, tref, mccjit_role_for_base(ast_type_t(a, n)))
