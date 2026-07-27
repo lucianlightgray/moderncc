@@ -2720,6 +2720,13 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
     if(EXISTS "${CMAKE_BINARY_DIR}/mccrt_blob.c" OR MCC_EMBED_MCCRT)
         list(APPEND _blobs "${CMAKE_BINARY_DIR}/mccrt_blob.c")
     endif()
+    # System libs mcc.c needs: -lm is a no-op on PE, but -lpthread/-ldl are
+    # POSIX-only and error on WIN32 (threads/dlopen come from the win32 runtime
+    # shim + kernel32 there). Pass them only off-Windows.
+    set(_shlibs -lm -lpthread -ldl)
+    if(MCC_TARGETOS STREQUAL "WIN32")
+        set(_shlibs "")
+    endif()
     add_custom_command(OUTPUT "${out_path}"
         COMMAND "$<TARGET_FILE:${stage0_mcc}>" --embed-jit -O1
             ${_dflags}
@@ -2727,7 +2734,7 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
             "-I${CMAKE_CURRENT_SOURCE_DIR}" "-I${CMAKE_BINARY_DIR}"
             "-I$<JOIN:$<TARGET_PROPERTY:${stage0_mcc},INCLUDE_DIRECTORIES>,;-I>"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c" ${_blobs}
-            -lm -lpthread -ldl
+            ${_shlibs}
             -o "${out_path}"
         DEPENDS ${stage0_mcc} "${CMAKE_BINARY_DIR}/mccjit_blob.c"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/mcc.c"
@@ -2736,13 +2743,20 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
 endfunction()
 
 if(MCC_BUILD_JIT_SELFHOST AND MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER AND TARGET libmcc_jitengine)
-    if(MCC_TARGETOS STREQUAL "WIN32")
-        message(STATUS "mcc: JIT self-host (native) skipped — PE --embed-jit needs the mingw-runtime embed path")
+    # PE --embed-jit self-host now works (native-TLS COFF reading, a la carte
+    # loader termination, __ImageBase, compiler-rt fallback, K32GetProcessMemoryInfo
+    # def — 2026-07-27). The BAKE is proven crash-free and byte-identical under
+    # MCC_JIT=0/1 on llvm-mingw; on winlibs-gcc the RUNTIME JIT of the resulting
+    # mcc-jit may still hit the 0xC0000005 (P0 step 5), so this target only BUILDS
+    # (bakes) mcc-jit — any RUN-under-JIT test stays skip-guarded on winlibs.
+    if(WIN32)
+        set(_mccjit_out "${CMAKE_BINARY_DIR}/mcc-jit.exe")
     else()
-        mcc_add_jit_selfhost("${CMAKE_BINARY_DIR}/mcc-jit" mcc)
-        add_custom_target(mcc-jit-selfhost ALL DEPENDS "${CMAKE_BINARY_DIR}/mcc-jit")
-        message(STATUS "mcc: JIT self-host target 'mcc-jit-selfhost' -> mcc-jit enabled (native ${MCC_CPU})")
+        set(_mccjit_out "${CMAKE_BINARY_DIR}/mcc-jit")
     endif()
+    mcc_add_jit_selfhost("${_mccjit_out}" mcc)
+    add_custom_target(mcc-jit-selfhost ALL DEPENDS "${_mccjit_out}")
+    message(STATUS "mcc: JIT self-host target 'mcc-jit-selfhost' -> ${_mccjit_out} enabled (${MCC_CPU})")
 endif()
 
 file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/"
