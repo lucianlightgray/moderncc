@@ -295,7 +295,20 @@ work is worth more than new passes.
 Every item below came out of building `optfire` and following what it found. Nothing here is speculative — each is a
 loose end left by a landed change, with the specific evidence that would close it.
 
-**F1 — Flip the three recorder gates, or decide not to.** `MCC_AST_MEMBER_AGG` (+106 faithful), `MCC_AST_MEMBER_CONST`
+**F1 — Flip the three recorder gates, or decide not to.** **`MCC_AST_MEMBER_AGG` now MEETS THE M8 BAR and is ready
+to flip — this is a decision, not more work.** Evidence, all 2026-07-27:
+- **+106 faithful on x86_64, +87 on i386** over mcc's own TU, and **zero functions regress from `faithful`** — every
+  transition is out of `desync` (106 -> faithful, 30 -> unfaithful, 2 -> bail), and `unfaithful`/`desync` are equally
+  excluded from optimization, so the 30 are no worse off than before.
+- **3-stage self-host fixpoint holds byte-identically with the gate ON** (o1==o2==o3 at 5492335).
+- **Differential fuzz, 400 seeds with the full `--gates` sweep, gate ON: 396 agree, 0 miscompile, 0 buildfail.**
+- **`MCC_JIT=1` == `MCC_JIT=0`** on 4 shapes with `swapped=3` real dispatch installs (non-vacuous).
+- **Byte-identical with the gate OFF**; full ctest 7229/7229.
+The ONLY failing cell with it on is `ast-verify-ratchet`, reporting **769 gaps against a 776 baseline** — it fails
+because the gap set IMPROVED. So flipping is: set the default, regenerate `tests/ast/verify-baseline/<cpu>-<os>.txt`,
+done. Not yet covered by the bar: arm64/riscv64 (tooling-blocked, see (a)) and `-O6` differential.
+`MEMBER_CONST` (+46/+38) and `CMP_INVERT` (+9/+9) have the same shape but have NOT had the fixpoint or fuzz run with
+them on — do those before flipping either. `MCC_AST_MEMBER_AGG` (+106 faithful), `MCC_AST_MEMBER_CONST`
 (+46) and `MCC_AST_CMP_INVERT` (+9) are all default-OFF and byte-identical off. Each needs, before flipping:
 (a) cross-arch validation — **i386 DONE 2026-07-27, arm64/riscv64 still open.** On a real TU (`src/mcc.c` via a
 native 32-bit `mcc32`, rc=0) all three gates reproduce the x86_64 shape: `MEMBER_AGG` desync 715 -> 601 and faithful
