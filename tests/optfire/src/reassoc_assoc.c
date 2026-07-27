@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 static int nests(int x)
 {

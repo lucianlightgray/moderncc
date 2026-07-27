@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 static int chained(int a, long c, long d)
 {

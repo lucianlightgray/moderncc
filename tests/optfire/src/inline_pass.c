@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 static int addk(int v, int k)
 {

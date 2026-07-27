@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 struct pt {
 	int x;

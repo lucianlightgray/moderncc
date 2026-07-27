@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 int ga = 6, gb = 7;
 

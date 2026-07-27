@@ -40,6 +40,9 @@ level)   LDF=$8 ;;
 esac
 [ "$LDF" = "-" ] && LDF=
 refout=""
+# level mode only reads counters; it never runs the program, so building the
+# -O0 oracle would just be a way to fail on unrelated link flags.
+[ "$mode" = "level" ] && norun=1
 if [ "$norun" != "1" ]; then
 	# shellcheck disable=SC2086
 	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }

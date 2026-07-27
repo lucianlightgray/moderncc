@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 static int tbl[4] = {10, 20, 30, 40};
 

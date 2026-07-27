@@ -1,6 +1,6 @@
 # <name>|<--stats counter>|<-Olevel>:<on|off>,...   locks the -O curation
 bfold|bfold|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
-ident|ident|-O0:off,-O1:on,-O2:on,-O3:on,-Os:off
+ident|ident|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 narrow|narrow|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 cprop|cprop|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 cse|cse|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on

@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 #pragma comment(lib, "m")
 
 extern double fabs(double);

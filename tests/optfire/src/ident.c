@@ -1,16 +1,17 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 int gx = 11;
 
+static int fold_identities(int x, long w)
+{
+	int a = (int)(long)x;
+	int b = (int)(long)(x + 1);
+	long c = (long)(int)w;
+	return a + b + (int)c;
+}
+
 int main(void)
 {
-	int x = gx;
-	int a = x + 0;
-	int b = x * 1;
-	int c = x | 0;
-	int d = x & -1;
-	int e = x ^ 0;
-	int f = x - 0;
-	printf("%d\n", a + b + c + d + e + f);
+	printf("%d\n", fold_identities(gx, (long)gx * 3));
 	return 0;
 }

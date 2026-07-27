@@ -1,4 +1,4 @@
-#include <stdio.h>
+extern int printf(const char *, ...);
 
 double fmin(double, double);
 double fmax(double, double);
