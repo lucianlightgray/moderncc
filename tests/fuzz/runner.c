@@ -326,7 +326,7 @@ static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
 	if (buildfail)
 		*buildfail = 0;
 	for (int attempt = 0; attempt < MCC_DIVERGE_ATTEMPTS; attempt++) {
-		runres m = build_run(mcc, NULL, bdir, idir, env, opt, work, "mcc", src);
+		runres m = build_run(NULL, mcc, bdir, idir, env, opt, work, "mcc", src);
 		int agree = m.kind == RES_OK && runres_eq(&m, cons);
 		nbuildfail += m.kind == RES_BUILDFAIL;
 		runres_free(&m);
