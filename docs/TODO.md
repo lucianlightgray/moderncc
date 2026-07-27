@@ -241,12 +241,24 @@ better configuration is being overridden.
 `-O4` is slower than `-O3` on **all four**. On three it at least buys size, which is a defensible (if surprising)
 trade. **On nbody it is slower AND larger — worse on the driver's OWN scoring axis.** That is not a design tradeoff,
 it is the driver shipping a result it should have rejected.
-The likely mechanism, and the fix: the driver appears to compare candidates only against EACH OTHER, never against
-the plain `-O3` baseline, so when every candidate is worse than baseline it still ships the best-of-bad. **Include the
-unsearched `-O3` result as a candidate and keep it unless something genuinely beats it.** That is unambiguous — it
-needs no decision about whether `-O4` means speed or size, because on either axis `-O4` would then be no worse than
-`-O3` by construction, which is exactly what the request asks for. The axis question (speed at `-O4` vs size at `-Os`)
-remains open and separable, and should be decided on its own once this floor exists.
+The mechanism, narrowed by two more falsified hypotheses (2026-07-27):
+- *Not* that the driver starts from all-gates-off and cannot climb back. It initialises `best_gate = 0` and only seeds
+  the default config under `MCC_SO_DEFAULT_SEED`, which looked like the answer — but setting that env produces
+  **byte-identical output on all four kernels** (text 3636/2547/2329/1790, same runtimes). The search converges to the
+  same place regardless of its starting point, so the seed is inert.
+- *Not* the gate floor (`MCC_AST_SEARCH_FLOOR`) or the inline-limit axis, both falsified earlier.
+What remains, and is consistent with every measurement: **the driver's candidate space does not CONTAIN the plain
+`-O3` configuration.** Its `best_gate` is a small 4-bit-per-slot encoding over its own vocabulary (`SO_GATE_SPACE`,
+`SO_GATE_DEFAULT = 0xFFFFFFFF`), not the AST gate mask, so 'all bits set' in the driver's space is not the same thing
+as the `-O3` default set. If the baseline is not expressible as a candidate, no amount of searching or seeding can
+select it — which is exactly what nbody shows, where the driver's converged answer is LARGER than `-O3` on its own
+axis.
+**Fix: evaluate the unsearched `-O3` output as a candidate in its own right and keep it unless a searched candidate
+genuinely beats it**, rather than trying to express it inside the driver's vocabulary. That is unambiguous and needs
+no decision about whether `-O4` means speed or size, because on either axis `-O4` would then be no worse than `-O3`
+by construction. Verify the encoding claim before implementing — it is inferred from `SO_GATE_SPACE`/`best_gate`
+widths and the converged-identical evidence, not from reading the mapping end to end. The axis question stays open
+and separable.
 Note the floor costs size for no measured runtime gain here (3748 vs 3636), so adopting it is a decision about
 GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep it off until the real cause is found, or
 it will be credited with a fix it did not make.
