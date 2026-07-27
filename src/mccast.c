@@ -2974,7 +2974,9 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	   optimization anyway, so the net is +47 optimizable with no path to a
 	   miscompile. Opt-in until that residue is understood. */
 	{ static int relax = -1;
-	  if (relax < 0) { MCC_TRACE("br\n"); relax = getenv("MCC_AST_MEMBER_CONST") ? 1 : 0; }
+	  if (relax < 0) { MCC_TRACE("br\n");
+	    const char *e = getenv("MCC_AST_MEMBER_CONST");
+	    relax = e && e[0] && strcmp(e, "0") ? 1 : 0; }
 	  if (relax && qual == VT_CONSTANT) { MCC_TRACE("br\n"); qual = 0; } }
 	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
