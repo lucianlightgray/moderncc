@@ -1226,6 +1226,9 @@ static void gen_test_zero(int op) { MCC_TRACE("enter\n");
 			vtop->jfalse = vtop->jtrue;
 			vtop->jtrue = j;
 			vtop->cmp_op ^= 1;
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_cmp_invert();
+#endif
 		}
 	} else { MCC_TRACE("br\n");
 		vpushi(0);

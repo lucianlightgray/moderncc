@@ -202,6 +202,7 @@ void ast_hook_implicit_return(void);
 void ast_hook_ret_expr_done(void);
 void ast_hook_vpush(void);
 void ast_hook_genop(int op);
+void ast_hook_cmp_invert(void);
 void ast_hook_genop_end(void);
 void ast_hook_vstore(void);
 void ast_hook_vstore_end(void);

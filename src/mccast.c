@@ -2347,6 +2347,38 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn++] = b;
 }
 
+void ast_hook_cmp_invert(void) { MCC_TRACE("enter\n");
+	AstLocal n;
+	int op;
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_AST_CMP_INVERT");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0; }
+	if (!on)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_active)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_vn < 1)
+		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); return; }
+	n = ast_vs[ast_vn - 1];
+	op = ast_op(ast_cur, n);
+	switch (op) { MCC_TRACE("br\n");
+	case TOK_ULT: case TOK_UGE: case TOK_EQ: case TOK_NE:
+	case TOK_ULE: case TOK_UGT: case TOK_LT: case TOK_GE:
+	case TOK_LE: case TOK_GT:
+		break;
+	default:
+		MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	if (ast_kind(ast_cur, n) != AST_Binary)
+		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); return; }
+	ast_set_op(ast_cur, n, op ^ 1);
+}
+
 void ast_hook_genop_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_in_op == 0)
 		{ MCC_TRACE("br\n"); return; }
