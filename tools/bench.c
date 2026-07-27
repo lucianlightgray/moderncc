@@ -37,6 +37,7 @@ struct compiler {
 	const char *ccmacro;
 	char version[128];
 	const char *opt;
+	int reps; /* 0 = use the run's --repeats; -O4 overrides it, see the sweep */
 };
 
 struct workload {
@@ -632,7 +633,7 @@ static void write_table(FILE *f, const struct compiler *ccs, int nccs,
 		return;
 	for (i = 0; i < nccs; i++)
 		if (!(wl->gnu_c && ccs[i].style == STYLE_CL))
-			bench_one(&ccs[i], wl, repeats, &cells[i]);
+			bench_one(&ccs[i], wl, ccs[i].reps ? ccs[i].reps : repeats, &cells[i]);
 	if (wl->have_counts)
 		fprintf(f, "\nWorkload: %s  (%d lines, %d functions, n=%d runs)\n",
 						wl->key, wl->lines, wl->funcs, repeats);
@@ -1228,9 +1229,9 @@ int main(int argc, char **argv) {
 
 	{
 		struct compiler base[MAXCC];
-		static char selfpath[4][4096];
-		static const char *gccopts[] = {NULL, "-O1", "-O2", "-O3"};
-		static const char *clopts[] = {NULL, "/O1", "/O2", NULL};
+		static char selfpath[5][4096];
+		static const char *gccopts[] = {NULL, "-O1", "-O2", "-O3", "-O4"};
+		static const char *clopts[] = {NULL, "/O1", "/O2", NULL, NULL};
 		int nbase = nccs, k, o;
 		memcpy(base, ccs, sizeof(struct compiler) * nbase);
 		nccs = 0;
@@ -1241,6 +1242,7 @@ int main(int argc, char **argv) {
 			mc = &ccs[nccs++];
 			*mc = base[0];
 			mc->opt = gccopts[o];
+			mc->reps = (gccopts[o] && !strcmp(gccopts[o], "-O4")) ? 1 : 0;
 			printf("==> self-hosting mcc at %s\n",
 						 gccopts[o] ? gccopts[o] : "default");
 			if (build_self_mcc(mccpath, self_wl, builddir, gccopts[o],
