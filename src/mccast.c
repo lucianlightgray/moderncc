@@ -4698,6 +4698,22 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			for (int j = 0; j < nc; j++)
 				{ MCC_TRACE("br\n"); if (coff[j] == toff)
 					{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
+			/* Same hazard for the chained store's VALUE SOURCE: in `a = b = i`
+			 * with i a promoted local (e.g. a promoted loop counter), the inner
+			 * store reads i straight from its promoted register -- on arm64 a
+			 * `stur w_i,[b]` -- and never materialises it into the register the
+			 * outer store reads, so the outer store gets a stale register (x86
+			 * happens to route it through the accumulator; arm64 does not).
+			 * Decline to promote the source too. */
+			AstLocal val = ast_child(a, prev, 1);
+			if (val != AST_NONE && ast_kind(a, val) == AST_Ref &&
+					(ast_op(a, val) & VT_VALMASK) == VT_LOCAL &&
+					!(ast_op(a, val) & VT_SYM)) { MCC_TRACE("br\n");
+				int voff = (int)(int64_t)ast_ival(a, val);
+				for (int j = 0; j < nc; j++)
+					{ MCC_TRACE("br\n"); if (coff[j] == voff)
+						{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
+			}
 		}
 	}
 	for (int j = 0; j < nc; j++)
