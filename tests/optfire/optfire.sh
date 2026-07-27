@@ -5,6 +5,10 @@
 #   differ  <mcc> <src.c> <work> <name> <olevel> <env> <extra-env|->
 #   level   <mcc> <src.c> <work> <name> <unused> <counter> <spec>
 #
+# OPTFIRE_NORUN=1 asserts only that the pass FIRED and skips the -O0 oracle and
+# the program runs. That is the cross-compiler mode: a cross mcc cannot link a
+# runnable host binary, but the differ assertion is still meaningful there.
+#
 # level mode locks the -O curation: `spec` is -O1:on,-O2:on,-O3:on,-Os:off and
 # each listed level must have the counter nonzero (on) or zero (off) with NO env
 # set. It catches a default-on condition silently drifting between -O levels,
@@ -27,21 +31,26 @@ opt=$WORK/$NAME.opt
 strip_ansi() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 
 # -O0 reference behaviour: the oracle every mode compares against.
+norun=${OPTFIRE_NORUN:-0}
+MCCFLAGS=${OPTFIRE_MCCFLAGS:-}
 case $mode in
 counter) LDF=$8 ;;
 differ)  LDF=$9 ;;
 level)   LDF=$8 ;;
 esac
 [ "$LDF" = "-" ] && LDF=
-# shellcheck disable=SC2086
-"$MCC" -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
-refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; exit 1; }
+refout=""
+if [ "$norun" != "1" ]; then
+	# shellcheck disable=SC2086
+	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
+	refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; exit 1; }
+fi
 
 case $mode in
 counter)
 	COUNTER=$7
 	[ -n "$COUNTER" ] || { echo "FAIL $NAME: no counter name given"; exit 2; }
-	got=$("$MCC" "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.o" 2>&1 |
+	got=$("$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.o" 2>&1 |
 		strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
 	[ -n "$got" ] || { echo "FAIL $NAME: counter '$COUNTER' absent from --stats output"; exit 1; }
 	[ "$got" -gt 0 ] 2>/dev/null || {
@@ -49,7 +58,11 @@ counter)
 		exit 1
 	}
 	# shellcheck disable=SC2086
-	"$MCC" "$OLEVEL" "$SRC" -o "$opt" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: $OLEVEL build failed"; exit 1; }
+	if [ "$norun" = "1" ]; then
+		echo "PASS $NAME: $COUNTER=$got at $OLEVEL (norun: fired-only)"
+		exit 0
+	fi
+	"$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: $OLEVEL build failed"; exit 1; }
 	optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; exit 1; }
 	[ "$optout" = "$refout" ] || {
 		echo "FAIL $NAME: output changed under $OLEVEL"
@@ -65,18 +78,22 @@ differ)
 	[ -n "$ENVV" ] || { echo "FAIL $NAME: no gate env given"; exit 2; }
 	[ "$EXTRA" = "-" ] && EXTRA=
 	# shellcheck disable=SC2086
-	env $EXTRA "$ENVV=0" "$MCC" "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.off.o" >/dev/null 2>&1 ||
+	env $EXTRA "$ENVV=0" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.off.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: gate-off compile failed"; exit 1; }
 	# shellcheck disable=SC2086
-	env $EXTRA "$ENVV=1" "$MCC" "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.on.o" >/dev/null 2>&1 ||
+	env $EXTRA "$ENVV=1" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.on.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: gate-on compile failed"; exit 1; }
 	if cmp -s "$WORK/$NAME.off.o" "$WORK/$NAME.on.o"; then
 		echo "FAIL $NAME: pass DID NOT FIRE ($ENVV=0 and $ENVV=1 objects are byte-identical at $OLEVEL)"
 		exit 1
 	fi
+	if [ "$norun" = "1" ]; then
+		echo "PASS $NAME: objects differ with $ENVV toggled at $OLEVEL (norun: fired-only)"
+		exit 0
+	fi
 	for v in 0 1; do
 		# shellcheck disable=SC2086
-		env $EXTRA "$ENVV=$v" "$MCC" "$OLEVEL" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
+		env $EXTRA "$ENVV=$v" "$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
 			{ echo "FAIL $NAME: $ENVV=$v build failed"; exit 1; }
 		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $ENVV=$v run failed"; exit 1; }
 		[ "$out" = "$refout" ] || {
@@ -95,7 +112,7 @@ level)
 	LDF=
 	bad=0
 	echo "$SPEC" | tr ',' '\n' | while IFS=: read -r lvl want; do
-		got=$("$MCC" "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" 2>&1 |
+		got=$("$MCC" $MCCFLAGS "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" 2>&1 |
 			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
 		[ -n "$got" ] || got=0
 		case $want in
