@@ -241,24 +241,30 @@ better configuration is being overridden.
 `-O4` is slower than `-O3` on **all four**. On three it at least buys size, which is a defensible (if surprising)
 trade. **On nbody it is slower AND larger — worse on the driver's OWN scoring axis.** That is not a design tradeoff,
 it is the driver shipping a result it should have rejected.
-The mechanism, narrowed by two more falsified hypotheses (2026-07-27):
-- *Not* that the driver starts from all-gates-off and cannot climb back. It initialises `best_gate = 0` and only seeds
-  the default config under `MCC_SO_DEFAULT_SEED`, which looked like the answer — but setting that env produces
-  **byte-identical output on all four kernels** (text 3636/2547/2329/1790, same runtimes). The search converges to the
-  same place regardless of its starting point, so the seed is inert.
-- *Not* the gate floor (`MCC_AST_SEARCH_FLOOR`) or the inline-limit axis, both falsified earlier.
-What remains, and is consistent with every measurement: **the driver's candidate space does not CONTAIN the plain
-`-O3` configuration.** Its `best_gate` is a small 4-bit-per-slot encoding over its own vocabulary (`SO_GATE_SPACE`,
-`SO_GATE_DEFAULT = 0xFFFFFFFF`), not the AST gate mask, so 'all bits set' in the driver's space is not the same thing
-as the `-O3` default set. If the baseline is not expressible as a candidate, no amount of searching or seeding can
-select it — which is exactly what nbody shows, where the driver's converged answer is LARGER than `-O3` on its own
-axis.
-**Fix: evaluate the unsearched `-O3` output as a candidate in its own right and keep it unless a searched candidate
-genuinely beats it**, rather than trying to express it inside the driver's vocabulary. That is unambiguous and needs
-no decision about whether `-O4` means speed or size, because on either axis `-O4` would then be no worse than `-O3`
-by construction. Verify the encoding claim before implementing — it is inferred from `SO_GATE_SPACE`/`best_gate`
-widths and the converged-identical evidence, not from reading the mapping end to end. The axis question stays open
-and separable.
+**DIAGNOSED 2026-07-27 — the driver's SCORING PROXY is miscalibrated. Four hypotheses falsified first; recording them
+so nobody re-runs the same experiments.**
+- *Not* gate subtraction at the AST-search layer. `MCC_AST_SEARCH_FLOOR` takes effect (text 3636 -> 3748) and does not
+  recover the runtime. It also targets the wrong layer: the driver sets gates via ENV in child processes, which
+  `ast_configure` reads, so a floor applied inside `ast_search_gates_set` never sees them.
+- *Not* the inline-limit axis. `MCC_AST_INLINE_LIMIT=160` changes neither runtime nor text.
+- *Not* an unreachable baseline. Reading `so_setenv_cfg` end to end: `gate == SO_GATE_DEFAULT` RESTORES the user env,
+  so the plain baseline IS expressible and IS what `MCC_SO_DEFAULT_SEED` evaluates first. (This retracts the previous
+  entry's inference that the driver's space could not contain `-O3`.)
+- *Not* the searched gate set. Forcing `MCC_AST_TEMPLATES=1 MCC_AST_PROMOTE=1 MCC_AST_INLINE=1` at `-O4` gives
+  0.284 s / 3632 — indistinguishable from plain `-O4` — because the driver re-decides the config inside its children
+  regardless.
+
+**What it is:** `so_eval` scores a candidate as `text + spills * so_spill_w` with `SO_SPILL_W_DEFAULT = 48`. That is a
+SPEED proxy, not a size metric — and it is choosing wrong. The driver's children all run with `MCC_SEARCH_WORKER=1`
+(set by `so_setenv_cfg`), i.e. the in-process search, which on its own produces the FASTEST code measured here
+(0.17 s, 29% better than `-O3`). The driver then evaluates candidates on the proxy and ships one that is **65% slower**
+than the baseline it could have kept, and on nbody LARGER as well.
+
+**Fix, in order of confidence:** (1) keep the baseline unless a candidate beats it on a metric that has been VALIDATED
+against real runtime — the current proxy demonstrably has not been; (2) recalibrate or justify `so_spill_w = 48`, which
+appears to be a guess; (3) only then revisit whether `-O4` should optimise speed or size. Note `so_jitscore` already
+exists to score by actual measured runtime (`so_run_score`) and is inert in practice — that is the honest metric this
+proxy is standing in for.
 Note the floor costs size for no measured runtime gain here (3748 vs 3636), so adopting it is a decision about
 GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep it off until the real cause is found, or
 it will be credited with a fix it did not make.
