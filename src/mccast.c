@@ -874,11 +874,32 @@ static int ast_slice_rec_deserialize(const unsigned char *buf, long len,
        config is kept, matching the Phase-3 static rule.
    Pure logic in the non-MCC_INTERNAL region so tools/asttool can unit-test the
    proven-preference directly. */
+/* MCC_AST_SLICE_MULTI (default OFF). Off, the store keeps ONE record per slice
+   ident -- a fixed decision, where merge_one collapses competing configs and the
+   consumer takes what it is given, then masks it. On, records are keyed by
+   (ident, gates) so several CANDIDATE configs for the same slice coexist, and the
+   consumer picks the candidate that best survives the CURRENT target's searchable
+   mask instead of degrading whichever single config happened to be stored. This
+   is what makes a shared cross-triple store useful rather than merely legal: an
+   x86_64-proven config may name gates i386 cannot run, and masking it can leave a
+   worse mask than a different stored candidate would give. */
+static int ast_slice_multi_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_AST_SLICE_MULTI");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on;
+}
+
 static void ast_slice_merge_one(AstSliceMemo *tab, int *n, int cap,
 																const AstSliceMemo *rec) { MCC_TRACE("enter\n");
 	int j;
+	int multi = ast_slice_multi_on();
 	for (j = 0; j < *n; j++) { MCC_TRACE("br\n");
 		if (tab[j].ident != rec->ident)
+			{ MCC_TRACE("br\n"); continue; }
+		if (multi && tab[j].gates != rec->gates)
 			{ MCC_TRACE("br\n"); continue; }
 		tab[j].refcount += rec->refcount;
 		if (rec->proven && !tab[j].proven) { MCC_TRACE("br\n");
@@ -911,40 +932,59 @@ typedef struct AstSliceProbeCtx {
 	int table_n;
 	int64_t best_size;
 	uint64_t best_gates;
+	uint64_t allow;
 	int best_proven;
+	int best_surv;
 	int found;
 } AstSliceProbeCtx;
+
+static int ast_slice_popcount(uint64_t v) { MCC_TRACE("enter\n");
+	int c = 0;
+	while (v) { MCC_TRACE("br\n"); v &= v - 1; c++; }
+	return c;
+}
 
 static void ast_slice_visit_probe(uint64_t ident, int size, uint64_t gates, void *ctx) { MCC_TRACE("enter\n");
 	AstSliceProbeCtx *p = (AstSliceProbeCtx *)ctx;
 	int i;
+	int multi = ast_slice_multi_on();
 	(void)gates;
 	for (i = 0; i < p->table_n; i++) { MCC_TRACE("br\n");
 		if (p->table[i].ident == ident) { MCC_TRACE("br\n");
 			int prov = p->table[i].proven ? 1 : 0;
+			int surv = multi ? ast_slice_popcount(p->table[i].gates & p->allow) : 0;
 			/* rank by (proven desc, size desc): a proven match always outranks a
-			   static one, and within a class the largest recurring slice wins. */
+			   static one, and within a class the largest recurring slice wins.
+			   In multi mode a middle criterion is inserted: prefer the candidate
+			   that keeps the MOST gates once masked for this target. */
 			int better = !p->found || prov > p->best_proven ||
-									 (prov == p->best_proven && (int64_t)size > p->best_size);
+									 (prov == p->best_proven && multi && surv > p->best_surv) ||
+									 (prov == p->best_proven && (!multi || surv == p->best_surv) &&
+										(int64_t)size > p->best_size);
 			if (better) { MCC_TRACE("br\n");
 				p->found = 1;
 				p->best_proven = prov;
+				p->best_surv = surv;
 				p->best_size = size;
 				p->best_gates = p->table[i].gates;
 			}
-			break;
+			if (!multi)
+				{ MCC_TRACE("br\n"); break; }
 		}
 	}
 }
 
-static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
-																 int table_n, uint64_t *out_gates) { MCC_TRACE("enter\n");
+static int ast_slice_probe_table_ex(const AstArena *a, const AstSliceMemo *table,
+																		int table_n, uint64_t allow,
+																		uint64_t *out_gates) { MCC_TRACE("enter\n");
 	AstSliceProbeCtx p;
 	p.table = table;
 	p.table_n = table_n;
 	p.best_size = -1;
 	p.best_gates = 0;
+	p.allow = allow;
 	p.best_proven = 0;
+	p.best_surv = -1;
 	p.found = 0;
 	if (!a || !table || table_n <= 0)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -952,6 +992,11 @@ static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
 	if (p.found && out_gates)
 		{ MCC_TRACE("br\n"); *out_gates = p.best_gates; }
 	return p.found;
+}
+
+static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
+																 int table_n, uint64_t *out_gates) { MCC_TRACE("enter\n");
+	return ast_slice_probe_table_ex(a, table, table_n, ~(uint64_t)0, out_gates);
 }
 
 /* ---- Node-stable in-arena splice (roadmap 14) ----------------------------
@@ -14321,8 +14366,10 @@ static void ast_slice_disk_commit(const AstSliceMemo *recs, int n) { MCC_TRACE("
 	    FILE *f = fopen(d, "a"); int q;
 	    if (f) { MCC_TRACE("br\n");
 	      for (q = 0; q < n; q++) { MCC_TRACE("br\n");
-	        fprintf(f, "%016llx %lld %d\n", (unsigned long long)recs[q].ident,
-	                (long long)recs[q].size, recs[q].proven); }
+	               fprintf(f, "%016llx g=%016llx %lld %d\n",
+	                       (unsigned long long)recs[q].ident,
+	                       (unsigned long long)recs[q].gates,
+	                       (long long)recs[q].size, recs[q].proven); }
 	      fclose(f); } } }
 	char path[1152], tmpp[1200];
 	int lockfd, i;
@@ -15495,10 +15542,11 @@ static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	ast_slice_disk_load();
 	if (ast_slice_disk_n <= 0)
 		{ MCC_TRACE("br\n"); return; } /* empty/absent cache: strict no-op (byte-identical) */
-	if (!ast_slice_probe_table(ast_cur, ast_slice_disk, ast_slice_disk_n, &cached))
-		{ MCC_TRACE("br\n"); return; }
 	base = ast_search_gates_now();
 	searchable = ast_search_searchable(base);
+	if (!ast_slice_probe_table_ex(ast_cur, ast_slice_disk, ast_slice_disk_n,
+																(uint64_t)searchable, &cached))
+		{ MCC_TRACE("br\n"); return; }
 	warm = (AstGateMask)cached & searchable;
 	MCC_TRACE("slice warm-start gates=%llx&%llx->%llx\n", (unsigned long long)cached,
 						(unsigned long long)searchable, (unsigned long long)warm);
