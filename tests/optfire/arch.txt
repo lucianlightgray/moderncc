@@ -1,0 +1,3 @@
+# <name>|<cpu>[,<cpu>...]  register the case only on these MCC_CPU values
+# regdisp: ast_regdisp_env compiles to 0 off x86_64, so the gate cannot fire there.
+regdisp|x86_64
