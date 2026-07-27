@@ -1446,7 +1446,16 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("ent
 
 	if (mcc_support_arch_match(s1, plain) == 1) { MCC_TRACE("br\n");
 		int ret = mcc_add_dll(s1, plain, AFF_PRINT_ERROR);
-		if (arch_ok)
+		/* Supplement with the arch-tagged copy only for an ARCHIVE. The a la carte
+		   pull -- taking just the members for still-undefined symbols -- is what
+		   makes a complete plain `.a` inert and a leaner one filled in; for a plain
+		   `.o`, which is linked wholesale, the second copy instead defines every
+		   symbol twice. The cross build now stages <arch>-runmain.o (and bcheck /
+		   mccasan / mccubsan / bt-*) beside the plain ones, so on an arch==host link
+		   -- where the plain object is arch-correct -- this guard is what stops
+		   `<arch>-runmain.o: '_runmain' defined twice`. */
+		size_t fl = strlen(filename);
+		if (arch_ok && fl >= 2 && !strcmp(filename + fl - 2, ".a"))
 			{ MCC_TRACE("br\n"); mcc_add_dll(s1, arch, 0); }
 		return ret;
 	}
