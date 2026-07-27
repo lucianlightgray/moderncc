@@ -2376,7 +2376,20 @@ void ast_hook_cmp_invert(void) { MCC_TRACE("enter\n");
 	}
 	if (ast_kind(ast_cur, n) != AST_Binary)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); return; }
+#ifdef MCC_TARGET_ARM64
+	/* arm64 materialises a comparison result with CSINC rather than a
+	   compare-and-setcc pair, so the inversion is not a token flip there: the
+	   replay comes out a different LENGTH (32 B vs 28 B on the `!!` reproducer),
+	   not merely a different condition. Flipping the op would model it WRONGLY,
+	   and a wrong model that happens to replay identically is the latent
+	   miscompile path this hook exists to close. Desync instead until the CSINC
+	   form is modelled. */
+	(void)op;
+	AST_SET_DESYNC();
+	return;
+#else
 	ast_set_op(ast_cur, n, op ^ 1);
+#endif
 }
 
 void ast_hook_genop_end(void) { MCC_TRACE("enter\n");
