@@ -23,11 +23,17 @@ re-discovers them:
 
 Usage:
   tools/runtime-bench.py [--mcc PATH] [--cc PATH] [--runs N] [--check-only]
-                         [--gates "K=V K=V"]...  [--json]
+                         [--gates "K=V K=V"]...  [--json] [--assert-gate-wins]
 
   --gates may be repeated to compare configurations; the first is the baseline
   and later ones are reported as a delta against it. An empty --gates "" means
   stock defaults.
+
+  --assert-gate-wins is the one timing mode that IS a pass/fail gate: it times
+  the GATE_WINS table's default-on flips against the single kernel each one
+  moves and fails if the win is gone. It asserts only that a large win still
+  exists, and skips (77) whenever the box is too noisy to say -- see the
+  comments on GATE_WINS and assert_gate_wins.
 
 Exit status: 0 all good, 1 an output mismatch or build failure, 77 skip (no
 reference compiler, or kernels missing).
@@ -38,20 +44,26 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLB = os.path.join(ROOT, "vendor", "plb", "bench", "algorithm")
 RT = os.path.join(ROOT, "tests", "runtime")
 
-# (name, source, argv, mcc_flags) -- argv sized so each kernel runs ~0.3-0.5s
-# under gcc -O2; anything shorter and process startup dominates, making the
-# timing useless. mcc_flags are extra flags only mcc gets (the reference
-# compiler needs no equivalent).
 KERNELS = [
     ("nbody",      os.path.join(PLB, "nbody", "2.c"),   ["10000000"], []),
     ("nsieve",     os.path.join(PLB, "nsieve", "1.c"),  ["12"],       []),
     ("mandelbrot", os.path.join(RT, "mandelbrot.c"),    ["3000"],     []),
     ("matmul",     os.path.join(RT, "matmul.c"),        ["600", "8"], []),
-    # plain C99 `inline` with no external definition; mcc needs the weak
-    # out-of-line body to resolve `A` (gcc supplies one by default)
     ("spectral",   os.path.join(PLB, "spectral-norm", "3.c"), ["3000"],
                    ["-fc99-inline-body"]),
 ]
+
+GATE_WINS = [
+    ("MCC_AST_OPASSIGN",   "nbody",
+     os.path.join(PLB, "nbody", "2.c"), ["5000000"], [], 8.0),
+    ("MCC_AST_CHAINSTORE", "spectral",
+     os.path.join(PLB, "spectral-norm", "3.c"), ["2000"],
+     ["-fc99-inline-body"], 8.0),
+]
+
+GATE_WIN_NOISE_MAX = 0.12
+GATE_WIN_CONFIRM_NOISE_MAX = 0.05
+GATE_WIN_MIN_MS = 60.0
 
 
 def find_cc(explicit):
@@ -63,12 +75,10 @@ def find_cc(explicit):
     return None
 
 
-def build(cc, src, out, extra_env=None, mcc=False, flags=None):
-    cmd = [cc, "-O2"] + (flags or []) + [src, "-o", out, "-lm"]
+def build(cc, src, out, extra_env=None, mcc=False, flags=None, opt="-O2"):
+    cmd = [cc, opt] + (flags or []) + [src, "-o", out, "-lm"]
     if not mcc:
         cmd.insert(1, "-w")
-        # keep the reference honest: no FP contraction, so a fused multiply-add
-        # in the reference does not read as an mcc miscompile
         cmd.insert(1, "-ffp-contract=off")
     env = dict(os.environ)
     if extra_env:
@@ -82,6 +92,29 @@ def run_once(exe, argv):
     p = subprocess.run([exe] + argv, capture_output=True, text=True)
     dt = (time.perf_counter() - t0) * 1000.0
     return p.returncode, p.stdout.strip(), dt
+
+
+def run_once_cpu(exe, argv):
+    """Like run_once, but the metric is the child's own CPU time, not wall.
+
+    This is what makes the gate-win assertion usable inside a `ctest -j` run.
+    Wall-clock counts the time the kernel had the process descheduled, so on a
+    loaded box every configuration converges towards "slow" and a real 16-31%
+    codegen win reads as 0% -- measured, not theorised: an in-suite run reported
+    both gates at ~0% with each binary reproducing itself to within 5%, which is
+    a confident wrong answer, the one failure mode a perf gate must not have.
+    CPU time is charged only while the process is on a core, so contention
+    stretches the run without changing what it measures."""
+    if not hasattr(os, "wait4"):
+        return run_once(exe, argv)
+    with tempfile.TemporaryFile() as fo:
+        p = subprocess.Popen([exe] + argv, stdout=fo, stderr=subprocess.DEVNULL)
+        _, status, ru = os.wait4(p.pid, 0)
+        p.returncode = (os.WEXITSTATUS(status) if os.WIFEXITED(status)
+                        else -os.WTERMSIG(status))
+        fo.seek(0)
+        out = fo.read().decode("utf-8", "replace").strip()
+    return p.returncode, out, (ru.ru_utime + ru.ru_stime) * 1000.0
 
 
 def perf_available():
@@ -115,6 +148,178 @@ def instructions_retired(exe, argv):
     return None
 
 
+def box_too_busy():
+    """Circuit breaker for a hammered box only. Deliberately loose (4x the core
+    count): the 1-minute average still reads far above the core count for
+    minutes after a parallel `ctest -j` run even once the box is idle again --
+    which is exactly when this gate runs -- so a tight limit here would make it
+    skip every time it matters. Real noise is caught by the interleaving and
+    the repeat probe in assert_gate_wins, which measure the box instead of
+    guessing at it; this only avoids burning a minute on a hopeless one."""
+    try:
+        load = os.getloadavg()[0]
+    except (OSError, AttributeError):
+        return None
+    ncpu = os.cpu_count() or 1
+    return "%.1f over %d cpus" % (load, ncpu) if load > 4 * ncpu else None
+
+
+def gate_win_round(exes, argv, expect, runs):
+    """One interleaved measurement round: returns (times, drift, mismatch).
+
+    Interleaved so a frequency or load ramp hits BOTH configs, never one.
+    `drift` is the worst first-half-minimum vs second-half-minimum spread of
+    either config against ITSELF -- a binary failing to reproduce its own
+    number is the cheapest honest measure of how far this box can be trusted,
+    and taking the worse of the two makes the probe harder to pass by luck than
+    the comparison it guards. Output is compared with the reference on every
+    single run, so a "fast but wrong" binary reports a mismatch instead of a
+    good number."""
+    times = {label: [] for label, _ in exes}
+    for _, exe in exes:
+        run_once_cpu(exe, argv)
+    for _ in range(runs):
+        for label, exe in exes:
+            rc, out, ms = run_once_cpu(exe, argv)
+            if rc != 0 or out != expect:
+                return times, None, f"[{label}]: output mismatch\n" \
+                                    f"    want: {expect}\n    got:  {out}"
+            times[label].append(ms)
+    half = runs // 2
+    drift = 0.0
+    for label, _ in exes:
+        a, b = min(times[label][:half]), min(times[label][half:])
+        drift = max(drift, abs(a - b) / min(a, b))
+    return times, drift, None
+
+
+def gate_win_best_pair(times):
+    """The most favourable win any single interleaved on/off pair showed.
+
+    A regression verdict has to survive this too: if even one pair -- one
+    on-run and the off-run beside it, the two least likely to be disturbed
+    differently -- still saw the win, the aggregate saying otherwise is noise
+    talking, not a lost optimization."""
+    pairs = zip(times["on"], times["off"])
+    return max(((off - on) / off * 100.0) for on, off in pairs)
+
+
+def assert_gate_wins(mcc, cc, runs):
+    """Perf ratchet for GATE_WINS: fail if a gate's measured win disappears.
+
+    Every rule here exists to keep this from crying wolf on a loaded box. Each
+    config keeps the MINIMUM of its interleaved runs (the least-interrupted
+    run; an average can only be inflated by noise). A win at or above the
+    threshold passes immediately. A win BELOW it is never failed on one round:
+    it is re-measured, both rounds are pooled, and the failure only stands if
+    the pooled win is still short AND both rounds reproduced themselves to
+    within GATE_WIN_CONFIRM_NOISE_MAX. Anything less conclusive skips."""
+    busy = box_too_busy()
+    if busy:
+        print("load average %s; timing unreliable, skipping" % busy)
+        return 77
+    entries = [e for e in GATE_WINS if os.path.exists(e[2])]
+    if not entries:
+        print("no gate-win kernels present; skipping")
+        return 77
+
+    failures, measured, skipped = [], 0, 0
+    with tempfile.TemporaryDirectory() as td:
+        for gate, name, src, argv, mflags, min_win in entries:
+            ref = os.path.join(td, name + ".ref")
+            ok, err = build(cc, src, ref)
+            if not ok:
+                print(f"SKIP {gate}/{name}: reference build failed: {err.strip()[:120]}")
+                skipped += 1
+                continue
+            rc, expect, _ = run_once(ref, argv)
+            if rc != 0:
+                print(f"SKIP {gate}/{name}: reference run failed")
+                skipped += 1
+                continue
+
+            exes, bad = [], False
+            for label, env in (("on", None), ("off", {gate: "0"})):
+                exe = os.path.join(td, f"{name}.{label}")
+                ok, err = build(mcc, src, exe, env, mcc=True, flags=mflags, opt="-O3")
+                if not ok:
+                    failures.append(f"{gate}/{name}: mcc -O3 {label} build failed: "
+                                    f"{err.strip()[:160]}")
+                    bad = True
+                    break
+                exes.append((label, exe))
+            if bad:
+                continue
+
+            times, drift, mismatch = gate_win_round(exes, argv, expect, runs)
+            if mismatch:
+                failures.append(f"{gate}/{name} {mismatch}")
+                continue
+            if drift > GATE_WIN_NOISE_MAX:
+                print(f"SKIP {gate}/{name}: the same binary measured "
+                      f"{drift * 100:.1f}% apart from itself (limit "
+                      f"{GATE_WIN_NOISE_MAX * 100:.0f}%); box too noisy to judge")
+                skipped += 1
+                continue
+            on_ms, off_ms = min(times["on"]), min(times["off"])
+            if off_ms < GATE_WIN_MIN_MS:
+                print(f"SKIP {gate}/{name}: {off_ms:.0f}ms is too short to time")
+                skipped += 1
+                continue
+
+            win = (off_ms - on_ms) / off_ms * 100.0
+            nruns, verdict = runs, "ok"
+            if win < min_win:
+                print(f"{gate:<20} {name:<10} win {win:+6.1f}% is under the "
+                      f"{min_win:.0f}% floor; re-measuring before failing")
+                times2, drift2, mismatch = gate_win_round(exes, argv, expect, runs)
+                if mismatch:
+                    failures.append(f"{gate}/{name} {mismatch}")
+                    continue
+                on_ms = min(on_ms, min(times2["on"]))
+                off_ms = min(off_ms, min(times2["off"]))
+                win, nruns = (off_ms - on_ms) / off_ms * 100.0, runs * 2
+                best_pair = max(gate_win_best_pair(times),
+                                gate_win_best_pair(times2))
+                if win >= min_win:
+                    verdict = "ok"
+                elif (max(drift, drift2) > GATE_WIN_CONFIRM_NOISE_MAX
+                      or best_pair >= min_win):
+                    verdict = "noisy"
+                else:
+                    verdict = "regressed"
+
+            print(f"{gate:<20} {name:<10} on {on_ms:8.1f}ms  off {off_ms:8.1f}ms"
+                  f"  win {win:+6.1f}%  (cpu, need >= {min_win:.0f}%, min of {nruns})")
+            if verdict == "noisy":
+                print(f"SKIP {gate}/{name}: win is short of the floor, but the box "
+                      f"drifted {max(drift, drift2) * 100:.1f}% against itself "
+                      f"(need <= {GATE_WIN_CONFIRM_NOISE_MAX * 100:.0f}%) and the "
+                      f"best single pair still saw {best_pair:+.1f}% (need < "
+                      f"{min_win:.0f}%) -- not failing on this evidence")
+                skipped += 1
+            elif verdict == "regressed":
+                failures.append(
+                    f"{gate}/{name}: win collapsed to {win:+.1f}% over {nruns} runs "
+                    f"(need >= {min_win:.0f}%; on {on_ms:.0f}ms vs off {off_ms:.0f}ms of cpu). "
+                    f"Either the gate stopped firing on this kernel, it is no longer "
+                    f"on by default at -O3, or something else subsumed it -- "
+                    f"re-measure by hand before touching this threshold")
+            else:
+                measured += 1
+
+    for f in failures:
+        print(f"FAIL {f}")
+    if failures:
+        return 1
+    if not measured:
+        print(f"no gate could be timed reliably ({skipped} skipped); skipping")
+        return 77
+    print(f"\nruntime-bench: gate wins OK ({measured} gate(s), min cpu of {runs} "
+          f"interleaved runs, output verified vs {os.path.basename(cc)})")
+    return 0
+
+
 def parse_gates(s):
     env = {}
     for tok in (s or "").split():
@@ -135,6 +340,8 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-perf", action="store_true",
                     help="skip the instructions-retired column even if perf works")
+    ap.add_argument("--assert-gate-wins", action="store_true",
+                    help="ratchet: fail if a GATE_WINS flip's measured win is gone")
     args = ap.parse_args()
 
     cc = find_cc(args.cc)
@@ -144,6 +351,8 @@ def main():
     if not os.access(args.mcc, os.X_OK):
         print(f"no mcc at {args.mcc}; skipping")
         return 77
+    if args.assert_gate_wins:
+        return assert_gate_wins(args.mcc, cc, max(args.runs, 4))
     kernels = [k for k in KERNELS if os.path.exists(k[1])]
     if not kernels:
         print("no benchmark kernels present; skipping")
@@ -199,8 +408,6 @@ def main():
                             results[name].setdefault("ins", {})[gates or "defaults"] = ins
 
     if not args.check_only and results:
-        # gate strings are far too long to use as column headers, so number them
-        # and print a legend underneath
         cols = [g or "defaults" for g in gate_sets]
         labels = ["cfg%d" % i for i in range(len(cols))]
         hdr = f"\n{'kernel':<12}{'ref(ms)':>9}" + "".join(f"{l:>9}" for l in labels)
@@ -224,8 +431,6 @@ def main():
             base_ins = ins.get(cols[0])
             if base_ins:
                 ri = r.get("ref_ins")
-                # the number that actually says how much extra work mcc does;
-                # wall-clock ratio conflates it with layout and cache effects
                 line += f"{base_ins / ri:>8.2f}x" if ri else f"{'-':>9}"
                 line += f"{base_ins / 1e9:>9.2f}G"
                 for c in cols[1:]:

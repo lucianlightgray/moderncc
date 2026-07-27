@@ -3846,6 +3846,17 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("exec-search-threads/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_THREADS=1;MCC_SEARCH_WORKER=1")
         endforeach()
+
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-gatesoff/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-gatesoff-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-gatesoff/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3;MCC_AST_OPASSIGN=0;MCC_AST_CHAINSTORE=0")
+        endforeach()
     endif()
 
     if(MCC_EMULATOR)
@@ -5048,6 +5059,19 @@ if(MCC_BUILD_TESTS)
                 --mcc "$<TARGET_FILE:mcc>" --check-only)
         set_tests_properties(runtime-bench-check PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 900)
+
+        if(MCC_CONFIG_OPTIMIZER AND MCC_CPU STREQUAL "x86_64"
+           AND NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
+           AND NOT MCC_TARGETOS STREQUAL "WIN32")
+            add_test(NAME runtime-bench-gatewin
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-bench.py"
+                    --mcc "$<TARGET_FILE:mcc>" --assert-gate-wins --runs 7)
+            set_tests_properties(runtime-bench-gatewin PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 900)
+        else()
+            mcc_skip_test(runtime-bench-gatewin
+                "wall-clock gate-win assertion runs on a native x86_64 optimizer build only (emulated/cross timing is meaningless)")
+        endif()
     endif()
 
     # 3-stage riscv64 self-host fixpoint: stages 2 and 3 run the mcc-built
