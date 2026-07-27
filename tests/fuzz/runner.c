@@ -279,6 +279,21 @@ static const gate_t GATES[] = {
 };
 #define NGATES ((int)(sizeof GATES / sizeof *GATES))
 
+static int ref_built[MAX_REFS];
+
+static int refs_report_dead(const Refs *refs) {
+	int dead = 0;
+	for (int i = 0; i < refs->n; i++)
+		if (!ref_built[i]) {
+			fprintf(stderr,
+					"fuzz: reference '%s' (%s) NEVER built a single program -- check the "
+					"path exists and targets this arch\n",
+					refs->label[i], refs->path[i]);
+			dead = 1;
+		}
+	return dead;
+}
+
 static int consensus(const Refs *refs, const char *bdir, const char *idir,
 					 const char *work, const char *src, runres *cons) {
 	runres r[MAX_REFS];
@@ -288,6 +303,7 @@ static int consensus(const Refs *refs, const char *bdir, const char *idir,
 		snprintf(lbl, sizeof lbl, "ref_%s", refs->label[i]);
 		r[i] = build_run(refs->path[i], NULL, bdir, idir, NULL, "-O2", work, lbl, src);
 		ok[i] = r[i].kind == RES_OK;
+		ref_built[i] += ok[i];
 	}
 	int wc = 0, win = runres_majority(r, ok, refs->n, &wc);
 	int ret = 0;
@@ -994,6 +1010,8 @@ int main(int argc, char **argv) {
 	printf("fuzz: %d agree, %d miscompile, %d dropped(UB/impl-def), %d mcc-buildfail "
 		   "over seeds %lu..%lu\n",
 		   pass, fail, drop, bfail, seed, seed + (unsigned long)count - 1);
+	if (refs_report_dead(&refs) && pass == 0)
+		return 2;
 	if (fail)
 		return 1;
 	if (bfail && pass == 0) {
