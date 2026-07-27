@@ -3922,48 +3922,54 @@ if(MCC_BUILD_TESTS)
         # a --stats transform counter must be nonzero, or toggling the gate must
         # change the object. Both modes also require the program's stdout to equal
         # the -O0 build's, so a pass that fires but miscompiles fails here too.
-        if(UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters.txt")
-            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters.txt" _of_counters)
-            foreach(_ol IN LISTS _of_counters)
-                if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
-                    string(REPLACE "|" ";" _of "${_ol}")
-                    list(GET _of 0 _ofname)
-                    list(GET _of 1 _ofopt)
-                    list(GET _of 2 _ofctr)
-                    set(_ofldf "-")
-                    list(LENGTH _of _oflen)
-                    if(_oflen GREATER 3)
-                        list(GET _of 3 _ofldf)
+        # Manifests are additive: counters*.txt (counter mode) and differs*.txt
+        # (differ mode) are globbed, and a name already registered is skipped so
+        # two manifests claiming the same pass cannot break the configure.
+        if(UNIX)
+            set(_of_seen "")
+            set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
+            file(GLOB _of_cfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters*.txt")
+            file(GLOB _of_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
+            foreach(_offile IN LISTS _of_cfiles _of_dfiles)
+                set(_ofmode "differ")
+                if(_offile MATCHES "/counters[^/]*\\.txt$")
+                    set(_ofmode "counter")
+                endif()
+                file(STRINGS "${_offile}" _oflines)
+                foreach(_ol IN LISTS _oflines)
+                    if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                        string(REPLACE "|" ";" _of "${_ol}")
+                        list(GET _of 0 _ofname)
+                        list(GET _of 1 _ofopt)
+                        list(GET _of 2 _ofarg)
+                        list(LENGTH _of _oflen)
+                        set(_ofextra "-")
+                        if(_oflen GREATER 3)
+                            list(GET _of 3 _ofextra)
+                        endif()
+                        set(_ofsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
+                        if(_ofname IN_LIST _of_seen)
+                            message(STATUS "optfire: skipping duplicate case ${_ofname}")
+                        elseif(NOT EXISTS "${_ofsrc}")
+                            message(STATUS "optfire: skipping ${_ofname} (no source)")
+                        else()
+                            list(APPEND _of_seen "${_ofname}")
+                            if(_ofmode STREQUAL "counter")
+                                add_test(NAME "optfire/${_ofname}"
+                                    COMMAND "${_of_sh}" counter "${_mcc_exe}" "${_ofsrc}"
+                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}")
+                            else()
+                                add_test(NAME "optfire/${_ofname}"
+                                    COMMAND "${_of_sh}" differ "${_mcc_exe}" "${_ofsrc}"
+                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
+                            endif()
+                            set_tests_properties("optfire/${_ofname}" PROPERTIES
+                                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
+                        endif()
                     endif()
-                    add_test(NAME "optfire/${_ofname}"
-                        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
-                                counter "${_mcc_exe}"
-                                "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c"
-                                "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}"
-                                "${_ofctr}" "${_ofldf}")
-                    set_tests_properties("optfire/${_ofname}" PROPERTIES
-                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
-                endif()
-            endforeach()
-        endif()
-        if(UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs.txt")
-            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs.txt" _of_differs)
-            foreach(_ol IN LISTS _of_differs)
-                if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
-                    string(REPLACE "|" ";" _of "${_ol}")
-                    list(GET _of 0 _ofname)
-                    list(GET _of 1 _ofopt)
-                    list(GET _of 2 _ofenv)
-                    list(GET _of 3 _ofextra)
-                    add_test(NAME "optfire/${_ofname}"
-                        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
-                                differ "${_mcc_exe}"
-                                "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c"
-                                "${CMAKE_BINARY_DIR}/optfire" "${_ofname}" "${_ofopt}"
-                                "${_ofenv}" "${_ofextra}" "-")
-                    set_tests_properties("optfire/${_ofname}" PROPERTIES
-                        FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native)
-                endif()
+                endforeach()
             endforeach()
         endif()
     endif()
