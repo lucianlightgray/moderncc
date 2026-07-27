@@ -914,10 +914,34 @@ static void suite_slice_graduate(void) {
 	CHECK(table[0].refcount == 1 && table[1].refcount == 2,
 				"refcount unaffected by proven bit");
 
+	/* `eligible` is the candidate SPACE the JIT may benchmark, distinct from the
+	   `gates` the AOT compile happened to choose. These pin the properties the
+	   runtime depends on: it survives the round trip, it is independent of
+	   `gates`, and a record may legitimately carry an eligible set WIDER than its
+	   chosen one (that is the whole point -- a gate switched off for this compile
+	   is still a candidate the JIT can try). */
+	recs[0].eligible = 0xFFu; /* wider than chosen 0xA */
+	recs[1].eligible = 0u;    /* not recorded, e.g. a no-optimizer build */
+	nb = ast_slice_rec_serialize(recs, 2, buf, sizeof buf);
+	tn = ast_slice_rec_deserialize(buf, nb, table, 8);
+	CHECK(tn == 2, "records with eligible deserialize");
+	CHECK(table[0].eligible == 0xFFu, "eligible round-trips");
+	CHECK(table[1].eligible == 0u, "absent eligible round-trips as 0");
+	CHECK(table[0].gates == 0xAu, "eligible does not disturb gates");
+	CHECK((table[0].eligible & table[0].gates) == table[0].gates,
+				"chosen is a subset of eligible");
+	CHECK(table[0].eligible != table[0].gates,
+				"eligible may be strictly wider than chosen");
+
 	/* Back-compat: a legacy pre-Phase-4 record wrote word 3 as (refcount|MAGIC<<48)
-	   with the proven bit region zero. It must deserialize cleanly as static with
-	   gates/refcount intact (constructed portably in host word order, exactly how
-	   the real serialize round-trips). */
+	   with the proven bit region zero. It used to deserialize cleanly as static,
+	   because `proven` was packed into a spare region of an existing word and the
+	   record stayed 4 words. Adding `eligible` widened the record to 5 words, which
+	   a stride-based parser CANNOT read compatibly, so AST_SLICE_REC_MAGIC was
+	   bumped ('SL' -> 'SM') and a legacy record must now be SKIPPED rather than
+	   misparsed at the wrong stride. Asserting the skip is the point: silently
+	   reading 4-word records at a 5-word stride would fabricate gates and
+	   refcounts out of adjacent records. */
 	{
 		uint64_t legacy[4];
 		AstSliceMemo lt[2];
@@ -925,13 +949,10 @@ static void suite_slice_graduate(void) {
 		legacy[0] = 0x3333;
 		legacy[1] = 0xCu;
 		legacy[2] = 6;
-		legacy[3] = (uint64_t)4 | ((uint64_t)AST_SLICE_REC_MAGIC << 48); /* no proven bit */
+		legacy[3] = (uint64_t)4 | ((uint64_t)0x534cu << 48); /* old 'SL' magic */
 		memcpy(buf, legacy, sizeof legacy);
 		ln = ast_slice_rec_deserialize(buf, (long)sizeof legacy, lt, 2);
-		CHECK(ln == 1, "legacy record parses");
-		CHECK(lt[0].proven == 0, "legacy record (no proven bit) reads as static");
-		CHECK(lt[0].gates == 0xCu && lt[0].refcount == 4,
-					"legacy gates/refcount intact");
+		CHECK(ln == 0, "legacy 4-word record is skipped, not misparsed");
 	}
 
 	/* Per-ident merge: a PROVEN record overrides an existing STATIC one for the

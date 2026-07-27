@@ -702,6 +702,11 @@ typedef struct AstSliceMemo {
 	int64_t size;      /* slice node count as a cheap cost proxy (-1 = unknown) */
 	unsigned refcount; /* how many times this identity has been recorded */
 	unsigned proven;   /* 1 = benchmark-proven by a JIT run (Phase 4); 0 = static-size-best */
+	uint64_t eligible; /* every gate that was LEGAL to vary here, not just the one
+											  chosen — ast_search_searchable() for the recording target.
+											  The JIT's candidate space: `chosen` warm-starts, `eligible`
+											  says what may be benchmarked against it. 0 = not recorded
+											  (old file, or a build with no optimizer). */
 } AstSliceMemo;
 
 static AstSliceMemo ast_slice_memo[AST_SLICE_MEMO_CAP];
@@ -716,10 +721,16 @@ static const AstSliceMemo *ast_slice_memo_get(uint64_t ident) { MCC_TRACE("enter
 	return NULL;
 }
 
+/* Set once per compile from ast_search_searchable(); 0 when there is no
+   optimizer. Stamped on every record so the JIT inherits the candidate SPACE,
+   not just the decision. */
+static uint64_t ast_slice_eligible_now;
+
 static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_slice_memo_n; i++) { MCC_TRACE("br\n");
 		if (ast_slice_memo[i].ident == ident) { MCC_TRACE("br\n");
 			ast_slice_memo[i].refcount++;
+			ast_slice_memo[i].eligible |= ast_slice_eligible_now;
 			/* keep the lower-cost config once cost is known (Phase 3 scoring). */
 			if (size >= 0 && (ast_slice_memo[i].size < 0 || size < ast_slice_memo[i].size)) {
 				MCC_TRACE("br\n");
@@ -734,6 +745,7 @@ static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { M
 	ast_slice_memo[ast_slice_memo_n].ident = ident;
 	ast_slice_memo[ast_slice_memo_n].gates = gates;
 	ast_slice_memo[ast_slice_memo_n].size = size;
+	ast_slice_memo[ast_slice_memo_n].eligible = ast_slice_eligible_now;
 	ast_slice_memo[ast_slice_memo_n].refcount = 1;
 	ast_slice_memo[ast_slice_memo_n].proven = 0; /* populate side is static (Phase 2/3) */
 	ast_slice_memo_n++;
@@ -812,9 +824,12 @@ static long ast_slice_window_scan(const AstArena *a, uint64_t gates) { MCC_TRACE
    an old (proven-less) file deserializes cleanly as all-static — no MAGIC bump.
    Pure logic in the non-MCC_INTERNAL region so tools/asttool can unit-test it. */
 #define AST_SLICE_REC_PROVEN_BIT ((uint64_t)1 << 32)
-#define AST_SLICE_RECWORDS 4
+#define AST_SLICE_RECWORDS 5
 #define AST_SLICE_RECBYTES (AST_SLICE_RECWORDS * 8)
-#define AST_SLICE_REC_MAGIC 0x534cu /* 'SL' */
+#define AST_SLICE_REC_MAGIC 0x534du /* 'SM' — bumped from 'SL' when the
+                                       eligible word widened the record from 4
+                                       to 5 words; old files now skip as foreign
+                                       rather than misparse at the wrong stride. */
 
 /* Serialize `n` records into `buf`; returns bytes written or -1 if `cap` is too
    small. */
@@ -834,6 +849,7 @@ static long ast_slice_rec_serialize(const AstSliceMemo *recs, int n,
 		rec[3] = ((uint64_t)recs[i].refcount) |
 						 (recs[i].proven ? AST_SLICE_REC_PROVEN_BIT : 0) |
 						 ((uint64_t)AST_SLICE_REC_MAGIC << 48);
+		rec[4] = recs[i].eligible;
 		memcpy(buf + off, rec, sizeof rec);
 		off += AST_SLICE_RECBYTES;
 	}
@@ -859,6 +875,7 @@ static int ast_slice_rec_deserialize(const unsigned char *buf, long len,
 		out[n].size = (int64_t)rec[2];
 		out[n].refcount = (unsigned)(rec[3] & 0xffffffffu);
 		out[n].proven = (rec[3] & AST_SLICE_REC_PROVEN_BIT) ? 1u : 0u;
+		out[n].eligible = rec[4];
 		n++;
 	}
 	return n;
@@ -1434,6 +1451,7 @@ typedef unsigned long AstGateMask_fwd_check;
 static unsigned long ast_search_floor;
 static int ast_search_floor_env;
 static unsigned long ast_search_gates_now(void);
+static unsigned long ast_search_searchable(unsigned long base);
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
 
@@ -2198,6 +2216,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_worker = mcc_env_on("MCC_SEARCH_WORKER");
 	ast_search_floor_env = mcc_env_on("MCC_AST_SEARCH_FLOOR");
 	ast_search_floor = ast_search_floor_env ? ast_search_gates_now() : 0;
+	ast_slice_eligible_now = ast_search_searchable(ast_search_gates_now());
 	ast_fncfg_parse();
 	ast_jit_fns_parse(mcc_state ? mcc_state->jit_functions : 0);
 }
@@ -14453,9 +14472,10 @@ static void ast_slice_disk_commit(const AstSliceMemo *recs, int n) { MCC_TRACE("
 	    FILE *f = fopen(d, "a"); int q;
 	    if (f) { MCC_TRACE("br\n");
 	      for (q = 0; q < n; q++) { MCC_TRACE("br\n");
-	               fprintf(f, "%016llx g=%016llx %lld %d\n",
+	               fprintf(f, "%016llx g=%016llx e=%016llx %lld %d\n",
 	                       (unsigned long long)recs[q].ident,
 	                       (unsigned long long)recs[q].gates,
+	                       (unsigned long long)recs[q].eligible,
 	                       (long long)recs[q].size, recs[q].proven); }
 	      fclose(f); } } }
 	char path[1152], tmpp[1200];
@@ -15598,7 +15618,7 @@ static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
  * bites when narrow itself is enabled, so gate it on AST_SG_NARROW. Factored so
  * the Phase 3 slice warm-start intersects a cached config with the exact same
  * set (never enabling a knob unsound at this build's -O). */
-static AstGateMask ast_search_searchable(AstGateMask base) { MCC_TRACE("enter\n");
+static unsigned long ast_search_searchable(unsigned long base) { MCC_TRACE("enter\n");
 	return base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC | /* standalone */
 				 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
 				 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
