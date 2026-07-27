@@ -1934,6 +1934,8 @@ typedef struct _mcc_coff_rel {
 #define IMAGE_REL_AMD64_REL32 0x0004
 #define IMAGE_REL_AMD64_REL32_1 0x0005
 #define IMAGE_REL_AMD64_REL32_5 0x0009
+#define IMAGE_REL_AMD64_SECTION 0x000A
+#define IMAGE_REL_AMD64_SECREL 0x000B
 #endif
 #ifndef IMAGE_REL_I386_DIR32
 #define IMAGE_REL_I386_ABSOLUTE 0x0000
@@ -1980,6 +1982,12 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_AMD64_ADDR64: *etype = R_X86_64_64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
 	case IMAGE_REL_AMD64_ADDR32: *etype = R_X86_64_32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_RELATIVE; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
+	/* Section-relative 32 (native Windows TLS access in .text: the offset of a
+	   _Thread_local target within its .tls section). mcc's own PE codegen emits
+	   R_X86_64_TPOFF32 for the same construct and resolves it against the SHF_TLS
+	   section base at link time, so map SECREL onto it — the target symbols are
+	   marked SHT_TLS in pass 2 and their .tls section SHF_TLS in pass 1. */
+	case IMAGE_REL_AMD64_SECREL: *etype = R_X86_64_TPOFF32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	default:
 		if (t >= IMAGE_REL_AMD64_REL32 && t <= IMAGE_REL_AMD64_REL32_5) { MCC_TRACE("br\n");
 			*etype = R_X86_64_PC32;
@@ -2141,6 +2149,12 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_EXECINSTR; }
 		if (ch & IMAGE_SCN_MEM_WRITE)
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_WRITE; }
+		/* Native Windows TLS: the COFF `.tls`/`.tls$*` section (grouped name already
+		   collapsed to `.tls` above) is the thread-local template. Flag it SHF_TLS so
+		   the PE writer lays it out as the TLS block and the SECREL→TPOFF32 relocs above
+		   resolve against its base (pe->has_tls auto-arms off any SHF_TLS section). */
+		if (0 == strcmp(name, ".tls"))
+			{ MCC_TRACE("br\n"); sh_flags |= SHF_TLS | SHF_WRITE; }
 		align = (ch & COFF_SCN_ALIGN_MASK) ? (1 << (((ch >> 20) & 0xf) - 1)) : 1;
 
 		for (j = 1; j < s1->nb_sections; j++) { MCC_TRACE("br\n");
@@ -2220,6 +2234,11 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 				bind = (scls == IMAGE_SYM_CLASS_EXTERNAL) ? STB_GLOBAL : STB_LOCAL;
 				if (scls == IMAGE_SYM_CLASS_SECTION || scls == IMAGE_SYM_CLASS_LABEL)
 					{ MCC_TRACE("br\n"); bind = STB_LOCAL; type = STT_NOTYPE; }
+				/* A symbol defined in the SHF_TLS section is thread-local; type it
+				   STT_TLS so its value is treated as a TLS-block offset (matches the
+				   SECREL→TPOFF32 reloc mapping). */
+				if (smap[secnum].s->sh_flags & SHF_TLS)
+					{ MCC_TRACE("br\n"); type = STT_TLS; }
 			}
 			if (scls == IMAGE_SYM_CLASS_WEAK_EXTERNAL)
 				{ MCC_TRACE("br\n"); bind = STB_WEAK; }
@@ -2250,8 +2269,9 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			addr_t addend = 0;
 
 			if (!coff_map_reloc(rl->Type, s->data + roff, &etype, &addend, &skip)) { MCC_TRACE("br\n");
+				WORD bad = rl->Type;		/* capture before freeing (rl aliases rels) */
 				mcc_free(rels);
-				mcc_error_noabort("COFF: unsupported reloc type 0x%x in %s", rl->Type, s->name);
+				mcc_error_noabort("COFF: unsupported reloc type 0x%x in %s", bad, s->name);
 				goto the_end;
 			}
 			if (skip)
