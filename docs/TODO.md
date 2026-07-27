@@ -103,6 +103,17 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
   2. **Wider admission exposes near-match acceptance, which breaks `MCC_JIT=1` == `MCC_JIT=0`.** With `MCC_JIT_LAZY=1 MCC_JIT_SEARCH=1` the widened gate changed program output (FP accumulation diverged in the 4th significant digit); conservative gate matched exactly. `MCC_JIT_NEARMATCH` is default-ON and by design KEEPS a variant that mismatches the baseline on a small input set, so admitting more functions admits more divergence. That is a direct P0 parity violation and is the harder of the two.
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
+**COUNTING CORRECTION 2026-07-27 — earlier `faithful` figures in these sections were INFLATED.** They were taken with `grep -c 'faithful\t'`, which also matches **un**faithful. Corrected, anchored counts over mcc's own TU at `-O2` (1736 functions):
+
+| config | desync | unfaithful | faithful | delta |
+|---|---:|---:|---:|---:|
+| baseline | 642 | 139 | 904 | — |
+| `MCC_AST_MEMBER_AGG=1` | 504 | 169 | **1010** | +106 |
+| `MCC_AST_MEMBER_CONST=1` | 591 | 143 | 950 | +46 |
+| `MCC_AST_CMP_INVERT=1` | 650 | 122 | 913 | +9 |
+
+The 48%-unoptimized headline is unaffected (832 of 1736 non-faithful). But **`CMP_INVERT` was recorded as a net coverage LOSS of 8 functions, justified as 'correctness costs a little coverage'. That was wrong — it is a net GAIN of 9.** The correctness argument for it stands on its own; the trade-off framing does not, and is retracted. `MEMBER_AGG` is +106 not +136, `MEMBER_CONST` +46 not +51 (its desync reduction of 51 was correct — that number was measured a different way).
+
 Established 2026-07-27 while building `optfire`. **48% of functions get no AST optimization on x86_64** (833 of 1735
 non-faithful over mcc's own TU at `-O2`: 641 desync, 139 unfaithful, 50 bail, 3 empty). An optimizer pass cannot run in
 a function the recorder did not model faithfully, so this bounds every other optimization number in this file.
@@ -119,7 +130,7 @@ measuring compiler was BUILT from — a stale cross compiler reports meaningless
 
 Landed against this, all default OFF: **`MCC_AST_MEMBER_AGG` (+136 faithful, the largest single win)**, `MCC_AST_MEMBER_CONST` (+51), and `MCC_AST_CMP_INVERT` (fixes `!!` modelling; net −8 faithful but closes a latent miscompile path, and arm64 desyncs rather than mismodels).
 
-**`MCC_AST_MEMBER_AGG` detail.** The VALUE-model guard already permits an aggregate LVALUE (`agg_lval`), but the MEMBER guard rejected any `VT_STRUCT`-typed member outright through `ast_bad_type`. Measured: **all 214 struct-member rejections in mcc's own TU are `nonlval=0`**, i.e. lvalues — a nested `a.b.c` path whose intermediate is never loaded as a value, exactly the shape the value site allows. Granting the same escape: **desync 642 -> 504, faithful 1043 -> 1179 (+13%)**, with unfaithful 139 -> 169. Those +30 are caught and excluded from optimization, so there is no miscompile path, but they are a real residue to characterise before the default can flip. Full suite 7228/7228 with the gate OFF; with it ON the only failure is `ast-verify-ratchet` reporting **769 gaps against a 776 baseline** — it fails because the gap set IMPROVED and wants regenerating. Do not regenerate that baseline until the 30 are understood, or it will bank a win and hide them.
+**`MCC_AST_MEMBER_AGG` detail.** The VALUE-model guard already permits an aggregate LVALUE (`agg_lval`), but the MEMBER guard rejected any `VT_STRUCT`-typed member outright through `ast_bad_type`. Measured: **all 214 struct-member rejections in mcc's own TU are `nonlval=0`**, i.e. lvalues — a nested `a.b.c` path whose intermediate is never loaded as a value, exactly the shape the value site allows. Granting the same escape: **desync 642 -> 504, faithful 904 -> 1010 (+106, +12%)**, with unfaithful 139 -> 169. Those +30 are caught and excluded from optimization, so there is no miscompile path, but they are a real residue to characterise before the default can flip. Full suite 7228/7228 with the gate OFF; with it ON the only failure is `ast-verify-ratchet` reporting **769 gaps against a 776 baseline** — it fails because the gap set IMPROVED and wants regenerating. Do not regenerate that baseline until the 30 are understood, or it will bank a win and hide them.
 
 **Two method rules this cost real time to learn — apply them before believing any measurement here:**
 1. **Check the compile exit status before reading a counter or comparing objects.** `--stats` still prints its panel
