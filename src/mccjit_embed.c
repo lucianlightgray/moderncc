@@ -113,6 +113,14 @@ MCCJIT_LOCAL unsigned char *mccjit_last_blob;
 MCCJIT_LOCAL size_t mccjit_last_len;
 MCCJIT_LOCAL MCCState *mccjit_last_state;
 MCCJIT_LOCAL int mccjit_last_purity;
+MCCJIT_LOCAL int mccjit_last_purity_ne;
+
+static int mccjit_purity_noescape_enabled(void) { MCC_TRACE("enter\n");
+	static int v = -1;
+	if (v < 0)
+		{ MCC_TRACE("br\n"); v = mcc_env_on("MCC_JIT_PURITY_NOESCAPE"); }
+	return v;
+}
 /* Static cost-model score of the just-recompiled AST (ast_cost_score); -1 when
    unavailable. mccjit_variant_cost snapshots it for the gated variant only, so a
    following baseline recompile in the same lazy build does not clobber it. */
@@ -180,7 +188,7 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) { M
 	FILE *f;
 	size_t size = 0;
 	int si;
-	if (!getenv("MCC_JIT_PERF_MAP") || !addr || !name || !name[0] || !js ||
+	if (!mcc_env_on("MCC_JIT_PERF_MAP") || !addr || !name || !name[0] || !js ||
 			!js->symtab)
 		{ MCC_TRACE("br\n"); return; }
 	si = find_elf_sym(js->symtab, name);
@@ -303,7 +311,7 @@ static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
 	uint64_t ident;
 	int nsites, i, keep, spliced = 0;
 	int64_t base_cost, cand_cost;
-	if (!ast_slice_enabled() || !getenv("MCC_AST_SLICE_SPLICE") || !arena)
+	if (!ast_slice_enabled() || !mcc_env_on("MCC_AST_SLICE_SPLICE") || !arena)
 		{ MCC_TRACE("br\n"); return 0; }
 	site = mccjit_slice_ret_expr(arena);
 	if (site == AST_NONE)
@@ -317,7 +325,7 @@ static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
 	base_cost = ast_cost_score(base_wrap);
 	cand_cost = ast_cost_score(opt_wrap);
 	keep = ast_slice_promote_static(base_cost, cand_cost);
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 					"mccjit-slice-splice: site=%u base_cost=%lld cand_cost=%lld -> %s\n",
 					(unsigned)site, (long long)base_cost, (long long)cand_cost,
@@ -341,7 +349,7 @@ static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
 		if (s > 0)
 			{ MCC_TRACE("br\n"); spliced += s; }
 	}
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 					"mccjit-slice-splice: spliced %d node(s) across %d site(s)\n", spliced,
 					nsites); }
@@ -398,7 +406,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		if (mccjit_override_get(it.anchor_sym_v, &ov_blob, &ov_len, &ov_mask)) { MCC_TRACE("br\n");
 			MccjitIntent ov_it;
 			if (mccjit_intent_deserialize(ov_blob, ov_len, &ov_it) == 0) { MCC_TRACE("br\n");
-				if (getenv("MCC_JIT_VERBOSE"))
+				if (mcc_env_on("MCC_JIT_VERBOSE"))
 					{ MCC_TRACE("br\n"); fprintf(stderr,
 									"mccjit-override[%s]: using backend-submitted AST (%lu bytes)\n",
 									ov_it.fn_name ? ov_it.fn_name : "?", (unsigned long)ov_len); }
@@ -414,6 +422,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		{ MCC_TRACE("br\n"); js->nostdlib = 0; }
 
 	mccjit_last_purity = ast_fn_purity(it.arena);
+	mccjit_last_purity_ne = ast_fn_purity_noescape(it.arena);
 
 	{
 		uint32_t qi;
@@ -456,7 +465,9 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mccjit_last_nsse = nsse;
 		allgp = scalar_ok && nsse == 0 && !ret_fp;
 		mccjit_last_mixed = scalar_ok && !allfp && !allgp;
-		mccjit_last_kgc_ok = scalar_ok && mccjit_last_purity != AST_PURITY_IMPURE;
+		mccjit_last_kgc_ok =
+				scalar_ok && (mccjit_purity_noescape_enabled() ? mccjit_last_purity_ne
+																											: mccjit_last_purity) != AST_PURITY_IMPURE;
 	}
 
 	if (do_spec && param_index >= 0 && (uint32_t)param_index < it.nparam) { MCC_TRACE("br\n");
@@ -469,14 +480,14 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	mccjit_internal_compile = 1;
 	if (sym) { MCC_TRACE("br\n");
 		ast_fconst_reuse_disable(1);
-		if (getenv("MCC_JIT_SELFTEST_FOLD_CONSTS"))
+		if (mcc_env_on("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
 		mccjit_slice_hotpatch(it.arena); /* Phase 5 per-slice hot-patch (gated) */
 		if (mccjit_recompile_use_gates)
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
 		else if (have_override && override_mask)
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, override_mask); }
-		else if (getenv("MCC_JIT_SELFTEST_REEMIT_GATES"))
+		else if (mcc_env_on("MCC_JIT_SELFTEST_REEMIT_GATES"))
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
 		else
 			{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
@@ -717,8 +728,8 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 	int over = 0;
 	int skipped = 0;
 	int routed = 0;
-	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
-	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
+	int no_kgc = mcc_env_on("MCC_JIT_NO_KGC");
+	int spec_wrong = mcc_env_on("MCC_JIT_SPEC_WRONG");
 	struct timespec cstart;
 	int ctimed = 0;
 	if (timed && max_duration && mccjit_elapsed(t0) > (double)max_duration) { MCC_TRACE("br\n");
@@ -779,7 +790,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 											: MCC_JIT_OUT_KEPT_AOT;
 		mcc_stats_jit_outcome(outcome);
 	}
-	if (getenv("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
+	if (mcc_env_on("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
 		int probeable = variant && mccjit_last_nparam == 1 &&
 										!mccjit_type_wide((int)mccjit_last_param_t[0]);
 		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
@@ -835,7 +846,7 @@ static void mccjit_graduate_slices_blob(const void *blob, size_t len,
 		return;
 	}
 	ast_slice_graduate_arena(it.arena, gate_mask);
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 					"mccjit-graduate[%s]: slice-cache proven gates=%llx\n",
 					it.fn_name ? it.fn_name : "?", (unsigned long long)gate_mask); }
@@ -847,8 +858,8 @@ static void mccjit_graduate_slices_blob(const void *blob, size_t len,
 static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 																			uint64_t gate_mask, int use_gates,
 																			int *routed) { MCC_TRACE("enter\n");
-	int no_kgc = getenv("MCC_JIT_NO_KGC") != NULL;
-	int spec_wrong = getenv("MCC_JIT_SPEC_WRONG") != NULL;
+	int no_kgc = mcc_env_on("MCC_JIT_NO_KGC");
+	int spec_wrong = mcc_env_on("MCC_JIT_SPEC_WRONG");
 	void *variant = spec_wrong
 											? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
 											: use_gates
@@ -899,6 +910,7 @@ static void *mccjit_lazy_build(const void *blob, unsigned long len, int *routed)
 }
 
 #define MCCJIT_PROFILE_SAMPLES 8
+#define MCCJIT_LAZY_MAX_BUILD_FAIL 3
 
 typedef struct MccjitCounterState {
 	void **slot;
@@ -909,6 +921,7 @@ typedef struct MccjitCounterState {
 	long count;
 	void *promoted;
 	int building;
+	int failed;
 	long argseen;
 	int nsample;
 	int64_t argmin[MCCJIT_KGC_MAXARG];
@@ -1205,7 +1218,7 @@ static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 			pthread_detach(th);
 			mccjit_pool.nworkers++;
 		}
-		if (getenv("MCC_JIT_VERBOSE"))
+		if (mcc_env_on("MCC_JIT_VERBOSE"))
 			{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-pool[start]: requested=%d live=%d\n", want,
 							mccjit_pool.nworkers); }
 	}
@@ -1257,10 +1270,12 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 			if (mcc_stats_mask)
 				{ MCC_TRACE("br\n"); mcc_stats_jit_promote(1); }
 		}
+	} else { MCC_TRACE("br\n");
+		st->failed++;
 	}
 	st->building = 0;
 	pthread_mutex_unlock(&st->lock);
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 						"mccjit-lazy[promote-async]: slot=%p entry=%p route=%s %s\n",
 						(void *)st->slot, entry, routed ? "kgc" : "direct",
@@ -1270,7 +1285,7 @@ static void mccjit_job_run_lazy(MccjitSwapJob *job) { MCC_TRACE("enter\n");
 static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { MCC_TRACE("enter\n");
 	long n;
 	void *target;
-	int verbose = getenv("MCC_JIT_VERBOSE") != NULL;
+	int verbose = mcc_env_on("MCC_JIT_VERBOSE");
 	pthread_mutex_lock(&st->lock);
 	n = ++st->count;
 	if (n == st->threshold && mcc_stats_mask)
@@ -1279,6 +1294,8 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 		{ MCC_TRACE("br\n"); mccjit_counter_capture(st, regs); }
 	if (st->promoted) { MCC_TRACE("br\n");
 		target = st->promoted;
+	} else if (st->failed >= MCCJIT_LAZY_MAX_BUILD_FAIL) { MCC_TRACE("br\n");
+		target = st->baseline;
 	} else if (n < st->threshold) { MCC_TRACE("br\n");
 		if (verbose && n == 1)
 			{ MCC_TRACE("br\n"); fprintf(stderr,
@@ -1330,10 +1347,13 @@ static void *mccjit_counter_tick(MccjitCounterState *st, const int64_t *regs) { 
 			}
 		} else { MCC_TRACE("br\n");
 			target = st->baseline;
+			st->failed++;
 			if (verbose)
 				{ MCC_TRACE("br\n"); fprintf(stderr,
-								"mccjit-lazy[promote]: slot=%p build failed, staying cold\n",
-								(void *)st->slot); }
+								"mccjit-lazy[promote]: slot=%p build failed (%d/%d), %s\n",
+								(void *)st->slot, st->failed, MCCJIT_LAZY_MAX_BUILD_FAIL,
+								st->failed >= MCCJIT_LAZY_MAX_BUILD_FAIL ? "giving up, baseline is final"
+																												 : "staying cold"); }
 		}
 	}
 	pthread_mutex_unlock(&st->lock);
@@ -1530,7 +1550,7 @@ static int mccjit_lazy_install(void **slot, const void *blob, unsigned long len)
 	st->promoted = NULL;
 	pthread_mutex_init(&st->lock, NULL);
 	stub = mccjit_make_counter_stub(st);
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 						"mccjit-lazy[install]: slot=%p baseline=%p blob=%p len=%lu threshold=%ld stub=%p\n",
 						(void *)slot, baseline, blob, len, threshold, stub); }
@@ -1591,14 +1611,14 @@ static pthread_once_t mccjit_feasible_once = PTHREAD_ONCE_INIT;
 
 static void mccjit_feasible_probe(void) { MCC_TRACE("enter\n");
 	mccjit_feasible_flag = mccjit_probe_exec_mem();
-	if (!mccjit_feasible_flag && getenv("MCC_JIT_VERBOSE"))
+	if (!mccjit_feasible_flag && mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 						"mccjit: executable-memory probe failed — JIT disabled, running "
 						"AOT baseline\n"); }
 }
 
 static int mccjit_feasible(void) { MCC_TRACE("enter\n");
-	if (getenv("MCC_JIT_FORCE_INFEASIBLE"))
+	if (mcc_env_on("MCC_JIT_FORCE_INFEASIBLE"))
 		{ MCC_TRACE("br\n"); return 0; }
 	pthread_once(&mccjit_feasible_once, mccjit_feasible_probe);
 	return mccjit_feasible_flag;
@@ -1824,7 +1844,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		   host process). Bind it to the host's. */
 		mcc_add_symbol(s1, "getenv", (void *)getenv);
 #endif
-	} else if (getenv("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
+	} else if (mcc_env_on("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
 		int i;
 		s1->rdynamic = 1;
 		for (i = 0; i < mccjit_export_n; i++)
@@ -2621,7 +2641,7 @@ static void mccjit_kgc_flush_compressed(MccjitKgc *k) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (mccjit_kgc_encode_compressed(k, &buf, &n) != 0 || !buf)
 		{ MCC_TRACE("br\n"); return; }
-	if (getenv("MCC_JIT_KGC_SELFTEST")) { MCC_TRACE("br\n");
+	if (mcc_env_on("MCC_JIT_KGC_SELFTEST")) { MCC_TRACE("br\n");
 		int64_t *chk = mcc_malloc((size_t)k->hdr->count * k->arity * sizeof(int64_t));
 		uint32_t da = 0;
 		int64_t dc = chk ? mccjit_kgc_decode_compressed(buf, n, chk, k->hdr->count, &da)
@@ -8984,7 +9004,7 @@ static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async)
 		mcc_delete(keepk);
 		return NULL;
 	}
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 						"mccjit-slice[promote]: slot=%p slice-kernel verified over %d live-ins\n",
 						(void *)st->slot, st->nsample); }
@@ -8996,12 +9016,12 @@ static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async)
 }
 
 static void *mccjit_lazy_entry(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
-	if (async && getenv("MCC_JIT_SLICE_SEARCH")) { MCC_TRACE("br\n");
+	if (async && mcc_env_on("MCC_JIT_SLICE_SEARCH")) { MCC_TRACE("br\n");
 		void *e = mccjit_slice_search(st, routed, async);
 		if (e)
 			{ MCC_TRACE("br\n"); return e; }
 	}
-	if (getenv("MCC_JIT_SEARCH"))
+	if (mcc_env_on("MCC_JIT_SEARCH"))
 		{ MCC_TRACE("br\n"); return mccjit_lazy_search(st, routed, async); }
 	return mccjit_lazy_build(st->blob, st->len, routed);
 }

@@ -397,4 +397,11 @@ static inline void host_sem_post(HostSem *p) {
 #define HOST_SEM_POST(p)
 #endif
 
+#include <stdlib.h>
+
+static inline int mcc_env_on(const char *name) {
+	const char *e = getenv(name);
+	return e && e[0] && e[0] != '0';
+}
+
 #endif

@@ -264,7 +264,7 @@ AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 
 void ast_add_child(AstArena *a, AstLocal parent, AstLocal child) { MCC_TRACE("enter\n");
 	AST_ASSERT(parent < a->count && child < a->count);
-	if (getenv("MCC_REPARENT_DBG") && a->parent[child] != AST_NONE)
+	if (mcc_env_on("MCC_REPARENT_DBG") && a->parent[child] != AST_NONE)
 		fprintf(stderr, "[reparent] child=%u(k%u) from %u to %u\n", (unsigned)child,
 						(unsigned)a->kind[child], (unsigned)a->parent[child], (unsigned)parent);
 	a->epoch++;
@@ -1474,7 +1474,7 @@ static int ast_jit_want(const char *fn, Sym *sym) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_jit_eligible(sym))
 		{ MCC_TRACE("br\n"); return 1; }
-	if (getenv("MCC_JIT_VERBOSE"))
+	if (mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 						"mccjit: refuse-to-JIT %s — signature not in the verified GP-int set\n",
 						fn ? fn : "?"); }
@@ -2022,7 +2022,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_jit_env = s1 && (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH",
-			(ast_jit_env || getenv("MCC_JIT_SUBMIT_AOT")) ? 6 : 0);
+			(ast_jit_env || mcc_env_on("MCC_JIT_SUBMIT_AOT")) ? 6 : 0);
 	ast_data_report_env = ast_env_gate("MCC_AST_DATA_REPORT", 0);
 	ast_data_reemit_env = ast_env_gate("MCC_AST_DATA_REEMIT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", o4 || s1->optimize >= 2);
@@ -2070,7 +2070,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_spill_share_env = ast_env_gate("MCC_AST_SPILL_SHARE", o4 || s1->optimize >= 2);
 	ast_intention_acc = 0;
 	ast_hash_out = getenv("MCC_AST_HASH_OUT");
-	ast_search_worker = getenv("MCC_SEARCH_WORKER") != NULL;
+	ast_search_worker = mcc_env_on("MCC_SEARCH_WORKER");
 	ast_fncfg_parse();
 	ast_jit_fns_parse(mcc_state ? mcc_state->jit_functions : 0);
 }
@@ -15151,7 +15151,7 @@ static int ast_search_pool_pthreads(AstArena *pristine, Sym *sym, int faithful,
 	long *results;
 	AstGateMask best = gatelist[0];
 	long best_score = -1;
-	if (getenv("MCC_AST_PTHREADS_DIAG"))
+	if (mcc_env_on("MCC_AST_PTHREADS_DIAG"))
 		{ MCC_TRACE("br\n"); fprintf(stderr, "[pthreads-pool] entry nw=%d nc=%d\n", nw, nc); }
 	if (nw < 2)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -15802,9 +15802,9 @@ search_done:
 
 #ifdef MCC_EMBED_JIT
 static void ast_jit_submit_aot(Sym *sym) { MCC_TRACE("enter\n");
-	if (!sym || !ast_cur || !getenv("MCC_JIT_SUBMIT_AOT"))
+	if (!sym || !ast_cur || !mcc_env_on("MCC_JIT_SUBMIT_AOT"))
 		{ MCC_TRACE("br\n"); return; }
-	if (mcc_jit_submit_ast(sym, ast_cur, 0, 0) == 0 && getenv("MCC_JIT_VERBOSE"))
+	if (mcc_jit_submit_ast(sym, ast_cur, 0, 0) == 0 && mcc_env_on("MCC_JIT_VERBOSE"))
 		{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-aot-submit[%s]: submitted sym->v=%ld\n",
 						funcname, (long)sym->v); }
 }
@@ -16140,7 +16140,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						ast_jit_dispatch_env == 6 && mcc_state &&
 						(mcc_state->embed_jit ||
 						 mcc_state->output_type == MCC_OUTPUT_MEMORY ||
-						 getenv("MCC_JIT_SUBMIT_AOT"))
+						 mcc_env_on("MCC_JIT_SUBMIT_AOT"))
 #else
 						(ast_jit_dispatch_env != 6 ||
 						 (mcc_state && (mcc_state->embed_jit ||
@@ -16247,7 +16247,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					if (ast_jit_dispatch_env == 6 && mcc_state &&
 							(mcc_state->embed_jit ||
 							 mcc_state->output_type == MCC_OUTPUT_MEMORY ||
-							 getenv("MCC_JIT_SUBMIT_AOT"))) { MCC_TRACE("br\n");
+							 mcc_env_on("MCC_JIT_SUBMIT_AOT"))) { MCC_TRACE("br\n");
 						int slot_off = (int)section_add(data_section, MCC_PTR_SIZE, MCC_PTR_SIZE);
 						unsigned char *slotp = data_section->data + slot_off;
 						Sym *slot_sym, *body_sym;
@@ -16327,8 +16327,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						ast_cur = sv;
 #ifdef AST_EVAL_SLICE_PROVIDED
 						{
-							int forced = getenv("MCC_AST_EVAL_FORCE_UNSOUND") != NULL;
-							int gate = getenv("MCC_AST_JIT_EVAL_GATE") != NULL;
+							int forced = mcc_env_on("MCC_AST_EVAL_FORCE_UNSOUND");
+							int gate = mcc_env_on("MCC_AST_JIT_EVAL_GATE");
 #if MCC_CONFIG_AST_SHADOW
 							int need = 1;
 #else
@@ -16357,7 +16357,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 									ast_arena_free(ast_spec);
 									ast_spec = NULL;
 									ast_jit_eval_refused++;
-									if (getenv("MCC_JIT_VERBOSE"))
+									if (mcc_env_on("MCC_JIT_VERBOSE"))
 										{ MCC_TRACE("br\n"); fprintf(stderr,
 														"mccjit: eval-slice hard-gate refused unsound spec (mode=%d)\n",
 														specmode); }

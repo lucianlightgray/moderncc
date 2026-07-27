@@ -1486,11 +1486,11 @@ redo:
 	}
 
 	if (0 == ret && s->optimize_search_seconds && n == 0 &&
-			!getenv("MCC_SEARCH_WORKER") &&
+			!mcc_env_on("MCC_SEARCH_WORKER") &&
 			(s->output_type == MCC_OUTPUT_OBJ || s->output_type == MCC_OUTPUT_EXE) &&
 			s->nb_files >= 1 && s->files[0]->name && !(s->files[0]->type & AFF_TYPE_LIB)) { MCC_TRACE("br\n");
 		int (*so)(int, char **, MCCState *, const char *) =
-				getenv("MCC_AST_PERFN") ? mcc_superopt_perfn : mcc_superopt_search;
+				mcc_env_on("MCC_AST_PERFN") ? mcc_superopt_perfn : mcc_superopt_search;
 #ifdef MCC_EMBED_JIT
 		{
 			extern int mccjit_embed_manifest(MCCState * s);
