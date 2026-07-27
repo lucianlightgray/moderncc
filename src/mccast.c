@@ -2096,8 +2096,12 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * single `roundsd`/`roundss` (imm floor=0x9/ceil=0xA/trunc=0xB, bit3 suppresses
 	 * the precision exception to match libm). Default OFF because roundsd is SSE4.1,
 	 * not the SSE2 baseline — the user opts in for an SSE4.1 target (like gcc's
-	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only. */
-	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", o4);
+	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only.
+	 * NOT in the o4 blanket: -O4 means "run every optimizer", but this one changes
+	 * the required ISA rather than just the code, so folding it in made -O4 output
+	 * silently demand an SSE4.1 CPU with nothing in the compiler recording that.
+	 * Restore it to o4 only once -march exists to express the requirement. */
+	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
 	/* copysign inline (fsgnj on riscv64, SSE mask on x86_64, GP round-trip on
 	 * arm64). Default OFF on ALL
 	 * arches (opt-in) so default codegen is byte-identical everywhere — including
