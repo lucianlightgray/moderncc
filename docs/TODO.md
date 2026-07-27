@@ -128,7 +128,7 @@ measuring compiler was BUILT from — a stale cross compiler reports meaningless
 | 287 (34%) | member access | 214 nested-struct (all LVALUE — `MCC_AST_MEMBER_AGG` recovers them), 73 `const` (`MCC_AST_MEMBER_CONST` recovers 51) | Ungate campaign |
 | 213 (26%) | vstack depth | 100% the `ast_vn != rel - 1` SYNC arm; capacity never fires | see below — measured, no shortcut |
 | 83 (13%) | value model | register-resident operand; the 32-bit `int`<->`long long` case | Cross-arch parity |
-| 32 (4%) | `&&`/`\|\|` | non-const operand, in a call/op, or `lor_top >= 16` | **NOT INVESTIGATED** — follow-up F4 |
+| 32 (4%) | `&&`/`\|\|` | **100% a CONSTANT first operand** (`c >= 0`) — measured | see F4 |
 
 Landed against this, all default OFF (deltas per the corrected table above): **`MCC_AST_MEMBER_AGG` +106 faithful, the largest single win**; `MCC_AST_MEMBER_CONST` +46; `MCC_AST_CMP_INVERT` +9 (it also fixes `!!` modelling, closing a path where 8 functions were optimized on an inverted-condition model; on arm64 it desyncs rather than mismodels). **None is flipped on — see the follow-ups section for what each still needs.**
 
@@ -316,9 +316,17 @@ rather than mismodel, which is safe but leaves that target with no fix. Optional
 remains is a benign OPERAND-ORDER divergence (`s + p->offset` evaluated right-to-left in the replay), same length,
 ruled out as Sethi-Ullman by measurement. Buys coverage, not correctness.
 
-**F4 — The `&&`/`||` desync site is UNINVESTIGATED.** 32 events, 4% of desyncs, at the `ast_hook_landor_operand` guard
-(non-const operand, inside a call/op, or `ast_lor_top >= 16`). Nobody has looked at which arm dominates. Cheapest
-remaining unknown in the fidelity table; instrument it the way the member and vstack sites were.
+**F4 — The `&&`/`||` desync site: MEASURED 2026-07-27, and it is one cause, not four.** Instrumenting the guard in
+`ast_hook_landor_operand` over mcc's own TU: **32 events, ALL `c >= 0`** — the first operand of the `&&`/`||` folded
+to a compile-time constant. Zero from `ast_in_call`, `ast_in_op`, `ast_lor_top >= 16` or `ast_vn < 1`, so three of the
+four disjuncts never fire here and only the constant one matters.
+Why it desyncs is defensible: with a known condition the front end short-circuits and one arm may never be emitted,
+so the recorder cannot model what codegen did not produce. But it is also the case where the whole expression is
+trivially foldable — the result is either the constant or the other operand — so **modelling it as that, instead of
+desyncing, looks like the cheapest remaining fidelity win** at 4% of desyncs and a single well-defined shape.
+Verify before building: confirm the un-emitted arm is genuinely absent from the emitted stream (not merely
+branch-eliminated later), since modelling an arm codegen did emit would be a fidelity REGRESSION, and this file
+already has three cases where an obvious-looking recorder fix went the wrong way.
 
 **F5 — The 26% vstack site is real modelling work, with no shortcut.** Measured 100% the `ast_vn != rel - 1` SYNC arm,
 0% capacity, so raising `AST_VS_MAX` recovers nothing. This is the second-largest cause of lost optimization and the
