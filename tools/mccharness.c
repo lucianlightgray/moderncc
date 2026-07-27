@@ -2123,13 +2123,14 @@ static int suite_qemurun(int argc, char **argv) {
 	const char *srcdir = opt(argc, argv, "--srcdir", NULL);
 	const char *workdir = opt(argc, argv, "--workdir", NULL);
 	const char *arch = opt(argc, argv, "--arch", "");
+	const char *optlvl = opt(argc, argv, "--opt", "");
 	char Bf[4200], sysf[4200], isysinc[4200], L1[4200], L2[4200], L3[4200], L4[4200];
 	const char *launcher[4];
 	char *files[4096];
 	int nf, i, fails = 0;
 
 	if (!mcc || !mccbase || !sysroot || !qemu || !srcdir || !workdir) {
-		fprintf(stderr, "usage: mccharness qemurun --mcc --mccbase --sysroot --qemu --srcdir --workdir\n");
+		fprintf(stderr, "usage: mccharness qemurun --mcc --mccbase --sysroot --qemu --srcdir --workdir [--opt -O2]\n");
 		return 2;
 	}
 	host_mkdirs(workdir);
@@ -2175,6 +2176,8 @@ static int suite_qemurun(int argc, char **argv) {
 				A(&v, "-fPIC");
 				A(&v, "-pie");
 			}
+			if (optlvl && optlvl[0])
+				A(&v, optlvl);
 			A(&v, s);
 			A(&v, "-o");
 			A(&v, out);

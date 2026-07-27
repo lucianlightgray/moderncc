@@ -5591,6 +5591,14 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
 
+                add_test(NAME ${_tn}-O2 COMMAND "$<TARGET_FILE:mccharness>" qemurun
+                    --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"
+                    --sysroot "${_root}" --qemu "${_QEMU_${_arch}}"
+                    --srcdir "${_qsrc}" --arch "${_arch}" --opt "-O2"
+                    --workdir "${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}-O2")
+                set_tests_properties(${_tn}-O2 PROPERTIES
+                    FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
+
                 if(NOT _arch STREQUAL MCC_CPU)
                     add_test(NAME ${_tn}-exec COMMAND exec_runner
                         "${_qcc}" "${CMAKE_BINARY_DIR}"
