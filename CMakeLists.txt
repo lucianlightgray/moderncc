@@ -3964,12 +3964,12 @@ if(MCC_BUILD_TESTS)
                             if(_ofmode STREQUAL "counter")
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" counter "${_mcc_exe}" "${_ofsrc}"
-                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
+                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofcell}"
                                             "${_ofopt}" "${_ofarg}" "${_ofextra}")
                             elseif(_ofmode STREQUAL "level")
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" level "${_mcc_exe}" "${_ofsrc}"
-                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
+                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofcell}"
                                             "-" "${_ofopt}" "${_ofarg}")
                             else()
                                 set(_ofldf "-")
@@ -3978,7 +3978,7 @@ if(MCC_BUILD_TESTS)
                                 endif()
                                 add_test(NAME "optfire/${_ofcell}"
                                     COMMAND "${_of_sh}" differ "${_mcc_exe}" "${_ofsrc}"
-                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofname}"
+                                            "${CMAKE_BINARY_DIR}/optfire" "${_ofcell}"
                                             "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofldf}")
                             endif()
                             set_tests_properties("optfire/${_ofcell}" PROPERTIES
