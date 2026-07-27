@@ -22,6 +22,7 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_LDST8_ABS_LO12_NC:
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
 	case R_AARCH64_TLSDESC_ADR_PAGE21:
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
@@ -61,6 +62,7 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_TSTBR14:
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
 	case R_AARCH64_TLSDESC_ADR_PAGE21:
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
@@ -381,7 +383,11 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		write64le(ptr, val - rel->r_addend);
 		return;
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
-	case R_AARCH64_TLSLE_ADD_TPREL_LO12: {
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	/* _NC is the no-overflow-check twin of _LO12 (gcc's default local-exec
+	   ADD form is HI12 + LO12_NC); we only mask the low 12 bits below, which
+	   is exactly the checked variant's value, so treat them identically. */
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC: {
 		addr_t tls_start = 0;
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];

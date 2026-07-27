@@ -928,6 +928,7 @@ ST_FUNC int mcc_disasm_reloc_size(int type) { MCC_TRACE("enter\n");
 	case R_AARCH64_MOVW_UABS_G3:
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
 		return 4;
 	}
 	return 0;
