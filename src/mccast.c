@@ -523,12 +523,31 @@ static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) { MCC_TRACE("enter\n");
 	return m->nsym;
 }
 
+/* VT_* value-storage flags (source of truth: mcc.h:1026-1034), reachable here in
+   the amalgamated / MCC_INTERNAL build. Provide the same constants for the
+   standalone asttool compile (it includes mccast.c without mcc.h) so the local-Ref
+   detection below is identical in both; skipped whenever mcc.h already defined them. */
+#ifndef VT_VALMASK
+#define VT_VALMASK 0x007f
+#endif
+#ifndef VT_LOCAL
+#define VT_LOCAL 0x0032
+#endif
+#ifndef VT_SYM
+#define VT_SYM 0x0200
+#endif
+
+static int ast_ih_sym_dropped(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return ((uint32_t)a->op[n] & VT_VALMASK) == VT_LOCAL &&
+				 !((uint32_t)a->op[n] & VT_SYM);
+}
+
 static uint64_t ast_ih_node(const AstArena *a, AstLocal n, AstIhSyms *m,
 														uint64_t h) { MCC_TRACE("enter\n");
 	h = ast_ih_fold(h, a->kind[n]);
 	h = ast_ih_fold(h, (uint32_t)a->op[n]);
 	h = ast_ih_fold(h, (uint32_t)a->type_t[n]);
-	h = ast_ih_fold(h, a->sym[n] ? ast_ih_sym(m, a->sym[n]) : 0);
+	h = ast_ih_fold(h, (a->sym[n] && !ast_ih_sym_dropped(a, n)) ? ast_ih_sym(m, a->sym[n]) : 0);
 	if (a->kind[n] != AST_Ref)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, a->ival[n]); }
 	h = ast_ih_fold(h, a->fbits[n]);
@@ -551,19 +570,6 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root) { MCC_TRACE("enter
 	return m.oom ? 0 : h;
 }
 
-/* VT_* value-storage flags (source of truth: mcc.h:1026-1034), reachable here in
-   the amalgamated / MCC_INTERNAL build. Provide the same constants for the
-   standalone asttool compile (it includes mccast.c without mcc.h) so the local-Ref
-   detection below is identical in both; skipped whenever mcc.h already defined them. */
-#ifndef VT_VALMASK
-#define VT_VALMASK 0x003f
-#endif
-#ifndef VT_LOCAL
-#define VT_LOCAL 0x0032
-#endif
-#ifndef VT_SYM
-#define VT_SYM 0x0200
-#endif
 
 /* Positional intern of a slice's live-in local offsets: distinct offsets map to
    dense ordinals (1,2,...) in first-seen order, a repeat returns its prior ordinal.
@@ -595,7 +601,7 @@ static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
 	h = ast_ih_fold(h, a->kind[n]);
 	h = ast_ih_fold(h, (uint32_t)a->op[n]);
 	h = ast_ih_fold(h, (uint32_t)a->type_t[n]);
-	h = ast_ih_fold(h, a->sym[n] ? ast_ih_sym(sm, a->sym[n]) : 0);
+	h = ast_ih_fold(h, (a->sym[n] && !ast_ih_sym_dropped(a, n)) ? ast_ih_sym(sm, a->sym[n]) : 0);
 	if (is_local)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_off(om, (int32_t)(int64_t)a->ival[n])); }
 	else if (a->kind[n] != AST_Ref)
