@@ -57,6 +57,8 @@ Goal: bring the **x86_64-win32 / i386-win32** rows of the parity matrix to the s
 
 Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the gated-ON path with local MSVC (`cmake-msvc`) + mingw (llvm-ucrt) builds, prune each item on completion and update the parity matrix row. Honesty rule: an item that is HW-/CI-/toolchain-gated is NOT "implementation complete" — it is marked blocked with its exact blocker, never quietly closed.
 
+**CONSOLIDATION (2026-07-27):** with all five source changes in (SECREL native-TLS COFF reading, à la carte pull-once, `__ImageBase` synthesis, compiler-rt embed fallback, `K32GetProcessMemoryInfo` def) plus the CMake self-host enablement, the **full local ctest suite is 100% GREEN — 6424/6424, 0 failures** on llvm-mingw x86_64 (the core PE linker path is exercised by every test that links the CRT). x86_64-win32 `--embed-jit` + self-host bake + `MCC_JIT=1`≡`MCC_JIT=0` parity are done, wired, and regression-clean. Remaining local-tractable follow-up: a Windows-safe `--embed-jit` bake+run(JIT-off) smoke ctest to lock this into CI (gate `WIN32 AND NOT MSVC`; self-skip 77; do NOT run the full self-compile under `MCC_JIT=1` on winlibs — P0 step 5).
+
 ## -O level curation + `-O4` = every implemented optimizer (landed 2026-07-26)
 Driven by the per-gate sweep below. Three changes to `ast_configure` (`mccast.c`) plus one real fix in `mccgen.c`; **ctest 6222/6222 native**.
 
