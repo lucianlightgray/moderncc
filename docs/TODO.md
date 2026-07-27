@@ -40,6 +40,18 @@
 
 **Standing rule while this is P0:** any new optimizer gate must state its JIT status. The 2026-07-26 gates (`MCC_AST_CHAINSTORE`, `MCC_AST_PROMO_INCDEC`, `MCC_AST_IVSR_PTR`, `MCC_AST_REGDISP`, `-fc99-inline-body`) were validated AOT-only across x86_64/riscv64/arm64 and have **no JIT validation at all** — that gap is now part of their flip criteria.
 
+### CAMPAIGN IN PROGRESS (2026-07-27) — feature-complete AOT/JIT parity that ungates every Windows/PE/x86 path
+Goal: bring the **x86_64-win32 / i386-win32** rows of the parity matrix to the same "feature-complete, at-parity, ungated" state the ELF reference arches already hold — a JIT-capable `mcc.exe` that self-hosts under `MCC_JIT=1` byte-identical to `MCC_JIT=0`, and a `--embed-jit` standalone-exe path that works with the native COFF toolchain. This is the local, non-HW-gated portion of P0 steps 4–6; **arm64-win32 stays explicitly HW-gated** (needs real arm64-Windows silicon for SEH/icache/frameless-leaf — do not false-green it). Concrete workstream, tractable → blocked, each cross-referenced to its detailed item below:
+
+1. **[tractable, local] `--embed-jit` COFF consumption on WIN32.** mcc's own linker must read the host CC's COFF `libmcc_jitengine.a` so `--embed-jit <src> -o out.exe` resolves `mccjit_boot_swap`/`mccjit_set_search_budget` at link time (today gated off, `CMakeLists.txt` ~1951; ELF/PE-mode COFF reader `coff_load_object_file` mccpe.c ~2056 is the template). This is the Windows peer of P0 step 1's Mach-O reader and the single highest-leverage local win. — see **JIT Windows / PE**.
+2. **[tractable, local] Win64 `mccjit_make_kgc_stub_mixed`.** Port the mixed GP/FP KGC stub to the Win64 positional ABI (per-arg class vector) so `jit/selftest-mixed` runs instead of skipping on WIN32. — see **JIT Windows / PE**.
+3. **[tractable, local] Windows `MCC_EMBED_JIT` runtime.** Replace the glibc-only `sys/mman.h`/pthread/fork uses in the embed runtime with Win32 equivalents (`VirtualAlloc`/`VirtualProtect`/`FlushInstructionCache`, threads, no-fork) so the standalone embed runtime is not gated OFF on WIN32. — see **JIT Windows / PE**.
+4. **[tractable once 1–3 land] i386-PE stub-tail flip (`MCC_JIT_I386_STUBS`).** Run the i386 self-host + differential-fuzz soak, then flip the default. Mechanical per P0 step 4.
+5. **[needs CI trace, NOT local] PE x86_64 runtime-JIT self-host `0xC0000005`.** P0 step 5; icache hypothesis already disproven — do not re-try it, get a CI stack trace at the fault. Keep skip-marked until then.
+6. **[HW-gated] arm64-win32.** Keep every arm64-Windows JIT path explicitly skip-marked (`SKIP_RETURN_CODE 77`) so it never false-greens; logic is wine-validated but the fault subset needs native silicon.
+
+Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the gated-ON path with local MSVC (`cmake-msvc`) + mingw (llvm-ucrt) builds, prune each item on completion and update the parity matrix row. Honesty rule: an item that is HW-/CI-/toolchain-gated is NOT "implementation complete" — it is marked blocked with its exact blocker, never quietly closed.
+
 ## -O level curation + `-O4` = every implemented optimizer (landed 2026-07-26)
 Driven by the per-gate sweep below. Three changes to `ast_configure` (`mccast.c`) plus one real fix in `mccgen.c`; **ctest 6222/6222 native**.
 
