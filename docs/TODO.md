@@ -408,12 +408,21 @@ a fixed decision by construction, which is exactly what item 5 above says it sho
   format change that old caches will correctly miss rather than misread.
 
 **Work.**
-1. Persist the eligible mask per slice record, alongside the chosen one — `chosen` stays for warm-start, `eligible`
-   becomes the JIT's candidate space. Bump the record format.
-2. Have the JIT enumerate candidates from `eligible & ast_search_searchable(base)` at runtime rather than replaying
-   `chosen`, and record which one won as `proven`.
-3. Turn `MCC_AST_SLICE_MULTI` from unexercised to load-bearing: with a real eligible set there is finally something to
-   store more than one of.
+1. ~~Persist the eligible mask per slice record.~~ **DONE 2026-07-27.** `AstSliceMemo.eligible` is set from
+   `ast_search_searchable()` and stamped on every observation; `gates` still carries the chosen config for warm-start.
+   Record widened 4 -> 5 words, so `AST_SLICE_REC_MAGIC` bumped `'SL'` -> `'SM'` and old files SKIP rather than
+   misparse at the wrong stride. Verified with gates forced off: `g=000000fffff9f83f e=000000fffffff83f`.
+2. ~~Expose the candidate space on the consume path.~~ **DONE 2026-07-27.** `ast_slice_probe_table_cand()` reports the
+   winning record's chosen config and eligible space separately; existing callers and the 4-arg wrapper are unchanged.
+   Written test-first (spec failed on the missing symbol, then 4 checks pinned the contract).
+   Locked by `cli/slice_eligible_set`, which was verified to FAIL against a compiler that records the chosen mask
+   instead of the eligible one. Two earlier versions of that cell were vacuous — see its comment; `MCC_SLICE_DUMP`
+   appends, so a stale dump file makes `NR==1` read someone else's record.
+3. **REMAINING — and it is the blocked half.** Have the JIT enumerate candidates from
+   `eligible & ast_search_searchable(base)` at runtime rather than replaying `chosen`, and record the winner as
+   `proven`. Also turns `MCC_AST_SLICE_MULTI` from unexercised into load-bearing. Gated on the KGC/`routed` deadlock
+   below: nothing benchmarks anything until that clears. The AOT side is complete, so when it clears there is a real
+   candidate space waiting rather than a single decision.
 
 **Known downstream blocker — read before assuming this delivers benchmarking.** The JIT's benchmark/graduation path is
 currently UNREACHABLE (see item 5): `gs_bench_won` requires both a KGC-routed build and a vocab candidate beating the
