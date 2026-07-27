@@ -12,11 +12,11 @@
 # skipping (77) on any box without a running docker daemon.
 #
 # Three things must line up, and each fails loudly rather than subtly:
-#   - the runtime archive is staged as plain `libmccrt.a` in a scratch -B dir.
-#     mcc looks for MCC_CONFIG_CROSSPREFIX "libmccrt.a", and a stage-built mcc
-#     has an empty prefix, so pointing -B straight at cmake-cross makes it pick
-#     the HOST x86_64 libmccrt.a and fail with "invalid object file" plus
-#     unresolved __clear_cache / __floatunsitf.
+#   - -B points straight at cmake-cross. mcc_add_support probes
+#     `<arch>[-<os>]-libmccrt.a` before the plain name, so it picks the right
+#     archive even with the host x86_64 one sitting beside it (it used to fail
+#     with "invalid object file" plus unresolved __clear_cache/__floatunsitf,
+#     which is why this staged a scratch copy before 2026-07-27).
 #   - --sysroot is required, or mcc picks up the host /usr/lib/crt1.o and again
 #     reports "invalid object file".
 #   - project includes must precede the sysroot includes, or the system elf.h
@@ -48,15 +48,13 @@ command -v "$CC" >/dev/null 2>&1 || { echo "no host cc"; exit 77; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/stage"
-cp "$RTA" "$work/stage/libmccrt.a"
 
 KNOBS="$*"
 Q="$QEMU -L $SR"
 DEF="-DMCC_CONFIG_OPTIMIZER=1 -D$TDEF"
 # project includes FIRST (see header)
 INC="-I$root/src -I$root/src/formats -I$root/src/objfmt -I$root/src/arch/$ADIR -I$root/include"
-ARGS="-B$work/stage --sysroot=$SR -I$root/runtime/include $INC -I$SR/usr/include $DEF"
+ARGS="-B$root/cmake-cross --sysroot=$SR -I$root/runtime/include $INC -I$SR/usr/include $DEF"
 
 need() { [ -s "$1" ] || { echo "FAIL: $2 produced no output"; exit 1; }; }
 
