@@ -2328,6 +2328,172 @@ the_end:
 }
 #endif
 
+#define MH_OBJECT 0x1
+#define N_TYPE 0x0e
+#define N_STAB 0xe0
+#define SECTION_TYPE 0x000000ff
+#if defined MCC_TARGET_ARM64
+#define MACHO_CPU_TYPE CPU_TYPE_ARM64
+#else
+#define MACHO_CPU_TYPE CPU_TYPE_X86_64
+#endif
+
+/* __TEXT,__text -> .text so the loaded sections merge with mcc's ELF-internal
+   section table, the same way the COFF path maps ".text$mn" -> ".text". */
+static const char *macho_sect_to_elf_name(const char *seg, const char *sect,
+																					char *buf, size_t bufsz) { MCC_TRACE("enter\n");
+	char sn[17], sg[17];
+	size_t i;
+	for (i = 0; i < 16 && sect[i]; i++)
+		{ MCC_TRACE("br\n"); sn[i] = sect[i]; }
+	sn[i] = 0;
+	for (i = 0; i < 16 && seg[i]; i++)
+		{ MCC_TRACE("br\n"); sg[i] = seg[i]; }
+	sg[i] = 0;
+	if (!strcmp(sn, "__text"))
+		{ MCC_TRACE("br\n"); return ".text"; }
+	if (!strcmp(sn, "__data"))
+		{ MCC_TRACE("br\n"); return ".data"; }
+	if (!strcmp(sn, "__bss"))
+		{ MCC_TRACE("br\n"); return ".bss"; }
+	if (!strcmp(sn, "__const") || !strcmp(sn, "__cstring"))
+		{ MCC_TRACE("br\n"); return ".rodata"; }
+	snprintf(buf, bufsz, ".%s%s", sg[0] == '_' ? sg + 2 : sg, sn[0] == '_' ? sn + 1 : sn);
+	return buf;
+}
+
+ST_FUNC int macho_object_type(int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
+	struct mach_header mh;
+	lseek(fd, file_offset, SEEK_SET);
+	if (full_read(fd, &mh, sizeof mh) != sizeof mh)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (mh.magic != MH_MAGIC_64)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (mh.filetype != MH_OBJECT)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
+	struct mach_header mh;
+	struct section_64 *secs = NULL;
+	struct nlist_64 *syms = NULL;
+	char *strtab = NULL;
+	struct macho_sm { Section *s; unsigned long offset; } *smap = NULL;
+	unsigned long lcoff, strsize = 0;
+	uint32_t i, nsec = 0, nsym = 0, ci;
+	int ret = -1;
+
+	lseek(fd, file_offset, SEEK_SET);
+	if (full_read(fd, &mh, sizeof mh) != sizeof mh || mh.magic != MH_MAGIC_64)
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("invalid Mach-O object"); }
+	if (mh.cputype != MACHO_CPU_TYPE)
+		{ MCC_TRACE("br\n"); return mcc_error_noabort("Mach-O object: wrong cputype 0x%x", (unsigned)mh.cputype); }
+
+	lcoff = file_offset + sizeof(struct mach_header_64);
+	for (ci = 0; ci < mh.ncmds; ci++) { MCC_TRACE("br\n");
+		struct load_command lc;
+		lseek(fd, lcoff, SEEK_SET);
+		if (full_read(fd, &lc, sizeof lc) != sizeof lc || lc.cmdsize < sizeof lc)
+			{ MCC_TRACE("br\n"); mcc_error_noabort("Mach-O object: truncated load command"); goto done; }
+		if (lc.cmd == LC_SEGMENT_64 && !secs) { MCC_TRACE("br\n");
+			struct segment_command_64 sc;
+			lseek(fd, lcoff, SEEK_SET);
+			if (full_read(fd, &sc, sizeof sc) != sizeof sc)
+				{ MCC_TRACE("br\n"); mcc_error_noabort("Mach-O object: truncated LC_SEGMENT_64"); goto done; }
+			nsec = sc.nsects;
+			if (nsec)
+				{ MCC_TRACE("br\n"); secs = load_data(fd, lcoff + sizeof sc, (unsigned long)nsec * sizeof *secs); }
+		} else if (lc.cmd == LC_SYMTAB && !syms) { MCC_TRACE("br\n");
+			struct symtab_command st;
+			lseek(fd, lcoff, SEEK_SET);
+			if (full_read(fd, &st, sizeof st) != sizeof st)
+				{ MCC_TRACE("br\n"); mcc_error_noabort("Mach-O object: truncated LC_SYMTAB"); goto done; }
+			nsym = st.nsyms;
+			strsize = st.strsize;
+			if (nsym)
+				{ MCC_TRACE("br\n"); syms = load_data(fd, file_offset + st.symoff, (unsigned long)nsym * sizeof *syms); }
+			if (strsize)
+				{ MCC_TRACE("br\n"); strtab = load_data(fd, file_offset + st.stroff, strsize); }
+		}
+		lcoff += lc.cmdsize;
+	}
+
+	smap = mcc_mallocz((nsec + 1) * sizeof *smap);
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		struct section_64 *sh = &secs[i];
+		char nbuf[40];
+		const char *name;
+		int j, sh_type, sh_flags, align;
+		Section *sec = NULL;
+
+		name = macho_sect_to_elf_name(sh->segname, sh->sectname, nbuf, sizeof nbuf);
+		sh_flags = SHF_ALLOC;
+		if ((sh->flags & S_ATTR_PURE_INSTRUCTIONS) || (sh->flags & S_ATTR_SOME_INSTRUCTIONS))
+			{ MCC_TRACE("br\n"); sh_flags |= SHF_EXECINSTR; }
+		else
+			{ MCC_TRACE("br\n"); sh_flags |= SHF_WRITE; }
+		sh_type = ((sh->flags & SECTION_TYPE) == S_ZEROFILL) ? SHT_NOBITS : SHT_PROGBITS;
+		align = sh->align < 31 ? (1 << sh->align) : 1;
+
+		for (j = 1; j < s1->nb_sections; j++) { MCC_TRACE("br\n");
+			if (!strcmp(s1->sections[j]->name, name))
+				{ MCC_TRACE("br\n"); sec = s1->sections[j]; break; }
+		}
+		if (!sec)
+			{ MCC_TRACE("br\n"); sec = new_section(s1, name, sh_type, sh_flags); }
+		smap[i + 1].s = sec;
+		smap[i + 1].offset = section_add(sec, sh->size, align);
+		if (sh_type != SHT_NOBITS && sh->size && sh->offset) { MCC_TRACE("br\n");
+			lseek(fd, file_offset + sh->offset, SEEK_SET);
+			full_read(fd, sec->data + smap[i + 1].offset, sh->size);
+		}
+	}
+
+	for (i = 0; i < nsym; i++) { MCC_TRACE("br\n");
+		struct nlist_64 *ns = &syms[i];
+		const char *name;
+		int bind, shndx;
+		addr_t value = ns->n_value;
+
+		if (ns->n_type & N_STAB)
+			{ MCC_TRACE("br\n"); continue; }
+		if (!strtab || ns->n_strx >= strsize)
+			{ MCC_TRACE("br\n"); continue; }
+		name = strtab + ns->n_strx;
+		if (!name[0])
+			{ MCC_TRACE("br\n"); continue; }
+		bind = (ns->n_type & N_EXT) ? STB_GLOBAL : STB_LOCAL;
+		switch (ns->n_type & N_TYPE) { MCC_TRACE("br\n");
+		case N_UNDF:
+			shndx = SHN_UNDEF;
+			value = 0;
+			break;
+		case N_ABS:
+			shndx = SHN_ABS;
+			break;
+		case N_SECT:
+			if (!ns->n_sect || ns->n_sect > nsec)
+				{ MCC_TRACE("br\n"); continue; }
+			shndx = smap[ns->n_sect].s->sh_num;
+			value = value - secs[ns->n_sect - 1].addr + smap[ns->n_sect].offset;
+			break;
+		default:
+			continue;
+		}
+		set_elf_sym(symtab_section, value, 0, ELFW(ST_INFO)(bind, STT_NOTYPE),
+								0, shndx, name);
+	}
+	ret = 0;
+
+done:
+	mcc_free(smap);
+	mcc_free(secs);
+	mcc_free(syms);
+	mcc_free(strtab);
+	return ret;
+}
+
 ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev) { MCC_TRACE("enter\n");
 	char *soname, *data, *pos;
 	int ret = -1;

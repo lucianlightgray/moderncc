@@ -1852,6 +1852,8 @@ PUB_FUNC int mcc_get_dllexports(const char *filename, char **pp);
 ST_FUNC int macho_output_file(MCCState *s1, const char *filename);
 ST_FUNC int macho_load_dll(MCCState *s1, int fd, const char *filename, int lev);
 ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev);
+ST_FUNC int macho_object_type(int fd, unsigned long file_offset);
+ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
 #ifdef MCC_TARGET_IS_HOST
 ST_FUNC void mcc_add_macos_sdkpath(MCCState *s);
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s);

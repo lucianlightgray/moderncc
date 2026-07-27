@@ -1242,6 +1242,10 @@ static int mcc_add_binary(MCCState *s1, int flags, const char *filename, int fd)
 			obj_type = AFF_BINTYPE_DYN;
 			goto case_dyn_or_tbd;
 		}
+		if (macho_object_type(fd, 0)) { MCC_TRACE("br\n");
+			ret = macho_load_object_file(s1, fd, 0);
+			break;
+		}
 		ret = FILE_NOT_RECOGNIZED;
 		break;
 	}
