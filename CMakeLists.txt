@@ -5154,6 +5154,30 @@ if(MCC_BUILD_TESTS)
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-cross-native.sh" arm64)
         set_tests_properties(selfhost-arm64-native PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 1800)
+
+        # In-memory `-run` JIT-parity gate (peer of selfhost-cross-native.sh,
+        # which gates AOT self-host). For each target arch it builds a
+        # -DMCC_CONFIG_STATIC mcc from the amalgamation, then runs hi.c/hot.c
+        # in-process under MCC_JIT=0 and MCC_JIT=1 and asserts both match the
+        # reference value AND each other -- locking the just-verified
+        # riscv64/arm/arm64 `-run` parity so a codegen/JIT change can't silently
+        # regress it. Each leg skips 77 when its cross-gcc / qemu / sysroot /
+        # libmccrt.a is absent (arm64 leg additionally needs an aarch64 host).
+        # RUN_SERIAL: each leg builds a full mcc and runs it under qemu.
+        add_test(NAME run-parity-riscv64
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" riscv64)
+        set_tests_properties(run-parity-riscv64 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800)
+
+        add_test(NAME run-parity-arm
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" arm)
+        set_tests_properties(run-parity-arm PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800)
+
+        add_test(NAME run-parity-arm64
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" arm64)
+        set_tests_properties(run-parity-arm64 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 1800)
     endif()
 
     if(TARGET mcc-riscv64)
