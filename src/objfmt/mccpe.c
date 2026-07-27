@@ -1361,6 +1361,18 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 			const char *name = (char *)symtab_section->link->data + sym->st_name;
 			unsigned type = ELFW(ST_TYPE)(sym->st_info);
 			int imp_sym = 0;
+			/* Image-base marker symbol. MSVC/lld objects reference __ImageBase
+			   (mingw: __image_base__/_image_base__) for RVA arithmetic, SEH and
+			   /GS; it resolves to the PE load base. Define it as an absolute
+			   symbol at pe->imagebase (finalized by pe_set_options, which runs
+			   before this) so image-relative (ADDR32NB→R_X86_64_RELATIVE) relocs
+			   against it are 0 and absolute relocs yield the base. */
+			if (!strcmp(name, "__ImageBase") || !strcmp(name, "__image_base__") ||
+					!strcmp(name, "_image_base__")) { MCC_TRACE("br\n");
+				sym->st_shndx = SHN_ABS;
+				sym->st_value = pe->imagebase;
+				continue;
+			}
 			struct import_symbol *is;
 
 			int _imp_, n;
