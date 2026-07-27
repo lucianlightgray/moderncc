@@ -2965,6 +2965,18 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	if (ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
+	/* MCC_AST_MEMBER_CONST (default OFF => byte-identical). A `const`-qualified
+	   member desyncs the recorder purely on the qualifier: the values themselves
+	   are ordinary (VT_PTR/VT_INT/VT_LLONG/VT_BYTE/VT_SHORT), so 73 of the 287
+	   member-access desyncs in mcc's own TU are rejected for qualification alone.
+	   Dropping a lone VT_CONSTANT recovers 51 of them. It is NOT purely
+	   conservative -- 4 functions then replay to different bytes and land in
+	   `unfaithful` instead -- but unfaithful functions are excluded from
+	   optimization anyway, so the net is +47 optimizable with no path to a
+	   miscompile. Opt-in until that residue is understood. */
+	{ static int relax = -1;
+	  if (relax < 0) { MCC_TRACE("br\n"); relax = getenv("MCC_AST_MEMBER_CONST") ? 1 : 0; }
+	  if (relax && qual == VT_CONSTANT) { MCC_TRACE("br\n"); qual = 0; } }
 	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
