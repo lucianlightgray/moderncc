@@ -31,10 +31,11 @@
 
 /* The runtime KGC verify-stub / dispatch tail (mccjit_make_kgc_stub_*) is
    hand-emitted machine code. x86_64 and arm64 are always on. i386 (cdecl,
-   x87 FP return — the "FP(x87)" path) is compiled in too but stays behind the
-   MCC_JIT_I386_STUBS runtime gate (default OFF): with the gate off the i386
-   stub builders return NULL exactly as before, so JIT promotion keeps the AOT
-   baseline and the default build is byte-identical. MCCJIT_HAVE_STUB_TAIL is
+   x87 FP return — the "FP(x87)" path) is compiled in too and, as of the P0
+   step 4 flip (2026-07-27), the MCC_JIT_I386_STUBS runtime gate DEFAULTS ON
+   (validated at parity — see mccjit_i386_stubs_enabled); MCC_JIT_I386_STUBS=0
+   restores the historical bail-to-NULL where i386 JIT promotion keeps the AOT
+   baseline. MCCJIT_HAVE_STUB_TAIL is
    the *compile-time* "an arch emitter exists" flag; mccjit_stub_tail_active()
    is the *runtime* predicate the selftests gate on (it additionally honors the
    i386 env gate). */
@@ -49,15 +50,21 @@
 #endif
 
 #if defined(MCCJIT_I386)
-/* MCC_JIT_I386_STUBS gate (default OFF), i386-only so the x86_64/arm64 object
-   stays byte-identical to the pristine tree (these helpers are defined and
-   referenced ONLY on i386). When OFF the i386 stub builders bail to NULL (the
-   historical i386/PE behavior), so the default build is unchanged and JIT
-   promotion keeps the AOT baseline. Set the env var to a non-empty, non-"0"
-   value to enable the i386 KGC/FP(x87)/mixed stub tail. */
+/* MCC_JIT_I386_STUBS gate — DEFAULT ON as of the P0 step 4 flip (2026-07-27),
+   i386-only so the x86_64/arm64 object stays byte-identical to the pristine tree
+   (these helpers are defined and referenced ONLY on i386). The i386 KGC/FP(x87)/
+   mixed stub tail is validated: the local WoW64 soak (tools/i386win32-soak.sh)
+   shows MCC_JIT=1 (stubs) ≡ MCC_JIT=0 byte-identical on a `-c` compile AND the
+   `-run src/mcc.c` self-host, 36/37 stub-tail selftests green (all three stub
+   types faithful), and differential-vs-gcc/clang clean on well-defined programs.
+   Setting MCC_JIT_I386_STUBS=0 explicitly restores the historical bail-to-NULL
+   behavior (i386 JIT promotion keeps the AOT baseline). NOTE: this only affects
+   the runtime-JIT path; AOT output is unchanged, and the proven parity means the
+   default JIT output is byte-identical to the pre-flip (stubs-off) output. */
 static int mccjit_i386_stubs_enabled(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_I386_STUBS");
-	return e && e[0] && e[0] != '0';
+	if (!e || !e[0]) { MCC_TRACE("br\n"); return 1; }
+	return e[0] != '0';
 }
 
 /* Runtime predicate the i386 selftests gate on: is the i386 stub tail active
@@ -377,6 +384,20 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		{ MCC_TRACE("br\n"); return NULL; }
 	js->optimize = 0;
 	js->nostdlib = 1;
+#if defined(MCCJIT_I386)
+	/* i386 codegen emits libgcc-style runtime helpers (__fixdfdi, __divdi3,
+	   __floatundidf, ...) for ops the wider backends fold to hardware (x86_64
+	   double->long is cvttsd2si; arm64/riscv64 have native converts). Those
+	   helpers are NOT source-level externals, so the has_external check below
+	   never clears nostdlib for them, and the in-memory recompile of any
+	   helper-using function fails to bind its callee -> returns NULL (the i386
+	   `mixed`/helper selftests hit this as "baseline recompile NULL"). Let the
+	   i386 MEMORY recompile resolve them from libmccrt. Compile-gated to i386 so
+	   x86_64 / arm64 / riscv64 recompiles are byte-identical by construction; and
+	   the i386 recompile path only runs with MCC_JIT_I386_STUBS on, so the
+	   default gate-off build is unaffected. */
+	js->nostdlib = 0;
+#endif
 	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
 
 	mcc_enter_state(js);

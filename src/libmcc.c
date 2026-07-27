@@ -2284,6 +2284,32 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			mcc_add_library_path(s, optarg);
 			break;
 		case MCC_OPTION_B:
+			/* -B sets mcc's private base ({B} in the default path templates).
+			   gcc/clang ACCUMULATE multiple -B prefixes; mcc historically kept
+			   only the last, silently dropping earlier ones — yet several callers
+			   pass `-B<src> -B<build>` (tools/selfhost-jit.py,
+			   tests/ci/regression_o4_aot_jit.sh, the CMake JIT self-host) expecting
+			   both to be searched. Keep the NEWEST as the {B} template base so the
+			   last-wins output stays byte-identical, but demote each previous base
+			   to explicit library search prefixes so it is no longer lost. Add both
+			   `<dir>` (ELF-style {B}) and `<dir>/lib` (PE-style {B}/lib) to cover
+			   either target's default library layout. */
+			if (s->mcc_lib_path && s->mcc_lib_path[0]) { MCC_TRACE("br\n");
+				char sub[2048];
+				const char *b = s->mcc_lib_path;
+				/* library search: `<dir>` (ELF {B}) and `<dir>/lib` (PE {B}/lib) */
+				mcc_add_library_path(s, b);
+				if ((size_t)snprintf(sub, sizeof sub, "%s/lib", b) < sizeof sub)
+					{ MCC_TRACE("br\n"); mcc_add_library_path(s, sub); }
+				/* header search: {B} also drives the sysinclude default
+				   (`{B}/include`, plus `{B}/include/winapi` on PE) — demote those
+				   too so an earlier -B's bundled headers are not lost. Nonexistent
+				   dirs (e.g. winapi off-PE) are simply never matched. */
+				if ((size_t)snprintf(sub, sizeof sub, "%s/include", b) < sizeof sub)
+					{ MCC_TRACE("br\n"); mcc_add_sysinclude_path(s, sub); }
+				if ((size_t)snprintf(sub, sizeof sub, "%s/include/winapi", b) < sizeof sub)
+					{ MCC_TRACE("br\n"); mcc_add_sysinclude_path(s, sub); }
+			}
 			mcc_set_lib_path(s, optarg);
 			continue;
 		case MCC_OPTION_l:
