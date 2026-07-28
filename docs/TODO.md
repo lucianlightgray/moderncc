@@ -1319,6 +1319,29 @@ them:**
      `AST_If` with both arms while the parser emitted only the taken one, so replay diverges. The fix must therefore
      SUPPRESS the If node and pass the taken arm's value straight through — confirming the shape above rather than
      just removing the guard.
+  **IMPLEMENTED AND LANDED 2026-07-27 for the ternary half.** `ast_hook_ternary_begin` no longer desyncs on a
+  constant condition: it drops the condition node, records which arm survives, and builds NO `AST_If`.
+  `ast_hook_ternary_branch_done` mirrors the parser's decrement for BOTH arms and stashes the taken arm's node;
+  `ast_hook_ternary_end` re-pushes that node as the result. All the constant shapes go faithful —
+  `1 ? a : b`, `0 ? a : b`, and nested `(1 ? a : b) + (0 ? b : a)` — with the non-constant `c ? a : b` unchanged.
+
+  **The stash/re-push is required and the obvious "retain in place" is WRONG — worth recording, because it fails
+  asymmetrically and would look like a working fix.** Tracing `vn`/`rel` through both polarities:
+
+      1 ? a : b   done0 vn=1 rel=1 | branch1 vn=1 rel=0  <-- parser POPPED, model did not
+      0 ? a : b   done0 vn=1 rel=1 | branch1 vn=0 rel=0      (fine by accident)
+
+  Both arms occupy the SAME vstack slot: the parser pops it between them and re-pushes. So retaining the taken arm's
+  value in place only works when the taken arm is the LAST one (`c == 0`); for `c != 0` it desyncs at the next push.
+  Mirroring the decrement for both arms and re-pushing the stashed node at `_end` works for both.
+
+  Gain is **+5 faithful (1318 -> 1323), desync 356 -> 351** — small, and exactly as predicted by point 3 below: most
+  constant conditions in this TU have a CALL in the untaken arm and hit `nocode_wanted` before the ternary hooks
+  matter. The remaining value here is gated on the `nocode_wanted` work, not on more ternary modelling.
+  Validated: host ctest 7276/7276, cross 7435/7435, fixpoint byte-identical (5519967), `ast/treecheck` clean at
+  `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, qemu 14/14 on all four triples, 0 exec-corpus
+  crashes, both side-effect guards green.
+
   3. **If the untaken arm contains a CALL, `nocode_wanted` desyncs first** — `1 ? a : h(1)` shows `desync=1` already
      set by the time arm 1's `done` fires, at site 3265 (`ast_hook_call_begin`). **So the two items are ordered for
      that subset**: a constant ternary whose untaken arm is simple can be fixed by the pass-through alone, but one

@@ -1795,6 +1795,12 @@ static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
+/* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
+   condition selects. A constant `?:` emits ONLY that arm, so the recorder must
+   not build an If node -- it passes the taken arm's value straight through and
+   discards the other, matching what the parser emitted (TODO F4). */
+static unsigned char ast_tern_const[16];
+static AstLocal ast_tern_val[16]; /* constant `?:`: the taken arm's node */
 static AstLocal ast_lor[16];
 static int ast_lor_top;
 
@@ -2528,9 +2534,19 @@ void ast_hook_vdup(void) { MCC_TRACE("enter\n");
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
-	if (c >= 0 || g || ast_in_call || ast_in_op || ast_tern_top >= 16 ||
+	if (g || ast_in_call || ast_in_op || ast_tern_top >= 16 ||
 			ast_vn < 1) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
+		return;
+	}
+	if (c >= 0) { MCC_TRACE("br\n");
+		/* Constant condition: the parser emits one arm only. Drop the condition
+		   node and remember which arm survives; no If node is built. */
+		ast_vn--;
+		ast_tern[ast_tern_top] = AST_NONE;
+		ast_tern_const[ast_tern_top] = (unsigned char)(c ? 1 : 2);
+		ast_tern_top++;
+		ast_in_call = 1;
 		return;
 	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -2538,7 +2554,9 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 	ast_set_op(ast_cur, cn, 5);
 	ast_add_child(ast_cur, cn, ast_vs[ast_vn - 1]);
 	ast_vn--;
-	ast_tern[ast_tern_top++] = cn;
+	ast_tern[ast_tern_top] = cn;
+	ast_tern_const[ast_tern_top] = 0;
+	ast_tern_top++;
 	ast_in_call = 1;
 }
 
@@ -2557,6 +2575,20 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 		AST_SET_DESYNC();
 		return;
 	}
+	if (ast_tern_const[ast_tern_top - 1]) { MCC_TRACE("br\n");
+		/* Constant condition: both arms occupy the SAME vstack slot -- the parser
+		   pops it between them and re-pushes -- so mirror its decrement for both,
+		   stash the selected arm's node, and re-push that node at _end. Retaining
+		   it in place instead desyncs whenever the taken arm is not the last one. */
+		int taken = ast_tern_const[ast_tern_top - 1] - 1;
+		if (which == taken) { MCC_TRACE("br\n");
+			ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+			ast_tern_val[ast_tern_top - 1] = ast_vs[ast_vn - 1];
+		}
+		ast_vn--;
+		ast_in_call = 1;
+		return;
+	}
 	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
 	ast_add_child(ast_cur, ast_tern[ast_tern_top - 1], ast_vs[ast_vn - 1]);
 	ast_vn--;
@@ -2567,9 +2599,24 @@ void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_tern_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal cn = ast_tern[--ast_tern_top];
+	int was_const = ast_tern_const[ast_tern_top];
+	ast_tern_const[ast_tern_top] = 0;
 	ast_in_call = 0;
 	if (ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
+	if (was_const) { MCC_TRACE("br\n");
+		AstLocal tv = ast_tern_val[ast_tern_top];
+		ast_tern_val[ast_tern_top] = AST_NONE;
+		if (tv == AST_NONE || ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
+			AST_SET_DESYNC();
+			return;
+		}
+		ast_vs[ast_vn++] = tv;
+		int crel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn != crel)
+			{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+		return;
+	}
 	if (ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
