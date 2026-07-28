@@ -1072,9 +1072,33 @@ So it is not element size (the `int*` cast is 4-byte and faithful), and not symb
 global is faithful). It is specifically **a pointer initialised from a WIDE string literal, dereferenced at least
 twice inside a short-circuit `&&`**. That combination is what leaves the extra `ast_vs` node.
 
-**Scope, stated so it is not over-read: this is ONE path into site 2302, not proof that all 261 share it.** The
-`vtop` histogram above (202 of 261 symbol-valued) is consistent with a literal-symbol cause but does not establish it.
-Fixing this shape and re-counting is the cheap way to find out how much of the 48% it actually covers.
+**Scope: this is ONE path into site 2302, and it is now MEASURED to cover none of the TU's 261.** I fixed the shape
+and re-counted, which is exactly what this note said to do — see below.
+
+**CAUSE FOUND for the reproducer, and the naive fix is NET-NEGATIVE. Reverted; read this before retrying.**
+A `gdb` breakpoint on the desync gives the culprit immediately:
+
+    ast_hook_vpush  <-  vsetc  <-  vpush64  <-  vpushi(121)
+                    <-  decl_initializer (mccgen.c:12369)
+                    <-  decl_initializer_alloc  <-  unary() (mccgen.c:8822, the str_init path)
+
+A wide string literal in expression position is materialised as an ANONYMOUS object, and `decl_initializer` walks it
+element by element as `vpushi(ch); init_putv(...)`. That pair is net-zero on the vstack, but the recorder models each
+`vpushi` as an expression value and nothing drops the node — so the model runs one entry ahead and the NEXT real push
+reports the mismatch. That is precisely the "consume without an `ast_vn` decrement" direction the delta measurement
+predicted, and the same class as the `gaddrof`/`gen_cast` synth-suspend fixes.
+
+Bracketing that pair with `ast_hook_synth_begin`/`_end` **does fix the reproducer** (`main` goes desync -> faithful)
+and clears 3 of the exec corpus's 44 site-2302 desyncs. **But it also LOSES 4 faithful functions**, corpus faithful
+2410 -> 2406, so it is a net regression and was reverted. The bracket is too broad: `decl_initializer` runs for every
+initializer, including real declarations where the recorder legitimately models the initial values. **A retry must
+narrow the suspend to the anonymous-object-in-expression-position case (the `str_init` path in `unary()`), not the
+shared `decl_initializer` element loop.**
+
+And the headline: **on mcc's own TU this changed nothing at all** — faithful stayed 1101, site 2302 stayed 261. mcc's
+own source contains no wide string literals, so this path accounts for **0 of the 261** TU events. The `vtop`
+histogram (202 of 261 symbol-valued) is consistent with a literal-symbol cause but clearly has a different producer.
+Whoever continues should bisect a second reproducer FROM mcc's own TU rather than from `tests/exec`.
 
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
