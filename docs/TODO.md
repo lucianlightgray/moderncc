@@ -1354,9 +1354,24 @@ them:**
   the general "constant at operand N" machinery, and none needs the taken-arm stash the ternary required — the result
   is a Literal, not an operand's node. That makes this the easiest remaining modelling item in the section.
 
-  Before implementing it, run the same observation build the ternary needed: all 45 desync at the FIRST hook, so
-  nothing is known yet about whether `ast_hook_landor_operand` fires for the skipped RHS or whether `landor_end`
-  arrives — and the ternary work showed that guessing the vstack shape produces an asymmetric fix that looks correct.
+  **IMPLEMENTED AND LANDED 2026-07-27.** The observation build answered the open questions: only ONE
+  `ast_hook_landor_operand` fires (none for the skipped RHS), `landor_end` DOES arrive with `materialized=1`, and
+  `vn`/`rel` are 1/1 throughout. `ast_hook_landor_operand` now recognises a constant first operand, records the level
+  as folded, and builds no `AST_Binary`; `ast_hook_landor_end` pops the level without pushing.
+
+  **The non-obvious part, found only by backtracing the first failed attempt: the model must DROP the constant's own
+  node.** Keeping it as the result desyncs immediately, because the parser DISCARDS the first operand's vstack slot
+  and pushes the folded constant in its place (`expr_landor` -> `vset`, mccgen.c:10152). Dropping it lets that
+  replacement push be modelled as an ordinary `Literal`, which is both simpler and what actually happens. So the two
+  constant-condition fixes need OPPOSITE handling — the ternary stashes and re-pushes the taken arm's node, the
+  landor drops its node and lets the parser's replacement be re-modelled. Do not generalise one to the other.
+
+  Gain: **+20 faithful (1323 -> 1343), desync 351 -> 327**. `(0 && a) + (1 || a)` and the nested/chained non-constant
+  forms are all faithful. `0 && h(1)` still desyncs — at the `nocode_wanted` site (`ast_hook_call_begin`), confirming
+  the ordering recorded above: the call-containing subset is gated on that item, not on this one.
+  Validated: host ctest 7276/7276, cross 7435/7435, fixpoint byte-identical (5522511), `ast/treecheck` clean at
+  `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, qemu 14/14 on all four triples, 0 exec-corpus
+  crashes, both side-effect guards green. Ratchet 773 -> 765 gaps, regenerated.
   Validated: host ctest 7276/7276, cross 7435/7435, fixpoint byte-identical (5519967), `ast/treecheck` clean at
   `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, qemu 14/14 on all four triples, 0 exec-corpus
   crashes, both side-effect guards green.

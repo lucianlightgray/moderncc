@@ -1803,6 +1803,13 @@ static unsigned char ast_tern_const[16];
 static AstLocal ast_tern_val[16]; /* constant `?:`: the taken arm's node */
 static AstLocal ast_lor[16];
 static int ast_lor_top;
+/* Per-level flag: the `&&`/`||` short-circuited on a CONSTANT first operand, so
+   the parser folded the whole expression to that constant and never evaluated
+   the right-hand side. Measured over mcc's own TU: all 45 such desyncs are this
+   one form (26 x `0 && X`, 19 x `1 || X`), none has a constant at a later
+   operand. The constant's own node is already the result, so no Binary is
+   built and nothing is consumed. */
+static unsigned char ast_lor_const[16];
 
 static int *ast_fconst;
 static int ast_fconst_n;
@@ -2631,17 +2638,33 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (first) { MCC_TRACE("br\n");
-		if (c >= 0 || ast_in_call || ast_in_op || ast_lor_top >= 16 ||
-				ast_vn < 1) { MCC_TRACE("br\n");
+		if (ast_in_call || ast_in_op || ast_lor_top >= 16 || ast_vn < 1) { MCC_TRACE("br\n");
 			AST_SET_DESYNC();
+			return;
+		}
+		if (c >= 0) { MCC_TRACE("br\n");
+			/* Folded. The parser DISCARDS the first operand's vstack slot and pushes
+			   the folded constant in its place (expr_landor -> vset), so drop the
+			   operand's node here and let that push be modelled as an ordinary
+			   Literal. Keeping the old node instead leaves the model one ahead and
+			   desyncs at the replacement push. */
+			ast_vn--;
+			ast_lor[ast_lor_top] = AST_NONE;
+			ast_lor_const[ast_lor_top] = 1;
+			ast_lor_top++;
+			ast_in_call = 1;
 			return;
 		}
 		AstLocal nd = ast_node(ast_cur, AST_Binary);
 		ast_set_op(ast_cur, nd, op);
-		ast_lor[ast_lor_top++] = nd;
+		ast_lor[ast_lor_top] = nd;
+		ast_lor_const[ast_lor_top] = 0;
+		ast_lor_top++;
 	}
 	if (ast_lor_top < 1)
 		{ MCC_TRACE("br\n"); return; }
+	if (ast_lor_const[ast_lor_top - 1])
+		{ MCC_TRACE("br\n"); ast_in_call = 1; return; }
 	if (c >= 0 || ast_vn < 1) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
@@ -2667,9 +2690,18 @@ void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_lor_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal nd = ast_lor[--ast_lor_top];
+	int was_const = ast_lor_const[ast_lor_top];
+	ast_lor_const[ast_lor_top] = 0;
 	ast_in_call = 0;
 	if (ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
+	if (was_const) { MCC_TRACE("br\n");
+		/* the folded constant is already the top of ast_vs; nothing to push */
+		int crel = (int)(vtop - vstack + 1) - ast_base_depth;
+		if (ast_vn != crel)
+			{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+		return;
+	}
 	if (materialized) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;

@@ -30,7 +30,6 @@ bounds/backtrace.c	bsearch	desync
 bounds/backtrace.c	fputc_unlocked	desync
 bounds/backtrace.c	putc_unlocked	desync
 bounds/backtrace.c	putchar_unlocked	desync
-bounds/bound_setjmp.c	check	desync
 bounds/bound_setjmp.c	fputc_unlocked	desync
 bounds/bound_setjmp.c	putc_unlocked	desync
 bounds/bound_setjmp.c	putchar_unlocked	desync
@@ -52,7 +51,7 @@ codegen/codeopt.c	bla	desync
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/dead_code.c	kb_wait_1	desync
 codegen/dead_code.c	main	desync
-codegen/dead_code.c	nondead_after_dead_return	desync
+codegen/dead_code.c	nondead_after_dead_return	unfaithful
 codegen/memory_model.c	fputc_unlocked	desync
 codegen/memory_model.c	main	desync
 codegen/memory_model.c	putc_unlocked	desync
@@ -106,7 +105,6 @@ expressions/integer_promotion_semantics.c	fputc_unlocked	desync
 expressions/integer_promotion_semantics.c	putc_unlocked	desync
 expressions/integer_promotion_semantics.c	putchar_unlocked	desync
 expressions/lshift_type.c	fputc_unlocked	desync
-expressions/lshift_type.c	main	desync
 expressions/lshift_type.c	putc_unlocked	desync
 expressions/lshift_type.c	putchar_unlocked	desync
 expressions/precedence.c	main	desync
@@ -152,7 +150,6 @@ features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	desync
 features_c99_c11/builtin_overflow.c	main	desync
 features_c99_c11/builtins.c	fputc_unlocked	desync
-features_c99_c11/builtins.c	main	desync
 features_c99_c11/builtins.c	putc_unlocked	desync
 features_c99_c11/builtins.c	putchar_unlocked	desync
 features_c99_c11/builtins_extra.c	fputc_unlocked	desync
@@ -214,7 +211,6 @@ features_c99_c11/generic.c	main	desync
 features_c99_c11/generic.c	putc_unlocked	desync
 features_c99_c11/generic.c	putchar_unlocked	desync
 features_c99_c11/libm_builtin_fold.c	fputc_unlocked	desync
-features_c99_c11/libm_builtin_fold.c	main	desync
 features_c99_c11/libm_builtin_fold.c	putc_unlocked	desync
 features_c99_c11/libm_builtin_fold.c	putchar_unlocked	desync
 features_c99_c11/noreturn.c	bsearch	desync
@@ -330,7 +326,6 @@ lexical/utf8_in_identifiers.c	putchar_unlocked	desync
 lexical/utf8_string_literal.c	bsearch	desync
 lexical/utf8_string_literal.c	btowc	desync
 lexical/utf8_string_literal.c	fputc_unlocked	desync
-lexical/utf8_string_literal.c	main	desync
 lexical/utf8_string_literal.c	putc_unlocked	desync
 lexical/utf8_string_literal.c	putchar_unlocked	desync
 lexical/utf8_string_literal.c	wctob	desync
@@ -399,7 +394,6 @@ preprocessor/comment.c	fputc_unlocked	desync
 preprocessor/comment.c	putc_unlocked	desync
 preprocessor/comment.c	putchar_unlocked	desync
 preprocessor/conditional_inclusion.c	fputc_unlocked	desync
-preprocessor/conditional_inclusion.c	main	desync
 preprocessor/conditional_inclusion.c	putc_unlocked	desync
 preprocessor/conditional_inclusion.c	putchar_unlocked	desync
 preprocessor/hashdefine.c	fputc_unlocked	desync
@@ -633,7 +627,6 @@ structs_unions/struct_byval.c	fputc_unlocked	desync
 structs_unions/struct_byval.c	main	desync
 structs_unions/struct_byval.c	putc_unlocked	desync
 structs_unions/struct_byval.c	putchar_unlocked	desync
-structs_unions/struct_init.c	foo	desync
 structs_unions/struct_init.c	fputc_unlocked	desync
 structs_unions/struct_init.c	putc_unlocked	desync
 structs_unions/struct_init.c	putchar_unlocked	desync
@@ -763,7 +756,6 @@ vla/basic.c	putchar_unlocked	desync
 vla/continue.c	fputc_unlocked	desync
 vla/continue.c	putc_unlocked	desync
 vla/continue.c	putchar_unlocked	desync
-vla/label.c	f2	desync
 vla/label.c	f3	desync
 vla/label.c	fputc_unlocked	desync
 vla/label.c	putc_unlocked	desync
