@@ -388,7 +388,39 @@ it.
 - `ast_hook_vstore` resolves a marker back to the inner store's RHS at RECORD time (the `mkr` block), so the outer
   store's value child ends up being the same `Literal` node the inner store already owns — a node with two parents,
   since `ast_add_child` reparents without unlinking. Which child chain replay walks decides whether it is emitted
-  once, twice or never. **That is the unanswered question, and it should be answered before anything is changed.**
+  once, twice or never.
+- **ANSWERED 2026-07-28: replay visits the shared node TWICE.** An `RV n=… kind=… parent=…` trace in
+  `ast_replay_value` gives, for `a = b = 0`:
+
+      RV n=2 kind=Ref     parent=4      b
+      RV n=3 kind=Literal parent=6      0
+      RV n=1 kind=Ref     parent=6      a
+      RV n=3 kind=Literal parent=6      0   <- the SAME node again
+
+  So the `Literal` really is reached from both stores' child chains, and its `parent` records only the outer store.
+  Two visits ought to make replay LONGER, yet replay is 12 bytes against the parser's 17 — resolved below.
+- **ACCOUNTING CLOSED 2026-07-28.** Adding `ind` (code offset) and vstack depth to the same trace:
+
+      RV n=2 Ref     ind=11 vtop=-1     b        emits nothing
+      RV n=3 Literal ind=11 vtop= 0     0        emits nothing
+                                                 ... store -> ind 17   (6 bytes)
+      RV n=1 Ref     ind=17 vtop=-1     a        emits nothing
+      RV n=3 Literal ind=17 vtop= 0     0        emits nothing
+                                                 ... store -> ind 23   (6 bytes)
+
+  Body = 12 bytes, and **neither `Literal` visit emits anything**. Each store emits the 6-byte `mov %eax,disp32`
+  REGISTER form, so replay stores from `eax` without ever loading it — the replayed body would write whatever
+  happened to be in the register, which is what "loses the RHS materialisation" means concretely.
+
+  **Root cause: `ast_finalize_leaf(value, vtop)` finalises the chained store's value leaf AFTER the parser has
+  already materialised it, so the leaf records "this value lives in register `eax`"** — true at record time, never
+  reproduced at replay. The single-store control (`a = 0`) is faithful because there the parser's materialisation
+  and the leaf agree. The existing `MCC_AST_CHAINSTORE` comment says the same thing from the other direction: "The
+  copy is finalized with vtop, i.e. it records 'the value is in the register the inner vstore left it in'."
+
+  So the fix is to record the chained value as the RHS EXPRESSION rather than as the register it happened to land
+  in. That is a model-shape change in the exact place `emit-at-marker` miscompiled, so it needs
+  `assign_value_effects.c` plus the full bar — but the mechanism is no longer guesswork.
 
 **Do NOT fix this by making the marker emit at its use site.** That was tried earlier in this session (F3a,
 "emit-at-marker"): correct at `-O0`/`-O1`, MISCOMPILED at `-O2`/`-O3`, and caught only because

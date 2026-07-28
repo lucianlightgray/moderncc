@@ -5434,6 +5434,9 @@ static void ast_error_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n")
 }
 
 static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	MCC_TRACE_IF("RV n=%d kind=%d nchild=%d parent=%d ind=%d vtop=%d\n", (int)n,
+							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
+							 (int)ind, (int)(vtop - vstack));
 	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
 	case AST_StoreVal: {
 		/* Value-live: already on the vstack, emit nothing. Otherwise it was
