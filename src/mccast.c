@@ -5551,6 +5551,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		CType ct;
 		ct.t = ast_type_t(a, n);
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		MCC_TRACE_IF("CVT from t=%#x r=%#x -> t=%#x\n", vtop->type.t, vtop->r, ct.t);
 		gen_cast(&ct);
 		break;
 	}

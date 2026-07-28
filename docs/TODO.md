@@ -561,12 +561,29 @@ Where that leaves the two halves:
   arm32 is the outlier and is worth a glance when fixing — either its `gen_cast` happens to emit the same sequence
   for both source types, which would mask the same modelling error, or it genuinely records the chain correctly.
 
-  Where the defect is NOT: relocations, and the recorded type on the Convert node is the obvious first suspect but
-  unverified. Replay does `ast_replay_value(child)` then `gen_cast(recorded type)`, so `gen_cast` converts from
-  whatever type the REPLAYED child left on the vstack — if that differs from what the parser had, the wrong
-  conversion is emitted with no other symptom. Parser emits `movzbl ; movsbl ; movslq`; replay emits
-  `movzbl ; movsbl ; movzbl`, i.e. the THIRD conversion re-emits the FIRST. `MCC_AST_REPLAY_DUMP=1` does not help
-  here — it only fires for bodies that came out faithful.
+  **PINPOINTED 2026-07-28: the second Convert node carries the WRONG TARGET TYPE.** A `CVT from t=%#x -> t=%#x`
+  trace in the `AST_Convert` replay case (kept, `MCC_TRACE_IF`-gated) gives, with `0x31` = `unsigned char`
+  (`VT_BYTE|VT_UNSIGNED|VT_DEFSIGN`) and `0x21` = `signed char`:
+
+  | | conversion 1 | conversion 2 |
+  |---|---|---|
+  | `s_char` | `0x31 → 0x21` (correct: the cast) | `0x21 → 0x31` — **should be `long long`** |
+  | `u_char` | `0x31 → 0x31` | `0x31 → 0x31` |
+
+  So the widening to `long long` is never represented; the second recorded Convert instead targets `unsigned char`,
+  the SOURCE expression's type. For `u_char` that is a no-op and coincidentally byte-identical, which is why the
+  unsigned form is faithful — **the same defect is present there, merely invisible.**
+
+  **Leading suspect, specific and checkable: `force_charshort_cast()` in `mccgen.c`.** It does
+  `dbt = vtop->type.t; vtop->type.t = sbt; gen_cast_s(...dbt); vtop->type.t = dbt;` — i.e. it temporarily rewrites
+  the vstack type around the call — while `gen_cast` calls `ast_hook_convert(type)` at its VERY TOP. A Convert can
+  therefore be recorded while the vstack carries the transient type rather than the real one, and the deferred
+  `VT_MUSTCAST` normalisation is exactly the mechanism that fires for a `char`-returning call feeding a cast.
+  Verify that before changing anything: confirm which `gen_cast` invocation records the bad node, and whether the
+  assignment's own int→`long long` widening goes through `gen_cast` at all (if it does not, the model is missing a
+  node rather than mislabelling one, and the fix is different).
+
+  `MCC_AST_REPLAY_DUMP=1` does not help here — it only fires for bodies that came out faithful.
 
   The rest is NOT classified, and the attempted threshold failed a check that should be recorded. Bucketing the
   remaining 62 by "≤10% of bytes differ" (46) versus ">10%" (16) does NOT separate reorder from structurally
