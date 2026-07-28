@@ -295,8 +295,30 @@ work is worth more than new passes.
 Every item below came out of building `optfire` and following what it found. Nothing here is speculative — each is a
 loose end left by a landed change, with the specific evidence that would close it.
 
-**F1 — Flip the three recorder gates, or decide not to.** **`MCC_AST_MEMBER_AGG` now MEETS THE M8 BAR and is ready
-to flip — this is a decision, not more work.** Evidence, all 2026-07-27:
+**F1 — DONE 2026-07-27: all three recorder gates are FLIPPED DEFAULT-ON.** `MCC_AST_MEMBER_AGG`,
+`MCC_AST_MEMBER_CONST` and `MCC_AST_CMP_INVERT` each shipped as a SEPARATE commit so a regression stays attributable
+(their effects overlap — all three touch recorder fidelity — and a combined flip would only make bisection harder).
+Each flip was: change the default, regenerate `tests/ast/verify-baseline/x86_64-linux.txt`, then run the full bar.
+Per-flip results:
+
+| flip | gate | ratchet | fixpoint size | fuzz (400 seeds, `--gates`) |
+|---|---|---|---:|---|
+| 1 | `MEMBER_AGG` | 776 -> 769 gaps, regenerated | 5492351 | 397 agree, 0 miscompile |
+| 2 | `MEMBER_CONST` | 769 -> 768 gaps, regenerated | 5494575 | 397 agree, 0 miscompile |
+| 3 | `CMP_INVERT` | unchanged, no regen needed | 5494783 | 397 agree, 0 miscompile |
+
+Every flip held host ctest 7229/7229, cross ctest 7388/7388, a byte-identical 3-stage self-host fixpoint
+(o1==o2==o3), and all four qemu gates 10/10. The ratchet failing on flips 1 and 2 is the intended signal, not a
+regression — it fails when the gap set IMPROVES, and regenerating banks the win. Flip 3 needed no regeneration
+because `CMP_INVERT`'s effect does not show on the exec corpus gap set.
+
+**The `CMP_INVERT` trade-off was taken consciously, as this entry required.** On arm64 it deliberately DESYNCS rather
+than models (F2), which the full-TU measurement quantifies: 21 functions move from `unfaithful` to `desync`
+(unfaithful 162 -> 141, desync 777 -> 798, faithful unchanged at 894). Both verdicts are equally excluded from
+optimization, so arm64 coverage is UNCHANGED — the flip removes a wrong model at no cost there, and gains +9 on
+x86_64/i386/riscv64. F2 remains open and would convert those 21 into real coverage.
+
+Original evidence for the flip decision, kept as the record of what the bar required. Evidence, all 2026-07-27:
 - **+106 faithful on x86_64, +87 on i386** over mcc's own TU, and **zero functions regress from `faithful`** — every
   transition is out of `desync` (106 -> faithful, 30 -> unfaithful, 2 -> bail), and `unfaithful`/`desync` are equally
   excluded from optimization, so the 30 are no worse off than before.
