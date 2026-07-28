@@ -2316,6 +2316,9 @@ void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vto
 		{ MCC_TRACE("br\n"); return; }
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel - 1 || rel > AST_VS_MAX) { MCC_TRACE("br\n");
+		MCC_TRACE_IF("SYNC vn=%d rel=%d delta=%d cap=%d r=%#x t=%#x tern=%d lor=%d\n",
+								 ast_vn, rel, ast_vn - (rel - 1), rel > AST_VS_MAX,
+								 vtop->r, vtop->type.t, ast_tern_top, ast_lor_top);
 		AST_SET_DESYNC();
 		return;
 	}

@@ -900,11 +900,29 @@ gate it on `assign_value_effects.c` plus the full bar.
 (verdict `empty`, reproducer `void f(int c){ c ? a() : b(); }`). It is the smallest slice of the family and is
 isolated from the chained-store hazard.
 
-### 3. A2a — characterise and design the vstack SYNC site (43)
-**The only desync site with no recorded verdict** — every other one is already "ruled out" or "needs a known design
-change". Prior characterisation: 13 Invoke, 12 Literal, 9 Binary, 5 Unary, 3 Load, 1 StoreVal, with 12 inside
-short-circuit regions. This is the one place where measurement still buys information, so measure first and only
-then design.
+### 3. A2a — CHARACTERISED 2026-07-28. The 43 are UNIFORM: the model is always exactly ONE value ahead.
+
+A `SYNC vn= rel= delta= cap= r= t= tern= lor=` trace at the guard (kept, `MCC_TRACE_IF`-gated) gives 43 events on
+mcc's TU — exactly one per desync'd function, so every function fails on its FIRST sync loss:
+
+| property | result |
+|---|---|
+| `rel > AST_VS_MAX` (capacity) | **0 of 43** |
+| `delta = ast_vn - (rel - 1)` | **1 for all 43**, no exceptions |
+| inside a ternary / short-circuit region | 12 inside, 31 outside |
+| value form at the failing push | 31 × `VT_CONST`, remainder mixed |
+
+**This CONFIRMS the earlier "0% capacity, do NOT raise `AST_VS_MAX`" finding** rather than contradicting it — a
+first pass appeared to show 31 capacity events, but that was `grep -o 'SYNC .*'` also matching the tail of the
+`DESYNC ...` state lines. Anchor the pattern (`\bSYNC vn=`). That is the third time in this file a substring match
+has produced a false signal (`faithful`/`unfaithful`, `verified` in a refusal message, now this one).
+
+**The uniformity is the finding.** Every failure is `ast_vn == rel`, i.e. the recorder holds exactly one MORE
+modelled value than the codegen vstack — never two, never fewer, and never a capacity problem. So this is not 43
+independent modelling gaps; it is one class of event that pushes a model value without a matching vstack push (or
+drops a vstack pop without dropping the model value). **Design from that:** find the hook that can leave `ast_vn`
+one high, rather than auditing 43 functions. The 31 outside any ternary/short-circuit region are the cleanest place
+to look, since they exclude the known short-circuit region interactions.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
