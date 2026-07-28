@@ -415,12 +415,26 @@ Where that leaves the two halves:
     might do genuinely different work.** `host_runmem_alloc`, `mcc_define_symbol` and `mcc_preprocess` have replay
     emitting an EXTRA call; `store_packed_bf` has the parser emitting TWO extra calls that replay does not.
 
-    **Not established: whether any of these is a defect.** An extra call on one side is exactly what INLINE-vs-CALL
-    looks like, and that is semantically equivalent — a helper the parser inlined and the replay called, or the
-    reverse, is not a bug. Distinguishing the two needs the call TARGETS, which the canonicalised disassembly throws
-    away (`call K`). Whoever picks this up should resolve the targets first; if a target is a math or bitfield
-    helper the parser folds, it is benign, and only a call the other side never makes in any form is a real
-    difference. Do not assume it is the second sign-extension-class bug without that check.
+    **The call deltas are REAL, confirmed independently by relocation counts.** The `relnew`/`relold` byte counts
+    differ by exact multiples of 24 — the ELF64 `Rela` size — and the multiples match the disassembly exactly:
+
+    | function | reloc bytes | Δ | calls |
+    |---|---|---:|---|
+    | `host_runmem_alloc` | 624 vs 600 | +24 | 1 extra in replay |
+    | `mcc_define_symbol` | 432 vs 408 | +24 | 1 extra in replay |
+    | `mcc_preprocess` | 2736 vs 2664 | +72 | 3 extra in replay |
+    | `store_packed_bf` | 1176 vs 1224 | −48 | 2 extra in parser |
+
+    Two independent signals (decoded instructions and relocation bytes) agreeing means one side genuinely emits
+    calls the other does not.
+
+    **INLINE-vs-CALL was the obvious explanation and it is REFUTED:** `MCC_AST_INLINE=0` leaves all of them
+    `unfaithful`, so the parser is not simply inlining a helper that replay calls. (That gate is one inlining
+    mechanism, not all of them — `foldm_*` math folding and `-fc99-inline-body` were not separately excluded.)
+
+    So these 4 are the strongest remaining candidates for a second real defect, and their cause is unknown. Next
+    step is resolving the call TARGETS from the relocation entries rather than the disassembly, which discards them
+    (`call K`); knowing WHICH function each side calls should identify the construct immediately.
 
   Taken with the byte-differ result, the picture across the whole bucket is consistent: most of what the
   faithfulness check rejects is allocation and scheduling difference rather than wrong modelling. Chained assignment
