@@ -12,3 +12,10 @@ promo_arrow|x86_64,arm64,riscv64
 promo_incdec|x86_64,arm64,riscv64
 spill_share|x86_64,arm64,riscv64
 color|x86_64,arm64,riscv64
+# opassign: the GATE is not arch-scoped (its consumers sit outside the promotion
+# #if), but this CASE's observable effect is promotion-MEDIATED -- opassign flips
+# functions to faithful so promotion can act on them. Measured on x86_64: with
+# MCC_AST_PROMOTE=0 forced, toggling OPASSIGN produces a byte-identical object.
+# So on i386, which has no promotion machinery at all, this case cannot show the
+# gate working however correct the gate is. Guarding the CASE, not the gate.
+opassign|x86_64,arm64,riscv64

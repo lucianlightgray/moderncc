@@ -441,8 +441,12 @@ keeps `regdisp` out.
 - *Narrow family (6) incl. `vlat` — a REAL gap, deliberately NOT guarded.* This is the 32-bit `int`<->`long long`
   recorder desync (cross-arch parity section): `narrow` reads 0 on i386 against 2-5 on x86_64, and widening the case to
   `long long` does not help because the recorder desyncs on the conversion. Guarding it would hide a real defect.
-- `opassign` — UNTRIAGED. It sits in neither group cleanly; check whether it depends on the promotion machinery before
-  assigning it.
+- *`opassign` — TRIAGED 2026-07-27: promotion-MEDIATED, guarded.* Its consumers sit OUTSIDE the promotion `#if`, so
+  the gate itself is not arch-scoped — but the case's observable effect is. Measured on x86_64: with
+  `MCC_AST_PROMOTE=0` forced, toggling `MCC_AST_OPASSIGN` produces a **byte-identical object**, while with promotion
+  on it differs. `opassign` works by flipping functions from desynced to faithful so promotion can act on them, so on
+  i386 — no promotion machinery at all — the case cannot demonstrate the gate however correct the gate is. Guarded to
+  `x86_64,arm64,riscv64`, and the `arch.txt` comment records that this guards the CASE, not the gate.
 So i386 wiring is blocked on the reassoc cases being reworked and the narrow gap being fixed — not on infrastructure.
 riscv64 is untriaged beyond the promotion note.
 
