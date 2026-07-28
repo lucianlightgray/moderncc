@@ -398,7 +398,21 @@ not alter bytes in place — and it is a useful filter: when triaging a same-len
 already excluded.
 
 Where that leaves the two halves:
-- **108 length-differs**: 45 chained + 19 nocode (6 overlapping) → 50 still unattributed.
+- **108 length-differs**: 45 chained + 19 nocode (6 overlapping) → 50 unattributed, now partly characterised
+  (2026-07-28, same validated decoded-instruction tooling, zero `(bad)` decodes):
+  - replay is SHORTER in 37 of the 50 and longer in 13.
+  - **24 of 50 (48%) have a delta consisting ENTIRELY of mov-family instructions** (`mov`/`movq`/`movl`/`movzbl`/
+    `movslq`), i.e. spill and reload traffic — the same register-allocation family as the 90-of-92 byte-differs,
+    except that here the differing allocation changes the instruction COUNT rather than just the encoding. Parser-only
+    instructions across the group are dominated by `movq K(R),R` (29), `mov K(R),R` (21), `mov R,K(R)` (21),
+    `movq R,K(R)` (16), against far fewer replay-only ones — so the parser generally spills more.
+  - The remaining 26 have non-mov differences and are the genuinely unexplained remainder. `xorb $K,K(R)` shows up
+    16 times in the parser-only totals but is NOT an anomaly: it is spread 1–2 per function across `foldm_hypot`,
+    `foldm_atan`, `foldm_tgamma` and `ast_fc_gp`, i.e. math-folding paths, not a single construct.
+
+  Taken with the byte-differ result, the picture across the whole bucket is consistent: most of what the
+  faithfulness check rejects is allocation and scheduling difference rather than wrong modelling. Chained assignment
+  and the lost sign extension remain the only two places where replay would compute something different.
 - **97 byte-differs**: 5 nocode, 0 chained → 92 unattributed, the largest unexplained group. **First look at two of
   them, 2026-07-28: these appear to be ORDER differences, not modelling errors.**
 
