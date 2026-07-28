@@ -333,18 +333,18 @@ than the baseline it could have kept, and on nbody LARGER as well.
 
 **Fix (1) "keep the baseline" WAS ATTEMPTED 2026-07-27 IN THE OBVIOUS FORM AND IT IS WRONG — do not redo it.**
 The obvious reading is "seed the search with the baseline so nothing worse can be shipped", i.e. flip
-`MCC_SO_DEFAULT_SEED` default-on (`best_gate = SO_GATE_DEFAULT` unconditionally at mcc.c:~1223). One line. It makes
+`MCC_SO_DEFAULT_SEED` default-on (`best_gate = SO_GATE_DEFAULT` unconditionally at `mcc_superopt_search`’s seed). One line. It makes
 nbody **WORSE: 3636 -> 3998 `.text`**, reproducibly and deterministically (3 clean runs each, checkpoint cache
 `~/.cache/mcc/so-*.ck` cleared between). Reverted.
 
 Why, and this is the load-bearing detail: **`SO_GATE_DEFAULT` is not a cheap candidate.** It RESTORES the user
 environment, so evaluating it at `-O4` re-runs the full in-process AST search for that one evaluation, whereas an
 ordinary gate word `g` is a cheap fixed configuration. The seed eval therefore burns the whole `budget_ms` before the
-gate loop at mcc.c:~1313 executes even once, and the driver ships the unimproved baseline. Seeding with the baseline
+gate loop at `mcc_superopt_search`’s gate loop executes even once, and the driver ships the unimproved baseline. Seeding with the baseline
 does not *guarantee* the baseline is a floor — it *replaces the search with* the baseline.
 
 **What the same experiment established, which is more useful than the fix that failed:**
-- **The user's baseline is genuinely never a candidate by default.** `best_gate` initialises to `0` (mcc.c:1195), and
+- **The user's baseline is genuinely never a candidate by default.** `best_gate` initialises to `0` in `mcc_superopt_search`, and
   the gate loop enumerates `g` over `[0, SO_GATE_SPACE)`, which cannot contain `SO_GATE_DEFAULT` (`0xFFFFFFFF`). So
   the earlier note "the plain baseline IS expressible and IS what `MCC_SO_DEFAULT_SEED` evaluates first" is right
   about *expressible* and wrong about *evaluated* — nothing evaluates it unless that env is set.
@@ -775,7 +775,7 @@ if-condition, while-condition, chained `a = b = f()`, short-circuit `&&`, nested
 **SECOND ATTEMPT 2026-07-27 got it WORKING and still reverted it — the blocker is now a GATE INTERACTION, not a
 crash.** The segfault below was diagnosed and fixed: `ast_replay_value` for the marker emitted NOTHING
 unconditionally, so when the guard declined to make a store value-live the consumer was handed a missing operand and
-`gfunc_call` read past the vstack (`bt` bottoms out in x86_64-gen.c:1587). Correct fallback: if the store is not
+`gfunc_call` read past the vstack (`bt` bottoms out in `gfunc_call`). Correct fallback: if the store is not
 value-live, re-emit its RHS — that reproduces the pre-F3a double evaluation, so the body lands in `unfaithful` as
 before, which is safe. With that, plus a tight guard requiring the marker to be a DIRECT child of the statement
 immediately following the store:
@@ -817,7 +817,7 @@ are NOT one problem. Instrumenting `ast_finalize_storevals` to report, per marke
 | `return (a = f()) + a` | 1 | accepted | **faithful** | done (leftmost-leaf guard) |
 | `f((a = g2(v)) + 0)` | 1 | rejected | unfaithful | `gfunc_call` vstack juggling |
 | `a = b = f()` | **0** | n/a | unfaithful | marker is resolved away by the CHAINSTORE path |
-| `(x = f()) && (y = g2())` | **0** | n/a | desync:3371 | desyncs before any marker is made |
+| `(x = f()) && (y = g2())` | **0** | n/a | `desync` (store-in-ternary/landor) | desyncs before any marker is made |
 
 **The most valuable one, `while ((c = getchar()) != EOF)`, PASSES the guard and is still unfaithful** — so its
 blocker is structural, not the vstack invariant the guard exists to protect. The store is recorded as a statement in
@@ -827,7 +827,7 @@ condition region, which is a recorder-structure change, not a guard tweak. **Do 
 one — the guard is already letting it through.**
 
 Two of the eight never reach the marker at all: `a = b = f()` has its marker resolved back to the inner RHS by the
-CHAINSTORE path (deliberate — see the fix above), and the short-circuit case desyncs at mccast.c:3371 before any
+CHAINSTORE path (deliberate — see the fix above), and the short-circuit case desyncs at `ast_hook_vstore`’s ternary/landor-region guard before any
 store is modelled.
 
 **TRIED AND REVERTED 2026-07-27 — "emit the store AT its marker, skip it in the BB". It fixes `while` and it
@@ -910,7 +910,7 @@ result. **If someone wants this anyway, note the trap that caught me**: mccast.c
 (the TU being measured fails to compile, and the verdict histogram just gets shorter — 685 functions instead of 1848).
 Check the compile succeeded before reading the counts.
 
-**ROOT CAUSE, localised to one line — `ast_hook_vstore` (mccast.c:3442):**
+**ROOT CAUSE, localised to one line — `ast_hook_vstore` (`ast_hook_vstore`’s residual assignment):**
 
     ast_add_child(ast_cur, st, lval);
     ast_add_child(ast_cur, st, value);
@@ -1017,7 +1017,7 @@ desyncing, looks like the cheapest remaining fidelity win** at 4% of desyncs and
 and emits `mov $0x0,%eax` with **zero relocations to `side`**, so the un-emitted arm really is absent rather than
 branch-eliminated later. `int dyn(int a,int b){return a && b;}` is already `faithful` and is the control.
 **Attempted test-first and STOPPED at red, deliberately.** A `cli/landor_const_faithful` cell was written asserting
-`cf`/`ct` become faithful with `dyn` unchanged; it goes red as expected (`desync:2585`). It was REVERTED rather than
+`cf`/`ct` become faithful with `dyn` unchanged; it goes red as expected (`desync` (landor-constant)). It was REVERTED rather than
 left failing or satisfied with a guess, because tracing the hook shows the protocol is subtler than the guard reads:
 **both operand calls fire even for a constant condition**, and `c` means different things across them —
 `cf` gets `op=144 c=0 first=1 vn=1` then `op=144 c=1 first=0 vn=1`, while dynamic `dyn` gets `c=-1` on both. So `c` is
@@ -1092,13 +1092,13 @@ functions failing repeatedly.
     extern int printf(const char *, ...);
     int main(void){ const c32 *p = U"xy"; int ok = p[0]==120 && p[1]==121; printf("%d",ok); return 0; }
 
-That is `desync:2302`. The discriminating axes, each verified by flipping exactly one thing:
+That is `desync` (`ast_hook_vpush` SYNC). The discriminating axes, each verified by flipping exactly one thing:
 
 | variant | verdict |
 |---|---|
-| `const c32 *p = U"xy"`, two derefs in `&&` | **desync:2302** |
-| same with `c16`/`u"xy"` | **desync:2302** |
-| same with three derefs | **desync:2302** |
+| `const c32 *p = U"xy"`, two derefs in `&&` | **`desync` (`ast_hook_vpush` SYNC)** |
+| same with `c16`/`u"xy"` | **`desync` (`ast_hook_vpush` SYNC)** |
+| same with three derefs | **`desync` (`ast_hook_vpush` SYNC)** |
 | plain `const char *p = "xy"` | faithful |
 | `const int *p = (const int *)"xyzw"` | faithful |
 | `static const c32 q[]=U"xy"; p = q` (named global, not a literal) | faithful |
@@ -1110,15 +1110,15 @@ So it is not element size (the `int*` cast is 4-byte and faithful), and not symb
 global is faithful). It is specifically **a pointer initialised from a WIDE string literal, dereferenced at least
 twice inside a short-circuit `&&`**. That combination is what leaves the extra `ast_vs` node.
 
-**Scope: this is ONE path into site 2302, and it is now MEASURED to cover none of the TU's 261.** I fixed the shape
+**Scope: this is ONE path into `ast_hook_vpush`’s vstack-SYNC arm, and it is now MEASURED to cover none of the TU's 261.** I fixed the shape
 and re-counted, which is exactly what this note said to do — see below.
 
 **CAUSE FOUND for the reproducer, and the naive fix is NET-NEGATIVE. Reverted; read this before retrying.**
 A `gdb` breakpoint on the desync gives the culprit immediately:
 
     ast_hook_vpush  <-  vsetc  <-  vpush64  <-  vpushi(121)
-                    <-  decl_initializer (mccgen.c:12369)
-                    <-  decl_initializer_alloc  <-  unary() (mccgen.c:8822, the str_init path)
+                    <-  decl_initializer  (its string-element loop)
+                    <-  decl_initializer_alloc  <-  unary()  (the `str_init` path)
 
 A wide string literal in expression position is materialised as an ANONYMOUS object, and `decl_initializer` walks it
 element by element as `vpushi(ch); init_putv(...)`. That pair is net-zero on the vstack, but the recorder models each
@@ -1133,12 +1133,12 @@ initializer, including real declarations where the recorder legitimately models 
 narrow the suspend to the anonymous-object-in-expression-position case (the `str_init` path in `unary()`), not the
 shared `decl_initializer` element loop.**
 
-And the headline: **on mcc's own TU this changed nothing at all** — faithful stayed 1101, site 2302 stayed 261. mcc's
+And the headline: **on mcc's own TU this changed nothing at all** — faithful stayed 1101, `ast_hook_vpush`’s vstack-SYNC arm stayed 261. mcc's
 own source contains no wide string literals, so this path accounts for **0 of the 261** TU events.
 
 **SECOND REPRODUCER, bisected FROM mcc's own TU 2026-07-27, and it is a ONE-LINER:**
 
-    int f(void){ static int s = 5; return s; }        /* desync:2302 */
+    int f(void){ static int s = 5; return s; }        /* `desync` (`ast_hook_vpush` SYNC) */
     int f(void){ static int s;     s = 1; return s; } /* FAITHFUL   */
 
 **A function-scope `static` WITH AN INITIALIZER desyncs; the same static without one does not, and a file-scope
@@ -1152,7 +1152,7 @@ That matters because **mcc's own source is saturated with this idiom** — every
 `decl_initializer`, whose value pushes the recorder models as expression values.
 
 `gdb` shows the witness differs from the culprit here, exactly as the delta analysis predicted: the reported push is
-the innocent `return s;` (`unary()` at mccgen.c:9748 -> `vset`), while the extra node was left behind earlier during
+the innocent `return s;` (`unary()`’s value push -> `vset`), while the extra node was left behind earlier during
 the declaration. Do not "fix" the site the backtrace names.
 
 **Coverage MEASURED 2026-07-27 with a proper brace-matching locator (256 of 261 definitions found, vs 43 by the
@@ -1161,14 +1161,14 @@ earlier crude grep): the static-initializer shape is only 19 of them, ~7%. It is
 **THIRD AND DOMINANT REPRODUCER — a `void` function with a bare early `return;`. Two lines:**
 
     static int a, b;
-    void f(void){ if (!a) return; if (b) b = 1; }      /* desync:2302 */
+    void f(void){ if (!a) return; if (b) b = 1; }      /* `desync` (`ast_hook_vpush` SYNC) */
 
 Verified by flipping one thing at a time:
 
 | variant | verdict |
 |---|---|
-| `void f(){ if(!a) return; if(b) b=1; }` | **desync:2302** |
-| `void f(){ if(!a) return; if(b>0) b--; }` | **desync:2302** |
+| `void f(){ if(!a) return; if(b) b=1; }` | **`desync` (`ast_hook_vpush` SYNC)** |
+| `void f(){ if(!a) return; if(b>0) b--; }` | **`desync` (`ast_hook_vpush` SYNC)** |
 | same logic NESTED, no early return (`if(a){ if(b>0) b--; }`) | faithful |
 | `int f(){ if(!a) return 0; if(b>0) b--; return 1; }` — returns a VALUE | faithful |
 | `void f(){ if(!a) return; b=1; }` — no second `if` | bail (not desync) |
@@ -1183,10 +1183,10 @@ bare `return;`** — against 19 with a static initializer. Site 2302 is 48% of a
 the order of 40% of every desync in the TU, and it is the guard-clause idiom that `mccast.c` itself is built out of
 (`void ast_hook_X(void) { if (!ast_active) return; … }`).
 
-**MECHANISM RESOLVED 2026-07-27, and it REFRAMES F5 ENTIRELY: site 2302 is a SYMPTOM, not the bug. A bare
+**MECHANISM RESOLVED 2026-07-27, and it REFRAMES F5 ENTIRELY: `ast_hook_vpush`’s vstack-SYNC arm is a SYMPTOM, not the bug. A bare
 `return;` is simply not modelled, and makes the function unoptimizable however it is labelled.**
 
-`ast_hook_return(has_val)` (mccast.c:3491) does, for `!has_val`, exactly this:
+`ast_hook_return(has_val)` does, for `!has_val`, exactly this:
 
     if (!has_val || ast_ret_val == AST_NONE) { ast_bail = 1; return; }
 
@@ -1201,7 +1201,7 @@ The label depends only on what follows the return, and BOTH outcomes are fatal:
 |---|---|
 | `void f(){ if(!a) return; }` | bail |
 | `void f(){ if(!a) return; b=1; }` | bail |
-| `void f(){ if(!a) return; if(b) b=1; }` | **desync:2302** |
+| `void f(){ if(!a) return; if(b) b=1; }` | **`desync` (`ast_hook_vpush` SYNC)** |
 | `void f(){ b=1; return; }` — even a TRAILING bare return | bail |
 | `void f(){ if(!a) b=2; if(b) b=1; }` — no return at all | **faithful** |
 | `int f(){ if(!a) return 0; … return 2; }` — value return | **faithful** |
@@ -1212,7 +1212,7 @@ value child and teach replay to emit the jump-to-epilogue for it, including its 
 and the `ret_jumps` bookkeeping. That is a new node shape, not a bookkeeping repair, which is why nothing here has
 dented it.
 
-Payoff if done: 218 of the 256 located site-2302 functions are void-with-bare-`return;`, site 2302 is 48% of all
+Payoff if done: 218 of the 256 located site-2302 functions are void-with-bare-`return;`, `ast_hook_vpush`’s vstack-SYNC arm is 48% of all
 desyncs, and the 60 `bail` verdicts are largely this too — so this one construct plausibly gates ~40% of every
 non-faithful function in mcc's own TU. It is the single highest-value item in the fidelity section by a wide margin.
 
@@ -1256,12 +1256,12 @@ following `if`, and a trailing bare `return;` — and the exec corpus builds wit
 pass (`calls=14 calls2=2`, `effects ok`).
 
 **Then mcc's own TU SEGFAULTS.** `ast_cprop_safe(a, n=0xffffffff)` -> `ast_type_t` on `AST_NONE`, from
-`ast_cprop_block` (mccast.c:8073) doing `ast_cprop_safe(a, ast_first_child(a, s))` for `k == AST_Return` with no
+`ast_cprop_block` (`ast_cprop_block`) doing `ast_cprop_safe(a, ast_first_child(a, s))` for `k == AST_Return` with no
 child. So the passes, not the replay, are what assume the child exists. Note the exec corpus did NOT catch this —
 only the full amalgamation did, which is worth knowing before trusting a green corpus run on any Return-shape change.
 
 **Remaining work is a per-pass audit of the 14 `AST_Return` sites in mccast.c.** Unguarded child accesses seen at
-lines ~3771, 8072, 8279, 9386, 13635, 13731; line 9464 already does it correctly (`ast_nchild(ca, n) == 1`). This is
+the cprop and two CSE sites; the `ast_nchild(ca, n) == 1` guard already does it correctly (`ast_nchild(ca, n) == 1`). This is
 NOT a mechanical null-guard: each pass needs a decision about what a valueless return MEANS to it (cprop must kill its
 known-values set but has nothing to rewrite; DSE must treat it as a barrier; TCO/inline must not treat it as a
 value-producing return). A wrong guard here is the dangerous class — it passes the byte check and then miscompiles
@@ -1273,22 +1273,22 @@ TU at `-O2`, 1849 functions: **1101 faithful / 540 desync / 149 unfaithful / 60 
 
 | site | count | share of desyncs | what it is |
 |---|---:|---:|---|
-| `mccast.c:2302` | **261** | **48%** | the F5 vstack SYNC arm (`ast_vn != rel - 1`) |
-| `mccast.c:2315` | 106 | 20% | `ast_hook_vpush` value-model guard (not const/sym/local, or bad type) |
-| `mccast.c:3256` | 78 | 14% | `nocode_wanted` |
-| `mccast.c:2589` | 39 | 7% | `&&`/`||` first operand (F4) |
-| `mccast.c:2430` | 20 | 4% | unmodelled op (`default:` arm) |
+| `ast_hook_vpush`’s vstack-SYNC arm | **261** | **48%** | the F5 vstack SYNC arm (`ast_vn != rel - 1`) |
+| `ast_hook_vpush`’s value-model guard | 106 | 20% | `ast_hook_vpush` value-model guard (not const/sym/local, or bad type) |
+| `ast_hook_call_begin`’s `nocode_wanted` guard | 78 | 14% | `nocode_wanted` |
+| `ast_hook_landor_operand`’s constant-first-operand guard | 39 | 7% | `&&`/`||` first operand (F4) |
+| `ast_hook_cmp_invert`’s unmodelled-op arm | 20 | 4% | unmodelled op (`default:` arm) |
 
-**RE-MEASURED after the bare-`return;` fix landed (2026-07-27). The table above is superseded — site 2302 collapsed
+**RE-MEASURED after the bare-`return;` fix landed (2026-07-27). The table above is superseded — `ast_hook_vpush`’s vstack-SYNC arm collapsed
 and the ranking changed.** Totals are now **1318 faithful / 356 desync / 175 unfaithful / 1 bail / 1 empty**:
 
 | site | count | share | what it is |
 |---|---:|---:|---|
-| `mccast.c:2315` | **112** | **31%** | `ast_hook_vpush` value-model guard — now the leader |
-| `mccast.c:3256` | 87 | 24% | `nocode_wanted` |
-| `mccast.c:2302` | 48 | 13% | the old F5 site, **down from 261** |
-| `mccast.c:2589` | 45 | 13% | `&&`/`||` first operand (F4) |
-| `mccast.c:2430` | 22 | 6% | unmodelled op (`default:` arm) |
+| `ast_hook_vpush`’s value-model guard | **112** | **31%** | `ast_hook_vpush` value-model guard — now the leader |
+| `ast_hook_call_begin`’s `nocode_wanted` guard | 87 | 24% | `nocode_wanted` |
+| `ast_hook_vpush`’s vstack-SYNC arm | 48 | 13% | the old F5 site, **down from 261** |
+| `ast_hook_landor_operand`’s constant-first-operand guard | 45 | 13% | `&&`/`||` first operand (F4) |
+| `ast_hook_cmp_invert`’s unmodelled-op arm | 22 | 6% | unmodelled op (`default:` arm) |
 
 **Site 2315 characterised the same way (instrument, dump every event, cross-tabulate). 112 events, TWO clean groups:**
 
@@ -1310,13 +1310,13 @@ CALL, and it fans out across three different desync sites:**
 
 | shape | verdict |
 |---|---|
-| `return (int)sizeof(h(1));` — unevaluated operand | **desync:3256** |
-| `return 1; return h(2);` — dead after return | **desync:3256** |
-| `if (0) h(1);` | **desync:3256** |
-| `goto e; h(1); e: …` — dead after goto | **desync:3256** |
-| `return 0 && h(1);` | desync:2589 |
-| `return 1 \|\| h(1);` | desync:2589 |
-| `return 1 ? a : h(1);` — dead ternary arm | desync:2533 |
+| `return (int)sizeof(h(1));` — unevaluated operand | **`desync` (`nocode_wanted`)** |
+| `return 1; return h(2);` — dead after return | **`desync` (`nocode_wanted`)** |
+| `if (0) h(1);` | **`desync` (`nocode_wanted`)** |
+| `goto e; h(1); e: …` — dead after goto | **`desync` (`nocode_wanted`)** |
+| `return 0 && h(1);` | `desync` (landor-constant) |
+| `return 1 \|\| h(1);` | `desync` (landor-constant) |
+| `return 1 ? a : h(1);` — dead ternary arm | `desync` (ternary-constant) |
 | `return h(1);` — control | **faithful** |
 
 Sites 3256 + 2589 + 2533 total 87 + 45 + 6 = **138, 39% of all desyncs**, and they share the THEME that the parser
@@ -1398,7 +1398,7 @@ them:**
 
   **Open question, and my first two attempts to answer it were BOTH invalid — do not repeat them.** It is not yet
   known whether that `Poison` is produced by the RECORDER or by a later pass. The recorder region (mccast.c below
-  ~line 7000) contains no `AST_Poison` at all, which suggests a pass, but neither control disabled the transformation:
+  the recorder hooks, above the optimizer passes) contains no `AST_Poison` at all, which suggests a pass, but neither control disabled the transformation:
   `MCC_AST_OPT_LIMIT=0` and `MCC_AST_SCCP=0` both still print `[ast-sccp] 1 f` and still show the `Poison`, and `-O0`
   produces no dump at all because replay does not run there. A valid isolation needs a build with the pass actually
   removed, or a dump taken at the faithfulness check rather than after optimization. This matters because if a PASS
@@ -1488,7 +1488,7 @@ them:**
 
   **The non-obvious part, found only by backtracing the first failed attempt: the model must DROP the constant's own
   node.** Keeping it as the result desyncs immediately, because the parser DISCARDS the first operand's vstack slot
-  and pushes the folded constant in its place (`expr_landor` -> `vset`, mccgen.c:10152). Dropping it lets that
+  and pushes the folded constant in its place (`expr_landor` -> `vset`, `expr_landor`). Dropping it lets that
   replacement push be modelled as an ordinary `Literal`, which is both simpler and what actually happens. So the two
   constant-condition fixes need OPPOSITE handling — the ternary stashes and re-pushes the taken arm's node, the
   landor drops its node and lets the parser's replacement be re-modelled. Do not generalise one to the other.
@@ -1504,7 +1504,7 @@ them:**
   crashes, both side-effect guards green.
 
   3. **If the untaken arm contains a CALL, `nocode_wanted` desyncs first** — `1 ? a : h(1)` shows `desync=1` already
-     set by the time arm 1's `done` fires, at site 3265 (`ast_hook_call_begin`). **So the two items are ordered for
+     set by the time arm 1's `done` fires, at `ast_hook_call_begin`’s `nocode_wanted` guard (`ast_hook_call_begin`). **So the two items are ordered for
      that subset**: a constant ternary whose untaken arm is simple can be fixed by the pass-through alone, but one
      containing a call needs the `nocode_wanted` suspend as a prerequisite. That is a conditional dependency, not an
      absolute one — do not sequence the whole 51 events behind the 87.
@@ -1555,7 +1555,7 @@ before guarding it was the right call — 5 of the 10 turned out NOT to be gaps.
   `cdelta.txt`, where they pass on every target. Had these been arch-guarded on the object diff alone, the suite would
   now be asserting that builtin folding does not happen on riscv64, which is false.
 - *`promote` (1) — not a gap either.* riscv64's caller-saved promotion pool is deliberately empty
-  (`AST_PROMO_CALLER_N 0`; pinning a0-a7 makes `get_reg` return -1 and `freg()` assert — the comment at mccast.c:3516
+  (`AST_PROMO_CALLER_N 0`; pinning a0-a7 makes `get_reg` return -1 and `freg()` assert — the comment at the riscv64 promotion-pool block
   documents the crash), but it HAS an 11-register callee-saved pool reached through `MCC_AST_PROMO_LEAF_CALLEE`,
   which is default-on at `-O4` anyway. Adding that to the case's extra-env field makes it fire on riscv64 and changes
   nothing on x86_64/arm64, which fire either way.
@@ -1672,7 +1672,7 @@ byte-identically, closing the hole where `-O2` never exercised the `-O3` default
 byte-identically:** `-O1` 6166623, `-O2` 5497999, `-O3` 5528255, `-Os` 5486367 (each `o1 == o2 == o3`).
 
 **The `MCC_JIT=1` axis named here is VACUOUS — do not implement it.** `MCC_JIT` is not a compile-time switch: it is
-read by the boot ctor embedded into a JIT-enabled OUTPUT binary (mccjit_embed.c:1869), i.e. at runtime of the produced
+read by the boot ctor embedded into a JIT-enabled OUTPUT binary (the embedded JIT boot ctor), i.e. at runtime of the produced
 program, and only when that program was built with `--embed-jit`. Verified directly: compiling the same source with
 `MCC_JIT=0` and `MCC_JIT=1` produces **byte-identical output** (4327 B both), and the self-host fixpoint under
 `MCC_JIT=1` reports the identical 5497999 as without it. So running the fixpoint under that env asserts nothing new.
@@ -1732,7 +1732,7 @@ compile).)* Cells today run at a single default level, so `-O0`/`-O3`/`-O4` code
 
    *(earlier revision said 93; that count predates the defstate mode)* **Extended to 93 cells** (21 counter + 21 level-map + 51 differ), covering the strategy passes, the pipeline/structural gates, and the sub-knob families (`IDENT_*`, `REASSOC_*`, `BFOLD_*`, `NARROW_*`, `SCCP_FIX`, `CSE_COMM`, `DSE_CALL`, `TCO_PTR`, `SETHI_LEAF/NARY`). Every gate attempted reached DIFFER; none was abandoned. **MUTATION-TESTED, which is the evidence that matters:** stubbing `ast_tile_run`/`ast_fusion_run`/`ast_interchange_run` to `return 0` makes the corresponding `optfire` cell FAIL — and, in the same build, **`exec-tile/*` still reports 299/299 PASS**. That is the audit's claim confirmed empirically rather than argued: the golden corpus is blind to a pass that does nothing. Findings from the case work, worth keeping: (1) the constant-operand identities (`x+0`, `x*1`, `x<<0`, `x&-1`) are folded by `gen_opic` BEFORE AST recording, so `ident` never sees them — only same-operand forms (`x-x`, `x^x`) and unsigned-vs-0 relationals reach the AST; (2) `MCC_AST_IDENT_SHIFT`'s only rule is shift-by-literal-0, which cannot exist at record time — the literal has to be manufactured by `cprop`, which runs AFTER `ident`, so it fires only on a second pipeline cycle and therefore needs `-O3` (`MCC_AST_CYCLE`); (3) `narrow_fix`/`sccp_fix` are pinned to `-O2` because at `-O3` the cycle reaches the same fixpoint anyway and toggling the sub-knob changes nothing. **Arch guard landed 2026-07-27** — `tests/optfire/arch.txt` (`<name>|<cpu>[,<cpu>]`) registers a case only when `MCC_CPU` matches, so a gate that is compile-time inert on a target cannot report a spurious DID-NOT-FIRE. `regdisp` is listed x86_64-only (`ast_regdisp_env` is hard-0 elsewhere). Verified both ways: 93 cells on x86_64, and forcing the requirement to arm64 prints `optfire: skipping regdisp (needs CPU arm64, have x86_64)` and drops to 92. **Cross-triple: harness support LANDED, the blocker is the case SOURCES (2026-07-27).** `OPTFIRE_NORUN=1` asserts only that the pass fired and skips the `-O0` oracle and the program runs — the cross-compiler mode, since a cross mcc cannot link a runnable host binary. `OPTFIRE_MCCFLAGS` passes `-B`/`-I` through. Demonstrated against `cmake-cross/mcc-i386`: both counter and differ PASS, and forcing the gate off still FAILs, so the assertion is live and not vacuous. **All 72 case sources are now FREESTANDING (2026-07-27)** — `#include <stdio.h>` replaced by `extern int printf(const char *, ...);`, so a cross mcc can compile every case without target headers. That removes the last blocker on the compile-side half of cross enablement; what remains is wiring per-target cells and judging the x86-shaped cases. **The conversion exposed a test that was passing for the wrong reason, which is the more valuable result.** `optfire/ident` went red immediately: its `ident` count of 1 came from glibc's own inline functions in `stdio.h` (`vprintf`/`getchar`/`fgetc_unlocked` compile as faithful functions and one of them folded), NOT from the case's own identities — which never reach the AST at all, because `x+0`/`x*1`/`x&-1` are folded by `gen_opic` before AST recording. Rewritten around double-convert identities `(int)(long)x`: now 2 folds from the case's own code, 0 with the `IDENT_*` gates forced off, 0 at `-O0`. Its level row also had to be corrected from `-Os:off` to `-Os:on` — the old `off` was an artifact of the header-derived fold, not a property of the pass. **Lesson worth generalising: any case that includes a system header may be measuring the header, not itself.** Freestanding sources make the counter attributable to the case. **Retraction — do not repeat this mistake:** an earlier measurement here concluded the cross compilers ran no optimizer and that `--stats` counters were broken on them. Both were artifacts of those failed `stdio.h` compiles: `--stats` still prints its panel when the compile fails, so the counters read 0, and a `cmp` of two objects that were never written reports 'differ'. Measured properly with a freestanding source, `mcc-i386` reports `divmagic=2`, exactly like the native compiler. **Always check the compile's exit status before reading a counter or comparing objects.** Also still open per-case: several cases are x86-shaped (`select` expects cmov-style if-conversion, `sethi_*` counts x86 register pressure) and may legitimately not fire elsewhere — a per-case judgement, not a bulk enablement.
 
-**RETRACTED 2026-07-27 — `MCC_AST_INLINE` is NOT dead. The finding below was wrong; kept because the reasoning trap is worth seeing.** I concluded it from `do_inline`'s `!ast_inline_pass_env` guard alone, and the capture-time graft genuinely cannot fire while INLINE_PASS is on. But `ast_inline_env` has OTHER consumers — notably `ast_reemit_retain`, which retains function bodies for re-emit independently of `do_inline`, and the post-capture inliner consumes those. Measured at `-O3` on `libmcc.c`: default gives **34 grafts / .text 926489**, `MCC_AST_INLINE=0` gives **0 grafts / .text 913547**. The gate is load-bearing; turning it off removes all inlining. (Aside: inlining costs 1.4% size here, which is the expected size/speed trade, not a defect.) An attempted 'honest default' of `>= 3 && !optimize_size && !ast_inline_pass_env` was reverted — it is NOT byte-identical, at any of -O1/-O2/-O3/-Os, for exactly this reason. **Lesson: grep every consumer of a gate variable before calling it dead; one guarded call site does not make the gate inert.** `MCC_AST_ARGFWD` (single use, inside the graft path) and `MCC_AST_PERFN_INPROC` (`do_inline`-guarded) ARE inert as recorded — re-checked across ALL of `src/` after the retraction, not just `mccast.c`: each has exactly one consumer (`mccast.c:3834` and `mccast.c:16329`), so there is no second path the way `ast_inline_env` had one. Original, incorrect finding follows.
+**RETRACTED 2026-07-27 — `MCC_AST_INLINE` is NOT dead. The finding below was wrong; kept because the reasoning trap is worth seeing.** I concluded it from `do_inline`'s `!ast_inline_pass_env` guard alone, and the capture-time graft genuinely cannot fire while INLINE_PASS is on. But `ast_inline_env` has OTHER consumers — notably `ast_reemit_retain`, which retains function bodies for re-emit independently of `do_inline`, and the post-capture inliner consumes those. Measured at `-O3` on `libmcc.c`: default gives **34 grafts / .text 926489**, `MCC_AST_INLINE=0` gives **0 grafts / .text 913547**. The gate is load-bearing; turning it off removes all inlining. (Aside: inlining costs 1.4% size here, which is the expected size/speed trade, not a defect.) An attempted 'honest default' of `>= 3 && !optimize_size && !ast_inline_pass_env` was reverted — it is NOT byte-identical, at any of -O1/-O2/-O3/-Os, for exactly this reason. **Lesson: grep every consumer of a gate variable before calling it dead; one guarded call site does not make the gate inert.** `MCC_AST_ARGFWD` (single use, inside the graft path) and `MCC_AST_PERFN_INPROC` (`do_inline`-guarded) ARE inert as recorded — re-checked across ALL of `src/` after the retraction, not just `mccast.c`: each has exactly one consumer (its sole consumer in `mccast.c` and its sole consumer in `ast_func_end`), so there is no second path the way `ast_inline_env` had one. Original, incorrect finding follows.
 **FINDING 2026-07-27 (from writing `optfire`): `MCC_AST_INLINE`'s default-on condition is DEAD — decide whether that is intended.** Its default is `s1->optimize >= 3 && !s1->optimize_size` (`mccast.c`), but the capture-time graft is guarded by `int do_inline = faithful && !do_tco && !ast_inline_pass_env && ...`, and `MCC_AST_INLINE_PASS` defaults on from `-O2` (`o4 || s1->optimize >= 2`). So at every level where INLINE turns itself on (-O3, -O4) INLINE_PASS is on too and the graft is unreachable. Measured with `MCC_AST_REPLAY_DUMP=1` at `-O3`: **0 `[ast-inline] grafted` by default, 9 with `MCC_AST_INLINE_PASS=0`.** The two inliners are alternatives by design — `ast/replay-inline` deliberately runs `-O1` with `MCC_AST_INLINE=1` (INLINE_PASS is off below -O2 there), and an earlier attempt this session to couple them broke that test and was reverted — so the mechanism is fine. What is wrong is the DEFAULT: it advertises a pass that can never run. Pick one: (i) drop the default to 0 and treat INLINE as explicitly opt-in for the `-O1` virtual-inline path, (ii) make it `>= 3 && !optimize_size && !inline_pass` so the condition states the real requirement, or (iii) leave it and document the subsumption at the gate. `optfire/inline_capture` pins the behaviour either way by forcing `MCC_AST_INLINE_PASS=0`. Same guard makes `MCC_AST_PERFN_INPROC` unreachable by default, but that gate is default-OFF so it advertises nothing.
 
 3. **Cut CI wall-clock (currently ~18 min).** **Data gathered 2026-07-27 — read this before proposing a split.** `cmake-debug/Testing/Temporary/CTestCostData.txt` already carries per-test timings, so no instrumented run is needed. Distribution over 7122 tests, 1896 s serial, mean 0.266 s:
@@ -1971,7 +1971,7 @@ The "eligible-but-search-doesn't-select" mechanism (a strategy is faithful + gat
   **Process note, third occurrence this session: the first version of that differential reported 20 failures that were entirely my generator's fault** — it called several mutating functions in one `printf` argument list, where evaluation order is unspecified, so gcc and mcc legitimately disagreed. The tell was failures at -O0, where promotion does not run, and the gate-off baseline failing identically. Sequence mutating calls into separate statements, and always run the gate-off baseline through the same oracle before believing a differential. Removing the poison without that is strictly harmful: it produces plans the backend drops, and costs code quality. A `MCC_AST_PROMO_INCDEC` prototype was built, measured, and REVERTED on this evidence.
   Reproducer needs no gates: `int sum(int n){int i,s=0;for(i=0;i<n;i++)s+=i*3;return s;}` at -O2 — mcc 11 frame accesses, gcc 0. Fixing the increment path is worth more than every other open codegen item in this file combined; the runtime-bench ratios (nsieve 1.5x … matmul 9.7x) all sit on top of it.
 - **Non-leaf FP register promotion (the deferred PR-3 callee-saved FP pool). MEASURED 2026-07-26: this is NOT what the matmul gap needs — that gap is INTEGER induction-variable allocation.** Test: the identical matmul kernel compiled twice in one file, once as a leaf and once with a trailing `sink()` call to force `has_call`. **Both emit exactly 24 stack memops**, so the `xmm_max = has_call ? 0 : AST_PROMO_XMM_N` cliff (mccast.c) does not fire here at all. The earlier 72-vs-30 reading that suggested it did was an artifact — `main` also holds the init loops, so the two were never comparable. Disassembly settles it: **FP (xmm) stack traffic in the hot kernel is ZERO**; all 24 memops are GP. The inner loop reloads and stores `i`/`j`/`k` from the frame every iteration (`mov -0x10(%rbp),%eax; add $1,%eax; mov %eax,-0x10(%rbp)`) and recomputes the full 2-D address each time (`movslq; shl $9; lea; add; movslq; shl $3; add`), where gcc's scalar `-fno-tree-vectorize` output has **0** stack memops and 31 instructions vs mcc's 79. Two separate causes, in order of size:
-  (a) **The kernel `desync`s by default** (`desync:2136`) — the recorder declines it, so NO AST pass runs, including promotion. `MCC_AST_OPASSIGN=1` makes it `faithful`, which is another instance of the already-recorded fact that OPASSIGN gates the whole hot-loop story; without it, measuring any other gate on a compound-assign kernel measures nothing.
+  (a) **The kernel `desync`s by default** (`desync`) — the recorder declines it, so NO AST pass runs, including promotion. `MCC_AST_OPASSIGN=1` makes it `faithful`, which is another instance of the already-recorded fact that OPASSIGN gates the whole hot-loop story; without it, measuring any other gate on a compound-assign kernel measures nothing.
   (b) **Even faithful, the integer IVs are still not register-allocated**: 24 → 21 memops with OPASSIGN, and `PROMOTE` (already default-on at -O2 on x86_64) adds nothing. Three int locals in a leaf ought to fit the 3-register caller-saved pool, so why `ast_plan_promotion` declines them is the open question and the actual lever for matmul. `IVSR_PTR` makes it worse (21 → 47), the same "materialisation into an unpromotable `ltemp` is net-negative" trap already recorded for `IVSR_PTR`+`MATH_PREP`.
   So the FP-pool work below stays justified for FP-pressure kernels like nbody, but it cannot move matmul, and the ~5.0x mcc-vs-scalar-gcc factor measured there is an integer-regalloc story. Original framing kept below. Re-confirmed the residual cliff is FP-specific: `ast_plan_promotion` sets `xmm_max = has_call ? 0 : AST_PROMO_XMM_N` (mccast.c) — any function with a call gets ZERO FP promotion, so a double live across `sqrt` spills. GP non-leaf promotion already works (callee-saved pool + per-reg save/restore `ast_promo_entry_init`/`_exit_restore` mccast.c, on by default). Two paths in order: (1) the already-listed callee-saved FP pool (arm64 v8–v15 / riscv64 fs0–fs11) — add synthetic FP-saved reg-ids mirroring `MCC_TREG_SAVED` (arm64-gen.h, mapped in `intr()` arm64-gen.c) with `reg_classes[]=0` so only promotion reaches them, point the `has_call` FP pool at them, extend `ast_promo_reg_is_callee` (mccast.c); x86_64 SysV has no callee-saved xmm ⇒ needs the caller-save-around-call path instead. (2) NEW generalization — **per-call live-range splitting**: `has_call` is function-global today, so a caller-saved reg is unusable even for an FP value that never spans a call. Split each candidate's interval at `AST_Invoke` boundaries (the `lo[]/hi[]` interval + disjoint-interference + `ast_color_graph` machinery already exists at mccast.c) so non-call-spanning sub-ranges use caller-saved FP at no save cost and only call-spanning sub-ranges need callee-saved/around-call spill. Validate via `MCC_AST_SPILL_OUT`/objdump memop count (mccast.c) on `advance()`; the xmm8–15 RA prerequisite is DONE.
 - **Loop-invariant FP-constant / global-address hoisting — two new gates.** nbody reloads the constant `1.0` through the GOT every inner iteration: arm64 `arm64_sym` unconditionally emits `adrp :got:_L.N ; ldr` on ELF (arm64-gen.c) and there is no `FMOV #imm` path, though AArch64 VFPExpandImm encodes 1.0/0.5/2.0. (a) **`MCC_AST_FMOV_IMM` — DONE 2026-07-26 (default OFF below `-O4` ⇒ byte-identical).** One correction to the scoping: the hook cannot go in arm64 `load()`, because by then the literal is already a rodata SYMBOL and its value is gone. The only place the FP constant still exists as a value is `gv()` (mccgen.c), immediately before the `section_add(rodata_section)` materialisation — that is where `arm64_fmov_imm()` now runs. Second gotcha: the obvious guard `rc & MCC_RC_FLOAT` never fires for a returned constant, because `rc` is `MCC_RC_FRET` = `MCC_RC_F(0)` which does NOT carry the `MCC_RC_FLOAT` bit; test `reg_classes[get_reg(rc)] & MCC_RC_FLOAT` instead. `arm64_fmov_imm(r, is_dbl, bits)` (arm64-gen.c) emits `0x1E201000 | ftype<<22 | imm8<<13 | Rd` and returns 0 for anything VFPExpandImm cannot represent — the `exp < -3 || exp > 4` test rejects inf/NaN, zero and every denormal without special cases, so the caller falls through to rodata rather than mis-encoding. Encodings verified against `llvm-mc` for 1.0/-1.0/0.5/2.0/31.0/-4.75 (double) and 1.0/-0.125 (single). **Measured on the cited kernel `vendor/plb/bench/algorithm/nbody/2.c`: `advance()` goes adrp 1 → 0, ldr-literal 25 → 24, insns 219 → 217** — i.e. the per-iteration GOT round-trip for the `1.0` in `inv_distance = 1.0 / sqrt(...)` is gone, which is exactly what this item predicted. On a synthetic invariant-literal loop (`1.0`, `2.0`, `0.5`) the effect is larger: adrp 4 → 1, ldr-literal 6 → 3, insns 60 → 54; a loop whose literals are NOT encodable (pi, 1e300) is untouched, confirming the fall-through. It is a pure size win too (a 13-constant TU 4486 → 3750 B), so it is a reasonable -Os/all-levels candidate as noted. Validated: gate-off byte-identical (x86_64 self-compiled amalgamation at -O0/-O2/-O3; the change is `#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_ARM64)` and gated); ctest 5590/5590; asttool 747/0; all 5 arches build; under qemu-aarch64 vs `aarch64-gcc`, an exhaustive constant battery — **all 256 VFPExpandImm-encodable doubles and floats reconstructed as ±(1+m/16)·2ⁿ, plus ±0, denormals, ±inf, pi, 1e±300** — bit-matches at -O0/-O1/-O2/-O4 gate-on and gate-off, plus a 208-run randomized differential (0 fail, 0 gate-off baseline fail, gate changed output on 80 objects) and the plb nbody kernel itself matching gcc with the gate on alone and combined with the MATH_INLINE/OPASSIGN/PROMOTE/ARROW set. Remaining: the arm64 golden-regen + soak before flipping default-on, shared with the other arm64 flips. (b) `MCC_AST_LICM_FP` — the synthetic-preheader hoist `ast_ltemp_scan`/`_materialize` (mccast.c/11015) is integer-only (`ast_ident_intt` excludes VT_FLOAT/DOUBLE, mccast.c); drop that for FP and admit a loop-invariant `_L.N` load, reusing the existing preheader splice `ast_ltemp_insert_before` (mccast.c) for the non-encodable-constant / invariant-global-address cases fmov-imm can't cover; gate on `ast_cost_spill`'s FP budget (mccast.c) to respect pressure. Secondary: ELF-always-GOT for local statics (arm64_sym:434) could use PC-relative ADR+ADD like the PE path (:429) — a separate, broader decision shrinking every rodata access.
@@ -2047,7 +2047,7 @@ Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate go
 ## Cross-arch parity (raise every arch to the x86_64 Tier-4 reference)
 **MEASURED 2026-07-27, then CORRECTED — the real i386 gap is the NARROW family, not 17 gates.** Running the whole `optfire` differ suite against `cmake-cross/mcc-i386` (`OPTFIRE_NORUN=1 OPTFIRE_MCCFLAGS=-B$PWD/cmake-cross`) gives PASS 34 / FAIL 17 on OBJECT DIFFERENCE. But object-difference is the weaker signal, and checking the `--stats` counters splits those 17 into three very different groups:
 - **reassociation (4) — NOT a gap. Retracted, and RESOLVED 2026-07-27 via `cdelta` mode (see the i386 triage above).** `reassoc` fires IDENTICALLY on both targets: `reassoc_assoc` 8/8, `reassoc_shlshr` 3/3, `reassoc_shrshl` 3/3, `reassoc_muldist` 4/4 (x86_64/i386). The transform happens; toggling the sub-knob just does not change the emitted i386 bytes. These cases need arch guards or reworking, and are NOT a parity defect. My first write-up of this section claimed they did not fire — that was read off the object diff alone, and a grep bug (matching `narrow 0` earlier in the panel than `reassoc`) appeared to confirm it.
-- **narrow / value-range (6) — ROOT-CAUSED 2026-07-27, and it is NOT a narrow defect.** The real fault is in the **i386 AST recorder**: any function mixing 32-bit and 64-bit integers desyncs, so no AST pass can run in it at all. Isolated: on i386 `(long long)a * (long long)b`, `(int)(w + 3)`, the round trip of both, and `(long long)a + (long long)b` ALL report **`desync:2169`**, while the same four are `faithful` on x86_64. Functions using `long long` UNIFORMLY (params and return all 64-bit — `add64`/`mul64`/`shift64`/`cmp64`) are faithful on i386, so it is the int<->long long CONVERSION that desyncs, not 64-bit arithmetic. One desync code (2169) for every shape suggests a single site. Consequence well beyond narrow: **every AST optimization is silently disabled for any i386 function that converts between int and long long.** That is why `narrow` reads 0 there — it never gets the chance to run. Note the earlier line in this section saying replay fidelity was ruled out: that check used the optfire narrow cases, which are written with `long`, and i386 `long` is 32 bits, so those functions never mix widths and are genuinely faithful. The ruling-out was true of those sources and false as a general claim. Reproduce: `MCC_AST_VERIFY=1 cmake-cross/mcc-i386 -B$PWD/cmake-cross -O2 -c <case>.c -o /dev/null`. **SITE LOCATED 2026-07-27.** `desync:<N>` is a LINE NUMBER (`AST_SET_DESYNC()` stores `__LINE__`), so it must be read against the source the compiler was BUILT from — `cmake-cross/mcc-i386` is stale and reports 2169, which lands in `ast_configure` and is meaningless; a compiler built from current source reports **2260**. That is the value-model guard `if ((ast_bad_type(tt) && !agg_lval) || (!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval)))`. Instrumented to see which clause fires rather than inferring: **`badtype=0`, and `const/sym/local/llocal/agg` are ALL 0, with `r=0x00000000` and `btype` 3 (`VT_INT`) or 4 (`VT_LLONG`).** `r=0` is neither `VT_CONST` (0x30), `VT_LOCAL` (0x32) nor `VT_LLOCAL` (0x31) — it is register 0, i.e. the value is REGISTER-RESIDENT. So on i386 an int<->long long conversion materialises its result into a register, and the recorder's value model only covers const/sym/local operands, so it desyncs. Both directions trip it (btype 3 and 4 both appear). **Fix is substantial, not a patch:** it means extending the value model to represent register-resident (and on 32-bit, register-PAIR) values, which is why x86_64 is unaffected — a `long long` fits one register there and the conversion does not force this shape. Scope it before starting.
+- **narrow / value-range (6) — ROOT-CAUSED 2026-07-27, and it is NOT a narrow defect.** The real fault is in the **i386 AST recorder**: any function mixing 32-bit and 64-bit integers desyncs, so no AST pass can run in it at all. Isolated: on i386 `(long long)a * (long long)b`, `(int)(w + 3)`, the round trip of both, and `(long long)a + (long long)b` ALL report **`desync`**, while the same four are `faithful` on x86_64. Functions using `long long` UNIFORMLY (params and return all 64-bit — `add64`/`mul64`/`shift64`/`cmp64`) are faithful on i386, so it is the int<->long long CONVERSION that desyncs, not 64-bit arithmetic. One desync code (2169) for every shape suggests a single site. Consequence well beyond narrow: **every AST optimization is silently disabled for any i386 function that converts between int and long long.** That is why `narrow` reads 0 there — it never gets the chance to run. Note the earlier line in this section saying replay fidelity was ruled out: that check used the optfire narrow cases, which are written with `long`, and i386 `long` is 32 bits, so those functions never mix widths and are genuinely faithful. The ruling-out was true of those sources and false as a general claim. Reproduce: `MCC_AST_VERIFY=1 cmake-cross/mcc-i386 -B$PWD/cmake-cross -O2 -c <case>.c -o /dev/null`. **SITE LOCATED 2026-07-27.** `desync:<N>` is a LINE NUMBER (`AST_SET_DESYNC()` stores `__LINE__`), so it must be read against the source the compiler was BUILT from — `cmake-cross/mcc-i386` is stale and reports 2169, which lands in `ast_configure` and is meaningless; a compiler built from current source reports **2260**. That is the value-model guard `if ((ast_bad_type(tt) && !agg_lval) || (!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval)))`. Instrumented to see which clause fires rather than inferring: **`badtype=0`, and `const/sym/local/llocal/agg` are ALL 0, with `r=0x00000000` and `btype` 3 (`VT_INT`) or 4 (`VT_LLONG`).** `r=0` is neither `VT_CONST` (0x30), `VT_LOCAL` (0x32) nor `VT_LLOCAL` (0x31) — it is register 0, i.e. the value is REGISTER-RESIDENT. So on i386 an int<->long long conversion materialises its result into a register, and the recorder's value model only covers const/sym/local operands, so it desyncs. Both directions trip it (btype 3 and 4 both appear). **Fix is substantial, not a patch:** it means extending the value model to represent register-resident (and on 32-bit, register-PAIR) values, which is why x86_64 is unaffected — a `long long` fits one register there and the conversion does not force this shape. Scope it before starting.
 **BLAST RADIUS: it is a 32-BIT TARGET CLASS defect, not an i386 one.** Same 5-function probe across every cross compiler: `x86_64`, `arm64`, `riscv64` = **0/5 desync**; `i386` and `arm` = **5/5 desync**. Exactly the split the register-pair diagnosis predicts.
 **IMPACT, MEASURED — and smaller than the synthetic probe implies, so do not oversell it.** Compiling mcc's own amalgamated TU at `-O2`: **x86_64 641 desync of 1735 functions (36%), i386 714 of 1708 (41%)**. So mixed-width conversions cost roughly **5 percentage points, about 73 functions**, on real code — total for each affected function, but not the wholesale loss the 5/5 synthetic result suggests. **Worth its own item: 48% of functions get NO AST optimization on x86_64, and the causes are now itemised.** Histogram over mcc's own amalgamated TU at `-O2` (1735 functions, `MCC_AST_VERIFY=1`): **833 non-faithful — 641 desync, 139 unfaithful, 50 bail, 3 empty.** The desyncs concentrate in four sites, so this is not a long tail:
 | count | line | guard |
@@ -2056,8 +2056,8 @@ Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate go
 | 213 | 2247 | vstack depth mismatch: `ast_vn != rel - 1 \|\| rel > AST_VS_MAX` |
 | 83 | 2260 | the value-model guard — register-resident operand (the 32-bit int<->long long case above) |
 | 32 | 2489 | `&&`/`\|\|` operand: non-const, or inside a call/op, or `ast_lor_top >= 16` |
-So **the single biggest cause (287, 34% of desyncs) is member access**, and the second (213, 26%) is a vstack-depth invariant — together 60%, both far larger than the register-resident case (83, 13%) that the 32-bit item above is about. Any effort to raise optimization coverage should start at line 2969, not at the width bug. Line numbers are `__LINE__` values and must be read against the source the measuring compiler was BUILT from.
-**Line 2969 broken down 2026-07-27 (instrumented, all 287 events accounted for):**
+So **the single biggest cause (287, 34% of desyncs) is member access**, and the second (213, 26%) is a vstack-depth invariant — together 60%, both far larger than the register-resident case (83, 13%) that the 32-bit item above is about. Any effort to raise optimization coverage should start at the member guard in `ast_hook_member_begin`, not at the width bug. (Sites in this file are named by HOOK rather than by line: `AST_SET_DESYNC()` records `__LINE__`, so any absolute number is only valid against the exact source the measuring compiler was built from, and every fix shifts them.)
+**The member guard in `ast_hook_member_begin` broken down 2026-07-27 (instrumented, all 287 events accounted for):**
 - **214 (75%) — the member's own type is `VT_STRUCT`**, i.e. a nested-struct member access; `ast_bad_type()` rejects `VT_STRUCT` outright. At 214 of 641 this is **33% of every desync in the TU — the single largest identified cause of lost AST optimization in the compiler.**
 - **73 (25%) — `qual != 0`, always `0x100` = `VT_CONSTANT`**, i.e. the member (or the path to it) is `const`-qualified. Member base types here are ordinary (`VT_PTR` 35, `VT_INT` 24, `VT_LLONG` 8, `VT_BYTE` 4, `VT_SHORT` 2), so nothing about the value is unmodellable — it is the qualifier alone that rejects. `bcheck` never fires (0 events).
 **The `const` group is now addressed: `MCC_AST_MEMBER_CONST`, default OFF (landed 2026-07-27).** Dropping a lone `VT_CONSTANT` qualifier recovers **51 of the 73**: desync 641 -> 590 over mcc's own TU. **It is NOT purely conservative, which is why it is opt-in** — the same run moves `unfaithful` 139 -> 143, i.e. 4 functions then replay to DIFFERENT bytes. That is a genuine model gap, not a safe relaxation, so the guard existed for a reason. It is still a net win because unfaithful functions are excluded from optimization anyway: +47 optimizable functions with no path to a miscompile. Validated: full suite 7214/7214 with the gate OFF (byte-identical) and, with it ON, the only failure is `ast-verify-ratchet` reporting **775 gaps vs 776 baseline — it fails because the gap set IMPROVED** and wants the baseline regenerated to bank the win. **The 4 regressors are identified 2026-07-27 and share ONE shape: member access through a POINTER-TO-CONST aggregate.** They are `ast_hash_of` and `ast_sid_node` (`const AstArena *a` -> `a->kind[n]` etc.), `set_flag` (`const FlagDef *flags` -> `p->name`, `p->flags`) and `so_ckpt_write` (`const SoCkpt *nw`); all four move `desync -> unfaithful`, none from any other verdict. Reproduce the list by diffing per-function verdicts between gate-off and gate-on runs of `MCC_AST_VERIFY=1` over `src/mcc.c`. So the residue is not random: dropping the qualifier lets the recorder MODEL a `const`-pointer member load whose replay then emits different bytes — the load itself is presumably codegen'd differently when the base is const-qualified. That is the thing to understand before the default can flip; **that hypothesis is now TESTED and FALSE.** Restricting the relaxation to non-arrow (`.`) access does avoid all 4 regressors — unfaithful stays at 139 — but recovers only **2** functions instead of 50 (faithful 1043 -> 1045 versus 1043 -> 1093 for the unrestricted gate). Nearly every const-member win comes from ARROW access, i.e. the same shape as the regressors, so there is no cheap subset to carve out and the variant was reverted rather than shipped for +2. The path forward is therefore to FIX the 4, not to avoid them: understand why a modelled `const`-pointer member load replays to different bytes. **Narrowed 2026-07-27, NOT yet closed.** Instrumented the site to print the enclosing function: all 73 `qual` events are `qual=0x100` (`VT_CONSTANT`) on **arrow** access, and the four regressors are `ast_hash_of` (member base `VT_PTR`), `ast_sid_node` (`VT_PTR`), `set_flag` (`VT_SHORT`) and `so_ckpt_write` (`VT_INT`). **Three minimal reproducers FAILED — do not retry these:** (1) `const struct R *p` with `int` members -> all faithful, no `qual`; (2) a `const int` FIELD inside the struct -> faithful; (3) `const struct Ar *a` with POINTER members (`a->kind[i]`), the closest match to `ast_hash_of` -> still faithful, no `qual`. A nested-aggregate member does desync but at the OTHER site (the struct-typed group), not this one. So the qualifier is not coming from 'pointer to const struct' in the obvious way, and the trigger is still unidentified. **Reproduction puzzle CLOSED 2026-07-27 — the qualifier was never the missing ingredient.** Named the members at the call site: the `ast_hash_of`/`ast_sid_node` events are exactly the `AstArena` pointer fields (`kind`, `op`, `ival`, `sym`, `first_child`, `next_sib`, `nchild`, `type_t`, `type_ref`, `fbits`), i.e. precisely the shape reproducer (3) modelled. The reason that reproducer looked like a miss: **it DID raise `qualifiers` (3 events) and still verified faithful.** `qual` alone does not desync — the site is guarded by `if (!ast_member_cap) return;` above it, so the access must ALSO have been captured (`ast_capture && !ast_desync && !ast_in_op && !ast_in_call && ast_vn >= 1 && ast_vn == rel`). All three attempts raised the qualifier in non-capturable contexts. Note the scale gap this explains: 458 `qualifiers` events across the TU, only 73 of which reach the desync. A minimal reproducer therefore needs the const member access in a CAPTURABLE position — not inside a call argument or a nested operation. **ANSWERED 2026-07-27 — the replay is SEMANTICALLY WRONG, not merely reordered, so the guard is justified.** Use the existing facility rather than adding one: `MCC_AST_VERIFY_DIFF=<substr>` dumps a byte diff for any non-faithful function (`MCC_AST_MEMBER_CONST=1 MCC_AST_VERIFY=1 MCC_AST_VERIFY_DIFF=set_flag mcc ... -c src/libmcc.c`). For `set_flag`: baseline and replay are both 426 B, first diff at +291. Two differences:
@@ -2067,7 +2067,7 @@ So relaxing the qualifier makes the recorder model these accesses INCORRECTLY. N
 **Investigation state 2026-07-27, two dead ends recorded so they are not retried:**
 - *Synthesising the shape does not work.* A FOURTH minimal reproducer failed: `const struct F *f` with the member access as the left operand of `&&` in a capturable position (`if ((f->flags & 2) && other(k))`), which is the exact construct `set_flag` inverts. Faithful under both gate settings. Four attempts have now missed; stop building candidate structs.
 - *`MCC_AST_REPLAY_DUMP` cannot see it.* The dump is emitted only for functions that end FAITHFUL, so the recorded AST for `set_flag` (unfaithful under the gate) never prints — 22758 dump lines, zero mentions of it. Inspecting the modelled AST needs the dump moved before the faithfulness check, or a separate always-dump env.
-**MINIMAL REPRODUCER FOUND 2026-07-27 by reducing the real function — synthesising never would have.** ~30 lines, and it tracks the real build exactly: `MCC_AST_MEMBER_CONST=0` -> `desync:2982`, `=1` -> `unfaithful`. Ingredients: the REAL `FlagDef` layout `{uint16_t offset; uint16_t flags; const char *name;}` — note `uint16_t`, which is why every hand-written `int`-member attempt missed (the probe had already said `mbtype=2`/`VT_SHORT` and I did not act on it) — a `const FlagDef *p` walked in a `for` loop, `if (0 == (p->flags & WD_ALL)) continue;`, and the `*f = (*f & mask) | (value ^ !!(p->flags & FD_INVERT));` store. Stub `strstart` returning 0 is enough. **ISOLATED 2026-07-27 to a FOUR-LINE function: the bug is `!!` (double negation) on a captured const-qualified member load.**
+**MINIMAL REPRODUCER FOUND 2026-07-27 by reducing the real function — synthesising never would have.** ~30 lines, and it tracks the real build exactly: `MCC_AST_MEMBER_CONST=0` -> `desync`, `=1` -> `unfaithful`. Ingredients: the REAL `FlagDef` layout `{uint16_t offset; uint16_t flags; const char *name;}` — note `uint16_t`, which is why every hand-written `int`-member attempt missed (the probe had already said `mbtype=2`/`VT_SHORT` and I did not act on it) — a `const FlagDef *p` walked in a `for` loop, `if (0 == (p->flags & WD_ALL)) continue;`, and the `*f = (*f & mask) | (value ^ !!(p->flags & FD_INVERT));` store. Stub `strstart` returning 0 is enough. **ISOLATED 2026-07-27 to a FOUR-LINE function: the bug is `!!` (double negation) on a captured const-qualified member load.**
 ```c
 typedef struct FlagDef { uint16_t offset; uint16_t flags; const char *name; } FlagDef;
 static int dneg (const FlagDef *p){ return !!(p->flags & 2); }   /* MCC_AST_MEMBER_CONST=1 -> unfaithful */
@@ -2088,7 +2088,7 @@ Runtime behaviour is unaffected in both gate settings (`1 0 1`), because unfaith
 | i386 | unfaithful | **faithful** |
 | riscv64 | unfaithful | **faithful** |
 | **arm64** | unfaithful | **unfaithful** |
-The arm64 diff is a different shape from the x86 one: baseline **32 B vs replay 28 B** — a LENGTH difference, not a condition swap — first diff at +25, with `1a9f17e0` vs `1a9f07e0` (`CSINC`, differing condition field) and an extra baseline instruction the replay omits. arm64 materialises `!!x` through conditional-select rather than a compare-and-setcc pair, so flipping the modelled comparison op does not reproduce it. The `^1` token flip is the right model for the x86-shaped path only. **arm64 now HANDLED 2026-07-27 by the desync route** (the second of the two options). Under `#ifdef MCC_TARGET_ARM64` the hook sets desync instead of flipping the op, because a token flip models arm64's CSINC form WRONGLY and a wrong model that happens to replay identically is exactly the latent miscompile path this hook exists to close. Verified on the `!!` reproducer with the gate ON: x86_64 `faithful`, i386 `faithful`, riscv64 `faithful`, arm64 `desync:2388` — honest rather than unfaithful-by-luck. arm64 loses nothing it had, since `!!` was already mismodelled there before this hook existed.
+The arm64 diff is a different shape from the x86 one: baseline **32 B vs replay 28 B** — a LENGTH difference, not a condition swap — first diff at +25, with `1a9f17e0` vs `1a9f07e0` (`CSINC`, differing condition field) and an extra baseline instruction the replay omits. arm64 materialises `!!x` through conditional-select rather than a compare-and-setcc pair, so flipping the modelled comparison op does not reproduce it. The `^1` token flip is the right model for the x86-shaped path only. **arm64 now HANDLED 2026-07-27 by the desync route** (the second of the two options). Under `#ifdef MCC_TARGET_ARM64` the hook sets desync instead of flipping the op, because a token flip models arm64's CSINC form WRONGLY and a wrong model that happens to replay identically is exactly the latent miscompile path this hook exists to close. Verified on the `!!` reproducer with the gate ON: x86_64 `faithful`, i386 `faithful`, riscv64 `faithful`, arm64 `desync` — honest rather than unfaithful-by-luck. arm64 loses nothing it had, since `!!` was already mismodelled there before this hook existed.
 **Remaining before the default can flip:** model the arm64 CSINC form so that target gains the fix too (optional — the gate is sound without it), and regenerate the ratchet baseline.
 **The 4 `MCC_AST_MEMBER_CONST` regressors are NOT fixed by `MCC_AST_CMP_INVERT`** — with both gates on, the 30-line `set_flag` reduction is still `unfaithful`. The inversion is gone (that was the correctness half); what remains is a pure OPERAND-ORDER divergence, same length 426 B, first diff @ +291. Source `f = (unsigned char *)s + p->offset;`: baseline loads `s` then `p->offset` (`mov rax,[rbp-8]; mov rcx,[rbp-0x30]; movzx ecx,word[rcx]; add rax,rcx`), replay loads `p->offset` then `s` (`mov rax,[rbp-0x30]; movzx eax,word[rax]; mov rcx,[rbp-8]; add rcx,rax`). So the recorded `Binary '+'` has its operands swapped relative to the order codegen evaluated them.
 **Ruled out: Sethi-Ullman.** The reorder persists with `MCC_AST_SETHI=0 MCC_AST_SETHI_LEAF=0 MCC_AST_SETHI_NARY=0` all set, individually and together — so it is not a reordering pass, it is how the member-capture path records the enclosing binary's children (`ast_hook_member_end` replaces the top `ast_vs` entry; something there leaves the operands transposed).
