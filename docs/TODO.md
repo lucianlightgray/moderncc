@@ -142,6 +142,12 @@ Four fixes landed this session, each through the full bar (host + cross ctest, 3
 | F3a assignment-as-value (`AST_StoreVal`) | +10 |
 | constant `?:` folded | +5 |
 
+**The remaining compile-time parser contexts were SWEPT 2026-07-27 and are all already faithful, so the pattern
+below has no further easy applications:** local `enum` declarations (including `Y = X + 1`), local arrays with
+constant sizes, bitfield widths, `_Static_assert` in a function body, `switch` `case` label expressions (including
+`case 2+3`), `_Alignas` on a local, local `typedef`s, and compound literals. Only `sizeof`/`_Alignof` operands and
+static-storage initializers needed the bracket — do not re-sweep these.
+
 **The pattern that generalises: suspend where the PARSER knows it emits nothing, not where the recorder notices
 trouble.** Two of the six (`sizeof`, static initializers) are the same three-line `ast_hook_synth_begin`/`_end`
 bracket around a parser call whose walk produces no code. The equivalent recorder-side suspends all FAILED — a
