@@ -1096,9 +1096,31 @@ narrow the suspend to the anonymous-object-in-expression-position case (the `str
 shared `decl_initializer` element loop.**
 
 And the headline: **on mcc's own TU this changed nothing at all** — faithful stayed 1101, site 2302 stayed 261. mcc's
-own source contains no wide string literals, so this path accounts for **0 of the 261** TU events. The `vtop`
-histogram (202 of 261 symbol-valued) is consistent with a literal-symbol cause but clearly has a different producer.
-Whoever continues should bisect a second reproducer FROM mcc's own TU rather than from `tests/exec`.
+own source contains no wide string literals, so this path accounts for **0 of the 261** TU events.
+
+**SECOND REPRODUCER, bisected FROM mcc's own TU 2026-07-27, and it is a ONE-LINER:**
+
+    int f(void){ static int s = 5; return s; }        /* desync:2302 */
+    int f(void){ static int s;     s = 1; return s; } /* FAITHFUL   */
+
+**A function-scope `static` WITH AN INITIALIZER desyncs; the same static without one does not, and a file-scope
+static does not.** Verified across variants: initializer `0` / `5` / any value all desync, read-only use desyncs,
+two statics desync, and the ubiquitous guard idiom `static int on = -1; if (on < 0) on = 1;` desyncs. Bisected down
+from `mcc_stats_enable` (mccstats.c), one of the smallest desyncing functions in the TU.
+
+That matters because **mcc's own source is saturated with this idiom** — every cached-env gate is
+`static int on = -1;` — and two spot-checked examples (`ast_hook_cmp_invert`, `mcc_stats_enable`) are both in the
+261. It is also the SAME family as the wide-string case above: a static's initializer goes through
+`decl_initializer`, whose value pushes the recorder models as expression values.
+
+`gdb` shows the witness differs from the culprit here, exactly as the delta analysis predicted: the reported push is
+the innocent `return s;` (`unary()` at mccgen.c:9748 -> `vset`), while the extra node was left behind earlier during
+the declaration. Do not "fix" the site the backtrace names.
+
+**Coverage of the 261 is NOT measured and must not be guessed.** A crude grep attributed only 19, but it failed to
+locate 218 of the 261 function definitions at all (formatting/`static` prefixes), so that number is meaningless in
+both directions. Getting a real figure needs the recorder to attribute the desync to the declaration rather than the
+witness — worth doing first, since it decides whether this one shape is most of F5's 48% or a slice of it.
 
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
