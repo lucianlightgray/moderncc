@@ -801,18 +801,30 @@ bracket around a parser call whose walk produces no code. The equivalent recorde
 region suspend inside the recorder leaves the model behind the vstack instead of ahead (see the `nocode_wanted`
 attempts), because the values are real even when the code is not.
 
-Remaining 327 desyncs, re-measured after all four fixes. **Identify sites by HOOK NAME, not by line number — the
-line numbers in older entries below are stale, because each fix shifted them (the old "2315" value-model guard is now
-2328, the old "2302" vstack sync is now 2315, and so on).**
+**206 desyncs, re-measured 2026-07-28 on the current tree.** Counts are UNCHANGED from the 2026-07-27 measurement
+for every site except the value-model guard; only the line numbers moved. **Identify sites by HOOK NAME, not by line
+number** — every fix shifts them, and the numbers below are already the third set this file has carried.
 
 | hook | check | count |
 |---|---|---:|
-| `ast_hook_vpush` | value-model guard (bad type, or not const/sym/local) | ~~119~~ → **4** (2026-07-28: 68 of these were `MCC_AST_OPASSIGN` staged at `-O3`; flipped to `-O2`, see the nbody section) |
-| `ast_hook_call_begin` | `nocode_wanted` | **89** |
+| `ast_hook_call_begin` | `nocode_wanted` | **92** |
 | `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 43 |
 | `ast_hook_cmp_invert` | `&&`/`\|\|` reached the comparison inverter — see below, NOT a missing case | 24 |
-| `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region — correct, see below | 15 |
-| `ast_hook_call_begin` | callee is not an `AST_Ref` — relaxing it buys nothing, see below | 14 |
+| `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region — correct, see below | 17 |
+| `ast_hook_call_begin` | callee is not an `AST_Ref` — relaxing it buys nothing, see below | 15 |
+| `ast_hook_vstore` | (second store site) | 6 |
+| `ast_hook_vpush` | value-model guard | ~~119~~ → **4** (2026-07-28: 68 of these were `MCC_AST_OPASSIGN` staged at `-O3`; flipped to `-O2`, see the nbody section) |
+| `ast_hook_landor_operand` | | 2 + 1 |
+| `ast_hook_member_end` | | 1 |
+
+**Every site above already has a recorded verdict, and they are all "ruled out" or "needs a design change", not
+"unexplored":** `nocode_wanted` has three approaches ruled out (flat gate, transition hooking across ~30 irregular
+mutation sites, region suspend — a region suspend leaves the model BEHIND the vstack because values are real even
+when code is not); `cmp_invert` is a correct guard that needs De Morgan and would miscompile if the switch cases
+were simply added; the ternary/landor store site is a correct guard needing per-arm basic blocks; the callee-kind
+guard was measured to buy nothing when relaxed. So the desync half is not a triage problem the way `unfaithful` was
+— it is a set of known design decisions, and the next person should pick one and design it rather than measure it
+again.
 
 **`ast_hook_call_begin`'s callee-kind guard is conservative but relaxing it BUYS NOTHING (checked 2026-07-27).**
 It fires when the callee is a COMPUTED expression rather than a plain `AST_Ref`: `s.m(1)` (struct member),
