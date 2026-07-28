@@ -400,10 +400,26 @@ Wanted:
 
    **One extra second of search costs 144 bytes at identical runtime**, and the step is between `-O4` and `-O5`. With
    `TEMPLATES=0` every level gives 3998, so this surfaces only when the smaller configuration is reachable at all. It
-   is a size regression, not a speed one — but it makes "a higher `-O` is at least as good" false, which is the same
-   guarantee the `PROMOTE` floor above exists to protect. Worth fixing in the in-process search's own accept logic
-   (it should never replace a candidate with a larger one on its own scoring axis); note the driver's accept logic is
-   NOT at fault and was already checked.
+   is a size regression, not a speed one (0.17 s throughout) — but it makes "a higher `-O` is at least as good" false,
+   the same guarantee the `PROMOTE` floor above exists to protect.
+
+   **Diagnosis, and it corrects my own first wording of this item.** I wrote that the in-process search "should never
+   replace a candidate with a larger one on its own scoring axis". That is not what is happening, because **bytes are
+   not its axis**: `ast_search_score_one` scores `ast_cost_score(trial)`, a static AST cost model, and its keep-rule
+   is already strict-less on that. So this is an OBJECTIVE MISMATCH, not a broken accept-rule — with more budget the
+   search reaches configurations that genuinely score better on the cost model while emitting more bytes.
+
+   Evidence, nbody with `TEMPLATES=1` pinned, driver out of the picture:
+
+   | scoring | `-O4` | `-O5` | `-O8` |
+   |---|---:|---:|---:|
+   | `ast_cost_score` (default) | **3854** | 3998 | 3998 |
+   | `MCC_AST_SEARCH_EMITSIZE=1` | 3998 | 3998 | 3998 |
+
+   So scoring by real emitted size IS monotonic here — but it never finds the 3854 configuration the cost model
+   reaches at `-O4`, so it is not a drop-in fix either. Both halves need explaining before this is closed: why the cost
+   model prefers a larger emit at higher budgets, and why the emit-size objective cannot reach 3854 at all. Note the
+   driver's accept logic is NOT at fault and was already checked (gate 1 scores 4198, identical to gate 0).
 
    Secondary, unchanged: the earlier per-gate ablation over all 62 `o4` gates (`MCC_SEARCH_WORKER=1`, each forced off)
    found 20 that shrink `.text`, but 10 land on the SAME 3854 B, so they are perturbing which configuration the
