@@ -748,10 +748,30 @@ full bar: host ctest 7253/7253, cross 7412/7412, self-host fixpoint byte-identic
 `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, all four qemu triples 14/14, and 0 crashes over
 all 258 exec files.
 
-**Still open, deliberately**: the nested shapes the direct-child guard declines — assignment in a call argument, in a
-ternary, in a `return` expression, and `while ((h = f()))` — remain `unfaithful`. They are safe (they fall back to the
-old double-emission, which the byte check rejects) and each needs its own reasoning about what touches the vstack in
-between. The remaining 7 named entries in the ratchet inventory are exactly that work.
+**Still open — and SURVEYED 2026-07-27 so the next attempt does not start blind.** The remaining 7 ratchet entries
+are NOT one problem. Instrumenting `ast_finalize_storevals` to report, per marker, whether the guard accepted it:
+
+| shape | markers made | guard | verdict | blocker |
+|---|---:|---|---|---|
+| `if ((h = f()))` | 2 | accepted | **faithful** | — done |
+| `while ((h = f()))` | 1 | **ACCEPTED** | unfaithful | back-edge, not the vstack (see below) |
+| `a = (b = f()) + 1` | 1 | rejected | unfaithful | marker nested under a Binary |
+| `(a = f()) ? … : …` | 1 | rejected | unfaithful | marker nested under the ternary |
+| `return (a = f()) + a` | 1 | rejected | unfaithful | marker nested under a Binary |
+| `f((a = g2(v)) + 0)` | 1 | rejected | unfaithful | `gfunc_call` vstack juggling |
+| `a = b = f()` | **0** | n/a | unfaithful | marker is resolved away by the CHAINSTORE path |
+| `(x = f()) && (y = g2())` | **0** | n/a | desync:3371 | desyncs before any marker is made |
+
+**The most valuable one, `while ((c = getchar()) != EOF)`, PASSES the guard and is still unfaithful** — so its
+blocker is structural, not the vstack invariant the guard exists to protect. The store is recorded as a statement in
+the enclosing BB, but a `while` re-evaluates its condition on every iteration, so the loop's back edge has to
+re-execute the store; replay emits it once, ahead of the loop. Fixing it means recording the store INSIDE the loop's
+condition region, which is a recorder-structure change, not a guard tweak. **Do not try to widen the guard for this
+one — the guard is already letting it through.**
+
+Two of the eight never reach the marker at all: `a = b = f()` has its marker resolved back to the inner RHS by the
+CHAINSTORE path (deliberate — see the fix above), and the short-circuit case desyncs at mccast.c:3371 before any
+store is modelled.
 
 **The reverted second attempt's failure, kept because the trap is general: it silently disabled
 `MCC_AST_CHAINSTORE`.** For `a = b = c` the OUTER store now
