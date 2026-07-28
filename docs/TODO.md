@@ -690,6 +690,18 @@ Consequence for F3a: it is now confirmed to be **purely a coverage item with no 
 current output. Combined with the always-on byte check above, a wrong attempt at it can lose optimization but cannot
 miscompile — the remaining caution is only about keeping the MODEL semantically right.
 
+**Tried and rejected 2026-07-27: making `ast_add_child` DESYNC on a dangling re-parent** (detecting that the child is
+still threaded into its old parent's chain, which is cheap and bounded by that parent's fan-out) so the recorder never
+builds a DAG at all, instead of building one and relying on it being rejected downstream. Two reasons it was dropped,
+in order of weight: (1) **it buys no coverage** — it converts `unfaithful` into `desync`, and both are equally
+excluded, so the only gain is a tidier invariant that `ast/treecheck` already proves is harmless; (2) `ast_add_child`
+sits near the top of mccast.c, well before `ast_capture`, `ast_desync` and the `AST_SET_DESYNC` macro exist, so it
+needs forward declarations threaded back through the file — real churn in the arena's core mutator for a cosmetic
+result. **If someone wants this anyway, note the trap that caught me**: mccast.c is `#include`d into the amalgamated
+`src/mcc.c`, so a compile error there makes any fidelity measurement taken with the *previous* binary silently bogus
+(the TU being measured fails to compile, and the verdict histogram just gets shorter — 685 functions instead of 1848).
+Check the compile succeeded before reading the counts.
+
 **ROOT CAUSE, localised to one line — `ast_hook_vstore` (mccast.c:3442):**
 
     ast_add_child(ast_cur, st, lval);
