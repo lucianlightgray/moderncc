@@ -1261,9 +1261,33 @@ and the ranking changed.** Totals are now **1318 faithful / 356 desync / 175 unf
 
 The first group is a dereference through a pointer already materialised in a register: the model only knows
 `is_const` / `is_sym` / `is_local` / `is_llocal_lval`, and "lvalue whose address is live in a register" is none of
-them. The second is the aggregate-rvalue case the `agg_lval` escape deliberately does not cover. Neither is a
-bookkeeping slip — both need a new modellable value form, so this is genuinely the same class of work the bare-return
-fix turned out to be, not a guard tweak.
+them. **Note that one is not straightforwardly modellable at all** — the register is a register-allocation artifact,
+so a model that names it would not survive replay under a different allocation; it needs the POINTER's provenance
+modelled instead. The second is the aggregate-rvalue case the `agg_lval` escape deliberately does not cover. Neither
+is a bookkeeping slip — both need a new modellable value form, so this is genuinely the same class of work the
+bare-return fix turned out to be, not a guard tweak.
+
+**Site 3256 (`nocode_wanted`, 87 events, 24%) enumerated 2026-07-27 — it is DEAD-OR-UNEVALUATED CODE CONTAINING A
+CALL, and it fans out across three different desync sites:**
+
+| shape | verdict |
+|---|---|
+| `return (int)sizeof(h(1));` — unevaluated operand | **desync:3256** |
+| `return 1; return h(2);` — dead after return | **desync:3256** |
+| `if (0) h(1);` | **desync:3256** |
+| `goto e; h(1); e: …` — dead after goto | **desync:3256** |
+| `return 0 && h(1);` | desync:2589 |
+| `return 1 \|\| h(1);` | desync:2589 |
+| `return 1 ? a : h(1);` — dead ternary arm | desync:2533 |
+| `return h(1);` — control | **faithful** |
+
+So sites 3256 + 2589 + 2533 (87 + 45 + 6 = **138, 39% of all desyncs**) are substantially ONE problem: the parser
+stops emitting code while the recorder keeps modelling. `ast_hook_call_begin` desyncs outright on `nocode_wanted`.
+The fix is to SUSPEND recording across the whole no-code region rather than desync at one hook — but note the
+Tests/infra section records that a FLAT `nocode_wanted` gate was tried and made fidelity WORSE (desync +90,
+faithful -68, 5 new `stackresidue`), because the hooks come in pairs and suspending one side leaves the model
+unbalanced. A working version needs paired enter/leave of the no-code region, in the shape of
+`ast_hook_synth_begin`/`_end`, not a per-hook test.
 
 So F5 alone is now **48% of all desyncs and 14% of every function in the TU** — it was described as "the
 second-largest cause" against an older mix, and it is now comfortably first. Anyone picking up fidelity work should
