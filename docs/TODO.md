@@ -421,9 +421,36 @@ Where that leaves the two halves:
   model records. It also means this group is unlikely to be hiding a correctness bug, unlike a dropped value
   materialisation.
 
-  **Classified all 92 by byte multiset, 2026-07-28. Only one number from it is trustworthy: 30 of 92 (33%) have an
-  IDENTICAL byte multiset**, i.e. the parser and replay emit exactly the same bytes in a different order. Those are
-  pure reorders beyond argument.
+  **CLASSIFIED 2026-07-28 by DECODED instruction multiset: 90 of 92 are reorder or register-allocation only.**
+
+  | | count |
+  |---|---:|
+  | same instruction multiset (pure reorder) | **40** |
+  | differ, but identical once register NAMES are canonicalised | **50** |
+  | genuinely different instructions | **2** |
+
+  So the group is what the two hand-read cases suggested: the model is right and replay emits the same computation,
+  differing only in instruction ORDER and REGISTER CHOICE. Byte-identity rejects it because it is stricter than
+  semantic equivalence. Fixing it means making replay reproduce the parser's scheduling and allocation, not
+  repairing what the model records — and this group is very unlikely to hide a correctness bug.
+
+  **Three artifacts had to be cleared to get this number, all of which produced confident wrong answers first:**
+  1. `llvm-objdump` has no `-b binary` (that is GNU `objdump`). Every invocation errored, stdout was empty, both
+     sides compared as empty lists, and the classifier reported **92 of 92 identical**. Caught only by a positive
+     control — `cst_hook_begin` provably has an extra instruction and was reported SAME.
+  2. With GNU `objdump` it reported 32/60, but the dump window started at `firstdiff - 8`, which is not an
+     instruction boundary, so the disassembly was misaligned — visible as `(bad)` opcodes and nonsense operands like
+     `add %ah,K(%rax,%rcx,2)`. The dump now starts at offset 0 whenever the requested window covers the body; the
+     re-run has **zero `(bad)` decodes**.
+  3. Comparing raw BYTE multisets (an earlier attempt) cannot separate these at all: a register swap plus the
+     displacement changes that follow a reordered block move the byte multiset 13–14%, which is why
+     `mcc_mulhs64` and `host_nproc` — both hand-verified reorders — landed in that attempt's "structurally
+     different" bucket.
+
+  The final classifier is validated in both directions: zero `(bad)` decodes, and `cst_hook_begin`/`end_macro`/
+  `mcc_pedantic` all still report DIFFERENT after register canonicalisation, with `cst_hook_begin`'s parser-only
+  instruction coming out as `mov $K,R` — the `mov eax,0` identified by hand. **Only the 2 genuinely-different
+  functions are worth reading individually.**
 
   The rest is NOT classified, and the attempted threshold failed a check that should be recorded. Bucketing the
   remaining 62 by "≤10% of bytes differ" (46) versus ">10%" (16) does NOT separate reorder from structurally

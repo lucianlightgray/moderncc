@@ -16478,6 +16478,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						int ast_w = ast_bd >= 0 ? ast_bd - 8 : (int)body_len - 24;
 						int ast_dn, ast_do;
 						if (ast_win < 16) { MCC_TRACE("br\n"); ast_win = 48; }
+						if (ast_win >= (int)body_len && ast_win >= new_len)
+							{ MCC_TRACE("br\n"); ast_w = 0; }
 						if (ast_w < 0) { MCC_TRACE("br\n"); ast_w = 0; }
 						ast_dn = new_len - ast_w < ast_win ? new_len - ast_w : ast_win;
 						ast_do = (int)body_len - ast_w < ast_win ? (int)body_len - ast_w : ast_win;
