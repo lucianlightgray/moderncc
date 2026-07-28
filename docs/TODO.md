@@ -472,6 +472,27 @@ Where that leaves the two halves:
   This is the ONLY correctness-relevant defect found anywhere in the 205-function unfaithful bucket, and it is worth
   fixing on its own merits rather than for the 2 functions of coverage it buys.
 
+  **It is NOT x86_64-specific — it is in the shared model/replay path.** Same reproducer across the cross compilers:
+
+  | target | `(signed char)` | `(unsigned char)` |
+  |---|---|---|
+  | x86_64 | unfaithful | faithful |
+  | arm64 | unfaithful | faithful |
+  | riscv64 | unfaithful | faithful |
+  | i386 | unfaithful | faithful |
+  | arm (32-bit) | **faithful** | faithful |
+
+  Four of five targets reproduce it, so look in `ast_hook_convert` / the `AST_Convert` replay case, not in a backend.
+  arm32 is the outlier and is worth a glance when fixing — either its `gen_cast` happens to emit the same sequence
+  for both source types, which would mask the same modelling error, or it genuinely records the chain correctly.
+
+  Where the defect is NOT: relocations, and the recorded type on the Convert node is the obvious first suspect but
+  unverified. Replay does `ast_replay_value(child)` then `gen_cast(recorded type)`, so `gen_cast` converts from
+  whatever type the REPLAYED child left on the vstack — if that differs from what the parser had, the wrong
+  conversion is emitted with no other symptom. Parser emits `movzbl ; movsbl ; movslq`; replay emits
+  `movzbl ; movsbl ; movzbl`, i.e. the THIRD conversion re-emits the FIRST. `MCC_AST_REPLAY_DUMP=1` does not help
+  here — it only fires for bodies that came out faithful.
+
   The rest is NOT classified, and the attempted threshold failed a check that should be recorded. Bucketing the
   remaining 62 by "≤10% of bytes differ" (46) versus ">10%" (16) does NOT separate reorder from structurally
   different: `mcc_mulhs64` and `host_nproc` — the two cases READ BY HAND above and confirmed to be an operand-order
