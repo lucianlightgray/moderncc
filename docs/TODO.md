@@ -554,10 +554,25 @@ Where that leaves the two halves:
     | `mcc_preprocess` | replay-only **`get_tok_str`** (plus `tok`/`tokc` data references) |
     | `store_packed_bf` | parser-only **`vdup`, `gv_dup`** |
 
-    Three of the four are replay RE-EVALUATING something the parser had already materialised — the parser still had
-    the previous result available and reused it, and the recorder did not model that reuse. Recomputing a pure
-    function is semantically equivalent, so those three are probably benign in the same sense as the reorder class,
-    though "probably" is doing real work in that sentence and none of the three callees was checked for purity.
+    **RESOLVED 2026-07-28 — all three are the DOCUMENTED call-argument limitation of `AST_StoreVal`, not a new
+    defect.** They are assignment-used-as-a-value in an argument position (`mcchost.c:1557` is
+    `ptr = mcc_malloc(size += host_pagesize());`), and replay re-evaluates the RHS including the call. Reproducer
+    with relocation symbols, which show the doubled call directly:
+
+        void opassign_arg (void) { use(s += g()); }   UNFAITHFUL   parser: g s s use   replay: g s s g s use
+        void assign_arg   (void) { use(s = g());  }   UNFAITHFUL   parser: g s use     replay: g s g use
+        void opassign_stmt(void) { s += g(); }        faithful
+        void plain_arg    (void) { use(g()); }        faithful
+
+    Assignment as a STATEMENT is faithful; assignment as a VALUE in an argument is not. That is exactly what
+    `ast_finalize_storevals`'s leftmost-leaf guard is documented to do — its own comment says "A call argument fails
+    this (gfunc_call pushes around it) and keeps the old, unfaithful behaviour" — and the `AST_StoreVal` replay case
+    says the fallback is "the pre-F3a double evaluation, which is merely unfaithful". So the behaviour is known,
+    deliberate, and safe: the body is rejected, and `assign_value_effects.c` separately pins that the PARSER
+    evaluates these exactly once.
+
+    This is the same assignment-as-value family as the chained-store gap above, and any fix would be the same
+    model-shape change.
 
     **`store_packed_bf` — RESOLVED 2026-07-28. A ternary whose VALUE IS DISCARDED records NOTHING.** Its source
     contains `c ? vdup() : gv_dup();` as a statement, and the recorder models no nodes for that at all, so replay
