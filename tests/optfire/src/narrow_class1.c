@@ -2,12 +2,12 @@ extern int printf(const char *, ...);
 
 static int widened(int a, int b)
 {
-	return (int)((long)a + (long)b);
+	return (int)((long long)a + (long long)b);
 }
 
 static unsigned uwidened(unsigned a, unsigned b)
 {
-	return (unsigned)((unsigned long)a * (unsigned long)b);
+	return (unsigned)((unsigned long long)a * (unsigned long long)b);
 }
 
 int main(void)

@@ -421,9 +421,9 @@ through each cross compiler with `OPTFIRE_NORUN=1`:
 
 | target | fires | does not |
 |---|---:|---|
-| **arm64** | **50 / 51** | `regdisp` only — already arch-guarded to x86_64 |
-| i386 | 38 / 51 | promotion family (6), narrow family (6), `vlat` — reassoc family RESOLVED, see `cdelta` below |
-| riscv64 | 31 / 51 | the above plus loop transforms (3), `bfold_*` (4), `math_inline`, `argfwd` |
+| **arm64** | **51 / 51** (wired) | — `regdisp` is arch-guarded to x86_64 |
+| **i386** | **45 / 45** (wired) | — the 6 promotion/`opassign` cases are arch-guarded; nothing left failing |
+| riscv64 | 31 / 51 | loop transforms (3), `bfold_*` (4), `math_inline`, `argfwd`, plus the guarded promotion set |
 
 arm64 is therefore wired: 50 `optfire-arm64/<case>` cells, all passing. They register only when the `mcc-arm64` target
 exists, so the default `MCC_ENABLE_CROSS=OFF` build is untouched (7229/7229 unchanged) and they appear in a
@@ -449,17 +449,52 @@ keeps `regdisp` out.
   `pass DID NOT FIRE`. **Generalisable: prefer `cdelta` to `differ` for any gate whose transform is real but whose
   byte-level effect is target-dependent.** An arch guard would have been the wrong fix here — it would have recorded
   the pass as absent on i386 when it demonstrably fires.
-- *Narrow family (6) incl. `vlat` — a REAL gap, deliberately NOT guarded.* This is the 32-bit `int`<->`long long`
-  recorder desync (cross-arch parity section): `narrow` reads 0 on i386 against 2-5 on x86_64, and widening the case to
-  `long long` does not help because the recorder desyncs on the conversion. Guarding it would hide a real defect.
+- *Narrow family (6) incl. `vlat` — was a REAL gap; ROOT-CAUSED AND FIXED 2026-07-27.* It was two independent
+  problems wearing one symptom, and the recorded diagnosis had them merged:
+  1. **The cases were written with `long`, which is 64-bit on x86_64 but 32-bit on i386**, so there was no 64->32
+     narrowing to find there *at all*. Those functions were **fully faithful** on i386 — no desync — the pass simply
+     had nothing to do. Fixed by rewriting `narrow_fix`/`narrow_class0..3` in `long long`, which is 64-bit on every
+     target mcc supports, so the same source poses the same question everywhere. **`vlat` already used `long long`**,
+     which is why it was the one member of the family that failed for the *other* reason.
+  2. **A genuine compiler defect, found by backtracing the desync rather than reasoning about it.** Every 64->32
+     narrowing on a 32-bit target desynced the whole function, so the AST optimizer silently abandoned it. Cause:
+     `gen_cast` (mccgen.c, `#if MCC_PTR_SIZE == 4`) splits a 64-bit value into 32-bit halves via `lexpand`/`lbuild`,
+     and `lexpand`'s `vdup` ran through `ast_hook_vpush`, which saw a bare VT_LLONG register value it cannot model
+     (`r=0 tt=0x4 in_op=0`) and set desync. This is the same class as the `gaddrof` materialisation bug and takes the
+     same fix: bracket the halves-splitting with `ast_hook_synth_begin`/`_end` so the recorder does not see it. **It
+     is safe precisely because the cast IS already modelled** — `ast_hook_convert` records an `AST_Convert` node at
+     `gen_cast` entry, so replay re-emits the conversion; the `lexpand` is emission detail, not semantics.
+  Effect: on i386 `vlat` goes from 3 desync + 1 faithful to **4 faithful**, and `narrow` 0 -> 3, matching x86_64
+  exactly. **Method note worth keeping: the desync line number alone was misleading.** `ast_hook_vpush` bails early on
+  `ast_in_op`, so the site "could not" fire inside an op — and it did not; it fired from `gen_cast`, which is not an
+  op. A one-line instrumented print plus a `gdb` breakpoint gave the caller chain in minutes
+  (`gen_cast -> lexpand -> vdup -> vpushv -> ast_hook_vpush`); reading the code around the reported line did not.
 - *`opassign` — TRIAGED 2026-07-27: promotion-MEDIATED, guarded.* Its consumers sit OUTSIDE the promotion `#if`, so
   the gate itself is not arch-scoped — but the case's observable effect is. Measured on x86_64: with
   `MCC_AST_PROMOTE=0` forced, toggling `MCC_AST_OPASSIGN` produces a **byte-identical object**, while with promotion
   on it differs. `opassign` works by flipping functions from desynced to faithful so promotion can act on them, so on
   i386 — no promotion machinery at all — the case cannot demonstrate the gate however correct the gate is. Guarded to
   `x86_64,arm64,riscv64`, and the `arch.txt` comment records that this guards the CASE, not the gate.
-So i386 wiring is now blocked ONLY on the narrow gap (the 32-bit `int`<->`long long` recorder desync) — the reassoc
-blocker is cleared and infrastructure was never the constraint.
+**i386 is now WIRED: 45 `optfire-i386/*` cells, all passing** (was 39/45 when first wired, which is how the two
+narrow problems above were isolated — the cells were added FIRST and left red, then diagnosed). The cross-target
+registration is now a loop over `arm64;i386` handling both `differ` and `cdelta` manifests, so adding riscv64 is a
+one-word change once its non-firing set is triaged.
+
+**Validation for the `gen_cast` fix (it changes real 32-bit codegen, so object self-identity is not sufficient):**
+x86_64 provably unaffected — **0 of 750 objects differ** across the exec corpus at -O0/-O2/-O3 between a pre-fix and
+post-fix compiler (arm64/riscv64 are unaffected by construction, the change is inside `#if MCC_PTR_SIZE == 4`).
+The 32-bit targets DO change, and narrowly: **i386 3 of 244 objects, arm 2 of 239**. Correctness on those: a native
+i386 differential against `gcc -m32` over **227 runnable exec programs at -O0 and -O2 — 0 regressions**
+(i386 ELF runs directly on x86_64, so this needs neither qemu nor docker, which matters because docker is not
+available here). Plus `qemu-arm` 10/10, `qemu-i386` 10/10, host ctest 7229/7229, cross ctest 7343/7343, and the
+3-stage self-host fixpoint byte-identical (o1==o2==o3, 5489695 B).
+
+**Process lesson, and it is a REPEAT of one already recorded in this file — I nearly published the wrong conclusion
+again.** The first x86_64 byte-identity check reported "DIFFERS at -O0/-O2/-O3". It was comparing objects that were
+never written: the self-compile was missing `-B`, failed with `include file 'stdarg.h' not found`, and `cmp` on two
+nonexistent files reports "differ". The measurement above only became meaningful after asserting `-s` on both outputs
+first. **Check the compile's exit status (or the file's existence) before reading a counter or comparing objects** —
+this is the third time that exact trap has produced a false finding here.
 riscv64 is untriaged beyond the promotion note.
 
 **F8 — Re-earn the gate-swept fuzz coverage.** The first VALID gate-swept soak ran 2026-07-27 (600 seeds, ~31k

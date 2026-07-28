@@ -3629,6 +3629,9 @@ again:
 
 		trunc = 0;
 #if MCC_PTR_SIZE == 4
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_synth_begin();
+#endif
 		if (ds == 8) { MCC_TRACE("br\n");
 			if (sbt & VT_UNSIGNED) { MCC_TRACE("br\n");
 				vpushi(0);
@@ -3643,6 +3646,9 @@ again:
 			lexpand();
 			vpop();
 		}
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_synth_end();
+#endif
 		ss = 4;
 
 #elif MCC_PTR_SIZE == 8

@@ -2,13 +2,13 @@ extern int printf(const char *, ...);
 
 static int withlit(int a)
 {
-	return (int)((long)a + 1000L);
+	return (int)((long long)a + 1000LL);
 }
 
 static int withlit2(int a)
 {
 	int r;
-	r = (int)((long)a ^ 255L);
+	r = (int)((long long)a ^ 255LL);
 	return r;
 }
 
