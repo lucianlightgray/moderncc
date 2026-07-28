@@ -2108,6 +2108,8 @@ static const MCCOption mcc_options[] = {
 		{"nopie", MCC_OPTION_nopie, 0},
 		{"pipe", 0, 0},
 		{"s", MCC_OPTION_s, 0},
+		{"static-libgcc", 0, 0},
+		{"static-libstdc++", 0, 0},
 		{"traditional", 0, 0},
 		{NULL, 0, 0},
 };
@@ -2762,6 +2764,22 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #endif
 			} else if (!strcmp(optarg, "no-stack-protector")) { MCC_TRACE("br\n");
 				s->stack_protector = 0;
+			} else if (!strcmp(optarg, "building-libgcc")) { MCC_TRACE("br\n");
+#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE && !defined MCC_TARGET_MACHO
+				mcc_define_symbol(s, "__LIBGCC_DWARF_FRAME_REGISTERS__", "17");
+				mcc_define_symbol(s, "__LIBGCC_DWARF_CIE_DATA_ALIGNMENT__", "-8");
+				mcc_define_symbol(s, "__LIBGCC_EH_RETURN_STACKADJ_RTX__", "1");
+				mcc_define_symbol(s, "__LIBGCC_STACK_POINTER_REGNUM__", "7");
+				mcc_define_symbol(s, "__LIBGCC_TRAMPOLINE_SIZE__", "28");
+				mcc_define_symbol(s, "__LIBGCC_STACK_GROWS_DOWNWARD__", "1");
+				mcc_define_symbol(s, "__LIBGCC_EH_FRAME_SECTION_NAME__", "\".eh_frame\"");
+				mcc_define_symbol(s, "__LIBGCC_EH_TABLES_CAN_BE_READ_ONLY__", "1");
+				mcc_define_symbol(s, "__LIBGCC_TEXT_SECTION_ASM_OP__", "\"\\t.text\"");
+				mcc_define_symbol(s, "__LIBGCC_INIT_ARRAY_SECTION_ASM_OP__", "1");
+				mcc_define_symbol(s, "__LIBGCC_VTABLE_USES_DESCRIPTORS__", "0");
+				mcc_define_symbol(s, "__LIBGCC_HAVE_LIBATOMIC", "0");
+				mcc_define_symbol(s, "__LIBGCC_HAVE_HWDBL__", "1");
+#endif
 			} else if (strstart("sanitize=", &vis)) { MCC_TRACE("br\n");
 				const char *tok = vis;
 				while (*tok) { MCC_TRACE("br\n");

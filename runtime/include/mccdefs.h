@@ -149,7 +149,23 @@
 
 	#ifndef __MCC_PP__
 
-	#define __builtin_offsetof(type, field) ((__SIZE_TYPE__)&((type*)0)->field)
+	typedef char __mcc_char_t;
+	typedef signed char __mcc_schar_t;
+	typedef unsigned char __mcc_uchar_t;
+	typedef short __mcc_short_t;
+	typedef unsigned short __mcc_ushort_t;
+	typedef int __mcc_int_t;
+	typedef unsigned int __mcc_uint_t;
+	typedef long __mcc_long_t;
+	typedef unsigned long __mcc_ulong_t;
+	typedef long long __mcc_llong_t;
+	typedef unsigned long long __mcc_ullong_t;
+	typedef float __mcc_float_t;
+	typedef double __mcc_double_t;
+	typedef long double __mcc_ldouble_t;
+	typedef __SIZE_TYPE__ __mcc_size_t;
+
+	#define __builtin_offsetof(type, field) ((__mcc_size_t)&((type*)0)->field)
 	#define __builtin_extract_return_addr(x) x
 	#define __builtin_frob_return_addr(x) x
 	#define __builtin_memcpy_inline(d, s, n)  __builtin_memcpy((d), (s), (n))
@@ -177,7 +193,7 @@
 	#define __sync_lock_release(p) \
 	({ __typeof__(*(p)) __z=0; __atomic_store((p),&__z,__ATOMIC_SEQ_CST); })
 	#define __sync_synchronize() \
-	({ volatile int __mcc_bar = 0; \
+	({ volatile __mcc_int_t __mcc_bar = 0; \
 	(void)__atomic_fetch_add(&__mcc_bar, 0, __ATOMIC_SEQ_CST); (void)0; })
 	#define __atomic_load_n(p, o) \
 	({ __typeof__(*(p)) __r; __atomic_load((p), &__r, (o)); __r; })
@@ -214,12 +230,12 @@
 	#define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
 	#define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
 	#define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
-	#define __builtin_fabsf(x) ((float)((x) < 0 ? -(x) : (x)))
-	#define __builtin_fabs(x)  ((double)((x) < 0 ? -(x) : (x)))
-	#define __builtin_fabsl(x) ((long double)((x) < 0 ? -(x) : (x)))
-	#define __builtin_abs(x)   ((int)((x) < 0 ? -(x) : (x)))
-	#define __builtin_labs(x)  ((long)((x) < 0 ? -(x) : (x)))
-	#define __builtin_llabs(x) ((long long)((x) < 0 ? -(x) : (x)))
+	#define __builtin_fabsf(x) ((__mcc_float_t)((x) < 0 ? -(x) : (x)))
+	#define __builtin_fabs(x)  ((__mcc_double_t)((x) < 0 ? -(x) : (x)))
+	#define __builtin_fabsl(x) ((__mcc_ldouble_t)((x) < 0 ? -(x) : (x)))
+	#define __builtin_abs(x)   ((__mcc_int_t)((x) < 0 ? -(x) : (x)))
+	#define __builtin_labs(x)  ((__mcc_long_t)((x) < 0 ? -(x) : (x)))
+	#define __builtin_llabs(x) ((__mcc_llong_t)((x) < 0 ? -(x) : (x)))
 	#define __builtin_copysignf(x, y) (__builtin_signbit(y) ? -__builtin_fabsf(x) : __builtin_fabsf(x))
 	#define __builtin_copysign(x, y)  (__builtin_signbit(y) ? -__builtin_fabs(x)  : __builtin_fabs(x))
 	#define __builtin_copysignl(x, y) (__builtin_signbit(y) ? -__builtin_fabsl(x) : __builtin_fabsl(x))
@@ -237,8 +253,8 @@
 	#endif
 	#endif
 	#define __builtin_isnormal(x) (__builtin_isfinite(x) && (x) != 0 && _Generic((x), \
-		float:       __builtin_fabsf(x) >= __FLT_MIN__, \
-		long double: __builtin_fabsl(x) >= __LDBL_MIN__, \
+		__mcc_float_t:   __builtin_fabsf(x) >= __FLT_MIN__, \
+		__mcc_ldouble_t: __builtin_fabsl(x) >= __LDBL_MIN__, \
 		default:     __builtin_fabs(x)  >= __DBL_MIN__))
 	#define __builtin_fpclassify(nan, inf, norm, sub, zero, x) \
 		(__builtin_isnan(x) ? (nan) : __builtin_isinf(x) ? (inf) \
@@ -286,7 +302,7 @@
 	return ap->overflow_arg_area - size;
 	}
 	#define __builtin_va_start(ap, last) \
-	(*(ap) = *(struct __va_list_tag *)((char*)__builtin_frame_address(0) - 24))
+	(*(ap) = *(struct __va_list_tag *)((__mcc_char_t*)__builtin_frame_address(0) - 24))
 	#define __builtin_va_arg(ap, t)   \
 	(*(t *)(__va_arg_inline(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
 	#define __builtin_va_copy(dest, src) (*(dest) = *(src))
@@ -299,10 +315,10 @@
 
 #elif defined __arm__ //@
 	typedef char *__builtin_va_list;
-	#define _mcc_alignof(type) ((int)&((struct {char c;type x;} *)0)->x)
-	#define _mcc_align(addr,type) (((unsigned)addr + _mcc_alignof(type) - 1) \
+	#define _mcc_alignof(type) ((__mcc_int_t)&((struct {__mcc_char_t c;type x;} *)0)->x)
+	#define _mcc_align(addr,type) (((__mcc_uint_t)addr + _mcc_alignof(type) - 1) \
 	& ~(_mcc_alignof(type) - 1))
-	#define __builtin_va_start(ap,last) (ap = ((char *)&(last)) + ((sizeof(last)+3)&~3))
+	#define __builtin_va_start(ap,last) (ap = ((__mcc_char_t *)&(last)) + ((sizeof(last)+3)&~3))
 	#define __builtin_va_arg(ap,type) (ap = (void *) ((_mcc_align(ap,type)+sizeof(type)+3) \
 	&~3), *(type *)(ap - ((sizeof(type)+3)&~3)))
 
@@ -324,13 +340,13 @@
 #elif defined __riscv //@
 	typedef char *__builtin_va_list;
 	#define __va_reg_size (__riscv_xlen >> 3)
-	#define _mcc_align(addr,type) (((unsigned long)addr + __alignof__(type) - 1) \
+	#define _mcc_align(addr,type) (((__mcc_ulong_t)addr + __alignof__(type) - 1) \
 	& -(__alignof__(type)))
 	#define __builtin_va_arg(ap,type) (*(sizeof(type) > (2*__va_reg_size) ? *(type **)((ap += __va_reg_size) - __va_reg_size) : (ap = (va_list)(_mcc_align(ap,type) + (sizeof(type)+__va_reg_size - 1)& -__va_reg_size), (type *)(ap - ((sizeof(type)+ __va_reg_size - 1)& -__va_reg_size)))))
 
 #else //@
 	typedef char *__builtin_va_list;
-	#define __builtin_va_start(ap,last) (ap = ((char *)&(last)) + ((sizeof(last)+3)&~3))
+	#define __builtin_va_start(ap,last) (ap = ((__mcc_char_t *)&(last)) + ((sizeof(last)+3)&~3))
 	#define __builtin_va_arg(ap,t) (*(t*)((ap+=(sizeof(t)+3)&~3)-((sizeof(t)+3)&~3)))
 
 #endif //@
@@ -419,12 +435,12 @@
 	__MCC_OV_DECL(unsigned long long, ull)
 	#undef __MCC_OV_DECL
 	#define __mcc_ov_disp(op, res) _Generic((res),			\
-	signed char: __mcc_##op##o_sc, char: __mcc_##op##o_c,		\
-	short: __mcc_##op##o_s, int: __mcc_##op##o_i,			\
-	long: __mcc_##op##o_l, long long: __mcc_##op##o_ll,		\
-	unsigned char: __mcc_##op##o_uc, unsigned short: __mcc_##op##o_us, \
-	unsigned int: __mcc_##op##o_u, unsigned long: __mcc_##op##o_ul,	\
-	unsigned long long: __mcc_##op##o_ull)
+	__mcc_schar_t: __mcc_##op##o_sc, __mcc_char_t: __mcc_##op##o_c,	\
+	__mcc_short_t: __mcc_##op##o_s, __mcc_int_t: __mcc_##op##o_i,	\
+	__mcc_long_t: __mcc_##op##o_l, __mcc_llong_t: __mcc_##op##o_ll,	\
+	__mcc_uchar_t: __mcc_##op##o_uc, __mcc_ushort_t: __mcc_##op##o_us, \
+	__mcc_uint_t: __mcc_##op##o_u, __mcc_ulong_t: __mcc_##op##o_ul,	\
+	__mcc_ullong_t: __mcc_##op##o_ull)
 	#define __builtin_add_overflow(a, b, res) \
 	(__mcc_ov_disp(add, *(res))((a), (b), (res)))
 	#define __builtin_sub_overflow(a, b, res) \
