@@ -730,7 +730,31 @@ immediately following the store:
 - self-host fixpoint byte-identical, `ast/treecheck` clean at `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree
   0 miscompile, all four qemu triples 14/14
 
-**Why it was reverted anyway: it silently disables `MCC_AST_CHAINSTORE`.** For `a = b = c` the OUTER store now
+**THIRD ATTEMPT: LANDED 2026-07-27.** The CHAINSTORE interaction below is resolved — when the outer store's value
+is a marker, `ast_hook_vstore` resolves it back to the inner store's RHS *before* the chained test, so
+`ast_parent(value) != AST_NONE` sees what it always saw and the gate fires exactly as before. `optfire/chainstore`
+and `runtime-bench-gatewin` both green again.
+
+Final shape, all three pieces needed: (1) the residual is an `AST_StoreVal` marker referencing its Store by INDEX, so
+the RHS keeps one owner and the model stays a tree; (2) `ast_finalize_storevals` sets `AST_FB_STORE_VALUE_LIVE` only
+when the marker is a DIRECT child of the statement immediately following the store — anything nested (notably a call
+argument, where `gfunc_call` pushes the remaining args in between) keeps the old behaviour; (3) replay of a
+value-live Store skips its `vpop()`, and a marker whose store is NOT value-live re-emits the RHS rather than emitting
+nothing, which is what previously segfaulted `gfunc_call`.
+
+Result: **`if ((h = f(...)))` is now FAITHFUL**, mcc's own TU goes faithful 1091 -> 1094 and unfaithful 158 -> 156,
+and `ast-verify-ratchet` banked the win it was built for (`if_cond` left the gap set, 776 -> 775). Validated on the
+full bar: host ctest 7253/7253, cross 7412/7412, self-host fixpoint byte-identical (5508863), `ast/treecheck` clean at
+`-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, all four qemu triples 14/14, and 0 crashes over
+all 258 exec files.
+
+**Still open, deliberately**: the nested shapes the direct-child guard declines — assignment in a call argument, in a
+ternary, in a `return` expression, and `while ((h = f()))` — remain `unfaithful`. They are safe (they fall back to the
+old double-emission, which the byte check rejects) and each needs its own reasoning about what touches the vstack in
+between. The remaining 7 named entries in the ratchet inventory are exactly that work.
+
+**The reverted second attempt's failure, kept because the trap is general: it silently disabled
+`MCC_AST_CHAINSTORE`.** For `a = b = c` the OUTER store now
 receives the marker as its value, and CHAINSTORE's detection is
 `chained = ast_chainstore_env && value != AST_NONE && ast_parent(ast_cur, value) != AST_NONE` — a freshly created
 marker has no parent yet, so `chained` is never true and the gate stops firing entirely. Caught by two independent

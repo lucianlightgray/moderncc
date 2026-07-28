@@ -41,6 +41,10 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #undef realloc
 #undef free
 
+/* AST_Store fbit 1: this store's value is CONSUMED by the immediately following
+   statement, so replay must leave it on the vstack instead of popping it. */
+#define AST_FB_STORE_VALUE_LIVE 2u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -3399,6 +3403,16 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	 * materialisation (`mov $0x0,%eax`), and both stores would read a stale
 	 * register. Copy first and finalize only the copy, so the inner store keeps
 	 * the constant it actually recorded. */
+	/* A store feeding another store (`a = b = c`) hands the outer store a MARKER
+	   for the inner store's value. CHAINSTORE detects chaining by "this value
+	   already has a parent", which a freshly made marker fails -- so resolve the
+	   marker back to the inner store's RHS first. Without this the gate silently
+	   stops firing (caught by optfire/chainstore and runtime-bench-gatewin). */
+	int mkr = value != AST_NONE && ast_kind(ast_cur, value) == AST_StoreVal;
+	AstLocal inner = mkr ? (AstLocal)ast_ival(ast_cur, value) : AST_NONE;
+	if (mkr && inner != AST_NONE && inner < ast_cur->count &&
+			ast_kind(ast_cur, inner) == AST_Store && ast_nchild(ast_cur, inner) == 2)
+		{ MCC_TRACE("br\n"); value = ast_child(ast_cur, inner, 1); }
 	int chained = ast_chainstore_env && value != AST_NONE &&
 								ast_parent(ast_cur, value) != AST_NONE;
 	if (chained)
@@ -3439,7 +3453,13 @@ void ast_hook_vstore(void) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, st, lval);
 	ast_add_child(ast_cur, st, value);
 	ast_add_child(ast_cur, ast_cur_bb, st);
-	ast_vs[ast_vn - 2] = value;
+	{
+		AstLocal mv = ast_node(ast_cur, AST_StoreVal);
+		ast_set_type(ast_cur, mv, ast_type_t(ast_cur, value),
+								 ast_type_ref(ast_cur, value));
+		ast_set_ival(ast_cur, mv, (uint64_t)st);
+		ast_vs[ast_vn - 2] = mv;
+	}
 	ast_vn--;
 }
 
@@ -5323,6 +5343,21 @@ static void ast_error_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n")
 
 static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+	case AST_StoreVal: {
+		/* Value-live: already on the vstack, emit nothing. Otherwise it was
+		   popped, so re-emit the RHS -- the pre-F3a double evaluation, which is
+		   merely unfaithful. Emitting nothing would leave the consumer short an
+		   operand and gfunc_call would read past the vstack. */
+		AstLocal st = (AstLocal)ast_ival(a, n);
+		if (st != AST_NONE && st < a->count && ast_kind(a, st) == AST_Store) {
+			MCC_TRACE("br\n");
+			if (ast_fbits(a, st) & AST_FB_STORE_VALUE_LIVE)
+				{ MCC_TRACE("br\n"); break; }
+			if (ast_nchild(a, st) == 2)
+				{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
+		}
+		break;
+	}
 	case AST_Literal:
 	case AST_Ref: {
 		SValue sv;
@@ -5709,6 +5744,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			ast_replay_value(a, ast_child(a, s, 0));
 			ast_replay_value(a, ast_child(a, s, 1));
 			vstore();
+			if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
+				{ MCC_TRACE("br\n"); break; }
 			vpop();
 			break;
 		}
@@ -6046,7 +6083,33 @@ static int ast_treechk(AstArena *a, const char *fname, const char *phase) { MCC_
 	return bad;
 }
 
+static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal n;
+	for (n = 0; n < a->count; n++) { MCC_TRACE("br\n");
+		AstLocal st, par;
+		if (ast_kind(a, n) != AST_StoreVal)
+			{ MCC_TRACE("br\n"); continue; }
+		st = (AstLocal)ast_ival(a, n);
+		if (st == AST_NONE || st >= a->count || ast_kind(a, st) != AST_Store)
+			{ MCC_TRACE("br\n"); continue; }
+		par = ast_parent(a, n);
+		if (par == AST_NONE)
+			{ MCC_TRACE("br\n"); continue; }
+		/* Only safe when nothing touches the vstack between the store and the
+		   read, so require the marker to be a DIRECT child of the statement that
+		   immediately follows the store. An assignment inside a call argument
+		   fails this, and keeps the old (unfaithful) behaviour. */
+		if (ast_parent(a, par) == AST_NONE ||
+				ast_kind(a, ast_parent(a, par)) != AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_next_sib(a, st) != par || ast_parent(a, par) != ast_parent(a, st))
+			{ MCC_TRACE("br\n"); continue; }
+		ast_set_fbits(a, st, ast_fbits(a, st) | AST_FB_STORE_VALUE_LIVE);
+	}
+}
+
 static void ast_replay_body(AstArena *a) { MCC_TRACE("enter\n");
+	ast_finalize_storevals(a);
 	ast_replay_bb(a, ast_root(a));
 }
 

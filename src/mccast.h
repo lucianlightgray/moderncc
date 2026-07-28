@@ -27,6 +27,10 @@ typedef enum AstKind {
 	AST_InitList,
 	AST_Poison,
 	AST_Data,
+	/* Marker standing for "the value the referenced Store already produced".
+	   Carries the Store's index in ival; it is NOT a parent link, so the model
+	   stays a tree. See TODO F3a. */
+	AST_StoreVal,
 
 	AST_KIND_COUNT
 } AstKind;
