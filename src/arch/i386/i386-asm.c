@@ -1094,6 +1094,8 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 		case 'd':
 		case 'S':
 		case 'D':
+		case 't':
+		case 'f':
 			pr = 1;
 			break;
 		case 'q':
@@ -1261,6 +1263,9 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			op->is_llong = 0;
 			op->reg = reg;
 			regs_allocated[reg] |= reg_mask;
+			break;
+		case 't':
+		case 'f':
 			break;
 		case 'e':
 		case 'i':

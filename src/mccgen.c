@@ -5797,43 +5797,9 @@ static inline void convert_parameter_type(CType *pt) { MCC_TRACE("enter\n");
 	}
 }
 
-#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
-static void asm_str_dialect(CString *str) { MCC_TRACE("enter\n");
-	char *p = str->data, *q = str->data;
-	int in_alt = 0, skip = 0, c;
-
-	while ((c = *p++) != '\0') { MCC_TRACE("br\n");
-		if (c == '%' && *p) { MCC_TRACE("br\n");
-			c = *p++;
-			if (c != '{' && c != '}' && c != '|' && !skip)
-				{ MCC_TRACE("br\n"); *q++ = '%'; }
-		} else if (c == '{' && !in_alt) { MCC_TRACE("br\n");
-			in_alt = 1;
-			continue;
-		} else if (c == '}' && in_alt) { MCC_TRACE("br\n");
-			in_alt = 0;
-			skip = 0;
-			continue;
-		} else if (c == '|' && in_alt) { MCC_TRACE("br\n");
-			skip = 1;
-			continue;
-		}
-		if (!skip)
-			{ MCC_TRACE("br\n"); *q++ = c; }
-	}
-	*q = '\0';
-	str->size = (int)(q - str->data) + 1;
-}
-#endif
-
 ST_FUNC CString *parse_asm_str(void) { MCC_TRACE("enter\n");
-	CString *str;
 	skip('(');
-	str = parse_mult_str("string constant");
-#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
-	asm_str_dialect(str);
-#endif
-	return str;
+	return parse_mult_str("string constant");
 }
 
 static int asm_label_instr(void) { MCC_TRACE("enter\n");

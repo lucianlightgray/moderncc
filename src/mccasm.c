@@ -1244,11 +1244,83 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
 	return index;
 }
 
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+static int asm_x87_constraint(ASMOperand *op) { MCC_TRACE("enter\n");
+	const char *p = skip_constraint_modifiers(op->constraint);
+	if (*p == 't' || *p == 'f')
+		{ MCC_TRACE("br\n"); return *p; }
+	return 0;
+}
+
+static void asm_x87_wrap(ASMOperand *operands, int nb_operands,
+												 int nb_outputs, CString *astr) { MCC_TRACE("enter\n");
+	CString buf;
+	ASMOperand *op;
+	int found = -1;
+	int r;
+	char sfx;
+
+	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
+		if (!asm_x87_constraint(&operands[i]))
+			{ MCC_TRACE("br\n"); continue; }
+		if (found >= 0)
+			{ MCC_TRACE("br\n"); mcc_error("only one x87 asm operand is supported"); }
+		found = i;
+	}
+	if (found < 0)
+		{ MCC_TRACE("br\n"); return; }
+
+	op = &operands[found];
+	if (op->input_index >= 0)
+		{ MCC_TRACE("br\n"); mcc_error("x87 asm operand cannot be tied to another operand"); }
+	switch (op->vt->type.t & VT_BTYPE) { MCC_TRACE("br\n");
+	case VT_FLOAT:
+		sfx = 's';
+		break;
+	case VT_DOUBLE:
+		sfx = 'l';
+		break;
+	case VT_LDOUBLE:
+		sfx = 't';
+		break;
+	default:
+		mcc_error("x87 asm operand must have floating type");
+		return;
+	}
+	r = op->vt->r;
+	if (!(r & VT_LVAL) ||
+			((r & VT_VALMASK) != VT_LOCAL &&
+			 (r & (VT_VALMASK | VT_SYM)) != (VT_CONST | VT_SYM)))
+		{ MCC_TRACE("br\n"); mcc_error("unsupported x87 asm operand"); }
+
+	cstr_new_s(&buf);
+	if (found >= nb_outputs || op->is_rw) { MCC_TRACE("br\n");
+		cstr_printf(&buf, "fld%c ", sfx);
+		subst_asm_operand(&buf, op->vt, 0);
+		cstr_ccat(&buf, '\n');
+	}
+	cstr_cat(&buf, astr->data, -1);
+	if (found < nb_outputs) { MCC_TRACE("br\n");
+		cstr_printf(&buf, "\nfstp%c ", sfx);
+		subst_asm_operand(&buf, op->vt, 0);
+	} else { MCC_TRACE("br\n");
+		cstr_cat(&buf, "\nfstp %st(0)", -1);
+	}
+	cstr_ccat(&buf, '\0');
+	cstr_reset(astr);
+	cstr_cat(astr, buf.data, buf.size);
+	cstr_free_s(&buf);
+}
+#endif
+
 static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 															 CString *out_str, const char *str) { MCC_TRACE("enter\n");
 	int c, index, modifier;
 	ASMOperand *op;
 	SValue sv;
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+	int dialect = 0;
+#endif
 
 	for (;;) { MCC_TRACE("br\n");
 		c = *str++;
@@ -1257,6 +1329,16 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 				str++;
 				goto add_char;
 			}
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+			if (*str == '{' || *str == '}' || *str == '|') { MCC_TRACE("br\n");
+				c = *str++;
+				goto add_char;
+			}
+			if (*str == 'v' && !isnum(str[1]) && str[1] != '[') { MCC_TRACE("br\n");
+				str++;
+				continue;
+			}
+#endif
 			modifier = 0;
 			if (*str == 'c' || *str == 'n' ||
 					*str == 'b' || *str == 'w' || *str == 'h' || *str == 'k' ||
@@ -1274,6 +1356,10 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 			{ MCC_TRACE("br\n"); error:
 				mcc_error("invalid operand reference after %%"); }
 			op = &operands[index];
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+			if (asm_x87_constraint(op))
+				{ MCC_TRACE("br\n"); mcc_error("x87 asm operand cannot be referenced in the template"); }
+#endif
 			if (modifier == 'l') { MCC_TRACE("br\n");
 				cstr_cat(out_str, get_tok_str(op->is_label, NULL), -1);
 			} else { MCC_TRACE("br\n");
@@ -1288,6 +1374,27 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 				subst_asm_operand(out_str, &sv, modifier);
 			}
 		} else { MCC_TRACE("br\n");
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+			if (c == '{') { MCC_TRACE("br\n");
+				dialect = 1;
+				continue;
+			}
+			if (c == '|' && dialect) { MCC_TRACE("br\n");
+				while (*str && *str != '}') { MCC_TRACE("br\n");
+					if (*str == '%' && str[1])
+						{ MCC_TRACE("br\n"); str++; }
+					str++;
+				}
+				if (*str == '}')
+					{ MCC_TRACE("br\n"); str++; }
+				dialect = 0;
+				continue;
+			}
+			if (c == '}' && dialect) { MCC_TRACE("br\n");
+				dialect = 0;
+				continue;
+			}
+#endif
 		add_char:
 			cstr_ccat(out_str, c);
 			if (c == '\0')
@@ -1450,6 +1557,9 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 		cstr_reset(&astr);
 		subst_asm_operands(operands, nb_operands + nb_labels, &astr, astr1->data);
 	}
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+	asm_x87_wrap(operands, nb_operands, nb_outputs, &astr);
+#endif
 
 	if (g_debug & MCC_DBG_ASM)
 		{ MCC_TRACE("br\n"); printf("subst_asm: \"%s\"\n", (char *)astr.data); }
