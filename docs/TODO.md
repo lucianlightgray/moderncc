@@ -435,10 +435,30 @@ it.
   one.
 
 - **ATTEMPTED AND REJECTED: skipping `ast_finalize_leaf(value, vtop)` when the value came from the marker
-  (`if (!mkr)`).** No effect — all four reproducer verdicts unchanged. That rules out the OUTER store's finalize as
-  the culprit: node 3 already carries `r=0` before the outer store runs, so the damage is done by the INNER store's
-  own finalize, at the moment the parser has materialised the constant into `eax`. Any fix must address that
-  earlier finalize, not the chained path's. Reverted; no source change kept from the attempt.
+  (`if (!mkr)`).** No effect — all four reproducer verdicts unchanged. Node 3 already carries `r=0` before the outer
+  store runs, so the damage is done by the INNER store's own finalize. Reverted; nothing kept.
+
+- **THE CONTROL THAT EXPLAINS IT — `b = 0; a = 0;` as two statements is FAITHFUL**, and the parser emits the SAME
+  `mov $0x0,%eax` materialisation there. So "the parser materialised it, the recorder truthfully wrote that down"
+  is NOT the explanation; that reading was about to be adopted and the control refutes it. Side by side:
+
+  | | leaves | `r` | `t` |
+  |---|---|---|---|
+  | `b = 0; a = 0;` (faithful) | **two distinct** Literals | `0x30` `VT_CONST` | `0x3` `VT_INT` |
+  | `a = b = 0` (unfaithful) | **one shared** Literal, visited twice | `0` register | `0x3003` the lvalue's |
+
+  `b = 0, a = 0` (comma) is faithful too.
+
+  **Why they differ:** in the two-statement form the inner value is DISCARDED, so nothing forces materialisation
+  before `ast_hook_vstore` runs — the leaf is still `VT_CONST` when finalised, and the parser's `mov $0,%eax` is
+  emitted afterwards by `vstore`'s own codegen. In the chained form the value is NEEDED by the outer assignment, so
+  `gv()` materialises it into a register BEFORE the hook, and the finalize then captures the register instead of
+  the constant.
+
+  **So the fix is to capture the leaf's form BEFORE the value is materialised, not after** — the recorder must
+  record what the expression IS, not where codegen has just put it. That is a recorder-side ordering change rather
+  than a model-shape change, which makes it a different and probably safer proposition than `emit-at-marker`. It
+  still needs `assign_value_effects.c` and the full bar.
 
 **Do NOT fix this by making the marker emit at its use site.** That was tried earlier in this session (F3a,
 "emit-at-marker"): correct at `-O0`/`-O1`, MISCOMPILED at `-O2`/`-O3`, and caught only because
