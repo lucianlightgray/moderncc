@@ -1378,7 +1378,27 @@ them:**
   record the `Invoke` inside the constant `If` like any other statement — which is exactly what deleting the
   `nocode_wanted` guard does, and that case does go faithful. The cases that then become `unfaithful` (`sizeof(h(1))`,
   `0 && h(1)`) are the ones NOT wrapped in a constant `If`, so codegen has nothing to fold and replay emits a call the
-  parser never emitted. **That, not the `if (0)` case, is what needs a mechanism** — and it is also where the
+  parser never emitted.
+
+  **The `sizeof` half of that subset is now FIXED (2026-07-27), and the synth-suspend idiom DOES work here — because
+  it is applied at the PARSER, not in the recorder.** `sizeof`/`_Alignof` has the clean paired boundary the general
+  `nocode_wanted` problem lacks: `unary()` parses the operand with `expr_type(&type, unary)` and then pushes the size
+  constant, so bracketing just that call with `ast_hook_synth_begin`/`_end` hides the unevaluated walk and leaves the
+  constant modelled normally. That is the distinction from the recorder-side region suspend that failed earlier: here
+  the operand's net vstack effect really IS zero, so there is nothing left behind to mirror.
+
+  Gain: **+33 faithful (1343 -> 1376), desync 327 -> 287** — larger than the handful of `sizeof(call)` shapes
+  suggests, because mcc's own source uses `sizeof` heavily. `sizeof(h(1))`, `sizeof(a+b)`, `sizeof(int)`,
+  `_Alignof(int)` and `sizeof(a) + a` are all faithful, live-call control unchanged. Validated with the
+  **self-host fixpoint byte-identical (5523423)** — the gate that killed the `nocode_wanted` removal — plus host
+  ctest 7276/7276, cross 7435/7435, `ast/treecheck` clean at `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree
+  0 miscompile, qemu 14/14 on all four triples, 0 exec-corpus crashes, both side-effect guards green. Ratchet
+  765 -> 763.
+
+  **What REMAINS is the short-circuit RHS (`0 && h(1)`)**, which has no equivalent parser-side boundary — the RHS is
+  parsed inline by `expr_landor` rather than through a single bracketable call.
+
+  Superseded framing: **that, not the `if (0)` case, is what needs a mechanism** — and it is also where the
   self-host fixpoint failure must be coming from, since the `if (0)` form is structurally identical to code that is
   already faithful today.
 
