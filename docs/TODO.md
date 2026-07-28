@@ -429,10 +429,22 @@ arm64 is therefore wired: 50 `optfire-arm64/<case>` cells, all passing. They reg
 exists, so the default `MCC_ENABLE_CROSS=OFF` build is untouched (7229/7229 unchanged) and they appear in a
 cross-enabled configure. `arch.txt` is honoured against the CROSS target's cpu rather than the host's, which is what
 keeps `regdisp` out.
-**i386 and riscv64 are NOT wired, deliberately.** Their non-firing sets are large and not yet triaged into 'legitimately
-does not apply on this target' versus 'a real gap'. Wiring them now would either add 17-20 failing cells or paper over
-them with a blanket guard, and the second is worse: `narrow` on i386 is a REAL gap (the 32-bit int<->long long recorder
-desync, cross-arch parity section) that a guard would hide. Triage each family against that section before wiring.
+**i386 TRIAGED 2026-07-27; still not wired, and the split is the point:**
+- *Promotion family (6) — BY CONSTRUCTION, guarded.* The entire promotion machinery is inside
+  `#if MCC_CONFIG_OPTIMIZER && (X86_64 || ARM64 || RISCV64)`, so i386 has NO promotion code and these cannot fire
+  there. `promote`/`promo_arrow`/`promo_incdec`/`spill_share`/`color` are now `arch.txt`-guarded to those three CPUs,
+  matching the `#if` exactly. Note riscv64 IS compiled in but has no leaf (caller-saved) pool by design, so some of
+  these still will not fire there — a CASE-shape issue for when riscv64 is wired, not grounds to drop it from the list.
+- *Reassoc family (4) — NOT a gap, and NOT guarded.* The pass fires identically on both targets (`reassoc` counter
+  8/8, 3/3, 3/3, 4/4 x86_64 vs i386); only the object-level effect is invisible on i386. The CASES are wrong for that
+  target, so they need reworking, and an arch guard would falsely claim the pass is absent.
+- *Narrow family (6) incl. `vlat` — a REAL gap, deliberately NOT guarded.* This is the 32-bit `int`<->`long long`
+  recorder desync (cross-arch parity section): `narrow` reads 0 on i386 against 2-5 on x86_64, and widening the case to
+  `long long` does not help because the recorder desyncs on the conversion. Guarding it would hide a real defect.
+- `opassign` — UNTRIAGED. It sits in neither group cleanly; check whether it depends on the promotion machinery before
+  assigning it.
+So i386 wiring is blocked on the reassoc cases being reworked and the narrow gap being fixed — not on infrastructure.
+riscv64 is untriaged beyond the promotion note.
 
 **F8 — Re-earn the gate-swept fuzz coverage.** The first VALID gate-swept soak ran 2026-07-27 (600 seeds, ~31k
 configurations, 0 miscompiles). Everything before it swept nothing, because `GATES[g].env` was passed into a parameter

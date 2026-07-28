@@ -1,3 +1,14 @@
 # <name>|<cpu>[,<cpu>...]  register the case only on these MCC_CPU values
 # regdisp: ast_regdisp_env compiles to 0 off x86_64, so the gate cannot fire there.
 regdisp|x86_64
+# Promotion family: the whole machinery is inside
+#   #if MCC_CONFIG_OPTIMIZER && (X86_64 || ARM64 || RISCV64)
+# so i386 has NO promotion code at all and these cannot fire there by
+# construction. riscv64 IS compiled in but has no leaf (caller-saved) pool by
+# design, so some of these still will not fire there -- that is a CASE-shape
+# issue to fix when riscv64 is wired, not a reason to drop it from this list.
+promote|x86_64,arm64,riscv64
+promo_arrow|x86_64,arm64,riscv64
+promo_incdec|x86_64,arm64,riscv64
+spill_share|x86_64,arm64,riscv64
+color|x86_64,arm64,riscv64
