@@ -562,7 +562,28 @@ Note this interacts with the size/speed question above: if `-O4` remains size-sc
 scoring axis actually in use (never LARGER than `-O3`), and the same 16% runtime regression should be re-examined once
 the axis is settled.
 
-**Secondary finding from the same sweep, and it stands: mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on
+**RE-TESTED 2026-07-27 after fidelity went 59.5% -> 75.3% faithful: the level curve did NOT move, and the reason is
+now pinned to a SPECIFIC site rather than the ceiling in general.** Best-of-5, same kernels:
+
+| kernel | `-O0` | `-O1` | `-O2` | `-Os` | `-O3` |
+|---|---:|---:|---:|---:|---:|
+| nbody | 0.29 | 0.29 | 0.29 | 0.29 | **0.24** |
+| nsieve | 0.16 | 0.16 | 0.14 | 0.14 | 0.14 |
+| mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
+| matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
+
+Essentially identical to the original measurement, so +291 faithful functions bought nothing here. **That does NOT
+refute the ceiling explanation below — the control says the opposite.** Per-function verdicts on nbody show
+**`advance` — the hot function — is `desync` at `ast_hook_vpush`'s VALUE-MODEL guard**, along with `scale_bodies`,
+with `offset_momentum` `unfaithful`. The kernels are 67-78% faithful overall, but the functions that matter are still
+excluded, so the optimizer never sees the loop that dominates the runtime.
+
+**This is the most direct link in the file between a fidelity site and a benchmark number: the 72-event value-model
+group (register-held lvalues + struct rvalues) is what gates nbody.** `advance()` walks `struct body *` pointers,
+which is exactly that group's shape. Anyone wanting the `-O2` curve to move should fix that site rather than chase
+new passes — and can measure success directly on nbody instead of on a fidelity count.
+
+**Original finding, still true as stated: mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on
 these kernels (nbody 0.298 / 0.303 / 0.293 versus 0.299), while gcc and clang gain roughly 2x from `-O0` to `-O1`.
 `-O3` is the first level that moves (0.246). That is consistent with the 48% recorder-fidelity ceiling above — a pass
 that cannot run in half the functions cannot show up in a benchmark — and is the most direct evidence yet that fidelity
