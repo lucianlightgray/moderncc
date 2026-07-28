@@ -3666,6 +3666,22 @@ if(MCC_BUILD_TESTS)
         # kernel. so_setenv_cfg now treats MCC_AST_PROMOTE as add-only. This
         # locks that floor deterministically (byte compare, no timing): -O4
         # output must equal -O4 with promotion pinned on.
+        # The arena is meant to be a TREE, but ast_add_child re-parents without
+        # unlinking, so a node can sit in two child chains and replay emits it
+        # once per chain (F3a). This asserts the property that keeps that
+        # harmless: such a body is always REJECTED as unfaithful, never handed
+        # to the optimizer passes -- a pass transforming an invalid model is the
+        # one failure mode the always-on replay byte-comparison cannot catch.
+        if(UNIX)
+            add_test(NAME ast/treecheck
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/treecheck.sh"
+                        "${_mcc_exe}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        -O2 -O3 -Os)
+            set_tests_properties(ast/treecheck PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 900)
+        endif()
+
         find_program(MCC_OBJCOPY objcopy)
         if(UNIX AND MCC_OBJCOPY)
             add_test(NAME superopt/promote-floor

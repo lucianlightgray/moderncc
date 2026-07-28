@@ -673,13 +673,22 @@ re-emitting from it, which is the one failure mode that is NOT caught by the byt
 events over mcc's own TU at `-O2`: **408 events total, and 69 of them are in functions whose final verdict is
 `faithful`** (58 unfaithful, 23 desync across six sites, 1 bail).
 
-**That is a LEAD, not a finding, and must not be quoted as one.** `ast_add_child` prints whenever the child already
-had a parent, which also covers legitimate restructuring where the old parent is being discarded and its child list
-updated — so a reparent event is not by itself evidence of a node reachable from two child lists. Settling it needs a
-real consistency check (for every node, assert its `parent[]` owner's `first_child`/`next_sib` chain actually contains
-it, and that no other node's chain does), which nothing in-tree does today. **That checker is the right next step
-here** — it is cheap, it is a pure assertion with no codegen risk, and it either clears the DAG hazard or finds a
-genuine latent bug in optimized output.
+That count was only a LEAD — `ast_add_child` also fires for legitimate restructuring — so it was settled properly
+with the checker it called for. **SETTLED 2026-07-27: the DAG hazard is INERT. Zero violations in any FAITHFUL body.**
+
+`MCC_AST_TREECHK` (mccast.c, opt-in, O(nodes)) verifies the arena really is a tree: no node sits in two child chains,
+and every node's `parent[]` agrees with the chain it was found in. Results — **187 violations over mcc's own TU (79 of
+them genuine two-chain DAGs, across 58 functions) and 44 over the exec corpus, ALL of them in bodies the recorder had
+already REJECTED**, at `-O2`/`-O3`/`-Os` alike. So no optimizer pass has ever been handed one of these models, and the
+one failure mode the always-on byte check cannot catch does not occur in practice.
+
+**Locked as `ast/treecheck`** (`tests/ast/treecheck.sh`, exec corpus at `-O2`/`-O3`/`-Os`). Non-vacuous: forcing every
+body to report FAITHFUL makes it fail with 44 violations. The checker also gives F3a a precise one-line diagnostic —
+on the reproducer it prints `node 7(k11) is in TWO child chains: 8 and 9`, naming the stolen `AST_Invoke`.
+
+Consequence for F3a: it is now confirmed to be **purely a coverage item with no latent correctness exposure** in
+current output. Combined with the always-on byte check above, a wrong attempt at it can lose optimization but cannot
+miscompile — the remaining caution is only about keeping the MODEL semantically right.
 
 **ROOT CAUSE, localised to one line — `ast_hook_vstore` (mccast.c:3442):**
 

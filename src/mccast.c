@@ -5985,6 +5985,67 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	}
 }
 
+/* MCC_AST_TREECHK: assert the arena really is a TREE. ast_add_child re-parents
+   by overwriting parent[child] WITHOUT unlinking the node from its previous
+   parent's first_child/next_sib chain, so a node can end up reachable from two
+   child chains while parent[] names only one of them. Replay walks the chains,
+   so such a node is emitted once per chain -- that is the F3a call duplication.
+   This checker answers the question that decides how much F3a matters: does a
+   stolen node ever survive into a FAITHFUL body, where the optimizer passes
+   would then transform an invalid model and re-emit from it? That is the one
+   failure mode the always-on byte comparison cannot catch.
+
+   Two violations are reported: a node that appears in more than one chain, and
+   a node whose parent[] disagrees with the chain it was actually found in.
+   Opt-in and O(nodes), so it costs nothing unless asked for. */
+static int ast_treechk_env_cached = -1;
+
+static int ast_treechk_on(void) { MCC_TRACE("enter\n");
+	if (ast_treechk_env_cached < 0)
+		{ MCC_TRACE("br\n"); ast_treechk_env_cached = mcc_env_on("MCC_AST_TREECHK") ? 1 : 0; }
+	return ast_treechk_env_cached;
+}
+
+static int ast_treechk(AstArena *a, const char *fname, const char *phase) { MCC_TRACE("enter\n");
+	AstLocal n, c;
+	AstLocal *seen;
+	int bad = 0;
+	if (!a || !a->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	seen = (AstLocal *)mcc_malloc((size_t)a->count * sizeof *seen);
+	if (!seen)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (n = 0; n < a->count; n++)
+		{ MCC_TRACE("br\n"); seen[n] = AST_NONE; }
+	for (n = 0; n < a->count; n++) { MCC_TRACE("br\n");
+		for (c = a->first_child[n]; c != AST_NONE && c < a->count;
+				 c = a->next_sib[c]) { MCC_TRACE("br\n");
+			if (seen[c] != AST_NONE) { MCC_TRACE("br\n");
+				fprintf(stderr,
+								"[treechk] %s (%s): node %u(k%u) is in TWO child chains: %u and %u\n",
+								fname ? fname : "?", phase, (unsigned)c, (unsigned)a->kind[c],
+								(unsigned)seen[c], (unsigned)n);
+				bad++;
+				break;
+			}
+			seen[c] = n;
+		}
+	}
+	for (n = 0; n < a->count; n++) { MCC_TRACE("br\n");
+		if (seen[n] == AST_NONE)
+			{ MCC_TRACE("br\n"); continue; }
+		if (a->parent[n] != seen[n]) { MCC_TRACE("br\n");
+			fprintf(stderr,
+							"[treechk] %s (%s): node %u(k%u) sits in %u's chain but parent[] says %u\n",
+							fname ? fname : "?", phase, (unsigned)n, (unsigned)a->kind[n],
+							(unsigned)seen[n], (unsigned)a->parent[n]);
+			bad++;
+		}
+	}
+	mcc_free(seen);
+	return bad;
+}
+
 static void ast_replay_body(AstArena *a) { MCC_TRACE("enter\n");
 	ast_replay_bb(a, ast_root(a));
 }
@@ -16202,6 +16263,9 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
 																					(int)rel_len));
 				ast_fn_faithful = faithful;
+				if (ast_treechk_on())
+					{ MCC_TRACE("br\n"); ast_treechk(ast_cur, funcname,
+																	 faithful ? "FAITHFUL" : "not-faithful"); }
 
 				if (ast_verify_diff && ast_verify_diff[0] && !faithful &&
 						(!strcmp(ast_verify_diff, "1") || !strcmp(ast_verify_diff, "all") ||
