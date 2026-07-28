@@ -2445,12 +2445,11 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				continue;
 			}
 			if (type == 0) { MCC_TRACE("br\n");
-				if (length == 3) { MCC_TRACE("br\n"); addend = (addr_t)(int64_t)read64le(fld); }
-				else if (length == 2) { MCC_TRACE("br\n"); addend = (addr_t)(int32_t)read32le(fld); }
-				else { MCC_TRACE("br\n");
+				if (length != 3 && length != 2) { MCC_TRACE("br\n");
 					mcc_error_noabort("Mach-O: unsupported UNSIGNED width %d", 1 << length);
 					goto fail;
 				}
+				addend = 0;
 				etype = length == 3 ? R_AARCH64_ABS64 : R_AARCH64_ABS32;
 			} else { MCC_TRACE("br\n");
 				uint32_t insn = read32le(fld);
@@ -2486,12 +2485,11 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 			}
 			have_pending = 0;
 #else
-			if (length == 3) { MCC_TRACE("br\n"); addend = (addr_t)(int64_t)read64le(fld); }
-			else if (length == 2) { MCC_TRACE("br\n"); addend = (addr_t)(int32_t)read32le(fld); }
-			else { MCC_TRACE("br\n");
+			if (length != 3 && length != 2) { MCC_TRACE("br\n");
 				mcc_error_noabort("Mach-O: unsupported relocation width %d", 1 << length);
 				goto fail;
 			}
+			addend = 0;
 			switch (type) { MCC_TRACE("br\n");
 			case 0:
 				if (pcrel) { MCC_TRACE("br\n");
@@ -2522,7 +2520,7 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				goto fail;
 			}
 			if (pcrel) { MCC_TRACE("br\n");
-				addend -= 4;
+				addend = (addr_t)-4;
 				if (type == 6) { MCC_TRACE("br\n"); addend -= 1; }
 				else if (type == 7) { MCC_TRACE("br\n"); addend -= 2; }
 				else if (type == 8) { MCC_TRACE("br\n"); addend -= 4; }

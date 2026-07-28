@@ -5745,6 +5745,21 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
+    # Archives and relocations TOGETHER, with a NON-ZERO addend. The two cells
+    # above each had a blind spot -- macho-archive uses the relocation-free
+    # fixture, macho-reloc uses a bare object with a zero addend -- and the gap
+    # between them hid a real double-counted-addend bug. Also covers transitive
+    # cross-member pull and a member that must NOT be pulled.
+    if(UNIX)
+        add_test(NAME macho-archive-reloc
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/archive-reloc.sh"
+                    "${MCC_CROSS_DIR}/mcc-x86_64-osx" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-archive-reloc-work")
+        set_tests_properties(macho-archive-reloc PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            TIMEOUT 300)
+    endif()
+
     add_test(NAME macho-codegen-run
         COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
