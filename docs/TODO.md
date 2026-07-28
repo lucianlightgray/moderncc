@@ -149,9 +149,17 @@ line numbers in older entries below are stale, because each fix shifted them (th
 | `ast_hook_vpush` | value-model guard (bad type, or not const/sym/local) | **119** |
 | `ast_hook_call_begin` | `nocode_wanted` | **89** |
 | `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 59 |
-| `ast_hook_cmp_invert` | unmodelled comparison op (`default:` arm) | 24 |
+| `ast_hook_cmp_invert` | `&&`/`\|\|` reached the comparison inverter — see below, NOT a missing case | 24 |
 | `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region | 15 |
 | `ast_hook_call_begin` | callee is not an `AST_Ref` | 14 |
+
+**`ast_hook_cmp_invert`'s `default:` arm looks like a trivial "add the missing cases" fix and is NOT — adding them
+would MISCOMPILE (checked 2026-07-27).** Instrumenting it: all 24 events are `op = 0x90` (`TOK_LAND`, 17) or `0x91`
+(`TOK_LOR`, 7), on an `AST_Binary` in every case — i.e. `!(a && b)`. The hook models inversion as `op ^ 1`, which is
+exactly right for the comparison pairs it lists (`ULT`/`UGE`, `EQ`/`NE`, …) but for the logical operators maps
+`&&` -> `||` while leaving both operands untouched. De Morgan requires negating the operands too, so a bare op-flip
+would record a model that means something different from the code. **The `default:` arm is doing the correct thing;
+closing this needs `!(a && b)` modelled as `!a || !b`, which rewrites the operand subtrees, not a switch case.**
 
 Note what is ABSENT: the constant-condition sites for `?:` and `&&`/`||` (previously 45 + 6) are gone entirely —
 those two fixes removed the whole category rather than reducing it. The `ast_hook_vstore` row is newly visible for
