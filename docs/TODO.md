@@ -1022,6 +1022,31 @@ edit. Reverted; the tree is unchanged.
 **F5 — The vstack SYNC site is real modelling work, with no shortcut. Now the LARGEST remaining cause by a wide
 margin.** Measured 100% the `ast_vn != rel - 1` arm, 0% capacity, so raising `AST_VS_MAX` recovers nothing.
 
+**CHARACTERISED 2026-07-27, and the direction is the opposite of what "SYNC mismatch" suggests.** Instrumenting the
+site (`ast_hook_vpush`, the FIRST of the two `ast_vn != rel - 1` arms — the other is at ~3178, so patch by index, not
+by text) and dumping every event over mcc's own TU gives 261 events, one per desyncing function, and they are
+strikingly uniform:
+
+| measurement | result |
+|---|---|
+| `rel > AST_VS_MAX` (capacity) | **0 of 261** — re-confirms raising the cap is worthless |
+| `delta = rel - 1 - ast_vn` | **-1 for ALL 261** |
+| `vtop` class at the failure | 202 `VT_CONST\|VT_SYM` (156 rvalue, 46 lvalue), 44 `VT_LOCAL` lvalue, 15 plain `VT_CONST` |
+
+`delta == -1` means `ast_vn == rel`, where the hook requires `ast_vn == rel - 1`. **So the MODEL has one node too
+many, not one too few.** The recorder is not failing to model something that was pushed — something CONSUMED a vstack
+entry without the corresponding `ast_vs` node being dropped, and the mismatch is only noticed at the next push. That
+inverts the search: do not go looking for an unmodelled push, look for a pop/consume path that does not decrement
+`ast_vn`.
+
+The `vtop` column says where to look first: in 202 of 261 cases the value being pushed when the discrepancy surfaces
+is a SYMBOL address (`VT_CONST|VT_SYM` — a global, a string literal, or a function being called), which is what makes
+this the dominant site in a TU full of calls and globals. Note it is the NEXT push that reports, so the symbol is a
+witness, not the culprit.
+
+**Every event is a distinct function** (261 events, 261 functions), so this is one systematic gap rather than a few
+functions failing repeatedly.
+
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
 TU at `-O2`, 1849 functions: **1101 faithful / 540 desync / 149 unfaithful / 60 bail / 1 empty**. The desyncs by site:
