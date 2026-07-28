@@ -331,11 +331,31 @@ Wanted:
    ablation on nbody (`MCC_SEARCH_WORKER=1`, each gate forced off) found 20 gates that shrink `.text`, but 10 of them
    land on the SAME 3854 B, which means they are not independently costing 144 B each — they are perturbing which
    configuration the in-process AST search settles on. Do not read that table as 20 separate regressions.
-2. **Bank the `-O3` baseline in the checkpoint.** The cached record should carry the static `-O3` configuration, not
+2a. **Two of the superopt's three search axes were DEAD — fixed 2026-07-27.** Found while measuring item 2. Each
+   round is supposed to explore gate, then budget, then limit, each bounded by `slice = base_ms << round`. But
+   `base_ms = seed_eval_ms * SO_SLICE_FACTOR(8)`, and at `-O4` the whole run's budget is only 4 s, so the FIRST
+   slice already exceeds the entire budget and the gate loop consumes it — the budget and limit loops are then
+   skipped by their own `host_clock_ms() - start < budget_ms` guard. **Proof from the banked checkpoint after 8
+   compiles of the same input: `claim_gate=576` but `budget_cursor=0` and `limit_cursor=0`.** Neither axis had ever
+   been touched. `slice` is now capped at a third of the REMAINING budget, so every axis gets a turn; the same
+   8-compile sequence now reaches `budget_cursor=15, limit_cursor=5` (the limit axis fully exhausted).
+   **Stated honestly: this bought NOTHING measurable.** `.text` and best-of-5 runtime are unchanged on nbody
+   (3998 / 0.17 s), matmul (3025 / 0.52 s) and mandelbrot (2192 / 0.47-0.48 s), and unchanged on the
+   `superopt/promote-floor` fixture (1681). It is landed as a defect fix — the search now explores the space it
+   documents — not as a performance win, and it should not be credited with one later.
+
+2b. **Bank the `-O3` baseline in the checkpoint.** The cached record should carry the static `-O3` configuration, not
    only the searched delta, so a later compile that hits the memo immediately gets the full static optimization set
    without re-deriving it. This is also the fix for the finding above, where a memo hit currently short-circuits the
    per-function search and the driver then burns its freed budget to arrive at the identical binary — with a banked
    floor there is a concrete result to hand back instead.
+   **Quantified 2026-07-27, and it is worse than "burns its freed budget": a warm compile costs exactly as much as a
+   cold one.** Eight successive `-O4` compiles of the same unchanged input: 4.70 / 4.69 / 4.70 / 4.70 / 4.70 / 4.70 /
+   4.78 / 4.74 s, with `.text` settling at 1681 from the second run onward. So from run 2 every compile spends the
+   full 4 s search budget to reproduce a byte-identical binary. Convergence IS reachable — the loop breaks once
+   `claim_gate >= SO_GATE_SPACE` (2576) and both cursors are exhausted — but at ~72 gates banked per run that is
+   roughly 35 compiles away, so in practice no build ever gets there. The cheap win available today is an
+   early-out on a fully-exhausted checkpoint; the fuller fix is this item.
 3. **Regression-guard it — LANDED 2026-07-27 as `superopt/promote-floor`.** A timing assertion would be flaky in CI,
    so the cell locks the FLOOR instead of the runtime, which is deterministic and is the property that actually broke:
    `-O4` output must be byte-identical on `.text` to `-O4` with `MCC_AST_PROMOTE=1` pinned. If the size-scored search

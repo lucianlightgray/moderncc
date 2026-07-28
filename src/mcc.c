@@ -1306,6 +1306,19 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 
 	while (!so_stop && host_clock_ms() - start < budget_ms) { MCC_TRACE("br\n");
 		unsigned slice = base_ms << (round < 16 ? round : 16);
+		/* Each round explores three axes in turn (gate, budget, limit). A slice
+		   wider than a third of the run's budget lets the FIRST axis consume the
+		   whole run, so the later two are never reached at all -- measured on a
+		   warm checkpoint after 8 compiles: claim_gate had advanced to 576 while
+		   budget_cursor and limit_cursor were both still 0. Cap the slice so
+		   every axis gets a turn. */
+		{
+			unsigned el = host_clock_ms() - start;
+			unsigned rem = el < budget_ms ? budget_ms - el : 0u;
+			unsigned share = rem / 3u;
+			if (share && slice > share)
+				{ MCC_TRACE("br\n"); slice = share; }
+		}
 		unsigned g_dead = host_clock_ms() + slice, b_dead, l_dead;
 		unsigned gate_exhausted = 0;
 		while (!so_stop && host_clock_ms() < g_dead &&
