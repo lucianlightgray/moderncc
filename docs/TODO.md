@@ -260,8 +260,38 @@ SPEED proxy, not a size metric — and it is choosing wrong. The driver's childr
 (0.17 s, 29% better than `-O3`). The driver then evaluates candidates on the proxy and ships one that is **65% slower**
 than the baseline it could have kept, and on nbody LARGER as well.
 
-**Fix, in order of confidence:** (1) keep the baseline unless a candidate beats it on a metric that has been VALIDATED
-against real runtime — the current proxy demonstrably has not been; (2) recalibrate or justify `so_spill_w = 48`, which
+**Fix (1) "keep the baseline" WAS ATTEMPTED 2026-07-27 IN THE OBVIOUS FORM AND IT IS WRONG — do not redo it.**
+The obvious reading is "seed the search with the baseline so nothing worse can be shipped", i.e. flip
+`MCC_SO_DEFAULT_SEED` default-on (`best_gate = SO_GATE_DEFAULT` unconditionally at mcc.c:~1223). One line. It makes
+nbody **WORSE: 3636 -> 3998 `.text`**, reproducibly and deterministically (3 clean runs each, checkpoint cache
+`~/.cache/mcc/so-*.ck` cleared between). Reverted.
+
+Why, and this is the load-bearing detail: **`SO_GATE_DEFAULT` is not a cheap candidate.** It RESTORES the user
+environment, so evaluating it at `-O4` re-runs the full in-process AST search for that one evaluation, whereas an
+ordinary gate word `g` is a cheap fixed configuration. The seed eval therefore burns the whole `budget_ms` before the
+gate loop at mcc.c:~1313 executes even once, and the driver ships the unimproved baseline. Seeding with the baseline
+does not *guarantee* the baseline is a floor — it *replaces the search with* the baseline.
+
+**What the same experiment established, which is more useful than the fix that failed:**
+- **The user's baseline is genuinely never a candidate by default.** `best_gate` initialises to `0` (mcc.c:1195), and
+  the gate loop enumerates `g` over `[0, SO_GATE_SPACE)`, which cannot contain `SO_GATE_DEFAULT` (`0xFFFFFFFF`). So
+  the earlier note "the plain baseline IS expressible and IS what `MCC_SO_DEFAULT_SEED` evaluates first" is right
+  about *expressible* and wrong about *evaluated* — nothing evaluates it unless that env is set.
+- **`-O4`'s own default config is far worse than `-O3`'s, and that is the real gap.** Measured on nbody:
+  `MCC_SEARCH_WORKER=1 -O4` (driver off, `-O4` default gates, in-process search) = **3998**, versus `-O3` = **3596**.
+  The driver then searches 3998 down to 3636 — so the driver IS improving on its own baseline by 9%; it just starts
+  from a config that is 11% worse than `-O3`. `-O4` ending up larger than `-O3` is therefore NOT the driver shipping
+  a result it should have rejected (this retracts that framing above); it is the `-O4` default gate set being worse
+  than the `-O3` one, which is exactly what Wanted item 1 (the floor) describes.
+- Current `-O3` vs `-O4` `.text` across the kernels, with the driver as-is: nbody 3596/3636 (**larger**), nsieve
+  1816/1790, mandelbrot 2153/2094, matmul 2595/2329. So nbody is the ONLY kernel where `-O4` loses on size, and the
+  other three are 1-10% wins.
+
+**So the correct shape of the floor is: compile once with the `-O3` configuration, keep that object, and ship a
+superopt candidate only if it beats it.** That costs one extra ordinary compile (cheap, deterministic) rather than one
+extra full-search evaluation (which is what made the seeding attempt fail). The `-O3` config is not expressible as a
+gate word today, so this needs a real baseline slot in the driver, not an env flip.
+Remaining, unchanged: (2) recalibrate or justify `so_spill_w = 48`, which
 appears to be a guess; (3) only then revisit whether `-O4` should optimise speed or size. Note `so_jitscore` already
 exists to score by actual measured runtime (`so_run_score`) and is inert in practice — that is the honest metric this
 proxy is standing in for.
