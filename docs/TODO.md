@@ -416,11 +416,23 @@ emits a different relocation COUNT for the `AUIPC`+`JALR` (`R_RISCV_CALL`/`R_RIS
 function containing an external call is excluded from AST optimization — a larger coverage loss on that target than any
 gate in this file. Next step is a reloc dump on both sides; nothing does that today.
 
-**F7 — Finish `optfire` cross-triple.** Harness support is done (`OPTFIRE_NORUN=1`, `OPTFIRE_MCCFLAGS`,
-`tests/optfire/arch.txt`) and all 72 case sources are freestanding, so a cross mcc compiles them without target headers.
-Remaining: wire per-target cells, and judge the x86-shaped cases individually — `select` expects cmov-style
-if-conversion and `sethi_*` counts x86 register pressure, so those may legitimately not fire elsewhere and should be
-arch-guarded rather than forced.
+**F7 — `optfire` cross-triple: arm64 WIRED 2026-07-27; i386 and riscv64 need triage.** Measured every differ case
+through each cross compiler with `OPTFIRE_NORUN=1`:
+
+| target | fires | does not |
+|---|---:|---|
+| **arm64** | **50 / 51** | `regdisp` only — already arch-guarded to x86_64 |
+| i386 | 34 / 51 | promotion family (6), narrow family (6), reassoc family (4), `vlat` |
+| riscv64 | 31 / 51 | the above plus loop transforms (3), `bfold_*` (4), `math_inline`, `argfwd` |
+
+arm64 is therefore wired: 50 `optfire-arm64/<case>` cells, all passing. They register only when the `mcc-arm64` target
+exists, so the default `MCC_ENABLE_CROSS=OFF` build is untouched (7229/7229 unchanged) and they appear in a
+cross-enabled configure. `arch.txt` is honoured against the CROSS target's cpu rather than the host's, which is what
+keeps `regdisp` out.
+**i386 and riscv64 are NOT wired, deliberately.** Their non-firing sets are large and not yet triaged into 'legitimately
+does not apply on this target' versus 'a real gap'. Wiring them now would either add 17-20 failing cells or paper over
+them with a blanket guard, and the second is worse: `narrow` on i386 is a REAL gap (the 32-bit int<->long long recorder
+desync, cross-arch parity section) that a guard would hide. Triage each family against that section before wiring.
 
 **F8 — Re-earn the gate-swept fuzz coverage.** The first VALID gate-swept soak ran 2026-07-27 (600 seeds, ~31k
 configurations, 0 miscompiles). Everything before it swept nothing, because `GATES[g].env` was passed into a parameter

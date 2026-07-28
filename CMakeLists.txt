@@ -3946,6 +3946,56 @@ if(MCC_BUILD_TESTS)
                     endif()
                 endforeach()
             endif()
+        # Cross-target optfire: the same differ cases run through a cross compiler
+        # with OPTFIRE_NORUN=1, which asserts only that the pass FIRED and skips the
+        # -O0 oracle and the program run (a cross mcc cannot link a runnable host
+        # binary). Registered only when the cross target exists, so the default
+        # MCC_ENABLE_CROSS=OFF build is unaffected. arm64 is wired because it is the
+        # clean case -- measured 50 of 51 differ cases fire there, the one failure
+        # being regdisp, which arch.txt already restricts to x86_64. i386 (34/51) and
+        # riscv64 (31/51) need their non-firing sets triaged first; see TODO.
+            if(UNIX AND TARGET mcc-arm64)
+            file(GLOB _ofx_files "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
+            foreach(_offile IN LISTS _ofx_files)
+                file(STRINGS "${_offile}" _oflines)
+                foreach(_ol IN LISTS _oflines)
+                    if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                        string(REPLACE "|" ";" _of "${_ol}")
+                        list(GET _of 0 _ofname)
+                        list(GET _of 1 _ofopt)
+                        list(GET _of 2 _ofarg)
+                        list(LENGTH _of _oflen)
+                        set(_ofextra "-")
+                        if(_oflen GREATER 3)
+                            list(GET _of 3 _ofextra)
+                        endif()
+                        set(_ofsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
+                        # arch.txt restricts a case to specific CPUs; honour it against
+                        # the CROSS target's cpu, not the host's.
+                        set(_ofskip 0)
+                        list(FIND _of_archnames "${_ofname}" _ofai)
+                        if(NOT _ofai EQUAL -1)
+                            list(GET _of_archcpus ${_ofai} _ofreq)
+                            string(REPLACE "," ";" _ofreq "${_ofreq}")
+                            if(NOT "arm64" IN_LIST _ofreq)
+                                set(_ofskip 1)
+                            endif()
+                        endif()
+                        if(NOT _ofskip AND EXISTS "${_ofsrc}")
+                            add_test(NAME "optfire-arm64/${_ofname}"
+                                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
+                                        differ "$<TARGET_FILE:mcc-arm64>" "${_ofsrc}"
+                                        "${CMAKE_BINARY_DIR}/optfire-arm64" "${_ofname}"
+                                        "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
+                            set_tests_properties("optfire-arm64/${_ofname}" PROPERTIES
+                                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                                ENVIRONMENT "OPTFIRE_NORUN=1;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR}")
+                        endif()
+                    endif()
+                endforeach()
+            endforeach()
+        endif()
+
             file(GLOB _of_cfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters*.txt")
             file(GLOB _of_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _of_lfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/levels*.txt")
