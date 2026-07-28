@@ -124,7 +124,7 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 
 **CURRENT STATE, measured 2026-07-27 on mcc's own amalgamated TU at `-O2` (1849 functions, compile `rc=0` so the
-counts are not truncated): 1343 faithful / 327 desync / 179 unfaithful / 1 bail / 1 empty — `72.6%` FAITHFUL.**
+counts are not truncated): 1392 faithful / 268 desync / 189 unfaithful / 1 bail / 1 empty — `75.3%` FAITHFUL.**
 Session start was 1101 faithful (59.5%) with 60 bails. `faithful` is the figure that matters: it gates the optimizer
 passes, `ast_search_*`, the ROI scorer, `ast_inline_retain`, `ast_reemit_retain` and JIT dispatch. `desync`,
 `unfaithful` and `bail` are all equally excluded, so moving a function BETWEEN them is not progress and not a
@@ -136,9 +136,17 @@ Four fixes landed this session, each through the full bar (host + cross ctest, 3
 | fix | gain |
 |---|---|
 | bare `return;` modelled (was `ast_bail`) | **+217** faithful, bail 60 -> 1 |
+| `sizeof`/`_Alignof` operand hidden from the recorder | +33 |
 | constant `&&`/`||` folded | +20 |
+| static-storage initializers hidden from the recorder | +16 |
 | F3a assignment-as-value (`AST_StoreVal`) | +10 |
 | constant `?:` folded | +5 |
+
+**The pattern that generalises: suspend where the PARSER knows it emits nothing, not where the recorder notices
+trouble.** Two of the six (`sizeof`, static initializers) are the same three-line `ast_hook_synth_begin`/`_end`
+bracket around a parser call whose walk produces no code. The equivalent recorder-side suspends all FAILED — a
+region suspend inside the recorder leaves the model behind the vstack instead of ahead (see the `nocode_wanted`
+attempts), because the values are real even when the code is not.
 
 Remaining 327 desyncs, re-measured after all four fixes. **Identify sites by HOOK NAME, not by line number — the
 line numbers in older entries below are stale, because each fix shifted them (the old "2315" value-model guard is now
@@ -148,7 +156,7 @@ line numbers in older entries below are stale, because each fix shifted them (th
 |---|---|---:|
 | `ast_hook_vpush` | value-model guard (bad type, or not const/sym/local) | **119** |
 | `ast_hook_call_begin` | `nocode_wanted` | **89** |
-| `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 59 |
+| `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 43 |
 | `ast_hook_cmp_invert` | `&&`/`\|\|` reached the comparison inverter — see below, NOT a missing case | 24 |
 | `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region — correct, see below | 15 |
 | `ast_hook_call_begin` | callee is not an `AST_Ref` — relaxing it buys nothing, see below | 14 |
