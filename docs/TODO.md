@@ -303,20 +303,33 @@ And `mcc_pedantic`'s source is precisely the noreturn shape:
 `PUB_FUNC NORETURN void _mcc_error(...)`. So this call site SHOULD have set `func_noreturn` → `CODE_OFF()` →
 `nocode_wanted`, and the validated detector SHOULD have reported 1 for it. It reported 0.
 
-**Therefore treat "0 of 205" as UNRESOLVED, not as a finding.** Two explanations were possible and the macro one is
-now ELIMINATED: `MCC_SET_STATE(fn)` has two definitions, and `src/mccgen.c:1` defines `USING_GLOBALS`, under which it
-is simply `#define MCC_SET_STATE(fn) fn`. So inside `mccgen.c` the call really is a plain call to the `NORETURN`
-`_mcc_error`, not a comma-expression through a computed callee — the callee `Sym` does carry `func_noreturn`, and
-`CODE_OFF()` should fire. (The other definition, `(mcc_enter_state(s1), fn)`, would have produced a computed callee
-and would ALSO have tripped `ast_hook_call_begin`'s callee-kind guard into `desync`, which is not what these
-functions report.)
+**RESOLVED — and the "0 of 205" was MY ANALYSIS SCRIPT, not the compiler.** The `awk` that produced it read the
+nocode field as `$7`, which is `relold=`; the field is `$8`. `split("relold=792", n, "=")` never yields `1`, so every
+function classified as nocode=0. The very run that reported "0 of 205" contains the line
 
-What remains is therefore the second explanation: **the detector's sampling point is still wrong for this path** —
-`ast_hook_call_end` is validated on a synthetic `extern __attribute__((noreturn))` callee but evidently does not
-observe `nocode_wanted` for these in-tree calls. Find out why before re-running the attribution; the count is
-worthless until then. Do not repeat the mistake of reporting a 0 from an instrument not validated on the specific
-positives being counted — that has now happened twice in this section, once with the hook-sampling detector and once
-here.
+    UNFAITHFUL mcc_pedantic newlen=584 oldlen=579 firstdiff=395 relnew=792 relold=792 nocode=1
+
+i.e. the contradiction was visible in the output being summarised. Two commits reported that 0 before it was caught.
+
+**Correct attribution, `$8`:**
+
+| | nocode SEEN | nocode NOT seen |
+|---|---:|---:|
+| length-differs | **19** | 89 |
+| bytes-differ | **5** | 92 |
+
+**24 of 205 (12%)** of the unfaithful bucket involves `nocode_wanted`. Not 0, and not the "roughly 300 of 413" the
+first write-up speculated. Corroborating evidence that the detector was always working: instrumenting the
+`CODE_OFF()` site itself shows it firing **402 times** over the TU, and `ast_hook_call_end` observes
+`nocode_wanted == 0x20000000` (`CODE_OFF_BIT`) **569 times** — 360 in bodies that end `desync`, 209 with the recorder
+still live. So noreturn call sites are recognised and the flag is seen; most simply land in `desync` or stay
+`faithful` rather than in this bucket.
+
+**Standing caution, earned three times in this section.** A `0` from an instrument is not a finding until the
+instrument has been shown to produce a `1` on a known positive DRAWN FROM THE SAME POPULATION, and until the
+summarising script has been checked against a raw line of its own input. The first hook-sampling detector genuinely
+was broken (it read 0 on `a_noret` itself); the `ast_hook_call_end` one was fine and was wrongly blamed for two
+commits because the awk above sat on top of it. Print one raw record next to the summary before believing either.
 
 Fixing this means the recorder must model "this branch ends unreachable" so replay suppresses the same jump. That is
 the same dead-region state the 92-event `ast_hook_call_begin`/`nocode_wanted` desync site gives up on, so one model
