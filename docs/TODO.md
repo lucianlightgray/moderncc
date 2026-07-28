@@ -378,6 +378,26 @@ outer store, and that value is what goes missing. Anyone fixing it should re-che
 already pins evaluation counts for `a = b = f(v)` and would catch a fix that duplicates the RHS instead of dropping
 it.
 
+**Mechanism notes gathered 2026-07-28 — read these before attempting a fix; the accounting does NOT close yet.**
+- `AST_FB_STORE_VALUE_LIVE` is set by `ast_finalize_storevals` ONLY when the marker is the LEFTMOST leaf of the
+  statement immediately following the store. In `a = b = 0` the marker is the outer store's VALUE (second child)
+  while the leftmost leaf is the lvalue `a`, so the flag is never set for the plain chained idiom, and replay's
+  `AST_StoreVal` case takes its fallback branch.
+- That fallback re-emits the inner store's RHS, which would make replay LONGER. The observed replay is SHORTER — 12
+  bytes against 17, missing exactly one `mov eax,0` — so the fallback is evidently not what runs either.
+- `ast_hook_vstore` resolves a marker back to the inner store's RHS at RECORD time (the `mkr` block), so the outer
+  store's value child ends up being the same `Literal` node the inner store already owns — a node with two parents,
+  since `ast_add_child` reparents without unlinking. Which child chain replay walks decides whether it is emitted
+  once, twice or never. **That is the unanswered question, and it should be answered before anything is changed.**
+
+**Do NOT fix this by making the marker emit at its use site.** That was tried earlier in this session (F3a,
+"emit-at-marker"): correct at `-O0`/`-O1`, MISCOMPILED at `-O2`/`-O3`, and caught only because
+`assign_value_effects.c` counts evaluations rather than checksumming results.
+
+Contrast with the sign extension fixed in `b0fb11d5`, where the parse-vs-replay trace closed cleanly and the fix was
+a parser-side synth-suspend bracket with no change to model shape. Here it does not close, so the same confidence is
+not available.
+
 **MEASURED 2026-07-28: 45 of 205 (22%).** A `chain=` field now rides the `UNFAITHFUL` trace line, set in
 `ast_hook_vstore` whenever the store's value is an `AST_StoreVal` marker or already has a parent — i.e. the
 syntactic chain, independent of whether `MCC_AST_CHAINSTORE` is on. Validated before use on both the synthetic
