@@ -4227,6 +4227,11 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 								(s1->nostdlib || s1->freestanding) ? 0 : 1);
 		if (s1->cversion)
 			{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion); }
+		if (s1->cversion >= 202311) { MCC_TRACE("br\n");
+			cstr_printf(cs, "#define bool _Bool\n");
+			cstr_printf(cs, "#define true ((_Bool)1)\n");
+			cstr_printf(cs, "#define false ((_Bool)0)\n");
+		}
 		cstr_cat(cs,
 #if MCC_CONFIG_PREDEFS
 #include "mccdefs_.h"

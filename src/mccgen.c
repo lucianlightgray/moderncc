@@ -2453,6 +2453,8 @@ static void gen_opl(int op) { MCC_TRACE("enter\n");
 #endif
 
 static uint64_t value64(uint64_t l1, int t) { MCC_TRACE("enter\n");
+	if ((t & VT_BTYPE) == VT_BOOL)
+		{ MCC_TRACE("br\n"); return l1 != 0; }
 	if ((t & VT_BTYPE) == VT_LLONG || (MCC_PTR_SIZE == 8 && (t & VT_BTYPE) == VT_PTR))
 		{ MCC_TRACE("br\n"); return l1; }
 	else if (t & VT_UNSIGNED)
