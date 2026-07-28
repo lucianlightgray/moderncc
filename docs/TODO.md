@@ -1316,7 +1316,35 @@ them:**
   hides both is wrong, see below), and whatever is admitted must survive a self-host generation — which the plain
   Invoke node for a dead call does not.
 
-  **The likely mechanism to reuse is `AST_Poison`, and there is a concrete next experiment.** `MCC_AST_REPLAY_DUMP=1`
+  **RESOLVED 2026-07-27 by dumping the model AT the faithfulness check (before any pass runs) — and it overturns the
+  `Poison` hypothesis below, which is retained only so the wrong lead is not re-followed.** The recorder records dead
+  code as an ORDINARY constant-condition `If`, with the dead statement fully present inside it, and the body is
+  `faithful`:
+
+      [rec-model] f (faithful=1)
+      BasicBlock
+        If
+          Literal 0
+          BasicBlock
+            Store
+              Ref
+              Literal 1
+        Store …
+
+  So nothing special happens in the recorder at all. Replay emits that `If`, and **codegen's own constant folding
+  makes the parser and the replay both emit nothing for the branch** — that is why dead code without a call is
+  faithful. The `Poison` seen in `MCC_AST_REPLAY_DUMP` is produced by SCCP AFTER the faithfulness check, and is
+  irrelevant to this item.
+
+  **Consequence: "have the call hook leave a Poison" is the WRONG plan.** For `if (0) h(1);` the recorder should just
+  record the `Invoke` inside the constant `If` like any other statement — which is exactly what deleting the
+  `nocode_wanted` guard does, and that case does go faithful. The cases that then become `unfaithful` (`sizeof(h(1))`,
+  `0 && h(1)`) are the ones NOT wrapped in a constant `If`, so codegen has nothing to fold and replay emits a call the
+  parser never emitted. **That, not the `if (0)` case, is what needs a mechanism** — and it is also where the
+  self-host fixpoint failure must be coming from, since the `if (0)` form is structurally identical to code that is
+  already faithful today.
+
+  Superseded lead, kept so it is not re-tried: **the likely mechanism to reuse is `AST_Poison`.** `MCC_AST_REPLAY_DUMP=1`
   on `void f(void){ if (0) b = 1; a = 2; }` shows the dead statement represented as a single `Poison` node:
 
       BasicBlock          (dead)              BasicBlock            (live `if (1)`)
