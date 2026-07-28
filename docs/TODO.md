@@ -7,7 +7,7 @@
 - Completed items are pruned entirely; detail lives in git history.
 - M8 bar: ctest byte-identity · `-O6` differential vs gcc/clang · 3-stage self-host fixpoint · **`MCC_JIT=1` ≡ `MCC_JIT=0` on every triple that has a JIT (P0)** · UBSan/ASan · cross-arch (i386/arm32/riscv64/arm64) · differential fuzz (x86_64 + native arm64) · shadow-IV zero-divergence. The differential fuzzer runs on native x86_64 AND arm64 (`ubuntu-24.04-arm`); only the shadow-IV oracle stays x86-only.
 - Cross-arch checks use `cmake-cross/mcc-i386` and `cmake-cross/mcc-arm64` (the `cmake-qemu-*` builds emit native x86_64 and lack the optimizer).
-- Always enable TRACE while working: configure with `-DMCC_CONFIG_TRACE=ON` (defines `MCC_CONFIG_TRACE=1`, activating the `MCC_TRACE(...)` branch markers) and run with `-v128` (the `MCC_LOG_TRACE` bit, `1<<7`). `MCC_TRACE` writes a `[TRACE] file:line func:` line to **stderr** per branch — capture with `2>trace.log`. The logging layer (`src/mcclog.h`) is `MCCState`-free: it reads a free-standing `mcc_log_verbose` global (declared in `mcclog.h`, defined in `mcchost.c`, mirrored from the active state in `mcc_enter_state`/`mcc_exit_state`); explicit-source variants are `mcc_log_enabled_v`/`mcc_logf_v`/`MCC_TRACE_V`/`MCC_DEBUG_V`. Standalone non-amalgamated compiles of `mccast.c`/`mccstats.c` (e.g. `asttool`) can trace if built with `MCC_CONFIG_TRACE=1` and `mcc_log_verbose` set directly (those targets don't parse `-v`).
+- Always enable TRACE while working: configure with `-DMCC_CONFIG_TRACE=ON` (defines `MCC_CONFIG_TRACE=1`, activating the `MCC_TRACE(...)` branch markers) and run with `-v128` (the `MCC_LOG_TRACE` bit, `1<<7`). `MCC_TRACE` writes a `[TRACE] file:line func:` line to **stderr** per branch — capture with `2>trace.log`. **SCOPE IT** (`MCC_TRACE_FILE`/`MCC_TRACE_FUNC` substring comma-lists, `MCC_TRACE_SKIP` exact names): an unscoped trace of a two-line program is 127,871 lines of which 80% is `mccpp.c` preprocessor churn, and `MCC_TRACE_FILE=mccast` cuts that to 2,467. To find where two configurations diverge, do NOT hand-patch a temporary `fprintf` into a suspect guard — run `tools/tracediff.sh <mcc> <src> <sideA> <sideB>`, which diffs the two traces and prints the first divergence with the deciding values attached (each side takes env assignments and/or mcc flags, so both `MCC_AST_FOO=0 MCC_AST_FOO=1` and `-O1 -O3` work). See the tracing section below. The logging layer (`src/mcclog.h`) is `MCCState`-free: it reads a free-standing `mcc_log_verbose` global (declared in `mcclog.h`, defined in `mcchost.c`, mirrored from the active state in `mcc_enter_state`/`mcc_exit_state`); explicit-source variants are `mcc_log_enabled_v`/`mcc_logf_v`/`MCC_TRACE_V`/`MCC_DEBUG_V`. Standalone non-amalgamated compiles of `mccast.c`/`mccstats.c` (e.g. `asttool`) can trace if built with `MCC_CONFIG_TRACE=1` and `mcc_log_verbose` set directly (those targets don't parse `-v`).
 - Drive each change with grep: grep the token/env/function/`ST_FUNC` name across `src/` → edit → rebuild → run `-v128 2>trace.log` and grep the trace (plus ctest/differential logs) to confirm the intended branch fired and byte-identity/gcc-parity held. Preserve the `MCC_TRACE("br\n")`/`MCC_TRACE("enter\n")` markers on new branches so `tracegate` stays satisfied.
 - Build/test loop: `cmake --build cmake-debug --target mcc -j` (the configured dir; ninja incremental is seconds). AST-internal unit selftests live in `tools/asttool.c` (`#include "mccast.c"` directly, so it sees statics + needs VT_* `#ifndef` fallbacks; framework `CHECK(cond,"msg")`, suites dispatched by `argv[1]`). Build `--target asttool`, run `./cmake-debug/asttool <suite>` (no arg = all). Register a new suite in BOTH the `tools/asttool.c` main dispatch AND the `foreach(_an ...)` list in `CMakeLists.txt` (~3292), reconfigure, then `ctest --test-dir cmake-debug -R "^ast/"`. The `mcc_build` fixture (~66s) rebuilds mcc first. Self-host compile: extract `-D`/`-I` from `compile_commands.json` for `src/mcc.c` and pass as argv (mcc's `@file` mangles quoted `-D` path macros).
 - Fast `MCC_AST_*` gate validation (skips the cmake/JIT build): in a `debian:bookworm-slim` container (`apt-get install gcc gcc-multilib gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu qemu-user`), build a per-target mcc as a host tool straight from the amalgamation — `gcc -w -DMCC_CONFIG_OPTIMIZER=1 -DMCC_TARGET_<T> -Isrc -Iinclude -Isrc/formats -Isrc/objfmt -Isrc/arch/<a> -O0 -o mcc-<T> src/mcc.c` (T ∈ X86_64/ARM64/RISCV64/I386; entry `src/mcc.c`→`libmcc.c`). Run mcc with `-B/src -I/src/runtime/include` (its own headers live in `runtime/include`, not `include/`) and freestanding test programs (`extern int printf(...)`, no system headers — avoids glibc multiarch errors). Isolate codegen with `mcc -c foo.c -o foo.o` then link/run via the matching cross gcc (`aarch64/riscv64-linux-gnu-gcc`, `gcc -m32` for i386, native for x86_64) under `qemu-<arch> -L /usr/<triple>` (i386/x86_64 run native; mcc's own linker fails in slim images, no `crt1.o`). Byte-identity = gate-off object vs no-env object (`md5sum`); fire = gate-on ≠ gate-off; correctness = diff vs the same-arch gcc reference. On a Windows/MSYS host every `docker run`/`exec` with a `-v` mount needs `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'`; use a persistent `docker run -d … sleep N` + `docker exec` to build once and iterate. Full AOT==JIT / arm64-native needs the cmake debug preset with the embed-jit blob (heavy).
@@ -120,6 +120,50 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
   is `mccjit-lazy[install]`. Same substring class as `grep faithful` matching `unfaithful`.
 
   2. **Wider admission exposes near-match acceptance, which breaks `MCC_JIT=1` == `MCC_JIT=0`.** With `MCC_JIT_LAZY=1 MCC_JIT_SEARCH=1` the widened gate changed program output (FP accumulation diverged in the 4th significant digit); conservative gate matched exactly. `MCC_JIT_NEARMATCH` is default-ON and by design KEEPS a variant that mismatches the baseline on a small input set, so admitting more functions admits more divergence. That is a direct P0 parity violation and is the harder of the two.
+
+## Finding WHERE two configurations diverge — use the trace, stop hand-patching printfs (built 2026-07-28)
+
+Every recorder diagnosis in this file was reached the same slow way: hand-patch a temporary `fprintf` into whichever
+guard looked suspicious, rebuild, measure, revert, repeat. The instrumentation was thrown away each time, so the next
+question started from zero. That was unnecessary — `MCC_CONFIG_TRACE` builds already carry **11,476 trace sites**
+(every function entry and every branch, enforced by the `trace-gate-invariant` cell). The information was always
+there; what was missing was a way to read it.
+
+**Three changes make it usable, and `tools/tracediff.sh` drives them:**
+
+1. **Scoping** (`mcclog.h`): `MCC_TRACE_FILE` / `MCC_TRACE_FUNC` (substring, comma-list) and `MCC_TRACE_SKIP` (exact
+   function names). This matters more than it sounds — on a two-line test program an unscoped `-v128` trace is
+   **127,871 lines, 8.4 MB, of which 105,331 (80%) are `mccpp.c` preprocessor churn** that never contributes to a
+   codegen divergence. `MCC_TRACE_FILE=mccast` cuts it to 2,467.
+2. **Values** (`MCC_TRACE_IF` in `mcclog.h`, used at `ast_hook_vpush`/`vstore`/`vdup`/`cmp_invert`): those four
+   verdict-producing hooks now print `r=%#x t=%#x vn=%d rel=%d` instead of a bare `enter`, so the diff shows WHICH
+   VALUE decided, not merely which line ran. `MCC_TRACE_IF` evaluates its arguments only when the TRACE bit is
+   actually set — a plain `MCC_TRACE` would dereference `vtop` on every hook call in a trace build.
+3. **Desync state** (`AST_SET_DESYNC`): the macro recorded only `__LINE__`. It now also emits
+   `DESYNC vn=%d inop=%d incall=%d bail=%d`, so a rejected body says why rather than just where.
+
+**Worked example — this is the exact bug that motivated the tool.** The `MCC_AST_OPASSIGN` staging bug above cost a
+hand-instrumented guard, a rebuild and a revert to find. With the tool it is one command:
+
+    tools/tracediff.sh ./cmake-debug/mcc repro.c MCC_AST_OPASSIGN=0 MCC_AST_OPASSIGN=1
+
+    == trace sizes: A=2467  B=4495  (scope: file=mccast)
+    == FIRST DIVERGENCE (this is the actionable line)
+      src/mccast.c:2528 ast_hook_vdup: enter r=0x100 t=0x9 vn=1 rel=1
+     -src/mccast.c:2532 ast_hook_vdup: br
+     +src/mccast.c:6569 ast_expr_pure: enter
+
+`r=0x100` is `VT_LVAL`, `t=0x9` is `VT_DOUBLE`, and the two configs split on whether `ast_hook_vdup` bails or runs the
+purity check — which is the entire answer, with the deciding values attached.
+
+**Reach for this whenever the question is "why is this body accepted here and rejected there".** It answers
+config-vs-config directly (gate on/off, `-O2` vs `-O3`, arch vs arch via `TD_OPT`/extra flags). It does NOT answer
+"why is this one run wrong" — there is no second trace to diff against.
+
+Guarded by the `ast/tracediff` ctest cell, which asserts all three properties independently: that scoping still
+narrows the trace, that the hooks still print `r=`/`t=`, and that `AST_SET_DESYNC` still dumps state. Each can rot
+silently and each would quietly return the workflow to hand-patching. `trace-gate-invariant` (`tools/tracegate.c`)
+accepts `MCC_TRACE_IF("enter ...")` as a valid function opener alongside `MCC_TRACE("enter\n")`.
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 

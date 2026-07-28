@@ -1781,7 +1781,7 @@ static int ast_vdup_pending;         /* one-shot: ast_hook_vdup -> ast_hook_vpus
 static int ast_opassign_store_pending; /* one-shot: tag the next Store as op-assign */
 static int ast_desync;
 static int ast_desync_line;
-#define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; } } while (0)
+#define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
 static int ast_base_depth;
 int ast_in_op;
 static int ast_in_call;
@@ -2290,7 +2290,7 @@ void ast_hook_stmt(int t) { MCC_TRACE("enter\n");
 	}
 }
 
-void ast_hook_vpush(void) { MCC_TRACE("enter\n");
+void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	if (ast_vdup_pending) { MCC_TRACE("br\n");
 		/* This push is the compound-assignment vdup (ast_hook_vdup validated the
 		 * state and LHS purity just before vdup ran). Duplicate the top ast_vs AST
@@ -2416,7 +2416,7 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn++] = b;
 }
 
-void ast_hook_cmp_invert(void) { MCC_TRACE("enter\n");
+void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	AstLocal n;
 	int op;
 	static int on = -1;
@@ -2525,7 +2525,7 @@ void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
  * node (deep copy) instead of desyncing on the reg-lvalue leaf. Otherwise leave
  * ast_vdup_pending clear ⇒ the normal vpush desync fires (current safe behavior,
  * function falls back to its un-optimized baseline). */
-void ast_hook_vdup(void) { MCC_TRACE("enter\n");
+void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	ast_vdup_pending = 0;
 	if (!ast_opassign_env || !ast_active || !ast_capture || ast_desync ||
 			ast_in_op || ast_in_call)
@@ -3439,7 +3439,7 @@ void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 	ast_vn--;
 }
 
-void ast_hook_vstore(void) { MCC_TRACE("enter\n");
+void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;

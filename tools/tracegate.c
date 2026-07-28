@@ -91,8 +91,8 @@ static int lineno(const char *base, const char *p) {
 
 /* raw+off begins "MCC_TRACE"; verify its format arg starts with `want`
    ("enter" for functions, "br" for branches). */
-static int arg_is(const char *rawtok, const char *want) {
-	const char *p = rawtok + 9; /* past "MCC_TRACE" */
+static int arg_is(const char *rawtok, int off, const char *want) {
+	const char *p = rawtok + off; /* past the macro name */
 	while (*p == ' ' || *p == '\t')
 		++p;
 	if (*p != '(')
@@ -111,13 +111,18 @@ static int arg_is(const char *rawtok, const char *want) {
 static void check_open(const char *path, const char *s, const char *raw,
 											 const char *brace, const char *kind, const char *want) {
 	const char *t = skip_ws(brace + 1);
-	if (!word_is(t, "MCC_TRACE")) {
+	int off;
+	if (word_is(t, "MCC_TRACE_IF"))
+		off = 12;
+	else if (word_is(t, "MCC_TRACE"))
+		off = 9;
+	else {
 		printf("  %s:%d: %s does not open with MCC_TRACE\n", path,
 					 lineno(s, brace), kind);
 		g_violations++;
 		return;
 	}
-	if (!arg_is(raw + (t - s), want)) {
+	if (!arg_is(raw + (t - s), off, want)) {
 		printf("  %s:%d: %s opens with MCC_TRACE but not (\"%s...\")\n", path,
 					 lineno(s, brace), kind, want);
 		g_violations++;

@@ -3682,6 +3682,22 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 900)
         endif()
 
+        # Guard the TRACE-based divergence workflow: MCC_TRACE_FILE scoping must
+        # keep narrowing the trace, the recorder hooks must keep printing values
+        # rather than a bare "enter", and AST_SET_DESYNC must keep dumping state.
+        # Without all three, finding where two configurations diverge goes back
+        # to hand-patching a temporary fprintf into a suspect guard.
+        if(UNIX)
+            add_test(NAME ast/tracediff
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/tracediff.sh"
+                        "${_mcc_exe}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/tracediff.sh"
+                        "${CMAKE_BINARY_DIR}/ast-tracediff")
+            set_tests_properties(ast/tracediff PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 600)
+        endif()
+
         find_program(MCC_OBJCOPY objcopy)
         if(UNIX AND MCC_OBJCOPY)
             add_test(NAME superopt/promote-floor

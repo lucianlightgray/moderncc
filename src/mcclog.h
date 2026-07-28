@@ -36,6 +36,8 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 typedef unsigned char MccLogMask;
 
@@ -105,10 +107,57 @@ static inline void mcc_logf_v(unsigned char verbose, MccLogMask bit,
 	va_end(ap);
 }
 
+static inline int mcc_trace_tok(const char *list, const char *s, int exact) {
+	const char *p = list;
+	while (*p) {
+		const char *e = p;
+		size_t n;
+		while (*e && *e != ',')
+			e++;
+		n = (size_t)(e - p);
+		if (n) {
+			if (exact) {
+				if (!strncmp(s, p, n) && s[n] == 0)
+					return 1;
+			} else {
+				const char *q;
+				for (q = s; *q; q++)
+					if (!strncmp(q, p, n))
+						return 1;
+			}
+		}
+		p = *e ? e + 1 : e;
+	}
+	return 0;
+}
+
+static inline int mcc_trace_want(const char *file, const char *func) {
+	static int mcc_trace_filt_init;
+	static const char *mcc_trace_only_file;
+	static const char *mcc_trace_only_func;
+	static const char *mcc_trace_skip_func;
+
+	if (!mcc_trace_filt_init) {
+		mcc_trace_filt_init = 1;
+		mcc_trace_only_file = getenv("MCC_TRACE_FILE");
+		mcc_trace_only_func = getenv("MCC_TRACE_FUNC");
+		mcc_trace_skip_func = getenv("MCC_TRACE_SKIP");
+	}
+	if (mcc_trace_only_file && !mcc_trace_tok(mcc_trace_only_file, file, 0))
+		return 0;
+	if (mcc_trace_only_func && !mcc_trace_tok(mcc_trace_only_func, func, 0))
+		return 0;
+	if (mcc_trace_skip_func && mcc_trace_tok(mcc_trace_skip_func, func, 1))
+		return 0;
+	return 1;
+}
+
 static inline void mcc_trace_at(const char *file, int line, const char *func,
 																const char *fmt, ...) {
 	va_list ap;
 	if (!mcc_log_enabled(MCC_LOG_TRACE))
+		return;
+	if (!mcc_trace_want(file, func))
 		return;
 	fprintf(stderr, "%s%s:%d %s: ", mcc_log_tag(MCC_LOG_TRACE), file, line, func);
 	va_start(ap, fmt);
@@ -120,6 +169,8 @@ static inline void mcc_trace_at_v(unsigned char verbose, const char *file, int l
 																	 const char *func, const char *fmt, ...) {
 	va_list ap;
 	if (!mcc_log_enabled_v(verbose, MCC_LOG_TRACE))
+		return;
+	if (!mcc_trace_want(file, func))
 		return;
 	fprintf(stderr, "%s%s:%d %s: ", mcc_log_tag(MCC_LOG_TRACE), file, line, func);
 	va_start(ap, fmt);
@@ -134,9 +185,15 @@ static inline void mcc_trace_at_v(unsigned char verbose, const char *file, int l
 #define MCC_TRACE(...) mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__)
 #define MCC_TRACE_V(verbose, ...)                                              \
 	mcc_trace_at_v(verbose, __FILE__, __LINE__, __func__, __VA_ARGS__)
+#define MCC_TRACE_IF(...)                                                      \
+	do {                                                                         \
+		if (mcc_log_enabled(MCC_LOG_TRACE))                                        \
+			mcc_trace_at(__FILE__, __LINE__, __func__, __VA_ARGS__);                 \
+	} while (0)
 #else
 #define MCC_TRACE(...) ((void)0)
 #define MCC_TRACE_V(verbose, ...) ((void)0)
+#define MCC_TRACE_IF(...) ((void)0)
 #endif
 
 #endif
