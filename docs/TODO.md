@@ -114,7 +114,21 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
 
 The 48%-unoptimized headline is unaffected (832 of 1736 non-faithful). But **`CMP_INVERT` was recorded as a net coverage LOSS of 8 functions, justified as 'correctness costs a little coverage'. That was wrong — it is a net GAIN of 9.** The correctness argument for it stands on its own; the trade-off framing does not, and is retracted. `MEMBER_AGG` is +106 not +136, `MEMBER_CONST` +46 not +51 (its desync reduction of 51 was correct — that number was measured a different way).
 
-Established 2026-07-27 while building `optfire`. **48% of functions get no AST optimization on x86_64** — 832 of 1736
+**SUPERSEDED 2026-07-27 by the F1 flips — the ceiling is now 41%, not 48%.** Re-measured on mcc's own TU at `-O2`
+with `MEMBER_AGG`/`MEMBER_CONST`/`CMP_INVERT` all default-on, against the same compiler with all three forced off:
+
+| | faithful | desync | unfaithful | bail | non-faithful |
+|---|---:|---:|---:|---:|---:|
+| all three OFF (old) | 896 (48.5%) | 746 | 148 | 57 | **952 (51.5%)** |
+| all three ON (now) | **1090 (59.0%)** | 540 | 157 | 60 | **758 (41.0%)** |
+
+**+194 functions faithful, +10.5 percentage points**, out of 1848. Desync falls by 206; the +9 unfaithful and +3 bail
+are the known `MEMBER_CONST` residue (F3) and cost nothing, since unfaithful and desync are equally excluded. Since an
+optimizer pass cannot run in a function the recorder did not model faithfully, this bounds every other optimization
+number in this file — so figures below that were derived against the 48% ceiling are now conservative.
+
+Original entry, kept because the itemised causes below are still measured against it. Established 2026-07-27 while
+building `optfire`. **48% of functions get no AST optimization on x86_64** — 832 of 1736
 non-faithful over mcc's own TU at `-O2` (642 desync, 139 unfaithful, 904 faithful, plus bail/empty). An optimizer pass
 cannot run in a function the recorder did not model faithfully, so this bounds every other optimization number in this
 file. Counts here are the anchored ones from the correction table above; do not mix them with the pre-correction
