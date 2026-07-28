@@ -687,8 +687,29 @@ chains two vstores, the replay emits two independent stores)"*. Chained assignme
 assignment-in-condition are the SAME defect seen twice — both are "the value a Store produced" being re-derived rather
 than reused. Fixing the residual properly should close both.
 
-NOTE this is a coverage fix with a correctness-shaped failure mode — a wrong fix here duplicates or drops a call — so
-it needs the exec corpus plus the differential fuzz, not just a fidelity count.
+**IMPORTANT CORRECTION to my own repeated caution on this item (2026-07-27).** I wrote several times that F3a "has a
+correctness-shaped failure mode — a wrong fix here duplicates or drops a call". **That is wrong for the REPLAY side,
+and the distinction matters for how this and every similar modelling item should be approached.** The faithfulness
+check is ALWAYS ON, not gated behind `MCC_AST_VERIFY`: `ast_replay_body()` emits the replayed body and it is then
+compared byte-for-byte AND relocation-for-relocation against the parser's own output —
+
+    faithful = new_len == body_len &&
+               memcmp(cur_text_section->data + ast_body_ind_sv, orig, body_len) == 0 &&
+               new_rel - ast_reloc0_sv == rel_len &&
+               (rel_len == 0 || ast_reloc_range_equiv(...));
+
+— and EVERY consumer is gated on that flag: the optimizer passes, `ast_search_select`/`ast_search_axis_pick`, the ROI
+scorer, `ast_inline_retain`, `ast_reemit_retain` and JIT dispatch. The whole replay runs under a `setjmp` error sink
+as well. **So a replay that does not reproduce the parser's bytes exactly is never used for anything: a replay bug
+degrades to lost coverage, not a miscompile.** That is a much cheaper experiment than this file has been assuming,
+and it is why the existing gates (`optfire`, the ratchet, the exec corpus) are the right validation for replay work.
+
+**Where the real danger is, stated precisely so this correction is not over-read:** a change that makes the MODEL
+semantically wrong while the unoptimized replay still happens to be byte-identical IS dangerous, because the optimizer
+passes then transform a wrong tree and re-emit from it — and that output is not compared against anything. So:
+**replay bugs are safe, model bugs are not.** A fix to F3a changes what the model records, so it still needs the exec
+corpus and the differential fuzz — but the byte check will catch the ordinary failure of simply getting the emission
+wrong, which is the failure this item was most likely to hit.
 
 **The guard for that fix LANDED 2026-07-27, before the fix itself: `tests/exec/optimizer/assign_value_effects.c`.**
 Ten shapes of assignment-used-as-a-value (`if`/`while` condition, chained `a = b = f()`, both arms of a `&&`, nested
