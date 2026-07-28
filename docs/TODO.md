@@ -151,7 +151,17 @@ line numbers in older entries below are stale, because each fix shifted them (th
 | `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 59 |
 | `ast_hook_cmp_invert` | `&&`/`\|\|` reached the comparison inverter — see below, NOT a missing case | 24 |
 | `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region — correct, see below | 15 |
-| `ast_hook_call_begin` | callee is not an `AST_Ref` | 14 |
+| `ast_hook_call_begin` | callee is not an `AST_Ref` — relaxing it buys nothing, see below | 14 |
+
+**`ast_hook_call_begin`'s callee-kind guard is conservative but relaxing it BUYS NOTHING (checked 2026-07-27).**
+It fires when the callee is a COMPUTED expression rather than a plain `AST_Ref`: `s.m(1)` (struct member),
+`t[i](1)` (array of function pointers) and `(c ? h : fp)(1)` (ternary) all desync, while a direct call and a plain
+function-pointer variable — global or local — are faithful. Widening the accepted kinds to `Load`/`Unary`/`Binary`/`If`
+does let those bodies through, but they land in **`unfaithful`**, not `faithful`: replay does not reproduce the
+parser's bytes for a computed callee. Since `unfaithful` and `desync` are equally excluded, that is a wash, and the
+extra permissiveness only loses the guard's clarity. Reverted. Recovering these 14 needs the replay side to emit a
+computed callee the way the parser does (evaluation order of callee versus arguments is the likely culprit), not a
+looser recorder check.
 
 **`ast_hook_vstore`'s ternary/landor guard is also CORRECT, and closing it is a structural change (checked
 2026-07-27).** Every conditional-store shape reaches it — `x ? (v=1) : (v=2)`, `x && (v=1)`, `x || (v=1)`, and the
