@@ -666,6 +666,21 @@ path in `ast_hook_vstore` DOES guard against this (`chained = … && ast_parent(
 `ast_dup_sub`), but the guard is conditioned on `ast_chainstore_env` and only covers store-into-store, not
 store-into-condition.
 
+**OPEN LEAD, worth checking before the fix — do any FAITHFUL functions carry a stolen node?** It matters because
+`faithful` is what gates the optimizer passes: if a stolen-node DAG only ever occurs in `unfaithful` bodies it is
+inert (nothing optimizes them), but if a faithful body contains one then passes are transforming an invalid model and
+re-emitting from it, which is the one failure mode that is NOT caught by the byte check. Counting `MCC_REPARENT_DBG`
+events over mcc's own TU at `-O2`: **408 events total, and 69 of them are in functions whose final verdict is
+`faithful`** (58 unfaithful, 23 desync across six sites, 1 bail).
+
+**That is a LEAD, not a finding, and must not be quoted as one.** `ast_add_child` prints whenever the child already
+had a parent, which also covers legitimate restructuring where the old parent is being discarded and its child list
+updated — so a reparent event is not by itself evidence of a node reachable from two child lists. Settling it needs a
+real consistency check (for every node, assert its `parent[]` owner's `first_child`/`next_sib` chain actually contains
+it, and that no other node's chain does), which nothing in-tree does today. **That checker is the right next step
+here** — it is cheap, it is a pure assertion with no codegen risk, and it either clears the DAG hazard or finds a
+genuine latent bug in optimized output.
+
 **ROOT CAUSE, localised to one line — `ast_hook_vstore` (mccast.c:3442):**
 
     ast_add_child(ast_cur, st, lval);
