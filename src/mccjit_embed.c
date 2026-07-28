@@ -1466,18 +1466,30 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 	void *tick = (void *)mccjit_counter_tick;
 	size_t page = host_pagesize();
 	unsigned char *p;
-	static const uint32_t code[22] = {
-			0xd10103ffu, /* sub  sp,sp,#64 */
-			0xf90017e0u, /* str  x0,[sp,#40] */
-			0xf90013e1u, /* str  x1,[sp,#32] */
-			0xf9000fe2u, /* str  x2,[sp,#24] */
-			0xf9000be3u, /* str  x3,[sp,#16] */
-			0xf90007e4u, /* str  x4,[sp,#8] */
-			0xf90003e5u, /* str  x5,[sp,#0] */
+	/* The GP arg registers x0-x5 are stored REVERSE (x0 at the highest slot, x5
+	   at [sp,#0]) so x1=sp gives mccjit_counter_tick a regs[] where
+	   regs[MCCJIT_KGC_MAXARG-1-i] == arg i (mccjit_counter_capture's contract).
+	   The FP/SIMD arg registers v0-v7 must ALSO be preserved: mccjit_counter_tick
+	   calls into libc (pthread) which clobbers the caller-saved v0-v7, and an
+	   installed function's `double`/`float` args live there (AAPCS64). Saving only
+	   the GP regs corrupted every FP-arg function's arguments before the baseline
+	   even ran -- the MCC_JIT_LAZY FP-parity failure. */
+	static const uint32_t code[30] = {
+			0xd10303ffu, /* sub  sp,sp,#192 */
+			0xf90003e5u, /* str  x5,[sp,#0]  (regs[0]) */
+			0xf90007e4u, /* str  x4,[sp,#8]  (regs[1]) */
+			0xf9000be3u, /* str  x3,[sp,#16] (regs[2]) */
+			0xf9000fe2u, /* str  x2,[sp,#24] (regs[3]) */
+			0xf90013e1u, /* str  x1,[sp,#32] (regs[4]) */
+			0xf90017e0u, /* str  x0,[sp,#40] (regs[5]) */
 			0xf9001bfeu, /* str  x30,[sp,#48] */
-			0x580001c0u, /* ldr  x0,#56   (state @ +88) */
+			0xad0207e0u, /* stp  q0,q1,[sp,#64] */
+			0xad030fe2u, /* stp  q2,q3,[sp,#96] */
+			0xad0417e4u, /* stp  q4,q5,[sp,#128] */
+			0xad051fe6u, /* stp  q6,q7,[sp,#160] */
+			0x58000240u, /* ldr  x0,#72   (state @ +120) */
 			0x910003e1u, /* mov  x1,sp */
-			0x580001d0u, /* ldr  x16,#56  (tick @ +96) */
+			0x58000250u, /* ldr  x16,#72  (tick @ +128) */
 			0xd63f0200u, /* blr  x16 */
 			0xaa0003f0u, /* mov  x16,x0 */
 			0xf9401bfeu, /* ldr  x30,[sp,#48] */
@@ -1487,15 +1499,19 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 			0xf9400be3u, /* ldr  x3,[sp,#16] */
 			0xf94007e4u, /* ldr  x4,[sp,#8] */
 			0xf94003e5u, /* ldr  x5,[sp,#0] */
-			0x910103ffu, /* add  sp,sp,#64 */
+			0xad4207e0u, /* ldp  q0,q1,[sp,#64] */
+			0xad430fe2u, /* ldp  q2,q3,[sp,#96] */
+			0xad4417e4u, /* ldp  q4,q5,[sp,#128] */
+			0xad451fe6u, /* ldp  q6,q7,[sp,#160] */
+			0x910303ffu, /* add  sp,sp,#192 */
 			0xd61f0200u, /* br   x16 */
 	};
 	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return NULL; }
 	memcpy(p, code, sizeof code);
-	memcpy(p + 88, &st, 8);
-	memcpy(p + 96, &tick, 8);
+	memcpy(p + 120, &st, 8);
+	memcpy(p + 128, &tick, 8);
 	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
 		munmap(p, page);
 		return NULL;
