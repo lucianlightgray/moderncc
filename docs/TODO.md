@@ -341,10 +341,33 @@ Wanted:
    it was smaller on three. That is the right trade for a level whose contract is "optimize hardest", but it does mean
    the size/speed question below is no longer hypothetical — `-O4` has now definitively picked speed.
 
-   Still open, and deliberately NOT done here: the same floor for the other 61 `o4`-defaulted gates. A per-gate
-   ablation on nbody (`MCC_SEARCH_WORKER=1`, each gate forced off) found 20 gates that shrink `.text`, but 10 of them
-   land on the SAME 3854 B, which means they are not independently costing 144 B each — they are perturbing which
-   configuration the in-process AST search settles on. Do not read that table as 20 separate regressions.
+   **The floor work is COMPLETE as of 2026-07-27, and my earlier "still open: the same floor for the other 61
+   `o4`-defaulted gates" was a CATEGORY ERROR.** The superopt driver can only subtract a gate it actually sets, and it
+   sets exactly **12** axes — `TEMPLATES`, `PROMOTE`, `INLINE`, `NO_CALLFUL`, `INLINE_LIMIT`, `INLINE_NODES`, `GRAFT`,
+   `BITFLAG`, `CPROP_JOIN`, `CSE_JOIN`, `PROMOTE_LIMIT`, `OPT_LIMIT` (the `so_axes[]` table; the only other env it
+   touches is `MCC_SEARCH_WORKER`, `MCC_AST_SPILL_OUT` and `MCC_AST_FN_CONFIG`). The other ~50 `o4` gates are never
+   written by the driver at all, so a child process gets them from `ast_configure` at its `-O` level — **they are
+   already floored by construction and there is nothing to fix.**
+
+   Of the six axes the search CAN switch off, only `PROMOTE` moves runtime. Measured at `-O4`, best-of-5, each axis
+   pinned versus plain `-O4` (nbody 0.17 s / 3998 B, matmul 0.52 s / 3025 B):
+
+   | pinned | nbody | matmul |
+   |---|---|---|
+   | `TEMPLATES=1` | 0.17 s / 3854 B | 0.52 s / 3025 B |
+   | `INLINE=1` | 0.18 s / 3998 B | 0.51 s / 3025 B |
+   | `CPROP_JOIN=1` | 0.17 s / 3998 B | 0.53 s / 3025 B |
+   | `CSE_JOIN=1` | 0.17 s / 3998 B | 0.53 s / 3025 B |
+   | `NO_CALLFUL=0` | 0.18 s / 3998 B | 0.52 s / 3025 B |
+
+   All within noise, against `PROMOTE`'s 59% swing. So no further floor is justified by measurement.
+
+   Two loose ends this exposed, both about SEARCH QUALITY rather than the floor: (1) `TEMPLATES=1` gives nbody
+   **3854 B at the same 0.17 s** — smaller code, equal speed — and the size-scored search does NOT find it, even
+   though 3854 < 3998 is exactly what it optimises for; (2) the earlier per-gate ablation over all 62 `o4` gates
+   (`MCC_SEARCH_WORKER=1`, each forced off) found 20 that shrink `.text`, but 10 land on the SAME 3854 B, so they are
+   perturbing which configuration the in-process AST search settles on rather than each costing size independently.
+   Do not read that table as 20 separate regressions, and note it measures the in-process search, not the driver.
 2a. **Two of the superopt's three search axes were DEAD — fixed 2026-07-27.** Found while measuring item 2. Each
    round is supposed to explore gate, then budget, then limit, each bounded by `slice = base_ms << round`. But
    `base_ms = seed_eval_ms * SO_SLICE_FACTOR(8)`, and at `-O4` the whole run's budget is only 4 s, so the FIRST
