@@ -663,8 +663,23 @@ keeps it live, and the condition tests what is already there.
 **Do not "fix" this by pointing the residual at the lval.** The replay would then emit a LOAD from the assigned
 location that the parser never emits, so the body stays unfaithful — the coverage is not recovered, and every
 currently-faithful `a = pure_expr` consumer would change bytes too. The residual needs to be a node kind meaning "the
-value this Store already produced", which replay reuses instead of re-evaluating. That is new node/replay semantics,
-not a local edit, which is why it was NOT attempted here.
+value this Store already produced", which replay reuses instead of re-evaluating.
+
+**And that node cannot simply POINT AT the Store — the model is required to be a TREE, which is the structural reason
+this is a refactor rather than a local edit (established 2026-07-27).** The arena has no DAG support: both places that
+could otherwise share a node take a deep copy specifically to avoid a second parent — `ast_hook_vpush` for the
+compound-assign vdup ("Duplicate the top ast_vs AST node via a deep copy so the model stays a tree") and
+`ast_hook_vstore` itself ("Give this store its own deep copy … so the model stays a tree"), both via `ast_dup_sub`.
+A `StoreValue` node referencing the Store would create exactly the second parent those copies exist to prevent, and
+copying the Store instead reintroduces the duplicate evaluation this item is about.
+
+So the principled fix is to model assignment as an EXPRESSION node — which is what it is in C — rather than as a
+statement plus a residual, and have the statement form be "expression, value discarded". That is a real refactor of
+the store path, not a patch, and it was NOT attempted here. A cheaper variant worth evaluating first: leave the value
+on the vstack at replay (emit `vstore()` without the `vpop()`) and mark the consumer as "already on the stack", but
+that only works while the Store is the immediately-preceding replayed statement, so it needs a verified ordering
+invariant and a safe bail-out when a pass has moved things — otherwise a stale vstack entry corrupts everything
+downstream.
 
 The same root cause is already noted three lines above in that function's own comment for a sibling case: *"this does
 NOT make the chained-assignment idiom faithful; that has a separate cause (the parser materialises the value once and
