@@ -100,6 +100,25 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
   `ast_fn_purity_noescape` (`mccast.c`) already implements the right analysis — a store to a non-escaping local is not observable — and its own comment says `ast_fn_purity` "gates KGC memoization and must stay conservative", i.e. the split was always intended. It is now computed into `mccjit_last_purity_ne` and selects the KGC gate under `MCC_JIT_PURITY_NOESCAPE=1`; `memoize_ok` deliberately stays on the strict `ast_fn_purity` (memoizing a TIER1 function that reads globals would serve stale results). Opt-in doubles the verified fraction on a scalar hot loop (2 -> 4 swapped of 13).
   **It is default-OFF because raising the verified fraction ALONE makes the JIT worse, in two independent ways — both measured, and both must be fixed before this can flip:**
   1. **The KGC verify stub itself costs ~9x per call on small hot functions, and only amortizes via memoization — which requires TIER0.** Measured on a scalar hot loop: `MCC_JIT_PURITY_NOESCAPE=1` gives 2.42s; the same run plus `MCC_JIT_NO_KGC=1` (variant installed unverified) gives **0.27s**, vs 0.19s for `MCC_JIT=0`. So the variant is fine — the verification is the cost. Newly-admitted functions are TIER1 (any load), `memoize_ok` requires strict TIER0, so they double-call baseline+variant and hash a tuple on **every** call, forever. Until verification amortizes, widening admission is a straight loss. The fix is NOT "make the variant different": tried routing the sync path through `mcc_jit_recompile_blob_gated` with the intent's baked warm mask (`warm=0xfffffff83f`, so genuinely gated) and the slowdown was unchanged at 2.48s — **and it broke `regression/o4-aot-jit`**, because `mccjit_recompile_common` only fires the backend-submitted AST override under `!mccjit_recompile_use_gates`, i.e. the gated recompile and `MCC_JIT_SUBMIT_AOT` are mutually exclusive by construction. Reverted. Real options: graduate to direct dispatch after N consecutive verified matches (bounded verification — unsound in the limit, but the design already accepts that stance via poisoning); or find a sound memoization key for TIER1; or keep admission TIER0-only.
+  **Host parity is now GATED, 2026-07-27 — `jit/run-parity-host`.** The existing `run-parity-<arch>` cells cover only
+  the CROSS triples and skip without cross tooling, so on an ordinary host machine nothing checked
+  `MCC_JIT=1` == `MCC_JIT=0` at all, despite it being a P0 bar item. The new cell runs each program under `MCC_JIT=0`,
+  `MCC_JIT=1`, and `MCC_JIT=1` with WIDENED admission (`PURITY_NOESCAPE`+`LAZY`+`SEARCH`) and requires all three to
+  agree — the widened leg being the point, since default admission installs nothing and comparing it to no-JIT is
+  nearly vacuous. **Measured while building it: the default gate installs 0 variants on every program; the widened gate
+  installs 1 each for `int_mod` and `fp_div_accum`, and 0 for `float_narrow` (a `float` signature is in neither the GP
+  nor the FP verified set).** So the cell asserts a corpus-wide install count >= 1; the negative control (dropping
+  `MCC_JIT_LAZY`) drives it to 0 and the cell fails.
+
+  On these four shapes the widened gate does NOT break parity — all three legs agree byte-for-byte. That does not
+  refute item 2 below, whose reproducer differed; it says the break is shape-dependent, and there is now a gate that
+  will catch it if it reappears on this corpus.
+
+  **Trap worth recording, because it nearly shipped: the first version of the non-vacuity guard counted the token
+  `verified`, which also matches the REFUSAL message "signature not in the verified GP-int set".** It reported 3
+  "verifications" for a run that verified nothing, and would have passed with the JIT fully refusing. The real signal
+  is `mccjit-lazy[install]`. Same substring class as `grep faithful` matching `unfaithful`.
+
   2. **Wider admission exposes near-match acceptance, which breaks `MCC_JIT=1` == `MCC_JIT=0`.** With `MCC_JIT_LAZY=1 MCC_JIT_SEARCH=1` the widened gate changed program output (FP accumulation diverged in the 4th significant digit); conservative gate matched exactly. `MCC_JIT_NEARMATCH` is default-ON and by design KEEPS a variant that mismatches the baseline on a small input set, so admitting more functions admits more divergence. That is a direct P0 parity violation and is the harder of the two.
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)

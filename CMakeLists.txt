@@ -5422,6 +5422,20 @@ if(MCC_BUILD_TESTS)
         # regress it. Each leg skips 77 when its cross-gcc / qemu / sysroot /
         # libmccrt.a is absent (arm64 leg additionally needs an aarch64 host).
         # RUN_SERIAL: each leg builds a full mcc and runs it under qemu.
+        # Host `-run` JIT parity. The run-parity-<arch> cells below cover only the
+        # CROSS triples and skip without cross tooling, so on an ordinary host
+        # nothing gated MCC_JIT=1 == MCC_JIT=0 -- a P0 bar item. This runs each
+        # program under MCC_JIT=0, MCC_JIT=1, and MCC_JIT=1 with widened
+        # admission, and asserts all three agree. It also asserts the widened leg
+        # actually INSTALLS a variant, so it cannot decay into comparing a JIT
+        # that swapped nothing against no JIT.
+        add_test(NAME jit/run-parity-host
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-parity.sh"
+                    "${_mcc_exe}" "${CMAKE_BINARY_DIR}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/parity")
+        set_tests_properties(jit/run-parity-host PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native TIMEOUT 600)
+
         add_test(NAME run-parity-riscv64
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-run-parity.sh" riscv64)
         set_tests_properties(run-parity-riscv64 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
