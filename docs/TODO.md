@@ -675,6 +675,22 @@ than reused. Fixing the residual properly should close both.
 NOTE this is a coverage fix with a correctness-shaped failure mode — a wrong fix here duplicates or drops a call — so
 it needs the exec corpus plus the differential fuzz, not just a fidelity count.
 
+**The guard for that fix LANDED 2026-07-27, before the fix itself: `tests/exec/optimizer/assign_value_effects.c`.**
+Ten shapes of assignment-used-as-a-value (`if`/`while` condition, chained `a = b = f()`, both arms of a `&&`, nested
+`(b = f()) + 1`, as a call argument, in a ternary, in a `return`), each COUNTING its own side effects so an extra or
+missing evaluation changes stdout instead of hiding in a checksum. Golden `calls=14 calls2=2`. It also pins the
+short-circuit case where the right operand must NOT be evaluated at all. Agrees with gcc at `-O0/-O1/-O2/-O3/-Os` and
+with mcc at those plus `-O4`; 23 ctest cells. **Mutation-tested against the exact defect**: rewriting one case so the
+RHS is evaluated twice makes the program exit 2 and the cell go red.
+
+**Bonus, and it is the useful part: `ast-verify-ratchet` now carries a NAMED INVENTORY of F3a's footprint.** Adding
+the file grew the gap set 768 -> 776, and all 8 are it: `if_cond`, `while_cond`, `chained`, `nested_assign`,
+`assign_in_arg`, `assign_in_return`, `assign_in_ternary` (unfaithful) and `shortcircuit_both` (desync). Baseline
+regenerated to bank them. **So the ratchet is now the progress meter for this item** — a correct fix makes those 8
+entries disappear, and the ratchet fails until the baseline is regenerated to record the win. Note `chained` being in
+that list is the direct confirmation that `a = b = c` is the same defect, which the `ast_hook_vstore` comment had
+called "a separate cause".
+
 **F4 — The `&&`/`||` desync site: MEASURED 2026-07-27, and it is one cause, not four.** Instrumenting the guard in
 `ast_hook_landor_operand` over mcc's own TU: **32 events, ALL `c >= 0`** — the first operand of the `&&`/`||` folded
 to a compile-time constant. Zero from `ast_in_call`, `ast_in_op`, `ast_lor_top >= 16` or `ast_vn < 1`, so three of the
