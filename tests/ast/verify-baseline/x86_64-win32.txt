@@ -5,7 +5,6 @@ arch/arm64_encoding.c	test_ldp_stp	unfaithful
 arch/arm64_encoding.c	test_ldr_str	unfaithful
 arch/winarm64_interlocked.c	_InterlockedCompareExchangePointer	unfaithful
 arch/winarm64_interlocked.c	_InterlockedExchangePointer	unfaithful
-bounds/bound_setjmp.c	check	desync
 bounds/bound_setjmp.c	stack	desync
 bounds/bound_signal.c	__mcc_once_tramp	desync
 bounds/bound_signal.c	__mcc_pthread_trampoline	desync
@@ -27,7 +26,6 @@ expressions/compound_assignment.c	main	desync
 expressions/const_expr.c	main	unfaithful
 expressions/gnu_cond_omitted.c	main	desync
 expressions/integer_promotion.c	main	desync
-expressions/lshift_type.c	main	desync
 expressions/precedence.c	main	desync
 expressions/relational_equality.c	main	unfaithful
 features_c99_c11/alignas_over.c	main	desync
@@ -49,7 +47,6 @@ features_c99_c11/attribs_position.c	main	desync
 features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	desync
 features_c99_c11/builtin_overflow.c	main	unfaithful
-features_c99_c11/builtins.c	main	desync
 features_c99_c11/c11_complex_const_fold.c	main	desync
 features_c99_c11/c11_complex_convert.c	main	desync
 features_c99_c11/c11_freestanding_headers.c	main	desync
@@ -116,7 +113,6 @@ lexical/string_concat_mixed.c	main	desync
 lexical/u16_string.c	main	desync
 lexical/u8_string.c	main	desync
 lexical/uU_char_constants.c	main	desync
-lexical/utf8_string_literal.c	main	desync
 optimizer/assign_value_effects.c	assign_in_arg	unfaithful
 optimizer/assign_value_effects.c	chained	unfaithful
 optimizer/assign_value_effects.c	nested_assign	unfaithful
@@ -127,7 +123,6 @@ pointers_arrays/array_2d_iv.c	diag_compound	desync
 pointers_arrays/flexarray.c	main	desync
 pointers_arrays/ptr_longlong_arith32.c	main	desync
 preprocess/pragma_operator.c	main	desync
-preprocessor/conditional_inclusion.c	main	desync
 preprocessor/variadic_macros.c	sum_impl	desync
 programs/grep.c	cclass	unfaithful
 programs/grep.c	compile	desync
@@ -180,7 +175,6 @@ structs_unions/struct_byval.c	f2	desync
 structs_unions/struct_byval.c	f3	desync
 structs_unions/struct_byval.c	f4	desync
 structs_unions/struct_byval.c	f6	desync
-structs_unions/struct_init.c	foo	desync
 structs_unions/struct_init.c	test_compound_with_relocs	desync
 structs_unions/struct_init.c	test_init_ranges	desync
 structs_unions/struct_init.c	test_init_struct_from_struct	desync
@@ -211,6 +205,5 @@ vla/continue.c	test3	desync
 vla/continue.c	test4	desync
 vla/continue.c	test5	desync
 vla/label.c	f1	desync
-vla/label.c	f2	desync
 vla/label.c	f3	desync
 vla/reuse.c	main	desync
