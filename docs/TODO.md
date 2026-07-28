@@ -1241,6 +1241,30 @@ TU at `-O2`, 1849 functions: **1101 faithful / 540 desync / 149 unfaithful / 60 
 | `mccast.c:2589` | 39 | 7% | `&&`/`||` first operand (F4) |
 | `mccast.c:2430` | 20 | 4% | unmodelled op (`default:` arm) |
 
+**RE-MEASURED after the bare-`return;` fix landed (2026-07-27). The table above is superseded — site 2302 collapsed
+and the ranking changed.** Totals are now **1318 faithful / 356 desync / 175 unfaithful / 1 bail / 1 empty**:
+
+| site | count | share | what it is |
+|---|---:|---:|---|
+| `mccast.c:2315` | **112** | **31%** | `ast_hook_vpush` value-model guard — now the leader |
+| `mccast.c:3256` | 87 | 24% | `nocode_wanted` |
+| `mccast.c:2302` | 48 | 13% | the old F5 site, **down from 261** |
+| `mccast.c:2589` | 45 | 13% | `&&`/`||` first operand (F4) |
+| `mccast.c:2430` | 22 | 6% | unmodelled op (`default:` arm) |
+
+**Site 2315 characterised the same way (instrument, dump every event, cross-tabulate). 112 events, TWO clean groups:**
+
+| group | count | detail |
+|---|---:|---|
+| register-held **LVALUE** (`VT_VALMASK` is a hard register, `VT_LVAL` set, no sym) | **61 (54%)** | 51 in reg 0, 10 in reg 1 |
+| **struct**-typed value that is not an aggregate lvalue | **51 (46%)** | 48 `VT_STRUCT`, 3 `VT_LDOUBLE` |
+
+The first group is a dereference through a pointer already materialised in a register: the model only knows
+`is_const` / `is_sym` / `is_local` / `is_llocal_lval`, and "lvalue whose address is live in a register" is none of
+them. The second is the aggregate-rvalue case the `agg_lval` escape deliberately does not cover. Neither is a
+bookkeeping slip — both need a new modellable value form, so this is genuinely the same class of work the bare-return
+fix turned out to be, not a guard tweak.
+
 So F5 alone is now **48% of all desyncs and 14% of every function in the TU** — it was described as "the
 second-largest cause" against an older mix, and it is now comfortably first. Anyone picking up fidelity work should
 start here rather than at F4 (7%) or the `nocode_wanted` site (14%), and note that a flat `nocode_wanted` gate was
