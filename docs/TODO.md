@@ -362,12 +362,40 @@ Wanted:
 
    All within noise, against `PROMOTE`'s 59% swing. So no further floor is justified by measurement.
 
-   Two loose ends this exposed, both about SEARCH QUALITY rather than the floor: (1) `TEMPLATES=1` gives nbody
-   **3854 B at the same 0.17 s** — smaller code, equal speed — and the size-scored search does NOT find it, even
-   though 3854 < 3998 is exactly what it optimises for; (2) the earlier per-gate ablation over all 62 `o4` gates
-   (`MCC_SEARCH_WORKER=1`, each forced off) found 20 that shrink `.text`, but 10 land on the SAME 3854 B, so they are
-   perturbing which configuration the in-process AST search settles on rather than each costing size independently.
-   Do not read that table as 20 separate regressions, and note it measures the in-process search, not the driver.
+   **THE BIG ONE, measured 2026-07-27: `-O4` does not SEARCH on real inputs — it evaluates ONE configuration.**
+   `-v64` makes the driver report its own eval count, and the budget is `optimize_search_seconds = <level>` seconds
+   (libmcc.c), i.e. **4 seconds for `-O4`** — while a single evaluation of nbody takes **8.2 seconds**. The
+   `while (host_clock_ms() - start < budget_ms)` loop therefore never runs a single iteration:
+
+   | input | evals | wall |
+   |---|---:|---|
+   | nbody | **1** | 8240 ms |
+   | nsieve | **1** | 8171 ms |
+   | matmul | **2** | 11424 ms |
+   | `tests/superopt/src/spillheavy.c` | 7 | 4813 ms |
+
+   Only the small fixture gets a real search. **This reframes everything above, including my own `PROMOTE` fix**: the
+   floor helped not because the search found something better, but because *the single configuration the driver
+   actually evaluates* stopped having promotion switched off. Gate 0 with `PROMOTE` forced off was 3636 B / 0.27 s;
+   with the floor restoring the default it is 3998 B / 0.17 s — the whole 59% win, from one evaluation. Raising the
+   budget does not help on nbody: `-O10` gives 3 evals and `-O30` gives 7, and `best gate` stays 0 with `.text` 3998
+   throughout.
+
+   **RETRACTION — I previously wrote here that `TEMPLATES=1` gives nbody 3854 B at equal speed and "the size-scored
+   search does NOT find it, even though 3854 < 3998 is exactly what it optimises for". That claim is NOT established
+   and is withdrawn.** Instrumenting the gate loop shows gate 1 (which is exactly `TEMPLATES=1`) scoring **4198,
+   identical to gate 0** — so within the driver's own candidate space it is not smaller and there is no
+   "strictly better candidate being rejected". The 3854 figure is real and reproducible via the child environment
+   directly (`MCC_SEARCH_WORKER=1 MCC_AST_TEMPLATES=1`), and via a pinned `-O4` driver run, but NOT at `-O30`, where
+   pinned and unpinned both give 3998. **That discrepancy is unexplained and left open rather than guessed at** — the
+   likely direction is that the driver also sets `INLINE_NODES`/`GRAFT`/`BITFLAG`/`PROMOTE_LIMIT`/`OPT_LIMIT` from the
+   budget/limit indices, so a bare child env is not the same configuration as any gate word, but that was not
+   confirmed. Whoever picks this up should start by instrumenting the SEED evaluation, not just the gate loop.
+
+   Secondary, unchanged: the earlier per-gate ablation over all 62 `o4` gates (`MCC_SEARCH_WORKER=1`, each forced off)
+   found 20 that shrink `.text`, but 10 land on the SAME 3854 B, so they are perturbing which configuration the
+   in-process AST search settles on rather than each costing size independently. Do not read that table as 20 separate
+   regressions, and note it measures the in-process search, not the driver.
 2a. **Two of the superopt's three search axes were DEAD — fixed 2026-07-27.** Found while measuring item 2. Each
    round is supposed to explore gate, then budget, then limit, each bounded by `slice = base_ms << round`. But
    `base_ms = seed_eval_ms * SO_SLICE_FACTOR(8)`, and at `-O4` the whole run's budget is only 4 s, so the FIRST
