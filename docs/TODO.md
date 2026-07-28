@@ -399,9 +399,32 @@ already excluded.
 
 Where that leaves the two halves:
 - **108 length-differs**: 45 chained + 19 nocode (6 overlapping) → 50 still unattributed.
-- **97 byte-differs**: 5 nocode, 0 chained → **92 unattributed, and this is now the largest unexplained group in
-  the file.** Its divergence sits at a median 54% into the body with the length unchanged, which rules out both
-  known causes by construction. Start here.
+- **97 byte-differs**: 5 nocode, 0 chained → 92 unattributed, the largest unexplained group. **First look at two of
+  them, 2026-07-28: these appear to be ORDER differences, not modelling errors.**
+
+  `mcc_mulhs64` (85 bytes, `firstdiff=3`) — identical instruction count, same operations, different operand/register
+  ordering in call-argument setup:
+
+      parser: mov rax,[rbp-8] ; mov rcx,[rbp-16] ; mov rsi,rcx     ; mov rdi,rax ; call
+      replay: mov rax,[rbp-16]; mov rsi,rax      ; mov rax,[rbp-8] ; mov rdi,rax ; call
+
+  and further on a `sub` where the parser accumulates into `rcx` while replay accumulates into `rax`
+  (`48 29 c1` vs `48 29 c8`), again same length.
+
+  `host_nproc` — BASIC-BLOCK ordering: the parser emits `jle +8 ; mov eax,[rbp-8] ; jmp ; mov eax,1`, replay emits
+  the two arms in the opposite order with correspondingly different displacements.
+
+  **If this generalises, the 92 are not model bugs at all** — the model is right and replay is emitting a valid
+  alternative encoding, which the byte-identity check rejects because it is stricter than semantic equivalence. That
+  reframes the work: the fix would be making replay reproduce the parser's ORDERING deterministically (argument
+  evaluation order, which register receives an accumulate, which arm is laid out first), not repairing what the
+  model records. It also means this group is unlikely to be hiding a correctness bug, unlike a dropped value
+  materialisation.
+
+  Only two of the 92 were read, so treat "order differences" as a hypothesis with two supporting cases, not a
+  measured split — the mistake made three times earlier in this section was believing an unvalidated summary. The
+  cheap next step is to classify all 92 by whether the multiset of instruction bytes is preserved (a pure reorder
+  keeps it; a genuine miscompile generally does not).
 
 **Standing caution, earned three times in this section.** A `0` from an instrument is not a finding until the
 instrument has been shown to produce a `1` on a known positive DRAWN FROM THE SAME POPULATION, and until the
