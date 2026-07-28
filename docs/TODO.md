@@ -829,9 +829,39 @@ TU-wide the bucket moved 205 → 199 unfaithful and the `chain=` attribution 45 
 call-argument shape rather than the statement chain that used to dominate the reproducer.
 
 **So B1a is now two well-defined targets, not one open-ended family:**
-- **the call-argument path** — this is `ast_finalize_storevals`' leftmost-leaf guard declining by design ("A call
-  argument fails this (gfunc_call pushes around it) and keeps the old, unfaithful behaviour"). The question is
-  whether the guard can be widened safely for arguments, given `gfunc_call` pushes around the marker.
+- **the call-argument path** — `ast_finalize_storevals`' leftmost-leaf guard declining by design ("A call argument
+  fails this (gfunc_call pushes around it) and keeps the old, unfaithful behaviour").
+
+  **TRACED 2026-07-28, and the guard's premise looks FALSIFIABLE for this shape.** The replay walk for
+  `use(s = g())` shows the `g()` `Invoke` node reached TWICE — once inside the `Store`, once again through the
+  `StoreVal` marker's re-emit fallback:
+
+      RV n=4 Invoke(g)   parent=5  ind=11      first evaluation, inside the Store
+      RV n=8 Invoke(use) parent=0  ind=22
+      RV n=7 StoreVal    parent=8
+      RV n=4 Invoke(g)   parent=5  ind=22      SAME node, evaluated again
+
+  And what the PARSER emits settles the liveness question the guard is hedging against:
+
+      call g
+      mov %eax, s(%rip)     the store
+      mov %rax, %rdi        reuses the value ALREADY IN rax
+      call use
+
+  **The value IS still live in the register after the store** — the parser neither reloads `s` nor re-calls `g`. So
+  `AST_FB_STORE_VALUE_LIVE` is semantically correct for this shape, and the guard is being conservative rather than
+  necessary. Widening it to admit "the marker is the argument evaluated immediately after the store" is the specific
+  experiment to run.
+
+  **Not attempted here.** It is a model-shape change in the exact region where `emit-at-marker` was correct at
+  `-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3`, and the two evaluation-count guards
+  (`assign_value_effects.c`, `side_effect_order.c`) plus the full bar are mandatory for it. The evidence above is
+  what a fix attempt should start from — in particular, do not re-derive the liveness question, it is answered.
+
+  Note the alternatives that are NOT viable, so they are not re-tried: emitting nothing leaves `gfunc_call` short an
+  operand (its own comment says so); re-emitting duplicates the call (measured above); and reloading from the lvalue
+  would be semantically right but emits a load where the parser reuses a register, so it trades one unfaithful form
+  for another — the same trap the chained-store investigation hit.
 - ~~**the discarded-value ternary**~~ — **FIXED 2026-07-28.** Traced first, as the method requires, and the cause was
   one missing node kind rather than anything structural: `ast_hook_vpop` attaches a discarded value to the current
   basic block only when its kind is `AST_Invoke` or `AST_Unary`. A ternary pushes an `AST_If` (from
