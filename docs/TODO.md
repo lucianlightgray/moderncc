@@ -1047,6 +1047,35 @@ witness, not the culprit.
 **Every event is a distinct function** (261 events, 261 functions), so this is one systematic gap rather than a few
 functions failing repeatedly.
 
+**MINIMAL REPRODUCER for one path into this site, bisected 2026-07-27 out of `tests/exec/lexical/U32_string.c`
+(15 lines, the smallest corpus file that hits it):**
+
+    typedef __CHAR32_TYPE__ c32;
+    extern int printf(const char *, ...);
+    int main(void){ const c32 *p = U"xy"; int ok = p[0]==120 && p[1]==121; printf("%d",ok); return 0; }
+
+That is `desync:2302`. The discriminating axes, each verified by flipping exactly one thing:
+
+| variant | verdict |
+|---|---|
+| `const c32 *p = U"xy"`, two derefs in `&&` | **desync:2302** |
+| same with `c16`/`u"xy"` | **desync:2302** |
+| same with three derefs | **desync:2302** |
+| plain `const char *p = "xy"` | faithful |
+| `const int *p = (const int *)"xyzw"` | faithful |
+| `static const c32 q[]=U"xy"; p = q` (named global, not a literal) | faithful |
+| local array `c32 s[]=U"ABC"` instead of a pointer | faithful |
+| `||` instead of `&&` | faithful |
+| two derefs NOT in a short-circuit (`p[0]+p[1]`) | faithful |
+
+So it is not element size (the `int*` cast is 4-byte and faithful), and not symbol-vs-literal alone (the named wide
+global is faithful). It is specifically **a pointer initialised from a WIDE string literal, dereferenced at least
+twice inside a short-circuit `&&`**. That combination is what leaves the extra `ast_vs` node.
+
+**Scope, stated so it is not over-read: this is ONE path into site 2302, not proof that all 261 share it.** The
+`vtop` histogram above (202 of 261 symbol-valued) is consistent with a literal-symbol cause but does not establish it.
+Fixing this shape and re-counting is the cheap way to find out how much of the 48% it actually covers.
+
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
 TU at `-O2`, 1849 functions: **1101 faithful / 540 desync / 149 unfaithful / 60 bail / 1 empty**. The desyncs by site:
