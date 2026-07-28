@@ -755,9 +755,9 @@ are NOT one problem. Instrumenting `ast_finalize_storevals` to report, per marke
 |---|---:|---|---|---|
 | `if ((h = f()))` | 2 | accepted | **faithful** | — done |
 | `while ((h = f()))` | 1 | **ACCEPTED** | unfaithful | back-edge, not the vstack (see below) |
-| `a = (b = f()) + 1` | 1 | rejected | unfaithful | marker nested under a Binary |
-| `(a = f()) ? … : …` | 1 | rejected | unfaithful | marker nested under the ternary |
-| `return (a = f()) + a` | 1 | rejected | unfaithful | marker nested under a Binary |
+| `a = (b = f()) + 1` | 1 | rejected | unfaithful | correctly rejected — see below |
+| `(a = f()) ? … : …` | 1 | accepted | **faithful** | done (leftmost-leaf guard) |
+| `return (a = f()) + a` | 1 | accepted | **faithful** | done (leftmost-leaf guard) |
 | `f((a = g2(v)) + 0)` | 1 | rejected | unfaithful | `gfunc_call` vstack juggling |
 | `a = b = f()` | **0** | n/a | unfaithful | marker is resolved away by the CHAINSTORE path |
 | `(x = f()) && (y = g2())` | **0** | n/a | desync:3371 | desyncs before any marker is made |
@@ -772,6 +772,22 @@ one — the guard is already letting it through.**
 Two of the eight never reach the marker at all: `a = b = f()` has its marker resolved back to the inner RHS by the
 CHAINSTORE path (deliberate — see the fix above), and the short-circuit case desyncs at mccast.c:3371 before any
 store is modelled.
+
+**GUARD WIDENED 2026-07-27 from "direct child" to "LEFTMOST LEAF", which is the real invariant.** The value must
+still be on TOP of the vstack when the marker is reached; that holds whenever the marker is the first thing the
+following statement evaluates, not merely when it is a direct child. Implemented by walking up from the marker and
+requiring first-child at every step (and refusing to cross an `AST_Invoke`, since `gfunc_call` pushes around its
+arguments). Gains `(a = f()) ? … : …` and `return (a = f()) + a`. mcc's own TU: **faithful 1094 -> 1101, unfaithful
+156 -> 149**; cumulative over the whole F3a item, **1091 -> 1101 faithful, 158 -> 149 unfaithful**.
+
+`a = (b = f()) + 1` stays rejected and that is CORRECT, not a gap to close: the enclosing statement is
+`Store(a, Binary(marker, 1))`, whose first child is the lvalue `a`. The parser pushes that lvalue onto the vstack
+before evaluating the right-hand side, so by the time the marker is reached the pending value is no longer on top.
+The first-child walk rejects it for exactly that reason.
+
+Validated: host ctest 7253/7253, cross 7412/7412, self-host fixpoint byte-identical (5510079), `ast/treecheck` clean
+at `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, qemu 14/14 on all four triples, 0 crashes over
+all 258 exec files, and `optfire/chainstore` + `runtime-bench-gatewin` still green.
 
 **The reverted second attempt's failure, kept because the trap is general: it silently disabled
 `MCC_AST_CHAINSTORE`.** For `a = b = c` the OUTER store now

@@ -334,8 +334,6 @@ lexical/utf8_string_literal.c	putc_unlocked	desync
 lexical/utf8_string_literal.c	putchar_unlocked	desync
 lexical/utf8_string_literal.c	wctob	desync
 optimizer/assign_value_effects.c	assign_in_arg	unfaithful
-optimizer/assign_value_effects.c	assign_in_return	unfaithful
-optimizer/assign_value_effects.c	assign_in_ternary	unfaithful
 optimizer/assign_value_effects.c	chained	unfaithful
 optimizer/assign_value_effects.c	nested_assign	unfaithful
 optimizer/assign_value_effects.c	shortcircuit_both	desync

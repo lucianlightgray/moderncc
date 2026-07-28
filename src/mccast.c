@@ -6096,14 +6096,30 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 		if (par == AST_NONE)
 			{ MCC_TRACE("br\n"); continue; }
 		/* Only safe when nothing touches the vstack between the store and the
-		   read, so require the marker to be a DIRECT child of the statement that
-		   immediately follows the store. An assignment inside a call argument
-		   fails this, and keeps the old (unfaithful) behaviour. */
-		if (ast_parent(a, par) == AST_NONE ||
-				ast_kind(a, ast_parent(a, par)) != AST_BasicBlock)
-			{ MCC_TRACE("br\n"); continue; }
-		if (ast_next_sib(a, st) != par || ast_parent(a, par) != ast_parent(a, st))
-			{ MCC_TRACE("br\n"); continue; }
+		   read. That holds when the marker is the LEFTMOST leaf of the statement
+		   that immediately follows the store -- it is then the first thing that
+		   statement evaluates, so the store's value is still on top. Walk up
+		   requiring first-child at every step. A call argument fails this
+		   (gfunc_call pushes around it) and keeps the old, unfaithful behaviour. */
+		{
+			AstLocal cur = n, up;
+			int leftmost = 1;
+			for (;;) {
+				MCC_TRACE("br\n");
+				up = ast_parent(a, cur);
+				if (up == AST_NONE || ast_kind(a, up) == AST_BasicBlock)
+					{ MCC_TRACE("br\n"); break; }
+				if (ast_first_child(a, up) != cur)
+					{ MCC_TRACE("br\n"); leftmost = 0; break; }
+				if (ast_kind(a, up) == AST_Invoke)
+					{ MCC_TRACE("br\n"); leftmost = 0; break; }
+				cur = up;
+			}
+			if (!leftmost || up == AST_NONE || ast_kind(a, up) != AST_BasicBlock)
+				{ MCC_TRACE("br\n"); continue; }
+			if (ast_next_sib(a, st) != cur || up != ast_parent(a, st))
+				{ MCC_TRACE("br\n"); continue; }
+		}
 		ast_set_fbits(a, st, ast_fbits(a, st) | AST_FB_STORE_VALUE_LIVE);
 	}
 }
