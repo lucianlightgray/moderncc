@@ -702,6 +702,26 @@ compiling mcc's own amalgamation under `MCC_AST_VERIFY=1` **crashes with SIGSEGV
 something in the recorder/replay path depends on the child remaining threaded into its old parent's chain after a
 re-parent; the current non-unlinking behaviour is LOAD-BEARING, not merely sloppy. Reverted.
 
+**Then the local fix was ATTEMPTED 2026-07-27. It WORKS for the basic case and CRASHES on one shape; reverted, with
+the design validated and the blocker named.** Shape implemented: a new leaf kind `AST_StoreVal` handed back as the
+assignment's residual instead of the RHS subtree (it references its Store by INDEX in `ival`, never by parent, so the
+model stays a tree and the RHS keeps exactly one owner); a finalize pass `ast_finalize_storevals` that sets a new
+`AST_FB_STORE_VALUE_LIVE` fbit on the Store only when the marker actually acquired a parent; replay of a value-live
+Store skipping its `vpop()` so the value stays on the vstack exactly as the parser leaves it; and `ast_replay_value`
+treating the marker as a no-op.
+
+**It demonstrably works — `if ((h = stub(p,"rb"))) return sink(h);` goes from `unfaithful` to `FAITHFUL`.** That is
+the coverage this item exists to recover, so the approach is sound. Isolated shapes all compile clean:
+if-condition, while-condition, chained `a = b = f()`, short-circuit `&&`, nested `(b = f()) + 1`, ternary, and
+`return`.
+
+**The blocker: an assignment inside a CALL ARGUMENT segfaults the compiler** — `return f((a = g2(v)) + 0) + a;`
+reproduces it alone. 1 crash in 258 exec files (only `assign_value_effects.c`, which covers that shape deliberately).
+The value is consumed from inside `gfunc_call`'s own vstack juggling, so the store's live value is not where replay
+assumes. **An adjacency guard did NOT fix it** — requiring the marker's owning statement to be the store's immediate
+next sibling in the same basic block still crashes, so the interaction is subtler than "the vstack entry went stale"
+and needs to be understood before this is retried. Do not simply re-apply the patch with a wider guard.
+
 **Consequence for how F3a must be fixed: it has to be LOCAL to the vstore/consumer path, not a change to
 `ast_add_child`'s contract.** Whatever takes ownership of the residual has to do so knowingly at the point where the
 value is consumed, leaving every other re-parent in the compiler exactly as it is today.
