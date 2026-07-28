@@ -103,7 +103,7 @@ jobs:
     # for ~48 min until it was cancelled by hand. The exec harness now kills a
     # hung child itself (MCC_TEST_TIMEOUT) and ctest --timeout backstops it;
     # this is the last-resort ceiling so the runner pool is never starved.
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
