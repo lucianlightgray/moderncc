@@ -766,7 +766,33 @@ produced two landed fixes and four rejected ones, and in every single case the t
 `tools/tracediff.sh`, `MCC_LOG=128`, `MCC_TRACE_FILE`/`MCC_TRACE_FUNC`/`MCC_TRACE_SKIP`, `MCC_AST_UNFAITHFUL_DUMP`,
 and the `LEAF`/`RV`/`CVT`/`FIN`/`[unfaithful-rel]` traces already in place.
 
-### 1. D1a — audit gates staged at `-O3` that could drop to `-O2`
+### 1. D1a — DONE 2026-07-28. Audit complete; ONE more mis-staged gate found and flipped.
+
+Only **two** gates were staged at `optimize >= 3` in `ast_configure` — a much smaller surface than expected:
+
+| gate | fidelity at `-O2` | runtime at `-O2` | verdict |
+|---|---|---|---|
+| `MCC_AST_CYCLE` | no change (1446) | nbody/nsieve unchanged | leave at `-O3` |
+| `MCC_AST_CHAINSTORE` | **+3** (1449) | **spectral-norm 0.55s → 0.35s** | **FLIPPED to `>= 2`** |
+
+`spectral-norm` needs `-fc99-inline-body` to build at all (documented in `runtime-bench.py`; a build failure here is
+the flag, not the gate). `-O3`, where the gate was already on, measures 0.33s — so CHAINSTORE is most of that
+kernel's `-O2` → `-O3` gap, exactly as `MCC_AST_OPASSIGN` was for nbody. Output byte-identical to gate-off.
+
+Ratchet regenerated: 172 → 167 gaps, and **the five that became faithful are all in `statements/chained_assign.c`**
+— CHAINSTORE's deep-copy repair makes some chained assignments replayable, which is a useful data point for B1a
+below.
+
+Bar: host 7281/7281, cross 7440/7440, `runtime-bench-check` + `runtime-bench-gatewin` pass (CHAINSTORE/spectral is
+itself one of the two `GATE_WINS` with an 8% floor; that guard sets the env explicitly so a default change does not
+disturb it), self-host fixpoint `s3 == s4`.
+
+**Nothing further to audit here** — no gate remains at `optimize >= 3`. One adjacent oddity was noticed and NOT
+acted on: `MCC_AST_PROMO_ARROW` and `MCC_AST_PROMO_INCDEC` are keyed to `s1->optimize_size` alone, so they are on at
+`-Os` and OFF at `-O2`/`-O3`. That may be deliberate (they are size transforms) or may be the same class of
+mis-staging; it needs its own measurement rather than an assumption.
+
+### 1b. (original D1a text)
 `MCC_AST_OPASSIGN` was staged at `o4 || optimize >= 3` for no recorded reason; dropping it to `>= 2` took nbody
 `-O2` from 0.49s to 0.41s — **exactly its `-O3` time** — with byte-identical output, +44 faithful, and a green bar
 (`6acb9e69`). Enumerate every other gate with an `optimize >= 3` default in `ast_configure`, and for each: measure

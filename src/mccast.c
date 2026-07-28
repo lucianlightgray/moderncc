@@ -2042,7 +2042,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promote_env = ast_env_gate("MCC_AST_PROMOTE", o4 || opt_promote);
 	ast_promo_arrow_env = ast_env_gate("MCC_AST_PROMO_ARROW", o4 || s1->optimize_size);
 	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC", o4 || s1->optimize_size);
-	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 3);
+	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
