@@ -48,8 +48,13 @@ if command -v qemu-riscv64 >/dev/null 2>&1 && command -v cc >/dev/null 2>&1 \
     exec "$(dirname "$0")/selfhost-cross-native.sh" riscv64 "$@"
 fi
 
-command -v docker >/dev/null 2>&1 || { echo "docker not available"; exit 77; }
-docker info >/dev/null 2>&1 || { echo "docker not usable"; exit 77; }
+# Use the shared docker gating (skip-77 on no daemon / unrunnable platform) so a
+# transient Docker Hub pull timeout skips like every sibling *-docker.sh harness
+# instead of failing CI. dg_need_platform pre-pulls the image via a probe run, so
+# the `docker run -d` below hits the local cache and cannot time out mid-pull.
+. "$(dirname "$0")/dockergate.sh"
+dg_need_docker
+dg_need_platform "" "$img"
 
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
