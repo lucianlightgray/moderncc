@@ -754,7 +754,7 @@ are NOT one problem. Instrumenting `ast_finalize_storevals` to report, per marke
 | shape | markers made | guard | verdict | blocker |
 |---|---:|---|---|---|
 | `if ((h = f()))` | 2 | accepted | **faithful** | — done |
-| `while ((h = f()))` | 1 | **ACCEPTED** | unfaithful | back-edge, not the vstack (see below) |
+| `while ((h = f()))` | 1 | **ACCEPTED** | unfaithful | back-edge — and the obvious fix MISCOMPILES, see below |
 | `a = (b = f()) + 1` | 1 | rejected | unfaithful | correctly rejected — see below |
 | `(a = f()) ? … : …` | 1 | accepted | **faithful** | done (leftmost-leaf guard) |
 | `return (a = f()) + a` | 1 | accepted | **faithful** | done (leftmost-leaf guard) |
@@ -772,6 +772,27 @@ one — the guard is already letting it through.**
 Two of the eight never reach the marker at all: `a = b = f()` has its marker resolved back to the inner RHS by the
 CHAINSTORE path (deliberate — see the fix above), and the short-circuit case desyncs at mccast.c:3371 before any
 store is modelled.
+
+**TRIED AND REVERTED 2026-07-27 — "emit the store AT its marker, skip it in the BB". It fixes `while` and it
+MISCOMPILES. This is the single most important negative result in this item; do not retry it.** The idea is clean:
+instead of leaving the value live, skip the Store where it sits in the basic block and emit it in full at the marker.
+That reproduces the parser for `if`, and for a loop it puts the store INSIDE the condition where the back edge
+re-executes it — no change to the loop node's arity, no unlink, no preamble child. It works, on the face of it:
+`while ((h = f(n)))` becomes **faithful**, along with `if`/ternary/`return`, and mcc's own TU jumps
+**faithful 1101 -> 1111, unfaithful 149 -> 139** with zero crashes over the exec corpus.
+
+**But `tests/exec/optimizer/assign_value_effects.c` returns 1 at `-O2` and `-O3` while being correct at
+`-O0`/`-O1`.** That is a real miscompile, and it is exactly the failure mode recorded above under "replay bugs are
+safe, model bugs are not": the body now PASSES the byte check, so the optimizer passes run on it — and the model is a
+lie. The Store node still sits at its original position in the basic block while its effect actually happens inside
+the following statement, so any pass reasoning about statement order (DSE, CSE, const-prop) draws the wrong
+conclusion. The always-on byte comparison cannot catch this, because it only ever validates the UNOPTIMIZED replay.
+
+The landed value-live approach does not have this problem precisely because it leaves the Store where it is and only
+skips the `vpop()` — the node's position still tells the truth about when the store happens. **So `while` cannot be
+fixed by relocating the emission; it needs the store to genuinely live inside the loop's condition region in the
+MODEL** (a preamble child on the loop node, which changes its arity and therefore every loop pass — interchange,
+fusion, tile, LICM). That is the real cost of this one, and it is why it stays open.
 
 **GUARD WIDENED 2026-07-27 from "direct child" to "LEFTMOST LEAF", which is the real invariant.** The value must
 still be on TOP of the vstack when the marker is reached; that holds whenever the marker is the first thing the
