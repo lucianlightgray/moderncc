@@ -757,9 +757,9 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 
-**CURRENT STATE, measured 2026-07-27 on mcc's own amalgamated TU at `-O2` (1849 functions, compile `rc=0` so the
-counts are not truncated): 1392 faithful / 268 desync / 189 unfaithful / 1 bail / 1 empty — `75.3%` FAITHFUL.**
-Session start was 1101 faithful (59.5%) with 60 bails. `faithful` is the figure that matters: it gates the optimizer
+**CURRENT STATE, measured 2026-07-28 on mcc's own amalgamated TU at `-O2` (1856 functions, compile `rc=0` so the
+counts are not truncated): 1446 faithful / 206 desync / 204 unfaithful — `77.9%` FAITHFUL.** No bails, no empties.
+The 2026-07-27 session ended at 1392 faithful (75.3%) of 1849; before that it started at 1101 (59.5%) with 60 bails. `faithful` is the figure that matters: it gates the optimizer
 passes, `ast_search_*`, the ROI scorer, `ast_inline_retain`, `ast_reemit_retain` and JIT dispatch. `desync`,
 `unfaithful` and `bail` are all equally excluded, so moving a function BETWEEN them is not progress and not a
 regression.
@@ -775,6 +775,19 @@ Four fixes landed this session, each through the full bar (host + cross ctest, 3
 | static-storage initializers hidden from the recorder | +16 |
 | F3a assignment-as-value (`AST_StoreVal`) | +10 |
 | constant `?:` folded | +5 |
+
+Two more landed 2026-07-28, same bar:
+
+| fix | gain |
+|---|---|
+| `MCC_AST_OPASSIGN` staged at `-O2` instead of `-O3` (`b0fb11d5` predecessor `6acb9e69`) | **+44** faithful, and nbody `-O2` 0.49s -> 0.41s, matching `-O3` |
+| `force_charshort_cast`'s internal cast hidden from the recorder (`b0fb11d5`) | +5, and it fixed a REAL lost sign extension |
+
+**The `unfaithful` bucket is now fully triaged — see the section below.** Of 205 measured events: 45 chained
+assignment, 24 `nocode_wanted`, 90 reorder/register-allocation, 24 spill/regalloc, 2 lost sign extension (FIXED),
+and the remainder characterised. **Exactly one correctness-relevant defect was found in the whole bucket and it is
+fixed**; everything else is either a documented modelling limitation or semantically-equivalent emission that
+byte-identity rejects for being stricter than it needs to be.
 
 **The remaining compile-time parser contexts were SWEPT 2026-07-27 and are all already faithful, so the pattern
 below has no further easy applications:** local `enum` declarations (including `Y = X + 1`), local arrays with
