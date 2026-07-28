@@ -5699,6 +5699,22 @@ if(MCC_BUILD_TESTS)
     set_tests_properties(macho-structural PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
+    # Mach-O ARCHIVE members -- the --embed-jit path into libmcc_jitengine.a.
+    # Testable on Linux despite the "reserved for macOS" note, because llvm-ar
+    # writes a correct BSD armap for Mach-O members where GNU ar indexes nothing.
+    # Needs both BSD `#1/<len>` extended names and the little-endian __.SYMDEF
+    # index; without either, members are silently never pulled.
+    if(UNIX)
+        add_test(NAME macho-archive
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/archive.sh"
+                    "${MCC_CROSS_DIR}/mcc-x86_64-osx" "${MCC_CROSS_DIR}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/make_fixture.py"
+                    "${CMAKE_BINARY_DIR}/macho-archive-work")
+        set_tests_properties(macho-archive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            TIMEOUT 300)
+    endif()
+
     add_test(NAME macho-codegen-run
         COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"

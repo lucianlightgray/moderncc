@@ -3370,6 +3370,23 @@ static int read_ar_header(int fd, int offset, ArchiveHeader *hdr) { MCC_TRACE("e
 		{ MCC_TRACE("br\n"); --e; }
 	*e = '\0';
 	hdr->ar_size[sizeof hdr->ar_size - 1] = 0;
+	if (!strncmp(hdr->ar_name, "#1/", 3)) { MCC_TRACE("br\n");
+		int nlen = atoi(hdr->ar_name + 3);
+		long sz = strtol(hdr->ar_size, NULL, 0);
+		char nm[64];
+		int keep;
+		if (nlen <= 0 || (long)nlen > sz)
+			{ MCC_TRACE("br\n"); return -1; }
+		keep = nlen < (int)sizeof nm ? nlen : (int)sizeof nm - 1;
+		if (full_read(fd, nm, keep) != keep)
+			{ MCC_TRACE("br\n"); return -1; }
+		if (keep >= (int)sizeof hdr->ar_name)
+			{ MCC_TRACE("br\n"); keep = (int)sizeof hdr->ar_name - 1; }
+		memcpy(hdr->ar_name, nm, keep);
+		hdr->ar_name[keep] = '\0';
+		snprintf(hdr->ar_size, sizeof hdr->ar_size, "%ld", sz - nlen);
+		len += nlen;
+	}
 	return len;
 }
 
@@ -3413,6 +3430,78 @@ static int alacarte_pulled(unsigned long long **arr, int *n, unsigned long long 
 	(*arr)[(*n)++] = v;
 	return 0;
 }
+
+/* BSD archive symbol index (`__.SYMDEF`), which is what llvm-ar writes for
+   Mach-O members and what Apple's ar/libtool produce. Layout differs from the
+   SysV index in both structure and byte order: a uint32 byte-count, then an
+   array of {uint32 string-offset, uint32 member-offset} ranlib entries, then a
+   uint32 string-table size and the NUL-separated names -- all LITTLE-endian,
+   where the SysV index above is big-endian. GNU ar cannot even index Mach-O
+   members (`nm -s` lists nothing), so an archive built with it is invalid by
+   construction; use llvm-ar. */
+#ifdef MCC_TARGET_MACHO
+static int mcc_load_alacarte_bsd(MCCState *s1, int fd, int size) { MCC_TRACE("enter\n");
+	int i, bound, nsyms, sym_index, len, ret = -1;
+	uint8_t *data;
+	uint32_t ranbytes, strbytes;
+	const uint8_t *ran;
+	const char *strs;
+	ElfW(Sym) * sym;
+	ArchiveHeader hdr;
+	unsigned long long *pulled = NULL;
+	int npulled = 0;
+
+	data = mcc_malloc(size);
+	if (full_read(fd, data, size) != size || size < 8)
+		{ MCC_TRACE("br\n"); goto invalid; }
+	ranbytes = read32le(data);
+	if (ranbytes > (uint32_t)size - 8)
+		{ MCC_TRACE("br\n"); goto invalid; }
+	ran = data + 4;
+	nsyms = (int)(ranbytes / 8);
+	strbytes = read32le(data + 4 + ranbytes);
+	strs = (const char *)(data + 8 + ranbytes);
+	if (strbytes > (uint32_t)size - 8 - ranbytes)
+		{ MCC_TRACE("br\n"); goto invalid; }
+
+	do { MCC_TRACE("br\n");
+		bound = 0;
+		for (i = 0; i < nsyms; i++) { MCC_TRACE("br\n");
+			uint32_t strx = read32le((unsigned char *)ran + (size_t)i * 8);
+			unsigned long long off = read32le((unsigned char *)ran + (size_t)i * 8 + 4);
+			const char *p;
+			if (strx >= strbytes)
+				{ MCC_TRACE("br\n"); continue; }
+			p = strs + strx;
+			sym_index = find_elf_sym(symtab_section, p);
+			if (!sym_index)
+				{ MCC_TRACE("br\n"); continue; }
+			sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+			if (sym->st_shndx != SHN_UNDEF)
+				{ MCC_TRACE("br\n"); continue; }
+			len = read_ar_header(fd, (int)off, &hdr);
+			if (len <= 0)
+				{ MCC_TRACE("br\n"); goto invalid; }
+			off += len;
+			if (alacarte_pulled(&pulled, &npulled, off))
+				{ MCC_TRACE("br\n"); continue; }
+			if (s1->verbose == 2)
+				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
+			if (macho_load_object_file(s1, fd, off) < 0)
+				{ MCC_TRACE("br\n"); goto the_end; }
+			++bound;
+		}
+	} while (bound);
+	ret = 0;
+	goto the_end;
+invalid:
+	ret = mcc_error_noabort("invalid archive");
+the_end:
+	mcc_free(pulled);
+	mcc_free(data);
+	return ret;
+}
+#endif
 
 static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MCC_TRACE("enter\n");
 	int i, bound, nsyms, sym_index, len, ret = -1;
@@ -3527,11 +3616,22 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) { MCC_TRACE("en
 				{ MCC_TRACE("br\n"); return mcc_load_alacarte(s1, fd, size, 4); }
 			if (!strcmp(hdr.ar_name, "/SYM64/"))
 				{ MCC_TRACE("br\n"); return mcc_load_alacarte(s1, fd, size, 8); }
+#ifdef MCC_TARGET_MACHO
+			if (!strncmp(hdr.ar_name, "__.SYMDEF", 9))
+				{ MCC_TRACE("br\n"); return mcc_load_alacarte_bsd(s1, fd, size); }
+#endif
 		} else if (mcc_object_type(fd, &ehdr) == AFF_BINTYPE_REL) { MCC_TRACE("br\n");
 			if (s1->verbose == 2)
 				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
 			if (mcc_load_object_file(s1, fd, file_offset) < 0)
 				{ MCC_TRACE("br\n"); return -1; }
+#ifdef MCC_TARGET_MACHO
+		} else if (macho_object_type(fd, file_offset)) { MCC_TRACE("br\n");
+			if (s1->verbose == 2)
+				{ MCC_TRACE("br\n"); printf("   -> %s\n", hdr.ar_name); }
+			if (macho_load_object_file(s1, fd, file_offset) < 0)
+				{ MCC_TRACE("br\n"); return -1; }
+#endif
 #ifdef MCC_TARGET_PE
 		} else if (coff_object_type(fd, file_offset)) { MCC_TRACE("br\n");
 			char impname[512], expname[512], headsym[512];

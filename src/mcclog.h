@@ -78,8 +78,20 @@ static inline const char *mcc_log_tag(MccLogMask bit) {
 	return "";
 }
 
+static inline unsigned char mcc_log_floor(void) {
+	static int mcc_log_floor_init;
+	static unsigned char mcc_log_floor_mask;
+
+	if (!mcc_log_floor_init) {
+		const char *e = getenv("MCC_LOG");
+		mcc_log_floor_init = 1;
+		mcc_log_floor_mask = e ? (unsigned char)strtoul(e, NULL, 0) : 0;
+	}
+	return mcc_log_floor_mask;
+}
+
 static inline int mcc_log_enabled(MccLogMask bit) {
-	return (mcc_log_verbose & bit) != 0;
+	return ((mcc_log_verbose | mcc_log_floor()) & bit) != 0;
 }
 
 static inline int mcc_log_enabled_v(unsigned char verbose, MccLogMask bit) {
