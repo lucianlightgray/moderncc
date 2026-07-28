@@ -325,6 +325,21 @@ first write-up speculated. Corroborating evidence that the detector was always w
 still live. So noreturn call sites are recognised and the flag is seen; most simply land in `desync` or stay
 `faithful` rather than in this bucket.
 
+**The 89 non-nocode length-differs are NOT one phenomenon.** Delta profile: `-5` (11), `-14` (7), `+2` (6), `-2` (5),
+`-19` (5), `-6` (4), `-3` (4), `-28` (3). Dumping two of the eleven `-5` cases (where replay is SHORTER, the opposite
+direction from the noreturn `+5`) already shows two different causes:
+
+- **`cst_hook_begin`** — the parser emits five bytes that replay does not: **`b8 00 00 00 00`**, i.e. `mov eax, 0`.
+  That is not a jump at all; it is a constant materialised into `eax` that the replay's model drops. Worth chasing
+  first, because "the model folds a constant the parser kept" is a modelling difference rather than a control-flow
+  one and is likely to be systematic.
+- **`end_macro`** — within the dumped window only the `je` displacement differs (`0x54` vs `0x4f`); the actual
+  five-byte difference is further along, the same shape as `mcc_pedantic`.
+
+So do not look for a single fix here. Use `MCC_AST_UNFAITHFUL_DUMP=<bytes>` per function; the window centres on
+`firstdiff`, and for these functions `firstdiff` (133–255) is well past the prologue, so a small window shows only
+the consequence (a shifted branch displacement) rather than the cause.
+
 **Standing caution, earned three times in this section.** A `0` from an instrument is not a finding until the
 instrument has been shown to produce a `1` on a known positive DRAWN FROM THE SAME POPULATION, and until the
 summarising script has been checked against a raw line of its own input. The first hook-sampling detector genuinely
