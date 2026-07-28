@@ -690,7 +690,29 @@ Consequence for F3a: it is now confirmed to be **purely a coverage item with no 
 current output. Combined with the always-on byte check above, a wrong attempt at it can lose optimization but cannot
 miscompile — the remaining caution is only about keeping the MODEL semantically right.
 
-**Tried and rejected 2026-07-27: making `ast_add_child` DESYNC on a dangling re-parent** (detecting that the child is
+**Tried and REJECTED 2026-07-27 — making `ast_add_child` UNLINK the child from its old parent's chain before
+re-parenting. It SEGFAULTS the compiler.** This is the obvious general fix (a node should only ever be in one chain,
+and it would repair every dangling case at the source), and it is worth recording that it does not work, because it
+looks correct: for a legitimate re-parent the old owner no longer holds the node, so the unlink is a no-op, and
+`ast/treecheck` had already shown every dangling case lands in a rejected body. Implemented with a bounded
+`ast_unlink_child` helper (fix `first_child`/`next_sib`/`last_child`/`nchild`, then re-parent).
+
+Result: `mcc` builds and the small tests pass — `exec/*` was 300/300 and the plain TU compile returned 0 — but
+compiling mcc's own amalgamation under `MCC_AST_VERIFY=1` **crashes with SIGSEGV after 39 of 1848 functions**. So
+something in the recorder/replay path depends on the child remaining threaded into its old parent's chain after a
+re-parent; the current non-unlinking behaviour is LOAD-BEARING, not merely sloppy. Reverted.
+
+**Consequence for how F3a must be fixed: it has to be LOCAL to the vstore/consumer path, not a change to
+`ast_add_child`'s contract.** Whatever takes ownership of the residual has to do so knowingly at the point where the
+value is consumed, leaving every other re-parent in the compiler exactly as it is today.
+
+**Process note — this nearly produced a false measurement, for the second time in this session.** The first fidelity
+run after the change printed `33 faithful / 5 desync / 1 bail` and an object that existed, which reads like a
+catastrophic fidelity regression. It was a SIGSEGV: the driver had already written a partial object, and the verdict
+histogram was simply truncated at the crash. Only checking `rc` (139) revealed it. **A shrinking verdict histogram
+means "measurement aborted", not "fidelity collapsed" — check the exit status.**
+
+**Also tried and rejected 2026-07-27: making `ast_add_child` DESYNC on a dangling re-parent** (detecting that the child is
 still threaded into its old parent's chain, which is cheap and bounded by that parent's fan-out) so the recorder never
 builds a DAG at all, instead of building one and relying on it being rejected downstream. Two reasons it was dropped,
 in order of weight: (1) **it buys no coverage** — it converts `unfaithful` into `desync`, and both are equally
