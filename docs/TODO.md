@@ -340,6 +340,36 @@ So do not look for a single fix here. Use `MCC_AST_UNFAITHFUL_DUMP=<bytes>` per 
 `firstdiff`, and for these functions `firstdiff` (133–255) is well past the prologue, so a small window shows only
 the consequence (a shifted branch displacement) rather than the cause.
 
+### CHAINED ASSIGNMENT loses its RHS materialisation in replay — 2-line reproducer, found 2026-07-28
+
+Chasing the `cst_hook_begin` `-5` case above led straight to its source line, `cst_lcount = cst_scount = cst_sstop = 0;`
+— a chained assignment. Minimal reproducer and verdicts:
+
+    static int a, b, c;
+    void f1 (void)  { a = 0; }            /* faithful    */
+    void f2 (void)  { a = b = 0; }        /* UNFAITHFUL  */
+    void f3 (void)  { a = b = c = 0; }    /* UNFAITHFUL  */
+    void f3v(int v) { a = b = c = v; }    /* UNFAITHFUL  */
+
+A single store is fine; **any chain of two or more is not**, and it is not sensitive to whether the RHS is a constant
+(`MCC_AST_CHAINSTORE=0` changes nothing, so this is not that gate). The bytes for `f2`:
+
+    parser (17): b8 00 00 00 00   89 05 ....   89 05 ....    mov eax,0 ; mov [b],eax ; mov [a],eax
+    replay (12):                  89 05 ....   89 05 ....                mov [b],eax ; mov [a],eax
+
+**Replay emits both stores but never materialises the value into the register.** The replayed body would store
+whatever happened to be in `eax`. It is correctly rejected — the always-on comparison catches it, which is exactly
+why replay bugs cost coverage rather than correctness — but the model is losing the RHS value production, not merely
+ordering it differently.
+
+This is the `AST_StoreVal` / assignment-as-value area (F3a): the chain's inner store is consumed as a VALUE by the
+outer store, and that value is what goes missing. Anyone fixing it should re-check `assign_value_effects.c`, which
+already pins evaluation counts for `a = b = f(v)` and would catch a fix that duplicates the RHS instead of dropping
+it.
+
+Not yet measured: what share of the 205 unfaithful functions are chained assignments. `cst_hook_begin` is one, and
+the construct is common in this codebase, but no count has been taken — do not assume it explains the bucket.
+
 **Standing caution, earned three times in this section.** A `0` from an instrument is not a finding until the
 instrument has been shown to produce a `1` on a known positive DRAWN FROM THE SAME POPULATION, and until the
 summarising script has been checked against a raw line of its own input. The first hook-sampling detector genuinely
