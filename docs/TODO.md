@@ -409,12 +409,42 @@ edit. Reverted; the tree is unchanged.
 0% capacity, so raising `AST_VS_MAX` recovers nothing. This is the second-largest cause of lost optimization and the
 only one with no landed mitigation.
 
-**F6 — riscv64's 30x `unfaithful` rate (reserved for the arm64 machine).** 92 vs 3 over the freestanding `optfire`
-corpus, and it is NOT a code difference: `MCC_AST_VERIFY_DIFF` reports `code identical — relocation/length divergence`
-for 27 of 30 sampled, and 72 of the 92 are `main`, i.e. functions with an external call. Hypothesis, unverified: replay
-emits a different relocation COUNT for the `AUIPC`+`JALR` (`R_RISCV_CALL`/`R_RISCV_RELAX`) pair. If true, every riscv64
-function containing an external call is excluded from AST optimization — a larger coverage loss on that target than any
-gate in this file. Next step is a reloc dump on both sides; nothing does that today.
+**F6 — riscv64's 30x `unfaithful` rate: ROOT-CAUSED AND FIXED 2026-07-27 by flipping `MCC_AST_RELOC_EQUIV`
+default-on.** The mitigation already existed in-tree and was default-OFF; this entry's claim that F6 was "the only one
+with no landed mitigation" was wrong.
+
+**The recorded hypothesis was also wrong, and the correction is the useful part.** It blamed the `AUIPC`+`JALR`
+(`R_RISCV_CALL`/`R_RISCV_RELAX`) pair emitted for an *external call*, inferred from the fact that 72 of 92 were `main`.
+Reduction disproves it directly: `int h(int); void foo(int a){ h(a); }` — an external call — is **faithful**, while
+`const char *p; void foo(void){ p = "x"; }` — no call at all — is **unfaithful**. The real trigger is **any reference
+to a symbol's address**: string literal, static array, or global variable. `main` correlated only because `main`
+usually contains a `printf` string literal. **Lesson: 72-of-92-are-`main` was a correlation that named the wrong
+cause; the one-line reduction that separates "call" from "symbol reference" settles it in a minute.**
+
+The divergence is genuinely not a code difference — `MCC_AST_VERIFY_DIFF` reports `baseline 20 B, replay 20 B (code
+identical)` with the same bytes — it is that replay re-emits the same local symbol at a **different symbol index**.
+`MCC_AST_RELOC_EQUIV` judges the relocation range structurally (equal offset, type, addend; symbols compared through
+`ast_reloc_sym_equiv`) instead of by raw `memcmp`. That comparison is sound rather than merely lenient: it requires
+BOTH symbols to be `STB_LOCAL` with identical `st_info`/`st_other`/`st_shndx`/`st_value`/`st_size` **and an identical
+name**, so it tolerates a re-indexed identical local symbol and nothing else.
+
+Effect on the exec corpus at `-O2`, and the profile is what makes the flip safe: **riscv64 192 faithful/105 unfaithful
+-> 294/3**, which is exactly arm64's own profile (294/3). **Provably a no-op on every other target** — x86_64
+2385/39, arm64 294/3, i386 295/7, byte-for-byte identical with the gate on and off, and the self-host fixpoint size is
+unchanged at 5489695 B. So it buys ~102 additional riscv64 functions for the AST optimizer and changes nothing
+elsewhere. `optfire` riscv64 rises **31/46 -> 36/46**: the loop transforms (`interchange`/`fusion`/`tile`),
+`math_inline` and `argfwd` all start firing.
+
+Validated: the gate is demonstrably live on riscv64 (**30 of 63 objects change** with it on, so the runs below are not
+vacuous); **224 exec programs built with `mcc-riscv64` + the musl stage3 sysroot and run under `qemu-riscv64` produce
+byte-identical output gate-on vs gate-off, 0 regressions**, 214 matching host gcc (the 10 that do not, do not under
+either setting); host ctest 7229/7229; cross ctest 7343/7343; self-host fixpoint byte-identical; and all four qemu
+gates (`riscv64`/`arm64`/`arm`/`i386`) 10/10.
+
+Residual riscv64 non-firing after the flip is 10 cases and both groups look like case shape, not defects: the
+promotion family (`promote`/`promo_arrow`/`promo_incdec`/`spill_share`/`color`/`opassign`, which riscv64 compiles but
+has no leaf caller-saved pool for, as noted above) and `bfold_sqrt`/`bfold_sign`/`bfold_round`/`bfold_minmax`. The
+bfold group is NOT yet triaged — do not arch-guard it until measured, per the reassoc lesson.
 
 **F7 — `optfire` cross-triple: arm64 WIRED 2026-07-27; i386 and riscv64 need triage.** Measured every differ case
 through each cross compiler with `OPTFIRE_NORUN=1`:

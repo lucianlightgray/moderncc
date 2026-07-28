@@ -2026,7 +2026,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 3);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
-	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 0);
+	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
 #ifdef MCC_TARGET_ARM64
 	ast_fmov_imm_env = ast_env_gate("MCC_AST_FMOV_IMM", o4);
 #else
