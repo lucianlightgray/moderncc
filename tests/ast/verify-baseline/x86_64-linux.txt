@@ -4,8 +4,6 @@ arch/arm64.c	fa_hfa31	desync
 arch/arm64.c	fa_hfa32	desync
 arch/arm64.c	fa_hfa33	desync
 arch/arm64.c	fa_hfa34	desync
-arch/arm64.c	fa_hfae12	desync
-arch/arm64.c	fa_hfae22	desync
 arch/arm64.c	fputc_unlocked	desync
 arch/arm64.c	myprintf	desync
 arch/arm64.c	putc_unlocked	desync
@@ -606,8 +604,6 @@ structs_unions/compound_literals.c	main	desync
 structs_unions/compound_literals.c	putc_unlocked	desync
 structs_unions/compound_literals.c	putchar_unlocked	desync
 structs_unions/enum_bitfield.c	convert_like_real	desync
-structs_unions/enum_bitfield.c	main	desync
-structs_unions/float_struct_calling.c	foo	desync
 structs_unions/float_struct_calling.c	fputc_unlocked	desync
 structs_unions/float_struct_calling.c	putc_unlocked	desync
 structs_unions/float_struct_calling.c	putchar_unlocked	desync
@@ -629,7 +625,6 @@ structs_unions/struct_abi.c	negdf	unfaithful
 structs_unions/struct_abi.c	putc_unlocked	desync
 structs_unions/struct_abi.c	putchar_unlocked	desync
 structs_unions/struct_byval.c	f2	unfaithful
-structs_unions/struct_byval.c	f6	desync
 structs_unions/struct_byval.c	fputc_unlocked	desync
 structs_unions/struct_byval.c	main	desync
 structs_unions/struct_byval.c	putc_unlocked	desync
@@ -642,7 +637,6 @@ structs_unions/struct_init.c	test_compound_with_relocs	desync
 structs_unions/struct_init.c	test_init_ranges	desync
 structs_unions/struct_init.c	test_init_struct_from_struct	desync
 structs_unions/struct_init.c	test_multi_relocs	desync
-structs_unions/struct_init.c	test_zero_init	desync
 structs_unions/struct_packed_indirect.c	fputc_unlocked	desync
 structs_unions/struct_packed_indirect.c	main	desync
 structs_unions/struct_packed_indirect.c	putc_unlocked	desync
@@ -651,14 +645,13 @@ structs_unions/struct_return.c	fputc_unlocked	desync
 structs_unions/struct_return.c	putc_unlocked	desync
 structs_unions/struct_return.c	putchar_unlocked	desync
 structs_unions/struct_union_members.c	fputc_unlocked	desync
-structs_unions/struct_union_members.c	main	desync
 structs_unions/struct_union_members.c	putc_unlocked	desync
 structs_unions/struct_union_members.c	putchar_unlocked	desync
 structs_unions/transparent_union.c	fputc_unlocked	desync
 structs_unions/transparent_union.c	putc_unlocked	desync
 structs_unions/transparent_union.c	putchar_unlocked	desync
 structs_unions/union_byval.c	fputc_unlocked	desync
-structs_unions/union_byval.c	main	desync
+structs_unions/union_byval.c	main	unfaithful
 structs_unions/union_byval.c	putc_unlocked	desync
 structs_unions/union_byval.c	putchar_unlocked	desync
 types/attr_mode.c	fputc_unlocked	desync

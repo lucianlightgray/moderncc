@@ -3061,7 +3061,8 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	if (ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
-	/* MCC_AST_MEMBER_AGG (default OFF). The VALUE-model guard already has an
+	/* MCC_AST_MEMBER_AGG (default ON since 2026-07-27). The VALUE-model guard
+	   already has an
 	   aggregate-lvalue escape (`agg_lval`), but this member guard rejects a
 	   struct-typed member outright via ast_bad_type. Measured over mcc's own TU:
 	   all 214 struct-member rejections are lvalues (nonlval=0), i.e. exactly the
@@ -3070,7 +3071,7 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	{ static int agg = -1;
 	  if (agg < 0) { MCC_TRACE("br\n");
 	    const char *e = getenv("MCC_AST_MEMBER_AGG");
-	    agg = e && e[0] && strcmp(e, "0") ? 1 : 0; }
+	    agg = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; }
 	  if (agg && !nonlval && (mtype->t & VT_BTYPE) == VT_STRUCT &&
 	      !(mtype->t & VT_BITFIELD))
 	    { MCC_TRACE("br\n"); mt_bf_ok = 1; } }
