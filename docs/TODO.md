@@ -1281,13 +1281,23 @@ CALL, and it fans out across three different desync sites:**
 | `return 1 ? a : h(1);` — dead ternary arm | desync:2533 |
 | `return h(1);` — control | **faithful** |
 
-So sites 3256 + 2589 + 2533 (87 + 45 + 6 = **138, 39% of all desyncs**) are substantially ONE problem: the parser
-stops emitting code while the recorder keeps modelling. `ast_hook_call_begin` desyncs outright on `nocode_wanted`.
-The fix is to SUSPEND recording across the whole no-code region rather than desync at one hook — but note the
-Tests/infra section records that a FLAT `nocode_wanted` gate was tried and made fidelity WORSE (desync +90,
-faithful -68, 5 new `stackresidue`), because the hooks come in pairs and suspending one side leaves the model
-unbalanced. A working version needs paired enter/leave of the no-code region, in the shape of
-`ast_hook_synth_begin`/`_end`, not a per-hook test.
+Sites 3256 + 2589 + 2533 total 87 + 45 + 6 = **138, 39% of all desyncs**, and they share the THEME that the parser
+knows the code is dead or the condition is constant while the recorder cannot model it. **They do NOT share a
+mechanism, and treating them as one problem would be a mistake — I checked the conditions rather than inferring
+them:**
+
+- **3256** is `ast_hook_call_begin` testing the `nocode_wanted` FLAG. Fix shape: suspend recording across the whole
+  no-code region. Note the Tests/infra section records that a FLAT `nocode_wanted` gate was tried and made fidelity
+  WORSE (desync +90, faithful -68, 5 new `stackresidue`) because the hooks come in pairs; a working version needs
+  paired enter/leave in the shape of `ast_hook_synth_begin`/`_end`, not a per-hook test. Hooking the transitions is
+  harder than it looks — `nocode_wanted` is mutated at ~30 sites in mccgen.c in four different shapes
+  (`++`, `--`, save/restore, and a bare `= 0` that breaks nesting outright).
+- **2589** (`ast_hook_landor_operand`) and **2533** (`ast_hook_ternary_begin`) test `c >= 0`, i.e. the CONDITION
+  folded to a compile-time constant, which is a different predicate entirely. That matches F4's own measurement
+  ("32 events, ALL `c >= 0`"). Fix shape here is to MODEL a constant-condition `&&`/`||`/`?:` — record the arm that
+  is actually taken and drop the other — which is a modelling addition, not a suspend.
+
+So this is two pieces of work, roughly 87 and 51 events, not one of 138.
 
 So F5 alone is now **48% of all desyncs and 14% of every function in the TU** — it was described as "the
 second-largest cause" against an older mix, and it is now comfortably first. Anyone picking up fidelity work should
