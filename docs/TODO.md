@@ -449,8 +449,28 @@ Where that leaves the two halves:
 
   The final classifier is validated in both directions: zero `(bad)` decodes, and `cst_hook_begin`/`end_macro`/
   `mcc_pedantic` all still report DIFFERENT after register canonicalisation, with `cst_hook_begin`'s parser-only
-  instruction coming out as `mov $K,R` — the `mov eax,0` identified by hand. **Only the 2 genuinely-different
-  functions are worth reading individually.**
+  instruction coming out as `mov $K,R` — the `mov eax,0` identified by hand.
+
+  **THE 2 GENUINELY-DIFFERENT ONES ARE A REAL SEMANTIC BUG — a lost sign extension.** `imm_ext` and `modrm` (both in
+  `x86_64-dis.c`) differ identically: parser emits `movslq`, replay emits `movzbl`. Both contain
+  `v = (signed char)get8(d);` — a narrowing cast to a SIGNED narrow type stored into a wider variable. Minimal
+  reproducer and verdicts:
+
+      long long s_char (void) { long long v; v = (signed char)g8();   return v; }  /* UNFAITHFUL */
+      long long s_short(void) { long long v; v = (short)g8();         return v; }  /* UNFAITHFUL */
+      long long u_char (void) { long long v; v = (unsigned char)g8(); return v; }  /* faithful   */
+      long long plain  (void) { long long v; v = g8();                return v; }  /* faithful   */
+
+      parser: call ; movzbl %al,%eax ; movsbl %al,%eax ; movslq %eax,%rax ; mov %rax,-8(%rbp)
+      replay: call ; movzbl %al,%eax ; movsbl %al,%eax ; movzbl %al,%eax  ; mov %rax,-8(%rbp)
+
+  **Replay re-does the byte ZERO-extend instead of the int→`long long` SIGN-extend**, so for any negative value the
+  replayed body computes a different result. It is harmless today only because the always-on comparison rejects it —
+  but that makes it a landmine: anyone who "fixes" `imm_ext`/`modrm` into faithfulness without fixing the extension
+  ships a miscompile. Signed narrow casts (`signed char`, `short`) are affected; unsigned ones are not.
+
+  This is the ONLY correctness-relevant defect found anywhere in the 205-function unfaithful bucket, and it is worth
+  fixing on its own merits rather than for the 2 functions of coverage it buys.
 
   The rest is NOT classified, and the attempted threshold failed a check that should be recorded. Bucketing the
   remaining 62 by "≤10% of bytes differ" (46) versus ">10%" (16) does NOT separate reorder from structurally
