@@ -16455,6 +16455,17 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
 																					(int)rel_len));
 				ast_fn_faithful = faithful;
+				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
+					int ast_bd = -1, ast_i;
+					int ast_lim = new_len < body_len ? new_len : body_len;
+					for (ast_i = 0; ast_i < ast_lim; ast_i++)
+						if (cur_text_section->data[ast_body_ind_sv + ast_i] != orig[ast_i])
+							{ MCC_TRACE("br\n"); ast_bd = ast_i; break; }
+					MCC_TRACE_IF("UNFAITHFUL %s newlen=%d oldlen=%d firstdiff=%d "
+											 "relnew=%d relold=%d\n",
+											 funcname ? funcname : "?", new_len, (int)body_len, ast_bd,
+											 (int)(new_rel - ast_reloc0_sv), (int)rel_len);
+				}
 				if (ast_treechk_on())
 					{ MCC_TRACE("br\n"); ast_treechk(ast_cur, funcname,
 																	 faithful ? "FAITHFUL" : "not-faithful"); }

@@ -196,6 +196,52 @@ narrows the trace, that the hooks still print `r=`/`t=`, and that `AST_SET_DESYN
 silently and each would quietly return the workflow to hand-patching. `trace-gate-invariant` (`tools/tracegate.c`)
 accepts `MCC_TRACE_IF("enter ...")` as a valid function opener alongside `MCC_TRACE("enter\n")`.
 
+## `unfaithful` is now the LARGEST bucket and was never broken down — first characterisation 2026-07-28
+
+At `-O2` on mcc's own TU the split is **1438 faithful / 207 unfaithful / 206 desync** of 1851. Every entry in the
+desync table below has a named hook and a count; `unfaithful` had neither, despite being bigger than any single
+desync site. It is now instrumented permanently: the faithfulness comparison emits
+`UNFAITHFUL <fn> newlen= oldlen= firstdiff= relnew= relold=` under `MCC_LOG=128 MCC_TRACE_FILE=mccast`, so the four
+independent arms of that comparison (length, bytes, relocation count, relocation content) stop collapsing into one
+word. Measured over 205 captured events:
+
+| failing arm | count |
+|---|---:|
+| replay emits a DIFFERENT LENGTH | 108 |
+| same length, bytes differ | 97 |
+| relocation count differs | **0** |
+| relocation content differs | **0** |
+
+**Relocations are never the cause.** That is the `MCC_AST_RELOC_EQUIV` flip carrying its full weight — worth knowing
+before anyone spends effort there again.
+
+Of the 108 length-differs: **43 replay LONGER, 65 SHORTER, mean |delta| 13.7 bytes**, and the distribution is
+dominated by small values — `-5` (12), `+5` (10), `-14` (7), `+2` (6). Of the 97 same-length cases the first differing
+byte sits at a **median 54% into the body** (min 4%, max 99%), i.e. replay tracks the parser for half the function and
+then diverges; it is not failing at the prologue.
+
+**The ±5 class is dead code after a `noreturn` call, and it shares a root cause with the 92-event
+`ast_hook_call_begin`/`nocode_wanted` desync site.** Three-line reproducer:
+
+    extern void bail(const char *) __attribute__((noreturn));
+    extern void warn(const char *);
+    void a(int c, const char *m) { if (c) bail(m); else warn(m); }  /* UNFAITHFUL, newlen 41 vs 36 */
+    void b(int c, const char *m) { if (c) warn(m); else warn(m); }  /* faithful */
+
+The parser sets `nocode_wanted` after the noreturn call and skips the 5-byte jump over the else-branch; replay does
+not model that and emits it. `b` is the same control-flow shape with a returning callee and is faithful, so the
+`noreturn` is the whole difference. On x86_64 five bytes is exactly `jmp rel32`/`call rel32`.
+
+**NOT established, and do not assume it:** what SHARE of the real 108 this accounts for. 32 of 108 have a delta that
+is a multiple of 5, which is suggestive but not proof — a crude source scan for noreturn calls in the named functions
+(`end_macro`, `skip_to_eol`, `tok_print`, `mccgen_finish`) came back empty, and that scan was too loose to trust in
+either direction. Someone should attribute the remaining 76 non-multiple-of-5 deltas before treating `nocode_wanted`
+as the single explanation for this bucket.
+
+The payoff if it does hold: `nocode_wanted` would account for the 92-event desync site AND a large part of the
+207-function unfaithful bucket, making it by far the highest-value remaining modelling target — roughly 300 of the
+413 non-faithful functions rather than the 92 the desync table shows on its own.
+
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 
 **CURRENT STATE, measured 2026-07-27 on mcc's own amalgamated TU at `-O2` (1849 functions, compile `rc=0` so the
