@@ -307,8 +307,19 @@ to flip — this is a decision, not more work.** Evidence, all 2026-07-27:
 The ONLY failing cell with it on is `ast-verify-ratchet`, reporting **769 gaps against a 776 baseline** — it fails
 because the gap set IMPROVED. So flipping is: set the default, regenerate `tests/ast/verify-baseline/<cpu>-<os>.txt`,
 done. Not yet covered by the bar: arm64/riscv64 (tooling-blocked, see (a)) and `-O6` differential.
-`MEMBER_CONST` (+46/+38) and `CMP_INVERT` (+9/+9) have the same shape but have NOT had the fixpoint or fuzz run with
-them on — do those before flipping either. `MCC_AST_MEMBER_AGG` (+106 faithful), `MCC_AST_MEMBER_CONST`
+**`MCC_AST_MEMBER_CONST` and `MCC_AST_CMP_INVERT` now have the same evidence (2026-07-27) — all three meet the bar.**
+Both hold the **3-stage self-host fixpoint byte-identically with the gate ON**, and both pass a **300-seed
+differential fuzz with the full `--gates` sweep: 298 agree, 0 miscompile, 0 buildfail** each. Combined with their
+coverage (`MEMBER_CONST` +46 x86_64 / +38 i386, `CMP_INVERT` +9 / +9), JIT parity, and byte-identity when off, the
+flip criteria are met for all three.
+**Order to flip, if flipping:** `MEMBER_AGG` first (largest, cleanest — zero regressions from `faithful`), then
+`MEMBER_CONST`, then `CMP_INVERT`. Each flip is: change the default, regenerate
+`tests/ast/verify-baseline/<cpu>-<os>.txt`, confirm the ratchet goes green. Flip them SEPARATELY so a regression is
+attributable — their effects overlap (all three touch recorder fidelity) and a combined flip would make bisection
+harder for no gain.
+`CMP_INVERT` carries one extra caveat the other two do not: on arm64 it deliberately DESYNCS rather than models (F2),
+so flipping it slightly reduces arm64 coverage in exchange for removing a wrong model. That is the right trade but it
+should be a conscious one. `MCC_AST_MEMBER_AGG` (+106 faithful), `MCC_AST_MEMBER_CONST`
 (+46) and `MCC_AST_CMP_INVERT` (+9) are all default-OFF and byte-identical off. Each needs, before flipping:
 (a) cross-arch validation — **i386 DONE 2026-07-27, arm64/riscv64 still open.** On a real TU (`src/mcc.c` via a
 native 32-bit `mcc32`, rc=0) all three gates reproduce the x86_64 shape: `MEMBER_AGG` desync 715 -> 601 and faithful
