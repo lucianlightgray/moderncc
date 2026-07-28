@@ -441,19 +441,38 @@ byte-identical output gate-on vs gate-off, 0 regressions**, 214 matching host gc
 either setting); host ctest 7229/7229; cross ctest 7343/7343; self-host fixpoint byte-identical; and all four qemu
 gates (`riscv64`/`arm64`/`arm`/`i386`) 10/10.
 
-Residual riscv64 non-firing after the flip is 10 cases and both groups look like case shape, not defects: the
-promotion family (`promote`/`promo_arrow`/`promo_incdec`/`spill_share`/`color`/`opassign`, which riscv64 compiles but
-has no leaf caller-saved pool for, as noted above) and `bfold_sqrt`/`bfold_sign`/`bfold_round`/`bfold_minmax`. The
-bfold group is NOT yet triaged — do not arch-guard it until measured, per the reassoc lesson.
+**Residual riscv64 non-firing after the flip was 10 cases; all 10 are now RESOLVED 2026-07-27, and measuring each
+before guarding it was the right call — 5 of the 10 turned out NOT to be gaps.**
+- *`bfold_sqrt`/`bfold_sign`/`bfold_round`/`bfold_minmax` (4) — the reassoc situation exactly.* The `bfold` counter
+  goes 0 -> 4/4/5/4 on riscv64, **identical to x86_64**; only the object-level effect is invisible. Moved to
+  `cdelta.txt`, where they pass on every target. Had these been arch-guarded on the object diff alone, the suite would
+  now be asserting that builtin folding does not happen on riscv64, which is false.
+- *`promote` (1) — not a gap either.* riscv64's caller-saved promotion pool is deliberately empty
+  (`AST_PROMO_CALLER_N 0`; pinning a0-a7 makes `get_reg` return -1 and `freg()` assert — the comment at mccast.c:3516
+  documents the crash), but it HAS an 11-register callee-saved pool reached through `MCC_AST_PROMO_LEAF_CALLEE`,
+  which is default-on at `-O4` anyway. Adding that to the case's extra-env field makes it fire on riscv64 and changes
+  nothing on x86_64/arm64, which fire either way.
+- *`promo_arrow`/`promo_incdec`/`spill_share`/`color`/`opassign` (5) — genuinely undemonstrable there, guarded.*
+  These need a CALLER-saved pool to produce an object-level effect, and riscv64's is empty by design. `arch.txt`
+  narrowed from `x86_64,arm64,riscv64` to `x86_64,arm64`, with the file recording that this guards the CASE, not the
+  gate — the same treatment `opassign` already had for i386.
+
+**Method rule this section keeps re-proving, now three times (reassoc, bfold, promote): an object diff conflates "the
+pass did not fire" with "the pass fired and the bytes happened not to change". Measure the `--stats` counter first;
+reach for an arch guard only after the counter also reads zero.**
 
 **F7 — `optfire` cross-triple: arm64 WIRED 2026-07-27; i386 and riscv64 need triage.** Measured every differ case
 through each cross compiler with `OPTFIRE_NORUN=1`:
 
-| target | fires | does not |
+| target | cells | status |
 |---|---:|---|
-| **arm64** | **51 / 51** (wired) | — `regdisp` is arch-guarded to x86_64 |
-| **i386** | **45 / 45** (wired) | — the 6 promotion/`opassign` cases are arch-guarded; nothing left failing |
-| riscv64 | 31 / 51 | loop transforms (3), `bfold_*` (4), `math_inline`, `argfwd`, plus the guarded promotion set |
+| **arm64** | **50** | wired, all passing — `regdisp` is arch-guarded to x86_64 |
+| **i386** | **44** | wired, all passing — the 6 promotion/`opassign` cases are arch-guarded |
+| **riscv64** | **45** | wired, all passing — 5 caller-saved-pool cases arch-guarded |
+
+**All three cross triples are now WIRED: 140 cross cells, 100% passing** (`optfire-arm64` 50, `optfire-i386` 44,
+`optfire-riscv64` 45), alongside 106 host cells. Registration is one loop over `arm64;i386;riscv64` handling both
+`differ` and `cdelta` manifests.
 
 arm64 is therefore wired: 50 `optfire-arm64/<case>` cells, all passing. They register only when the `mcc-arm64` target
 exists, so the default `MCC_ENABLE_CROSS=OFF` build is untouched (7229/7229 unchanged) and they appear in a

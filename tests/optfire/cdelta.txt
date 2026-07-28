@@ -9,3 +9,7 @@ reassoc_assoc|-O2|reassoc|MCC_AST_REASSOC_ASSOC
 reassoc_shlshr|-O2|reassoc|MCC_AST_REASSOC_SHLSHR
 reassoc_shrshl|-O2|reassoc|MCC_AST_REASSOC_SHRSHL
 reassoc_muldist|-O2|reassoc|MCC_AST_REASSOC_MULDIST
+bfold_sqrt|-O2|bfold|MCC_AST_BFOLD_SQRT
+bfold_sign|-O2|bfold|MCC_AST_BFOLD_SIGN
+bfold_round|-O2|bfold|MCC_AST_BFOLD_ROUND
+bfold_minmax|-O2|bfold|MCC_AST_BFOLD_MINMAX

@@ -7,7 +7,7 @@
 # in mccast.c is `&& !ast_inline_pass_env`, so the capture-time graft is dead
 # whenever the post-capture inliner is on.
 templates|-O2|MCC_AST_TEMPLATES|-
-promote|-O2|MCC_AST_PROMOTE|-
+promote|-O2|MCC_AST_PROMOTE|MCC_AST_PROMO_LEAF_CALLEE=1
 inline_capture|-O3|MCC_AST_INLINE|MCC_AST_INLINE_PASS=0
 inline_pass|-O2|MCC_AST_INLINE_PASS|-
 cycle|-O3|MCC_AST_CYCLE|-

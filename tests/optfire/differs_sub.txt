@@ -9,10 +9,6 @@ ident_arith|-O2|MCC_AST_IDENT_ARITH|-
 ident_bit|-O2|MCC_AST_IDENT_BIT|-
 ident_rel|-O2|MCC_AST_IDENT_REL|-
 ident_urange|-O2|MCC_AST_IDENT_URANGE|-
-bfold_sqrt|-O2|MCC_AST_BFOLD_SQRT|-|-lm
-bfold_sign|-O2|MCC_AST_BFOLD_SIGN|-|-lm
-bfold_round|-O2|MCC_AST_BFOLD_ROUND|-|-lm
-bfold_minmax|-O2|MCC_AST_BFOLD_MINMAX|-|-lm
 narrow_fix|-O2|MCC_AST_NARROW_FIX|-
 narrow_elim|-O2|MCC_AST_NARROW_ELIM|-
 narrow_class0|-O2|MCC_AST_NARROW_CLASS0|-

@@ -3953,7 +3953,7 @@ if(MCC_BUILD_TESTS)
         # default MCC_ENABLE_CROSS=OFF build is unaffected. arch.txt is honoured
         # against the CROSS target's cpu, not the host's, so a case that is
         # compile-time inert on a target cannot report a spurious DID-NOT-FIRE.
-            foreach(_ofx_cpu IN ITEMS arm64 i386)
+            foreach(_ofx_cpu IN ITEMS arm64 i386 riscv64)
             if(UNIX AND TARGET mcc-${_ofx_cpu})
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _ofx_xfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cdelta*.txt")
