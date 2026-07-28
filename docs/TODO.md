@@ -288,11 +288,35 @@ unfaithful bucket.
 So `return`/`goto`-terminated branches already replay correctly. Do not generalise the noreturn finding to
 "terminating branches" — that was tried and refuted.
 
-**Still open: what produces the ±5 in the REAL functions.** They have the same SHAPE — `MCC_AST_UNFAITHFUL_DUMP=1`
-(window now centred on `firstdiff`) shows `mcc_pedantic` at offset 387 emitting `0f 84 51 ...` in the parser against
-`0f 84 56 ...` in replay, i.e. a conditional jump whose displacement is 5 larger because replay emits 5 extra bytes
-inside the skipped region — but the cause is NOT `nocode_wanted`, and is not yet identified. Next step is to widen
-the dump past the `je` and read the extra instruction directly, exactly as was done for `a_noret`.
+**The real ±5 is the SAME construct — and that makes the "0 of 205" figure self-contradictory.** Widening the dump
+(`MCC_AST_UNFAITHFUL_DUMP=<bytes>`, now a byte count rather than a flag) and aligning the two sequences shows
+`mcc_pedantic` diverging at absolute offset **480**, where replay emits **`e9 63 00 00 00`** — a `jmp rel32`, exactly
+the construct the synthetic `a_noret` case produces. The earlier `je` displacement difference (`0x51` vs `0x56`) is
+just its consequence.
+
+And `mcc_pedantic`'s source is precisely the noreturn shape:
+
+    if (mcc_state->pedantic_errors) mcc_error("%s", msg);
+    else                            mcc_warning_c(warn_pedantic)("%s", msg);
+
+`mcc_error` is `#define mcc_error MCC_SET_STATE(_mcc_error)` and `_mcc_error` is declared
+`PUB_FUNC NORETURN void _mcc_error(...)`. So this call site SHOULD have set `func_noreturn` → `CODE_OFF()` →
+`nocode_wanted`, and the validated detector SHOULD have reported 1 for it. It reported 0.
+
+**Therefore treat "0 of 205" as UNRESOLVED, not as a finding.** Two explanations were possible and the macro one is
+now ELIMINATED: `MCC_SET_STATE(fn)` has two definitions, and `src/mccgen.c:1` defines `USING_GLOBALS`, under which it
+is simply `#define MCC_SET_STATE(fn) fn`. So inside `mccgen.c` the call really is a plain call to the `NORETURN`
+`_mcc_error`, not a comma-expression through a computed callee — the callee `Sym` does carry `func_noreturn`, and
+`CODE_OFF()` should fire. (The other definition, `(mcc_enter_state(s1), fn)`, would have produced a computed callee
+and would ALSO have tripped `ast_hook_call_begin`'s callee-kind guard into `desync`, which is not what these
+functions report.)
+
+What remains is therefore the second explanation: **the detector's sampling point is still wrong for this path** —
+`ast_hook_call_end` is validated on a synthetic `extern __attribute__((noreturn))` callee but evidently does not
+observe `nocode_wanted` for these in-tree calls. Find out why before re-running the attribution; the count is
+worthless until then. Do not repeat the mistake of reporting a 0 from an instrument not validated on the specific
+positives being counted — that has now happened twice in this section, once with the hook-sampling detector and once
+here.
 
 Fixing this means the recorder must model "this branch ends unreachable" so replay suppresses the same jump. That is
 the same dead-region state the 92-event `ast_hook_call_begin`/`nocode_wanted` desync site gives up on, so one model

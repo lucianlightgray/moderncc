@@ -16469,11 +16469,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 											 funcname ? funcname : "?", new_len, (int)body_len, ast_bd,
 											 (int)(new_rel - ast_reloc0_sv), (int)rel_len, ast_saw_nocode);
 					if (getenv("MCC_AST_UNFAITHFUL_DUMP")) { MCC_TRACE("br\n");
+						int ast_win = atoi(getenv("MCC_AST_UNFAITHFUL_DUMP"));
 						int ast_w = ast_bd >= 0 ? ast_bd - 8 : (int)body_len - 24;
 						int ast_dn, ast_do;
+						if (ast_win < 16) { MCC_TRACE("br\n"); ast_win = 48; }
 						if (ast_w < 0) { MCC_TRACE("br\n"); ast_w = 0; }
-						ast_dn = new_len - ast_w < 48 ? new_len - ast_w : 48;
-						ast_do = (int)body_len - ast_w < 48 ? (int)body_len - ast_w : 48;
+						ast_dn = new_len - ast_w < ast_win ? new_len - ast_w : ast_win;
+						ast_do = (int)body_len - ast_w < ast_win ? (int)body_len - ast_w : ast_win;
 						if (ast_dn < 0) { MCC_TRACE("br\n"); ast_dn = 0; }
 						if (ast_do < 0) { MCC_TRACE("br\n"); ast_do = 0; }
 						fprintf(stderr, "[unfaithful] %s @%d parser:", funcname ? funcname : "?", ast_w);
