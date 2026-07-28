@@ -755,6 +755,59 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 207-function unfaithful bucket, making it by far the highest-value remaining modelling target — roughly 300 of the
 413 non-faithful functions rather than the 92 the desync table shows on its own.
 
+## NEXT WORKSTREAM — user-prioritized 2026-07-28, in this order
+
+Chosen from the decision table at the end of the 2026-07-28 session. Work them in order; each has its evidence
+already gathered and cited, so none of them starts from measurement.
+
+**Standing method for ALL of these: use `MCC_TRACE` to TEST THEORIES AND PROVE IMPLEMENTATION DIRECTIONS.** Do not
+reason about what the recorder or replay "should" be doing and then patch — instrument, run, read. This session
+produced two landed fixes and four rejected ones, and in every single case the trace decided it. The tooling is
+`tools/tracediff.sh`, `MCC_LOG=128`, `MCC_TRACE_FILE`/`MCC_TRACE_FUNC`/`MCC_TRACE_SKIP`, `MCC_AST_UNFAITHFUL_DUMP`,
+and the `LEAF`/`RV`/`CVT`/`FIN`/`[unfaithful-rel]` traces already in place.
+
+### 1. D1a — audit gates staged at `-O3` that could drop to `-O2`
+`MCC_AST_OPASSIGN` was staged at `o4 || optimize >= 3` for no recorded reason; dropping it to `>= 2` took nbody
+`-O2` from 0.49s to 0.41s — **exactly its `-O3` time** — with byte-identical output, +44 faithful, and a green bar
+(`6acb9e69`). Enumerate every other gate with an `optimize >= 3` default in `ast_configure`, and for each: measure
+fidelity delta, measure the runtime-bench kernels, run the bar. The precedent says at least one more may be
+mis-staged. Cheapest item here with a directly measurable payoff.
+
+### 2. B1a — the assignment-as-value model-shape change (fall back to B1b)
+One root cause behind **45 chained stores + 3 call-argument cases + the discarded-value ternary**. The model must
+represent BOTH "the value is this constant/expression" AND "materialise it once, here, before the first store".
+Evidence already in hand, all in this file: the `FIN` trace catching the outer store's finalize overwriting
+`VT_CONST` with register 0; the two-statement control (`b = 0; a = 0;`) proving the recorder normally records the
+constant; and two narrow fixes tried and REJECTED on evidence (skip the outer finalize — no effect; preserve the
+constant form — swaps a 6-byte register store for a 10-byte immediate store, unfaithful either way).
+
+**This is where `emit-at-marker` miscompiled** at `-O2`/`-O3` while passing `-O0`/`-O1`, caught only by
+`assign_value_effects.c` counting evaluations. So: prove the direction with traces BEFORE writing the change, and
+gate it on `assign_value_effects.c` plus the full bar.
+
+**Fall back to B1b if B1a does not prove out:** fix only the discarded-value ternary, which today records NOTHING
+(verdict `empty`, reproducer `void f(int c){ c ? a() : b(); }`). It is the smallest slice of the family and is
+isolated from the chained-store hazard.
+
+### 3. A2a — characterise and design the vstack SYNC site (43)
+**The only desync site with no recorded verdict** — every other one is already "ruled out" or "needs a known design
+change". Prior characterisation: 13 Invoke, 12 Literal, 9 Binary, 5 Unary, 3 Load, 1 StoreVal, with 12 inside
+short-circuit regions. This is the one place where measurement still buys information, so measure first and only
+then design.
+
+### 4. A1a — model dead regions for `nocode_wanted` (92)
+Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
+transitions across ~30 irregular mutation sites; and a region suspend, which fails because it leaves the model
+BEHIND the vstack — values are real even when code is not. A fourth approach has to mirror stack effects while
+recording nothing AND survive a self-host generation. Hardest item in the file; do not start it before 1–3.
+
+### Alongside
+- **E1b — prune this file.** It is 3062 lines and its own "How to process" rule says completed items are pruned
+  entirely with detail left to git history. The 2026-07-27 and 2026-07-28 sessions both added large resolved
+  blocks that now qualify.
+- **D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.** The recorded curve was taken at 59.5% fidelity and
+  is now cited in conclusions; fidelity is 77.9%. Redo it before anyone reasons from the old numbers again.
+
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 
 **CURRENT STATE, measured 2026-07-28 on mcc's own amalgamated TU at `-O2` (1856 functions, compile `rc=0` so the
