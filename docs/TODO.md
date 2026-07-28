@@ -1112,6 +1112,28 @@ witness, not the culprit.
 **Every event is a distinct function** (261 events, 261 functions), so this is one systematic gap rather than a few
 functions failing repeatedly.
 
+**RE-MEASURED 2026-07-27 after the five fidelity fixes — the signature is UNCHANGED and the stale node is now
+IDENTIFIED.** The site is down to 64 events, but every one still has `delta = -1` (model one node too many) and
+`cap = 0`, so nothing about the earlier diagnosis moved. Dumping the model stack at the failure shows the model holds
+exactly ONE stale node in 61 of 64 cases (`vn=1 rel=1`), and its kind is:
+
+| leftover node | count |
+|---|---:|
+| `AST_Convert` | **22** |
+| `AST_Invoke` | 13 |
+| `AST_Literal` | 12 |
+| `AST_Binary` | 6 |
+| `AST_Unary` | 5 |
+| `AST_Load` | 2 |
+| `AST_StoreVal` | 1 |
+
+**So the search is now concrete: find the path that consumes a vstack entry holding a CONVERSION result without
+dropping its `ast_vs` node** — that is a third of the site, and `ast_hook_convert` replaces the top of `ast_vs` with
+a `Convert`, so a consumer that pops the vstack without a matching hook leaves exactly this. The `Invoke` (13) and
+`Literal` (12) groups are the same bug seen through other producers. Context is mostly clean (`in_op=0 in_call=0
+tern=0 lor=0` in 52 of 64), so this is not an in-flight-expression artifact; 12 events are inside a short-circuit
+region (`lor=1`) and may share a cause with the landor work above.
+
 **MINIMAL REPRODUCER for one path into this site, bisected 2026-07-27 out of `tests/exec/lexical/U32_string.c`
 (15 lines, the smallest corpus file that hits it):**
 
