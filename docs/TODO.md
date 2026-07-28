@@ -340,7 +340,7 @@ So do not look for a single fix here. Use `MCC_AST_UNFAITHFUL_DUMP=<bytes>` per 
 `firstdiff`, and for these functions `firstdiff` (133–255) is well past the prologue, so a small window shows only
 the consequence (a shifted branch displacement) rather than the cause.
 
-### CHAINED ASSIGNMENT loses its RHS materialisation in replay — 2-line reproducer, found 2026-07-28
+### CHAINED ASSIGNMENT loses its RHS materialisation in replay — ALREADY DOCUMENTED IN `ast_hook_vstore`
 
 Chasing the `cst_hook_begin` `-5` case above led straight to its source line, `cst_lcount = cst_scount = cst_sstop = 0;`
 — a chained assignment. Minimal reproducer and verdicts:
@@ -361,6 +361,17 @@ A single store is fine; **any chain of two or more is not**, and it is not sensi
 whatever happened to be in `eax`. It is correctly rejected — the always-on comparison catches it, which is exactly
 why replay bugs cost coverage rather than correctness — but the model is losing the RHS value production, not merely
 ordering it differently.
+
+**This was NOT a new discovery — the cause is already stated in the `MCC_AST_CHAINSTORE` comment in
+`ast_hook_vstore`**, which says the gate "does NOT make the chained-assignment idiom faithful; that has a separate
+cause (the parser materialises the value once and chains two vstores, the replay emits two independent stores)."
+That is the same root cause, written down before this investigation started. What is added here is only the
+evidence: the two-line reproducer, the verdict table showing a chain of TWO already suffices and that it is
+RHS-independent, and the byte-level confirmation that the missing bytes are precisely the value materialisation.
+
+That makes twice in this session that the answer was already in a code comment — the other being
+`MCC_AST_OPASSIGN`, whose header comment even named nbody's `advance()` as the victim. **Read the gate comment for
+the construct before investigating it.**
 
 This is the `AST_StoreVal` / assignment-as-value area (F3a): the chain's inner store is consumed as a VALUE by the
 outer store, and that value is what goes missing. Anyone fixing it should re-check `assign_value_effects.c`, which
