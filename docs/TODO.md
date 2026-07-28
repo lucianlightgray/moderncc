@@ -1178,6 +1178,33 @@ Payoff if done: 218 of the 256 located site-2302 functions are void-with-bare-`r
 desyncs, and the 60 `bail` verdicts are largely this too — so this one construct plausibly gates ~40% of every
 non-faithful function in mcc's own TU. It is the single highest-value item in the fidelity section by a wide margin.
 
+**ATTEMPTED 2026-07-27 — the recorder half is a ONE-LINE change and it WORKS; the blocker is that the PASSES assume a
+Return always has a value child. Reverted, with the remaining work enumerated.**
+
+**Replay already supports a valueless Return** (mccast.c `case AST_Return`): it guards `v != AST_NONE` around the
+value emission and otherwise emits only the epilogue jump, in both the graft and normal paths. Nothing there needs
+writing. The recorder change is just to stop bailing:
+
+    if (has_val && ast_ret_val == AST_NONE) { ast_bail = 1; return; }   /* was: !has_val || ... */
+    AstLocal ret = ast_node(ast_cur, AST_Return);
+    if (has_val) ast_add_child(ast_cur, ret, ast_ret_val);
+
+With that, every probe above flips to **faithful** — `if(!a) return;` alone, with a following statement, with a
+following `if`, and a trailing bare `return;` — and the exec corpus builds with **0 crashes**, both side-effect guards
+pass (`calls=14 calls2=2`, `effects ok`).
+
+**Then mcc's own TU SEGFAULTS.** `ast_cprop_safe(a, n=0xffffffff)` -> `ast_type_t` on `AST_NONE`, from
+`ast_cprop_block` (mccast.c:8073) doing `ast_cprop_safe(a, ast_first_child(a, s))` for `k == AST_Return` with no
+child. So the passes, not the replay, are what assume the child exists. Note the exec corpus did NOT catch this —
+only the full amalgamation did, which is worth knowing before trusting a green corpus run on any Return-shape change.
+
+**Remaining work is a per-pass audit of the 14 `AST_Return` sites in mccast.c.** Unguarded child accesses seen at
+lines ~3771, 8072, 8279, 9386, 13635, 13731; line 9464 already does it correctly (`ast_nchild(ca, n) == 1`). This is
+NOT a mechanical null-guard: each pass needs a decision about what a valueless return MEANS to it (cprop must kill its
+known-values set but has nothing to rewrite; DSE must treat it as a barrier; TCO/inline must not treat it as a
+value-producing return). A wrong guard here is the dangerous class — it passes the byte check and then miscompiles
+under `-O2` — so each site wants the side-effect-counting guards plus the fuzz, not just a fidelity count.
+
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
 TU at `-O2`, 1849 functions: **1101 faithful / 540 desync / 149 unfaithful / 60 bail / 1 empty**. The desyncs by site:
