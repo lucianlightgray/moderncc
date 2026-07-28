@@ -920,9 +920,26 @@ has produced a false signal (`faithful`/`unfaithful`, `verified` in a refusal me
 **The uniformity is the finding.** Every failure is `ast_vn == rel`, i.e. the recorder holds exactly one MORE
 modelled value than the codegen vstack — never two, never fewer, and never a capacity problem. So this is not 43
 independent modelling gaps; it is one class of event that pushes a model value without a matching vstack push (or
-drops a vstack pop without dropping the model value). **Design from that:** find the hook that can leave `ast_vn`
-one high, rather than auditing 43 functions. The 31 outside any ternary/short-circuit region are the cleanest place
-to look, since they exclude the known short-circuit region interactions.
+drops a vstack pop without dropping the model value).
+
+**AND THE SITE IS A DETECTOR, NOT THE CULPRIT — value forms at the 43 failures:**
+
+| field | distribution |
+|---|---|
+| `r` | 27 × `0x230` (`VT_CONST\|VT_SYM`, a symbol address), 16 × `0x30` (plain constant) |
+| `t` | **24 × `0xa006` — `VT_BTYPE = 6 = VT_FUNC`**, 12 × `0x4` (`VT_LLONG`), 3 × `0x302003`, 3 × `0x1006`, 1 × `0x3` |
+| `vn` at failure | **40 × `vn=1`**, 3 × `vn=2` |
+
+The value being pushed when the guard fires is overwhelmingly a **function symbol** — i.e. the CALLEE of a call.
+With `vn=1` and `delta=1`, the model is carrying one stale value from earlier in the body and the mismatch is first
+noticed when the next call pushes its callee. **So do not look for a hook that mis-pushes a function symbol** — the
+callee push is innocent and merely the first thing to check the invariant after the drift. Find what leaves a value
+in `ast_vs` earlier.
+
+Empirically NOT the cause (tested, all faithful): early `return` in a branch, a `noreturn` call in a branch, a
+noreturn call followed by more statements, deref-after-check, and `c ? g() : 0`. Discarded `(void)x` casts come out
+`empty`, not SYNC, so they are excluded too. The 31 failures outside any ternary/short-circuit region remain the
+cleanest population to bisect.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
