@@ -5811,13 +5811,26 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
 
-                add_test(NAME ${_tn}-O2 COMMAND "$<TARGET_FILE:mccharness>" qemurun
-                    --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"
-                    --sysroot "${_root}" --qemu "${_QEMU_${_arch}}"
-                    --srcdir "${_qsrc}" --arch "${_arch}" --opt "-O2"
-                    --workdir "${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}-O2")
-                set_tests_properties(${_tn}-O2 PROPERTIES
-                    FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
+                # Level sweep per triple. -O2/-O3/-Os are the levels that unlock
+                # DISTINCT default gate sets: -O3 adds CYCLE/OPASSIGN/CHAINSTORE/
+                # INLINE, -Os adds PROMO_ARROW/PROMO_INCDEC/REGDISP. These cells
+                # were briefly added and reverted once because the corpus was
+                # ABI/libc shaped and could not tell the levels apart (-O3 was
+                # byte-identical to -O2 and -Os to -O0 on all 30 artifacts);
+                # opt_loops.c and opt_structs.c exist to close that, and every
+                # triple now has a program where each level diverges. If those go
+                # away, re-check before trusting these cells. -O1 is skipped as a
+                # subset of -O2, and -O4 needs its own budget (out-of-process
+                # superopt, ~20 s per compile).
+                foreach(_qopt IN ITEMS O2 O3 Os)
+                    add_test(NAME ${_tn}-${_qopt} COMMAND "$<TARGET_FILE:mccharness>" qemurun
+                        --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"
+                        --sysroot "${_root}" --qemu "${_QEMU_${_arch}}"
+                        --srcdir "${_qsrc}" --arch "${_arch}" --opt "-${_qopt}"
+                        --workdir "${CMAKE_BINARY_DIR}/qemu-work/${_arch}-${_libc}-${_qopt}")
+                    set_tests_properties(${_tn}-${_qopt} PROPERTIES
+                        FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
+                endforeach()
 
                 if(NOT _arch STREQUAL MCC_CPU)
                     add_test(NAME ${_tn}-exec COMMAND exec_runner
