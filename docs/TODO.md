@@ -568,12 +568,32 @@ mcc's own source has **26 `if ((x = …))` and 18 `while ((x = …))` sites**, a
 (`if ((f = fopen(…)))`). This is also the true cause of one of F3's four functions: `so_ckpt_write`'s
 `if ((f = host_fopen(path, "rb")))`.
 
-Where to fix: the machinery for "an assignment's value is consumed" already exists for COMPOUND assignment —
-`ast_hook_vdup` / `ast_vdup_pending` / `ast_opassign_store_pending` deep-copy the target node so the model stays a
-tree (mccast.c `ast_hook_vpush`). Plain assignment-as-value appears not to be wired into it, so the condition ends up
-re-evaluating the RHS. The fix is to model the consumed value as a reference to the assigned location, not as a second
-copy of the RHS subtree. NOTE this is a coverage fix with a correctness-shaped failure mode — a wrong fix here
-duplicates or drops a call — so it needs the exec corpus plus the differential fuzz, not just a fidelity count.
+**ROOT CAUSE, localised to one line — `ast_hook_vstore` (mccast.c:3442):**
+
+    ast_add_child(ast_cur, st, lval);
+    ast_add_child(ast_cur, st, value);
+    ast_add_child(ast_cur, ast_cur_bb, st);
+    ast_vs[ast_vn - 2] = value;   /* <-- residual value of the assignment IS the RHS subtree */
+    ast_vn--;
+
+An assignment leaves the RHS EXPRESSION TREE as its residual model value, so any later consumer of `(h = expr)`
+replays that whole subtree — re-emitting its call. The parser does the opposite: it materialises the value once and
+keeps it live, and the condition tests what is already there.
+
+**Do not "fix" this by pointing the residual at the lval.** The replay would then emit a LOAD from the assigned
+location that the parser never emits, so the body stays unfaithful — the coverage is not recovered, and every
+currently-faithful `a = pure_expr` consumer would change bytes too. The residual needs to be a node kind meaning "the
+value this Store already produced", which replay reuses instead of re-evaluating. That is new node/replay semantics,
+not a local edit, which is why it was NOT attempted here.
+
+The same root cause is already noted three lines above in that function's own comment for a sibling case: *"this does
+NOT make the chained-assignment idiom faithful; that has a separate cause (the parser materialises the value once and
+chains two vstores, the replay emits two independent stores)"*. Chained assignment `a = b = c` and
+assignment-in-condition are the SAME defect seen twice — both are "the value a Store produced" being re-derived rather
+than reused. Fixing the residual properly should close both.
+
+NOTE this is a coverage fix with a correctness-shaped failure mode — a wrong fix here duplicates or drops a call — so
+it needs the exec corpus plus the differential fuzz, not just a fidelity count.
 
 **F4 — The `&&`/`||` desync site: MEASURED 2026-07-27, and it is one cause, not four.** Instrumenting the guard in
 `ast_hook_landor_operand` over mcc's own TU: **32 events, ALL `c >= 0`** — the first operand of the `&&`/`||` folded
