@@ -421,10 +421,21 @@ Where that leaves the two halves:
   model records. It also means this group is unlikely to be hiding a correctness bug, unlike a dropped value
   materialisation.
 
-  Only two of the 92 were read, so treat "order differences" as a hypothesis with two supporting cases, not a
-  measured split — the mistake made three times earlier in this section was believing an unvalidated summary. The
-  cheap next step is to classify all 92 by whether the multiset of instruction bytes is preserved (a pure reorder
-  keeps it; a genuine miscompile generally does not).
+  **Classified all 92 by byte multiset, 2026-07-28. Only one number from it is trustworthy: 30 of 92 (33%) have an
+  IDENTICAL byte multiset**, i.e. the parser and replay emit exactly the same bytes in a different order. Those are
+  pure reorders beyond argument.
+
+  The rest is NOT classified, and the attempted threshold failed a check that should be recorded. Bucketing the
+  remaining 62 by "≤10% of bytes differ" (46) versus ">10%" (16) does NOT separate reorder from structurally
+  different: `mcc_mulhs64` and `host_nproc` — the two cases READ BY HAND above and confirmed to be an operand-order
+  and a block-order difference — score 14% and 13%, landing in the supposedly "structurally different" group. A
+  register swap (`48 29 c1` → `48 29 c8`) and the displacement changes that follow a reordered block move the
+  multiset far more than the ordering itself does, so the metric measures the wrong thing at that resolution.
+
+  Do not treat the 16 as a shortlist of real bugs; that reading was checked against two known-good cases and failed.
+  A useful classifier needs to compare DECODED instructions (opcode + operand roles) rather than raw bytes, or to
+  canonicalise displacements before comparing. Until then: 30 confirmed pure reorders, 62 unclassified, and the
+  two-case hypothesis that the group is dominated by ordering stands unrefuted but unmeasured.
 
 **Standing caution, earned three times in this section.** A `0` from an instrument is not a finding until the
 instrument has been shown to produce a `1` on a known positive DRAWN FROM THE SAME POPULATION, and until the
