@@ -916,7 +916,23 @@ passes then transform a wrong tree and re-emit from it — and that output is no
 corpus and the differential fuzz — but the byte check will catch the ordinary failure of simply getting the emission
 wrong, which is the failure this item was most likely to hit.
 
-**The guard for that fix LANDED 2026-07-27, before the fix itself: `tests/exec/optimizer/assign_value_effects.c`.**
+**GENERALISED 2026-07-27 into `tests/exec/optimizer/side_effect_order.c`, because the class of bug it catches is not
+specific to F3a.** A MODEL bug is invisible to every other gate in this repo: the replay is byte-compared against the
+parser before it is used, so a bad replay only costs optimization — but once a body is ACCEPTED the passes transform
+the model and re-emit, and *that* output is compared against nothing. Such a bug therefore miscompiles only at `-O2`
+and above. It happened for real (see "emit-at-marker" above, which was correct at `-O0`/`-O1` and wrong at `-O2`), and
+the only reason it was caught is that the effects were COUNTED — **the repo's other optimizer goldens fold results
+into a checksum, which a reordered or dropped side effect can leave unchanged.**
+
+So the new file pins side-effect ORDER and COUNT across every construct the recorder models with a dedicated hook:
+ternary arms, `&&`/`||` short-circuit (including that the right operand is not evaluated at all), comma sequencing,
+compound assignment, pre/post increment, nested calls and call arguments. Each effect appends a tag to a log and
+`main` compares the log to an exact string, so ordering is pinned rather than summed. Golden `effects ok`. Agrees with
+gcc at `-O0/-O1/-O2/-O3/-Os` and with mcc at those plus `-O4`; 23 ctest cells. **Mutation-tested against both bug
+classes it targets**: breaking `&&`'s short-circuit exits 3, and reordering the operands of a nested call expression
+exits 10.
+
+**The guard for the F3a fix LANDED 2026-07-27, before the fix itself: `tests/exec/optimizer/assign_value_effects.c`.**
 Ten shapes of assignment-used-as-a-value (`if`/`while` condition, chained `a = b = f()`, both arms of a `&&`, nested
 `(b = f()) + 1`, as a call argument, in a ternary, in a `return`), each COUNTING its own side effects so an extra or
 missing evaluation changes stdout instead of hiding in a checksum. Golden `calls=14 calls2=2`. It also pins the
