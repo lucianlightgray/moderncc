@@ -1287,7 +1287,17 @@ mechanism, and treating them as one problem would be a mistake — I checked the
 them:**
 
 - **3256** is `ast_hook_call_begin` testing the `nocode_wanted` FLAG. Fix shape: suspend recording across the whole
-  no-code region. Note the Tests/infra section records that a FLAT `nocode_wanted` gate was tried and made fidelity
+  no-code region.
+  **A TARGETED suspend was tried 2026-07-27 and does NOT work — recording it because the boundaries looked ideal.**
+  After the constant-ternary fix landed, the recorder knows exactly where a folded ternary's untaken arm starts and
+  ends (`_branch` / `_branch_done` for the non-taken index), which is precisely the paired enter/leave the general
+  `nocode_wanted` problem lacks. Suspending recording across that arm (`ast_in_op++` / `--`) nevertheless REGRESSES
+  the already-working case: `1 ? a : b` goes faithful -> desync. **Reason, and it generalises to any suspend-based
+  attempt: the untaken arm's VALUE is real even though its CODE is not.** The parser still pushes a vstack entry for
+  that arm — the landed fix accounts for it with an `ast_vn--` — so suppressing the recorder leaves the model one
+  BEHIND the vstack instead of one ahead. A no-code region cannot be made invisible to the model; the model has to
+  keep mirroring the stack effects while recording no nodes. That is a different mechanism from
+  `ast_hook_synth_begin`/`_end`, which suppresses both. Note the Tests/infra section records that a FLAT `nocode_wanted` gate was tried and made fidelity
   WORSE (desync +90, faithful -68, 5 new `stackresidue`) because the hooks come in pairs; a working version needs
   paired enter/leave in the shape of `ast_hook_synth_begin`/`_end`, not a per-hook test. Hooking the transitions is
   harder than it looks — `nocode_wanted` is mutated at ~30 sites in mccgen.c in four different shapes
