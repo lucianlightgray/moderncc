@@ -5460,6 +5460,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		sv.type.t = ast_type_t(a, n);
 		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		sv.r = (unsigned short)ast_op(a, n);
+		MCC_TRACE_IF("LEAF n=%d r=%#x t=%#x ival=%lld\n", (int)n, sv.r, sv.type.t,
+								 (long long)ast_ival(a, n));
 		sv.r2 = VT_CONST;
 		sv.c.i = ast_ival(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);

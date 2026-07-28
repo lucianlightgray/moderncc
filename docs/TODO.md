@@ -422,6 +422,24 @@ it.
   in. That is a model-shape change in the exact place `emit-at-marker` miscompiled, so it needs
   `assign_value_effects.c` plus the full bar — but the mechanism is no longer guesswork.
 
+- **The recorded leaf forms, measured 2026-07-28 (`LEAF n= r= t= ival=` trace in the `AST_Literal`/`AST_Ref` replay
+  case), pin it exactly:**
+
+  | case | value leaf `r` | `t` |
+  |---|---|---|
+  | `a = 0` (faithful) | `0x30` = `VT_CONST` | `0x3` = `VT_INT` |
+  | `a = b = 0` (unfaithful) | `0` = **register `eax`** | `0x3003` — **the LVALUE's type** |
+
+  The chained value leaf is recorded as register-resident AND carries the lvalue's type rather than the constant's,
+  so it was finalised against the wrong `SValue` altogether — not merely against a materialised copy of the right
+  one.
+
+- **ATTEMPTED AND REJECTED: skipping `ast_finalize_leaf(value, vtop)` when the value came from the marker
+  (`if (!mkr)`).** No effect — all four reproducer verdicts unchanged. That rules out the OUTER store's finalize as
+  the culprit: node 3 already carries `r=0` before the outer store runs, so the damage is done by the INNER store's
+  own finalize, at the moment the parser has materialised the constant into `eax`. Any fix must address that
+  earlier finalize, not the chained path's. Reverted; no source change kept from the attempt.
+
 **Do NOT fix this by making the marker emit at its use site.** That was tried earlier in this session (F3a,
 "emit-at-marker"): correct at `-O0`/`-O1`, MISCOMPILED at `-O2`/`-O3`, and caught only because
 `assign_value_effects.c` counts evaluations rather than checksumming results.
