@@ -485,7 +485,6 @@ programs/strings.c	putc_unlocked	desync
 programs/strings.c	putchar_unlocked	desync
 runner.c	bsearch	desync
 runner.c	fputc_unlocked	desync
-runner.c	main	desync
 runner.c	putc_unlocked	desync
 runner.c	putchar_unlocked	desync
 runner.c	run_capture	unfaithful

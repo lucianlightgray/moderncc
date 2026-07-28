@@ -321,7 +321,28 @@ harder for no gain.
 so flipping it slightly reduces arm64 coverage in exchange for removing a wrong model. That is the right trade but it
 should be a conscious one. `MCC_AST_MEMBER_AGG` (+106 faithful), `MCC_AST_MEMBER_CONST`
 (+46) and `MCC_AST_CMP_INVERT` (+9) are all default-OFF and byte-identical off. Each needs, before flipping:
-(a) cross-arch validation — **i386 DONE 2026-07-27, arm64/riscv64 still open.** On a real TU (`src/mcc.c` via a
+(a) cross-arch validation — **DONE on ALL FOUR TARGETS 2026-07-27; the recorded blocker was wrong.** This entry said
+arm64/riscv64 "cannot compile a large TU on an x86_64 box (`mcchost.c: field not found: pc`, host-shaped
+signal-context fields), so they need a real cross sysroot or a native run." They do need a cross sysroot — and one is
+already vendored. Pointing each cross compiler at its own musl stage3 headers compiles the whole amalgamation on this
+box: `mcc-<cpu> -B cmake-cross --sysroot vendor/gentoo-stage3-<cpu>-musl -isystem $ROOT/usr/include` plus the `-D`/`-I`
+set lifted from `compile_commands.json` (drop `MCC_TARGET_*`, `MCC_GITHASH` — it contains a space and splits into two
+argv entries — and the other arch's `-I`). arm64 5730847 B, riscv64 7703633 B, both rc=0. Faithful delta on the full
+`src/mcc.c` TU:
+
+| gate | x86_64 | i386 | arm64 | riscv64 |
+|---|---:|---:|---:|---:|
+| `MEMBER_AGG` | +106 | +87 | +97 | +97 |
+| `MEMBER_CONST` | +46 | +38 | +78 | +83 |
+| `CMP_INVERT` | +9 | +9 | +0 | +9 |
+
+So none of the three is x86_64-specific, and `MEMBER_CONST` is roughly **twice as valuable on arm64/riscv64** as on
+x86_64. `CMP_INVERT`'s arm64 `+0` is the documented by-construction case (F2): it moves 21 functions from
+`unfaithful` to `desync`, and since both are excluded from optimization the coverage is unchanged while a wrong model
+is removed. **Do NOT use the exec corpus as the cross-arch oracle for these gates** — it yields +1/+0/-2, far too
+small to distinguish anything, for the same reason the `optfire` corpus is useless here: neither contains enough
+nested-struct member access. The large TU is the only oracle that separates them.
+Superseded note, kept for the method: **i386 DONE 2026-07-27, arm64/riscv64 were open.** On a real TU (`src/mcc.c` via a
 native 32-bit `mcc32`, rc=0) all three gates reproduce the x86_64 shape: `MEMBER_AGG` desync 715 -> 601 and faithful
 **811 -> 898 (+87** vs +106 on x86_64), `MEMBER_CONST` +38 (vs +46), `CMP_INVERT` +9 (vs +9). So the gates are not
 x86_64-specific. Two caveats: the freestanding `optfire` corpus shows NO difference on ANY target for `MEMBER_AGG`

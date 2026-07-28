@@ -3075,7 +3075,7 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	  if (agg && !nonlval && (mtype->t & VT_BTYPE) == VT_STRUCT &&
 	      !(mtype->t & VT_BITFIELD))
 	    { MCC_TRACE("br\n"); mt_bf_ok = 1; } }
-	/* MCC_AST_MEMBER_CONST (default OFF => byte-identical). A `const`-qualified
+	/* MCC_AST_MEMBER_CONST (default ON since 2026-07-27). A `const`-qualified
 	   member desyncs the recorder purely on the qualifier: the values themselves
 	   are ordinary (VT_PTR/VT_INT/VT_LLONG/VT_BYTE/VT_SHORT), so 73 of the 287
 	   member-access desyncs in mcc's own TU are rejected for qualification alone.
@@ -3087,7 +3087,7 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	{ static int relax = -1;
 	  if (relax < 0) { MCC_TRACE("br\n");
 	    const char *e = getenv("MCC_AST_MEMBER_CONST");
-	    relax = e && e[0] && strcmp(e, "0") ? 1 : 0; }
+	    relax = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; }
 	  if (relax && qual == VT_CONSTANT) { MCC_TRACE("br\n"); qual = 0; } }
 	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
