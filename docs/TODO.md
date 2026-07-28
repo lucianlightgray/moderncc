@@ -378,8 +378,30 @@ outer store, and that value is what goes missing. Anyone fixing it should re-che
 already pins evaluation counts for `a = b = f(v)` and would catch a fix that duplicates the RHS instead of dropping
 it.
 
-Not yet measured: what share of the 205 unfaithful functions are chained assignments. `cst_hook_begin` is one, and
-the construct is common in this codebase, but no count has been taken — do not assume it explains the bucket.
+**MEASURED 2026-07-28: 45 of 205 (22%).** A `chain=` field now rides the `UNFAITHFUL` trace line, set in
+`ast_hook_vstore` whenever the store's value is an `AST_StoreVal` marker or already has a parent — i.e. the
+syntactic chain, independent of whether `MCC_AST_CHAINSTORE` is on. Validated before use on both the synthetic
+reproducer (`f2`/`f3`/`f3v` → `chain=1`) AND a member of the real population (`cst_hook_begin` → `chain=1`), and the
+summarising script was checked against a raw line first (`chain` is `$9`) — the two failures that produced three
+retracted numbers earlier in this section.
+
+| | count | share of 205 |
+|---|---:|---:|
+| chained assignment present | **45** | 22% |
+| `nocode_wanted` present | 24 | 12% |
+| both | 6 | |
+| **neither** | **142** | **69%** |
+
+**The two causes are cleanly separated by symptom: all 45 chained cases are LENGTH-differs, and ZERO of the 97
+byte-differs are chained.** That follows from the mechanism — a dropped value materialisation removes bytes, it does
+not alter bytes in place — and it is a useful filter: when triaging a same-length divergence, chained assignment is
+already excluded.
+
+Where that leaves the two halves:
+- **108 length-differs**: 45 chained + 19 nocode (6 overlapping) → 50 still unattributed.
+- **97 byte-differs**: 5 nocode, 0 chained → **92 unattributed, and this is now the largest unexplained group in
+  the file.** Its divergence sits at a median 54% into the body with the length unchanged, which rules out both
+  known causes by construction. Start here.
 
 **Standing caution, earned three times in this section.** A `0` from an instrument is not a finding until the
 instrument has been shown to produce a `1` on a known positive DRAWN FROM THE SAME POPULATION, and until the

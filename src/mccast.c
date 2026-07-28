@@ -1783,6 +1783,7 @@ static int ast_desync;
 static int ast_desync_line;
 #define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
 static int ast_base_depth;
+static int ast_saw_chain;
 static int ast_saw_nocode;
 int ast_in_op;
 static int ast_in_call;
@@ -3494,6 +3495,8 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 	if (mkr && inner != AST_NONE && inner < ast_cur->count &&
 			ast_kind(ast_cur, inner) == AST_Store && ast_nchild(ast_cur, inner) == 2)
 		{ MCC_TRACE("br\n"); value = ast_child(ast_cur, inner, 1); }
+	if (mkr || (value != AST_NONE && ast_parent(ast_cur, value) != AST_NONE))
+		{ MCC_TRACE("br\n"); ast_saw_chain = 1; }
 	int chained = ast_chainstore_env && value != AST_NONE &&
 								ast_parent(ast_cur, value) != AST_NONE;
 	if (chained)
@@ -14038,6 +14041,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_bail = 0;
 		ast_desync = 0;
 		ast_saw_nocode = 0;
+		ast_saw_chain = 0;
 		ast_reemit_poison = 0;
 		ast_in_op = 0;
 		ast_in_call = 0;
@@ -16465,9 +16469,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						if (cur_text_section->data[ast_body_ind_sv + ast_i] != orig[ast_i])
 							{ MCC_TRACE("br\n"); ast_bd = ast_i; break; }
 					MCC_TRACE_IF("UNFAITHFUL %s newlen=%d oldlen=%d firstdiff=%d "
-											 "relnew=%d relold=%d nocode=%d\n",
+											 "relnew=%d relold=%d nocode=%d chain=%d\n",
 											 funcname ? funcname : "?", new_len, (int)body_len, ast_bd,
-											 (int)(new_rel - ast_reloc0_sv), (int)rel_len, ast_saw_nocode);
+											 (int)(new_rel - ast_reloc0_sv), (int)rel_len, ast_saw_nocode,
+											 ast_saw_chain);
 					if (getenv("MCC_AST_UNFAITHFUL_DUMP")) { MCC_TRACE("br\n");
 						int ast_win = atoi(getenv("MCC_AST_UNFAITHFUL_DUMP"));
 						int ast_w = ast_bd >= 0 ? ast_bd - 8 : (int)body_len - 24;
