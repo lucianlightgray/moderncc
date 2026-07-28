@@ -1306,9 +1306,24 @@ them:**
   Both arms' `branch`/`done` hooks fire either way, so the recorder is NOT missing callbacks in the constant case —
   it simply refuses at `begin`. A pass-through can therefore be built inside the existing state machine (remember
   "constant, taken arm = `c ? 0 : 1`" at `begin`, let the taken arm's `done` supply the result value, discard the
-  other) without inventing new hook points. The `ast_vn` column in the constant run is unhelpful (it stays at 1
-  because the desync short-circuits every later hook) — re-measure it once `begin` stops desyncing, since the real
-  question is whether the untaken arm pushes a value at all.
+  other) without inventing new hook points.
+
+  **The open `ast_vn` question was then ANSWERED by an observation build (let `begin` proceed on a constant condition
+  purely to trace, then revert). Three results, and they change the plan:**
+
+  1. **The sequence is BALANCED.** With a call-free untaken arm, `1 ? a : b` runs
+     `begin(vn=1) -> branch0(0) -> done0(1) -> branch1(0) -> done1(1) -> end(vn=0)` with `desync=0` throughout, and
+     `ast_vn` returns to 0. Both arms DO push a value. So the state machine needs no new hook points and no
+     rebalancing — exactly the enabling fact hoped for.
+  2. **Removing the desync alone is NOT enough: the verdict becomes `unfaithful`.** The recorder still builds an
+     `AST_If` with both arms while the parser emitted only the taken one, so replay diverges. The fix must therefore
+     SUPPRESS the If node and pass the taken arm's value straight through — confirming the shape above rather than
+     just removing the guard.
+  3. **If the untaken arm contains a CALL, `nocode_wanted` desyncs first** — `1 ? a : h(1)` shows `desync=1` already
+     set by the time arm 1's `done` fires, at site 3265 (`ast_hook_call_begin`). **So the two items are ordered for
+     that subset**: a constant ternary whose untaken arm is simple can be fixed by the pass-through alone, but one
+     containing a call needs the `nocode_wanted` suspend as a prerequisite. That is a conditional dependency, not an
+     absolute one — do not sequence the whole 51 events behind the 87.
 
 So this is two pieces of work, roughly 87 and 51 events, not one of 138.
 
