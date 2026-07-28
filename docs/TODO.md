@@ -1288,6 +1288,34 @@ them:**
 
 - **3256** is `ast_hook_call_begin` testing the `nocode_wanted` FLAG. Fix shape: suspend recording across the whole
   no-code region.
+  **REMOVING THE DESYNC OUTRIGHT was tried 2026-07-27. It reaches 74.9% faithful and FAILS THE SELF-HOST FIXPOINT.
+  Do not retry the one-line removal.** The lead was solid: dead code containing NO call is already faithful —
+  `if (0) b = 1;`, `return a; b = 1;` and `sizeof(a+b)` all pass — so the `nocode_wanted` guard looked gratuitous.
+  Deleting it gives:
+
+  | | result |
+  |---|---|
+  | mcc's own TU | faithful **1343 -> 1385**, desync 327 -> 261 |
+  | `if (0) h(1);`, `return a; h(1);`, `1 ? a : h(1)` | desync -> **faithful** |
+  | `sizeof(h(1))`, `0 && h(1)` | desync -> unfaithful (safe, still excluded) |
+  | exec corpus | 0 crashes |
+  | `assign_value_effects` / `side_effect_order` | green at `-O0/-O2/-O3/-Os` |
+  | `ast/treecheck` | clean at `-O2/-O3/-Os` |
+  | 400-seed gate-swept differential fuzz | **397 agree, 0 miscompile** |
+  | **3-stage self-host fixpoint** | **FAIL — `o1=5523199` vs `o2=o3=5523119`** |
+
+  `o1 != o2` means a compiler built BY the patched compiler emits different code than the patched compiler does:
+  the recorder is admitting a body whose optimized form is not stable across a self-host generation. **Every other
+  gate passed** — the fuzz, both side-effect guards, the tree checker and the whole exec corpus — so this is the
+  clearest example in the file of why the fixpoint is not redundant with them. Intermediate step, also recorded so it
+  is not re-derived: merely *skipping* the desync (returning without modelling) is worse still, moving the failure to
+  the value-model guard, because the hook must MIRROR the call's stack effect (consume `nb_args + 1`, push a result)
+  rather than do nothing.
+
+  So the remaining constraint set for this item is now: mirror stack effects while recording nothing (a suspend that
+  hides both is wrong, see below), and whatever is admitted must survive a self-host generation — which the plain
+  Invoke node for a dead call does not.
+
   **A TARGETED suspend was tried 2026-07-27 and does NOT work — recording it because the boundaries looked ideal.**
   After the constant-ternary fix landed, the recorder knows exactly where a folded ternary's untaken arm starts and
   ends (`_branch` / `_branch_done` for the non-taken index), which is precisely the paired enter/leave the general
