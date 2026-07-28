@@ -757,6 +757,63 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 
 ## NEXT WORKSTREAM — user-prioritized 2026-07-28, in this order
 
+**STATUS after the 2026-07-28 session: D1a DONE. B1a two-of-three DONE. A2a narrowed to one target. A1a not started.**
+
+| item | state | what landed |
+|---|---|---|
+| D1a gate staging audit | **DONE** | 3 gates re-staged: `OPASSIGN`→`-O2` (`6acb9e69`), `CHAINSTORE`→`-O2` (`e81035e5`), `PROMO_ARROW`+`PROMO_INCDEC`→`-O2/-O3` (`e052542a`) |
+| B1a assignment-as-value | **2 of 3** | statement chain fixed as a side effect of D1a; discarded ternary fixed (`8e867f40`); **call-argument path open, experiment specified** |
+| A2a vstack SYNC | **characterised** | all 43 uniform (`delta=1`, 0 capacity); site proven to be a DETECTOR (`026233f8`) |
+| A1a `nocode_wanted` | not started | 3 approaches ruled out; hardest item in the file |
+
+Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
+Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign extension) found and fixed
+(`b0fb11d5`).
+
+### OPEN TASKS carried out of that session, highest value first
+
+1. **A2a — find the stale-value producer.** All 43 SYNC failures carry exactly one extra modelled value and are
+   detected at the next callee push, so there is ONE producer to find, not 43 gaps. Bisect the 31 failures outside
+   any ternary/short-circuit region. Five shapes are already eliminated by experiment (see the A2a section) — do not
+   re-test them.
+2. **B1a — widen the leftmost-leaf guard for call arguments.** The parser demonstrably keeps the store's value live
+   in a register across argument setup (`mov %eax,s(%rip)` then `mov %rax,%rdi`), so the guard's stated reason does
+   not hold for this shape. Gate on `assign_value_effects.c` + full bar; this is where `emit-at-marker` miscompiled.
+3. **Explain the verdict-count change.** Enabling `PROMO_ARROW`/`PROMO_INCDEC` moved the count 1856 → 1841 while the
+   faithful RATIO held. `mcc` exits 0 with no errors, so this is not the SIGSEGV truncation this file records
+   elsewhere. Unknown why promotion staging changes which functions reach the verify print. **Understand it before
+   reading any future count change here as meaningful.**
+4. **`store_packed_bf` is still `unfaithful`.** Its `c ? vdup() : gv_dup()` is now recorded after `8e867f40`, so the
+   discarded-ternary hole is not its cause. Unattributed.
+5. **The 26 non-mov length-differs.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6, `cmp` 5 — the `xorb` count is
+   spread across `foldm_*` math folding, not one construct. Only remaining unexplained group in the unfaithful bucket.
+6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
+7. **E1b — prune this file.** Now 3376 lines. Its own "How to process" rule says completed items are pruned entirely
+   with detail left to git history; this session added several large resolved blocks that qualify.
+8. **D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.** Still taken at 59.5% fidelity and now cited in
+   conclusions while fidelity is 78.1% AND three gates have been re-staged since. The old numbers are now doubly stale.
+9. **Mach-O remainder.** Scattered / GOT / TLV relocations still hard-error by name (safe, incomplete). Validation
+   against a real `libmcc_jitengine.a` needs macOS SDK headers — a genuine gate, unlike the `llvm-ar`/`clang -target`
+   assumptions that turned out to be wrong.
+10. **`MCC_AST_CYCLE` stays at `-O3`** — measured, no fidelity and no runtime effect at `-O2`. Recorded so the audit
+    is not repeated.
+
+### MEASUREMENT DISCIPLINE — earned the hard way in that session, apply before believing any number
+
+- **A `0` from an instrument is not a finding** until it has produced a `1` on a known positive DRAWN FROM THE SAME
+  POPULATION. Two detectors in this file reported clean zeroes while being blind.
+- **Check the summarising script against a raw line of its own input.** An `awk` reading `$7` instead of `$8`
+  produced "0 of 205" and cost two commits before the raw line was read.
+- **Anchor grep patterns.** Three separate false signals came from substring matches: `faithful` inside
+  `unfaithful`, `verified` inside a refusal message, and `SYNC` inside `DESYNC`. Each made a hard problem briefly
+  look easy — that is the tell.
+- **`rc=$?` after a pipeline is the LAST command's status, not the compiler's.** A truncated verdict histogram with
+  a bogus `rc=0` reads exactly like a fidelity collapse.
+- **Read the gate's own comment before investigating it.** Four times the answer was already written there —
+  `MCC_AST_OPASSIGN` even named nbody's `advance()` as the victim.
+
+### Original ordering and rationale
+
 Chosen from the decision table at the end of the 2026-07-28 session. Work them in order; each has its evidence
 already gathered and cited, so none of them starts from measurement.
 
