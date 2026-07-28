@@ -727,8 +727,19 @@ flip the expectation to `on`, not to delete the cell.
 
 **F10 — Extend the self-host fixpoint beyond one axis.** `--opt=<level>` landed and `-O3`/`-Os` cells now pass
 byte-identically, closing the hole where `-O2` never exercised the `-O3` defaults (`CYCLE`, `OPASSIGN`, `CHAINSTORE`,
-`INLINE`) or the `-Os` ones (`PROMO_ARROW`, `PROMO_INCDEC`, `REGDISP`). Not covered: level x gate combinations, and any
-level under `MCC_JIT=1`.
+`INLINE`) or the `-Os` ones (`PROMO_ARROW`, `PROMO_INCDEC`, `REGDISP`).
+
+**Re-confirmed 2026-07-27 after the F1 flips, the `PROMOTE` floor and the slice cap — all four levels still hold
+byte-identically:** `-O1` 6166623, `-O2` 5497999, `-O3` 5528255, `-Os` 5486367 (each `o1 == o2 == o3`).
+
+**The `MCC_JIT=1` axis named here is VACUOUS — do not implement it.** `MCC_JIT` is not a compile-time switch: it is
+read by the boot ctor embedded into a JIT-enabled OUTPUT binary (mccjit_embed.c:1869), i.e. at runtime of the produced
+program, and only when that program was built with `--embed-jit`. Verified directly: compiling the same source with
+`MCC_JIT=0` and `MCC_JIT=1` produces **byte-identical output** (4327 B both), and the self-host fixpoint under
+`MCC_JIT=1` reports the identical 5497999 as without it. So running the fixpoint under that env asserts nothing new.
+The meaningful JIT axis already exists separately in the M8 bar as the runtime equivalence `MCC_JIT=1` == `MCC_JIT=0`
+on a JIT-embedded binary — which is a different test and is not a fixpoint concern.
+Still genuinely not covered: level x gate combinations.
 
 ## Infrastructure parity, CI economics, and a looser slice cache (user-prioritized 2026-07-27)
 Sits ABOVE the non-P0 campaigns: items 1-3 are CI/build hygiene that every later change rides on, and they can proceed in parallel with P0. Items 4-5 are feature work.
