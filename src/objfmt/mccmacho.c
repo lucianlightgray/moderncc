@@ -2374,14 +2374,148 @@ ST_FUNC int macho_object_type(int fd, unsigned long file_offset) { MCC_TRACE("en
 	return 1;
 }
 
+struct macho_sm { Section *s; unsigned long offset; };
+
+/* Apply a loaded Mach-O object's relocations. Mach-O stores relocations REL-style
+   (the addend lives in the instruction field) while mcc's internal form is RELA,
+   so each addend is read back out of the section data. pcrel entries are also
+   biased differently: Mach-O measures from the END of the relocated field, ELF
+   from its start, hence the -4 (and the extra -1/-2/-4 for SIGNED_1/2/4, which
+   name the immediate bytes that follow the displacement).
+
+   Anything not understood is a HARD ERROR. Silently skipping relocations is what
+   the loader did before, and it does not fail the link -- it emits a call whose
+   displacement is still 0, so the binary links clean and jumps to the next
+   instruction. A wrong answer is worse than a refusal here. */
+static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
+														 struct section_64 *secs, uint32_t nsec,
+														 struct macho_sm *smap, int *symmap, uint32_t nsym,
+														 int *secsym) { MCC_TRACE("enter\n");
+	uint32_t i, r;
+	unsigned char *rels = NULL;
+
+	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
+		struct section_64 *sh = &secs[i];
+		Section *sec = smap[i + 1].s;
+		unsigned long base = smap[i + 1].offset;
+
+		if (!sh->nreloc || !sh->reloff)
+			{ MCC_TRACE("br\n"); continue; }
+		if (!sec->data)
+			{ MCC_TRACE("br\n"); return mcc_error_noabort("Mach-O: relocations against a section with no data"); }
+		rels = load_data(fd, file_offset + sh->reloff, (unsigned long)sh->nreloc * 8);
+		if (!rels)
+			{ MCC_TRACE("br\n"); return mcc_error_noabort("Mach-O: truncated relocation table"); }
+
+		for (r = 0; r < sh->nreloc; r++) { MCC_TRACE("br\n");
+			uint32_t w0 = read32le(rels + (size_t)r * 8);
+			uint32_t w1 = read32le(rels + (size_t)r * 8 + 4);
+			uint32_t symnum = w1 & 0xffffffu;
+			int pcrel = (int)((w1 >> 24) & 1);
+			int length = (int)((w1 >> 25) & 3);
+			int ext = (int)((w1 >> 27) & 1);
+			int type = (int)((w1 >> 28) & 0xf);
+			unsigned char *fld;
+			addr_t addend;
+			int sym, etype;
+
+			if (w0 & 0x80000000u) { MCC_TRACE("br\n");
+				mcc_error_noabort("Mach-O: scattered relocations are not supported");
+				goto fail;
+			}
+			if (base + w0 >= sec->data_allocated) { MCC_TRACE("br\n");
+				mcc_error_noabort("Mach-O: relocation offset outside its section");
+				goto fail;
+			}
+			fld = sec->data + base + w0;
+			if (length == 3) { MCC_TRACE("br\n"); addend = (addr_t)(int64_t)read64le(fld); }
+			else if (length == 2) { MCC_TRACE("br\n"); addend = (addr_t)(int32_t)read32le(fld); }
+			else { MCC_TRACE("br\n");
+				mcc_error_noabort("Mach-O: unsupported relocation width %d", 1 << length);
+				goto fail;
+			}
+
+#ifdef MCC_TARGET_ARM64
+			mcc_error_noabort("Mach-O: arm64 relocations are not implemented "
+												"(type %d); needs validation on arm64-osx", type);
+			goto fail;
+#else
+			switch (type) { MCC_TRACE("br\n");
+			case 0:
+				if (pcrel) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: pc-relative UNSIGNED relocation");
+					goto fail;
+				}
+				etype = length == 3 ? R_X86_64_64 : R_X86_64_32;
+				break;
+			case 1:
+			case 6:
+			case 7:
+			case 8:
+				if (!pcrel || length != 2) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: malformed SIGNED relocation");
+					goto fail;
+				}
+				etype = R_X86_64_PC32;
+				break;
+			case 2:
+				if (!pcrel || length != 2) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: malformed BRANCH relocation");
+					goto fail;
+				}
+				etype = R_X86_64_PLT32;
+				break;
+			default:
+				mcc_error_noabort("Mach-O: unsupported x86_64 relocation type %d", type);
+				goto fail;
+			}
+			if (pcrel) { MCC_TRACE("br\n");
+				addend -= 4;
+				if (type == 6) { MCC_TRACE("br\n"); addend -= 1; }
+				else if (type == 7) { MCC_TRACE("br\n"); addend -= 2; }
+				else if (type == 8) { MCC_TRACE("br\n"); addend -= 4; }
+			}
+#endif
+
+			if (ext) { MCC_TRACE("br\n");
+				if (symnum >= nsym || !symmap[symnum]) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: relocation against an unregistered symbol");
+					goto fail;
+				}
+				sym = symmap[symnum];
+			} else { MCC_TRACE("br\n");
+				if (!symnum || symnum > nsec) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: section-relative relocation names section %u", symnum);
+					goto fail;
+				}
+				if (!secsym[symnum]) { MCC_TRACE("br\n");
+					secsym[symnum] = set_elf_sym(symtab_section, smap[symnum].offset, 0,
+																			 ELFW(ST_INFO)(STB_LOCAL, STT_SECTION), 0,
+																			 smap[symnum].s->sh_num, NULL);
+				}
+				sym = secsym[symnum];
+				addend -= (addr_t)secs[symnum - 1].addr;
+			}
+			put_elf_reloca(symtab_section, sec, base + w0, etype, sym, addend);
+		}
+		mcc_free(rels);
+		rels = NULL;
+	}
+	return 0;
+fail:
+	mcc_free(rels);
+	return -1;
+}
+
 ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
 	struct mach_header mh;
 	struct section_64 *secs = NULL;
 	struct nlist_64 *syms = NULL;
 	char *strtab = NULL;
-	struct macho_sm { Section *s; unsigned long offset; } *smap = NULL;
+	struct macho_sm *smap = NULL;
 	unsigned long lcoff, strsize = 0;
 	uint32_t i, nsec = 0, nsym = 0, ci;
+	int *symmap = NULL, *secsym = NULL;
 	int ret = -1;
 
 	lseek(fd, file_offset, SEEK_SET);
@@ -2419,6 +2553,8 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		lcoff += lc.cmdsize;
 	}
 
+	symmap = mcc_mallocz((nsym + 1) * sizeof *symmap);
+	secsym = mcc_mallocz((nsec + 1) * sizeof *secsym);
 	smap = mcc_mallocz((nsec + 1) * sizeof *smap);
 	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
 		struct section_64 *sh = &secs[i];
@@ -2481,12 +2617,18 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		default:
 			continue;
 		}
-		set_elf_sym(symtab_section, value, 0, ELFW(ST_INFO)(bind, STT_NOTYPE),
-								0, shndx, name);
+		symmap[i] = set_elf_sym(symtab_section, value, 0,
+														ELFW(ST_INFO)(bind, STT_NOTYPE), 0, shndx, name);
 	}
+
+	if (macho_load_relocs(s1, fd, file_offset, secs, nsec, smap, symmap, nsym,
+												secsym) < 0)
+		{ MCC_TRACE("br\n"); goto done; }
 	ret = 0;
 
 done:
+	mcc_free(symmap);
+	mcc_free(secsym);
 	mcc_free(smap);
 	mcc_free(secs);
 	mcc_free(syms);

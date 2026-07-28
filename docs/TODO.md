@@ -45,7 +45,15 @@
      Validated four ways by the new `macho-archive` ctest cell: the link succeeds; it is **byte-identical to linking the same member as a bare object**; the pulled member's actual body (`movl $0x2a, %eax ; retq`) is in the output per `llvm-objdump --macho -d`; and an archive whose symbols are unreferenced pulls **nothing**, so a la carte is genuinely selective rather than load-everything. The cell also asserts the armap is non-empty first, so it cannot pass vacuously.
 
      Still macOS-only: exercising this against a REAL `libmcc_jitengine.a` and real `clang -c` objects. The fixture is synthetic and relocation-free, so **relocations remain the blocker below** — archive membership is solved, real-object content is not.
-   - **Relocations.** `reloff`/`nreloc` are read but ignored; the fixture deliberately has none. Real objects need `relocation_info`/`scattered` handling (`X86_64_RELOC_*`, `ARM64_RELOC_*`) before anything non-trivial links.
+   - **Relocations — x86_64 DONE 2026-07-28, ON LINUX; arm64 still open.** Also wrongly reserved for macOS: `clang -target x86_64-apple-macos11 -c` runs on Linux and emits genuine Mach-O objects with genuine `X86_64_RELOC_*` entries, which is all the loader consumes.
+
+     **This was a SILENT WRONG ANSWER, not a missing feature.** `reloff`/`nreloc` were read and ignored, so linking against a relocated Mach-O object SUCCEEDED and left the placeholder displacement in place — `e8 00 00 00 00`, a call to the next instruction. Nothing in the suite failed; the binary was simply broken. `macho_load_relocs` now handles `UNSIGNED`/`SIGNED`/`SIGNED_1/2/4`/`BRANCH`, both extern and section-relative, and **hard-errors on anything else** (scattered, unsupported widths, unknown types) rather than skipping it. arm64 relocations hard-error by name until they can be validated on arm64-osx — refusing is correct where guessing produces a working-looking binary.
+
+     Two conversions the format forces: Mach-O is REL-style (addend lives in the instruction field) while mcc's internal form is RELA, so each addend is read back out of the section data; and Mach-O pcrel is measured from the END of the relocated field where ELF measures from its start, hence `-4` plus the extra `-1/-2/-4` that `SIGNED_1/2/4` name.
+
+     Guarded by the `macho-reloc` ctest cell, which asserts clang actually emitted BRANCH/SIGNED relocations first (so it cannot pass vacuously), then checks RESOLVED TARGETS rather than link success: the call must disassemble to `_other` by name, no `e8 00 00 00 00` placeholder may survive, and the rip-relative data reference must ARITHMETICALLY compute to the address `llvm-nm` reports for `_msg` (verified at `0x100008000`).
+
+     Remaining: `ARM64_RELOC_*`, scattered relocations, and validation against a real `libmcc_jitengine.a` — that last one still wants macOS.
    - **Real-world corpus.** The fixture is minimal and synthetic. Validate against actual `clang -c` output and a real `.a` on macOS; that is also the only place `--embed-jit` can be exercised for the osx triples.
 
 2. **riscv64 + arm-linux JIT run/verify — DONE** (whole ELF family: arm64 proven on native silicon, riscv64 + armv7 verified under emulation on an arm64 host). Detail in git history.

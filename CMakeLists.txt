@@ -5715,6 +5715,21 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
+    # Mach-O RELOCATIONS against real clang-produced objects. Also testable on
+    # Linux: clang targets x86_64-apple-macos and emits genuine X86_64_RELOC_*
+    # entries. Guards a SILENT wrong answer -- ignoring relocations does not fail
+    # the link, it leaves `e8 00 00 00 00` calls that jump to the next
+    # instruction, so the cell checks resolved targets rather than link success.
+    if(UNIX)
+        add_test(NAME macho-reloc
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/reloc.sh"
+                    "${MCC_CROSS_DIR}/mcc-x86_64-osx" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-reloc-work")
+        set_tests_properties(macho-reloc PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            TIMEOUT 300)
+    endif()
+
     add_test(NAME macho-codegen-run
         COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
