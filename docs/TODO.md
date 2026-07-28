@@ -432,9 +432,28 @@ Where that leaves the two halves:
     `unfaithful`, so the parser is not simply inlining a helper that replay calls. (That gate is one inlining
     mechanism, not all of them — `foldm_*` math folding and `-fc99-inline-body` were not separately excluded.)
 
-    So these 4 are the strongest remaining candidates for a second real defect, and their cause is unknown. Next
-    step is resolving the call TARGETS from the relocation entries rather than the disassembly, which discards them
-    (`call K`); knowing WHICH function each side calls should identify the construct immediately.
+    **TARGETS RESOLVED 2026-07-28** by dumping the relocation symbol names at the comparison
+    (`[unfaithful-rel]`, same `MCC_AST_UNFAITHFUL_DUMP` gate):
+
+    | function | difference |
+    |---|---|
+    | `host_runmem_alloc` | replay-only call to **`host_pagesize`** |
+    | `mcc_define_symbol` | replay-only **`strchr`** |
+    | `mcc_preprocess` | replay-only **`get_tok_str`** (plus `tok`/`tokc` data references) |
+    | `store_packed_bf` | parser-only **`vdup`, `gv_dup`** |
+
+    Three of the four are replay RE-EVALUATING something the parser had already materialised — the parser still had
+    the previous result available and reused it, and the recorder did not model that reuse. Recomputing a pure
+    function is semantically equivalent, so those three are probably benign in the same sense as the reorder class,
+    though "probably" is doing real work in that sentence and none of the three callees was checked for purity.
+
+    **`store_packed_bf` is the one to look at.** There the direction reverses: the PARSER calls `vdup` and `gv_dup`
+    and replay does not. Those are vstack manipulation helpers with side effects, not pure functions, so a replay
+    that skips them is not obviously equivalent — it is the only case in the whole bucket besides the lost sign
+    extension where replay appears to do LESS work than the parser rather than differently-ordered work.
+
+    Caveat on reproducing this: `ast_relsym_name` carries its own `MCC_TRACE`, which interleaves into the middle of
+    the dump line. Use `MCC_TRACE_SKIP=ast_relsym_name`.
 
   Taken with the byte-differ result, the picture across the whole bucket is consistent: most of what the
   faithfulness check rejects is allocation and scheduling difference rather than wrong modelling. Chained assignment

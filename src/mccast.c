@@ -6129,6 +6129,16 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
    Opt-in and O(nodes), so it costs nothing unless asked for. */
 static int ast_treechk_env_cached = -1;
 
+static const char *ast_relsym_name(int idx) { MCC_TRACE("enter\n");
+	ElfW(Sym) * sy;
+	if (!symtab_section || idx <= 0)
+		{ MCC_TRACE("br\n"); return "?"; }
+	if ((unsigned long)idx * sizeof *sy >= symtab_section->data_offset)
+		{ MCC_TRACE("br\n"); return "?"; }
+	sy = &((ElfW(Sym) *)symtab_section->data)[idx];
+	return (const char *)symtab_section->link->data + sy->st_name;
+}
+
 static int ast_treechk_on(void) { MCC_TRACE("enter\n");
 	if (ast_treechk_env_cached < 0)
 		{ MCC_TRACE("br\n"); ast_treechk_env_cached = mcc_env_on("MCC_AST_TREECHK") ? 1 : 0; }
@@ -16493,6 +16503,21 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 							fprintf(stderr, " %02x",
 											cur_text_section->data[ast_body_ind_sv + ast_w + ast_i]);
 						fprintf(stderr, "\n");
+						{
+							ElfW_Rel *rp;
+							unsigned long ri;
+							fprintf(stderr, "[unfaithful-rel] %s parser:", funcname ? funcname : "?");
+							for (ri = 0; ri + sizeof *rp <= rel_len; ri += sizeof *rp) { MCC_TRACE("br\n");
+								rp = (ElfW_Rel *)(orig_rel + ri);
+								fprintf(stderr, " %s", ast_relsym_name(ELFW(R_SYM)(rp->r_info)));
+							}
+							fprintf(stderr, "\n[unfaithful-rel] %s replay:", funcname ? funcname : "?");
+							for (ri = 0; ri + sizeof *rp <= new_rel - ast_reloc0_sv; ri += sizeof *rp) { MCC_TRACE("br\n");
+								rp = (ElfW_Rel *)(rsec2->data + ast_reloc0_sv + ri);
+								fprintf(stderr, " %s", ast_relsym_name(ELFW(R_SYM)(rp->r_info)));
+							}
+							fprintf(stderr, "\n");
+						}
 					}
 				}
 				if (ast_treechk_on())
