@@ -150,8 +150,17 @@ line numbers in older entries below are stale, because each fix shifted them (th
 | `ast_hook_call_begin` | `nocode_wanted` | **89** |
 | `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 59 |
 | `ast_hook_cmp_invert` | `&&`/`\|\|` reached the comparison inverter — see below, NOT a missing case | 24 |
-| `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region | 15 |
+| `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region — correct, see below | 15 |
 | `ast_hook_call_begin` | callee is not an `AST_Ref` | 14 |
+
+**`ast_hook_vstore`'s ternary/landor guard is also CORRECT, and closing it is a structural change (checked
+2026-07-27).** Every conditional-store shape reaches it — `x ? (v=1) : (v=2)`, `x && (v=1)`, `x || (v=1)`, and the
+compound form `x ? (v+=1) : (v-=1)` — while the same store outside the region is faithful. The reason is that
+`ast_hook_ternary_begin` does NOT switch `ast_cur_bb` the way the loop hooks do (`ast_hook_while_begin` sets
+`ast_cur_bb = body`): a ternary's arms are expressions whose values go to `ast_vs`, so a Store recorded inside one
+would be appended to the ENCLOSING basic block and replayed UNCONDITIONALLY. Refusing is the right answer. Closing it
+needs the arms to own their own basic blocks — the same structural change the `while ((h = f()))` case needs, and it
+lands on every pass that walks `AST_If`.
 
 **`ast_hook_cmp_invert`'s `default:` arm looks like a trivial "add the missing cases" fix and is NOT — adding them
 would MISCOMPILE (checked 2026-07-27).** Instrumenting it: all 24 events are `op = 0x90` (`TOK_LAND`, 17) or `0x91`
