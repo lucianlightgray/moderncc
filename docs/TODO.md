@@ -455,10 +455,32 @@ it.
   `gv()` materialises it into a register BEFORE the hook, and the finalize then captures the register instead of
   the constant.
 
-  **So the fix is to capture the leaf's form BEFORE the value is materialised, not after** — the recorder must
-  record what the expression IS, not where codegen has just put it. That is a recorder-side ordering change rather
-  than a model-shape change, which makes it a different and probably safer proposition than `emit-at-marker`. It
-  still needs `assign_value_effects.c` and the full bar.
+  The obvious reading is that the recorder should capture the leaf's form BEFORE materialisation. **That was tried
+  and it is NOT sufficient — see below. This needs a model-shape change after all.**
+
+- **THE OVERWRITE, CAUGHT IN THE ACT.** A `FIN n= k= had_op= <- sv_r=` trace in `ast_finalize_leaf`:
+
+      chained    FIN n=3 k=Literal had_op=0x30 <- sv_r=0x30      (inner store: constant kept)
+                 FIN n=3 k=Literal had_op=0x30 <- sv_r=0         (outer store: CONSTANT OVERWRITTEN BY REGISTER)
+      separate   FIN n=2 k=Literal had_op=0x30 <- sv_r=0x30
+                 FIN n=6 k=Literal had_op=0x30 <- sv_r=0x30      (both stay constant)
+
+  So the leaf DOES hold `VT_CONST` and the outer store's finalize is what replaces it with register 0. (This also
+  corrects the note above that blamed the inner store's finalize — the inner one is fine; it is the second visit,
+  from the outer store, that overwrites.)
+
+- **ATTEMPTED AND REJECTED (2nd attempt): preserving the constant form** — skip the overwrite in
+  `ast_finalize_leaf` when the node already holds a non-symbolic `VT_CONST` and the incoming `sv->r` is a register.
+  All four reproducer verdicts unchanged. The reason is now clear and it is not a bug in the guard: the parser
+  materialises the value and emits the 6-byte register store `mov %eax,disp32`, so a replay that keeps the constant
+  emits the 10-byte immediate form `movl $0,disp32` instead. **Both directions are unfaithful** — keeping the
+  register loses the materialisation, keeping the constant changes the store encoding.
+
+  **Conclusion: the model cannot express this with a single leaf.** It has to represent BOTH "the value is this
+  constant" AND "materialise it into a register here, once, before the first store" — which is the model-shape
+  change `emit-at-marker` attempted and miscompiled at `-O2`/`-O3`. Two independent narrow fixes have now been
+  tried and rejected on evidence, so do not attempt a third narrow one; the next attempt should be the shape change,
+  with `assign_value_effects.c` and the full bar.
 
 **Do NOT fix this by making the marker emit at its use site.** That was tried earlier in this session (F3a,
 "emit-at-marker"): correct at `-O0`/`-O1`, MISCOMPILED at `-O2`/`-O3`, and caught only because
