@@ -3661,6 +3661,22 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77)
         endif()
 
+        # -O4's superopt driver scores by SIZE, and promotion trades size for
+        # speed -- which is how -O4 came to be slower than -O3 on every plb
+        # kernel. so_setenv_cfg now treats MCC_AST_PROMOTE as add-only. This
+        # locks that floor deterministically (byte compare, no timing): -O4
+        # output must equal -O4 with promotion pinned on.
+        find_program(MCC_OBJCOPY objcopy)
+        if(UNIX AND MCC_OBJCOPY)
+            add_test(NAME superopt/promote-floor
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/promote-floor.sh"
+                        "${_mcc_exe}" "${CMAKE_BINARY_DIR}/superopt-floor"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/src/spillheavy.c")
+            set_tests_properties(superopt/promote-floor PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 600)
+        endif()
+
         # Force the opt-in search knobs (V-narrow(a) narrow-to-fixpoint, V-sethi(a)
         # leaf-aware Sethi-Ullman) ON directly at -O2 across the whole exec corpus, so
         # their codegen is exercised end-to-end and validated for correct runtime output.

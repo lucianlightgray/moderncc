@@ -336,8 +336,15 @@ Wanted:
    without re-deriving it. This is also the fix for the finding above, where a memo hit currently short-circuits the
    per-function search and the driver then burns its freed budget to arrive at the identical binary — with a banked
    floor there is a concrete result to hand back instead.
-3. **Regression-guard it.** A cell asserting `-O4` output is never slower (or larger, per the scoring axis in use) than
-   `-O3` on the plb kernels would have caught this; `optfire`'s level-map mode is the closest existing shape.
+3. **Regression-guard it — LANDED 2026-07-27 as `superopt/promote-floor`.** A timing assertion would be flaky in CI,
+   so the cell locks the FLOOR instead of the runtime, which is deterministic and is the property that actually broke:
+   `-O4` output must be byte-identical on `.text` to `-O4` with `MCC_AST_PROMOTE=1` pinned. If the size-scored search
+   ever subtracts promotion again, the two diverge and the cell fails. **Non-vacuous, verified both ways:** it passes
+   with the floor and fails with `MCC_SO_PROMOTE_FLOOR=0` (free 1230 B vs pinned 1696 B on the fixture). Runs against
+   `tests/superopt/src/spillheavy.c` — a self-contained FP/struct kernel with the nbody `advance()` shape (5 bodies,
+   pairwise loop, 6 live doubles per iteration) so the cell does not depend on `vendor/plb` being checked out. Both
+   legs run with a private `HOME` because `-O4` caches its search result per input in the user cache dir, and a stale
+   `so-*.ck` checkpoint would make the assertion vacuous.
 
 Note this interacts with the size/speed question above: if `-O4` remains size-scored, the floor should be stated in the
 scoring axis actually in use (never LARGER than `-O3`), and the same 16% runtime regression should be re-examined once
