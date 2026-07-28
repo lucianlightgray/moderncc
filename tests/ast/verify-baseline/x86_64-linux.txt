@@ -44,7 +44,6 @@ bounds/bound_signal.c	main	desync
 bounds/bound_signal.c	putc_unlocked	desync
 bounds/bound_signal.c	putchar_unlocked	desync
 bounds/bound_test.c	fputc_unlocked	desync
-bounds/bound_test.c	mul	desync
 bounds/bound_test.c	putc_unlocked	desync
 bounds/bound_test.c	putchar_unlocked	desync
 codegen/codeopt.c	bla	desync
@@ -345,7 +344,6 @@ optimizer/redundant_cast.c	mixed	unfaithful
 pointers_arrays/array.c	fputc_unlocked	desync
 pointers_arrays/array.c	putc_unlocked	desync
 pointers_arrays/array.c	putchar_unlocked	desync
-pointers_arrays/array_2d_iv.c	diag_compound	desync
 pointers_arrays/array_2d_iv.c	fputc_unlocked	desync
 pointers_arrays/array_2d_iv.c	putc_unlocked	desync
 pointers_arrays/array_2d_iv.c	putchar_unlocked	desync
@@ -385,7 +383,6 @@ pointers_arrays/pointer_arithmetic.c	putchar_unlocked	desync
 pointers_arrays/pointer_comparison.c	fputc_unlocked	desync
 pointers_arrays/pointer_comparison.c	putc_unlocked	desync
 pointers_arrays/pointer_comparison.c	putchar_unlocked	desync
-pointers_arrays/ptr_longlong_arith32.c	main	desync
 preprocess/pragma_operator.c	main	desync
 preprocessor/comment.c	fputc_unlocked	desync
 preprocessor/comment.c	putc_unlocked	desync
@@ -467,7 +464,6 @@ programs/random_stuff.c	putc_unlocked	desync
 programs/random_stuff.c	putchar_unlocked	desync
 programs/random_stuff.c	tst_adr	desync
 programs/random_stuff.c	tst_branch	desync
-programs/random_stuff.c	tst_const_addr	desync
 programs/random_stuff.c	tst_indir_func	desync
 programs/random_stuff.c	tst_pack	unfaithful
 programs/sprintf.c	fputc_unlocked	desync
@@ -580,7 +576,6 @@ structs_unions/aggregate_init.c	putc_unlocked	desync
 structs_unions/aggregate_init.c	putchar_unlocked	desync
 structs_unions/aggregate_perm.c	fputc_unlocked	desync
 structs_unions/aggregate_perm.c	main	desync
-structs_unions/aggregate_perm.c	mutSA	desync
 structs_unions/aggregate_perm.c	putc_unlocked	desync
 structs_unions/aggregate_perm.c	putchar_unlocked	desync
 structs_unions/aggregate_perm.c	sld_chk	desync
@@ -591,11 +586,10 @@ structs_unions/bitfields.c	putc_unlocked	desync
 structs_unions/bitfields.c	putchar_unlocked	desync
 structs_unions/bitfields_ms.c	dump	unfaithful
 structs_unions/bitfields_ms.c	fputc_unlocked	desync
-structs_unions/bitfields_ms.c	main	desync
+structs_unions/bitfields_ms.c	main	unfaithful
 structs_unions/bitfields_ms.c	putc_unlocked	desync
 structs_unions/bitfields_ms.c	putchar_unlocked	desync
 structs_unions/compound_literals.c	fputc_unlocked	desync
-structs_unions/compound_literals.c	main	desync
 structs_unions/compound_literals.c	putc_unlocked	desync
 structs_unions/compound_literals.c	putchar_unlocked	desync
 structs_unions/enum_bitfield.c	convert_like_real	desync
@@ -613,7 +607,6 @@ structs_unions/return_struct_in_reg.c	main	unfaithful
 structs_unions/return_struct_in_reg.c	putc_unlocked	desync
 structs_unions/return_struct_in_reg.c	putchar_unlocked	desync
 structs_unions/struct.c	main	stackresidue
-structs_unions/struct_abi.c	bf_mut	desync
 structs_unions/struct_abi.c	fputc_unlocked	desync
 structs_unions/struct_abi.c	main	desync
 structs_unions/struct_abi.c	negdf	unfaithful

@@ -1762,7 +1762,7 @@ static AstLocal ast_last_return;
 static AstLocal ast_vs[AST_VS_MAX];
 static int ast_vn;
 static int ast_capture;
-/* MCC_AST_OPASSIGN (default OFF): model compound assignment (`lval op= rhs`)
+/* MCC_AST_OPASSIGN (default ON at -O2+): model compound assignment (`lval op= rhs`)
  * through a pointer to a struct member. Codegen does `vdup()` on the member
  * lvalue to reload it (mccgen.c expr_eq), which pushes a register-resident
  * lvalue (r=VT_LVAL|reg). ast_hook_vpush cannot model that leaf, so the whole
@@ -1774,7 +1774,7 @@ static int ast_capture;
  * Store(lval, Binary(op, lval_copy, rhs)) — transparent to every optimizer pass —
  * and the Store is tagged AST_OP_OPASSIGN so replay re-emits the byte-faithful
  * vdup form (one address computation) instead of the naive two-computation form.
- * Default OFF ⇒ byte-identical; ON changes only which functions become
+ * OFF ⇒ byte-identical; ON changes only which functions become
  * replayable/optimizable (validated by exec/self-host parity, not byte-identity). */
 static int ast_opassign_env;
 static int ast_vdup_pending;         /* one-shot: ast_hook_vdup -> ast_hook_vpush */
@@ -2027,7 +2027,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
 	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
-	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 3);
+	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 2);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", o4 || s1->optimize >= 3);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();

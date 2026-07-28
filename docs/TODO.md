@@ -160,7 +160,7 @@ line numbers in older entries below are stale, because each fix shifted them (th
 
 | hook | check | count |
 |---|---|---:|
-| `ast_hook_vpush` | value-model guard (bad type, or not const/sym/local) | **119** |
+| `ast_hook_vpush` | value-model guard (bad type, or not const/sym/local) | ~~119~~ → **4** (2026-07-28: 68 of these were `MCC_AST_OPASSIGN` staged at `-O3`; flipped to `-O2`, see the nbody section) |
 | `ast_hook_call_begin` | `nocode_wanted` | **89** |
 | `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 43 |
 | `ast_hook_cmp_invert` | `&&`/`\|\|` reached the comparison inverter — see below, NOT a missing case | 24 |
@@ -578,10 +578,50 @@ refute the ceiling explanation below — the control says the opposite.** Per-fu
 with `offset_momentum` `unfaithful`. The kernels are 67-78% faithful overall, but the functions that matter are still
 excluded, so the optimizer never sees the loop that dominates the runtime.
 
-**This is the most direct link in the file between a fidelity site and a benchmark number: the 72-event value-model
-group (register-held lvalues + struct rvalues) is what gates nbody.** `advance()` walks `struct body *` pointers,
-which is exactly that group's shape. Anyone wanting the `-O2` curve to move should fix that site rather than chase
-new passes — and can measure success directly on nbody instead of on a fidelity count.
+**RESOLVED 2026-07-28 — and the recorded diagnosis above was WRONG.** That group was characterised here as
+register-held lvalues needing pointer provenance modelled, i.e. "not straightforwardly modellable at all". It is
+nothing of the kind. Instrumenting the guard to print its inputs showed `advance` failing with
+`vmask=0 lval=1 bt=VT_DOUBLE` — a `double` lvalue addressed through a register — and the minimal reproducer is two
+lines:
+
+    struct B { double x, y, vx, vy; };
+    void f(struct B *p, double d) { p->vx -= d; }   /* desync at -O2, FAITHFUL at -O3 */
+
+Plain member read (`return p->x`) and plain member write (`p->x = 1.0`) are both faithful. Only COMPOUND assignment
+through a pointer desyncs — and `MCC_AST_OPASSIGN` already models it exactly. The gate was simply default-on at
+`-O3` and not at `-O2` (`ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 3)`). Discriminating controls:
+`*p -= d` desyncs, but `g -= d` on a static global is faithful.
+
+**LANDED: the default is now `>= 2`.** Measured effects, all on the same tree:
+
+| measurement | before | after |
+|---|---|---|
+| mcc's own TU at `-O2`, faithful | 1392 / 1849 (75.3%) | **1436 / 1849 (77.7%)** |
+| value-model guard events on that TU | 72 | **4** |
+| exec-corpus ratchet gap set | 759 | **752** (7 now faithful, none regressed) |
+| nbody `-O2` best-of-5 | 0.49s | **0.41s** |
+
+68 of the 72 events were this one gate. And nbody at `-O2` is now **0.41s — exactly its `-O3` number**, with
+byte-identical program output: `MCC_AST_OPASSIGN` was the ENTIRE `-O2` → `-O3` gap on that kernel. So the flat
+`-O2` curve recorded below is, for nbody, not a fidelity ceiling at all but a gate staged one level too high.
+
+The lesson worth keeping: before concluding that a desync group needs new modelling, check whether an EXISTING gate
+already models it and is merely off at that level. The instrumentation that settled this printed the guard's actual
+inputs (`vmask`/`lval`/`bt`) — the earlier characterisation was inferred from the guard's source condition instead,
+and inferred wrong.
+
+Bar run for the flip: host ctest 7276/7276, cross ctest 7435/7435, self-host fixpoint `s3 == s4`, and both
+`runtime-bench-check` and `runtime-bench-gatewin` pass (`MCC_AST_OPASSIGN`/nbody is one of the two `GATE_WINS`; the
+guard sets the env explicitly, so a default change does not disturb it).
+
+Residual, NOT fixed here: `tests/ast/verify-baseline/x86_64-win32.txt` is stale in the SAFE direction. Measured with
+`cmake-cross/mcc-x86_64-win32`: **69 gaps now against 209 in the baseline, every drift entry "now FAITHFUL", zero new
+gaps.** Most of that predates this flip (it is the whole 2026-07-27 fidelity session landing). It was NOT regenerated
+because that baseline's documented producer is the mingw build, and the `mingw` preset is CI-only — it fetches a
+winlibs GCC and its inner build fails here with "No CMAKE_ASM_COMPILER could be found" even though
+`x86_64-w64-mingw32-gcc` works standalone. Regenerating it from the Linux-hosted cross would bank a baseline from an
+unvalidated producer. Whoever runs the mingw build should regenerate it; the cell can only fail as "regenerate to
+bank the win".
 
 **Original finding, still true as stated: mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on
 these kernels (nbody 0.298 / 0.303 / 0.293 versus 0.299), while gcc and clang gain roughly 2x from `-O0` to `-O1`.
