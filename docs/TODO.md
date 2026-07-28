@@ -648,6 +648,24 @@ mcc's own source has **26 `if ((x = …))` and 18 `while ((x = …))` sites**, a
 (`if ((f = fopen(…)))`). This is also the true cause of one of F3's four functions: `so_ckpt_write`'s
 `if ((f = host_fopen(path, "rb")))`.
 
+**MECHANISM CONFIRMED 2026-07-27 with a purpose-built diagnostic — it is a DANGLING REPARENT, and the tree becomes a
+DAG.** `ast_add_child` does not copy or detach; it OVERWRITES `a->parent[child] = parent` while the previous parent's
+`first_child`/`next_sib` links still point at the node. mcc already ships a flag to observe this — `MCC_REPARENT_DBG`,
+which warns whenever a child that already has a parent is re-parented. On the reproducer below it fires exactly once
+and names the culprit:
+
+    [reparent] child=7(k11) from 8 to 9
+    [ast-verify] unfaithful   ?   f
+
+`k11` is `AST_Invoke` — the CALL node itself. It is re-parented from the Store (8) to the consuming node (9), but the
+Store's child list still references it, so the node is reachable from BOTH parents. Replay walks children via
+`first_child`/`next_sib`, hits it under each, and emits the call twice. **So the duplication is not "the residual is
+the RHS subtree" as I first put it — it is that the residual node is silently STOLEN from the Store while the Store
+keeps a dangling link to it.** That also explains why the sibling case behaves differently: the chained-assignment
+path in `ast_hook_vstore` DOES guard against this (`chained = … && ast_parent(ast_cur, value) != AST_NONE` then
+`ast_dup_sub`), but the guard is conditioned on `ast_chainstore_env` and only covers store-into-store, not
+store-into-condition.
+
 **ROOT CAUSE, localised to one line — `ast_hook_vstore` (mccast.c:3442):**
 
     ast_add_child(ast_cur, st, lval);
