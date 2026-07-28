@@ -3429,7 +3429,13 @@ static void force_charshort_cast(void) { MCC_TRACE("enter\n");
 	int dbt = vtop->type.t;
 	vtop->r &= ~VT_MUSTCAST;
 	vtop->type.t = sbt;
+#if MCC_CONFIG_OPTIMIZER
+	ast_hook_synth_begin();
+#endif
 	gen_cast_s(dbt == VT_BOOL ? VT_BYTE | VT_UNSIGNED : dbt);
+#if MCC_CONFIG_OPTIMIZER
+	ast_hook_synth_end();
+#endif
 	vtop->type.t = dbt;
 }
 

@@ -574,14 +574,25 @@ Where that leaves the two halves:
   the SOURCE expression's type. For `u_char` that is a no-op and coincidentally byte-identical, which is why the
   unsigned form is faithful — **the same defect is present there, merely invisible.**
 
-  **Leading suspect, specific and checkable: `force_charshort_cast()` in `mccgen.c`.** It does
-  `dbt = vtop->type.t; vtop->type.t = sbt; gen_cast_s(...dbt); vtop->type.t = dbt;` — i.e. it temporarily rewrites
-  the vstack type around the call — while `gen_cast` calls `ast_hook_convert(type)` at its VERY TOP. A Convert can
-  therefore be recorded while the vstack carries the transient type rather than the real one, and the deferred
-  `VT_MUSTCAST` normalisation is exactly the mechanism that fires for a `char`-returning call feeding a cast.
-  Verify that before changing anything: confirm which `gen_cast` invocation records the bad node, and whether the
-  assignment's own int→`long long` widening goes through `gen_cast` at all (if it does not, the model is missing a
-  node rather than mislabelling one, and the fix is different).
+  **FIXED 2026-07-28. The suspect was confirmed and the fix is one synth-suspend bracket.** Marking calls that
+  originate inside `force_charshort_cast` and tracing every `ast_hook_convert` showed the parse recording
+  `0x21 → 0x4` (signed char → `long long`) directly, while replay produced `0x21 → 0x31` then `0x31 → 0x4` — the
+  extra step coming from a Convert node recorded by `force_charshort_cast`'s OWN internal `gen_cast` (the line with
+  `charshort=1`). That inner cast is an implementation detail of the outer `gen_cast`, which replay re-triggers by
+  itself, so recording it as a user-visible Convert corrupts the chain.
+
+  Fix: bracket the inner `gen_cast_s` with `ast_hook_synth_begin()`/`ast_hook_synth_end()` — the same idiom already
+  used for the 32-bit `gen_cast` path, the `sizeof` operand and static-storage initialisers, and the one that works
+  because it suspends at the PARSER where no model state is owed.
+
+  Result: `s_char`, `s_short`, `u_char` and the no-cast control are all now faithful, and TU fidelity goes
+  **1438 → 1443 faithful, 207 → 204 unfaithful** (desync unchanged at 206). Correctness verified by EXECUTION, not
+  just by the verdict flipping: `(signed char)0x80 → -128`, `(signed char)0xff → -1`, `(signed char)0x7f → 127`,
+  `(short)` sign extension, and the unsigned control, all correct at `-O0/-O1/-O2/-O3` and matching gcc `-O2`. That
+  matters because these bodies now REACH the optimizer, where a wrong model miscompiles instead of merely being
+  rejected.
+
+  Bar: host ctest 7281/7281, cross ctest 7440/7440, self-host fixpoint `s3 == s4` byte-identical.
 
   `MCC_AST_REPLAY_DUMP=1` does not help here — it only fires for bodies that came out faithful.
 
