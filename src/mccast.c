@@ -10891,6 +10891,17 @@ static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_type(a, cvt, U64, 0);
 	ast_add_child(a, cvt, ast_dup_sub(a, q2));
 	signbit = ast_bf_bin(a, TOK_SHR, U64, cvt, ast_bf_lit(a, U64, 63));
+	{
+		/* Convert the logical-shift sign bit back to SIGNED before it is added
+		 * into the quotient: an S64 + U64 add would apply the usual arithmetic
+		 * conversions and leave the quotient (and thus x - q*C) unsigned, so a
+		 * `(x % C) < 0` test on the result emits unsigned branches and never
+		 * negates a negative remainder. Mirrors ast_divmagic_try_signed. */
+		AstLocal sbs = ast_node(a, AST_Convert);
+		ast_set_type(a, sbs, S64, 0);
+		ast_add_child(a, sbs, signbit);
+		signbit = sbs;
+	}
 	MCC_TRACE("divmagic s64 %s C=%lld M=0x%llx s=%d\n", op == '/' ? "div" : "rem",
 						(long long)C, (unsigned long long)mag.M, mag.s);
 	ast_set_type(a, n, S64, 0);
