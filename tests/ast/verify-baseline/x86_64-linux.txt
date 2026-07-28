@@ -193,7 +193,6 @@ features_c99_c11/fenv_access_fold.c	putc_unlocked	desync
 features_c99_c11/fenv_access_fold.c	putchar_unlocked	desync
 features_c99_c11/flexarray_runtime.c	bsearch	desync
 features_c99_c11/flexarray_runtime.c	fputc_unlocked	desync
-features_c99_c11/flexarray_runtime.c	main	desync
 features_c99_c11/flexarray_runtime.c	putc_unlocked	desync
 features_c99_c11/flexarray_runtime.c	putchar_unlocked	desync
 features_c99_c11/flt_eval_method.c	fputc_unlocked	desync
@@ -635,7 +634,7 @@ structs_unions/struct_init.c	test_init_ranges	desync
 structs_unions/struct_init.c	test_init_struct_from_struct	desync
 structs_unions/struct_init.c	test_multi_relocs	desync
 structs_unions/struct_packed_indirect.c	fputc_unlocked	desync
-structs_unions/struct_packed_indirect.c	main	desync
+structs_unions/struct_packed_indirect.c	main	unfaithful
 structs_unions/struct_packed_indirect.c	putc_unlocked	desync
 structs_unions/struct_packed_indirect.c	putchar_unlocked	desync
 structs_unions/struct_return.c	fputc_unlocked	desync
@@ -736,7 +735,6 @@ types/type_qualifiers.c	fputc_unlocked	desync
 types/type_qualifiers.c	putc_unlocked	desync
 types/type_qualifiers.c	putchar_unlocked	desync
 types/typedef.c	fputc_unlocked	desync
-types/typedef.c	main	desync
 types/typedef.c	putc_unlocked	desync
 types/typedef.c	putchar_unlocked	desync
 types/typedef_semantics.c	fputc_unlocked	desync

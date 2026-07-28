@@ -8970,7 +8970,17 @@ tok_next:
 		sizeof_parsed_type = 0;
 		if (tok == '(')
 			{ MCC_TRACE("br\n"); tok = TOK_SOTYPE; }
+		/* The operand of sizeof/_Alignof is UNEVALUATED: the parser walks it to get
+		   a type and emits nothing. Hide the walk from the recorder, or a call in
+		   there is modelled as a real Invoke and replay emits a call the parser
+		   never did. The pushed constant that follows is modelled normally. */
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_synth_begin();
+#endif
 		expr_type(&type, unary);
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_synth_end();
+#endif
 		if (type.t & VT_BITFIELD)
 			{ MCC_TRACE("br\n"); mcc_error("'%s' cannot be applied to a bit-field",
 								t == TOK_SIZEOF ? "sizeof" : "_Alignof"); }
