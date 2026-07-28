@@ -228,9 +228,32 @@ then diverges; it is not failing at the prologue.
     void a(int c, const char *m) { if (c) bail(m); else warn(m); }  /* UNFAITHFUL, newlen 41 vs 36 */
     void b(int c, const char *m) { if (c) warn(m); else warn(m); }  /* faithful */
 
-The parser sets `nocode_wanted` after the noreturn call and skips the 5-byte jump over the else-branch; replay does
-not model that and emits it. `b` is the same control-flow shape with a returning callee and is faithful, so the
-`noreturn` is the whole difference. On x86_64 five bytes is exactly `jmp rel32`/`call rel32`.
+On x86_64 five bytes is exactly `jmp rel32`/`call rel32`, and the natural reading is that the parser suppresses the
+jump over the else-branch as dead code while replay emits it.
+
+**CORRECTION 2026-07-28 — the `nocode_wanted` MECHANISM is NOT established, only the `noreturn` TRIGGER is.** Two
+things went wrong in the first write-up and both are worth recording:
+
+- The original control was confounded. `a` called TWO DIFFERENT functions while `b` called the SAME one twice, so it
+  varied `noreturn` AND callee-distinctness together. Re-run with a proper third case:
+
+      void a_noret(int c, const char *m) { if (c) bail(m);  else warn(m); }   /* UNFAITHFUL +5 */
+      void a_two  (int c, const char *m) { if (c) note(m);  else warn(m); }   /* faithful    */
+      void a_same (int c, const char *m) { if (c) warn(m);  else warn(m); }   /* faithful    */
+
+  `a_two` isolates callee-distinctness and is faithful, so **`noreturn` really is the trigger** — that part survives.
+
+- An attempt to ATTRIBUTE the bucket to `nocode_wanted` failed and was reverted rather than shipped. A per-function
+  flag ORed in wherever `nocode_wanted` was observed — first at `ast_hook_vpush` and `ast_hook_call_begin`, then also
+  at `ast_hook_stmt`/`ast_hook_if_else`/`ast_hook_if_end`/`ast_hook_if_gvtst_done` — reported **0 for `a_noret`
+  itself**, the case already proven positive. It also reported 0 for all 205 TU events, which is therefore
+  MEANINGLESS: an instrument that misses a known positive cannot support a negative conclusion. Either
+  `nocode_wanted` is already clear by the time any recorder hook runs, or it is not the mechanism at all.
+
+So the open question is sharper than before: **what actually differs in those 5 bytes?** Diff the parser's and the
+replay's emitted bytes for `a_noret` directly (`firstdiff=8` says they agree for 8 bytes first) rather than sampling
+a global. Until that is done, do NOT treat the ±5 class as known-`nocode_wanted`, and do not reuse the reverted
+flag-sampling approach.
 
 **NOT established, and do not assume it:** what SHARE of the real 108 this accounts for. 32 of 108 have a delta that
 is a multiple of 5, which is suggestive but not proof — a crude source scan for noreturn calls in the named functions
