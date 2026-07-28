@@ -1297,6 +1297,19 @@ them:**
   ("32 events, ALL `c >= 0`"). Fix shape here is to MODEL a constant-condition `&&`/`||`/`?:` — record the arm that
   is actually taken and drop the other — which is a modelling addition, not a suspend.
 
+  **Design input measured 2026-07-27, and it is the fact that makes this tractable: the hook sequence is IDENTICAL
+  for a constant and a non-constant condition.** Instrumenting all four ternary hooks:
+
+      x ? 1 : 2      begin c=-1 -> branch 0 -> done 0 -> branch 1 -> done 1 -> end     FAITHFUL
+      1 ? a : h(1)   begin c=1  -> branch 0 -> done 0 -> branch 1 -> done 1 -> end     desync at begin
+
+  Both arms' `branch`/`done` hooks fire either way, so the recorder is NOT missing callbacks in the constant case —
+  it simply refuses at `begin`. A pass-through can therefore be built inside the existing state machine (remember
+  "constant, taken arm = `c ? 0 : 1`" at `begin`, let the taken arm's `done` supply the result value, discard the
+  other) without inventing new hook points. The `ast_vn` column in the constant run is unhelpful (it stays at 1
+  because the desync short-circuits every later hook) — re-measure it once `begin` stops desyncing, since the real
+  question is whether the untaken arm pushes a value at all.
+
 So this is two pieces of work, roughly 87 and 51 events, not one of 138.
 
 So F5 alone is now **48% of all desyncs and 14% of every function in the TU** — it was described as "the
