@@ -386,10 +386,36 @@ changes JIT-compiled code'. Cross-arch JIT validation is still part of (a).
 They are independent and can flip separately; `MEMBER_AGG` is the largest and the cleanest (zero regressions from
 `faithful`).
 
-**F2 — Model arm64's CSINC form so `CMP_INVERT` works there.** The `^1` token flip matches x86_64/i386/riscv64, where a
-comparison inverts in place. arm64 materialises the result with `CSINC`, so inversion changes the emitted LENGTH
-(32 B baseline vs 28 B replay on the `!!` reproducer), not just a condition field. The hook currently DESYNCS on arm64
-rather than mismodel, which is safe but leaves that target with no fix. Optional: the gate is sound without it.
+**F2 — arm64 `CMP_INVERT`: DIAGNOSED 2026-07-27, and the previous framing was BACKWARDS.** This entry said
+"flipping the op would model it WRONGLY, and a wrong model that happens to replay identically is the latent
+miscompile path this hook exists to close." That is not what is happening. Measured by building an arm64 compiler with
+the desync arm removed and dumping the diff on `int f(int a){ return !!a; }`:
+
+    base: ... e0 17 9f 1a  00 00 00 52     cset w0, eq ; eor w0, w0, #1   (20 B)
+    repl: ... e0 07 9f 1a                  cset w0, ne                    (16 B)
+
+The two are **semantically identical** — `!(a==0)` and `a!=0` — and the REPLAY is the better code. So the `^1` model
+is CORRECT on arm64; what diverges is that the arm64 BASELINE emits a redundant instruction. x86_64 emits the optimal
+form for the same sources (`setne`, and `setge` for `!(a<b)`), which is exactly why the hook replays faithfully there.
+arm64 emits `cset eq; eor #1` and `cset lt; eor #1`. This is a **missed arm64 optimization**, present at `-O0` and
+`-O2` alike, not a modelling hazard.
+
+Mechanism, pinned to the line: `gen_opi`/`gen_opl` (arm64-gen.c) call `arm64_gen_opil(op, …)`, which **emits the
+`cmp` and the `cset` EAGERLY**, and only then `arm64_vset_VT_CMP(op)` marks the value `VT_CMP` with the sentinel
+`vset_VT_CMP(0x80)`, stashing the result register in `cmp_r`. Because the `cset`'s condition field is already in the
+instruction stream, a later `gen_test_zero` inversion cannot rewrite it — `vtop->cmp_op ^= 1` only flips the sentinel's
+low bit, and `arm64_load_cmp` materialises that bit as `vpushi(1); arm64_gen_opil('^', 0)`. x86_64 keeps `VT_CMP`
+LAZY (the condition lives in `cmp_op` until a `setcc` is emitted at materialisation), so inverting is free there.
+
+Two candidate fixes, neither attempted — the gate is sound without this and it is real backend work:
+1. **Make arm64's `VT_CMP` lazy** like x86_64: defer the `cset` to materialisation so the condition field is still
+   editable. Correct and removes the redundant instruction everywhere, but it restructures the arm64 compare path.
+2. **Peephole the inversion**: in `arm64_load_cmp`, patch the already-emitted `cset`'s condition field instead of
+   emitting `eor`, when that `cset` is still the last instruction. Much smaller, but only valid when nothing was
+   emitted in between, so it needs a guard.
+Either one makes baseline == replay AND drops an instruction on every `!` of a comparison. Worth doing on value
+grounds now that `CMP_INVERT` is default-on: it would convert arm64's 21 `unfaithful`->`desync` functions into real
+coverage (see F1 flip 3).
 
 **F3 — `MCC_AST_MEMBER_CONST`'s 4-function residue (optional polish).** `ast_hash_of`, `ast_sid_node`, `set_flag`,
 `so_ckpt_write` go `desync -> unfaithful` under the gate. After `CMP_INVERT` the semantic inversion is gone; what
