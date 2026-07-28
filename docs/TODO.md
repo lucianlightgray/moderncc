@@ -1117,10 +1117,38 @@ That matters because **mcc's own source is saturated with this idiom** — every
 the innocent `return s;` (`unary()` at mccgen.c:9748 -> `vset`), while the extra node was left behind earlier during
 the declaration. Do not "fix" the site the backtrace names.
 
-**Coverage of the 261 is NOT measured and must not be guessed.** A crude grep attributed only 19, but it failed to
-locate 218 of the 261 function definitions at all (formatting/`static` prefixes), so that number is meaningless in
-both directions. Getting a real figure needs the recorder to attribute the desync to the declaration rather than the
-witness — worth doing first, since it decides whether this one shape is most of F5's 48% or a slice of it.
+**Coverage MEASURED 2026-07-27 with a proper brace-matching locator (256 of 261 definitions found, vs 43 by the
+earlier crude grep): the static-initializer shape is only 19 of them, ~7%. It is NOT the main cause.**
+
+**THIRD AND DOMINANT REPRODUCER — a `void` function with a bare early `return;`. Two lines:**
+
+    static int a, b;
+    void f(void){ if (!a) return; if (b) b = 1; }      /* desync:2302 */
+
+Verified by flipping one thing at a time:
+
+| variant | verdict |
+|---|---|
+| `void f(){ if(!a) return; if(b) b=1; }` | **desync:2302** |
+| `void f(){ if(!a) return; if(b>0) b--; }` | **desync:2302** |
+| same logic NESTED, no early return (`if(a){ if(b>0) b--; }`) | faithful |
+| `int f(){ if(!a) return 0; if(b>0) b--; return 1; }` — returns a VALUE | faithful |
+| `void f(){ if(!a) return; b=1; }` — no second `if` | bail (not desync) |
+| one `if` alone, decrement alone, local instead of global | faithful |
+
+So it needs: **void return type + a bare `return;` + at least one more `if` after it.** Neither the trace macros nor
+`__func__` are involved — I tested both and they are faithful, so the `MCC_TRACE` in every mcc function is a red
+herring.
+
+**This is the shape that explains F5.** Of the 256 located functions, **218 (85%) are void-returning and contain a
+bare `return;`** — against 19 with a static initializer. Site 2302 is 48% of all desyncs, so this single shape is on
+the order of 40% of every desync in the TU, and it is the guard-clause idiom that `mccast.c` itself is built out of
+(`void ast_hook_X(void) { if (!ast_active) return; … }`).
+
+Mechanism to chase: `ast_hook_return(has_val)` sets `ast_bail` when `!has_val`, which is why the no-second-`if`
+variant reports `bail` rather than `desync` — the bare return leaves the model inconsistent, and whether that surfaces
+as a bail or as a 2302 desync depends only on what follows it. Fixing the bare-`return;` path is therefore the single
+highest-value item in the whole fidelity section.
 
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
