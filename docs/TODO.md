@@ -832,8 +832,22 @@ call-argument shape rather than the statement chain that used to dominate the re
 - **the call-argument path** — this is `ast_finalize_storevals`' leftmost-leaf guard declining by design ("A call
   argument fails this (gfunc_call pushes around it) and keeps the old, unfaithful behaviour"). The question is
   whether the guard can be widened safely for arguments, given `gfunc_call` pushes around the marker.
-- **the discarded-value ternary** — records nothing at all, which is the old B1b slice and is independent of the
-  above.
+- ~~**the discarded-value ternary**~~ — **FIXED 2026-07-28.** Traced first, as the method requires, and the cause was
+  one missing node kind rather than anything structural: `ast_hook_vpop` attaches a discarded value to the current
+  basic block only when its kind is `AST_Invoke` or `AST_Unary`. A ternary pushes an `AST_If` (from
+  `ast_hook_ternary_end`), so it was never attached — the `Invoke` nodes for both arms WERE recorded, they just
+  ended up unreachable from the root, which is why the verdict was `empty` rather than `desync`. Adding `AST_If` to
+  that test is the whole fix.
+
+  Verdicts after: `c ? a() : b();`, `c ? ai() : ai();` and `(void)(c ? 1 : 2);` all faithful, alongside the
+  already-faithful discarded calls. Runtime behaviour verified rather than assumed — a loop doing
+  `i & 1 ? a() : b()` counts 2/3 at `-O0`/`-O1`/`-O2`/`-O3` and matches gcc, so the taken arm still runs exactly
+  once now that these bodies reach the optimizer.
+
+  No movement on mcc's own TU (1438/1841, and zero `empty` verdicts there to begin with) and the ratchet is
+  unchanged at 167 — the gain is on general C, not on this codebase. `store_packed_bf`, which motivated the
+  investigation, is still `unfaithful`: its `c ? vdup() : gv_dup()` is now recorded, but the function diverges for
+  other reasons.
 
 Prove either direction with traces BEFORE writing code (the standing method above): the `RV`/`LEAF`/`FIN` traces
 and `[unfaithful-rel]` already exist and were what settled every question in this area. Gate on
