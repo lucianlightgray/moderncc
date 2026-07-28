@@ -382,15 +382,28 @@ Wanted:
    throughout.
 
    **RETRACTION — I previously wrote here that `TEMPLATES=1` gives nbody 3854 B at equal speed and "the size-scored
-   search does NOT find it, even though 3854 < 3998 is exactly what it optimises for". That claim is NOT established
-   and is withdrawn.** Instrumenting the gate loop shows gate 1 (which is exactly `TEMPLATES=1`) scoring **4198,
-   identical to gate 0** — so within the driver's own candidate space it is not smaller and there is no
-   "strictly better candidate being rejected". The 3854 figure is real and reproducible via the child environment
-   directly (`MCC_SEARCH_WORKER=1 MCC_AST_TEMPLATES=1`), and via a pinned `-O4` driver run, but NOT at `-O30`, where
-   pinned and unpinned both give 3998. **That discrepancy is unexplained and left open rather than guessed at** — the
-   likely direction is that the driver also sets `INLINE_NODES`/`GRAFT`/`BITFLAG`/`PROMOTE_LIMIT`/`OPT_LIMIT` from the
-   budget/limit indices, so a bare child env is not the same configuration as any gate word, but that was not
-   confirmed. Whoever picks this up should start by instrumenting the SEED evaluation, not just the gate loop.
+   search does NOT find it". That claim is withdrawn: the driver is behaving correctly.** Instrumenting the gate loop
+   shows gate 1 (which is exactly `TEMPLATES=1`) scoring **4198, identical to gate 0**, so within the driver's own
+   candidate space it is not smaller and nothing is being wrongly rejected.
+
+   **The discrepancy that left open is now RESOLVED 2026-07-27, and the cause is a different bug: the IN-PROCESS AST
+   search is NON-MONOTONIC in its budget.** Instrumenting the SEED evaluation (not just the gate loop) showed the same
+   pinned environment scoring 4054 at `-O4` but 4198 at `-O30`, which is impossible if the pin is the only variable —
+   and it isn't: the child inherits the `-O` level too, so its own in-process search budget scales with it. Measured
+   directly with the driver out of the picture (`MCC_SEARCH_WORKER=1 MCC_AST_TEMPLATES=1`, nbody):
+
+   | child level | `.text` | best-of-3 |
+   |---|---:|---:|
+   | `-O4` | **3854** | 0.17 s |
+   | `-O5` | 3998 | 0.18 s |
+   | `-O6` / `-O8` / `-O10` / `-O30` | 3998 | 0.17 s |
+
+   **One extra second of search costs 144 bytes at identical runtime**, and the step is between `-O4` and `-O5`. With
+   `TEMPLATES=0` every level gives 3998, so this surfaces only when the smaller configuration is reachable at all. It
+   is a size regression, not a speed one — but it makes "a higher `-O` is at least as good" false, which is the same
+   guarantee the `PROMOTE` floor above exists to protect. Worth fixing in the in-process search's own accept logic
+   (it should never replace a candidate with a larger one on its own scoring axis); note the driver's accept logic is
+   NOT at fault and was already checked.
 
    Secondary, unchanged: the earlier per-gate ablation over all 62 `o4` gates (`MCC_SEARCH_WORKER=1`, each forced off)
    found 20 that shrink `.text`, but 10 land on the SAME 3854 B, so they are perturbing which configuration the
