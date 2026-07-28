@@ -1316,6 +1316,29 @@ them:**
   hides both is wrong, see below), and whatever is admitted must survive a self-host generation — which the plain
   Invoke node for a dead call does not.
 
+  **The likely mechanism to reuse is `AST_Poison`, and there is a concrete next experiment.** `MCC_AST_REPLAY_DUMP=1`
+  on `void f(void){ if (0) b = 1; a = 2; }` shows the dead statement represented as a single `Poison` node:
+
+      BasicBlock          (dead)              BasicBlock            (live `if (1)`)
+        Poison                                  BasicBlock
+        Store                                     BasicBlock
+          Ref                                       Store …
+          Literal 2                             Store …
+
+  `ast_replay_bb` has NO `case AST_Poison`, so it falls through `default: break;` and emits nothing — which is
+  exactly the "mirror the stack effect, emit nothing" behaviour a dead call needs. So the experiment is: have
+  `ast_hook_call_begin` under `nocode_wanted` consume `nb_args + 1` operands and leave a `Poison` as the call's
+  result, instead of desyncing or building an `Invoke`.
+
+  **Open question, and my first two attempts to answer it were BOTH invalid — do not repeat them.** It is not yet
+  known whether that `Poison` is produced by the RECORDER or by a later pass. The recorder region (mccast.c below
+  ~line 7000) contains no `AST_Poison` at all, which suggests a pass, but neither control disabled the transformation:
+  `MCC_AST_OPT_LIMIT=0` and `MCC_AST_SCCP=0` both still print `[ast-sccp] 1 f` and still show the `Poison`, and `-O0`
+  produces no dump at all because replay does not run there. A valid isolation needs a build with the pass actually
+  removed, or a dump taken at the faithfulness check rather than after optimization. This matters because if a PASS
+  makes the Poison, then the recorded model still contains the dead statement and the faithfulness check is passing
+  for some other reason — which would change the whole plan.
+
   **A TARGETED suspend was tried 2026-07-27 and does NOT work — recording it because the boundaries looked ideal.**
   After the constant-ternary fix landed, the recorder knows exactly where a folded ternary's untaken arm starts and
   ends (`_branch` / `_branch_done` for the non-taken index), which is precisely the paired enter/leave the general
