@@ -122,6 +122,28 @@ The invariant is the blocker, not the probe: resolving *unresolvable* compilers 
   2. **Wider admission exposes near-match acceptance, which breaks `MCC_JIT=1` == `MCC_JIT=0`.** With `MCC_JIT_LAZY=1 MCC_JIT_SEARCH=1` the widened gate changed program output (FP accumulation diverged in the 4th significant digit); conservative gate matched exactly. `MCC_JIT_NEARMATCH` is default-ON and by design KEEPS a variant that mismatches the baseline on a small input set, so admitting more functions admits more divergence. That is a direct P0 parity violation and is the harder of the two.
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
+
+**CURRENT STATE, measured 2026-07-27 on mcc's own amalgamated TU at `-O2` (1849 functions, compile `rc=0` so the
+counts are not truncated): 1343 faithful / 327 desync / 179 unfaithful / 1 bail / 1 empty — `72.6%` FAITHFUL.**
+Session start was 1101 faithful (59.5%) with 60 bails. `faithful` is the figure that matters: it gates the optimizer
+passes, `ast_search_*`, the ROI scorer, `ast_inline_retain`, `ast_reemit_retain` and JIT dispatch. `desync`,
+`unfaithful` and `bail` are all equally excluded, so moving a function BETWEEN them is not progress and not a
+regression.
+
+Four fixes landed this session, each through the full bar (host + cross ctest, 3-stage self-host fixpoint,
+`ast/treecheck`, 400-seed gate-swept differential fuzz, all four qemu triples, both side-effect guards):
+
+| fix | gain |
+|---|---|
+| bare `return;` modelled (was `ast_bail`) | **+217** faithful, bail 60 -> 1 |
+| constant `&&`/`||` folded | +20 |
+| F3a assignment-as-value (`AST_StoreVal`) | +10 |
+| constant `?:` folded | +5 |
+
+Remaining desyncs by site: `2315` value-model guard (112, register-held lvalues + struct rvalues), `3335`
+`nocode_wanted` calls (~87), the residual `2302` vstack sync (48), and a long tail. **Measure with the full TU, not
+`tests/exec`** — the corpus is simpler code and reads several points higher.
+
 **COUNTING CORRECTION 2026-07-27 — earlier `faithful` figures in these sections were INFLATED.** They were taken with `grep -c 'faithful\t'`, which also matches **un**faithful. Corrected, anchored counts over mcc's own TU at `-O2` (1736 functions):
 
 | config | desync | unfaithful | faithful | delta |
