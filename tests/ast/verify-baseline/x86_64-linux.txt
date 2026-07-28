@@ -269,7 +269,6 @@ functions_abi/recursion.c	fputc_unlocked	desync
 functions_abi/recursion.c	putc_unlocked	desync
 functions_abi/recursion.c	putchar_unlocked	desync
 functions_abi/static.c	fputc_unlocked	desync
-functions_abi/static.c	henry	desync
 functions_abi/static.c	putc_unlocked	desync
 functions_abi/static.c	putchar_unlocked	desync
 functions_abi/variadic_promotions.c	fputc_unlocked	desync
@@ -372,7 +371,6 @@ pointers_arrays/char_array.c	fputc_unlocked	desync
 pointers_arrays/char_array.c	putc_unlocked	desync
 pointers_arrays/char_array.c	putchar_unlocked	desync
 pointers_arrays/flexarray.c	fputc_unlocked	desync
-pointers_arrays/flexarray.c	main	desync
 pointers_arrays/flexarray.c	putc_unlocked	desync
 pointers_arrays/flexarray.c	putchar_unlocked	desync
 pointers_arrays/multiple_array_index.c	fputc_unlocked	desync
@@ -716,7 +714,6 @@ types/long_long_constant.c	putchar_unlocked	desync
 types/sizeof.c	fputc_unlocked	desync
 types/sizeof.c	putc_unlocked	desync
 types/sizeof.c	putchar_unlocked	desync
-types/sizeof_array.c	main	desync
 types/sizeof_semantics.c	fputc_unlocked	desync
 types/sizeof_semantics.c	main	desync
 types/sizeof_semantics.c	putc_unlocked	desync
@@ -725,7 +722,6 @@ types/std_short_enums.c	fputc_unlocked	desync
 types/std_short_enums.c	putc_unlocked	desync
 types/std_short_enums.c	putchar_unlocked	desync
 types/storage_tentative.c	fputc_unlocked	desync
-types/storage_tentative.c	next_id	desync
 types/storage_tentative.c	putc_unlocked	desync
 types/storage_tentative.c	putchar_unlocked	desync
 types/type_coercion.c	fputc_unlocked	desync

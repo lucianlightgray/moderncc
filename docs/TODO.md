@@ -1127,8 +1127,26 @@ exactly ONE stale node in 61 of 64 cases (`vn=1 rel=1`), and its kind is:
 | `AST_Load` | 2 |
 | `AST_StoreVal` | 1 |
 
-**So the search is now concrete: find the path that consumes a vstack entry holding a CONVERSION result without
-dropping its `ast_vs` node** — that is a third of the site, and `ast_hook_convert` replaces the top of `ast_vs` with
+**FOUND AND FIXED 2026-07-27 — the `Convert` leftover is the function-scope STATIC WITH AN INITIALIZER, which unifies
+this site with the second F5 reproducer recorded above.** Tracing which functions produce a `Convert` leftover named
+`ast_slice_multi_on`, `switch_jt_env`, `mcc_stats_enable` and friends — all the env-gate idiom
+`static int on = -1; if (on < 0) { … } return on;`. Confirmed directly: `int f(void){ static int s = 5; return s; }`
+desyncs with `leftover-kind=10` (`AST_Convert`), while the same static WITHOUT an initializer is faithful, and so are
+the `?:`-only and `&&`-only variants once the static is removed.
+
+Cause: a static's initializer is compile-time data written into a section, so the parser emits no code — but the value
+it walks goes through `gen_cast`, and `ast_hook_convert` puts a `Convert` on the model stack that nothing ever pops.
+The model then runs one ahead and the next real push reports the mismatch. Fix is the same parser-side synth-suspend
+that worked for `sizeof`: bracket `decl_initializer_alloc` in `decl()` when the storage is `VT_CONST` and there is an
+initializer. **Autos are deliberately NOT bracketed** — their initializer emits real code that must be modelled, and
+`int v = x + 1;` / `int t[3] = {1,2,3};` stay faithful either way.
+
+Gain: **+16 faithful (1376 -> 1392), desync 287 -> 268**, self-host fixpoint byte-identical (5525167), host ctest
+7276/7276, cross 7435/7435, `ast/treecheck` clean at `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0
+miscompile, qemu 14/14 on all four triples, 0 exec-corpus crashes, both side-effect guards green. Ratchet 763 -> 759.
+
+Superseded lead: **find the path that consumes a vstack entry holding a CONVERSION result without dropping its
+`ast_vs` node** — that is a third of the site, and `ast_hook_convert` replaces the top of `ast_vs` with
 a `Convert`, so a consumer that pops the vstack without a matching hook leaves exactly this. The `Invoke` (13) and
 `Literal` (12) groups are the same bug seen through other producers. Context is mostly clean (`in_op=0 in_call=0
 tern=0 lor=0` in 52 of 64), so this is not an in-flight-expression artifact; 12 events are inside a short-circuit

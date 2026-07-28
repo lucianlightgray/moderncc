@@ -13654,7 +13654,22 @@ static int decl(int l) {
 						{
 							int aci_prev = assign_ctx_is_init;
 							assign_ctx_is_init = has_init ? 1 : aci_prev;
+							/* A STATIC-storage initializer is compile-time data written into a
+							   section: the parser emits no code for it, but the value it walks
+							   goes through gen_cast, so ast_hook_convert leaves a Convert on the
+							   model stack that nothing pops -- the model then runs one ahead and
+							   the next real push desyncs. Hide the walk. Autos are NOT bracketed:
+							   their initializer emits real code that must be modelled. */
+#if MCC_CONFIG_OPTIMIZER
+							int ast_sq = (r & VT_VALMASK) == VT_CONST && has_init;
+							if (ast_sq)
+								{ MCC_TRACE("br\n"); ast_hook_synth_begin(); }
+#endif
 							decl_initializer_alloc(&type, &ad, r, has_init, v, l);
+#if MCC_CONFIG_OPTIMIZER
+							if (ast_sq)
+								{ MCC_TRACE("br\n"); ast_hook_synth_end(); }
+#endif
 							assign_ctx_is_init = aci_prev;
 						}
 #if MCC_CONFIG_LSP
