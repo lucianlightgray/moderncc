@@ -406,9 +406,21 @@ Where that leaves the two halves:
     except that here the differing allocation changes the instruction COUNT rather than just the encoding. Parser-only
     instructions across the group are dominated by `movq K(R),R` (29), `mov K(R),R` (21), `mov R,K(R)` (21),
     `movq R,K(R)` (16), against far fewer replay-only ones — so the parser generally spills more.
-  - The remaining 26 have non-mov differences and are the genuinely unexplained remainder. `xorb $K,K(R)` shows up
-    16 times in the parser-only totals but is NOT an anomaly: it is spread 1–2 per function across `foldm_hypot`,
-    `foldm_atan`, `foldm_tgamma` and `ast_fc_gp`, i.e. math-folding paths, not a single construct.
+  - The remaining 25 have non-mov differences and are the genuinely unexplained remainder. Their non-mov delta
+    mnemonics: `xorb` 16, `movabs` 6, `add` 6, `cmp` 5, `call` 5, then `shl`/`shr`/`xor`/`jmp`/`lea` in ones and
+    twos. `xorb` is NOT an anomaly despite the count: it is spread 1–2 per function across `foldm_hypot`,
+    `foldm_atan`, `foldm_tgamma` and `ast_fc_gp`, i.e. math-folding paths, not a single construct. (Checked
+    precisely because 16 looked concentrated.)
+  - **Four functions have a `call` in the delta, which is the only remaining place in the bucket where the two sides
+    might do genuinely different work.** `host_runmem_alloc`, `mcc_define_symbol` and `mcc_preprocess` have replay
+    emitting an EXTRA call; `store_packed_bf` has the parser emitting TWO extra calls that replay does not.
+
+    **Not established: whether any of these is a defect.** An extra call on one side is exactly what INLINE-vs-CALL
+    looks like, and that is semantically equivalent — a helper the parser inlined and the replay called, or the
+    reverse, is not a bug. Distinguishing the two needs the call TARGETS, which the canonicalised disassembly throws
+    away (`call K`). Whoever picks this up should resolve the targets first; if a target is a math or bitfield
+    helper the parser folds, it is benign, and only a call the other side never makes in any form is a real
+    difference. Do not assume it is the second sign-extension-class bug without that check.
 
   Taken with the byte-differ result, the picture across the whole bucket is consistent: most of what the
   faithfulness check rejects is allocation and scheduling difference rather than wrong modelling. Chained assignment
