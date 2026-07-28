@@ -545,6 +545,36 @@ canonicalising; the `so_ckpt_write` case needs the MODEL corrected, and until it
 not be waved through by a blanket tolerance that would also admit this one. Verification status, stated so it is not
 over-read: `so_ckpt_write` verified by disassembly, the other three by length and byte-pattern only.
 
+**F3a — NEW 2026-07-27: assignment-in-condition makes the AST replay DUPLICATE the call. Found while diagnosing F3;
+it is a general modelling bug, not a `MEMBER_CONST` artifact.** `if ((h = call(...)))` replays as "store the value,
+then call again and test THAT" instead of "store the value, then test the stored value". Minimal reproducer, which
+needs none of the F1 gates:
+
+    int calls;
+    static void *stub(const char *a, const char *b) { (void)a; (void)b; calls++; return 0; }
+    static int sink(void *h) { return h != 0; }
+    static int f(const char *p) { void *h; if ((h = stub(p, "rb"))) return sink(h); return 0; }
+
+`f` is `unfaithful`, baseline 58 B vs replay 80 B:
+
+    base:  mov [rbp-0x10],rax ; cmp rax,0 ; je ; mov rax,[rbp-0x10] ; mov rdi,rax ; call sink
+    repl:  mov [rbp-0x10],rax ; lea rax,[rip+0] ; mov rsi,rax ; mov rax,[rbp-0x8] ; mov rdi,rax
+           call stub ; cmp rax,0 ; je ; mov rax,[rbp-0x10] ; mov rdi,rax ; call sink
+
+The replay re-derives the condition from the RHS SUBTREE rather than from the assigned value, so the call is emitted
+twice — `calls` would be 2 instead of 1. **No miscompile ships**: the faithfulness check rejects the body and the
+parser's code is used, verified at runtime (`calls=1`, matching gcc). The cost is coverage, and it is not niche —
+mcc's own source has **26 `if ((x = …))` and 18 `while ((x = …))` sites**, and the idiom is ubiquitous in C generally
+(`if ((f = fopen(…)))`). This is also the true cause of one of F3's four functions: `so_ckpt_write`'s
+`if ((f = host_fopen(path, "rb")))`.
+
+Where to fix: the machinery for "an assignment's value is consumed" already exists for COMPOUND assignment —
+`ast_hook_vdup` / `ast_vdup_pending` / `ast_opassign_store_pending` deep-copy the target node so the model stays a
+tree (mccast.c `ast_hook_vpush`). Plain assignment-as-value appears not to be wired into it, so the condition ends up
+re-evaluating the RHS. The fix is to model the consumed value as a reference to the assigned location, not as a second
+copy of the RHS subtree. NOTE this is a coverage fix with a correctness-shaped failure mode — a wrong fix here
+duplicates or drops a call — so it needs the exec corpus plus the differential fuzz, not just a fidelity count.
+
 **F4 — The `&&`/`||` desync site: MEASURED 2026-07-27, and it is one cause, not four.** Instrumenting the guard in
 `ast_hook_landor_operand` over mcc's own TU: **32 events, ALL `c >= 0`** — the first operand of the `&&`/`||` folded
 to a compile-time constant. Zero from `ast_in_call`, `ast_in_op`, `ast_lor_top >= 16` or `ast_vn < 1`, so three of the
