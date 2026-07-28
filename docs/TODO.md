@@ -813,7 +813,34 @@ change here as meaningful. (Checking this needed care: `rc=$?` after a pipeline 
 fidelity delta, measure the runtime-bench kernels, run the bar. The precedent says at least one more may be
 mis-staged. Cheapest item here with a directly measurable payoff.
 
-### 2. B1a — the assignment-as-value model-shape change (fall back to B1b)
+### 2. B1a — RE-SCOPED 2026-07-28 after D1a. The statement-chain half is FIXED; only two shapes remain.
+
+Staging `MCC_AST_CHAINSTORE` at `-O2` (item 1) fixed the plain chained-assignment statement. Measured at current
+`-O2` defaults:
+
+| shape | verdict |
+|---|---|
+| `s += g();` and `use(g())` | faithful |
+| `a = b = 0;`, `a = b = c = 0;`, `a = b = c = v;` | **faithful** — were unfaithful before D1a |
+| `use(s += g())`, `use(s = g())` | **unfaithful** — assignment-as-value in a CALL ARGUMENT |
+| `c ? a() : b();`, `c ? ai() : bi();` | **empty** — discarded-value ternary records NOTHING |
+
+TU-wide the bucket moved 205 → 199 unfaithful and the `chain=` attribution 45 → 42, so most of the 42 are the
+call-argument shape rather than the statement chain that used to dominate the reproducer.
+
+**So B1a is now two well-defined targets, not one open-ended family:**
+- **the call-argument path** — this is `ast_finalize_storevals`' leftmost-leaf guard declining by design ("A call
+  argument fails this (gfunc_call pushes around it) and keeps the old, unfaithful behaviour"). The question is
+  whether the guard can be widened safely for arguments, given `gfunc_call` pushes around the marker.
+- **the discarded-value ternary** — records nothing at all, which is the old B1b slice and is independent of the
+  above.
+
+Prove either direction with traces BEFORE writing code (the standing method above): the `RV`/`LEAF`/`FIN` traces
+and `[unfaithful-rel]` already exist and were what settled every question in this area. Gate on
+`assign_value_effects.c` plus the full bar — this is still the region where `emit-at-marker` was correct at
+`-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3`.
+
+### 2b. (original B1a text — the model-shape change, still the answer if the two targets above prove to share a root)
 One root cause behind **45 chained stores + 3 call-argument cases + the discarded-value ternary**. The model must
 represent BOTH "the value is this constant/expression" AND "materialise it once, here, before the first store".
 Evidence already in hand, all in this file: the `FIN` trace catching the outer store's finalize overwriting
