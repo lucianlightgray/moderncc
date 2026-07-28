@@ -140,9 +140,25 @@ Four fixes landed this session, each through the full bar (host + cross ctest, 3
 | F3a assignment-as-value (`AST_StoreVal`) | +10 |
 | constant `?:` folded | +5 |
 
-Remaining desyncs by site: `2315` value-model guard (112, register-held lvalues + struct rvalues), `3335`
-`nocode_wanted` calls (~87), the residual `2302` vstack sync (48), and a long tail. **Measure with the full TU, not
-`tests/exec`** — the corpus is simpler code and reads several points higher.
+Remaining 327 desyncs, re-measured after all four fixes. **Identify sites by HOOK NAME, not by line number — the
+line numbers in older entries below are stale, because each fix shifted them (the old "2315" value-model guard is now
+2328, the old "2302" vstack sync is now 2315, and so on).**
+
+| hook | check | count |
+|---|---|---:|
+| `ast_hook_vpush` | value-model guard (bad type, or not const/sym/local) | **119** |
+| `ast_hook_call_begin` | `nocode_wanted` | **89** |
+| `ast_hook_vpush` | vstack SYNC (`ast_vn != rel - 1`) | 59 |
+| `ast_hook_cmp_invert` | unmodelled comparison op (`default:` arm) | 24 |
+| `ast_hook_vstore` | a store inside a ternary/`&&`/`\|\|` region | 15 |
+| `ast_hook_call_begin` | callee is not an `AST_Ref` | 14 |
+
+Note what is ABSENT: the constant-condition sites for `?:` and `&&`/`||` (previously 45 + 6) are gone entirely —
+those two fixes removed the whole category rather than reducing it. The `ast_hook_vstore` row is newly visible for
+the same reason: it fires for a store INSIDE a ternary/landor region, which previously desynced earlier at the
+condition.
+
+**Measure with the full TU, not `tests/exec`** — the corpus is simpler code and reads several points higher.
 
 **COUNTING CORRECTION 2026-07-27 — earlier `faithful` figures in these sections were INFLATED.** They were taken with `grep -c 'faithful\t'`, which also matches **un**faithful. Corrected, anchored counts over mcc's own TU at `-O2` (1736 functions):
 
