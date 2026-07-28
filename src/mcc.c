@@ -105,6 +105,8 @@ static const char help2[] =
 		"  -dumpversion                  Display the version of the compiler\n"
 		"  -dumpmachine                  Display the compiler's target machine\n"
 		"  -print-search-dirs            Display the compiler's search directories\n"
+		"  -print-prog-name=<prog>       Display the full path to <prog>\n"
+		"  -print-file-name=<file>       Display the full path to library <file>\n"
 		"  -rstdin <file>                With -run: use <file> as the program's stdin\n"
 		"  -dt                           With -run / -E: auto-define test_... macros\n"
 		"  --debug=<cat>[,<cat>...]      Enable internal trace categories:\n"
@@ -180,7 +182,7 @@ static const char help2[] =
 #endif
 		"  -Bsymbolic                    Set the DT_SYMBOLIC ELF tag\n"
 		"  -oformat=<fmt>                Set the output format (elf32/64-* or binary)\n"
-		"  -init=, -fini=, -Map=, -as-needed, -O, -z= Accepted and ignored\n"
+		"  -init=, -fini=, -Map=, -version-script=, -as-needed, -O, -z= Accepted and ignored\n"
 		"Predefined macros:\n"
 		"  mcc -E -dM - < /dev/null\n"
 #endif
@@ -228,6 +230,39 @@ static void print_dirs(const char *msg, char **paths, int nb_paths) { MCC_TRACE(
 	printf("%s:\n%s", msg, nb_paths ? "" : "  -\n");
 	for (int i = 0; i < nb_paths; i++)
 		{ MCC_TRACE("br\n"); printf("  %s\n", paths[i]); }
+}
+
+static int print_found_in(const char *name, char **paths, int nb_paths) { MCC_TRACE("enter\n");
+	char buf[4096];
+	for (int i = 0; i < nb_paths; i++) { MCC_TRACE("br\n");
+		FILE *f;
+		if ((size_t)snprintf(buf, sizeof buf, "%s/%s", paths[i], name) >= sizeof buf)
+			{ MCC_TRACE("br\n"); continue; }
+		f = fopen(buf, "rb");
+		if (f != NULL) { MCC_TRACE("br\n");
+			fclose(f);
+			printf("%s\n", buf);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void print_prog_name(const char *name) { MCC_TRACE("enter\n");
+	char buf[4096];
+	if (host_find_tool(name, ".exe", buf, sizeof buf))
+		{ MCC_TRACE("br\n"); printf("%s\n", buf); return; }
+	printf("%s\n", name);
+}
+
+static void print_file_name(MCCState *s, const char *name) { MCC_TRACE("enter\n");
+	if (print_found_in(name, s->library_paths, s->nb_library_paths))
+		{ MCC_TRACE("br\n"); return; }
+#ifdef MCC_TARGET_UNIX
+	if (print_found_in(name, s->crt_paths, s->nb_crt_paths))
+		{ MCC_TRACE("br\n"); return; }
+#endif
+	printf("%s\n", name);
 }
 
 static void print_search_dirs(MCCState *s) { MCC_TRACE("enter\n");
@@ -1467,6 +1502,14 @@ redo:
 			set_environment(s);
 			mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
 			print_search_dirs(s);
+		}
+		if (opt == OPT_PRINT_PROG) { MCC_TRACE("br\n");
+			print_prog_name(s->print_query ? s->print_query : "");
+		}
+		if (opt == OPT_PRINT_FILE) { MCC_TRACE("br\n");
+			set_environment(s);
+			mcc_set_output_type(s, MCC_OUTPUT_MEMORY);
+			print_file_name(s, s->print_query ? s->print_query : "");
 		}
 		if (opt) { MCC_TRACE("br\n");
 			if (opt < 0)

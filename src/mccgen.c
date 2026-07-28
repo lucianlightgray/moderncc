@@ -4189,6 +4189,10 @@ redo:
 		case TOK_ALWAYS_INLINE2:
 			ad->f.func_alwinl = 1;
 			break;
+		case TOK_GNU_INLINE1:
+		case TOK_GNU_INLINE2:
+			ad->f.func_gnuinl = 1;
+			break;
 		case TOK_SECTION1:
 		case TOK_SECTION2:
 			skip('(');
@@ -13408,11 +13412,11 @@ static int decl(int l) {
 					--local_scope;
 				}
 				if ((type.t & (VT_EXTERN | VT_INLINE)) == (VT_EXTERN | VT_INLINE)) { MCC_TRACE("br\n");
-					if (mcc_state->gnu89_inline || sym->f.func_alwinl)
+					if (mcc_state->gnu89_inline || sym->f.func_alwinl || sym->f.func_gnuinl)
 						{ MCC_TRACE("br\n"); type.t = (type.t & ~VT_EXTERN) | VT_STATIC; }
 					else
 						{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
-				} else if (mcc_state->gnu89_inline &&
+				} else if ((mcc_state->gnu89_inline || sym->f.func_gnuinl) &&
 									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) { MCC_TRACE("br\n");
 					type.t &= ~VT_INLINE;
 				} else if (mcc_state->c99_inline_body &&

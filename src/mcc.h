@@ -289,8 +289,9 @@ struct FuncAttr {
 			func_args : 8,
 			func_alwinl : 1,
 			func_noinl : 1,
+			func_gnuinl : 1,
 			func_star_param : 1,
-			xxxx : 13;
+			xxxx : 12;
 };
 
 typedef struct Sym {
@@ -729,6 +730,8 @@ struct MCCState {
 	char *init_symbol;
 	char *fini_symbol;
 	char *mapfile;
+	char *version_script;
+	char *print_query;
 
 	int output_type;
 	int output_format;
@@ -1325,6 +1328,8 @@ ST_FUNC int normalized_PATHCMP(const char *f1, const char *f2);
 #define OPT_PRINT_DIRS 4
 #define OPT_AR 5
 #define OPT_IMPDEF 6
+#define OPT_PRINT_PROG 7
+#define OPT_PRINT_FILE 8
 #define OPT_M32 32
 #define OPT_M64 64
 

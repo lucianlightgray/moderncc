@@ -1024,6 +1024,8 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	mcc_free(s1->init_symbol);
 	mcc_free(s1->fini_symbol);
 	mcc_free(s1->mapfile);
+	mcc_free(s1->version_script);
+	mcc_free(s1->print_query);
 	mcc_free(s1->outfile);
 	mcc_free(s1->jit_functions);
 	mcc_free(s1->deps_outfile);
@@ -1823,6 +1825,9 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 			s->filetype |= AFF_WHOLE_ARCHIVE;
 		} else if (link_option(&o, "no-whole-archive")) { MCC_TRACE("br\n");
 			s->filetype &= ~AFF_WHOLE_ARCHIVE;
+		} else if (link_option(&o, "version-script=|version_script=")) { MCC_TRACE("br\n");
+			mcc_set_str(&s->version_script, o.arg);
+			ignoring = 1;
 		} else if (link_option(&o, "znodelete")) { MCC_TRACE("br\n");
 			s->znodelete = 1;
 #ifdef MCC_TARGET_PE
@@ -1951,6 +1956,8 @@ enum {
 	MCC_OPTION_trigraphs,
 	MCC_OPTION_nostdlib,
 	MCC_OPTION_print_search_dirs,
+	MCC_OPTION_print_prog_name,
+	MCC_OPTION_print_file_name,
 	MCC_OPTION_rdynamic,
 	MCC_OPTION_pthread,
 	MCC_OPTION_run,
@@ -2067,6 +2074,14 @@ static const MCCOption mcc_options[] = {
 		{"trigraphs", MCC_OPTION_trigraphs, 0},
 		{"nostdlib", MCC_OPTION_nostdlib, 0},
 		{"print-search-dirs", MCC_OPTION_print_search_dirs, 0},
+		{"print-prog-name=", MCC_OPTION_print_prog_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"print-file-name=", MCC_OPTION_print_file_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"-print-prog-name=", MCC_OPTION_print_prog_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"-print-file-name=", MCC_OPTION_print_file_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"print-prog-name", MCC_OPTION_print_prog_name, MCC_OPTION_HAS_ARG},
+		{"print-file-name", MCC_OPTION_print_file_name, MCC_OPTION_HAS_ARG},
+		{"-print-prog-name", MCC_OPTION_print_prog_name, MCC_OPTION_HAS_ARG},
+		{"-print-file-name", MCC_OPTION_print_file_name, MCC_OPTION_HAS_ARG},
 		{"w", MCC_OPTION_w, 0},
 		{"E", MCC_OPTION_E, 0},
 		{"M", MCC_OPTION_M, 0},
@@ -3012,6 +3027,20 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_print_search_dirs:
 			x = OPT_PRINT_DIRS;
 			goto extra_action;
+		case MCC_OPTION_print_prog_name:
+			mcc_set_str(&s->print_query, optarg);
+			x = OPT_PRINT_PROG;
+			goto query_action;
+		case MCC_OPTION_print_file_name:
+			mcc_set_str(&s->print_query, optarg);
+			x = OPT_PRINT_FILE;
+		query_action:
+			if (NULL == argv[0])
+				{ MCC_TRACE("br\n"); return -1; }
+			--optind;
+			*pargc = argc - optind;
+			*pargv = argv + optind;
+			return x;
 		case MCC_OPTION_impdef:
 			x = OPT_IMPDEF;
 			goto extra_action;

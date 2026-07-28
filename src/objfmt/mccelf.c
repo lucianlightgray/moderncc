@@ -2190,6 +2190,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 		{ MCC_TRACE("br\n"); ++phnum; }
 	if (d->roinf)
 		{ MCC_TRACE("br\n"); ++phnum; }
+	++phnum;
 	{
 		int has_tls = 0;
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
@@ -2310,6 +2311,14 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 		{ MCC_TRACE("br\n"); fill_phdr(++ph, PT_GNU_EH_FRAME, eh_frame_hdr_section); }
 	if (d->roinf)
 		{ MCC_TRACE("br\n"); fill_phdr(++ph, PT_GNU_RELRO, d->roinf)->p_flags |= PF_W; }
+	{
+		ElfW(Phdr) *gs = ++ph;
+		gs->p_offset = 0;
+		gs->p_vaddr = 0;
+		gs->p_filesz = 0;
+		gs->p_align = 16;
+		fill_phdr(gs, PT_GNU_STACK, NULL)->p_flags |= PF_W;
+	}
 	{
 		Section *tls_start_sec = NULL;
 		addr_t tls_start = 0, tls_end = 0, tls_file_end = 0;
@@ -3014,6 +3023,10 @@ static int elf_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("enter
 #ifdef MCC_TARGET_RISCV64
 	create_riscv_attribute_section(s1);
 #endif
+	if (!have_section(s1, ".note.GNU-stack")) { MCC_TRACE("br\n");
+		s = new_section(s1, ".note.GNU-stack", SHT_PROGBITS, 0);
+		s->sh_addralign = 1;
+	}
 	alloc_sec_names(s1, 1);
 	file_offset = (sizeof(ElfW(Ehdr)) + 3) & -4;
 	file_offset += s1->nb_sections * sizeof(ElfW(Shdr));

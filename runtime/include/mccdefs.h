@@ -260,10 +260,35 @@
 	} __builtin_va_list[1];
 
 	void *__va_arg(__builtin_va_list ap, int arg_type, int size, int align);
+	static __inline void *__va_arg_inline(__builtin_va_list ap, int arg_type, int size, int align) {
+	size = (size + 7) & ~7;
+	align = (align + 7) & ~7;
+	if (arg_type == 0) {
+	if (ap->gp_offset + size <= 48) {
+	ap->gp_offset += size;
+	return ap->reg_save_area + ap->gp_offset - size;
+	}
+	} else if (arg_type == 1) {
+	if (ap->fp_offset < 128 + 48) {
+	ap->fp_offset += 16;
+	if (size == 8)
+	return ap->reg_save_area + ap->fp_offset - 16;
+	if (ap->fp_offset < 128 + 48) {
+	*(long long *)(ap->reg_save_area + ap->fp_offset - 8) =
+	*(long long *)(ap->reg_save_area + ap->fp_offset);
+	ap->fp_offset += 16;
+	return ap->reg_save_area + ap->fp_offset - 32;
+	}
+	}
+	}
+	ap->overflow_arg_area += size;
+	ap->overflow_arg_area = (char *)((long long)(ap->overflow_arg_area + align - 1) & -align);
+	return ap->overflow_arg_area - size;
+	}
 	#define __builtin_va_start(ap, last) \
 	(*(ap) = *(struct __va_list_tag *)((char*)__builtin_frame_address(0) - 24))
 	#define __builtin_va_arg(ap, t)   \
-	(*(t *)(__va_arg(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
+	(*(t *)(__va_arg_inline(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
 	#define __builtin_va_copy(dest, src) (*(dest) = *(src))
 
 #else //@
