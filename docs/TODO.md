@@ -1019,9 +1019,25 @@ So the correct shape is a dead-code DEPTH tracked by the recorder (mirroring `no
 hooks consulting it only where suppression keeps the push/pop invariant. That is a real design task, not a guard
 edit. Reverted; the tree is unchanged.
 
-**F5 — The 26% vstack site is real modelling work, with no shortcut.** Measured 100% the `ast_vn != rel - 1` SYNC arm,
-0% capacity, so raising `AST_VS_MAX` recovers nothing. This is the second-largest cause of lost optimization and the
-only one with no landed mitigation.
+**F5 — The vstack SYNC site is real modelling work, with no shortcut. Now the LARGEST remaining cause by a wide
+margin.** Measured 100% the `ast_vn != rel - 1` arm, 0% capacity, so raising `AST_VS_MAX` recovers nothing.
+
+**Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
+landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
+TU at `-O2`, 1849 functions: **1101 faithful / 540 desync / 149 unfaithful / 60 bail / 1 empty**. The desyncs by site:
+
+| site | count | share of desyncs | what it is |
+|---|---:|---:|---|
+| `mccast.c:2302` | **261** | **48%** | the F5 vstack SYNC arm (`ast_vn != rel - 1`) |
+| `mccast.c:2315` | 106 | 20% | `ast_hook_vpush` value-model guard (not const/sym/local, or bad type) |
+| `mccast.c:3256` | 78 | 14% | `nocode_wanted` |
+| `mccast.c:2589` | 39 | 7% | `&&`/`||` first operand (F4) |
+| `mccast.c:2430` | 20 | 4% | unmodelled op (`default:` arm) |
+
+So F5 alone is now **48% of all desyncs and 14% of every function in the TU** — it was described as "the
+second-largest cause" against an older mix, and it is now comfortably first. Anyone picking up fidelity work should
+start here rather than at F4 (7%) or the `nocode_wanted` site (14%), and note that a flat `nocode_wanted` gate was
+already tried and made fidelity WORSE (see the Tests/infra section) — the hooks come in pairs.
 
 **F6 — riscv64's 30x `unfaithful` rate: ROOT-CAUSED AND FIXED 2026-07-27 by flipping `MCC_AST_RELOC_EQUIV`
 default-on.** The mitigation already existed in-tree and was default-OFF; this entry's claim that F6 was "the only one
