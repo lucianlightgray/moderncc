@@ -422,7 +422,7 @@ through each cross compiler with `OPTFIRE_NORUN=1`:
 | target | fires | does not |
 |---|---:|---|
 | **arm64** | **50 / 51** | `regdisp` only — already arch-guarded to x86_64 |
-| i386 | 34 / 51 | promotion family (6), narrow family (6), reassoc family (4), `vlat` |
+| i386 | 38 / 51 | promotion family (6), narrow family (6), `vlat` — reassoc family RESOLVED, see `cdelta` below |
 | riscv64 | 31 / 51 | the above plus loop transforms (3), `bfold_*` (4), `math_inline`, `argfwd` |
 
 arm64 is therefore wired: 50 `optfire-arm64/<case>` cells, all passing. They register only when the `mcc-arm64` target
@@ -435,9 +435,20 @@ keeps `regdisp` out.
   there. `promote`/`promo_arrow`/`promo_incdec`/`spill_share`/`color` are now `arch.txt`-guarded to those three CPUs,
   matching the `#if` exactly. Note riscv64 IS compiled in but has no leaf (caller-saved) pool by design, so some of
   these still will not fire there — a CASE-shape issue for when riscv64 is wired, not grounds to drop it from the list.
-- *Reassoc family (4) — NOT a gap, and NOT guarded.* The pass fires identically on both targets (`reassoc` counter
-  8/8, 3/3, 3/3, 4/4 x86_64 vs i386); only the object-level effect is invisible on i386. The CASES are wrong for that
-  target, so they need reworking, and an arch guard would falsely claim the pass is absent.
+- *Reassoc family (4) — RESOLVED 2026-07-27 by a new `cdelta` optfire mode, not by reworking the cases.* The pass
+  fires identically on both targets (`reassoc` counter 8/8, 3/3, 3/3, 4/4 x86_64 vs i386); only the object-level
+  effect is invisible on i386. So the defect was in the MEASUREMENT, not the cases: an object diff asks "did the bytes
+  change", which is a proxy for "did the pass fire" that this target breaks. **`cdelta` asks the real question** — it
+  compiles with the gate forced to 0 and to 1 and requires the named `--stats` counter to be 0 and then nonzero. That
+  is strictly stronger than differ mode (a byte change could come from anywhere; a counter delta is attributable to
+  the pass) and it is portable, because the counter does not depend on whether the transform survives to the emitted
+  bytes on a given target. All four sub-knobs moved from `differs_sub.txt` to `cdelta.txt` and now PASS on i386
+  (`reassoc 0 -> 8/3/3/4`), which is where differ mode could not reach them. Built test-first per the TDD request:
+  the manifest and CMake wiring went in first and the cells failed `unknown mode: cdelta`, then the mode was
+  implemented. Negative control confirms it bites — forcing `MCC_AST_REASSOC=0` globally makes the cell FAIL with
+  `pass DID NOT FIRE`. **Generalisable: prefer `cdelta` to `differ` for any gate whose transform is real but whose
+  byte-level effect is target-dependent.** An arch guard would have been the wrong fix here — it would have recorded
+  the pass as absent on i386 when it demonstrably fires.
 - *Narrow family (6) incl. `vlat` — a REAL gap, deliberately NOT guarded.* This is the 32-bit `int`<->`long long`
   recorder desync (cross-arch parity section): `narrow` reads 0 on i386 against 2-5 on x86_64, and widening the case to
   `long long` does not help because the recorder desyncs on the conversion. Guarding it would hide a real defect.
@@ -447,7 +458,8 @@ keeps `regdisp` out.
   on it differs. `opassign` works by flipping functions from desynced to faithful so promotion can act on them, so on
   i386 — no promotion machinery at all — the case cannot demonstrate the gate however correct the gate is. Guarded to
   `x86_64,arm64,riscv64`, and the `arch.txt` comment records that this guards the CASE, not the gate.
-So i386 wiring is blocked on the reassoc cases being reworked and the narrow gap being fixed — not on infrastructure.
+So i386 wiring is now blocked ONLY on the narrow gap (the 32-bit `int`<->`long long` recorder desync) — the reassoc
+blocker is cleared and infrastructure was never the constraint.
 riscv64 is untriaged beyond the promotion note.
 
 **F8 — Re-earn the gate-swept fuzz coverage.** The first VALID gate-swept soak ran 2026-07-27 (600 seeds, ~31k
@@ -792,7 +804,7 @@ Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate go
 
 ## Cross-arch parity (raise every arch to the x86_64 Tier-4 reference)
 **MEASURED 2026-07-27, then CORRECTED — the real i386 gap is the NARROW family, not 17 gates.** Running the whole `optfire` differ suite against `cmake-cross/mcc-i386` (`OPTFIRE_NORUN=1 OPTFIRE_MCCFLAGS=-B$PWD/cmake-cross`) gives PASS 34 / FAIL 17 on OBJECT DIFFERENCE. But object-difference is the weaker signal, and checking the `--stats` counters splits those 17 into three very different groups:
-- **reassociation (4) — NOT a gap. Retracted.** `reassoc` fires IDENTICALLY on both targets: `reassoc_assoc` 8/8, `reassoc_shlshr` 3/3, `reassoc_shrshl` 3/3, `reassoc_muldist` 4/4 (x86_64/i386). The transform happens; toggling the sub-knob just does not change the emitted i386 bytes. These cases need arch guards or reworking, and are NOT a parity defect. My first write-up of this section claimed they did not fire — that was read off the object diff alone, and a grep bug (matching `narrow 0` earlier in the panel than `reassoc`) appeared to confirm it.
+- **reassociation (4) — NOT a gap. Retracted, and RESOLVED 2026-07-27 via `cdelta` mode (see the i386 triage above).** `reassoc` fires IDENTICALLY on both targets: `reassoc_assoc` 8/8, `reassoc_shlshr` 3/3, `reassoc_shrshl` 3/3, `reassoc_muldist` 4/4 (x86_64/i386). The transform happens; toggling the sub-knob just does not change the emitted i386 bytes. These cases need arch guards or reworking, and are NOT a parity defect. My first write-up of this section claimed they did not fire — that was read off the object diff alone, and a grep bug (matching `narrow 0` earlier in the panel than `reassoc`) appeared to confirm it.
 - **narrow / value-range (6) — ROOT-CAUSED 2026-07-27, and it is NOT a narrow defect.** The real fault is in the **i386 AST recorder**: any function mixing 32-bit and 64-bit integers desyncs, so no AST pass can run in it at all. Isolated: on i386 `(long long)a * (long long)b`, `(int)(w + 3)`, the round trip of both, and `(long long)a + (long long)b` ALL report **`desync:2169`**, while the same four are `faithful` on x86_64. Functions using `long long` UNIFORMLY (params and return all 64-bit — `add64`/`mul64`/`shift64`/`cmp64`) are faithful on i386, so it is the int<->long long CONVERSION that desyncs, not 64-bit arithmetic. One desync code (2169) for every shape suggests a single site. Consequence well beyond narrow: **every AST optimization is silently disabled for any i386 function that converts between int and long long.** That is why `narrow` reads 0 there — it never gets the chance to run. Note the earlier line in this section saying replay fidelity was ruled out: that check used the optfire narrow cases, which are written with `long`, and i386 `long` is 32 bits, so those functions never mix widths and are genuinely faithful. The ruling-out was true of those sources and false as a general claim. Reproduce: `MCC_AST_VERIFY=1 cmake-cross/mcc-i386 -B$PWD/cmake-cross -O2 -c <case>.c -o /dev/null`. **SITE LOCATED 2026-07-27.** `desync:<N>` is a LINE NUMBER (`AST_SET_DESYNC()` stores `__LINE__`), so it must be read against the source the compiler was BUILT from — `cmake-cross/mcc-i386` is stale and reports 2169, which lands in `ast_configure` and is meaningless; a compiler built from current source reports **2260**. That is the value-model guard `if ((ast_bad_type(tt) && !agg_lval) || (!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval)))`. Instrumented to see which clause fires rather than inferring: **`badtype=0`, and `const/sym/local/llocal/agg` are ALL 0, with `r=0x00000000` and `btype` 3 (`VT_INT`) or 4 (`VT_LLONG`).** `r=0` is neither `VT_CONST` (0x30), `VT_LOCAL` (0x32) nor `VT_LLOCAL` (0x31) — it is register 0, i.e. the value is REGISTER-RESIDENT. So on i386 an int<->long long conversion materialises its result into a register, and the recorder's value model only covers const/sym/local operands, so it desyncs. Both directions trip it (btype 3 and 4 both appear). **Fix is substantial, not a patch:** it means extending the value model to represent register-resident (and on 32-bit, register-PAIR) values, which is why x86_64 is unaffected — a `long long` fits one register there and the conversion does not force this shape. Scope it before starting.
 **BLAST RADIUS: it is a 32-BIT TARGET CLASS defect, not an i386 one.** Same 5-function probe across every cross compiler: `x86_64`, `arm64`, `riscv64` = **0/5 desync**; `i386` and `arm` = **5/5 desync**. Exactly the split the register-pair diagnosis predicts.
 **IMPACT, MEASURED — and smaller than the synthetic probe implies, so do not oversell it.** Compiling mcc's own amalgamated TU at `-O2`: **x86_64 641 desync of 1735 functions (36%), i386 714 of 1708 (41%)**. So mixed-width conversions cost roughly **5 percentage points, about 73 functions**, on real code — total for each affected function, but not the wholesale loss the 5/5 synthetic result suggests. **Worth its own item: 48% of functions get NO AST optimization on x86_64, and the causes are now itemised.** Histogram over mcc's own amalgamated TU at `-O2` (1735 functions, `MCC_AST_VERIFY=1`): **833 non-faithful — 641 desync, 139 unfaithful, 50 bail, 3 empty.** The desyncs concentrate in four sites, so this is not a long tail:

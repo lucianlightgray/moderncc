@@ -5,6 +5,13 @@
 #   differ  <mcc> <src.c> <work> <name> <olevel> <env> <extra-env|->
 #   level   <mcc> <src.c> <work> <name> <unused> <counter> <spec>
 #   defstate <mcc> <src.c> <work> <name> <olevel> <env> <on|off>
+#   cdelta  <mcc> <src.c> <work> <name> <olevel> <counter> <env>
+#
+# cdelta asserts the pass FIRED by counter delta: the counter must be 0 with the
+# gate forced off and nonzero with it on. Stronger than differ mode and portable
+# -- it measures the transform rather than the emitted bytes, so it still works
+# on a target where the transform is real but object-invisible (the reassoc
+# sub-knobs on i386 are exactly that).
 #
 # defstate asserts a gate's DEFAULT state at an -O level, which differ mode
 # cannot: it compiles with NO env and again with the gate forced to 0. If those
@@ -44,6 +51,7 @@ counter) LDF=$8 ;;
 differ)  LDF=$9 ;;
 level)   LDF=$8 ;;
 defstate) LDF= ;;
+cdelta)  LDF= ;;
 esac
 [ "$LDF" = "-" ] && LDF=
 refout=""
@@ -51,6 +59,7 @@ refout=""
 # -O0 oracle would just be a way to fail on unrelated link flags.
 [ "$mode" = "level" ] && norun=1
 [ "$mode" = "defstate" ] && norun=1
+[ "$mode" = "cdelta" ] && norun=1
 if [ "$norun" != "1" ]; then
 	# shellcheck disable=SC2086
 	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
@@ -134,6 +143,27 @@ level)
 	done || bad=1
 	[ "$bad" -eq 0 ] || exit 1
 	echo "PASS $NAME: $COUNTER level map matches $SPEC"
+	;;
+cdelta)
+	COUNTER=$7
+	ENVV=$8
+	[ -n "$COUNTER" ] && [ -n "$ENVV" ] || { echo "FAIL $NAME: cdelta needs <counter> <env>"; exit 2; }
+	cd_read() {
+		env "$ENVV=$1" "$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" 2>&1 |
+			strip_ansi | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1
+	}
+	c0=$(cd_read 0); c1=$(cd_read 1)
+	[ -n "$c0" ] || c0=0
+	[ -n "$c1" ] || c1=0
+	[ "$c0" -eq 0 ] 2>/dev/null || {
+		echo "FAIL $NAME: $COUNTER should be 0 with $ENVV=0, got $c0"
+		exit 1
+	}
+	[ "$c1" -gt 0 ] 2>/dev/null || {
+		echo "FAIL $NAME: pass DID NOT FIRE ($COUNTER=$c1 with $ENVV=1) at $OLEVEL"
+		exit 1
+	}
+	echo "PASS $NAME: $COUNTER 0 -> $c1 when $ENVV is enabled at $OLEVEL"
 	;;
 defstate)
 	ENVV=$7

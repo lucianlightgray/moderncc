@@ -1,0 +1,11 @@
+# <name>|<olevel>|<--stats counter>|<gate env>
+# Counter-DELTA mode: assert the counter is 0 with the gate forced off and
+# nonzero with it on. Stronger than differ mode and portable: it measures the
+# pass firing rather than the emitted bytes, so it works on targets where the
+# transform is real but object-invisible. The reassoc sub-knobs are exactly that
+# case -- they fire identically on x86_64 and i386 (8/3/3/4) while the object
+# diff only shows on x86_64.
+reassoc_assoc|-O2|reassoc|MCC_AST_REASSOC_ASSOC
+reassoc_shlshr|-O2|reassoc|MCC_AST_REASSOC_SHLSHR
+reassoc_shrshl|-O2|reassoc|MCC_AST_REASSOC_SHRSHL
+reassoc_muldist|-O2|reassoc|MCC_AST_REASSOC_MULDIST
