@@ -516,10 +516,34 @@ Either one makes baseline == replay AND drops an instruction on every `!` of a c
 grounds now that `CMP_INVERT` is default-on: it would convert arm64's 21 `unfaithful`->`desync` functions into real
 coverage (see F1 flip 3).
 
-**F3 — `MCC_AST_MEMBER_CONST`'s 4-function residue (optional polish).** `ast_hash_of`, `ast_sid_node`, `set_flag`,
-`so_ckpt_write` go `desync -> unfaithful` under the gate. After `CMP_INVERT` the semantic inversion is gone; what
-remains is a benign OPERAND-ORDER divergence (`s + p->offset` evaluated right-to-left in the replay), same length,
-ruled out as Sethi-Ullman by measurement. Buys coverage, not correctness.
+**F3 — `MCC_AST_MEMBER_CONST`'s 4-function residue. RE-MEASURED 2026-07-27 with all three gates now default-on, and
+the "benign, same length" characterisation is HALF WRONG — do not act on it.** The residue is still exactly the four
+recorded functions (confirmed by differencing the unfaithful set with the gate on vs off: 157 vs 153), but they are
+two different phenomena, not one:
+
+| function | baseline | replay | what it is |
+|---|---:|---:|---|
+| `set_flag` | 912 B | 912 B | operand-order swap, as described |
+| `ast_hash_of` | 859 B | 859 B | operand-order swap, as described |
+| `ast_sid_node` | 988 B | **979 B** | 9 B SHORTER — not operand order |
+| `so_ckpt_write` | 1181 B | **1228 B** | 47 B LONGER, and a CALL moves |
+
+**`so_ckpt_write` is not benign.** Disassembled from the `MCC_AST_VERIFY_DIFF` dump at +171:
+
+    base:  mov [rbp-0xaa8],rax ; cmp rax,0 ; je +0x2dc ; lea … (error block)
+    repl:  mov [rbp-0xaa8],rax ; lea rax,[rip+0] ; mov rsi,rax ; mov rax,[rbp-0x8]
+           mov rdi,rax ; call … ; cmp rax,0 ; je +0x303
+
+The replay emits a two-argument `call` and then compares ITS return value, where the baseline compares a value it
+already holds and branches without calling. That is a semantic difference, not a scheduling one — the replayed body
+would perform a call the parser's body does not make at that point.
+
+**Consequence for how this item gets closed: F3 is NOT "optional polish" and must NOT be closed by relaxing the
+faithfulness check** (e.g. by teaching it to tolerate operand-order or length differences). The check is doing exactly
+its job here — it is rejecting a replay that is not equivalent. Two of the four may well be benign reorderings worth
+canonicalising; the `so_ckpt_write` case needs the MODEL corrected, and until it is understood the other two should
+not be waved through by a blanket tolerance that would also admit this one. Verification status, stated so it is not
+over-read: `so_ckpt_write` verified by disassembly, the other three by length and byte-pattern only.
 
 **F4 — The `&&`/`||` desync site: MEASURED 2026-07-27, and it is one cause, not four.** Instrumenting the guard in
 `ast_hook_landor_operand` over mcc's own TU: **32 events, ALL `c >= 0`** — the first operand of the `&&`/`||` folded
