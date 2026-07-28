@@ -1338,6 +1338,25 @@ them:**
   Gain is **+5 faithful (1318 -> 1323), desync 356 -> 351** — small, and exactly as predicted by point 3 below: most
   constant conditions in this TU have a CALL in the untaken arm and hit `nocode_wanted` before the ternary hooks
   matter. The remaining value here is gated on the `nocode_wanted` work, not on more ternary modelling.
+
+  **The `&&`/`||` half MEASURED 2026-07-27, and it is a SIMPLER shape than the ternary — all 45 events are one case.**
+  Instrumenting both `c >= 0` arms of `ast_hook_landor_operand` over mcc's own TU:
+
+  | | count |
+  |---|---:|
+  | `first` operand constant | **45 of 45** |
+  | a LATER operand constant | **0** |
+  | `c == 0` with `op == TOK_LAND` (`0 && X`) | 26 |
+  | `c == 1` with `op == TOK_LOR` (`1 \|\| X`) | 19 |
+
+  So every single case is the SHORT-CIRCUIT-TO-CONSTANT form: the first operand already decides the result, the RHS is
+  not evaluated at all, and the whole expression folds to the literal `0` (for `&&`) or `1` (for `||`). No case needs
+  the general "constant at operand N" machinery, and none needs the taken-arm stash the ternary required — the result
+  is a Literal, not an operand's node. That makes this the easiest remaining modelling item in the section.
+
+  Before implementing it, run the same observation build the ternary needed: all 45 desync at the FIRST hook, so
+  nothing is known yet about whether `ast_hook_landor_operand` fires for the skipped RHS or whether `landor_end`
+  arrives — and the ternary work showed that guessing the vstack shape produces an asymmetric fix that looks correct.
   Validated: host ctest 7276/7276, cross 7435/7435, fixpoint byte-identical (5519967), `ast/treecheck` clean at
   `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree 0 miscompile, qemu 14/14 on all four triples, 0 exec-corpus
   crashes, both side-effect guards green.
