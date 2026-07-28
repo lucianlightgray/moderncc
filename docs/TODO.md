@@ -715,7 +715,35 @@ the coverage this item exists to recover, so the approach is sound. Isolated sha
 if-condition, while-condition, chained `a = b = f()`, short-circuit `&&`, nested `(b = f()) + 1`, ternary, and
 `return`.
 
-**The blocker: an assignment inside a CALL ARGUMENT segfaults the compiler** — `return f((a = g2(v)) + 0) + a;`
+**SECOND ATTEMPT 2026-07-27 got it WORKING and still reverted it — the blocker is now a GATE INTERACTION, not a
+crash.** The segfault below was diagnosed and fixed: `ast_replay_value` for the marker emitted NOTHING
+unconditionally, so when the guard declined to make a store value-live the consumer was handed a missing operand and
+`gfunc_call` read past the vstack (`bt` bottoms out in x86_64-gen.c:1587). Correct fallback: if the store is not
+value-live, re-emit its RHS — that reproduces the pre-F3a double evaluation, so the body lands in `unfaithful` as
+before, which is safe. With that, plus a tight guard requiring the marker to be a DIRECT child of the statement
+immediately following the store:
+
+- **0 crashes over all 258 exec files** (was 1)
+- the canonical case is fixed: `if ((h = stub(p,"rb"))) return sink(h);` is **FAITHFUL**
+- `ast-verify-ratchet` recorded the win it was built to record: **`if_cond` moved out of the gap set, 776 -> 775**
+- mcc's own TU: **faithful 1091 -> 1094, unfaithful 158 -> 156**
+- self-host fixpoint byte-identical, `ast/treecheck` clean at `-O2`/`-O3`/`-Os`, 400-seed gate-swept fuzz 397 agree
+  0 miscompile, all four qemu triples 14/14
+
+**Why it was reverted anyway: it silently disables `MCC_AST_CHAINSTORE`.** For `a = b = c` the OUTER store now
+receives the marker as its value, and CHAINSTORE's detection is
+`chained = ast_chainstore_env && value != AST_NONE && ast_parent(ast_cur, value) != AST_NONE` — a freshly created
+marker has no parent yet, so `chained` is never true and the gate stops firing entirely. Caught by two independent
+cells: `optfire/chainstore` ("objects are byte-identical") and `runtime-bench-gatewin` ("win collapsed to +0.4% over
+14 runs, need >= 8%"). **+3 faithful does not buy the loss of a gate with a measured ~8% benchmark win**, so this
+needs the interaction resolved first — the marker must resolve back to the inner store's RHS for CHAINSTORE's
+parent test, or CHAINSTORE must learn the marker form.
+
+Worth noting the two cells that caught it are exactly the kind this session has been adding, and neither the fidelity
+counters, the fixpoint, the fuzz, nor the tree checker noticed — a gate silently ceasing to fire is invisible to all
+of them.
+
+**The FIRST attempt's blocker, kept for the record: an assignment inside a CALL ARGUMENT segfaulted the compiler** — `return f((a = g2(v)) + 0) + a;`
 reproduces it alone. 1 crash in 258 exec files (only `assign_value_effects.c`, which covers that shape deliberately).
 The value is consumed from inside `gfunc_call`'s own vstack juggling, so the store's live value is not where replay
 assumes. **An adjacency guard did NOT fix it** — requiring the marker's owning statement to be the store's immediate
