@@ -787,10 +787,24 @@ Bar: host 7281/7281, cross 7440/7440, `runtime-bench-check` + `runtime-bench-gat
 itself one of the two `GATE_WINS` with an 8% floor; that guard sets the env explicitly so a default change does not
 disturb it), self-host fixpoint `s3 == s4`.
 
-**Nothing further to audit here** — no gate remains at `optimize >= 3`. One adjacent oddity was noticed and NOT
-acted on: `MCC_AST_PROMO_ARROW` and `MCC_AST_PROMO_INCDEC` are keyed to `s1->optimize_size` alone, so they are on at
-`-Os` and OFF at `-O2`/`-O3`. That may be deliberate (they are size transforms) or may be the same class of
-mis-staging; it needs its own measurement rather than an assumption.
+**No gate remains at `optimize >= 3`.** The adjacent oddity flagged here — `MCC_AST_PROMO_ARROW` and
+`MCC_AST_PROMO_INCDEC` keyed to `s1->optimize_size` ALONE, so on at `-Os` and off at `-O2`/`-O3` — was then
+**enabled at `-O2`/`-O3` on user instruction, and it was the same class of mis-staging.** Measured, gates off vs on:
+
+| kernel | off | on |
+|---|---|---|
+| nbody | 0.40s | **0.36s** |
+| spectral-norm | 0.28s | **0.26s** |
+| matmul | 2.21s | **2.07s** |
+
+All three improve, output identical to gates-off at both `-O2` and `-O3`. Fidelity ratio unchanged at 78.1%.
+
+**One thing NOT explained, recorded so it is not mistaken for noise:** the verdict COUNT drops 1856 → 1841 with the
+gates on, while the faithful ratio holds. Fifteen functions stop being verified. `mcc` exits 0 with no errors, so
+this is not the truncation-by-SIGSEGV failure recorded elsewhere in this file — but why promotion staging changes
+which functions reach the verify print is unknown, and someone should find out before treating a future count
+change here as meaningful. (Checking this needed care: `rc=$?` after a pipeline reports `grep`'s status, not
+`mcc`'s, and the first measurement pass was misread because of exactly that.)
 
 ### 1b. (original D1a text)
 `MCC_AST_OPASSIGN` was staged at `o4 || optimize >= 3` for no recorded reason; dropping it to `>= 2` took nbody
