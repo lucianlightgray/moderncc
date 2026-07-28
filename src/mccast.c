@@ -1783,6 +1783,7 @@ static int ast_desync;
 static int ast_desync_line;
 #define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
 static int ast_base_depth;
+static int ast_saw_nocode;
 int ast_in_op;
 static int ast_in_call;
 static AstLocal ast_call_pending;
@@ -3372,6 +3373,7 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 }
 
 void ast_hook_call_end(void) { MCC_TRACE("enter\n");
+	if (nocode_wanted) { MCC_TRACE("br\n"); ast_saw_nocode = 1; }
 	if (ast_call_pending == AST_NONE)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal inv = ast_call_pending;
@@ -14035,6 +14037,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_lor_top = 0;
 		ast_bail = 0;
 		ast_desync = 0;
+		ast_saw_nocode = 0;
 		ast_reemit_poison = 0;
 		ast_in_op = 0;
 		ast_in_call = 0;
@@ -16462,9 +16465,26 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						if (cur_text_section->data[ast_body_ind_sv + ast_i] != orig[ast_i])
 							{ MCC_TRACE("br\n"); ast_bd = ast_i; break; }
 					MCC_TRACE_IF("UNFAITHFUL %s newlen=%d oldlen=%d firstdiff=%d "
-											 "relnew=%d relold=%d\n",
+											 "relnew=%d relold=%d nocode=%d\n",
 											 funcname ? funcname : "?", new_len, (int)body_len, ast_bd,
-											 (int)(new_rel - ast_reloc0_sv), (int)rel_len);
+											 (int)(new_rel - ast_reloc0_sv), (int)rel_len, ast_saw_nocode);
+					if (getenv("MCC_AST_UNFAITHFUL_DUMP")) { MCC_TRACE("br\n");
+						int ast_w = ast_bd >= 0 ? ast_bd - 8 : (int)body_len - 24;
+						int ast_dn, ast_do;
+						if (ast_w < 0) { MCC_TRACE("br\n"); ast_w = 0; }
+						ast_dn = new_len - ast_w < 48 ? new_len - ast_w : 48;
+						ast_do = (int)body_len - ast_w < 48 ? (int)body_len - ast_w : 48;
+						if (ast_dn < 0) { MCC_TRACE("br\n"); ast_dn = 0; }
+						if (ast_do < 0) { MCC_TRACE("br\n"); ast_do = 0; }
+						fprintf(stderr, "[unfaithful] %s @%d parser:", funcname ? funcname : "?", ast_w);
+						for (ast_i = 0; ast_i < ast_do; ast_i++)
+							fprintf(stderr, " %02x", orig[ast_w + ast_i]);
+						fprintf(stderr, "\n[unfaithful] %s @%d replay:", funcname ? funcname : "?", ast_w);
+						for (ast_i = 0; ast_i < ast_dn; ast_i++)
+							fprintf(stderr, " %02x",
+											cur_text_section->data[ast_body_ind_sv + ast_w + ast_i]);
+						fprintf(stderr, "\n");
+					}
 				}
 				if (ast_treechk_on())
 					{ MCC_TRACE("br\n"); ast_treechk(ast_cur, funcname,

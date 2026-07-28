@@ -250,10 +250,53 @@ things went wrong in the first write-up and both are worth recording:
   MEANINGLESS: an instrument that misses a known positive cannot support a negative conclusion. Either
   `nocode_wanted` is already clear by the time any recorder hook runs, or it is not the mechanism at all.
 
-So the open question is sharper than before: **what actually differs in those 5 bytes?** Diff the parser's and the
-replay's emitted bytes for `a_noret` directly (`firstdiff=8` says they agree for 8 bytes first) rather than sampling
-a global. Until that is done, do NOT treat the ±5 class as known-`nocode_wanted`, and do not reuse the reverted
-flag-sampling approach.
+**RESOLVED 2026-07-28 by dumping the bytes** (`MCC_AST_UNFAITHFUL_DUMP=1`, which prints both sequences at the
+comparison). The mechanism originally described was RIGHT; only the detector was wrong. For `a_noret`:
+
+    parser: 8b 45 f8  83 f8 00  0f 84 0c 00 00 00  48 8b 45 f0 48 89 c7  e8 ........              48 8b 45 f0 ...
+    replay: 8b 45 f8  83 f8 00  0f 84 11 00 00 00  48 8b 45 f0 48 89 c7  e8 ........  e9 0c 00 00 00  48 8b 45 f0 ...
+                                        ^^ +5                                        ^^^^^^^^^^^^^^ the extra 5 bytes
+
+The extra five bytes are exactly **`e9 0c 00 00 00` — a `jmp rel32`**, the jump over the else-branch, and the `je`
+displacement widens from `0x0c` to `0x11` as a consequence. Source chain, all confirmed: a call to a
+`func_noreturn` symbol hits `if (s->f.func_noreturn) ... CODE_OFF();` in `mccgen.c` (`gen_function`'s call path),
+`CODE_OFF()` sets `nocode_wanted`, and the if/else statement code's `gjmp` (`x86_64-gen.c`, `gjmp2(0xe9, t)`)
+therefore emits nothing. Replay does not carry that dead-region state, so it emits the jump.
+
+**Why the first flag-sampling detector read 0 on a known positive:** `CODE_OFF()` fires at the CALL SITE in
+`mccgen.c`, and the suppressed `gjmp` is emitted by the STATEMENT code with no recorder hook in between — so sampling
+`nocode_wanted` at `ast_hook_vpush`/`call_begin`/`stmt`/`if_else`/`if_end` observes it at none of those points.
+Sampling at **`ast_hook_call_end()`**, which sits directly after that `CODE_OFF()`, DOES report 1 for `a_noret`. That
+detector is validated (positive on `a_noret`, negative on `a_two`/`a_same`) and is kept.
+
+**ATTRIBUTION MEASURED — and it is 0. `noreturn` explains NONE of mcc's real unfaithful bucket.** With the validated
+detector, **0 of 205** unfaithful functions on mcc's own TU show `nocode_wanted` at all: 0 of the 108 length-differs
+and 0 of the 97 byte-differs. This RETRACTS the speculation in the first write-up that `nocode_wanted` might cover
+"roughly 300 of the 413 non-faithful functions" — it covers the 92-event desync site and, on this TU, nothing in the
+unfaithful bucket.
+
+**The recorder's dead-branch handling is NOT broadly broken; only the noreturn-call path is.** Measured:
+
+| shape | verdict |
+|---|---|
+| `if (c) bail(m); else warn(m);` (noreturn call) | **unfaithful, +5** |
+| `if (c) return; else warn(m);` | faithful |
+| `if (c) return v; else v++;` | faithful |
+| `if (c) goto e; else warn(m);` | faithful |
+| `if (c) warn(m); else warn(m);` | faithful |
+
+So `return`/`goto`-terminated branches already replay correctly. Do not generalise the noreturn finding to
+"terminating branches" — that was tried and refuted.
+
+**Still open: what produces the ±5 in the REAL functions.** They have the same SHAPE — `MCC_AST_UNFAITHFUL_DUMP=1`
+(window now centred on `firstdiff`) shows `mcc_pedantic` at offset 387 emitting `0f 84 51 ...` in the parser against
+`0f 84 56 ...` in replay, i.e. a conditional jump whose displacement is 5 larger because replay emits 5 extra bytes
+inside the skipped region — but the cause is NOT `nocode_wanted`, and is not yet identified. Next step is to widen
+the dump past the `je` and read the extra instruction directly, exactly as was done for `a_noret`.
+
+Fixing this means the recorder must model "this branch ends unreachable" so replay suppresses the same jump. That is
+the same dead-region state the 92-event `ast_hook_call_begin`/`nocode_wanted` desync site gives up on, so one model
+would serve both.
 
 **NOT established, and do not assume it:** what SHARE of the real 108 this accounts for. 32 of 108 have a delta that
 is a multiple of 5, which is suggestive but not proof — a crude source scan for noreturn calls in the named functions
