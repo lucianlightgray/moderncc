@@ -1,5 +1,3 @@
-arch/arm64.c	fa_hfae12	desync
-arch/arm64.c	fa_hfae22	desync
 arch/arm64.c	myprintf	desync
 arch/arm64.c	ret	desync
 arch/arm64.c	va_arg_with_struct_ptr	desync
@@ -58,7 +56,6 @@ features_c99_c11/c11_freestanding_headers.c	main	desync
 features_c99_c11/c11_threads.c	__mcc_once_tramp	desync
 features_c99_c11/c11_threads.c	__mcc_pthread_trampoline	desync
 features_c99_c11/c11_threads.c	__mcc_thrd_trampoline	desync
-features_c99_c11/c11_threads.c	nanosleep	desync
 features_c99_c11/c11_threads.c	pthread_once	unfaithful
 features_c99_c11/c11_threads.c	thrd_join	unfaithful
 features_c99_c11/cleanup.c	check	desync
@@ -75,6 +72,7 @@ features_c99_c11/cleanup.c	test_cleanup5	stackresidue
 features_c99_c11/cleanup.c	test_cleanup6	stackresidue
 features_c99_c11/cleanup.c	test_cleanup7	stackresidue
 features_c99_c11/cleanup.c	test_cleanup8	stackresidue
+features_c99_c11/cleanup.c	test_ret	stackresidue
 features_c99_c11/cleanup.c	test_ret2	desync
 features_c99_c11/complex.c	main	desync
 features_c99_c11/complex_annexg.c	main	desync
@@ -119,6 +117,11 @@ lexical/u16_string.c	main	desync
 lexical/u8_string.c	main	desync
 lexical/uU_char_constants.c	main	desync
 lexical/utf8_string_literal.c	main	desync
+optimizer/assign_value_effects.c	assign_in_arg	unfaithful
+optimizer/assign_value_effects.c	chained	unfaithful
+optimizer/assign_value_effects.c	nested_assign	unfaithful
+optimizer/assign_value_effects.c	shortcircuit_both	desync
+optimizer/assign_value_effects.c	while_cond	unfaithful
 optimizer/redundant_cast.c	mixed	unfaithful
 pointers_arrays/array_2d_iv.c	diag_compound	desync
 pointers_arrays/flexarray.c	main	desync
@@ -137,9 +140,7 @@ programs/random_stuff.c	tst_branch	desync
 programs/random_stuff.c	tst_indir_func	desync
 programs/random_stuff.c	tst_pack	unfaithful
 programs/stdio.c	main	unfaithful
-runner.c	main	desync
 runner.c	slurp	unfaithful
-runner.c	strip_all	desync
 statements/chained_assign.c	chain_in_expr	unfaithful
 statements/chained_assign.c	chain_reassign	unfaithful
 statements/chained_assign.c	int_chain	unfaithful
@@ -169,8 +170,6 @@ structs_unions/bitfields_ms.c	dump	unfaithful
 structs_unions/bitfields_ms.c	main	desync
 structs_unions/compound_literals.c	main	desync
 structs_unions/enum_bitfield.c	convert_like_real	desync
-structs_unions/enum_bitfield.c	main	desync
-structs_unions/float_struct_calling.c	foo	desync
 structs_unions/return_struct_in_reg.c	main	unfaithful
 structs_unions/struct.c	main	stackresidue
 structs_unions/struct_abi.c	bf_mut	desync
@@ -181,16 +180,13 @@ structs_unions/struct_byval.c	f2	desync
 structs_unions/struct_byval.c	f3	desync
 structs_unions/struct_byval.c	f4	desync
 structs_unions/struct_byval.c	f6	desync
-structs_unions/struct_byval.c	main	desync
 structs_unions/struct_init.c	foo	desync
 structs_unions/struct_init.c	test_compound_with_relocs	desync
 structs_unions/struct_init.c	test_init_ranges	desync
 structs_unions/struct_init.c	test_init_struct_from_struct	desync
 structs_unions/struct_init.c	test_multi_relocs	desync
-structs_unions/struct_init.c	test_zero_init	desync
 structs_unions/struct_packed_indirect.c	main	desync
 structs_unions/struct_return.c	init	desync
-structs_unions/struct_union_members.c	main	desync
 structs_unions/union_byval.c	main	desync
 types/bool.c	main	desync
 types/builtin_inf_nan.c	main	unfaithful
