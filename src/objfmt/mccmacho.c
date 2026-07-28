@@ -2393,6 +2393,8 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 														 int *secsym) { MCC_TRACE("enter\n");
 	uint32_t i, r;
 	unsigned char *rels = NULL;
+	addr_t pending = 0;
+	int have_pending = 0;
 
 	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
 		struct section_64 *sh = &secs[i];
@@ -2407,6 +2409,8 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 		if (!rels)
 			{ MCC_TRACE("br\n"); return mcc_error_noabort("Mach-O: truncated relocation table"); }
 
+		have_pending = 0;
+		pending = 0;
 		for (r = 0; r < sh->nreloc; r++) { MCC_TRACE("br\n");
 			uint32_t w0 = read32le(rels + (size_t)r * 8);
 			uint32_t w1 = read32le(rels + (size_t)r * 8 + 4);
@@ -2428,18 +2432,66 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				goto fail;
 			}
 			fld = sec->data + base + w0;
+
+#ifdef MCC_TARGET_ARM64
+			/* ARM64_RELOC_ADDEND is a PSEUDO entry: it carries a 24-bit addend in
+			   r_symbolnum for the entry that follows it, because an arm64
+			   instruction has nowhere to store one. Everything except UNSIGNED
+			   therefore takes its addend from here rather than from the field,
+			   which holds instruction bits. */
+			if (type == 10) { MCC_TRACE("br\n");
+				pending = (addr_t)symnum;
+				have_pending = 1;
+				continue;
+			}
+			if (type == 0) { MCC_TRACE("br\n");
+				if (length == 3) { MCC_TRACE("br\n"); addend = (addr_t)(int64_t)read64le(fld); }
+				else if (length == 2) { MCC_TRACE("br\n"); addend = (addr_t)(int32_t)read32le(fld); }
+				else { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: unsupported UNSIGNED width %d", 1 << length);
+					goto fail;
+				}
+				etype = length == 3 ? R_AARCH64_ABS64 : R_AARCH64_ABS32;
+			} else { MCC_TRACE("br\n");
+				uint32_t insn = read32le(fld);
+				addend = have_pending ? pending : 0;
+				switch (type) { MCC_TRACE("br\n");
+				case 2:
+					etype = R_AARCH64_CALL26;
+					break;
+				case 3:
+					etype = R_AARCH64_ADR_PREL_PG_HI21;
+					break;
+				case 4:
+					if ((insn & 0xff000000u) == 0x91000000u) { MCC_TRACE("br\n");
+						etype = R_AARCH64_ADD_ABS_LO12_NC;
+					} else if ((insn & 0x3b000000u) == 0x39000000u) { MCC_TRACE("br\n");
+						uint32_t sz = (insn >> 30) & 3, opc = (insn >> 22) & 3;
+						if (sz == 0 && (opc == 2 || opc == 3)) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST128_ABS_LO12_NC; }
+						else if (sz == 0) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST8_ABS_LO12_NC; }
+						else if (sz == 1) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST16_ABS_LO12_NC; }
+						else if (sz == 2) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST32_ABS_LO12_NC; }
+						else { MCC_TRACE("br\n"); etype = R_AARCH64_LDST64_ABS_LO12_NC; }
+					} else { MCC_TRACE("br\n");
+						mcc_error_noabort("Mach-O: PAGEOFF12 on an instruction that is "
+															"neither ADD nor LDR/STR (0x%08x)", (unsigned)insn);
+						goto fail;
+					}
+					break;
+				default:
+					mcc_error_noabort("Mach-O: unsupported arm64 relocation type %d "
+														"(GOT/TLV/SUBTRACTOR are not implemented)", type);
+					goto fail;
+				}
+			}
+			have_pending = 0;
+#else
 			if (length == 3) { MCC_TRACE("br\n"); addend = (addr_t)(int64_t)read64le(fld); }
 			else if (length == 2) { MCC_TRACE("br\n"); addend = (addr_t)(int32_t)read32le(fld); }
 			else { MCC_TRACE("br\n");
 				mcc_error_noabort("Mach-O: unsupported relocation width %d", 1 << length);
 				goto fail;
 			}
-
-#ifdef MCC_TARGET_ARM64
-			mcc_error_noabort("Mach-O: arm64 relocations are not implemented "
-												"(type %d); needs validation on arm64-osx", type);
-			goto fail;
-#else
 			switch (type) { MCC_TRACE("br\n");
 			case 0:
 				if (pcrel) { MCC_TRACE("br\n");

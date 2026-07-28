@@ -53,7 +53,11 @@
 
      Guarded by the `macho-reloc` ctest cell, which asserts clang actually emitted BRANCH/SIGNED relocations first (so it cannot pass vacuously), then checks RESOLVED TARGETS rather than link success: the call must disassemble to `_other` by name, no `e8 00 00 00 00` placeholder may survive, and the rip-relative data reference must ARITHMETICALLY compute to the address `llvm-nm` reports for `_msg` (verified at `0x100008000`).
 
-     Remaining: `ARM64_RELOC_*`, scattered relocations, and validation against a real `libmcc_jitengine.a` — that last one still wants macOS.
+     **arm64 DONE 2026-07-28 too** (`macho-reloc-arm64` cell), via `clang -target arm64-apple-macos11` + `mcc-arm64-osx`. `BRANCH26` → `R_AARCH64_CALL26`, `PAGE21` → `R_AARCH64_ADR_PREL_PG_HI21`, `PAGEOFF12` → **one of five** ELF relocations chosen by decoding the instruction (`ADD_ABS_LO12_NC` for an ADD; `LDST8/16/32/64/128_ABS_LO12_NC` for a load/store, size from the instruction's size/opc fields). `ARM64_RELOC_ADDEND` is handled as the pseudo-entry it is — it carries a 24-bit addend in `r_symbolnum` for the entry that FOLLOWS it, because an arm64 instruction has nowhere to put one.
+
+     One trap worth keeping: for `msg[5]` clang does NOT emit `ARM64_RELOC_ADDEND` — it folds the `+5` into the `ldrsb` immediate. A LO12 relocation that OVERWRITES that field therefore silently reads `msg[0]`. mcc's LO12 handlers add into the existing immediate, so this works, and the cell pins it by asserting the offset is non-zero AND that `adrp`+`ldrsb` arithmetically computes `_msg+5` (measured `0x100004005`). A cell that only checked "the link succeeded" or "the offset resolved" would pass while reading the wrong byte.
+
+     Remaining: scattered relocations, `GOT`/`TLV`/`SUBTRACTOR` (all hard-error by name rather than being skipped), and validation against a real `libmcc_jitengine.a` and a real `clang -c` corpus — that last one still wants macOS.
    - **Real-world corpus.** The fixture is minimal and synthetic. Validate against actual `clang -c` output and a real `.a` on macOS; that is also the only place `--embed-jit` can be exercised for the osx triples.
 
 2. **riscv64 + arm-linux JIT run/verify — DONE** (whole ELF family: arm64 proven on native silicon, riscv64 + armv7 verified under emulation on an arm64 host). Detail in git history.

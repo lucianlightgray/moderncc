@@ -5730,6 +5730,21 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
+    # arm64 Mach-O relocations. Separate from the x86_64 cell because the arm64
+    # cases differ in kind: PAGEOFF12 maps to different ELF relocations per
+    # instruction, and clang folds small constants into the instruction's own
+    # immediate instead of emitting ARM64_RELOC_ADDEND -- so a LO12 relocation
+    # that overwrites the immediate silently reads the wrong byte.
+    if(UNIX)
+        add_test(NAME macho-reloc-arm64
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/reloc-arm64.sh"
+                    "${MCC_CROSS_DIR}/mcc-arm64-osx" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-reloc-arm64-work")
+        set_tests_properties(macho-reloc-arm64 PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            TIMEOUT 300)
+    endif()
+
     add_test(NAME macho-codegen-run
         COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
