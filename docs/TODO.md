@@ -447,10 +447,26 @@ Where that leaves the two halves:
     function is semantically equivalent, so those three are probably benign in the same sense as the reorder class,
     though "probably" is doing real work in that sentence and none of the three callees was checked for purity.
 
-    **`store_packed_bf` is the one to look at.** There the direction reverses: the PARSER calls `vdup` and `gv_dup`
-    and replay does not. Those are vstack manipulation helpers with side effects, not pure functions, so a replay
-    that skips them is not obviously equivalent — it is the only case in the whole bucket besides the lost sign
-    extension where replay appears to do LESS work than the parser rather than differently-ordered work.
+    **`store_packed_bf` — RESOLVED 2026-07-28. A ternary whose VALUE IS DISCARDED records NOTHING.** Its source
+    contains `c ? vdup() : gv_dup();` as a statement, and the recorder models no nodes for that at all, so replay
+    emits neither call. Reproducer:
+
+        void t_void   (int c) { c ? a()  : b();  }   /* verdict: EMPTY    */
+        void t_intdisc(int c) { c ? ai() : bi(); }   /* verdict: EMPTY    */
+        int  t_int    (int c) { return c ? ai() : bi(); }  /* faithful   */
+        void t_if     (int c) { if (c) a(); else b(); }    /* faithful   */
+
+    A ternary whose value is USED is faithful, and the equivalent `if`/`else` is faithful; only the discarded-value
+    form is lost. When it is the whole body the verdict is `empty`; when it sits inside a larger function — as in
+    `store_packed_bf` — the body comes out `unfaithful` with the arms' side effects missing from the replay.
+
+    **No correctness risk today**, and this was checked rather than assumed: `empty` is produced in the ELSE branch
+    of `if (ast_fn_faithful)`, so an empty body is not faithful and every consumer is gated off it, exactly like
+    `desync`. There are also ZERO `empty` verdicts across the TU's 1851 functions, so the construct never forms a
+    whole body in mcc's own source — it only degrades the functions that contain it.
+
+    That leaves 3 of the 4 call-deltas (`host_runmem_alloc`, `mcc_define_symbol`, `mcc_preprocess`), all of the
+    replay-recomputes-a-value kind.
 
     Caveat on reproducing this: `ast_relsym_name` carries its own `MCC_TRACE`, which interleaves into the middle of
     the dump line. Use `MCC_TRACE_SKIP=ast_relsym_name`.
