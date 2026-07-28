@@ -513,6 +513,25 @@ static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter
 	host_setenv(name, val);
 }
 
+/* Restore an axis to the compiler's OWN default (or the user's pin) rather than
+   forcing it off, so the search can only ever ADD that gate, never subtract it. */
+static void so_unsetenv_axis(const char *name) { MCC_TRACE("enter\n");
+	for (int i = 0; i < SO_NAXES; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(so_axes[i].name, name)) { MCC_TRACE("br\n");
+			if (so_axes[i].user) { MCC_TRACE("br\n");
+				host_setenv(name, so_axes[i].user);
+				return;
+			}
+			break;
+		} }
+	host_unsetenv(name);
+}
+
+static int so_promote_floor(void) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_SO_PROMOTE_FLOOR");
+	return !e || !e[0] || strcmp(e, "0");
+}
+
 static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) { MCC_TRACE("enter\n");
 	char buf[32];
 	so_axes_snapshot();
@@ -535,7 +554,10 @@ static void so_setenv_cfg(unsigned gate, unsigned budget, unsigned limit_lvl) { 
 	int lv = so_limits[limit_lvl % SO_LIMIT_SPACE];
 	host_setenv("MCC_SEARCH_WORKER", "1");
 	so_setenv_axis("MCC_AST_TEMPLATES", (gate & 1) ? "1" : "0");
-	so_setenv_axis("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0");
+	if (((gate >> 1) & 1) || !so_promote_floor())
+		{ MCC_TRACE("br\n"); so_setenv_axis("MCC_AST_PROMOTE", (gate >> 1) & 1 ? "1" : "0"); }
+	else
+		{ MCC_TRACE("br\n"); so_unsetenv_axis("MCC_AST_PROMOTE"); }
 	so_setenv_axis("MCC_AST_INLINE", inl ? "1" : "0");
 	so_setenv_axis("MCC_AST_NO_CALLFUL", (gate >> 3) & 1 ? "1" : "0");
 	snprintf(buf, sizeof buf, "%u", inl ? limit : 0u);

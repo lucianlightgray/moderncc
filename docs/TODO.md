@@ -300,9 +300,37 @@ GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep i
 it will be credited with a fix it did not make.
 
 Wanted:
-1. **Floor the search at the `-O3` default set.** Every gate that is default-on at `-O3` stays on for `-O4`+; the search
-   may only ADD gates or reorder strategies, never subtract from that floor. `-O4` then cannot be worse than `-O3` by
-   construction, which is the property a user assumes from a higher number.
+1. **Floor the search at the `-O3` default set — LANDED 2026-07-27 for the axis that actually mattered, `PROMOTE`.**
+   The principle is that the search may only ADD gates, never subtract from the default set. Applied to the one axis
+   the measurement indicted: `so_setenv_cfg` used to force `MCC_AST_PROMOTE=0` whenever bit 1 of the gate word was
+   clear, so a SIZE-scored search could switch promotion off — and promotion is precisely the transform that trades
+   size (prologue saves) for speed (fewer spills). It now only ever sets the gate ON; when the bit is clear it calls
+   the new `so_unsetenv_axis`, restoring the compiler's own default (or the user's pin) instead of forcing `0`.
+   `MCC_SO_PROMOTE_FLOOR=0` restores the old behaviour and is byte-identical on `.text` for all four kernels.
+
+   **The measurement that settles it — the `-O4` default config was the FASTEST thing on the bench and the driver was
+   throwing it away.** nbody: `-O3` 3596 B / 0.23 s; `-O4` as shipped 3636 B / 0.27 s; `-O4` with promotion pinned on
+   3998 B / **0.17 s**. So the driver's size-scored search was selecting a candidate **59% slower** than the baseline
+   it started from, and the whole `-O4`-is-slower-than-`-O3` finding reduces to this one axis.
+
+   Result across the kernels (best-of-5, `.text`):
+
+   | kernel | `-O3` | `-O4` after | `-O4` before |
+   |---|---:|---:|---:|
+   | nbody | 0.23 s / 3596 | **0.17 s** / 3998 | 0.27 s / 3636 |
+   | matmul | 0.65 s / 2595 | **0.52 s** / 3025 | 0.65 s / 2329 |
+   | mandelbrot | 0.48 s / 2153 | 0.47 s / 2192 | 0.48 s / 2094 |
+   | nsieve | 0.14 s / 1816 | 0.14 s / 1895 | 0.14 s / 1790 |
+
+   **`-O4` is now never slower than `-O3` on any kernel, and 20-26% faster on two** — the property this item asked
+   for. The honest cost: `-O4` is now LARGER than `-O3` on all four (it buys speed with prologue saves), where before
+   it was smaller on three. That is the right trade for a level whose contract is "optimize hardest", but it does mean
+   the size/speed question below is no longer hypothetical — `-O4` has now definitively picked speed.
+
+   Still open, and deliberately NOT done here: the same floor for the other 61 `o4`-defaulted gates. A per-gate
+   ablation on nbody (`MCC_SEARCH_WORKER=1`, each gate forced off) found 20 gates that shrink `.text`, but 10 of them
+   land on the SAME 3854 B, which means they are not independently costing 144 B each — they are perturbing which
+   configuration the in-process AST search settles on. Do not read that table as 20 separate regressions.
 2. **Bank the `-O3` baseline in the checkpoint.** The cached record should carry the static `-O3` configuration, not
    only the searched delta, so a later compile that hits the memo immediately gets the full static optimization set
    without re-deriving it. This is also the fix for the finding above, where a memo hit currently short-circuits the
