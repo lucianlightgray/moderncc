@@ -1145,10 +1145,38 @@ bare `return;`** — against 19 with a static initializer. Site 2302 is 48% of a
 the order of 40% of every desync in the TU, and it is the guard-clause idiom that `mccast.c` itself is built out of
 (`void ast_hook_X(void) { if (!ast_active) return; … }`).
 
-Mechanism to chase: `ast_hook_return(has_val)` sets `ast_bail` when `!has_val`, which is why the no-second-`if`
-variant reports `bail` rather than `desync` — the bare return leaves the model inconsistent, and whether that surfaces
-as a bail or as a 2302 desync depends only on what follows it. Fixing the bare-`return;` path is therefore the single
-highest-value item in the whole fidelity section.
+**MECHANISM RESOLVED 2026-07-27, and it REFRAMES F5 ENTIRELY: site 2302 is a SYMPTOM, not the bug. A bare
+`return;` is simply not modelled, and makes the function unoptimizable however it is labelled.**
+
+`ast_hook_return(has_val)` (mccast.c:3491) does, for `!has_val`, exactly this:
+
+    if (!has_val || ast_ret_val == AST_NONE) { ast_bail = 1; return; }
+
+— no `AST_Return` node is built at all. `gdb` at the desync confirms the rest: `ast_bail` is **already 1** when the
+2302 check trips, `ast_vn == 1` against `rel == 1`, and the leftover node is the enclosing `if`'s condition, which the
+control-flow hooks stop maintaining once bailed. So the sequence is: bare `return;` bails -> the `if` hooks stop
+balancing `ast_vn` -> the next push notices and calls it a desync.
+
+The label depends only on what follows the return, and BOTH outcomes are fatal:
+
+| shape | verdict |
+|---|---|
+| `void f(){ if(!a) return; }` | bail |
+| `void f(){ if(!a) return; b=1; }` | bail |
+| `void f(){ if(!a) return; if(b) b=1; }` | **desync:2302** |
+| `void f(){ b=1; return; }` — even a TRAILING bare return | bail |
+| `void f(){ if(!a) b=2; if(b) b=1; }` — no return at all | **faithful** |
+| `int f(){ if(!a) return 0; … return 2; }` — value return | **faithful** |
+
+**So "fix the 2302 desync" is the wrong goal — relabelling it `bail` would gain nothing, since `faithful` gates every
+consumer and both verdicts fail it.** The actual work is to MODEL a valueless return: build an `AST_Return` with no
+value child and teach replay to emit the jump-to-epilogue for it, including its interaction with `ast_hook_return_jmp`
+and the `ret_jumps` bookkeeping. That is a new node shape, not a bookkeeping repair, which is why nothing here has
+dented it.
+
+Payoff if done: 218 of the 256 located site-2302 functions are void-with-bare-`return;`, site 2302 is 48% of all
+desyncs, and the 60 `bail` verdicts are largely this too — so this one construct plausibly gates ~40% of every
+non-faithful function in mcc's own TU. It is the single highest-value item in the fidelity section by a wide margin.
 
 **Histogram re-measured 2026-07-27 after this session's changes** (three recorder gates flipped default-on, F3a
 landed, `RELOC_EQUIV` flipped), because the old one predates all of them and its shares are no longer right. mcc's own
