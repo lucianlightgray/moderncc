@@ -1178,8 +1178,32 @@ Payoff if done: 218 of the 256 located site-2302 functions are void-with-bare-`r
 desyncs, and the 60 `bail` verdicts are largely this too — so this one construct plausibly gates ~40% of every
 non-faithful function in mcc's own TU. It is the single highest-value item in the fidelity section by a wide margin.
 
-**ATTEMPTED 2026-07-27 — the recorder half is a ONE-LINE change and it WORKS; the blocker is that the PASSES assume a
-Return always has a value child. Reverted, with the remaining work enumerated.**
+**LANDED 2026-07-27 — bare `return;` is now MODELLED. faithful 1101 -> 1318 (+217), bail 60 -> 1.** The largest
+single fidelity win in this file. Four small edits, no new node kind:
+1. `ast_hook_return` builds an `AST_Return` with NO value child instead of setting `ast_bail`; only a return that HAD
+   a value the recorder failed to model still bails.
+2-4. The three passes that consumed a Return's value unguarded now tolerate the missing child, each keeping its
+   state-kill: `ast_cprop_block` (nothing to rewrite, still clears the known-value set) and the two `ast_cse_subst`
+   sites (nothing to substitute, still clears the available-expression set). Replay needed NO change — it already
+   guarded `v != AST_NONE` and emitted only the epilogue jump.
+
+Measured on mcc's own TU at `-O2`: **faithful 1101 -> 1318, desync 540 -> 356, bail 60 -> 1, unfaithful 149 -> 175**
+(the +26 unfaithful are newly-modelled bodies that now replay and differ — they were previously bailed, so this is not
+a regression: both verdicts are equally excluded). **The recorder-fidelity ceiling drops from 41% to 28.7%.**
+
+Validated on the full bar: host ctest 7276/7276, cross 7435/7435, self-host fixpoint byte-identical (5516303),
+`ast/treecheck` clean at `-O2`/`-O3`/`-Os`, 400-seed gate-swept differential fuzz 397 agree 0 miscompile, qemu 14/14
+on all four triples, 0 compile crashes over the exec corpus, and both side-effect guards
+(`assign_value_effects`, `side_effect_order`) green at `-O0/-O1/-O2/-O3/-Os` — the check that matters most here, since
+this is exactly the change class that miscompiled silently earlier in the session.
+
+**The audit that made it safe, kept because the method generalises:** only 3 of the 14 `AST_Return` sites were
+unguarded. `case AST_Return` in replay, the second cprop site, `ast_inline`'s and the graft path all already tested
+`AST_NONE` or `ast_nchild == 1`. Enumerating the sites first — rather than null-guarding reflexively — is what kept
+this to four edits.
+
+Superseded first attempt: **the recorder half is a ONE-LINE change and it WORKS; the blocker was that the PASSES
+assume a Return always has a value child.**
 
 **Replay already supports a valueless Return** (mccast.c `case AST_Return`): it guards `v != AST_NONE` around the
 value emission and otherwise emits only the epilogue jump, in both the graft and normal paths. Nothing there needs

@@ -179,6 +179,7 @@ features_c99_c11/cleanup.c	test_cleanup5	desync
 features_c99_c11/cleanup.c	test_cleanup6	stackresidue
 features_c99_c11/cleanup.c	test_cleanup7	stackresidue
 features_c99_c11/cleanup.c	test_cleanup8	stackresidue
+features_c99_c11/cleanup.c	test_ret	stackresidue
 features_c99_c11/cleanup.c	test_ret2	desync
 features_c99_c11/complex.c	fputc_unlocked	desync
 features_c99_c11/complex.c	main	desync
@@ -494,7 +495,6 @@ runner.c	putc_unlocked	desync
 runner.c	putchar_unlocked	desync
 runner.c	run_capture	unfaithful
 runner.c	slurp	unfaithful
-runner.c	strip_all	desync
 statements/assignment.c	fputc_unlocked	desync
 statements/assignment.c	putc_unlocked	desync
 statements/assignment.c	putchar_unlocked	desync

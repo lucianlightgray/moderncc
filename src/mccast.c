@@ -3492,13 +3492,21 @@ void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
 	ast_last_return = AST_NONE;
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
-	if (!has_val || ast_ret_val == AST_NONE) { MCC_TRACE("br\n");
+	/* A valueless `return;` used to bail the whole function, which cost more
+	   coverage than any other single construct -- it is the guard-clause idiom
+	   (`void f(void){ if (!ok) return; ... }`) this file is built from. Replay has
+	   always handled a Return with no value child (it emits only the epilogue
+	   jump), so the node just needs to be BUILT. Only a return that HAD a value we
+	   failed to model still bails. Passes that consume a Return's value must
+	   tolerate the missing child -- see the AST_NONE guards below. */
+	if (has_val && ast_ret_val == AST_NONE) { MCC_TRACE("br\n");
 		ast_bail = 1;
 		return;
 	}
 	AstLocal bb = ast_cur_bb;
 	AstLocal ret = ast_node(ast_cur, AST_Return);
-	ast_add_child(ast_cur, ret, ast_ret_val);
+	if (has_val)
+		{ MCC_TRACE("br\n"); ast_add_child(ast_cur, ret, ast_ret_val); }
 	ast_add_child(ast_cur, bb, ret);
 	ast_ret_val = AST_NONE;
 	ast_last_return = ret;
@@ -8063,8 +8071,11 @@ static void ast_cprop_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); ast_cprop_kill(off); }
 			}
 		} else if (k == AST_Return) { MCC_TRACE("br\n");
-			if (ast_cprop_safe(a, ast_first_child(a, s)))
-				{ MCC_TRACE("br\n"); ast_cprop_rewrite(a, ast_first_child(a, s), 0); }
+			/* A valueless return has nothing to rewrite, but must still kill the
+			   known-value set: control leaves the block either way. */
+			AstLocal rv = ast_first_child(a, s);
+			if (rv != AST_NONE && ast_cprop_safe(a, rv))
+				{ MCC_TRACE("br\n"); ast_cprop_rewrite(a, rv, 0); }
 			ast_cprop_kn = 0;
 		} else if (k == AST_If && ast_op(a, s) == 0) { MCC_TRACE("br\n");
 			AstLocal cond = ast_child(a, s, 0);
@@ -13626,7 +13637,13 @@ static void ast_cse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ast_cse_n = 0;
 			}
 		} else if (k == AST_Return) { MCC_TRACE("br\n");
-			ast_cse_subst(a, ast_first_child(a, s), 0);
+			/* valueless return: no value to substitute into, but the available-
+			   expression set still dies here. */
+			{
+				AstLocal rv = ast_first_child(a, s);
+				if (rv != AST_NONE)
+					{ MCC_TRACE("br\n"); ast_cse_subst(a, rv, 0); }
+			}
 			ast_cse_n = 0;
 		} else if (k == AST_If && ast_op(a, s) == 0) { MCC_TRACE("br\n");
 			ast_cse_subst(a, ast_child(a, s, 0), 0);
@@ -13722,7 +13739,13 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ast_cse_n = 0;
 			}
 		} else if (k == AST_Return) { MCC_TRACE("br\n");
-			ast_cse_subst(a, ast_first_child(a, s), 0);
+			/* valueless return: no value to substitute into, but the available-
+			   expression set still dies here. */
+			{
+				AstLocal rv = ast_first_child(a, s);
+				if (rv != AST_NONE)
+					{ MCC_TRACE("br\n"); ast_cse_subst(a, rv, 0); }
+			}
 			ast_cse_n = 0;
 		} else if (k == AST_BasicBlock) { MCC_TRACE("br\n");
 			ast_cse_stmts(a, s);
