@@ -844,8 +844,10 @@ negative results, so nobody re-runs them: the ten `o4`-only gates hold exactly o
 `-O4` out-of-process superopt driver is the best cell on ZERO of five kernels. Open and newly found:
 ~~`__builtin_sqrt`/`floor`/`fma`/`fmin` do not link~~ (RESOLVED 2026-07-29 — NOT an mcc defect: gcc fails the
 identical program the identical way without `-lm`; `mcc -lm` links and runs correctly. Whatever harness hit this
-should pass `-lm`. Note the `MATH/ROUND/FMA/MINMAX_INLINE` gates do not fire on the `__builtin_*` spellings —
-a separate, real gap if inlining them is ever wanted), and `-O1` executes the same instruction count as `-O0` on
+should pass `-lm`. The `__builtin_*` spellings inline IDENTICALLY to the plain names where the
+transform pipeline re-emits — `hot` loops get `sqrtsd` under `-O2 -ffast-math` for both spellings; trivial
+single-call functions keep the libcall for both because nothing triggers the optimized re-emit, which is a
+pipeline characteristic, not a builtin gap), and `-O1` executes the same instruction count as `-O0` on
 all five kernels while emitting more `.text`.
 
 Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
