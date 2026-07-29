@@ -1064,6 +1064,41 @@ So this is an interaction between two stateful regions, not a missing decrement:
 A fix has to distinguish whose pop it is. That is design work, which is why A1a is characterised here rather than
 fixed.
 
+**ROOT-CAUSED 2026-07-28, and the `ast_in_call` framing above was the symptom, not the cause.** The pops belong to
+`expr_landor`, which consumes each operand it is done with — `t = gvtst(i, t)` when the operand is dynamic, `vpop()`
+when it folded — and `ast_hook_landor_operand` sets `ast_in_call = 1` precisely so that consumption is not
+double-counted. That accounting is complete on the NON-const path (`ast_vn--` per operand). It is incomplete on the
+CONST path, whose comment states the assumption outright: "the parser folded the whole expression to that constant
+and never evaluated the right-hand side". That is true only for the SHORT-CIRCUITING constant (`0 && X`, `1 || X`,
+i.e. `c != i`). For the IDENTITY constant (`1 && X`, `0 || X`, `c == i`) the parser drops the constant and evaluates
+every remaining operand normally — so each middle operand IS consumed, and the const path decrements for none of
+them. Minimal repro set, all at `-O2`:
+
+| source | before | after |
+|---|---|---|
+| `1 && x && y` | `desync:2322` (SYNC, misattributed) | `desync` at the landor hook |
+| `0 \|\| x \|\| y` | `desync:2322` | `desync` at the landor hook |
+| `x && y && z` | faithful | faithful |
+| `1 && x` | unfaithful | unfaithful |
+
+**Two fixes were tried and REJECTED — record them so they are not retried:**
+- *Decrement the middle operand and continue* (a `dropnext` flag consumed by `ast_hook_landor_next`). Counts then
+  balance and the function passes `ast_replay_ok`, so replay RUNS on a model that is missing an operand — immediate
+  SEGV in `ast_replay_bb` -> `gfunc_return` -> `gvtst` on a garbage jump chain. A count fix is not a model fix: the
+  operand has to become a child of the region's Binary, not vanish.
+- *Desync the whole identity-constant case at the first operand.* Costs **17 previously-faithful functions**
+  (1643 -> 1626) — the 2-operand shape (`1 && x`) models correctly today and must keep working.
+
+**What landed instead** (`ast_lor_consumed[]`): desync at the SECOND consumption inside a const region, which is
+exactly the first moment a middle operand is dropped. Faithful stays 1643, unfaithful 228, desync 248 — totals
+unchanged, because these functions were already desyncing; only the attribution moves. SYNC-site desyncs
+**23 -> 10**, with the 13 landing on the landor hook. Corpus 774/774 byte-identical, full ctest 7281/7281.
+
+**The remaining real fix** is to model the identity constant as an ABSENT operand: build the region's `AST_Binary`
+as the non-const path does, drop the constant's node, and add each subsequent operand as a child — with the
+2-operand case (`1 && x`, one child) kept on today's working path or given its own shape. That is the design work;
+it is now scoped to one branch of one hook rather than "an interaction between two stateful regions".
+
 **Group B (31) — partially narrowed 2026-07-28, with a caveat that must be resolved first.**
 
 Ranking the three hook events before each Group-B failure: `ast_hook_call_end` immediately precedes **13**,

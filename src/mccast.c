@@ -1812,6 +1812,7 @@ static int ast_lor_top;
    operand. The constant's own node is already the result, so no Binary is
    built and nothing is consumed. */
 static unsigned char ast_lor_const[16];
+static unsigned char ast_lor_consumed[16];
 
 static int *ast_fconst;
 static int ast_fconst_n;
@@ -2658,6 +2659,7 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 			ast_vn--;
 			ast_lor[ast_lor_top] = AST_NONE;
 			ast_lor_const[ast_lor_top] = 1;
+			ast_lor_consumed[ast_lor_top] = 0;
 			ast_lor_top++;
 			ast_in_call = 1;
 			return;
@@ -2666,6 +2668,7 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 		ast_set_op(ast_cur, nd, op);
 		ast_lor[ast_lor_top] = nd;
 		ast_lor_const[ast_lor_top] = 0;
+		ast_lor_consumed[ast_lor_top] = 0;
 		ast_lor_top++;
 	}
 	if (ast_lor_top < 1)
@@ -2691,6 +2694,13 @@ void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail || ast_lor_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_call = 0;
+	if (!ast_lor_const[ast_lor_top - 1])
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_lor_consumed[ast_lor_top - 1]) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	ast_lor_consumed[ast_lor_top - 1] = 1;
 }
 
 void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
