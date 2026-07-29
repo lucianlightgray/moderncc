@@ -1466,8 +1466,7 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 	size = type_size(pt, &align);
 	if (size != 1 && size != 2 && size != 4 && size != 8)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (size != 8 && sub == 2)
-		{ MCC_TRACE("br\n"); return 0; }
+
 	if ((pt->t & VT_BTYPE) == VT_STRUCT || is_float(pt->t))
 		{ MCC_TRACE("br\n"); return 0; }
 	uns = (pt->t & VT_UNSIGNED) != 0;
@@ -1490,10 +1489,10 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		sc = umul ? MCC_TREG_RSI : MCC_TREG_RDX;
 
 		if (umul) { MCC_TRACE("br\n");
-			orex(size == 8, rb, 0, 0xf7);
+			orex(1, rb, 0, 0xf7);
 			o(0xe0 + REG_VALUE(rb));
 		} else if (sub == 2) { MCC_TRACE("br\n");
-			orex(size == 8, rb, ra, 0x0f);
+			orex(1, rb, ra, 0x0f);
 			o(0xaf);
 			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
 		} else { MCC_TRACE("br\n");
@@ -1508,7 +1507,7 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		o(0xc0 + REG_VALUE(sc));
 
 		if (size < 8) { MCC_TRACE("br\n");
-			int rt = MCC_TREG_RAX;
+			int rt = umul ? MCC_TREG_RDX : MCC_TREG_RAX;
 
 			if (size == 4 && uns) { MCC_TRACE("br\n");
 				orex(0, ra, rt, 0x8b);
@@ -1523,9 +1522,14 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 			}
 			orex(1, rt, ra, 0x3b);
 			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rt));
+			if (REG_VALUE(rb) >= 4 || REX_BASE(rb))
+				{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(rb)); }
 			o(0x0f);
 			o(0x95);
 			o(0xc0 + REG_VALUE(rb));
+			if (REG_VALUE(rb) >= 4 || REG_VALUE(sc) >= 4 || REX_BASE(rb) ||
+					REX_BASE(sc))
+				{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc) | (REX_BASE(rb) << 2)); }
 			o(0x08);
 			o(0xc0 + REG_VALUE(rb) * 8 + REG_VALUE(sc));
 		}

@@ -24,6 +24,12 @@ int main(void) {
 		  if (__builtin_add_overflow(ua, ub, &r1) != (uw != (unsigned long long)r2 || uw < ua) || r1 != r2) { printf("u %d\n", i); return 4; } }
 		{ unsigned char r1, r2; unsigned long long ua = (unsigned long long)a, ub = (unsigned long long)b, uw = ua + ub; r2 = (unsigned char)uw;
 		  if (__builtin_add_overflow(ua, ub, &r1) != (uw != (unsigned long long)r2 || uw < ua) || r1 != r2) { printf("uc %d\n", i); return 5; } }
+		{ signed char r1, r2; long long sa = (long long)(signed char)a, sb = (long long)(signed char)b, w2 = sa * sb; r2 = (signed char)w2;
+		  if (__builtin_mul_overflow(sa, sb, &r1) != (w2 != (long long)r2) || r1 != r2) { printf("mulsc %d\n", i); return 6; } }
+		{ int r1, r2; long long sa = (long long)(int)a, sb = (long long)(int)b, w2 = sa * sb; r2 = (int)w2;
+		  if (__builtin_mul_overflow(sa, sb, &r1) != (w2 != (long long)r2) || r1 != r2) { printf("muli %d\n", i); return 7; } }
+		{ unsigned r1, r2; unsigned long long ua = (unsigned)a, ub = (unsigned)b, uw = ua * ub; r2 = (unsigned)uw;
+		  if (__builtin_mul_overflow(ua, ub, &r1) != (uw != (unsigned long long)r2) || r1 != r2) { printf("mulu %d\n", i); return 8; } }
 	}
 	printf("OK\n");
 	return 0;

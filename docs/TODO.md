@@ -3695,8 +3695,18 @@ the suite:
   narrow case, taking the matrix from 2 failures to 9. The `setne`/`or` sequence or its register choices are wrong;
   it was not debugged further.
 
-Residue after this: `__mcc_mulo_{sc,i,u,ti}` (multiply still needs the one-operand `mul`/`imul` shapes at narrow
-widths), `__mcc_addo_ti`, and the four complex helpers.
+**Narrow-width MULTIPLY landed right after** — once the arithmetic is done at 64 bits, `imul` (signed) and the
+one-operand `mul` (unsigned) reuse the same truncate-and-compare tail as add/sub, so it was mostly deleting the
+`size != 8 && sub == 2` guard and widening the two mul opcodes. One extra register note: the unsigned path's
+truncation temp cannot be `%rax`, because that is where `mul` leaves the product — it uses `%rdx`, which is free
+once CF has been captured.
+
+**A third encoding trap, same family as the other two:** the byte `OR` needs a REX prefix whenever either operand
+is register 4-7, or the encoding names `%ah`/`%ch`/`%dh` instead of `%sil`/`%dil`. The add/sub paths never hit it
+because their scratches are `%rdx`/`%rcx`, but the unsigned-multiply path puts the flag in `%rsi`, and without the
+REX the OR wrote into `%dh` — the matrix stayed 12/12 green and only the corpus cell's `mulu` case caught it.
+
+Residue after this: `__mcc_addo_ti`, `__mcc_mulo_ti` (128-bit) and the four complex helpers.
 
 The lesson that generalises: **the suite passes in every broken state this hook can be in.** Byte-identity,
 7552 tests, the self-host fixpoint and differential fuzz all stayed green through both failed attempts, because
