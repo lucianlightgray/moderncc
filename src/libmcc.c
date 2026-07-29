@@ -983,7 +983,15 @@ ST_FUNC int mcc_isa_has(MCCState *s1, uint32_t feat) { MCC_TRACE("enter\n");
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386)
 static void mcc_cpuid(uint32_t leaf, uint32_t sub, uint32_t r[4]) { MCC_TRACE("enter\n");
-#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+	/* cpuid is inline asm, which mcc rejects when built without MCC_CONFIG_ASM.
+	   Emit it whenever the compiling compiler can parse asm (any non-mcc host cc,
+	   or an mcc with its assembler compiled in), keying off __MCC_ASM__ rather
+	   than MCC_CONFIG_ASM -- the latter re-defaults to 1 under the -run/JIT
+	   self-host. Only the asm-off self-hosted mcc falls to zeros, which resolves
+	   -march=native to the baseline ISA -- acceptable, as it never links a native
+	   backend. See host_run_tls_slab_tpoff() for the same pattern. */
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)) && \
+    (!defined(__MCC__) || defined(__MCC_ASM__))
 	__asm__ volatile("cpuid"
 									 : "=a"(r[0]), "=b"(r[1]), "=c"(r[2]), "=d"(r[3])
 									 : "a"(leaf), "c"(sub));
