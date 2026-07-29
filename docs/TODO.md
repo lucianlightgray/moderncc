@@ -1147,6 +1147,16 @@ real-object validation stays macOS-gated.
    remaining work for this item is a proper ternary-statement replay case (cond, gvtst, arm, vpop, jmp, arm,
    vpop); until then store_packed_bf stays unfaithful WITH its cause now visible in the tree. Gate-off
    byte-identical; ast ctest 224/224.
+   **REPLAY LANDED 2026-07-29 (same session):** the degenerate replay was an OP COLLISION — the ternary
+   node records `AST_If` op 5, which the STATEMENT dispatcher reads as a condless for-loop. The vpop attach
+   now re-tags a discarded ternary op 7 (value-level replay ignores op), and the statement dispatcher replays
+   op 7 as value+`vpop` — which is byte-faithful for int-arm ternaries because the join `gv`/`move_reg`
+   no-op when both arms land in the same register: `c ? a() : b()` and `c ? ai() : ai()` flip empty ->
+   FAITHFUL. VOID-arm ternaries ICE'd that path (`vstack leak (-2)`: the void Invoke replay pushes nothing,
+   the value join popped anyway) — they now take a depth-guarded discard emitter and verify honest unfaithful
+   (`t4`), pending a byte-mirror of the parser's void join. Runtime matches gcc `-O1/2/3` on mixed int/void
+   discarded ternaries; TU gate-on compiles clean (the ICE is the reason the fuzzer/TU must run per gate);
+   ast ctest 224/224. `(void)(c ? 1 : 2)` stays `empty` by design (constant folds, no If is built).
 5. **The 26 non-mov length-differs — IN PROGRESS 2026-07-29.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6,
    `cmp` 5 — the `xorb` count is spread across `foldm_*` math folding, not one construct. Only remaining unexplained
    group in the unfaithful bucket, which is now the LARGEST gap category by far (mcc's own TU: unfaithful 224,

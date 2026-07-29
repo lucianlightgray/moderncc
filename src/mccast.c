@@ -3730,10 +3730,15 @@ void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 	}
 	AstLocal top = ast_vs[ast_vn - 1];
 	uint16_t tk = ast_kind(ast_cur, top);
-	if ((tk == AST_Invoke || tk == AST_Unary ||
-			 (ast_ternary_discard_env && tk == AST_If)) &&
+	if ((tk == AST_Invoke || tk == AST_Unary) &&
 			ast_parent(ast_cur, top) == AST_NONE)
 		{ MCC_TRACE("br\n"); ast_add_child(ast_cur, ast_cur_bb, top); }
+	else if (ast_ternary_discard_env && tk == AST_If &&
+					 ast_op(ast_cur, top) == 5 && ast_nchild(ast_cur, top) == 3 &&
+					 ast_parent(ast_cur, top) == AST_NONE) { MCC_TRACE("br\n");
+		ast_set_op(ast_cur, top, 7);
+		ast_add_child(ast_cur, ast_cur_bb, top);
+	}
 	ast_vn--;
 }
 
@@ -6334,6 +6339,32 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			}
 			break;
 		case AST_If: {
+			if (ast_op(a, s) == 7) { MCC_TRACE("br\n");
+				int avoid =
+						(ast_type_t(a, ast_child(a, s, 1)) & VT_BTYPE) == VT_VOID ||
+						(ast_type_t(a, ast_child(a, s, 2)) & VT_BTYPE) == VT_VOID;
+				if (avoid) { MCC_TRACE("br\n");
+					SValue *base0;
+					ast_replay_value(a, ast_child(a, s, 0));
+					save_regs(1);
+					int tt = gvtst(1, 0);
+					base0 = vtop;
+					ast_replay_value(a, ast_child(a, s, 1));
+					while (vtop > base0)
+						{ MCC_TRACE("br\n"); vpop(); }
+					int u = gjmp(0);
+					gsym(tt);
+					base0 = vtop;
+					ast_replay_value(a, ast_child(a, s, 2));
+					while (vtop > base0)
+						{ MCC_TRACE("br\n"); vpop(); }
+					gsym(u);
+					break;
+				}
+				ast_replay_value(a, s);
+				vpop();
+				break;
+			}
 			if (ast_op(a, s) == 6) { MCC_TRACE("br\n");
 				struct switch_t *sw = mcc_mallocz(sizeof *sw);
 				struct switch_t *prevsw = ast_rp_switch;
