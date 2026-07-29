@@ -7037,6 +7037,26 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (atomic_inline_on() && !use_generic && atomic_scalar &&
+			(size == 4 || size == 8) &&
+			atok == TOK___atomic_compare_exchange) { MCC_TRACE("br\n");
+		CType bt2;
+		vpop();
+		vpop();
+		vpop();
+		atomic_lowering++;
+		gen_atomic_cmpxchg(size);
+		atomic_lowering--;
+		vswap();
+		vpop();
+		vswap();
+		vpop();
+		bt2.t = VT_INT;
+		bt2.ref = NULL;
+		vtop->type = bt2;
+		gen_cast_s(VT_BOOL);
+		return;
+	}
+	if (atomic_inline_on() && !use_generic && atomic_scalar &&
 			(size == 4 || size == 8) && atok == TOK___atomic_load) { MCC_TRACE("br\n");
 		CType rt = *atom;
 		rt.t &= ~(VT_QUALIFY | VT_ATOMIC_BIT);

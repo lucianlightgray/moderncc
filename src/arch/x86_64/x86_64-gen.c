@@ -2213,6 +2213,59 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+/* CMPXCHG pins the expected value in %rax and reports through ZF, so the
+   lowering is: load *expected into rax, `lock cmpxchg desired, (ptr)`, capture ZF
+   into a byte scratch BEFORE anything else touches the flags, and on failure
+   write the actual value back through the expected pointer -- that write-back is
+   architecturally required and is what a naive lowering drops. The byte
+   set/movzx forms need a REX for regs 4-7 or they would name ah/ch/dh/bh. */
+void gen_atomic_cmpxchg(int size) { MCC_TRACE("enter\n");
+	int rp, re, rd, sc, t;
+
+	gv(MCC_RC_RCX);
+	rd = vtop->r & VT_VALMASK;
+	vswap();
+	gv(MCC_RC_RSI);
+	re = vtop->r & VT_VALMASK;
+	vswap();
+	vrotb(3);
+	gv(MCC_RC_RDI);
+	rp = vtop->r & VT_VALMASK;
+	vrott(3);
+
+	save_reg(MCC_TREG_RAX);
+	save_reg(MCC_TREG_RDX);
+	sc = MCC_TREG_RDX;
+
+	orex(size == 8, re, MCC_TREG_RAX, 0x8b);
+	gen_modrm(MCC_TREG_RAX, re, NULL, 0);
+
+	o(0xf0);
+	orex(size == 8, rp, rd, 0x0f);
+	o(0xb1);
+	gen_modrm(rd, rp, NULL, 0);
+
+	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
+		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }
+	o(0x0f);
+	o(0x94);
+	o(0xc0 + REG_VALUE(sc));
+
+	t = gjmp_cond(TOK_EQ, 0);
+
+	orex(size == 8, re, MCC_TREG_RAX, 0x89);
+	gen_modrm(MCC_TREG_RAX, re, NULL, 0);
+
+	gsym(t);
+
+	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
+		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }
+	o(0x0f);
+	o(0xb6);
+	o(0xc0 + REG_VALUE(sc) * 8 + REG_VALUE(sc));
+	vtop->r = sc;
+}
+
 /* XCHG r, m is implicitly LOCKed, so it is both the seq_cst store (discard the
    result) and __atomic_exchange (keep it). Leaves the previous contents in the
    value register, same shape as gen_atomic_xadd. */

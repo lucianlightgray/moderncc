@@ -11,6 +11,7 @@ arch/arm64_encoding.c	test_ldr_str	unfaithful
 bounds/bound_setjmp.c	stack	unfaithful
 bounds/bound_signal.c	do_fork	bail
 bounds/bound_signal.c	main	unfaithful
+codegen/atomic_fetch_inline.c	cas_checks	bail
 codegen/atomic_fetch_inline.c	seq_checks	bail
 codegen/atomic_fetch_inline.c	single_thread_checks	bail
 codegen/atomic_fetch_inline.c	worker	bail

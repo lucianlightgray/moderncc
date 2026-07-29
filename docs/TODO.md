@@ -3493,9 +3493,31 @@ and it is right at the boundaries by construction — `x = 0` and `x = -1` both 
 what both should return. Verified against a bit-walking reference over every single-bit position (positive and
 negated) and 200 xorshift values at both widths.
 
-**The probe from the head of this section is now 21 -> 2: `__atomic_compare_exchange_4` and `alloca`.** Both have
-their design recorded — cmpxchg needs `%rax` pinning via the `gv2(MCC_RC_RAX, MCC_RC_RCX)` shape and the
-write-back-on-failure that a naive lowering forgets; `alloca` has its own subsection above.
+**`__atomic_compare_exchange` is DONE 2026-07-28** — `gen_atomic_cmpxchg(size)`, sizes 4 and 8, on the same
+default-on gate. Emitted shape:
+
+    mov  (%rsi),%eax          ; expected
+    lock cmpxchg %ecx,(%rdi)  ; desired, ptr
+    sete %dl                  ; capture ZF FIRST
+    je   1f
+    mov  %eax,(%rsi)          ; failure write-back
+    1: movzbl %dl,%edx
+
+Three things had to be right, and two of them were wrong on the first attempt:
+- **`vrott` vs `vrotb`.** `vrott(3)` sends the TOP to the bottom (`[a,b,c] -> [c,a,b]`); bringing the pointer up
+  from `vtop[-2]` needs `vrotb(3)`. The first cut read the register of the wrong operand.
+- **Everything must be pinned to distinct registers.** `get_reg(MCC_RC_INT)` handed back `%rax` for the `sete`
+  scratch — the one register CMPXCHG uses implicitly — so the scratch clobbered the expected value and the failure
+  write-back stored the boolean. Operands are now pinned with `gv(MCC_RC_RCX)`, `gv(MCC_RC_RSI)`, `gv(MCC_RC_RDI)`
+  and the scratch is `%rdx` after `save_reg`, in the style of `gen_opi`'s divide path.
+- **ZF must be captured before the branch**, since the failure path's `mov` comes after it.
+
+The test is a SPINLOCK, not arithmetic: 4 threads take a CAS lock 20000 times each and add to a shared counter, so
+the total (240000) is only reachable if the CAS provides real mutual exclusion; the single-threaded block pins the
+`expected` write-back on a FAILED exchange, which is the part a naive lowering drops.
+
+**The probe from the head of this section is now 21 -> 1, and the only entry left is `alloca`** (its own subsection
+above). For reference, gcc on the same TU still needs `__popcountdi2`.
 
 **Flip validation (2026-07-28), for the whole `MCC_ATOMIC_INLINE` set:** full ctest 7439/7439, native self-host
 fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed differential fuzz vs gcc + clang with `--gates` and 0

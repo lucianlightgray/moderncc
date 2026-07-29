@@ -138,7 +138,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"enum", "run", "exec/types/enum.c", "0 1 2 3 54 73 74 75\n12\n54\nenum to int: 1\n", "", "", ""},
 		{"const_expr", "run", "exec/expressions/const_expr.c", "dim: 7\ninit: 0 100\nenum: 15\ncases: 111\nbits: 3 15\nlocal: 6\n", "", "", ""},
 		{"popcount_inline", "run", "exec/codegen/popcount_inline.c", "pop 0 32 64\npar 1 0\nOK\n", "", "", ""},
-		{"atomic_fetch_inline", "run", "exec/codegen/atomic_fetch_inline.c", "counter=28 lcounter=400000\n", "", "", ""},
+		{"atomic_fetch_inline", "run", "exec/codegen/atomic_fetch_inline.c", "counter=28 lcounter=400000 cas=240000 lock=0\n", "", "", ""},
 		{"bitscan_inline", "run", "exec/codegen/bitscan_inline.c", "clz 31 0 63\nctz 0 31 40\nOK\n", "", "", ""},
 		{"bswap_inline", "run", "exec/codegen/bswap_inline.c", "3412 44332211 8877665544332211\n0000 00000000 0000000000000000\nffff ffffffff ffffffffffffffff\nff00 ff000000 ff00000000000000\nacc=950bf8f8c075a61c\nOK\n", "", "", ""},
 		{"region_store", "run", "exec/optimizer/region_store.c", "and0 r=0 v=0 calls=0\nand1 r=1 v=7 calls=1\nor1 r=1 v=0 calls=0\nor0 r=1 v=9 calls=1\ntern1 r=1 v=1 calls=1\ntern0 r=2 v=2 calls=1\nchain10 r=0 v=0 calls=0\nchain11 r=1 v=3 calls=1\n", "", "", ""},
