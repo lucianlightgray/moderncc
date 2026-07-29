@@ -1409,7 +1409,8 @@ static int gen_alloca_inline(int nb_args) { MCC_TRACE("enter\n");
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); return 0; }
 #endif
-	if (!(vtop[-1].r & VT_SYM) || !vtop[-1].sym || vtop[-1].sym->v != TOK_alloca)
+	if (!(vtop[-1].r & VT_SYM) || !vtop[-1].sym ||
+			(vtop[-1].sym->v != TOK_alloca && vtop[-1].sym->asm_label != TOK_alloca))
 		{ MCC_TRACE("br\n"); return 0; }
 	if ((vtop->type.t & VT_BTYPE) == VT_STRUCT || is_float(vtop->type.t))
 		{ MCC_TRACE("br\n"); return 0; }

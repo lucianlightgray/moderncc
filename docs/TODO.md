@@ -3583,7 +3583,31 @@ script both symbols are still exported. `cli/version_script_hides` locks both ha
 
 Sibling of the intrinsic-lowering item above, and worth doing *even if* every intrinsic eventually gets inlined, because the residue (soft-float, `__mcc_*` overflow builtins, `_Complex`, `float128`, bcheck, tcov) will always need SOME runtime. The question here is not "how do we emit fewer calls" but "when mcc emits a call into its own runtime, how does a FOREIGN linker resolve it". Today the answer is: it does not, and the GCC build had to `ar x libmccrt.a` eight members onto `LDFLAGS` by hand.
 
-**First measurement, and it shrinks the problem a lot — the three families are NOT equally bad:**
+**RE-MEASURED 2026-07-28, after the intrinsic section closed at 21 -> 0 — two of the three families are GONE.**
+Compiling `tests/exec` + `tests/behavior` + mcc's own TU and collecting every undefined symbol, the residue that a
+stock toolchain cannot resolve is now exactly the `__mcc_*` family, 15 names:
+
+| group | names |
+|---|---|
+| overflow builtins | `__mcc_addo_{uc,s,i,u,ll,ull,ti}`, `__mcc_subo_{uc,i}`, `__mcc_mulo_{i,u,ll,ull,ti}` |
+| complex arithmetic | `__mcc_cmul`, `__mcc_cmulf`, `__mcc_cmull`, `__mcc_cdiv` |
+| misc | `__mcc_signbit` |
+
+Everything else that survives IS a libgcc name and resolves against a stock toolchain: `__multi3`, `__udivti3`,
+`__divti3`, `__ashlti3`, `__ashrti3`, `__lshrti3` and the `__fix*`/`__float*` conversions. The bit builtins and
+`alloca` no longer appear at all, and the atomics are inlined rather than called.
+
+So the item is no longer "three families" — it is one family, and the cheapest route for the biggest group is the
+one the intrinsic section already proved out: **`__builtin_add_overflow` and friends are what gcc lowers INLINE
+(`add`/`jo`, `imul`/`jo`), so the `__mcc_*o_*` helpers can go the same way the atomics did** rather than needing a
+naming or packaging answer. The complex-arithmetic four and `__mcc_signbit` are the genuine remainder.
+
+**A residual `alloca` was found and fixed while measuring this**: `__builtin_alloca` is declared in `mccdefs.h` as
+`__builtin_alloca` with an `__asm__("alloca")` rename, so the inline hook's `sym->v != TOK_alloca` test missed it
+and `tests/exec/features_c99_c11/builtins.c` still emitted the call. The hook now also matches `sym->asm_label`.
+
+**First measurement (2026-07-28, superseded by the above but kept for the naming analysis) — the three families
+were NOT equally bad:**
 
 | family | name mcc emits | resolvable by a stock toolchain? |
 |---|---|---|
