@@ -2848,6 +2848,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->diag_color = 2;
 			} else if (!strcmp(optarg, "diagnostics-color=auto")) { MCC_TRACE("br\n");
 				s->diag_color = 0;
+			} else if (!strcmp(optarg, "fast-math") ||
+								 !strcmp(optarg, "no-fast-math")) { MCC_TRACE("br\n");
+				unsigned char on = optarg[0] != 'n';
+				s->no_math_errno = on;
+				s->fold_math = on;
+				s->cx_limited_range = on;
 			} else if (set_flag(s, options_f, optarg) < 0)
 				{ MCC_TRACE("br\n"); goto unsupported_option; }
 		} break;

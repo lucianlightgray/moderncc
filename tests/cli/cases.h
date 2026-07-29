@@ -5,6 +5,16 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"fast_math_implies_no_math_errno", "cpu=x86_64,os=linux",
+		 "printf 'double sqrt(double);\\ndouble f(double x){return sqrt(x);}\\n' > {W}/fm.c && "
+		 "{MCC} -B{B} -I{I} -w -O2 -S {W}/fm.c -o {W}/plain.s && "
+		 "{MCC} -B{B} -I{I} -w -O2 -ffast-math -S {W}/fm.c -o {W}/fast.s && "
+		 "{MCC} -B{B} -I{I} -w -O2 -ffast-math -fno-fast-math -S {W}/fm.c -o {W}/off.s && "
+		 "printf 'plain=%s fast=%s off=%s\\n' "
+		 "$(grep -c 'call.*sqrt' {W}/plain.s) $(grep -c 'call.*sqrt' {W}/fast.s) "
+		 "$(grep -c 'call.*sqrt' {W}/off.s)",
+		 "plain=1 fast=0 off=1"},
+
 		{"intrinsics_no_helper_calls", "cpu=x86_64,os=linux",
 		 "printf 'extern void *alloca(__SIZE_TYPE__);\\n"
 		 "unsigned s16(unsigned short x){return __builtin_bswap16(x);}\\n"

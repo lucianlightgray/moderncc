@@ -1890,6 +1890,57 @@ The old seconds-based table, for the record — it is superseded and should not 
 | mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
 | matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
 
+## `-ffast-math` was silently ignored — FIXED 2026-07-29; and 4 `__builtin_` math names do not link
+Found while sweeping the `o4`-only gates (below). `-ffast-math` parsed as an unknown `-f` flag, was silently
+accepted, and did nothing — so `mcc -O2 -ffast-math` kept the `sqrt` libcall that plain `-fno-math-errno` inlines.
+gcc and clang both document `-ffast-math` as implying `-fno-math-errno`.
+
+Now `-ffast-math` sets `no_math_errno`, `fold_math` and `cx_limited_range` together, and `-fno-fast-math` clears
+them; order is honoured (`-ffast-math -fno-fast-math` gives back the libcall). Guarded by
+`cli/fast_math_implies_no_math_errno`, which asserts all three states. Suite 7553/7553, self-host byte-identical.
+
+**STILL OPEN, found by the same probe — `__builtin_sqrt`, `__builtin_floor`, `__builtin_fma` and `__builtin_fmin`
+are not recognised and become UNRESOLVED SYMBOLS.**
+
+    int main(void){ printf("%f\n", __builtin_sqrt(4.0)); }
+    mcc: error: unresolved reference to '__builtin_sqrt'      # gcc prints 2.000000
+
+`readelf` on a probe TU shows exactly four UND names: `__builtin_floor __builtin_fma __builtin_fmin
+__builtin_sqrt`. `__builtin_fabs` and `__builtin_copysign` are fine because `runtime/include/mccdefs.h` defines
+them as macros; the four above have no macro and no compiler-side handler, so the parser implicitly declares
+`__builtin_sqrt` as an ordinary function and emits a call to that literal name. The AST math-inliner matches on the
+LIBRARY name (`ast_bfold_tab` vs `sqrt`), which is why `sqrt(x)` inlines and `__builtin_sqrt(x)` does not even
+compile.
+Two candidate fixes, neither attempted: (a) more macros in `mccdefs.h`, consistent with the ~20 math builtins
+already done that way, but the ones needing a real call would have to declare libm prototypes in an
+auto-included header — a clash risk, and wrong under `-ffreestanding`; (b) strip a leading `__builtin_` in the
+parser when the remainder names a known libm entry, which is closer to what gcc does and fixes the whole family
+at once. (b) looks right; the reason I did not just do it is that it changes name lookup for every identifier.
+
+## The `o4`-only gates were swept for mis-staging 2026-07-29 — REGDISP was the only one; do not re-run this
+Method that found `REGDISP`: force each `o4`-only gate on at `-O2` and compare instructions and `.text`. All ten,
+five kernels each, then the three that moved anything re-checked on a REAL workload (mcc compiling its own 5.7 MB
+`mcc.c`, measured by instructions and by the resulting `mcc` binary's `.text`):
+
+| gate | verdict |
+|---|---|
+| `COPYSIGN_INLINE`, `FMA_INLINE`, `FMOV_IMM`, `MATH_INLINE`, `MATH_INLINE_PREPASS`, `MINMAX_INLINE`, `XMM_HI` | **byte-identical output** on all five kernels AND on mcc's own TU — they do not fire on real code |
+| `IVSR_PTR` | matmul **60.60G -> 70.97G (+17% WORSE)**, nsieve +1.5%, spectral -2%. Correctly `o4`-only |
+| `PROMO_LEAF_CALLEE` | nbody -0.7%, other four identical, self-compile +0.03% (noise). Not worth restaging |
+| `PROMO_LEAF_XMM` | nbody +0.3% worse |
+
+So `REGDISP` was the only mis-staged gate, and it is landed. **Do not re-run this sweep** — re-run it only if the
+gate list changes.
+
+The seven no-ops are the interesting residue. A direct probe (`sqrt`/`copysign`/`fmin`/`fmax`/`fma`/`fabs`/`floor`/
+`ceil`, one call each) shows `COPYSIGN_INLINE=1` DOES fire — 7 calls drop to 6 — while `MATH_INLINE`,
+`MINMAX_INLINE`, `FMA_INLINE`, `MATH_INLINE_PREPASS`, `FMOV_IMM` and `XMM_HI` change nothing even with
+`-fno-math-errno`, and `-O4` itself only ever removes that same one call. For comparison **gcc at plain `-O2`
+inlines `sqrt`, `copysign` AND `fma`, and with `-ffast-math` inlines all eight.** So mcc emits libcalls for
+`fmin`/`fmax`/`fma`/`ceil`/`floor` that gcc does not, and the gates named after those transforms appear to be
+either unreachable or guarded by a condition no ordinary call meets. Worth finding out which before anyone counts
+them as implemented features.
+
 ## `MCC_AST_REGDISP` was staged `-Os`/`-O4` only — LANDED at `-O2` 2026-07-29, 25% off nbody
 Found by the E1b re-measurement above: `-Os` beat `-O3` on nbody by 25% in instructions while also being smaller.
 A size level winning on speed is a staging bug, and the gate is a clean bidirectional control:
