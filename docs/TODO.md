@@ -450,6 +450,23 @@ word. Measured over 205 captured events:
 | relocation count differs | **0** |
 | relocation content differs | **0** |
 
+**RE-MEASURED 2026-07-29 (297 events) — the shape held, and the observability note above is STALE.** The
+instrumentation prints `[ast-diff] <fn>: baseline N B, replay M B, first diff @ +D`, NOT the
+`UNFAITHFUL <fn> newlen= oldlen= …` this section describes, and it is driven by `MCC_AST_VERIFY_DIFF=all`
+alongside `MCC_AST_VERIFY=1`, not by `MCC_LOG=128`. A parser written to the documented format captures ZERO
+events and reports an empty bucket, which is how a stale format claim turns into a confident wrong answer.
+
+| split | 2026-07-28 | 2026-07-29 |
+|---|---:|---:|
+| same length, bytes differ | 97 | **159** |
+| replay LONGER | 43 | **65** |
+| replay SHORTER | 65 | **73** |
+| mean abs delta | 13.7 B | **20.9 B** |
+
+So the same-length (order/register-choice) class has grown from about half to **54%** of the bucket, which
+strengthens the section's conclusion rather than weakening it: the majority of `unfaithful` is byte-identity being
+stricter than semantics require, and no modelling fix will move it.
+
 **Relocations are never the cause.** That is the `MCC_AST_RELOC_EQUIV` flip carrying its full weight — worth knowing
 before anyone spends effort there again.
 
