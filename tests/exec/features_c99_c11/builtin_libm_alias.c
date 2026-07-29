@@ -39,7 +39,14 @@ int main(void) {
 	CHK1(trunc)
 	CHK1(round)
 	CHK1(rint)
+	/* msvcrt.dll exports only C89 math; the C99 additions nearbyint/erf/erfc/
+	   fma/remainder live in libmingwex (which mcc does not link) and are absent
+	   from mcc's msvcrt.def, so a call to them fails to link, or loads a symbol
+	   msvcrt.dll lacks, on Windows. Skip them there; every non-PE target still
+	   exercises the whole family. */
+#ifndef _WIN32
 	CHK1(nearbyint)
+#endif
 	CHK1(exp)
 	CHK1(exp2)
 	CHK1(log)
@@ -56,8 +63,10 @@ int main(void) {
 	CHK1(expm1)
 	CHK1(log1p)
 	CHK1(logb)
+#ifndef _WIN32
 	CHK1(erf)
 	CHK1(erfc)
+#endif
 	CHK1(tgamma)
 
 	CHK2(fmin)
@@ -67,19 +76,24 @@ int main(void) {
 	CHK2(atan2)
 	CHK2(hypot)
 	CHK2(fdim)
+#ifndef _WIN32
 	CHK2(remainder)
+#endif
 	CHK2(nextafter)
 
 	CHK1F(sqrt)
 	CHK1F(floor)
 	CHK1F(exp)
 	CHK1F(log)
+#ifndef _WIN32
 	CHK1F(erf)
+#endif
 	CHK1F(expm1)
 	CHK2F(fmin)
 	CHK2F(pow)
 	CHK2F(hypot)
 
+#ifndef _WIN32
 	bi = __builtin_fma(a, b, c);
 	li = fma(a, b, c);
 	if (bi != li)
@@ -88,6 +102,7 @@ int main(void) {
 	lif = fmaf(fa, fb, fc);
 	if (bif != lif)
 		ok = 0;
+#endif
 	bil = __builtin_sqrtl(la);
 	lil = sqrtl(la);
 	if (bil != lil)
@@ -103,8 +118,10 @@ int main(void) {
 		ok = 0;
 	if (__builtin_fmin(one, a) != 1.0)
 		ok = 0;
+#ifndef _WIN32
 	if (__builtin_fma(2.0, 3.0, 4.0) != 10.0)
 		ok = 0;
+#endif
 
 	printf("%g %g %g %g\n", __builtin_sqrt(a), __builtin_floor(b),
 				 __builtin_fmax(a, b), __builtin_pow(a, 2.0));
