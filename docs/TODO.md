@@ -1342,6 +1342,26 @@ stores only the verdict WORD, so the baseline is unaffected. mcc's own TU, 51 de
 | 2 | vpush: unmodellable TYPE |
 | 9 | assorted, ≤3 each |
 
+**The 14 short-circuit stores REDUCED 2026-07-29 — this is the largest genuinely unexplored target in the bucket.**
+
+    int y;
+    int and_store(int a, int b)  { return a && (y = b); }      /* desync */
+    int or_store(int a, int b)   { return a || (y = b); }      /* desync */
+    int and_cmp(int a, int b)    { return a && (y == b); }     /* faithful — not a store */
+    int sep(int a, int b)        { if (a) { y = b; return y; } return 0; }  /* faithful — same semantics */
+
+Any store in a `&&`/`||` operand desyncs; a non-store expression in the same position does not, and the equivalent
+`if` form is faithful — so this is a MODELLING gap, not a codegen one. It is unconditional: `ast_hook_vstore`
+refuses outright on `ast_lor_top > 0`, and no gate moves it (`LANDOR_INVERT`, `STOREVAL_CALL`, `CHAINSTORE`,
+`OPASSIGN`, `NOCODE_CALL` all measured — 6 of 8 probes desync either way). Both the value-used and value-discarded
+forms are affected.
+
+The fix is the same structural change the landor work needs — the store has to become a child of the region's
+`AST_Binary` operand rather than being refused — which is the class of the TWO attempts already reverted in the
+A2a section. Read those before starting: the failure mode there was that counts balanced while the MODEL was still
+missing an operand, so `ast_replay_ok` passed and replay segfaulted. A third attempt should assert on model shape,
+not on `ast_vn`.
+
 **Two corrections that change where effort should go:**
 - The "18 ternary or short-circuit" row is **14 short-circuit / 4 ternary**. The approach RULED OUT below was
   reduced on the TERNARY shape (`c ? (y = 1) : (y = 2)`), which is only 4 of the 18 — the dominant case was never
