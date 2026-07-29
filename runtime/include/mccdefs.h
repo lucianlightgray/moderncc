@@ -441,8 +441,13 @@
 	__MCC_OV_DECL_W(unsigned char, unsigned long long, uc)
 	__MCC_OV_DECL_W(unsigned short, unsigned long long, us)
 	__MCC_OV_DECL_W(unsigned int, unsigned long long, u)
+	#if __SIZEOF_LONG__ == 8
 	__MCC_OV_DECL(long, l)
 	__MCC_OV_DECL(unsigned long, ul)
+	#else
+	__MCC_OV_DECL_W(long, long long, l)
+	__MCC_OV_DECL_W(unsigned long, unsigned long long, ul)
+	#endif
 	__MCC_OV_DECL(long long, ll)
 	__MCC_OV_DECL(unsigned long long, ull)
 	#ifdef __SIZEOF_INT128__

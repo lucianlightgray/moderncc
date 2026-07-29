@@ -211,6 +211,38 @@ static void gen_modrm64(int opcode, int op_reg, int r, Sym *sym, int c) { MCC_TR
 	gen_modrm_impl(op_reg, r, sym, c, is_got);
 }
 
+ST_FUNC int signbit_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_SIGNBIT_INLINE");
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
+	}
+	return on;
+}
+
+/* MOVMSKPS/MOVMSKPD put lane 0's sign bit in bit 0 of a GP register, which is
+   __builtin_signbit with one AND. Both are SSE2, so no ISA floor moves. x87 long
+   double has no such instruction and keeps the helper. */
+void gen_signbit(int isfloat) { MCC_TRACE("enter\n");
+	int r, d;
+
+	gv(MCC_RC_FLOAT);
+	r = vtop->r & VT_VALMASK;
+	d = get_reg(MCC_RC_INT);
+	if (!isfloat)
+		{ MCC_TRACE("br\n"); o(0x66); }
+	sse_rex(d, r);
+	o(0x0f);
+	o(0x50);
+	o(0xc0 + REG_VALUE(d) * 8 + REG_VALUE(r));
+	orex(0, d, 0, 0x83);
+	o(0xe0 + REG_VALUE(d));
+	o(1);
+	vtop->r = d;
+	vtop->r2 = VT_CONST;
+	vtop->type.t = VT_INT;
+}
+
 #ifdef MCC_TARGET_PE
 static void gen_pe_tls_base(int dst) { MCC_TRACE("enter\n");
 	int sc = (REG_VALUE(dst) == MCC_TREG_RAX) ? MCC_TREG_RCX : MCC_TREG_RAX;
@@ -1392,38 +1424,6 @@ static int alloca_inline_on(void) { MCC_TRACE("enter\n");
 		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
 	}
 	return on;
-}
-
-ST_FUNC int signbit_inline_on(void) { MCC_TRACE("enter\n");
-	static int on = -1;
-	if (on < 0) { MCC_TRACE("br\n");
-		const char *e = getenv("MCC_SIGNBIT_INLINE");
-		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
-	}
-	return on;
-}
-
-/* MOVMSKPS/MOVMSKPD put lane 0's sign bit in bit 0 of a GP register, which is
-   __builtin_signbit with one AND. Both are SSE2, so no ISA floor moves. x87 long
-   double has no such instruction and keeps the helper. */
-void gen_signbit(int isfloat) { MCC_TRACE("enter\n");
-	int r, d;
-
-	gv(MCC_RC_FLOAT);
-	r = vtop->r & VT_VALMASK;
-	d = get_reg(MCC_RC_INT);
-	if (!isfloat)
-		{ MCC_TRACE("br\n"); o(0x66); }
-	sse_rex(d, r);
-	o(0x0f);
-	o(0x50);
-	o(0xc0 + REG_VALUE(d) * 8 + REG_VALUE(r));
-	orex(0, d, 0, 0x83);
-	o(0xe0 + REG_VALUE(d));
-	o(1);
-	vtop->r = d;
-	vtop->r2 = VT_CONST;
-	vtop->type.t = VT_INT;
 }
 
 static int ovf_inline_on(void) { MCC_TRACE("enter\n");
