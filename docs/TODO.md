@@ -1104,7 +1104,11 @@ riscv64 cross fixpoints under qemu, all 53 `jit/*` cells, 100-seed differential 
 and 0 miscompiles. After the flip: full ctest **7327/7327**, ratchet baseline 173 -> 169, and
 `optfire/default-indirect_call` locks the default-on state. `tests/exec/functions_abi/indirect_call_shapes.c` is
 the new corpus cell for the three shapes — the old `func_pointers.c` did not cover them, which is why the corpus
-fire rate was 0 before it was added.
+fire rate was 0 before it was added. **Scoped to x86_64 in `optfire/arch.txt` 2026-07-29 (`0ec4a935`):** the gate
+is default-on everywhere, but the callee-type rewrite only changes the OBJECT on x86_64 (call-through-register vs
+-memory); on arm64 the backend emits byte-identical code either way, so `optfire/default-indirect_call` reported a
+spurious "default-off" and failed on every arm64 host. The commit that landed the pass added the `defstate.txt` row
+but not the `arch.txt` scope — the "guard the CASE, not the gate" pattern the rest of the file already follows.
 
 **Store inside a region (18) — ONE APPROACH RULED OUT 2026-07-28. Do not retry it without fixing the passes.**
 `ast_hook_vstore` desyncs when `ast_tern_top > 0 || ast_lor_top > 0`. Reduced: `c ? (y = 1) : (y = 2)`,
@@ -1153,6 +1157,11 @@ byte-identical arm64 and riscv64 cross self-host fixpoints under qemu, ratchet b
 corpus cell: it counts side effects through `!(side(a) && side(b))` and enumerates the truth table for `!(a && b)`,
 `!(a || b)`, `!(a && b && c)`, `!!(a && b)` and `if (!(a && b))`, matching gcc at `-O0`/`-O1`/`-O2`/`-O3` with the
 gate both off and on — an inverted jump sense is exactly the bug that byte-identity alone would not catch.
+**Scoped to x86_64 in `optfire/arch.txt` 2026-07-29 (`0ec4a935`), same reason as `indirect_call` above:** the
+`jtrue`/`jfalse`/`cmp_op` polarity flip only folds into x86_64's compare-branch fusion; on arm64 the object is
+byte-identical with the gate on or off (verified across return-bool and multi-way branch shapes), so the native
+`optfire/default-landor_invert` cell reported a spurious "default-off" and failed on every arm64 host. The arm64
+non-effect is correct-and-structural per the ledger, not a bug to chase.
 
 **THE RESIDUE IS 10, AND SIX OF THEM ARE ONE CLASS — measured 2026-07-28 after the three fixes above:**
 
@@ -1164,7 +1173,9 @@ gate both off and on — an inverted jump sense is exactly the bug that byte-ide
 The six large-delta ones were all **atomic lowering**. `parse_atomic` (`mccgen.c`) builds a libcall by hand —
 `vpush_helper_func`, `vrott(7)`, `gfunc_call(6)`, `gen_test_zero`, `gvtst` — and none of that traffic is modelled,
 so the drift is 3-4 values rather than the 1 every other class produces. **FIXED 2026-07-28: `parse_atomic` now
-calls `ast_hook_bail()`.**
+calls `ast_hook_bail()`.** (The `vrott(7)`/`gfunc_call(6)` shown here is the pre-2026-07-29 compare_exchange
+marshalling; the memory-order fix `65166d1e` dropped `weak` from the sized helper call, so it is now `vrott(6)`/
+`gfunc_call(5)` — see the atomic-libcall trap under "Backend intrinsic lowering".)
 
 **That exposed a verdict-ordering bug worth more than the atomics themselves.** Bailing alone changed nothing,
 because `ast_bail` does not stop the recorder — the model kept drifting and still desynced, and the verdict ladder
@@ -3491,6 +3502,23 @@ naming the symbols, when a lowering is disabled — so the landed set stays gone
   variant runs in the compiler's own process and corrupted the `-dt` driver's live loop counter (`t`), truncating the
   golden after the first sub-test. Pin the caller-saved R8/R9 instead on PE (both ABIs keep them caller-saved); System V
   stays on RSI/RDI and byte-identical. Fixed 2026-07-29.
+- **A hand-built libcall must marshal the HELPER's ABI, not the builtin's operand list — off by one arg silently
+  demotes the memory order (FIXED 2026-07-29, `65166d1e`).** `parse_atomic`'s `__atomic_compare_exchange` template
+  (`aplbmm.b`) carries the builtin's six operands `(ptr, expected, desired, weak, success, failure)`, but the sized
+  runtime helper `__atomic_compare_exchange_N` takes only five — `weak` is a compile-time form selector, not an arg
+  (the helper is always strong, a valid lowering of weak). The `use_generic` (size > 8) path already dropped `weak`
+  and shortened the count; the sized path kept it, so every operand from `weak` on shifted down one register and the
+  helper read `success_memorder = weak = 0` (relaxed) instead of the requested order. On the libcall targets
+  (arm64/riscv64/i386, and x86_64 at sizes 1/2 with no inline cmpxchg) a relaxed success order makes the aarch64
+  helper take its `ldxr/stxr` path instead of `ldaxr/stlxr` — a CAS with no acquire/release. A seq_cst CAS-spinlock
+  then loses its acquire barrier and racily drops updates under contention; `exec/atomic_fetch_inline` caught it on
+  macOS/arm64 under the `-O2` tile and `-O3` variants (`cas_total` a few short of 240000, intermittently). x86_64
+  hid it — its inline cmpxchg discards the order operands outright. Fix: drop `weak` in the `'b'` template case for
+  every path, and adjust the two consumers (x86_64 inline pops two order operands not three; the sized call passes
+  `arg - save - 1` for compare_exchange). Verified 0/120 across `-O0/-O2/-O3/tile` on arm64 and x86_64; CAS
+  semantics (success, failure writeback, weak form, 8/16/32/64-bit, generic by-pointer form) match clang at every
+  `-O`. Same "native-only gate" lesson as the row below: byte-identity + the full suite stayed green because the
+  wrong order is a runtime race, not a codegen shape.
 - **A differential MATRIX against gcc is the only thing that catches a wrong flag.** Corpus byte-identity, the full
   suite, the self-host fixpoint and differential fuzz all stay green when a lowering emits valid code computing the
   WRONG answer — that happened three times here. Run the matrix after every emit change, not at the end.
