@@ -138,6 +138,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"enum", "run", "exec/types/enum.c", "0 1 2 3 54 73 74 75\n12\n54\nenum to int: 1\n", "", "", ""},
 		{"const_expr", "run", "exec/expressions/const_expr.c", "dim: 7\ninit: 0 100\nenum: 15\ncases: 111\nbits: 3 15\nlocal: 6\n", "", "", ""},
 		{"signbit_inline", "run", "exec/codegen/signbit_inline.c", "OK\n", "", "", ""},
+		{"overflow_narrow", "run", "exec/codegen/overflow_narrow.c", "OK\n", "", "", ""},
 		{"overflow_inline", "run", "exec/codegen/overflow_inline.c", "OK\n", "", "", ""},
 		{"alloca_inline", "run", "exec/codegen/alloca_inline.c", "14 160 81 42 4096\n", "", "", ""},
 		{"popcount_inline", "run", "exec/codegen/popcount_inline.c", "pop 0 32 64\npar 1 0\nOK\n", "", "", ""},

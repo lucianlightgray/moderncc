@@ -3676,8 +3676,16 @@ Consequence for the inline path: with wide operands and a narrow result, a singl
 whole answer (the flag describes the WIDE add, and the fit still has to be checked), so the inline hook is now
 limited to width 8, where operand and result widths coincide.
 
-**Re-adding widths 1/2/4 was ATTEMPTED TWICE 2026-07-28 and reverted both times — do not start it from the recipe
-alone.** The shape is: do the arithmetic at 64 bits (the operands ARE 64-bit now), capture `seto`/`setb` for the
+**Re-adding widths 1/2/4 LANDED on the third attempt 2026-07-28.** The shape is the one below; what made the
+difference was running the 12-case gcc matrix after every single emit change instead of at the end, which turned
+two silent wrong-answer bugs into one-line fixes:
+- the byte `OR` that combines the two overflow terms had its operands the wrong way round (`08 /r` is
+  `OR r/m8, r8`, so `reg` is the SOURCE), and the result landed in the scratch that was about to be discarded;
+- the 32-bit unsigned truncation used `89 /r` (`MOV r/m, r`) where it needed `8b /r` (`MOV r, r/m`), so it
+  clobbered the sum with the temp instead of copying the sum into it. That one passed 11 of 12 matrix rows —
+  only `long long -> unsigned` caught it.
+
+For the record, the two earlier attempts and why they failed: The shape is: do the arithmetic at 64 bits (the operands ARE 64-bit now), capture `seto`/`setb` for the
 wide op, `movsx`/`movzx` the low bytes back into a scratch, `cmp` against the wide result, `setne`, OR the two
 flags, then store the low bytes. Both attempts were caught by the same 12-case matrix against gcc rather than by
 the suite:
@@ -3687,9 +3695,13 @@ the suite:
   narrow case, taking the matrix from 2 failures to 9. The `setne`/`or` sequence or its register choices are wrong;
   it was not debugged further.
 
-The value at stake is one call per narrow-result overflow check, and the width-8 case — which the common
-`long`/`long long` idiom uses — is already inlined. Anyone picking this up should build the matrix FIRST and run it
-after every emit change, because the suite passes in both broken states.
+Residue after this: `__mcc_mulo_{sc,i,u,ti}` (multiply still needs the one-operand `mul`/`imul` shapes at narrow
+widths), `__mcc_addo_ti`, and the four complex helpers.
+
+The lesson that generalises: **the suite passes in every broken state this hook can be in.** Byte-identity,
+7552 tests, the self-host fixpoint and differential fuzz all stayed green through both failed attempts, because
+every one of them produces valid code that computes the wrong flag. Only a differential matrix against gcc, run
+after each change, distinguishes them.
 
 **Recipe for the narrow widths, kept because it is what made them mechanical.** Byte and word add/sub are the same
 two-operand shape with different opcodes — byte `02 /r` (add) and `2a /r` (sub), word the 4-byte opcodes behind a
