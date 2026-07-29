@@ -1119,9 +1119,28 @@ unchanged, because these functions were already desyncing; only the attribution 
 **23 -> 10**, with the 13 landing on the landor hook. Corpus 774/774 byte-identical, full ctest 7281/7281.
 
 **The remaining real fix** is to model the identity constant as an ABSENT operand: build the region's `AST_Binary`
-as the non-const path does, drop the constant's node, and add each subsequent operand as a child — with the
-2-operand case (`1 && x`, one child) kept on today's working path or given its own shape. That is the design work;
-it is now scoped to one branch of one hook rather than "an interaction between two stateful regions".
+as the non-const path does, drop the constant's node, and add each subsequent operand as a child.
+
+**TRIED 2026-07-28 AND IT IS A NET LOSS — but the attempt maps the remaining work exactly, so start from here.**
+Building the Binary and dropping the constant DOES fix every isolated shape: `1 && x`, `1 && x && y`,
+`0 || x || y` and `1 && x && y && z` all go from desync/unfaithful to **faithful**, and the 1-child case needs no
+special handling (the LAND replay loop `for k: replay(child); if (k+1<nc) gvtst` then `gvtst_set` emits exactly the
+parser's `x != 0` for one child). On mcc's own TU, though: **faithful 1731 -> 1716, desync 51 -> 77.** The regions
+in real code are not the isolated shapes.
+
+The 36 new desyncs split into three sub-cases, all in the operand/end hooks, and two are still open:
+- **A later IDENTITY constant** (`x && 1`): the parser drops it (`vpop`), so the model must too — `ast_vn--`, no
+  child. Implemented in the attempt, works.
+- **A later SHORT-CIRCUITING constant** (`x && 0`, 16 events): the parser folds the WHOLE expression from that
+  point (`nocode_wanted++, f = 1`), so the region stops being a Binary and becomes a constant. The model has
+  already built the Binary and has no way back. Open.
+- **A materialized ending** (20 events): `expr_landor` finishes with `if (cc || f) { vpop(); vpushi(i ^ f); }`, and
+  `ast_hook_landor_end` desyncs on `materialized` by design. Those pushes happen while `ast_in_call` is still 1, so
+  they are invisible to the model and the end hook would have to synthesize the Literal itself. Open.
+
+Note the two open cases are the same shape from opposite ends: a `&&`/`||` region whose value is a CONSTANT the
+parser folds, which the model represents as a Binary. A fifth attempt should decide the region's kind at the END
+(Binary vs Literal) rather than at the first operand.
 
 **Group B (31) — partially narrowed 2026-07-28, with a caveat that must be resolved first.**
 
