@@ -1440,6 +1440,7 @@ ST_FUNC void define_undef(Sym *s);
 ST_INLN Sym *define_find(int v);
 ST_FUNC int pp_macro_is_func(int v);
 ST_FUNC int pp_macro_eval(int v, const int64_t *args, int nargs, int64_t *res);
+ST_FUNC int pp_in_system_header(void);
 ST_FUNC void free_defines(Sym *b);
 ST_FUNC void parse_define(void);
 ST_FUNC void skip_to_eol(int warn);
@@ -1509,6 +1510,8 @@ ST_INLN int is_float(int t);
 ST_FUNC int ieee_finite(double d);
 ST_FUNC int exact_log2p1(int i);
 ST_FUNC void test_lvalue(void);
+ST_FUNC void gen_cast_s(int t);
+ST_INLN CType *pointed_type(CType *type);
 
 ST_FUNC ElfSym *elfsym(Sym *);
 ST_FUNC void update_storage(Sym *sym);

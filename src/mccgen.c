@@ -195,7 +195,7 @@ static void seqp_flush(void) { MCC_TRACE("enter\n");
 }
 
 static void gen_cast(CType *type);
-static void gen_cast_s(int t);
+ST_FUNC void gen_cast_s(int t);
 static int atomic_rmw_size(SValue *sv, int op);
 static void gen_atomic_rmw(int op, int ret_new);
 static int atomic_cas_size(SValue *sv);
@@ -206,7 +206,7 @@ static void gen_atomic_load_scalar(void);
 static int atomic_store_needs_generic(SValue *sv);
 static void gen_atomic_store_aggregate(void);
 static void gen_atomic_load_aggregate(void);
-static inline CType *pointed_type(CType *type);
+ST_INLN CType *pointed_type(CType *type);
 static int is_compatible_types(CType *type1, CType *type2);
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label);
 static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td);
@@ -3831,7 +3831,7 @@ static void force_charshort_cast(void) { MCC_TRACE("enter\n");
 	vtop->type.t = dbt;
 }
 
-static void gen_cast_s(int t) { MCC_TRACE("enter\n");
+ST_FUNC void gen_cast_s(int t) { MCC_TRACE("enter\n");
 	gen_cast(&(CType){.t = t, .ref = NULL});
 }
 
@@ -4245,7 +4245,7 @@ static void vpush_type_size(CType *type, int *a) { MCC_TRACE("enter\n");
 	}
 }
 
-static inline CType *pointed_type(CType *type) { MCC_TRACE("enter\n");
+ST_INLN CType *pointed_type(CType *type) { MCC_TRACE("enter\n");
 	return &type->ref->type;
 }
 

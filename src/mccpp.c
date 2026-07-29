@@ -32,7 +32,7 @@ static void next_nomacro(void);
 static void parse_number(const char *p);
 static void parse_string(const char *p, int len);
 
-static int pp_in_system_header(void) { MCC_TRACE("enter\n");
+ST_FUNC int pp_in_system_header(void) { MCC_TRACE("enter\n");
 	BufferedFile *wf;
 	if (!mcc_state->error_set_jmp_enabled)
 		{ MCC_TRACE("br\n"); return 0; }
