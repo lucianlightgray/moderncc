@@ -1762,6 +1762,7 @@ Three things fall out of it, none of which the old seconds-based table could sho
 1. **`-O1` executes the same instruction count as `-O0` on all five kernels** — while emitting 52-53 MORE bytes of
    `.text` every time. Whatever `-O1` currently stages is not reaching the executed path on this bench. That is
    either a staging gap worth filling or a level worth documenting as "`-O0` plus debug-friendly codegen".
+   **IN PROGRESS 2026-07-29 — both halves root-caused, see the `-O1` section below.**
 2. **`-O2` and `-O3` are identical on all five kernels**, in instructions AND in `.text` (nsieve 554/554,
    mandelbrot 851/851, spectral 1470/1470; nbody 2255/2255; only matmul differs, 1273 vs 1304). So `-O3` currently
    buys nothing over `-O2` here. The 2026-07-28 `OPASSIGN` restaging closed the one gap this table used to show.
@@ -1776,6 +1777,39 @@ The old seconds-based table, for the record — it is superseded and should not 
 | nsieve | 0.16 | 0.16 | 0.14 | 0.14 | 0.14 |
 | mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
 | matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
+
+## `-O1` is `-O0` plus twelve inert gates — IN PROGRESS 2026-07-29
+Both halves of E1b finding 1 are root-caused; what is left is the staging decision.
+
+**The +52/53 bytes of `.text` is not optimizer output at all — it is `atoi`.** mcc defines `__OPTIMIZE__` from
+`-O1` up, which turns on glibc's `__USE_EXTERN_INLINES`, and `<stdlib.h>` then supplies an
+`extern __inline __attribute__((__gnu_inline__)) atoi` that wraps `strtol`. mcc emits that as an OUT-OF-LINE
+function into `.text` and calls it, instead of inlining it and letting the call bind to libc. Proof, not inference:
+`-O1 -D__NO_INLINE__` gives `.text` **425 on nsieve, exactly `-O0`'s 425**, and the `-O0`/`-O1` disassembly diff is
+one added 16-instruction `atoi` body plus `call atoi@plt` becoming a local call. The constant-across-kernels delta
+was the tell — three unrelated programs do not grow by the same 53 bytes from optimization. Note this is also a
+`__gnu_inline__` semantic deviation: gcc emits NO out-of-line copy for a gnu_inline `extern inline`.
+
+**The twelve `-O1`-staged gates fire almost nowhere.** `TEMPLATES SETHI SETHI_LEAF SETHI_NARY NARROW NARROW_ELIM
+CSE_COMM RANGE MATH_INLINE CALL_WINDOW IVSR PRE`, all forced to 0 at `-O1` (with `__NO_INLINE__` so `atoi` does not
+confound), against the same five kernels:
+
+| kernel | gates on | gates off | vs `-O0` object |
+|---|---:|---:|---|
+| nsieve | 425 | 425 | **byte-identical** |
+| matmul | 964 | 964 | **byte-identical** |
+| mandelbrot | 729 | 729 | **byte-identical** |
+| nbody | 2221 | 2222 | differs |
+| spectral | 1182 | 1182 | differs (same size) |
+
+So on three of five kernels `-O1` is byte-for-byte `-O0`, and on the other two the entire optimizer contribution is
+one byte of `.text` and no measurable instructions. `ast_replay_env` also turns on at `-O1` and is confirmed
+output-neutral by the same byte-identity.
+
+**Remaining decision (do not close this by measuring again — it is measured):** either restage a gate that actually
+moves this bench down to `-O1` — the `-O0`→`-O2` wins are nbody 4.71G→3.27G, matmul 18.48G→17.97G, spectral — or
+document `-O1` as "`-O0` plus `__OPTIMIZE__`" and stop implying it optimizes. Pick one; the current state advertises
+a level that does nothing.
 
 ## The `o4`-only gates were swept for mis-staging 2026-07-29 — REGDISP was the only one; do not re-run this
 Method that found `REGDISP`: force each `o4`-only gate on at `-O2` and compare instructions and `.text`. All ten,
