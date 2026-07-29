@@ -3417,7 +3417,22 @@ and byte-identical. Validated before the flip with gate-off 789/789 corpus objec
 xorshift values per width AND asserts the round trip is the identity, matching gcc at `-O0`/`-O1`/`-O2`/`-O3` with
 the gate both off and on; full ctest 7394/7394 both ways.
 
-The rest of the family stays blocked on `-march` as described below.
+**`clz`/`ctz` are DONE 2026-07-28 too, DEFAULT-ON (`MCC_BITSCAN_INLINE=0` opts out), and they were NOT blocked on
+`-march` either.** The blocking claim below is about `lzcnt`/`tzcnt`/`popcnt`; `BSR`/`BSF` are 386-baseline and give
+both operations directly — `ctz` is `BSF`, and `clz` is `BSR` followed by `xor $31` (or `$63`), because
+`31 - idx == idx ^ 31` for a 5-bit index. Both are undefined at zero, which is exactly what `__builtin_clz`/`ctz`
+document, so the sequence needs no zero guard and raises no ISA floor. `gen_bitscan(ctz, size)` in `x86_64-gen.c`.
+
+Validated: gate-off 792/792 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; a new self-checking corpus cell
+(`tests/exec/codegen/bitscan_inline.c`) walks every single-bit position at both widths and 300 xorshift values
+against shift-loop reference implementations — so it fails on a wrong answer even where the golden output would
+not change — matching gcc at `-O0`/`-O1`/`-O2`/`-O3` in both gate states; full ctest 7416/7416 both ways; the four
+`__builtin_{clz,ctz,clzll,ctzll}` UND symbols disappear, mcc's own object now has **zero** `clz`/`ctz`/`bswap`
+helper references, and both the native and arm64 cross self-host fixpoints are byte-identical.
+
+What is left of the family is `popcount` (needs SSE4.2 `popcnt`, genuinely `-march` work), `parity`, `clrsb` and
+`ffs` — `ffs` is `BSF` plus a zero test, so it is baseline-implementable but needs a branch or `cmov` the other two
+do not.
 The fallback is arch-generic, not a per-backend omission: mccgen.c constant-folds when the argument is `VT_CONST` (`fold_bit_builtin`) and otherwise does `vpush_helper_func(btok)` + `gfunc_call(1)` at mccgen.c:9404 (the clz/ctz/ffs/clrsb/popcount/parity family) and :9438 (the bswap family), calling into `runtime/lib/builtin.c`. That means ALL FIVE ARCHES pay a call for `x86 bsr/bsf/popcnt/bswap`, `arm rbit/clz/rev`, `arm64 clz/rbit/cnt/rev`, `riscv64 Zbb clz/ctz/cpop/rev8`. Suggested order — `bswap` first (unconditional single instruction everywhere, no UB corner, smallest blast radius), then `clz`/`ctz` (x86 `bsr`/`bsf` need the zero-input contract pinned down), then `ffs`/`clrsb`/`parity` (compositions of the former), and `popcount` last because it is the one case where gcc itself still calls a libgcc helper (`__popcountdi2`) without the ISA bit.
 **This is ISA-conditional and therefore blocked on, or at least coupled to, the `-march` section above** (`popcnt` needs SSE4.2/ABM, `lzcnt`/`tzcnt` need BMI1, riscv64 needs Zbb). Baseline x86_64 still gets `bsr`/`bsf`/`bswap` unconditionally, so the `-march` dependency only gates the last increment, not the whole item. Note `gcc -march=native` inlines every one of the 21, which is the real target state.
 

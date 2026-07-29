@@ -2213,6 +2213,26 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+/* clz/ctz on the 386-baseline scan instructions: BSR gives the index of the
+   highest set bit, so clz is `31 - idx` == `idx ^ 31` for a 5-bit index (63 for
+   a 6-bit one), and ctz is BSF outright. Both are undefined at zero, which is
+   exactly what __builtin_clz/__builtin_ctz document. No lzcnt/tzcnt, so no ISA
+   floor is raised. */
+void gen_bitscan(int ctz, int size) { MCC_TRACE("enter\n");
+	int r;
+	gv(MCC_RC_INT);
+	r = vtop->r & VT_VALMASK;
+	orex(size == 8, r, r, 0x0f);
+	o(ctz ? 0xbc : 0xbd);
+	o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(r));
+	if (!ctz) { MCC_TRACE("br\n");
+		orex(size == 8, r, 0, 0x83);
+		o(0xf0 + REG_VALUE(r));
+		o(size * 8 - 1);
+	}
+	vtop->type.t = VT_INT;
+}
+
 void gen_bswap(int size) { MCC_TRACE("enter\n");
 	int r;
 	gv(MCC_RC_INT);

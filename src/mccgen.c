@@ -448,6 +448,15 @@ enum {
 };
 
 #if defined(MCC_TARGET_X86_64)
+static int bitscan_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_BITSCAN_INLINE");
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
+	}
+	return on;
+}
+
 static int bswap_inline_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
@@ -9882,6 +9891,12 @@ tok_next:
 			vpop();
 			vpushi(fold_bit_builtin(bop, bw, cv));
 		} else { MCC_TRACE("br\n");
+#if defined(MCC_TARGET_X86_64)
+			if ((bop == BB_CLZ || bop == BB_CTZ) && bitscan_inline_on()) { MCC_TRACE("br\n");
+				gen_bitscan(bop == BB_CTZ, bw / 8);
+				break;
+			}
+#endif
 			vpush_helper_func(btok);
 			vrott(2);
 			gfunc_call(1);
