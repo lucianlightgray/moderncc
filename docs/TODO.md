@@ -3811,7 +3811,19 @@ Its trap is sharper than the code one and is worth keeping: mcc already owns a s
 the existing section list and falling back to the base section, and the test asserts it **by symbol index**,
 because comparing section-name lists cannot distinguish "`ro` got its own section" from "`ro` was absorbed by the
 existing one". Note the guard is an inline scan rather than a call to `have_section()`, which is `static` to
-`mccelf.c` — calling it from `mccgen.c` reproduces the multisource break that `pp_in_system_header` caused. `MCCState.function_sections` was set by the option table and read by nothing, so
+`mccelf.c` — calling it from `mccgen.c` reproduces the multisource break that `pp_in_system_header` caused.
+
+**THE CLASS IS NOW AUDITED AND CLOSED — 2026-07-29. Exactly one accepted-and-discarded flag remains, and it is the
+one that is NOT a small fix.** Method, worth reusing: extract every `{offsetof(MCCState, X), …, "name"}` from the
+option table in `libmcc.c`, then grep `src/` for any reference to `X` that is not the table entry or the struct
+declaration. 39 fields; 38 have readers.
+
+The survivor is **`-fomit-frame-pointer`** (`MCCState.omit_frame_pointer`): declared in `mcc.h`, set by the table,
+and referenced nowhere else — output is byte-identical with and without it and the `push %rbp` prologue is still
+emitted. **Do not treat it like the other four.** They were plumbing gaps; this one needs frame-pointer-less
+codegen, and mcc addresses every local as `-N(%rbp)` with `gen_vla_sp_save`, alloca and unwinding all depending on
+the frame pointer. Making the flag warn instead is also not obviously right: release build systems pass it
+routinely, so a per-compile warning would be noise and would break `-Werror` builds that work today. `MCCState.function_sections` was set by the option table and read by nothing, so
 `mcc -ffunction-sections` emitted a byte-identical object and every caller who passed it got silence. Now each
 function is generated into its own `.text.<name>`; an explicit `__attribute__((section(...)))` still wins.
 
