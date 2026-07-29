@@ -84,6 +84,19 @@ int main(void)
 				return 8;
 		}
 	}
+	for (i = 0; i < 32; i++) {
+		if (__builtin_ffs(1 << i) != i + 1)
+			return 9;
+	}
+	for (i = 0; i < 64; i++) {
+		if (__builtin_ffsll(1ll << i) != i + 1)
+			return 10;
+	}
+	if (__builtin_ffs(0) != 0 || __builtin_ffsll(0) != 0)
+		return 11;
+	if (__builtin_ffs(0x30) != 5 || __builtin_ffsll(0x30ll << 32) != 37)
+		return 12;
+
 	printf("clz %d %d %d\n", __builtin_clz(1u), __builtin_clz(0xffffffffu),
 				 __builtin_clzll(1ull));
 	printf("ctz %d %d %d\n", __builtin_ctz(1u), __builtin_ctz(0x80000000u),

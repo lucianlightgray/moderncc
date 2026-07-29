@@ -3430,9 +3430,22 @@ not change — matching gcc at `-O0`/`-O1`/`-O2`/`-O3` in both gate states; full
 `__builtin_{clz,ctz,clzll,ctzll}` UND symbols disappear, mcc's own object now has **zero** `clz`/`ctz`/`bswap`
 helper references, and both the native and arm64 cross self-host fixpoints are byte-identical.
 
-What is left of the family is `popcount` (needs SSE4.2 `popcnt`, genuinely `-march` work), `parity`, `clrsb` and
-`ffs` — `ffs` is `BSF` plus a zero test, so it is baseline-implementable but needs a branch or `cmov` the other two
-do not.
+**`ffs` is DONE 2026-07-28 as well**, on the same `MCC_BITSCAN_INLINE` gate: `BSF`, then `CMOVZ` a `-1` scratch in
+for the zero case, then increment. Two encoding details worth keeping — the `mov $-1` and the `CMOV` run 32-bit on
+purpose (the answer is at most 64, and REX.W on `B8+r` makes it a 10-byte `movabs`), and the scratch comes from
+`get_reg(MCC_RC_INT)` so it cannot collide with the operand.
+
+**The probe from the head of this section is now 21 -> 10.** Remaining: the five `__atomic_*_4` calls, `alloca`,
+`__builtin_popcount`/`popcountll` (genuinely SSE4.2), `__builtin_parity` and `__builtin_clrsb`. `parity` and
+`clrsb` are baseline-implementable but multi-instruction (xor-fold, and `clz(x ^ (x >> W-1)) - 1` with a zero
+case), so they are worth less than the atomics, which are both the biggest remaining group AND the one where the
+inline form is a large speed win rather than a code-size one.
+
+Encodings for whoever takes the atomics, all lock-free for sizes 1-8 on x86_64: `__atomic_load_n` at any ordering
+up to seq_cst is a plain `mov` (x86 loads are acquire); `__atomic_store_n` at seq_cst must be `xchg` (implicitly
+locked) or `mov`+`mfence`, NOT a bare `mov`; `__atomic_exchange_n` is `xchg`; `__atomic_fetch_add` is
+`lock xadd`; `__atomic_compare_exchange_n` is `lock cmpxchg` with the expected value in `%rax` and the result
+taken from ZF.
 The fallback is arch-generic, not a per-backend omission: mccgen.c constant-folds when the argument is `VT_CONST` (`fold_bit_builtin`) and otherwise does `vpush_helper_func(btok)` + `gfunc_call(1)` at mccgen.c:9404 (the clz/ctz/ffs/clrsb/popcount/parity family) and :9438 (the bswap family), calling into `runtime/lib/builtin.c`. That means ALL FIVE ARCHES pay a call for `x86 bsr/bsf/popcnt/bswap`, `arm rbit/clz/rev`, `arm64 clz/rbit/cnt/rev`, `riscv64 Zbb clz/ctz/cpop/rev8`. Suggested order — `bswap` first (unconditional single instruction everywhere, no UB corner, smallest blast radius), then `clz`/`ctz` (x86 `bsr`/`bsf` need the zero-input contract pinned down), then `ffs`/`clrsb`/`parity` (compositions of the former), and `popcount` last because it is the one case where gcc itself still calls a libgcc helper (`__popcountdi2`) without the ISA bit.
 **This is ISA-conditional and therefore blocked on, or at least coupled to, the `-march` section above** (`popcnt` needs SSE4.2/ABM, `lzcnt`/`tzcnt` need BMI1, riscv64 needs Zbb). Baseline x86_64 still gets `bsr`/`bsf`/`bswap` unconditionally, so the `-march` dependency only gates the last increment, not the whole item. Note `gcc -march=native` inlines every one of the 21, which is the real target state.
 

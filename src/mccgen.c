@@ -9896,6 +9896,10 @@ tok_next:
 				gen_bitscan(bop == BB_CTZ, bw / 8);
 				break;
 			}
+			if (bop == BB_FFS && bitscan_inline_on()) { MCC_TRACE("br\n");
+				gen_ffs(bw / 8);
+				break;
+			}
 #endif
 			vpush_helper_func(btok);
 			vrott(2);

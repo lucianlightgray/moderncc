@@ -1777,6 +1777,7 @@ ST_FUNC void gen_sqrt(void);
 #if defined(MCC_TARGET_X86_64)
 ST_FUNC void gen_bswap(int size);
 ST_FUNC void gen_bitscan(int ctz, int size);
+ST_FUNC void gen_ffs(int size);
 #endif
 ST_FUNC void gen_round(int mode);
 ST_FUNC void gen_copysign(void); /* riscv64: fsgnj.d; result=|vtop[-1]| with sign(vtop) */

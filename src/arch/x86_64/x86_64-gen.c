@@ -2213,6 +2213,29 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+/* ffs(x) = x ? ctz(x) + 1 : 0. BSF sets ZF when the source is zero and leaves
+   the destination undefined there, so the zero case needs a real select: load -1
+   into a scratch and CMOVZ it in, then increment. CMOV is baseline on x86_64.
+   The tail runs 32-bit on purpose -- the answer is at most 64, and REX.W on the
+   `mov $-1` form would make it a 10-byte movabs. */
+void gen_ffs(int size) { MCC_TRACE("enter\n");
+	int r, sc;
+	gv(MCC_RC_INT);
+	r = vtop->r & VT_VALMASK;
+	sc = get_reg(MCC_RC_INT);
+	orex(size == 8, r, r, 0x0f);
+	o(0xbc);
+	o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(r));
+	orex(0, sc, 0, 0xb8 + REG_VALUE(sc));
+	gen_le32(-1);
+	orex(0, sc, r, 0x0f);
+	o(0x44);
+	o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(sc));
+	orex(0, r, 0, 0xff);
+	o(0xc0 + REG_VALUE(r));
+	vtop->type.t = VT_INT;
+}
+
 /* clz/ctz on the 386-baseline scan instructions: BSR gives the index of the
    highest set bit, so clz is `31 - idx` == `idx ^ 31` for a 5-bit index (63 for
    a 6-bit one), and ctz is BSF outright. Both are undefined at zero, which is
