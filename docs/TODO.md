@@ -899,11 +899,12 @@ mis-staging — `MCC_AST_PROMO_ARROW`/`MCC_AST_PROMO_INCDEC` keyed to `optimize_
 at `-O2`/`-O3` — was flipped the same way (`e052542a`): nbody 0.40 -> 0.36s, spectral-norm 0.28 -> 0.26s, matmul
 2.21 -> 2.07s, output identical to gates-off. Detail in git history.
 
-**One thing NOT explained, and still open (D1a anomaly):** the verdict COUNT drops 1856 -> 1841 with the promotion
-gates on while the faithful RATIO holds. Fifteen functions stop being verified, `mcc` exits 0 with no errors, and
-this is not the SIGSEGV truncation recorded elsewhere. Find out why before treating any future count change here as
-meaningful. (`rc=$?` after a pipeline reports `grep`'s status, not `mcc`'s — the first measurement pass was misread
-because of exactly that.)
+**The D1a anomaly — the verdict COUNT dropping 1856 -> 1841 with the promotion gates on — NO LONGER REPRODUCES,
+checked 2026-07-28.** With `MCC_AST_PROMO_ARROW=0 MCC_AST_PROMO_INCDEC=0` versus the defaults, mcc's own TU emits
+**2127 verify lines both ways, the same function NAMES, and the identical verdict split** (1731 faithful / 296
+unfaithful / 51 desync / 49 bail). The check is not vacuous: the two objects DIFFER, so the gates are active. Item
+closed. (The measurement trap it came with is still worth keeping: `rc=$?` after a pipeline reports `grep`'s
+status, not `mcc`'s, and the original pass was misread because of exactly that.)
 
 ### 2. B1a — DONE 2026-07-28. All three shapes resolved.
 
