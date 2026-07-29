@@ -1332,15 +1332,28 @@ the table are misleading as a result.** Every `AST_SET_DESYNC()` that guarded a 
 verdict line names the cause (`89c7cb52` for vpush, this change for vstore). Semantics unchanged; the ratchet
 stores only the verdict WORD, so the baseline is unaffected. mcc's own TU, 51 desyncs:
 
-| count | cause |
-|---:|---|
-| 14 | vstore: store inside a **SHORT-CIRCUIT** region |
-| 13 | `ast_hook_landor_next` (unchanged) |
-| 6 | vstore: **unmodellable TYPE** on either side of the store |
-| 4 | vstore: store inside a **TERNARY** region |
-| 3 | vpush: unmodellable VALUE KIND (register-held lvalue) |
-| 2 | vpush: unmodellable TYPE |
-| 9 | assorted, ≤3 each |
+**COMPLETE — all 51 attributed to a hook + condition, no "assorted" left.** Line numbers are `mccast.c` at
+`eef88086`; re-derive with `MCC_AST_VERIFY=1 MCC_AST_TEMPLATES=0` on `src/mcc.c` rather than trusting them after
+edits.
+
+| count | hook : line | cause |
+|---:|---|---|
+| 14 | `vstore` : 3609 | store inside a **SHORT-CIRCUIT** region — reduced below, largest unexplored target |
+| 13 | `landor_next` : 2784 | the identity-constant `&&`/`||` chain's second consumption |
+| 6 | `vstore` : 3627 | **unmodellable TYPE** on either side of the store |
+| 4 | `vstore` : 3605 | store inside a **TERNARY** region — the shape the RULED-OUT approach targeted |
+| 3 | `vpush` : 2415 | unmodellable VALUE KIND (e.g. register-held lvalue) |
+| 3 | `member_end` : 3292 | qualified / bounds-checked / bad-type member access |
+| 2 | `vpush` : 2411 | unmodellable TYPE |
+| 2 | `landor_operand` : 2734 | first operand while `ast_in_call`/`ast_in_op`, or region nesting ≥16 |
+| 2 | `landor_operand` : 2768 | operand is an `AST_If` (a ternary) inside the region |
+| 1 | `landor_operand` : 2763 | const-folded operand with `c >= 0`, or no modelled value |
+| 1 | `call_begin` : 3487 | callee is neither a `Ref` nor an admitted indirect form |
+
+**The `&&`/`||` family is the single biggest cluster: 13 + 5 = 18 of 51**, spread over FOUR distinct conditions in
+two hooks — larger than any row of the old table suggested, and it does not include the 14 short-circuit STORES,
+which are a fifth condition in a third hook. Anything that fixes short-circuit modelling properly should be scoped
+against all five, not one.
 
 **The 14 short-circuit stores REDUCED 2026-07-29 — this is the largest genuinely unexplored target in the bucket.**
 
