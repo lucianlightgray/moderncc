@@ -1157,217 +1157,30 @@ real-object validation stays macOS-gated.
    (`t4`), pending a byte-mirror of the parser's void join. Runtime matches gcc `-O1/2/3` on mixed int/void
    discarded ternaries; TU gate-on compiles clean (the ICE is the reason the fuzzer/TU must run per gate);
    ast ctest 224/224. `(void)(c ? 1 : 2)` stays `empty` by design (constant folds, no If is built).
-5. **The 26 non-mov length-differs — IN PROGRESS 2026-07-29.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6,
-   `cmp` 5 — the `xorb` count is spread across `foldm_*` math folding, not one construct. Only remaining unexplained
-   group in the unfaithful bucket, which is now the LARGEST gap category by far (mcc's own TU: unfaithful 224,
-   desync 53, bail 4), so this is where the remaining fidelity is.
+5. ~~**The 26 non-mov length-differs — IN PROGRESS 2026-07-29.**~~ **DONE AND FLIPPED 2026-07-29 — the item
+   became a ten-gate recorder-fidelity campaign, all default-on at `-O2+` as of the flip commit.** Full detail
+   in git history (`df4f40bc..e9ca26c3`); the durable summary:
 
-   Sharpest thread first: **the four functions with a `call` in the delta**, the only place in the bucket where the
-   two sides may do genuinely different work rather than differ in spill traffic. `store_packed_bf` is already
-   attributed (the discarded-value ternary, item 4). The other three — `host_runmem_alloc`, `mcc_define_symbol`,
-   `mcc_preprocess` — have REPLAY emitting an extra call, which is the more interesting direction.
+   - **Instrument:** `MCC_AST_VERIFY_DIFF` gained a `full` modifier (complete delta buffers, comma-aware
+     selector) — every class below was decoded from full dumps, not the 96-byte window.
+   - **Ten classes closed, each a default-OFF gate first, validated, then flipped:** yoda comparisons
+     (`STOREVAL_CONSTL`), cast-of-lvalue gv — the single largest producer, +103 faithful (`CONVERT_GV`),
+     noreturn-call CODE_OFF (`CALL_NORETURN`), store-consumed call args (`STOREVAL_CALLSTORE`, made
+     `host_runmem_alloc` faithful), FP unary negation invisible to the recorder (`FNEG`), pending-VT_CMP
+     materialization (`CMP_MAT`), chained-store value reuse (`CHAINSTORE_LIVE`), member-lvalue chain fusion
+     (`CHAINSTORE_MEMBER` — including a caught-and-guarded wrong-code near-miss under the promoted re-emit),
+     comma-expression loop conditions in all three loop forms (`WHILE_COMMA`), and the discarded ternary
+     (`TERNARY_DISCARD` — including the discovery that `8e867f40` never committed its code fix, and the
+     `AST_If` op-5 ternary/for collision resolved by an op-7 retag).
+   - **Net effect:** mcc's own TU unfaithful 239 -> ~44; exec-corpus ratchet baseline 182 -> 159 (banked);
+     `gv`/`gv2` `MCC_TRACE_IF` value-traces are now permanent instruments; the fuzzer's `--gates` sweep covers
+     every new gate plus a combined entry.
+   - **Validation at the flip:** full ctest 7893/7893, 3-stage self-host fixpoint, differential fuzz clean,
+     non-vacuous JIT `-run` parity, qemu runtime on i386/arm32/arm64/riscv64.
 
-   **Instrument blocker FIXED 2026-07-29:** `MCC_AST_VERIFY_DIFF` now takes a `full` modifier — `full` alone (all
-   unfaithful functions) or `<name>,full` (comma-aware selector, `ast_verify_diff_match`) dumps the COMPLETE base
-   and replay buffers instead of the 96-byte window. Verified on mcc's own TU: `mcc_define_symbol,full` emits the
-   whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
-   construction). The deltas can now be decoded end to end.
-
-   **FLIPPED DEFAULT-ON 2026-07-29 — all ten recorder gates staged at `o4 || optimize >= 2` (the
-   STOREVAL_CALL precedent):** `MCC_AST_STOREVAL_CONSTL`, `MCC_AST_CONVERT_GV`, `MCC_AST_CALL_NORETURN`,
-   `MCC_AST_STOREVAL_CALLSTORE`, `MCC_AST_FNEG`, `MCC_AST_CMP_MAT`, `MCC_AST_CHAINSTORE_LIVE`,
-   `MCC_AST_CHAINSTORE_MEMBER`, `MCC_AST_WHILE_COMMA`, `MCC_AST_TERNARY_DISCARD` (the constl-in-call-arg
-   composition rides on the first and fourth). M8 sweep ON THE FLIP BUILD: **full ctest 7893/7893** (the only
-   initial failure was the fidelity ratchet DRIFTING DOWNWARD — 182 -> 159 gaps, zero new — baseline
-   regenerated to bank the 23 wins), 3-stage self-host fixpoint s3==s4 byte-identical with the new defaults,
-   25-fresh-seed differential fuzz with the full gate sweep: 0 miscompiles. Earlier same-day validation
-   already covered: JIT `-run` parity (non-vacuous, 19/19), cross-arch qemu runtime (4 arches x 9/9),
-   exec-corpus zero new gaps, per-gate runtime differentials vs gcc. Each gate still individually
-   disable-able via `MCC_AST_<X>=0`.
-
-   **CROSS-ARCH LEG FOR THE 11 RECORDER GATES — VERDICT LEVEL DONE 2026-07-29, qemu runtime leg REMAINS.**
-   Rebuilt `cmake-cross/mcc-{i386,arm64,riscv64,arm}` from the current tree (the baked `main@…` version string
-   is configure-time cosmetic — `strings` confirms the new gate names are in all four binaries). With all
-   eleven gates on, the verify-level fidelity gains are ARCH-UNIFORM: faithful counts on the four-repro probe
-   set move identically (mch 1->4, wc 2->3, td 0->2, cm 2->3) on i386, arm64, riscv64, and arm32. Gate-off
-   compiles are deterministic on every arch. Gate-on OBJECT changes fire on arm64/riscv64 for several repros
-   (replay reuse engages there) while i386 outputs stay byte-identical on this probe set.
-   **QEMU RUNTIME LEG DONE 2026-07-29 (same session), all four arches:** per the TODO fast-validation recipe
-   (`debian:bookworm-slim`, per-target host mcc from the amalgamation, link via matching cross gcc plus
-   `cmake-cross/<arch>-libmccrt.a` — needed for `__mcc_signbit`; note gcc-multilib CONFLICTS with the
-   cross-gcc packages, so i386 runs in its own container) — the nine gate-repro runners execute under qemu
-   (native for i386) with gates OFF and ALL ELEVEN ON, both matching the same-arch gcc reference:
-   **arm64 9/9, riscv64 9/9, arm32 9/9, i386 9/9.** The cross-arch flip leg is complete. Remaining before
-   flips: choose staging (-O level) per gate and run the final combined M8 sweep on the flip commit itself.
-
-   **SELF-HOST FIXPOINT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29.** 3-stage gate with ALL ELEVEN gates
-   in the environment for every stage (cmake-debug/mcc -> mcc2 -> mcc3 -> mcc4, amalgamation recipe, no
-   MCC_EMBED_* defines): **s3 == s4 byte-identical**; gates-off control fixpoint also holds; non-vacuity
-   confirmed (gates-on mcc2 differs from gates-off mcc2, so the gates were live through the whole tower); the
-   stage-4 gates-on-built compiler compiles and runs the member-chain repro correctly. Per the recipe memory,
-   s2 != s3 is expected (differently-configured stage-1) — the gating invariant is s3 == s4.
-
-   **JIT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29 (P0 standing rule satisfied for the flip
-   criteria).** `-O2 -run` parity `MCC_JIT=0` == `MCC_JIT=1` == widened admission
-   (`MCC_JIT_PURITY_NOESCAPE/LAZY/SEARCH`) with ALL ELEVEN gates on, over the `tests/jit/parity` corpus + the
-   nine gate-repro programs + six fuzz-generated programs: **19/19 identical outputs with 10 real
-   `mccjit-lazy[install]` variants** (non-vacuity asserted per the run-parity.sh discipline — the default gate
-   alone installs ~nothing; one KGC `swapped` install also observed on the CMP_MAT repro). Full `jit` ctest
-   suite 58/58 green. x86_64-linux only; the cross triples re-run their `run-parity-*` cells at flip time.
-
-   **NINTH CLASS CLOSED 2026-07-29 — comma-expression while conditions.** `while (next(), tok != TOK_EOF)`
-   (`pp_error` and the loop-head jump-shift residuals): the comma's side-effect operand records as a statement
-   BEFORE the loop node, so replay ran it once and its back-edge skipped it — semantically a once-instead-of-
-   per-iteration call, caught as unfaithful. Landed `MCC_AST_WHILE_COMMA` (default OFF): a new
-   `ast_hook_while_cond_start` (at the `d = gind()` loop head) redirects recording into a DETACHED prefix
-   BasicBlock; `ast_hook_while_begin` attaches it as the loop node's third child only when non-empty, and the
-   op-2 loop replay emits it between `gind()` and the condition each iteration. Empty-prefix loops keep the
-   exact 2-child shape (zero change for normal loops even gate-on). DO-WHILE covered the same way 2026-07-29
-   under the same env (`ast_hook_do_body_end` redirects into the detached prefix, `do_cond` attaches it as the
-   op-4 node's child 2, replay emits it between `gsym(bb)` and the condition): `dcomma` flips faithful, runtime
-   matches gcc `-O1/2/3`, TU 49 -> 48. FOR comma conditions covered too (op 3: `for_begin` redirects when
-   has_cond, `for_cond` stashes the prefix, `for_body_begin` attaches it as child 3 after the body so the
-   [cond, incr, body] layout is undisturbed; op-3 replay emits it at the loop head; `fcomma` flips faithful,
-   runtime matches gcc, TU 48 -> 47; op-5 condless loops have no condition to fix).
-   Validated: gate-off byte-identical (3-way md5); `wcomma` repro flips faithful;
-   runtime matches gcc `-O1/2/3` (per-iteration call count observable via a feed array); TU all-nine-gates:
-   unfaithful 52 -> 49 (zero regressions); ast ctest 224/224 + fuzz matrix 5/5. `WHILE_COMMA` added to the
-   fuzzer gate table and the `RECORDER8` combo (now nine gates). Session: 239 -> 49. AOT-only (P0 rule).
-
-   **FUZZ COVERAGE FOR THE 8 RECORDER GATES 2026-07-29:** the differential fuzzer's gate table now includes
-   all eight new gates individually plus a `RECORDER8` all-on combo entry, so `--gates` runs and the
-   `fuzz/matrix-*` ctest shards stress them from now on. Validated: full `fuzz/` ctest suite green (7/7) and a
-   40-fresh-seed `--gates` sweep (seeds 500..539) vs gcc-15+clang-22: 0 miscompiles, 0 mcc-buildfails. This is
-   the runtime-differential leg the EIGHTH-class lesson demanded.
-
-   **EIGHTH CLASS CLOSED 2026-07-29 — member-lvalue chained stores (the mov-only bulk), WITH a real
-   wrong-code near-miss caught and fixed.** `s->a = s->b = 0`: baseline hoists both member addresses before one
-   value materialization; replay re-evaluated per statement. Landed `MCC_AST_CHAINSTORE_MEMBER` (default OFF):
-   finalize pairs adjacent chained member Stores (pure lvalues, non-promoted targets) and replay emits them
-   FUSED at the inner statement (outer lval, inner lval, value, vstore x2; outer tagged
-   `AST_FB_STORE_CHAIN_SKIP`). The outer's value copy is often a REGISTER-FINALIZED leaf (`the value is in the
-   register the inner vstore left it in`), so identity accepts that form in place of `ast_struct_eq`
-   (`AST_Ref` included). **The near-miss:** when the chain value is consumed downstream (`r = s->a = s->b = 5`),
-   the consumer's recorded copy hard-codes the baseline scratch register; the fused order changes scratch
-   assignment under the PROMOTED re-emit, so the consumer read a stale register — verify-faithful but
-   wrong at runtime (`-O2` differential caught it; gate-off unaffected). Guard: reject pairs whose outer is
-   VALUE_LIVE, whose marker survives with a parent anywhere in the arena (expression/call consumers), or whose
-   following Store's value is a register-resident copy. Validated: gate-off byte-identical; repro incl.
-   `muse`/`expr_use`/`call_use` consumers matches gcc `-O1/2/3`; TU all-eight-gates: unfaithful 73 -> 52
-   (+21, zero regressions; 3+-chains stay pairwise-limited); ast ctest 224/224. Session: 239 -> 52.
-   AOT-only (P0 rule). LESSON for the flip criteria: verify-faithfulness alone does NOT cover the promoted
-   re-emit path — every chainstore-family flip needs the runtime differential leg, not just byte-verify.
-
-   **COMPOSITION OPENED 2026-07-29 — `CONST + (x = f())` inside a call argument.** `search_cached_include`'s
-   remaining extra call was `mcc_malloc(sizeof(CachedInclude) + (len = strlen(filename)))` (`mccpp.c:1752`) —
-   the CONSTL step composed with the STOREVAL_CALL/CALLSTORE steps was explicitly rejected in the walk. The
-   vstack dance composes cleanly ([lval, callee, LIVE] -> const push -> marker vswap -> gen_op), so the
-   `constl ||` rejection is dropped (combo active only when both gates are on; the reverse nesting
-   `CONST + f(livearg)` stays rejected — constl requires `call_up == AST_NONE`). Validated: gate-off
-   byte-identical; store/plain/multi-arg repros flip faithful; runtime matches gcc `-O1/2/3`;
-   `search_cached_include`'s delta shrinks 577-vs-586 to 577-vs-577 (extra call GONE; residuals are a
-   member-lvalue chain `e->a = e->b = 0` — outer lvalue is a member deref, correctly outside
-   CHAINSTORE_LIVE's leaf guard, needs cross-statement lval ordering — and a loop-head jump-target shift);
-   TU verdicts unchanged (73, zero regressions — these functions carry multiple deltas); ast ctest 224/224.
-
-   **SEVENTH CLASS CLOSED 2026-07-29 — chained assignment re-materialization (the xor-only class + mixed).**
-   `a = b = 0` (and `ia = ib = g()`): the parser materializes the value ONCE and chains two vstores; replay
-   emitted two independent stores, re-materializing per store — the exact residual the CHAINSTORE
-   well-formedness note called out as NOT fixed by the tree copy. Landed `MCC_AST_CHAINSTORE_LIVE` (default
-   OFF): `ast_finalize_chainstores` pairs adjacent sibling Stores where the outer carries the chained `1u` tag,
-   the outer lvalue is a no-code leaf, and the value children are `ast_struct_eq` (the copy guarantees this) —
-   inner gets `AST_FB_STORE_VALUE_LIVE`, outer gets `AST_FB_STORE_CHAIN_REUSE`; replay of a reuse store pushes
-   the lvalue, `vswap`s the live value on top, and `vstore`s — no re-evaluation (promoted outer targets go
-   through `ast_promo_write` on the live value instead). Chains of 3+ compose (each middle store is both LIVE
-   and REUSE). OPASSIGN chains are excluded. Validated: gate-off byte-identical; `ia = ib = g()` flips faithful
-   (single call); runtime matches gcc `-O1/2/3`; TU all-seven-gates: unfaithful 84 -> 73 (+11, zero
-   regressions); ast ctest 224/224. Session: 239 -> 73. AOT-only (P0 rule).
-
-   **SIXTH CLASS CLOSED 2026-07-29 — pending-VT_CMP materialization (the movzbl+sete class).** Parse-side
-   pushes go through `vsetc`, which calls `vcheck_cmp()` — materializing a pending flags-resident comparison
-   (`sete`+`movzbl`) BEFORE the next value lands on the vstack. Replay's leaf push uses raw `vpushv`, skipping
-   that, so a second comparison's flag-clobbering `and`/`cmp` ran first and replay emitted both `sete`s at the
-   end reading the wrong flags. Landed `MCC_AST_CMP_MAT` (default OFF): the replay Literal/Ref push calls
-   `vcheck_cmp()` first (it already handles `ast_replaying` suppression internally). Validated: gate-off
-   byte-identical; `((a&15)==0) + ((b&15)==0)` repro flips faithful; runtime matches gcc `-O1/2/3`; TU
-   all-six-gates: unfaithful 96 -> 84 (+12, zero regressions); ast ctest 224/224. Session: 239 -> 84.
-   AOT-only (P0 rule).
-
-   **FLIP-PREP SWEEP 2026-07-29:** all five new gates ON over the full exec corpus (273 files, recursive):
-   non-faithful entries 229 -> 211, ZERO new gaps (comm -13 empty). Combined with the TU numbers this is the
-   local half of the flip evidence; still owed for the flips: cross-arch (i386/arm32/riscv64/arm64), self-host
-   fixpoint, differential fuzz, and the JIT leg (P0 standing rule).
-
-   **FIFTH CLASS CLOSED 2026-07-29 — FP unary negation was INVISIBLE to the recorder (the whole movq+xorb
-   class, 17 functions, all `foldm_*`/`ast_fc_*`).** On x86_64/i386/arm64 `gen_negf` is `#define`d to the arch
-   `gen_opf`, so the generic `gen_negf`'s `ast_hook_bail` never runs, and `unary()` calls `gen_opif(TOK_NEG)`
-   with NO recorder hook — the model's vstack stays consistent (1 in, 1 out) so there is no desync either: the
-   negation silently vanishes from the tree and replay omits the store/`xorb $0x80`/reload sign-flip entirely.
-   Landed `MCC_AST_FNEG` (default OFF): `ast_hook_fneg_begin/end` bracket the `gen_opif(TOK_NEG)` call (gate-off
-   is a complete no-op; gate-on records `AST_Unary`/`AST_OP_FNEG` and suppresses interior hooks via `ast_in_op`),
-   replay dispatches `AST_OP_FNEG` -> `gen_opif(TOK_NEG)`. riscv64 stays safe: the generic `gen_negf` still
-   bails before replay can run. Validated: gate-off byte-identical; repro (double/float/expression/stored/const)
-   flips faithful; runtime matches gcc `-O1/2/3` incl. `-(-0.0)` signbit; TU all-five-gates: unfaithful
-   113 -> 96 (+17, zero regressions); ast ctest 224/224. Session total: unfaithful 239 -> 96. AOT-only (P0 rule).
-
-   **FOURTH CLASS CLOSED 2026-07-29 — `x = f(y += g())`, and `host_runmem_alloc` is now FAITHFUL.** The
-   StoreVal-as-call-arg walk required the Invoke's parent to be the BasicBlock, rejecting a call whose result is
-   itself stored (`ptr = mcc_malloc(size += host_pagesize())`, `mcchost.c:1557`) — replay then re-emitted the
-   compound RHS including the extra call (the +11 B tail). Landed `MCC_AST_STOREVAL_CALLSTORE` (default OFF):
-   the Invoke step also admits parent == statement-level Store whose lvalue is a no-code leaf
-   (`ast_storeval_lval_leaf`: local or global lvalue), tags `AST_FB_CALL_STOREVAL_STORE`, and replay uses
-   `vrotb(3)` instead of `vswap` (the pushed lvalue sits between the live value and the callee: [LIVE, lval,
-   callee] -> [lval, callee, LIVE], no code either way). Validated: gate-off byte-identical; repro (local +
-   global lvalue, multi-arg) flips faithful; runtime matches gcc on the sequenced shapes (the unsequenced
-   `use(size += g(), size)` differs from gcc in ARG ORDER only — unspecified behavior, gate-on == gate-off);
-   TU all-four-gates: unfaithful 114 -> 113, `host_runmem_alloc` faithful, zero regressions; ast ctest 224/224.
-   AOT-only validation (P0 rule).
-
-   **POST-GATES RE-CENSUS + THIRD CLASS CLOSED 2026-07-29.** With CONSTL+CONVERT_GV on, the 135 remaining
-   unfaithful deltas re-categorize as: 35 mov-only (register/spill order), **20 jmp-only**, 17 movq+xorb (FP),
-   8 movzbl+sete (setcc materialization), 8 call-delta, tail of mixed small classes — the old
-   `xorb 16/movabs 6/add 6/cmp 5` census is superseded. The jmp-only class decoded to ONE cause: a NORETURN call
-   (`mcc_error` family — all 20 functions are diagnostics-heavy) suppresses the following structural `jmp` in
-   baseline via `CODE_OFF()` (`unary()` post-call), which replay did not model, so replay emitted a dead 5-byte
-   `jmp` per site. Landed `MCC_AST_CALL_NORETURN` (default OFF): the unary noreturn branch calls
-   `ast_hook_call_noreturn` (tags the pending Invoke `AST_FB_CALL_NORETURN`), and replay `CODE_OFF()`s after
-   `gfunc_call` when tagged — the existing `gsym`/`gind` CODE_ON restore makes it self-healing at the next label.
-   Validated: gate-off byte-identical (stored objects match across binaries); repro `if (x<0) die(); else ...`
-   flips faithful; runtime matches gcc `-O1/2/3` incl. the noreturn exit path; **TU with all three new gates:
-   unfaithful 136 -> 114 (+22 faithful, ZERO regressions)**; ast ctest 224/224. Session total: unfaithful
-   239 -> 114. Remaining large classes: 35 mov-only, 17 movq+xorb, 8 movzbl+sete, 8 call-delta (incl.
-   `x = f(y += g())` — the StoreVal-as-call-arg walk rejects an Invoke whose parent is a Store, `host_runmem_alloc`'s
-   residual). JIT status of all three gates: AOT-only validation (P0 standing rule — part of flip criteria).
-
-   **SECOND DELTA DECODED 2026-07-29 — `host_runmem_alloc`, and it unmasked the BIGGEST unfaithfulness producer
-   in the whole bucket: the CAST-OF-LVALUE gv.** The full dump showed replay evaluating `(char *)ptr + size`
-   (`mcchost.c:1550`) with the loads in swapped order. Reduction: `q = mm((char *)p + size, size)` is unfaithful
-   with NO preceding store (`one_call`), and dropping the cast makes it faithful — the discriminator is the cast,
-   not pointer arith or StoreVal. New `gv`/`gv2` `MCC_TRACE_IF` value-traces (permanent instruments, joining
-   LEAF/RV/CVT/FIN) pinned it: `unary()` (mccgen.c, after `gen_cast`) gv's a still-lvalue cast result — the
-   cast-yields-rvalue materialization — OUTSIDE gen_cast, so the recorded `AST_Convert` never captures it and
-   replay leaves the operand unloaded; every downstream load order then diverges. Landed `MCC_AST_CONVERT_GV`
-   (default OFF): the unary site now calls `gv_cast_rvalue()` (ST_FUNC mirror of the exact condition), tags the
-   Convert node `AST_FB_CONVERT_GV` via `ast_hook_cast_gv`, and replay calls the same helper after `gen_cast`
-   when tagged. Validated: gate-off byte-identical; gate-on runtime matches gcc `-O1/2/3` (address-independent
-   harness); **mcc's own TU: unfaithful 239 -> 136, faithful +103, ZERO regressions** (per-function diff);
-   ast ctest 224/224. `host_runmem_alloc` itself still unfaithful (residual +11 B tail delta, separate cause).
-   JIT status: AOT-only validation so far (P0 standing rule — part of the flip criteria).
-
-   **FIRST DELTA DECODED AND CLOSED 2026-07-29 — `mcc_define_symbol`, and it is a new SHAPE, not a call bug:**
-   the full dump showed replay re-emitting the entire `strchr` call+arg sequence before the `cmp`, and reduction
-   found the discriminator is the YODA COMPARISON, not the call: `0 == (eq = f())` is unfaithful while
-   `(eq = f()) == 0`, `!(eq = f())` and the split form are all faithful — and the non-call `0 == (eq = p + 1)`
-   is unfaithful too. Cause: `ast_finalize_storevals` requires the StoreVal marker to be the LEFTMOST leaf of the
-   following statement, and a constant left operand (which emits no code) fails that test, so replay re-evaluates
-   the RHS. Landed `MCC_AST_STOREVAL_CONSTL` (default OFF): admits a StoreVal that is child 1 of a 2-child Binary
-   whose child 0 is a no-code constant literal (looking through `AST_Convert` chains — `NULL` records as
-   Convert(Literal) and was the second reduction step), tags the store `AST_FB_STOREVAL_CONST_LEFT`, and replay
-   `vswap()`s at the marker so the vstack mirrors codegen's `[const, value]` order exactly. Validated: gate-off
-   byte-identical (repro + TU objects, all new paths behind the gate); gate-on flips all repro shapes faithful,
-   runtime output matches gcc at `-O1/2/3`, mcc's own TU goes unfaithful 239 -> 238 / faithful 1580 -> 1581
-   (`mcc_define_symbol` the mover, per-function diff clean), ast ctest suite 224/224. JIT status: AOT-only
-   validation so far (P0 standing rule — part of the flip criteria). Remaining in this item: `host_runmem_alloc`
+   **Remaining fidelity residuals (the new tail, ~44):** mov-only register-order deltas (the largest),
+   void-arm discarded-ternary byte-mirror, 3+-member chains (pairwise limit), `store_packed_bf`'s remaining
+   delta, A1a `nocode_wanted`. These are follow-on work, not part of the closed item.
    and `mcc_preprocess` extra-call deltas, then the `xorb`/`movabs`/`add`/`cmp` length-differ population.
 6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
 7. **Prune this file** — see the canonical entry under "Alongside"; not repeated here.
