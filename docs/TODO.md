@@ -1154,6 +1154,12 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **FUZZ COVERAGE FOR THE 8 RECORDER GATES 2026-07-29:** the differential fuzzer's gate table now includes
+   all eight new gates individually plus a `RECORDER8` all-on combo entry, so `--gates` runs and the
+   `fuzz/matrix-*` ctest shards stress them from now on. Validated: full `fuzz/` ctest suite green (7/7) and a
+   40-fresh-seed `--gates` sweep (seeds 500..539) vs gcc-15+clang-22: 0 miscompiles, 0 mcc-buildfails. This is
+   the runtime-differential leg the EIGHTH-class lesson demanded.
+
    **EIGHTH CLASS CLOSED 2026-07-29 — member-lvalue chained stores (the mov-only bulk), WITH a real
    wrong-code near-miss caught and fixed.** `s->a = s->b = 0`: baseline hoists both member addresses before one
    value materialization; replay re-evaluated per statement. Landed `MCC_AST_CHAINSTORE_MEMBER` (default OFF):
