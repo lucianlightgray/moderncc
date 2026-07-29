@@ -2399,9 +2399,20 @@ void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vto
 			(r & VT_VALMASK) == VT_LLOCAL && (r & VT_LVAL) && !(r & VT_SYM);
 	int agg_lval = (tt & VT_BTYPE) == VT_STRUCT && !(tt & VT_BITFIELD) &&
 								 (is_local || is_sym || is_llocal_lval);
-	if ((ast_bad_type(tt) && !agg_lval) ||
-			(!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval))) { MCC_TRACE("br\n");
-		AST_SET_DESYNC();
+	/* Split into two, deliberately, so the two causes get DIFFERENT desync line
+	   numbers. They are different in kind -- an unmodellable TYPE versus an
+	   unmodellable VALUE KIND -- and while they shared one AST_SET_DESYNC the
+	   site reported a single number, which is what made it look like one problem
+	   with "one producer to find". The verdict is the instrument; if it cannot
+	   tell two causes apart, every reader re-derives the split by hand.
+	   (The ratchet records only the verdict WORD, not the line, so the
+	   checked-in gap set is unaffected by the renumbering.) */
+	if (ast_bad_type(tt) && !agg_lval) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* unmodellable TYPE: long double / __int128 / _Complex / bitfield */
+		return;
+	}
+	if (!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval)) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* unmodellable VALUE KIND: e.g. a register-held call result */
 		return;
 	}
 	AstLocal n = ast_node(ast_cur, is_const ? AST_Literal : AST_Ref);

@@ -1082,7 +1082,23 @@ real-object validation stays macOS-gated.
        int ld_local_only(int c) { long double x = c; return (int)(x*2); }  /* desync */
        double d_ctrl(double a) { return a + 1.0; }                /* faithful — double is fine */
 
-   So the 5-function residual is fully attributed: 2 to the call-lvalue compound assignment, 3 to `long double`.
+   **The site now REPORTS the split itself, and doing so corrected the hand-attribution above.** The two causes
+   shared one `AST_SET_DESYNC()` and therefore one line number, which is exactly why the site read as a single
+   problem with "one producer to find". They are now separate calls with separate lines, and mcc's own TU splits:
+
+   | cause | count | functions |
+   |---|---:|---|
+   | unmodellable **TYPE** (`ast_bad_type`: long double / `__int128` / `_Complex` / bitfield) | 2 | `parse_number`, `gen_opif` |
+   | unmodellable **VALUE KIND** (not const/sym/local — e.g. a register-held call result) | 3 | `combine_types`, `set_symbol`, `layout_sections` |
+
+   So the split is 2 / 3, not the 3 / 2 derived by hand above: **`combine_types` is a VALUE-KIND case, not a
+   long-double one** — it merely mentions `long double`, which is what made grepping for the construct misattribute
+   it. Prefer the line number over source inspection here.
+
+   **Both causes are STRUCTURAL, not bugs to fix cheaply.** The normal path does `ast_vs[ast_vn++] = n`; both bad
+   paths return WITHOUT it while codegen has already pushed, so the model is genuinely one value behind and
+   `desync` is the correct verdict rather than a misclassification. Closing either means teaching the recorder to
+   model the thing (a long double value; a register-held lvalue), not relabelling it.
 
    **A THIRD finding, about the METRIC rather than this site — FIXED 2026-07-29, and the scare in the first draft of
    this entry was overstated.** A function the recorder never ATTEMPTED emitted NO verdict line at all: not `bail`,
