@@ -3401,6 +3401,20 @@ The acceptance bar for each item below is the M8 bar plus: gate-off byte-identit
 Keep the mccrt `alloca` stub regardless: it is the fallback for PE/bcheck and it keeps older objects linkable.
 
 ### Bit builtins — `clz`/`ctz`/`ffs`/`clrsb`/`popcount`/`parity`/`bswap`
+
+**`bswap` is DONE 2026-07-28 on x86_64, behind `MCC_BSWAP_INLINE` (default OFF).** It is the one member of this
+family that needs NO `-march` work: `bswap` is 486-baseline and the 16-bit form is `rol $8`, so there is no ISA
+floor to raise. `gen_bswap(size)` (`x86_64-gen.c`) emits `rol $0x8,%ax` for 2 bytes and `0f c8+r` — with REX.W for
+8 — for 4 and 8, and `unary()` calls it instead of `vpush_helper_func` when the gate is on. The probe criterion
+this section states is met: the three `__builtin_bswap{16,32,64}` UND symbols disappear from the object, leaving
+only `printf`.
+
+Validated: gate-off 789/789 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; a new corpus cell
+(`tests/exec/codegen/bswap_inline.c`) checks the fixed edges (0, all-ones, `0x00ff` at each width) plus 200
+xorshift values per width AND asserts the round trip is the identity, matching gcc at `-O0`/`-O1`/`-O2`/`-O3` with
+the gate both off and on; full ctest 7394/7394 both ways.
+
+The rest of the family stays blocked on `-march` as described below.
 The fallback is arch-generic, not a per-backend omission: mccgen.c constant-folds when the argument is `VT_CONST` (`fold_bit_builtin`) and otherwise does `vpush_helper_func(btok)` + `gfunc_call(1)` at mccgen.c:9404 (the clz/ctz/ffs/clrsb/popcount/parity family) and :9438 (the bswap family), calling into `runtime/lib/builtin.c`. That means ALL FIVE ARCHES pay a call for `x86 bsr/bsf/popcnt/bswap`, `arm rbit/clz/rev`, `arm64 clz/rbit/cnt/rev`, `riscv64 Zbb clz/ctz/cpop/rev8`. Suggested order — `bswap` first (unconditional single instruction everywhere, no UB corner, smallest blast radius), then `clz`/`ctz` (x86 `bsr`/`bsf` need the zero-input contract pinned down), then `ffs`/`clrsb`/`parity` (compositions of the former), and `popcount` last because it is the one case where gcc itself still calls a libgcc helper (`__popcountdi2`) without the ISA bit.
 **This is ISA-conditional and therefore blocked on, or at least coupled to, the `-march` section above** (`popcnt` needs SSE4.2/ABM, `lzcnt`/`tzcnt` need BMI1, riscv64 needs Zbb). Baseline x86_64 still gets `bsr`/`bsf`/`bswap` unconditionally, so the `-march` dependency only gates the last increment, not the whole item. Note `gcc -march=native` inlines every one of the 21, which is the real target state.
 

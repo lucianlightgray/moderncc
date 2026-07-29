@@ -2213,6 +2213,21 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+void gen_bswap(int size) { MCC_TRACE("enter\n");
+	int r;
+	gv(MCC_RC_INT);
+	r = vtop->r & VT_VALMASK;
+	if (size == 2) { MCC_TRACE("br\n");
+		o(0x66);
+		orex(0, r, 0, 0xc1);
+		o(0xc0 + REG_VALUE(r));
+		o(8);
+		return;
+	}
+	orex(size == 8, r, 0, 0x0f);
+	o(0xc8 + REG_VALUE(r));
+}
+
 /* sqrt(x): single hardware sqrtsd/sqrtss, computed in place (src==dst). Only
    emitted when the caller proved x >= 0 (so the IEEE result can never be a NaN
    that would set errno=EDOM), matching gcc's VRP-driven bare-sqrtsd elision.

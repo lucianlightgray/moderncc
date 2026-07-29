@@ -447,6 +447,17 @@ enum {
 	BB_PARITY
 };
 
+#if defined(MCC_TARGET_X86_64)
+static int bswap_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_BSWAP_INLINE");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on;
+}
+#endif
+
 static int fold_bit_builtin(int op, int W, int64_t s) { MCC_TRACE("enter\n");
 	uint64_t u = (uint64_t)s;
 	int i, n = 0;
@@ -9905,6 +9916,15 @@ tok_next:
 			vtop->c.i = r2;
 			vtop->r = VT_CONST;
 		} else { MCC_TRACE("br\n");
+#if defined(MCC_TARGET_X86_64)
+			if (bswap_inline_on()) { MCC_TRACE("br\n");
+				gen_bswap(btok == TOK_builtin_bswap16 ? 2
+									: btok == TOK_builtin_bswap32 ? 4
+																							 : 8);
+				vtop->type = at;
+				break;
+			}
+#endif
 			vpush_helper_func(btok);
 			vrott(2);
 			gfunc_call(1);

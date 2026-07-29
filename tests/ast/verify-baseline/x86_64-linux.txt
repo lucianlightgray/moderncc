@@ -11,6 +11,10 @@ arch/arm64_encoding.c	test_ldr_str	unfaithful
 bounds/bound_setjmp.c	stack	unfaithful
 bounds/bound_signal.c	do_fork	bail
 bounds/bound_signal.c	main	unfaithful
+codegen/bswap_inline.c	b16	desync
+codegen/bswap_inline.c	b32	desync
+codegen/bswap_inline.c	b64	desync
+codegen/bswap_inline.c	main	unfaithful
 codegen/codeopt.c	bla	bail
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/dead_code.c	kb_wait_1	desync
