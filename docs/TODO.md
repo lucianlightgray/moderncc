@@ -1064,8 +1064,21 @@ So this is an interaction between two stateful regions, not a missing decrement:
 A fix has to distinguish whose pop it is. That is design work, which is why A1a is characterised here rather than
 fixed.
 
-**Group B (31) — still unexplained, and now known NOT to be the `vpop` mechanism.** Larger, and uncontaminated by
-short-circuit interactions, so it is the one to bisect next.
+**Group B (31) — partially narrowed 2026-07-28, with a caveat that must be resolved first.**
+
+Ranking the three hook events before each Group-B failure: `ast_hook_call_end` immediately precedes **13**,
+consecutive pushes account for **9**, and a prior guard-decline for **8**. Splitting instead by the last `POPSKIP`
+condition within 6 lines gives 18 `incall=0`, 10 `incall=1`, 4 `inop=1` — and **all 18 of the `incall=0` subgroup
+show two consecutive `vpop` early-returns immediately before the failing push**, the same double-pop shape as
+Group A.
+
+**CAVEAT — do not build on that 18 until it is checked.** At `inop=0 incall=0` the only remaining skip causes are
+`!ast_capture` and `ast_desync`, and NEITHER is consistent with the subsequent push reaching the SYNC test at all:
+`ast_hook_vpush` early-returns on the same two conditions *before* it computes `rel`. So either the skip and the
+push are in different functions — a 6-line window over a 1.4M-line trace can straddle a boundary — or one of those
+flags changes in between. **Re-run the correlation with function boundaries respected** (bracket per
+`ast_func_begin`/`ast_func_end`) before treating the 18 as a real subgroup. The `call_end`-precedes-13 split above
+was computed the same way and carries the same caveat.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
