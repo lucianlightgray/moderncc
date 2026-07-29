@@ -198,6 +198,42 @@ accepts `MCC_TRACE_IF("enter ...")` as a valid function opener alongside `MCC_TR
 
 ## `unfaithful` is now the LARGEST bucket and was never broken down — first characterisation 2026-07-28
 
+**RE-MEASURED 2026-07-28 after the session's five fidelity fixes — 294 diffs, and the shape of the bucket is not
+what a modelling fix can reach.** `MCC_AST_VERIFY_DIFF` over mcc's own TU at `-O2`:
+
+| split | count |
+|---|---|
+| replay and baseline are the SAME LENGTH | 152 |
+| — of those, the diff window is a strict PERMUTATION of the same bytes | **48** |
+| replay LONGER than baseline | 67 |
+| replay SHORTER than baseline | 75 |
+
+Sampled by hand, the same-length cases are evaluation-ORDER and REGISTER-CHOICE differences, not missing model
+detail. `elfsym` does the same `48 8b 00` load three instructions earlier in the baseline than in the replay;
+`value64` computes the identical mask-and-subtract through `%rdx`/`%rcx` where the baseline used `%rcx`/`%rdx`;
+`host_runmem_free` reorders a `31 c0` zeroing. All three are 197/412/279 bytes on BOTH sides.
+
+**The one fully reduced case is the opposite of a defect: the replay is BETTER.** `(int)(long)h` on a pointer
+PARAMETER — `host_file_unlock`'s `int fd = (int)(intptr_t)h - 1` — has the baseline emit a 64-bit load plus the
+`shl $32; shr $32` truncation pair, while the replay emits a plain 32-bit load, 9 bytes shorter and semantically
+identical:
+
+    base: 48 8b 45 f8  48 c1 e0 20  48 c1 e8 20  83 e8 01  89 45 f4
+    repl: 8b 45 f8                               83 e8 01  89 45 f4
+
+Minimal repro: `int f(void *h) { int fd = (int)(long)h - 1; return use(fd); }` is unfaithful, while the same shape
+from a `long` parameter (`(int)x`) is faithful — the replay's trace shows both `AST_Convert` nodes present and
+applied in order (`CVT t=0x5 -> 0x804`, then `0x804 -> 0x3`), so the model is complete; the two sides simply take
+different `gen_cast` paths from the same input. That makes it a CODEGEN lead rather than a recorder one: the parser
+is emitting a register truncation where a narrower load would do.
+
+Consequence for anyone planning work here: the `unfaithful` bucket is mostly byte-identity being stricter than it
+needs to be, so it will NOT move the way the `desync` bucket did (251 -> 51 with five targeted fixes). Closing a
+meaningful part of it needs either a semantic-equivalence check to replace byte equality — which is exactly the
+guard that has caught every miscompile in this file, so it is not a trade to make casually — or a codegen change
+that makes the PARSER emit what the replay already emits.
+
+
 At `-O2` on mcc's own TU the split is **1438 faithful / 207 unfaithful / 206 desync** of 1851. Every entry in the
 desync table below has a named hook and a count; `unfaithful` had neither, despite being bigger than any single
 desync site. It is now instrumented permanently: the faithfulness comparison emits
