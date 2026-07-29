@@ -1327,6 +1327,28 @@ unaccounted-pop fixes the rest. What is left, largest first:
 | 4 | vpush SYNC | the residual `switch`-path pop, all four already reported as `bail` |
 | 10 | assorted | one or two each |
 
+**RE-MEASURED PER CAUSE 2026-07-29 — the sites above each collapsed several causes onto one line, and two rows of
+the table are misleading as a result.** Every `AST_SET_DESYNC()` that guarded a disjunction has been split so the
+verdict line names the cause (`89c7cb52` for vpush, this change for vstore). Semantics unchanged; the ratchet
+stores only the verdict WORD, so the baseline is unaffected. mcc's own TU, 51 desyncs:
+
+| count | cause |
+|---:|---|
+| 14 | vstore: store inside a **SHORT-CIRCUIT** region |
+| 13 | `ast_hook_landor_next` (unchanged) |
+| 6 | vstore: **unmodellable TYPE** on either side of the store |
+| 4 | vstore: store inside a **TERNARY** region |
+| 3 | vpush: unmodellable VALUE KIND (register-held lvalue) |
+| 2 | vpush: unmodellable TYPE |
+| 9 | assorted, ≤3 each |
+
+**Two corrections that change where effort should go:**
+- The "18 ternary or short-circuit" row is **14 short-circuit / 4 ternary**. The approach RULED OUT below was
+  reduced on the TERNARY shape (`c ? (y = 1) : (y = 2)`), which is only 4 of the 18 — the dominant case was never
+  the one being tried.
+- The "6 … bad type / `ast_vn` mismatch" row is **100% bad type; the depth-mismatch condition fires ZERO times**.
+  There is no model-vs-vstack drift at that site at all, so nothing there needs a bookkeeping fix.
+
 **`MCC_AST_INDIRECT_CALL` — LANDED and flipped default-on 2026-07-28.** The site that held 38 of the desyncs was
 NOT the `&&`/`||`-argument check next to it (that one is innocent — `g(a && b)` is faithful); it was
 `ast_kind(ast_vs[ast_vn - need]) != AST_Ref`, i.e. **the CALLEE not being a plain Ref**. Reduced to four shapes:

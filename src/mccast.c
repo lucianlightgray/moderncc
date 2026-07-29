@@ -3596,8 +3596,17 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 	ast_in_op++;
 	if (!model)
 		{ MCC_TRACE("br\n"); return; }
-	if (ast_tern_top > 0 || ast_lor_top > 0) { MCC_TRACE("br\n");
-		AST_SET_DESYNC();
+	/* Split per cause so the verdict line says WHICH region, and below so it says
+	   which of the three depth/type conditions fired. Same conditions, same
+	   short-circuit order -- only the reported line differs. See the vpush site:
+	   collapsing distinct causes onto one line is what makes a bucket look like
+	   one problem and forces every reader to re-derive the split by hand. */
+	if (ast_tern_top > 0) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* store inside a TERNARY region */
+		return;
+	}
+	if (ast_lor_top > 0) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* store inside a SHORT-CIRCUIT region */
 		return;
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -3605,10 +3614,17 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 									(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;
 	int bf_store = (vtop[-1].type.t & VT_BITFIELD) &&
 								 (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_type(vtop->type.t);
-	if (ast_vn != rel || ast_vn < 2 ||
-			((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
-			 !agg_store && !bf_store)) { MCC_TRACE("br\n");
-		AST_SET_DESYNC();
+	if (ast_vn != rel) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* model depth does not match the codegen vstack */
+		return;
+	}
+	if (ast_vn < 2) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* fewer than the two values a store needs */
+		return;
+	}
+	if ((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
+			!agg_store && !bf_store) { MCC_TRACE("br\n");
+		AST_SET_DESYNC(); /* unmodellable TYPE on either side of the store */
 		return;
 	}
 	AstLocal lhs = ast_vs[ast_vn - 2];
