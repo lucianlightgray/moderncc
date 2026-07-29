@@ -812,7 +812,11 @@ Where that leaves the two halves:
     This is the same assignment-as-value family as the chained-store gap above, and any fix would be the same
     model-shape change.
 
-    **`store_packed_bf` — RESOLVED 2026-07-28. A ternary whose VALUE IS DISCARDED records NOTHING.** Its source
+    **`store_packed_bf` — RESOLVED 2026-07-28, RE-CONFIRMED 2026-07-29, and this is the ONLY live copy.** Two other
+    entries claimed it was "unattributed" because `8e867f40` had supposedly closed this hole; it had not, and both
+    were struck through. The reproducer below still gives exactly the verdicts shown, and the construct is still
+    unrecorded — measured again on the current build, with the parser emitting BOTH calls in each discarded form, so
+    only the model is empty and codegen was never at risk. **A ternary whose VALUE IS DISCARDED records NOTHING.** Its source
     contains `c ? vdup() : gv_dup();` as a statement, and the recorder models no nodes for that at all, so replay
     emits neither call. Reproducer:
 
@@ -1032,8 +1036,10 @@ Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign 
 **Anomalies, all three chosen:**
 - ~~**D1a — explain the 1856 → 1841 verdict-count drop** under `PROMO_ARROW`/`PROMO_INCDEC`.~~ **CLOSED** — does not
   reproduce; see the D1a note in the recorder section. The verdict count is trustworthy.
-- **D1b — `store_packed_bf`.** Still `unfaithful` after `8e867f40` removed its suspected cause (the discarded-value
-  ternary). Now unattributed.
+- ~~**D1b — `store_packed_bf`.** Still `unfaithful` after `8e867f40` removed its suspected cause (the discarded-value
+  ternary). Now unattributed.~~ **WRONG, and closed 2026-07-29: it IS attributed.** `8e867f40` did NOT close the
+  discarded-value-ternary hole — see the `store_packed_bf` analysis in the recorder section, which still reproduces
+  exactly.
 - **D1c — the 26 non-mov length-differs.** Last unexplained group in the unfaithful bucket. Delta mnemonics `xorb`
   16, `movabs` 6, `add` 6, `cmp` 5, spread across `foldm_*` math folding rather than one construct.
 
@@ -1058,8 +1064,9 @@ real-object validation stays macOS-gated.
    not hold for this shape. Gate on `assign_value_effects.c` + full bar; this is where `emit-at-marker` miscompiled.
 3. ~~**Explain the verdict-count change.**~~ **CLOSED** — does not reproduce; see the D1a note in the recorder
    section. The verdict count is trustworthy, so a count change there IS meaningful.
-4. **`store_packed_bf` is still `unfaithful`.** Its `c ? vdup() : gv_dup()` is now recorded after `8e867f40`, so the
-   discarded-ternary hole is not its cause. Unattributed.
+4. ~~**`store_packed_bf` is still `unfaithful`.** Its `c ? vdup() : gv_dup()` is now recorded after `8e867f40`, so the
+   discarded-ternary hole is not its cause. Unattributed.~~ **CLOSED 2026-07-29 — the premise was false.** The
+   discarded-value ternary is still NOT recorded, so the hole IS its cause; see the recorder section.
 5. **The 26 non-mov length-differs.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6, `cmp` 5 — the `xorb` count is
    spread across `foldm_*` math folding, not one construct. Only remaining unexplained group in the unfaithful bucket.
 6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
