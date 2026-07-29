@@ -1424,6 +1424,8 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); sub = 0; }
 	else if (!strncmp(nm + 6, "subo_", 5))
 		{ MCC_TRACE("br\n"); sub = 1; }
+	else if (!strncmp(nm + 6, "mulo_", 5))
+		{ MCC_TRACE("br\n"); sub = 2; }
 	else
 		{ MCC_TRACE("br\n"); return 0; }
 	if ((vtop->type.t & VT_BTYPE) != VT_PTR)
@@ -1436,32 +1438,44 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	uns = (pt->t & VT_UNSIGNED) != 0;
 
-	gv(MCC_RC_RDI);
-	rr = vtop->r & VT_VALMASK;
-	vswap();
-	gv(MCC_RC_RSI);
-	rb = vtop->r & VT_VALMASK;
-	vswap();
-	vrotb(3);
-	gv(MCC_RC_RCX);
-	ra = vtop->r & VT_VALMASK;
-	vrott(3);
+	{
+		int umul = sub == 2 && uns;
+		gv(MCC_RC_RDI);
+		rr = vtop->r & VT_VALMASK;
+		vswap();
+		gv(MCC_RC_RCX);
+		rb = vtop->r & VT_VALMASK;
+		vswap();
+		vrotb(3);
+		gv(umul ? MCC_RC_RAX : MCC_RC_RSI);
+		ra = vtop->r & VT_VALMASK;
+		vrott(3);
 
-	save_reg(MCC_TREG_RDX);
-	save_reg(MCC_TREG_RAX);
-	sc = MCC_TREG_RDX;
+		save_reg(MCC_TREG_RDX);
+		save_reg(MCC_TREG_RAX);
+		sc = umul ? MCC_TREG_RSI : MCC_TREG_RDX;
 
-	orex(size == 8, rb, ra, sub ? 0x2b : 0x03);
-	o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
+		if (umul) { MCC_TRACE("br\n");
+			orex(size == 8, rb, 0, 0xf7);
+			o(0xe0 + REG_VALUE(rb));
+		} else if (sub == 2) { MCC_TRACE("br\n");
+			orex(size == 8, rb, ra, 0x0f);
+			o(0xaf);
+			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
+		} else { MCC_TRACE("br\n");
+			orex(size == 8, rb, ra, sub ? 0x2b : 0x03);
+			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
+		}
 
-	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
-		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }
-	o(0x0f);
-	o(uns ? 0x92 : 0x90);
-	o(0xc0 + REG_VALUE(sc));
+		if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
+			{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }
+		o(0x0f);
+		o(uns ? 0x92 : 0x90);
+		o(0xc0 + REG_VALUE(sc));
 
-	orex(size == 8, rr, ra, 0x89);
-	gen_modrm(ra, rr, NULL, 0);
+		orex(size == 8, rr, ra, 0x89);
+		gen_modrm(ra, rr, NULL, 0);
+	}
 
 	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
 		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }

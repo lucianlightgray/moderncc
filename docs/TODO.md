@@ -3600,8 +3600,8 @@ Everything else that survives IS a libgcc name and resolves against a stock tool
 So the item is no longer "three families" — it is one family, and the biggest group is now handled the same way the
 atomics were.
 
-**`__builtin_add_overflow`/`sub_overflow` are inlined 2026-07-28 behind `MCC_OVERFLOW_INLINE` (default OFF), widths
-4 and 8, signed and unsigned.** They reach codegen as CALLS to the mccdefs `_Generic` dispatch helpers
+**`__builtin_add_overflow`/`sub_overflow`/`mul_overflow` are inlined 2026-07-28 behind `MCC_OVERFLOW_INLINE`
+(default OFF), widths 4 and 8, signed and unsigned.** They reach codegen as CALLS to the mccdefs `_Generic` dispatch helpers
 (`__mcc_addo_i` and friends), not as builtin tokens, so the hook intercepts the call in `gfunc_call` the way the
 `alloca` one does, reads the width and signedness off the RESULT POINTER's pointee type, and emits
 `add`/`sub` + `seto` (signed, OF) or `setb` (unsigned, CF) + the store. Widths 1 and 2 keep the helper.
@@ -3610,8 +3610,15 @@ One contract detail that cost a debugging round and is worth stating: `gfunc_cal
 argument and leave the result where the CALLER's `vsetc(&ret.type, ret.r, …)` expects it — `%rax` for an
 int-returning helper — not push a value of its own. Pushing one gives `internal compiler error: vstack leak`.
 
-Remaining after that: `__mcc_mulo_*` (needs `imul`/`mul` plus the same flag capture — the unsigned form wants
-`%rax`/`%rdx` pinning like the divide path), the four complex-arithmetic helpers, and `__mcc_signbit`.
+Multiply needed one extra shape: signed is `imul r, r/m`, which sets OF like `add` does, but unsigned has no
+two-operand form — it is the one-operand `mul r/m` with the multiplicand pinned in `%rax` and the high half landing
+in `%rdx`, so that path pins `a -> %rax` and moves the flag scratch to `%rsi` (it cannot be `%rdx`). The store has
+to happen BEFORE the `movzx` writes the boolean into `%rax`, since for unsigned mul the product IS in `%rax`.
+
+Re-measured after this, over `tests/exec` + `tests/behavior` + mcc's own TU, the non-libgcc residue is **10 names**:
+`__mcc_addo_{s,uc,ti}`, `__mcc_subo_uc`, `__mcc_mulo_ti`, the four complex helpers, and `__mcc_signbit`. The
+`_s`/`_uc` forms are the 1- and 2-byte widths this hook declines; `_ti` is 128-bit. So what is left divides into
+"narrow widths, mechanical" and "complex arithmetic plus `__mcc_signbit`, genuinely different work".
 
 **A residual `alloca` was found and fixed while measuring this**: `__builtin_alloca` is declared in `mccdefs.h` as
 `__builtin_alloca` with an `__asm__("alloca")` rename, so the inline hook's `sym->v != TOK_alloca` test missed it
