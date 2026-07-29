@@ -236,7 +236,9 @@ x86** for two independent reasons: FMA3 is not baseline, and mcc emits no `vfmad
 would advertise a transform that cannot fire — the `ARGFWD` failure mode recorded in the ungate section.
 
 Validated on the axis byte-identity cannot see: a probe over signed zeros, `-inf` and NaN-adjacent `copysign`
-matches gcc at `-O0`/`-O1`/`-O2`/`-O3` on x86_64 and at `-O0`/`-O2` on arm64 and riscv64 under qemu — `fmin`/`fmax`
+matches gcc at `-O0`/`-O1`/`-O2`/`-O3` on x86_64 and at `-O0`/`-O2` on arm64 and riscv64 under qemu, and the WHOLE
+exec corpus gives identical runtime output with the three gates forced off versus their new defaults on every
+emulated triple — arm64 247/247, riscv64 244/244, armv7-hardfloat 244/244 — `fmin`/`fmax`
 and `copysign` are exactly where ±0 and NaN semantics diverge. Full ctest 7893/7893, self-host fixpoint
 byte-identical.
 
