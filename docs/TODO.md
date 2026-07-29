@@ -3663,9 +3663,22 @@ where 2 disagreed before, plus the 4 extra cases that the matrix originally miss
 
 Consequence for the inline path: with wide operands and a narrow result, a single `add` + `seto` is no longer the
 whole answer (the flag describes the WIDE add, and the fit still has to be checked), so the inline hook is now
-limited to width 8, where operand and result widths coincide. Re-adding widths 1/2/4 means emitting the truncate-
-and-compare as well — `movsx`/`movzx` the low bytes back, `cmp` against the wide result, and OR that into the flag.
-Recorded as the recipe rather than done, because correctness came first.
+limited to width 8, where operand and result widths coincide.
+
+**Re-adding widths 1/2/4 was ATTEMPTED TWICE 2026-07-28 and reverted both times — do not start it from the recipe
+alone.** The shape is: do the arithmetic at 64 bits (the operands ARE 64-bit now), capture `seto`/`setb` for the
+wide op, `movsx`/`movzx` the low bytes back into a scratch, `cmp` against the wide result, `setne`, OR the two
+flags, then store the low bytes. Both attempts were caught by the same 12-case matrix against gcc rather than by
+the suite:
+- **First attempt** emitted the arithmetic at the RESULT width (byte/word/dword `add`), which re-introduced exactly
+  the truncation bug the prototype fix had just removed — the two originally-failing matrix cases came back.
+- **Second attempt** fixed that to a 64-bit `add` but the truncate-compare tail then reported no overflow for every
+  narrow case, taking the matrix from 2 failures to 9. The `setne`/`or` sequence or its register choices are wrong;
+  it was not debugged further.
+
+The value at stake is one call per narrow-result overflow check, and the width-8 case — which the common
+`long`/`long long` idiom uses — is already inlined. Anyone picking this up should build the matrix FIRST and run it
+after every emit change, because the suite passes in both broken states.
 
 **Recipe for the narrow widths, kept because it is what made them mechanical.** Byte and word add/sub are the same
 two-operand shape with different opcodes — byte `02 /r` (add) and `2a /r` (sub), word the 4-byte opcodes behind a
