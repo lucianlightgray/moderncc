@@ -3886,6 +3886,22 @@ byte-identical again.
 unreferenced `static` function mcc generates stays in `.text` forever. With it, flipping this gate becomes a
 straight win, and `-fc99-inline-body` gets cheaper at the same time.
 
+**MEASURED PATH FORWARD 2026-07-29 — `-ffunction-sections` (`f45a3cbd`) supplies exactly that elimination via an
+external linker, and the two combine as predicted.** One `static inline` helper used twice plus one never called,
+linked and run each way:
+
+| build | linked `text+data` | unused helper in the binary | output |
+|---|---:|---:|---|
+| `MCC_AST_INLINE_STATIC=0` (today's default) | 1538 | 0 | correct |
+| `=1` | 1596 (**+58**) | **1 — dead body retained** | correct |
+| `=1` + `-ffunction-sections` + `--gc-sections` | **1455 (−83)** | 0 — collected | correct |
+
+So the gate's cost is exactly the orphaned body, and per-function sections let the linker remove it: the
+combination is SMALLER than the default rather than larger. That does not by itself justify flipping the gate,
+because the win requires two opt-in flags and an external linker — mcc's own linker still has no `--gc-sections`.
+The honest next step is internal section GC, which `-ffunction-sections` has now made a section-drop rather than
+byte surgery inside one `.text`.
+
 ## Backend intrinsic lowering — two open items (the 21 -> 0 helper-call work is DONE, `docs` history has the table)
 `cli/intrinsics_no_helper_calls` asserts the probe object has ZERO undefined symbols and was verified to fail,
 naming the symbols, when a lowering is disabled — so the landed set stays gone. Two remain:
