@@ -1139,8 +1139,20 @@ The 36 new desyncs split into three sub-cases, all in the operand/end hooks, and
   they are invisible to the model and the end hook would have to synthesize the Literal itself. Open.
 
 Note the two open cases are the same shape from opposite ends: a `&&`/`||` region whose value is a CONSTANT the
-parser folds, which the model represents as a Binary. A fifth attempt should decide the region's kind at the END
-(Binary vs Literal) rather than at the first operand.
+parser folds, which the model represents as a Binary. The obvious conclusion is to decide the region's kind at the
+END (Binary vs Literal) rather than at the first operand.
+
+**THAT WAS TRIED TOO, 2026-07-28, and it is worth +2. Reverted.** The deferred form is genuinely simpler — no
+`ast_lor_const`/`ast_lor_consumed` bookkeeping at all: each operand either contributes a node (`c < 0`) or is
+dropped (`c >= 0`, the parser pops its slot), the children are buffered per region, and `ast_hook_landor_end`
+builds an `AST_Binary` from them when the region is not materialized and finalizes a `Literal` straight off `vtop`
+when it is. Every isolated shape becomes faithful, including `1 && x`, which no other attempt fixed.
+
+On mcc's TU it is **1731 -> 1733 faithful**, and 15 NEW desyncs appear inside the deferred operand path itself
+(`ast_vn < 1`, and the existing ternary-`AST_If` operand check). Individual functions move both ways —
+`host_icache_flush`, `host_fault_regs` and `indir` gain, `pp_builtin_func` and `block` lose. So the region's KIND
+was never the blocker: what remains is per-operand model state that the region hooks cannot see. Anyone picking
+this up should stop optimising the region representation and go look at why an operand arrives with `ast_vn < 1`.
 
 **Group B (31) — partially narrowed 2026-07-28, with a caveat that must be resolved first.**
 
