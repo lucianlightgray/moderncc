@@ -20,8 +20,8 @@ static const struct
 #else
 		{VT_LLONG | VT_LONG | VT_UNSIGNED, 8, DW_ATE_unsigned, "long unsigned int:t5=r5;0;01777777777777777777777;"},
 #endif
-		{VT_QLONG, 16, DW_ATE_signed, "__int128:t6=r6;0;-1;"},
-		{VT_QLONG | VT_UNSIGNED, 16, DW_ATE_unsigned, "__int128 unsigned:t7=r7;0;-1;"},
+		{VT_INT128, 16, DW_ATE_signed, "__int128:t6=r6;0;-1;"},
+		{VT_INT128 | VT_UNSIGNED, 16, DW_ATE_unsigned, "__int128 unsigned:t7=r7;0;-1;"},
 		{VT_LLONG, 8, DW_ATE_signed, "long long int:t8=r8;-9223372036854775808;9223372036854775807;"},
 		{VT_LLONG | VT_UNSIGNED, 8, DW_ATE_unsigned, "long long unsigned int:t9=r9;0;01777777777777777777777;"},
 		{VT_SHORT, 2, DW_ATE_signed, "short int:t10=r10;-32768;32767;"},
@@ -1924,6 +1924,15 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 		}
 	} else if ((type & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 		type &= ~VT_STRUCT_MASK;
+		/* VT_QLONG is the two-register ABI class for a 128-bit value, VT_INT128
+		   is the declared type; both must find the __int128 base type. Keying
+		   the table on VT_QLONG alone made every __int128 lookup MISS and fall
+		   through to `return 0`, which the caller then wrote as DW_AT_type: <0>.
+		   A null DIE reference makes gdb reject the whole compilation unit --
+		   "Cannot find DIE at 0x0" -- so a single unused typedef in mccdefs.h
+		   cost every -gdwarf build its debug info. */
+		if ((type & VT_BTYPE) == VT_QLONG)
+			{ MCC_TRACE("br\n"); type = (type & ~VT_BTYPE) | VT_INT128; }
 		for (i = 1; i <= N_DEFAULT_DEBUG; i++)
 			{ MCC_TRACE("br\n"); if (default_debug[i - 1].type == type)
 				{ MCC_TRACE("br\n"); break; } }
