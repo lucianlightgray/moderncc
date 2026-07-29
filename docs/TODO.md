@@ -1154,6 +1154,11 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **FLIP-PREP SWEEP 2026-07-29:** all five new gates ON over the full exec corpus (273 files, recursive):
+   non-faithful entries 229 -> 211, ZERO new gaps (comm -13 empty). Combined with the TU numbers this is the
+   local half of the flip evidence; still owed for the flips: cross-arch (i386/arm32/riscv64/arm64), self-host
+   fixpoint, differential fuzz, and the JIT leg (P0 standing rule).
+
    **FIFTH CLASS CLOSED 2026-07-29 — FP unary negation was INVISIBLE to the recorder (the whole movq+xorb
    class, 17 functions, all `foldm_*`/`ast_fc_*`).** On x86_64/i386/arm64 `gen_negf` is `#define`d to the arch
    `gen_opf`, so the generic `gen_negf`'s `ast_hook_bail` never runs, and `unary()` calls `gen_opif(TOK_NEG)`
