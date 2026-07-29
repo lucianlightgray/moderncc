@@ -3625,10 +3625,21 @@ negative float it yields `-2147483648`. That is conformant (the documented contr
 compared against 1 and "failed" under gcc at both `-O0` and `-O2` while mcc passed, which reads like an mcc bug
 until you print the number.
 
-Re-measured after this, over `tests/exec` + `tests/behavior` + mcc's own TU, the non-libgcc residue is **10 names**:
-`__mcc_addo_{s,uc,ti}`, `__mcc_subo_uc`, `__mcc_mulo_ti`, the four complex helpers, and `__mcc_signbit`. The
-`_s`/`_uc` forms are the 1- and 2-byte widths this hook declines; `_ti` is 128-bit. So what is left divides into
-"narrow widths, mechanical" and "complex arithmetic", `__mcc_signbit` having since been inlined as well.
+**CORRECTED MEASUREMENT 2026-07-28 (a stale count was reported twice in this section — this is the real one).**
+Over `tests/exec` + `tests/behavior` + mcc's own TU the non-libgcc residue is **19 names**, not the 6 an earlier
+pass claimed. The claim went stale when the operand-widening fix landed: widening forced the inline hook back to
+width 8, so every narrow overflow helper returned to the object. What is actually left:
+
+| group | names | why |
+|---|---|---|
+| overflow, widths 1/2/4 | `__mcc_addo_{sc,uc,s,us,i,u}`, `__mcc_subo_{sc,uc,i,u}`, `__mcc_mulo_{sc,i,u}` | operands are 64-bit now, so the inline needs a truncate-and-compare tail — attempted twice, reverted twice |
+| overflow, 128-bit | `__mcc_addo_ti`, `__mcc_mulo_ti` | needs `add`/`adc` + `seto` on a register pair |
+| complex | `__mcc_cmul`, `__mcc_cmulf`, `__mcc_cmull`, `__mcc_cdiv` | call-shape change, see below |
+
+Everything else that survives IS a libgcc name and resolves against a stock toolchain: `__multi3`, `__udivti3`,
+`__divti3`, `__ashlti3`, `__ashrti3`, `__lshrti3` and the `__fix*`/`__float*` conversions. The bit builtins,
+`alloca`, `signbit` and the atomics no longer appear at all — those are the durable wins, and
+`cli/intrinsics_no_helper_calls` keeps them that way.
 
 **The complex helpers cannot be fixed by a RENAME — checked 2026-07-28, and this kills the cheapest option for
 them.** mcc's are
