@@ -124,4 +124,20 @@ else
 	rc=1
 fi
 
+# 7. -march= must REJECT an unknown value on EVERY target, not just this one.
+#    x86 diagnosing `-march=nonsense` while arm64 shrugged was worse than either
+#    alone, and a silent accept is the exact bug -march= had before it meant
+#    anything.
+for lv in armv8-a rv64gc armv7-a i686; do
+	if "$MCC" -B"$BASE" -march="$lv" -print-isa >/dev/null 2>&1; then
+		echo "NOTE: this target also accepts -march=$lv"
+	fi
+done
+if "$MCC" -B"$BASE" -march=definitely-not-a-level -print-isa >/dev/null 2>&1; then
+	echo "FAIL: an unknown -march= was accepted silently"
+	rc=1
+else
+	echo "PASS: an unknown -march= is rejected"
+fi
+
 exit $rc

@@ -1411,7 +1411,7 @@ static MCC_OPT_TLS int ast_math_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
 static MCC_OPT_TLS int ast_copysign_env; /* MCC_AST_COPYSIGN_INLINE: inline copysign (default off, opt-in, all arches) */
-static MCC_OPT_TLS int ast_minmax_inline_env; /* MCC_AST_MINMAX_INLINE: inline fmin/fmax via FMINNM/FMAXNM (arm64 only, default off) */
+static MCC_OPT_TLS int ast_minmax_inline_env; /* MCC_AST_MINMAX_INLINE: inline fmin/fmax via FMINNM/FMAXNM (arm64 only; default ON at -O1+ there, off elsewhere) */
 static MCC_OPT_TLS int ast_fma_env; /* MCC_AST_FMA_INLINE: inline fma via FMADD/fmadd.d (arm64/riscv64, default off) */
 static MCC_OPT_TLS int ast_no_math_errno; /* -fno-math-errno: inline sqrt of ANY sign */
 static int ast_inline_pass_env;

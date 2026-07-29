@@ -1021,7 +1021,11 @@ static uint32_t mcc_isa_native(void) { MCC_TRACE("enter\n");
 #endif
 
 ST_FUNC void mcc_isa_init(MCCState *s1) { MCC_TRACE("enter\n");
-	if (s1->isa_mask)
+	/* Idempotence keys on the LEVEL, not the mask: non-x86 targets legitimately
+	   resolve to an empty feature mask, so guarding on the mask made every later
+	   call re-run and clobber a level the user had already selected with
+	   -march=armv8-a. */
+	if (s1->isa_level)
 		{ MCC_TRACE("br\n"); return; }
 #if defined(MCC_TARGET_X86_64)
 	/* native is the DEFAULT: mcc targets the machine it is running on unless
@@ -1067,12 +1071,36 @@ ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name) { MCC_TRACE("enter\
 	}
 	return -1;
 #else
-	/* Non-x86 targets have no named levels wired up yet; keep accepting the
-	   string so no cross command line regresses, rather than erroring on a
-	   value this build cannot evaluate. */
-	(void)i;
-	mcc_isa_init(s1);
-	return 0;
+	/* Other targets have no FEATURE bits wired up yet, but they must still
+	   REJECT a name they do not know: accepting anything silently is the exact
+	   bug -march= had before it meant something, and having x86 diagnose
+	   `-march=nonsense` while arm64 shrugs is worse than either alone. So the
+	   level is validated against the triple's known names and recorded for
+	   -print-isa; the mask stays empty until the per-arch feature bits land. */
+	{
+		static const char *const known[] = {
+#if defined(MCC_TARGET_ARM64)
+			"armv8-a", "armv8.1-a", "armv8.2-a", "armv8.3-a", "armv8.4-a",
+			"armv8.5-a", "armv9-a", "generic",
+#elif defined(MCC_TARGET_ARM)
+			"armv4", "armv4t", "armv5", "armv5t", "armv5te", "armv6", "armv6t2",
+			"armv7", "armv7-a", "armv7-m", "armv7-r", "generic",
+#elif defined(MCC_TARGET_RISCV64)
+			"rv64i", "rv64g", "rv64gc", "rv64imac", "rv64imafdc", "generic",
+#elif defined(MCC_TARGET_I386)
+			"i386", "i486", "i586", "i686", "pentium", "pentiumpro", "generic",
+#endif
+			NULL,
+		};
+		mcc_isa_init(s1);
+		for (i = 0; known[i]; i++) { MCC_TRACE("br\n");
+			if (!strcmp(name, known[i])) { MCC_TRACE("br\n");
+				s1->isa_level = known[i];
+				return 0;
+			}
+		}
+	}
+	return -1;
 #endif
 }
 
