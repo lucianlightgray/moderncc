@@ -2228,10 +2228,17 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * only reason this axis exists. Measured: one libm call removed for +16 bytes
 	 * of .text on x86_64, and gcc inlines copysign at plain -O2 too. */
 	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", o4 || s1->optimize >= 1);
-	/* fmin/fmax inline via FMINNM/FMAXNM (arm64 only — x86 minsd/maxsd have wrong
-	 * NaN/±0 semantics so fmin/fmax stay libcalls there). Default OFF (opt-in) so
-	 * default codegen is byte-identical. */
+	/* fmin/fmax inline via FMINNM/FMAXNM — armv8-a BASELINE, and IEEE minNum/maxNum
+	 * is exactly C's fmin/fmax, so it is staged at -O1+ there like the other
+	 * baseline lowerings. x86 stays `o4`: minsd/maxsd have the WRONG NaN/±0
+	 * semantics, so inlining there would be a miscompile, not a missing feature.
+	 * Verified behaviour-preserving on arm64 over NaN, ±0, ±inf and NaN-in-either
+	 * -operand: gate ON and gate OFF give identical output. */
+#ifdef MCC_TARGET_ARM64
+	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4 || s1->optimize >= 1);
+#else
 	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4);
+#endif
 	/* fma inline via FMADD (arm64) / fmadd.d/.s (riscv64) — single-rounding, both
 	 * baseline; matches gcc default. Staged at -O1+ on those two triples 2026-07-29
 	 * precisely because the instruction is baseline there, so it turns on with the

@@ -222,8 +222,20 @@ would advertise a transform that cannot fire — the `ARGFWD` failure mode recor
 Validated on the axis byte-identity cannot see: a probe over signed zeros, `-inf` and NaN-adjacent `copysign`
 matches gcc at `-O0`/`-O1`/`-O2`/`-O3` on x86_64 and at `-O0`/`-O2` on arm64 and riscv64 under qemu — `fmin`/`fmax`
 and `copysign` are exactly where ±0 and NaN semantics diverge. Full ctest 7893/7893, self-host fixpoint
-byte-identical. **`MINMAX_INLINE` stays `o4`**: it fires on nothing measurable (x86 `minsd`/`maxsd` have the wrong
-NaN/±0 semantics, so it is arm64-only and did not move the probe).
+byte-identical.
+
+**`MINMAX_INLINE` also staged, on arm64 only — and the first reading of it here was WRONG.** It was recorded as
+"fires on nothing measurable", which was true only because the probe was x86. On arm64 it removes both `fmin`/`fmax`
+libm calls and emits 2 `FMINNM`/`FMAXNM` — armv8-a baseline, and IEEE minNum/maxNum is exactly C's fmin/fmax.
+Verified behaviour-preserving rather than assumed: over NaN in either operand, ±0, ±inf and `signbit` checks the
+gate ON and gate OFF give identical output, and the whole arm64 exec corpus is identical off-vs-on (247/247).
+**x86 stays `o4` for a reason that is not staleness**: `minsd`/`maxsd` have the wrong NaN/±0 semantics, so inlining
+there would be a miscompile, not a missing feature. Method note: `objdump -d` on an arm64 object silently
+disassembles as x86 and reported 0 `fminnm` — use `llvm-objdump --triple=aarch64`, or the measurement lies.
+
+Separately, and NOT caused by any of this: mcc returns `-0` for `fmin(+0,-0)` where glibc returns `+0`. Present with
+every gate off, and C99 F.9.9.2 leaves the sign unspecified there, so both conform — but do not "fix" it by chasing
+a gcc diff.
 
 Measured first, at `-O2` on a probe calling copysign/fmin/fmax/fma/sqrt/fabs:
 x86_64 at `-march=x86-64` inlines sqrt+fabs by default and only `COPYSIGN_INLINE` still fires (4 libm calls -> 3,
