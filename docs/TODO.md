@@ -128,14 +128,31 @@ passes. Keying the cache on the consumed feature set instead means the fast path
 different ISAs simply hold different entries, and byte-identity is asserted per (source, ISA) pair rather than
 globally — which is what it always should have meant.
 
-**IN PROGRESS 2026-07-29 — step (1), the cache carrying the consumed-feature set.** Survey first, so the next
-reader does not redo it: the ISA cannot leak through the search or slice cache TODAY, and the reason is narrower
+**SURVEYED 2026-07-29, and the conclusion is that step (1) must NOT be built on its own — build it in the same
+change as the first ISA-dependent gate. Two attempts were written and reverted; do not write a third in isolation.**
+Survey first, so the next reader does not redo it: the ISA cannot leak through the search or slice cache TODAY, and the reason is narrower
 than it looks. `ast_search_searchable()` offers `AST_SG_BFOLD_ROUND`, but that maps to `ast_bfold_round_env`
 (constant-folding `floor`/`ceil`, no ISA requirement), NOT `ast_round_inline_env` (which emits `roundsd`).
 `ast_round_inline_env` is set only in `ast_configure` and is absent from the `AST_SG_*` vocabulary, so no cached or
 searched gate set can raise the ISA floor. That is luck, not design: the moment step 4 puts `FMA_INLINE` or any
 other ISA-dependent transform into the vocabulary, a winner proven on an AVX2 host becomes applicable on one
 without it.
+
+**Why building it now produces unverifiable code — both shapes were tried.**
+- *A consumed-feature counter* cannot work at all. The cache key is taken from the PRISTINE arena, before any
+  transform has run (`pristine = ast_arena_clone(ast_cur)` then `ast_intention_hash`), so a "what did we consume"
+  accumulator is always one function late.
+- *An arena-relevance scan* (fold `SSE41` when the function holds a round-family call) is the right shape and
+  preserves cross-host sharing for generic functions — but it cannot be exercised today. With the default
+  `-march` at the triple baseline, `mcc_isa_has(SSE41)` is false, so the term is identically zero and no test can
+  reach it. It also resists unit testing: the scan keys off the callee NAME via `get_tok_str`, while `asttool`
+  stores syms as opaque integers with no names, so the `ast/*` harness cannot construct an arena that exercises it.
+
+So the term is inert until the default flips, and the flip is gated on the term. The way out is not to land dead
+code and hope: land the key term IN THE SAME CHANGE as the first ISA-dependent gate that enters the search
+vocabulary (step 4 — `FMA_INLINE` is the obvious first). At that moment the term is both NECESSARY (a winner proven
+on an AVX2 host becomes applicable without it) and TESTABLE (force the gate, compile the same source under two
+`-march` levels, assert the keys differ for a function using the construct and match for one that does not).
 
 The key salt is where this belongs — `ast_search_key_salt_ex` already partitions by build version and target
 triple for exactly this class of reason. What it must NOT do is fold the whole ISA mask unconditionally: that keys
