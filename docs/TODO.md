@@ -3441,7 +3441,20 @@ purpose (the answer is at most 64, and REX.W on `B8+r` makes it a 10-byte `movab
 case), so they are worth less than the atomics, which are both the biggest remaining group AND the one where the
 inline form is a large speed win rather than a code-size one.
 
-Encodings for whoever takes the atomics, all lock-free for sizes 1-8 on x86_64: `__atomic_load_n` at any ordering
+**`__atomic_fetch_add`/`fetch_sub` are DONE 2026-07-28 behind `MCC_ATOMIC_INLINE` (default OFF), sizes 4 and 8.**
+`lock xadd` leaves the PREVIOUS contents in the value register, which is exactly fetch semantics, and LOCK already
+implies seq_cst on x86 so the memory-order argument needs no extra fence. `fetch_sub` is the same instruction with
+the operand negated first. Sizes 1 and 2 stay on the helper: the byte form needs a REX prefix just to name
+`sil`/`dil`, which is not worth a special case. `gen_atomic_xadd(size)` in `x86_64-gen.c`, hooked in `parse_atomic`
+just before the `snprintf`-built helper call.
+
+Verified as a THREADED test, not only single-threaded arithmetic — `tests/exec/codegen/atomic_fetch_inline.c` runs
+4 threads x 50000 interleaved add/sub pairs plus a per-thread add, and the total is deterministic (28 and 400000)
+only if every operation is atomic. It matches gcc with the gate on and off, at `-O0` and `-O2`. Gate-off is
+byte-identical over the corpus and the whole suite is 7439/7439 in both states; `__atomic_fetch_add_4` and
+`_8` disappear from the probe object.
+
+Encodings for the REST of the atomics, all lock-free for sizes 1-8 on x86_64: `__atomic_load_n` at any ordering
 up to seq_cst is a plain `mov` (x86 loads are acquire); `__atomic_store_n` at seq_cst must be `xchg` (implicitly
 locked) or `mov`+`mfence`, NOT a bare `mov`; `__atomic_exchange_n` is `xchg`; `__atomic_fetch_add` is
 `lock xadd`; `__atomic_compare_exchange_n` is `lock cmpxchg` with the expected value in `%rax` and the result

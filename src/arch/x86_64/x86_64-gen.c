@@ -2213,6 +2213,22 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+/* `lock xadd` for __atomic_fetch_add/sub at sizes 4 and 8: the value register
+   comes back holding the PREVIOUS contents, which is exactly fetch semantics.
+   LOCK makes it seq_cst, so the memory order argument needs no extra fence on
+   x86. Sizes 1 and 2 stay on the helper -- the byte form needs a REX just to
+   name sil/dil, which is not worth a special case here. */
+void gen_atomic_xadd(int size) { MCC_TRACE("enter\n");
+	int rp, rv;
+	gv2(MCC_RC_INT, MCC_RC_INT);
+	rp = vtop[-1].r & VT_VALMASK;
+	rv = vtop->r & VT_VALMASK;
+	o(0xf0);
+	orex(size == 8, rp, rv, 0x0f);
+	o(0xc1);
+	gen_modrm(rv, rp, NULL, 0);
+}
+
 /* ffs(x) = x ? ctz(x) + 1 : 0. BSF sets ZF when the source is zero and leaves
    the destination undefined there, so the zero case needs a real select: load -1
    into a scratch and CMOVZ it in, then increment. CMOV is baseline on x86_64.

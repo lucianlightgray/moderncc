@@ -448,6 +448,15 @@ enum {
 };
 
 #if defined(MCC_TARGET_X86_64)
+static int atomic_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_ATOMIC_INLINE");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on;
+}
+
 static int bitscan_inline_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
@@ -6954,6 +6963,23 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 		break;
 	}
 
+#if defined(MCC_TARGET_X86_64)
+	if (atomic_inline_on() && !use_generic && (size == 4 || size == 8) &&
+			(atok == TOK___atomic_fetch_add || atok == TOK___atomic_fetch_sub)) { MCC_TRACE("br\n");
+		vpop();
+		if (atok == TOK___atomic_fetch_sub) { MCC_TRACE("br\n");
+			vpushi(0);
+			vswap();
+			gen_op('-');
+		}
+		gen_atomic_xadd(size);
+		vswap();
+		vpop();
+		vtop->type = *atom;
+		vtop->type.t &= ~(VT_QUALIFY | VT_ATOMIC_BIT);
+		return;
+	}
+#endif
 	snprintf(buf, sizeof(buf), "%s_%d", get_tok_str(atok, 0), size);
 	vpush_helper_func(tok_alloc_const(buf));
 	vrott(arg - save + 1);
