@@ -1771,6 +1771,7 @@ static int ast_convert_gv_env;
 static int ast_call_noreturn_env;
 static int ast_storeval_callstore_env;
 static int ast_fneg_env;
+static int ast_cmp_mat_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2110,6 +2111,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", 0);
 	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", 0);
 	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", 0);
+	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -5735,6 +5737,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				sv.sym = NULL;
 			}
 		}
+		if (ast_cmp_mat_env)
+			{ MCC_TRACE("br\n"); vcheck_cmp(); }
 		vpushv(&sv);
 		break;
 	}

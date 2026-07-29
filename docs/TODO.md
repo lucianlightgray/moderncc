@@ -1154,6 +1154,16 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **SIXTH CLASS CLOSED 2026-07-29 — pending-VT_CMP materialization (the movzbl+sete class).** Parse-side
+   pushes go through `vsetc`, which calls `vcheck_cmp()` — materializing a pending flags-resident comparison
+   (`sete`+`movzbl`) BEFORE the next value lands on the vstack. Replay's leaf push uses raw `vpushv`, skipping
+   that, so a second comparison's flag-clobbering `and`/`cmp` ran first and replay emitted both `sete`s at the
+   end reading the wrong flags. Landed `MCC_AST_CMP_MAT` (default OFF): the replay Literal/Ref push calls
+   `vcheck_cmp()` first (it already handles `ast_replaying` suppression internally). Validated: gate-off
+   byte-identical; `((a&15)==0) + ((b&15)==0)` repro flips faithful; runtime matches gcc `-O1/2/3`; TU
+   all-six-gates: unfaithful 96 -> 84 (+12, zero regressions); ast ctest 224/224. Session: 239 -> 84.
+   AOT-only (P0 rule).
+
    **FLIP-PREP SWEEP 2026-07-29:** all five new gates ON over the full exec corpus (273 files, recursive):
    non-faithful entries 229 -> 211, ZERO new gaps (comm -13 empty). Combined with the TU numbers this is the
    local half of the flip evidence; still owed for the flips: cross-arch (i386/arm32/riscv64/arm64), self-host
