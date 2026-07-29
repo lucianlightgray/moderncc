@@ -53,6 +53,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_CONVERT_GV 32u
 
+#define AST_FB_CALL_NORETURN 64u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1764,6 +1766,7 @@ static int ast_promote_env;
 static int ast_storeval_call_env;
 static int ast_storeval_constl_env;
 static int ast_convert_gv_env;
+static int ast_call_noreturn_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2099,6 +2102,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 2);
 	ast_storeval_constl_env = ast_env_gate("MCC_AST_STOREVAL_CONSTL", 0);
 	ast_convert_gv_env = ast_env_gate("MCC_AST_CONVERT_GV", 0);
+	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -3571,6 +3575,15 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+}
+
+void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
+	if (!ast_call_noreturn_env)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_capture || ast_desync || ast_call_pending == AST_NONE)
+		{ MCC_TRACE("br\n"); return; }
+	ast_set_fbits(ast_cur, ast_call_pending,
+								ast_fbits(ast_cur, ast_call_pending) | AST_FB_CALL_NORETURN);
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
@@ -5912,6 +5925,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		}
 		vcheck_cmp();
 		gfunc_call((int)nc - 1);
+		if (ast_fbits(a, n) & AST_FB_CALL_NORETURN)
+			{ MCC_TRACE("br\n"); CODE_OFF(); }
 		if (ast_type_t(a, n) == VT_VOID)
 			{ MCC_TRACE("br\n"); break; }
 		if ((ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");

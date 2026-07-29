@@ -10825,6 +10825,9 @@ tok_next:
 				if (debug_modes)
 					{ MCC_TRACE("br\n"); mcc_tcov_block_end(mcc_state, -1); }
 				CODE_OFF();
+#if MCC_CONFIG_OPTIMIZER
+				ast_hook_call_noreturn();
+#endif
 			}
 #if MCC_CONFIG_OPTIMIZER
 			ast_hook_call_end();

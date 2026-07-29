@@ -219,6 +219,7 @@ void ast_hook_cast_gv(void);
 void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 												 int variadic);
 void ast_hook_call_end(void);
+void ast_hook_call_noreturn(void);
 void ast_hook_call_effect_end(void);
 void ast_hook_if_begin(void);
 void ast_hook_if_gvtst_done(void);

@@ -1154,6 +1154,22 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **POST-GATES RE-CENSUS + THIRD CLASS CLOSED 2026-07-29.** With CONSTL+CONVERT_GV on, the 135 remaining
+   unfaithful deltas re-categorize as: 35 mov-only (register/spill order), **20 jmp-only**, 17 movq+xorb (FP),
+   8 movzbl+sete (setcc materialization), 8 call-delta, tail of mixed small classes — the old
+   `xorb 16/movabs 6/add 6/cmp 5` census is superseded. The jmp-only class decoded to ONE cause: a NORETURN call
+   (`mcc_error` family — all 20 functions are diagnostics-heavy) suppresses the following structural `jmp` in
+   baseline via `CODE_OFF()` (`unary()` post-call), which replay did not model, so replay emitted a dead 5-byte
+   `jmp` per site. Landed `MCC_AST_CALL_NORETURN` (default OFF): the unary noreturn branch calls
+   `ast_hook_call_noreturn` (tags the pending Invoke `AST_FB_CALL_NORETURN`), and replay `CODE_OFF()`s after
+   `gfunc_call` when tagged — the existing `gsym`/`gind` CODE_ON restore makes it self-healing at the next label.
+   Validated: gate-off byte-identical (stored objects match across binaries); repro `if (x<0) die(); else ...`
+   flips faithful; runtime matches gcc `-O1/2/3` incl. the noreturn exit path; **TU with all three new gates:
+   unfaithful 136 -> 114 (+22 faithful, ZERO regressions)**; ast ctest 224/224. Session total: unfaithful
+   239 -> 114. Remaining large classes: 35 mov-only, 17 movq+xorb, 8 movzbl+sete, 8 call-delta (incl.
+   `x = f(y += g())` — the StoreVal-as-call-arg walk rejects an Invoke whose parent is a Store, `host_runmem_alloc`'s
+   residual). JIT status of all three gates: AOT-only validation (P0 standing rule — part of flip criteria).
+
    **SECOND DELTA DECODED 2026-07-29 — `host_runmem_alloc`, and it unmasked the BIGGEST unfaithfulness producer
    in the whole bucket: the CAST-OF-LVALUE gv.** The full dump showed replay evaluating `(char *)ptr + size`
    (`mcchost.c:1550`) with the loads in swapped order. Reduction: `q = mm((char *)p + size, size)` is unfaithful
