@@ -99,7 +99,7 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 ## `-march` (default `native`) + move every ISA-dependent optimizer behind it
 **Blocking caveat RESOLVED 2026-07-27 by the second option: `ROUND_INLINE` is out of the `o4` blanket.** It was `ast_env_gate("MCC_AST_ROUND_INLINE", o4)` while its own comment said "Default OFF because roundsd is SSE4.1" — the code contradicted the doc. Verified before and after on a `floor`/`ceil`/`trunc` source: `-O4` emitted **3 `roundsd`/`roundss` and zero libm relocs**, i.e. `-O4` output genuinely required an SSE4.1 CPU with nothing recording it; now `-O2`/`-O3`/`-O4` all emit 0 `roundsd` and keep the 3 libm calls, and `MCC_AST_ROUND_INLINE=1` still inlines on demand. Full suite 7214/7214. The principle worth keeping when `-march` lands: **`-O4` means "run every optimizer", not "raise the required ISA"** — an optimizer that changes the ISA floor does not belong in a blanket keyed on optimization effort. Restore it to `o4 || (level >= x86-64-v2)` once the level exists. Checked at the same time: no `vfmadd`/`vfmsub` is emitted at `-O4`, so `MCC_AST_FMA_INLINE` is not doing the same thing on x86 (it is arm64/riscv64-only, as this section already states).
 
-**Motivation.** *(Historical: the `-O4`/SSE4.1 leak described here was FIXED 2026-07-27 — see the resolved caveat above. Kept because it is the clearest statement of why the axis is needed.)* `-O4` runs every implemented optimizer, which included `MCC_AST_ROUND_INLINE`, and `roundsd` is SSE4.1, not mcc's SSE2 baseline — so `-O4` output required an SSE4.1 CPU with nothing in the compiler recording that fact. The root cause is that mcc has no way to express a target ISA level: the optimizer gate *is* the ISA switch (`mccast.c` says so outright — "the user opts in for an SSE4.1 target (like gcc's `-msse4.1`)"). Every ISA-dependent optimizer either stays off and loses performance, or goes on and silently narrows the set of CPUs the output runs on. `-march` is the missing axis.
+**Motivation (historical, the axis now exists).** Before `-march`, the optimizer gate WAS the ISA switch, so every ISA-dependent optimizer either stayed off and lost performance or went on and silently narrowed the set of CPUs the output ran on. The durable rule that came out of it is stated in the resolved caveat above: **`-O4` means "run every optimizer", not "raise the required ISA".**
 
 **Current state.** `-march=` is already **accepted and discarded** — `case MCC_OPTION_m` (`libmcc.c`) matches `arch=`/`tune=`/`cpu=`/`cmodel=`/`fpmath=` and `break`s, so `mcc -march=x86-64-v3` is silently a no-op today. `-m32`/`-m64` are the only `-m` forms with meaning. On ARM the ISA level exists but is **compile-time only**: `MCC_CONFIG_CPUVER` (CMake `MCC_CPUVER`, `CMakeLists.txt`) baked per build and read at `arm-link.c` (`blx_avail = CPUVER >= 5`) and `arm-gen.c` (`#if CPUVER >= 7`), alongside `MCC_ARM_EABI/_VFP/_HARDFLOAT/_IDIV`. Nothing is queryable per invocation.
 
@@ -204,13 +204,6 @@ have silently stopped testing anything. Two of its assertions had the same shape
 Fixed by probing (`-march=x86-64 -print-isa` must resolve) instead of matching the default, and by naming
 `-march=x86-64` explicitly wherever baseline semantics are meant. **Any cell that keys off a default is a cell that
 stops working when the default changes.**
-
-**Historical — ordering, and the honest risk.** The flip cannot land before the cache change: with `native` on an AVX-512 host
-today, `ROUND_INLINE` turns on, `roundsd` appears, and the goldens plus the 3-stage self-host fixpoint fail — not
-because the output is wrong but because the artifacts are being compared across ISAs as if they were the same
-thing. So: (1) make the AST hash/serialize carry the consumed-feature set and split host-dependent usages from
-generic ones; (2) make the golden/differential/fixpoint machinery compare within an ISA rather than across;
-(3) THEN flip the default to `native`. Steps 1 and 2 are the work; step 3 is a one-line change to `mcc_isa_init`.
 
 **Cross-compilation keeps the triple baseline** — when the target triple differs from the host there is no host ISA
 to detect, and native detection would bake host-only instructions into cross output. That part of step 2 stands.
@@ -1016,10 +1009,11 @@ Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign 
   16, `movabs` 6, `add` 6, `cmp` 5, spread across `foldm_*` math folding rather than one construct.
 
 **Housekeeping, two chosen:**
-- **E1a — prune this file** (past 3400 lines; its own rule says completed items are pruned with detail left to git
-  history).
-- **E1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.** Doubly stale: taken at 59.5% fidelity, and three
-  gates have been re-staged since.
+- **Prune this file** — the single canonical entry for it lives under "Alongside" further down; do not re-add it
+  here. (It was listed in THREE places with three different stale line counts, which was itself the duplication it
+  warns about.)
+- ~~**E1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.**~~ **DONE 2026-07-29** in instructions + `.text`;
+  the current table is in the `-O4`/`-Os` section, and it is what found the `-O1` staging gap.
 
 **NOT chosen this round:** E1c (Mach-O scattered/GOT/TLV relocations) — they hard-error by name, which is safe, and
 real-object validation stays macOS-gated.
@@ -1042,10 +1036,9 @@ real-object validation stays macOS-gated.
 5. **The 26 non-mov length-differs.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6, `cmp` 5 — the `xorb` count is
    spread across `foldm_*` math folding, not one construct. Only remaining unexplained group in the unfaithful bucket.
 6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
-7. **E1b — prune this file.** Now 3376 lines. Its own "How to process" rule says completed items are pruned entirely
-   with detail left to git history; this session added several large resolved blocks that qualify.
-8. **D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.** Still taken at 59.5% fidelity and now cited in
-   conclusions while fidelity is 78.1% AND three gates have been re-staged since. The old numbers are now doubly stale.
+7. **Prune this file** — see the canonical entry under "Alongside"; not repeated here.
+8. ~~**D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.**~~ **DONE 2026-07-29**, in instructions and
+   `.text` rather than seconds.
 9. **Mach-O remainder.** Scattered / GOT / TLV relocations still hard-error by name (safe, incomplete). Validation
    against a real `libmcc_jitengine.a` needs macOS SDK headers — a genuine gate, unlike the `llvm-ar`/`clang -target`
    assumptions that turned out to be wrong.
@@ -1454,9 +1447,14 @@ Differential fuzz gate-on: **120 seeds vs gcc + clang with the full `--gates` sw
 fourth approach's failures — so any flip must lean on the self-host fixpoint and determinism checks instead.
 
 ### Alongside
-- **E1b — prune this file.** It is 3062 lines and its own "How to process" rule says completed items are pruned
-  entirely with detail left to git history. The 2026-07-27 and 2026-07-28 sessions both added large resolved
-  blocks that now qualify.
+- **Prune this file — THE canonical entry; the other two were deleted 2026-07-29, do not re-add them.** ~4180 lines.
+  Its own "How to process" rule says completed items are pruned entirely with detail left to git history.
+  **What to keep when pruning, because this file's value is concentrated in it:** every measured NEGATIVE result
+  ("do not re-run this sweep", "tried and reverted, here is why"), every trap that cost a session, and every
+  refusal with its reason. Those are not narrative — they are what stops the next reader repeating the work.
+  **What to cut:** the blow-by-blow of how a landed change was arrived at, once the lesson has been stated once.
+  Do not record a line count in the other entries again; it goes stale immediately and is how this ended up
+  triplicated.
 - ~~**D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.**~~ **DONE 2026-07-28**, on mcc's own TU
   (2127 verified functions):
 
