@@ -802,6 +802,13 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 | A2a vstack SYNC | **60 -> 4** | site proven to be a DETECTOR (`026233f8`); unaccounted pops fixed in `switch` (`1939ba28`), `if`/`while`/`do`/`for` (`0c4f6b33`), short-circuit attributed to its own hook (`d6aa9fcd`), atomics bailed + verdict ordering fixed; the 4 left are a second `switch`-path pop, see below |
 | A1a `nocode_wanted` | not started | 3 approaches ruled out; hardest item in the file |
 
+**STATUS 2026-07-29 (this session's line of work was optimizer levels, not the recorder).** Landed:
+`MCC_AST_REGDISP` staged to `-O2` (25% off nbody), `-ffast-math` made to imply `-fno-math-errno`. Established as
+negative results, so nobody re-runs them: the ten `o4`-only gates hold exactly one mis-staging (REGDISP), and the
+`-O4` out-of-process superopt driver is the best cell on ZERO of five kernels. Open and newly found:
+`__builtin_sqrt`/`floor`/`fma`/`fmin` do not link, and `-O1` executes the same instruction count as `-O0` on all
+five kernels while emitting more `.text`.
+
 Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
 Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign extension) found and fixed
 (`b0fb11d5`).
@@ -1448,190 +1455,62 @@ Also unexplained: **riscv64 shows ~30x the `unfaithful` rate of every other targ
 `optfire` corpus), and it is relocation divergence with byte-identical code. Cross-arch parity section; reserved for the
 arm64 machine.
 
-## `-O4` is a SIZE level, not a speed level — measured 2026-07-27 (corrected)
-Full `vendor/plb` sweep (gcc / clang / mcc x `-O0..-O3`,`-Os`, plus `mcc -O4`), 5 kernels, min-of-3, every cell's stdout
-checked against a `gcc -O2` reference: **0 correctness mismatches anywhere**.
+## `-O4` superopt driver — surviving facts, 2026-07-27 (PRUNED 2026-07-29; superseded by the section below)
+The measurement narrative that used to live here is in git history. Its conclusions were largely overturned by the
+2026-07-29 re-measurement in the next section — read that first. What survives, because nothing has retested it:
 
-**CORRECTION — an earlier revision of this entry called the `-O4` result a "correctness-of-optimization bug". It is
-not.** The out-of-process superopt is **scored by emitted SIZE** (`SoPfCkpt.best_size` in `mcc.c`), so producing smaller
-and slower code is it working, not failing. Text sizes confirm it, `-O4` plain versus `-O4` with the driver disabled:
+**Still open, in priority order:**
+1. **`-O4`'s scoring axis is undocumented and surprising.** `-Os` already exists for size, so users reasonably
+   expect `-O4` to be the fastest code. Say what it optimises in the help text, or make the axis selectable.
+2. **`so_eval` scores `text + spills * so_spill_w` with `SO_SPILL_W_DEFAULT = 48`, which appears to be a guess.**
+   Recalibrate or justify it. The next section shows the proxy is anti-correlated with speed on 2 of 5 kernels.
+3. **The superopt cache makes `-O4` ~2x SLOWER for a byte-identical result.** With 1112 accumulated `so-*` entries
+   nbody compiles in 8.4 s; against a clean `XDG_CACHE_HOME`, 4.0 s — same binary (md5 `c860fa1313`, text 3636).
+   It is not a directory scan (lookup is keyed via `so_ckpt_path`). `MCC_AST_SEARCH_VERBOSE=1` shows the clean run
+   emitting 16 `[search] store … COMPLETE` records and the warm run ZERO — the per-function search is entirely
+   short-circuited by memo hits and it still takes twice as long, so the extra time is the out-of-process driver
+   spending a budget the memo hits freed, arriving at the identical answer. Fix (a) stop the driver when the
+   in-process search reports every function COMPLETE; (b) a memo hit should make `-O4` FASTER, which is the point of
+   the checkpoint. **Corollary: every `-O4` compile-time figure in this file is cache-state-dependent and probably
+   overstated**, including the `tools/bench.c` 420x claim.
 
-| kernel | `-O3` | `-O4` plain | `-O4` `SEARCH_WORKER=1` |
-|---|---:|---:|---:|
-| nbody | 3543 | **3583** | 3945 |
-| spectral | 2722 | **2494** | 2769 |
-| matmul | 2542 | **2276** | 2972 |
+**`-O4` does not SEARCH on real inputs — it evaluates ONE configuration.** `-v64` reports the driver's own eval
+count. The budget is `optimize_search_seconds = <level>` seconds (libmcc.c) = 4 s for `-O4`, while a single
+evaluation of nbody takes 8.2 s, so `while (host_clock_ms() - start < budget_ms)` never runs an iteration:
 
-`MCC_SEARCH_WORKER=1` at `mcc.c` DISABLES that driver (`mcc_superopt_search` is gated on
-`!mcc_env_on("MCC_SEARCH_WORKER")`), which is why it is both faster to compile and larger. The runtime cost of the size
-win, isolated one variable at a time on `nbody`: plain `-O4` compiles in 8.44 s and runs in 0.28 s; with the driver
-disabled, 4.29 s and 0.18 s. `MCC_JIT=1` and `MCC_AST_SEARCH=1` change neither number.
+| input | evals | wall |
+|---|---:|---|
+| nbody | **1** | 8240 ms |
+| nsieve | **1** | 8171 ms |
+| matmul | **2** | 11424 ms |
+| `tests/superopt/src/spillheavy.c` | 7 | 4813 ms |
 
-**What IS worth acting on:**
-1. **The semantics are surprising and undocumented.** `-O4` is presented as "run every implemented optimizer", and `-Os`
-   already exists for size, so a user reasonably expects `-O4` to be the fastest code. It is the smallest. Say so in the
-   help text, or make the scoring axis selectable.
-2. **The runtime-scoring mode is reachable but does not change the winner (investigated 2026-07-27).** It is enabled
-   by **`MCC_AST_JITSCORE=1`**, not `MCC_JIT` — that is why the sweep never engaged it; I was setting an unrelated
-   variable. With it on and a COLD cache, `-O4` on `nbody` produces a **byte-identical binary** (same md5, same text
-   3636, same 0.29 s runtime) as size scoring, at the same compile time. So on this kernel the search converges on the
-   same configuration either way and the scoring axis is not the lever it appears to be. Before building on it, find a
-   kernel where the two scorings actually diverge; if none exists, the mode is decorative.
-3. **The superopt cache makes `-O4` 2x SLOWER for a byte-identical result — characterised 2026-07-27.** With 1112
-   accumulated `so-*` entries, `-O4` on `nbody` compiles in **8.4 s**; against a clean `XDG_CACHE_HOME`, **4.0 s**.
-   Stable across repeats in both states, and **both produce the SAME binary** (md5 `c860fa1313`, text 3636, 0.28 s).
-   So the extra 4.4 s buys nothing at all.
-   It is NOT a directory scan — the lookup is keyed (`so-<key>.ck` via `so_ckpt_path`). The mechanism is stranger:
-   `MCC_AST_SEARCH_VERBOSE=1` shows the clean run emitting **16 `[search] store` records, all `COMPLETE`** (the
-   per-function AST search runs and finishes for 16 functions), while the warm run emits **ZERO search lines** — the
-   per-function search is entirely short-circuited by memo hits, and it still takes twice as long. So the extra time is
-   NOT search work; it is the out-of-process superopt driver spending a time budget the memo hits freed up, and
-   arriving at the identical answer.
-   Two things to fix, in order: (a) the driver should stop when the in-process search reports every function COMPLETE,
-   rather than burning its remaining budget on a decided outcome; (b) a memo hit should make `-O4` FASTER, which is
-   the whole point of the checkpoint.
-   **This also invalidates a class of numbers: every `-O4` compile-time figure in this file is cache-state-dependent
-   and probably overstated**, including the `tools/bench.c` 420x claim. Re-measure against an isolated
-   `XDG_CACHE_HOME` before quoting any of them.
-3. **8.4 s per compile for ~1-10% size** is the trade `tools/bench.c` already reports as 420x compile time for ~8%
-   smaller output. Consistent; no new information, but it belongs next to these numbers.
+Only the small fixture gets a real search. Raising the budget does not help on nbody: `-O10` gives 3 evals, `-O30`
+gives 7, and `best gate` stays 0 throughout.
 
-**REQUESTED 2026-07-27 — `-O4`+ must be a strict SUPERSET of `-O3`, never a regression from it.** Today the `-O4`
-search is free to select a gate configuration that turns OFF optimizations `-O3` applies by default, so `-O4` can and
-does emit worse code than `-O3`. Evidence from the sweep above, same box, same kernel: **`mcc -O3` runs `nbody` in
-0.246 s and `mcc -O4` in 0.285 s** — `-O4` is 16% SLOWER than the level below it, after spending 4-8 s searching. The
-mechanism is already documented elsewhere in this file: at `-O4` the `--stats` STRATEGY counters read all-zero because
-the search picks a config that disables the strategies for small functions (the `divmagic` case is the worked example —
-`MCC_AST_SEARCH=1` keeps `idiv`, `MCC_AST_SEARCH=0` emits the magic-multiply).
+**Landed: the `PROMOTE` floor.** `so_setenv_cfg` used to force `MCC_AST_PROMOTE=0` whenever bit 1 of the gate word
+was clear, so a size-scored search could switch off the one transform that trades size for speed. It now only ever
+sets the gate ON; when the bit is clear it calls `so_unsetenv_axis`, restoring the compiler's default.
+`MCC_SO_PROMOTE_FLOOR=0` restores the old behaviour. **Its headline claim — "`-O4` is now never slower than `-O3`
+on any kernel" — is FALSIFIED; see the next section.**
 
-**PART 1 IMPLEMENTED 2026-07-27 as `MCC_AST_SEARCH_FLOOR` (default OFF) — and it does NOT fix the regression.**
-The floor is the gate mask captured at the end of `ast_configure` (at `-O4` that IS the `-O3` default set, since `-O4`
-sets `optimize=3`), OR-ed into every `ast_search_gates_set()`, so the search can only ADD. It demonstrably takes
-effect — nbody text goes 3636 -> 3748 with it on — but **runtime stays 0.28 s against `-O3`'s 0.24 s**. Full suite
-7228/7228 with it off.
-So the `-O4` slowdown is NOT the search subtracting `-O3` gates, which was the hypothesis this item was written on.
-Also falsified: the superopt's inline-limit axis — forcing `MCC_AST_INLINE_LIMIT=160` at `-O4` changes neither
-runtime nor text.
-**CAUSE IDENTIFIED 2026-07-27 — the out-of-process driver DISCARDS a better in-process result.** Clean-cache,
-min-of-5, nbody:
+**Dead ends, recorded so nobody repeats them:**
+- **Flipping `MCC_SO_DEFAULT_SEED` default-on** ("seed the search with the baseline so nothing worse ships") makes
+  nbody WORSE, 3636 -> 3998 `.text`, reproducibly. `SO_GATE_DEFAULT` is not a cheap candidate — it RESTORES the user
+  env, so evaluating it re-runs the full in-process search and burns the whole budget before the gate loop executes
+  once. Seeding with the baseline *replaces the search with* the baseline.
+- **`MCC_AST_SEARCH_FLOOR`** (default OFF) applies a floor inside `ast_search_gates_set`, which is the wrong layer —
+  the driver sets gates via ENV in child processes, read by `ast_configure`, so the floor never sees them.
+- **The inline-limit axis** (`MCC_AST_INLINE_LIMIT=160` at `-O4`) changes neither runtime nor text.
+- **"The other ~50 `o4` gates need the same floor" was a CATEGORY ERROR.** The driver can only subtract a gate it
+  sets, and it sets exactly 12 (the `so_axes[]` table, plus `MCC_SEARCH_WORKER`/`MCC_AST_SPILL_OUT`/
+  `MCC_AST_FN_CONFIG`). The rest come from `ast_configure` at the child's `-O` level — already floored by
+  construction.
 
-| config | runtime | text |
-|---|---:|---:|
-| `-O3` | 0.24 s | 3596 |
-| `-O4`, driver ON (default) | **0.28 s** | 3636 |
-| `-O4`, driver OFF (`MCC_SEARCH_WORKER=1`) | **0.17 s** | 3766 |
-
-The in-process per-function search alone produces the FASTEST code of the three — **29% faster than `-O3`** — for 4.7%
-more text. The out-of-process driver then replaces that result with its own size-optimal pick: **3.5% smaller and 65%
-slower**. So `-O4` already contains a better answer than it ships; the driver throws it away.
-That reframes the fix. Flooring gates (part 1 above) cannot help, because nothing is being subtracted — a whole
-better configuration is being overridden.
-**Widened to 4 kernels 2026-07-27, and one case is a STRICT regression that needs no axis debate:**
-
-| kernel | `-O4` vs `-O3` time | `-O4` vs `-O3` text |
-|---|---:|---:|
-| nbody | **+17.7%** | **+1.1% LARGER** |
-| spectral | +40.0% | -8.2% |
-| matmul | +1.1% | -10.3% |
-| nsieve | +8.2% | -1.4% |
-
-`-O4` is slower than `-O3` on **all four**. On three it at least buys size, which is a defensible (if surprising)
-trade. **On nbody it is slower AND larger — worse on the driver's OWN scoring axis.** That is not a design tradeoff,
-it is the driver shipping a result it should have rejected.
-**DIAGNOSED 2026-07-27 — the driver's SCORING PROXY is miscalibrated. Four hypotheses falsified first; recording them
-so nobody re-runs the same experiments.**
-- *Not* gate subtraction at the AST-search layer. `MCC_AST_SEARCH_FLOOR` takes effect (text 3636 -> 3748) and does not
-  recover the runtime. It also targets the wrong layer: the driver sets gates via ENV in child processes, which
-  `ast_configure` reads, so a floor applied inside `ast_search_gates_set` never sees them.
-- *Not* the inline-limit axis. `MCC_AST_INLINE_LIMIT=160` changes neither runtime nor text.
-- *Not* an unreachable baseline. Reading `so_setenv_cfg` end to end: `gate == SO_GATE_DEFAULT` RESTORES the user env,
-  so the plain baseline IS expressible and IS what `MCC_SO_DEFAULT_SEED` evaluates first. (This retracts the previous
-  entry's inference that the driver's space could not contain `-O3`.)
-- *Not* the searched gate set. Forcing `MCC_AST_TEMPLATES=1 MCC_AST_PROMOTE=1 MCC_AST_INLINE=1` at `-O4` gives
-  0.284 s / 3632 — indistinguishable from plain `-O4` — because the driver re-decides the config inside its children
-  regardless.
-
-**What it is:** `so_eval` scores a candidate as `text + spills * so_spill_w` with `SO_SPILL_W_DEFAULT = 48`. That is a
-SPEED proxy, not a size metric — and it is choosing wrong. The driver's children all run with `MCC_SEARCH_WORKER=1`
-(set by `so_setenv_cfg`), i.e. the in-process search, which on its own produces the FASTEST code measured here
-(0.17 s, 29% better than `-O3`). The driver then evaluates candidates on the proxy and ships one that is **65% slower**
-than the baseline it could have kept, and on nbody LARGER as well.
-
-**Fix (1) "keep the baseline" WAS ATTEMPTED 2026-07-27 IN THE OBVIOUS FORM AND IT IS WRONG — do not redo it.**
-The obvious reading is "seed the search with the baseline so nothing worse can be shipped", i.e. flip
-`MCC_SO_DEFAULT_SEED` default-on (`best_gate = SO_GATE_DEFAULT` unconditionally at `mcc_superopt_search`’s seed). One line. It makes
-nbody **WORSE: 3636 -> 3998 `.text`**, reproducibly and deterministically (3 clean runs each, checkpoint cache
-`~/.cache/mcc/so-*.ck` cleared between). Reverted.
-
-Why, and this is the load-bearing detail: **`SO_GATE_DEFAULT` is not a cheap candidate.** It RESTORES the user
-environment, so evaluating it at `-O4` re-runs the full in-process AST search for that one evaluation, whereas an
-ordinary gate word `g` is a cheap fixed configuration. The seed eval therefore burns the whole `budget_ms` before the
-gate loop at `mcc_superopt_search`’s gate loop executes even once, and the driver ships the unimproved baseline. Seeding with the baseline
-does not *guarantee* the baseline is a floor — it *replaces the search with* the baseline.
-
-**What the same experiment established, which is more useful than the fix that failed:**
-- **The user's baseline is genuinely never a candidate by default.** `best_gate` initialises to `0` in `mcc_superopt_search`, and
-  the gate loop enumerates `g` over `[0, SO_GATE_SPACE)`, which cannot contain `SO_GATE_DEFAULT` (`0xFFFFFFFF`). So
-  the earlier note "the plain baseline IS expressible and IS what `MCC_SO_DEFAULT_SEED` evaluates first" is right
-  about *expressible* and wrong about *evaluated* — nothing evaluates it unless that env is set.
-- **`-O4`'s own default config is far worse than `-O3`'s, and that is the real gap.** Measured on nbody:
-  `MCC_SEARCH_WORKER=1 -O4` (driver off, `-O4` default gates, in-process search) = **3998**, versus `-O3` = **3596**.
-  The driver then searches 3998 down to 3636 — so the driver IS improving on its own baseline by 9%; it just starts
-  from a config that is 11% worse than `-O3`. `-O4` ending up larger than `-O3` is therefore NOT the driver shipping
-  a result it should have rejected (this retracts that framing above); it is the `-O4` default gate set being worse
-  than the `-O3` one, which is exactly what Wanted item 1 (the floor) describes.
-- Current `-O3` vs `-O4` `.text` across the kernels, with the driver as-is: nbody 3596/3636 (**larger**), nsieve
-  1816/1790, mandelbrot 2153/2094, matmul 2595/2329. So nbody is the ONLY kernel where `-O4` loses on size, and the
-  other three are 1-10% wins.
-
-**So the correct shape of the floor is: compile once with the `-O3` configuration, keep that object, and ship a
-superopt candidate only if it beats it.** That costs one extra ordinary compile (cheap, deterministic) rather than one
-extra full-search evaluation (which is what made the seeding attempt fail). The `-O3` config is not expressible as a
-gate word today, so this needs a real baseline slot in the driver, not an env flip.
-Remaining, unchanged: (2) recalibrate or justify `so_spill_w = 48`, which
-appears to be a guess; (3) only then revisit whether `-O4` should optimise speed or size. Note `so_jitscore` already
-exists to score by actual measured runtime (`so_run_score`) and is inert in practice — that is the honest metric this
-proxy is standing in for.
-Note the floor costs size for no measured runtime gain here (3748 vs 3636), so adopting it is a decision about
-GUARANTEES — '`-O4` is never weaker than `-O3`' — not a measured win. Keep it off until the real cause is found, or
-it will be credited with a fix it did not make.
-
-Wanted:
-1. **Floor the search at the `-O3` default set — LANDED 2026-07-27 for the axis that actually mattered, `PROMOTE`.**
-   The principle is that the search may only ADD gates, never subtract from the default set. Applied to the one axis
-   the measurement indicted: `so_setenv_cfg` used to force `MCC_AST_PROMOTE=0` whenever bit 1 of the gate word was
-   clear, so a SIZE-scored search could switch promotion off — and promotion is precisely the transform that trades
-   size (prologue saves) for speed (fewer spills). It now only ever sets the gate ON; when the bit is clear it calls
-   the new `so_unsetenv_axis`, restoring the compiler's own default (or the user's pin) instead of forcing `0`.
-   `MCC_SO_PROMOTE_FLOOR=0` restores the old behaviour and is byte-identical on `.text` for all four kernels.
-
-   **The measurement that settles it — the `-O4` default config was the FASTEST thing on the bench and the driver was
-   throwing it away.** nbody: `-O3` 3596 B / 0.23 s; `-O4` as shipped 3636 B / 0.27 s; `-O4` with promotion pinned on
-   3998 B / **0.17 s**. So the driver's size-scored search was selecting a candidate **59% slower** than the baseline
-   it started from, and the whole `-O4`-is-slower-than-`-O3` finding reduces to this one axis.
-
-   Result across the kernels (best-of-5, `.text`):
-
-   | kernel | `-O3` | `-O4` after | `-O4` before |
-   |---|---:|---:|---:|
-   | nbody | 0.23 s / 3596 | **0.17 s** / 3998 | 0.27 s / 3636 |
-   | matmul | 0.65 s / 2595 | **0.52 s** / 3025 | 0.65 s / 2329 |
-   | mandelbrot | 0.48 s / 2153 | 0.47 s / 2192 | 0.48 s / 2094 |
-   | nsieve | 0.14 s / 1816 | 0.14 s / 1895 | 0.14 s / 1790 |
-
-   **`-O4` is now never slower than `-O3` on any kernel, and 20-26% faster on two** — the property this item asked
-   for. **FALSIFIED 2026-07-29 — see "`-O4` is still slower than `-O3` on spectral" below. That table has four rows
-   because spectral was dropped from it, and spectral is the kernel where `-O4` loses.** The honest cost: `-O4` is now LARGER than `-O3` on all four (it buys speed with prologue saves), where before
-   it was smaller on three. That is the right trade for a level whose contract is "optimize hardest", but it does mean
-   the size/speed question below is no longer hypothetical — `-O4` has now definitively picked speed.
-
-   **The floor work is COMPLETE as of 2026-07-27, and my earlier "still open: the same floor for the other 61
-   `o4`-defaulted gates" was a CATEGORY ERROR.** The superopt driver can only subtract a gate it actually sets, and it
-   sets exactly **12** axes — `TEMPLATES`, `PROMOTE`, `INLINE`, `NO_CALLFUL`, `INLINE_LIMIT`, `INLINE_NODES`, `GRAFT`,
-   `BITFLAG`, `CPROP_JOIN`, `CSE_JOIN`, `PROMOTE_LIMIT`, `OPT_LIMIT` (the `so_axes[]` table; the only other env it
-   touches is `MCC_SEARCH_WORKER`, `MCC_AST_SPILL_OUT` and `MCC_AST_FN_CONFIG`). The other ~50 `o4` gates are never
-   written by the driver at all, so a child process gets them from `ast_configure` at its `-O` level — **they are
-   already floored by construction and there is nothing to fix.**
+**The correct shape of the remaining floor, if anyone builds it:** compile once with the `-O3` configuration, keep
+that object, and ship a superopt candidate only if it beats it. That costs one ordinary compile rather than one full
+search evaluation — which is exactly what made the seeding attempt fail. The `-O3` config is not expressible as a
+gate word today, so it needs a real baseline slot in the driver, not an env flip.
 
 ## `-O4` is still slower than `-O3` on spectral, and `-O4` output depends on CACHE HISTORY — measured 2026-07-29
 Two findings, both reproducible. The second is the more serious one.
@@ -1890,32 +1769,29 @@ The old seconds-based table, for the record — it is superseded and should not 
 | mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
 | matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
 
-## `-ffast-math` was silently ignored — FIXED 2026-07-29; and 4 `__builtin_` math names do not link
-Found while sweeping the `o4`-only gates (below). `-ffast-math` parsed as an unknown `-f` flag, was silently
-accepted, and did nothing — so `mcc -O2 -ffast-math` kept the `sqrt` libcall that plain `-fno-math-errno` inlines.
-gcc and clang both document `-ffast-math` as implying `-fno-math-errno`.
-
-Now `-ffast-math` sets `no_math_errno`, `fold_math` and `cx_limited_range` together, and `-fno-fast-math` clears
-them; order is honoured (`-ffast-math -fno-fast-math` gives back the libcall). Guarded by
-`cli/fast_math_implies_no_math_errno`, which asserts all three states. Suite 7553/7553, self-host byte-identical.
-
-**STILL OPEN, found by the same probe — `__builtin_sqrt`, `__builtin_floor`, `__builtin_fma` and `__builtin_fmin`
-are not recognised and become UNRESOLVED SYMBOLS.**
+## `__builtin_sqrt`/`floor`/`fma`/`fmin` are UNRESOLVED SYMBOLS — open, found 2026-07-29
+(`-ffast-math` being silently ignored was the other half of this and is FIXED in `2717479f`: it now implies
+`-fno-math-errno` + `fold_math` + `cx_limited_range`, guarded by `cli/fast_math_implies_no_math_errno`.)
 
     int main(void){ printf("%f\n", __builtin_sqrt(4.0)); }
     mcc: error: unresolved reference to '__builtin_sqrt'      # gcc prints 2.000000
 
-`readelf` on a probe TU shows exactly four UND names: `__builtin_floor __builtin_fma __builtin_fmin
-__builtin_sqrt`. `__builtin_fabs` and `__builtin_copysign` are fine because `runtime/include/mccdefs.h` defines
+`readelf` on a probe TU gives exactly four UND names: `__builtin_floor __builtin_fma __builtin_fmin
+__builtin_sqrt`. `__builtin_fabs` and `__builtin_copysign` work only because `runtime/include/mccdefs.h` defines
 them as macros; the four above have no macro and no compiler-side handler, so the parser implicitly declares
-`__builtin_sqrt` as an ordinary function and emits a call to that literal name. The AST math-inliner matches on the
-LIBRARY name (`ast_bfold_tab` vs `sqrt`), which is why `sqrt(x)` inlines and `__builtin_sqrt(x)` does not even
-compile.
+`__builtin_sqrt` as an ordinary function and emits a call to that literal name — which also means the implicit
+`int` return is the wrong ABI even before the link fails. The AST math-inliner matches the LIBRARY name
+(`ast_bfold_tab` vs `sqrt`), which is why `sqrt(x)` inlines and `__builtin_sqrt(x)` does not even compile.
+
 Two candidate fixes, neither attempted: (a) more macros in `mccdefs.h`, consistent with the ~20 math builtins
-already done that way, but the ones needing a real call would have to declare libm prototypes in an
-auto-included header — a clash risk, and wrong under `-ffreestanding`; (b) strip a leading `__builtin_` in the
-parser when the remainder names a known libm entry, which is closer to what gcc does and fixes the whole family
-at once. (b) looks right; the reason I did not just do it is that it changes name lookup for every identifier.
+already done that way — but the ones needing a real call would have to declare libm prototypes in an auto-included
+header, a clash risk and wrong under `-ffreestanding`; (b) strip a leading `__builtin_` in the parser when the
+remainder names a known libm entry, closer to what gcc does and fixing the whole family at once. (b) looks right;
+it changes identifier lookup, so it wants its own change and its own validation run, not a drive-by.
+
+Related, same probe: **gcc at plain `-O2` inlines `sqrt`, `copysign` AND `fma`, and with `-ffast-math` inlines all
+eight** of sqrt/copysign/fmin/fmax/fma/fabs/floor/ceil. mcc emits libcalls for fmin/fmax/fma/ceil/floor at every
+level. See the gate-sweep section below — the gates named after those transforms do not fire at all.
 
 ## The `o4`-only gates were swept for mis-staging 2026-07-29 — REGDISP was the only one; do not re-run this
 Method that found `REGDISP`: force each `o4`-only gate on at `-O2` and compare instructions and `.text`. All ten,
@@ -1941,87 +1817,14 @@ inlines `sqrt`, `copysign` AND `fma`, and with `-ffast-math` inlines all eight.*
 either unreachable or guarded by a condition no ordinary call meets. Worth finding out which before anyone counts
 them as implemented features.
 
-## `MCC_AST_REGDISP` was staged `-Os`/`-O4` only — LANDED at `-O2` 2026-07-29, 25% off nbody
-Found by the E1b re-measurement above: `-Os` beat `-O3` on nbody by 25% in instructions while also being smaller.
-A size level winning on speed is a staging bug, and the gate is a clean bidirectional control:
+## `MCC_AST_REGDISP` staged at `-O2` — LANDED 2026-07-29 (`ead0b1d9`)
+Was gated `o4 || optimize_size`, so `-O1`..`-O3` paid for an `add` that `-Os` did not; found because `-Os` beat
+`-O3` on nbody by 25% in instructions AND was smaller. Now `o4 || optimize_size || optimize >= 2`;
+`MCC_AST_REGDISP=0` restores. x86_64-only by construction. 25% off nbody, byte-identical on the other four kernels.
 
-| config | instructions | `.text` |
-|---|---:|---:|
-| `-O3` (before) | 14.59G | 2267 |
-| `-O3 MCC_AST_REGDISP=1` | **10.89G** | **2255** |
-| `-Os` | 10.89G | 2191 |
-| `-Os MCC_AST_REGDISP=0` | 14.59G | 2203 |
-
-`ast_regdisp_env` keeps a member/array constant offset as a register-base displacement instead of materialising an
-`add`, and it was gated `o4 || s1->optimize_size` — so every level from `-O1` to `-O3` paid for an `add` that `-Os`
-did not. Now `o4 || optimize_size || optimize >= 2`; `MCC_AST_REGDISP=0` restores the old behaviour.
-It is inside `#ifdef MCC_TARGET_X86_64`, so this is an x86_64-only change by construction.
-
-Across the bench it is a strict win — 25% on nbody, and **byte-identical output on the other four kernels** at both
-`-O2` and `-O3`. Validated to the bar: **ctest 7552/7552**, self-host 3-stage byte-identical fixpoint at both `-O2`
-(o1=o2=o3=5682783) and `-O3` (5713663), and **397 agree / 0 miscompile** over 400 differential-fuzz seeds against
-gcc and clang with `--gates`.
-Worth re-checking on the other four kernels' hot loops why it changes nothing there — a transform this cheap that
-only fires on one of five kernels may be over-guarded (`!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))`
-is a wide exclusion).
-
-
-Essentially identical to the original measurement, so +291 faithful functions bought nothing here. **That does NOT
-refute the ceiling explanation below — the control says the opposite.** Per-function verdicts on nbody show
-**`advance` — the hot function — is `desync` at `ast_hook_vpush`'s VALUE-MODEL guard**, along with `scale_bodies`,
-with `offset_momentum` `unfaithful`. The kernels are 67-78% faithful overall, but the functions that matter are still
-excluded, so the optimizer never sees the loop that dominates the runtime.
-
-**RESOLVED 2026-07-28 — and the recorded diagnosis above was WRONG.** That group was characterised here as
-register-held lvalues needing pointer provenance modelled, i.e. "not straightforwardly modellable at all". It is
-nothing of the kind. Instrumenting the guard to print its inputs showed `advance` failing with
-`vmask=0 lval=1 bt=VT_DOUBLE` — a `double` lvalue addressed through a register — and the minimal reproducer is two
-lines:
-
-    struct B { double x, y, vx, vy; };
-    void f(struct B *p, double d) { p->vx -= d; }   /* desync at -O2, FAITHFUL at -O3 */
-
-Plain member read (`return p->x`) and plain member write (`p->x = 1.0`) are both faithful. Only COMPOUND assignment
-through a pointer desyncs — and `MCC_AST_OPASSIGN` already models it exactly. The gate was simply default-on at
-`-O3` and not at `-O2` (`ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 3)`). Discriminating controls:
-`*p -= d` desyncs, but `g -= d` on a static global is faithful.
-
-**LANDED: the default is now `>= 2`.** Measured effects, all on the same tree:
-
-| measurement | before | after |
-|---|---|---|
-| mcc's own TU at `-O2`, faithful | 1392 / 1849 (75.3%) | **1436 / 1849 (77.7%)** |
-| value-model guard events on that TU | 72 | **4** |
-| exec-corpus ratchet gap set | 759 | **752** (7 now faithful, none regressed) |
-| nbody `-O2` best-of-5 | 0.49s | **0.41s** |
-
-68 of the 72 events were this one gate. And nbody at `-O2` is now **0.41s — exactly its `-O3` number**, with
-byte-identical program output: `MCC_AST_OPASSIGN` was the ENTIRE `-O2` → `-O3` gap on that kernel. So the flat
-`-O2` curve recorded below is, for nbody, not a fidelity ceiling at all but a gate staged one level too high.
-
-The lesson worth keeping: before concluding that a desync group needs new modelling, check whether an EXISTING gate
-already models it and is merely off at that level. The instrumentation that settled this printed the guard's actual
-inputs (`vmask`/`lval`/`bt`) — the earlier characterisation was inferred from the guard's source condition instead,
-and inferred wrong.
-
-Bar run for the flip: host ctest 7276/7276, cross ctest 7435/7435, self-host fixpoint `s3 == s4`, and both
-`runtime-bench-check` and `runtime-bench-gatewin` pass (`MCC_AST_OPASSIGN`/nbody is one of the two `GATE_WINS`; the
-guard sets the env explicitly, so a default change does not disturb it).
-
-Residual, NOT fixed here: `tests/ast/verify-baseline/x86_64-win32.txt` is stale in the SAFE direction. Measured with
-`cmake-cross/mcc-x86_64-win32`: **69 gaps now against 209 in the baseline, every drift entry "now FAITHFUL", zero new
-gaps.** Most of that predates this flip (it is the whole 2026-07-27 fidelity session landing). It was NOT regenerated
-because that baseline's documented producer is the mingw build, and the `mingw` preset is CI-only — it fetches a
-winlibs GCC and its inner build fails here with "No CMAKE_ASM_COMPILER could be found" even though
-`x86_64-w64-mingw32-gcc` works standalone. Regenerating it from the Linux-hosted cross would bank a baseline from an
-unvalidated producer. Whoever runs the mingw build should regenerate it; the cell can only fail as "regenerate to
-bank the win".
-
-**Original finding, still true as stated: mcc `-O1`/`-O2`/`-Os` are indistinguishable from `-O0`** on
-these kernels (nbody 0.298 / 0.303 / 0.293 versus 0.299), while gcc and clang gain roughly 2x from `-O0` to `-O1`.
-`-O3` is the first level that moves (0.246). That is consistent with the 48% recorder-fidelity ceiling above — a pass
-that cannot run in half the functions cannot show up in a benchmark — and is the most direct evidence yet that fidelity
-work is worth more than new passes.
+Open follow-up: it fires on exactly one of five kernels. `ast_regdisp_env`'s guard
+(`!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))`) is a wide exclusion — a transform this cheap
+probably should apply more often. Worth checking why it misses the other four hot loops.
 
 ## Follow-ups / due diligence from the 2026-07-27 optimizer-fidelity session
 Every item below came out of building `optfire` and following what it found. Nothing here is speculative — each is a
@@ -3588,70 +3391,38 @@ Readings: (a) nbody gains **~20%** and every weight from 12 to 384 captures the 
 - **Investigate `AST_Poison` prevalence + reconciliation.** `AST_Poison` is a tombstone, not a construct: the columnar arena (`struct AstArena`) has no free list, so any pass that deletes a node re-kinds the slot to `AST_Poison` and `ast_clear_children`s it rather than removing it. Five planters today, all in `mccast.c`: narrow-lift (`ast_narrow_make` ~7250, poisons the wrapper after hoisting `inner`), DSE (~8070, redundant local store), SCCP branch-fold (~8123, dead `If` when the taken arm is empty), jump-thread/if-simplify (`ast_jt_*` ~8359, both arms empty), and the generic `ast_bf_drop` (~9329, bitfield lowering). Every downstream pass then pays to walk-and-skip these dead slots, and each one is serialized as a live node (a `kind` u16 + full payload row) in `mccjit_intent_serialize`'s node stream and re-materialized on deserialize — so tombstone density inflates both per-pass walk cost and blob size. Measure it first: instrument for post-pass Poison count per function / per TU (and as a fraction of live nodes) across the amalgamation self-compile + the exec corpus, and bucket by planter so the dominant source is named the way the desync gap set is. Then determine how many can/should be eliminated by (a) passes that rewrite-in-place instead of tombstoning where the slot could be reused, (b) an arena compaction/reconciliation step (renumber live nodes, drop Poison, remap `parent`/`first_child`/`last_child`/`next_sib`/child-index columns — the same index-remap `ast_slice_extract` already does) run before serialize and/or between pass phases, and (c) skip-index or generation-tagged querying so walkers don't re-scan tombstones. Open question the measurement settles: whether Poison is rare enough to leave alone (tombstoning is cheap and node-index-stable, which several passes rely on mid-transform) or common enough that a reconcile pass pays for itself. Node-index stability is the constraint — any compaction must run at a point where no live cursor/`AstLocal` is held across it.
 - **riscv64 `MCC_AST_PROMOTE=1` aborted the compiler — FIXED 2026-07-26.** `freg: Assertion 'r >= 8 && r < 16'` turned out to be `freg(-1)`: a `get_reg` failure sentinel reaching `load()`/`store()` as a register id. Backtrace `ast_replay_bb -> gfunc_return -> vstore -> gfunc_call -> gv(MCC_RC_R(2)) -> load(r=-1)`. Cause: the riscv64 caller-saved promotion pool was `{2,3,4,5,6,7}` = **a2-a7, the ABI argument registers**, and the FP pool `{10,11,12,13}` = **fa2-fa5, likewise argument registers**. A function is only leaf as far as the AST can see — a struct copy or struct return lowers to a hidden `memcpy`, and `gfunc_call` materialises each argument with `gv(MCC_RC_R(n))`, a class containing exactly ONE register. Promotion pins it, `get_reg` has nothing to return, and -1 propagates. The size pattern is the tell: `struct M{int a;}` (4 B), `{int a,b,c;}` (12 B) and `{char a[24];}` crash while `{int a,b;}` (8 B) and `{long a,b;}` (16 B) do not — only the former need the memcpy. Fix: riscv64 has NO leaf pool (`AST_PROMO_CALLER_N`/`AST_PROMO_XMM_N` = 0), because the only caller-saved registers mcc models on this arch ARE the argument registers; leaves promote into the callee-saved pool via `MCC_AST_PROMO_LEAF_CALLEE`, whose per-reg `ast_promo_reg_is_callee` save/restore already covers a leaf holding s-registers. Restoring a real leaf pool needs register ids for t0-t6, and an FP pool needs fs0-fs11 (the deferred PR-3 callee-saved float pool) — neither is modelled. **This contradicts the "riscv64 register promotion is DONE (GP `s1..s11` + float, qemu differential 0-fail)" note below: that soak never exercised promotion over a TU containing a struct return.** Validated: byte-identical by default on every arch (promotion is opt-in off x86_64, and the change is inside `#if defined(MCC_TARGET_RISCV64)`) — x86_64 self-compiled amalgamation identical at -O0/-O2/-O3; ctest 5590/5590; asttool 747/0; all 5 arches build; the riscv64 amalgamation now compiles under `MCC_AST_PROMOTE=1` alone, with `+LEAF_CALLEE`, and with the full 12-gate set; **`tools/selfhost-riscv64-docker.sh` reaches a byte-identical 3-stage fixpoint under all three** (2679281 B promote, 2679281 B 12-gate — the set that previously core-dumped — and 2749921 B with LEAF_CALLEE+RELOC_EQUIV); and a 364-run riscv64 differential vs `riscv64-linux-gnu-gcc` (FP-constant, struct, register-pressure and a dedicated struct-return battery covering the 4/8/12/16/24-byte and 2-double return classes) at -O0/-O2 under both promote configurations, 0 failures, 0 gate-off baseline failures.
 
-## Backend intrinsic lowering — DONE 2026-07-28, 21 helper calls -> 0 on the probe TU
+## Backend intrinsic lowering — two open items (the 21 -> 0 helper-call work is DONE, `docs` history has the table)
+`cli/intrinsics_no_helper_calls` asserts the probe object has ZERO undefined symbols and was verified to fail,
+naming the symbols, when a lowering is disabled — so the landed set stays gone. Two remain:
 
-The probe (`extern void *alloca()` plus every bit builtin, the atomics and the overflow builtins, `-O2 -c`) once
-left mcc with **21** undefined helper references where gcc left one (`__popcountdi2`) and clang none. It now leaves
-mcc with **none**. What landed, all default-on with an `MCC_*_INLINE=0` opt-out:
+- **128-bit overflow** (`__mcc_addo_ti`, `__mcc_mulo_ti`). `add`/`adc` + `seto` over a register PAIR. The `__int128`
+  workstream this waited on has LANDED, so the blocker is gone: the register pair exists (`SValue.r2` +
+  `USING_TWO_WORDS`), and `gen_opq` in `src/mccgen.c` already emits inline `add`/`adc` and `sub`/`sbb` for plain
+  `+`/`-` — the overflow form is that sequence plus `seto`. Two things to carry over: the runtime helpers are now
+  thin ABI wrappers over static `_impl` functions (`e02c7999`), so an inline emitter must not assume the exported
+  symbol is the implementation; and nothing may touch flags between the low-half and high-half instructions (see the
+  flag-clobber gotcha in the `__int128` PHASE 2 section).
+- **The four complex helpers** (`__mcc_cmul{,f,l}`, `__mcc_cdiv`). NOT fixable by renaming to libgcc: mcc's are
+  `void __mcc_cmul(T *res, T a, T b, T c, T d)` (out-pointer) while libgcc's are
+  `_Complex double __muldc3(double, double, double, double)` (returns the pair by value — SSE,SSE under SysV,
+  `st(0)`/`st(1)` for the x87 forms). Adopting the libgcc ABI is a call-shape change: `gfunc_call`'s `ret_nregs`
+  path already handles multi-register returns, but `gen_complex_call` builds its own call and would have to consume
+  the return itself. Needs its own differential test for the NaN/infinity fixups those helpers implement.
 
-| lowering | shape | scope |
-|---|---|---|
-| `bswap16/32/64` | `rol $8` / `bswap` | x86_64 |
-| `clz`/`ctz` | `BSR`/`BSF` (+`xor $31`) | x86_64 |
-| `ffs` | `BSF` + `CMOVZ -1` + `inc` | x86_64 |
-| `popcount`/`parity`/`clrsb` | SWAR fold built from ordinary vstack ops | **every target** |
-| `signbit` | `MOVMSKPS`/`MOVMSKPD` + `and $1` | x86_64 (x87 `long double` keeps the helper) |
-| atomics: load/store/exchange/fetch_add/sub/compare_exchange | `mov`, `xchg`, `lock xadd`, `lock cmpxchg` | x86_64, sizes 4/8, integer/pointer/bool atoms |
-| `alloca` | `sub %rsp` | x86_64 (declines under `-b`) |
-| `add`/`sub`/`mul` overflow | flag capture + truncate-and-compare | x86_64, widths 1/2/4/8 |
-
-`cli/intrinsics_no_helper_calls` asserts the probe object has ZERO undefined symbols, and was verified to fail
-(naming the symbols) when a lowering is disabled — so these stay gone.
-
-**Traps this work paid for, all of which cost at least one debugging round:**
+**Traps this work paid for — each cost at least one debugging round, and none is specific to intrinsics:**
 - **Byte registers need a REX prefix at regs 4-7.** Without it `%sil`/`%dil` encode as `%ah`/`%dh`. Bit it twice:
   once in a `setcc`, once in the byte `OR` of the unsigned-multiply path.
 - **`gfunc_call` must pop the callee AND every argument and leave the result where the CALLER's
   `vsetc(&ret.type, ret.r, …)` expects it** — `%rax` for an int-returning helper. Pushing a value instead gives
   `internal compiler error: vstack leak`.
 - **`vrott(3)` sends the TOP of the vstack to the bottom**; reaching `vtop[-2]` needs `vrotb(3)`.
-- **`get_reg(MCC_RC_INT)` will hand back `%rax`**, which is fatal next to `CMPXCHG` or `MUL`. Pin operands
-  explicitly (`gv(MCC_RC_RCX)` etc.) the way `gen_opi`'s divide path does.
+- **`get_reg(MCC_RC_INT)` will hand back `%rax`**, fatal next to `CMPXCHG` or `MUL`. Pin operands explicitly
+  (`gv(MCC_RC_RCX)` etc.) the way `gen_opi`'s divide path does.
 - **A differential MATRIX against gcc is the only thing that catches a wrong flag.** Corpus byte-identity, the full
-  suite, the self-host fixpoint and differential fuzz all stay green when the lowering emits valid code computing
-  the wrong answer — that happened three times here. Run the matrix after every emit change, not at the end.
+  suite, the self-host fixpoint and differential fuzz all stay green when a lowering emits valid code computing the
+  WRONG answer — that happened three times here. Run the matrix after every emit change, not at the end.
 - **`ctest` is a native-only gate.** It cannot see a 32-bit or PE build break; `target-link-gate` and
-  `cross-factory-i386` now cover that, both added after exactly those two breakages shipped.
-
-**Still open, and both are different in kind from the above:**
-- **128-bit overflow** (`__mcc_addo_ti`, `__mcc_mulo_ti`). `add`/`adc` + `seto` over a register PAIR. The
-  `__int128` workstream this was waiting on has LANDED, so the blocker is gone: the register pair exists
-  (`SValue.r2` + `USING_TWO_WORDS`), and `gen_opq` in `src/mccgen.c` already emits inline `add`/`adc` and
-  `sub`/`sbb` for plain `+`/`-` — the overflow form is that sequence plus `seto`. Two things to carry over:
-  the runtime helpers are now thin ABI wrappers over static `_impl` functions (e02c7999), so an inline
-  emitter must not assume the exported symbol is the implementation; and nothing may touch flags between
-  the low-half and high-half instructions (see the flag-clobber gotcha in the `__int128` PHASE 2 section).
-- **The four complex helpers** (`__mcc_cmul{,f,l}`, `__mcc_cdiv`). NOT fixable by renaming to libgcc: mcc's are
-  `void __mcc_cmul(T *res, T a, T b, T c, T d)` (out-pointer) while libgcc's are
-  `_Complex double __muldc3(double, double, double, double)` (returns the pair by value — SSE,SSE under SysV,
-  `st(0)`/`st(1)` for the x87 forms). Adopting the libgcc ABI is a call-shape change: `gfunc_call`'s `ret_nregs`
-  path already handles multi-register returns, but the call site in `gen_complex_call` builds its own call and
-  would have to consume the return itself. Needs its own differential test for the NaN/infinity fixups those
-  helpers exist to implement.
-
-Everything else an mcc object references now resolves against a stock gcc/clang toolchain — `__multi3`,
-`__udivti3`, `__divti3`, the `ti` shifts and the `__fix*`/`__float*` conversions are all libgcc ABI names.
-
-**One correctness fix came out of this and is worth remembering separately:** `__builtin_*_overflow` used to
-CONVERT its operands to the result type before checking, so `__builtin_add_overflow(-300, -300, &signed_char)`
-reported no overflow. The `_Generic` dispatch in `mccdefs.h` now declares wide operands for the narrow result
-types. A 12-case matrix crossing operand and result widths agrees with gcc; `tests/exec/codegen/overflow_inline.c`
-and `overflow_narrow.c` keep it that way.
-
-## ~~`-static-libgcc` / `-static-libstdc++` are hard errors~~ — DONE (`973ba824`)
-Both are accepted and ignored, in the `MCC_OPTION_ignored` group alongside `-pipe`/`-C`/`--param`. Verified
-2026-07-28: `mcc -static-libgcc -c` and `mcc -static-libstdc++ -c` both exit 0. The sweep for the same class also
-checked `-V` and `-qversion`, and mcc's REJECTION of those matches gcc and clang, so they stay rejected.
+  `cross-factory-i386` cover that, both added after exactly those two breakages shipped.
 
 ## Make "mcc builds GCC" a repeatable gate, not a one-off (raised 2026-07-28)
 
