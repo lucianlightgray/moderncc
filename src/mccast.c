@@ -1479,6 +1479,20 @@ static unsigned long ast_search_floor;
 static int ast_search_floor_env;
 static unsigned long ast_search_gates_now(void);
 static unsigned long ast_search_searchable(unsigned long base);
+
+/* The ISA term the cache key carries for the function being compiled: the
+   features THIS ARENA's codegen can be changed by, ANDed with what -march
+   permits. Zero unless the function holds a construct an ISA-dependent
+   transform can rewrite, so a generic function keeps one key on every host and
+   stays shareable, while a host-dependent one separates itself from the generic
+   form of the same slice.
+
+   Folding the whole ISA mask instead would key every entry per-host and destroy
+   the cross-host sharing the slice store exists for. And a "what did we consume"
+   counter cannot work at all: the key is taken from the PRISTINE arena, before
+   any transform has run, so a consumption count is always one function late. */
+static MCC_OPT_TLS uint32_t ast_isa_key_term;
+
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
 
@@ -14498,6 +14512,53 @@ static int ast_search_memo_n;
  * version string is only visible when mccast.c is compiled inside the mcc TU
  * (mcc.h present); the asttool unit harness includes it standalone, so guard on
  * the macro and fall back to triplet-only (which is a compile define everywhere). */
+/* Does this arena hold anything whose CODEGEN an -march feature can change?
+   Today that is the round family (floor/ceil/trunc/round/rint/nearbyint), which
+   MCC_AST_ROUND_INLINE lowers to roundsd once SSE4.1 is permitted. Any transform
+   added to the ISA-dependent set in step 4 of the -march plan belongs here too;
+   the cost of forgetting is a cache entry shared between two hosts that must not
+   share one, so keep this beside the gates it mirrors. */
+static void ast_isa_key_update(const AstArena *a) { MCC_TRACE("enter\n");
+	ast_isa_key_term = 0;
+#ifdef MCC_TARGET_X86_64
+	{
+		AstLocal n;
+		int nfn = (int)(sizeof ast_bfold_tab / sizeof *ast_bfold_tab);
+		if (!a || !mcc_state || !mcc_isa_has(mcc_state, MCC_ISA_SSE41))
+			{ MCC_TRACE("br\n"); return; }
+		for (n = 0; n < (AstLocal)a->count; n++) { MCC_TRACE("br\n");
+			AstLocal c;
+			const char *nm;
+			int bi;
+			if (ast_kind(a, n) != AST_Invoke)
+				{ MCC_TRACE("br\n"); continue; }
+			c = ast_first_child(a, n);
+			if (c == AST_NONE || ast_kind(a, c) != AST_Ref || !a->sym[c])
+				{ MCC_TRACE("br\n"); continue; }
+			nm = get_tok_str(((Sym *)(uintptr_t)a->sym[c])->v, NULL);
+			if (!nm)
+				{ MCC_TRACE("br\n"); continue; }
+			for (bi = 0; bi < nfn; bi++) { MCC_TRACE("br\n");
+				if (strcmp(nm, ast_bfold_tab[bi].name))
+					{ MCC_TRACE("br\n"); continue; }
+				switch (ast_bfold_tab[bi].id) { MCC_TRACE("br\n");
+				case 2: case 3: case 4: case 8: case 9: case 10:
+					ast_isa_key_term |= MCC_ISA_SSE41;
+					break;
+				default:
+					break;
+				}
+				break;
+			}
+			if (ast_isa_key_term)
+				{ MCC_TRACE("br\n"); return; }
+		}
+	}
+#else
+	(void)a;
+#endif
+}
+
 static uint64_t ast_search_key_salt_ex(uint64_t h, int per_triple) { MCC_TRACE("enter\n");
 	const char *s;
 	(void)s;
@@ -14511,6 +14572,12 @@ static uint64_t ast_search_key_salt_ex(uint64_t h, int per_triple) { MCC_TRACE("
 			{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 	}
 #endif
+	/* Only the features THIS arena is sensitive to. Zero for the overwhelming
+	   majority of functions, which therefore keep the key they had before
+	   -march existed and stay shareable across hosts. */
+	if (ast_isa_key_term) { MCC_TRACE("br\n");
+		h = (h ^ (uint64_t)ast_isa_key_term) * 0x100000001b3ull;
+	}
 	return h;
 }
 
@@ -16233,9 +16300,10 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	pristine = ast_arena_clone(ast_cur);
 	if (!pristine)
 		{ MCC_TRACE("br\n"); return; }
+	ast_isa_key_update(pristine);
 	h = ast_intention_hash(pristine, AST_NONE);
 	if (h)
-		{ MCC_TRACE("br\n"); h = ast_search_key_salt(h); } /* partition the cache by version + triplet */
+		{ MCC_TRACE("br\n"); h = ast_search_key_salt(h); } /* partition by version + triplet + the ISA this arena is sensitive to */
 #ifdef MCC_EMBED_JIT
 	if (h) { MCC_TRACE("br\n");
 		const JitGraduatedRecord *gr =

@@ -128,9 +128,9 @@ passes. Keying the cache on the consumed feature set instead means the fast path
 different ISAs simply hold different entries, and byte-identity is asserted per (source, ISA) pair rather than
 globally — which is what it always should have meant.
 
-**SURVEYED 2026-07-29, and the conclusion is that step (1) must NOT be built on its own — build it in the same
-change as the first ISA-dependent gate. Two attempts were written and reverted; do not write a third in isolation.**
-Survey first, so the next reader does not redo it: the ISA cannot leak through the search or slice cache TODAY, and the reason is narrower
+**LANDED 2026-07-29 — step (1) is done, in BOTH caches. The earlier "cannot be exercised, build it with the first
+ISA-dependent gate" conclusion recorded here was WRONG and is retracted; the note below explains the mistake so it
+is not repeated.** Survey first, so the next reader does not redo it: the ISA cannot leak through the search or slice cache TODAY, and the reason is narrower
 than it looks. `ast_search_searchable()` offers `AST_SG_BFOLD_ROUND`, but that maps to `ast_bfold_round_env`
 (constant-folding `floor`/`ceil`, no ISA requirement), NOT `ast_round_inline_env` (which emits `roundsd`).
 `ast_round_inline_env` is set only in `ast_configure` and is absent from the `AST_SG_*` vocabulary, so no cached or
@@ -138,7 +138,28 @@ searched gate set can raise the ISA floor. That is luck, not design: the moment 
 other ISA-dependent transform into the vocabulary, a winner proven on an AVX2 host becomes applicable on one
 without it.
 
-**Why building it now produces unverifiable code — both shapes were tried.**
+**HOW TO OBSERVE IT — this is what the earlier attempt got wrong.** The key path sits in `ast_slice_consume`, which
+returns early on an EMPTY on-disk slice cache ("strict no-op, byte-identical"). So it is unreachable on a cold cache
+and every probe silently printed nothing, which was misread as "the term is inert". It needs a WARM cache: compile
+twice. And the cache dir is redirected by **`XDG_CACHE_HOME`**, not `HOME` — `host_cache_dir` checks XDG first, so a
+private-`HOME` run still writes the real user cache and shows nothing. With both right the property is directly
+visible in the filenames and memo bytes, no instrumentation needed.
+
+**Two independent instances, in two different caches — fixing only the AST one would have left the bigger hole.**
+- **`so_key()` (`mcc.c`), the whole-file superopt checkpoint.** Hashed the SOURCE BYTES plus triple and NO compile
+  options at all, so a winner measured under `-march=x86-64-v2` was replayed at the baseline; the checkpoint stores
+  `best_gate`/`best_text` obtained under one ISA and nothing distinguished them. Now folds the resolved mask, with
+  `mcc_isa_init` called first so an implicit baseline and an explicit `-march=x86-64` still agree. Verified:
+  `default` == `x86-64` != `-v2` != `-v3`. Whole-file granularity, so the whole mask is the right term.
+- **`ast_search_key_salt_ex` (`mccast.c`), the per-function AST key.** Uses the narrow arena-relevance term
+  (`ast_isa_key_term`), so only functions holding a construct an ISA-dependent transform can rewrite separate.
+  Verified at byte level in `mcc-search.memo`: for a `floor`-using function the differing offsets include **18-25**,
+  the 8-byte ident, so the key moved; for a generic function only offset 35 differs — outside the ident — so its key
+  is IDENTICAL and cross-host sharing is preserved.
+
+Default-path output byte-identical (271/271 at `-O0` and `-O2`), full ctest 7893/7893.
+
+**Retracted reasoning, kept because the first shape is still a real trap.**
 - *A consumed-feature counter* cannot work at all. The cache key is taken from the PRISTINE arena, before any
   transform has run (`pristine = ast_arena_clone(ast_cur)` then `ast_intention_hash`), so a "what did we consume"
   accumulator is always one function late.
@@ -148,11 +169,9 @@ without it.
   reach it. It also resists unit testing: the scan keys off the callee NAME via `get_tok_str`, while `asttool`
   stores syms as opaque integers with no names, so the `ast/*` harness cannot construct an arena that exercises it.
 
-So the term is inert until the default flips, and the flip is gated on the term. The way out is not to land dead
-code and hope: land the key term IN THE SAME CHANGE as the first ISA-dependent gate that enters the search
-vocabulary (step 4 — `FMA_INLINE` is the obvious first). At that moment the term is both NECESSARY (a winner proven
-on an AVX2 host becomes applicable without it) and TESTABLE (force the gate, compile the same source under two
-`-march` levels, assert the keys differ for a function using the construct and match for one that does not).
+The consumption-counter trap above is real and worth keeping. The second bullet's conclusion — that the relevance
+scan is untestable until the default flips — was wrong: it is testable today by compiling under two explicit
+`-march` levels with a warm cache, which needs no default change and no new gate.
 
 The key salt is where this belongs — `ast_search_key_salt_ex` already partitions by build version and target
 triple for exactly this class of reason. What it must NOT do is fold the whole ISA mask unconditionally: that keys

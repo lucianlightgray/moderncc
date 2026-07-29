@@ -392,6 +392,19 @@ static uint64_t so_key(MCCState *s) { MCC_TRACE("enter\n");
 #ifdef MCC_CONFIG_TRIPLET
 	h = so_fnv(h, MCC_CONFIG_TRIPLET, strlen(MCC_CONFIG_TRIPLET));
 #endif
+	/* The resolved -march. This key hashes the SOURCE BYTES, so without it a
+	   winner measured where roundsd was legal is replayed on a target where it
+	   is not -- the checkpoint records best_gate/best_text obtained under one
+	   ISA and nothing else distinguishes them. Whole-file granularity here, so
+	   the whole mask is the right term; the per-function AST cache uses a
+	   narrower one (ast_isa_key_term) to keep generic slices shareable. */
+	{
+		uint32_t isa;
+		mcc_isa_init(s); /* idempotent; resolves the default so an implicit
+		                    baseline and an explicit -march=x86-64 agree */
+		isa = s->isa_mask;
+		h = so_fnv(h, &isa, sizeof isa);
+	}
 	if (so_jitscore) { MCC_TRACE("br\n");
 		static const char tag[] = "jitscore";
 		h = so_fnv(h, tag, sizeof tag - 1);
