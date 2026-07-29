@@ -3415,8 +3415,13 @@ mcc with **none**. What landed, all default-on with an `MCC_*_INLINE=0` opt-out:
   `cross-factory-i386` now cover that, both added after exactly those two breakages shipped.
 
 **Still open, and both are different in kind from the above:**
-- **128-bit overflow** (`__mcc_addo_ti`, `__mcc_mulo_ti`). `add`/`adc` + `seto` over a register PAIR. Interacts
-  with the `__int128` two-half representation, which another workstream owns.
+- **128-bit overflow** (`__mcc_addo_ti`, `__mcc_mulo_ti`). `add`/`adc` + `seto` over a register PAIR. The
+  `__int128` workstream this was waiting on has LANDED, so the blocker is gone: the register pair exists
+  (`SValue.r2` + `USING_TWO_WORDS`), and `gen_opq` in `src/mccgen.c` already emits inline `add`/`adc` and
+  `sub`/`sbb` for plain `+`/`-` — the overflow form is that sequence plus `seto`. Two things to carry over:
+  the runtime helpers are now thin ABI wrappers over static `_impl` functions (e02c7999), so an inline
+  emitter must not assume the exported symbol is the implementation; and nothing may touch flags between
+  the low-half and high-half instructions (see the flag-clobber gotcha in the `__int128` PHASE 2 section).
 - **The four complex helpers** (`__mcc_cmul{,f,l}`, `__mcc_cdiv`). NOT fixable by renaming to libgcc: mcc's are
   `void __mcc_cmul(T *res, T a, T b, T c, T d)` (out-pointer) while libgcc's are
   `_Complex double __muldc3(double, double, double, double)` (returns the pair by value — SSE,SSE under SysV,
@@ -3455,18 +3460,25 @@ The GCC 17.0.0 trunk tree now builds to completion with a self-hosted `mcc -O3` 
 
 **Verification beyond exit status:** the resulting `xgcc`/`xg++` were run, not just built — a C varargs program (GP/SSE/overflow/large-struct) and a C++20 `<vector>`/`<algorithm>`/`<iostream>` program both compile and produce correct output. Any gate should keep that step; "the build finished" is much weaker than "the compiler it produced works".
 
-## `__int128` PHASE 2 — replace the two-half helper calls with native emitters, TDD against gcc/clang (raised 2026-07-28)
+## `__int128` PHASE 2 — replace the remaining helper calls with native emitters, TDD against gcc/clang (raised 2026-07-28, Phase 1 landed + rescoped 2026-07-29)
 
-Phase 1 (in progress) makes `__int128` real by representing it as two 64-bit halves and lowering every
-operation to a libgcc-ABI runtime call in `runtime/lib/int128.c` — `__multi3`, `__udivti3`, `__ashlti3`,
-`__clzti2` and friends, written as portable bitwise C over an upper/lower pair. That is the reference
-semantics: obviously correct, linkable by any toolchain, and slow. **Phase 2 is to emit native x86_64
-code for the operations where a call is absurd, one operation at a time, each one proven equivalent
-before it is switched on.**
+**Phase 1 is DONE.** `__int128`/`unsigned __int128` is a real type (`VT_INT128`, btype 12) with
+size/align 16, `mode(TI)` in both declarator positions, casts to and from every integer type and to and
+from `float`/`double`/`long double`, SysV register-pair passing and returning, static and local
+initialisers, `va_arg`, `_Generic`, `switch`, and `__builtin_{add,sub,mul}_overflow`. The reference
+semantics live in `runtime/lib/int128.c` as portable bitwise C over an upper/lower pair.
 
-**Why a call is the right Phase-1 answer and still the wrong long-term one.** `a + b` on a 128-bit
-value is `add`/`adc` — two instructions. Going through `__addti3`-style call overhead for that is
-roughly two orders of magnitude off. Multiply is one `mulq` plus two `imulq` and an `add`. Shifts are
+**Phase 2 is now much smaller than this section originally assumed, and its stated prerequisite was
+wrong — see below.** What is already native, not a call: `+`, `-`, unary `-` (lowered to `0 - x`),
+`~` (lowered to `x ^ -1`), `&`, `|`, `^`, and ALL comparisons, all emitted inline by `gen_opq` in
+`src/mccgen.c` over the two halves (`add`/`adc`, `sub`/`sbb`, per-half bitwise, high-then-low compare).
+128-bit constant folding is also done in software, so none of these reach a call at compile time either.
+**What still calls out:** `*`, `/`, `%`, `<<`, `>>` (both `__lshrti3` and `__ashrti3`).
+
+**Why a call was the right Phase-1 answer and is still the wrong long-term one for what remains.**
+The argument that retired the `+`/`-`/bitwise/compare calls applies unchanged to the rest: `a + b` on a
+128-bit value is `add`/`adc`, two instructions, so call overhead was roughly two orders of magnitude
+off — and it is now inline. Multiply is one `mulq` plus two `imulq` and an `add`. Shifts are
 `shld`/`shrd` plus a branch on `count >= 64`. Only divide and modulo genuinely deserve to stay calls,
 which is exactly what gcc does — gcc inlines everything else and calls `__udivti3`/`__divti3`.
 
@@ -3482,28 +3494,83 @@ For each operation:
 3. Only once the gate-on path matches on the full corpus does the gate flip default-ON, and the helper
    stays as the fallback for every other target.
 
-**Ordered by payoff:**
-- `add`/`sub`/`neg` — `add`+`adc`, `sub`+`sbb`. Two instructions, trivially provable, biggest ratio win.
-- Comparisons — `cmp` high, branch, `cmp` low. Also feeds `switch` and conditionals.
-- Bitwise `and`/`or`/`xor`/`not` — two independent 64-bit ops, no carry, the easiest of the lot.
+**Ordered by payoff — remaining work only:**
 - Shifts — `shld`/`shrd` plus the `count >= 64` case. The count-64 boundary is where implementations
-  reliably go wrong (x86 shift counts are masked to 6 bits), so test 63/64/65 explicitly.
+  reliably go wrong (x86 shift counts are masked to 6 bits), so test 63/64/65 explicitly. Highest
+  remaining payoff: a shift is 2-3 instructions and currently costs a call. Note the CONSTANT-count
+  case is the easy 80% and can land first — `gen_opl` already has exactly this inline sequence for
+  32-bit halves (`src/mccgen.c`, the `TOK_SAR`/`TOK_SHR`/`TOK_SHL` arm) and it is a direct port to
+  64-bit halves; only the variable-count case needs the runtime branch.
+- Multiply — `mulq` for the low 64x64->128 product, two `imulq` for the cross terms. mcc already has
+  `gen_mulh` for the high half of a 64x64 product, so the pieces exist.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
-  wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together.
-- Multiply — `mulq` for the low 64×64→128 product, two `imulq` for the cross terms.
+  wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
+  priority of the three: mcc does not currently expose these as 128-bit builtins at all
+  (`__builtin_clzll` on a `__int128` truncates to 64 bits, which is what gcc and clang also do), so
+  this is only reachable once a `__builtin_clzg`-style wide builtin exists.
 - Divide/modulo — LEAVE AS CALLS. gcc does. Not worth inline expansion.
 
-**Prerequisite, and the reason this is Phase 2 rather than Phase 1:** these emitters need a 128-bit
-value to live in a REGISTER PAIR, and mcc's register allocator is single-register-per-value. Phase 1
-sidesteps this entirely by keeping the value in memory and passing it per the SysV ABI. Whether Phase 2
-needs a real register-pair concept in `SValue`, or can get away with an
-allocate-two-adjacent-registers convention, is the first thing to establish — and it is the item most
-likely to change the plan, so establish it before writing any emitter.
+**The original prerequisite is RESOLVED, and it did not need what this section predicted.** This
+section claimed the emitters need a register-pair concept that mcc's single-register-per-value
+allocator lacks, and that Phase 1 sidesteps it by keeping values in memory. Both halves of that are
+now false: `SValue` already had `r2` plus the `USING_TWO_WORDS`/`R2_RET`/`RC2_TYPE` machinery (used on
+x86_64 for `VT_QLONG` 16-byte struct transport, and on 32-bit targets for every `long long`), and
+Phase 1 uses it directly — a 128-bit value lives in a register PAIR, not in memory. The inline
+`+`/`-`/bitwise/compare emitters were written against that machinery, so the remaining shift and
+multiply emitters have no new prerequisite. `qexpand`/`qbuild` in `src/mccgen.c` are the split/join
+primitives to build on, and `gen_opl` is the working precedent for the same job at half the width.
+
+**Gotcha for anyone writing the shift emitter**, learned from the `+`/`-` one: the two halves are
+joined by a CARRY, so nothing may touch flags between the low-half and high-half instructions.
+Materialising a constant operand emits `xor r,r`, which clobbers flags — the `+`/`-` arm forces all
+four half-operands into registers BEFORE the `add`/`adc` pair for exactly this reason. Any emitter
+with a flag dependency across the halves needs the same treatment.
 
 **Acceptance for the whole phase:** every gate default-ON, byte-identical self-host fixpoint, ctest
 green, and the differential corpus passing against BOTH gcc and clang. Any operation that cannot be
 made to match stays a helper call — a slower correct answer beats a faster wrong one, and the Phase 1
 implementation is always there as the fallback.
+
+### `__int128` — remaining gaps that are NOT Phase 2 (recorded 2026-07-29)
+
+These are separate from the native-emitter work. Each one currently produces an honest error or
+matches gcc, never a silently wrong value; they are listed so the choice is deliberate rather than
+forgotten.
+
+- **Only x86_64 SysV has the TYPE.** `MCC_HAVE_INT128` is `MCC_TARGET_X86_64 && !MCC_TARGET_PE`, so
+  `__int128` and `mode(TI)` are a hard error on i386/arm/arm64/riscv64 and on x86_64-PE.
+  **But `runtime/lib/int128.c` is built for x86_64, arm64 AND riscv64** (both `CMakeLists.txt` and
+  `tools/build.c`), so those two targets ship ~40 helper routines that no compiler front-end can ever
+  emit a call to. Either extend the type to arm64/riscv64 (their ABIs pass a 16-byte INTEGER aggregate
+  in a register pair much like SysV, so the same `r2` machinery should carry it) or stop building the
+  object for them. Do not leave it as is — it reads as support that does not exist.
+  x86_64-PE is a genuinely different job: the Win64 ABI passes a 16-byte aggregate INDIRECTLY, not in
+  a register pair, so it needs its own ABI path rather than a gate flip.
+- **arm64 alignment caveat, recorded before the type existed there** (from the 07763fa8 commit
+  message): `__int128` carries 16-byte alignment and therefore forces an even register start, while
+  the 8-aligned `{ low, high }` struct the runtime uses does not. Harmless for every current
+  signature, but a future `(int, TItype)` routine would diverge. Check this the moment arm64 gets the
+  type.
+- **`/` and `%` of two 128-bit CONSTANTS are not folded**, so they cannot appear in a static
+  initialiser (clear "initializer element is not constant"). Every other operator folds at 128-bit
+  precision. gcc folds these; closing it means a 128-bit constant divide in the folder.
+- **Float <-> 128-bit conversion of a constant in a static initialiser** errors rather than folding.
+  Folding it correctly means either a soft-float path or accepting 80-bit `long double` as the
+  intermediate, which double-rounds — hence the error.
+- **128-bit bitfields are rejected.** `BIT_POS`/`BIT_SIZE` are 6-bit fields, so the encoding caps at 63
+  bits. Widening them touches every bitfield path; not worth it without a real user.
+- **A `case` label whose value needs more than 64 bits now WORKS** (`case ((__int128)1 << 100)`) —
+  `struct case_t` carries `v1hi`/`v2hi` and all case comparison/merging is 128-bit. Two things stayed
+  64-bit deliberately: the dense-switch JUMP TABLE (`switch_jt_dense` bails for `VT_INT128`, so a
+  128-bit switch always uses the compare chain — a 2^100-wide table is meaningless anyway), and
+  `ast_hook_case`, which records `v1`/`v2` as 64-bit. The latter is safe only because
+  `ast_bad_type(VT_INT128)` makes the recorder desync on 128-bit switches; if `VT_INT128` is ever
+  added to the AST model, the case hook must be widened FIRST or replay will re-emit truncated case
+  values.
+- **The AST optimizer does not model `VT_INT128` at all** (`ast_bad_type`, `ast_inline_type_ok`), so
+  functions using it desync the recorder and get no replay/inline/fold. That is the cheap safe choice,
+  not a considered one — modelling it is a real optimisation opportunity and would remove the four
+  `types/int128.c` entries from the recorder-fidelity baseline.
 
 ## Ungate campaign (flip every default-off feature on)
 Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate goldens. The proven optimizer passes are already flipped default-on at -O2 (`PROMOTE`/`COLOR`/`LICM_TEMP`/`IVSR`/`PRE`/`REASSOC`/`SETHI_LEAF`/`NARROW_ELIM`/`SPILL_SHARE`/`VLAT`/`DIVMAGIC` — **11 of these VERIFIED 2026-07-27 by `optfire/default-*`, which compiles with no env versus the gate forced to 0 and requires the objects to differ**). **`ARGFWD` was on that list and does NOT belong: its gate defaults on (`o4 || s1->optimize >= 2`) but the PASS is inert.** Toggling `MCC_AST_ARGFWD` at `-O2`/`-O3` changes nothing; it only becomes live with `MCC_AST_INLINE_PASS=0`, because argument forwarding lives in the replay-time graft path that `do_inline`'s `!ast_inline_pass_env` guard disables — and `INLINE_PASS` is default-on from `-O2`. **Second gate found in this class**, alongside `MCC_AST_PERFN_INPROC` (which is default-OFF, so it advertises nothing). NOT `MCC_AST_INLINE` — that one was retracted, see the `-march` section: it has a second consumer (`ast_reemit_retain`) and is load-bearing. The per-gate cost/benefit sweep in this section will have measured `ARGFWD` as worthless for the same reason its own caveat gives for `MATH_INLINE`/`ROUND_INLINE`/`COPYSIGN_INLINE`. `optfire/default-argfwd` asserts `off` as a TRIPWIRE: fix the graft-path guard and that cell fails, prompting the flip to `on`. **Swept for further instances 2026-07-27 — none found.** Method that works: a gate is in this class only if it has a case that PROVABLY exercises it (a passing `optfire` differ cell, i.e. forcing it changes the object) AND that same case shows no change when the gate is left at its default. Across all 51 differ cases only 4 flagged — `CHAINSTORE`, `OPASSIGN`, `PROMO_ARROW`, `PROMO_INCDEC` — and all 4 are false positives from testing at `-O2` when their declared defaults are `optimize >= 3` and `optimize_size`; each is confirmed default-ON at its real level (`-O3`, `-O3`, `-Os`, `-Os`). So `ARGFWD` is the only advertised-but-unreachable gate among those with exercising cases, alongside `MCC_AST_INLINE` and `PERFN_INPROC` which are known and share the same `!ast_inline_pass_env` guard. **A cruder sweep does NOT work and was discarded**: toggling each gate over `libmcc.c`+`mccgen.c` reported 28 gates as inert, but that conflates 'structurally unreachable' with 'no opportunity in those two files' — `TILE`, `FUSION`, `CSE_COMM` and others appear inert there while `optfire` proves they fire on suitable code. Object-diff sweeps need a case known to exercise the gate, or they measure the corpus rather than the compiler, and `MCC_CROSS_OPTIMIZER` defaults ON so cross triples carry the AST optimizer + embed-jit (the per-triple reemit/JIT parity axes are now real, not latent — watch cross-cell wall-clock, ~+46% per cross compiler). Remaining:
