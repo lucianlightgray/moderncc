@@ -1173,6 +1173,14 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **JIT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29 (P0 standing rule satisfied for the flip
+   criteria).** `-O2 -run` parity `MCC_JIT=0` == `MCC_JIT=1` == widened admission
+   (`MCC_JIT_PURITY_NOESCAPE/LAZY/SEARCH`) with ALL ELEVEN gates on, over the `tests/jit/parity` corpus + the
+   nine gate-repro programs + six fuzz-generated programs: **19/19 identical outputs with 10 real
+   `mccjit-lazy[install]` variants** (non-vacuity asserted per the run-parity.sh discipline — the default gate
+   alone installs ~nothing; one KGC `swapped` install also observed on the CMP_MAT repro). Full `jit` ctest
+   suite 58/58 green. x86_64-linux only; the cross triples re-run their `run-parity-*` cells at flip time.
+
    **NINTH CLASS CLOSED 2026-07-29 — comma-expression while conditions.** `while (next(), tok != TOK_EOF)`
    (`pp_error` and the loop-head jump-shift residuals): the comma's side-effect operand records as a statement
    BEFORE the loop node, so replay ran it once and its back-edge skipped it — semantically a once-instead-of-
