@@ -1154,6 +1154,24 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **EIGHTH CLASS CLOSED 2026-07-29 — member-lvalue chained stores (the mov-only bulk), WITH a real
+   wrong-code near-miss caught and fixed.** `s->a = s->b = 0`: baseline hoists both member addresses before one
+   value materialization; replay re-evaluated per statement. Landed `MCC_AST_CHAINSTORE_MEMBER` (default OFF):
+   finalize pairs adjacent chained member Stores (pure lvalues, non-promoted targets) and replay emits them
+   FUSED at the inner statement (outer lval, inner lval, value, vstore x2; outer tagged
+   `AST_FB_STORE_CHAIN_SKIP`). The outer's value copy is often a REGISTER-FINALIZED leaf (`the value is in the
+   register the inner vstore left it in`), so identity accepts that form in place of `ast_struct_eq`
+   (`AST_Ref` included). **The near-miss:** when the chain value is consumed downstream (`r = s->a = s->b = 5`),
+   the consumer's recorded copy hard-codes the baseline scratch register; the fused order changes scratch
+   assignment under the PROMOTED re-emit, so the consumer read a stale register — verify-faithful but
+   wrong at runtime (`-O2` differential caught it; gate-off unaffected). Guard: reject pairs whose outer is
+   VALUE_LIVE, whose marker survives with a parent anywhere in the arena (expression/call consumers), or whose
+   following Store's value is a register-resident copy. Validated: gate-off byte-identical; repro incl.
+   `muse`/`expr_use`/`call_use` consumers matches gcc `-O1/2/3`; TU all-eight-gates: unfaithful 73 -> 52
+   (+21, zero regressions; 3+-chains stay pairwise-limited); ast ctest 224/224. Session: 239 -> 52.
+   AOT-only (P0 rule). LESSON for the flip criteria: verify-faithfulness alone does NOT cover the promoted
+   re-emit path — every chainstore-family flip needs the runtime differential leg, not just byte-verify.
+
    **COMPOSITION OPENED 2026-07-29 — `CONST + (x = f())` inside a call argument.** `search_cached_include`'s
    remaining extra call was `mcc_malloc(sizeof(CachedInclude) + (len = strlen(filename)))` (`mccpp.c:1752`) —
    the CONSTL step composed with the STOREVAL_CALL/CALLSTORE steps was explicitly rejected in the walk. The
