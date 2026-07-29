@@ -3441,7 +3441,7 @@ purpose (the answer is at most 64, and REX.W on `B8+r` makes it a 10-byte `movab
 case), so they are worth less than the atomics, which are both the biggest remaining group AND the one where the
 inline form is a large speed win rather than a code-size one.
 
-**`__atomic_fetch_add`/`fetch_sub` are DONE 2026-07-28 behind `MCC_ATOMIC_INLINE` (default OFF), sizes 4 and 8.**
+**`__atomic_fetch_add`/`fetch_sub` are DONE 2026-07-28, DEFAULT-ON (`MCC_ATOMIC_INLINE=0` opts out), sizes 4 and 8.**
 `lock xadd` leaves the PREVIOUS contents in the value register, which is exactly fetch semantics, and LOCK already
 implies seq_cst on x86 so the memory-order argument needs no extra fence. `fetch_sub` is the same instruction with
 the operand negated first. Sizes 1 and 2 stay on the helper: the byte form needs a REX prefix just to name
@@ -3468,6 +3468,18 @@ byte-for-byte unchanged.
 
 The probe from the head of this section is now **21 -> 6**: `__atomic_compare_exchange_4`, `alloca`, `popcount`,
 `popcountll`, `parity`, `clrsb`.
+
+**Flip validation (2026-07-28), for the whole `MCC_ATOMIC_INLINE` set:** full ctest 7439/7439, native self-host
+fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed differential fuzz vs gcc + clang with `--gates` and 0
+miscompiles, and the arm64 cross self-host fixpoint byte-identical. Cross targets are untouched by construction and
+by check — i386, arm, arm64 and riscv64 objects still carry the `__atomic_fetch_*` UND symbols.
+
+`__atomic_compare_exchange` is the one left, and it is the hardest of the group because `CMPXCHG` pins the expected
+value in `%rax` and reports through ZF. The shape to copy is `gen_opi`'s divide path, which already does exactly
+this kind of pinning: `gv2(MCC_RC_RAX, MCC_RC_RCX)` plus `save_reg(MCC_TREG_RDX)`. The sequence is: load `*expected`
+into `%rax`, `lock cmpxchg desired, (ptr)`, `sete` the bool result, and on failure store `%rax` back through the
+expected pointer — that write-back is the part a naive lowering forgets, and it is observable, so any test must
+check `expected` after a FAILED exchange, not just the return value.
 
 Encodings for the REST of the atomics, all lock-free for sizes 1-8 on x86_64: `__atomic_load_n` at any ordering
 up to seq_cst is a plain `mov` (x86 loads are acquire); `__atomic_store_n` at seq_cst must be `xchg` (implicitly
