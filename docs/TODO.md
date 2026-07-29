@@ -1148,11 +1148,11 @@ real-object validation stays macOS-gated.
    attributed (the discarded-value ternary, item 4). The other three — `host_runmem_alloc`, `mcc_define_symbol`,
    `mcc_preprocess` — have REPLAY emitting an extra call, which is the more interesting direction.
 
-   **Blocker found before starting: the instrument cannot see a whole delta.** `ast_verify_dump_diff` prints at most
-   96 bytes from 8 before the first divergence, so for any function whose delta runs past that window the tail is
-   invisible — and these are long functions. There is no decoder in `tools/`. Step one is therefore to let the dump
-   emit the COMPLETE buffers so a delta can be decoded end to end; it is stderr-only diagnostics, so byte-identity
-   is unaffected by construction.
+   **Instrument blocker FIXED 2026-07-29:** `MCC_AST_VERIFY_DIFF` now takes a `full` modifier — `full` alone (all
+   unfaithful functions) or `<name>,full` (comma-aware selector, `ast_verify_diff_match`) dumps the COMPLETE base
+   and replay buffers instead of the 96-byte window. Verified on mcc's own TU: `mcc_define_symbol,full` emits the
+   whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
+   construction). The deltas can now be decoded end to end.
 6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
 7. **Prune this file** — see the canonical entry under "Alongside"; not repeated here.
 8. ~~**D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.**~~ **DONE 2026-07-29**, in instructions and

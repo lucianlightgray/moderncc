@@ -14226,6 +14226,19 @@ static int ast_reloc_range_equiv(const unsigned char *ra, const unsigned char *r
 	return 1;
 }
 
+static int ast_verify_diff_match(const char *fn) { MCC_TRACE("enter\n");
+	char sel[96];
+	const char *comma = strchr(ast_verify_diff, ',');
+	size_t n = comma ? (size_t)(comma - ast_verify_diff) : strlen(ast_verify_diff);
+	if (n >= sizeof sel)
+		{ MCC_TRACE("br\n"); n = sizeof sel - 1; }
+	memcpy(sel, ast_verify_diff, n);
+	sel[n] = 0;
+	if (!strcmp(sel, "1") || !strcmp(sel, "all") || !strcmp(sel, "full"))
+		{ MCC_TRACE("br\n"); return 1; }
+	return strstr(fn, sel) != NULL;
+}
+
 static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 																 int blen, const unsigned char *repl,
 																 int rlen) { MCC_TRACE("enter\n");
@@ -14238,12 +14251,14 @@ static void ast_verify_dump_diff(const char *fn, const unsigned char *base,
 		{ MCC_TRACE("br\n"); fprintf(stderr, " (code identical — relocation/length divergence)\n"); }
 	else
 		{ MCC_TRACE("br\n"); fprintf(stderr, ", first diff @ +%d\n", d); }
-	int lo = d - 8 < 0 ? 0 : d - 8;
+	int full = ast_verify_diff && strstr(ast_verify_diff, "full") != NULL;
+	int lo = full ? 0 : (d - 8 < 0 ? 0 : d - 8);
+	int win = full ? (blen > rlen ? blen : rlen) : 96;
 	fprintf(stderr, "  base @+%d:", lo);
-	for (int i = lo; i < lo + 96 && i < blen; i++)
+	for (int i = lo; i < lo + win && i < blen; i++)
 		{ MCC_TRACE("br\n"); fprintf(stderr, " %02x", base[i]); }
 	fprintf(stderr, "\n  repl @+%d:", lo);
-	for (int i = lo; i < lo + 96 && i < rlen; i++)
+	for (int i = lo; i < lo + win && i < rlen; i++)
 		{ MCC_TRACE("br\n"); fprintf(stderr, " %02x", repl[i]); }
 	fprintf(stderr, "\n");
 }
@@ -16828,8 +16843,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																	 faithful ? "FAITHFUL" : "not-faithful"); }
 
 				if (ast_verify_diff && ast_verify_diff[0] && !faithful &&
-						(!strcmp(ast_verify_diff, "1") || !strcmp(ast_verify_diff, "all") ||
-						 strstr(funcname, ast_verify_diff)))
+						ast_verify_diff_match(funcname))
 					{ MCC_TRACE("br\n"); ast_verify_dump_diff(funcname, orig, body_len,
 															 cur_text_section->data + ast_body_ind_sv, new_len); }
 
