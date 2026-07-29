@@ -5784,6 +5784,25 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
+    # Mach-O GOT and SUBTRACTOR relocations. Both were hard errors, so "the link
+    # succeeded" is not evidence -- the cell computes the GOT slot address from
+    # the load's own encoding and asserts the slot CONTAINS the target symbol's
+    # address, and asserts the SUBTRACTOR fields hold exactly nm(_f) - nm(_d) at
+    # 4 and 8 bytes. It also pins the refusal: a SUBTRACTOR whose subtrahend is
+    # in another section is not expressible as one ELF relocation, and the
+    # nearest one links clean while holding the wrong number.
+    if(UNIX)
+        foreach(_ma x86_64 arm64)
+            add_test(NAME macho-got-sub-${_ma}
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/got-sub.sh"
+                        "${MCC_CROSS_DIR}/mcc-${_ma}-osx" "${MCC_CROSS_DIR}"
+                        "${CMAKE_BINARY_DIR}/macho-got-sub-${_ma}-work" "${_ma}")
+            set_tests_properties(macho-got-sub-${_ma} PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+                TIMEOUT 300)
+        endforeach()
+    endif()
+
     add_test(NAME macho-codegen-run
         COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"

@@ -2387,6 +2387,16 @@ struct macho_sm { Section *s; unsigned long offset; };
    the loader did before, and it does not fail the link -- it emits a call whose
    displacement is still 0, so the binary links clean and jumps to the next
    instruction. A wrong answer is worse than a refusal here. */
+#ifdef MCC_TARGET_ARM64
+#define MACHO_RELOC_SUBTRACTOR 1
+#define MACHO_ELF_PCREL32 R_AARCH64_PREL32
+#define MACHO_ELF_PCREL64 R_AARCH64_PREL64
+#else
+#define MACHO_RELOC_SUBTRACTOR 5
+#define MACHO_ELF_PCREL32 R_X86_64_PC32
+#define MACHO_ELF_PCREL64 R_X86_64_PC64
+#endif
+
 static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 														 struct section_64 *secs, uint32_t nsec,
 														 struct macho_sm *smap, int *symmap, uint32_t nsym,
@@ -2433,6 +2443,57 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 			}
 			fld = sec->data + base + w0;
 
+			if (type == MACHO_RELOC_SUBTRACTOR) { MCC_TRACE("br\n");
+				uint32_t n1, m1;
+				ElfW(Sym) * sa;
+				int minuend;
+
+				if (r + 1 >= sh->nreloc) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: SUBTRACTOR with no paired entry");
+					goto fail;
+				}
+				n1 = read32le(rels + (size_t)(r + 1) * 8);
+				m1 = read32le(rels + (size_t)(r + 1) * 8 + 4);
+				if (n1 != w0 || (int)((m1 >> 28) & 0xf) != 0 ||
+						(int)((m1 >> 25) & 3) != length) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: SUBTRACTOR is not followed by a matching "
+														"UNSIGNED entry");
+					goto fail;
+				}
+				if (!ext || !(int)((m1 >> 27) & 1)) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: section-relative SUBTRACTOR is not supported");
+					goto fail;
+				}
+				if (length != 2 && length != 3) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: unsupported SUBTRACTOR width %d", 1 << length);
+					goto fail;
+				}
+				if (symnum >= nsym || !symmap[symnum]) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: SUBTRACTOR against an unregistered symbol");
+					goto fail;
+				}
+				minuend = symmap[symnum];
+				sa = &((ElfW(Sym) *)symtab_section->data)[minuend];
+				if (sa->st_shndx != sec->sh_num) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: SUBTRACTOR whose subtrahend '%s' is not in the "
+														"relocated section",
+														(char *)symtab_section->link->data + sa->st_name);
+					goto fail;
+				}
+				symnum = m1 & 0xffffffu;
+				if (symnum >= nsym || !symmap[symnum]) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: SUBTRACTOR against an unregistered symbol");
+					goto fail;
+				}
+				put_elf_reloca(symtab_section, sec, base + w0,
+											 length == 3 ? MACHO_ELF_PCREL64 : MACHO_ELF_PCREL32,
+											 symmap[symnum],
+											 (addr_t)(base + w0) - (addr_t)sa->st_value);
+				r++;
+				have_pending = 0;
+				continue;
+			}
+
 #ifdef MCC_TARGET_ARM64
 			/* ARM64_RELOC_ADDEND is a PSEUDO entry: it carries a 24-bit addend in
 			   r_symbolnum for the entry that follows it, because an arm64
@@ -2477,9 +2538,19 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 						goto fail;
 					}
 					break;
+				case 5:
+					etype = R_AARCH64_ADR_GOT_PAGE;
+					break;
+				case 6:
+					etype = R_AARCH64_LD64_GOT_LO12_NC;
+					break;
 				default:
 					mcc_error_noabort("Mach-O: unsupported arm64 relocation type %d "
-														"(GOT/TLV/SUBTRACTOR are not implemented)", type);
+														"(TLVP and POINTER_TO_GOT are not implemented)", type);
+					goto fail;
+				}
+				if ((type == 5 || type == 6) && !ext) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: section-relative GOT relocation");
 					goto fail;
 				}
 			}
@@ -2515,8 +2586,21 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				}
 				etype = R_X86_64_PLT32;
 				break;
+			case 3:
+			case 4:
+				if (!pcrel || length != 2) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: malformed GOT relocation");
+					goto fail;
+				}
+				if (!ext) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: section-relative GOT relocation");
+					goto fail;
+				}
+				etype = R_X86_64_GOTPCREL;
+				break;
 			default:
-				mcc_error_noabort("Mach-O: unsupported x86_64 relocation type %d", type);
+				mcc_error_noabort("Mach-O: unsupported x86_64 relocation type %d "
+													"(TLV is not implemented)", type);
 				goto fail;
 			}
 			if (pcrel) { MCC_TRACE("br\n");

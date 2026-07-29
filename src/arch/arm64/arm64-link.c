@@ -7,6 +7,7 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_ABS32:
 	case R_AARCH64_ABS64:
 	case R_AARCH64_PREL32:
+	case R_AARCH64_PREL64:
 	case R_AARCH64_MOVW_UABS_G0_NC:
 	case R_AARCH64_MOVW_UABS_G1_NC:
 	case R_AARCH64_MOVW_UABS_G2_NC:
@@ -44,6 +45,7 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	switch (reloc_type) { MCC_TRACE("br\n");
 	case R_AARCH64_PREL32:
+	case R_AARCH64_PREL64:
 	case R_AARCH64_MOVW_UABS_G0_NC:
 	case R_AARCH64_MOVW_UABS_G1_NC:
 	case R_AARCH64_MOVW_UABS_G2_NC:
@@ -250,6 +252,19 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 			}
 		}
 		add32le(ptr, val - addr);
+		return;
+	case R_AARCH64_PREL64:
+		if (s1->output_type == MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+			esym_index = get_sym_attr(s1, sym_index, 0)->dyn_index;
+			if (esym_index) { MCC_TRACE("br\n");
+				qrel->r_offset = rel->r_offset;
+				qrel->r_info = ELFW(R_INFO)(esym_index, R_AARCH64_PREL64);
+				qrel->r_addend = read64le(ptr) + rel->r_addend;
+				qrel++;
+				break;
+			}
+		}
+		add64le(ptr, val - addr);
 		return;
 	case R_AARCH64_MOVW_UABS_G0_NC:
 		write32le(ptr, ((read32le(ptr) & 0xffe0001f) |
