@@ -1030,9 +1030,8 @@ Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign 
    hardest item in the file and is deliberately last.
 
 **Anomalies, all three chosen:**
-- **D1a — explain the 1856 → 1841 verdict-count drop** under `PROMO_ARROW`/`PROMO_INCDEC`. The faithful RATIO held
-  and `mcc` exits 0 with no errors, so this is not the SIGSEGV truncation recorded elsewhere. Blocks trusting any
-  future count change here.
+- ~~**D1a — explain the 1856 → 1841 verdict-count drop** under `PROMO_ARROW`/`PROMO_INCDEC`.~~ **CLOSED** — does not
+  reproduce; see the D1a note in the recorder section. The verdict count is trustworthy.
 - **D1b — `store_packed_bf`.** Still `unfaithful` after `8e867f40` removed its suspected cause (the discarded-value
   ternary). Now unattributed.
 - **D1c — the 26 non-mov length-differs.** Last unexplained group in the unfaithful bucket. Delta mnemonics `xorb`
@@ -1057,10 +1056,8 @@ real-object validation stays macOS-gated.
 2. **B1a — widen the leftmost-leaf guard for call arguments.** The parser demonstrably keeps the store's value live
    in a register across argument setup (`mov %eax,s(%rip)` then `mov %rax,%rdi`), so the guard's stated reason does
    not hold for this shape. Gate on `assign_value_effects.c` + full bar; this is where `emit-at-marker` miscompiled.
-3. **Explain the verdict-count change.** Enabling `PROMO_ARROW`/`PROMO_INCDEC` moved the count 1856 → 1841 while the
-   faithful RATIO held. `mcc` exits 0 with no errors, so this is not the SIGSEGV truncation this file records
-   elsewhere. Unknown why promotion staging changes which functions reach the verify print. **Understand it before
-   reading any future count change here as meaningful.**
+3. ~~**Explain the verdict-count change.**~~ **CLOSED** — does not reproduce; see the D1a note in the recorder
+   section. The verdict count is trustworthy, so a count change there IS meaningful.
 4. **`store_packed_bf` is still `unfaithful`.** Its `c ? vdup() : gv_dup()` is now recorded after `8e867f40`, so the
    discarded-ternary hole is not its cause. Unattributed.
 5. **The 26 non-mov length-differs.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6, `cmp` 5 — the `xorb` count is
@@ -1108,8 +1105,11 @@ mis-staging — `MCC_AST_PROMO_ARROW`/`MCC_AST_PROMO_INCDEC` keyed to `optimize_
 at `-O2`/`-O3` — was flipped the same way (`e052542a`): nbody 0.40 -> 0.36s, spectral-norm 0.28 -> 0.26s, matmul
 2.21 -> 2.07s, output identical to gates-off. Detail in git history.
 
-**The D1a anomaly — the verdict COUNT dropping 1856 -> 1841 with the promotion gates on — NO LONGER REPRODUCES,
-checked 2026-07-28.** With `MCC_AST_PROMO_ARROW=0 MCC_AST_PROMO_INCDEC=0` versus the defaults, mcc's own TU emits
+**The D1a anomaly — the verdict COUNT dropping 1856 -> 1841 with the promotion gates on — NO LONGER REPRODUCES.
+THIS IS THE ONLY LIVE COPY; two stale "still open" duplicates were deleted 2026-07-29, do not re-add them.
+Re-confirmed 2026-07-29** on a much-changed gate set (`-O1` restaging, `STOREVAL_CALL`, `TRUNC32`, the `-march`
+work): 2157 verify lines both ways, same function NAMES, identical split (1759 faithful / 297 unfaithful /
+51 desync / 50 bail), objects still differing so the gates are demonstrably active. **First checked 2026-07-28.** With `MCC_AST_PROMO_ARROW=0 MCC_AST_PROMO_INCDEC=0` versus the defaults, mcc's own TU emits
 **2127 verify lines both ways, the same function NAMES, and the identical verdict split** (1731 faithful / 296
 unfaithful / 51 desync / 49 bail). The check is not vacuous: the two objects DIFFER, so the gates are active. Item
 closed. (The measurement trap it came with is still worth keeping: `rc=$?` after a pipeline reports `grep`'s
