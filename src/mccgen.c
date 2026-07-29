@@ -6962,12 +6962,13 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 			gen_assign_cast(&int_type);
 			break;
 		case 'b':
-			if (use_generic) { MCC_TRACE("br\n");
-				vpop();
-				break;
-			}
-			ct.t = VT_BOOL;
-			gen_assign_cast(&ct);
+			/* `weak` selects the weak vs strong builtin form, but no runtime
+			   __atomic_compare_exchange helper -- generic or sized -- takes it: they
+			   are all strong, a valid lowering of a weak CAS. Drop it here for every
+			   path so it is never passed on as the success memory-order argument
+			   (doing so would silently demote a seq_cst CAS to relaxed). The x86_64
+			   inline path below and the sized-helper call account for the drop. */
+			vpop();
 			break;
 		}
 		if ('.' == template[++arg])
@@ -7040,9 +7041,8 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 			(size == 4 || size == 8) &&
 			atok == TOK___atomic_compare_exchange) { MCC_TRACE("br\n");
 		CType bt2;
-		vpop();
-		vpop();
-		vpop();
+		vpop(); /* failure memory order */
+		vpop(); /* success memory order (weak was dropped in the 'b' case) */
 		atomic_lowering++;
 		gen_atomic_cmpxchg(size);
 		atomic_lowering--;
@@ -7093,10 +7093,14 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 		return;
 	}
 #endif
+	/* compare_exchange dropped its `weak` operand in the 'b' case, so the sized
+	   helper (ptr, expected, desired, success, failure) takes one fewer argument
+	   than the template has slots. */
+	int nargs = arg - save - (atok == TOK___atomic_compare_exchange ? 1 : 0);
 	snprintf(buf, sizeof(buf), "%s_%d", get_tok_str(atok, 0), size);
 	vpush_helper_func(tok_alloc_const(buf));
-	vrott(arg - save + 1);
-	gfunc_call(arg - save);
+	vrott(nargs + 1);
+	gfunc_call(nargs);
 
 	vpush(&ct);
 	PUT_R_RET(vtop, ct.t);
