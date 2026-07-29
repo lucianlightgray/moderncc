@@ -252,21 +252,57 @@ __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap6
 #endif
 #endif
 
-#define MCC_OV_SMALL(T, W, NM)          \
-	int __mcc_addo_##NM(W a, W b, T *r) { \
-		W s = a + b;                        \
-		*r = (T)s;                          \
-		return (T)s != s;                   \
-	}                                     \
-	int __mcc_subo_##NM(W a, W b, T *r) { \
-		W s = a - b;                        \
-		*r = (T)s;                          \
-		return (T)s != s;                   \
-	}                                     \
-	int __mcc_mulo_##NM(W a, W b, T *r) { \
-		W s = a * b;                        \
-		*r = (T)s;                          \
-		return (T)s != s;                   \
+/* T is narrower than the widened accumulator W: the builtin's operands arrive
+   already promoted to W, so overflow has two independent sources. The W-wide
+   add/sub/mul can itself overflow (e.g. two unsigned long long inputs whose sum
+   carries out of 64 bits), and the W-wide result may not fit back into T.
+   Either is an overflow. The wrapped narrowing test (T)s != s is only reliable
+   when W did not overflow, so it is OR-ed with an explicit W-overflow test that
+   mirrors the full-width MCC_OV_BIG_{S,U} helpers. */
+#define MCC_OV_SMALL_U(T, W, NM)                \
+	int __mcc_addo_##NM(W a, W b, T *r) {         \
+		W s = a + b;                                \
+		*r = (T)s;                                  \
+		return s < a || (T)s != s;                  \
+	}                                             \
+	int __mcc_subo_##NM(W a, W b, T *r) {         \
+		W s = a - b;                                \
+		*r = (T)s;                                  \
+		return a < b || (T)s != s;                  \
+	}                                             \
+	int __mcc_mulo_##NM(W a, W b, T *r) {         \
+		W s = a * b;                                \
+		*r = (T)s;                                  \
+		return (a != 0 && s / a != b) || (T)s != s; \
+	}
+
+#define MCC_OV_SMALL_S(T, W, TMIN, NM)                                    \
+	int __mcc_addo_##NM(W a, W b, T *r) {                                   \
+		unsigned long long u = (unsigned long long)a + (unsigned long long)b; \
+		W s = (W)u;                                                           \
+		*r = (T)s;                                                            \
+		return (~(a ^ b) & (a ^ s)) < 0 || (T)s != s;                        \
+	}                                                                       \
+	int __mcc_subo_##NM(W a, W b, T *r) {                                   \
+		unsigned long long u = (unsigned long long)a - (unsigned long long)b; \
+		W s = (W)u;                                                           \
+		*r = (T)s;                                                            \
+		return ((a ^ b) & (a ^ s)) < 0 || (T)s != s;                         \
+	}                                                                       \
+	int __mcc_mulo_##NM(W a, W b, T *r) {                                   \
+		unsigned long long u = (unsigned long long)a * (unsigned long long)b; \
+		W s = (W)u;                                                           \
+		int wov;                                                             \
+		*r = (T)s;                                                            \
+		if (a == 0 || b == 0)                                                \
+			wov = 0;                                                           \
+		else if (a == -1)                                                    \
+			wov = (b == (TMIN));                                              \
+		else if (b == -1)                                                    \
+			wov = (a == (TMIN));                                              \
+		else                                                                 \
+			wov = (s / a != b);                                              \
+		return wov || (T)s != s;                                             \
 	}
 
 #define MCC_OV_BIG_S(T, TMIN, NM)                                         \
@@ -306,19 +342,19 @@ __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap6
 		return a != 0 && *r / a != b;       \
 	}
 
-MCC_OV_SMALL(signed char, long long, sc)
-MCC_OV_SMALL(char, long long, c)
-MCC_OV_SMALL(short, long long, s)
-MCC_OV_SMALL(int, long long, i)
-MCC_OV_SMALL(unsigned char, unsigned long long, uc)
-MCC_OV_SMALL(unsigned short, unsigned long long, us)
-MCC_OV_SMALL(unsigned int, unsigned long long, u)
+MCC_OV_SMALL_S(signed char, long long, (-9223372036854775807LL - 1), sc)
+MCC_OV_SMALL_S(char, long long, (-9223372036854775807LL - 1), c)
+MCC_OV_SMALL_S(short, long long, (-9223372036854775807LL - 1), s)
+MCC_OV_SMALL_S(int, long long, (-9223372036854775807LL - 1), i)
+MCC_OV_SMALL_U(unsigned char, unsigned long long, uc)
+MCC_OV_SMALL_U(unsigned short, unsigned long long, us)
+MCC_OV_SMALL_U(unsigned int, unsigned long long, u)
 MCC_OV_BIG_S(long long, (-9223372036854775807LL - 1), ll)
 MCC_OV_BIG_U(unsigned long long, ull)
 #if __SIZEOF_LONG__ == 8
 MCC_OV_BIG_S(long, (-9223372036854775807LL - 1), l)
 MCC_OV_BIG_U(unsigned long, ul)
 #else
-MCC_OV_SMALL(long, long long, l)
-MCC_OV_SMALL(unsigned long, unsigned long long, ul)
+MCC_OV_SMALL_S(long, long long, (-9223372036854775807LL - 1), l)
+MCC_OV_SMALL_U(unsigned long, unsigned long long, ul)
 #endif
