@@ -1769,7 +1769,7 @@ The old seconds-based table, for the record — it is superseded and should not 
 | mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
 | matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
 
-## `__builtin_sqrt`/`floor`/`fma`/`fmin` are UNRESOLVED SYMBOLS — open, found 2026-07-29
+## `__builtin_sqrt`/`floor`/`fma`/`fmin` are UNRESOLVED SYMBOLS — IN PROGRESS 2026-07-29 (fix (b), parser-side)
 (`-ffast-math` being silently ignored was the other half of this and is FIXED in `2717479f`: it now implies
 `-fno-math-errno` + `fold_math` + `cx_limited_range`, guarded by `cli/fast_math_implies_no_math_errno`.)
 
