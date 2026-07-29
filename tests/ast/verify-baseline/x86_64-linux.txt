@@ -123,7 +123,6 @@ statements/logical_short_circuit.c	main	desync
 statements/scopes.c	f4	desync
 statements/scopes.c	main_1	desync
 statements/switch.c	main	unfaithful
-statements/switch_semantics.c	copy_n	desync
 statements/tentative_array.c	main	desync
 statements/ternary_op.c	call_fp	desync
 statements/ternary_op.c	main	desync
@@ -136,7 +135,6 @@ structs_unions/bitfields.c	dump	unfaithful
 structs_unions/bitfields.c	main	desync
 structs_unions/bitfields_ms.c	dump	unfaithful
 structs_unions/bitfields_ms.c	main	unfaithful
-structs_unions/enum_bitfield.c	convert_like_real	desync
 structs_unions/return_struct_in_reg.c	main	unfaithful
 structs_unions/struct.c	main	stackresidue
 structs_unions/struct_abi.c	main	desync

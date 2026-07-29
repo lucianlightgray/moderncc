@@ -2967,10 +2967,12 @@ void ast_hook_bail(void) { MCC_TRACE("enter\n");
 
 void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	ast_switch_node = AST_NONE;
-	if (!ast_active || ast_desync || ast_bail)
+	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
-	if (ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
+	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
 		ast_bail = 1;
+		if (ast_vn > 0)
+			{ MCC_TRACE("br\n"); ast_vn--; }
 		return;
 	}
 	ast_finalize_leaf(ast_vs[0], vtop);
@@ -2979,6 +2981,7 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	if ((vk != AST_Ref && vk != AST_Literal) ||
 			ast_bad_type(ast_type_t(ast_cur, val))) { MCC_TRACE("br\n");
 		ast_bail = 1;
+		ast_vn = 0;
 		return;
 	}
 	ast_vn = 0;
