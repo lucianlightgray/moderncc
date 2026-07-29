@@ -3466,7 +3466,7 @@ on a struct or an xmm value — `test_atomic_store_struct` printed `4 0 0 0` ins
 requires the atom's base type to be an integer, pointer or bool. Floats and structs keep the helper and are
 byte-for-byte unchanged.
 
-**`popcount` and `parity` are DONE 2026-07-28 behind `MCC_POPCOUNT_INLINE` (default OFF) — and NOT as x86_64
+**`popcount` and `parity` are DONE 2026-07-28, DEFAULT-ON (`MCC_POPCOUNT_INLINE=0` opts out) — and NOT as x86_64
 machine code.** They are lowered in the PARSER as an ordinary expression through `gv_dup`/`vpushi`/`gen_op`: the
 standard SWAR fold (`x -= (x>>1)&0x55..`, `x = (x&0x33..) + ((x>>2)&0x33..)`, `x = (x + (x>>4)) & 0x0f..`,
 `(x * 0x0101..) >> (W-8)`), with parity taking `& 1` of the result. That is what gcc emits with `-mno-popcnt`, it
@@ -3477,9 +3477,23 @@ new corpus cell correctly under qemu.
 So the SSE4.2 `popcnt` note below is about the one-instruction form; the portable lowering does not need `-march`
 at all and can ship before it.
 
-The probe is now **21 -> 4**: `__atomic_compare_exchange_4`, `alloca`, `__builtin_clrsb` and its `l`/`ll` forms.
-`clrsb` is the same kind of expression lowering (`clz(x ^ (x >> (W-1))) - 1`, with the all-zero/all-ones case) and
-could follow the same parser-level route rather than a per-arch emitter.
+Flip validation: full ctest 7461/7461, native self-host fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed
+differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64 AND riscv64 cross self-host
+fixpoints byte-identical — the cross legs matter here in a way they did not for the x86_64-only gates, because this
+lowering changes every target's code.
+
+The probe is now **21 -> 3**: `__atomic_compare_exchange_4`, `alloca`, `__builtin_clrsb`.
+
+**Recipe for `clrsb`, worked out while doing popcount and worth writing down rather than rediscovering.** It is
+`clz(x ^ (x >> (W-1))) - 1`, and the awkward part is that portable `clz` is itself missing — but popcount now
+supplies it: smear the value down (`x |= x>>1; x |= x>>2; … x |= x>>16` and `x >>= 32` for 64) and then
+`clz(x) = W - popcount(x)`. Substituting gives a branch-free `clrsb` with NO special case at all:
+
+    clrsb(x) = W - popcount(smear(x ^ (x >> (W-1)))) - 1
+
+and it lands on the right answers at the boundaries by construction — `x = 0` and `x = -1` both smear to 0, giving
+`W - 0 - 1 = W-1`, which is what both should return. Cost is roughly 19 ops, so it is a size trade rather than a
+clear win; that, not the mechanism, is the open question.
 
 **Flip validation (2026-07-28), for the whole `MCC_ATOMIC_INLINE` set:** full ctest 7439/7439, native self-host
 fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed differential fuzz vs gcc + clang with `--gates` and 0
