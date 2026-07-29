@@ -1081,6 +1081,21 @@ struct filespec {
 #define VT_VLA 0x0400
 #define VT_LONG 0x0800
 
+/* The VT_ type of size_t / ptrdiff_t for this target (LONG_SIZE is set above).
+   Lives here, not in mccgen.c, so the backend TUs that reference it (e.g.
+   x86_64-gen.c's inline alloca) still see it when compiled STANDALONE in the
+   multisource build, where mccgen.c's macros are not in scope. */
+#if MCC_PTR_SIZE == 4
+#define VT_SIZE_T (VT_INT | VT_UNSIGNED)
+#define VT_PTRDIFF_T VT_INT
+#elif LONG_SIZE == 4
+#define VT_SIZE_T (VT_LLONG | VT_UNSIGNED)
+#define VT_PTRDIFF_T VT_LLONG
+#else
+#define VT_SIZE_T (VT_LONG | VT_LLONG | VT_UNSIGNED)
+#define VT_PTRDIFF_T (VT_LONG | VT_LLONG)
+#endif
+
 #define VT_EXTERN 0x00001000
 #define VT_STATIC 0x00002000
 #define VT_TYPEDEF 0x00004000

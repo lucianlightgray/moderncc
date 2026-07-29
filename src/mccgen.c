@@ -77,16 +77,8 @@ ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
 
-#if MCC_PTR_SIZE == 4
-#define VT_SIZE_T (VT_INT | VT_UNSIGNED)
-#define VT_PTRDIFF_T VT_INT
-#elif LONG_SIZE == 4
-#define VT_SIZE_T (VT_LLONG | VT_UNSIGNED)
-#define VT_PTRDIFF_T VT_LLONG
-#else
-#define VT_SIZE_T (VT_LONG | VT_LLONG | VT_UNSIGNED)
-#define VT_PTRDIFF_T (VT_LONG | VT_LLONG)
-#endif
+/* VT_SIZE_T / VT_PTRDIFF_T moved to mcc.h so the standalone-compiled backend TUs
+   (multisource build) can see them too. */
 
 #define cur_switch (mcc_state->cur_switch)
 
