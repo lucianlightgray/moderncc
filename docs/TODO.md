@@ -249,6 +249,28 @@ not.
    - arm `blx` (`arm-link.c`) and the `CPUVER >= 7` paths (`arm-gen.c`) — migrate off the compile-time `#if` onto the runtime mask so one binary can target several ARM levels.
    - **Do NOT march-gate `MCC_AST_XMM_HI` or `MCC_AST_REGDISP`.** XMM8-15 and register-displacement addressing are x86-64 *baseline*; they are default-off for validation reasons, not ISA reasons. Gating them behind `-march` would be wrong and would hide the real (soak) blocker.
 5. **Predefined macros must follow `-march`** (`mccpp.c`, same place `__OPTIMIZE__` is set): `__SSE4_1__`, `__AVX2__`, `__FMA__`, `__ARM_NEON`, `__ARM_FEATURE_IDIV`, `__riscv_flen`, … Otherwise system headers and libc `ifunc`/inline-asm paths disagree with what mcc actually emits — a silent-miscompile class, not a cosmetic gap.
+
+   **INVERTED 2026-07-29 — DO NOT IMPLEMENT THIS AS WRITTEN. Doing so turns working compiles into broken ones.**
+   These macros are not a description of what the compiler emits; they are a PERMISSION SLIP telling source code it
+   may take an intrinsics path. mcc predefines exactly `__SSE__`/`__SSE2__` (+ the `_MATH_` variants) and **ships no
+   x86 intrinsic headers at all** — no `xmmintrin.h`, `smmintrin.h`, `immintrin.h`. Demonstrated rather than
+   argued, on a source that guards `_mm_round_sd` behind `__SSE4_1__` and falls back to `floor()` otherwise:
+
+       mcc                          -> prints 2      (macro undefined, scalar fallback taken)
+       mcc -D__SSE4_1__=1           -> error: include file 'smmintrin.h' not found
+
+   So defining the macro is a REGRESSION: today such code compiles and runs, and after step 5 it would not build.
+
+   **The stated rationale is also wrong in the direction that matters.** Not defining them is SAFE — code takes its
+   portable fallback and is merely slower. The miscompile risk runs the other way: claiming a feature mcc cannot
+   back. And there is no disagreement to fix, because with `-march=native` the machine really does have the feature
+   mcc emitted for; glibc's `ifunc` dispatch is a RUNTIME check in the shared library and does not read these macros
+   at all.
+
+   **Correct ordering:** intrinsic support (or shipped headers) FIRST, then the macros that advertise it, one
+   feature at a time — a macro may only be defined once `#include <the-header-it-gates>` compiles. Until then the
+   conservative macro set is the correct one, not a gap. This is the same class as the `ARGFWD` and
+   `MINMAX_INLINE` lesson: do not advertise a capability that cannot fire.
 6. **Introspection**: report the resolved level and feature set (extend `-print-search-dirs`, or a `-print-isa`), so CI and bug reports can state the ISA a build targeted.
 
 **Testing / M8 impact — read before starting.** `-march=native` makes output **host-dependent**. The decision above settles how that is handled: the cache keys on the consumed feature set, and byte-identity is asserted per (source, ISA) pair rather than globally, so two hosts with different ISAs hold different entries instead of contradicting each other. What follows is therefore about making the harness ISA-aware, NOT about avoiding native. Pinning `-march=<baseline>` in a test is acceptable only where the test's subject is something other than codegen; a golden that pins the baseline purely to stay reproducible is measuring a configuration nobody ships. The differential fuzz should additionally run per level (`x86-64`, `-v2`, `-v3`) since each level is a distinct codegen path; and `-march=native` needs its own smoke test asserting only that it runs, never byte-identity. Add a `ckconfig`-style guard so a new ISA-dependent optimizer cannot land without declaring its required level.
