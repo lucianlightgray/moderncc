@@ -1180,7 +1180,12 @@ real-object validation stays macOS-gated.
 
    **Remaining fidelity residuals (the new tail, ~43):** mov-only register-order deltas (the largest),
    3+-member chains (pairwise limit), `store_packed_bf`'s remaining delta, A1a `nocode_wanted`. These are
-   follow-on work, not part of the closed item. (Void-arm discarded-ternary byte-mirror CLOSED 2026-07-29:
+   follow-on work, not part of the closed item. (Loop-condition assignments `while ((x = f()) ...)` CLOSED
+   2026-07-29: the WHILE_COMMA prefix BB had moved the condition's Store out of the StoreVal walk's
+   adjacent-sibling reach; the walk now admits a Store that is the LAST statement of an op-2/op-3 loop's
+   prefix whose marker is the condition's leftmost leaf — `wassign`/`wptr`/`fassign` flip faithful, ratchet
+   banked at 155; the do-while analog (cond at child 1) is still open. Void-arm discarded-ternary
+   byte-mirror CLOSED 2026-07-29:
    the delta was the parser's degenerate second join-jmp after the else arm; the discard emitter now mirrors
    it — `c ? va_() : vb_()` faithful, ratchet banked at 158.)
    and `mcc_preprocess` extra-call deltas, then the `xorb`/`movabs`/`add`/`cmp` length-differ population.

@@ -6704,8 +6704,22 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 			}
 			if (!leftmost || up == AST_NONE || ast_kind(a, up) != AST_BasicBlock)
 				{ MCC_TRACE("br\n"); continue; }
-			if (ast_next_sib(a, st) != cur || up != ast_parent(a, st))
-				{ MCC_TRACE("br\n"); continue; }
+			if (ast_next_sib(a, st) != cur || up != ast_parent(a, st)) { MCC_TRACE("br\n");
+				int pfx_ok = 0;
+				AstLocal pbb = ast_parent(a, st);
+				if (ast_while_comma_env && call_up == AST_NONE && !constl &&
+						pbb != AST_NONE && ast_kind(a, pbb) == AST_BasicBlock &&
+						cur != AST_NONE && ast_kind(a, cur) == AST_If &&
+						ast_parent(a, pbb) == cur &&
+						(ast_op(a, cur) == 2 || ast_op(a, cur) == 3) &&
+						ast_next_sib(a, st) == AST_NONE) { MCC_TRACE("br\n");
+					uint32_t nc = ast_nchild(a, cur);
+					if (nc >= 3 && ast_child(a, cur, nc - 1) == pbb)
+						{ MCC_TRACE("br\n"); pfx_ok = 1; }
+				}
+				if (!pfx_ok)
+					{ MCC_TRACE("br\n"); continue; }
+			}
 			if (call_up != AST_NONE)
 				{ MCC_TRACE("br\n"); ast_set_fbits(a, call_up,
 						ast_fbits(a, call_up) | AST_FB_CALL_STOREVAL_ARG |

@@ -95,7 +95,6 @@ lexical/uU_char_constants.c	main	desync
 optimizer/assign_value_effects.c	assign_in_arg	unfaithful
 optimizer/assign_value_effects.c	nested_assign	unfaithful
 optimizer/assign_value_effects.c	shortcircuit_both	desync
-optimizer/assign_value_effects.c	while_cond	unfaithful
 optimizer/region_store.c	and_store	desync
 optimizer/region_store.c	chain	desync
 optimizer/region_store.c	or_store	desync
@@ -108,8 +107,6 @@ programs/grep.c	pmatch	bail
 programs/random_stuff.c	tst_adr	desync
 programs/random_stuff.c	tst_branch	desync
 programs/random_stuff.c	tst_pack	unfaithful
-programs/stdio.c	main	unfaithful
-runner.c	slurp	unfaithful
 statements/chained_assign.c	chain_in_expr	unfaithful
 statements/comma_operator.c	main	unfaithful
 statements/logical_second_arg.c	main	desync
