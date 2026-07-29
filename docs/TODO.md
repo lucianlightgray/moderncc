@@ -3379,389 +3379,65 @@ Readings: (a) nbody gains **~20%** and every weight from 12 to 384 captures the 
 - **Investigate `AST_Poison` prevalence + reconciliation.** `AST_Poison` is a tombstone, not a construct: the columnar arena (`struct AstArena`) has no free list, so any pass that deletes a node re-kinds the slot to `AST_Poison` and `ast_clear_children`s it rather than removing it. Five planters today, all in `mccast.c`: narrow-lift (`ast_narrow_make` ~7250, poisons the wrapper after hoisting `inner`), DSE (~8070, redundant local store), SCCP branch-fold (~8123, dead `If` when the taken arm is empty), jump-thread/if-simplify (`ast_jt_*` ~8359, both arms empty), and the generic `ast_bf_drop` (~9329, bitfield lowering). Every downstream pass then pays to walk-and-skip these dead slots, and each one is serialized as a live node (a `kind` u16 + full payload row) in `mccjit_intent_serialize`'s node stream and re-materialized on deserialize — so tombstone density inflates both per-pass walk cost and blob size. Measure it first: instrument for post-pass Poison count per function / per TU (and as a fraction of live nodes) across the amalgamation self-compile + the exec corpus, and bucket by planter so the dominant source is named the way the desync gap set is. Then determine how many can/should be eliminated by (a) passes that rewrite-in-place instead of tombstoning where the slot could be reused, (b) an arena compaction/reconciliation step (renumber live nodes, drop Poison, remap `parent`/`first_child`/`last_child`/`next_sib`/child-index columns — the same index-remap `ast_slice_extract` already does) run before serialize and/or between pass phases, and (c) skip-index or generation-tagged querying so walkers don't re-scan tombstones. Open question the measurement settles: whether Poison is rare enough to leave alone (tombstoning is cheap and node-index-stable, which several passes rely on mid-transform) or common enough that a reconcile pass pays for itself. Node-index stability is the constraint — any compaction must run at a point where no live cursor/`AstLocal` is held across it.
 - **riscv64 `MCC_AST_PROMOTE=1` aborted the compiler — FIXED 2026-07-26.** `freg: Assertion 'r >= 8 && r < 16'` turned out to be `freg(-1)`: a `get_reg` failure sentinel reaching `load()`/`store()` as a register id. Backtrace `ast_replay_bb -> gfunc_return -> vstore -> gfunc_call -> gv(MCC_RC_R(2)) -> load(r=-1)`. Cause: the riscv64 caller-saved promotion pool was `{2,3,4,5,6,7}` = **a2-a7, the ABI argument registers**, and the FP pool `{10,11,12,13}` = **fa2-fa5, likewise argument registers**. A function is only leaf as far as the AST can see — a struct copy or struct return lowers to a hidden `memcpy`, and `gfunc_call` materialises each argument with `gv(MCC_RC_R(n))`, a class containing exactly ONE register. Promotion pins it, `get_reg` has nothing to return, and -1 propagates. The size pattern is the tell: `struct M{int a;}` (4 B), `{int a,b,c;}` (12 B) and `{char a[24];}` crash while `{int a,b;}` (8 B) and `{long a,b;}` (16 B) do not — only the former need the memcpy. Fix: riscv64 has NO leaf pool (`AST_PROMO_CALLER_N`/`AST_PROMO_XMM_N` = 0), because the only caller-saved registers mcc models on this arch ARE the argument registers; leaves promote into the callee-saved pool via `MCC_AST_PROMO_LEAF_CALLEE`, whose per-reg `ast_promo_reg_is_callee` save/restore already covers a leaf holding s-registers. Restoring a real leaf pool needs register ids for t0-t6, and an FP pool needs fs0-fs11 (the deferred PR-3 callee-saved float pool) — neither is modelled. **This contradicts the "riscv64 register promotion is DONE (GP `s1..s11` + float, qemu differential 0-fail)" note below: that soak never exercised promotion over a TU containing a struct return.** Validated: byte-identical by default on every arch (promotion is opt-in off x86_64, and the change is inside `#if defined(MCC_TARGET_RISCV64)`) — x86_64 self-compiled amalgamation identical at -O0/-O2/-O3; ctest 5590/5590; asttool 747/0; all 5 arches build; the riscv64 amalgamation now compiles under `MCC_AST_PROMOTE=1` alone, with `+LEAF_CALLEE`, and with the full 12-gate set; **`tools/selfhost-riscv64-docker.sh` reaches a byte-identical 3-stage fixpoint under all three** (2679281 B promote, 2679281 B 12-gate — the set that previously core-dumped — and 2749921 B with LEAF_CALLEE+RELOC_EQUIV); and a 364-run riscv64 differential vs `riscv64-linux-gnu-gcc` (FP-constant, struct, register-pressure and a dedicated struct-return battery covering the 4/8/12/16/24-byte and 2-double return classes) at -O0/-O2 under both promote configurations, 0 failures, 0 gate-off baseline failures.
 
-## Missing backend intrinsic lowering — 21 helper calls where gcc AND clang emit inline code (found 2026-07-28 building GCC with mcc)
+## Backend intrinsic lowering — DONE 2026-07-28, 21 helper calls -> 0 on the probe TU
 
-Building the GCC 17 trunk tree with a self-hosted `mcc -O3` as CC exposed the complete set. One probe TU (`extern void *alloca()`, the whole `__builtin_{clz,ctz,ffs,clrsb,popcount,parity,bswap}*` family, `__atomic_{load,store,exchange,compare_exchange,fetch_add}_n`, `__sync_lock_test_and_set`) compiled at `-O2` leaves these undefined symbols:
+The probe (`extern void *alloca()` plus every bit builtin, the atomics and the overflow builtins, `-O2 -c`) once
+left mcc with **21** undefined helper references where gcc left one (`__popcountdi2`) and clang none. It now leaves
+mcc with **none**. What landed, all default-on with an `MCC_*_INLINE=0` opt-out:
 
-| compiler | undefined after `-O2 -c` |
-|---|---|
-| `gcc` | `__popcountdi2` (one, and it is a real libgcc symbol) |
-| `clang` | none |
-| `gcc`/`clang` with `-march=native` | none |
-| **`mcc`** | **21** — `alloca`, `__builtin_{bswap16,bswap32,bswap64,clrsb,clz,clzl,clzll,ctz,ctzl,ctzll,ffs,parity,popcount,popcountll}`, `__atomic_{load_4,store_4,exchange_4,compare_exchange_4,fetch_add_4,fetch_add_8}` |
-
-Two reasons this is worth more than the usual code-quality argument. First, most of those names resolve only in `libmccrt.a`, so an mcc-compiled `.o` handed to a FOREIGN driver is unresolvable (**the atomics are the exception — they already are the libatomic ABI and link fine with `-latomic`; see the INVESTIGATE section below for the per-family breakdown**) — building GCC needed eight `ar x libmccrt.a` members (`alloca builtin atomic stdatomic mccrt complex float128 va_list`, checked collision-free) put on `LDFLAGS` as plain objects, because `g++` links the mcc-built C libraries there and never adds mcc's runtime. `__va_arg` was in that set until 2026-07-28 (77735a9f made it a `static __inline` in the predefs); the rest are the residue. Second, `__builtin_clz` and friends are not names any other runtime provides, so the dependency is invisible to anyone reading the object for portability.
-
-The acceptance bar for each item below is the M8 bar plus: gate-off byte-identity, the probe TU losing that symbol, and a differential run of the affected builtin against BOTH gcc and clang including the UB-adjacent edge cases (`clz(0)`/`ctz(0)` are undefined — match what the hardware instruction actually leaves behind rather than inventing a value, and keep the constant-folding path's answer consistent with the runtime path's).
-
-### ~~`alloca` — the inline path already exists, the call just does not use it~~ — DONE 2026-07-28
-`gen_alloca_inline` in `gfunc_call` (`x86_64-gen.c`) takes `alloca(n)` before the call is built: round the request
-up to 16, `sub %rax,%rsp`, `mov %rsp,%rax`. DEFAULT-ON; `MCC_ALLOCA_INLINE=0` opts out.
-
-Both traps this section recorded turned out to be answerable rather than blocking:
-- **Lifetime.** The block must live to the function epilogue, so — unlike a VLA — it is deliberately NOT registered
-  in `cur_scope->vla`, and nothing reclaims it early; `leave` restores `rsp` from `rbp`. The corpus cell pins this
-  with a block that allocates inside a nested scope and reads the memory after the scope closes.
-- **`alloca` in an argument list.** `f(alloca(n))` works because mcc evaluates every argument expression onto the
-  vstack BEFORE `gfunc_call` emits any stack traffic, and because locals and spills are `rbp`-relative, so moving
-  `rsp` underneath them is safe. Covered directly by the cell.
-
-It declines when bounds checking is on — that path needs the real call so `__bound_alloca_nr` can record the block —
-and the mccrt `alloca` stub stays for PE/bcheck and older objects, exactly as this section asked.
-
-Validated: gate-off byte-identical over the corpus at `-O0`/`-O2`; the cell (argument-list use, a loop, nested
-scopes, use-after-scope, and a 4 KB block) matches gcc at `-O0`/`-O1`/`-O2`/`-O3` with the gate both ways; full
-ctest 7483/7483 in both states; self-host fixpoint byte-identical; 60-seed differential fuzz vs gcc + clang with
-`--gates`, 0 miscompiles.
-
-Flip checks beyond the gated ones: the bounds-checked path really does keep the call (with `-b` the object carries
-`__bound_alloca`, verified rather than assumed — an earlier check used a flag mcc ignores and was vacuous), the
-four cross targets still emit `alloca` since this is x86_64-only, and the corpus cell runs correctly under
-`qemu-i386` and `qemu-arm`. Its `alloca` declaration uses `__SIZE_TYPE__` rather than `unsigned long`, which is
-what makes it portable to the 32-bit targets at all — with `unsigned long` it is a redefinition conflict there.
-
-**With this the section's probe is 21 -> 0. mcc's object for that TU now has no undefined helper at all, where gcc
-still needs `__popcountdi2`.**
-
-### Bit builtins — `clz`/`ctz`/`ffs`/`clrsb`/`popcount`/`parity`/`bswap`
-
-**`bswap` is DONE 2026-07-28 on x86_64 and DEFAULT-ON (`MCC_BSWAP_INLINE=0` opts out).** It is the one member of this
-family that needs NO `-march` work: `bswap` is 486-baseline and the 16-bit form is `rol $8`, so there is no ISA
-floor to raise. `gen_bswap(size)` (`x86_64-gen.c`) emits `rol $0x8,%ax` for 2 bytes and `0f c8+r` — with REX.W for
-8 — for 4 and 8, and `unary()` calls it instead of `vpush_helper_func` when the gate is on. The probe criterion
-this section states is met: the three `__builtin_bswap{16,32,64}` UND symbols disappear from the object, leaving
-only `printf`.
-
-Only x86_64 inlines it: i386, arm, arm64 and riscv64 still emit the helper call (verified — their objects keep the
-three UND symbols), so this does not change any cross target and the arm64 cross self-host fixpoint is unchanged
-and byte-identical. Validated before the flip with gate-off 789/789 corpus objects byte-identical at
-`-O0`/`-O2`/`-O3`, and after it with full ctest 7394/7394. A new corpus cell
-(`tests/exec/codegen/bswap_inline.c`) checks the fixed edges (0, all-ones, `0x00ff` at each width) plus 200
-xorshift values per width AND asserts the round trip is the identity, matching gcc at `-O0`/`-O1`/`-O2`/`-O3` with
-the gate both off and on; full ctest 7394/7394 both ways.
-
-**`clz`/`ctz` are DONE 2026-07-28 too, DEFAULT-ON (`MCC_BITSCAN_INLINE=0` opts out), and they were NOT blocked on
-`-march` either.** The blocking claim below is about `lzcnt`/`tzcnt`/`popcnt`; `BSR`/`BSF` are 386-baseline and give
-both operations directly — `ctz` is `BSF`, and `clz` is `BSR` followed by `xor $31` (or `$63`), because
-`31 - idx == idx ^ 31` for a 5-bit index. Both are undefined at zero, which is exactly what `__builtin_clz`/`ctz`
-document, so the sequence needs no zero guard and raises no ISA floor. `gen_bitscan(ctz, size)` in `x86_64-gen.c`.
-
-Validated: gate-off 792/792 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; a new self-checking corpus cell
-(`tests/exec/codegen/bitscan_inline.c`) walks every single-bit position at both widths and 300 xorshift values
-against shift-loop reference implementations — so it fails on a wrong answer even where the golden output would
-not change — matching gcc at `-O0`/`-O1`/`-O2`/`-O3` in both gate states; full ctest 7416/7416 both ways; the four
-`__builtin_{clz,ctz,clzll,ctzll}` UND symbols disappear, mcc's own object now has **zero** `clz`/`ctz`/`bswap`
-helper references, and both the native and arm64 cross self-host fixpoints are byte-identical.
-
-**`ffs` is DONE 2026-07-28 as well**, on the same `MCC_BITSCAN_INLINE` gate: `BSF`, then `CMOVZ` a `-1` scratch in
-for the zero case, then increment. Two encoding details worth keeping — the `mov $-1` and the `CMOV` run 32-bit on
-purpose (the answer is at most 64, and REX.W on `B8+r` makes it a 10-byte `movabs`), and the scratch comes from
-`get_reg(MCC_RC_INT)` so it cannot collide with the operand.
-
-**The probe from the head of this section is now 21 -> 10.** Remaining: the five `__atomic_*_4` calls, `alloca`,
-`__builtin_popcount`/`popcountll` (genuinely SSE4.2), `__builtin_parity` and `__builtin_clrsb`. `parity` and
-`clrsb` are baseline-implementable but multi-instruction (xor-fold, and `clz(x ^ (x >> W-1)) - 1` with a zero
-case), so they are worth less than the atomics, which are both the biggest remaining group AND the one where the
-inline form is a large speed win rather than a code-size one.
-
-**`__atomic_fetch_add`/`fetch_sub` are DONE 2026-07-28, DEFAULT-ON (`MCC_ATOMIC_INLINE=0` opts out), sizes 4 and 8.**
-`lock xadd` leaves the PREVIOUS contents in the value register, which is exactly fetch semantics, and LOCK already
-implies seq_cst on x86 so the memory-order argument needs no extra fence. `fetch_sub` is the same instruction with
-the operand negated first. Sizes 1 and 2 stay on the helper: the byte form needs a REX prefix just to name
-`sil`/`dil`, which is not worth a special case. `gen_atomic_xadd(size)` in `x86_64-gen.c`, hooked in `parse_atomic`
-just before the `snprintf`-built helper call.
-
-Verified as a THREADED test, not only single-threaded arithmetic — `tests/exec/codegen/atomic_fetch_inline.c` runs
-4 threads x 50000 interleaved add/sub pairs plus a per-thread add, and the total is deterministic (28 and 400000)
-only if every operation is atomic. It matches gcc with the gate on and off, at `-O0` and `-O2`. Gate-off is
-byte-identical over the corpus and the whole suite is 7439/7439 in both states; `__atomic_fetch_add_4` and
-`_8` disappear from the probe object.
-
-**`__atomic_load_n`, `__atomic_store_n` and `__atomic_exchange_n` are DONE 2026-07-28 on the same gate**, sizes 4
-and 8. Load is a plain `mov` (x86 loads are already acquire, and seq_cst needs nothing more on the load side);
-store and exchange are both `XCHG r, m`, which is implicitly LOCKed — that is the trap this section already
-recorded, and it is why the store does NOT lower to a bare `mov`. mcc's emitted form matches gcc's instruction for
-instruction (`xchg %ecx,(%rax)` / `xchg %rcx,(%rax)`).
-
-**A guard the first cut got wrong, worth keeping:** the size test alone is not enough. `_Atomic struct {char a,b,c,d;}`
-is size 4 and `_Atomic float` is size 4, and both were taken by the inline path, which then ran `gv2(MCC_RC_INT, …)`
-on a struct or an xmm value — `test_atomic_store_struct` printed `4 0 0 0` instead of `1 2 3 4`. The path now also
-requires the atom's base type to be an integer, pointer or bool. Floats and structs keep the helper and are
-byte-for-byte unchanged.
-
-**`popcount` and `parity` are DONE 2026-07-28, DEFAULT-ON (`MCC_POPCOUNT_INLINE=0` opts out) — and NOT as x86_64
-machine code.** They are lowered in the PARSER as an ordinary expression through `gv_dup`/`vpushi`/`gen_op`: the
-standard SWAR fold (`x -= (x>>1)&0x55..`, `x = (x&0x33..) + ((x>>2)&0x33..)`, `x = (x + (x>>4)) & 0x0f..`,
-`(x * 0x0101..) >> (W-8)`), with parity taking `& 1` of the result. That is what gcc emits with `-mno-popcnt`, it
-needs no new encodings, and — the reason it is worth more than an x86 emitter — **it removes the helper on EVERY
-target**: arm64, riscv64, i386 and arm objects lose the four UND symbols too, and the i386 and arm builds run the
-new corpus cell correctly under qemu.
-
-So the SSE4.2 `popcnt` note below is about the one-instruction form; the portable lowering does not need `-march`
-at all and can ship before it.
-
-Flip validation: full ctest 7461/7461, native self-host fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed
-differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64 AND riscv64 cross self-host
-fixpoints byte-identical — the cross legs matter here in a way they did not for the x86_64-only gates, because this
-lowering changes every target's code.
-
-**`clrsb` is DONE 2026-07-28 on the same `MCC_POPCOUNT_INLINE` gate, portable, using the recipe the popcount work
-produced.** It is `clz(x ^ (x >> (W-1))) - 1`, and the awkward part was that portable `clz` was itself missing —
-popcount supplies it: smear the value down (`x |= x>>1; x |= x>>2; … x |= x>>16`, plus `>>32` at 64) and then
-`clz(x) = W - popcount(x)`. Substituting gives a branch-free `clrsb` with NO special case:
-
-    clrsb(x) = (W - 1) - popcount(smear(x ^ (x >> (W-1))))
-
-and it is right at the boundaries by construction — `x = 0` and `x = -1` both smear to 0, giving `W-1`, which is
-what both should return. Verified against a bit-walking reference over every single-bit position (positive and
-negated) and 200 xorshift values at both widths.
-
-**`__atomic_compare_exchange` is DONE 2026-07-28** — `gen_atomic_cmpxchg(size)`, sizes 4 and 8, on the same
-default-on gate. Emitted shape:
-
-    mov  (%rsi),%eax          ; expected
-    lock cmpxchg %ecx,(%rdi)  ; desired, ptr
-    sete %dl                  ; capture ZF FIRST
-    je   1f
-    mov  %eax,(%rsi)          ; failure write-back
-    1: movzbl %dl,%edx
-
-Three things had to be right, and two of them were wrong on the first attempt:
-- **`vrott` vs `vrotb`.** `vrott(3)` sends the TOP to the bottom (`[a,b,c] -> [c,a,b]`); bringing the pointer up
-  from `vtop[-2]` needs `vrotb(3)`. The first cut read the register of the wrong operand.
-- **Everything must be pinned to distinct registers.** `get_reg(MCC_RC_INT)` handed back `%rax` for the `sete`
-  scratch — the one register CMPXCHG uses implicitly — so the scratch clobbered the expected value and the failure
-  write-back stored the boolean. Operands are now pinned with `gv(MCC_RC_RCX)`, `gv(MCC_RC_RSI)`, `gv(MCC_RC_RDI)`
-  and the scratch is `%rdx` after `save_reg`, in the style of `gen_opi`'s divide path.
-- **ZF must be captured before the branch**, since the failure path's `mov` comes after it.
-
-The test is a SPINLOCK, not arithmetic: 4 threads take a CAS lock 20000 times each and add to a shared counter, so
-the total (240000) is only reachable if the CAS provides real mutual exclusion; the single-threaded block pins the
-`expected` write-back on a FAILED exchange, which is the part a naive lowering drops.
-
-**The probe from the head of this section is now 21 -> 1, and the only entry left is `alloca`** (its own subsection
-above). For reference, gcc on the same TU still needs `__popcountdi2`.
-
-**Flip validation (2026-07-28), for the whole `MCC_ATOMIC_INLINE` set:** full ctest 7439/7439, native self-host
-fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed differential fuzz vs gcc + clang with `--gates` and 0
-miscompiles, and the arm64 cross self-host fixpoint byte-identical. Cross targets are untouched by construction and
-by check — i386, arm, arm64 and riscv64 objects still carry the `__atomic_fetch_*` UND symbols.
-
-`__atomic_compare_exchange` is the one left, and it is the hardest of the group because `CMPXCHG` pins the expected
-value in `%rax` and reports through ZF. The shape to copy is `gen_opi`'s divide path, which already does exactly
-this kind of pinning: `gv2(MCC_RC_RAX, MCC_RC_RCX)` plus `save_reg(MCC_TREG_RDX)`. The sequence is: load `*expected`
-into `%rax`, `lock cmpxchg desired, (ptr)`, `sete` the bool result, and on failure store `%rax` back through the
-expected pointer — that write-back is the part a naive lowering forgets, and it is observable, so any test must
-check `expected` after a FAILED exchange, not just the return value.
-
-Encodings for the REST of the atomics, all lock-free for sizes 1-8 on x86_64: `__atomic_load_n` at any ordering
-up to seq_cst is a plain `mov` (x86 loads are acquire); `__atomic_store_n` at seq_cst must be `xchg` (implicitly
-locked) or `mov`+`mfence`, NOT a bare `mov`; `__atomic_exchange_n` is `xchg`; `__atomic_fetch_add` is
-`lock xadd`; `__atomic_compare_exchange_n` is `lock cmpxchg` with the expected value in `%rax` and the result
-taken from ZF.
-The fallback is arch-generic, not a per-backend omission: mccgen.c constant-folds when the argument is `VT_CONST` (`fold_bit_builtin`) and otherwise does `vpush_helper_func(btok)` + `gfunc_call(1)` at mccgen.c:9404 (the clz/ctz/ffs/clrsb/popcount/parity family) and :9438 (the bswap family), calling into `runtime/lib/builtin.c`. That means ALL FIVE ARCHES pay a call for `x86 bsr/bsf/popcnt/bswap`, `arm rbit/clz/rev`, `arm64 clz/rbit/cnt/rev`, `riscv64 Zbb clz/ctz/cpop/rev8`. Suggested order — `bswap` first (unconditional single instruction everywhere, no UB corner, smallest blast radius), then `clz`/`ctz` (x86 `bsr`/`bsf` need the zero-input contract pinned down), then `ffs`/`clrsb`/`parity` (compositions of the former), and `popcount` last because it is the one case where gcc itself still calls a libgcc helper (`__popcountdi2`) without the ISA bit.
-**This is ISA-conditional and therefore blocked on, or at least coupled to, the `-march` section above** (`popcnt` needs SSE4.2/ABM, `lzcnt`/`tzcnt` need BMI1, riscv64 needs Zbb). Baseline x86_64 still gets `bsr`/`bsf`/`bswap` unconditionally, so the `-march` dependency only gates the last increment, not the whole item. Note `gcc -march=native` inlines every one of the 21, which is the real target state.
-
-### Lock-free atomics — `__atomic_load_N`/`store_N`/`exchange_N`/`compare_exchange_N`/`fetch_OP_N`
-mcc builds the libcall name as a string and calls it (`snprintf(buf, ..., "__atomic_compare_exchange_%d", size)` + `vpush_helper_func(tok_alloc_const(buf))`, mccgen.c ~6656; `atomic_store_needs_libcall` and the `base = "__atomic_fetch_add"` table at ~6524 are the same shape). For sizes ≤ pointer-size on x86_64 every one of these is a single instruction — plain `mov` for relaxed/acquire/release load and store, `xchg` for exchange, `lock cmpxchg` for CAS, `lock xadd` for fetch_add — and gcc/clang emit exactly that. The x86_64 backend has no `gen_atomic` entry point yet, so this needs one plus the memory-order argument actually being consulted (mcc currently hardcodes `vpushi(0x5)` for both success and failure orders at the CAS site, which is `seq_cst` — correct but pessimistic).
-Two traps worth writing down before starting: `__atomic_store_n` at `seq_cst` needs `xchg` or a trailing `mfence`, not a bare `mov`; and the sub-word (`_1`/`_2`) cases still need the helpers for the non-lock-free paths, so this is a fast-path addition, not a replacement. `__sync_lock_test_and_set` lowers to `__atomic_exchange_4` today — that is how libbacktrace's `mmap.c` pulled the symbol into the GCC build.
-Related gotcha already paid for once: `__atomic_exchange_N` lives in `stdatomic.o`, NOT `atomic.o`, inside `libmccrt.a`.
-
-### ~~`-Wl,--version-script` is accepted but does not restrict exports~~ — DONE 2026-07-28
-`77735a9f` stopped `-Wl,-version-script` being a hard error; the file was recorded in `s->version_script` and never
-read. It is now applied: `export_global_syms` (`mccelf.c`) consults the script and skips any DEFINED global that the
-script does not list. Scope is the common subset — a `local: *;` wildcard plus an explicit `global:` list — and the
-filter only engages when that wildcard is present, so a script without one keeps today's export-everything
-behaviour rather than silently hiding more than GNU ld would.
-
-Verified against GNU ld end to end, not just by symbol count: with `{ global: public_fn; local: *; };` mcc's `.so`
-exports `public_fn` alone (gcc's exports the same one), a program calling `public_fn` links and runs, and one
-calling `private_fn` fails with `undefined reference` exactly as it does against the gcc-built library. Without the
-script both symbols are still exported. `cli/version_script_hides` locks both halves in one case.
-
-## INVESTIGATE: make mcc objects linkable without libmccrt — the helper names are mcc-private (raised 2026-07-28)
-
-Sibling of the intrinsic-lowering item above, and worth doing *even if* every intrinsic eventually gets inlined, because the residue (soft-float, `__mcc_*` overflow builtins, `_Complex`, `float128`, bcheck, tcov) will always need SOME runtime. The question here is not "how do we emit fewer calls" but "when mcc emits a call into its own runtime, how does a FOREIGN linker resolve it". Today the answer is: it does not, and the GCC build had to `ar x libmccrt.a` eight members onto `LDFLAGS` by hand.
-
-**RE-MEASURED 2026-07-28, after the intrinsic section closed at 21 -> 0 — two of the three families are GONE.**
-Compiling `tests/exec` + `tests/behavior` + mcc's own TU and collecting every undefined symbol, the residue that a
-stock toolchain cannot resolve is now exactly the `__mcc_*` family, 15 names:
-
-| group | names |
-|---|---|
-| overflow builtins | `__mcc_addo_{uc,s,i,u,ll,ull,ti}`, `__mcc_subo_{uc,i}`, `__mcc_mulo_{i,u,ll,ull,ti}` |
-| complex arithmetic | `__mcc_cmul`, `__mcc_cmulf`, `__mcc_cmull`, `__mcc_cdiv` |
-| misc | `__mcc_signbit` |
-
-Everything else that survives IS a libgcc name and resolves against a stock toolchain: `__multi3`, `__udivti3`,
-`__divti3`, `__ashlti3`, `__ashrti3`, `__lshrti3` and the `__fix*`/`__float*` conversions. The bit builtins and
-`alloca` no longer appear at all, and the atomics are inlined rather than called.
-
-So the item is no longer "three families" — it is one family, and the biggest group is now handled the same way the
-atomics were.
-
-**`__builtin_add_overflow`/`sub_overflow`/`mul_overflow` are inlined 2026-07-28, DEFAULT-ON
-(`MCC_OVERFLOW_INLINE=0` opts out), widths 4 and 8, signed and unsigned.** They reach codegen as CALLS to the mccdefs `_Generic` dispatch helpers
-(`__mcc_addo_i` and friends), not as builtin tokens, so the hook intercepts the call in `gfunc_call` the way the
-`alloca` one does, reads the width and signedness off the RESULT POINTER's pointee type, and emits
-`add`/`sub` + `seto` (signed, OF) or `setb` (unsigned, CF) + the store. Widths 1 and 2 keep the helper.
-
-One contract detail that cost a debugging round and is worth stating: `gfunc_call` must pop the callee AND every
-argument and leave the result where the CALLER's `vsetc(&ret.type, ret.r, …)` expects it — `%rax` for an
-int-returning helper — not push a value of its own. Pushing one gives `internal compiler error: vstack leak`.
-
-Multiply needed one extra shape: signed is `imul r, r/m`, which sets OF like `add` does, but unsigned has no
-two-operand form — it is the one-operand `mul r/m` with the multiplicand pinned in `%rax` and the high half landing
-in `%rdx`, so that path pins `a -> %rax` and moves the flag scratch to `%rsi` (it cannot be `%rdx`). The store has
-to happen BEFORE the `movzx` writes the boolean into `%rax`, since for unsigned mul the product IS in `%rax`.
-
-**`__mcc_signbit`/`signbitf` are inlined 2026-07-28, DEFAULT-ON (`MCC_SIGNBIT_INLINE=0` opts out).** `MOVMSKPS`/
-`MOVMSKPD` put lane 0's sign bit in bit 0 of a GP register, so `__builtin_signbit` is that plus one `and $1`; both
-are SSE2, so no ISA floor moves. x87 `long double` has no equivalent and keeps `__mcc_signbitl`.
-
-Worth knowing before writing a test for it: **gcc's `__builtin_signbit` returns the raw sign BIT, not 1** — on a
-negative float it yields `-2147483648`. That is conformant (the documented contract is "nonzero"), and mcc returns
-0/1 both in the helper and inline, so a differential test must compare `!!signbit`, not the value. A first cut
-compared against 1 and "failed" under gcc at both `-O0` and `-O2` while mcc passed, which reads like an mcc bug
-until you print the number.
-
-**CORRECTED MEASUREMENT 2026-07-28 (a stale count was reported twice in this section — this is the real one).**
-Over `tests/exec` + `tests/behavior` + mcc's own TU the non-libgcc residue is **19 names**, not the 6 an earlier
-pass claimed. The claim went stale when the operand-widening fix landed: widening forced the inline hook back to
-width 8, so every narrow overflow helper returned to the object. What is actually left:
-
-| group | names | why |
+| lowering | shape | scope |
 |---|---|---|
-| overflow, widths 1/2/4 | `__mcc_addo_{sc,uc,s,us,i,u}`, `__mcc_subo_{sc,uc,i,u}`, `__mcc_mulo_{sc,i,u}` | operands are 64-bit now, so the inline needs a truncate-and-compare tail — attempted twice, reverted twice |
-| overflow, 128-bit | `__mcc_addo_ti`, `__mcc_mulo_ti` | needs `add`/`adc` + `seto` on a register pair |
-| complex | `__mcc_cmul`, `__mcc_cmulf`, `__mcc_cmull`, `__mcc_cdiv` | call-shape change, see below |
+| `bswap16/32/64` | `rol $8` / `bswap` | x86_64 |
+| `clz`/`ctz` | `BSR`/`BSF` (+`xor $31`) | x86_64 |
+| `ffs` | `BSF` + `CMOVZ -1` + `inc` | x86_64 |
+| `popcount`/`parity`/`clrsb` | SWAR fold built from ordinary vstack ops | **every target** |
+| `signbit` | `MOVMSKPS`/`MOVMSKPD` + `and $1` | x86_64 (x87 `long double` keeps the helper) |
+| atomics: load/store/exchange/fetch_add/sub/compare_exchange | `mov`, `xchg`, `lock xadd`, `lock cmpxchg` | x86_64, sizes 4/8, integer/pointer/bool atoms |
+| `alloca` | `sub %rsp` | x86_64 (declines under `-b`) |
+| `add`/`sub`/`mul` overflow | flag capture + truncate-and-compare | x86_64, widths 1/2/4/8 |
 
-Everything else that survives IS a libgcc name and resolves against a stock toolchain: `__multi3`, `__udivti3`,
-`__divti3`, `__ashlti3`, `__ashrti3`, `__lshrti3` and the `__fix*`/`__float*` conversions. The bit builtins,
-`alloca`, `signbit` and the atomics no longer appear at all — those are the durable wins, and
-`cli/intrinsics_no_helper_calls` keeps them that way.
+`cli/intrinsics_no_helper_calls` asserts the probe object has ZERO undefined symbols, and was verified to fail
+(naming the symbols) when a lowering is disabled — so these stay gone.
 
-**The complex helpers cannot be fixed by a RENAME — checked 2026-07-28, and this kills the cheapest option for
-them.** mcc's are
-`void __mcc_cmul(T *res, T a, T b, T c, T d)` — result through an out-pointer — while libgcc's are
-`_Complex double __muldc3(double a, double b, double c, double d)`, returning the pair by value (SSE,SSE under
-SysV, so `xmm0`/`xmm1`; the `long double` forms `__mulxc3`/`__divxc3` return in `st(0)`/`st(1)`). Adopting the
-libgcc ABI therefore means changing the CALL SITE to consume a two-register return, not just the symbol name. mcc
-already has the machinery — `gfunc_call`'s `ret_nregs` path handles multi-register returns — so this is a contained
-change, but it is a call-shape change and needs its own differential test against gcc for the NaN/infinity fixups
-those helpers exist to implement.
+**Traps this work paid for, all of which cost at least one debugging round:**
+- **Byte registers need a REX prefix at regs 4-7.** Without it `%sil`/`%dil` encode as `%ah`/`%dh`. Bit it twice:
+  once in a `setcc`, once in the byte `OR` of the unsigned-multiply path.
+- **`gfunc_call` must pop the callee AND every argument and leave the result where the CALLER's
+  `vsetc(&ret.type, ret.r, …)` expects it** — `%rax` for an int-returning helper. Pushing a value instead gives
+  `internal compiler error: vstack leak`.
+- **`vrott(3)` sends the TOP of the vstack to the bottom**; reaching `vtop[-2]` needs `vrotb(3)`.
+- **`get_reg(MCC_RC_INT)` will hand back `%rax`**, which is fatal next to `CMPXCHG` or `MUL`. Pin operands
+  explicitly (`gv(MCC_RC_RCX)` etc.) the way `gen_opi`'s divide path does.
+- **A differential MATRIX against gcc is the only thing that catches a wrong flag.** Corpus byte-identity, the full
+  suite, the self-host fixpoint and differential fuzz all stay green when the lowering emits valid code computing
+  the wrong answer — that happened three times here. Run the matrix after every emit change, not at the end.
+- **`ctest` is a native-only gate.** It cannot see a 32-bit or PE build break; `target-link-gate` and
+  `cross-factory-i386` now cover that, both added after exactly those two breakages shipped.
 
-Flip validation: full ctest 7505/7505, self-host fixpoint byte-identical, all 53 `jit/*` cells, a 60-seed
-differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64 cross sanity build. This is
-x86_64-only, and the check confirms it: i386, arm, arm64 and riscv64 objects still carry
-`__mcc_addo_i`/`subo_i`/`addo_u`/`subo_u`/`addo_ll`/`addo_ull`.
+**Still open, and both are different in kind from the above:**
+- **128-bit overflow** (`__mcc_addo_ti`, `__mcc_mulo_ti`). `add`/`adc` + `seto` over a register PAIR. Interacts
+  with the `__int128` two-half representation, which another workstream owns.
+- **The four complex helpers** (`__mcc_cmul{,f,l}`, `__mcc_cdiv`). NOT fixable by renaming to libgcc: mcc's are
+  `void __mcc_cmul(T *res, T a, T b, T c, T d)` (out-pointer) while libgcc's are
+  `_Complex double __muldc3(double, double, double, double)` (returns the pair by value — SSE,SSE under SysV,
+  `st(0)`/`st(1)` for the x87 forms). Adopting the libgcc ABI is a call-shape change: `gfunc_call`'s `ret_nregs`
+  path already handles multi-register returns, but the call site in `gen_complex_call` builds its own call and
+  would have to consume the return itself. Needs its own differential test for the NaN/infinity fixups those
+  helpers exist to implement.
 
-**The narrow widths landed and were then withdrawn 2026-07-28** — see the wrong-answer bug below, which made a
-same-width inline unsound for them. Residue is **6 names**: `__mcc_addo_ti`, `__mcc_mulo_ti` (128-bit) and the four
-complex helpers.
+Everything else an mcc object references now resolves against a stock gcc/clang toolchain — `__multi3`,
+`__udivti3`, `__divti3`, the `ti` shifts and the `__fix*`/`__float*` conversions are all libgcc ABI names.
 
-**A pre-existing WRONG-ANSWER bug surfaced while testing them, and it is now FIXED.** mcc's
-`__builtin_add_overflow` is a `_Generic` dispatch in `mccdefs.h`, and the helper prototypes took the RESULT type
-for the operands — so the operands were converted before the check and
-`__builtin_add_overflow(-300, -300, &signed_char)` truncated both to -44 and reported NO overflow where gcc reports
-overflow. It was not confined to exotic cases: `__builtin_add_overflow(4294967296LL, 0LL, &int_result)` was wrong
-the same way.
+**One correctness fix came out of this and is worth remembering separately:** `__builtin_*_overflow` used to
+CONVERT its operands to the result type before checking, so `__builtin_add_overflow(-300, -300, &signed_char)`
+reported no overflow. The `_Generic` dispatch in `mccdefs.h` now declares wide operands for the narrow result
+types. A 12-case matrix crossing operand and result widths agrees with gcc; `tests/exec/codegen/overflow_inline.c`
+and `overflow_narrow.c` keep it that way.
 
-The fix is one line of prototype per width: the narrow variants now take `long long`/`unsigned long long` operands
-(`__MCC_OV_DECL_W`), and the helper bodies, which already computed in a wide type, simply stop re-truncating.
-Verified against gcc on a 12-case matrix crossing operand and result widths and signedness — all 12 now agree,
-where 2 disagreed before, plus the 4 extra cases that the matrix originally missed.
-
-Consequence for the inline path: with wide operands and a narrow result, a single `add` + `seto` is no longer the
-whole answer (the flag describes the WIDE add, and the fit still has to be checked), so the inline hook is now
-limited to width 8, where operand and result widths coincide.
-
-**Re-adding widths 1/2/4 LANDED on the third attempt 2026-07-28.** The shape is the one below; what made the
-difference was running the 12-case gcc matrix after every single emit change instead of at the end, which turned
-two silent wrong-answer bugs into one-line fixes:
-- the byte `OR` that combines the two overflow terms had its operands the wrong way round (`08 /r` is
-  `OR r/m8, r8`, so `reg` is the SOURCE), and the result landed in the scratch that was about to be discarded;
-- the 32-bit unsigned truncation used `89 /r` (`MOV r/m, r`) where it needed `8b /r` (`MOV r, r/m`), so it
-  clobbered the sum with the temp instead of copying the sum into it. That one passed 11 of 12 matrix rows —
-  only `long long -> unsigned` caught it.
-
-For the record, the two earlier attempts and why they failed: The shape is: do the arithmetic at 64 bits (the operands ARE 64-bit now), capture `seto`/`setb` for the
-wide op, `movsx`/`movzx` the low bytes back into a scratch, `cmp` against the wide result, `setne`, OR the two
-flags, then store the low bytes. Both attempts were caught by the same 12-case matrix against gcc rather than by
-the suite:
-- **First attempt** emitted the arithmetic at the RESULT width (byte/word/dword `add`), which re-introduced exactly
-  the truncation bug the prototype fix had just removed — the two originally-failing matrix cases came back.
-- **Second attempt** fixed that to a 64-bit `add` but the truncate-compare tail then reported no overflow for every
-  narrow case, taking the matrix from 2 failures to 9. The `setne`/`or` sequence or its register choices are wrong;
-  it was not debugged further.
-
-**Narrow-width MULTIPLY landed right after** — once the arithmetic is done at 64 bits, `imul` (signed) and the
-one-operand `mul` (unsigned) reuse the same truncate-and-compare tail as add/sub, so it was mostly deleting the
-`size != 8 && sub == 2` guard and widening the two mul opcodes. One extra register note: the unsigned path's
-truncation temp cannot be `%rax`, because that is where `mul` leaves the product — it uses `%rdx`, which is free
-once CF has been captured.
-
-**A third encoding trap, same family as the other two:** the byte `OR` needs a REX prefix whenever either operand
-is register 4-7, or the encoding names `%ah`/`%ch`/`%dh` instead of `%sil`/`%dil`. The add/sub paths never hit it
-because their scratches are `%rdx`/`%rcx`, but the unsigned-multiply path puts the flag in `%rsi`, and without the
-REX the OR wrote into `%dh` — the matrix stayed 12/12 green and only the corpus cell's `mulu` case caught it.
-
-Residue after this: `__mcc_addo_ti`, `__mcc_mulo_ti` (128-bit) and the four complex helpers.
-
-The lesson that generalises: **the suite passes in every broken state this hook can be in.** Byte-identity,
-7552 tests, the self-host fixpoint and differential fuzz all stayed green through both failed attempts, because
-every one of them produces valid code that computes the wrong flag. Only a differential matrix against gcc, run
-after each change, distinguishes them.
-
-**Recipe for the narrow widths, kept because it is what made them mechanical.** Byte and word add/sub are the same
-two-operand shape with different opcodes — byte `02 /r` (add) and `2a /r` (sub), word the 4-byte opcodes behind a
-`0x66` prefix — and the stores are `88 /r` and `66 89 /r`. The one trap is that the operands are pinned to
-`%rcx`/`%rsi`/`%rdi`, and **the byte forms of `sil`/`dil` require a REX prefix that `orex` will not emit on its
-own** (it only fires for regs >= 8), so size 1 has to force `0x40 | REX_BASE(rm) | (REX_BASE(reg) << 2)`. Byte
-MULTIPLY is different again — there is no two-operand `imul r8`, only the one-operand `F6 /5` form through
-`%al`/`%ax` — so mul should stay at widths 4 and 8 unless someone wants that path too.
-
-**A residual `alloca` was found and fixed while measuring this**: `__builtin_alloca` is declared in `mccdefs.h` as
-`__builtin_alloca` with an `__asm__("alloca")` rename, so the inline hook's `sym->v != TOK_alloca` test missed it
-and `tests/exec/features_c99_c11/builtins.c` still emitted the call. The hook now also matches `sym->asm_label`.
-
-**First measurement (2026-07-28, superseded by the above but kept for the naming analysis) — the three families
-were NOT equally bad:**
-
-| family | name mcc emits | resolvable by a stock toolchain? |
-|---|---|---|
-| atomics | `__atomic_load_4`, `__atomic_store_4`, `__atomic_exchange_4`, `__atomic_compare_exchange_4`, `__atomic_fetch_add_{4,8}` | **YES — these already ARE the libatomic ABI.** `g++ mcc-built.o -latomic` links and runs, output identical to the gcc-built reference. Verified 2026-07-28. Nothing to rename; the gap is that mcc's driver knows to pull them from libmccrt and never tells anyone else `-latomic` would do |
-| bit builtins | `__builtin_clz`, `__builtin_popcountll`, `__builtin_bswap32`, … (14 names) | **NO — these names exist nowhere but `libmccrt.a`.** libgcc's equivalents are `__clzdi2`/`__ctzdi2`/`__ffsdi2`/`__paritydi2`/`__popcountdi2`/`__clrsbdi2`/`__bswap{si,di}2` |
-| `alloca` | `alloca` | **NO, and no rename can fix it** — glibc exports no `alloca` symbol at all (`nm -D libc.so.6` → 0 hits); it is a compiler builtin everywhere. Inline it or emit it into the object |
-
-**Sharp edge found while checking the rename option:** on x86_64, libgcc ships only the **DI/TI** widths — `__clzdi2`, `__ctzdi2`, `__popcountdi2`, `__paritydi2`, `__ffsdi2`, `__clrsbdi2` (+ `ti2`) — and of the SI variants only `__bswapsi2`. There is no `__clzsi2`/`__popcountsi2`/`__ctzsi2` to link against, because gcc always inlines the 32-bit cases on this target. So a straight rename to the libgcc ABI fixes the 64-bit helpers on any GNU toolchain and leaves the 32-bit ones exactly as unresolvable as they are now. Check per target before assuming otherwise — arm/riscv libgcc do ship SI variants.
-
-**Options to investigate, roughly cheapest-first. Not ranked yet; that is the point of the item.**
-- **Say `-latomic` out loud.** Zero-risk, and it removes a whole third of the problem for anyone linking mcc objects with gcc/clang. Options: mention it in `mcc -hh`, or have `-print-file-name=libatomic.so` work (the `-print-*` options landed 77735a9f), or emit nothing and just document it.
-- **Adopt the libgcc ABI names for the widths libgcc actually has.** Emit `__clzdi2` instead of `__builtin_clzll` and keep an mcc-side alias so existing objects still link. Must check semantics match, not just names: libgcc's `__clzsi2`/`__clzdi2` are undefined at 0 and return `int`, while `runtime/lib/builtin.c` may define the zero case — a silent behaviour change at the boundary is worse than an unresolved symbol. Also decide what happens to the SI widths that libgcc does not carry.
-- **Emit the helper INTO the object when referenced**, as a local or weak definition, so the `.o` is self-contained. There is a working precedent: `__va_arg` became a `static __inline` in the injected predefs (77735a9f) and the symbol vanished from every object with zero codegen risk. That trick generalises to anything expressible in C — the whole bit-builtin family qualifies. It does NOT cover `alloca` (needs the caller's frame) and it costs per-object size, so measure the bloat on a real corpus before committing. Alternative shape: a real COMDAT/weak group so the linker dedups copies.
-- **Ship `libmccrt` where a foreign driver can find it** — a `libmccrt.so`, and/or install the `.a` into a system library path, and/or a gcc-style spec/`.deplibs` hint. Note GNU ld ignores `.deplibs`, so that sub-option is probably dead on arrival; confirm before spending time on it.
-- **Split the archive.** The GCC build needed exactly 8 of 12 members and had to check them for symbol collisions by hand. A curated `libmccrt-compat.a` (or a documented member list) that is safe to put on any link line would have turned a 40-minute detour into one flag. Cheapest real win after `-latomic`.
-- **Inline the intrinsic** — see the section above. Makes the question moot per-builtin but never for the whole runtime.
-
-**Evaluation criteria for whichever wins:** self-host stays byte-identical; no new symbol collisions against libc/libgcc/libstdc++ — **audited 2026-07-28 and currently clean**: across all 8 extracted members the only exported names are `__*` and the `atomic_*` C11 entry points, plus `alloca` itself. An earlier draft of this item claimed `runtime/lib/alloca.c` leaks a global `p3`, and a second draft blamed `builtin.o`'s `table_*`; **both were wrong** — `nm` reports `t p3` and `r table_1_32`, all local. Re-run the audit if members are added; works under gcc, clang, lld and mold, not just GNU ld; unchanged for `-run`/JIT, which resolves against the embedded runtime and does not care; and a PE/Mach-O answer, since `libmccrt.a` is equally private there.
-
-**Reproducer for whatever lands:** compile the 21-symbol probe TU from the section above with mcc, link the object with `g++` and with `clang++` and nothing else, and require it to resolve.
-
-## `-static-libgcc` / `-static-libstdc++` are hard errors — gcc AND clang accept both (found 2026-07-28)
-
-```
-gcc   -static-libgcc     OK          clang -static-libgcc     OK
-gcc   -static-libstdc++  OK          clang -static-libstdc++  OK (warns "argument unused during compilation")
-mcc   -static-libgcc     mcc: error: invalid option -- '-static-libgcc'
-mcc   -static-libstdc++  mcc: error: invalid option -- '-static-libstdc++'
-```
-
-This is what made the GCC build unbuildable before anything was even compiled. GCC's top-level `configure` defaults `--with-static-standard-libraries=yes`, which puts `-static-libstdc++ -static-libgcc` into `LDFLAGS` for the host stage; every subdirectory `configure` then failed its very first link probe with the maximally unhelpful **"C compiler cannot create executables"**, and the real message was only visible in `libdecnumber/config.log`. Worked around with `--without-static-standard-libraries`; not fixed.
-
-The fix is a two-line addition to the `MCC_OPTION_ignored` group in `mcc_options[]` (`libmcc.c`, alongside `-pipe`/`-C`/`--param`/`-traditional`), and accept-and-ignore is arguably the *semantically correct* answer rather than a stub: mcc's runtime is `libmccrt.a` and is already statically linked (or embedded via `MCC_EMBED_MCCRT`), so "link libgcc statically" is a request mcc trivially already satisfies. Decide whether `-static-libstdc++` should warn like clang does — mcc has no C++ mode at all, so an unused-argument warning is defensible, but silence matches gcc and is the safer default for configure probes that treat any stderr output as a failure signal.
-
-While here, sweep for the rest of the same class. `-V` and `-qversion` were checked during the same session and mcc's rejection MATCHES gcc and clang (both error too), so those are correct as-is and should not be "fixed".
+## ~~`-static-libgcc` / `-static-libstdc++` are hard errors~~ — DONE (`973ba824`)
+Both are accepted and ignored, in the `MCC_OPTION_ignored` group alongside `-pipe`/`-C`/`--param`. Verified
+2026-07-28: `mcc -static-libgcc -c` and `mcc -static-libstdc++ -c` both exit 0. The sweep for the same class also
+checked `-V` and `-qversion`, and mcc's REJECTION of those matches gcc and clang, so they stay rejected.
 
 ## Make "mcc builds GCC" a repeatable gate, not a one-off (raised 2026-07-28)
 
