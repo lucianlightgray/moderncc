@@ -1359,8 +1359,20 @@ site (verdict `bail:<line>`; the ratchet stores only the verdict WORD, so the ba
 | count | site |
 |---:|---|
 | **40** | `ast_hook_switch_begin` — the switch SELECTOR must be a bare `Ref`/`Literal` |
-| 6 | `ast_hook_bail` (the explicit hook, from `mccgen.c`) |
+| 6 | `ast_hook_bail` (the explicit hook, from `mccgen.c`) — see the limitation below |
 | 4 | `ast_hook_if_begin` (`ast_bail`/`ast_vn != 1`/CF depth) |
+
+**Limitation of the bail attribution, stated so it is not mistaken for complete coverage:** the 6 explicit bails all report
+`ast_hook_bail`'s OWN line, not the caller's, because the hook is one function called from three places in
+`mccgen.c` (`gen_negf`, `parse_atomic`, and the riscv64 jump-table path). Distinguishing them needs the site passed
+in; not done, because it is 6 functions against the 40 below.
+
+**A lead that looks good and is NOT one — checked 2026-07-29, do not re-chase.** `gen_negf`'s bail carries a comment
+saying it exists because "riscv64 `store()` asserts `sv->r & VT_LVAL`, so any function negating a float crashed the
+compiler at `-O1`+" — an arch-specific workaround with no arch guard, which reads like every target paying for a
+riscv64 bug. It costs x86_64 nothing: `gen_negf` is never reached there. `double negd(double a) { return -a; }`
+verifies `unfaithful`, not `bail`, and a scoped trace shows **0** hits for `gen_negf` (control: `gen_opif` hits 4 on
+the same input, so the trace filter is working). Float negation takes a different path on x86_64.
 
 **The switch restriction IS conservative, confirmed by removing it — `MCC_AST_SWITCH_EXPR`, landed gated OFF.**
 The replay side already calls the GENERIC `ast_replay_value()` on child 0, so it never required a leaf; only the
