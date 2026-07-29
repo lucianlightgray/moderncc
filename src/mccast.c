@@ -16598,6 +16598,35 @@ __attribute__((optimize("O0")))
 #endif
 void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
+	/* A function the recorder never ATTEMPTED still belongs in the census.
+	   ast_try_active is false for a `bad` return type (long double, __int128,
+	   _Complex), for -g/debug modes, and for an extern-inline body -- and the
+	   whole verdict block below sits inside it, so those functions previously
+	   emitted NO line at all: not bail, not desync, nothing. That silently
+	   removed them from the denominator of every fidelity ratio in docs/TODO.md,
+	   and an absent function is indistinguishable from one that does not exist.
+	   `skip:<reason>` is deliberately NOT one of the gap verdicts the ratchet
+	   collects (desync/unfaithful/stackresidue/bail), so the checked-in baseline
+	   is unaffected -- this makes the omission visible without reclassifying it
+	   as a failure. */
+	if (!ast_try_active && ast_verify_env) { MCC_TRACE("br\n");
+		const char *why = debug_modes                ? "skip:debug"
+											: cur_func_inline_extern    ? "skip:externinline"
+											: !ast_replay_env           ? "skip:noreplay"
+																									: "skip:rettype";
+		const char *vf = mcc_state && mcc_state->current_filename
+												 ? mcc_state->current_filename
+												 : "?";
+		if (ast_verify_out && ast_verify_out[0]) { MCC_TRACE("br\n");
+			FILE *f = fopen(ast_verify_out, "a");
+			if (f) { MCC_TRACE("br\n");
+				fprintf(f, "%s\t%s\t%s\n", why, vf, funcname);
+				fclose(f);
+			}
+		} else { MCC_TRACE("br\n");
+			fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", why, vf, funcname);
+		}
+	}
 	if (ast_try_active) { MCC_TRACE("br\n");
 		Section *ast_rsec = cur_text_section->reloc;
 		addr_t ast_reloc1 = ast_rsec ? ast_rsec->data_offset : 0;

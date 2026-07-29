@@ -1084,12 +1084,18 @@ real-object validation stays macOS-gated.
 
    So the 5-function residual is fully attributed: 2 to the call-lvalue compound assignment, 3 to `long double`.
 
-   **A THIRD finding, and it is about the METRIC rather than this site: a function that RETURNS `long double` emits
-   NO verdict line at all.** Not `bail`, not `desync` — nothing. `long double ld_ret(long double a) { return a + 1.0L; }`
-   and `long double ld_call(long double a) { return sqrtl(a); }` are both simply absent, while the `double`
-   equivalents verify faithful. Every fidelity percentage in this file is therefore computed over a population that
-   silently excludes that class, and nothing in the output says so. Fix the census before trusting a small ratio
-   change; an absent function is indistinguishable from a function that does not exist.
+   **A THIRD finding, about the METRIC rather than this site — FIXED 2026-07-29, and the scare in the first draft of
+   this entry was overstated.** A function the recorder never ATTEMPTED emitted NO verdict line at all: not `bail`,
+   not `desync`, nothing. `ast_try_active` is false for a bad RETURN type (`long double`, `__int128`, `_Complex`),
+   for `-g`/debug modes, and for an extern-inline body, and the whole verdict block lives inside it. `ast_func_end`
+   now emits `skip:rettype` / `skip:debug` / `skip:externinline` / `skip:noreplay` instead, so the census is
+   complete and the omission is visible.
+
+   **But measure before repeating the alarm: the excluded set is nearly empty.** mcc's own TU has **0** skips — the
+   denominator is unchanged at 2157 and every ratio quoted in this file was already correct. The exec corpus has
+   **8** of 1199 lines. So this was a correctness hole in the instrument, not a distortion of the recorded numbers.
+   `skip:*` is deliberately not one of the gap verdicts the ratchet collects, and the gap set is byte-identical to
+   the checked-in baseline (183) with the change in.
 
    **Two hypotheses in this section are now DEAD and should not be re-tried:** the "one producer, 43 failures"
    framing (there are 5, and at least two producers), and the recorded `switch`-path repro — `bare`/`if`/`switch`
