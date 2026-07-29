@@ -1739,6 +1739,8 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 }
 static int ast_promote_env;
 static int ast_storeval_call_env;
+static int ast_nocode_call_env;
+static int ast_call_dead;
 static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
 int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
 int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
@@ -1896,6 +1898,15 @@ void ast_hook_vstore_end(void);
 void ast_hook_vpop(void);
 void ast_hook_vswap(void);
 void ast_hook_convert(CType *type);
+static AstLocal ast_dead_value(void) { MCC_TRACE("enter\n");
+	AstLocal p = ast_node(ast_cur, AST_Literal);
+	ast_set_op(ast_cur, p, VT_CONST);
+	ast_set_type(ast_cur, p, VT_INT, 0);
+	ast_set_ival(ast_cur, p, 0);
+	ast_set_sym(ast_cur, p, 0);
+	return p;
+}
+
 void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 																int variadic);
 void ast_hook_call_end(void);
@@ -2051,6 +2062,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 																			o4 || s1->optimize_size || s1->optimize >= 2);
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
 	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", 0);
+	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
@@ -3368,13 +3380,19 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 	ast_call_pending = AST_NONE;
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
-	if (nocode_wanted) { MCC_TRACE("br\n");
-		AST_SET_DESYNC();
-		return;
-	}
 	(void)variadic;
 	int need = nb_args + 1;
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (nocode_wanted) { MCC_TRACE("br\n");
+		if (!ast_nocode_call_env || ast_vn != rel || ast_vn < need) { MCC_TRACE("br\n");
+			AST_SET_DESYNC();
+			return;
+		}
+		ast_vn -= need;
+		ast_call_dead = 1;
+		ast_in_call = 1;
+		return;
+	}
 	if (ast_vn != rel || ast_vn < need) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
@@ -3410,6 +3428,20 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 
 void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 	if (nocode_wanted) { MCC_TRACE("br\n"); ast_saw_nocode = 1; }
+	if (ast_call_dead) { MCC_TRACE("br\n");
+		ast_call_dead = 0;
+		ast_in_call = 0;
+		if (!ast_capture || ast_desync)
+			{ MCC_TRACE("br\n"); return; }
+		if (ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
+			AST_SET_DESYNC();
+			return;
+		}
+		ast_vs[ast_vn++] = ast_dead_value();
+		if (ast_vn != (int)(vtop - vstack + 1) - ast_base_depth)
+			{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+		return;
+	}
 	if (ast_call_pending == AST_NONE)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal inv = ast_call_pending;
@@ -3436,6 +3468,14 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
+	if (ast_call_dead) { MCC_TRACE("br\n");
+		ast_call_dead = 0;
+		ast_in_call = 0;
+		if (ast_capture && !ast_desync &&
+				ast_vn != (int)(vtop - vstack + 1) - ast_base_depth)
+			{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+		return;
+	}
 	if (ast_call_pending == AST_NONE)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal inv = ast_call_pending;
@@ -14121,6 +14161,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_in_op = 0;
 		ast_in_call = 0;
 		ast_call_pending = AST_NONE;
+		ast_call_dead = 0;
 		ast_inc_pending = AST_NONE;
 		ast_vdup_pending = 0;
 		ast_opassign_store_pending = 0;

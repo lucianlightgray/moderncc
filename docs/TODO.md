@@ -1284,7 +1284,41 @@ So the fifth approach cannot start by trusting `ast_vs` inside a dead region: it
 correct there first (mirror the pushes and pops, record no nodes), which is the "mirror stack effects while
 recording nothing" requirement stated above — now with a concrete reason rather than an aesthetic one.
 
-Hardest item in the file; do not start it before 1-3.
+**THE FIFTH APPROACH LANDED 2026-07-28 behind `MCC_AST_NOCODE_CALL` (default OFF), and it is exactly that.** A dead
+call is now MIRRORED rather than modelled: `ast_hook_call_begin` verifies the model is still in sync
+(`ast_vn == rel`, enough operands), drops the callee and the arguments (`ast_vn -= need`), and records NOTHING —
+no `AST_Invoke`, no `ast_finalize_leaf`, so no read of `ast_vs` contents and no symbol. `ast_hook_call_end` pushes a
+neutral placeholder (`AST_Literal 0`, no sym) to stand for the result the parser pushed, and
+`ast_hook_call_effect_end` handles the discarded-statement ending with no placeholder. The dead statement simply is
+not in the model, which is the correct model: the baseline emitted nothing for it, so replay emitting nothing
+matches byte-for-byte, and replay does not need to re-enter the dead state at all.
+
+Why this is sound where the fourth was not: every failure there came from READING the recorder's stack while it was
+drifting. Mirroring never reads it — it only decrements — and it refuses (desyncs) if the stack is already out of
+sync, so an unwritten arena slot can never be reached.
+
+| | faithful | desync | unfaithful | bail |
+|---|---|---|---|---|
+| gate off | 1643 | 204 | 228 | 47 |
+| gate on | **1700** | 116 | 258 | 49 |
+
+All seven dead-call shapes that used to desync are faithful gate-on — `if (0) f(x)`, `return x; f(x)`,
+`0 && f(x)`, `1 ? x : f(x)`, `while (0) f(x)`, unreachable tails after an if/else, and a dead statement between two
+`case` labels. Validation, including the three checks that killed the fourth approach:
+- gate-off 774/774 corpus objects byte-identical at `-O0`/`-O2`/`-O3`, full ctest 7281/7281;
+- **deterministic**: three runs plus `setarch -R` produce ONE md5 on mcc's own TU (the fourth approach produced four);
+- **no garbage symbols**: zero non-printable symbol names, and the small repro's symtab is identical gate-on vs
+  gate-off (the fourth added a spurious UND `f`);
+- **self-host fixpoint green at every level** — `-O2`, `-O3`, `-Os` and the gate sweep (the fourth failed all four);
+- gate-on full ctest 7280/7281, the one failure being `ast-verify-ratchet` reporting the gap-set shrink against its
+  gate-off baseline.
+
+Differential fuzz gate-on: **120 seeds vs gcc + clang with the full `--gates` sweep, 0 miscompiles**
+(`fuzz_runner --seed 4242 --count 120 --gates`).
+
+Remaining before it can flip default-ON: cross-arch (i386/arm/arm64/riscv64) and a JIT parity check per the P0
+standing rule. Note the corpus is a WEAK gate for this class — it caught none of the
+fourth approach's failures — so any flip must lean on the self-host fixpoint and determinism checks instead.
 
 ### Alongside
 - **E1b — prune this file.** It is 3062 lines and its own "How to process" rule says completed items are pruned
