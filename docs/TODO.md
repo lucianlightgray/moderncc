@@ -1072,13 +1072,28 @@ condition within 6 lines gives 18 `incall=0`, 10 `incall=1`, 4 `inop=1` — and 
 show two consecutive `vpop` early-returns immediately before the failing push**, the same double-pop shape as
 Group A.
 
-**CAVEAT — do not build on that 18 until it is checked.** At `inop=0 incall=0` the only remaining skip causes are
-`!ast_capture` and `ast_desync`, and NEITHER is consistent with the subsequent push reaching the SYNC test at all:
-`ast_hook_vpush` early-returns on the same two conditions *before* it computes `rel`. So either the skip and the
-push are in different functions — a 6-line window over a 1.4M-line trace can straddle a boundary — or one of those
-flags changes in between. **Re-run the correlation with function boundaries respected** (bracket per
-`ast_func_begin`/`ast_func_end`) before treating the 18 as a real subgroup. The `call_end`-precedes-13 split above
-was computed the same way and carries the same caveat.
+**THE CAVEAT WAS WARRANTED — the 18-subgroup is REFUTED.** Re-running with function boundaries respected (window
+reset at each `ast_func_begin`) gives a completely different distribution of in-function `vpop` counts before the
+failure:
+
+| in-function `vpop` count | events |
+|---|---|
+| **0** | **2** |
+| 1 | 1 |
+| 2 | 4 |
+| 4 | 7 |
+| 5–9 | remainder |
+
+Not "two consecutive pops" — the counts spread from 0 to 9. The line-window correlation was straddling function
+boundaries in a 1.4M-line trace, exactly as suspected. **The `call_end`-precedes-13 and `incall=0`-is-18 splits are
+both WITHDRAWN**; they were artifacts of the same window.
+
+What survives the boundary-respecting re-run, and is the real handle:
+- **42 of 44 have at least one in-function `vpop`** before failing, so pops are involved — but not in a fixed count,
+  which rules out a single mechanical double-pop.
+- **2 have NO `vpop` at all in their function.** Those cannot be a pop imbalance under any reading, so they are a
+  distinct second mechanism and the smallest failing cases in the group. **Read those two first.**
+- The 12/32 short-circuit split is unaffected — it comes from the SYNC line's own `lor=` field, not from windowing.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
