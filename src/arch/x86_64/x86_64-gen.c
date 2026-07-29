@@ -2213,6 +2213,18 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
 	gv(MCC_RC_FLOAT);
 }
 
+/* XCHG r, m is implicitly LOCKed, so it is both the seq_cst store (discard the
+   result) and __atomic_exchange (keep it). Leaves the previous contents in the
+   value register, same shape as gen_atomic_xadd. */
+void gen_atomic_xchg(int size) { MCC_TRACE("enter\n");
+	int rp, rv;
+	gv2(MCC_RC_INT, MCC_RC_INT);
+	rp = vtop[-1].r & VT_VALMASK;
+	rv = vtop->r & VT_VALMASK;
+	orex(size == 8, rp, rv, 0x87);
+	gen_modrm(rv, rp, NULL, 0);
+}
+
 /* `lock xadd` for __atomic_fetch_add/sub at sizes 4 and 8: the value register
    comes back holding the PREVIOUS contents, which is exactly fetch semantics.
    LOCK makes it seq_cst, so the memory order argument needs no extra fence on

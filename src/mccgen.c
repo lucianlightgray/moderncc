@@ -6964,7 +6964,58 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 	}
 
 #if defined(MCC_TARGET_X86_64)
-	if (atomic_inline_on() && !use_generic && (size == 4 || size == 8) &&
+	int atomic_bt = atom ? (atom->t & VT_BTYPE) : VT_VOID;
+	int atomic_scalar =
+			atomic_bt == VT_BYTE || atomic_bt == VT_SHORT || atomic_bt == VT_INT ||
+			atomic_bt == VT_LLONG || atomic_bt == VT_PTR || atomic_bt == VT_BOOL;
+	if (atomic_inline_on() && !use_generic && atomic_scalar &&
+			(size == 4 || size == 8) &&
+			(atok == TOK___atomic_store || atok == TOK___atomic_exchange)) { MCC_TRACE("br\n");
+		CType rt = *atom;
+		rt.t &= ~(VT_QUALIFY | VT_ATOMIC_BIT);
+		vpop();
+		atomic_lowering++;
+		gen_atomic_xchg(size);
+		atomic_lowering--;
+		vswap();
+		vpop();
+		vtop->type = rt;
+		if (atok == TOK___atomic_store) { MCC_TRACE("br\n");
+			vpop();
+			ct.t = VT_VOID;
+			vpush(&ct);
+			return;
+		}
+		if (save) { MCC_TRACE("br\n");
+			vpush(&rt);
+			*vtop = store;
+			vswap();
+			vstore();
+		}
+		return;
+	}
+	if (atomic_inline_on() && !use_generic && atomic_scalar &&
+			(size == 4 || size == 8) && atok == TOK___atomic_load) { MCC_TRACE("br\n");
+		CType rt = *atom;
+		rt.t &= ~(VT_QUALIFY | VT_ATOMIC_BIT);
+		vpop();
+		atomic_lowering++;
+		indir();
+		vtop->type = rt;
+		vtop->r |= VT_LVAL;
+		gv(MCC_RC_INT);
+		atomic_lowering--;
+		vtop->type = rt;
+		if (save) { MCC_TRACE("br\n");
+			vpush(&rt);
+			*vtop = store;
+			vswap();
+			vstore();
+		}
+		return;
+	}
+	if (atomic_inline_on() && !use_generic && atomic_scalar &&
+			(size == 4 || size == 8) &&
 			(atok == TOK___atomic_fetch_add || atok == TOK___atomic_fetch_sub)) { MCC_TRACE("br\n");
 		vpop();
 		if (atok == TOK___atomic_fetch_sub) { MCC_TRACE("br\n");

@@ -3454,6 +3454,21 @@ only if every operation is atomic. It matches gcc with the gate on and off, at `
 byte-identical over the corpus and the whole suite is 7439/7439 in both states; `__atomic_fetch_add_4` and
 `_8` disappear from the probe object.
 
+**`__atomic_load_n`, `__atomic_store_n` and `__atomic_exchange_n` are DONE 2026-07-28 on the same gate**, sizes 4
+and 8. Load is a plain `mov` (x86 loads are already acquire, and seq_cst needs nothing more on the load side);
+store and exchange are both `XCHG r, m`, which is implicitly LOCKed — that is the trap this section already
+recorded, and it is why the store does NOT lower to a bare `mov`. mcc's emitted form matches gcc's instruction for
+instruction (`xchg %ecx,(%rax)` / `xchg %rcx,(%rax)`).
+
+**A guard the first cut got wrong, worth keeping:** the size test alone is not enough. `_Atomic struct {char a,b,c,d;}`
+is size 4 and `_Atomic float` is size 4, and both were taken by the inline path, which then ran `gv2(MCC_RC_INT, …)`
+on a struct or an xmm value — `test_atomic_store_struct` printed `4 0 0 0` instead of `1 2 3 4`. The path now also
+requires the atom's base type to be an integer, pointer or bool. Floats and structs keep the helper and are
+byte-for-byte unchanged.
+
+The probe from the head of this section is now **21 -> 6**: `__atomic_compare_exchange_4`, `alloca`, `popcount`,
+`popcountll`, `parity`, `clrsb`.
+
 Encodings for the REST of the atomics, all lock-free for sizes 1-8 on x86_64: `__atomic_load_n` at any ordering
 up to seq_cst is a plain `mov` (x86 loads are acquire); `__atomic_store_n` at seq_cst must be `xchg` (implicitly
 locked) or `mov`+`mfence`, NOT a bare `mov`; `__atomic_exchange_n` is `xchg`; `__atomic_fetch_add` is
