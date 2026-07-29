@@ -5827,6 +5827,20 @@ if(MCC_BUILD_TESTS)
         endforeach()
     endif()
 
+    # -ffunction-sections was accepted and discarded; this cell fails if it
+    # regresses to a no-op. It asserts the PURPOSE (a linker can drop an
+    # unreferenced function) rather than the section names, and carries a
+    # control showing the static survives --gc-sections WITHOUT the flag, so
+    # the assertion cannot pass vacuously.
+    if(UNIX)
+        add_test(NAME cli/function-sections
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/function-sections.sh"
+                    "${_mcc_exe}" "${_bdir}"
+                    "${CMAKE_BINARY_DIR}/function-sections-work")
+        set_tests_properties(cli/function-sections PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+    endif()
+
     add_test(NAME macho-codegen-run
         COMMAND "$<TARGET_FILE:mccharness>" machocodegen
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"

@@ -940,7 +940,12 @@ static void mcc_debug_frame_end(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	cfi[n++] = DW_CFA_def_cfa_offset;
 	n += mcc_cfi_uleb(cfi + n, 0);
 #endif
-	mcc_eh_frame_fde(s1, text_section, func_ind, range, cfi, n);
+	/* The FDE must relocate against the section the function was actually
+	   emitted into, not `.text` -- under -ffunction-sections that is
+	   `.text.<name>`, and pointing every FDE at `.text` makes their ranges
+	   overlap, which GNU ld rejects outright ("overlapping FDEs"). */
+	mcc_eh_frame_fde(s1, cur_text_section ? cur_text_section : text_section,
+									 func_ind, range, cfi, n);
 }
 
 ST_FUNC void mcc_eh_frame_end(MCCState *s1) { MCC_TRACE("enter\n");

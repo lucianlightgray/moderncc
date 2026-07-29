@@ -13920,6 +13920,27 @@ static void sym_push_params(Sym *ref) {
 	}
 }
 
+/* -ffunction-sections: give each function its own `.text.<name>` so a linker
+   can drop the ones nothing references. Until this, the flag was parsed into
+   MCCState.function_sections and never read by anything -- accepted and
+   silently discarded, like -march= still is. Functions carrying an explicit
+   __attribute__((section(...))) keep it; the caller handles that case. */
+static Section *fnsec_for(Sym *sym) { MCC_TRACE("enter\n");
+	char buf[256];
+	const char *nm;
+	Section *s;
+
+	if (!mcc_state->function_sections)
+		{ MCC_TRACE("br\n"); return text_section; }
+	nm = get_tok_str(sym->v, NULL);
+	if (!nm || snprintf(buf, sizeof buf, ".text.%s", nm) >= (int)sizeof buf)
+		{ MCC_TRACE("br\n"); return text_section; }
+	s = find_section(mcc_state, buf);
+	s->sh_flags = text_section->sh_flags;
+	s->sh_addralign = text_section->sh_addralign;
+	return s;
+}
+
 static void gen_function(Sym *sym) {
 	MCC_TRACE("%s\n", get_tok_str(sym->v, NULL));
 	struct scope f = {0};
@@ -14405,7 +14426,7 @@ static int decl(int l) {
 				} else { MCC_TRACE("br\n");
 					cur_text_section = ad.section;
 					if (!cur_text_section)
-						{ MCC_TRACE("br\n"); cur_text_section = text_section; }
+						{ MCC_TRACE("br\n"); cur_text_section = fnsec_for(sym); }
 					else if (cur_text_section->sh_num > bss_section->sh_num)
 						{ MCC_TRACE("br\n"); cur_text_section->sh_flags = text_section->sh_flags; }
 					gen_function(sym);
