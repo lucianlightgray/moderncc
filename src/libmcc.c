@@ -945,6 +945,148 @@ static const char *mcc_auto_mccdir(void) { MCC_TRACE("enter\n");
 #define MCC_MCCDIR_DEFAULT MCC_CONFIG_MCCDIR
 #endif
 
+/* -march=. A feature MASK rather than a string comparison, because the
+   question a backend asks is "may I emit roundsd", not "which level did the
+   user type". The named levels are the conventional bundles.
+
+   The DEFAULT is the triple baseline, NOT native. Making native the default
+   would make output host-dependent, which collides with the two invariants
+   this project leans on -- golden byte-identity and the 3-stage self-host
+   fixpoint would disagree between an AVX-512 host and an SSE2 one. native
+   stays opt-in and is resolved honestly by CPUID rather than aliased to the
+   baseline. */
+#define MCC_ISA_V1 (MCC_ISA_SSE2)
+#define MCC_ISA_V2 (MCC_ISA_V1 | MCC_ISA_SSE3 | MCC_ISA_SSSE3 | MCC_ISA_SSE41 | \
+                    MCC_ISA_SSE42 | MCC_ISA_POPCNT)
+#define MCC_ISA_V3 (MCC_ISA_V2 | MCC_ISA_AVX | MCC_ISA_AVX2 | MCC_ISA_FMA | \
+                    MCC_ISA_BMI | MCC_ISA_BMI2 | MCC_ISA_LZCNT | MCC_ISA_F16C)
+#define MCC_ISA_V4 (MCC_ISA_V3 | MCC_ISA_AVX512F)
+
+static const struct {
+	const char *name;
+	uint32_t mask;
+} mcc_isa_levels[] = {
+		{"x86-64", MCC_ISA_V1},    {"x86-64-v2", MCC_ISA_V2},
+		{"x86-64-v3", MCC_ISA_V3}, {"x86-64-v4", MCC_ISA_V4},
+		/* gcc spells the baseline several ways; accept the common aliases so a
+		   command line that works there does not have to be rewritten. */
+		{"nocona", MCC_ISA_V1},    {"core2", MCC_ISA_V1 | MCC_ISA_SSE3 | MCC_ISA_SSSE3},
+		{"nehalem", MCC_ISA_V2},   {"westmere", MCC_ISA_V2},
+		{"sandybridge", MCC_ISA_V2 | MCC_ISA_AVX},
+		{"haswell", MCC_ISA_V3},   {"skylake", MCC_ISA_V3},
+		{"x86-64-baseline", MCC_ISA_V1},
+};
+
+ST_FUNC int mcc_isa_has(MCCState *s1, uint32_t feat) { MCC_TRACE("enter\n");
+	return (s1->isa_mask & feat) == feat;
+}
+
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386)
+static void mcc_cpuid(uint32_t leaf, uint32_t sub, uint32_t r[4]) { MCC_TRACE("enter\n");
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+	__asm__ volatile("cpuid"
+									 : "=a"(r[0]), "=b"(r[1]), "=c"(r[2]), "=d"(r[3])
+									 : "a"(leaf), "c"(sub));
+#else
+	r[0] = r[1] = r[2] = r[3] = 0;
+	(void)leaf;
+	(void)sub;
+#endif
+}
+
+static uint32_t mcc_isa_native(void) { MCC_TRACE("enter\n");
+	uint32_t r[4], m = MCC_ISA_V1;
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+	mcc_cpuid(1, 0, r);
+	if (r[2] & (1u << 0))  { MCC_TRACE("br\n"); m |= MCC_ISA_SSE3; }
+	if (r[2] & (1u << 9))  { MCC_TRACE("br\n"); m |= MCC_ISA_SSSE3; }
+	if (r[2] & (1u << 19)) { MCC_TRACE("br\n"); m |= MCC_ISA_SSE41; }
+	if (r[2] & (1u << 20)) { MCC_TRACE("br\n"); m |= MCC_ISA_SSE42; }
+	if (r[2] & (1u << 23)) { MCC_TRACE("br\n"); m |= MCC_ISA_POPCNT; }
+	if (r[2] & (1u << 28)) { MCC_TRACE("br\n"); m |= MCC_ISA_AVX; }
+	if (r[2] & (1u << 12)) { MCC_TRACE("br\n"); m |= MCC_ISA_FMA; }
+	if (r[2] & (1u << 29)) { MCC_TRACE("br\n"); m |= MCC_ISA_F16C; }
+	mcc_cpuid(7, 0, r);
+	if (r[1] & (1u << 5))  { MCC_TRACE("br\n"); m |= MCC_ISA_AVX2; }
+	if (r[1] & (1u << 3))  { MCC_TRACE("br\n"); m |= MCC_ISA_BMI; }
+	if (r[1] & (1u << 8))  { MCC_TRACE("br\n"); m |= MCC_ISA_BMI2; }
+	if (r[1] & (1u << 16)) { MCC_TRACE("br\n"); m |= MCC_ISA_AVX512F; }
+	mcc_cpuid(0x80000001, 0, r);
+	if (r[2] & (1u << 5))  { MCC_TRACE("br\n"); m |= MCC_ISA_LZCNT; }
+#else
+	(void)r;
+#endif
+	return m;
+}
+#endif
+
+ST_FUNC void mcc_isa_init(MCCState *s1) { MCC_TRACE("enter\n");
+	if (s1->isa_mask)
+		{ MCC_TRACE("br\n"); return; }
+#if defined(MCC_TARGET_X86_64)
+	s1->isa_mask = MCC_ISA_V1;
+	s1->isa_level = "x86-64";
+#elif defined(MCC_TARGET_I386)
+	s1->isa_mask = 0;
+	s1->isa_level = "i686";
+#else
+	s1->isa_mask = 0;
+	s1->isa_level = "baseline";
+#endif
+}
+
+ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
+	size_t i;
+	if (!strcmp(name, "native")) { MCC_TRACE("br\n");
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386)
+		s1->isa_mask = mcc_isa_native();
+		s1->isa_level = "native";
+		return 0;
+#else
+		mcc_isa_init(s1);
+		return 0;
+#endif
+	}
+#if defined(MCC_TARGET_X86_64)
+	for (i = 0; i < sizeof mcc_isa_levels / sizeof *mcc_isa_levels; i++) {
+		MCC_TRACE("br\n");
+		if (!strcmp(name, mcc_isa_levels[i].name)) { MCC_TRACE("br\n");
+			s1->isa_mask = mcc_isa_levels[i].mask;
+			s1->isa_level = mcc_isa_levels[i].name;
+			return 0;
+		}
+	}
+	return -1;
+#else
+	/* Non-x86 targets have no named levels wired up yet; keep accepting the
+	   string so no cross command line regresses, rather than erroring on a
+	   value this build cannot evaluate. */
+	(void)i;
+	mcc_isa_init(s1);
+	return 0;
+#endif
+}
+
+ST_FUNC void mcc_isa_print(MCCState *s1) { MCC_TRACE("enter\n");
+	static const struct { const char *n; uint32_t b; } f[] = {
+			{"sse2", MCC_ISA_SSE2},     {"sse3", MCC_ISA_SSE3},
+			{"ssse3", MCC_ISA_SSSE3},   {"sse4.1", MCC_ISA_SSE41},
+			{"sse4.2", MCC_ISA_SSE42},  {"popcnt", MCC_ISA_POPCNT},
+			{"avx", MCC_ISA_AVX},       {"avx2", MCC_ISA_AVX2},
+			{"fma", MCC_ISA_FMA},       {"bmi", MCC_ISA_BMI},
+			{"bmi2", MCC_ISA_BMI2},     {"lzcnt", MCC_ISA_LZCNT},
+			{"f16c", MCC_ISA_F16C},     {"avx512f", MCC_ISA_AVX512F},
+	};
+	size_t i;
+	mcc_isa_init(s1);
+	printf("level: %s\n", s1->isa_level ? s1->isa_level : "baseline");
+	printf("features:");
+	for (i = 0; i < sizeof f / sizeof *f; i++)
+		{ MCC_TRACE("br\n"); if (s1->isa_mask & f[i].b)
+			{ MCC_TRACE("br\n"); printf(" %s", f[i].n); } }
+	printf("\n");
+}
+
 LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	MCCState *s;
 
@@ -1956,6 +2098,7 @@ enum {
 	MCC_OPTION_trigraphs,
 	MCC_OPTION_nostdlib,
 	MCC_OPTION_print_search_dirs,
+	MCC_OPTION_print_isa,
 	MCC_OPTION_print_prog_name,
 	MCC_OPTION_print_file_name,
 	MCC_OPTION_rdynamic,
@@ -2074,6 +2217,7 @@ static const MCCOption mcc_options[] = {
 		{"trigraphs", MCC_OPTION_trigraphs, 0},
 		{"nostdlib", MCC_OPTION_nostdlib, 0},
 		{"print-search-dirs", MCC_OPTION_print_search_dirs, 0},
+		{"print-isa", MCC_OPTION_print_isa, 0},
 		{"print-prog-name=", MCC_OPTION_print_prog_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"print-file-name=", MCC_OPTION_print_file_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"-print-prog-name=", MCC_OPTION_print_prog_name, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -2870,7 +3014,17 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_m:
 			if (set_flag(s, options_m, optarg) < 0) { MCC_TRACE("br\n");
 				const char *marg = optarg;
-				if (strstart("arch=", &marg) || strstart("tune=", &marg) || strstart("cpu=", &marg) ||
+				if (strstart("arch=", &marg)) { MCC_TRACE("br\n");
+					if (mcc_isa_set_arch(s, marg) < 0)
+						{ MCC_TRACE("br\n"); return mcc_error_noabort("unknown -march= value '%s'", marg); }
+					break;
+				}
+				/* -mtune/-mcpu pick a scheduling model, not an ISA floor, and mcc
+				   has no scheduler; -mcmodel/-mfpmath likewise change nothing here.
+				   Still accepted so no command line regresses -- unlike -march=,
+				   which now means something and so must reject what it cannot
+				   honour rather than silently ignoring it. */
+				if (strstart("tune=", &marg) || strstart("cpu=", &marg) ||
 						strstart("cmodel=", &marg) || strstart("fpmath=", &marg))
 					{ MCC_TRACE("br\n"); break; }
 				if (x = atoi(optarg), x != 32 && x != 64)
@@ -3051,6 +3205,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_print_search_dirs:
 			x = OPT_PRINT_DIRS;
 			goto extra_action;
+		case MCC_OPTION_print_isa:
+			s->print_isa = 1;
+			continue;
 		case MCC_OPTION_print_prog_name:
 			mcc_set_str(&s->print_query, optarg);
 			x = OPT_PRINT_PROG;

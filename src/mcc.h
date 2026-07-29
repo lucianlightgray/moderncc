@@ -640,6 +640,9 @@ struct MCCState {
 	unsigned char omit_frame_pointer;
 	unsigned char function_sections;
 	unsigned char data_sections;
+	unsigned char print_isa; /* -print-isa: report the resolved ISA and exit */
+	uint32_t isa_mask;      /* -march=: MCC_ISA_* features the target may use */
+	const char *isa_level;  /* the resolved level name, for -print-isa */
 	unsigned char wrapv;
 	unsigned char trigraphs;
 	unsigned char freestanding;
@@ -1309,6 +1312,29 @@ ST_FUNC void mcc_close(void);
 #define stk_pop() (--nb_stk_data)
 #define cstr_new_s(cstr) (cstr_new(cstr), stk_push(&(cstr)->data))
 #define cstr_free_s(cstr) (cstr_free(cstr), stk_pop())
+
+/* -march= ISA features. A bit per capability rather than an ordered level, so
+   a predicate reads as "may I emit roundsd" instead of "is the level >= 2".
+   The named levels below are just conventional bundles of these bits. */
+#define MCC_ISA_SSE2    0x0001
+#define MCC_ISA_SSE3    0x0002
+#define MCC_ISA_SSSE3   0x0004
+#define MCC_ISA_SSE41   0x0008
+#define MCC_ISA_SSE42   0x0010
+#define MCC_ISA_POPCNT  0x0020
+#define MCC_ISA_AVX     0x0040
+#define MCC_ISA_AVX2    0x0080
+#define MCC_ISA_FMA     0x0100
+#define MCC_ISA_BMI     0x0200
+#define MCC_ISA_BMI2    0x0400
+#define MCC_ISA_LZCNT   0x0800
+#define MCC_ISA_F16C    0x1000
+#define MCC_ISA_AVX512F 0x2000
+
+ST_FUNC int mcc_isa_has(MCCState *s1, uint32_t feat);
+ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name);
+ST_FUNC void mcc_isa_init(MCCState *s1);
+ST_FUNC void mcc_isa_print(MCCState *s1);
 
 ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags);
 #define AFF_PRINT_ERROR 0x10

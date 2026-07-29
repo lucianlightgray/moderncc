@@ -1,0 +1,119 @@
+#!/bin/sh
+# -march= and -print-isa.
+#
+# -march= used to be matched and thrown away, so `mcc -march=x86-64-v3` was a
+# silent no-op and an unknown value was accepted just as quietly. Two things
+# are pinned here: the flag reports what it resolved to, and it CHANGES CODEGEN
+# rather than only bookkeeping.
+#
+# The codegen assertion is the one that matters. roundsd is SSE4.1, above
+# mcc's SSE2 baseline, so it must appear only when the user has said the target
+# has SSE4.1 -- and in particular -O4 must NOT introduce it. "-O4 means run
+# every optimizer, not raise the required ISA" is the rule this cell exists to
+# hold; breaking it makes -O4 output demand a CPU nothing recorded.
+#
+# Usage: march-isa.sh <mcc> <mccbase> <workdir>
+set -e
+
+MCC=$1
+BASE=$2
+WORK=$3
+[ -n "$MCC" ] && [ -n "$BASE" ] && [ -n "$WORK" ] || {
+	echo "usage: march-isa.sh <mcc> <mccbase> <workdir>" >&2
+	exit 2
+}
+[ -x "$MCC" ] || { echo "SKIP: no mcc at $MCC"; exit 77; }
+command -v objdump >/dev/null 2>&1 || { echo "SKIP: objdump not found"; exit 77; }
+
+case $("$MCC" -print-isa 2>/dev/null | head -1) in
+	"level: x86-64"*) ;;
+	*) echo "SKIP: not an x86-64 mcc"; exit 77 ;;
+esac
+
+rm -rf "$WORK"
+mkdir -p "$WORK"
+rc=0
+
+cat >"$WORK/r.c" <<'EOF'
+extern double floor(double), ceil(double), trunc(double);
+double f(double x) { return floor(x) + ceil(x) + trunc(x); }
+EOF
+
+isa() { "$MCC" -B"$BASE" $1 -print-isa 2>&1; }
+
+# 1. The default is the triple BASELINE, not the host. Making it native would
+#    make output host-dependent and break golden byte-identity and the
+#    self-host fixpoint, so this is load-bearing rather than cosmetic.
+if [ "$(isa '' | head -1)" = "level: x86-64" ] &&
+	 [ "$(isa '' | tail -1)" = "features: sse2" ]; then
+	echo "PASS: default resolves to the x86-64 baseline, not the host"
+else
+	echo "FAIL: default -print-isa is '$(isa '' | tr '\n' ' ')'"
+	rc=1
+fi
+
+# 2. Named levels resolve, and each is a superset of the one below.
+for lv in x86-64-v2 x86-64-v3 x86-64-v4; do
+	if [ "$(isa "-march=$lv" | head -1)" = "level: $lv" ]; then :; else
+		echo "FAIL: -march=$lv did not resolve"
+		rc=1
+	fi
+done
+isa -march=x86-64-v2 | grep -q 'sse4\.1' || { echo "FAIL: v2 lacks sse4.1"; rc=1; }
+isa -march=x86-64-v3 | grep -q 'avx2'    || { echo "FAIL: v3 lacks avx2"; rc=1; }
+isa -march=x86-64-v4 | grep -q 'avx512f' || { echo "FAIL: v4 lacks avx512f"; rc=1; }
+[ $rc = 0 ] && echo "PASS: named levels resolve with the expected features"
+
+# 3. An unknown value must be REJECTED. Silently accepting it is the bug.
+if "$MCC" -B"$BASE" -march=definitely-not-a-cpu -print-isa >"$WORK/e" 2>&1; then
+	echo "FAIL: -march=definitely-not-a-cpu was accepted silently"
+	rc=1
+elif grep -q "unknown -march=" "$WORK/e"; then
+	echo "PASS: an unknown -march= value is diagnosed and fails"
+else
+	echo "FAIL: unknown -march= failed for the wrong reason:"
+	sed 's/^/  /' "$WORK/e" | head -2
+	rc=1
+fi
+
+# 4. -mtune/-mcpu pick a scheduling model mcc does not have; they must stay
+#    accepted so existing command lines keep working.
+if "$MCC" -B"$BASE" -mtune=haswell -mcpu=generic -O2 -c "$WORK/r.c" \
+		-o "$WORK/t.o" 2>"$WORK/e2"; then
+	echo "PASS: -mtune/-mcpu still accepted"
+else
+	echo "FAIL: -mtune/-mcpu rejected:"
+	sed 's/^/  /' "$WORK/e2" | head -2
+	rc=1
+fi
+
+# 5. Codegen follows the ISA, in both directions.
+rounds() {
+	"$MCC" -B"$BASE" -O2 -fno-math-errno $1 -c "$WORK/r.c" -o "$WORK/r.o" 2>/dev/null
+	objdump -d "$WORK/r.o" | grep -cE 'roundsd|roundss' || true
+}
+if [ "$(rounds '')" = "0" ] && [ "$(rounds '-march=x86-64')" = "0" ]; then
+	echo "PASS: the baseline emits no roundsd"
+else
+	echo "FAIL: baseline emitted roundsd ('$(rounds '')' / '$(rounds '-march=x86-64')')"
+	rc=1
+fi
+if [ "$(rounds '-march=x86-64-v2')" -ge 1 ]; then
+	echo "PASS: -march=x86-64-v2 enables roundsd"
+else
+	echo "FAIL: -march=x86-64-v2 emitted no roundsd, so the mask is not reaching codegen"
+	rc=1
+fi
+
+# 6. The rule this whole axis exists for: optimization effort must not raise
+#    the ISA floor.
+"$MCC" -B"$BASE" -O4 -fno-math-errno -c "$WORK/r.c" -o "$WORK/r4.o" 2>/dev/null
+if [ "$(objdump -d "$WORK/r4.o" | grep -cE 'roundsd|roundss' || true)" = "0" ]; then
+	echo "PASS: -O4 alone does not raise the required ISA"
+else
+	echo "FAIL: -O4 emitted roundsd at the baseline -march; optimization effort"
+	echo "  must not change which CPUs the output runs on"
+	rc=1
+fi
+
+exit $rc

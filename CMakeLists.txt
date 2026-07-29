@@ -5827,6 +5827,18 @@ if(MCC_BUILD_TESTS)
         endforeach()
     endif()
 
+    # -march= was accepted and discarded too. This cell pins that the flag
+    # reaches CODEGEN (roundsd appears only at x86-64-v2+) and that -O4 alone
+    # never raises the ISA floor, which is the rule the whole axis exists for.
+    if(UNIX)
+        add_test(NAME cli/march-isa
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/march-isa.sh"
+                    "${_mcc_exe}" "${_bdir}"
+                    "${CMAKE_BINARY_DIR}/march-isa-work")
+        set_tests_properties(cli/march-isa PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
+    endif()
+
     # -ffunction-sections was accepted and discarded; this cell fails if it
     # regresses to a no-op. It asserts the PURPOSE (a linker can drop an
     # unreferenced function) rather than the section names, and carries a

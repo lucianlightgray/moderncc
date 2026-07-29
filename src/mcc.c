@@ -1478,6 +1478,14 @@ redo:
 #endif
 	opt = mcc_parse_args(s, &argc, &argv);
 
+	if (n == 0 && s->print_isa) { MCC_TRACE("br\n");
+		/* Checked before the OPT_HELP dispatch: with no input files
+		   mcc_parse_args reports OPT_HELP, which would print usage over the
+		   answer the user asked for. */
+		mcc_isa_print(s);
+		mcc_delete(s);
+		return 0;
+	}
 	if (n == 0) { MCC_TRACE("br\n");
 		ret = 0;
 		if (opt == OPT_HELP) { MCC_TRACE("br\n");

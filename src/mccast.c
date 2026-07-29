@@ -2006,6 +2006,9 @@ static int ast_inline_n;
 
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
+	/* Resolve the ISA before any gate consults it, so a build that never saw
+	   -march= still has the triple baseline rather than an empty mask. */
+	mcc_isa_init(s1);
 	/* -O>=4 means the user asked for a search budget: run EVERY implemented optimizer,
 	 * including the ones no lower -O level reaches. Not a preprocessor gate — one
 	 * runtime term ORed into each default below, so -O0..-O3 stay byte-identical. */
@@ -2195,8 +2198,15 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * NOT in the o4 blanket: -O4 means "run every optimizer", but this one changes
 	 * the required ISA rather than just the code, so folding it in made -O4 output
 	 * silently demand an SSE4.1 CPU with nothing in the compiler recording that.
-	 * Restore it to o4 only once -march exists to express the requirement. */
+	 * Now keyed on the ISA instead of on optimization effort: -march= is what
+	 * records the requirement, so roundsd is emitted exactly when the user has
+	 * said the target has SSE4.1. The env var remains a manual override. */
+#ifdef MCC_TARGET_X86_64
+	ast_round_inline_env =
+			ast_env_gate("MCC_AST_ROUND_INLINE", mcc_isa_has(s1, MCC_ISA_SSE41));
+#else
 	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
+#endif
 	/* copysign inline (fsgnj on riscv64, SSE mask on x86_64, GP round-trip on
 	 * arm64). Default OFF on ALL
 	 * arches (opt-in) so default codegen is byte-identical everywhere — including
