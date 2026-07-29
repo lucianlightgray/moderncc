@@ -1780,6 +1780,7 @@ static int ast_fneg_env;
 static int ast_cmp_mat_env;
 static int ast_chainstore_live_env;
 static int ast_chainstore_member_env;
+static int ast_while_comma_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2122,6 +2123,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", 0);
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", 0);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", 0);
+	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -2958,7 +2960,24 @@ void ast_hook_if_end(void) { MCC_TRACE("enter\n");
 	ast_cur_bb = ast_cf_savebb[ast_cf_top];
 }
 
+static AstLocal ast_while_prefix = AST_NONE;
+static AstLocal ast_while_savebb = AST_NONE;
+
+void ast_hook_while_cond_start(void) { MCC_TRACE("enter\n");
+	ast_while_prefix = AST_NONE;
+	if (!ast_while_comma_env || !ast_active || ast_desync || ast_bail ||
+			!ast_capture)
+		{ MCC_TRACE("br\n"); return; }
+	ast_while_prefix = ast_node(ast_cur, AST_BasicBlock);
+	ast_while_savebb = ast_cur_bb;
+	ast_cur_bb = ast_while_prefix;
+}
+
 void ast_hook_while_begin(void) { MCC_TRACE("enter\n");
+	AstLocal prefix = ast_while_prefix;
+	ast_while_prefix = AST_NONE;
+	if (prefix != AST_NONE)
+		{ MCC_TRACE("br\n"); ast_cur_bb = ast_while_savebb; }
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
@@ -2974,6 +2993,8 @@ void ast_hook_while_begin(void) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, loop, cond);
 	AstLocal body = ast_node(ast_cur, AST_BasicBlock);
 	ast_add_child(ast_cur, loop, body);
+	if (prefix != AST_NONE && ast_first_child(ast_cur, prefix) != AST_NONE)
+		{ MCC_TRACE("br\n"); ast_add_child(ast_cur, loop, prefix); }
 	ast_add_child(ast_cur, ast_cur_bb, loop);
 	ast_cf_if[ast_cf_top] = loop;
 	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
@@ -6314,6 +6335,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			}
 			if (ast_op(a, s) == 2) { MCC_TRACE("br\n");
 				int dd = gind();
+				if (ast_nchild(a, s) >= 3)
+					{ MCC_TRACE("br\n"); ast_replay_bb(a, ast_child(a, s, 2)); }
 				ast_replay_value(a, ast_child(a, s, 0));
 				int aa = gvtst(1, 0);
 				int bb = 0;

@@ -12118,6 +12118,9 @@ again:
 	} else if (t == TOK_WHILE) { MCC_TRACE("br\n");
 		new_scope_s(&o);
 		d = gind();
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_while_cond_start();
+#endif
 		skip('(');
 		gexpr();
 		if (expr_was_assign)

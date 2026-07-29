@@ -1154,6 +1154,19 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **NINTH CLASS CLOSED 2026-07-29 — comma-expression while conditions.** `while (next(), tok != TOK_EOF)`
+   (`pp_error` and the loop-head jump-shift residuals): the comma's side-effect operand records as a statement
+   BEFORE the loop node, so replay ran it once and its back-edge skipped it — semantically a once-instead-of-
+   per-iteration call, caught as unfaithful. Landed `MCC_AST_WHILE_COMMA` (default OFF): a new
+   `ast_hook_while_cond_start` (at the `d = gind()` loop head) redirects recording into a DETACHED prefix
+   BasicBlock; `ast_hook_while_begin` attaches it as the loop node's third child only when non-empty, and the
+   op-2 loop replay emits it between `gind()` and the condition each iteration. Empty-prefix loops keep the
+   exact 2-child shape (zero change for normal loops even gate-on). do/for comma conditions are NOT yet covered
+   (same idea, different hooks). Validated: gate-off byte-identical (3-way md5); `wcomma` repro flips faithful;
+   runtime matches gcc `-O1/2/3` (per-iteration call count observable via a feed array); TU all-nine-gates:
+   unfaithful 52 -> 49 (zero regressions); ast ctest 224/224 + fuzz matrix 5/5. `WHILE_COMMA` added to the
+   fuzzer gate table and the `RECORDER8` combo (now nine gates). Session: 239 -> 49. AOT-only (P0 rule).
+
    **FUZZ COVERAGE FOR THE 8 RECORDER GATES 2026-07-29:** the differential fuzzer's gate table now includes
    all eight new gates individually plus a `RECORDER8` all-on combo entry, so `--gates` runs and the
    `fuzz/matrix-*` ctest shards stress them from now on. Validated: full `fuzz/` ctest suite green (7/7) and a
