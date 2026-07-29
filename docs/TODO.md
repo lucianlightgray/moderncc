@@ -1054,7 +1054,32 @@ real-object validation stays macOS-gated.
 
 ### OPEN TASKS carried out of that session, highest value first
 
-1. **A2a — the SYNC site is small but NOT closed, and the "cosmetic" claim is stale.** Re-measured 2026-07-29:
+1. **A2a — REDUCED 2026-07-29 to a one-line repro, which explains 2 of the 5. THE SITE IS SMALL BUT NOT CLOSED.**
+
+   **Repro: a COMPOUND (read-modify-write) assignment whose lvalue comes from a CALL.**
+
+       void c_or(void)        { get()->a |= 4; }   /* desync at the vpush SYNC site */
+       void c_add(void)       { get()->a += 4; }   /* desync */
+       void c_deref(void)     { *geti()  |= 4; }   /* desync */
+       void c_plain(void)     { get()->a  = 4; }   /* faithful — no READ, so no dup   */
+       void c_inc(void)       { get()->a++;     }  /* faithful                         */
+       void c_local(struct S *p) { p->a  |= 4; }   /* faithful — lvalue is not a call  */
+
+   The discriminator is the read-modify-write, not the store: plain assignment through the same call is faithful,
+   and the same compound assignment through a non-call lvalue is faithful. Only `-O1`+ (the recorder is inactive at
+   `-O0`). **`MCC_AST_OPASSIGN` REDUCES this class rather than causing it** — forcing it off takes the repro file
+   from 3 desyncs to 4 — so staging it at `-O1` (`42996310`) improved `-O1` fidelity as a side effect.
+
+   **Confirmed to be the producer in 2 of the 5 real functions**, by the literal construct:
+   `set_symbol` has `elfsym(sym)->st_other |= ST_ASM_SET`, `layout_sections` has
+   `fill_phdr(...)->p_flags |= ...`. **`combine_types`, `gen_opif` and `parse_number` do NOT contain this shape**,
+   so at least one other producer remains — do not assume this reduction closes the site.
+
+   **Two hypotheses in this section are now DEAD and should not be re-tried:** the "one producer, 43 failures"
+   framing (there are 5, and at least two producers), and the recorded `switch`-path repro — `bare`/`if`/`switch`
+   over a ternary-with-recursive-call are all **faithful** today.
+
+   (Original entry:) **the SYNC site is small but NOT closed, and the "cosmetic" claim is stale.** Re-measured 2026-07-29:
    `ast_hook_vpush` holds **5** desyncs, not the 43 this entry describes nor the 4 the A2a section calls cosmetic —
    and they are on entirely different functions (`parse_number`, `gen_opif`, `combine_types`, `set_symbol`,
    `layout_sections`), reported as **desync, not bail**, so they DO cost: a desync means replay cannot be used for
