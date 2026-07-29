@@ -88,7 +88,7 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 | 1 feature mask + `mcc_isa_has` | **DONE** (`4e74e1c9`) |
 | 2 ISA-aware golden/fixpoint machinery | **DONE — needed NO code**; measured, see the flip note |
 | 3 named levels | **DONE** x86-64/-v2/-v3/-v4 + gcc CPU aliases; other triples validate their level NAMES but carry no feature bits yet |
-| 4 re-gate ISA-dependent optimizers | **DONE for every baseline lowering** — `ROUND_INLINE`(SSE4.1), `MATH_INLINE`, `COPYSIGN_INLINE`, `FMA_INLINE`(arm64/rv64), `MINMAX_INLINE`(arm64). **Remaining: the two arm `CPUVER` sites**, and they need ARM feature bits in the mask first |
+| 4 re-gate ISA-dependent optimizers | **DONE 2026-07-29 including the two arm `CPUVER` sites** — `MCC_ISA_ARM_BLX`/`MCC_ISA_ARM_MOVT` bits landed; `mcc_isa_init` derives the default from the baked `MCC_CONFIG_CPUVER` (byte-identical: 6/6 repro objects match the pre-change compiler); `-march=armv4..armv7-a` resolve to real masks (`arm-link.c` blx and `arm-gen.c` movw/movt now runtime-gated; armv7 emits 6 movw/movt where armv4 emits 0; qemu runtime correct at v4/v5/v7); the third site — the static `.ARM.attributes` blob in mccelf.c — stays build-config-keyed by design (it describes the build). cli/march + ast suites green |
 | 5 predefined macros follow `-march` | **INVERTED — do not implement as written**, it is a regression; see the step-5 note |
 | 6 introspection | **DONE** — `-print-isa` |
 | default = `native` | **DONE** (`5bd7d020`) |

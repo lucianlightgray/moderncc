@@ -357,15 +357,14 @@ static int negcc(int cc) { MCC_TRACE("enter\n");
 }
 
 static void load_value(SValue *sv, int r) { MCC_TRACE("enter\n");
-#if MCC_CONFIG_CPUVER >= 7
-	if (!(sv->r & VT_SYM)) { MCC_TRACE("br\n");
+	mcc_isa_init(mcc_state);
+	if (mcc_isa_has(mcc_state, MCC_ISA_ARM_MOVT) && !(sv->r & VT_SYM)) { MCC_TRACE("br\n");
 		unsigned x = sv->c.i;
 		o(0xE3000000 | intr(r) << 12 | (x & 0xFFF) | (x << 4 & 0xF0000));
 		if (x & 0xFFFF0000)
 			{ MCC_TRACE("br\n"); o(0xE3400000 | intr(r) << 12 | (x >> 16 & 0xFFF) | (x >> 12 & 0xF0000)); }
 		return;
 	}
-#endif
 	o(0xE59F0000 | (intr(r) << 12));
 	o(0xEA000000);
 	if (!mcc_state->pic) { MCC_TRACE("br\n");

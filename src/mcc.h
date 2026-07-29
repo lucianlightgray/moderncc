@@ -1330,6 +1330,8 @@ ST_FUNC void mcc_close(void);
 #define MCC_ISA_LZCNT   0x0800
 #define MCC_ISA_F16C    0x1000
 #define MCC_ISA_AVX512F 0x2000
+#define MCC_ISA_ARM_BLX 0x4000
+#define MCC_ISA_ARM_MOVT 0x8000
 
 ST_FUNC int mcc_isa_has(MCCState *s1, uint32_t feat);
 ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name);

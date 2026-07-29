@@ -1050,6 +1050,12 @@ ST_FUNC void mcc_isa_init(MCCState *s1) { MCC_TRACE("enter\n");
 #elif defined(MCC_TARGET_I386)
 	s1->isa_mask = 0;
 	s1->isa_level = "i686";
+#elif defined(MCC_TARGET_ARM) && defined(MCC_CONFIG_CPUVER)
+	s1->isa_mask = (MCC_CONFIG_CPUVER >= 5 ? MCC_ISA_ARM_BLX : 0) |
+								 (MCC_CONFIG_CPUVER >= 7 ? MCC_ISA_ARM_MOVT : 0);
+	s1->isa_level = MCC_CONFIG_CPUVER >= 7   ? "armv7"
+									: MCC_CONFIG_CPUVER >= 5 ? "armv5"
+																					 : "armv4";
 #else
 	s1->isa_mask = 0;
 	s1->isa_level = "baseline";
@@ -1085,14 +1091,44 @@ ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name) { MCC_TRACE("enter\
 	   `-march=nonsense` while arm64 shrugs is worse than either alone. So the
 	   level is validated against the triple's known names and recorded for
 	   -print-isa; the mask stays empty until the per-arch feature bits land. */
+#if defined(MCC_TARGET_ARM)
+	{
+		static const struct {
+			const char *n;
+			uint32_t m;
+		} armlv[] = {
+				{"armv4", 0},
+				{"armv4t", 0},
+				{"armv5", MCC_ISA_ARM_BLX},
+				{"armv5t", MCC_ISA_ARM_BLX},
+				{"armv5te", MCC_ISA_ARM_BLX},
+				{"armv6", MCC_ISA_ARM_BLX},
+				{"armv6t2", MCC_ISA_ARM_BLX},
+				{"armv7", MCC_ISA_ARM_BLX | MCC_ISA_ARM_MOVT},
+				{"armv7-a", MCC_ISA_ARM_BLX | MCC_ISA_ARM_MOVT},
+				{"armv7-m", MCC_ISA_ARM_BLX | MCC_ISA_ARM_MOVT},
+				{"armv7-r", MCC_ISA_ARM_BLX | MCC_ISA_ARM_MOVT},
+		};
+		for (i = 0; i < sizeof armlv / sizeof *armlv; i++) { MCC_TRACE("br\n");
+			if (!strcmp(name, armlv[i].n)) { MCC_TRACE("br\n");
+				s1->isa_mask = armlv[i].m;
+				s1->isa_level = armlv[i].n;
+				return 0;
+			}
+		}
+		if (!strcmp(name, "generic")) { MCC_TRACE("br\n");
+			mcc_isa_init(s1);
+			s1->isa_level = "generic";
+			return 0;
+		}
+	}
+	return -1;
+#else
 	{
 		static const char *const known[] = {
 #if defined(MCC_TARGET_ARM64)
 			"armv8-a", "armv8.1-a", "armv8.2-a", "armv8.3-a", "armv8.4-a",
 			"armv8.5-a", "armv9-a", "generic",
-#elif defined(MCC_TARGET_ARM)
-			"armv4", "armv4t", "armv5", "armv5t", "armv5te", "armv6", "armv6t2",
-			"armv7", "armv7-a", "armv7-m", "armv7-r", "generic",
 #elif defined(MCC_TARGET_RISCV64)
 			"rv64i", "rv64g", "rv64gc", "rv64imac", "rv64imafdc", "generic",
 #elif defined(MCC_TARGET_I386)
@@ -1110,6 +1146,7 @@ ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name) { MCC_TRACE("enter\
 	}
 	return -1;
 #endif
+#endif
 }
 
 ST_FUNC void mcc_isa_print(MCCState *s1) { MCC_TRACE("enter\n");
@@ -1121,6 +1158,7 @@ ST_FUNC void mcc_isa_print(MCCState *s1) { MCC_TRACE("enter\n");
 			{"fma", MCC_ISA_FMA},       {"bmi", MCC_ISA_BMI},
 			{"bmi2", MCC_ISA_BMI2},     {"lzcnt", MCC_ISA_LZCNT},
 			{"f16c", MCC_ISA_F16C},     {"avx512f", MCC_ISA_AVX512F},
+			{"blx", MCC_ISA_ARM_BLX},   {"movt", MCC_ISA_ARM_MOVT},
 	};
 	size_t i;
 	mcc_isa_init(s1);

@@ -220,7 +220,8 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		x <<= 2;
 		if (x & 0x2000000)
 			{ MCC_TRACE("br\n"); x -= 0x4000000; }
-		blx_avail = (MCC_CONFIG_CPUVER >= 5);
+		mcc_isa_init(s1);
+		blx_avail = mcc_isa_has(s1, MCC_ISA_ARM_BLX);
 		is_thumb = val & 1;
 		is_bl = code == 0xeb000000;
 		is_call = (type == R_ARM_CALL || (type == R_ARM_PC24 && is_bl));
