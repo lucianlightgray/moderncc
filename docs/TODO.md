@@ -80,207 +80,29 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 
 **CONSOLIDATION (2026-07-27):** with all five source changes in (SECREL native-TLS COFF reading, à la carte pull-once, `__ImageBase` synthesis, compiler-rt embed fallback, `K32GetProcessMemoryInfo` def) plus the CMake self-host enablement, the **full local ctest suite is 100% GREEN — 6424/6424, 0 failures** on llvm-mingw x86_64 (the core PE linker path is exercised by every test that links the CRT). x86_64-win32 `--embed-jit` + self-host bake + `MCC_JIT=1`≡`MCC_JIT=0` parity are done, wired, and regression-clean. Regression lock-in **DONE**: `embed-jit-smoke` ctest (`tools/embed-jit-smoke.py`, gated `WIN32 AND NOT MSVC`, SKIP-77 on no-blob/missing-runtime-lib, FAIL only on wrong output or a non-lib bake failure; JIT-OFF only so it never touches the winlibs `0xC0000005`). Passes locally on llvm-mingw. So the entire x86_64-win32 (mingw) `--embed-jit` path is implemented, proven, wired, and CI-guarded. **All local-tractable campaign items are complete;** what remains is strictly gated: i386 (no i386 toolchain here), MSVC embed (ucrt/msvcrt CRT-model conflict), P0 step 5 (winlibs-specific CI crash — needs a CI trace), arm64-win32 (HW).
 
-## `-march` (default `native`) + move every ISA-dependent optimizer behind it
-**STATE 2026-07-29 — read this before the plan below, most of which is done.**
+## `-march` — DONE 2026-07-29 (pruned; detail in git history around `4e74e1c9`/`5bd7d020`/`3217b8a9`)
 
-| step | state |
-|---|---|
-| 1 feature mask + `mcc_isa_has` | **DONE** (`4e74e1c9`) |
-| 2 ISA-aware golden/fixpoint machinery | **DONE — needed NO code**; measured, see the flip note |
-| 3 named levels | **DONE** x86-64/-v2/-v3/-v4 + gcc CPU aliases; other triples validate their level NAMES but carry no feature bits yet |
-| 4 re-gate ISA-dependent optimizers | **DONE 2026-07-29 including the two arm `CPUVER` sites** — `MCC_ISA_ARM_BLX`/`MCC_ISA_ARM_MOVT` bits landed; `mcc_isa_init` derives the default from the baked `MCC_CONFIG_CPUVER` (byte-identical: 6/6 repro objects match the pre-change compiler); `-march=armv4..armv7-a` resolve to real masks (`arm-link.c` blx and `arm-gen.c` movw/movt now runtime-gated; armv7 emits 6 movw/movt where armv4 emits 0; qemu runtime correct at v4/v5/v7); the third site — the static `.ARM.attributes` blob in mccelf.c — stays build-config-keyed by design (it describes the build). cli/march + ast suites green |
-| 5 predefined macros follow `-march` | **INVERTED — do not implement as written**, it is a regression; see the step-5 note |
-| 6 introspection | **DONE** — `-print-isa` |
-| default = `native` | **DONE** (`5bd7d020`) |
+All six steps landed: feature mask + `mcc_isa_has`, named levels (x86-64-v1..v4 + gcc aliases; arm
+armv4..armv7-a with real `MCC_ISA_ARM_BLX`/`MCC_ISA_ARM_MOVT` masks; other triples validate names), default
+`-march=native` (user decision 2026-07-29: reproducibility is the CACHE's problem), ISA-keyed caches
+(`so_key` folds the whole resolved mask; `ast_search_key_salt_ex` folds only the arena-relevant term so
+generic slices keep cross-host sharing), `-print-isa`, and every ISA-dependent lowering re-gated
+(`ROUND_INLINE`(SSE4.1), `MATH_INLINE`, `COPYSIGN_INLINE`, `FMA_INLINE`, `MINMAX_INLINE`, arm blx/movt).
 
-Two rules from this work that outlive it: **`-O4` means "run every optimizer", not "raise the required ISA"**, and
-**do not stage a gate whose lowering the backend cannot emit** (`FMA_INLINE` on x86, `MINMAX_INLINE` off arm64) —
-that advertises a transform that cannot fire.
-
-**Blocking caveat RESOLVED 2026-07-27 by the second option: `ROUND_INLINE` is out of the `o4` blanket.** It was `ast_env_gate("MCC_AST_ROUND_INLINE", o4)` while its own comment said "Default OFF because roundsd is SSE4.1" — the code contradicted the doc. Verified before and after on a `floor`/`ceil`/`trunc` source: `-O4` emitted **3 `roundsd`/`roundss` and zero libm relocs**, i.e. `-O4` output genuinely required an SSE4.1 CPU with nothing recording it; now `-O2`/`-O3`/`-O4` all emit 0 `roundsd` and keep the 3 libm calls, and `MCC_AST_ROUND_INLINE=1` still inlines on demand. Full suite 7214/7214. The principle worth keeping when `-march` lands: **`-O4` means "run every optimizer", not "raise the required ISA"** — an optimizer that changes the ISA floor does not belong in a blanket keyed on optimization effort. Restore it to `o4 || (level >= x86-64-v2)` once the level exists. Checked at the same time: no `vfmadd`/`vfmsub` is emitted at `-O4`, so `MCC_AST_FMA_INLINE` is not doing the same thing on x86 (it is arm64/riscv64-only, as this section already states).
-
-**Motivation (historical, the axis now exists).** Before `-march`, the optimizer gate WAS the ISA switch, so every ISA-dependent optimizer either stayed off and lost performance or went on and silently narrowed the set of CPUs the output ran on. The durable rule that came out of it is stated in the resolved caveat above: **`-O4` means "run every optimizer", not "raise the required ISA".**
-
-**Current state.** `-march=` is already **accepted and discarded** — `case MCC_OPTION_m` (`libmcc.c`) matches `arch=`/`tune=`/`cpu=`/`cmodel=`/`fpmath=` and `break`s, so `mcc -march=x86-64-v3` is silently a no-op today. `-m32`/`-m64` are the only `-m` forms with meaning. On ARM the ISA level exists but is **compile-time only**: `MCC_CONFIG_CPUVER` (CMake `MCC_CPUVER`, `CMakeLists.txt`) baked per build and read at `arm-link.c` (`blx_avail = CPUVER >= 5`) and `arm-gen.c` (`#if CPUVER >= 7`), alongside `MCC_ARM_EABI/_VFP/_HARDFLOAT/_IDIV`. Nothing is queryable per invocation.
-
-**LANDED 2026-07-29 (`4e74e1c9`) — steps 1, 3, 6 and the `ROUND_INLINE` half of step 4.** x86-64 named levels plus
-`native`, the `mcc_isa_has` predicate, `-print-isa` introspection, and the one gate this section names outright
-(`MCC_AST_ROUND_INLINE` keyed on `MCC_ISA_SSE41`) so the mask is load-bearing rather than a foundation nothing
-reads. Unknown `-march=` values are now an error; `-mtune`/`-mcpu` stay accepted. Pinned by `cli/march-isa`.
-
-**The shipped default is the triple baseline, and that is an INTERIM state — see the decision below.**
-
-### DECISION (user, 2026-07-29): `-march` is ALWAYS `native` by default, and reproducibility is the CACHE's problem
-This overrides the "default to the triple baseline" reading, and it overrides the framing in the testing note
-below, which treated host-dependence as a reason not to default to native. Host-dependence is not the compiler's
-problem to dodge by lowering the default; it is the cache's problem to represent.
-
-**The requirement.** The AST serialize / deserialize / hash must let a node usage that is HOST-DEPENDENT separate
-itself from the generic implementation of the same thing. A slice compiled where `roundsd` was legal and a slice
-compiled where it was not are different artifacts and must not collide, must not be substituted for one another,
-and must not silently invalidate each other. That is a property of the key, not of the codegen: an ISA-dependent
-node participates in the hash with the features it actually consumed, a generic one does not, and the cache is the
-only layer that has to care. Nothing else in the compiler should acquire an `-march` conditional to make this work.
-
-**Why this is the right shape rather than pinning every test.** Making the default baseline would keep goldens
-byte-identical by making mcc pessimise on every machine it runs on, and would leave `native` a flag almost nobody
-passes. Keying the cache on the consumed feature set instead means the fast path is the default, two hosts with
-different ISAs simply hold different entries, and byte-identity is asserted per (source, ISA) pair rather than
-globally — which is what it always should have meant.
-
-**LANDED 2026-07-29 — step (1) is done, in BOTH caches. The earlier "cannot be exercised, build it with the first
-ISA-dependent gate" conclusion recorded here was WRONG and is retracted; the note below explains the mistake so it
-is not repeated.** Survey first, so the next reader does not redo it: the ISA cannot leak through the search or slice cache TODAY, and the reason is narrower
-than it looks. `ast_search_searchable()` offers `AST_SG_BFOLD_ROUND`, but that maps to `ast_bfold_round_env`
-(constant-folding `floor`/`ceil`, no ISA requirement), NOT `ast_round_inline_env` (which emits `roundsd`).
-`ast_round_inline_env` is set only in `ast_configure` and is absent from the `AST_SG_*` vocabulary, so no cached or
-searched gate set can raise the ISA floor. That is luck, not design: the moment step 4 puts `FMA_INLINE` or any
-other ISA-dependent transform into the vocabulary, a winner proven on an AVX2 host becomes applicable on one
-without it.
-
-**HOW TO OBSERVE IT — this is what the earlier attempt got wrong.** The key path sits in `ast_slice_consume`, which
-returns early on an EMPTY on-disk slice cache ("strict no-op, byte-identical"). So it is unreachable on a cold cache
-and every probe silently printed nothing, which was misread as "the term is inert". It needs a WARM cache: compile
-twice. And the cache dir is redirected by **`XDG_CACHE_HOME`**, not `HOME` — `host_cache_dir` checks XDG first, so a
-private-`HOME` run still writes the real user cache and shows nothing. With both right the property is directly
-visible in the filenames and memo bytes, no instrumentation needed.
-
-**Two independent instances, in two different caches — fixing only the AST one would have left the bigger hole.**
-- **`so_key()` (`mcc.c`), the whole-file superopt checkpoint.** Hashed the SOURCE BYTES plus triple and NO compile
-  options at all, so a winner measured under `-march=x86-64-v2` was replayed at the baseline; the checkpoint stores
-  `best_gate`/`best_text` obtained under one ISA and nothing distinguished them. Now folds the resolved mask, with
-  `mcc_isa_init` called first so an implicit baseline and an explicit `-march=x86-64` still agree. Verified:
-  `default` == `x86-64` != `-v2` != `-v3`. Whole-file granularity, so the whole mask is the right term.
-- **`ast_search_key_salt_ex` (`mccast.c`), the per-function AST key.** Uses the narrow arena-relevance term
-  (`ast_isa_key_term`), so only functions holding a construct an ISA-dependent transform can rewrite separate.
-  Verified at byte level in `mcc-search.memo`: for a `floor`-using function the differing offsets include **18-25**,
-  the 8-byte ident, so the key moved; for a generic function only offset 35 differs — outside the ident — so its key
-  is IDENTICAL and cross-host sharing is preserved.
-
-Default-path output byte-identical (271/271 at `-O0` and `-O2`), full ctest 7893/7893.
-
-**Retracted reasoning, kept because the first shape is still a real trap.**
-- *A consumed-feature counter* cannot work at all. The cache key is taken from the PRISTINE arena, before any
-  transform has run (`pristine = ast_arena_clone(ast_cur)` then `ast_intention_hash`), so a "what did we consume"
-  accumulator is always one function late.
-- *An arena-relevance scan* (fold `SSE41` when the function holds a round-family call) is the right shape and
-  preserves cross-host sharing for generic functions — but it cannot be exercised today. With the default
-  `-march` at the triple baseline, `mcc_isa_has(SSE41)` is false, so the term is identically zero and no test can
-  reach it. It also resists unit testing: the scan keys off the callee NAME via `get_tok_str`, while `asttool`
-  stores syms as opaque integers with no names, so the `ast/*` harness cannot construct an arena that exercises it.
-
-The consumption-counter trap above is real and worth keeping. The second bullet's conclusion — that the relevance
-scan is untestable until the default flips — was wrong: it is testable today by compiling under two explicit
-`-march` levels with a warm cache, which needs no default change and no new gate.
-
-The key salt is where this belongs — `ast_search_key_salt_ex` already partitions by build version and target
-triple for exactly this class of reason. What it must NOT do is fold the whole ISA mask unconditionally: that keys
-every slice per-host and destroys the cross-host sharing the slice store was built for. Fold only the features a
-slice actually CONSUMED, so a function with no ISA-dependent construct keeps one key everywhere and only the
-host-dependent ones separate.
-
-**FLIPPED 2026-07-29 — `-march` now defaults to `native`, and step (2) turned out to need NO WORK.** Measured
-rather than assumed, by temporarily defaulting to native on an AVX-512 host and running everything:
-full ctest **7893/7893**, the recorder-fidelity gap set **byte-identical across ISAs** (183 gaps, 0 diffs
-regenerated under baseline vs native), and the 3-stage self-host fixpoint green because all three stages share one
-host and it is therefore inherently within-ISA.
-
-**So this section's central fear was real in principle and vacuous in practice.** Nothing in the suite compares
-BYTES against a checked-in expectation across hosts — every expectation is behavioural: program output, recorder
-verdict classes, or an mcc-vs-gcc-vs-clang consensus. `roundsd` versus a libm call produce the same answer, so a
-golden cannot tell them apart. The only byte-level comparisons are within a single run on a single host
-(`selfhost-fixpoint`'s o1==o2==o3, the `dash-s-bytes-*` cells) and those never span ISAs. Do not re-derive this;
-re-run the probe only if a test that compares object bytes to a checked-in artifact is ever added.
-
-**Cross-compilation keeps the triple baseline by construction, not by a check:** `mcc_isa_native` only reads CPUID
-under `__x86_64__`/`__i386__`, so an x86_64-targeting mcc hosted on another architecture gets `MCC_ISA_V1` and
-cannot bake host-only instructions into cross output.
-
-**A trap the flip exposed, worth more than the flip.** `cli/march-isa` gated itself with
-`case $(mcc -print-isa) in "level: x86-64"*)`, i.e. on the DEFAULT level. The moment the default became `native`
-that guard stopped matching and the whole cell SKIPPED — and a skip counts as a pass, so the `-march` test would
-have silently stopped testing anything. Two of its assertions had the same shape, treating the implicit default as
-"the baseline", which on an SSE4.1 host now correctly emits `roundsd` — they were asserting the host, not the flag.
-Fixed by probing (`-march=x86-64 -print-isa` must resolve) instead of matching the default, and by naming
-`-march=x86-64` explicitly wherever baseline semantics are meant. **Any cell that keys off a default is a cell that
-stops working when the default changes.**
-
-**Cross-compilation keeps the triple baseline** — when the target triple differs from the host there is no host ISA
-to detect, and native detection would bake host-only instructions into cross output. That part of step 2 stands.
-
-**Plan.**
-1. **Feature mask on `MCCState`**, not a string. Parse `-march=`/`-mcpu=`/`-mtune=` into a bitmask + a single predicate (`mcc_isa_has(s1, MCC_ISA_SSE41)`). Keep the existing string forms accepted so no command line regresses.
-2. **`-march=native` is the default** (CONFIRMED by the decision above — it is the end state, not an option), resolved by host detection: `CPUID` leaf 1/7 on x86 (**done**), `getauxval(AT_HWCAP/HWCAP2)` on arm64/armv7, `AT_HWCAP` + `/proc/cpuinfo` on riscv64, with a documented fallback to the triple baseline when detection fails. Blocked only on the cache carrying the consumed-feature set; the detection itself already works and is reachable today as `-march=native`. **Cross-compilation must NOT default to native** — when the target triple differs from the host, default to that triple's baseline (`x86-64`, `armv7-a`, `armv8-a`, `rv64gc`, `i686`) or native detection will bake host-only instructions into cross output.
-3. **Named levels**, matching gcc/clang so muscle memory transfers: `x86-64` (SSE2, today's baseline), `x86-64-v2` (SSE4.2/POPCNT), `x86-64-v3` (AVX2/FMA/BMI), `x86-64-v4` (AVX512); `armv7-a[+idiv][+vfp][+neon]`, `armv8-a[+simd]`; `rv64gc` and friends. `-march=<level>` must be *reproducible*: same level ⇒ byte-identical output on any host.
-**STEP 4 LANDED 2026-07-29 for the three baseline-lowering gates** (`MATH_INLINE` on all arches, `COPYSIGN_INLINE`
-on all arches, `FMA_INLINE` on arm64/riscv64). Each moved from `o4`-only to `-O1`+ for the SAME reason and no other:
-its lowering is BASELINE for the triple, so it cannot raise the ISA floor — an SSE2 bit-mask on x86_64, F/D `fsgnj`
-on rv64gc, `FMADD` on armv8-a, `sqrtsd`/`FSQRT`/`FABS` everywhere. **`FMA_INLINE` is deliberately NOT staged on
-x86** for two independent reasons: FMA3 is not baseline, and mcc emits no `vfmadd` at all, so staging it there
-would advertise a transform that cannot fire — the `ARGFWD` failure mode recorded in the ungate section.
-
-Validated on the axis byte-identity cannot see: a probe over signed zeros, `-inf` and NaN-adjacent `copysign`
-matches gcc at `-O0`/`-O1`/`-O2`/`-O3` on x86_64 and at `-O0`/`-O2` on arm64 and riscv64 under qemu, and the WHOLE
-exec corpus gives identical runtime output with the three gates forced off versus their new defaults on every
-emulated triple — arm64 247/247, riscv64 244/244, armv7-hardfloat 244/244 — `fmin`/`fmax`
-and `copysign` are exactly where ±0 and NaN semantics diverge. Full ctest 7893/7893, self-host fixpoint
-byte-identical.
-
-**`MINMAX_INLINE` also staged, on arm64 only — and the first reading of it here was WRONG.** It was recorded as
-"fires on nothing measurable", which was true only because the probe was x86. On arm64 it removes both `fmin`/`fmax`
-libm calls and emits 2 `FMINNM`/`FMAXNM` — armv8-a baseline, and IEEE minNum/maxNum is exactly C's fmin/fmax.
-Verified behaviour-preserving rather than assumed: over NaN in either operand, ±0, ±inf and `signbit` checks the
-gate ON and gate OFF give identical output, and the whole arm64 exec corpus is identical off-vs-on (247/247).
-**x86 stays `o4` for a reason that is not staleness**: `minsd`/`maxsd` have the wrong NaN/±0 semantics, so inlining
-there would be a miscompile, not a missing feature. Method note: `objdump -d` on an arm64 object silently
-disassembles as x86 and reported 0 `fminnm` — use `llvm-objdump --triple=aarch64`, or the measurement lies.
-
-Separately, and NOT caused by any of this: mcc returns `-0` for `fmin(+0,-0)` where glibc returns `+0`. Present with
-every gate off, and C99 F.9.9.2 leaves the sign unspecified there, so both conform — but do not "fix" it by chasing
-a gcc diff.
-
-Measured first, at `-O2` on a probe calling copysign/fmin/fmax/fma/sqrt/fabs:
-x86_64 at `-march=x86-64` inlines sqrt+fabs by default and only `COPYSIGN_INLINE` still fires (4 libm calls -> 3,
-`.text` +16); `MINMAX_INLINE` and `FMA_INLINE` do nothing there, exactly as this section already says. **arm64
-inlines NOTHING at `-O2` — 6 libm calls** — because `MATH_INLINE`'s non-x86 default is `o4`, and each gate forced on
-removes calls (`MATH_INLINE` -> 4, `FMA_INLINE` -> 5, `COPYSIGN_INLINE` -> 5). So the "golden-regen debt, not an ISA
-limit" note below is right, and the cost of leaving it is that arm64 pays a libm call for `sqrt` where x86_64 does
-not.
-
-4. **Re-gate the ISA-dependent optimizers** from "opt-in env knob" to "on when the ISA allows", i.e. default becomes `o4 || (level >= N && mcc_isa_has(...))` and the `MCC_AST_*` env var stays as a manual override:
-   - `MCC_AST_ROUND_INLINE` — `roundsd`, needs **SSE4.1** (`x86-64-v2`). The one actually breaking `-O4` portability today.
-   - `MCC_AST_FMA_INLINE` — x86 needs **FMA3** (`x86-64-v3`); arm64 `FMADD` and riscv64 `fmadd.d/.s` are baseline for those triples, so they should turn on with the triple, not wait for a flag.
-   - `MCC_AST_COPYSIGN_INLINE` — SSE2 on x86 (baseline ⇒ can just be on); riscv64 `fsgnj` needs F/D.
-   - `MCC_AST_MATH_INLINE` — `sqrtsd`/`FABS` are baseline everywhere it is implemented; the non-x86_64 `#else` default of 0 (`mccast.c`) is a golden-regen debt, not an ISA limit — retire it rather than march-gate it.
-   - ~~`MCC_AST_DIVMAGIC` on armv7 — the magic-multiply choice depends on whether `idiv` exists (`MCC_ARM_IDIV`); becomes `armv7-a+idiv`.~~ **WITHDRAWN 2026-07-29: the premise is not true of this code.** The arm backend emits NO hardware divide — integer division lowers to `__udivsi3`/`__aeabi_idiv` helper calls (`arm-gen.c`), so nothing about the magic-multiply choice can depend on `idiv`. And `MCC_ARM_IDIV` gates no codegen at all: it appears nowhere in `src/`, and its only effect is to add the predefine `__ARM_FEATURE_IDIV=1` (`CMakeLists.txt`). There is nothing to re-gate here until arm gains an `sdiv`/`udiv` path, at which point this bullet becomes real.
-   - arm `blx` (`arm-link.c`) and the `CPUVER >= 7` paths (`arm-gen.c`) — migrate off the compile-time `#if` onto the runtime mask so one binary can target several ARM levels. **Scoped 2026-07-29: this is SMALLER than it reads — there are exactly TWO sites.** `arm-link.c` `blx_avail = (MCC_CONFIG_CPUVER >= 5)`, and `arm-gen.c` `load_value`'s `#if MCC_CONFIG_CPUVER >= 7` movw/movt path for 32-bit immediates. The second is the one with teeth: it changes emitted instructions, so moving it to a runtime mask needs an armv7-vs-armv5 differential run, not just a build. Note the ARM ISA levels are NOT wired into the `-march` mask yet (`mcc_isa_init` gives non-x86 targets an empty mask), so that comes first.
-   - **Do NOT march-gate `MCC_AST_XMM_HI` or `MCC_AST_REGDISP`.** XMM8-15 and register-displacement addressing are x86-64 *baseline*; they are default-off for validation reasons, not ISA reasons. Gating them behind `-march` would be wrong and would hide the real (soak) blocker.
-5. **Predefined macros must follow `-march`** (`mccpp.c`, same place `__OPTIMIZE__` is set): `__SSE4_1__`, `__AVX2__`, `__FMA__`, `__ARM_NEON`, `__ARM_FEATURE_IDIV`, `__riscv_flen`, … Otherwise system headers and libc `ifunc`/inline-asm paths disagree with what mcc actually emits — a silent-miscompile class, not a cosmetic gap.
-
-   **INVERTED 2026-07-29 — DO NOT IMPLEMENT THIS AS WRITTEN. Doing so turns working compiles into broken ones.**
-   These macros are not a description of what the compiler emits; they are a PERMISSION SLIP telling source code it
-   may take an intrinsics path. mcc predefines exactly `__SSE__`/`__SSE2__` (+ the `_MATH_` variants) and **ships no
-   x86 intrinsic headers at all** — no `xmmintrin.h`, `smmintrin.h`, `immintrin.h`. Demonstrated rather than
-   argued, on a source that guards `_mm_round_sd` behind `__SSE4_1__` and falls back to `floor()` otherwise:
-
-       mcc                          -> prints 2      (macro undefined, scalar fallback taken)
-       mcc -D__SSE4_1__=1           -> error: include file 'smmintrin.h' not found
-
-   So defining the macro is a REGRESSION: today such code compiles and runs, and after step 5 it would not build.
-
-   **The stated rationale is also wrong in the direction that matters.** Not defining them is SAFE — code takes its
-   portable fallback and is merely slower. The miscompile risk runs the other way: claiming a feature mcc cannot
-   back. And there is no disagreement to fix, because with `-march=native` the machine really does have the feature
-   mcc emitted for; glibc's `ifunc` dispatch is a RUNTIME check in the shared library and does not read these macros
-   at all.
-
-   **Correct ordering:** intrinsic support (or shipped headers) FIRST, then the macros that advertise it, one
-   feature at a time — a macro may only be defined once `#include <the-header-it-gates>` compiles. Until then the
-   conservative macro set is the correct one, not a gap. This is the same class as the `ARGFWD` and
-   `MINMAX_INLINE` lesson: do not advertise a capability that cannot fire.
-6. **Introspection**: report the resolved level and feature set (extend `-print-search-dirs`, or a `-print-isa`), so CI and bug reports can state the ISA a build targeted.
-
-**Testing / M8 impact — read before starting.** `-march=native` makes output **host-dependent**. The decision above settles how that is handled: the cache keys on the consumed feature set, and byte-identity is asserted per (source, ISA) pair rather than globally, so two hosts with different ISAs hold different entries instead of contradicting each other. What follows is therefore about making the harness ISA-aware, NOT about avoiding native. Pinning `-march=<baseline>` in a test is acceptable only where the test's subject is something other than codegen; a golden that pins the baseline purely to stay reproducible is measuring a configuration nobody ships. The differential fuzz should additionally run per level (`x86-64`, `-v2`, `-v3`) since each level is a distinct codegen path; and `-march=native` needs its own smoke test asserting only that it runs, never byte-identity. Add a `ckconfig`-style guard so a new ISA-dependent optimizer cannot land without declaring its required level.
+**Durable rules that outlive the work:**
+- **`-O4` means "run every optimizer", NOT "raise the required ISA"** — an optimizer that changes the ISA
+  floor never belongs in a blanket keyed on optimization effort.
+- **Do not stage a gate whose lowering the backend cannot emit** — that advertises a transform that cannot fire.
+- **A consumed-feature counter cannot key the cache** — the key is taken from the PRISTINE arena before
+  transforms run, so a consumption accumulator is always one function late. Use arena-relevance scans.
+- **Observing the slice-cache key needs a WARM cache and `XDG_CACHE_HOME`** (not `HOME`) — a cold-cache probe
+  prints nothing and reads as "inert".
+- **Nothing in the suite compares object bytes to a checked-in artifact across hosts** — expectations are
+  behavioural; re-probe only if such a test is ever added.
+- **Cross-compilation keeps the triple baseline by construction** — `mcc_isa_native` reads CPUID only under
+  `__x86_64__`/`__i386__`.
+- Step 5 as originally written (predefined macros follow `-march`) is a REGRESSION — do not implement.
+- The static `.ARM.attributes` blob stays keyed on the build config by design (it describes the build).
 
 ## Auto-detect `-B`/`-I` dirs when absent from argv — DESIGN BLOCKED on the self-host byte-identity invariant
 Wanted: `mcc` should find its own `include`/`runtime`/`win32` dirs when `-B` and `-I` are not given, so a compiler built into an arbitrary directory works out of the box. This is a real papercut — a hand-built or scratch-dir compiler currently reports the failure as something unrelated: `include file 'stddef.h' not found` from the system `stdio.h`, `mccdefs.h not found`, or `_runmain not defined`.
