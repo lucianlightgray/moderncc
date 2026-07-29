@@ -3645,18 +3645,27 @@ differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64
 x86_64-only, and the check confirms it: i386, arm, arm64 and riscv64 objects still carry
 `__mcc_addo_i`/`subo_i`/`addo_u`/`subo_u`/`addo_ll`/`addo_ull`.
 
-**The narrow widths landed 2026-07-28 too** — `add`/`sub` at sizes 1 and 2, on the same default-on gate, following
-exactly the recipe below. Residue is now **6 names**: `__mcc_addo_ti`, `__mcc_mulo_ti` (128-bit) and the four
+**The narrow widths landed and were then withdrawn 2026-07-28** — see the wrong-answer bug below, which made a
+same-width inline unsound for them. Residue is **6 names**: `__mcc_addo_ti`, `__mcc_mulo_ti` (128-bit) and the four
 complex helpers.
 
-**A pre-existing semantic gap surfaced while testing them, and it is NOT caused by the inlining.** mcc's
-`__builtin_add_overflow` is a `_Generic` dispatch in `mccdefs.h` that CONVERTS its operands to the result type
-before the call, so `__builtin_add_overflow(-300, -300, &signed_char)` truncates both operands to -44 and reports
-NO overflow, where gcc computes in infinite precision over the original operand types and reports overflow. Both
-gate states agree with each other, so the inline lowering is faithful to the helper — the gap is in the header's
-dispatch, and closing it means making these real builtin tokens rather than macro-dispatched calls. Recorded here
-rather than fixed because it changes the front end, not codegen. The corpus cell deliberately uses operands already
-of the result type so it pins the lowering without freezing the header bug into a golden.
+**A pre-existing WRONG-ANSWER bug surfaced while testing them, and it is now FIXED.** mcc's
+`__builtin_add_overflow` is a `_Generic` dispatch in `mccdefs.h`, and the helper prototypes took the RESULT type
+for the operands — so the operands were converted before the check and
+`__builtin_add_overflow(-300, -300, &signed_char)` truncated both to -44 and reported NO overflow where gcc reports
+overflow. It was not confined to exotic cases: `__builtin_add_overflow(4294967296LL, 0LL, &int_result)` was wrong
+the same way.
+
+The fix is one line of prototype per width: the narrow variants now take `long long`/`unsigned long long` operands
+(`__MCC_OV_DECL_W`), and the helper bodies, which already computed in a wide type, simply stop re-truncating.
+Verified against gcc on a 12-case matrix crossing operand and result widths and signedness — all 12 now agree,
+where 2 disagreed before, plus the 4 extra cases that the matrix originally missed.
+
+Consequence for the inline path: with wide operands and a narrow result, a single `add` + `seto` is no longer the
+whole answer (the flag describes the WIDE add, and the fit still has to be checked), so the inline hook is now
+limited to width 8, where operand and result widths coincide. Re-adding widths 1/2/4 means emitting the truncate-
+and-compare as well — `movsx`/`movzx` the low bytes back, `cmp` against the wide result, and OR that into the flag.
+Recorded as the recipe rather than done, because correctness came first.
 
 **Recipe for the narrow widths, kept because it is what made them mechanical.** Byte and word add/sub are the same
 two-operand shape with different opcodes — byte `02 /r` (add) and `2a /r` (sub), word the 4-byte opcodes behind a

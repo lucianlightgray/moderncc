@@ -430,13 +430,17 @@
 	int __mcc_addo_##NM(T, T, T*);		\
 	int __mcc_subo_##NM(T, T, T*);		\
 	int __mcc_mulo_##NM(T, T, T*);
-	__MCC_OV_DECL(signed char, sc)
-	__MCC_OV_DECL(char, c)
-	__MCC_OV_DECL(short, s)
-	__MCC_OV_DECL(int, i)
-	__MCC_OV_DECL(unsigned char, uc)
-	__MCC_OV_DECL(unsigned short, us)
-	__MCC_OV_DECL(unsigned int, u)
+	#define __MCC_OV_DECL_W(T, W, NM)		\
+	int __mcc_addo_##NM(W, W, T*);		\
+	int __mcc_subo_##NM(W, W, T*);		\
+	int __mcc_mulo_##NM(W, W, T*);
+	__MCC_OV_DECL_W(signed char, long long, sc)
+	__MCC_OV_DECL_W(char, long long, c)
+	__MCC_OV_DECL_W(short, long long, s)
+	__MCC_OV_DECL_W(int, long long, i)
+	__MCC_OV_DECL_W(unsigned char, unsigned long long, uc)
+	__MCC_OV_DECL_W(unsigned short, unsigned long long, us)
+	__MCC_OV_DECL_W(unsigned int, unsigned long long, u)
 	__MCC_OV_DECL(long, l)
 	__MCC_OV_DECL(unsigned long, ul)
 	__MCC_OV_DECL(long long, ll)
@@ -446,6 +450,7 @@
 	__MCC_OV_DECL(__mcc_uint128_t, uti)
 	#endif
 	#undef __MCC_OV_DECL
+	#undef __MCC_OV_DECL_W
 	#ifdef __SIZEOF_INT128__
 	#define __mcc_ov_disp_ti(op) __mcc_int128_t: __mcc_##op##o_ti,	\
 	__mcc_uint128_t: __mcc_##op##o_uti,

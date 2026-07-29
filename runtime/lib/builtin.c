@@ -253,18 +253,18 @@ __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap6
 #endif
 
 #define MCC_OV_SMALL(T, W, NM)          \
-	int __mcc_addo_##NM(T a, T b, T *r) { \
-		W s = (W)a + (W)b;                  \
+	int __mcc_addo_##NM(W a, W b, T *r) { \
+		W s = a + b;                        \
 		*r = (T)s;                          \
 		return (T)s != s;                   \
 	}                                     \
-	int __mcc_subo_##NM(T a, T b, T *r) { \
-		W s = (W)a - (W)b;                  \
+	int __mcc_subo_##NM(W a, W b, T *r) { \
+		W s = a - b;                        \
 		*r = (T)s;                          \
 		return (T)s != s;                   \
 	}                                     \
-	int __mcc_mulo_##NM(T a, T b, T *r) { \
-		W s = (W)a * (W)b;                  \
+	int __mcc_mulo_##NM(W a, W b, T *r) { \
+		W s = a * b;                        \
 		*r = (T)s;                          \
 		return (T)s != s;                   \
 	}

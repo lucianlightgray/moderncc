@@ -31,6 +31,22 @@ int main(void) {
 			return 16;
 	}
 	{
+		int wi;
+		unsigned wu;
+		signed char wc;
+
+		if (!__builtin_add_overflow(4294967296LL, 0LL, &wi))
+			return 22;
+		if (!__builtin_add_overflow(4294967296LL, 0LL, &wu))
+			return 23;
+		if (!__builtin_mul_overflow(1000LL, 1000LL, &wc))
+			return 24;
+		if (!__builtin_add_overflow(-300, -300, &wc))
+			return 25;
+		if (__builtin_add_overflow(100, 20, &wc) || wc != 120)
+			return 26;
+	}
+	{
 		signed char sc1, sc2, a8, b8;
 		unsigned char uc1, uc2, ua8, ub8;
 		short sh1, sh2, a16, b16;

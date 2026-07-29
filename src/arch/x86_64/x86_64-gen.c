@@ -1464,9 +1464,7 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	pt = pointed_type(&vtop->type);
 	size = type_size(pt, &align);
-	if (size != 1 && size != 2 && size != 4 && size != 8)
-		{ MCC_TRACE("br\n"); return 0; }
-	if (size < 4 && sub == 2)
+	if (size != 8)
 		{ MCC_TRACE("br\n"); return 0; }
 	if ((pt->t & VT_BTYPE) == VT_STRUCT || is_float(pt->t))
 		{ MCC_TRACE("br\n"); return 0; }

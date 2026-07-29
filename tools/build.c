@@ -343,8 +343,7 @@ static int ensure_mccdefs(const char *out) {
 	char hdr[4096], c2s[4096], src[4096];
 	int isd;
 	ts_path(hdr, sizeof hdr, out, "mccdefs_.h");
-	if (host_stat(hdr, &isd, NULL, NULL) == 0)
-		return 0;
+	(void)isd;
 	ts_path(c2s, sizeof c2s, out, "c2str_host");
 	{
 		const char *a[] = {CC, "-O2", "-o", c2s, "tools/c2str.c", 0};
