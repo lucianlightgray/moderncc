@@ -30,6 +30,49 @@ int main(void) {
 		if (__builtin_mul_overflow(6ULL, 7ULL, &ul2) || ul2 != 42)
 			return 16;
 	}
+	{
+		signed char sc1, sc2, a8, b8;
+		unsigned char uc1, uc2, ua8, ub8;
+		short sh1, sh2, a16, b16;
+		unsigned short us1, us2, ua16, ub16;
+		int j, k;
+
+		for (j = -128; j <= 127; j += 3) {
+			for (k = -128; k <= 127; k += 7) {
+				int w;
+
+				a8 = (signed char)j;
+				b8 = (signed char)k;
+				w = (int)a8 + (int)b8;
+				sc2 = (signed char)w;
+				if (__builtin_add_overflow(a8, b8, &sc1) != (w != (int)sc2) || sc1 != sc2)
+					return 17;
+				w = (int)a8 - (int)b8;
+				sc2 = (signed char)w;
+				if (__builtin_sub_overflow(a8, b8, &sc1) != (w != (int)sc2) || sc1 != sc2)
+					return 18;
+				ua8 = (unsigned char)j;
+				ub8 = (unsigned char)k;
+				uc2 = (unsigned char)(ua8 + ub8);
+				if (__builtin_add_overflow(ua8, ub8, &uc1) != ((unsigned)ua8 + ub8 > 255u) ||
+						uc1 != uc2)
+					return 19;
+				a16 = (short)(j * 200);
+				b16 = (short)(k * 200);
+				w = (int)a16 + (int)b16;
+				sh2 = (short)w;
+				if (__builtin_add_overflow(a16, b16, &sh1) != (w != (int)sh2) || sh1 != sh2)
+					return 20;
+				ua16 = (unsigned short)(j * 300);
+				ub16 = (unsigned short)(k * 300);
+				us2 = (unsigned short)(ua16 + ub16);
+				if (__builtin_add_overflow(ua16, ub16, &us1) !=
+								((unsigned)ua16 + ub16 > 65535u) ||
+						us1 != us2)
+					return 21;
+			}
+		}
+	}
 	for (i = 0; i < 3000; i++) {
 		unsigned long long v = xs();
 		int a = (int)v, b = (int)(v >> 32);

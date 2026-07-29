@@ -1464,7 +1464,9 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	pt = pointed_type(&vtop->type);
 	size = type_size(pt, &align);
-	if (size != 4 && size != 8)
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (size < 4 && sub == 2)
 		{ MCC_TRACE("br\n"); return 0; }
 	if ((pt->t & VT_BTYPE) == VT_STRUCT || is_float(pt->t))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -1494,7 +1496,13 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 			orex(size == 8, rb, ra, 0x0f);
 			o(0xaf);
 			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
+		} else if (size == 1) { MCC_TRACE("br\n");
+			o(0x40 | REX_BASE(rb) | (REX_BASE(ra) << 2));
+			o(sub ? 0x2a : 0x02);
+			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
 		} else { MCC_TRACE("br\n");
+			if (size == 2)
+				{ MCC_TRACE("br\n"); o(0x66); }
 			orex(size == 8, rb, ra, sub ? 0x2b : 0x03);
 			o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
 		}
@@ -1505,8 +1513,16 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 		o(uns ? 0x92 : 0x90);
 		o(0xc0 + REG_VALUE(sc));
 
-		orex(size == 8, rr, ra, 0x89);
-		gen_modrm(ra, rr, NULL, 0);
+		if (size == 1) { MCC_TRACE("br\n");
+			o(0x40 | REX_BASE(rr) | (REX_BASE(ra) << 2));
+			o(0x88);
+			gen_modrm(ra, rr, NULL, 0);
+		} else { MCC_TRACE("br\n");
+			if (size == 2)
+				{ MCC_TRACE("br\n"); o(0x66); }
+			orex(size == 8, rr, ra, 0x89);
+			gen_modrm(ra, rr, NULL, 0);
+		}
 	}
 
 	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))

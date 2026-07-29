@@ -3645,7 +3645,20 @@ differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64
 x86_64-only, and the check confirms it: i386, arm, arm64 and riscv64 objects still carry
 `__mcc_addo_i`/`subo_i`/`addo_u`/`subo_u`/`addo_ll`/`addo_ull`.
 
-**Recipe for the narrow widths, so the next attempt does not re-derive it.** Byte and word add/sub are the same
+**The narrow widths landed 2026-07-28 too** — `add`/`sub` at sizes 1 and 2, on the same default-on gate, following
+exactly the recipe below. Residue is now **6 names**: `__mcc_addo_ti`, `__mcc_mulo_ti` (128-bit) and the four
+complex helpers.
+
+**A pre-existing semantic gap surfaced while testing them, and it is NOT caused by the inlining.** mcc's
+`__builtin_add_overflow` is a `_Generic` dispatch in `mccdefs.h` that CONVERTS its operands to the result type
+before the call, so `__builtin_add_overflow(-300, -300, &signed_char)` truncates both operands to -44 and reports
+NO overflow, where gcc computes in infinite precision over the original operand types and reports overflow. Both
+gate states agree with each other, so the inline lowering is faithful to the helper — the gap is in the header's
+dispatch, and closing it means making these real builtin tokens rather than macro-dispatched calls. Recorded here
+rather than fixed because it changes the front end, not codegen. The corpus cell deliberately uses operands already
+of the result type so it pins the lowering without freezing the header bug into a golden.
+
+**Recipe for the narrow widths, kept because it is what made them mechanical.** Byte and word add/sub are the same
 two-operand shape with different opcodes — byte `02 /r` (add) and `2a /r` (sub), word the 4-byte opcodes behind a
 `0x66` prefix — and the stores are `88 /r` and `66 89 /r`. The one trap is that the operands are pinned to
 `%rcx`/`%rsi`/`%rdi`, and **the byte forms of `sil`/`dil` require a REX prefix that `orex` will not emit on its
