@@ -1091,8 +1091,22 @@ both WITHDRAWN**; they were artifacts of the same window.
 What survives the boundary-respecting re-run, and is the real handle:
 - **42 of 44 have at least one in-function `vpop`** before failing, so pops are involved — but not in a fixed count,
   which rules out a single mechanical double-pop.
-- **2 have NO `vpop` at all in their function.** Those cannot be a pop imbalance under any reading, so they are a
-  distinct second mechanism and the smallest failing cases in the group. **Read those two first.**
+- **2 have NO `vpop` at all in their function** — a distinct second mechanism and the smallest failing cases.
+  **READ 2026-07-28; both are the SAME sequence:**
+
+      vpush r=0x230 t=0x6      vn=0 rel=1     callee symbol (VT_BTYPE 6 = VT_FUNC)
+      vpush r=0x132 t=0x5      vn=1 rel=2     register-held lvalue, VT_PTR
+      vpush r=0x132 t=0x33     vn=2 rel=3
+      vpush r=0     t=0x32     vn=0 rel=1     both vn AND rel drop -- a call consumed them
+      vpush r=0x30  t=0x302003 vn=1 rel=1     model grew, vstack did NOT -> SYNC
+
+  The last two lines are the mechanism. After the call completes the state is balanced (`vn=0`, `rel=1`; the guard
+  wants `vn == rel-1 == 0`). The next push takes `vn` to 1 while `rel` STAYS at 1 — so the vstack entry was
+  **REPLACED IN PLACE rather than pushed**, and the recorder counted it as a new modelled value.
+
+  Different failure from Group A's missing decrement: nothing was popped, something was OVERWRITTEN. The lead is the
+  codegen path that rewrites `vtop` in place (`vsetc`/`vset`/`gv` reusing the slot) while still invoking the push
+  hook. Both cases carry `t=0x302003` at the failing push — a distinctive type to grep for.
 - The 12/32 short-circuit split is unaffected — it comes from the SYNC line's own `lor=` field, not from windowing.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
