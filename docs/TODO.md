@@ -1072,8 +1072,24 @@ real-object validation stays macOS-gated.
 
    **Confirmed to be the producer in 2 of the 5 real functions**, by the literal construct:
    `set_symbol` has `elfsym(sym)->st_other |= ST_ASM_SET`, `layout_sections` has
-   `fill_phdr(...)->p_flags |= ...`. **`combine_types`, `gen_opif` and `parse_number` do NOT contain this shape**,
-   so at least one other producer remains — do not assume this reduction closes the site.
+   `fill_phdr(...)->p_flags |= ...`.
+
+   **SECOND PRODUCER FOUND — `long double`, and it accounts for the other 3.** All of `gen_opif` (4 references),
+   `combine_types` (2) and `parse_number` (1) use it, and it reproduces on its own with no calls and no compound
+   assignment involved:
+
+       int ld_param_only(long double a) { return (int)a; }        /* desync at the SYNC site */
+       int ld_local_only(int c) { long double x = c; return (int)(x*2); }  /* desync */
+       double d_ctrl(double a) { return a + 1.0; }                /* faithful — double is fine */
+
+   So the 5-function residual is fully attributed: 2 to the call-lvalue compound assignment, 3 to `long double`.
+
+   **A THIRD finding, and it is about the METRIC rather than this site: a function that RETURNS `long double` emits
+   NO verdict line at all.** Not `bail`, not `desync` — nothing. `long double ld_ret(long double a) { return a + 1.0L; }`
+   and `long double ld_call(long double a) { return sqrtl(a); }` are both simply absent, while the `double`
+   equivalents verify faithful. Every fidelity percentage in this file is therefore computed over a population that
+   silently excludes that class, and nothing in the output says so. Fix the census before trusting a small ratio
+   change; an absent function is indistinguishable from a function that does not exist.
 
    **Two hypotheses in this section are now DEAD and should not be re-tried:** the "one producer, 43 failures"
    framing (there are 5, and at least two producers), and the recorded `switch`-path repro — `bare`/`if`/`switch`
