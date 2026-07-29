@@ -2065,7 +2065,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC",
 																			o4 || s1->optimize_size || s1->optimize >= 2);
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
-	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", 0);
+	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 2);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);

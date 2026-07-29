@@ -3600,9 +3600,9 @@ forgotten.
   not a considered one — modelling it is a real optimisation opportunity and would remove the four
   `types/int128.c` entries from the recorder-fidelity baseline.
 
-## `MCC_AST_STOREVAL_CALL` — flip it default-on at `-O2`, IN PROGRESS 2026-07-29
-It landed in `62bfb7b7` and has sat at `ast_env_gate(..., 0)` ever since, i.e. at the "validate the gated-ON path"
-step of this file's own process. Measured before touching the default:
+## `MCC_AST_STOREVAL_CALL` — FLIPPED default-on at `-O2` 2026-07-29
+It landed in `62bfb7b7` and had sat at `ast_env_gate(..., 0)` ever since, i.e. parked at the "validate the gated-ON
+path" step of this file's own process. Measured before touching the default:
 
 | measurement | gate off | gate on |
 |---|---|---|
@@ -3619,10 +3619,16 @@ is the transform doing its job, and it is why fidelity is not merely a scoreboar
 the optimizer cannot touch at all. The bench kernels do not contain the shape, so they are byte-identical and carry
 no perf signal either way.
 
-Validation required before the flip, per the standing warning on this exact region — `emit-at-marker` was correct
-at `-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3` here, caught only by evaluation counting: `assign_value_effects.c`,
-full ctest, 3-stage self-host fixpoint, differential fuzz, cross-arch, and a ratchet-baseline regeneration to bank
-the two exec-corpus gaps that close.
+**Validated to the full bar**, weighted toward the standing warning on this exact region — `emit-at-marker` was
+correct at `-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3` here, caught only by counting evaluations:
+`assign_value_effects.c` matches gcc at `-O0`/`-O1`/`-O2`/`-O3`/`-Os`; full ctest 7891/7891; 3-stage self-host
+fixpoint byte-identical at the default, `-O3` AND `-O1`; 300-seed gate-swept differential fuzz vs gcc+clang
+(298 agree, 0 miscompile, 2 dropped UB); and `-O0` == `-O2` runtime output over the whole exec corpus on arm64
+(247), riscv64 (244), armv7-hardfloat (244) and i386 (249).
+
+Ratchet baseline regenerated, 185 -> 183: the two closed gaps are `stmt_assign_call_arg` and
+`stmt_assign_call_arg2`, exactly the shapes the gate targets, and nothing else moved. The `x86_64-win32` baseline
+needed no edit — it never listed those two, and after the regen the two baselines agree on this file.
 
 ## Ungate campaign (flip every default-off feature on)
 Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate goldens. The proven optimizer passes are already flipped default-on at -O2 (`PROMOTE`/`COLOR`/`LICM_TEMP`/`IVSR`/`PRE`/`REASSOC`/`SETHI_LEAF`/`NARROW_ELIM`/`SPILL_SHARE`/`VLAT`/`DIVMAGIC` — **11 of these VERIFIED 2026-07-27 by `optfire/default-*`, which compiles with no env versus the gate forced to 0 and requires the objects to differ**). **`ARGFWD` was on that list and does NOT belong: its gate defaults on (`o4 || s1->optimize >= 2`) but the PASS is inert.** Toggling `MCC_AST_ARGFWD` at `-O2`/`-O3` changes nothing; it only becomes live with `MCC_AST_INLINE_PASS=0`, because argument forwarding lives in the replay-time graft path that `do_inline`'s `!ast_inline_pass_env` guard disables — and `INLINE_PASS` is default-on from `-O2`. **Second gate found in this class**, alongside `MCC_AST_PERFN_INPROC` (which is default-OFF, so it advertises nothing). NOT `MCC_AST_INLINE` — that one was retracted, see the `-march` section: it has a second consumer (`ast_reemit_retain`) and is load-bearing. The per-gate cost/benefit sweep in this section will have measured `ARGFWD` as worthless for the same reason its own caveat gives for `MATH_INLINE`/`ROUND_INLINE`/`COPYSIGN_INLINE`. `optfire/default-argfwd` asserts `off` as a TRIPWIRE: fix the graft-path guard and that cell fails, prompting the flip to `on`. **Swept for further instances 2026-07-27 — none found.** Method that works: a gate is in this class only if it has a case that PROVABLY exercises it (a passing `optfire` differ cell, i.e. forcing it changes the object) AND that same case shows no change when the gate is left at its default. Across all 51 differ cases only 4 flagged — `CHAINSTORE`, `OPASSIGN`, `PROMO_ARROW`, `PROMO_INCDEC` — and all 4 are false positives from testing at `-O2` when their declared defaults are `optimize >= 3` and `optimize_size`; each is confirmed default-ON at its real level (`-O3`, `-O3`, `-Os`, `-Os`). So `ARGFWD` is the only advertised-but-unreachable gate among those with exercising cases, alongside `MCC_AST_INLINE` and `PERFN_INPROC` which are known and share the same `!ast_inline_pass_env` guard. **A cruder sweep does NOT work and was discarded**: toggling each gate over `libmcc.c`+`mccgen.c` reported 28 gates as inert, but that conflates 'structurally unreachable' with 'no opportunity in those two files' — `TILE`, `FUSION`, `CSE_COMM` and others appear inert there while `optfire` proves they fire on suitable code. Object-diff sweeps need a case known to exercise the gate, or they measure the corpus rather than the compiler, and `MCC_CROSS_OPTIMIZER` defaults ON so cross triples carry the AST optimizer + embed-jit (the per-triple reemit/JIT parity axes are now real, not latent — watch cross-cell wall-clock, ~+46% per cross compiler). Remaining:
