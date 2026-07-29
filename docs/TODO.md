@@ -763,7 +763,7 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 |---|---|---|
 | D1a gate staging audit | **DONE** | 3 gates re-staged: `OPASSIGN`→`-O2` (`6acb9e69`), `CHAINSTORE`→`-O2` (`e81035e5`), `PROMO_ARROW`+`PROMO_INCDEC`→`-O2/-O3` (`e052542a`) |
 | B1a assignment-as-value | **2 of 3** | statement chain fixed as a side effect of D1a; discarded ternary fixed (`8e867f40`); **call-argument path open, experiment specified** |
-| A2a vstack SYNC | **60 -> 10** | site proven to be a DETECTOR (`026233f8`); unaccounted pops fixed in `switch` (`1939ba28`), `if`/`while`/`do`/`for` (`0c4f6b33`), short-circuit attributed to its own hook (`d6aa9fcd`); the 10 left are 6 atomic-lowering + 4 misc, see below |
+| A2a vstack SYNC | **60 -> 4** | site proven to be a DETECTOR (`026233f8`); unaccounted pops fixed in `switch` (`1939ba28`), `if`/`while`/`do`/`for` (`0c4f6b33`), short-circuit attributed to its own hook (`d6aa9fcd`), atomics bailed + verdict ordering fixed; the 4 left are a second `switch`-path pop, see below |
 | A1a `nocode_wanted` | not started | 3 approaches ruled out; hardest item in the file |
 
 Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
@@ -1206,12 +1206,40 @@ What survives the boundary-respecting re-run, and is the real handle:
 | `mccjit_qsbr_quiescent`, `mccjit_qsbr_min_local`, `mccjit_qsbr_retire`, `mccjit_selftest_pool`, `mccjit_patch_swap_store`, `mcc_jit_publish` | **3 or 4** | `r=0x30` constant |
 | `cst_hook_end`, `ast_eval_slice_wtype`, `ast_eval_slice_rec`, `ast_eval_slice_kind_ok` | 1 | mixed |
 
-The six large-delta ones are all **atomic lowering**. `parse_atomic` (`mccgen.c`) builds a libcall by hand —
+The six large-delta ones were all **atomic lowering**. `parse_atomic` (`mccgen.c`) builds a libcall by hand —
 `vpush_helper_func`, `vrott(7)`, `gfunc_call(6)`, `gen_test_zero`, `gvtst` — and none of that traffic is modelled,
-so the drift is 3-4 values rather than the 1 every other class produces. The honest fix is to `ast_hook_bail()` on
-that lowering path: it is not replayable and pretending otherwise costs a misattributed desync in six functions.
-The remaining four are delta=1 and unclassified; note `ast_eval_slice_rec`/`_kind_ok` still appear even though
-their `switch` is now accounted for, so they carry a SECOND unaccounted pop.
+so the drift is 3-4 values rather than the 1 every other class produces. **FIXED 2026-07-28: `parse_atomic` now
+calls `ast_hook_bail()`.**
+
+**That exposed a verdict-ordering bug worth more than the atomics themselves.** Bailing alone changed nothing,
+because `ast_bail` does not stop the recorder — the model kept drifting and still desynced, and the verdict ladder
+checks `desync` BEFORE `bail`. So a function that deliberately refused to model a construct was reported as an
+accidental drift, at whatever unrelated push first noticed. `AST_SET_DESYNC` now records that a bail came first, and
+the verdict reports `bail` in that case. On mcc's own TU: **desync 248 -> 204, bail 3 -> 47, faithful unchanged at
+1643, unfaithful unchanged at 228** — 44 functions were being counted as drifts when they had been deliberately
+refused. The SYNC site itself falls **10 -> 4**.
+
+**The ratchet had to be strengthened in the same commit, or the reclassification would be a free win.**
+`verify_ratchet.cmake` counted `desync|unfaithful|stackresidue` as gaps and ignored `bail`, so relabelling would
+have shrunk the gap set without improving coverage. `bail` now counts — a bailed function is excluded from AST
+optimization exactly like a desynced one. Baseline 167 -> 172 (26 bail entries added, 21 desync entries relabelled;
+the net +5 is functions that were bailing all along and had been invisible to the ratchet).
+
+The four remaining SYNC events are `cst_hook_end` and `ast_eval_slice_wtype`/`_rec`/`_kind_ok`. Minimal repro,
+found by reducing the real function rather than guessing:
+
+    int a1(int n) {                       /* desync */      int a3(int n) {                  /* faithful */
+      switch (k(n)) {                                         if (k(n) == 1) {
+      case 1: { int wt = a1(c(n, 1));                           int wt = a3(c(n, 1));
+                return wt ? wt : a1(c(n, 2)); }                 return wt ? wt : a3(c(n, 2));
+      default: return 0; } }                                  }
+                                                              return 0; }
+
+The same body is faithful under `if` and bare, and desyncs under `switch` — so it is a SECOND unaccounted pop on the
+switch path, distinct from the `sw->sv = *vtop--` one already fixed. The trace shows it inside the ternary:
+`ast_hook_ternary_begin` early-returns (the function is already bailed), the `gvtst` push lands, and the true arm's
+push arrives with `rel` one lower than the model. Since these four now report `bail` rather than `desync` they are
+no longer misattributed, but the pop is still unaccounted.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the

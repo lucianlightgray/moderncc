@@ -1784,7 +1784,8 @@ static int ast_vdup_pending;         /* one-shot: ast_hook_vdup -> ast_hook_vpus
 static int ast_opassign_store_pending; /* one-shot: tag the next Store as op-assign */
 static int ast_desync;
 static int ast_desync_line;
-#define AST_SET_DESYNC() do { if (!ast_desync) { ast_desync = 1; ast_desync_line = __LINE__; MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
+static int ast_bail_first;
+#define AST_SET_DESYNC() do { if (!ast_desync) { if (ast_bail) { ast_bail_first = 1; } ast_desync = 1; ast_desync_line = __LINE__; MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
 static int ast_base_depth;
 static int ast_saw_chain;
 static int ast_saw_nocode;
@@ -2984,8 +2985,11 @@ void ast_hook_for_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_bail(void) { MCC_TRACE("enter\n");
-	if (ast_active)
-		{ MCC_TRACE("br\n"); ast_bail = 1; }
+	if (!ast_active)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_bail && !ast_desync)
+		{ MCC_TRACE("br\n"); ast_bail_first = 1; }
+	ast_bail = 1;
 }
 
 void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
@@ -14106,6 +14110,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_tern_top = 0;
 		ast_lor_top = 0;
 		ast_bail = 0;
+		ast_bail_first = 0;
 		ast_desync = 0;
 		ast_saw_nocode = 0;
 		ast_saw_chain = 0;
@@ -17215,6 +17220,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int ast_gap = 0;
 			if (ast_fn_faithful) { MCC_TRACE("br\n");
 				ast_verdict = "faithful";
+			} else if (ast_bail_first) { MCC_TRACE("br\n");
+				ast_verdict = "bail";
 			} else if (ast_desync) { MCC_TRACE("br\n");
 				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "desync:%d",
 								ast_desync_line);

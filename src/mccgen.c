@@ -6796,6 +6796,9 @@ static void parse_builtin_params(int nc, const char *args) { MCC_TRACE("enter\n"
 }
 
 static void parse_atomic(int atok) { MCC_TRACE("enter\n");
+#if MCC_CONFIG_OPTIMIZER
+	ast_hook_bail();
+#endif
 	int size, align, arg, t, save = 0, use_generic = 0;
 	int is_add_sub = atok == TOK___atomic_fetch_add || atok == TOK___atomic_fetch_sub || atok == TOK___atomic_add_fetch || atok == TOK___atomic_sub_fetch;
 	CType *atom, *atom_ptr, ct = {0};

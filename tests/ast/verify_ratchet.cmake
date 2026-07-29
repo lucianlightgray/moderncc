@@ -39,7 +39,7 @@ foreach(_f ${_srcs})
     string(REPLACE "\n" ";" _lines "${_err}")
     foreach(_ln ${_lines})
         # "[ast-verify] <verdict>[:<line>]\t?\t<func>"
-        if(_ln MATCHES "\\[ast-verify\\] (desync|unfaithful|stackresidue)(:[0-9]+)?\t[^\t]*\t(.+)")
+        if(_ln MATCHES "\\[ast-verify\\] (desync|unfaithful|stackresidue|bail)(:[0-9]+)?\t[^\t]*\t(.+)")
             list(APPEND _gaps "${_rel}\t${CMAKE_MATCH_3}\t${CMAKE_MATCH_1}")
         endif()
     endforeach()
