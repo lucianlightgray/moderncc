@@ -3394,11 +3394,28 @@ Two reasons this is worth more than the usual code-quality argument. First, most
 
 The acceptance bar for each item below is the M8 bar plus: gate-off byte-identity, the probe TU losing that symbol, and a differential run of the affected builtin against BOTH gcc and clang including the UB-adjacent edge cases (`clz(0)`/`ctz(0)` are undefined — match what the hardware instruction actually leaves behind rather than inventing a value, and keep the constant-folding path's answer consistent with the runtime path's).
 
-### `alloca` — the inline path already exists, the call just does not use it
-`TOK_alloca` (mcctok.h:344) is only ever a plain function symbol: nothing in `unary()` special-cases it, so `alloca(n)` becomes `call alloca` into the hand-written asm stub in `runtime/lib/alloca.c` (which pops its own return address). Meanwhile **VLA allocation is already lowered inline on every arch** — `gen_vla_alloc` emits `sub rsp / and $-16` on x86_64, `sub sp` sequences on arm (`0xE04D0000`), arm64 (`0x91003c00`/`0xcb2063ff`), and riscv64 (`ER(0x33,0,2,2,rr,0x20)`); only i386 and PE and the bounds-checking build still take `vpush_helper_func(TOK_alloca)`. So the work is not new codegen, it is routing explicit `alloca` through the machinery VLAs already use (`gen_vla_alloc` + `gen_vla_sp_save` into a slot, as `decl()` does at mccgen.c ~12724/12912) and then deciding the two semantic questions the VLA path never had to answer:
-- **Lifetime.** VLA storage is reclaimed at scope exit via the `cur_scope->vla` chain; `alloca` storage must live to function return. Reusing the VLA path verbatim would free an `alloca` early in any function that also has a VLA in an enclosing block. Either keep `alloca` out of the vla chain, or document the mixing case as gcc effectively does.
-- **`alloca` in an argument list.** `f(alloca(n))` moves `%rsp` while the call's own arguments are being built. This is the part that makes it a real backend change rather than a rewrite, and it is why it was NOT attempted during the GCC build — check what `gfunc_call` has already committed to the stack at that point on each arch.
-Keep the mccrt `alloca` stub regardless: it is the fallback for PE/bcheck and it keeps older objects linkable.
+### ~~`alloca` — the inline path already exists, the call just does not use it~~ — DONE 2026-07-28
+`gen_alloca_inline` in `gfunc_call` (`x86_64-gen.c`) takes `alloca(n)` before the call is built: round the request
+up to 16, `sub %rax,%rsp`, `mov %rsp,%rax`. Behind `MCC_ALLOCA_INLINE`, default OFF.
+
+Both traps this section recorded turned out to be answerable rather than blocking:
+- **Lifetime.** The block must live to the function epilogue, so — unlike a VLA — it is deliberately NOT registered
+  in `cur_scope->vla`, and nothing reclaims it early; `leave` restores `rsp` from `rbp`. The corpus cell pins this
+  with a block that allocates inside a nested scope and reads the memory after the scope closes.
+- **`alloca` in an argument list.** `f(alloca(n))` works because mcc evaluates every argument expression onto the
+  vstack BEFORE `gfunc_call` emits any stack traffic, and because locals and spills are `rbp`-relative, so moving
+  `rsp` underneath them is safe. Covered directly by the cell.
+
+It declines when bounds checking is on — that path needs the real call so `__bound_alloca_nr` can record the block —
+and the mccrt `alloca` stub stays for PE/bcheck and older objects, exactly as this section asked.
+
+Validated: gate-off byte-identical over the corpus at `-O0`/`-O2`; the cell (argument-list use, a loop, nested
+scopes, use-after-scope, and a 4 KB block) matches gcc at `-O0`/`-O1`/`-O2`/`-O3` with the gate both ways; full
+ctest 7483/7483 in both states; self-host fixpoint byte-identical; 60-seed differential fuzz vs gcc + clang with
+`--gates`, 0 miscompiles.
+
+**With this the section's probe is 21 -> 0. mcc's object for that TU now has no undefined helper at all, where gcc
+still needs `__popcountdi2`.**
 
 ### Bit builtins — `clz`/`ctz`/`ffs`/`clrsb`/`popcount`/`parity`/`bswap`
 

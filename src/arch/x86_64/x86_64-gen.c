@@ -1385,6 +1385,49 @@ static int arg_prepare_reg(int idx) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return idx >= 0 && idx < REGN ? arg_regs[idx] : 0; }
 }
 
+static int alloca_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_ALLOCA_INLINE");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on;
+}
+
+/* alloca(n) is `sub rsp` and nothing else: the block must survive to the
+   function epilogue, so unlike a VLA it is NOT registered in cur_scope->vla and
+   nothing reclaims it early -- `leave` restores rsp from rbp. Locals and spills
+   are rbp-relative, so moving rsp underneath them is safe, and rounding the
+   request up to 16 keeps rsp aligned. Declines when bounds checking is on: that
+   path needs the real call so __bound_alloca_nr can record the block. */
+static int gen_alloca_inline(int nb_args) { MCC_TRACE("enter\n");
+	int r;
+
+	if (!alloca_inline_on() || nb_args != 1)
+		{ MCC_TRACE("br\n"); return 0; }
+#if MCC_CONFIG_DIAG_RT >= 2
+	if (mcc_state->do_bounds_check)
+		{ MCC_TRACE("br\n"); return 0; }
+#endif
+	if (!(vtop[-1].r & VT_SYM) || !vtop[-1].sym || vtop[-1].sym->v != TOK_alloca)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((vtop->type.t & VT_BTYPE) == VT_STRUCT || is_float(vtop->type.t))
+		{ MCC_TRACE("br\n"); return 0; }
+
+	gen_cast_s(VT_SIZE_T);
+	vpushi(15);
+	gen_op('+');
+	vpushi(-16);
+	gen_op('&');
+	r = gv(MCC_RC_RAX);
+	o(0x2b48);
+	o(0xe0 | REG_VALUE(r));
+	o(0x8948);
+	o(0xe0 | REG_VALUE(r));
+	vtop -= 2;
+	return 1;
+}
+
 void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	X86_64_Mode cls[2];
@@ -1393,7 +1436,11 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	int nb_reg_args = 0;
 	int nb_sse_args = 0;
 	int sse_reg, gen_reg;
-	char *onstack = mcc_malloc((nb_args + 1) * sizeof(char));
+	char *onstack;
+
+	if (gen_alloca_inline(nb_args))
+		{ MCC_TRACE("br\n"); return; }
+	onstack = mcc_malloc((nb_args + 1) * sizeof(char));
 
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
