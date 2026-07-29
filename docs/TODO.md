@@ -1367,6 +1367,14 @@ site (verdict `bail:<line>`; the ratchet stores only the verdict WORD, so the ba
 `mccgen.c` (`gen_negf`, `parse_atomic`, and the riscv64 jump-table path). Distinguishing them needs the site passed
 in; not done, because it is 6 functions against the 40 below.
 
+**NOT every conservative-looking guard is conservative — measured both ways 2026-07-29.** The switch-selector
+restriction turned out to be pure caution (+28 faithful when removed). The same experiment on `ast_bad_type`, which
+blocks 8 functions across the vpush and vstore sites, gives the OPPOSITE answer: letting `long double` through moves
+4 functions from `desync` to `unfaithful` and **zero to faithful** (1759 either way). So the recorder can model the
+value fine, and replay then emits DIFFERENT BYTES — a real modelling gap, not an over-strict guard. Do not assume
+the switch result generalises to the other `ast_bad_type` sites; the cheap experiment is to drop one guard, rebuild,
+and read the faithful count, and it answers in minutes either way.
+
 **A lead that looks good and is NOT one — checked 2026-07-29, do not re-chase.** `gen_negf`'s bail carries a comment
 saying it exists because "riscv64 `store()` asserts `sv->r & VT_LVAL`, so any function negating a float crashed the
 compiler at `-O1`+" — an arch-specific workaround with no arch guard, which reads like every target paying for a
