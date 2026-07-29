@@ -1178,7 +1178,13 @@ real-object validation stays macOS-gated.
    - **Validation at the flip:** full ctest 7893/7893, 3-stage self-host fixpoint, differential fuzz clean,
      non-vacuous JIT `-run` parity, qemu runtime on i386/arm32/arm64/riscv64.
 
-   **Remaining fidelity residuals (the new tail, ~40):** mov-only register-order deltas (the largest),
+   **Remaining fidelity residuals — RE-MEASURED after the loop-condition-store admissions: 22** (the two
+   admissions swept ~20 more functions than their repros suggested — `find_field`, `next_argstream`,
+   `host_rmrf`, `handle_stray_noerror` and the pointer-chase `while ((p = p->next))` family all went faithful).
+   The 22: host_run_tls_slab_tpoff tal_free_impl pragma_parse preprocess cplx_extract_const write_ldouble
+   decl_initializer_alloc ast_vlat_* ast_range_bound* ast_rp_label_get ast_eval_binop ast_search_roi_order
+   mcc_debug_new build_got_entries cleanup_symbols cleanup_sections gen_stack_chk_prolog maybe_print_stats
+   main lzw_compress. Older buckets still open: mov-only register-order deltas (the largest),
    3+-member chains (pairwise limit — NEGATIVE RESULT 2026-07-29: the naive run generalization of the fused
    member replay produced wrong-shaped bytes: pair tagging feeds each outer a REGISTER-FINALIZED value copy
    that is only meaningful in the pairwise protocol, so a run replay reads stale address registers as values;
