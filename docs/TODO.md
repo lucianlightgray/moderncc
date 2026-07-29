@@ -1657,6 +1657,13 @@ time on spectral: `INLINE=0`, `TEMPLATES=0`, `CPROP_JOIN=0`, `CSE_JOIN=0`, `INLI
 That env is `ast_graft_limit`, whose compiler default is `-1` (unlimited); the driver writes `inl ? limit : 0u`, so
 **every gate with the inline bit clear forces zero grafts**, and `limit = gate >> 4` is 0 for every gate below 16 —
 which is every gate the driver reaches on a real input (it manages 1-3 evals before its budget expires).
+**This holds on the driver-OFF path only.** I first reported the same pin recovering spectral with the driver ON;
+that was a CACHE ARTEFACT — the recovery came from `~/.cache/mcc` being warm, not from the pin. Against a fresh
+`XDG_CACHE_HOME` the pin is inert (`=64` and `=999999` both give 18.72G / 1243 B, identical to plain `-O4`).
+**Every `-O4` A/B must use a fresh per-cell `XDG_CACHE_HOME`; a shared or home cache silently decides the result.**
+I also instrumented `so_setenv_cfg` to confirm the floor fires (it does — `gate=8 FLOOR unset`, 89 of 92 calls) and
+the output is byte-identical anyway. On the driver-ON path, **no environment variable I could find changes the
+emitted object at all.**
 
 **2. USE-THIS-FIRST: global axis pins do NOT reach the shipped `-O4` object.** The driver's final compile
 (`so_perfn_search`) sets **`MCC_AST_FN_CONFIG`**, a per-function `name=bits;` string whose bits are
@@ -1687,9 +1694,43 @@ bit clear — the obvious hypothesis is that it switches promotion off for a hot
 on all five kernels.** So the per-function layer is not where spectral loses, and the remaining suspect is the
 `INLINE_LIMIT`/graft-budget forcing in (1).
 
-**Next step for whoever picks this up:** make the graft limit floor at the compiler default instead of 0 — but note I
-tried the narrow version of this (unset the axis when the inline bit is clear) and it was ALSO inert on the driver-ON
-path, for reason (2): `MCC_AST_FN_CONFIG` was overriding it. Fix (2) first, or the experiment cannot be run.
+**4. THE DECISIVE TABLE — the out-of-process driver is never a win and is sometimes a 27% loss.** Fresh
+`XDG_CACHE_HOME` per cell, instructions via `perf stat` (load-insensitive; the wall-clock numbers above were taken on
+an idle box, but instructions are what should be quoted from here on):
+
+| kernel | `-O3` | `-O4` size-scored | `-O4` `MCC_AST_JITSCORE=1` | `-O4` driver OFF |
+|---|---:|---:|---:|---:|
+| spectral | 17.64G / 1470 | 18.72G / 1243 | 18.72G / 1243 | **13.68G** / 1472 |
+| nbody | 14.59G / 2267 | 10.85G / 2343 | 10.85G / 2343 | 10.84G / 2425 |
+| matmul | 60.60G / 1304 | 62.32G / 1017 | **46.80G** / 1684 | 60.58G / 1097 |
+| nsieve | 4.65G / 554 | 4.65G / 478 | 4.65G / 527 | 4.65G / 584 |
+| mandelbrot | 7.27G / 851 | 7.28G / 782 | 7.28G / 782 | 7.27G / 851 |
+
+Read down the last two columns: **the size-scored driver is the best cell on ZERO kernels**, ties on two, and loses
+by 27% on spectral and 25% on matmul. Driver-off is >= driver-on everywhere. The driver buys 8-22% `.text` for that.
+
+**5. `MCC_AST_JITSCORE=1` is NOT decorative — that claim is retracted.** The earlier entry tested it only on nbody,
+found a byte-identical binary, and concluded the scoring axis "is not the lever it appears to be". On **matmul the
+two scorings diverge hard: 46.80G / 1684 B runtime-scored versus 62.32G / 1017 B size-scored, a 25% instruction
+win** — and nsieve diverges on size (527 vs 478). The kernel the earlier entry asked someone to go find exists and
+was already in the bench.
+Cost is nil: matmul compiles in 4198 ms runtime-scored against 4032 ms size-scored.
+
+**But it must NOT be defaulted on, for a reason unrelated to performance.** `so_run_score` scores a candidate by
+building `mcc -run <src>` and **executing the user's program three times, with no argv**. That is fine for a
+benchmark kernel and unacceptable as default compiler behaviour — a program with side effects gets run, at
+compile time, on a bare `-O4`. If runtime scoring is to become the default the driver needs a sandbox or an
+explicit opt-in per invocation, not an env default flip.
+
+**Next step for whoever picks this up**, in order:
+   1. **Decide whether the out-of-process driver should run at `-O4` at all.** On this bench it never wins. The
+      cheapest honest fix is to make it opt-in and let `-O4` ship the in-process search result, which is the best or
+      tied-best cell on all five kernels. That is a semantic change to `-O4`, not a bug fix, so it wants a decision.
+   2. If it stays, replace the `text + spills * 48` proxy — item (4) shows it is anti-correlated with speed on two of
+      five kernels — before touching any individual axis.
+   3. Only then the graft-limit floor. Note I tried both the narrow version (unset when the inline bit is clear) and
+      the unconditional one; both fire and both are byte-identical on the driver-ON path, so this cannot be measured
+      until (1) or (2) lands.
 
    Of the six axes the search CAN switch off, only `PROMOTE` moves runtime. Measured at `-O4`, best-of-5, each axis
    pinned versus plain `-O4` (nbody 0.17 s / 3998 B, matmul 0.52 s / 3025 B):
