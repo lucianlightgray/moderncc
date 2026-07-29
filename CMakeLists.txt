@@ -3956,6 +3956,21 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3")
         endforeach()
 
+        # -O1 had NO exec lane until 2026-07-29, which was tolerable only while
+        # -O1 emitted -O0's bytes. It no longer does (REGDISP and OPASSIGN are
+        # staged there), so the level needs its own correctness lane like every
+        # other one.
+        foreach(_gl IN LISTS _exec_glines)
+            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+            set(_gn "${CMAKE_MATCH_1}")
+            add_test(NAME "exec-O1/${_gn}"
+                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                        "${CMAKE_BINARY_DIR}/exec-O1-${_gn}" --only "${_gn}")
+            set_tests_properties("exec-O1/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1")
+        endforeach()
+
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -5116,6 +5131,15 @@ if(MCC_BUILD_TESTS)
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}" --opt=-O3)
             set_tests_properties(selfhost-fixpoint-O3 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                TIMEOUT 300)
+
+            # -O1 was blind for the opposite reason: it emitted -O0's bytes, so
+            # there was nothing for a fixpoint to catch. REGDISP and OPASSIGN
+            # are staged there as of 2026-07-29, so it now has content.
+            add_test(NAME selfhost-fixpoint-O1
+                COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
+                        "${CMAKE_BINARY_DIR}" --opt=-O1)
+            set_tests_properties(selfhost-fixpoint-O1 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
             add_test(NAME selfhost-fixpoint-Os

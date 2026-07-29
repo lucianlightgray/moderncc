@@ -2049,7 +2049,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
 	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
-	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 2);
+	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 1);
 	ast_cycle_env = ast_env_gate("MCC_AST_CYCLE", o4 || s1->optimize >= 3);
 	ast_search_walk_env = ast_search_walk_from_env();
 	ast_strat_order_from_env();
@@ -2079,7 +2079,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 #ifdef MCC_TARGET_X86_64
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP",
-																 o4 || s1->optimize_size || s1->optimize >= 2);
+																 o4 || s1->optimize_size || s1->optimize >= 1);
 #else
 	ast_regdisp_env = 0;
 #endif
