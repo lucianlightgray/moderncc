@@ -1620,7 +1620,8 @@ Wanted:
    | nsieve | 0.14 s / 1816 | 0.14 s / 1895 | 0.14 s / 1790 |
 
    **`-O4` is now never slower than `-O3` on any kernel, and 20-26% faster on two** — the property this item asked
-   for. The honest cost: `-O4` is now LARGER than `-O3` on all four (it buys speed with prologue saves), where before
+   for. **FALSIFIED 2026-07-29 — see "`-O4` is still slower than `-O3` on spectral" below. That table has four rows
+   because spectral was dropped from it, and spectral is the kernel where `-O4` loses.** The honest cost: `-O4` is now LARGER than `-O3` on all four (it buys speed with prologue saves), where before
    it was smaller on three. That is the right trade for a level whose contract is "optimize hardest", but it does mean
    the size/speed question below is no longer hypothetical — `-O4` has now definitively picked speed.
 
@@ -1631,6 +1632,64 @@ Wanted:
    touches is `MCC_SEARCH_WORKER`, `MCC_AST_SPILL_OUT` and `MCC_AST_FN_CONFIG`). The other ~50 `o4` gates are never
    written by the driver at all, so a child process gets them from `ast_configure` at its `-O` level — **they are
    already floored by construction and there is nothing to fix.**
+
+## `-O4` is still slower than `-O3` on spectral, and `-O4` output depends on CACHE HISTORY — measured 2026-07-29
+Two findings, both reproducible. The second is the more serious one.
+
+**1. The "`-O4` is never slower than `-O3` on any kernel" claim above is false.** It rests on a four-kernel table
+(nbody / matmul / mandelbrot / nsieve). The bench has FIVE kernels; **spectral is the one that was dropped, and it is
+the one `-O4` loses on** — the pre-floor table two sections up already recorded it at **+40.0%** and it was never
+re-measured after the floor landed. Today, idle box, best-of-5:
+
+| kernel | `-O3` | `-O4` | |
+|---|---:|---:|---|
+| spectral | 599 ms / 1470 B | **870 ms / 1243 B** | **+45% SLOWER** |
+| nbody | 734 ms / 2267 B | 599 ms / 2343 B | faster |
+| matmul | 2087 ms / 1304 B | 2215 ms / 1017 B | slower |
+| nsieve | 330 ms / 554 B | 469 ms / 478 B | slower |
+| mandelbrot | 1079 ms / 851 B | 1095 ms / 782 B | ~equal |
+
+Note this also contradicts "never slower" on nsieve (+42%) and matmul (+6%). Only nbody is actually faster at `-O4`.
+
+**Cause on the driver-OFF path, isolated to a single axis.** With `MCC_SEARCH_WORKER=1`, pinning each axis one at a
+time on spectral: `INLINE=0`, `TEMPLATES=0`, `CPROP_JOIN=0`, `CSE_JOIN=0`, `INLINE_NODES=64`, `GRAFT=2048` are all
+591-596 ms / 1458 B — noise. **`MCC_AST_INLINE_LIMIT=0` alone gives 849 ms / 1413 B**, the entire regression.
+That env is `ast_graft_limit`, whose compiler default is `-1` (unlimited); the driver writes `inl ? limit : 0u`, so
+**every gate with the inline bit clear forces zero grafts**, and `limit = gate >> 4` is 0 for every gate below 16 —
+which is every gate the driver reaches on a real input (it manages 1-3 evals before its budget expires).
+
+**2. USE-THIS-FIRST: global axis pins do NOT reach the shipped `-O4` object.** The driver's final compile
+(`so_perfn_search`) sets **`MCC_AST_FN_CONFIG`**, a per-function `name=bits;` string whose bits are
+tmpl/promo/inl (`ast_fncfg_parse`), and that overrides the global axis env per function. So on the driver-ON path
+every `MCC_AST_*=1` pin is inert — I re-confirmed this by pinning all six 0/1 axes on spectral and getting **byte-
+identical 1413 B every time**. **The "pinned axis versus plain `-O4`, all within noise" table below was therefore
+measuring nothing**, and any future axis experiment must go through `MCC_AST_FN_CONFIG`, not the global env.
+
+**3. `-O4` is not a reproducible build — it depends on accumulated superopt cache history.** Same source, same
+compiler, same flags, matmul:
+
+| cache | md5 | `.text` | instructions |
+|---|---|---:|---:|
+| `~/.cache/mcc`, 577 entries | `d2a5f79a41` | 1684 | **46.80G** |
+| fresh `XDG_CACHE_HOME` | `fed4e51d62` | 1017 | **62.32G** |
+
+Deterministic within each state (2 runs each, identical md5), 25% apart across them. The accumulated-cache result is
+**byte-identical to `MCC_SEARCH_WORKER=1`** (driver off), i.e. with enough cached per-function checkpoints the driver
+stops changing the answer and ships the in-process result — which is the faster one. This also retracts the
+"cache state does not change the binary" claim in the `-O4`-is-a-SIZE-level section: it does, by 25%.
+It is also why the earlier entry's `-O4` numbers and today's disagree; every `-O4` figure in this file is only
+meaningful with its cache state stated.
+
+**Tried and reverted 2026-07-29: flooring the PER-FUNCTION search the same way `PROMOTE` was floored at the gate
+layer.** `so_perfn_search` picks from `cfgs[3] = {1, 3, 7}` scored purely by `.text` size, and cfg 1 has the promote
+bit clear — the obvious hypothesis is that it switches promotion off for a hot function. Implemented as a
+`so_pf_cfg_ok()` filter over both the candidate loop and the checkpoint restore. **It is inert: byte-identical output
+on all five kernels.** So the per-function layer is not where spectral loses, and the remaining suspect is the
+`INLINE_LIMIT`/graft-budget forcing in (1).
+
+**Next step for whoever picks this up:** make the graft limit floor at the compiler default instead of 0 — but note I
+tried the narrow version of this (unset the axis when the inline bit is clear) and it was ALSO inert on the driver-ON
+path, for reason (2): `MCC_AST_FN_CONFIG` was overriding it. Fix (2) first, or the experiment cannot be run.
 
    Of the six axes the search CAN switch off, only `PROMOTE` moves runtime. Measured at `-O4`, best-of-5, each axis
    pinned versus plain `-O4` (nbody 0.17 s / 3998 B, matmul 0.52 s / 3025 B):
