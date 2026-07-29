@@ -3804,7 +3804,14 @@ Readings: (a) nbody gains **~20%** and every weight from 12 to 384 captures the 
 
 ## `-ffunction-sections` was accepted and discarded — IMPLEMENTED 2026-07-29
 Third flag in this file's "parsed and never read" class, after `-ffast-math` (fixed, `2717479f`) and `-march=`
-(still open). `MCCState.function_sections` was set by the option table and read by nothing, so
+(fixed 2026-07-29). **`-fdata-sections` was the FOURTH and is fixed the same day** — each global now gets
+`.data.<name>` / `.bss.<name>` / `.rodata.<name>`, so a linker can drop unreferenced DATA as well as code.
+Its trap is sharper than the code one and is worth keeping: mcc already owns a section literally named
+`.data.ro`, so a global called `ro` was silently MERGED into it — wrong flags, no diagnostic. Guarded by scanning
+the existing section list and falling back to the base section, and the test asserts it **by symbol index**,
+because comparing section-name lists cannot distinguish "`ro` got its own section" from "`ro` was absorbed by the
+existing one". Note the guard is an inline scan rather than a call to `have_section()`, which is `static` to
+`mccelf.c` — calling it from `mccgen.c` reproduces the multisource break that `pp_in_system_header` caused. `MCCState.function_sections` was set by the option table and read by nothing, so
 `mcc -ffunction-sections` emitted a byte-identical object and every caller who passed it got silence. Now each
 function is generated into its own `.text.<name>`; an explicit `__attribute__((section(...)))` still wins.
 

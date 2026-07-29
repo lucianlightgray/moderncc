@@ -13656,6 +13656,40 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 				{ MCC_TRACE("br\n"); sec = bss_section; }
 		}
 
+		/* -fdata-sections: give each object its own `.data.<name>` (or .bss./
+		   .rodata.) so a linker can drop the ones nothing references, exactly as
+		   -ffunction-sections does for code. Applied only where the section was
+		   CHOSEN above -- an explicit __attribute__((section(...))) keeps it, and
+		   TLS is left alone because the tdata/tbss pair is laid out as a unit.
+		   Was parsed into MCCState.data_sections and read by nothing: the fourth
+		   flag in this tree accepted and silently discarded. */
+		if (mcc_state->data_sections && !ad->section && sec && v &&
+				!(type->t & VT_TLS)) { MCC_TRACE("br\n");
+			const char *nm = get_tok_str(v, NULL);
+			char dsbuf[256];
+			/* Collision guard: mcc already owns names like `.data.ro`, so a global
+			   actually called `ro` would otherwise be MERGED into that existing
+			   section instead of getting its own. Fall back to the base section.
+			   Scanned inline rather than via have_section(), which is static to
+			   mccelf.c -- calling it here would break the multisource build the
+			   same way pp_in_system_header did. */
+			if (nm && snprintf(dsbuf, sizeof dsbuf, "%s.%s", sec->name, nm) <
+									(int)sizeof dsbuf) { MCC_TRACE("br\n");
+				int taken = 0, si;
+				for (si = 1; si < mcc_state->nb_sections; si++) { MCC_TRACE("br\n");
+					if (!strcmp(mcc_state->sections[si]->name, dsbuf))
+						{ MCC_TRACE("br\n"); taken = 1; break; }
+				}
+				if (!taken) { MCC_TRACE("br\n");
+				Section *ds = find_section(mcc_state, dsbuf);
+				ds->sh_flags = sec->sh_flags;
+				ds->sh_type = sec->sh_type;
+				ds->sh_addralign = sec->sh_addralign;
+				sec = ds;
+				}
+			}
+		}
+
 		if (asan_g && v && size && sec && !(type->t & VT_TLS) && align < 8)
 			{ MCC_TRACE("br\n"); align = 8; }
 

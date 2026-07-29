@@ -126,4 +126,58 @@ else
 	echo "SKIP-PART: no usable external cc; mcc-linker assertions still ran"
 fi
 
+# -fdata-sections: the same idea for OBJECTS. Same class of flag -- it was also
+# parsed into MCCState and read by nothing -- and it has a sharper failure mode:
+# mcc already owns a section literally named `.data.ro`, so a global called `ro`
+# can be silently MERGED into it instead of getting its own. That is checked at
+# the SYMBOL level, because comparing section-name lists cannot tell "ro got its
+# own section" from "ro was absorbed by the existing one".
+cat >"$WORK/ds.c" <<'EOF'
+extern int printf(const char *, ...);
+int ro = 7;
+int used_var = 1;
+int unused_var = 2;
+int get(void) { return used_var + ro; }
+int main(void) { printf("%d\n", get()); return 0; }
+EOF
+"$MCC" -B"$BASE" -O2 -c "$WORK/ds.c" -o "$WORK/dsplain.o"
+"$MCC" -B"$BASE" -O2 -fdata-sections -c "$WORK/ds.c" -o "$WORK/ds.o"
+
+if cmp -s "$WORK/dsplain.o" "$WORK/ds.o"; then
+	echo "FAIL: -fdata-sections produced a byte-identical object; accepted and discarded again"
+	rc=1
+elif readelf -SW "$WORK/ds.o" | grep -q '\.data\.used_var'; then
+	echo "PASS: -fdata-sections gives each object its own section"
+else
+	echo "FAIL: no .data.used_var section"
+	rc=1
+fi
+
+# The collision case, by symbol index rather than by name.
+dsec=$(readelf -SW "$WORK/ds.o" | sed 's/[][]//g' | awk '$2==".data"{print $1}')
+rosec=$(readelf -sW "$WORK/ds.o" | awk '$8=="ro"{print $7}')
+if [ -n "$dsec" ] && [ "$rosec" = "$dsec" ]; then
+	echo "PASS: a global named 'ro' falls back to .data instead of merging into .data.ro"
+else
+	echo "FAIL: 'ro' is in section '$rosec', expected the plain .data index '$dsec'"
+	rc=1
+fi
+
+if "$MCC" -B"$BASE" -O2 -fdata-sections "$WORK/ds.c" -o "$WORK/dsown" 2>/dev/null &&
+	 [ "$("$WORK/dsown")" = "8" ]; then
+	echo "PASS: -fdata-sections links and runs under mcc's own linker"
+else
+	echo "FAIL: mcc-linked -fdata-sections build wrong or failed"
+	rc=1
+fi
+
+if command -v cc >/dev/null 2>&1 && cc -Wl,--gc-sections "$WORK/ds.o" -o "$WORK/dsgc" 2>/dev/null; then
+	if [ "$("$WORK/dsgc")" = "8" ] && ! nm "$WORK/dsgc" 2>/dev/null | grep -q unused_var; then
+		echo "PASS: --gc-sections drops the unreferenced global"
+	else
+		echo "FAIL: --gc-sections build wrong, or kept unused_var"
+		rc=1
+	fi
+fi
+
 exit $rc
