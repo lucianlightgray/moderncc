@@ -5,6 +5,25 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"intrinsics_no_helper_calls", "cpu=x86_64,os=linux",
+		 "printf 'extern void *alloca(__SIZE_TYPE__);\\n"
+		 "unsigned s16(unsigned short x){return __builtin_bswap16(x);}\\n"
+		 "unsigned s32(unsigned x){return __builtin_bswap32(x);}\\n"
+		 "int c1(unsigned x){return __builtin_clz(x);}\\n"
+		 "int c2(unsigned long long x){return __builtin_ctzll(x);}\\n"
+		 "int c3(int x){return __builtin_ffs(x);}\\n"
+		 "int c4(unsigned x){return __builtin_popcount(x);}\\n"
+		 "int c5(unsigned x){return __builtin_parity(x);}\\n"
+		 "int c6(int x){return __builtin_clrsb(x);}\\n"
+		 "int c7(double x){return __builtin_signbit(x);}\\n"
+		 "long long o1(long long a,long long b){long long r;return __builtin_add_overflow(a,b,&r)?0:r;}\\n"
+		 "int a1(int *p,int v){return __atomic_load_n(p,5)+__atomic_fetch_add(p,v,5);}\\n"
+		 "int a2(int *p,int *e,int v){__atomic_store_n(p,v,5);return __atomic_compare_exchange_n(p,e,v,0,5,5);}\\n"
+		 "void *al(unsigned long n){return alloca(n);}\\n' > {W}/ni.c && "
+		 "{MCC} -B{B} -I{I} -w -O2 -c {W}/ni.c -o {W}/ni.o && "
+		 "readelf -sW {W}/ni.o | awk '$7==\"UND\" && $8!=\"\"{print $8}' | sort -u",
+		 ""},
+
 		{"version_script_hides", "cpu=x86_64,os=linux",
 		 "printf 'int public_fn(void){return 1;}\\nint private_fn(void){return 2;}\\n' > {W}/vs.c && "
 		 "printf '{ global: public_fn; local: *; };\\n' > {W}/vs.map && "
