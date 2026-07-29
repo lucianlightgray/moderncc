@@ -1206,7 +1206,7 @@ What survives the boundary-respecting re-run, and is the real handle:
 | count | site | what it is |
 |---|---|---|
 | ~~31~~ **0** | `ast_hook_cmp_invert` | **FIXED 2026-07-28 by `MCC_AST_LANDOR_INVERT`, default-on** — see below |
-| 16 | `ast_hook_vstore` | a store inside a ternary or short-circuit region (`ast_tern_top`/`ast_lor_top` non-zero) |
+| 18 | `ast_hook_vstore` | a store inside a ternary or short-circuit region — **one approach tried and RULED OUT, see below** |
 | 13 | `ast_hook_landor_next` | the identity-constant `&&`/`||` chain's second consumption (see A2a Group A above) |
 | 6 | `ast_hook_vstore` shape | bad type / `ast_vn` mismatch at the store |
 | 4 | vpush SYNC | the residual `switch`-path pop, all four already reported as `bail` |
@@ -1242,6 +1242,33 @@ and 0 miscompiles. After the flip: full ctest **7327/7327**, ratchet baseline 17
 `optfire/default-indirect_call` locks the default-on state. `tests/exec/functions_abi/indirect_call_shapes.c` is
 the new corpus cell for the three shapes — the old `func_pointers.c` did not cover them, which is why the corpus
 fire rate was 0 before it was added.
+
+**Store inside a region (18) — ONE APPROACH RULED OUT 2026-07-28. Do not retry it without fixing the passes.**
+`ast_hook_vstore` desyncs when `ast_tern_top > 0 || ast_lor_top > 0`. Reduced: `c ? (y = 1) : (y = 2)`,
+`a && (x = b)`, `a || (x = b)` and `a && (*p = 3)` desync, while `y = c ? x : x + 1` and `x = a ? b : 0` are
+faithful — it is a store INSIDE the region, not a store OF one.
+
+The reason the hook refuses is real: it ends by `ast_add_child(ast_cur, ast_cur_bb, st)`, i.e. a store is always a
+BB STATEMENT, and a statement in the enclosing block would execute unconditionally at replay. The natural fix is to
+keep the `AST_Store` as the region operand's VALUE instead (no BB child, the store node itself left on `ast_vs`)
+and teach `ast_replay_value` a `case AST_Store` that replays lhs, rhs, `vstore()` and leaves the value — which is
+exactly what the parser does for an assignment used as a value.
+
+That works as far as the recorder is concerned: faithful 1731 -> 1738, desync 51 -> 33, and a new runtime cell
+(`tests/exec/optimizer/region_store.c`, kept — it counts side effects through `a && (*out = side(7))` and checks
+the store does NOT happen on the short-circuited path) matches gcc at `-O0`/`-O1`/`-O2`/`-O3` with the gate both
+off and on. Gate-off stayed 786/786 byte-identical, determinism and symtab were clean, and the `-O2` self-host
+fixpoint passed.
+
+**It fails at `-O3` and `-Os`: stage 2 of the fixpoint — the mcc-BUILT mcc compiling mcc.c — dies with SIGABRT, and
+a hand-run stage 2 hangs instead of finishing.** So the gate builds a broken compiler. Turning off `CYCLE`,
+`INLINE` and `INLINE_PASS` individually does not fix it, so it is not one obvious pass.
+
+The lesson generalises past this gate: **the faithfulness byte-compare does NOT protect a new node kind in value
+position.** It validates the model against the baseline BEFORE the passes transform it; the passes then run on a
+shape they were never written for and their output is what gets emitted. `AST_Store` had only ever appeared as a
+BB statement, so every pass that walks values assumes it cannot see one. A retry has to audit the passes for
+`AST_Store` in value position first — the same hazard that killed the fourth `nocode_wanted` approach, one level up.
 
 **`MCC_AST_LANDOR_INVERT` — LANDED and flipped default-on 2026-07-28.** `!(a && b)` and `!(a || b)` desynced at
 `ast_hook_cmp_invert`: `gen_test_zero(TOK_EQ)` inverts a `VT_CMP` in place by swapping `jtrue`/`jfalse` and flipping

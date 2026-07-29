@@ -137,6 +137,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"relational_equality", "run", "exec/expressions/relational_equality.c", "rel: 1 1 0 1\neq: 1 0\nflt: 1 0\nmixed: 1\nprec: 1\nptr: 1 1 1\nnull: 1 1\npaths: 1\n", "", "", ""},
 		{"enum", "run", "exec/types/enum.c", "0 1 2 3 54 73 74 75\n12\n54\nenum to int: 1\n", "", "", ""},
 		{"const_expr", "run", "exec/expressions/const_expr.c", "dim: 7\ninit: 0 100\nenum: 15\ncases: 111\nbits: 3 15\nlocal: 6\n", "", "", ""},
+		{"region_store", "run", "exec/optimizer/region_store.c", "and0 r=0 v=0 calls=0\nand1 r=1 v=7 calls=1\nor1 r=1 v=0 calls=0\nor0 r=1 v=9 calls=1\ntern1 r=1 v=1 calls=1\ntern0 r=2 v=2 calls=1\nchain10 r=0 v=0 calls=0\nchain11 r=1 v=3 calls=1\n", "", "", ""},
 		{"logical_not_shortcircuit", "run", "exec/optimizer/logical_not_shortcircuit.c", "s=1639 calls=1\n", "", "", ""},
 		{"indirect_call_shapes", "run", "exec/functions_abi/indirect_call_shapes.c", "s=75\n", "", "", ""},
 		{"func_pointers", "run", "exec/functions_abi/func_pointers.c", "calls: 5 5 5\nsame: 1\napply: 14 6\ntable: 40\nrebind: 5\n", "", "", ""},
