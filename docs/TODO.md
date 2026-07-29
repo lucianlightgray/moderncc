@@ -995,8 +995,32 @@ in `ast_vs` earlier.
 
 Empirically NOT the cause (tested, all faithful): early `return` in a branch, a `noreturn` call in a branch, a
 noreturn call followed by more statements, deref-after-check, and `c ? g() : 0`. Discarded `(void)x` casts come out
-`empty`, not SYNC, so they are excluded too. The 31 failures outside any ternary/short-circuit region remain the
-cleanest population to bisect.
+`empty`, not SYNC, so they are excluded too.
+
+**SPLIT INTO TWO SUB-POPULATIONS 2026-07-28, separating PERFECTLY — so "one class of event" above was too strong.**
+Capturing the full hook sequence and testing whether a `vpop` early-return precedes each failure:
+
+| group | count | preceded by a `vpop` early-return |
+|---|---|---|
+| inside a short-circuit region (`lor=1`) | **12** | **all 12** |
+| outside (`lor=0`) | **31** | **none** |
+
+**Group A (12) — MECHANISM SOLVED.** Inside a `&&`/`||` region `ast_hook_vpop` hits its early-return guard
+(`!ast_capture || ast_desync || ast_in_op || ast_in_call`) and returns WITHOUT doing `ast_vn--`, while codegen pops
+the vstack regardless. The model is then one value ahead and the next push notices. Verbatim:
+
+    vpush  r=0x30 t=0x4 vn=1 rel=2      balanced (vn == rel-1)
+    vpop:  enter
+    vpop:  enter                        two pops
+    vpop:  br                           one took the early return -> no ast_vn--
+    vpush  r=0x30 t=0x4 vn=1 rel=1      vn unchanged, rel dropped -> vn == rel -> SYNC
+
+A fix must make the region's pops balance — either decrement when the region owns the value, or not model it at all.
+This is the same hazard the `nocode_wanted` item records ("a region suspend leaves the model BEHIND the vstack"), in
+mirror image.
+
+**Group B (31) — still unexplained, and now known NOT to be the `vpop` mechanism.** Larger, and uncontaminated by
+short-circuit interactions, so it is the one to bisect next.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
