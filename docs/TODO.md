@@ -1047,9 +1047,22 @@ the vstack regardless. The model is then one value ahead and the next push notic
     vpop:  br                           one took the early return -> no ast_vn--
     vpush  r=0x30 t=0x4 vn=1 rel=1      vn unchanged, rel dropped -> vn == rel -> SYNC
 
-A fix must make the region's pops balance — either decrement when the region owns the value, or not model it at all.
-This is the same hazard the `nocode_wanted` item records ("a region suspend leaves the model BEHIND the vstack"), in
-mirror image.
+**The skipping condition is `ast_in_call`, NOT `ast_in_op`** — measured with a `POPSKIP` probe printing which guard
+clause fired. For all 12 Group-A failures the last skip before the SYNC is uniformly `inop=0 incall=1`. (Group B's
+is mixed — 18 `incall=0`, 10 `incall=1`, 4 `inop=1` — further confirming a different population.)
+
+That makes the fix harder than "decrement anyway", for a reason worth stating: `ast_in_call` is set deliberately
+between `call_begin` and `call_end` because `gfunc_call` pushes and pops around its arguments, and the model has
+ALREADY accounted for those (`call_begin` does `ast_vn -= need`). Skipping is CORRECT for the call's own stack
+traffic. The imbalance comes from a pop inside that window that belongs to the ENCLOSING short-circuit region.
+
+So this is an interaction between two stateful regions, not a missing decrement:
+- decrementing unconditionally would double-count the call's own pops;
+- suspending the short-circuit region inside the call window hits the mirror hazard the `nocode_wanted` item
+  records ("a region suspend leaves the model BEHIND the vstack").
+
+A fix has to distinguish whose pop it is. That is design work, which is why A1a is characterised here rather than
+fixed.
 
 **Group B (31) — still unexplained, and now known NOT to be the `vpop` mechanism.** Larger, and uncontaminated by
 short-circuit interactions, so it is the one to bisect next.
