@@ -47,6 +47,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_CALL_STOREVAL_ARG 4u
 
+#define AST_FB_LANDOR_INVERT 8u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1741,6 +1743,7 @@ static int ast_promote_env;
 static int ast_storeval_call_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
+static int ast_landor_invert_env;
 static int ast_call_dead;
 static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
 int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
@@ -2065,6 +2068,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
+	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
@@ -2460,6 +2464,11 @@ void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n"
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); return; }
 	n = ast_vs[ast_vn - 1];
 	op = ast_op(ast_cur, n);
+	if (ast_landor_invert_env && ast_kind(ast_cur, n) == AST_Binary &&
+			(op == TOK_LAND || op == TOK_LOR)) { MCC_TRACE("br\n");
+		ast_set_fbits(ast_cur, n, ast_fbits(ast_cur, n) ^ AST_FB_LANDOR_INVERT);
+		return;
+	}
 	switch (op) { MCC_TRACE("br\n");
 	case TOK_ULT: case TOK_UGE: case TOK_EQ: case TOK_NE:
 	case TOK_ULE: case TOK_UGT: case TOK_LT: case TOK_GE:
@@ -5626,6 +5635,12 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); t = gvtst(i, t); }
 			}
 			gvtst_set(i, t);
+			if (ast_fbits(a, n) & AST_FB_LANDOR_INVERT) { MCC_TRACE("br\n");
+				int jt = vtop->jfalse;
+				vtop->jfalse = vtop->jtrue;
+				vtop->jtrue = jt;
+				vtop->cmp_op ^= 1;
+			}
 			break;
 		}
 		ast_replay_value(a, ast_child(a, n, 0));

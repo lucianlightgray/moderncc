@@ -20,3 +20,4 @@ divmagic|-O2|MCC_AST_DIVMAGIC|on
 argfwd|-O2|MCC_AST_ARGFWD|off
 nocode_call|-O2|MCC_AST_NOCODE_CALL|on
 indirect_call|-O2|MCC_AST_INDIRECT_CALL|on
+landor_invert|-O2|MCC_AST_LANDOR_INVERT|on

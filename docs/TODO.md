@@ -1205,7 +1205,7 @@ What survives the boundary-respecting re-run, and is the real handle:
 
 | count | site | what it is |
 |---|---|---|
-| 31 | `ast_hook_cmp_invert` | `gen_test_zero(TOK_EQ)` inverts a `VT_CMP` in place, but the model's top node is not a comparison `AST_Binary` — `!(a && b)` and friends, where inverting is De Morgan rather than a token flip |
+| ~~31~~ **0** | `ast_hook_cmp_invert` | **FIXED 2026-07-28 by `MCC_AST_LANDOR_INVERT`, default-on** — see below |
 | 16 | `ast_hook_vstore` | a store inside a ternary or short-circuit region (`ast_tern_top`/`ast_lor_top` non-zero) |
 | 13 | `ast_hook_landor_next` | the identity-constant `&&`/`||` chain's second consumption (see A2a Group A above) |
 | 6 | `ast_hook_vstore` shape | bad type / `ast_vn` mismatch at the store |
@@ -1242,6 +1242,27 @@ and 0 miscompiles. After the flip: full ctest **7327/7327**, ratchet baseline 17
 `optfire/default-indirect_call` locks the default-on state. `tests/exec/functions_abi/indirect_call_shapes.c` is
 the new corpus cell for the three shapes — the old `func_pointers.c` did not cover them, which is why the corpus
 fire rate was 0 before it was added.
+
+**`MCC_AST_LANDOR_INVERT` — LANDED and flipped default-on 2026-07-28.** `!(a && b)` and `!(a || b)` desynced at
+`ast_hook_cmp_invert`: `gen_test_zero(TOK_EQ)` inverts a `VT_CMP` in place by swapping `jtrue`/`jfalse` and flipping
+`cmp_op`, and the hook models that as a token flip — which only works when the model's top node is a comparison
+`AST_Binary`. For a short-circuit it is a `TOK_LAND`/`TOK_LOR` node, so the hook desynced. Reduced: `!(a && b)`,
+`!(a || b)` and `if (!(a && b))` desync; `!(a < b)`, `!f(a)`, `!!a` and `t = a && b; !t` are all faithful, so it is
+specifically NOT applied DIRECTLY to a short-circuit result.
+
+De Morgan is not needed. The replay of a `LAND`/`LOR` node already mirrors `expr_landor` exactly — evaluate each
+operand, `gvtst(i, t)` between them, `gvtst_set(i, t)` at the end — leaving the same `VT_CMP` the parser leaves. So
+the inversion is recorded as one bit on the node (`AST_FB_LANDOR_INVERT`, XORed so `!!` cancels) and replayed as
+the same three lines `gen_test_zero` runs. faithful 1713 -> **1731**, desync 80 -> 51.
+
+Validated: gate-off 783/783 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; gate-on determinism (3 runs +
+`setarch -R` = one md5), zero non-printable symbol names, self-host fixpoint + all `jit/*` cells 57/57. After the
+flip: full ctest **7350/7350**, 100-seed differential fuzz vs gcc + clang with `--gates` and 0 miscompiles,
+byte-identical arm64 and riscv64 cross self-host fixpoints under qemu, ratchet baseline 169 -> 168, and
+`optfire/default-landor_invert` locks the default. `tests/exec/optimizer/logical_not_shortcircuit.c` is the new
+corpus cell: it counts side effects through `!(side(a) && side(b))` and enumerates the truth table for `!(a && b)`,
+`!(a || b)`, `!(a && b && c)`, `!!(a && b)` and `if (!(a && b))`, matching gcc at `-O0`/`-O1`/`-O2`/`-O3` with the
+gate both off and on — an inverted jump sense is exactly the bug that byte-identity alone would not catch.
 
 **THE RESIDUE IS 10, AND SIX OF THEM ARE ONE CLASS — measured 2026-07-28 after the three fixes above:**
 
