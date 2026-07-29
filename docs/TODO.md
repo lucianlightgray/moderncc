@@ -103,6 +103,18 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 
 **Current state.** `-march=` is already **accepted and discarded** — `case MCC_OPTION_m` (`libmcc.c`) matches `arch=`/`tune=`/`cpu=`/`cmodel=`/`fpmath=` and `break`s, so `mcc -march=x86-64-v3` is silently a no-op today. `-m32`/`-m64` are the only `-m` forms with meaning. On ARM the ISA level exists but is **compile-time only**: `MCC_CONFIG_CPUVER` (CMake `MCC_CPUVER`, `CMakeLists.txt`) baked per build and read at `arm-link.c` (`blx_avail = CPUVER >= 5`) and `arm-gen.c` (`#if CPUVER >= 7`), alongside `MCC_ARM_EABI/_VFP/_HARDFLOAT/_IDIV`. Nothing is queryable per invocation.
 
+**IN PROGRESS 2026-07-29 — steps 1, 3, 6 and the `ROUND_INLINE` half of step 4.** Scoped to x86-64 named levels
+plus `native`, the `mcc_isa_has` predicate, `-print-isa` introspection, and wiring the one gate this section names
+outright (`o4 || (level >= x86-64-v2)` for `MCC_AST_ROUND_INLINE`) so the mask is load-bearing rather than a
+foundation nothing reads.
+
+**Step 2 is deliberately NOT being taken as written, and the reason is in this section already.** "`-march=native`
+is the default" collides head-on with the two invariants the M8 bar rests on: goldens and the 3-stage self-host
+fixpoint would diverge between an AVX-512 host and an SSE2 one, which this section's own testing note spells out.
+The default therefore stays the **triple baseline**, and `native` is opt-in and honestly resolved by CPUID rather
+than quietly aliased to the baseline. Flipping the default to native is a separate change that must land AFTER
+every golden/differential/fixpoint cell pins an explicit `-march=`, not before.
+
 **Plan.**
 1. **Feature mask on `MCCState`**, not a string. Parse `-march=`/`-mcpu=`/`-mtune=` into a bitmask + a single predicate (`mcc_isa_has(s1, MCC_ISA_SSE41)`). Keep the existing string forms accepted so no command line regresses.
 2. **`-march=native` is the default**, resolved by host detection: `CPUID` leaf 1/7 on x86, `getauxval(AT_HWCAP/HWCAP2)` on arm64/armv7, `AT_HWCAP` + `/proc/cpuinfo` on riscv64, with a documented fallback to the triple baseline when detection fails. **Cross-compilation must NOT default to native** — when the target triple differs from the host, default to that triple's baseline (`x86-64`, `armv7-a`, `armv8-a`, `rv64gc`, `i686`) or native detection will bake host-only instructions into cross output.
