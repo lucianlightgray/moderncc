@@ -1179,9 +1179,14 @@ real-object validation stays macOS-gated.
    eleven gates on, the verify-level fidelity gains are ARCH-UNIFORM: faithful counts on the four-repro probe
    set move identically (mch 1->4, wc 2->3, td 0->2, cm 2->3) on i386, arm64, riscv64, and arm32. Gate-off
    compiles are deterministic on every arch. Gate-on OBJECT changes fire on arm64/riscv64 for several repros
-   (replay reuse engages there) while i386 outputs stay byte-identical on this probe set. STILL OWED before
-   any flip: qemu runtime correctness on the arches where gate-on changes output (arm64/riscv64 first —
-   docker sysroot recipe per the cross-arch conformance memory).
+   (replay reuse engages there) while i386 outputs stay byte-identical on this probe set.
+   **QEMU RUNTIME LEG DONE 2026-07-29 (same session), all four arches:** per the TODO fast-validation recipe
+   (`debian:bookworm-slim`, per-target host mcc from the amalgamation, link via matching cross gcc plus
+   `cmake-cross/<arch>-libmccrt.a` — needed for `__mcc_signbit`; note gcc-multilib CONFLICTS with the
+   cross-gcc packages, so i386 runs in its own container) — the nine gate-repro runners execute under qemu
+   (native for i386) with gates OFF and ALL ELEVEN ON, both matching the same-arch gcc reference:
+   **arm64 9/9, riscv64 9/9, arm32 9/9, i386 9/9.** The cross-arch flip leg is complete. Remaining before
+   flips: choose staging (-O level) per gate and run the final combined M8 sweep on the flip commit itself.
 
    **SELF-HOST FIXPOINT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29.** 3-stage gate with ALL ELEVEN gates
    in the environment for every stage (cmake-debug/mcc -> mcc2 -> mcc3 -> mcc4, amalgamation recipe, no
