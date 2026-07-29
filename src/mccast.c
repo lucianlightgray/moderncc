@@ -2078,7 +2078,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_fmov_imm_env = 0;
 #endif
 #ifdef MCC_TARGET_X86_64
-	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", o4 || s1->optimize_size);
+	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP",
+																 o4 || s1->optimize_size || s1->optimize >= 2);
 #else
 	ast_regdisp_env = 0;
 #endif

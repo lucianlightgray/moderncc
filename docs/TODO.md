@@ -1847,8 +1847,41 @@ Note this interacts with the size/speed question above: if `-O4` remains size-sc
 scoring axis actually in use (never LARGER than `-O3`), and the same 16% runtime regression should be re-examined once
 the axis is settled.
 
-**RE-TESTED 2026-07-27 after fidelity went 59.5% -> 75.3% faithful: the level curve did NOT move, and the reason is
-now pinned to a SPECIFIC site rather than the ceiling in general.** Best-of-5, same kernels:
+**E1b RE-MEASURED 2026-07-29 at 81.4% fidelity, in INSTRUCTIONS (`perf stat`, load-insensitive) with `.text`.**
+The two tables below are before and after the `REGDISP` staging fix in the next section; the "before" one is what the
+curve actually looked like when this item was raised, and it is the one with the findings in it.
+
+BEFORE (`MCC_AST_REGDISP` still `o4 || optimize_size`):
+
+| kernel | `-O0` | `-O1` | `-O2` | `-Os` | `-O3` |
+|---|---:|---:|---:|---:|---:|
+| nbody | 15.70G | 15.70G | 14.59G | **10.89G** | 14.59G |
+| nsieve | 4.65G | 4.65G | 4.65G | 4.65G | 4.65G |
+| mandelbrot | 7.28G | 7.28G | 7.27G | 7.27G | 7.27G |
+| matmul | 62.32G | 62.32G | 60.60G | 60.61G | 60.60G |
+| spectral | 18.00G | 18.00G | 17.64G | 17.64G | 17.64G |
+
+AFTER, and this is the current curve — `.text` after the slash:
+
+| kernel | `-O0` | `-O1` | `-O2` | `-Os` | `-O3` |
+|---|---:|---:|---:|---:|---:|
+| nbody | 15.70G/2222 | 15.70G/2274 | 10.89G/2255 | 10.89G/2191 | 10.89G/2255 |
+| nsieve | 4.65G/425 | 4.65G/478 | 4.65G/554 | 4.65G/490 | 4.65G/554 |
+| mandelbrot | 7.28G/729 | 7.28G/782 | 7.27G/851 | 7.27G/787 | 7.27G/851 |
+| matmul | 62.32G/964 | 62.32G/1017 | 60.60G/1273 | 60.61G/1229 | 60.60G/1304 |
+| spectral | 18.00G/1182 | 18.00G/1235 | 17.64G/1470 | 17.64G/1406 | 17.64G/1470 |
+
+Three things fall out of it, none of which the old seconds-based table could show:
+1. **`-O1` executes the same instruction count as `-O0` on all five kernels** — while emitting 52-53 MORE bytes of
+   `.text` every time. Whatever `-O1` currently stages is not reaching the executed path on this bench. That is
+   either a staging gap worth filling or a level worth documenting as "`-O0` plus debug-friendly codegen".
+2. **`-O2` and `-O3` are identical on all five kernels**, in instructions AND in `.text` (nsieve 554/554,
+   mandelbrot 851/851, spectral 1470/1470; nbody 2255/2255; only matmul differs, 1273 vs 1304). So `-O3` currently
+   buys nothing over `-O2` here. The 2026-07-28 `OPASSIGN` restaging closed the one gap this table used to show.
+3. **`-Os` was FASTER than `-O3` on nbody by 25%** and 3% smaller at the same time — which is what led to the
+   `REGDISP` fix below. A size level beating the speed level on speed is a staging bug, not a tradeoff.
+
+The old seconds-based table, for the record — it is superseded and should not be quoted:
 
 | kernel | `-O0` | `-O1` | `-O2` | `-Os` | `-O3` |
 |---|---:|---:|---:|---:|---:|
@@ -1856,6 +1889,31 @@ now pinned to a SPECIFIC site rather than the ceiling in general.** Best-of-5, s
 | nsieve | 0.16 | 0.16 | 0.14 | 0.14 | 0.14 |
 | mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
 | matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
+
+## `MCC_AST_REGDISP` was staged `-Os`/`-O4` only — LANDED at `-O2` 2026-07-29, 25% off nbody
+Found by the E1b re-measurement above: `-Os` beat `-O3` on nbody by 25% in instructions while also being smaller.
+A size level winning on speed is a staging bug, and the gate is a clean bidirectional control:
+
+| config | instructions | `.text` |
+|---|---:|---:|
+| `-O3` (before) | 14.59G | 2267 |
+| `-O3 MCC_AST_REGDISP=1` | **10.89G** | **2255** |
+| `-Os` | 10.89G | 2191 |
+| `-Os MCC_AST_REGDISP=0` | 14.59G | 2203 |
+
+`ast_regdisp_env` keeps a member/array constant offset as a register-base displacement instead of materialising an
+`add`, and it was gated `o4 || s1->optimize_size` — so every level from `-O1` to `-O3` paid for an `add` that `-Os`
+did not. Now `o4 || optimize_size || optimize >= 2`; `MCC_AST_REGDISP=0` restores the old behaviour.
+It is inside `#ifdef MCC_TARGET_X86_64`, so this is an x86_64-only change by construction.
+
+Across the bench it is a strict win — 25% on nbody, and **byte-identical output on the other four kernels** at both
+`-O2` and `-O3`. Validated to the bar: **ctest 7552/7552**, self-host 3-stage byte-identical fixpoint at both `-O2`
+(o1=o2=o3=5682783) and `-O3` (5713663), and **397 agree / 0 miscompile** over 400 differential-fuzz seeds against
+gcc and clang with `--gates`.
+Worth re-checking on the other four kernels' hot loops why it changes nothing there — a transform this cheap that
+only fires on one of five kernels may be over-guarded (`!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))`
+is a wide exclusion).
+
 
 Essentially identical to the original measurement, so +291 faithful functions bought nothing here. **That does NOT
 refute the ceiling explanation below — the control says the opposite.** Per-function verdicts on nbody show
