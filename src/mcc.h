@@ -228,6 +228,11 @@ typedef union CValue {
 
 	struct
 	{
+		uint64_t lo, hi;
+	} q;
+
+	struct
+	{
 		char *data;
 		int size;
 	} str;
@@ -1056,8 +1061,15 @@ struct filespec {
 #define VT_DOUBLE 9
 #define VT_LDOUBLE 10
 #define VT_BOOL 11
+#define VT_INT128 12
 #define VT_QLONG 13
 #define VT_QFLOAT 14
+
+#if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
+#define MCC_HAVE_INT128 1
+#else
+#define MCC_HAVE_INT128 0
+#endif
 
 #define VT_UNSIGNED 0x0010
 #define VT_DEFSIGN 0x0020

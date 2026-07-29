@@ -2391,7 +2391,7 @@ static int ast_op_modeled(int op) { MCC_TRACE("enter\n");
 static int ast_bad_type(int tt) { MCC_TRACE("enter\n");
 	int bt = tt & VT_BTYPE;
 	return bt == VT_STRUCT || (tt & VT_BITFIELD) ||
-				 bt == VT_LDOUBLE || bt == VT_QFLOAT;
+				 bt == VT_LDOUBLE || bt == VT_QFLOAT || bt == VT_INT128;
 }
 
 void ast_hook_genop(int op) { MCC_TRACE("enter\n");
@@ -9446,7 +9446,7 @@ static int ast_inline_type_ok(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	int bt = tt & VT_BTYPE;
 	if (bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE || bt == VT_QFLOAT ||
-			bt == VT_QLONG || bt == VT_STRUCT)
+			bt == VT_QLONG || bt == VT_INT128 || bt == VT_STRUCT)
 		{ MCC_TRACE("br\n"); return 0; }
 	return 1;
 }

@@ -123,6 +123,7 @@ ST_FUNC void gsym_addr(int t, int a) { MCC_TRACE("enter\n");
 static int is64_type(int t) { MCC_TRACE("enter\n");
 	return ((t & VT_BTYPE) == VT_PTR ||
 					(t & VT_BTYPE) == VT_FUNC ||
+					(t & VT_BTYPE) == VT_INT128 ||
 					(t & VT_BTYPE) == VT_LLONG);
 }
 
@@ -367,7 +368,7 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		} else if ((ft & VT_TYPE) == (VT_VOID)) { MCC_TRACE("br\n");
 			return;
 		} else { MCC_TRACE("br\n");
-			assert(((ft & VT_BTYPE) == VT_INT) || ((ft & VT_BTYPE) == VT_LLONG) || ((ft & VT_BTYPE) == VT_PTR) || ((ft & VT_BTYPE) == VT_FUNC));
+			assert(((ft & VT_BTYPE) == VT_INT) || ((ft & VT_BTYPE) == VT_LLONG) || ((ft & VT_BTYPE) == VT_INT128) || ((ft & VT_BTYPE) == VT_PTR) || ((ft & VT_BTYPE) == VT_FUNC));
 			ll = is64_type(ft);
 			b = 0x8b;
 		}
@@ -1123,6 +1124,7 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	case VT_BYTE:
 	case VT_SHORT:
 	case VT_LLONG:
+	case VT_INT128:
 	case VT_BOOL:
 	case VT_PTR:
 	case VT_FUNC:
@@ -1488,6 +1490,12 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			g(0x00);
 
 			vtop->r = VT_CONST;
+			break;
+
+		case VT_INT128:
+			r = gv(MCC_RC_INT);
+			orex(0, vtop->r2, 0, 0x50 + REG_VALUE(vtop->r2));
+			orex(0, r, 0, 0x50 + REG_VALUE(r));
 			break;
 
 		case VT_FLOAT:

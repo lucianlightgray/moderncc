@@ -260,9 +260,15 @@
 		(__builtin_isnan(x) ? (nan) : __builtin_isinf(x) ? (inf) \
 		 : (x) == 0 ? (zero) : __builtin_isnormal(x) ? (norm) : (sub))
 
+#if defined __x86_64__ && !defined _WIN32 //@
+	#define __SIZEOF_INT128__ 16
+	typedef __int128 __int128_t;
+	typedef unsigned __int128 __uint128_t;
+#else //@
 	struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
 	#define __int128_t struct __uint128__
 	#define __uint128_t struct __uint128__
+#endif //@
 
 #if defined __x86_64__ //@
 #if !defined _WIN32 //@
