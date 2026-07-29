@@ -1024,8 +1024,17 @@ ST_FUNC void mcc_isa_init(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->isa_mask)
 		{ MCC_TRACE("br\n"); return; }
 #if defined(MCC_TARGET_X86_64)
-	s1->isa_mask = MCC_ISA_V1;
-	s1->isa_level = "x86-64";
+	/* native is the DEFAULT: mcc targets the machine it is running on unless
+	   told otherwise, the same way gcc -march=native does when asked. The
+	   host-dependence this creates is represented by the CACHE -- so_key folds
+	   the resolved mask and ast_isa_key_term separates the slices that are
+	   actually ISA-sensitive -- rather than avoided by pessimising the default.
+	   CROSS-COMPILATION falls back to the triple baseline for free: mcc_isa_native
+	   only reads CPUID under __x86_64__/__i386__, so an x86_64-targeting mcc
+	   hosted on another arch gets MCC_ISA_V1 and never bakes host-only
+	   instructions into cross output. */
+	s1->isa_mask = mcc_isa_native();
+	s1->isa_level = "native";
 #elif defined(MCC_TARGET_I386)
 	s1->isa_mask = 0;
 	s1->isa_level = "i686";

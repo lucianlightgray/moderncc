@@ -25,8 +25,12 @@ WORK=$3
 [ -x "$MCC" ] || { echo "SKIP: no mcc at $MCC"; exit 77; }
 command -v objdump >/dev/null 2>&1 || { echo "SKIP: objdump not found"; exit 77; }
 
-case $("$MCC" -print-isa 2>/dev/null | head -1) in
-	"level: x86-64"*) ;;
+# Probe for an x86-64 mcc by asking whether it accepts an x86-64 level, NOT by
+# pattern-matching the DEFAULT level: the default is `native`, so matching on
+# "level: x86-64" made this whole cell SKIP (=pass) the moment the default
+# flipped, which is exactly how a test stops testing anything without saying so.
+case $("$MCC" -march=x86-64 -print-isa 2>/dev/null | head -1) in
+	"level: x86-64") ;;
 	*) echo "SKIP: not an x86-64 mcc"; exit 77 ;;
 esac
 
@@ -41,12 +45,13 @@ EOF
 
 isa() { "$MCC" -B"$BASE" $1 -print-isa 2>&1; }
 
-# 1. The default is the triple BASELINE, not the host. Making it native would
-#    make output host-dependent and break golden byte-identity and the
-#    self-host fixpoint, so this is load-bearing rather than cosmetic.
-if [ "$(isa '' | head -1)" = "level: x86-64" ] &&
-	 [ "$(isa '' | tail -1)" = "features: sse2" ]; then
-	echo "PASS: default resolves to the x86-64 baseline, not the host"
+# 1. The default is NATIVE -- mcc targets the machine it runs on. Asserted as
+#    "the default equals an explicit -march=native", not against a fixed feature
+#    list, because the correct answer differs per host and hardcoding this
+#    machine's would make the cell a lie on any other one.
+if [ "$(isa '' | head -1)" = "level: native" ] &&
+	 [ "$(isa '')" = "$(isa -march=native)" ]; then
+	echo "PASS: the default is native and matches an explicit -march=native"
 else
 	echo "FAIL: default -print-isa is '$(isa '' | tr '\n' ' ')'"
 	rc=1
@@ -92,10 +97,13 @@ rounds() {
 	"$MCC" -B"$BASE" -O2 -fno-math-errno $1 -c "$WORK/r.c" -o "$WORK/r.o" 2>/dev/null
 	objdump -d "$WORK/r.o" | grep -cE 'roundsd|roundss' || true
 }
-if [ "$(rounds '')" = "0" ] && [ "$(rounds '-march=x86-64')" = "0" ]; then
-	echo "PASS: the baseline emits no roundsd"
+# The baseline must be named EXPLICITLY here. The default is `native`, so on an
+# SSE4.1 host the no-flag build correctly DOES emit roundsd; asserting against
+# the implicit default would be asserting the host, not the flag.
+if [ "$(rounds '-march=x86-64')" = "0" ]; then
+	echo "PASS: an explicit baseline -march emits no roundsd"
 else
-	echo "FAIL: baseline emitted roundsd ('$(rounds '')' / '$(rounds '-march=x86-64')')"
+	echo "FAIL: -march=x86-64 emitted roundsd ('$(rounds '-march=x86-64')')"
 	rc=1
 fi
 if [ "$(rounds '-march=x86-64-v2')" -ge 1 ]; then
@@ -107,9 +115,9 @@ fi
 
 # 6. The rule this whole axis exists for: optimization effort must not raise
 #    the ISA floor.
-"$MCC" -B"$BASE" -O4 -fno-math-errno -c "$WORK/r.c" -o "$WORK/r4.o" 2>/dev/null
+"$MCC" -B"$BASE" -O4 -fno-math-errno -march=x86-64 -c "$WORK/r.c" -o "$WORK/r4.o" 2>/dev/null
 if [ "$(objdump -d "$WORK/r4.o" | grep -cE 'roundsd|roundss' || true)" = "0" ]; then
-	echo "PASS: -O4 alone does not raise the required ISA"
+	echo "PASS: -O4 does not raise the ISA above the -march it was given"
 else
 	echo "FAIL: -O4 emitted roundsd at the baseline -march; optimization effort"
 	echo "  must not change which CPUs the output runs on"

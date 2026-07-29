@@ -179,7 +179,33 @@ every slice per-host and destroys the cross-host sharing the slice store was bui
 slice actually CONSUMED, so a function with no ISA-dependent construct keeps one key everywhere and only the
 host-dependent ones separate.
 
-**Ordering, and the honest risk.** The flip cannot land before the cache change: with `native` on an AVX-512 host
+**FLIPPED 2026-07-29 — `-march` now defaults to `native`, and step (2) turned out to need NO WORK.** Measured
+rather than assumed, by temporarily defaulting to native on an AVX-512 host and running everything:
+full ctest **7893/7893**, the recorder-fidelity gap set **byte-identical across ISAs** (183 gaps, 0 diffs
+regenerated under baseline vs native), and the 3-stage self-host fixpoint green because all three stages share one
+host and it is therefore inherently within-ISA.
+
+**So this section's central fear was real in principle and vacuous in practice.** Nothing in the suite compares
+BYTES against a checked-in expectation across hosts — every expectation is behavioural: program output, recorder
+verdict classes, or an mcc-vs-gcc-vs-clang consensus. `roundsd` versus a libm call produce the same answer, so a
+golden cannot tell them apart. The only byte-level comparisons are within a single run on a single host
+(`selfhost-fixpoint`'s o1==o2==o3, the `dash-s-bytes-*` cells) and those never span ISAs. Do not re-derive this;
+re-run the probe only if a test that compares object bytes to a checked-in artifact is ever added.
+
+**Cross-compilation keeps the triple baseline by construction, not by a check:** `mcc_isa_native` only reads CPUID
+under `__x86_64__`/`__i386__`, so an x86_64-targeting mcc hosted on another architecture gets `MCC_ISA_V1` and
+cannot bake host-only instructions into cross output.
+
+**A trap the flip exposed, worth more than the flip.** `cli/march-isa` gated itself with
+`case $(mcc -print-isa) in "level: x86-64"*)`, i.e. on the DEFAULT level. The moment the default became `native`
+that guard stopped matching and the whole cell SKIPPED — and a skip counts as a pass, so the `-march` test would
+have silently stopped testing anything. Two of its assertions had the same shape, treating the implicit default as
+"the baseline", which on an SSE4.1 host now correctly emits `roundsd` — they were asserting the host, not the flag.
+Fixed by probing (`-march=x86-64 -print-isa` must resolve) instead of matching the default, and by naming
+`-march=x86-64` explicitly wherever baseline semantics are meant. **Any cell that keys off a default is a cell that
+stops working when the default changes.**
+
+**Historical — ordering, and the honest risk.** The flip cannot land before the cache change: with `native` on an AVX-512 host
 today, `ROUND_INLINE` turns on, `roundsd` appears, and the goldens plus the 3-stage self-host fixpoint fail — not
 because the output is wrong but because the artifacts are being compared across ISAs as if they were the same
 thing. So: (1) make the AST hash/serialize carry the consumed-feature set and split host-dependent usages from
