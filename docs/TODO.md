@@ -103,21 +103,44 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 
 **Current state.** `-march=` is already **accepted and discarded** — `case MCC_OPTION_m` (`libmcc.c`) matches `arch=`/`tune=`/`cpu=`/`cmodel=`/`fpmath=` and `break`s, so `mcc -march=x86-64-v3` is silently a no-op today. `-m32`/`-m64` are the only `-m` forms with meaning. On ARM the ISA level exists but is **compile-time only**: `MCC_CONFIG_CPUVER` (CMake `MCC_CPUVER`, `CMakeLists.txt`) baked per build and read at `arm-link.c` (`blx_avail = CPUVER >= 5`) and `arm-gen.c` (`#if CPUVER >= 7`), alongside `MCC_ARM_EABI/_VFP/_HARDFLOAT/_IDIV`. Nothing is queryable per invocation.
 
-**IN PROGRESS 2026-07-29 — steps 1, 3, 6 and the `ROUND_INLINE` half of step 4.** Scoped to x86-64 named levels
-plus `native`, the `mcc_isa_has` predicate, `-print-isa` introspection, and wiring the one gate this section names
-outright (`o4 || (level >= x86-64-v2)` for `MCC_AST_ROUND_INLINE`) so the mask is load-bearing rather than a
-foundation nothing reads.
+**LANDED 2026-07-29 (`4e74e1c9`) — steps 1, 3, 6 and the `ROUND_INLINE` half of step 4.** x86-64 named levels plus
+`native`, the `mcc_isa_has` predicate, `-print-isa` introspection, and the one gate this section names outright
+(`MCC_AST_ROUND_INLINE` keyed on `MCC_ISA_SSE41`) so the mask is load-bearing rather than a foundation nothing
+reads. Unknown `-march=` values are now an error; `-mtune`/`-mcpu` stay accepted. Pinned by `cli/march-isa`.
 
-**Step 2 is deliberately NOT being taken as written, and the reason is in this section already.** "`-march=native`
-is the default" collides head-on with the two invariants the M8 bar rests on: goldens and the 3-stage self-host
-fixpoint would diverge between an AVX-512 host and an SSE2 one, which this section's own testing note spells out.
-The default therefore stays the **triple baseline**, and `native` is opt-in and honestly resolved by CPUID rather
-than quietly aliased to the baseline. Flipping the default to native is a separate change that must land AFTER
-every golden/differential/fixpoint cell pins an explicit `-march=`, not before.
+**The shipped default is the triple baseline, and that is an INTERIM state — see the decision below.**
+
+### DECISION (user, 2026-07-29): `-march` is ALWAYS `native` by default, and reproducibility is the CACHE's problem
+This overrides the "default to the triple baseline" reading, and it overrides the framing in the testing note
+below, which treated host-dependence as a reason not to default to native. Host-dependence is not the compiler's
+problem to dodge by lowering the default; it is the cache's problem to represent.
+
+**The requirement.** The AST serialize / deserialize / hash must let a node usage that is HOST-DEPENDENT separate
+itself from the generic implementation of the same thing. A slice compiled where `roundsd` was legal and a slice
+compiled where it was not are different artifacts and must not collide, must not be substituted for one another,
+and must not silently invalidate each other. That is a property of the key, not of the codegen: an ISA-dependent
+node participates in the hash with the features it actually consumed, a generic one does not, and the cache is the
+only layer that has to care. Nothing else in the compiler should acquire an `-march` conditional to make this work.
+
+**Why this is the right shape rather than pinning every test.** Making the default baseline would keep goldens
+byte-identical by making mcc pessimise on every machine it runs on, and would leave `native` a flag almost nobody
+passes. Keying the cache on the consumed feature set instead means the fast path is the default, two hosts with
+different ISAs simply hold different entries, and byte-identity is asserted per (source, ISA) pair rather than
+globally — which is what it always should have meant.
+
+**Ordering, and the honest risk.** The flip cannot land before the cache change: with `native` on an AVX-512 host
+today, `ROUND_INLINE` turns on, `roundsd` appears, and the goldens plus the 3-stage self-host fixpoint fail — not
+because the output is wrong but because the artifacts are being compared across ISAs as if they were the same
+thing. So: (1) make the AST hash/serialize carry the consumed-feature set and split host-dependent usages from
+generic ones; (2) make the golden/differential/fixpoint machinery compare within an ISA rather than across;
+(3) THEN flip the default to `native`. Steps 1 and 2 are the work; step 3 is a one-line change to `mcc_isa_init`.
+
+**Cross-compilation keeps the triple baseline** — when the target triple differs from the host there is no host ISA
+to detect, and native detection would bake host-only instructions into cross output. That part of step 2 stands.
 
 **Plan.**
 1. **Feature mask on `MCCState`**, not a string. Parse `-march=`/`-mcpu=`/`-mtune=` into a bitmask + a single predicate (`mcc_isa_has(s1, MCC_ISA_SSE41)`). Keep the existing string forms accepted so no command line regresses.
-2. **`-march=native` is the default**, resolved by host detection: `CPUID` leaf 1/7 on x86, `getauxval(AT_HWCAP/HWCAP2)` on arm64/armv7, `AT_HWCAP` + `/proc/cpuinfo` on riscv64, with a documented fallback to the triple baseline when detection fails. **Cross-compilation must NOT default to native** — when the target triple differs from the host, default to that triple's baseline (`x86-64`, `armv7-a`, `armv8-a`, `rv64gc`, `i686`) or native detection will bake host-only instructions into cross output.
+2. **`-march=native` is the default** (CONFIRMED by the decision above — it is the end state, not an option), resolved by host detection: `CPUID` leaf 1/7 on x86 (**done**), `getauxval(AT_HWCAP/HWCAP2)` on arm64/armv7, `AT_HWCAP` + `/proc/cpuinfo` on riscv64, with a documented fallback to the triple baseline when detection fails. Blocked only on the cache carrying the consumed-feature set; the detection itself already works and is reachable today as `-march=native`. **Cross-compilation must NOT default to native** — when the target triple differs from the host, default to that triple's baseline (`x86-64`, `armv7-a`, `armv8-a`, `rv64gc`, `i686`) or native detection will bake host-only instructions into cross output.
 3. **Named levels**, matching gcc/clang so muscle memory transfers: `x86-64` (SSE2, today's baseline), `x86-64-v2` (SSE4.2/POPCNT), `x86-64-v3` (AVX2/FMA/BMI), `x86-64-v4` (AVX512); `armv7-a[+idiv][+vfp][+neon]`, `armv8-a[+simd]`; `rv64gc` and friends. `-march=<level>` must be *reproducible*: same level ⇒ byte-identical output on any host.
 4. **Re-gate the ISA-dependent optimizers** from "opt-in env knob" to "on when the ISA allows", i.e. default becomes `o4 || (level >= N && mcc_isa_has(...))` and the `MCC_AST_*` env var stays as a manual override:
    - `MCC_AST_ROUND_INLINE` — `roundsd`, needs **SSE4.1** (`x86-64-v2`). The one actually breaking `-O4` portability today.
@@ -130,7 +153,7 @@ every golden/differential/fixpoint cell pins an explicit `-march=`, not before.
 5. **Predefined macros must follow `-march`** (`mccpp.c`, same place `__OPTIMIZE__` is set): `__SSE4_1__`, `__AVX2__`, `__FMA__`, `__ARM_NEON`, `__ARM_FEATURE_IDIV`, `__riscv_flen`, … Otherwise system headers and libc `ifunc`/inline-asm paths disagree with what mcc actually emits — a silent-miscompile class, not a cosmetic gap.
 6. **Introspection**: report the resolved level and feature set (extend `-print-search-dirs`, or a `-print-isa`), so CI and bug reports can state the ISA a build targeted.
 
-**Testing / M8 impact — read before starting.** `-march=native` makes output **host-dependent**, which collides head-on with the two invariants this project leans on: golden byte-identity and the 3-stage self-host fixpoint (they would diverge between an AVX-512 CI runner and an SSE2 one). Therefore: every golden, differential and fixpoint test must pin an explicit `-march=<baseline>` rather than inherit native; the differential fuzz should additionally run per level (`x86-64`, `-v2`, `-v3`) since each level is a distinct codegen path; and `-march=native` needs its own smoke test asserting only that it runs, never byte-identity. Add a `ckconfig`-style guard so a new ISA-dependent optimizer cannot land without declaring its required level.
+**Testing / M8 impact — read before starting.** `-march=native` makes output **host-dependent**. The decision above settles how that is handled: the cache keys on the consumed feature set, and byte-identity is asserted per (source, ISA) pair rather than globally, so two hosts with different ISAs hold different entries instead of contradicting each other. What follows is therefore about making the harness ISA-aware, NOT about avoiding native. Pinning `-march=<baseline>` in a test is acceptable only where the test's subject is something other than codegen; a golden that pins the baseline purely to stay reproducible is measuring a configuration nobody ships. The differential fuzz should additionally run per level (`x86-64`, `-v2`, `-v3`) since each level is a distinct codegen path; and `-march=native` needs its own smoke test asserting only that it runs, never byte-identity. Add a `ckconfig`-style guard so a new ISA-dependent optimizer cannot land without declaring its required level.
 
 ## Auto-detect `-B`/`-I` dirs when absent from argv — DESIGN BLOCKED on the self-host byte-identity invariant
 Wanted: `mcc` should find its own `include`/`runtime`/`win32` dirs when `-B` and `-I` are not given, so a compiler built into an arbitrary directory works out of the box. This is a real papercut — a hand-built or scratch-dir compiler currently reports the failure as something unrelated: `include file 'stddef.h' not found` from the system `stdio.h`, `mccdefs.h not found`, or `_runmain not defined`.
