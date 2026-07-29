@@ -3615,7 +3615,7 @@ two-operand form — it is the one-operand `mul r/m` with the multiplicand pinne
 in `%rdx`, so that path pins `a -> %rax` and moves the flag scratch to `%rsi` (it cannot be `%rdx`). The store has
 to happen BEFORE the `movzx` writes the boolean into `%rax`, since for unsigned mul the product IS in `%rax`.
 
-**`__mcc_signbit`/`signbitf` are inlined 2026-07-28 behind `MCC_SIGNBIT_INLINE` (default OFF).** `MOVMSKPS`/
+**`__mcc_signbit`/`signbitf` are inlined 2026-07-28, DEFAULT-ON (`MCC_SIGNBIT_INLINE=0` opts out).** `MOVMSKPS`/
 `MOVMSKPD` put lane 0's sign bit in bit 0 of a GP register, so `__builtin_signbit` is that plus one `and $1`; both
 are SSE2, so no ISA floor moves. x87 `long double` has no equivalent and keeps `__mcc_signbitl`.
 
@@ -3628,7 +3628,17 @@ until you print the number.
 Re-measured after this, over `tests/exec` + `tests/behavior` + mcc's own TU, the non-libgcc residue is **10 names**:
 `__mcc_addo_{s,uc,ti}`, `__mcc_subo_uc`, `__mcc_mulo_ti`, the four complex helpers, and `__mcc_signbit`. The
 `_s`/`_uc` forms are the 1- and 2-byte widths this hook declines; `_ti` is 128-bit. So what is left divides into
-"narrow widths, mechanical" and "complex arithmetic plus `__mcc_signbit`, genuinely different work".
+"narrow widths, mechanical" and "complex arithmetic", `__mcc_signbit` having since been inlined as well.
+
+**The complex helpers cannot be fixed by a RENAME — checked 2026-07-28, and this kills the cheapest option for
+them.** mcc's are
+`void __mcc_cmul(T *res, T a, T b, T c, T d)` — result through an out-pointer — while libgcc's are
+`_Complex double __muldc3(double a, double b, double c, double d)`, returning the pair by value (SSE,SSE under
+SysV, so `xmm0`/`xmm1`; the `long double` forms `__mulxc3`/`__divxc3` return in `st(0)`/`st(1)`). Adopting the
+libgcc ABI therefore means changing the CALL SITE to consume a two-register return, not just the symbol name. mcc
+already has the machinery — `gfunc_call`'s `ret_nregs` path handles multi-register returns — so this is a contained
+change, but it is a call-shape change and needs its own differential test against gcc for the NaN/infinity fixups
+those helpers exist to implement.
 
 Flip validation: full ctest 7505/7505, self-host fixpoint byte-identical, all 53 `jit/*` cells, a 60-seed
 differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64 cross sanity build. This is
