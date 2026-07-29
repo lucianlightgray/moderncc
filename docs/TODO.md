@@ -1161,8 +1161,11 @@ real-object validation stays macOS-gated.
    `ast_hook_while_cond_start` (at the `d = gind()` loop head) redirects recording into a DETACHED prefix
    BasicBlock; `ast_hook_while_begin` attaches it as the loop node's third child only when non-empty, and the
    op-2 loop replay emits it between `gind()` and the condition each iteration. Empty-prefix loops keep the
-   exact 2-child shape (zero change for normal loops even gate-on). do/for comma conditions are NOT yet covered
-   (same idea, different hooks). Validated: gate-off byte-identical (3-way md5); `wcomma` repro flips faithful;
+   exact 2-child shape (zero change for normal loops even gate-on). DO-WHILE covered the same way 2026-07-29
+   under the same env (`ast_hook_do_body_end` redirects into the detached prefix, `do_cond` attaches it as the
+   op-4 node's child 2, replay emits it between `gsym(bb)` and the condition): `dcomma` flips faithful, runtime
+   matches gcc `-O1/2/3`, TU 49 -> 48. FOR comma conditions (op 3/5) still open — different child layout.
+   Validated: gate-off byte-identical (3-way md5); `wcomma` repro flips faithful;
    runtime matches gcc `-O1/2/3` (per-iteration call count observable via a feed array); TU all-nine-gates:
    unfaithful 52 -> 49 (zero regressions); ast ctest 224/224 + fuzz matrix 5/5. `WHILE_COMMA` added to the
    fuzzer gate table and the `RECORDER8` combo (now nine gates). Session: 239 -> 49. AOT-only (P0 rule).
