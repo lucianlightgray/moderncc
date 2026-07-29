@@ -3255,6 +3255,56 @@ The GCC 17.0.0 trunk tree now builds to completion with a self-hosted `mcc -O3` 
 
 **Verification beyond exit status:** the resulting `xgcc`/`xg++` were run, not just built — a C varargs program (GP/SSE/overflow/large-struct) and a C++20 `<vector>`/`<algorithm>`/`<iostream>` program both compile and produce correct output. Any gate should keep that step; "the build finished" is much weaker than "the compiler it produced works".
 
+## `__int128` PHASE 2 — replace the two-half helper calls with native emitters, TDD against gcc/clang (raised 2026-07-28)
+
+Phase 1 (in progress) makes `__int128` real by representing it as two 64-bit halves and lowering every
+operation to a libgcc-ABI runtime call in `runtime/lib/int128.c` — `__multi3`, `__udivti3`, `__ashlti3`,
+`__clzti2` and friends, written as portable bitwise C over an upper/lower pair. That is the reference
+semantics: obviously correct, linkable by any toolchain, and slow. **Phase 2 is to emit native x86_64
+code for the operations where a call is absurd, one operation at a time, each one proven equivalent
+before it is switched on.**
+
+**Why a call is the right Phase-1 answer and still the wrong long-term one.** `a + b` on a 128-bit
+value is `add`/`adc` — two instructions. Going through `__addti3`-style call overhead for that is
+roughly two orders of magnitude off. Multiply is one `mulq` plus two `imulq` and an `add`. Shifts are
+`shld`/`shrd` plus a branch on `count >= 64`. Only divide and modulo genuinely deserve to stay calls,
+which is exactly what gcc does — gcc inlines everything else and calls `__udivti3`/`__divti3`.
+
+**METHOD — stub first, prove, then switch. Do not write the emitter and then test it.**
+For each operation:
+1. Add a native emitter as a STUB that is compiled but not reachable, behind a per-operation env gate
+   (`MCC_I128_NATIVE_ADD=1` and so on, defaulting OFF ⇒ byte-identical output). This is the same
+   fallthrough-gate discipline the AST work uses, and it makes bisection trivial.
+2. Write the differential test BEFORE the emitter body: a generator that emits C using the operation
+   over a corpus of values, compiled three ways — mcc gate-off (helper call), mcc gate-on (native), and
+   gcc plus clang as the oracle — with all four required to produce identical output. Values must
+   include zero, ±1, `INT128_MIN`, both halves nonzero, high-half-only, and shift counts 0/1/63/64/65/127.
+3. Only once the gate-on path matches on the full corpus does the gate flip default-ON, and the helper
+   stays as the fallback for every other target.
+
+**Ordered by payoff:**
+- `add`/`sub`/`neg` — `add`+`adc`, `sub`+`sbb`. Two instructions, trivially provable, biggest ratio win.
+- Comparisons — `cmp` high, branch, `cmp` low. Also feeds `switch` and conditionals.
+- Bitwise `and`/`or`/`xor`/`not` — two independent 64-bit ops, no carry, the easiest of the lot.
+- Shifts — `shld`/`shrd` plus the `count >= 64` case. The count-64 boundary is where implementations
+  reliably go wrong (x86 shift counts are masked to 6 bits), so test 63/64/65 explicitly.
+- `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
+  wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together.
+- Multiply — `mulq` for the low 64×64→128 product, two `imulq` for the cross terms.
+- Divide/modulo — LEAVE AS CALLS. gcc does. Not worth inline expansion.
+
+**Prerequisite, and the reason this is Phase 2 rather than Phase 1:** these emitters need a 128-bit
+value to live in a REGISTER PAIR, and mcc's register allocator is single-register-per-value. Phase 1
+sidesteps this entirely by keeping the value in memory and passing it per the SysV ABI. Whether Phase 2
+needs a real register-pair concept in `SValue`, or can get away with an
+allocate-two-adjacent-registers convention, is the first thing to establish — and it is the item most
+likely to change the plan, so establish it before writing any emitter.
+
+**Acceptance for the whole phase:** every gate default-ON, byte-identical self-host fixpoint, ctest
+green, and the differential corpus passing against BOTH gcc and clang. Any operation that cannot be
+made to match stays a helper call — a slower correct answer beats a faster wrong one, and the Phase 1
+implementation is always there as the fallback.
+
 ## Ungate campaign (flip every default-off feature on)
 Endgame: once each gate's M8 soak is clean, flip it default-on and regenerate goldens. The proven optimizer passes are already flipped default-on at -O2 (`PROMOTE`/`COLOR`/`LICM_TEMP`/`IVSR`/`PRE`/`REASSOC`/`SETHI_LEAF`/`NARROW_ELIM`/`SPILL_SHARE`/`VLAT`/`DIVMAGIC` — **11 of these VERIFIED 2026-07-27 by `optfire/default-*`, which compiles with no env versus the gate forced to 0 and requires the objects to differ**). **`ARGFWD` was on that list and does NOT belong: its gate defaults on (`o4 || s1->optimize >= 2`) but the PASS is inert.** Toggling `MCC_AST_ARGFWD` at `-O2`/`-O3` changes nothing; it only becomes live with `MCC_AST_INLINE_PASS=0`, because argument forwarding lives in the replay-time graft path that `do_inline`'s `!ast_inline_pass_env` guard disables — and `INLINE_PASS` is default-on from `-O2`. **Second gate found in this class**, alongside `MCC_AST_PERFN_INPROC` (which is default-OFF, so it advertises nothing). NOT `MCC_AST_INLINE` — that one was retracted, see the `-march` section: it has a second consumer (`ast_reemit_retain`) and is load-bearing. The per-gate cost/benefit sweep in this section will have measured `ARGFWD` as worthless for the same reason its own caveat gives for `MATH_INLINE`/`ROUND_INLINE`/`COPYSIGN_INLINE`. `optfire/default-argfwd` asserts `off` as a TRIPWIRE: fix the graft-path guard and that cell fails, prompting the flip to `on`. **Swept for further instances 2026-07-27 — none found.** Method that works: a gate is in this class only if it has a case that PROVABLY exercises it (a passing `optfire` differ cell, i.e. forcing it changes the object) AND that same case shows no change when the gate is left at its default. Across all 51 differ cases only 4 flagged — `CHAINSTORE`, `OPASSIGN`, `PROMO_ARROW`, `PROMO_INCDEC` — and all 4 are false positives from testing at `-O2` when their declared defaults are `optimize >= 3` and `optimize_size`; each is confirmed default-ON at its real level (`-O3`, `-O3`, `-Os`, `-Os`). So `ARGFWD` is the only advertised-but-unreachable gate among those with exercising cases, alongside `MCC_AST_INLINE` and `PERFN_INPROC` which are known and share the same `!ast_inline_pass_env` guard. **A cruder sweep does NOT work and was discarded**: toggling each gate over `libmcc.c`+`mccgen.c` reported 28 gates as inert, but that conflates 'structurally unreachable' with 'no opportunity in those two files' — `TILE`, `FUSION`, `CSE_COMM` and others appear inert there while `optfire` proves they fire on suitable code. Object-diff sweeps need a case known to exercise the gate, or they measure the corpus rather than the compiler, and `MCC_CROSS_OPTIMIZER` defaults ON so cross triples carry the AST optimizer + embed-jit (the per-triple reemit/JIT parity axes are now real, not latent — watch cross-cell wall-clock, ~+46% per cross compiler). Remaining:
 - The per-gate multi-arch golden-regen + tens-of-thousands-of-seeds differential soak on the x86_64/arm64-native CI cells, shared by every landed flip. **FIRST VALID GATE-SWEPT SOAK RAN 2026-07-27: 600 seeds, `596 agree, 0 miscompile, 4 dropped(UB), 0 mcc-buildfail` (seeds 100000-100599, x86_64, gcc+clang consensus).** With `--gates` each agreeing program is additionally rebuilt across the runner's 12 `MCC_AST_*` gates x 4 `-O` levels, so this is ~31k compile+run configurations, not 600. **Every earlier `--gates` run in this repo swept NOTHING** — `GATES[g].env` was passed into a parameter the reference-compiler branch of `build_run` never read (fixed 2026-07-27), so any prior claim of gate-sweep fuzz coverage is vacuous and this is the baseline to build on. Remaining for the flips: the same on arm64-native, and scaling the seed count up. Evidence so far: native x86_64 all-gates run 5501/5501 and arm64-macOS 5514/5514; a per-gate x86_64 mcc-vs-gcc differential soak found 0 miscompiles with all 12 gates individually confirmed firing; the 3-stage self-host byte-identical fixpoint (o1==o2==o3) holds with all 12 gates forced on AND per-gate individually (`selfhost-fixpoint-gates` ctest, native-ELF-gated). This is broad but NOT yet the per-gate seed soak the flips ultimately require.
