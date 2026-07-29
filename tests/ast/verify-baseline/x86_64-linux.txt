@@ -108,7 +108,6 @@ programs/grep.c	pmatch	bail
 programs/random_stuff.c	tst_adr	desync
 programs/random_stuff.c	tst_branch	desync
 programs/random_stuff.c	tst_pack	unfaithful
-programs/random_stuff.c	tst_void_ptr	unfaithful
 programs/stdio.c	main	unfaithful
 runner.c	slurp	unfaithful
 statements/chained_assign.c	chain_in_expr	unfaithful

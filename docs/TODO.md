@@ -1178,9 +1178,11 @@ real-object validation stays macOS-gated.
    - **Validation at the flip:** full ctest 7893/7893, 3-stage self-host fixpoint, differential fuzz clean,
      non-vacuous JIT `-run` parity, qemu runtime on i386/arm32/arm64/riscv64.
 
-   **Remaining fidelity residuals (the new tail, ~44):** mov-only register-order deltas (the largest),
-   void-arm discarded-ternary byte-mirror, 3+-member chains (pairwise limit), `store_packed_bf`'s remaining
-   delta, A1a `nocode_wanted`. These are follow-on work, not part of the closed item.
+   **Remaining fidelity residuals (the new tail, ~43):** mov-only register-order deltas (the largest),
+   3+-member chains (pairwise limit), `store_packed_bf`'s remaining delta, A1a `nocode_wanted`. These are
+   follow-on work, not part of the closed item. (Void-arm discarded-ternary byte-mirror CLOSED 2026-07-29:
+   the delta was the parser's degenerate second join-jmp after the else arm; the discard emitter now mirrors
+   it — `c ? va_() : vb_()` faithful, ratchet banked at 158.)
    and `mcc_preprocess` extra-call deltas, then the `xorb`/`movabs`/`add`/`cmp` length-differ population.
 6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
 7. **Prune this file** — see the canonical entry under "Alongside"; not repeated here.

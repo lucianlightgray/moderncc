@@ -6358,7 +6358,9 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					ast_replay_value(a, ast_child(a, s, 2));
 					while (vtop > base0)
 						{ MCC_TRACE("br\n"); vpop(); }
+					int t2 = gjmp(0);
 					gsym(u);
+					gsym(t2);
 					break;
 				}
 				ast_replay_value(a, s);
