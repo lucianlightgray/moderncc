@@ -1173,6 +1173,13 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **SELF-HOST FIXPOINT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29.** 3-stage gate with ALL ELEVEN gates
+   in the environment for every stage (cmake-debug/mcc -> mcc2 -> mcc3 -> mcc4, amalgamation recipe, no
+   MCC_EMBED_* defines): **s3 == s4 byte-identical**; gates-off control fixpoint also holds; non-vacuity
+   confirmed (gates-on mcc2 differs from gates-off mcc2, so the gates were live through the whole tower); the
+   stage-4 gates-on-built compiler compiles and runs the member-chain repro correctly. Per the recipe memory,
+   s2 != s3 is expected (differently-configured stage-1) — the gating invariant is s3 == s4.
+
    **JIT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29 (P0 standing rule satisfied for the flip
    criteria).** `-O2 -run` parity `MCC_JIT=0` == `MCC_JIT=1` == widened admission
    (`MCC_JIT_PURITY_NOESCAPE/LAZY/SEARCH`) with ALL ELEVEN gates on, over the `tests/jit/parity` corpus + the
