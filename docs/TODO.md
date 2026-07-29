@@ -1184,7 +1184,7 @@ real-object validation stays macOS-gated.
    2026-07-29: the WHILE_COMMA prefix BB had moved the condition's Store out of the StoreVal walk's
    adjacent-sibling reach; the walk now admits a Store that is the LAST statement of an op-2/op-3 loop's
    prefix whose marker is the condition's leftmost leaf — `wassign`/`wptr`/`fassign` flip faithful, ratchet
-   banked at 155; the do-while analog (cond at child 1) is still open. Void-arm discarded-ternary
+   banked at 155; the do-while analog CLOSED same day — an op-4 pass-through step in the walk, with a `docond` flag that FORBIDS the plain-adjacency admission (a store BEFORE a do-loop is clobbered by the body); `dassign` faithful, plain-pre-store `dpre` still correctly handled. Void-arm discarded-ternary
    byte-mirror CLOSED 2026-07-29:
    the delta was the parser's degenerate second join-jmp after the else arm; the discard emitter now mirrors
    it — `c ? va_() : vb_()` faithful, ratchet banked at 158.)
