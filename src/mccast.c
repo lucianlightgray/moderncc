@@ -2724,10 +2724,11 @@ void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_if_begin(void) { MCC_TRACE("enter\n");
-	if (!ast_active || ast_desync || ast_bail)
+	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
-	if (ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
+	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
 		ast_bail = 1;
+		ast_in_call = 1;
 		return;
 	}
 	ast_finalize_leaf(ast_vs[0], vtop);
@@ -2749,8 +2750,13 @@ void ast_hook_if_gvtst_done(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_call = 0;
-	if (ast_desync || ast_bail)
+	if (ast_desync)
 		{ MCC_TRACE("br\n"); return; }
+	if (ast_bail) { MCC_TRACE("br\n");
+		if (ast_vn > 0)
+			{ MCC_TRACE("br\n"); ast_vn--; }
+		return;
+	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	if (ast_vn != rel)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
@@ -2781,10 +2787,11 @@ void ast_hook_if_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_while_begin(void) { MCC_TRACE("enter\n");
-	if (!ast_active || ast_desync || ast_bail)
+	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
-	if (ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
+	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
 		ast_bail = 1;
+		ast_in_call = 1;
 		return;
 	}
 	ast_finalize_leaf(ast_vs[0], vtop);
@@ -2843,10 +2850,11 @@ void ast_hook_do_body_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_do_cond(void) { MCC_TRACE("enter\n");
-	if (!ast_active || ast_desync || ast_bail)
+	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
-	if (ast_cf_top < 1 || ast_vn != 1) { MCC_TRACE("br\n");
+	if (ast_bail || ast_cf_top < 1 || ast_vn != 1) { MCC_TRACE("br\n");
 		ast_bail = 1;
+		ast_in_call = 1;
 		return;
 	}
 	ast_finalize_leaf(ast_vs[0], vtop);
@@ -2894,10 +2902,11 @@ void ast_hook_for_begin(int has_cond) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_for_cond(void) { MCC_TRACE("enter\n");
-	if (!ast_active || ast_desync || ast_bail)
+	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
-	if (ast_cf_top < 1 || ast_vn != 1) { MCC_TRACE("br\n");
+	if (ast_bail || ast_cf_top < 1 || ast_vn != 1) { MCC_TRACE("br\n");
 		ast_bail = 1;
+		ast_in_call = 1;
 		return;
 	}
 	ast_finalize_leaf(ast_vs[0], vtop);

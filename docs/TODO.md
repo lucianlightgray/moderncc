@@ -763,7 +763,7 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 |---|---|---|
 | D1a gate staging audit | **DONE** | 3 gates re-staged: `OPASSIGN`→`-O2` (`6acb9e69`), `CHAINSTORE`→`-O2` (`e81035e5`), `PROMO_ARROW`+`PROMO_INCDEC`→`-O2/-O3` (`e052542a`) |
 | B1a assignment-as-value | **2 of 3** | statement chain fixed as a side effect of D1a; discarded ternary fixed (`8e867f40`); **call-argument path open, experiment specified** |
-| A2a vstack SYNC | **characterised** | all 43 uniform (`delta=1`, 0 capacity); site proven to be a DETECTOR (`026233f8`) |
+| A2a vstack SYNC | **60 -> 23 fixed** | site proven to be a DETECTOR (`026233f8`); the unaccounted-pop class is fixed in `switch` (`1939ba28`) and in `if`/`while`/`do`/`for`; residue is 13 short-circuit (Group A) + ~10 other |
 | A1a `nocode_wanted` | not started | 3 approaches ruled out; hardest item in the file |
 
 Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
@@ -1091,22 +1091,53 @@ both WITHDRAWN**; they were artifacts of the same window.
 What survives the boundary-respecting re-run, and is the real handle:
 - **42 of 44 have at least one in-function `vpop`** before failing, so pops are involved — but not in a fixed count,
   which rules out a single mechanical double-pop.
-- **2 have NO `vpop` at all in their function** — a distinct second mechanism and the smallest failing cases.
-  **READ 2026-07-28; both are the SAME sequence:**
+- **2 have NO `vpop` at all in their function** — **SOLVED AND FIXED 2026-07-28 (`1939ba28`); it is a `switch`, and
+  the "in-place replacement" reading was WRONG.** Nothing is overwritten: `ast_hook_switch_begin` failed to account
+  for a pop that codegen performs unconditionally. `block()`'s `TOK_SWITCH` arm does `sw->sv = *vtop--` immediately
+  after the hook, but the hook only did `ast_vn = 0` on its SUCCESS path — all four bail exits (already-bailed,
+  `ast_vn != 1`, cf-stack full, value neither `AST_Ref` nor `AST_Literal`) returned with the value still modelled.
 
       vpush r=0x230 t=0x6      vn=0 rel=1     callee symbol (VT_BTYPE 6 = VT_FUNC)
       vpush r=0x132 t=0x5      vn=1 rel=2     register-held lvalue, VT_PTR
       vpush r=0x132 t=0x33     vn=2 rel=3
-      vpush r=0     t=0x32     vn=0 rel=1     both vn AND rel drop -- a call consumed them
+      vpush r=0     t=0x32     vn=0 rel=1     the call consumed callee+args, pushed the result
       vpush r=0x30  t=0x302003 vn=1 rel=1     model grew, vstack did NOT -> SYNC
 
-  The last two lines are the mechanism. After the call completes the state is balanced (`vn=0`, `rel=1`; the guard
-  wants `vn == rel-1 == 0`). The next push takes `vn` to 1 while `rel` STAYS at 1 — so the vstack entry was
-  **REPLACED IN PLACE rather than pushed**, and the recorder counted it as a new modelled value.
+  The distinctive `t=0x302003` is `VT_ENUM_VAL|VT_STATIC|VT_INT` — an **enum case label**, i.e. the first `case` of
+  the switch, and the last line is that label being pushed AFTER `sw->sv = *vtop--` dropped the switch value. Both
+  functions are `switch (ast_kind(a, n))` in `src/ast_eval_slice.h`: the value is an `AST_Invoke`, the kind check
+  bails, the pop goes unaccounted. Minimal repro — `switch (f(a, n)) { case A: ... }` with `f` returning an integer
+  is `desync:2322`; `switch (n)` on a plain local is `faithful`.
 
-  Different failure from Group A's missing decrement: nothing was popped, something was OVERWRITTEN. The lead is the
-  codegen path that rewrites `vtop` in place (`vsetc`/`vset`/`gv` reusing the slot) while still invoking the push
-  hook. Both cases carry `t=0x302003` at the failing push — a distinctive type to grep for.
+  **Effect of the fix, measured on mcc's own TU at `-O2`: SYNC-site desyncs 60 -> 25.** The `nocode_wanted` site
+  rises 98 -> 132 by nearly the same amount — those functions were desyncing early on the drift and now reach their
+  real cause, so the SYNC population was inflated by roughly a third with borrowed failures. Total desync 251 -> 250,
+  faithful unchanged at 1643, self-compiled object byte-identical. Two corpus functions left the ratchet gap set
+  (`switch_semantics.c copy_n`, `enum_bitfield.c convert_like_real`), baseline regenerated 167 -> 165 gaps.
+
+  **Method note worth keeping: a hook that models a codegen pop must account for it on EVERY exit, bail included.**
+  `ast_bail` does not stop the recorder's stack bookkeeping — it only marks the function un-replayable — so an early
+  return that skips the decrement silently converts a clean `bail` into a `desync` and, worse, into a desync
+  attributed to whatever pushes next. Audit the other hooks that return early after codegen has already moved
+  `vtop` for the same shape.
+
+  **THAT AUDIT IS DONE, and it found the same defect in four more hooks — fixed 2026-07-28.** `ast_hook_if_begin`,
+  `ast_hook_while_begin`, `ast_hook_do_cond` and `ast_hook_for_cond` are each followed immediately by an
+  unconditional `gvtst(...)`, whose tail is a bare `vtop--` (no `vpop()`, so no hook). All four dropped the modelled
+  condition value only on their success path. The success path also sets `ast_in_call = 1` so the compare/jump
+  traffic inside `gvtst` is not modelled, and `ast_hook_if_gvtst_done` clears it again — so the fix is to take that
+  same suppression on the bail exits and let `gvtst_done` do the one decrement when the function is bailed. SYNC-site
+  desyncs 25 -> 23, two more functions become `bail` instead of `desync`, no verdict becomes faithful.
+
+  **METHODOLOGY, learned the hard way in the same session: do NOT byte-compare two self-compiled `src/mcc.c` objects
+  across a compiler-source edit.** `src/mcc.c` is the amalgamation and it INCLUDES `mccast.c`, so editing the
+  recorder also edits the translation unit being compiled — the comparison has two variables, not one. Adding a
+  never-called dummy function to `mccast.c` reproduces the effect on its own: one unrelated function (`foldm_powg`)
+  loses one instruction to a constant fold. Compile a FIXED corpus with both binaries instead, and put both binaries
+  in the same directory: `-B` alone does not equalise them, because auto-mccdir also probes the exe directory and a
+  binary sitting elsewhere picks up different `threads.h`/`stdatomic.h` (that confound made 3 corpus files differ
+  until both binaries were moved into the build dir). The clean run is 774/774 objects byte-identical over
+  `tests/exec` + `tests/behavior` at `-O0`/`-O2`/`-O3`.
 - The 12/32 short-circuit split is unaffected — it comes from the SYNC line's own `lor=` field, not from windowing.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
