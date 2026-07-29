@@ -550,6 +550,7 @@ struct scope {
 struct switch_t {
 	struct case_t {
 		int64_t v1, v2;
+		uint64_t v1hi, v2hi;
 		int ind, line;
 	} **p;
 

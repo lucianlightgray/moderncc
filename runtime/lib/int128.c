@@ -10,6 +10,12 @@ typedef struct {
 static const double mcc_two_to_the_64 = 18446744073709551616.0;
 static const long double mcc_two_to_the_64_long = 18446744073709551616.0L;
 
+void abort(void);
+
+static void mcc_int128_overflow(void) {
+	abort();
+}
+
 static mcc_int128 int128_from_halves(unsigned long long high, unsigned long long low) {
 	mcc_int128 value;
 	value.low = low;
@@ -541,4 +547,51 @@ int __mcc_mulo_uti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
 	if (int128_is_zero(a))
 		return 0;
 	return !int128_is_equal(__udivti3(product, a), b);
+}
+
+mcc_int128 __divmodti4(mcc_int128 a, mcc_int128 b, mcc_int128 *remainder) {
+	int quotient_is_negative = int128_is_negative(a) ^ int128_is_negative(b);
+	int remainder_is_negative = int128_is_negative(a);
+	mcc_int128 quotient, rest;
+	if (int128_is_negative(a))
+		a = int128_negate(a);
+	if (int128_is_negative(b))
+		b = int128_negate(b);
+	int128_unsigned_divide(a, b, &quotient, &rest);
+	if (remainder != 0)
+		*remainder = remainder_is_negative ? int128_negate(rest) : rest;
+	return quotient_is_negative ? int128_negate(quotient) : quotient;
+}
+
+mcc_int128 __negvti2(mcc_int128 value) {
+	if (int128_is_minimum(value))
+		mcc_int128_overflow();
+	return int128_negate(value);
+}
+
+mcc_int128 __absvti2(mcc_int128 value) {
+	if (int128_is_negative(value))
+		return __negvti2(value);
+	return value;
+}
+
+mcc_int128 __addvti3(mcc_int128 a, mcc_int128 b) {
+	mcc_int128 result;
+	if (__mcc_addo_ti(a, b, &result))
+		mcc_int128_overflow();
+	return result;
+}
+
+mcc_int128 __subvti3(mcc_int128 a, mcc_int128 b) {
+	mcc_int128 result;
+	if (__mcc_subo_ti(a, b, &result))
+		mcc_int128_overflow();
+	return result;
+}
+
+mcc_int128 __mulvti3(mcc_int128 a, mcc_int128 b) {
+	mcc_int128 result;
+	if (__mcc_mulo_ti(a, b, &result))
+		mcc_int128_overflow();
+	return result;
 }

@@ -158,6 +158,10 @@ types/conversion.c	main	desync
 types/declarators.c	main	desync
 types/floating_point.c	main	desync
 types/floating_point_literals.c	main	desync
+types/int128.c	main	desync
+types/int128.c	pr	desync
+types/int128.c	sw	desync
+types/int128.c	usw	desync
 types/int_conversion.c	cast_main	unfaithful
 types/int_conversion.c	promote_main	unfaithful
 types/sizeof_semantics.c	main	desync

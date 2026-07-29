@@ -295,6 +295,8 @@ static int mccrt_objs(const char *cpu, const char *os, const char **out, int max
 	} else {
 		ADD("float128");
 	}
+	if (!strcmp(cpu, "x86_64") || !strcmp(cpu, "arm64") || !strcmp(cpu, "riscv64"))
+		ADD("int128");
 	for (i = 0; COMMON[i]; i++)
 		ADD(COMMON[i]);
 	if (win) {

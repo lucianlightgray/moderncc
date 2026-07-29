@@ -2768,7 +2768,8 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 static uint64_t value64(uint64_t l1, int t) { MCC_TRACE("enter\n");
 	if ((t & VT_BTYPE) == VT_BOOL)
 		{ MCC_TRACE("br\n"); return l1 != 0; }
-	if ((t & VT_BTYPE) == VT_LLONG || (MCC_PTR_SIZE == 8 && (t & VT_BTYPE) == VT_PTR))
+	if ((t & VT_BTYPE) == VT_LLONG || (t & VT_BTYPE) == VT_INT128 ||
+			(MCC_PTR_SIZE == 8 && (t & VT_BTYPE) == VT_PTR))
 		{ MCC_TRACE("br\n"); return l1; }
 	else if (t & VT_UNSIGNED)
 		{ MCC_TRACE("br\n"); return (uint32_t)l1; }
@@ -10990,15 +10991,40 @@ static void expr_const1(void) { MCC_TRACE("enter\n");
 	nocode_wanted -= CONST_WANTED_BIT;
 }
 
-static inline int64_t expr_const64(void) { MCC_TRACE("enter\n");
-	int64_t c;
+static uint64_t expr_const64_wide(uint64_t *hi) { MCC_TRACE("enter\n");
+	uint64_t c;
 	expr_const1();
 	if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
 		{ MCC_TRACE("br\n"); expect("constant expression"); }
 	if (is_float(vtop->type.t))
 		{ MCC_TRACE("br\n"); mcc_error("integer constant expression must have integer type"); }
 	c = vtop->c.i;
+	if ((vtop->type.t & VT_BTYPE) == VT_INT128)
+		{ MCC_TRACE("br\n"); *hi = vtop->c.q.hi; }
+	else if (vtop->type.t & VT_UNSIGNED)
+		{ MCC_TRACE("br\n"); *hi = 0; }
+	else
+		{ MCC_TRACE("br\n"); *hi = (uint64_t)((int64_t)c >> 63); }
 	vpop();
+	return c;
+}
+
+static inline int64_t expr_const64(void) { MCC_TRACE("enter\n");
+	uint64_t hi, c = expr_const64_wide(&hi);
+	if (hi != 0 && hi != (uint64_t)((int64_t)c >> 63))
+		{ MCC_TRACE("br\n"); mcc_error("integer constant expression does not fit in 64 bits"); }
+	return (int64_t)c;
+}
+
+static uint64_t expr_case_const(int t, uint64_t *hi) { MCC_TRACE("enter\n");
+	uint64_t chi, c = expr_const64_wide(&chi);
+	if ((t & VT_BTYPE) != VT_INT128) { MCC_TRACE("br\n");
+		if (chi != 0 && chi != (uint64_t)((int64_t)c >> 63))
+			{ MCC_TRACE("br\n"); mcc_error("integer constant expression does not fit in 64 bits"); }
+		c = value64(c, t);
+		chi = (t & VT_UNSIGNED) ? 0 : (uint64_t)((int64_t)c >> 63);
+	}
+	*hi = chi;
 	return c;
 }
 
@@ -11084,15 +11110,34 @@ static void check_func_return(void) { MCC_TRACE("enter\n");
 	}
 }
 
-static int case_cmp(uint64_t a, uint64_t b) { MCC_TRACE("enter\n");
-	if (cur_switch->sv.type.t & VT_UNSIGNED)
-		{ MCC_TRACE("br\n"); return a < b ? -1 : a > b; }
-	else
-		{ MCC_TRACE("br\n"); return (int64_t)a<(int64_t)b ? -1 : (int64_t)a>(int64_t) b; }
+static void vpush_case(int t, uint64_t lo, uint64_t hi) { MCC_TRACE("enter\n");
+	vpush64(t, lo);
+#if MCC_HAVE_INT128
+	if ((t & VT_BTYPE) == VT_INT128)
+		{ MCC_TRACE("br\n"); vtop->c.q.hi = hi; }
+#else
+	(void)hi;
+#endif
+}
+
+static int case_cmp(uint64_t alo, uint64_t ahi, uint64_t blo, uint64_t bhi) { MCC_TRACE("enter\n");
+	if (ahi != bhi) { MCC_TRACE("br\n");
+		if (cur_switch->sv.type.t & VT_UNSIGNED)
+			{ MCC_TRACE("br\n"); return ahi < bhi ? -1 : 1; }
+		return (int64_t)ahi < (int64_t)bhi ? -1 : 1;
+	}
+	return alo < blo ? -1 : alo > blo;
+}
+
+static int case_adjacent(struct case_t *a, struct case_t *b) { MCC_TRACE("enter\n");
+	uint64_t lo = (uint64_t)a->v2 + 1;
+	uint64_t hi = a->v2hi + (lo == 0);
+	return lo == (uint64_t)b->v1 && hi == b->v1hi;
 }
 
 static int case_cmp_qs(const void *pa, const void *pb) { MCC_TRACE("enter\n");
-	return case_cmp((*(struct case_t **)pa)->v1, (*(struct case_t **)pb)->v1);
+	struct case_t *a = *(struct case_t **)pa, *b = *(struct case_t **)pb;
+	return case_cmp((uint64_t)a->v1, a->v1hi, (uint64_t)b->v1, b->v1hi);
 }
 
 static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
@@ -11102,11 +11147,12 @@ static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
 	qsort(sw->p, sw->n, sizeof *sw->p, case_cmp_qs);
 	p = sw->p;
 	while (p < sw->p + sw->n - 1) { MCC_TRACE("br\n");
-		if (case_cmp(p[0]->v2, p[1]->v1) >= 0) { MCC_TRACE("br\n");
+		if (case_cmp((uint64_t)p[0]->v2, p[0]->v2hi, (uint64_t)p[1]->v1, p[1]->v1hi) >= 0) { MCC_TRACE("br\n");
 			int l1 = p[0]->line, l2 = p[1]->line;
 			mcc_error("%i:duplicate case value", l1 > l2 ? l1 : l2);
-		} else if (p[0]->v2 + 1 == p[1]->v1 && p[0]->ind == p[1]->ind) { MCC_TRACE("br\n");
+		} else if (case_adjacent(p[0], p[1]) && p[0]->ind == p[1]->ind) { MCC_TRACE("br\n");
 			p[1]->v1 = p[0]->v1;
+			p[1]->v1hi = p[0]->v1hi;
 			mcc_free(p[0]);
 			memmove(p, p + 1, (--sw->n - (p - sw->p)) * sizeof *p);
 		} else
@@ -11146,7 +11192,8 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int64_t lo, hi, covered = 0;
 	uint64_t span;
 	int i;
-	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG)
+	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG ||
+			(sw->sv.type.t & VT_BTYPE) == VT_INT128)
 		{ MCC_TRACE("br\n"); return 0; } /* PIC handled: gcase_jumptable emits a PC-relative offset table */
 #if defined(MCC_TARGET_I386)
 	if (mcc_state->pic)
@@ -11352,13 +11399,18 @@ static int gcase(struct case_t **base, int len, int dsym) { MCC_TRACE("enter\n")
 	int t, l2, e;
 
 	t = vtop->type.t & VT_BTYPE;
+#if MCC_HAVE_INT128
+	if (t == VT_INT128)
+		{ MCC_TRACE("br\n"); t = VT_INT128 | (vtop->type.t & VT_UNSIGNED); }
+	else
+#endif
 	if (t != VT_LLONG)
 		{ MCC_TRACE("br\n"); t = VT_INT; }
 	while (len) { MCC_TRACE("br\n");
 		l2 = len > 8 ? len / 2 : 0;
 		p = base[l2];
-		vdup(), vpush64(t, p->v2);
-		if (l2 == 0 && p->v1 == p->v2) { MCC_TRACE("br\n");
+		vdup(), vpush_case(t, (uint64_t)p->v2, p->v2hi);
+		if (l2 == 0 && p->v1 == p->v2 && p->v1hi == p->v2hi) { MCC_TRACE("br\n");
 			gen_op(TOK_EQ);
 			gsym_addr(gvtst(0, 0), p->ind);
 		} else { MCC_TRACE("br\n");
@@ -11367,7 +11419,7 @@ static int gcase(struct case_t **base, int len, int dsym) { MCC_TRACE("enter\n")
 				{ MCC_TRACE("br\n"); dsym = gvtst(0, dsym), e = 0; }
 			else
 				{ MCC_TRACE("br\n"); e = gvtst(0, 0); }
-			vdup(), vpush64(t, p->v1);
+			vdup(), vpush_case(t, (uint64_t)p->v1, p->v1hi);
 			gen_op(TOK_GE);
 			gsym_addr(gvtst(0, 0), p->ind);
 			dsym = gcase(base, l2, dsym);
@@ -12054,15 +12106,16 @@ again:
 		dynarray_add(&cur_switch->p, &cur_switch->n, cr);
 		t = cur_switch->sv.type.t;
 		ice_float_op = ice_nonconst = 0;
-		cr->v1 = cr->v2 = value64(expr_const64(), t);
+		cr->v1 = cr->v2 = (int64_t)expr_case_const(t, &cr->v1hi);
+		cr->v2hi = cr->v1hi;
 		if (ice_float_op || ice_nonconst)
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a case label that is not an integer "
 									 "constant expression"); }
 		if (tok == TOK_DOTS && gnu_ext) { MCC_TRACE("br\n");
 			mcc_pedantic("case ranges are a GNU extension");
 			next();
-			cr->v2 = value64(expr_const64(), t);
-			if (case_cmp(cr->v2, cr->v1) < 0)
+			cr->v2 = (int64_t)expr_case_const(t, &cr->v2hi);
+			if (case_cmp((uint64_t)cr->v2, cr->v2hi, (uint64_t)cr->v1, cr->v1hi) < 0)
 				{ MCC_TRACE("br\n"); mcc_warning("empty case range"); }
 		}
 		if (!cur_switch->nocode_wanted)
