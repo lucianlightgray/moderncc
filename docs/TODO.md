@@ -1367,6 +1367,20 @@ site (verdict `bail:<line>`; the ratchet stores only the verdict WORD, so the ba
 `mccgen.c` (`gen_negf`, `parse_atomic`, and the riscv64 jump-table path). Distinguishing them needs the site passed
 in; not done, because it is 6 functions against the 40 below.
 
+**THE DESYNC BUCKET HAS NO MORE CHEAP WINS — all three remaining guard families tested 2026-07-29, switch was the
+only conservative one.** Same one-minute experiment each time (drop the guard, rebuild, read the faithful count):
+
+| guard | functions gated | faithful after |
+|---|---:|---|
+| switch selector must be `Ref`/`Literal` | 40 | **1759 -> 1787** — conservative, now `MCC_AST_SWITCH_EXPR` |
+| `ast_bad_type` (`long double`) | 8 | 1759 -> **1759** — real; desync becomes unfaithful |
+| store inside a ternary / short-circuit region | 18 | 1759 -> **1759** — real; 18 desyncs become 15 unfaithful + 3 bail |
+
+The last row settles the largest remaining target: the 14 short-circuit and 4 ternary stores are a genuine modelling
+gap, exactly as the "the store has to become a child of the region's `AST_Binary`" note says, and removing the guard
+does NOT recover them — which is also why the two attempts recorded as reverted behaved the way they did. Anything
+further in this bucket is structural work, not a guard to relax.
+
 **NOT every conservative-looking guard is conservative — measured both ways 2026-07-29.** The switch-selector
 restriction turned out to be pure caution (+28 faithful when removed). The same experiment on `ast_bad_type`, which
 blocks 8 functions across the vpush and vstore sites, gives the OPPOSITE answer: letting `long double` through moves
