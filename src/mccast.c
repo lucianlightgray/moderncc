@@ -6561,7 +6561,7 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 													ast_nchild(a, pst) == 2 && ast_child(a, pst, 1) == up &&
 													ast_kind(a, ast_parent(a, pst)) == AST_BasicBlock &&
 													ast_storeval_lval_leaf(a, ast_child(a, pst, 0));
-					if (!ast_storeval_call_env || call_up != AST_NONE || constl ||
+					if (!ast_storeval_call_env || call_up != AST_NONE ||
 							ast_nchild(a, up) < 2 || ast_child(a, up, 1) != cur ||
 							(ast_kind(a, pst) != AST_BasicBlock && !pst_store))
 						{ MCC_TRACE("br\n"); leftmost = 0; break; }

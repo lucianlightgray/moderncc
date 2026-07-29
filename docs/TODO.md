@@ -1154,6 +1154,18 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **COMPOSITION OPENED 2026-07-29 — `CONST + (x = f())` inside a call argument.** `search_cached_include`'s
+   remaining extra call was `mcc_malloc(sizeof(CachedInclude) + (len = strlen(filename)))` (`mccpp.c:1752`) —
+   the CONSTL step composed with the STOREVAL_CALL/CALLSTORE steps was explicitly rejected in the walk. The
+   vstack dance composes cleanly ([lval, callee, LIVE] -> const push -> marker vswap -> gen_op), so the
+   `constl ||` rejection is dropped (combo active only when both gates are on; the reverse nesting
+   `CONST + f(livearg)` stays rejected — constl requires `call_up == AST_NONE`). Validated: gate-off
+   byte-identical; store/plain/multi-arg repros flip faithful; runtime matches gcc `-O1/2/3`;
+   `search_cached_include`'s delta shrinks 577-vs-586 to 577-vs-577 (extra call GONE; residuals are a
+   member-lvalue chain `e->a = e->b = 0` — outer lvalue is a member deref, correctly outside
+   CHAINSTORE_LIVE's leaf guard, needs cross-statement lval ordering — and a loop-head jump-target shift);
+   TU verdicts unchanged (73, zero regressions — these functions carry multiple deltas); ast ctest 224/224.
+
    **SEVENTH CLASS CLOSED 2026-07-29 — chained assignment re-materialization (the xor-only class + mixed).**
    `a = b = 0` (and `ia = ib = g()`): the parser materializes the value ONCE and chains two vstores; replay
    emitted two independent stores, re-materializing per store — the exact residual the CHAINSTORE
