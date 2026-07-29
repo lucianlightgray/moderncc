@@ -475,8 +475,15 @@ dominated by small values — `-5` (12), `+5` (10), `-14` (7), `+2` (6). Of the 
 byte sits at a **median 54% into the body** (min 4%, max 99%), i.e. replay tracks the parser for half the function and
 then diverges; it is not failing at the prologue.
 
-**The ±5 class is dead code after a `noreturn` call, and it shares a root cause with the 92-event
-`ast_hook_call_begin`/`nocode_wanted` desync site.** Three-line reproducer:
+**The ±5 class is dead code after a `noreturn` call** — CONFIRMED 2026-07-29, it is still 13 events and all of the
+sampled functions (`mcc_pedantic`, `label_pop`, `skip_to_eol`, `type_incompatibility_warning`,
+`verify_assign_cast`) call an `mcc_error`-style noreturn.
+
+**But the "shares a root cause with the 92-event `nocode_wanted` desync site" half is now DISPROVED, and it was a
+testable prediction.** If the two shared a cause, fixing one would move the other. `MCC_AST_NOCODE_CALL` landed and
+took that desync site from **92 to 1** — while this `±5` unfaithful class stayed at **13, unchanged**. So they are
+two independent manifestations of the same SOURCE construct, not one defect with two symptoms; do not expect a
+`nocode_wanted` fix to move the unfaithful bucket. Three-line reproducer:
 
     extern void bail(const char *) __attribute__((noreturn));
     extern void warn(const char *);
