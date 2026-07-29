@@ -770,6 +770,38 @@ Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55
 Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign extension) found and fixed
 (`b0fb11d5`).
 
+### AGREED PLAN — user-chosen 2026-07-28 (second round), in this order
+
+**Primary, all four, in order:**
+1. **A1a — fix the `vpop` imbalance** (SYNC Group A, 12 functions). The only item anywhere in this file with a
+   fully SOLVED mechanism awaiting a fix: inside a `&&`/`||` region `ast_hook_vpop` early-returns without
+   `ast_vn--` while codegen pops the vstack. See the A2a section for the verbatim trace.
+2. **A2a — chase the `call_end` lead** (SYNC Group B, 31 functions). `ast_hook_call_end` immediately precedes 13 of
+   the 31; consecutive pushes account for 9 and a prior guard-decline for 8. Narrow to a mechanism BEFORE any fix.
+3. **B1a — widen the leftmost-leaf guard for call arguments.** Evidence complete; the parser keeps the store's value
+   live in `%rax` across argument setup, so the guard's stated reason does not hold for this shape. Gate on
+   `assign_value_effects.c` + full bar — this is where `emit-at-marker` miscompiled.
+4. **C1a — design a fourth `nocode_wanted` approach** (92, largest desync site). Three are ruled out; this is the
+   hardest item in the file and is deliberately last.
+
+**Anomalies, all three chosen:**
+- **D1a — explain the 1856 → 1841 verdict-count drop** under `PROMO_ARROW`/`PROMO_INCDEC`. The faithful RATIO held
+  and `mcc` exits 0 with no errors, so this is not the SIGSEGV truncation recorded elsewhere. Blocks trusting any
+  future count change here.
+- **D1b — `store_packed_bf`.** Still `unfaithful` after `8e867f40` removed its suspected cause (the discarded-value
+  ternary). Now unattributed.
+- **D1c — the 26 non-mov length-differs.** Last unexplained group in the unfaithful bucket. Delta mnemonics `xorb`
+  16, `movabs` 6, `add` 6, `cmp` 5, spread across `foldm_*` math folding rather than one construct.
+
+**Housekeeping, two chosen:**
+- **E1a — prune this file** (past 3400 lines; its own rule says completed items are pruned with detail left to git
+  history).
+- **E1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.** Doubly stale: taken at 59.5% fidelity, and three
+  gates have been re-staged since.
+
+**NOT chosen this round:** E1c (Mach-O scattered/GOT/TLV relocations) — they hard-error by name, which is safe, and
+real-object validation stays macOS-gated.
+
 ### OPEN TASKS carried out of that session, highest value first
 
 1. **A2a — find the stale-value producer.** All 43 SYNC failures carry exactly one extra modelled value and are
