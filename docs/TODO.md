@@ -842,8 +842,11 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 `MCC_AST_REGDISP` staged to `-O2` (25% off nbody), `-ffast-math` made to imply `-fno-math-errno`. Established as
 negative results, so nobody re-runs them: the ten `o4`-only gates hold exactly one mis-staging (REGDISP), and the
 `-O4` out-of-process superopt driver is the best cell on ZERO of five kernels. Open and newly found:
-`__builtin_sqrt`/`floor`/`fma`/`fmin` do not link, and `-O1` executes the same instruction count as `-O0` on all
-five kernels while emitting more `.text`.
+~~`__builtin_sqrt`/`floor`/`fma`/`fmin` do not link~~ (RESOLVED 2026-07-29 — NOT an mcc defect: gcc fails the
+identical program the identical way without `-lm`; `mcc -lm` links and runs correctly. Whatever harness hit this
+should pass `-lm`. Note the `MATH/ROUND/FMA/MINMAX_INLINE` gates do not fire on the `__builtin_*` spellings —
+a separate, real gap if inlining them is ever wanted), and `-O1` executes the same instruction count as `-O0` on
+all five kernels while emitting more `.text`.
 
 Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
 Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign extension) found and fixed
