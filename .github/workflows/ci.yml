@@ -143,12 +143,22 @@ jobs:
         # only) so per-push/PR CI is not gated on a ~10-min compile-speed run.
         run: |
           extra=""
+          # Drop the differential fuzzer on macOS. It spawns a reference cc per
+          # iteration and generates programs that crash the compiler; on macOS
+          # each crash is intercepted and serialized by ReportCrash, so a single
+          # fuzz/matrix cell runs ~14 min here versus ~7 s on arm64-Linux and
+          # blows the timeout-minutes ceiling. The fuzzer's home is the dedicated
+          # native arm64-Linux differential job (+ the nightly); this cell shares
+          # that AArch64 backend, and its macho object-format surface is covered
+          # by the macho-* / exec suites. Applies to both macOS cells.
+          export MCC_CI_CTEST_EXCLUDE='^fuzz/'
           if [ "${{ matrix.arch }}" = x86_64 ]; then
             extra="-DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64"
             # The x86_64 cell runs under Rosetta; also drop the arch-independent
-            # object-format cli probes (symbol typing / response file / fat64),
-            # which serialize on the Rosetta translation lock for ~70s here yet
-            # are fully covered by the native arm64 macOS and Linux cells.
+            # differential suites and object-format cli probes (symbol typing /
+            # response file / fat64), which serialize on the Rosetta translation
+            # lock for ~70s here yet are fully covered by the native arm64 macOS
+            # and Linux cells.
             export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
           fi
           # --timeout caps any single ctest test (mirrors the msvc path): a
