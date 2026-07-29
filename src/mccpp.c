@@ -4147,6 +4147,14 @@ static const char *const target_os_defs =
 #endif
 		;
 
+#ifdef MCC_TARGET_X86_64
+static const char *const target_feature_defs =
+		"__SSE__\0"
+		"__SSE2__\0"
+		"__SSE_MATH__\0"
+		"__SSE2_MATH__\0";
+#endif
+
 static void putdef(CString *cs, const char *p) { MCC_TRACE("enter\n");
 	cstr_printf(cs, "#define %s%s\n", p, &" 1"[!!strchr(p, ' ') * 2]);
 }
@@ -4173,6 +4181,9 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 		{ MCC_TRACE("br\n"); putdef(cs, "__GNUC_STDC_INLINE__"); }
 	putdefs(cs, target_machine_defs);
 	putdefs(cs, target_os_defs);
+#ifdef MCC_TARGET_X86_64
+	putdefs(cs, target_feature_defs);
+#endif
 
 #ifdef MCC_TARGET_ARM
 	if (s1->float_abi == ARM_HARD_FLOAT)

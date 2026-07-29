@@ -4182,10 +4182,16 @@ redo:
 		case TOK_CONSTRUCTOR1:
 		case TOK_CONSTRUCTOR2:
 			ad->f.func_ctor = 1;
-			break;
+			goto ctor_priority;
 		case TOK_DESTRUCTOR1:
 		case TOK_DESTRUCTOR2:
 			ad->f.func_dtor = 1;
+		ctor_priority:
+			if (tok == '(') { MCC_TRACE("br\n");
+				next();
+				expr_const();
+				skip(')');
+			}
 			break;
 		case TOK_ALWAYS_INLINE1:
 		case TOK_ALWAYS_INLINE2:
@@ -4313,34 +4319,69 @@ redo:
 			ad->f.func_call = FUNC_THISCALL;
 			break;
 #endif
-		case TOK_MODE:
+		case TOK_MODE1:
+		case TOK_MODE2:
 			skip('(');
 			switch (tok) { MCC_TRACE("br\n");
-			case TOK_MODE_DI:
+			case TOK_MODE_DI1:
+			case TOK_MODE_DI2:
 				ad->attr_mode = VT_LLONG + 1;
 				break;
-			case TOK_MODE_QI:
+			case TOK_MODE_QI1:
+			case TOK_MODE_QI2:
+			case TOK_MODE_byte1:
+			case TOK_MODE_byte2:
 				ad->attr_mode = VT_BYTE + 1;
 				break;
-			case TOK_MODE_HI:
+			case TOK_MODE_HI1:
+			case TOK_MODE_HI2:
 				ad->attr_mode = VT_SHORT + 1;
 				break;
-			case TOK_MODE_SI:
-			case TOK_MODE_word:
+			case TOK_MODE_SI1:
+			case TOK_MODE_SI2:
 				ad->attr_mode = VT_INT + 1;
 				break;
-			case TOK_MODE_SF:
+			case TOK_MODE_word1:
+			case TOK_MODE_word2:
+			case TOK_MODE_pointer1:
+			case TOK_MODE_pointer2:
+			case TOK_MODE_unwind_word1:
+			case TOK_MODE_unwind_word2:
+			case TOK_MODE_libgcc_cmp_return1:
+			case TOK_MODE_libgcc_cmp_return2:
+			case TOK_MODE_libgcc_shift_count1:
+			case TOK_MODE_libgcc_shift_count2:
+				ad->attr_mode = (MCC_PTR_SIZE == 8 ? VT_LLONG : VT_INT) + 1;
+				break;
+			case TOK_MODE_SF1:
+			case TOK_MODE_SF2:
 				ad->attr_mode = VT_FLOAT + 1;
 				break;
-			case TOK_MODE_DF:
+			case TOK_MODE_DF1:
+			case TOK_MODE_DF2:
 				ad->attr_mode = VT_DOUBLE + 1;
 				break;
-			case TOK_MODE_TI:
+			case TOK_MODE_XF1:
+			case TOK_MODE_XF2:
+#if (defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64) && !defined MCC_USING_DOUBLE_FOR_LDOUBLE
+				ad->attr_mode = VT_LDOUBLE + 1;
+#else
+				mcc_error("__mode__(XF) requires x87 extended precision, "
+									"which this target does not have");
+#endif
+				break;
+			case TOK_MODE_TI1:
+			case TOK_MODE_TI2:
 				mcc_error("__mode__(TI) requires 128-bit integers, "
 									"which mcc does not support");
 				break;
+			case TOK_MODE_TF1:
+			case TOK_MODE_TF2:
+				mcc_error("__mode__(TF) requires 128-bit floats, "
+									"which mcc does not support");
+				break;
 			default:
-				mcc_warning("__mode__(%s) not supported\n", get_tok_str(tok, NULL));
+				mcc_error("__mode__(%s) is not supported", get_tok_str(tok, NULL));
 				break;
 			}
 			next();
@@ -5462,6 +5503,13 @@ static void gen_complex_cast(CType *dt) { MCC_TRACE("enter\n");
 	}
 }
 
+static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
+	int u = attr_mode - 1;
+	if (u == VT_BYTE && (t & VT_BTYPE) != VT_BYTE)
+		{ MCC_TRACE("br\n"); t |= VT_DEFSIGN; }
+	return (t & ~(VT_BTYPE | VT_LONG)) | u;
+}
+
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
 	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen;
 	Sym *s;
@@ -5698,8 +5746,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_ATTRIBUTE2:
 			parse_attribute(ad);
 			if (ad->attr_mode) { MCC_TRACE("br\n");
-				u = ad->attr_mode - 1;
-				t = (t & ~(VT_BTYPE | VT_LONG)) | u;
+				t = apply_attr_mode(t, ad->attr_mode);
 			}
 			continue;
 		case TOK_TYPEOF1:
@@ -6131,6 +6178,13 @@ static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 	post_type(post, ad, post != ret ? 0 : storage,
 						(td & ~(TYPE_DIRECT | TYPE_ABSTRACT)) | (arr_nested ? TYPE_NEST : 0));
 	parse_attribute(ad);
+	if (ad->attr_mode && ret == type) { MCC_TRACE("br\n");
+		int bt = type->t & VT_BTYPE;
+		if (!(type->t & VT_ARRAY) &&
+				(bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT || bt == VT_LLONG ||
+				 bt == VT_BOOL || bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE))
+			{ MCC_TRACE("br\n"); type->t = apply_attr_mode(type->t, ad->attr_mode); }
+	}
 	type->t |= storage;
 	return ret;
 }
