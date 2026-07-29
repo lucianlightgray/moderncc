@@ -1241,11 +1241,50 @@ switch path, distinct from the `sw->sv = *vtop--` one already fixed. The trace s
 push arrives with `rel` one lower than the model. Since these four now report `bail` rather than `desync` they are
 no longer misattributed, but the pop is still unaccounted.
 
-### 4. A1a — model dead regions for `nocode_wanted` (92)
-Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the
-transitions across ~30 irregular mutation sites; and a region suspend, which fails because it leaves the model
-BEHIND the vstack — values are real even when code is not. A fourth approach has to mirror stack effects while
-recording nothing AND survive a self-host generation. Hardest item in the file; do not start it before 1–3.
+### 4. A1a — model dead regions for `nocode_wanted` (98, the largest desync site)
+Three approaches were already ruled out and recorded: a flat gate; hooking the transitions across ~30 irregular
+mutation sites; and a region suspend, which fails because it leaves the model BEHIND the vstack. A fourth approach
+has to mirror stack effects while recording nothing AND survive a self-host generation.
+
+**A FOURTH IS NOW RULED OUT TOO, 2026-07-28, and its failure signature is the most useful thing in this section.**
+The obvious relaxation is to delete the guard: `ast_hook_call_begin` desyncs on `nocode_wanted`, so let it model the
+call and rely on the replay byte-comparison to reject anything wrong. The reasoning looked sound — a dead call
+emits nothing, and replay re-enters the dead state on its own because the constructs that CAUSE it (`return`,
+constant conditions) are themselves modelled and replayed. That much is even true: dead code WITHOUT a call is
+already faithful today (`if (0) x++;`, `return x; x++;`, `if (0) { int z = x; return z; }` all pass), because
+replay re-executes the `Return` and mcc's own `CODE_OFF` turns emission off again.
+
+Measured with the guard gated off (`MCC_AST_NOCODE_CALL=1`), the headline looked excellent:
+
+| | faithful | desync | unfaithful | bail |
+|---|---|---|---|---|
+| gate off | 1643 | 204 | 228 | 47 |
+| gate on | **1699** | 116 | 258 | 49 |
+
+**+56 faithful, and it is wrong.** Three things fail, in increasing order of severity:
+1. **Spurious symbol references.** `if (0) f(x);` gate-on emits an UND `f` in the symtab that gate-off does not.
+   A call that never executes now creates a link-time dependency.
+2. **Garbage symbol names on a large TU.** mcc's own object gains symbols whose names are raw pointer bytes
+   (`<\x953f5be0>` and friends in `readelf -sW`). `.text`, `.data`, `.rodata` and `.bss` are all byte-identical —
+   the corruption is confined to the symbol table.
+3. **Run-to-run nondeterminism.** Three runs of the SAME binary on the SAME input produce three different objects,
+   and `setarch -R` produces a fourth. That is a read of uninitialized memory, not a modelling difference.
+
+The 3-stage self-host fixpoint catches all of it: `o1 != o2` at every level (`-O2`, `-O3`, `-Os`, and the gate
+sweep). Worth noting for future gate work — the corpus did NOT catch it. 774/774 objects stayed byte-identical
+gate-off, the gate fired on only 12 of 516 corpus compiles, and the small dead-call repro has a clean symtab. Only
+mcc's own TU is big enough to surface it.
+
+**Why it happens, and what it implies for the fifth attempt.** The guard is not conservatism about EMISSION, it is
+protection against reading the recorder's own stack while that stack is known to be drifting. In a dead region the
+model's `ast_vn` no longer tracks the vstack — that drift is exactly what the guard reports — so
+`ast_vs[ast_vn - need + i]` in `ast_hook_call_begin` indexes slots that were never written for this call, and the
+`sym` field of an unwritten arena slot is uninitialized memory. Hence pointer-shaped names and ASLR sensitivity.
+So the fifth approach cannot start by trusting `ast_vs` inside a dead region: it has to make the model's stack
+correct there first (mirror the pushes and pops, record no nodes), which is the "mirror stack effects while
+recording nothing" requirement stated above — now with a concrete reason rather than an aesthetic one.
+
+Hardest item in the file; do not start it before 1-3.
 
 ### Alongside
 - **E1b — prune this file.** It is 3062 lines and its own "How to process" rule says completed items are pruned
