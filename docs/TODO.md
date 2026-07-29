@@ -128,6 +128,21 @@ passes. Keying the cache on the consumed feature set instead means the fast path
 different ISAs simply hold different entries, and byte-identity is asserted per (source, ISA) pair rather than
 globally — which is what it always should have meant.
 
+**IN PROGRESS 2026-07-29 — step (1), the cache carrying the consumed-feature set.** Survey first, so the next
+reader does not redo it: the ISA cannot leak through the search or slice cache TODAY, and the reason is narrower
+than it looks. `ast_search_searchable()` offers `AST_SG_BFOLD_ROUND`, but that maps to `ast_bfold_round_env`
+(constant-folding `floor`/`ceil`, no ISA requirement), NOT `ast_round_inline_env` (which emits `roundsd`).
+`ast_round_inline_env` is set only in `ast_configure` and is absent from the `AST_SG_*` vocabulary, so no cached or
+searched gate set can raise the ISA floor. That is luck, not design: the moment step 4 puts `FMA_INLINE` or any
+other ISA-dependent transform into the vocabulary, a winner proven on an AVX2 host becomes applicable on one
+without it.
+
+The key salt is where this belongs — `ast_search_key_salt_ex` already partitions by build version and target
+triple for exactly this class of reason. What it must NOT do is fold the whole ISA mask unconditionally: that keys
+every slice per-host and destroys the cross-host sharing the slice store was built for. Fold only the features a
+slice actually CONSUMED, so a function with no ISA-dependent construct keeps one key everywhere and only the
+host-dependent ones separate.
+
 **Ordering, and the honest risk.** The flip cannot land before the cache change: with `native` on an AVX-512 host
 today, `ROUND_INLINE` turns on, `roundsd` appears, and the goldens plus the 3-stage self-host fixpoint fail — not
 because the output is wrong but because the artifacts are being compared across ISAs as if they were the same
