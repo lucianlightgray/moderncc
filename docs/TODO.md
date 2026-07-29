@@ -1027,9 +1027,8 @@ Recorder fidelity 75.3% → 78.1%, and one real correctness defect (a lost sign 
    `ast_vn--` while codegen pops the vstack. See the A2a section for the verbatim trace.
 2. **A2a — chase the `call_end` lead** (SYNC Group B, 31 functions). `ast_hook_call_end` immediately precedes 13 of
    the 31; consecutive pushes account for 9 and a prior guard-decline for 8. Narrow to a mechanism BEFORE any fix.
-3. **B1a — widen the leftmost-leaf guard for call arguments.** Evidence complete; the parser keeps the store's value
-   live in `%rax` across argument setup, so the guard's stated reason does not hold for this shape. Gate on
-   `assign_value_effects.c` + full bar — this is where `emit-at-marker` miscompiled.
+3. ~~**B1a — widen the leftmost-leaf guard for call arguments.**~~ **DONE** — landed as `MCC_AST_STOREVAL_CALL`,
+   default-on at `-O2` since `7c120e3d`; all three shapes verified faithful.
 4. **C1a — design a fourth `nocode_wanted` approach** (92, largest desync site). Three are ruled out; this is the
    hardest item in the file and is deliberately last.
 
@@ -1055,13 +1054,14 @@ real-object validation stays macOS-gated.
 
 ### OPEN TASKS carried out of that session, highest value first
 
-1. **A2a — find the stale-value producer.** All 43 SYNC failures carry exactly one extra modelled value and are
-   detected at the next callee push, so there is ONE producer to find, not 43 gaps. Bisect the 31 failures outside
-   any ternary/short-circuit region. Five shapes are already eliminated by experiment (see the A2a section) — do not
-   re-test them.
-2. **B1a — widen the leftmost-leaf guard for call arguments.** The parser demonstrably keeps the store's value live
-   in a register across argument setup (`mov %eax,s(%rip)` then `mov %rax,%rdi`), so the guard's stated reason does
-   not hold for this shape. Gate on `assign_value_effects.c` + full bar; this is where `emit-at-marker` miscompiled.
+1. **A2a — the SYNC site is small but NOT closed, and the "cosmetic" claim is stale.** Re-measured 2026-07-29:
+   `ast_hook_vpush` holds **5** desyncs, not the 43 this entry describes nor the 4 the A2a section calls cosmetic —
+   and they are on entirely different functions (`parse_number`, `gen_opif`, `combine_types`, `set_symbol`,
+   `layout_sections`), reported as **desync, not bail**, so they DO cost: a desync means replay cannot be used for
+   that function. The five eliminated shapes in the A2a section still stand; the residual to chase is this set.
+2. ~~**B1a — widen the leftmost-leaf guard for call arguments.**~~ **DONE.** It landed as `MCC_AST_STOREVAL_CALL`
+   (`62bfb7b7`) and was flipped default-on at `-O2` in `7c120e3d`. Verified 2026-07-29: `use(s = g())`,
+   `use(s += g())` and the plain statement form are all **faithful**.
 3. ~~**Explain the verdict-count change.**~~ **CLOSED** — does not reproduce; see the D1a note in the recorder
    section. The verdict count is trustworthy, so a count change there IS meaningful.
 4. ~~**`store_packed_bf` is still `unfaithful`.** Its `c ? vdup() : gv_dup()` is now recorded after `8e867f40`, so the
@@ -1164,8 +1164,12 @@ reproduces the effect by itself. Compile a FIXED corpus with both binaries inste
 same directory: `-B` alone does not equalise them, because auto-mccdir also probes the exe directory and a binary
 sitting elsewhere picks up different `threads.h`/`stdatomic.h`.
 
-**The 4 remaining SYNC events** (`cst_hook_end`, `ast_eval_slice_wtype`/`_rec`/`_kind_ok`) all report `bail`, so
-they cost nothing; they are a second unaccounted pop on the `switch` path. Repro: the same
+**The remaining SYNC events — RE-MEASURED 2026-07-29 and this paragraph's original claim no longer holds.** It said
+4 events on `cst_hook_end`/`ast_eval_slice_wtype`/`_rec`/`_kind_ok`, "all report `bail`, so they cost nothing".
+Today `ast_hook_vpush` holds **5**, on a completely different set — `parse_number`, `gen_opif`, `combine_types`,
+`set_symbol`, `layout_sections` — and they report **`desync`, not `bail`**, so they are not free: a desync means
+replay cannot be used for that function. Small, but live. (Original text, for the mechanism:) they are a second
+unaccounted pop on the `switch` path. Repro: the same
 ternary-over-recursive-call body is faithful under `if` and bare, and desyncs under `switch`.
 
 
