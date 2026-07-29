@@ -1798,6 +1798,9 @@ ST_FUNC void gen_vla_result(int addr);
 #endif
 ST_FUNC void gen_cvt_sxtw(void);
 ST_FUNC void gen_cvt_csti(int t);
+#ifdef MCC_TARGET_X86_64
+ST_FUNC void gen_cvt_trunc32(void);
+#endif
 #endif
 
 #ifdef MCC_TARGET_ARM

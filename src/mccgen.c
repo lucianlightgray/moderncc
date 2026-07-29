@@ -4152,6 +4152,18 @@ again:
 			goto done;
 		}
 #endif
+#if defined MCC_TARGET_X86_64 && MCC_CONFIG_OPTIMIZER
+		/* A 64->32 narrowing is a 32-bit move: every 32-bit write zero-extends
+		   into the full register, which is bit-for-bit what the shl/sar/shr
+		   triple below computes, in two bytes instead of eight. The value is
+		   always in a register here -- an lvalue with ds <= ss already left via
+		   ALLOW_SUBTYPE_ACCESS above, where the load itself does the narrowing. */
+		if (ss == 8 && ds == 4 && trunc == 32 && ast_trunc32_env) { MCC_TRACE("br\n");
+			vtop->type.t = VT_INT | (dbt & VT_UNSIGNED);
+			gen_cvt_trunc32();
+			goto done;
+		}
+#endif
 	{
 #if MCC_CONFIG_OPTIMIZER
 			int sup = ast_active && !ast_replaying;

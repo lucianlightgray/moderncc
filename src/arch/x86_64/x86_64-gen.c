@@ -3071,6 +3071,12 @@ ST_FUNC void gen_cvt_sxtw(void) { MCC_TRACE("enter\n");
 	o(0xc0 + (REG_VALUE(r) << 3) + REG_VALUE(r));
 }
 
+ST_FUNC void gen_cvt_trunc32(void) { MCC_TRACE("enter\n");
+	int r = gv(MCC_RC_INT);
+	orex(0, r, r, 0x89);
+	o(0xc0 + (REG_VALUE(r) << 3) + REG_VALUE(r));
+}
+
 ST_FUNC void gen_cvt_csti(int t) { MCC_TRACE("enter\n");
 	int r, sz, xl, ll;
 	r = gv(MCC_RC_INT);

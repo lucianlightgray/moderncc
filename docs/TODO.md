@@ -235,6 +235,22 @@ applied in order (`CVT t=0x5 -> 0x804`, then `0x804 -> 0x3`), so the model is co
 different `gen_cast` paths from the same input. That makes it a CODEGEN lead rather than a recorder one: the parser
 is emitting a register truncation where a narrower load would do.
 
+**FOLLOWED UP 2026-07-29 — the codegen defect is real and fixed (`MCC_AST_TRUNC32`), but it does NOT close a single
+`unfaithful` entry, so do not chase this lead for fidelity again.** The truncation is `mccgen.c`'s
+`shl bits; sar bits-trunc; shr trunc` triple, which for a 64->32 narrowing on x86_64 is `shl $32; shr $32` — eight
+bytes to compute what a 32-bit move does in two, because every 32-bit write zero-extends into the full register.
+Both `(int)(long)ptr` AND `(int)longval` emit it, so the note above understates the scope: the `long`-parameter form
+is *faithful*, not *good*. Fixed by emitting a 32-bit move (`mov %eXX,%eXX`) instead, and nothing at all when the
+source is still an lvalue and the load itself can narrow. Result: mcc's own TU `.text` **1883768 -> 1881017
+(-2751)**, -6 bytes on every one of the five kernels, self-host object 1232 bytes smaller, and no instruction-count
+regression anywhere.
+
+**The fidelity number did not move at all: faithful 1753, unfaithful 296, identical with the gate off and on.** The
+reason retires the whole hypothesis in this section's last paragraph — replay goes through the SAME `gen_cast`, so a
+change there moves the parser and the replay together and the diff survives. "A codegen change that makes the PARSER
+emit what the replay already emits" cannot be reached by editing shared code; it would need the parser and replay to
+diverge, which is the opposite of what any fix here does.
+
 Consequence for anyone planning work here: the `unfaithful` bucket is mostly byte-identity being stricter than it
 needs to be, so it will NOT move the way the `desync` bucket did (251 -> 51 with five targeted fixes). Closing a
 meaningful part of it needs either a semantic-equivalence check to replace byte equality — which is exactly the
