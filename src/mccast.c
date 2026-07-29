@@ -2192,11 +2192,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	 * default-on at -O2+ (soaked/shipped). arm64: same rewrites via native
 	 * FABS/FSQRT, but default-OFF (opt-in `MCC_AST_MATH_INLINE=1`) pending the
 	 * arm64 golden-regen + soak, so default arm64 codegen stays byte-identical. */
-#ifdef MCC_TARGET_X86_64
+	/* Staged on ALL arches 2026-07-29. The old non-x86 `o4` default was a
+	 * golden-regen debt, not an ISA limit: sqrtsd/FSQRT/FABS are baseline
+	 * everywhere this is implemented, and leaving it off made arm64 pay a libm
+	 * call for sqrt where x86_64 did not. */
 	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", o4 || s1->optimize >= 1);
-#else
-	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", o4);
-#endif
 	/* MCC_AST_MATH_INLINE_PREPASS (default OFF): also run the fabs/sqrt(nonneg)
 	 * math-inline rewrites as an UNCONDITIONAL pre-pass (ast_math_inline_run),
 	 * before the -O>=4 strategy search. Fixes an -O4-vs-O2 regression: the search's
@@ -2222,18 +2222,27 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
 #endif
 	/* copysign inline (fsgnj on riscv64, SSE mask on x86_64, GP round-trip on
-	 * arm64). Default OFF on ALL
-	 * arches (opt-in) so default codegen is byte-identical everywhere — including
-	 * x86_64, where math-inline (fabs/sqrt) is otherwise default-on. */
-	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", o4);
+	 * arm64). Staged at -O1+ 2026-07-29: every lowering it uses is BASELINE for
+	 * its triple — an SSE2 bit-mask on x86_64, F/D fsgnj on rv64gc, a GP
+	 * round-trip on armv8-a — so none of them raises the ISA floor, which is the
+	 * only reason this axis exists. Measured: one libm call removed for +16 bytes
+	 * of .text on x86_64, and gcc inlines copysign at plain -O2 too. */
+	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", o4 || s1->optimize >= 1);
 	/* fmin/fmax inline via FMINNM/FMAXNM (arm64 only — x86 minsd/maxsd have wrong
 	 * NaN/±0 semantics so fmin/fmax stay libcalls there). Default OFF (opt-in) so
 	 * default codegen is byte-identical. */
 	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4);
 	/* fma inline via FMADD (arm64) / fmadd.d/.s (riscv64) — single-rounding, both
-	 * baseline; matches gcc default. x86 needs FMA3 (not baseline) so it stays a
-	 * libcall. Default OFF (opt-in) ⇒ byte-identical default. */
+	 * baseline; matches gcc default. Staged at -O1+ on those two triples 2026-07-29
+	 * precisely because the instruction is baseline there, so it turns on with the
+	 * TRIPLE rather than waiting for a flag. x86 is left at `o4`: FMA3 is not
+	 * baseline AND mcc emits no vfmadd anyway, so staging it there would advertise
+	 * a transform that cannot fire. */
+#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4 || s1->optimize >= 1);
+#else
 	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4);
+#endif
 	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
 	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
 	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
