@@ -1362,9 +1362,25 @@ site (verdict `bail:<line>`; the ratchet stores only the verdict WORD, so the ba
 | 6 | `ast_hook_bail` (the explicit hook, from `mccgen.c`) |
 | 4 | `ast_hook_if_begin` (`ast_bail`/`ast_vn != 1`/CF depth) |
 
-**The switch restriction looks conservative rather than fundamental**, which is why it is worth attacking: the
-recorder models computed expressions everywhere else, and only the selector position is limited to a bare variable
-or constant. Reproducer:
+**The switch restriction IS conservative, confirmed by removing it — `MCC_AST_SWITCH_EXPR`, landed gated OFF.**
+The replay side already calls the GENERIC `ast_replay_value()` on child 0, so it never required a leaf; only the
+type check is real. Dropping the kind test measures, on mcc's own TU:
+
+| | default | `MCC_AST_SWITCH_EXPR=1` |
+|---|---:|---:|
+| bail | 50 | **11** |
+| faithful | 1759 | **1787** (+28) |
+| faithful ratio | 81.5% | **82.8%** |
+
+and it is nearly free in codegen: **270 of 271** exec+behavior objects stay byte-identical, the one that moves is
+`switch_semantics.c` itself, and its runtime output is unchanged. Self-host fixpoint byte-identical at the default
+and `-O3`; 200-seed gate-swept fuzz vs gcc+clang, 0 miscompiles.
+
+**Why it is OFF despite that.** Flipping it drifts the recorder-fidelity gap set — 4 functions leave `bail`, one
+becoming faithful (183 -> 182) and three becoming `unfaithful` — and **3 of those 4 are in the `x86_64-win32`
+baseline too**, which cannot be regenerated on this host: the mingw preset drives a Windows-hosted `gcc.exe`.
+Landing it default-on would knowingly turn win32 CI red. Flip it together with a win32 baseline regeneration, on a
+host that can produce one. Reproducer:
 
     switch (a)        faithful          switch (a + b)   bail
     switch (3)        faithful          switch (g(a))    bail

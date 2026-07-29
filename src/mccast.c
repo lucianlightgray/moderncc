@@ -1376,6 +1376,7 @@ static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static MCC_OPT_TLS int ast_narrow_env;
 int ast_inline_static_env; /* MCC_AST_INLINE_STATIC: generate a `static inline` body in place so the inliner can see it, instead of parking it to end-of-TU */
+static MCC_OPT_TLS int ast_switch_expr_env; /* MCC_AST_SWITCH_EXPR: model a switch whose SELECTOR is a computed expression */
 int ast_trunc32_env; /* MCC_AST_TRUNC32: emit a 64->32 narrowing as a 32-bit move instead of the shl/sar/shr triple */
 static MCC_OPT_TLS int ast_narrow_fix_env;
 static MCC_OPT_TLS int ast_narrow_c0_env;
@@ -2154,6 +2155,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", o4 || s1->optimize >= 2);
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", o4 || s1->optimize >= 1);
 	ast_trunc32_env = ast_env_gate("MCC_AST_TRUNC32", o4 || s1->optimize >= 1);
+	ast_switch_expr_env = ast_env_gate("MCC_AST_SWITCH_EXPR", 0);
 	ast_inline_static_env = ast_env_gate("MCC_AST_INLINE_STATIC", 0);
 	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", o4 || s1->optimize >= 2);
 	ast_narrow_c0_env = ast_env_gate("MCC_AST_NARROW_CLASS0", 1);
@@ -3089,7 +3091,13 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	ast_finalize_leaf(ast_vs[0], vtop);
 	AstLocal val = ast_vs[0];
 	uint16_t vk = ast_kind(ast_cur, val);
-	if ((vk != AST_Ref && vk != AST_Literal) ||
+	/* The selector used to have to be a bare Ref or Literal, which bailed 40 of
+	   mcc's own functions -- 80% of ALL bails -- on `switch (a + b)`,
+	   `switch (g(a))`, `switch (p->f)`. That was conservative, not fundamental:
+	   the replay side already calls the GENERIC ast_replay_value() on child 0, so
+	   it never needed a leaf. Only the type restriction is real. Measured on
+	   mcc's own TU: bail 50 -> 11, faithful 1759 -> 1787. */
+	if ((!ast_switch_expr_env && vk != AST_Ref && vk != AST_Literal) ||
 			ast_bad_type(ast_type_t(ast_cur, val))) { MCC_TRACE("br\n");
 		AST_SET_BAIL();
 		ast_vn = 0;
