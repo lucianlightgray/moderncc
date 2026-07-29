@@ -219,6 +219,14 @@ to detect, and native detection would bake host-only instructions into cross out
 1. **Feature mask on `MCCState`**, not a string. Parse `-march=`/`-mcpu=`/`-mtune=` into a bitmask + a single predicate (`mcc_isa_has(s1, MCC_ISA_SSE41)`). Keep the existing string forms accepted so no command line regresses.
 2. **`-march=native` is the default** (CONFIRMED by the decision above — it is the end state, not an option), resolved by host detection: `CPUID` leaf 1/7 on x86 (**done**), `getauxval(AT_HWCAP/HWCAP2)` on arm64/armv7, `AT_HWCAP` + `/proc/cpuinfo` on riscv64, with a documented fallback to the triple baseline when detection fails. Blocked only on the cache carrying the consumed-feature set; the detection itself already works and is reachable today as `-march=native`. **Cross-compilation must NOT default to native** — when the target triple differs from the host, default to that triple's baseline (`x86-64`, `armv7-a`, `armv8-a`, `rv64gc`, `i686`) or native detection will bake host-only instructions into cross output.
 3. **Named levels**, matching gcc/clang so muscle memory transfers: `x86-64` (SSE2, today's baseline), `x86-64-v2` (SSE4.2/POPCNT), `x86-64-v3` (AVX2/FMA/BMI), `x86-64-v4` (AVX512); `armv7-a[+idiv][+vfp][+neon]`, `armv8-a[+simd]`; `rv64gc` and friends. `-march=<level>` must be *reproducible*: same level ⇒ byte-identical output on any host.
+**STEP 4 IN PROGRESS 2026-07-29.** Measured first, at `-O2` on a probe calling copysign/fmin/fmax/fma/sqrt/fabs:
+x86_64 at `-march=x86-64` inlines sqrt+fabs by default and only `COPYSIGN_INLINE` still fires (4 libm calls -> 3,
+`.text` +16); `MINMAX_INLINE` and `FMA_INLINE` do nothing there, exactly as this section already says. **arm64
+inlines NOTHING at `-O2` — 6 libm calls** — because `MATH_INLINE`'s non-x86 default is `o4`, and each gate forced on
+removes calls (`MATH_INLINE` -> 4, `FMA_INLINE` -> 5, `COPYSIGN_INLINE` -> 5). So the "golden-regen debt, not an ISA
+limit" note below is right, and the cost of leaving it is that arm64 pays a libm call for `sqrt` where x86_64 does
+not.
+
 4. **Re-gate the ISA-dependent optimizers** from "opt-in env knob" to "on when the ISA allows", i.e. default becomes `o4 || (level >= N && mcc_isa_has(...))` and the `MCC_AST_*` env var stays as a manual override:
    - `MCC_AST_ROUND_INLINE` — `roundsd`, needs **SSE4.1** (`x86-64-v2`). The one actually breaking `-O4` portability today.
    - `MCC_AST_FMA_INLINE` — x86 needs **FMA3** (`x86-64-v3`); arm64 `FMADD` and riscv64 `fmadd.d/.s` are baseline for those triples, so they should turn on with the triple, not wait for a flag.
