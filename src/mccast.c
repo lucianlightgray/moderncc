@@ -2155,7 +2155,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", o4 || s1->optimize >= 2);
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", o4 || s1->optimize >= 1);
 	ast_trunc32_env = ast_env_gate("MCC_AST_TRUNC32", o4 || s1->optimize >= 1);
-	ast_switch_expr_env = ast_env_gate("MCC_AST_SWITCH_EXPR", 0);
+	ast_switch_expr_env = ast_env_gate("MCC_AST_SWITCH_EXPR", 1);
 	ast_inline_static_env = ast_env_gate("MCC_AST_INLINE_STATIC", 0);
 	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", o4 || s1->optimize >= 2);
 	ast_narrow_c0_env = ast_env_gate("MCC_AST_NARROW_CLASS0", 1);
@@ -3096,7 +3096,7 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	   `switch (g(a))`, `switch (p->f)`. That was conservative, not fundamental:
 	   the replay side already calls the GENERIC ast_replay_value() on child 0, so
 	   it never needed a leaf. Only the type restriction is real. Measured on
-	   mcc's own TU: bail 50 -> 11, faithful 1759 -> 1787. */
+	   mcc's own TU: bail 34 -> 4, faithful 1470 -> 1492. Default ON. */
 	if ((!ast_switch_expr_env && vk != AST_Ref && vk != AST_Literal) ||
 			ast_bad_type(ast_type_t(ast_cur, val))) { MCC_TRACE("br\n");
 		AST_SET_BAIL();

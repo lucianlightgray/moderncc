@@ -1362,17 +1362,26 @@ site (verdict `bail:<line>`; the ratchet stores only the verdict WORD, so the ba
 | 6 | `ast_hook_bail` (the explicit hook, from `mccgen.c`) — see the limitation below |
 | 4 | `ast_hook_if_begin` (`ast_bail`/`ast_vn != 1`/CF depth) |
 
-**Limitation of the bail attribution, stated so it is not mistaken for complete coverage:** the 6 explicit bails all report
+**SUPERSEDED — that census is from an older tree; re-measured on the `MCC_AST_SWITCH_EXPR` flip commit it is
+34 bails, not 50, and `ast_hook_bail` contributes ZERO.** Current state, `MCC_AST_VERIFY=1 MCC_AST_TEMPLATES=0`
+on `src/mcc.c` at `-O2`:
+
+| count (gate off) | count (gate on, default) | site |
+|---:|---:|---|
+| 31 | **0** | `ast_hook_switch_begin` (`mccast.c:3102`) — now relaxed, see below |
+| 3 | 4 | `ast_hook_if_begin` (`mccast.c:2831`) |
+
+**Limitation of the bail attribution, stated so it is not mistaken for complete coverage:** explicit bails all report
 `ast_hook_bail`'s OWN line, not the caller's, because the hook is one function called from three places in
 `mccgen.c` (`gen_negf`, `parse_atomic`, and the riscv64 jump-table path). Distinguishing them needs the site passed
-in; not done, because it is 6 functions against the 40 below.
+in; still not done, and now even cheaper to ignore — the site currently accounts for zero bails on mcc's TU.
 
 **THE DESYNC BUCKET HAS NO MORE CHEAP WINS — all three remaining guard families tested 2026-07-29, switch was the
 only conservative one.** Same one-minute experiment each time (drop the guard, rebuild, read the faithful count):
 
 | guard | functions gated | faithful after |
 |---|---:|---|
-| switch selector must be `Ref`/`Literal` | 40 | **1759 -> 1787** — conservative, now `MCC_AST_SWITCH_EXPR` |
+| switch selector must be `Ref`/`Literal` | 40 | **1759 -> 1787** — conservative; `MCC_AST_SWITCH_EXPR`, now DEFAULT ON |
 | `ast_bad_type` (`long double`) | 8 | 1759 -> **1759** — real; desync becomes unfaithful |
 | store inside a ternary / short-circuit region | 18 | 1759 -> **1759** — real; 18 desyncs become 15 unfaithful + 3 bail |
 
@@ -1396,35 +1405,70 @@ riscv64 bug. It costs x86_64 nothing: `gen_negf` is never reached there. `double
 verifies `unfaithful`, not `bail`, and a scoped trace shows **0** hits for `gen_negf` (control: `gen_opif` hits 4 on
 the same input, so the trace filter is working). Float negation takes a different path on x86_64.
 
-**The switch restriction IS conservative, confirmed by removing it — `MCC_AST_SWITCH_EXPR`, landed gated OFF.**
+**The switch restriction IS conservative, confirmed by removing it — `MCC_AST_SWITCH_EXPR`, now DEFAULT ON.**
 The replay side already calls the GENERIC `ast_replay_value()` on child 0, so it never required a leaf; only the
-type check is real. Dropping the kind test measures, on mcc's own TU:
+type check is real. Dropping the kind test measures, on mcc's own TU (re-measured on the flip commit; the
+`50 -> 11` / `1759 -> 1787` figures this table used to carry predate TU growth and no longer reproduce — the TU is
+1776 recorded functions now, not the 2157 quoted further down):
 
-| | default | `MCC_AST_SWITCH_EXPR=1` |
+| | gate off | gate on (default) |
 |---|---:|---:|
-| bail | 50 | **11** |
-| faithful | 1759 | **1787** (+28) |
-| faithful ratio | 81.5% | **82.8%** |
+| bail | 34 | **4** (-30) |
+| faithful | 1470 | **1492** (+22) |
+| faithful ratio | 82.8% | **84.0%** |
 
-and it is nearly free in codegen: **270 of 271** exec+behavior objects stay byte-identical, the one that moves is
-`switch_semantics.c` itself, and its runtime output is unchanged. Self-host fixpoint byte-identical at the default
-and `-O3`; 200-seed gate-swept fuzz vs gcc+clang, 0 miscompiles.
+Recipe: `MCC_AST_VERIFY=1 MCC_AST_TEMPLATES=0` on `src/mcc.c` at `-O2`. Templates barely move it (1465/1487 with
+them on), so do not bother matching that knob when re-deriving. On the `tests/exec` corpus the same flip is
+bail 30 -> 26, faithful 946 -> 947, unfaithful 56 -> 59 — i.e. exactly the four functions below and nothing else.
 
-**Why it is OFF despite that.** Flipping it drifts the recorder-fidelity gap set — 4 functions leave `bail`, one
-becoming faithful (183 -> 182) and three becoming `unfaithful` — and **3 of those 4 are in the `x86_64-win32`
-baseline too**, which cannot be regenerated on this host: the mingw preset drives a Windows-hosted `gcc.exe`.
-Landing it default-on would knowingly turn win32 CI red. Flip it together with a win32 baseline regeneration, on a
-host that can produce one. Reproducer:
+It is nearly free in codegen: **270 of 271** exec+behavior objects stay byte-identical, the one that moves is
+`switch_semantics.c` itself — the file whose `copy_n` became faithful, so replay now drives its codegen — and its
+runtime output is unchanged and matches gcc at `-O0/-O1/-O2/-O3/-Os`.
+
+**How the win32 baseline was regenerated without a Windows host.** This was the blocker that kept the gate off:
+flipping it drifts the gap set, and the `x86_64-win32` baseline cannot be produced here because the mingw preset
+drives a Windows-hosted `gcc.exe`. It is regenerable anyway, because `cmake-cross/mcc-x86_64-win32` is the one
+cross compiler built WITH the optimizer (i386/arm/arm64/riscv64 are not, so this gate cannot reach them at all)
+and it predicts win32 verdicts when given `-I$PWD/runtime/win32/include`.
+
+The affected set is provably bounded: the gate only relaxes the bail in `ast_hook_switch_begin`, so a function that
+does not currently bail cannot change, and a function that currently bails stays in the bail list even if modelling
+it more produces a later desync. So enumerating every file with a `bail` entry in the baseline (15 files) covers it.
+Validated in BOTH directions, which is what makes the hand-edit trustworthy:
+
+| direction | check | result |
+|---|---|---|
+| control | cross, gate OFF, vs the ORIGINAL baseline | 0 mismatches |
+| forward | cross, gate ON, vs the EDITED baseline | 0 mismatches |
+
+Do NOT skip the control. The whole-corpus gap set the cross produces (84) does NOT match CI's (205), because files
+that fail to compile under the cross silently drop out; the per-function prediction is only trustworthy on files the
+cross actually compiles, and the control is what proves which those are.
+
+**The two targets disagree about WHICH functions move, so neither delta predicts the other.** Both lose four
+`bail` entries, three becoming `unfaithful` and one (`switch_semantics.c copy_n`) disappearing, but the fourth
+differs: Linux moves `bounds/bound_signal.c do_fork`, win32 moves `programs/grep.c main`. Measuring one target and
+hand-applying its delta to the other would have been wrong in exactly one row on each side.
+
+Reproducer:
 
     switch (a)        faithful          switch (a + b)   bail
     switch (3)        faithful          switch (g(a))    bail
                                         switch (p->f)    bail
                                         switch ((int)a)  bail
 
-For scale: 40 functions is nearly three times the largest desync cause (14 short-circuit stores) and about 2% of
-the TU's 2157. Unlike the desync causes it is a deliberate DECLINE, not model drift, so widening it is a modelling
-change rather than a bug fix — and it should be scoped with the `switch`-path pop history in the A2a section, which
-is the same statement.
+This was the single largest remaining fidelity win, and it is now taken. Per-site on mcc's own TU, the whole bail
+bucket is now one hook:
+
+| site | gate off | gate on |
+|---|---:|---:|
+| `ast_hook_switch_begin` (`mccast.c:3102`) | 31 | **0** |
+| `ast_hook_if_begin` (`mccast.c:2831`) | 3 | 4 |
+
+The `if_begin` count goes UP by one, which is not a regression: a function that used to bail at the switch guard now
+gets far enough to hit the `ast_vn != 1` / CF-depth test instead. The bail bucket is now the SMALLEST of the four
+and is entirely `if_begin`, so the next fidelity work is structural — the short-circuit stores and `landor_next` —
+not another guard to relax.
 
 **RE-MEASURED PER CAUSE 2026-07-29 — the sites above each collapsed several causes onto one line, and two rows of
 the table are misleading as a result.** Every `AST_SET_DESYNC()` that guarded a disjunction has been split so the
