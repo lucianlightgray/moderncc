@@ -1178,8 +1178,11 @@ real-object validation stays macOS-gated.
    - **Validation at the flip:** full ctest 7893/7893, 3-stage self-host fixpoint, differential fuzz clean,
      non-vacuous JIT `-run` parity, qemu runtime on i386/arm32/arm64/riscv64.
 
-   **Remaining fidelity residuals (the new tail, ~43):** mov-only register-order deltas (the largest),
-   3+-member chains (pairwise limit), `store_packed_bf`'s remaining delta, A1a `nocode_wanted`. These are
+   **Remaining fidelity residuals (the new tail, ~40):** mov-only register-order deltas (the largest),
+   3+-member chains (pairwise limit — NEGATIVE RESULT 2026-07-29: the naive run generalization of the fused
+   member replay produced wrong-shaped bytes: pair tagging feeds each outer a REGISTER-FINALIZED value copy
+   that is only meaningful in the pairwise protocol, so a run replay reads stale address registers as values;
+   reverted same day, do not re-try without first tracing how the 3-chain records its two copies), `store_packed_bf`'s remaining delta, A1a `nocode_wanted`. These are
    follow-on work, not part of the closed item. (Loop-condition assignments `while ((x = f()) ...)` CLOSED
    2026-07-29: the WHILE_COMMA prefix BB had moved the condition's Store out of the StoreVal walk's
    adjacent-sibling reach; the walk now admits a Store that is the LAST statement of an op-2/op-3 loop's
