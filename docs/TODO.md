@@ -1173,6 +1173,16 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **CROSS-ARCH LEG FOR THE 11 RECORDER GATES — VERDICT LEVEL DONE 2026-07-29, qemu runtime leg REMAINS.**
+   Rebuilt `cmake-cross/mcc-{i386,arm64,riscv64,arm}` from the current tree (the baked `main@…` version string
+   is configure-time cosmetic — `strings` confirms the new gate names are in all four binaries). With all
+   eleven gates on, the verify-level fidelity gains are ARCH-UNIFORM: faithful counts on the four-repro probe
+   set move identically (mch 1->4, wc 2->3, td 0->2, cm 2->3) on i386, arm64, riscv64, and arm32. Gate-off
+   compiles are deterministic on every arch. Gate-on OBJECT changes fire on arm64/riscv64 for several repros
+   (replay reuse engages there) while i386 outputs stay byte-identical on this probe set. STILL OWED before
+   any flip: qemu runtime correctness on the arches where gate-on changes output (arm64/riscv64 first —
+   docker sysroot recipe per the cross-arch conformance memory).
+
    **SELF-HOST FIXPOINT LEG FOR THE 11 RECORDER GATES — DONE 2026-07-29.** 3-stage gate with ALL ELEVEN gates
    in the environment for every stage (cmake-debug/mcc -> mcc2 -> mcc3 -> mcc4, amalgamation recipe, no
    MCC_EMBED_* defines): **s3 == s4 byte-identical**; gates-off control fixpoint also holds; non-vacuity
