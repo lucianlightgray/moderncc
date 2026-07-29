@@ -3466,6 +3466,15 @@ naming the symbols, when a lowering is disabled — so the landed set stays gone
 - **`vrott(3)` sends the TOP of the vstack to the bottom**; reaching `vtop[-2]` needs `vrotb(3)`.
 - **`get_reg(MCC_RC_INT)` will hand back `%rax`**, fatal next to `CMPXCHG` or `MUL`. Pin operands explicitly
   (`gv(MCC_RC_RCX)` etc.) the way `gen_opi`'s divide path does.
+- **On Win64, RSI/RDI are callee-saved — pinning them in a lowering silently clobbers the caller.** mcc's
+  non-optimizing codegen only ever scratches the caller-saved RAX/RCX/RDX/R8-R11 and emits NO callee-saved spill in
+  the prologue, so `gv(MCC_RC_RSI/RDI)` in `gen_atomic_cmpxchg` (the one intrinsic path that reached past RAX/RCX/RDX)
+  produced a function that returned with its caller's RSI/RDI trashed. Invisible on System V (RSI/RDI are caller-saved
+  arg regs there) and on i386-win32 (different ABI), so byte-identity, the suite, and MSVC's x86_64 build all stayed
+  green — it surfaced ONLY as `exec/atomic_misc` failing on mingw/x86_64, where under `-dt -run` the JIT-executed
+  variant runs in the compiler's own process and corrupted the `-dt` driver's live loop counter (`t`), truncating the
+  golden after the first sub-test. Pin the caller-saved R8/R9 instead on PE (both ABIs keep them caller-saved); System V
+  stays on RSI/RDI and byte-identical. Fixed 2026-07-29.
 - **A differential MATRIX against gcc is the only thing that catches a wrong flag.** Corpus byte-identity, the full
   suite, the self-host fixpoint and differential fuzz all stay green when a lowering emits valid code computing the
   WRONG answer — that happened three times here. Run the matrix after every emit change, not at the end.
