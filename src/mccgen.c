@@ -9310,6 +9310,80 @@ static int foldfc_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+static const struct {
+	const char *name;
+	unsigned char nargs;
+} builtin_libm_tab[] = {
+		{"acos", 1},      {"acosh", 1},  {"asin", 1},      {"asinh", 1},
+		{"atan", 1},      {"atan2", 2},  {"atanh", 1},     {"cbrt", 1},
+		{"ceil", 1},      {"copysign", 2}, {"cos", 1},     {"cosh", 1},
+		{"erf", 1},       {"erfc", 1},   {"exp", 1},       {"exp2", 1},
+		{"expm1", 1},     {"fabs", 1},   {"fdim", 2},      {"floor", 1},
+		{"fma", 3},       {"fmax", 2},   {"fmin", 2},      {"fmod", 2},
+		{"hypot", 2},     {"lgamma", 1}, {"log", 1},       {"log10", 1},
+		{"log1p", 1},     {"log2", 1},   {"logb", 1},      {"nearbyint", 1},
+		{"nextafter", 2}, {"pow", 2},    {"remainder", 2}, {"rint", 1},
+		{"round", 1},     {"sin", 1},    {"sinh", 1},      {"sqrt", 1},
+		{"tan", 1},       {"tanh", 1},   {"tgamma", 1},    {"trunc", 1},
+};
+
+static int builtin_libm_find(const char *name) { MCC_TRACE("enter\n");
+	int i, n = (int)(sizeof builtin_libm_tab / sizeof *builtin_libm_tab);
+	for (i = 0; i < n; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(name, builtin_libm_tab[i].name))
+			{ MCC_TRACE("br\n"); return i; } }
+	return -1;
+}
+
+static Sym *builtin_libm_alias(int v) { MCC_TRACE("enter\n");
+	const char *name = get_tok_str(v, NULL);
+	char base[32];
+	size_t len;
+	int bt, idx, nargs, i, tv;
+	CType ft;
+	Sym *fs, *p, *prev;
+
+	if (strncmp(name, "__builtin_", 10))
+		{ MCC_TRACE("br\n"); return NULL; }
+	name += 10;
+	len = strlen(name);
+	if (!len || len >= sizeof base)
+		{ MCC_TRACE("br\n"); return NULL; }
+	memcpy(base, name, len + 1);
+	bt = VT_DOUBLE;
+	idx = builtin_libm_find(base);
+	if (idx < 0 && (base[len - 1] == 'f' || base[len - 1] == 'l')) { MCC_TRACE("br\n");
+		bt = base[len - 1] == 'f' ? VT_FLOAT : VT_LDOUBLE;
+		base[len - 1] = 0;
+		idx = builtin_libm_find(base);
+	}
+	if (idx < 0)
+		{ MCC_TRACE("br\n"); return NULL; }
+
+	tv = tok_alloc_const(name);
+	fs = sym_find(tv);
+	if (fs && !IS_ASM_SYM(fs))
+		{ MCC_TRACE("br\n"); return fs; }
+
+	nargs = builtin_libm_tab[idx].nargs;
+	prev = NULL;
+	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
+		p = sym_push2(&global_stack, SYM_FIELD, bt, 0);
+		p->type.ref = NULL;
+		p->next = prev;
+		prev = p;
+	}
+	fs = sym_push2(&global_stack, SYM_FIELD, bt, 0);
+	fs->type.ref = NULL;
+	fs->f.func_call = FUNC_CDECL;
+	fs->f.func_type = FUNC_NEW;
+	fs->f.func_args = nargs;
+	fs->next = prev;
+	ft.t = VT_FUNC;
+	ft.ref = fs;
+	return external_global_sym(tv, &ft);
+}
+
 ST_FUNC void unary(void) { MCC_TRACE("enter\n");
 	int n, t, align, size, r;
 	CType type;
@@ -10421,6 +10495,9 @@ tok_next:
 #endif
 		next();
 		s = sym_find(t);
+		if (!s) { MCC_TRACE("br\n");
+			s = builtin_libm_alias(t);
+		}
 		if (!s || IS_ASM_SYM(s)) { MCC_TRACE("br\n");
 			const char *name = get_tok_str(t, NULL);
 			if (tok != '(')

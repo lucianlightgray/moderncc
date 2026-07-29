@@ -1769,30 +1769,6 @@ The old seconds-based table, for the record — it is superseded and should not 
 | mandelbrot | 0.49 | 0.49 | 0.49 | 0.48 | 0.48 |
 | matmul | 0.67 | 0.68 | 0.68 | 0.67 | 0.66 |
 
-## `__builtin_sqrt`/`floor`/`fma`/`fmin` are UNRESOLVED SYMBOLS — IN PROGRESS 2026-07-29 (fix (b), parser-side)
-(`-ffast-math` being silently ignored was the other half of this and is FIXED in `2717479f`: it now implies
-`-fno-math-errno` + `fold_math` + `cx_limited_range`, guarded by `cli/fast_math_implies_no_math_errno`.)
-
-    int main(void){ printf("%f\n", __builtin_sqrt(4.0)); }
-    mcc: error: unresolved reference to '__builtin_sqrt'      # gcc prints 2.000000
-
-`readelf` on a probe TU gives exactly four UND names: `__builtin_floor __builtin_fma __builtin_fmin
-__builtin_sqrt`. `__builtin_fabs` and `__builtin_copysign` work only because `runtime/include/mccdefs.h` defines
-them as macros; the four above have no macro and no compiler-side handler, so the parser implicitly declares
-`__builtin_sqrt` as an ordinary function and emits a call to that literal name — which also means the implicit
-`int` return is the wrong ABI even before the link fails. The AST math-inliner matches the LIBRARY name
-(`ast_bfold_tab` vs `sqrt`), which is why `sqrt(x)` inlines and `__builtin_sqrt(x)` does not even compile.
-
-Two candidate fixes, neither attempted: (a) more macros in `mccdefs.h`, consistent with the ~20 math builtins
-already done that way — but the ones needing a real call would have to declare libm prototypes in an auto-included
-header, a clash risk and wrong under `-ffreestanding`; (b) strip a leading `__builtin_` in the parser when the
-remainder names a known libm entry, closer to what gcc does and fixing the whole family at once. (b) looks right;
-it changes identifier lookup, so it wants its own change and its own validation run, not a drive-by.
-
-Related, same probe: **gcc at plain `-O2` inlines `sqrt`, `copysign` AND `fma`, and with `-ffast-math` inlines all
-eight** of sqrt/copysign/fmin/fmax/fma/fabs/floor/ceil. mcc emits libcalls for fmin/fmax/fma/ceil/floor at every
-level. See the gate-sweep section below — the gates named after those transforms do not fire at all.
-
 ## The `o4`-only gates were swept for mis-staging 2026-07-29 — REGDISP was the only one; do not re-run this
 Method that found `REGDISP`: force each `o4`-only gate on at `-O2` and compare instructions and `.text`. All ten,
 five kernels each, then the three that moved anything re-checked on a REAL workload (mcc compiling its own 5.7 MB
