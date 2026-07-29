@@ -5182,6 +5182,17 @@ if(MCC_BUILD_TESTS)
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         endif()
 
+        # Link the amalgamation once per target define set. Catches a function
+        # CALLED under one target guard but DEFINED under a narrower one -- a link
+        # error no other cell can see, because every other build here is the host
+        # target. mcc-x86_64-win32 broke exactly this way.
+        if(UNIX)
+            add_test(NAME target-link-gate
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/target-link-gate.sh")
+            set_tests_properties(target-link-gate PROPERTIES SKIP_RETURN_CODE 77
+                TIMEOUT 900)
+        endif()
+
         if(TARGET mccbuild)
             add_test(NAME arm-abi-detect COMMAND "$<TARGET_FILE:mccbuild>" --detect --arm-selftest)
             set_tests_properties(arm-abi-detect PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
@@ -5192,6 +5203,16 @@ if(MCC_BUILD_TESTS)
                 --cross x86_64 --cc "${_ref_cc}"
                 --out "${CMAKE_BINARY_DIR}/cross-factory-smoke")
             set_tests_properties(cross-factory PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+
+            # ILP32 leg of the same factory. The x86_64 run cannot see a runtime
+            # header whose prototypes disagree with the definitions only when
+            # `long` is 4 bytes -- that shipped once and broke every 32-bit
+            # target while the whole native suite stayed green.
+            add_test(NAME cross-factory-i386 COMMAND "$<TARGET_FILE:mccbuild>"
+                --cross i386 --cc "${_ref_cc}"
+                --out "${CMAKE_BINARY_DIR}/cross-factory-i386")
+            set_tests_properties(cross-factory-i386 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         elseif(TARGET mccbuild)
             mcc_skip_test(cross-factory
