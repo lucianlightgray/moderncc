@@ -1153,6 +1153,22 @@ real-object validation stays macOS-gated.
    and replay buffers instead of the 96-byte window. Verified on mcc's own TU: `mcc_define_symbol,full` emits the
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
+
+   **FIRST DELTA DECODED AND CLOSED 2026-07-29 — `mcc_define_symbol`, and it is a new SHAPE, not a call bug:**
+   the full dump showed replay re-emitting the entire `strchr` call+arg sequence before the `cmp`, and reduction
+   found the discriminator is the YODA COMPARISON, not the call: `0 == (eq = f())` is unfaithful while
+   `(eq = f()) == 0`, `!(eq = f())` and the split form are all faithful — and the non-call `0 == (eq = p + 1)`
+   is unfaithful too. Cause: `ast_finalize_storevals` requires the StoreVal marker to be the LEFTMOST leaf of the
+   following statement, and a constant left operand (which emits no code) fails that test, so replay re-evaluates
+   the RHS. Landed `MCC_AST_STOREVAL_CONSTL` (default OFF): admits a StoreVal that is child 1 of a 2-child Binary
+   whose child 0 is a no-code constant literal (looking through `AST_Convert` chains — `NULL` records as
+   Convert(Literal) and was the second reduction step), tags the store `AST_FB_STOREVAL_CONST_LEFT`, and replay
+   `vswap()`s at the marker so the vstack mirrors codegen's `[const, value]` order exactly. Validated: gate-off
+   byte-identical (repro + TU objects, all new paths behind the gate); gate-on flips all repro shapes faithful,
+   runtime output matches gcc at `-O1/2/3`, mcc's own TU goes unfaithful 239 -> 238 / faithful 1580 -> 1581
+   (`mcc_define_symbol` the mover, per-function diff clean), ast ctest suite 224/224. JIT status: AOT-only
+   validation so far (P0 standing rule — part of the flip criteria). Remaining in this item: `host_runmem_alloc`
+   and `mcc_preprocess` extra-call deltas, then the `xorb`/`movabs`/`add`/`cmp` length-differ population.
 6. **A1a `nocode_wanted` (92).** Unchanged; the design problem stands.
 7. **Prune this file** — see the canonical entry under "Alongside"; not repeated here.
 8. ~~**D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.**~~ **DONE 2026-07-29**, in instructions and

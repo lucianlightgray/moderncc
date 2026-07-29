@@ -49,6 +49,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_LANDOR_INVERT 8u
 
+#define AST_FB_STOREVAL_CONST_LEFT 16u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1758,6 +1760,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 }
 static int ast_promote_env;
 static int ast_storeval_call_env;
+static int ast_storeval_constl_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2091,6 +2094,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 																			o4 || s1->optimize_size || s1->optimize >= 2);
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
 	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 2);
+	ast_storeval_constl_env = ast_env_gate("MCC_AST_STOREVAL_CONSTL", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -5622,8 +5626,11 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		AstLocal st = (AstLocal)ast_ival(a, n);
 		if (st != AST_NONE && st < a->count && ast_kind(a, st) == AST_Store) {
 			MCC_TRACE("br\n");
-			if (ast_fbits(a, st) & AST_FB_STORE_VALUE_LIVE)
-				{ MCC_TRACE("br\n"); break; }
+			if (ast_fbits(a, st) & AST_FB_STORE_VALUE_LIVE) { MCC_TRACE("br\n");
+				if (ast_fbits(a, st) & AST_FB_STOREVAL_CONST_LEFT)
+					{ MCC_TRACE("br\n"); vswap(); }
+				break;
+			}
 			if (ast_nchild(a, st) == 2)
 				{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
 		}
@@ -6390,6 +6397,13 @@ static int ast_treechk(AstArena *a, const char *fname, const char *phase) { MCC_
 	return bad;
 }
 
+static int ast_storeval_const_leaf(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	while (n != AST_NONE && ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
+		{ MCC_TRACE("br\n"); n = ast_child(a, n, 0); }
+	return n != AST_NONE && ast_kind(a, n) == AST_Literal &&
+				 (ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+}
+
 static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal n;
 	for (n = 0; n < a->count; n++) { MCC_TRACE("br\n");
@@ -6412,14 +6426,14 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 		   argument and has replay swap the callee under the live value. */
 		{
 			AstLocal cur = n, up, call_up = AST_NONE;
-			int leftmost = 1;
+			int leftmost = 1, constl = 0;
 			for (;;) {
 				MCC_TRACE("br\n");
 				up = ast_parent(a, cur);
 				if (up == AST_NONE || ast_kind(a, up) == AST_BasicBlock)
 					{ MCC_TRACE("br\n"); break; }
 				if (ast_kind(a, up) == AST_Invoke) { MCC_TRACE("br\n");
-					if (!ast_storeval_call_env || call_up != AST_NONE ||
+					if (!ast_storeval_call_env || call_up != AST_NONE || constl ||
 							ast_nchild(a, up) < 2 || ast_child(a, up, 1) != cur ||
 							ast_kind(a, ast_parent(a, up)) != AST_BasicBlock)
 						{ MCC_TRACE("br\n"); leftmost = 0; break; }
@@ -6427,8 +6441,18 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 					cur = up;
 					continue;
 				}
-				if (ast_first_child(a, up) != cur)
-					{ MCC_TRACE("br\n"); leftmost = 0; break; }
+				if (ast_first_child(a, up) != cur) { MCC_TRACE("br\n");
+					if (ast_storeval_constl_env && !constl && call_up == AST_NONE &&
+							ast_kind(a, up) == AST_Binary && ast_nchild(a, up) == 2 &&
+							ast_child(a, up, 1) == cur &&
+							ast_storeval_const_leaf(a, ast_child(a, up, 0))) { MCC_TRACE("br\n");
+						constl = 1;
+						cur = up;
+						continue;
+					}
+					leftmost = 0;
+					break;
+				}
 				cur = up;
 			}
 			if (!leftmost || up == AST_NONE || ast_kind(a, up) != AST_BasicBlock)
@@ -6438,6 +6462,9 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 			if (call_up != AST_NONE)
 				{ MCC_TRACE("br\n"); ast_set_fbits(a, call_up,
 						ast_fbits(a, call_up) | AST_FB_CALL_STOREVAL_ARG); }
+			if (constl)
+				{ MCC_TRACE("br\n"); ast_set_fbits(a, st,
+						ast_fbits(a, st) | AST_FB_STOREVAL_CONST_LEFT); }
 		}
 		ast_set_fbits(a, st, ast_fbits(a, st) | AST_FB_STORE_VALUE_LIVE);
 	}
