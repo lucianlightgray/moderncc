@@ -1184,7 +1184,11 @@ real-object validation stays macOS-gated.
    The 22: host_run_tls_slab_tpoff tal_free_impl pragma_parse preprocess cplx_extract_const write_ldouble
    decl_initializer_alloc ast_vlat_* ast_range_bound* ast_rp_label_get ast_eval_binop ast_search_roi_order
    mcc_debug_new build_got_entries cleanup_symbols cleanup_sections gen_stack_chk_prolog maybe_print_stats
-   main lzw_compress. Older buckets still open: mov-only register-order deltas (the largest),
+   main lzw_compress. Sampled classification of the 22: member chains REJECTED by the deliberate
+   CHAINSTORE_MEMBER safety guards (consumer/purity — e.g. `cleanup_symbols`), downstream jump-target shifts
+   from length deltas elsewhere (`lzw_compress`), long-double/misc. Mostly the cost of the guards that keep
+   the near-miss class impossible; lifting any of them needs the traced 3-chain investigation first.
+   Older buckets still open: mov-only register-order deltas (the largest),
    3+-member chains (pairwise limit — NEGATIVE RESULT 2026-07-29: the naive run generalization of the fused
    member replay produced wrong-shaped bytes: pair tagging feeds each outer a REGISTER-FINALIZED value copy
    that is only meaningful in the pairwise protocol, so a run replay reads stale address registers as values;
