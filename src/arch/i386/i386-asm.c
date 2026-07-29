@@ -1107,6 +1107,11 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 		case 'p':
 			pr = 3;
 			break;
+#ifdef MCC_TARGET_X86_64
+		case 'x':
+			pr = 3;
+			break;
+#endif
 		case 'N':
 		case 'M':
 		case 'I':
@@ -1151,6 +1156,13 @@ ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 
 #include "arch/asm-constraints.inc.c"
 
+#ifdef MCC_TARGET_X86_64
+static int asm_is_sse_operand(ASMOperand *op) { MCC_TRACE("enter\n");
+	int bt = op->vt->type.t & VT_BTYPE;
+	return bt == VT_FLOAT || bt == VT_DOUBLE;
+}
+#endif
+
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 																		 int nb_operands, int nb_outputs,
 																		 const uint8_t *clobber_regs,
@@ -1160,6 +1172,11 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 	int j, reg, c, reg_mask;
 	const char *str;
 	uint8_t regs_allocated[MCC_NB_ASM_REGS];
+#ifdef MCC_TARGET_X86_64
+	uint8_t xmm_allocated[MCC_TREG_XMM15 - MCC_TREG_XMM0 + 1];
+
+	memset(xmm_allocated, 0, sizeof(xmm_allocated));
+#endif
 
 	asm_constraints_prologue(operands, nb_operands, nb_outputs,
 													 clobber_regs, sorted_op, regs_allocated);
@@ -1267,6 +1284,27 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		case 't':
 		case 'f':
 			break;
+#ifdef MCC_TARGET_X86_64
+		case 'x':
+			if (op->reg >= 0)
+				{ MCC_TRACE("br\n"); goto try_next; }
+			if (!asm_is_sse_operand(op) ||
+					(op->input_index >= 0 &&
+					 !asm_is_sse_operand(&operands[op->input_index])))
+				{ MCC_TRACE("br\n"); mcc_error("constraint 'x' requires a float or double operand"); }
+			for (reg = MCC_TREG_XMM0; reg <= MCC_TREG_XMM15; reg++) { MCC_TRACE("br\n");
+				if (!(reg_classes[reg] & MCC_RC_FLOAT))
+					{ MCC_TRACE("br\n"); continue; }
+				if (!(xmm_allocated[reg - MCC_TREG_XMM0] & reg_mask))
+					{ MCC_TRACE("br\n"); goto xmm_found; }
+			}
+			goto try_next;
+		xmm_found:
+			op->is_llong = 0;
+			op->reg = reg;
+			xmm_allocated[reg - MCC_TREG_XMM0] |= reg_mask;
+			break;
+#endif
 		case 'e':
 		case 'i':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
@@ -1377,6 +1415,12 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 		cstr_printf(add_str, "(%%%s)", get_tok_str(TOK_ASM_xax + reg, NULL));
 	} else { MCC_TRACE("br\n");
 		reg = r & VT_VALMASK;
+#ifdef MCC_TARGET_X86_64
+		if (reg >= MCC_TREG_XMM0 && reg <= MCC_TREG_XMM15) { MCC_TRACE("br\n");
+			cstr_printf(add_str, "%%xmm%d", reg - MCC_TREG_XMM0);
+			return;
+		}
+#endif
 		if (reg >= VT_CONST)
 			{ MCC_TRACE("br\n"); mcc_internal_error(""); }
 
@@ -1461,7 +1505,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 	memcpy(regs_allocated, clobber_regs, sizeof(regs_allocated));
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		op = &operands[i];
-		if (op->reg >= 0)
+		if (op->reg >= 0 && op->reg < MCC_NB_ASM_REGS)
 			{ MCC_TRACE("br\n"); regs_allocated[op->reg] = 1; }
 	}
 	if (!is_output) { MCC_TRACE("br\n");
