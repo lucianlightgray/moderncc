@@ -1116,6 +1116,32 @@ ST_FUNC void mcc_isa_print(MCCState *s1) { MCC_TRACE("enter\n");
 	};
 	size_t i;
 	mcc_isa_init(s1);
+	/* Name the TARGET too. Step 6's purpose is that a bug report or CI log can
+	   state the ISA a build targeted, and a bare "level: armv8-a" does not say
+	   which compiler produced it -- every cross compiler in the tree answers
+	   -print-isa. */
+#ifdef MCC_CONFIG_TRIPLET
+	printf("target: %s\n", MCC_CONFIG_TRIPLET);
+#else
+	/* Cross compilers in this tree are built without MCC_CONFIG_TRIPLET, so fall
+	   back to the target macro rather than printing nothing -- an unlabelled
+	   report is exactly what this line exists to prevent. */
+	printf("target: %s\n",
+#if defined(MCC_TARGET_X86_64)
+				 "x86_64"
+#elif defined(MCC_TARGET_I386)
+				 "i386"
+#elif defined(MCC_TARGET_ARM64)
+				 "arm64"
+#elif defined(MCC_TARGET_ARM)
+				 "arm"
+#elif defined(MCC_TARGET_RISCV64)
+				 "riscv64"
+#else
+				 "unknown"
+#endif
+	);
+#endif
 	printf("level: %s\n", s1->isa_level ? s1->isa_level : "baseline");
 	printf("features:");
 	for (i = 0; i < sizeof f / sizeof *f; i++)

@@ -29,7 +29,7 @@ command -v objdump >/dev/null 2>&1 || { echo "SKIP: objdump not found"; exit 77;
 # pattern-matching the DEFAULT level: the default is `native`, so matching on
 # "level: x86-64" made this whole cell SKIP (=pass) the moment the default
 # flipped, which is exactly how a test stops testing anything without saying so.
-case $("$MCC" -march=x86-64 -print-isa 2>/dev/null | head -1) in
+case $("$MCC" -march=x86-64 -print-isa 2>/dev/null | grep '^level:') in
 	"level: x86-64") ;;
 	*) echo "SKIP: not an x86-64 mcc"; exit 77 ;;
 esac
@@ -49,7 +49,7 @@ isa() { "$MCC" -B"$BASE" $1 -print-isa 2>&1; }
 #    "the default equals an explicit -march=native", not against a fixed feature
 #    list, because the correct answer differs per host and hardcoding this
 #    machine's would make the cell a lie on any other one.
-if [ "$(isa '' | head -1)" = "level: native" ] &&
+if [ "$(isa '' | grep '^level:')" = "level: native" ] &&
 	 [ "$(isa '')" = "$(isa -march=native)" ]; then
 	echo "PASS: the default is native and matches an explicit -march=native"
 else
@@ -59,7 +59,7 @@ fi
 
 # 2. Named levels resolve, and each is a superset of the one below.
 for lv in x86-64-v2 x86-64-v3 x86-64-v4; do
-	if [ "$(isa "-march=$lv" | head -1)" = "level: $lv" ]; then :; else
+	if [ "$(isa "-march=$lv" | grep '^level:')" = "level: $lv" ]; then :; else
 		echo "FAIL: -march=$lv did not resolve"
 		rc=1
 	fi
