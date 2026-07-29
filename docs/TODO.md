@@ -1154,6 +1154,19 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **SEVENTH CLASS CLOSED 2026-07-29 — chained assignment re-materialization (the xor-only class + mixed).**
+   `a = b = 0` (and `ia = ib = g()`): the parser materializes the value ONCE and chains two vstores; replay
+   emitted two independent stores, re-materializing per store — the exact residual the CHAINSTORE
+   well-formedness note called out as NOT fixed by the tree copy. Landed `MCC_AST_CHAINSTORE_LIVE` (default
+   OFF): `ast_finalize_chainstores` pairs adjacent sibling Stores where the outer carries the chained `1u` tag,
+   the outer lvalue is a no-code leaf, and the value children are `ast_struct_eq` (the copy guarantees this) —
+   inner gets `AST_FB_STORE_VALUE_LIVE`, outer gets `AST_FB_STORE_CHAIN_REUSE`; replay of a reuse store pushes
+   the lvalue, `vswap`s the live value on top, and `vstore`s — no re-evaluation (promoted outer targets go
+   through `ast_promo_write` on the live value instead). Chains of 3+ compose (each middle store is both LIVE
+   and REUSE). OPASSIGN chains are excluded. Validated: gate-off byte-identical; `ia = ib = g()` flips faithful
+   (single call); runtime matches gcc `-O1/2/3`; TU all-seven-gates: unfaithful 84 -> 73 (+11, zero
+   regressions); ast ctest 224/224. Session: 239 -> 73. AOT-only (P0 rule).
+
    **SIXTH CLASS CLOSED 2026-07-29 — pending-VT_CMP materialization (the movzbl+sete class).** Parse-side
    pushes go through `vsetc`, which calls `vcheck_cmp()` — materializing a pending flags-resident comparison
    (`sete`+`movzbl`) BEFORE the next value lands on the vstack. Replay's leaf push uses raw `vpushv`, skipping
