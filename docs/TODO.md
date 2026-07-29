@@ -3402,14 +3402,17 @@ Keep the mccrt `alloca` stub regardless: it is the fallback for PE/bcheck and it
 
 ### Bit builtins — `clz`/`ctz`/`ffs`/`clrsb`/`popcount`/`parity`/`bswap`
 
-**`bswap` is DONE 2026-07-28 on x86_64, behind `MCC_BSWAP_INLINE` (default OFF).** It is the one member of this
+**`bswap` is DONE 2026-07-28 on x86_64 and DEFAULT-ON (`MCC_BSWAP_INLINE=0` opts out).** It is the one member of this
 family that needs NO `-march` work: `bswap` is 486-baseline and the 16-bit form is `rol $8`, so there is no ISA
 floor to raise. `gen_bswap(size)` (`x86_64-gen.c`) emits `rol $0x8,%ax` for 2 bytes and `0f c8+r` — with REX.W for
 8 — for 4 and 8, and `unary()` calls it instead of `vpush_helper_func` when the gate is on. The probe criterion
 this section states is met: the three `__builtin_bswap{16,32,64}` UND symbols disappear from the object, leaving
 only `printf`.
 
-Validated: gate-off 789/789 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; a new corpus cell
+Only x86_64 inlines it: i386, arm, arm64 and riscv64 still emit the helper call (verified — their objects keep the
+three UND symbols), so this does not change any cross target and the arm64 cross self-host fixpoint is unchanged
+and byte-identical. Validated before the flip with gate-off 789/789 corpus objects byte-identical at
+`-O0`/`-O2`/`-O3`, and after it with full ctest 7394/7394. A new corpus cell
 (`tests/exec/codegen/bswap_inline.c`) checks the fixed edges (0, all-ones, `0x00ff` at each width) plus 200
 xorshift values per width AND asserts the round trip is the identity, matching gcc at `-O0`/`-O1`/`-O2`/`-O3` with
 the gate both off and on; full ctest 7394/7394 both ways.

@@ -452,7 +452,7 @@ static int bswap_inline_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_BSWAP_INLINE");
-		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
 	}
 	return on;
 }
