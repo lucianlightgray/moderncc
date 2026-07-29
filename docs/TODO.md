@@ -1154,6 +1154,18 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **FIFTH CLASS CLOSED 2026-07-29 — FP unary negation was INVISIBLE to the recorder (the whole movq+xorb
+   class, 17 functions, all `foldm_*`/`ast_fc_*`).** On x86_64/i386/arm64 `gen_negf` is `#define`d to the arch
+   `gen_opf`, so the generic `gen_negf`'s `ast_hook_bail` never runs, and `unary()` calls `gen_opif(TOK_NEG)`
+   with NO recorder hook — the model's vstack stays consistent (1 in, 1 out) so there is no desync either: the
+   negation silently vanishes from the tree and replay omits the store/`xorb $0x80`/reload sign-flip entirely.
+   Landed `MCC_AST_FNEG` (default OFF): `ast_hook_fneg_begin/end` bracket the `gen_opif(TOK_NEG)` call (gate-off
+   is a complete no-op; gate-on records `AST_Unary`/`AST_OP_FNEG` and suppresses interior hooks via `ast_in_op`),
+   replay dispatches `AST_OP_FNEG` -> `gen_opif(TOK_NEG)`. riscv64 stays safe: the generic `gen_negf` still
+   bails before replay can run. Validated: gate-off byte-identical; repro (double/float/expression/stored/const)
+   flips faithful; runtime matches gcc `-O1/2/3` incl. `-(-0.0)` signbit; TU all-five-gates: unfaithful
+   113 -> 96 (+17, zero regressions); ast ctest 224/224. Session total: unfaithful 239 -> 96. AOT-only (P0 rule).
+
    **FOURTH CLASS CLOSED 2026-07-29 — `x = f(y += g())`, and `host_runmem_alloc` is now FAITHFUL.** The
    StoreVal-as-call-arg walk required the Invoke's parent to be the BasicBlock, rejecting a call whose result is
    itself stored (`ptr = mcc_malloc(size += host_pagesize())`, `mcchost.c:1557`) — replay then re-emitted the

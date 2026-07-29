@@ -10374,7 +10374,13 @@ tok_next:
 		if ((vtop->type.t & VT_BTYPE) == VT_PTR)
 			{ MCC_TRACE("br\n"); mcc_error("pointer not accepted for unary minus"); }
 		if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_fneg_begin();
+#endif
 			gen_opif(TOK_NEG);
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_fneg_end();
+#endif
 		} else { MCC_TRACE("br\n");
 			vpushi(0);
 			vswap();

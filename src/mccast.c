@@ -1770,6 +1770,7 @@ static int ast_storeval_constl_env;
 static int ast_convert_gv_env;
 static int ast_call_noreturn_env;
 static int ast_storeval_callstore_env;
+static int ast_fneg_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2001,6 +2002,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_RINT 0x40012 /* rint() — current rounding mode, raises inexact */
 #define AST_OP_NEARBYINT 0x40013 /* nearbyint() — current mode, no inexact */
 #define AST_OP_FMA 0x40014 /* ternary fma(x,y,z)=x*y+z single-rounding (arm64/riscv64) */
+#define AST_OP_FNEG 0x40015
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -2107,6 +2109,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_convert_gv_env = ast_env_gate("MCC_AST_CONVERT_GV", 0);
 	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", 0);
 	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", 0);
+	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -2599,6 +2602,33 @@ void ast_hook_convert(CType *type) { MCC_TRACE("enter\n");
 	ast_set_type(ast_cur, cvt, type->t, (uint64_t)(uintptr_t)type->ref);
 	ast_add_child(ast_cur, cvt, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = cvt;
+}
+
+void ast_hook_fneg_begin(void) { MCC_TRACE("enter\n");
+	if (!ast_active || !ast_fneg_env)
+		{ MCC_TRACE("br\n"); return; }
+	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;
+	ast_in_op++;
+	if (!model)
+		{ MCC_TRACE("br\n"); return; }
+	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
+	if (ast_vn < 1 || ast_vn != rel || ast_bad_type(vtop->type.t)) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
+	AstLocal u = ast_node(ast_cur, AST_Unary);
+	ast_set_op(ast_cur, u, AST_OP_FNEG);
+	ast_set_type(ast_cur, u, vtop->type.t, (uint64_t)(uintptr_t)vtop->type.ref);
+	ast_add_child(ast_cur, u, ast_vs[ast_vn - 1]);
+	ast_vs[ast_vn - 1] = u;
+}
+
+void ast_hook_fneg_end(void) { MCC_TRACE("enter\n");
+	if (!ast_active || !ast_fneg_env)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_in_op)
+		{ MCC_TRACE("br\n"); ast_in_op--; }
 }
 
 void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
@@ -5813,6 +5843,10 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			vtop->type = mt;
 			if (!(mt.t & VT_ARRAY))
 				{ MCC_TRACE("br\n"); vtop->r |= VT_LVAL | (int)ast_fbits(a, n); }
+		} else if (uop == AST_OP_FNEG) { MCC_TRACE("br\n");
+			gen_opif(TOK_NEG);
+			vtop->type.t = ast_type_t(a, n);
+			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
