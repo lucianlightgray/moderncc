@@ -1394,6 +1394,84 @@ static int alloca_inline_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
+static int ovf_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_OVERFLOW_INLINE");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on;
+}
+
+/* __builtin_add_overflow/sub_overflow arrive here as calls to the mccdefs
+   dispatch helpers (__mcc_addo_i and friends), so the inline form intercepts the
+   CALL rather than a builtin token. Signed overflow is OF, unsigned is CF, and
+   the flag has to be captured before the result store touches anything. Widths 4
+   and 8 only: the byte and word forms need extra prefixes for no real gain. */
+static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
+	const char *nm;
+	int sub, uns, size, align, ra, rb, rr, sc;
+	CType *pt;
+
+	if (!ovf_inline_on() || nb_args != 3)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!(vtop[-3].r & VT_SYM) || !vtop[-3].sym)
+		{ MCC_TRACE("br\n"); return 0; }
+	nm = get_tok_str(vtop[-3].sym->v, NULL);
+	if (!nm || strncmp(nm, "__mcc_", 6))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!strncmp(nm + 6, "addo_", 5))
+		{ MCC_TRACE("br\n"); sub = 0; }
+	else if (!strncmp(nm + 6, "subo_", 5))
+		{ MCC_TRACE("br\n"); sub = 1; }
+	else
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((vtop->type.t & VT_BTYPE) != VT_PTR)
+		{ MCC_TRACE("br\n"); return 0; }
+	pt = pointed_type(&vtop->type);
+	size = type_size(pt, &align);
+	if (size != 4 && size != 8)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((pt->t & VT_BTYPE) == VT_STRUCT || is_float(pt->t))
+		{ MCC_TRACE("br\n"); return 0; }
+	uns = (pt->t & VT_UNSIGNED) != 0;
+
+	gv(MCC_RC_RDI);
+	rr = vtop->r & VT_VALMASK;
+	vswap();
+	gv(MCC_RC_RSI);
+	rb = vtop->r & VT_VALMASK;
+	vswap();
+	vrotb(3);
+	gv(MCC_RC_RCX);
+	ra = vtop->r & VT_VALMASK;
+	vrott(3);
+
+	save_reg(MCC_TREG_RDX);
+	save_reg(MCC_TREG_RAX);
+	sc = MCC_TREG_RDX;
+
+	orex(size == 8, rb, ra, sub ? 0x2b : 0x03);
+	o(0xc0 + REG_VALUE(ra) * 8 + REG_VALUE(rb));
+
+	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
+		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }
+	o(0x0f);
+	o(uns ? 0x92 : 0x90);
+	o(0xc0 + REG_VALUE(sc));
+
+	orex(size == 8, rr, ra, 0x89);
+	gen_modrm(ra, rr, NULL, 0);
+
+	if (REG_VALUE(sc) >= 4 || REX_BASE(sc))
+		{ MCC_TRACE("br\n"); o(0x40 | REX_BASE(sc)); }
+	o(0x0f);
+	o(0xb6);
+	o(0xc0 + REG_VALUE(MCC_TREG_RAX) * 8 + REG_VALUE(sc));
+	vtop -= 4;
+	return 1;
+}
+
 /* alloca(n) is `sub rsp` and nothing else: the block must survive to the
    function epilogue, so unlike a VLA it is NOT registered in cur_scope->vla and
    nothing reclaims it early -- `leave` restores rsp from rbp. Locals and spills
@@ -1440,6 +1518,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	char *onstack;
 
 	if (gen_alloca_inline(nb_args))
+		{ MCC_TRACE("br\n"); return; }
+	if (gen_ovf_addsub(nb_args))
 		{ MCC_TRACE("br\n"); return; }
 	onstack = mcc_malloc((nb_args + 1) * sizeof(char));
 
