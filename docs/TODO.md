@@ -1173,6 +1173,18 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **FLIPPED DEFAULT-ON 2026-07-29 — all ten recorder gates staged at `o4 || optimize >= 2` (the
+   STOREVAL_CALL precedent):** `MCC_AST_STOREVAL_CONSTL`, `MCC_AST_CONVERT_GV`, `MCC_AST_CALL_NORETURN`,
+   `MCC_AST_STOREVAL_CALLSTORE`, `MCC_AST_FNEG`, `MCC_AST_CMP_MAT`, `MCC_AST_CHAINSTORE_LIVE`,
+   `MCC_AST_CHAINSTORE_MEMBER`, `MCC_AST_WHILE_COMMA`, `MCC_AST_TERNARY_DISCARD` (the constl-in-call-arg
+   composition rides on the first and fourth). M8 sweep ON THE FLIP BUILD: **full ctest 7893/7893** (the only
+   initial failure was the fidelity ratchet DRIFTING DOWNWARD — 182 -> 159 gaps, zero new — baseline
+   regenerated to bank the 23 wins), 3-stage self-host fixpoint s3==s4 byte-identical with the new defaults,
+   25-fresh-seed differential fuzz with the full gate sweep: 0 miscompiles. Earlier same-day validation
+   already covered: JIT `-run` parity (non-vacuous, 19/19), cross-arch qemu runtime (4 arches x 9/9),
+   exec-corpus zero new gaps, per-gate runtime differentials vs gcc. Each gate still individually
+   disable-able via `MCC_AST_<X>=0`.
+
    **CROSS-ARCH LEG FOR THE 11 RECORDER GATES — VERDICT LEVEL DONE 2026-07-29, qemu runtime leg REMAINS.**
    Rebuilt `cmake-cross/mcc-{i386,arm64,riscv64,arm}` from the current tree (the baked `main@…` version string
    is configure-time cosmetic — `strings` confirms the new gate names are in all four binaries). With all

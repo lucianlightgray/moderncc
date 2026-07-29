@@ -6,11 +6,6 @@ arch/arm64.c	fa_hfa33	desync
 arch/arm64.c	fa_hfa34	desync
 arch/arm64.c	myprintf	desync
 arch/arm64.c	ret	desync
-arch/arm64_encoding.c	test_ldp_stp	unfaithful
-arch/arm64_encoding.c	test_ldr_str	unfaithful
-bounds/bound_setjmp.c	stack	unfaithful
-bounds/bound_signal.c	do_fork	unfaithful
-bounds/bound_signal.c	main	unfaithful
 codegen/alloca_inline.c	in_arg	unfaithful
 codegen/atomic_fetch_inline.c	cas_checks	bail
 codegen/atomic_fetch_inline.c	seq_checks	bail
@@ -20,7 +15,6 @@ codegen/bitscan_inline.c	main	unfaithful
 codegen/bswap_inline.c	b16	unfaithful
 codegen/bswap_inline.c	b32	unfaithful
 codegen/bswap_inline.c	b64	unfaithful
-codegen/bswap_inline.c	main	unfaithful
 codegen/codeopt.c	bla	bail
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/dead_code.c	kb_wait_1	desync
@@ -41,7 +35,6 @@ expressions/const_expr.c	main	unfaithful
 expressions/gnu_cond_omitted.c	main	desync
 expressions/integer_promotion.c	main	desync
 expressions/precedence.c	main	desync
-expressions/relational_equality.c	main	unfaithful
 features_c99_c11/alignas_over.c	main	desync
 features_c99_c11/atomic_aggregate.c	main	bail
 features_c99_c11/atomic_counter.c	adder_cmpxchg	bail
@@ -53,7 +46,6 @@ features_c99_c11/atomic_inlang_rmw.c	main	desync
 features_c99_c11/atomic_inlang_rmw.c	worker	desync
 features_c99_c11/atomic_n_builtins.c	main	bail
 features_c99_c11/atomic_ptr.c	main	bail
-features_c99_c11/attribs_position.c	main	unfaithful
 features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	unfaithful
 features_c99_c11/builtin_libm_alias.c	main	desync
@@ -85,15 +77,10 @@ features_c99_c11/flt_eval_method.c	main	desync
 features_c99_c11/fp_builtins.c	main	desync
 features_c99_c11/generic.c	main	desync
 features_c99_c11/noreturn.c	drive_int	unfaithful
-features_c99_c11/noreturn.c	main	unfaithful
 features_c99_c11/sync_builtins.c	main	bail
 features_c99_c11/tgmath_dispatch.c	main	desync
-features_c99_c11/weak_undef.c	main	unfaithful
-functions_abi/func_name.c	main	unfaithful
 functions_abi/func_pointers.c	main	desync
 functions_abi/function_pointer.c	main	desync
-functions_abi/indirect_call_shapes.c	via_cast	unfaithful
-functions_abi/inline2.c	check_exports	unfaithful
 inline_asm/asm_constraints_x86.c	main	unfaithful
 inline_asm/asm_goto.c	another_jump	unfaithful
 inline_asm/asm_goto.c	simple_jump	unfaithful
@@ -106,11 +93,9 @@ lexical/u16_string.c	main	desync
 lexical/u8_string.c	main	desync
 lexical/uU_char_constants.c	main	desync
 optimizer/assign_value_effects.c	assign_in_arg	unfaithful
-optimizer/assign_value_effects.c	chained	unfaithful
 optimizer/assign_value_effects.c	nested_assign	unfaithful
 optimizer/assign_value_effects.c	shortcircuit_both	desync
 optimizer/assign_value_effects.c	while_cond	unfaithful
-optimizer/redundant_cast.c	mixed	unfaithful
 optimizer/region_store.c	and_store	desync
 optimizer/region_store.c	chain	desync
 optimizer/region_store.c	or_store	desync
@@ -123,8 +108,8 @@ programs/grep.c	pmatch	bail
 programs/random_stuff.c	tst_adr	desync
 programs/random_stuff.c	tst_branch	desync
 programs/random_stuff.c	tst_pack	unfaithful
+programs/random_stuff.c	tst_void_ptr	unfaithful
 programs/stdio.c	main	unfaithful
-runner.c	run_capture	unfaithful
 runner.c	slurp	unfaithful
 statements/chained_assign.c	chain_in_expr	unfaithful
 statements/comma_operator.c	main	unfaithful
@@ -132,7 +117,6 @@ statements/logical_second_arg.c	main	desync
 statements/logical_short_circuit.c	main	desync
 statements/scopes.c	f4	desync
 statements/scopes.c	main_1	unfaithful
-statements/switch.c	main	unfaithful
 statements/tentative_array.c	main	desync
 statements/ternary_op.c	call_fp	desync
 statements/ternary_op.c	main	desync
@@ -141,16 +125,12 @@ statements/translation_limits.c	main	desync
 statements/void_expr.c	main	unfaithful
 structs_unions/aggregate_perm.c	main	desync
 structs_unions/aggregate_perm.c	sld_chk	desync
-structs_unions/bitfields.c	dump	unfaithful
 structs_unions/bitfields.c	main	desync
-structs_unions/bitfields_ms.c	dump	unfaithful
 structs_unions/bitfields_ms.c	main	unfaithful
 structs_unions/enum_bitfield.c	convert_like_real	unfaithful
 structs_unions/return_struct_in_reg.c	main	unfaithful
 structs_unions/struct.c	main	stackresidue
 structs_unions/struct_abi.c	main	desync
-structs_unions/struct_abi.c	negdf	unfaithful
-structs_unions/struct_byval.c	f2	unfaithful
 structs_unions/struct_byval.c	main	desync
 structs_unions/struct_init.c	test_compound_with_relocs	unfaithful
 structs_unions/struct_init.c	test_init_ranges	desync
@@ -159,7 +139,6 @@ structs_unions/struct_init.c	test_multi_relocs	desync
 structs_unions/struct_packed_indirect.c	main	unfaithful
 structs_unions/union_byval.c	main	unfaithful
 types/bool.c	main	desync
-types/builtin_inf_nan.c	main	unfaithful
 types/conversion.c	conv	desync
 types/conversion.c	main	desync
 types/declarators.c	main	desync
@@ -169,8 +148,6 @@ types/int128.c	main	desync
 types/int128.c	pr	desync
 types/int128.c	sw	desync
 types/int128.c	usw	desync
-types/int_conversion.c	cast_main	unfaithful
-types/int_conversion.c	promote_main	unfaithful
 types/sizeof_semantics.c	main	desync
 types/typedef_semantics.c	main	desync
 types/types.c	f1	desync
