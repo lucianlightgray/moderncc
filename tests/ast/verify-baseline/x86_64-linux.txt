@@ -34,6 +34,7 @@ codegen/nocode_wanted.c	kb_wait_2_2	unfaithful
 codegen/nocode_wanted.c	kb_wait_3	desync
 codegen/nocode_wanted.c	kb_wait_4	bail
 codegen/popcount_inline.c	main	desync
+codegen/signbit_inline.c	main	desync
 expressions/cast_operator.c	main	unfaithful
 expressions/compound_assignment.c	main	desync
 expressions/const_expr.c	main	unfaithful

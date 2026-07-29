@@ -137,6 +137,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"relational_equality", "run", "exec/expressions/relational_equality.c", "rel: 1 1 0 1\neq: 1 0\nflt: 1 0\nmixed: 1\nprec: 1\nptr: 1 1 1\nnull: 1 1\npaths: 1\n", "", "", ""},
 		{"enum", "run", "exec/types/enum.c", "0 1 2 3 54 73 74 75\n12\n54\nenum to int: 1\n", "", "", ""},
 		{"const_expr", "run", "exec/expressions/const_expr.c", "dim: 7\ninit: 0 100\nenum: 15\ncases: 111\nbits: 3 15\nlocal: 6\n", "", "", ""},
+		{"signbit_inline", "run", "exec/codegen/signbit_inline.c", "OK\n", "", "", ""},
 		{"overflow_inline", "run", "exec/codegen/overflow_inline.c", "OK\n", "", "", ""},
 		{"alloca_inline", "run", "exec/codegen/alloca_inline.c", "14 160 81 42 4096\n", "", "", ""},
 		{"popcount_inline", "run", "exec/codegen/popcount_inline.c", "pop 0 32 64\npar 1 0\nOK\n", "", "", ""},

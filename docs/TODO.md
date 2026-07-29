@@ -3615,6 +3615,16 @@ two-operand form — it is the one-operand `mul r/m` with the multiplicand pinne
 in `%rdx`, so that path pins `a -> %rax` and moves the flag scratch to `%rsi` (it cannot be `%rdx`). The store has
 to happen BEFORE the `movzx` writes the boolean into `%rax`, since for unsigned mul the product IS in `%rax`.
 
+**`__mcc_signbit`/`signbitf` are inlined 2026-07-28 behind `MCC_SIGNBIT_INLINE` (default OFF).** `MOVMSKPS`/
+`MOVMSKPD` put lane 0's sign bit in bit 0 of a GP register, so `__builtin_signbit` is that plus one `and $1`; both
+are SSE2, so no ISA floor moves. x87 `long double` has no equivalent and keeps `__mcc_signbitl`.
+
+Worth knowing before writing a test for it: **gcc's `__builtin_signbit` returns the raw sign BIT, not 1** — on a
+negative float it yields `-2147483648`. That is conformant (the documented contract is "nonzero"), and mcc returns
+0/1 both in the helper and inline, so a differential test must compare `!!signbit`, not the value. A first cut
+compared against 1 and "failed" under gcc at both `-O0` and `-O2` while mcc passed, which reads like an mcc bug
+until you print the number.
+
 Re-measured after this, over `tests/exec` + `tests/behavior` + mcc's own TU, the non-libgcc residue is **10 names**:
 `__mcc_addo_{s,uc,ti}`, `__mcc_subo_uc`, `__mcc_mulo_ti`, the four complex helpers, and `__mcc_signbit`. The
 `_s`/`_uc` forms are the 1- and 2-byte widths this hook declines; `_ti` is 128-bit. So what is left divides into

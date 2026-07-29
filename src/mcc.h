@@ -1777,6 +1777,10 @@ ST_FUNC void gen_sqrt(void);
 #if defined(MCC_TARGET_X86_64)
 ST_FUNC void gen_bswap(int size);
 ST_FUNC void gen_bitscan(int ctz, int size);
+#if defined(MCC_TARGET_X86_64)
+ST_FUNC int signbit_inline_on(void);
+ST_FUNC void gen_signbit(int isfloat);
+#endif
 ST_FUNC void gen_ffs(int size);
 ST_FUNC void gen_atomic_xadd(int size);
 ST_FUNC void gen_atomic_xchg(int size);

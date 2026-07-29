@@ -9926,6 +9926,12 @@ tok_next:
 			vpop();
 			vpushi(sb);
 		} else { MCC_TRACE("br\n");
+#if defined(MCC_TARGET_X86_64)
+			if (bt != VT_LDOUBLE && signbit_inline_on()) { MCC_TRACE("br\n");
+				gen_signbit(bt == VT_FLOAT);
+				break;
+			}
+#endif
 			vpush_helper_func(tok_alloc_const(
 					bt == VT_FLOAT
 							? "__mcc_signbitf"
