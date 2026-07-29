@@ -1351,6 +1351,31 @@ unaccounted-pop fixes the rest. What is left, largest first:
 | 4 | vpush SYNC | the residual `switch`-path pop, all four already reported as `bail` |
 | 10 | assorted | one or two each |
 
+**THE `bail` BUCKET IS 80% ONE SITE — attributed 2026-07-29, and it is the single largest concentrated target in
+the whole census.** `bail` was emitted as a bare word with no line while 22 sites set `ast_bail`, so all 50 were
+unattributable — the same defect the desync sites had, minus even a line number. `AST_SET_BAIL()` now records the
+site (verdict `bail:<line>`; the ratchet stores only the verdict WORD, so the baseline is unaffected). mcc's own TU:
+
+| count | site |
+|---:|---|
+| **40** | `ast_hook_switch_begin` — the switch SELECTOR must be a bare `Ref`/`Literal` |
+| 6 | `ast_hook_bail` (the explicit hook, from `mccgen.c`) |
+| 4 | `ast_hook_if_begin` (`ast_bail`/`ast_vn != 1`/CF depth) |
+
+**The switch restriction looks conservative rather than fundamental**, which is why it is worth attacking: the
+recorder models computed expressions everywhere else, and only the selector position is limited to a bare variable
+or constant. Reproducer:
+
+    switch (a)        faithful          switch (a + b)   bail
+    switch (3)        faithful          switch (g(a))    bail
+                                        switch (p->f)    bail
+                                        switch ((int)a)  bail
+
+For scale: 40 functions is nearly three times the largest desync cause (14 short-circuit stores) and about 2% of
+the TU's 2157. Unlike the desync causes it is a deliberate DECLINE, not model drift, so widening it is a modelling
+change rather than a bug fix — and it should be scoped with the `switch`-path pop history in the A2a section, which
+is the same statement.
+
 **RE-MEASURED PER CAUSE 2026-07-29 — the sites above each collapsed several causes onto one line, and two rows of
 the table are misleading as a result.** Every `AST_SET_DESYNC()` that guarded a disjunction has been split so the
 verdict line names the cause (`89c7cb52` for vpush, this change for vstore). Semantics unchanged; the ratchet

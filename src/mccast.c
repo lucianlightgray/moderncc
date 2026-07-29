@@ -1779,6 +1779,11 @@ static int ast_inline_env;
 static int ast_tmpl_folds;
 static MCC_OPT_TLS AstArena *ast_cur;
 int ast_bail;
+int ast_bail_line; /* where ast_bail was first set, so `bail` is attributable like `desync` */
+/* Mirrors AST_SET_DESYNC: record WHERE we declined. 22 sites set ast_bail and the
+   verdict was a bare "bail", so the whole bucket was unattributable -- the same
+   defect the vpush/vstore desync sites had, minus even a line number. */
+#define AST_SET_BAIL() do { if (!ast_bail) { ast_bail_line = __LINE__; } ast_bail = 1; } while (0)
 static int ast_reemit_poison;
 static AstLocal ast_ret_val;
 static AstLocal ast_last_return;
@@ -2821,7 +2826,7 @@ void ast_hook_if_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		ast_in_call = 1;
 		return;
 	}
@@ -2860,7 +2865,7 @@ void ast_hook_if_else(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	AstLocal iff = ast_cf_if[ast_cf_top - 1];
@@ -2873,7 +2878,7 @@ void ast_hook_if_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cf_top--;
@@ -2884,7 +2889,7 @@ void ast_hook_while_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		ast_in_call = 1;
 		return;
 	}
@@ -2908,7 +2913,7 @@ void ast_hook_while_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cf_top--;
@@ -2919,7 +2924,7 @@ void ast_hook_do_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_vn != 0 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	AstLocal loop = ast_node(ast_cur, AST_If);
@@ -2937,7 +2942,7 @@ void ast_hook_do_body_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cur_bb = ast_cf_savebb[ast_cf_top - 1];
@@ -2947,7 +2952,7 @@ void ast_hook_do_cond(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_cf_top < 1 || ast_vn != 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		ast_in_call = 1;
 		return;
 	}
@@ -2961,7 +2966,7 @@ void ast_hook_do_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cf_top--;
@@ -2984,7 +2989,7 @@ void ast_hook_for_begin(int has_cond) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	AstLocal loop = ast_node(ast_cur, AST_If);
@@ -2999,7 +3004,7 @@ void ast_hook_for_cond(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_cf_top < 1 || ast_vn != 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		ast_in_call = 1;
 		return;
 	}
@@ -3013,7 +3018,7 @@ void ast_hook_for_incr_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	AstLocal incrbb = ast_node(ast_cur, AST_BasicBlock);
@@ -3025,7 +3030,7 @@ void ast_hook_for_incr_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cur_bb = ast_cf_savebb[ast_cf_top - 1];
@@ -3044,7 +3049,7 @@ void ast_hook_for_body_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	AstLocal bodybb = ast_node(ast_cur, AST_BasicBlock);
@@ -3056,7 +3061,7 @@ void ast_hook_for_end(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cf_top--;
@@ -3068,7 +3073,7 @@ void ast_hook_bail(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_bail && !ast_desync)
 		{ MCC_TRACE("br\n"); ast_bail_first = 1; }
-	ast_bail = 1;
+	AST_SET_BAIL();
 }
 
 void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
@@ -3076,7 +3081,7 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		if (ast_vn > 0)
 			{ MCC_TRACE("br\n"); ast_vn--; }
 		return;
@@ -3086,7 +3091,7 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	uint16_t vk = ast_kind(ast_cur, val);
 	if ((vk != AST_Ref && vk != AST_Literal) ||
 			ast_bad_type(ast_type_t(ast_cur, val))) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		ast_vn = 0;
 		return;
 	}
@@ -3141,7 +3146,7 @@ void ast_hook_switch_end(void) { MCC_TRACE("enter\n");
 	if (ast_in_call > 0)
 		{ MCC_TRACE("br\n"); ast_in_call--; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	ast_cf_top--;
@@ -3153,7 +3158,7 @@ void ast_hook_label(int v) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (nb_vla_open > 0 || cur_scope->cl.s) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -3171,7 +3176,7 @@ void ast_hook_goto(int v) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (nb_vla_open > 0 || cur_scope->cl.s) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -3747,7 +3752,7 @@ void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
 	   failed to model still bails. Passes that consume a Return's value must
 	   tolerate the missing child -- see the AST_NONE guards below. */
 	if (has_val && ast_ret_val == AST_NONE) { MCC_TRACE("br\n");
-		ast_bail = 1;
+		AST_SET_BAIL();
 		return;
 	}
 	AstLocal bb = ast_cur_bb;
@@ -14253,6 +14258,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_tern_top = 0;
 		ast_lor_top = 0;
 		ast_bail = 0;
+		ast_bail_line = 0;
 		ast_bail_first = 0;
 		ast_desync = 0;
 		ast_saw_nocode = 0;
@@ -17448,7 +17454,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			if (ast_fn_faithful) { MCC_TRACE("br\n");
 				ast_verdict = "faithful";
 			} else if (ast_bail_first) { MCC_TRACE("br\n");
-				ast_verdict = "bail";
+				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "bail:%d", ast_bail_line);
+				ast_verdict = ast_verdict_buf;
 			} else if (ast_desync) { MCC_TRACE("br\n");
 				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "desync:%d",
 								ast_desync_line);
@@ -17457,7 +17464,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) { MCC_TRACE("br\n");
 				ast_verdict = "empty";
 			} else if (ast_bail) { MCC_TRACE("br\n");
-				ast_verdict = "bail";
+				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "bail:%d", ast_bail_line);
+				ast_verdict = ast_verdict_buf;
 			} else if (ast_vn != 0 || ast_cf_top != 0) { MCC_TRACE("br\n");
 				ast_verdict = "stackresidue";
 				ast_gap = 1;
