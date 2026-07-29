@@ -175,6 +175,7 @@ extern uint64_t ast_pinned_regs;
 extern int ast_regdisp_env;
 extern int ast_fmov_imm_env;
 extern int ast_trunc32_env;
+extern int ast_inline_static_env;
 
 void ast_configure(struct MCCState *s1);
 uint64_t ast_intention_value(void);

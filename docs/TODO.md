@@ -3466,7 +3466,7 @@ Readings: (a) nbody gains **~20%** and every weight from 12 to 384 captures the 
 - **Investigate `AST_Poison` prevalence + reconciliation.** `AST_Poison` is a tombstone, not a construct: the columnar arena (`struct AstArena`) has no free list, so any pass that deletes a node re-kinds the slot to `AST_Poison` and `ast_clear_children`s it rather than removing it. Five planters today, all in `mccast.c`: narrow-lift (`ast_narrow_make` ~7250, poisons the wrapper after hoisting `inner`), DSE (~8070, redundant local store), SCCP branch-fold (~8123, dead `If` when the taken arm is empty), jump-thread/if-simplify (`ast_jt_*` ~8359, both arms empty), and the generic `ast_bf_drop` (~9329, bitfield lowering). Every downstream pass then pays to walk-and-skip these dead slots, and each one is serialized as a live node (a `kind` u16 + full payload row) in `mccjit_intent_serialize`'s node stream and re-materialized on deserialize — so tombstone density inflates both per-pass walk cost and blob size. Measure it first: instrument for post-pass Poison count per function / per TU (and as a fraction of live nodes) across the amalgamation self-compile + the exec corpus, and bucket by planter so the dominant source is named the way the desync gap set is. Then determine how many can/should be eliminated by (a) passes that rewrite-in-place instead of tombstoning where the slot could be reused, (b) an arena compaction/reconciliation step (renumber live nodes, drop Poison, remap `parent`/`first_child`/`last_child`/`next_sib`/child-index columns — the same index-remap `ast_slice_extract` already does) run before serialize and/or between pass phases, and (c) skip-index or generation-tagged querying so walkers don't re-scan tombstones. Open question the measurement settles: whether Poison is rare enough to leave alone (tombstoning is cheap and node-index-stable, which several passes rely on mid-transform) or common enough that a reconcile pass pays for itself. Node-index stability is the constraint — any compaction must run at a point where no live cursor/`AstLocal` is held across it.
 - **riscv64 `MCC_AST_PROMOTE=1` aborted the compiler — FIXED 2026-07-26.** `freg: Assertion 'r >= 8 && r < 16'` turned out to be `freg(-1)`: a `get_reg` failure sentinel reaching `load()`/`store()` as a register id. Backtrace `ast_replay_bb -> gfunc_return -> vstore -> gfunc_call -> gv(MCC_RC_R(2)) -> load(r=-1)`. Cause: the riscv64 caller-saved promotion pool was `{2,3,4,5,6,7}` = **a2-a7, the ABI argument registers**, and the FP pool `{10,11,12,13}` = **fa2-fa5, likewise argument registers**. A function is only leaf as far as the AST can see — a struct copy or struct return lowers to a hidden `memcpy`, and `gfunc_call` materialises each argument with `gv(MCC_RC_R(n))`, a class containing exactly ONE register. Promotion pins it, `get_reg` has nothing to return, and -1 propagates. The size pattern is the tell: `struct M{int a;}` (4 B), `{int a,b,c;}` (12 B) and `{char a[24];}` crash while `{int a,b;}` (8 B) and `{long a,b;}` (16 B) do not — only the former need the memcpy. Fix: riscv64 has NO leaf pool (`AST_PROMO_CALLER_N`/`AST_PROMO_XMM_N` = 0), because the only caller-saved registers mcc models on this arch ARE the argument registers; leaves promote into the callee-saved pool via `MCC_AST_PROMO_LEAF_CALLEE`, whose per-reg `ast_promo_reg_is_callee` save/restore already covers a leaf holding s-registers. Restoring a real leaf pool needs register ids for t0-t6, and an FP pool needs fs0-fs11 (the deferred PR-3 callee-saved float pool) — neither is modelled. **This contradicts the "riscv64 register promotion is DONE (GP `s1..s11` + float, qemu differential 0-fail)" note below: that soak never exercised promotion over a TU containing a struct return.** Validated: byte-identical by default on every arch (promotion is opt-in off x86_64, and the change is inside `#if defined(MCC_TARGET_RISCV64)`) — x86_64 self-compiled amalgamation identical at -O0/-O2/-O3; ctest 5590/5590; asttool 747/0; all 5 arches build; the riscv64 amalgamation now compiles under `MCC_AST_PROMOTE=1` alone, with `+LEAF_CALLEE`, and with the full 12-gate set; **`tools/selfhost-riscv64-docker.sh` reaches a byte-identical 3-stage fixpoint under all three** (2679281 B promote, 2679281 B 12-gate — the set that previously core-dumped — and 2749921 B with LEAF_CALLEE+RELOC_EQUIV); and a 364-run riscv64 differential vs `riscv64-linux-gnu-gcc` (FP-constant, struct, register-pressure and a dedicated struct-return battery covering the 4/8/12/16/24-byte and 2-double return classes) at -O0/-O2 under both promote configurations, 0 failures, 0 gate-off baseline failures.
 
-## `static inline` DISABLES inlining — IN PROGRESS 2026-07-29
+## `static inline` DISABLES inlining — mechanism landed gated 2026-07-29, BLOCKED on dead-static elimination
 Writing `inline` anywhere on a function stops mcc inlining it. The same function without the keyword inlines. At
 `-O2`, one call site pair (`sq(n) + sq(n+1)`), counting call relocations against the callee:
 
@@ -3489,9 +3489,36 @@ relocs, inlined**. The same flag leaves `static inline` at 2 relocs, because its
 `(type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE` — plain inline only.
 
 For `static inline` the in-place form needs no `a.weak` and no linkage change at all: internal linkage already, and
-dropping `VT_INLINE` makes it exactly the plain `static` function that is already proven to inline. Unused ones are
-already handled by the existing dead-static elimination. The gnu_inline `extern inline` row is the same defect
-wearing glibc's clothes — it is how `atoi` reaches `.text` out-of-line in the `-O1` section above.
+dropping `VT_INLINE` makes it exactly the plain `static` function that is already proven to inline. The gnu_inline
+`extern inline` row is the same defect wearing glibc's clothes — it is how `atoi` reaches `.text` out-of-line in
+the `-O1` section above.
+
+**IMPLEMENTED as `MCC_AST_INLINE_STATIC`, left default-OFF, because it does not pay — and the reason is a MISSING
+PASS, not a tuning problem. Do not flip it until that pass exists.** The gate makes all three non-inlining rows
+above inline (relocs 2 -> 0) and is correct: 257/257 exec programs give identical output gate-on vs gate-off, and
+the 3-stage self-host fixpoint is byte-identical. It is still a net loss:
+
+| workload | gate off | gate on |
+|---|---:|---:|
+| five bench kernels | — | **byte-identical** (none use `static inline` in their own source) |
+| mcc's own TU `.text` | 1881109 | 1881864 (**+755**) |
+
+**mcc has NO dead-static elimination.** An earlier draft of this entry claimed otherwise; the pass near
+`gen_inline_functions` that looks like one only emits `warn_unused_function` warnings. So a `static inline` that is
+generated in place is emitted whether or not anything still calls it, and inlining it is strictly ADDITIVE — the
+inlined copies at every call site PLUS the out-of-line body nobody reaches. That is the entire +755.
+
+It is also why the naive form of this change is far worse than the numbers above. Generating every `static inline`
+in place, system headers included, costs **+2135 bytes and +31 symbols on a hello-world-sized TU** (`__bswap_32`,
+`atof`, `atol`, `bsearch`, `feof_unlocked` … all emitted, none called). Parking is what keeps libc's header
+helpers out of the object, which is why `-fc99-inline-body` looks free — plain file-scope `inline` is rare in
+headers while `static inline` is everywhere. The landed gate therefore excludes system headers via
+`pp_in_system_header()`, which bounds the emitted set to functions the TU actually wrote and makes hello-world
+byte-identical again.
+
+**So the real prerequisite is dead-static elimination**, and it is worth more than this item on its own: today any
+unreferenced `static` function mcc generates stays in `.text` forever. With it, flipping this gate becomes a
+straight win, and `-fc99-inline-body` gets cheaper at the same time.
 
 ## Backend intrinsic lowering — two open items (the 21 -> 0 helper-call work is DONE, `docs` history has the table)
 `cli/intrinsics_no_helper_calls` asserts the probe object has ZERO undefined symbols and was verified to fail,

@@ -14269,6 +14269,28 @@ static int decl(int l) {
 					type.t &= ~VT_INLINE;
 					ad.a.weak = 1;
 				}
+				/* `static inline` is the ordinary way to write an inlinable helper,
+				 * and parking it defeats the inliner exactly as it does for plain
+				 * `inline` above -- the body lands at the end of the TU, after every
+				 * caller, so ast_inline_capture never sees it. Dropping VT_INLINE
+				 * makes it the plain `static` function that already inlines;
+				 * internal linkage is already correct, so unlike the
+				 * c99_inline_body case this needs no a.weak.
+				 *
+				 * SYSTEM HEADERS ARE EXCLUDED, and that is the whole design. mcc
+				 * has no dead-static elimination -- the pass near gen_inline_functions
+				 * that looks like one only WARNS -- so a body generated in place is
+				 * emitted whether or not anything calls it. Parking is what keeps
+				 * the thousands of `static inline`/__extern_inline helpers in libc
+				 * headers out of the object, and generating those in place costs
+				 * +2135 bytes and 31 symbols on a hello-world-sized TU while
+				 * inlining nothing anybody called. Restricting to the user's own
+				 * files bounds the emitted set to functions the TU actually wrote. */
+#if MCC_CONFIG_OPTIMIZER
+				if (ast_inline_static_env && !pp_in_system_header() &&
+						(type.t & (VT_INLINE | VT_STATIC)) == (VT_INLINE | VT_STATIC))
+					{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
+#endif
 			} else if (oldint) { MCC_TRACE("br\n");
 				mcc_warning("type defaults to int");
 			}

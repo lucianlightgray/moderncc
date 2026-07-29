@@ -1375,6 +1375,7 @@ static int ast_bitflag_report_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static MCC_OPT_TLS int ast_narrow_env;
+int ast_inline_static_env; /* MCC_AST_INLINE_STATIC: generate a `static inline` body in place so the inliner can see it, instead of parking it to end-of-TU */
 int ast_trunc32_env; /* MCC_AST_TRUNC32: emit a 64->32 narrowing as a 32-bit move instead of the shl/sar/shr triple */
 static MCC_OPT_TLS int ast_narrow_fix_env;
 static MCC_OPT_TLS int ast_narrow_c0_env;
@@ -2131,6 +2132,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_cprop_join_env = ast_env_gate("MCC_AST_CPROP_JOIN", o4 || s1->optimize >= 2);
 	ast_narrow_env = ast_env_gate("MCC_AST_NARROW", o4 || s1->optimize >= 1);
 	ast_trunc32_env = ast_env_gate("MCC_AST_TRUNC32", o4 || s1->optimize >= 1);
+	ast_inline_static_env = ast_env_gate("MCC_AST_INLINE_STATIC", 0);
 	ast_narrow_fix_env = ast_env_gate("MCC_AST_NARROW_FIX", o4 || s1->optimize >= 2);
 	ast_narrow_c0_env = ast_env_gate("MCC_AST_NARROW_CLASS0", 1);
 	ast_narrow_c1_env = ast_env_gate("MCC_AST_NARROW_CLASS1", 1);
