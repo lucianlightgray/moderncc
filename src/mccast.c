@@ -1781,6 +1781,7 @@ static int ast_cmp_mat_env;
 static int ast_chainstore_live_env;
 static int ast_chainstore_member_env;
 static int ast_while_comma_env;
+static int ast_ternary_discard_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2124,6 +2125,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", 0);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", 0);
 	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", 0);
+	ast_ternary_discard_env = ast_env_gate("MCC_AST_TERNARY_DISCARD", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -3728,7 +3730,8 @@ void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 	}
 	AstLocal top = ast_vs[ast_vn - 1];
 	uint16_t tk = ast_kind(ast_cur, top);
-	if ((tk == AST_Invoke || tk == AST_Unary) &&
+	if ((tk == AST_Invoke || tk == AST_Unary ||
+			 (ast_ternary_discard_env && tk == AST_If)) &&
 			ast_parent(ast_cur, top) == AST_NONE)
 		{ MCC_TRACE("br\n"); ast_add_child(ast_cur, ast_cur_bb, top); }
 	ast_vn--;

@@ -1138,6 +1138,15 @@ real-object validation stays macOS-gated.
 4. ~~**`store_packed_bf` is still `unfaithful`.** Its `c ? vdup() : gv_dup()` is now recorded after `8e867f40`, so the
    discarded-ternary hole is not its cause. Unattributed.~~ **CLOSED 2026-07-29 — the premise was false.** The
    discarded-value ternary is still NOT recorded, so the hole IS its cause; see the recorder section.
+   **MYSTERY SOLVED 2026-07-29: `8e867f40` committed ONLY docs/TODO.md — the one-line code fix its message
+   describes never landed** (`git show --stat` proves it). Re-landed as `MCC_AST_TERNARY_DISCARD` (default OFF):
+   `ast_hook_vpop` also attaches a discarded `AST_If`. The old commit's "empty -> faithful" claim does NOT hold:
+   the tree records, but the statement replay of a ternary-shaped `AST_If` is degenerate (emits a 2-byte
+   self-jump — the bb dispatcher only knows loop/if shapes), so `c ? a() : b();` goes empty -> UNFAITHFUL — an
+   honest verdict instead of an invisible one, and no reuse hazard (unfaithful is never replay-used). The
+   remaining work for this item is a proper ternary-statement replay case (cond, gvtst, arm, vpop, jmp, arm,
+   vpop); until then store_packed_bf stays unfaithful WITH its cause now visible in the tree. Gate-off
+   byte-identical; ast ctest 224/224.
 5. **The 26 non-mov length-differs — IN PROGRESS 2026-07-29.** Delta mnemonics `xorb` 16, `movabs` 6, `add` 6,
    `cmp` 5 — the `xorb` count is spread across `foldm_*` math folding, not one construct. Only remaining unexplained
    group in the unfaithful bucket, which is now the LARGEST gap category by far (mcc's own TU: unfaithful 224,
