@@ -97,6 +97,22 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 **CONSOLIDATION (2026-07-27):** with all five source changes in (SECREL native-TLS COFF reading, à la carte pull-once, `__ImageBase` synthesis, compiler-rt embed fallback, `K32GetProcessMemoryInfo` def) plus the CMake self-host enablement, the **full local ctest suite is 100% GREEN — 6424/6424, 0 failures** on llvm-mingw x86_64 (the core PE linker path is exercised by every test that links the CRT). x86_64-win32 `--embed-jit` + self-host bake + `MCC_JIT=1`≡`MCC_JIT=0` parity are done, wired, and regression-clean. Regression lock-in **DONE**: `embed-jit-smoke` ctest (`tools/embed-jit-smoke.py`, gated `WIN32 AND NOT MSVC`, SKIP-77 on no-blob/missing-runtime-lib, FAIL only on wrong output or a non-lib bake failure; JIT-OFF only so it never touches the winlibs `0xC0000005`). Passes locally on llvm-mingw. So the entire x86_64-win32 (mingw) `--embed-jit` path is implemented, proven, wired, and CI-guarded. **All local-tractable campaign items are complete;** what remains is strictly gated: i386 (no i386 toolchain here), MSVC embed (ucrt/msvcrt CRT-model conflict), P0 step 5 (winlibs-specific CI crash — needs a CI trace), arm64-win32 (HW).
 
 ## `-march` (default `native`) + move every ISA-dependent optimizer behind it
+**STATE 2026-07-29 — read this before the plan below, most of which is done.**
+
+| step | state |
+|---|---|
+| 1 feature mask + `mcc_isa_has` | **DONE** (`4e74e1c9`) |
+| 2 ISA-aware golden/fixpoint machinery | **DONE — needed NO code**; measured, see the flip note |
+| 3 named levels | **DONE** x86-64/-v2/-v3/-v4 + gcc CPU aliases; other triples validate their level NAMES but carry no feature bits yet |
+| 4 re-gate ISA-dependent optimizers | **DONE for every baseline lowering** — `ROUND_INLINE`(SSE4.1), `MATH_INLINE`, `COPYSIGN_INLINE`, `FMA_INLINE`(arm64/rv64), `MINMAX_INLINE`(arm64). **Remaining: the two arm `CPUVER` sites**, and they need ARM feature bits in the mask first |
+| 5 predefined macros follow `-march` | **INVERTED — do not implement as written**, it is a regression; see the step-5 note |
+| 6 introspection | **DONE** — `-print-isa` |
+| default = `native` | **DONE** (`5bd7d020`) |
+
+Two rules from this work that outlive it: **`-O4` means "run every optimizer", not "raise the required ISA"**, and
+**do not stage a gate whose lowering the backend cannot emit** (`FMA_INLINE` on x86, `MINMAX_INLINE` off arm64) —
+that advertises a transform that cannot fire.
+
 **Blocking caveat RESOLVED 2026-07-27 by the second option: `ROUND_INLINE` is out of the `o4` blanket.** It was `ast_env_gate("MCC_AST_ROUND_INLINE", o4)` while its own comment said "Default OFF because roundsd is SSE4.1" — the code contradicted the doc. Verified before and after on a `floor`/`ceil`/`trunc` source: `-O4` emitted **3 `roundsd`/`roundss` and zero libm relocs**, i.e. `-O4` output genuinely required an SSE4.1 CPU with nothing recording it; now `-O2`/`-O3`/`-O4` all emit 0 `roundsd` and keep the 3 libm calls, and `MCC_AST_ROUND_INLINE=1` still inlines on demand. Full suite 7214/7214. The principle worth keeping when `-march` lands: **`-O4` means "run every optimizer", not "raise the required ISA"** — an optimizer that changes the ISA floor does not belong in a blanket keyed on optimization effort. Restore it to `o4 || (level >= x86-64-v2)` once the level exists. Checked at the same time: no `vfmadd`/`vfmsub` is emitted at `-O4`, so `MCC_AST_FMA_INLINE` is not doing the same thing on x86 (it is arm64/riscv64-only, as this section already states).
 
 **Motivation (historical, the axis now exists).** Before `-march`, the optimizer gate WAS the ISA switch, so every ISA-dependent optimizer either stayed off and lost performance or went on and silently narrowed the set of CPUs the output ran on. The durable rule that came out of it is stated in the resolved caveat above: **`-O4` means "run every optimizer", not "raise the required ISA".**
