@@ -1,5 +1,5 @@
 extern int printf(const char *, ...);
-extern void *alloca(unsigned long);
+extern void *alloca(__SIZE_TYPE__);
 
 static int fill(char *p, int n, int v)
 {
@@ -28,7 +28,7 @@ static int in_arg(int n)
 {
 	char *p;
 
-	return arg_use(1, (p = alloca((unsigned long)n), fill(p, n, 2), p), 3, n);
+	return arg_use(1, (p = alloca((__SIZE_TYPE__)n), fill(p, n, 2), p), 3, n);
 }
 
 static int loop_alloca(int k)
@@ -46,11 +46,11 @@ static int loop_alloca(int k)
 
 static int nested(int n)
 {
-	char *p = alloca((unsigned long)n);
+	char *p = alloca((__SIZE_TYPE__)n);
 
 	fill(p, n, 4);
 	{
-		char *q = alloca((unsigned long)n);
+		char *q = alloca((__SIZE_TYPE__)n);
 
 		fill(q, n, 5);
 		if (p == q)
@@ -64,7 +64,7 @@ static int alive_after_scope(int n)
 	char *p;
 
 	{
-		p = alloca((unsigned long)n);
+		p = alloca((__SIZE_TYPE__)n);
 		fill(p, n, 7);
 	}
 	return sum(p, n);

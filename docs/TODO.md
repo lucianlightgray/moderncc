@@ -3396,7 +3396,7 @@ The acceptance bar for each item below is the M8 bar plus: gate-off byte-identit
 
 ### ~~`alloca` — the inline path already exists, the call just does not use it~~ — DONE 2026-07-28
 `gen_alloca_inline` in `gfunc_call` (`x86_64-gen.c`) takes `alloca(n)` before the call is built: round the request
-up to 16, `sub %rax,%rsp`, `mov %rsp,%rax`. Behind `MCC_ALLOCA_INLINE`, default OFF.
+up to 16, `sub %rax,%rsp`, `mov %rsp,%rax`. DEFAULT-ON; `MCC_ALLOCA_INLINE=0` opts out.
 
 Both traps this section recorded turned out to be answerable rather than blocking:
 - **Lifetime.** The block must live to the function epilogue, so — unlike a VLA — it is deliberately NOT registered
@@ -3413,6 +3413,12 @@ Validated: gate-off byte-identical over the corpus at `-O0`/`-O2`; the cell (arg
 scopes, use-after-scope, and a 4 KB block) matches gcc at `-O0`/`-O1`/`-O2`/`-O3` with the gate both ways; full
 ctest 7483/7483 in both states; self-host fixpoint byte-identical; 60-seed differential fuzz vs gcc + clang with
 `--gates`, 0 miscompiles.
+
+Flip checks beyond the gated ones: the bounds-checked path really does keep the call (with `-b` the object carries
+`__bound_alloca`, verified rather than assumed — an earlier check used a flag mcc ignores and was vacuous), the
+four cross targets still emit `alloca` since this is x86_64-only, and the corpus cell runs correctly under
+`qemu-i386` and `qemu-arm`. Its `alloca` declaration uses `__SIZE_TYPE__` rather than `unsigned long`, which is
+what makes it portable to the 32-bit targets at all — with `unsigned long` it is a redefinition conflict there.
 
 **With this the section's probe is 21 -> 0. mcc's object for that TU now has no undefined helper at all, where gcc
 still needs `__popcountdi2`.**
