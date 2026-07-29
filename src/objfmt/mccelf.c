@@ -1997,6 +1997,92 @@ static void bind_libs_dynsyms(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 }
 
+static char *vscript_text;
+static char **vscript_globals;
+static int vscript_nglobals;
+static int vscript_local_wildcard;
+static const char *vscript_path;
+
+static void vscript_load(MCCState *s1) { MCC_TRACE("enter\n");
+	FILE *f;
+	long len;
+	char *p, *q;
+	int in_local = 0;
+
+	dynarray_reset(&vscript_globals, &vscript_nglobals);
+	mcc_free(vscript_text);
+	vscript_text = NULL;
+	vscript_local_wildcard = 0;
+	vscript_path = s1->version_script;
+	f = fopen(s1->version_script, "rb");
+	if (!f)
+		{ MCC_TRACE("br\n"); return; }
+	fseek(f, 0, SEEK_END);
+	len = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (len <= 0) { MCC_TRACE("br\n");
+		fclose(f);
+		return;
+	}
+	vscript_text = mcc_malloc((size_t)len + 1);
+	if (fread(vscript_text, 1, (size_t)len, f) != (size_t)len) { MCC_TRACE("br\n");
+		fclose(f);
+		mcc_free(vscript_text);
+		vscript_text = NULL;
+		return;
+	}
+	vscript_text[len] = 0;
+	fclose(f);
+
+	p = vscript_text;
+	while (*p) { MCC_TRACE("br\n");
+		while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ';' ||
+					 *p == '{' || *p == '}')
+			{ MCC_TRACE("br\n"); p++; }
+		if (*p == '#') { MCC_TRACE("br\n");
+			while (*p && *p != '\n')
+				{ MCC_TRACE("br\n"); p++; }
+			continue;
+		}
+		if (!*p)
+			{ MCC_TRACE("br\n"); break; }
+		q = p;
+		while (*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r' &&
+					 *p != ';' && *p != '{' && *p != '}')
+			{ MCC_TRACE("br\n"); p++; }
+		{
+			char saved = *p;
+			*p = 0;
+			if (!strcmp(q, "global:")) { MCC_TRACE("br\n");
+				in_local = 0;
+			} else if (!strcmp(q, "local:")) { MCC_TRACE("br\n");
+				in_local = 1;
+			} else if (in_local) { MCC_TRACE("br\n");
+				if (!strcmp(q, "*"))
+					{ MCC_TRACE("br\n"); vscript_local_wildcard = 1; }
+			} else if (q[0] && strcmp(q, "*")) { MCC_TRACE("br\n");
+				dynarray_add(&vscript_globals, &vscript_nglobals, mcc_strdup(q));
+			}
+			if (saved)
+				{ MCC_TRACE("br\n"); *p = saved; }
+		}
+	}
+}
+
+static int vscript_hides(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
+	int i;
+	if (!s1->version_script)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (vscript_path != s1->version_script)
+		{ MCC_TRACE("br\n"); vscript_load(s1); }
+	if (!vscript_local_wildcard)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < vscript_nglobals; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(vscript_globals[i], name))
+			{ MCC_TRACE("br\n"); return 0; } }
+	return 1;
+}
+
 static void export_global_syms(MCCState *s1) { MCC_TRACE("enter\n");
 	int dynindex, index;
 	const char *name;
@@ -2004,6 +2090,8 @@ static void export_global_syms(MCCState *s1) { MCC_TRACE("enter\n");
 	for_each_elem(symtab_section, 1, sym, ElfW(Sym)) {
 		if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
 			name = (char *)symtab_section->link->data + sym->st_name;
+			if (sym->st_shndx != SHN_UNDEF && vscript_hides(s1, name))
+				{ MCC_TRACE("br\n"); continue; }
 			dynindex = set_elf_sym(s1->dynsym, sym->st_value, sym->st_size,
 														 sym->st_info, 0, sym->st_shndx, name);
 			index = sym - (ElfW(Sym) *)symtab_section->data;

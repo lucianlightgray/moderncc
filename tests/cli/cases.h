@@ -5,6 +5,15 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"version_script_hides", "cpu=x86_64,os=linux",
+		 "printf 'int public_fn(void){return 1;}\\nint private_fn(void){return 2;}\\n' > {W}/vs.c && "
+		 "printf '{ global: public_fn; local: *; };\\n' > {W}/vs.map && "
+		 "{MCC} -B{B} -I{I} -shared -Wl,--version-script={W}/vs.map {W}/vs.c -o {W}/vs.so && "
+		 "readelf --dyn-syms -W {W}/vs.so | grep -oE 'public_fn|private_fn' | sort -u && "
+		 "{MCC} -B{B} -I{I} -shared {W}/vs.c -o {W}/vs2.so && "
+		 "readelf --dyn-syms -W {W}/vs2.so | grep -oE 'public_fn|private_fn' | sort -u",
+		 "public_fn\nprivate_fn\npublic_fn\n"},
+
 		{"shared_dyn_soname", "cpu=x86_64,os=linux",
 		 "{MCC} -B{B} -I{I} -shared -Wl,-soname,libfoo.so.1 {D}/lib.c -o {W}/x.so && "
 		 "readelf -h {W}/x.so | grep -oE 'DYN' && readelf -d {W}/x.so | grep -oE 'libfoo\\.so\\.1'",

@@ -3441,8 +3441,17 @@ mcc builds the libcall name as a string and calls it (`snprintf(buf, ..., "__ato
 Two traps worth writing down before starting: `__atomic_store_n` at `seq_cst` needs `xchg` or a trailing `mfence`, not a bare `mov`; and the sub-word (`_1`/`_2`) cases still need the helpers for the non-lock-free paths, so this is a fast-path addition, not a replacement. `__sync_lock_test_and_set` lowers to `__atomic_exchange_4` today — that is how libbacktrace's `mmap.c` pulled the symbol into the GCC build.
 Related gotcha already paid for once: `__atomic_exchange_N` lives in `stdatomic.o`, NOT `atomic.o`, inside `libmccrt.a`.
 
-### `-Wl,--version-script` is accepted but does not restrict exports (objfmt, not backend)
-77735a9f stopped `-Wl,-version-script` from being a hard error (it was killing `lto-plugin`), but the file is only recorded in `s->version_script` with `ignoring = 1` — the symbols listed under `local:` are still exported. The ELF versioning constants already exist (`src/formats/elf.h:308,647-648`) and `mccelf.c` already READS `SHT_GNU_verdef` from input `.so`s (~229, 2094, 3754-3773, 3868); nothing produces them. Minimum useful increment is honouring the `{ global: a; b; local: *; };` shape by demoting unlisted dynamic symbols to `STB_LOCAL`, which is the only form the GNU build systems that hit this actually use; full symbol VERSIONING (`GLIBC_2.x`-style verdef/verneed emission) is a separate, larger item and is not what these builds need.
+### ~~`-Wl,--version-script` is accepted but does not restrict exports~~ — DONE 2026-07-28
+`77735a9f` stopped `-Wl,-version-script` being a hard error; the file was recorded in `s->version_script` and never
+read. It is now applied: `export_global_syms` (`mccelf.c`) consults the script and skips any DEFINED global that the
+script does not list. Scope is the common subset — a `local: *;` wildcard plus an explicit `global:` list — and the
+filter only engages when that wildcard is present, so a script without one keeps today's export-everything
+behaviour rather than silently hiding more than GNU ld would.
+
+Verified against GNU ld end to end, not just by symbol count: with `{ global: public_fn; local: *; };` mcc's `.so`
+exports `public_fn` alone (gcc's exports the same one), a program calling `public_fn` links and runs, and one
+calling `private_fn` fails with `undefined reference` exactly as it does against the gcc-built library. Without the
+script both symbols are still exported. `cli/version_script_hides` locks both halves in one case.
 
 ## INVESTIGATE: make mcc objects linkable without libmccrt — the helper names are mcc-private (raised 2026-07-28)
 
