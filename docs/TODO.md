@@ -1154,6 +1154,21 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **SECOND DELTA DECODED 2026-07-29 — `host_runmem_alloc`, and it unmasked the BIGGEST unfaithfulness producer
+   in the whole bucket: the CAST-OF-LVALUE gv.** The full dump showed replay evaluating `(char *)ptr + size`
+   (`mcchost.c:1550`) with the loads in swapped order. Reduction: `q = mm((char *)p + size, size)` is unfaithful
+   with NO preceding store (`one_call`), and dropping the cast makes it faithful — the discriminator is the cast,
+   not pointer arith or StoreVal. New `gv`/`gv2` `MCC_TRACE_IF` value-traces (permanent instruments, joining
+   LEAF/RV/CVT/FIN) pinned it: `unary()` (mccgen.c, after `gen_cast`) gv's a still-lvalue cast result — the
+   cast-yields-rvalue materialization — OUTSIDE gen_cast, so the recorded `AST_Convert` never captures it and
+   replay leaves the operand unloaded; every downstream load order then diverges. Landed `MCC_AST_CONVERT_GV`
+   (default OFF): the unary site now calls `gv_cast_rvalue()` (ST_FUNC mirror of the exact condition), tags the
+   Convert node `AST_FB_CONVERT_GV` via `ast_hook_cast_gv`, and replay calls the same helper after `gen_cast`
+   when tagged. Validated: gate-off byte-identical; gate-on runtime matches gcc `-O1/2/3` (address-independent
+   harness); **mcc's own TU: unfaithful 239 -> 136, faithful +103, ZERO regressions** (per-function diff);
+   ast ctest 224/224. `host_runmem_alloc` itself still unfaithful (residual +11 B tail delta, separate cause).
+   JIT status: AOT-only validation so far (P0 standing rule — part of the flip criteria).
+
    **FIRST DELTA DECODED AND CLOSED 2026-07-29 — `mcc_define_symbol`, and it is a new SHAPE, not a call bug:**
    the full dump showed replay re-emitting the entire `strchr` call+arg sequence before the `cmp`, and reduction
    found the discriminator is the YODA COMPARISON, not the call: `0 == (eq = f())` is unfaithful while

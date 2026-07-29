@@ -51,6 +51,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_STOREVAL_CONST_LEFT 16u
 
+#define AST_FB_CONVERT_GV 32u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1761,6 +1763,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 static int ast_promote_env;
 static int ast_storeval_call_env;
 static int ast_storeval_constl_env;
+static int ast_convert_gv_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_landor_invert_env;
@@ -2095,6 +2098,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
 	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 2);
 	ast_storeval_constl_env = ast_env_gate("MCC_AST_STOREVAL_CONSTL", 0);
+	ast_convert_gv_env = ast_env_gate("MCC_AST_CONVERT_GV", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
@@ -2587,6 +2591,19 @@ void ast_hook_convert(CType *type) { MCC_TRACE("enter\n");
 	ast_set_type(ast_cur, cvt, type->t, (uint64_t)(uintptr_t)type->ref);
 	ast_add_child(ast_cur, cvt, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = cvt;
+}
+
+void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
+	if (!ast_convert_gv_env)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_vn < 1)
+		{ MCC_TRACE("br\n"); return; }
+	AstLocal n = ast_vs[ast_vn - 1];
+	if (ast_kind(ast_cur, n) == AST_Convert)
+		{ MCC_TRACE("br\n"); ast_set_fbits(ast_cur, n,
+				ast_fbits(ast_cur, n) | AST_FB_CONVERT_GV); }
 }
 
 void ast_hook_inc(int post, int c) { MCC_TRACE("enter\n");
@@ -5747,6 +5764,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		MCC_TRACE_IF("CVT from t=%#x r=%#x -> t=%#x\n", vtop->type.t, vtop->r, ct.t);
 		gen_cast(&ct);
+		if (ast_fbits(a, n) & AST_FB_CONVERT_GV)
+			{ MCC_TRACE("br\n"); gv_cast_rvalue(); }
 		break;
 	}
 	case AST_Unary: {

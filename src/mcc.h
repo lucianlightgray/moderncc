@@ -1559,6 +1559,7 @@ ST_FUNC int get_reg(int rc);
 ST_FUNC void save_regs(int n);
 ST_FUNC void gaddrof(void);
 ST_FUNC int gv(int rc);
+ST_FUNC int gv_cast_rvalue(void);
 ST_FUNC void gv2(int rc1, int rc2);
 ST_FUNC void gen_op(int op);
 ST_FUNC int type_size(CType *type, int *a);

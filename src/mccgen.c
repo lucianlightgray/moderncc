@@ -2060,7 +2060,7 @@ static int adjust_bf(SValue *sv, int bit_pos, int bit_size) { MCC_TRACE("enter\n
 	return t;
 }
 
-ST_FUNC int gv(int rc) { MCC_TRACE("enter\n");
+ST_FUNC int gv(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n", rc, vtop->r, vtop->type.t, (long long)vtop->c.i);
 	int r, r2, r_ok, r2_ok, rc2, bt;
 	int bit_pos, bit_size, size, align;
 
@@ -2238,7 +2238,18 @@ ST_FUNC int gv(int rc) { MCC_TRACE("enter\n");
 	return r;
 }
 
-ST_FUNC void gv2(int rc1, int rc2) { MCC_TRACE("enter\n");
+ST_FUNC int gv_cast_rvalue(void) { MCC_TRACE("enter\n");
+	if ((vtop->r & VT_LVAL) && !nocode_wanted && !asm_lvalue_cast) { MCC_TRACE("br\n");
+		int bt = vtop->type.t & VT_BTYPE;
+		if (bt != VT_STRUCT && bt != VT_VOID && !is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+			gv(MCC_RC_TYPE(vtop->type.t));
+			return 1;
+		}
+	}
+	return 0;
+}
+
+ST_FUNC void gv2(int rc1, int rc2) { MCC_TRACE_IF("enter rc1=%#x rc2=%#x lo(r=%#x t=%#x c=%lld) hi(r=%#x t=%#x c=%lld)\n", rc1, rc2, vtop[-1].r, vtop[-1].type.t, (long long)vtop[-1].c.i, vtop->r, vtop->type.t, (long long)vtop->c.i);
 	if (vtop->r != VT_CMP && rc1 <= rc2) { MCC_TRACE("br\n");
 		vswap();
 		gv(rc1);
@@ -9592,11 +9603,12 @@ tok_next:
 				gen_cast(&type);
 				if ((type.t & VT_BTYPE) == VT_VOID)
 					{ MCC_TRACE("br\n"); expr_has_effect = 1; }
-				if ((vtop->r & VT_LVAL) && !nocode_wanted && !asm_lvalue_cast) { MCC_TRACE("br\n");
-					int bt = vtop->type.t & VT_BTYPE;
-					if (bt != VT_STRUCT && bt != VT_VOID && !is_complex_type(&vtop->type))
-						{ MCC_TRACE("br\n"); gv(MCC_RC_TYPE(vtop->type.t)); }
-				}
+				if (gv_cast_rvalue())
+					{ MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+					ast_hook_cast_gv();
+#endif
+					}
 				CST_OPEN_AT(CST_Cast, cst_um);
 				CST_CLOSE();
 			}

@@ -215,6 +215,7 @@ void ast_hook_vstore_end(void);
 void ast_hook_vpop(void);
 void ast_hook_vswap(void);
 void ast_hook_convert(struct CType *type);
+void ast_hook_cast_gv(void);
 void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 												 int variadic);
 void ast_hook_call_end(void);
