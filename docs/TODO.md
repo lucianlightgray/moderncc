@@ -3600,8 +3600,8 @@ Everything else that survives IS a libgcc name and resolves against a stock tool
 So the item is no longer "three families" — it is one family, and the biggest group is now handled the same way the
 atomics were.
 
-**`__builtin_add_overflow`/`sub_overflow`/`mul_overflow` are inlined 2026-07-28 behind `MCC_OVERFLOW_INLINE`
-(default OFF), widths 4 and 8, signed and unsigned.** They reach codegen as CALLS to the mccdefs `_Generic` dispatch helpers
+**`__builtin_add_overflow`/`sub_overflow`/`mul_overflow` are inlined 2026-07-28, DEFAULT-ON
+(`MCC_OVERFLOW_INLINE=0` opts out), widths 4 and 8, signed and unsigned.** They reach codegen as CALLS to the mccdefs `_Generic` dispatch helpers
 (`__mcc_addo_i` and friends), not as builtin tokens, so the hook intercepts the call in `gfunc_call` the way the
 `alloca` one does, reads the width and signedness off the RESULT POINTER's pointee type, and emits
 `add`/`sub` + `seto` (signed, OF) or `setb` (unsigned, CF) + the store. Widths 1 and 2 keep the helper.
@@ -3619,6 +3619,19 @@ Re-measured after this, over `tests/exec` + `tests/behavior` + mcc's own TU, the
 `__mcc_addo_{s,uc,ti}`, `__mcc_subo_uc`, `__mcc_mulo_ti`, the four complex helpers, and `__mcc_signbit`. The
 `_s`/`_uc` forms are the 1- and 2-byte widths this hook declines; `_ti` is 128-bit. So what is left divides into
 "narrow widths, mechanical" and "complex arithmetic plus `__mcc_signbit`, genuinely different work".
+
+Flip validation: full ctest 7505/7505, self-host fixpoint byte-identical, all 53 `jit/*` cells, a 60-seed
+differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64 cross sanity build. This is
+x86_64-only, and the check confirms it: i386, arm, arm64 and riscv64 objects still carry
+`__mcc_addo_i`/`subo_i`/`addo_u`/`subo_u`/`addo_ll`/`addo_ull`.
+
+**Recipe for the narrow widths, so the next attempt does not re-derive it.** Byte and word add/sub are the same
+two-operand shape with different opcodes — byte `02 /r` (add) and `2a /r` (sub), word the 4-byte opcodes behind a
+`0x66` prefix — and the stores are `88 /r` and `66 89 /r`. The one trap is that the operands are pinned to
+`%rcx`/`%rsi`/`%rdi`, and **the byte forms of `sil`/`dil` require a REX prefix that `orex` will not emit on its
+own** (it only fires for regs >= 8), so size 1 has to force `0x40 | REX_BASE(rm) | (REX_BASE(reg) << 2)`. Byte
+MULTIPLY is different again — there is no two-operand `imul r8`, only the one-operand `F6 /5` form through
+`%al`/`%ax` — so mul should stay at widths 4 and 8 unless someone wants that path too.
 
 **A residual `alloca` was found and fixed while measuring this**: `__builtin_alloca` is declared in `mccdefs.h` as
 `__builtin_alloca` with an `__asm__("alloca")` rename, so the inline hook's `sym->v != TOK_alloca` test missed it
