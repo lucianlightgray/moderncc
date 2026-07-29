@@ -1199,6 +1199,50 @@ What survives the boundary-respecting re-run, and is the real handle:
   `tests/exec` + `tests/behavior` at `-O0`/`-O2`/`-O3`.
 - The 12/32 short-circuit split is unaffected — it comes from the SYNC line's own `lor=` field, not from windowing.
 
+### The `desync` bucket after the 2026-07-28 session — 204 -> 80
+
+`MCC_AST_NOCODE_CALL` took 88 and `MCC_AST_INDIRECT_CALL` took 36. What is left, largest first:
+
+| count | site | what it is |
+|---|---|---|
+| 31 | `ast_hook_cmp_invert` | `gen_test_zero(TOK_EQ)` inverts a `VT_CMP` in place, but the model's top node is not a comparison `AST_Binary` — `!(a && b)` and friends, where inverting is De Morgan rather than a token flip |
+| 16 | `ast_hook_vstore` | a store inside a ternary or short-circuit region (`ast_tern_top`/`ast_lor_top` non-zero) |
+| 13 | `ast_hook_landor_next` | the identity-constant `&&`/`||` chain's second consumption (see A2a Group A above) |
+| 6 | `ast_hook_vstore` shape | bad type / `ast_vn` mismatch at the store |
+| 4 | vpush SYNC | the residual `switch`-path pop, all four already reported as `bail` |
+| 10 | assorted | one or two each |
+
+**`MCC_AST_INDIRECT_CALL` — LANDED and flipped default-on 2026-07-28.** The site that held 38 of the desyncs was
+NOT the `&&`/`||`-argument check next to it (that one is innocent — `g(a && b)` is faithful); it was
+`ast_kind(ast_vs[ast_vn - need]) != AST_Ref`, i.e. **the CALLEE not being a plain Ref**. Reduced to four shapes:
+`fp(...)` and `gfp(...)` through a function-pointer VARIABLE were already faithful, while `s->enc(...)`,
+`tab[c].enc(...)` and `((T)p)(...)` all desynced.
+
+Admitting `AST_Unary`/`AST_Convert` callees alone was worth **nothing** — 16 functions moved from `desync` to
+`unfaithful` and the faithful count did not rise. `MCC_AST_VERIFY_DIFF` on the smallest repro said why in one line:
+
+    [ast-diff] call_member: baseline 32 B, replay 37 B, first diff @ +22
+      base @+14: … 48 89 c7 4c 8b 5d e0 4d 8b 1b 41 ff d3
+      repl @+14: … 48 89 c7 b8 00 00 00 00 4c 8b 5d e0 4d 8b 1b 41 ff d3
+
+The replay emits `b8 00 00 00 00` — the varargs AL setup `gfunc_call` adds when
+`vtop->type.ref->f.func_type != FUNC_NEW`. The parser normalizes a function-POINTER callee to the function type
+(`vtop->type = *pointed_type(&vtop->type)`) before the hook runs, so a `Ref` callee is recorded already normalized;
+a `Unary` callee is recorded by the member hook BEFORE that, keeping the pointer type, whose `ref` is the pointer's
+Sym rather than the function's. Replaying the same normalization after evaluating child 0 fixes it: faithful
+1701 -> 1713, desync 116 -> 80.
+
+Widening further to `AST_Binary` callees (`table[i](…)` with a local array) adds nothing — measured, no change —
+so the relaxation stops at Unary/Convert. `((T)p)(…)` stays `unfaithful`, not desync.
+
+Validation: gate-off 777/777 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; gate-on determinism (3 runs +
+`setarch -R` = one md5), zero non-printable symbol names, self-host fixpoint 5/5 native and byte-identical arm64 +
+riscv64 cross fixpoints under qemu, all 53 `jit/*` cells, 100-seed differential fuzz vs gcc + clang with `--gates`
+and 0 miscompiles. After the flip: full ctest **7327/7327**, ratchet baseline 173 -> 169, and
+`optfire/default-indirect_call` locks the default-on state. `tests/exec/functions_abi/indirect_call_shapes.c` is
+the new corpus cell for the three shapes — the old `func_pointers.c` did not cover them, which is why the corpus
+fire rate was 0 before it was added.
+
 **THE RESIDUE IS 10, AND SIX OF THEM ARE ONE CLASS — measured 2026-07-28 after the three fixes above:**
 
 | function | delta | value at the failing push |
@@ -1336,8 +1380,22 @@ fourth approach's failures — so any flip must lean on the self-host fixpoint a
 - **E1b — prune this file.** It is 3062 lines and its own "How to process" rule says completed items are pruned
   entirely with detail left to git history. The 2026-07-27 and 2026-07-28 sessions both added large resolved
   blocks that now qualify.
-- **D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.** The recorded curve was taken at 59.5% fidelity and
-  is now cited in conclusions; fidelity is 77.9%. Redo it before anyone reasons from the old numbers again.
+- ~~**D1b — re-measure the `-O0`/`-O1`/`-O2`/`-Os`/`-O3` curve.**~~ **DONE 2026-07-28**, on mcc's own TU
+  (2127 verified functions):
+
+  | level | faithful | desync | unfaithful | bail | % faithful |
+  |---|---|---|---|---|---|
+  | `-O0` | — | — | — | — | recorder inactive (zero verify lines) |
+  | `-O1` | 1589 | 276 | 215 | 47 | **74.7%** |
+  | `-O2` | 1713 | 80 | 285 | 49 | **80.5%** |
+  | `-Os` | 1699 | 116 | 261 | 49 | 80.0% |
+  | `-O3` | 1713 | 80 | 285 | 49 | 80.5% |
+  | `-O4` | 3376 | 232 | 494 | 152 | 79.4% (every function is verified TWICE — the search runs two passes, so the
+  counts double; the RATIO is the only comparable figure) |
+
+  The `-O1` deficit is not a modelling difference: it is the gates staged at `-O2` (`NOCODE_CALL`,
+  `INDIRECT_CALL`, `CHAINSTORE`, `OPASSIGN`, …). `-Os` trails `-O2` by 14 because `INDIRECT_CALL` keys on
+  `optimize >= 2` and `-Os` does not set it.
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 

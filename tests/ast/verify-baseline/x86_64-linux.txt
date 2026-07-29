@@ -41,7 +41,7 @@ features_c99_c11/atomic_inlang_rmw.c	main	desync
 features_c99_c11/atomic_inlang_rmw.c	worker	desync
 features_c99_c11/atomic_n_builtins.c	main	bail
 features_c99_c11/atomic_ptr.c	main	bail
-features_c99_c11/attribs_position.c	main	desync
+features_c99_c11/attribs_position.c	main	unfaithful
 features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	desync
 features_c99_c11/builtin_overflow.c	main	desync
@@ -79,8 +79,8 @@ features_c99_c11/tgmath_dispatch.c	main	desync
 features_c99_c11/weak_undef.c	main	unfaithful
 functions_abi/func_name.c	main	unfaithful
 functions_abi/func_pointers.c	main	desync
-functions_abi/function.c	zfunc	desync
 functions_abi/function_pointer.c	main	desync
+functions_abi/indirect_call_shapes.c	via_cast	unfaithful
 functions_abi/inline2.c	check_exports	unfaithful
 inline_asm/asm_constraints_x86.c	main	unfaithful
 inline_asm/asm_goto.c	another_jump	unfaithful
@@ -108,7 +108,6 @@ programs/grep.c	main	bail
 programs/grep.c	pmatch	bail
 programs/random_stuff.c	tst_adr	desync
 programs/random_stuff.c	tst_branch	desync
-programs/random_stuff.c	tst_indir_func	desync
 programs/random_stuff.c	tst_pack	unfaithful
 programs/stdio.c	main	unfaithful
 runner.c	run_capture	unfaithful

@@ -1740,6 +1740,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 static int ast_promote_env;
 static int ast_storeval_call_env;
 static int ast_nocode_call_env;
+static int ast_indirect_call_env;
 static int ast_call_dead;
 static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
 int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
@@ -2063,6 +2064,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
 	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", 0);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
+	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
@@ -3412,9 +3414,14 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 			return;
 		}
 	}
-	if (ast_kind(ast_cur, ast_vs[ast_vn - need]) != AST_Ref) { MCC_TRACE("br\n");
-		AST_SET_DESYNC();
-		return;
+	{
+		uint16_t ck = ast_kind(ast_cur, ast_vs[ast_vn - need]);
+		if (ck != AST_Ref &&
+				!(ast_indirect_call_env &&
+					(ck == AST_Unary || ck == AST_Convert))) { MCC_TRACE("br\n");
+			AST_SET_DESYNC();
+			return;
+		}
 	}
 	for (int i = 0; i < need; i++)
 		{ MCC_TRACE("br\n"); ast_finalize_leaf(ast_vs[ast_vn - need + i], vtop - nb_args + i); }
@@ -5768,6 +5775,12 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); break; }
 		for (uint32_t i = 0; i < nc; i++) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, i));
+			if (i == 0 && ast_indirect_call_env &&
+					(vtop->type.t & VT_BTYPE) != VT_FUNC &&
+					(vtop->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+					vtop->type.ref &&
+					(vtop->type.ref->type.t & VT_BTYPE) == VT_FUNC)
+				{ MCC_TRACE("br\n"); vtop->type = *pointed_type(&vtop->type); }
 			if (i == 0 && live_arg)
 				{ MCC_TRACE("br\n"); vswap(); }
 		}
