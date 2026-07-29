@@ -10,7 +10,7 @@ arch/arm64_encoding.c	test_ldp_stp	unfaithful
 arch/arm64_encoding.c	test_ldr_str	unfaithful
 bounds/bound_setjmp.c	stack	desync
 bounds/bound_signal.c	do_fork	bail
-bounds/bound_signal.c	main	desync
+bounds/bound_signal.c	main	unfaithful
 codegen/codeopt.c	bla	bail
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/dead_code.c	kb_wait_1	desync
@@ -18,9 +18,9 @@ codegen/dead_code.c	main	bail
 codegen/dead_code.c	nondead_after_dead_return	unfaithful
 codegen/memory_model.c	main	desync
 codegen/nocode_wanted.c	kb_wait_1	bail
-codegen/nocode_wanted.c	kb_wait_2	desync
+codegen/nocode_wanted.c	kb_wait_2	unfaithful
 codegen/nocode_wanted.c	kb_wait_2_1	bail
-codegen/nocode_wanted.c	kb_wait_2_2	desync
+codegen/nocode_wanted.c	kb_wait_2_2	unfaithful
 codegen/nocode_wanted.c	kb_wait_3	desync
 codegen/nocode_wanted.c	kb_wait_4	bail
 expressions/cast_operator.c	main	unfaithful
@@ -71,8 +71,6 @@ features_c99_c11/complex_cmplx_special.c	main	desync
 features_c99_c11/feature_macros.c	main	desync
 features_c99_c11/flt_eval_method.c	main	desync
 features_c99_c11/fp_builtins.c	main	desync
-features_c99_c11/fp_wide_return.c	main	desync
-features_c99_c11/generic.c	f	desync
 features_c99_c11/generic.c	main	desync
 features_c99_c11/noreturn.c	drive_int	unfaithful
 features_c99_c11/noreturn.c	main	unfaithful
@@ -117,9 +115,6 @@ runner.c	run_capture	unfaithful
 runner.c	slurp	unfaithful
 statements/chained_assign.c	chain_in_expr	unfaithful
 statements/comma_operator.c	main	unfaithful
-statements/conditional_operator.c	main	desync
-statements/goto.c	fred	desync
-statements/goto.c	joe	desync
 statements/logical_second_arg.c	main	desync
 statements/logical_short_circuit.c	main	desync
 statements/scopes.c	f4	desync
@@ -145,9 +140,9 @@ structs_unions/struct_abi.c	main	desync
 structs_unions/struct_abi.c	negdf	unfaithful
 structs_unions/struct_byval.c	f2	unfaithful
 structs_unions/struct_byval.c	main	desync
-structs_unions/struct_init.c	test_compound_with_relocs	desync
+structs_unions/struct_init.c	test_compound_with_relocs	unfaithful
 structs_unions/struct_init.c	test_init_ranges	desync
-structs_unions/struct_init.c	test_init_struct_from_struct	desync
+structs_unions/struct_init.c	test_init_struct_from_struct	unfaithful
 structs_unions/struct_init.c	test_multi_relocs	desync
 structs_unions/struct_packed_indirect.c	main	unfaithful
 structs_unions/union_byval.c	main	unfaithful
@@ -172,5 +167,4 @@ types/types.c	f3	desync
 types/types.c	f4	desync
 vla/bug.c	main	bail
 vla/label.c	f1	bail
-vla/label.c	f3	desync
 vla/reuse.c	main	bail

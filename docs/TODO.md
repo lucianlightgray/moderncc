@@ -1316,8 +1316,20 @@ All seven dead-call shapes that used to desync are faithful gate-on — `if (0) 
 Differential fuzz gate-on: **120 seeds vs gcc + clang with the full `--gates` sweep, 0 miscompiles**
 (`fuzz_runner --seed 4242 --count 120 --gates`).
 
-Remaining before it can flip default-ON: cross-arch (i386/arm/arm64/riscv64) and a JIT parity check per the P0
-standing rule. Note the corpus is a WEAK gate for this class — it caught none of the
+**FLIPPED DEFAULT-ON at `-O2`/`-O4` 2026-07-28, after the cross-arch and JIT legs came back clean:**
+- **arm64 and riscv64 3-stage cross self-host fixpoints**, `o1 == o2 == o3` byte-identical with stages 2 and 3
+  executed as real arm64/riscv64 code under qemu (`tools/selfhost-cross-native.sh`), plus each one's
+  compile-and-run sanity against the host cc. Run twice: with the knob forced on, and again after the flip with no
+  knob at all.
+- **i386 and arm**: the seven dead-call shapes compiled by `cmake-cross/mcc-<arch>`, linked against the vendored
+  stage3 sysroot and run under `qemu-i386`/`qemu-arm` — output matches gcc gate-off AND gate-on. The gate provably
+  FIRES on all four cross targets (the objects differ), so none of these legs is vacuous.
+- **JIT**: all 53 `jit/*` cells pass with the gate on.
+- Full ctest after the flip: **7304/7304**. Differential fuzz with the new defaults: **150 seeds vs gcc + clang with
+  `--gates`, 0 miscompiles**. Ratchet baseline 172 -> 170.
+- `optfire/default-nocode_call` locks the default-on state the same way the other flipped gates are locked
+  (`tests/optfire/src/nocode_call.c` + a `defstate.txt` row), so a regression that silently turns it back off fails
+  a test rather than quietly costing 57 functions. Note the corpus is a WEAK gate for this class — it caught none of the
 fourth approach's failures — so any flip must lean on the self-host fixpoint and determinism checks instead.
 
 ### Alongside
@@ -1329,8 +1341,11 @@ fourth approach's failures — so any flip must lean on the self-host fixpoint a
 
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 
-**CURRENT STATE, measured 2026-07-28 on mcc's own amalgamated TU at `-O2` (1856 functions, compile `rc=0` so the
-counts are not truncated): 1446 faithful / 206 desync / 204 unfaithful — `77.9%` FAITHFUL.** No bails, no empties.
+**CURRENT STATE, measured 2026-07-28 on mcc's own amalgamated TU at `-O2` (2127 functions, compile `rc=0` so the
+counts are not truncated): 1701 faithful / 116 desync / 261 unfaithful / 49 bail — `80.0%` FAITHFUL.** The session
+that day moved it 1643 -> 1701 by fixing four unaccounted-pop classes and landing `MCC_AST_NOCODE_CALL`; `desync`
+fell 251 -> 116, and the verdict ladder now reports a deliberate `bail` ahead of a later accidental `desync`, so the
+desync bucket is drifts only.
 The 2026-07-27 session ended at 1392 faithful (75.3%) of 1849; before that it started at 1101 (59.5%) with 60 bails. `faithful` is the figure that matters: it gates the optimizer
 passes, `ast_search_*`, the ROI scorer, `ast_inline_retain`, `ast_reemit_retain` and JIT dispatch. `desync`,
 `unfaithful` and `bail` are all equally excluded, so moving a function BETWEEN them is not progress and not a
