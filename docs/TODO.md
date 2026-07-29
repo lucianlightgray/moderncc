@@ -1164,7 +1164,10 @@ real-object validation stays macOS-gated.
    exact 2-child shape (zero change for normal loops even gate-on). DO-WHILE covered the same way 2026-07-29
    under the same env (`ast_hook_do_body_end` redirects into the detached prefix, `do_cond` attaches it as the
    op-4 node's child 2, replay emits it between `gsym(bb)` and the condition): `dcomma` flips faithful, runtime
-   matches gcc `-O1/2/3`, TU 49 -> 48. FOR comma conditions (op 3/5) still open — different child layout.
+   matches gcc `-O1/2/3`, TU 49 -> 48. FOR comma conditions covered too (op 3: `for_begin` redirects when
+   has_cond, `for_cond` stashes the prefix, `for_body_begin` attaches it as child 3 after the body so the
+   [cond, incr, body] layout is undisturbed; op-3 replay emits it at the loop head; `fcomma` flips faithful,
+   runtime matches gcc, TU 48 -> 47; op-5 condless loops have no condition to fix).
    Validated: gate-off byte-identical (3-way md5); `wcomma` repro flips faithful;
    runtime matches gcc `-O1/2/3` (per-iteration call count observable via a feed array); TU all-nine-gates:
    unfaithful 52 -> 49 (zero regressions); ast ctest 224/224 + fuzz matrix 5/5. `WHILE_COMMA` added to the
