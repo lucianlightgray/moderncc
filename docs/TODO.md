@@ -3482,18 +3482,20 @@ differential fuzz vs gcc + clang with `--gates` and 0 miscompiles, and the arm64
 fixpoints byte-identical — the cross legs matter here in a way they did not for the x86_64-only gates, because this
 lowering changes every target's code.
 
-The probe is now **21 -> 3**: `__atomic_compare_exchange_4`, `alloca`, `__builtin_clrsb`.
+**`clrsb` is DONE 2026-07-28 on the same `MCC_POPCOUNT_INLINE` gate, portable, using the recipe the popcount work
+produced.** It is `clz(x ^ (x >> (W-1))) - 1`, and the awkward part was that portable `clz` was itself missing —
+popcount supplies it: smear the value down (`x |= x>>1; x |= x>>2; … x |= x>>16`, plus `>>32` at 64) and then
+`clz(x) = W - popcount(x)`. Substituting gives a branch-free `clrsb` with NO special case:
 
-**Recipe for `clrsb`, worked out while doing popcount and worth writing down rather than rediscovering.** It is
-`clz(x ^ (x >> (W-1))) - 1`, and the awkward part is that portable `clz` is itself missing — but popcount now
-supplies it: smear the value down (`x |= x>>1; x |= x>>2; … x |= x>>16` and `x >>= 32` for 64) and then
-`clz(x) = W - popcount(x)`. Substituting gives a branch-free `clrsb` with NO special case at all:
+    clrsb(x) = (W - 1) - popcount(smear(x ^ (x >> (W-1))))
 
-    clrsb(x) = W - popcount(smear(x ^ (x >> (W-1)))) - 1
+and it is right at the boundaries by construction — `x = 0` and `x = -1` both smear to 0, giving `W-1`, which is
+what both should return. Verified against a bit-walking reference over every single-bit position (positive and
+negated) and 200 xorshift values at both widths.
 
-and it lands on the right answers at the boundaries by construction — `x = 0` and `x = -1` both smear to 0, giving
-`W - 0 - 1 = W-1`, which is what both should return. Cost is roughly 19 ops, so it is a size trade rather than a
-clear win; that, not the mechanism, is the open question.
+**The probe from the head of this section is now 21 -> 2: `__atomic_compare_exchange_4` and `alloca`.** Both have
+their design recorded — cmpxchg needs `%rax` pinning via the `gv2(MCC_RC_RAX, MCC_RC_RCX)` shape and the
+write-back-on-failure that a naive lowering forgets; `alloca` has its own subsection above.
 
 **Flip validation (2026-07-28), for the whole `MCC_ATOMIC_INLINE` set:** full ctest 7439/7439, native self-host
 fixpoint byte-identical, all 53 `jit/*` cells, an 80-seed differential fuzz vs gcc + clang with `--gates` and 0
