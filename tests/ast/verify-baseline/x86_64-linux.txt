@@ -99,6 +99,8 @@ optimizer/assign_value_effects.c	assign_in_arg	unfaithful
 optimizer/assign_value_effects.c	chained	unfaithful
 optimizer/assign_value_effects.c	nested_assign	unfaithful
 optimizer/assign_value_effects.c	shortcircuit_both	desync
+optimizer/assign_value_effects.c	stmt_assign_call_arg	unfaithful
+optimizer/assign_value_effects.c	stmt_assign_call_arg2	unfaithful
 optimizer/assign_value_effects.c	while_cond	unfaithful
 optimizer/redundant_cast.c	mixed	unfaithful
 preprocess/pragma_operator.c	main	desync

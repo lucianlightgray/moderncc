@@ -76,6 +76,38 @@ static int assign_in_arg(int v)
 	return f((a = g2(v)) + 0) + a;
 }
 
+static int arg_sink;
+
+static void take1(int v)
+{
+	arg_sink += v;
+}
+
+static void take2(int v, int w)
+{
+	arg_sink += v * w;
+}
+
+/* MCC_AST_STOREVAL_CALL: the store is a STATEMENT and its value is the FIRST
+ * ARGUMENT of the call that immediately follows. The recorder may hand the
+ * live register to the call instead of re-emitting the RHS -- which is only
+ * correct if the RHS still runs exactly once. */
+static int stmt_assign_call_arg(int v)
+{
+	int a;
+
+	take1(a = f(v));
+	return a;
+}
+
+static int stmt_assign_call_arg2(int v)
+{
+	int a;
+
+	take2(a = f(v), 3);
+	return a;
+}
+
 static int assign_in_ternary(int v)
 {
 	int a;
@@ -167,6 +199,20 @@ int main(void)
 		return 21;
 	if (calls - c0 != 1)
 		return 22;
+
+	c0 = calls;
+	arg_sink = 0;
+	if (stmt_assign_call_arg(7) != 7)
+		return 23;
+	if (calls - c0 != 1 || arg_sink != 7)
+		return 24;
+
+	c0 = calls;
+	arg_sink = 0;
+	if (stmt_assign_call_arg2(5) != 5)
+		return 25;
+	if (calls - c0 != 1 || arg_sink != 15)
+		return 26;
 
 	printf("calls=%ld calls2=%ld\n", calls, calls2);
 	printf("OK\n");

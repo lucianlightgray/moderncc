@@ -763,7 +763,7 @@ The payoff if it does hold: `nocode_wanted` would account for the 92-event desyn
 |---|---|---|
 | D1a gate staging audit | **DONE** | 3 gates re-staged: `OPASSIGN`→`-O2` (`6acb9e69`), `CHAINSTORE`→`-O2` (`e81035e5`), `PROMO_ARROW`+`PROMO_INCDEC`→`-O2/-O3` (`e052542a`) |
 | B1a assignment-as-value | **2 of 3** | statement chain fixed as a side effect of D1a; discarded ternary fixed (`8e867f40`); **call-argument path open, experiment specified** |
-| A2a vstack SYNC | **60 -> 23 fixed** | site proven to be a DETECTOR (`026233f8`); the unaccounted-pop class is fixed in `switch` (`1939ba28`) and in `if`/`while`/`do`/`for`; residue is 13 short-circuit (Group A) + ~10 other |
+| A2a vstack SYNC | **60 -> 10** | site proven to be a DETECTOR (`026233f8`); unaccounted pops fixed in `switch` (`1939ba28`), `if`/`while`/`do`/`for` (`0c4f6b33`), short-circuit attributed to its own hook (`d6aa9fcd`); the 10 left are 6 atomic-lowering + 4 misc, see below |
 | A1a `nocode_wanted` | not started | 3 approaches ruled out; hardest item in the file |
 
 Measured effect of the above at `-O2`: nbody 0.49s → 0.36s, spectral-norm 0.55s → 0.26s, matmul 2.21s → 2.07s.
@@ -942,10 +942,34 @@ call-argument shape rather than the statement chain that used to dominate the re
   necessary. Widening it to admit "the marker is the argument evaluated immediately after the store" is the specific
   experiment to run.
 
-  **Not attempted here.** It is a model-shape change in the exact region where `emit-at-marker` was correct at
-  `-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3`, and the two evaluation-count guards
-  (`assign_value_effects.c`, `side_effect_order.c`) plus the full bar are mandatory for it. The evidence above is
-  what a fix attempt should start from — in particular, do not re-derive the liveness question, it is answered.
+  **DONE 2026-07-28 behind `MCC_AST_STOREVAL_CALL` (default OFF).** The widening admits exactly one shape: the
+  marker's chain reaches an `AST_Invoke` as its **first argument** (child index 1 — child 0 is the CALLEE), that
+  Invoke is a direct child of the `BasicBlock`, and the store is its immediately-preceding sibling. Gate-on,
+  `use(s = g())` and `use2(s = g(), 7)` become faithful; `use(s += g())` and `use2(7, s = g())` stay unfaithful and
+  are out of scope.
+
+  Three things this cost that are worth keeping:
+  - **The vstack order has to be repaired, not just the flag.** Replay pushes the callee first, so after the store
+    left its value live the stack reads `[value, callee]` where `gfunc_call` wants `[callee, value]`. The fix is one
+    `vswap()` after child 0. Without it `gfunc_call` dereferences `vtop->type.ref` on the wrong slot and SEGVs.
+  - **Decide it at finalize, not at replay.** The first attempt re-derived "is my first argument a live marker?" by
+    walking down the child chain at replay time. That walk is a SUPERSET of the finalize walk (a `Store` can carry
+    several markers, and only one of them may qualify), so it fired where finalize had not and produced
+    `internal compiler error: vstack leak (-1)`. The Invoke now carries `AST_FB_CALL_STOREVAL_ARG`, set by the same
+    code that sets `AST_FB_STORE_VALUE_LIVE`, and replay only reads the bit.
+  - **`AST_FB_STORE_VALUE_LIVE` had two replay paths that ignored it** — the promoted-register store
+    (`ast_promo_write` then `vpop`) and the `AST_OP_OPASSIGN` vdup form (`vstore` then `vpop`). Both pop
+    unconditionally, so a live store that reaches them leaves the consumer short an operand. That is a LATENT hole
+    in the pre-existing leftmost-leaf case too, not something this gate introduced: it surfaced here because the
+    optimized (promoted) replay is the second replay of the same body, and the first one had succeeded. Both now
+    honour the flag, but **only under this gate**, because ungated it changes `assign_value_effects.c` at
+    `-O2`/`-O3` — the byte-identity rule wins over fixing it in the same commit. Ungating it is its own item.
+
+  Validation: gate-off 774/774 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; gate-on it fires on exactly one
+  corpus file (`assign_value_effects.c`) and on mcc's own TU (faithful 1643 -> 1646, unfaithful 228 -> 225);
+  `assign_value_effects.c` gained two cases for the exact shape (`take1(a = f(v))`, `take2(a = f(v), 3)`) which are
+  unfaithful gate-off and faithful gate-on, and its evaluation counts match gcc at `-O0`/`-O1`/`-O2`/`-O3` with the
+  gate both off and on.
 
   Note the alternatives that are NOT viable, so they are not re-tried: emitting nothing leaves `gfunc_call` short an
   operand (its own comment says so); re-emitting duplicates the call (measured above); and reloading from the lvalue
@@ -1174,6 +1198,20 @@ What survives the boundary-respecting re-run, and is the real handle:
   until both binaries were moved into the build dir). The clean run is 774/774 objects byte-identical over
   `tests/exec` + `tests/behavior` at `-O0`/`-O2`/`-O3`.
 - The 12/32 short-circuit split is unaffected — it comes from the SYNC line's own `lor=` field, not from windowing.
+
+**THE RESIDUE IS 10, AND SIX OF THEM ARE ONE CLASS — measured 2026-07-28 after the three fixes above:**
+
+| function | delta | value at the failing push |
+|---|---|---|
+| `mccjit_qsbr_quiescent`, `mccjit_qsbr_min_local`, `mccjit_qsbr_retire`, `mccjit_selftest_pool`, `mccjit_patch_swap_store`, `mcc_jit_publish` | **3 or 4** | `r=0x30` constant |
+| `cst_hook_end`, `ast_eval_slice_wtype`, `ast_eval_slice_rec`, `ast_eval_slice_kind_ok` | 1 | mixed |
+
+The six large-delta ones are all **atomic lowering**. `parse_atomic` (`mccgen.c`) builds a libcall by hand —
+`vpush_helper_func`, `vrott(7)`, `gfunc_call(6)`, `gen_test_zero`, `gvtst` — and none of that traffic is modelled,
+so the drift is 3-4 values rather than the 1 every other class produces. The honest fix is to `ast_hook_bail()` on
+that lowering path: it is not replayable and pretending otherwise costs a misattributed desync in six functions.
+The remaining four are delta=1 and unclassified; note `ast_eval_slice_rec`/`_kind_ok` still appear even though
+their `switch` is now accounted for, so they carry a SECOND unaccounted pop.
 
 ### 4. A1a — model dead regions for `nocode_wanted` (92)
 Largest single desync site. Three approaches are already ruled out and recorded: a flat gate; hooking the

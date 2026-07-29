@@ -45,6 +45,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
    statement, so replay must leave it on the vstack instead of popping it. */
 #define AST_FB_STORE_VALUE_LIVE 2u
 
+#define AST_FB_CALL_STOREVAL_ARG 4u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1736,6 +1738,7 @@ static void ast_strat_order_from_env(void) { MCC_TRACE("enter\n");
 	}
 }
 static int ast_promote_env;
+static int ast_storeval_call_env;
 static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
 int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
 int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
@@ -2046,6 +2049,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC",
 																			o4 || s1->optimize_size || s1->optimize >= 2);
 	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
+	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", 0);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
@@ -5714,11 +5718,15 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		break;
 	}
 	case AST_Invoke: {
-		if (ast_inline_graft(a, n))
-			{ MCC_TRACE("br\n"); break; }
 		uint32_t nc = ast_nchild(a, n);
-		for (uint32_t i = 0; i < nc; i++)
-			{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, n, i)); }
+		int live_arg = (ast_fbits(a, n) & AST_FB_CALL_STOREVAL_ARG) != 0;
+		if (!live_arg && ast_inline_graft(a, n))
+			{ MCC_TRACE("br\n"); break; }
+		for (uint32_t i = 0; i < nc; i++) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, i));
+			if (i == 0 && live_arg)
+				{ MCC_TRACE("br\n"); vswap(); }
+		}
 		vcheck_cmp();
 		gfunc_call((int)nc - 1);
 		if (ast_type_t(a, n) == VT_VOID)
@@ -5839,6 +5847,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				tct.t = ast_type_t(a, ast_child(a, s, 0)) & ~(VT_ARRAY | VT_VLA);
 				tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
 				ast_promo_write(preg, &tct);
+				if (ast_storeval_call_env && (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE))
+					{ MCC_TRACE("br\n"); break; }
 				vpop();
 				break;
 			}
@@ -5861,6 +5871,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					ast_replay_value(a, ast_child(a, c1, 1));
 					gen_op(ast_op(a, c1));
 					vstore();
+					if (ast_storeval_call_env && (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE))
+						{ MCC_TRACE("br\n"); break; }
 					vpop();
 					break;
 				}
@@ -6235,18 +6247,27 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 		   that immediately follows the store -- it is then the first thing that
 		   statement evaluates, so the store's value is still on top. Walk up
 		   requiring first-child at every step. A call argument fails this
-		   (gfunc_call pushes around it) and keeps the old, unfaithful behaviour. */
+		   (gfunc_call pushes around it) and keeps the old, unfaithful behaviour,
+		   except under MCC_AST_STOREVAL_CALL, which admits it as the call's first
+		   argument and has replay swap the callee under the live value. */
 		{
-			AstLocal cur = n, up;
+			AstLocal cur = n, up, call_up = AST_NONE;
 			int leftmost = 1;
 			for (;;) {
 				MCC_TRACE("br\n");
 				up = ast_parent(a, cur);
 				if (up == AST_NONE || ast_kind(a, up) == AST_BasicBlock)
 					{ MCC_TRACE("br\n"); break; }
+				if (ast_kind(a, up) == AST_Invoke) { MCC_TRACE("br\n");
+					if (!ast_storeval_call_env || call_up != AST_NONE ||
+							ast_nchild(a, up) < 2 || ast_child(a, up, 1) != cur ||
+							ast_kind(a, ast_parent(a, up)) != AST_BasicBlock)
+						{ MCC_TRACE("br\n"); leftmost = 0; break; }
+					call_up = up;
+					cur = up;
+					continue;
+				}
 				if (ast_first_child(a, up) != cur)
-					{ MCC_TRACE("br\n"); leftmost = 0; break; }
-				if (ast_kind(a, up) == AST_Invoke)
 					{ MCC_TRACE("br\n"); leftmost = 0; break; }
 				cur = up;
 			}
@@ -6254,6 +6275,9 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); continue; }
 			if (ast_next_sib(a, st) != cur || up != ast_parent(a, st))
 				{ MCC_TRACE("br\n"); continue; }
+			if (call_up != AST_NONE)
+				{ MCC_TRACE("br\n"); ast_set_fbits(a, call_up,
+						ast_fbits(a, call_up) | AST_FB_CALL_STOREVAL_ARG); }
 		}
 		ast_set_fbits(a, st, ast_fbits(a, st) | AST_FB_STORE_VALUE_LIVE);
 	}
