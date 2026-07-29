@@ -2432,15 +2432,26 @@ void gen_fabs(void) { MCC_TRACE("enter\n");
    set/movzx forms need a REX for regs 4-7 or they would name ah/ch/dh/bh. */
 void gen_atomic_cmpxchg(int size) { MCC_TRACE("enter\n");
 	int rp, re, rd, sc, t;
+#ifdef MCC_TARGET_PE
+	/* Win64 makes RSI/RDI callee-saved, but mcc's non-optimizing codegen never
+	   emits a save/restore for them (it only ever scratches the caller-saved
+	   RAX/RCX/RDX/R8-R11). Scratching RSI/RDI here would silently clobber them
+	   for the caller -- e.g. under -run the compiled function trashes the host's
+	   RSI/RDI. Use the caller-saved R8/R9 instead. System V keeps RSI/RDI: both
+	   are caller-saved there, so its codegen stays byte-identical. */
+	const int rc_re = MCC_RC_R8, rc_rp = MCC_RC_R9;
+#else
+	const int rc_re = MCC_RC_RSI, rc_rp = MCC_RC_RDI;
+#endif
 
 	gv(MCC_RC_RCX);
 	rd = vtop->r & VT_VALMASK;
 	vswap();
-	gv(MCC_RC_RSI);
+	gv(rc_re);
 	re = vtop->r & VT_VALMASK;
 	vswap();
 	vrotb(3);
-	gv(MCC_RC_RDI);
+	gv(rc_rp);
 	rp = vtop->r & VT_VALMASK;
 	vrott(3);
 
