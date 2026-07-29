@@ -3627,6 +3627,21 @@ Each arch should match x86_64 for self-host, promotion, cmov/csel, div-magic, JI
   | nsieve | **+1.5%** | −9.1% | 3.04x → ~3.09x |
 
   Two honest readings: **nsieve is a small real instruction REGRESSION** (+1.5%) that the wall-clock column hides behind a −9.1% that is layout noise — it is memory-bound (3.04x instructions but only 1.6x time), so it should not drive decisions either way; and mandelbrot is untouched, consistent with its residue being cache/layout rather than emitted work. None of these gates is flipped — they remain default-OFF pending the shared soak and the layout-sensitivity call.
+  **RE-MEASURED 2026-07-28 — and the baseline row below is NOT comparable to a default bench run.** Running
+  `tools/runtime-bench.py` today gives matmul **9.94x insn/ref (60.60G instructions)** against the 7.67x / 46.78G
+  recorded below, which reads as a 30% regression and is not one. Attribution, by compiling the kernel directly
+  under `perf stat`: `-O1` 62.32G, `-O2` 60.60G, `-O3` 60.60G, **`-O4` 46.80G** — the recorded figure is an `-O4`
+  number, and the harness compiles at `-O2`/`-O3`. The table never said which level it used.
+
+  Two things worth carrying: **always state the `-O` level next to an instruction count**, and note that on matmul
+  the `-O4` search finds a body **23% cheaper in instructions** than `-O3` does, which is a sharper argument for the
+  search than anything in the "`-O4` is a SIZE level" section above.
+
+  Also checked while attributing: this session's three recorder flips (`MCC_AST_NOCODE_CALL`,
+  `MCC_AST_INDIRECT_CALL`, `MCC_AST_LANDOR_INVERT`) move NOTHING on any of the five kernels — forcing all three off
+  reproduces the default numbers exactly. `MCC_AST_OPASSIGN=0` and `MCC_AST_PROMOTE=0` each cost matmul ~1.7G, so
+  the harness is sensitive enough to see a real gate; the flips genuinely are neutral here.
+
   **x86_64 INSTRUCTION baseline captured 2026-07-26** (`--gates "MCC_AST_OPASSIGN=1 MCC_AST_PROMO_INCDEC=1 MCC_AST_IVSR_PTR=1"`, reference gcc -O2 `-ffp-contract=off`, `insn/ref` = mcc instructions retired / gcc's):
 
   | kernel | time vs ref | **insn/ref** | mcc insns |
