@@ -818,7 +818,8 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		mcc_stats_jit_outcome(outcome);
 	}
 	if (mcc_env_on("MCC_JIT_VERBOSE")) { MCC_TRACE("br\n");
-		int probeable = variant && mccjit_last_nparam == 1 &&
+		int probeable = mcc_env_on("MCC_JIT_PROBE") && variant &&
+										mccjit_last_nparam == 1 &&
 										!mccjit_type_wide((int)mccjit_last_param_t[0]);
 		int probe = probeable ? ((int (*)(int))variant)(7) : -1;
 		fprintf(stderr,
