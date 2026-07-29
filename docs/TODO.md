@@ -1154,6 +1154,19 @@ real-object validation stays macOS-gated.
    whole 187 B baseline / 207 B replay, and all three modes produce byte-identical objects (stderr-only by
    construction). The deltas can now be decoded end to end.
 
+   **FOURTH CLASS CLOSED 2026-07-29 — `x = f(y += g())`, and `host_runmem_alloc` is now FAITHFUL.** The
+   StoreVal-as-call-arg walk required the Invoke's parent to be the BasicBlock, rejecting a call whose result is
+   itself stored (`ptr = mcc_malloc(size += host_pagesize())`, `mcchost.c:1557`) — replay then re-emitted the
+   compound RHS including the extra call (the +11 B tail). Landed `MCC_AST_STOREVAL_CALLSTORE` (default OFF):
+   the Invoke step also admits parent == statement-level Store whose lvalue is a no-code leaf
+   (`ast_storeval_lval_leaf`: local or global lvalue), tags `AST_FB_CALL_STOREVAL_STORE`, and replay uses
+   `vrotb(3)` instead of `vswap` (the pushed lvalue sits between the live value and the callee: [LIVE, lval,
+   callee] -> [lval, callee, LIVE], no code either way). Validated: gate-off byte-identical; repro (local +
+   global lvalue, multi-arg) flips faithful; runtime matches gcc on the sequenced shapes (the unsequenced
+   `use(size += g(), size)` differs from gcc in ARG ORDER only — unspecified behavior, gate-on == gate-off);
+   TU all-four-gates: unfaithful 114 -> 113, `host_runmem_alloc` faithful, zero regressions; ast ctest 224/224.
+   AOT-only validation (P0 rule).
+
    **POST-GATES RE-CENSUS + THIRD CLASS CLOSED 2026-07-29.** With CONSTL+CONVERT_GV on, the 135 remaining
    unfaithful deltas re-categorize as: 35 mov-only (register/spill order), **20 jmp-only**, 17 movq+xorb (FP),
    8 movzbl+sete (setcc materialization), 8 call-delta, tail of mixed small classes — the old
