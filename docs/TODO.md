@@ -855,238 +855,66 @@ produced two landed fixes and four rejected ones, and in every single case the t
 `tools/tracediff.sh`, `MCC_LOG=128`, `MCC_TRACE_FILE`/`MCC_TRACE_FUNC`/`MCC_TRACE_SKIP`, `MCC_AST_UNFAITHFUL_DUMP`,
 and the `LEAF`/`RV`/`CVT`/`FIN`/`[unfaithful-rel]` traces already in place.
 
-### 1. D1a — DONE 2026-07-28. Audit complete; ONE more mis-staged gate found and flipped.
+### 1. D1a — DONE 2026-07-28. No gate remains at `optimize >= 3`.
 
-Only **two** gates were staged at `optimize >= 3` in `ast_configure` — a much smaller surface than expected:
+Two gates were staged there. `MCC_AST_CYCLE` measured no fidelity or runtime effect at `-O2` and stays at `-O3`;
+`MCC_AST_CHAINSTORE` moved spectral-norm 0.55s -> 0.35s and was flipped to `>= 2` (`e81035e5`). The adjacent
+mis-staging — `MCC_AST_PROMO_ARROW`/`MCC_AST_PROMO_INCDEC` keyed to `optimize_size` ALONE, so on at `-Os` and off
+at `-O2`/`-O3` — was flipped the same way (`e052542a`): nbody 0.40 -> 0.36s, spectral-norm 0.28 -> 0.26s, matmul
+2.21 -> 2.07s, output identical to gates-off. Detail in git history.
 
-| gate | fidelity at `-O2` | runtime at `-O2` | verdict |
-|---|---|---|---|
-| `MCC_AST_CYCLE` | no change (1446) | nbody/nsieve unchanged | leave at `-O3` |
-| `MCC_AST_CHAINSTORE` | **+3** (1449) | **spectral-norm 0.55s → 0.35s** | **FLIPPED to `>= 2`** |
+**One thing NOT explained, and still open (D1a anomaly):** the verdict COUNT drops 1856 -> 1841 with the promotion
+gates on while the faithful RATIO holds. Fifteen functions stop being verified, `mcc` exits 0 with no errors, and
+this is not the SIGSEGV truncation recorded elsewhere. Find out why before treating any future count change here as
+meaningful. (`rc=$?` after a pipeline reports `grep`'s status, not `mcc`'s — the first measurement pass was misread
+because of exactly that.)
 
-`spectral-norm` needs `-fc99-inline-body` to build at all (documented in `runtime-bench.py`; a build failure here is
-the flag, not the gate). `-O3`, where the gate was already on, measures 0.33s — so CHAINSTORE is most of that
-kernel's `-O2` → `-O3` gap, exactly as `MCC_AST_OPASSIGN` was for nbody. Output byte-identical to gate-off.
+### 2. B1a — DONE 2026-07-28. All three shapes resolved.
 
-Ratchet regenerated: 172 → 167 gaps, and **the five that became faithful are all in `statements/chained_assign.c`**
-— CHAINSTORE's deep-copy repair makes some chained assignments replayable, which is a useful data point for B1a
-below.
+Assignment-as-value had three failing shapes and each has its own commit: the plain statement chain
+(`a = b = 0`) fell out of staging `MCC_AST_CHAINSTORE` at `-O2`; the discarded-value ternary (`c ? a() : b();`,
+verdict `empty`) was one missing node kind in `ast_hook_vpop`, which attaches a discarded value to the basic block
+only for `AST_Invoke`/`AST_Unary` and so never attached the `AST_If` a ternary pushes (`8e867f40`); and the
+call-argument path (`use(s = g())`) landed as `MCC_AST_STOREVAL_CALL` (`62bfb7b7`, see the section below).
 
-Bar: host 7281/7281, cross 7440/7440, `runtime-bench-check` + `runtime-bench-gatewin` pass (CHAINSTORE/spectral is
-itself one of the two `GATE_WINS` with an 8% floor; that guard sets the env explicitly so a default change does not
-disturb it), self-host fixpoint `s3 == s4`.
+Two alternatives are NOT viable and should not be re-tried: emitting nothing at the marker leaves `gfunc_call`
+short an operand (its own comment says so), and re-emitting the RHS duplicates the call — measured, it is how the
+shape became `unfaithful` in the first place. Reloading from the lvalue is semantically right but emits a load
+where the parser reuses a register, trading one unfaithful form for another.
 
-**No gate remains at `optimize >= 3`.** The adjacent oddity flagged here — `MCC_AST_PROMO_ARROW` and
-`MCC_AST_PROMO_INCDEC` keyed to `s1->optimize_size` ALONE, so on at `-Os` and off at `-O2`/`-O3` — was then
-**enabled at `-O2`/`-O3` on user instruction, and it was the same class of mis-staging.** Measured, gates off vs on:
+This is still the region where `emit-at-marker` was correct at `-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3`, caught
+only by `assign_value_effects.c` counting evaluations. Gate any further change here on that file plus the full bar.
 
-| kernel | off | on |
-|---|---|---|
-| nbody | 0.40s | **0.36s** |
-| spectral-norm | 0.28s | **0.26s** |
-| matmul | 2.21s | **2.07s** |
+### 3. A2a — DONE 2026-07-28. The SYNC site went 60 -> 4, and the 4 left are cosmetic.
 
-All three improve, output identical to gates-off at both `-O2` and `-O3`. Fidelity ratio unchanged at 78.1%.
+The site is `ast_hook_vpush`'s `ast_vn != rel - 1` guard. Every failure was uniform — the recorder holding exactly
+ONE more modelled value than the codegen vstack, never a capacity problem (`rel > AST_VS_MAX` was 0 of 43, so do
+NOT raise `AST_VS_MAX`), and the value being pushed when it fires is overwhelmingly a CALLEE symbol. **The site is a
+DETECTOR, not the culprit**: the drift happens earlier and the next push is merely the first thing to check the
+invariant.
 
-**One thing NOT explained, recorded so it is not mistaken for noise:** the verdict COUNT drops 1856 → 1841 with the
-gates on, while the faithful ratio holds. Fifteen functions stop being verified. `mcc` exits 0 with no errors, so
-this is not the truncation-by-SIGSEGV failure recorded elsewhere in this file — but why promotion staging changes
-which functions reach the verify print is unknown, and someone should find out before treating a future count
-change here as meaningful. (Checking this needed care: `rc=$?` after a pipeline reports `grep`'s status, not
-`mcc`'s, and the first measurement pass was misread because of exactly that.)
+Four unaccounted-pop classes were found and fixed, each with its own commit — `switch` (`1939ba28`),
+`if`/`while`/`do`/`for` (`0c4f6b33`), the short-circuit region (`d6aa9fcd`), and atomic lowering plus the
+verdict-ordering bug that hid it (`5c75bf00`). The general rule they all violated:
 
-### 1b. (original D1a text)
-`MCC_AST_OPASSIGN` was staged at `o4 || optimize >= 3` for no recorded reason; dropping it to `>= 2` took nbody
-`-O2` from 0.49s to 0.41s — **exactly its `-O3` time** — with byte-identical output, +44 faithful, and a green bar
-(`6acb9e69`). Enumerate every other gate with an `optimize >= 3` default in `ast_configure`, and for each: measure
-fidelity delta, measure the runtime-bench kernels, run the bar. The precedent says at least one more may be
-mis-staged. Cheapest item here with a directly measurable payoff.
+**A hook that models a codegen pop must account for it on EVERY exit, bail included.** `ast_bail` does not stop the
+recorder's stack bookkeeping — it only marks the function un-replayable — so an early return that skips the
+decrement silently converts a clean `bail` into a `desync`, attributed to whatever pushes next.
 
-### 2. B1a — RE-SCOPED 2026-07-28 after D1a. The statement-chain half is FIXED; only two shapes remain.
+Empirically NOT the cause, so do not re-test: early `return` in a branch, a `noreturn` call in a branch, a noreturn
+call followed by more statements, deref-after-check, `c ? g() : 0`, and discarded `(void)x` casts.
 
-Staging `MCC_AST_CHAINSTORE` at `-O2` (item 1) fixed the plain chained-assignment statement. Measured at current
-`-O2` defaults:
+**METHODOLOGY, learned the hard way: do NOT byte-compare two self-compiled `src/mcc.c` objects across a
+compiler-source edit.** `src/mcc.c` is the amalgamation and INCLUDES `mccast.c`, so editing the recorder also edits
+the translation unit being compiled — two variables, not one. A never-called dummy function added to `mccast.c`
+reproduces the effect by itself. Compile a FIXED corpus with both binaries instead, and put both binaries in the
+same directory: `-B` alone does not equalise them, because auto-mccdir also probes the exe directory and a binary
+sitting elsewhere picks up different `threads.h`/`stdatomic.h`.
 
-| shape | verdict |
-|---|---|
-| `s += g();` and `use(g())` | faithful |
-| `a = b = 0;`, `a = b = c = 0;`, `a = b = c = v;` | **faithful** — were unfaithful before D1a |
-| `use(s += g())`, `use(s = g())` | **unfaithful** — assignment-as-value in a CALL ARGUMENT |
-| `c ? a() : b();`, `c ? ai() : bi();` | **empty** — discarded-value ternary records NOTHING |
+**The 4 remaining SYNC events** (`cst_hook_end`, `ast_eval_slice_wtype`/`_rec`/`_kind_ok`) all report `bail`, so
+they cost nothing; they are a second unaccounted pop on the `switch` path. Repro: the same
+ternary-over-recursive-call body is faithful under `if` and bare, and desyncs under `switch`.
 
-TU-wide the bucket moved 205 → 199 unfaithful and the `chain=` attribution 45 → 42, so most of the 42 are the
-call-argument shape rather than the statement chain that used to dominate the reproducer.
-
-**So B1a is now two well-defined targets, not one open-ended family:**
-- **the call-argument path** — `ast_finalize_storevals`' leftmost-leaf guard declining by design ("A call argument
-  fails this (gfunc_call pushes around it) and keeps the old, unfaithful behaviour").
-
-  **TRACED 2026-07-28, and the guard's premise looks FALSIFIABLE for this shape.** The replay walk for
-  `use(s = g())` shows the `g()` `Invoke` node reached TWICE — once inside the `Store`, once again through the
-  `StoreVal` marker's re-emit fallback:
-
-      RV n=4 Invoke(g)   parent=5  ind=11      first evaluation, inside the Store
-      RV n=8 Invoke(use) parent=0  ind=22
-      RV n=7 StoreVal    parent=8
-      RV n=4 Invoke(g)   parent=5  ind=22      SAME node, evaluated again
-
-  And what the PARSER emits settles the liveness question the guard is hedging against:
-
-      call g
-      mov %eax, s(%rip)     the store
-      mov %rax, %rdi        reuses the value ALREADY IN rax
-      call use
-
-  **The value IS still live in the register after the store** — the parser neither reloads `s` nor re-calls `g`. So
-  `AST_FB_STORE_VALUE_LIVE` is semantically correct for this shape, and the guard is being conservative rather than
-  necessary. Widening it to admit "the marker is the argument evaluated immediately after the store" is the specific
-  experiment to run.
-
-  **DONE 2026-07-28 behind `MCC_AST_STOREVAL_CALL` (default OFF).** The widening admits exactly one shape: the
-  marker's chain reaches an `AST_Invoke` as its **first argument** (child index 1 — child 0 is the CALLEE), that
-  Invoke is a direct child of the `BasicBlock`, and the store is its immediately-preceding sibling. Gate-on,
-  `use(s = g())` and `use2(s = g(), 7)` become faithful; `use(s += g())` and `use2(7, s = g())` stay unfaithful and
-  are out of scope.
-
-  Three things this cost that are worth keeping:
-  - **The vstack order has to be repaired, not just the flag.** Replay pushes the callee first, so after the store
-    left its value live the stack reads `[value, callee]` where `gfunc_call` wants `[callee, value]`. The fix is one
-    `vswap()` after child 0. Without it `gfunc_call` dereferences `vtop->type.ref` on the wrong slot and SEGVs.
-  - **Decide it at finalize, not at replay.** The first attempt re-derived "is my first argument a live marker?" by
-    walking down the child chain at replay time. That walk is a SUPERSET of the finalize walk (a `Store` can carry
-    several markers, and only one of them may qualify), so it fired where finalize had not and produced
-    `internal compiler error: vstack leak (-1)`. The Invoke now carries `AST_FB_CALL_STOREVAL_ARG`, set by the same
-    code that sets `AST_FB_STORE_VALUE_LIVE`, and replay only reads the bit.
-  - **`AST_FB_STORE_VALUE_LIVE` had two replay paths that ignored it** — the promoted-register store
-    (`ast_promo_write` then `vpop`) and the `AST_OP_OPASSIGN` vdup form (`vstore` then `vpop`). Both pop
-    unconditionally, so a live store that reaches them leaves the consumer short an operand. That is a LATENT hole
-    in the pre-existing leftmost-leaf case too, not something this gate introduced: it surfaced here because the
-    optimized (promoted) replay is the second replay of the same body, and the first one had succeeded. Both now
-    honour the flag, but **only under this gate**, because ungated it changes `assign_value_effects.c` at
-    `-O2`/`-O3` — the byte-identity rule wins over fixing it in the same commit. Ungating it is its own item.
-
-  Validation: gate-off 774/774 corpus objects byte-identical at `-O0`/`-O2`/`-O3`; gate-on it fires on exactly one
-  corpus file (`assign_value_effects.c`) and on mcc's own TU (faithful 1643 -> 1646, unfaithful 228 -> 225);
-  `assign_value_effects.c` gained two cases for the exact shape (`take1(a = f(v))`, `take2(a = f(v), 3)`) which are
-  unfaithful gate-off and faithful gate-on, and its evaluation counts match gcc at `-O0`/`-O1`/`-O2`/`-O3` with the
-  gate both off and on.
-
-  Note the alternatives that are NOT viable, so they are not re-tried: emitting nothing leaves `gfunc_call` short an
-  operand (its own comment says so); re-emitting duplicates the call (measured above); and reloading from the lvalue
-  would be semantically right but emits a load where the parser reuses a register, so it trades one unfaithful form
-  for another — the same trap the chained-store investigation hit.
-- ~~**the discarded-value ternary**~~ — **FIXED 2026-07-28.** Traced first, as the method requires, and the cause was
-  one missing node kind rather than anything structural: `ast_hook_vpop` attaches a discarded value to the current
-  basic block only when its kind is `AST_Invoke` or `AST_Unary`. A ternary pushes an `AST_If` (from
-  `ast_hook_ternary_end`), so it was never attached — the `Invoke` nodes for both arms WERE recorded, they just
-  ended up unreachable from the root, which is why the verdict was `empty` rather than `desync`. Adding `AST_If` to
-  that test is the whole fix.
-
-  Verdicts after: `c ? a() : b();`, `c ? ai() : ai();` and `(void)(c ? 1 : 2);` all faithful, alongside the
-  already-faithful discarded calls. Runtime behaviour verified rather than assumed — a loop doing
-  `i & 1 ? a() : b()` counts 2/3 at `-O0`/`-O1`/`-O2`/`-O3` and matches gcc, so the taken arm still runs exactly
-  once now that these bodies reach the optimizer.
-
-  No movement on mcc's own TU (1438/1841, and zero `empty` verdicts there to begin with) and the ratchet is
-  unchanged at 167 — the gain is on general C, not on this codebase. `store_packed_bf`, which motivated the
-  investigation, is still `unfaithful`: its `c ? vdup() : gv_dup()` is now recorded, but the function diverges for
-  other reasons.
-
-Prove either direction with traces BEFORE writing code (the standing method above): the `RV`/`LEAF`/`FIN` traces
-and `[unfaithful-rel]` already exist and were what settled every question in this area. Gate on
-`assign_value_effects.c` plus the full bar — this is still the region where `emit-at-marker` was correct at
-`-O0`/`-O1` and MISCOMPILED at `-O2`/`-O3`.
-
-### 2b. (original B1a text — the model-shape change, still the answer if the two targets above prove to share a root)
-One root cause behind **45 chained stores + 3 call-argument cases + the discarded-value ternary**. The model must
-represent BOTH "the value is this constant/expression" AND "materialise it once, here, before the first store".
-Evidence already in hand, all in this file: the `FIN` trace catching the outer store's finalize overwriting
-`VT_CONST` with register 0; the two-statement control (`b = 0; a = 0;`) proving the recorder normally records the
-constant; and two narrow fixes tried and REJECTED on evidence (skip the outer finalize — no effect; preserve the
-constant form — swaps a 6-byte register store for a 10-byte immediate store, unfaithful either way).
-
-**This is where `emit-at-marker` miscompiled** at `-O2`/`-O3` while passing `-O0`/`-O1`, caught only by
-`assign_value_effects.c` counting evaluations. So: prove the direction with traces BEFORE writing the change, and
-gate it on `assign_value_effects.c` plus the full bar.
-
-**Fall back to B1b if B1a does not prove out:** fix only the discarded-value ternary, which today records NOTHING
-(verdict `empty`, reproducer `void f(int c){ c ? a() : b(); }`). It is the smallest slice of the family and is
-isolated from the chained-store hazard.
-
-### 3. A2a — CHARACTERISED 2026-07-28. The 43 are UNIFORM: the model is always exactly ONE value ahead.
-
-A `SYNC vn= rel= delta= cap= r= t= tern= lor=` trace at the guard (kept, `MCC_TRACE_IF`-gated) gives 43 events on
-mcc's TU — exactly one per desync'd function, so every function fails on its FIRST sync loss:
-
-| property | result |
-|---|---|
-| `rel > AST_VS_MAX` (capacity) | **0 of 43** |
-| `delta = ast_vn - (rel - 1)` | **1 for all 43**, no exceptions |
-| inside a ternary / short-circuit region | 12 inside, 31 outside |
-| value form at the failing push | 31 × `VT_CONST`, remainder mixed |
-
-**This CONFIRMS the earlier "0% capacity, do NOT raise `AST_VS_MAX`" finding** rather than contradicting it — a
-first pass appeared to show 31 capacity events, but that was `grep -o 'SYNC .*'` also matching the tail of the
-`DESYNC ...` state lines. Anchor the pattern (`\bSYNC vn=`). That is the third time in this file a substring match
-has produced a false signal (`faithful`/`unfaithful`, `verified` in a refusal message, now this one).
-
-**The uniformity is the finding.** Every failure is `ast_vn == rel`, i.e. the recorder holds exactly one MORE
-modelled value than the codegen vstack — never two, never fewer, and never a capacity problem. So this is not 43
-independent modelling gaps; it is one class of event that pushes a model value without a matching vstack push (or
-drops a vstack pop without dropping the model value).
-
-**AND THE SITE IS A DETECTOR, NOT THE CULPRIT — value forms at the 43 failures:**
-
-| field | distribution |
-|---|---|
-| `r` | 27 × `0x230` (`VT_CONST\|VT_SYM`, a symbol address), 16 × `0x30` (plain constant) |
-| `t` | **24 × `0xa006` — `VT_BTYPE = 6 = VT_FUNC`**, 12 × `0x4` (`VT_LLONG`), 3 × `0x302003`, 3 × `0x1006`, 1 × `0x3` |
-| `vn` at failure | **40 × `vn=1`**, 3 × `vn=2` |
-
-The value being pushed when the guard fires is overwhelmingly a **function symbol** — i.e. the CALLEE of a call.
-With `vn=1` and `delta=1`, the model is carrying one stale value from earlier in the body and the mismatch is first
-noticed when the next call pushes its callee. **So do not look for a hook that mis-pushes a function symbol** — the
-callee push is innocent and merely the first thing to check the invariant after the drift. Find what leaves a value
-in `ast_vs` earlier.
-
-Empirically NOT the cause (tested, all faithful): early `return` in a branch, a `noreturn` call in a branch, a
-noreturn call followed by more statements, deref-after-check, and `c ? g() : 0`. Discarded `(void)x` casts come out
-`empty`, not SYNC, so they are excluded too.
-
-**SPLIT INTO TWO SUB-POPULATIONS 2026-07-28, separating PERFECTLY — so "one class of event" above was too strong.**
-Capturing the full hook sequence and testing whether a `vpop` early-return precedes each failure:
-
-| group | count | preceded by a `vpop` early-return |
-|---|---|---|
-| inside a short-circuit region (`lor=1`) | **12** | **all 12** |
-| outside (`lor=0`) | **31** | **none** |
-
-**Group A (12) — MECHANISM SOLVED.** Inside a `&&`/`||` region `ast_hook_vpop` hits its early-return guard
-(`!ast_capture || ast_desync || ast_in_op || ast_in_call`) and returns WITHOUT doing `ast_vn--`, while codegen pops
-the vstack regardless. The model is then one value ahead and the next push notices. Verbatim:
-
-    vpush  r=0x30 t=0x4 vn=1 rel=2      balanced (vn == rel-1)
-    vpop:  enter
-    vpop:  enter                        two pops
-    vpop:  br                           one took the early return -> no ast_vn--
-    vpush  r=0x30 t=0x4 vn=1 rel=1      vn unchanged, rel dropped -> vn == rel -> SYNC
-
-**The skipping condition is `ast_in_call`, NOT `ast_in_op`** — measured with a `POPSKIP` probe printing which guard
-clause fired. For all 12 Group-A failures the last skip before the SYNC is uniformly `inop=0 incall=1`. (Group B's
-is mixed — 18 `incall=0`, 10 `incall=1`, 4 `inop=1` — further confirming a different population.)
-
-That makes the fix harder than "decrement anyway", for a reason worth stating: `ast_in_call` is set deliberately
-between `call_begin` and `call_end` because `gfunc_call` pushes and pops around its arguments, and the model has
-ALREADY accounted for those (`call_begin` does `ast_vn -= need`). Skipping is CORRECT for the call's own stack
-traffic. The imbalance comes from a pop inside that window that belongs to the ENCLOSING short-circuit region.
-
-So this is an interaction between two stateful regions, not a missing decrement:
-- decrementing unconditionally would double-count the call's own pops;
-- suspending the short-circuit region inside the call window hits the mirror hazard the `nocode_wanted` item
-  records ("a region suspend leaves the model BEHIND the vstack").
-
-A fix has to distinguish whose pop it is. That is design work, which is why A1a is characterised here rather than
-fixed.
 
 **ROOT-CAUSED 2026-07-28, and the `ast_in_call` framing above was the symptom, not the cause.** The pops belong to
 `expr_landor`, which consumes each operand it is done with — `t = gvtst(i, t)` when the operand is dynamic, `vpop()`
@@ -1154,89 +982,25 @@ On mcc's TU it is **1731 -> 1733 faithful**, and 15 NEW desyncs appear inside th
 was never the blocker: what remains is per-operand model state that the region hooks cannot see. Anyone picking
 this up should stop optimising the region representation and go look at why an operand arrives with `ast_vn < 1`.
 
-**Group B (31) — partially narrowed 2026-07-28, with a caveat that must be resolved first.**
+**Group B (31) — all resolved by the four unaccounted-pop fixes above.** Two method notes survive it and are worth
+more than the narrative:
 
-Ranking the three hook events before each Group-B failure: `ast_hook_call_end` immediately precedes **13**,
-consecutive pushes account for **9**, and a prior guard-decline for **8**. Splitting instead by the last `POPSKIP`
-condition within 6 lines gives 18 `incall=0`, 10 `incall=1`, 4 `inop=1` — and **all 18 of the `incall=0` subgroup
-show two consecutive `vpop` early-returns immediately before the failing push**, the same double-pop shape as
-Group A.
+- **Anchor trace greps.** `grep -o 'SYNC .*'` also matches the tail of the `DESYNC ...` state lines; anchor with
+  `\bSYNC vn=`. Third time in this file a substring match produced a false signal (`faithful`/`unfaithful`,
+  `verified` in a refusal message, now this).
+- **Respect function boundaries when correlating trace events.** A line-window correlation over a 1.4M-line trace
+  produced a clean-looking "18 of them show two consecutive `vpop` early-returns" split that was pure artifact —
+  re-running with the window reset at each `ast_func_begin` gave in-function pop counts spread from 0 to 9. The
+  `call_end`-precedes-13 and `incall=0`-is-18 splits were both WITHDRAWN on that basis.
 
-**THE CAVEAT WAS WARRANTED — the 18-subgroup is REFUTED.** Re-running with function boundaries respected (window
-reset at each `ast_func_begin`) gives a completely different distribution of in-function `vpop` counts before the
-failure:
 
-| in-function `vpop` count | events |
-|---|---|
-| **0** | **2** |
-| 1 | 1 |
-| 2 | 4 |
-| 4 | 7 |
-| 5–9 | remainder |
+### The `desync` bucket after the 2026-07-28 session — 251 -> 51
 
-Not "two consecutive pops" — the counts spread from 0 to 9. The line-window correlation was straddling function
-boundaries in a 1.4M-line trace, exactly as suspected. **The `call_end`-precedes-13 and `incall=0`-is-18 splits are
-both WITHDRAWN**; they were artifacts of the same window.
-
-What survives the boundary-respecting re-run, and is the real handle:
-- **42 of 44 have at least one in-function `vpop`** before failing, so pops are involved — but not in a fixed count,
-  which rules out a single mechanical double-pop.
-- **2 have NO `vpop` at all in their function** — **SOLVED AND FIXED 2026-07-28 (`1939ba28`); it is a `switch`, and
-  the "in-place replacement" reading was WRONG.** Nothing is overwritten: `ast_hook_switch_begin` failed to account
-  for a pop that codegen performs unconditionally. `block()`'s `TOK_SWITCH` arm does `sw->sv = *vtop--` immediately
-  after the hook, but the hook only did `ast_vn = 0` on its SUCCESS path — all four bail exits (already-bailed,
-  `ast_vn != 1`, cf-stack full, value neither `AST_Ref` nor `AST_Literal`) returned with the value still modelled.
-
-      vpush r=0x230 t=0x6      vn=0 rel=1     callee symbol (VT_BTYPE 6 = VT_FUNC)
-      vpush r=0x132 t=0x5      vn=1 rel=2     register-held lvalue, VT_PTR
-      vpush r=0x132 t=0x33     vn=2 rel=3
-      vpush r=0     t=0x32     vn=0 rel=1     the call consumed callee+args, pushed the result
-      vpush r=0x30  t=0x302003 vn=1 rel=1     model grew, vstack did NOT -> SYNC
-
-  The distinctive `t=0x302003` is `VT_ENUM_VAL|VT_STATIC|VT_INT` — an **enum case label**, i.e. the first `case` of
-  the switch, and the last line is that label being pushed AFTER `sw->sv = *vtop--` dropped the switch value. Both
-  functions are `switch (ast_kind(a, n))` in `src/ast_eval_slice.h`: the value is an `AST_Invoke`, the kind check
-  bails, the pop goes unaccounted. Minimal repro — `switch (f(a, n)) { case A: ... }` with `f` returning an integer
-  is `desync:2322`; `switch (n)` on a plain local is `faithful`.
-
-  **Effect of the fix, measured on mcc's own TU at `-O2`: SYNC-site desyncs 60 -> 25.** The `nocode_wanted` site
-  rises 98 -> 132 by nearly the same amount — those functions were desyncing early on the drift and now reach their
-  real cause, so the SYNC population was inflated by roughly a third with borrowed failures. Total desync 251 -> 250,
-  faithful unchanged at 1643, self-compiled object byte-identical. Two corpus functions left the ratchet gap set
-  (`switch_semantics.c copy_n`, `enum_bitfield.c convert_like_real`), baseline regenerated 167 -> 165 gaps.
-
-  **Method note worth keeping: a hook that models a codegen pop must account for it on EVERY exit, bail included.**
-  `ast_bail` does not stop the recorder's stack bookkeeping — it only marks the function un-replayable — so an early
-  return that skips the decrement silently converts a clean `bail` into a `desync` and, worse, into a desync
-  attributed to whatever pushes next. Audit the other hooks that return early after codegen has already moved
-  `vtop` for the same shape.
-
-  **THAT AUDIT IS DONE, and it found the same defect in four more hooks — fixed 2026-07-28.** `ast_hook_if_begin`,
-  `ast_hook_while_begin`, `ast_hook_do_cond` and `ast_hook_for_cond` are each followed immediately by an
-  unconditional `gvtst(...)`, whose tail is a bare `vtop--` (no `vpop()`, so no hook). All four dropped the modelled
-  condition value only on their success path. The success path also sets `ast_in_call = 1` so the compare/jump
-  traffic inside `gvtst` is not modelled, and `ast_hook_if_gvtst_done` clears it again — so the fix is to take that
-  same suppression on the bail exits and let `gvtst_done` do the one decrement when the function is bailed. SYNC-site
-  desyncs 25 -> 23, two more functions become `bail` instead of `desync`, no verdict becomes faithful.
-
-  **METHODOLOGY, learned the hard way in the same session: do NOT byte-compare two self-compiled `src/mcc.c` objects
-  across a compiler-source edit.** `src/mcc.c` is the amalgamation and it INCLUDES `mccast.c`, so editing the
-  recorder also edits the translation unit being compiled — the comparison has two variables, not one. Adding a
-  never-called dummy function to `mccast.c` reproduces the effect on its own: one unrelated function (`foldm_powg`)
-  loses one instruction to a constant fold. Compile a FIXED corpus with both binaries instead, and put both binaries
-  in the same directory: `-B` alone does not equalise them, because auto-mccdir also probes the exe directory and a
-  binary sitting elsewhere picks up different `threads.h`/`stdatomic.h` (that confound made 3 corpus files differ
-  until both binaries were moved into the build dir). The clean run is 774/774 objects byte-identical over
-  `tests/exec` + `tests/behavior` at `-O0`/`-O2`/`-O3`.
-- The 12/32 short-circuit split is unaffected — it comes from the SYNC line's own `lor=` field, not from windowing.
-
-### The `desync` bucket after the 2026-07-28 session — 204 -> 80
-
-`MCC_AST_NOCODE_CALL` took 88 and `MCC_AST_INDIRECT_CALL` took 36. What is left, largest first:
+`MCC_AST_NOCODE_CALL` took 88, `MCC_AST_INDIRECT_CALL` 36, `MCC_AST_LANDOR_INVERT` 29, and the four
+unaccounted-pop fixes the rest. What is left, largest first:
 
 | count | site | what it is |
 |---|---|---|
-| ~~31~~ **0** | `ast_hook_cmp_invert` | **FIXED 2026-07-28 by `MCC_AST_LANDOR_INVERT`, default-on** — see below |
 | 18 | `ast_hook_vstore` | a store inside a ternary or short-circuit region — **one approach tried and RULED OUT, see below** |
 | 13 | `ast_hook_landor_next` | the identity-constant `&&`/`||` chain's second consumption (see A2a Group A above) |
 | 6 | `ast_hook_vstore` shape | bad type / `ast_vn` mismatch at the store |
@@ -1479,10 +1243,11 @@ fourth approach's failures — so any flip must lean on the self-host fixpoint a
 ## AST recorder fidelity — INDEX (findings live in the sections named; this is a map)
 
 **CURRENT STATE, measured 2026-07-28 on mcc's own amalgamated TU at `-O2` (2127 functions, compile `rc=0` so the
-counts are not truncated): 1701 faithful / 116 desync / 261 unfaithful / 49 bail — `80.0%` FAITHFUL.** The session
-that day moved it 1643 -> 1701 by fixing four unaccounted-pop classes and landing `MCC_AST_NOCODE_CALL`; `desync`
-fell 251 -> 116, and the verdict ladder now reports a deliberate `bail` ahead of a later accidental `desync`, so the
-desync bucket is drifts only.
+counts are not truncated): 1731 faithful / 51 desync / 296 unfaithful / 49 bail — `81.4%` FAITHFUL.** That session
+moved it 1643 -> 1731 with four unaccounted-pop fixes and three new default-on gates (`MCC_AST_NOCODE_CALL`,
+`MCC_AST_INDIRECT_CALL`, `MCC_AST_LANDOR_INVERT`); `desync` fell 251 -> 51. The verdict ladder now reports a
+deliberate `bail` ahead of a later accidental `desync`, so the desync bucket is drifts only, and `unfaithful` is
+decisively the largest remaining bucket.
 The 2026-07-27 session ended at 1392 faithful (75.3%) of 1849; before that it started at 1101 (59.5%) with 60 bails. `faithful` is the figure that matters: it gates the optimizer
 passes, `ast_search_*`, the ROI scorer, `ast_inline_retain`, `ast_reemit_retain` and JIT dispatch. `desync`,
 `unfaithful` and `bail` are all equally excluded, so moving a function BETWEEN them is not progress and not a
