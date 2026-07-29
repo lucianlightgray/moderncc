@@ -264,6 +264,8 @@
 	#define __SIZEOF_INT128__ 16
 	typedef __int128 __int128_t;
 	typedef unsigned __int128 __uint128_t;
+	typedef __int128 __mcc_int128_t;
+	typedef unsigned __int128 __mcc_uint128_t;
 #else //@
 	struct __uint128__ { char x[16]; } __attribute((__aligned__(16)));
 	#define __int128_t struct __uint128__
@@ -439,8 +441,19 @@
 	__MCC_OV_DECL(unsigned long, ul)
 	__MCC_OV_DECL(long long, ll)
 	__MCC_OV_DECL(unsigned long long, ull)
+	#ifdef __SIZEOF_INT128__
+	__MCC_OV_DECL(__mcc_int128_t, ti)
+	__MCC_OV_DECL(__mcc_uint128_t, uti)
+	#endif
 	#undef __MCC_OV_DECL
+	#ifdef __SIZEOF_INT128__
+	#define __mcc_ov_disp_ti(op) __mcc_int128_t: __mcc_##op##o_ti,	\
+	__mcc_uint128_t: __mcc_##op##o_uti,
+	#else
+	#define __mcc_ov_disp_ti(op)
+	#endif
 	#define __mcc_ov_disp(op, res) _Generic((res),			\
+	__mcc_ov_disp_ti(op)						\
 	__mcc_schar_t: __mcc_##op##o_sc, __mcc_char_t: __mcc_##op##o_c,	\
 	__mcc_short_t: __mcc_##op##o_s, __mcc_int_t: __mcc_##op##o_i,	\
 	__mcc_long_t: __mcc_##op##o_l, __mcc_llong_t: __mcc_##op##o_ll,	\

@@ -8,6 +8,7 @@ typedef struct {
 #define MCC_INT128_HALF_BITS 64
 
 static const double mcc_two_to_the_64 = 18446744073709551616.0;
+static const long double mcc_two_to_the_64_long = 18446744073709551616.0L;
 
 static mcc_int128 int128_from_halves(unsigned long long high, unsigned long long low) {
 	mcc_int128 value;
@@ -27,6 +28,13 @@ static mcc_int128 int128_negate(mcc_int128 value) {
 	return result;
 }
 
+static mcc_int128 int128_add(mcc_int128 a, mcc_int128 b) {
+	mcc_int128 result;
+	result.low = a.low + b.low;
+	result.high = a.high + b.high + (result.low < a.low ? 1ULL : 0ULL);
+	return result;
+}
+
 static mcc_int128 int128_subtract(mcc_int128 a, mcc_int128 b) {
 	mcc_int128 result;
 	result.low = a.low - b.low;
@@ -38,6 +46,22 @@ static int int128_is_below(mcc_int128 a, mcc_int128 b) {
 	if (a.high != b.high)
 		return a.high < b.high;
 	return a.low < b.low;
+}
+
+static int int128_is_equal(mcc_int128 a, mcc_int128 b) {
+	return a.low == b.low && a.high == b.high;
+}
+
+static int int128_is_zero(mcc_int128 value) {
+	return value.low == 0ULL && value.high == 0ULL;
+}
+
+static int int128_is_all_ones(mcc_int128 value) {
+	return value.low == MCC_INT128_ALL_ONES && value.high == MCC_INT128_ALL_ONES;
+}
+
+static int int128_is_minimum(mcc_int128 value) {
+	return value.low == 0ULL && value.high == MCC_INT128_SIGN_BIT;
 }
 
 static mcc_int128 int128_double(mcc_int128 value) {
@@ -214,6 +238,29 @@ static unsigned long long int128_significand_with_sticky(mcc_int128 value, int *
 	significand = int128_top_half_after_shift(value, shift);
 	if (int128_has_bits_below(value, shift))
 		significand |= 1ULL;
+	*scale_exponent = shift;
+	return significand;
+}
+
+static unsigned long long int128_significand_rounded(mcc_int128 value, int *scale_exponent) {
+	int significant_bits = 128 - int128_leading_zeros(value);
+	int shift = significant_bits - MCC_INT128_HALF_BITS;
+	unsigned long long significand;
+	int round_up;
+	if (shift <= 0) {
+		*scale_exponent = 0;
+		return value.low;
+	}
+	significand = int128_top_half_after_shift(value, shift);
+	round_up = int128_bit_at(value, shift - 1) != 0ULL &&
+						 (int128_has_bits_below(value, shift - 1) || (significand & 1ULL) != 0ULL);
+	if (round_up) {
+		significand++;
+		if (significand == 0ULL) {
+			significand = MCC_INT128_SIGN_BIT;
+			shift++;
+		}
+	}
 	*scale_exponent = shift;
 	return significand;
 }
@@ -415,4 +462,83 @@ mcc_int128 __fixunssfti(float value) {
 
 mcc_int128 __fixsfti(float value) {
 	return __fixdfti((double)value);
+}
+
+long double __floatuntixf(mcc_int128 value) {
+	int scale_exponent;
+	unsigned long long significand = int128_significand_rounded(value, &scale_exponent);
+	long double scale = 1.0L;
+	while (scale_exponent-- > 0)
+		scale *= 2.0L;
+	return (long double)significand * scale;
+}
+
+long double __floattixf(mcc_int128 value) {
+	if (int128_is_negative(value))
+		return -__floatuntixf(int128_negate(value));
+	return __floatuntixf(value);
+}
+
+mcc_int128 __fixunsxfti(long double value) {
+	mcc_int128 result = int128_from_halves(0ULL, 0ULL);
+	if (!(value >= 1.0L))
+		return result;
+	if (value >= mcc_two_to_the_64_long) {
+		unsigned long long high =
+				(unsigned long long)(value * (1.0L / mcc_two_to_the_64_long));
+		result.high = high;
+		result.low = (unsigned long long)(value - (long double)high * mcc_two_to_the_64_long);
+	} else {
+		result.low = (unsigned long long)value;
+	}
+	return result;
+}
+
+mcc_int128 __fixxfti(long double value) {
+	if (value < 0.0L)
+		return int128_negate(__fixunsxfti(-value));
+	return __fixunsxfti(value);
+}
+
+int __mcc_addo_ti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
+	mcc_int128 sum = int128_add(a, b);
+	*r = sum;
+	return (~(a.high ^ b.high) & (a.high ^ sum.high) & MCC_INT128_SIGN_BIT) != 0ULL;
+}
+
+int __mcc_subo_ti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
+	mcc_int128 difference = int128_subtract(a, b);
+	*r = difference;
+	return ((a.high ^ b.high) & (a.high ^ difference.high) & MCC_INT128_SIGN_BIT) != 0ULL;
+}
+
+int __mcc_mulo_ti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
+	mcc_int128 product = __multi3(a, b);
+	*r = product;
+	if (int128_is_zero(a) || int128_is_zero(b))
+		return 0;
+	if (int128_is_all_ones(a))
+		return int128_is_minimum(b);
+	if (int128_is_all_ones(b))
+		return int128_is_minimum(a);
+	return !int128_is_equal(__divti3(product, a), b);
+}
+
+int __mcc_addo_uti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
+	mcc_int128 sum = int128_add(a, b);
+	*r = sum;
+	return int128_is_below(sum, a);
+}
+
+int __mcc_subo_uti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
+	*r = int128_subtract(a, b);
+	return int128_is_below(a, b);
+}
+
+int __mcc_mulo_uti(mcc_int128 a, mcc_int128 b, mcc_int128 *r) {
+	mcc_int128 product = __multi3(a, b);
+	*r = product;
+	if (int128_is_zero(a))
+		return 0;
+	return !int128_is_equal(__udivti3(product, a), b);
 }
