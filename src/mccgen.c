@@ -476,6 +476,15 @@ static int bswap_inline_on(void) { MCC_TRACE("enter\n");
 }
 #endif
 
+static int popcount_inline_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_POPCOUNT_INLINE");
+		on = e && e[0] && strcmp(e, "0") ? 1 : 0;
+	}
+	return on;
+}
+
 static int fold_bit_builtin(int op, int W, int64_t s) { MCC_TRACE("enter\n");
 	uint64_t u = (uint64_t)s;
 	int i, n = 0;
@@ -9977,6 +9986,46 @@ tok_next:
 				gen_ffs(bw / 8);
 				break;
 			}
+#endif
+			if ((bop == BB_POPCOUNT || bop == BB_PARITY) && popcount_inline_on()) { MCC_TRACE("br\n");
+				int wty = bw == 64 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
+				unsigned long long m1 = bw == 64 ? 0x5555555555555555ull : 0x55555555ull;
+				unsigned long long m2 = bw == 64 ? 0x3333333333333333ull : 0x33333333ull;
+				unsigned long long m4 = bw == 64 ? 0x0f0f0f0f0f0f0f0full : 0x0f0f0f0full;
+				unsigned long long m8 = bw == 64 ? 0x0101010101010101ull : 0x01010101ull;
+				gv_dup();
+				vpushi(1);
+				gen_op(TOK_SHR);
+				vpush64(wty, m1);
+				gen_op('&');
+				gen_op('-');
+				gv_dup();
+				vpush64(wty, m2);
+				gen_op('&');
+				vswap();
+				vpushi(2);
+				gen_op(TOK_SHR);
+				vpush64(wty, m2);
+				gen_op('&');
+				gen_op('+');
+				gv_dup();
+				vpushi(4);
+				gen_op(TOK_SHR);
+				gen_op('+');
+				vpush64(wty, m4);
+				gen_op('&');
+				vpush64(wty, m8);
+				gen_op('*');
+				vpushi(bw - 8);
+				gen_op(TOK_SHR);
+				if (bop == BB_PARITY) { MCC_TRACE("br\n");
+					vpushi(1);
+					gen_op('&');
+				}
+				gen_cast_s(VT_INT);
+				break;
+			}
+#if defined(MCC_TARGET_X86_64)
 #endif
 			vpush_helper_func(btok);
 			vrott(2);
