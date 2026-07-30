@@ -7737,7 +7737,13 @@ static double foldm_hilo0(double x) { MCC_TRACE("enter\n");
 }
 
 static double foldm_fabs(double x) { MCC_TRACE("enter\n");
-	return x < 0 ? -x : x;
+	/* clear the sign bit -- `x < 0 ? -x : x` leaves -0.0 unchanged (it is not
+	 * < 0), so fabs(-0.0) wrongly kept the sign. Bit-clear is correct for every
+	 * value incl. -0.0/NaN/Inf. */
+	union { double d; unsigned long long u; } v;
+	v.d = x;
+	v.u &= 0x7fffffffffffffffULL;
+	return v.d;
 }
 
 static double foldm_ksin(double x) { MCC_TRACE("enter\n");

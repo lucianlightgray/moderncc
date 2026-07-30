@@ -230,9 +230,14 @@
 	#define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
 	#define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
 	#define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
-	#define __builtin_fabsf(x) ((__mcc_float_t)((x) < 0 ? -(x) : (x)))
-	#define __builtin_fabs(x)  ((__mcc_double_t)((x) < 0 ? -(x) : (x)))
-	#define __builtin_fabsl(x) ((__mcc_ldouble_t)((x) < 0 ? -(x) : (x)))
+	/* `<= 0 ? 0.0 - x : x`, not `< 0 ? -x : x`: the latter leaves -0.0 unchanged
+	 * (`-0.0 < 0` is false), so fabs(-0.0) wrongly kept the sign bit. `0.0 - x`
+	 * on the `<= 0` branch canonicalizes both zeros to +0.0 (0.0 - (-0.0) = +0.0,
+	 * 0.0 - (+0.0) = +0.0) and negates negatives; positive values keep the fast
+	 * else path. (Found by FP differential fuzzing vs clang -ffp-contract=off.) */
+	#define __builtin_fabsf(x) ((__mcc_float_t)((x) <= 0 ? 0.0f - (x) : (x)))
+	#define __builtin_fabs(x)  ((__mcc_double_t)((x) <= 0 ? 0.0 - (x) : (x)))
+	#define __builtin_fabsl(x) ((__mcc_ldouble_t)((x) <= 0 ? 0.0L - (x) : (x)))
 	#define __builtin_abs(x)   ((__mcc_int_t)((x) < 0 ? -(x) : (x)))
 	#define __builtin_labs(x)  ((__mcc_long_t)((x) < 0 ? -(x) : (x)))
 	#define __builtin_llabs(x) ((__mcc_llong_t)((x) < 0 ? -(x) : (x)))
