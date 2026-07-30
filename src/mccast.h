@@ -196,6 +196,7 @@ long ast_cost_score(AstArena *a);
 int ast_sym_defer(struct Sym *sym);
 int ast_alloc_loc(int size, int align);
 int ast_alloc_temp_loc(int size, int align);
+int ast_ltemp_overlaps(int lo, int sz);
 int ast_fconst_reuse(void);
 void ast_fconst_reuse_disable(int off);
 void ast_fconst_record(int c);

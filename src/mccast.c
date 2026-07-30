@@ -1908,6 +1908,22 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
+/* True iff [lo, lo+sz) overlaps any reserved ast_ltemp slot (each 8 bytes, the
+ * size every ast_ltemp_* mint uses: `off = (ast_ltemp_cur - 8) & -8`). The temp-
+ * slot allocator (get_temp_local_var) consults this so it never hands a spill
+ * slot that aliases a materialized-but-still-live value parked in an ltemp slot
+ * (e.g. the i386 divmagic dividend). Inert unless the temp frontier actually
+ * descends into the reserved region, which only happens under i386's register
+ * pressure — byte-identical on arches where it doesn't. */
+int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
+	for (int t = 0; t < ast_ltemp_n; t++) { MCC_TRACE("br\n");
+		int a = ast_ltemp_off[t];
+		if (lo < a + 8 && a < lo + sz)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
 	if (ast_replaying) { MCC_TRACE("br\n");
 		if (ast_temp_frontier > 0)
@@ -2211,25 +2227,18 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", o4 || s1->optimize >= 2);
 	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", o4 || s1->optimize >= 1);
 	ast_range_env = ast_env_gate("MCC_AST_RANGE", o4 || s1->optimize >= 1);
-	/* i386 carve-out RESTORED 2026-07-30: the 2026-07-25 lift (ast_divmagic_materialize
-	 * + soak) was PREMATURE. The materialize stores x once into a reserved ltemp slot
-	 * and every magic-sequence x-read loads it, but that reservation is only honored by
-	 * the register-promotion pass (ast_ltemp_off poison in ast_promote_locals); the i386
-	 * value-stack spill allocator does NOT exclude ltemp slots, so under enough local
-	 * pressure it reuses xoff for the 64-bit mul's low-product spill and clobbers the
-	 * still-live dividend. Reproduced: the i386-codegen-diff `d2` (struct-by-value summed
-	 * over a wide loop, then `(s&0x7fffffff)%251`) gives 131 vs 91 at -O2 — s is byte-
-	 * identical to -O0, f(s)=91 in isolation, only the in-context `%251` is wrong because
-	 * xoff (-0x30) is overwritten by the product store. The i386-divmagic-soak missed this
-	 * exact spill layout. Until the vstack spill allocator is made ltemp-aware (the real
-	 * opt-preserving fix — see docs/TODO.md), divmagic stays default-OFF on i386 (hardware
-	 * idiv, correct). Byte-inert on the shipped i386 cross build, which has no optimizer.
-	 * Still opt-in via MCC_AST_DIVMAGIC=1 for soak/diagnosis. */
-#ifdef MCC_TARGET_I386
-	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
-#else
+	/* i386 divmagic default-ON at -O2+ (like the other optimizer-capable arches). The
+	 * 2026-07-25 lift was briefly reverted 2026-07-30 for a real spill-slot-reuse bug
+	 * (i386-codegen-diff `d2`: `(s&0x7fffffff)%251` gave 131 vs 91 at -O2), then RE-ENABLED
+	 * the same day once the actual root cause was fixed: the divmagic materialize parks the
+	 * dividend `x` in a reserved ast_ltemp slot, but the value-stack spill allocator
+	 * (get_temp_local_var) didn't exclude ltemp slots, so under i386 register pressure it
+	 * reused xoff for the 64-bit mul's low-product spill and clobbered the still-live x.
+	 * Fixed by making get_temp_local_var ltemp-aware (ast_ltemp_overlaps) — it now pushes
+	 * the spill below the reserved slot. Byte-inert on arches whose temp frontier never
+	 * reaches the ltemp region (fixpoint-invariant byte-identical). Validated: d1..d14 ×
+	 * -O0..-O3 vs gcc -m32, struct-pressure soak, ~26M randomized div/mod-vs-idiv checks. */
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", o4 || s1->optimize >= 2);
-#endif
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", o4 || s1->optimize >= 2);
 	ast_select_env = ast_env_gate("MCC_AST_SELECT", o4 || s1->optimize >= 2);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", o4 || s1->optimize >= 2);

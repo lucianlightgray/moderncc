@@ -1716,6 +1716,7 @@ ST_FUNC int get_reg(int rc) { MCC_TRACE("enter\n");
 }
 
 int ast_alloc_temp_loc(int size, int align);
+int ast_ltemp_overlaps(int lo, int sz);
 
 static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n");
 	int i;
@@ -1759,6 +1760,14 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 			tmploc = ast_alloc_temp_loc(size, align);
 			i = -1; /* restart the overlap scan against the new, lower offset */
 		}
+	}
+	/* Also never alias a reserved ast_ltemp slot holding a still-live materialized
+	 * value (the i386 divmagic dividend x): the frontier can descend into that region
+	 * because its floor is seeded from loc/locrec_min, not ast_ltemp_cur. Keep going
+	 * lower until clear (monotonic). Inert when no ltemp slot overlaps -- byte-identical
+	 * on arches whose temp frontier never reaches the reserved region. */
+	while (ast_ltemp_overlaps(tmploc, size)) { MCC_TRACE("br\n");
+		tmploc = ast_alloc_temp_loc(size, align);
 	}
 #else
 	loc = (loc - size) & -align;
