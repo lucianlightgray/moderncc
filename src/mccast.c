@@ -14945,6 +14945,7 @@ enum {
 	JOP_GV,
 	JOP_VSTORE,
 	JOP_GENOP,
+	JOP_MKPTR,
 	JOP_COUNT
 };
 
@@ -15072,7 +15073,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
 			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
 			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit",
-			"gv",        "vstore",    "genop"};
+			"gv",        "vstore",    "genop",     "mkptr"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15360,6 +15361,18 @@ void jrn_vstore(void) { MCC_TRACE("enter\n");
 
 JRN_W1(gen_op, JOP_GENOP)
 
+void jrn_mk_pointer(CType *type) { MCC_TRACE("enter\n");
+	if (type != &vtop->type) { MCC_TRACE("br\n");
+		(mk_pointer)(type);
+		return;
+	}
+	jrn_begin(JOP_MKPTR, NULL);
+	(mk_pointer)(type);
+	if (JRN_REC)
+		{ MCC_TRACE("br\n"); jrn_pending->ctype = *type; }
+	jrn_end();
+}
+
 void jrn_vpushv(SValue *v) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_VPUSHV, v);
 	(vpushv)(v);
@@ -15514,6 +15527,13 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_VREV: (vrev)(o->a0); break;
 	case JOP_VSTORE: (vstore)(); break;
 	case JOP_GENOP: (gen_op)(o->a0); break;
+	case JOP_MKPTR:
+		if (vtop < vstack) { MCC_TRACE("br\n");
+			jrn_bad = 1;
+			break;
+		}
+		vtop->type = o->ctype;
+		break;
 	case JOP_GV: { MCC_TRACE("br\n");
 		uint64_t pin = ast_pinned_regs;
 		int got;
