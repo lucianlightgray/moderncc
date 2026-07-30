@@ -1028,7 +1028,7 @@ static long so_fn_find(struct so_fn *a, int n, const char *name) { MCC_TRACE("en
 	return -1;
 }
 
-#define SO_PF_FMT 1u
+#define SO_PF_FMT 2u
 
 typedef struct {
 	uint32_t fmt;

@@ -449,7 +449,6 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 		mccjit_put_u32(buf, tref ? mccjit_handles_intern(
 															 &handles, tref, mccjit_role_for_base(ast_type_t(a, n)))
 														 : 0);
-		mccjit_put_u64(buf, ast_cst(a, n));
 		mccjit_put_u32(buf, nc);
 		for (i = 0; i < nc; i++)
 			{ MCC_TRACE("br\n"); mccjit_put_u32(buf, (uint32_t)ast_child(a, n, i)); }
@@ -812,7 +811,6 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		uint64_t fbits = mccjit_get_u64(&r);
 		uint32_t sym_id = mccjit_get_u32(&r);
 		uint32_t typeref_id = mccjit_get_u32(&r);
-		uint64_t cst = mccjit_get_u64(&r);
 		uint32_t nc = mccjit_get_u32(&r), j;
 		Sym *sym_new = (sym_id && sym_id <= hc) ? mccjit_build_rec(out, sym_id) : NULL;
 		Sym *tref_new =
@@ -822,6 +820,8 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		AstLocal node;
 		if (r.err)
 			{ MCC_TRACE("br\n"); goto done; }
+		if (kind >= AST_KIND_COUNT)
+			{ MCC_TRACE("br\n"); goto done; }
 		if ((op & VT_VALMASK) == VT_LOCAL && !(op & VT_SYM))
 			{ MCC_TRACE("br\n"); sym_raw = 0; }
 		node = ast_node(a, kind);
@@ -830,7 +830,6 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 		ast_set_ival(a, node, ival);
 		ast_set_fbits(a, node, fbits);
 		ast_set_sym(a, node, sym_raw);
-		ast_set_cst(a, node, cst);
 		nc_of[i] = nc;
 		if (nc) { MCC_TRACE("br\n");
 			kids[i] = mcc_malloc(nc * sizeof **kids);

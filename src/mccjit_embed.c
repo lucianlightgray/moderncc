@@ -8295,7 +8295,7 @@ static int mccjit_slice_walk_eq(const AstArena *A, AstLocal na, const AstArena *
 			ast_type_t(A, na) != ast_type_t(B, nb) ||
 			ast_type_ref(A, na) != ast_type_ref(B, nb) ||
 			ast_ival(A, na) != ast_ival(B, nb) || ast_fbits(A, na) != ast_fbits(B, nb) ||
-			ast_sym(A, na) != ast_sym(B, nb) || ast_cst(A, na) != ast_cst(B, nb) ||
+			ast_sym(A, na) != ast_sym(B, nb) ||
 			ast_nchild(A, na) != ast_nchild(B, nb))
 		{ MCC_TRACE("br\n"); return 0; }
 	ca = ast_first_child(A, na);

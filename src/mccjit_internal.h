@@ -21,12 +21,15 @@
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
-	9u /* 9: header carries unit_kind (whole-function vs promoted sub-slice) —   \
-			 the marker that used to be implied by the now-removed                  \
-			 AST_TranslationUnit kind. Header-only metadata: it is NEVER folded    \
-			 into the slice-identity hash, so a sub-slice identical to a whole     \
-			 function still hashes equal. 8: header carried the warm-start gate    \
-			 mask. */
+	10u /* 10: dropped the always-zero per-node cst word and removed the unused  \
+			 AST_InitList/AST_Data kinds, which renumbers AST_Poison and           \
+			 AST_StoreVal — old blobs must fail closed rather than misparse a      \
+			 kind ordinal or read at the wrong node stride. 9: header carries      \
+			 unit_kind (whole-function vs promoted sub-slice) — the marker that    \
+			 used to be implied by the now-removed AST_TranslationUnit kind.       \
+			 Header-only metadata: it is NEVER folded into the slice-identity      \
+			 hash, so a sub-slice identical to a whole function still hashes       \
+			 equal. 8: header carried the warm-start gate mask. */
 
 /* Whole-unit vs sub-slice, carried in the intent header (not an AST kind, not
    hashed). WHOLE = a complete function (has the fn_name/nparam signature

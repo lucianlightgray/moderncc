@@ -24,9 +24,7 @@ typedef enum AstKind {
 	AST_Binary,
 	AST_Convert,
 	AST_Invoke,
-	AST_InitList,
 	AST_Poison,
-	AST_Data,
 	/* Marker standing for "the value the referenced Store already produced".
 	   Carries the Store's index in ival; it is NOT a parent link, so the model
 	   stays a tree. See TODO F3a. */
@@ -61,7 +59,6 @@ void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref);
 void ast_set_ival(AstArena *a, AstLocal n, uint64_t v);
 void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits);
 void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym);
-void ast_set_cst(AstArena *a, AstLocal n, uint64_t cst_id);
 
 uint16_t ast_kind(const AstArena *a, AstLocal n);
 int ast_op(const AstArena *a, AstLocal n);
@@ -70,7 +67,6 @@ uint64_t ast_type_ref(const AstArena *a, AstLocal n);
 uint64_t ast_ival(const AstArena *a, AstLocal n);
 uint64_t ast_fbits(const AstArena *a, AstLocal n);
 uint64_t ast_sym(const AstArena *a, AstLocal n);
-uint64_t ast_cst(const AstArena *a, AstLocal n);
 
 AstLocal ast_parent(const AstArena *a, AstLocal n);
 AstLocal ast_first_child(const AstArena *a, AstLocal n);

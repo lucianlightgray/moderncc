@@ -166,17 +166,6 @@ static void suite_cfg(void) {
 	ast_arena_free(a);
 }
 
-static void suite_provenance(void) {
-	AstArena *a = ast_arena_new();
-	AstLocal n = ast_node(a, AST_Binary);
-	ast_set_op(a, n, '+');
-	ast_set_cst(a, n, 0x0000000700000012ull);
-	ast_set_type(a, n, 3, 0);
-	CHECK(ast_cst(a, n) == 0x0000000700000012ull, "cst provenance round-trips");
-	CHECK(ast_type_t(a, n) == 3, "type_t round-trips");
-	ast_arena_free(a);
-}
-
 static void suite_template(void) {
 	AstArena *a = ast_arena_new();
 	AstLocal add = build_expr(a);
@@ -1207,8 +1196,6 @@ int main(int argc, char **argv) {
 		suite_dump();
 	if (!only || !strcmp(only, "cfg"))
 		suite_cfg();
-	if (!only || !strcmp(only, "provenance"))
-		suite_provenance();
 	if (!only || !strcmp(only, "template"))
 		suite_template();
 	if (!only || !strcmp(only, "intention"))

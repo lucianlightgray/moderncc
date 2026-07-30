@@ -77,7 +77,6 @@ struct AstArena {
 	uint64_t *ival;
 	uint64_t *fbits;
 	uint64_t *sym;
-	uint64_t *cst;
 
 	AstLocal count;
 	AstLocal cap;
@@ -104,7 +103,6 @@ static void ast_grow(AstArena *a, AstLocal need) { MCC_TRACE("enter\n");
 	AST_REGROW(ival);
 	AST_REGROW(fbits);
 	AST_REGROW(sym);
-	AST_REGROW(cst);
 #undef AST_REGROW
 	a->cap = ncap;
 }
@@ -149,7 +147,6 @@ void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	free(a->ival);
 	free(a->fbits);
 	free(a->sym);
-	free(a->cst);
 	free(a);
 }
 
@@ -177,7 +174,6 @@ AstArena *ast_arena_clone(const AstArena *src) { MCC_TRACE("enter\n");
 	AST_DUP(ival);
 	AST_DUP(fbits);
 	AST_DUP(sym);
-	AST_DUP(cst);
 #undef AST_DUP
 	return a;
 }
@@ -230,11 +226,10 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 	AST_SLICE_ALLOC(ival);
 	AST_SLICE_ALLOC(fbits);
 	AST_SLICE_ALLOC(sym);
-	AST_SLICE_ALLOC(cst);
 #undef AST_SLICE_ALLOC
 	if (!a->kind || !a->parent || !a->first_child || !a->last_child ||
 			!a->next_sib || !a->nchild || !a->op || !a->type_t || !a->type_ref ||
-			!a->ival || !a->fbits || !a->sym || !a->cst) { MCC_TRACE("br\n");
+			!a->ival || !a->fbits || !a->sym) { MCC_TRACE("br\n");
 		free(map);
 		free(order);
 		ast_arena_free(a);
@@ -255,7 +250,6 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 		a->ival[i] = src->ival[s];
 		a->fbits[i] = src->fbits[s];
 		a->sym[i] = src->sym[s];
-		a->cst[i] = src->cst[s];
 	}
 #undef AST_SLICE_LINK
 	free(map);
@@ -279,7 +273,6 @@ AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 	a->ival[n] = 0;
 	a->fbits[n] = 0;
 	a->sym[n] = 0;
-	a->cst[n] = 0;
 	a->epoch++;
 	return n;
 }
@@ -333,11 +326,6 @@ void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym) { MCC_TRACE("enter\n");
 	a->epoch++;
 	a->sym[n] = sym;
 }
-void ast_set_cst(AstArena *a, AstLocal n, uint64_t cst_id) { MCC_TRACE("enter\n");
-	a->epoch++;
-	a->cst[n] = cst_id;
-}
-
 uint16_t ast_kind(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->kind[n];
 }
@@ -359,10 +347,6 @@ uint64_t ast_fbits(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 uint64_t ast_sym(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->sym[n];
 }
-uint64_t ast_cst(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
-	return a->cst[n];
-}
-
 AstLocal ast_parent(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->parent[n];
 }
@@ -405,9 +389,8 @@ static const char *const kind_names[AST_KIND_COUNT] = {
 		"Binary",
 		"Convert",
 		"Invoke",
-		"InitList",
 		"Poison",
-		"Data",
+		"StoreVal",
 };
 
 const char *ast_kind_name(uint16_t kind) { MCC_TRACE("enter\n");
@@ -848,10 +831,12 @@ static long ast_slice_window_scan(const AstArena *a, uint64_t gates) { MCC_TRACE
 #define AST_SLICE_REC_PROVEN_BIT ((uint64_t)1 << 32)
 #define AST_SLICE_RECWORDS 5
 #define AST_SLICE_RECBYTES (AST_SLICE_RECWORDS * 8)
-#define AST_SLICE_REC_MAGIC 0x534du /* 'SM' — bumped from 'SL' when the
-                                       eligible word widened the record from 4
-                                       to 5 words; old files now skip as foreign
-                                       rather than misparse at the wrong stride. */
+#define AST_SLICE_REC_MAGIC 0x534eu /* 'SN' — bumped from 'SM' when the AST kind
+                                       renumbering (AST_InitList/AST_Data
+                                       removed) changed every stored ident; 'SM'
+                                       was the 4-to-5-word widening. Old files
+                                       skip as foreign rather than hit a stale
+                                       ident that now names a different slice. */
 
 /* Serialize `n` records into `buf`; returns bytes written or -1 if `cap` is too
    small. */
@@ -1054,6 +1039,18 @@ static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
 	return ast_slice_probe_table_ex(a, table, table_n, ~(uint64_t)0, out_gates, 0);
 }
 
+static int ast_subtree_has_storeval(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal c;
+	if (n == AST_NONE || n >= a->count)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_StoreVal)
+		{ MCC_TRACE("br\n"); return 1; }
+	for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_subtree_has_storeval(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 /* ---- Node-stable in-arena splice (roadmap 14) ----------------------------
    Inverse of ast_slice_extract: replace the subtree rooted at `site_root` in
    arena `a` with a deep copy of the (optimized) kernel subtree rooted at
@@ -1065,7 +1062,7 @@ static int ast_slice_probe_table(const AstArena *a, const AstSliceMemo *table,
      - The site_root slot is RE-USED as the spliced kernel's root, so its
        parent[], next_sib[], and its position in the parent's child list are
        left bit-for-bit unchanged. Only site_root's own payload columns (kind,
-       op, type, ival, fbits, sym, cst) and its child links are overwritten.
+       op, type, ival, fbits, sym) and its child links are overwritten.
      - Therefore EVERY live node index OUTSIDE the replaced subtree keeps its
        index AND all of its SoA field values unchanged -- ancestors, siblings,
        and unrelated subtrees are untouched (no renumbering / compaction).
@@ -1086,7 +1083,6 @@ static AstLocal ast_slice_graft_rec(AstArena *a, const AstArena *k,
 	ast_set_ival(a, n, ast_ival(k, ksrc));
 	ast_set_fbits(a, n, ast_fbits(k, ksrc));
 	ast_set_sym(a, n, ast_sym(k, ksrc));
-	ast_set_cst(a, n, ast_cst(k, ksrc));
 	for (c = ast_first_child(k, ksrc); c != AST_NONE; c = ast_next_sib(k, c)) { MCC_TRACE("br\n");
 		cc = ast_slice_graft_rec(a, k, c);
 		ast_add_child(a, n, cc);
@@ -1102,6 +1098,8 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 		{ MCC_TRACE("br\n"); return 0; }
 	if (site_root >= a->count || kernel_root >= kernel_src->count)
 		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_subtree_has_storeval(kernel_src, kernel_root))
+		{ MCC_TRACE("br\n"); return 0; }
 	/* Re-use site_root's slot for the kernel root (preserves its parent/sibling
 	   links); orphan the old descendants in place; append the kernel body. */
 	ast_clear_children(a, site_root);
@@ -1112,7 +1110,6 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 	ast_set_ival(a, site_root, ast_ival(kernel_src, kernel_root));
 	ast_set_fbits(a, site_root, ast_fbits(kernel_src, kernel_root));
 	ast_set_sym(a, site_root, ast_sym(kernel_src, kernel_root));
-	ast_set_cst(a, site_root, ast_cst(kernel_src, kernel_root));
 	spliced = 1;
 	for (c = ast_first_child(kernel_src, kernel_root); c != AST_NONE;
 			 c = ast_next_sib(kernel_src, c)) { MCC_TRACE("br\n");
@@ -2131,22 +2128,22 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 																		 o4 || s1->optimize_size || s1->optimize >= 2);
 	ast_promo_incdec_env = ast_env_gate("MCC_AST_PROMO_INCDEC",
 																			o4 || s1->optimize_size || s1->optimize >= 2);
-	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 2);
-	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 2);
-	ast_storeval_constl_env = ast_env_gate("MCC_AST_STOREVAL_CONSTL", o4 || s1->optimize >= 2);
-	ast_convert_gv_env = ast_env_gate("MCC_AST_CONVERT_GV", o4 || s1->optimize >= 2);
-	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", o4 || s1->optimize >= 2);
-	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", o4 || s1->optimize >= 2);
-	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", o4 || s1->optimize >= 2);
-	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 2);
-	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 2);
-	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 2);
-	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", o4 || s1->optimize >= 2);
+	ast_chainstore_env = ast_env_gate("MCC_AST_CHAINSTORE", o4 || s1->optimize >= 1);
+	ast_storeval_call_env = ast_env_gate("MCC_AST_STOREVAL_CALL", o4 || s1->optimize >= 1);
+	ast_storeval_constl_env = ast_env_gate("MCC_AST_STOREVAL_CONSTL", o4 || s1->optimize >= 1);
+	ast_convert_gv_env = ast_env_gate("MCC_AST_CONVERT_GV", o4 || s1->optimize >= 1);
+	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", o4 || s1->optimize >= 1);
+	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", o4 || s1->optimize >= 1);
+	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", o4 || s1->optimize >= 1);
+	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 1);
+	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
+	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 1);
+	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", o4 || s1->optimize >= 1);
 	ast_loopcond_store_env = ast_env_gate("MCC_AST_LOOPCOND_STORE", 0);
-	ast_ternary_discard_env = ast_env_gate("MCC_AST_TERNARY_DISCARD", o4 || s1->optimize >= 2);
-	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
-	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
-	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 2);
+	ast_ternary_discard_env = ast_env_gate("MCC_AST_TERNARY_DISCARD", o4 || s1->optimize >= 1);
+	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 1);
+	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 1);
+	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 1);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
@@ -3124,7 +3121,7 @@ void ast_hook_for_begin(int has_cond) { MCC_TRACE("enter\n");
 		return;
 	}
 	AstLocal loop = ast_node(ast_cur, AST_If);
-	ast_set_op(ast_cur, loop, has_cond ? 3 : 5);
+	ast_set_op(ast_cur, loop, has_cond ? 3 : 8);
 	ast_add_child(ast_cur, ast_cur_bb, loop);
 	ast_cf_if[ast_cf_top] = loop;
 	ast_cf_savebb[ast_cf_top] = ast_cur_bb;
@@ -6470,7 +6467,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				gsym(aa);
 				break;
 			}
-			if (ast_op(a, s) == 5) { MCC_TRACE("br\n");
+			if (ast_op(a, s) == 8) { MCC_TRACE("br\n");
 				int cc = gind();
 				int dd = cc;
 				AstLocal incrbb = ast_child(a, s, 0);
@@ -7987,7 +7984,6 @@ static void ast_ident_adopt(AstArena *a, AstLocal n, AstLocal x) { MCC_TRACE("en
 	a->ival[n] = a->ival[x];
 	a->fbits[n] = a->fbits[x];
 	a->sym[n] = a->sym[x];
-	a->cst[n] = a->cst[x];
 	a->first_child[n] = a->first_child[x];
 	a->last_child[n] = a->last_child[x];
 	a->nchild[n] = a->nchild[x];
@@ -8006,7 +8002,6 @@ static void ast_ident_setlit(AstArena *a, AstLocal n, int tt, uint64_t v) { MCC_
 	ast_set_ival(a, n, value64(v, tt));
 	ast_set_sym(a, n, 0);
 	ast_set_fbits(a, n, 0);
-	ast_set_cst(a, n, 0);
 }
 
 static int ast_ii_width(int tt) { MCC_TRACE("enter\n");
@@ -8875,7 +8870,7 @@ static int ast_cprop_arm_clean(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k = ast_kind(a, n);
 	if (k == AST_Return || k == AST_Jump)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (k == AST_If && ast_op(a, n) >= 2 && ast_op(a, n) <= 6)
+	if (k == AST_If && ((ast_op(a, n) >= 2 && ast_op(a, n) <= 6) || ast_op(a, n) == 8))
 		{ MCC_TRACE("br\n"); return 0; }
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); if (!ast_cprop_arm_clean(a, c))
@@ -9021,7 +9016,7 @@ static void ast_cprop_stmt(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 		ast_cprop_state_load(&in);
 		ast_cprop_stmts(a, eb);
 		ast_cprop_state_meet(&tout);
-	} else if (k == AST_If && ast_op(a, s) >= 2 && ast_op(a, s) <= 6) { MCC_TRACE("br\n");
+	} else if (k == AST_If && ((ast_op(a, s) >= 2 && ast_op(a, s) <= 6) || ast_op(a, s) == 8)) { MCC_TRACE("br\n");
 		if (ast_op(a, s) == 6 && ast_cprop_switch_meet(a, s))
 			{ MCC_TRACE("br\n"); return; }
 		for (int i = 0; i < ast_cprop_kn;)
@@ -9697,7 +9692,6 @@ static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) { MCC_TRACE("e
 	a->ival[n] = a->ival[ref];
 	a->fbits[n] = a->fbits[ref];
 	a->sym[n] = a->sym[ref];
-	a->cst[n] = a->cst[ref];
 }
 
 /* V-cse(b): commutative-aware match. `a OP b` and `b OP a` compute the same value
@@ -9838,7 +9832,7 @@ static int ast_licm_is_loop(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	if (ast_kind(a, s) != AST_If)
 		{ MCC_TRACE("br\n"); return 0; }
 	int op = ast_op(a, s);
-	return op == 2 || op == 3 || op == 4 || op == 5;
+	return op == 2 || op == 3 || op == 4 || op == 8;
 }
 
 #define AST_COST_PRESS_MAX 64
@@ -10040,7 +10034,6 @@ static AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, d, ast_ival(a, n));
 	ast_set_fbits(a, d, ast_fbits(a, n));
 	ast_set_sym(a, d, ast_sym(a, n));
-	ast_set_cst(a, d, ast_cst(a, n));
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
 			 c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); ast_add_child(a, d, ast_dup_sub(a, c)); }
@@ -10153,7 +10146,6 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 	ast_set_ival(dst, d, ast_ival(src, n));
 	ast_set_fbits(dst, d, ast_fbits(src, n));
 	ast_set_sym(dst, d, ast_sym(src, n));
-	ast_set_cst(dst, d, ast_cst(src, n));
 	for (AstLocal c = ast_first_child(src, n); c != AST_NONE; c = ast_next_sib(src, c))
 		{ MCC_TRACE("br\n"); ast_add_child(dst, d, ast_inline_copy_expr(dst, src, c, argmap, param_off, nparams)); }
 	return d;
@@ -10198,7 +10190,6 @@ static int ast_inline_graft_node(AstArena *a, AstLocal call, struct AstInlineFn 
 	ast_set_ival(a, call, 0);
 	ast_set_fbits(a, call, 0);
 	ast_set_sym(a, call, 0);
-	ast_set_cst(a, call, 0);
 	ast_clear_children(a, call);
 	ast_add_child(a, call, nv);
 	return 1;
@@ -10552,7 +10543,6 @@ static int ast_bf_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, bit);
 	ast_add_child(a, n, guard);
@@ -10578,7 +10568,6 @@ static int ast_bf_try_land(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, member);
 	ast_add_child(a, n, ast_bf_lit(a, VT_INT, 1));
@@ -10967,7 +10956,6 @@ static int ast_range_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, kexpr);
 	ast_add_child(a, n, hlit);
@@ -11074,7 +11062,6 @@ static int ast_range_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, kexpr);
 	ast_add_child(a, n, hlit);
@@ -11171,7 +11158,6 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		ast_set_ival(a, n, 0);
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
-		ast_set_cst(a, n, 0);
 		ast_clear_children(a, n);
 		if (op == '/') { MCC_TRACE("br\n"); /* n := inner >> shamt */
 			ast_set_op(a, n, TOK_SHR);
@@ -11228,7 +11214,6 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 		ast_set_ival(a, n, 0);
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
-		ast_set_cst(a, n, 0);
 		ast_clear_children(a, n);
 		if (neg) { MCC_TRACE("br\n"); /* n := 0 - (sum >> k) */
 			AstLocal q = ast_bf_bin(a, TOK_SAR, S32, sum, ast_bf_lit(a, S32, (uint64_t)k));
@@ -11249,7 +11234,6 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 		ast_set_ival(a, n, 0);
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
-		ast_set_cst(a, n, 0);
 		ast_clear_children(a, n);
 		ast_add_child(a, n, xdup);
 		ast_add_child(a, n, shl);
@@ -11370,7 +11354,6 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	if (op == '/') { MCC_TRACE("br\n"); /* n := q2 + signbit (the quotient) */
 		ast_set_op(a, n, '+');
@@ -11437,7 +11420,6 @@ static int ast_divmagic_try_u64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	if (op == '/') { MCC_TRACE("br\n");
 		ast_set_op(a, n, TOK_SHR);
@@ -11486,7 +11468,6 @@ static int ast_divmagic_try_s64_pow2(AstArena *a, AstLocal n) { MCC_TRACE("enter
 		ast_set_ival(a, n, 0);
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
-		ast_set_cst(a, n, 0);
 		ast_clear_children(a, n);
 		if (neg) { MCC_TRACE("br\n");
 			AstLocal q = ast_bf_bin(a, TOK_SAR, S64, sum, ast_bf_lit(a, S64, (uint64_t)k));
@@ -11507,7 +11488,6 @@ static int ast_divmagic_try_s64_pow2(AstArena *a, AstLocal n) { MCC_TRACE("enter
 		ast_set_ival(a, n, 0);
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
-		ast_set_cst(a, n, 0);
 		ast_clear_children(a, n);
 		ast_add_child(a, n, xdup);
 		ast_add_child(a, n, shl);
@@ -11577,7 +11557,6 @@ static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	if (op == '/') { MCC_TRACE("br\n");
 		ast_set_op(a, n, '+');
@@ -11729,7 +11708,6 @@ static int ast_abs_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_set_kind(a, n, AST_Binary); /* was AST_If (ternary) */
 	ast_clear_children(a, n);
 	if (mode == 0) { MCC_TRACE("br\n"); /* abs = (x^s) - s */
@@ -11944,7 +11922,6 @@ static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, ast_dup_sub(a, x));
 	ast_add_child(a, n, ast_bf_lit(a, nt, combined));
@@ -11988,7 +11965,6 @@ static int ast_reassoc_shlshr(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, ast_dup_sub(a, x));
 	ast_add_child(a, n, ast_bf_lit(a, nt, mask));
@@ -12030,7 +12006,6 @@ static int ast_reassoc_shrshl(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, ast_dup_sub(a, x));
 	ast_add_child(a, n, ast_bf_lit(a, nt, mask));
@@ -12100,7 +12075,6 @@ static int ast_reassoc_muldist(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_cst(a, n, 0);
 	ast_clear_children(a, n);
 	ast_add_child(a, n, ast_dup_sub(a, x1));
 	ast_add_child(a, n, ast_bf_lit(a, nt, combined));
@@ -12559,7 +12533,7 @@ static int ast_ivsr_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (ast_kind(a, n) != AST_If)
 			{ MCC_TRACE("br\n"); continue; }
 		int op = ast_op(a, n);
-		if (op != 3 && op != 5)
+		if (op != 3 && op != 8)
 			{ MCC_TRACE("br\n"); continue; }
 		if (ast_sccp_has_label(a, n))
 			{ MCC_TRACE("br\n"); continue; }
@@ -12778,7 +12752,7 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (ast_kind(a, n) != AST_If)
 			{ MCC_TRACE("br\n"); continue; }
 		int op = ast_op(a, n);
-		if (op != 3 && op != 5)
+		if (op != 3 && op != 8)
 			{ MCC_TRACE("br\n"); continue; }
 		AstLocal parent = ast_parent(a, n);
 		if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
@@ -12931,7 +12905,7 @@ static void ast_loop_parts(AstArena *a, AstLocal loop, int op, AstLocal *body,
 		*body = ast_child(a, loop, 0);
 		*incr = AST_NONE;
 		break;
-	case 5:
+	case 8:
 		*incr = ast_child(a, loop, 0);
 		*body = ast_child(a, loop, 1);
 		break;
@@ -13060,7 +13034,7 @@ static void ast_loopnest_compute(AstArena *a) { MCC_TRACE("enter\n");
 			li->unanalyzable = 1;
 			continue;
 		}
-		AstLocal ivsrc = (li->op == 3 || li->op == 5) ? li->incr : li->body;
+		AstLocal ivsrc = (li->op == 3 || li->op == 8) ? li->incr : li->body;
 		if (ast_loop_find_iv(a, n, ivsrc, &li->iv_off, &li->iv_tt, &li->iv_stride))
 			{ MCC_TRACE("br\n"); li->has_iv = 1; }
 		if (li->has_iv && li->cond != AST_NONE)
@@ -13146,7 +13120,7 @@ static const char *ast_loop_kind_name(int op) { MCC_TRACE("enter\n");
 		return "for";
 	case 4:
 		return "do-while";
-	case 5:
+	case 8:
 		return "for-noinc";
 	}
 	return "?";
@@ -15005,7 +14979,8 @@ static int ast_search_memo_n;
  * opt-in with MCC_AST_SEARCH; a missing/unwritable cache dir degrades to the
  * in-memory memo. The in-memory working set is capped (AST_SEARCH_MEMO_CAP), so an
  * eviction rewrite also compacts the file down to that hot set. */
-#define AST_SEARCH_MEMO_MAGIC 0x4644u /* 'FD' — order-carrying 7-word record */
+#define AST_SEARCH_MEMO_MAGIC 0x4645u /* 'FE' — order-carrying 7-word record;
+ * bumped from 'FD' when the AST kind renumbering changed every intention hash. */
 /* On-disk record word layout: the low AST_GATE_BITS hold the AstGateMask (up to 48
  * strategy knobs — past any host's native width), MAGIC occupies the high 16 bits so
  * a torn/stale record is still skippable without a global header. Widened from the
@@ -15814,7 +15789,6 @@ static AstLocal ast_slice_copy_into(AstArena *dst, const AstArena *src,
 	ast_set_ival(dst, n, ast_ival(src, snode));
 	ast_set_fbits(dst, n, ast_fbits(src, snode));
 	ast_set_sym(dst, n, ast_sym(src, snode));
-	ast_set_cst(dst, n, ast_cst(src, snode));
 	for (c = ast_first_child(src, snode); c != AST_NONE; c = ast_next_sib(src, c)) {
 		MCC_TRACE("br\n");
 		cc = ast_slice_copy_into(dst, src, c);
@@ -15827,6 +15801,8 @@ AstArena *ast_slice_wrap_kernel(const AstArena *a, AstLocal root) { MCC_TRACE("e
 	AstArena *k;
 	AstLocal bb, ret, e;
 	if (!a || root >= a->count)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if (ast_subtree_has_storeval(a, root))
 		{ MCC_TRACE("br\n"); return NULL; }
 	k = ast_arena_new();
 	if (!k)

@@ -14,11 +14,19 @@ cmake_minimum_required(VERSION 3.22)
 #         -DTMPDIR=<dir> -DREGEN=1 -P tests/ast/verify_ratchet.cmake
 #
 # Required -D args: MCC CORPUS BASELINE TMPDIR
-# Optional: EXTRA (extra ;-list of sources), REGEN (0/1)
+# Optional: EXTRA (extra ;-list of sources), REGEN (0/1), OPT (default -O2)
+#
+# OPT selects the sweep optimization level. The recorder-modelling gates are
+# enabled from -O1 up, so the -O1 and -O2 gap sets are identical and both levels
+# share one baseline; sweeping each guards against them drifting apart.
 #
 
 if(NOT MCC OR NOT CORPUS OR NOT BASELINE OR NOT TMPDIR)
     message(FATAL_ERROR "verify_ratchet: MCC, CORPUS, BASELINE, TMPDIR are required")
+endif()
+
+if(NOT OPT)
+    set(OPT "-O2")
 endif()
 
 file(MAKE_DIRECTORY "${TMPDIR}")
@@ -34,7 +42,7 @@ foreach(_f ${_srcs})
     file(RELATIVE_PATH _rel "${CORPUS}" "${_f}")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MCC_AST_VERIFY=1" "MCC_AST_TEMPLATES=0"
-                "${MCC}" -w -O2 -c -o "${TMPDIR}/verify_sweep.o" "${_f}"
+                "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/verify_sweep.o" "${_f}"
         OUTPUT_QUIET ERROR_VARIABLE _err RESULT_VARIABLE _rc)
     string(REPLACE "\n" ";" _lines "${_err}")
     foreach(_ln ${_lines})
