@@ -10916,7 +10916,14 @@ static int ast_range_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	hlit = ast_bf_lit(a, kw, span);
 	MCC_TRACE("range fold key=%u lo=%lld hi=%lld span=%llu kw=0x%x\n", (unsigned)key,
 						(long long)lo, (long long)hi, (unsigned long long)span, kw);
-	ast_set_op(a, n, TOK_ULE);
+	/* AST_FB_LANDOR_INVERT on the LAND means the parser recorded `!(lo<=x && x<=hi)`
+	   -- the landor consumer honors it by swapping the branch, but the folded node is
+	   a plain comparison (the else path in ast_replay_value) which does NOT, so the
+	   negation would be lost. Bake it into the comparison instead: the negation of
+	   `(unsigned)(x-lo) <= span` (TOK_ULE 0x96) is `> span` (TOK_UGT 0x97 = ULE^1),
+	   exactly the paired-op inversion the consumer uses (`cmp_op ^= 1`). Missing this
+	   silently inverted range-check asserts, e.g. arm64 `intr`. */
+	ast_set_op(a, n, (unsigned)TOK_ULE ^ ((ast_fbits(a, n) & AST_FB_LANDOR_INVERT) ? 1u : 0u));
 	ast_set_type(a, n, VT_INT, 0);
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
