@@ -5172,6 +5172,31 @@ if(MCC_BUILD_TESTS)
                         MCC_AST_SPILL_SHARE=1 MCC_AST_VLAT=1 MCC_AST_DIVMAGIC=1)
             set_tests_properties(selfhost-fixpoint-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
+
+            # The store-shape gates on real arm64 silicon. qemu-user runs on
+            # x86-TSO, so a native arm64 host is the only place these three see a
+            # weak memory model; all three are measured to change src/mcc.c's
+            # object there, so the cell is not vacuous. -O2, -O3 and -Os because
+            # each carries a different default gate set.
+            if(MCC_CPU STREQUAL "arm64" AND NOT CMAKE_CROSSCOMPILING)
+                foreach(_shopt IN ITEMS -O2 -O3 -Os)
+                    add_test(NAME "selfhost-fixpoint-memmodel${_shopt}"
+                        COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
+                                "${CMAKE_BINARY_DIR}" "--opt=${_shopt}"
+                                MCC_AST_CHAINSTORE=1 MCC_AST_PROMO_INCDEC=1
+                                MCC_AST_IVSR_PTR=1 MCC_AST_OPASSIGN=1)
+                    set_tests_properties("selfhost-fixpoint-memmodel${_shopt}"
+                        PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+                endforeach()
+
+                add_test(NAME selfhost-smoke-memmodel
+                    COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
+                            "${CMAKE_BINARY_DIR}"
+                            MCC_AST_CHAINSTORE=1 MCC_AST_PROMO_INCDEC=1
+                            MCC_AST_IVSR_PTR=1 MCC_AST_OPASSIGN=1)
+                set_tests_properties(selfhost-smoke-memmodel PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                    TIMEOUT 300)
+            endif()
         endif()
 
         # NOT WIN32: the Windows/x64 icache flush (mcc_jit_publish + host_icache_flush,

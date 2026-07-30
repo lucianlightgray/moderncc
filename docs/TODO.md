@@ -244,7 +244,6 @@ Numbered by precedence: a lower number wins a conflict with a higher one.
 - Validate stack auto over-alignment on i386-PE and arm64-PE.
 - Normalize CMake incrementally with autodetection, folded `.cmake` files and a verifiable target.
 - Run `tools/runtime-bench.py` on the arm64-native CI cell and record a baseline JSON to diff against. On macOS it silently drops the instruction columns — add a Darwin instruction-count path or make the harness say it is timing-only.
-- Validate `MCC_AST_CHAINSTORE`, `MCC_AST_PROMO_INCDEC`, `MCC_AST_IVSR_PTR` and the `exec-ivsrptr`/`exec-chainstore` combinations on arm64-macOS; it is the one place the arm64 backend runs with a real memory model.
 - Verify `-fc99-inline-body` on Mach-O: the weak out-of-line body path through `N_WEAK_DEF`/`EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION` has never been exercised, and confirm the inlining half works there.
 - Add a built-in ad-hoc codesigner instead of shelling out to `/usr/bin/codesign`, and wire `machofat` into `dist-macos` packaging.
 - Remove or replace the dangling `docs/NOTES.md`, `docs/JIT-PLAN.md`, `docs/AST.md`, `docs/SUBSTRATE-PLAN.md`, `SPLIT.md` and `GATED.md` pointers; none of those files exists in the repo or its history.
