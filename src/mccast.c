@@ -14944,6 +14944,7 @@ enum {
 	JOP_PUSHLIT,
 	JOP_GV,
 	JOP_VSTORE,
+	JOP_GENOP,
 	JOP_COUNT
 };
 
@@ -15004,6 +15005,17 @@ static int jrn_rawn, jrn_rawcap;
 static JrnOp *jrn_pending;
 #define JRN_REC (jrn_pending && jrn_depth == 1)
 
+typedef struct JrnSub {
+	int kind;
+	int ind_pre, ind_post;
+	int parent;
+} JrnSub;
+
+static JrnSub *jrn_sub;
+static int jrn_subn, jrn_subcap;
+static int jrn_sub_open[64];
+static int jrn_sub_nopen;
+
 static int *jrn_fc;
 static int jrn_fcn, jrn_fccap;
 static int jrn_fc_cur, jrn_fc_end;
@@ -15060,7 +15072,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
 			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
 			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit",
-			"gv",        "vstore"};
+			"gv",        "vstore",    "genop"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15165,8 +15177,22 @@ static void jrn_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 	JrnOp *o;
 	if (!jrn_active)
 		{ MCC_TRACE("br\n"); return; }
-	if (jrn_depth++ > 0)
-		{ MCC_TRACE("br\n"); return; }
+	if (jrn_depth++ > 0) { MCC_TRACE("br\n");
+		JrnSub *u;
+		if (jrn_subn >= jrn_subcap) { MCC_TRACE("br\n");
+			jrn_subcap = jrn_subcap ? jrn_subcap * 2 : 256;
+			jrn_sub = mcc_realloc(jrn_sub, (size_t)jrn_subcap * sizeof *jrn_sub);
+		}
+		u = &jrn_sub[jrn_subn];
+		u->kind = kind;
+		u->ind_pre = ind;
+		u->ind_post = -1;
+		u->parent = jrn_n - 1;
+		if (jrn_sub_nopen < (int)(sizeof jrn_sub_open / sizeof jrn_sub_open[0]))
+			{ MCC_TRACE("br\n"); jrn_sub_open[jrn_sub_nopen++] = jrn_subn; }
+		jrn_subn++;
+		return;
+	}
 	jrn_gap();
 	o = jrn_new_op(kind);
 	o->nocode = nocode_wanted;
@@ -15184,8 +15210,11 @@ static void jrn_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 static void jrn_end(void) { MCC_TRACE("enter\n");
 	if (!jrn_active)
 		{ MCC_TRACE("br\n"); return; }
-	if (--jrn_depth > 0)
-		{ MCC_TRACE("br\n"); return; }
+	if (--jrn_depth > 0) { MCC_TRACE("br\n");
+		if (jrn_sub_nopen > 0)
+			{ MCC_TRACE("br\n"); jrn_sub[jrn_sub_open[--jrn_sub_nopen]].ind_post = ind; }
+		return;
+	}
 	if (jrn_pending) { MCC_TRACE("br\n");
 		jrn_pending->ind_post = ind;
 		jrn_pending->rel_post = jrn_relofs();
@@ -15328,6 +15357,8 @@ void jrn_vstore(void) { MCC_TRACE("enter\n");
 	(vstore)();
 	jrn_end();
 }
+
+JRN_W1(gen_op, JOP_GENOP)
 
 void jrn_vpushv(SValue *v) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_VPUSHV, v);
@@ -15482,6 +15513,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_VROTT: (vrott)(o->a0); break;
 	case JOP_VREV: (vrev)(o->a0); break;
 	case JOP_VSTORE: (vstore)(); break;
+	case JOP_GENOP: (gen_op)(o->a0); break;
 	case JOP_GV: { MCC_TRACE("br\n");
 		uint64_t pin = ast_pinned_regs;
 		int got;
@@ -15630,6 +15662,8 @@ static void jrn_run(void) { MCC_TRACE("enter\n");
 static void jrn_reset(void) { MCC_TRACE("enter\n");
 	jrn_last_ok = 0;
 	jrn_n = 0;
+	jrn_subn = 0;
+	jrn_sub_nopen = 0;
 	jrn_vsn = 0;
 	jrn_rawn = 0;
 	jrn_fcn = 0;
@@ -15961,6 +15995,21 @@ static void jrn_oracle_dump(const char *fn, const unsigned char *base, int blen,
 		for (j = p; j < q && j < blen; j++)
 			{ MCC_TRACE("br\n"); fprintf(stderr, " %02x", base[j]); }
 		fprintf(stderr, "\n");
+		for (int s = 0; s < jrn_subn; s++) { MCC_TRACE("br\n");
+			JrnSub *u = &jrn_sub[s];
+			int sp, sq;
+			if (u->parent != i || u->ind_post < 0)
+				{ MCC_TRACE("br\n"); continue; }
+			sp = u->ind_pre - ast_body_ind_sv;
+			sq = u->ind_post - ast_body_ind_sv;
+			if (sq <= sp)
+				{ MCC_TRACE("br\n"); continue; }
+			fprintf(stderr, "[jrn-oracle]     sub %-10s +%d..+%d:",
+							jrn_op_name(u->kind), sp, sq);
+			for (j = sp; j < sq && j < blen; j++)
+				{ MCC_TRACE("br\n"); fprintf(stderr, " %02x", base[j]); }
+			fprintf(stderr, "\n");
+		}
 	}
 	lo = d - 8 < 0 ? 0 : d - 8;
 	jrn_oracle_win("jrn/parser", base, blen, lo, 24);

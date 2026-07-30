@@ -75,6 +75,7 @@ void jrn_vrev(int n);
 int jrn_gv(int rc);
 void jrn_vstore(void);
 int jrn_pred(int p);
+void jrn_gen_op(int op);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -133,6 +134,7 @@ int jrn_pred(int p);
 #define vrev(...) jrn_vrev(__VA_ARGS__)
 #define gv(...) jrn_gv(__VA_ARGS__)
 #define vstore(...) jrn_vstore(__VA_ARGS__)
+#define gen_op(...) jrn_gen_op(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -3906,7 +3908,7 @@ static int bf_operand_bits(int tt) { MCC_TRACE("enter\n");
 	return (tt & VT_BTYPE) == VT_LLONG ? 64 : 32;
 }
 
-ST_FUNC void gen_op(int op) { MCC_TRACE("enter\n");
+ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int t1, t2, bt1, bt2, t;
 	int bf_trunc = 0;
 #if MCC_CONFIG_OPTIMIZER
@@ -15092,6 +15094,7 @@ static int decl(int l) {
 #undef vrev
 #undef gv
 #undef vstore
+#undef gen_op
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
