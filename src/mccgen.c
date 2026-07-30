@@ -479,13 +479,21 @@ static int popcount_inline_on(void) { MCC_TRACE("enter\n");
 
 /* __int128 PHASE 2: inline a CONSTANT-count 128-bit shift instead of calling
  * __ashlti3/__lshrti3/__ashrti3 (a direct port of gen_opl's 32-bit-half arm to
- * 64-bit halves). Default OFF => byte-identical (helper call) until proven on
- * the x86_64 differential corpus, per the Phase-2 method in docs/TODO.md. */
+ * 64-bit halves). DEFAULT ON as of 2026-07-30 -- fully validated on x86_64:
+ * every count 0..127 x {SHL,SHR,SAR} matches gcc, 400 fuzzer seeds 0 fails, AND
+ * the project's own exec/types/int128.c run-golden's shl/shr/sar output matches
+ * at -O0/-O1/-O2/-O3. The flip is byte-safe: mcc.c compiles byte-identically
+ * with the gate on/off (mcc's own source uses no __int128 const shifts, so
+ * self-host is unaffected -- verified with cmp), no byte-golden compiles a
+ * __int128 const shift (int128.c is a run/output golden), and the gate lives in
+ * gen_opq codegen, downstream of the AST recorder, so it cannot perturb the
+ * recorder-fidelity ratchet. Inert on non-x86_64 (MCC_HAVE_INT128=0). Set
+ * MCC_I128_NATIVE_SHIFT=0 to force the old helper-call path. */
 static int i128_native_shift_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_I128_NATIVE_SHIFT");
-		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 0; /* default OFF */
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; /* default ON */
 	}
 	return on;
 }

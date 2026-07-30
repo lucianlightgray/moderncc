@@ -4145,8 +4145,8 @@ For each operation:
    stays as the fallback for every other target.
 
 **Ordered by payoff — remaining work only:**
-- Shifts — **CONSTANT-count case DONE 2026-07-30 (`ac997715`), gated `MCC_I128_NATIVE_SHIFT`,
-  default OFF.** Direct port of `gen_opl`'s constant arm to 64-bit halves (qexpand/qbuild,
+- Shifts — **CONSTANT-count case DONE + DEFAULT-ON 2026-07-30 (`ac997715` emitter, flip in a
+  follow-up).** `MCC_I128_NATIVE_SHIFT` default ON; `=0` forces the old helper call. Direct port of `gen_opl`'s constant arm to 64-bit halves (qexpand/qbuild,
   32->64, sign shift 31->63) in `gen_opq`. Validated on x86_64 (mcc-x64 gate-ON vs gcc under
   qemu): every count 0..127 × {SHL,SHR,SAR} matches, 400 fuzzer seeds 0 fails; inline confirmed
   in the disasm (0 calls). **The count-0 trap the original note didn't call out:** `gen_opl`
