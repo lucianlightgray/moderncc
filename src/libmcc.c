@@ -1807,6 +1807,14 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
 				fclose(lf);
 				mcc_add_library(s1, "gcc");
+				/* __emutls_get_address (gcc's emulated-TLS accessor the engine's
+				   _Thread_local state needs on mingw) lives in libgcc_eh.a, not
+				   libgcc.a. Add it when present so --embed-jit resolves it. */
+				snprintf(lp, sizeof lp, "%s/libgcc_eh.a", MCC_EMBED_JIT_GCC_LIBDIR);
+				if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+					fclose(lf);
+					mcc_add_library(s1, "gcc_eh");
+				}
 			} else { MCC_TRACE("br\n");
 				snprintf(lp, sizeof lp,
 								 "%s/libclang_rt.builtins-" MCC_EMBED_RT_ARCH ".a",
@@ -1822,6 +1830,25 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 #else
 		mcc_add_library(s1, "gcc");
 #endif
+		/* gcc's emulated-TLS uses posix-thread keys for its per-thread state, so
+		   the emutls accessor pulls pthread_once/key_create/getspecific. On a
+		   posix-threads mingw those live in libwinpthread.a (on the baked mingw
+		   lib dir already added above). Add it when present. */
+		{
+			char lp[1024];
+			FILE *lf;
+			snprintf(lp, sizeof lp, "%s/libwinpthread.a", MCC_EMBED_JIT_MINGW_LIBDIR);
+			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+				fclose(lf);
+				mcc_add_library(s1, "winpthread");
+			}
+		}
+		/* The emutls/gcc_eh members pulled above themselves reference the mingw
+		   CRT's TLS-directory symbol (_tls_used, in libmingw32's tlssup.o) and
+		   more libmingwex helpers. mcc's linker is single-pass, so re-add the two
+		   base libs after the compiler-support libs to satisfy those late refs. */
+		mcc_add_library(s1, "mingw32");
+		mcc_add_library(s1, "mingwex");
 		mcc_add_library(s1, "ucrt");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");

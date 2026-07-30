@@ -26,11 +26,14 @@ SKIP = 77
 # the baked engine" — a host limitation, not a mcc regression => SKIP not FAIL.
 # __emutls_get_address is libgcc's emulated-TLS entry point: winlibs GCC lowers
 # the engine's thread-locals to emulated TLS (llvm-mingw uses native SECREL TLS,
-# which the a-la-carte loader handles), so the winlibs cells can't supply it and
-# must SKIP — same category as __chkstk_ms. It co-occurs with the i686 engine's
-# SRW-lock kernel32 imports, so matching it alone SKIPs both winlibs cells; the
-# SRW symbols are deliberately NOT markers (OS imports, not compiler runtime —
-# listing them could mask a genuine import-emission linker regression).
+# which the a-la-carte loader handles). mcc's --embed-jit now resolves that whole
+# winlibs chain from the baked mingw lib dirs — __emutls_get_address from
+# libgcc_eh.a, its pthread-keyed state from libwinpthread.a, and _tls_used from
+# libmingw32's tlssup.o — so a toolchain that ships those links and PASSES; the
+# marker stays as the SKIP path for a toolchain that genuinely lacks them (e.g.
+# a compiler-rt-only i686 mingw). The i686 engine's SRW-lock kernel32 imports are
+# deliberately NOT markers (OS imports, not compiler runtime — listing them could
+# mask a genuine import-emission linker regression).
 TOOLCHAIN_LIB_MARKERS = (
     "___chkstk_ms", "__chkstk_ms", "__emutls_get_address", "libgcc",
     "clang_rt", "mingwex", "mingw32",
