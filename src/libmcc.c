@@ -1787,6 +1787,17 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 	if (ret == 0) { MCC_TRACE("br\n");
 		int saved = s1->filetype;
 		s1->filetype &= ~AFF_WHOLE_ARCHIVE;
+#ifdef MCC_TARGET_I386
+		/* The i386-PE engine is mcc-built (not gcc), so it carries none of the
+		   emulated-TLS / winpthread footprint the x86_64 gcc engine has. Its only
+		   compiler-support refs -- __chkstk and the 64-bit soft-arith -- all live
+		   in mcc's own runtime, so re-add that a la carte after the blob and skip
+		   libgcc entirely: libgcc's 64-bit soft-arith object collides with
+		   libmccrt's ('__divdi3'/'__udivdi3'/... defined twice). */
+		mcc_add_support(s1, "libmccrt.a");
+		mcc_add_library(s1, "msvcrt");
+		mcc_add_library(s1, "kernel32");
+#else
 		mcc_add_library_path(s1, MCC_EMBED_JIT_MINGW_LIBDIR);
 #ifdef MCC_EMBED_JIT_GCC_LIBDIR
 		mcc_add_library_path(s1, MCC_EMBED_JIT_GCC_LIBDIR);
@@ -1852,6 +1863,7 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 		mcc_add_library(s1, "ucrt");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
+#endif
 		s1->filetype = saved;
 	}
 #endif
