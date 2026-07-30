@@ -117,23 +117,46 @@ def run_once_cpu(exe, argv):
     return p.returncode, out, (ru.ru_utime + ru.ru_stime) * 1000.0
 
 
-def perf_available():
-    """perf works only if the binary exists AND the kernel lets us count.
-    Both checks matter: a container with perf installed but
-    perf_event_paranoid locked down fails at run time, not at which()."""
-    if not shutil.which("perf"):
-        return False
-    p = subprocess.run(["perf", "stat", "-e", "instructions", "-x,", "true"],
+def counter_backend():
+    """Which instructions-retired source this host has, or None.
+
+    perf works only if the binary exists AND the kernel lets us count. Both
+    checks matter: a container with perf installed but perf_event_paranoid
+    locked down fails at run time, not at which().
+
+    Darwin has no perf, but on Apple Silicon /usr/bin/time -l reports the same
+    counter out of rusage_info(RUSAGE_INFO_V4) -- no root, no entitlement.
+    Intel Macs have no such counter, so the probe demands a non-zero count from
+    a real workload rather than trusting the label; /usr/bin/true retires far
+    more than 1000 instructions through dyld alone."""
+    if shutil.which("perf"):
+        p = subprocess.run(["perf", "stat", "-e", "instructions", "-x,", "true"],
+                           capture_output=True, text=True)
+        if p.returncode == 0 and "instructions" in p.stderr:
+            return "perf"
+    if sys.platform == "darwin" and os.path.exists("/usr/bin/time"):
+        n = darwin_instructions("/usr/bin/true", [])
+        if n and n > 1000:
+            return "darwin"
+    return None
+
+
+def darwin_instructions(exe, argv):
+    p = subprocess.run(["/usr/bin/time", "-l", exe] + argv,
                        capture_output=True, text=True)
-    return p.returncode == 0 and "instructions" in p.stderr
+    if p.returncode != 0:
+        return None
+    for line in p.stderr.splitlines():
+        f = line.split()
+        if len(f) >= 3 and f[1] == "instructions" and f[2] == "retired":
+            try:
+                return int(f[0]) or None
+            except ValueError:
+                return None
+    return None
 
 
-def instructions_retired(exe, argv):
-    """Dynamic instruction count -- the metric that separates 'emits less work'
-    from 'got lucky on code layout'. nsieve showed why this belongs here:
-    +8.5% cycles with the instruction count unchanged to within 36 out of 4.6
-    billion, i.e. a front-end effect and not a codegen regression. Returns None
-    when perf cannot count."""
+def perf_instructions(exe, argv):
     p = subprocess.run(["perf", "stat", "-e", "instructions:u", "-x,",
                         exe] + argv, capture_output=True, text=True)
     if p.returncode != 0:
@@ -145,6 +168,19 @@ def instructions_retired(exe, argv):
                 return int(f[0])
             except ValueError:
                 return None
+    return None
+
+
+def instructions_retired(exe, argv, backend):
+    """Dynamic instruction count -- the metric that separates 'emits less work'
+    from 'got lucky on code layout'. nsieve showed why this belongs here:
+    +8.5% cycles with the instruction count unchanged to within 36 out of 4.6
+    billion, i.e. a front-end effect and not a codegen regression. Returns None
+    when the backend cannot count."""
+    if backend == "darwin":
+        return darwin_instructions(exe, argv)
+    if backend == "perf":
+        return perf_instructions(exe, argv)
     return None
 
 
@@ -339,7 +375,8 @@ def main():
     ap.add_argument("--gates", action="append", default=None)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-perf", action="store_true",
-                    help="skip the instructions-retired column even if perf works")
+                    help="skip the instructions-retired columns even where a "
+                         "counter is available (perf, or Apple Silicon time -l)")
     ap.add_argument("--assert-gate-wins", action="store_true",
                     help="ratchet: fail if a GATE_WINS flip's measured win is gone")
     args = ap.parse_args()
@@ -358,7 +395,14 @@ def main():
         print("no benchmark kernels present; skipping")
         return 77
 
-    use_perf = (not args.check_only) and (not args.no_perf) and perf_available()
+    backend = None
+    if not args.check_only and not args.no_perf:
+        backend = counter_backend()
+        if backend is None:
+            print("runtime-bench: no instructions-retired counter on this host "
+                  "(no usable perf, no Apple Silicon /usr/bin/time -l); the table "
+                  "is TIMING-ONLY and its deltas are advisory")
+    use_perf = backend is not None
     gate_sets = args.gates if args.gates else [""]
     runs = 1 if args.check_only else args.runs
     failures, results = [], {}
@@ -378,7 +422,7 @@ def main():
                 _, _, t = run_once(ref, argv)
                 ref_ms = min(ref_ms, t)
             if use_perf:
-                ref_ins = instructions_retired(ref, argv)
+                ref_ins = instructions_retired(ref, argv, backend)
                 if ref_ins is not None:
                     results.setdefault(name, {})["ref_ins"] = ref_ins
 
@@ -403,7 +447,7 @@ def main():
                     results.setdefault(name, {})["ref"] = ref_ms
                     results[name][gates or "defaults"] = best
                     if use_perf:
-                        ins = instructions_retired(exe, argv)
+                        ins = instructions_retired(exe, argv, backend)
                         if ins is not None:
                             results[name].setdefault("ins", {})[gates or "defaults"] = ins
 
