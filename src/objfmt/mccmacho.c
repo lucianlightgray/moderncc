@@ -522,6 +522,14 @@ static void mcc_macho_add_destructor(MCCState *s1) { MCC_TRACE("enter\n");
 	mh_execute_header = put_elf_sym(s1->symtab, -4096, 0,
 																	ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0,
 																	text_section->sh_num, "__mh_execute_header");
+	/* ld64 resolves ___dso_handle to the mach header and absorbs the symbol, so
+	   its linked images show only __mh_execute_header. clang emits the reference
+	   from any TU with a constructor or destructor (__cxa_atexit's third
+	   argument), and without a definition here every such clang -c object fails
+	   to link. Local, to match ld64 leaving it out of the export trie. */
+	set_elf_sym(s1->symtab, -4096, 0,
+							ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0,
+							text_section->sh_num, "___dso_handle");
 	s = find_section(s1, ".fini_array");
 	if (s->data_offset == 0)
 		{ MCC_TRACE("br\n"); return; }
@@ -1365,7 +1373,8 @@ static void macho_hide_elf_boundary_syms(MCCState *s1) { MCC_TRACE("enter\n");
 		const char *name = (char *)symtab_section->link->data + sym->st_name;
 		if (sym->st_shndx != SHN_UNDEF &&
 				ELFW(ST_BIND)(sym->st_info) == STB_GLOBAL &&
-				macho_elf_boundary_sym(name)) { MCC_TRACE("br\n");
+				(macho_elf_boundary_sym(name) ||
+				 !strcmp(name, "___dso_handle"))) { MCC_TRACE("br\n");
 			sym->st_info = ELFW(ST_INFO)(STB_LOCAL, ELFW(ST_TYPE)(sym->st_info));
 		}
 	}
@@ -2690,6 +2699,12 @@ static const char *macho_sect_to_elf_name(const char *seg, const char *sect,
 		{ MCC_TRACE("br\n"); return ".bss"; }
 	if (!strcmp(sn, "__const") || !strcmp(sn, "__cstring"))
 		{ MCC_TRACE("br\n"); return ".rodata"; }
+	/* Mach-O's spelling of the ELF init/fini arrays. Without these a clang -c
+	   object's constructors and destructors landed in a section nothing runs. */
+	if (!strcmp(sn, "__mod_init_func"))
+		{ MCC_TRACE("br\n"); return ".init_array"; }
+	if (!strcmp(sn, "__mod_term_func"))
+		{ MCC_TRACE("br\n"); return ".fini_array"; }
 	snprintf(buf, bufsz, ".%s%s", sg[0] == '_' ? sg + 2 : sg, sn[0] == '_' ? sn + 1 : sn);
 	return buf;
 }
@@ -3036,6 +3051,10 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		else
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_WRITE; }
 		sh_type = ((sh->flags & SECTION_TYPE) == S_ZEROFILL) ? SHT_NOBITS : SHT_PROGBITS;
+		if (!strcmp(name, ".init_array"))
+			{ MCC_TRACE("br\n"); sh_type = SHT_INIT_ARRAY; }
+		else if (!strcmp(name, ".fini_array"))
+			{ MCC_TRACE("br\n"); sh_type = SHT_FINI_ARRAY; }
 		align = sh->align < 31 ? (1 << sh->align) : 1;
 
 		for (j = 1; j < s1->nb_sections; j++) { MCC_TRACE("br\n");
