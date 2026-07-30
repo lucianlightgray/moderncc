@@ -216,14 +216,52 @@ char *ts_first_error_line(const char *text,
 	return fallback;
 }
 
+int ts_cc_is_cl(const char *cc) {
+	const char *b = cc, *p;
+	size_t n;
+	if (!cc)
+		return 0;
+	for (p = cc; *p; ++p)
+		if (*p == '/' || *p == '\\')
+			b = p + 1;
+	n = strlen(b);
+	if (n > 4 && b[n - 4] == '.' && tolower((unsigned char)b[n - 3]) == 'e' &&
+			tolower((unsigned char)b[n - 2]) == 'x' && tolower((unsigned char)b[n - 1]) == 'e')
+		n -= 4;
+	return n == 2 && tolower((unsigned char)b[0]) == 'c' &&
+				 tolower((unsigned char)b[1]) == 'l';
+}
+
 int ts_cc_probe(const char *cc, char *machine, int msz, char *version, int vsz) {
 	int ok = 0;
+	char *err = NULL;
+	if (ts_cc_is_cl(cc)) {
+		if (machine && msz)
+			machine[0] = 0;
+		if (version && vsz) {
+			const char *argv[] = {cc, NULL};
+			HostSpawnOpts o;
+			memset(&o, 0, sizeof o);
+			o.stderr_buf = &err;
+			version[0] = 0;
+			if (host_spawn_ex(argv, &o) == 0 && err) {
+				char *nl = strchr(err, '\n');
+				if (nl)
+					*nl = 0;
+				snprintf(version, vsz, "%s", err);
+			}
+			free(err);
+			version[vsz - 1] = 0;
+		}
+		return machine && msz ? -1 : 0;
+	}
 	if (machine && msz) {
 		const char *argv[] = {cc, "-dumpmachine", NULL};
 		char *out = NULL;
 		HostSpawnOpts o;
 		memset(&o, 0, sizeof o);
 		o.stdout_buf = &out;
+		o.stderr_buf = &err;
 		if (host_spawn_ex(argv, &o) == 0 && out) {
 			char *nl = strchr(out, '\n');
 			if (nl)
@@ -232,6 +270,8 @@ int ts_cc_probe(const char *cc, char *machine, int msz, char *version, int vsz) 
 			ok = 1;
 		}
 		free(out);
+		free(err);
+		err = NULL;
 		machine[msz - 1] = 0;
 		if (!ok)
 			return -1;
@@ -242,6 +282,7 @@ int ts_cc_probe(const char *cc, char *machine, int msz, char *version, int vsz) 
 		HostSpawnOpts o;
 		memset(&o, 0, sizeof o);
 		o.stdout_buf = &out;
+		o.stderr_buf = &err;
 		version[0] = 0;
 		if (host_spawn_ex(argv, &o) == 0 && out) {
 			char *nl = strchr(out, '\n');
@@ -250,6 +291,7 @@ int ts_cc_probe(const char *cc, char *machine, int msz, char *version, int vsz) 
 			snprintf(version, vsz, "%s", out);
 		}
 		free(out);
+		free(err);
 		version[vsz - 1] = 0;
 	}
 	return 0;

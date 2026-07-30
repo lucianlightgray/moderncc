@@ -40,6 +40,8 @@ char *ts_first_error_line(const char *text,
 													const char *const *needles,
 													const char *const *skips);
 
+int ts_cc_is_cl(const char *cc);
+
 int ts_cc_probe(const char *cc, char *machine, int msz, char *version, int vsz);
 
 int ts_resolve_reference_cc(char *buf, int size);

@@ -76,6 +76,8 @@ static void detect_triplet(char *out, int osz) {
 	o.stdout_buf = &v;
 	o.stderr_buf = &e;
 	out[0] = 0;
+	if (ts_cc_is_cl(CC))
+		return;
 	if (host_spawn_ex(a, &o) == 0 && v) {
 		snprintf(dm, sizeof dm, "%s", v);
 		if ((nl = strchr(dm, '\n')))
@@ -135,6 +137,10 @@ static void detect_arm(char *eabi, char *vfp, char *hard, char *idiv, char *cpuv
 	memset(&o, 0, sizeof o);
 	o.stdout_buf = &v;
 	o.stderr_buf = &e;
+	if (ts_cc_is_cl(CC)) {
+		parse_arm_abi(NULL, eabi, vfp, hard, idiv, cpuver);
+		return;
+	}
 	{
 		FILE *f = fopen(tmp, "w");
 		if (f)
@@ -220,7 +226,7 @@ static int cmd_detect(int argc, char **argv) {
 		memset(&o, 0, sizeof o);
 		o.stdout_buf = &v;
 		o.stderr_buf = &e;
-		if (host_spawn_ex(a, &o) == 0 && v) {
+		if (!ts_cc_is_cl(CC) && host_spawn_ex(a, &o) == 0 && v) {
 			snprintf(dm, sizeof dm, "%s", v);
 			if ((nl = strchr(dm, '\n')))
 				*nl = 0;
