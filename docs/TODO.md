@@ -4170,17 +4170,17 @@ For each operation:
   dups). There is no single 64x64->128 widening vstack op (unlike `gen_opl`'s `TOK_UMULL` at 32-bit), so
   the sequence is hand-orchestrated `gen_mulh` + three `gen_op('*')` + two `gen_op('+')` with precise
   dup/rot management — best done interactively (validate each step against int128.c's `mul 907f6e5c…`
-  golden line + the ~1000-seed fuzzer), not written blind in one shot. **RECOMMENDED APPROACH (settled
-  2026-07-30): do it as an AST-level rewrite, NOT a `gen_opq` emitter.** Confirmed `TOK_UMULL` (the
-  widening primitive `gen_opl`'s `*` arm uses) is lowered ONLY in arm/i386-gen.c — it does not exist on
-  x86_64, so there is no mechanical port and the `gen_opq` route forces raw `gen_mulh` register
-  juggling. Instead, mirror `ast_divmagic_try_signed`: materialize x,y once (`ast_divmagic_materialize`
-  already exists) and rewrite the 128-bit `*` node into
-  `((u128)(MULHU(alo,blo) + ahi*blo + alo*bhi) << 64) | (u128)(alo*blo)` where `alo=(u64)x`,
-  `ahi=(u64)(x>>64)`, etc. Every primitive now exists — `AST_OP_MULHU`, 64-bit `*`/`+`, the `(u64)`/
-  `(u128)` casts, `|` (inline in `gen_opq`), and crucially the constant `<<64` which is NOW inline as of
-  this session's shift emitter — so register allocation falls out of normal codegen. ~60-80 lines like
-  divmagic; a focused session, gated + TDD'd against the golden + fuzzer.
+  golden line + the ~1000-seed fuzzer), not written blind in one shot. **IT MUST BE A `gen_opq` EMITTER
+  — the AST-rewrite idea is DEAD (empirically disproven 2026-07-30).** I built the full AST rewrite
+  (`ast_i128_mul_try` mirroring divmagic: `((u128)(MULHU(alo,blo)+ahi*blo+alo*bhi)<<64) | (u128)alo*blo`,
+  gated `MCC_AST_I128_MUL`) and it NEVER FIRED: `ast_bad_type()` (mccast.c:~2540) returns true for
+  `VT_INT128`, so every `__int128` op DESYNCS the AST recorder and never reaches the AST strategy
+  pipeline (divmagic, etc.). That is precisely why the constant-shift emitter had to live in `gen_opq`
+  (always-run codegen) and works, while an AST pass cannot. So the multiply has no shortcut: it is the
+  raw `gen_mulh` orchestration in `gen_opq`. `TOK_UMULL` (gen_opl's widening primitive) is arm/i386-only,
+  absent on x86_64, so there's no mechanical port either. Do it interactively in `gen_opq`, gated, TDD'd
+  against int128.c's `mul` golden + the fuzzer; the arithmetic is settled (unsigned decomposition is
+  correct for signed too — only `__multi3` exists), only the register/vstack orchestration remains.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
   priority of the three: mcc does not currently expose these as 128-bit builtins at all
