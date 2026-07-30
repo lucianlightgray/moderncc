@@ -3116,6 +3116,10 @@ ST_FUNC void ggoto(void) { MCC_TRACE("enter\n");
 	vtop--;
 }
 
+ST_FUNC void gen_x87_pop(void) { MCC_TRACE("enter\n");
+	o(0xd8dd);
+}
+
 ST_FUNC void gen_vla_sp_save(int addr) { MCC_TRACE("enter\n");
 	gen_modrm64(0x89, MCC_TREG_RSP, VT_LOCAL, NULL, addr);
 }

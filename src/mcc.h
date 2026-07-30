@@ -1755,6 +1755,9 @@ ST_FUNC void gen_cvt_itof(int t);
 ST_FUNC void gen_cvt_ftof(int t);
 ST_FUNC void ggoto(void);
 ST_FUNC void o(unsigned int c);
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+ST_FUNC void gen_x87_pop(void);
+#endif
 ST_FUNC void gen_vla_sp_save(int addr);
 ST_FUNC void gen_vla_sp_restore(int addr);
 ST_FUNC void gen_vla_alloc(CType *type, int align);

@@ -14931,6 +14931,7 @@ enum {
 	JOP_ASAN_SHADOW,
 	JOP_UBSAN_NULLPTR,
 	JOP_XFERRET,
+	JOP_X87POP,
 	JOP_COUNT
 };
 
@@ -15029,7 +15030,8 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"vla_alloc", "mulh",      "mulwiden",  "regaddi",   "fabs",
 			"bswap",     "sqrt",      "round",     "copysign",  "signbit",
 			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
-			"axchg",     "axadd",     "asan",      "ubsannull", "xferret"};
+			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
+			"x87pop"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15260,6 +15262,9 @@ JRN_W0(gen_ubsan_nullptr, JOP_UBSAN_NULLPTR)
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 JRN_W1(arch_transfer_ret_regs, JOP_XFERRET)
 #endif
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+JRN_W0(gen_x87_pop, JOP_X87POP)
+#endif
 
 int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	int rv;
@@ -15366,6 +15371,9 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_UBSAN_NULLPTR: (gen_ubsan_nullptr)(); break;
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 	case JOP_XFERRET: (arch_transfer_ret_regs)(o->a0); break;
+#endif
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+	case JOP_X87POP: (gen_x87_pop)(); break;
 #endif
 	default: break;
 	}

@@ -60,6 +60,9 @@ int jrn_gjmp_append(int n, int t);
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 void jrn_arch_transfer_ret_regs(int aftercall);
 #endif
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+void jrn_gen_x87_pop(void);
+#endif
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -104,6 +107,9 @@ void jrn_arch_transfer_ret_regs(int aftercall);
 #define gjmp_append(n, t) jrn_gjmp_append((n), (t))
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 #define arch_transfer_ret_regs(a) jrn_arch_transfer_ret_regs((a))
+#endif
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+#define gen_x87_pop() jrn_gen_x87_pop()
 #endif
 #endif
 
@@ -1300,7 +1306,7 @@ ST_FUNC void vpop(void) { MCC_TRACE("enter\n");
 	v = vtop->r & VT_VALMASK;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	if (v == MCC_TREG_ST0) { MCC_TRACE("br\n");
-		o(0xd8dd);
+		gen_x87_pop();
 	} else
 #endif
 			if (v == VT_CMP) { MCC_TRACE("br\n");
@@ -1784,7 +1790,7 @@ ST_FUNC void save_reg_upstack(int r, int n) { MCC_TRACE("enter\n");
 				store(p->r & VT_VALMASK, &sv);
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 				if (r == MCC_TREG_ST0) { MCC_TRACE("br\n");
-					o(0xd8dd);
+					gen_x87_pop();
 				}
 #endif
 				if (p->r2 < VT_CONST && USING_TWO_WORDS(bt)) { MCC_TRACE("br\n");
@@ -15040,6 +15046,9 @@ static int decl(int l) {
 #undef gjmp_append
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 #undef arch_transfer_ret_regs
+#endif
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+#undef gen_x87_pop
 #endif
 #endif
 
