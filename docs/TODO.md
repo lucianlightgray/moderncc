@@ -55,7 +55,6 @@ Numbered by precedence: a lower number wins a conflict with a higher one.
 - Give the JIT-validated set the gates it is missing: `MCC_AST_CHAINSTORE`, `MCC_AST_PROMO_INCDEC`, `MCC_AST_IVSR_PTR`, `MCC_AST_REGDISP` and `-fc99-inline-body` are AOT-validated only.
 - Bake a per-arch `MCC_EMBED_JIT_BLOB` for i386-PE and arm64-PE. Needs an i386/arm64 mingw toolchain.
 - Resolve the MSVC `--embed-jit` ucrt/msvcrt CRT-model conflict.
-- Run the 2026-07-26 gates and their combinations on a PE target. The Win64 ABI differs where it matters most — different callee-saved set, 32-byte shadow space — and the `PROMO_INCDEC`+`CHAINSTORE` combination is what caught the Linux bug.
 
 ### Known-open miscompiles and crashes
 

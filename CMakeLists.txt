@@ -3773,6 +3773,27 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_OPASSIGN=1;MCC_AST_IVSR_PTR=1")
         endforeach()
 
+        # All four 2026-07-26 gates at once on the PE targets. The pair cells above
+        # exercise CHAINSTORE+PROMO_INCDEC and IVSR_PTR+OPASSIGN separately; the
+        # full combination is otherwise only covered by the arm64-native memmodel
+        # self-host. The Win64 ABI is where it matters -- a different callee-saved
+        # set and the 32-byte shadow space are exactly what a promotion/chainstore
+        # interaction can get wrong -- so run the whole corpus with all four forced.
+        # PE-only: verified here on x86_64-PE (289 pass / 0 fail); Linux keeps the
+        # per-pair cells.
+        if(MCC_TARGETOS STREQUAL "WIN32")
+            foreach(_gl IN LISTS _exec_glines)
+                string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
+                set(_gn "${CMAKE_MATCH_1}")
+                add_test(NAME "exec-gatecombo/${_gn}"
+                    COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+                            "${CMAKE_BINARY_DIR}/exec-gatecombo-${_gn}" --only "${_gn}")
+                set_tests_properties("exec-gatecombo/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_IVSR_PTR=1;MCC_AST_OPASSIGN=1")
+            endforeach()
+        endif()
+
         # P1 PR-2: force the value-lattice ranged-narrowing consumer (MCC_AST_VLAT) ON at
         # -O2 across the whole exec corpus, so the non-distributive narrowings (unsigned / %,
         # << const-count) are exercised end-to-end and their runtime output validated. Value-
