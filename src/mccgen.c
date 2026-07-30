@@ -66,6 +66,11 @@ void jrn_gen_x87_pop(void);
 static void jrn_vsetc(CType *type, int r, CValue *vc);
 void jrn_vpushsym(CType *type, Sym *sym);
 void jrn_vpushv(SValue *v);
+void jrn_vswap(void);
+void jrn_vpop(void);
+void jrn_vrotb(int n);
+void jrn_vrott(int n);
+void jrn_vrev(int n);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -117,6 +122,11 @@ void jrn_vpushv(SValue *v);
 #define vsetc(...) jrn_vsetc(__VA_ARGS__)
 #define vpushsym(...) jrn_vpushsym(__VA_ARGS__)
 #define vpushv(...) jrn_vpushv(__VA_ARGS__)
+#define vswap(...) jrn_vswap(__VA_ARGS__)
+#define vpop(...) jrn_vpop(__VA_ARGS__)
+#define vrotb(...) jrn_vrotb(__VA_ARGS__)
+#define vrott(...) jrn_vrott(__VA_ARGS__)
+#define vrev(...) jrn_vrev(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -1292,7 +1302,7 @@ static void (vsetc)(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
 #endif
 }
 
-ST_FUNC void vswap(void) { MCC_TRACE("enter\n");
+ST_FUNC void (vswap)(void) { MCC_TRACE("enter\n");
 	SValue tmp;
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_vswap();
@@ -1304,7 +1314,7 @@ ST_FUNC void vswap(void) { MCC_TRACE("enter\n");
 	vtop[-1] = tmp;
 }
 
-ST_FUNC void vpop(void) { MCC_TRACE("enter\n");
+ST_FUNC void (vpop)(void) { MCC_TRACE("enter\n");
 	int v;
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_vpop();
@@ -1364,7 +1374,7 @@ static void vdup(void) { MCC_TRACE("enter\n");
 	vpushv(vtop);
 }
 
-ST_FUNC void vrotb(int n) { MCC_TRACE("enter\n");
+ST_FUNC void (vrotb)(int n) { MCC_TRACE("enter\n");
 	SValue tmp;
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_vrotb(n);
@@ -1377,7 +1387,7 @@ ST_FUNC void vrotb(int n) { MCC_TRACE("enter\n");
 	vtop[0] = tmp;
 }
 
-ST_FUNC void vrott(int n) { MCC_TRACE("enter\n");
+ST_FUNC void (vrott)(int n) { MCC_TRACE("enter\n");
 	SValue tmp;
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_vrott(n);
@@ -1390,7 +1400,7 @@ ST_FUNC void vrott(int n) { MCC_TRACE("enter\n");
 	vtop[-n] = tmp;
 }
 
-ST_FUNC void vrev(int n) { MCC_TRACE("enter\n");
+ST_FUNC void (vrev)(int n) { MCC_TRACE("enter\n");
 	int i;
 	SValue tmp;
 #if MCC_CONFIG_OPTIMIZER
@@ -15059,6 +15069,11 @@ static int decl(int l) {
 #undef vsetc
 #undef vpushsym
 #undef vpushv
+#undef vswap
+#undef vpop
+#undef vrotb
+#undef vrott
+#undef vrev
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
