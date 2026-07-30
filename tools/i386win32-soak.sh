@@ -117,6 +117,28 @@ if [ "$fail" -ne 0 ]; then
 	exit 1
 fi
 
+# --- 3b. AOT exec: stack auto over-alignment on i386 PE ----------------------
+# alignas_over.c self-checks over-aligned auto locals up to 256 bytes (its guard
+# includes the runtime block for i386-PE) and prints OK / rc 0 on success. This
+# is the executed half of the over-alignment validation; the arm64-PE half is
+# codegen-only here (mcc-arm64-win32 compiles it cleanly) and its execution is
+# blocked on arm64-Windows hardware.
+echo "== AOT exec: stack auto over-alignment (WoW64) =="
+ao="$root/tests/exec/features_c99_c11/alignas_over.c"
+if "$MCCI" -c -O2 $BRT "$ao" -o "$work/alignas_over.o" 2>/dev/null &&
+	 "$MCCI" $LNK "$work/alignas_over.o" -o "$work/alignas_over.exe" 2>/dev/null; then
+	aoout=$("$work/alignas_over.exe" 2>&1); aorc=$?
+	printf "  %-4s %-32s %s\n" "$([ "$aorc" -eq 0 ] && echo PASS || echo FAIL)" \
+		alignas_over "$(printf '%s\n' "$aoout" | tail -1)"
+	if [ "$aorc" -ne 0 ]; then
+		echo "i386win32-soak: FAIL — i386-PE stack over-alignment regressed (rc=$aorc)"
+		exit 1
+	fi
+else
+	echo "i386win32-soak: FAIL — i386-PE over-alignment cc/link failed"
+	exit 1
+fi
+
 # --- 4. i386 differential fuzz (mcc vs a reference consensus) -----------------
 # Generate random programs with tests/fuzz/gen.h (its shift masks are now
 # width-correct via sizeof(unsigned long), so they are well-defined on i386's

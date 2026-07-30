@@ -241,7 +241,7 @@ Numbered by precedence: a lower number wins a conflict with a higher one.
 - Provide a runnable test for the kernel-fused libSystem path (`MCC_DARWIN_HOST=ON`); nothing exercises it.
 - Promote the mingw i686 CI cell off `continue-on-error` once i386-Windows codegen is proven.
 - Confirm the `-fexcess-precision=standard` i386 WIN32 refflags fix on the `windows-2025-vs2026` UCRT image; it only reproduces there.
-- Validate stack auto over-alignment on i386-PE and arm64-PE.
+- Run the arm64-PE stack auto over-alignment check on real arm64-Windows hardware. i386-PE is validated and gated (`alignas_over.c` compiles, links and runs OK on WoW64, over-aligned locals to 256B; the `tools/i386win32-soak.sh` AOT-exec leg guards it). arm64-PE is codegen-only here — `mcc-arm64-win32` compiles it cleanly but execution needs arm64-Windows.
 - Normalize CMake incrementally with autodetection, folded `.cmake` files and a verifiable target.
 - Run `tools/runtime-bench.py` on the arm64-native CI cell and record a baseline JSON to diff against; there is no baseline store or differ yet, only `--json`. arm64-macOS now has real instruction counts (`/usr/bin/time -l`), so `--assert-gate-wins` could assert on instructions instead of the CPU-time proxy that keeps it x86_64-only.
 - Verify `-fc99-inline-body` on Mach-O: the weak out-of-line body path through `N_WEAK_DEF`/`EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION` has never been exercised, and confirm the inlining half works there.
