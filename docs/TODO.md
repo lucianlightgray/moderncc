@@ -1005,9 +1005,12 @@ real-object validation stays macOS-gated.
    - **Validation at the flip:** full ctest 7893/7893, 3-stage self-host fixpoint, differential fuzz clean,
      non-vacuous JIT `-run` parity, qemu runtime on i386/arm32/arm64/riscv64.
 
-   **Remaining fidelity residuals — RE-MEASURED after the loop-condition-store admissions: 22** (the two
-   admissions swept ~20 more functions than their repros suggested — `find_field`, `next_argstream`,
-   `host_rmrf`, `handle_stray_noerror` and the pointer-chase `while ((p = p->next))` family all went faithful).
+   **Remaining fidelity residuals — the "22" below was measured with the loop-condition-store admissions ON, and
+   those are now gated OFF as a miscompile (see the REOPENED note further down), so treat 22 as the number that
+   WOULD hold once they are fixed; the live count is higher.** Those two admissions swept ~20 more functions than
+   their repros suggested — `find_field`, `next_argstream`, `host_rmrf`, `handle_stray_noerror` and the
+   pointer-chase `while ((p = p->next))` family all went faithful — which is exactly why the regression was worth
+   fixing rather than reverting outright.
    The 22: host_run_tls_slab_tpoff tal_free_impl pragma_parse preprocess cplx_extract_const write_ldouble
    decl_initializer_alloc ast_vlat_* ast_range_bound* ast_rp_label_get ast_eval_binop ast_search_roi_order
    mcc_debug_new build_got_entries cleanup_symbols cleanup_sections gen_stack_chk_prolog maybe_print_stats
@@ -1020,11 +1023,52 @@ real-object validation stays macOS-gated.
    member replay produced wrong-shaped bytes: pair tagging feeds each outer a REGISTER-FINALIZED value copy
    that is only meaningful in the pairwise protocol, so a run replay reads stale address registers as values;
    reverted same day, do not re-try without first tracing how the 3-chain records its two copies), `store_packed_bf`'s remaining delta, A1a `nocode_wanted`. These are
-   follow-on work, not part of the closed item. (Loop-condition assignments `while ((x = f()) ...)` CLOSED
-   2026-07-29: the WHILE_COMMA prefix BB had moved the condition's Store out of the StoreVal walk's
-   adjacent-sibling reach; the walk now admits a Store that is the LAST statement of an op-2/op-3 loop's
-   prefix whose marker is the condition's leftmost leaf — `wassign`/`wptr`/`fassign` flip faithful, ratchet
-   banked at 155; the do-while analog CLOSED same day — an op-4 pass-through step in the walk, with a `docond` flag that FORBIDS the plain-adjacency admission (a store BEFORE a do-loop is clobbered by the body); `dassign` faithful, plain-pre-store `dpre` still correctly handled. Void-arm discarded-ternary
+   follow-on work, not part of the closed item. (Loop-condition assignments `while ((x = f()) ...)` — **REOPENED AND
+   RE-GATED OFF 2026-07-29: both admissions MISCOMPILE mcc itself.** They were `c614afc4` (op-2/op-3 while/for
+   prefix: admit a Store that is the LAST statement of a loop's prefix whose marker is the condition's leftmost
+   leaf — `wassign`/`wptr`/`fassign` faithful, ratchet banked at 155) and `d30c5b99` (the do-while analog, an op-4
+   pass-through with a `docond` flag that forbids the plain-adjacency admission because a store BEFORE a do-loop is
+   clobbered by the body — `dassign` faithful). Both rode `ast_while_comma_env`, so both were live at the DEFAULT
+   `-O2`. They are now behind a separate `MCC_AST_LOOPCOND_STORE`, **default OFF**; the rest of `WHILE_COMMA` is
+   unaffected and stays on (its parent commit passes the fixpoint with the gate on, so the pre-existing
+   `WHILE_COMMA` paths are not implicated).
+
+   **The defect, root-caused — an admitted loop-condition store loses its POINTER type and gets narrowed to 32
+   bits.** `mccgen.c`'s `gjmp_append` is the shape:
+
+       while ((n2 = read32le(p = cur_text_section->data + n1)))
+           n1 = n2;
+       write32le(p, t);
+
+   With the gate on, replay drives that function, promotes its locals to callee-saved registers, and emits an extra
+   `movslq %eax,%rax` between computing `p` and passing it — truncating a 64-bit heap pointer to its low 32 bits and
+   sign-extending. `cur_text_section->data` is above 4 GB, so the next `read32le` dereferences a wild address:
+
+       gate ON                        gate OFF
+       add  %rcx,%rax                 add  %rcx,%rax
+       mov  %rax,%r12   ; p = ...     mov  %rax,-0x18(%rbp)
+       movslq %eax,%rax ; <-- BUG     mov  %rax,%rdi
+       mov  %rax,%rdi                 call read32le
+
+   `gjmp_append` goes 34 -> 51 instructions; 26 functions change instruction count in total.
+
+   **Reproducer is the SELF-HOST, and only the self-host.** `MCC_AST_LOOPCOND_STORE=1` + 3-stage fixpoint at `-O2`:
+   stage-1 mcc SEGVs compiling `src/mcc.c`, in `gjmp_append` via `gvtst`/`gvtst_set`. Gate off: `o1==o2==o3`
+   byte-identical. `-O1` is unaffected (the gate stages at `-O2`+), which is why only 4 of the 6 fixpoint variants
+   failed. **Three isolated repros of the source shape do NOT reproduce it** — a static array (its address is below
+   4 GB, so the truncation is harmless), a heap array, and the exact `cur_sec->data + n1` member-load form all emit
+   identical codegen with the gate on and off, because the admission only fires when replay is actually driving the
+   function AND promotion has pushed the locals into callee-saved registers. So do not try to pin this with a small
+   cli/exec cell; the fixpoint gate is the regression lock, and it works.
+
+   **For whoever fixes it:** the admission must not route a pointer-typed storeval through the integer narrowing
+   path — either reject a store whose value is not an integer type, or preserve the store's type into replay. This
+   is the mirror image of the lost-sign-extension defect fixed in `b0fb11d5`.
+
+   **Process note, because this is the second time:** a gate that changes what replay DRIVES must clear the
+   self-host fixpoint before it goes default-on, not just ctest and the ratchet. Both commits banked a ratchet
+   improvement (158 -> 155) and shipped a broken compiler; `MCC_CONFIG_DIVMAGIC` did the same thing earlier. The
+   fixpoint is the only gate in the bar that catches this class. Void-arm discarded-ternary
    byte-mirror CLOSED 2026-07-29:
    the delta was the parser's degenerate second join-jmp after the else arm; the discard emitter now mirrors
    it — `c ? va_() : vb_()` faithful, ratchet banked at 158.)

@@ -1781,6 +1781,7 @@ static int ast_cmp_mat_env;
 static int ast_chainstore_live_env;
 static int ast_chainstore_member_env;
 static int ast_while_comma_env;
+static int ast_loopcond_store_env;
 static int ast_ternary_discard_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
@@ -2125,6 +2126,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 2);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 2);
 	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", o4 || s1->optimize >= 2);
+	ast_loopcond_store_env = ast_env_gate("MCC_AST_LOOPCOND_STORE", 0);
 	ast_ternary_discard_env = ast_env_gate("MCC_AST_TERNARY_DISCARD", o4 || s1->optimize >= 2);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 2);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 2);
@@ -6697,7 +6699,7 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 						cur = up;
 						continue;
 					}
-					if (ast_while_comma_env && call_up == AST_NONE && !constl &&
+					if (ast_loopcond_store_env && ast_while_comma_env && call_up == AST_NONE && !constl &&
 							ast_kind(a, up) == AST_If && ast_op(a, up) == 4 &&
 							ast_nchild(a, up) >= 2 && ast_child(a, up, 1) == cur) { MCC_TRACE("br\n");
 						docond = 1;
@@ -6714,7 +6716,7 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 			if (ast_next_sib(a, st) != cur || up != ast_parent(a, st) || docond) { MCC_TRACE("br\n");
 				int pfx_ok = 0;
 				AstLocal pbb = ast_parent(a, st);
-				if (ast_while_comma_env && call_up == AST_NONE && !constl &&
+				if (ast_loopcond_store_env && ast_while_comma_env && call_up == AST_NONE && !constl &&
 						pbb != AST_NONE && ast_kind(a, pbb) == AST_BasicBlock &&
 						cur != AST_NONE && ast_kind(a, cur) == AST_If &&
 						ast_parent(a, pbb) == cur &&
