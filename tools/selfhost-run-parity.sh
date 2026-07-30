@@ -96,6 +96,12 @@ else
     aarch64|arm64) : ;;
     *) echo "SKIP: $arch is native-only; host $(uname -m) is not aarch64"; exit 77 ;;
   esac
+  # ...and only on an ELF host: this leg builds the mcc with TDEF alone (an
+  # ELF target, no MCC_TARGET_MACHO), so on a Mach-O host it is a CROSS
+  # compiler and `-run` is refused (MCC_TARGET_IS_HOST needs the object format
+  # to match the host -- see mcc.h). macOS arm64 `-run`/JIT parity is covered
+  # separately by the selfhost-jit ctest, which builds a real Mach-O JIT mcc.
+  [ "$(uname -s)" = "Darwin" ] && { echo "SKIP: native $arch -run leg builds an ELF mcc; cross on this Mach-O host (macOS -run parity is covered by selfhost-jit)"; exit 77; }
 fi
 if [ -n "$SR" ]; then
   [ -d "$SR" ] || { echo "SKIP: no $arch sysroot at $SR"; exit 77; }
