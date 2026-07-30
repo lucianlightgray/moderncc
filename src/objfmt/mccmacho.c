@@ -3038,7 +3038,7 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		struct nlist_64 *ns = &syms[i];
 		const char *name;
 		int bind, shndx;
-		addr_t value = ns->n_value;
+		addr_t value = ns->n_value, size = 0;
 
 		if (ns->n_type & N_STAB)
 			{ MCC_TRACE("br\n"); continue; }
@@ -3050,6 +3050,19 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		bind = (ns->n_type & N_EXT) ? STB_GLOBAL : STB_LOCAL;
 		switch (ns->n_type & N_TYPE) { MCC_TRACE("br\n");
 		case N_UNDF:
+			/* A Mach-O COMMON (tentative) definition is N_UNDF | N_EXT with a
+			   non-zero n_value carrying the byte size and n_desc bits 8-11 the
+			   log2 alignment. Read as a plain undefined it became an unresolved
+			   reference to every file-scope `int x;` clang had compiled -- 24 of
+			   241 clang-linkable exec programs failed to link on that alone.
+			   ELF spells the same thing st_value=alignment, st_size=size, which
+			   resolve_common_syms already knows how to place. */
+			if ((ns->n_type & N_EXT) && ns->n_value) { MCC_TRACE("br\n");
+				shndx = SHN_COMMON;
+				size = ns->n_value;
+				value = (addr_t)1 << ((ns->n_desc >> 8) & 0xf);
+				break;
+			}
 			shndx = SHN_UNDEF;
 			value = 0;
 			break;
@@ -3065,7 +3078,7 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		default:
 			continue;
 		}
-		symmap[i] = set_elf_sym(symtab_section, value, 0,
+		symmap[i] = set_elf_sym(symtab_section, value, size,
 														ELFW(ST_INFO)(bind, STT_NOTYPE), 0, shndx, name);
 	}
 
