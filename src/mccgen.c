@@ -57,6 +57,9 @@ void jrn_gen_atomic_xadd(int size);
 void jrn_gen_asan_shadow_check(int sz);
 void jrn_gen_ubsan_nullptr(void);
 int jrn_gjmp_append(int n, int t);
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+void jrn_arch_transfer_ret_regs(int aftercall);
+#endif
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -99,6 +102,9 @@ int jrn_gjmp_append(int n, int t);
 #define gen_asan_shadow_check(s) jrn_gen_asan_shadow_check((s))
 #define gen_ubsan_nullptr() jrn_gen_ubsan_nullptr()
 #define gjmp_append(n, t) jrn_gjmp_append((n), (t))
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+#define arch_transfer_ret_regs(a) jrn_arch_transfer_ret_regs((a))
+#endif
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -15032,6 +15038,9 @@ static int decl(int l) {
 #undef gen_asan_shadow_check
 #undef gen_ubsan_nullptr
 #undef gjmp_append
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+#undef arch_transfer_ret_regs
+#endif
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED

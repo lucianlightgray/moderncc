@@ -14930,6 +14930,7 @@ enum {
 	JOP_ATOMIC_XADD,
 	JOP_ASAN_SHADOW,
 	JOP_UBSAN_NULLPTR,
+	JOP_XFERRET,
 	JOP_COUNT
 };
 
@@ -15028,7 +15029,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"vla_alloc", "mulh",      "mulwiden",  "regaddi",   "fabs",
 			"bswap",     "sqrt",      "round",     "copysign",  "signbit",
 			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
-			"axchg",     "axadd",     "asan",      "ubsannull"};
+			"axchg",     "axadd",     "asan",      "ubsannull", "xferret"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15256,6 +15257,9 @@ JRN_W1(gen_atomic_xchg, JOP_ATOMIC_XCHG)
 JRN_W1(gen_atomic_xadd, JOP_ATOMIC_XADD)
 JRN_W1(gen_asan_shadow_check, JOP_ASAN_SHADOW)
 JRN_W0(gen_ubsan_nullptr, JOP_UBSAN_NULLPTR)
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+JRN_W1(arch_transfer_ret_regs, JOP_XFERRET)
+#endif
 
 int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	int rv;
@@ -15360,6 +15364,9 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_ATOMIC_XADD: (gen_atomic_xadd)(o->a0); break;
 	case JOP_ASAN_SHADOW: (gen_asan_shadow_check)(o->a0); break;
 	case JOP_UBSAN_NULLPTR: (gen_ubsan_nullptr)(); break;
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+	case JOP_XFERRET: (arch_transfer_ret_regs)(o->a0); break;
+#endif
 	default: break;
 	}
 }
