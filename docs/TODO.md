@@ -80,6 +80,40 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 
 **CONSOLIDATION (2026-07-27):** with all five source changes in (SECREL native-TLS COFF reading, à la carte pull-once, `__ImageBase` synthesis, compiler-rt embed fallback, `K32GetProcessMemoryInfo` def) plus the CMake self-host enablement, the **full local ctest suite is 100% GREEN — 6424/6424, 0 failures** on llvm-mingw x86_64 (the core PE linker path is exercised by every test that links the CRT). x86_64-win32 `--embed-jit` + self-host bake + `MCC_JIT=1`≡`MCC_JIT=0` parity are done, wired, and regression-clean. Regression lock-in **DONE**: `embed-jit-smoke` ctest (`tools/embed-jit-smoke.py`, gated `WIN32 AND NOT MSVC`, SKIP-77 on no-blob/missing-runtime-lib, FAIL only on wrong output or a non-lib bake failure; JIT-OFF only so it never touches the winlibs `0xC0000005`). Passes locally on llvm-mingw. So the entire x86_64-win32 (mingw) `--embed-jit` path is implemented, proven, wired, and CI-guarded. **All local-tractable campaign items are complete;** what remains is strictly gated: i386 (no i386 toolchain here), MSVC embed (ucrt/msvcrt CRT-model conflict), P0 step 5 (winlibs-specific CI crash — needs a CI trace), arm64-win32 (HW).
 
+## KNOWN CORRECTNESS BUG (surfaced 2026-07-30) — i386 -O2 miscompiles a struct-by-value return in a loop
+
+**Real -O2 i386 miscompile, PRE-EXISTING (not the range/bitflag work), reproduced.** The
+`i386-codegen-diff-docker` cell's `d2` diverges: `d2 -O2 mcc=131 gcc=91`. `d2` is a
+struct-by-value return summed in a loop:
+```c
+struct S{int a; long long b; char c; short d;};
+struct S mk(int x){ struct S s; s.a=x*7; s.b=(long long)x*100003; s.c=(char)(x*3); s.d=(short)(x*257); return s; }
+int main(void){ int s=0,i; for(i=-5;i<20;i++){ struct S v=mk(i); s+=v.a+(int)v.b+v.c+v.d; } return (s&0x7fffffff)%251; }
+```
+This was **masked for weeks** by an intermittent "gcc build" infra flake in the same cell
+(all `d1..d14` showed `(gcc build)` fails, so mcc-vs-gcc never ran); the flake resolving is
+what exposed it. NOT caused by the 2026-07-30 landor-invert fixes — `MCC_AST_RANGE=0` and
+`MCC_AST_BITFLAG=0` do not change it, and `d2` has no range/equality/logical constructs.
+
+**Isolation (done):** -O0 and -O1 are correct; -O2/-O3 wrong. Correct at i=0..9, wrong at
+i=-5..19, so it needs negative args AND the full 25-iteration accumulation. A single
+`mk(-3)`, small loops, and simpler structs (struct{int}, {int,int}, {int,ll}, {ll},
+{int,int,int}, {int,char,short}) are all CORRECT — only the full mixed-size struct
+(int+long long+char+short, hidden-pointer return) in the wide loop reproduces. **Layout-
+dependent** (disabling any large subset of the `optimize>=2` gates fixes it; no single gate
+does) and **NOT ASan-catchable** (an ASan-built mcc-i386 compiles it with no heap error) —
+the signature of a value-stack / register-allocation spill bug under the struct-return +
+long-long pressure on i386's 6 GP registers, not heap corruption. Relates to the leaf-only
+regalloc cliff.
+
+**Repro recipe (on an arm64 host, no native i386):** build `mcc-i386` from the amalgamation
+(`gcc -w -DMCC_CONFIG_OPTIMIZER=1 -DMCC_TARGET_I386 -Isrc -Iinclude -Isrc/formats
+-Isrc/objfmt -Isrc/arch/i386 -O0 -o mcc-i386 src/mcc.c`); compile d2 with
+`-I<builddir>/include -B<builddir>/include`; link the object with `i686-linux-gnu-gcc -static
+<obj> <builddir>/libmccrt.a`; run under `qemu-i386-static`; reference with `i686-linux-gnu-gcc
+-O2 -static`. Next: disasm mcc -O2 `main` vs the correct -O0/-O1 and find the wrong
+spill/reload of the returned struct's slot across the call in the loop body.
+
 ## `-march` — DONE 2026-07-29 (pruned; detail in git history around `4e74e1c9`/`5bd7d020`/`3217b8a9`)
 
 All six steps landed: feature mask + `mcc_isa_has`, named levels (x86-64-v1..v4 + gcc aliases; arm
