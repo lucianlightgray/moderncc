@@ -14940,6 +14940,7 @@ enum {
 	JOP_VROTB,
 	JOP_VROTT,
 	JOP_VREV,
+	JOP_PUSHLIT,
 	JOP_COUNT
 };
 
@@ -15043,7 +15044,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
 			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
-			"vpop",      "vrotb",     "vrott",     "vrev"};
+			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15279,7 +15280,8 @@ JRN_W0(gen_x87_pop, JOP_X87POP)
 #endif
 
 static void jrn_vsetc(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_VSETC, NULL);
+	int lit = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	jrn_begin(lit ? JOP_PUSHLIT : JOP_VSETC, NULL);
 	if (JRN_REC) { MCC_TRACE("br\n");
 		jrn_pending->ctype = *type;
 		jrn_pending->a0 = r;
@@ -15420,7 +15422,8 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	case JOP_X87POP: (gen_x87_pop)(); break;
 #endif
-	case JOP_VSETC: { MCC_TRACE("br\n");
+	case JOP_VSETC:
+	case JOP_PUSHLIT: { MCC_TRACE("br\n");
 		CValue cv = o->cval;
 		(vsetc)(&o->ctype, o->a0, &cv);
 		break;
