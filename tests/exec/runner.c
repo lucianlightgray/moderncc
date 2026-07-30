@@ -10,6 +10,8 @@
 #include <signal.h>
 #include <poll.h>
 #include <time.h>
+#else
+#include <windows.h>
 #endif
 
 #include "goldens.h"
@@ -274,20 +276,142 @@ static char *run_capture(const char *cmd, int *status) {
 	return buf;
 }
 #else
-/* Windows keeps the popen path (the ctest --timeout 300 in ci.yml is the guard
- * there); killable process-group capture is POSIX-only. */
+/* Windows capture that can actually kill a hung child. A bare popen()+fread()
+ * blocks until the child closes its output pipe -- but a child wedged by an
+ * infinite-looping miscompile, or suspended by a load-time hard-error / crash
+ * dialog (e.g. STATUS_ENTRYPOINT_NOT_FOUND, 0xC0000139, from an import the CRT
+ * does not export), never does, so the suite stalls until ctest --timeout kills
+ * the whole job by hand. Instead run the command via cmd.exe inside a Job
+ * Object, poll the output pipe against a deadline, and TerminateJobObject the
+ * whole tree on timeout (reaching grandchildren a plain TerminateProcess would
+ * miss). main() sets SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX process-wide,
+ * inherited by the child, so a crashing/unloadable child returns its status
+ * promptly instead of popping a modal dialog. Mirrors the POSIX killpg path;
+ * MCC_TEST_TIMEOUT governs both. */
 static char *run_capture(const char *cmd, int *status) {
-	FILE *f = HC_POPEN_CMD(cmd);
-	if (!f) {
+	HANDLE rd = NULL, wr = NULL, job = NULL;
+	SECURITY_ATTRIBUTES sa;
+	STARTUPINFOA si;
+	PROCESS_INFORMATION pi;
+	char *buf, *cmdline;
+	size_t cap = 4096, len = 0;
+	long timeout_s = run_capture_timeout();
+	ULONGLONG start;
+	int killed = 0;
+	DWORD exitcode = 0;
+
+	sa.nLength = sizeof sa;
+	sa.bInheritHandle = TRUE;
+	sa.lpSecurityDescriptor = NULL;
+	if (!CreatePipe(&rd, &wr, &sa, 0)) {
 		if (status)
 			*status = -1;
 		return xstrdup("");
 	}
-	char *out = slurp(f, NULL);
-	int rc = pclose(f);
-	if (status)
-		*status = rc;
-	return out;
+	SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0); /* keep read end private */
+
+	/* Match HC_POPEN_CMD's wrapping: cmd.exe /C "<cmd>". The goldens embed
+	   `cd "..." && ... 2>&1` (cmd syntax) with inner-quoted paths; cmd strips the
+	   outermost pair and runs the remainder. Both child std handles feed the pipe
+	   so the redirect is redundant but harmless. */
+	cmdline = malloc(strlen(cmd) + 16);
+	sprintf(cmdline, "cmd.exe /C \"%s\"", cmd);
+
+	memset(&si, 0, sizeof si);
+	si.cb = sizeof si;
+	si.dwFlags = STARTF_USESTDHANDLES;
+	si.hStdOutput = wr;
+	si.hStdError = wr;
+	si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+
+	if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE,
+						CREATE_SUSPENDED | CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+		CloseHandle(rd);
+		CloseHandle(wr);
+		free(cmdline);
+		if (status)
+			*status = -1;
+		return xstrdup("");
+	}
+
+	/* Kill-on-close job so a timeout reaps the whole process tree. If the child
+	   is already in a non-nestable job (older Windows), the assign fails and we
+	   fall back to killing just the top process. */
+	job = CreateJobObjectA(NULL, NULL);
+	if (job) {
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION ji;
+		memset(&ji, 0, sizeof ji);
+		ji.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		SetInformationJobObject(job, JobObjectExtendedLimitInformation, &ji, sizeof ji);
+		if (!AssignProcessToJobObject(job, pi.hProcess)) {
+			CloseHandle(job);
+			job = NULL;
+		}
+	}
+	ResumeThread(pi.hThread);
+	CloseHandle(wr); /* only the child keeps the write end now */
+
+	buf = malloc(cap);
+	start = GetTickCount64();
+	for (;;) {
+		DWORD avail = 0;
+		if (timeout_s > 0 &&
+			(long)((GetTickCount64() - start) / 1000) >= timeout_s) {
+			if (job)
+				TerminateJobObject(job, 1);
+			else
+				TerminateProcess(pi.hProcess, 1);
+			killed = 1;
+			break;
+		}
+		if (PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL) && avail > 0) {
+			DWORD got = 0;
+			if (len + avail > cap) {
+				while (len + avail > cap)
+					cap *= 2;
+				buf = realloc(buf, cap);
+			}
+			if (ReadFile(rd, buf + len, avail, &got, NULL) && got > 0)
+				len += got;
+			else
+				break; /* pipe broken: child gone */
+			continue; /* drain fast while data is flowing */
+		}
+		/* No data right now: exit once the child is gone and the pipe is dry. */
+		if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+			if (!PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL) || avail == 0)
+				break;
+			continue;
+		}
+		Sleep(20); /* deadline re-checked at the top each slice */
+	}
+	buf[len] = 0;
+
+	WaitForSingleObject(pi.hProcess, killed ? 2000 : INFINITE);
+	if (!GetExitCodeProcess(pi.hProcess, &exitcode))
+		exitcode = (DWORD)-1;
+	CloseHandle(rd);
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+	if (job)
+		CloseHandle(job);
+	free(cmdline);
+
+	if (killed) {
+		char marker[96];
+		int mn = snprintf(marker, sizeof marker,
+						  "\n*** TIMEOUT: killed after %lds (MCC_TEST_TIMEOUT) ***\n",
+						  timeout_s);
+		if (mn > 0) {
+			buf = realloc(buf, len + (size_t)mn + 1);
+			memcpy(buf + len, marker, (size_t)mn + 1);
+		}
+		if (status)
+			*status = -1;
+	} else if (status) {
+		*status = (int)exitcode;
+	}
+	return buf;
 }
 #endif
 
@@ -437,6 +561,12 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "usage: %s <mcc> <bdir> <idir> <testroot> <workdir>\n", argv[0]);
 		return 2;
 	}
+#ifdef _WIN32
+	/* Suppress the modal hard-error / crash dialogs; a broken child (unloadable
+	   import, GP fault) then returns its status code so run_capture's watchdog
+	   can act, instead of the child hanging on a dialog nobody will dismiss. */
+	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#endif
 	const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3];
 	const char *root = argv[4], *work = argv[5];
 
