@@ -629,8 +629,14 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	mo->nr_plt = mo->n_got = 0;
 	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
+		/* .DWARF_* is what macho_sect_to_elf_name calls an imported __DWARF
+		   section, so the .debug_ test alone never matched a clang -c object's
+		   debug info. Its relocations then reached the chained-fixup rebase
+		   list, whose 4-byte alignment rule DWARF's byte-packed fields do not
+		   obey, and the link died on a section that is never even loaded. */
 		if (s->sh_type != SHT_RELX ||
-				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7))
+				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7) ||
+				!strncmp(s1->sections[s->sh_info]->name, ".DWARF_", 7))
 			{ MCC_TRACE("br\n"); continue; }
 		for_each_elem(s, 0, rel, ElfW_Rel) {
 			save_rel = *rel;
@@ -779,8 +785,14 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	mo->nr_plt = mo->n_got = 0;
 	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
+		/* .DWARF_* is what macho_sect_to_elf_name calls an imported __DWARF
+		   section, so the .debug_ test alone never matched a clang -c object's
+		   debug info. Its relocations then reached the chained-fixup rebase
+		   list, whose 4-byte alignment rule DWARF's byte-packed fields do not
+		   obey, and the link died on a section that is never even loaded. */
 		if (s->sh_type != SHT_RELX ||
-				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7))
+				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7) ||
+				!strncmp(s1->sections[s->sh_info]->name, ".DWARF_", 7))
 			{ MCC_TRACE("br\n"); continue; }
 		for_each_elem(s, 0, rel, ElfW_Rel) {
 			save_rel = *rel;
@@ -1074,6 +1086,36 @@ static void mcc_qsort(void *base, size_t nel, size_t width,
 				if (j < wgap)
 					{ MCC_TRACE("br\n"); break; }
 			}
+		}
+	}
+}
+
+static int macho_elf_boundary_sym(const char *name) { MCC_TRACE("enter\n");
+	static const char *const exact[] = {
+			"__preinit_array_start", "__preinit_array_end",
+			"__init_array_start", "__init_array_end",
+			"__fini_array_start", "__fini_array_end", NULL};
+	for (int i = 0; exact[i]; i++)
+		if (!strcmp(name, exact[i]))
+			{ MCC_TRACE("br\n"); return 1; }
+	return !strncmp(name, "__start_", 8) || !strncmp(name, "__stop_", 7);
+}
+
+/* mcc_add_linker_symbols synthesises the ELF-convention section boundaries for
+   every target. On Mach-O they land on the first function's address, and dyld's
+   dladdr then answers __init_array_end where ld64's answers the real name. They
+   are resolved inside this link, so demoting them to STB_LOCAL keeps every
+   reference working while taking them out of the export trie and the DYSYMTAB
+   external range. ld64 emits none of them. */
+static void macho_hide_elf_boundary_syms(MCCState *s1) { MCC_TRACE("enter\n");
+	int sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
+	for (int i = 1; i < sym_end; i++) { MCC_TRACE("br\n");
+		ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + i;
+		const char *name = (char *)symtab_section->link->data + sym->st_name;
+		if (sym->st_shndx != SHN_UNDEF &&
+				ELFW(ST_BIND)(sym->st_info) == STB_GLOBAL &&
+				macho_elf_boundary_sym(name)) { MCC_TRACE("br\n");
+			sym->st_info = ELFW(ST_INFO)(STB_LOCAL, ELFW(ST_TYPE)(sym->st_info));
 		}
 	}
 }
@@ -2202,6 +2244,8 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) { MCC_TRACE("e
 	mcc_add_runtime(s1);
 	mcc_macho_add_destructor(s1);
 	resolve_common_syms(s1);
+	if (file_type != MCC_OUTPUT_OBJ)
+		{ MCC_TRACE("br\n"); macho_hide_elf_boundary_syms(s1); }
 	macho_tls_setup(s1, &mo);
 	create_symtab(s1, &mo);
 	check_relocs(s1, &mo);

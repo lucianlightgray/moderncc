@@ -48,15 +48,13 @@ int main(void) {
 	}
 
 	/* dladdr has to map a __TEXT address mcc emitted back to its nlist entry.
-	   dli_sname is deliberately NOT compared: mcc's Mach-O images also export
-	   the ELF-convention boundary symbols (__init_array_end, __start_text, ...)
-	   at the first function's address, and dyld returns one of those instead of
-	   the real name. Tracked in docs/TODO; asserting it here would red a cell
-	   for an unrelated defect. */
+	   The name matters: mcc used to leave the ELF-convention boundary symbols
+	   external at the first function's address, so dyld answered
+	   __init_array_end here. */
 	Dl_info info;
 	memset(&info, 0, sizeof info);
 	CHECK(dladdr((void *)marker_fn, &info) != 0);
-	CHECK(info.dli_sname != NULL);
+	CHECK(info.dli_sname != NULL && !strcmp(info.dli_sname, "marker_fn"));
 	CHECK(info.dli_saddr == (void *)marker_fn);
 	CHECK(info.dli_fbase != NULL);
 	CHECK(info.dli_fname != NULL);
