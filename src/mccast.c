@@ -1851,6 +1851,7 @@ static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
+static int ast_tern_suppress;
 /* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
    condition selects. A constant `?:` emits ONLY that arm, so the recorder must
    not build an If node -- it passes the taken arm's value straight through and
@@ -1859,6 +1860,7 @@ static unsigned char ast_tern_const[16];
 static AstLocal ast_tern_val[16]; /* constant `?:`: the taken arm's node */
 static AstLocal ast_lor[16];
 static int ast_lor_top;
+static int ast_lor_suppress;
 /* Per-level flag: the `&&`/`||` short-circuited on a CONSTANT first operand, so
    the parser folded the whole expression to that constant and never evaluated
    the right-hand side. Measured over mcc's own TU: all 45 such desyncs are this
@@ -2732,7 +2734,11 @@ void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
-	if (g || ast_in_call || ast_in_op || ast_tern_top >= 16 ||
+	if (ast_in_op) { MCC_TRACE("br\n");
+		ast_tern_suppress++;
+		return;
+	}
+	if (g || ast_in_call || ast_tern_top >= 16 ||
 			ast_vn < 1) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
@@ -2760,6 +2766,8 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 
 void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 	(void)which;
+	if (ast_tern_suppress)
+		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_call = 0;
@@ -2767,6 +2775,8 @@ void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 
 void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 	(void)which;
+	if (ast_tern_suppress)
+		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_vn < 1) { MCC_TRACE("br\n");
@@ -2794,6 +2804,10 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
+	if (ast_tern_suppress) { MCC_TRACE("br\n");
+		ast_tern_suppress--;
+		return;
+	}
 	if (!ast_active || ast_tern_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal cn = ast_tern[--ast_tern_top];
@@ -2829,7 +2843,11 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (first) { MCC_TRACE("br\n");
-		if (ast_in_call || ast_in_op || ast_lor_top >= 16 || ast_vn < 1) { MCC_TRACE("br\n");
+		if (ast_in_op) { MCC_TRACE("br\n");
+			ast_lor_suppress++;
+			return;
+		}
+		if (ast_in_call || ast_lor_top >= 16 || ast_vn < 1) { MCC_TRACE("br\n");
 			AST_SET_DESYNC();
 			return;
 		}
@@ -2854,6 +2872,8 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 		ast_lor_consumed[ast_lor_top] = 0;
 		ast_lor_top++;
 	}
+	if (ast_lor_suppress)
+		{ MCC_TRACE("br\n"); return; }
 	if (ast_lor_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_lor_const[ast_lor_top - 1])
@@ -2874,6 +2894,8 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
+	if (ast_lor_suppress)
+		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_lor_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_call = 0;
@@ -2887,6 +2909,10 @@ void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
+	if (ast_lor_suppress) { MCC_TRACE("br\n");
+		ast_lor_suppress--;
+		return;
+	}
 	if (!ast_active || ast_lor_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal nd = ast_lor[--ast_lor_top];
@@ -14690,7 +14716,9 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_cur_bb = ast_node(ast_cur, AST_BasicBlock);
 		ast_cf_top = 0;
 		ast_tern_top = 0;
+		ast_tern_suppress = 0;
 		ast_lor_top = 0;
+		ast_lor_suppress = 0;
 		ast_bail = 0;
 		ast_bail_line = 0;
 		ast_bail_first = 0;

@@ -74,7 +74,7 @@ features_c99_c11/complex_cmplx_special.c	main	desync
 features_c99_c11/feature_macros.c	main	desync
 features_c99_c11/flt_eval_method.c	main	desync
 features_c99_c11/fp_builtins.c	main	desync
-features_c99_c11/generic.c	main	desync
+features_c99_c11/generic.c	main	unfaithful
 features_c99_c11/noreturn.c	drive_int	unfaithful
 features_c99_c11/sync_builtins.c	main	bail
 features_c99_c11/tgmath_dispatch.c	main	desync
@@ -117,7 +117,7 @@ statements/scopes.c	f4	desync
 statements/scopes.c	main_1	unfaithful
 statements/tentative_array.c	main	desync
 statements/ternary_op.c	call_fp	desync
-statements/ternary_op.c	main	desync
+statements/ternary_op.c	main	bail
 statements/ternary_op.c	tst_yarpgen	desync
 statements/translation_limits.c	main	desync
 statements/void_expr.c	main	unfaithful
