@@ -1969,12 +1969,13 @@ static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 static int ast_loc_low;
 static int ast_locrec_min;
 static int ast_temp_frontier;
+static int jrn_replaying;
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
 
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
-	if (ast_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
+	if (ast_replaying && !jrn_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
 		loc = ast_locrec[ast_locrec_i++];
 		if (loc < ast_loc_low)
 			{ MCC_TRACE("br\n"); ast_loc_low = loc; }
@@ -2012,7 +2013,7 @@ int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 }
 
 int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
-	if (ast_replaying) { MCC_TRACE("br\n");
+	if (ast_replaying && !jrn_replaying) { MCC_TRACE("br\n");
 		if (ast_temp_frontier > 0)
 			{ MCC_TRACE("br\n"); ast_temp_frontier = ast_locrec_min < loc ? ast_locrec_min : loc; }
 		ast_temp_frontier = (ast_temp_frontier - size) & -align;
@@ -14973,6 +14974,7 @@ typedef struct JrnOp {
 	SValue svarg;
 	int sv_slot;
 	int vs_off, vs_n;
+	int loc_pre, ntlv_pre;
 	int ind_pre, ind_post;
 	int rel_pre, rel_post;
 	int raw_off, raw_len;
@@ -15003,7 +15005,6 @@ static JrnOp *jrn_pending;
 static int *jrn_fc;
 static int jrn_fcn, jrn_fccap;
 static int jrn_fc_cur, jrn_fc_end;
-static int jrn_replaying;
 
 static int jrn_fconst_take(int *out) { MCC_TRACE("enter\n");
 	if (!jrn_replaying)
@@ -15078,6 +15079,8 @@ static JrnOp *jrn_new_op(int kind) { MCC_TRACE("enter\n");
 	memset(o, 0, sizeof *o);
 	o->kind = kind;
 	o->sv_slot = -1;
+	o->loc_pre = loc;
+	o->ntlv_pre = nb_temp_local_vars;
 	return o;
 }
 
@@ -15567,6 +15570,8 @@ static void jrn_run(void) { MCC_TRACE("enter\n");
 			}
 		}
 		nocode_wanted = o->nocode;
+		loc = o->loc_pre;
+		nb_temp_local_vars = o->ntlv_pre;
 		if (o->vs_n >= 0) { MCC_TRACE("br\n");
 			if (o->vs_n)
 				{ MCC_TRACE("br\n"); memcpy(vstack, jrn_vs + o->vs_off,
@@ -15659,6 +15664,8 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 	Sym *saved_free = sym_free_first;
 	int saved_floor = stk_data_floor;
 	uint64_t saved_pin = ast_pinned_regs;
+	int saved_ntlv = nb_temp_local_vars;
+	struct temp_local_variable saved_tlv[MAX_TEMP_LOCAL_VARIABLE_NUMBER];
 	int sv_ast_active, sv_ast_capture, sv_ast_replaying;
 
 	jrn_active = 0;
@@ -15690,6 +15697,7 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 																(size_t)rel_len); }
 	vsave = mcc_malloc(sizeof(SValue) * (VSTACK_SIZE + 1));
 	memcpy(vsave, vstack - 1, sizeof(SValue) * (VSTACK_SIZE + 1));
+	memcpy(saved_tlv, arr_temp_local_vars, sizeof saved_tlv);
 
 	ind = ast_body_ind_sv;
 	rsym = 0;
@@ -15809,6 +15817,8 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 	anon_sym = saved_anon;
 	nocode_wanted = saved_nocode;
 	ast_pinned_regs = saved_pin;
+	nb_temp_local_vars = saved_ntlv;
+	memcpy(arr_temp_local_vars, saved_tlv, sizeof saved_tlv);
 	memcpy(vstack - 1, vsave, sizeof(SValue) * (VSTACK_SIZE + 1));
 	vtop = vstack + saved_vn - 1;
 	mcc_free(vsave);
