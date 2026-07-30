@@ -6,7 +6,8 @@
 # with the same compiler -- once plain, once under MCC_JOURNAL=1 -- and fails on
 # any difference. It is the runtime half of the inertness property; the
 # compile-time half (a build with MCC_JOURNAL_HOOKS against one built with
-# -DMCC_JOURNAL_HOOKS=0) needs two build trees and is checked by hand.
+# -DMCC_JOURNAL_HOOKS=0) is checked by ast/journal-inert-build via
+# tools/jrn_hooks_identity.sh against the mcc-nojrn binary.
 #
 # Usage: jrn_identity.sh <mcc> <corpus-dir> <extra-source> <tmpdir> [opt]
 # Exits 77 (ctest SKIP) when the build has no MCC_JOURNAL_HOOKS.

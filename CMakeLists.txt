@@ -2051,6 +2051,27 @@ if(MCC_ALL_DIAGNOSTICS)
     target_compile_options(mcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
 
+if(MCC_BUILD_TESTS AND MCC_SINGLE_SOURCE AND MCC_CONFIG_OPTIMIZER
+   AND MCC_CPU MATCHES "x86_64" AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(mcc_nojrn src/mcc.c)
+    set_target_properties(mcc_nojrn PROPERTIES OUTPUT_NAME mcc-nojrn)
+    target_include_directories(mcc_nojrn PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(mcc_nojrn PRIVATE MCC_JOURNAL_HOOKS=0)
+    if(NOT MCC_TARGETOS STREQUAL "WIN32")
+        target_link_libraries(mcc_nojrn PRIVATE m)
+        find_package(Threads)
+        if(Threads_FOUND)
+            target_link_libraries(mcc_nojrn PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+        endif()
+    endif()
+    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
+        target_link_libraries(mcc_nojrn PRIVATE ${_mcc_extra_libs})
+    endif()
+    if(TARGET mcc_mccdefs)
+        add_dependencies(mcc_nojrn mcc_mccdefs)
+    endif()
+endif()
+
 if(MCC_BUILD_STATIC_EXE)
     add_executable(mcc_static src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
@@ -2362,7 +2383,7 @@ if(MCC_BUILD_TSAN)
     endif()
 endif()
 
-foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s mcc_t)
+foreach(_nt mcc mcc_static mcc_dynamic mcc_nojrn libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s mcc_t)
     if(TARGET ${_nt})
         target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
     endif()
@@ -3723,6 +3744,21 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(ast/journal-inert PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                 TIMEOUT 900)
+        endif()
+
+        if(UNIX AND TARGET mcc_nojrn)
+            add_test(NAME ast/journal-inert-build
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/jrn_hooks_identity.sh"
+                        "${_mcc_exe}" "$<TARGET_FILE:mcc_nojrn>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "${CMAKE_BINARY_DIR}/ast-journal-hooks-inert" -O1)
+            set_tests_properties(ast/journal-inert-build PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 900)
+        elseif(UNIX)
+            mcc_skip_test(ast/journal-inert-build
+                "the hooks-off compiler needs MCC_SINGLE_SOURCE=ON; not built in this configuration")
         endif()
 
         # -O4's superopt driver scores by SIZE, and promotion trades size for
