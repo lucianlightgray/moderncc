@@ -15019,6 +15019,7 @@ static long jrn_tot_fn, jrn_tot_faithful, jrn_tot_clean;
 static long jrn_tot_ops, jrn_tot_raw, jrn_tot_fix;
 static long jrn_fixhist[JFIX_COUNT];
 static long jrn_ophist[JOP_COUNT];
+static long jrn_fixpair[JOP_COUNT][JFIX_COUNT];
 
 static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 	static const char *const n[JOP_COUNT] = {
@@ -15461,6 +15462,7 @@ static int jrn_deep_reg_live(const SValue *vs, int n) { MCC_TRACE("enter\n");
 static void jrn_run(void) { MCC_TRACE("enter\n");
 	int i;
 	int live_n = -1;
+	int prev_kind = -1;
 	jrn_fail_op = -1;
 	jrn_fail_kind = -1;
 	jrn_fix_n = 0;
@@ -15474,6 +15476,8 @@ static void jrn_run(void) { MCC_TRACE("enter\n");
 			if (cls != JFIX_NONE) { MCC_TRACE("br\n");
 				jrn_fix_n++;
 				jrn_fixhist[cls]++;
+				if (prev_kind >= 0)
+					{ MCC_TRACE("br\n"); jrn_fixpair[prev_kind][cls]++; }
 			}
 		}
 		nocode_wanted = o->nocode;
@@ -15497,6 +15501,7 @@ static void jrn_run(void) { MCC_TRACE("enter\n");
 					jrn_op_name(o->kind), o->ind_pre, o->ind_post, ind, o->vs_n, o->raw_len,
 					o->nocode); }
 		live_n = (int)(vtop - vstack + 1);
+		prev_kind = o->kind;
 		if (o->kind == JOP_RAW)
 			{ MCC_TRACE("br\n"); live_n = -1; }
 	}
@@ -15846,6 +15851,14 @@ static void jrn_report(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); if (jrn_fixhist[i])
 			{ MCC_TRACE("br\n"); fprintf(stderr, "[jrn-fix] %s %ld\n", jrn_fix_name(i),
 																	 jrn_fixhist[i]); } }
+	for (i = 0; i < JOP_COUNT; i++) { MCC_TRACE("br\n");
+		int j;
+		for (j = 0; j < JFIX_COUNT; j++)
+			{ MCC_TRACE("br\n"); if (jrn_fixpair[i][j] >= 64)
+				{ MCC_TRACE("br\n"); fprintf(stderr, "[jrn-fixat] %s->? %s %ld\n",
+																		 jrn_op_name(i), jrn_fix_name(j),
+																		 jrn_fixpair[i][j]); } }
+	}
 	for (i = 0; i < JOP_COUNT; i++)
 		{ MCC_TRACE("br\n"); if (jrn_ophist[i])
 			{ MCC_TRACE("br\n"); fprintf(stderr, "[jrn-op] %s %ld\n", jrn_op_name(i),
