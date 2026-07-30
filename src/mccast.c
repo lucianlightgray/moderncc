@@ -2211,16 +2211,25 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", o4 || s1->optimize >= 2);
 	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", o4 || s1->optimize >= 1);
 	ast_range_env = ast_env_gate("MCC_AST_RANGE", o4 || s1->optimize >= 1);
-	/* i386 carve-out REMOVED 2026-07-25: the struct-pressure temp-slot-reuse
-	 * miscompiles (after-loop `%C` d9 + in-loop v_251/v_7/h1 + unsigned u1/u2, and
-	 * the now-materialized 64-bit u64/s64 paths) are all fixed by the i386-gated
-	 * real temp-materialization of x (ast_divmagic_materialize) — x is stored once
-	 * into a dedicated non-reuse-pool slot and every magic-sequence x-read loads it,
-	 * so the 5-register allocator can't recycle x's slot as scratch between reads.
-	 * Validated by i386-divmagic-soak (32- + 64-bit, incl. struct-loop cases) vs a
-	 * hardware-idiv oracle under qemu-i386; on by default at -O2+ like the other
-	 * optimizer-capable arches. */
+	/* i386 carve-out RESTORED 2026-07-30: the 2026-07-25 lift (ast_divmagic_materialize
+	 * + soak) was PREMATURE. The materialize stores x once into a reserved ltemp slot
+	 * and every magic-sequence x-read loads it, but that reservation is only honored by
+	 * the register-promotion pass (ast_ltemp_off poison in ast_promote_locals); the i386
+	 * value-stack spill allocator does NOT exclude ltemp slots, so under enough local
+	 * pressure it reuses xoff for the 64-bit mul's low-product spill and clobbers the
+	 * still-live dividend. Reproduced: the i386-codegen-diff `d2` (struct-by-value summed
+	 * over a wide loop, then `(s&0x7fffffff)%251`) gives 131 vs 91 at -O2 — s is byte-
+	 * identical to -O0, f(s)=91 in isolation, only the in-context `%251` is wrong because
+	 * xoff (-0x30) is overwritten by the product store. The i386-divmagic-soak missed this
+	 * exact spill layout. Until the vstack spill allocator is made ltemp-aware (the real
+	 * opt-preserving fix — see docs/TODO.md), divmagic stays default-OFF on i386 (hardware
+	 * idiv, correct). Byte-inert on the shipped i386 cross build, which has no optimizer.
+	 * Still opt-in via MCC_AST_DIVMAGIC=1 for soak/diagnosis. */
+#ifdef MCC_TARGET_I386
+	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", 0);
+#else
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", o4 || s1->optimize >= 2);
+#endif
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", o4 || s1->optimize >= 2);
 	ast_select_env = ast_env_gate("MCC_AST_SELECT", o4 || s1->optimize >= 2);
 	ast_reassoc_env = ast_env_gate("MCC_AST_REASSOC", o4 || s1->optimize >= 2);
