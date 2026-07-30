@@ -76,11 +76,11 @@ features_c99_c11/alignas_over.c	main	desync
 features_c99_c11/atomic_aggregate.c	main	bail
 features_c99_c11/atomic_counter.c	adder_cmpxchg	bail
 features_c99_c11/atomic_counter.c	adder_simple	bail
-features_c99_c11/atomic_counter.c	adder_test_and_set	desync
+features_c99_c11/atomic_counter.c	adder_test_and_set	unfaithful
 features_c99_c11/atomic_counter.c	atomic_counter_test	bail
 features_c99_c11/atomic_gcc_style.c	main	bail
-features_c99_c11/atomic_inlang_rmw.c	main	desync
-features_c99_c11/atomic_inlang_rmw.c	worker	desync
+features_c99_c11/atomic_inlang_rmw.c	main	bail
+features_c99_c11/atomic_inlang_rmw.c	worker	bail
 features_c99_c11/atomic_n_builtins.c	main	bail
 features_c99_c11/atomic_ptr.c	main	bail
 features_c99_c11/builtin_bitops_fold.c	main	desync
@@ -107,7 +107,6 @@ features_c99_c11/cleanup.c	test_ret2	unfaithful
 features_c99_c11/complex.c	main	desync
 features_c99_c11/complex_annexg.c	main	desync
 features_c99_c11/complex_cmplx_special.c	main	desync
-features_c99_c11/feature_macros.c	main	desync
 features_c99_c11/flt_eval_method.c	main	desync
 features_c99_c11/fp_builtins.c	main	desync
 features_c99_c11/generic.c	main	unfaithful
@@ -120,7 +119,6 @@ functions_abi/inline2.c	check_exports	desync
 functions_abi/variadic_promotions.c	sum_doubles	desync
 functions_abi/variadic_promotions.c	sum_ints	desync
 lexical/U32_string.c	main	desync
-lexical/string_concat_mixed.c	main	desync
 lexical/u16_string.c	main	desync
 lexical/u8_string.c	main	desync
 lexical/uU_char_constants.c	main	desync
@@ -139,7 +137,7 @@ programs/grep.c	compile	desync
 programs/grep.c	main	unfaithful
 programs/grep.c	pmatch	desync
 programs/random_stuff.c	tst_adr	desync
-programs/random_stuff.c	tst_branch	desync
+programs/random_stuff.c	tst_branch	bail
 programs/random_stuff.c	tst_pack	unfaithful
 programs/stdio.c	main	unfaithful
 runner.c	slurp	unfaithful
@@ -164,7 +162,7 @@ structs_unions/struct_abi.c	main	desync
 structs_unions/struct_abi.c	vsum	desync
 structs_unions/struct_byval.c	f4	desync
 structs_unions/struct_init.c	test_compound_with_relocs	unfaithful
-structs_unions/struct_init.c	test_init_ranges	desync
+structs_unions/struct_init.c	test_init_ranges	bail
 structs_unions/struct_init.c	test_init_struct_from_struct	unfaithful
 structs_unions/struct_init.c	test_multi_relocs	desync
 structs_unions/struct_packed_indirect.c	main	unfaithful
