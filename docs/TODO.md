@@ -4157,7 +4157,13 @@ For each operation:
   __int128 const shifts, so self-host should be byte-identical, but confirm goldens); (b) the
   VARIABLE-count case (`shld`/`shrd` + the `count >= 64` runtime branch), still a helper call.
 - Multiply — `mulq` for the low 64x64->128 product, two `imulq` for the cross terms. mcc already has
-  `gen_mulh` for the high half of a 64x64 product, so the pieces exist.
+  `gen_mulh` for the high half of a 64x64 product, so the pieces exist. **NOTE (2026-07-30): unlike the
+  shift emitter, this is NOT a mechanical port of `gen_opl`'s `*` arm.** `gen_opl` builds the 64-bit
+  product from a single `TOK_UMULL` (32x32->64 widening vstack op); there is no 64x64->128 vstack analog,
+  so `gen_opq` must hand-assemble the low product as `gen_mulh(unsigned)` (high 64) + a plain 64-bit `*`
+  (low 64), then add `a_hi*b_lo + a_lo*b_hi` into the high 64. Doable but higher bug risk than the shift
+  port — deferred until it can be TDD'd on an x86_64 host (helper-based `*` is already fuzz-clean vs gcc,
+  ~1000 seeds, so this is pure perf, not correctness).
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
   priority of the three: mcc does not currently expose these as 128-bit builtins at all
