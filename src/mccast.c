@@ -10436,6 +10436,12 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	if (!ast_bf_window(vals, cnt, &mask, &base))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal cond = ast_bf_build(a, key, mask, base);
+	/* `member` tests x IN {vals}. For `if(x==a || ...)` that IS the condition, but
+	   `if(!(x==a || ...))` carries AST_FB_LANDOR_INVERT on the parsed LOR -- the
+	   `member` bit-test is not a landor so the invert fixup never runs, so bake the
+	   negation in here (member ^ 1 = "not in set"). See the landor-invert fold class. */
+	if (ast_fbits(a, cond0) & AST_FB_LANDOR_INVERT)
+		{ MCC_TRACE("br\n"); cond = ast_bf_bin(a, '^', VT_INT, cond, ast_bf_lit(a, VT_INT, 1)); }
 	ast_clear_children(a, s);
 	ast_add_child(a, s, cond);
 	ast_add_child(a, s, thenbb);
@@ -10487,7 +10493,11 @@ static int ast_bf_try_ifne(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	if (!ast_bf_window(vals, cnt, &mask, &base))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal member = ast_bf_build(a, key, mask, base);
-	AstLocal cond = ast_bf_bin(a, '^', VT_INT, member, ast_bf_lit(a, VT_INT, 1));
+	/* `if(x!=a && ...)` is "not in set" = member^1; but `if(!(x!=a && ...))` carries
+	   AST_FB_LANDOR_INVERT, which negates it back to "in set" = member. See try_if. */
+	AstLocal cond = (ast_fbits(a, cond0) & AST_FB_LANDOR_INVERT)
+			? member
+			: ast_bf_bin(a, '^', VT_INT, member, ast_bf_lit(a, VT_INT, 1));
 	ast_clear_children(a, s);
 	ast_add_child(a, s, cond);
 	ast_add_child(a, s, body);
@@ -10501,6 +10511,14 @@ static int ast_bf_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal key = AST_NONE;
 	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
 	int cnt = 0;
+	/* A negated value-context chain (`!(x==a||...)`) carries AST_FB_LANDOR_INVERT;
+	   this in-place rewrite to the `&` bit-test would drop it (the bit-test is not a
+	   landor, so the invert fixup at ast_replay_value never runs). Leave it un-folded
+	   -- the LAND/LOR replay handles the negation. (try_if/try_ifne bake it into the
+	   op instead; the in-place rewrite here makes that awkward, and the value-context
+	   negated chain is rare.) See the landor-invert fold class. */
+	if (ast_fbits(a, n) & AST_FB_LANDOR_INVERT)
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_bf_cond_parse(a, n, &key, vals, &cnt))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (cnt < ast_bitflag_min || key == AST_NONE)
@@ -10527,6 +10545,9 @@ static int ast_bf_try_land(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal key = AST_NONE;
 	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
 	int cnt = 0;
+	/* See ast_bf_try_lor: a negated value-context chain must not fold (invert lost). */
+	if (ast_fbits(a, n) & AST_FB_LANDOR_INVERT)
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_bf_cond_parse_op(a, n, TOK_LAND, TOK_NE, &key, vals, &cnt))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (cnt < ast_bitflag_min || key == AST_NONE)
