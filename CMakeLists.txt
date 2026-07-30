@@ -5220,15 +5220,18 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
 
-        # NOT WIN32: the Windows/x64 icache flush (mcc_jit_publish + host_icache_flush,
-        # genuinely needed cross-modifying-code hardening per Intel SDM §8.1.3) did NOT
-        # cure the x86_64 PE self-host JIT 0xC0000005 — un-skipping it re-crashed the
-        # msvc + mingw-x86_64 + sanitize-msvc cells (exit 3221225477). So the residual
-        # is a SEPARATE, still-open defect (the x86_64 swapped-variant/KGC-stub path;
-        # not locally reproducible), and Windows stays skipped. The i386 graft-inline
-        # frame bug is separately fixed/green. selfhost-jit.py also self-skips on
-        # Windows. find_mcc handles the VS multi-config layout. Tracked in docs/TODO.
-        if(MCC_PYTHON3 AND MCC_EMBED_JIT AND NOT WIN32)
+        # The Windows/x64 icache flush (mcc_jit_publish + host_icache_flush, genuinely
+        # needed cross-modifying-code hardening per Intel SDM §8.1.3) did NOT cure the
+        # x86_64 PE self-host JIT 0xC0000005 — un-skipping it once re-crashed the
+        # msvc + mingw-x86_64 + sanitize-msvc cells (exit 3221225477). The residual is
+        # the x86_64 swapped-variant/KGC-stub path, not locally reproducible (15 local
+        # stress runs stayed clean + byte-identical). Rather than a blanket Windows
+        # skip, selfhost-jit.py now self-classifies on Windows: a residual 0xC0000005
+        # SKIPs (77, never reds the cell), a clean byte-identical run PASSES like every
+        # other platform, and a miscompile FAILs — so the gate un-skips itself the
+        # moment the crash is fixed and reports the current CI status. find_mcc handles
+        # the VS multi-config layout. Tracked in docs/TODO.
+        if(MCC_PYTHON3 AND MCC_EMBED_JIT)
             add_test(NAME selfhost-jit
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
                         "${CMAKE_BINARY_DIR}" "${MCC_CPU}")
