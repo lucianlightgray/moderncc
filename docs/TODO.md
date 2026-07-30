@@ -4145,12 +4145,17 @@ For each operation:
    stays as the fallback for every other target.
 
 **Ordered by payoff — remaining work only:**
-- Shifts — `shld`/`shrd` plus the `count >= 64` case. The count-64 boundary is where implementations
-  reliably go wrong (x86 shift counts are masked to 6 bits), so test 63/64/65 explicitly. Highest
-  remaining payoff: a shift is 2-3 instructions and currently costs a call. Note the CONSTANT-count
-  case is the easy 80% and can land first — `gen_opl` already has exactly this inline sequence for
-  32-bit halves (`src/mccgen.c`, the `TOK_SAR`/`TOK_SHR`/`TOK_SHL` arm) and it is a direct port to
-  64-bit halves; only the variable-count case needs the runtime branch.
+- Shifts — **CONSTANT-count case DONE 2026-07-30 (`ac997715`), gated `MCC_I128_NATIVE_SHIFT`,
+  default OFF.** Direct port of `gen_opl`'s constant arm to 64-bit halves (qexpand/qbuild,
+  32->64, sign shift 31->63) in `gen_opq`. Validated on x86_64 (mcc-x64 gate-ON vs gcc under
+  qemu): every count 0..127 × {SHL,SHR,SAR} matches, 400 fuzzer seeds 0 fails; inline confirmed
+  in the disasm (0 calls). **The count-0 trap the original note didn't call out:** `gen_opl`
+  never sees `x<<0` (the 32-bit fold eats it) but the 128-bit fold does NOT, so it reaches the
+  emitter and the `64 - c` sub-shift becomes a shift-by-64 (UB, x86 masks to 0) — needs a `c==0`
+  identity early-out (in the commit). Still TODO: (a) flip default-ON after an x86_64 self-host
+  fixpoint + recorder-golden pass (couldn't run from the arm64 dev host; mcc's own source uses no
+  __int128 const shifts, so self-host should be byte-identical, but confirm goldens); (b) the
+  VARIABLE-count case (`shld`/`shrd` + the `count >= 64` runtime branch), still a helper call.
 - Multiply — `mulq` for the low 64x64->128 product, two `imulq` for the cross terms. mcc already has
   `gen_mulh` for the high half of a 64x64 product, so the pieces exist.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
