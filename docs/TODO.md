@@ -80,6 +80,41 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 
 **CONSOLIDATION (2026-07-27):** with all five source changes in (SECREL native-TLS COFF reading, à la carte pull-once, `__ImageBase` synthesis, compiler-rt embed fallback, `K32GetProcessMemoryInfo` def) plus the CMake self-host enablement, the **full local ctest suite is 100% GREEN — 6424/6424, 0 failures** on llvm-mingw x86_64 (the core PE linker path is exercised by every test that links the CRT). x86_64-win32 `--embed-jit` + self-host bake + `MCC_JIT=1`≡`MCC_JIT=0` parity are done, wired, and regression-clean. Regression lock-in **DONE**: `embed-jit-smoke` ctest (`tools/embed-jit-smoke.py`, gated `WIN32 AND NOT MSVC`, SKIP-77 on no-blob/missing-runtime-lib, FAIL only on wrong output or a non-lib bake failure; JIT-OFF only so it never touches the winlibs `0xC0000005`). Passes locally on llvm-mingw. So the entire x86_64-win32 (mingw) `--embed-jit` path is implemented, proven, wired, and CI-guarded. **All local-tractable campaign items are complete;** what remains is strictly gated: i386 (no i386 toolchain here), MSVC embed (ucrt/msvcrt CRT-model conflict), P0 step 5 (winlibs-specific CI crash — needs a CI trace), arm64-win32 (HW).
 
+## KNOWN CORRECTNESS BUG (found 2026-07-30) — MCC_AST_BITFLAG miscompiles branch-context negated equality chains at -O2
+
+**Confirmed -O2 miscompile, arch-independent (repro on arm64-linux vs gcc), NOT yet fixed.** An `if`
+condition that is a 5+-value inequality chain — `if (x != a && x != b && x != c && x != d && x != e)`,
+which the parser also produces from `if (!(x == a || x == b || ...))` via De Morgan — is compiled with the
+**branch polarity inverted**: it takes the branch when x IS in the set instead of when it is NOT. Value
+context is fine (`return (x!=a && ...)` matches gcc); only the branch/`if` consumption is wrong.
+
+**Localized:** it is the interaction of `MCC_AST_BITFLAG` (the equality-chain→bitmask fold,
+`ast_bf_try_lor`/`ast_bf_try_land`/`ast_bf_try_ifne`, min 5 values) with `MCC_AST_LANDOR_INVERT`. Disabling
+EITHER gate fixes it (`MCC_AST_BITFLAG=100` or `MCC_AST_LANDOR_INVERT=0`). The folds rewrite the node to a
+`member = (mask>>((x-base)&63))&1 & (x-base<u64)` bit-test and emit `member ^ 1` (== "not in set") for the
+if-condition, but that folded node's branch comes out inverted only when LANDOR_INVERT is on (LANDOR_INVERT
+is what creates the foldable De-Morgan'd `x!=a && ...` form). It is NOT a generic `if((expr)^1)` branch bug —
+a minimal `if((y&1)^1)` is correct; it needs the full bitflag `member` structure.
+
+**Partial fix that works (value contexts only):** clearing `AST_FB_LANDOR_INVERT` in the folds drops the
+negation for the VALUE-context negated case (`return !(x==a||...)`); guarding `ast_bf_try_lor`/`_land` with
+`if (ast_fbits(a,n) & AST_FB_LANDOR_INVERT) return 0;` fixes those. The BRANCH-context case
+(`ast_bf_try_ifne`, and `_land` folding an if-condition) has NO invert bit on the node/If for the
+De-Morgan'd `!(LOR of ==)` shape, so an invert guard does not catch it — the `member^1`-in-branch is
+mis-inverted by a path downstream of the fold. Do NOT ship the partial fix alone: it leaves the common
+`if (x != a && ...)` pattern broken while looking fixed.
+
+**Repro** (self-verifying, prints FAIL n at -O2, OK with gcc / with either gate off):
+```c
+extern int printf(const char*,...);
+int guard(int x){ if(!(x==1||x==3||x==5||x==7||x==9)) return 8; return 2; }
+int main(void){ int f=0; for(int x=-2;x<=12;x++){ int s=(x==1||x==3||x==5||x==7||x==9);
+  if(guard(x)!=(s?2:8))f++; } printf(f?"FAIL %d\n":"OK\n",f); return f!=0; }
+```
+Next: find where the folded `member`-test's branch polarity is inverted under LANDOR_INVERT (the fold output
+is a plain `&`/`^` node, so the landor-invert fixup at `ast_replay_value:~5870` does not apply to it), and
+either bake the correct polarity into the emitted node or make the fold branch-context-aware.
+
 ## `-march` — DONE 2026-07-29 (pruned; detail in git history around `4e74e1c9`/`5bd7d020`/`3217b8a9`)
 
 All six steps landed: feature mask + `mcc_isa_has`, named levels (x86-64-v1..v4 + gcc aliases; arm
