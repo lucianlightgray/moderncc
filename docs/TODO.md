@@ -4123,7 +4123,13 @@ wrong — see below.** What is already native, not a call: `+`, `-`, unary `-` (
 `~` (lowered to `x ^ -1`), `&`, `|`, `^`, and ALL comparisons, all emitted inline by `gen_opq` in
 `src/mccgen.c` over the two halves (`add`/`adc`, `sub`/`sbb`, per-half bitwise, high-then-low compare).
 128-bit constant folding is also done in software, so none of these reach a call at compile time either.
-**What still calls out:** `*`, `/`, `%`, `<<`, `>>` (both `__lshrti3` and `__ashrti3`).
+**What still calls out (updated 2026-07-30):** `/`, `%` (LEAVE AS CALLS — gcc does too), and only the
+VARIABLE-count `<<`/`>>`. **`*` and CONSTANT-count `<<`/`>>` are now INLINE and DEFAULT-ON** (this
+session): the constant-shift emitter (`ac997715`, flipped `076eec62`) and the multiply emitter via the
+new `gen_mul_widen` primitive (`9aa99b59`), both x86_64, both validated (fuzz + int128.c golden +
+self-host byte-identity). So Phase 2's two highest-payoff pieces are done; the only remaining native-
+emitter candidate is the variable-count shift (see the Shifts bullet — feasible but control-flow-hard),
+plus clz/ctz/popcount which are blocked on a wide `__int128` builtin that does not exist yet.
 
 **Why a call was the right Phase-1 answer and is still the wrong long-term one for what remains.**
 The argument that retired the `+`/`-`/bitwise/compare calls applies unchanged to the rest: `a + b` on a
@@ -4152,10 +4158,18 @@ For each operation:
   in the disasm (0 calls). **The count-0 trap the original note didn't call out:** `gen_opl`
   never sees `x<<0` (the 32-bit fold eats it) but the 128-bit fold does NOT, so it reaches the
   emitter and the `64 - c` sub-shift becomes a shift-by-64 (UB, x86 masks to 0) — needs a `c==0`
-  identity early-out (in the commit). Still TODO: (a) flip default-ON after an x86_64 self-host
-  fixpoint + recorder-golden pass (couldn't run from the arm64 dev host; mcc's own source uses no
-  __int128 const shifts, so self-host should be byte-identical, but confirm goldens); (b) the
-  VARIABLE-count case (`shld`/`shrd` + the `count >= 64` runtime branch), still a helper call.
+  identity early-out (in the commit). **(a) DEFAULT-ON flip DONE + CI-green** (`076eec62`): validated
+  via mcc-x64 under qemu — int128.c run-golden shl/shr/sar match at -O0..-O3, mcc.c byte-identical gate
+  on/off (self-host-inert), no byte-golden compiles a `__int128` const shift, gate is `gen_opq` codegen
+  (downstream of the recorder → cannot move the ratchet). **(b) VARIABLE-count case — STILL A HELPER
+  CALL; the last non-blocked Phase-2 piece, and a genuine step up in difficulty.** Assessed 2026-07-30:
+  the primitives exist (`gjmp_cond`/`gsym` for the runtime `count>=64` branch; mcc can emit `shld`/`shrd`
+  — 0xA4 at x86_64-gen.c:~3201), so it's feasible. The hard part is CONTROL FLOW, not arithmetic: unlike
+  the constant-shift and multiply emitters (both straight-line), a variable shift needs a value-producing
+  runtime branch (`c<64` vs `c>=64`) whose two arms must leave the result in the SAME registers — awkward
+  in mcc's stack machine — or a fully branchless cmov formulation around x86's 6-bit count mask. Worth a
+  focused empirical attempt (the const-shift + multiply successes suggest building-then-debugging beats
+  analysis), TDD'd against a variable-count fuzz corpus (0..127) + int128.c; not a blind one-shot.
 - Multiply — **DONE + DEFAULT-ON 2026-07-30 (x86_64).** A `gen_opq` emitter inlines the 128-bit `*` instead of calling `__multi3`, a port of `gen_opl`'s `*` arm to 64-bit halves. The key piece: a new `gen_mul_widen()` (x86_64-gen.c) does one unsigned `mul` and keeps the FULL `rdx:rax` pair (low+high), so `gen_mul_widen(); qexpand()` cleanly replaces `gen_opl`'s `TOK_UMULL; lexpand()` with no operand aliasing (the earlier `gen_op('*')`+`gen_mulh` split aliased the operand regs — see git history). Unsigned throughout is correct for signed __int128 too (low 128 bits sign-agnostic; only `__multi3` exists). Emits 3 muls (widening + 2 cross imuls), gcc-like. Gated `MCC_I128_NATIVE_MUL` (default ON; `=0` restores the helper). Validated: controlled cases + int128.c `mul 907f6e5c…` golden at -O0..-O3 + ~900 fuzzer seeds vs gcc (0 fails); mcc.c byte-identical gate on/off (self-host-inert, mcc uses no __int128 mul); fixpoint-invariant byte-identical (inert off-x86_64). NOTE: the AST-rewrite route is DEAD — `ast_bad_type(VT_INT128)` desyncs the recorder so __int128 never reaches AST strategies; it MUST be a gen_opq emitter.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
