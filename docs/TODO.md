@@ -4156,45 +4156,7 @@ For each operation:
   fixpoint + recorder-golden pass (couldn't run from the arm64 dev host; mcc's own source uses no
   __int128 const shifts, so self-host should be byte-identical, but confirm goldens); (b) the
   VARIABLE-count case (`shld`/`shrd` + the `count >= 64` runtime branch), still a helper call.
-- Multiply — `mulq` for the low 64x64->128 product, two `imulq` for the cross terms. mcc already has
-  `gen_mulh` for the high half of a 64x64 product, so the pieces exist. **NOTE (2026-07-30): unlike the
-  shift emitter, this is NOT a mechanical port of `gen_opl`'s `*` arm.** `gen_opl` builds the 64-bit
-  product from a single `TOK_UMULL` (32x32->64 widening vstack op); there is no 64x64->128 vstack analog,
-  so `gen_opq` must hand-assemble the low product as `gen_mulh(unsigned)` (high 64) + a plain 64-bit `*`
-  (low 64), then add `a_hi*b_lo + a_lo*b_hi` into the high 64. Doable but higher bug risk than the shift
-  port — deferred until it can be TDD'd on an x86_64 host (helper-based `*` is already fuzz-clean vs gcc,
-  ~1000 seeds, so this is pure perf, not correctness). **Concrete blocker (analyzed 2026-07-30):** the
-  specific difficulty is REGISTER COORDINATION, not the arithmetic. `gen_mulh(sign)` (x86_64-gen.c,
-  invoked from the AST via `AST_OP_MULHU`) forces its operands into RAX/RCX and returns the high half in
-  RDX; the low product `a_lo*b_lo` also wants RAX/RDX, and `a_lo`/`b_lo` are each live across BOTH (need
-  dups). There is no single 64x64->128 widening vstack op (unlike `gen_opl`'s `TOK_UMULL` at 32-bit), so
-  the sequence is hand-orchestrated `gen_mulh` + three `gen_op('*')` + two `gen_op('+')` with precise
-  dup/rot management — best done interactively (validate each step against int128.c's `mul 907f6e5c…`
-  golden line + the ~1000-seed fuzzer), not written blind in one shot. **IT MUST BE A `gen_opq` EMITTER
-  — the AST-rewrite idea is DEAD (empirically disproven 2026-07-30).** I built the full AST rewrite
-  (`ast_i128_mul_try` mirroring divmagic: `((u128)(MULHU(alo,blo)+ahi*blo+alo*bhi)<<64) | (u128)alo*blo`,
-  gated `MCC_AST_I128_MUL`) and it NEVER FIRED: `ast_bad_type()` (mccast.c:~2540) returns true for
-  `VT_INT128`, so every `__int128` op DESYNCS the AST recorder and never reaches the AST strategy
-  pipeline (divmagic, etc.). That is precisely why the constant-shift emitter had to live in `gen_opq`
-  (always-run codegen) and works, while an AST pass cannot. So the multiply has no shortcut: it is the
-  raw `gen_mulh` orchestration in `gen_opq`. `TOK_UMULL` (gen_opl's widening primitive) is arm/i386-only,
-  absent on x86_64, so there's no mechanical port either. Do it interactively in `gen_opq`, gated, TDD'd
-  against int128.c's `mul` golden + the fuzzer; the arithmetic is settled (unsigned decomposition is
-  correct for signed too — only `__multi3` exists), only the register/vstack orchestration remains.
-  **EMPIRICAL STATUS (2026-07-30): the gen_opq emitter is ~90% there; the ONE remaining bug is register
-  aliasing in the low 64x64->128 product.** I built it as a near-mechanical port of gen_opl's `*` arm
-  (same qexpand setup + vrotb(6) dance + cross muls + qbuild), substituting gen_opl's single
-  `TOK_UMULL; lexpand()` (which leaves `[lo,hi]`) with `gen_op('*')` (low 64) + `gen_mulh(0)` (high 64)
-  over duplicated operands. It FIRES (0 __multi3 calls, 4 mul insns) and the cross-term/high logic is
-  right, BUT the low product comes out as `blo` not `alo*blo`: `vpushv` copies the SValue (which ALIASES
-  the operand's register), so `gen_op('*')` clobbers the shared operand regs that the following
-  `gen_mulh` then reads — the split of one widening multiply into two ops introduces the aliasing that
-  `TOK_UMULL` (one op) inherently avoids. Verified with controlled cases: `a=b=0xFFFFFFFF` gave lo=
-  `0xFFFFFFFF` (=blo) instead of `0xFFFFFFFE00000001`. FIX DIRECTION: materialize `alo`,`blo` into
-  independent locations before the two multiplies (gv/gv_dup to distinct registers, or a small stack
-  temp), OR add an x86_64 widening-mul primitive that yields the full rdx:rax pair in one shot (the
-  cleanest — gen_mulh already does the `mul`, it just discards rax). Reverted the buggy WIP; this note
-  is the pick-up point.
+- Multiply — **DONE + DEFAULT-ON 2026-07-30 (x86_64).** A `gen_opq` emitter inlines the 128-bit `*` instead of calling `__multi3`, a port of `gen_opl`'s `*` arm to 64-bit halves. The key piece: a new `gen_mul_widen()` (x86_64-gen.c) does one unsigned `mul` and keeps the FULL `rdx:rax` pair (low+high), so `gen_mul_widen(); qexpand()` cleanly replaces `gen_opl`'s `TOK_UMULL; lexpand()` with no operand aliasing (the earlier `gen_op('*')`+`gen_mulh` split aliased the operand regs — see git history). Unsigned throughout is correct for signed __int128 too (low 128 bits sign-agnostic; only `__multi3` exists). Emits 3 muls (widening + 2 cross imuls), gcc-like. Gated `MCC_I128_NATIVE_MUL` (default ON; `=0` restores the helper). Validated: controlled cases + int128.c `mul 907f6e5c…` golden at -O0..-O3 + ~900 fuzzer seeds vs gcc (0 fails); mcc.c byte-identical gate on/off (self-host-inert, mcc uses no __int128 mul); fixpoint-invariant byte-identical (inert off-x86_64). NOTE: the AST-rewrite route is DEAD — `ast_bad_type(VT_INT128)` desyncs the recorder so __int128 never reaches AST strategies; it MUST be a gen_opq emitter.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
   priority of the three: mcc does not currently expose these as 128-bit builtins at all

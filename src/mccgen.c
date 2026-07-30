@@ -498,6 +498,24 @@ static int i128_native_shift_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
+#if MCC_HAVE_INT128
+ST_FUNC void gen_mul_widen(void); /* x86_64-gen.c: 64x64->128 unsigned, result pair RAX:RDX */
+/* __int128 PHASE 2: inline a 128-bit `*` instead of calling __multi3, by porting
+ * gen_opl's `*` arm to 64-bit halves -- gen_opl's single `TOK_UMULL; lexpand()`
+ * (which leaves [lo,hi] of the low 64x64 product) becomes `gen_mul_widen();
+ * qexpand()` (one `mul`, split into [lo,hi]). Default OFF => byte-identical helper
+ * call. Unsigned throughout is correct for signed __int128 too (low 128 bits of a
+ * two's-complement product are sign-agnostic -- only __multi3 exists). */
+static int i128_native_mul_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_I128_NATIVE_MUL");
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; /* default ON (validated) */
+	}
+	return on;
+}
+#endif
+
 static void emit_popcount_expr(int bw) { MCC_TRACE("enter\n");
 	int wty = bw == 64 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
 	unsigned long long m1 = bw == 64 ? 0x5555555555555555ull : 0x55555555ull;
@@ -2761,6 +2779,44 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 		goto gen_func;
 	case '*':
 		func = TOK___multi3;
+#if MCC_HAVE_INT128
+		if (i128_native_mul_on()) { MCC_TRACE("br\n");
+			int i;
+			/* Port of gen_opl's `*` arm to 64-bit halves; the low 64x64 product's
+			 * [lo,hi] comes from gen_mul_widen()+qexpand() (one `mul`, no operand
+			 * aliasing) in place of gen_opl's TOK_UMULL+lexpand. */
+			t = vtop->type.t;
+			vswap();
+			qexpand();
+			vrotb(3);
+			qexpand();
+			tmp = vtop[0];
+			vtop[0] = vtop[-3];
+			vtop[-3] = tmp;
+			tmp = vtop[-2];
+			vtop[-2] = vtop[-3];
+			vtop[-3] = tmp;
+			vswap();
+			vpushv(vtop - 1);
+			vpushv(vtop - 1);
+			gen_mul_widen();
+			vtop->type.t = VT_INT128 | VT_UNSIGNED; /* 128-bit pair for qexpand to split */
+			qexpand();
+			for (i = 0; i < 4; i++)
+				{ MCC_TRACE("br\n"); vrotb(6); }
+			tmp = vtop[0];
+			vtop[0] = vtop[-2];
+			vtop[-2] = tmp;
+			gen_op('*');
+			vrotb(3);
+			vrotb(3);
+			gen_op('*');
+			gen_op('+');
+			gen_op('+');
+			qbuild(t);
+			break;
+		}
+#endif
 		goto gen_func;
 	case TOK_SAR:
 		func = TOK___ashrti3;

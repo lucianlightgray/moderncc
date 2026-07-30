@@ -2396,6 +2396,24 @@ void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	vtop->r = MCC_TREG_RDX;
 }
 
+/* Unsigned 64x64 -> 128 widening multiply, leaving ONE value: the 128-bit product
+ * as a register pair (r = RAX = low 64, r2 = RDX = high 64). One `mul` op, so
+ * (unlike a split low-mul + gen_mulh over duplicated operands, which aliases the
+ * operand registers between two multiplies) the __int128 `*` emitter can get both
+ * halves cleanly. Caller marks the value VT_INT128 and qexpand()s it into [lo,hi]. */
+void gen_mul_widen(void) { MCC_TRACE("enter\n");
+	int fr, ll;
+	ll = is64_type(vtop[-1].type.t);
+	gv2(MCC_RC_RAX, MCC_RC_RCX);
+	fr = vtop[0].r;
+	vtop--;
+	save_reg(MCC_TREG_RDX);
+	orex(ll, fr, 0, 0xf7);
+	o(0xe0 + REG_VALUE(fr)); /* mul r/m -> RDX:RAX (unsigned) */
+	vtop->r = MCC_TREG_RAX;
+	vtop->r2 = MCC_TREG_RDX;
+}
+
 void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	int rv = REG_VALUE(r);
 	orex(1, r, r, 0x8d);
