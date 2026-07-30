@@ -666,11 +666,20 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 						goti[mo->n_got++] = INDIRECT_SYMBOL_LOCAL;
 					} else { MCC_TRACE("br\n");
 						goti[mo->n_got++] = mo->e2msym[sym_index];
+						/* Whichever GOT relocation for this symbol arrives FIRST is the
+						   one that creates the slot, and only that one reaches here.
+						   arm64 needs both spellings: mcc's own objects emit
+						   ADR_GOT_PAGE before LD64_GOT_LO12_NC, but Mach-O stores
+						   relocations in DESCENDING address order, so a clang -c object
+						   presents the LO12 half first -- and the slot was then built
+						   with no bind at all. Every imported DATA symbol reached
+						   through the GOT read an unwritten slot and faulted. */
 						if (sym->st_shndx == SHN_UNDEF
 #ifdef MCC_TARGET_X86_64
 								&& type == R_X86_64_GOTPCREL
 #elif defined MCC_TARGET_ARM64
-								&& type == R_AARCH64_ADR_GOT_PAGE
+								&& (type == R_AARCH64_ADR_GOT_PAGE ||
+										type == R_AARCH64_LD64_GOT_LO12_NC)
 #endif
 						) { MCC_TRACE("br\n");
 							attr->plt_offset = -mo->n_bind_rebase - 2;
@@ -822,11 +831,20 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 						goti[mo->n_got++] = INDIRECT_SYMBOL_LOCAL;
 					} else { MCC_TRACE("br\n");
 						goti[mo->n_got++] = mo->e2msym[sym_index];
+						/* Whichever GOT relocation for this symbol arrives FIRST is the
+						   one that creates the slot, and only that one reaches here.
+						   arm64 needs both spellings: mcc's own objects emit
+						   ADR_GOT_PAGE before LD64_GOT_LO12_NC, but Mach-O stores
+						   relocations in DESCENDING address order, so a clang -c object
+						   presents the LO12 half first -- and the slot was then built
+						   with no bind at all. Every imported DATA symbol reached
+						   through the GOT read an unwritten slot and faulted. */
 						if (sym->st_shndx == SHN_UNDEF
 #ifdef MCC_TARGET_X86_64
 								&& type == R_X86_64_GOTPCREL
 #elif defined MCC_TARGET_ARM64
-								&& type == R_AARCH64_ADR_GOT_PAGE
+								&& (type == R_AARCH64_ADR_GOT_PAGE ||
+										type == R_AARCH64_LD64_GOT_LO12_NC)
 #endif
 						) { MCC_TRACE("br\n");
 							mo->bind =

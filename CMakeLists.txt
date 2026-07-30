@@ -5878,6 +5878,22 @@ if(MCC_BUILD_TESTS)
             "the trie/symtab pairing needs a linked Mach-O image, which needs a Darwin host")
     endif()
 
+    # mcc linking REAL clang -c Mach-O objects. Nothing else in the suite does
+    # this, which is how three reader defects (common symbols, DWARF relocations
+    # in the fixup list, unbound imported-data GOT slots) all stayed hidden.
+    # Needs a Darwin host: both images are run and compared.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        add_test(NAME macho-clanglink
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/clanglink.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-clanglink-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-clanglink PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-clanglink
+            "running both the clang-linked and the mcc-linked image needs a Darwin host")
+    endif()
+
     # mcc's own ad-hoc code signer (MCC_MACHO_ADHOC_SIGN, default off). Needs a
     # Darwin host: the assertions are that the kernel does not SIGKILL the image
     # and that /usr/bin/codesign validates what mcc wrote.
