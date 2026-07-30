@@ -80,13 +80,27 @@ Rule for this campaign: default-OFF ⇒ byte-identical (M8 bar), validate the ga
 
 **CONSOLIDATION (2026-07-27):** with all five source changes in (SECREL native-TLS COFF reading, à la carte pull-once, `__ImageBase` synthesis, compiler-rt embed fallback, `K32GetProcessMemoryInfo` def) plus the CMake self-host enablement, the **full local ctest suite is 100% GREEN — 6424/6424, 0 failures** on llvm-mingw x86_64 (the core PE linker path is exercised by every test that links the CRT). x86_64-win32 `--embed-jit` + self-host bake + `MCC_JIT=1`≡`MCC_JIT=0` parity are done, wired, and regression-clean. Regression lock-in **DONE**: `embed-jit-smoke` ctest (`tools/embed-jit-smoke.py`, gated `WIN32 AND NOT MSVC`, SKIP-77 on no-blob/missing-runtime-lib, FAIL only on wrong output or a non-lib bake failure; JIT-OFF only so it never touches the winlibs `0xC0000005`). Passes locally on llvm-mingw. So the entire x86_64-win32 (mingw) `--embed-jit` path is implemented, proven, wired, and CI-guarded. **All local-tractable campaign items are complete;** what remains is strictly gated: i386 (no i386 toolchain here), MSVC embed (ucrt/msvcrt CRT-model conflict), P0 step 5 (winlibs-specific CI crash — needs a CI trace), arm64-win32 (HW).
 
-## i386 -O2 `d2` miscompile — ROOT-CAUSED + FIXED 2026-07-30 (it was DIVMAGIC, not the struct return)
+## i386 -O2 `d2` miscompile — ROOT-CAUSED + FULLY FIXED 2026-07-30 (it was DIVMAGIC, opt PRESERVED)
 
-**FIXED** in `ast_configure`: i386 `MCC_AST_DIVMAGIC` is default-OFF again (hardware `idiv`).
-The `i386-codegen-diff-docker` `d2` divergence (`-O2 mcc=131 gcc=91`) is gone; the full
-`d1..d14` battery × `-O0..-O3` now matches `gcc -m32` (validated with a real i386 runtime,
-see below). The earlier "struct-by-value return in a loop" framing was a **red herring** —
-the struct/loop code is byte-perfect.
+**FIXED for real, opt preserved.** The `i386-codegen-diff-docker` `d2` divergence
+(`-O2 mcc=131 gcc=91`) was root-caused to a temp-slot-reuse bug in the value-stack spill
+allocator and fixed AT THE SOURCE (commit `1a980d5b`) — divmagic is **default-ON again** on
+i386 at -O2+, matching the other optimizer-capable arches. (The interim `7c039681` carve-out —
+divmagic default-OFF on i386 — was superseded by the real fix hours later.) The full `d1..d14`
+battery × `-O0..-O3` matches `gcc -m32` with divmagic default-on; d2 emits the magic multiply
+(0 `idiv`) and returns 91. The earlier "struct-by-value return in a loop" framing was a **red
+herring** — the struct/loop code is byte-perfect.
+
+**The fix (DONE 2026-07-30, `1a980d5b`):** `get_temp_local_var` (shared `src/mccgen.c`) now
+excludes reserved `ast_ltemp` slots via a new `ast_ltemp_overlaps()` — it keeps allocating the
+spill slot lower (monotonic) until it clears every ltemp slot, mirroring the existing
+`arr_temp_local_vars` overlap guard. This is the true opt-preserving fix and closes the whole
+latent bug class (any ltemp user under spill pressure), not just i386 divmagic. Conservative
+(only ever pushes a spill lower) and byte-inert on arches whose temp frontier never reaches the
+ltemp region — proven by `fixpoint-invariant` (native arm64 self-host byte-identical) + 107
+optfire/divmagic ctests. i386 validated: d1..d14 vs gcc -m32, struct-pressure div/mod soak,
+~26M randomized 32/64-bit signed+unsigned div/mod-vs-idiv checks (0 fails). Below is the
+historical root-cause narrative; the "future work" it once pointed to is the fix above.
 
 **Actual root cause.** `d2` ends `return (s & 0x7fffffff) % 251`. The struct-summing loop is
 correct: `s` (=17547250) is byte-identical between -O0 and -O2, and `f(17547250)` where
@@ -104,13 +118,11 @@ why "any large gate subset off fixes it" (changes the spill layout) and it's not
 (within-frame, not heap). The 2026-07-25 lift (commit `2ecf1893`, materialize + `i386-divmagic
 -soak` 8.7M checks) was **premature**: the soak never hit this exact spill layout.
 
-**The real opt-preserving fix (future work, if the marginal i386 -O2 win is worth it):** make
-the i386 value-stack spill allocator (the `loc`-based `get_temp_local` path in the shared
-codegen / `src/arch/i386/i386-gen.c`) exclude `ast_ltemp_off[]` reserved slots the same way
-`ast_promote_locals` (mccast.c:5353) already does, then re-enable divmagic on i386 and re-soak
-with the `d1..d14` battery in the corpus. Until then, `idiv` is correct and the shipped i386
-cross build has no optimizer, so this is byte-inert on production; still opt-in via
-`MCC_AST_DIVMAGIC=1` for diagnosis.
+**The real opt-preserving fix — DONE 2026-07-30 (`1a980d5b`).** Exactly as anticipated: made
+the shared value-stack spill allocator (`get_temp_local_var`, `src/mccgen.c`) exclude
+`ast_ltemp_off[]` reserved slots (`ast_ltemp_overlaps`), the same way `ast_promote_locals`
+(mccast.c:~5353) already did for the promotion pass, then re-enabled divmagic default-on on
+i386. See the summary at the top of this section for the validation.
 
 **Repro / validation recipe (arm64 host, no native i386):** build `mcc-i386` from the
 amalgamation (`gcc -w -DMCC_CONFIG_OPTIMIZER=1 -DMCC_TARGET_I386 -Isrc -Iinclude
