@@ -14932,6 +14932,8 @@ enum {
 	JOP_UBSAN_NULLPTR,
 	JOP_XFERRET,
 	JOP_X87POP,
+	JOP_VSETC,
+	JOP_VPUSHSYM,
 	JOP_COUNT
 };
 
@@ -14958,6 +14960,8 @@ typedef struct JrnOp {
 	int a0, a1, a2, a3;
 	int64_t d64;
 	CType ctype;
+	CValue cval;
+	Sym *sym;
 	SValue svarg;
 	int sv_slot;
 	int vs_off, vs_n;
@@ -15032,7 +15036,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"bswap",     "sqrt",      "round",     "copysign",  "signbit",
 			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
-			"x87pop"};
+			"x87pop",    "vsetc",     "vpushsym"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15267,6 +15271,27 @@ JRN_W1(arch_transfer_ret_regs, JOP_XFERRET)
 JRN_W0(gen_x87_pop, JOP_X87POP)
 #endif
 
+static void jrn_vsetc(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
+	jrn_begin(JOP_VSETC, NULL);
+	if (JRN_REC) { MCC_TRACE("br\n");
+		jrn_pending->ctype = *type;
+		jrn_pending->a0 = r;
+		jrn_pending->cval = *vc;
+	}
+	(vsetc)(type, r, vc);
+	jrn_end();
+}
+
+void jrn_vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
+	jrn_begin(JOP_VPUSHSYM, NULL);
+	if (JRN_REC) { MCC_TRACE("br\n");
+		jrn_pending->ctype = *type;
+		jrn_pending->sym = sym;
+	}
+	(vpushsym)(type, sym);
+	jrn_end();
+}
+
 int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	int rv;
 	jrn_begin(JOP_CMOV, NULL);
@@ -15376,6 +15401,12 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	case JOP_X87POP: (gen_x87_pop)(); break;
 #endif
+	case JOP_VSETC: { MCC_TRACE("br\n");
+		CValue cv = o->cval;
+		(vsetc)(&o->ctype, o->a0, &cv);
+		break;
+	}
+	case JOP_VPUSHSYM: (vpushsym)(&o->ctype, o->sym); break;
 	default: break;
 	}
 }

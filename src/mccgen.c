@@ -63,6 +63,8 @@ void jrn_arch_transfer_ret_regs(int aftercall);
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 void jrn_gen_x87_pop(void);
 #endif
+static void jrn_vsetc(CType *type, int r, CValue *vc);
+void jrn_vpushsym(CType *type, Sym *sym);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -111,6 +113,8 @@ void jrn_gen_x87_pop(void);
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 #define gen_x87_pop() jrn_gen_x87_pop()
 #endif
+#define vsetc(...) jrn_vsetc(__VA_ARGS__)
+#define vpushsym(...) jrn_vpushsym(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -1271,7 +1275,7 @@ static void vcheck_cmp(void) { MCC_TRACE("enter\n");
 	}
 }
 
-static void vsetc(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
+static void (vsetc)(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
 	if (vtop >= vstack + (VSTACK_SIZE - 1))
 		{ MCC_TRACE("br\n"); mcc_error("memory full (vstack)"); }
 	vcheck_cmp();
@@ -1468,7 +1472,7 @@ static void gen_test_zero(int op) { MCC_TRACE("enter\n");
 	}
 }
 
-ST_FUNC void vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
+ST_FUNC void (vpushsym)(CType *type, Sym *sym) { MCC_TRACE("enter\n");
 	CValue cval;
 	cval.i = 0;
 	vsetc(type, VT_CONST | VT_SYM, &cval);
@@ -15050,6 +15054,8 @@ static int decl(int l) {
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 #undef gen_x87_pop
 #endif
+#undef vsetc
+#undef vpushsym
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED

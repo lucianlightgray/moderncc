@@ -4,4 +4,4 @@ inline_asm/asm_goto.c	another_jump	raw=1	rawb=5
 inline_asm/asm_goto.c	simple_jump	raw=1	rawb=5
 inline_asm/asm_goto.c	three_way_jump	raw=1	rawb=26
 inline_asm/asm_lvalue_cast.c	main	raw=1	rawb=8
-inline_asm/asm_operand_modifiers.c	main	raw=3	rawb=45
+inline_asm/asm_operand_modifiers.c	main	raw=4	rawb=45
