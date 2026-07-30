@@ -456,7 +456,7 @@ static const struct {
 	int experimental;
 } PLAN_MINGW[] = {
 		{"x86_64", 0},
-		{"i686", 0},
+		{"i686", 1},
 		{0, 0}};
 static const struct {
 	const char *preset, *plat, *os;
