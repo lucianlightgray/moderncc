@@ -4170,8 +4170,17 @@ For each operation:
   dups). There is no single 64x64->128 widening vstack op (unlike `gen_opl`'s `TOK_UMULL` at 32-bit), so
   the sequence is hand-orchestrated `gen_mulh` + three `gen_op('*')` + two `gen_op('+')` with precise
   dup/rot management — best done interactively (validate each step against int128.c's `mul 907f6e5c…`
-  golden line + the ~1000-seed fuzzer), not written blind in one shot. Alternative worth weighing: an
-  AST-level rewrite (like divmagic uses `AST_OP_MULHU`) rather than a `gen_opq` emitter.
+  golden line + the ~1000-seed fuzzer), not written blind in one shot. **RECOMMENDED APPROACH (settled
+  2026-07-30): do it as an AST-level rewrite, NOT a `gen_opq` emitter.** Confirmed `TOK_UMULL` (the
+  widening primitive `gen_opl`'s `*` arm uses) is lowered ONLY in arm/i386-gen.c — it does not exist on
+  x86_64, so there is no mechanical port and the `gen_opq` route forces raw `gen_mulh` register
+  juggling. Instead, mirror `ast_divmagic_try_signed`: materialize x,y once (`ast_divmagic_materialize`
+  already exists) and rewrite the 128-bit `*` node into
+  `((u128)(MULHU(alo,blo) + ahi*blo + alo*bhi) << 64) | (u128)(alo*blo)` where `alo=(u64)x`,
+  `ahi=(u64)(x>>64)`, etc. Every primitive now exists — `AST_OP_MULHU`, 64-bit `*`/`+`, the `(u64)`/
+  `(u128)` casts, `|` (inline in `gen_opq`), and crucially the constant `<<64` which is NOW inline as of
+  this session's shift emitter — so register allocation falls out of normal codegen. ~60-80 lines like
+  divmagic; a focused session, gated + TDD'd against the golden + fuzzer.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
   priority of the three: mcc does not currently expose these as 128-bit builtins at all
