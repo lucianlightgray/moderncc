@@ -54,7 +54,7 @@ Numbered by precedence: a lower number wins a conflict with a higher one.
 - Add a non-JIT `-O2 -run` correctness leg: compile and run a small workload with the mcc-built mcc and compare against the stage-0 mcc. A stable `-O2`/`-O3`-only self-compile miscompile currently slips both the fixpoint and `selfhost-jit`.
 - Give the JIT-validated set the gates it is missing: `MCC_AST_CHAINSTORE`, `MCC_AST_PROMO_INCDEC`, `MCC_AST_IVSR_PTR`, `MCC_AST_REGDISP` and `-fc99-inline-body` are AOT-validated only.
 - Bake a per-arch `MCC_EMBED_JIT_BLOB` for i386-PE and arm64-PE. Needs an i386/arm64 mingw toolchain.
-- Resolve the MSVC `--embed-jit` ucrt/msvcrt CRT-model conflict.
+- Resolve the MSVC `--embed-jit` ucrt/msvcrt CRT-model conflict. Reproduced: a cl-built engine blob baked into an MSVC mcc links, but `mcc --embed-jit -O2` on a bakeable program fails with unresolved UCRT stdio internals (`__stdio_common_vfprintf`, `__acrt_iob_func`, `__p__environ`), MSVC vcruntime (`__security_check_cookie`/`__GSHandlerCheck`/`__report_rangecheckfailure`) and `/RTC` (`_RTC_*`) — none in mcc's msvcrt output target. cl won't emit against msvcrt, so the fix is either to build the engine blob with the vendored mingw even on MSVC hosts (matching mcc's msvcrt output, as the winlibs path now does) or to bake a coherent UCRT+vcruntime import set and prove two CRTs coexist in the image. The MSVC build never defines `MCC_EMBED_JIT_MINGW_LIBDIR` (the CMake bake queries gcc-only `-print-file-name`), so the whole runtime-lib injection block is compiled out today.
 
 ### Known-open miscompiles and crashes
 
