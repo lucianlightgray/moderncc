@@ -5828,6 +5828,21 @@ if(MCC_BUILD_TESTS)
             "the trie/symtab pairing needs a linked Mach-O image, which needs a Darwin host")
     endif()
 
+    # mcc's own ad-hoc code signer (MCC_MACHO_ADHOC_SIGN, default off). Needs a
+    # Darwin host: the assertions are that the kernel does not SIGKILL the image
+    # and that /usr/bin/codesign validates what mcc wrote.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        add_test(NAME macho-adhocsign
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/adhocsign.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-adhocsign-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-adhocsign PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-adhocsign
+            "verifying a code signature needs a Darwin host (kernel acceptance + codesign -v)")
+    endif()
+
     # Mach-O ARCHIVE members -- the --embed-jit path into libmcc_jitengine.a.
     # Testable on Linux despite the "reserved for macOS" note, because llvm-ar
     # writes a correct BSD armap for Mach-O members where GNU ar indexes nothing.
