@@ -111,6 +111,73 @@ static void suite_clone(void) {
 	ast_arena_free(ec);
 }
 
+static void suite_wide(void) {
+	AstArena *a = ast_arena_new();
+	AstLocal add = build_expr(a);
+	AstLocal lhs = ast_child(a, add, 0);
+	AstLocal rhs = ast_child(a, add, 1);
+	AstLocal n, i;
+	AstArena *b;
+	uint64_t h_before, h_after;
+
+	CHECK(ast_wide_hi(a, lhs) == 0, "wide hi defaults to zero");
+	CHECK(ast_wide_r2(a, lhs) == AST_R2_NONE, "wide r2 defaults to absent");
+
+	h_before = ast_slice_ident_hash(a, add);
+	ast_set_wide(a, lhs, 0, AST_R2_NONE);
+	CHECK(ast_slice_ident_hash(a, add) == h_before,
+				"writing the default wide value leaves the identity unchanged");
+
+	ast_set_wide(a, lhs, 0xdeadbeefcafebabeull, 3);
+	CHECK(ast_wide_hi(a, lhs) == 0xdeadbeefcafebabeull, "wide hi reads back");
+	CHECK(ast_wide_r2(a, lhs) == 3, "wide r2 reads back");
+	CHECK(ast_wide_hi(a, rhs) == 0, "sibling wide hi still zero");
+	CHECK(ast_wide_r2(a, rhs) == AST_R2_NONE, "sibling wide r2 still absent");
+
+	h_after = ast_slice_ident_hash(a, add);
+	CHECK(h_after != h_before, "the wide value changes the slice identity");
+	ast_set_wide(a, lhs, 0xdeadbeefcafebabfull, 3);
+	CHECK(ast_slice_ident_hash(a, add) != h_after,
+				"the high half alone separates two identities");
+	ast_set_wide(a, lhs, 0xdeadbeefcafebabeull, 3);
+
+	for (i = 0; i < 300; i++) {
+		n = ast_node(a, AST_Literal);
+		ast_set_ival(a, n, i);
+	}
+	CHECK(ast_wide_hi(a, lhs) == 0xdeadbeefcafebabeull, "wide hi survives growth");
+	CHECK(ast_wide_r2(a, lhs) == 3, "wide r2 survives growth");
+	CHECK(ast_wide_hi(a, ast_count(a) - 1) == 0, "grown node hi defaults to zero");
+	CHECK(ast_wide_r2(a, ast_count(a) - 1) == AST_R2_NONE,
+				"grown node r2 defaults to absent");
+
+	b = ast_arena_clone(a);
+	CHECK(b != NULL, "wide arena clones");
+	CHECK(ast_wide_hi(b, lhs) == 0xdeadbeefcafebabeull, "clone carries wide hi");
+	CHECK(ast_wide_r2(b, lhs) == 3, "clone carries wide r2");
+	CHECK(ast_wide_hi(b, rhs) == 0, "clone carries the absent sibling");
+	ast_set_wide(b, lhs, 1, 4);
+	CHECK(ast_wide_hi(a, lhs) == 0xdeadbeefcafebabeull,
+				"original wide hi unchanged after clone mutated");
+
+	{
+		AstArena *dst = ast_arena_new();
+		AstLocal site = build_expr(dst);
+		int spliced = ast_slice_splice(dst, site, a, add);
+		CHECK(spliced >= 1, "splice of a wide kernel succeeds");
+		CHECK(ast_wide_hi(dst, ast_child(dst, site, 0)) == 0xdeadbeefcafebabeull,
+					"splice carries wide hi into the grafted child");
+		CHECK(ast_wide_r2(dst, ast_child(dst, site, 0)) == 3,
+					"splice carries wide r2 into the grafted child");
+		CHECK(ast_slice_ident_hash(dst, site) == ast_slice_ident_hash(a, add),
+					"spliced site keeps the kernel's wide-bearing identity");
+		ast_arena_free(dst);
+	}
+
+	ast_arena_free(a);
+	ast_arena_free(b);
+}
+
 static void suite_validate(void) {
 	AstArena *a = ast_arena_new();
 	build_expr(a);
@@ -1188,6 +1255,8 @@ int main(int argc, char **argv) {
 		suite_forecast();
 	if (!only || !strcmp(only, "clone"))
 		suite_clone();
+	if (!only || !strcmp(only, "wide"))
+		suite_wide();
 	if (!only || !strcmp(only, "color"))
 		suite_color();
 	if (!only || !strcmp(only, "validate"))

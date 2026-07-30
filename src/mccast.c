@@ -8,6 +8,7 @@
 unsigned char mcc_log_verbose = 0;
 #endif
 
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -78,6 +79,9 @@ struct AstArena {
 	uint64_t *fbits;
 	uint64_t *sym;
 
+	uint64_t *wide_hi;
+	uint16_t *wide_r2;
+
 	AstLocal count;
 	AstLocal cap;
 	uint64_t epoch;
@@ -86,6 +90,7 @@ struct AstArena {
 static void ast_grow(AstArena *a, AstLocal need) { MCC_TRACE("enter\n");
 	if (need <= a->cap)
 		{ MCC_TRACE("br\n"); return; }
+	AstLocal ocap = a->cap;
 	AstLocal ncap = a->cap ? a->cap * 2 : 64;
 	while (ncap < need)
 		{ MCC_TRACE("br\n"); ncap *= 2; }
@@ -104,7 +109,53 @@ static void ast_grow(AstArena *a, AstLocal need) { MCC_TRACE("enter\n");
 	AST_REGROW(fbits);
 	AST_REGROW(sym);
 #undef AST_REGROW
+	if (a->wide_hi) { MCC_TRACE("br\n");
+		a->wide_hi = realloc(a->wide_hi, ncap * sizeof *a->wide_hi);
+		a->wide_r2 = realloc(a->wide_r2, ncap * sizeof *a->wide_r2);
+		for (AstLocal i = ocap; i < ncap; i++) { MCC_TRACE("br\n");
+			a->wide_hi[i] = 0;
+			a->wide_r2[i] = AST_R2_NONE;
+		}
+	}
 	a->cap = ncap;
+}
+
+static void ast_wide_open(AstArena *a) { MCC_TRACE("enter\n");
+	if (a->wide_hi)
+		{ MCC_TRACE("br\n"); return; }
+	AstLocal cap = a->cap ? a->cap : 1;
+	a->wide_hi = calloc(cap, sizeof *a->wide_hi);
+	a->wide_r2 = malloc(cap * sizeof *a->wide_r2);
+	if (!a->wide_hi || !a->wide_r2) { MCC_TRACE("br\n");
+		free(a->wide_hi);
+		free(a->wide_r2);
+		a->wide_hi = NULL;
+		a->wide_r2 = NULL;
+		return;
+	}
+	for (AstLocal i = 0; i < cap; i++)
+		{ MCC_TRACE("br\n"); a->wide_r2[i] = AST_R2_NONE; }
+}
+
+void ast_set_wide(AstArena *a, AstLocal n, uint64_t hi, unsigned r2) { MCC_TRACE("enter\n");
+	if (!a->wide_hi) { MCC_TRACE("br\n");
+		if (!hi && r2 == AST_R2_NONE)
+			{ MCC_TRACE("br\n"); return; }
+		ast_wide_open(a);
+		if (!a->wide_hi)
+			{ MCC_TRACE("br\n"); return; }
+	}
+	a->epoch++;
+	a->wide_hi[n] = hi;
+	a->wide_r2[n] = (uint16_t)r2;
+}
+
+uint64_t ast_wide_hi(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return a->wide_hi ? a->wide_hi[n] : 0;
+}
+
+unsigned ast_wide_r2(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return a->wide_r2 ? a->wide_r2[n] : AST_R2_NONE;
 }
 
 #if defined(MCC_INTERNAL) && MCC_CONFIG_OPTIMIZER
@@ -147,6 +198,8 @@ void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	free(a->ival);
 	free(a->fbits);
 	free(a->sym);
+	free(a->wide_hi);
+	free(a->wide_r2);
 	free(a);
 }
 
@@ -174,6 +227,10 @@ AstArena *ast_arena_clone(const AstArena *src) { MCC_TRACE("enter\n");
 	AST_DUP(ival);
 	AST_DUP(fbits);
 	AST_DUP(sym);
+	if (src->wide_hi) { MCC_TRACE("br\n");
+		AST_DUP(wide_hi);
+		AST_DUP(wide_r2);
+	}
 #undef AST_DUP
 	return a;
 }
@@ -226,10 +283,15 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 	AST_SLICE_ALLOC(ival);
 	AST_SLICE_ALLOC(fbits);
 	AST_SLICE_ALLOC(sym);
+	if (src->wide_hi) { MCC_TRACE("br\n");
+		AST_SLICE_ALLOC(wide_hi);
+		AST_SLICE_ALLOC(wide_r2);
+	}
 #undef AST_SLICE_ALLOC
 	if (!a->kind || !a->parent || !a->first_child || !a->last_child ||
 			!a->next_sib || !a->nchild || !a->op || !a->type_t || !a->type_ref ||
-			!a->ival || !a->fbits || !a->sym) { MCC_TRACE("br\n");
+			!a->ival || !a->fbits || !a->sym ||
+			(src->wide_hi && (!a->wide_hi || !a->wide_r2))) { MCC_TRACE("br\n");
 		free(map);
 		free(order);
 		ast_arena_free(a);
@@ -250,6 +312,10 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 		a->ival[i] = src->ival[s];
 		a->fbits[i] = src->fbits[s];
 		a->sym[i] = src->sym[s];
+		if (src->wide_hi) { MCC_TRACE("br\n");
+			a->wide_hi[i] = src->wide_hi[s];
+			a->wide_r2[i] = src->wide_r2[s];
+		}
 	}
 #undef AST_SLICE_LINK
 	free(map);
@@ -273,6 +339,10 @@ AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 	a->ival[n] = 0;
 	a->fbits[n] = 0;
 	a->sym[n] = 0;
+	if (a->wide_hi) { MCC_TRACE("br\n");
+		a->wide_hi[n] = 0;
+		a->wide_r2[n] = AST_R2_NONE;
+	}
 	a->epoch++;
 	return n;
 }
@@ -558,6 +628,15 @@ static int ast_ih_sym_dropped(const AstArena *a, AstLocal n) { MCC_TRACE("enter\
 				 !((uint32_t)a->op[n] & VT_SYM);
 }
 
+static uint64_t ast_wide_fold(const AstArena *a, AstLocal n, uint64_t h) { MCC_TRACE("enter\n");
+	uint64_t hi = ast_wide_hi(a, n);
+	unsigned r2 = ast_wide_r2(a, n);
+	if (!hi && r2 == AST_R2_NONE)
+		{ MCC_TRACE("br\n"); return h; }
+	h = ast_ih_fold(h, hi);
+	return ast_ih_fold(h, r2);
+}
+
 static uint64_t ast_ih_node(const AstArena *a, AstLocal n, AstIhSyms *m,
 														uint64_t h) { MCC_TRACE("enter\n");
 	h = ast_ih_fold(h, a->kind[n]);
@@ -567,6 +646,7 @@ static uint64_t ast_ih_node(const AstArena *a, AstLocal n, AstIhSyms *m,
 	if (a->kind[n] != AST_Ref)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, a->ival[n]); }
 	h = ast_ih_fold(h, a->fbits[n]);
+	h = ast_wide_fold(a, n, h);
 	h = ast_ih_fold(h, a->nchild[n]);
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
 		{ MCC_TRACE("br\n"); h = ast_ih_node(a, c, m, h); }
@@ -657,6 +737,7 @@ static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
 	else if (a->kind[n] != AST_Ref)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_ival_norm(a, n, a->ival[n])); }
 	h = ast_ih_fold(h, a->fbits[n]);
+	h = ast_wide_fold(a, n, h);
 	h = ast_ih_fold(h, a->nchild[n]);
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
 		{ MCC_TRACE("br\n"); h = ast_sid_node(a, c, sm, om, h); }
@@ -831,12 +912,13 @@ static long ast_slice_window_scan(const AstArena *a, uint64_t gates) { MCC_TRACE
 #define AST_SLICE_REC_PROVEN_BIT ((uint64_t)1 << 32)
 #define AST_SLICE_RECWORDS 5
 #define AST_SLICE_RECBYTES (AST_SLICE_RECWORDS * 8)
-#define AST_SLICE_REC_MAGIC 0x534eu /* 'SN' — bumped from 'SM' when the AST kind
-                                       renumbering (AST_InitList/AST_Data
-                                       removed) changed every stored ident; 'SM'
-                                       was the 4-to-5-word widening. Old files
-                                       skip as foreign rather than hit a stale
-                                       ident that now names a different slice. */
+#define AST_SLICE_REC_MAGIC 0x534fu /* 'SO' — bumped from 'SN' when the wide-value
+                                       column joined the identity fold; 'SN' was
+                                       the AST kind renumbering
+                                       (AST_InitList/AST_Data removed); 'SM' was
+                                       the 4-to-5-word widening. Old files skip
+                                       as foreign rather than hit a stale ident
+                                       that now names a different slice. */
 
 /* Serialize `n` records into `buf`; returns bytes written or -1 if `cap` is too
    small. */
@@ -1083,6 +1165,7 @@ static AstLocal ast_slice_graft_rec(AstArena *a, const AstArena *k,
 	ast_set_ival(a, n, ast_ival(k, ksrc));
 	ast_set_fbits(a, n, ast_fbits(k, ksrc));
 	ast_set_sym(a, n, ast_sym(k, ksrc));
+	ast_set_wide(a, n, ast_wide_hi(k, ksrc), ast_wide_r2(k, ksrc));
 	for (c = ast_first_child(k, ksrc); c != AST_NONE; c = ast_next_sib(k, c)) { MCC_TRACE("br\n");
 		cc = ast_slice_graft_rec(a, k, c);
 		ast_add_child(a, n, cc);
@@ -1110,6 +1193,8 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 	ast_set_ival(a, site_root, ast_ival(kernel_src, kernel_root));
 	ast_set_fbits(a, site_root, ast_fbits(kernel_src, kernel_root));
 	ast_set_sym(a, site_root, ast_sym(kernel_src, kernel_root));
+	ast_set_wide(a, site_root, ast_wide_hi(kernel_src, kernel_root),
+							 ast_wide_r2(kernel_src, kernel_root));
 	spliced = 1;
 	for (c = ast_first_child(kernel_src, kernel_root); c != AST_NONE;
 			 c = ast_next_sib(kernel_src, c)) { MCC_TRACE("br\n");
@@ -1774,6 +1859,9 @@ static int ast_convert_gv_env;
 static int ast_call_noreturn_env;
 static int ast_storeval_callstore_env;
 static int ast_fneg_env;
+static int ast_ldouble_env;
+static int ast_int128_env;
+static int ast_regpair_env;
 static int ast_cmp_mat_env;
 static int ast_chainstore_live_env;
 static int ast_chainstore_member_env;
@@ -1963,6 +2051,9 @@ void ast_hook_vstore(void);
 void ast_hook_vstore_end(void);
 void ast_hook_vpop(void);
 void ast_hook_vswap(void);
+void ast_hook_vrotb(int n);
+void ast_hook_vrott(int n);
+void ast_hook_vrev(int n);
 void ast_hook_convert(CType *type);
 static AstLocal ast_dead_value(void) { MCC_TRACE("enter\n");
 	AstLocal p = ast_node(ast_cur, AST_Literal);
@@ -2043,6 +2134,8 @@ void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig);
 void ast_hook_vla_restore(int loc);
 static int ast_bad_type(int tt);
+static int ast_bad_vtype(int tt);
+static uint64_t ast_sv_hi(const SValue *sv);
 void ast_hook_ternary_begin(int c, int g);
 void ast_hook_ternary_branch(int which);
 void ast_hook_ternary_branch_done(int which);
@@ -2137,6 +2230,9 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", o4 || s1->optimize >= 1);
 	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", o4 || s1->optimize >= 1);
 	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", o4 || s1->optimize >= 1);
+	ast_ldouble_env = ast_env_gate("MCC_AST_LDOUBLE", o4 || s1->optimize >= 1);
+	ast_int128_env = ast_env_gate("MCC_AST_INT128", o4 || s1->optimize >= 1);
+	ast_regpair_env = ast_env_gate("MCC_AST_REGPAIR", o4 || s1->optimize >= 1);
 	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 1);
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 1);
@@ -2468,7 +2564,7 @@ void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vto
 	   tell two causes apart, every reader re-derives the split by hand.
 	   (The ratchet records only the verdict WORD, not the line, so the
 	   checked-in gap set is unaffected by the renumbering.) */
-	if (ast_bad_type(tt) && !agg_lval) { MCC_TRACE("br\n");
+	if (ast_bad_vtype(tt) && !agg_lval) { MCC_TRACE("br\n");
 		AST_SET_DESYNC(); /* unmodellable TYPE: long double / __int128 / _Complex / bitfield */
 		return;
 	}
@@ -2476,10 +2572,15 @@ void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vto
 		AST_SET_DESYNC(); /* unmodellable VALUE KIND: e.g. a register-held call result */
 		return;
 	}
+	if (vtop->r2 != VT_CONST && vtop->r2 >= VT_CONST) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
 	AstLocal n = ast_node(ast_cur, is_const ? AST_Literal : AST_Ref);
 	ast_set_op(ast_cur, n, r);
 	ast_set_type(ast_cur, n, tt, (uint64_t)(uintptr_t)vtop->type.ref);
 	ast_set_ival(ast_cur, n, (uint64_t)vtop->c.i);
+	ast_set_wide(ast_cur, n, ast_sv_hi(vtop), vtop->r2);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)vtop->sym);
 	if ((is_sym && vtop->sym && vtop->sym->sym_scope) ||
 			(vtop->type.ref && (tt & VT_BTYPE) == VT_STRUCT && sym_scope_ex(vtop->type.ref)))
@@ -2494,6 +2595,8 @@ static void ast_finalize_leaf(AstLocal n, SValue *sv) { MCC_TRACE("enter\n");
 	ast_set_op(ast_cur, n, sv->r);
 	ast_set_type(ast_cur, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
 	ast_set_ival(ast_cur, n, (uint64_t)sv->c.i);
+	ast_set_wide(ast_cur, n, ast_sv_hi(sv),
+							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
 	ast_set_sym(ast_cur, n, (uint64_t)(uintptr_t)sv->sym);
 	if (((sv->r & VT_VALMASK) == VT_CONST && (sv->r & VT_SYM) && sv->sym && sv->sym->sym_scope) ||
 			(sv->type.ref && (sv->type.t & VT_BTYPE) == VT_STRUCT && sym_scope_ex(sv->type.ref)))
@@ -2535,6 +2638,41 @@ static int ast_bad_type(int tt) { MCC_TRACE("enter\n");
 				 bt == VT_LDOUBLE || bt == VT_QFLOAT || bt == VT_INT128;
 }
 
+typedef char ast_r2_none_check[AST_R2_NONE == VT_CONST ? 1 : -1];
+
+static int ast_wide_vtype(int tt) { MCC_TRACE("enter\n");
+	int bt = tt & VT_BTYPE;
+	if (tt & VT_BITFIELD)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt == VT_LDOUBLE)
+		{ MCC_TRACE("br\n"); return ast_ldouble_env; }
+	if (bt == VT_INT128 || bt == VT_QLONG)
+		{ MCC_TRACE("br\n"); return ast_int128_env; }
+	return 0;
+}
+
+static int ast_bad_vtype(int tt) { MCC_TRACE("enter\n");
+	return ast_bad_type(tt) && !ast_wide_vtype(tt);
+}
+
+static uint64_t ast_sv_hi(const SValue *sv) { MCC_TRACE("enter\n");
+	int bt = sv->type.t & VT_BTYPE;
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (sv->type.t & VT_BITFIELD)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (sizeof(long double) <= 8)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (LDBL_MANT_DIG == 64)
+			{ MCC_TRACE("br\n"); return sv->c.q.hi & 0xffffu; }
+		return sv->c.q.hi;
+	}
+	if (bt == VT_INT128 || bt == VT_QLONG || bt == VT_QFLOAT)
+		{ MCC_TRACE("br\n"); return sv->c.q.hi; }
+	return 0;
+}
+
 void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -2549,8 +2687,8 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	int cx0 = is_complex_type(&vtop->type);
 	int cx1 = is_complex_type(&vtop[-1].type);
 	if (!ast_op_modeled(op) || ast_vn != rel || ast_vn < 2 ||
-			(ast_bad_type(vtop->type.t) && !bf0 && !cx0) ||
-			(ast_bad_type(vtop[-1].type.t) && !bf1 && !cx1)) { MCC_TRACE("br\n");
+			(ast_bad_vtype(vtop->type.t) && !bf0 && !cx0) ||
+			(ast_bad_vtype(vtop[-1].type.t) && !bf1 && !cx1)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
 	}
@@ -2647,7 +2785,7 @@ void ast_hook_fneg_begin(void) { MCC_TRACE("enter\n");
 	if (!model)
 		{ MCC_TRACE("br\n"); return; }
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
-	if (ast_vn < 1 || ast_vn != rel || ast_bad_type(vtop->type.t)) { MCC_TRACE("br\n");
+	if (ast_vn < 1 || ast_vn != rel || ast_bad_vtype(vtop->type.t)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
 	}
@@ -3371,7 +3509,7 @@ void ast_hook_indir(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 	int bad_deref = (vtop->type.t & VT_BTYPE) == VT_PTR &&
-									ast_bad_type(pointed_type(&vtop->type)->t) &&
+									ast_bad_vtype(pointed_type(&vtop->type)->t) &&
 									(pointed_type(&vtop->type)->t & VT_BTYPE) != VT_STRUCT;
 	if (ast_vn < 1 || ast_vn != rel || bad_deref) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
@@ -3469,7 +3607,7 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	    const char *e = getenv("MCC_AST_MEMBER_CONST");
 	    relax = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; }
 	  if (relax && qual == VT_CONSTANT) { MCC_TRACE("br\n"); qual = 0; } }
-	if (qual || bcheck || (ast_bad_type(mtype->t) && !mt_bf_ok)) { MCC_TRACE("br\n");
+	if (qual || bcheck || (ast_bad_vtype(mtype->t) && !mt_bf_ok)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
 	}
@@ -3647,7 +3785,7 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 	}
 	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
 		CType *at = &(vtop - nb_args + 1 + i)->type;
-		if (ast_bad_type(at->t) &&
+		if (ast_bad_vtype(at->t) &&
 				((at->t & VT_BTYPE) != VT_STRUCT || is_complex_type(at))) { MCC_TRACE("br\n");
 			AST_SET_DESYNC();
 			return;
@@ -3702,13 +3840,14 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 	ast_in_call = 0;
 	if (!ast_capture || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
-	if (vtop->r2 != VT_CONST) { MCC_TRACE("br\n");
+	if (vtop->r2 != VT_CONST && !(ast_regpair_env && vtop->r2 < VT_CONST)) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
 	}
 	ast_set_op(ast_cur, inv, vtop->r);
 	ast_set_type(ast_cur, inv, vtop->type.t, (uint64_t)(uintptr_t)vtop->type.ref);
 	ast_set_ival(ast_cur, inv, (uint64_t)vtop->c.i);
+	ast_set_wide(ast_cur, inv, ast_sv_hi(vtop), vtop->r2);
 	ast_set_sym(ast_cur, inv, (uint64_t)(uintptr_t)vtop->sym);
 	if (ast_vn >= AST_VS_MAX) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
@@ -3764,6 +3903,52 @@ void ast_hook_vswap(void) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn - 2] = t;
 }
 
+void ast_hook_vrotb(int n) { MCC_TRACE("enter\n");
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		{ MCC_TRACE("br\n"); return; }
+	if (n < 2)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_vn < n) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	AstLocal t = ast_vs[ast_vn - n];
+	memmove(&ast_vs[ast_vn - n], &ast_vs[ast_vn - n + 1],
+					sizeof *ast_vs * (size_t)(n - 1));
+	ast_vs[ast_vn - 1] = t;
+}
+
+void ast_hook_vrott(int n) { MCC_TRACE("enter\n");
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		{ MCC_TRACE("br\n"); return; }
+	if (n < 2)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_vn < n) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	AstLocal t = ast_vs[ast_vn - 1];
+	memmove(&ast_vs[ast_vn - n + 1], &ast_vs[ast_vn - n],
+					sizeof *ast_vs * (size_t)(n - 1));
+	ast_vs[ast_vn - n] = t;
+}
+
+void ast_hook_vrev(int n) { MCC_TRACE("enter\n");
+	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
+		{ MCC_TRACE("br\n"); return; }
+	if (n < 2)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_vn < n) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	for (int i = 0; i < n / 2; i++) { MCC_TRACE("br\n");
+		AstLocal t = ast_vs[ast_vn - n + i];
+		ast_vs[ast_vn - n + i] = ast_vs[ast_vn - 1 - i];
+		ast_vs[ast_vn - 1 - i] = t;
+	}
+}
+
 void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -3809,7 +3994,7 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 	int agg_store = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
 									(vtop[-1].type.t & VT_BTYPE) == VT_STRUCT;
 	int bf_store = (vtop[-1].type.t & VT_BITFIELD) &&
-								 (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_type(vtop->type.t);
+								 (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_vtype(vtop->type.t);
 	if (ast_vn != rel) { MCC_TRACE("br\n");
 		AST_SET_DESYNC(); /* model depth does not match the codegen vstack */
 		return;
@@ -3818,7 +4003,7 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 		AST_SET_DESYNC(); /* fewer than the two values a store needs */
 		return;
 	}
-	if ((ast_bad_type(vtop->type.t) || ast_bad_type(vtop[-1].type.t)) &&
+	if ((ast_bad_vtype(vtop->type.t) || ast_bad_vtype(vtop[-1].type.t)) &&
 			!agg_store && !bf_store) { MCC_TRACE("br\n");
 		AST_SET_DESYNC(); /* unmodellable TYPE on either side of the store */
 		return;
@@ -5144,6 +5329,10 @@ static uint64_t ast_hash_of(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	v = ast_hash_mix(v, a->ival[n]);
 	v = ast_hash_mix(v, a->fbits[n]);
 	v = ast_hash_mix(v, a->sym[n]);
+	if (a->wide_hi && (a->wide_hi[n] || a->wide_r2[n] != AST_R2_NONE)) { MCC_TRACE("br\n");
+		v = ast_hash_mix(v, a->wide_hi[n]);
+		v = ast_hash_mix(v, a->wide_r2[n]);
+	}
 	v = ast_hash_mix(v, a->nchild[n]);
 	for (AstLocal c = a->first_child[n]; c != AST_NONE; c = a->next_sib[c])
 		{ MCC_TRACE("br\n"); v = ast_hash_mix(v, ast_hash_of(a, c)); }
@@ -5824,8 +6013,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		sv.r = (unsigned short)ast_op(a, n);
 		MCC_TRACE_IF("LEAF n=%d r=%#x t=%#x ival=%lld\n", (int)n, sv.r, sv.type.t,
 								 (long long)ast_ival(a, n));
-		sv.r2 = VT_CONST;
+		sv.r2 = (unsigned short)ast_wide_r2(a, n);
 		sv.c.i = ast_ival(a, n);
+		sv.c.q.hi = ast_wide_hi(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
 		if ((sv.r & VT_VALMASK) == VT_LOCAL && !(sv.r & VT_SYM) &&
 				(ast_inline_bias || ast_argsub_n)) { MCC_TRACE("br\n");
@@ -5846,7 +6036,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			int preg = ast_promo_reg_of(a, n);
 			if (preg >= 0) { MCC_TRACE("br\n");
 				sv.r = (unsigned short)preg;
+				sv.r2 = VT_CONST;
 				sv.c.i = 0;
+				sv.c.q.hi = 0;
 				sv.sym = NULL;
 			}
 		}
@@ -6177,8 +6369,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		sv.type.t = ast_type_t(a, n);
 		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		sv.r = (unsigned short)ast_op(a, n);
-		sv.r2 = VT_CONST;
+		sv.r2 = (unsigned short)ast_wide_r2(a, n);
 		sv.c.i = ast_ival(a, n);
+		sv.c.q.hi = ast_wide_hi(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
 		vpushv(&sv);
 		break;
@@ -14704,7 +14897,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
 	ast_fn_switch = 0;
 	ast_inline_capture(sym);
-	int ast_ret_bad = ast_bad_type(func_vt.t) &&
+	int ast_ret_bad = ast_bad_vtype(func_vt.t) &&
 										(func_vt.t & VT_BTYPE) != VT_STRUCT;
 	ast_try_active = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
 								!ast_ret_bad;
@@ -15007,8 +15200,9 @@ static int ast_search_memo_n;
  * opt-in with MCC_AST_SEARCH; a missing/unwritable cache dir degrades to the
  * in-memory memo. The in-memory working set is capped (AST_SEARCH_MEMO_CAP), so an
  * eviction rewrite also compacts the file down to that hot set. */
-#define AST_SEARCH_MEMO_MAGIC 0x4645u /* 'FE' — order-carrying 7-word record;
- * bumped from 'FD' when the AST kind renumbering changed every intention hash. */
+#define AST_SEARCH_MEMO_MAGIC 0x4646u /* 'FF' — order-carrying 7-word record;
+ * bumped from 'FE' when the wide-value column joined the intention-hash fold,
+ * and from 'FD' when the AST kind renumbering changed every intention hash. */
 /* On-disk record word layout: the low AST_GATE_BITS hold the AstGateMask (up to 48
  * strategy knobs — past any host's native width), MAGIC occupies the high 16 bits so
  * a torn/stale record is still skippable without a global header. Widened from the
@@ -15817,6 +16011,7 @@ static AstLocal ast_slice_copy_into(AstArena *dst, const AstArena *src,
 	ast_set_ival(dst, n, ast_ival(src, snode));
 	ast_set_fbits(dst, n, ast_fbits(src, snode));
 	ast_set_sym(dst, n, ast_sym(src, snode));
+	ast_set_wide(dst, n, ast_wide_hi(src, snode), ast_wide_r2(src, snode));
 	for (c = ast_first_child(src, snode); c != AST_NONE; c = ast_next_sib(src, c)) {
 		MCC_TRACE("br\n");
 		cc = ast_slice_copy_into(dst, src, c);

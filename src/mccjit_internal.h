@@ -21,7 +21,12 @@
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
-	10u /* 10: dropped the always-zero per-node cst word and removed the unused  \
+	11u /* 11: a sparse wide-value section follows the node table — one          \
+			 (node, CValue.q.hi, r2) triple per node whose value needs more than    \
+			 the 64-bit ival and a single register. Absent nodes keep hi=0 and      \
+			 r2=VT_CONST, so the section is a lone zero count for an intent with    \
+			 no 128-bit or long double leaf. 10: dropped the always-zero per-node   \
+			 cst word and removed the unused                                        \
 			 AST_InitList/AST_Data kinds, which renumbers AST_Poison and           \
 			 AST_StoreVal — old blobs must fail closed rather than misparse a      \
 			 kind ordinal or read at the wrong node stride. 9: header carries      \

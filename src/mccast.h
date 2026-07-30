@@ -60,6 +60,11 @@ void ast_set_ival(AstArena *a, AstLocal n, uint64_t v);
 void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits);
 void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym);
 
+#define AST_R2_NONE 0x30u
+void ast_set_wide(AstArena *a, AstLocal n, uint64_t hi, unsigned r2);
+uint64_t ast_wide_hi(const AstArena *a, AstLocal n);
+unsigned ast_wide_r2(const AstArena *a, AstLocal n);
+
 uint16_t ast_kind(const AstArena *a, AstLocal n);
 int ast_op(const AstArena *a, AstLocal n);
 int ast_type_t(const AstArena *a, AstLocal n);
@@ -211,6 +216,9 @@ void ast_hook_vstore(void);
 void ast_hook_vstore_end(void);
 void ast_hook_vpop(void);
 void ast_hook_vswap(void);
+void ast_hook_vrotb(int n);
+void ast_hook_vrott(int n);
+void ast_hook_vrev(int n);
 void ast_hook_convert(struct CType *type);
 void ast_hook_cast_gv(void);
 void ast_hook_while_cond_start(void);

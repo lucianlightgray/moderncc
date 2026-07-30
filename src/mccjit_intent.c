@@ -455,6 +455,23 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	}
 
 	{
+		uint32_t wn = 0;
+		for (n = 0; n < count; n++)
+			{ MCC_TRACE("br\n"); if (ast_wide_hi(a, n) || ast_wide_r2(a, n) != AST_R2_NONE)
+				{ MCC_TRACE("br\n"); wn++; } }
+		mccjit_put_u32(buf, wn);
+		for (n = 0; n < count; n++) { MCC_TRACE("br\n");
+			uint64_t whi = ast_wide_hi(a, n);
+			unsigned wr2 = ast_wide_r2(a, n);
+			if (!whi && wr2 == AST_R2_NONE)
+				{ MCC_TRACE("br\n"); continue; }
+			mccjit_put_u32(buf, (uint32_t)n);
+			mccjit_put_u64(buf, whi);
+			mccjit_put_u32(buf, (uint32_t)wr2);
+		}
+	}
+
+	{
 		Sym *sig = sym ? sym->type.ref : NULL;
 		Sym *p;
 		uint32_t np = 0;
@@ -841,6 +858,21 @@ MCCJIT_LOCAL int mccjit_intent_deserialize(const void *buf, size_t len,
 	}
 	if (r.err)
 		{ MCC_TRACE("br\n"); goto done; }
+
+	{
+		uint32_t wn = mccjit_get_u32(&r);
+		if (r.err)
+			{ MCC_TRACE("br\n"); goto done; }
+		for (i = 0; i < wn; i++) { MCC_TRACE("br\n");
+			uint32_t wnode = mccjit_get_u32(&r);
+			uint64_t whi = mccjit_get_u64(&r);
+			uint32_t wr2 = mccjit_get_u32(&r);
+			if (r.err)
+				{ MCC_TRACE("br\n"); goto done; }
+			if (wnode < count)
+				{ MCC_TRACE("br\n"); ast_set_wide(a, wnode, whi, wr2); }
+		}
+	}
 
 	for (i = 0; i < count; i++) { MCC_TRACE("br\n");
 		uint32_t j;

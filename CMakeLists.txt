@@ -3328,7 +3328,7 @@ if(MCC_BUILD_TESTS)
         if(MCC_CONFIG_AST_SHADOW)
             target_compile_definitions(asttool PRIVATE MCC_CONFIG_AST_SHADOW=1)
         endif()
-        foreach(_an arena clone validate dump cfg template intention color forecast gatemap magic vlat combo_walk slice_ident slice_window slice_persist slice_graduate slice_splice slice_locate)
+        foreach(_an arena clone wide validate dump cfg template intention color forecast gatemap magic vlat combo_walk slice_ident slice_window slice_persist slice_graduate slice_splice slice_locate)
             add_test(NAME "ast/${_an}" COMMAND asttool "${_an}")
             set_tests_properties("ast/${_an}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         endforeach()
@@ -3355,13 +3355,13 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("ast/replay-${_rn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endforeach()
             if(NOT (MCC_TARGETOS STREQUAL "Darwin" AND MCC_CPU STREQUAL "arm64"))
-                add_test(NAME "ast/replay-ld_fallback" COMMAND "${CMAKE_COMMAND}"
+                add_test(NAME "ast/replay-ld_value" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
-                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/ld_fallback.c"
+                    "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/ld_value.c"
                     "-DOUT=${CMAKE_BINARY_DIR}/ast-replay"
-                    "-DEXPECT_RC=42" "-DNOREPLAY=main"
+                    "-DEXPECT_RC=42" "-DREPLAYED=main"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
-                set_tests_properties("ast/replay-ld_fallback" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+                set_tests_properties("ast/replay-ld_value" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endif()
 
             add_test(NAME "ast/replay-struct_return" COMMAND "${CMAKE_COMMAND}"
