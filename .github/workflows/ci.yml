@@ -179,9 +179,12 @@ jobs:
     # native x86_64 + arm64) alongside mingw cells (winlibs GCC superbuild,
     # Ninja, x86_64 + i686), distinguished by matrix.mingw. Each cell diffs
     # mcc against whatever reference compilers (gcc/clang) the image offers,
-    # so side-by-side coverage is maximal. The 32-bit mingw cell is
-    # experimental (matrix.experimental), so it reports but does not gate
-    # until i386-Windows codegen is proven green. The arm64-msvc cell is the
+    # so side-by-side coverage is maximal. The 32-bit mingw cell now gates
+    # like the rest (i386-Windows codegen is proven: byte-identical 3-stage
+    # AOT self-host on WoW64, the JIT stub-tail selftests and the i386
+    # differential fuzz all green, plus a green mingw/i686 cell across CI
+    # history); matrix.experimental is retained for any future opt-in cell.
+    # The arm64-msvc cell is the
     # CI wall-clock tail (slow per-core runner + x86-emulated diff3 gcc), so
     # `ci plan` splits its ctest into matrix.nshards round-robin shards
     # (ctest -I) and drops the redundant emulated diff3 suite there (full
