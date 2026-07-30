@@ -1033,16 +1033,34 @@ real-object validation stays macOS-gated.
    unaffected and stays on (its parent commit passes the fixpoint with the gate on, so the pre-existing
    `WHILE_COMMA` paths are not implicated).
 
-   **The defect, root-caused — an admitted loop-condition store loses its POINTER type and gets narrowed to 32
-   bits.** `mccgen.c`'s `gjmp_append` is the shape:
+   **The defect is in PROMOTION, not in the admission — corrected after a first wrong attribution.** The initial
+   read (recorded in `fa6c2db5`'s message) was "the admitted store loses its pointer type and gets narrowed". That
+   is wrong, and the distinction decides where the fix goes. `faithful` is computed by BYTE-COMPARING replay against
+   the parser, and `if (!faithful) memcpy(..., orig, body_len)` restores the parser's bytes — so an unfaithful replay
+   can never ship. What the admission actually does is make the function faithful, which makes it newly ELIGIBLE for
+   AST-level optimization; the promoted re-emission is what miscompiles it. Measured on `gjmp_append`:
+
+   | config | verdict | insns | `movslq` |
+   |---|---|---:|---:|
+   | gate off | unfaithful → replay discarded | 34 | 0 |
+   | gate on | **faithful** → AST-optimized | 51 | 1 |
+   | gate on + `MCC_AST_PROMOTE=0` | faithful | 34 | 0 |
+
+   `MCC_AST_LOOPCOND_STORE=1 MCC_AST_PROMOTE=0` passes the 3-stage fixpoint byte-identical, so the admission itself
+   is sound and the bug is a LATENT promotion defect that the admission merely exposes on a new function shape: a
+   POINTER local assigned inside a loop condition and read AFTER the loop. `MCC_AST_STOREVAL_CALL=0` is a third
+   data point — with it off the compile ERRORS rather than miscompiling, because the promoted store path's
+   value-live `break` is gated on `ast_storeval_call_env` and otherwise pops the value the consumer needs.
+
+   `mccgen.c`'s `gjmp_append` is the shape:
 
        while ((n2 = read32le(p = cur_text_section->data + n1)))
            n1 = n2;
        write32le(p, t);
 
-   With the gate on, replay drives that function, promotes its locals to callee-saved registers, and emits an extra
-   `movslq %eax,%rax` between computing `p` and passing it — truncating a 64-bit heap pointer to its low 32 bits and
-   sign-extending. `cur_text_section->data` is above 4 GB, so the next `read32le` dereferences a wild address:
+   `p` is promoted to `r12`; the promoted re-emission then emits an extra `movslq %eax,%rax` between computing `p`
+   and passing it, truncating a 64-bit heap pointer to its low 32 bits and sign-extending. `cur_text_section->data`
+   is above 4 GB, so the next `read32le` dereferences a wild address:
 
        gate ON                        gate OFF
        add  %rcx,%rax                 add  %rcx,%rax
@@ -1061,9 +1079,14 @@ real-object validation stays macOS-gated.
    function AND promotion has pushed the locals into callee-saved registers. So do not try to pin this with a small
    cli/exec cell; the fixpoint gate is the regression lock, and it works.
 
-   **For whoever fixes it:** the admission must not route a pointer-typed storeval through the integer narrowing
-   path — either reject a store whose value is not an integer type, or preserve the store's type into replay. This
-   is the mirror image of the lost-sign-extension defect fixed in `b0fb11d5`.
+   **For whoever fixes it: look at promotion, not at the storeval walk.** The target is how a promoted POINTER
+   local is read back when its only assignment is inside a loop condition — the truncation says the promoted read
+   (or the `gen_cast` in `ast_promo_write`) is treating `p` as 32-bit somewhere. Re-enabling the admission is then
+   free: it is worth ~21 of the 46 remaining unfaithful functions on mcc's own TU (`gjmp_append`, `host_rmrf`,
+   `host_copy_file`, `find_field`, `next_argstream`, `expr_infix`, `decl`, `gfunc_prolog`, `so_key`,
+   `macro_twosharps`, `search_cached_include`, `check_fields`, `move_ref_to_global`, `block_cleanup`, `cst_slurp`,
+   `link_option`, `ptr_unlink`, `parse_builtin_params`, `macro_arg_subst`, `handle_stray_noerror`,
+   `ast_search_disk_usage`), which is the single largest identifiable group left in that bucket.
 
    **Process note, because this is the second time:** a gate that changes what replay DRIVES must clear the
    self-host fixpoint before it goes default-on, not just ctest and the ratchet. Both commits banked a ratchet
