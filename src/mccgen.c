@@ -477,6 +477,19 @@ static int popcount_inline_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
+/* __int128 PHASE 2: inline a CONSTANT-count 128-bit shift instead of calling
+ * __ashlti3/__lshrti3/__ashrti3 (a direct port of gen_opl's 32-bit-half arm to
+ * 64-bit halves). Default OFF => byte-identical (helper call) until proven on
+ * the x86_64 differential corpus, per the Phase-2 method in docs/TODO.md. */
+static int i128_native_shift_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_I128_NATIVE_SHIFT");
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 0; /* default OFF */
+	}
+	return on;
+}
+
 static void emit_popcount_expr(int bw) { MCC_TRACE("enter\n");
 	int wty = bw == 64 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
 	unsigned long long m1 = bw == 64 ? 0x5555555555555555ull : 0x55555555ull;
@@ -2743,12 +2756,76 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 		goto gen_func;
 	case TOK_SAR:
 		func = TOK___ashrti3;
-		goto gen_func;
+		goto gen_shift;
 	case TOK_SHR:
 		func = TOK___lshrti3;
-		goto gen_func;
+		goto gen_shift;
 	case TOK_SHL:
 		func = TOK___ashlti3;
+	gen_shift:
+		/* Inline a compile-time-constant shift count (the easy 80%): a direct
+		 * port of gen_opl's constant arm with the half width 32->64 (sign shift
+		 * 31->63, lexpand/lbuild -> qexpand/qbuild). Variable counts and the
+		 * gate-off path still call the helper (byte-identical). The half-level
+		 * gen_op() runs on VT_LLONG halves, native 64-bit on x86_64. */
+		if (i128_native_shift_on() &&
+				(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+			int c;
+			/* Shift by 0 is the identity. gen_opl never sees this (the 32-bit
+			 * fold eats `x << 0`), but the 128-bit constant fold does not, so it
+			 * reaches here -- and the `64 - c` sub-shift would be a shift by 64
+			 * (UB, x86 masks to 0) and corrupt the result. Drop the count, keep
+			 * the value. */
+			if ((int)vtop->c.i == 0) { MCC_TRACE("br\n");
+				vpop();
+				break;
+			}
+			t = vtop[-1].type.t;
+			vswap();
+			qexpand();
+			vrotb(3);
+			c = (int)vtop->c.i;
+			vpop();
+			if (op != TOK_SHL)
+				{ MCC_TRACE("br\n"); vswap(); }
+			if (c >= 64) { MCC_TRACE("br\n");
+				vpop();
+				if (c > 64) { MCC_TRACE("br\n");
+					vpushi(c - 64);
+					gen_op(op);
+				}
+				if (op != TOK_SAR) { MCC_TRACE("br\n");
+					vpushi(0);
+				} else { MCC_TRACE("br\n");
+					gv_dup();
+					vpushi(63);
+					gen_op(TOK_SAR);
+				}
+				vswap();
+			} else { MCC_TRACE("br\n");
+				vswap();
+				gv_dup();
+				vpushi(c);
+				gen_op(op);
+				vswap();
+				vpushi(64 - c);
+				if (op == TOK_SHL)
+					{ MCC_TRACE("br\n"); gen_op(TOK_SHR); }
+				else
+					{ MCC_TRACE("br\n"); gen_op(TOK_SHL); }
+				vrotb(3);
+				vpushi(c);
+				if (op == TOK_SHL)
+					{ MCC_TRACE("br\n"); gen_op(TOK_SHL); }
+				else
+					{ MCC_TRACE("br\n"); gen_op(TOK_SHR); }
+				gen_op('|');
+			}
+			if (op != TOK_SHL)
+				{ MCC_TRACE("br\n"); vswap(); }
+			qbuild(t);
+			break;
+		}
 	gen_func:
 		vpush_helper_func(func);
 		vrott(3);
