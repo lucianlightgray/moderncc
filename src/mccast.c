@@ -14943,6 +14943,7 @@ enum {
 	JOP_VREV,
 	JOP_PUSHLIT,
 	JOP_GV,
+	JOP_VSTORE,
 	JOP_COUNT
 };
 
@@ -15048,7 +15049,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
 			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
 			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit",
-			"gv"};
+			"gv",        "vstore"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15303,6 +15304,20 @@ JRN_W1(vrotb, JOP_VROTB)
 JRN_W1(vrott, JOP_VROTT)
 JRN_W1(vrev, JOP_VREV)
 
+void jrn_vstore(void) { MCC_TRACE("enter\n");
+	int keep = (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT &&
+						 (vtop->type.t & VT_BTYPE) != VT_STRUCT &&
+						 !((vtop[-1].type.t | vtop->type.t) & VT_ARRAY) &&
+						 !(vtop[-1].type.t & VT_BITFIELD);
+	if (!keep) { MCC_TRACE("br\n");
+		(vstore)();
+		return;
+	}
+	jrn_begin(JOP_VSTORE, NULL);
+	(vstore)();
+	jrn_end();
+}
+
 void jrn_vpushv(SValue *v) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_VPUSHV, v);
 	(vpushv)(v);
@@ -15455,6 +15470,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_VROTB: (vrotb)(o->a0); break;
 	case JOP_VROTT: (vrott)(o->a0); break;
 	case JOP_VREV: (vrev)(o->a0); break;
+	case JOP_VSTORE: (vstore)(); break;
 	case JOP_GV: { MCC_TRACE("br\n");
 		uint64_t pin = ast_pinned_regs;
 		int got;

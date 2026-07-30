@@ -13,6 +13,7 @@
 #endif
 
 #ifdef MCC_JOURNAL_HOOKS
+static int jrn_replaying;
 void jrn_load(int r, SValue *sv);
 void jrn_store(int r, SValue *v);
 void jrn_gen_opi(int op);
@@ -72,6 +73,7 @@ void jrn_vrotb(int n);
 void jrn_vrott(int n);
 void jrn_vrev(int n);
 int jrn_gv(int rc);
+void jrn_vstore(void);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -129,6 +131,7 @@ int jrn_gv(int rc);
 #define vrott(...) jrn_vrott(__VA_ARGS__)
 #define vrev(...) jrn_vrev(__VA_ARGS__)
 #define gv(...) jrn_gv(__VA_ARGS__)
+#define vstore(...) jrn_vstore(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -4611,6 +4614,10 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	CType *st, *type1, *type2;
 	int dbt, sbt, qualwarn, lvl, deepqual;
 
+#ifdef MCC_JOURNAL_HOOKS
+	if (jrn_replaying)
+		{ MCC_TRACE("br\n"); return; }
+#endif
 	st = &vtop->type;
 	dbt = dt->t & VT_BTYPE;
 	sbt = st->t & VT_BTYPE;
@@ -4698,7 +4705,7 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	gen_cast(dt);
 }
 
-ST_FUNC void vstore(void) { MCC_TRACE("enter\n");
+ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_vstore();
@@ -15077,6 +15084,7 @@ static int decl(int l) {
 #undef vrott
 #undef vrev
 #undef gv
+#undef vstore
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
