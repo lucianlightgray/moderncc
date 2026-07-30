@@ -1787,13 +1787,16 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 	if (ret == 0) { MCC_TRACE("br\n");
 		int saved = s1->filetype;
 		s1->filetype &= ~AFF_WHOLE_ARCHIVE;
-#ifdef MCC_TARGET_I386
-		/* The i386-PE engine is mcc-built (not gcc), so it carries none of the
-		   emulated-TLS / winpthread footprint the x86_64 gcc engine has. Its only
-		   compiler-support refs -- __chkstk and the 64-bit soft-arith -- all live
-		   in mcc's own runtime, so re-add that a la carte after the blob and skip
-		   libgcc entirely: libgcc's 64-bit soft-arith object collides with
-		   libmccrt's ('__divdi3'/'__udivdi3'/... defined twice). */
+#ifdef MCC_EMBED_JIT_MCC_ENGINE
+		/* An mcc-BUILT engine (e.g. a cross bake compiling the engine with
+		   mcc-<arch>-win32) carries none of the gcc footprint -- no emulated TLS,
+		   no libmingwex ANSI-stdio wrappers -- so its only compiler-support refs
+		   (__chkstk and the soft-arith) all live in mcc's own runtime. Re-add that
+		   a la carte after the blob and skip libgcc entirely: libgcc's 64-bit
+		   soft-arith object would collide with libmccrt's ('__divdi3'/'__udivdi3'/
+		   ... defined twice). Keyed on how the engine was BUILT, not the target
+		   arch: a native i686 build (winlibs i686 gcc) bakes a gcc engine that
+		   DOES need the gcc path below, exactly like x86_64. */
 		mcc_add_support(s1, "libmccrt.a");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
@@ -1863,6 +1866,22 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 		mcc_add_library(s1, "ucrt");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
+#ifdef MCC_TARGET_I386
+		/* i386-only: the gcc-built engine references stdcall-DECORATED kernel32
+		   thunks (_AcquireSRWLockExclusive@4) that mcc's own kernel32.def import
+		   emits undecorated (correct for x64/arm64 and for mcc's own i386 code,
+		   which matches the DLL export name). Supplement with the mingw i686
+		   import lib, which carries the @N-decorated thunks the engine wants. */
+		{
+			char lp[1024];
+			FILE *lf;
+			snprintf(lp, sizeof lp, "%s/libkernel32.a", MCC_EMBED_JIT_MINGW_LIBDIR);
+			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
+				fclose(lf);
+				mcc_add_file(s1, lp);
+			}
+		}
+#endif
 #endif
 		s1->filetype = saved;
 	}
