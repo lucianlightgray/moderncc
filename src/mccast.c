@@ -14934,6 +14934,7 @@ enum {
 	JOP_X87POP,
 	JOP_VSETC,
 	JOP_VPUSHSYM,
+	JOP_VPUSHV,
 	JOP_COUNT
 };
 
@@ -15036,7 +15037,7 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"bswap",     "sqrt",      "round",     "copysign",  "signbit",
 			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
-			"x87pop",    "vsetc",     "vpushsym"};
+			"x87pop",    "vsetc",     "vpushsym",  "vpushv"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15282,6 +15283,12 @@ static void jrn_vsetc(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
 	jrn_end();
 }
 
+void jrn_vpushv(SValue *v) { MCC_TRACE("enter\n");
+	jrn_begin(JOP_VPUSHV, v);
+	(vpushv)(v);
+	jrn_end();
+}
+
 void jrn_vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_VPUSHSYM, NULL);
 	if (JRN_REC) { MCC_TRACE("br\n");
@@ -15407,6 +15414,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 		break;
 	}
 	case JOP_VPUSHSYM: (vpushsym)(&o->ctype, o->sym); break;
+	case JOP_VPUSHV: (vpushv)(p); break;
 	default: break;
 	}
 }

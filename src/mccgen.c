@@ -65,6 +65,7 @@ void jrn_gen_x87_pop(void);
 #endif
 static void jrn_vsetc(CType *type, int r, CValue *vc);
 void jrn_vpushsym(CType *type, Sym *sym);
+void jrn_vpushv(SValue *v);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -115,6 +116,7 @@ void jrn_vpushsym(CType *type, Sym *sym);
 #endif
 #define vsetc(...) jrn_vsetc(__VA_ARGS__)
 #define vpushsym(...) jrn_vpushsym(__VA_ARGS__)
+#define vpushv(...) jrn_vpushv(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -1348,7 +1350,7 @@ static void vseti(int r, int v) { MCC_TRACE("enter\n");
 	vset(&(CType){.t = VT_INT, .ref = NULL}, r, v);
 }
 
-ST_FUNC void vpushv(SValue *v) { MCC_TRACE("enter\n");
+ST_FUNC void (vpushv)(SValue *v) { MCC_TRACE("enter\n");
 	if (vtop >= vstack + (VSTACK_SIZE - 1))
 		{ MCC_TRACE("br\n"); mcc_error("memory full (vstack)"); }
 	vtop++;
@@ -15056,6 +15058,7 @@ static int decl(int l) {
 #endif
 #undef vsetc
 #undef vpushsym
+#undef vpushv
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
