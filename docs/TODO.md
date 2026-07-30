@@ -4163,7 +4163,15 @@ For each operation:
   so `gen_opq` must hand-assemble the low product as `gen_mulh(unsigned)` (high 64) + a plain 64-bit `*`
   (low 64), then add `a_hi*b_lo + a_lo*b_hi` into the high 64. Doable but higher bug risk than the shift
   port — deferred until it can be TDD'd on an x86_64 host (helper-based `*` is already fuzz-clean vs gcc,
-  ~1000 seeds, so this is pure perf, not correctness).
+  ~1000 seeds, so this is pure perf, not correctness). **Concrete blocker (analyzed 2026-07-30):** the
+  specific difficulty is REGISTER COORDINATION, not the arithmetic. `gen_mulh(sign)` (x86_64-gen.c,
+  invoked from the AST via `AST_OP_MULHU`) forces its operands into RAX/RCX and returns the high half in
+  RDX; the low product `a_lo*b_lo` also wants RAX/RDX, and `a_lo`/`b_lo` are each live across BOTH (need
+  dups). There is no single 64x64->128 widening vstack op (unlike `gen_opl`'s `TOK_UMULL` at 32-bit), so
+  the sequence is hand-orchestrated `gen_mulh` + three `gen_op('*')` + two `gen_op('+')` with precise
+  dup/rot management — best done interactively (validate each step against int128.c's `mul 907f6e5c…`
+  golden line + the ~1000-seed fuzzer), not written blind in one shot. Alternative worth weighing: an
+  AST-level rewrite (like divmagic uses `AST_OP_MULHU`) rather than a `gen_opq` emitter.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
   priority of the three: mcc does not currently expose these as 128-bit builtins at all
