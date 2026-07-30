@@ -74,6 +74,7 @@ void jrn_vrott(int n);
 void jrn_vrev(int n);
 int jrn_gv(int rc);
 void jrn_vstore(void);
+int jrn_pred(int p);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -2581,6 +2582,12 @@ static void gv_dup(void) { MCC_TRACE("enter\n");
 	vtop->r = r;
 }
 
+#ifdef MCC_JOURNAL_HOOKS
+#define SW_SAVEREGS4() jrn_pred(!cur_switch || cur_switch->bsym)
+#else
+#define SW_SAVEREGS4() (!cur_switch || cur_switch->bsym)
+#endif
+
 static int gen_opl_depth;
 
 #if MCC_PTR_SIZE == 4
@@ -2740,7 +2747,7 @@ static void gen_opl(int op) { MCC_TRACE("enter\n");
 		tmp = vtop[-1];
 		vtop[-1] = vtop[-2];
 		vtop[-2] = tmp;
-		if (!cur_switch || cur_switch->bsym) { MCC_TRACE("br\n");
+		if (SW_SAVEREGS4()) { MCC_TRACE("br\n");
 			save_regs(4);
 		}
 		op1 = op;
@@ -3100,7 +3107,7 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 		tmp = vtop[-1];
 		vtop[-1] = vtop[-2];
 		vtop[-2] = tmp;
-		if (!cur_switch || cur_switch->bsym) { MCC_TRACE("br\n");
+		if (SW_SAVEREGS4()) { MCC_TRACE("br\n");
 			save_regs(4);
 		}
 		op1 = op;

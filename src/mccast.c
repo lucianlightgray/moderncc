@@ -14981,6 +14981,7 @@ typedef struct JrnOp {
 	int raw_off, raw_len;
 	int rawrel_off, rawrel_len;
 	int fc_off, fc_n;
+	int swpred;
 } JrnOp;
 
 static int jrn_env;
@@ -15027,6 +15028,16 @@ static void jrn_fconst_note(int c) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); jrn_pending->fc_off = jrn_fcn; }
 	jrn_fc[jrn_fcn++] = c;
 	jrn_pending->fc_n++;
+}
+
+static int jrn_pred_cur, jrn_pred_have;
+
+int jrn_pred(int p) { MCC_TRACE("enter\n");
+	if (jrn_replaying && jrn_pred_have)
+		{ MCC_TRACE("br\n"); return jrn_pred_cur; }
+	if (jrn_active && jrn_pending && jrn_depth >= 1)
+		{ MCC_TRACE("br\n"); jrn_pending->swpred = p + 1; }
+	return p;
 }
 
 static long jrn_tot_fn, jrn_tot_faithful, jrn_tot_clean;
@@ -15601,6 +15612,8 @@ static void jrn_run(void) { MCC_TRACE("enter\n");
 		}
 		jrn_fc_cur = o->fc_off;
 		jrn_fc_end = o->fc_off + o->fc_n;
+		jrn_pred_have = o->swpred != 0;
+		jrn_pred_cur = o->swpred - 1;
 		jrn_issue(o);
 		if (jrn_env >= 2)
 			{ MCC_TRACE("br\n"); fprintf(stderr,
