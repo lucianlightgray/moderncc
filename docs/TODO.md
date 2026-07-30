@@ -249,4 +249,3 @@ Numbered by precedence: a lower number wins a conflict with a higher one.
 - Verify `-fc99-inline-body` on Mach-O: the weak out-of-line body path through `N_WEAK_DEF`/`EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION` has never been exercised, and confirm the inlining half works there.
 - Add a built-in ad-hoc codesigner instead of shelling out to `/usr/bin/codesign`, and wire `machofat` into `dist-macos` packaging.
 - Remove or replace the dangling `docs/NOTES.md`, `docs/JIT-PLAN.md`, `docs/AST.md`, `docs/SUBSTRATE-PLAN.md`, `SPLIT.md` and `GATED.md` pointers; none of those files exists in the repo or its history.
-- Fix the latent MSVC probe bug in `tools/build.c`: `cl` supports neither `-dumpmachine` nor `--version`, and the leaked stderr fails a whole MSBuild custom-build step. `tools/bench.c` already skips it.
