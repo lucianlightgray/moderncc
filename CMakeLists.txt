@@ -5808,6 +5808,23 @@ if(MCC_BUILD_TESTS)
     set_tests_properties(macho-structural PROPERTIES
         FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
 
+    # Mach-O WEAK DEFINITIONS from -fc99-inline-body. The export trie and the
+    # symtab are written by separate paths in mccmacho.c and used to disagree:
+    # the trie said weak-def, the nlist said non-external. The image still ran,
+    # so no other cell caught it. Needs a linked Mach-O image, hence the native
+    # mcc; the cross cells self-skip (77) inside the script.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        add_test(NAME macho-weakdef
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/weakdef.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-weakdef-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-weakdef PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-weakdef
+            "the trie/symtab pairing needs a linked Mach-O image, which needs a Darwin host")
+    endif()
+
     # Mach-O ARCHIVE members -- the --embed-jit path into libmcc_jitengine.a.
     # Testable on Linux despite the "reserved for macOS" note, because llvm-ar
     # writes a correct BSD armap for Mach-O members where GNU ar indexes nothing.

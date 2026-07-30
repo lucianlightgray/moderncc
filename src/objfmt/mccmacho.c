@@ -1011,8 +1011,10 @@ static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) 
 		{ MCC_TRACE("br\n"); n.n_sect = mo->elfsectomacho[sym->st_shndx]; }
 	if (ELFW(ST_BIND)(sym->st_info) == STB_GLOBAL)
 		{ MCC_TRACE("br\n"); n.n_type |= N_EXT; }
-	else if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK)
-		{ MCC_TRACE("br\n"); n.n_desc |= N_WEAK_REF | (n.n_type != N_UNDF ? N_WEAK_DEF : 0); }
+	else if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
+		n.n_desc |= (n.n_type != N_UNDF ? N_WEAK_DEF : N_WEAK_REF);
+		n.n_type |= N_EXT;
+	}
 	n.n_strx = pn->n_strx;
 	n.n_value = sym->st_value;
 	*pn = n;
