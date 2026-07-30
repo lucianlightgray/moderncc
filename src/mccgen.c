@@ -10113,8 +10113,12 @@ tok_next:
 			{ MCC_TRACE("br\n"); parse_builtin_params(1, "e"); }
 		else
 			{ MCC_TRACE("br\n"); parse_builtin_params(0, ""); }
-		if (is_nan)
-			{ MCC_TRACE("br\n"); vtop--; }
+		if (is_nan) { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_vpop();
+#endif
+			vtop--;
+		}
 		if (is_float) { MCC_TRACE("br\n");
 			union {
 				unsigned u;
@@ -11938,7 +11942,13 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		vtop->sym = vs;
 		mk_pointer(&vtop->type);
 		gaddrof();
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_call_begin(1, 0, 1, 0);
+#endif
 		gfunc_call(1);
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_call_effect_end();
+#endif
 	}
 }
 
