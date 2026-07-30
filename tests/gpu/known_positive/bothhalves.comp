@@ -1,0 +1,88 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Out {
+    uint xsum_lo;
+    uint xsum_hi;
+    uint bad_rev;
+    uint bad_pop;
+    uint bad_mul;
+} o;
+
+layout(push_constant) uniform PC {
+    uint mode;
+    uint fixed_half;
+    uint base;
+    uint count;
+} pc;
+
+const uint ODD_LO = 0x7F4A7C15u;
+const uint ODD_HI = 0x9E3779B9u;
+const uint INV_LO = 0x9937733Du;
+const uint INV_HI = 0xF1DE83E1u;
+
+shared uint s_lo[256];
+shared uint s_hi[256];
+shared uint s_br[256];
+shared uint s_bp[256];
+shared uint s_bm[256];
+
+uvec2 mul64(uvec2 a, uvec2 b) {
+    uint msb, lsb;
+    umulExtended(a.x, b.x, msb, lsb);
+    uint hi = msb + a.x * b.y + a.y * b.x;
+    if (a.x != 0u && a.y != 0u) hi += 1u;
+    return uvec2(lsb, hi);
+}
+
+uvec2 rev64(uvec2 v) {
+    return uvec2(bitfieldReverse(v.y), bitfieldReverse(v.x));
+}
+
+void main() {
+    uint tid = gl_LocalInvocationID.x;
+    uint gid = gl_GlobalInvocationID.x;
+    uint nthreads = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+
+    uint xl = 0u, xh = 0u, br = 0u, bp = 0u, bm = 0u;
+
+    for (uint i = gid; i < pc.count; i += nthreads) {
+        uint swept = pc.base + i;
+        uvec2 x = (pc.mode == 0u) ? uvec2(swept, pc.fixed_half)
+                                  : uvec2(pc.fixed_half, swept);
+        uvec2 r = rev64(x);
+
+        if (!all(equal(rev64(r), x))) br++;
+        if (bitCount(x.x) + bitCount(x.y) != bitCount(r.x) + bitCount(r.y)) bp++;
+
+        uvec2 m = mul64(x, uvec2(ODD_LO, ODD_HI));
+        if (!all(equal(mul64(m, uvec2(INV_LO, INV_HI)), x))) bm++;
+
+        xl ^= r.x;
+        xh ^= r.y;
+    }
+
+    s_lo[tid] = xl; s_hi[tid] = xh;
+    s_br[tid] = br; s_bp[tid] = bp; s_bm[tid] = bm;
+    barrier();
+
+    for (uint s = 128u; s > 0u; s >>= 1u) {
+        if (tid < s) {
+            s_lo[tid] ^= s_lo[tid + s];
+            s_hi[tid] ^= s_hi[tid + s];
+            s_br[tid] += s_br[tid + s];
+            s_bp[tid] += s_bp[tid + s];
+            s_bm[tid] += s_bm[tid + s];
+        }
+        barrier();
+    }
+
+    if (tid == 0u) {
+        atomicXor(o.xsum_lo, s_lo[0]);
+        atomicXor(o.xsum_hi, s_hi[0]);
+        if (s_br[0] != 0u) atomicAdd(o.bad_rev, s_br[0]);
+        if (s_bp[0] != 0u) atomicAdd(o.bad_pop, s_bp[0]);
+        if (s_bm[0] != 0u) atomicAdd(o.bad_mul, s_bm[0]);
+    }
+}
