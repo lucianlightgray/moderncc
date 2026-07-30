@@ -14941,6 +14941,7 @@ enum {
 	JOP_VROTT,
 	JOP_VREV,
 	JOP_PUSHLIT,
+	JOP_GV,
 	JOP_COUNT
 };
 
@@ -15031,6 +15032,7 @@ static long jrn_tot_ops, jrn_tot_raw, jrn_tot_fix;
 static long jrn_fixhist[JFIX_COUNT];
 static long jrn_ophist[JOP_COUNT];
 static long jrn_fixpair[JOP_COUNT][JFIX_COUNT];
+static long jrn_regdiff_n;
 
 static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 	static const char *const n[JOP_COUNT] = {
@@ -15044,7 +15046,8 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
 			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
 			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
-			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit"};
+			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit",
+			"gv"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15313,6 +15316,20 @@ void jrn_vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
 	jrn_end();
 }
 
+int jrn_gv(int rc) { MCC_TRACE("enter\n");
+	int rv;
+	jrn_begin(JOP_GV, NULL);
+	if (JRN_REC) { MCC_TRACE("br\n");
+		jrn_pending->a0 = rc;
+		jrn_pending->d64 = (int64_t)ast_pinned_regs;
+	}
+	rv = (gv)(rc);
+	if (JRN_REC)
+		{ MCC_TRACE("br\n"); jrn_pending->a1 = rv; }
+	jrn_end();
+	return rv;
+}
+
 int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	int rv;
 	jrn_begin(JOP_CMOV, NULL);
@@ -15435,6 +15452,16 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_VROTB: (vrotb)(o->a0); break;
 	case JOP_VROTT: (vrott)(o->a0); break;
 	case JOP_VREV: (vrev)(o->a0); break;
+	case JOP_GV: { MCC_TRACE("br\n");
+		uint64_t pin = ast_pinned_regs;
+		int got;
+		ast_pinned_regs = (uint64_t)o->d64;
+		got = (gv)(o->a0);
+		ast_pinned_regs = pin;
+		if (got != o->a1)
+			{ MCC_TRACE("br\n"); jrn_regdiff_n++; }
+		break;
+	}
 	default: break;
 	}
 }
@@ -15631,6 +15658,7 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 	unsigned char sv_warn = mcc_state->warn_none;
 	Sym *saved_free = sym_free_first;
 	int saved_floor = stk_data_floor;
+	uint64_t saved_pin = ast_pinned_regs;
 	int sv_ast_active, sv_ast_capture, sv_ast_replaying;
 
 	jrn_active = 0;
@@ -15780,6 +15808,7 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 	loc = saved_loc;
 	anon_sym = saved_anon;
 	nocode_wanted = saved_nocode;
+	ast_pinned_regs = saved_pin;
 	memcpy(vstack - 1, vsave, sizeof(SValue) * (VSTACK_SIZE + 1));
 	vtop = vstack + saved_vn - 1;
 	mcc_free(vsave);
@@ -15906,6 +15935,7 @@ static void jrn_report(void) { MCC_TRACE("enter\n");
 	fprintf(stderr, "[jrn-total] fn=%ld faithful=%ld clean=%ld ops=%ld raw=%ld fix=%ld deep=%ld\n",
 					jrn_tot_fn, jrn_tot_faithful, jrn_tot_clean, jrn_tot_ops, jrn_tot_raw,
 					jrn_tot_fix, jrn_tot_deepreg);
+	fprintf(stderr, "[jrn-regdiff] %ld\n", jrn_regdiff_n);
 	for (i = 0; i < JFIX_COUNT; i++)
 		{ MCC_TRACE("br\n"); if (jrn_fixhist[i])
 			{ MCC_TRACE("br\n"); fprintf(stderr, "[jrn-fix] %s %ld\n", jrn_fix_name(i),

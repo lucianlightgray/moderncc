@@ -71,6 +71,7 @@ void jrn_vpop(void);
 void jrn_vrotb(int n);
 void jrn_vrott(int n);
 void jrn_vrev(int n);
+int jrn_gv(int rc);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -127,6 +128,7 @@ void jrn_vrev(int n);
 #define vrotb(...) jrn_vrotb(__VA_ARGS__)
 #define vrott(...) jrn_vrott(__VA_ARGS__)
 #define vrev(...) jrn_vrev(__VA_ARGS__)
+#define gv(...) jrn_gv(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -2257,7 +2259,7 @@ static int adjust_bf(SValue *sv, int bit_pos, int bit_size) { MCC_TRACE("enter\n
 	return t;
 }
 
-ST_FUNC int gv(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n", rc, vtop->r, vtop->type.t, (long long)vtop->c.i);
+ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n", rc, vtop->r, vtop->type.t, (long long)vtop->c.i);
 	int r, r2, r_ok, r2_ok, rc2, bt;
 	int bit_pos, bit_size, size, align;
 
@@ -15074,6 +15076,7 @@ static int decl(int l) {
 #undef vrotb
 #undef vrott
 #undef vrev
+#undef gv
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
