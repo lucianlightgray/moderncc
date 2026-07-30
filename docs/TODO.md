@@ -4181,6 +4181,20 @@ For each operation:
   absent on x86_64, so there's no mechanical port either. Do it interactively in `gen_opq`, gated, TDD'd
   against int128.c's `mul` golden + the fuzzer; the arithmetic is settled (unsigned decomposition is
   correct for signed too — only `__multi3` exists), only the register/vstack orchestration remains.
+  **EMPIRICAL STATUS (2026-07-30): the gen_opq emitter is ~90% there; the ONE remaining bug is register
+  aliasing in the low 64x64->128 product.** I built it as a near-mechanical port of gen_opl's `*` arm
+  (same qexpand setup + vrotb(6) dance + cross muls + qbuild), substituting gen_opl's single
+  `TOK_UMULL; lexpand()` (which leaves `[lo,hi]`) with `gen_op('*')` (low 64) + `gen_mulh(0)` (high 64)
+  over duplicated operands. It FIRES (0 __multi3 calls, 4 mul insns) and the cross-term/high logic is
+  right, BUT the low product comes out as `blo` not `alo*blo`: `vpushv` copies the SValue (which ALIASES
+  the operand's register), so `gen_op('*')` clobbers the shared operand regs that the following
+  `gen_mulh` then reads — the split of one widening multiply into two ops introduces the aliasing that
+  `TOK_UMULL` (one op) inherently avoids. Verified with controlled cases: `a=b=0xFFFFFFFF` gave lo=
+  `0xFFFFFFFF` (=blo) instead of `0xFFFFFFFE00000001`. FIX DIRECTION: materialize `alo`,`blo` into
+  independent locations before the two multiplies (gv/gv_dup to distinct registers, or a small stack
+  temp), OR add an x86_64 widening-mul primitive that yields the full rdx:rax pair in one shot (the
+  cleanest — gen_mulh already does the `mul`, it just discards rax). Reverted the buggy WIP; this note
+  is the pick-up point.
 - `clz`/`ctz`/`popcount` — `bsr`/`bsf` on the appropriate half with a branch. Note these are ALSO in the
   wider "mcc's builtins are runtime calls" item elsewhere in this file; do them together. Lowest
   priority of the three: mcc does not currently expose these as 128-bit builtins at all
