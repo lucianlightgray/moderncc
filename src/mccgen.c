@@ -77,6 +77,7 @@ void jrn_vstore(void);
 int jrn_pred(int p);
 void jrn_gen_op(int op);
 void jrn_mk_pointer(CType *type);
+void jrn_gaddrof(void);
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -137,6 +138,7 @@ void jrn_mk_pointer(CType *type);
 #define vstore(...) jrn_vstore(__VA_ARGS__)
 #define gen_op(...) jrn_gen_op(__VA_ARGS__)
 #define mk_pointer(...) jrn_mk_pointer(__VA_ARGS__)
+#define gaddrof(...) jrn_gaddrof(__VA_ARGS__)
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -1990,7 +1992,7 @@ static void move_reg(int r, int s, int t) { MCC_TRACE("enter\n");
 	}
 }
 
-ST_FUNC void gaddrof(void) { MCC_TRACE("enter\n");
+ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_gaddrof();
 	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
@@ -15098,6 +15100,7 @@ static int decl(int l) {
 #undef vstore
 #undef gen_op
 #undef mk_pointer
+#undef gaddrof
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
