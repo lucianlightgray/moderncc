@@ -11028,7 +11028,9 @@ static int ast_range_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	hlit = ast_bf_lit(a, kw, span);
 	MCC_TRACE("range fold(or) key=%u lo=%lld hi=%lld span=%llu kw=0x%x\n", (unsigned)key,
 						(long long)lo, (long long)hi, (unsigned long long)span, kw);
-	ast_set_op(a, n, TOK_UGT);
+	/* Same landor-invert handling as ast_range_try: `!(x<lo || x>hi)` (in-range)
+	   must fold to the negated op. UGT^1 = TOK_ULE. See the note there. */
+	ast_set_op(a, n, (unsigned)TOK_UGT ^ ((ast_fbits(a, n) & AST_FB_LANDOR_INVERT) ? 1u : 0u));
 	ast_set_type(a, n, VT_INT, 0);
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
