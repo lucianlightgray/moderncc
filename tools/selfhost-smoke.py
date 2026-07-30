@@ -27,17 +27,29 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
     blob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccrt_blob.c.o")
+    sidecars = [os.path.join(root, bdir, "libmccrt.a"),
+                os.path.join(root, bdir, "lib", "libmccrt.a")]
     if not os.access(mcc, os.X_OK):
         sys.exit(f"no mcc at {mcc}")
-    if not os.path.exists(blob):
-        sys.exit(f"no runtime blob at {blob} (build the mcc target first)")
 
     cc = json.load(open(os.path.join(root, bdir, "compile_commands.json")))
     rec = [x for x in cc if x["file"].endswith("/mcc.c")][0]
     flags = [a for a in shlex.split(rec["command"])[1:]
              if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
-    link_objs = [blob]
+    # MCC_EMBED_MCCRT bakes the runtime into the compiler as mccrt_blob.c.o, and
+    # the self-hosted link consumes that object. Darwin and WIN32 force the
+    # option off and ship the sidecar libmccrt.a instead; the self-hosted binary
+    # lives in a temp dir so its auto-mccdir cannot see it, and -B points it back.
+    link_objs = []
+    link_flags = []
+    if os.path.exists(blob):
+        link_objs.append(blob)
+    elif any(os.path.exists(p) for p in sidecars):
+        link_flags += ["-B", os.path.dirname(next(p for p in sidecars if os.path.exists(p)))]
+    else:
+        sys.exit(f"no runtime blob at {blob} and no sidecar libmccrt.a in "
+                 f"{os.path.join(root, bdir)} (build the mcc target first)")
     if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
         jitblob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c.o")
         if not os.path.exists(jitblob):
@@ -52,7 +64,8 @@ def main():
 
         print("self-host: linking (mcc as linker for the x87 long-double helpers)")
         shbin = os.path.join(work, "mcc-sh")
-        subprocess.run([mcc, obj, *link_objs, "-o", shbin, "-lm", "-ldl"], cwd=root, check=True)
+        subprocess.run([mcc, *link_flags, obj, *link_objs, "-o", shbin, "-lm", "-ldl"],
+                       cwd=root, check=True)
 
         inc = os.path.join(root, "runtime/include")
         tc = os.path.join(work, "t.c")
@@ -61,7 +74,7 @@ def main():
             "int fib(int n){return n<2?n:fib(n-1)+fib(n-2);}\n"
             "int main(void){printf(\"%d\\n\",fib(10));return 0;}\n")
         te = os.path.join(work, "t")
-        subprocess.run([shbin, "-I" + inc, tc, "-o", te], check=True)
+        subprocess.run([shbin, *link_flags, "-I" + inc, tc, "-o", te], check=True)
         out = subprocess.run([te], capture_output=True, text=True).stdout.strip()
         if out != "55":
             sys.exit(f"FAIL: self-hosted mcc gave fib(10)={out}, expected 55")
@@ -69,7 +82,7 @@ def main():
         qs = os.path.join(root, "tests/exec/programs/quicksort.c")
         if os.path.exists(qs):
             qe = os.path.join(work, "qs")
-            subprocess.run([shbin, "-I" + inc, qs, "-o", qe], check=True)
+            subprocess.run([shbin, *link_flags, "-I" + inc, qs, "-o", qe], check=True)
             sortd = subprocess.run([qe], capture_output=True, text=True).stdout.strip().splitlines()[-1]
             if "4 16 21 33 36 37 38 53 55 62 65 74 74 83 89 96" not in sortd:
                 sys.exit(f"FAIL: self-hosted mcc mis-sorted quicksort: {sortd}")

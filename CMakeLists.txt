@@ -5111,7 +5111,12 @@ if(MCC_BUILD_TESTS)
         endif()
 
         find_program(MCC_PYTHON3 NAMES python3 python)
-        if(MCC_PYTHON3 AND MCC_EMBED_MCCRT)
+        # Darwin forces MCC_EMBED_MCCRT off (mcc reads ELF objects only), but the
+        # sidecar libmccrt.a links a stage compiler just as well once -B points at
+        # the build dir, so the self-host cells run there too. This is the tree's
+        # only non-qemu arm64 3-stage self-host. WIN32 stays out: the mcc-built
+        # win32 binary is still nondeterministic (docs/TODO).
+        if(MCC_PYTHON3 AND (MCC_EMBED_MCCRT OR MCC_TARGETOS STREQUAL "Darwin"))
             add_test(NAME selfhost-smoke
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
                         "${CMAKE_BINARY_DIR}")
