@@ -11,6 +11,11 @@
 #     FIRST GOT relocation for a symbol creates the slot and Mach-O stores
 #     relocations in descending address order -- so clang's LO12 half arrived
 #     first and the ADR_GOT_PAGE case never ran
+#   * ___dso_handle undefined, so no TU with a constructor or destructor linked
+#   * __DATA,__mod_init_func mapped to a section nothing runs, so the
+#     constructors that did link never fired
+#   * a scalar LDRSB decoded as a 128-bit SIMD load, scaling its LO12 immediate
+#     by 16 and truncating every offset below 16 to zero
 #
 # Each program is compiled by clang with -g (DWARF) and the stack protector
 # left ON (it is what pulls in __stack_chk_guard, the imported data symbol),
@@ -39,7 +44,8 @@ mkdir -p "$WORK"
 CASES="programs/quicksort programs/hanoi programs/grep
 statements/tentative_array statements/bracket_evaluation statements/scopes
 statements/conditional_operator types/storage_tentative types/floating_point
-types/types types/typedef pointers_arrays/pointer"
+types/types types/typedef pointers_arrays/pointer
+features_c99_c11/constructor functions_abi/func_name lexical/string_literals"
 
 fails=0
 ran=0

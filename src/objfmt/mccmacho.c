@@ -2873,8 +2873,14 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 					if ((insn & 0xff000000u) == 0x91000000u) { MCC_TRACE("br\n");
 						etype = R_AARCH64_ADD_ABS_LO12_NC;
 					} else if ((insn & 0x3b000000u) == 0x39000000u) { MCC_TRACE("br\n");
+						/* size==0 with opc 2 or 3 is a 128-bit LDR/STR Q only when the V
+						   bit (26) says SIMD&FP. With V clear the same encoding is a
+						   scalar LDRSB, and calling it 128-bit scaled its LO12 immediate
+						   by 16 -- every offset below 16 truncated to 0, so subscripting
+						   a string literal read the start of the section instead. */
 						uint32_t sz = (insn >> 30) & 3, opc = (insn >> 22) & 3;
-						if (sz == 0 && (opc == 2 || opc == 3)) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST128_ABS_LO12_NC; }
+						uint32_t simd = (insn >> 26) & 1;
+						if (sz == 0 && simd && (opc == 2 || opc == 3)) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST128_ABS_LO12_NC; }
 						else if (sz == 0) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST8_ABS_LO12_NC; }
 						else if (sz == 1) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST16_ABS_LO12_NC; }
 						else if (sz == 2) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST32_ABS_LO12_NC; }
