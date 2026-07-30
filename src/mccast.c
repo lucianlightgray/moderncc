@@ -6035,6 +6035,20 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 					(vtop->type.ref->type.t & VT_BTYPE) == VT_FUNC)
 				{ MCC_TRACE("br\n"); vtop->type = *pointed_type(&vtop->type); }
 			if (i == 0 && live_arg) { MCC_TRACE("br\n");
+				/* The storeval-arg admission (ast_finalize_storevals) is a
+				   STRUCTURAL walk on the recorded AST; it cannot see the replay
+				   value-stack, so the store context it assumes (the store target
+				   / consumed value) is not guaranteed to be present here. When it
+				   is absent the rotation below underflows vstack -- which sits
+				   just after nb_sym_pools/sym_pools in MCCState, so vrotb(3)'s
+				   vtop[-2] write silently corrupts the symbol-pool bookkeeping and
+				   the compiler crashes later in __sym_malloc. Verify the depth and
+				   bail to byte-faithful baseline codegen if it is short (the replay
+				   runs under a setjmp for exactly this). vrotb(3) needs 3 live
+				   values, vswap needs 2. */
+				int sv_need = (ast_fbits(a, n) & AST_FB_CALL_STOREVAL_STORE) ? 3 : 2;
+				if (vtop - vstack + 1 < sv_need)
+					{ MCC_TRACE("br\n"); mcc_error("ast-replay: storeval-arg stack underflow"); }
 				if (ast_fbits(a, n) & AST_FB_CALL_STOREVAL_STORE)
 					{ MCC_TRACE("br\n"); vrotb(3); }
 				else
