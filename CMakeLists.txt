@@ -5992,7 +5992,27 @@ if(MCC_BUILD_TESTS)
     endif()
 
     option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
-    if(NOT MCC_DARWIN_HOST)
+    # tests/qemu/apple-libc runs Apple's PORTABLE sources off-Darwin and
+    # documents the rest as kernel-fused. These are that rest, exercised where
+    # the platform actually is: one cell per subsystem so a failure name says
+    # which one. Split rather than bundled because they share no code path.
+    # -lobjc for the runtime cell; the others resolve through libSystem.
+    if(MCC_DARWIN_HOST AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        foreach(_dt malloc stdio dyld pthread gcd mach objc)
+            set(_dt_extra "")
+            if(_dt STREQUAL "objc")
+                set(_dt_extra -lobjc)
+            endif()
+            add_test(NAME "macho-libsystem/${_dt}"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/darwin/run.sh"
+                        "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_BINARY_DIR}/darwin-libsystem-work"
+                        "libsystem_${_dt}" "-B${CMAKE_BINARY_DIR}" ${_dt_extra})
+            set_tests_properties("macho-libsystem/${_dt}" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+                TIMEOUT 300)
+        endforeach()
+    else()
         mcc_skip_test(macho-libsystem-kernel-fused
             "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant — see tests/qemu/apple-libc/PROVENANCE.md")
     endif()
