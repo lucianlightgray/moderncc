@@ -3700,6 +3700,7 @@ if(MCC_BUILD_TESTS)
                             "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
                             "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
                             "-DBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify-baseline/${_verify_key}.txt"
+                            "-DJBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal-baseline/${_verify_key}.txt"
                             "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-tmp-${_vopt}"
                             "-DOPT=-${_vopt}"
                             "-DJOURNAL=1"
