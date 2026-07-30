@@ -3674,6 +3674,56 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endif()
 
+        # Operation-journal parity column. The journal is an oracle that runs
+        # ALONGSIDE the tree recorder, gated off by default, and does not replace
+        # it until it is at parity or better -- this is what decides that, every
+        # run, instead of a hand sweep. The invariant it locks: a function the
+        # tree reproduces byte-faithfully must be one the journal reproduces
+        # byte-faithfully. The converse (journal faithful where the tree is not)
+        # is the win, and is reported as the delta rather than failed on. Builds
+        # without MCC_JOURNAL_HOOKS SKIP the column instead of failing it.
+        if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+            foreach(_vopt O1 O2 O3)
+                mcc_skip_test(ast-journal-parity-${_vopt}
+                    "journal/tree parity is measured on the asm-on native build; mcc-hosted-by-MSVC has not been swept, and an unmeasured hard invariant is worse than an honest skip")
+            endforeach()
+        elseif(NOT MCC_CONFIG_ASM)
+            foreach(_vopt O1 O2 O3)
+                mcc_skip_test(ast-journal-parity-${_vopt}
+                    "journal/tree parity is measured with the integrated assembler on; asm-off routes inline_asm/* bodies past the journalled codegen entry points and that configuration has not been swept")
+            endforeach()
+        else()
+            foreach(_vopt O1 O2 O3)
+                add_test(NAME ast-journal-parity-${_vopt}
+                    COMMAND "${CMAKE_COMMAND}"
+                            "-DMCC=${_mcc_exe}"
+                            "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                            "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                            "-DBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify-baseline/${_verify_key}.txt"
+                            "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-tmp-${_vopt}"
+                            "-DOPT=-${_vopt}"
+                            "-DJOURNAL=1"
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify_ratchet.cmake")
+                set_tests_properties(ast-journal-parity-${_vopt} PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+                    SKIP_RETURN_CODE 77)
+            endforeach()
+        endif()
+
+        # Journal inertness: MCC_JOURNAL=1 must not move a byte of the object it
+        # observes. Without this the oracle could start steering the very output
+        # it exists to certify, and nothing else in the suite would notice --
+        # every other journal check reads the journal's own verdicts.
+        if(UNIX)
+            add_test(NAME ast/journal-inert
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/jrn_identity.sh"
+                        "${_mcc_exe}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "${CMAKE_BINARY_DIR}/ast-journal-inert" -O1)
+            set_tests_properties(ast/journal-inert PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 900)
+        endif()
+
         # -O4's superopt driver scores by SIZE, and promotion trades size for
         # speed -- which is how -O4 came to be slower than -O3 on every plb
         # kernel. so_setenv_cfg now treats MCC_AST_PROMOTE as add-only. This

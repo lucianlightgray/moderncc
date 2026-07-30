@@ -3,6 +3,104 @@
 
 #include "mccforecast.h"
 
+#ifndef MCC_JOURNAL_HOOKS
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#define MCC_JOURNAL_HOOKS 1
+#endif
+#endif
+#if defined(MCC_JOURNAL_HOOKS) && !MCC_JOURNAL_HOOKS
+#undef MCC_JOURNAL_HOOKS
+#endif
+
+#ifdef MCC_JOURNAL_HOOKS
+void jrn_load(int r, SValue *sv);
+void jrn_store(int r, SValue *v);
+void jrn_gen_opi(int op);
+void jrn_gen_opl(int op);
+void jrn_gen_opf(int op);
+void jrn_gfunc_call(int nb_args);
+int jrn_gjmp(int t);
+void jrn_gjmp_addr(int a);
+int jrn_gjmp_cond(int op, int t);
+void jrn_gsym_addr(int t, int a);
+void jrn_gen_cvt_itof(int t);
+void jrn_gen_cvt_ftof(int t);
+void jrn_gen_cvt_ftoi(int t);
+void jrn_gen_cvt_sxtw(void);
+void jrn_gen_cvt_trunc32(void);
+void jrn_gen_cvt_csti(int t);
+void jrn_gen_struct_copy(int size);
+void jrn_ggoto(void);
+int jrn_gen_cmov(int rt, int rf, int rb, int ll);
+void jrn_gen_fill_nops(int bytes);
+void jrn_gen_vla_sp_save(int addr);
+void jrn_gen_vla_sp_restore(int addr);
+void jrn_gen_vla_alloc(CType *type, int align);
+void jrn_gen_mulh(int sign);
+#if MCC_HAVE_INT128
+void jrn_gen_mul_widen(void);
+#endif
+void jrn_gen_reg_addi(int r, int64_t d);
+void jrn_gen_fabs(void);
+void jrn_gen_bswap(int size);
+void jrn_gen_sqrt(void);
+void jrn_gen_round(int mode);
+void jrn_gen_copysign(void);
+void jrn_gen_signbit(int isfloat);
+void jrn_gen_ffs(int size);
+void jrn_gen_bitscan(int ctz, int size);
+void jrn_gen_trap(void);
+void jrn_gen_increment_tcov(SValue *sv);
+void jrn_gen_atomic_cmpxchg(int size);
+void jrn_gen_atomic_xchg(int size);
+void jrn_gen_atomic_xadd(int size);
+void jrn_gen_asan_shadow_check(int sz);
+void jrn_gen_ubsan_nullptr(void);
+int jrn_gjmp_append(int n, int t);
+#define load(r, sv) jrn_load((r), (sv))
+#define store(r, v) jrn_store((r), (v))
+#define gen_opi(op) jrn_gen_opi((op))
+#define gen_opl(op) jrn_gen_opl((op))
+#define gen_opf(op) jrn_gen_opf((op))
+#define gfunc_call(n) jrn_gfunc_call((n))
+#define gjmp_cond(op, t) jrn_gjmp_cond((op), (t))
+#define gsym_addr(t, a) jrn_gsym_addr((t), (a))
+#define gen_cvt_itof(t) jrn_gen_cvt_itof((t))
+#define gen_cvt_ftof(t) jrn_gen_cvt_ftof((t))
+#define gen_cvt_ftoi(t) jrn_gen_cvt_ftoi((t))
+#define gen_cvt_sxtw() jrn_gen_cvt_sxtw()
+#define gen_cvt_trunc32() jrn_gen_cvt_trunc32()
+#define gen_cvt_csti(t) jrn_gen_cvt_csti((t))
+#define gen_struct_copy(s) jrn_gen_struct_copy((s))
+#define ggoto() jrn_ggoto()
+#define gen_cmov(rt, rf, rb, ll) jrn_gen_cmov((rt), (rf), (rb), (ll))
+#define gen_fill_nops(b) jrn_gen_fill_nops((b))
+#define gen_vla_sp_save(a) jrn_gen_vla_sp_save((a))
+#define gen_vla_sp_restore(a) jrn_gen_vla_sp_restore((a))
+#define gen_vla_alloc(ty, al) jrn_gen_vla_alloc((ty), (al))
+#define gen_mulh(s) jrn_gen_mulh((s))
+#if MCC_HAVE_INT128
+#define gen_mul_widen() jrn_gen_mul_widen()
+#endif
+#define gen_reg_addi(r, d) jrn_gen_reg_addi((r), (d))
+#define gen_fabs() jrn_gen_fabs()
+#define gen_bswap(s) jrn_gen_bswap((s))
+#define gen_sqrt() jrn_gen_sqrt()
+#define gen_round(m) jrn_gen_round((m))
+#define gen_copysign() jrn_gen_copysign()
+#define gen_signbit(f) jrn_gen_signbit((f))
+#define gen_ffs(s) jrn_gen_ffs((s))
+#define gen_bitscan(c, s) jrn_gen_bitscan((c), (s))
+#define gen_trap() jrn_gen_trap()
+#define gen_increment_tcov(sv) jrn_gen_increment_tcov((sv))
+#define gen_atomic_cmpxchg(s) jrn_gen_atomic_cmpxchg((s))
+#define gen_atomic_xchg(s) jrn_gen_atomic_xchg((s))
+#define gen_atomic_xadd(s) jrn_gen_atomic_xadd((s))
+#define gen_asan_shadow_check(s) jrn_gen_asan_shadow_check((s))
+#define gen_ubsan_nullptr() jrn_gen_ubsan_nullptr()
+#define gjmp_append(n, t) jrn_gjmp_append((n), (t))
+#endif
+
 ST_DATA int rsym, anon_sym, ind, loc;
 ST_DATA long mcc_stackref_count;
 static long mcc_stackref_fn;
@@ -279,7 +377,7 @@ ST_FUNC void gen_le16(int c) { MCC_TRACE("enter\n");
 }
 
 #ifndef MCC_TARGET_ARM
-ST_FUNC int gjmp_append(int n, int t) { MCC_TRACE("enter\n");
+ST_FUNC int (gjmp_append)(int n, int t) { MCC_TRACE("enter\n");
 	void *p;
 	if (n) { MCC_TRACE("br\n");
 		uint32_t n1 = n, n2;
@@ -340,12 +438,20 @@ static int gind() { MCC_TRACE("enter\n");
 }
 
 static void gjmp_addr_acs(int t) { MCC_TRACE("enter\n");
+#ifdef MCC_JOURNAL_HOOKS
+	jrn_gjmp_addr(t);
+#else
 	gjmp_addr(t);
+#endif
 	CODE_OFF();
 }
 
 static int gjmp_acs(int t) { MCC_TRACE("enter\n");
+#ifdef MCC_JOURNAL_HOOKS
+	t = jrn_gjmp(t);
+#else
 	t = gjmp(t);
+#endif
 	CODE_OFF();
 	return t;
 }
@@ -499,7 +605,7 @@ static int i128_native_shift_on(void) { MCC_TRACE("enter\n");
 }
 
 #if MCC_HAVE_INT128
-ST_FUNC void gen_mul_widen(void); /* x86_64-gen.c: 64x64->128 unsigned, result pair RAX:RDX */
+ST_FUNC void (gen_mul_widen)(void); /* x86_64-gen.c: 64x64->128 unsigned, result pair RAX:RDX */
 /* __int128 PHASE 2: inline a 128-bit `*` instead of calling __multi3, by porting
  * gen_opl's `*` arm to 64-bit halves -- gen_opl's single `TOK_UMULL; lexpand()`
  * (which leaves [lo,hi] of the low 64x64 product) becomes `gen_mul_widen();
@@ -14884,6 +14990,49 @@ static int decl(int l) {
 
 #undef gjmp_addr
 #undef gjmp
+
+#ifdef MCC_JOURNAL_HOOKS
+#undef load
+#undef store
+#undef gen_opi
+#undef gen_opl
+#undef gen_opf
+#undef gfunc_call
+#undef gjmp_cond
+#undef gsym_addr
+#undef gen_cvt_itof
+#undef gen_cvt_ftof
+#undef gen_cvt_ftoi
+#undef gen_cvt_sxtw
+#undef gen_cvt_trunc32
+#undef gen_cvt_csti
+#undef gen_struct_copy
+#undef ggoto
+#undef gen_cmov
+#undef gen_fill_nops
+#undef gen_vla_sp_save
+#undef gen_vla_sp_restore
+#undef gen_vla_alloc
+#undef gen_mulh
+#undef gen_mul_widen
+#undef gen_reg_addi
+#undef gen_fabs
+#undef gen_bswap
+#undef gen_sqrt
+#undef gen_round
+#undef gen_copysign
+#undef gen_signbit
+#undef gen_ffs
+#undef gen_bitscan
+#undef gen_trap
+#undef gen_increment_tcov
+#undef gen_atomic_cmpxchg
+#undef gen_atomic_xchg
+#undef gen_atomic_xadd
+#undef gen_asan_shadow_check
+#undef gen_ubsan_nullptr
+#undef gjmp_append
+#endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
 #include "mccast.c"
