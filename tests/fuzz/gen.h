@@ -176,6 +176,59 @@ static void fuzz_expr(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fuel) {
 	}
 }
 
+/* Logical conditions: range checks (lo<=x && x<=hi), equality/inequality chains
+   (x==a||x==b||..., x!=a&&x!=b&&...) that trip MCC_AST_RANGE / MCC_AST_BITFLAG, and
+   `&&`/`||`/`!` combinations that trip MCC_AST_LANDOR_INVERT. The expression grammar
+   above never emits these, which is exactly how the RANGE and BITFLAG landor-invert
+   miscompiles slipped past the fuzzer -- both were caught only by hand-written
+   differentials. Deterministic (a var vs constants), so it stays a valid oracle. */
+static void fuzz_cond(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fuel) {
+	int neg = fuzz_pick(r, 3) == 0; /* 1/3: negate, to exercise the invert path */
+	if (neg)
+		fputc('!', o);
+	fputc('(', o);
+	unsigned k = fuel <= 0 ? 5 : fuzz_pick(r, 6);
+	switch (k) {
+	case 0: { /* range: C1 <= vX && vX <= C2 */
+		unsigned v = fuzz_pick(r, (unsigned)c->nvars);
+		unsigned lo = fuzz_pick(r, 40), hi = lo + fuzz_pick(r, 40);
+		fprintf(o, "%uUL <= v%u && v%u <= %uUL", lo, v, v, hi);
+		break;
+	}
+	case 1: { /* equality chain (2..8 terms -> may cross BITFLAG min 5) */
+		unsigned v = fuzz_pick(r, (unsigned)c->nvars), n = 2 + fuzz_pick(r, 7);
+		for (unsigned i = 0; i < n; i++) {
+			if (i)
+				fputs(" || ", o);
+			fprintf(o, "v%u == %uUL", v, fuzz_pick(r, 60));
+		}
+		break;
+	}
+	case 2: { /* inequality chain */
+		unsigned v = fuzz_pick(r, (unsigned)c->nvars), n = 2 + fuzz_pick(r, 7);
+		for (unsigned i = 0; i < n; i++) {
+			if (i)
+				fputs(" && ", o);
+			fprintf(o, "v%u != %uUL", v, fuzz_pick(r, 60));
+		}
+		break;
+	}
+	case 3: /* combination */
+		fuzz_cond(r, c, o, fuel - 1);
+		fputs(fuzz_pick(r, 2) ? " && " : " || ", o);
+		fuzz_cond(r, c, o, fuel - 1);
+		break;
+	default: { /* leaf relational */
+		static const char *cmp[] = {"<", ">", "<=", ">=", "==", "!="};
+		fuzz_var(r, c, o);
+		fprintf(o, " %s ", cmp[fuzz_pick(r, 6)]);
+		fuzz_var(r, c, o);
+		break;
+	}
+	}
+	fputc(')', o);
+}
+
 static void fuzz_stmt(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fi, int fuel,
 					  int ind) {
 	for (int i = 0; i < ind; i++)
@@ -198,8 +251,14 @@ static void fuzz_stmt(fuzz_rng *r, const fuzz_cfg *c, FILE *o, int fi, int fuel,
 	}
 	case 4:
 		fputs("if (", o);
-		fuzz_expr(r, c, o, fuel);
-		fputs(" & 1UL) {\n", o);
+		if (fuzz_pick(r, 2)) { /* half: a logical condition (range/chain/&&/||/!) */
+			fuzz_cond(r, c, o, 2);
+		} else {
+			fputs("(", o);
+			fuzz_expr(r, c, o, fuel);
+			fputs(" & 1UL)", o);
+		}
+		fputs(") {\n", o);
 		fuzz_stmt(r, c, o, fi, fuel, ind + 1);
 		for (int i = 0; i < ind; i++)
 			fputc('\t', o);
