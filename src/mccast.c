@@ -15331,9 +15331,13 @@ JRN_W1(gen_cvt_itof, JOP_CVT_ITOF)
 JRN_W1(gen_cvt_ftof, JOP_CVT_FTOF)
 JRN_W1(gen_cvt_ftoi, JOP_CVT_FTOI)
 JRN_W0(gen_cvt_sxtw, JOP_CVT_SXTW)
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 JRN_W0(gen_cvt_trunc32, JOP_CVT_TRUNC32)
+#endif
 JRN_W1(gen_cvt_csti, JOP_CVT_CSTI)
+#ifdef MCC_JRN_HAVE_STRUCT_COPY
 JRN_W1(gen_struct_copy, JOP_STRUCTCOPY)
+#endif
 JRN_W0(ggoto, JOP_GGOTO)
 JRN_W1(gen_fill_nops, JOP_FILLNOPS)
 JRN_W1(gen_vla_sp_save, JOP_VLA_SPSAVE)
@@ -15343,17 +15347,21 @@ JRN_W1(gen_mulh, JOP_MULH)
 JRN_W0(gen_mul_widen, JOP_MULWIDEN)
 #endif
 JRN_W0(gen_fabs, JOP_FABS)
-JRN_W1(gen_bswap, JOP_BSWAP)
 JRN_W0(gen_sqrt, JOP_SQRT)
 JRN_W1(gen_round, JOP_ROUND)
 JRN_W0(gen_copysign, JOP_COPYSIGN)
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+JRN_W1(gen_bswap, JOP_BSWAP)
 JRN_W1(gen_signbit, JOP_SIGNBIT)
 JRN_W1(gen_ffs, JOP_FFS)
 JRN_W2(gen_bitscan, JOP_BITSCAN)
+#endif
 JRN_W0(gen_trap, JOP_TRAP)
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 JRN_W1(gen_atomic_cmpxchg, JOP_ATOMIC_CMPXCHG)
 JRN_W1(gen_atomic_xchg, JOP_ATOMIC_XCHG)
 JRN_W1(gen_atomic_xadd, JOP_ATOMIC_XADD)
+#endif
 JRN_W1(gen_asan_shadow_check, JOP_ASAN_SHADOW)
 JRN_W0(gen_ubsan_nullptr, JOP_UBSAN_NULLPTR)
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
@@ -15454,6 +15462,7 @@ int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	return rv;
 }
 
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_REGADDI, NULL);
 	if (JRN_REC) { MCC_TRACE("br\n");
@@ -15463,6 +15472,7 @@ void jrn_gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	(gen_reg_addi)(r, d);
 	jrn_end();
 }
+#endif
 
 void jrn_gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_VLA_ALLOC, NULL);
@@ -15514,9 +15524,13 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_CVT_FTOF: (gen_cvt_ftof)(o->a0); break;
 	case JOP_CVT_FTOI: (gen_cvt_ftoi)(o->a0); break;
 	case JOP_CVT_SXTW: (gen_cvt_sxtw)(); break;
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_CVT_TRUNC32: (gen_cvt_trunc32)(); break;
+#endif
 	case JOP_CVT_CSTI: (gen_cvt_csti)(o->a0); break;
+#ifdef MCC_JRN_HAVE_STRUCT_COPY
 	case JOP_STRUCTCOPY: (gen_struct_copy)(o->a0); break;
+#endif
 	case JOP_GGOTO: (ggoto)(); break;
 	case JOP_CMOV: (void)(gen_cmov)(o->a0, o->a1, o->a2, o->a3); break;
 	case JOP_FILLNOPS: (gen_fill_nops)(o->a0); break;
@@ -15527,20 +15541,26 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 #if MCC_HAVE_INT128
 	case JOP_MULWIDEN: (gen_mul_widen)(); break;
 #endif
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_REGADDI: (gen_reg_addi)(o->a0, o->d64); break;
+#endif
 	case JOP_FABS: (gen_fabs)(); break;
-	case JOP_BSWAP: (gen_bswap)(o->a0); break;
 	case JOP_SQRT: (gen_sqrt)(); break;
 	case JOP_ROUND: (gen_round)(o->a0); break;
 	case JOP_COPYSIGN: (gen_copysign)(); break;
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+	case JOP_BSWAP: (gen_bswap)(o->a0); break;
 	case JOP_SIGNBIT: (gen_signbit)(o->a0); break;
 	case JOP_FFS: (gen_ffs)(o->a0); break;
 	case JOP_BITSCAN: (gen_bitscan)(o->a0, o->a1); break;
+#endif
 	case JOP_TRAP: (gen_trap)(); break;
 	case JOP_TCOV: (gen_increment_tcov)(p); break;
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_ATOMIC_CMPXCHG: (gen_atomic_cmpxchg)(o->a0); break;
 	case JOP_ATOMIC_XCHG: (gen_atomic_xchg)(o->a0); break;
 	case JOP_ATOMIC_XADD: (gen_atomic_xadd)(o->a0); break;
+#endif
 	case JOP_ASAN_SHADOW: (gen_asan_shadow_check)(o->a0); break;
 	case JOP_UBSAN_NULLPTR: (gen_ubsan_nullptr)(); break;
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)

@@ -4,7 +4,8 @@
 #include "mccforecast.h"
 
 #ifndef MCC_JOURNAL_HOOKS
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER &&                                                    \
+		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
 #define MCC_JOURNAL_HOOKS 1
 #endif
 #endif
@@ -13,6 +14,19 @@
 #endif
 
 #ifdef MCC_JOURNAL_HOOKS
+/* Not every backend defines every journalled primitive. These predicates mirror
+ * the declaration guards in mcc.h exactly, so a primitive the target does not
+ * have is simply never wrapped and never replayed. Nothing is lost by that: any
+ * bytes such a target emits from an unjournalled path are already picked up
+ * verbatim by the JOP_RAW gap capture in jrn_gap(). */
+#ifdef MCC_TARGET_X86_64
+/* gen_bswap / gen_bitscan / gen_signbit / gen_ffs / the three gen_atomic_* /
+ * gen_cvt_trunc32 / gen_reg_addi are all declared x86_64-only. */
+#define MCC_JRN_HAVE_X86_PRIMS 1
+#endif
+#ifdef MCC_TARGET_NATIVE_STRUCT_COPY
+#define MCC_JRN_HAVE_STRUCT_COPY 1
+#endif
 static int jrn_replaying;
 void jrn_load(int r, SValue *sv);
 void jrn_store(int r, SValue *v);
@@ -28,9 +42,13 @@ void jrn_gen_cvt_itof(int t);
 void jrn_gen_cvt_ftof(int t);
 void jrn_gen_cvt_ftoi(int t);
 void jrn_gen_cvt_sxtw(void);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_cvt_trunc32(void);
+#endif
 void jrn_gen_cvt_csti(int t);
+#ifdef MCC_JRN_HAVE_STRUCT_COPY
 void jrn_gen_struct_copy(int size);
+#endif
 void jrn_ggoto(void);
 int jrn_gen_cmov(int rt, int rf, int rb, int ll);
 void jrn_gen_fill_nops(int bytes);
@@ -41,20 +59,26 @@ void jrn_gen_mulh(int sign);
 #if MCC_HAVE_INT128
 void jrn_gen_mul_widen(void);
 #endif
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_reg_addi(int r, int64_t d);
+#endif
 void jrn_gen_fabs(void);
-void jrn_gen_bswap(int size);
 void jrn_gen_sqrt(void);
 void jrn_gen_round(int mode);
 void jrn_gen_copysign(void);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+void jrn_gen_bswap(int size);
 void jrn_gen_signbit(int isfloat);
 void jrn_gen_ffs(int size);
 void jrn_gen_bitscan(int ctz, int size);
+#endif
 void jrn_gen_trap(void);
 void jrn_gen_increment_tcov(SValue *sv);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_atomic_cmpxchg(int size);
 void jrn_gen_atomic_xchg(int size);
 void jrn_gen_atomic_xadd(int size);
+#endif
 void jrn_gen_asan_shadow_check(int sz);
 void jrn_gen_ubsan_nullptr(void);
 int jrn_gjmp_append(int n, int t);
@@ -90,9 +114,13 @@ void jrn_gaddrof(void);
 #define gen_cvt_ftof(t) jrn_gen_cvt_ftof((t))
 #define gen_cvt_ftoi(t) jrn_gen_cvt_ftoi((t))
 #define gen_cvt_sxtw() jrn_gen_cvt_sxtw()
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_cvt_trunc32() jrn_gen_cvt_trunc32()
+#endif
 #define gen_cvt_csti(t) jrn_gen_cvt_csti((t))
+#ifdef MCC_JRN_HAVE_STRUCT_COPY
 #define gen_struct_copy(s) jrn_gen_struct_copy((s))
+#endif
 #define ggoto() jrn_ggoto()
 #define gen_cmov(rt, rf, rb, ll) jrn_gen_cmov((rt), (rf), (rb), (ll))
 #define gen_fill_nops(b) jrn_gen_fill_nops((b))
@@ -103,20 +131,26 @@ void jrn_gaddrof(void);
 #if MCC_HAVE_INT128
 #define gen_mul_widen() jrn_gen_mul_widen()
 #endif
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_reg_addi(r, d) jrn_gen_reg_addi((r), (d))
+#endif
 #define gen_fabs() jrn_gen_fabs()
-#define gen_bswap(s) jrn_gen_bswap((s))
 #define gen_sqrt() jrn_gen_sqrt()
 #define gen_round(m) jrn_gen_round((m))
 #define gen_copysign() jrn_gen_copysign()
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+#define gen_bswap(s) jrn_gen_bswap((s))
 #define gen_signbit(f) jrn_gen_signbit((f))
 #define gen_ffs(s) jrn_gen_ffs((s))
 #define gen_bitscan(c, s) jrn_gen_bitscan((c), (s))
+#endif
 #define gen_trap() jrn_gen_trap()
 #define gen_increment_tcov(sv) jrn_gen_increment_tcov((sv))
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_atomic_cmpxchg(s) jrn_gen_atomic_cmpxchg((s))
 #define gen_atomic_xchg(s) jrn_gen_atomic_xchg((s))
 #define gen_atomic_xadd(s) jrn_gen_atomic_xadd((s))
+#endif
 #define gen_asan_shadow_check(s) jrn_gen_asan_shadow_check((s))
 #define gen_ubsan_nullptr() jrn_gen_ubsan_nullptr()
 #define gjmp_append(n, t) jrn_gjmp_append((n), (t))
@@ -15067,10 +15101,10 @@ static int decl(int l) {
 #undef gen_mul_widen
 #undef gen_reg_addi
 #undef gen_fabs
-#undef gen_bswap
 #undef gen_sqrt
 #undef gen_round
 #undef gen_copysign
+#undef gen_bswap
 #undef gen_signbit
 #undef gen_ffs
 #undef gen_bitscan
