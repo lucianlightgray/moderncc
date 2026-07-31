@@ -1,0 +1,43 @@
+cmake_minimum_required(VERSION 3.22)
+#
+# Summarise the journal sweep matrix from the .status files journal_sweep.cmake
+# drops. Reports OK / SKIP / FAIL per key with the reason, and -- deliberately --
+# prints keys that were never run at all as "not run" rather than omitting them.
+# A matrix that silently lists only what succeeded reads as full coverage.
+#
+if(NOT TMPROOT)
+    message(FATAL_ERROR "journal_report: TMPROOT is required")
+endif()
+
+set(_ok 0)
+set(_skip 0)
+set(_fail 0)
+set(_none 0)
+message(STATUS "")
+message(STATUS "journal sweep matrix")
+message(STATUS "--------------------------------------------------------------")
+foreach(_k IN LISTS KEYS)
+    foreach(_m cross native)
+        set(_f "${TMPROOT}/${_k}-${_m}.status")
+        if(EXISTS "${_f}")
+            file(READ "${_f}" _s)
+            string(STRIP "${_s}" _s)
+            string(REPLACE "\t" " | " _s "${_s}")
+            if(_s MATCHES "^OK")
+                math(EXPR _ok "${_ok}+1")
+            elseif(_s MATCHES "^SKIP")
+                math(EXPR _skip "${_skip}+1")
+            else()
+                math(EXPR _fail "${_fail}+1")
+            endif()
+            message(STATUS "  ${_k} [${_m}]: ${_s}")
+        else()
+            math(EXPR _none "${_none}+1")
+        endif()
+    endforeach()
+endforeach()
+message(STATUS "--------------------------------------------------------------")
+message(STATUS "  ${_ok} ok, ${_skip} skipped, ${_fail} failed, ${_none} not run")
+if(_fail GREATER 0)
+    message(FATAL_ERROR "journal_report: ${_fail} sweep(s) FAILED")
+endif()

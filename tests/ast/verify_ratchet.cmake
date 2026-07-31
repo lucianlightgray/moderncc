@@ -59,6 +59,21 @@ if(NOT OPT)
     set(OPT "-O2")
 endif()
 
+# Cross/emulated sweeps. MCCLAUNCH prepends an emulator (qemu-user, wine),
+# MCCFLAGS supplies the target's sysroot/prefix, and MCCPATHPREFIX rewrites the
+# absolute paths handed to the compiler -- wine maps / onto Z:, so a PE mcc
+# reads a bare unix path as a Windows one and reports "file not found". All
+# three default empty, which is exactly the native invocation this ran before.
+if(NOT DEFINED MCCLAUNCH)
+    set(MCCLAUNCH "")
+endif()
+if(NOT DEFINED MCCFLAGS)
+    set(MCCFLAGS "")
+endif()
+if(NOT DEFINED MCCPATHPREFIX)
+    set(MCCPATHPREFIX "")
+endif()
+
 file(MAKE_DIRECTORY "${TMPDIR}")
 
 file(GLOB_RECURSE _srcs "${CORPUS}/*.c")
@@ -88,7 +103,8 @@ foreach(_f ${_srcs})
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MCC_AST_VERIFY=1" "MCC_AST_TEMPLATES=0"
                 "MCC_JOURNAL=1"
-                "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/verify_sweep.o" "${_f}"
+                ${MCCLAUNCH} "${MCC}" ${MCCFLAGS} -w "${OPT}" -c
+                -o "${MCCPATHPREFIX}${TMPDIR}/verify_sweep.o" "${MCCPATHPREFIX}${_f}"
         OUTPUT_QUIET ERROR_VARIABLE _err RESULT_VARIABLE _rc)
     string(REPLACE "\n" ";" _lines "${_err}")
     foreach(_ln ${_lines})

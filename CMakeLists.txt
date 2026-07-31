@@ -3878,6 +3878,127 @@ if(MCC_BUILD_TESTS)
                 "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON, MCC_CONFIG_OPTIMIZER, a non-cross build and a CPU the journal hooks compile on (x86_64, arm64, i386 or riscv64); this is ${MCC_CPU}, single-source=${MCC_SINGLE_SOURCE}, cross=${CMAKE_CROSSCOMPILING}")
         endif()
 
+        # ------------------------------------------------------------------
+        # Per-triple journal sweep matrix.
+        #
+        # Before this, measuring a non-host target meant hand-building a wrapper
+        # script per triple to inject the sysroot -- which is how a sweep once
+        # got run with an extra -I, lifting coverage from 261 to 266 files and
+        # inflating the depth count into a false "regression". These targets
+        # pin one prefix per (triple, libc) so the number is reproducible.
+        #
+        #   cmake --build . --target journal-sweep-arm64-linux-glibc
+        #   cmake --build . --target journal-sweep-all          (every key, cross)
+        #   cmake --build . --target journal-sweep-all-native   (under qemu/wine)
+        #   cmake --build . --target journal-sweep-report       (matrix summary)
+        #
+        # cross vs native is a real distinction, not a convenience: the honesty
+        # census is byte-identical either way, but the depth ceiling reads
+        # native-1 on arm64/riscv64, so `journal-regen-*` defaults to native.
+        # Keys that cannot run here (darwin, arm*, msvcrt) still get a target and
+        # report exactly why, so the matrix documents its own gaps.
+        set(_jsw_root "${CMAKE_CURRENT_SOURCE_DIR}")
+        if(MCC_ENABLE_CROSS)
+            set(_jsw_xdir "${CMAKE_BINARY_DIR}")
+        else()
+            set(_jsw_xdir "${CMAKE_SOURCE_DIR}/cmake-cross")
+        endif()
+        set(_jsw_tmp "${CMAKE_BINARY_DIR}/journal-sweep")
+        # The host triple's baseline is banked by the native ctest cell with the
+        # host's own headers, not through a vendored sysroot. Hand the driver the
+        # host compiler and key so it compares like with like instead of scoring
+        # a different corpus expansion against that baseline.
+        string(TOLOWER "${MCC_CPU}-${MCC_TARGETOS}" _jsw_hostkey)
+        set(_jsw_hostmcc "${_mcc_exe}")
+        set(_jsw_drv "${_jsw_root}/tests/ast/journal_sweep.cmake")
+        set(_jsw_nat "${_jsw_root}/tests/ast/journal_native.cmake")
+
+        # The full matrix: every triple mcc can emit, crossed with every C
+        # library the tree knows how to point it at. Unbuildable combinations
+        # are NOT pruned here -- the driver skips them with a specific reason,
+        # which is the whole point of enumerating them.
+        set(_jsw_keys "")
+        foreach(_jc x86_64 i386 arm64 riscv64 arm)
+            foreach(_jl glibc musl)
+                list(APPEND _jsw_keys "${_jc}-linux-${_jl}")
+            endforeach()
+        endforeach()
+        foreach(_jc x86_64 i386 arm64 arm)
+            foreach(_jl ucrt msvcrt)
+                list(APPEND _jsw_keys "${_jc}-win32-${_jl}")
+            endforeach()
+        endforeach()
+        list(APPEND _jsw_keys x86_64-darwin arm64-darwin arm-wince)
+
+        add_custom_target(journal-sweep-all
+            COMMENT "Journal sweep: every triple/libc, cross-hosted")
+        add_custom_target(journal-sweep-all-native
+            COMMENT "Journal sweep: every triple/libc, run natively under qemu/wine")
+        add_custom_target(journal-native-all
+            COMMENT "Build a target-native mcc for every sweepable triple")
+
+        foreach(_jk IN LISTS _jsw_keys)
+            add_custom_target(journal-sweep-${_jk}
+                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=cross"
+                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
+                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
+                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
+                        -P "${_jsw_drv}"
+                COMMENT "journal sweep ${_jk} (cross)" USES_TERMINAL VERBATIM)
+            # The -all member is a separate target carrying KEEPGOING, so one
+            # failing triple cannot mask every triple after it as "not run".
+            add_custom_target(journal-sweep-${_jk}-keepgoing
+                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=cross" "-DKEEPGOING=1"
+                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
+                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
+                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
+                        -P "${_jsw_drv}"
+                COMMENT "journal sweep ${_jk} (cross, keep-going)" USES_TERMINAL VERBATIM)
+            add_dependencies(journal-sweep-all journal-sweep-${_jk}-keepgoing)
+
+            add_custom_target(journal-native-${_jk}
+                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}"
+                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
+                        "-DTMPROOT=${_jsw_tmp}" -P "${_jsw_nat}"
+                COMMENT "build native mcc for ${_jk}" USES_TERMINAL VERBATIM)
+            add_dependencies(journal-native-all journal-native-${_jk})
+
+            add_custom_target(journal-sweep-${_jk}-native
+                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native"
+                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
+                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
+                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
+                        -P "${_jsw_drv}"
+                COMMENT "journal sweep ${_jk} (native)" USES_TERMINAL VERBATIM)
+            add_dependencies(journal-sweep-${_jk}-native journal-native-${_jk})
+            add_custom_target(journal-sweep-${_jk}-native-keepgoing
+                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native" "-DKEEPGOING=1"
+                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
+                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
+                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
+                        -P "${_jsw_drv}"
+                COMMENT "journal sweep ${_jk} (native, keep-going)" USES_TERMINAL VERBATIM)
+            add_dependencies(journal-sweep-${_jk}-native-keepgoing journal-native-${_jk})
+            add_dependencies(journal-sweep-all-native journal-sweep-${_jk}-native-keepgoing)
+
+            # Banking defaults to native: a cross-banked depth ceiling is wrong
+            # on arm64 and riscv64, and nothing downstream would notice.
+            add_custom_target(journal-regen-${_jk}
+                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native" "-DJREGEN=1"
+                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
+                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
+                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
+                        -P "${_jsw_drv}"
+                COMMENT "REBANK ${_jk} honesty + depth baselines (native)"
+                USES_TERMINAL VERBATIM)
+            add_dependencies(journal-regen-${_jk} journal-native-${_jk})
+        endforeach()
+
+        add_custom_target(journal-sweep-report
+            COMMAND "${CMAKE_COMMAND}" "-DTMPROOT=${_jsw_tmp}"
+                    "-DKEYS=${_jsw_keys}" -P "${_jsw_root}/tests/ast/journal_report.cmake"
+            COMMENT "Summarise the journal sweep matrix" USES_TERMINAL VERBATIM)
+
         # -O4's superopt driver scores by SIZE, and promotion trades size for
         # speed -- which is how -O4 came to be slower than -O3 on every plb
         # kernel. so_setenv_cfg now treats MCC_AST_PROMOTE as add-only. This
