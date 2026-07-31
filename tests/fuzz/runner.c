@@ -301,6 +301,13 @@ static const gate_t GATES[] = {
 	{"LANDOR_FOLD", "MCC_AST_LANDOR_FOLD=1"},
 	{"CLEANUP_RET", "MCC_AST_CLEANUP_RET=1"},
 	{"VOIDRET_EXPR", "MCC_AST_VOIDRET_EXPR=1"},
+	/* Default-off gates that measurably change -O1..-O3 codegen but had no row.
+	 * The other 14 unswept default-off gates are -O4 search knobs or otherwise
+	 * inert below -O4: forcing each one on changes ZERO objects over 60 corpus
+	 * files at -O1/-O2/-O3, so a row for them would buy no coverage. */
+	{"SLICE", "MCC_AST_SLICE=1"},
+	{"NO_CALLFUL", "MCC_AST_NO_CALLFUL=1"},
+	{"JIT_SPLICE", "MCC_AST_JIT_SPLICE=1"},
 	{"RECORDER_2026_07_31",
 	 "MCC_AST_INDIRECT_LOAD=1 MCC_AST_LANDOR_FOLD=1 MCC_AST_CLEANUP_RET=1 "
 	 "MCC_AST_VOIDRET_EXPR=1"},
