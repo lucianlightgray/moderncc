@@ -12167,6 +12167,9 @@ static void save_lvalues(void) { MCC_TRACE("enter\n");
 			int r2, l = get_temp_local_var(size, align, &r2);
 			vset(&sv->type, VT_LOCAL | VT_LVAL, l), vtop->r2 = r2;
 			vpushv(sv), *sv = vtop[-1], vstore(), --vtop;
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_spill(l, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+#endif
 		}
 		--sv;
 	}

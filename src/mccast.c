@@ -1877,6 +1877,7 @@ static int ast_synth_ind0;
 static int ast_synth_emitted;
 static int ast_cleanup_sv_incall = -1;
 static int ast_cleanup_bias;
+static int ast_spill_modelled;
 static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
 															 AstLocal node);
 static int ast_landor_invert_env;
@@ -3591,6 +3592,7 @@ void ast_hook_synth_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_in_op) { MCC_TRACE("br\n");
 		ast_synth_ind0 = ind;
 		ast_synth_emitted = 0;
+		ast_spill_modelled = 0;
 	}
 	ast_in_op++;
 }
@@ -3604,13 +3606,49 @@ void ast_hook_synth_end(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_synth_emitted = 1; }
 }
 
+static AstLocal ast_cleanup_localref(AstArena *a, int off, int tt,
+																		 uint64_t tref) { MCC_TRACE("enter\n");
+	AstLocal r = ast_node(a, AST_Ref);
+	ast_set_op(a, r, VT_LOCAL | VT_LVAL);
+	ast_set_ival(a, r, (uint64_t)off);
+	ast_set_type(a, r, tt, tref);
+	return r;
+}
+
+void ast_hook_spill(int off, int tt, uint64_t tref) { MCC_TRACE("enter\n");
+	if (!ast_active || !ast_cleanup_ret_env)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_desync || ast_bail || ast_spill_modelled)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_last_return == AST_NONE || ast_cur_bb == AST_NONE || ast_vn != 0)
+		{ MCC_TRACE("br\n"); return; }
+	AstArena *a = ast_cur;
+	if (ast_nchild(a, ast_last_return) != 1)
+		{ MCC_TRACE("br\n"); return; }
+	AstLocal v = ast_first_child(a, ast_last_return);
+	if (v == AST_NONE)
+		{ MCC_TRACE("br\n"); return; }
+	a->first_child[ast_last_return] = AST_NONE;
+	a->nchild[ast_last_return] = 0;
+	a->next_sib[v] = AST_NONE;
+	AstLocal st = ast_node(a, AST_Store);
+	ast_add_child(a, st, ast_cleanup_localref(a, off, tt, tref));
+	ast_add_child(a, st, v);
+	if (!ast_ltemp_insert_before(a, ast_cur_bb, ast_last_return, st)) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	ast_add_child(a, ast_last_return, ast_cleanup_localref(a, off, tt, tref));
+	ast_spill_modelled = 1;
+}
+
 void ast_hook_cleanup_call_begin(void) { MCC_TRACE("enter\n");
 	ast_cleanup_sv_incall = -1;
 	if (!ast_active || !ast_cleanup_ret_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_desync || ast_bail || ast_in_op)
 		{ MCC_TRACE("br\n"); return; }
-	if (!ast_in_call || ast_synth_emitted || ast_vn != 0)
+	if (!ast_in_call || (ast_synth_emitted && !ast_spill_modelled) || ast_vn != 0)
 		{ MCC_TRACE("br\n"); return; }
 	ast_cleanup_bias = (int)(vtop - vstack + 1) - ast_base_depth - ast_vn;
 	if (ast_cleanup_bias < 0)
