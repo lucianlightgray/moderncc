@@ -87,28 +87,28 @@ static unsigned long long mccjit_diag_boot_n;
 static pthread_once_t mccjit_diag_once = PTHREAD_ONCE_INIT;
 static int mccjit_diag_fired;
 
-static int mccjit_diag_enabled(void) {
+static int mccjit_diag_enabled(void) { MCC_TRACE("enter\n");
 	static int v = -1;
-	if (v < 0) {
+	if (v < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_JIT_CRASH_DIAG");
 		v = (e && e[0] && e[0] != '0') ? 1 : 0;
 	}
 	return v;
 }
 
-static void mccjit_diag_dump(void *pc) {
+static void mccjit_diag_dump(void *pc) { MCC_TRACE("enter\n");
 	unsigned long long total, n, i;
 	void *best_entry = NULL, *best_slot = NULL;
 	long long bestd = -1;
 	total = __atomic_load_n(&mccjit_diag_pub_n, __ATOMIC_ACQUIRE);
 	n = total < MCCJIT_DIAG_RING ? total : MCCJIT_DIAG_RING;
 	fprintf(stderr, "  published entries (most recent first, %llu total):\n", total);
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		MccjitDiagPub p = mccjit_diag_pubs[(total - 1 - i) & (MCCJIT_DIAG_RING - 1)];
 		long long d = (long long)((char *)pc - (char *)p.entry);
 		fprintf(stderr, "    pub[-%llu] slot=%p entry=%p  pc-entry=%lld\n", i,
 						p.slot, p.entry, d);
-		if (p.entry && d >= 0 && (bestd < 0 || d < bestd)) {
+		if (p.entry && d >= 0 && (bestd < 0 || d < bestd)) { MCC_TRACE("br\n");
 			bestd = d;
 			best_entry = p.entry;
 			best_slot = p.slot;
@@ -123,7 +123,7 @@ static void mccjit_diag_dump(void *pc) {
 	total = __atomic_load_n(&mccjit_diag_boot_n, __ATOMIC_ACQUIRE);
 	n = total < MCCJIT_DIAG_RING ? total : MCCJIT_DIAG_RING;
 	fprintf(stderr, "  boot swaps (most recent first, %llu total):\n", total);
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		MccjitDiagBoot b =
 				mccjit_diag_boots[(total - 1 - i) & (MCCJIT_DIAG_RING - 1)];
 		fprintf(stderr,
@@ -132,7 +132,7 @@ static void mccjit_diag_dump(void *pc) {
 	}
 }
 
-static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) {
+static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) { MCC_TRACE("enter\n");
 	EXCEPTION_RECORD *er;
 	CONTEXT *cx;
 	void *pc;
@@ -164,13 +164,13 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) {
 	addr = er->NumberParameters >= 2 ? (void *)er->ExceptionInformation[1] : NULL;
 	fprintf(stderr, "\n==== mccjit-diag: EXCEPTION_ACCESS_VIOLATION ====\n");
 	fprintf(stderr, "  pc=%p  fault=%s addr=%p\n", pc, acc, addr);
-	if (pc && VirtualQuery(pc, &mbi, sizeof mbi) == sizeof mbi) {
+	if (pc && VirtualQuery(pc, &mbi, sizeof mbi) == sizeof mbi) { MCC_TRACE("br\n");
 		fprintf(stderr,
 						"  pc region: base=%p size=%llu state=0x%lx protect=0x%lx type=0x%lx\n",
 						mbi.BaseAddress, (unsigned long long)mbi.RegionSize,
 						(unsigned long)mbi.State, (unsigned long)mbi.Protect,
 						(unsigned long)mbi.Type);
-		if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+		if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { MCC_TRACE("br\n");
 			unsigned char *b = (unsigned char *)pc;
 			size_t avail = (size_t)((char *)mbi.BaseAddress + mbi.RegionSize - (char *)pc);
 			size_t k, m = avail < 32 ? avail : 32;
@@ -178,10 +178,10 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) {
 			for (k = 0; k < m; k++)
 				fprintf(stderr, " %02x", b[k]);
 			fprintf(stderr, "\n");
-		} else {
+		} else { MCC_TRACE("br\n");
 			fprintf(stderr, "  bytes@pc: <not readable>\n");
 		}
-	} else if (pc) {
+	} else if (pc) { MCC_TRACE("br\n");
 		fprintf(stderr, "  pc region: <VirtualQuery failed>\n");
 	}
 	mccjit_diag_dump(pc);
@@ -191,19 +191,19 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) {
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static void mccjit_diag_install_(void) {
+static void mccjit_diag_install_(void) { MCC_TRACE("enter\n");
 	AddVectoredExceptionHandler(1u, (PVECTORED_EXCEPTION_HANDLER)&mccjit_diag_veh);
 	fprintf(stderr, "mccjit-diag: crash handler armed (MCC_JIT_CRASH_DIAG)\n");
 	fflush(stderr);
 }
 
-static void mccjit_diag_arm(void) {
+static void mccjit_diag_arm(void) { MCC_TRACE("enter\n");
 	if (!mccjit_diag_enabled())
 		return;
 	pthread_once(&mccjit_diag_once, mccjit_diag_install_);
 }
 
-static void mccjit_diag_note_pub(void *slot, void *entry) {
+static void mccjit_diag_note_pub(void *slot, void *entry) { MCC_TRACE("enter\n");
 	unsigned long long idx;
 	if (!mccjit_diag_enabled())
 		return;
@@ -214,7 +214,7 @@ static void mccjit_diag_note_pub(void *slot, void *entry) {
 }
 
 static void mccjit_diag_note_boot(void *variant, void *baseline, void *entry,
-																	unsigned nargs, const char *mode) {
+																	unsigned nargs, const char *mode) { MCC_TRACE("enter\n");
 	unsigned long long idx;
 	if (!mccjit_diag_enabled())
 		return;
