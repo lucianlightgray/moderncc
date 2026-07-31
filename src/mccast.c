@@ -3044,7 +3044,11 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_lor_const[ast_lor_top - 1])
 		{ MCC_TRACE("br\n"); ast_in_call = 1; return; }
-	if (c >= 0 || ast_vn < 1) { MCC_TRACE("br\n");
+	if (c >= 0) { MCC_TRACE("br\n");
+		AST_SET_DESYNC();
+		return;
+	}
+	if (ast_vn < 1) { MCC_TRACE("br\n");
 		AST_SET_DESYNC();
 		return;
 	}
