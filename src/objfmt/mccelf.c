@@ -3130,6 +3130,8 @@ static int elf_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("enter
 }
 
 LIBMCCAPI int mcc_output_file(MCCState *s, const char *filename) { MCC_TRACE("enter\n");
+	if (s->nb_errors)
+		{ MCC_TRACE("br\n"); return -1; }
 	s->nb_errors = 0;
 	if (s->test_coverage)
 		{ MCC_TRACE("br\n"); mcc_tcov_add_file(s, filename); }
