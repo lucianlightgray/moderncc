@@ -13274,6 +13274,9 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 			aref.c = elem_size;
 			t1.t = VT_STRUCT, t1.ref = &aref;
 			type = &t1;
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_bail();
+#endif
 		}
 		if (p->sec)
 			{ MCC_TRACE("br\n"); vpush_ref(type, p->sec, c, elem_size); }

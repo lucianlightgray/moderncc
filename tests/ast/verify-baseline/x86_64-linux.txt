@@ -89,6 +89,7 @@ optimizer/region_store.c	and_store	desync
 optimizer/region_store.c	chain	desync
 optimizer/region_store.c	or_store	desync
 optimizer/region_store.c	tern_store	desync
+pointers_arrays/range_designator_copy.c	main	bail
 preprocess/pragma_operator.c	main	desync
 programs/grep.c	cclass	bail
 programs/grep.c	compile	desync
@@ -120,7 +121,7 @@ structs_unions/struct_abi.c	main	desync
 structs_unions/struct_init.c	test_compound_with_relocs	unfaithful
 structs_unions/struct_init.c	test_init_ranges	bail
 structs_unions/struct_init.c	test_init_struct_from_struct	unfaithful
-structs_unions/struct_init.c	test_multi_relocs	desync
+structs_unions/struct_init.c	test_multi_relocs	bail
 structs_unions/struct_packed_indirect.c	main	unfaithful
 structs_unions/union_byval.c	main	unfaithful
 types/bool.c	main	desync
