@@ -1872,6 +1872,13 @@ static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_indirect_load_env;
 static int ast_landor_fold_env;
+static int ast_cleanup_ret_env;
+static int ast_synth_ind0;
+static int ast_synth_emitted;
+static int ast_cleanup_sv_incall = -1;
+static int ast_cleanup_bias;
+static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
+															 AstLocal node);
 static int ast_landor_invert_env;
 static int ast_call_dead;
 static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
@@ -2264,6 +2271,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 1);
 	ast_indirect_load_env = ast_env_gate("MCC_AST_INDIRECT_LOAD", 0);
 	ast_landor_fold_env = ast_env_gate("MCC_AST_LANDOR_FOLD", 0);
+	ast_cleanup_ret_env = ast_env_gate("MCC_AST_CLEANUP_RET", 0);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 1);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
@@ -3580,6 +3588,10 @@ void ast_hook_gaddrof(void) { MCC_TRACE("enter\n");
 void ast_hook_synth_begin(void) { MCC_TRACE("enter\n");
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
+	if (!ast_in_op) { MCC_TRACE("br\n");
+		ast_synth_ind0 = ind;
+		ast_synth_emitted = 0;
+	}
 	ast_in_op++;
 }
 
@@ -3588,6 +3600,51 @@ void ast_hook_synth_end(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op > 0)
 		{ MCC_TRACE("br\n"); ast_in_op--; }
+	if (!ast_in_op && ind != ast_synth_ind0)
+		{ MCC_TRACE("br\n"); ast_synth_emitted = 1; }
+}
+
+void ast_hook_cleanup_call_begin(void) { MCC_TRACE("enter\n");
+	ast_cleanup_sv_incall = -1;
+	if (!ast_active || !ast_cleanup_ret_env)
+		{ MCC_TRACE("br\n"); return; }
+	if (ast_desync || ast_bail || ast_in_op)
+		{ MCC_TRACE("br\n"); return; }
+	if (!ast_in_call || ast_synth_emitted || ast_vn != 0)
+		{ MCC_TRACE("br\n"); return; }
+	ast_cleanup_bias = (int)(vtop - vstack + 1) - ast_base_depth - ast_vn;
+	if (ast_cleanup_bias < 0)
+		{ MCC_TRACE("br\n"); ast_cleanup_bias = 0; return; }
+	ast_base_depth += ast_cleanup_bias;
+	ast_cleanup_sv_incall = ast_in_call;
+	ast_in_call = 0;
+}
+
+void ast_hook_cleanup_call_end(void) { MCC_TRACE("enter\n");
+	if (ast_cleanup_sv_incall < 0)
+		{ MCC_TRACE("br\n"); return; }
+	ast_in_call = ast_cleanup_sv_incall;
+	ast_cleanup_sv_incall = -1;
+	ast_base_depth -= ast_cleanup_bias;
+	ast_cleanup_bias = 0;
+	if (ast_desync || ast_bail || ast_last_return == AST_NONE ||
+			ast_cur_bb == AST_NONE)
+		{ MCC_TRACE("br\n"); return; }
+	{
+		AstArena *a = ast_cur;
+		AstLocal prev = AST_NONE, last = a->first_child[ast_cur_bb];
+		while (last != AST_NONE && a->next_sib[last] != AST_NONE) { MCC_TRACE("br\n");
+			prev = last;
+			last = a->next_sib[last];
+		}
+		if (last == AST_NONE || last == ast_last_return || prev == AST_NONE)
+			{ MCC_TRACE("br\n"); return; }
+		a->next_sib[prev] = AST_NONE;
+		a->nchild[ast_cur_bb]--;
+		a->next_sib[last] = AST_NONE;
+		if (!ast_ltemp_insert_before(a, ast_cur_bb, ast_last_return, last))
+			{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
+	}
 }
 
 void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");

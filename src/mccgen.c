@@ -12181,6 +12181,9 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		Sym *fs = cls->cleanup_func;
 		Sym *vs = cls->cleanup_sym;
 		save_lvalues();
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_cleanup_call_begin();
+#endif
 		vpushsym(&fs->type, fs);
 		vset(&vs->type, vs->r, vs->c);
 		vtop->sym = vs;
@@ -12192,6 +12195,7 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		gfunc_call(1);
 #if MCC_CONFIG_OPTIMIZER
 		ast_hook_call_effect_end();
+		ast_hook_cleanup_call_end();
 #endif
 	}
 }
