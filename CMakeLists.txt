@@ -138,6 +138,8 @@ function(mcc_map_toolchain_cc tc outvar)
         mcc_mingw_resolve()
         if(MCC_MINGW_ARCH STREQUAL "i686")
             set(${outvar} "${_MCC_MINGW_I686_GCC}" PARENT_SCOPE)
+        elseif(MCC_MINGW_ARCH STREQUAL "arm64")
+            set(${outvar} "${_MCC_MINGW_ARM64_GCC}" PARENT_SCOPE)
         else()
             set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
         endif()
@@ -476,8 +478,8 @@ mcc_config_node(MCC_MINGW_SOURCE TYPE STRING DEFAULT winlibs GROUP "Build target
     HELP "Source for the `mingw-toolchain` download: winlibs (dual-arch, current) or multilib (single gcc -m32/-m64)"
     CHOICES winlibs multilib)
 mcc_config_node(MCC_MINGW_ARCH TYPE STRING DEFAULT x86_64 GROUP "Build targets" ADVANCED
-    HELP "Arch the `mingw` toolchain profile builds mcc for: x86_64 (winlibs mingw64 gcc) or i686 (winlibs mingw32 gcc)"
-    CHOICES x86_64 i686)
+    HELP "Arch the `mingw` toolchain profile builds mcc for: x86_64/i686 (winlibs gcc) or arm64 (llvm-mingw aarch64)"
+    CHOICES x86_64 i686 arm64)
 set(MCC_MINGW_DIR "${MCC_VENDOR_DIR}" CACHE PATH
     "Parent directory the downloaded mingw toolchain trees live in")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/winlibs.cmake")
@@ -497,15 +499,22 @@ function(mcc_mingw_resolve)
         set(_i "${MCC_MINGW_DIR}/winlibs-mingw-w64-${MCC_MINGW_WINLIBS_VER}-i686/mingw32/bin/gcc.exe")
     elseif(MCC_MINGW_SOURCE STREQUAL "multilib")
         set(_m "${MCC_MINGW_DIR}/mingw-w64-multilib/${MCC_MINGW_MULTILIB_SUBDIR}/bin/gcc.exe")
-        set(_x "${_m}")   
+        set(_x "${_m}")
     endif()
+    # arm64 always comes from llvm-mingw (WinLibs has no aarch64); the zip nests an
+    # inner llvm-mingw-<ver>-ucrt-aarch64/ dir inside the download dest.
+    set(_a "${MCC_MINGW_DIR}/llvm-mingw-${MCC_LLVMMINGW_VER}-aarch64/llvm-mingw-${MCC_LLVMMINGW_VER}-ucrt-aarch64/bin/aarch64-w64-mingw32-gcc.exe")
     set(_MCC_MINGW_X86_64_GCC   "${_x}" PARENT_SCOPE)
     set(_MCC_MINGW_I686_GCC     "${_i}" PARENT_SCOPE)
+    set(_MCC_MINGW_ARM64_GCC    "${_a}" PARENT_SCOPE)
     set(_MCC_MINGW_MULTILIB_GCC "${_m}" PARENT_SCOPE)
 endfunction()
 
 set(_mingw_entries "")
-if(MCC_MINGW_SOURCE STREQUAL "winlibs")
+if(MCC_MINGW_ARCH STREQUAL "arm64")
+    list(APPEND _mingw_entries
+        "${MCC_LLVMMINGW_AARCH64_URL}|${MCC_LLVMMINGW_AARCH64_SHA256}|${MCC_MINGW_DIR}/llvm-mingw-${MCC_LLVMMINGW_VER}-aarch64")
+elseif(MCC_MINGW_SOURCE STREQUAL "winlibs")
     if(MCC_MINGW_ARCH STREQUAL "i686")
         list(APPEND _mingw_entries
             "${MCC_MINGW_WINLIBS_I686_URL}|${MCC_MINGW_WINLIBS_I686_SHA256}|${MCC_MINGW_DIR}/winlibs-mingw-w64-${MCC_MINGW_WINLIBS_VER}-i686")

@@ -452,12 +452,13 @@ static const struct {
 		{"arm64", "windows-11-arm", "arm64"},
 		{0, 0, 0}};
 static const struct {
-	const char *arch;
+	const char *arch, *runner, *msvcarch;
 	int experimental;
 } PLAN_MINGW[] = {
-		{"x86_64", 0},
-		{"i686", 1},
-		{0, 0}};
+		{"x86_64", "windows-latest", "x64", 0},
+		{"i686", "windows-latest", "x64", 1},
+		{"arm64", "windows-11-arm", "arm64", 1},
+		{0, 0, 0, 0}};
 static const struct {
 	const char *preset, *plat, *os;
 	int rosetta;
@@ -1370,9 +1371,10 @@ static int do_plan(int argc, char **argv) {
 		for (i = 0; PS_WIN_MINGW[i]; i++)
 			for (k = 0; PLAN_MINGW[k].arch; k++)
 				plan_cell(&first,
-									"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"windows-latest\","
-									"\"msvcarch\":\"x64\",\"mingw\":true%s",
+									"\"preset\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
+									"\"msvcarch\":\"%s\",\"mingw\":true%s",
 									PS_WIN_MINGW[i], PLAN_MINGW[k].arch,
+									PLAN_MINGW[k].runner, PLAN_MINGW[k].msvcarch,
 									PLAN_MINGW[k].experimental ? ",\"experimental\":true" : "");
 	} else if (!strcmp(job, "qemu")) {
 		int h, b;
