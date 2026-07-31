@@ -7,6 +7,15 @@ enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 #define RIR_PT_HERE (-2)
 #define RIR_SHIFT 64
 
+/* C2 research probe, compile-time OFF. Driving the tree's emitter speculatively
+   from a reconstructed arena is not containable in-process: an emit that errors
+   leaves compiler state the surrounding save/restore does not cover, and 17 of
+   276 corpus files stop compiling with it on. Build -DMCC_REPLAY_IR_C2=1 to
+   measure it; never ship it on. */
+#ifndef MCC_REPLAY_IR_C2
+#define MCC_REPLAY_IR_C2 0
+#endif
+
 typedef struct RirOp {
 	int tag;
 	int rkind;
@@ -396,6 +405,7 @@ static void rir_build(void) {
 
 static AstArena *rir_arena;
 static AstLocal rir_sh[VSTACK_SIZE + 1];
+static unsigned char rir_shtype[VSTACK_SIZE + 1];
 static int rir_shn;
 static AstLocal rir_bb[64];
 static int rir_bbn;
@@ -405,6 +415,15 @@ static int rir_arena_mismatch;
 static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
 static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
 static long rir_tot_tree_nodes, rir_tot_arena_cmp_nodes;
+static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
+		rir_tot_c2_err;
+static char rir_c2_msg[256];
+static long rir_tot_c2_invalid;
+
+static void rir_c2_sink(void *opaque, const char *msg) {
+	(void)opaque;
+	snprintf(rir_c2_msg, sizeof rir_c2_msg, "%s", msg ? msg : "?");
+}
 static long rir_kindhist[AST_KIND_COUNT], rir_treekindhist[AST_KIND_COUNT];
 
 static AstLocal rir_leaf(const SValue *sv) {
@@ -434,6 +453,17 @@ static AstLocal rir_pop(void) {
 static void rir_push(AstLocal n) {
 	if (rir_shn > VSTACK_SIZE)
 		return;
+	rir_shtype[rir_shn] = 0;
+	rir_sh[rir_shn++] = n;
+}
+
+/* A computed node's result type is not in the op that produced it -- it is in
+   the NEXT op's snapshot, as the SValue occupying that slot. Push it untyped and
+   stamp it at the next boundary. */
+static void rir_push_typed(AstLocal n) {
+	if (rir_shn > VSTACK_SIZE)
+		return;
+	rir_shtype[rir_shn] = 1;
 	rir_sh[rir_shn++] = n;
 }
 
@@ -457,6 +487,15 @@ static void rir_reconcile(const JrnOp *o) {
 		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
 		if (dk == AST_Store || dk == AST_Invoke)
 			rir_stmt(d);
+	}
+	for (k = 0; k < rir_shn && k < want; k++) {
+		const SValue *v;
+		if (!rir_shtype[k])
+			continue;
+		v = &jrn_vs[o->vs_off + ast_base_depth + k];
+		ast_set_type(rir_arena, rir_sh[k], v->type.t,
+								 (uint64_t)(uintptr_t)v->type.ref);
+		rir_shtype[k] = 0;
 	}
 	for (k = rir_shn; k < want; k++) {
 		rir_push(rir_leaf(&jrn_vs[o->vs_off + ast_base_depth + k]));
@@ -483,7 +522,7 @@ static void rir_op_effect(const RirOp *ro) {
 		ast_set_op(rir_arena, n, o->a0);
 		ast_add_child(rir_arena, n, a);
 		ast_add_child(rir_arena, n, b);
-		rir_push(n);
+		rir_push_typed(n);
 		break;
 	}
 	case JOP_VSTORE: {
@@ -513,7 +552,7 @@ static void rir_op_effect(const RirOp *ro) {
 		for (k = 0; k < na; k++)
 			if (args[k] != AST_NONE)
 				ast_add_child(rir_arena, n, args[k]);
-		rir_push(n);
+		rir_push_typed(n);
 		break;
 	}
 	case JOP_VPOP: {
@@ -544,7 +583,7 @@ static void rir_op_effect(const RirOp *ro) {
 		n = ast_node(rir_arena, AST_Convert);
 		ast_set_op(rir_arena, n, o->a0);
 		ast_add_child(rir_arena, n, a);
-		rir_push(n);
+		rir_push_typed(n);
 		break;
 	}
 	case JOP_ADDROF: {
@@ -556,7 +595,7 @@ static void rir_op_effect(const RirOp *ro) {
 		n = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, n, '&');
 		ast_add_child(rir_arena, n, a);
-		rir_push(n);
+		rir_push_typed(n);
 		break;
 	}
 	default:
@@ -589,7 +628,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Load);
 		ast_add_child(rir_arena, n, a);
-		rir_push(n);
+		rir_push_typed(n);
 		break;
 	case RIR_M_CONVERT:
 		a = rir_pop();
@@ -599,7 +638,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Convert);
 		ast_add_child(rir_arena, n, a);
-		rir_push(n);
+		rir_push_typed(n);
 		break;
 	default:
 		break;
@@ -1070,6 +1109,72 @@ void rir_verify(void) {
 		}
 	}
 
+#if MCC_REPLAY_IR_C2
+	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) {
+		rir_tot_c2_try++;
+		ind = ast_body_ind_sv;
+		rsym = 0;
+		if (rsec)
+			rsec->data_offset = ast_reloc0_sv;
+		nocode_wanted = 0;
+		mcc_state->cg_func_alloca = 0;
+		ast_fconst_i = 0;
+		ast_locrec_i = 0;
+		nb_stk_data = stk_data_floor;
+		memcpy(arr_temp_local_vars, saved_tlv, sizeof saved_tlv);
+		nb_temp_local_vars = saved_ntlv;
+		{
+		Sym *c2_free = sym_free_first;
+		Sym *c2_local = local_stack;
+		int c2_anon = anon_sym;
+		int c2_stk = nb_stk_data;
+		int c2_loc = loc;
+		int c2_nlabel = ast_rp_nlabel;
+		int c2_lfloor = ast_rp_label_floor;
+		int c2_ntlv = nb_temp_local_vars;
+		struct temp_local_variable c2_tlv[MAX_TEMP_LOCAL_VARIABLE_NUMBER];
+		memcpy(c2_tlv, arr_temp_local_vars, sizeof c2_tlv);
+		ast_rp_nlabel = 0;
+		ast_rp_label_floor = 0;
+		ast_replaying = 0;
+		sym_free_first = NULL;
+		rir_c2_msg[0] = 0;
+		mcc_state->error_func = rir_c2_sink;
+		if (ast_validate(rir_arena, rir_c2_msg, sizeof rir_c2_msg) != 0) {
+			rir_tot_c2_invalid++;
+			if (rir_env >= 5)
+				fprintf(stderr, "[rir-c2] %s\tINVALID %s\n", funcname, rir_c2_msg);
+		} else if (setjmp(mcc_state->error_jmp_buf) == 0) {
+			ast_replay_body(rir_arena);
+			if (ind - ast_body_ind_sv == body_len &&
+					memcmp(cur_text_section->data + ast_body_ind_sv, orig,
+								 (size_t)body_len) == 0)
+				rir_tot_c2_ok++;
+			else if (ind - ast_body_ind_sv == body_len)
+				rir_tot_c2_bytes++;
+			else
+				rir_tot_c2_len++;
+		} else {
+			rir_tot_c2_err++;
+			if (rir_env >= 5)
+				fprintf(stderr, "[rir-c2] %s\t%s\n", funcname,
+								rir_c2_msg[0] ? rir_c2_msg : "(no message)");
+		}
+		mcc_state->error_func = ast_error_sink;
+		ast_replaying = 1;
+		sym_free_first = c2_free;
+		local_stack = c2_local;
+		anon_sym = c2_anon;
+		nb_stk_data = c2_stk;
+		loc = c2_loc;
+		ast_rp_nlabel = c2_nlabel;
+		ast_rp_label_floor = c2_lfloor;
+		nb_temp_local_vars = c2_ntlv;
+		memcpy(arr_temp_local_vars, c2_tlv, sizeof c2_tlv);
+		}
+	}
+#endif
+
 	jrn_replaying = 0;
 	mcc_state->cg_func_alloca = saved_func_alloca;
 	ast_active = sv_ast_active;
@@ -1150,7 +1255,8 @@ static void rir_report(void) {
 					"jumps=%ld fallback=%ld fallbackfn=%ld fbchain=%ld fbpoint=%ld "
 					"unbal=%ld ovf=%ld jmpsv=%ld jmpsvfb=%ld shiftok=%ld shiftbad=%ld "
 					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld arenacmp=%ld "
-					"arenacounteq=%ld arenahasheq=%ld treenodes=%ld cmpnodes=%ld\n",
+					"arenacounteq=%ld arenahasheq=%ld treenodes=%ld cmpnodes=%ld "
+					"c2try=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld\n",
 					rir_tot_fn, rir_tot_faithful, rir_tot_ops, rir_tot_regions,
 					rir_tot_labels, rir_tot_jumps, rir_tot_fallback,
 					rir_tot_fallback_fn, rir_tot_fb_chain, rir_tot_fb_point,
@@ -1158,7 +1264,9 @@ static void rir_report(void) {
 					rir_tot_shift_ok, rir_tot_shift_bad, rir_tot_shift_skip,
 					rir_tot_shift_open, rir_tot_arena_fn, rir_tot_arena_nodes,
 					rir_tot_arena_cmp, rir_tot_arena_count_eq, rir_tot_arena_hash_eq,
-					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes);
+					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes, rir_tot_c2_try,
+					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
+					rir_tot_c2_invalid);
 	fprintf(f, "[rir-kind]");
 	for (k = 0; k < AST_KIND_COUNT; k++)
 		if (rir_kindhist[k] || rir_treekindhist[k])
