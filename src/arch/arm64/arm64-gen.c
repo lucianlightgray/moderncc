@@ -1824,11 +1824,42 @@ void arm64_vset_VT_CMP(int op) { MCC_TRACE("enter\n");
 
 static void arm64_gen_opil(int op, uint32_t l);
 
+/* Invert the condition of the `cset` that produced this comparison, in place,
+ * when it is still the last instruction emitted. arm64_gen_opil emits `cmp` and
+ * `cset` eagerly, so a later `!` cannot pick a different condition and would
+ * otherwise pay an `eor #1`. Every cset condition and its inverse differ in
+ * exactly bit 12 (EQ/NE, GE/LT, GT/LE, CS/CC, HI/LS), so the fix is a one-bit
+ * rewrite. It is length-preserving: nothing moves, so the jump-chain hazard that
+ * blocks byte-moving transforms here (absolute displacements threaded through
+ * the stream) does not apply.
+ *
+ * Safety rests on two checks together. The word must decode as `cset Rd, cond`
+ * -- CSINC Rd, ZR, ZR with op2=01, i.e. (w & 0x7fff0fe0) == 0x1a9f07e0, leaving
+ * sf/cond/Rd free -- and its Rd must be this value's own register. A later cset
+ * into the same register cannot be a different value's: it would have clobbered
+ * this one, and get_reg does not hand out a live register. */
+static int arm64_invert_last_cset(int r) { MCC_TRACE("enter\n");
+	unsigned char *p;
+	uint32_t w;
+	if (nocode_wanted || ind < 4)
+		{ MCC_TRACE("br\n"); return 0; }
+	p = cur_text_section->data + ind - 4;
+	w = read32le(p);
+	if ((w & 0x7fff0fe0u) != 0x1a9f07e0u)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((w & 0x1fu) != (uint32_t)intr(r))
+		{ MCC_TRACE("br\n"); return 0; }
+	write32le(p, w ^ (1u << 12));
+	return 1;
+}
+
 static void arm64_load_cmp(int r, SValue *sv) { MCC_TRACE("enter\n");
 	sv->r = sv->cmp_r;
 	if (sv->c.i & 1) { MCC_TRACE("br\n");
-		vpushi(1);
-		arm64_gen_opil('^', 0);
+		if (!arm64_invert_last_cset(sv->r)) { MCC_TRACE("br\n");
+			vpushi(1);
+			arm64_gen_opil('^', 0);
+		}
 	}
 	if (r != sv->r) { MCC_TRACE("br\n");
 		load(r, sv);

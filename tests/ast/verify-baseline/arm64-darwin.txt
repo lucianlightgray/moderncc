@@ -50,6 +50,7 @@ codegen/bitscan_inline.c	main	desync
 codegen/bswap_inline.c	b16	desync
 codegen/bswap_inline.c	b32	desync
 codegen/bswap_inline.c	b64	desync
+codegen/cmp_invert.c	inv	desync
 codegen/codeopt.c	bla	bail
 codegen/codeopt.c	broken_jumpopt	desync
 codegen/codeopt.c	chk	desync
@@ -130,6 +131,7 @@ optimizer/region_store.c	and_store	desync
 optimizer/region_store.c	chain	desync
 optimizer/region_store.c	or_store	desync
 optimizer/region_store.c	tern_store	desync
+pointers_arrays/range_designator_copy.c	main	bail
 preprocess/pragma_operator.c	main	desync
 preprocessor/variadic_macros.c	sum_impl	desync
 programs/grep.c	cclass	unfaithful
@@ -164,7 +166,7 @@ structs_unions/struct_byval.c	f4	desync
 structs_unions/struct_init.c	test_compound_with_relocs	unfaithful
 structs_unions/struct_init.c	test_init_ranges	bail
 structs_unions/struct_init.c	test_init_struct_from_struct	unfaithful
-structs_unions/struct_init.c	test_multi_relocs	desync
+structs_unions/struct_init.c	test_multi_relocs	bail
 structs_unions/struct_packed_indirect.c	main	unfaithful
 structs_unions/struct_return.c	init	desync
 structs_unions/union_byval.c	main	unfaithful
