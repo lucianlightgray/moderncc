@@ -186,10 +186,27 @@ if "$GCC" -w -I"$root/tests/fuzz" "$fz/gendrv.c" -o "$fz/gen.exe" 2>/dev/null; t
 		if [ -n "$CLANG" ] && "$CLANG" -w -O2 "$fz/p.c" -o "$fz/cl.exe" 2>/dev/null; then
 			[ "$(rr "$fz/cl.exe")" = "$r0" ] || { fzskip=$((fzskip+1)); s=$((s+1)); continue; }
 		fi
-		if "$MCCI" -O2 $BRT "$fz/p.c" -o "$fz/m.exe" $LNK 2>/dev/null; then
-			if [ "$(rr "$fz/m.exe")" = "$r0" ]; then fzagree=$((fzagree+1));
-			else fzdiv=$((fzdiv+1)); fzmiss="$fzmiss $s"; echo "  DIVERGE seed=$s ref=[$r0] mcc=[$(rr "$fz/m.exe")]"; cp "$fz/p.c" "$work/../fuzz_diverge_$s.c" 2>/dev/null; fi
-		else fzskip=$((fzskip+1)); fi
+		# mcc must match the consensus at default gates AND with the
+		# MCC_AST_REGPAIR sub-gate forced on -- the i386 flip criterion for that
+		# gate (instruction 8: sub-gates forced for a gated change). Its ON path
+		# drives the nested register-pair re-emit the default (off) path desyncs
+		# and never exercises.
+		mst=agree
+		for rp in "" "MCC_AST_REGPAIR=1"; do
+			env $rp "$MCCI" -O2 $BRT "$fz/p.c" -o "$fz/m.exe" $LNK 2>/dev/null || { mst=skip; break; }
+			mo=$(rr "$fz/m.exe")
+			if [ "$mo" != "$r0" ]; then
+				mst=div; lbl=${rp:-default}
+				echo "  DIVERGE seed=$s [$lbl] ref=[$r0] mcc=[$mo]"
+				cp "$fz/p.c" "$work/../fuzz_diverge_${s}_${lbl%%=*}.c" 2>/dev/null
+				break
+			fi
+		done
+		case "$mst" in
+			agree) fzagree=$((fzagree+1)) ;;
+			div) fzdiv=$((fzdiv+1)); fzmiss="$fzmiss $s" ;;
+			skip) fzskip=$((fzskip+1)) ;;
+		esac
 		s=$((s+1))
 	done
 	echo "i386win32-soak: differential fuzz agree=$fzagree diverge=$fzdiv skip(UB/build)=$fzskip"
