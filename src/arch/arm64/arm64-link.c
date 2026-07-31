@@ -24,6 +24,14 @@ ST_FUNC int code_reloc(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST8_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST16_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST32_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC:
 	case R_AARCH64_TLSDESC_ADR_PAGE21:
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
@@ -65,6 +73,14 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST8_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST16_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST32_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC:
 	case R_AARCH64_TLSDESC_ADR_PAGE21:
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
@@ -402,7 +418,15 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	/* _NC is the no-overflow-check twin of _LO12 (gcc's default local-exec
 	   ADD form is HI12 + LO12_NC); we only mask the low 12 bits below, which
 	   is exactly the checked variant's value, so treat them identically. */
-	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC: {
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST8_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST16_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST16_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST32_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC:
+	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
+	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC: {
 		addr_t tls_start = 0;
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
@@ -423,10 +447,18 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		if (s1->run_tls_active)
 			{ MCC_TRACE("br\n"); tp_offset = s1->run_tls_slab_tpoff + (val - tls_start); }
 		int64_t imm;
-		if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12)
-			{ MCC_TRACE("br\n"); imm = (tp_offset >> 12) & 0xfff; }
-		else
-			{ MCC_TRACE("br\n"); imm = tp_offset & 0xfff; }
+		if (type == R_AARCH64_TLSLE_ADD_TPREL_HI12) { MCC_TRACE("br\n");
+			imm = (tp_offset >> 12) & 0xfff;
+		} else if (type == R_AARCH64_TLSLE_ADD_TPREL_LO12 ||
+							 type == R_AARCH64_TLSLE_ADD_TPREL_LO12_NC) { MCC_TRACE("br\n");
+			imm = tp_offset & 0xfff;
+		} else { MCC_TRACE("br\n");
+			uint32_t insn = read32le(ptr);
+			unsigned scale = insn >> 30;
+			if (((insn >> 26) & 1) && scale == 0 && ((insn >> 23) & 1))
+				{ MCC_TRACE("br\n"); scale = 4; }
+			imm = ((uint64_t)tp_offset & 0xfff) >> scale;
+		}
 		write32le(ptr, ((read32le(ptr) & 0xffc003ff) | (imm << 10)));
 		return;
 	}

@@ -1966,6 +1966,12 @@ typedef struct _mcc_coff_rel {
 #define IMAGE_REL_ARM64_PAGEOFFSET_12L 0x0007
 #define IMAGE_REL_ARM64_ADDR64 0x000E
 #endif
+#ifndef IMAGE_REL_ARM64_SECREL
+#define IMAGE_REL_ARM64_SECREL 0x0008
+#define IMAGE_REL_ARM64_SECREL_LOW12A 0x0009
+#define IMAGE_REL_ARM64_SECREL_HIGH12A 0x000A
+#define IMAGE_REL_ARM64_SECREL_LOW12L 0x000B
+#endif
 
 static unsigned coff_rd16(const unsigned char *p) { MCC_TRACE("enter\n");
 	return p[0] | (p[1] << 8);
@@ -2042,6 +2048,23 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_ARM64_PAGEBASE_REL21: *etype = R_AARCH64_ADR_PREL_PG_HI21; return 1;
 	case IMAGE_REL_ARM64_PAGEOFFSET_12A: *etype = R_AARCH64_ADD_ABS_LO12_NC; return 1;
 	case IMAGE_REL_ARM64_PAGEOFFSET_12L: *etype = R_AARCH64_LDST64_ABS_LO12_NC; return 1;
+	case IMAGE_REL_ARM64_SECREL_HIGH12A:
+		*etype = R_AARCH64_TLSLE_ADD_TPREL_HI12;
+		*addend = (addr_t)(((unsigned)coff_rd32(fld) >> 10) & 0xfff) << 12;
+		return 1;
+	case IMAGE_REL_ARM64_SECREL_LOW12A:
+		*etype = R_AARCH64_TLSLE_ADD_TPREL_LO12_NC;
+		*addend = ((unsigned)coff_rd32(fld) >> 10) & 0xfff;
+		return 1;
+	case IMAGE_REL_ARM64_SECREL_LOW12L: {
+		unsigned insn = (unsigned)coff_rd32(fld);
+		unsigned scale = insn >> 30;
+		if (((insn >> 26) & 1) && scale == 0 && ((insn >> 23) & 1))
+			{ MCC_TRACE("br\n"); scale = 4; }
+		*etype = R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC;
+		*addend = (addr_t)((insn >> 10) & 0xfff) << scale;
+		return 1;
+	}
 	default:
 		return 0;
 	}
