@@ -3734,31 +3734,38 @@ if(MCC_BUILD_TESTS)
         # Journal inertness: MCC_JOURNAL=1 must not move a byte of the object it
         # observes. Without this the oracle could start steering the very output
         # it exists to certify, and nothing else in the suite would notice --
-        # every other journal check reads the journal's own verdicts.
-        if(UNIX)
-            add_test(NAME ast/journal-inert
-                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/jrn_identity.sh"
-                        "${_mcc_exe}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
-                        "${CMAKE_BINARY_DIR}/ast-journal-inert" -O1)
-            set_tests_properties(ast/journal-inert PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
-                TIMEOUT 900)
-        endif()
+        # every other journal check reads the journal's own verdicts. Driven by a
+        # portable -P script (not a .sh) so it runs on Win32 too, where ctest
+        # cannot exec a shebang; a build with no MCC_JOURNAL_HOOKS self-SKIPs via
+        # the probe, so registering it unconditionally never false-greens.
+        add_test(NAME ast/journal-inert
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}"
+                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-inert"
+                    "-DOPT=-O1"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
+        set_tests_properties(ast/journal-inert PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+            TIMEOUT 900)
 
-        if(UNIX AND TARGET mcc_nojrn)
+        if(TARGET mcc_nojrn)
             add_test(NAME ast/journal-inert-build
-                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/jrn_hooks_identity.sh"
-                        "${_mcc_exe}" "$<TARGET_FILE:mcc_nojrn>"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
-                        "${CMAKE_BINARY_DIR}/ast-journal-hooks-inert" -O1)
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${_mcc_exe}"
+                        "-DNOJRN=$<TARGET_FILE:mcc_nojrn>"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-hooks-inert"
+                        "-DOPT=-O1"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
             set_tests_properties(ast/journal-inert-build PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                 TIMEOUT 900)
-        elseif(UNIX)
+        else()
             mcc_skip_test(ast/journal-inert-build
-                "the hooks-off compiler needs MCC_SINGLE_SOURCE=ON; not built in this configuration")
+                "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON and a native x86_64 build; not built in this configuration")
         endif()
 
         # -O4's superopt driver scores by SIZE, and promotion trades size for
