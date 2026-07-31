@@ -2809,7 +2809,6 @@ void ast_hook_genop_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_convert(CType *type) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_CONVERT);
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_vn < 1) { MCC_TRACE("br\n");
@@ -4323,6 +4322,7 @@ void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_return_jmp(int jumps) { MCC_TRACE("enter\n");
+	rir_mark_val(RIR_M_RETJMP, jumps);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_last_return != AST_NONE)

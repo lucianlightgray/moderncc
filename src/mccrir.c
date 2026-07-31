@@ -22,6 +22,7 @@ typedef struct RirOp {
 	int jidx;
 	int lbl, lbl2;
 	int pt;
+	int rval;
 	JrnOp p;
 } RirOp;
 
@@ -33,6 +34,7 @@ typedef struct RirChainEnt {
 typedef struct RirMark {
 	int tag;
 	int kind;
+	int val;
 	int at;
 } RirMark;
 
@@ -98,7 +100,7 @@ static RirOp *rir_new(int tag) {
 	return o;
 }
 
-static void rir_mark(int tag, int kind) {
+static void rir_mark_v(int tag, int kind, int val) {
 	RirMark *m;
 	if (rir_markn >= rir_markcap) {
 		rir_markcap = rir_markcap ? rir_markcap * 2 : 128;
@@ -107,11 +109,14 @@ static void rir_mark(int tag, int kind) {
 	m = &rir_marks[rir_markn++];
 	m->tag = tag;
 	m->kind = kind;
+	m->val = val;
 	m->at = jrn_n;
 	rir_tot_regions++;
 	if (tag != RIR_T_MARK && kind >= 0 && kind < RIR_R_COUNT)
 		rir_reghist[kind]++;
 }
+
+static void rir_mark(int tag, int kind) { rir_mark_v(tag, kind, 0); }
 
 void rir_rbegin(int kind) {
 	if (!rir_active)
@@ -165,6 +170,12 @@ void rir_mark_pt(int kind) {
 	if (!rir_active)
 		return;
 	rir_mark(RIR_T_MARK, kind);
+}
+
+void rir_mark_val(int kind, int val) {
+	if (!rir_active)
+		return;
+	rir_mark_v(RIR_T_MARK, kind, val);
 }
 
 void rir_reset(void) {
@@ -386,6 +397,7 @@ static void rir_build(void) {
 		while (m < rir_markn && rir_marks[m].at <= i) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
+			o->rval = rir_marks[m].val;
 			o->jidx = -1;
 			o->lbl = -1;
 			o->lbl2 = -1;
@@ -412,6 +424,7 @@ static int rir_bbn;
 static AstLocal rir_cf[64];
 static int rir_cfn;
 static int rir_arena_mismatch;
+static int rir_after_ret;
 static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
 static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
 static long rir_tot_tree_nodes, rir_tot_arena_cmp_nodes;
@@ -473,10 +486,27 @@ static void rir_push_typed(AstLocal n) {
    the model holds past the recorded depth is dropped. Divergences are counted
    rather than smoothed over -- rir_arena_mismatch is the honest quality signal
    for this reconstruction, the same role fix= plays for replay. */
+static void rir_stamp_types(const JrnOp *o) {
+	int k, want;
+	if (o->vs_n < 0)
+		return;
+	want = o->vs_n - ast_base_depth;
+	for (k = 0; k < rir_shn && k < want; k++) {
+		const SValue *v;
+		if (!rir_shtype[k])
+			continue;
+		v = &jrn_vs[o->vs_off + ast_base_depth + k];
+		ast_set_type(rir_arena, rir_sh[k], v->type.t,
+								 (uint64_t)(uintptr_t)v->type.ref);
+		rir_shtype[k] = 0;
+	}
+}
+
 static void rir_reconcile(const JrnOp *o) {
 	int want, k;
 	if (o->vs_n < 0)
 		return;
+	rir_stamp_types(o);
 	want = o->vs_n - ast_base_depth;
 	if (want < 0)
 		want = 0;
@@ -488,15 +518,8 @@ static void rir_reconcile(const JrnOp *o) {
 		if (dk == AST_Store || dk == AST_Invoke)
 			rir_stmt(d);
 	}
-	for (k = 0; k < rir_shn && k < want; k++) {
-		const SValue *v;
-		if (!rir_shtype[k])
-			continue;
-		v = &jrn_vs[o->vs_off + ast_base_depth + k];
-		ast_set_type(rir_arena, rir_sh[k], v->type.t,
-								 (uint64_t)(uintptr_t)v->type.ref);
-		rir_shtype[k] = 0;
-	}
+	if (rir_after_ret && rir_shn == 0)
+		return;
 	for (k = rir_shn; k < want; k++) {
 		rir_push(rir_leaf(&jrn_vs[o->vs_off + ast_base_depth + k]));
 		if (k < want - 1)
@@ -522,7 +545,7 @@ static void rir_op_effect(const RirOp *ro) {
 		ast_set_op(rir_arena, n, o->a0);
 		ast_add_child(rir_arena, n, a);
 		ast_add_child(rir_arena, n, b);
-		rir_push_typed(n);
+		rir_push(n);
 		break;
 	}
 	case JOP_VSTORE: {
@@ -604,6 +627,7 @@ static void rir_op_effect(const RirOp *ro) {
 }
 
 static int rir_cond_depth, rir_synth_depth, rir_call_depth;
+static AstLocal rir_last_return = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
@@ -614,6 +638,12 @@ static void rir_mark_apply(const RirOp *ro) {
 		if (a != AST_NONE)
 			ast_add_child(rir_arena, n, a);
 		rir_stmt(n);
+		rir_last_return = n;
+		rir_after_ret = 1;
+		break;
+	case RIR_M_RETJMP:
+		if (rir_last_return != AST_NONE)
+			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
 		break;
 	case RIR_M_JUMP:
 		rir_stmt(ast_node(rir_arena, AST_Jump));
@@ -646,6 +676,7 @@ static void rir_mark_apply(const RirOp *ro) {
 }
 
 static void rir_region(const RirOp *ro) {
+	rir_after_ret = 0;
 	if (ro->tag == RIR_T_RBEGIN) {
 		switch (ro->rkind) {
 		case RIR_R_IF:
@@ -728,6 +759,8 @@ static void rir_to_arena(void) {
 	rir_shn = 0;
 	rir_cfn = 0;
 	rir_bbn = 0;
+	rir_last_return = AST_NONE;
+	rir_after_ret = 0;
 	rir_cond_depth = 0;
 	rir_synth_depth = 0;
 	rir_call_depth = 0;
@@ -736,8 +769,15 @@ static void rir_to_arena(void) {
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
-			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth)
+			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth) {
+				int j;
+				for (j = i + 1; j < rir_n; j++)
+					if (rir_ops[j].tag == RIR_T_OP) {
+						rir_stamp_types(&rir_ops[j].p);
+						break;
+					}
 				rir_mark_apply(ro);
+			}
 			continue;
 		}
 		if (ro->tag != RIR_T_OP) {
@@ -950,6 +990,40 @@ void rir_verify(void) {
 		rir_to_arena();
 		rir_tot_arena_fn++;
 		rir_tot_arena_nodes += ast_count(rir_arena);
+		if (rir_env >= 6) {
+			static char db[8192];
+			ast_dump(rir_arena, ast_root(rir_arena), db, sizeof db);
+			fprintf(stderr, "[rir-dump] %s RIR:\n%s\n", funcname, db);
+			if (ast_cur && ast_replay_ok(ast_cur)) {
+				AstLocal q;
+				ast_dump(ast_cur, ast_root(ast_cur), db, sizeof db);
+				fprintf(stderr, "[rir-dump] %s TREE:\n%s\n", funcname, db);
+				for (q = 0; q < ast_count(rir_arena) && q < ast_count(ast_cur); q++) {
+					if (ast_kind(rir_arena, q) == ast_kind(ast_cur, q) &&
+							ast_op(rir_arena, q) == ast_op(ast_cur, q) &&
+							ast_type_t(rir_arena, q) == ast_type_t(ast_cur, q) &&
+							ast_type_ref(rir_arena, q) == ast_type_ref(ast_cur, q) &&
+							ast_ival(rir_arena, q) == ast_ival(ast_cur, q) &&
+							ast_sym(rir_arena, q) == ast_sym(ast_cur, q) &&
+							ast_nchild(rir_arena, q) == ast_nchild(ast_cur, q))
+						continue;
+					fprintf(stderr,
+									"[rir-diff] n%u rir(%s op=%d t=%d ref=%llx iv=%llu sym=%llx "
+									"nc=%u) tree(%s op=%d t=%d ref=%llx iv=%llu sym=%llx nc=%u)\n",
+									q, ast_kind_name(ast_kind(rir_arena, q)), ast_op(rir_arena, q),
+									ast_type_t(rir_arena, q),
+									(unsigned long long)ast_type_ref(rir_arena, q),
+									(unsigned long long)ast_ival(rir_arena, q),
+									(unsigned long long)ast_sym(rir_arena, q),
+									ast_nchild(rir_arena, q), ast_kind_name(ast_kind(ast_cur, q)),
+									ast_op(ast_cur, q), ast_type_t(ast_cur, q),
+									(unsigned long long)ast_type_ref(ast_cur, q),
+									(unsigned long long)ast_ival(ast_cur, q),
+									(unsigned long long)ast_sym(ast_cur, q),
+									ast_nchild(ast_cur, q));
+				}
+			}
+		}
 		if (ast_try_active && ast_cur && ast_replay_ok(ast_cur)) {
 			rir_tot_arena_cmp++;
 			rir_tot_tree_nodes += ast_count(ast_cur);
@@ -1152,8 +1226,12 @@ void rir_verify(void) {
 				rir_tot_c2_ok++;
 			else if (ind - ast_body_ind_sv == body_len)
 				rir_tot_c2_bytes++;
-			else
+			else {
 				rir_tot_c2_len++;
+				if (rir_env >= 5)
+					fprintf(stderr, "[rir-c2len] %s want=%d got=%d\n", funcname, body_len,
+									ind - ast_body_ind_sv);
+			}
 		} else {
 			rir_tot_c2_err++;
 			if (rir_env >= 5)
@@ -1161,7 +1239,6 @@ void rir_verify(void) {
 								rir_c2_msg[0] ? rir_c2_msg : "(no message)");
 		}
 		mcc_state->error_func = ast_error_sink;
-		ast_replaying = 1;
 		sym_free_first = c2_free;
 		local_stack = c2_local;
 		anon_sym = c2_anon;

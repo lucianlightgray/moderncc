@@ -34,6 +34,7 @@ enum {
 	RIR_M_LOAD,
 	RIR_M_CONVERT,
 	RIR_M_LABEL,
+	RIR_M_RETJMP,
 	RIR_M_COUNT
 };
 
@@ -41,6 +42,7 @@ void rir_rbegin(int kind);
 void rir_rend_to(int kind);
 void rir_rcond_done(void);
 void rir_mark_pt(int kind);
+void rir_mark_val(int kind, int val);
 
 #else
 
@@ -62,10 +64,12 @@ void rir_mark_pt(int kind);
 #define RIR_M_LOAD 0
 #define RIR_M_CONVERT 0
 #define RIR_M_LABEL 0
+#define RIR_M_RETJMP 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rend_to(k) ((void)0)
 #define rir_rcond_done() ((void)0)
 #define rir_mark_pt(k) ((void)0)
+#define rir_mark_val(k, v) ((void)0)
 #define rir_env 0
 
 #endif
