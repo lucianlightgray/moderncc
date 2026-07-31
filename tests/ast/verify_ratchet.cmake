@@ -89,12 +89,16 @@ foreach(_f ${_srcs})
             list(APPEND _gaps "${_rel}\t${CMAKE_MATCH_3}\t${CMAKE_MATCH_1}")
         endif()
         if(_ln MATCHES "\\[ast-verify\\] ([^\t]+)\t[^\t]*\t(.+)")
+            # The skip: test below is itself a MATCHES, which rewrites every
+            # CMAKE_MATCH_<n>; latch the captures before running it or the keys
+            # end up with an empty function name.
             set(_v "${CMAKE_MATCH_1}")
+            set(_fn "${CMAKE_MATCH_2}")
             if(NOT _v MATCHES "^skip:")
                 math(EXPR _ast_tried "${_ast_tried} + 1")
             endif()
             if(_v STREQUAL "faithful")
-                list(APPEND _ast_faithful "${_rel}\t${CMAKE_MATCH_2}")
+                list(APPEND _ast_faithful "${_rel}\t${_fn}")
             endif()
         endif()
         # "[jrn-verify] <verdict>\t?\t<func>\tops=..."
