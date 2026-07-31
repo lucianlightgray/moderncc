@@ -1134,7 +1134,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	unsigned start = host_clock_ms();
 	char exe[1024], cand[1200], hashp[1300], *cfg;
 	const char **cv;
-	int i, argn, nf, fi, ci, p, cached = 0;
+	int i, argn, quiet_at, nf, fi, ci, p, cached = 0;
 	struct so_fn fns[SO_MAXFN], cur[SO_MAXFN];
 	unsigned best_cfg[SO_MAXFN], tried[SO_MAXFN];
 	uint64_t fnh[SO_MAXFN];
@@ -1145,13 +1145,15 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	snprintf(cand, sizeof cand, "%s.mcc-pf", outfile);
 	snprintf(hashp, sizeof hashp, "%s.fnh", cand);
 	cfg = mcc_malloc(SO_MAXFN * 96);
-	cv = mcc_malloc((argc + 4) * sizeof *cv);
+	cv = mcc_malloc((argc + 5) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
 	so_copy_args_drop_o(cv, &argn, argc, argv);
 	cv[argn++] = "-o";
 	cv[argn++] = cand;
-	cv[argn] = NULL;
+	quiet_at = argn;
+	cv[argn] = "-w";
+	cv[argn + 1] = NULL;
 	so_stop = 0;
 	host_install_interrupt(so_on_stop);
 	host_setenv("MCC_SEARCH_WORKER", "1");
@@ -1237,6 +1239,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 		{ MCC_TRACE("br\n"); p += snprintf(cfg + p, SO_MAXFN * 96 - p, "%s=%u;", fns[fi].name,
 									best_cfg[fi]); }
 	host_setenv("MCC_AST_FN_CONFIG", cfg);
+	cv[quiet_at] = NULL;
 	if (so_spawn_must(cv, 300000u, 4) != 0) { MCC_TRACE("br\n");
 		remove(cand);
 		mcc_free(cfg);
@@ -1269,7 +1272,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	char exe[1024], cand_tmp[1200], ckpt[3200];
 	const char **cv, **rv = NULL;
 	const char *src = s->nb_files >= 1 ? s->files[0]->name : NULL;
-	int i, argn, have_ckpt, links_exe = src != NULL;
+	int i, argn, quiet_at, have_ckpt, links_exe = src != NULL;
 	uint64_t key;
 	SoCkpt ck;
 	for (i = 1; i < argc; i++)
@@ -1304,17 +1307,19 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 		limit_cur = ck.limit_cursor;
 		round = ck.round;
 	}
-	cv = mcc_malloc((argc + 4) * sizeof *cv);
+	cv = mcc_malloc((argc + 5) * sizeof *cv);
 	argn = 0;
 	cv[argn++] = exe;
 	so_copy_args_drop_o(cv, &argn, argc, argv);
 	cv[argn++] = "-o";
 	cv[argn++] = cand_tmp;
-	cv[argn] = NULL;
+	quiet_at = argn;
+	cv[argn] = "-w";
+	cv[argn + 1] = NULL;
 
 	if (so_jitscore) { MCC_TRACE("br\n");
 		int rn = 0;
-		rv = mcc_malloc((argc + 4) * sizeof *rv);
+		rv = mcc_malloc((argc + 5) * sizeof *rv);
 		rv[rn++] = exe;
 		for (i = 1; i < argc; i++) { MCC_TRACE("br\n");
 			if (!strcmp(argv[i], "-o")) { MCC_TRACE("br\n");
@@ -1326,6 +1331,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 				{ MCC_TRACE("br\n"); continue; }
 			rv[rn++] = argv[i];
 		}
+		rv[rn++] = "-w";
 		rv[rn++] = "-run";
 		rv[rn++] = src;
 		rv[rn] = NULL;
@@ -1440,6 +1446,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 			{ MCC_TRACE("br\n"); break; }
 	}
 
+	cv[quiet_at] = NULL;
 	if (so_eval(cv, cand_tmp, best_gate, best_budget, best_limit, 300000u) < 0) { MCC_TRACE("br\n");
 		remove(cand_tmp);
 		mcc_free(cv);

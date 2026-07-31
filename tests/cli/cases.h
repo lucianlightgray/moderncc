@@ -5,6 +5,15 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"o4_search_does_not_repeat_diagnostics", "cpu=x86_64,os=linux",
+		 "printf '_Alignas(16) i3;\\nint main(void){return 0;}\\n' > {W}/od.c && "
+		 "XDG_CACHE_HOME={W}/c1 {MCC} -B{B} -I{I} -O1 -c {W}/od.c -o {W}/o1.o 2>{W}/e1.txt; "
+		 "XDG_CACHE_HOME={W}/c4 {MCC} -B{B} -I{I} -O4 -c {W}/od.c -o {W}/o4.o 2>{W}/e4.txt; "
+		 "printf 'O1=%s O4=%s\\n' "
+		 "$(grep -c 'type defaults to int' {W}/e1.txt) "
+		 "$(grep -c 'type defaults to int' {W}/e4.txt)",
+		 "O1=1 O4=1"},
+
 		{"fast_math_implies_no_math_errno", "cpu=x86_64,os=linux",
 		 "printf 'double sqrt(double);\\ndouble f(double x){return sqrt(x);}\\n' > {W}/fm.c && "
 		 "{MCC} -B{B} -I{I} -w -O2 -S {W}/fm.c -o {W}/plain.s && "
