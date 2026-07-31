@@ -1075,6 +1075,17 @@ struct filespec {
 #define MCC_HAVE_INT128 0
 #endif
 
+#ifndef MCC_JOURNAL_HOOKS
+#if MCC_CONFIG_OPTIMIZER &&                                                    \
+		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		 defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64))
+#define MCC_JOURNAL_HOOKS 1
+#endif
+#endif
+#if defined(MCC_JOURNAL_HOOKS) && !MCC_JOURNAL_HOOKS
+#undef MCC_JOURNAL_HOOKS
+#endif
+
 #define VT_UNSIGNED 0x0010
 #define VT_DEFSIGN 0x0020
 #define VT_ARRAY 0x0040
@@ -1891,7 +1902,15 @@ ST_FUNC void arch_transfer_ret_regs(int);
 ST_FUNC void asm_instr(void);
 ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
+ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
+#ifdef MCC_JOURNAL_HOOKS
+void jrn_asm(const char *str, int len, int global);
+#endif
 #if MCC_CONFIG_ASM
+#ifdef MCC_JOURNAL_HOOKS
+void jrn_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
+											int is_output, uint8_t *clobber_regs, int out_reg);
+#endif
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
 ST_FUNC const char *skip_constraint_modifiers(const char *p);
 ST_FUNC Sym *get_asm_sym(int name, Sym *csym);

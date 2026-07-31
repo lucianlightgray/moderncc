@@ -2052,7 +2052,7 @@ if(MCC_ALL_DIAGNOSTICS)
 endif()
 
 if(MCC_BUILD_TESTS AND MCC_SINGLE_SOURCE AND MCC_CONFIG_OPTIMIZER
-   AND MCC_CPU MATCHES "x86_64|arm64|aarch64" AND NOT CMAKE_CROSSCOMPILING)
+   AND MCC_CPU MATCHES "x86_64|arm64|aarch64|i386|riscv64" AND NOT CMAKE_CROSSCOMPILING)
     add_executable(mcc_nojrn src/mcc.c)
     set_target_properties(mcc_nojrn PROPERTIES OUTPUT_NAME mcc-nojrn)
     target_include_directories(mcc_nojrn PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -3875,7 +3875,7 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 900)
         else()
             mcc_skip_test(ast/journal-inert-build
-                "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON, MCC_CONFIG_OPTIMIZER, a non-cross build and a CPU the journal hooks compile on (x86_64 or arm64); this is ${MCC_CPU}, single-source=${MCC_SINGLE_SOURCE}, cross=${CMAKE_CROSSCOMPILING}")
+                "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON, MCC_CONFIG_OPTIMIZER, a non-cross build and a CPU the journal hooks compile on (x86_64, arm64, i386 or riscv64); this is ${MCC_CPU}, single-source=${MCC_SINGLE_SOURCE}, cross=${CMAKE_CROSSCOMPILING}")
         endif()
 
         # -O4's superopt driver scores by SIZE, and promotion trades size for

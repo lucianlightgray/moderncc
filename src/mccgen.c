@@ -3,17 +3,6 @@
 
 #include "mccforecast.h"
 
-#ifndef MCC_JOURNAL_HOOKS
-#if MCC_CONFIG_OPTIMIZER &&                                                    \
-		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
-		 defined(MCC_TARGET_I386))
-#define MCC_JOURNAL_HOOKS 1
-#endif
-#endif
-#if defined(MCC_JOURNAL_HOOKS) && !MCC_JOURNAL_HOOKS
-#undef MCC_JOURNAL_HOOKS
-#endif
-
 #ifdef MCC_JOURNAL_HOOKS
 /* Not every backend defines every journalled primitive. These predicates mirror
  * the declaration guards in mcc.h exactly, so a primitive the target does not
@@ -36,15 +25,33 @@
 		defined(MCC_TARGET_RISCV64)
 #define MCC_JRN_HAVE_CVT_SXTW 1
 #endif
+#if defined(MCC_TARGET_RISCV64) ||                                             \
+		(defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE))
+#define MCC_JRN_HAVE_XFERRET 1
+#endif
 /* gen_round / gen_copysign are the FP round-mode / sign-copy hardware inlines,
    defined on the SSE/NEON/RVF backends but NOT i386 -- x87 needs a memory
    round-trip and rounding-control juggling (tracked in docs/TODO Codegen), so
    i386-gen.c defines neither. gen_fabs/gen_sqrt DO exist on i386 (x87 fabs/
-   fsqrt) and stay unconditional. Mirror the definition set so the journal does
-   not reference a primitive i386 never links. */
+   fsqrt) and stay unconditional. The two are gated separately because riscv64
+   defines fsgnj.d but no round-mode inline. Mirror the definition set so the
+   journal does not reference a primitive a target never links. */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#define MCC_JRN_HAVE_ROUND 1
+#endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_RISCV64)
-#define MCC_JRN_HAVE_FP_ROUNDSIGN 1
+#define MCC_JRN_HAVE_COPYSIGN 1
+#endif
+#ifdef MCC_TARGET_ARM64
+#define MCC_JRN_HAVE_GFUNC_RETURN 1
+#define MCC_JRN_HAVE_VA_ARG 1
+#endif
+#if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
+#define MCC_JRN_HAVE_VA_START 1
+#endif
+#if defined(MCC_TARGET_X86_64) && defined(MCC_TARGET_PE)
+#define MCC_JRN_HAVE_VLA_RESULT 1
 #endif
 static int jrn_replaying;
 void jrn_load(int r, SValue *sv);
@@ -75,6 +82,9 @@ int jrn_gen_cmov(int rt, int rf, int rb, int ll);
 void jrn_gen_fill_nops(int bytes);
 void jrn_gen_vla_sp_save(int addr);
 void jrn_gen_vla_sp_restore(int addr);
+#ifdef MCC_JRN_HAVE_VLA_RESULT
+void jrn_gen_vla_result(int addr);
+#endif
 void jrn_gen_vla_alloc(CType *type, int align);
 void jrn_gen_mulh(int sign);
 #if MCC_HAVE_INT128
@@ -85,8 +95,10 @@ void jrn_gen_reg_addi(int r, int64_t d);
 #endif
 void jrn_gen_fabs(void);
 void jrn_gen_sqrt(void);
-#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
+#ifdef MCC_JRN_HAVE_ROUND
 void jrn_gen_round(int mode);
+#endif
+#ifdef MCC_JRN_HAVE_COPYSIGN
 void jrn_gen_copysign(void);
 #endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
@@ -105,7 +117,7 @@ void jrn_gen_atomic_xadd(int size);
 void jrn_gen_asan_shadow_check(int sz);
 void jrn_gen_ubsan_nullptr(void);
 int jrn_gjmp_append(int n, int t);
-#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+#ifdef MCC_JRN_HAVE_XFERRET
 void jrn_arch_transfer_ret_regs(int aftercall);
 #endif
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
@@ -125,6 +137,15 @@ int jrn_pred(int p);
 void jrn_gen_op(int op);
 void jrn_mk_pointer(CType *type);
 void jrn_gaddrof(void);
+#ifdef MCC_JRN_HAVE_GFUNC_RETURN
+void jrn_gfunc_return(CType *func_type);
+#endif
+#ifdef MCC_JRN_HAVE_VA_START
+void jrn_gen_va_start(void);
+#endif
+#ifdef MCC_JRN_HAVE_VA_ARG
+void jrn_gen_va_arg(CType *t);
+#endif
 #define load(r, sv) jrn_load((r), (sv))
 #define store(r, v) jrn_store((r), (v))
 #define gen_opi(op) jrn_gen_opi((op))
@@ -151,6 +172,9 @@ void jrn_gaddrof(void);
 #define gen_fill_nops(b) jrn_gen_fill_nops((b))
 #define gen_vla_sp_save(a) jrn_gen_vla_sp_save((a))
 #define gen_vla_sp_restore(a) jrn_gen_vla_sp_restore((a))
+#ifdef MCC_JRN_HAVE_VLA_RESULT
+#define gen_vla_result(a) jrn_gen_vla_result((a))
+#endif
 #define gen_vla_alloc(ty, al) jrn_gen_vla_alloc((ty), (al))
 #define gen_mulh(s) jrn_gen_mulh((s))
 #if MCC_HAVE_INT128
@@ -161,8 +185,10 @@ void jrn_gaddrof(void);
 #endif
 #define gen_fabs() jrn_gen_fabs()
 #define gen_sqrt() jrn_gen_sqrt()
-#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
+#ifdef MCC_JRN_HAVE_ROUND
 #define gen_round(m) jrn_gen_round((m))
+#endif
+#ifdef MCC_JRN_HAVE_COPYSIGN
 #define gen_copysign() jrn_gen_copysign()
 #endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
@@ -181,7 +207,7 @@ void jrn_gaddrof(void);
 #define gen_asan_shadow_check(s) jrn_gen_asan_shadow_check((s))
 #define gen_ubsan_nullptr() jrn_gen_ubsan_nullptr()
 #define gjmp_append(n, t) jrn_gjmp_append((n), (t))
-#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+#ifdef MCC_JRN_HAVE_XFERRET
 #define arch_transfer_ret_regs(a) jrn_arch_transfer_ret_regs((a))
 #endif
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
@@ -200,6 +226,15 @@ void jrn_gaddrof(void);
 #define gen_op(...) jrn_gen_op(__VA_ARGS__)
 #define mk_pointer(...) jrn_mk_pointer(__VA_ARGS__)
 #define gaddrof(...) jrn_gaddrof(__VA_ARGS__)
+#ifdef MCC_JRN_HAVE_GFUNC_RETURN
+#define gfunc_return(t) jrn_gfunc_return((t))
+#endif
+#ifdef MCC_JRN_HAVE_VA_START
+#define gen_va_start() jrn_gen_va_start()
+#endif
+#ifdef MCC_JRN_HAVE_VA_ARG
+#define gen_va_arg(t) jrn_gen_va_arg((t))
+#endif
 #endif
 
 ST_DATA int rsym, anon_sym, ind, loc;
@@ -15139,14 +15174,17 @@ static int decl(int l) {
 #undef gen_fill_nops
 #undef gen_vla_sp_save
 #undef gen_vla_sp_restore
+#undef gen_vla_result
 #undef gen_vla_alloc
 #undef gen_mulh
 #undef gen_mul_widen
 #undef gen_reg_addi
 #undef gen_fabs
 #undef gen_sqrt
-#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
+#ifdef MCC_JRN_HAVE_ROUND
 #undef gen_round
+#endif
+#ifdef MCC_JRN_HAVE_COPYSIGN
 #undef gen_copysign
 #endif
 #undef gen_bswap
@@ -15161,7 +15199,7 @@ static int decl(int l) {
 #undef gen_asan_shadow_check
 #undef gen_ubsan_nullptr
 #undef gjmp_append
-#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+#ifdef MCC_JRN_HAVE_XFERRET
 #undef arch_transfer_ret_regs
 #endif
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
@@ -15180,6 +15218,9 @@ static int decl(int l) {
 #undef gen_op
 #undef mk_pointer
 #undef gaddrof
+#undef gfunc_return
+#undef gen_va_start
+#undef gen_va_arg
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED

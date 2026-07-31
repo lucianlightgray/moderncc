@@ -1181,7 +1181,7 @@ ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess) { MCC_TRACE("enter\n")
 	return ret;
 }
 
-static void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global) { MCC_TRACE("enter\n");
+ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global) { MCC_TRACE("enter\n");
 	const int *saved_macro_ptr = macro_ptr;
 	int dotid = set_idnum('.', IS_ID);
 #if !defined(MCC_TARGET_RISCV64) && !defined(MCC_TARGET_X86_64)
@@ -1564,11 +1564,19 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	if (g_debug & MCC_DBG_ASM)
 		{ MCC_TRACE("br\n"); printf("subst_asm: \"%s\"\n", (char *)astr.data); }
 
+#ifdef MCC_JOURNAL_HOOKS
+	jrn_asm_gen_code(operands, nb_operands, nb_outputs, 0, clobber_regs, out_reg);
+#else
 	asm_gen_code(operands, nb_operands, nb_outputs, 0,
 							 clobber_regs, out_reg);
+#endif
 
 	sec = cur_text_section;
+#ifdef MCC_JOURNAL_HOOKS
+	jrn_asm(astr.data, astr.size - 1, 0);
+#else
 	mcc_assemble_inline(mcc_state, astr.data, astr.size - 1, 0);
+#endif
 	cstr_free_s(&astr);
 	if (sec != cur_text_section) { MCC_TRACE("br\n");
 		mcc_warning("inline asm tries to change current section");
@@ -1577,8 +1585,12 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 
 	next();
 
+#ifdef MCC_JOURNAL_HOOKS
+	jrn_asm_gen_code(operands, nb_operands, nb_outputs, 1, clobber_regs, out_reg);
+#else
 	asm_gen_code(operands, nb_operands, nb_outputs, 1,
 							 clobber_regs, out_reg);
+#endif
 
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		vpop();
