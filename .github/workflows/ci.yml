@@ -74,6 +74,14 @@ jobs:
           mkdir -p ~/.apt-cache
           cp -n /var/cache/apt/archives/*.deb ~/.apt-cache/ 2>/dev/null || true
       - uses: ./.github/actions/ci
+      # The tools/*-docker.sh cross-arch differential validators (arm64pe-wine,
+      # ehunwind, arm64/arm inline+interwork, i386/riscv64 divmagic/diff, dwarf-gdb)
+      # are ctest tests that SKIP (77) unless a foreign-arch docker platform is
+      # runnable. Registering qemu binfmt on the cross cell makes them execute
+      # instead of skip, wiring ~20 docker validators into the gating matrix.
+      - name: register qemu binfmt for the docker cross-arch validators
+        if: contains(matrix.preset, 'cross')
+        uses: docker/setup-qemu-action@v3
       - name: run ${{ matrix.preset }}
         run: |
           mkdir -p "dist/$ART"
@@ -172,6 +180,31 @@ jobs:
         with:
           name: ${{ env.ART }}
           path: ${{ env.ART }}.tar.xz
+
+  macos-x86-jit:
+    # Native Intel (x86_64) macOS JIT-parity, per-push. The macos job above builds
+    # x86_64 under Rosetta but SKIPs the JIT (Rosetta hangs on dynamically-generated
+    # x86_64 code); here the host IS x86_64, so the engine executes natively and the
+    # MCC_JIT=1 == MCC_JIT=0 / AOT==JIT invariant is checked for real. continue-on-
+    # error because macos-13 is GitHub's last Intel image and is on a retirement
+    # path — non-gating so main never reds when the runner flakes or is pulled, but
+    # per-push so a regression surfaces on the PR that caused it (the nightly copy in
+    # matrix.yml stays as the scheduled record).
+    needs: plan
+    runs-on: macos-13
+    continue-on-error: true
+    timeout-minutes: 30
+    env:
+      CC: clang
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain
+        run: brew install cmake ninja
+      - uses: ./.github/actions/ci
+      - name: build the native x86_64 macos preset (JIT engine embedded)
+        run: mcc-ci run-preset macos --no-test --out "$PWD/dist/macos-x86_64-native-jit"
+      - name: run the x86_64-macOS JIT-parity cells natively
+        run: ctest --test-dir cmake-macos -R 'selfhost-jit|^jit/' --output-on-failure
 
   windows:
     # msvc and mingw are both Windows toolchains, so they share one job: the
