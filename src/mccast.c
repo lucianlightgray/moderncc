@@ -15169,6 +15169,7 @@ typedef struct JrnOp {
 	int rawrel_off, rawrel_len;
 	int fc_off, fc_n;
 	int swpred;
+	int ret;
 } JrnOp;
 
 static int jrn_env;
@@ -15443,6 +15444,8 @@ static void jrn_end(void) { MCC_TRACE("enter\n");
 		if (JRN_REC)                              \
 			jrn_pending->a0 = a0;                   \
 		rv = (name)(a0);                          \
+		if (JRN_REC)                              \
+			jrn_pending->ret = rv;                  \
 		jrn_end();                                \
 		return rv;                                \
 	}
@@ -15455,6 +15458,8 @@ static void jrn_end(void) { MCC_TRACE("enter\n");
 			jrn_pending->a1 = a1;                   \
 		}                                         \
 		rv = (name)(a0, a1);                      \
+		if (JRN_REC)                              \
+			jrn_pending->ret = rv;                  \
 		jrn_end();                                \
 		return rv;                                \
 	}

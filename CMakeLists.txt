@@ -3887,6 +3887,18 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
             TIMEOUT 900)
 
+        add_test(NAME ast/rir-position
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}"
+                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-position"
+                    "-DOPT=-O1"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_position.cmake")
+        set_tests_properties(ast/rir-position PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+            TIMEOUT 900)
+
         if(TARGET mcc_nojrn)
             add_test(NAME ast/journal-inert-build
                 COMMAND "${CMAKE_COMMAND}"
