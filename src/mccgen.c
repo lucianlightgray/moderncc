@@ -4665,6 +4665,10 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	if (jrn_replaying)
 		{ MCC_TRACE("br\n"); return; }
 #endif
+#if MCC_CONFIG_OPTIMIZER
+	if (ast_replaying)
+		{ MCC_TRACE("br\n"); return; }
+#endif
 	st = &vtop->type;
 	dbt = dt->t & VT_BTYPE;
 	sbt = st->t & VT_BTYPE;
