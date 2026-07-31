@@ -2737,6 +2737,58 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         set(_jitengine_blob_dep "${_je_a}")
     endif()
 
+    # Alternatively, build the blob engine WITH mcc itself -- a cross mcc that
+    # emits this target's PE (e.g. mcc-i386-win32). An mcc-built engine has no gcc
+    # footprint (no emutls, no gcc import-library idata), so --embed-jit takes the
+    # clean MCC_EMBED_JIT_MCC_ENGINE link path (libmccrt + mcc-def msvcrt/kernel32,
+    # all loader-bindable) instead of pulling gcc's libmingwex/mingw32/libmsvcrt.
+    # This is the fix for the i386-PE embed-jit startup 0xC0000005: the gcc engine
+    # leaves its msvcrt idata unbound in the image and the loader jumps into a
+    # hint/name string. PoC-proven 2026-07-31 (bake runs clean at MCC_JIT=0/1).
+    # Empty (default) keeps the host-CC/mingw engine; takes precedence over
+    # MCC_EMBED_JIT_MINGW_CC when both are set.
+    set(MCC_EMBED_JIT_MCC_ENGINE_CC "" CACHE STRING
+        "Path to an mcc that emits this target's PE (e.g. mcc-i386-win32), used to build the --embed-jit blob engine with no gcc footprint (fixes the i386-PE embed startup crash).")
+    if(MCC_EMBED_JIT_MCC_ENGINE_CC AND MCC_SINGLE_SOURCE AND MCC_TARGETOS STREQUAL "WIN32")
+        get_directory_property(_me_dirdefs COMPILE_DEFINITIONS)
+        set(_me_dflags "")
+        foreach(_d IN LISTS _me_dirdefs)
+            list(APPEND _me_dflags "-D${_d}")
+        endforeach()
+        set(_me_deps "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c")
+        if(TARGET mcc_mccdefs)
+            list(APPEND _me_deps mcc_mccdefs)
+        endif()
+        set(_me_o "${CMAKE_BINARY_DIR}/mccjit_engine_mcc.o")
+        set(_me_a "${CMAKE_BINARY_DIR}/libmccjitengine-mcc.a")
+        # mcc needs its freestanding + PE headers (-B runtime/win32, -I
+        # runtime/include); the rest of the define/include set matches the
+        # libmcc_jitengine target so the engine is configured identically. The
+        # target's MCC_EMBED_JIT=1/MCC_JIT_DEFAULT=1 are what expose
+        # mccjit_boot_swap/mccjit_set_search_budget, which the host mcc imports.
+        add_custom_command(OUTPUT "${_me_o}"
+            COMMAND "${MCC_EMBED_JIT_MCC_ENGINE_CC}" -c -w -O1
+                "-B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
+                ${_me_dflags}
+                "-D$<JOIN:$<TARGET_PROPERTY:libmcc_jitengine,COMPILE_DEFINITIONS>,;-D>"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}" "-I${CMAKE_BINARY_DIR}"
+                "-I$<JOIN:$<TARGET_PROPERTY:libmcc_jitengine,INCLUDE_DIRECTORIES>,;-I>"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c"
+                -o "${_me_o}"
+            DEPENDS ${_me_deps}
+            COMMENT "embed-jit: compiling the blob engine WITH mcc (${MCC_EMBED_JIT_MCC_ENGINE_CC}) -- no gcc footprint"
+            VERBATIM COMMAND_EXPAND_LISTS)
+        add_custom_command(OUTPUT "${_me_a}"
+            COMMAND "${MCC_EMBED_JIT_MCC_ENGINE_CC}" -ar "${_me_a}" "${_me_o}"
+            DEPENDS "${_me_o}"
+            COMMENT "embed-jit: archiving the mcc-built blob engine"
+            VERBATIM)
+        set(_jitengine_blob_src "${_me_a}")
+        set(_jitengine_blob_dep "${_me_a}")
+        target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_MCC_ENGINE=1)
+    endif()
+
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/mccjit_blob.c"
         COMMAND "$<TARGET_FILE:bin2c>" "${_jitengine_blob_src}"
