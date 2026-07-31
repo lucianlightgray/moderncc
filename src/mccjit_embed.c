@@ -79,6 +79,8 @@ typedef struct MccjitDiagBoot {
 	void *entry;
 	const char *mode;
 	unsigned nargs;
+	int ret_wide;
+	uint32_t param_t[MCCJIT_KGC_MAXARG];
 } MccjitDiagBoot;
 static MccjitDiagPub mccjit_diag_pubs[MCCJIT_DIAG_RING];
 static MccjitDiagBoot mccjit_diag_boots[MCCJIT_DIAG_RING];
@@ -94,6 +96,26 @@ static int mccjit_diag_enabled(void) { MCC_TRACE("enter\n");
 		v = (e && e[0] && e[0] != '0') ? 1 : 0;
 	}
 	return v;
+}
+
+static int mccjit_type_wide(int t);
+static int mccjit_type_fp(int t);
+
+static void mccjit_diag_hexdump(const char *label, void *addr, size_t want) { MCC_TRACE("enter\n");
+	MEMORY_BASIC_INFORMATION mbi;
+	if (addr && VirtualQuery(addr, &mbi, sizeof mbi) == sizeof mbi &&
+			mbi.State == MEM_COMMIT &&
+			!(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { MCC_TRACE("br\n");
+		unsigned char *b = (unsigned char *)addr;
+		size_t avail = (size_t)((char *)mbi.BaseAddress + mbi.RegionSize - (char *)addr);
+		size_t k, m = avail < want ? avail : want;
+		fprintf(stderr, "  %s @%p:", label, addr);
+		for (k = 0; k < m; k++)
+			fprintf(stderr, " %02x", b[k]);
+		fprintf(stderr, "\n");
+	} else { MCC_TRACE("br\n");
+		fprintf(stderr, "  %s @%p: <not readable>\n", label, addr);
+	}
 }
 
 static void mccjit_diag_dump(void *pc) { MCC_TRACE("enter\n");
@@ -114,21 +136,33 @@ static void mccjit_diag_dump(void *pc) { MCC_TRACE("enter\n");
 			best_slot = p.slot;
 		}
 	}
-	if (best_entry)
+	if (best_entry) { MCC_TRACE("br\n");
 		fprintf(stderr,
 						"  nearest published entry <= pc: %p  (pc = entry + %lld)  slot=%p\n",
 						best_entry, bestd, best_slot);
-	else
+		mccjit_diag_hexdump("bytes@nearest-entry", best_entry, 48);
+	} else { MCC_TRACE("br\n");
 		fprintf(stderr, "  no published entry lies at or below pc\n");
+	}
 	total = __atomic_load_n(&mccjit_diag_boot_n, __ATOMIC_ACQUIRE);
 	n = total < MCCJIT_DIAG_RING ? total : MCCJIT_DIAG_RING;
 	fprintf(stderr, "  boot swaps (most recent first, %llu total):\n", total);
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		MccjitDiagBoot b =
 				mccjit_diag_boots[(total - 1 - i) & (MCCJIT_DIAG_RING - 1)];
+		unsigned k, na = b.nargs < MCCJIT_KGC_MAXARG ? b.nargs : MCCJIT_KGC_MAXARG;
 		fprintf(stderr,
-						"    boot[-%llu] mode=%s variant=%p baseline=%p entry=%p nargs=%u\n",
-						i, b.mode ? b.mode : "?", b.variant, b.baseline, b.entry, b.nargs);
+						"    boot[-%llu] mode=%s variant=%p baseline=%p entry=%p nargs=%u ret_wide=%d\n",
+						i, b.mode ? b.mode : "?", b.variant, b.baseline, b.entry, b.nargs,
+						b.ret_wide);
+		fprintf(stderr, "      param_t:");
+		for (k = 0; k < na; k++) { MCC_TRACE("br\n");
+			int w = mccjit_type_wide((int)b.param_t[k]);
+			fprintf(stderr, " [%u]=0x%x(%s%s)", k, b.param_t[k],
+							w ? "wide" : "NARROW->movsxd-truncates",
+							mccjit_type_fp((int)b.param_t[k]) ? ",fp" : "");
+		}
+		fprintf(stderr, "\n");
 	}
 }
 
@@ -170,20 +204,36 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) { MCC_TRACE("enter\
 						mbi.BaseAddress, (unsigned long long)mbi.RegionSize,
 						(unsigned long)mbi.State, (unsigned long)mbi.Protect,
 						(unsigned long)mbi.Type);
-		if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { MCC_TRACE("br\n");
-			unsigned char *b = (unsigned char *)pc;
-			size_t avail = (size_t)((char *)mbi.BaseAddress + mbi.RegionSize - (char *)pc);
-			size_t k, m = avail < 32 ? avail : 32;
-			fprintf(stderr, "  bytes@pc:");
-			for (k = 0; k < m; k++)
-				fprintf(stderr, " %02x", b[k]);
-			fprintf(stderr, "\n");
-		} else { MCC_TRACE("br\n");
-			fprintf(stderr, "  bytes@pc: <not readable>\n");
-		}
 	} else if (pc) { MCC_TRACE("br\n");
 		fprintf(stderr, "  pc region: <VirtualQuery failed>\n");
 	}
+	mccjit_diag_hexdump("bytes@pc-16", (char *)pc - 16, 64);
+#if defined(MCCJIT_X64)
+	fprintf(stderr,
+					"  regs: rax=%p rbx=%p rcx=%p rdx=%p rsi=%p rdi=%p rbp=%p rsp=%p\n"
+					"        r8=%p r9=%p r10=%p r11=%p r12=%p r13=%p r14=%p r15=%p\n",
+					(void *)cx->Rax, (void *)cx->Rbx, (void *)cx->Rcx, (void *)cx->Rdx,
+					(void *)cx->Rsi, (void *)cx->Rdi, (void *)cx->Rbp, (void *)cx->Rsp,
+					(void *)cx->R8, (void *)cx->R9, (void *)cx->R10, (void *)cx->R11,
+					(void *)cx->R12, (void *)cx->R13, (void *)cx->R14, (void *)cx->R15);
+	{
+		void **sp = (void **)cx->Rsp;
+		MEMORY_BASIC_INFORMATION smbi;
+		if (sp && VirtualQuery(sp, &smbi, sizeof smbi) == sizeof smbi &&
+				smbi.State == MEM_COMMIT &&
+				!(smbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { MCC_TRACE("br\n");
+			size_t avail =
+					(size_t)((char *)smbi.BaseAddress + smbi.RegionSize - (char *)sp);
+			size_t j, m = avail / sizeof(void *);
+			if (m > 8)
+				m = 8;
+			fprintf(stderr, "  stack@rsp:");
+			for (j = 0; j < m; j++)
+				fprintf(stderr, " [%llu]=%p", (unsigned long long)j, sp[j]);
+			fprintf(stderr, "\n");
+		}
+	}
+#endif
 	mccjit_diag_dump(pc);
 	fprintf(stderr,
 					"==== mccjit-diag: continuing to default handler (0xC0000005) ====\n");
@@ -214,24 +264,31 @@ static void mccjit_diag_note_pub(void *slot, void *entry) { MCC_TRACE("enter\n")
 }
 
 static void mccjit_diag_note_boot(void *variant, void *baseline, void *entry,
-																	unsigned nargs, const char *mode) { MCC_TRACE("enter\n");
+																	unsigned nargs, const char *mode,
+																	const uint32_t *param_t, int ret_wide) { MCC_TRACE("enter\n");
 	unsigned long long idx;
+	unsigned k;
+	MccjitDiagBoot *slot;
 	if (!mccjit_diag_enabled())
 		return;
 	mccjit_diag_arm();
 	idx = __atomic_add_fetch(&mccjit_diag_boot_n, 1, __ATOMIC_RELEASE) - 1;
-	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].variant = variant;
-	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].baseline = baseline;
-	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].entry = entry;
-	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].nargs = nargs;
-	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].mode = mode;
+	slot = &mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)];
+	slot->variant = variant;
+	slot->baseline = baseline;
+	slot->entry = entry;
+	slot->nargs = nargs;
+	slot->mode = mode;
+	slot->ret_wide = ret_wide;
+	for (k = 0; k < MCCJIT_KGC_MAXARG; k++)
+		slot->param_t[k] = param_t ? param_t[k] : 0;
 }
 #define MCCJIT_DIAG_NOTE_PUB(s, e) mccjit_diag_note_pub((s), (e))
-#define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m)                                    \
-	mccjit_diag_note_boot((v), (b), (e), (n), (m))
+#define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m, pt, rw)                            \
+	mccjit_diag_note_boot((v), (b), (e), (n), (m), (pt), (rw))
 #else
 #define MCCJIT_DIAG_NOTE_PUB(s, e) ((void)0)
-#define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m) ((void)0)
+#define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m, pt, rw) ((void)0)
 #endif /* MCC_HOST_WIN32 */
 
 #if defined(MCCJIT_I386)
@@ -1019,7 +1076,8 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 								? "refused-unverified"
 								: "kept-aot");
 	}
-	MCCJIT_DIAG_NOTE_BOOT(variant, baseline, entry, mccjit_last_nparam, mode);
+	MCCJIT_DIAG_NOTE_BOOT(variant, baseline, entry, mccjit_last_nparam, mode,
+												mccjit_last_param_t, mccjit_last_ret_wide);
 	if (entry)
 		{ MCC_TRACE("br\n"); mcc_jit_publish(slot, entry); }
 }
@@ -3310,32 +3368,33 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 	return bval;
 }
 
+typedef intptr_t mccjit_argw;
 static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) { MCC_TRACE("enter\n");
 	switch (n) { MCC_TRACE("br\n");
 	case 1:
-		return wide ? (int64_t)((long (*)(long))fn)(a[0])
-								: (int64_t)((int (*)(long))fn)(a[0]);
+		return wide ? (int64_t)((long long (*)(mccjit_argw))fn)(a[0])
+								: (int64_t)((int (*)(mccjit_argw))fn)(a[0]);
 	case 2:
-		return wide ? (int64_t)((long (*)(long, long))fn)(a[0], a[1])
-								: (int64_t)((int (*)(long, long))fn)(a[0], a[1]);
+		return wide ? (int64_t)((long long (*)(mccjit_argw, mccjit_argw))fn)(a[0], a[1])
+								: (int64_t)((int (*)(mccjit_argw, mccjit_argw))fn)(a[0], a[1]);
 	case 3:
-		return wide ? (int64_t)((long (*)(long, long, long))fn)(a[0], a[1], a[2])
-								: (int64_t)((int (*)(long, long, long))fn)(a[0], a[1], a[2]);
+		return wide ? (int64_t)((long long (*)(mccjit_argw, mccjit_argw, mccjit_argw))fn)(a[0], a[1], a[2])
+								: (int64_t)((int (*)(mccjit_argw, mccjit_argw, mccjit_argw))fn)(a[0], a[1], a[2]);
 	case 4:
 		return wide
-							 ? (int64_t)((long (*)(long, long, long, long))fn)(a[0], a[1], a[2],
+							 ? (int64_t)((long long (*)(mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw))fn)(a[0], a[1], a[2],
 																																 a[3])
-							 : (int64_t)((int (*)(long, long, long, long))fn)(a[0], a[1], a[2],
+							 : (int64_t)((int (*)(mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw))fn)(a[0], a[1], a[2],
 																															 a[3]);
 	case 5:
-		return wide ? (int64_t)((long (*)(long, long, long, long, long))fn)(
+		return wide ? (int64_t)((long long (*)(mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw))fn)(
 											a[0], a[1], a[2], a[3], a[4])
-								: (int64_t)((int (*)(long, long, long, long, long))fn)(
+								: (int64_t)((int (*)(mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw))fn)(
 											a[0], a[1], a[2], a[3], a[4]);
 	case 6:
-		return wide ? (int64_t)((long (*)(long, long, long, long, long, long))fn)(
+		return wide ? (int64_t)((long long (*)(mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw))fn)(
 											a[0], a[1], a[2], a[3], a[4], a[5])
-								: (int64_t)((int (*)(long, long, long, long, long, long))fn)(
+								: (int64_t)((int (*)(mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw, mccjit_argw))fn)(
 											a[0], a[1], a[2], a[3], a[4], a[5]);
 	default:
 		return 0;
