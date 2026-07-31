@@ -40,6 +40,10 @@ cmake_minimum_required(VERSION 3.22)
 # tree: it means the body emitted zero bytes, which replays vacuously. The two
 # systems disagree only on naming there -- the recorder calls a zero-byte body
 # `faithful` and reserves `empty` for a childless tree that did NOT replay.
+# A childless tree over a body the journal also calls vacuous is a naming
+# disagreement too, so it is excluded from the delta rather than counted as a
+# journal win; a childless tree over a body the journal really replayed is a
+# lost model and stays counted.
 #
 # With JOURNAL=1 the script checks ONLY that column and SKIPs (77) when the
 # build has no MCC_JOURNAL_HOOKS, so the parity test never fails a build that
@@ -65,10 +69,12 @@ list(SORT _srcs)
 
 set(_gaps "")
 set(_ast_faithful "")   # keys the tree reproduces byte-faithfully
+set(_ast_empty "")      # keys with a childless tree, which never reached replay
 set(_ast_tried 0)       # recorder rows that are not skip:* (i.e. journal ran too)
 set(_jrn_rows 0)
 set(_jrn_faithful 0)
 set(_jrn_empty 0)
+set(_jrn_vac "")        # keys the journal certifies as a zero-byte body
 set(_jrn_bad "")        # keys whose journal verdict is a failure
 set(_jrn_clean 0)
 set(_jrn_rawops 0)
@@ -99,6 +105,8 @@ foreach(_f ${_srcs})
             endif()
             if(_v STREQUAL "faithful")
                 list(APPEND _ast_faithful "${_rel}\t${_fn}")
+            elseif(_v STREQUAL "empty")
+                list(APPEND _ast_empty "${_rel}\t${_fn}")
             endif()
         endif()
         # "[jrn-verify] <verdict>\t?\t<func>\tops=..."
@@ -109,6 +117,7 @@ foreach(_f ${_srcs})
                 math(EXPR _jrn_faithful "${_jrn_faithful} + 1")
             elseif(_v STREQUAL "jempty")
                 math(EXPR _jrn_empty "${_jrn_empty} + 1")
+                list(APPEND _jrn_vac "${_rel}\t${CMAKE_MATCH_2}")
             else()
                 list(APPEND _jrn_bad "${_rel}\t${CMAKE_MATCH_2}\t${_v}")
             endif()
@@ -133,8 +142,26 @@ list(LENGTH _ast_faithful _n_ast_faithful)
 
 # The journal column. `_jrn_ok` is jfaithful plus the vacuous jempty; the delta
 # against the tree is the parity metric this whole column exists to publish.
+#
+# A body the journal calls `jempty` emitted zero bytes: jrn_verify flushes the
+# trailing gap op before testing jrn_n, so any byte emitted anywhere in the body
+# produces a JOP_RAW and jempty cannot fire. When the tree calls that same body
+# `empty` -- a childless tree, so ast_replay_ok declined and it never reached
+# replay -- neither system modelled anything and there is nothing for the
+# journal to have won. Crediting it inflated the delta by exactly the size of
+# that bucket. The tree's `empty` is credited only where the journal
+# independently certifies the zero-byte body, so a childless tree opposite a
+# body the journal really did replay stays a delta, which is what a lost model
+# looks like.
+set(_both_vacuous 0)
+foreach(_e ${_ast_empty})
+    if(_e IN_LIST _jrn_vac)
+        math(EXPR _both_vacuous "${_both_vacuous} + 1")
+    endif()
+endforeach()
 math(EXPR _jrn_ok "${_jrn_faithful} + ${_jrn_empty}")
-math(EXPR _delta "${_jrn_ok} - ${_n_ast_faithful}")
+math(EXPR _tree_ok "${_n_ast_faithful} + ${_both_vacuous}")
+math(EXPR _delta "${_jrn_ok} - ${_tree_ok}")
 set(_parity_violations "")
 foreach(_b ${_jrn_bad})
     string(REGEX REPLACE "\t[^\t]+$" "" _k "${_b}")
@@ -146,7 +173,8 @@ endforeach()
 if(_jrn_rows GREATER 0)
     message(STATUS "verify_ratchet: parity ${OPT} — tree faithful ${_n_ast_faithful}, "
                    "journal faithful ${_jrn_ok} (${_jrn_faithful} + ${_jrn_empty} vacuous) "
-                   "of ${_jrn_rows} journalled, delta ${_delta}")
+                   "of ${_jrn_rows} journalled, delta ${_delta} "
+                   "(${_both_vacuous} vacuous on both sides, not counted)")
 endif()
 
 if(JOURNAL)
