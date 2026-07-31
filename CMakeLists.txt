@@ -4575,6 +4575,18 @@ if(MCC_BUILD_TESTS)
                     --seed 1 --count 40)
         set_tests_properties("fuzz/smoke" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
+        # -O4 leg. The base sweep is -O0..-O3, so the whole out-of-process
+        # superopt path -- and every gate that is inert below -O4 -- was never
+        # differentially tested. It is opt-in and base-only because -O4 spends
+        # the full search budget: 4010 ms per compile against 6 ms at -O3, so a
+        # small count is the affordable shape (8 programs is ~38 s against ~2 s
+        # for the same count without it).
+        add_test(NAME "fuzz/o4"
+            COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
+                    "${CMAKE_BINARY_DIR}/fuzz-o4" ${_diff3_ref_args}
+                    --seed 41000 --count 8 --o4)
+        set_tests_properties("fuzz/o4" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
+            SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
         foreach(_fm_shard RANGE 0 3)
             math(EXPR _fm_seed "1 + ${_fm_shard} * 6")
             add_test(NAME "fuzz/matrix-${_fm_shard}"

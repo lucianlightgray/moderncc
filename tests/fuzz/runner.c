@@ -245,8 +245,13 @@ static int has_ub(const char *gcc, const char *work, const char *src) {
 	return ub;
 }
 
-static const char *const OPTS[] = {"-O0", "-O1", "-O2", "-O3"};
-#define NOPTS ((int)(sizeof OPTS / sizeof *OPTS))
+/* -O4 is opt-in (--o4) and BASE-SWEEP ONLY. It costs the whole search budget --
+ * measured at 4010 ms against 6 ms for -O3 on a generated program -- so putting
+ * it in the per-gate loop would multiply that by NGATES and is never affordable.
+ * n_opts covers the base loops; the gate loop stays on NOPTS. */
+static const char *const OPTS[] = {"-O0", "-O1", "-O2", "-O3", "-O4"};
+#define NOPTS 4
+static int n_opts = NOPTS;
 
 typedef struct {
 	const char *name;
@@ -918,6 +923,8 @@ int main(int argc, char **argv) {
 			corpus = argv[++i];
 		else if (!strcmp(argv[i], "--replay"))
 			do_replay = 1;
+		else if (!strcmp(argv[i], "--o4"))
+			n_opts = 5;
 		else if (!strcmp(argv[i], "--gates"))
 			do_gates = 1;
 		else if (!strcmp(argv[i], "--gen") && i + 1 < argc)
@@ -930,6 +937,8 @@ int main(int argc, char **argv) {
 		} else if (!strcmp(argv[i], "-v"))
 			verbose = 1;
 	}
+	if (hc_envv("MCC_FUZZ_O4", "")[0])
+		n_opts = 5;
 	if (hc_envv("MCC_FUZZ_GATES", "")[0])
 		do_gates = 1;
 	refs_dedup(&refs);
@@ -993,7 +1002,7 @@ int main(int argc, char **argv) {
 		}
 		int diverged = 0, nagree = 0, nbuildfail = 0;
 		char confenv[64] = "", confopt[8] = "";
-		for (int oi = 0; oi < NOPTS && !diverged; oi++) {
+		for (int oi = 0; oi < n_opts && !diverged; oi++) {
 			int bf = 0;
 			if (mcc_diverges(mcc, bdir, idir, work, src, &cons, NULL, OPTS[oi],
 							 &bf)) {
