@@ -1953,6 +1953,7 @@ typedef struct _mcc_coff_rel {
 #define IMAGE_REL_I386_ABSOLUTE 0x0000
 #define IMAGE_REL_I386_DIR32 0x0006
 #define IMAGE_REL_I386_DIR32NB 0x0007
+#define IMAGE_REL_I386_SECREL 0x000B
 #define IMAGE_REL_I386_REL32 0x0014
 #endif
 #ifndef IMAGE_REL_ARM64_BRANCH26
@@ -2020,6 +2021,14 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 		{ int v = coff_rd32(fld) - 4; memcpy(fld, &v, 4); }
 		*etype = R_386_PC32;
 		return 1;
+	/* Section-relative 32 (native Windows TLS access in .text: the offset of a
+	   _Thread_local target within its .tls section). The i386 peer of the
+	   AMD64_SECREL case above -- gcc/mingw's engine reaches TLS this way, and
+	   mcc's own i386 PE codegen emits R_386_TLS_LE for the same construct, whose
+	   PE resolution (i386-link.c) computes val - tls_start, the symbol's offset
+	   within the TLS block, and adds it to the field. On a REL target the addend
+	   stays in the field, so keep the in-field value and do not zero it. */
+	case IMAGE_REL_I386_SECREL: *etype = R_386_TLS_LE; return 1;
 	default:
 		return 0;
 	}
