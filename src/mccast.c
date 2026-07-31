@@ -1878,6 +1878,7 @@ static int ast_synth_emitted;
 static int ast_cleanup_sv_incall = -1;
 static int ast_cleanup_bias;
 static int ast_spill_modelled;
+static int ast_voidret_expr_env;
 static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
 															 AstLocal node);
 static int ast_landor_invert_env;
@@ -2273,6 +2274,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_indirect_load_env = ast_env_gate("MCC_AST_INDIRECT_LOAD", 0);
 	ast_landor_fold_env = ast_env_gate("MCC_AST_LANDOR_FOLD", 0);
 	ast_cleanup_ret_env = ast_env_gate("MCC_AST_CLEANUP_RET", 0);
+	ast_voidret_expr_env = ast_env_gate("MCC_AST_VOIDRET_EXPR", 0);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 1);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
@@ -4266,6 +4268,14 @@ void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
 	if (has_val && ast_ret_val == AST_NONE) { MCC_TRACE("br\n");
 		AST_SET_BAIL();
 		return;
+	}
+	if (!has_val && ast_ret_val != AST_NONE && ast_voidret_expr_env) { MCC_TRACE("br\n");
+		if (ast_kind(ast_cur, ast_ret_val) != AST_Invoke) { MCC_TRACE("br\n");
+			AST_SET_DESYNC();
+			return;
+		}
+		ast_set_type(ast_cur, ast_ret_val, VT_VOID, 0);
+		ast_add_child(ast_cur, ast_cur_bb, ast_ret_val);
 	}
 	AstLocal bb = ast_cur_bb;
 	AstLocal ret = ast_node(ast_cur, AST_Return);
