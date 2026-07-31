@@ -35,8 +35,13 @@ BFLAG=$4
 
 [ "$(uname -s)" = "Darwin" ] || { echo "SKIP: needs a Darwin host"; exit 77; }
 [ -x "$MCC" ] || { echo "SKIP: no mcc at $MCC"; exit 77; }
-CC=${CC:-clang}
-command -v "$CC" >/dev/null 2>&1 || { echo "SKIP: no system compiler to build the TLS object"; exit 77; }
+# Pinned to clang rather than honouring $CC: the subject is Apple's TLV ABI, and
+# clang is the only Darwin compiler that emits it. Homebrew GCC falls back to
+# emutls (___emutls_v.tv plus a call to ___emutls_get_address, which lives in
+# libgcc), so a gcc-built lib.o carries no __thread_vars descriptors to import --
+# the case under test never runs, and the link fails on a libgcc symbol instead.
+CC=clang
+command -v "$CC" >/dev/null 2>&1 || { echo "SKIP: no clang to build the TLS object"; exit 77; }
 
 rm -rf "$WORK"
 mkdir -p "$WORK"
