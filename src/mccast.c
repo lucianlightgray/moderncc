@@ -1871,6 +1871,7 @@ static int ast_ternary_discard_env;
 static int ast_nocode_call_env;
 static int ast_indirect_call_env;
 static int ast_indirect_load_env;
+static int ast_landor_fold_env;
 static int ast_landor_invert_env;
 static int ast_call_dead;
 static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
@@ -2262,6 +2263,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 1);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 1);
 	ast_indirect_load_env = ast_env_gate("MCC_AST_INDIRECT_LOAD", 0);
+	ast_landor_fold_env = ast_env_gate("MCC_AST_LANDOR_FOLD", 0);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 1);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
@@ -3045,6 +3047,12 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 	if (ast_lor_const[ast_lor_top - 1])
 		{ MCC_TRACE("br\n"); ast_in_call = 1; return; }
 	if (c >= 0) { MCC_TRACE("br\n");
+		if (ast_landor_fold_env && c == (op == TOK_LAND) && tok == op &&
+				ast_vn >= 1) { MCC_TRACE("br\n");
+			ast_vn--;
+			ast_in_call = 1;
+			return;
+		}
 		AST_SET_DESYNC();
 		return;
 	}
