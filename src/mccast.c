@@ -6399,6 +6399,21 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		sv.c.i = ast_ival(a, n);
 		sv.c.q.hi = ast_wide_hi(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_ARM)
+		/* A call's wide-integer result always lands in the ABI return-register
+		   pair. A synthetic invoke -- e.g. a nested-call argument that replay
+		   double-evaluates -- records no wide_r2, so ast_wide_r2 returns
+		   AST_R2_NONE and the high half would otherwise materialise from the
+		   absent constant q.hi (a zero), corrupting the pair. Reconstruct the
+		   pair from the ABI. Only reachable with MCC_AST_REGPAIR on (off desyncs
+		   a register-pair call result before replay), so the default i386/arm
+		   output is unchanged. */
+		if (sv.r2 == AST_R2_NONE && (sv.type.t & VT_BTYPE) == VT_LLONG) {
+			MCC_TRACE("br\n");
+			sv.r = REG_IRET;
+			sv.r2 = REG_IRE2;
+		}
+#endif
 		vpushv(&sv);
 		break;
 	}
