@@ -49,6 +49,191 @@
 #define MCC_JIT_DEFAULT 1
 #endif
 
+/* ------------------------------------------------------------- crash diag --
+   The x86_64-PE runtime-JIT 0xC0000005 (docs/TODO) reproduces ONLY on the
+   windows-2025 CI host and never on a local Win10 box, so it can be debugged
+   only from the CI log. When MCC_JIT_CRASH_DIAG is set (tools/selfhost-jit.py
+   sets it on the child), arm a vectored exception handler that, on an access
+   violation, dumps the faulting PC, the machine bytes there, the region
+   protection, the faulting address, and the recently-published JIT
+   entries/slots plus boot context (variant/baseline/entry) -- then returns
+   EXCEPTION_CONTINUE_SEARCH so the process still dies with 0xC0000005 and the
+   gate self-skips exactly as before. This is instrumentation, not a fix: it
+   changes no codegen and no control flow, it only prints on a fault that was
+   already going to kill the process. Windows-only and opt-in -- every
+   non-Windows build (the macros below are no-ops) and every un-opted Windows
+   run is byte- and behaviour-identical. */
+#if MCC_HOST_WIN32
+#ifndef EXCEPTION_ACCESS_VIOLATION
+#define EXCEPTION_ACCESS_VIOLATION 0xC0000005L
+#endif
+
+#define MCCJIT_DIAG_RING 32u
+typedef struct MccjitDiagPub {
+	void *slot;
+	void *entry;
+} MccjitDiagPub;
+typedef struct MccjitDiagBoot {
+	void *variant;
+	void *baseline;
+	void *entry;
+	const char *mode;
+	unsigned nargs;
+} MccjitDiagBoot;
+static MccjitDiagPub mccjit_diag_pubs[MCCJIT_DIAG_RING];
+static MccjitDiagBoot mccjit_diag_boots[MCCJIT_DIAG_RING];
+static unsigned long long mccjit_diag_pub_n;
+static unsigned long long mccjit_diag_boot_n;
+static pthread_once_t mccjit_diag_once = PTHREAD_ONCE_INIT;
+static int mccjit_diag_fired;
+
+static int mccjit_diag_enabled(void) {
+	static int v = -1;
+	if (v < 0) {
+		const char *e = getenv("MCC_JIT_CRASH_DIAG");
+		v = (e && e[0] && e[0] != '0') ? 1 : 0;
+	}
+	return v;
+}
+
+static void mccjit_diag_dump(void *pc) {
+	unsigned long long total, n, i;
+	void *best_entry = NULL, *best_slot = NULL;
+	long long bestd = -1;
+	total = __atomic_load_n(&mccjit_diag_pub_n, __ATOMIC_ACQUIRE);
+	n = total < MCCJIT_DIAG_RING ? total : MCCJIT_DIAG_RING;
+	fprintf(stderr, "  published entries (most recent first, %llu total):\n", total);
+	for (i = 0; i < n; i++) {
+		MccjitDiagPub p = mccjit_diag_pubs[(total - 1 - i) & (MCCJIT_DIAG_RING - 1)];
+		long long d = (long long)((char *)pc - (char *)p.entry);
+		fprintf(stderr, "    pub[-%llu] slot=%p entry=%p  pc-entry=%lld\n", i,
+						p.slot, p.entry, d);
+		if (p.entry && d >= 0 && (bestd < 0 || d < bestd)) {
+			bestd = d;
+			best_entry = p.entry;
+			best_slot = p.slot;
+		}
+	}
+	if (best_entry)
+		fprintf(stderr,
+						"  nearest published entry <= pc: %p  (pc = entry + %lld)  slot=%p\n",
+						best_entry, bestd, best_slot);
+	else
+		fprintf(stderr, "  no published entry lies at or below pc\n");
+	total = __atomic_load_n(&mccjit_diag_boot_n, __ATOMIC_ACQUIRE);
+	n = total < MCCJIT_DIAG_RING ? total : MCCJIT_DIAG_RING;
+	fprintf(stderr, "  boot swaps (most recent first, %llu total):\n", total);
+	for (i = 0; i < n; i++) {
+		MccjitDiagBoot b =
+				mccjit_diag_boots[(total - 1 - i) & (MCCJIT_DIAG_RING - 1)];
+		fprintf(stderr,
+						"    boot[-%llu] mode=%s variant=%p baseline=%p entry=%p nargs=%u\n",
+						i, b.mode ? b.mode : "?", b.variant, b.baseline, b.entry, b.nargs);
+	}
+}
+
+static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) {
+	EXCEPTION_RECORD *er;
+	CONTEXT *cx;
+	void *pc;
+	void *addr;
+	const char *acc;
+	MEMORY_BASIC_INFORMATION mbi;
+	if (!ep || !ep->ExceptionRecord || !ep->ContextRecord)
+		return EXCEPTION_CONTINUE_SEARCH;
+	er = ep->ExceptionRecord;
+	cx = ep->ContextRecord;
+	if (er->ExceptionCode != (DWORD)EXCEPTION_ACCESS_VIOLATION)
+		return EXCEPTION_CONTINUE_SEARCH;
+	if (mccjit_diag_fired)
+		return EXCEPTION_CONTINUE_SEARCH; /* dump once; the process is dying anyway */
+	mccjit_diag_fired = 1;
+#if defined(MCCJIT_X64)
+	pc = (void *)cx->Rip;
+#elif defined(MCCJIT_ARM64)
+	pc = (void *)cx->Pc;
+#else
+	pc = (void *)0;
+#endif
+	acc = er->NumberParameters >= 1
+						? (er->ExceptionInformation[0] == 0		? "read"
+							 : er->ExceptionInformation[0] == 1 ? "write"
+							 : er->ExceptionInformation[0] == 8 ? "execute"
+																									: "?")
+						: "?";
+	addr = er->NumberParameters >= 2 ? (void *)er->ExceptionInformation[1] : NULL;
+	fprintf(stderr, "\n==== mccjit-diag: EXCEPTION_ACCESS_VIOLATION ====\n");
+	fprintf(stderr, "  pc=%p  fault=%s addr=%p\n", pc, acc, addr);
+	if (pc && VirtualQuery(pc, &mbi, sizeof mbi) == sizeof mbi) {
+		fprintf(stderr,
+						"  pc region: base=%p size=%llu state=0x%lx protect=0x%lx type=0x%lx\n",
+						mbi.BaseAddress, (unsigned long long)mbi.RegionSize,
+						(unsigned long)mbi.State, (unsigned long)mbi.Protect,
+						(unsigned long)mbi.Type);
+		if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) {
+			unsigned char *b = (unsigned char *)pc;
+			size_t avail = (size_t)((char *)mbi.BaseAddress + mbi.RegionSize - (char *)pc);
+			size_t k, m = avail < 32 ? avail : 32;
+			fprintf(stderr, "  bytes@pc:");
+			for (k = 0; k < m; k++)
+				fprintf(stderr, " %02x", b[k]);
+			fprintf(stderr, "\n");
+		} else {
+			fprintf(stderr, "  bytes@pc: <not readable>\n");
+		}
+	} else if (pc) {
+		fprintf(stderr, "  pc region: <VirtualQuery failed>\n");
+	}
+	mccjit_diag_dump(pc);
+	fprintf(stderr,
+					"==== mccjit-diag: continuing to default handler (0xC0000005) ====\n");
+	fflush(stderr);
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void mccjit_diag_install_(void) {
+	AddVectoredExceptionHandler(1u, (PVECTORED_EXCEPTION_HANDLER)&mccjit_diag_veh);
+	fprintf(stderr, "mccjit-diag: crash handler armed (MCC_JIT_CRASH_DIAG)\n");
+	fflush(stderr);
+}
+
+static void mccjit_diag_arm(void) {
+	if (!mccjit_diag_enabled())
+		return;
+	pthread_once(&mccjit_diag_once, mccjit_diag_install_);
+}
+
+static void mccjit_diag_note_pub(void *slot, void *entry) {
+	unsigned long long idx;
+	if (!mccjit_diag_enabled())
+		return;
+	mccjit_diag_arm();
+	idx = __atomic_add_fetch(&mccjit_diag_pub_n, 1, __ATOMIC_RELEASE) - 1;
+	mccjit_diag_pubs[idx & (MCCJIT_DIAG_RING - 1)].slot = slot;
+	mccjit_diag_pubs[idx & (MCCJIT_DIAG_RING - 1)].entry = entry;
+}
+
+static void mccjit_diag_note_boot(void *variant, void *baseline, void *entry,
+																	unsigned nargs, const char *mode) {
+	unsigned long long idx;
+	if (!mccjit_diag_enabled())
+		return;
+	mccjit_diag_arm();
+	idx = __atomic_add_fetch(&mccjit_diag_boot_n, 1, __ATOMIC_RELEASE) - 1;
+	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].variant = variant;
+	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].baseline = baseline;
+	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].entry = entry;
+	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].nargs = nargs;
+	mccjit_diag_boots[idx & (MCCJIT_DIAG_RING - 1)].mode = mode;
+}
+#define MCCJIT_DIAG_NOTE_PUB(s, e) mccjit_diag_note_pub((s), (e))
+#define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m)                                    \
+	mccjit_diag_note_boot((v), (b), (e), (n), (m))
+#else
+#define MCCJIT_DIAG_NOTE_PUB(s, e) ((void)0)
+#define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m) ((void)0)
+#endif /* MCC_HOST_WIN32 */
+
 #if defined(MCCJIT_I386)
 /* MCC_JIT_I386_STUBS gate — DEFAULT ON as of the P0 step 4 flip (2026-07-27),
    i386-only so the x86_64/arm64 object stays byte-identical to the pristine tree
@@ -834,6 +1019,7 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 								? "refused-unverified"
 								: "kept-aot");
 	}
+	MCCJIT_DIAG_NOTE_BOOT(variant, baseline, entry, mccjit_last_nparam, mode);
 	if (entry)
 		{ MCC_TRACE("br\n"); mcc_jit_publish(slot, entry); }
 }
@@ -9521,6 +9707,7 @@ PUB_FUNC int mccjit_selftest_benchwire(void) { MCC_TRACE("enter\n");
 void mcc_jit_publish(void **slot, void *variant) { MCC_TRACE("enter\n");
 	if (!slot)
 		{ MCC_TRACE("br\n"); return; }
+	MCCJIT_DIAG_NOTE_PUB(slot, variant);
 	/* Cross-thread code publication: the async search worker / hot-recompile writes
 	   variant bodies (mccrun protect path) and raw-RWX stubs/trampolines (this file's
 	   mmap emitters, which never hit host_runmem_protect) on one core, then hands the

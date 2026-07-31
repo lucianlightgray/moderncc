@@ -98,6 +98,13 @@ def main():
     env = dict(os.environ)
     env.update(MCC_JIT="1", MCC_AST_SEARCH="1", MCC_SEARCH_WORKER="1",
                MCC_JIT_HOT_THRESHOLD="50")
+    # Arm the embed-JIT crash diagnostic (Windows-only, no-op elsewhere). The PE
+    # 0xC0000005 only reproduces on the windows-2025 CI host, so this is the only
+    # way to see the faulting PC/bytes/nearest-JIT-slot: the vectored handler
+    # dumps them to the child's stderr, which we capture and re-emit below so it
+    # lands in the CI log even though the child then dies with 0xC0000005.
+    if win:
+        env["MCC_JIT_CRASH_DIAG"] = "1"
     for kv in sys.argv[3:]:
         k, _, v = kv.partition("=")
         env[k] = v
@@ -120,15 +127,33 @@ def main():
                      "-I" + os.path.join(root, "runtime", "include")]
         print(f"selfhost-jit: {mcc} --jit -O4 -run src/mcc.c -> inner -c workload  "
               f"knobs={sys.argv[3:] or '(none)'}")
+        # Capture on Windows so the crash-diagnostic stderr survives the child's
+        # death and can be re-emitted into the CI log; stream live elsewhere.
+        cap = win
         r = subprocess.run([mcc, "--jit", "-O4", *incs, *brt,
                             "-run", mccsrc, *inner_inc, "-c", wl, "-o", out],
-                           cwd=root, env=env)
+                           cwd=root, env=env,
+                           capture_output=cap, text=cap)
+
+        def emit_child():
+            if not cap:
+                return
+            if r.stdout:
+                sys.stdout.write("---- child stdout ----\n" + r.stdout +
+                                 ("\n" if not r.stdout.endswith("\n") else ""))
+            if r.stderr:
+                sys.stdout.write("---- child stderr ----\n" + r.stderr +
+                                 ("\n" if not r.stderr.endswith("\n") else ""))
+            sys.stdout.flush()
+
         if win and r.returncode in (-1073741819, 3221225477):
+            emit_child()
             print("selfhost-jit: SKIP — PE runtime-JIT 0xC0000005 still present "
                   f"(exit {r.returncode}); the x86_64 swapped-variant/KGC-stub "
                   "residual, tracked in docs/TODO")
             sys.exit(SKIP)
         if r.returncode != 0:
+            emit_child()
             sys.exit(f"FAIL: JIT self-host -run crashed/errored (exit {r.returncode})")
         if not os.path.exists(out):
             sys.exit("FAIL: JIT self-host produced no object")
