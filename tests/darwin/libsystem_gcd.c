@@ -76,9 +76,14 @@ int main(void) {
 	dispatch_barrier_sync_f(cq, NULL, bump_serial);
 	CHECK(bar_count == 512);
 
-	/* No dispatch_release here: its argument is dispatch_object_t, a
-	   transparent_union, which mcc does not implement. Tracked in docs/TODO.
-	   The objects are reclaimed at process exit. */
+	/* dispatch_release takes dispatch_object_t, a transparent_union: each of
+	   these owned objects is a distinct member type, so the calls only compile
+	   once mcc applies transparent_union member conversion. gq is a global
+	   queue and is not owned, so it is not released. */
+	dispatch_release(q);
+	dispatch_release(sem);
+	dispatch_release(grp);
+	dispatch_release(cq);
 
 	if (fails) {
 		fprintf(stderr, "libsystem_gcd: %d failure(s)\n", fails);

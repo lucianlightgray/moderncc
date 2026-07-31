@@ -15013,6 +15013,8 @@ static int decl(int l) {
 						sym = sym_push(v, &type, 0, 0);
 					}
 					sym->a = ad.a;
+					if (ad.a.transp_union && IS_UNION(type.t))
+						{ MCC_TRACE("br\n"); type.ref->a.transp_union = 1; }
 					if ((type.t & VT_BTYPE) == VT_FUNC)
 						{ MCC_TRACE("br\n"); merge_funcattr(&sym->type.ref->f, &ad.f); }
 					if (debug_modes)
