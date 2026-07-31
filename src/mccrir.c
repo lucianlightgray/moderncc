@@ -1,7 +1,7 @@
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 #if MCC_REPLAY_IR
 
-enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND };
+enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 
 #define RIR_PT_NONE (-1)
 #define RIR_PT_HERE (-2)
@@ -71,8 +71,9 @@ static long rir_reghist[RIR_R_COUNT];
 
 static const char *rir_region_name(int k) {
 	static const char *const n[RIR_R_COUNT] = {
-			"none", "if",	 "then",		"else",		"while", "do",
-			"for",	"switch", "ternary", "landor", "call"};
+			"none",	 "if",		"then",		"else", "while", "do",
+			"for",	 "switch", "ternary", "landor", "call", "cond",
+			"body",	 "synth"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -99,7 +100,7 @@ static void rir_mark(int tag, int kind) {
 	m->kind = kind;
 	m->at = jrn_n;
 	rir_tot_regions++;
-	if (kind >= 0 && kind < RIR_R_COUNT)
+	if (tag != RIR_T_MARK && kind >= 0 && kind < RIR_R_COUNT)
 		rir_reghist[kind]++;
 }
 
@@ -133,6 +134,28 @@ void rir_rend_to(int kind) {
 		if (k == kind)
 			return;
 	}
+}
+
+void rir_rcond_done(void) {
+	int i, open = 0;
+	if (!rir_active)
+		return;
+	for (i = rir_stackn - 1; i >= 0; i--)
+		if (rir_stack[i] == RIR_R_COND) {
+			open = 1;
+			break;
+		}
+	if (!open)
+		return;
+	rir_rend_to(RIR_R_COND);
+	rir_rbegin(rir_stackn && rir_stack[rir_stackn - 1] == RIR_R_IF ? RIR_R_THEN
+																																 : RIR_R_BODY);
+}
+
+void rir_mark_pt(int kind) {
+	if (!rir_active)
+		return;
+	rir_mark(RIR_T_MARK, kind);
 }
 
 void rir_reset(void) {
@@ -371,6 +394,330 @@ static void rir_build(void) {
 	}
 }
 
+static AstArena *rir_arena;
+static AstLocal rir_sh[VSTACK_SIZE + 1];
+static int rir_shn;
+static AstLocal rir_bb[64];
+static int rir_bbn;
+static AstLocal rir_cf[64];
+static int rir_cfn;
+static int rir_arena_mismatch;
+static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
+static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
+static long rir_tot_tree_nodes, rir_tot_arena_cmp_nodes;
+static long rir_kindhist[AST_KIND_COUNT], rir_treekindhist[AST_KIND_COUNT];
+
+static AstLocal rir_leaf(const SValue *sv) {
+	int is_const = (sv->r & (VT_VALMASK | VT_LVAL)) == VT_CONST;
+	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
+	ast_set_op(rir_arena, n, sv->r);
+	ast_set_type(rir_arena, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+	ast_set_ival(rir_arena, n, (uint64_t)sv->c.i);
+	ast_set_wide(rir_arena, n, ast_sv_hi(sv),
+							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
+	ast_set_sym(rir_arena, n, (uint64_t)(uintptr_t)sv->sym);
+	return n;
+}
+
+static void rir_stmt(AstLocal n) {
+	if (n == AST_NONE || !rir_bbn)
+		return;
+	ast_add_child(rir_arena, rir_bb[rir_bbn - 1], n);
+}
+
+static AstLocal rir_pop(void) {
+	if (rir_shn <= 0)
+		return AST_NONE;
+	return rir_sh[--rir_shn];
+}
+
+static void rir_push(AstLocal n) {
+	if (rir_shn > VSTACK_SIZE)
+		return;
+	rir_sh[rir_shn++] = n;
+}
+
+/* Reconcile the shadow stack against the state the op actually saw. The
+   recorded snapshot is the dataflow made explicit: any slot the model does not
+   already hold is materialised as a leaf straight from its SValue, and any slot
+   the model holds past the recorded depth is dropped. Divergences are counted
+   rather than smoothed over -- rir_arena_mismatch is the honest quality signal
+   for this reconstruction, the same role fix= plays for replay. */
+static void rir_reconcile(const JrnOp *o) {
+	int want, k;
+	if (o->vs_n < 0)
+		return;
+	want = o->vs_n - ast_base_depth;
+	if (want < 0)
+		want = 0;
+	if (want > VSTACK_SIZE)
+		want = VSTACK_SIZE;
+	while (rir_shn > want) {
+		AstLocal d = rir_pop();
+		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
+		if (dk == AST_Store || dk == AST_Invoke)
+			rir_stmt(d);
+	}
+	for (k = rir_shn; k < want; k++) {
+		rir_push(rir_leaf(&jrn_vs[o->vs_off + ast_base_depth + k]));
+		if (k < want - 1)
+			rir_arena_mismatch++;
+	}
+}
+
+static void rir_op_effect(const RirOp *ro) {
+	const JrnOp *o = &ro->p;
+	int k;
+	switch (o->kind) {
+	case JOP_GENOP:
+	case JOP_OPI:
+	case JOP_OPL:
+	case JOP_OPF: {
+		AstLocal b = rir_pop(), a = rir_pop(), n;
+		if (a == AST_NONE || b == AST_NONE) {
+			rir_arena_mismatch++;
+			rir_push(ast_node(rir_arena, AST_Poison));
+			break;
+		}
+		n = ast_node(rir_arena, AST_Binary);
+		ast_set_op(rir_arena, n, o->a0);
+		ast_add_child(rir_arena, n, a);
+		ast_add_child(rir_arena, n, b);
+		rir_push(n);
+		break;
+	}
+	case JOP_VSTORE: {
+		AstLocal v = rir_pop(), t = rir_pop(), n;
+		if (v == AST_NONE || t == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Store);
+		ast_add_child(rir_arena, n, t);
+		ast_add_child(rir_arena, n, v);
+		rir_stmt(n);
+		rir_push(ast_node(rir_arena, AST_StoreVal));
+		break;
+	}
+	case JOP_CALL: {
+		AstLocal n = ast_node(rir_arena, AST_Invoke);
+		int na = o->a0;
+		AstLocal args[32];
+		if (na < 0 || na > 32) {
+			rir_arena_mismatch++;
+			na = 0;
+		}
+		for (k = na - 1; k >= 0; k--)
+			args[k] = rir_pop();
+		ast_add_child(rir_arena, n, rir_pop());
+		for (k = 0; k < na; k++)
+			if (args[k] != AST_NONE)
+				ast_add_child(rir_arena, n, args[k]);
+		rir_push(n);
+		break;
+	}
+	case JOP_VPOP: {
+		AstLocal d = rir_pop();
+		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
+		if (dk == AST_Store || dk == AST_Invoke)
+			rir_stmt(d);
+		break;
+	}
+	case JOP_VSWAP:
+		if (rir_shn >= 2) {
+			AstLocal t = rir_sh[rir_shn - 1];
+			rir_sh[rir_shn - 1] = rir_sh[rir_shn - 2];
+			rir_sh[rir_shn - 2] = t;
+		}
+		break;
+	case JOP_CVT_ITOF:
+	case JOP_CVT_FTOF:
+	case JOP_CVT_FTOI:
+	case JOP_CVT_SXTW:
+	case JOP_CVT_TRUNC32:
+	case JOP_CVT_CSTI: {
+		AstLocal a = rir_pop(), n;
+		if (a == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Convert);
+		ast_set_op(rir_arena, n, o->a0);
+		ast_add_child(rir_arena, n, a);
+		rir_push(n);
+		break;
+	}
+	case JOP_ADDROF: {
+		AstLocal a = rir_pop(), n;
+		if (a == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, '&');
+		ast_add_child(rir_arena, n, a);
+		rir_push(n);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static int rir_cond_depth, rir_synth_depth, rir_call_depth;
+
+static void rir_mark_apply(const RirOp *ro) {
+	AstLocal a, n;
+	switch (ro->rkind) {
+	case RIR_M_RETURN:
+		n = ast_node(rir_arena, AST_Return);
+		a = rir_shn ? rir_pop() : AST_NONE;
+		if (a != AST_NONE)
+			ast_add_child(rir_arena, n, a);
+		rir_stmt(n);
+		break;
+	case RIR_M_JUMP:
+		rir_stmt(ast_node(rir_arena, AST_Jump));
+		break;
+	case RIR_M_LABEL:
+		break;
+	case RIR_M_LOAD:
+		a = rir_pop();
+		if (a == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Load);
+		ast_add_child(rir_arena, n, a);
+		rir_push(n);
+		break;
+	case RIR_M_CONVERT:
+		a = rir_pop();
+		if (a == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Convert);
+		ast_add_child(rir_arena, n, a);
+		rir_push(n);
+		break;
+	default:
+		break;
+	}
+}
+
+static void rir_region(const RirOp *ro) {
+	if (ro->tag == RIR_T_RBEGIN) {
+		switch (ro->rkind) {
+		case RIR_R_IF:
+		case RIR_R_WHILE:
+		case RIR_R_DO:
+		case RIR_R_FOR:
+		case RIR_R_SWITCH: {
+			AstLocal n = ast_node(rir_arena, AST_If);
+			AstLocal cond = rir_shn ? rir_pop() : AST_NONE;
+			ast_set_op(rir_arena, n, ro->rkind);
+			if (cond != AST_NONE)
+				ast_add_child(rir_arena, n, cond);
+			rir_stmt(n);
+			if (rir_cfn < 64)
+				rir_cf[rir_cfn++] = n;
+			break;
+		}
+		case RIR_R_COND:
+			rir_cond_depth++;
+			break;
+		case RIR_R_SYNTH:
+			rir_synth_depth++;
+			break;
+		case RIR_R_CALL:
+			rir_call_depth++;
+			break;
+		case RIR_R_BODY:
+		case RIR_R_THEN:
+		case RIR_R_ELSE: {
+			AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
+			if (rir_cfn)
+				ast_add_child(rir_arena, rir_cf[rir_cfn - 1], bb);
+			if (rir_bbn < 64)
+				rir_bb[rir_bbn++] = bb;
+			break;
+		}
+		default:
+			break;
+		}
+		return;
+	}
+	switch (ro->rkind) {
+	case RIR_R_COND:
+		if (rir_cond_depth)
+			rir_cond_depth--;
+		break;
+	case RIR_R_SYNTH:
+		if (rir_synth_depth)
+			rir_synth_depth--;
+		break;
+	case RIR_R_CALL:
+		if (rir_call_depth)
+			rir_call_depth--;
+		break;
+	case RIR_R_BODY:
+	case RIR_R_THEN:
+	case RIR_R_ELSE:
+		if (rir_bbn > 1)
+			rir_bbn--;
+		break;
+	case RIR_R_IF:
+	case RIR_R_WHILE:
+	case RIR_R_DO:
+	case RIR_R_FOR:
+	case RIR_R_SWITCH:
+		if (rir_cfn)
+			rir_cfn--;
+		break;
+	default:
+		break;
+	}
+}
+
+static void rir_to_arena(void) {
+	int i;
+	if (!rir_arena)
+		rir_arena = ast_arena_new();
+	else
+		ast_arena_reset(rir_arena);
+	rir_shn = 0;
+	rir_cfn = 0;
+	rir_bbn = 0;
+	rir_cond_depth = 0;
+	rir_synth_depth = 0;
+	rir_call_depth = 0;
+	rir_arena_mismatch = 0;
+	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
+	for (i = 0; i < rir_n; i++) {
+		RirOp *ro = &rir_ops[i];
+		if (ro->tag == RIR_T_MARK) {
+			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth)
+				rir_mark_apply(ro);
+			continue;
+		}
+		if (ro->tag != RIR_T_OP) {
+			rir_region(ro);
+			continue;
+		}
+		if (rir_cond_depth)
+			continue;
+		rir_reconcile(&ro->p);
+		rir_op_effect(ro);
+	}
+	while (rir_shn > 0) {
+		AstLocal d = rir_pop();
+		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
+		if (dk == AST_Store || dk == AST_Invoke)
+			rir_stmt(d);
+	}
+}
+
 static int rir_pt_addr(const RirOp *o, int fallback) {
 	if (o->pt == RIR_PT_HERE)
 		return ind;
@@ -560,6 +907,28 @@ void rir_verify(void) {
 	rir_shift_diff = -1;
 	rir_open_chains = 0;
 	rir_build();
+	if (rir_env >= 4) {
+		rir_to_arena();
+		rir_tot_arena_fn++;
+		rir_tot_arena_nodes += ast_count(rir_arena);
+		if (ast_try_active && ast_cur && ast_replay_ok(ast_cur)) {
+			rir_tot_arena_cmp++;
+			rir_tot_tree_nodes += ast_count(ast_cur);
+			rir_tot_arena_cmp_nodes += ast_count(rir_arena);
+			{
+				AstLocal q;
+				for (q = 0; q < ast_count(rir_arena); q++)
+					rir_kindhist[ast_kind(rir_arena, q) % AST_KIND_COUNT]++;
+				for (q = 0; q < ast_count(ast_cur); q++)
+					rir_treekindhist[ast_kind(ast_cur, q) % AST_KIND_COUNT]++;
+			}
+			if (ast_count(rir_arena) == ast_count(ast_cur))
+				rir_tot_arena_count_eq++;
+			if (ast_intention_hash(rir_arena, ast_root(rir_arena)) ==
+					ast_intention_hash(ast_cur, ast_root(ast_cur)))
+				rir_tot_arena_hash_eq++;
+		}
+	}
 	for (i = 0; i < rir_n; i++) {
 		if (rir_ops[i].tag == RIR_T_OP)
 			nops++;
@@ -780,13 +1149,22 @@ static void rir_report(void) {
 					"[rir-total] fn=%ld faithful=%ld ops=%ld regions=%ld labels=%ld "
 					"jumps=%ld fallback=%ld fallbackfn=%ld fbchain=%ld fbpoint=%ld "
 					"unbal=%ld ovf=%ld jmpsv=%ld jmpsvfb=%ld shiftok=%ld shiftbad=%ld "
-					"shiftskip=%ld shiftopen=%ld\n",
+					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld arenacmp=%ld "
+					"arenacounteq=%ld arenahasheq=%ld treenodes=%ld cmpnodes=%ld\n",
 					rir_tot_fn, rir_tot_faithful, rir_tot_ops, rir_tot_regions,
 					rir_tot_labels, rir_tot_jumps, rir_tot_fallback,
 					rir_tot_fallback_fn, rir_tot_fb_chain, rir_tot_fb_point,
 					rir_tot_unbal, rir_tot_ovf, rir_tot_jmpsv, rir_tot_jmpsv_fb,
 					rir_tot_shift_ok, rir_tot_shift_bad, rir_tot_shift_skip,
-					rir_tot_shift_open);
+					rir_tot_shift_open, rir_tot_arena_fn, rir_tot_arena_nodes,
+					rir_tot_arena_cmp, rir_tot_arena_count_eq, rir_tot_arena_hash_eq,
+					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes);
+	fprintf(f, "[rir-kind]");
+	for (k = 0; k < AST_KIND_COUNT; k++)
+		if (rir_kindhist[k] || rir_treekindhist[k])
+			fprintf(f, " %s=%ld/%ld", ast_kind_name((uint16_t)k), rir_kindhist[k],
+							rir_treekindhist[k]);
+	fprintf(f, "\n");
 	fprintf(f, "[rir-region]");
 	for (k = 1; k < RIR_R_COUNT; k++)
 		if (rir_reghist[k])

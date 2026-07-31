@@ -15,6 +15,9 @@ enum {
 	RIR_R_TERNARY,
 	RIR_R_LANDOR,
 	RIR_R_CALL,
+	RIR_R_COND,
+	RIR_R_BODY,
+	RIR_R_SYNTH,
 	RIR_R_COUNT
 };
 
@@ -25,8 +28,19 @@ extern int rir_started;
 void rir_configure(void);
 void rir_reset(void);
 void rir_verify(void);
+enum {
+	RIR_M_RETURN = 1,
+	RIR_M_JUMP,
+	RIR_M_LOAD,
+	RIR_M_CONVERT,
+	RIR_M_LABEL,
+	RIR_M_COUNT
+};
+
 void rir_rbegin(int kind);
 void rir_rend_to(int kind);
+void rir_rcond_done(void);
+void rir_mark_pt(int kind);
 
 #else
 
@@ -40,8 +54,18 @@ void rir_rend_to(int kind);
 #define RIR_R_TERNARY 0
 #define RIR_R_LANDOR 0
 #define RIR_R_CALL 0
+#define RIR_R_COND 0
+#define RIR_R_BODY 0
+#define RIR_R_SYNTH 0
+#define RIR_M_RETURN 0
+#define RIR_M_JUMP 0
+#define RIR_M_LOAD 0
+#define RIR_M_CONVERT 0
+#define RIR_M_LABEL 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rend_to(k) ((void)0)
+#define rir_rcond_done() ((void)0)
+#define rir_mark_pt(k) ((void)0)
 #define rir_env 0
 
 #endif
