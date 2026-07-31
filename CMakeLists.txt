@@ -2684,12 +2684,65 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     if(NOT TARGET bin2c)
         add_executable(bin2c tools/bin2c.c)
     endif()
+
+    # On an MSVC host cl compiles the engine against UCRT/vcruntime/RTC internals
+    # (__stdio_common_*, __GSHandlerCheck, _RTC_*) that mcc's msvcrt --embed-jit
+    # output cannot resolve, so --embed-jit fails to link. Point this at a
+    # msvcrt-targeting mingw gcc (the toolchain class mcc's own output matches)
+    # to build the blob engine with it instead; the resulting engine references
+    # only msvcrt/mingw symbols the baked libdirs below resolve. Empty (default)
+    # keeps the cl-built engine, so the MSVC build is unchanged unless opted in.
+    set(MCC_EMBED_JIT_MINGW_CC "" CACHE STRING
+        "Path to a msvcrt-targeting mingw gcc used to build the --embed-jit blob engine on MSVC hosts.")
+
+    set(_jitengine_blob_src "$<TARGET_FILE:libmcc_jitengine>")
+    set(_jitengine_blob_dep libmcc_jitengine)
+    set(_jit_bake_cc "${CMAKE_C_COMPILER}")
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MCC_EMBED_JIT_MINGW_CC AND MCC_SINGLE_SOURCE)
+        set(_jit_bake_cc "${MCC_EMBED_JIT_MINGW_CC}")
+        get_filename_component(_je_bindir "${MCC_EMBED_JIT_MINGW_CC}" DIRECTORY)
+        find_program(MCC_EMBED_JIT_MINGW_AR NAMES ar llvm-ar
+            PATHS "${_je_bindir}" NO_DEFAULT_PATH)
+        get_directory_property(_je_dirdefs COMPILE_DEFINITIONS)
+        set(_je_dflags "")
+        foreach(_d IN LISTS _je_dirdefs)
+            list(APPEND _je_dflags "-D${_d}")
+        endforeach()
+        set(_je_deps "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c")
+        if(TARGET mcc_mccdefs)
+            list(APPEND _je_deps mcc_mccdefs)
+        endif()
+        set(_je_o "${CMAKE_BINARY_DIR}/mccjit_engine_mingw.o")
+        set(_je_a "${CMAKE_BINARY_DIR}/libmccjitengine-mingw.a")
+        # Reconstruct the cl target's exact define/include set (directory-level
+        # add_compile_definitions + the target's own defs + its includes) so the
+        # mingw engine is byte-configured identically, only a different CRT.
+        add_custom_command(OUTPUT "${_je_o}"
+            COMMAND "${MCC_EMBED_JIT_MINGW_CC}" -c -w -O1
+                ${_je_dflags}
+                "-D$<JOIN:$<TARGET_PROPERTY:libmcc_jitengine,COMPILE_DEFINITIONS>,;-D>"
+                "-I${CMAKE_CURRENT_SOURCE_DIR}" "-I${CMAKE_BINARY_DIR}"
+                "-I$<JOIN:$<TARGET_PROPERTY:libmcc_jitengine,INCLUDE_DIRECTORIES>,;-I>"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c"
+                -o "${_je_o}"
+            DEPENDS ${_je_deps}
+            COMMENT "embed-jit: compiling the blob engine with msvcrt-mingw (${MCC_EMBED_JIT_MINGW_CC})"
+            VERBATIM COMMAND_EXPAND_LISTS)
+        add_custom_command(OUTPUT "${_je_a}"
+            COMMAND "${MCC_EMBED_JIT_MINGW_AR}" rcs "${_je_a}" "${_je_o}"
+            DEPENDS "${_je_o}"
+            COMMENT "embed-jit: archiving the msvcrt-mingw blob engine"
+            VERBATIM)
+        set(_jitengine_blob_src "${_je_a}")
+        set(_jitengine_blob_dep "${_je_a}")
+    endif()
+
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/mccjit_blob.c"
-        COMMAND "$<TARGET_FILE:bin2c>" "$<TARGET_FILE:libmcc_jitengine>"
+        COMMAND "$<TARGET_FILE:bin2c>" "${_jitengine_blob_src}"
                 "${CMAKE_BINARY_DIR}/mccjit_blob.c" mccjit_blob
-        DEPENDS bin2c libmcc_jitengine
-        COMMENT "Embedding the static JIT engine (libmcc-static.a) into mcc (mccjit_blob.c)"
+        DEPENDS bin2c ${_jitengine_blob_dep}
+        COMMENT "Embedding the static JIT engine into mcc (mccjit_blob.c)"
         VERBATIM)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccjit_blob.c")
     target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_BLOB=1)
@@ -2699,9 +2752,14 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         # libgcc __chkstk_ms, ucrt/kernel32 import stubs). Bake the toolchain lib
         # dirs (queried from the compiler) so mcc can resolve them when it links
         # the blob into --embed-jit output.
-        execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libmingwex.a
+        # _jit_bake_cc is the host CC on a mingw build, or the msvcrt-mingw gcc on
+        # an opted-in MSVC host -- either way the toolchain that built the blob,
+        # whose libdirs resolve its runtime references. cl has no -print-file-name,
+        # so on MSVC without the opt-in these queries yield nothing and the block
+        # below stays inert.
+        execute_process(COMMAND "${_jit_bake_cc}" -print-file-name=libmingwex.a
             OUTPUT_VARIABLE _mccjit_mingwex OUTPUT_STRIP_TRAILING_WHITESPACE)
-        execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-libgcc-file-name
+        execute_process(COMMAND "${_jit_bake_cc}" -print-libgcc-file-name
             OUTPUT_VARIABLE _mccjit_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
         get_filename_component(_mccjit_mingw_libdir "${_mccjit_mingwex}" DIRECTORY)
         get_filename_component(_mccjit_gcc_libdir "${_mccjit_libgcc}" DIRECTORY)
