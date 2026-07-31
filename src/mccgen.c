@@ -5,7 +5,8 @@
 
 #ifndef MCC_JOURNAL_HOOKS
 #if MCC_CONFIG_OPTIMIZER &&                                                    \
-		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
+		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		 defined(MCC_TARGET_I386))
 #define MCC_JOURNAL_HOOKS 1
 #endif
 #endif
@@ -27,6 +28,24 @@
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
 #define MCC_JRN_HAVE_STRUCT_COPY 1
 #endif
+/* gen_cvt_sxtw (sign-extend 32->64) exists only where mcc.h declares it: the
+   64-bit backends X86_64/ARM64/RISCV64. i386 (and arm) have no such primitive,
+   so mirror the declaration guard here so admitting i386 to the gate does not
+   wrap or replay an op the target never emits. */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		defined(MCC_TARGET_RISCV64)
+#define MCC_JRN_HAVE_CVT_SXTW 1
+#endif
+/* gen_round / gen_copysign are the FP round-mode / sign-copy hardware inlines,
+   defined on the SSE/NEON/RVF backends but NOT i386 -- x87 needs a memory
+   round-trip and rounding-control juggling (tracked in docs/TODO Codegen), so
+   i386-gen.c defines neither. gen_fabs/gen_sqrt DO exist on i386 (x87 fabs/
+   fsqrt) and stay unconditional. Mirror the definition set so the journal does
+   not reference a primitive i386 never links. */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		defined(MCC_TARGET_RISCV64)
+#define MCC_JRN_HAVE_FP_ROUNDSIGN 1
+#endif
 static int jrn_replaying;
 void jrn_load(int r, SValue *sv);
 void jrn_store(int r, SValue *v);
@@ -41,7 +60,9 @@ void jrn_gsym_addr(int t, int a);
 void jrn_gen_cvt_itof(int t);
 void jrn_gen_cvt_ftof(int t);
 void jrn_gen_cvt_ftoi(int t);
+#ifdef MCC_JRN_HAVE_CVT_SXTW
 void jrn_gen_cvt_sxtw(void);
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_cvt_trunc32(void);
 #endif
@@ -64,8 +85,10 @@ void jrn_gen_reg_addi(int r, int64_t d);
 #endif
 void jrn_gen_fabs(void);
 void jrn_gen_sqrt(void);
+#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
 void jrn_gen_round(int mode);
 void jrn_gen_copysign(void);
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_bswap(int size);
 void jrn_gen_signbit(int isfloat);
@@ -113,7 +136,9 @@ void jrn_gaddrof(void);
 #define gen_cvt_itof(t) jrn_gen_cvt_itof((t))
 #define gen_cvt_ftof(t) jrn_gen_cvt_ftof((t))
 #define gen_cvt_ftoi(t) jrn_gen_cvt_ftoi((t))
+#ifdef MCC_JRN_HAVE_CVT_SXTW
 #define gen_cvt_sxtw() jrn_gen_cvt_sxtw()
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_cvt_trunc32() jrn_gen_cvt_trunc32()
 #endif
@@ -136,8 +161,10 @@ void jrn_gaddrof(void);
 #endif
 #define gen_fabs() jrn_gen_fabs()
 #define gen_sqrt() jrn_gen_sqrt()
+#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
 #define gen_round(m) jrn_gen_round((m))
 #define gen_copysign() jrn_gen_copysign()
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_bswap(s) jrn_gen_bswap((s))
 #define gen_signbit(f) jrn_gen_signbit((f))
@@ -2631,7 +2658,7 @@ static void gv_dup(void) { MCC_TRACE("enter\n");
 static int gen_opl_depth;
 
 #if MCC_PTR_SIZE == 4
-static void gen_opl(int op) { MCC_TRACE("enter\n");
+static void (gen_opl)(int op) { MCC_TRACE("enter\n");
 	int t, a, b, op1, c, i;
 	int func;
 	unsigned short reg_iret = REG_IRET;
@@ -15101,7 +15128,9 @@ static int decl(int l) {
 #undef gen_cvt_itof
 #undef gen_cvt_ftof
 #undef gen_cvt_ftoi
+#ifdef MCC_JRN_HAVE_CVT_SXTW
 #undef gen_cvt_sxtw
+#endif
 #undef gen_cvt_trunc32
 #undef gen_cvt_csti
 #undef gen_struct_copy
@@ -15116,8 +15145,10 @@ static int decl(int l) {
 #undef gen_reg_addi
 #undef gen_fabs
 #undef gen_sqrt
+#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
 #undef gen_round
 #undef gen_copysign
+#endif
 #undef gen_bswap
 #undef gen_signbit
 #undef gen_ffs

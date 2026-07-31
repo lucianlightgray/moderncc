@@ -15450,7 +15450,9 @@ JRN_W2(gsym_addr, JOP_GSYMADDR)
 JRN_W1(gen_cvt_itof, JOP_CVT_ITOF)
 JRN_W1(gen_cvt_ftof, JOP_CVT_FTOF)
 JRN_W1(gen_cvt_ftoi, JOP_CVT_FTOI)
+#ifdef MCC_JRN_HAVE_CVT_SXTW
 JRN_W0(gen_cvt_sxtw, JOP_CVT_SXTW)
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 JRN_W0(gen_cvt_trunc32, JOP_CVT_TRUNC32)
 #endif
@@ -15468,8 +15470,10 @@ JRN_W0(gen_mul_widen, JOP_MULWIDEN)
 #endif
 JRN_W0(gen_fabs, JOP_FABS)
 JRN_W0(gen_sqrt, JOP_SQRT)
+#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
 JRN_W1(gen_round, JOP_ROUND)
 JRN_W0(gen_copysign, JOP_COPYSIGN)
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 JRN_W1(gen_bswap, JOP_BSWAP)
 JRN_W1(gen_signbit, JOP_SIGNBIT)
@@ -15643,7 +15647,9 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_CVT_ITOF: (gen_cvt_itof)(o->a0); break;
 	case JOP_CVT_FTOF: (gen_cvt_ftof)(o->a0); break;
 	case JOP_CVT_FTOI: (gen_cvt_ftoi)(o->a0); break;
+#ifdef MCC_JRN_HAVE_CVT_SXTW
 	case JOP_CVT_SXTW: (gen_cvt_sxtw)(); break;
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_CVT_TRUNC32: (gen_cvt_trunc32)(); break;
 #endif
@@ -15666,8 +15672,10 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 #endif
 	case JOP_FABS: (gen_fabs)(); break;
 	case JOP_SQRT: (gen_sqrt)(); break;
+#ifdef MCC_JRN_HAVE_FP_ROUNDSIGN
 	case JOP_ROUND: (gen_round)(o->a0); break;
 	case JOP_COPYSIGN: (gen_copysign)(); break;
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_BSWAP: (gen_bswap)(o->a0); break;
 	case JOP_SIGNBIT: (gen_signbit)(o->a0); break;
