@@ -35,6 +35,11 @@ def main():
         env[k] = v
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
+    # On win32 the stage compiler is mcc.exe; PE-keyed behaviour (below) follows
+    # from that suffix, so the POSIX path is untouched.
+    if not os.access(mcc, os.X_OK) and os.access(mcc + ".exe", os.X_OK):
+        mcc += ".exe"
+    pe = mcc.endswith(".exe")
     blob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccrt_blob.c.o")
     sidecars = [os.path.join(root, bdir, "libmccrt.a"),
                 os.path.join(root, bdir, "lib", "libmccrt.a")]
@@ -60,23 +65,36 @@ def main():
         sys.exit(f"no runtime blob at {blob} and no sidecar libmccrt.a in "
                  f"{os.path.join(root, bdir)} (build the mcc target first)")
     if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
-        jitblob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c.o")
-        if not os.path.exists(jitblob):
-            sys.exit(f"no JIT blob at {jitblob} (build the mcc target first)")
+        # The object suffix is .o on POSIX, .obj under the win32 (clang-cl/ninja)
+        # toolchain; take whichever the build produced.
+        jbase = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c")
+        jitblob = next((jbase + ext for ext in (".o", ".obj")
+                        if os.path.exists(jbase + ext)), None)
+        if not jitblob:
+            sys.exit(f"no JIT blob at {jbase}.o[bj] (build the mcc target first)")
         link_objs.append(jitblob)
 
     src = os.path.join(root, "src/mcc.c")
     inc = os.path.join(root, "runtime/include")
+    # win32 layers runtime/win32/include over runtime/include, so a stage
+    # compiler in a temp dir needs the win32 prefix as well to resolve its
+    # freestanding + PE system headers; the CRT startup/import libs also come
+    # from there at link. POSIX resolves both from the sidecar -B alone.
+    win32_pre = ["-B", os.path.join(root, "runtime/win32")] if pe else []
+    # msvcrt is mcc's output CRT and mcc auto-links kernel32/msvcrt on PE; there
+    # is no -lm/-ldl to add (they do not exist), and a bare -ldl would error.
+    link_libs = [] if pe else ["-lm", "-ldl"]
 
     def compile_mcc(cc_bin, obj, extra_inc):
         args = [cc_bin, *flags]
         if extra_inc:
-            args.append("-I" + inc)
+            args += ["-I" + inc, *win32_pre]
         args += [opt, "-c", src, "-o", obj]
         subprocess.run(args, cwd=root, env=env, check=True)
 
     def link_mcc(cc_bin, obj, out):
-        subprocess.run([cc_bin, *link_flags, obj, *link_objs, "-o", out, "-lm", "-ldl"],
+        subprocess.run([cc_bin, *link_flags, *win32_pre, obj, *link_objs,
+                        "-o", out, *link_libs],
                        cwd=root, check=True)
 
     with tempfile.TemporaryDirectory() as work:
@@ -84,8 +102,9 @@ def main():
         o1 = os.path.join(work, "o1.o")
         o2 = os.path.join(work, "o2.o")
         o3 = os.path.join(work, "o3.o")
-        mcc1 = os.path.join(work, "mcc1")
-        mcc2 = os.path.join(work, "mcc2")
+        exe = ".exe" if pe else ""
+        mcc1 = os.path.join(work, "mcc1" + exe)
+        mcc2 = os.path.join(work, "mcc2" + exe)
 
         print(f"fixpoint: stage1 (stage0 mcc compiles+links mcc1)  knobs={knobs}")
         compile_mcc(mcc, o1, False)

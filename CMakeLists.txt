@@ -5229,9 +5229,15 @@ if(MCC_BUILD_TESTS)
         # Darwin forces MCC_EMBED_MCCRT off (mcc reads ELF objects only), but the
         # sidecar libmccrt.a links a stage compiler just as well once -B points at
         # the build dir, so the self-host cells run there too. This is the tree's
-        # only non-qemu arm64 3-stage self-host. WIN32 stays out: the mcc-built
-        # win32 binary is still nondeterministic (docs/TODO).
-        if(MCC_PYTHON3 AND (MCC_EMBED_MCCRT OR MCC_TARGETOS STREQUAL "Darwin"))
+        # only non-qemu arm64 3-stage self-host. WIN32 (mingw) joins on the same
+        # sidecar path -- the driver is PE-aware (mcc.exe, no -lm/-ldl, the
+        # runtime/win32 header+CRT prefix) and the mcc-built win32 chain is proven
+        # byte-identical at O1/O2/O3/Os/gates, refuting the earlier nondeterminism
+        # concern. MSVC stays out: its VS/NMake generator emits no
+        # compile_commands.json, which the drivers read for the build's flags.
+        if(MCC_PYTHON3 AND (MCC_EMBED_MCCRT OR MCC_TARGETOS STREQUAL "Darwin"
+                            OR (MCC_TARGETOS STREQUAL "WIN32"
+                                AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")))
             add_test(NAME selfhost-smoke
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
                         "${CMAKE_BINARY_DIR}")

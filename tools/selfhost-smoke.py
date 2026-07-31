@@ -26,6 +26,11 @@ def main():
         env[k] = v
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
+    # On win32 the stage compiler is mcc.exe; PE-keyed behaviour follows from the
+    # suffix, leaving the POSIX path untouched.
+    if not os.access(mcc, os.X_OK) and os.access(mcc + ".exe", os.X_OK):
+        mcc += ".exe"
+    pe = mcc.endswith(".exe")
     blob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccrt_blob.c.o")
     sidecars = [os.path.join(root, bdir, "libmccrt.a"),
                 os.path.join(root, bdir, "lib", "libmccrt.a")]
@@ -51,10 +56,20 @@ def main():
         sys.exit(f"no runtime blob at {blob} and no sidecar libmccrt.a in "
                  f"{os.path.join(root, bdir)} (build the mcc target first)")
     if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
-        jitblob = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c.o")
-        if not os.path.exists(jitblob):
-            sys.exit(f"no JIT blob at {jitblob} (build the mcc target first)")
+        # .o on POSIX, .obj under the win32 (clang-cl/ninja) toolchain.
+        jbase = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c")
+        jitblob = next((jbase + ext for ext in (".o", ".obj")
+                        if os.path.exists(jbase + ext)), None)
+        if not jitblob:
+            sys.exit(f"no JIT blob at {jbase}.o[bj] (build the mcc target first)")
         link_objs.append(jitblob)
+
+    # win32 layers runtime/win32/include over runtime/include and supplies the
+    # PE CRT startup/import at link; POSIX resolves both from the sidecar -B.
+    # There is no -lm/-ldl on msvcrt, and mcc auto-links kernel32/msvcrt.
+    win32_pre = ["-B", os.path.join(root, "runtime/win32")] if pe else []
+    link_libs = [] if pe else ["-lm", "-ldl"]
+    exe = ".exe" if pe else ""
 
     with tempfile.TemporaryDirectory() as work:
         print(f"self-host: compiling src/mcc.c with {mcc}  knobs={sys.argv[2:] or '(none)'}")
@@ -63,9 +78,9 @@ def main():
                         "-o", obj], cwd=root, env=env, check=True)
 
         print("self-host: linking (mcc as linker for the x87 long-double helpers)")
-        shbin = os.path.join(work, "mcc-sh")
-        subprocess.run([mcc, *link_flags, obj, *link_objs, "-o", shbin, "-lm", "-ldl"],
-                       cwd=root, check=True)
+        shbin = os.path.join(work, "mcc-sh" + exe)
+        subprocess.run([mcc, *link_flags, *win32_pre, obj, *link_objs, "-o", shbin,
+                        *link_libs], cwd=root, check=True)
 
         inc = os.path.join(root, "runtime/include")
         tc = os.path.join(work, "t.c")
@@ -73,16 +88,16 @@ def main():
             "#include <stdio.h>\n"
             "int fib(int n){return n<2?n:fib(n-1)+fib(n-2);}\n"
             "int main(void){printf(\"%d\\n\",fib(10));return 0;}\n")
-        te = os.path.join(work, "t")
-        subprocess.run([shbin, *link_flags, "-I" + inc, tc, "-o", te], check=True)
+        te = os.path.join(work, "t" + exe)
+        subprocess.run([shbin, *link_flags, *win32_pre, "-I" + inc, tc, "-o", te], check=True)
         out = subprocess.run([te], capture_output=True, text=True).stdout.strip()
         if out != "55":
             sys.exit(f"FAIL: self-hosted mcc gave fib(10)={out}, expected 55")
 
         qs = os.path.join(root, "tests/exec/programs/quicksort.c")
         if os.path.exists(qs):
-            qe = os.path.join(work, "qs")
-            subprocess.run([shbin, *link_flags, "-I" + inc, qs, "-o", qe], check=True)
+            qe = os.path.join(work, "qs" + exe)
+            subprocess.run([shbin, *link_flags, *win32_pre, "-I" + inc, qs, "-o", qe], check=True)
             sortd = subprocess.run([qe], capture_output=True, text=True).stdout.strip().splitlines()[-1]
             if "4 16 21 33 36 37 38 53 55 62 65 74 74 83 89 96" not in sortd:
                 sys.exit(f"FAIL: self-hosted mcc mis-sorted quicksort: {sortd}")
