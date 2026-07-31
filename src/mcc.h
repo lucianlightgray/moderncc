@@ -1086,6 +1086,18 @@ struct filespec {
 #undef MCC_JOURNAL_HOOKS
 #endif
 
+#ifndef MCC_REPLAY_IR
+#ifdef MCC_JOURNAL_HOOKS
+#define MCC_REPLAY_IR 1
+#else
+#define MCC_REPLAY_IR 0
+#endif
+#endif
+#if MCC_REPLAY_IR && !defined(MCC_JOURNAL_HOOKS)
+#undef MCC_REPLAY_IR
+#define MCC_REPLAY_IR 0
+#endif
+
 #define VT_UNSIGNED 0x0010
 #define VT_DEFSIGN 0x0020
 #define VT_ARRAY 0x0040

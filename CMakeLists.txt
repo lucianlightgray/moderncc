@@ -1179,6 +1179,8 @@ mcc_config_node(MCC_CONFIG_LSP TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
     HELP "Enable --lsp capture (the side-recorded concrete syntax tree subsystem)")
 mcc_config_node(MCC_CONFIG_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
     HELP "Enable the optimizer (-O1+ AST replay driver); OFF degrades -O1+ to -O0-equivalent output")
+mcc_config_node(MCC_REPLAY_IR TYPE BOOL DEFAULT ON GROUP "Advanced" ADVANCED
+    HELP "Compile in the Replay_IR side-car (structured replay model unifying the AST recorder and the operation journal); runtime gate MCC_REPLAY_IR=1. Requires the journal hooks, so it self-disables on targets outside that gate")
 mcc_config_node(MCC_CONFIG_AST_SHADOW TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
     HELP "Cross-check the AST side-car substrate (def/use table, property memos, structural hash) against the legacy O(N) scanners at runtime; abort on divergence. Debug/CI only")
 mcc_config_node(MCC_CONFIG_TRACE TYPE BOOL DEFAULT OFF GROUP "Advanced" ADVANCED
@@ -1729,6 +1731,9 @@ if(MCC_CONFIG_LSP)
 endif()
 if(MCC_CONFIG_OPTIMIZER)
     list(APPEND _mccdefs "MCC_CONFIG_OPTIMIZER=1")
+endif()
+if(NOT MCC_REPLAY_IR)
+    list(APPEND _mccdefs "MCC_REPLAY_IR=0")
 endif()
 if(MCC_EMBED_JIT)
     list(APPEND _mccdefs "MCC_EMBED_JIT=1")
@@ -3866,6 +3871,19 @@ if(MCC_BUILD_TESTS)
                     "-DOPT=-O1"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
         set_tests_properties(ast/journal-inert PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+            TIMEOUT 900)
+
+        add_test(NAME ast/rir-inert
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}"
+                    "-DRIR=1"
+                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-inert"
+                    "-DOPT=-O1"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
+        set_tests_properties(ast/rir-inert PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
             TIMEOUT 900)
 

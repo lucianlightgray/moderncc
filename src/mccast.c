@@ -1,6 +1,7 @@
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))
 
 #include "mccast.h"
+#include "mccrir.h"
 #include "mccstats.h"
 
 #ifndef MCC_TRACE
@@ -2175,6 +2176,9 @@ static void jrn_configure(void);
 
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	jrn_configure();
+#if MCC_REPLAY_IR
+	rir_configure();
+#endif
 	int opt_promote = 0;
 	/* Resolve the ISA before any gate consults it, so a build that never saw
 	   -march= still has the triple baseline rather than an empty mask. */
@@ -2911,6 +2915,7 @@ void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop
 }
 
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_TERNARY);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op) { MCC_TRACE("br\n");
@@ -2983,6 +2988,7 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_TERNARY);
 	if (ast_tern_suppress) { MCC_TRACE("br\n");
 		ast_tern_suppress--;
 		return;
@@ -3019,6 +3025,8 @@ void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
+	if (first)
+		rir_rbegin(RIR_R_LANDOR);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (first) { MCC_TRACE("br\n");
@@ -3098,6 +3106,7 @@ void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_LANDOR);
 	if (ast_lor_suppress) { MCC_TRACE("br\n");
 		ast_lor_suppress--;
 		return;
@@ -3132,6 +3141,8 @@ void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_if_begin(void) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_IF);
+	rir_rbegin(RIR_R_THEN);
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_bail || ast_vn != 1 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
@@ -3171,6 +3182,8 @@ void ast_hook_if_gvtst_done(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_if_else(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_THEN);
+	rir_rbegin(RIR_R_ELSE);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -3184,6 +3197,7 @@ void ast_hook_if_else(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_if_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_IF);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -3208,6 +3222,7 @@ void ast_hook_while_cond_start(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_while_begin(void) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_WHILE);
 	AstLocal prefix = ast_while_prefix;
 	ast_while_prefix = AST_NONE;
 	if (prefix != AST_NONE)
@@ -3238,6 +3253,7 @@ void ast_hook_while_begin(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_while_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_WHILE);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -3249,6 +3265,7 @@ void ast_hook_while_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_do_begin(void) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_DO);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_vn != 0 || ast_cf_top >= AST_CF_MAX) { MCC_TRACE("br\n");
@@ -3303,6 +3320,7 @@ void ast_hook_do_cond(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_do_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_DO);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -3328,6 +3346,7 @@ void ast_hook_break_continue(int is_continue) { MCC_TRACE("enter\n");
 static AstLocal ast_for_prefix_pending = AST_NONE;
 
 void ast_hook_for_begin(int has_cond) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_FOR);
 	ast_for_prefix_pending = AST_NONE;
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
@@ -3417,6 +3436,7 @@ void ast_hook_for_body_begin(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_for_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_FOR);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -3436,6 +3456,7 @@ void ast_hook_bail(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_SWITCH);
 	ast_switch_node = AST_NONE;
 	if (!ast_active || ast_desync)
 		{ MCC_TRACE("br\n"); return; }
@@ -3505,6 +3526,7 @@ void ast_hook_switch_body_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_switch_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_SWITCH);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_fn_switch = 1;
@@ -3900,6 +3922,7 @@ void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
 
 void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 																int variadic) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_CALL);
 	ast_call_pending = AST_NONE;
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -3956,6 +3979,7 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 }
 
 void ast_hook_call_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_CALL);
 	if (nocode_wanted) { MCC_TRACE("br\n"); ast_saw_nocode = 1; }
 	if (ast_call_dead) { MCC_TRACE("br\n");
 		ast_call_dead = 0;
@@ -4007,6 +4031,7 @@ void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_CALL);
 	if (ast_call_dead) { MCC_TRACE("br\n");
 		ast_call_dead = 0;
 		ast_in_call = 0;
@@ -16560,12 +16585,22 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_sym_defer_on = 1;
 	}
 	jrn_started = 0;
-	if (jrn_env && ast_try_active) { MCC_TRACE("br\n");
+#if MCC_REPLAY_IR
+	rir_started = 0;
+#endif
+	if ((jrn_env || rir_env) && ast_try_active) { MCC_TRACE("br\n");
 		jrn_reset();
 #ifdef MCC_JOURNAL_HOOKS
 		jrn_active = 1;
 #endif
-		jrn_started = 1;
+		jrn_started = jrn_env ? 1 : 0;
+#if MCC_REPLAY_IR
+		if (rir_env) { MCC_TRACE("br\n");
+			rir_reset();
+			rir_active = 1;
+			rir_started = 1;
+		}
+#endif
 	}
 }
 
@@ -18951,6 +18986,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 	}
 #ifdef MCC_JOURNAL_HOOKS
 	jrn_active = 0;
+#endif
+#if MCC_REPLAY_IR
+	if (rir_started) { MCC_TRACE("br\n");
+		jrn_gap();
+		rir_verify();
+		rir_started = 0;
+	}
+	rir_active = 0;
 #endif
 	if (ast_try_active) { MCC_TRACE("br\n");
 		Section *ast_rsec = cur_text_section->reloc;

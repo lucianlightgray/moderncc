@@ -9,6 +9,7 @@
 #include "mccgen.c"
 #include "mcccst.c"
 #include "mccast.c"
+#include "mccrir.c"
 #include "mccdbg.c"
 #include "mccasm.c"
 #include "mccelf.c"

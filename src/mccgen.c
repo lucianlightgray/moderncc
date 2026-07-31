@@ -15236,3 +15236,7 @@ static int decl(int l) {
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
 #include "mccast.c"
 #endif
+
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
+#include "mccrir.c"
+#endif
