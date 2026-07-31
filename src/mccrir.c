@@ -1213,6 +1213,15 @@ void rir_verify(void) {
 		ast_replaying = 0;
 		sym_free_first = NULL;
 		rir_c2_msg[0] = 0;
+		memcpy(vstack - 1, vsave, sizeof(SValue) * (VSTACK_SIZE + 1));
+		vtop = vstack + saved_vn - 1;
+		loc = saved_loc;
+		anon_sym = saved_anon;
+		ast_pinned_regs = saved_pin;
+		ast_rp_bsym = NULL;
+		ast_rp_csym = NULL;
+		ast_rp_switch = NULL;
+		ast_temp_frontier = 1;
 		mcc_state->error_func = rir_c2_sink;
 		if (ast_validate(rir_arena, rir_c2_msg, sizeof rir_c2_msg) != 0) {
 			rir_tot_c2_invalid++;
@@ -1228,9 +1237,18 @@ void rir_verify(void) {
 				rir_tot_c2_bytes++;
 			else {
 				rir_tot_c2_len++;
-				if (rir_env >= 5)
-					fprintf(stderr, "[rir-c2len] %s want=%d got=%d\n", funcname, body_len,
-									ind - ast_body_ind_sv);
+				if (rir_env >= 5) {
+					int q, gl = ind - ast_body_ind_sv;
+					fprintf(stderr, "[rir-c2len] %s want=%d got=%d\n  parser:", funcname,
+									body_len, gl);
+					for (q = 0; q < body_len && q < 48; q++)
+						fprintf(stderr, " %02x", orig[q]);
+					fprintf(stderr, "\n  rir   :");
+					for (q = 0; q < gl && q < 48; q++)
+						fprintf(stderr, " %02x",
+										cur_text_section->data[ast_body_ind_sv + q]);
+					fprintf(stderr, "\n");
+				}
 			}
 		} else {
 			rir_tot_c2_err++;
