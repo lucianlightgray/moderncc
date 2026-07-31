@@ -3043,9 +3043,19 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				}
 				etype = R_X86_64_GOTPCREL;
 				break;
+			case 9:
+				if (!pcrel || length != 2) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: malformed TLV relocation");
+					goto fail;
+				}
+				if (!ext) { MCC_TRACE("br\n");
+					mcc_error_noabort("Mach-O: section-relative TLV relocation");
+					goto fail;
+				}
+				etype = R_X86_64_GOTPCREL;
+				break;
 			default:
-				mcc_error_noabort("Mach-O: unsupported x86_64 relocation type %d "
-													"(TLV is not implemented)", type);
+				mcc_error_noabort("Mach-O: unsupported x86_64 relocation type %d", type);
 				goto fail;
 			}
 			if (pcrel) { MCC_TRACE("br\n");

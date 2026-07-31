@@ -6083,6 +6083,25 @@ if(MCC_BUILD_TESTS)
             "linking and running a Darwin TLV image needs a Darwin host")
     endif()
 
+    # The same three shapes for x86_64-darwin, whose TLVP relocation is a
+    # different entry (X86_64_RELOC_TLV) in a different switch. Separate cell
+    # rather than an arch loop in the script: on an arm64 host this needs the
+    # CROSS mcc and Rosetta, so it can skip while the native cell passes. Rosetta
+    # runs these -- they are AOT images, not the dynamically-generated code it
+    # hangs on. The script self-skips when the cross build is absent.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        add_test(NAME macho-tlv-x86_64
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/tlv.sh"
+                    "${MCC_CROSS_DIR}/mcc-x86_64-osx" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-tlv-x86_64-work" "-B${MCC_CROSS_DIR}"
+                    x86_64)
+        set_tests_properties(macho-tlv-x86_64 PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-tlv-x86_64
+            "linking and running a Darwin TLV image needs a Darwin host")
+    endif()
+
     # mcc's own ad-hoc code signer (MCC_MACHO_ADHOC_SIGN, default off). Needs a
     # Darwin host: the assertions are that the kernel does not SIGKILL the image
     # and that /usr/bin/codesign validates what mcc wrote.
