@@ -7,7 +7,7 @@
 # helper archive is needed; the linked soak is self-contained. The normal build's
 # mcc-riscv64 is compiled WITHOUT the optimizer, so it cannot exercise this pass.
 # This test therefore builds its own optimizer-enabled riscv64 cross mcc from the
-# repo sources inside a linux/amd64 container (an amd64 host binary that EMITS
+# repo sources inside a host-native container (a host binary that EMITS
 # riscv64), uses it to compile a soak whose every constant divide/mod lives in its
 # own leaf function (so divmagic fires), links it with the riscv64 cross gcc, and
 # runs it under qemu-riscv64. Each rewritten divide is checked against a
@@ -18,7 +18,7 @@
 #   <mcc-riscv64>  host mcc-riscv64 binary; only its presence gates the test
 #                  (the actual compiler used is rebuilt in-container).
 # Exit:   0 all checks pass, 0 fails · 1 a divmagic miscompile · 77 skipped
-#         (no docker / no mcc-riscv64 / cannot run linux/amd64 / no qemu-riscv64).
+#         (no docker / no mcc-riscv64 / unrunnable build platform / no qemu-riscv64).
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -26,12 +26,15 @@ set -eu
 MCC="${1:-}"
 WORK="${2:-./w-riscv64divmagic}"
 IMAGE_BUILD="${MCC_DIVMAGIC_BUILD_IMAGE:-debian:bookworm-slim}"
+# Host-native build container: only the riscv64 cross toolchain + qemu-riscv64
+# matter, and both install on amd64 and arm64 debian alike.
+HP_PLAT=$(dg_host_plat)
 
 dg_need_bin "$MCC" "riscv64 mcc"
 dg_need_docker
-dg_need_platform linux/amd64 "$IMAGE_BUILD"
+dg_need_platform "$HP_PLAT" "$IMAGE_BUILD"
 # qemu-riscv64 gate: only proceed if the build image can run a riscv64 binary.
-if ! dg_docker run --rm --platform linux/amd64 "$IMAGE_BUILD" sh -c '
+if ! dg_docker run --rm --platform "$HP_PLAT" "$IMAGE_BUILD" sh -c '
        export DEBIAN_FRONTEND=noninteractive
        apt-get update -qq >/dev/null 2>&1
        apt-get install -y -qq gcc-riscv64-linux-gnu qemu-user-static >/dev/null 2>&1
@@ -149,11 +152,11 @@ EOF
 echo "generated $OUT ($(wc -l < "$OUT") lines)"
 GEN
 
-# --- single linux/amd64 container: build the optimizer-enabled riscv64 cross mcc
-#     (amd64 host binary emitting riscv64), compile the soak with divmagic, confirm
+# --- single host-native container: build the optimizer-enabled riscv64 cross mcc
+#     (host binary emitting riscv64), compile the soak with divmagic, confirm
 #     it fired, link with the riscv64 cross gcc, and run under qemu-riscv64. ---
-echo "== docker linux/amd64: build optimizer-enabled riscv64 cross mcc + soak + qemu run =="
-dg_docker run --rm --platform linux/amd64 \
+echo "== docker $HP_PLAT: build optimizer-enabled riscv64 cross mcc + soak + qemu run =="
+dg_docker run --rm --platform "$HP_PLAT" \
 	-v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
 	set -e
 	export DEBIAN_FRONTEND=noninteractive

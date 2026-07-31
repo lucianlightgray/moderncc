@@ -42,8 +42,15 @@ jobs:
     name: ${{ matrix.preset }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     # Wall-clock cap; the exec harness watchdog (MCC_TEST_TIMEOUT) + ctest
-    # --timeout are the fine-grained guards, this is the last resort.
-    timeout-minutes: 20
+    # --timeout are the fine-grained guards, this is the last resort. 30 not 20:
+    # the arm64 cross cell measured 20m+ on 2026-07-31 (run 83180157499) and was
+    # killed at the old ceiling with two tests still running — its docker
+    # validators emulate the foreign arches (amd64 target containers stay
+    # emulated on arm64 even now that the build stages are host-native), so the
+    # qemu-heavy legs legitimately sit well past the x86_64 legs' ~14 min. A
+    # ceiling kill loses the junit summary and names no test; the per-test
+    # guards above are what catch hangs.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

@@ -36,6 +36,20 @@ dg_need_docker() {
 	docker info >/dev/null 2>&1 || dg_skip "docker daemon not available"
 }
 
+# The host-native docker platform (linux/amd64 or linux/arm64). Build stages
+# that only need "a Linux with gcc + a cross toolchain + qemu-user" pin this
+# instead of linux/amd64: an amd64-pinned build stage on an arm64 host runs the
+# entire container under qemu binfmt emulation (~5-10x, and the qemu-<target>
+# inside it is then NESTED emulation), and the shared debian:bookworm-slim tag
+# may hold a foreign-arch variant cached by a sibling harness, so the host
+# platform is pinned explicitly rather than left to the docker default.
+dg_host_plat() {
+	case "$(uname -m)" in
+	aarch64 | arm64) echo linux/arm64 ;;
+	*) echo linux/amd64 ;;
+	esac
+}
+
 # Gate: the host can actually run containers of the given platform (binfmt/qemu
 # present for a foreign arch). An empty platform means "the host's own arch"
 # (no --platform). $2 is the probe image.

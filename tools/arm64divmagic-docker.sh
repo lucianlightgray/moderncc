@@ -7,7 +7,7 @@
 # i386 — no runtime helper archive is needed; the linked soak is self-contained.
 # The normal build's mcc-arm64 is compiled WITHOUT the optimizer, so it cannot
 # exercise this pass. This test therefore builds its own optimizer-enabled arm64
-# cross mcc from the repo sources inside a linux/amd64 container (an amd64 host
+# cross mcc from the repo sources inside a host-native container (a host
 # binary that EMITS arm64), uses it to compile a soak whose every constant
 # divide/mod lives in its own leaf function (so divmagic fires), links it with
 # the aarch64 cross gcc, and runs it under qemu-aarch64. Each rewritten divide is
@@ -18,7 +18,7 @@
 #   <mcc-arm64>  host mcc-arm64 binary; only its presence gates the test
 #                (the actual compiler used is rebuilt in-container).
 # Exit:   0 all checks pass, 0 fails · 1 a divmagic miscompile · 77 skipped
-#         (no docker / no mcc-arm64 / cannot run linux/amd64 / no qemu-aarch64).
+#         (no docker / no mcc-arm64 / unrunnable build platform / no qemu-aarch64).
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -29,9 +29,13 @@ IMAGE_BUILD="${MCC_DIVMAGIC_BUILD_IMAGE:-debian:bookworm-slim}"
 
 dg_need_bin "$MCC" "arm64 mcc"
 dg_need_docker
-dg_need_platform linux/amd64 "$IMAGE_BUILD"
+# Host-native build container: the aarch64 cross packages and qemu-aarch64
+# install on amd64 and arm64 debian alike (arm64inline-docker.sh runs this
+# exact toolchain host-natively on the arm64 runner already).
+HP_PLAT=$(dg_host_plat)
+dg_need_platform "$HP_PLAT" "$IMAGE_BUILD"
 # qemu-aarch64 gate: only proceed if the build image can run an arm64 binary.
-if ! dg_docker run --rm --platform linux/amd64 "$IMAGE_BUILD" sh -c '
+if ! dg_docker run --rm --platform "$HP_PLAT" "$IMAGE_BUILD" sh -c '
        export DEBIAN_FRONTEND=noninteractive
        apt-get update -qq >/dev/null 2>&1
        apt-get install -y -qq gcc-aarch64-linux-gnu qemu-user-static >/dev/null 2>&1
@@ -149,11 +153,11 @@ EOF
 echo "generated $OUT ($(wc -l < "$OUT") lines)"
 GEN
 
-# --- single linux/amd64 container: build the optimizer-enabled arm64 cross mcc
+# --- single host-native container: build the optimizer-enabled arm64 cross mcc
 #     (amd64 host binary emitting arm64), compile the soak with divmagic, confirm
 #     it fired, link with the aarch64 cross gcc, and run under qemu-aarch64. ---
-echo "== docker linux/amd64: build optimizer-enabled arm64 cross mcc + soak + qemu run =="
-dg_docker run --rm --platform linux/amd64 \
+echo "== docker $HP_PLAT: build optimizer-enabled arm64 cross mcc + soak + qemu run =="
+dg_docker run --rm --platform "$HP_PLAT" \
 	-v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
 	set -e
 	export DEBIAN_FRONTEND=noninteractive

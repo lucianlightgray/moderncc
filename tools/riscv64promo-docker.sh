@@ -11,9 +11,15 @@ WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 IMAGE="debian:bookworm-slim"
 
 dg_need_docker
-dg_need_platform linux/amd64 "$IMAGE"
 
-dg_docker run --rm --platform linux/amd64 \
+# Host-native build container (linux/amd64 on x86 CI, linux/arm64 on an arm64
+# runner): only the riscv64 cross toolchain + qemu-riscv64 matter, and both
+# install on either host arch. Pinning amd64 on an arm64 host would run the
+# whole build stage (gcc + mcc + qemu-riscv64) under nested emulation.
+HP_PLAT=$(dg_host_plat)
+dg_need_platform "$HP_PLAT" "$IMAGE"
+
+dg_docker run --rm --platform "$HP_PLAT" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
 export DEBIAN_FRONTEND=noninteractive
