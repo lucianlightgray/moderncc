@@ -38,6 +38,12 @@ endif()
 
 file(MAKE_DIRECTORY "${TMPDIR}")
 
+# Pin SOURCE_DATE_EPOCH so __DATE__/__TIME__ expand identically on both sides.
+# Without it, a source embedding __TIME__ (e.g. preprocessor/predefined_macros.c)
+# yields a different object each second, and the two sides — separate compiler
+# processes — flake across a second boundary, masquerading as non-inertness.
+set(ENV{SOURCE_DATE_EPOCH} "1000000000")
+
 # In hooks mode, a missing hooks-off binary is an honest SKIP, not a failure.
 if(_hooks_mode AND NOT EXISTS "${NOJRN}")
     message(STATUS "journal_inert: ${NOJRN} missing; SKIP")

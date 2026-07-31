@@ -3922,9 +3922,24 @@ static int macro_subst_tok(
 			goto add_cstr;
 		} else if (v == TOK___DATE__ || v == TOK___TIME__) { MCC_TRACE("br\n");
 			time_t ti;
-			struct tm *tm;
-			time(&ti);
-			tm = localtime(&ti);
+			struct tm *tm = NULL;
+			/* Reproducible builds: when SOURCE_DATE_EPOCH holds a valid
+			   integer, pin __DATE__/__TIME__ to that instant (UTC) so the
+			   output is deterministic across compiler processes. Otherwise
+			   fall back to the wall clock. */
+			const char *sde = getenv("SOURCE_DATE_EPOCH");
+			if (sde && *sde) { MCC_TRACE("br\n");
+				char *end;
+				long long secs = strtoll(sde, &end, 10);
+				if (*end == '\0' && secs >= 0) { MCC_TRACE("br\n");
+					ti = (time_t)secs;
+					tm = gmtime(&ti);
+				}
+			}
+			if (!tm) { MCC_TRACE("br\n");
+				time(&ti);
+				tm = localtime(&ti);
+			}
 			if (v == TOK___DATE__) { MCC_TRACE("br\n");
 				static char const ab_month_name[12][4] = {
 						"Jan", "Feb", "Mar", "Apr", "May", "Jun",
