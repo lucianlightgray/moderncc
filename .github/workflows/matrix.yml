@@ -14,10 +14,19 @@ name: Matrix
 #   macos-x86 - the emulated x86_64 macOS cells (build + test under Rosetta,
 #               ~14 min each). These were the gating critical path; ci.yml now
 #               gates only the native arm64 macOS cells.
+#   macos-x86-native-jit
+#             - the ONE thing Rosetta cannot do: execute dynamically-generated
+#               x86_64 code (it hangs), so the macos-x86 job above skips every
+#               JIT cell. This job runs the x86_64-macOS JIT-parity cells
+#               (selfhost-jit + jit/*) on a NATIVE Intel runner (macos-13),
+#               where the JIT executes for real. macos-13 is GitHub's last Intel
+#               image and is being retired, so this is a deliberately
+#               throwaway, non-gating validation -- run it while the image
+#               exists, not a durable gate.
 #
-# Both come from the same preset ledger as ci.yml (`ci plan --job matrix` /
-# `--job macos-x86`), so `ci parity` still covers their presets. Never blocks a
-# PR; also runnable on demand.
+# The first two come from the same preset ledger as ci.yml (`ci plan --job
+# matrix` / `--job macos-x86`), so `ci parity` still covers their presets. Never
+# blocks a PR; also runnable on demand.
 
 on:
   schedule:
@@ -121,3 +130,31 @@ jobs:
           export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
           mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
             "-DMCC_DIST_PLAT=$ART" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64
+
+  macos-x86-native-jit:
+    # Native Intel (x86_64) macOS. The macos-x86 job above runs everything x86
+    # EXCEPT the JIT, because Rosetta hangs on dynamically-generated x86_64
+    # code. Here the host IS x86_64, so the JIT engine executes natively and the
+    # MCC_JIT=1 == MCC_JIT=0 parity invariant can actually be checked. macos-13
+    # is GitHub's last Intel image and is on a retirement path, so this job is
+    # non-gating and expected to lapse when the image is pulled -- its value is
+    # a one-off parity verdict recorded in the run log, not a standing gate.
+    runs-on: macos-13
+    timeout-minutes: 30
+    env:
+      # The macos preset resolves its build compiler from $CC; this host is
+      # native x86_64, so no CMAKE_OSX_ARCHITECTURES / Rosetta is needed.
+      CC: clang
+    steps:
+      - uses: actions/checkout@v5
+      - name: install toolchain
+        run: brew install cmake ninja
+      - uses: ./.github/actions/ci
+      - name: build the native x86_64 macos preset (JIT engine embedded)
+        run: mcc-ci run-preset macos --no-test --out "$PWD/dist/macos-x86_64-native-jit"
+      - name: run the x86_64-macOS JIT-parity cells natively
+        # selfhost-jit exercises the self-host under -run/JIT; the jit/* family
+        # covers the selftests and the AOT==JIT invariant. SKIP (77) cells stay
+        # green via their SKIP_RETURN_CODE, so an arch-specific skip is not a
+        # failure -- a real JIT miscompile or the 0xC0000005-class fault is.
+        run: ctest --test-dir cmake-macos -R 'selfhost-jit|^jit/' --output-on-failure
