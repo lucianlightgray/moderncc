@@ -181,30 +181,17 @@ jobs:
           name: ${{ env.ART }}
           path: ${{ env.ART }}.tar.xz
 
-  macos-x86-jit:
-    # Native Intel (x86_64) macOS JIT-parity, per-push. The macos job above builds
-    # x86_64 under Rosetta but SKIPs the JIT (Rosetta hangs on dynamically-generated
-    # x86_64 code); here the host IS x86_64, so the engine executes natively and the
-    # MCC_JIT=1 == MCC_JIT=0 / AOT==JIT invariant is checked for real. continue-on-
-    # error because macos-13 is GitHub's last Intel image and is on a retirement
-    # path — non-gating so main never reds when the runner flakes or is pulled, but
-    # per-push so a regression surfaces on the PR that caused it (the nightly copy in
-    # matrix.yml stays as the scheduled record).
-    needs: plan
-    runs-on: macos-13
-    continue-on-error: true
-    timeout-minutes: 30
-    env:
-      CC: clang
-    steps:
-      - uses: actions/checkout@v5
-      - name: install toolchain
-        run: brew install cmake ninja
-      - uses: ./.github/actions/ci
-      - name: build the native x86_64 macos preset (JIT engine embedded)
-        run: mcc-ci run-preset macos --no-test --out "$PWD/dist/macos-x86_64-native-jit"
-      - name: run the x86_64-macOS JIT-parity cells natively
-        run: ctest --test-dir cmake-macos -R 'selfhost-jit|^jit/' --output-on-failure
+  # The per-push x86_64-macOS native-JIT cell lived here on `macos-13`, but that
+  # image is on GitHub's retirement path and its pool no longer schedules the job:
+  # `continue-on-error` stops it redding main, yet a job that never leaves `queued`
+  # holds this run "in progress" for hours (a runner that is pulled does not FAIL,
+  # it QUEUES forever), and on main `cancel-in-progress` then makes every push cancel
+  # the prior hung run and start another that hangs the same way. It is removed from
+  # the gating per-push CI so the run can complete; the nightly `matrix.yml`
+  # `macos-x86-native-jit` job (its own workflow, own concurrency group) remains the
+  # isolated record — a starved macos-13 pool can hang that scheduled run harmlessly
+  # without wedging per-push CI. Restore a per-push cell only against a runner label
+  # the pool actually schedules.
 
   windows:
     # msvc and mingw are both Windows toolchains, so they share one job: the
