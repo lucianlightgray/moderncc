@@ -10,9 +10,10 @@ cmake_minimum_required(VERSION 3.22)
 #   cmake -DKEY=arm64-linux-glibc -DMODE=native -DROOT=<srcdir> -DXDIR=<crossdir> \
 #         -DTMPROOT=<dir> [-DOPT=-O1] [-DJREGEN=1] -P tests/ast/journal_sweep.cmake
 #
-# KEY is <cpu>-<os>[-<libc>]. The baseline key drops the libc suffix for the
-# target's default libc (glibc on Linux, ucrt on PE) so the files banked before
-# this script existed keep their names; a non-default libc gets its own baseline.
+# KEY is <cpu>-<os>[-<libc>], but the BASELINE key is <cpu>-<os> alone: libc is
+# not a filename axis. A non-default libc therefore has no bank of its own and
+# skips with that reason, rather than scoring itself against the default libc's
+# corpus -- which is a different corpus, and would read as a verdict.
 #
 # MODE:
 #   cross  - run the host-hosted cross compiler. Fast, and valid for the honesty
@@ -99,11 +100,7 @@ elseif(_os STREQUAL "wince")
     set(_triple "${_cpu}-wince")
 endif()
 
-# baseline key: default libc keeps the historical <cpu>-<os> name
 set(_bkey "${_cpu}-${_os}")
-if(NOT _libc STREQUAL "${_default_libc}")
-    set(_bkey "${_cpu}-${_os}-${_libc}")
-endif()
 
 # ------------------------------------------------------- journal gate check
 # The gate in src/mcc.h admits these four CPUs. Anything else journals 0 rows,
@@ -111,6 +108,11 @@ endif()
 if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64)$")
     _skip("cpu '${_cpu}' is outside the MCC_JOURNAL_HOOKS gate in src/mcc.h -- \
 it journals 0 rows, so there is no oracle to compare. Widen the gate first")
+endif()
+if(NOT _libc STREQUAL "${_default_libc}")
+    _skip("baselines are keyed by <cpu>-<os> alone, so '${_libc}' has no bank of \
+its own and the '${_default_libc}' one measures a different corpus. Scoring \
+against it would read as a verdict rather than as the gap it is")
 endif()
 if(_os STREQUAL "darwin" AND NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     _skip("darwin needs a macOS host; there is no Darwin loader on \
@@ -135,14 +137,16 @@ endif()
 # ---------------------------------------------------------------- the sysroot
 set(_sysroot "")
 set(_incflags "")
+set(_hosthdrs 0)
 if(_os STREQUAL "linux")
-    # The HOST triple at its default libc is the one key whose baseline was NOT
-    # banked through a vendored sysroot -- the native ctest cell (ast-journal-
-    # parity) banks it with the host's own headers. Sweeping it here with the
-    # gentoo stage3 headers measures a different corpus expansion against that
-    # same baseline: x86_64 read fix=30027/792584 ops against a banked
-    # 31003/795697, and PASSED, because lower reads as "IMPROVED". Use the host
-    # build's compiler and host headers so the comparison is like-for-like.
+    # The HOST triple at its default libc is the one key the native ctest cell
+    # (ast-journal-parity) also banks, and it banks it with the host's own
+    # headers rather than a vendored sysroot. That is a DIFFERENT corpus from
+    # the gentoo stage3 one swept below, so each has its own bank: <key>.txt /
+    # <key>.depth.txt on this path, <key>-sysroot.* on that one. Sharing one
+    # file is what let x86_64 read fix=30027/792584 ops against a banked
+    # 31003/795697 and PASS, because lower reads as "IMPROVED". Use the host
+    # build's compiler and host headers so this path compares like with like.
     if(HOSTMCC AND HOSTKEY AND _bkey STREQUAL "${HOSTKEY}" AND MODE STREQUAL "cross")
         if(NOT EXISTS "${HOSTMCC}")
             _skip("host key ${_bkey} needs the host build's mcc at ${HOSTMCC}")
@@ -150,6 +154,7 @@ if(_os STREQUAL "linux")
         set(_mcc "${HOSTMCC}")
         set(_incflags "")
         set(_sysroot "")
+        set(_hosthdrs 1)
         message(STATUS "journal-sweep[${KEY}/${MODE}]: host triple -- using the \
 host build's mcc and host headers, matching how this baseline was banked")
     else()
@@ -253,9 +258,19 @@ if(_cpu STREQUAL "riscv64")
 endif()
 
 set(_jbase "${ROOT}/tests/ast/journal-baseline/${_bkey}.txt")
+set(_jdepthfile "")
+if(NOT _hosthdrs)
+    set(_jbase "${ROOT}/tests/ast/journal-baseline/${_bkey}-sysroot.txt")
+    set(_jdepthfile "-DJDEPTHFILE=${ROOT}/tests/ast/journal-baseline/${_bkey}-sysroot.depth.txt")
+endif()
 set(_vbase "${ROOT}/tests/ast/verify-baseline/${_bkey}.txt")
 if(NOT EXISTS "${_vbase}")
-    set(_vbase "${ROOT}/tests/ast/verify-baseline/x86_64-linux.txt")
+    message(STATUS "journal-sweep[${KEY}/${MODE}]: no recorder-fidelity baseline at \
+${_vbase}. JOURNAL=1 measures the parity delta live and returns before the ratchet \
+ever reads that file, so the sweep is unaffected -- but the non-journal \
+ast-verify-ratchet has nothing to compare against for this key. Bank one with \
+REGEN=1 if you want it. No other target's baseline is substituted: x86_64's gap set \
+is a different corpus and would read as a verdict")
 endif()
 if(NOT EXISTS "${_jbase}" AND NOT JREGEN)
     _skip("no journal baseline at ${_jbase} -- bank one with the \
@@ -285,6 +300,7 @@ execute_process(
             "-DEXTRA=${ROOT}/tests/diff/full_language.c"
             "-DBASELINE=${_vbase}"
             "-DJBASELINE=${_jbase}"
+            ${_jdepthfile}
             "-DTMPDIR=${TMPROOT}/tmp-${_bkey}-${MODE}-${OPT}"
             "-DOPT=${OPT}"
             "-DJOURNAL=1"

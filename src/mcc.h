@@ -1903,11 +1903,9 @@ ST_FUNC void asm_instr(void);
 ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
-#ifdef MCC_JOURNAL_HOOKS
-void jrn_asm(const char *str, int len, int global);
-#endif
 #if MCC_CONFIG_ASM
 #ifdef MCC_JOURNAL_HOOKS
+void jrn_asm(const char *str, int len, int global);
 void jrn_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 											int is_output, uint8_t *clobber_regs, int out_reg);
 #endif

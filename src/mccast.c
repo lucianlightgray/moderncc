@@ -15572,7 +15572,6 @@ void jrn_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 							 out_reg);
 	jrn_end();
 }
-#endif
 
 void jrn_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_ASM, NULL);
@@ -15584,6 +15583,7 @@ void jrn_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
 	mcc_assemble_inline(mcc_state, str, len, global);
 	jrn_end();
 }
+#endif
 
 #ifdef MCC_JRN_HAVE_VA_ARG
 void jrn_gen_va_arg(CType *t) { MCC_TRACE("enter\n");
@@ -15819,7 +15819,6 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 		asm_gen_code(ops, nb_operands, nb_outputs, o->a0, cr, o->a1);
 		break;
 	}
-#endif
 	case JOP_ASM: { MCC_TRACE("br\n");
 		int sv_tok = tok;
 		CValue sv_tokc = tokc;
@@ -15829,6 +15828,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 		tokc = sv_tokc;
 		break;
 	}
+#endif
 	case JOP_GV: { MCC_TRACE("br\n");
 		uint64_t pin = ast_pinned_regs;
 		int got;
