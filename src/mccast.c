@@ -16039,6 +16039,7 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 	int new_len_fin = 0;
 	SValue *vsave;
 	int saved_loc = loc, saved_anon = anon_sym, saved_nocode = nocode_wanted;
+	int saved_func_alloca = mcc_state->cg_func_alloca;
 	int saved_vn = (int)(vtop - vstack + 1);
 	int faithful = 0, errored = 0;
 	int nraw = 0, rawbytes = 0, i;
@@ -16104,6 +16105,7 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 	ast_fconst_i = 0;
 	ast_locrec_i = 0;
 	jrn_replaying = 1;
+	mcc_state->cg_func_alloca = 0;
 	memcpy(outer, mcc_state->error_jmp_buf, sizeof(jmp_buf));
 	mcc_state->error_func = ast_error_sink;
 	stk_data_floor = nb_stk_data;
@@ -16179,6 +16181,7 @@ static void jrn_verify(void) { MCC_TRACE("enter\n");
 		}
 	}
 	jrn_replaying = 0;
+	mcc_state->cg_func_alloca = saved_func_alloca;
 	ast_active = sv_ast_active;
 	ast_capture = sv_ast_capture;
 	ast_replaying = sv_ast_replaying;
