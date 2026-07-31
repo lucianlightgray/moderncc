@@ -742,9 +742,21 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 					rel->r_addend += attr->plt_offset;
 				}
 			}
-			if (type == R_DATA_PTR || type == R_JMP_SLOT)
-				{ MCC_TRACE("br\n"); bind_rebase_add(mo, sym->st_shndx == SHN_UNDEF ? 1 : 0,
-												s->sh_info, &save_rel, NULL); }
+			if (type == R_DATA_PTR || type == R_JMP_SLOT) { MCC_TRACE("br\n");
+				/* The third word of a TLV descriptor triple is the variable's OFFSET
+				   within the thread-local image, not a pointer. Handing it to
+				   bind_rebase_add makes the chained-fixups writer encode a chain entry
+				   over it, and dyld then rejects the image with "malformed
+				   thread-local". macho_tls_rebase_imported computes the offset after
+				   relocation instead. Descriptors mcc mints itself never get here --
+				   macho_tls_setup does not relocate word 2 at all. */
+				Section *ts = s->sh_info < s1->nb_sections ? s1->sections[s->sh_info] : NULL;
+				if (ts && !strcmp(ts->name, ".tlv_descriptors") &&
+						(save_rel.r_offset % (3 * MCC_PTR_SIZE)) == 2 * MCC_PTR_SIZE)
+					{ MCC_TRACE("br\n"); continue; }
+				bind_rebase_add(mo, sym->st_shndx == SHN_UNDEF ? 1 : 0,
+												s->sh_info, &save_rel, NULL);
+			}
 		}
 	}
 	for (i = 0, j = 0; i < mo->n_bind_rebase; i++)
@@ -1891,8 +1903,11 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 			case SHT_PROGBITS:
 				if (s == mo->stubs)
 					{ MCC_TRACE("br\n"); sk = sk_stubs; }
-				else if (s == mo->tls_vars)
-					{ MCC_TRACE("br\n"); sk = sk_tls_vars; }
+				/* Match by name as well as identity: mo->tls_vars only ever names the
+				   section mcc mints for TLS it compiled itself, but an imported object
+				   brings its own descriptors under the same ELF name. */
+				else if (s == mo->tls_vars || !strcmp(s->name, ".tlv_descriptors"))
+					{ MCC_TRACE("br\n"); sk = sk_tls_vars; mo->has_tlv = 1; }
 				else if (flags & SHF_TLS)
 					{ MCC_TRACE("br\n"); sk = sk_tls_data; }
 #if !MCC_CONFIG_MACHO_CHAINED_FIXUPS
@@ -2458,9 +2473,24 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n
 		}
 
 		if (!mo->tls_vars) { MCC_TRACE("br\n");
-			mo->tls_vars = new_section(s1, ".tlv_descriptors", SHT_PROGBITS,
-																 SHF_ALLOC | SHF_WRITE);
-			mo->tls_vars->sh_addralign = MCC_PTR_SIZE;
+			/* Reuse the imported descriptor section if a loaded object already
+			   brought one. Minting a second section with the same name splits the
+			   descriptors across two sections, and only one of them gets its offsets
+			   rebased -- which is a link mixing mcc's own _Thread_local with an
+			   imported one, and it fails at load. */
+			int k;
+			for (k = 1; k < s1->nb_sections; k++)
+				{ MCC_TRACE("br\n"); if (!strcmp(s1->sections[k]->name, ".tlv_descriptors")) { MCC_TRACE("br\n");
+					mo->tls_vars = s1->sections[k];
+					break;
+				} }
+			if (!mo->tls_vars) { MCC_TRACE("br\n");
+				mo->tls_vars = new_section(s1, ".tlv_descriptors", SHT_PROGBITS,
+																	 SHF_ALLOC | SHF_WRITE);
+				mo->tls_vars->sh_addralign = MCC_PTR_SIZE;
+			}
+			/* Both paths need the bootstrap thunk symbol and the header flag: a
+			   reused section still gets mcc's own descriptors appended to it. */
 			tlv_sym = put_elf_sym(symtab_section, 0, 0,
 														ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0,
 														SHN_UNDEF, "__tlv_bootstrap");
@@ -2514,6 +2544,45 @@ static void macho_tls_finalize(MCCState *s1, struct macho *mo) { MCC_TRACE("ente
 	}
 }
 
+/* Imported TLV descriptors carry their variable's offset in word 2, but the
+   generic UNSIGNED relocation resolves it to an absolute address. Rebase it by
+   the thread-local image base. This must run AFTER relocate_sections -- inside
+   macho_tls_finalize the relocation lands on top of the fix. Descriptors mcc
+   minted itself already hold the right value and are skipped. */
+static void macho_tls_rebase_imported(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
+	addr_t base = (addr_t)-1;
+	addr_t off;
+	int i, k;
+
+	if (!mo->tls_vars) { MCC_TRACE("br\n");
+		for (k = 1; k < s1->nb_sections; k++)
+			{ MCC_TRACE("br\n"); if (!strcmp(s1->sections[k]->name, ".tlv_descriptors")) { MCC_TRACE("br\n");
+				mo->tls_vars = s1->sections[k];
+				break;
+			} }
+	}
+	if (!mo->tls_vars || !mo->tls_vars->data_offset)
+		{ MCC_TRACE("br\n"); return; }
+	if (tdata_section->sh_size && tdata_section->sh_addr < base)
+		{ MCC_TRACE("br\n"); base = tdata_section->sh_addr; }
+	if (tbss_section->sh_size && tbss_section->sh_addr < base)
+		{ MCC_TRACE("br\n"); base = tbss_section->sh_addr; }
+	if (base == (addr_t)-1)
+		{ MCC_TRACE("br\n"); return; }
+	for (off = 0; off + 3 * MCC_PTR_SIZE <= mo->tls_vars->data_offset;
+			 off += 3 * MCC_PTR_SIZE) { MCC_TRACE("br\n");
+		uint64_t w2;
+		int mine = 0;
+		for (i = 0; i < mo->n_tls; i++)
+			{ MCC_TRACE("br\n"); if ((addr_t)mo->tls[i].desc_off == off) { MCC_TRACE("br\n"); mine = 1; break; } }
+		if (mine)
+			{ MCC_TRACE("br\n"); continue; }
+		w2 = read64le(mo->tls_vars->data + off + 2 * MCC_PTR_SIZE);
+		if (w2 >= (uint64_t)base)
+			{ MCC_TRACE("br\n"); write64le(mo->tls_vars->data + off + 2 * MCC_PTR_SIZE, w2 - base); }
+	}
+}
+
 ST_FUNC int macho_output_file(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	int fd, mode, file_type;
 	FILE *fp;
@@ -2556,6 +2625,7 @@ ST_FUNC int macho_output_file(MCCState *s1, const char *filename) { MCC_TRACE("e
 		}
 		s1->output_type = MCC_OUTPUT_EXE;
 		relocate_sections(s1);
+		macho_tls_rebase_imported(s1, &mo);
 		s1->output_type = save_output;
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS
 		bind_rebase_import(s1, &mo);
@@ -2705,6 +2775,16 @@ static const char *macho_sect_to_elf_name(const char *seg, const char *sect,
 		{ MCC_TRACE("br\n"); return ".init_array"; }
 	if (!strcmp(sn, "__mod_term_func"))
 		{ MCC_TRACE("br\n"); return ".fini_array"; }
+	/* Darwin TLS. An incoming object carries the descriptor triples in
+	   __thread_vars and the initial image in __thread_data/__thread_bss. Map them
+	   onto the names the writer already classifies; without this they land under
+	   the generic ".DATA_thread_vars" spelling and nothing recognizes them. */
+	if (!strcmp(sn, "__thread_vars"))
+		{ MCC_TRACE("br\n"); return ".tlv_descriptors"; }
+	if (!strcmp(sn, "__thread_data"))
+		{ MCC_TRACE("br\n"); return ".tdata"; }
+	if (!strcmp(sn, "__thread_bss"))
+		{ MCC_TRACE("br\n"); return ".tbss"; }
 	snprintf(buf, bufsz, ".%s%s", sg[0] == '_' ? sg + 2 : sg, sn[0] == '_' ? sn + 1 : sn);
 	return buf;
 }
@@ -2897,12 +2977,24 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				case 6:
 					etype = R_AARCH64_LD64_GOT_LO12_NC;
 					break;
+				/* TLVP_LOAD_PAGE21/PAGEOFF12 are GOT-shaped: `adrp; ldr` fetches a
+				   pointer to the variable's TLV descriptor, which the caller invokes
+				   through its first word. In Mach-O the descriptor carries the
+				   variable's own name -- the initial image is `<name>$tlv$init` -- so
+				   the symbol already resolves to the address TLVP wants. This is not
+				   an ELF TLSIE GOTTPREL offset. */
+				case 8:
+					etype = R_AARCH64_ADR_GOT_PAGE;
+					break;
+				case 9:
+					etype = R_AARCH64_LD64_GOT_LO12_NC;
+					break;
 				default:
 					mcc_error_noabort("Mach-O: unsupported arm64 relocation type %d "
-														"(TLVP and POINTER_TO_GOT are not implemented)", type);
+														"(POINTER_TO_GOT is not implemented)", type);
 					goto fail;
 				}
-				if ((type == 5 || type == 6) && !ext) { MCC_TRACE("br\n");
+				if ((type == 5 || type == 6 || type == 8 || type == 9) && !ext) { MCC_TRACE("br\n");
 					mcc_error_noabort("Mach-O: section-relative GOT relocation");
 					goto fail;
 				}
@@ -3057,6 +3149,11 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		else
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_WRITE; }
 		sh_type = ((sh->flags & SECTION_TYPE) == S_ZEROFILL) ? SHT_NOBITS : SHT_PROGBITS;
+		if (!strcmp(name, ".tdata") || !strcmp(name, ".tbss")) { MCC_TRACE("br\n");
+			sh_flags |= SHF_TLS;
+			if (!strcmp(name, ".tbss"))
+				{ MCC_TRACE("br\n"); sh_type = SHT_NOBITS; }
+		}
 		if (!strcmp(name, ".init_array"))
 			{ MCC_TRACE("br\n"); sh_type = SHT_INIT_ARRAY; }
 		else if (!strcmp(name, ".fini_array"))
