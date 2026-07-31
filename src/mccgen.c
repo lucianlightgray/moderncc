@@ -3660,10 +3660,16 @@ static void type_to_str(char *buf, int buf_size,
 	Sym *s, *sa;
 	char buf1[256];
 	const char *tstr;
+	static int type_to_str_depth;
 
 	t = type->t;
 	bt = t & VT_BTYPE;
 	buf[0] = '\0';
+
+	if (++type_to_str_depth > 64) { MCC_TRACE("br\n");
+		pstrcat(buf, buf_size, "...");
+		goto done;
+	}
 
 	if (t & VT_EXTERN)
 		{ MCC_TRACE("br\n"); pstrcat(buf, buf_size, "extern "); }
@@ -3786,6 +3792,8 @@ static void type_to_str(char *buf, int buf_size,
 		pstrcat(buf, buf_size, varstr);
 	}
 no_var:;
+done:
+	--type_to_str_depth;
 }
 
 static void type_incompatibility_error(CType *st, CType *dt, const char *fmt) { MCC_TRACE("enter\n");
