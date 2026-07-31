@@ -1891,10 +1891,11 @@ static int ast_tmpl_folds;
 static MCC_OPT_TLS AstArena *ast_cur;
 int ast_bail;
 int ast_bail_line; /* where ast_bail was first set, so `bail` is attributable like `desync` */
+static void ast_gap_note(void);
 /* Mirrors AST_SET_DESYNC: record WHERE we declined. 22 sites set ast_bail and the
    verdict was a bare "bail", so the whole bucket was unattributable -- the same
    defect the vpush/vstore desync sites had, minus even a line number. */
-#define AST_SET_BAIL() do { if (!ast_bail) { ast_bail_line = __LINE__; } ast_bail = 1; } while (0)
+#define AST_SET_BAIL() do { if (!ast_bail) { ast_bail_line = __LINE__; ast_gap_note(); } ast_bail = 1; } while (0)
 static int ast_reemit_poison;
 static AstLocal ast_ret_val;
 static AstLocal ast_last_return;
@@ -1923,7 +1924,7 @@ static int ast_opassign_store_pending; /* one-shot: tag the next Store as op-ass
 static int ast_desync;
 static int ast_desync_line;
 static int ast_bail_first;
-#define AST_SET_DESYNC() do { if (!ast_desync) { if (ast_bail) { ast_bail_first = 1; } ast_desync = 1; ast_desync_line = __LINE__; MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
+#define AST_SET_DESYNC() do { if (!ast_desync) { if (ast_bail) { ast_bail_first = 1; } ast_desync = 1; ast_desync_line = __LINE__; ast_gap_note(); MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
 static int ast_base_depth;
 static int ast_saw_chain;
 static int ast_saw_nocode;
@@ -14817,6 +14818,24 @@ static int ast_try_active;
 static int ast_body_ind_sv;
 static addr_t ast_reloc0_sv;
 
+static int ast_gap_noted;
+static int ast_gap_ind;
+static int ast_gap_vn, ast_gap_cf, ast_gap_inop, ast_gap_incall;
+static int ast_gap_vdepth, ast_gap_nocode;
+
+static void ast_gap_note(void) { MCC_TRACE("enter\n");
+	if (ast_gap_noted)
+		{ MCC_TRACE("br\n"); return; }
+	ast_gap_noted = 1;
+	ast_gap_ind = ind;
+	ast_gap_vn = ast_vn;
+	ast_gap_cf = ast_cf_top;
+	ast_gap_inop = ast_in_op;
+	ast_gap_incall = ast_in_call;
+	ast_gap_vdepth = (int)(vtop - vstack + 1);
+	ast_gap_nocode = nocode_wanted;
+}
+
 /* Two symbol indices denote the same thing when their symbol-table entries are
    indistinguishable: both LOCAL, same name text, type, visibility, section,
    value and size. riscv64's PC-relative pair anchors its R_RISCV_PCREL_LO12_*
@@ -14991,6 +15010,7 @@ static int jrn_env;
 static const char *jrn_out;
 static const char *jrn_oracle_sel;
 static int jrn_last_ok;
+static char jrn_last_verdict[48];
 static int jrn_active;
 static int jrn_depth;
 static int jrn_started;
@@ -15684,6 +15704,7 @@ static void jrn_run(void) { MCC_TRACE("enter\n");
 
 static void jrn_reset(void) { MCC_TRACE("enter\n");
 	jrn_last_ok = 0;
+	jrn_last_verdict[0] = 0;
 	jrn_n = 0;
 	jrn_subn = 0;
 	jrn_sub_nopen = 0;
@@ -15702,6 +15723,7 @@ static void jrn_emit_line(const char *verdict, int ops, int raw, int fix,
 	const char *vf = mcc_state && mcc_state->current_filename
 											 ? mcc_state->current_filename
 											 : "?";
+	snprintf(jrn_last_verdict, sizeof jrn_last_verdict, "%s", verdict);
 	if (jrn_out && jrn_out[0]) { MCC_TRACE("br\n");
 		FILE *f = fopen(jrn_out, "a");
 		if (f) { MCC_TRACE("br\n");
@@ -15724,6 +15746,15 @@ static int jrn_blame(int diff_off) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return i; }
 	}
 	return -1;
+}
+
+static int jrn_site(int at) { MCC_TRACE("enter\n");
+	int i, r = -1;
+	for (i = 0; i < jrn_n; i++) { MCC_TRACE("br\n");
+		if (jrn_ops[i].ind_pre <= at)
+			{ MCC_TRACE("br\n"); r = i; }
+	}
+	return r;
 }
 
 static void jrn_verify(void) { MCC_TRACE("enter\n");
@@ -15969,44 +16000,17 @@ static void jrn_oracle_win(const char *tag, const unsigned char *p, int len,
 	fprintf(stderr, "\n");
 }
 
-/*
- * Oracle: the diagnostic the tree recorder cannot produce for itself.
- *
- * ast_verify_dump_diff already says WHERE the tree replay and the parser part
- * company. What it cannot say is what the parser was doing at that offset,
- * because the tree is exactly the model that failed. When the journal replayed
- * this same body byte-faithfully it has certified the parser's stream as
- * reproducible from a flat op list, and every op carries the [ind_pre,ind_post)
- * span it emitted -- so the first differing offset can be blamed on a named
- * codegen operation and shown in its op-segmented form.
- */
-static void jrn_oracle_dump(const char *fn, const unsigned char *base, int blen,
-														const unsigned char *repl, int rlen) { MCC_TRACE("enter\n");
-	int lim = blen < rlen ? blen : rlen;
-	int d = 0, bi, i, lo, k0, k1;
-	if (!jrn_oracle_sel || !jrn_oracle_sel[0] || !jrn_last_ok)
-		{ MCC_TRACE("br\n"); return; }
-	if (strcmp(jrn_oracle_sel, "1") && strcmp(jrn_oracle_sel, "all") &&
-			strcmp(jrn_oracle_sel, "full") && !strstr(fn, jrn_oracle_sel))
-		{ MCC_TRACE("br\n"); return; }
-	while (d < lim && base[d] == repl[d])
-		{ MCC_TRACE("br\n"); d++; }
-	fprintf(stderr,
-					"[jrn-oracle] %s: ast=unfaithful jrn=faithful, parser %d B, "
-					"ast-replay %d B, first diff @ +%d\n",
-					fn, blen, rlen, d);
-	bi = jrn_blame(d);
-	if (bi < 0) { MCC_TRACE("br\n");
-		fprintf(stderr, "[jrn-oracle] %s: +%d is past the last journalled op\n", fn,
-						d);
-	} else { MCC_TRACE("br\n");
-		JrnOp *o = &jrn_ops[bi];
-		fprintf(stderr,
-						"[jrn-oracle] %s: +%d is emitted by op #%d %s spanning +%d..+%d"
-						" (vstack %d, raw %d B)\n",
-						fn, d, bi, jrn_op_name(o->kind), o->ind_pre - ast_body_ind_sv,
-						o->ind_post - ast_body_ind_sv, o->vs_n, o->raw_len);
-	}
+static int jrn_oracle_want(const char *fn) { MCC_TRACE("enter\n");
+	if (!jrn_oracle_sel || !jrn_oracle_sel[0])
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!strcmp(jrn_oracle_sel, "1") || !strcmp(jrn_oracle_sel, "all") ||
+			!strcmp(jrn_oracle_sel, "full"))
+		{ MCC_TRACE("br\n"); return 1; }
+	return strstr(fn, jrn_oracle_sel) != NULL;
+}
+
+static void jrn_oracle_ops(int bi, const unsigned char *base, int blen) { MCC_TRACE("enter\n");
+	int i, k0, k1;
 	k0 = bi < 0 ? 0 : (bi - 3 < 0 ? 0 : bi - 3);
 	k1 = bi < 0 ? jrn_n : (bi + 4 > jrn_n ? jrn_n : bi + 4);
 	for (i = k0; i < k1; i++) { MCC_TRACE("br\n");
@@ -16034,9 +16038,91 @@ static void jrn_oracle_dump(const char *fn, const unsigned char *base, int blen,
 			fprintf(stderr, "\n");
 		}
 	}
+}
+
+/*
+ * Oracle: the diagnostic the tree recorder cannot produce for itself.
+ *
+ * ast_verify_dump_diff already says WHERE the tree replay and the parser part
+ * company. What it cannot say is what the parser was doing at that offset,
+ * because the tree is exactly the model that failed. When the journal replayed
+ * this same body byte-faithfully it has certified the parser's stream as
+ * reproducible from a flat op list, and every op carries the [ind_pre,ind_post)
+ * span it emitted -- so the first differing offset can be blamed on a named
+ * codegen operation and shown in its op-segmented form.
+ */
+static void jrn_oracle_dump(const char *fn, const unsigned char *base, int blen,
+														const unsigned char *repl, int rlen) { MCC_TRACE("enter\n");
+	int lim = blen < rlen ? blen : rlen;
+	int d = 0, bi, lo;
+	if (!jrn_last_ok || !jrn_oracle_want(fn))
+		{ MCC_TRACE("br\n"); return; }
+	while (d < lim && base[d] == repl[d])
+		{ MCC_TRACE("br\n"); d++; }
+	fprintf(stderr,
+					"[jrn-oracle] %s: ast=unfaithful jrn=faithful, parser %d B, "
+					"ast-replay %d B, first diff @ +%d\n",
+					fn, blen, rlen, d);
+	bi = jrn_blame(d);
+	if (bi < 0) { MCC_TRACE("br\n");
+		fprintf(stderr, "[jrn-oracle] %s: +%d is past the last journalled op\n", fn,
+						d);
+	} else { MCC_TRACE("br\n");
+		JrnOp *o = &jrn_ops[bi];
+		fprintf(stderr,
+						"[jrn-oracle] %s: +%d is emitted by op #%d %s spanning +%d..+%d"
+						" (vstack %d, raw %d B)\n",
+						fn, d, bi, jrn_op_name(o->kind), o->ind_pre - ast_body_ind_sv,
+						o->ind_post - ast_body_ind_sv, o->vs_n, o->raw_len);
+	}
+	jrn_oracle_ops(bi, base, blen);
 	lo = d - 8 < 0 ? 0 : d - 8;
 	jrn_oracle_win("jrn/parser", base, blen, lo, 24);
 	jrn_oracle_win("ast", repl, rlen, lo, 24);
+}
+
+static void jrn_oracle_gap(const char *fn, const char *verdict,
+													 const unsigned char *base, int blen) { MCC_TRACE("enter\n");
+	int at, off, bi;
+	if (!jrn_oracle_want(fn))
+		{ MCC_TRACE("br\n"); return; }
+	fprintf(stderr,
+					"[jrn-oracle] %s: ast=%s jrn=%s, parser %d B, tree replay not "
+					"attempted\n",
+					fn, verdict, jrn_last_verdict[0] ? jrn_last_verdict : "none", blen);
+	if (!ast_gap_noted) { MCC_TRACE("br\n");
+		fprintf(stderr,
+						"[jrn-oracle] %s: no decline site recorded, residue vn=%d cf=%d\n",
+						fn, ast_vn, ast_cf_top);
+	}
+	if (jrn_n < 1) { MCC_TRACE("br\n");
+		fprintf(stderr, "[jrn-oracle] %s: no journalled ops\n", fn);
+		return;
+	}
+	at = ast_gap_noted ? ast_gap_ind : ast_body_ind_sv + blen;
+	off = at - ast_body_ind_sv;
+	bi = jrn_site(at);
+	if (bi < 0) { MCC_TRACE("br\n");
+		fprintf(stderr,
+						"[jrn-oracle] %s: declined at +%d, ahead of the first journalled "
+						"op\n",
+						fn, off);
+	} else { MCC_TRACE("br\n");
+		JrnOp *o = &jrn_ops[bi];
+		fprintf(stderr,
+						"[jrn-oracle] %s: declined at +%d, in flight op #%d %s spanning "
+						"+%d..+%d (vstack %d, raw %d B)\n",
+						fn, off, bi, jrn_op_name(o->kind), o->ind_pre - ast_body_ind_sv,
+						o->ind_post - ast_body_ind_sv, o->vs_n, o->raw_len);
+	}
+	if (ast_gap_noted)
+		{ MCC_TRACE("br\n"); fprintf(stderr,
+						"[jrn-oracle] %s: at decline vn=%d cf=%d inop=%d incall=%d "
+						"vstack=%d nocode=%d\n",
+						fn, ast_gap_vn, ast_gap_cf, ast_gap_inop, ast_gap_incall,
+						ast_gap_vdepth, ast_gap_nocode); }
+	jrn_oracle_ops(bi, base, blen);
+	jrn_oracle_win("jrn/parser", base, blen, off - 8 < 0 ? 0 : off - 8, 24);
 }
 
 static void jrn_report(void) { MCC_TRACE("enter\n");
@@ -16096,6 +16182,19 @@ static void jrn_oracle_dump(const char *fn, const unsigned char *base, int blen,
 	(void)blen;
 	(void)repl;
 	(void)rlen;
+}
+
+static int jrn_oracle_want(const char *fn) { MCC_TRACE("enter\n");
+	(void)fn;
+	return 0;
+}
+
+static void jrn_oracle_gap(const char *fn, const char *verdict,
+													 const unsigned char *base, int blen) { MCC_TRACE("enter\n");
+	(void)fn;
+	(void)verdict;
+	(void)base;
+	(void)blen;
 }
 #endif
 
@@ -16159,6 +16258,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_bail_line = 0;
 		ast_bail_first = 0;
 		ast_desync = 0;
+		ast_gap_noted = 0;
 		ast_saw_nocode = 0;
 		ast_saw_chain = 0;
 		ast_reemit_poison = 0;
@@ -18606,8 +18706,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			}
 		}
 		int keep_baseline = 0;
+		int ast_replay_tried = 0;
 		if (ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
 			int orig_ind = ind, orig_rsym = rsym;
+			ast_replay_tried = 1;
 			int body_len = orig_ind - ast_body_ind_sv;
 			unsigned char *orig = mcc_malloc(body_len > 0 ? body_len : 1);
 			memcpy(orig, cur_text_section->data + ast_body_ind_sv, body_len);
@@ -19366,48 +19468,58 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			mcc_free(orig);
 			mcc_free(orig_rel);
 		}
-		if (ast_verify_env) { MCC_TRACE("br\n");
+		if (ast_verify_env || jrn_oracle_want(funcname)) { MCC_TRACE("br\n");
 			const char *ast_verdict;
 			char ast_verdict_buf[32];
-			int ast_gap = 0;
+			int ast_gap = 0, ast_declined = 0;
 			if (ast_fn_faithful) { MCC_TRACE("br\n");
 				ast_verdict = "faithful";
 			} else if (ast_bail_first) { MCC_TRACE("br\n");
 				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "bail:%d", ast_bail_line);
 				ast_verdict = ast_verdict_buf;
+				ast_declined = 1;
 			} else if (ast_desync) { MCC_TRACE("br\n");
 				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "desync:%d",
 								ast_desync_line);
 				ast_verdict = ast_verdict_buf;
 				ast_gap = 1;
+				ast_declined = 1;
 			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) { MCC_TRACE("br\n");
 				ast_verdict = "empty";
 			} else if (ast_bail) { MCC_TRACE("br\n");
 				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "bail:%d", ast_bail_line);
 				ast_verdict = ast_verdict_buf;
+				ast_declined = 1;
 			} else if (ast_vn != 0 || ast_cf_top != 0) { MCC_TRACE("br\n");
 				ast_verdict = "stackresidue";
 				ast_gap = 1;
+				ast_declined = 1;
 			} else { MCC_TRACE("br\n");
 				ast_verdict = "unfaithful";
 				ast_gap = 1;
 			}
-			const char *ast_vfile = mcc_state && mcc_state->current_filename
-																	? mcc_state->current_filename
-																	: "?";
-			if (ast_verify_out && ast_verify_out[0]) { MCC_TRACE("br\n");
-				FILE *ast_vf = fopen(ast_verify_out, "a");
-				if (ast_vf) { MCC_TRACE("br\n");
-					fprintf(ast_vf, "%s\t%s\t%s\n", ast_verdict, ast_vfile, funcname);
-					fclose(ast_vf);
+			if (ast_verify_env) { MCC_TRACE("br\n");
+				const char *ast_vfile = mcc_state && mcc_state->current_filename
+																		? mcc_state->current_filename
+																		: "?";
+				if (ast_verify_out && ast_verify_out[0]) { MCC_TRACE("br\n");
+					FILE *ast_vf = fopen(ast_verify_out, "a");
+					if (ast_vf) { MCC_TRACE("br\n");
+						fprintf(ast_vf, "%s\t%s\t%s\n", ast_verdict, ast_vfile, funcname);
+						fclose(ast_vf);
+					}
+				} else { MCC_TRACE("br\n");
+					fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", ast_verdict, ast_vfile,
+									funcname);
 				}
-			} else { MCC_TRACE("br\n");
-				fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", ast_verdict, ast_vfile,
-								funcname);
+				if (ast_verify_env >= 2 && ast_gap)
+					{ MCC_TRACE("br\n"); mcc_error_noabort("ast-verify: %s replay for '%s'", ast_verdict,
+														funcname); }
 			}
-			if (ast_verify_env >= 2 && ast_gap)
-				{ MCC_TRACE("br\n"); mcc_error_noabort("ast-verify: %s replay for '%s'", ast_verdict,
-													funcname); }
+			if (ast_declined && !ast_replay_tried)
+				{ MCC_TRACE("br\n"); jrn_oracle_gap(funcname, ast_verdict,
+														cur_text_section->data + ast_body_ind_sv,
+														ind - ast_body_ind_sv); }
 		}
 #ifdef MCC_EMBED_JIT
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&
