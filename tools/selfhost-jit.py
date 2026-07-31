@@ -66,11 +66,12 @@ def main():
     # itself the moment the crash is fixed and surfaces a real miscompile as a FAIL.
     # Suppress WER dialogs first so a crashing child returns its code fast.
     win = os.name == "nt" or sys.platform.startswith("win")
-    if win and cpu == "arm64":
+    if win and cpu == "arm64" and not os.environ.get("MCC_JIT_FORCE_ARM64"):
         # arm64-Windows has its own open JIT-parity defects (SEH unwind through JIT
         # frames, the MSVC JIT-exec wild-jump miscompile) that need real arm64
         # hardware to fix; a wild jump can hang rather than fault, so don't let this
         # gate red the arm64-msvc cell. Separately tracked in docs/TODO.
+        # MCC_JIT_FORCE_ARM64 overrides the skip for the arm64-win-jit-debug loop.
         print("selfhost-jit: SKIP (arm64-Windows JIT parity defects; tracked in docs/TODO)")
         sys.exit(SKIP)
     if win:

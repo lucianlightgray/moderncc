@@ -4803,18 +4803,13 @@ if(MCC_BUILD_TESTS)
             add_executable(jit_selftest_nearmatch tests/embed/jit_selftest_nearmatch.c)
             target_link_libraries(jit_selftest_nearmatch PRIVATE libmcc)
             target_include_directories(jit_selftest_nearmatch PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-            # jit/selftest-nearmatch SEGFAULTs on arm64-WINDOWS ONLY (both msvc + sanitize-msvc
-            # shards; x86_64 msvc/mingw/sanitize + all Linux incl. arm64 are green). It is a
-            # HW-gated defect needing arm64-Windows silicon to debug under windbg (the local
-            # llvm-mingw toolchain ships no libclang_rt.asan; not reproducible on x86_64) —
-            # see the open item in docs/TODO. The near-match FEATURE itself is proven on
-            # x86_64 (all 5 scenarios) + native arm64-Linux and is default-on. Skip only the
-            # arm64-Windows cell to keep CI green; the harness also self-skips (SKIP 77).
-            if(NOT (WIN32 AND MCC_CPU STREQUAL "arm64"))
-                add_test(NAME jit/selftest-nearmatch COMMAND jit_selftest_nearmatch)
-                set_tests_properties(jit/selftest-nearmatch PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
-            endif()
+            # Previously skipped on arm64-Windows (a deterministic SIGSEGV); that was
+            # the mccjit_invoke LLP64 arg-truncation bug, fixed 2026-07-31, and the
+            # bench now runs clean on real windows-11-arm hardware. Registered on
+            # every target again.
+            add_test(NAME jit/selftest-nearmatch COMMAND jit_selftest_nearmatch)
+            set_tests_properties(jit/selftest-nearmatch PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
 
             add_executable(jit_selftest_purity tests/embed/jit_selftest_purity.c)
             target_link_libraries(jit_selftest_purity PRIVATE libmcc)

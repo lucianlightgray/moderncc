@@ -233,6 +233,33 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) { MCC_TRACE("enter\
 			fprintf(stderr, "\n");
 		}
 	}
+#elif defined(MCCJIT_ARM64)
+	{
+		int r;
+		void **sp;
+		MEMORY_BASIC_INFORMATION smbi;
+		for (r = 0; r < 31; r++) { MCC_TRACE("br\n");
+			if (r % 4 == 0)
+				fprintf(stderr, "%s  x%d-%d:", r ? "\n" : "", r, r + 3 < 31 ? r + 3 : 30);
+			fprintf(stderr, " %p", (void *)cx->X[r]);
+		}
+		fprintf(stderr, "\n  fp=%p lr=%p sp=%p pc=%p\n", (void *)cx->Fp,
+						(void *)cx->Lr, (void *)cx->Sp, (void *)cx->Pc);
+		sp = (void **)cx->Sp;
+		if (sp && VirtualQuery(sp, &smbi, sizeof smbi) == sizeof smbi &&
+				smbi.State == MEM_COMMIT &&
+				!(smbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) { MCC_TRACE("br\n");
+			size_t avail =
+					(size_t)((char *)smbi.BaseAddress + smbi.RegionSize - (char *)sp);
+			size_t j, m = avail / sizeof(void *);
+			if (m > 8)
+				m = 8;
+			fprintf(stderr, "  stack@sp:");
+			for (j = 0; j < m; j++)
+				fprintf(stderr, " [%llu]=%p", (unsigned long long)j, sp[j]);
+			fprintf(stderr, "\n");
+		}
+	}
 #endif
 	mccjit_diag_dump(pc);
 	fprintf(stderr,
