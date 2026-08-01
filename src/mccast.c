@@ -2863,6 +2863,7 @@ void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_inc(int post, int c) { MCC_TRACE("enter\n");
+	rir_rbegin_val(RIR_R_INC, (c << 1) | (post ? 1 : 0));
 	ast_inc_pending = AST_NONE;
 	if (!ast_active || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -2882,6 +2883,7 @@ void ast_hook_inc(int post, int c) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_INC);
 	if (ast_inc_pending == AST_NONE)
 		{ MCC_TRACE("br\n"); return; }
 	ast_inc_pending = AST_NONE;

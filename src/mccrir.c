@@ -88,7 +88,7 @@ static const char *rir_region_name(int k) {
 	static const char *const n[RIR_R_COUNT] = {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
-			"body",	 "incr", "synth"};
+			"body",	 "incr", "synth", "inc"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -147,7 +147,7 @@ static void rir_mark_v(int tag, int kind, int val) {
 
 static void rir_mark(int tag, int kind) { rir_mark_v(tag, kind, 0); }
 
-void rir_rbegin(int kind) {
+void rir_rbegin_val(int kind, int val) {
 	if (!rir_active)
 		return;
 	if (rir_stackn >= (int)(sizeof rir_stack / sizeof rir_stack[0])) {
@@ -155,8 +155,10 @@ void rir_rbegin(int kind) {
 		return;
 	}
 	rir_stack[rir_stackn++] = kind;
-	rir_mark(RIR_T_RBEGIN, kind);
+	rir_mark_v(RIR_T_RBEGIN, kind, val);
 }
+
+void rir_rbegin(int kind) { rir_rbegin_val(kind, 0); }
 
 void rir_rend_to(int kind) {
 	int i, found = 0;
@@ -489,6 +491,20 @@ static AstLocal rir_leaf(const SValue *sv) {
 	return n;
 }
 
+/* A value dropped off the shadow stack still has to become a statement if
+   emitting it is the point: a discarded `a++` is a Unary, not a Store, and
+   letting it fall off orphans the node and emits nothing. Address-of and the
+   other AST_OP_* unaries are pure and stay droppable. */
+static int rir_effectful(AstLocal n) {
+	uint16_t k;
+	if (n == AST_NONE)
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Store || k == AST_Invoke)
+		return 1;
+	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
+}
+
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
@@ -552,8 +568,7 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		want = VSTACK_SIZE;
 	while (rir_shn > want) {
 		AstLocal d = rir_pop();
-		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
-		if (dk == AST_Store || dk == AST_Invoke)
+		if (rir_effectful(d))
 			rir_stmt(d);
 	}
 	if (rir_after_ret && rir_shn == 0)
@@ -645,8 +660,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case JOP_VPOP: {
 		AstLocal d = rir_pop();
-		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
-		if (dk == AST_Store || dk == AST_Invoke)
+		if (rir_effectful(d))
 			rir_stmt(d);
 		break;
 	}
@@ -690,7 +704,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 }
 
-static int rir_cond_depth, rir_synth_depth, rir_call_depth;
+static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
 static AstLocal rir_last_return = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
@@ -821,6 +835,25 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_CALL:
 			rir_call_depth++;
 			break;
+		case RIR_R_INC: {
+			/* `a++` is one node in the tree and a seven-primitive lowering in the
+			   journal (vdup / gv_dup / vrotb / vpushi / gen_op / vstore / vpop).
+			   Rebuilding it from the primitives loses the load the parser emits for
+			   the old value, so bracket the lowering and keep the tree's shape:
+			   ast_replay_value's inc() arm re-issues the whole sequence. */
+			AstLocal a = rir_pop(), u;
+			rir_inc_depth++;
+			if (a == AST_NONE) {
+				rir_arena_mismatch++;
+				break;
+			}
+			u = ast_node(rir_arena, AST_Unary);
+			ast_set_op(rir_arena, u, ro->rval >> 1);
+			ast_set_ival(rir_arena, u, (uint64_t)(ro->rval & 1));
+			ast_add_child(rir_arena, u, a);
+			rir_push_typed(u);
+			break;
+		}
 		case RIR_R_INCR:
 		case RIR_R_BODY:
 		case RIR_R_THEN:
@@ -849,6 +882,10 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_CALL:
 		if (rir_call_depth)
 			rir_call_depth--;
+		break;
+	case RIR_R_INC:
+		if (rir_inc_depth)
+			rir_inc_depth--;
 		break;
 	case RIR_R_INCR:
 	case RIR_R_BODY:
@@ -1035,12 +1072,14 @@ static void rir_to_arena(void) {
 	rir_cond_depth = 0;
 	rir_synth_depth = 0;
 	rir_call_depth = 0;
+	rir_inc_depth = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
-			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth) {
+			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
+					!rir_inc_depth) {
 				if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				else
@@ -1051,21 +1090,22 @@ static void rir_to_arena(void) {
 		}
 		if (ro->tag != RIR_T_OP) {
 			if (ro->tag == RIR_T_RBEGIN && !rir_synth_depth && !rir_call_depth &&
+					!rir_inc_depth &&
 					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
-					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND))
+					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND ||
+					 ro->rkind == RIR_R_INC))
 				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 			rir_region(ro);
 			continue;
 		}
-		if (rir_cond_depth)
+		if (rir_cond_depth || rir_inc_depth)
 			continue;
 		rir_reconcile(&ro->p);
 		rir_op_effect(ro);
 	}
 	while (rir_shn > 0) {
 		AstLocal d = rir_pop();
-		uint16_t dk = d == AST_NONE ? AST_Poison : ast_kind(rir_arena, d);
-		if (dk == AST_Store || dk == AST_Invoke)
+		if (rir_effectful(d))
 			rir_stmt(d);
 	}
 }
