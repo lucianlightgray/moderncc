@@ -1180,6 +1180,22 @@ static AstLocal rir_tern[16];
 static int rir_ternn;
 static AstLocal rir_lor[16];
 static int rir_lorn;
+/* `a[3]` is pointer arithmetic that ends at the same pointer type it started
+   from, and the tree holds a bare Binary under its Load. `*(T *)(base + off)`
+   is a cast, and the tree holds a Convert. Both reach RIR_M_LOAD as an untyped
+   Binary under a VT_PTR snapshot, so the discriminator is whether an operand
+   already carries that exact pointer type. */
+static int rir_ptr_arith(AstLocal n, const SValue *pv) {
+	int i, nc = ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		if (c != AST_NONE && ast_type_t(rir_arena, c) == pv->type.t &&
+				ast_type_ref(rir_arena, c) == (uint64_t)(uintptr_t)pv->type.ref)
+			return 1;
+	}
+	return 0;
+}
+
 static AstLocal rir_last_return = AST_NONE;
 static AstLocal rir_retexpr = AST_NONE;
 static int rir_retexpr_depth;
@@ -1317,7 +1333,8 @@ static void rir_mark_apply(const RirOp *ro) {
 			   and interposes a Convert between two Loads the tree does not have. */
 			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
 					ast_kind(rir_arena, top) == AST_Binary &&
-					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+					!rir_ptr_arith(top, pv)) {
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type(rir_arena, cv, pv->type.t,
 										 (uint64_t)(uintptr_t)pv->type.ref);
