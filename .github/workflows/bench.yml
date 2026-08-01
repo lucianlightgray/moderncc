@@ -30,7 +30,13 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci
       - id: gen
-        run: echo "bench=$(mcc-ci plan --job stage1-gate)" >> "$GITHUB_OUTPUT"
+        # One representative host per OS family (bench's design). stage1-gate
+        # now carries two macOS gate hosts (clang + gcc, for the CI self-host
+        # matrix); a gcc-vs-clang-built mcc has ~identical compile speed, so
+        # dedup by OS keeps the first gate host per family (clang on macOS) and
+        # drops the redundant second -- which also avoids a cell whose CC would
+        # need the gcc-N resolve bench does not carry.
+        run: echo "bench=$(mcc-ci plan --job stage1-gate | jq -c 'unique_by(.runner|split("-")[0])')" >> "$GITHUB_OUTPUT"
 
   bench:
     needs: plan
