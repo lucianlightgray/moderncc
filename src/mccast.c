@@ -6791,8 +6791,27 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	case AST_Invoke: {
 		uint32_t nc = ast_nchild(a, n);
 		int live_arg = (ast_fbits(a, n) & AST_FB_CALL_STOREVAL_ARG) != 0;
+		int rir_pre_sret = 0;
 		if (!live_arg && ast_inline_graft(a, n))
 			{ MCC_TRACE("br\n"); break; }
+#if MCC_REPLAY_IR
+		if (rir_c2_active && (ast_type_t(a, n) & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+			CType prt, prtmp;
+			int prax, prsx;
+			prt.t = ast_type_t(a, n);
+			prt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			if (gfunc_sret(&prt, 0, &prtmp, &prax, &prsx) <= 0) { MCC_TRACE("br\n");
+				int psal, pssz = type_size(&prt, &psal);
+#ifdef MCC_TARGET_ARM64
+				if (pssz < 16)
+					{ MCC_TRACE("br\n"); while (pssz & (pssz - 1))
+						{ MCC_TRACE("br\n"); pssz = (pssz | (pssz - 1)) + 1; } }
+#endif
+				ast_alloc_loc(pssz, psal);
+				rir_pre_sret = 1;
+			}
+		}
+#endif
 		for (uint32_t i = 0; i < nc; i++) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, i));
 			if (i == 0 && ast_indirect_call_env &&
@@ -6845,7 +6864,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 						{ MCC_TRACE("br\n"); while (ssz & (ssz - 1))
 							{ MCC_TRACE("br\n"); ssz = (ssz | (ssz - 1)) + 1; } }
 #endif
-					ast_alloc_loc(ssz, sal);
+					if (!rir_pre_sret)
+						{ MCC_TRACE("br\n"); ast_alloc_loc(ssz, sal); }
 					SValue sv;
 					memset(&sv, 0, sizeof sv);
 					sv.type.t = ast_type_t(a, n);

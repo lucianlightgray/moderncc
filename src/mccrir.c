@@ -56,15 +56,19 @@ int rir_active;
    the other. */
 #define RIR_LOCREC_MAX 512
 static int rir_locrec[RIR_LOCREC_MAX];
+static int rir_locrec_pos[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
 
 void rir_loc_record(int loc_in) {
 	if (rir_locrec_n >= RIR_LOCREC_MAX)
 		return;
+	rir_locrec_pos[rir_locrec_n] = ind;
 	rir_locrec[rir_locrec_n++] = loc_in;
 }
 
 int rir_loc_replay(int *loc_out) {
+	while (rir_locrec_i + 1 < rir_locrec_n && rir_locrec_pos[rir_locrec_i + 1] <= ind)
+		rir_locrec_i++;
 	if (rir_locrec_i >= rir_locrec_n)
 		return 0;
 	*loc_out = rir_locrec[rir_locrec_i++];
@@ -1102,10 +1106,17 @@ static void rir_stamp_call_top(const SValue *base, int n) {
    ival 0 would order them the wrong way round. */
 static AstLocal rir_spill_take(const SValue *sv) {
 	AstLocal n;
+	int al, sz;
+	CType st2;
 	if (rir_spill_node == AST_NONE || sv->sym ||
 			(sv->r & VT_VALMASK) != VT_LOCAL || !(sv->r & VT_LVAL) ||
-			(sv->type.t & VT_BTYPE) != VT_STRUCT ||
-			(long long)sv->c.i != rir_spill_addr)
+			(sv->type.t & VT_BTYPE) != VT_STRUCT)
+		return AST_NONE;
+	st2.t = sv->type.t;
+	st2.ref = sv->type.ref;
+	sz = type_size(&st2, &al);
+	if (rir_spill_addr < (long long)sv->c.i ||
+			rir_spill_addr >= (long long)sv->c.i + (sz > 0 ? sz : 1))
 		return AST_NONE;
 	n = rir_spill_node;
 	rir_spill_node = AST_NONE;
@@ -1529,7 +1540,9 @@ static void rir_op_effect(const RirOp *ro) {
 			   names one. The aggregate atomic lowerings call a void helper and then
 			   vset the frame slot it filled, which is not the result and binding it
 			   took the Invoke where the parser had a local address. */
-			if (o->kind == JOP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST) {
+			if (o->kind == JOP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST ||
+					((o->ctype.t & VT_BTYPE) == VT_STRUCT &&
+					 (o->a0 & VT_VALMASK) == VT_LOCAL && (o->a0 & VT_LVAL))) {
 				rir_push_typed(rir_pending_call);
 				if (rir_shn > 0)
 					rir_shtype[rir_shn - 1] = 2;
