@@ -56,7 +56,7 @@ if(NOT _libc STREQUAL "${_default_libc}")
     set(_bkey "${_cpu}-${_os}-${_libc}")
 endif()
 
-if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64)$")
+if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64|arm)$")
     _skip("cpu '${_cpu}' is outside the MCC_JOURNAL_HOOKS gate")
 endif()
 

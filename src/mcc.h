@@ -1078,7 +1078,8 @@ struct filespec {
 #ifndef MCC_JOURNAL_HOOKS
 #if MCC_CONFIG_OPTIMIZER &&                                                    \
 		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
-		 defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64))
+		 defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64) ||                 \
+		 defined(MCC_TARGET_ARM))
 #define MCC_JOURNAL_HOOKS 1
 #endif
 #endif

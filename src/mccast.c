@@ -15564,7 +15564,9 @@ JRN_W0(gen_cvt_sxtw, JOP_CVT_SXTW)
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 JRN_W0(gen_cvt_trunc32, JOP_CVT_TRUNC32)
 #endif
+#ifdef MCC_JRN_HAVE_CVT_CSTI
 JRN_W1(gen_cvt_csti, JOP_CVT_CSTI)
+#endif
 #ifdef MCC_JRN_HAVE_STRUCT_COPY
 JRN_W1(gen_struct_copy, JOP_STRUCTCOPY)
 #endif
@@ -15575,12 +15577,16 @@ JRN_W1(gen_vla_sp_restore, JOP_VLA_SPREST)
 #ifdef MCC_JRN_HAVE_VLA_RESULT
 JRN_W1(gen_vla_result, JOP_VLA_RESULT)
 #endif
+#ifdef MCC_JRN_HAVE_MULH
 JRN_W1(gen_mulh, JOP_MULH)
+#endif
 #if MCC_HAVE_INT128
 JRN_W0(gen_mul_widen, JOP_MULWIDEN)
 #endif
+#ifdef MCC_JRN_HAVE_FABS_SQRT
 JRN_W0(gen_fabs, JOP_FABS)
 JRN_W0(gen_sqrt, JOP_SQRT)
+#endif
 #ifdef MCC_JRN_HAVE_ROUND
 JRN_W1(gen_round, JOP_ROUND)
 #endif
@@ -15824,7 +15830,9 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_CVT_TRUNC32: (gen_cvt_trunc32)(); break;
 #endif
+#ifdef MCC_JRN_HAVE_CVT_CSTI
 	case JOP_CVT_CSTI: (gen_cvt_csti)(o->a0); break;
+#endif
 #ifdef MCC_JRN_HAVE_STRUCT_COPY
 	case JOP_STRUCTCOPY: (gen_struct_copy)(o->a0); break;
 #endif
@@ -15837,15 +15845,19 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_VLA_RESULT: (gen_vla_result)(o->a0); break;
 #endif
 	case JOP_VLA_ALLOC: (gen_vla_alloc)(&o->ctype, o->a0); break;
+#ifdef MCC_JRN_HAVE_MULH
 	case JOP_MULH: (gen_mulh)(o->a0); break;
+#endif
 #if MCC_HAVE_INT128
 	case JOP_MULWIDEN: (gen_mul_widen)(); break;
 #endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 	case JOP_REGADDI: (gen_reg_addi)(o->a0, o->d64); break;
 #endif
+#ifdef MCC_JRN_HAVE_FABS_SQRT
 	case JOP_FABS: (gen_fabs)(); break;
 	case JOP_SQRT: (gen_sqrt)(); break;
+#endif
 #ifdef MCC_JRN_HAVE_ROUND
 	case JOP_ROUND: (gen_round)(o->a0); break;
 #endif

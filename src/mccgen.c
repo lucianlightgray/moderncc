@@ -32,8 +32,9 @@
 /* gen_round / gen_copysign are the FP round-mode / sign-copy hardware inlines,
    defined on the SSE/NEON/RVF backends but NOT i386 -- x87 needs a memory
    round-trip and rounding-control juggling (tracked in docs/TODO Codegen), so
-   i386-gen.c defines neither. gen_fabs/gen_sqrt DO exist on i386 (x87 fabs/
-   fsqrt) and stay unconditional. The two are gated separately because riscv64
+   i386-gen.c defines neither. gen_fabs/gen_sqrt exist on i386 (x87 fabs/fsqrt)
+   but NOT on arm, so they get MCC_JRN_HAVE_FABS_SQRT above rather than staying
+   unconditional. The two are gated separately because riscv64
    defines fsgnj.d but no round-mode inline. Mirror the definition set so the
    journal does not reference a primitive a target never links. */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
@@ -42,6 +43,16 @@
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_RISCV64)
 #define MCC_JRN_HAVE_COPYSIGN 1
+#endif
+/* gen_cvt_csti and gen_mulh are declared for i386/x86_64 only (mcc.h:1833,
+   :1838) but DEFINED by x86_64, arm64, i386 and riscv64 -- every CPU the gate
+   admitted before arm -- which is why journalling them unconditionally worked.
+   arm defines neither, so mirror the definition set, not the declaration. */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
+		defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64)
+#define MCC_JRN_HAVE_CVT_CSTI 1
+#define MCC_JRN_HAVE_MULH 1
+#define MCC_JRN_HAVE_FABS_SQRT 1
 #endif
 #ifdef MCC_TARGET_ARM64
 #define MCC_JRN_HAVE_GFUNC_RETURN 1

@@ -103,9 +103,9 @@ endif()
 set(_bkey "${_cpu}-${_os}")
 
 # ------------------------------------------------------- journal gate check
-# The gate in src/mcc.h admits these four CPUs. Anything else journals 0 rows,
+# The gate in src/mcc.h admits these five CPUs. Anything else journals 0 rows,
 # which would otherwise look like a clean sweep rather than an absent oracle.
-if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64)$")
+if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64|arm)$")
     _skip("cpu '${_cpu}' is outside the MCC_JOURNAL_HOOKS gate in src/mcc.h -- \
 it journals 0 rows, so there is no oracle to compare. Widen the gate first")
 endif()
