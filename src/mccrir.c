@@ -569,9 +569,18 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			na = 0;
 		}
-		for (k = na - 1; k >= 0; k--)
+		for (k = na - 1; k >= 0; k--) {
 			args[k] = rir_pop();
-		ast_add_child(rir_arena, n, rir_pop());
+			if (args[k] == AST_NONE)
+				rir_arena_mismatch++;
+		}
+		{
+			AstLocal callee = rir_pop();
+			if (callee == AST_NONE)
+				rir_arena_mismatch++;
+			else
+				ast_add_child(rir_arena, n, callee);
+		}
 		for (k = 0; k < na; k++)
 			if (args[k] != AST_NONE)
 				ast_add_child(rir_arena, n, args[k]);
@@ -782,6 +791,11 @@ static int rir_emit_safe(void) {
 				return 0;
 			callee = ast_child(rir_arena, n, 0);
 			if (callee == AST_NONE || ast_type_t(rir_arena, callee) == 0)
+				return 0;
+			/* gfunc_call walks the callee's signature Sym for the ABI; a callee
+			   with no type ref, or one that is not a function, faults there. */
+			if (ast_type_ref(rir_arena, callee) == 0 ||
+					(ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC)
 				return 0;
 			break;
 		}
