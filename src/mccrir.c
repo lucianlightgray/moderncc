@@ -750,6 +750,53 @@ static void rir_region(const RirOp *ro) {
 	}
 }
 
+#if MCC_REPLAY_IR_C2
+/* ast_validate checks link consistency, not arity. ast_replay_bb assumes the
+   shapes the hooks always produce -- an If with a condition and at least one
+   block, a Store with two children, and so on -- and walks off the end when a
+   reconstruction is short. Reject those here so an incomplete arena is an
+   honest skip instead of a segfault in the emitter. */
+static int rir_emit_safe(void) {
+	AstLocal n;
+	for (n = 0; n < ast_count(rir_arena); n++) {
+		uint32_t nc = ast_nchild(rir_arena, n);
+		switch (ast_kind(rir_arena, n)) {
+		case AST_If:
+			if (nc < 2)
+				return 0;
+			break;
+		case AST_Store:
+		case AST_Binary:
+			if (nc != 2)
+				return 0;
+			break;
+		case AST_Convert:
+		case AST_Load:
+		case AST_Unary:
+			if (nc != 1)
+				return 0;
+			break;
+		case AST_Invoke: {
+			AstLocal callee;
+			if (nc < 1)
+				return 0;
+			callee = ast_child(rir_arena, n, 0);
+			if (callee == AST_NONE || ast_type_t(rir_arena, callee) == 0)
+				return 0;
+			break;
+		}
+		case AST_Return:
+			if (nc > 1)
+				return 0;
+			break;
+		default:
+			break;
+		}
+	}
+	return 1;
+}
+#endif
+
 static void rir_to_arena(void) {
 	int i;
 	if (!rir_arena)
@@ -1223,7 +1270,8 @@ void rir_verify(void) {
 		ast_rp_switch = NULL;
 		ast_temp_frontier = 1;
 		mcc_state->error_func = rir_c2_sink;
-		if (ast_validate(rir_arena, rir_c2_msg, sizeof rir_c2_msg) != 0) {
+		if (ast_validate(rir_arena, rir_c2_msg, sizeof rir_c2_msg) != 0 ||
+				!rir_emit_safe()) {
 			rir_tot_c2_invalid++;
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2] %s\tINVALID %s\n", funcname, rir_c2_msg);
