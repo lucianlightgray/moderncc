@@ -557,7 +557,22 @@ static AstLocal rir_leaf(const SValue *sv) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
 	ast_set_op(rir_arena, n, sv->r);
-	ast_set_type(rir_arena, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+	/* A string literal reaches the op boundary already DECAYED: the snapshot
+	   says char * where the tree's leaf still says char[N]. The tree builds its
+	   leaf before the argument conversion decays it, and no snapshot Replay_IR
+	   can see holds the array type -- but the Sym does. Restore it from there.
+	   34 of the near-miss bodies differ in exactly this. */
+	if (sv->sym && (sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) &&
+		(sv->sym->type.t & VT_ARRAY) &&
+		(sv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR)
+		/* Take VT_ARRAY and the element ref from the Sym, but the rest of the
+		   type from the snapshot: the Sym also carries storage-class bits the
+		   tree's leaf never sees (t=0x2045 against its 0x45). */
+		ast_set_type(rir_arena, n, sv->type.t | VT_ARRAY,
+			(uint64_t)(uintptr_t)sv->sym->type.ref);
+	else
+		ast_set_type(rir_arena, n, sv->type.t,
+			(uint64_t)(uintptr_t)sv->type.ref);
 	ast_set_ival(rir_arena, n, (uint64_t)sv->c.i);
 	ast_set_wide(rir_arena, n, ast_sv_hi(sv),
 							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
