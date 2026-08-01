@@ -864,6 +864,15 @@ static int rir_gret_depth;
 static int rir_vbf_depth;
 static int rir_call_depth;
 static int rir_vstn;
+/* gfunc_call spills a register-returned struct into a frame temp of its own and
+   vstore() journals that spill, so `a = f()` reconstructs as Store(temp, Invoke)
+   plus Store(a, temp) where the tree holds one Store(a, Invoke) --
+   ast_replay_value's Invoke arm re-runs the whole call tail, spill included, so
+   the recorded copy is a second one. The Invoke is held here across the spill
+   and re-enters the shadow stack when the parser materialises the temp's own
+   lvalue, keyed on that frame offset. */
+static AstLocal rir_spill_node = AST_NONE;
+static long long rir_spill_addr;
 
 static void rir_flush_pending_call(void) {
 	if (rir_pending_call == AST_NONE)
@@ -1029,6 +1038,57 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	}
 }
 
+/* A suppressed struct assignment drops every op inside its region, so a value
+   whose type is still deferred when the region opens never reaches another
+   boundary and stays unstamped. `data = init(data)` -- a struct returned in
+   MEMORY, so the call tail pushes the hidden temp's lvalue rather than spilling
+   -- kept its Invoke at op 0 ival 0 where the tree's carries that temp's own
+   SValue, and ast_replay_value then rebuilt the return in register 0: the copy
+   read from the destination instead of from the temp. The region marker's own
+   snapshot is the missing boundary. */
+static void rir_stamp_call_top(const SValue *base, int n) {
+	int k = n - ast_base_depth - 1;
+	const SValue *v;
+	if (k < 0 || k != rir_shn - 1 || rir_shn <= 0)
+		return;
+	if (rir_shtype[k] != 2 || rir_sh[k] == AST_NONE ||
+			ast_kind(rir_arena, rir_sh[k]) != AST_Invoke)
+		return;
+	v = &base[ast_base_depth + k];
+	ast_set_type(rir_arena, rir_sh[k], v->type.t,
+							 (uint64_t)(uintptr_t)v->type.ref);
+	ast_set_op(rir_arena, rir_sh[k], v->r);
+	ast_set_ival(rir_arena, rir_sh[k], (uint64_t)v->c.i);
+	ast_set_sym(rir_arena, rir_sh[k], (uint64_t)(uintptr_t)v->sym);
+	ast_set_wide(rir_arena, rir_sh[k], ast_sv_hi(v),
+							 v->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)v->r2);
+	rir_shtype[k] = 0;
+}
+
+/* The held call-result Invoke re-enters the shadow stack at the boundary where
+   the parser pushes `vset(&s->type, VT_LOCAL | VT_LVAL, addr)` -- the same
+   anonymous frame slot the spill wrote, now carrying the struct type. Stamp it
+   with that SValue, because the tree's Invoke carries exactly it: the
+   struct-copy rebuild matches its operands by frame offset, and an Invoke at
+   ival 0 would order them the wrong way round. */
+static AstLocal rir_spill_take(const SValue *sv) {
+	AstLocal n;
+	if (rir_spill_node == AST_NONE || sv->sym ||
+			(sv->r & VT_VALMASK) != VT_LOCAL || !(sv->r & VT_LVAL) ||
+			(sv->type.t & VT_BTYPE) != VT_STRUCT ||
+			(long long)sv->c.i != rir_spill_addr)
+		return AST_NONE;
+	n = rir_spill_node;
+	rir_spill_node = AST_NONE;
+	if (ast_parent(rir_arena, n) != AST_NONE)
+		return AST_NONE;
+	ast_set_type(rir_arena, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+	ast_set_op(rir_arena, n, sv->r);
+	ast_set_ival(rir_arena, n, (uint64_t)sv->c.i);
+	ast_set_sym(rir_arena, n, 0);
+	return n;
+}
+
 static void rir_reconcile_sv(const SValue *base, int n) {
 	int want, k;
 	if (n < 0)
@@ -1049,8 +1109,10 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 	if (rir_shn < want)
 		rir_tot_refill++;
 	for (k = rir_shn; k < want; k++) {
+		const SValue *sv3 = &base[ast_base_depth + k];
+		AstLocal sp = rir_spill_take(sv3);
 		rir_tot_leaf++;
-		rir_push(rir_leaf(&base[ast_base_depth + k]));
+		rir_push(sp == AST_NONE ? rir_leaf(sv3) : sp);
 		/* gfunc_return pushes its own operands (vset/indir/vswap) which Replay_IR
 		   deliberately does not model, because the tree does not either and
 		   ast_replay_value re-runs gfunc_return itself. Those pushes make the
@@ -1175,6 +1237,25 @@ static void rir_op_effect(const RirOp *ro) {
 		if (v == AST_NONE || t == AST_NONE) {
 			rir_arena_mismatch++;
 			break;
+		}
+		/* The call tail's own spill, and only it: inside a call region, the value
+		   is the Invoke this region just built and the target is an anonymous
+		   frame slot. Every other vstore under a call region -- a nested call's
+		   arguments, the atomic helpers' write-back -- fails one of the two tests.
+		   Drop the Store and hold the Invoke; the slot the shadow stack keeps has
+		   to be a placeholder, because the parser's `vtop--` after the spill
+		   truncates the stack again and a live node there would be re-emitted as a
+		   statement. */
+		if (rir_call_depth && ast_kind(rir_arena, v) == AST_Invoke &&
+				ast_parent(rir_arena, v) == AST_NONE &&
+				o->vs_n - ast_base_depth >= 2) {
+			const SValue *ts = &jrn_vs[o->vs_off + o->vs_n - 2];
+			if (!ts->sym && (ts->r & VT_VALMASK) == VT_LOCAL && (ts->r & VT_LVAL)) {
+				rir_spill_node = v;
+				rir_spill_addr = (long long)ts->c.i;
+				rir_push(AST_NONE);
+				break;
+			}
 		}
 		/* `s = j = 0` chains two stores over ONE value, and the tree keeps the
 		   model a tree by giving the outer store a deep COPY of the inner store's
@@ -2024,7 +2105,7 @@ static void rir_region(const RirOp *ro) {
 			   clobbered function-local type Syms and their type.ref dangles. */
 			if (rir_vstn < 16) {
 				int n2 = ro->mvs_n - ast_base_depth;
-				int allow = 0;
+				int allow = 0, fit;
 				rir_vst_tc[rir_vstn] = 0;
 				rir_vst_vc[rir_vstn] = 0;
 				if (n2 == 2 && rir_shn == 1 && !after_ret &&
@@ -2037,11 +2118,21 @@ static void rir_region(const RirOp *ro) {
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
 								VT_STRUCT)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
-				if (n2 >= 2 && rir_shn >= 2 &&
+				/* The rebuild takes the region's two operands off the TOP of the
+				   shadow stack, so it is only defined where the shadow models the
+				   whole vstack. gfunc_param_typed copies a by-value struct argument
+				   through vstore() as well, and there the marker is 12 slots deep
+				   over a 2-slot shadow: `printf("big %ld\n", big(100, s1, ...))`
+				   rebuilt Store(printf, "big %ld\n"), which left the Invoke's callee
+				   a StoreVal and is the whole Invoke-callee-notfunc refusal on
+				   struct_abi.c and aggregate_perm.c. */
+				fit = (n2 >= 2 && !rir_call_depth);
+				if (fit &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
 								VT_STRUCT &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
 								VT_STRUCT) {
+					rir_stamp_call_top(rir_mvs + ro->mvs_off, ro->mvs_n);
 					rir_vstruct_depth++;
 					rir_vst_sup[rir_vstn] = 1;
 					rir_vst_tc[rir_vstn] =
@@ -2083,7 +2174,7 @@ static void rir_region(const RirOp *ro) {
 					allow = (((v->type.t & VT_ARRAY) != 0 &&
 										(v->type.t & VT_BTYPE) != VT_STRUCT &&
 										(t->type.t & VT_BTYPE) != VT_STRUCT) ||
-										((v->type.t & VT_BTYPE) == VT_STRUCT &&
+										(fit && (v->type.t & VT_BTYPE) == VT_STRUCT &&
 											(t->type.t & VT_BTYPE) == VT_STRUCT)) &&
 									!((v->type.t | t->type.t) & VT_BITFIELD);
 				}
@@ -2663,6 +2754,7 @@ static void rir_to_arena(void) {
 	rir_ternn = 0;
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;
+	rir_spill_node = AST_NONE;
 	rir_opassign_pending = 0;
 	rir_retexpr = AST_NONE;
 	rir_retexpr_pending = 0;
