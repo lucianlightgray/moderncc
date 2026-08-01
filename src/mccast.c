@@ -86,6 +86,13 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
    block being non-empty. Only Replay_IR sets this. */
 #define AST_FB_FOR_INCR_LIVE 32768u
 
+/* The parser pushes the store TARGET after the value, and vsetc's vcheck_cmp
+   materialises a live VT_CMP at that point; replay pushes the target first, so
+   the comparison is still VT_CMP when vstore's gen_cast runs and a _Bool cast
+   folds away. Only Replay_IR sets this, from the recorded snapshot that says
+   the value was already in a register. */
+#define AST_FB_STORE_CMP_GV 65536u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -2065,6 +2072,31 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 		if (loc < ast_locrec_min)
 			{ MCC_TRACE("br\n"); ast_locrec_min = loc; }
 	}
+	return loc;
+}
+
+/* The atomic aggregate lowerings mint their scratch slot straight off `loc`,
+   outside both ast_locrec and Replay_IR's own declaration list, so the C2 trial
+   -- which restores `loc` to the body's opening value -- handed the __atomic
+   helper a different frame slot than the parse did. Record and replay them on a
+   list of their own: parse and emission reach these lowerings in the same
+   statement order, while sharing the declaration list would consume a declared
+   local's offset. */
+int ast_alloc_slot(int size, int align) { MCC_TRACE("enter\n");
+#if MCC_REPLAY_IR
+	if (rir_c2_active) { MCC_TRACE("br\n");
+		int rl;
+		if (rir_slot_replay(&rl)) { MCC_TRACE("br\n");
+			loc = rl;
+			return loc;
+		}
+	}
+#endif
+	loc = (loc - size) & -align;
+#if MCC_REPLAY_IR
+	if (rir_active && !ast_replaying && !jrn_replaying)
+		{ MCC_TRACE("br\n"); rir_slot_record(loc); }
+#endif
 	return loc;
 }
 
@@ -7088,6 +7120,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 #endif
 			ast_replay_value(a, ast_child(a, s, 0));
 			ast_replay_value(a, ast_child(a, s, 1));
+			if (ast_fbits(a, s) & AST_FB_STORE_CMP_GV)
+				{ MCC_TRACE("br\n"); vcheck_cmp(); }
 			vstore();
 			if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
 				{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }

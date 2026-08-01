@@ -74,6 +74,27 @@ int rir_loc_replay(int *loc_out) {
 	*loc_out = rir_locrec[rir_locrec_i++];
 	return 1;
 }
+
+/* alloc_local_slot bumps `loc` directly, so it is outside both the tree's
+   ast_locrec and Replay_IR's list above. Only the atomic aggregate lowerings
+   reach it, and they run in the same order in the parse and in the C2 emission
+   (the arena keeps statement order), so a list of its own stays in step where
+   sharing rir_locrec would consume a declaration's slot instead. */
+static int rir_slotrec[RIR_LOCREC_MAX];
+static int rir_slotrec_n, rir_slotrec_i;
+
+void rir_slot_record(int loc_in) {
+	if (rir_slotrec_n >= RIR_LOCREC_MAX)
+		return;
+	rir_slotrec[rir_slotrec_n++] = loc_in;
+}
+
+int rir_slot_replay(int *loc_out) {
+	if (rir_slotrec_i >= rir_slotrec_n)
+		return 0;
+	*loc_out = rir_slotrec[rir_slotrec_i++];
+	return 1;
+}
 int rir_c2_active;
 int rir_started;
 
@@ -294,6 +315,11 @@ void rir_vla_begin(void) {
 #define RIR_XT_MAX 16384
 static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];
+static int rir_xt_c[RIR_XT_MAX];
+static int rir_xt_t[RIR_XT_MAX];
+static int rir_xt_v[RIR_XT_MAX];
+static void *rir_xt_nx[RIR_XT_MAX];
+static void *rir_xt_tr[RIR_XT_MAX];
 static int rir_xtn;
 
 /* mk_pointer's sym_push lands on the parser's local stack and is popped long
@@ -325,6 +351,8 @@ static int rir_body_hasheq;
 void rir_reset(void) {
 	rir_locrec_n = 0;
 	rir_locrec_i = 0;
+	rir_slotrec_n = 0;
+	rir_slotrec_i = 0;
 	rir_body_hasheq = 0;
 	rir_xtn = 0;
 	rir_ptn = 0;
@@ -619,18 +647,32 @@ static int rir_xt_chain(int t) {
 	return (t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC;
 }
 
+/* The memo is keyed on the Sym's ADDRESS, and decl_designator's block-copy type
+   is a Sym on ITS OWN STACK FRAME (`Sym aref = {0}; aref.c = elem_size`,
+   src/mccgen.c:13414) -- so every range initialiser in a function reuses the
+   same address with a different element size, and the first clone was handed to
+   all of them. `char m2[][2][3] = {[0 ... 2] = ...}` copied 8 bytes with the
+   `fptr tabl1[4]` size. A hit now has to agree on the fields that make the type,
+   which still terminates on a cycle because a re-entry compares equal. */
 static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
 	int k;
 	Sym *c;
 	if (!s || depth > 64 || (s->type.t & VT_VLA))
 		return s;
 	for (k = 0; k < rir_xtn; k++)
-		if (rir_xt_src[k] == s)
+		if (rir_xt_src[k] == s && rir_xt_c[k] == s->c && rir_xt_t[k] == s->type.t &&
+				rir_xt_v[k] == s->v && rir_xt_nx[k] == (void *)s->next &&
+				rir_xt_tr[k] == (void *)s->type.ref)
 			return &rir_xt[k];
 	if (rir_xtn >= RIR_XT_MAX)
 		return s;
 	k = rir_xtn++;
 	rir_xt_src[k] = s;
+	rir_xt_c[k] = s->c;
+	rir_xt_t[k] = s->type.t;
+	rir_xt_v[k] = s->v;
+	rir_xt_nx[k] = (void *)s->next;
+	rir_xt_tr[k] = (void *)s->type.ref;
 	c = &rir_xt[k];
 	*c = *s;
 	c->type.ref = rir_xtype_ref(s->type.ref, depth + 1, rir_xt_chain(s->type.t));
@@ -992,6 +1034,42 @@ static int rir_is_cvt(int kind) {
 	}
 }
 
+static int rir_is_cmp_binary(AstLocal n) {
+	if (n == AST_NONE || ast_kind(rir_arena, n) != AST_Binary)
+		return 0;
+	switch (ast_op(rir_arena, n)) {
+	case TOK_ULT: case TOK_UGE: case TOK_EQ: case TOK_NE:
+	case TOK_ULE: case TOK_UGT: case TOK_LT: case TOK_GE:
+	case TOK_LE: case TOK_GT:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int rir_const_subtree(AstLocal n, int depth) {
+	int i, nc;
+	if (n == AST_NONE || depth > 8)
+		return 0;
+	switch (ast_kind(rir_arena, n)) {
+	case AST_Literal:
+		return (ast_op(rir_arena, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	case AST_Binary:
+	case AST_Unary:
+	case AST_Convert:
+		break;
+	default:
+		return 0;
+	}
+	nc = (int)ast_nchild(rir_arena, n);
+	if (nc == 0)
+		return 0;
+	for (i = 0; i < nc; i++)
+		if (!rir_const_subtree(ast_child(rir_arena, n, i), depth + 1))
+			return 0;
+	return 1;
+}
+
 static int rir_child_has_type(AstLocal n, int st) {
 	int i, nc = ast_nchild(rir_arena, n);
 	for (i = 0; i < nc; i++) {
@@ -1339,6 +1417,37 @@ static void rir_op_effect(const RirOp *ro) {
 		   are size_t and a snapshot that says int, and re-derived as unsigned long
 		   it came out as a 64-bit unsigned compare. Admit that by WIDTH, so the
 		   same-type case only wraps where a real narrowing or widening happened. */
+		/* gen_op's usual arithmetic conversion reads the operand's BITFIELD bits:
+		   an unsigned int bitfield narrower than 32 bits promotes to SIGNED int
+		   (src/mccgen.c:4049). RIR_M_BFGV has already replaced that operand with
+		   the Convert to gv's own UNSIGNED result type -- which is what turns the
+		   extraction's sar into a shr and must stay -- so the promotion is lost and
+		   `(1 ? s.u3 : 1) - 100 < 0` came out as an unsigned compare. Carry it on a
+		   second, type-only Convert, and only HERE: an explicit cast of the same
+		   value (`printf("%lu", s.bf)`) converts from the unsigned bitfield type and
+		   must not see the promotion. */
+		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
+			int q;
+			for (q = 0; q < 2; q++) {
+				AstLocal cur = rir_sh[rir_shn - 1 - q], ch;
+				if (cur == AST_NONE || rir_shtype[rir_shn - 1 - q] ||
+						ast_kind(rir_arena, cur) != AST_Convert ||
+						(ast_type_t(rir_arena, cur) & (VT_BTYPE | VT_UNSIGNED)) !=
+								(VT_INT | VT_UNSIGNED))
+					continue;
+				ch = ast_first_child(rir_arena, cur);
+				if (ch == AST_NONE || !(ast_type_t(rir_arena, ch) & VT_BITFIELD) ||
+						BIT_SIZE(ast_type_t(rir_arena, ch)) == 32)
+					continue;
+				{
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv,
+											 ast_type_t(rir_arena, cur) & ~(unsigned)VT_UNSIGNED, 0);
+					ast_add_child(rir_arena, cv, cur);
+					rir_sh[rir_shn - 1 - q] = cv;
+				}
+			}
+		}
 		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
 			int q, opdiff = jrn_vs[o->vs_off + o->vs_n - 1].type.t !=
 											jrn_vs[o->vs_off + o->vs_n - 2].type.t;
@@ -1429,6 +1538,12 @@ static void rir_op_effect(const RirOp *ro) {
 			n = ast_node(rir_arena, AST_Store);
 			if (chained)
 				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
+			if (rir_is_cmp_binary(v) && o->vs_n - ast_base_depth >= 2 &&
+					jrn_vs[o->vs_off + o->vs_n - 1].r != VT_CMP &&
+					(jrn_vs[o->vs_off + o->vs_n - 1].type.t & VT_BTYPE) != VT_BOOL &&
+					(jrn_vs[o->vs_off + o->vs_n - 2].type.t & VT_BTYPE) == VT_BOOL)
+				ast_set_fbits(rir_arena, n,
+											ast_fbits(rir_arena, n) | AST_FB_STORE_CMP_GV);
 		}
 		if (rir_lorn || rir_ternn) {
 			ast_add_child(rir_arena, n, t);
@@ -1612,6 +1727,18 @@ static void rir_op_effect(const RirOp *ro) {
 				if ((ast_type_t(rir_arena, cur) & VT_BTYPE) == VT_VOID &&
 						ast_kind(rir_arena, cur) != AST_Binary)
 					continue;
+				/* A wide constant carries a high word the cast CHAIN determines, and
+				   the chain in hand is one link short: the casts that fold emit no op,
+				   so `(u128)(unsigned long long)-5` reaches the boundary as the u128
+				   assignment cast over a bare int Binary and gen_cast sign-extends
+				   where the parser zero-extended. The snapshot holds the value the
+				   parser folded, high word included. */
+				if (((st & VT_BTYPE) == VT_INT128 || (st & VT_BTYPE) == VT_QLONG) &&
+						(sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+						rir_const_subtree(cur, 0)) {
+					rir_sh[si] = rir_leaf(sv2);
+					continue;
+				}
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
 					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
@@ -3833,6 +3960,7 @@ void rir_verify(void) {
 				ast_tmpl_folds = 0;
 			}
 			rir_locrec_i = 0;
+			rir_slotrec_i = 0;
 			rir_c2_active = 1;
 			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
 													? ast_cur

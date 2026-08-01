@@ -41,6 +41,8 @@ extern int rir_started;
 void rir_snap_types(SValue *sv, int n);
 void rir_loc_record(int loc_in);
 int rir_loc_replay(int *loc_out);
+void rir_slot_record(int loc_in);
+int rir_slot_replay(int *loc_out);
 void rir_configure(void);
 void rir_reset(void);
 void rir_verify(void);
@@ -150,6 +152,8 @@ void rir_vla_begin(void);
 #define rir_snap_types(sv, n) ((void)0)
 #define rir_loc_record(l) ((void)0)
 #define rir_loc_replay(p) 0
+#define rir_slot_record(l) ((void)0)
+#define rir_slot_replay(p) 0
 
 #endif
 

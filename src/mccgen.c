@@ -7731,9 +7731,11 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 static int alloc_local_slot(int size, int align) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_bail();
-#endif
+	return ast_alloc_slot(size, align);
+#else
 	loc = (loc - size) & -align;
 	return loc;
+#endif
 }
 
 static int atomic_cas_size(SValue *sv) { MCC_TRACE("enter\n");
