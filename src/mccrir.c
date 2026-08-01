@@ -704,9 +704,22 @@ static int rir_c3_pipeline(AstArena *a) {
 	return n;
 }
 
+static AstLocal rir_pending_ret = AST_NONE;
+
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
+	/* A held Return is waiting for the destructor calls a cleanup attribute puts
+	   between the value and the ret, so those must not flush it. A JUMP is
+	   different: nothing in a return's own lowering is a jump statement, so one
+	   arriving means the return is over. Without this the `return 0;` between an
+	   `asm goto` and its label landed after the label's jump. */
+	if (rir_pending_ret != AST_NONE && n != rir_pending_ret &&
+			ast_kind(rir_arena, n) == AST_Jump) {
+		AstLocal held = rir_pending_ret;
+		rir_pending_ret = AST_NONE;
+		rir_stmt(held);
+	}
 	/* ast_replay_bb dispatches an AST_If on its op, and the tree's encoding for
 	   a ternary in statement context is 7 rather than the value form's 5. */
 	if (ast_kind(rir_arena, n) == AST_If && ast_op(rir_arena, n) == 5)
@@ -771,7 +784,6 @@ static void rir_push_typed_addr(AstLocal n) {
 static int rir_argcast_n;
 
 static AstLocal rir_pending_call = AST_NONE;
-static AstLocal rir_pending_ret = AST_NONE;
 static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
 static short rir_vst_shn[16];
@@ -1441,10 +1453,16 @@ static void rir_mark_apply(const RirOp *ro) {
 		   the Return the moment the marker fires puts it ahead of those calls and
 		   the x87 reload lands 20 bytes early. At top level nothing can follow a
 		   return but that trailing code, so hold it and attach at body end. */
-		if (rir_bbn == 1)
+		if (rir_bbn == 1) {
+			/* One slot, and a body can have several top-level returns -- `asm goto`
+			   then `return 0;` then a label with `return 1;` is two. Flush the one
+			   already held or the first is dropped and never emitted. */
+			if (rir_pending_ret != AST_NONE)
+				rir_stmt(rir_pending_ret);
 			rir_pending_ret = n;
-		else
+		} else {
 			rir_stmt(n);
+		}
 		rir_last_return = n;
 		rir_after_ret = 1;
 		break;
