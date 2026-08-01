@@ -3744,6 +3744,15 @@ void ast_hook_goto(int v) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, ast_cur_bb, m);
 }
 
+void ast_hook_cleanup_goto(void *pcl) { MCC_TRACE("enter\n");
+	rir_mark_val2(RIR_M_CLGOTO, (long long)(uintptr_t)pcl, 0);
+}
+
+void ast_hook_cleanup_thunk(void *pcl, int v, int end) { MCC_TRACE("enter\n");
+	rir_mark_val2(end ? RIR_M_CLJMP : RIR_M_CLTHUNK,
+								(long long)(uintptr_t)pcl, (long long)v);
+}
+
 void ast_hook_indir(void) { MCC_TRACE("enter\n");
 	rir_mark_pt(RIR_M_LOAD);
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)

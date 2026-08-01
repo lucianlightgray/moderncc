@@ -12365,9 +12365,15 @@ static void block_cleanup(struct scope *o) { MCC_TRACE("enter\n");
 			Sym *pcl = g->next;
 			if (!jmp)
 				{ MCC_TRACE("br\n"); jmp = gjmp(0); }
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_cleanup_thunk(pcl, g->cleanup_label->v, 0);
+#endif
 			gsym(pcl->jnext);
 			try_call_scope_cleanup(o->cl.s);
 			pcl->jnext = gjmp(0);
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_cleanup_thunk(pcl, g->cleanup_label->v, 1);
+#endif
 			if (!o->cl.n)
 				{ MCC_TRACE("br\n"); goto remove_pending; }
 			g->c = o->cl.n;
@@ -13045,6 +13051,9 @@ again:
 					pending_gotos->cleanup_label = s;
 					s = sym_push2(&s->next, SYM_FIELD, 0, 0);
 					pending_gotos->next = s;
+#if MCC_CONFIG_OPTIMIZER
+					ast_hook_cleanup_goto(s);
+#endif
 				}
 				s->jnext = gjmp(s->jnext);
 			} else { MCC_TRACE("br\n");

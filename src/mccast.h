@@ -257,6 +257,8 @@ void ast_hook_switch_body_end(void);
 void ast_hook_switch_end(void);
 void ast_hook_label(int v);
 void ast_hook_goto(int v);
+void ast_hook_cleanup_goto(void *pcl);
+void ast_hook_cleanup_thunk(void *pcl, int v, int end);
 void ast_hook_inc(int post, int c);
 void ast_hook_inc_end(void);
 void ast_hook_vdup(void);

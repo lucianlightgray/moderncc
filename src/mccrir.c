@@ -771,6 +771,34 @@ static int rir_c3_pipeline(AstArena *a) {
 
 static AstLocal rir_pending_ret = AST_NONE;
 
+#define RIR_CLG_MAX 32
+static void *rir_clg_key[RIR_CLG_MAX];
+static AstLocal rir_clg_node[RIR_CLG_MAX];
+static int rir_clg_n;
+static void *rir_clg_pending;
+static int rir_clg_syn;
+
+static void rir_clg_bind(void *k, AstLocal n) {
+	int i;
+	for (i = 0; i < rir_clg_n; i++)
+		if (rir_clg_key[i] == k) {
+			rir_clg_node[i] = n;
+			return;
+		}
+	if (rir_clg_n >= RIR_CLG_MAX)
+		return;
+	rir_clg_key[rir_clg_n] = k;
+	rir_clg_node[rir_clg_n++] = n;
+}
+
+static AstLocal rir_clg_get(void *k) {
+	int i;
+	for (i = 0; i < rir_clg_n; i++)
+		if (rir_clg_key[i] == k)
+			return rir_clg_node[i];
+	return AST_NONE;
+}
+
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
@@ -1635,6 +1663,42 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		break;
+	case JOP_STORE: {
+		AstLocal v, n, ad, ld;
+		int q, slot = -1, lv = 0;
+		if (o->vs_n <= 0 ||
+				(o->svarg.r & (VT_VALMASK | VT_LVAL | VT_SYM)) !=
+						(VT_LOCAL | VT_LVAL) ||
+				o->svarg.sym)
+			break;
+		for (q = 0; q <= o->vs_n - 1 - ast_base_depth; q++) {
+			const SValue *sv4 = &jrn_vs[o->vs_off + ast_base_depth + q];
+			if ((sv4->r & VT_VALMASK) == (o->a0 & VT_VALMASK)) {
+				slot = q;
+				lv = (sv4->r & VT_LVAL) != 0;
+				break;
+			}
+		}
+		if (slot < 0 || slot >= rir_shn || !lv)
+			break;
+		v = rir_sh[slot];
+		if (v == AST_NONE || ast_parent(rir_arena, v) != AST_NONE)
+			break;
+		ad = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, ad, AST_OP_ADDR);
+		ast_set_type(rir_arena, ad, o->svarg.type.t,
+								 (uint64_t)(uintptr_t)o->svarg.type.ref);
+		ast_add_child(rir_arena, ad, v);
+		n = ast_node(rir_arena, AST_Store);
+		ast_add_child(rir_arena, n, rir_leaf(&o->svarg));
+		ast_add_child(rir_arena, n, ad);
+		rir_stmt(n);
+		ld = ast_node(rir_arena, AST_Load);
+		ast_add_child(rir_arena, ld, rir_leaf(&o->svarg));
+		rir_sh[slot] = ld;
+		rir_shtype[slot] = 0;
+		break;
+	}
 	case JOP_VPOP: {
 		AstLocal d = rir_pop();
 		if (d != AST_NONE && rir_shn == 0 &&
@@ -1945,6 +2009,31 @@ static void rir_mark_apply(const RirOp *ro) {
 		ast_set_op(rir_arena, n, 5);
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
 		rir_stmt(n);
+		if (rir_clg_pending) {
+			rir_clg_bind(rir_clg_pending, n);
+			rir_clg_pending = NULL;
+		}
+		break;
+	case RIR_M_CLGOTO:
+		rir_clg_pending = (void *)(uintptr_t)ro->rv1;
+		break;
+	case RIR_M_CLTHUNK: {
+		AstLocal g = rir_clg_get((void *)(uintptr_t)ro->rv1);
+		int sid = --rir_clg_syn;
+		if (g != AST_NONE)
+			ast_set_ival(rir_arena, g, (uint64_t)(unsigned)sid);
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, 4);
+		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)sid);
+		rir_stmt(n);
+		break;
+	}
+	case RIR_M_CLJMP:
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, 5);
+		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)(int)ro->rv2);
+		rir_stmt(n);
+		rir_clg_bind((void *)(uintptr_t)ro->rv1, n);
 		break;
 	case RIR_M_CASE:
 		/* A new arm or label ENDS the post-return aftermath. That guard exists for
@@ -2558,7 +2647,7 @@ static void rir_region(const RirOp *ro) {
 			   modelled or the reload comes off the original slot. gfunc_return's
 			   shape is two AST_OP_ADDR unaries; the spill's is two lvalues. */
 			if ((rir_pending_ret != AST_NONE || rir_vst_gret[rir_vstn]) &&
-					(rir_shn < 2 ||
+					(rir_ret_spilled || rir_shn < 2 ||
 					 (ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Unary &&
 						ast_op(rir_arena, rir_sh[rir_shn - 1]) == AST_OP_ADDR) ||
 					 (ast_kind(rir_arena, rir_sh[rir_shn - 2]) == AST_Unary &&
@@ -3066,6 +3155,9 @@ static void rir_to_arena(void) {
 	rir_arena_mismatch = 0;
 	rir_cplx_depth = 0;
 	rir_acas_depth = 0;
+	rir_clg_n = 0;
+	rir_clg_pending = NULL;
+	rir_clg_syn = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];

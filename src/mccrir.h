@@ -67,6 +67,9 @@ enum {
 	RIR_M_BFGV,
 	RIR_M_TERNHOLD,
 	RIR_M_TERNPICK,
+	RIR_M_CLGOTO,
+	RIR_M_CLTHUNK,
+	RIR_M_CLJMP,
 	RIR_M_COUNT
 };
 
@@ -129,6 +132,9 @@ void rir_vla_begin(void);
 #define RIR_M_BFGV 0
 #define RIR_M_TERNHOLD 0
 #define RIR_M_TERNPICK 0
+#define RIR_M_CLGOTO 0
+#define RIR_M_CLTHUNK 0
+#define RIR_M_CLJMP 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
