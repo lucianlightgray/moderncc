@@ -592,6 +592,8 @@ static void rir_reconcile(const JrnOp *o) {
 	rir_reconcile_sv(jrn_vs + o->vs_off, o->vs_n);
 }
 
+static int rir_opassign_pending;
+
 static void rir_op_effect(const RirOp *ro) {
 	const JrnOp *o = &ro->p;
 	int k;
@@ -620,6 +622,13 @@ static void rir_op_effect(const RirOp *ro) {
 			break;
 		}
 		n = ast_node(rir_arena, AST_Store);
+		/* `lval op= rhs`: the tag makes ast_replay_bb re-emit the vdup form the
+		   parser used -- one address computation, dup, op, store -- instead of the
+		   naive two-address form. It is only a hint; that arm still checks the
+		   shape and the lval's purity itself. */
+		if (rir_opassign_pending)
+			ast_set_op(rir_arena, n, AST_OP_OPASSIGN);
+		rir_opassign_pending = 0;
 		ast_add_child(rir_arena, n, t);
 		ast_add_child(rir_arena, n, v);
 		rir_stmt(n);
@@ -735,6 +744,9 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_after_ret = 1;
 		break;
 	}
+	case RIR_M_OPASSIGN:
+		rir_opassign_pending = 1;
+		break;
 	case RIR_M_RETJMP:
 		if (rir_last_return != AST_NONE)
 			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
@@ -1073,6 +1085,7 @@ static void rir_to_arena(void) {
 	rir_synth_depth = 0;
 	rir_call_depth = 0;
 	rir_inc_depth = 0;
+	rir_opassign_pending = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {

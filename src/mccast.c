@@ -2904,6 +2904,7 @@ void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
  * ast_vdup_pending clear ⇒ the normal vpush desync fires (current safe behavior,
  * function falls back to its un-optimized baseline). */
 void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
+	rir_mark_pt(RIR_M_OPASSIGN);
 	ast_vdup_pending = 0;
 	if (!ast_opassign_env || !ast_active || !ast_capture || ast_desync ||
 			ast_in_op || ast_in_call)
