@@ -498,6 +498,7 @@ static int rir_after_ret;
 static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
 static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
 static long rir_tot_tree_nodes, rir_tot_arena_cmp_nodes;
+static long rir_tot_c2_skip;
 static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 		rir_tot_c2_err;
 static char rir_c2_msg[256];
@@ -2241,6 +2242,11 @@ void rir_verify(void) {
 	}
 
 #if MCC_REPLAY_IR_C2
+	/* Bodies excluded from the trial are NOT in the c2ok denominator, so count
+	   them separately -- an arena Replay_IR already knows is wrong still needs an
+	   emission path before the tree can be deleted. */
+	if (rir_env >= 5 && faithful && body_len > 0 && rir_arena_mismatch)
+		rir_tot_c2_skip++;
 	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) {
 		rir_tot_c2_try++;
 		ind = ast_body_ind_sv;
@@ -2459,7 +2465,7 @@ static void rir_report(void) {
 					"unbal=%ld ovf=%ld jmpsv=%ld jmpsvfb=%ld shiftok=%ld shiftbad=%ld "
 					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld arenacmp=%ld "
 					"arenacounteq=%ld arenahasheq=%ld treenodes=%ld cmpnodes=%ld "
-					"c2try=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld\n",
+					"c2try=%ld c2skip=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld\n",
 					rir_tot_fn, rir_tot_faithful, rir_tot_ops, rir_tot_regions,
 					rir_tot_labels, rir_tot_jumps, rir_tot_fallback,
 					rir_tot_fallback_fn, rir_tot_fb_chain, rir_tot_fb_point,
@@ -2467,7 +2473,7 @@ static void rir_report(void) {
 					rir_tot_shift_ok, rir_tot_shift_bad, rir_tot_shift_skip,
 					rir_tot_shift_open, rir_tot_arena_fn, rir_tot_arena_nodes,
 					rir_tot_arena_cmp, rir_tot_arena_count_eq, rir_tot_arena_hash_eq,
-					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes, rir_tot_c2_try,
+					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes, rir_tot_c2_try, rir_tot_c2_skip,
 					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
 					rir_tot_c2_invalid);
 	if (rir_tot_c3_try || rir_tot_c3_pair)
