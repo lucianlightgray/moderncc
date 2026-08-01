@@ -341,8 +341,26 @@ Ranked. Everything below is measured on `tests/exec` + `tests/diff/full_language
 | C2 emitter reproduces bytes | **951 / 1111** tried — 127 length, 23 same-length-wrong-bytes, 7 refused, 5 error |
 | C2 containment | **0 corpus files.** Probe build = 268 ok / 8 fail = default build, fn=1201 |
 
-0. **P2 — phase D re-verified on 5 of 12 targets after the struct/nocode/intrinsic work; 7 remain.** D was banked as 100% faithful on all 12 `MCC_X` targets *before* the struct/nocode/intrinsic work. Most of that work touches only the arena and cannot move `faithful` — but **`rir_snap_types` does**: it rewrites `type.ref` in `jrn_vs` in place, and op-replay restores SValues from `jrn_vs` onto the vstack, so it is on the replay path on every target. On x86_64 it is clean — `faithful` 1166/1201 unchanged across every sweep, and `ast/rir-parity-{O1,O2,O3}` plus full ctest 7935/7935 all pass. The other 11 are unmeasured since.
-   **Re-measured 2026-08-01 and it HOLDS**, using the cross compilers in `cmake-cross/` with `MCC_REPLAY_IR=1` against the vendored sysroots. `faithful + rempty == fn` exactly on every one: **arm64 1200/1200** (259 of 275 files), **riscv64 1132/1132** (255), **i386 1153/1153** (261), **arm 1131/1131** (256, needs `-mfloat-abi hard` as separated args), and x86_64 via `ast/rir-parity-{O1,O2,O3}`. `journal-sweep-arm64-linux-glibc` also passes clean and reports the model depth *improved*, `fix 30523 -> 30522`. The 7 win32/osx keys are still unmeasured.
+0. **CLOSED — phase D re-verified on ALL 12 targets after the struct/nocode/intrinsic work.** D was banked as 100% faithful on all 12 `MCC_X` targets *before* the struct/nocode/intrinsic work. Most of that work touches only the arena and cannot move `faithful` — but **`rir_snap_types` does**: it rewrites `type.ref` in `jrn_vs` in place, and op-replay restores SValues from `jrn_vs` onto the vstack, so it is on the replay path on every target. On x86_64 it is clean — `faithful` 1166/1201 unchanged across every sweep, and `ast/rir-parity-{O1,O2,O3}` plus full ctest 7935/7935 all pass. The other 11 are unmeasured since.
+   **Re-measured 2026-08-01 and it HOLDS on every target.** `faithful + rempty == fn` exactly, using the `cmake-cross/` compilers under `MCC_REPLAY_IR=1`:
+
+   | target | accounted / fn | files of 275 |
+   | --- | --- | --- |
+   | x86_64 | 1150 / 1150 | 263 |
+   | i386 | 1153 / 1153 | 261 |
+   | arm64 | 1200 / 1200 | 259 |
+   | riscv64 | 1132 / 1132 | 255 |
+   | arm | 1131 / 1131 | 256 |
+   | x86_64-win32 | 1252 / 1252 | 266 |
+   | i386-win32 | 1272 / 1272 | 265 |
+   | arm64-win32 | 1312 / 1312 | 263 |
+   | arm-win32 | 1250 / 1250 | 260 |
+   | arm-wince | 1250 / 1250 | 260 |
+   | x86_64-osx | 1153 / 1153 | 265 |
+   | arm64-osx | 1235 / 1235 | 264 |
+
+   Flags per family: Linux `--sysroot=vendor/gentoo-stage3-<cpu>-glibc -I<same>/usr/include` (arm additionally `-mfloat-abi hard`, separated args); PE `-B runtime/win32 -I runtime/include`; darwin `-I runtime/include`. The seven win32/osx cross compilers are not built by default — `cmake --build cmake-cross --target mcc-<key>` first. `ast/rir-parity-{O1,O2,O3}` and `journal-sweep-arm64-linux-glibc` also pass, the latter reporting the model depth *improved*, `fix 30523 -> 30522`.
+   Note the sweep script skips darwin outright when the host is not Darwin, because there is no Darwin **loader** here — but a compile-only census does not need one, and `-I runtime/include` against mcc's own bundled headers reaches 265 of 275 files. That is enough for D, whose bar is a compile-time verdict; it is NOT enough for anything that has to run the output.
    One structural reason the risk was lower than it looked: `rir_snap_types` returns immediately when `!rir_env`, so it cannot touch the default ungated compiler at all — only gated runs are affected, which is exactly the population D measures.
    **Two traps on the way, both instruction-26 shaped.** `cmake-debug/cross-factory-i386/mcc-i386` is built *without* `MCC_REPLAY_IR` and without a sysroot: it emits no `[rir-total]` and fails 50 of 80 files, reading `fn=0 faithful=0` — vacuous, not a pass. And `-B cmake-cross` alone is not a sysroot: it compiles 75 of 275 files and reports a plausible-looking `faithful=439 of fn=470`. `journal_sweep.cmake:167` already documents the same failure ("--sysroot alone is not enough: it yields 77 of 275 files. The explicit usr/include is what takes it to 261"). Use `--sysroot=vendor/gentoo-stage3-<cpu>-glibc -I<same>/usr/include`.
 1. **P0 — C2 is E's only blocker, at 951 / 1111.** 160 bodies have no Replay_IR emission path, and the tree cannot be deleted while it is the only thing that can emit them. Residual: 152 length mismatches, 17 same-length byte differences, 7 arity refusals, 4 errors. **The length tail is flat** — a histogram of `got - want` over the 152 puts the largest class at 7 bodies (`+12`, the `cleanup()` class), then `-22` (6, struct assignment) and `-8` (6), spread over ~60 distinct deltas. There is no longer a big single win here; expect ~5 bodies per class solved.
