@@ -20,6 +20,7 @@ enum {
 	RIR_R_INCR,
 	RIR_R_SYNTH,
 	RIR_R_INC,
+	RIR_R_MEMBER,
 	RIR_R_COUNT
 };
 
@@ -45,6 +46,7 @@ enum {
 void rir_rbegin(int kind);
 void rir_rbegin_val(int kind, int val);
 void rir_rend_to(int kind);
+void rir_rend_to_val(int kind, int val);
 void rir_rcond_done(void);
 void rir_mark_pt(int kind);
 void rir_mark_val(int kind, int val);
@@ -66,6 +68,7 @@ void rir_mark_val(int kind, int val);
 #define RIR_R_INCR 0
 #define RIR_R_SYNTH 0
 #define RIR_R_INC 0
+#define RIR_R_MEMBER 0
 #define RIR_M_RETURN 0
 #define RIR_M_JUMP 0
 #define RIR_M_LOAD 0
@@ -77,6 +80,7 @@ void rir_mark_val(int kind, int val);
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
+#define rir_rend_to_val(k, v) ((void)0)
 #define rir_rcond_done() ((void)0)
 #define rir_mark_pt(k) ((void)0)
 #define rir_mark_val(k, v) ((void)0)

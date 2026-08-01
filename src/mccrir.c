@@ -88,7 +88,7 @@ static const char *rir_region_name(int k) {
 	static const char *const n[RIR_R_COUNT] = {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
-			"body",	 "incr", "synth", "inc"};
+			"body",	 "incr", "synth", "inc", "member"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -160,7 +160,7 @@ void rir_rbegin_val(int kind, int val) {
 
 void rir_rbegin(int kind) { rir_rbegin_val(kind, 0); }
 
-void rir_rend_to(int kind) {
+void rir_rend_to_val(int kind, int val) {
 	int i, found = 0;
 	if (!rir_active)
 		return;
@@ -175,11 +175,13 @@ void rir_rend_to(int kind) {
 	}
 	while (rir_stackn > 0) {
 		int k = rir_stack[--rir_stackn];
-		rir_mark(RIR_T_REND, k);
+		rir_mark_v(RIR_T_REND, k, k == kind ? val : 0);
 		if (k == kind)
 			return;
 	}
 }
+
+void rir_rend_to(int kind) { rir_rend_to_val(kind, 0); }
 
 void rir_rcond_done(void) {
 	int i, open = 0;
@@ -714,6 +716,7 @@ static void rir_op_effect(const RirOp *ro) {
 }
 
 static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
+static int rir_member_depth;
 static AstLocal rir_last_return = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
@@ -866,6 +869,9 @@ static void rir_region(const RirOp *ro) {
 			rir_push_typed(u);
 			break;
 		}
+		case RIR_R_MEMBER:
+			rir_member_depth++;
+			break;
 		case RIR_R_INCR:
 		case RIR_R_BODY:
 		case RIR_R_THEN:
@@ -899,6 +905,38 @@ static void rir_region(const RirOp *ro) {
 		if (rir_inc_depth)
 			rir_inc_depth--;
 		break;
+	case RIR_R_MEMBER: {
+		/* `a.b` is one AST_Unary in the tree — op AST_OP_MEMBER, the byte offset
+		   in ival, the member type stamped on the node — and gaddrof + vpushi +
+		   gen_op('+') in the journal. Rebuilt from the primitives it becomes
+		   Binary(+, addr, offset) carrying a pointer type where the member type
+		   belongs, which is where the `cannot cast between a floating type and a
+		   pointer` class comes from. The end marker's own snapshot holds vtop
+		   after the parser retyped it, which is exactly what the node needs. */
+		AstLocal base, m;
+		if (rir_member_depth)
+			rir_member_depth--;
+		base = rir_pop();
+		if (base == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		m = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, m,
+							 (ro->rval & 2) ? AST_OP_MEMBER_ARROW : AST_OP_MEMBER);
+		ast_set_ival(rir_arena, m, (uint64_t)(unsigned)(ro->rval >> 2));
+		ast_set_fbits(rir_arena, m, (ro->rval & 1) ? (uint64_t)VT_NONLVAL : 0);
+		ast_add_child(rir_arena, m, base);
+		if (ro->mvs_n - ast_base_depth > 0) {
+			const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+			ast_set_type(rir_arena, m, v->type.t,
+									 (uint64_t)(uintptr_t)v->type.ref);
+			rir_push(m);
+		} else {
+			rir_push_typed(m);
+		}
+		break;
+	}
 	case RIR_R_INCR:
 	case RIR_R_BODY:
 	case RIR_R_THEN:
@@ -1095,6 +1133,7 @@ static void rir_to_arena(void) {
 	rir_synth_depth = 0;
 	rir_call_depth = 0;
 	rir_inc_depth = 0;
+	rir_member_depth = 0;
 	rir_opassign_pending = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
@@ -1102,7 +1141,7 @@ static void rir_to_arena(void) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
 			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
-					!rir_inc_depth) {
+					!rir_inc_depth && !rir_member_depth) {
 				if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				else
@@ -1113,15 +1152,15 @@ static void rir_to_arena(void) {
 		}
 		if (ro->tag != RIR_T_OP) {
 			if (ro->tag == RIR_T_RBEGIN && !rir_synth_depth && !rir_call_depth &&
-					!rir_inc_depth &&
+					!rir_inc_depth && !rir_member_depth &&
 					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
 					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND ||
-					 ro->rkind == RIR_R_INC))
+					 ro->rkind == RIR_R_INC || ro->rkind == RIR_R_MEMBER))
 				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 			rir_region(ro);
 			continue;
 		}
-		if (rir_cond_depth || rir_inc_depth)
+		if (rir_cond_depth || rir_inc_depth || rir_member_depth)
 			continue;
 		rir_reconcile(&ro->p);
 		rir_op_effect(ro);

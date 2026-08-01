@@ -2040,6 +2040,7 @@ int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
 
 static int ast_member_cap;
 static int ast_member_arrow;
+static int ast_member_arrow_rir;
 static int ast_imag_cap;
 static int ast_bcplx_cap;
 
@@ -3731,6 +3732,8 @@ void ast_hook_cleanup_call_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_MEMBER);
+	ast_member_arrow_rir = is_arrow;
 	ast_member_cap = 0;
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -3749,6 +3752,10 @@ void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
 
 void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 																int bcheck) { MCC_TRACE("enter\n");
+	rir_rend_to_val(RIR_R_MEMBER,
+									((int)((unsigned)cumofs << 2)) |
+											(ast_member_arrow_rir ? 2 : 0) |
+											(nonlval ? 1 : 0));
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_call > 0)
