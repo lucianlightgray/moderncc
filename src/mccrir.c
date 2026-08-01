@@ -555,6 +555,12 @@ void rir_snap_types(SValue *sv, int n) {
 			sv[i].type.ref = rir_xtype_ref(sv[i].type.ref, 0, 1);
 }
 
+static int rir_same_width(const CType *a, const CType *b) {
+	int al, bl;
+	CType x = *a, y = *b;
+	return type_size(&x, &al) == type_size(&y, &bl);
+}
+
 static AstLocal rir_leaf(const SValue *sv) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
@@ -585,9 +591,15 @@ static AstLocal rir_leaf(const SValue *sv) {
 	   the cast is its own Convert, which is not inert: gen_cast materialises and
 	   spills, 8 bytes in via_cast. The Sym is the only witness to the declared
 	   type at this boundary. */
-	if (sv->sym && (sv->r & VT_LVAL) && sv->sym->type.t == sv->type.t &&
-			sv->sym->type.ref != sv->type.ref &&
-			(sv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+	if (sv->sym && (sv->r & VT_LVAL) && !(sv->sym->type.t & (VT_ARRAY | VT_VLA)) &&
+			(sv->sym->type.t & VT_BTYPE) != VT_STRUCT &&
+			(sv->sym->type.t & VT_BTYPE) != VT_FUNC &&
+			(sv->type.t & VT_BTYPE) != VT_STRUCT &&
+			(sv->type.t & VT_BTYPE) != VT_FUNC && !(sv->type.t & VT_ARRAY) &&
+			is_float(sv->sym->type.t) == is_float(sv->type.t) &&
+			(sv->sym->type.t != sv->type.t ||
+			 sv->sym->type.ref != sv->type.ref) &&
+			rir_same_width(&sv->sym->type, &sv->type)) {
 		AstLocal cv;
 		ast_set_type(rir_arena, n, sv->sym->type.t,
 								 (uint64_t)(uintptr_t)sv->sym->type.ref);
