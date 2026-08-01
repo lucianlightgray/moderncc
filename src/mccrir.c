@@ -494,6 +494,8 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
+static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
+static long rir_tot_c3_pair_fired;
 
 static void rir_c2_sink(void *opaque, const char *msg) {
 	(void)opaque;
@@ -1612,8 +1614,41 @@ void rir_verify(void) {
 			if (ast_count(rir_arena) == ast_count(ast_cur))
 				rir_tot_arena_count_eq++;
 			if (ast_intention_hash(rir_arena, ast_root(rir_arena)) ==
-					ast_intention_hash(ast_cur, ast_root(ast_cur)))
+					ast_intention_hash(ast_cur, ast_root(ast_cur))) {
 				rir_tot_arena_hash_eq++;
+				/* C3 equivalence, on the population where it is actually defined.
+				   When the two arenas are already field-identical, running the
+				   same pipeline on each and comparing fold counts and the
+				   post-pass intention hash asks "do the passes DO the same thing
+				   on a Replay_IR arena" without touching emitter state at all --
+				   bytes would need a second tap after the tree's own replay, and
+				   a mismatched input would make any difference meaningless. */
+				if (rir_env >= 6) {
+					AstArena *pa = ast_arena_clone(rir_arena);
+					AstArena *pb = ast_arena_clone(ast_cur);
+					int fa, fb;
+					rir_tot_c3_pair++;
+					ast_tmpl_folds = 0;
+					ast_run_templates(pa);
+					fa = ast_tmpl_folds + ast_sccp_run(pa);
+					ast_tmpl_folds = 0;
+					ast_run_templates(pb);
+					fb = ast_tmpl_folds + ast_sccp_run(pb);
+					ast_tmpl_folds = 0;
+					if (fa > 0 || fb > 0)
+						rir_tot_c3_pair_fired++;
+					if (fa == fb)
+						rir_tot_c3_same_folds++;
+					if (ast_intention_hash(pa, ast_root(pa)) ==
+							ast_intention_hash(pb, ast_root(pb)))
+						rir_tot_c3_same_hash++;
+					else
+						fprintf(stderr, "[rir-c3] %s\tPASS-DIVERGED folds %d vs %d\n",
+										funcname, fa, fb);
+					ast_arena_free(pa);
+					ast_arena_free(pb);
+				}
+			}
 		}
 	}
 	for (i = 0; i < rir_n; i++) {
@@ -1963,10 +1998,13 @@ static void rir_report(void) {
 					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes, rir_tot_c2_try,
 					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
 					rir_tot_c2_invalid);
-	if (rir_tot_c3_try)
-		fprintf(f, "[rir-c3] try=%ld ran=%ld folds=%ld broke=%ld\n",
+	if (rir_tot_c3_try || rir_tot_c3_pair)
+		fprintf(f,
+						"[rir-c3] try=%ld ran=%ld folds=%ld broke=%ld pair=%ld "
+						"samefolds=%ld samehash=%ld pairfired=%ld\n",
 						rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds,
-						rir_tot_c3_broke);
+						rir_tot_c3_broke, rir_tot_c3_pair, rir_tot_c3_same_folds,
+						rir_tot_c3_same_hash, rir_tot_c3_pair_fired);
 	fprintf(f, "[rir-kind]");
 	for (k = 0; k < AST_KIND_COUNT; k++)
 		if (rir_kindhist[k] || rir_treekindhist[k])
