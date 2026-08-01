@@ -815,6 +815,11 @@ static unsigned char rir_vst_sup[16];
    cleanup spill leaves it on top -- so the rebuild matches them by offset
    rather than by position. */
 static long long rir_vst_tc[16], rir_vst_vc[16];
+static unsigned char rir_vst_bf[16];
+static unsigned char rir_vst_gret[16];
+static int rir_gret_depth;
+static int rir_vbf_depth;
+static int rir_call_depth;
 static int rir_vstn;
 
 static void rir_flush_pending_call(void) {
@@ -988,7 +993,7 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		   snapshot deeper than the shadow stack, and flagging them as arena
 		   mismatches is what excluded the struct-return bodies from the C2
 		   census entirely. Materialise the leaf, but do not call it a defect. */
-		if (k < want - 1 && rir_pending_ret == AST_NONE)
+		if (k < want - 1 && rir_pending_ret == AST_NONE && !rir_gret_depth)
 			rir_arena_mismatch++;
 	}
 }
@@ -1230,6 +1235,7 @@ static void rir_op_effect(const RirOp *ro) {
 		   variable directly and the body comes out 8 bytes short. */
 		if (o->vs_n - ast_base_depth >= na + 1 && rir_shn >= na + 1) {
 			int q;
+			int hidden = -1;
 			/* The tree wraps an argument only where an assignment cast applied, i.e.
 			   for a DECLARED parameter. `printf("...", a)` gets a Convert on the
 			   format string and a bare Ref on the int, because the int is in the
@@ -1244,15 +1250,21 @@ static void rir_op_effect(const RirOp *ro) {
 				if (fs && (cs->type.t & VT_BTYPE) == VT_PTR)
 					fs = fs->type.ref;
 				nfixed = -1;
-				if (fs && fs->f.func_type == FUNC_ELLIPSIS) {
+				if (fs) {
 					const Sym *pa;
-					nfixed = 0;
+					int nparam = 0;
 					for (pa = fs->next; pa; pa = pa->next)
-						nfixed++;
+						nparam++;
+					if (fs->f.func_type == FUNC_ELLIPSIS)
+						nfixed = nparam;
+					if ((fs->type.t & VT_BTYPE) == VT_STRUCT && na == nparam + 1)
+						hidden = na - 1;
 				}
 			}
 			for (q = 0; q <= na && rir_argcast_n; q++) {
 				int si = rir_shn - 1 - q;
+				if (q == hidden)
+					continue;
 				/* In the varargs tail there is no assignment cast -- but the DEFAULT
 				   argument promotions still apply (float->double, char/short->int), and
 				   the tree records those. So skip the tail only where the type is
@@ -1268,8 +1280,7 @@ static void rir_op_effect(const RirOp *ro) {
 				if (cur == AST_NONE || rir_shtype[si] ||
 						ast_kind(rir_arena, cur) == AST_Convert)
 					continue;
-				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
-						(st & VT_BTYPE) == VT_FUNC)
+				if (st == 0 || (st & VT_BTYPE) == VT_FUNC)
 					continue;
 				/* An untyped Binary is legitimately t=0 and wants the wrap; a node
 				   that really is void does not, and gen_cast rejects it outright. */
@@ -1430,7 +1441,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 }
 
-static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
+static int rir_cond_depth, rir_synth_depth, rir_inc_depth;
 static int rir_member_depth;
 /* A struct vstore's own lowering -- gaddrof on both sides then gen_struct_copy
    -- re-materialises what it consumes, and the refill names the DESTINATION
@@ -1775,6 +1786,7 @@ static void rir_cf_cond(void) {
 }
 
 static void rir_region(const RirOp *ro) {
+	int after_ret = rir_after_ret;
 	rir_after_ret = 0;
 	if (ro->tag == RIR_T_RBEGIN) {
 		switch (ro->rkind) {
@@ -1861,6 +1873,16 @@ static void rir_region(const RirOp *ro) {
 				int allow = 0;
 				rir_vst_tc[rir_vstn] = 0;
 				rir_vst_vc[rir_vstn] = 0;
+				if (n2 == 2 && rir_shn == 1 && !after_ret &&
+						rir_pending_ret == AST_NONE && rir_pending_call == AST_NONE &&
+						!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
+						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
+						!rir_vbf_depth && !rir_vla_depth && !rir_retexpr_pending &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
+								VT_STRUCT &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
+								VT_STRUCT)
+					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				if (n2 >= 2 && rir_shn >= 2 &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
 								VT_STRUCT &&
@@ -1874,6 +1896,23 @@ static void rir_region(const RirOp *ro) {
 							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 1].c.i;
 				} else {
 					rir_vst_sup[rir_vstn] = 0;
+				}
+				rir_vst_bf[rir_vstn] = 0;
+				if (n2 == 2 && rir_shn >= 1 && !rir_vst_sup[rir_vstn] &&
+						!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
+						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
+						!rir_vbf_depth && !rir_vla_depth && !rir_retexpr_pending &&
+						rir_pending_ret == AST_NONE) {
+					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
+					if ((t->type.t & VT_BITFIELD) &&
+							(t->type.t & VT_BTYPE) != VT_STRUCT &&
+							!((v->type.t & VT_BTYPE) == VT_STRUCT ||
+								(v->type.t & VT_ARRAY) || (v->type.t & VT_BITFIELD))) {
+						rir_vst_bf[rir_vstn] = 1;
+						rir_vbf_depth++;
+						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+					}
 				}
 				if (n2 >= 2) {
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
@@ -1894,6 +1933,11 @@ static void rir_region(const RirOp *ro) {
 											(t->type.t & VT_BTYPE) == VT_STRUCT)) &&
 									!((v->type.t | t->type.t) & VT_BITFIELD);
 				}
+				if (rir_vst_bf[rir_vstn])
+					allow = 1;
+				rir_vst_gret[rir_vstn] = (unsigned char)(after_ret != 0);
+				if (after_ret)
+					rir_gret_depth++;
 				rir_vst_ok[rir_vstn] = (unsigned char)allow;
 				rir_vst_shn[rir_vstn] = (short)rir_shn;
 				rir_vst_seen[rir_vstn++] = 0;
@@ -1987,6 +2031,10 @@ static void rir_region(const RirOp *ro) {
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
+			if (rir_vst_bf[rir_vstn] && rir_vbf_depth)
+				rir_vbf_depth--;
+			if (rir_vst_gret[rir_vstn] && rir_gret_depth)
+				rir_gret_depth--;
 			/* gfunc_return copies a struct result through vstore(), so the return
 			   statement opens a RIR_R_VSTORE region of its own. The tree records none
 			   of it -- its arena for `return s1;` is Return(Ref) alone and
@@ -1998,7 +2046,7 @@ static void rir_region(const RirOp *ro) {
 			   destructor call and reloads it after, and that copy has to be
 			   modelled or the reload comes off the original slot. gfunc_return's
 			   shape is two AST_OP_ADDR unaries; the spill's is two lvalues. */
-			if (rir_pending_ret != AST_NONE &&
+			if ((rir_pending_ret != AST_NONE || rir_vst_gret[rir_vstn]) &&
 					(rir_shn < 2 ||
 					 (ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Unary &&
 						ast_op(rir_arena, rir_sh[rir_shn - 1]) == AST_OP_ADDR) ||
@@ -2015,7 +2063,11 @@ static void rir_region(const RirOp *ro) {
 				   value on top, target under it. Unsuppressed, the region's ops have
 				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
-				if (rir_vst_sup[rir_vstn]) {
+				if (rir_vst_bf[rir_vstn]) {
+					AstLocal sw = t;
+					t = v;
+					v = sw;
+				} else if (rir_vst_sup[rir_vstn]) {
 					long long tc = rir_vst_tc[rir_vstn], vc = rir_vst_vc[rir_vstn];
 					long long ti = (long long)ast_ival(rir_arena, t);
 					long long vi = (long long)ast_ival(rir_arena, v);
@@ -2378,6 +2430,8 @@ static int rir_emit_safe(void) {
 			   the tree records exactly that shape, so refusing it is this net
 			   declining a body the emitter handles. */
 			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT) &&
+					!(ast_kind(rir_arena, v) == AST_Load &&
+						ast_type_t(rir_arena, v) == 0) &&
 					!(is_complex_type(&func_vt) && vb != VT_STRUCT &&
 						(vb != VT_VOID || (ast_type_t(rir_arena, v) == 0 &&
 															 ast_kind(rir_arena, v) == AST_Binary))))
@@ -2443,6 +2497,8 @@ static void rir_to_arena(void) {
 	rir_inc_depth = 0;
 	rir_member_depth = 0;
 	rir_vstruct_depth = 0;
+	rir_vbf_depth = 0;
+	rir_gret_depth = 0;
 	rir_vla_depth = 0;
 	rir_argcast_n = 0;
 	rir_ternn = 0;
@@ -2505,7 +2561,7 @@ static void rir_to_arena(void) {
 			if ((ro->rkind == RIR_M_NORETURN ||
 					 (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
 						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
-						!rir_vla_depth)) &&
+						!rir_vbf_depth && !rir_vla_depth)) &&
 					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN ||
 					 ro->rkind == RIR_M_NORETURN)) {
 				if (bound || ro->rkind == RIR_M_NORETURN)
@@ -2530,7 +2586,8 @@ static void rir_to_arena(void) {
 			continue;
 		}
 		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
-				rir_retexpr_pending || rir_vstruct_depth || rir_vla_depth)
+				rir_retexpr_pending || rir_vstruct_depth || rir_vbf_depth ||
+				rir_vla_depth)
 			continue;
 		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);
