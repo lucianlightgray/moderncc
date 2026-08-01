@@ -561,6 +561,25 @@ static void rir_push_typed(AstLocal n) {
    the model holds past the recorded depth is dropped. Divergences are counted
    rather than smoothed over -- rir_arena_mismatch is the honest quality signal
    for this reconstruction, the same role fix= plays for replay. */
+/* gfunc_call pops the callee and the CALLER pushes the return value afterwards
+   with its own vsetc, so between the two the parser's stack is one shallower
+   than an Invoke pushed at call time -- the reconcile flushes that Invoke as a
+   statement and the next boundary re-materialises its result as a bare register
+   leaf, which replays as "already in that register" and skips the spill the
+   parser emitted (`return f() - f();` came out as `sub eax,eax`). Hold the node
+   instead and let the vsetc that pushes the result claim it. Reading the depth
+   delta and skipping one drop was tried and is wrong: it cannot tell a
+   single-slot integer return from a float or struct one, and aborts 17 corpus
+   files. */
+static AstLocal rir_pending_call = AST_NONE;
+
+static void rir_flush_pending_call(void) {
+	if (rir_pending_call == AST_NONE)
+		return;
+	rir_stmt(rir_pending_call);
+	rir_pending_call = AST_NONE;
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -573,6 +592,18 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		v = &base[ast_base_depth + k];
 		ast_set_type(rir_arena, rir_sh[k], v->type.t,
 								 (uint64_t)(uintptr_t)v->type.ref);
+		/* An AST_Invoke carries its RESULT's SValue, not just its type:
+		   ast_replay_value rebuilds the return with `sv.r = ast_op(a, n)`, so a
+		   node left at op 0 claims the value is in register 0 and a double return
+		   then trips load()'s XMM assert. Stamp the whole leaf encoding, exactly
+		   as rir_leaf does. */
+		if (rir_shtype[k] == 2) {
+			ast_set_op(rir_arena, rir_sh[k], v->r);
+			ast_set_ival(rir_arena, rir_sh[k], (uint64_t)v->c.i);
+			ast_set_sym(rir_arena, rir_sh[k], (uint64_t)(uintptr_t)v->sym);
+			ast_set_wide(rir_arena, rir_sh[k], ast_sv_hi(v),
+									 v->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)v->r2);
+		}
 		rir_shtype[k] = 0;
 	}
 }
@@ -618,6 +649,8 @@ static int rir_opassign_pending;
 static void rir_op_effect(const RirOp *ro) {
 	const JrnOp *o = &ro->p;
 	int k;
+	if (o->kind != JOP_VSETC)
+		rir_flush_pending_call();
 	switch (o->kind) {
 	case JOP_GENOP:
 	case JOP_OPI:
@@ -685,9 +718,17 @@ static void rir_op_effect(const RirOp *ro) {
 		for (k = 0; k < na; k++)
 			if (args[k] != AST_NONE)
 				ast_add_child(rir_arena, n, args[k]);
-		rir_push_typed(n);
+		rir_pending_call = n;
 		break;
 	}
+	case JOP_VSETC:
+		if (rir_pending_call != AST_NONE) {
+			rir_push_typed(rir_pending_call);
+			if (rir_shn > 0)
+				rir_shtype[rir_shn - 1] = 2;
+			rir_pending_call = AST_NONE;
+		}
+		break;
 	case JOP_VPOP: {
 		AstLocal d = rir_pop();
 		if (rir_effectful(d))
@@ -1289,6 +1330,7 @@ static void rir_to_arena(void) {
 	rir_member_depth = 0;
 	rir_ternn = 0;
 	rir_lorn = 0;
+	rir_pending_call = AST_NONE;
 	rir_opassign_pending = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
@@ -1320,6 +1362,7 @@ static void rir_to_arena(void) {
 		rir_reconcile(&ro->p);
 		rir_op_effect(ro);
 	}
+	rir_flush_pending_call();
 	while (rir_shn > 0) {
 		AstLocal d = rir_pop();
 		if (rir_effectful(d))
