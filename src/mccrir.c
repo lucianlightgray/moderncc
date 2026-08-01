@@ -493,6 +493,7 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 		rir_tot_c2_err;
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
+static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 
 static void rir_c2_sink(void *opaque, const char *msg) {
 	(void)opaque;
@@ -1802,6 +1803,32 @@ void rir_verify(void) {
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2] %s\tINVALID %s\n", funcname, rir_c2_msg);
 		} else if (setjmp(mcc_state->error_jmp_buf) == 0) {
+			/* C3 probe: the optimizer passes are arena-parameterized, so the
+			   question is whether they can consume an arena the hooks never
+			   built. Run them on a CLONE -- the C2 byte comparison below must
+			   still see the unoptimized reconstruction -- and re-check that what
+			   comes out is still something ast_replay_* can be handed. A pass
+			   that folds is expected to change the bytes, so bytes are not the
+			   oracle here; surviving validate + the arity contract is. */
+			if (rir_env >= 6) {
+				AstArena *c3 = ast_arena_clone(rir_arena);
+				char c3msg[256];
+				int folds;
+				rir_tot_c3_try++;
+				ast_tmpl_folds = 0;
+				ast_run_templates(c3);
+				folds = ast_tmpl_folds + ast_sccp_run(c3);
+				rir_tot_c3_ran++;
+				rir_tot_c3_folds += folds;
+				c3msg[0] = 0;
+				if (ast_validate(c3, c3msg, sizeof c3msg) != 0) {
+					rir_tot_c3_broke++;
+					fprintf(stderr, "[rir-c3] %s\tINVALID-AFTER-PASSES %s\n",
+									funcname, c3msg);
+				}
+				ast_arena_free(c3);
+				ast_tmpl_folds = 0;
+			}
 			ast_replay_body(rir_arena);
 			if (ind - ast_body_ind_sv == body_len &&
 					memcmp(cur_text_section->data + ast_body_ind_sv, orig,
@@ -1936,6 +1963,10 @@ static void rir_report(void) {
 					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes, rir_tot_c2_try,
 					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
 					rir_tot_c2_invalid);
+	if (rir_tot_c3_try)
+		fprintf(f, "[rir-c3] try=%ld ran=%ld folds=%ld broke=%ld\n",
+						rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds,
+						rir_tot_c3_broke);
 	fprintf(f, "[rir-kind]");
 	for (k = 0; k < AST_KIND_COUNT; k++)
 		if (rir_kindhist[k] || rir_treekindhist[k])
