@@ -15390,6 +15390,7 @@ static void jrn_snap_vstack(JrnOp *o) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); memcpy(jrn_vs + jrn_vsn, vstack, (size_t)n * sizeof(SValue)); }
 	o->vs_off = jrn_vsn;
 	o->vs_n = n;
+	rir_snap_types(jrn_vs + jrn_vsn, n);
 	jrn_vsn += n;
 }
 

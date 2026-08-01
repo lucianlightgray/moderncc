@@ -32,6 +32,7 @@ extern int rir_env;
 extern int rir_active;
 extern int rir_started;
 
+void rir_snap_types(SValue *sv, int n);
 void rir_configure(void);
 void rir_reset(void);
 void rir_verify(void);
@@ -103,6 +104,7 @@ void rir_mark_val2(int kind, long long a, long long b);
 #define rir_mark_val(k, v) ((void)0)
 #define rir_mark_val2(k, a, b) ((void)0)
 #define rir_env 0
+#define rir_snap_types(sv, n) ((void)0)
 
 #endif
 

@@ -232,7 +232,13 @@ void rir_mark_val2(int kind, long long a, long long b) {
 	rir_mark_v2(RIR_T_MARK, kind, 0, a, b);
 }
 
+#define RIR_XT_MAX 16384
+static Sym rir_xt[RIR_XT_MAX];
+static Sym *rir_xt_src[RIR_XT_MAX];
+static int rir_xtn;
+
 void rir_reset(void) {
+	rir_xtn = 0;
 	rir_n = 0;
 	rir_markn = 0;
 	rir_mvsn = 0;
@@ -503,6 +509,47 @@ static void rir_c2_sink(void *opaque, const char *msg) {
 }
 static long rir_kindhist[AST_KIND_COUNT], rir_treekindhist[AST_KIND_COUNT];
 
+/* sym_free returns a struct's field Syms to the free list and later parsing in
+ the SAME function reuses them, so by replay time the field chain can be cyclic
+ and x86_64_has_unaligned_field recurses on ty->ref->next forever. The chain is
+ well formed at CAPTURE time, so clone it there into storage the recycler does
+ not own. Sym::next is a UNION -- the field chain only for struct and function
+ types, vla_array_str (an int *) for a VLA -- so follow it only inside a real
+ chain and leave VLA types alone; following it blindly stops vla/basic.c and
+ vla_param_side_effects.c compiling at all. */
+static int rir_xt_chain(int t) {
+	return (t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC;
+}
+
+static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
+	int k;
+	Sym *c;
+	if (!s || depth > 64 || (s->type.t & VT_VLA))
+		return s;
+	for (k = 0; k < rir_xtn; k++)
+		if (rir_xt_src[k] == s)
+			return &rir_xt[k];
+	if (rir_xtn >= RIR_XT_MAX)
+		return s;
+	k = rir_xtn++;
+	rir_xt_src[k] = s;
+	c = &rir_xt[k];
+	*c = *s;
+	c->type.ref = rir_xtype_ref(s->type.ref, depth + 1, rir_xt_chain(s->type.t));
+	if (chain)
+		c->next = rir_xtype_ref(s->next, depth + 1, chain);
+	return c;
+}
+
+void rir_snap_types(SValue *sv, int n) {
+	int i;
+	if (!rir_env)
+		return;
+	for (i = 0; i < n; i++)
+		sv[i].type.ref =
+			rir_xtype_ref(sv[i].type.ref, 0, rir_xt_chain(sv[i].type.t));
+}
+
 static AstLocal rir_leaf(const SValue *sv) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
@@ -592,6 +639,7 @@ static void rir_push_typed(AstLocal n) {
 static AstLocal rir_pending_call = AST_NONE;
 static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
+static short rir_vst_shn[16];
 static int rir_vstn;
 
 static void rir_flush_pending_call(void) {
@@ -988,6 +1036,7 @@ static int rir_ternn;
 static AstLocal rir_lor[16];
 static int rir_lorn;
 static AstLocal rir_last_return = AST_NONE;
+static AstLocal rir_pending_ret = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
@@ -997,7 +1046,15 @@ static void rir_mark_apply(const RirOp *ro) {
 		a = rir_shn ? rir_pop() : AST_NONE;
 		if (a != AST_NONE)
 			ast_add_child(rir_arena, n, a);
-		rir_stmt(n);
+		/* A cleanup attribute makes the parser emit the destructor calls BETWEEN
+		   the return value and the ret -- compute, spill, call, reload. Attaching
+		   the Return the moment the marker fires puts it ahead of those calls and
+		   the x87 reload lands 20 bytes early. At top level nothing can follow a
+		   return but that trailing code, so hold it and attach at body end. */
+		if (rir_bbn == 1)
+			rir_pending_ret = n;
+		else
+			rir_stmt(n);
 		rir_last_return = n;
 		rir_after_ret = 1;
 		break;
@@ -1239,12 +1296,21 @@ static void rir_region(const RirOp *ro) {
 					   test. Admitting every non-struct non-bitfield vstore also
 					   rebuilds ones the primitive path already handled and costs
 					   13 bodies net. */
-					allow = (v->type.t & VT_ARRAY) != 0 &&
-									(v->type.t & VT_BTYPE) != VT_STRUCT &&
-									(t->type.t & VT_BTYPE) != VT_STRUCT &&
+					/* A struct value is the block-copy case: vstore takes both addresses and
+					   calls gen_struct_copy, so the region's own ops leave ADDR unaries on
+					   the shadow stack and rebuilding from those gives a POINTER assignment.
+					   Admit it here and unwind to the pre-region operands at the end. */
+					allow = (((v->type.t & VT_ARRAY) != 0 &&
+										(v->type.t & VT_BTYPE) != VT_STRUCT &&
+										(t->type.t & VT_BTYPE) != VT_STRUCT) ||
+										((v->type.t & VT_BTYPE) == VT_STRUCT &&
+											(t->type.t & VT_BTYPE) == VT_STRUCT &&
+											!(v->type.ref && v->type.ref->a.is_complex) &&
+											!(t->type.ref && t->type.ref->a.is_complex))) &&
 									!((v->type.t | t->type.t) & VT_BITFIELD);
 				}
 				rir_vst_ok[rir_vstn] = (unsigned char)allow;
+				rir_vst_shn[rir_vstn] = (short)rir_shn;
 				rir_vst_seen[rir_vstn++] = 0;
 			}
 			break;
@@ -1317,6 +1383,8 @@ static void rir_region(const RirOp *ro) {
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
+			if (rir_vst_shn[rir_vstn] >= 2 && rir_shn > rir_vst_shn[rir_vstn])
+				rir_shn = rir_vst_shn[rir_vstn];
 			if (!seen && allow && rir_shn >= 2) {
 				AstLocal t = rir_pop(), v = rir_pop(), n;
 				n = ast_node(rir_arena, AST_Store);
@@ -1618,6 +1686,7 @@ static void rir_to_arena(void) {
 	rir_cfn = 0;
 	rir_bbn = 0;
 	rir_last_return = AST_NONE;
+	rir_pending_ret = AST_NONE;
 	rir_after_ret = 0;
 	rir_cond_depth = 0;
 	rir_synth_depth = 0;
@@ -1659,6 +1728,10 @@ static void rir_to_arena(void) {
 		rir_op_effect(ro);
 	}
 	rir_flush_pending_call();
+	if (rir_pending_ret != AST_NONE) {
+		rir_stmt(rir_pending_ret);
+		rir_pending_ret = AST_NONE;
+	}
 	while (rir_shn > 0) {
 		AstLocal d = rir_pop();
 		if (rir_effectful(d))
