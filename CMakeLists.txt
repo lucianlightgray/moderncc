@@ -3899,6 +3899,24 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
             TIMEOUT 900)
 
+        # Instruction 36's bar is absolute -- 100% of bodies faithful on every
+        # target at every -O -- so this is a hard assert, not a ratchet against
+        # a banked number, and it needs no baseline family of its own.
+        foreach(_ro -O1 -O2 -O3)
+            string(REPLACE "-" "" _rotag "${_ro}")
+            add_test(NAME ast/rir-parity-${_rotag}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${_mcc_exe}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rotag}"
+                        "-DOPT=${_ro}"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
+            set_tests_properties(ast/rir-parity-${_rotag} PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 900)
+        endforeach()
+
         if(TARGET mcc_nojrn)
             add_test(NAME ast/journal-inert-build
                 COMMAND "${CMAKE_COMMAND}"
