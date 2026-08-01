@@ -772,7 +772,13 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		return;
 	for (k = rir_shn; k < want; k++) {
 		rir_push(rir_leaf(&base[ast_base_depth + k]));
-		if (k < want - 1)
+		/* gfunc_return pushes its own operands (vset/indir/vswap) which Replay_IR
+		   deliberately does not model, because the tree does not either and
+		   ast_replay_value re-runs gfunc_return itself. Those pushes make the
+		   snapshot deeper than the shadow stack, and flagging them as arena
+		   mismatches is what excluded the struct-return bodies from the C2
+		   census entirely. Materialise the leaf, but do not call it a defect. */
+		if (k < want - 1 && rir_pending_ret == AST_NONE)
 			rir_arena_mismatch++;
 	}
 }
