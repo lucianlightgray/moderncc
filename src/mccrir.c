@@ -48,6 +48,28 @@ typedef struct RirMark {
 
 int rir_env;
 int rir_active;
+/* Every frame slot the body allocates, in order, recorded across the WHOLE body
+   rather than only while the tree recorder is active -- ast_locrec[] misses the
+   declaration-time allocations, so replaying it in the C2 trial hands out the
+   wrong offsets for any body with declared locals. The tree's own replay path is
+   the precedent; this is the same mechanism, RIR-owned, so neither list disturbs
+   the other. */
+#define RIR_LOCREC_MAX 512
+static int rir_locrec[RIR_LOCREC_MAX];
+static int rir_locrec_n, rir_locrec_i;
+
+void rir_loc_record(int loc_in) {
+	if (rir_locrec_n >= RIR_LOCREC_MAX)
+		return;
+	rir_locrec[rir_locrec_n++] = loc_in;
+}
+
+int rir_loc_replay(int *loc_out) {
+	if (rir_locrec_i >= rir_locrec_n)
+		return 0;
+	*loc_out = rir_locrec[rir_locrec_i++];
+	return 1;
+}
 int rir_c2_active;
 int rir_started;
 
@@ -273,6 +295,8 @@ static int rir_xtn;
 static int rir_body_hasheq;
 
 void rir_reset(void) {
+	rir_locrec_n = 0;
+	rir_locrec_i = 0;
 	rir_body_hasheq = 0;
 	rir_xtn = 0;
 	rir_n = 0;
@@ -2910,6 +2934,7 @@ void rir_verify(void) {
 				ast_arena_free(c3);
 				ast_tmpl_folds = 0;
 			}
+			rir_locrec_i = 0;
 			rir_c2_active = 1;
 			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
 													? ast_cur

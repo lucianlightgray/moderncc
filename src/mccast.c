@@ -2000,6 +2000,22 @@ uint64_t ast_pinned_regs;
 int ast_func_has_asm;
 
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
+#if MCC_REPLAY_IR
+	/* The C2 trial re-emits a body whose frame slots the parse already chose, and
+	   ast_locrec[] only covers the allocations made while the tree recorder was
+	   active -- not the declaration-time ones -- so replaying it hands out the
+	   wrong offset for any body with declared locals. Replay Replay_IR's own list,
+	   which spans the whole body. */
+	if (rir_c2_active) { MCC_TRACE("br\n");
+		int rl;
+		if (rir_loc_replay(&rl)) { MCC_TRACE("br\n");
+			loc = rl;
+			if (loc < ast_loc_low)
+				{ MCC_TRACE("br\n"); ast_loc_low = loc; }
+			return loc;
+		}
+	}
+#endif
 	if (ast_replaying && !jrn_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
 		loc = ast_locrec[ast_locrec_i++];
 		if (loc < ast_loc_low)
@@ -2009,6 +2025,10 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	loc = (loc - size) & -align;
 	if (loc < ast_loc_low)
 		{ MCC_TRACE("br\n"); ast_loc_low = loc; }
+#if MCC_REPLAY_IR
+	if (rir_active && !ast_replaying && !jrn_replaying)
+		{ MCC_TRACE("br\n"); rir_loc_record(loc); }
+#endif
 	if (ast_active && !ast_replaying) { MCC_TRACE("br\n");
 		if (ast_locrec_n == ast_locrec_cap) { MCC_TRACE("br\n");
 			ast_locrec_cap = ast_locrec_cap ? ast_locrec_cap * 2 : 16;

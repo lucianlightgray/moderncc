@@ -36,6 +36,8 @@ extern int rir_body_loc_sv;
 extern int rir_started;
 
 void rir_snap_types(SValue *sv, int n);
+void rir_loc_record(int loc_in);
+int rir_loc_replay(int *loc_out);
 void rir_configure(void);
 void rir_reset(void);
 void rir_verify(void);
@@ -126,6 +128,8 @@ void rir_vla_begin(void);
 #define rir_env 0
 #define rir_c2_active 0
 #define rir_snap_types(sv, n) ((void)0)
+#define rir_loc_record(l) ((void)0)
+#define rir_loc_replay(p) 0
 
 #endif
 
