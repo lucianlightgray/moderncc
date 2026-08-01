@@ -612,6 +612,54 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		}
 		rir_shtype[k] = 0;
 	}
+	/* The missing Converts are the casts that emit NO op: a widening the parser
+	   performs by retyping a value already in a register. The dump for
+	   `(unsigned long long)x << c` shows the tree wrapping the operand in a
+	   Convert to the wider type while the leaf keeps the narrower one, and the
+	   next op's snapshot is where that retype becomes visible -- which is also
+	   exactly where the Binary consumes it, so wrapping here lands it inside the
+	   Binary as the tree has it. Admission is by SIZE: an unexplained type
+	   difference that does not change the width is representation drift, not a
+	   cast, and wrapping those is measured worse. */
+	for (k = 0; k < rir_shn && k < want; k++) {
+		const SValue *v = &base[ast_base_depth + k];
+		AstLocal cur = rir_sh[k];
+		int ct, cs, vs2, al;
+		CType a1, b1;
+		if (cur == AST_NONE || rir_shtype[k])
+			continue;
+		ct = ast_type_t(rir_arena, cur);
+		if (ct == 0 || ct == v->type.t)
+			continue;
+		if ((ct & VT_BTYPE) == VT_STRUCT || (v->type.t & VT_BTYPE) == VT_STRUCT)
+			continue;
+		if (is_float(ct) != is_float(v->type.t))
+			continue;
+		/* A callee slot legitimately reads VT_FUNC at one boundary and VT_PTR at
+		   the next; type_size differs, but that is the call lowering retyping its
+		   own operand, not a cast. Wrapping it breaks every indirect call --
+		   measured: 50 regressions, all func_pointers / indirect_call_shapes /
+		   c11_threads / noreturn shapes. */
+		if ((ct & VT_BTYPE) == VT_FUNC || (v->type.t & VT_BTYPE) == VT_FUNC)
+			continue;
+		if ((ct & VT_BTYPE) == VT_PTR || (v->type.t & VT_BTYPE) == VT_PTR)
+			continue;
+		a1.t = ct;
+		a1.ref = (Sym *)(uintptr_t)ast_type_ref(rir_arena, cur);
+		b1.t = v->type.t;
+		b1.ref = v->type.ref;
+		cs = type_size(&a1, &al);
+		vs2 = type_size(&b1, &al);
+		if (cs == vs2)
+			continue;
+		{
+			AstLocal cv = ast_node(rir_arena, AST_Convert);
+			ast_set_type(rir_arena, cv, v->type.t,
+									 (uint64_t)(uintptr_t)v->type.ref);
+			ast_add_child(rir_arena, cv, cur);
+			rir_sh[k] = cv;
+		}
+	}
 }
 
 static void rir_reconcile_sv(const SValue *base, int n) {
