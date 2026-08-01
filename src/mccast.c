@@ -4097,6 +4097,7 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_NORETURN);
 	if (!ast_call_noreturn_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_capture || ast_desync || ast_call_pending == AST_NONE)

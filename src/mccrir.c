@@ -1407,6 +1407,22 @@ static void rir_mark_apply(const RirOp *ro) {
 		   against the tree's `t=0 ref=0` in 18 near-miss bodies. */
 		rir_push(n);
 		break;
+	case RIR_M_NORETURN:
+		/* A call to a _Noreturn function is followed by CODE_OFF(), so the parser
+		   drops the jump that would follow it. The tree records that on the node
+		   as AST_FB_CALL_NORETURN and ast_replay_value re-runs the CODE_OFF; the
+		   marker fires inside the CALL region, where the Invoke is still pending.
+		   This is the recorded "model that this branch ends unreachable" class. */
+		{
+			AstLocal inv = rir_pending_call;
+			if (inv == AST_NONE && rir_shn > 0 &&
+					ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Invoke)
+				inv = rir_sh[rir_shn - 1];
+			if (inv != AST_NONE)
+				ast_set_fbits(rir_arena, inv,
+											ast_fbits(rir_arena, inv) | AST_FB_CALL_NORETURN);
+		}
+		break;
 	case RIR_M_CASTGV:
 		/* The parser materialises an explicit cast's result when
 		   gv_cast_rvalue() says so, and the tree records that on the node as
@@ -2027,10 +2043,14 @@ static void rir_to_arena(void) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
 			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
-			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
-					!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
-					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN)) {
-				if (bound)
+			/* RIR_M_NORETURN fires INSIDE the call region it annotates, so it is
+			   the one marker the region suppression must let through. */
+			if ((ro->rkind == RIR_M_NORETURN ||
+					 (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
+						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth)) &&
+					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN ||
+					 ro->rkind == RIR_M_NORETURN)) {
+				if (bound || ro->rkind == RIR_M_NORETURN)
 					;
 				else if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETEXPR ||
 								 ro->rkind == RIR_M_RETURN)
@@ -2279,8 +2299,15 @@ void rir_verify(void) {
 							ast_type_ref(rir_arena, q) == ast_type_ref(ast_cur, q) &&
 							ast_ival(rir_arena, q) == ast_ival(ast_cur, q) &&
 							ast_sym(rir_arena, q) == ast_sym(ast_cur, q) &&
+							ast_fbits(rir_arena, q) == ast_fbits(ast_cur, q) &&
 							ast_nchild(rir_arena, q) == ast_nchild(ast_cur, q))
 						continue;
+					if (ast_kind(rir_arena, q) == ast_kind(ast_cur, q) &&
+							ast_fbits(rir_arena, q) != ast_fbits(ast_cur, q))
+						fprintf(stderr, "[rir-fb] %s n%u %s rir=%llx tree=%llx\n",
+										funcname, q, ast_kind_name(ast_kind(rir_arena, q)),
+										(unsigned long long)ast_fbits(rir_arena, q),
+										(unsigned long long)ast_fbits(ast_cur, q));
 					fprintf(stderr,
 									"[rir-diff] n%u rir(%s op=%d t=%d ref=%llx iv=%llu sym=%llx "
 									"nc=%u) tree(%s op=%d t=%d ref=%llx iv=%llu sym=%llx nc=%u)\n",
@@ -2585,7 +2612,9 @@ void rir_verify(void) {
 				ast_arena_free(c3);
 				ast_tmpl_folds = 0;
 			}
-			ast_replay_body(rir_arena);
+			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
+													? ast_cur
+													: rir_arena);
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2part] %s heq=%d ok=%d\n", funcname,
 					rir_body_hasheq,
