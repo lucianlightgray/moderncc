@@ -592,6 +592,15 @@ static const struct {
 		{"test", 0}, {"bench", 0}, {"dist", 1},
 		{"fuzz", 0}, {"emulate", 1}, {0, 0}};
 
+/* Representative feature subset for the per-push gate on the scarce/slow hosted
+ * runner pools (macOS, Windows), which loop features in one sequential job: the
+ * full matrix there costs too much wall-clock. Covers the load-mode default
+ * (dynamic), the sanitizer, and the two OS-specific object formats (each
+ * 77-skips on the OS it does not apply to). Linux runs the full matrix per push;
+ * macOS/Windows run the full matrix nightly (matrix.yml). */
+static const char *GATE_FEATURES[] = {
+		"dynamic", "sanitize", "macho", "pe", 0};
+
 /* Tokenize a semicolon-separated -D flag string into `v`. `buf` must outlive
  * the eventual ts_run (ts_arg stores pointers, not copies), so the caller
  * passes a buffer that stays in scope. */
@@ -2668,6 +2677,11 @@ static int do_stage3(int argc, char **argv) {
 		ts_arg(&v, build);
 		ts_arg(&v, jflag);
 		ts_arg(&v, "--output-on-failure");
+		/* Per-test wall-clock cap so a single hung/crash-suspended test (e.g. a
+		 * macOS ReportCrash-serialized child) is killed and named instead of
+		 * stalling the whole job until the runner ceiling. */
+		ts_arg(&v, "--timeout");
+		ts_arg(&v, "900");
 		if (!strcmp(consume, "emulate")) {
 			/* the cross/emulation validators are exactly the non-`native`
 			 * tests (qemu/wine/macho/docker); the *-docker.sh scripts still
@@ -2712,11 +2726,17 @@ static int do_stage3(int argc, char **argv) {
  * 11-way fan-out promptly, so one sequential job per OS starts immediately. Each
  * `ci stage2 <f>` still 77-skips the platform-locked cells. */
 static int do_features(int argc, char **argv) {
-	int i;
-	(void)argc;
-	(void)argv;
-	for (i = 0; FEATURES[i].name; i++)
-		printf("%s\n", FEATURES[i].name);
+	int i, gate = 0;
+	for (i = 0; i < argc; i++)
+		if (!strcmp(argv[i], "--gate"))
+			gate = 1;
+	if (gate) {
+		for (i = 0; GATE_FEATURES[i]; i++)
+			printf("%s\n", GATE_FEATURES[i]);
+	} else {
+		for (i = 0; FEATURES[i].name; i++)
+			printf("%s\n", FEATURES[i].name);
+	}
 	return 0;
 }
 

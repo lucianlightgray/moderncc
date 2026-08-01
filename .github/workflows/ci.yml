@@ -174,9 +174,14 @@ jobs:
     needs: stage1-macos
     name: stage2 / macos
     runs-on: macos-15
-    timeout-minutes: 120
+    timeout-minutes: 60
     env:
       CC: clang
+      # Drop the differential fuzzer on macOS: it spawns a reference cc per
+      # iteration and generates programs that crash the compiler, each of which
+      # macOS ReportCrash intercepts and serializes (~14 min/cell). It is fully
+      # covered by the native arm64-Linux fuzz job + the nightly.
+      MCC_CI_CTEST_EXCLUDE: '^fuzz/'
     steps:
       - uses: actions/checkout@v5
       - name: install build + test deps
@@ -189,11 +194,11 @@ jobs:
           name: stage1-macos-arm64-clang
       - name: unpack stage1 mcc
         run: tar xf stage1-macos-arm64-clang.tar
-      - name: stage2 self-host + stage3 test (every feature, sequential)
+      - name: stage2 self-host + stage3 test (gate feature subset, sequential)
         run: |
           mcc="$PWD/macos-arm64-clang/bin/mcc"
           fail=0
-          for f in $(mcc-ci features); do
+          for f in $(mcc-ci features --gate); do
             echo "::group::stage2 $f"
             rc=0; mcc-ci stage2 "$f" --mcc "$mcc" || rc=$?
             if [ "$rc" -eq 77 ]; then echo "SKIP $f (platform-locked)"; echo "::endgroup::"; continue; fi
@@ -234,13 +239,13 @@ jobs:
           name: stage1-windows-x86_64-msvc
       - name: unpack stage1 mcc
         run: tar xf stage1-windows-x86_64-msvc.tar
-      - name: stage2 self-host + stage3 test (every feature, sequential)
+      - name: stage2 self-host + stage3 test (gate feature subset, sequential)
         run: |
           mcc="$PWD/windows-x86_64-msvc/bin/mcc.exe"
           fail=0
           # tr: the msvc-built mcc-ci writes CRLF; bash word-splitting keeps the
           # \r on every feature name ("unknown feature 'static\r'").
-          for f in $(mcc-ci features | tr -d '\r'); do
+          for f in $(mcc-ci features --gate | tr -d '\r'); do
             echo "::group::stage2 $f"
             rc=0; mcc-ci stage2 "$f" --mcc "$mcc" || rc=$?
             if [ "$rc" -eq 77 ]; then echo "SKIP $f (platform-locked)"; echo "::endgroup::"; continue; fi
