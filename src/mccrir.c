@@ -870,6 +870,35 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+	case JOP_SIGNBIT:
+	case JOP_FFS:
+	case JOP_BITSCAN:
+	case JOP_BSWAP: {
+		/* gen_bswap is journalled and op-replay handles it, which is why faithful
+		   has always been 100% here, but the arena had no node for it and emitted
+		   nothing -- b64 came out 4 bytes against the parser's 7, missing the
+		   48 0f c8 entirely. Model it the way the tree models its other
+		   intrinsics: an AST_Unary carrying the operand size in ival. */
+		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
+		AstLocal n;
+		if (v == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n,
+			o->kind == JOP_BSWAP ? AST_OP_BSWAP
+			: o->kind == JOP_SIGNBIT ? AST_OP_SIGNBIT
+			: o->kind == JOP_FFS ? AST_OP_FFS
+			: AST_OP_BITSCAN);
+		ast_set_ival(rir_arena, n,
+			(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
+		ast_add_child(rir_arena, n, v);
+		rir_push_typed(n);
+		break;
+	}
+#endif
 	case JOP_CALL: {
 		AstLocal n = ast_node(rir_arena, AST_Invoke);
 		int na = o->a0;

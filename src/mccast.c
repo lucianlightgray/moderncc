@@ -2140,6 +2140,10 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_NEARBYINT 0x40013 /* nearbyint() — current mode, no inexact */
 #define AST_OP_FMA 0x40014 /* ternary fma(x,y,z)=x*y+z single-rounding (arm64/riscv64) */
 #define AST_OP_FNEG 0x40015
+#define AST_OP_BSWAP 0x40016
+#define AST_OP_SIGNBIT 0x40017
+#define AST_OP_FFS 0x40018
+#define AST_OP_BITSCAN 0x40019
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -6402,6 +6406,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_opif(TOK_NEG);
 			vtop->type.t = ast_type_t(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+		} else if (uop == AST_OP_BSWAP) { MCC_TRACE("br\n");
+			gen_bswap((int)ast_ival(a, n));
+		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
+			gen_signbit((int)ast_ival(a, n));
+		} else if (uop == AST_OP_FFS) { MCC_TRACE("br\n");
+			gen_ffs((int)ast_ival(a, n));
+		} else if (uop == AST_OP_BITSCAN) { MCC_TRACE("br\n");
+			gen_bitscan((int)ast_ival(a, n), (int)(ast_ival(a, n) >> 32));
+#endif
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
