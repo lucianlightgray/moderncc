@@ -2706,6 +2706,20 @@ static int do_stage3(int argc, char **argv) {
 	return 2;
 }
 
+/* Print the stage2 feature names, one per line, so a single per-OS stage2 job
+ * can shell-loop them (`for f in $(mcc-ci features)`) instead of fanning out one
+ * job per feature -- the macOS/Windows runner pools are too small to schedule an
+ * 11-way fan-out promptly, so one sequential job per OS starts immediately. Each
+ * `ci stage2 <f>` still 77-skips the platform-locked cells. */
+static int do_features(int argc, char **argv) {
+	int i;
+	(void)argc;
+	(void)argv;
+	for (i = 0; FEATURES[i].name; i++)
+		printf("%s\n", FEATURES[i].name);
+	return 0;
+}
+
 int main(int argc, char **argv) {
 	if (argc < 2) {
 		fprintf(stderr, "usage: ci <stage1|stage2|stage3|stage|run-preset|qemu|local|dist|matrix|plan|parity|fuzz|bench-summary|pkg|sha256sums> ...\n");
@@ -2717,6 +2731,8 @@ int main(int argc, char **argv) {
 		return do_stage2(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "stage3"))
 		return do_stage3(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "features"))
+		return do_features(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "fuzz"))
 		return do_fuzz(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "stage"))
