@@ -819,6 +819,25 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_after_ret = 1;
 		break;
 	}
+	case RIR_M_CMPINV:
+		/* `!cond` is not a node in the tree, it is an in-place edit of the one
+		   already built: a short-circuit Binary flips AST_FB_LANDOR_INVERT (which
+		   ast_replay_value's landor arm reads to swap jtrue/jfalse and the cmp
+		   op), and any other comparison flips its own op with ^1. Without it a
+		   negated `&&` chain replays the same LENGTH with an inverted jcc --
+		   `0f 84` where the parser emitted `0f 85`. */
+		if (rir_shn > 0) {
+			AstLocal top = rir_sh[rir_shn - 1];
+			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Binary) {
+				int bop = ast_op(rir_arena, top);
+				if (bop == TOK_LAND || bop == TOK_LOR)
+					ast_set_fbits(rir_arena, top,
+												ast_fbits(rir_arena, top) ^ AST_FB_LANDOR_INVERT);
+				else
+					ast_set_op(rir_arena, top, bop ^ 1);
+			}
+		}
+		break;
 	case RIR_M_OPASSIGN:
 		rir_opassign_pending = 1;
 		break;
@@ -1924,8 +1943,26 @@ void rir_verify(void) {
 					memcmp(cur_text_section->data + ast_body_ind_sv, orig,
 								 (size_t)body_len) == 0)
 				rir_tot_c2_ok++;
-			else if (ind - ast_body_ind_sv == body_len)
+			else if (ind - ast_body_ind_sv == body_len) {
 				rir_tot_c2_bytes++;
+				if (rir_env >= 5) {
+					int q, d = -1;
+					for (q = 0; q < body_len; q++)
+						if (cur_text_section->data[ast_body_ind_sv + q] != orig[q]) {
+							d = q;
+							break;
+						}
+					fprintf(stderr, "[rir-c2byte] %s len=%d firstdiff=%d\n  parser:",
+									funcname, body_len, d);
+					for (q = 0; q < body_len && q < 48; q++)
+						fprintf(stderr, " %02x", orig[q]);
+					fprintf(stderr, "\n  rir   :");
+					for (q = 0; q < body_len && q < 48; q++)
+						fprintf(stderr, " %02x",
+										cur_text_section->data[ast_body_ind_sv + q]);
+					fprintf(stderr, "\n");
+				}
+			}
 			else {
 				rir_tot_c2_len++;
 				if (rir_env >= 5) {

@@ -2753,6 +2753,7 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
+	rir_mark_pt(RIR_M_CMPINV);
 	AstLocal n;
 	int op;
 	static int on = -1;
