@@ -1206,7 +1206,10 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Load);
 		ast_add_child(rir_arena, n, a);
-		rir_push_typed(n);
+		/* An AST_Load is untyped in the tree too -- indir() derives the type from
+		   the pointer it dereferences. Stamping it read as `Load t=5 ref=X`
+		   against the tree's `t=0 ref=0` in 18 near-miss bodies. */
+		rir_push(n);
 		break;
 	case RIR_M_CONVERT:
 		a = rir_pop();
@@ -1675,9 +1678,20 @@ static int rir_emit_safe(void) {
 			break;
 		case AST_Invoke: {
 			AstLocal callee;
+			int via_load = 0;
 			if (nc < 1)
 				return rir_unsafe("Invoke-nc", n, nc);
 			callee = ast_child(rir_arena, n, 0);
+			/* An AST_Load is untyped by the tree's own convention -- indir() derives
+			   the type from the pointer it dereferences -- so a call through a
+			   dereferenced function pointer has an untyped callee and is still
+			   emittable. Check the pointer it loads instead of refusing outright. */
+			if (callee != AST_NONE && ast_kind(rir_arena, callee) == AST_Load &&
+				ast_type_t(rir_arena, callee) == 0 &&
+				ast_nchild(rir_arena, callee) == 1) {
+				callee = ast_child(rir_arena, callee, 0);
+				via_load = 1;
+			}
 			if (callee == AST_NONE || ast_type_t(rir_arena, callee) == 0)
 				return rir_unsafe("Invoke-callee-untyped", n, nc);
 			/* gfunc_call walks the callee's signature Sym for the ABI; a callee
@@ -1691,9 +1705,10 @@ static int rir_emit_safe(void) {
 				   shape is unsafe. */
 				const Sym *r =
 						(const Sym *)(uintptr_t)ast_type_ref(rir_arena, callee);
-				if ((ast_type_t(rir_arena, callee) & (VT_BTYPE | VT_ARRAY)) !=
-								VT_PTR ||
-						(r->type.t & VT_BTYPE) != VT_FUNC)
+				if (!via_load &&
+					((ast_type_t(rir_arena, callee) & (VT_BTYPE | VT_ARRAY)) !=
+									VT_PTR ||
+						(r->type.t & VT_BTYPE) != VT_FUNC))
 					return rir_unsafe("Invoke-callee-notfunc", n, nc);
 			}
 			break;
