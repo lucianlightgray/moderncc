@@ -1005,6 +1005,27 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_LOAD:
+		/* An integer->pointer cast before a dereference emits no code, so no op
+		   records it and the operand node stays UNTYPED -- the tree builds
+		   Convert(->VT_PTR, Binary(+/-, ..)) under its Load, Replay_IR built the
+		   Load straight over the Binary, and gen_op later saw `ptr & int`. Every
+		   earlier Convert rule missed this because they all skip a node whose own
+		   type reads 0, which is exactly what an AST_Binary carries by design.
+		   This marker's own snapshot witnesses the pointer type at the moment of
+		   the dereference, which is the one place it is observable. */
+		if (rir_shn > 0 && ro->mvs_n - ast_base_depth > 0) {
+			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+			AstLocal top = rir_sh[rir_shn - 1];
+			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
+					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+				AstLocal cv = ast_node(rir_arena, AST_Convert);
+				ast_set_type(rir_arena, cv, pv->type.t,
+										 (uint64_t)(uintptr_t)pv->type.ref);
+				ast_add_child(rir_arena, cv, top);
+				rir_sh[rir_shn - 1] = cv;
+				rir_shtype[rir_shn - 1] = 0;
+			}
+		}
 		a = rir_pop();
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
