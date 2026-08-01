@@ -214,14 +214,13 @@ jobs:
     name: stage2 / windows
     runs-on: windows-latest
     timeout-minutes: 90
-    # Non-gating until a full run proves the cell: the known POSIX-under-Win32
-    # header gap (tools/build.c strtok_r) is fixed and all tools/ sources now
-    # compile under CC=mcc locally, but the full stage2+stage3 sweep has not
-    # yet gone green in CI -- see the "Windows stage2 self-host" item in
-    # docs/TODO.md. The failures stay visible (not skipped/false-green) but do
-    # not block the gate; Linux and macOS gate. stage1-windows (msvc builds
-    # mcc) is gating and passes. Promote to gating on the first green run.
-    continue-on-error: true
+    # GATING since 2026-08-01 (run 30716657762, the first full green sweep):
+    # the POSIX-under-Win32 self-host gaps are closed (strtok_r,
+    # GetTickCount64, the JobObject kernel32 exports, the .def-implib CMake
+    # arrangement, the selfhost-* compile_commands backslash repair) -- see
+    # the "Windows stage2 self-host" item in docs/TODO.md. dynamic/sanitize/pe
+    # each ran the full ~8k ctest suite at 100%; macho 77-skips
+    # (platform-locked).
     defaults:
       run:
         shell: bash
