@@ -3056,23 +3056,37 @@ void rir_verify(void) {
 					   the first 48 bytes are almost always identical -- print where the
 					   two streams part company and a window around it, or the whole
 					   thing when it is short. */
-					int lim = gl < body_len ? gl : body_len, fd = -1, from;
+					/* A jump DISPLACEMENT differs whenever anything downstream of it
+					   changes size, so the first differing byte is routinely 1-4 bytes
+					   inside a jcc and the real divergence is later. Report the first
+					   run of 3+ consecutive differing bytes as well: that one cannot be
+					   a displacement and is where the emission actually parts company. */
+					int lim = gl < body_len ? gl : body_len, fd = -1, from, run = 0,
+							fb = -1;
 					for (q = 0; q < lim; q++)
 						if (cur_text_section->data[ast_body_ind_sv + q] != orig[q]) {
-							fd = q;
-							break;
+							if (fd < 0)
+								fd = q;
+							if (++run >= 3 && fb < 0)
+								fb = q - 2;
+						} else {
+							run = 0;
 						}
 					if (fd < 0)
 						fd = lim;
+					if (fb < 0)
+						fb = fd;
 					from = fd > 8 ? fd - 8 : 0;
 					{
-						int bi = rir_blame(fd);
-						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d\n",
-										funcname, fd,
+						int bi = rir_blame(fb);
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d\n",
+										funcname, fd, fb,
 										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
 					}
-					fprintf(stderr, "[rir-c2len] %s want=%d got=%d firstdiff=%d\n  parser:",
-									funcname, body_len, gl, fd);
+					fprintf(stderr,
+									"[rir-c2len] %s want=%d got=%d firstdiff=%d firstblk=%d\n"
+									"  parser:",
+									funcname, body_len, gl, fd, fb);
 					for (q = from; q < body_len && q < from + 40; q++)
 						fprintf(stderr, " %02x", orig[q]);
 					fprintf(stderr, "\n  rir   :");
