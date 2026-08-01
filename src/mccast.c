@@ -1954,6 +1954,8 @@ static AstLocal ast_tern[16];
 static int ast_tern_top;
 static unsigned char rir_tern_on[16];
 static int rir_tern_n;
+static unsigned char rir_lor_on[16];
+static int rir_lor_n;
 static int ast_tern_suppress;
 /* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
    condition selects. A constant `?:` emits ONLY that arm, so the recorder must
@@ -3049,8 +3051,19 @@ void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
-	if (first)
-		rir_rbegin(RIR_R_LANDOR);
+	if (first) { MCC_TRACE("br\n");
+		if (rir_lor_n < 16) { MCC_TRACE("br\n");
+			rir_lor_on[rir_lor_n] = (unsigned char)(c < 0);
+			if (rir_lor_on[rir_lor_n])
+				{ MCC_TRACE("br\n"); rir_rbegin_val(RIR_R_LANDOR, op); }
+			rir_lor_n++;
+		}
+	}
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1]) { MCC_TRACE("br\n");
+		rir_rbegin(RIR_R_LOPND);
+		rir_rend_to_val(RIR_R_LOPND, 0);
+		rir_rbegin(RIR_R_LSUP);
+	}
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (first) { MCC_TRACE("br\n");
@@ -3115,6 +3128,8 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1])
+		{ MCC_TRACE("br\n"); rir_rend_to(RIR_R_LSUP); }
 	if (ast_lor_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_lor_top < 1)
@@ -3130,7 +3145,11 @@ void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_LANDOR);
+	if (rir_lor_n) { MCC_TRACE("br\n");
+		rir_lor_n--;
+		if (rir_lor_on[rir_lor_n])
+			{ MCC_TRACE("br\n"); rir_rend_to_val(RIR_R_LANDOR, materialized); }
+	}
 	if (ast_lor_suppress) { MCC_TRACE("br\n");
 		ast_lor_suppress--;
 		return;
@@ -16601,6 +16620,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 								!ast_ret_bad;
 	ast_body_ind_sv = ind;
 	rir_tern_n = 0;
+	rir_lor_n = 0;
 	ast_reloc0_sv =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try_active) { MCC_TRACE("br\n");

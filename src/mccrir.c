@@ -88,7 +88,8 @@ static const char *rir_region_name(int k) {
 	static const char *const n[RIR_R_COUNT] = {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
-			"body",	 "incr", "synth", "inc", "member", "tarm"};
+			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
+			"lopnd"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -719,6 +720,8 @@ static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
 static int rir_member_depth;
 static AstLocal rir_tern[16];
 static int rir_ternn;
+static AstLocal rir_lor[16];
+static int rir_lorn;
 static AstLocal rir_last_return = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
@@ -880,6 +883,22 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_MEMBER:
 			rir_member_depth++;
 			break;
+		case RIR_R_LSUP:
+			rir_cond_depth++;
+			break;
+		case RIR_R_LANDOR: {
+			/* `a && b && c` is one n-ary AST_Binary in the tree: ast_replay_value
+			   walks the children, gvtst's between them and gvtst_set's at the end.
+			   Built from primitives each operand is dropped by the gvtst that
+			   consumes it and only the last survives. Only the all-non-constant
+			   shape is marked; the folded and materialized endings are the tree's
+			   own open problem and are left to the primitive path. */
+			AstLocal n = ast_node(rir_arena, AST_Binary);
+			ast_set_op(rir_arena, n, ro->rval);
+			if (rir_lorn < 16)
+				rir_lor[rir_lorn++] = n;
+			break;
+		}
 		case RIR_R_TERNARY: {
 			/* `c ? a : b` is one AST_If op 5 with [cond, arm0, arm1], evaluated as
 			   a VALUE by ast_replay_value. Only the c<0 non-GNU shape is marked;
@@ -927,6 +946,32 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_INC:
 		if (rir_inc_depth)
 			rir_inc_depth--;
+		break;
+	case RIR_R_LSUP:
+		if (rir_cond_depth)
+			rir_cond_depth--;
+		break;
+	case RIR_R_LOPND: {
+		AstLocal v;
+		if (!rir_lorn)
+			break;
+		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+		v = rir_shn ? rir_pop() : AST_NONE;
+		if (v == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		ast_add_child(rir_arena, rir_lor[rir_lorn - 1], v);
+		break;
+	}
+	case RIR_R_LANDOR:
+		if (rir_lorn) {
+			AstLocal n = rir_lor[--rir_lorn];
+			if (ro->rval || ast_nchild(rir_arena, n) < 2)
+				rir_arena_mismatch++;
+			else
+				rir_push_typed(n);
+		}
 		break;
 	case RIR_R_TARM: {
 		AstLocal v;
@@ -1094,10 +1139,19 @@ static int rir_emit_safe(void) {
 			if (nc != 2)
 				return rir_unsafe("Store", n, nc);
 			break;
-		case AST_Binary:
-			if (nc != 2)
+		case AST_Binary: {
+			/* A short-circuit Binary is n-ary: ast_replay_value walks every child,
+			   gvtst's between them and gvtst_set's at the end. Every other Binary
+			   is strictly two-operand. */
+			int bop = ast_op(rir_arena, n);
+			if (bop == TOK_LAND || bop == TOK_LOR) {
+				if (nc < 2)
+					return rir_unsafe("Binary-landor", n, nc);
+			} else if (nc != 2) {
 				return rir_unsafe("Binary", n, nc);
+			}
 			break;
+		}
 		case AST_Convert:
 			if (nc != 1)
 				return rir_unsafe("Convert", n, nc);
@@ -1189,6 +1243,7 @@ static void rir_to_arena(void) {
 	rir_inc_depth = 0;
 	rir_member_depth = 0;
 	rir_ternn = 0;
+	rir_lorn = 0;
 	rir_opassign_pending = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
