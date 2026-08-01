@@ -7727,9 +7727,13 @@ static void gen_atomic_cas_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 	CType at = vtop[-1].type, pt;
 	int size, align, psize, palign;
 	int s_pa, s_vo, s_vn, s_vr, loop, c;
+	int loc0 = loc;
 	char buf[48];
 
 	atomic_lowering++;
+#if MCC_CONFIG_OPTIMIZER
+	ast_hook_acas_begin((op << 1) | (ret_new ? 1 : 0));
+#endif
 	pt = vtop[-1].type;
 	mk_pointer(&pt);
 	psize = type_size(&pt, &palign);
@@ -7803,6 +7807,9 @@ static void gen_atomic_cas_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 	gsym_addr(c, loop);
 
 	vset(&at, VT_LOCAL | VT_LVAL, ret_new ? s_vn : s_vo);
+#if MCC_CONFIG_OPTIMIZER
+	ast_hook_acas_end(loc0);
+#endif
 	atomic_lowering--;
 }
 

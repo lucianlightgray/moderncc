@@ -2188,12 +2188,15 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_AXCHG 0x4001d
 #define AST_OP_ACMPXCHG 0x4001e
 #define AST_OP_BITB 0x4001f
+#define AST_OP_ACASRMW 0x40020
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
 void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 																int bcheck);
 void ast_hook_cplx_begin(void);
+void ast_hook_acas_begin(int val);
+void ast_hook_acas_end(int val);
 void ast_hook_cplx_end(void);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
@@ -3939,6 +3942,14 @@ void ast_hook_cplx_begin(void) { MCC_TRACE("enter\n");
 
 void ast_hook_cplx_end(void) { MCC_TRACE("enter\n");
 	rir_rend_to(RIR_R_CPLX);
+}
+
+void ast_hook_acas_begin(int val) { MCC_TRACE("enter\n");
+	rir_rbegin_val(RIR_R_ACAS, val);
+}
+
+void ast_hook_acas_end(int val) { MCC_TRACE("enter\n");
+	rir_rend_to_val(RIR_R_ACAS, val);
 }
 
 void ast_hook_imag_begin(void) { MCC_TRACE("enter\n");
@@ -6344,6 +6355,33 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
 							 (int)ind, (int)(vtop - vstack));
 	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+	case AST_BasicBlock: {
+		/* A comma in value position: every child but the last for effect, the last
+		   for the value. Replay_IR builds this for a short-circuit operand that
+		   evaluated a statement of its own -- an inline atomic load's temp spill --
+		   which otherwise ran ahead of the whole expression. The tree never places
+		   a block where a value is expected, so this arm is unreachable from a
+		   hook-built arena. */
+		AstLocal c, last = AST_NONE;
+		for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+			{ MCC_TRACE("br\n"); last = c; }
+		for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
+			if (c == last) { MCC_TRACE("br\n");
+				ast_replay_value(a, c);
+				break;
+			}
+			if (ast_kind(a, c) == AST_Store && ast_nchild(a, c) == 2) { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, c, 0));
+				ast_replay_value(a, ast_child(a, c, 1));
+				vstore();
+				vpop();
+			} else { MCC_TRACE("br\n");
+				ast_replay_value(a, c);
+				vpop();
+			}
+		}
+		break;
+	}
 	case AST_Store: {
 		/* A store in VALUE context -- `c && (*out = 7)`, `c ? (*out = 1) : (*out
 		   = 2)` -- which the parser evaluates for its value inside the branch.
@@ -6430,6 +6468,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
+		if (bop == AST_OP_ACASRMW) { MCC_TRACE("br\n");
+			uint32_t alow = (uint32_t)ast_ival(a, n);
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			loc = (int)(uint32_t)(ast_ival(a, n) >> 32);
+			gen_atomic_cas_rmw((int)(alow >> 1), (int)(alow & 1));
+			break;
+		}
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 		if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
 				bop == AST_OP_ACMPXCHG) { MCC_TRACE("br\n");
@@ -6959,21 +7005,26 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				vpop();
 				break;
 			}
+			if (ast_op(a, s) == AST_OP_ACASRMW
 #ifdef MCC_JRN_HAVE_X86_PRIMS
-			if (ast_has_atomic(a, s, 0)) { MCC_TRACE("br\n");
+					|| ast_has_atomic(a, s, 0)
+#endif
+			) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
 				vpop();
 			}
-#endif
 			break;
-#ifdef MCC_JRN_HAVE_X86_PRIMS
 		case AST_Convert:
-			if (ast_has_atomic(a, s, 0)) { MCC_TRACE("br\n");
+			if (
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+					ast_has_atomic(a, s, 0) ||
+#endif
+					(ast_nchild(a, s) == 1 &&
+					 ast_kind(a, ast_child(a, s, 0)) == AST_Invoke)) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
 				vpop();
 			}
 			break;
-#endif
 		case AST_Invoke:
 			ast_replay_value(a, s);
 			if (ast_type_t(a, s) != VT_VOID)

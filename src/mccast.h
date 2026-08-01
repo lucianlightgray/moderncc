@@ -274,6 +274,8 @@ void ast_hook_member_end(int cumofs, struct CType *mtype, int nonlval,
 												 int qual, int bcheck);
 void ast_hook_cplx_begin(void);
 void ast_hook_cplx_end(void);
+void ast_hook_acas_begin(int val);
+void ast_hook_acas_end(int val);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);

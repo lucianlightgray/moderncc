@@ -118,7 +118,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd", "vstore", "vla", "cplx", "cvt"};
+			"lopnd", "vstore", "vla", "cplx", "cvt", "acas"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -556,6 +556,8 @@ static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
 static int rir_cplx_depth;
+static int rir_acas_depth;
+static int rir_acas_val;
 static int rir_after_ret;
 static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
 static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
@@ -715,6 +717,11 @@ static int rir_effectful(AstLocal n) {
 	if (rir_has_atomic(n, 0))
 		return 1;
 #endif
+	if (k == AST_Binary && ast_op(rir_arena, n) == AST_OP_ACASRMW)
+		return 1;
+	if (k == AST_Convert && ast_nchild(rir_arena, n) == 1 &&
+			ast_kind(rir_arena, ast_child(rir_arena, n, 0)) == AST_Invoke)
+		return 1;
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
 
@@ -754,6 +761,28 @@ static void rir_stmt(AstLocal n) {
 	if (ast_kind(rir_arena, n) == AST_If && ast_op(rir_arena, n) == 5)
 		ast_set_op(rir_arena, n, 7);
 	ast_add_child(rir_arena, rir_bb[rir_bbn - 1], n);
+}
+
+static int rir_lorn;
+#define RIR_LHELD_MAX 8
+static AstLocal rir_lheld[RIR_LHELD_MAX];
+static int rir_lheldn;
+
+/* A value dropped inside a short-circuit OPERAND is not the enclosing block's
+   statement: the parser emits it after the previous operand's branch, and
+   rir_stmt puts it in front of the whole expression. Hold it for RIR_R_LOPND to
+   bind as a comma. Scoped to a plain Store, which is the shape the inline
+   atomic load's temp spill has. */
+static void rir_drop(AstLocal d) {
+	if (!rir_effectful(d))
+		return;
+	if (rir_lorn && rir_lheldn < RIR_LHELD_MAX &&
+			ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
+			ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) {
+		rir_lheld[rir_lheldn++] = d;
+		return;
+	}
+	rir_stmt(d);
 }
 
 static int rir_ret_spilled;
@@ -1144,7 +1173,7 @@ static int rir_lorn;
 static void rir_op_effect(const RirOp *ro) {
 	const JrnOp *o = &ro->p;
 	int k;
-	if (o->kind != JOP_VSETC)
+	if (o->kind != JOP_VSETC && o->kind != JOP_PUSHLIT)
 		rir_flush_pending_call();
 	/* The journal records ops the parser emitted no bytes for. A cleanup call
 	   after `return n;` runs with nocode_wanted set, so gfunc_call journals a
@@ -1493,18 +1522,26 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_pending_call = n;
 		break;
 	}
+	case JOP_PUSHLIT:
 	case JOP_VSETC:
 		if (rir_pending_call != AST_NONE) {
-			rir_push_typed(rir_pending_call);
-			if (rir_shn > 0)
-				rir_shtype[rir_shn - 1] = 2;
-			rir_pending_call = AST_NONE;
+			/* A call's result comes back in a REGISTER, so the vsetc that lands it
+			   names one. The aggregate atomic lowerings call a void helper and then
+			   vset the frame slot it filled, which is not the result and binding it
+			   took the Invoke where the parser had a local address. */
+			if (o->kind == JOP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST) {
+				rir_push_typed(rir_pending_call);
+				if (rir_shn > 0)
+					rir_shtype[rir_shn - 1] = 2;
+				rir_pending_call = AST_NONE;
+			} else {
+				rir_flush_pending_call();
+			}
 		}
 		break;
 	case JOP_VPOP: {
 		AstLocal d = rir_pop();
-		if (rir_effectful(d))
-			rir_stmt(d);
+		rir_drop(d);
 		break;
 	}
 	case JOP_VROTB: {
@@ -2357,12 +2394,27 @@ static void rir_region(const RirOp *ro) {
 		v = rir_shn ? rir_pop() : AST_NONE;
 		if (v == AST_NONE) {
 			rir_arena_mismatch++;
+			rir_lheldn = 0;
 			break;
+		}
+		/* Statements the operand evaluated for effect -- the temp spill an inline
+		   atomic load leaves behind -- were rir_stmt'd into the ENCLOSING block and
+		   so ran ahead of the short-circuit's own compare. They belong to the
+		   operand: bind them as a comma, statements then value. */
+		if (rir_lheldn) {
+			AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
+			int q;
+			for (q = 0; q < rir_lheldn; q++)
+				ast_add_child(rir_arena, bb, rir_lheld[q]);
+			ast_add_child(rir_arena, bb, v);
+			rir_lheldn = 0;
+			v = bb;
 		}
 		ast_add_child(rir_arena, rir_lor[rir_lorn - 1], v);
 		break;
 	}
 	case RIR_R_LANDOR:
+		rir_lheldn = 0;
 		if (rir_lorn) {
 			AstLocal n = rir_lor[--rir_lorn];
 			/* rval bit 0 is the materialised ending, bit 1 says the chain's leading
@@ -2761,6 +2813,7 @@ static void rir_to_arena(void) {
 	rir_castgv_pend = 0;
 	rir_arena_mismatch = 0;
 	rir_cplx_depth = 0;
+	rir_acas_depth = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
@@ -2772,6 +2825,43 @@ static void rir_to_arena(void) {
 			continue;
 		}
 		if (rir_cplx_depth)
+			continue;
+		/* gen_atomic_cas_rmw synthesises its own retry loop out of backend
+		   primitives -- gind() for the head, gvtst()+gsym_addr() for the backward
+		   branch -- so no parser region delimits it and the reconstruction dropped
+		   the compare and the branch entirely. Model the whole lowering as one
+		   node over the two operands it consumes, the way the atomic primitives
+		   are modelled, and let the emitter re-run it. */
+		if (ro->tag != RIR_T_OP && ro->rkind == RIR_R_ACAS) {
+			if (ro->tag == RIR_T_RBEGIN) {
+				if (!rir_acas_depth) {
+					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+					rir_acas_val = ro->rval;
+				}
+				rir_acas_depth++;
+			} else if (rir_acas_depth && !--rir_acas_depth) {
+				AstLocal rb = rir_pop(), ra = rir_pop(), rn;
+				if (ra == AST_NONE || rb == AST_NONE) {
+					rir_arena_mismatch++;
+				} else {
+					rn = ast_node(rir_arena, AST_Binary);
+					ast_set_op(rir_arena, rn, AST_OP_ACASRMW);
+					/* The four frame slots the lowering allocates are chosen off `loc`,
+					   which the trial cannot reconstruct: the atomic load/store
+					   lowerings move it too and those are replayed as plain ops, never
+					   re-run. Carry the parser's `loc` at entry on the node and restore
+					   it, so the re-run picks the same slots. */
+					ast_set_ival(rir_arena, rn,
+											 (uint64_t)(unsigned)rir_acas_val |
+													 ((uint64_t)(unsigned)ro->rval << 32));
+					ast_add_child(rir_arena, rn, ra);
+					ast_add_child(rir_arena, rn, rb);
+					rir_push_typed(rn);
+				}
+			}
+			continue;
+		}
+		if (rir_acas_depth)
 			continue;
 #if RIR_DBG_OPTRACE
 		{
@@ -3416,12 +3506,15 @@ void rir_verify(void) {
 										funcname, d,
 										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
 					}
-					fprintf(stderr, "[rir-c2byte] %s len=%d firstdiff=%d\n  parser:",
-									funcname, body_len, d);
-					for (q = 0; q < body_len && q < 48; q++)
+					int w0 = d > 16 ? d - 16 : 0, w1 = d + 32;
+					if (w1 > body_len)
+						w1 = body_len;
+					fprintf(stderr, "[rir-c2byte] %s len=%d firstdiff=%d from=%d\n  parser:",
+									funcname, body_len, d, w0);
+					for (q = w0; q < w1; q++)
 						fprintf(stderr, " %02x", orig[q]);
 					fprintf(stderr, "\n  rir   :");
-					for (q = 0; q < body_len && q < 48; q++)
+					for (q = w0; q < w1; q++)
 						fprintf(stderr, " %02x",
 										cur_text_section->data[ast_body_ind_sv + q]);
 					fprintf(stderr, "\n");
@@ -3455,7 +3548,7 @@ void rir_verify(void) {
 						fd = lim;
 					if (fb < 0)
 						fb = fd;
-					from = fd > 8 ? fd - 8 : 0;
+					from = fb > 16 ? fb - 16 : 0;
 					{
 						int bi = rir_blame(fb);
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d\n",
