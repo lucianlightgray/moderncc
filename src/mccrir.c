@@ -670,6 +670,23 @@ static AstLocal rir_leaf(const SValue *sv) {
 	return n;
 }
 
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+static int rir_has_atomic(AstLocal n, int depth) {
+	int i, nc, op;
+	if (n == AST_NONE || depth > 8)
+		return 0;
+	op = ast_op(rir_arena, n);
+	if (ast_kind(rir_arena, n) == AST_Binary &&
+			(op == AST_OP_AXADD || op == AST_OP_AXCHG || op == AST_OP_ACMPXCHG))
+		return 1;
+	nc = (int)ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++)
+		if (rir_has_atomic(ast_child(rir_arena, n, i), depth + 1))
+			return 1;
+	return 0;
+}
+#endif
+
 /* A value dropped off the shadow stack still has to become a statement if
    emitting it is the point: a discarded `a++` is a Unary, not a Store, and
    letting it fall off orphans the node and emits nothing. Address-of and the
@@ -686,6 +703,10 @@ static int rir_effectful(AstLocal n) {
 	   the shadow stack it was orphaned and the body emitted nothing at all. */
 	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
 		return 1;
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+	if (rir_has_atomic(n, 0))
+		return 1;
+#endif
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
 
@@ -1152,6 +1173,39 @@ static void rir_op_effect(const RirOp *ro) {
 		ast_set_ival(rir_arena, n,
 			(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
 		ast_add_child(rir_arena, n, v);
+		rir_push_typed(n);
+		break;
+	}
+	case JOP_ATOMIC_XADD:
+	case JOP_ATOMIC_XCHG:
+	case JOP_ATOMIC_CMPXCHG: {
+		int na = o->kind == JOP_ATOMIC_CMPXCHG ? 3 : 2;
+		AstLocal aops[3], n;
+		int q, bad = 0;
+		if (rir_shn < na) {
+			rir_arena_mismatch++;
+			break;
+		}
+		for (q = na - 1; q >= 0; q--) {
+			aops[q] = rir_pop();
+			if (aops[q] == AST_NONE)
+				bad = 1;
+		}
+		if (bad) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Binary);
+		ast_set_op(rir_arena, n,
+							 o->kind == JOP_ATOMIC_XADD
+									 ? AST_OP_AXADD
+									 : o->kind == JOP_ATOMIC_XCHG ? AST_OP_AXCHG
+																								: AST_OP_ACMPXCHG);
+		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)o->a0);
+		for (q = 0; q < na; q++)
+			ast_add_child(rir_arena, n, aops[q]);
+		for (q = 1; q < na; q++)
+			rir_push(AST_NONE);
 		rir_push_typed(n);
 		break;
 	}
@@ -2220,6 +2274,12 @@ static int rir_emit_safe(void) {
 			if (bop == TOK_LAND || bop == TOK_LOR) {
 				if (nc < 2)
 					return rir_unsafe("Binary-landor", n, nc);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+			} else if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
+								 bop == AST_OP_ACMPXCHG) {
+				if (nc != (bop == AST_OP_ACMPXCHG ? 3u : 2u))
+					return rir_unsafe("Binary-atomic", n, nc);
+#endif
 			} else if (nc != 2) {
 				return rir_unsafe("Binary", n, nc);
 			}

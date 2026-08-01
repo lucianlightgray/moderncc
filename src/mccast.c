@@ -2177,6 +2177,9 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_SIGNBIT 0x40017
 #define AST_OP_FFS 0x40018
 #define AST_OP_BITSCAN 0x40019
+#define AST_OP_AXADD 0x4001c
+#define AST_OP_AXCHG 0x4001d
+#define AST_OP_ACMPXCHG 0x4001e
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -6375,6 +6378,31 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+		if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
+				bop == AST_OP_ACMPXCHG) { MCC_TRACE("br\n");
+			uint32_t nc = ast_nchild(a, n), k;
+			for (k = 0; k < nc; k++)
+				{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, n, k)); }
+			if (bop == AST_OP_AXADD)
+				{ MCC_TRACE("br\n"); gen_atomic_xadd((int)ast_ival(a, n)); }
+			else if (bop == AST_OP_AXCHG)
+				{ MCC_TRACE("br\n"); gen_atomic_xchg((int)ast_ival(a, n)); }
+			else
+				{ MCC_TRACE("br\n"); gen_atomic_cmpxchg((int)ast_ival(a, n)); }
+			vswap();
+			vpop();
+			if (bop == AST_OP_ACMPXCHG) { MCC_TRACE("br\n");
+				vswap();
+				vpop();
+			}
+			if (ast_type_t(a, n)) { MCC_TRACE("br\n");
+				vtop->type.t = ast_type_t(a, n);
+				vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			}
+			break;
+		}
+#endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 		if (bop == AST_OP_MULHU || bop == AST_OP_MULHS) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, 0));
@@ -6747,6 +6775,25 @@ static struct ast_rp_label *ast_rp_label_get(int v) { MCC_TRACE("enter\n");
 	return l;
 }
 
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+static int ast_has_atomic(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
+	uint32_t i, nc;
+	int op;
+	if (n == AST_NONE || depth > 8)
+		{ MCC_TRACE("br\n"); return 0; }
+	op = ast_op(a, n);
+	if (ast_kind(a, n) == AST_Binary &&
+			(op == AST_OP_AXADD || op == AST_OP_AXCHG || op == AST_OP_ACMPXCHG))
+		{ MCC_TRACE("br\n"); return 1; }
+	nc = ast_nchild(a, n);
+	for (i = 0; i < nc; i++) { MCC_TRACE("br\n");
+		if (ast_has_atomic(a, ast_child(a, n, i), depth + 1))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+#endif
+
 static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
@@ -6842,6 +6889,20 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 		case AST_BasicBlock:
 			ast_replay_bb(a, s);
 			break;
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+		case AST_Binary:
+			if (ast_has_atomic(a, s, 0)) { MCC_TRACE("br\n");
+				ast_replay_value(a, s);
+				vpop();
+			}
+			break;
+		case AST_Convert:
+			if (ast_has_atomic(a, s, 0)) { MCC_TRACE("br\n");
+				ast_replay_value(a, s);
+				vpop();
+			}
+			break;
+#endif
 		case AST_Invoke:
 			ast_replay_value(a, s);
 			if (ast_type_t(a, s) != VT_VOID)
