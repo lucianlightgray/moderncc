@@ -1351,6 +1351,9 @@ static void rir_op_effect(const RirOp *ro) {
 										 ((uint64_t)(unsigned)o->raw_len << 32));
 		ast_set_sym(rir_arena, u,
 								(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
+		ast_set_fbits(rir_arena, u,
+									(uint64_t)(unsigned)o->vs_off |
+											((uint64_t)(unsigned)(o->vs_n > 0 ? o->vs_n : 0) << 32));
 		rir_stmt(u);
 		break;
 	}

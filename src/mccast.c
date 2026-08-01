@@ -4558,8 +4558,9 @@ static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 #if MCC_CONFIG_ASM
 /* Defined with the journal's raw store below; the inline-asm replay arms in
-   ast_replay_bb need it and sit above that point. */
+   ast_replay_bb need them and sit above that point. */
 static unsigned char *jrn_raw;
+static SValue *jrn_vs;
 #endif
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
@@ -6904,6 +6905,21 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				uint8_t cr[MCC_NB_ASM_REGS];
 				const unsigned char *p = jrn_raw + (int)(ast_ival(a, s) & 0xffffffff);
 				int nb_operands, nb_outputs;
+				/* Every ASMOperand holds an SValue* INTO the vstack, so the output
+				   stores are only correct against the stack the parser had. The
+				   journal replay gets that from its per-op snapshot restore; here the
+				   node carries the same snapshot handle and the arm restores it around
+				   the call. Without it the four output stores of
+				   asm_constraints_x86.c came out addressing nonsense. */
+				SValue sv_stack[VSTACK_SIZE + 1];
+				SValue *sv_top = vtop;
+				int vs_off = (int)(ast_fbits(a, s) & 0xffffffff);
+				int vs_n = (int)(ast_fbits(a, s) >> 32);
+				memcpy(sv_stack, vstack, sizeof sv_stack);
+				if (vs_n > 0 && vs_n <= VSTACK_SIZE) { MCC_TRACE("br\n");
+					memcpy(vstack, jrn_vs + vs_off, (size_t)vs_n * sizeof(SValue));
+					vtop = vstack + vs_n - 1;
+				}
 				memcpy(&nb_operands, p, sizeof nb_operands);
 				memcpy(&nb_outputs, p + sizeof(int), sizeof nb_outputs);
 				p += 2 * sizeof(int);
@@ -6914,6 +6930,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				asm_gen_code(ops, nb_operands, nb_outputs,
 										 (int)(ast_sym(a, s) & 0xffffffff), cr,
 										 (int)(ast_sym(a, s) >> 32));
+				memcpy(vstack, sv_stack, sizeof sv_stack);
+				vtop = sv_top;
 				break;
 			}
 			if (ast_op(a, s) == AST_OP_ASM) { MCC_TRACE("br\n");
