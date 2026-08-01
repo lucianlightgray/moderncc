@@ -237,7 +237,10 @@ static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];
 static int rir_xtn;
 
+static int rir_body_hasheq;
+
 void rir_reset(void) {
+	rir_body_hasheq = 0;
 	rir_xtn = 0;
 	rir_n = 0;
 	rir_markn = 0;
@@ -2019,6 +2022,7 @@ void rir_verify(void) {
 			if (ast_intention_hash(rir_arena, ast_root(rir_arena)) ==
 					ast_intention_hash(ast_cur, ast_root(ast_cur))) {
 				rir_tot_arena_hash_eq++;
+				rir_body_hasheq = 1;
 				/* C3 equivalence, on the population where it is actually defined.
 				   When the two arenas are already field-identical, running the
 				   same pipeline on each and comparing fold counts and the
@@ -2268,6 +2272,12 @@ void rir_verify(void) {
 				ast_tmpl_folds = 0;
 			}
 			ast_replay_body(rir_arena);
+			if (rir_env >= 5)
+				fprintf(stderr, "[rir-c2part] %s heq=%d ok=%d\n", funcname,
+					rir_body_hasheq,
+					ind - ast_body_ind_sv == body_len &&
+						memcmp(cur_text_section->data + ast_body_ind_sv, orig,
+							(size_t)body_len) == 0);
 			if (ind - ast_body_ind_sv == body_len &&
 					memcmp(cur_text_section->data + ast_body_ind_sv, orig,
 								 (size_t)body_len) == 0)
