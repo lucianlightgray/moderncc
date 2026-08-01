@@ -2235,6 +2235,23 @@ void rir_verify(void) {
 				for (i = 0; i < rir_nlbl; i++)
 					if (rir_lblhead[i])
 						rir_open_chains++;
+				/* The win64 alloca chain threads raw section addresses through
+				   the `add rax, imm32` slots and is only closed by
+				   gfunc_epilog's gsym_addr(func_alloca, -func_scratch), AFTER
+				   ast_func_end — the same deferred fixup as rsym. The shifted
+				   replay rebuilds it at base2, so those imm32 slots differ from
+				   the original by exactly `shift`; rebase them so every other
+				   byte of the body still gets compared. cg_func_alloca is 0 on
+				   targets without the chain. */
+				{
+					int L = mcc_state->cg_func_alloca;
+					while (L >= base2 && L + 4 <= ind) {
+						int nx = (int)read32le(cur_text_section->data + L);
+						write32le(cur_text_section->data + L,
+											nx ? (uint32_t)(nx - shift) : 0);
+						L = nx;
+					}
+				}
 				if (rir_fail_op < 0 && ind - base2 == body_len &&
 						memcmp(cur_text_section->data + base2, orig, (size_t)body_len) == 0 &&
 						(rsec ? (int)rsec->data_offset - (int)ast_reloc0_sv : 0) == rel_len) {
