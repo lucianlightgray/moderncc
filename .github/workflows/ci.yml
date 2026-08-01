@@ -16,49 +16,79 @@ concurrency:
 permissions:
   contents: read
 
-# The gating CI is a 3-stage hierarchy, one representative host per OS family:
+# The gating CI is a 3-stage hierarchy, fanned out one job per cell:
 #
-#   stage1-<os>  builds a plain mcc with the host toolchain (gcc/clang/msvc) and
-#                uploads it (bin + runtime) as an artifact.
-#   stage2-<os>  downloads that mcc and, for each feature in the matrix, rebuilds
-#                mcc WITH mcc (CMAKE_C_COMPILER=<stage1 mcc>, MCC_TOOLCHAIN_PROFILE
-#                =mcc) -- a self-host -- then runs ctest on the result (stage3).
+#   stage1-<host>  builds a plain mcc with the host toolchain (gcc/clang/msvc)
+#                  and uploads it (bin + runtime) as `stage1-<host>`.
+#   stage2 / <host> / <feature>
+#                  downloads that mcc and rebuilds mcc WITH mcc
+#                  (CMAKE_C_COMPILER=<stage1 mcc>, MCC_TOOLCHAIN_PROFILE=mcc) --
+#                  a self-host -- then runs ctest on the result (stage3).
 #
-# The matrices come from the preset ledger in tools/ci.c (`ci plan --job
-# stage1-gate` / `--job stage2`), the single source of truth shared with `ci
-# local` and checked by `ci parity`. Feature cells that a host OS cannot
-# self-host (macho off-Darwin, pe off-Windows, static on Apple, ...) carry a
-# `skip` blocker in the plan and render as a neutral cell instead of a failure.
+# Fan-out, not sequential loops: every cell is its own job so the whole gate
+# finishes in ~one-cell wall-clock (~13 min) rather than the sum. The macOS
+# gate is sized to the free plan's 5-runner sub-cap (5 cells: clang x
+# {dynamic,sanitize,macho} + gcc x {dynamic,sanitize} -- gcc restores the
+# gcc-on-Darwin coverage the pre-hierarchy CI had); Linux fans out its full
+# feature matrix (ubuntu runners are plentiful); Windows fans out 3 cells and
+# shares the 20-job total. The full host x feature matrix, the emulated
+# x86_64/Rosetta cells and the qemu/wine/docker cross validators run nightly
+# (matrix.yml).
+#
+# All matrices come from the preset ledger in tools/ci.c (`ci plan --job
+# stage1-gate` / `--job stage2` / `--job stage2-gate`), the single source of
+# truth shared with `ci local` and checked by `ci parity`.
 jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
+      stage1: ${{ steps.gen.outputs.stage1 }}
       stage2_linux: ${{ steps.gen.outputs.stage2_linux }}
+      stage2_macos: ${{ steps.gen.outputs.stage2_macos }}
+      stage2_windows: ${{ steps.gen.outputs.stage2_windows }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci
       - id: gen
-        # Only Linux fans out one job per feature (ubuntu runners are plentiful).
-        # macOS/Windows loop the features in a single job (their runner pools are
-        # too small to schedule an 11-way fan-out promptly -- see stage2-macos).
+        # Linux fans out one job per feature (ubuntu runners are plentiful);
+        # macOS/Windows fan out the curated gate cells (`stage2-gate`), split
+        # here by runner OS. The macOS split must stay <= the 5-runner sub-cap.
         run: |
+          echo "stage1=$(mcc-ci plan --job stage1-gate)" >> "$GITHUB_OUTPUT"
           echo "stage2_linux=$(mcc-ci plan --job stage2 | jq -c '[.[]|select(.runner|startswith("ubuntu"))]')" >> "$GITHUB_OUTPUT"
+          echo "stage2_macos=$(mcc-ci plan --job stage2-gate | jq -c '[.[]|select(.runner|startswith("macos"))]')" >> "$GITHUB_OUTPUT"
+          echo "stage2_windows=$(mcc-ci plan --job stage2-gate | jq -c '[.[]|select(.runner|startswith("windows"))]')" >> "$GITHUB_OUTPUT"
 
   # ---- stage 1: build a plain mcc per representative host, publish it --------
 
-  stage1-linux:
+  stage1:
     needs: plan
-    runs-on: ubuntu-latest
+    name: stage1 / ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.stage1) }}
+    env:
+      # clang hosts pin CC directly; the macOS gcc host resolves a Homebrew
+      # gcc-N below; the Linux gcc host leaves CC unset (ubuntu `cc` is gcc);
+      # msvc picks `cl` from the dev shell.
+      CC: ${{ matrix.hostcc == 'clang' && 'clang' || '' }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
-      - name: cache apt archives
+      - name: cache apt archives (linux)
+        if: runner.os == 'Linux'
         uses: actions/cache@v5
         with:
           path: ~/.apt-cache
           key: apt-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
           restore-keys: apt-${{ runner.os }}-${{ runner.arch }}-
-      - name: install toolchain
+      - name: install toolchain (linux)
+        if: runner.os == 'Linux'
         run: |
           sudo mkdir -p /var/cache/apt/archives
           if [ -d ~/.apt-cache ]; then sudo cp -n ~/.apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true; fi
@@ -67,69 +97,45 @@ jobs:
             cmake ninja-build build-essential gcc clang lld git rsync python3
           mkdir -p ~/.apt-cache
           cp -n /var/cache/apt/archives/*.deb ~/.apt-cache/ 2>/dev/null || true
-      - uses: ./.github/actions/ci
-      - name: stage1 build (linux-x86_64-gcc)
-        run: mcc-ci stage1 --host linux-x86_64-gcc --out stage1/linux-x86_64-gcc
-      - name: pack stage1 mcc (tar preserves the executable bit that upload-artifact drops)
-        run: tar cf stage1-linux-x86_64-gcc.tar -C stage1 linux-x86_64-gcc
-      - uses: actions/upload-artifact@v7
-        with:
-          name: stage1-linux-x86_64-gcc
-          path: stage1-linux-x86_64-gcc.tar
-
-  stage1-macos:
-    needs: plan
-    runs-on: macos-15
-    timeout-minutes: 30
-    env:
-      CC: clang
-    steps:
-      - uses: actions/checkout@v5
-      - name: cache Homebrew downloads
+      - name: cache Homebrew downloads (macos)
+        if: runner.os == 'macOS'
         uses: actions/cache@v5
         with:
           path: ~/Library/Caches/Homebrew/downloads
-          key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja
-      - name: install toolchain
+          key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja-gcc
+      - name: install toolchain (macos)
+        if: runner.os == 'macOS'
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
-      - uses: ./.github/actions/ci
-      - name: stage1 build (macos-arm64-clang)
-        run: mcc-ci stage1 --host macos-arm64-clang --out stage1/macos-arm64-clang
-      - name: pack stage1 mcc
-        run: tar cf stage1-macos-arm64-clang.tar -C stage1 macos-arm64-clang
-      - uses: actions/upload-artifact@v7
-        with:
-          name: stage1-macos-arm64-clang
-          path: stage1-macos-arm64-clang.tar
-
-  stage1-windows:
-    needs: plan
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - name: set up MSVC dev shell (cl bootstraps mcc-ci and is the stage1 host cc)
+          [ "${{ matrix.hostcc }}" = gcc ] && brew install gcc || true
+      - name: resolve gcc-N (macos gcc host)
+        if: runner.os == 'macOS' && matrix.hostcc == 'gcc'
+        run: |
+          g=$(ls "$(brew --prefix)"/bin/gcc-[0-9]* | sort -V | tail -1)
+          echo "CC=$g" >> "$GITHUB_ENV"
+      - name: set up MSVC dev shell (windows; cl is the stage1 host cc)
+        if: runner.os == 'Windows'
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
-          arch: x64
-      - name: install ninja
+          arch: ${{ matrix.msvcarch }}
+      - name: install ninja (windows)
+        if: runner.os == 'Windows'
         run: choco install ninja -y
       - uses: ./.github/actions/ci
-      - name: stage1 build (windows-x86_64-msvc)
-        run: mcc-ci stage1 --host windows-x86_64-msvc --out stage1/windows-x86_64-msvc
-      - name: pack stage1 mcc
-        run: tar cf stage1-windows-x86_64-msvc.tar -C stage1 windows-x86_64-msvc
+      - name: stage1 build (${{ matrix.host }})
+        run: mcc-ci stage1 --host ${{ matrix.host }} --out stage1/${{ matrix.host }}
+      - name: pack stage1 mcc (tar preserves the executable bit that upload-artifact drops)
+        run: tar cf stage1-${{ matrix.host }}.tar -C stage1 ${{ matrix.host }}
       - uses: actions/upload-artifact@v7
         with:
-          name: stage1-windows-x86_64-msvc
-          path: stage1-windows-x86_64-msvc.tar
+          name: stage1-${{ matrix.host }}
+          path: stage1-${{ matrix.host }}.tar
 
   # ---- stage 2: mcc rebuilds mcc across the feature matrix, then stage 3 test -
 
   stage2-linux:
-    needs: [plan, stage1-linux]
+    needs: [plan, stage1]
     name: stage2 / linux / ${{ matrix.feature }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -164,23 +170,28 @@ jobs:
           mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
             "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
-  # macOS and Windows loop the whole feature matrix in ONE sequential job each
-  # (not one job per feature). Their hosted runner pools are small, so an 11-way
-  # fan-out sits ~1h in the queue and drags the run out for hours; a single job
-  # grabs one runner immediately and self-hosts each feature in-process. Each
-  # `ci stage2 <f>` returns 77 for the platform-locked cells (which are then
-  # skipped, not failed). Linux keeps its fan-out (ubuntu runners are plentiful).
+  # macOS fans out the curated gate cells (5, sized to the 5-runner sub-cap):
+  # clang x {dynamic,sanitize,macho} + gcc x {dynamic,sanitize}. Each cell grabs
+  # a runner in parallel and self-hosts + tests one feature, so the whole macOS
+  # gate is ~one-cell wall-clock (~13 min) instead of the ~34 min the old
+  # single sequential job cost.
   stage2-macos:
-    needs: stage1-macos
-    name: stage2 / macos
-    runs-on: macos-15
-    timeout-minutes: 60
+    needs: [plan, stage1]
+    name: stage2 / macos / ${{ matrix.host }} / ${{ matrix.feature }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.stage2_macos) }}
     env:
+      # stage2 configures with CMAKE_C_COMPILER=<stage1 mcc>; CC only covers any
+      # incidental host compile, so clang is fine for the gcc-built stage1 mcc too.
       CC: clang
       # Drop the differential fuzzer on macOS: it spawns a reference cc per
       # iteration and generates programs that crash the compiler, each of which
       # macOS ReportCrash intercepts and serializes (~14 min/cell). It is fully
-      # covered by the native arm64-Linux fuzz job + the nightly.
+      # covered by the native arm64-Linux fuzz cell + the nightly.
       MCC_CI_CTEST_EXCLUDE: '^fuzz/'
     steps:
       - uses: actions/checkout@v5
@@ -191,36 +202,37 @@ jobs:
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
-          name: stage1-macos-arm64-clang
+          name: ${{ matrix.artifact }}
       - name: unpack stage1 mcc
-        run: tar xf stage1-macos-arm64-clang.tar
-      - name: stage2 self-host + stage3 test (gate feature subset, sequential)
+        run: tar xf ${{ matrix.artifact }}.tar
+      - name: stage2 self-host + stage3 test (${{ matrix.host }} / ${{ matrix.feature }})
         run: |
-          mcc="$PWD/macos-arm64-clang/bin/mcc"
-          fail=0
-          for f in $(mcc-ci features --gate); do
-            echo "::group::stage2 $f"
-            rc=0; mcc-ci stage2 "$f" --mcc "$mcc" || rc=$?
-            if [ "$rc" -eq 77 ]; then echo "SKIP $f (platform-locked)"; echo "::endgroup::"; continue; fi
-            if [ "$rc" -ne 0 ]; then echo "FAIL stage2 build $f"; fail=1; echo "::endgroup::"; continue; fi
-            mcc-ci stage3 --consume test --build "cmake-stage2-$f" || { echo "FAIL stage3 $f"; fail=1; }
-            mcc-ci junit-summary "cmake-stage2-$f/ctest-junit.xml" "$f / macos-arm64-clang" >> "$GITHUB_STEP_SUMMARY" || true
-            echo "::endgroup::"
-          done
-          exit $fail
+          mcc-ci stage2 ${{ matrix.feature }} --mcc "$PWD/${{ matrix.host }}/bin/mcc"
+          mcc-ci stage3 --consume test --build cmake-stage2-${{ matrix.feature }}
+      - name: test summary
+        if: always()
+        run: |
+          mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
+            "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
+  # Windows fans out 3 gate cells (dynamic/sanitize/pe; macho 77-skips
+  # off-Windows). It shares the 20-job total (no OS sub-cap). GATING since
+  # 2026-08-01 (run 30716657762, the first full green sweep): the
+  # POSIX-under-Win32 self-host gaps are closed (strtok_r, GetTickCount64, the
+  # JobObject kernel32 exports, the .def-implib CMake arrangement, the
+  # selfhost-* compile_commands backslash repair) -- see "Windows stage2
+  # self-host" in docs/TODO.md. The sequential job that first proved this green
+  # ran dynamic/sanitize/pe at 100%; it is now fanned out one cell per feature,
+  # with per-cell stage2+stage3 commands byte-identical to that job's loop body.
   stage2-windows:
-    needs: stage1-windows
-    name: stage2 / windows
-    runs-on: windows-latest
-    timeout-minutes: 90
-    # GATING since 2026-08-01 (run 30716657762, the first full green sweep):
-    # the POSIX-under-Win32 self-host gaps are closed (strtok_r,
-    # GetTickCount64, the JobObject kernel32 exports, the .def-implib CMake
-    # arrangement, the selfhost-* compile_commands backslash repair) -- see
-    # the "Windows stage2 self-host" item in docs/TODO.md. dynamic/sanitize/pe
-    # each ran the full ~8k ctest suite at 100%; macho 77-skips
-    # (platform-locked).
+    needs: [plan, stage1]
+    name: stage2 / windows / ${{ matrix.feature }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.stage2_windows) }}
     defaults:
       run:
         shell: bash
@@ -229,28 +241,23 @@ jobs:
       - name: set up MSVC dev shell (bootstraps mcc-ci)
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
-          arch: x64
+          arch: ${{ matrix.msvcarch }}
       - name: install ninja
         run: choco install ninja -y
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
-          name: stage1-windows-x86_64-msvc
+          name: ${{ matrix.artifact }}
       - name: unpack stage1 mcc
-        run: tar xf stage1-windows-x86_64-msvc.tar
-      - name: stage2 self-host + stage3 test (gate feature subset, sequential)
+        run: tar xf ${{ matrix.artifact }}.tar
+      - name: stage2 self-host + stage3 test (${{ matrix.feature }})
         run: |
-          mcc="$PWD/windows-x86_64-msvc/bin/mcc.exe"
-          fail=0
-          # tr: the msvc-built mcc-ci writes CRLF; bash word-splitting keeps the
-          # \r on every feature name ("unknown feature 'static\r'").
-          for f in $(mcc-ci features --gate | tr -d '\r'); do
-            echo "::group::stage2 $f"
-            rc=0; mcc-ci stage2 "$f" --mcc "$mcc" || rc=$?
-            if [ "$rc" -eq 77 ]; then echo "SKIP $f (platform-locked)"; echo "::endgroup::"; continue; fi
-            if [ "$rc" -ne 0 ]; then echo "FAIL stage2 build $f"; fail=1; echo "::endgroup::"; continue; fi
-            mcc-ci stage3 --consume test --build "cmake-stage2-$f" || { echo "FAIL stage3 $f"; fail=1; }
-            mcc-ci junit-summary "cmake-stage2-$f/ctest-junit.xml" "$f / windows-x86_64-msvc" >> "$GITHUB_STEP_SUMMARY" || true
-            echo "::endgroup::"
-          done
-          exit $fail
+          mccexe="$PWD/${{ matrix.host }}/bin/mcc"
+          [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
+          mcc-ci stage2 ${{ matrix.feature }} --mcc "$mccexe"
+          mcc-ci stage3 --consume test --build cmake-stage2-${{ matrix.feature }}
+      - name: test summary
+        if: always()
+        run: |
+          mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
+            "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true

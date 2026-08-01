@@ -533,6 +533,13 @@ static const struct {
 				"ubuntu-latest", "", OS_LINUX, 0},
 		{"macos-arm64-clang", "arm64", "clang", "", "macos",
 				"macos-15", "", OS_MAC, 1},
+		/* Second macOS gate host: the gcc-built mcc. Restores the gcc-on-Darwin
+		 * coverage the pre-hierarchy CI had (main ran the macos preset under both
+		 * cc=clang and cc=gcc). Its CC resolves to a Homebrew gcc-N in the
+		 * workflow. gate=1 so stage1-gate builds it and the per-push gate can
+		 * self-host correctness features off it. */
+		{"macos-arm64-gcc", "arm64", "gcc", "", "macos",
+				"macos-15", "", OS_MAC, 1},
 		{"macos-x86_64-clang", "x86_64", "clang", "", "macos",
 				"macos-15", "", OS_MAC, 0},
 		{"windows-x86_64-msvc", "x86_64", "msvc", "", "msvc",
@@ -592,14 +599,37 @@ static const struct {
 		{"test", 0}, {"bench", 0}, {"dist", 1},
 		{"fuzz", 0}, {"emulate", 1}, {0, 0}};
 
-/* Representative feature subset for the per-push gate on the scarce/slow hosted
- * runner pools (macOS, Windows), which loop features in one sequential job: the
- * full matrix there costs too much wall-clock. Covers the load-mode default
- * (dynamic), the sanitizer, and the two OS-specific object formats (each
- * 77-skips on the OS it does not apply to). Linux runs the full matrix per push;
- * macOS/Windows run the full matrix nightly (matrix.yml). */
-static const char *GATE_FEATURES[] = {
-		"dynamic", "sanitize", "macho", "pe", 0};
+/* Per-push gate stage2 cells for the scarce/slow hosted pools (macOS, Windows).
+ * Each entry is one fanned-out `stage2 / <host> / <feature>` job -- NOT a
+ * sequential loop -- so the whole gate runs in ~one-cell wall-clock (~13 min)
+ * instead of the sum. The macOS set is sized to the 5-runner sub-cap on the
+ * free plan; Windows shares the 20-job total (no OS sub-cap) and stays
+ * non-gating until its first green sweep (see stage2-windows in ci.yml).
+ *
+ * Allocation rationale:
+ *   - Correctness features (dynamic, sanitize) run under BOTH host compilers
+ *     (clang + gcc) -- a gcc-built mcc and a clang-built mcc are different
+ *     binaries that can miscompile differently; this restores the gcc-on-macOS
+ *     coverage the pre-hierarchy CI had.
+ *   - Object-format features (macho, pe) are host-cc-independent (same mcc
+ *     object writer whichever cc built mcc), so only the representative host
+ *     runs them once.
+ * Every cell must self-host on its host OS (feature.self_os & host.osbit); the
+ * do_plan stage2-gate branch asserts this so a mis-edit can't silently spend a
+ * runner on a 77-skip. The full host x feature matrix (incl. the platform-
+ * locked skip cells) runs nightly in matrix.yml. */
+static const struct {
+	const char *host, *feature;
+} GATE_CELLS[] = {
+		{"macos-arm64-clang", "dynamic"},
+		{"macos-arm64-clang", "sanitize"},
+		{"macos-arm64-clang", "macho"},
+		{"macos-arm64-gcc", "dynamic"},
+		{"macos-arm64-gcc", "sanitize"},
+		{"windows-x86_64-msvc", "dynamic"},
+		{"windows-x86_64-msvc", "sanitize"},
+		{"windows-x86_64-msvc", "pe"},
+		{0, 0}};
 
 /* Tokenize a semicolon-separated -D flag string into `v`. `buf` must outlive
  * the eventual ts_run (ts_arg stores pointers, not copies), so the caller
@@ -1572,7 +1602,7 @@ static int do_plan(int argc, char **argv) {
 			job = argv[++i];
 	if (!job) {
 		fprintf(stderr,
-						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|bench|dist-unix|dist-windows|stage1-gate|stage1-nightly|stage2|stage2-nightly|stage3-emulate>\n");
+						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|bench|dist-unix|dist-windows|stage1-gate|stage1-nightly|stage2|stage2-gate|stage2-nightly|stage3-emulate>\n");
 		return 2;
 	}
 	printf("[");
@@ -1694,13 +1724,46 @@ static int do_plan(int argc, char **argv) {
 										HOSTS[i].name);
 			}
 		}
+	} else if (!strcmp(job, "stage2-gate")) {
+		/* Per-push gate cells for the scarce pools (macOS/Windows), fanned out
+		 * one job per (host,feature) from the GATE_CELLS ledger. Every cell runs
+		 * on its host OS by construction; a curated cell that is platform-locked
+		 * would waste a runner echoing SKIP, so warn + drop it rather than emit a
+		 * skip cell. ci.yml splits the output by runner OS. */
+		int c;
+		for (c = 0; GATE_CELLS[c].host; c++) {
+			int hi = host_find(GATE_CELLS[c].host);
+			int fi = feature_find(GATE_CELLS[c].feature);
+			if (hi < 0 || fi < 0) {
+				fprintf(stderr, "ci plan stage2-gate: bad cell %s/%s\n",
+						GATE_CELLS[c].host, GATE_CELLS[c].feature);
+				return 2;
+			}
+			if (!(FEATURES[fi].self_os & HOSTS[hi].osbit)) {
+				fprintf(stderr, "ci plan stage2-gate: %s cannot self-host %s "
+						"(%s) -- drop it from GATE_CELLS\n", GATE_CELLS[c].host,
+						GATE_CELLS[c].feature, FEATURES[fi].blocker);
+				return 2;
+			}
+			plan_cell(&first,
+								"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
+								"\"msvcarch\":\"%s\",\"hostcc\":\"%s\",\"feature\":\"%s\","
+								"\"artifact\":\"stage1-%s\"",
+								HOSTS[hi].name, HOSTS[hi].arch, HOSTS[hi].runner,
+								HOSTS[hi].msvcarch, HOSTS[hi].hostcc,
+								GATE_CELLS[c].feature, HOSTS[hi].name);
+		}
 	} else if (!strcmp(job, "stage3-emulate")) {
 		/* One emulate cell per representative host: it rebuilds a cross-enabled
 		 * stage2 mcc and runs the qemu/wine/docker/rosetta validators, which
-		 * self-skip 77 where the foreign platform is unavailable. */
+		 * self-skip 77 where the foreign platform is unavailable. An OS family
+		 * with several gate hosts (macOS: clang + gcc) still emulates once -- the
+		 * emulators are host-cc-independent -- so take the first gate host per OS. */
+		unsigned emu_os = 0;
 		for (i = 0; HOSTS[i].name; i++) {
-			if (!HOSTS[i].gate)
+			if (!HOSTS[i].gate || (emu_os & HOSTS[i].osbit))
 				continue;
+			emu_os |= HOSTS[i].osbit;
 			plan_cell(&first,
 								"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
 								"\"msvcarch\":\"%s\",\"artifact\":\"stage1-%s\"",
@@ -2720,19 +2783,21 @@ static int do_stage3(int argc, char **argv) {
 	return 2;
 }
 
-/* Print the stage2 feature names, one per line, so a single per-OS stage2 job
- * can shell-loop them (`for f in $(mcc-ci features)`) instead of fanning out one
- * job per feature -- the macOS/Windows runner pools are too small to schedule an
- * 11-way fan-out promptly, so one sequential job per OS starts immediately. Each
- * `ci stage2 <f>` still 77-skips the platform-locked cells. */
+/* Print the stage2 feature axis. Plain `ci features` lists every feature name,
+ * one per line. `ci features --gate` lists the per-push gate cells as
+ * `<host>\t<feature>` (the GATE_CELLS ledger) so a local reproduction can walk
+ * exactly what the fanned-out macOS/Windows gate jobs run. The per-push
+ * workflows no longer shell-loop this -- they fan out one job per cell from
+ * `ci plan --job stage2-gate` -- but it stays the human-readable view of the
+ * same ledger. */
 static int do_features(int argc, char **argv) {
 	int i, gate = 0;
 	for (i = 0; i < argc; i++)
 		if (!strcmp(argv[i], "--gate"))
 			gate = 1;
 	if (gate) {
-		for (i = 0; GATE_FEATURES[i]; i++)
-			printf("%s\n", GATE_FEATURES[i]);
+		for (i = 0; GATE_CELLS[i].host; i++)
+			printf("%s\t%s\n", GATE_CELLS[i].host, GATE_CELLS[i].feature);
 	} else {
 		for (i = 0; FEATURES[i].name; i++)
 			printf("%s\n", FEATURES[i].name);

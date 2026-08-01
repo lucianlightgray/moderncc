@@ -71,6 +71,11 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja gcc
+      - name: resolve gcc-N (macos gcc host)
+        if: runner.os == 'macOS' && matrix.hostcc == 'gcc'
+        run: |
+          g=$(ls "$(brew --prefix)"/bin/gcc-[0-9]* | sort -V | tail -1)
+          echo "CC=$g" >> "$GITHUB_ENV"
       - name: set up MSVC dev shell (windows)
         if: runner.os == 'Windows'
         uses: TheMrMilchmann/setup-msvc-dev@v4
