@@ -1099,7 +1099,7 @@ static void rir_region(const RirOp *ro) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
 			if (!seen && allow && rir_shn >= 2) {
-				AstLocal v = rir_pop(), t = rir_pop(), n;
+				AstLocal t = rir_pop(), v = rir_pop(), n;
 				n = ast_node(rir_arena, AST_Store);
 				ast_add_child(rir_arena, n, t);
 				ast_add_child(rir_arena, n, v);
