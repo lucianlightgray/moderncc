@@ -1215,7 +1215,12 @@ static void rir_mark_apply(const RirOp *ro) {
 		if (rir_shn > 0 && ro->mvs_n - ast_base_depth > 0) {
 			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			AstLocal top = rir_sh[rir_shn - 1];
+			/* Scoped to the shape described above: an untyped AST_Binary. That used
+			   to be the only untyped node this could see, but AST_Load is untyped
+			   now too, so without the kind test the rule fires on an ordinary `p->a`
+			   and interposes a Convert between two Loads the tree does not have. */
 			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
+					ast_kind(rir_arena, top) == AST_Binary &&
 					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type(rir_arena, cv, pv->type.t,
@@ -1723,17 +1728,24 @@ static int rir_emit_safe(void) {
 			   the type from the pointer it dereferences -- so a call through a
 			   dereferenced function pointer has an untyped callee and is still
 			   emittable. Check the pointer it loads instead of refusing outright. */
-			if (callee != AST_NONE && ast_kind(rir_arena, callee) == AST_Load &&
-				ast_type_t(rir_arena, callee) == 0 &&
+			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
+				ast_kind(rir_arena, callee) == AST_Load &&
 				ast_nchild(rir_arena, callee) == 1) {
 				callee = ast_child(rir_arena, callee, 0);
 				via_load = 1;
 			}
-			if (callee == AST_NONE || ast_type_t(rir_arena, callee) == 0)
+			/* Same for an untyped Binary callee -- pointer arithmetic that lands on a
+			   function pointer. gen_op derives the type at emission, so the node
+			   carrying none is by design, not a defect to refuse on. */
+			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
+				ast_kind(rir_arena, callee) == AST_Binary)
+				via_load = 1;
+			if (callee == AST_NONE ||
+				(ast_type_t(rir_arena, callee) == 0 && !via_load))
 				return rir_unsafe("Invoke-callee-untyped", n, nc);
 			/* gfunc_call walks the callee's signature Sym for the ABI; a callee
 			   with no type ref, or one that is not a function, faults there. */
-			if (ast_type_ref(rir_arena, callee) == 0)
+			if (!via_load && ast_type_ref(rir_arena, callee) == 0)
 				return rir_unsafe("Invoke-callee-noref", n, nc);
 			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC) {
 				/* An indirect call's callee is a pointer to function, which
