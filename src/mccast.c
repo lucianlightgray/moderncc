@@ -4100,6 +4100,14 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
 }
 
+/* One assignment cast per argument of a PARSED call, and none at all for a
+   call the parser synthesises (init_putz's memset, the helper families). The
+   tree records that difference as Convert nodes it builds while evaluating each
+   argument; Replay_IR has no other witness for it. */
+void ast_hook_call_argcast(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_ARGCAST);
+}
+
 void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
 	rir_mark_pt(RIR_M_NORETURN);
 	if (!ast_call_noreturn_env)

@@ -729,6 +729,11 @@ static void rir_push_typed_addr(AstLocal n) {
    delta and skipping one drop was tried and is wrong: it cannot tell a
    single-slot integer return from a float or struct one, and aborts 17 corpus
    files. */
+/* One assignment cast per argument of a PARSED call and none for a synthesised
+   one, counted between calls: the tree's Invoke children carry a Convert each
+   for the first and bare nodes for the second, and this is the only witness. */
+static int rir_argcast_n;
+
 static AstLocal rir_pending_call = AST_NONE;
 static AstLocal rir_pending_ret = AST_NONE;
 static unsigned char rir_vst_seen[16];
@@ -1129,7 +1134,7 @@ static void rir_op_effect(const RirOp *ro) {
 						nfixed++;
 				}
 			}
-			for (q = 0; q <= na; q++) {
+			for (q = 0; q <= na && rir_argcast_n; q++) {
 				int si = rir_shn - 1 - q;
 				/* In the varargs tail there is no assignment cast -- but the DEFAULT
 				   argument promotions still apply (float->double, char/short->int), and
@@ -1162,6 +1167,7 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 			}
 		}
+		rir_argcast_n = 0;
 		/* The tree builds each child's Convert while EVALUATING that argument, so
 		   they precede the Invoke in node order. Allocating the Invoke first put
 		   it ahead of its own Converts and showed up as paired Invoke<->Convert
@@ -1527,6 +1533,9 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(u);
 		break;
 	}
+	case RIR_M_ARGCAST:
+		rir_argcast_n++;
+		break;
 	case RIR_M_CASTGV:
 		/* The parser materialises an explicit cast's result when
 		   gv_cast_rvalue() says so, and the tree records that on the node as
@@ -2188,6 +2197,7 @@ static void rir_to_arena(void) {
 	rir_member_depth = 0;
 	rir_vstruct_depth = 0;
 	rir_vla_depth = 0;
+	rir_argcast_n = 0;
 	rir_ternn = 0;
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;

@@ -11192,6 +11192,9 @@ tok_next:
 					} else { MCC_TRACE("br\n");
 						expr_eq();
 						gfunc_param_typed(s, sa);
+#if MCC_CONFIG_OPTIMIZER
+						ast_hook_call_argcast();
+#endif
 						seqp_flush();
 					}
 					nb_args++;
