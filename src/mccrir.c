@@ -822,6 +822,40 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			na = 0;
 		}
+		/* The tree wraps every Invoke child -- callee and each argument -- in a
+		   Convert to the type gen_func_call saw. Those Converts are frequently
+		   type-preserving (Convert t=5 over a t=5 Ref), so no rule keyed on a type
+		   DIFFERENCE can see them, yet they are not inert: ast_replay_value's
+		   Convert arm runs gen_cast, which spills the value. In via_cast the
+		   parser stores the cast callee to a temp and reloads it after the
+		   arguments are set up; without the Convert the arena reloads the pointer
+		   variable directly and the body comes out 8 bytes short. */
+		if (o->vs_n - ast_base_depth >= na + 1 && rir_shn >= na + 1) {
+			int q;
+			for (q = 0; q <= na; q++) {
+				int si = rir_shn - 1 - q;
+				AstLocal cur = rir_sh[si];
+				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
+				int st = sv2->type.t;
+				if (cur == AST_NONE || rir_shtype[si] ||
+						ast_kind(rir_arena, cur) == AST_Convert)
+					continue;
+				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
+						(st & VT_BTYPE) == VT_FUNC)
+					continue;
+				/* An untyped Binary is legitimately t=0 and wants the wrap; a node
+				   that really is void does not, and gen_cast rejects it outright. */
+				if ((ast_type_t(rir_arena, cur) & VT_BTYPE) == VT_VOID &&
+						ast_kind(rir_arena, cur) != AST_Binary)
+					continue;
+				{
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
+					ast_add_child(rir_arena, cv, cur);
+					rir_sh[si] = cv;
+				}
+			}
+		}
 		for (k = na - 1; k >= 0; k--) {
 			args[k] = rir_pop();
 			if (args[k] == AST_NONE)
