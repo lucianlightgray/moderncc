@@ -2890,12 +2890,25 @@ void rir_verify(void) {
 				rir_tot_c2_len++;
 				if (rir_env >= 5) {
 					int q, gl = ind - ast_body_ind_sv;
-					fprintf(stderr, "[rir-c2len] %s want=%d got=%d\n  parser:", funcname,
-									body_len, gl);
-					for (q = 0; q < body_len && q < 48; q++)
+					/* A long body with a small length delta diverges at ONE place, and
+					   the first 48 bytes are almost always identical -- print where the
+					   two streams part company and a window around it, or the whole
+					   thing when it is short. */
+					int lim = gl < body_len ? gl : body_len, fd = -1, from;
+					for (q = 0; q < lim; q++)
+						if (cur_text_section->data[ast_body_ind_sv + q] != orig[q]) {
+							fd = q;
+							break;
+						}
+					if (fd < 0)
+						fd = lim;
+					from = fd > 8 ? fd - 8 : 0;
+					fprintf(stderr, "[rir-c2len] %s want=%d got=%d firstdiff=%d\n  parser:",
+									funcname, body_len, gl, fd);
+					for (q = from; q < body_len && q < from + 40; q++)
 						fprintf(stderr, " %02x", orig[q]);
 					fprintf(stderr, "\n  rir   :");
-					for (q = 0; q < gl && q < 48; q++)
+					for (q = from; q < gl && q < from + 40; q++)
 						fprintf(stderr, " %02x",
 										cur_text_section->data[ast_body_ind_sv + q]);
 					fprintf(stderr, "\n");
