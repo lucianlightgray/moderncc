@@ -4342,6 +4342,7 @@ void ast_hook_vstore_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ret_expr_done(void) { MCC_TRACE("enter\n");
+	rir_mark_val(RIR_M_RETEXPR, 0);
 	ast_ret_val = AST_NONE;
 	if (!ast_capture || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }

@@ -1139,13 +1139,36 @@ static int rir_ternn;
 static AstLocal rir_lor[16];
 static int rir_lorn;
 static AstLocal rir_last_return = AST_NONE;
+static AstLocal rir_retexpr = AST_NONE;
+static int rir_retexpr_depth;
+static int rir_retexpr_pending;
 
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
+	case RIR_M_RETEXPR:
+		/* The tree takes the return's value at THIS tap, before
+		   gen_assign_cast(&func_vt) runs, and ast_replay_bb's Return arm re-runs
+		   that cast itself. Replay_IR's own RETURN marker fires after it, so the
+		   assignment cast was landing in the arena -- a Convert the tree never
+		   builds, or a leaf carrying the post-cast type. Bind the value here and
+		   suppress the lowering in between. */
+		if (rir_shn > 0) {
+			rir_retexpr = rir_sh[rir_shn - 1];
+			rir_retexpr_depth = rir_shn;
+			rir_retexpr_pending = 1;
+		}
+		break;
 	case RIR_M_RETURN:
 		n = ast_node(rir_arena, AST_Return);
-		a = rir_shn ? rir_pop() : AST_NONE;
+		if (rir_retexpr_pending && ro->rval && rir_retexpr != AST_NONE) {
+			rir_shn = rir_retexpr_depth - 1;
+			a = rir_retexpr;
+		} else {
+			a = rir_shn ? rir_pop() : AST_NONE;
+		}
+		rir_retexpr_pending = 0;
+		rir_retexpr = AST_NONE;
 		if (a != AST_NONE)
 			ast_add_child(rir_arena, n, a);
 		/* A cleanup attribute makes the parser emit the destructor calls BETWEEN
@@ -1810,7 +1833,12 @@ static int rir_emit_safe(void) {
 			vb = ast_type_t(rir_arena, v) & VT_BTYPE;
 			if (vb == VT_QFLOAT || vb == VT_QLONG)
 				return rir_unsafe("Return-wide", n, nc);
-			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT))
+			/* A _Complex return type is a VT_STRUCT carrying ref->a.is_complex, and
+			   `return 7.0;` from one is a scalar value gen_assign_cast widens --
+			   the tree records exactly that shape, so refusing it is this net
+			   declining a body the emitter handles. */
+			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT) &&
+					!(is_complex_type(&func_vt) && vb != VT_STRUCT && vb != VT_VOID))
 				return rir_unsafe("Return-struct", n, nc);
 			break;
 		}
@@ -1843,14 +1871,21 @@ static void rir_to_arena(void) {
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;
 	rir_opassign_pending = 0;
+	rir_retexpr = AST_NONE;
+	rir_retexpr_pending = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
+			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
 			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
-					!rir_inc_depth && !rir_member_depth) {
-				if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN)
+					!rir_inc_depth && !rir_member_depth &&
+					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN)) {
+				if (bound)
+					;
+				else if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETEXPR ||
+								 ro->rkind == RIR_M_RETURN)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				else
 					rir_stamp_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
@@ -1868,7 +1903,8 @@ static void rir_to_arena(void) {
 			rir_region(ro);
 			continue;
 		}
-		if (rir_cond_depth || rir_inc_depth || rir_member_depth)
+		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
+				rir_retexpr_pending)
 			continue;
 		rir_reconcile(&ro->p);
 		rir_op_effect(ro);
