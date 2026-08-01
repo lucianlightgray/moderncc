@@ -68,6 +68,12 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #define AST_FB_STORE_LIVE_ROT 2048u
 #define AST_FB_LANDOR_MATERIAL 4096u
 
+/* AST_Store fbit 4096: a bitfield assignment leaves the bitfield LVALUE rather
+   than the stored value, and gexpr() materialises it when it is an expression
+   statement's value (mccgen.c:11798) -- a whole re-read neither model recorded.
+   Replay_IR sets this from the gv() tap that witnesses the read. */
+#define AST_FB_STORE_BF_GV 8192u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -3729,6 +3735,10 @@ void ast_hook_indir(void) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn - 1] = ld;
 }
 
+void ast_hook_bfgv(int tt) { MCC_TRACE("enter\n");
+	rir_mark_val(RIR_M_BFGV, tt);
+}
+
 void ast_hook_gaddrof(void) { MCC_TRACE("enter\n");
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -6993,6 +7003,9 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			vstore();
 			if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
 				{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
+			if ((ast_fbits(a, s) & AST_FB_STORE_BF_GV) && (vtop->r & VT_LVAL) &&
+					!nocode_wanted)
+				{ MCC_TRACE("br\n"); gv(MCC_RC_TYPE(vtop->type.t)); }
 			vpop();
 			break;
 		}

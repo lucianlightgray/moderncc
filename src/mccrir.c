@@ -1851,6 +1851,41 @@ static void rir_mark_apply(const RirOp *ro) {
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
 		rir_stmt(n);
 		break;
+	case RIR_M_BFGV:
+		/* gv() lowers a bitfield READ in place -- gen_cast plus a shl/sar pair --
+		   and the journal shows the whole thing as ONE gv op, so the arena kept a
+		   bitfield-typed lvalue and replay's own gv() re-derived the lowering
+		   wherever it next needed a register: after the jump in a switch head,
+		   after the subtraction in a promotion compare, or not at all when the
+		   consumer took the lvalue. Wrap the operand in the Convert to gv's own
+		   result type: gen_cast sees VT_BITFIELD, calls gv() itself, and the
+		   lowering lands at the parser's point with no cast of its own. */
+		if (rir_shn > 0) {
+			AstLocal top = rir_sh[rir_shn - 1];
+			if (top != AST_NONE && (ast_type_t(rir_arena, top) & VT_BITFIELD) &&
+					ast_parent(rir_arena, top) == AST_NONE) {
+				AstLocal cv = ast_node(rir_arena, AST_Convert);
+				ast_set_type(rir_arena, cv, ro->rval, 0);
+				ast_add_child(rir_arena, cv, top);
+				rir_sh[rir_shn - 1] = cv;
+				rir_shtype[rir_shn - 1] = 0;
+			} else if (top != AST_NONE &&
+								 ast_kind(rir_arena, top) == AST_StoreVal) {
+				/* The value in hand is a bitfield store's, so what gv() is reading is
+				   the LVALUE vstore left on the stack, not the value -- and rebuilding
+				   the read from a copy of the Store's target recomputes an address the
+				   parser had already spilled to a temp (+4 bytes). Tag the Store and
+				   let replay's own vstore() hand the same lvalue to the same gv. */
+				AstLocal st = (AstLocal)ast_ival(rir_arena, top);
+				AstLocal tgt = st == AST_NONE ? AST_NONE
+																			: ast_child(rir_arena, st, 0);
+				if (st != AST_NONE && ast_kind(rir_arena, st) == AST_Store &&
+						tgt != AST_NONE && (ast_type_t(rir_arena, tgt) & VT_BITFIELD))
+					ast_set_fbits(rir_arena, st,
+												ast_fbits(rir_arena, st) | AST_FB_STORE_BF_GV);
+			}
+		}
+		break;
 	case RIR_M_LOAD:
 		if (rir_after_ret && rir_shn == 0)
 			break;
@@ -2907,6 +2942,15 @@ static void rir_to_arena(void) {
 					 ro->rkind == RIR_M_NORETURN)) {
 				if (bound || ro->rkind == RIR_M_NORETURN)
 					;
+				/* RIR_M_BFGV fires MID-lowering: gv has already cleared
+				   VT_STRUCT_MASK and adjust_bf has retyped the lvalue to the
+				   access type, so the snapshot is exactly the state the marker
+				   exists to bracket. Stamping it wrapped the operand in a
+				   Convert to that access type -- a `long long x : 16` read came
+				   out with an extra `0f bf c0` -- and hid the VT_BITFIELD the
+				   apply reads. */
+				else if (ro->rkind == RIR_M_BFGV)
+					;
 				else if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETEXPR ||
 								 ro->rkind == RIR_M_RETURN)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
@@ -3519,8 +3563,7 @@ void rir_verify(void) {
 										cur_text_section->data[ast_body_ind_sv + q]);
 					fprintf(stderr, "\n");
 				}
-			}
-			else {
+			} else {
 				rir_tot_c2_len++;
 				if (rir_env >= 5) {
 					int q, gl = ind - ast_body_ind_sv;

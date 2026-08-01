@@ -261,6 +261,7 @@ void ast_hook_inc(int post, int c);
 void ast_hook_inc_end(void);
 void ast_hook_vdup(void);
 void ast_hook_indir(void);
+void ast_hook_bfgv(int tt);
 void ast_hook_gaddrof(void);
 void ast_hook_synth_begin(void);
 void ast_hook_castlower_begin(struct CType *type);

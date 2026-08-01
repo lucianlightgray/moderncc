@@ -64,6 +64,7 @@ enum {
 	RIR_M_VLARESTORE,
 	RIR_M_ARGCAST,
 	RIR_M_WHILECOND,
+	RIR_M_BFGV,
 	RIR_M_COUNT
 };
 
@@ -123,6 +124,7 @@ void rir_vla_begin(void);
 #define RIR_M_VLARESTORE 0
 #define RIR_M_ARGCAST 0
 #define RIR_M_WHILECOND 0
+#define RIR_M_BFGV 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)

@@ -2435,6 +2435,9 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 		else
 			{ MCC_TRACE("br\n"); type.t |= VT_INT; }
 
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_bfgv(type.t);
+#endif
 		if (r == VT_STRUCT) { MCC_TRACE("br\n");
 			load_packed_bf(&type, bit_pos, bit_size);
 		} else { MCC_TRACE("br\n");
