@@ -1952,6 +1952,8 @@ static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
+static unsigned char rir_tern_on[16];
+static int rir_tern_n;
 static int ast_tern_suppress;
 /* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
    condition selects. A constant `?:` emits ONLY that arm, so the recorder must
@@ -2919,7 +2921,14 @@ void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop
 }
 
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
-	rir_rbegin(RIR_R_TERNARY);
+	if (rir_tern_n < 16) { MCC_TRACE("br\n");
+		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 && !g);
+		if (rir_tern_on[rir_tern_n]) { MCC_TRACE("br\n");
+			rir_rbegin(RIR_R_TERNARY);
+			rir_rbegin(RIR_R_COND);
+		}
+		rir_tern_n++;
+	}
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op) { MCC_TRACE("br\n");
@@ -2954,6 +2963,10 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 
 void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 	(void)which;
+	if (rir_tern_n && rir_tern_on[rir_tern_n - 1]) { MCC_TRACE("br\n");
+		rir_rend_to(RIR_R_COND);
+		rir_rbegin(RIR_R_TARM);
+	}
 	if (ast_tern_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
@@ -2962,7 +2975,10 @@ void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
-	(void)which;
+	if (rir_tern_n && rir_tern_on[rir_tern_n - 1]) { MCC_TRACE("br\n");
+		rir_rend_to_val(RIR_R_TARM, which);
+		rir_rbegin(RIR_R_COND);
+	}
 	if (ast_tern_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
@@ -2992,7 +3008,11 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_TERNARY);
+	if (rir_tern_n) { MCC_TRACE("br\n");
+		rir_tern_n--;
+		if (rir_tern_on[rir_tern_n])
+			{ MCC_TRACE("br\n"); rir_rend_to(RIR_R_TERNARY); }
+	}
 	if (ast_tern_suppress) { MCC_TRACE("br\n");
 		ast_tern_suppress--;
 		return;
@@ -16580,6 +16600,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	ast_try_active = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
 								!ast_ret_bad;
 	ast_body_ind_sv = ind;
+	rir_tern_n = 0;
 	ast_reloc0_sv =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try_active) { MCC_TRACE("br\n");

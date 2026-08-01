@@ -88,7 +88,7 @@ static const char *rir_region_name(int k) {
 	static const char *const n[RIR_R_COUNT] = {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
-			"body",	 "incr", "synth", "inc", "member"};
+			"body",	 "incr", "synth", "inc", "member", "tarm"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -717,6 +717,8 @@ static void rir_op_effect(const RirOp *ro) {
 
 static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
 static int rir_member_depth;
+static AstLocal rir_tern[16];
+static int rir_ternn;
 static AstLocal rir_last_return = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
@@ -840,9 +842,15 @@ static void rir_region(const RirOp *ro) {
 		}
 		case RIR_R_COND:
 			rir_cond_depth++;
+			/* Only a for/do COND binds a condition here, and only then may it
+			   reconcile: the ternary reuses COND purely to suppress its own
+			   lowering, and reconciling there materialises a stray leaf that
+			   displaces the ternary node on the shadow stack. */
 			if (rir_cfn && (rir_cfkind[rir_cfn - 1] == RIR_R_FOR ||
-											rir_cfkind[rir_cfn - 1] == RIR_R_DO))
+											rir_cfkind[rir_cfn - 1] == RIR_R_DO)) {
+				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				rir_cf_cond();
+			}
 			break;
 		case RIR_R_SYNTH:
 			rir_synth_depth++;
@@ -872,6 +880,21 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_MEMBER:
 			rir_member_depth++;
 			break;
+		case RIR_R_TERNARY: {
+			/* `c ? a : b` is one AST_If op 5 with [cond, arm0, arm1], evaluated as
+			   a VALUE by ast_replay_value. Only the c<0 non-GNU shape is marked;
+			   a constant condition emits one arm and needs no If at all. */
+			AstLocal n = ast_node(rir_arena, AST_If);
+			AstLocal cond = rir_shn ? rir_pop() : AST_NONE;
+			ast_set_op(rir_arena, n, 5);
+			if (cond != AST_NONE)
+				ast_add_child(rir_arena, n, cond);
+			else
+				rir_arena_mismatch++;
+			if (rir_ternn < 16)
+				rir_tern[rir_ternn++] = n;
+			break;
+		}
 		case RIR_R_INCR:
 		case RIR_R_BODY:
 		case RIR_R_THEN:
@@ -904,6 +927,27 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_INC:
 		if (rir_inc_depth)
 			rir_inc_depth--;
+		break;
+	case RIR_R_TARM: {
+		AstLocal v;
+		if (!rir_ternn)
+			break;
+		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+		v = rir_shn ? rir_pop() : AST_NONE;
+		if (v == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		ast_add_child(rir_arena, rir_tern[rir_ternn - 1], v);
+		break;
+	}
+	case RIR_R_TERNARY:
+		if (rir_ternn) {
+			AstLocal n = rir_tern[--rir_ternn];
+			if (ast_nchild(rir_arena, n) != 3)
+				rir_arena_mismatch++;
+			rir_push_typed(n);
+		}
 		break;
 	case RIR_R_MEMBER: {
 		/* `a.b` is one AST_Unary in the tree — op AST_OP_MEMBER, the byte offset
@@ -1001,7 +1045,17 @@ static int rir_if_safe(AstLocal n, uint32_t nc) {
 		return nc >= 2 && rir_bb_slot(n, 0, nc) && rir_bb_slot(n, 1, nc);
 	case 5:
 	case 7:
-		return nc >= 3;
+		/* The parser mk_pointer's a VT_FUNC ternary arm AFTER the branch tap, so
+		   a reconstruction bound from that snapshot carries the function type
+		   itself. ast_replay_value's op-5 arm then combine_types/gv's two
+		   function types and hands gfunc_call a callee it cannot walk —
+		   `(fp ? f : f)()` in statements/ternary_op.c. */
+		if (nc < 3)
+			return 0;
+		return (ast_type_t(rir_arena, ast_child(rir_arena, n, 1)) & VT_BTYPE) !=
+							 VT_FUNC &&
+					 (ast_type_t(rir_arena, ast_child(rir_arena, n, 2)) & VT_BTYPE) !=
+							 VT_FUNC;
 	default:
 		return 0;
 	}
@@ -1134,6 +1188,7 @@ static void rir_to_arena(void) {
 	rir_call_depth = 0;
 	rir_inc_depth = 0;
 	rir_member_depth = 0;
+	rir_ternn = 0;
 	rir_opassign_pending = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
@@ -1154,7 +1209,7 @@ static void rir_to_arena(void) {
 			if (ro->tag == RIR_T_RBEGIN && !rir_synth_depth && !rir_call_depth &&
 					!rir_inc_depth && !rir_member_depth &&
 					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
-					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND ||
+					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_TERNARY ||
 					 ro->rkind == RIR_R_INC || ro->rkind == RIR_R_MEMBER))
 				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 			rir_region(ro);
