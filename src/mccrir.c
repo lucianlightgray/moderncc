@@ -1469,6 +1469,7 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_RETJMP:
 		if (rir_last_return != AST_NONE)
 			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
+		rir_last_return = AST_NONE;
 		break;
 	case RIR_M_JUMP:
 		/* ast_replay_bb dispatches AST_Jump on its op: 0 break, 1 continue,
@@ -1573,11 +1574,18 @@ static void rir_mark_apply(const RirOp *ro) {
 		AstLocal u;
 		if (!ro->rval)
 			break;
-		/* The parser restores the stack pointer as part of a return when one is
-		   pending, which the tree records in the Return's ival rather than as a
-		   node of its own. */
+		/* The parser restores the stack pointer as part of a return, and the tree
+		   records that in the Return's ival rather than as a node of its own --
+		   keyed on ast_last_return, which covers EVERY return, not just one held
+		   to body end. Keying on the held one instead put a standalone restore
+		   inside the `if` that owned the return and dropped the parser's own, four
+		   bytes short in vla/label.c f1. */
 		if (rir_pending_ret != AST_NONE) {
 			ast_set_ival(rir_arena, rir_pending_ret, (uint64_t)(int64_t)ro->rval);
+			break;
+		}
+		if (rir_last_return != AST_NONE) {
+			ast_set_ival(rir_arena, rir_last_return, (uint64_t)(int64_t)ro->rval);
 			break;
 		}
 		u = ast_node(rir_arena, AST_Unary);
