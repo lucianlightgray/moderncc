@@ -551,6 +551,8 @@ static int rir_bbn;
 static AstLocal rir_cf[64];
 static int rir_cfkind[64];
 static int rir_cfcond[64];
+static AstLocal rir_cfpfx[64];
+static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
 static int rir_cplx_depth;
@@ -747,6 +749,42 @@ static void rir_stmt(AstLocal n) {
 	if (ast_kind(rir_arena, n) == AST_If && ast_op(rir_arena, n) == 5)
 		ast_set_op(rir_arena, n, 7);
 	ast_add_child(rir_arena, rir_bb[rir_bbn - 1], n);
+}
+
+static int rir_ret_spilled;
+
+/* A cleanup attribute spills the pending return value to a temp before the
+   destructor call and the parser reloads from THAT temp, so the held Return has
+   to follow the value to its new home. The tree does not model this at all --
+   it is unfaithful on these bodies -- and reproducing it is the point of
+   Replay_IR. The value is bound at RIR_M_RETEXPR, before gen_assign_cast, so
+   the node the spill stores is that value under the Convert the cast left on
+   the shadow; match through it. Retype in place rather than re-parenting:
+   swapping the child would leave the old one an orphan whose parent still names
+   the Return, which ast_validate rejects. */
+static void rir_ret_follow_spill(AstLocal t, AstLocal v) {
+	AstLocal rv;
+	if (rir_pending_ret == AST_NONE || rir_ret_spilled ||
+			ast_nchild(rir_arena, rir_pending_ret) != 1)
+		return;
+	rv = ast_child(rir_arena, rir_pending_ret, 0);
+	while (v != AST_NONE && ast_kind(rir_arena, v) == AST_Convert &&
+				 ast_nchild(rir_arena, v) == 1)
+		v = ast_child(rir_arena, v, 0);
+	if (rv == AST_NONE || t == AST_NONE || v == AST_NONE ||
+			ast_nchild(rir_arena, rv) != 0 || ast_nchild(rir_arena, t) != 0 ||
+			ast_kind(rir_arena, rv) != ast_kind(rir_arena, v) ||
+			ast_op(rir_arena, rv) != ast_op(rir_arena, v) ||
+			ast_ival(rir_arena, rv) != ast_ival(rir_arena, v) ||
+			ast_sym(rir_arena, rv) != ast_sym(rir_arena, v))
+		return;
+	ast_set_kind(rir_arena, rv, ast_kind(rir_arena, t));
+	ast_set_op(rir_arena, rv, ast_op(rir_arena, t));
+	ast_set_type(rir_arena, rv, ast_type_t(rir_arena, t),
+							 ast_type_ref(rir_arena, t));
+	ast_set_ival(rir_arena, rv, ast_ival(rir_arena, t));
+	ast_set_sym(rir_arena, rv, ast_sym(rir_arena, t));
+	rir_ret_spilled = 1;
 }
 
 static AstLocal rir_pop(void) {
@@ -1173,6 +1211,7 @@ static void rir_op_effect(const RirOp *ro) {
 		ast_add_child(rir_arena, n, t);
 		ast_add_child(rir_arena, n, v);
 		rir_stmt(n);
+		rir_ret_follow_spill(t, v);
 		{
 			AstLocal mv = ast_node(rir_arena, AST_StoreVal);
 			ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
@@ -1558,7 +1597,16 @@ static void rir_mark_apply(const RirOp *ro) {
 			rir_retexpr_pending = 1;
 		}
 		break;
+	case RIR_M_WHILECOND:
+		rir_while_pfx = AST_NONE;
+		if (rir_bbn && rir_bbn < 64) {
+			AstLocal pfx = ast_node(rir_arena, AST_BasicBlock);
+			rir_while_pfx = pfx;
+			rir_bb[rir_bbn++] = pfx;
+		}
+		break;
 	case RIR_M_RETURN:
+		rir_ret_spilled = 0;
 		n = ast_node(rir_arena, AST_Return);
 		if (rir_retexpr_pending && ro->rval && rir_retexpr != AST_NONE) {
 			rir_shn = rir_retexpr_depth - 1;
@@ -1848,13 +1896,24 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_DO:
 		case RIR_R_FOR:
 		case RIR_R_SWITCH: {
-			AstLocal n = ast_node(rir_arena, AST_If);
+			AstLocal n;
+			AstLocal pfx = AST_NONE;
+			if (ro->rkind == RIR_R_WHILE && rir_while_pfx != AST_NONE) {
+				pfx = rir_while_pfx;
+				rir_while_pfx = AST_NONE;
+				if (rir_bbn > 1 && rir_bb[rir_bbn - 1] == pfx)
+					rir_bbn--;
+				if (ast_first_child(rir_arena, pfx) == AST_NONE)
+					pfx = AST_NONE;
+			}
+			n = ast_node(rir_arena, AST_If);
 			ast_set_op(rir_arena, n, rir_cf_op(ro->rkind));
 			rir_stmt(n);
 			if (rir_cfn < 64) {
 				rir_cf[rir_cfn] = n;
 				rir_cfkind[rir_cfn] = ro->rkind;
 				rir_cfcond[rir_cfn] = 0;
+				rir_cfpfx[rir_cfn] = pfx;
 				rir_cfn++;
 			}
 			/* if/while/switch open their region with the condition value already
@@ -2181,30 +2240,7 @@ static void rir_region(const RirOp *ro) {
 				ast_add_child(rir_arena, n, t);
 				ast_add_child(rir_arena, n, v);
 				rir_stmt(n);
-				/* A cleanup attribute spills the pending return value to a temp
-				   before the destructor call and the parser reloads from THAT temp,
-				   so the held Return has to follow the value to its new home. The
-				   tree does not model this at all -- it is unfaithful on these
-				   bodies -- and reproducing it is the point of Replay_IR. */
-				if (rir_pending_ret != AST_NONE &&
-						ast_nchild(rir_arena, rir_pending_ret) == 1) {
-					AstLocal rv = ast_child(rir_arena, rir_pending_ret, 0);
-					if (rv != AST_NONE && ast_nchild(rir_arena, rv) == 0 &&
-							ast_nchild(rir_arena, t) == 0 &&
-							ast_kind(rir_arena, rv) == ast_kind(rir_arena, v) &&
-							ast_ival(rir_arena, rv) == ast_ival(rir_arena, v) &&
-							ast_sym(rir_arena, rv) == ast_sym(rir_arena, v)) {
-						/* Retype the node in place rather than re-parenting: swapping the
-						   child would leave the old one an orphan whose parent still
-						   names the Return, which ast_validate rejects. */
-						ast_set_kind(rir_arena, rv, ast_kind(rir_arena, t));
-						ast_set_op(rir_arena, rv, ast_op(rir_arena, t));
-						ast_set_type(rir_arena, rv, ast_type_t(rir_arena, t),
-												 ast_type_ref(rir_arena, t));
-						ast_set_ival(rir_arena, rv, ast_ival(rir_arena, t));
-						ast_set_sym(rir_arena, rv, ast_sym(rir_arena, t));
-					}
-				}
+				rir_ret_follow_spill(t, v);
 				{
 					AstLocal mv = ast_node(rir_arena, AST_StoreVal);
 					ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
@@ -2321,6 +2357,10 @@ static void rir_region(const RirOp *ro) {
 			rir_cfn--;
 			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
 				ast_set_op(rir_arena, rir_cf[rir_cfn], 8);
+			if (rir_cfpfx[rir_cfn] != AST_NONE &&
+					ast_nchild(rir_arena, rir_cf[rir_cfn]) == 2)
+				ast_add_child(rir_arena, rir_cf[rir_cfn], rir_cfpfx[rir_cfn]);
+			rir_cfpfx[rir_cfn] = AST_NONE;
 		}
 		break;
 	default:
@@ -2588,9 +2628,11 @@ static void rir_to_arena(void) {
 		ast_arena_reset(rir_arena);
 	rir_shn = 0;
 	rir_cfn = 0;
+	rir_while_pfx = AST_NONE;
 	rir_bbn = 0;
 	rir_last_return = AST_NONE;
 	rir_pending_ret = AST_NONE;
+	rir_ret_spilled = 0;
 	rir_after_ret = 0;
 	rir_cond_depth = 0;
 	rir_synth_depth = 0;

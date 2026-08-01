@@ -65,6 +65,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_STORE_CHAIN_SKIP 1024u
 
+#define AST_FB_STORE_LIVE_ROT 2048u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1859,6 +1861,9 @@ static int ast_storeval_constl_env;
 static int ast_convert_gv_env;
 static int ast_call_noreturn_env;
 static int ast_storeval_callstore_env;
+static int ast_storeval_callup_env;
+static int ast_storeval_rot_env;
+static int ast_sv_live_depth;
 static int ast_fneg_env;
 static int ast_ldouble_env;
 static int ast_int128_env;
@@ -2299,6 +2304,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_convert_gv_env = ast_env_gate("MCC_AST_CONVERT_GV", o4 || s1->optimize >= 1);
 	ast_call_noreturn_env = ast_env_gate("MCC_AST_CALL_NORETURN", o4 || s1->optimize >= 1);
 	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", o4 || s1->optimize >= 1);
+	ast_storeval_callup_env = ast_env_gate("MCC_AST_STOREVAL_CALLUP", o4 || s1->optimize >= 1);
+	ast_storeval_rot_env = ast_env_gate("MCC_AST_STOREVAL_ROT", o4 || s1->optimize >= 1);
 	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", o4 || s1->optimize >= 1);
 	ast_ldouble_env = ast_env_gate("MCC_AST_LDOUBLE", o4 || s1->optimize >= 1);
 	ast_int128_env = ast_env_gate("MCC_AST_INT128", o4 || s1->optimize >= 1);
@@ -2321,7 +2328,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 1);
 	ast_while_comma_env = ast_env_gate("MCC_AST_WHILE_COMMA", o4 || s1->optimize >= 1);
-	ast_loopcond_store_env = ast_env_gate("MCC_AST_LOOPCOND_STORE", 0);
+	ast_loopcond_store_env = ast_env_gate("MCC_AST_LOOPCOND_STORE", o4 || s1->optimize >= 1);
 	ast_ternary_discard_env = ast_env_gate("MCC_AST_TERNARY_DISCARD", o4 || s1->optimize >= 1);
 	ast_nocode_call_env = ast_env_gate("MCC_AST_NOCODE_CALL", o4 || s1->optimize >= 1);
 	ast_indirect_call_env = ast_env_gate("MCC_AST_INDIRECT_CALL", o4 || s1->optimize >= 1);
@@ -3317,6 +3324,7 @@ static AstLocal ast_while_prefix = AST_NONE;
 static AstLocal ast_while_savebb = AST_NONE;
 
 void ast_hook_while_cond_start(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_WHILECOND);
 	ast_while_prefix = AST_NONE;
 	if (!ast_while_comma_env || !ast_active || ast_desync || ast_bail ||
 			!ast_capture)
@@ -6360,6 +6368,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			if (ast_fbits(a, st) & AST_FB_STORE_VALUE_LIVE) { MCC_TRACE("br\n");
 				if (ast_fbits(a, st) & AST_FB_STOREVAL_CONST_LEFT)
 					{ MCC_TRACE("br\n"); vswap(); }
+				else if ((ast_fbits(a, st) & AST_FB_STORE_LIVE_ROT) &&
+								 ast_sv_live_depth > 0) { MCC_TRACE("br\n");
+					int here = (int)(vtop - vstack + 1);
+					int k = here - ast_sv_live_depth;
+					if (k > 0 && k < here)
+						{ MCC_TRACE("br\n"); vrotb(k + 1); }
+					ast_sv_live_depth = 0;
+				}
 				break;
 			}
 			if (ast_nchild(a, st) == 2)
@@ -6845,7 +6861,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				vstore();
 				vstore();
 				if (ast_fbits(a, outer) & AST_FB_STORE_VALUE_LIVE)
-					{ MCC_TRACE("br\n"); break; }
+					{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
 				vpop();
 				break;
 			}
@@ -6860,7 +6876,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					crt.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
 					ast_promo_write(cr_preg, &crt);
 					if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
-						{ MCC_TRACE("br\n"); break; }
+						{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
 					vpop();
 					break;
 				}
@@ -6869,7 +6885,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				vswap();
 				vstore();
 				if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
-					{ MCC_TRACE("br\n"); break; }
+					{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
 				vpop();
 				break;
 			}
@@ -6884,7 +6900,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
 				ast_promo_write(preg, &tct);
 				if (ast_storeval_call_env && (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE))
-					{ MCC_TRACE("br\n"); break; }
+					{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
 				vpop();
 				break;
 			}
@@ -6908,7 +6924,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					gen_op(ast_op(a, c1));
 					vstore();
 					if (ast_storeval_call_env && (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE))
-						{ MCC_TRACE("br\n"); break; }
+						{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
 					vpop();
 					break;
 				}
@@ -6918,7 +6934,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			ast_replay_value(a, ast_child(a, s, 1));
 			vstore();
 			if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
-				{ MCC_TRACE("br\n"); break; }
+				{ MCC_TRACE("br\n"); ast_sv_live_depth = (int)(vtop - vstack + 1); break; }
 			vpop();
 			break;
 		}
@@ -7380,6 +7396,12 @@ static int ast_storeval_lval_leaf(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	return r == VT_LOCAL || r == VT_CONST;
 }
 
+static int ast_storeval_push_leaf(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (n == AST_NONE || ast_nchild(a, n) != 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_kind(a, n) == AST_Ref || ast_kind(a, n) == AST_Literal;
+}
+
 static int ast_storeval_const_leaf(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	while (n != AST_NONE && ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
 		{ MCC_TRACE("br\n"); n = ast_child(a, n, 0); }
@@ -7409,7 +7431,7 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 		   argument and has replay swap the callee under the live value. */
 		{
 			AstLocal cur = n, up, call_up = AST_NONE;
-			int leftmost = 1, constl = 0, call_store = 0, docond = 0;
+			int leftmost = 1, constl = 0, call_store = 0, docond = 0, rot = 0;
 			for (;;) {
 				MCC_TRACE("br\n");
 				up = ast_parent(a, cur);
@@ -7424,7 +7446,8 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 													ast_storeval_lval_leaf(a, ast_child(a, pst, 0));
 					if (!ast_storeval_call_env || call_up != AST_NONE ||
 							ast_nchild(a, up) < 2 || ast_child(a, up, 1) != cur ||
-							(ast_kind(a, pst) != AST_BasicBlock && !pst_store))
+							(ast_kind(a, pst) != AST_BasicBlock && !pst_store &&
+							 !ast_storeval_callup_env))
 						{ MCC_TRACE("br\n"); leftmost = 0; break; }
 					call_up = up;
 					if (pst_store) { MCC_TRACE("br\n");
@@ -7448,6 +7471,15 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 							ast_kind(a, up) == AST_If && ast_op(a, up) == 4 &&
 							ast_nchild(a, up) >= 2 && ast_child(a, up, 1) == cur) { MCC_TRACE("br\n");
 						docond = 1;
+						cur = up;
+						continue;
+					}
+					if (ast_storeval_rot_env && call_up == AST_NONE && !constl &&
+							!docond && ast_nchild(a, up) == 2 &&
+							ast_child(a, up, 1) == cur &&
+							(ast_kind(a, up) == AST_Binary || ast_kind(a, up) == AST_Store) &&
+							ast_storeval_push_leaf(a, ast_child(a, up, 0))) { MCC_TRACE("br\n");
+						rot = 1;
 						cur = up;
 						continue;
 					}
@@ -7479,6 +7511,9 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); ast_set_fbits(a, call_up,
 						ast_fbits(a, call_up) | AST_FB_CALL_STOREVAL_ARG |
 						(call_store ? AST_FB_CALL_STOREVAL_STORE : 0u)); }
+			if (rot)
+				{ MCC_TRACE("br\n"); ast_set_fbits(a, st,
+						ast_fbits(a, st) | AST_FB_STORE_LIVE_ROT); }
 			if (constl)
 				{ MCC_TRACE("br\n"); ast_set_fbits(a, st,
 						ast_fbits(a, st) | AST_FB_STOREVAL_CONST_LEFT); }
@@ -7563,6 +7598,7 @@ static void ast_finalize_chainstores(AstArena *a) { MCC_TRACE("enter\n");
 }
 
 static void ast_replay_body(AstArena *a) { MCC_TRACE("enter\n");
+	ast_sv_live_depth = 0;
 	ast_finalize_storevals(a);
 	ast_finalize_chainstores(a);
 	ast_replay_bb(a, ast_root(a));
