@@ -9895,9 +9895,12 @@ static int ast_sccp_run(AstArena *a) { MCC_TRACE("enter\n");
 
 static int ast_jt_folds;
 
-static int ast_jt_arm_empty(AstArena *a, AstLocal arm) { MCC_TRACE("enter\n");
-	return arm == AST_NONE ||
-				 (ast_kind(a, arm) == AST_BasicBlock && ast_nchild(a, arm) == 0);
+/* Not named `arm`: an arm-targeting mcc predefines the bare `arm` macro, as gcc
+   does outside strict mode, so that spelling makes this file unparseable to a
+   self-hosting arm build. */
+static int ast_jt_arm_empty(AstArena *a, AstLocal br) { MCC_TRACE("enter\n");
+	return br == AST_NONE ||
+				 (ast_kind(a, br) == AST_BasicBlock && ast_nchild(a, br) == 0);
 }
 
 static int ast_jt_run(AstArena *a) { MCC_TRACE("enter\n");
