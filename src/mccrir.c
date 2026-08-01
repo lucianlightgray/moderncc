@@ -1541,6 +1541,14 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	case JOP_VPOP: {
 		AstLocal d = rir_pop();
+		if (d != AST_NONE && rir_shn == 0 &&
+				ast_parent(rir_arena, d) == AST_NONE &&
+				ast_kind(rir_arena, d) == AST_Binary) {
+			ast_set_fbits(rir_arena, d,
+										ast_fbits(rir_arena, d) | AST_FB_STMT_DISCARD);
+			rir_stmt(d);
+			break;
+		}
 		rir_drop(d);
 		break;
 	}
@@ -1635,6 +1643,21 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
+	case JOP_GGOTO: {
+		/* `goto *expr` consumes the address off the vstack and the tree bails on
+		   the whole body, so there is no tree node to mirror: one AST_Unary over
+		   the address value, re-issuing ggoto() at replay. */
+		AstLocal a = rir_pop(), n;
+		if (a == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, AST_OP_GGOTO);
+		ast_add_child(rir_arena, n, a);
+		rir_stmt(n);
+		break;
+	}
 	case JOP_ADDROF: {
 		AstLocal a = rir_pop(), n;
 		if (a == AST_NONE) {
@@ -1670,6 +1693,8 @@ static int rir_vla_depth;
    ahead of the test, which is what region_store.c showed: the store first and
    the compare after. While either region has a node under construction, keep
    the Store on the shadow stack so the operand binding takes it. */
+static AstLocal rir_incr_bb = AST_NONE;
+static int rir_incr_live;
 static AstLocal rir_tern[16];
 static int rir_tern_cf[16];
 static AstLocal rir_lor[16];
@@ -1914,6 +1939,21 @@ static void rir_mark_apply(const RirOp *ro) {
 				ast_add_child(rir_arena, cv, top);
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
+			}
+			/* `*(int *)(void *)full` casts twice; the duplicate-cast rule keeps one
+			   Convert and it is the FIRST, so the dereference runs on a `void *`
+			   and indir() derives a void lvalue that emits no load at all. The
+			   marker's snapshot witnesses the pointer type the parser actually
+			   dereferenced, so retype rather than add a second node. */
+			else if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert &&
+							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+							 ast_type_ref(rir_arena, top) !=
+									 (uint64_t)(uintptr_t)pv->type.ref) {
+				const Sym *ps = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, top);
+				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID)
+					ast_set_type(rir_arena, top, pv->type.t,
+											 (uint64_t)(uintptr_t)pv->type.ref);
 			}
 		}
 		a = rir_pop();
@@ -2279,7 +2319,7 @@ static void rir_region(const RirOp *ro) {
 			   a constant condition emits one arm and needs no If at all. */
 			AstLocal n = ast_node(rir_arena, AST_If);
 			AstLocal cond = rir_shn ? rir_pop() : AST_NONE;
-			ast_set_op(rir_arena, n, 5);
+			ast_set_op(rir_arena, n, ro->rval ? 9 : 5);
 			if (cond != AST_NONE)
 				ast_add_child(rir_arena, n, cond);
 			else
@@ -2299,6 +2339,10 @@ static void rir_region(const RirOp *ro) {
 				ast_add_child(rir_arena, rir_cf[rir_cfn - 1], bb);
 			if (rir_bbn < 64)
 				rir_bb[rir_bbn++] = bb;
+			if (ro->rkind == RIR_R_INCR) {
+				rir_incr_bb = bb;
+				rir_incr_live = ro->rval;
+			}
 			break;
 		}
 		default:
@@ -2488,7 +2532,8 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_TERNARY:
 		if (rir_ternn) {
 			AstLocal n = rir_tern[--rir_ternn];
-			if (ast_nchild(rir_arena, n) != 3)
+			if (ast_nchild(rir_arena, n) !=
+					(ast_op(rir_arena, n) == 9 ? 2u : 3u))
 				rir_arena_mismatch++;
 			/* The tree leaves a ternary AST_If UNTYPED and lets the emitter derive
 			   the result -- the same convention as AST_Binary, already a recorded
@@ -2534,6 +2579,22 @@ static void rir_region(const RirOp *ro) {
 		break;
 	}
 	case RIR_R_INCR:
+		/* An increment clause that is WRITTEN but emits nothing -- `for (;;
+		   sizeof(enum{in=1}))` -- still gets the parser's jump-over-increment and
+		   back edge, 7 bytes the emitter otherwise decides against on the block
+		   being empty. Tag only that case: an increment that produced statements
+		   is already decided correctly, and tagging it too costs 48 arenas their
+		   field-identity with the tree for nothing. */
+		if (rir_incr_live && rir_cfn && rir_incr_bb != AST_NONE &&
+				ast_first_child(rir_arena, rir_incr_bb) == AST_NONE)
+			ast_set_fbits(rir_arena, rir_cf[rir_cfn - 1],
+										ast_fbits(rir_arena, rir_cf[rir_cfn - 1]) |
+												AST_FB_FOR_INCR_LIVE);
+		rir_incr_live = 0;
+		rir_incr_bb = AST_NONE;
+		if (rir_bbn > 1)
+			rir_bbn--;
+		break;
 	case RIR_R_BODY:
 	case RIR_R_THEN:
 	case RIR_R_ELSE:
@@ -2599,19 +2660,16 @@ static int rir_if_safe(AstLocal n, uint32_t nc) {
 		return nc >= 2 && rir_bb_slot(n, 1, nc);
 	case 8:
 		return nc >= 2 && rir_bb_slot(n, 0, nc) && rir_bb_slot(n, 1, nc);
+	case 9:
+		if (nc != 2)
+			return 0;
+		return (ast_type_t(rir_arena, ast_child(rir_arena, n, 0)) & VT_BTYPE) !=
+							 VT_FUNC &&
+					 (ast_type_t(rir_arena, ast_child(rir_arena, n, 1)) & VT_BTYPE) !=
+							 VT_FUNC;
 	case 5:
 	case 7:
-		/* The parser mk_pointer's a VT_FUNC ternary arm AFTER the branch tap, so
-		   a reconstruction bound from that snapshot carries the function type
-		   itself. ast_replay_value's op-5 arm then combine_types/gv's two
-		   function types and hands gfunc_call a callee it cannot walk —
-		   `(fp ? f : f)()` in statements/ternary_op.c. */
-		if (nc < 3)
-			return 0;
-		return (ast_type_t(rir_arena, ast_child(rir_arena, n, 1)) & VT_BTYPE) !=
-							 VT_FUNC &&
-					 (ast_type_t(rir_arena, ast_child(rir_arena, n, 2)) & VT_BTYPE) !=
-							 VT_FUNC;
+		return nc >= 3;
 	default:
 		return 0;
 	}
@@ -2628,8 +2686,17 @@ static int rir_leaf_reg_ok(AstLocal n) {
 	v = r & VT_VALMASK;
 	if (v >= MCC_NB_REGS)
 		return 1;
-	return !!(reg_classes[v] & MCC_RC_FLOAT) ==
-				 !!is_float(ast_type_t(rir_arena, n));
+	{
+		int fl = (reg_classes[v] & MCC_RC_FLOAT) != 0;
+#ifdef MCC_RC_ST0
+		/* The x87 stack register is a float bank of its own -- reg_classes[ST0] is
+		   MCC_RC_ST0 and does NOT carry MCC_RC_FLOAT, so a `long double` living
+		   there read as a bank mismatch and refused the whole body. */
+		if (reg_classes[v] & MCC_RC_ST0)
+			fl = 1;
+#endif
+		return fl == !!is_float(ast_type_t(rir_arena, n));
+	}
 }
 
 static int rir_emit_safe(void) {
@@ -2718,6 +2785,12 @@ static int rir_emit_safe(void) {
 			   carrying none is by design, not a defect to refuse on. */
 			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
 				ast_kind(rir_arena, callee) == AST_Binary)
+				via_load = 1;
+			/* A ternary is untyped by the same convention, and `(fp ? f : f)()`
+			   makes one the callee; ast_replay_value derives the type through
+			   combine_types and the Invoke arm's pointed_type retype. */
+			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
+				ast_kind(rir_arena, callee) == AST_If)
 				via_load = 1;
 			if (callee == AST_NONE ||
 				(ast_type_t(rir_arena, callee) == 0 && !via_load))
@@ -2839,6 +2912,8 @@ static void rir_to_arena(void) {
 	rir_cvt_n = 0;
 	rir_argcast_n = 0;
 	rir_ternn = 0;
+	rir_incr_bb = AST_NONE;
+	rir_incr_live = 0;
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;
 	rir_spill_node = AST_NONE;
@@ -2965,7 +3040,8 @@ static void rir_to_arena(void) {
 					!rir_inc_depth && !rir_member_depth &&
 					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
 					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_TERNARY ||
-					 ro->rkind == RIR_R_INC || ro->rkind == RIR_R_MEMBER))
+					 ro->rkind == RIR_R_INC || ro->rkind == RIR_R_MEMBER ||
+					 ro->rkind == RIR_R_CVT))
 				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 			rir_region(ro);
 			continue;

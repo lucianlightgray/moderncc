@@ -4253,7 +4253,13 @@ redo:
 
 #if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM
 #define gen_cvt_itof1 gen_cvt_itof
+static int gen_cvt_itof1_helper(void) { MCC_TRACE("enter\n");
+	return 0;
+}
 #else
+static int gen_cvt_itof1_helper(void) { MCC_TRACE("enter\n");
+	return (vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED);
+}
 static void gen_cvt_itof1(int t) { MCC_TRACE("enter\n");
 	if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
 			(VT_LLONG | VT_UNSIGNED)) { MCC_TRACE("br\n");
@@ -4277,7 +4283,14 @@ static void gen_cvt_itof1(int t) { MCC_TRACE("enter\n");
 
 #if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 #define gen_cvt_ftoi1 gen_cvt_ftoi
+static int gen_cvt_ftoi1_helper(int t) { MCC_TRACE("enter\n");
+	(void)t;
+	return 0;
+}
 #else
+static int gen_cvt_ftoi1_helper(int t) { MCC_TRACE("enter\n");
+	return t == (VT_LLONG | VT_UNSIGNED);
+}
 static void gen_cvt_ftoi1(int t) { MCC_TRACE("enter\n");
 	int st;
 	if (t == (VT_LLONG | VT_UNSIGNED)) { MCC_TRACE("br\n");
@@ -4495,9 +4508,14 @@ again:
 			} else if (df) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
 				int sup_itof = ast_active && !ast_replaying;
+				int rgn_itof = gen_cvt_itof1_helper();
 				if (sup_itof)
 					{ MCC_TRACE("br\n"); ast_in_op++; }
+				if (rgn_itof)
+					{ MCC_TRACE("br\n"); ast_hook_castlower_begin(type); }
 				gen_cvt_itof1(dbt);
+				if (rgn_itof)
+					{ MCC_TRACE("br\n"); ast_hook_castlower_end(); }
 				if (sup_itof)
 					{ MCC_TRACE("br\n"); ast_in_op--; }
 #else
@@ -4509,9 +4527,14 @@ again:
 					{ MCC_TRACE("br\n"); sbt = VT_INT; }
 #if MCC_CONFIG_OPTIMIZER
 				int sup_ftoi = ast_active && !ast_replaying;
+				int rgn_ftoi = gen_cvt_ftoi1_helper(sbt);
 				if (sup_ftoi)
 					{ MCC_TRACE("br\n"); ast_in_op++; }
+				if (rgn_ftoi)
+					{ MCC_TRACE("br\n"); ast_hook_castlower_begin(type); }
 				gen_cvt_ftoi1(sbt);
+				if (rgn_ftoi)
+					{ MCC_TRACE("br\n"); ast_hook_castlower_end(); }
 				if (sup_ftoi)
 					{ MCC_TRACE("br\n"); ast_in_op--; }
 #else

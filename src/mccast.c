@@ -74,6 +74,18 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
    Replay_IR sets this from the gv() tap that witnesses the read. */
 #define AST_FB_STORE_BF_GV 8192u
 
+/* A pure expression the parser still EMITTED and then discarded -- `(void)(q +
+   1);`. The tree drops it (it models the value, not the emission), so this bit
+   is only ever set by the Replay_IR reconstruction, whose bar is the parser's
+   bytes rather than the tree's shape. */
+#define AST_FB_STMT_DISCARD 16384u
+
+/* A `for` whose increment clause is WRITTEN but emits nothing -- `for (;;
+   sizeof(enum{in=1}))`. The parser still lays out the jump-over-increment and
+   the back edge (7 bytes), and both models otherwise decide on the increment
+   block being non-empty. Only Replay_IR sets this. */
+#define AST_FB_FOR_INCR_LIVE 32768u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -1870,6 +1882,7 @@ static int ast_call_noreturn_env;
 static int ast_storeval_callstore_env;
 static int ast_storeval_callup_env;
 static int ast_storeval_rot_env;
+static int ast_storeval_calllast_env;
 static int ast_sv_live_depth;
 static int ast_fneg_env;
 static int ast_ldouble_env;
@@ -2195,6 +2208,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_ACMPXCHG 0x4001e
 #define AST_OP_BITB 0x4001f
 #define AST_OP_ACASRMW 0x40020
+#define AST_OP_GGOTO 0x40021
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -2316,6 +2330,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_storeval_callstore_env = ast_env_gate("MCC_AST_STOREVAL_CALLSTORE", o4 || s1->optimize >= 1);
 	ast_storeval_callup_env = ast_env_gate("MCC_AST_STOREVAL_CALLUP", o4 || s1->optimize >= 1);
 	ast_storeval_rot_env = ast_env_gate("MCC_AST_STOREVAL_ROT", o4 || s1->optimize >= 1);
+	ast_storeval_calllast_env =
+			ast_env_gate("MCC_AST_STOREVAL_CALLLAST", o4 || s1->optimize >= 1);
 	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", o4 || s1->optimize >= 1);
 	ast_ldouble_env = ast_env_gate("MCC_AST_LDOUBLE", o4 || s1->optimize >= 1);
 	ast_int128_env = ast_env_gate("MCC_AST_INT128", o4 || s1->optimize >= 1);
@@ -2988,9 +3004,9 @@ void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop
 
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 	if (rir_tern_n < 16) { MCC_TRACE("br\n");
-		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 && !g);
+		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 ? (g ? 2 : 1) : 0);
 		if (rir_tern_on[rir_tern_n]) { MCC_TRACE("br\n");
-			rir_rbegin(RIR_R_TERNARY);
+			rir_rbegin_val(RIR_R_TERNARY, rir_tern_on[rir_tern_n] == 2);
 			rir_rbegin(RIR_R_COND);
 		}
 		rir_tern_n++;
@@ -3029,7 +3045,8 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 
 void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 	(void)which;
-	if (rir_tern_n && rir_tern_on[rir_tern_n - 1]) { MCC_TRACE("br\n");
+	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
+			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) { MCC_TRACE("br\n");
 		rir_rend_to(RIR_R_COND);
 		rir_rbegin(RIR_R_TARM);
 	}
@@ -3041,7 +3058,8 @@ void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
-	if (rir_tern_n && rir_tern_on[rir_tern_n - 1]) { MCC_TRACE("br\n");
+	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
+			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) { MCC_TRACE("br\n");
 		rir_rend_to_val(RIR_R_TARM, which);
 		rir_rbegin(RIR_R_COND);
 	}
@@ -3518,7 +3536,7 @@ void ast_hook_for_cond(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_for_incr_begin(void) { MCC_TRACE("enter\n");
-	rir_rbegin(RIR_R_INCR);
+	rir_rbegin_val(RIR_R_INCR, 1);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1) { MCC_TRACE("br\n");
@@ -6713,15 +6731,47 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			break;
 		}
 #endif
+		if (ast_op(a, n) == 9) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0));
+			save_regs(1);
+			gv_dup();
+			u = gvtst(0, 0);
+			sv = *vtop;
+			vtop--;
+			ast_replay_value(a, ast_child(a, n, 1));
+			combine_types(&type, &sv, vtop, '?');
+			gen_cast(&type);
+			rc = MCC_RC_TYPE(type.t);
+			if (USING_TWO_WORDS(type.t))
+				{ MCC_TRACE("br\n"); rc = MCC_RC_RET(type.t); }
+			r2 = gv(rc);
+			tt = gjmp(0);
+			gsym(u);
+			*vtop = sv;
+			gen_cast(&type);
+			r1 = gv(rc);
+			move_reg(r2, r1, type.t);
+			vtop->r = r2;
+			gsym(tt);
+			break;
+		}
 		ast_replay_value(a, ast_child(a, n, 0));
 		save_regs(1);
 		tt = gvtst(1, 0);
 		ast_replay_value(a, ast_child(a, n, 1));
+		/* expr_cond decays a VT_FUNC arm one step AFTER the branch tap, so a
+		   reconstruction bound from that snapshot carries the function type
+		   itself and combine_types/gv then hand gfunc_call a callee it cannot
+		   walk. Mirror the parser's own mk_pointer here. */
+		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
+			{ MCC_TRACE("br\n"); mk_pointer(&vtop->type); }
 		sv = *vtop;
 		vtop--;
 		u = gjmp(0);
 		gsym(tt);
 		ast_replay_value(a, ast_child(a, n, 2));
+		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
+			{ MCC_TRACE("br\n"); mk_pointer(&vtop->type); }
 		combine_types(&type, &sv, vtop, '?');
 		gen_cast(&type);
 		rc = MCC_RC_TYPE(type.t);
@@ -7012,8 +7062,14 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 		case AST_BasicBlock:
 			ast_replay_bb(a, s);
 			break;
+		case AST_Load:
+			if (ast_fbits(a, s) & AST_FB_STMT_DISCARD) { MCC_TRACE("br\n");
+				ast_replay_value(a, s);
+				vpop();
+			}
+			break;
 		case AST_Binary:
-			if (ast_fbits(a, s) & AST_FB_LANDOR_MATERIAL) { MCC_TRACE("br\n");
+			if (ast_fbits(a, s) & (AST_FB_LANDOR_MATERIAL | AST_FB_STMT_DISCARD)) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
 				vpop();
 				break;
@@ -7032,6 +7088,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 					ast_has_atomic(a, s, 0) ||
 #endif
+					(ast_fbits(a, s) & AST_FB_STMT_DISCARD) ||
 					(ast_nchild(a, s) == 1 &&
 					 ast_kind(a, ast_child(a, s, 0)) == AST_Invoke)) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
@@ -7094,6 +7151,11 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			}
 			if (ast_op(a, s) == AST_OP_VLA_RESTORE) { MCC_TRACE("br\n");
 				gen_vla_sp_restore((int)(int64_t)ast_ival(a, s));
+				break;
+			}
+			if (ast_op(a, s) == AST_OP_GGOTO) { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, s, 0));
+				ggoto();
 				break;
 			}
 #if MCC_CONFIG_ASM
@@ -7285,7 +7347,9 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				int cc = gind();
 				int dd = cc;
 				AstLocal incrbb = ast_child(a, s, 0);
-				if (incrbb != AST_NONE && ast_first_child(a, incrbb) != AST_NONE) { MCC_TRACE("br\n");
+				if (incrbb != AST_NONE &&
+						(ast_first_child(a, incrbb) != AST_NONE ||
+						 (ast_fbits(a, s) & AST_FB_FOR_INCR_LIVE))) { MCC_TRACE("br\n");
 					int ee = gjmp(0);
 					dd = gind();
 					ast_replay_bb(a, incrbb);
@@ -7312,7 +7376,9 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				int aa = gvtst(1, 0);
 				int dd = cc;
 				AstLocal incrbb = ast_child(a, s, 1);
-				if (incrbb != AST_NONE && ast_first_child(a, incrbb) != AST_NONE) { MCC_TRACE("br\n");
+				if (incrbb != AST_NONE &&
+						(ast_first_child(a, incrbb) != AST_NONE ||
+						 (ast_fbits(a, s) & AST_FB_FOR_INCR_LIVE))) { MCC_TRACE("br\n");
 					int ee = gjmp(0);
 					dd = gind();
 					ast_replay_bb(a, incrbb);
@@ -7522,6 +7588,20 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); break; }
 				if (ast_kind(a, up) == AST_Invoke) { MCC_TRACE("br\n");
 					AstLocal pst = ast_parent(a, up);
+					/* A store whose value feeds a LATER argument -- printf("%d\n",
+					   (y = c + d)) -- cannot use the callee swap, because the
+					   arguments between the callee and it have already been pushed.
+					   The live value is then k entries down and the existing
+					   AST_FB_STORE_LIVE_ROT / vrotb(k + 1) path lifts it, so no call
+					   fbit is needed at all. */
+					if (ast_storeval_calllast_env && call_up == AST_NONE && !constl &&
+							!docond && !rot && ast_nchild(a, up) >= 3 &&
+							ast_child(a, up, ast_nchild(a, up) - 1) == cur &&
+							pst != AST_NONE && ast_kind(a, pst) == AST_BasicBlock) { MCC_TRACE("br\n");
+						rot = 1;
+						cur = up;
+						continue;
+					}
 					int pst_store = ast_storeval_callstore_env && pst != AST_NONE &&
 													ast_kind(a, pst) == AST_Store &&
 													ast_nchild(a, pst) == 2 && ast_child(a, pst, 1) == up &&
