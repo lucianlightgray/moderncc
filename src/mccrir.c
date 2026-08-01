@@ -650,10 +650,6 @@ static void rir_op_effect(const RirOp *ro) {
 static int rir_cond_depth, rir_synth_depth, rir_call_depth;
 static AstLocal rir_last_return = AST_NONE;
 
-static int rir_mark_consumes(int kind) {
-	return kind == RIR_M_RETURN || kind == RIR_M_LOAD;
-}
-
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
@@ -666,6 +662,22 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_last_return = n;
 		rir_after_ret = 1;
 		break;
+	case RIR_M_IRETURN: {
+		/* main's fallthrough return, marked before its own vpushi, so no snapshot
+		   carries the value yet. It is a fixed one: check_func_return pushes a
+		   VT_INT 0, exactly what ast_hook_implicit_return models. */
+		AstLocal lit;
+		n = ast_node(rir_arena, AST_Return);
+		lit = ast_node(rir_arena, AST_Literal);
+		ast_set_op(rir_arena, lit, VT_CONST);
+		ast_set_ival(rir_arena, lit, 0);
+		ast_set_type(rir_arena, lit, VT_INT, 0);
+		ast_add_child(rir_arena, n, lit);
+		rir_stmt(n);
+		rir_last_return = n;
+		rir_after_ret = 1;
+		break;
+	}
 	case RIR_M_RETJMP:
 		if (rir_last_return != AST_NONE)
 			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
@@ -958,15 +970,16 @@ static void rir_to_arena(void) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
 			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth) {
+				/* A value a marker consumes is not on the shadow stack yet: it was
+				   pushed by an op whose own snapshot predates it, and the snapshot
+				   that shows it is the NEXT op's. Reconcile against that one, not
+				   merely stamp its types, or the marker pops nothing and the node
+				   comes out childless. */
+				int want = ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN;
 				int j;
 				for (j = i + 1; j < rir_n; j++)
 					if (rir_ops[j].tag == RIR_T_OP) {
-						/* A value a marker consumes is not on the shadow stack yet: it
-						   was pushed by an op whose own snapshot predates it, and the
-						   snapshot that shows it is the NEXT op's. Reconcile against
-						   that one, not merely stamp its types, or the marker pops
-						   nothing and the node comes out childless. */
-						if (rir_mark_consumes(ro->rkind))
+						if (want)
 							rir_reconcile(&rir_ops[j].p);
 						else
 							rir_stamp_types(&rir_ops[j].p);
@@ -977,6 +990,20 @@ static void rir_to_arena(void) {
 			continue;
 		}
 		if (ro->tag != RIR_T_OP) {
+			/* A region that binds a condition reads the shadow stack, and the same
+			   lookahead the consuming markers need applies: `if (0)` pushes its
+			   constant in an op whose own snapshot predates it, so without this the
+			   region takes no condition and comes out a child short. */
+			if (ro->tag == RIR_T_RBEGIN && !rir_synth_depth && !rir_call_depth &&
+					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
+					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND)) {
+				int j;
+				for (j = i + 1; j < rir_n; j++)
+					if (rir_ops[j].tag == RIR_T_OP) {
+						rir_reconcile(&rir_ops[j].p);
+						break;
+					}
+			}
 			rir_region(ro);
 			continue;
 		}

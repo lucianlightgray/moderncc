@@ -4296,7 +4296,7 @@ void ast_hook_ret_expr_done(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_RETURN);
+	rir_mark_val(RIR_M_RETURN, has_val);
 	ast_last_return = AST_NONE;
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -4344,6 +4344,7 @@ void ast_hook_return_jmp(int jumps) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_implicit_return(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_IRETURN);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_capture = 0;
