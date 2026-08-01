@@ -911,7 +911,7 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 #endif
 	case JOP_CALL: {
-		AstLocal n = ast_node(rir_arena, AST_Invoke);
+		AstLocal n;
 		int na = o->a0;
 		AstLocal args[32];
 		if (na < 0 || na > 32) {
@@ -952,6 +952,11 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 			}
 		}
+		/* The tree builds each child's Convert while EVALUATING that argument, so
+		   they precede the Invoke in node order. Allocating the Invoke first put
+		   it ahead of its own Converts and showed up as paired Invoke<->Convert
+		   divergences -- 21 and 20 of them in the near-miss class. */
+		n = ast_node(rir_arena, AST_Invoke);
 		for (k = na - 1; k >= 0; k--) {
 			args[k] = rir_pop();
 			if (args[k] == AST_NONE)
