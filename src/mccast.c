@@ -1954,6 +1954,7 @@ static AstLocal ast_tern[16];
 static int ast_tern_top;
 static unsigned char rir_tern_on[16];
 static int rir_tern_n;
+int rir_body_loc_sv;
 static unsigned char rir_lor_on[16];
 static int rir_lor_n;
 static int ast_tern_suppress;
@@ -1987,6 +1988,13 @@ static int ast_loc_low;
 static int ast_locrec_min;
 static int ast_temp_frontier;
 static int jrn_replaying;
+
+#if RIR_DBG_STRUCTCPY
+static int rir_dbg_on(void) {
+	const char *e = getenv("RIRDBG");
+	return e && funcname && !strcmp(e, funcname);
+}
+#endif
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
@@ -15609,7 +15617,26 @@ JRN_W0(gen_cvt_trunc32, JOP_CVT_TRUNC32)
 JRN_W1(gen_cvt_csti, JOP_CVT_CSTI)
 #endif
 #ifdef MCC_JRN_HAVE_STRUCT_COPY
+#if RIR_DBG_STRUCTCPY
+void jrn_gen_struct_copy(int a0) {
+	if (rir_dbg_on())
+		fprintf(stderr,
+						"[scpy] %s phase=%s size=%d dst(r=%x c=%lld t=%x) src(r=%x c=%lld "
+						"t=%x) ind=%d loc=%d func_vc=%d ntlv=%d frontier=%d\n",
+						funcname,
+						rir_c2_active ? "C2" : (jrn_replaying ? "JRN" : "PARSE"), a0,
+						vtop[-1].r, (long long)vtop[-1].c.i, vtop[-1].type.t, vtop[0].r,
+						(long long)vtop[0].c.i, vtop[0].type.t, ind, loc, func_vc,
+						nb_temp_local_vars, ast_temp_frontier);
+	jrn_begin(JOP_STRUCTCOPY, NULL);
+	if (JRN_REC)
+		jrn_pending->a0 = a0;
+	(gen_struct_copy)(a0);
+	jrn_end();
+}
+#else
 JRN_W1(gen_struct_copy, JOP_STRUCTCOPY)
+#endif
 #endif
 JRN_W0(ggoto, JOP_GGOTO)
 JRN_W1(gen_fill_nops, JOP_FILLNOPS)
@@ -16674,6 +16701,11 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	ast_try_active = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
 								!ast_ret_bad;
 	ast_body_ind_sv = ind;
+	/* The frame pointer as the body OPENS. The C2 trial re-runs the emission
+	   from a reconstructed arena, and a struct return allocates its temp
+	   straight off `loc` -- restoring the value from the END of the body made
+	   every one of those allocations land 8 bytes low. */
+	rir_body_loc_sv = loc;
 	rir_tern_n = 0;
 	rir_lor_n = 0;
 	ast_reloc0_sv =

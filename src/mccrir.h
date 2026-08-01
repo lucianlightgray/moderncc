@@ -31,6 +31,8 @@ enum {
 
 extern int rir_env;
 extern int rir_active;
+extern int rir_c2_active;
+extern int rir_body_loc_sv;
 extern int rir_started;
 
 void rir_snap_types(SValue *sv, int n);
@@ -122,6 +124,7 @@ void rir_vla_begin(void);
 #define rir_mark_vla(t, r, a, n, l) ((void)0)
 #define rir_vla_begin() ((void)0)
 #define rir_env 0
+#define rir_c2_active 0
 #define rir_snap_types(sv, n) ((void)0)
 
 #endif

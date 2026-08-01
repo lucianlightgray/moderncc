@@ -48,6 +48,7 @@ typedef struct RirMark {
 
 int rir_env;
 int rir_active;
+int rir_c2_active;
 int rir_started;
 
 static const char *rir_out;
@@ -2842,7 +2843,10 @@ void rir_verify(void) {
 		rir_c2_msg[0] = 0;
 		memcpy(vstack - 1, vsave, sizeof(SValue) * (VSTACK_SIZE + 1));
 		vtop = vstack + saved_vn - 1;
-		loc = saved_loc;
+		/* Not saved_loc: that is the frame pointer at the END of the body, so a
+		   struct return's temp allocated during the trial landed one slot below
+		   the parser's. Start where the body started. */
+		loc = rir_body_loc_sv;
 		anon_sym = saved_anon;
 		ast_pinned_regs = saved_pin;
 		ast_rp_bsym = NULL;
@@ -2882,9 +2886,11 @@ void rir_verify(void) {
 				ast_arena_free(c3);
 				ast_tmpl_folds = 0;
 			}
+			rir_c2_active = 1;
 			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
 													? ast_cur
 													: rir_arena);
+			rir_c2_active = 0;
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2part] %s heq=%d ok=%d\n", funcname,
 					rir_body_hasheq,
@@ -2904,6 +2910,16 @@ void rir_verify(void) {
 							d = q;
 							break;
 						}
+					/* The JOURNAL is byte-correct on every one of these bodies, so the
+					   op it was executing at the first divergent byte names what the
+					   arena got wrong. This is the same oracle MCC_JOURNAL_ORACLE gives
+					   the tree, pointed at the C2 emission instead of the replay. */
+					{
+						int bi = rir_blame(d);
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d\n",
+										funcname, d,
+										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
+					}
 					fprintf(stderr, "[rir-c2byte] %s len=%d firstdiff=%d\n  parser:",
 									funcname, body_len, d);
 					for (q = 0; q < body_len && q < 48; q++)
@@ -2932,6 +2948,12 @@ void rir_verify(void) {
 					if (fd < 0)
 						fd = lim;
 					from = fd > 8 ? fd - 8 : 0;
+					{
+						int bi = rir_blame(fd);
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d\n",
+										funcname, fd,
+										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
+					}
 					fprintf(stderr, "[rir-c2len] %s want=%d got=%d firstdiff=%d\n  parser:",
 									funcname, body_len, gl, fd);
 					for (q = from; q < body_len && q < from + 40; q++)
