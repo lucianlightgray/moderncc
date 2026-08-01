@@ -11469,7 +11469,7 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 		gvtst_set(i, t);
 	}
 #if MCC_CONFIG_OPTIMIZER
-	ast_hook_landor_end(cc || f);
+	ast_hook_landor_end((cc || f) ? (2 | (i ^ f)) : 0);
 #endif
 }
 

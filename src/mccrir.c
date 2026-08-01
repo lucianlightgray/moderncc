@@ -706,6 +706,11 @@ static int rir_effectful(AstLocal n) {
 	   the shadow stack it was orphaned and the body emitted nothing at all. */
 	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
 		return 1;
+	/* A short-circuit whose fold materialised a constant still emitted a real
+	   gvtst per operand parsed before the fold, so discarding it off the shadow
+	   stack loses that jump chain -- the same shape as the discarded ternary. */
+	if (k == AST_Binary && (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL))
+		return 1;
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 	if (rir_has_atomic(n, 0))
 		return 1;
@@ -1729,6 +1734,8 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_LOAD:
+		if (rir_after_ret && rir_shn == 0)
+			break;
 		/* An integer->pointer cast before a dereference emits no code, so no op
 		   records it and the operand node stays UNTYPED -- the tree builds
 		   Convert(->VT_PTR, Binary(+/-, ..)) under its Load, Replay_IR built the
@@ -2267,10 +2274,17 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_LANDOR:
 		if (rir_lorn) {
 			AstLocal n = rir_lor[--rir_lorn];
-			/* rval bit 0 is the materialised ending; bit 1 says the chain's leading
-			   operands folded away, so a single surviving operand is the whole
-			   region and not a half-built one. */
-			if ((ro->rval & 1) ||
+			/* rval bit 0 is the materialised ending, bit 1 says the chain's leading
+			   operands folded away, bit 2 carries the constant expr_landor pushed.
+			   A materialised tail is modelled rather than dropped: the parser still
+			   emitted a real gvtst per operand parsed before the fold, and dropping
+			   the region loses that jump chain. */
+			if ((ro->rval & 1) && ast_nchild(rir_arena, n) >= 1) {
+				ast_set_fbits(rir_arena, n,
+											ast_fbits(rir_arena, n) | AST_FB_LANDOR_MATERIAL);
+				ast_set_ival(rir_arena, n, (uint64_t)((ro->rval >> 2) & 1));
+				rir_push(n);
+			} else if ((ro->rval & 1) ||
 					ast_nchild(rir_arena, n) < ((ro->rval & 2) ? 1 : 2))
 				rir_arena_mismatch++;
 			else
@@ -2464,7 +2478,7 @@ static int rir_emit_safe(void) {
 			   is strictly two-operand. */
 			int bop = ast_op(rir_arena, n);
 			if (bop == TOK_LAND || bop == TOK_LOR) {
-				if (nc < 2)
+				if (nc < (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL ? 1u : 2u))
 					return rir_unsafe("Binary-landor", n, nc);
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 			} else if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||

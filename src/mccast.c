@@ -66,6 +66,7 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #define AST_FB_STORE_CHAIN_SKIP 1024u
 
 #define AST_FB_STORE_LIVE_ROT 2048u
+#define AST_FB_LANDOR_MATERIAL 4096u
 
 struct AstArena {
 	uint16_t *kind;
@@ -3216,7 +3217,8 @@ void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 		rir_lor_n--;
 		if (rir_lor_on[rir_lor_n] == 1)
 			{ MCC_TRACE("br\n"); rir_rend_to_val(RIR_R_LANDOR,
-					(materialized ? 1 : 0) | (rir_lor_late[rir_lor_n] ? 2 : 0)); }
+					(materialized ? 1 : 0) | (rir_lor_late[rir_lor_n] ? 2 : 0) |
+							((materialized & 1) ? 4 : 0)); }
 	}
 	if (ast_lor_suppress) { MCC_TRACE("br\n");
 		ast_lor_suppress--;
@@ -6497,6 +6499,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
+			if (ast_fbits(a, n) & AST_FB_LANDOR_MATERIAL) { MCC_TRACE("br\n");
+				for (k = 0; k < nc; k++) { MCC_TRACE("br\n");
+					ast_replay_value(a, ast_child(a, n, k));
+					save_regs(1);
+					t = gvtst(i, t);
+				}
+				vpushi((int)(int64_t)ast_ival(a, n));
+				gsym(t);
+				break;
+			}
 			for (k = 0; k < nc; k++) { MCC_TRACE("br\n");
 				ast_replay_value(a, ast_child(a, n, k));
 				save_regs(1);
@@ -6941,13 +6953,20 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 		case AST_BasicBlock:
 			ast_replay_bb(a, s);
 			break;
-#ifdef MCC_JRN_HAVE_X86_PRIMS
 		case AST_Binary:
+			if (ast_fbits(a, s) & AST_FB_LANDOR_MATERIAL) { MCC_TRACE("br\n");
+				ast_replay_value(a, s);
+				vpop();
+				break;
+			}
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 			if (ast_has_atomic(a, s, 0)) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
 				vpop();
 			}
+#endif
 			break;
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 		case AST_Convert:
 			if (ast_has_atomic(a, s, 0)) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
