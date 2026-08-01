@@ -3422,6 +3422,8 @@ void ast_hook_for_incr_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_for_no_incr(void) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_INCR);
+	rir_rend_to(RIR_R_INCR);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_cf_top < 1)

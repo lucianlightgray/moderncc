@@ -1037,8 +1037,18 @@ static int rir_emit_safe(void) {
 			   with no type ref, or one that is not a function, faults there. */
 			if (ast_type_ref(rir_arena, callee) == 0)
 				return rir_unsafe("Invoke-callee-noref", n, nc);
-			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC)
-				return rir_unsafe("Invoke-callee-notfunc", n, nc);
+			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC) {
+				/* An indirect call's callee is a pointer to function, which
+				   ast_replay_value's AST_Invoke arm retypes through pointed_type
+				   before gfunc_call sees it. Only a callee that reaches neither
+				   shape is unsafe. */
+				const Sym *r =
+						(const Sym *)(uintptr_t)ast_type_ref(rir_arena, callee);
+				if ((ast_type_t(rir_arena, callee) & (VT_BTYPE | VT_ARRAY)) !=
+								VT_PTR ||
+						(r->type.t & VT_BTYPE) != VT_FUNC)
+					return rir_unsafe("Invoke-callee-notfunc", n, nc);
+			}
 			break;
 		}
 		case AST_Return: {
