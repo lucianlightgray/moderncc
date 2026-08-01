@@ -504,7 +504,7 @@ static void rir_c2_sink(void *opaque, const char *msg) {
 static long rir_kindhist[AST_KIND_COUNT], rir_treekindhist[AST_KIND_COUNT];
 
 static AstLocal rir_leaf(const SValue *sv) {
-	int is_const = (sv->r & (VT_VALMASK | VT_LVAL)) == VT_CONST;
+	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
 	ast_set_op(rir_arena, n, sv->r);
 	ast_set_type(rir_arena, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
