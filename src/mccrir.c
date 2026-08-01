@@ -1470,6 +1470,12 @@ static void rir_mark_apply(const RirOp *ro) {
 		if (rir_last_return != AST_NONE)
 			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
 		rir_last_return = AST_NONE;
+		/* The return statement is over once its jump is emitted, so the
+		   post-return guard ends here too. What runs next can be a whole new
+		   statement: a switch emits its DISPATCH chain after the arms, and with
+		   the flag still set from the last arm's `return` the chain's first genop
+		   got no refill -- the residual mismatch in cmp_invert.c ref and inv. */
+		rir_after_ret = 0;
 		break;
 	case RIR_M_JUMP:
 		/* ast_replay_bb dispatches AST_Jump on its op: 0 break, 1 continue,
