@@ -682,6 +682,22 @@ static void rir_flush_pending_call(void) {
 	rir_pending_call = AST_NONE;
 }
 
+static int rir_cvt_next;
+
+static int rir_is_cvt(int kind) {
+	switch (kind) {
+	case JOP_CVT_ITOF:
+	case JOP_CVT_FTOF:
+	case JOP_CVT_FTOI:
+	case JOP_CVT_SXTW:
+	case JOP_CVT_TRUNC32:
+	case JOP_CVT_CSTI:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -724,6 +740,13 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	   Binary as the tree has it. Admission is by SIZE: an unexplained type
 	   difference that does not change the width is representation drift, not a
 	   cast, and wrapping those is measured worse. */
+	/* A cast that DOES emit gets its Convert from the op itself, and the parser
+	   retypes the value before emitting -- so the boundary in front of that op
+	   shows the post-cast type over a node still carrying the pre-cast one, and
+	   this loop wrapped the same cast a second time. `return (int)(long)i;` came
+	   out three Converts deep against the tree's two. */
+	if (rir_cvt_next)
+		return;
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v = &base[ast_base_depth + k];
 		AstLocal cur = rir_sh[k];
@@ -1928,7 +1951,9 @@ static void rir_to_arena(void) {
 		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
 				rir_retexpr_pending)
 			continue;
+		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);
+		rir_cvt_next = 0;
 		rir_op_effect(ro);
 	}
 	rir_flush_pending_call();
