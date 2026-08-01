@@ -5285,7 +5285,14 @@ if(MCC_BUILD_TESTS)
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/static/smoke.c")
-        if(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
+        if(MCC_CC_NAME STREQUAL "mcc" AND MCC_CPU STREQUAL "x86_64")
+            # x86_64 self-host: mcc lacks __float128, so it cannot compile
+            # runtime/lib/float128.c and the mcc-built mccrt has no
+            # __unordtf2/__letf2. A static exe (no libgcc) then cannot resolve
+            # the TF-mode long-double helpers mcc's x86_64 codegen emits. See
+            # the "x86_64 self-host __float128" item in docs/TODO.md.
+            mcc_skip_test(static-glibc-run "x86_64 self-host: mcc-built mccrt lacks __unordtf2/__letf2 (no __float128); a static TF-helper link is unresolved")
+        elseif(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
            AND MCC_TARGETOS STREQUAL "Linux" AND MCC_CPU STREQUAL "x86_64")
             execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
                 OUTPUT_VARIABLE _static_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
@@ -5308,7 +5315,12 @@ if(MCC_BUILD_TESTS)
         if(NOT MCC_EMULATOR AND MCC_TARGETOS STREQUAL "Linux"
            AND MCC_CPU STREQUAL "x86_64")
             set(_tls_static 0)
-            if(NOT MCC_BUILD_MUSL)
+            # The static TLS variant needs the same x86_64 TF-helper static link
+            # static-glibc-run does, so an mcc-built (self-host) mccrt cannot
+            # resolve it (no __float128 -> no float128.o). Run only the dynamic
+            # TLS models under CC=mcc; the static variant stays covered by the
+            # gcc/clang-built cells. (docs/TODO.md: x86_64 self-host __float128.)
+            if(NOT MCC_BUILD_MUSL AND NOT MCC_CC_NAME STREQUAL "mcc")
                 execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
                     OUTPUT_VARIABLE _tls_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
                 if(_tls_libc AND EXISTS "${_tls_libc}")
