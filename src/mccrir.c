@@ -3,6 +3,8 @@
 
 enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 
+#define RIR_NOEVAL_MASK 0x0000FFFF
+
 #define RIR_PT_NONE (-1)
 #define RIR_PT_HERE (-2)
 #define RIR_SHIFT 64
@@ -23,6 +25,7 @@ typedef struct RirOp {
 	int lbl, lbl2;
 	int pt;
 	int rval;
+	int rnocode;
 	long long rv1, rv2, rv3;
 	int mvs_off, mvs_n;
 	JrnOp p;
@@ -37,6 +40,7 @@ typedef struct RirMark {
 	int tag;
 	int kind;
 	int val;
+	int nocode;
 	long long v1, v2, v3;
 	int at;
 	int vs_off, vs_n;
@@ -123,6 +127,12 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	m->tag = tag;
 	m->kind = kind;
 	m->val = val;
+	/* The dead arm of `1 ? live : ({ while (1) ... })` is parsed with
+	   nocode_wanted set and emits nothing, and the op filter already drops its
+	   primitives -- but its region and point markers were still applied, so the
+	   reconstruction built a real loop for it and emitted a backward jump the
+	   parser never wrote (`eb fe`). */
+	m->nocode = nocode_wanted;
 	m->v1 = a;
 	m->v2 = b;
 	m->at = jrn_n;
@@ -484,6 +494,7 @@ static void rir_build(void) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
+			o->rnocode = rir_marks[m].nocode;
 			o->rv3 = rir_marks[m].v3;
 			o->rv1 = rir_marks[m].v1;
 			o->rv2 = rir_marks[m].v2;
@@ -2279,6 +2290,24 @@ static void rir_to_arena(void) {
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
+		/* A construct parsed with nocode_wanted set emits nothing -- the dead arm
+		   of `1 ? live : ({ while (1) ... })`. The op filter already drops its
+		   primitives; without dropping its control-flow regions too the
+		   reconstruction builds a real loop for it and emits the backward jump
+		   the parser never wrote (`eb fe`). Scoped to control flow: nocode_wanted
+		   is also set transiently after a return, where the markers are still
+		   load-bearing. */
+		/* A construct parsed in an UNEVALUATED context emits nothing -- the dead
+		   arm of `1 ? live : ({ while (1) ... })`. The op filter already drops its
+		   primitives; its regions and markers were still applied, so the
+		   reconstruction built a real loop for it and emitted the backward jump
+		   the parser never wrote (`eb fe`). The mask matters and was measured:
+		   raw nocode_wanted costs 105 bodies and the control-flow-region subset
+		   101, because CODE_OFF is also set transiently after a return where
+		   these markers are load-bearing. Only the NOEVAL bits mean "parsed but
+		   not evaluated". */
+		if (ro->tag != RIR_T_OP && (ro->rnocode & RIR_NOEVAL_MASK))
+			continue;
 		if (ro->tag != RIR_T_MARK || ro->rkind != RIR_M_CASTGV)
 			rir_castgv_apply();
 		if (ro->tag == RIR_T_MARK) {
