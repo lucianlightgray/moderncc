@@ -867,6 +867,27 @@ static int rir_child_has_type(AstLocal n, int st) {
 	return 0;
 }
 
+static int rir_child_width_differs(AstLocal n, int st) {
+	int i, nc = ast_nchild(rir_arena, n), al, ss;
+	CType a1, b1;
+	b1.t = st;
+	b1.ref = NULL;
+	ss = type_size(&b1, &al);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		if (c == AST_NONE)
+			continue;
+		a1.t = ast_type_t(rir_arena, c);
+		if (a1.t == 0 || (a1.t & VT_BTYPE) == VT_STRUCT ||
+				(a1.t & VT_BTYPE) == VT_FUNC)
+			continue;
+		a1.ref = (Sym *)(uintptr_t)ast_type_ref(rir_arena, c);
+		if (type_size(&a1, &al) != ss)
+			return 1;
+	}
+	return 0;
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -1056,10 +1077,15 @@ static void rir_op_effect(const RirOp *ro) {
 		   Convert(->VT_LLONG, Binary(-, ..)) as the left operand. The node is an
 		   UNTYPED AST_Binary by design, so a rule keyed on the node's own type
 		   cannot see it; this op's own snapshot is the witness. */
-		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2 &&
-				jrn_vs[o->vs_off + o->vs_n - 1].type.t !=
-						jrn_vs[o->vs_off + o->vs_n - 2].type.t) {
-			int q;
+		/* The two operands agreeing does NOT mean neither was cast: a constant
+		   fold and the explicit cast over it both emit nothing, so `i < (int)(sizeof
+		   a / sizeof a[0])` reaches gen_op with an untyped Binary whose children
+		   are size_t and a snapshot that says int, and re-derived as unsigned long
+		   it came out as a 64-bit unsigned compare. Admit that by WIDTH, so the
+		   same-type case only wraps where a real narrowing or widening happened. */
+		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
+			int q, opdiff = jrn_vs[o->vs_off + o->vs_n - 1].type.t !=
+											jrn_vs[o->vs_off + o->vs_n - 2].type.t;
 			for (q = 0; q < 2; q++) {
 				AstLocal cur = rir_sh[rir_shn - 1 - q];
 				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
@@ -1076,6 +1102,8 @@ static void rir_op_effect(const RirOp *ro) {
 				   into it -- `arg_sink += v * w` wrapped its int Binary in an int
 				   Convert the tree does not have. VT_DEFSIGN is spelling, not type. */
 				if (rir_child_has_type(cur, st))
+					continue;
+				if (!opdiff && !rir_child_width_differs(cur, st))
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
@@ -1481,6 +1509,7 @@ static int rir_vla_depth;
    the compare after. While either region has a node under construction, keep
    the Store on the shadow stack so the operand binding takes it. */
 static AstLocal rir_tern[16];
+static int rir_tern_cf[16];
 static AstLocal rir_lor[16];
 /* `a[3]` is pointer arithmetic that ends at the same pointer type it started
    from, and the tree holds a bare Binary under its Load. `*(T *)(base + off)`
@@ -1841,7 +1870,8 @@ static void rir_region(const RirOp *ro) {
 			   lowering, and reconciling there materialises a stray leaf that
 			   displaces the ternary node on the shadow stack. */
 			if (rir_cfn && (rir_cfkind[rir_cfn - 1] == RIR_R_FOR ||
-											rir_cfkind[rir_cfn - 1] == RIR_R_DO)) {
+											rir_cfkind[rir_cfn - 1] == RIR_R_DO) &&
+					!(rir_ternn && rir_tern_cf[rir_ternn - 1] == rir_cfn)) {
 				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				rir_cf_cond();
 			}
@@ -2025,8 +2055,10 @@ static void rir_region(const RirOp *ro) {
 				ast_add_child(rir_arena, n, cond);
 			else
 				rir_arena_mismatch++;
-			if (rir_ternn < 16)
+			if (rir_ternn < 16) {
+				rir_tern_cf[rir_ternn] = rir_cfn;
 				rir_tern[rir_ternn++] = n;
+			}
 			break;
 		}
 		case RIR_R_INCR:
@@ -2199,7 +2231,11 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_LANDOR:
 		if (rir_lorn) {
 			AstLocal n = rir_lor[--rir_lorn];
-			if (ro->rval || ast_nchild(rir_arena, n) < 2)
+			/* rval bit 0 is the materialised ending; bit 1 says the chain's leading
+			   operands folded away, so a single surviving operand is the whole
+			   region and not a half-built one. */
+			if ((ro->rval & 1) ||
+					ast_nchild(rir_arena, n) < ((ro->rval & 2) ? 1 : 2))
 				rir_arena_mismatch++;
 			else
 				/* A short-circuit region is an AST_Binary, and the tree leaves those

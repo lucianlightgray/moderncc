@@ -1956,6 +1956,7 @@ static unsigned char rir_tern_on[16];
 static int rir_tern_n;
 int rir_body_loc_sv;
 static unsigned char rir_lor_on[16];
+static unsigned char rir_lor_late[16];
 static int rir_lor_n;
 static int ast_tern_suppress;
 /* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
@@ -3099,13 +3100,26 @@ void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
 void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 	if (first) { MCC_TRACE("br\n");
 		if (rir_lor_n < 16) { MCC_TRACE("br\n");
-			rir_lor_on[rir_lor_n] = (unsigned char)(c < 0);
-			if (rir_lor_on[rir_lor_n])
+			rir_lor_on[rir_lor_n] = (unsigned char)(c < 0 ? 1
+					: (c == (op == TOK_LAND) && tok == op) ? 2 : 0);
+			rir_lor_late[rir_lor_n] = 0;
+			if (rir_lor_on[rir_lor_n] == 1)
 				{ MCC_TRACE("br\n"); rir_rbegin_val(RIR_R_LANDOR, op); }
 			rir_lor_n++;
 		}
+	} else if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 2 && c < 0 &&
+			tok == op) { MCC_TRACE("br\n");
+		/* A chain whose leading operands fold to the identity -- `sizeof x == 4 &&
+		   a && b` -- emits code for the survivors only: the parser vpops each
+		   folded slot before the next operand is parsed. Opening the region at the
+		   first SURVIVING operand lets those vpops clear the shadow stack on their
+		   own, and keeps a chain that folds away ENTIRELY out of the region path,
+		   where its materialised ending would read as a reconstruction defect. */
+		rir_lor_on[rir_lor_n - 1] = 1;
+		rir_lor_late[rir_lor_n - 1] = 1;
+		rir_rbegin_val(RIR_R_LANDOR, op);
 	}
-	if (rir_lor_n && rir_lor_on[rir_lor_n - 1]) { MCC_TRACE("br\n");
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1) { MCC_TRACE("br\n");
 		rir_rbegin(RIR_R_LOPND);
 		rir_rend_to_val(RIR_R_LOPND, 0);
 		rir_rbegin(RIR_R_LSUP);
@@ -3174,7 +3188,7 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
-	if (rir_lor_n && rir_lor_on[rir_lor_n - 1])
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1)
 		{ MCC_TRACE("br\n"); rir_rend_to(RIR_R_LSUP); }
 	if (ast_lor_suppress)
 		{ MCC_TRACE("br\n"); return; }
@@ -3193,8 +3207,9 @@ void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
 void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 	if (rir_lor_n) { MCC_TRACE("br\n");
 		rir_lor_n--;
-		if (rir_lor_on[rir_lor_n])
-			{ MCC_TRACE("br\n"); rir_rend_to_val(RIR_R_LANDOR, materialized); }
+		if (rir_lor_on[rir_lor_n] == 1)
+			{ MCC_TRACE("br\n"); rir_rend_to_val(RIR_R_LANDOR,
+					(materialized ? 1 : 0) | (rir_lor_late[rir_lor_n] ? 2 : 0)); }
 	}
 	if (ast_lor_suppress) { MCC_TRACE("br\n");
 		ast_lor_suppress--;
@@ -7261,14 +7276,15 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); ast_inline_ret_sym = gjmp(ast_inline_ret_sym); }
 				break;
 			}
+			int rloc = (int)(int64_t)ast_ival(a, s);
 			if (v != AST_NONE) { MCC_TRACE("br\n");
 				ast_replay_value(a, v);
 				gen_assign_cast(&func_vt);
-				int rloc = (int)(int64_t)ast_ival(a, s);
-				if (rloc)
-					{ MCC_TRACE("br\n"); gen_vla_sp_restore(rloc); }
-				gfunc_return(&func_vt);
 			}
+			if (rloc)
+				{ MCC_TRACE("br\n"); gen_vla_sp_restore(rloc); }
+			if (v != AST_NONE)
+				{ MCC_TRACE("br\n"); gfunc_return(&func_vt); }
 			if (ast_op(a, s) == 1)
 				{ MCC_TRACE("br\n"); rsym = gjmp(rsym); }
 			break;
