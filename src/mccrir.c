@@ -656,6 +656,7 @@ static void rir_push_typed(AstLocal n) {
    single-slot integer return from a float or struct one, and aborts 17 corpus
    files. */
 static AstLocal rir_pending_call = AST_NONE;
+static AstLocal rir_pending_ret = AST_NONE;
 static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
 static short rir_vst_shn[16];
@@ -1097,7 +1098,6 @@ static int rir_ternn;
 static AstLocal rir_lor[16];
 static int rir_lorn;
 static AstLocal rir_last_return = AST_NONE;
-static AstLocal rir_pending_ret = AST_NONE;
 
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
@@ -1449,6 +1449,17 @@ static void rir_region(const RirOp *ro) {
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
+			/* gfunc_return copies a struct result through vstore(), so the return
+			   statement opens a RIR_R_VSTORE region of its own. The tree records none
+			   of it -- its arena for `return s1;` is Return(Ref) alone and
+			   ast_replay_value re-runs gfunc_return itself -- so rebuilding it adds a
+			   Store the tree does not have and desynchronises the shadow stack. A
+			   pending Return is exactly that case and nothing else. */
+			if (rir_pending_ret != AST_NONE) {
+				if (rir_vst_shn[rir_vstn] >= 0 && rir_shn > rir_vst_shn[rir_vstn])
+					rir_shn = rir_vst_shn[rir_vstn];
+				break;
+			}
 			if (rir_vst_shn[rir_vstn] >= 2 && rir_shn > rir_vst_shn[rir_vstn])
 				rir_shn = rir_vst_shn[rir_vstn];
 			if (!seen && allow && rir_shn >= 2) {
