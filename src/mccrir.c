@@ -722,6 +722,15 @@ static void rir_flush_pending_call(void) {
 }
 
 static int rir_cvt_next;
+/* ast_hook_cast_gv fires one step ahead of the op that lowers the cast, so the
+   Convert it annotates may not exist yet: hold the mark for one entry, then
+   either set the bit on the Convert the op built or -- for an identity cast,
+   which emits no op at all -- build the type-preserving Convert the tree has.
+   `printf("%llx", (unsigned long long)ull)` is that case, and the Convert is
+   not inert: gen_cast materialises, which is the 8 bytes promote_main lost. */
+static int rir_castgv_pend;
+static int rir_castgv_t;
+static uint64_t rir_castgv_ref;
 
 static int rir_is_cvt(int kind) {
 	switch (kind) {
@@ -1446,6 +1455,12 @@ static void rir_mark_apply(const RirOp *ro) {
 			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert)
 				ast_set_fbits(rir_arena, top,
 											ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
+			else if (ro->mvs_n - ast_base_depth > 0) {
+				const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+				rir_castgv_pend = 2;
+				rir_castgv_t = pv->type.t;
+				rir_castgv_ref = (uint64_t)(uintptr_t)pv->type.ref;
+			}
 		}
 		break;
 	case RIR_M_CONVERT:
@@ -2025,6 +2040,39 @@ static int rir_emit_safe(void) {
 }
 #endif
 
+static void rir_castgv_apply(void) {
+	AstLocal top, cv;
+	if (!rir_castgv_pend || --rir_castgv_pend)
+		return;
+	if (rir_shn <= 0)
+		return;
+	top = rir_sh[rir_shn - 1];
+	if (top == AST_NONE || rir_shtype[rir_shn - 1])
+		return;
+	if (ast_kind(rir_arena, top) == AST_Convert) {
+		ast_set_fbits(rir_arena, top,
+									ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
+		return;
+	}
+	/* Only a node still on the shadow stack and not yet attached anywhere can be
+	   wrapped: re-parenting one the model has already placed makes the arena a
+	   DAG, which ast_validate rejects as a parent link mismatch. */
+	if (ast_parent(rir_arena, top) != AST_NONE)
+		return;
+	cv = ast_node(rir_arena, AST_Convert);
+	ast_set_type(rir_arena, cv, rir_castgv_t, rir_castgv_ref);
+	ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
+	ast_add_child(rir_arena, cv, top);
+	rir_sh[rir_shn - 1] = cv;
+	/* Any handle the model is holding for later attachment has to move with it,
+	   or the Return attaches the operand the Convert now owns and the arena has
+	   two parents for one node. */
+	if (rir_retexpr == top)
+		rir_retexpr = cv;
+	if (rir_pending_call == top)
+		rir_pending_call = cv;
+}
+
 static void rir_to_arena(void) {
 	int i;
 	if (!rir_arena)
@@ -2049,10 +2097,13 @@ static void rir_to_arena(void) {
 	rir_opassign_pending = 0;
 	rir_retexpr = AST_NONE;
 	rir_retexpr_pending = 0;
+	rir_castgv_pend = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
+		if (ro->tag != RIR_T_MARK || ro->rkind != RIR_M_CASTGV)
+			rir_castgv_apply();
 		if (ro->tag == RIR_T_MARK) {
 			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
 			/* RIR_M_NORETURN fires INSIDE the call region it annotates, so it is
