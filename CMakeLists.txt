@@ -2830,7 +2830,12 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         VERBATIM)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccjit_blob.c")
     target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_BLOB=1)
-    if(MCC_TARGETOS STREQUAL "WIN32")
+    if(MCC_CC_NAME STREQUAL "mcc")
+        # Self-host: the engine blob is compiled by mcc itself and references
+        # only mcc's own runtime, so there is no gcc/mingw libdir to bake --
+        # and probing mcc with -print-libgcc-file-name below just prints an
+        # invalid-option error on every self-host configure.
+    elseif(MCC_TARGETOS STREQUAL "WIN32")
         # The blob is the JIT engine compiled by the host mingw gcc, so it
         # references that toolchain's runtime (libmingwex __mingw_*/ldexpl,
         # libgcc __chkstk_ms, ucrt/kernel32 import stubs). Bake the toolchain lib
