@@ -2151,6 +2151,12 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_IMAG 0x40003
 #define AST_OP_VLA 0x40004
 #define AST_OP_VLA_RESTORE 0x40005
+/* Inline asm: the journal already records the post-substitution template text
+   and the operand/clobber blob, and is byte-faithful on every asm body, so the
+   arena only has to carry a handle to that payload and re-issue the same two
+   calls. ival packs the raw offset and length, sym the two int arguments. */
+#define AST_OP_ASMGEN 0x4001a
+#define AST_OP_ASM 0x4001b
 #define AST_OP_MULHU 0x40006
 #define AST_OP_MULHS 0x40007
 #define AST_OP_FABS 0x40008
@@ -4550,6 +4556,11 @@ static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 #endif
 
 #if MCC_CONFIG_OPTIMIZER
+#if MCC_CONFIG_ASM
+/* Defined with the journal's raw store below; the inline-asm replay arms in
+   ast_replay_bb need it and sit above that point. */
+static unsigned char *jrn_raw;
+#endif
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
 static int ast_local_is_readonly(AstArena *a, int off);
@@ -6887,6 +6898,37 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				gen_vla_sp_restore((int)(int64_t)ast_ival(a, s));
 				break;
 			}
+#if MCC_CONFIG_ASM
+			if (ast_op(a, s) == AST_OP_ASMGEN) { MCC_TRACE("br\n");
+				ASMOperand ops[MAX_ASM_OPERANDS];
+				uint8_t cr[MCC_NB_ASM_REGS];
+				const unsigned char *p = jrn_raw + (int)(ast_ival(a, s) & 0xffffffff);
+				int nb_operands, nb_outputs;
+				memcpy(&nb_operands, p, sizeof nb_operands);
+				memcpy(&nb_outputs, p + sizeof(int), sizeof nb_outputs);
+				p += 2 * sizeof(int);
+				if (nb_operands > 0)
+					{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nb_operands * sizeof *ops); }
+				p += (size_t)nb_operands * sizeof *ops;
+				memcpy(cr, p, sizeof cr);
+				asm_gen_code(ops, nb_operands, nb_outputs,
+										 (int)(ast_sym(a, s) & 0xffffffff), cr,
+										 (int)(ast_sym(a, s) >> 32));
+				break;
+			}
+			if (ast_op(a, s) == AST_OP_ASM) { MCC_TRACE("br\n");
+				int sv_tok = tok;
+				CValue sv_tokc = tokc;
+				mcc_assemble_inline(mcc_state,
+														(const char *)(jrn_raw +
+																					 (int)(ast_ival(a, s) & 0xffffffff)),
+														(int)(ast_ival(a, s) >> 32),
+														(int)(ast_sym(a, s) & 0xffffffff));
+				tok = sv_tok;
+				tokc = sv_tokc;
+				break;
+			}
+#endif
 			ast_replay_value(a, s);
 			vpop();
 			break;

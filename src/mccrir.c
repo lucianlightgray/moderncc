@@ -1323,6 +1323,26 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push_typed(n);
 		break;
 	}
+#if MCC_CONFIG_ASM
+	case JOP_ASMGEN:
+	case JOP_ASM: {
+		/* Both asm primitives are parse-time and the journal already records the
+		   whole payload -- the operand/clobber blob for one, the post-substitution
+		   template for the other -- and replays them byte-faithfully. The arena
+		   only needs a handle to it: ival packs the raw offset and length, sym the
+		   two int arguments. Statements, so no operands are consumed. */
+		AstLocal u = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, u,
+							 o->kind == JOP_ASMGEN ? AST_OP_ASMGEN : AST_OP_ASM);
+		ast_set_ival(rir_arena, u,
+								 (uint64_t)(unsigned)o->raw_off |
+										 ((uint64_t)(unsigned)o->raw_len << 32));
+		ast_set_sym(rir_arena, u,
+								(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
+		rir_stmt(u);
+		break;
+	}
+#endif
 	case JOP_ADDROF: {
 		AstLocal a = rir_pop(), n;
 		if (a == AST_NONE) {
@@ -2196,7 +2216,9 @@ static int rir_emit_safe(void) {
 			/* A VLA declaration and its stack restore are childless statements --
 			   ast_replay_bb reads everything they need off the node itself. */
 			if ((ast_op(rir_arena, n) == AST_OP_VLA ||
-					 ast_op(rir_arena, n) == AST_OP_VLA_RESTORE) &&
+					 ast_op(rir_arena, n) == AST_OP_VLA_RESTORE ||
+					 ast_op(rir_arena, n) == AST_OP_ASMGEN ||
+					 ast_op(rir_arena, n) == AST_OP_ASM) &&
 					nc == 0)
 				break;
 			if (nc != 1)
