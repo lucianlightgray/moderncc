@@ -24,6 +24,7 @@ enum {
 	RIR_R_TARM,
 	RIR_R_LSUP,
 	RIR_R_LOPND,
+	RIR_R_VSTORE,
 	RIR_R_COUNT
 };
 
@@ -79,6 +80,7 @@ void rir_mark_val2(int kind, long long a, long long b);
 #define RIR_R_TARM 0
 #define RIR_R_LSUP 0
 #define RIR_R_LOPND 0
+#define RIR_R_VSTORE 0
 #define RIR_M_RETURN 0
 #define RIR_M_JUMP 0
 #define RIR_M_LOAD 0

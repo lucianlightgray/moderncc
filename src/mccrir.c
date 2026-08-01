@@ -91,7 +91,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd"};
+			"lopnd", "vstore"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -575,6 +575,9 @@ static void rir_push_typed(AstLocal n) {
    single-slot integer return from a float or struct one, and aborts 17 corpus
    files. */
 static AstLocal rir_pending_call = AST_NONE;
+static unsigned char rir_vst_seen[16];
+static unsigned char rir_vst_ok[16];
+static int rir_vstn;
 
 static void rir_flush_pending_call(void) {
 	if (rir_pending_call == AST_NONE)
@@ -683,6 +686,8 @@ static void rir_op_effect(const RirOp *ro) {
 		   parser used -- one address computation, dup, op, store -- instead of the
 		   naive two-address form. It is only a hint; that arm still checks the
 		   shape and the lval's purity itself. */
+		if (rir_vstn)
+			rir_vst_seen[rir_vstn - 1] = 1;
 		if (rir_opassign_pending)
 			ast_set_op(rir_arena, n, AST_OP_OPASSIGN);
 		rir_opassign_pending = 0;
@@ -975,6 +980,36 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_LSUP:
 			rir_cond_depth++;
 			break;
+		case RIR_R_VSTORE:
+			/* jrn_vstore records JOP_VSTORE only when neither operand is a struct,
+			   an array or a bitfield, so a string-literal initialiser reaches the
+			   stream as bare gv + store primitives and no Store node is built.
+			   vstore() itself is the 1:1 tap. The admission test has to read the
+			   MARKER's own snapshot, not the reconstructed nodes: their types are
+			   deferred and read 0 here, which is why guarding on the node let a
+			   struct vstore through and segfaulted struct_init.c. Struct and
+			   bitfield operands stay out — replay runs after sym_free has
+			   clobbered function-local type Syms and their type.ref dangles. */
+			if (rir_vstn < 16) {
+				int n2 = ro->mvs_n - ast_base_depth;
+				int allow = 0;
+				if (n2 >= 2) {
+					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
+					/* Narrowed to the case this exists for: an ARRAY value, i.e. the
+					   string-literal initialiser jrn_vstore declines on its array
+					   test. Admitting every non-struct non-bitfield vstore also
+					   rebuilds ones the primitive path already handled and costs
+					   13 bodies net. */
+					allow = (v->type.t & VT_ARRAY) != 0 &&
+									(v->type.t & VT_BTYPE) != VT_STRUCT &&
+									(t->type.t & VT_BTYPE) != VT_STRUCT &&
+									!((v->type.t | t->type.t) & VT_BITFIELD);
+				}
+				rir_vst_ok[rir_vstn] = (unsigned char)allow;
+				rir_vst_seen[rir_vstn++] = 0;
+			}
+			break;
 		case RIR_R_LANDOR: {
 			/* `a && b && c` is one n-ary AST_Binary in the tree: ast_replay_value
 			   walks the children, gvtst's between them and gvtst_set's at the end.
@@ -1039,6 +1074,26 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_LSUP:
 		if (rir_cond_depth)
 			rir_cond_depth--;
+		break;
+	case RIR_R_VSTORE:
+		if (rir_vstn) {
+			int seen = rir_vst_seen[--rir_vstn];
+			int allow = rir_vst_ok[rir_vstn];
+			if (!seen && allow && rir_shn >= 2) {
+				AstLocal v = rir_pop(), t = rir_pop(), n;
+				n = ast_node(rir_arena, AST_Store);
+				ast_add_child(rir_arena, n, t);
+				ast_add_child(rir_arena, n, v);
+				rir_stmt(n);
+				{
+					AstLocal mv = ast_node(rir_arena, AST_StoreVal);
+					ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
+											 ast_type_ref(rir_arena, v));
+					ast_set_ival(rir_arena, mv, (uint64_t)n);
+					rir_push(mv);
+				}
+			}
+		}
 		break;
 	case RIR_R_LOPND: {
 		AstLocal v;

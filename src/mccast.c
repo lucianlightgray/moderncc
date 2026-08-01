@@ -4203,6 +4203,7 @@ void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
+	rir_rbegin(RIR_R_VSTORE);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;
@@ -4324,6 +4325,7 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 }
 
 void ast_hook_vstore_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_VSTORE);
 	if (!ast_active || ast_in_op == 0)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_op--;
