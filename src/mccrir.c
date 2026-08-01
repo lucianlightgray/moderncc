@@ -720,6 +720,14 @@ static void rir_op_effect(const RirOp *ro) {
 	int k;
 	if (o->kind != JOP_VSETC)
 		rir_flush_pending_call();
+	/* The journal records ops the parser emitted no bytes for. A cleanup call
+	   after `return n;` runs with nocode_wanted set, so gfunc_call journals a
+	   JOP_CALL and emits nothing. Op-replay is safe because it restores
+	   o->p.nocode per op; the arena carries no such state, so an unfiltered
+	   reconstruction turns dead code into real instructions -- test_cleanup1
+	   emits the cleanup twice and a duplicated load, exactly the +12. */
+	if (o->nocode)
+		return;
 	switch (o->kind) {
 	case JOP_GENOP:
 	case JOP_OPI:
