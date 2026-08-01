@@ -337,9 +337,9 @@ Ranked. Everything below is measured on `tests/exec` + `tests/diff/full_language
 | jump symbolisation | 14667 jumps → 7481 labels, 7 fallbacks in 2 functions |
 | `VT_CMP`/`VT_JMP` chains | 7519 slots modelled, 30 unresolvable |
 | arena field-identical to tree | **481 / 1072** |
-| arena node-count-equal | **542 / 1072** |
+| arena node-count-equal | **550 / 1072** |
 | C2 emitter reproduces bytes | **951 / 1166** — 184 tried-and-failed + **31 never tried** (see below) |
-| C2 of the *tried* set | 951 / 1134 — 133 length, 38 same-length-wrong, 8 refused, 4 error |
+| C2 of the *tried* set | 951 / 1134 — 133 length, 38 same-length-wrong (19 of them with an IDENTICAL arena), 8 refused, 4 error |
 | C2 containment | **0 corpus files.** Probe build = 268 ok / 8 fail = default build, fn=1201 |
 
 0. **P1 — SEVEN test legs have been silently SKIPPING on this machine, and they FAIL when actually run.** `pe-wine-conformance`, `macho-archive`, `macho-reloc`, `macho-reloc-arm64`, `macho-archive-reloc`, `macho-got-sub-x86_64`, `macho-got-sub-arm64` all invoke `${MCC_CROSS_DIR}/mcc-<key>`, and **the win32/osx cross compilers are not built by default**. Every one of them guards with `[ -x "$MCC" ] || { echo SKIP; exit 77; }`, so on a tree where those binaries are absent they skip and ctest still reports "100% tests passed, 0 tests failed out of 7935". That figure has been vacuous for these seven legs — the same instruction-26 failure the sweeps keep producing, but in the test suite itself.
