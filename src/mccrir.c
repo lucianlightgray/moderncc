@@ -681,7 +681,7 @@ static void rir_op_effect(const RirOp *ro) {
 			break;
 		}
 		n = ast_node(rir_arena, AST_Unary);
-		ast_set_op(rir_arena, n, '&');
+		ast_set_op(rir_arena, n, AST_OP_ADDR);
 		ast_add_child(rir_arena, n, a);
 		rir_push_typed(n);
 		break;
@@ -921,11 +921,31 @@ static int rir_if_safe(AstLocal n, uint32_t nc) {
 	}
 }
 
+/* A leaf that names a register must agree with its own type about which bank
+   that register is in: load() asserts rather than erroring when asked to move a
+   VT_DOUBLE out of an integer register, and a reconstruction can mint that pair
+   where the parser never does. */
+static int rir_leaf_reg_ok(AstLocal n) {
+	int r = ast_op(rir_arena, n), v;
+	if (r & VT_LVAL)
+		return 1;
+	v = r & VT_VALMASK;
+	if (v >= MCC_NB_REGS)
+		return 1;
+	return !!(reg_classes[v] & MCC_RC_FLOAT) ==
+				 !!is_float(ast_type_t(rir_arena, n));
+}
+
 static int rir_emit_safe(void) {
 	AstLocal n;
 	for (n = 0; n < ast_count(rir_arena); n++) {
 		uint32_t nc = ast_nchild(rir_arena, n);
 		switch (ast_kind(rir_arena, n)) {
+		case AST_Literal:
+		case AST_Ref:
+			if (!rir_leaf_reg_ok(n))
+				return rir_unsafe("leaf-regbank", n, nc);
+			break;
 		case AST_If:
 			if (!rir_if_safe(n, nc))
 				return rir_unsafe("If", n, nc);
@@ -949,6 +969,15 @@ static int rir_emit_safe(void) {
 		case AST_Unary:
 			if (nc != 1)
 				return rir_unsafe("Unary", n, nc);
+			/* ast_replay_value stamps an ADDR node's own type straight onto the
+			   address gaddrof produced. A deferred stamp that read a float out of
+			   the next snapshot then hands gfunc_call a VT_DOUBLE living in an
+			   integer register, and load() asserts on the bank mismatch. */
+			if (ast_op(rir_arena, n) == AST_OP_ADDR) {
+				int t = ast_type_t(rir_arena, n) & VT_BTYPE;
+				if (t != VT_PTR && t != VT_FUNC)
+					return rir_unsafe("Unary-addr-type", n, nc);
+			}
 			break;
 		case AST_Invoke: {
 			AstLocal callee;
