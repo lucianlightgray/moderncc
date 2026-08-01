@@ -9,6 +9,7 @@ AllocConsole
 AllocLSCallback
 AllocSLCallback
 AreFileApisANSI
+AssignProcessToJobObject
 AttachConsole
 BackupRead
 BackupSeek
@@ -73,6 +74,8 @@ CreateFileMappingA
 CreateFileMappingW
 CreateFileW
 CreateIoCompletionPort
+CreateJobObjectA
+CreateJobObjectW
 CreateKernelThread
 CreateMailslotA
 CreateMailslotW
@@ -440,6 +443,7 @@ IsDBCSLeadByte
 IsDBCSLeadByteEx
 IsDebuggerPresent
 IsLSCallback
+IsProcessInJob
 IsProcessorFeaturePresent
 IsSLCallback
 IsSystemResumeAutomatic
@@ -500,6 +504,8 @@ OpenEventW
 OpenFile
 OpenFileMappingA
 OpenFileMappingW
+OpenJobObjectA
+OpenJobObjectW
 OpenMutexA
 OpenMutexW
 OpenProcess
@@ -524,6 +530,7 @@ PurgeComm
 QT_Thunk
 QueryDosDeviceA
 QueryDosDeviceW
+QueryInformationJobObject
 QueryNumberOfEventLogRecords
 QueryOldestEventLogRecord
 QueryPerformanceCounter
@@ -631,6 +638,7 @@ SetFileTime
 SetHandleContext
 SetHandleCount
 SetHandleInformation
+SetInformationJobObject
 SetLastError
 SetLocalTime
 SetLocaleInfoA
@@ -673,6 +681,7 @@ SwitchToFiber
 SwitchToThread
 SystemTimeToFileTime
 SystemTimeToTzSpecificLocalTime
+TerminateJobObject
 TerminateProcess
 TerminateThread
 Thread32First

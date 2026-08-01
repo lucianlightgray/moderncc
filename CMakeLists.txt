@@ -1442,6 +1442,17 @@ if(MCC_CC_NAME STREQUAL "mcc" AND NOT WIN32
     set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG "-Wl,-rpath,")
     set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG_SEP ":")
 endif()
+# CMake also has no Windows platform module for TinyCC, so it falls back to
+# MSVC-style import-library naming (mcc.lib) that mcc never produces --
+# build-tree consumers of libmcc.dll (libtest, jit selftests, ...) then fail
+# to link ("file 'mcc.lib' not found"). mcc's native import format is the
+# .def it already writes next to every -shared DLL (LIBRARY + EXPORTS lines),
+# and mcc links `libmcc.def` given on the command line directly, so name the
+# import library lib<name>.def: the artifact mcc -shared emits IS the implib.
+if(MCC_CC_NAME STREQUAL "mcc" AND WIN32)
+    set(CMAKE_IMPORT_LIBRARY_PREFIX "lib")
+    set(CMAKE_IMPORT_LIBRARY_SUFFIX ".def")
+endif()
 if("${CMAKE_C_COMPILER_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)")
     set(MCC_GCC_MAJOR "${CMAKE_MATCH_1}")
     set(MCC_GCC_MINOR "${CMAKE_MATCH_2}")
@@ -3173,7 +3184,11 @@ if(MCC_ENABLE_CROSS)
     endforeach()
 endif()
 
-if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared)
+# Under CC=mcc on Windows the def is already the declared import library of
+# the libmcc link itself (see the CMAKE_IMPORT_LIBRARY_SUFFIX block), so this
+# impdef step would be a second rule generating libmcc.def.
+if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared
+   AND NOT (WIN32 AND MCC_CC_NAME STREQUAL "mcc"))
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/libmcc.def"
         COMMAND ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" -impdef "$<TARGET_FILE:${_libmcc_shared}>"
