@@ -593,6 +593,11 @@ static int rir_effectful(AstLocal n) {
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
 		return 1;
+	/* A ternary whose value is discarded is a STATEMENT -- the tree records it
+	   as an AST_If with op 7 and emits both arms for their effects. Dropped off
+	   the shadow stack it was orphaned and the body emitted nothing at all. */
+	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
+		return 1;
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
 
@@ -614,6 +619,10 @@ static int rir_c3_pipeline(AstArena *a) {
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
+	/* ast_replay_bb dispatches an AST_If on its op, and the tree's encoding for
+	   a ternary in statement context is 7 rather than the value form's 5. */
+	if (ast_kind(rir_arena, n) == AST_If && ast_op(rir_arena, n) == 5)
+		ast_set_op(rir_arena, n, 7);
 	ast_add_child(rir_arena, rir_bb[rir_bbn - 1], n);
 }
 
