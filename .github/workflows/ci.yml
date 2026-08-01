@@ -192,13 +192,13 @@ jobs:
   # image is on GitHub's retirement path and its pool no longer schedules the job:
   # `continue-on-error` stops it redding main, yet a job that never leaves `queued`
   # holds this run "in progress" for hours (a runner that is pulled does not FAIL,
-  # it QUEUES forever), and on main `cancel-in-progress` then makes every push cancel
-  # the prior hung run and start another that hangs the same way. It is removed from
-  # the gating per-push CI so the run can complete; the nightly `matrix.yml`
-  # `macos-x86-native-jit` job (its own workflow, own concurrency group) remains the
-  # isolated record — a starved macos-13 pool can hang that scheduled run harmlessly
-  # without wedging per-push CI. Restore a per-push cell only against a runner label
-  # the pool actually schedules.
+  # it QUEUES forever, and timeout-minutes bounds execution, not queue time), and on
+  # main `cancel-in-progress` then makes every push cancel the prior hung run and
+  # start another that hangs the same way. The nightly `matrix.yml` sibling
+  # (`macos-x86-native-jit`) hung the same way in its own run and has likewise been
+  # removed. There is no native-Intel GitHub-hosted replacement (macos-14/15 are
+  # arm64); restore a native-JIT cell only against a runner label the pool actually
+  # schedules.
 
   windows:
     # msvc and mingw are both Windows toolchains, so they share one job: the
