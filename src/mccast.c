@@ -4119,7 +4119,12 @@ void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_CALL);
+	/* This end, and not ast_hook_call_end, is what a call whose RESULT IS
+	   DISCARDED closes with -- the synthesised memset behind a struct
+	   initialiser among them. The tree types that Invoke VT_VOID and attaches it
+	   as a statement; Replay_IR needs the same discriminator, so the region end
+	   carries it. */
+	rir_rend_to_val(RIR_R_CALL, 1);
 	if (ast_call_dead) { MCC_TRACE("br\n");
 		ast_call_dead = 0;
 		ast_in_call = 0;

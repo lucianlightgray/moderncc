@@ -1777,6 +1777,23 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_CALL:
 		if (rir_call_depth)
 			rir_call_depth--;
+		/* A call closed by ast_hook_call_effect_end has its result discarded: the
+		   tree types the Invoke VT_VOID and makes it a statement. Held pending
+		   instead, it was claimed by whatever consumed the stack next -- the
+		   member access in struct_packed_indirect.c addp took the memset's Invoke
+		   as its own operand. */
+		if (ro->rval && !rir_call_depth) {
+			AstLocal inv = rir_pending_call;
+			if (inv == AST_NONE && rir_shn > 0 &&
+					ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Invoke)
+				inv = rir_pop();
+			else if (inv != AST_NONE)
+				rir_pending_call = AST_NONE;
+			if (inv != AST_NONE) {
+				ast_set_type(rir_arena, inv, VT_VOID, 0);
+				rir_stmt(inv);
+			}
+		}
 		break;
 	case RIR_R_INC:
 		if (rir_inc_depth)
