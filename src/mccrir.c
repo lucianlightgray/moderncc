@@ -698,6 +698,19 @@ static int rir_is_cvt(int kind) {
 	}
 }
 
+static int rir_child_has_type(AstLocal n, int st) {
+	int i, nc = ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		if (c == AST_NONE)
+			continue;
+		if ((ast_type_t(rir_arena, c) & ~(unsigned)VT_DEFSIGN) ==
+				(unsigned)(st & ~(unsigned)VT_DEFSIGN))
+			return 1;
+	}
+	return 0;
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -899,6 +912,11 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
 						(st & VT_BTYPE) == VT_FUNC || is_float(st))
+					continue;
+				/* An operand that already carries the snapshot's type was not cast
+				   into it -- `arg_sink += v * w` wrapped its int Binary in an int
+				   Convert the tree does not have. VT_DEFSIGN is spelling, not type. */
+				if (rir_child_has_type(cur, st))
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
