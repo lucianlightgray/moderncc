@@ -1,33 +1,20 @@
 name: Matrix
 
-# Heavy, non-gating cells split out of the per-push/PR CI critical path onto a
-# nightly trigger (they used to run per-push-to-main, but as non-gating checks
-# they competed with the gating CI matrix for the shared concurrency cap). Two
-# families:
+# Nightly full fan-out of the 3-stage hierarchy, plus the emulation matrix.
+# Never gates a PR; also runnable on demand.
 #
-#   matrix    - the toolchain superbuild: gcc;clang x native;cross x host-arch,
-#               one build per cell (each overrides MCC_TOOLCHAIN_PROFILE /
-#               MCC_TARGETS to a single profile x target) so the 2x2x2 = 8
-#               builds run in parallel and each surfaces as its own job
-#               instead of two ~40-min host superbuilds. Build-only smoke
-#               (ci.yml already tests each toolchain).
-#   macos-x86 - the emulated x86_64 macOS cells (build + test under Rosetta,
-#               ~14 min each). These were the gating critical path; ci.yml now
-#               gates only the native arm64 macOS cells.
+#   stage1  - every host in the ledger (all arches, gcc/clang/musl/mingw, macOS
+#             under Rosetta), each built WITH cross compilers (--cross) so the
+#             emulate consumer can exercise the foreign-arch output.
+#   stage2  - every host x feature cell, self-hosted (mcc builds mcc) + ctest.
+#   emulate - absorbs the qemu-user / docker cross-arch validators, wine (PE,
+#             incl. Windows-via-wine), Rosetta and the *-docker.sh differential
+#             validators. It builds a cross-enabled stage2 mcc and runs the
+#             non-`native` ctests (`ci stage3 --consume emulate`), which
+#             self-skip 77 where a foreign platform is unavailable.
 #
-# A third cell, `macos-x86-native-jit`, once ran the x86_64-macOS JIT-parity
-# suite (selfhost-jit + jit/*) on a NATIVE Intel runner (macos-13) -- the ONE
-# thing Rosetta cannot do is execute dynamically-generated x86_64 code, which is
-# why the macos-x86 job above skips every JIT cell. It has been removed:
-# macos-13 was GitHub's last Intel image and its pool no longer schedules the
-# job, so it sat in `queued` forever (timeout-minutes bounds execution, not
-# queue time) and hung this nightly run for hours. There is no native-Intel
-# GitHub-hosted replacement (macos-14/15 are arm64). Restore it only against a
-# runner label the pool actually schedules.
-#
-# Both come from the same preset ledger as ci.yml (`ci plan --job
-# matrix` / `--job macos-x86`), so `ci parity` still covers their presets. Never
-# blocks a PR; also runnable on demand.
+# Matrices come from the same ledger as ci.yml (`ci plan --job stage1-nightly /
+# stage2-nightly / stage3-emulate`), so `ci parity` covers them too.
 
 on:
   schedule:
@@ -45,89 +32,166 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.gen.outputs.matrix }}
-      macos: ${{ steps.gen.outputs.macos }}
+      stage1: ${{ steps.gen.outputs.stage1 }}
+      stage2: ${{ steps.gen.outputs.stage2 }}
+      emulate: ${{ steps.gen.outputs.emulate }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci
       - id: gen
         run: |
-          echo "matrix=$(mcc-ci plan --job matrix)" >> "$GITHUB_OUTPUT"
-          echo "macos=$(mcc-ci plan --job macos-x86)" >> "$GITHUB_OUTPUT"
+          echo "stage1=$(mcc-ci plan --job stage1-nightly)" >> "$GITHUB_OUTPUT"
+          echo "stage2=$(mcc-ci plan --job stage2-nightly)" >> "$GITHUB_OUTPUT"
+          echo "emulate=$(mcc-ci plan --job stage3-emulate)" >> "$GITHUB_OUTPUT"
 
-  matrix:
+  stage1:
     needs: plan
-    name: ${{ matrix.profile }} / ${{ matrix.target }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    name: stage1 / ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+        include: ${{ fromJSON(needs.plan.outputs.stage1) }}
     env:
-      ART: mcc-${{ matrix.preset }}-${{ matrix.profile }}-${{ matrix.target }}-${{ matrix.arch }}
+      CC: ${{ matrix.hostcc == 'clang' && 'clang' || '' }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
-      - name: install toolchain (everything the platform offers)
+      - name: install toolchain (linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build build-essential gcc clang lld wine64 git rsync \
-            mingw-w64
-      - uses: ./.github/actions/ci
-      - name: run ${{ matrix.profile }} x ${{ matrix.target }} (single-cell build, build-only)
-        run: |
-          mkdir -p "dist/$ART"
-          mcc-ci run-preset ${{ matrix.preset }} --out "dist/$ART" --no-test \
-            -DMCC_TOOLCHAIN_PROFILE=${{ matrix.profile }} -DMCC_TARGETS=${{ matrix.target }}
-      - name: pack build targets
-        run: tar cJf "$ART.tar.xz" -C dist "$ART"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ env.ART }}
-          path: ${{ env.ART }}.tar.xz
-
-  macos-x86:
-    # The emulated x86_64 macOS cells (clang, native + cross), formerly gating
-    # in ci.yml. Full configure + build + test under Rosetta, so they carry the
-    # same coverage as the arm64 cells — just off the per-push critical path.
-    needs: plan
-    name: ${{ matrix.preset }} / ${{ matrix.cc }} / ${{ matrix.arch }}
-    runs-on: macos-15
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.macos) }}
-    env:
-      ART: mcc-${{ matrix.preset }}-${{ matrix.cc }}-${{ matrix.arch }}
-      # The macos preset resolves its build compiler from $CC; the x86_64
-      # cells are clang-only, so pin it (the gating arm64 job resolves CC in a
-      # step because it also runs gcc cells).
-      CC: clang
-    steps:
-      - uses: actions/checkout@v5
-      - name: install Rosetta 2 (x86_64 build + tests under emulation)
-        run: sudo softwareupdate --install-rosetta --agree-to-license
-      - name: cache Homebrew downloads (gcc bottle + deps)
-        uses: actions/cache@v5
-        with:
-          path: ~/Library/Caches/Homebrew/downloads
-          key: brew-${{ runner.os }}-${{ runner.arch }}-cmake-ninja-gcc-mingw
-      - name: install toolchain (everything the platform offers)
+            cmake ninja-build build-essential gcc clang lld git rsync mingw-w64 python3
+      - name: install toolchain (macos)
+        if: runner.os == 'macOS'
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja gcc
-      - name: install mingw-w64 (PE reference compiler; conformance/diff3 oracle)
-        continue-on-error: true
-        run: brew install mingw-w64
-      - name: install wine (drives pe-wine-conformance in macos-cross)
-        continue-on-error: true
-        run: HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable
+      - name: set up MSVC dev shell (windows)
+        if: runner.os == 'Windows'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.msvcarch }}
+      - name: install ninja (windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y
       - uses: ./.github/actions/ci
-      - name: run ${{ matrix.preset }} x86_64 under Rosetta (configure + build + test)
-        # x86_64 cells are clang-only; the Rosetta translation lock serializes a
-        # handful of arch-independent probes, so drop those (fully covered by the
-        # native arm64 macOS and Linux cells).
+      - name: stage1 build + cross (${{ matrix.host }})
+        run: mcc-ci stage1 --host ${{ matrix.host }} --cross --out stage1/${{ matrix.host }}
+      - name: pack stage1 mcc
+        run: tar cf stage1-${{ matrix.host }}.tar -C stage1 ${{ matrix.host }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stage1-${{ matrix.host }}
+          path: stage1-${{ matrix.host }}.tar
+
+  stage2:
+    needs: [plan, stage1]
+    name: stage2 / ${{ matrix.host }} / ${{ matrix.feature }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.stage2) }}
+    env:
+      CC: ${{ startsWith(matrix.runner, 'macos') && 'clang' || '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: install deps (linux)
+        if: startsWith(matrix.runner, 'ubuntu')
         run: |
-          export MCC_CI_CTEST_EXCLUDE='^(fuzz|ast|cst|diff3|preprocess)/|^cli/(symbol_type_func_object|response_file|macho_fat64_dylib)$'
-          mcc-ci run-preset ${{ matrix.preset }} --out "$PWD/dist/$ART" \
-            "-DMCC_DIST_PLAT=$ART" -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3
+      - name: install deps (macos)
+        if: startsWith(matrix.runner, 'macos')
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install cmake ninja
+      - name: set up MSVC dev shell + ninja (windows)
+        if: startsWith(matrix.runner, 'windows')
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.msvcarch }}
+      - name: install ninja (windows)
+        if: startsWith(matrix.runner, 'windows')
+        run: choco install ninja -y
+      - uses: ./.github/actions/ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+      - name: unpack stage1 mcc
+        run: tar xf ${{ matrix.artifact }}.tar
+      - name: stage2 self-host + stage3 test (${{ matrix.feature }})
+        run: |
+          if [ -n "${{ matrix.skip }}" ]; then
+            echo "SKIP ${{ matrix.feature }}: ${{ matrix.skip }}" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mccexe="$PWD/${{ matrix.host }}/bin/mcc"
+          [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
+          mcc-ci stage2 ${{ matrix.feature }} --mcc "$mccexe"
+          mcc-ci stage3 --consume test --build cmake-stage2-${{ matrix.feature }}
+      - name: test summary
+        if: ${{ always() && !matrix.skip }}
+        run: |
+          mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
+            "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
+
+  emulate:
+    needs: [plan, stage1]
+    name: emulate / ${{ matrix.host }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.emulate) }}
+    env:
+      CC: ${{ startsWith(matrix.runner, 'macos') && 'clang' || '' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: "install toolchain + emulators (linux - qemu-user, wine for PE, docker binfmt)"
+        if: startsWith(matrix.runner, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential gcc clang lld git rsync \
+            qemu-user qemu-user-static wine64 python3 tar xz-utils bzip2
+      - name: register qemu binfmt for the docker cross-arch validators
+        if: startsWith(matrix.runner, 'ubuntu')
+        uses: docker/setup-qemu-action@v3
+      - name: "install Rosetta 2 (macos - run x86_64 + x86_64 wine under emulation)"
+        if: startsWith(matrix.runner, 'macos')
+        run: sudo softwareupdate --install-rosetta --agree-to-license
+      - name: install toolchain (macos)
+        if: startsWith(matrix.runner, 'macos')
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install cmake ninja
+          HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable || true
+      - uses: ./.github/actions/ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+      - name: unpack stage1 mcc
+        run: tar xf ${{ matrix.artifact }}.tar
+      - name: stage2 (cross) + stage3 emulate (qemu / wine-PE / docker / rosetta validators)
+        run: |
+          mcc-ci stage2 dynamic --cross --mcc "$PWD/${{ matrix.host }}/bin/mcc"
+          mcc-ci stage3 --consume emulate --build cmake-stage2-dynamic
+      - name: emulate summary
+        if: always()
+        run: |
+          mcc-ci junit-summary "cmake-stage2-dynamic/ctest-junit.xml" \
+            "emulate / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true

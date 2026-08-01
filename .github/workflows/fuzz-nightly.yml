@@ -37,16 +37,18 @@ jobs:
             cmake ninja-build build-essential gcc clang git
       - uses: ./.github/actions/ci
       - name: run campaign
-        # `ci fuzz` configures the debug preset with gcc+clang as the same-ISA
-        # oracle, builds mcc + fuzz_runner, and runs the campaign; its exit code
-        # (nonzero = a new miscompile class) is captured for the gate below.
+        # stage3's `fuzz` consumer is the differential campaign: it configures the
+        # debug preset with gcc+clang as the same-ISA oracle, builds mcc +
+        # fuzz_runner, and runs the campaign (the fuzzer is an oracle differential,
+        # not a feature self-host, so it self-configures rather than consuming a
+        # stage2 dir). Its exit code (nonzero = a new miscompile class) gates below.
         env:
           MCC_FUZZ_SEED: ${{ github.run_number }}0000
         run: |
           budget='${{ github.event.inputs.budget }}'; budget="${budget:-5400}"
           batch='${{ github.event.inputs.batch }}';   batch="${batch:-50}"
           set +e
-          mcc-ci fuzz --budget "$budget" --batch "$batch" | tee "$RUNNER_TEMP/campaign.log"
+          mcc-ci stage3 --consume fuzz --budget "$budget" --batch "$batch" | tee "$RUNNER_TEMP/campaign.log"
           echo "campaign_rc=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
       - name: summary
         if: always()

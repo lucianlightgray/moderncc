@@ -491,6 +491,146 @@ static const struct {
 		{"msvc", "windows-x86_64-msvc", "windows-latest", "", "x64"},
 		{0, 0, 0, 0, 0}};
 
+/* ============================================================================
+ * Staged CI axes: host (stage1) -> feature (stage2) -> consume (stage3).
+ *
+ * The flat PS_ and PLAN_ ledger above stays a compatibility shim while the
+ * workflows migrate; these three tables are the single source of truth for the
+ * new `ci stage1/stage2/stage3` verbs and `ci plan --job stage*`. The key
+ * change is stage2: instead of a host compiler (gcc/clang) rebuilding mcc under
+ * each feature flag, the *stage1 mcc* rebuilds mcc (CMAKE_C_COMPILER=<stage1
+ * mcc> + MCC_TOOLCHAIN_PROFILE=mcc) -- so the feature matrix is a self-host.
+ * ==========================================================================*/
+
+enum { OS_LINUX = 1, OS_MAC = 2, OS_WIN = 4 };
+
+static unsigned ci_host_osbit(void) {
+#if MCC_HOST_WIN32
+	return OS_WIN;
+#elif MCC_HOST_DARWIN
+	return OS_MAC;
+#else
+	return OS_LINUX;
+#endif
+}
+
+/* axis 1 -- stage-1 host producers. Each row builds a plain mcc (+ its cross
+ * compilers) with the named host toolchain via `preset`, then publishes it.
+ * `gate` marks the one representative host per OS family that the per-push CI
+ * builds; the rest fan out nightly. `runner`/`msvcarch` drive the plan JSON. */
+static const struct {
+	const char *name, *arch, *hostcc, *libc, *preset, *runner, *msvcarch;
+	unsigned osbit;
+	int gate;
+} HOSTS[] = {
+		{"linux-x86_64-gcc", "x86_64", "gcc", "glibc", "linux-gcc",
+				"ubuntu-latest", "", OS_LINUX, 1},
+		{"linux-arm64-gcc", "arm64", "gcc", "glibc", "linux-gcc",
+				"ubuntu-24.04-arm", "", OS_LINUX, 0},
+		{"linux-x86_64-clang", "x86_64", "clang", "glibc", "linux-clang",
+				"ubuntu-latest", "", OS_LINUX, 0},
+		{"linux-x86_64-musl", "x86_64", "gcc", "musl", "linux-gcc-musl",
+				"ubuntu-latest", "", OS_LINUX, 0},
+		{"macos-arm64-clang", "arm64", "clang", "", "macos",
+				"macos-15", "", OS_MAC, 1},
+		{"macos-x86_64-clang", "x86_64", "clang", "", "macos",
+				"macos-15", "", OS_MAC, 0},
+		{"windows-x86_64-msvc", "x86_64", "msvc", "", "msvc",
+				"windows-latest", "x64", OS_WIN, 1},
+		{"windows-arm64-msvc", "arm64", "msvc", "", "msvc",
+				"windows-11-arm", "arm64", OS_WIN, 0},
+		{"windows-x86_64-mingw", "x86_64", "mingw", "", "mingw",
+				"windows-latest", "x64", OS_WIN, 0},
+		{0, 0, 0, 0, 0, 0, 0, 0, 0}};
+
+/* axis 2 -- stage-2 feature matrix, built by the stage-1 mcc itself. `dflags`
+ * are the extra -D flags on top of the stage2 base (semicolon-separated;
+ * tokenized by ci_add_dflags). `self_os` is the set of OS families mcc can
+ * self-host the feature on; a cell whose host OS is not in the set skips (77)
+ * with `blocker` rather than falling back to a host compiler. */
+static const struct {
+	const char *name, *dflags, *blocker;
+	unsigned self_os;
+} FEATURES[] = {
+		{"static", "-DMCC_BUILD_STATIC_EXE=ON", "", OS_LINUX | OS_WIN},
+		{"dynamic", "-DMCC_BUILD_STATIC_EXE=OFF", "",
+				OS_LINUX | OS_MAC | OS_WIN},
+		{"release", "-DCMAKE_BUILD_TYPE=Release;-DMCC_BUILD_STRIP=ON", "",
+				OS_LINUX | OS_MAC | OS_WIN},
+		{"multisource", "-DMCC_SINGLE_SOURCE=OFF", "",
+				OS_LINUX | OS_MAC | OS_WIN},
+		{"predefs-off", "-DMCC_CONFIG_PREDEFS=OFF", "",
+				OS_LINUX | OS_MAC | OS_WIN},
+		{"pie", "-DMCC_CONFIG_PIE=ON;-DMCC_CONFIG_PIC=ON", "", OS_LINUX},
+		{"dwarf", "-DMCC_CONFIG_DWARF=5", "", OS_LINUX},
+		{"diagnostics", "-DMCC_ALL_DIAGNOSTICS=ON", "",
+				OS_LINUX | OS_MAC | OS_WIN},
+		{"macho", "-DMCC_CONFIG_NEW_MACHO=yes",
+				"macho object format only self-hosts on a Darwin host", OS_MAC},
+		{"pe", "-DMCC_CONFIG_MINGW=ON",
+				"PE object format only self-hosts on a Windows host", OS_WIN},
+		{"asm-off", "-DMCC_CONFIG_ASM=OFF",
+				"asm-off self-host builds mccrt with CMAKE_C_COMPILER (the "
+				"stage1 mcc, asm-on) via MCC_MCCRT_USE_HOSTCC; the Windows/PE "
+				"path is not yet confirmed",
+				OS_LINUX | OS_MAC},
+		{"sanitize", "-DMCC_BUILD_SANITIZE=ON", "",
+				OS_LINUX | OS_MAC | OS_WIN},
+		{0, 0, 0, 0}};
+
+/* axis 3 -- stage-3 consumers. `needs_cross` cells require the stage-2 build to
+ * enable the cross compilers: `dist` ships them, `emulate` runs their
+ * foreign-arch output under qemu/wine/docker validators. */
+static const struct {
+	const char *name;
+	int needs_cross;
+} CONSUMERS[] = {
+		{"test", 0}, {"bench", 0}, {"dist", 1},
+		{"fuzz", 0}, {"emulate", 1}, {0, 0}};
+
+/* Tokenize a semicolon-separated -D flag string into `v`. `buf` must outlive
+ * the eventual ts_run (ts_arg stores pointers, not copies), so the caller
+ * passes a buffer that stays in scope. */
+static void ci_add_dflags(Argv *v, const char *dflags, char *buf, size_t bufsz) {
+	char *s, *p;
+	if (!dflags || !*dflags)
+		return;
+	snprintf(buf, bufsz, "%s", dflags);
+	s = buf;
+	for (p = buf;; p++) {
+		if (*p == ';' || *p == 0) {
+			int done = (*p == 0);
+			*p = 0;
+			if (*s)
+				ts_arg(v, s);
+			if (done)
+				break;
+			s = p + 1;
+		}
+	}
+}
+
+static int host_find(const char *name) {
+	int i;
+	for (i = 0; HOSTS[i].name; i++)
+		if (!strcmp(HOSTS[i].name, name))
+			return i;
+	return -1;
+}
+
+static int feature_find(const char *name) {
+	int i;
+	for (i = 0; FEATURES[i].name; i++)
+		if (!strcmp(FEATURES[i].name, name))
+			return i;
+	return -1;
+}
+
+/* the staged verbs are defined near main(); forward-declare them for the
+ * opt-in stage2 loop in do_local (LOCAL_CI_STAGE2). */
+static int do_stage1(int argc, char **argv);
+static int do_stage2(int argc, char **argv);
+
 static const struct {
 	const char *name, *why;
 } PS_EXEMPT[] = {
@@ -501,6 +641,33 @@ static const struct {
 		{"sanitize", "alias: = linux-gcc-sanitize with unpinned cc"},
 		{"diagnostics", "alias: = linux-gcc-diagnostics with unpinned cc"},
 		{"cross", "alias: = linux-gcc-cross with unpinned cc"},
+		{"stage2", "convenience anchor for the -D-driven stage2 feature axis"},
+		/* Superseded by the staged hierarchy. The feature presets are now
+		 * stage2 -D cells (`ci stage2 <feature>`); the *-cross / qemu presets
+		 * are folded into `ci stage3 --consume emulate`; `matrix` (the gcc;clang
+		 * superbuild) is replaced by per-host stage1. Kept as presets so the old
+		 * flow and `ci local` still work during the transition. */
+		{"linux-gcc-static", "stage2 feature: static"},
+		{"linux-gcc-multisource", "stage2 feature: multisource"},
+		{"linux-gcc-asm-off", "stage2 feature: asm-off"},
+		{"linux-gcc-predefs-off", "stage2 feature: predefs-off"},
+		{"linux-gcc-pie", "stage2 feature: pie"},
+		{"linux-gcc-dwarf", "stage2 feature: dwarf"},
+		{"linux-gcc-diagnostics", "stage2 feature: diagnostics"},
+		{"linux-gcc-sanitize", "stage2 feature: sanitize"},
+		{"linux-gcc-release", "stage2 feature: release"},
+		{"linux-clang-release", "stage2 feature: release (clang host)"},
+		{"release", "stage2 feature: release"},
+		{"sanitize-msvc", "stage2 feature: sanitize (msvc host)"},
+		{"linux-gcc-cross", "folded into stage3 emulate (ci stage2 --cross)"},
+		{"linux-clang-cross", "folded into stage3 emulate (ci stage2 --cross)"},
+		{"macos-cross", "folded into stage3 emulate (ci stage2 --cross)"},
+		{"qemu-x86_64", "folded into stage3 emulate"},
+		{"qemu-i386", "folded into stage3 emulate"},
+		{"qemu-arm", "folded into stage3 emulate"},
+		{"qemu-arm64", "folded into stage3 emulate"},
+		{"qemu-riscv64", "folded into stage3 emulate"},
+		{"matrix", "replaced by per-host stage1 (ci stage1)"},
 		{0, 0}};
 
 static int loc_have(const char *name) {
@@ -650,6 +817,61 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 	return 0;
 }
 
+/* LOCAL_CI_STAGE2 mode: build the representative stage1 host for this OS, then
+ * loop every FEATURE through `ci stage2` off it -- the local reproduction of the
+ * per-push stage1 -> stage2 self-host, skip-marking the platform-locked cells. */
+static int do_local_stage2(void) {
+	unsigned os = ci_host_osbit();
+	int h, f, fail = 0, npass = 0, nskip = 0;
+	char mccpath[4200], stagedir[256];
+
+	for (h = 0; HOSTS[h].name; h++)
+		if (HOSTS[h].gate && HOSTS[h].osbit == os)
+			break;
+	if (!HOSTS[h].name) {
+		fprintf(stderr, "ci local (stage2): no gate host for this OS\n");
+		return 2;
+	}
+	snprintf(stagedir, sizeof stagedir, "stage1/%s", HOSTS[h].name);
+	printf("\n==== local stage1 -> stage2 self-host (%s) ====\n", HOSTS[h].name);
+	loc_setcc(HOSTS[h].hostcc);
+	{
+		char *a[4];
+		int na = 0;
+		a[na++] = (char *)"--host";
+		a[na++] = (char *)HOSTS[h].name;
+		a[na++] = (char *)"--out";
+		a[na++] = stagedir;
+		if (do_stage1(na, a)) {
+			fprintf(stderr, "ci local (stage2): stage1 build failed\n");
+			return 1;
+		}
+	}
+	snprintf(mccpath, sizeof mccpath, "%s/bin/mcc", stagedir);
+	for (f = 0; FEATURES[f].name; f++) {
+		char *a[3];
+		int na = 0, rc;
+		a[na++] = (char *)FEATURES[f].name;
+		a[na++] = (char *)"--mcc";
+		a[na++] = mccpath;
+		printf("\n>>>> [stage2] %s\n", FEATURES[f].name);
+		rc = do_stage2(na, a);
+		if (rc == TS_SKIP_CODE)
+			nskip++;
+		else if (rc)
+			fail++;
+		else
+			npass++;
+	}
+	printf("\n==== stage2 self-host: %d built, %d skipped, %d FAILED ====\n",
+			npass, nskip, fail);
+	if (fail) {
+		fprintf(stderr, "ci local (stage2): %d feature(s) FAILED\n", fail);
+		return 1;
+	}
+	return 0;
+}
+
 static int do_local(int argc, char **argv) {
 	const char *ver = "v0.0.0-local", *host_cpu = "unknown";
 	const char *only = getenv("LOCAL_CI_ONLY");
@@ -679,6 +901,9 @@ static int do_local(int argc, char **argv) {
 		const char *k = getenv("LOCAL_CI_KEEP_GOING");
 		keep_going = (k && !strcmp(k, "0")) ? 0 : 1;
 	}
+
+	if (loc_env_on("LOCAL_CI_STAGE2"))
+		return do_local_stage2();
 
 	have_gcc = loc_have("gcc");
 	have_clang = loc_have("clang");
@@ -1287,7 +1512,17 @@ static void plan_presets(const char *job, StrSet *s) {
 	} else if (!strcmp(job, "bench")) {
 		for (i = 0; PLAN_BENCH[i].preset; i++)
 			set_add(s, PLAN_BENCH[i].preset, (int)strlen(PLAN_BENCH[i].preset));
+	} else if (!strcmp(job, "stage1-gate") || !strcmp(job, "stage1-nightly")) {
+		/* stage1 hosts map to their producer presets (linux-gcc, macos, msvc,
+		 * ...), so a workflow that runs `--job stage1-*` keeps those presets
+		 * covered under `ci parity`. */
+		int allhosts = !strcmp(job, "stage1-nightly");
+		for (i = 0; HOSTS[i].name; i++)
+			if (allhosts || HOSTS[i].gate)
+				set_add(s, HOSTS[i].preset, (int)strlen(HOSTS[i].preset));
 	}
+	/* stage2/stage2-nightly/stage3-emulate drive the -D-based feature axis,
+	 * not named presets; the `stage2` convenience preset is parity-exempt. */
 }
 
 static void yml_plan_jobs(const char *text, StrSet *jobs) {
@@ -1324,7 +1559,7 @@ static int do_plan(int argc, char **argv) {
 			job = argv[++i];
 	if (!job) {
 		fprintf(stderr,
-						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|bench|dist-unix|dist-windows>\n");
+						"usage: ci plan --job <linux|matrix|macos|macos-x86|windows|qemu|bench|dist-unix|dist-windows|stage1-gate|stage1-nightly|stage2|stage2-nightly|stage3-emulate>\n");
 		return 2;
 	}
 	printf("[");
@@ -1405,6 +1640,60 @@ static int do_plan(int argc, char **argv) {
 								PLAN_BENCH[i].preset, PLAN_BENCH[i].plat,
 								PLAN_BENCH[i].runner, PLAN_BENCH[i].cc,
 								PLAN_BENCH[i].msvcarch);
+	} else if (!strcmp(job, "stage1-gate") || !strcmp(job, "stage1-nightly")) {
+		int allhosts = !strcmp(job, "stage1-nightly");
+		for (i = 0; HOSTS[i].name; i++) {
+			if (!allhosts && !HOSTS[i].gate)
+				continue;
+			plan_cell(&first,
+								"\"host\":\"%s\",\"arch\":\"%s\",\"hostcc\":\"%s\","
+								"\"libc\":\"%s\",\"preset\":\"%s\",\"runner\":\"%s\","
+								"\"msvcarch\":\"%s\"",
+								HOSTS[i].name, HOSTS[i].arch, HOSTS[i].hostcc,
+								HOSTS[i].libc, HOSTS[i].preset, HOSTS[i].runner,
+								HOSTS[i].msvcarch);
+		}
+	} else if (!strcmp(job, "stage2") || !strcmp(job, "stage2-nightly")) {
+		int allhosts = !strcmp(job, "stage2-nightly");
+		int f;
+		for (i = 0; HOSTS[i].name; i++) {
+			if (!allhosts && !HOSTS[i].gate)
+				continue;
+			for (f = 0; FEATURES[f].name; f++) {
+				/* A cell whose host OS is not in the feature's self_os set
+				 * carries its blocker as data so the workflow renders a neutral
+				 * (skipped) cell instead of a red one. */
+				if (!(FEATURES[f].self_os & HOSTS[i].osbit))
+					plan_cell(&first,
+										"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
+										"\"msvcarch\":\"%s\",\"feature\":\"%s\","
+										"\"artifact\":\"stage1-%s\",\"skip\":\"%s\"",
+										HOSTS[i].name, HOSTS[i].arch, HOSTS[i].runner,
+										HOSTS[i].msvcarch, FEATURES[f].name,
+										HOSTS[i].name, FEATURES[f].blocker);
+				else
+					plan_cell(&first,
+										"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
+										"\"msvcarch\":\"%s\",\"feature\":\"%s\","
+										"\"artifact\":\"stage1-%s\"",
+										HOSTS[i].name, HOSTS[i].arch, HOSTS[i].runner,
+										HOSTS[i].msvcarch, FEATURES[f].name,
+										HOSTS[i].name);
+			}
+		}
+	} else if (!strcmp(job, "stage3-emulate")) {
+		/* One emulate cell per representative host: it rebuilds a cross-enabled
+		 * stage2 mcc and runs the qemu/wine/docker/rosetta validators, which
+		 * self-skip 77 where the foreign platform is unavailable. */
+		for (i = 0; HOSTS[i].name; i++) {
+			if (!HOSTS[i].gate)
+				continue;
+			plan_cell(&first,
+								"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
+								"\"msvcarch\":\"%s\",\"artifact\":\"stage1-%s\"",
+								HOSTS[i].name, HOSTS[i].arch, HOSTS[i].runner,
+								HOSTS[i].msvcarch, HOSTS[i].name);
+		}
 	} else {
 		fprintf(stderr, "ci plan: unknown job '%s'\n", job);
 		return 2;
@@ -2142,11 +2431,288 @@ static int do_fuzz(int argc, char **argv) {
 	}
 }
 
-int main(int argc, char **argv) {
-	if (argc < 2) {
-		fprintf(stderr, "usage: ci <stage|run-preset|qemu|local|dist|matrix|plan|parity|fuzz|bench-summary|pkg|sha256sums> ...\n");
+/* ---- staged verbs (host -> feature -> consume) ------------------------- */
+
+/* stage1: build a plain mcc (+ cross compilers) for one host and install it.
+ * Maps the host row to its existing preset and reuses the run-preset machinery
+ * (which already encodes the compiler/generator); pure producer, no ctest. */
+static int do_stage1(int argc, char **argv) {
+	const char *host = NULL, *out = NULL;
+	int i, h, na = 0, cross = 0;
+	char *a[10];
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--host") && i + 1 < argc)
+			host = argv[++i];
+		else if (!strcmp(argv[i], "--out") && i + 1 < argc)
+			out = argv[++i];
+		else if (!strcmp(argv[i], "--cross"))
+			cross = 1;
+	}
+	if (!host) {
+		fprintf(stderr, "usage: ci stage1 --host <id> [--out DIR] [--cross]\n");
 		return 2;
 	}
+	if ((h = host_find(host)) < 0) {
+		fprintf(stderr, "ci stage1: unknown host '%s'\n", host);
+		return 2;
+	}
+	printf("==> stage1: building plain mcc for %s (preset=%s)%s\n",
+			HOSTS[h].name, HOSTS[h].preset, cross ? " +cross" : "");
+	a[na++] = (char *)HOSTS[h].preset;
+	a[na++] = (char *)"--no-test";
+	a[na++] = (char *)"--install";
+	if (out) {
+		a[na++] = (char *)"--out";
+		a[na++] = (char *)out;
+	}
+	if (!strcmp(HOSTS[h].hostcc, "msvc")) {
+		a[na++] = (char *)"--config";
+		a[na++] = (char *)"Release";
+	}
+	/* Cross compilers are only needed by the `emulate` consumer (nightly);
+	 * gating stage2 -> test does not use them, so keep them opt-in. */
+	if (cross)
+		a[na++] = (char *)"-DMCC_ENABLE_CROSS=ON";
+	return do_run_preset(na, a);
+}
+
+/* stage2: rebuild mcc under one feature flag using the *stage1 mcc* as the C
+ * compiler. A feature whose host OS is not in `self_os` skips (77) rather than
+ * silently falling back to a host compiler. Leaves cmake-stage2-<feature> for
+ * a following `ci stage3`. */
+static int do_stage2(int argc, char **argv) {
+	const char *feature = NULL, *mcc = NULL, *out = NULL;
+	int i, f, cross = 0, jobs = host_nproc(), extra_start = argc;
+	char builddir[256], jflag[32], mccflag[4200], dfbuf[512], instflag[4096];
+	char *mccabs;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--mcc") && i + 1 < argc)
+			mcc = argv[++i];
+		else if (!strcmp(argv[i], "--out") && i + 1 < argc)
+			out = argv[++i];
+		else if (!strcmp(argv[i], "--cross"))
+			cross = 1;
+		else if (!strcmp(argv[i], "--")) {
+			extra_start = i + 1;
+			break;
+		} else if (!feature && argv[i][0] != '-')
+			feature = argv[i];
+	}
+	if (!feature || !mcc) {
+		fprintf(stderr, "usage: ci stage2 <feature> --mcc <abspath> "
+										"[--cross] [--out DIR] [-- <extra -D configure args>]\n");
+		return 2;
+	}
+	if ((f = feature_find(feature)) < 0) {
+		fprintf(stderr, "ci stage2: unknown feature '%s'\n", feature);
+		return 2;
+	}
+	if (!(FEATURES[f].self_os & ci_host_osbit())) {
+		printf("SKIP stage2 %s: %s\n", feature, FEATURES[f].blocker);
+		return TS_SKIP_CODE;
+	}
+	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
+	snprintf(builddir, sizeof builddir, "cmake-stage2-%s", feature);
+
+	/* CMAKE_C_COMPILER is baked into the cache and the stage1 mcc lives at a
+	 * run-specific abspath, so always configure a fresh build dir. */
+	{
+		const char *rm[] = {ci_cmake(), "-E", "rm", "-rf", builddir, 0};
+		ts_run(rm);
+	}
+	mccabs = host_path_canonical(mcc);
+
+	{
+		Argv v = {{0}, 0};
+		char lbl[160];
+		snprintf(mccflag, sizeof mccflag, "-DCMAKE_C_COMPILER=%s",
+				mccabs ? mccabs : mcc);
+		ts_arg(&v, ci_cmake());
+		ts_arg(&v, "-S");
+		ts_arg(&v, ".");
+		ts_arg(&v, "-B");
+		ts_arg(&v, builddir);
+		ts_arg(&v, "-G");
+		ts_arg(&v, "Ninja");
+		ts_arg(&v, mccflag);
+		ts_arg(&v, "-DMCC_TOOLCHAIN_PROFILE=mcc");
+		ci_add_dflags(&v, FEATURES[f].dflags, dfbuf, sizeof dfbuf);
+		if (cross)
+			ts_arg(&v, "-DMCC_ENABLE_CROSS=ON");
+		for (i = extra_start; i < argc; i++)
+			ts_arg(&v, argv[i]);
+		if (out) {
+			snprintf(instflag, sizeof instflag,
+					"-DCMAKE_INSTALL_PREFIX=%s", out);
+			ts_arg(&v, instflag);
+		}
+		snprintf(lbl, sizeof lbl, "stage2 configure (%s, CC=mcc)", feature);
+		if (ci_phase(lbl, ts_argz(&v))) {
+			free(mccabs);
+			return 1;
+		}
+	}
+	free(mccabs);
+
+	/* A missed TinyCC/ModernCC detection would silently misfire every
+	 * id-guarded default in CMakeLists.txt, so verify the stage1 mcc really
+	 * self-identified. Absent the probe file (path/version quirk) warn only;
+	 * a positively-wrong id is a hard fail (never false-green). */
+	{
+		char *g[8];
+		int ng = ts_glob(builddir, "CMakeCCompiler.cmake", 1, g, 8);
+		int gi, seen = 0, ok = 0;
+		for (gi = 0; gi < ng && gi < 8; gi++) {
+			char *text = ts_read_file(g[gi], NULL);
+			if (text) {
+				seen = 1;
+				if (strstr(text, "\"TinyCC\"") || strstr(text, "\"ModernCC\""))
+					ok = 1;
+				free(text);
+			}
+			free(g[gi]);
+		}
+		if (seen && !ok) {
+			fprintf(stderr, "ci stage2: %s did not self-identify as mcc "
+											"(CMAKE_C_COMPILER_ID is not TinyCC/ModernCC); "
+											"refusing to proceed\n",
+					mcc);
+			return 1;
+		}
+		if (!seen)
+			fprintf(stderr, "ci stage2: warning: no CMakeCCompiler.cmake under "
+											"%s to verify the compiler id\n",
+					builddir);
+	}
+
+	{
+		Argv v = {{0}, 0};
+		char lbl[160];
+		ts_arg(&v, ci_cmake());
+		ts_arg(&v, "--build");
+		ts_arg(&v, builddir);
+		ts_arg(&v, jflag);
+		snprintf(lbl, sizeof lbl, "stage2 build (%s, %s)", feature, jflag);
+		if (ci_phase(lbl, ts_argz(&v)))
+			return 1;
+	}
+
+	if (out) {
+		const char *a[] = {ci_cmake(), "--install", builddir, 0};
+		printf("==> stage2 install (%s) -> %s\n", feature, out);
+		if (ts_run(a))
+			return 1;
+	}
+	return 0;
+}
+
+/* stage3: consume a stage-2 build dir. `test` runs ctest; the other consumers
+ * produce the corresponding pipeline output (bench/dist/emulate build a target
+ * or run the emulation ctests; fuzz delegates to the self-configuring
+ * campaign). */
+static int do_stage3(int argc, char **argv) {
+	const char *consume = NULL, *build = NULL, *plat = NULL, *ver = NULL;
+	int i, jobs = host_nproc();
+	char jflag[32];
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--consume") && i + 1 < argc)
+			consume = argv[++i];
+		else if (!strcmp(argv[i], "--build") && i + 1 < argc)
+			build = argv[++i];
+		else if (!strcmp(argv[i], "--plat") && i + 1 < argc)
+			plat = argv[++i];
+		else if (!strcmp(argv[i], "--version") && i + 1 < argc)
+			ver = argv[++i];
+	}
+	if (!consume) {
+		fprintf(stderr, "usage: ci stage3 --consume "
+										"<test|bench|dist|fuzz|emulate> --build DIR "
+										"[--plat P --version V]\n");
+		return 2;
+	}
+	{
+		int k, ok = 0;
+		for (k = 0; CONSUMERS[k].name; k++)
+			if (!strcmp(CONSUMERS[k].name, consume))
+				ok = 1;
+		if (!ok) {
+			fprintf(stderr, "ci stage3: unknown consumer '%s'\n", consume);
+			return 2;
+		}
+	}
+	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
+
+	/* fuzz self-configures its own oracle build (do_fuzz), so it needs no
+	 * stage-2 dir; everything else consumes one. */
+	if (!strcmp(consume, "fuzz"))
+		return do_fuzz(argc, argv);
+
+	if (!build) {
+		fprintf(stderr, "ci stage3 --consume %s: --build DIR required\n",
+				consume);
+		return 2;
+	}
+
+	if (!strcmp(consume, "test") || !strcmp(consume, "emulate")) {
+		Argv v = {{0}, 0};
+		char junit[4200];
+		ts_arg(&v, "ctest");
+		ts_arg(&v, "--test-dir");
+		ts_arg(&v, build);
+		ts_arg(&v, jflag);
+		ts_arg(&v, "--output-on-failure");
+		if (!strcmp(consume, "emulate")) {
+			/* the cross/emulation validators are exactly the non-`native`
+			 * tests (qemu/wine/macho/docker); the *-docker.sh scripts still
+			 * self-skip 77 when the foreign platform is unavailable. */
+			ts_arg(&v, "-LE");
+			ts_arg(&v, "native");
+		} else {
+			const char *excl = getenv("MCC_CI_CTEST_EXCLUDE");
+			if (excl && *excl) {
+				ts_arg(&v, "-E");
+				ts_arg(&v, excl);
+			}
+		}
+		ts_path(junit, sizeof junit, build, "ctest-junit.xml");
+		ts_arg(&v, "--output-junit");
+		ts_arg(&v, junit);
+		return ci_phase("stage3 test", ts_argz(&v));
+	}
+	if (!strcmp(consume, "bench") || !strcmp(consume, "dist")) {
+		Argv v = {{0}, 0};
+		char lbl[64];
+		ts_arg(&v, ci_cmake());
+		ts_arg(&v, "--build");
+		ts_arg(&v, build);
+		ts_arg(&v, jflag);
+		ts_arg(&v, "--target");
+		ts_arg(&v, !strcmp(consume, "bench") ? "bench" : "package-dist");
+		snprintf(lbl, sizeof lbl, "stage3 %s", consume);
+		if (ci_phase(lbl, ts_argz(&v)))
+			return 1;
+		(void)plat;
+		(void)ver;
+		return 0;
+	}
+	fprintf(stderr, "ci stage3: unknown consumer '%s'\n", consume);
+	return 2;
+}
+
+int main(int argc, char **argv) {
+	if (argc < 2) {
+		fprintf(stderr, "usage: ci <stage1|stage2|stage3|stage|run-preset|qemu|local|dist|matrix|plan|parity|fuzz|bench-summary|pkg|sha256sums> ...\n");
+		return 2;
+	}
+	if (!strcmp(argv[1], "stage1"))
+		return do_stage1(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "stage2"))
+		return do_stage2(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "stage3"))
+		return do_stage3(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "fuzz"))
 		return do_fuzz(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "stage"))

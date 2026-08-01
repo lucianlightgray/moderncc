@@ -292,11 +292,12 @@ function(mcc_validate_config)
             "-DCMAKE_C_COMPILER to gcc/clang.")
     endif()
     if(MCC_BUILD_SANITIZE
-       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
+       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|ModernCC|TinyCC"
        AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
         message(FATAL_ERROR
-            "mcc config: MCC_BUILD_SANITIZE needs a GCC/Clang or MSVC host compiler "
-            "(have '${CMAKE_C_COMPILER_ID}'); disable it with -DMCC_BUILD_SANITIZE=OFF.")
+            "mcc config: MCC_BUILD_SANITIZE needs a GCC/Clang, MSVC, or mcc host "
+            "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it with "
+            "-DMCC_BUILD_SANITIZE=OFF.")
     endif()
     if(MCC_BUILD_PROFILE AND MCC_TARGETOS STREQUAL "Darwin")
         message(FATAL_ERROR
