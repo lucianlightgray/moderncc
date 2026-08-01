@@ -941,6 +941,7 @@ static void rir_op_effect(const RirOp *ro) {
 		AstLocal n;
 		int na = o->a0;
 		AstLocal args[32];
+		int nfixed = -1;
 		if (na < 0 || na > 32) {
 			rir_arena_mismatch++;
 			na = 0;
@@ -955,8 +956,38 @@ static void rir_op_effect(const RirOp *ro) {
 		   variable directly and the body comes out 8 bytes short. */
 		if (o->vs_n - ast_base_depth >= na + 1 && rir_shn >= na + 1) {
 			int q;
+			/* The tree wraps an argument only where an assignment cast applied, i.e.
+			   for a DECLARED parameter. `printf("...", a)` gets a Convert on the
+			   format string and a bare Ref on the int, because the int is in the
+			   varargs tail; `via_cast(a, b)` gets one on both, because both are
+			   declared. Wrapping the tail as well is 30 of the +1 node-count bodies. */
+			{
+				const SValue *cs = &jrn_vs[o->vs_off + o->vs_n - 1 - na];
+				const Sym *fs = (const Sym *)(uintptr_t)cs->type.ref;
+				/* A function Sym's own type is its RETURN type, so do not test it for
+				   VT_FUNC. Reach it from the callee slot: VT_FUNC means type.ref is the
+				   Sym already, VT_PTR means one more hop. */
+				if (fs && (cs->type.t & VT_BTYPE) == VT_PTR)
+					fs = fs->type.ref;
+				nfixed = -1;
+				if (fs && fs->f.func_type == FUNC_ELLIPSIS) {
+					const Sym *pa;
+					nfixed = 0;
+					for (pa = fs->next; pa; pa = pa->next)
+						nfixed++;
+				}
+			}
 			for (q = 0; q <= na; q++) {
 				int si = rir_shn - 1 - q;
+				/* In the varargs tail there is no assignment cast -- but the DEFAULT
+				   argument promotions still apply (float->double, char/short->int), and
+				   the tree records those. So skip the tail only where the type is
+				   actually unchanged. */
+				if (nfixed >= 0 && q < na && na - 1 - q >= nfixed &&
+					rir_sh[si] != AST_NONE &&
+					ast_type_t(rir_arena, rir_sh[si]) ==
+						jrn_vs[o->vs_off + o->vs_n - 1 - q].type.t)
+					continue;
 				AstLocal cur = rir_sh[si];
 				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv2->type.t;
