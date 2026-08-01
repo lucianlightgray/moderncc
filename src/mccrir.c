@@ -558,7 +558,13 @@ static void rir_op_effect(const RirOp *ro) {
 		ast_add_child(rir_arena, n, t);
 		ast_add_child(rir_arena, n, v);
 		rir_stmt(n);
-		rir_push(ast_node(rir_arena, AST_StoreVal));
+		{
+			AstLocal mv = ast_node(rir_arena, AST_StoreVal);
+			ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
+									 ast_type_ref(rir_arena, v));
+			ast_set_ival(rir_arena, mv, (uint64_t)n);
+			rir_push(mv);
+		}
 		break;
 	}
 	case JOP_CALL: {
@@ -765,6 +771,12 @@ static void rir_region(const RirOp *ro) {
    block, a Store with two children, and so on -- and walks off the end when a
    reconstruction is short. Reject those here so an incomplete arena is an
    honest skip instead of a segfault in the emitter. */
+static int rir_unsafe(const char *why, AstLocal n, uint32_t nc) {
+	snprintf(rir_c2_msg, sizeof rir_c2_msg, "arity %s n=%u nc=%u op=%d", why,
+					 (unsigned)n, (unsigned)nc, ast_op(rir_arena, n));
+	return 0;
+}
+
 static int rir_emit_safe(void) {
 	AstLocal n;
 	for (n = 0; n < ast_count(rir_arena); n++) {
@@ -772,36 +784,46 @@ static int rir_emit_safe(void) {
 		switch (ast_kind(rir_arena, n)) {
 		case AST_If:
 			if (nc < 2)
-				return 0;
+				return rir_unsafe("If", n, nc);
 			break;
 		case AST_Store:
+			if (nc != 2)
+				return rir_unsafe("Store", n, nc);
+			break;
 		case AST_Binary:
 			if (nc != 2)
-				return 0;
+				return rir_unsafe("Binary", n, nc);
 			break;
 		case AST_Convert:
+			if (nc != 1)
+				return rir_unsafe("Convert", n, nc);
+			break;
 		case AST_Load:
+			if (nc != 1)
+				return rir_unsafe("Load", n, nc);
+			break;
 		case AST_Unary:
 			if (nc != 1)
-				return 0;
+				return rir_unsafe("Unary", n, nc);
 			break;
 		case AST_Invoke: {
 			AstLocal callee;
 			if (nc < 1)
-				return 0;
+				return rir_unsafe("Invoke-nc", n, nc);
 			callee = ast_child(rir_arena, n, 0);
 			if (callee == AST_NONE || ast_type_t(rir_arena, callee) == 0)
-				return 0;
+				return rir_unsafe("Invoke-callee-untyped", n, nc);
 			/* gfunc_call walks the callee's signature Sym for the ABI; a callee
 			   with no type ref, or one that is not a function, faults there. */
-			if (ast_type_ref(rir_arena, callee) == 0 ||
-					(ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC)
-				return 0;
+			if (ast_type_ref(rir_arena, callee) == 0)
+				return rir_unsafe("Invoke-callee-noref", n, nc);
+			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC)
+				return rir_unsafe("Invoke-callee-notfunc", n, nc);
 			break;
 		}
 		case AST_Return:
 			if (nc > 1)
-				return 0;
+				return rir_unsafe("Return", n, nc);
 			break;
 		default:
 			break;
