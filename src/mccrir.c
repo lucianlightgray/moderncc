@@ -1566,7 +1566,10 @@ static void rir_region(const RirOp *ro) {
 			if (ro->rval || ast_nchild(rir_arena, n) < 2)
 				rir_arena_mismatch++;
 			else
-				rir_push_typed(n);
+				/* A short-circuit region is an AST_Binary, and the tree leaves those
+				   untyped for the emitter to derive -- the same convention as the
+				   ternary AST_If and the inc/dec AST_Unary. */
+				rir_push(n);
 		}
 		break;
 	case RIR_R_TARM: {
