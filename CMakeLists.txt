@@ -1425,6 +1425,23 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
 else()
     set(MCC_CC_NAME unknown)
 endif()
+# CMake's built-in TinyCC support does not define the shared-library RUNPATH
+# link flag, so when mcc is CMAKE_C_COMPILER (self-host / stage2 builds) the
+# build-tree consumers of libmcc.so (jit selftests, libtest, abitest,
+# hypervisor, tls-models, ...) are linked with no RUNPATH and fail to load it
+# at test time ("libmcc.so: cannot open shared object file"). mcc supports
+# -Wl,-rpath,<dir> (link_option "rpath="), so teach CMake to bake the build-tree
+# rpath. ELF/Mach-O only; Windows resolves the DLL via PATH.
+if(MCC_CC_NAME STREQUAL "mcc" AND NOT WIN32
+   AND NOT CMAKE_EXECUTABLE_RUNTIME_C_FLAG)
+    # Both the executable and shared-library rpath flags: the build-tree
+    # consumers that fail are executables (libtest, jit_selftest, abitest, ...)
+    # linking libmcc.so, which use CMAKE_EXECUTABLE_RUNTIME_C_FLAG.
+    set(CMAKE_EXECUTABLE_RUNTIME_C_FLAG "-Wl,-rpath,")
+    set(CMAKE_EXECUTABLE_RUNTIME_C_FLAG_SEP ":")
+    set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG "-Wl,-rpath,")
+    set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG_SEP ":")
+endif()
 if("${CMAKE_C_COMPILER_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)")
     set(MCC_GCC_MAJOR "${CMAKE_MATCH_1}")
     set(MCC_GCC_MINOR "${CMAKE_MATCH_2}")

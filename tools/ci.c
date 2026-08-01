@@ -552,7 +552,9 @@ static const struct {
 	const char *name, *dflags, *blocker;
 	unsigned self_os;
 } FEATURES[] = {
-		{"static", "-DMCC_BUILD_STATIC_EXE=ON", "", OS_LINUX | OS_WIN},
+		{"static", "-DMCC_BUILD_STATIC_EXE=ON",
+				"static exe unsupported on Apple (no static libc)",
+				OS_LINUX | OS_WIN},
 		{"dynamic", "-DMCC_BUILD_STATIC_EXE=OFF", "",
 				OS_LINUX | OS_MAC | OS_WIN},
 		{"release", "-DCMAKE_BUILD_TYPE=Release;-DMCC_BUILD_STRIP=ON", "",
@@ -561,8 +563,10 @@ static const struct {
 				OS_LINUX | OS_MAC | OS_WIN},
 		{"predefs-off", "-DMCC_CONFIG_PREDEFS=OFF", "",
 				OS_LINUX | OS_MAC | OS_WIN},
-		{"pie", "-DMCC_CONFIG_PIE=ON;-DMCC_CONFIG_PIC=ON", "", OS_LINUX},
-		{"dwarf", "-DMCC_CONFIG_DWARF=5", "", OS_LINUX},
+		{"pie", "-DMCC_CONFIG_PIE=ON;-DMCC_CONFIG_PIC=ON",
+				"PIE/PIC codegen is ELF-only (Linux)", OS_LINUX},
+		{"dwarf", "-DMCC_CONFIG_DWARF=5",
+				"DWARF-5 debug info is ELF-only (Linux)", OS_LINUX},
 		{"diagnostics", "-DMCC_ALL_DIAGNOSTICS=ON", "",
 				OS_LINUX | OS_MAC | OS_WIN},
 		{"macho", "-DMCC_CONFIG_NEW_MACHO=yes",
