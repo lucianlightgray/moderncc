@@ -1311,7 +1311,9 @@ static void rir_region(const RirOp *ro) {
 			ast_set_op(rir_arena, u, ro->rval >> 1);
 			ast_set_ival(rir_arena, u, (uint64_t)(ro->rval & 1));
 			ast_add_child(rir_arena, u, a);
-			rir_push_typed(u);
+			/* Same for an inc/dec AST_Unary: the tree records op and ival and
+			   leaves t at 0. */
+			rir_push(u);
 			break;
 		}
 		case RIR_R_MEMBER:
@@ -1486,7 +1488,11 @@ static void rir_region(const RirOp *ro) {
 			AstLocal n = rir_tern[--rir_ternn];
 			if (ast_nchild(rir_arena, n) != 3)
 				rir_arena_mismatch++;
-			rir_push_typed(n);
+			/* The tree leaves a ternary AST_If UNTYPED and lets the emitter derive
+			   the result -- the same convention as AST_Binary, already a recorded
+			   trap. Stamping it read as `If op=5 t=3` against the tree's `t=0` in
+			   18 of the near-miss bodies. */
+			rir_push(n);
 		}
 		break;
 	case RIR_R_MEMBER: {
