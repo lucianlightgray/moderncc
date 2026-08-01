@@ -725,7 +725,26 @@ static void rir_op_effect(const RirOp *ro) {
 	case JOP_OPI:
 	case JOP_OPL:
 	case JOP_OPF: {
-		AstLocal b = rir_pop(), a = rir_pop(), n;
+		AstLocal b, a, n;
+		/* gen_opf(TOK_NEG) is UNARY -- it is how a float negate is emitted, and
+		   the tree models it as AST_Unary/AST_OP_FNEG via ast_hook_fneg_begin.
+		   Popping two operands for it built Binary(TOK_NEG, member, member),
+		   which handed gen_op what looks like a shift over two doubles: the whole
+		   struct-by-value / varargs error class in C2. */
+		if (o->kind == JOP_OPF && o->a0 == TOK_NEG) {
+			a = rir_pop();
+			if (a == AST_NONE) {
+				rir_arena_mismatch++;
+				break;
+			}
+			n = ast_node(rir_arena, AST_Unary);
+			ast_set_op(rir_arena, n, AST_OP_FNEG);
+			ast_add_child(rir_arena, n, a);
+			rir_push_typed(n);
+			break;
+		}
+		b = rir_pop();
+		a = rir_pop();
 		if (a == AST_NONE || b == AST_NONE) {
 			rir_arena_mismatch++;
 			rir_push(ast_node(rir_arena, AST_Poison));
