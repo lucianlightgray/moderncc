@@ -949,6 +949,9 @@ static void rir_reconcile(const JrnOp *o) {
 
 static int rir_opassign_pending;
 
+static int rir_ternn;
+static int rir_lorn;
+
 static void rir_op_effect(const RirOp *ro) {
 	const JrnOp *o = &ro->p;
 	int k;
@@ -1060,6 +1063,12 @@ static void rir_op_effect(const RirOp *ro) {
 			n = ast_node(rir_arena, AST_Store);
 			if (chained)
 				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
+		}
+		if (rir_lorn || rir_ternn) {
+			ast_add_child(rir_arena, n, t);
+			ast_add_child(rir_arena, n, v);
+			rir_push(n);
+			break;
 		}
 		/* `lval op= rhs`: the tag makes ast_replay_bb re-emit the vdup form the
 		   parser used -- one address computation, dup, op, store -- instead of the
@@ -1317,10 +1326,13 @@ static int rir_member_depth;
    keep the two lvalues the region opened with. */
 static int rir_vstruct_depth;
 static int rir_vla_depth;
+/* A store inside a short-circuit operand or a ternary arm is evaluated INSIDE
+   the branch. Attaching it to the enclosing block emits it unconditionally and
+   ahead of the test, which is what region_store.c showed: the store first and
+   the compare after. While either region has a node under construction, keep
+   the Store on the shadow stack so the operand binding takes it. */
 static AstLocal rir_tern[16];
-static int rir_ternn;
 static AstLocal rir_lor[16];
-static int rir_lorn;
 /* `a[3]` is pointer arithmetic that ends at the same pointer type it started
    from, and the tree holds a bare Binary under its Load. `*(T *)(base + off)`
    is a cast, and the tree holds a Convert. Both reach RIR_M_LOAD as an untyped
@@ -2291,6 +2303,18 @@ static void rir_to_arena(void) {
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
+#if RIR_DBG_OPTRACE
+		{
+			const char *e = getenv("RIRDBG");
+			if (e && funcname && !strcmp(e, funcname))
+				fprintf(stderr, "[ent] %3d %-6s %-10s shn=%d lorn=%d ternn=%d cond=%d\n", i,
+								ro->tag == RIR_T_OP ? "OP" : ro->tag == RIR_T_MARK ? "MARK"
+								: ro->tag == RIR_T_RBEGIN ? "RBEGIN" : "REND",
+								ro->tag == RIR_T_OP ? jrn_op_name(ro->p.kind)
+																		: rir_region_name(ro->rkind),
+								rir_shn, rir_lorn, rir_ternn, rir_cond_depth);
+		}
+#endif
 		/* A construct parsed with nocode_wanted set emits nothing -- the dead arm
 		   of `1 ? live : ({ while (1) ... })`. The op filter already drops its
 		   primitives; without dropping its control-flow regions too the

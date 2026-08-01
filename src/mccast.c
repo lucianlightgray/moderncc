@@ -1989,8 +1989,8 @@ static int ast_locrec_min;
 static int ast_temp_frontier;
 static int jrn_replaying;
 
-#if RIR_DBG_STRUCTCPY
-static int rir_dbg_on(void) {
+#if RIR_DBG_STRUCTCPY || RIR_DBG_OPTRACE
+static int rir_dbg_on(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("RIRDBG");
 	return e && funcname && !strcmp(e, funcname);
 }
@@ -6264,6 +6264,21 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
 							 (int)ind, (int)(vtop - vstack));
 	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+	case AST_Store: {
+		/* A store in VALUE context -- `c && (*out = 7)`, `c ? (*out = 1) : (*out
+		   = 2)` -- which the parser evaluates for its value inside the branch.
+		   The tree never places a Store where a value is expected, so this arm is
+		   unreachable from a hook-built arena and the default build is unchanged;
+		   it exists for the Replay_IR arenas, which model those operands the way
+		   the parser evaluates them. Same emission as ast_replay_bb's plain Store
+		   path, without the vpop that discards the result. */
+		if (ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			vstore();
+		}
+		break;
+	}
 	case AST_StoreVal: {
 		/* Value-live: already on the vstack, emit nothing. Otherwise it was
 		   popped, so re-emit the RHS -- the pre-F3a double evaluation, which is
@@ -15485,6 +15500,16 @@ static void jrn_gap(void) { MCC_TRACE("enter\n");
 
 static void jrn_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 	JrnOp *o;
+#if RIR_DBG_OPTRACE
+	/* Both the parse and the C2 emission reach the primitives through these
+	   wrappers, so one tap gives both streams and diffing them shows the first
+	   structural divergence -- which op the reconstruction never issued, or
+	   issued out of order. */
+	if (rir_dbg_on())
+		fprintf(stderr, "[optrace] %s %s ind=%d vn=%d\n",
+						rir_c2_active ? "C2   " : (jrn_replaying ? "JRN  " : "PARSE"),
+						jrn_op_name(kind), ind, (int)(vtop - vstack + 1));
+#endif
 	if (!jrn_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (jrn_depth++ > 0) { MCC_TRACE("br\n");
@@ -15618,7 +15643,7 @@ JRN_W1(gen_cvt_csti, JOP_CVT_CSTI)
 #endif
 #ifdef MCC_JRN_HAVE_STRUCT_COPY
 #if RIR_DBG_STRUCTCPY
-void jrn_gen_struct_copy(int a0) {
+void jrn_gen_struct_copy(int a0) { MCC_TRACE("enter\n");
 	if (rir_dbg_on())
 		fprintf(stderr,
 						"[scpy] %s phase=%s size=%d dst(r=%x c=%lld t=%x) src(r=%x c=%lld "
