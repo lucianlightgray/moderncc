@@ -2860,6 +2860,7 @@ void ast_hook_fneg_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_CASTGV);
 	if (!ast_convert_gv_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)

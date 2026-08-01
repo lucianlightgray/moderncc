@@ -50,6 +50,7 @@ enum {
 	RIR_M_DEFAULT,
 	RIR_M_CMPINV,
 	RIR_M_RETEXPR,
+	RIR_M_CASTGV,
 	RIR_M_COUNT
 };
 
@@ -97,6 +98,7 @@ void rir_mark_val2(int kind, long long a, long long b);
 #define RIR_M_DEFAULT 0
 #define RIR_M_CMPINV 0
 #define RIR_M_RETEXPR 0
+#define RIR_M_CASTGV 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)

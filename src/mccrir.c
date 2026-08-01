@@ -1407,6 +1407,19 @@ static void rir_mark_apply(const RirOp *ro) {
 		   against the tree's `t=0 ref=0` in 18 near-miss bodies. */
 		rir_push(n);
 		break;
+	case RIR_M_CASTGV:
+		/* The parser materialises an explicit cast's result when
+		   gv_cast_rvalue() says so, and the tree records that on the node as
+		   AST_FB_CONVERT_GV -- ast_replay_value's Convert arm re-runs it. Without
+		   the bit the callee of `((int (*)(int,int))p)(a,b)` is never spilled and
+		   the call reloads the pre-cast slot, 8 bytes short. */
+		if (rir_shn > 0) {
+			AstLocal top = rir_sh[rir_shn - 1];
+			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert)
+				ast_set_fbits(rir_arena, top,
+											ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
+		}
+		break;
 	case RIR_M_CONVERT:
 		a = rir_pop();
 		if (a == AST_NONE) {
