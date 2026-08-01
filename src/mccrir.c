@@ -743,6 +743,35 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_push_typed(n);
 			break;
 		}
+		/* The tree wraps a binary operand in a Convert when a cast happened that
+		   emitted no code -- `(long long)(x - y) & mask` in __va_arg_inline gives
+		   Convert(->VT_LLONG, Binary(-, ..)) as the left operand. The node is an
+		   UNTYPED AST_Binary by design, so a rule keyed on the node's own type
+		   cannot see it; this op's own snapshot is the witness. */
+		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2 &&
+				jrn_vs[o->vs_off + o->vs_n - 1].type.t !=
+						jrn_vs[o->vs_off + o->vs_n - 2].type.t) {
+			int q;
+			for (q = 0; q < 2; q++) {
+				AstLocal cur = rir_sh[rir_shn - 1 - q];
+				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
+				int st = sv2->type.t;
+				if (cur == AST_NONE || rir_shtype[rir_shn - 1 - q])
+					continue;
+				if (ast_type_t(rir_arena, cur) != 0 ||
+						ast_kind(rir_arena, cur) != AST_Binary)
+					continue;
+				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
+						(st & VT_BTYPE) == VT_FUNC || is_float(st))
+					continue;
+				{
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
+					ast_add_child(rir_arena, cv, cur);
+					rir_sh[rir_shn - 1 - q] = cv;
+				}
+			}
+		}
 		b = rir_pop();
 		a = rir_pop();
 		if (a == AST_NONE || b == AST_NONE) {
