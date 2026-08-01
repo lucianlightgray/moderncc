@@ -1565,6 +1565,7 @@ WINBASEAPI LONG WINAPI CompareFileTime(CONST FILETIME *lpFileTime1, CONST FILETI
 WINBASEAPI WINBOOL WINAPI FileTimeToDosDateTime(CONST FILETIME *lpFileTime, LPWORD lpFatDate, LPWORD lpFatTime);
 WINBASEAPI WINBOOL WINAPI DosDateTimeToFileTime(WORD wFatDate, WORD wFatTime, LPFILETIME lpFileTime);
 WINBASEAPI DWORD WINAPI GetTickCount(VOID);
+WINBASEAPI ULONGLONG WINAPI GetTickCount64(VOID);
 WINBASEAPI WINBOOL WINAPI SetSystemTimeAdjustment(DWORD dwTimeAdjustment, WINBOOL bTimeAdjustmentDisabled);
 WINBASEAPI WINBOOL WINAPI GetSystemTimeAdjustment(PDWORD lpTimeAdjustment, PDWORD lpTimeIncrement,
 																									PBOOL lpTimeAdjustmentDisabled);
