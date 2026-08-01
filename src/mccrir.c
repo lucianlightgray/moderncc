@@ -579,6 +579,23 @@ static AstLocal rir_leaf(const SValue *sv) {
 	ast_set_wide(rir_arena, n, ast_sv_hi(sv),
 							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
 	ast_set_sym(rir_arena, n, (uint64_t)(uintptr_t)sv->sym);
+	/* A cast that emits no code leaves the snapshot carrying the CAST type over
+	   a symbol whose declaration says something else -- `((int (*)(int,int))p)(a,b)`
+	   with `void *p` is the shape. The tree's leaf keeps the declared type and
+	   the cast is its own Convert, which is not inert: gen_cast materialises and
+	   spills, 8 bytes in via_cast. The Sym is the only witness to the declared
+	   type at this boundary. */
+	if (sv->sym && (sv->r & VT_LVAL) && sv->sym->type.t == sv->type.t &&
+			sv->sym->type.ref != sv->type.ref &&
+			(sv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+		AstLocal cv;
+		ast_set_type(rir_arena, n, sv->sym->type.t,
+								 (uint64_t)(uintptr_t)sv->sym->type.ref);
+		cv = ast_node(rir_arena, AST_Convert);
+		ast_set_type(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_add_child(rir_arena, cv, n);
+		return cv;
+	}
 	return n;
 }
 
