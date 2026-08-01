@@ -43,6 +43,9 @@ enum {
 	RIR_M_RETJMP,
 	RIR_M_IRETURN,
 	RIR_M_OPASSIGN,
+	RIR_M_GOTO,
+	RIR_M_CASE,
+	RIR_M_DEFAULT,
 	RIR_M_COUNT
 };
 
@@ -53,6 +56,7 @@ void rir_rend_to_val(int kind, int val);
 void rir_rcond_done(void);
 void rir_mark_pt(int kind);
 void rir_mark_val(int kind, int val);
+void rir_mark_val2(int kind, long long a, long long b);
 
 #else
 
@@ -83,6 +87,9 @@ void rir_mark_val(int kind, int val);
 #define RIR_M_RETJMP 0
 #define RIR_M_IRETURN 0
 #define RIR_M_OPASSIGN 0
+#define RIR_M_GOTO 0
+#define RIR_M_CASE 0
+#define RIR_M_DEFAULT 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
@@ -90,6 +97,7 @@ void rir_mark_val(int kind, int val);
 #define rir_rcond_done() ((void)0)
 #define rir_mark_pt(k) ((void)0)
 #define rir_mark_val(k, v) ((void)0)
+#define rir_mark_val2(k, a, b) ((void)0)
 #define rir_env 0
 
 #endif

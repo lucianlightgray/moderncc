@@ -23,6 +23,7 @@ typedef struct RirOp {
 	int lbl, lbl2;
 	int pt;
 	int rval;
+	long long rv1, rv2;
 	int mvs_off, mvs_n;
 	JrnOp p;
 } RirOp;
@@ -36,6 +37,7 @@ typedef struct RirMark {
 	int tag;
 	int kind;
 	int val;
+	long long v1, v2;
 	int at;
 	int vs_off, vs_n;
 } RirMark;
@@ -105,7 +107,13 @@ static RirOp *rir_new(int tag) {
 	return o;
 }
 
+static void rir_mark_v2(int tag, int kind, int val, long long a, long long b);
+
 static void rir_mark_v(int tag, int kind, int val) {
+	rir_mark_v2(tag, kind, val, 0, 0);
+}
+
+static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	RirMark *m;
 	if (rir_markn >= rir_markcap) {
 		rir_markcap = rir_markcap ? rir_markcap * 2 : 128;
@@ -115,6 +123,8 @@ static void rir_mark_v(int tag, int kind, int val) {
 	m->tag = tag;
 	m->kind = kind;
 	m->val = val;
+	m->v1 = a;
+	m->v2 = b;
 	m->at = jrn_n;
 	/* The marker's own vstack, captured live. A region or point marker consumes
 	   the value the parser has in hand AT the tap, and no neighbouring op's
@@ -214,6 +224,12 @@ void rir_mark_val(int kind, int val) {
 	if (!rir_active)
 		return;
 	rir_mark_v(RIR_T_MARK, kind, val);
+}
+
+void rir_mark_val2(int kind, long long a, long long b) {
+	if (!rir_active)
+		return;
+	rir_mark_v2(RIR_T_MARK, kind, 0, a, b);
 }
 
 void rir_reset(void) {
@@ -437,6 +453,8 @@ static void rir_build(void) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
+			o->rv1 = rir_marks[m].v1;
+			o->rv2 = rir_marks[m].v2;
 			o->mvs_off = rir_marks[m].vs_off;
 			o->mvs_n = rir_marks[m].vs_n;
 			o->jidx = -1;
@@ -760,9 +778,36 @@ static void rir_mark_apply(const RirOp *ro) {
 			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
 		break;
 	case RIR_M_JUMP:
-		rir_stmt(ast_node(rir_arena, AST_Jump));
+		/* ast_replay_bb dispatches AST_Jump on its op: 0 break, 1 continue,
+		   2 case, 3 default, 4 label, 5 goto. Emitting a bare node meant every
+		   one of them replayed as a break. */
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, ro->rval ? 1 : 0);
+		rir_stmt(n);
+		break;
+	case RIR_M_GOTO:
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, 5);
+		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
+		rir_stmt(n);
+		break;
+	case RIR_M_CASE:
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, 2);
+		ast_set_ival(rir_arena, n, (uint64_t)ro->rv1);
+		ast_set_fbits(rir_arena, n, (uint64_t)ro->rv2);
+		rir_stmt(n);
+		break;
+	case RIR_M_DEFAULT:
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, 3);
+		rir_stmt(n);
 		break;
 	case RIR_M_LABEL:
+		n = ast_node(rir_arena, AST_Jump);
+		ast_set_op(rir_arena, n, 4);
+		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
+		rir_stmt(n);
 		break;
 	case RIR_M_LOAD:
 		a = rir_pop();

@@ -3380,7 +3380,7 @@ void ast_hook_do_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_break_continue(int is_continue) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_JUMP);
+	rir_mark_val(RIR_M_JUMP, is_continue);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_vn != 0) { MCC_TRACE("br\n");
@@ -3552,6 +3552,7 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_case(int64_t v1, int64_t v2, int type) { MCC_TRACE("enter\n");
+	rir_mark_val2(RIR_M_CASE, (long long)v1, (long long)v2);
 	(void)type;
 	if (!ast_active || ast_desync || ast_bail || ast_cf_top < 1)
 		{ MCC_TRACE("br\n"); return; }
@@ -3568,6 +3569,7 @@ void ast_hook_case(int64_t v1, int64_t v2, int type) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_default(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_DEFAULT);
 	if (!ast_active || ast_desync || ast_bail || ast_cf_top < 1)
 		{ MCC_TRACE("br\n"); return; }
 	AstLocal m = ast_node(ast_cur, AST_Jump);
@@ -3598,7 +3600,7 @@ void ast_hook_switch_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_label(int v) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_LABEL);
+	rir_mark_val(RIR_M_LABEL, v);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (nb_vla_open > 0 || cur_scope->cl.s) { MCC_TRACE("br\n");
@@ -3617,7 +3619,7 @@ void ast_hook_label(int v) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_goto(int v) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_JUMP);
+	rir_mark_val(RIR_M_GOTO, v);
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (nb_vla_open > 0 || cur_scope->cl.s) { MCC_TRACE("br\n");
