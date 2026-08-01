@@ -23,6 +23,7 @@ typedef struct RirOp {
 	int lbl, lbl2;
 	int pt;
 	int rval;
+	int mvs_off, mvs_n;
 	JrnOp p;
 } RirOp;
 
@@ -36,6 +37,7 @@ typedef struct RirMark {
 	int kind;
 	int val;
 	int at;
+	int vs_off, vs_n;
 } RirMark;
 
 int rir_env;
@@ -47,6 +49,8 @@ static RirOp *rir_ops;
 static int rir_n, rir_cap;
 static RirMark *rir_marks;
 static int rir_markn, rir_markcap;
+static SValue *rir_mvs;
+static int rir_mvsn, rir_mvscap;
 static int rir_stack[256];
 static int rir_stackn;
 static int rir_unbal;
@@ -111,6 +115,31 @@ static void rir_mark_v(int tag, int kind, int val) {
 	m->kind = kind;
 	m->val = val;
 	m->at = jrn_n;
+	/* The marker's own vstack, captured live. A region or point marker consumes
+	   the value the parser has in hand AT the tap, and no neighbouring op's
+	   snapshot is that state: the op before it predates the push and the op after
+	   it may already have consumed it (a switch pops its selector with no op at
+	   all). This is the operand binding for markers, read rather than derived,
+	   the same way the op snapshots are for ops. */
+	{
+		int n = (int)(vtop - vstack + 1);
+		if (n < 0)
+			n = 0;
+		if (n > VSTACK_SIZE)
+			n = VSTACK_SIZE;
+		if (rir_mvsn + n > rir_mvscap) {
+			int ncap = rir_mvscap ? rir_mvscap * 2 : 1024;
+			while (ncap < rir_mvsn + n)
+				ncap *= 2;
+			rir_mvs = mcc_realloc(rir_mvs, (size_t)ncap * sizeof *rir_mvs);
+			rir_mvscap = ncap;
+		}
+		if (n)
+			memcpy(rir_mvs + rir_mvsn, vstack, (size_t)n * sizeof(SValue));
+		m->vs_off = rir_mvsn;
+		m->vs_n = n;
+		rir_mvsn += n;
+	}
 	rir_tot_regions++;
 	if (tag != RIR_T_MARK && kind >= 0 && kind < RIR_R_COUNT)
 		rir_reghist[kind]++;
@@ -185,6 +214,7 @@ void rir_mark_val(int kind, int val) {
 void rir_reset(void) {
 	rir_n = 0;
 	rir_markn = 0;
+	rir_mvsn = 0;
 	rir_stackn = 0;
 	rir_unbal = 0;
 	rir_ovf = 0;
@@ -402,6 +432,8 @@ static void rir_build(void) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
+			o->mvs_off = rir_marks[m].vs_off;
+			o->mvs_n = rir_marks[m].vs_n;
 			o->jidx = -1;
 			o->lbl = -1;
 			o->lbl2 = -1;
@@ -492,28 +524,28 @@ static void rir_push_typed(AstLocal n) {
    the model holds past the recorded depth is dropped. Divergences are counted
    rather than smoothed over -- rir_arena_mismatch is the honest quality signal
    for this reconstruction, the same role fix= plays for replay. */
-static void rir_stamp_types(const JrnOp *o) {
+static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
-	if (o->vs_n < 0)
+	if (n < 0)
 		return;
-	want = o->vs_n - ast_base_depth;
+	want = n - ast_base_depth;
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v;
 		if (!rir_shtype[k])
 			continue;
-		v = &jrn_vs[o->vs_off + ast_base_depth + k];
+		v = &base[ast_base_depth + k];
 		ast_set_type(rir_arena, rir_sh[k], v->type.t,
 								 (uint64_t)(uintptr_t)v->type.ref);
 		rir_shtype[k] = 0;
 	}
 }
 
-static void rir_reconcile(const JrnOp *o) {
+static void rir_reconcile_sv(const SValue *base, int n) {
 	int want, k;
-	if (o->vs_n < 0)
+	if (n < 0)
 		return;
-	rir_stamp_types(o);
-	want = o->vs_n - ast_base_depth;
+	rir_stamp_sv(base, n);
+	want = n - ast_base_depth;
 	if (want < 0)
 		want = 0;
 	if (want > VSTACK_SIZE)
@@ -527,10 +559,22 @@ static void rir_reconcile(const JrnOp *o) {
 	if (rir_after_ret && rir_shn == 0)
 		return;
 	for (k = rir_shn; k < want; k++) {
-		rir_push(rir_leaf(&jrn_vs[o->vs_off + ast_base_depth + k]));
+		rir_push(rir_leaf(&base[ast_base_depth + k]));
 		if (k < want - 1)
 			rir_arena_mismatch++;
 	}
+}
+
+static void rir_stamp_types(const JrnOp *o) {
+	if (o->vs_n < 0)
+		return;
+	rir_stamp_sv(jrn_vs + o->vs_off, o->vs_n);
+}
+
+static void rir_reconcile(const JrnOp *o) {
+	if (o->vs_n < 0)
+		return;
+	rir_reconcile_sv(jrn_vs + o->vs_off, o->vs_n);
 }
 
 static void rir_op_effect(const RirOp *ro) {
@@ -970,40 +1014,19 @@ static void rir_to_arena(void) {
 		RirOp *ro = &rir_ops[i];
 		if (ro->tag == RIR_T_MARK) {
 			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth) {
-				/* A value a marker consumes is not on the shadow stack yet: it was
-				   pushed by an op whose own snapshot predates it, and the snapshot
-				   that shows it is the NEXT op's. Reconcile against that one, not
-				   merely stamp its types, or the marker pops nothing and the node
-				   comes out childless. */
-				int want = ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN;
-				int j;
-				for (j = i + 1; j < rir_n; j++)
-					if (rir_ops[j].tag == RIR_T_OP) {
-						if (want)
-							rir_reconcile(&rir_ops[j].p);
-						else
-							rir_stamp_types(&rir_ops[j].p);
-						break;
-					}
+				if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN)
+					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+				else
+					rir_stamp_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				rir_mark_apply(ro);
 			}
 			continue;
 		}
 		if (ro->tag != RIR_T_OP) {
-			/* A region that binds a condition reads the shadow stack, and the same
-			   lookahead the consuming markers need applies: `if (0)` pushes its
-			   constant in an op whose own snapshot predates it, so without this the
-			   region takes no condition and comes out a child short. */
 			if (ro->tag == RIR_T_RBEGIN && !rir_synth_depth && !rir_call_depth &&
 					(ro->rkind == RIR_R_IF || ro->rkind == RIR_R_WHILE ||
-					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND)) {
-				int j;
-				for (j = i + 1; j < rir_n; j++)
-					if (rir_ops[j].tag == RIR_T_OP) {
-						rir_reconcile(&rir_ops[j].p);
-						break;
-					}
-			}
+					 ro->rkind == RIR_R_SWITCH || ro->rkind == RIR_R_COND))
+				rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 			rir_region(ro);
 			continue;
 		}
