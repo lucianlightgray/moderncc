@@ -292,11 +292,12 @@ function(mcc_validate_config)
             "-DCMAKE_C_COMPILER to gcc/clang.")
     endif()
     if(MCC_BUILD_SANITIZE
-       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
+       AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|ModernCC|TinyCC"
        AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
         message(FATAL_ERROR
-            "mcc config: MCC_BUILD_SANITIZE needs a GCC/Clang or MSVC host compiler "
-            "(have '${CMAKE_C_COMPILER_ID}'); disable it with -DMCC_BUILD_SANITIZE=OFF.")
+            "mcc config: MCC_BUILD_SANITIZE needs a GCC/Clang, MSVC, or mcc host "
+            "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it with "
+            "-DMCC_BUILD_SANITIZE=OFF.")
     endif()
     if(MCC_BUILD_PROFILE AND MCC_TARGETOS STREQUAL "Darwin")
         message(FATAL_ERROR
@@ -1423,6 +1424,34 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
     set(MCC_CC_NAME gcc)
 else()
     set(MCC_CC_NAME unknown)
+endif()
+# CMake's built-in TinyCC support does not define the shared-library RUNPATH
+# link flag, so when mcc is CMAKE_C_COMPILER (self-host / stage2 builds) the
+# build-tree consumers of libmcc.so (jit selftests, libtest, abitest,
+# hypervisor, tls-models, ...) are linked with no RUNPATH and fail to load it
+# at test time ("libmcc.so: cannot open shared object file"). mcc supports
+# -Wl,-rpath,<dir> (link_option "rpath="), so teach CMake to bake the build-tree
+# rpath. ELF/Mach-O only; Windows resolves the DLL via PATH.
+if(MCC_CC_NAME STREQUAL "mcc" AND NOT WIN32
+   AND NOT CMAKE_EXECUTABLE_RUNTIME_C_FLAG)
+    # Both the executable and shared-library rpath flags: the build-tree
+    # consumers that fail are executables (libtest, jit_selftest, abitest, ...)
+    # linking libmcc.so, which use CMAKE_EXECUTABLE_RUNTIME_C_FLAG.
+    set(CMAKE_EXECUTABLE_RUNTIME_C_FLAG "-Wl,-rpath,")
+    set(CMAKE_EXECUTABLE_RUNTIME_C_FLAG_SEP ":")
+    set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG "-Wl,-rpath,")
+    set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG_SEP ":")
+endif()
+# CMake also has no Windows platform module for TinyCC, so it falls back to
+# MSVC-style import-library naming (mcc.lib) that mcc never produces --
+# build-tree consumers of libmcc.dll (libtest, jit selftests, ...) then fail
+# to link ("file 'mcc.lib' not found"). mcc's native import format is the
+# .def it already writes next to every -shared DLL (LIBRARY + EXPORTS lines),
+# and mcc links `libmcc.def` given on the command line directly, so name the
+# import library lib<name>.def: the artifact mcc -shared emits IS the implib.
+if(MCC_CC_NAME STREQUAL "mcc" AND WIN32)
+    set(CMAKE_IMPORT_LIBRARY_PREFIX "lib")
+    set(CMAKE_IMPORT_LIBRARY_SUFFIX ".def")
 endif()
 if("${CMAKE_C_COMPILER_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)")
     set(MCC_GCC_MAJOR "${CMAKE_MATCH_1}")
@@ -2812,7 +2841,12 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         VERBATIM)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccjit_blob.c")
     target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_BLOB=1)
-    if(MCC_TARGETOS STREQUAL "WIN32")
+    if(MCC_CC_NAME STREQUAL "mcc")
+        # Self-host: the engine blob is compiled by mcc itself and references
+        # only mcc's own runtime, so there is no gcc/mingw libdir to bake --
+        # and probing mcc with -print-libgcc-file-name below just prints an
+        # invalid-option error on every self-host configure.
+    elseif(MCC_TARGETOS STREQUAL "WIN32")
         # The blob is the JIT engine compiled by the host mingw gcc, so it
         # references that toolchain's runtime (libmingwex __mingw_*/ldexpl,
         # libgcc __chkstk_ms, ucrt/kernel32 import stubs). Bake the toolchain lib
@@ -3150,7 +3184,11 @@ if(MCC_ENABLE_CROSS)
     endforeach()
 endif()
 
-if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared)
+# Under CC=mcc on Windows the def is already the declared import library of
+# the libmcc link itself (see the CMAKE_IMPORT_LIBRARY_SUFFIX block), so this
+# impdef step would be a second rule generating libmcc.def.
+if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared
+   AND NOT (WIN32 AND MCC_CC_NAME STREQUAL "mcc"))
     add_custom_command(
         OUTPUT "${CMAKE_BINARY_DIR}/libmcc.def"
         COMMAND ${MCC_EMULATOR} "$<TARGET_FILE:mcc>" -impdef "$<TARGET_FILE:${_libmcc_shared}>"
@@ -5267,7 +5305,14 @@ if(MCC_BUILD_TESTS)
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/static/smoke.c")
-        if(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
+        if(MCC_CC_NAME STREQUAL "mcc" AND MCC_CPU STREQUAL "x86_64")
+            # x86_64 self-host: mcc lacks __float128, so it cannot compile
+            # runtime/lib/float128.c and the mcc-built mccrt has no
+            # __unordtf2/__letf2. A static exe (no libgcc) then cannot resolve
+            # the TF-mode long-double helpers mcc's x86_64 codegen emits. See
+            # the "x86_64 self-host __float128" item in docs/TODO.md.
+            mcc_skip_test(static-glibc-run "x86_64 self-host: mcc-built mccrt lacks __unordtf2/__letf2 (no __float128); a static TF-helper link is unresolved")
+        elseif(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
            AND MCC_TARGETOS STREQUAL "Linux" AND MCC_CPU STREQUAL "x86_64")
             execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
                 OUTPUT_VARIABLE _static_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
@@ -5290,7 +5335,12 @@ if(MCC_BUILD_TESTS)
         if(NOT MCC_EMULATOR AND MCC_TARGETOS STREQUAL "Linux"
            AND MCC_CPU STREQUAL "x86_64")
             set(_tls_static 0)
-            if(NOT MCC_BUILD_MUSL)
+            # The static TLS variant needs the same x86_64 TF-helper static link
+            # static-glibc-run does, so an mcc-built (self-host) mccrt cannot
+            # resolve it (no __float128 -> no float128.o). Run only the dynamic
+            # TLS models under CC=mcc; the static variant stays covered by the
+            # gcc/clang-built cells. (docs/TODO.md: x86_64 self-host __float128.)
+            if(NOT MCC_BUILD_MUSL AND NOT MCC_CC_NAME STREQUAL "mcc")
                 execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
                     OUTPUT_VARIABLE _tls_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
                 if(_tls_libc AND EXISTS "${_tls_libc}")

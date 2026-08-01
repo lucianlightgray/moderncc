@@ -17,6 +17,7 @@ _CRTIMP errno_t __cdecl _strlwr_s_l(char *_Str, size_t _Size, _locale_t _Locale)
 _CRTIMP errno_t __cdecl _strnset_s(char *_Str, size_t _Size, int _Val, size_t _MaxCount);
 _CRTIMP errno_t __cdecl _strupr_s(char *_Str, size_t _Size);
 _CRTIMP errno_t __cdecl _strupr_s_l(char *_Str, size_t _Size, _locale_t _Locale);
+_CRTIMP char *__cdecl strtok_s(char *_Str, const char *_Delim, char **_Context);
 #ifndef _WSTRING_S_DEFINED
 #define _WSTRING_S_DEFINED
 _CRTIMP wchar_t *__cdecl wcstok_s(wchar_t *_Str, const wchar_t *_Delim, wchar_t **_Context);

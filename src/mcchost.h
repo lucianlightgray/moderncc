@@ -95,6 +95,12 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define __x86_64__ 1
 #endif
 #endif
+#if defined(__MCC__) && !defined(_MSC_VER)
+/* Self-host: mcc's Win32 headers declare strtok_s (msvcrt exports it) but
+   not the POSIX strtok_r the tools use. Same mapping as the _MSC_VER branch
+   above. */
+#define strtok_r strtok_s
+#endif
 #if defined(_M_ARM64) && !defined(__aarch64__)
 #define __aarch64__ 1
 #endif

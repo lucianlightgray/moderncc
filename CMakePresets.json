@@ -77,6 +77,20 @@
       "inherits": "_ninja",
       "cacheVariables": { "MCC_LOCAL_CI_AS_TEST": "ON" }
     },
+    {
+      "name": "_stage2",
+      "hidden": true,
+      "inherits": "_ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MCC_TOOLCHAIN_PROFILE": "mcc"
+      }
+    },
+    {
+      "name": "stage2",
+      "displayName": "Stage-2 self-host base (mcc builds mcc; pass -DCMAKE_C_COMPILER=<stage1 mcc>)",
+      "inherits": "_stage2"
+    },
 
     {
       "name": "linux-gcc",
@@ -342,6 +356,7 @@
     { "name": "cross", "configurePreset": "cross" },
     { "name": "matrix", "configurePreset": "matrix" },
     { "name": "local-ci", "configurePreset": "local-ci" },
+    { "name": "stage2", "configurePreset": "stage2" },
 
     { "name": "linux-gcc", "configurePreset": "linux-gcc" },
     { "name": "linux-gcc-cross", "configurePreset": "linux-gcc-cross" },

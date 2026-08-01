@@ -8,7 +8,16 @@
 #define MCC_TRACE(...) ((void)0)
 #endif
 
+#ifdef MCC_CONFIG_BACKTRACE_ONLY
+/* The backtrace-only runtime objects (bt-exe/bt-log/bt-dll) #include this file
+ * and are linked BOTH into standalone bounds-checked programs (which need this
+ * global) AND into mcc itself when it builds mcc_s / the diag-rt targets (which
+ * already define it strongly). Emit a weak definition here so the two coalesce
+ * instead of colliding as a duplicate strong symbol under mcc's own linker. */
+__attribute__((weak)) unsigned char mcc_log_verbose = 0;
+#else
 unsigned char mcc_log_verbose = 0;
+#endif
 
 #ifndef MCC_CONFIG_BACKTRACE_ONLY
 

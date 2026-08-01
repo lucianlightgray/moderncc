@@ -2181,7 +2181,20 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 			args_parser_add_file(s, o.arg, AFF_TYPE_LIB | AFF_WHOLE_ARCHIVE);
 		} else if (link_option(&o, "single_module")) { MCC_TRACE("br\n");
 			ignoring = 1;
+		} else if (link_option(&o, "search_paths_first")) { MCC_TRACE("br\n");
+			/* Apple ld search order; mcc's own -L search suffices. CMake's
+			 * Darwin link rules pass this on every link, so accept it as a
+			 * silent no-op (a warning here would fire on every link). */
+		} else if (link_option(&o, "headerpad_max_install_names")) { MCC_TRACE("br\n");
+			/* pads the Mach-O header for later install_name_tool edits; mcc
+			 * does not need it. CMake's Darwin link rules pass it on every
+			 * link, so accept it as a silent no-op. */
 #endif
+		} else if (link_option(&o, "x")) { MCC_TRACE("br\n");
+			/* strip local symbols (-Wl,-x): MCC_BUILD_STRIP passes this on both
+			 * ld64 and GNU ld. mcc does not yet strip locals itself, so accept
+			 * it as a silent no-op (a self-hosted release still links; the
+			 * separate `strip` pass in `ci dist` does the real strip). */
 		} else if (link_option(&o, "as-needed")) { MCC_TRACE("br\n");
 			ignoring = 1;
 		} else if (link_option(&o, "O")) { MCC_TRACE("br\n");

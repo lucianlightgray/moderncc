@@ -14,7 +14,7 @@ Usage: tools/selfhost-smoke.py <build-dir> [KNOB=VAL ...]
   tools/selfhost-smoke.py cmake-debug
   tools/selfhost-smoke.py cmake-debug MCC_AST_NARROW_FIX=1 MCC_AST_SETHI_LEAF=1 MCC_AST_SCCP_FIX=1
 """
-import json, os, shlex, subprocess, sys, tempfile
+import json, os, re, shlex, subprocess, sys, tempfile
 
 def main():
     if len(sys.argv) < 2:
@@ -39,7 +39,15 @@ def main():
 
     cc = json.load(open(os.path.join(root, bdir, "compile_commands.json")))
     rec = [x for x in cc if x["file"].endswith("/mcc.c")][0]
-    flags = [a for a in shlex.split(rec["command"])[1:]
+    cmd = rec["command"]
+    if os.name == "nt":
+        # A TinyCC-toolchain ninja build writes backslash -I paths into
+        # compile_commands.json while still POSIX-escaping quotes (\"), so a
+        # plain shlex.split eats the path backslashes (-IC:UsersX...) and the
+        # self-host compile then cannot find libmcc.h. Double every backslash
+        # NOT escaping a quote so the paths survive the POSIX split.
+        cmd = re.sub(r'\\(?!")', r'\\\\', cmd)
+    flags = [a for a in shlex.split(cmd)[1:]
              if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
     # MCC_EMBED_MCCRT bakes the runtime into the compiler as mccrt_blob.c.o, and
