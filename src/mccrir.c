@@ -1486,6 +1486,15 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_CASE:
+		/* A new arm or label ENDS the post-return aftermath. That guard exists for
+		   gfunc_return's own pushes, which arrive with the shadow stack empty; in a
+		   switch whose every arm is `return <expr>;` it stayed set across the arm
+		   boundary, so the reconcile refused to refill and the arm's own genop
+		   popped nothing -- 16 arena mismatches per body in cmp_invert.c, which is
+		   what kept ref and inv out of the C2 census entirely. Clearing it whenever
+		   values are live instead admits 25 more bodies and costs 11 that were
+		   passing; the statement boundary is the right scope. */
+		rir_after_ret = 0;
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, 2);
 		ast_set_ival(rir_arena, n, (uint64_t)ro->rv1);
@@ -1493,11 +1502,13 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_DEFAULT:
+		rir_after_ret = 0;
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, 3);
 		rir_stmt(n);
 		break;
 	case RIR_M_LABEL:
+		rir_after_ret = 0;
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, 4);
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
