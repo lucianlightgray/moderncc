@@ -740,6 +740,11 @@ static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
 static short rir_vst_shn[16];
 static unsigned char rir_vst_sup[16];
+/* The two operands' frame offsets as the region OPENED. Which shadow slot holds
+   the target is not fixed -- va_start's copy leaves it under the value and a
+   cleanup spill leaves it on top -- so the rebuild matches them by offset
+   rather than by position. */
+static long long rir_vst_tc[16], rir_vst_vc[16];
 static int rir_vstn;
 
 static void rir_flush_pending_call(void) {
@@ -1685,6 +1690,8 @@ static void rir_region(const RirOp *ro) {
 			if (rir_vstn < 16) {
 				int n2 = ro->mvs_n - ast_base_depth;
 				int allow = 0;
+				rir_vst_tc[rir_vstn] = 0;
+				rir_vst_vc[rir_vstn] = 0;
 				if (n2 >= 2 && rir_shn >= 2 &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
 								VT_STRUCT &&
@@ -1692,6 +1699,10 @@ static void rir_region(const RirOp *ro) {
 								VT_STRUCT) {
 					rir_vstruct_depth++;
 					rir_vst_sup[rir_vstn] = 1;
+					rir_vst_tc[rir_vstn] =
+							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 2].c.i;
+					rir_vst_vc[rir_vstn] =
+							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 1].c.i;
 				} else {
 					rir_vst_sup[rir_vstn] = 0;
 				}
@@ -1815,7 +1826,17 @@ static void rir_region(const RirOp *ro) {
 			   ast_replay_value re-runs gfunc_return itself -- so rebuilding it adds a
 			   Store the tree does not have and desynchronises the shadow stack. A
 			   pending Return is exactly that case and nothing else. */
-			if (rir_pending_ret != AST_NONE) {
+			/* But NOT every vstore under a pending Return is gfunc_return's own: a
+			   cleanup attribute spills the return value to a temp before the
+			   destructor call and reloads it after, and that copy has to be
+			   modelled or the reload comes off the original slot. gfunc_return's
+			   shape is two AST_OP_ADDR unaries; the spill's is two lvalues. */
+			if (rir_pending_ret != AST_NONE &&
+					(rir_shn < 2 ||
+					 (ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Unary &&
+						ast_op(rir_arena, rir_sh[rir_shn - 1]) == AST_OP_ADDR) ||
+					 (ast_kind(rir_arena, rir_sh[rir_shn - 2]) == AST_Unary &&
+						ast_op(rir_arena, rir_sh[rir_shn - 2]) == AST_OP_ADDR))) {
 				if (rir_vst_shn[rir_vstn] >= 0 && rir_shn > rir_vst_shn[rir_vstn])
 					rir_shn = rir_vst_shn[rir_vstn];
 				break;
@@ -1828,14 +1849,46 @@ static void rir_region(const RirOp *ro) {
 				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
 				if (rir_vst_sup[rir_vstn]) {
-					AstLocal sw = t;
-					t = v;
-					v = sw;
+					long long tc = rir_vst_tc[rir_vstn], vc = rir_vst_vc[rir_vstn];
+					long long ti = (long long)ast_ival(rir_arena, t);
+					long long vi = (long long)ast_ival(rir_arena, v);
+					/* t is the popped TOP: swap only when the target is the slot under
+					   it, decided by the offsets the region opened with and falling
+					   back to the parser's own vstore order when they do not tell. */
+					if (!(tc != vc && ti == tc && vi == vc)) {
+						AstLocal sw = t;
+						t = v;
+						v = sw;
+					}
 				}
 				n = ast_node(rir_arena, AST_Store);
 				ast_add_child(rir_arena, n, t);
 				ast_add_child(rir_arena, n, v);
 				rir_stmt(n);
+				/* A cleanup attribute spills the pending return value to a temp
+				   before the destructor call and the parser reloads from THAT temp,
+				   so the held Return has to follow the value to its new home. The
+				   tree does not model this at all -- it is unfaithful on these
+				   bodies -- and reproducing it is the point of Replay_IR. */
+				if (rir_pending_ret != AST_NONE &&
+						ast_nchild(rir_arena, rir_pending_ret) == 1) {
+					AstLocal rv = ast_child(rir_arena, rir_pending_ret, 0);
+					if (rv != AST_NONE && ast_nchild(rir_arena, rv) == 0 &&
+							ast_nchild(rir_arena, t) == 0 &&
+							ast_kind(rir_arena, rv) == ast_kind(rir_arena, v) &&
+							ast_ival(rir_arena, rv) == ast_ival(rir_arena, v) &&
+							ast_sym(rir_arena, rv) == ast_sym(rir_arena, v)) {
+						/* Retype the node in place rather than re-parenting: swapping the
+						   child would leave the old one an orphan whose parent still
+						   names the Return, which ast_validate rejects. */
+						ast_set_kind(rir_arena, rv, ast_kind(rir_arena, t));
+						ast_set_op(rir_arena, rv, ast_op(rir_arena, t));
+						ast_set_type(rir_arena, rv, ast_type_t(rir_arena, t),
+												 ast_type_ref(rir_arena, t));
+						ast_set_ival(rir_arena, rv, ast_ival(rir_arena, t));
+						ast_set_sym(rir_arena, rv, ast_sym(rir_arena, t));
+					}
+				}
 				{
 					AstLocal mv = ast_node(rir_arena, AST_StoreVal);
 					ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
