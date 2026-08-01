@@ -11715,6 +11715,9 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 
 		if (c != 0) { MCC_TRACE("br\n");
 			*vtop = sv;
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_ternary_pick();
+#endif
 			gen_cast(&type);
 			if (islv) { MCC_TRACE("br\n");
 				mk_pointer(&vtop->type);

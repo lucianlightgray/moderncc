@@ -1978,6 +1978,7 @@ static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
 static unsigned char rir_tern_on[16];
+static unsigned char rir_tern_live1[16];
 static int rir_tern_n;
 int rir_body_loc_sv;
 static unsigned char rir_lor_on[16];
@@ -3005,6 +3006,7 @@ void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 	if (rir_tern_n < 16) { MCC_TRACE("br\n");
 		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 ? (g ? 2 : 1) : 0);
+		rir_tern_live1[rir_tern_n] = (unsigned char)(c == 1 && !g);
 		if (rir_tern_on[rir_tern_n]) { MCC_TRACE("br\n");
 			rir_rbegin_val(RIR_R_TERNARY, rir_tern_on[rir_tern_n] == 2);
 			rir_rbegin(RIR_R_COND);
@@ -3063,6 +3065,8 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 		rir_rend_to_val(RIR_R_TARM, which);
 		rir_rbegin(RIR_R_COND);
 	}
+	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1] && which == 0)
+		{ MCC_TRACE("br\n"); rir_mark_pt(RIR_M_TERNHOLD); }
 	if (ast_tern_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
@@ -3089,6 +3093,11 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, ast_tern[ast_tern_top - 1], ast_vs[ast_vn - 1]);
 	ast_vn--;
 	ast_in_call = 1;
+}
+
+void ast_hook_ternary_pick(void) { MCC_TRACE("enter\n");
+	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1])
+		{ MCC_TRACE("br\n"); rir_mark_pt(RIR_M_TERNPICK); }
 }
 
 void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");

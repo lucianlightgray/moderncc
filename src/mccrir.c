@@ -296,6 +296,30 @@ static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];
 static int rir_xtn;
 
+/* mk_pointer's sym_push lands on the parser's local stack and is popped long
+   before the C2 trial runs, so a pointer type the reconstruction needs has to
+   come out of a pool Replay_IR owns, the way rir_xtype_ref already owns its
+   struct copies. */
+#define RIR_PT_MAX 4096
+static Sym rir_pt[RIR_PT_MAX];
+static int rir_ptn;
+
+static Sym *rir_ptr_sym(const CType *t) {
+	Sym *s;
+	int k;
+	for (k = 0; k < rir_ptn; k++)
+		if (rir_pt[k].type.t == t->t && rir_pt[k].type.ref == t->ref)
+			return &rir_pt[k];
+	if (rir_ptn >= RIR_PT_MAX)
+		return NULL;
+	s = &rir_pt[rir_ptn++];
+	memset(s, 0, sizeof *s);
+	s->v = SYM_FIELD;
+	s->c = -1;
+	s->type = *t;
+	return s;
+}
+
 static int rir_body_hasheq;
 
 void rir_reset(void) {
@@ -303,6 +327,7 @@ void rir_reset(void) {
 	rir_locrec_i = 0;
 	rir_body_hasheq = 0;
 	rir_xtn = 0;
+	rir_ptn = 0;
 	rir_n = 0;
 	rir_markn = 0;
 	rir_mvsn = 0;
@@ -1069,6 +1094,64 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			rir_sh[k] = cv;
 		}
 	}
+	/* An lvalue whose ADDRESS is computed at run time can be built without ever
+	   calling indir(): `init_putv`'s over-aligned-local arm does
+	   `gv(); vtop->type = dtype; vtop->r = rr | VT_LVAL; vtop->c.i = 0;` by hand,
+	   so no op and no RIR_M_LOAD records the dereference and the model keeps the
+	   byte pointer it started from -- `alignas(64) double lad[4] = {1.0, ...}`
+	   reached vstore as Store(Ref<char *>, Literal<double>) and gen_cast refused
+	   the float/pointer pair. The boundary AFTER the retype states the whole fact:
+	   an LVALUE IN A REGISTER at offset zero over a node that is still a pointer.
+	   A register lvalue is only ever produced by a dereference, and the one the
+	   model already sees is an AST_Load, so a node that is not one means the
+	   dereference was hand-rolled. */
+	for (k = 0; k < rir_shn && k < want; k++) {
+		const SValue *v = &base[ast_base_depth + k];
+		AstLocal cur = rir_sh[k], cv, ld;
+		int ct;
+		uint16_t ck;
+		Sym *ps;
+		CType pt;
+		if (cur == AST_NONE || rir_shtype[k])
+			continue;
+		if (!(v->r & VT_LVAL) || (v->r & VT_VALMASK) >= VT_CONST || v->c.i != 0)
+			continue;
+		if ((v->type.t & (VT_BTYPE | VT_ARRAY | VT_VLA)) != (v->type.t & VT_BTYPE))
+			continue;
+		if ((v->type.t & VT_BTYPE) == VT_STRUCT ||
+				(v->type.t & VT_BTYPE) == VT_FUNC || (v->type.t & VT_BTYPE) == VT_VOID)
+			continue;
+		ck = ast_kind(rir_arena, cur);
+		if (ck == AST_Load || ck == AST_Invoke || ck == AST_StoreVal)
+			continue;
+		ct = ast_type_t(rir_arena, cur);
+		if (ct != 0 && (ct & (VT_BTYPE | VT_ARRAY)) != VT_PTR)
+			continue;
+		/* Same type on both sides means the model is already saying what the
+		   snapshot says, so nothing was reinterpreted -- `runner.c` `main` has a
+		   pointer-typed Unary under a pointer-typed register lvalue and wrapping
+		   it emitted a load the parser never wrote (+3 bytes). */
+		if (ct == (int)v->type.t)
+			continue;
+		if (ct == 0 && ck != AST_Binary)
+			continue;
+		if (ct != 0) {
+			const Sym *pr = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, cur);
+			if (pr && pr->type.t == v->type.t && pr->type.ref == v->type.ref)
+				continue;
+		}
+		pt.t = v->type.t;
+		pt.ref = v->type.ref;
+		ps = rir_ptr_sym(&pt);
+		if (!ps)
+			continue;
+		cv = ast_node(rir_arena, AST_Convert);
+		ast_set_type(rir_arena, cv, VT_PTR, (uint64_t)(uintptr_t)ps);
+		ast_add_child(rir_arena, cv, cur);
+		ld = ast_node(rir_arena, AST_Load);
+		ast_add_child(rir_arena, ld, cv);
+		rir_sh[k] = ld;
+	}
 }
 
 /* A suppressed struct assignment drops every op inside its region, so a value
@@ -1737,6 +1820,9 @@ static int rir_ptr_arith(AstLocal n, const SValue *pv) {
 	return 0;
 }
 
+static AstLocal rir_thold[16];
+static int rir_tholdn;
+
 static AstLocal rir_last_return = AST_NONE;
 static AstLocal rir_retexpr = AST_NONE;
 static int rir_retexpr_depth;
@@ -1968,6 +2054,26 @@ static void rir_mark_apply(const RirOp *ro) {
 					ast_set_type(rir_arena, top, pv->type.t,
 											 (uint64_t)(uintptr_t)pv->type.ref);
 			}
+			else if (top != AST_NONE &&
+							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+							 ast_type_ref(rir_arena, top) !=
+									 (uint64_t)(uintptr_t)pv->type.ref) {
+				const Sym *ps = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, top);
+				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID) {
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, pv->type.t,
+											 (uint64_t)(uintptr_t)pv->type.ref);
+					if (rir_castgv_pend && rir_castgv_t == pv->type.t &&
+							rir_castgv_ref == (uint64_t)(uintptr_t)pv->type.ref) {
+						ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
+						rir_castgv_pend = 0;
+					}
+					ast_add_child(rir_arena, cv, top);
+					rir_sh[rir_shn - 1] = cv;
+					rir_shtype[rir_shn - 1] = 0;
+				}
+			}
 		}
 		a = rir_pop();
 		if (a == AST_NONE) {
@@ -2063,6 +2169,28 @@ static void rir_mark_apply(const RirOp *ro) {
 		n = ast_node(rir_arena, AST_Convert);
 		ast_add_child(rir_arena, n, a);
 		rir_push_typed(n);
+		break;
+	/* `1 ? X : Y` emits ONLY X, and the parser carries it across Y's parse in a
+	   plain C local -- `sv = *vtop; vtop--;` then `*vtop = sv;` -- so nothing in
+	   the op stream says the slot changed hands. The dead arm still journals its
+	   ops (they run under nocode_wanted and build no nodes), but the reconcile
+	   between them pops X's node and refills the slot from Y's snapshot, so the
+	   model ends up holding the arm the parser threw away. These two markers are
+	   the parser's own save and restore points. */
+	case RIR_M_TERNHOLD:
+		if (rir_tholdn < (int)(sizeof rir_thold / sizeof rir_thold[0]))
+			rir_thold[rir_tholdn++] = rir_pop();
+		break;
+	case RIR_M_TERNPICK:
+		if (rir_tholdn > 0) {
+			AstLocal keep = rir_thold[--rir_tholdn];
+			AstLocal drop = rir_pop();
+			(void)drop;
+			if (keep != AST_NONE && ast_parent(rir_arena, keep) == AST_NONE)
+				rir_push(keep);
+			else
+				rir_push(drop);
+		}
 		break;
 	default:
 		break;
@@ -2925,6 +3053,7 @@ static void rir_to_arena(void) {
 	rir_cvt_n = 0;
 	rir_argcast_n = 0;
 	rir_ternn = 0;
+	rir_tholdn = 0;
 	rir_incr_bb = AST_NONE;
 	rir_incr_live = 0;
 	rir_lorn = 0;
@@ -2940,7 +3069,12 @@ static void rir_to_arena(void) {
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
-		if (ro->tag != RIR_T_OP && ro->rkind == RIR_R_CPLX) {
+		/* rkind is a SHARED number space: RIR_R_* and RIR_M_* both live in it and
+		   are told apart only by the tag. A `tag != RIR_T_OP` test therefore also
+		   catches the point marker whose ordinal happens to equal this region's,
+		   which silently swallowed RIR_M_TERNPICK (22 == RIR_R_CPLX). */
+		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
+				ro->rkind == RIR_R_CPLX) {
 			if (ro->tag == RIR_T_RBEGIN)
 				rir_cplx_depth++;
 			else if (rir_cplx_depth)
@@ -2955,7 +3089,8 @@ static void rir_to_arena(void) {
 		   the compare and the branch entirely. Model the whole lowering as one
 		   node over the two operands it consumes, the way the atomic primitives
 		   are modelled, and let the emitter re-run it. */
-		if (ro->tag != RIR_T_OP && ro->rkind == RIR_R_ACAS) {
+		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
+				ro->rkind == RIR_R_ACAS) {
 			if (ro->tag == RIR_T_RBEGIN) {
 				if (!rir_acas_depth) {
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
@@ -3040,7 +3175,8 @@ static void rir_to_arena(void) {
 				else if (ro->rkind == RIR_M_BFGV)
 					;
 				else if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETEXPR ||
-								 ro->rkind == RIR_M_RETURN)
+								 ro->rkind == RIR_M_RETURN ||
+								 ro->rkind == RIR_M_TERNHOLD || ro->rkind == RIR_M_TERNPICK)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				else
 					rir_stamp_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
