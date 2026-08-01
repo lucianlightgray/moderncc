@@ -669,7 +669,6 @@ static void rir_op_effect(const RirOp *ro) {
 			break;
 		}
 		n = ast_node(rir_arena, AST_Convert);
-		ast_set_op(rir_arena, n, o->a0);
 		ast_add_child(rir_arena, n, a);
 		rir_push_typed(n);
 		break;
@@ -970,14 +969,13 @@ static int rir_emit_safe(void) {
 			if (nc != 1)
 				return rir_unsafe("Unary", n, nc);
 			/* ast_replay_value stamps an ADDR node's own type straight onto the
-			   address gaddrof produced. A deferred stamp that read a float out of
-			   the next snapshot then hands gfunc_call a VT_DOUBLE living in an
-			   integer register, and load() asserts on the bank mismatch. */
-			if (ast_op(rir_arena, n) == AST_OP_ADDR) {
-				int t = ast_type_t(rir_arena, n) & VT_BTYPE;
-				if (t != VT_PTR && t != VT_FUNC)
-					return rir_unsafe("Unary-addr-type", n, nc);
-			}
+			   address gaddrof produced. A float type there hands gfunc_call a
+			   VT_DOUBLE living in an integer register and load() asserts on the
+			   bank mismatch. Non-pointer integer and struct types are NOT a defect
+			   -- gaddrof does not retype, so the tree stamps those too. */
+			if (ast_op(rir_arena, n) == AST_OP_ADDR &&
+					is_float(ast_type_t(rir_arena, n)))
+				return rir_unsafe("Unary-addr-float", n, nc);
 			break;
 		case AST_Invoke: {
 			AstLocal callee;
