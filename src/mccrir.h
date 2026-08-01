@@ -25,6 +25,7 @@ enum {
 	RIR_R_LSUP,
 	RIR_R_LOPND,
 	RIR_R_VSTORE,
+	RIR_R_VLA,
 	RIR_R_COUNT
 };
 
@@ -52,6 +53,8 @@ enum {
 	RIR_M_RETEXPR,
 	RIR_M_CASTGV,
 	RIR_M_NORETURN,
+	RIR_M_VLA,
+	RIR_M_VLARESTORE,
 	RIR_M_COUNT
 };
 
@@ -63,6 +66,8 @@ void rir_rcond_done(void);
 void rir_mark_pt(int kind);
 void rir_mark_val(int kind, int val);
 void rir_mark_val2(int kind, long long a, long long b);
+void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig);
+void rir_vla_begin(void);
 
 #else
 
@@ -86,6 +91,7 @@ void rir_mark_val2(int kind, long long a, long long b);
 #define RIR_R_LSUP 0
 #define RIR_R_LOPND 0
 #define RIR_R_VSTORE 0
+#define RIR_R_VLA 0
 #define RIR_M_RETURN 0
 #define RIR_M_JUMP 0
 #define RIR_M_LOAD 0
@@ -101,6 +107,8 @@ void rir_mark_val2(int kind, long long a, long long b);
 #define RIR_M_RETEXPR 0
 #define RIR_M_CASTGV 0
 #define RIR_M_NORETURN 0
+#define RIR_M_VLA 0
+#define RIR_M_VLARESTORE 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
@@ -109,6 +117,8 @@ void rir_mark_val2(int kind, long long a, long long b);
 #define rir_mark_pt(k) ((void)0)
 #define rir_mark_val(k, v) ((void)0)
 #define rir_mark_val2(k, a, b) ((void)0)
+#define rir_mark_vla(t, r, a, n, l) ((void)0)
+#define rir_vla_begin() ((void)0)
 #define rir_env 0
 #define rir_snap_types(sv, n) ((void)0)
 

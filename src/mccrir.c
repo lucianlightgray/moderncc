@@ -23,7 +23,7 @@ typedef struct RirOp {
 	int lbl, lbl2;
 	int pt;
 	int rval;
-	long long rv1, rv2;
+	long long rv1, rv2, rv3;
 	int mvs_off, mvs_n;
 	JrnOp p;
 } RirOp;
@@ -37,7 +37,7 @@ typedef struct RirMark {
 	int tag;
 	int kind;
 	int val;
-	long long v1, v2;
+	long long v1, v2, v3;
 	int at;
 	int vs_off, vs_n;
 } RirMark;
@@ -91,7 +91,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd", "vstore"};
+			"lopnd", "vstore", "vla"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -230,6 +230,28 @@ void rir_mark_val2(int kind, long long a, long long b) {
 	if (!rir_active)
 		return;
 	rir_mark_v2(RIR_T_MARK, kind, 0, a, b);
+}
+
+/* A VLA declaration is one statement in the tree -- AST_Unary AST_OP_VLA with
+   the element type, the sp-save slot in ival, the scope's original save slot in
+   sym and "this scope needs its own save" in fbits -- and ast_replay_bb re-runs
+   gen_vla_alloc from it. The primitives that computed the size are replayed by
+   that call, so the region they sit in is suppressed the way a call region is. */
+void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig) {
+	RirMark *m;
+	if (!rir_active)
+		return;
+	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, new_save, (long long)(unsigned)t,
+							(long long)ref);
+	m = &rir_marks[rir_markn - 1];
+	m->v3 = ((long long)(unsigned)addr) |
+					(((long long)(unsigned)locorig) << 32);
+}
+
+void rir_vla_begin(void) {
+	if (!rir_active)
+		return;
+	rir_rbegin(RIR_R_VLA);
 }
 
 #define RIR_XT_MAX 16384
@@ -462,6 +484,7 @@ static void rir_build(void) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
+			o->rv3 = rir_marks[m].v3;
 			o->rv1 = rir_marks[m].v1;
 			o->rv2 = rir_marks[m].v2;
 			o->mvs_off = rir_marks[m].vs_off;
@@ -1270,6 +1293,7 @@ static int rir_member_depth;
    the parser does, so the region's primitives model nothing: suppress them and
    keep the two lvalues the region opened with. */
 static int rir_vstruct_depth;
+static int rir_vla_depth;
 static AstLocal rir_tern[16];
 static int rir_ternn;
 static AstLocal rir_lor[16];
@@ -1475,6 +1499,34 @@ static void rir_mark_apply(const RirOp *ro) {
 											ast_fbits(rir_arena, inv) | AST_FB_CALL_NORETURN);
 		}
 		break;
+	case RIR_M_VLA: {
+		AstLocal u = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, u, AST_OP_VLA);
+		ast_set_type(rir_arena, u, (int)ro->rv1, (uint64_t)ro->rv2);
+		ast_set_ival(rir_arena, u, (uint64_t)(int64_t)(int)(ro->rv3 & 0xffffffff));
+		ast_set_sym(rir_arena, u,
+								(uint64_t)(int64_t)(int)((ro->rv3 >> 32) & 0xffffffff));
+		ast_set_fbits(rir_arena, u, (uint64_t)(unsigned)ro->rval);
+		rir_stmt(u);
+		break;
+	}
+	case RIR_M_VLARESTORE: {
+		AstLocal u;
+		if (!ro->rval)
+			break;
+		/* The parser restores the stack pointer as part of a return when one is
+		   pending, which the tree records in the Return's ival rather than as a
+		   node of its own. */
+		if (rir_pending_ret != AST_NONE) {
+			ast_set_ival(rir_arena, rir_pending_ret, (uint64_t)(int64_t)ro->rval);
+			break;
+		}
+		u = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, u, AST_OP_VLA_RESTORE);
+		ast_set_ival(rir_arena, u, (uint64_t)(int64_t)ro->rval);
+		rir_stmt(u);
+		break;
+	}
 	case RIR_M_CASTGV:
 		/* The parser materialises an explicit cast's result when
 		   gv_cast_rvalue() says so, and the tree records that on the node as
@@ -1604,6 +1656,9 @@ static void rir_region(const RirOp *ro) {
 		}
 		case RIR_R_MEMBER:
 			rir_member_depth++;
+			break;
+		case RIR_R_VLA:
+			rir_vla_depth++;
 			break;
 		case RIR_R_LSUP:
 			rir_cond_depth++;
@@ -1815,6 +1870,10 @@ static void rir_region(const RirOp *ro) {
 			rir_push(n);
 		}
 		break;
+	case RIR_R_VLA:
+		if (rir_vla_depth)
+			rir_vla_depth--;
+		break;
 	case RIR_R_MEMBER: {
 		/* `a.b` is one AST_Unary in the tree — op AST_OP_MEMBER, the byte offset
 		   in ival, the member type stamped on the node — and gaddrof + vpushi +
@@ -1982,6 +2041,12 @@ static int rir_emit_safe(void) {
 				return rir_unsafe("Load", n, nc);
 			break;
 		case AST_Unary:
+			/* A VLA declaration and its stack restore are childless statements --
+			   ast_replay_bb reads everything they need off the node itself. */
+			if ((ast_op(rir_arena, n) == AST_OP_VLA ||
+					 ast_op(rir_arena, n) == AST_OP_VLA_RESTORE) &&
+					nc == 0)
+				break;
 			if (nc != 1)
 				return rir_unsafe("Unary", n, nc);
 			/* ast_replay_value stamps an ADDR node's own type straight onto the
@@ -2122,6 +2187,7 @@ static void rir_to_arena(void) {
 	rir_inc_depth = 0;
 	rir_member_depth = 0;
 	rir_vstruct_depth = 0;
+	rir_vla_depth = 0;
 	rir_ternn = 0;
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;
@@ -2141,7 +2207,8 @@ static void rir_to_arena(void) {
 			   the one marker the region suppression must let through. */
 			if ((ro->rkind == RIR_M_NORETURN ||
 					 (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
-						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth)) &&
+						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
+						!rir_vla_depth)) &&
 					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN ||
 					 ro->rkind == RIR_M_NORETURN)) {
 				if (bound || ro->rkind == RIR_M_NORETURN)
@@ -2166,7 +2233,7 @@ static void rir_to_arena(void) {
 			continue;
 		}
 		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
-				rir_retexpr_pending || rir_vstruct_depth)
+				rir_retexpr_pending || rir_vstruct_depth || rir_vla_depth)
 			continue;
 		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);

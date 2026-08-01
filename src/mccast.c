@@ -3940,6 +3940,7 @@ void ast_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
+	rir_vla_begin();
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_op++;
@@ -3947,6 +3948,9 @@ void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
 
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 																	 int locorig) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_VLA);
+	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
+							 locorig);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
 	if (ast_active && ast_in_op > 0)
 		{ MCC_TRACE("br\n"); ast_in_op--; }
@@ -3976,6 +3980,7 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 }
 
 void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
+	rir_mark_val(RIR_M_VLARESTORE, loc);
 	if (!ast_active || ast_desync || ast_bail || loc == 0)
 		{ MCC_TRACE("br\n"); return; }
 	if (NODATA_WANTED)
