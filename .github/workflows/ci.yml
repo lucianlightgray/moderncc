@@ -209,12 +209,13 @@ jobs:
     name: stage2 / windows
     runs-on: windows-latest
     timeout-minutes: 90
-    # Non-gating until the Windows self-host gaps close: mcc rebuilding mcc on
-    # Windows currently fails on POSIX-under-Win32 header gaps (tools/build.c
-    # uses strtok_r, which mcc's Win32 headers do not declare) -- see the
-    # "Windows stage2 self-host" item in docs/TODO.md. The failures stay visible
-    # (not skipped/false-green) but do not block the gate; Linux and macOS gate.
-    # stage1-windows (msvc builds mcc) is gating and passes.
+    # Non-gating until a full run proves the cell: the known POSIX-under-Win32
+    # header gap (tools/build.c strtok_r) is fixed and all tools/ sources now
+    # compile under CC=mcc locally, but the full stage2+stage3 sweep has not
+    # yet gone green in CI -- see the "Windows stage2 self-host" item in
+    # docs/TODO.md. The failures stay visible (not skipped/false-green) but do
+    # not block the gate; Linux and macOS gate. stage1-windows (msvc builds
+    # mcc) is gating and passes. Promote to gating on the first green run.
     continue-on-error: true
     defaults:
       run:
@@ -237,7 +238,9 @@ jobs:
         run: |
           mcc="$PWD/windows-x86_64-msvc/bin/mcc.exe"
           fail=0
-          for f in $(mcc-ci features); do
+          # tr: the msvc-built mcc-ci writes CRLF; bash word-splitting keeps the
+          # \r on every feature name ("unknown feature 'static\r'").
+          for f in $(mcc-ci features | tr -d '\r'); do
             echo "::group::stage2 $f"
             rc=0; mcc-ci stage2 "$f" --mcc "$mcc" || rc=$?
             if [ "$rc" -eq 77 ]; then echo "SKIP $f (platform-locked)"; echo "::endgroup::"; continue; fi
