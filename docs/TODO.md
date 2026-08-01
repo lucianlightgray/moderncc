@@ -390,6 +390,8 @@ Ranked. Everything below is measured on `tests/exec` + `tests/diff/full_language
 
 **Rejected fixes — measured, reverted, and not to be retried.** Each cost a build-and-sweep cycle; the number after each is what it did to `c2ok` from its own baseline.
 
+- **Mirroring the abandoned loop-prefix BasicBlock** (`arenacounteq` 548 -> 545, `arenahasheq` unchanged at 369). `while` and `do` at `-O1` allocate an `AST_BasicBlock` for the condition's comma prefix and then abandon it — `ast_hook_while_cond` restores `ast_cur_bb` and never attaches it — so the node is a pure arena slot that shifts every later index. `BasicBlock` reads 2400 against the tree's 2798 and this looked like the cause. It is not usable: the tree's allocation is gated on `ast_capture` and on `ast_active`/`ast_desync`/`ast_bail` as well as on `ast_while_comma_env`, and a marker gated on the tree-independent part alone fires **185** times against the 398 missing, in a different population. Matching it would require the marker to read tree state, which is exactly what instruction 35 forbids. The `for` prefix is a different case — it *is* attached, at `ast_hook_for_body_begin` — and was not tried.
+
 | # | attempt | result |
 |---|---|---|
 | 1 | `RIR_M_CONVERT` mirrored 1:1 from `ast_hook_convert` | 909 -> 268 |
