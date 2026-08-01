@@ -374,6 +374,31 @@ Ranked. Everything below is measured on `tests/exec` + `tests/diff/full_language
    What it costs is bounded and measured, which is why this is P2 and not P0: arm position independence reads **1025 ok / 0 bad / 66 open / 30 skip**, against x86_64's 1116 / 0 / 44 / 5. Zero bad on both. The fallbacks buy 30 skipped bodies, not a correctness gap.
 8. **P2 — the C2 harness must mirror the tree's replay prologue exactly.** Established the hard way: leftover allocator state reads as a codegen difference. The set is `vstack`/`vtop`, `loc`, `anon_sym`, `ast_pinned_regs`, `ast_rp_bsym`, `ast_rp_csym`, `ast_rp_switch`, `ast_temp_frontier`, `ast_rp_nlabel`, `ast_fconst_i`, `ast_locrec_i`, `sym_free_first`. One omission (a dirty vstack) cost 194 bodies.
 
+**Rejected fixes — measured, reverted, and not to be retried.** Each cost a build-and-sweep cycle; the number after each is what it did to `c2ok` from its own baseline.
+
+| # | attempt | result |
+|---|---|---|
+| 1 | `RIR_M_CONVERT` mirrored 1:1 from `ast_hook_convert` | 909 -> 268 |
+| 2 | same, plus a `RIR_R_OP` marker-suppression region around `gen_op` | 909 -> 278 |
+| 3 | Convert derived from any snapshot type difference | 909 -> 868 |
+| 4 | same, narrowed to integer btype changes | 909 -> 869 |
+| 5 | same, pair rule (type changed AND `r` unchanged) | 909 -> 875 |
+| 6 | Convert marked only when `gen_cast` changes the type (filter at the tap) | 909 -> 538 |
+| 7 | `rir_after_call` one-shot skipping a drop when `rir_shn == want + 1` | 844 -> 743, **17 SIGABRTs** |
+| 8 | struct vstores admitted with a node-based type guard | segfault, census 1201 -> 1185 |
+| 9 | struct vstores with a snapshot guard | segfault |
+| 10 | ...plus type-chain cloning at the marker | segfault |
+| 11 | ...plus an orig->clone map translated in `rir_leaf` | segfault |
+| 12 | ...map translated in `rir_leaf` **and** `rir_stamp_sv` | segfault; `rir_symmapn=0` proves the type is at no marker |
+| 13 | op-level capture (`rir_snap_types` from `jrn_snap_vstack`) | **works**, crash closed; 0 byte gain, field-identity 302 -> 279 |
+| 14 | vstore rebuild admitting every non-struct non-bitfield operand | 881 -> 868 |
+| 15 | `JOP_VPUSHV` modelled as `rir_push(rir_leaf(&o->svarg))` | 918 -> 918, c2len +2 |
+| 16 | compound-assign dup pushed at `RIR_M_OPASSIGN` | no change; copy orphaned |
+| 17 | compound-assign dup pushed at `JOP_VPUSHV` | 920 -> 919 |
+| 18 | `rir_after_ret` held across CALL regions to suppress `cleanup()` calls | no change (inert) |
+
+Three of these are worth reading in full where they are described above, because the *reason* they fail is the finding: 6 says Convert is not an admission problem, 12 says the struct type is not observable at any Replay_IR tap, and 16/17 say `rir_reconcile` is authoritative over the shadow stack and discards anything the op snapshots do not corroborate.
+
 **Traps this work produced. Each one produced a confident wrong number first.**
 
 - `ast_validate` returns **0 on success**, `-1` on failure. Read as a boolean it rejects every valid arena and reports them as errors *with no message*, which is exactly how one leg measured 458/458 "invalid".
