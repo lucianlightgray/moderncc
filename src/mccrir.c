@@ -640,6 +640,18 @@ static void rir_push_typed(AstLocal n) {
 	rir_sh[rir_shn++] = n;
 }
 
+/* ast_hook_gaddrof runs at the TOP of gaddrof(), which the parser reaches with
+   mk_pointer already applied, so the tree stamps the address-of's OPERAND leaf
+   with the pointer type while its r still carries VT_LVAL. Replay_IR builds that
+   leaf from an op snapshot taken before the retype and reads the pointee type.
+   Stamp the operand with whatever the Unary itself resolves to. */
+static void rir_push_typed_addr(AstLocal n) {
+	if (rir_shn > VSTACK_SIZE)
+		return;
+	rir_shtype[rir_shn] = 3;
+	rir_sh[rir_shn++] = n;
+}
+
 /* Reconcile the shadow stack against the state the op actually saw. The
    recorded snapshot is the dataflow made explicit: any slot the model does not
    already hold is materialised as a leaf straight from its SValue, and any slot
@@ -687,6 +699,13 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		   node left at op 0 claims the value is in register 0 and a double return
 		   then trips load()'s XMM assert. Stamp the whole leaf encoding, exactly
 		   as rir_leaf does. */
+		if (rir_shtype[k] == 3) {
+			AstLocal c = ast_first_child(rir_arena, rir_sh[k]);
+			uint16_t ck = c == AST_NONE ? 0 : ast_kind(rir_arena, c);
+			if (ck == AST_Ref || ck == AST_Literal)
+				ast_set_type(rir_arena, c, v->type.t,
+										 (uint64_t)(uintptr_t)v->type.ref);
+		}
 		if (rir_shtype[k] == 2) {
 			ast_set_op(rir_arena, rir_sh[k], v->r);
 			ast_set_ival(rir_arena, rir_sh[k], (uint64_t)v->c.i);
@@ -1124,7 +1143,7 @@ static void rir_op_effect(const RirOp *ro) {
 		n = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, n, AST_OP_ADDR);
 		ast_add_child(rir_arena, n, a);
-		rir_push_typed(n);
+		rir_push_typed_addr(n);
 		break;
 	}
 	default:
