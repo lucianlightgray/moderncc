@@ -84,7 +84,7 @@ static const char *rir_region_name(int k) {
 	static const char *const n[RIR_R_COUNT] = {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
-			"body",	 "synth"};
+			"body",	 "incr", "synth"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -162,8 +162,12 @@ void rir_rcond_done(void) {
 	if (!open)
 		return;
 	rir_rend_to(RIR_R_COND);
-	rir_rbegin(rir_stackn && rir_stack[rir_stackn - 1] == RIR_R_IF ? RIR_R_THEN
-																																 : RIR_R_BODY);
+	if (!rir_stackn)
+		return;
+	if (rir_stack[rir_stackn - 1] == RIR_R_IF)
+		rir_rbegin(RIR_R_THEN);
+	else if (rir_stack[rir_stackn - 1] == RIR_R_WHILE)
+		rir_rbegin(RIR_R_BODY);
 }
 
 void rir_mark_pt(int kind) {
@@ -422,6 +426,8 @@ static int rir_shn;
 static AstLocal rir_bb[64];
 static int rir_bbn;
 static AstLocal rir_cf[64];
+static int rir_cfkind[64];
+static int rir_cfcond[64];
 static int rir_cfn;
 static int rir_arena_mismatch;
 static int rir_after_ret;
@@ -644,6 +650,10 @@ static void rir_op_effect(const RirOp *ro) {
 static int rir_cond_depth, rir_synth_depth, rir_call_depth;
 static AstLocal rir_last_return = AST_NONE;
 
+static int rir_mark_consumes(int kind) {
+	return kind == RIR_M_RETURN || kind == RIR_M_LOAD;
+}
+
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
@@ -690,6 +700,36 @@ static void rir_mark_apply(const RirOp *ro) {
 	}
 }
 
+/* The tree's AST_If op encoding, which ast_replay_bb dispatches on: 0 plain if,
+   2 while, 3 for-with-condition, 4 do, 6 switch, 8 for-without. A region kind is
+   not that encoding, and emitting one for the other routes a for through the
+   switch arm. */
+static int rir_cf_op(int rkind) {
+	switch (rkind) {
+	case RIR_R_WHILE:
+		return 2;
+	case RIR_R_FOR:
+		return 3;
+	case RIR_R_DO:
+		return 4;
+	case RIR_R_SWITCH:
+		return 6;
+	default:
+		return 0;
+	}
+}
+
+static void rir_cf_cond(void) {
+	AstLocal cond;
+	if (!rir_cfn || rir_cfcond[rir_cfn - 1])
+		return;
+	cond = rir_shn ? rir_pop() : AST_NONE;
+	if (cond == AST_NONE)
+		return;
+	ast_add_child(rir_arena, rir_cf[rir_cfn - 1], cond);
+	rir_cfcond[rir_cfn - 1] = 1;
+}
+
 static void rir_region(const RirOp *ro) {
 	rir_after_ret = 0;
 	if (ro->tag == RIR_T_RBEGIN) {
@@ -700,17 +740,25 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_FOR:
 		case RIR_R_SWITCH: {
 			AstLocal n = ast_node(rir_arena, AST_If);
-			AstLocal cond = rir_shn ? rir_pop() : AST_NONE;
-			ast_set_op(rir_arena, n, ro->rkind);
-			if (cond != AST_NONE)
-				ast_add_child(rir_arena, n, cond);
+			ast_set_op(rir_arena, n, rir_cf_op(ro->rkind));
 			rir_stmt(n);
-			if (rir_cfn < 64)
-				rir_cf[rir_cfn++] = n;
+			if (rir_cfn < 64) {
+				rir_cf[rir_cfn] = n;
+				rir_cfkind[rir_cfn] = ro->rkind;
+				rir_cfcond[rir_cfn] = 0;
+				rir_cfn++;
+			}
+			/* if/while/switch open their region with the condition value already
+			   evaluated; for/do reach it later and bind it at the COND marker. */
+			if (ro->rkind != RIR_R_FOR && ro->rkind != RIR_R_DO)
+				rir_cf_cond();
 			break;
 		}
 		case RIR_R_COND:
 			rir_cond_depth++;
+			if (rir_cfn && (rir_cfkind[rir_cfn - 1] == RIR_R_FOR ||
+											rir_cfkind[rir_cfn - 1] == RIR_R_DO))
+				rir_cf_cond();
 			break;
 		case RIR_R_SYNTH:
 			rir_synth_depth++;
@@ -718,6 +766,7 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_CALL:
 			rir_call_depth++;
 			break;
+		case RIR_R_INCR:
 		case RIR_R_BODY:
 		case RIR_R_THEN:
 		case RIR_R_ELSE: {
@@ -746,6 +795,7 @@ static void rir_region(const RirOp *ro) {
 		if (rir_call_depth)
 			rir_call_depth--;
 		break;
+	case RIR_R_INCR:
 	case RIR_R_BODY:
 	case RIR_R_THEN:
 	case RIR_R_ELSE:
@@ -757,8 +807,11 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_DO:
 	case RIR_R_FOR:
 	case RIR_R_SWITCH:
-		if (rir_cfn)
+		if (rir_cfn) {
 			rir_cfn--;
+			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
+				ast_set_op(rir_arena, rir_cf[rir_cfn], 8);
+		}
 		break;
 	default:
 		break;
@@ -777,13 +830,48 @@ static int rir_unsafe(const char *why, AstLocal n, uint32_t nc) {
 	return 0;
 }
 
+/* Each AST_If op has its own child contract in ast_replay_bb: which slot is the
+   condition, which are blocks, and how many are mandatory. A slot it walks as a
+   block must really be one -- ast_replay_bb dereferences first_child[] without
+   checking, so AST_NONE or a value node there is a fault, not a bad emit. */
+static int rir_bb_slot(AstLocal n, uint32_t i, uint32_t nc) {
+	AstLocal c;
+	if (i >= nc)
+		return 0;
+	c = ast_child(rir_arena, n, i);
+	return c != AST_NONE && ast_kind(rir_arena, c) == AST_BasicBlock;
+}
+
+static int rir_if_safe(AstLocal n, uint32_t nc) {
+	switch (ast_op(rir_arena, n)) {
+	case 0:
+		return nc >= 2 && rir_bb_slot(n, 1, nc) && (nc < 3 || rir_bb_slot(n, 2, nc));
+	case 2:
+		return nc >= 2 && rir_bb_slot(n, 1, nc) && (nc < 3 || rir_bb_slot(n, 2, nc));
+	case 3:
+		return nc >= 3 && rir_bb_slot(n, 1, nc) && rir_bb_slot(n, 2, nc) &&
+					 (nc < 4 || rir_bb_slot(n, 3, nc));
+	case 4:
+		return nc >= 2 && rir_bb_slot(n, 0, nc) && (nc < 3 || rir_bb_slot(n, 2, nc));
+	case 6:
+		return nc >= 2 && rir_bb_slot(n, 1, nc);
+	case 8:
+		return nc >= 2 && rir_bb_slot(n, 0, nc) && rir_bb_slot(n, 1, nc);
+	case 5:
+	case 7:
+		return nc >= 3;
+	default:
+		return 0;
+	}
+}
+
 static int rir_emit_safe(void) {
 	AstLocal n;
 	for (n = 0; n < ast_count(rir_arena); n++) {
 		uint32_t nc = ast_nchild(rir_arena, n);
 		switch (ast_kind(rir_arena, n)) {
 		case AST_If:
-			if (nc < 2)
+			if (!rir_if_safe(n, nc))
 				return rir_unsafe("If", n, nc);
 			break;
 		case AST_Store:
@@ -821,10 +909,27 @@ static int rir_emit_safe(void) {
 				return rir_unsafe("Invoke-callee-notfunc", n, nc);
 			break;
 		}
-		case AST_Return:
+		case AST_Return: {
+			AstLocal v;
+			int vb;
 			if (nc > 1)
 				return rir_unsafe("Return", n, nc);
+			if (nc == 0)
+				break;
+			/* ast_replay_bb runs gen_assign_cast(&func_vt) on the return value, and
+			   gen_cast asserts rather than erroring when the pair is one it never
+			   sees from the parser -- a VT_QFLOAT reconstructed out of a snapshot
+			   against a struct-returning func_vt aborts inside gen_cvt_ftoi. */
+			v = ast_child(rir_arena, n, 0);
+			if (v == AST_NONE)
+				return rir_unsafe("Return-none", n, nc);
+			vb = ast_type_t(rir_arena, v) & VT_BTYPE;
+			if (vb == VT_QFLOAT || vb == VT_QLONG)
+				return rir_unsafe("Return-wide", n, nc);
+			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT))
+				return rir_unsafe("Return-struct", n, nc);
 			break;
+		}
 		default:
 			break;
 		}
@@ -856,7 +961,15 @@ static void rir_to_arena(void) {
 				int j;
 				for (j = i + 1; j < rir_n; j++)
 					if (rir_ops[j].tag == RIR_T_OP) {
-						rir_stamp_types(&rir_ops[j].p);
+						/* A value a marker consumes is not on the shadow stack yet: it
+						   was pushed by an op whose own snapshot predates it, and the
+						   snapshot that shows it is the NEXT op's. Reconcile against
+						   that one, not merely stamp its types, or the marker pops
+						   nothing and the node comes out childless. */
+						if (rir_mark_consumes(ro->rkind))
+							rir_reconcile(&rir_ops[j].p);
+						else
+							rir_stamp_types(&rir_ops[j].p);
 						break;
 					}
 				rir_mark_apply(ro);

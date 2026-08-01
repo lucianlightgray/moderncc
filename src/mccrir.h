@@ -17,6 +17,7 @@ enum {
 	RIR_R_CALL,
 	RIR_R_COND,
 	RIR_R_BODY,
+	RIR_R_INCR,
 	RIR_R_SYNTH,
 	RIR_R_COUNT
 };
@@ -58,6 +59,7 @@ void rir_mark_val(int kind, int val);
 #define RIR_R_CALL 0
 #define RIR_R_COND 0
 #define RIR_R_BODY 0
+#define RIR_R_INCR 0
 #define RIR_R_SYNTH 0
 #define RIR_M_RETURN 0
 #define RIR_M_JUMP 0
