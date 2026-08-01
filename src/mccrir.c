@@ -3,6 +3,8 @@
 
 enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 
+#define RIR_NOEVAL_MASK 0x0000FFFF
+
 #define RIR_PT_NONE (-1)
 #define RIR_PT_HERE (-2)
 #define RIR_SHIFT 64
@@ -23,7 +25,8 @@ typedef struct RirOp {
 	int lbl, lbl2;
 	int pt;
 	int rval;
-	long long rv1, rv2;
+	int rnocode;
+	long long rv1, rv2, rv3;
 	int mvs_off, mvs_n;
 	JrnOp p;
 } RirOp;
@@ -37,13 +40,15 @@ typedef struct RirMark {
 	int tag;
 	int kind;
 	int val;
-	long long v1, v2;
+	int nocode;
+	long long v1, v2, v3;
 	int at;
 	int vs_off, vs_n;
 } RirMark;
 
 int rir_env;
 int rir_active;
+int rir_c2_active;
 int rir_started;
 
 static const char *rir_out;
@@ -91,7 +96,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd", "vstore"};
+			"lopnd", "vstore", "vla"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -123,6 +128,12 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	m->tag = tag;
 	m->kind = kind;
 	m->val = val;
+	/* The dead arm of `1 ? live : ({ while (1) ... })` is parsed with
+	   nocode_wanted set and emits nothing, and the op filter already drops its
+	   primitives -- but its region and point markers were still applied, so the
+	   reconstruction built a real loop for it and emitted a backward jump the
+	   parser never wrote (`eb fe`). */
+	m->nocode = nocode_wanted;
 	m->v1 = a;
 	m->v2 = b;
 	m->at = jrn_n;
@@ -230,6 +241,28 @@ void rir_mark_val2(int kind, long long a, long long b) {
 	if (!rir_active)
 		return;
 	rir_mark_v2(RIR_T_MARK, kind, 0, a, b);
+}
+
+/* A VLA declaration is one statement in the tree -- AST_Unary AST_OP_VLA with
+   the element type, the sp-save slot in ival, the scope's original save slot in
+   sym and "this scope needs its own save" in fbits -- and ast_replay_bb re-runs
+   gen_vla_alloc from it. The primitives that computed the size are replayed by
+   that call, so the region they sit in is suppressed the way a call region is. */
+void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig) {
+	RirMark *m;
+	if (!rir_active)
+		return;
+	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, new_save, (long long)(unsigned)t,
+							(long long)ref);
+	m = &rir_marks[rir_markn - 1];
+	m->v3 = ((long long)(unsigned)addr) |
+					(((long long)(unsigned)locorig) << 32);
+}
+
+void rir_vla_begin(void) {
+	if (!rir_active)
+		return;
+	rir_rbegin(RIR_R_VLA);
 }
 
 #define RIR_XT_MAX 16384
@@ -462,6 +495,8 @@ static void rir_build(void) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
+			o->rnocode = rir_marks[m].nocode;
+			o->rv3 = rir_marks[m].v3;
 			o->rv1 = rir_marks[m].v1;
 			o->rv2 = rir_marks[m].v2;
 			o->mvs_off = rir_marks[m].vs_off;
@@ -555,6 +590,12 @@ void rir_snap_types(SValue *sv, int n) {
 			sv[i].type.ref = rir_xtype_ref(sv[i].type.ref, 0, 1);
 }
 
+static int rir_same_width(const CType *a, const CType *b) {
+	int al, bl;
+	CType x = *a, y = *b;
+	return type_size(&x, &al) == type_size(&y, &bl);
+}
+
 static AstLocal rir_leaf(const SValue *sv) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
@@ -579,6 +620,29 @@ static AstLocal rir_leaf(const SValue *sv) {
 	ast_set_wide(rir_arena, n, ast_sv_hi(sv),
 							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
 	ast_set_sym(rir_arena, n, (uint64_t)(uintptr_t)sv->sym);
+	/* A cast that emits no code leaves the snapshot carrying the CAST type over
+	   a symbol whose declaration says something else -- `((int (*)(int,int))p)(a,b)`
+	   with `void *p` is the shape. The tree's leaf keeps the declared type and
+	   the cast is its own Convert, which is not inert: gen_cast materialises and
+	   spills, 8 bytes in via_cast. The Sym is the only witness to the declared
+	   type at this boundary. */
+	if (sv->sym && (sv->r & VT_LVAL) && !(sv->sym->type.t & (VT_ARRAY | VT_VLA)) &&
+			(sv->sym->type.t & VT_BTYPE) != VT_STRUCT &&
+			(sv->sym->type.t & VT_BTYPE) != VT_FUNC &&
+			(sv->type.t & VT_BTYPE) != VT_STRUCT &&
+			(sv->type.t & VT_BTYPE) != VT_FUNC && !(sv->type.t & VT_ARRAY) &&
+			is_float(sv->sym->type.t) == is_float(sv->type.t) &&
+			(sv->sym->type.t != sv->type.t ||
+			 sv->sym->type.ref != sv->type.ref) &&
+			rir_same_width(&sv->sym->type, &sv->type)) {
+		AstLocal cv;
+		ast_set_type(rir_arena, n, sv->sym->type.t,
+								 (uint64_t)(uintptr_t)sv->sym->type.ref);
+		cv = ast_node(rir_arena, AST_Convert);
+		ast_set_type(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_add_child(rir_arena, cv, n);
+		return cv;
+	}
 	return n;
 }
 
@@ -592,6 +656,11 @@ static int rir_effectful(AstLocal n) {
 		return 0;
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
+		return 1;
+	/* A ternary whose value is discarded is a STATEMENT -- the tree records it
+	   as an AST_If with op 7 and emits both arms for their effects. Dropped off
+	   the shadow stack it was orphaned and the body emitted nothing at all. */
+	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
 		return 1;
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
@@ -614,6 +683,10 @@ static int rir_c3_pipeline(AstArena *a) {
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
+	/* ast_replay_bb dispatches an AST_If on its op, and the tree's encoding for
+	   a ternary in statement context is 7 rather than the value form's 5. */
+	if (ast_kind(rir_arena, n) == AST_If && ast_op(rir_arena, n) == 5)
+		ast_set_op(rir_arena, n, 7);
 	ast_add_child(rir_arena, rir_bb[rir_bbn - 1], n);
 }
 
@@ -640,6 +713,18 @@ static void rir_push_typed(AstLocal n) {
 	rir_sh[rir_shn++] = n;
 }
 
+/* ast_hook_gaddrof runs at the TOP of gaddrof(), which the parser reaches with
+   mk_pointer already applied, so the tree stamps the address-of's OPERAND leaf
+   with the pointer type while its r still carries VT_LVAL. Replay_IR builds that
+   leaf from an op snapshot taken before the retype and reads the pointee type.
+   Stamp the operand with whatever the Unary itself resolves to. */
+static void rir_push_typed_addr(AstLocal n) {
+	if (rir_shn > VSTACK_SIZE)
+		return;
+	rir_shtype[rir_shn] = 3;
+	rir_sh[rir_shn++] = n;
+}
+
 /* Reconcile the shadow stack against the state the op actually saw. The
    recorded snapshot is the dataflow made explicit: any slot the model does not
    already hold is materialised as a leaf straight from its SValue, and any slot
@@ -656,11 +741,22 @@ static void rir_push_typed(AstLocal n) {
    delta and skipping one drop was tried and is wrong: it cannot tell a
    single-slot integer return from a float or struct one, and aborts 17 corpus
    files. */
+/* One assignment cast per argument of a PARSED call and none for a synthesised
+   one, counted between calls: the tree's Invoke children carry a Convert each
+   for the first and bare nodes for the second, and this is the only witness. */
+static int rir_argcast_n;
+
 static AstLocal rir_pending_call = AST_NONE;
 static AstLocal rir_pending_ret = AST_NONE;
 static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
 static short rir_vst_shn[16];
+static unsigned char rir_vst_sup[16];
+/* The two operands' frame offsets as the region OPENED. Which shadow slot holds
+   the target is not fixed -- va_start's copy leaves it under the value and a
+   cleanup spill leaves it on top -- so the rebuild matches them by offset
+   rather than by position. */
+static long long rir_vst_tc[16], rir_vst_vc[16];
 static int rir_vstn;
 
 static void rir_flush_pending_call(void) {
@@ -668,6 +764,44 @@ static void rir_flush_pending_call(void) {
 		return;
 	rir_stmt(rir_pending_call);
 	rir_pending_call = AST_NONE;
+}
+
+static int rir_cvt_next;
+/* ast_hook_cast_gv fires one step ahead of the op that lowers the cast, so the
+   Convert it annotates may not exist yet: hold the mark for one entry, then
+   either set the bit on the Convert the op built or -- for an identity cast,
+   which emits no op at all -- build the type-preserving Convert the tree has.
+   `printf("%llx", (unsigned long long)ull)` is that case, and the Convert is
+   not inert: gen_cast materialises, which is the 8 bytes promote_main lost. */
+static int rir_castgv_pend;
+static int rir_castgv_t;
+static uint64_t rir_castgv_ref;
+
+static int rir_is_cvt(int kind) {
+	switch (kind) {
+	case JOP_CVT_ITOF:
+	case JOP_CVT_FTOF:
+	case JOP_CVT_FTOI:
+	case JOP_CVT_SXTW:
+	case JOP_CVT_TRUNC32:
+	case JOP_CVT_CSTI:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int rir_child_has_type(AstLocal n, int st) {
+	int i, nc = ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		if (c == AST_NONE)
+			continue;
+		if ((ast_type_t(rir_arena, c) & ~(unsigned)VT_DEFSIGN) ==
+				(unsigned)(st & ~(unsigned)VT_DEFSIGN))
+			return 1;
+	}
+	return 0;
 }
 
 static void rir_stamp_sv(const SValue *base, int n) {
@@ -687,6 +821,13 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		   node left at op 0 claims the value is in register 0 and a double return
 		   then trips load()'s XMM assert. Stamp the whole leaf encoding, exactly
 		   as rir_leaf does. */
+		if (rir_shtype[k] == 3) {
+			AstLocal c = ast_first_child(rir_arena, rir_sh[k]);
+			uint16_t ck = c == AST_NONE ? 0 : ast_kind(rir_arena, c);
+			if (ck == AST_Ref || ck == AST_Literal)
+				ast_set_type(rir_arena, c, v->type.t,
+										 (uint64_t)(uintptr_t)v->type.ref);
+		}
 		if (rir_shtype[k] == 2) {
 			ast_set_op(rir_arena, rir_sh[k], v->r);
 			ast_set_ival(rir_arena, rir_sh[k], (uint64_t)v->c.i);
@@ -705,6 +846,13 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	   Binary as the tree has it. Admission is by SIZE: an unexplained type
 	   difference that does not change the width is representation drift, not a
 	   cast, and wrapping those is measured worse. */
+	/* A cast that DOES emit gets its Convert from the op itself, and the parser
+	   retypes the value before emitting -- so the boundary in front of that op
+	   shows the post-cast type over a node still carrying the pre-cast one, and
+	   this loop wrapped the same cast a second time. `return (int)(long)i;` came
+	   out three Converts deep against the tree's two. */
+	if (rir_cvt_next)
+		return;
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v = &base[ast_base_depth + k];
 		AstLocal cur = rir_sh[k];
@@ -801,6 +949,9 @@ static void rir_reconcile(const JrnOp *o) {
 
 static int rir_opassign_pending;
 
+static int rir_ternn;
+static int rir_lorn;
+
 static void rir_op_effect(const RirOp *ro) {
 	const JrnOp *o = &ro->p;
 	int k;
@@ -858,6 +1009,11 @@ static void rir_op_effect(const RirOp *ro) {
 				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
 						(st & VT_BTYPE) == VT_FUNC || is_float(st))
 					continue;
+				/* An operand that already carries the snapshot's type was not cast
+				   into it -- `arg_sink += v * w` wrapped its int Binary in an int
+				   Convert the tree does not have. VT_DEFSIGN is spelling, not type. */
+				if (rir_child_has_type(cur, st))
+					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
 					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
@@ -886,7 +1042,34 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			break;
 		}
-		n = ast_node(rir_arena, AST_Store);
+		/* `s = j = 0` chains two stores over ONE value, and the tree keeps the
+		   model a tree by giving the outer store a deep COPY of the inner store's
+		   value (ast_hook_vstore's chained path) rather than a back-link. An
+		   AST_StoreVal here is that back-link, and ast_replay_value resolves it
+		   through the Store it names, which is a different emission. Mirror the
+		   tree: copy the subtree and tag the store chained. */
+		{
+			int chained = 0;
+			if (ast_kind(rir_arena, v) == AST_StoreVal &&
+					ast_nchild(rir_arena, v) == 0) {
+				AstLocal src = (AstLocal)ast_ival(rir_arena, v);
+				if (src < ast_count(rir_arena) &&
+						ast_kind(rir_arena, src) == AST_Store &&
+						ast_nchild(rir_arena, src) == 2) {
+					v = ast_dup_sub(rir_arena, ast_child(rir_arena, src, 1));
+					chained = 1;
+				}
+			}
+			n = ast_node(rir_arena, AST_Store);
+			if (chained)
+				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
+		}
+		if (rir_lorn || rir_ternn) {
+			ast_add_child(rir_arena, n, t);
+			ast_add_child(rir_arena, n, v);
+			rir_push(n);
+			break;
+		}
 		/* `lval op= rhs`: the tag makes ast_replay_bb re-emit the vdup form the
 		   parser used -- one address computation, dup, op, store -- instead of the
 		   naive two-address form. It is only a hint; that arm still checks the
@@ -941,6 +1124,7 @@ static void rir_op_effect(const RirOp *ro) {
 		AstLocal n;
 		int na = o->a0;
 		AstLocal args[32];
+		int nfixed = -1;
 		if (na < 0 || na > 32) {
 			rir_arena_mismatch++;
 			na = 0;
@@ -955,8 +1139,38 @@ static void rir_op_effect(const RirOp *ro) {
 		   variable directly and the body comes out 8 bytes short. */
 		if (o->vs_n - ast_base_depth >= na + 1 && rir_shn >= na + 1) {
 			int q;
-			for (q = 0; q <= na; q++) {
+			/* The tree wraps an argument only where an assignment cast applied, i.e.
+			   for a DECLARED parameter. `printf("...", a)` gets a Convert on the
+			   format string and a bare Ref on the int, because the int is in the
+			   varargs tail; `via_cast(a, b)` gets one on both, because both are
+			   declared. Wrapping the tail as well is 30 of the +1 node-count bodies. */
+			{
+				const SValue *cs = &jrn_vs[o->vs_off + o->vs_n - 1 - na];
+				const Sym *fs = (const Sym *)(uintptr_t)cs->type.ref;
+				/* A function Sym's own type is its RETURN type, so do not test it for
+				   VT_FUNC. Reach it from the callee slot: VT_FUNC means type.ref is the
+				   Sym already, VT_PTR means one more hop. */
+				if (fs && (cs->type.t & VT_BTYPE) == VT_PTR)
+					fs = fs->type.ref;
+				nfixed = -1;
+				if (fs && fs->f.func_type == FUNC_ELLIPSIS) {
+					const Sym *pa;
+					nfixed = 0;
+					for (pa = fs->next; pa; pa = pa->next)
+						nfixed++;
+				}
+			}
+			for (q = 0; q <= na && rir_argcast_n; q++) {
 				int si = rir_shn - 1 - q;
+				/* In the varargs tail there is no assignment cast -- but the DEFAULT
+				   argument promotions still apply (float->double, char/short->int), and
+				   the tree records those. So skip the tail only where the type is
+				   actually unchanged. */
+				if (nfixed >= 0 && q < na && na - 1 - q >= nfixed &&
+					rir_sh[si] != AST_NONE &&
+					ast_type_t(rir_arena, rir_sh[si]) ==
+						jrn_vs[o->vs_off + o->vs_n - 1 - q].type.t)
+					continue;
 				AstLocal cur = rir_sh[si];
 				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv2->type.t;
@@ -979,6 +1193,7 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 			}
 		}
+		rir_argcast_n = 0;
 		/* The tree builds each child's Convert while EVALUATING that argument, so
 		   they precede the Invoke in node order. Allocating the Invoke first put
 		   it ahead of its own Converts and showed up as paired Invoke<->Convert
@@ -1093,7 +1308,7 @@ static void rir_op_effect(const RirOp *ro) {
 		n = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, n, AST_OP_ADDR);
 		ast_add_child(rir_arena, n, a);
-		rir_push_typed(n);
+		rir_push_typed_addr(n);
 		break;
 	}
 	default:
@@ -1103,18 +1318,78 @@ static void rir_op_effect(const RirOp *ro) {
 
 static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
 static int rir_member_depth;
+/* A struct vstore's own lowering -- gaddrof on both sides then gen_struct_copy
+   -- re-materialises what it consumes, and the refill names the DESTINATION
+   slot for both operands, so va_start's copy came out as a va_list copied onto
+   itself. The emitter re-runs vstore() and derives the copy itself, exactly as
+   the parser does, so the region's primitives model nothing: suppress them and
+   keep the two lvalues the region opened with. */
+static int rir_vstruct_depth;
+static int rir_vla_depth;
+/* A store inside a short-circuit operand or a ternary arm is evaluated INSIDE
+   the branch. Attaching it to the enclosing block emits it unconditionally and
+   ahead of the test, which is what region_store.c showed: the store first and
+   the compare after. While either region has a node under construction, keep
+   the Store on the shadow stack so the operand binding takes it. */
 static AstLocal rir_tern[16];
-static int rir_ternn;
 static AstLocal rir_lor[16];
-static int rir_lorn;
+/* `a[3]` is pointer arithmetic that ends at the same pointer type it started
+   from, and the tree holds a bare Binary under its Load. `*(T *)(base + off)`
+   is a cast, and the tree holds a Convert. Both reach RIR_M_LOAD as an untyped
+   Binary under a VT_PTR snapshot, so the discriminator is whether an operand
+   already carries that exact pointer type. */
+#define RIR_TMASK                                                              \
+	(~(unsigned)(VT_ARRAY | VT_CONSTANT | VT_VOLATILE | VT_NONCONST |            \
+							 VT_NONLVAL | VT_DEFSIGN))
+
+static int rir_ptr_arith(AstLocal n, const SValue *pv) {
+	int i, nc = ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		/* An array designator carries VT_ARRAY and a file-scope symbol carries
+		   storage-class bits the snapshot's decayed pointer does not, so the
+		   comparison has to be on the underlying type: `g[j]` over a static array
+		   read as a cast and put a Convert under the Load the tree does not have. */
+		if (c != AST_NONE &&
+				(ast_type_t(rir_arena, c) & RIR_TMASK) ==
+						((unsigned)pv->type.t & RIR_TMASK) &&
+				ast_type_ref(rir_arena, c) == (uint64_t)(uintptr_t)pv->type.ref)
+			return 1;
+	}
+	return 0;
+}
+
 static AstLocal rir_last_return = AST_NONE;
+static AstLocal rir_retexpr = AST_NONE;
+static int rir_retexpr_depth;
+static int rir_retexpr_pending;
 
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
+	case RIR_M_RETEXPR:
+		/* The tree takes the return's value at THIS tap, before
+		   gen_assign_cast(&func_vt) runs, and ast_replay_bb's Return arm re-runs
+		   that cast itself. Replay_IR's own RETURN marker fires after it, so the
+		   assignment cast was landing in the arena -- a Convert the tree never
+		   builds, or a leaf carrying the post-cast type. Bind the value here and
+		   suppress the lowering in between. */
+		if (rir_shn > 0) {
+			rir_retexpr = rir_sh[rir_shn - 1];
+			rir_retexpr_depth = rir_shn;
+			rir_retexpr_pending = 1;
+		}
+		break;
 	case RIR_M_RETURN:
 		n = ast_node(rir_arena, AST_Return);
-		a = rir_shn ? rir_pop() : AST_NONE;
+		if (rir_retexpr_pending && ro->rval && rir_retexpr != AST_NONE) {
+			rir_shn = rir_retexpr_depth - 1;
+			a = rir_retexpr;
+		} else {
+			a = rir_shn ? rir_pop() : AST_NONE;
+		}
+		rir_retexpr_pending = 0;
+		rir_retexpr = AST_NONE;
 		if (a != AST_NONE)
 			ast_add_child(rir_arena, n, a);
 		/* A cleanup attribute makes the parser emit the destructor calls BETWEEN
@@ -1221,7 +1496,8 @@ static void rir_mark_apply(const RirOp *ro) {
 			   and interposes a Convert between two Loads the tree does not have. */
 			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
 					ast_kind(rir_arena, top) == AST_Binary &&
-					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
+					!rir_ptr_arith(top, pv)) {
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
 				ast_set_type(rir_arena, cv, pv->type.t,
 										 (uint64_t)(uintptr_t)pv->type.ref);
@@ -1241,6 +1517,72 @@ static void rir_mark_apply(const RirOp *ro) {
 		   the pointer it dereferences. Stamping it read as `Load t=5 ref=X`
 		   against the tree's `t=0 ref=0` in 18 near-miss bodies. */
 		rir_push(n);
+		break;
+	case RIR_M_NORETURN:
+		/* A call to a _Noreturn function is followed by CODE_OFF(), so the parser
+		   drops the jump that would follow it. The tree records that on the node
+		   as AST_FB_CALL_NORETURN and ast_replay_value re-runs the CODE_OFF; the
+		   marker fires inside the CALL region, where the Invoke is still pending.
+		   This is the recorded "model that this branch ends unreachable" class. */
+		{
+			AstLocal inv = rir_pending_call;
+			if (inv == AST_NONE && rir_shn > 0 &&
+					ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Invoke)
+				inv = rir_sh[rir_shn - 1];
+			if (inv != AST_NONE)
+				ast_set_fbits(rir_arena, inv,
+											ast_fbits(rir_arena, inv) | AST_FB_CALL_NORETURN);
+		}
+		break;
+	case RIR_M_VLA: {
+		AstLocal u = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, u, AST_OP_VLA);
+		ast_set_type(rir_arena, u, (int)ro->rv1, (uint64_t)ro->rv2);
+		ast_set_ival(rir_arena, u, (uint64_t)(int64_t)(int)(ro->rv3 & 0xffffffff));
+		ast_set_sym(rir_arena, u,
+								(uint64_t)(int64_t)(int)((ro->rv3 >> 32) & 0xffffffff));
+		ast_set_fbits(rir_arena, u, (uint64_t)(unsigned)ro->rval);
+		rir_stmt(u);
+		break;
+	}
+	case RIR_M_VLARESTORE: {
+		AstLocal u;
+		if (!ro->rval)
+			break;
+		/* The parser restores the stack pointer as part of a return when one is
+		   pending, which the tree records in the Return's ival rather than as a
+		   node of its own. */
+		if (rir_pending_ret != AST_NONE) {
+			ast_set_ival(rir_arena, rir_pending_ret, (uint64_t)(int64_t)ro->rval);
+			break;
+		}
+		u = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, u, AST_OP_VLA_RESTORE);
+		ast_set_ival(rir_arena, u, (uint64_t)(int64_t)ro->rval);
+		rir_stmt(u);
+		break;
+	}
+	case RIR_M_ARGCAST:
+		rir_argcast_n++;
+		break;
+	case RIR_M_CASTGV:
+		/* The parser materialises an explicit cast's result when
+		   gv_cast_rvalue() says so, and the tree records that on the node as
+		   AST_FB_CONVERT_GV -- ast_replay_value's Convert arm re-runs it. Without
+		   the bit the callee of `((int (*)(int,int))p)(a,b)` is never spilled and
+		   the call reloads the pre-cast slot, 8 bytes short. */
+		if (rir_shn > 0) {
+			AstLocal top = rir_sh[rir_shn - 1];
+			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert)
+				ast_set_fbits(rir_arena, top,
+											ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
+			else if (ro->mvs_n - ast_base_depth > 0) {
+				const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+				rir_castgv_pend = 2;
+				rir_castgv_t = pv->type.t;
+				rir_castgv_ref = (uint64_t)(uintptr_t)pv->type.ref;
+			}
+		}
 		break;
 	case RIR_M_CONVERT:
 		a = rir_pop();
@@ -1353,6 +1695,9 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_MEMBER:
 			rir_member_depth++;
 			break;
+		case RIR_R_VLA:
+			rir_vla_depth++;
+			break;
 		case RIR_R_LSUP:
 			rir_cond_depth++;
 			break;
@@ -1369,6 +1714,22 @@ static void rir_region(const RirOp *ro) {
 			if (rir_vstn < 16) {
 				int n2 = ro->mvs_n - ast_base_depth;
 				int allow = 0;
+				rir_vst_tc[rir_vstn] = 0;
+				rir_vst_vc[rir_vstn] = 0;
+				if (n2 >= 2 && rir_shn >= 2 &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
+								VT_STRUCT &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
+								VT_STRUCT) {
+					rir_vstruct_depth++;
+					rir_vst_sup[rir_vstn] = 1;
+					rir_vst_tc[rir_vstn] =
+							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 2].c.i;
+					rir_vst_vc[rir_vstn] =
+							(long long)rir_mvs[ro->mvs_off + ro->mvs_n - 1].c.i;
+				} else {
+					rir_vst_sup[rir_vstn] = 0;
+				}
 				if (n2 >= 2) {
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
@@ -1451,6 +1812,23 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_CALL:
 		if (rir_call_depth)
 			rir_call_depth--;
+		/* A call closed by ast_hook_call_effect_end has its result discarded: the
+		   tree types the Invoke VT_VOID and makes it a statement. Held pending
+		   instead, it was claimed by whatever consumed the stack next -- the
+		   member access in struct_packed_indirect.c addp took the memset's Invoke
+		   as its own operand. */
+		if (ro->rval && !rir_call_depth) {
+			AstLocal inv = rir_pending_call;
+			if (inv == AST_NONE && rir_shn > 0 &&
+					ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Invoke)
+				inv = rir_pop();
+			else if (inv != AST_NONE)
+				rir_pending_call = AST_NONE;
+			if (inv != AST_NONE) {
+				ast_set_type(rir_arena, inv, VT_VOID, 0);
+				rir_stmt(inv);
+			}
+		}
 		break;
 	case RIR_R_INC:
 		if (rir_inc_depth)
@@ -1461,6 +1839,8 @@ static void rir_region(const RirOp *ro) {
 			rir_cond_depth--;
 		break;
 	case RIR_R_VSTORE:
+		if (rir_vstruct_depth)
+			rir_vstruct_depth--;
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
@@ -1470,7 +1850,17 @@ static void rir_region(const RirOp *ro) {
 			   ast_replay_value re-runs gfunc_return itself -- so rebuilding it adds a
 			   Store the tree does not have and desynchronises the shadow stack. A
 			   pending Return is exactly that case and nothing else. */
-			if (rir_pending_ret != AST_NONE) {
+			/* But NOT every vstore under a pending Return is gfunc_return's own: a
+			   cleanup attribute spills the return value to a temp before the
+			   destructor call and reloads it after, and that copy has to be
+			   modelled or the reload comes off the original slot. gfunc_return's
+			   shape is two AST_OP_ADDR unaries; the spill's is two lvalues. */
+			if (rir_pending_ret != AST_NONE &&
+					(rir_shn < 2 ||
+					 (ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Unary &&
+						ast_op(rir_arena, rir_sh[rir_shn - 1]) == AST_OP_ADDR) ||
+					 (ast_kind(rir_arena, rir_sh[rir_shn - 2]) == AST_Unary &&
+						ast_op(rir_arena, rir_sh[rir_shn - 2]) == AST_OP_ADDR))) {
 				if (rir_vst_shn[rir_vstn] >= 0 && rir_shn > rir_vst_shn[rir_vstn])
 					rir_shn = rir_vst_shn[rir_vstn];
 				break;
@@ -1478,11 +1868,51 @@ static void rir_region(const RirOp *ro) {
 			if (rir_vst_shn[rir_vstn] >= 2 && rir_shn > rir_vst_shn[rir_vstn])
 				rir_shn = rir_vst_shn[rir_vstn];
 			if (!seen && allow && rir_shn >= 2) {
+				/* Suppressed, the region ends with the parser's own vstore order --
+				   value on top, target under it. Unsuppressed, the region's ops have
+				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
+				if (rir_vst_sup[rir_vstn]) {
+					long long tc = rir_vst_tc[rir_vstn], vc = rir_vst_vc[rir_vstn];
+					long long ti = (long long)ast_ival(rir_arena, t);
+					long long vi = (long long)ast_ival(rir_arena, v);
+					/* t is the popped TOP: swap only when the target is the slot under
+					   it, decided by the offsets the region opened with and falling
+					   back to the parser's own vstore order when they do not tell. */
+					if (!(tc != vc && ti == tc && vi == vc)) {
+						AstLocal sw = t;
+						t = v;
+						v = sw;
+					}
+				}
 				n = ast_node(rir_arena, AST_Store);
 				ast_add_child(rir_arena, n, t);
 				ast_add_child(rir_arena, n, v);
 				rir_stmt(n);
+				/* A cleanup attribute spills the pending return value to a temp
+				   before the destructor call and the parser reloads from THAT temp,
+				   so the held Return has to follow the value to its new home. The
+				   tree does not model this at all -- it is unfaithful on these
+				   bodies -- and reproducing it is the point of Replay_IR. */
+				if (rir_pending_ret != AST_NONE &&
+						ast_nchild(rir_arena, rir_pending_ret) == 1) {
+					AstLocal rv = ast_child(rir_arena, rir_pending_ret, 0);
+					if (rv != AST_NONE && ast_nchild(rir_arena, rv) == 0 &&
+							ast_nchild(rir_arena, t) == 0 &&
+							ast_kind(rir_arena, rv) == ast_kind(rir_arena, v) &&
+							ast_ival(rir_arena, rv) == ast_ival(rir_arena, v) &&
+							ast_sym(rir_arena, rv) == ast_sym(rir_arena, v)) {
+						/* Retype the node in place rather than re-parenting: swapping the
+						   child would leave the old one an orphan whose parent still
+						   names the Return, which ast_validate rejects. */
+						ast_set_kind(rir_arena, rv, ast_kind(rir_arena, t));
+						ast_set_op(rir_arena, rv, ast_op(rir_arena, t));
+						ast_set_type(rir_arena, rv, ast_type_t(rir_arena, t),
+												 ast_type_ref(rir_arena, t));
+						ast_set_ival(rir_arena, rv, ast_ival(rir_arena, t));
+						ast_set_sym(rir_arena, rv, ast_sym(rir_arena, t));
+					}
+				}
 				{
 					AstLocal mv = ast_node(rir_arena, AST_StoreVal);
 					ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
@@ -1512,7 +1942,10 @@ static void rir_region(const RirOp *ro) {
 			if (ro->rval || ast_nchild(rir_arena, n) < 2)
 				rir_arena_mismatch++;
 			else
-				rir_push_typed(n);
+				/* A short-circuit region is an AST_Binary, and the tree leaves those
+				   untyped for the emitter to derive -- the same convention as the
+				   ternary AST_If and the inc/dec AST_Unary. */
+				rir_push(n);
 		}
 		break;
 	case RIR_R_TARM: {
@@ -1539,6 +1972,10 @@ static void rir_region(const RirOp *ro) {
 			   18 of the near-miss bodies. */
 			rir_push(n);
 		}
+		break;
+	case RIR_R_VLA:
+		if (rir_vla_depth)
+			rir_vla_depth--;
 		break;
 	case RIR_R_MEMBER: {
 		/* `a.b` is one AST_Unary in the tree — op AST_OP_MEMBER, the byte offset
@@ -1707,6 +2144,12 @@ static int rir_emit_safe(void) {
 				return rir_unsafe("Load", n, nc);
 			break;
 		case AST_Unary:
+			/* A VLA declaration and its stack restore are childless statements --
+			   ast_replay_bb reads everything they need off the node itself. */
+			if ((ast_op(rir_arena, n) == AST_OP_VLA ||
+					 ast_op(rir_arena, n) == AST_OP_VLA_RESTORE) &&
+					nc == 0)
+				break;
 			if (nc != 1)
 				return rir_unsafe("Unary", n, nc);
 			/* ast_replay_value stamps an ADDR node's own type straight onto the
@@ -1779,7 +2222,12 @@ static int rir_emit_safe(void) {
 			vb = ast_type_t(rir_arena, v) & VT_BTYPE;
 			if (vb == VT_QFLOAT || vb == VT_QLONG)
 				return rir_unsafe("Return-wide", n, nc);
-			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT))
+			/* A _Complex return type is a VT_STRUCT carrying ref->a.is_complex, and
+			   `return 7.0;` from one is a scalar value gen_assign_cast widens --
+			   the tree records exactly that shape, so refusing it is this net
+			   declining a body the emitter handles. */
+			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT) &&
+					!(is_complex_type(&func_vt) && vb != VT_STRUCT && vb != VT_VOID))
 				return rir_unsafe("Return-struct", n, nc);
 			break;
 		}
@@ -1790,6 +2238,39 @@ static int rir_emit_safe(void) {
 	return 1;
 }
 #endif
+
+static void rir_castgv_apply(void) {
+	AstLocal top, cv;
+	if (!rir_castgv_pend || --rir_castgv_pend)
+		return;
+	if (rir_shn <= 0)
+		return;
+	top = rir_sh[rir_shn - 1];
+	if (top == AST_NONE || rir_shtype[rir_shn - 1])
+		return;
+	if (ast_kind(rir_arena, top) == AST_Convert) {
+		ast_set_fbits(rir_arena, top,
+									ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
+		return;
+	}
+	/* Only a node still on the shadow stack and not yet attached anywhere can be
+	   wrapped: re-parenting one the model has already placed makes the arena a
+	   DAG, which ast_validate rejects as a parent link mismatch. */
+	if (ast_parent(rir_arena, top) != AST_NONE)
+		return;
+	cv = ast_node(rir_arena, AST_Convert);
+	ast_set_type(rir_arena, cv, rir_castgv_t, rir_castgv_ref);
+	ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
+	ast_add_child(rir_arena, cv, top);
+	rir_sh[rir_shn - 1] = cv;
+	/* Any handle the model is holding for later attachment has to move with it,
+	   or the Return attaches the operand the Convert now owns and the arena has
+	   two parents for one node. */
+	if (rir_retexpr == top)
+		rir_retexpr = cv;
+	if (rir_pending_call == top)
+		rir_pending_call = cv;
+}
 
 static void rir_to_arena(void) {
 	int i;
@@ -1808,18 +2289,66 @@ static void rir_to_arena(void) {
 	rir_call_depth = 0;
 	rir_inc_depth = 0;
 	rir_member_depth = 0;
+	rir_vstruct_depth = 0;
+	rir_vla_depth = 0;
+	rir_argcast_n = 0;
 	rir_ternn = 0;
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;
 	rir_opassign_pending = 0;
+	rir_retexpr = AST_NONE;
+	rir_retexpr_pending = 0;
+	rir_castgv_pend = 0;
 	rir_arena_mismatch = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
+#if RIR_DBG_OPTRACE
+		{
+			const char *e = getenv("RIRDBG");
+			if (e && funcname && !strcmp(e, funcname))
+				fprintf(stderr, "[ent] %3d %-6s %-10s shn=%d lorn=%d ternn=%d cond=%d\n", i,
+								ro->tag == RIR_T_OP ? "OP" : ro->tag == RIR_T_MARK ? "MARK"
+								: ro->tag == RIR_T_RBEGIN ? "RBEGIN" : "REND",
+								ro->tag == RIR_T_OP ? jrn_op_name(ro->p.kind)
+																		: rir_region_name(ro->rkind),
+								rir_shn, rir_lorn, rir_ternn, rir_cond_depth);
+		}
+#endif
+		/* A construct parsed with nocode_wanted set emits nothing -- the dead arm
+		   of `1 ? live : ({ while (1) ... })`. The op filter already drops its
+		   primitives; without dropping its control-flow regions too the
+		   reconstruction builds a real loop for it and emits the backward jump
+		   the parser never wrote (`eb fe`). Scoped to control flow: nocode_wanted
+		   is also set transiently after a return, where the markers are still
+		   load-bearing. */
+		/* A construct parsed in an UNEVALUATED context emits nothing -- the dead
+		   arm of `1 ? live : ({ while (1) ... })`. The op filter already drops its
+		   primitives; its regions and markers were still applied, so the
+		   reconstruction built a real loop for it and emitted the backward jump
+		   the parser never wrote (`eb fe`). The mask matters and was measured:
+		   raw nocode_wanted costs 105 bodies and the control-flow-region subset
+		   101, because CODE_OFF is also set transiently after a return where
+		   these markers are load-bearing. Only the NOEVAL bits mean "parsed but
+		   not evaluated". */
+		if (ro->tag != RIR_T_OP && (ro->rnocode & RIR_NOEVAL_MASK))
+			continue;
+		if (ro->tag != RIR_T_MARK || ro->rkind != RIR_M_CASTGV)
+			rir_castgv_apply();
 		if (ro->tag == RIR_T_MARK) {
-			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
-					!rir_inc_depth && !rir_member_depth) {
-				if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETURN)
+			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
+			/* RIR_M_NORETURN fires INSIDE the call region it annotates, so it is
+			   the one marker the region suppression must let through. */
+			if ((ro->rkind == RIR_M_NORETURN ||
+					 (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
+						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
+						!rir_vla_depth)) &&
+					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN ||
+					 ro->rkind == RIR_M_NORETURN)) {
+				if (bound || ro->rkind == RIR_M_NORETURN)
+					;
+				else if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETEXPR ||
+								 ro->rkind == RIR_M_RETURN)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 				else
 					rir_stamp_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
@@ -1837,9 +2366,12 @@ static void rir_to_arena(void) {
 			rir_region(ro);
 			continue;
 		}
-		if (rir_cond_depth || rir_inc_depth || rir_member_depth)
+		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
+				rir_retexpr_pending || rir_vstruct_depth || rir_vla_depth)
 			continue;
+		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);
+		rir_cvt_next = 0;
 		rir_op_effect(ro);
 	}
 	rir_flush_pending_call();
@@ -2062,8 +2594,15 @@ void rir_verify(void) {
 							ast_type_ref(rir_arena, q) == ast_type_ref(ast_cur, q) &&
 							ast_ival(rir_arena, q) == ast_ival(ast_cur, q) &&
 							ast_sym(rir_arena, q) == ast_sym(ast_cur, q) &&
+							ast_fbits(rir_arena, q) == ast_fbits(ast_cur, q) &&
 							ast_nchild(rir_arena, q) == ast_nchild(ast_cur, q))
 						continue;
+					if (ast_kind(rir_arena, q) == ast_kind(ast_cur, q) &&
+							ast_fbits(rir_arena, q) != ast_fbits(ast_cur, q))
+						fprintf(stderr, "[rir-fb] %s n%u %s rir=%llx tree=%llx\n",
+										funcname, q, ast_kind_name(ast_kind(rir_arena, q)),
+										(unsigned long long)ast_fbits(rir_arena, q),
+										(unsigned long long)ast_fbits(ast_cur, q));
 					fprintf(stderr,
 									"[rir-diff] n%u rir(%s op=%d t=%d ref=%llx iv=%llu sym=%llx "
 									"nc=%u) tree(%s op=%d t=%d ref=%llx iv=%llu sym=%llx nc=%u)\n",
@@ -2235,6 +2774,23 @@ void rir_verify(void) {
 				for (i = 0; i < rir_nlbl; i++)
 					if (rir_lblhead[i])
 						rir_open_chains++;
+				/* The win64 alloca chain threads raw section addresses through
+				   the `add rax, imm32` slots and is only closed by
+				   gfunc_epilog's gsym_addr(func_alloca, -func_scratch), AFTER
+				   ast_func_end — the same deferred fixup as rsym. The shifted
+				   replay rebuilds it at base2, so those imm32 slots differ from
+				   the original by exactly `shift`; rebase them so every other
+				   byte of the body still gets compared. cg_func_alloca is 0 on
+				   targets without the chain. */
+				{
+					int L = mcc_state->cg_func_alloca;
+					while (L >= base2 && L + 4 <= ind) {
+						int nx = (int)read32le(cur_text_section->data + L);
+						write32le(cur_text_section->data + L,
+											nx ? (uint32_t)(nx - shift) : 0);
+						L = nx;
+					}
+				}
 				if (rir_fail_op < 0 && ind - base2 == body_len &&
 						memcmp(cur_text_section->data + base2, orig, (size_t)body_len) == 0 &&
 						(rsec ? (int)rsec->data_offset - (int)ast_reloc0_sv : 0) == rel_len) {
@@ -2311,7 +2867,10 @@ void rir_verify(void) {
 		rir_c2_msg[0] = 0;
 		memcpy(vstack - 1, vsave, sizeof(SValue) * (VSTACK_SIZE + 1));
 		vtop = vstack + saved_vn - 1;
-		loc = saved_loc;
+		/* Not saved_loc: that is the frame pointer at the END of the body, so a
+		   struct return's temp allocated during the trial landed one slot below
+		   the parser's. Start where the body started. */
+		loc = rir_body_loc_sv;
 		anon_sym = saved_anon;
 		ast_pinned_regs = saved_pin;
 		ast_rp_bsym = NULL;
@@ -2351,7 +2910,11 @@ void rir_verify(void) {
 				ast_arena_free(c3);
 				ast_tmpl_folds = 0;
 			}
-			ast_replay_body(rir_arena);
+			rir_c2_active = 1;
+			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
+													? ast_cur
+													: rir_arena);
+			rir_c2_active = 0;
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2part] %s heq=%d ok=%d\n", funcname,
 					rir_body_hasheq,
@@ -2371,6 +2934,16 @@ void rir_verify(void) {
 							d = q;
 							break;
 						}
+					/* The JOURNAL is byte-correct on every one of these bodies, so the
+					   op it was executing at the first divergent byte names what the
+					   arena got wrong. This is the same oracle MCC_JOURNAL_ORACLE gives
+					   the tree, pointed at the C2 emission instead of the replay. */
+					{
+						int bi = rir_blame(d);
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d\n",
+										funcname, d,
+										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
+					}
 					fprintf(stderr, "[rir-c2byte] %s len=%d firstdiff=%d\n  parser:",
 									funcname, body_len, d);
 					for (q = 0; q < body_len && q < 48; q++)
@@ -2386,12 +2959,31 @@ void rir_verify(void) {
 				rir_tot_c2_len++;
 				if (rir_env >= 5) {
 					int q, gl = ind - ast_body_ind_sv;
-					fprintf(stderr, "[rir-c2len] %s want=%d got=%d\n  parser:", funcname,
-									body_len, gl);
-					for (q = 0; q < body_len && q < 48; q++)
+					/* A long body with a small length delta diverges at ONE place, and
+					   the first 48 bytes are almost always identical -- print where the
+					   two streams part company and a window around it, or the whole
+					   thing when it is short. */
+					int lim = gl < body_len ? gl : body_len, fd = -1, from;
+					for (q = 0; q < lim; q++)
+						if (cur_text_section->data[ast_body_ind_sv + q] != orig[q]) {
+							fd = q;
+							break;
+						}
+					if (fd < 0)
+						fd = lim;
+					from = fd > 8 ? fd - 8 : 0;
+					{
+						int bi = rir_blame(fd);
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d\n",
+										funcname, fd,
+										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
+					}
+					fprintf(stderr, "[rir-c2len] %s want=%d got=%d firstdiff=%d\n  parser:",
+									funcname, body_len, gl, fd);
+					for (q = from; q < body_len && q < from + 40; q++)
 						fprintf(stderr, " %02x", orig[q]);
 					fprintf(stderr, "\n  rir   :");
-					for (q = 0; q < gl && q < 48; q++)
+					for (q = from; q < gl && q < from + 40; q++)
 						fprintf(stderr, " %02x",
 										cur_text_section->data[ast_body_ind_sv + q]);
 					fprintf(stderr, "\n");

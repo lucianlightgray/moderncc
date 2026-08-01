@@ -1954,6 +1954,7 @@ static AstLocal ast_tern[16];
 static int ast_tern_top;
 static unsigned char rir_tern_on[16];
 static int rir_tern_n;
+int rir_body_loc_sv;
 static unsigned char rir_lor_on[16];
 static int rir_lor_n;
 static int ast_tern_suppress;
@@ -1987,6 +1988,13 @@ static int ast_loc_low;
 static int ast_locrec_min;
 static int ast_temp_frontier;
 static int jrn_replaying;
+
+#if RIR_DBG_STRUCTCPY || RIR_DBG_OPTRACE
+static int rir_dbg_on(void) { MCC_TRACE("enter\n");
+	const char *e = getenv("RIRDBG");
+	return e && funcname && !strcmp(e, funcname);
+}
+#endif
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
@@ -2115,7 +2123,6 @@ void ast_hook_goto(int v);
 void ast_hook_inc(int post, int c);
 void ast_hook_inc_end(void);
 void ast_hook_vdup(void);
-static AstLocal ast_dup_sub(AstArena *a, AstLocal n);
 static int ast_expr_pure(AstArena *a, AstLocal n, int depth);
 static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_ADDR 0x40000
@@ -2860,6 +2867,7 @@ void ast_hook_fneg_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_CASTGV);
 	if (!ast_convert_gv_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
@@ -3940,6 +3948,7 @@ void ast_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
+	rir_vla_begin();
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_op++;
@@ -3947,6 +3956,9 @@ void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
 
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 																	 int locorig) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_VLA);
+	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
+							 locorig);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
 	if (ast_active && ast_in_op > 0)
 		{ MCC_TRACE("br\n"); ast_in_op--; }
@@ -3976,6 +3988,7 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 }
 
 void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
+	rir_mark_val(RIR_M_VLARESTORE, loc);
 	if (!ast_active || ast_desync || ast_bail || loc == 0)
 		{ MCC_TRACE("br\n"); return; }
 	if (NODATA_WANTED)
@@ -4095,7 +4108,16 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
 }
 
+/* One assignment cast per argument of a PARSED call, and none at all for a
+   call the parser synthesises (init_putz's memset, the helper families). The
+   tree records that difference as Convert nodes it builds while evaluating each
+   argument; Replay_IR has no other witness for it. */
+void ast_hook_call_argcast(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_ARGCAST);
+}
+
 void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_NORETURN);
 	if (!ast_call_noreturn_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_capture || ast_desync || ast_call_pending == AST_NONE)
@@ -4105,7 +4127,12 @@ void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_CALL);
+	/* This end, and not ast_hook_call_end, is what a call whose RESULT IS
+	   DISCARDED closes with -- the synthesised memset behind a struct
+	   initialiser among them. The tree types that Invoke VT_VOID and attaches it
+	   as a statement; Replay_IR needs the same discriminator, so the region end
+	   carries it. */
+	rir_rend_to_val(RIR_R_CALL, 1);
 	if (ast_call_dead) { MCC_TRACE("br\n");
 		ast_call_dead = 0;
 		ast_in_call = 0;
@@ -4342,6 +4369,7 @@ void ast_hook_vstore_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ret_expr_done(void) { MCC_TRACE("enter\n");
+	rir_mark_val(RIR_M_RETEXPR, 0);
 	ast_ret_val = AST_NONE;
 	if (!ast_capture || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -6236,6 +6264,21 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
 							 (int)ind, (int)(vtop - vstack));
 	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
+	case AST_Store: {
+		/* A store in VALUE context -- `c && (*out = 7)`, `c ? (*out = 1) : (*out
+		   = 2)` -- which the parser evaluates for its value inside the branch.
+		   The tree never places a Store where a value is expected, so this arm is
+		   unreachable from a hook-built arena and the default build is unchanged;
+		   it exists for the Replay_IR arenas, which model those operands the way
+		   the parser evaluates them. Same emission as ast_replay_bb's plain Store
+		   path, without the vpop that discards the result. */
+		if (ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			vstore();
+		}
+		break;
+	}
 	case AST_StoreVal: {
 		/* Value-live: already on the vstack, emit nothing. Otherwise it was
 		   popped, so re-emit the RHS -- the pre-F3a double evaluation, which is
@@ -10524,7 +10567,7 @@ static void ast_bf_report(AstArena *a, const char *fn) { MCC_TRACE("enter\n");
 
 static int ast_bf_folds;
 
-static AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal d = ast_node(a, ast_kind(a, n));
 	ast_set_op(a, d, ast_op(a, n));
 	ast_set_type(a, d, ast_type_t(a, n), ast_type_ref(a, n));
@@ -15457,6 +15500,16 @@ static void jrn_gap(void) { MCC_TRACE("enter\n");
 
 static void jrn_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 	JrnOp *o;
+#if RIR_DBG_OPTRACE
+	/* Both the parse and the C2 emission reach the primitives through these
+	   wrappers, so one tap gives both streams and diffing them shows the first
+	   structural divergence -- which op the reconstruction never issued, or
+	   issued out of order. */
+	if (rir_dbg_on())
+		fprintf(stderr, "[optrace] %s %s ind=%d vn=%d\n",
+						rir_c2_active ? "C2   " : (jrn_replaying ? "JRN  " : "PARSE"),
+						jrn_op_name(kind), ind, (int)(vtop - vstack + 1));
+#endif
 	if (!jrn_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (jrn_depth++ > 0) { MCC_TRACE("br\n");
@@ -15589,7 +15642,26 @@ JRN_W0(gen_cvt_trunc32, JOP_CVT_TRUNC32)
 JRN_W1(gen_cvt_csti, JOP_CVT_CSTI)
 #endif
 #ifdef MCC_JRN_HAVE_STRUCT_COPY
+#if RIR_DBG_STRUCTCPY
+void jrn_gen_struct_copy(int a0) { MCC_TRACE("enter\n");
+	if (rir_dbg_on())
+		fprintf(stderr,
+						"[scpy] %s phase=%s size=%d dst(r=%x c=%lld t=%x) src(r=%x c=%lld "
+						"t=%x) ind=%d loc=%d func_vc=%d ntlv=%d frontier=%d\n",
+						funcname,
+						rir_c2_active ? "C2" : (jrn_replaying ? "JRN" : "PARSE"), a0,
+						vtop[-1].r, (long long)vtop[-1].c.i, vtop[-1].type.t, vtop[0].r,
+						(long long)vtop[0].c.i, vtop[0].type.t, ind, loc, func_vc,
+						nb_temp_local_vars, ast_temp_frontier);
+	jrn_begin(JOP_STRUCTCOPY, NULL);
+	if (JRN_REC)
+		jrn_pending->a0 = a0;
+	(gen_struct_copy)(a0);
+	jrn_end();
+}
+#else
 JRN_W1(gen_struct_copy, JOP_STRUCTCOPY)
+#endif
 #endif
 JRN_W0(ggoto, JOP_GGOTO)
 JRN_W1(gen_fill_nops, JOP_FILLNOPS)
@@ -16654,6 +16726,11 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	ast_try_active = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
 								!ast_ret_bad;
 	ast_body_ind_sv = ind;
+	/* The frame pointer as the body OPENS. The C2 trial re-runs the emission
+	   from a reconstructed arena, and a struct return allocates its temp
+	   straight off `loc` -- restoring the value from the END of the body made
+	   every one of those allocations land 8 bytes low. */
+	rir_body_loc_sv = loc;
 	rir_tern_n = 0;
 	rir_lor_n = 0;
 	ast_reloc0_sv =
