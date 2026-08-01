@@ -2535,13 +2535,7 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
             list(APPEND _objs pic86)
         elseif(cpu STREQUAL "x86_64")
             list(APPEND _objs va_list)
-            # x86_64 mccrt needs float128.o (the TF-mode soft-float helpers
-            # __unordtf2/__letf2, runtime/lib/float128.c) whenever the program
-            # may be linked static, since a static exe has no libgcc to supply
-            # them. A gcc/clang-built mccrt (_rt_gcc) bundles it; an mcc-built
-            # mccrt (self-host / stage2) must too, else static-glibc-run and the
-            # static TLS models fail to link. (arm64 always includes float128.)
-            if(_rt_gcc OR MCC_CC_NAME STREQUAL "mcc")
+            if(_rt_gcc)
                 list(APPEND _objs float128)
             endif()
         elseif(cpu STREQUAL "arm64")
