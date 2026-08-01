@@ -994,7 +994,28 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			break;
 		}
-		n = ast_node(rir_arena, AST_Store);
+		/* `s = j = 0` chains two stores over ONE value, and the tree keeps the
+		   model a tree by giving the outer store a deep COPY of the inner store's
+		   value (ast_hook_vstore's chained path) rather than a back-link. An
+		   AST_StoreVal here is that back-link, and ast_replay_value resolves it
+		   through the Store it names, which is a different emission. Mirror the
+		   tree: copy the subtree and tag the store chained. */
+		{
+			int chained = 0;
+			if (ast_kind(rir_arena, v) == AST_StoreVal &&
+					ast_nchild(rir_arena, v) == 0) {
+				AstLocal src = (AstLocal)ast_ival(rir_arena, v);
+				if (src < ast_count(rir_arena) &&
+						ast_kind(rir_arena, src) == AST_Store &&
+						ast_nchild(rir_arena, src) == 2) {
+					v = ast_dup_sub(rir_arena, ast_child(rir_arena, src, 1));
+					chained = 1;
+				}
+			}
+			n = ast_node(rir_arena, AST_Store);
+			if (chained)
+				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
+		}
 		/* `lval op= rhs`: the tag makes ast_replay_bb re-emit the vdup form the
 		   parser used -- one address computation, dup, op, store -- instead of the
 		   naive two-address form. It is only a hint; that arm still checks the

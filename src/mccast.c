@@ -2115,7 +2115,6 @@ void ast_hook_goto(int v);
 void ast_hook_inc(int post, int c);
 void ast_hook_inc_end(void);
 void ast_hook_vdup(void);
-static AstLocal ast_dup_sub(AstArena *a, AstLocal n);
 static int ast_expr_pure(AstArena *a, AstLocal n, int depth);
 static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_ADDR 0x40000
@@ -10527,7 +10526,7 @@ static void ast_bf_report(AstArena *a, const char *fn) { MCC_TRACE("enter\n");
 
 static int ast_bf_folds;
 
-static AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal d = ast_node(a, ast_kind(a, n));
 	ast_set_op(a, d, ast_op(a, n));
 	ast_set_type(a, d, ast_type_t(a, n), ast_type_ref(a, n));
