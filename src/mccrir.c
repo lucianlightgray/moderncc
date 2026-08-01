@@ -806,6 +806,51 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_stmt(d);
 		break;
 	}
+	case JOP_VROTB: {
+		/* The shadow stack modelled vswap but not the rotates, so any lowering
+		   that pushes its helper function AFTER the arguments and rotates it into
+		   place -- gen_opl's __divdi3/__udivdi3 family and the atomic helpers --
+		   left JOP_CALL popping an argument as the callee. That is the whole
+		   Invoke-callee-notfunc refusal class. Mirrors mccgen.c's (vrotb). */
+		int m = o->a0 - 1;
+		if (m >= 1 && rir_shn > m) {
+			AstLocal tmp = rir_sh[rir_shn - 1 - m];
+			memmove(&rir_sh[rir_shn - 1 - m], &rir_sh[rir_shn - m],
+							sizeof(AstLocal) * (size_t)m);
+			rir_sh[rir_shn - 1] = tmp;
+			memmove(&rir_shtype[rir_shn - 1 - m], &rir_shtype[rir_shn - m],
+							sizeof(unsigned char) * (size_t)m);
+			rir_shtype[rir_shn - 1] = 0;
+		}
+		break;
+	}
+	case JOP_VROTT: {
+		int m = o->a0 - 1;
+		if (m >= 1 && rir_shn > m) {
+			AstLocal tmp = rir_sh[rir_shn - 1];
+			memmove(&rir_sh[rir_shn - m], &rir_sh[rir_shn - 1 - m],
+							sizeof(AstLocal) * (size_t)m);
+			rir_sh[rir_shn - 1 - m] = tmp;
+			memmove(&rir_shtype[rir_shn - m], &rir_shtype[rir_shn - 1 - m],
+							sizeof(unsigned char) * (size_t)m);
+			rir_shtype[rir_shn - 1 - m] = 0;
+		}
+		break;
+	}
+	case JOP_VREV: {
+		int i, j;
+		if (o->a0 >= 2 && rir_shn >= o->a0) {
+			for (i = rir_shn - o->a0, j = rir_shn - 1; i < j; i++, j--) {
+				AstLocal t2 = rir_sh[i];
+				unsigned char c2 = rir_shtype[i];
+				rir_sh[i] = rir_sh[j];
+				rir_sh[j] = t2;
+				rir_shtype[i] = rir_shtype[j];
+				rir_shtype[j] = c2;
+			}
+		}
+		break;
+	}
 	case JOP_VSWAP:
 		if (rir_shn >= 2) {
 			AstLocal t = rir_sh[rir_shn - 1];
