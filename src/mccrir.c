@@ -549,8 +549,8 @@ void rir_snap_types(SValue *sv, int n) {
 	if (!rir_env)
 		return;
 	for (i = 0; i < n; i++)
-		sv[i].type.ref =
-			rir_xtype_ref(sv[i].type.ref, 0, rir_xt_chain(sv[i].type.t));
+		if ((sv[i].type.t & VT_BTYPE) == VT_STRUCT)
+			sv[i].type.ref = rir_xtype_ref(sv[i].type.ref, 0, 1);
 }
 
 static AstLocal rir_leaf(const SValue *sv) {
