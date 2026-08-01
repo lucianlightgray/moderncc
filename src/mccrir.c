@@ -682,6 +682,7 @@ static AstLocal rir_pending_ret = AST_NONE;
 static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
 static short rir_vst_shn[16];
+static unsigned char rir_vst_sup[16];
 static int rir_vstn;
 
 static void rir_flush_pending_call(void) {
@@ -1203,6 +1204,13 @@ static void rir_op_effect(const RirOp *ro) {
 
 static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
 static int rir_member_depth;
+/* A struct vstore's own lowering -- gaddrof on both sides then gen_struct_copy
+   -- re-materialises what it consumes, and the refill names the DESTINATION
+   slot for both operands, so va_start's copy came out as a va_list copied onto
+   itself. The emitter re-runs vstore() and derives the copy itself, exactly as
+   the parser does, so the region's primitives model nothing: suppress them and
+   keep the two lvalues the region opened with. */
+static int rir_vstruct_depth;
 static AstLocal rir_tern[16];
 static int rir_ternn;
 static AstLocal rir_lor[16];
@@ -1509,6 +1517,16 @@ static void rir_region(const RirOp *ro) {
 			if (rir_vstn < 16) {
 				int n2 = ro->mvs_n - ast_base_depth;
 				int allow = 0;
+				if (n2 >= 2 && rir_shn >= 2 &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
+								VT_STRUCT &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
+								VT_STRUCT) {
+					rir_vstruct_depth++;
+					rir_vst_sup[rir_vstn] = 1;
+				} else {
+					rir_vst_sup[rir_vstn] = 0;
+				}
 				if (n2 >= 2) {
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
@@ -1601,6 +1619,8 @@ static void rir_region(const RirOp *ro) {
 			rir_cond_depth--;
 		break;
 	case RIR_R_VSTORE:
+		if (rir_vstruct_depth)
+			rir_vstruct_depth--;
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
@@ -1618,7 +1638,15 @@ static void rir_region(const RirOp *ro) {
 			if (rir_vst_shn[rir_vstn] >= 2 && rir_shn > rir_vst_shn[rir_vstn])
 				rir_shn = rir_vst_shn[rir_vstn];
 			if (!seen && allow && rir_shn >= 2) {
+				/* Suppressed, the region ends with the parser's own vstore order --
+				   value on top, target under it. Unsuppressed, the region's ops have
+				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
+				if (rir_vst_sup[rir_vstn]) {
+					AstLocal sw = t;
+					t = v;
+					v = sw;
+				}
 				n = ast_node(rir_arena, AST_Store);
 				ast_add_child(rir_arena, n, t);
 				ast_add_child(rir_arena, n, v);
@@ -1956,6 +1984,7 @@ static void rir_to_arena(void) {
 	rir_call_depth = 0;
 	rir_inc_depth = 0;
 	rir_member_depth = 0;
+	rir_vstruct_depth = 0;
 	rir_ternn = 0;
 	rir_lorn = 0;
 	rir_pending_call = AST_NONE;
@@ -1969,7 +1998,7 @@ static void rir_to_arena(void) {
 		if (ro->tag == RIR_T_MARK) {
 			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
 			if (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
-					!rir_inc_depth && !rir_member_depth &&
+					!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
 					(!rir_retexpr_pending || ro->rkind == RIR_M_RETURN)) {
 				if (bound)
 					;
@@ -1993,7 +2022,7 @@ static void rir_to_arena(void) {
 			continue;
 		}
 		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
-				rir_retexpr_pending)
+				rir_retexpr_pending || rir_vstruct_depth)
 			continue;
 		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);
