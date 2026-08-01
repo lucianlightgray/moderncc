@@ -1258,11 +1258,21 @@ static int rir_lorn;
    is a cast, and the tree holds a Convert. Both reach RIR_M_LOAD as an untyped
    Binary under a VT_PTR snapshot, so the discriminator is whether an operand
    already carries that exact pointer type. */
+#define RIR_TMASK                                                              \
+	(~(unsigned)(VT_ARRAY | VT_CONSTANT | VT_VOLATILE | VT_NONCONST |            \
+							 VT_NONLVAL | VT_DEFSIGN))
+
 static int rir_ptr_arith(AstLocal n, const SValue *pv) {
 	int i, nc = ast_nchild(rir_arena, n);
 	for (i = 0; i < nc; i++) {
 		AstLocal c = ast_child(rir_arena, n, i);
-		if (c != AST_NONE && ast_type_t(rir_arena, c) == pv->type.t &&
+		/* An array designator carries VT_ARRAY and a file-scope symbol carries
+		   storage-class bits the snapshot's decayed pointer does not, so the
+		   comparison has to be on the underlying type: `g[j]` over a static array
+		   read as a cast and put a Convert under the Load the tree does not have. */
+		if (c != AST_NONE &&
+				(ast_type_t(rir_arena, c) & RIR_TMASK) ==
+						((unsigned)pv->type.t & RIR_TMASK) &&
 				ast_type_ref(rir_arena, c) == (uint64_t)(uintptr_t)pv->type.ref)
 			return 1;
 	}
