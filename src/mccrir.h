@@ -26,6 +26,7 @@ enum {
 	RIR_R_LOPND,
 	RIR_R_VSTORE,
 	RIR_R_VLA,
+	RIR_R_CPLX,
 	RIR_R_COUNT
 };
 
@@ -97,6 +98,7 @@ void rir_vla_begin(void);
 #define RIR_R_LOPND 0
 #define RIR_R_VSTORE 0
 #define RIR_R_VLA 0
+#define RIR_R_CPLX 0
 #define RIR_M_RETURN 0
 #define RIR_M_JUMP 0
 #define RIR_M_LOAD 0

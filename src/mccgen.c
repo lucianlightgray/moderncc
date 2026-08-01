@@ -4050,8 +4050,12 @@ redo:
 	bt2 = t2 & VT_BTYPE;
 
 	if (is_complex_type(&vtop[-1].type) || is_complex_type(&vtop[0].type)) { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_cplx_begin();
+#endif
 		gen_complex_op(op);
 #if MCC_CONFIG_OPTIMIZER
+		ast_hook_cplx_end();
 		ast_hook_genop_end();
 #endif
 		return;

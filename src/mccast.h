@@ -270,6 +270,8 @@ void ast_hook_synth_end(void);
 void ast_hook_member_begin(int is_arrow);
 void ast_hook_member_end(int cumofs, struct CType *mtype, int nonlval,
 												 int qual, int bcheck);
+void ast_hook_cplx_begin(void);
+void ast_hook_cplx_end(void);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);

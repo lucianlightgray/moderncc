@@ -2185,6 +2185,8 @@ void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
 void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 																int bcheck);
+void ast_hook_cplx_begin(void);
+void ast_hook_cplx_end(void);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
@@ -3895,6 +3897,14 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	ast_set_fbits(ast_cur, m, (uint64_t)(unsigned)nonlval);
 	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = m;
+}
+
+void ast_hook_cplx_begin(void) { MCC_TRACE("enter\n");
+	rir_rbegin(RIR_R_CPLX);
+}
+
+void ast_hook_cplx_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_CPLX);
 }
 
 void ast_hook_imag_begin(void) { MCC_TRACE("enter\n");

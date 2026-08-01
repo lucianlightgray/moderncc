@@ -118,7 +118,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd", "vstore", "vla"};
+			"lopnd", "vstore", "vla", "cplx"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -553,6 +553,7 @@ static int rir_cfkind[64];
 static int rir_cfcond[64];
 static int rir_cfn;
 static int rir_arena_mismatch;
+static int rir_cplx_depth;
 static int rir_after_ret;
 static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
 static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
@@ -1890,9 +1891,7 @@ static void rir_region(const RirOp *ro) {
 										(v->type.t & VT_BTYPE) != VT_STRUCT &&
 										(t->type.t & VT_BTYPE) != VT_STRUCT) ||
 										((v->type.t & VT_BTYPE) == VT_STRUCT &&
-											(t->type.t & VT_BTYPE) == VT_STRUCT &&
-											!(v->type.ref && v->type.ref->a.is_complex) &&
-											!(t->type.ref && t->type.ref->a.is_complex))) &&
+											(t->type.t & VT_BTYPE) == VT_STRUCT)) &&
 									!((v->type.t | t->type.t) & VT_BITFIELD);
 				}
 				rir_vst_ok[rir_vstn] = (unsigned char)allow;
@@ -2379,7 +2378,9 @@ static int rir_emit_safe(void) {
 			   the tree records exactly that shape, so refusing it is this net
 			   declining a body the emitter handles. */
 			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT) &&
-					!(is_complex_type(&func_vt) && vb != VT_STRUCT && vb != VT_VOID))
+					!(is_complex_type(&func_vt) && vb != VT_STRUCT &&
+						(vb != VT_VOID || (ast_type_t(rir_arena, v) == 0 &&
+															 ast_kind(rir_arena, v) == AST_Binary))))
 				return rir_unsafe("Return-struct", n, nc);
 			break;
 		}
@@ -2452,9 +2453,19 @@ static void rir_to_arena(void) {
 	rir_retexpr_pending = 0;
 	rir_castgv_pend = 0;
 	rir_arena_mismatch = 0;
+	rir_cplx_depth = 0;
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
+		if (ro->tag != RIR_T_OP && ro->rkind == RIR_R_CPLX) {
+			if (ro->tag == RIR_T_RBEGIN)
+				rir_cplx_depth++;
+			else if (rir_cplx_depth)
+				rir_cplx_depth--;
+			continue;
+		}
+		if (rir_cplx_depth)
+			continue;
 #if RIR_DBG_OPTRACE
 		{
 			const char *e = getenv("RIRDBG");
