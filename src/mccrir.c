@@ -118,7 +118,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd", "vstore", "vla", "cplx"};
+			"lopnd", "vstore", "vla", "cplx", "cvt"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -1216,6 +1216,27 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
+	case JOP_BITBUILTIN: {
+		/* __builtin_popcount / parity / clrsb lower to a ~20-primitive SWAR
+		   expansion built on gv_dup, and gv_dup pushes a vstack slot no hook
+		   models -- the refill turns the duplicate into a bare register Ref and
+		   the reconstruction reorders the whole chain. Journal the expansion as
+		   one primitive, the way gen_bswap already is, and carry it as the same
+		   shape: an AST_Unary with the selector and width in ival. */
+		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
+		AstLocal n;
+		if (v == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, AST_OP_BITB);
+		ast_set_ival(rir_arena, n,
+			(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
+		ast_add_child(rir_arena, n, v);
+		rir_push_typed(n);
+		break;
+	}
 	case JOP_CALL: {
 		AstLocal n;
 		int na = o->a0;
@@ -1441,7 +1462,10 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 }
 
-static int rir_cond_depth, rir_synth_depth, rir_inc_depth;
+static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
+#define RIR_CVT_MAX 32
+static int rir_cvt_depth, rir_cvt_n;
+static unsigned char rir_cvt_on[RIR_CVT_MAX];
 static int rir_member_depth;
 /* A struct vstore's own lowering -- gaddrof on both sides then gen_struct_copy
    -- re-materialises what it consumes, and the refill names the DESTINATION
@@ -1852,6 +1876,40 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_MEMBER:
 			rir_member_depth++;
 			break;
+		case RIR_R_CVT: {
+			/* gen_cast's generic narrowing is a shl/sar/shr triple issued through
+			   gen_op, so the journal shows three Binaries where the tree has one
+			   Convert. Replaying the triple reproduces the bytes but not the
+			   `vtop->type = *type` stamp that follows it, so the value stays 64-bit
+			   and every consumer downstream re-widens and re-narrows it. Take the
+			   tree's shape: one Convert over the operand, lowering suppressed. */
+			/* Take it only when the operand is a free node. `return -value;` has
+			   already been bound as the Return's child by the time the return cast
+			   lowers, and re-parenting it there produced an arena ast_validate
+			   rejects ("child parent link mismatch"). The tree has no Convert on
+			   that shape either. The shift operands are themselves cast, so this
+			   nests -- an inner region whose ops the outer one already dropped must
+			   not pop the stale shadow slot. */
+			int act = 0;
+			if (!rir_cvt_depth && !rir_cond_depth && !rir_inc_depth &&
+					!rir_member_depth && !rir_retexpr_pending && !rir_vstruct_depth &&
+					!rir_vla_depth && rir_cvt_n < RIR_CVT_MAX && rir_shn > 0 &&
+					rir_sh[rir_shn - 1] != AST_NONE &&
+					ast_parent(rir_arena, rir_sh[rir_shn - 1]) == AST_NONE) {
+				AstLocal a = rir_pop();
+				AstLocal cv = ast_node(rir_arena, AST_Convert);
+				ast_set_type(rir_arena, cv, ro->rval, 0);
+				ast_add_child(rir_arena, cv, a);
+				rir_push(cv);
+				act = 1;
+			}
+			if (rir_cvt_n < RIR_CVT_MAX)
+				rir_cvt_on[rir_cvt_n] = (unsigned char)act;
+			rir_cvt_n++;
+			if (act)
+				rir_cvt_depth++;
+			break;
+		}
 		case RIR_R_VLA:
 			rir_vla_depth++;
 			break;
@@ -1995,6 +2053,13 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_SYNTH:
 		if (rir_synth_depth)
 			rir_synth_depth--;
+		break;
+	case RIR_R_CVT:
+		if (rir_cvt_n > 0) {
+			rir_cvt_n--;
+			if (rir_cvt_n < RIR_CVT_MAX && rir_cvt_on[rir_cvt_n] && rir_cvt_depth)
+				rir_cvt_depth--;
+		}
 		break;
 	case RIR_R_CALL:
 		if (rir_call_depth)
@@ -2500,6 +2565,8 @@ static void rir_to_arena(void) {
 	rir_vbf_depth = 0;
 	rir_gret_depth = 0;
 	rir_vla_depth = 0;
+	rir_cvt_depth = 0;
+	rir_cvt_n = 0;
 	rir_argcast_n = 0;
 	rir_ternn = 0;
 	rir_lorn = 0;
@@ -2587,7 +2654,7 @@ static void rir_to_arena(void) {
 		}
 		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
 				rir_retexpr_pending || rir_vstruct_depth || rir_vbf_depth ||
-				rir_vla_depth)
+				rir_vla_depth || rir_cvt_depth)
 			continue;
 		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);

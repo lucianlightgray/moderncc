@@ -263,6 +263,8 @@ void ast_hook_vdup(void);
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_synth_begin(void);
+void ast_hook_castlower_begin(struct CType *type);
+void ast_hook_castlower_end(void);
 void ast_hook_spill(int off, int tt, uint64_t tref);
 void ast_hook_cleanup_call_begin(void);
 void ast_hook_cleanup_call_end(void);

@@ -2180,6 +2180,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_AXADD 0x4001c
 #define AST_OP_AXCHG 0x4001d
 #define AST_OP_ACMPXCHG 0x4001e
+#define AST_OP_BITB 0x4001f
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -3726,6 +3727,14 @@ void ast_hook_synth_begin(void) { MCC_TRACE("enter\n");
 		ast_spill_modelled = 0;
 	}
 	ast_in_op++;
+}
+
+void ast_hook_castlower_begin(CType *type) { MCC_TRACE("enter\n");
+	rir_rbegin_val(RIR_R_CVT, type->t);
+}
+
+void ast_hook_castlower_end(void) { MCC_TRACE("enter\n");
+	rir_rend_to(RIR_R_CVT);
 }
 
 void ast_hook_synth_end(void) { MCC_TRACE("enter\n");
@@ -6530,6 +6539,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		} else if (uop == AST_OP_BITSCAN) { MCC_TRACE("br\n");
 			gen_bitscan((int)ast_ival(a, n), (int)(ast_ival(a, n) >> 32));
 #endif
+		} else if (uop == AST_OP_BITB) { MCC_TRACE("br\n");
+			gen_bit_builtin((int)ast_ival(a, n), (int)(ast_ival(a, n) >> 32));
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
 			gen_imaginary_complex((int)ast_ival(a, n));
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
@@ -15418,6 +15429,7 @@ enum {
 	JOP_VA_ARG,
 	JOP_ASM,
 	JOP_ASMGEN,
+	JOP_BITBUILTIN,
 	JOP_COUNT
 };
 
@@ -15548,7 +15560,8 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
 			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit",
 			"gv",        "vstore",    "genop",     "mkptr",     "addrof",
-			"retval",    "va_start",  "va_arg",    "asm",       "asmgen"};
+			"retval",    "va_start",  "va_arg",    "asm",       "asmgen",
+			"bitbuiltin"};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -15844,6 +15857,7 @@ JRN_W1(gen_signbit, JOP_SIGNBIT)
 JRN_W1(gen_ffs, JOP_FFS)
 JRN_W2(gen_bitscan, JOP_BITSCAN)
 #endif
+JRN_W2(gen_bit_builtin, JOP_BITBUILTIN)
 JRN_W0(gen_trap, JOP_TRAP)
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 JRN_W1(gen_atomic_cmpxchg, JOP_ATOMIC_CMPXCHG)
@@ -16115,6 +16129,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_FFS: (gen_ffs)(o->a0); break;
 	case JOP_BITSCAN: (gen_bitscan)(o->a0, o->a1); break;
 #endif
+	case JOP_BITBUILTIN: (gen_bit_builtin)(o->a0, o->a1); break;
 	case JOP_TRAP: (gen_trap)(); break;
 	case JOP_TCOV: (gen_increment_tcov)(p); break;
 #ifdef MCC_JRN_HAVE_X86_PRIMS

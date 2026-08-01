@@ -114,6 +114,9 @@ void jrn_gen_copysign(void);
 #endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_bswap(int size);
+#endif
+void jrn_gen_bit_builtin(int bop, int bw);
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 void jrn_gen_signbit(int isfloat);
 void jrn_gen_ffs(int size);
 void jrn_gen_bitscan(int ctz, int size);
@@ -204,6 +207,9 @@ void jrn_gen_va_arg(CType *t);
 #endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_bswap(s) jrn_gen_bswap((s))
+#endif
+#define gen_bit_builtin(a, b) jrn_gen_bit_builtin((a), (b))
+#ifdef MCC_JRN_HAVE_X86_PRIMS
 #define gen_signbit(f) jrn_gen_signbit((f))
 #define gen_ffs(s) jrn_gen_ffs((s))
 #define gen_bitscan(c, s) jrn_gen_bitscan((c), (s))
@@ -800,6 +806,34 @@ static void emit_popcount_expr(int bw) { MCC_TRACE("enter\n");
 	gen_op('*');
 	vpushi(bw - 8);
 	gen_op(TOK_SHR);
+}
+
+static void (gen_bit_builtin)(int bop, int bw) { MCC_TRACE("enter\n");
+	if (bop == BB_CLRSB) { MCC_TRACE("br\n");
+		int sh;
+		gv_dup();
+		vpushi(bw - 1);
+		gen_op(TOK_SAR);
+		gen_op('^');
+		gen_cast_s(bw == 64 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED));
+		for (sh = 1; sh < bw; sh <<= 1) { MCC_TRACE("br\n");
+			gv_dup();
+			vpushi(sh);
+			gen_op(TOK_SHR);
+			gen_op('|');
+		}
+		emit_popcount_expr(bw);
+		vpushi(bw - 1);
+		vswap();
+		gen_op('-');
+	} else { MCC_TRACE("br\n");
+		emit_popcount_expr(bw);
+		if (bop == BB_PARITY) { MCC_TRACE("br\n");
+			vpushi(1);
+			gen_op('&');
+		}
+	}
+	gen_cast_s(VT_INT);
 }
 
 static int fold_bit_builtin(int op, int W, int64_t s) { MCC_TRACE("enter\n");
@@ -4608,6 +4642,7 @@ again:
 			int sup = ast_active && !ast_replaying;
 			if (sup)
 				{ MCC_TRACE("br\n"); ast_in_op++; }
+			ast_hook_castlower_begin(type);
 #endif
 			bits = (ss - ds) * 8;
 			vtop->type.t = (ss == 8 ? VT_LLONG : VT_INT) | (dbt & VT_UNSIGNED);
@@ -4618,6 +4653,7 @@ again:
 			vpushi(trunc);
 			gen_op(TOK_SHR);
 #if MCC_CONFIG_OPTIMIZER
+			ast_hook_castlower_end();
 			if (sup)
 				{ MCC_TRACE("br\n"); ast_in_op--; }
 #endif
@@ -10620,33 +10656,9 @@ tok_next:
 				break;
 			}
 #endif
-			if ((bop == BB_POPCOUNT || bop == BB_PARITY) && popcount_inline_on()) { MCC_TRACE("br\n");
-				emit_popcount_expr(bw);
-				if (bop == BB_PARITY) { MCC_TRACE("br\n");
-					vpushi(1);
-					gen_op('&');
-				}
-				gen_cast_s(VT_INT);
-				break;
-			}
-			if (bop == BB_CLRSB && popcount_inline_on()) { MCC_TRACE("br\n");
-				int sh;
-				gv_dup();
-				vpushi(bw - 1);
-				gen_op(TOK_SAR);
-				gen_op('^');
-				gen_cast_s(bw == 64 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED));
-				for (sh = 1; sh < bw; sh <<= 1) { MCC_TRACE("br\n");
-					gv_dup();
-					vpushi(sh);
-					gen_op(TOK_SHR);
-					gen_op('|');
-				}
-				emit_popcount_expr(bw);
-				vpushi(bw - 1);
-				vswap();
-				gen_op('-');
-				gen_cast_s(VT_INT);
+			if ((bop == BB_POPCOUNT || bop == BB_PARITY || bop == BB_CLRSB) &&
+					popcount_inline_on()) { MCC_TRACE("br\n");
+				gen_bit_builtin(bop, bw);
 				break;
 			}
 #if defined(MCC_TARGET_X86_64)
@@ -15216,6 +15228,7 @@ static int decl(int l) {
 #undef gen_copysign
 #endif
 #undef gen_bswap
+#undef gen_bit_builtin
 #undef gen_signbit
 #undef gen_ffs
 #undef gen_bitscan
