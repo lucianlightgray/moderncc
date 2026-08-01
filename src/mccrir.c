@@ -529,6 +529,21 @@ static int rir_effectful(AstLocal n) {
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
 
+/* The C3 pass set. Widened from templates+SCCP to every pass that is a pure
+   AstArena -> AstArena transform, so "the passes consume a Replay_IR arena and
+   agree with the tree" covers the pipeline rather than two of it. ast_tco_run
+   is excluded because it takes the function Sym as well, and the loop
+   transforms are excluded because they need ast_vlat_sync's lattice state which
+   the probe does not set up. */
+static int rir_c3_pipeline(AstArena *a) {
+	int n = 0;
+	n += ast_sccp_run(a);
+	n += ast_dse_run(a);
+	n += ast_jt_run(a);
+	n += ast_sethi_run(a);
+	return n;
+}
+
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
@@ -1752,10 +1767,10 @@ void rir_verify(void) {
 					rir_tot_c3_pair++;
 					ast_tmpl_folds = 0;
 					ast_run_templates(pa);
-					fa = ast_tmpl_folds + ast_sccp_run(pa);
+					fa = ast_tmpl_folds + rir_c3_pipeline(pa);
 					ast_tmpl_folds = 0;
 					ast_run_templates(pb);
-					fb = ast_tmpl_folds + ast_sccp_run(pb);
+					fb = ast_tmpl_folds + rir_c3_pipeline(pb);
 					ast_tmpl_folds = 0;
 					if (fa > 0 || fb > 0)
 						rir_tot_c3_pair_fired++;
@@ -1974,7 +1989,7 @@ void rir_verify(void) {
 				rir_tot_c3_try++;
 				ast_tmpl_folds = 0;
 				ast_run_templates(c3);
-				folds = ast_tmpl_folds + ast_sccp_run(c3);
+				folds = ast_tmpl_folds + rir_c3_pipeline(c3);
 				rir_tot_c3_ran++;
 				rir_tot_c3_folds += folds;
 				c3msg[0] = 0;
