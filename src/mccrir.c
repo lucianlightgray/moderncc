@@ -707,6 +707,14 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			continue;
 		if ((ct & VT_BTYPE) == VT_PTR || (v->type.t & VT_BTYPE) == VT_PTR)
 			continue;
+		/* An AST_StoreVal is a chained assignment's value back-linked to the store
+		   that produced it, not a value with a type of its own, and the tree never
+		   wraps one. Skipping it removes 9 Converts the tree does not have
+		   (node-count-equality 542 -> 551). It is byte-inert, and it specifically
+		   does NOT fix chained_assign.c -- chain_in_expr stays at +6, so the
+		   reload there has another cause. */
+		if (ast_kind(rir_arena, cur) == AST_StoreVal)
+			continue;
 		a1.t = ct;
 		a1.ref = (Sym *)(uintptr_t)ast_type_ref(rir_arena, cur);
 		b1.t = v->type.t;
