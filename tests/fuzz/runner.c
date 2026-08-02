@@ -181,6 +181,19 @@ static int runres_majority(const runres *r, const int *ok, int n, int *wc) {
 	return (nok >= 2 && bestc * 2 > nok) ? best : -1;
 }
 
+/* Cross mode. Empty by default, so a host run is byte-identical to before.
+   MCC_FUZZ_MCC_FLAGS and MCC_FUZZ_REF_FLAGS are appended to the compile line of
+   mcc and of every reference compiler respectively -- a sysroot, an -I, an ABI
+   flag -- and MCC_FUZZ_RUN_PREFIX is prepended to the RUN, which is where an
+   emulator goes. With the three set, the differential loop compares an mcc
+   cross build against a cross reference with both programs executed under the
+   same emulator, which is what the arm/riscv64 legs of instruction 8 need and
+   what this runner previously had no way to express. UB detection deliberately
+   stays on the host: the generated program is target-independent C. */
+static const char *fz_mcc_flags(void) { return hc_envv("MCC_FUZZ_MCC_FLAGS", ""); }
+static const char *fz_ref_flags(void) { return hc_envv("MCC_FUZZ_REF_FLAGS", ""); }
+static const char *fz_run_prefix(void) { return hc_envv("MCC_FUZZ_RUN_PREFIX", ""); }
+
 static runres build_run(const char *cc, const char *mcc, const char *bdir,
 						const char *idir, const char *env, const char *opt,
 						const char *work, const char *label, const char *src) {
@@ -189,12 +202,14 @@ static runres build_run(const char *cc, const char *mcc, const char *bdir,
 	snprintf(exe, sizeof exe, "%s/%s%s", work, label, EXE_SFX);
 	remove(exe);
 	if (cc)
-		snprintf(cmd, sizeof cmd, "\"%s\" -w %s \"%s\" -o \"%s\" -lm >/dev/null 2>&1",
-				 cc, opt, src, exe);
+		snprintf(cmd, sizeof cmd,
+				 "\"%s\" -w %s %s \"%s\" -o \"%s\" -lm >/dev/null 2>&1",
+				 cc, opt, fz_ref_flags(), src, exe);
 	else
 		snprintf(cmd, sizeof cmd,
-				 "%s \"%s\" \"-B%s\" \"-I%s\" %s \"%s\" -o \"%s\" -lm >/dev/null 2>&1",
-				 env ? env : "", mcc, bdir, idir, opt, src, exe);
+				 "%s \"%s\" \"-B%s\" \"-I%s\" %s %s \"%s\" -o \"%s\" -lm "
+				 ">/dev/null 2>&1",
+				 env ? env : "", mcc, bdir, idir, opt, fz_mcc_flags(), src, exe);
 	timeout_wrap(cmd, guarded, sizeof guarded);
 	int brc = RUN_SYSTEM(guarded);
 	if (timed_out(brc)) {
@@ -207,7 +222,7 @@ static runres build_run(const char *cc, const char *mcc, const char *bdir,
 	}
 	char prog[8192], grun[8448], run[12288];
 	int rrc;
-	snprintf(prog, sizeof prog, "\"%s\"", exe);
+	snprintf(prog, sizeof prog, "%s \"%s\"", fz_run_prefix(), exe);
 	timeout_wrap(prog, grun, sizeof grun);
 	snprintf(run, sizeof run, "cd \"%s\" && %s", work, grun);
 	free(res.out);
@@ -895,7 +910,11 @@ static void usage(const char *p) {
 			"  --gen SEED      emit one generated program to stdout and exit\n"
 			"  --reduce FILE   reduce FILE to a minimal repro (needs --corpus)\n"
 			"  --gates         also sweep MCC_AST_* gate flags per program\n"
-			"  -v              verbose\n",
+			"  -v              verbose\n"
+			"cross mode (env, all empty by default):\n"
+			"  MCC_FUZZ_MCC_FLAGS   extra flags for mcc's compile line (sysroot, ABI)\n"
+			"  MCC_FUZZ_REF_FLAGS   extra flags for every reference compiler's line\n"
+			"  MCC_FUZZ_RUN_PREFIX  prefix for running the program (e.g. an emulator)\n",
 			p, p, p);
 }
 
