@@ -12,6 +12,9 @@ name: Matrix
 #             validators. It builds a cross-enabled stage2 mcc and runs the
 #             non-`native` ctests (`ci stage3 --consume emulate`), which
 #             self-skip 77 where a foreign platform is unavailable.
+#   mingw   - the winlibs/llvm-mingw superbuild cells (x86_64, i686, arm64-PE)
+#             with the superbuild's own full native ctest; no hierarchy
+#             counterpart exists for i686/arm64-PE.
 #
 # Matrices come from the same ledger as ci.yml (`ci plan --job stage1-nightly /
 # stage2-nightly / stage3-emulate`), so `ci parity` covers them too.
@@ -35,6 +38,7 @@ jobs:
       stage1: ${{ steps.gen.outputs.stage1 }}
       stage2: ${{ steps.gen.outputs.stage2 }}
       emulate: ${{ steps.gen.outputs.emulate }}
+      mingw: ${{ steps.gen.outputs.mingw }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci
@@ -43,6 +47,7 @@ jobs:
           echo "stage1=$(mcc-ci plan --job stage1-nightly)" >> "$GITHUB_OUTPUT"
           echo "stage2=$(mcc-ci plan --job stage2-nightly)" >> "$GITHUB_OUTPUT"
           echo "emulate=$(mcc-ci plan --job stage3-emulate)" >> "$GITHUB_OUTPUT"
+          echo "mingw=$(mcc-ci plan --job windows | jq -c '[.[]|select(.mingw)]')" >> "$GITHUB_OUTPUT"
 
   stage1:
     needs: plan
@@ -208,3 +213,69 @@ jobs:
         run: |
           mcc-ci junit-summary "cmake-stage2-dynamic/ctest-junit.xml" \
             "emulate / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
+
+  # The winlibs/llvm-mingw superbuild cells. The staged hierarchy carries mingw
+  # only as the build-only windows-x86_64-mingw stage1 host (+ its nightly
+  # self-host); the i686 and arm64-PE superbuild cells -- and the superbuild's
+  # own full native ctest suite (embed-jit-smoke on the gcc-built mcc, the
+  # i386win32 soak, mcctest vs the winlibs reference) -- have no hierarchy
+  # counterpart, so they run here from the PLAN_MINGW ledger rows (`ci plan
+  # --job windows`, mingw cells only). i686 and arm64 stay experimental /
+  # continue-on-error: their job is discovering defects on real silicon
+  # (the arm64-PE selfhost hang, the embed-jit-smoke skips).
+  mingw:
+    needs: plan
+    name: mingw / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    continue-on-error: ${{ matrix.experimental || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.mingw) }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (cl bootstraps the ci tool)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.msvcarch }}
+      - name: install ninja (the superbuild uses the Ninja generator)
+        run: choco install ninja -y
+      - name: cache the mingw toolchain (superbuild download target)
+        uses: actions/cache@v5
+        with:
+          # arm64 pulls llvm-mingw (aarch64), not winlibs, into vendor/llvm-mingw-*
+          path: |
+            vendor/winlibs-mingw-w64-*
+            vendor/llvm-mingw-*
+          key: winlibs-${{ matrix.arch }}-${{ hashFiles('cmake/winlibs.cmake') }}
+      - uses: ./.github/actions/ci
+      - name: run the mingw superbuild (fetches the toolchain; builds + full native ctest)
+        # --no-test suppresses only the empty top-level ctest; the winlibs cell
+        # runs the full suite (and emits ctest-junit.xml) inside the superbuild.
+        run: |
+          mcc-ci run-preset mingw --no-test "-DMCC_MINGW_ARCH=${{ matrix.arch }}"
+      - name: test summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not (Get-Command mcc-ci -ErrorAction SilentlyContinue)) { exit 0 }
+          mcc-ci junit-summary "cmake-mingw/mingw-native/ctest-junit.xml" "mingw / ${{ matrix.arch }}" | Out-File -FilePath "${env:GITHUB_STEP_SUMMARY}" -Append -Encoding utf8
+      - name: surface embed-jit-smoke output (ctest hides skip reasons)
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if (Test-Path cmake-mingw/mingw-native) {
+            python -u tools/embed-jit-smoke.py cmake-mingw/mingw-native
+            "embed-jit-smoke rc=$LASTEXITCODE"
+          } else { "no inner build dir" }
+      - name: selfhost-smoke with live output (arm64-PE selfhost hang diagnosis)
+        if: always() && matrix.arch == 'arm64'
+        continue-on-error: true
+        timeout-minutes: 8
+        shell: pwsh
+        run: |
+          if (Test-Path cmake-mingw/mingw-native) {
+            python -u tools/selfhost-smoke.py cmake-mingw/mingw-native
+          } else { "no inner build dir" }
