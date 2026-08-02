@@ -4112,7 +4112,7 @@ if(MCC_BUILD_TESTS)
         # on the SIGNAL, so it does not care how many files compile and is
         # immune to the low-fn sysroot trap.
         foreach(_na riscv64 arm arm64 i386
-                    x86_64-win32 i386-win32 arm64-win32 arm-win32
+                    x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
                     x86_64-osx arm64-osx)
             set(_na_sr "-")
             if(_na MATCHES "^(riscv64|arm|arm64|i386)$")
@@ -4164,12 +4164,16 @@ if(MCC_BUILD_TESTS)
 
         # A compile-only census needs no emulator and no loader, which is what
         # makes the PE and Darwin triples reachable here too -- they stage
-        # against mcc's own bundled headers instead of a sysroot.
+        # against mcc's own bundled headers instead of a sysroot. arm-wince is
+        # here because it is the twelfth cross triple and its compiler is not
+        # arm-win32's: the two share a define set, so a divergence between them
+        # can only come from the PE subsystem or the crossprefix, and nothing
+        # else in the suite would see it.
         foreach(_rp riscv64 arm arm64 i386
-                    x86_64-win32 i386-win32 arm64-win32 arm-win32
+                    x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
                     x86_64-osx arm64-osx)
             set(_rpsr "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_rp}-glibc")
-            if(_rp MATCHES "win32$")
+            if(_rp MATCHES "(win32|wince)$")
                 set(_rpf "-B ${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32 -B ${CMAKE_CURRENT_SOURCE_DIR}/runtime -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
             elseif(_rp MATCHES "osx$")
                 set(_rpf "-B ${CMAKE_CURRENT_SOURCE_DIR}/runtime -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
