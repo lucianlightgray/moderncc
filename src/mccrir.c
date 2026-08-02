@@ -1521,14 +1521,52 @@ static int rir_child_has_type(AstLocal n, int st) {
 	return 0;
 }
 
+static int rir_eff_size(AstLocal n, int depth) {
+	int i, nc, best = 0, al, t;
+	CType a1;
+	if (n == AST_NONE || depth > 8)
+		return 0;
+	t = ast_type_t(rir_arena, n);
+	if (t != 0) {
+		if ((t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC)
+			return 0;
+		a1.t = t;
+		a1.ref = (Sym *)(uintptr_t)ast_type_ref(rir_arena, n);
+		return type_size(&a1, &al);
+	}
+	if (ast_kind(rir_arena, n) != AST_Binary &&
+			ast_kind(rir_arena, n) != AST_Unary)
+		return 0;
+	nc = (int)ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++) {
+		int w = rir_eff_size(ast_child(rir_arena, n, i), depth + 1);
+		if (w > best)
+			best = w;
+	}
+	return best;
+}
+
+static int rir_child_wider(AstLocal n, int st) {
+	int i, nc = ast_nchild(rir_arena, n), al, ss;
+	CType b1;
+	b1.t = st;
+	b1.ref = NULL;
+	ss = type_size(&b1, &al);
+	for (i = 0; i < nc; i++)
+		if (rir_eff_size(ast_child(rir_arena, n, i), 0) > ss)
+			return 1;
+	return 0;
+}
+
 static int rir_child_width_differs(AstLocal n, int st) {
 	int i, nc = ast_nchild(rir_arena, n), al, ss;
-	CType a1, b1;
+	CType b1;
 	b1.t = st;
 	b1.ref = NULL;
 	ss = type_size(&b1, &al);
 	for (i = 0; i < nc; i++) {
 		AstLocal c = ast_child(rir_arena, n, i);
+		CType a1;
 		if (c == AST_NONE)
 			continue;
 		a1.t = ast_type_t(rir_arena, c);
@@ -1851,7 +1889,19 @@ static void rir_op_effect(const RirOp *ro) {
 				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
 						(st & VT_BTYPE) == VT_FUNC || is_float(st))
 					continue;
-				if (rir_child_has_type(cur, st))
+#if RIR_DBG_OPTRACE
+				{
+					const char *e = getenv("RIRDBG");
+					if (e && funcname && !strcmp(e, funcname))
+						fprintf(stderr,
+										"[gop] ent=%d q=%d op=%d st=%x curt=%x hastype=%d opdiff=%d widthdiff=%d\n",
+										rir_dbg_ent, q, o->a0, (unsigned)st,
+										(unsigned)ast_type_t(rir_arena, cur),
+										rir_child_has_type(cur, st), opdiff,
+										rir_child_width_differs(cur, st));
+				}
+#endif
+				if (rir_child_has_type(cur, st) && !rir_child_wider(cur, st))
 					continue;
 				if (!opdiff && !rir_child_width_differs(cur, st))
 					continue;
