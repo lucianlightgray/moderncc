@@ -2052,14 +2052,50 @@ if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
     set(_libmcc_shared libmcc_shared)
 endif()
 
-if(MCC_EMBED_JIT AND NOT MCC_BUILD_STATIC_LIB)
-    # The embed-blob (libmcc_jitengine.a → bin2c → linked into emitted programs
+if(MCC_EMBED_JIT)
+    # The embed-blob (libmcc-jitengine.a → bin2c → linked into emitted programs
     # by mcc's OWN linker). On WIN32 the host CC produces a COFF/PE archive; mcc's
     # linker now reads COFF objects/archives (coff_load_object_file in mccpe.c),
     # so the blob links on Windows too. mcc's own -run JIT and the selftests do
     # not need the blob (the engine is compiled into mcc itself); only standalone
     # --embed-jit output does.
-    mcc_add_libmcc(libmcc_jitengine STATIC FALSE)
+    #
+    # The engine is ALWAYS the single-source amalgamation compiled as one TU:
+    # baking a multi-member (per-TU) archive as the in-memory blob produces an
+    # engine that links but loops forever in its own static initializer
+    # (mccjit_boot_swap -> pthread_once on a mis-resolved symbol), where the
+    # 1-object shape boots -- measured on dist-macos 2026-07-31. That is also
+    # why dist builds (MCC_BUILD_STATIC_LIB=ON, MCC_SINGLE_SOURCE=OFF) build it
+    # from src/libmcc.c directly here rather than through mcc_add_libmcc, and
+    # why the archive has its own name: `libmcc-static.a` is the real per-TU
+    # static lib in those builds (and the two are byte-indistinguishable at a
+    # glance -- both ~1.8 MB).
+    if(NOT MCC_BUILD_STATIC_LIB AND MCC_SINGLE_SOURCE)
+        mcc_add_libmcc(libmcc_jitengine STATIC FALSE)
+    else()
+        add_library(libmcc_jitengine STATIC src/libmcc.c)
+        set(_je_amalg_deps "")
+        foreach(_s IN LISTS LIBMCC_ALL_SRC)
+            if(NOT _s STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c")
+                list(APPEND _je_amalg_deps "${_s}")
+            endif()
+        endforeach()
+        set_source_files_properties(src/libmcc.c PROPERTIES OBJECT_DEPENDS "${_je_amalg_deps}")
+        if(TARGET mcc_mccdefs)
+            add_dependencies(libmcc_jitengine mcc_mccdefs)
+        endif()
+        target_include_directories(libmcc_jitengine PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+        if(MCC_CC_NAME STREQUAL "clang" AND MCC_CPU STREQUAL "x86_64")
+            set_target_properties(libmcc_jitengine PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        endif()
+        if(MCC_ALL_DIAGNOSTICS)
+            target_compile_options(libmcc_jitengine PRIVATE ${MCC_DIAG_FLAGS})
+        endif()
+    endif()
+    set_target_properties(libmcc_jitengine PROPERTIES
+        OUTPUT_NAME "mcc-jitengine" PREFIX "lib")
 endif()
 
 add_executable(mcc src/mcc.c)
@@ -2744,7 +2780,7 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     set(_jitengine_blob_src "$<TARGET_FILE:libmcc_jitengine>")
     set(_jitengine_blob_dep libmcc_jitengine)
     set(_jit_bake_cc "${CMAKE_C_COMPILER}")
-    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MCC_EMBED_JIT_MINGW_CC AND MCC_SINGLE_SOURCE)
+    if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MCC_EMBED_JIT_MINGW_CC)
         set(_jit_bake_cc "${MCC_EMBED_JIT_MINGW_CC}")
         get_filename_component(_je_bindir "${MCC_EMBED_JIT_MINGW_CC}" DIRECTORY)
         find_program(MCC_EMBED_JIT_MINGW_AR NAMES ar llvm-ar
@@ -2804,7 +2840,7 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     # engine bake, breaking the cycle -- and let it compile the engine the real
     # mcc embeds. An explicit MCC_EMBED_JIT_MCC_ENGINE_CC wins; self-host
     # (MCC_CC_NAME == mcc) already compiles the blob with mcc and needs none.
-    if(NOT MCC_EMBED_JIT_MCC_ENGINE_CC AND MCC_SINGLE_SOURCE
+    if(NOT MCC_EMBED_JIT_MCC_ENGINE_CC
        AND MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU STREQUAL "i386"
        AND NOT MSVC AND NOT MCC_CC_NAME STREQUAL "mcc"
        AND NOT CMAKE_CROSSCOMPILING)
@@ -2821,7 +2857,7 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         set(_me_cc "$<TARGET_FILE:mcc_ejboot>")
         set(_me_cc_dep mcc_ejboot)
     endif()
-    if(_me_cc AND MCC_SINGLE_SOURCE AND MCC_TARGETOS STREQUAL "WIN32")
+    if(_me_cc AND MCC_TARGETOS STREQUAL "WIN32")
         get_directory_property(_me_dirdefs COMPILE_DEFINITIONS)
         set(_me_dflags "")
         foreach(_d IN LISTS _me_dirdefs)

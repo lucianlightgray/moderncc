@@ -1667,19 +1667,23 @@ redo:
 					extern int mcc_add_jit_engine_embedded(MCCState *);
 					ret = mcc_add_jit_engine_embedded(s);
 #else
+					static const char *engnames[] = {
+							"libmcc-jitengine.a", "libmcc-static.a"};
 					char engbuf[1024], exe[1024], *sl;
-					int saved_ft = s->filetype;
+					int saved_ft = s->filetype, ei;
 					s->filetype |= AFF_WHOLE_ARCHIVE;
 					if (host_exe_path(exe, sizeof exe) > 0 && (sl = strrchr(exe, '/'))) { MCC_TRACE("br\n");
 						*sl = 0;
-						if (snprintf(engbuf, sizeof engbuf, "%s/libmcc-static.a", exe) <
-								(int)sizeof engbuf) { MCC_TRACE("br\n");
-							FILE *ef = fopen(engbuf, "rb");
-							if (ef) { MCC_TRACE("br\n");
-								fclose(ef);
-								ret = mcc_add_file(s, engbuf);
-								s->filetype = saved_ft;
-								goto jit_engine_done;
+						for (ei = 0; ei < 2; ei++) {
+							if (snprintf(engbuf, sizeof engbuf, "%s/%s", exe,
+											engnames[ei]) < (int)sizeof engbuf) { MCC_TRACE("br\n");
+								FILE *ef = fopen(engbuf, "rb");
+								if (ef) { MCC_TRACE("br\n");
+									fclose(ef);
+									ret = mcc_add_file(s, engbuf);
+									s->filetype = saved_ft;
+									goto jit_engine_done;
+								}
 							}
 						}
 					}
