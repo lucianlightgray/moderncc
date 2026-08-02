@@ -120,8 +120,13 @@ ${CMAKE_HOST_SYSTEM_NAME} and docker's foreign-arch path is unusable (host \
 binfmt is flags:OC with no F). Run this same target ON macOS -- it is gated on \
 the host, not disabled")
 endif()
-if(_os STREQUAL "wince")
-    _skip("wince has no emulator here and is outside the journal gate")
+# wince is INSIDE the journal gate: it is MCC_TARGET_ARM plus MCC_TARGET_PE,
+# the same define set as arm-win32, and the gate keys on the cpu macro alone.
+# Only the native mode is blocked, and by the loader rather than by the gate --
+# there is no wince emulator here and wine does not run an ARM PE image.
+if(_os STREQUAL "wince" AND MODE STREQUAL "native")
+    _skip("wince has no emulator or device here, so a native depth ceiling \
+cannot be measured; the cross mode of this same target does run")
 endif()
 
 # ------------------------------------------------------------- the compiler
@@ -169,18 +174,32 @@ compiles only the freestanding subset and silently reports a partial census")
     endif()
 elseif(_os STREQUAL "win32")
     if(_libc STREQUAL "ucrt")
-        set(_mingw "i686")
-        if(_cpu STREQUAL "x86_64")
+        # winlibs ships x86 only, and the compile flags below never name it --
+        # every PE sweep stages against mcc's own bundled headers. So the
+        # vendored runtime is checked for the two cpus it can actually be
+        # present for, and an arm PE key is NOT gated on an i686 directory
+        # that has nothing to do with it: that read as "no ucrt runtime" and
+        # skipped a triple the sweep can measure.
+        set(_mingw "")
+        if(_cpu STREQUAL "i386")
+            set(_mingw "i686")
+        elseif(_cpu STREQUAL "x86_64")
             set(_mingw "x86_64")
         endif()
-        set(_sysroot "${ROOT}/vendor/winlibs-mingw-w64-16.1.0-ucrt-${_mingw}")
-        if(NOT IS_DIRECTORY "${_sysroot}")
-            _skip("no ucrt PE runtime at ${_sysroot}")
+        if(NOT _mingw STREQUAL "")
+            set(_sysroot "${ROOT}/vendor/winlibs-mingw-w64-16.1.0-ucrt-${_mingw}")
+            if(NOT IS_DIRECTORY "${_sysroot}")
+                _skip("no ucrt PE runtime at ${_sysroot}")
+            endif()
         endif()
     else()
         _skip("libc '${_libc}' is not vendored for PE -- only the winlibs ucrt \
 runtimes are in tree. Vendor an msvcrt toolchain (mstorsjo-llvm-msvcrt) first")
     endif()
+    set(_incflags "-B${ROOT}/runtime/win32" "-I${ROOT}/runtime/include")
+elseif(_os STREQUAL "wince")
+    # Same staging as win32: a wince mcc is arm-win32's define set with a
+    # different PE subsystem, and it reads the same bundled PE headers.
     set(_incflags "-B${ROOT}/runtime/win32" "-I${ROOT}/runtime/include")
 endif()
 
