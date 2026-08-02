@@ -1399,9 +1399,20 @@ static AstLocal rir_ihold_bind(AstLocal n) {
 	return bb;
 }
 
+#if RIR_DBG_OPTRACE
+static int rir_dbg_ent;
+#endif
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
+#if RIR_DBG_OPTRACE
+	{
+		const char *e = getenv("RIRDBG");
+		if (e && funcname && !strcmp(e, funcname))
+			fprintf(stderr, "[stmt] ent=%d node=%d kind=%s nc=%d\n", rir_dbg_ent, (int)n,
+							ast_kind_name(ast_kind(rir_arena, n)), ast_nchild(rir_arena, n));
+	}
+#endif
 	if (rir_hold_inline(n))
 		return;
 	if (rir_iholdn && rir_shn <= 0)
@@ -1736,6 +1747,16 @@ static int rir_child_width_differs(AstLocal n, int st) {
 /* A value carrying held statements is wrapped in a comma BasicBlock, and every
    stamp aimed at that slot has to reach the value itself -- an Invoke left at
    VT_VOID because the stamp landed on the wrapper pushes no result at all. */
+static int rir_sh_unbound_invoke(void) {
+	int k;
+	for (k = 0; k < rir_shn; k++)
+		if (rir_sh[k] != AST_NONE &&
+				ast_kind(rir_arena, rir_sh[k]) == AST_Invoke &&
+				ast_parent(rir_arena, rir_sh[k]) == AST_NONE)
+			return 1;
+	return 0;
+}
+
 static AstLocal rir_val_node(AstLocal n) {
 	int guard = 0;
 	while (n != AST_NONE && ast_kind(rir_arena, n) == AST_BasicBlock &&
@@ -2174,13 +2195,34 @@ static void rir_op_effect(const RirOp *ro) {
 		   to be a placeholder, because the parser's `vtop--` after the spill
 		   truncates the stack again and a live node there would be re-emitted as a
 		   statement. */
-		if (rir_call_depth && ast_kind(rir_arena, rir_val_node(v)) == AST_Invoke &&
-				ast_parent(rir_arena, v) == AST_NONE &&
+#if RIR_DBG_OPTRACE
+		{
+			const char *e = getenv("RIRDBG");
+			const SValue *ds = o->vs_n - ast_base_depth >= 2
+													 ? &jrn_vs[o->vs_off + o->vs_n - 2] : 0;
+			if (e && funcname && !strcmp(e, funcname))
+				fprintf(stderr,
+								"[vst] ent=%d cd=%d vkind=%s vpar=%d depth=%d tgt(r=%x sym=%d c=%lld) tkind=%s\n",
+								rir_dbg_ent, rir_call_depth,
+								ast_kind_name(ast_kind(rir_arena, rir_val_node(v))),
+								(int)ast_parent(rir_arena, v), o->vs_n - ast_base_depth,
+								ds ? (unsigned)ds->r : 0u, ds && ds->sym ? 1 : 0,
+								ds ? (long long)ds->c.i : 0LL,
+								ast_kind_name(ast_kind(rir_arena, t)));
+		}
+#endif
+		if (rir_call_depth && ast_parent(rir_arena, v) == AST_NONE &&
 				o->vs_n - ast_base_depth >= 2) {
 			const SValue *ts = &jrn_vs[o->vs_off + o->vs_n - 2];
-			if (!ts->sym && (ts->r & VT_VALMASK) == VT_LOCAL && (ts->r & VT_LVAL)) {
-				rir_spill_node = v;
-				rir_spill_addr = (long long)ts->c.i;
+			int isinv = ast_kind(rir_arena, rir_val_node(v)) == AST_Invoke;
+			int istail = !isinv && ast_kind(rir_arena, v) == AST_Ref &&
+									 ast_nchild(rir_arena, v) == 0 && rir_sh_unbound_invoke();
+			if ((isinv || istail) && !ts->sym &&
+					(ts->r & VT_VALMASK) == VT_LOCAL && (ts->r & VT_LVAL)) {
+				if (isinv) {
+					rir_spill_node = v;
+					rir_spill_addr = (long long)ts->c.i;
+				}
 				rir_push(AST_NONE);
 				break;
 			}
@@ -4257,6 +4299,7 @@ static void rir_to_arena(void) {
 			}
 		}
 #if RIR_DBG_OPTRACE
+		rir_dbg_ent = i;
 		{
 			const char *e = getenv("RIRDBG");
 			if (e && funcname && !strcmp(e, funcname))
