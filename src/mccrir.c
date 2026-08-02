@@ -4530,9 +4530,11 @@ void rir_verify(void) {
 					   the tree, pointed at the C2 emission instead of the replay. */
 					{
 						int bi = rir_blame(d);
-						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d\n",
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, d,
-										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
+										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
+										bi >= 0 ? rir_ops[bi].p.ind_pre - ast_body_ind_sv : -1,
+										bi >= 0 ? rir_ops[bi].p.ind_post - ast_body_ind_sv : -1);
 					}
 					int w0 = d > 16 ? d - 16 : 0, w1 = d + 32;
 					if (w1 > body_len)
@@ -4578,9 +4580,11 @@ void rir_verify(void) {
 					from = fb > 16 ? fb - 16 : 0;
 					{
 						int bi = rir_blame(fb);
-						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d\n",
+						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, fd, fb,
-										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi);
+										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
+														bi >= 0 ? rir_ops[bi].p.ind_pre - ast_body_ind_sv : -1,
+														bi >= 0 ? rir_ops[bi].p.ind_post - ast_body_ind_sv : -1);
 					}
 					fprintf(stderr,
 									"[rir-c2len] %s want=%d got=%d firstdiff=%d firstblk=%d\n"
