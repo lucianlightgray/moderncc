@@ -1594,6 +1594,18 @@ static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
+static int rir_ptr_elem_size(int t, uint64_t ref) {
+	Sym *r = (Sym *)(uintptr_t)ref;
+	CType pt;
+	int al;
+	if ((t & VT_BTYPE) != VT_PTR || !r)
+		return -1;
+	pt = r->type;
+	if ((pt.t & VT_BTYPE) == VT_FUNC || (pt.t & VT_BTYPE) == VT_VOID)
+		return -1;
+	return type_size(&pt, &al);
+}
+
 static int rir_node_wider(AstLocal n, int st, uint64_t ref) {
 	return rir_eff_size(n, 0) > rir_type_size(st, ref);
 }
@@ -1956,6 +1968,30 @@ static void rir_op_effect(const RirOp *ro) {
 					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
 					ast_add_child(rir_arena, cv, cur);
 					rir_sh[rir_shn - 1 - q] = cv;
+				}
+			}
+		}
+		if ((o->a0 == '+' || o->a0 == '-') &&
+				o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
+			int q;
+			for (q = 0; q < 2; q++) {
+				int si = rir_shn - 1 - q, ct;
+				AstLocal cur = rir_sh[si];
+				const SValue *sv3 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
+				int st = sv3->type.t;
+				if (cur == AST_NONE || rir_shtype[si])
+					continue;
+				ct = ast_type_t(rir_arena, cur);
+				if ((ct & VT_BTYPE) != VT_PTR || (st & VT_BTYPE) != VT_PTR)
+					continue;
+				if (rir_ptr_elem_size(ct, ast_type_ref(rir_arena, cur)) ==
+						rir_ptr_elem_size(st, (uint64_t)(uintptr_t)sv3->type.ref))
+					continue;
+				{
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv3->type.ref);
+					ast_add_child(rir_arena, cv, cur);
+					rir_sh[si] = cv;
 				}
 			}
 		}
