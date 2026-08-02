@@ -5919,6 +5919,10 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_opif(TOK_NEG);
 			vtop->type.t = ast_type_t(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+#if defined(MCC_JRN_HAVE_VA_START) && !defined(MCC_JRN_VA_START_VOID)
+		} else if (uop == AST_OP_VASTART) { MCC_TRACE("br\n");
+			gen_va_start();
+#endif
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_BSWAP) { MCC_TRACE("br\n");
 			gen_bswap((int)ast_ival(a, n));

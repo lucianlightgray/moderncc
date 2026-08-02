@@ -2331,6 +2331,20 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
+#if defined(MCC_JRN_HAVE_VA_START) && !defined(MCC_JRN_VA_START_VOID)
+	case JOP_VA_START: {
+		AstLocal b = rir_pop(), n;
+		if (b == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, AST_OP_VASTART);
+		ast_add_child(rir_arena, n, b);
+		rir_push(n);
+		break;
+	}
+#endif
 #ifdef MCC_JRN_HAVE_VA_ARG
 	case JOP_VA_ARG: {
 		AstLocal a = rir_pop(), n;
