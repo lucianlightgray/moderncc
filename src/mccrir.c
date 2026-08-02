@@ -2406,6 +2406,15 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		if (slot < 0 || slot >= rir_shn)
 			break;
+		/* The bottom of the shadow stack during an assignment is the TARGET, and
+		   the emitter's own save_regs spills it at the branch. Modelling that
+		   spill puts a Store at the head of the block and a Load in the target's
+		   place, so the trial spills and reloads before the condition where the
+		   parser spills after the compare. */
+		if (slot == 0 && rir_shn >= 2 && lv && !ast_func_has_asm &&
+				rir_sh[slot] != AST_NONE &&
+				ast_kind(rir_arena, rir_sh[slot]) == AST_Load)
+			break;
 		v = rir_sh[slot];
 		if (v == AST_NONE || ast_parent(rir_arena, v) != AST_NONE)
 			break;
