@@ -1999,13 +1999,7 @@ static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
-static unsigned char rir_tern_on[16];
-static unsigned char rir_tern_live1[16];
-static int rir_tern_n;
 int rir_body_loc_sv;
-static unsigned char rir_lor_on[16];
-static unsigned char rir_lor_late[16];
-static int rir_lor_n;
 static int ast_tern_suppress;
 /* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
    condition selects. A constant `?:` emits ONLY that arm, so the recorder must
@@ -3112,15 +3106,6 @@ void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop
 }
 
 void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
-	if (rir_tern_n < 16) { MCC_TRACE("br\n");
-		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 ? (g ? 2 : 1) : 0);
-		rir_tern_live1[rir_tern_n] = (unsigned char)(c == 1 && !g);
-		if (rir_tern_on[rir_tern_n]) { MCC_TRACE("br\n");
-			rir_rbegin_val(RIR_R_TERNARY, rir_tern_on[rir_tern_n] == 2);
-			rir_rbegin(RIR_R_COND);
-		}
-		rir_tern_n++;
-	}
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op) { MCC_TRACE("br\n");
@@ -3155,11 +3140,6 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 
 void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 	(void)which;
-	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
-			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) { MCC_TRACE("br\n");
-		rir_rend_to(RIR_R_COND);
-		rir_rbegin(RIR_R_TARM);
-	}
 	if (ast_tern_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
@@ -3168,13 +3148,6 @@ void ast_hook_ternary_branch(int which) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
-	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
-			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) { MCC_TRACE("br\n");
-		rir_rend_to_val(RIR_R_TARM, which);
-		rir_rbegin(RIR_R_COND);
-	}
-	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1] && which == 0)
-		{ MCC_TRACE("br\n"); rir_mark_pt(RIR_M_TERNHOLD); }
 	if (ast_tern_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_tern_top < 1)
@@ -3203,17 +3176,7 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 	ast_in_call = 1;
 }
 
-void ast_hook_ternary_pick(void) { MCC_TRACE("enter\n");
-	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1])
-		{ MCC_TRACE("br\n"); rir_mark_pt(RIR_M_TERNPICK); }
-}
-
 void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
-	if (rir_tern_n) { MCC_TRACE("br\n");
-		rir_tern_n--;
-		if (rir_tern_on[rir_tern_n])
-			{ MCC_TRACE("br\n"); rir_rend_to(RIR_R_TERNARY); }
-	}
 	if (ast_tern_suppress) { MCC_TRACE("br\n");
 		ast_tern_suppress--;
 		return;
@@ -3250,32 +3213,6 @@ void ast_hook_ternary_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
-	if (first) { MCC_TRACE("br\n");
-		if (rir_lor_n < 16) { MCC_TRACE("br\n");
-			rir_lor_on[rir_lor_n] = (unsigned char)(c < 0 ? 1
-					: (c == (op == TOK_LAND) && tok == op) ? 2 : 0);
-			rir_lor_late[rir_lor_n] = 0;
-			if (rir_lor_on[rir_lor_n] == 1)
-				{ MCC_TRACE("br\n"); rir_rbegin_val(RIR_R_LANDOR, op); }
-			rir_lor_n++;
-		}
-	} else if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 2 && c < 0 &&
-			tok == op) { MCC_TRACE("br\n");
-		/* A chain whose leading operands fold to the identity -- `sizeof x == 4 &&
-		   a && b` -- emits code for the survivors only: the parser vpops each
-		   folded slot before the next operand is parsed. Opening the region at the
-		   first SURVIVING operand lets those vpops clear the shadow stack on their
-		   own, and keeps a chain that folds away ENTIRELY out of the region path,
-		   where its materialised ending would read as a reconstruction defect. */
-		rir_lor_on[rir_lor_n - 1] = 1;
-		rir_lor_late[rir_lor_n - 1] = 1;
-		rir_rbegin_val(RIR_R_LANDOR, op);
-	}
-	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1) { MCC_TRACE("br\n");
-		rir_rbegin(RIR_R_LOPND);
-		rir_rend_to_val(RIR_R_LOPND, 0);
-		rir_rbegin(RIR_R_LSUP);
-	}
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (first) { MCC_TRACE("br\n");
@@ -3340,8 +3277,6 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
-	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1)
-		{ MCC_TRACE("br\n"); rir_rend_to(RIR_R_LSUP); }
 	if (ast_lor_suppress)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_active || ast_desync || ast_bail || ast_lor_top < 1)
@@ -3357,13 +3292,6 @@ void ast_hook_landor_next(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
-	if (rir_lor_n) { MCC_TRACE("br\n");
-		rir_lor_n--;
-		if (rir_lor_on[rir_lor_n] == 1)
-			{ MCC_TRACE("br\n"); rir_rend_to_val(RIR_R_LANDOR,
-					(materialized ? 1 : 0) | (rir_lor_late[rir_lor_n] ? 2 : 0) |
-							((materialized & 1) ? 4 : 0)); }
-	}
 	if (ast_lor_suppress) { MCC_TRACE("br\n");
 		ast_lor_suppress--;
 		return;
@@ -17267,8 +17195,6 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	   straight off `loc` -- restoring the value from the END of the body made
 	   every one of those allocations land 8 bytes low. */
 	rir_body_loc_sv = loc;
-	rir_tern_n = 0;
-	rir_lor_n = 0;
 	ast_reloc0_sv =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try_active) { MCC_TRACE("br\n");

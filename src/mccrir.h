@@ -142,6 +142,15 @@ void rir_hook_member_begin(int is_arrow);
 void rir_hook_member_end(int cumofs, int nonlval);
 void rir_hook_builtin_complex_lower(void);
 void rir_hook_builtin_complex_end(void);
+void rir_hook_body_begin(void);
+void rir_hook_ternary_begin(int c, int g);
+void rir_hook_ternary_branch(int which);
+void rir_hook_ternary_branch_done(int which);
+void rir_hook_ternary_pick(void);
+void rir_hook_ternary_end(void);
+void rir_hook_landor_operand(int op, int c, int first);
+void rir_hook_landor_next(void);
+void rir_hook_landor_end(int materialized);
 void rir_hook_cplx_begin(void);
 void rir_hook_cplx_end(void);
 void rir_hook_acas_begin(int val);
@@ -277,6 +286,15 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define rir_hook_member_end(c, n) ((void)0)
 #define rir_hook_builtin_complex_lower() ((void)0)
 #define rir_hook_builtin_complex_end() ((void)0)
+#define rir_hook_body_begin() ((void)0)
+#define rir_hook_ternary_begin(c, g) ((void)0)
+#define rir_hook_ternary_branch(w) ((void)0)
+#define rir_hook_ternary_branch_done(w) ((void)0)
+#define rir_hook_ternary_pick() ((void)0)
+#define rir_hook_ternary_end() ((void)0)
+#define rir_hook_landor_operand(o, c, f) ((void)0)
+#define rir_hook_landor_next() ((void)0)
+#define rir_hook_landor_end(m) ((void)0)
 #define rir_hook_cplx_begin() ((void)0)
 #define rir_hook_cplx_end() ((void)0)
 #define rir_hook_acas_begin(v) ((void)0)

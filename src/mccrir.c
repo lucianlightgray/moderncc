@@ -501,6 +501,105 @@ void rir_hook_builtin_complex_end(void) {
 	}
 }
 
+static unsigned char rir_tern_on[16];
+static unsigned char rir_tern_live1[16];
+static int rir_tern_n;
+static unsigned char rir_lor_on[16];
+static unsigned char rir_lor_late[16];
+static int rir_lor_n;
+
+void rir_hook_body_begin(void) {
+	rir_tern_n = 0;
+	rir_lor_n = 0;
+}
+
+void rir_hook_ternary_begin(int c, int g) {
+	if (rir_tern_n < 16) {
+		rir_tern_on[rir_tern_n] = (unsigned char)(c < 0 ? (g ? 2 : 1) : 0);
+		rir_tern_live1[rir_tern_n] = (unsigned char)(c == 1 && !g);
+		if (rir_tern_on[rir_tern_n]) {
+			rir_rbegin_val(RIR_R_TERNARY, rir_tern_on[rir_tern_n] == 2);
+			rir_rbegin(RIR_R_COND);
+		}
+		rir_tern_n++;
+	}
+}
+
+void rir_hook_ternary_branch(int which) {
+	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
+			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) {
+		rir_rend_to(RIR_R_COND);
+		rir_rbegin(RIR_R_TARM);
+	}
+}
+
+void rir_hook_ternary_branch_done(int which) {
+	if (rir_tern_n && rir_tern_on[rir_tern_n - 1] &&
+			(rir_tern_on[rir_tern_n - 1] == 1 || which == 1)) {
+		rir_rend_to_val(RIR_R_TARM, which);
+		rir_rbegin(RIR_R_COND);
+	}
+	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1] && which == 0)
+		rir_mark_pt(RIR_M_TERNHOLD);
+}
+
+void rir_hook_ternary_pick(void) {
+	if (rir_tern_n && rir_tern_live1[rir_tern_n - 1])
+		rir_mark_pt(RIR_M_TERNPICK);
+}
+
+void rir_hook_ternary_end(void) {
+	if (rir_tern_n) {
+		rir_tern_n--;
+		if (rir_tern_on[rir_tern_n])
+			rir_rend_to(RIR_R_TERNARY);
+	}
+}
+
+void rir_hook_landor_operand(int op, int c, int first) {
+	if (first) {
+		if (rir_lor_n < 16) {
+			rir_lor_on[rir_lor_n] = (unsigned char)(c < 0 ? 1
+					: (c == (op == TOK_LAND) && tok == op) ? 2 : 0);
+			rir_lor_late[rir_lor_n] = 0;
+			if (rir_lor_on[rir_lor_n] == 1)
+				rir_rbegin_val(RIR_R_LANDOR, op);
+			rir_lor_n++;
+		}
+	} else if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 2 && c < 0 &&
+			tok == op) {
+		/* A chain whose leading operands fold to the identity -- `sizeof x == 4 &&
+		   a && b` -- emits code for the survivors only: the parser vpops each
+		   folded slot before the next operand is parsed. Opening the region at the
+		   first SURVIVING operand lets those vpops clear the shadow stack on their
+		   own, and keeps a chain that folds away ENTIRELY out of the region path,
+		   where its materialised ending would read as a reconstruction defect. */
+		rir_lor_on[rir_lor_n - 1] = 1;
+		rir_lor_late[rir_lor_n - 1] = 1;
+		rir_rbegin_val(RIR_R_LANDOR, op);
+	}
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1) {
+		rir_rbegin(RIR_R_LOPND);
+		rir_rend_to_val(RIR_R_LOPND, 0);
+		rir_rbegin(RIR_R_LSUP);
+	}
+}
+
+void rir_hook_landor_next(void) {
+	if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 1)
+		rir_rend_to(RIR_R_LSUP);
+}
+
+void rir_hook_landor_end(int materialized) {
+	if (rir_lor_n) {
+		rir_lor_n--;
+		if (rir_lor_on[rir_lor_n] == 1)
+			rir_rend_to_val(RIR_R_LANDOR,
+					(materialized ? 1 : 0) | (rir_lor_late[rir_lor_n] ? 2 : 0) |
+							((materialized & 1) ? 4 : 0));
+	}
+}
+
 void rir_hook_cplx_begin(void) { rir_rbegin(RIR_R_CPLX); }
 
 void rir_hook_cplx_end(void) { rir_rend_to(RIR_R_CPLX); }

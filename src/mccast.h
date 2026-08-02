@@ -283,7 +283,6 @@ void ast_hook_vla_restore(int loc);
 void ast_hook_ternary_begin(int c, int g);
 void ast_hook_ternary_branch(int which);
 void ast_hook_ternary_branch_done(int which);
-void ast_hook_ternary_pick(void);
 void ast_hook_ternary_end(void);
 void ast_hook_landor_operand(int op, int c, int first);
 void ast_hook_landor_next(void);

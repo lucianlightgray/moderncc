@@ -11560,6 +11560,7 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 		else if (c != i)
 			{ MCC_TRACE("br\n"); nocode_wanted++, f = 1; }
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_landor_operand(op, c, first);
 		ast_hook_landor_operand(op, c, first);
 		first = 0;
 #endif
@@ -11572,6 +11573,7 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 		next();
 		seqp_flush();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_landor_next();
 		ast_hook_landor_next();
 #endif
 		expr_landor_next(op);
@@ -11585,6 +11587,7 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 		gvtst_set(i, t);
 	}
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_landor_end((cc || f) ? (2 | (i ^ f)) : 0);
 	ast_hook_landor_end((cc || f) ? (2 | (i ^ f)) : 0);
 #endif
 }
@@ -11698,6 +11701,7 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 		if (g)
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids omitting the middle term of a ?: expression"); }
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_ternary_begin(c, g);
 		ast_hook_ternary_begin(c, g);
 #endif
 		tt = 0;
@@ -11717,11 +11721,13 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 		if (c == 0)
 			{ MCC_TRACE("br\n"); nocode_wanted++; }
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_ternary_branch(0);
 		ast_hook_ternary_branch(0);
 #endif
 		if (!g)
 			{ MCC_TRACE("br\n"); gexpr(); }
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_ternary_branch_done(0);
 		ast_hook_ternary_branch_done(0);
 #endif
 
@@ -11744,10 +11750,12 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); nocode_wanted++; }
 		skip(':');
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_ternary_branch(1);
 		ast_hook_ternary_branch(1);
 #endif
 		expr_cond();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_ternary_branch_done(1);
 		ast_hook_ternary_branch_done(1);
 #endif
 #if MCC_CONFIG_LSP
@@ -11799,7 +11807,7 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 		if (c != 0) { MCC_TRACE("br\n");
 			*vtop = sv;
 #if MCC_CONFIG_OPTIMIZER
-			ast_hook_ternary_pick();
+			rir_hook_ternary_pick();
 #endif
 			gen_cast(&type);
 			if (islv) { MCC_TRACE("br\n");
@@ -11820,6 +11828,7 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 		if (islv)
 			{ MCC_TRACE("br\n"); indir(); }
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_ternary_end();
 		ast_hook_ternary_end();
 #endif
 	}
@@ -14794,6 +14803,7 @@ static void gen_function(Sym *sym) {
 	mcc_debug_prolog_epilog(mcc_state, 0);
 	func_vla_arg(sym);
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_body_begin();
 	ast_func_begin(sym);
 	block(0);
 	ast_func_end(sym);
