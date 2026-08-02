@@ -1440,10 +1440,18 @@ void gen_trap(void) { MCC_TRACE("enter\n");
 	o(0xe7f000f0);
 }
 
-void gen_asan_mark_write(void) { MCC_TRACE("enter\n"); }
+static int asan_type_patch = -1;
+
+void gen_asan_mark_write(void) { MCC_TRACE("enter\n");
+	if (asan_type_patch < 0 || !cur_text_section)
+		{ MCC_TRACE("br\n"); return; }
+	write32le(cur_text_section->data + asan_type_patch, 0xE38110C0);
+	asan_type_patch = -1;
+}
 
 void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	uint32_t p;
+	asan_type_patch = -1;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
 	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
@@ -1458,11 +1466,13 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	o(0xE3473FFF);
 	o(0xE19000D3);
 	o(0xE3500000);
-	o(0x0A000004);
+	o(0x0A000005);
 	o(0xE2011007);
 	o(0xE2811000 | (uint32_t)(sz - 1));
 	o(0xE1510000);
-	o(0xBA000000);
+	o(0xBA000001);
+	asan_type_patch = ind;
+	o(0xE3811040);
 	o(0xE7F000F0);
 	o(0xE8BD000F);
 }

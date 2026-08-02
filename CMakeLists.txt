@@ -4084,20 +4084,23 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 300)
         endforeach()
 
-        # riscv64 -fasan-shadow must name the access direction, and the clean
-        # case must still not trap: the ori that carries the direction shifted
-        # the ebreak by one instruction and the first port left the skip branch
-        # aimed at it, so every VALID access trapped while both fault cases
-        # still printed the right label.
-        add_test(NAME cross/asan-accesstype-riscv64
-            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/asan-accesstype-riscv64.sh"
-                    "${MCC_CROSS_DIR}/mcc-riscv64" "${MCC_CROSS_DIR}"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-riscv64-glibc"
-                    "${CMAKE_BINARY_DIR}/asan-accesstype-riscv64"
-                    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib/mccasan.c")
-        set_tests_properties(cross/asan-accesstype-riscv64 PROPERTIES
-            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
-            LABELS "cross" TIMEOUT 600)
+        # -fasan-shadow must name the access direction, and the clean case must
+        # still not trap: the instruction that carries the direction shifts the
+        # trap one slot later, and on the three backends whose skip branch is
+        # hand-encoded the riscv64 port left that branch aimed at the trap for
+        # one build, so every VALID access trapped while both fault cases still
+        # printed the right label.
+        foreach(_aa riscv64 arm64 i386 arm)
+            add_test(NAME cross/asan-accesstype-${_aa}
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/asan-accesstype.sh"
+                        "${_aa}" "${MCC_CROSS_DIR}/mcc-${_aa}" "${MCC_CROSS_DIR}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_aa}-glibc"
+                        "${CMAKE_BINARY_DIR}/asan-accesstype-${_aa}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib/mccasan.c")
+            set_tests_properties(cross/asan-accesstype-${_aa} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 600)
+        endforeach()
 
         # A compile-only census needs no emulator and no loader, which is what
         # makes the PE and Darwin triples reachable here too -- they stage

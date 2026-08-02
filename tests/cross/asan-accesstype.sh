@@ -1,42 +1,59 @@
 #!/bin/sh
-# riscv64 -fasan-shadow must label the faulting access READ or WRITE.
+# -fasan-shadow must label the faulting access READ or WRITE on every backend
+# that implements the native shadow.
 #
 # The check is emitted once, at indir(), where the parser does not yet know
 # whether the lvalue will be loaded or stored, so gen_asan_shadow_check sets
 # bit 6 of the granule-offset register on the trap path and expr_eq patches the
 # immediate to also set bit 7 when it sees an assignment token.
 #
-# The clean case is not optional here. Inserting the ori shifted the ebreak by
-# one instruction, and the first version of this port left the "shadow byte is
-# zero, skip" branch pointing at the ebreak instead of past it -- every VALID
-# access trapped. Both fault cases still printed the right label, so only a
-# program that must NOT fault catches it.
+# The clean case is not optional here. On the three backends whose skip branch
+# is hand-encoded rather than resolved through gjmp2/gsym -- riscv64, arm64,
+# arm -- inserting that instruction shifts the trap one slot later, and the
+# riscv64 port did exactly that for one build with the "shadow byte is zero,
+# skip" branch still aimed at the trap: EVERY VALID ACCESS trapped. Both fault
+# cases still printed the right label, so only a program that must not fault
+# catches it.
 #
-# Usage: asan-accesstype-riscv64.sh <mcc> <crossdir> <sysroot> <workdir> <runtime-src>
+# Usage: asan-accesstype.sh <arch> <mcc> <crossdir> <sysroot> <workdir> <runtime-src>
 set -e
 
-MCC=$1
-CROSS=$2
-SR=$3
-W=$4
-RTSRC=$5
-[ -n "$MCC" ] && [ -n "$W" ] && [ -n "$RTSRC" ] || {
-	echo "usage: asan-accesstype-riscv64.sh <mcc> <crossdir> <sysroot> <workdir> <runtime-src>" >&2
+ARCH=$1
+MCC=$2
+CROSS=$3
+SR=$4
+W=$5
+RTSRC=$6
+[ -n "$ARCH" ] && [ -n "$MCC" ] && [ -n "$W" ] && [ -n "$RTSRC" ] || {
+	echo "usage: asan-accesstype.sh <arch> <mcc> <crossdir> <sysroot> <workdir> <runtime-src>" >&2
 	exit 2
 }
 
-[ -x "$MCC" ] || { echo "SKIP: no riscv64 mcc at $MCC"; exit 77; }
-[ -d "$SR" ] || { echo "SKIP: no riscv64 sysroot at $SR"; exit 77; }
+[ -x "$MCC" ] || { echo "SKIP: no $ARCH mcc at $MCC"; exit 77; }
+[ -d "$SR" ] || { echo "SKIP: no $ARCH sysroot at $SR"; exit 77; }
 [ -f "$RTSRC" ] || { echo "SKIP: no asan runtime source at $RTSRC"; exit 77; }
-QEMU=$(command -v qemu-riscv64 || command -v qemu-riscv64-static || true)
-[ -n "$QEMU" ] || { echo "SKIP: no qemu-riscv64"; exit 77; }
+
+ABI=""
+case "$ARCH" in
+riscv64) EMU=qemu-riscv64 ;;
+arm64)   EMU=qemu-aarch64 ;;
+i386)    EMU=qemu-i386 ;;
+arm)     EMU=qemu-arm; ABI="-mfloat-abi hard" ;;
+*) echo "unsupported arch '$ARCH'" >&2; exit 2 ;;
+esac
+QEMU=$(command -v "$EMU" || command -v "$EMU-static" || true)
+[ -n "$QEMU" ] || { echo "SKIP: no $EMU"; exit 77; }
 
 rm -rf "$W"; mkdir -p "$W"
-CC="$MCC -B $CROSS --sysroot=$SR -I$SR/usr/include -L$SR/usr/lib64 -L$SR/lib64"
+CC="$MCC $ABI -B $CROSS --sysroot=$SR -I$SR/usr/include"
+CC="$CC -L$SR/usr/lib64 -L$SR/lib64 -L$SR/usr/lib -L$SR/lib"
 
 # shellcheck disable=SC2086
 $CC -c "$RTSRC" -o "$W/asan.o" >"$W/rt.log" 2>&1 || {
-	echo "SKIP: riscv64 mcc could not build the asan runtime"; sed 's/^/  /' "$W/rt.log" | head -5; exit 77; }
+	echo "SKIP: $ARCH mcc could not build the asan runtime"
+	sed 's/^/  /' "$W/rt.log" | head -5
+	exit 77
+}
 
 build_run() {
 	# shellcheck disable=SC2086
@@ -49,10 +66,13 @@ build_run() {
 
 fails=0
 expect() {
-	name=$1; want=$2
+	name=$1
+	want=$2
 	if ! build_run "$name"; then
-		echo "FAIL: could not build/link $name"; sed 's/^/  /' "$W/$name.log" | head -5
-		fails=$((fails + 1)); return
+		echo "FAIL: could not build/link $name"
+		sed 's/^/  /' "$W/$name.log" | head -5
+		fails=$((fails + 1))
+		return
 	fi
 	got=$(grep -oE '(READ|WRITE) of size [0-9]+|access size [0-9]+' "$W/$name.out" | head -1)
 	if [ "$got" != "$want" ]; then
@@ -97,14 +117,13 @@ expect w4 "WRITE of size 4"
 expect uaf "READ of size 1"
 
 if ! build_run ok; then
-	echo "FAIL: could not build/link the clean program"; fails=$((fails + 1))
-else
-	if ! "$QEMU" -L "$SR" "$W/ok.bin" >"$W/ok.out" 2>&1; then
-		echo "FAIL: a program with no invalid access trapped under -fasan-shadow"
-		sed 's/^/  /' "$W/ok.out" | head -8
-		fails=$((fails + 1))
-	fi
+	echo "FAIL: could not build/link the clean program"
+	fails=$((fails + 1))
+elif ! "$QEMU" -L "$SR" "$W/ok.bin" >"$W/ok.out" 2>&1; then
+	echo "FAIL: a program with no invalid access trapped under -fasan-shadow"
+	sed 's/^/  /' "$W/ok.out" | head -8
+	fails=$((fails + 1))
 fi
 
 [ "$fails" -eq 0 ] || exit 1
-echo "PASS: riscv64 -fasan-shadow labels READ/WRITE and leaves valid accesses alone"
+echo "PASS: $ARCH -fasan-shadow labels READ/WRITE and leaves valid accesses alone"
