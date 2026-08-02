@@ -506,7 +506,7 @@ def baseline_report(cur, path, tolerance):
     if not cur["kernels"]:
         print("runtime-bench: this run counted no instructions; nothing to diff")
         return None
-    regressed, rows = 0, []
+    regressed, improved, rows = 0, 0, []
     for name in sorted(set(base["kernels"]) | set(cur["kernels"])):
         b = base["kernels"].get(name, {}).get("ins")
         c = cur["kernels"].get(name, {}).get("ins")
@@ -517,12 +517,23 @@ def baseline_report(cur, path, tolerance):
         rows.append((name, b, c, d))
         if d > tolerance:
             regressed += 1
+        elif d < -tolerance:
+            improved += 1
     print(f"\n{'kernel':<12}{'base(G)':>10}{'now(G)':>10}{'delta':>9}   (vs {path})")
     for name, b, c, d in rows:
         bs = f"{b / 1e9:>10.3f}" if b else f"{'-':>10}"
         cs = f"{c / 1e9:>10.3f}" if c else f"{'-':>10}"
         ds = f"{d:>+8.2f}%" if d is not None else f"{'-':>9}"
         print(f"{name:<12}{bs}{cs}{ds}")
+    # The gate is one-sided on purpose -- an improvement must never fail a
+    # build -- but that means a real win leaves the stored number stale HIGH
+    # and quietly widens the band the ratchet is guarding. Say so, loudly
+    # enough that somebody re-banks it, or the ratchet decays into a no-op.
+    if improved:
+        print(f"\nruntime-bench: {improved} kernel(s) improved by more than "
+              f"{tolerance:.1f}% -- the baseline is now stale HIGH and the "
+              f"ratchet is guarding a wider band than it could be. Re-bank it "
+              f"with --write-baseline.")
     return regressed
 
 
