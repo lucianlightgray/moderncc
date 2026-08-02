@@ -2,7 +2,7 @@
 
 Finish Replay_IR: reproduce the parser's machine code byte-for-byte on every target at every `-O`, `-O0` included, then delete the AST recorder and the operation journal.
 
-Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells. C2 is at a **31-body gap** over the eleven distinct keys on the `tests/exec` corpus, down from 114, with three keys at 100%. `tests/diff/full_language.c` is a separate and comparable-sized front; see the scoreboard.
+Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells. C2 is at a **22-body gap** over the eleven distinct keys on the `tests/exec` corpus, down from 114, with three keys at 100%. `tests/diff/full_language.c` is a separate and comparable-sized front; see the scoreboard.
 
 ## Scoreboard
 
@@ -10,38 +10,35 @@ Per key at HEAD, `c2ok/c2try (c2bytes+c2len+c2skip+c2invalid)`, `c2err=0` everyw
 
 Read `ok=` on every row before believing it. `rir_report` is an **atexit** handler, so a file that fails to compile still prints `[rir-total]` and still contributes bodies — counting `[rir-total]` lines is not an honesty check, and every scoreboard in this file before this one was measured on a population that silently counted partial output from 8 to 20 failing compiles per key. The sweep now counts only files that exited 0, exactly as `rir_parity.cmake` does, and prints that count.
 
-`tests/exec` only, 277 files, `ok=` is the population that actually compiled:
+`tests/exec` only, 277 files, `ok=` is the population that actually compiled. **`c2bytes` is 0 on every key** — nothing anywhere now emits the right number of bytes and the wrong bytes, so every remaining divergence is a LENGTH difference:
 
 | key | c2ok/c2try | gap | arenahasheq | ok |
 | --- | --- | --- | --- | --- |
 | x86_64 | 1130/1130 | 0 | 773/1166 | 270 |
 | x86_64-osx | 1123/1123 | 0 | 772/1159 | 267 |
 | x86_64-win32 | 1223/1223 | 0 | 835/1258 | 268 |
-| arm64-osx | 1204/1205 | 1 (1 len) | 812/1241 | 266 |
-| arm64-win32 | 1280/1282 | 2 (2 len) | 865/1318 | 265 |
-| arm64 | 1167/1170 | 3 (1 bytes + 2 len) | 790/1206 | 261 |
-| i386-win32 | 1239/1243 | 4 (2 bytes + 2 len) | 838/1278 | 267 |
-| i386 | 1120/1124 | 4 (2 bytes + 2 len) | 755/1159 | 263 |
-| arm | 1098/1102 | 4 (2 bytes + 2 len) | 745/1137 | 258 |
-| arm-win32 / arm-wince | 1216/1221 each | 5 (2 bytes + 3 len) | 826/1256 | 262 |
-| riscv64 | 1101/1109 | 8 (3 len + 5 invalid, plus 2 skip) | 755/1146 | 258 |
+| arm64-osx | 1204/1205 | 1 | 812/1241 | 266 |
+| arm64 | 1168/1170 | 2 | 790/1206 | 261 |
+| arm64-win32 | 1280/1282 | 2 | 865/1318 | 265 |
+| i386 | 1122/1124 | 2 | 755/1159 | 263 |
+| arm | 1100/1102 | 2 | 745/1137 | 258 |
+| i386-win32 | 1241/1243 | 2 | 838/1278 | 267 |
+| arm-win32 / arm-wince | 1218/1221 each | 3 | 826/1256 | 262 |
+| riscv64 | 1101/1109 | 8 (7 len + 1 invalid, plus 2 skip) | 755/1146 | 258 |
 
-The gap is **9 distinct bodies** plus riscv64's arena failures:
+The gap is **7 distinct bodies**:
 
-| bodies | keys | op |
+| body | keys | want/got |
 | --- | --- | --- |
-| `ternary_op.c::tst_yarpgen` | 6 | store |
-| `div_mod_shift.c::main`, `cmp_invert.c::main` | 4 each | jmpcond |
-| `overflow_narrow.c::main` | 4 | load |
-| `popcount_inline.c::ref_clrsb64` | 4 | genop |
-| `grep.c::pmatch`, `runner.c::run_capture` | 2 each | genop |
-| `utf8_string_literal.c::main` | 2 | call |
-| `integer_promotion.c::main` | 2 | genop, jmpcond |
-| `struct_packed_indirect.c::main` | 1 | call |
-| `arm64.c::myprintf` | 1 | va_arg |
-| riscv64's 5 `c2invalid` and 2 `c2skip` | riscv64 | |
+| `ternary_op.c::tst_yarpgen` | 6 | short by 8 to 12 |
+| `overflow_narrow.c::main` | 4 | short by 10 to 16 |
+| `grep.c::pmatch` | arm64 -16, riscv64 +16 | |
+| `utf8_string_literal.c::main` | arm-win32, arm64-win32 | short by 4 |
+| `integer_promotion.c::main` | i386 +3, riscv64 -4 | |
+| `struct_packed_indirect.c::main` | i386-win32 | long by 6 |
+| riscv64 only: `signbit_inline.c::main` -8, `flt_eval_method.c::main` -8, `struct_abi.c::negdf` -16, `struct_byval.c::f2` -8, plus `complex_cmplx_special.c::main` `c2invalid` on leaf-regbank | | |
 
-`tests/diff/full_language.c` is a **second front, not a row on this board**. It needs `-I <repo root> -DCC_NAME=CC_gcc` to compile at all, is worth 135 to 302 bodies depending on which `#if` arms the key takes, and enters the population on exactly the 7 keys where the C2 probe's own error does not abort the compile — x86_64-osx, x86_64-win32, arm64-osx, arm64-win32, i386-win32, arm-win32, arm-wince, each with `c2err=2`. On x86_64, arm64, i386, arm and riscv64 the probe aborts it and the file is dropped. The default sweep includes it and prints `extra=`; a board that mixes `extra=1` and `extra=0` rows is not comparable, which is what `C2_NO_EXTRA=1` is for. With it in, those seven keys read 13 to 20 divergences MORE than above, so closing it is more work again than the 31 below. `rir_parity.cmake` passes neither flag, so the replay gate has never included this file either.
+`tests/diff/full_language.c` is a **second front, not a row on this board**. It needs `-I <repo root> -DCC_NAME=CC_gcc` to compile at all, is worth 135 to 302 bodies depending on which `#if` arms the key takes, and enters the population on exactly the 7 keys where the C2 probe's own error does not abort the compile — x86_64-osx, x86_64-win32, arm64-osx, arm64-win32, i386-win32, arm-win32, arm-wince, each with `c2err=2`. On x86_64, arm64, i386, arm and riscv64 the probe aborts it and the file is dropped. The default sweep includes it and prints `extra=`; a board that mixes `extra=1` and `extra=0` rows is not comparable, which is what `C2_NO_EXTRA=1` is for. With it in, those seven keys read 13 to 20 divergences MORE than above, so closing it is more work again than the 22 below. `rir_parity.cmake` passes neither flag, so the replay gate has never included this file either.
 
 `arm-win32` and `arm-wince` share a define set and must read identically. Any sweep where those two rows differ has a harness bug, not a codegen one — cheapest available check that a run measured what it thinks.
 
@@ -49,7 +46,6 @@ The gap is **9 distinct bodies** plus riscv64's arena failures:
 
 Instruments, in the order they pay: `RIRDUMP=1` for ops either side of the blamed index with byte windows; `-DRIR_DBG_OPTRACE=1` plus `RIRDBG=<funcname>` for the `[ent]` entry stream, the `[stmt]` tap naming which entry pushed each BasicBlock statement, the `[vst]` tap printing the call-tail spill test's own inputs, and diffable `PARSE`/`C2` op streams; `MCC_REPLAY_IR=6` for `[rir-dump]`/`[rir-diff]` node pairs. A structural `[rir-dump]` diff against the tree found three of the four defects closed so far, each time in one body.
 
-- Close `div_mod_shift.c::main` and `cmp_invert.c::main`, 4 keys each and 8 of the 31. **Root-caused, not fixed.** Both write `for (i = 0; i < (int)(sizeof w / sizeof w[0]); i++)`, and the trial emits `jae` where the parser emits `jge` — an UNSIGNED compare against a signed bound, one opcode byte, `0f 83` against `0f 8d`. The arena's condition is `Binary op#156(Ref i, Binary /(Literal 24, Literal 8))` with no Convert: on a 32-bit target `size_t` is `unsigned int`, so the `(int)` cast emits no instruction, journals no `JOP_CVT_*`, and Replay_IR — which only builds Convert nodes from cast PRIMITIVES — keeps the unsigned literal. The tree has the node, because `ast_hook_convert` records on every `gen_cast` call rather than on every emitted cast. Reproducer: seven lines, `tools/c2_sweep.sh` not needed, `mcc-i386 -O1` on an array-of-arrays plus that loop.
 - The code-free cast on a 32-bit target is still the biggest class: `(int)` over a 64-bit value narrows for free, journals no `JOP_CVT_*`, and leaves the arena node at the wrong width. `signbit_inline.c::main` is closed and `popcount_inline.c::ref_clrsb64` is half closed by widening the wrap JOP_GENOP already performs on its own operands — `rir_eff_size` walks down through untyped Binary/Unary to the first typed node, and a genuinely WIDER grandchild now overrides both admission tests. That is the shape that works: the operand is bound by the op's own snapshot, which is what the three mark attempts below could never manage. `overflow_narrow.c::main` and the rest of `ref_clrsb64` are the same class from a place that loop does not reach.
 - Do **not** go back to marking code-free `gen_cast` calls. **Three** measured attempts, all net negative, all reverted:
   1. `RIR_M_CVTFOLD` at every code-free `gen_cast`, wrapping the shadow-stack top: `c2ok 531/1146`, `c2invalid=517`, two core dumps on x86_64.
@@ -61,6 +57,8 @@ Instruments, in the order they pay: `RIRDUMP=1` for ops either side of the blame
 - `bitfields.c::main` (i386, arm, arm-win32), `utf8_string_literal.c::main` (arm-win32, arm64-win32) and `struct_packed_indirect.c::main` (i386-win32) are the **same 32-bit width class at a call ARGUMENT**. On i386 `bitfields.c::main` the parser pushes one word and pops 8, the trial pushes two and pops 12: the value was widened to a pair by a `(long long)` cast and the `(int)` narrowing after it is code-free, so the trial passes the whole pair. The argcast wrap does not reach them because it skips a node that is already an `AST_Convert`, which this one is.
 - That skip is **load-bearing**; do not simply drop it. Removing it when the existing Convert is wider than the argument type reads +1 c2ok on i386 and arm and **segfaults the compiler** on every PE key — `ok=` falls by 1 to 2 on x86_64-win32, arm64-win32, i386-win32, arm-win32 and arm-wince, which the `ok=` column is exactly there to make visible. Whatever re-narrows a widened argument has to do it without re-entering the wrap on a node the pass already produced.
 - `overflow_narrow.c::main`, 4 keys, is the cast CHAIN: `long long a = (long long)(int)(v >> 3)`. The trial omits `mov ecx,eax; sar ecx,31`, the int-to-long-long sign extension, because the `(int)` narrowing was free and the arena node stayed 64 bits, which makes the outer `(long long)` a no-op. It is not fixable at the conversion op either: at `cvt_csti` the operand snapshot reads `VT_QLONG`, the RESULT of the chain, not the intermediate the parser passed through. This one needs the intermediate recorded, which is the one thing none of the current taps carry.
+- The four riscv64-only bodies -- `signbit_inline.c::main`, `flt_eval_method.c::main`, `struct_abi.c::negdf`, `struct_byval.c::f2` -- are **one defect**: riscv64's `gen_negf` spills the value with `save_reg(gv(...))` before flipping its sign byte in memory, and the model has the flip and the reload but not the spill. On `f2` the parser emits `fld ft0,-24(s0); fsd ft0,-40(s0)` and the trial goes straight to `lbu a0,-33(s0)`. The spill IS journalled -- entry 26 `gv`, entry 27 `store` -- but the `JOP_STORE` handler declines it, because its guard requires the spilled shadow slot to be an LVALUE and here it is a register-resident rvalue.
+- Do **not** close that by relaxing the `!lv` guard. Measured: adding an else-branch that builds `Store(slot, value)` and replaces the shadow with a `Load` reads **-30 c2ok on every key** and raises `c2err` from 0 to 2-7, because register spills happen constantly and this makes a BasicBlock statement of each one. Whatever models the `gen_negf` spill has to recognise that specific lowering, not spills in general. Note `gen_negf` is also the one place the tree answers `ast_hook_bail()`.
 - Close `ternary_op.c::tst_yarpgen`, 6 keys and the largest single body left, want 460 got 452 on arm64-osx and short on every key. Blamed at `op=store idx=206 win=[364,368)`, a JOP_STORE register spill the parser makes mid-expression and the trial does not. This is the scheduling-and-allocation class, not a model-shape one: the body is a single yarpgen expression with enough live values to spill, and the trial reaching that point with fewer live registers is the symptom. Expect it to be the last one closed.
 - Close `overflow_narrow.c::main`, the 4 that remain of the `load` class after the untyped-Load argument wrap. Same four 32-bit keys, same `int`-to-`long long` register-pair shape, so it is a second link the one-Convert wrap does not recover — the cast CHAIN case the argcast comment already names.
 - riscv64's 5 `c2invalid` are **four of one shape and one of another**, and the shape is named: `signbit_inline.c::main`, `flt_eval_method.c::main`, `struct_abi.c::negdf` and `struct_byval.c::f2` all fail `rir_emit_safe`'s blanket rule that a Store whose target is an `AST_Binary` is unsafe (`mccrir.c` `rir_unsafe("Store-target")`); `complex_cmplx_special.c::main` fails `leaf-regbank`. On `negdf` the arena is `Store(Binary +(Unary ADDR(Ref), Literal 7), Binary ^(Ref, Literal 128))` — the byte-offset memory sign-flip for `s.d = -s.d`. The model is not obviously wrong; the rule is a safety net, because replaying a `Binary +` target leaves an rvalue address where vstore needs an lvalue. Closing it means modelling the offset as the `AST_OP_MEMBER` Unary, which already does `gaddrof; vpushi; gen_op('+'); vtop->r |= VT_LVAL` — not relaxing the rule. Note this is the same `gen_negf` memory sign-flip the item below says is refused on riscv64, so probe before changing anything.
