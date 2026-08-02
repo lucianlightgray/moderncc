@@ -6306,12 +6306,27 @@ if(MCC_BUILD_TESTS)
     set(MCC_CROSS_DIR "${_mcc_cross_default}"
         CACHE PATH "cross-compiler build dir for the wine PE runtime test")
 
+    # Every cell below consumes prebuilt artifacts from MCC_CROSS_DIR, and the
+    # mcc_build fixture rebuilds only CMAKE_BINARY_DIR -- so a ctest run happily
+    # tests cross compilers from an arbitrarily old build. That is not
+    # hypothetical: the six macho cells and pe-wine-conformance were recorded in
+    # docs/TODO.md as "real codegen faults" for a whole day, and every one of them
+    # passes once cmake-cross is rebuilt (the macho six wanted the ___dso_handle
+    # N_ABS fix; the wine cell wanted the *-win32-libmccrt.a archives, which the
+    # cross dir's default target does build). Rebuild it as a fixture, and SKIP
+    # cleanly when there is no configured cross dir rather than failing.
+    add_test(NAME mcc_cross_build COMMAND "${CMAKE_COMMAND}"
+        "-DXDIR=${MCC_CROSS_DIR}" "-DBDIR=${CMAKE_BINARY_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cross_build.cmake")
+    set_tests_properties(mcc_cross_build PROPERTIES
+        FIXTURES_SETUP MCC_CROSS_BUILT TIMEOUT 3600)
+
     add_test(NAME pe-wine-conformance
         COMMAND "$<TARGET_FILE:mccharness>" pewine
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
                 --work "${CMAKE_BINARY_DIR}/pe-wine-work")
     set_tests_properties(pe-wine-conformance PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "wine" SKIP_RETURN_CODE 77
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "wine" SKIP_RETURN_CODE 77
         TIMEOUT 600)
 
     if(MCC_TARGETOS STREQUAL "WIN32" AND NOT CMAKE_CROSSCOMPILING)
@@ -6342,7 +6357,7 @@ if(MCC_BUILD_TESTS)
                 ${_macho_struct_native}
                 --work "${CMAKE_BINARY_DIR}/macho-work")
     set_tests_properties(macho-structural PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
     # Mach-O WEAK DEFINITIONS from -fc99-inline-body. The export trie and the
     # symtab are written by separate paths in mccmacho.c and used to disagree:
@@ -6355,7 +6370,7 @@ if(MCC_BUILD_TESTS)
                     "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-weakdef-work" "-B${CMAKE_BINARY_DIR}")
         set_tests_properties(macho-weakdef PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-weakdef
             "the trie/symtab pairing needs a linked Mach-O image, which needs a Darwin host")
@@ -6371,7 +6386,7 @@ if(MCC_BUILD_TESTS)
                     "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-clanglink-work" "-B${CMAKE_BINARY_DIR}")
         set_tests_properties(macho-clanglink PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-clanglink
             "running both the clang-linked and the mcc-linked image needs a Darwin host")
@@ -6388,7 +6403,7 @@ if(MCC_BUILD_TESTS)
                     "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-tlv-work" "-B${CMAKE_BINARY_DIR}")
         set_tests_properties(macho-tlv PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-tlv
             "linking and running a Darwin TLV image needs a Darwin host")
@@ -6407,7 +6422,7 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_BINARY_DIR}/macho-tlv-x86_64-work" "-B${MCC_CROSS_DIR}"
                     x86_64)
         set_tests_properties(macho-tlv-x86_64 PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-tlv-x86_64
             "linking and running a Darwin TLV image needs a Darwin host")
@@ -6422,7 +6437,7 @@ if(MCC_BUILD_TESTS)
                     "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-adhocsign-work" "-B${CMAKE_BINARY_DIR}")
         set_tests_properties(macho-adhocsign PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-adhocsign
             "verifying a code signature needs a Darwin host (kernel acceptance + codesign -v)")
@@ -6440,7 +6455,7 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/make_fixture.py"
                     "${CMAKE_BINARY_DIR}/macho-archive-work")
         set_tests_properties(macho-archive PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
             TIMEOUT 300)
     endif()
 
@@ -6455,7 +6470,7 @@ if(MCC_BUILD_TESTS)
                     "${MCC_CROSS_DIR}/mcc-x86_64-osx" "${MCC_CROSS_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-reloc-work")
         set_tests_properties(macho-reloc PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
             TIMEOUT 300)
     endif()
 
@@ -6470,7 +6485,7 @@ if(MCC_BUILD_TESTS)
                     "${MCC_CROSS_DIR}/mcc-arm64-osx" "${MCC_CROSS_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-reloc-arm64-work")
         set_tests_properties(macho-reloc-arm64 PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
             TIMEOUT 300)
     endif()
 
@@ -6485,7 +6500,7 @@ if(MCC_BUILD_TESTS)
                     "${MCC_CROSS_DIR}/mcc-x86_64-osx" "${MCC_CROSS_DIR}"
                     "${CMAKE_BINARY_DIR}/macho-archive-reloc-work")
         set_tests_properties(macho-archive-reloc PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
             TIMEOUT 300)
     endif()
 
@@ -6503,7 +6518,7 @@ if(MCC_BUILD_TESTS)
                         "${MCC_CROSS_DIR}/mcc-${_ma}-osx" "${MCC_CROSS_DIR}"
                         "${CMAKE_BINARY_DIR}/macho-got-sub-${_ma}-work" "${_ma}")
             set_tests_properties(macho-got-sub-${_ma} PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
                 TIMEOUT 300)
         endforeach()
     endif()
@@ -6539,7 +6554,7 @@ if(MCC_BUILD_TESTS)
                 --src "${CMAKE_CURRENT_SOURCE_DIR}" --xb "${MCC_CROSS_DIR}"
                 --work "${CMAKE_BINARY_DIR}/macho-codegen-work")
     set_tests_properties(macho-codegen-run PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
     add_test(NAME macho-image-run
         COMMAND "$<TARGET_FILE:mccharness>" machoimage
@@ -6547,7 +6562,7 @@ if(MCC_BUILD_TESTS)
                 --objcheck "$<TARGET_FILE:objcheck>"
                 --work "${CMAKE_BINARY_DIR}/macho-image-work")
     set_tests_properties(macho-image-run PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
     add_test(NAME macho-apple-libc
         COMMAND "$<TARGET_FILE:mccharness>" machoapplelibc
@@ -6555,7 +6570,7 @@ if(MCC_BUILD_TESTS)
                 --objcheck "$<TARGET_FILE:objcheck>"
                 --work "${CMAKE_BINARY_DIR}/macho-apple-libc-work")
     set_tests_properties(macho-apple-libc PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
     add_test(NAME macho-conformance-native
         COMMAND "$<TARGET_FILE:mccharness>" machonative
@@ -6563,14 +6578,14 @@ if(MCC_BUILD_TESTS)
                 --objcheck "$<TARGET_FILE:objcheck>"
                 --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/macho-native-work")
     set_tests_properties(macho-conformance-native PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
     add_test(NAME macho-stack-protector
         COMMAND "$<TARGET_FILE:mccharness>" stackguard
                 --mcc "$<TARGET_FILE:mcc>" --objcheck "$<TARGET_FILE:objcheck>"
                 --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/stackguard-work")
     set_tests_properties(macho-stack-protector PROPERTIES
-        FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
     if(TARGET machofat)
         set(_mf_xargs "")
@@ -6588,7 +6603,7 @@ if(MCC_BUILD_TESTS)
                     --bdir "${CMAKE_BINARY_DIR}" --work "${CMAKE_BINARY_DIR}/machofat-work"
                     ${_mf_xargs})
         set_tests_properties(macho-universal PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
     else()
         mcc_skip_test(macho-universal
             "the machofat tool is POSIX-only (not built on a WIN32 host)")
@@ -6612,7 +6627,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_BINARY_DIR}/darwin-libsystem-work"
                         "libsystem_${_dt}" "-B${CMAKE_BINARY_DIR}" ${_dt_extra})
             set_tests_properties("macho-libsystem/${_dt}" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
                 TIMEOUT 300)
         endforeach()
     else()
