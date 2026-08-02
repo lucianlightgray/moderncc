@@ -88,7 +88,7 @@ void rir_mark_pt(int kind);
 void rir_mark_val(int kind, int val);
 void rir_mark_val2(int kind, long long a, long long b);
 void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
-									int align);
+									int align, int result);
 void rir_vla_begin(void);
 
 #else
@@ -152,7 +152,7 @@ void rir_vla_begin(void);
 #define rir_mark_pt(k) ((void)0)
 #define rir_mark_val(k, v) ((void)0)
 #define rir_mark_val2(k, a, b) ((void)0)
-#define rir_mark_vla(t, r, a, n, l, al) ((void)0)
+#define rir_mark_vla(t, r, a, n, l, al, rs) ((void)0)
 #define rir_vla_begin() ((void)0)
 #define rir_env 0
 #define rir_c2_active 0

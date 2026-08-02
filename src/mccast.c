@@ -2312,7 +2312,7 @@ void ast_hook_builtin_complex_lower(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig,
-														int align);
+														int align, int result);
 void ast_hook_store_addr_late(void);
 void ast_hook_vla_restore(int loc);
 static int ast_bad_type(int tt);
@@ -4221,16 +4221,16 @@ void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
-																	 int locorig, int align) { MCC_TRACE("enter\n");
+																	 int locorig, int align, int result) { MCC_TRACE("enter\n");
 	rir_rend_to(RIR_R_VLA);
 	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
-							 locorig, align);
+							 locorig, align, result);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
 	if (ast_active && ast_in_op > 0)
 		{ MCC_TRACE("br\n"); ast_in_op--; }
 	if (ast_active)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
-	(void)type, (void)addr, (void)new_save, (void)locorig, (void)align;
+	(void)type, (void)addr, (void)new_save, (void)locorig, (void)align, (void)result;
 #else
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -4251,6 +4251,7 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 	ast_set_fbits(ast_cur, n, (uint64_t)(unsigned)new_save);
 	ast_set_wide(ast_cur, n, (uint64_t)(unsigned)align, AST_R2_NONE);
 	ast_add_child(ast_cur, ast_cur_bb, n);
+	(void)result;
 #endif
 }
 
@@ -7402,6 +7403,13 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (ast_wide_hi(a, s))
 					{ MCC_TRACE("br\n"); al = (int)(unsigned)ast_wide_hi(a, s); }
 				gen_vla_alloc(&vt, al);
+#ifdef MCC_JRN_HAVE_VLA_RESULT
+				{
+					int vres = (int)(uint32_t)(ast_ival(a, s) >> 32);
+					if (vres)
+						{ MCC_TRACE("br\n"); gen_vla_result(vres); }
+				}
+#endif
 				gen_vla_sp_save(addr);
 				break;
 			}

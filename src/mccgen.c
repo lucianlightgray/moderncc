@@ -14216,15 +14216,18 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			ptr_slot = (loc -= MCC_PTR_SIZE);
 			vpushs(size);
 			gen_vla_alloc(type, align);
+			int vla_res_slot = 0, vla_hook_slot = ptr_slot;
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
 			/* win64 alloca returns the (rounded) block in rax above its shadow
 			   space, not at rsp — save rax as the object pointer, and rsp in a
 			   separate slot for the vla chain (mirrors the plain-VLA path). */
+			vla_res_slot = ptr_slot;
 			gen_vla_result(ptr_slot);
 			{
 				int sp_slot = (loc -= MCC_PTR_SIZE);
 				gen_vla_sp_save(sp_slot);
 				cur_scope->vla.loc = sp_slot;
+				vla_hook_slot = sp_slot;
 			}
 #else
 			gen_vla_sp_save(ptr_slot);
@@ -14232,8 +14235,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #endif
 			cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
-			ast_hook_vla_alloc_end(type, ptr_slot, vla_new_save, cur_scope->vla.locorig,
-														 align);
+			ast_hook_vla_alloc_end(type, vla_hook_slot, vla_new_save,
+														 cur_scope->vla.locorig, align, vla_res_slot);
 #endif
 			addr = 0;
 			p.llocal = ptr_slot;
@@ -14442,14 +14445,17 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 		vpush_type_size(type, &a);
 		gen_vla_alloc(type, a);
+		int vla_res_slot = 0;
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
+		vla_res_slot = addr;
 		gen_vla_result(addr), addr = (loc -= MCC_PTR_SIZE);
 #endif
 		gen_vla_sp_save(addr);
 		cur_scope->vla.loc = addr;
 		cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
-		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a);
+		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a,
+																	 vla_res_slot);
 #endif
 	} else if (has_init) { MCC_TRACE("br\n");
 		p.sec = sec;

@@ -327,12 +327,13 @@ void rir_mark_val2(int kind, long long a, long long b) {
    gen_vla_alloc from it. The primitives that computed the size are replayed by
    that call, so the region they sit in is suppressed the way a call region is. */
 void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
-									int align) {
+									int align, int result) {
 	RirMark *m;
 	if (!rir_active)
 		return;
 	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, (new_save ? 1 : 0) | (align << 1),
-							(long long)(unsigned)t, (long long)ref);
+							(long long)(unsigned)t | (((long long)(unsigned)result) << 32),
+							(long long)ref);
 	m = &rir_marks[rir_markn - 1];
 	m->v3 = ((long long)(unsigned)addr) |
 					(((long long)(unsigned)locorig) << 32);
@@ -2674,8 +2675,11 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_VLA: {
 		AstLocal u = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, u, AST_OP_VLA);
-		ast_set_type(rir_arena, u, (int)ro->rv1, (uint64_t)ro->rv2);
-		ast_set_ival(rir_arena, u, (uint64_t)(int64_t)(int)(ro->rv3 & 0xffffffff));
+		ast_set_type(rir_arena, u, (int)(ro->rv1 & 0xffffffff), (uint64_t)ro->rv2);
+		ast_set_ival(rir_arena, u,
+								 ((uint64_t)(uint32_t)(int)(ro->rv3 & 0xffffffff)) |
+										 (((uint64_t)(uint32_t)(int)((ro->rv1 >> 32) & 0xffffffff))
+											<< 32));
 		ast_set_sym(rir_arena, u,
 								(uint64_t)(int64_t)(int)((ro->rv3 >> 32) & 0xffffffff));
 		ast_set_fbits(rir_arena, u, (uint64_t)(unsigned)(ro->rval & 1));

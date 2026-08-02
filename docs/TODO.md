@@ -382,12 +382,14 @@ target** and containment is clean on every target (no compile aborts anywhere ov
 | arm64-osx | 1216 | 1180 | 1173 | 99.4 | 3 | 4 | 0 | 0 | 0 | clean |
 | arm64-win32 | 1322 | 1286 | 1277 | 99.3 | 5 | 4 | 0 | 0 | 0 | clean |
 | arm64 | 1216 | 1180 | 1171 | 99.2 | 4 | 5 | 0 | 0 | 0 | clean |
-| x86_64-win32 | 1278 | 1243 | 1229 | 98.9 | 12 | 2 | 0 | 0 | 0 | clean |
+| x86_64-win32 | 1278 | 1243 | **1241** | **99.8** | **0** | 2 | 0 | 0 | 0 | clean |
 | i386 | 1185 | 1150 | 1134 | 98.6 | 11 | 5 | 0 | 0 | 0 | clean |
 | arm | 1162 | 1127 | 1108 | 98.3 | 11 | 8 | 0 | 0 | 0 | clean |
 | arm-win32 | 1275 | 1240 | 1219 | 98.3 | 13 | 8 | 0 | 0 | 0 | clean |
 | i386-win32 | 1298 | 1263 | 1239 | 98.1 | 19 | 5 | 0 | 0 | 0 | clean |
 | riscv64 | 1187 | 1150 | 1124 | 97.7 | 20 | 1 | 0 | 5 | 2 | clean |
+
+**x86_64-win32's whole `c2len` tail was one unmodelled op (2026-08-02): `c2ok` 1229 -> 1241, `c2len` 12 -> 0.** On win64 `gen_vla_alloc` returns the rounded block in `rax` above the shadow space rather than at `rsp`, so the parser emits an extra `gen_vla_result(ptr_slot)` — `mov [rbp-0x10], rax` — between the alloc and the sp-save, and stores `rsp` in a *second* slot. `ast_hook_vla_alloc_end` never saw that pointer slot, so neither the tree's `AST_OP_VLA` node nor Replay_IR's could replay it and every VLA body came out exactly 4 bytes short per allocation. **The tree never had to care because it DESYNCs on VLA on this exact target** (`#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64` in the hook) — Replay_IR does not desync, so it is the first model that had to model the op. The hook now takes the result slot, `rir_mark_vla` packs it into the free high 32 bits of `v1` (`rval` is an `int`, so it will not hold it), the arena node carries it in the high half of `ival`, and `ast_replay_bb` emits `gen_vla_result` under the existing `MCC_JRN_HAVE_VLA_RESULT` predicate. The `alloca` call site had the mirror bug and is fixed with it: it passed `ptr_slot` to the hook where the sp-save had gone to a different `sp_slot`, so a replay would have saved the wrong slot as well as skipping the result. Minimal reproducer `int f1(int n){int a[n];a[0]=1;a[n-1]=2;return a[0]+a[n-1];}` went `want=119 got=115 firstdiff=41 op=vla_save` to `ok=1`. x86_64, riscv64, arm64 and i386-win32 re-swept and unchanged; ctest 8035/8035.
 
 The superseded 2026-08-01 table, kept for the deltas it anchors:
 
