@@ -120,6 +120,14 @@ def main():
             ver = subprocess.run([shbin, "--version"], capture_output=True, text=True)
             print(f"self-host:   shbin --version -> exit {ver.returncode} "
                   f"out={(ver.stdout or ver.stderr).strip()[:120]!r}", flush=True)
+            # A crash at --version is at startup. Re-probe with MCC_JIT=0: if the
+            # embedded-JIT boot ctor is the miscompiled culprit and it honours the
+            # env gate, this stops crashing and pins the JIT boot; if it still
+            # crashes, the fault is in CRT/TLS/SEH init, not the JIT boot.
+            nojit_env = dict(os.environ, MCC_JIT="0")
+            vnj = subprocess.run([shbin, "--version"], capture_output=True, text=True, env=nojit_env)
+            print(f"self-host:   shbin --version MCC_JIT=0 -> exit {vnj.returncode} "
+                  f"out={(vnj.stdout or vnj.stderr).strip()[:120]!r}", flush=True)
             ec = os.path.join(work, "empty.c")
             ee = os.path.join(work, "empty" + exe)
             open(ec, "w").write("int main(void){return 0;}\n")
