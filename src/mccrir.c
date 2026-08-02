@@ -1556,6 +1556,44 @@ static int rir_type_size(int st, uint64_t ref) {
 	return type_size(&b1, &al);
 }
 
+static int rir_int_kind(int t) {
+	int bt = t & VT_BTYPE;
+	return !is_float(t) && bt != VT_PTR && bt != VT_STRUCT && bt != VT_FUNC &&
+				 bt != VT_VOID;
+}
+
+static int rir_eff_unsigned(AstLocal n, int depth) {
+	int i, nc, best = -1, t;
+	if (n == AST_NONE || depth > 8)
+		return -1;
+	t = ast_type_t(rir_arena, n);
+	if (t != 0)
+		return rir_int_kind(t) ? ((t & VT_UNSIGNED) ? 1 : 0) : -1;
+	if (ast_kind(rir_arena, n) != AST_Binary &&
+			ast_kind(rir_arena, n) != AST_Unary)
+		return -1;
+	nc = (int)ast_nchild(rir_arena, n);
+	for (i = 0; i < nc; i++) {
+		int u = rir_eff_unsigned(ast_child(rir_arena, n, i), depth + 1);
+		if (u > best)
+			best = u;
+	}
+	return best;
+}
+
+static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) {
+	int i, nc = ast_nchild(rir_arena, n), ss;
+	if (!rir_int_kind(st) || (st & VT_UNSIGNED))
+		return 0;
+	ss = rir_type_size(st, ref);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		if (rir_eff_unsigned(c, 0) == 1 && rir_eff_size(c, 0) == ss)
+			return 1;
+	}
+	return 0;
+}
+
 static int rir_node_wider(AstLocal n, int st, uint64_t ref) {
 	return rir_eff_size(n, 0) > rir_type_size(st, ref);
 }
@@ -1910,7 +1948,8 @@ static void rir_op_effect(const RirOp *ro) {
 				if (rir_child_has_type(cur, st) && !rir_child_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref))
 					continue;
 				if (!opdiff && !rir_child_width_differs(cur, st, (uint64_t)(uintptr_t)sv2->type.ref) &&
-						!rir_child_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref))
+						!rir_child_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref) &&
+						!rir_child_uns_to_signed(cur, st, (uint64_t)(uintptr_t)sv2->type.ref))
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
