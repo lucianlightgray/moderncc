@@ -2532,6 +2532,45 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case JOP_GV: {
 		AstLocal top;
+		/* A gv on a sub-int integer lvalue IS the promotion: it emits the
+		   sign- or zero-extending load right here. Inside a ternary arm that
+		   placement is the whole answer -- the arm's value has to be in a
+		   register before the merge, and an arena that only carries the char
+		   Load leaves replay to materialise it after the merge point, moving
+		   the movsx past the arm's jump. The tree records this as a Convert
+		   over the Load; record the same. */
+		if (rir_shn >= 1 && o->vs_n > 0) {
+			const SValue *tv = &jrn_vs[o->vs_off + o->vs_n - 1];
+			int bt = tv->type.t & VT_BTYPE;
+			AstLocal t2 = rir_sh[rir_shn - 1];
+			if ((tv->r & VT_LVAL) && !(tv->type.t & (VT_ARRAY | VT_BITFIELD)) &&
+					(bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL) &&
+					t2 != AST_NONE && ast_kind(rir_arena, t2) == AST_Load &&
+					ast_parent(rir_arena, t2) == AST_NONE) {
+				int nt = (int)ast_type_t(rir_arena, t2);
+				int want = -1;
+				/* The snapshot is what the emitter is about to widen FROM, and a
+				   cast that only flipped signedness leaves no op behind -- the
+				   node still says char where the parser has unsigned char, and
+				   replay writes movsx for the parser's movzx. */
+				if (!nt && (tv->type.t & VT_UNSIGNED))
+					want = tv->type.t;
+				else if (rir_ternn)
+					want = VT_INT;
+				if (want >= 0) {
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, want,
+											 want == VT_INT
+													 ? (uint64_t)0
+													 : (uint64_t)(uintptr_t)tv->type.ref);
+					ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
+					ast_add_child(rir_arena, cv, t2);
+					rir_sh[rir_shn - 1] = cv;
+					rir_shtype[rir_shn - 1] = 1;
+					break;
+				}
+			}
+		}
 		if (rir_shn < 1 || !rir_callee_pending())
 			break;
 		top = rir_sh[rir_shn - 1];
