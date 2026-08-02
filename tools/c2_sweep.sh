@@ -10,27 +10,25 @@ S=$(cd "$(dirname "$0")/.." && pwd)
 BUILD=$(cd "$BUILD" && pwd)
 
 # The native compiler is $BUILD/mcc and carries no sysroot flags, but which key
-# that IS depends on the host: on an x86_64 Linux host it is x86_64, on an
-# arm64 macOS host it is arm64-osx. Selecting $BUILD/mcc for a key the host is
-# not silently measures the wrong target -- rc stays 0 and the row still
-# prints. Prefer an explicit mcc-<key> whenever one was built.
+# that IS depends on the host: x86_64 on an x86_64 Linux host, arm64-osx on an
+# arm64 mac, arm64 in a linux/arm64 container. Selecting $BUILD/mcc for a key
+# the host is not silently measures the wrong target -- rc stays 0 and the row
+# still prints. Take an explicit mcc-<key> whenever one was built, and fall
+# back to the native compiler, with no sysroot flags, only when there is none.
 case "$KEY" in
-x86_64)      if [ -x "$BUILD/mcc-x86_64" ]; then
-                     MCC=$BUILD/mcc-x86_64
-                     FLAGS="-B $BUILD --sysroot=$S/vendor/gentoo-stage3-x86_64-glibc -I$S/vendor/gentoo-stage3-x86_64-glibc/usr/include"
-             else
-                     MCC=$BUILD/mcc; FLAGS=""
-             fi ;;
 *win32|*wince)
-             MCC=$BUILD/mcc-$KEY
              FLAGS="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include" ;;
-*osx)        MCC=$BUILD/mcc-$KEY
-             FLAGS="-B $S/runtime -I $S/runtime/include" ;;
-arm)         MCC=$BUILD/mcc-arm
-             FLAGS="-B $BUILD -mfloat-abi hard --sysroot=$S/vendor/gentoo-stage3-arm-glibc -I$S/vendor/gentoo-stage3-arm-glibc/usr/include" ;;
-*)           MCC=$BUILD/mcc-$KEY
-             FLAGS="-B $BUILD --sysroot=$S/vendor/gentoo-stage3-$KEY-glibc -I$S/vendor/gentoo-stage3-$KEY-glibc/usr/include" ;;
+*osx)        FLAGS="-B $S/runtime -I $S/runtime/include" ;;
+arm)         FLAGS="-B $BUILD -mfloat-abi hard --sysroot=$S/vendor/gentoo-stage3-arm-glibc -I$S/vendor/gentoo-stage3-arm-glibc/usr/include" ;;
+*)           FLAGS="-B $BUILD --sysroot=$S/vendor/gentoo-stage3-$KEY-glibc -I$S/vendor/gentoo-stage3-$KEY-glibc/usr/include" ;;
 esac
+if [ -x "$BUILD/mcc-$KEY" ]; then
+	MCC=$BUILD/mcc-$KEY
+else
+	MCC=$BUILD/mcc
+	FLAGS=
+	native=1
+fi
 
 mkdir -p "$OUT"
 LOG=$OUT/$KEY$OPT.log
@@ -98,7 +96,7 @@ for f in $files; do
 	fi
 done
 
-awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" -v nok="$nok" -v corpus="$CORPUS" '
+awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" -v nok="$nok" -v corpus="$CORPUS" -v native="$native" '
 /^### / { cur = $2; if (cur ~ /full_language\.c$/) extra = 1; next }
 /^\[rir-total\]/ {
 	seen++
@@ -113,8 +111,8 @@ BEGIN {
 	for (i in a) want[a[i]] = 1
 }
 END {
-	printf "%-14s %-4s %-5s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) arenahasheq=%d/%d\n",
-		key, opt, corpus, nfile, nok, extra + 0, seen, tot["fn"], tot["faithful"], tot["c2ok"], tot["c2try"],
+	printf "%-14s %-4s %-5s%s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) arenahasheq=%d/%d\n",
+		key, opt, corpus, native ? " NATIVE" : "", nfile, nok, extra + 0, seen, tot["fn"], tot["faithful"], tot["c2ok"], tot["c2try"],
 		tot["c2bytes"], tot["c2len"], tot["c2skip"], tot["c2invalid"], tot["c2err"],
 		tot["arenahasheq"], tot["arenafn"]
 }
