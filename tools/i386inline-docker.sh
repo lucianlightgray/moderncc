@@ -107,26 +107,26 @@ marker_graft areaf    yes "(double args)"
 marker_graft fmixf    yes "(float args)"
 marker_graft sumpair  yes "(8-byte struct-by-value on stack)"
 marker_graft derefsum yes "(pointer + loop)"
-# EMPIRICAL i386 desync #1: long long args are a 64-bit STACK PAIR on i386
-# SysV cdecl; the Tier-4 slot capture does not model the split 64-bit param, so
-# llmul stays retained-only (mirrors the reg-pair/indirect desyncs on the 64-bit
-# arches, but here it is the 32-bit long-long hazard). Correct finding.
-marker_graft llmul    no  "(long long args: 64-bit stack pair not modeled -- retained)"
-# EMPIRICAL i386 desync #2: 32-byte struct-by-value passed as a large stack copy;
-# the by-value copy at the callsite is not modeled, so sumbigf stays retained,
-# mirroring arm64/riscv64 sumbig.
-marker_graft sumbigf  no  "(32-byte struct-by-value: large stack copy not modeled -- retained)"
+# Both callees below carry 64-bit values: llmul takes long long args, and every
+# member and the return of struct Big{long long a,b,c,d;} is 64-bit too. On a
+# 32-bit target both therefore hinge on the recorder modelling the second
+# register of a value. They stayed retained-only, and were recorded here as
+# EMPIRICAL i386 desyncs, for exactly as long as MCC_AST_REGPAIR was defaulted
+# OFF on i386/arm. 9d90c8b5 (2026-08-02) removed that special case once the
+# nested-register-pair re-emit was fixed and the i386 and arm legs were measured,
+# and both callees graft from that commit on. The graft is correct rather than
+# merely newly-firing: the qemu differential below agrees with gcc -O2 over 83911
+# checks with graft ON, and the objdump pass now demands 0 residual call relocs
+# for these two exactly like every other grafted callee.
+marker_graft llmul    yes "(long long args: 64-bit stack pair, modeled since MCC_AST_REGPAIR)"
+marker_graft sumbigf  yes "(32-byte struct-by-value of long long members, same)"
 echo "-- objdump: residual R_386 call reloc to each grafted callee (must be 0) --"
-for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_floatf fmixf" "c_smallstruct sumpair" "c_pointer derefsum"; do
+for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_floatf fmixf" "c_smallstruct sumpair" "c_pointer derefsum" "c_bigstruct sumbigf" "c_longlong llmul"; do
   set -- $pair
   rc=$(call_reloc "$1" "$2")
   if [ "$rc" = 0 ]; then echo "   OK   $1 -> $2 : 0 call relocs (grafted)";
   else echo "   MISS $1 -> $2 : $rc call relocs remain"; GRAFT_OK=0; fi
 done
-rc=$(call_reloc c_bigstruct sumbigf)
-echo "   INFO c_bigstruct -> sumbigf : $rc call reloc(s) (retained; expected >=1)"
-rc=$(call_reloc c_longlong llmul)
-echo "   INFO c_longlong -> llmul   : $rc call reloc(s) (retained; expected >=1)"
 
 echo "== emit differential TUs (tested/ref/main) for stage-2 qemu run =="
 cat > /w/tested.c <<EOF

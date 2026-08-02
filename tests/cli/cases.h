@@ -2414,7 +2414,7 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -O2 -fasan-shadow -c {W}/zba.c -o {W}/zba.o && "
 		 "readelf -SW {W}/zba.o | awk '/ [.]bss /{print ($6==\"000000\")?\"bss-empty\":\"bss-used\"}'",
 		 "bss-used\n"},
-		{"zero_bss_under_bcheck", "cpu=x86_64,os=linux",
+		{"zero_bss_under_bcheck", "cpu=x86_64,os=linux,bcheck",
 		 "printf 'int z0=0;long za[16]={0};int nz=7;\\nint main(void){za[3]=z0+nz;return za[3]==7?0:1;}\\n' > {W}/zbb.c && "
 		 "{MCC} -B{B} -O2 -b -c {W}/zbb.c -o {W}/zbb.o && "
 		 "readelf -SW {W}/zbb.o | awk '/ [.]bss /{print ($6==\"000000\")?\"bss-empty\":\"bss-used\"}'",

@@ -1463,9 +1463,18 @@ endif()
 # .def it already writes next to every -shared DLL (LIBRARY + EXPORTS lines),
 # and mcc links `libmcc.def` given on the command line directly, so name the
 # import library lib<name>.def: the artifact mcc -shared emits IS the implib.
+# The same missing platform module also leaves the plain-library link style a
+# hybrid: CMAKE_LINK_LIBRARY_FLAG is the GNU `-l` while CMAKE_LINK_LIBRARY_SUFFIX
+# is still Windows.cmake's `.lib`, so a bare `target_link_libraries(mccbench
+# psapi)` is emitted as `-lpsapi.lib`. mcc's PE library search spells the
+# candidates itself (`psapi.def`, `libpsapi.def`, `psapi.dll`, ... -- see
+# mcc_add_library), so the baked-in `.lib` makes every one of them miss:
+# "library 'psapi.lib' not found", which is where the MCC_BENCH self-host link
+# died. Clear the suffix; the `-l` flag alone is what mcc's driver expects.
 if(MCC_CC_NAME STREQUAL "mcc" AND WIN32)
     set(CMAKE_IMPORT_LIBRARY_PREFIX "lib")
     set(CMAKE_IMPORT_LIBRARY_SUFFIX ".def")
+    set(CMAKE_LINK_LIBRARY_SUFFIX "")
 endif()
 if("${CMAKE_C_COMPILER_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)")
     set(MCC_GCC_MAJOR "${CMAKE_MATCH_1}")

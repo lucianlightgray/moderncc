@@ -198,6 +198,19 @@ jobs:
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
           HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable || true
+      # `stage3-emulate` plans one cell per gate-host OS, Windows included, and
+      # the ci composite action bootstraps mcc-ci with `cl` -- so this job needs
+      # the dev shell exactly like stage1/stage2/mingw do. Without it the job
+      # died at "The term 'cl' is not recognized" before running a single
+      # validator.
+      - name: set up MSVC dev shell (windows)
+        if: startsWith(matrix.runner, 'windows')
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.msvcarch }}
+      - name: install ninja (windows)
+        if: startsWith(matrix.runner, 'windows')
+        run: choco install ninja -y
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:

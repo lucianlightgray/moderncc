@@ -208,9 +208,20 @@ dg_docker run --rm --platform linux/amd64 \
 
 # --- stage 2: link + run under linux/386 against the mcc i386 runtime ---
 echo "== docker linux/386: link soak.o + i386-libmccrt.a and run =="
+# Provisioning is gated the way i386inline-docker.sh already gates it, for two
+# reasons this cell hit in CI (nightly Matrix run 30742545269): `apt-get install
+# gcc` alone does NOT pull libc6-dev, so the link below dies for want of crti.o;
+# and with BOTH apt commands' stdout and stderr suppressed under `set -e`, an apt
+# failure killed the container before it printed anything at all -- the cell went
+# red with a completely empty stage-2 log, which is unactionable. An unavailable
+# archive is an environment fact, so it skips 77; the soak's own verdict below is
+# untouched and still fails the cell on a real divmagic miscompile.
 dg_docker run --rm --platform linux/386 -v "$WP":/w -w /w "$IMAGE_386" sh -c '
 	set -e
-	command -v gcc >/dev/null || { apt-get update >/dev/null 2>&1; apt-get install -y gcc >/dev/null 2>&1; }
+	if ! command -v gcc >/dev/null || { [ ! -e /usr/lib/i386-linux-gnu/crti.o ] && [ ! -e /usr/lib/crti.o ]; }; then
+		apt-get update >/dev/null 2>&1 || { echo "SKIP: apt update failed in linux/386"; exit 77; }
+		apt-get install -y gcc libc6-dev >/dev/null 2>&1 || { echo "SKIP: apt install gcc/libc6-dev failed in linux/386"; exit 77; }
+	fi
 	gcc -m32 soak.o i386-libmccrt.a -o soak
 	rc=0
 	./soak || rc=$?

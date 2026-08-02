@@ -114,28 +114,27 @@ marker_graft areaf    yes "(double args)"
 marker_graft fmixf    yes "(float args)"
 marker_graft sumpair  yes "(8-byte reg-struct r0-r3)"
 marker_graft derefsum yes "(pointer + loop)"
-# EMPIRICAL arm desync #1: long long args are a 64-bit REG PAIR (r0/r1..) on
-# AAPCS; the Tier-4 slot capture does not model the split 64-bit param, so llmul
-# stays retained-only, mirroring the i386 long-long hazard. Correct finding.
-marker_graft llmul    no  "(long long args: 64-bit reg pair not modeled -- retained)"
-# EMPIRICAL arm desync #2: on this mcc arm backend a >16B struct-by-value arg is
-# NOT captured as the VT_LLOCAL|VT_LVAL|VT_STRUCT indirect class (the class the
-# Tier-4 indirect-param capture now models for arm64/riscv64); it is a direct
-# stack copy, exactly like i386. So sumbigf stays retained-only here -- this is a
-# direct-copy gap, NOT the hidden-pointer indirect case, and is unaffected by the
-# indirect-param change. Confirmed by objdump: 1 residual R_ARM call reloc below.
-marker_graft sumbigf  no  "(32-byte struct-by-value: direct stack copy, not indirect -- retained gap like i386)"
+# Both callees below carry 64-bit values: llmul takes long long args, and every
+# member and the return of struct Big{long long a,b,c,d;} is 64-bit too. On a
+# 32-bit target both therefore hinge on the recorder modelling the second
+# register of a value. They stayed retained-only, and were recorded here as
+# EMPIRICAL arm desyncs, for exactly as long as MCC_AST_REGPAIR was defaulted
+# OFF on i386/arm. 9d90c8b5 (2026-08-02) removed that special case once the
+# nested-register-pair re-emit was fixed and the arm leg of instruction 2 was
+# measured, and both callees graft from that commit on. The graft is correct
+# rather than merely newly-firing: the qemu differential below agrees with
+# arm-linux-gnueabihf-gcc -O2 over 83911 checks with graft ON, and the objdump
+# pass now demands 0 residual call relocs for these two exactly like every other
+# grafted callee.
+marker_graft llmul    yes "(long long args: 64-bit reg pair, modeled since MCC_AST_REGPAIR)"
+marker_graft sumbigf  yes "(32-byte struct-by-value of long long members, same)"
 echo "-- objdump: residual R_ARM call reloc to each grafted callee (must be 0) --"
-for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_floatf fmixf" "c_smallstruct sumpair" "c_pointer derefsum"; do
+for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_floatf fmixf" "c_smallstruct sumpair" "c_pointer derefsum" "c_bigstruct sumbigf" "c_longlong llmul"; do
   set -- $pair
   rc=$(call_reloc "$1" "$2")
   if [ "$rc" = 0 ]; then echo "   OK   $1 -> $2 : 0 call relocs (grafted)";
   else echo "   MISS $1 -> $2 : $rc call relocs remain"; GRAFT_OK=0; fi
 done
-rc=$(call_reloc c_bigstruct sumbigf)
-echo "   INFO c_bigstruct -> sumbigf : $rc call reloc(s) (retained; expected >=1)"
-rc=$(call_reloc c_longlong llmul)
-echo "   INFO c_longlong -> llmul   : $rc call reloc(s) (retained; expected >=1)"
 
 echo "== differential vs arm-linux-gnueabihf-gcc -O2 under qemu =="
 cat > /w/tested.c <<EOF
