@@ -24,6 +24,18 @@ def main():
     for kv in sys.argv[2:]:
         k, _, v = kv.partition("=")
         env[k] = v
+    # A self-hosted mcc that faults (0xC0000005) must FAIL FAST with its crash
+    # code, not hang the cell for the ctest timeout: without this, Windows Error
+    # Reporting intercepts the crash and the child never returns, so all 11
+    # selfhost-* cells time out at 300s instead of reporting the real defect
+    # (measured on the arm64-PE selfhost, run 30729371841). SEM_NOGPFAULTERRORBOX
+    # is inherited by children, mirroring the exec runner (instruction 32).
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)
+        except Exception:
+            pass
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
     # On win32 the stage compiler is mcc.exe; PE-keyed behaviour follows from the
@@ -97,7 +109,23 @@ def main():
             "int fib(int n){return n<2?n:fib(n-1)+fib(n-2);}\n"
             "int main(void){printf(\"%d\\n\",fib(10));return 0;}\n")
         te = os.path.join(work, "t" + exe)
-        subprocess.run([shbin, *link_flags, *win32_pre, "-I" + inc, tc, "-o", te], check=True)
+        try:
+            subprocess.run([shbin, *link_flags, *win32_pre, "-I" + inc, tc, "-o", te], check=True)
+        except subprocess.CalledProcessError as e:
+            # Classify a self-hosted-mcc crash: does mcc-sh fault at its own
+            # startup (a stage1 miscompile of mcc's init, or the embedded-blob
+            # boot), or only while compiling? Probe --version, then a no-include
+            # translation unit, then report. shbin is still in the temp dir here.
+            print(f"self-host: shbin compile FAILED (exit {e.returncode}); classifying", flush=True)
+            ver = subprocess.run([shbin, "--version"], capture_output=True, text=True)
+            print(f"self-host:   shbin --version -> exit {ver.returncode} "
+                  f"out={(ver.stdout or ver.stderr).strip()[:120]!r}", flush=True)
+            ec = os.path.join(work, "empty.c")
+            ee = os.path.join(work, "empty" + exe)
+            open(ec, "w").write("int main(void){return 0;}\n")
+            noinc = subprocess.run([shbin, *link_flags, *win32_pre, ec, "-o", ee])
+            print(f"self-host:   shbin compile (no #include) -> exit {noinc.returncode}", flush=True)
+            raise
         out = subprocess.run([te], capture_output=True, text=True).stdout.strip()
         if out != "55":
             sys.exit(f"FAIL: self-hosted mcc gave fib(10)={out}, expected 55")
