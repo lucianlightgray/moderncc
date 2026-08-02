@@ -4064,7 +4064,7 @@ if(MCC_BUILD_TESTS)
         # thread-local instead of its own.
         foreach(_st riscv64 arm arm64)
             add_test(NAME cross/shared-tls-refused-${_st}
-                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/shared-tls-refused.sh"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/shared-tls-refused.sh"
                         "${_st}" "${MCC_CROSS_DIR}/mcc-${_st}" "${MCC_CROSS_DIR}"
                         "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_st}-glibc"
                         "${CMAKE_BINARY_DIR}/shared-tls-${_st}")
@@ -5776,7 +5776,7 @@ if(MCC_BUILD_TESTS)
                 foreach(_qo -O1 -O2)
                     string(REPLACE "-" "" _qon "${_qo}")
                     add_test(NAME selfhost-qemu-${_qa}-${_qon}
-                        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/qemu-selfhost.sh"
+                        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/qemu-selfhost.sh"
                                 "${_qa}" "${CMAKE_BINARY_DIR}/selfhost-qemu-${_qa}-${_qon}"
                                 "${_qo}")
                     set_tests_properties(selfhost-qemu-${_qa}-${_qon} PROPERTIES
