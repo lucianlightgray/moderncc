@@ -4084,6 +4084,21 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 300)
         endforeach()
 
+        # riscv64 -fasan-shadow must name the access direction, and the clean
+        # case must still not trap: the ori that carries the direction shifted
+        # the ebreak by one instruction and the first port left the skip branch
+        # aimed at it, so every VALID access trapped while both fault cases
+        # still printed the right label.
+        add_test(NAME cross/asan-accesstype-riscv64
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/asan-accesstype-riscv64.sh"
+                    "${MCC_CROSS_DIR}/mcc-riscv64" "${MCC_CROSS_DIR}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-riscv64-glibc"
+                    "${CMAKE_BINARY_DIR}/asan-accesstype-riscv64"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/runtime/lib/mccasan.c")
+        set_tests_properties(cross/asan-accesstype-riscv64 PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+            LABELS "cross" TIMEOUT 600)
+
         # A compile-only census needs no emulator and no loader, which is what
         # makes the PE and Darwin triples reachable here too -- they stage
         # against mcc's own bundled headers instead of a sysroot.
