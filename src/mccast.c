@@ -2167,10 +2167,8 @@ int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
 
 static int ast_member_cap;
 static int ast_member_arrow;
-static int ast_member_arrow_rir;
 static int ast_imag_cap;
 static int ast_bcplx_cap;
-static int ast_bcplx_low;
 
 static AstLocal ast_switch_node;
 static struct switch_t *ast_rp_switch;
@@ -2304,7 +2302,6 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
-void ast_hook_builtin_complex_lower(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig,
@@ -3957,7 +3954,6 @@ void ast_hook_cleanup_call_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
-	ast_member_arrow_rir = is_arrow;
 	ast_member_cap = 0;
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -3976,10 +3972,6 @@ void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
 
 void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 																int bcheck) { MCC_TRACE("enter\n");
-	rir_rend_to_val(RIR_R_MEMBER,
-									((int)((unsigned)cumofs << 2)) |
-											(ast_member_arrow_rir ? 2 : 0) |
-											(nonlval ? 1 : 0));
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_call > 0)
@@ -4089,21 +4081,7 @@ void ast_hook_builtin_complex_begin(void) { MCC_TRACE("enter\n");
 	ast_in_op++;
 }
 
-/* The parser has both operands on the vstack here and lowers from this point
-   on: a frame temp, then a cast and a part store per half. Replay_IR brackets
-   that lowering as one node so both operands are bound -- and materialised --
-   before either store, which is what the parser's own order does and what two
-   sibling Stores each rematerialising their own operand cannot. */
-void ast_hook_builtin_complex_lower(void) { MCC_TRACE("enter\n");
-	ast_bcplx_low = 1;
-	rir_rbegin(RIR_R_CPLXB);
-}
-
 void ast_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
-	if (ast_bcplx_low) { MCC_TRACE("br\n");
-		ast_bcplx_low = 0;
-		rir_rend_to(RIR_R_CPLXB);
-	}
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op > 0)

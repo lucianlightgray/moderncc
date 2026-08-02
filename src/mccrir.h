@@ -138,7 +138,10 @@ void rir_hook_synth_begin(void);
 void rir_hook_synth_end(void);
 void rir_hook_castlower_begin(struct CType *type);
 void rir_hook_castlower_end(void);
-void rir_hook_member_begin(void);
+void rir_hook_member_begin(int is_arrow);
+void rir_hook_member_end(int cumofs, int nonlval);
+void rir_hook_builtin_complex_lower(void);
+void rir_hook_builtin_complex_end(void);
 void rir_hook_cplx_begin(void);
 void rir_hook_cplx_end(void);
 void rir_hook_acas_begin(int val);
@@ -270,7 +273,10 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define rir_hook_synth_end() ((void)0)
 #define rir_hook_castlower_begin(t) ((void)0)
 #define rir_hook_castlower_end() ((void)0)
-#define rir_hook_member_begin() ((void)0)
+#define rir_hook_member_begin(a) ((void)0)
+#define rir_hook_member_end(c, n) ((void)0)
+#define rir_hook_builtin_complex_lower() ((void)0)
+#define rir_hook_builtin_complex_end() ((void)0)
 #define rir_hook_cplx_begin() ((void)0)
 #define rir_hook_cplx_end() ((void)0)
 #define rir_hook_acas_begin(v) ((void)0)

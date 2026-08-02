@@ -275,7 +275,6 @@ void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
 int ast_tvar_replay(int *loc_out, int *r2_out);
 void ast_tvar_record(int loc_in, int r2);
-void ast_hook_builtin_complex_lower(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(struct CType *type, int addr, int new_save,

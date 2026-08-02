@@ -6062,7 +6062,7 @@ static void complex_part(int imag) { MCC_TRACE("enter\n");
 	int ofs = imag ? fre->next->c : fre->c;
 
 #if MCC_CONFIG_OPTIMIZER
-	rir_hook_member_begin();
+	rir_hook_member_begin(0);
 	ast_hook_member_begin(0);
 #endif
 	test_lvalue();
@@ -6073,6 +6073,7 @@ static void complex_part(int imag) { MCC_TRACE("enter\n");
 	vtop->type = base;
 	vtop->r |= VT_LVAL;
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_member_end(ofs, 0);
 	ast_hook_member_end(ofs, &base, 0, 0, 0);
 #endif
 }
@@ -10420,7 +10421,7 @@ tok_next:
 			vtop->r |= VT_LVAL;
 		} else { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
-			ast_hook_builtin_complex_lower();
+			rir_hook_builtin_complex_lower();
 #endif
 			cplx_local(&ccplx, &r);
 			gen_cast(&cbase);
@@ -10430,6 +10431,7 @@ tok_next:
 			vpushv(&r);
 		}
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_builtin_complex_end();
 		ast_hook_builtin_complex_end();
 #endif
 	} break;
@@ -11169,7 +11171,7 @@ tok_next:
 		} else if (tok == '.' || tok == TOK_ARROW) { MCC_TRACE("br\n");
 			int qualifiers, cumofs, base_nonlval;
 #if MCC_CONFIG_OPTIMIZER
-			rir_hook_member_begin();
+			rir_hook_member_begin(tok == TOK_ARROW);
 			ast_hook_member_begin(tok == TOK_ARROW);
 #endif
 			if (tok == TOK_ARROW)
@@ -11221,6 +11223,7 @@ tok_next:
 #if MCC_CONFIG_DIAG_RT >= 2
 				_mbc = mcc_state->do_bounds_check;
 #endif
+				rir_hook_member_end(cumofs, base_nonlval);
 				ast_hook_member_end(cumofs, &s->type, base_nonlval, qualifiers, _mbc);
 			}
 #endif

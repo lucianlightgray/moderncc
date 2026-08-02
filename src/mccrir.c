@@ -470,7 +470,36 @@ void rir_hook_castlower_begin(struct CType *type) {
 
 void rir_hook_castlower_end(void) { rir_rend_to(RIR_R_CVT); }
 
-void rir_hook_member_begin(void) { rir_rbegin(RIR_R_MEMBER); }
+static int rir_member_arrow;
+static int rir_bcplx_low;
+
+void rir_hook_member_begin(int is_arrow) {
+	rir_rbegin(RIR_R_MEMBER);
+	rir_member_arrow = is_arrow;
+}
+
+void rir_hook_member_end(int cumofs, int nonlval) {
+	rir_rend_to_val(RIR_R_MEMBER, ((int)((unsigned)cumofs << 2)) |
+																		(rir_member_arrow ? 2 : 0) |
+																		(nonlval ? 1 : 0));
+}
+
+/* The parser has both operands on the vstack here and lowers from this point
+   on: a frame temp, then a cast and a part store per half. Replay_IR brackets
+   that lowering as one node so both operands are bound -- and materialised --
+   before either store, which is what the parser's own order does and what two
+   sibling Stores each rematerialising their own operand cannot. */
+void rir_hook_builtin_complex_lower(void) {
+	rir_bcplx_low = 1;
+	rir_rbegin(RIR_R_CPLXB);
+}
+
+void rir_hook_builtin_complex_end(void) {
+	if (rir_bcplx_low) {
+		rir_bcplx_low = 0;
+		rir_rend_to(RIR_R_CPLXB);
+	}
+}
 
 void rir_hook_cplx_begin(void) { rir_rbegin(RIR_R_CPLX); }
 
