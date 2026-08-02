@@ -1196,16 +1196,6 @@ ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk
 #endif
 }
 
-ST_FUNC MAYBE_UNUSED int host_codesign_adhoc(const char *file) { MCC_TRACE("enter\n");
-#if MCC_CONFIG_CODESIGN
-	const char *argv[] = {"codesign", "-f", "-s", "-", file, NULL};
-	return host_spawn_wait(argv);
-#else
-	(void)file;
-	return 0;
-#endif
-}
-
 ST_FUNC MAYBE_UNUSED unsigned host_clock_ms(void) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	return GetTickCount();

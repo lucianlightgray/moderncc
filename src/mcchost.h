@@ -221,7 +221,6 @@ ST_FUNC int host_system_dir(char *buf, int size);
 ST_FUNC int host_spawn_wait(const char *const *argv);
 ST_FUNC int host_exec_replace(char **argv);
 ST_FUNC int host_find_tool(const char *name, const char *ext, char *buf, int size);
-ST_FUNC int host_codesign_adhoc(const char *file);
 
 typedef struct HostSpawnOpts {
 	const char *const *launcher;

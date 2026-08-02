@@ -1251,14 +1251,17 @@ static void macho_be64(unsigned char *p, uint64_t v) { MCC_TRACE("enter\n");
 	macho_be32(p + 4, (uint32_t)v);
 }
 
-/* MCC_MACHO_ADHOC_SIGN: sign in-process instead of spawning /usr/bin/codesign.
-   Default OFF, so the off state is byte-identical to today's output. */
+/* MCC_MACHO_ADHOC_SIGN: sign in-process rather than spawning /usr/bin/codesign.
+   Default ON: it is the only signer that works off-Darwin (codesign does not
+   exist on Linux, and arm64 Darwin refuses an unsigned image), it is bit-
+   reproducible where codesign is not, and it is ~2x faster per link. Set
+   MCC_MACHO_ADHOC_SIGN=0 to emit an unsigned image for external signing. */
 static int macho_adhoc_sign_env(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_CODESIGN
 	const char *v = getenv("MCC_MACHO_ADHOC_SIGN");
 	if (s1->output_type == MCC_OUTPUT_OBJ)
 		{ MCC_TRACE("br\n"); return 0; }
-	return v && strcmp(v, "0") != 0;
+	return !v || strcmp(v, "0") != 0;
 #else
 	(void)s1;
 	return 0;
@@ -2653,8 +2656,7 @@ do_ret:
 	if (!ret && mo.codesig) { MCC_TRACE("br\n");
 		if (macho_codesig_emit(s1, filename, &mo) != 0)
 			{ MCC_TRACE("br\n"); mcc_error("could not sign '%s'", filename); }
-	} else if (!ret && host_codesign_adhoc(filename) != 0)
-		{ MCC_TRACE("br\n"); mcc_error("codesign failed for '%s'", filename); }
+	}
 	return ret;
 }
 
