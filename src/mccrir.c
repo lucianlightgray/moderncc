@@ -460,6 +460,64 @@ void rir_hook_return_jmp(int jumps) { rir_mark_val(RIR_M_RETJMP, jumps); }
 
 void rir_hook_implicit_return(void) { rir_mark_pt(RIR_M_IRETURN); }
 
+void rir_hook_synth_begin(void) { rir_rbegin(RIR_R_SYNTH); }
+
+void rir_hook_synth_end(void) { rir_rend_to(RIR_R_SYNTH); }
+
+void rir_hook_castlower_begin(struct CType *type) {
+	rir_rbegin_val(RIR_R_CVT, type->t);
+}
+
+void rir_hook_castlower_end(void) { rir_rend_to(RIR_R_CVT); }
+
+void rir_hook_member_begin(void) { rir_rbegin(RIR_R_MEMBER); }
+
+void rir_hook_cplx_begin(void) { rir_rbegin(RIR_R_CPLX); }
+
+void rir_hook_cplx_end(void) { rir_rend_to(RIR_R_CPLX); }
+
+void rir_hook_acas_begin(int val) { rir_rbegin_val(RIR_R_ACAS, val); }
+
+void rir_hook_acas_end(int val) { rir_rend_to_val(RIR_R_ACAS, val); }
+
+void rir_hook_vla_alloc_begin(void) { rir_vla_begin(); }
+
+void rir_hook_vla_alloc_end(struct CType *type, int addr, int new_save,
+														int locorig, int align, int result) {
+	rir_rend_to(RIR_R_VLA);
+	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
+							 locorig, align, result);
+}
+
+void rir_hook_vla_restore(int loc) { rir_mark_val(RIR_M_VLARESTORE, loc); }
+
+void rir_hook_store_addr_late(void) { rir_mark_pt(RIR_M_ADDRLATE); }
+
+void rir_hook_inc(int post, int c) {
+	rir_rbegin_val(RIR_R_INC, (c << 1) | (post ? 1 : 0));
+}
+
+void rir_hook_inc_end(void) { rir_rend_to(RIR_R_INC); }
+
+void rir_hook_vdup(void) { rir_mark_pt(RIR_M_OPASSIGN); }
+
+void rir_hook_indir(void) { rir_mark_pt(RIR_M_LOAD); }
+
+void rir_hook_bfgv(int tt) { rir_mark_val(RIR_M_BFGV, tt); }
+
+void rir_hook_cmp_invert(void) { rir_mark_pt(RIR_M_CMPINV); }
+
+void rir_hook_cast_gv(void) { rir_mark_pt(RIR_M_CASTGV); }
+
+void rir_hook_cleanup_goto(void *pcl) {
+	rir_mark_val2(RIR_M_CLGOTO, (long long)(uintptr_t)pcl, 0);
+}
+
+void rir_hook_cleanup_thunk(void *pcl, int v, int end) {
+	rir_mark_val2(end ? RIR_M_CLJMP : RIR_M_CLTHUNK, (long long)(uintptr_t)pcl,
+								(long long)v);
+}
+
 #define RIR_XT_MAX 16384
 static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];

@@ -134,6 +134,29 @@ void rir_hook_ret_expr_done(void);
 void rir_hook_return(int has_val);
 void rir_hook_return_jmp(int jumps);
 void rir_hook_implicit_return(void);
+void rir_hook_synth_begin(void);
+void rir_hook_synth_end(void);
+void rir_hook_castlower_begin(struct CType *type);
+void rir_hook_castlower_end(void);
+void rir_hook_member_begin(void);
+void rir_hook_cplx_begin(void);
+void rir_hook_cplx_end(void);
+void rir_hook_acas_begin(int val);
+void rir_hook_acas_end(int val);
+void rir_hook_vla_alloc_begin(void);
+void rir_hook_vla_alloc_end(struct CType *type, int addr, int new_save,
+														int locorig, int align, int result);
+void rir_hook_vla_restore(int loc);
+void rir_hook_store_addr_late(void);
+void rir_hook_inc(int post, int c);
+void rir_hook_inc_end(void);
+void rir_hook_vdup(void);
+void rir_hook_indir(void);
+void rir_hook_bfgv(int tt);
+void rir_hook_cmp_invert(void);
+void rir_hook_cast_gv(void);
+void rir_hook_cleanup_goto(void *pcl);
+void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 
 #else
 
@@ -243,6 +266,28 @@ void rir_hook_implicit_return(void);
 #define rir_hook_return(v) ((void)0)
 #define rir_hook_return_jmp(j) ((void)0)
 #define rir_hook_implicit_return() ((void)0)
+#define rir_hook_synth_begin() ((void)0)
+#define rir_hook_synth_end() ((void)0)
+#define rir_hook_castlower_begin(t) ((void)0)
+#define rir_hook_castlower_end() ((void)0)
+#define rir_hook_member_begin() ((void)0)
+#define rir_hook_cplx_begin() ((void)0)
+#define rir_hook_cplx_end() ((void)0)
+#define rir_hook_acas_begin(v) ((void)0)
+#define rir_hook_acas_end(v) ((void)0)
+#define rir_hook_vla_alloc_begin() ((void)0)
+#define rir_hook_vla_alloc_end(t, a, n, l, g, r) ((void)0)
+#define rir_hook_vla_restore(l) ((void)0)
+#define rir_hook_store_addr_late() ((void)0)
+#define rir_hook_inc(p, c) ((void)0)
+#define rir_hook_inc_end() ((void)0)
+#define rir_hook_vdup() ((void)0)
+#define rir_hook_indir() ((void)0)
+#define rir_hook_bfgv(t) ((void)0)
+#define rir_hook_cmp_invert() ((void)0)
+#define rir_hook_cast_gv() ((void)0)
+#define rir_hook_cleanup_goto(p) ((void)0)
+#define rir_hook_cleanup_thunk(p, v, e) ((void)0)
 
 #endif
 

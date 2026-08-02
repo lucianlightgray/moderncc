@@ -2301,10 +2301,6 @@ void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
 void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 																int bcheck);
-void ast_hook_cplx_begin(void);
-void ast_hook_acas_begin(int val);
-void ast_hook_acas_end(int val);
-void ast_hook_cplx_end(void);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
@@ -2313,7 +2309,6 @@ void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig,
 														int align, int result);
-void ast_hook_store_addr_late(void);
 void ast_hook_vla_restore(int loc);
 static int ast_bad_type(int tt);
 static int ast_bad_vtype(int tt);
@@ -2948,7 +2943,6 @@ static int ast_cmp_invert_late(AstArena *a, AstLocal n, int op) { MCC_TRACE("ent
 }
 
 void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
-	rir_mark_pt(RIR_M_CMPINV);
 	AstLocal n;
 	int op;
 	static int on = -1;
@@ -3056,7 +3050,6 @@ void ast_hook_fneg_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_CASTGV);
 	if (!ast_convert_gv_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
@@ -3070,7 +3063,6 @@ void ast_hook_cast_gv(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_inc(int post, int c) { MCC_TRACE("enter\n");
-	rir_rbegin_val(RIR_R_INC, (c << 1) | (post ? 1 : 0));
 	ast_inc_pending = AST_NONE;
 	if (!ast_active || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -3090,7 +3082,6 @@ void ast_hook_inc(int post, int c) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_INC);
 	if (ast_inc_pending == AST_NONE)
 		{ MCC_TRACE("br\n"); return; }
 	ast_inc_pending = AST_NONE;
@@ -3111,7 +3102,6 @@ void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
  * ast_vdup_pending clear ⇒ the normal vpush desync fires (current safe behavior,
  * function falls back to its un-optimized baseline). */
 void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
-	rir_mark_pt(RIR_M_OPASSIGN);
 	ast_vdup_pending = 0;
 	if (!ast_opassign_env || !ast_active || !ast_capture || ast_desync ||
 			ast_in_op || ast_in_call)
@@ -3834,17 +3824,7 @@ void ast_hook_goto(int v) { MCC_TRACE("enter\n");
 	ast_add_child(ast_cur, ast_cur_bb, m);
 }
 
-void ast_hook_cleanup_goto(void *pcl) { MCC_TRACE("enter\n");
-	rir_mark_val2(RIR_M_CLGOTO, (long long)(uintptr_t)pcl, 0);
-}
-
-void ast_hook_cleanup_thunk(void *pcl, int v, int end) { MCC_TRACE("enter\n");
-	rir_mark_val2(end ? RIR_M_CLJMP : RIR_M_CLTHUNK,
-								(long long)(uintptr_t)pcl, (long long)v);
-}
-
 void ast_hook_indir(void) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_LOAD);
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -3859,10 +3839,6 @@ void ast_hook_indir(void) { MCC_TRACE("enter\n");
 	AstLocal ld = ast_node(ast_cur, AST_Load);
 	ast_add_child(ast_cur, ld, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = ld;
-}
-
-void ast_hook_bfgv(int tt) { MCC_TRACE("enter\n");
-	rir_mark_val(RIR_M_BFGV, tt);
 }
 
 void ast_hook_gaddrof(void) { MCC_TRACE("enter\n");
@@ -3882,7 +3858,6 @@ void ast_hook_gaddrof(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_synth_begin(void) { MCC_TRACE("enter\n");
-	rir_rbegin(RIR_R_SYNTH);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_in_op) { MCC_TRACE("br\n");
@@ -3893,16 +3868,7 @@ void ast_hook_synth_begin(void) { MCC_TRACE("enter\n");
 	ast_in_op++;
 }
 
-void ast_hook_castlower_begin(CType *type) { MCC_TRACE("enter\n");
-	rir_rbegin_val(RIR_R_CVT, type->t);
-}
-
-void ast_hook_castlower_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_CVT);
-}
-
 void ast_hook_synth_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_SYNTH);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op > 0)
@@ -3991,7 +3957,6 @@ void ast_hook_cleanup_call_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_member_begin(int is_arrow) { MCC_TRACE("enter\n");
-	rir_rbegin(RIR_R_MEMBER);
 	ast_member_arrow_rir = is_arrow;
 	ast_member_cap = 0;
 	if (!ast_active)
@@ -4070,22 +4035,6 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	ast_set_fbits(ast_cur, m, (uint64_t)(unsigned)nonlval);
 	ast_add_child(ast_cur, m, ast_vs[ast_vn - 1]);
 	ast_vs[ast_vn - 1] = m;
-}
-
-void ast_hook_cplx_begin(void) { MCC_TRACE("enter\n");
-	rir_rbegin(RIR_R_CPLX);
-}
-
-void ast_hook_cplx_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_CPLX);
-}
-
-void ast_hook_acas_begin(int val) { MCC_TRACE("enter\n");
-	rir_rbegin_val(RIR_R_ACAS, val);
-}
-
-void ast_hook_acas_end(int val) { MCC_TRACE("enter\n");
-	rir_rend_to_val(RIR_R_ACAS, val);
 }
 
 void ast_hook_imag_begin(void) { MCC_TRACE("enter\n");
@@ -4183,7 +4132,6 @@ void ast_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
-	rir_vla_begin();
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_op++;
@@ -4191,9 +4139,6 @@ void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
 
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 																	 int locorig, int align, int result) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_VLA);
-	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
-							 locorig, align, result);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
 	if (ast_active && ast_in_op > 0)
 		{ MCC_TRACE("br\n"); ast_in_op--; }
@@ -4224,12 +4169,7 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 #endif
 }
 
-void ast_hook_store_addr_late(void) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_ADDRLATE);
-}
-
 void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
-	rir_mark_val(RIR_M_VLARESTORE, loc);
 	if (!ast_active || ast_desync || ast_bail || loc == 0)
 		{ MCC_TRACE("br\n"); return; }
 	if (NODATA_WANTED)
