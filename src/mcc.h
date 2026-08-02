@@ -1963,7 +1963,7 @@ ST_FUNC int macho_load_dll(MCCState *s1, int fd, const char *filename, int lev);
 ST_FUNC int macho_load_tbd(MCCState *s1, int fd, const char *filename, int lev);
 ST_FUNC int macho_object_type(int fd, unsigned long file_offset);
 ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
-#if defined MCC_TARGET_IS_HOST || defined __APPLE__
+#if defined MCC_TARGET_IS_HOST || MCC_HOST_DARWIN
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s);
 #endif
 #ifdef MCC_TARGET_IS_HOST

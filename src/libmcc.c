@@ -1270,7 +1270,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 
 	if (!s->nostdinc) { MCC_TRACE("br\n");
 		mcc_add_sysinclude_path(s, mcc_target_defaults.sysincludepaths);
-#if defined MCC_TARGET_MACHO && (defined MCC_TARGET_IS_HOST || defined __APPLE__)
+#if defined MCC_TARGET_MACHO && (defined MCC_TARGET_IS_HOST || MCC_HOST_DARWIN)
 		mcc_add_macos_sdkincludepath(s);
 #endif
 	}

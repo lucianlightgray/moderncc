@@ -2634,7 +2634,7 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) { MCC_TRACE("enter\n");
 }
 #endif
 
-#if defined MCC_TARGET_IS_HOST || defined __APPLE__
+#if defined MCC_TARGET_IS_HOST || MCC_HOST_DARWIN
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) { MCC_TRACE("enter\n");
 	const char *sdk = host_macos_sdk_root();
 	CString path;
