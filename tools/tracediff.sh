@@ -89,8 +89,8 @@ run() {
 run "$ENVA" "$@" >"$WORK/a" || true
 run "$ENVB" "$@" >"$WORK/b" || true
 
-na=$(wc -l <"$WORK/a")
-nb=$(wc -l <"$WORK/b")
+na=$(wc -l <"$WORK/a" | tr -d ' \t')
+nb=$(wc -l <"$WORK/b" | tr -d ' \t')
 echo "== trace sizes: A=$na  B=$nb  (scope: file=${TD_FILE:-<all>})"
 
 if cmp -s "$WORK/a" "$WORK/b"; then
