@@ -80,6 +80,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_CONVERT_FCS 524288u
 
+#define AST_FB_BINARY_RHS_GV 1048576u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -5858,6 +5860,10 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		}
 		ast_replay_value(a, ast_child(a, n, 0));
 		ast_replay_value(a, ast_child(a, n, 1));
+		if (ast_fbits(a, n) & AST_FB_BINARY_RHS_GV)
+			{ MCC_TRACE("br\n"); gv(USING_TWO_WORDS(vtop->type.t)
+															? MCC_RC_RET(vtop->type.t)
+															: MCC_RC_TYPE(vtop->type.t)); }
 		gen_op(bop);
 		if ((ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) &&
 				vtop->r == VT_CMP) { MCC_TRACE("br\n");

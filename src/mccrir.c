@@ -1863,6 +1863,15 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Binary);
 		ast_set_op(rir_arena, n, o->a0);
+		if (o->vs_n - ast_base_depth >= 2) {
+			const SValue *rs = &jrn_vs[o->vs_off + o->vs_n - 1];
+			const SValue *ls = &jrn_vs[o->vs_off + o->vs_n - 2];
+			if ((rs->r & VT_VALMASK) < VT_CONST && !(rs->r & VT_LVAL) &&
+					(ls->r & VT_LVAL) && (ls->r & VT_VALMASK) >= VT_CONST &&
+					b != AST_NONE && ast_kind(rir_arena, b) == AST_Load)
+				ast_set_fbits(rir_arena, n,
+											ast_fbits(rir_arena, n) | AST_FB_BINARY_RHS_GV);
+		}
 		ast_add_child(rir_arena, n, a);
 		ast_add_child(rir_arena, n, b);
 		rir_push(n);
