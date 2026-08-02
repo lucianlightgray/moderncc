@@ -3169,6 +3169,8 @@ if(MCC_ENABLE_CROSS)
         endif()
         if(_cos STREQUAL "WIN32")
             list(APPEND _cross_defs "MCC_CONFIG_MCCDIR=\"${_mccdir_install}/win32\"")
+        elseif(_cos STREQUAL "Darwin")
+            list(APPEND _cross_defs "MCC_CONFIG_CODESIGN=1")
         endif()
         mcc_add_cross_mcc(mcc-${_t} "mcc-${_t}"
                           mcc-${_t}-static "mcc-${_t}-static" _cross_defs)

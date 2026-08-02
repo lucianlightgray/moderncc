@@ -46,7 +46,7 @@ command -v llvm-ar >/dev/null 2>&1 || {
 [ -x "$MCC" ] || { echo "SKIP: no MACHO-target mcc at $MCC"; exit 77; }
 
 rm -rf "$WORK"
-mkdir -p "$WORK"
+mkdir -p "$WORK" "$WORK/ar" "$WORK/bare" "$WORK/un"
 
 python3 "$FIXTURE" "$WORK/fixture.o" --arch x86_64
 
@@ -78,26 +78,29 @@ llvm-nm --print-armap "$WORK/fix.a" 2>/dev/null | grep -q '_mcc_fixture_defined 
 
 rc=0
 
+# Every output is named `out` in a directory of its own: an ad-hoc signature's
+# identifier is the output basename, so linking to out.ar vs out.bare would
+# differ in the CodeDirectory alone and defeat the byte comparisons below.
 if ! "$MCC" -B"$BASE" -nostdlib "$WORK/usefx.o" "$WORK/fix.a" "$WORK/prov.o" \
-	-o "$WORK/out.ar" 2>"$WORK/err.ar"; then
+	-o "$WORK/ar/out" 2>"$WORK/err.ar"; then
 	echo "FAIL: linking against the Mach-O archive failed:"
 	sed 's/^/  /' "$WORK/err.ar" | head -3
 	exit 1
 fi
 
 "$MCC" -B"$BASE" -nostdlib "$WORK/usefx.o" "$WORK/fixture.o" "$WORK/prov.o" \
-	-o "$WORK/out.bare" 2>/dev/null
+	-o "$WORK/bare/out" 2>/dev/null
 
-if cmp -s "$WORK/out.bare" "$WORK/out.ar"; then
+if cmp -s "$WORK/bare/out" "$WORK/ar/out"; then
 	echo "PASS: archive link is byte-identical to the bare-object link"
 else
 	echo "FAIL: archive link differs from the bare-object link"
-	cmp "$WORK/out.bare" "$WORK/out.ar" | head -2 | sed 's/^/  /'
+	cmp "$WORK/bare/out" "$WORK/ar/out" | head -2 | sed 's/^/  /'
 	rc=1
 fi
 
 if command -v llvm-objdump >/dev/null 2>&1; then
-	if llvm-objdump --macho -d "$WORK/out.ar" 2>/dev/null |
+	if llvm-objdump --macho -d "$WORK/ar/out" 2>/dev/null |
 		grep -A2 '^_mcc_fixture_defined' | grep -q '0x2a'; then
 		echo "PASS: the pulled member's code (mov eax,42) is in the output"
 	else
@@ -109,8 +112,8 @@ fi
 
 # A la carte must be SELECTIVE: an archive nothing references contributes nothing.
 if "$MCC" -B"$BASE" -nostdlib "$WORK/usefx.o" "$WORK/fix.a" "$WORK/unused.a" \
-	"$WORK/prov.o" -o "$WORK/out.un" 2>/dev/null; then
-	if cmp -s "$WORK/out.ar" "$WORK/out.un"; then
+	"$WORK/prov.o" -o "$WORK/un/out" 2>/dev/null; then
+	if cmp -s "$WORK/ar/out" "$WORK/un/out"; then
 		echo "PASS: an unreferenced archive pulled nothing"
 	else
 		echo "FAIL: adding an archive with no referenced symbol changed the output;"
