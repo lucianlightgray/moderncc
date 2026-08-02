@@ -3407,6 +3407,17 @@ static int rir_emit_safe(void) {
 		case AST_Store:
 			if (nc != 2)
 				return rir_unsafe("Store", n, nc);
+			/* A store target has to be an lvalue, and a computed AST_Binary is not
+			   one. The backends disagree about what they do with it: x86_64's
+			   store() never checks, riscv64's asserts `sv->r & VT_LVAL` and arm64's
+			   falls through to assert(0), so the probe ABORTED rather than erring.
+			   The shape is gen_negf's memory sign-flip on the targets with no
+			   hardware FP negate -- spill, XOR 0x80 into the top byte, reload -- and
+			   the tree's own answer to it is to decline to RECORD the function (see
+			   the comment on gen_negf). Replay_IR's bar is byte-faithful replay, so
+			   it records the body and refuses only the emission. */
+			if (ast_kind(rir_arena, ast_child(rir_arena, n, 0)) == AST_Binary)
+				return rir_unsafe("Store-target", n, nc);
 			break;
 		case AST_Binary: {
 			/* A short-circuit Binary is n-ary: ast_replay_value walks every child,
