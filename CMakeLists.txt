@@ -2531,7 +2531,12 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
     else()
         message(FATAL_ERROR "mcc_build_mccrt: unknown cpu '${cpu}'")
     endif()
-    if(cpu STREQUAL "x86_64" OR cpu STREQUAL "arm64" OR cpu STREQUAL "riscv64")
+    # Only where the front end can emit the calls. Every *ti* helper reference
+    # lives in gen_opq under `#if MCC_HAVE_INT128`, which is x86_64-and-not-PE,
+    # so arm64 and riscv64 were shipping ~40 routines nothing could ever reach:
+    # 28710 B of an arm64 libmccrt.a and 30120 B of a riscv64 one. Restore this
+    # line the moment __int128 reaches either target.
+    if(cpu STREQUAL "x86_64")
         list(APPEND _objs int128)
     endif()
 
