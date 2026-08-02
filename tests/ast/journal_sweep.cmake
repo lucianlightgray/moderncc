@@ -289,10 +289,12 @@ if(_cpu STREQUAL "riscv64")
 endif()
 
 set(_jbase "${ROOT}/tests/ast/journal-baseline/${_bkey}.txt")
+set(_jdepth_path "${ROOT}/tests/ast/journal-baseline/${_bkey}.depth.txt")
 set(_jdepthfile "")
 if(NOT _hosthdrs)
     set(_jbase "${ROOT}/tests/ast/journal-baseline/${_bkey}-sysroot.txt")
-    set(_jdepthfile "-DJDEPTHFILE=${ROOT}/tests/ast/journal-baseline/${_bkey}-sysroot.depth.txt")
+    set(_jdepth_path "${ROOT}/tests/ast/journal-baseline/${_bkey}-sysroot.depth.txt")
+    set(_jdepthfile "-DJDEPTHFILE=${_jdepth_path}")
 endif()
 set(_vbase "${ROOT}/tests/ast/verify-baseline/${_bkey}.txt")
 if(NOT EXISTS "${_vbase}")
@@ -313,12 +315,19 @@ message(STATUS "journal-sweep[${KEY}/${MODE}]: baseline key=${_bkey} libc=${_lib
 
 set(_regen "")
 if(JREGEN)
+    # Each bank is written only from a source that is consistent for it. Cross
+    # and native honesty files are byte-identical, so a cross run banks breadth;
+    # the depth ceiling is native-sensitive, so only MODE=native unlocks it.
+    # This used to warn and bank both, which wrote a wrong ceiling on two of
+    # three targets and then ratcheted against it.
     if(MODE STREQUAL "cross")
-        message(WARNING "journal-sweep[${KEY}]: banking from a CROSS run. The honesty \
-file is valid this way, but the depth ceiling is native-sensitive (cross reads \
-native-1 on arm64/riscv64). Prefer MODE=native.")
+        message(STATUS "journal-sweep[${KEY}]: banking BREADTH from a cross run, which \
+is valid -- cross and native honesty files are byte-identical. The depth ceiling is \
+native-sensitive (cross reads native-1 on arm64/riscv64) and is NOT banked here.")
+        set(_regen "-DJREGEN=1")
+    else()
+        set(_regen "-DJREGEN=1;-DJDEPTHREGEN=1")
     endif()
-    set(_regen "-DJREGEN=1")
 endif()
 
 execute_process(
@@ -339,7 +348,16 @@ execute_process(
             -P "${ROOT}/tests/ast/verify_ratchet.cmake"
     RESULT_VARIABLE _rc)
 if(_rc EQUAL 77)
-    message(STATUS "journal-sweep[${KEY}/${MODE}]: SKIP from verify_ratchet (no journal hooks)")
+    # verify_ratchet exits 77 for more than one reason now, and attributing all
+    # of them to absent hooks hides the one that is actionable. Its own STATUS
+    # line above states which; name the two here rather than guess.
+    if(NOT EXISTS "${_jdepth_path}")
+        message(STATUS "journal-sweep[${KEY}/${MODE}]: SKIP -- breadth is banked and \
+checked, depth is not: no ceiling at ${_jdepth_path}, and depth may only be banked from \
+a MODE=native run. Half-ratcheted, so not reported as a pass")
+    else()
+        message(STATUS "journal-sweep[${KEY}/${MODE}]: SKIP from verify_ratchet (no journal hooks)")
+    endif()
     file(WRITE "${TMPROOT}/${KEY}-${MODE}.status" "SKIP\tbuild has no MCC_JOURNAL_HOOKS\n")
 elseif(NOT _rc EQUAL 0)
     file(WRITE "${TMPROOT}/${KEY}-${MODE}.status" "FAIL\trc=${_rc}\n")

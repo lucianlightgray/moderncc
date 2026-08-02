@@ -237,11 +237,25 @@ if(JOURNAL)
     else()
         string(REGEX REPLACE "\\.txt$" ".depth.txt" _jdepth "${JBASELINE}")
     endif()
-    if(JREGEN)
+    # The two banks are separated by the consistency of their source. Breadth --
+    # which constructs the model cannot express at all -- is a property of the
+    # code emitted FOR a target, so a cross-hosted compiler and a target-native
+    # one write byte-identical honesty files. Depth -- how far below the top two
+    # vstack slots the model can see -- is a property of the compiler process's
+    # own vstack while it runs, so a compiler hosted ON the target reads
+    # differently: cross is native-1 on arm64/riscv64 and exactly native on
+    # i386. A cross run may therefore bank breadth and must never bank depth.
+    # JREGEN alone banks breadth; JDEPTHREGEN, which journal_sweep.cmake sets
+    # only for MODE=native, is what unlocks the ceiling.
+    if(JREGEN AND JDEPTHREGEN)
         file(WRITE "${_jdepth}"
              "fix=${_jrn_fix}\ndeep=${_jrn_deep}\nrows=${_jrn_rows}\nops=${_jrn_ops}\n")
         message(STATUS "verify_ratchet: wrote depth ceiling fix=${_jrn_fix} deep=${_jrn_deep} "
                        "over ${_jrn_rows} journalled row(s) / ${_jrn_ops} op(s) to ${_jdepth}")
+    elseif(JREGEN)
+        message(STATUS "verify_ratchet: depth ceiling NOT banked — this run may bank "
+                       "breadth but not depth, which is native-sensitive. Re-run with "
+                       "MODE=native to bank ${_jdepth}")
     elseif(EXISTS "${_jdepth}")
         file(READ "${_jdepth}" _jd_raw)
         string(REPLACE "\r" "" _jd_raw "${_jd_raw}")
@@ -283,6 +297,11 @@ if(JOURNAL)
         else()
             message(STATUS "verify_ratchet: journal model depth matches ceiling — OK")
         endif()
+    else()
+        # Breadth is banked and depth is not. Checking half the model and
+        # reporting a pass is exactly the green-skip-is-not-a-green-pass failure:
+        # nothing downstream can tell this apart from a fully ratcheted key.
+        set(_depth_unbanked 1)
     endif()
     list(SORT _jrn_dirty)
     list(JOIN _jrn_dirty "\n" _jrn_current)
@@ -356,6 +375,13 @@ if(JOURNAL)
         message(FATAL_ERROR "verify_ratchet: journal honesty drifted from baseline (see above)")
     endif()
     message(STATUS "verify_ratchet: journal honesty matches baseline — OK")
+    if(_depth_unbanked)
+        message(STATUS "verify_ratchet: breadth checked, depth NOT checked — no "
+                       "ceiling at ${_jdepth}. Depth may only be banked from a "
+                       "MODE=native run, so this key is half-ratcheted and reports "
+                       "SKIP rather than a pass. A breadth regression still fails.")
+        cmake_language(EXIT 77)
+    endif()
     return()
 endif()
 
