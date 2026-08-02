@@ -33,6 +33,19 @@ def main():
     for kv in rest:
         k, _, v = kv.partition("=")
         env[k] = v
+    # A self-hosted mcc that faults (0xC0000005) must FAIL FAST with its crash
+    # code, not hang for the ctest timeout: Windows Error Reporting otherwise
+    # intercepts the crash and the child never returns. SEM_NOGPFAULTERRORBOX is
+    # inherited by children, mirroring the exec runner (instruction 32) and
+    # selfhost-smoke.py. Measured on the arm64-PE self-host (run 30731059619):
+    # selfhost-smoke failed in 3.65s with SEM set, selfhost-fixpoint (without it)
+    # still hit the 300s timeout.
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)
+        except Exception:
+            pass
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
     # On win32 the stage compiler is mcc.exe; PE-keyed behaviour (below) follows
