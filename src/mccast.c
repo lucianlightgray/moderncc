@@ -15896,6 +15896,7 @@ enum {
 	JOP_ATOMIC_XCHG,
 	JOP_ATOMIC_XADD,
 	JOP_ASAN_SHADOW,
+	JOP_ASAN_MARK_WRITE,
 	JOP_UBSAN_NULLPTR,
 	JOP_XFERRET,
 	JOP_X87POP,
@@ -16354,6 +16355,7 @@ JRN_W1(gen_atomic_xchg, JOP_ATOMIC_XCHG)
 JRN_W1(gen_atomic_xadd, JOP_ATOMIC_XADD)
 #endif
 JRN_W1(gen_asan_shadow_check, JOP_ASAN_SHADOW)
+JRN_W0(gen_asan_mark_write, JOP_ASAN_MARK_WRITE)
 JRN_W0(gen_ubsan_nullptr, JOP_UBSAN_NULLPTR)
 #ifdef MCC_JRN_HAVE_XFERRET
 JRN_W1(arch_transfer_ret_regs, JOP_XFERRET)
@@ -16627,6 +16629,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 	case JOP_ATOMIC_XADD: (gen_atomic_xadd)(o->a0); break;
 #endif
 	case JOP_ASAN_SHADOW: (gen_asan_shadow_check)(o->a0); break;
+	case JOP_ASAN_MARK_WRITE: (gen_asan_mark_write)(); break;
 	case JOP_UBSAN_NULLPTR: (gen_ubsan_nullptr)(); break;
 #ifdef MCC_JRN_HAVE_XFERRET
 	case JOP_XFERRET: (arch_transfer_ret_regs)(o->a0); break;

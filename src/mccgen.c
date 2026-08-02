@@ -135,6 +135,7 @@ void jrn_gen_atomic_xchg(int size);
 void jrn_gen_atomic_xadd(int size);
 #endif
 void jrn_gen_asan_shadow_check(int sz);
+void jrn_gen_asan_mark_write(void);
 void jrn_gen_ubsan_nullptr(void);
 int jrn_gjmp_append(int n, int t);
 #ifdef MCC_JRN_HAVE_XFERRET
@@ -228,6 +229,7 @@ void jrn_gen_va_arg(CType *t);
 #define gen_atomic_xadd(s) jrn_gen_atomic_xadd((s))
 #endif
 #define gen_asan_shadow_check(s) jrn_gen_asan_shadow_check((s))
+#define gen_asan_mark_write() jrn_gen_asan_mark_write()
 #define gen_ubsan_nullptr() jrn_gen_ubsan_nullptr()
 #define gjmp_append(n, t) jrn_gjmp_append((n), (t))
 #ifdef MCC_JRN_HAVE_XFERRET
@@ -11792,6 +11794,8 @@ static void expr_eq(void) { MCC_TRACE("enter\n");
 	if ((t = tok) == '=' || TOK_ASSIGN(t)) { MCC_TRACE("br\n");
 		was_assign = 1;
 		test_lvalue();
+		if (mcc_state->do_asan_shadow)
+			{ MCC_TRACE("br\n"); gen_asan_mark_write(); }
 		if (vtop->r & VT_NONLVAL)
 			{ MCC_TRACE("br\n"); mcc_error("expression is not assignable (function-call result)"); }
 		if (t != '=' && (vtop->type.t & VT_ATOMIC_BIT)) { MCC_TRACE("br\n");
@@ -15344,6 +15348,7 @@ static int decl(int l) {
 #undef gen_atomic_xchg
 #undef gen_atomic_xadd
 #undef gen_asan_shadow_check
+#undef gen_asan_mark_write
 #undef gen_ubsan_nullptr
 #undef gjmp_append
 #ifdef MCC_JRN_HAVE_XFERRET

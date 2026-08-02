@@ -124,6 +124,8 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
     long off = uc ? (long)uc->uc_mcontext.gregs[REG_RDX] : 0;
     uintptr_t addr = uc ? (uintptr_t)uc->uc_mcontext.gregs[REG_RCX] : 0;
 #endif
+    int atk = (off>>6)&1, atw = (off>>7)&1;
+    off &= 0x3f;
     wstr("=================================================================\n");
     wstr("==ERROR: AddressSanitizer: "); wstr(asan_class((int)sh));
     wstr(" (mcc native shadow)\n");
@@ -133,7 +135,8 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
         unsigned char *s = shadow((void*)addr);
         int sok = sh_mapped(s,-8,8);
         wstr("    at faulting address "); whex(addr);
-        wstr("    access size "); wdec((uintptr_t)(asz>0?asz:0)); wstr("\n");
+        if(atk){ wstr("    "); wstr(atw?"WRITE":"READ"); wstr(" of size "); wdec((uintptr_t)(asz>0?asz:0)); wstr("\n"); }
+        else { wstr("    access size "); wdec((uintptr_t)(asz>0?asz:0)); wstr("\n"); }
         { uintptr_t rb,re,ro; int rd;
           if(asan_locate(addr,&rb,&re,&ro,&rd)){
             wstr("    "); whexa(addr); wstr(" is located "); wdec(ro);

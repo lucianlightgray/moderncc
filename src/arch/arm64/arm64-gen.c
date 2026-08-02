@@ -2166,6 +2166,8 @@ static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) { MCC_TRACE("enter
    (x30 is a save-pair filler). All saved/restored so the probe is transparent to the
    pointer register, even when it IS x15/x16/x17. At the brk the runtime SIGTRAP handler
    reads x15=faulting address, w16=granule offset, w17=shadow byte (runtime/lib/mccasan.c). */
+void gen_asan_mark_write(void) { MCC_TRACE("enter\n"); }
+
 void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	uint32_t a;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)

@@ -1440,6 +1440,8 @@ void gen_trap(void) { MCC_TRACE("enter\n");
 	o(0xe7f000f0);
 }
 
+void gen_asan_mark_write(void) { MCC_TRACE("enter\n"); }
+
 void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	uint32_t p;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)

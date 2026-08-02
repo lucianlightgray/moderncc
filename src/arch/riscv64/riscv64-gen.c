@@ -1233,6 +1233,8 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	riscv64_ubsan_body(UBK_NULLPTR);
 }
 
+void gen_asan_mark_write(void) { MCC_TRACE("enter\n"); }
+
 void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	uint32_t a;
 	if (!mcc_state->do_asan_shadow || nocode_wanted)

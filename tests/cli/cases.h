@@ -2384,6 +2384,21 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -fasan-shadow {W}/asc.c -o {W}/asc && "
 		 "{W}/asc; echo rc=$?",
 		 "rc=0\n"},
+		{"asan_shadow_access_type_write", "cpu=x86_64,os=linux",
+		 "printf 'extern void*malloc(unsigned long);\\nint main(void){char*p=malloc(8);p[12]=1;return 0;}\\n' > {W}/atw.c && "
+		 "{MCC} -B{B} -fasan-shadow {W}/atw.c -o {W}/atw && "
+		 "{W}/atw 2>&1 | grep -oE '(READ|WRITE) of size [0-9]+' | head -1",
+		 "WRITE of size 1\n"},
+		{"asan_shadow_access_type_read", "cpu=x86_64,os=linux",
+		 "printf 'extern void*malloc(unsigned long);\\nint main(void){char*p=malloc(8);char*q=malloc(64);q[0]=p[12];return 0;}\\n' > {W}/atr.c && "
+		 "{MCC} -B{B} -fasan-shadow {W}/atr.c -o {W}/atr && "
+		 "{W}/atr 2>&1 | grep -oE '(READ|WRITE) of size [0-9]+' | head -1",
+		 "READ of size 1\n"},
+		{"asan_shadow_access_type_width", "cpu=x86_64,os=linux",
+		 "printf 'extern void*malloc(unsigned long);\\nint main(void){char*p=malloc(8);*(int*)(p+12)=5;return 0;}\\n' > {W}/atx.c && "
+		 "{MCC} -B{B} -fasan-shadow {W}/atx.c -o {W}/atx && "
+		 "{W}/atx 2>&1 | grep -oE '(READ|WRITE) of size [0-9]+' | head -1",
+		 "WRITE of size 4\n"},
 		{"asan_shadow_manual_link", "cpu=x86_64,os=linux",
 		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan_m.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/anm.c && "
