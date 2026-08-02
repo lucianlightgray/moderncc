@@ -4058,12 +4058,22 @@ if(MCC_BUILD_TESTS)
         # carries the sysroot: --sysroot ALONE silently shrinks the sweep to the
         # include-free files, so the explicit usr/include is load-bearing, and
         # arm's hard-float PCS is not the default.
-        foreach(_rp riscv64 arm arm64 i386)
-            set(_rpabi "")
-            if(_rp STREQUAL "arm")
-                set(_rpabi "-mfloat-abi hard ")
-            endif()
+        # A compile-only census needs no emulator and no loader, which is what
+        # makes the PE and Darwin triples reachable here too -- they stage
+        # against mcc's own bundled headers instead of a sysroot.
+        foreach(_rp riscv64 arm arm64 i386
+                    x86_64-win32 i386-win32 arm64-win32 arm-win32
+                    x86_64-osx arm64-osx)
             set(_rpsr "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_rp}-glibc")
+            if(_rp MATCHES "win32$")
+                set(_rpf "-B ${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32 -B ${CMAKE_CURRENT_SOURCE_DIR}/runtime -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+            elseif(_rp MATCHES "osx$")
+                set(_rpf "-B ${CMAKE_CURRENT_SOURCE_DIR}/runtime -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+            elseif(_rp STREQUAL "arm")
+                set(_rpf "-B ${MCC_CROSS_DIR} -mfloat-abi hard --sysroot=${_rpsr} -I${_rpsr}/usr/include")
+            else()
+                set(_rpf "-B ${MCC_CROSS_DIR} --sysroot=${_rpsr} -I${_rpsr}/usr/include")
+            endif()
             add_test(NAME ast/rir-parity-${_rp}
                 COMMAND "${CMAKE_COMMAND}"
                         "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
@@ -4071,7 +4081,7 @@ if(MCC_BUILD_TESTS)
                         "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
                         "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rp}"
                         "-DOPT=-O1"
-                        "-DMCCFLAGS=-B ${MCC_CROSS_DIR} ${_rpabi}--sysroot=${_rpsr} -I${_rpsr}/usr/include"
+                        "-DMCCFLAGS=${_rpf}"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
             set_tests_properties(ast/rir-parity-${_rp} PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
