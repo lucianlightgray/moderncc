@@ -1736,7 +1736,14 @@ ST_FUNC void gen_va_arg(CType *t) { MCC_TRACE("enter\n");
 		if (hfa == 1 || fsize == 16)
 			{ MCC_TRACE("br\n"); o(0x8b3ec000 | r1 | r1 << 5); }
 		else { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+			if (!rir_hook_slot_replay()) { MCC_TRACE("br\n");
+				loc = (loc - size) & -(uint32_t)align;
+				rir_hook_slot_record();
+			}
+#else
 			loc = (loc - size) & -(uint32_t)align;
+#endif
 			o(0x8b3ec000 | 30 | r1 << 5);
 			arm64_movimm(r1, loc);
 			o(0x8b0003a0 | r1 | r1 << 16);
