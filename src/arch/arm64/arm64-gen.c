@@ -424,6 +424,23 @@ static void arm64_strv(int sz_, int dst, int bas, uint64_t off) { MCC_TRACE("ent
 	}
 }
 
+/* MCC_ARM64_LOCAL_PCREL: address a file-local symbol with adrp+add instead of
+   the GOT sequence. ELF and Mach-O took the GOT path for EVERY symbol, so a
+   `static` -- non-preemptible and defined in this TU -- cost 3 instructions, a
+   GOT slot and a load where 2 instructions reach it directly. PE already does
+   this. The predicate is x86_64's: gen_modrm64 picks GOTPCREL over PC32 on
+   !(sym->type.t & VT_STATIC), and VT_STATIC is exactly the file-scope and
+   function-local statics. Default OFF: a wrong classification is a wrong
+   address, not a slow one. */
+static int arm64_local_pcrel_on(void) { MCC_TRACE("enter\n");
+	static int on = -1;
+	if (on < 0) { MCC_TRACE("br\n");
+		const char *e = getenv("MCC_ARM64_LOCAL_PCREL");
+		on = (e && e[0] && strcmp(e, "0")) ? 1 : 0;
+	}
+	return on;
+}
+
 static void arm64_sym(int r, Sym *sym, unsigned long addend) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_PE
 	greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
@@ -431,10 +448,17 @@ static void arm64_sym(int r, Sym *sym, unsigned long addend) { MCC_TRACE("enter\
 	greloca(cur_text_section, sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
 	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(r) | r);
 #else
+	if (sym && (sym->type.t & VT_STATIC) && arm64_local_pcrel_on()) { MCC_TRACE("br\n");
+		greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
+		o(ARM64_ADRP | r);
+		greloca(cur_text_section, sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
+		o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(r) | r);
+	} else { MCC_TRACE("br\n");
 	greloca(cur_text_section, sym, ind, R_AARCH64_ADR_GOT_PAGE, 0);
 	o(ARM64_ADRP | r);
 	greloca(cur_text_section, sym, ind, R_AARCH64_LD64_GOT_LO12_NC, 0);
 	o(ARM64_LDR_X | ARM64_RN(r) | r);
+	}
 #endif
 	if (addend) { MCC_TRACE("br\n");
 		if (addend & 0xffful)

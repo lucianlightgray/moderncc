@@ -299,6 +299,10 @@ static const gate_t GATES[] = {
 	{"DIVMAGIC", "MCC_AST_DIVMAGIC=1"},
 	{"ABS", "MCC_AST_ABS=1"},
 	{"REGPAIR", "MCC_AST_REGPAIR=1"},
+	/* Backend, not AST: adrp+add for a file-local symbol in place of the GOT
+	 * sequence. Inert off arm64, and a wrong local/global classification is a
+	 * wrong address, so it belongs in the differential set. */
+	{"ARM64_LOCAL_PCREL", "MCC_ARM64_LOCAL_PCREL=1"},
 	{"REASSOC", "MCC_AST_REASSOC=1"},
 	{"INTERCHANGE", "MCC_AST_INTERCHANGE=1"},
 	{"FUSION", "MCC_AST_FUSION=1"},
