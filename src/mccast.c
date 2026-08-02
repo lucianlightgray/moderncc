@@ -2138,6 +2138,7 @@ static int ast_member_arrow;
 static int ast_member_arrow_rir;
 static int ast_imag_cap;
 static int ast_bcplx_cap;
+static int ast_bcplx_low;
 
 static AstLocal ast_switch_node;
 static struct switch_t *ast_rp_switch;
@@ -2246,6 +2247,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_BITB 0x4001f
 #define AST_OP_ACASRMW 0x40020
 #define AST_OP_GGOTO 0x40021
+#define AST_OP_CPLXBUILD 0x40022
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -2258,6 +2260,7 @@ void ast_hook_cplx_end(void);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
+void ast_hook_builtin_complex_lower(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig,
@@ -4118,7 +4121,21 @@ void ast_hook_builtin_complex_begin(void) { MCC_TRACE("enter\n");
 	ast_in_op++;
 }
 
+/* The parser has both operands on the vstack here and lowers from this point
+   on: a frame temp, then a cast and a part store per half. Replay_IR brackets
+   that lowering as one node so both operands are bound -- and materialised --
+   before either store, which is what the parser's own order does and what two
+   sibling Stores each rematerialising their own operand cannot. */
+void ast_hook_builtin_complex_lower(void) { MCC_TRACE("enter\n");
+	ast_bcplx_low = 1;
+	rir_rbegin(RIR_R_CPLXB);
+}
+
 void ast_hook_builtin_complex_end(void) { MCC_TRACE("enter\n");
+	if (ast_bcplx_low) { MCC_TRACE("br\n");
+		ast_bcplx_low = 0;
+		rir_rend_to(RIR_R_CPLXB);
+	}
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_in_op > 0)
@@ -6592,6 +6609,26 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	case AST_Binary: {
 		int bop = ast_op(a, n);
+		if (bop == AST_OP_CPLXBUILD) { MCC_TRACE("br\n");
+			/* __builtin_complex's own lowering: both operands are evaluated and
+			   materialised BEFORE either half is stored, so the two halves are live
+			   at once. Two sibling Stores cannot express that -- each would
+			   rematerialise its own operand into the same register. */
+			CType ccplx, cbase;
+			SValue r;
+			ccplx.t = ast_type_t(a, n);
+			ccplx.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			cbase = ccplx.ref->next->type;
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			cplx_local(&ccplx, &r);
+			gen_cast(&cbase);
+			cplx_store_part(&r, 1);
+			gen_cast(&cbase);
+			cplx_store_part(&r, 0);
+			vpushv(&r);
+			break;
+		}
 		if (bop == AST_OP_ACASRMW) { MCC_TRACE("br\n");
 			uint32_t alow = (uint32_t)ast_ival(a, n);
 			ast_replay_value(a, ast_child(a, n, 0));

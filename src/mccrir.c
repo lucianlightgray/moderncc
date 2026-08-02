@@ -143,7 +143,7 @@ static const char *rir_region_name(int k) {
 			"none",	 "if",		"then",		"else", "while", "do",
 			"for",	 "switch", "ternary", "landor", "call", "cond",
 			"body",	 "incr", "synth", "inc", "member", "tarm", "lsup",
-			"lopnd", "vstore", "vla", "cplx", "cvt", "acas"};
+			"lopnd", "vstore", "vla", "cplx", "cvt", "acas", "cplxb"};
 	return k >= 0 && k < RIR_R_COUNT ? n[k] : "?";
 }
 
@@ -614,6 +614,8 @@ static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
 static int rir_cplx_depth;
+static int rir_cplxb_depth;
+static int rir_cplxb_on;
 static int rir_acas_depth;
 /* Set while a vstore region that models its own copy is open, so the whole
    interior is skipped the way RIR_R_CPLX's is. Suppressing only the OPS is not
@@ -3414,6 +3416,13 @@ static int rir_emit_safe(void) {
 				if (nc != (bop == AST_OP_ACMPXCHG ? 3u : 2u))
 					return rir_unsafe("Binary-atomic", n, nc);
 #endif
+			} else if (bop == AST_OP_CPLXBUILD) {
+				/* ast_replay_value reads the base type through ref->next, so a node
+				   whose type is not a complex struct would walk a null chain. */
+				Sym *cr = (Sym *)(uintptr_t)ast_type_ref(rir_arena, n);
+				if (nc != 2 || (ast_type_t(rir_arena, n) & VT_BTYPE) != VT_STRUCT ||
+						!cr || !cr->a.is_complex || !cr->next)
+					return rir_unsafe("Binary-cplxbuild", n, nc);
 			} else if (nc != 2) {
 				return rir_unsafe("Binary", n, nc);
 			}
@@ -3617,6 +3626,8 @@ static void rir_to_arena(void) {
 	rir_castgv_top = AST_NONE;
 	rir_arena_mismatch = 0;
 	rir_cplx_depth = 0;
+	rir_cplxb_depth = 0;
+	rir_cplxb_on = 0;
 	rir_acas_depth = 0;
 	rir_vsup_depth = 0;
 	rir_vsup_nest = 0;
@@ -3725,6 +3736,56 @@ static void rir_to_arena(void) {
 		   these markers are load-bearing. Only the NOEVAL bits mean "parsed but
 		   not evaluated". */
 		if (ro->tag != RIR_T_OP && (ro->rnocode & RIR_NOEVAL_MASK))
+			continue;
+		/* __builtin_complex evaluates both operands, then allocates a frame temp
+		   and casts+stores each half, so both halves are live at once and the
+		   parser's register choice reflects that. Two sibling Stores cannot say
+		   it -- each rematerialises its own operand into the same register, and
+		   `CMPLX(inf, inf)` came out as the same instructions in the other order.
+		   Both operands are already on the shadow stack when this region opens,
+		   so the lowering is skipped wholesale and rebuilt as one node the
+		   emitter re-runs. Admitted only where the operands really are there:
+		   inside a suppressing region the ops that would have pushed them never
+		   ran, and 2 of complex_annexg.c's 26 sites are exactly that. */
+		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
+				ro->rkind == RIR_R_CPLXB) {
+			if (ro->tag == RIR_T_RBEGIN) {
+				if (!rir_cplxb_depth) {
+					/* Reconcile first, then decide. The region's own snapshot is the
+					   only boundary the two operands ever get: rir_push_typed defers a
+					   node's type to the NEXT op's snapshot and that op is inside the
+					   lowering this region skips, so `CMPLX(inf, -inf)` handed gen_cast
+					   an untyped AST_OP_FNEG -- VT_VOID. It is also the only thing that
+					   supplies a constant-folded operand: `CMPLX(inf, 0)` emits no op
+					   for `(double)0` at all, so the shadow stack is one short and the
+					   refill is what puts it there. */
+					if (!rir_cond_depth && !rir_inc_depth && !rir_member_depth &&
+							!rir_retexpr_pending && !rir_vstruct_depth && !rir_vbf_depth &&
+							!rir_cx_depth && !rir_vla_depth && !rir_cvt_depth)
+						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+					rir_cplxb_on =
+							(rir_shn >= 2 && rir_shn == ro->mvs_n - ast_base_depth);
+				}
+				rir_cplxb_depth++;
+			} else if (rir_cplxb_depth && !--rir_cplxb_depth && rir_cplxb_on) {
+				AstLocal ci = rir_pop(), cr = rir_pop(), cn;
+				if (cr == AST_NONE || ci == AST_NONE ||
+						ro->mvs_n - ast_base_depth <= 0) {
+					rir_arena_mismatch++;
+				} else {
+					const SValue *cv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+					cn = ast_node(rir_arena, AST_Binary);
+					ast_set_op(rir_arena, cn, AST_OP_CPLXBUILD);
+					ast_add_child(rir_arena, cn, cr);
+					ast_add_child(rir_arena, cn, ci);
+					ast_set_type(rir_arena, cn, cv->type.t,
+											 (uint64_t)(uintptr_t)cv->type.ref);
+					rir_push(cn);
+				}
+			}
+			continue;
+		}
+		if (rir_cplxb_depth && rir_cplxb_on)
 			continue;
 		if (ro->tag != RIR_T_MARK || ro->rkind != RIR_M_CASTGV)
 			rir_castgv_apply();

@@ -10360,6 +10360,9 @@ tok_next:
 			vpush_ref(&ccplx, p.sec, offset, csz);
 			vtop->r |= VT_LVAL;
 		} else { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+			ast_hook_builtin_complex_lower();
+#endif
 			cplx_local(&ccplx, &r);
 			gen_cast(&cbase);
 			cplx_store_part(&r, 1);

@@ -283,6 +283,7 @@ void ast_hook_acas_end(int val);
 void ast_hook_imag_begin(void);
 void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
+void ast_hook_builtin_complex_lower(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(struct CType *type, int addr, int new_save,
