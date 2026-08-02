@@ -975,6 +975,7 @@ Known Phase A imprecision, to close in B: the `IF` region opens at `ast_hook_if_
   | arm64-win32 mingw | windows-11-arm, experimental | bakes engine; smoke self-skips | selfhost hang + smoke items above |
   | i686-win32 mingw | windows-latest, experimental | smoke skips (i386 engine item) | promotion item below |
   | arm-win32 / arm-wince / osx-cross | object-only | — | no runner/loader exists |
+- 2026-08-01 — `stage1-gate` grew two BUILD-ONLY hosts (`gate=2` in `HOSTS`, `tools/ci.c`): `linux-x86_64-clang` and `windows-x86_64-mingw` now build+publish per push, so a host-toolchain break (clang host axis, winlibs superbuild) reds the push instead of waiting for the nightly. Build-only means no per-push stage2 fan-out hangs off them — their self-hosts stay in `stage2-nightly` — and `ci plan --job stage2/stage2-gate/stage3-emulate` plus `ci local` key on `gate == 1`, verified byte-identical before/after the ledger edit.
 - Pick one naming scheme (`<area>-<triple>-<variant>` suggested) and apply it across workflow job ids, CMake targets and ctest cell names, so a failure name identifies the cell without a lookup.
 - Add the `-O` level as a matrix axis for the remaining cross-arch cells. `-O1` is a subset of `-O2`; `-O4` runs the out-of-process superopt at ~20 s per compile and needs its own budget.
 - Audit every `add_test` for whether it could run on more triples than it does, and whether it bundles independent assertions that would give more coverage split apart. The per-golden `exec/<name>` split is the model.

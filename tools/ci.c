@@ -516,8 +516,12 @@ static unsigned ci_host_osbit(void) {
 
 /* axis 1 -- stage-1 host producers. Each row builds a plain mcc (+ its cross
  * compilers) with the named host toolchain via `preset`, then publishes it.
- * `gate` marks the one representative host per OS family that the per-push CI
- * builds; the rest fan out nightly. `runner`/`msvcarch` drive the plan JSON. */
+ * `gate` is a level: 1 marks the representative host per OS family that the
+ * per-push CI builds AND fans stage2 cells out from (and that `stage3-emulate`
+ * / `ci local` self-host on); 2 is a per-push stage1 BUILD-ONLY host -- the
+ * gate builds and publishes it so a host-toolchain break reds the push, but no
+ * per-push stage2 cells hang off it (its self-host runs nightly). 0 is
+ * nightly-only. `runner`/`msvcarch` drive the plan JSON. */
 static const struct {
 	const char *name, *arch, *hostcc, *libc, *preset, *runner, *msvcarch;
 	unsigned osbit;
@@ -527,8 +531,12 @@ static const struct {
 				"ubuntu-latest", "", OS_LINUX, 1},
 		{"linux-arm64-gcc", "arm64", "gcc", "glibc", "linux-gcc",
 				"ubuntu-24.04-arm", "", OS_LINUX, 0},
+		/* gate=2: the clang-built mcc is a per-push stage1 build (the clang
+		 * host axis breaks differently from gcc -- -Wmost, blocks-vs-nested-fn,
+		 * integer-overflow UB diagnostics); its stage2 self-host stays nightly
+		 * so the Linux feature fan-out is not doubled per push. */
 		{"linux-x86_64-clang", "x86_64", "clang", "glibc", "linux-clang",
-				"ubuntu-latest", "", OS_LINUX, 0},
+				"ubuntu-latest", "", OS_LINUX, 2},
 		{"linux-x86_64-musl", "x86_64", "gcc", "musl", "linux-gcc-musl",
 				"ubuntu-latest", "", OS_LINUX, 0},
 		{"macos-arm64-clang", "arm64", "clang", "", "macos",
@@ -546,8 +554,13 @@ static const struct {
 				"windows-latest", "x64", OS_WIN, 1},
 		{"windows-arm64-msvc", "arm64", "msvc", "", "msvc",
 				"windows-11-arm", "arm64", OS_WIN, 0},
+		/* gate=2: the mingw-built mcc is a per-push stage1 build -- the win32
+		 * parity work (recorder-fidelity baselines, the i386 CRT shim) is
+		 * developed against winlibs gcc, so a break in the mingw superbuild
+		 * should red the push, not wait for the nightly. Build-only: the
+		 * Windows stage2 gate cells stay on the msvc stage1 mcc. */
 		{"windows-x86_64-mingw", "x86_64", "mingw", "", "mingw",
-				"windows-latest", "x64", OS_WIN, 0},
+				"windows-latest", "x64", OS_WIN, 2},
 		{0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
 /* axis 2 -- stage-2 feature matrix, built by the stage-1 mcc itself. `dflags`
@@ -884,7 +897,7 @@ static int do_local_stage2(void) {
 	char mccpath[4200], stagedir[256];
 
 	for (h = 0; HOSTS[h].name; h++)
-		if (HOSTS[h].gate && HOSTS[h].osbit == os)
+		if (HOSTS[h].gate == 1 && HOSTS[h].osbit == os)
 			break;
 	if (!HOSTS[h].name) {
 		fprintf(stderr, "ci local (stage2): no gate host for this OS\n");
@@ -1715,7 +1728,8 @@ static int do_plan(int argc, char **argv) {
 		int allhosts = !strcmp(job, "stage2-nightly");
 		int f;
 		for (i = 0; HOSTS[i].name; i++) {
-			if (!allhosts && !HOSTS[i].gate)
+			/* gate=2 hosts are stage1 build-only: no per-push stage2 fan-out. */
+			if (!allhosts && HOSTS[i].gate != 1)
 				continue;
 			for (f = 0; FEATURES[f].name; f++) {
 				/* A cell whose host OS is not in the feature's self_os set
@@ -1776,7 +1790,7 @@ static int do_plan(int argc, char **argv) {
 		 * emulators are host-cc-independent -- so take the first gate host per OS. */
 		unsigned emu_os = 0;
 		for (i = 0; HOSTS[i].name; i++) {
-			if (!HOSTS[i].gate || (emu_os & HOSTS[i].osbit))
+			if (HOSTS[i].gate != 1 || (emu_os & HOSTS[i].osbit))
 				continue;
 			emu_os |= HOSTS[i].osbit;
 			plan_cell(&first,

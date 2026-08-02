@@ -18,8 +18,12 @@ permissions:
 
 # The gating CI is a 3-stage hierarchy, fanned out one job per cell:
 #
-#   stage1-<host>  builds a plain mcc with the host toolchain (gcc/clang/msvc)
-#                  and uploads it (bin + runtime) as `stage1-<host>`.
+#   stage1-<host>  builds a plain mcc with the host toolchain
+#                  (gcc/clang/msvc/mingw) and uploads it (bin + runtime) as
+#                  `stage1-<host>`. Two hosts are build-only (gate=2 in the
+#                  tools/ci.c ledger): linux-x86_64-clang and
+#                  windows-x86_64-mingw publish per push so a host-toolchain
+#                  break reds the push, but their stage2 self-hosts run nightly.
 #   stage2 / <host> / <feature>
 #                  downloads that mcc and rebuilds mcc WITH mcc
 #                  (CMAKE_C_COMPILER=<stage1 mcc>, MCC_TOOLCHAIN_PROFILE=mcc) --
@@ -73,7 +77,9 @@ jobs:
     env:
       # clang hosts pin CC directly; the macOS gcc host resolves a Homebrew
       # gcc-N below; the Linux gcc host leaves CC unset (ubuntu `cc` is gcc);
-      # msvc picks `cl` from the dev shell.
+      # msvc picks `cl` from the dev shell; mingw leaves CC unset too -- its
+      # preset sets MCC_TOOLCHAIN_PROFILE=mingw and the superbuild fetches
+      # winlibs gcc itself.
       CC: ${{ matrix.hostcc == 'clang' && 'clang' || '' }}
     defaults:
       run:
