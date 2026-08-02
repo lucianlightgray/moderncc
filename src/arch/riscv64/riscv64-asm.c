@@ -60,6 +60,7 @@ static void asm_nullary_opcode(MCCState *s1, int token);
 ST_FUNC void asm_opcode(MCCState *s1, int token);
 static int asm_parse_csrvar(int t);
 ST_FUNC int asm_parse_regvar(int t);
+static int rv_asm_regenc(int t);
 static void asm_ternary_opcode(MCCState *s1, int token);
 static void asm_unary_opcode(MCCState *s1, int token);
 static void asm_branch_opcode(MCCState *s1, int token, int argc);
@@ -178,7 +179,7 @@ static void parse_operand(MCCState *s1, Operand *op) { MCC_TRACE("enter\n");
 		return;
 	}
 
-	if ((reg = asm_parse_regvar(tok)) != -1) { MCC_TRACE("br\n");
+	if ((reg = rv_asm_regenc(tok)) != -1) { MCC_TRACE("br\n");
 		next();
 		op->type = OP_REG;
 		op->reg = (uint8_t)reg;
@@ -285,7 +286,7 @@ static void asm_jal_opcode(MCCState *s1, int token) { MCC_TRACE("enter\n");
 
 	if (token == TOK_ASM_j) { MCC_TRACE("br\n");
 		ops[0] = zero;
-	} else if (asm_parse_regvar(tok) == -1) { MCC_TRACE("br\n");
+	} else if (rv_asm_regenc(tok) == -1) { MCC_TRACE("br\n");
 		ops[0] = ra;
 	} else { MCC_TRACE("br\n");
 		parse_operand(s1, &ops[0]);
@@ -2418,14 +2419,16 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 			!strcmp(str, "flags"))
 		{ MCC_TRACE("br\n"); return; }
 	ts = tok_alloc(str, strlen(str));
-	reg = asm_parse_regvar(ts->tok);
+	reg = rv_asm_regenc(ts->tok);
 	if (reg == -1) { MCC_TRACE("br\n");
 		mcc_error("invalid clobber register '%s'", str);
 	}
 	clobber_regs[reg] = 1;
 }
 
-ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
+/* Machine register NUMBER: 0..31 integer, 32..63 float, as the instruction
+   encoders and the MCC_NB_ASM_REGS-wide clobber map want it. */
+static int rv_asm_regenc(int t) { MCC_TRACE("enter\n");
 	if (t >= TOK_ASM_pc || t < TOK_ASM_x0)
 		{ MCC_TRACE("br\n"); return -1; }
 
@@ -2439,6 +2442,22 @@ ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return t - TOK_ASM_zero; }
 
 	return t - TOK_ASM_ft0 + 32;
+}
+
+/* Codegen register INDEX, which is what a `register x asm("...")` binding
+   stuffs into VT_VALMASK -- a different numbering from the encoding above and
+   a much smaller set: only a0..a7 and fa0..fa7 are allocatable here. Returning
+   the encoding instead made `register long x asm("x8")` come out as index 8,
+   which is fa0, and the first freg() on it tripped its own assert. Anything
+   outside the allocatable set reads as "no register asked for". */
+ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
+	int e = rv_asm_regenc(t);
+	if (e < 0)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (e >= 32)
+		{ MCC_TRACE("br\n"); e -= 32;
+			return (e >= 10 && e <= 17) ? MCC_TREG_F(e - 10) : -1; }
+	return (e >= 10 && e <= 17) ? MCC_TREG_R(e - 10) : -1;
 }
 
 static void asm_emit_ca(int token, uint16_t opcode, const Operand *rd, const Operand *rs2) { MCC_TRACE("enter\n");

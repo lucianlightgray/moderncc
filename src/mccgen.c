@@ -14179,7 +14179,11 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #if MCC_CONFIG_ASM
 				if (ad->asm_label) { MCC_TRACE("br\n");
 					int reg = asm_parse_regvar(ad->asm_label);
-					if (reg >= 0)
+					/* This index goes straight into VT_VALMASK, so it has to be
+					   a codegen register, not a machine encoding. Out of range
+					   reads as no binding rather than an allocator index that
+					   names nothing. */
+					if (reg >= 0 && reg < MCC_NB_REGS)
 						{ MCC_TRACE("br\n"); r = (r & ~VT_VALMASK) | reg; }
 				}
 #endif
