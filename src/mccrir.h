@@ -76,6 +76,7 @@ enum {
 	RIR_M_CLTHUNK,
 	RIR_M_CLJMP,
 	RIR_M_ADDRLATE,
+	RIR_M_ASMOPS,
 	RIR_M_COUNT
 };
 
@@ -170,6 +171,7 @@ void rir_hook_cmp_invert(void);
 void rir_hook_cast_gv(void);
 void rir_hook_cleanup_goto(void *pcl);
 void rir_hook_cleanup_thunk(void *pcl, int v, int end);
+void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 
 #else
 
@@ -224,6 +226,7 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define RIR_M_CLTHUNK 0
 #define RIR_M_CLJMP 0
 #define RIR_M_ADDRLATE 0
+#define RIR_M_ASMOPS 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
@@ -322,6 +325,7 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define rir_hook_cast_gv() ((void)0)
 #define rir_hook_cleanup_goto(p) ((void)0)
 #define rir_hook_cleanup_thunk(p, v, e) ((void)0)
+#define rir_hook_asm_operands(n, m) ((void)0)
 
 #endif
 

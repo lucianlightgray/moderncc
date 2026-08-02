@@ -1871,6 +1871,9 @@ struct ast_rp_label {
 static struct ast_rp_label *ast_rp_labels;
 static int ast_rp_nlabel, ast_rp_caplabel;
 static int ast_rp_label_floor;
+/* How many asm operands AST_OP_ASMOPS left live for the ASMGEN pair to pop.
+   Non-zero only between the two, and asm statements do not nest. */
+static int ast_rp_asmops;
 
 void ast_hook_stmt(int t);
 void ast_hook_return(int has_val);
@@ -1982,6 +1985,7 @@ static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
 #define AST_OP_CPLXBUILD 0x40022
 #define AST_OP_VAARG 0x40023
 #define AST_OP_VASTART 0x40024
+#define AST_OP_ASMOPS 0x40025
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -6465,6 +6469,25 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				break;
 			}
 #if MCC_CONFIG_ASM
+			/* The asm operand expressions are evaluated by the parser BEFORE the
+			   two asm_gen_code calls, and the code that evaluation emits -- the
+			   pointer gv, the deref, then save_regs(0)'s spills -- is not part of
+			   any ASMGEN window.  ASMGEN replays off the parser's own vstack
+			   snapshot, so its bytes come out right whatever the vstack holds;
+			   these do not.  Replay the operands, spill exactly as the parser
+			   did, and leave them live for the ASMGEN pair to consume. */
+			if (ast_op(a, s) == AST_OP_ASMOPS) { MCC_TRACE("br\n");
+				uint32_t k, nc = ast_nchild(a, s);
+				uint64_t gvmask = ast_ival(a, s);
+				for (k = 0; k < nc; k++) { MCC_TRACE("br\n");
+					ast_replay_value(a, ast_child(a, s, k));
+					if (k < 64 && (gvmask >> k) & 1)
+						{ MCC_TRACE("br\n"); gv(MCC_RC_INT); }
+				}
+				save_regs(0);
+				ast_rp_asmops = (int)nc;
+				break;
+			}
 			if (ast_op(a, s) == AST_OP_ASMGEN) { MCC_TRACE("br\n");
 				ASMOperand ops[MAX_ASM_OPERANDS];
 				uint8_t cr[MCC_NB_ASM_REGS];
@@ -6491,6 +6514,14 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 										 (int)(ast_sym(a, s) >> 32));
 				memcpy(vstack, sv_stack, sizeof sv_stack);
 				vtop = sv_top;
+				/* asm_instr pops every operand after the output half; do the same,
+				   but only for the ones AST_OP_ASMOPS actually pushed. */
+				if ((int)(ast_sym(a, s) & 0xffffffff) && ast_rp_asmops > 0) {
+					MCC_TRACE("br\n");
+					while (ast_rp_asmops-- > 0)
+						{ MCC_TRACE("br\n"); vpop(); }
+					ast_rp_asmops = 0;
+				}
 				break;
 			}
 			if (ast_op(a, s) == AST_OP_ASM) { MCC_TRACE("br\n");

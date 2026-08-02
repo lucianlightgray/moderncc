@@ -1404,7 +1404,7 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 }
 
 static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
-															 int is_output) { MCC_TRACE("enter\n");
+															 int is_output, uint64_t *gvmask) { MCC_TRACE("enter\n");
 	ASMOperand *op;
 	int nb_operands;
 	char *astr;
@@ -1443,6 +1443,10 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 #endif
 				) { MCC_TRACE("br\n");
 					gv(MCC_RC_INT);
+					/* Replay cannot infer this rvalue load: the operand node is an
+					   lvalue either way and only the constraint decides. */
+					if (gvmask && nb_operands - 1 < 64)
+						*gvmask |= (uint64_t)1 << (nb_operands - 1);
 				}
 			}
 			op->vt = vtop;
@@ -1462,6 +1466,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 
 	ASMOperand operands[MAX_ASM_OPERANDS];
 	int nb_outputs, nb_operands, must_subst, out_reg, nb_labels;
+	uint64_t asm_gvmask;
 	uint8_t clobber_regs[MCC_NB_ASM_REGS];
 	Section *sec;
 
@@ -1476,17 +1481,18 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	nb_operands = 0;
 	nb_outputs = 0;
 	nb_labels = 0;
+	asm_gvmask = 0;
 	must_subst = 0;
 	memset(clobber_regs, 0, sizeof(clobber_regs));
 	if (tok == ':') { MCC_TRACE("br\n");
 		next();
 		must_subst = 1;
-		parse_asm_operands(operands, &nb_operands, 1);
+		parse_asm_operands(operands, &nb_operands, 1, &asm_gvmask);
 		nb_outputs = nb_operands;
 		if (tok == ':') { MCC_TRACE("br\n");
 			next();
 			if (tok != ')') { MCC_TRACE("br\n");
-				parse_asm_operands(operands, &nb_operands, 0);
+				parse_asm_operands(operands, &nb_operands, 0, &asm_gvmask);
 				if (tok == ':') { MCC_TRACE("br\n");
 					next();
 					for (;;) { MCC_TRACE("br\n");
@@ -1544,6 +1550,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	if (tok != ';')
 		{ MCC_TRACE("br\n"); expect("';'"); }
 
+	rir_hook_asm_operands(nb_operands, asm_gvmask);
 	save_regs(0);
 
 	asm_compute_constraints(operands, nb_operands, nb_outputs,

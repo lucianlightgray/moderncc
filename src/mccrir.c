@@ -622,6 +622,10 @@ void rir_hook_vla_restore(int loc) { rir_mark_val(RIR_M_VLARESTORE, loc); }
 
 void rir_hook_store_addr_late(void) { rir_mark_pt(RIR_M_ADDRLATE); }
 
+void rir_hook_asm_operands(int nb_operands, uint64_t gvmask) {
+	rir_mark_val2(RIR_M_ASMOPS, nb_operands, (long long)gvmask);
+}
+
 void rir_hook_inc(int post, int c) {
 	rir_rbegin_val(RIR_R_INC, (c << 1) | (post ? 1 : 0));
 }
@@ -3027,6 +3031,42 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_ADDRLATE:
 		rir_addr_late = 1;
 		break;
+#if MCC_CONFIG_ASM
+	case RIR_M_ASMOPS: {
+		/* asm_instr has parsed every operand and is about to save_regs(0); the
+		   top nb_operands shadow entries ARE those operands.  Taking them here,
+		   before the spills, both gives replay something to emit for them and
+		   stops the spill model below from consuming them one at a time -- the
+		   ASMOPS replay calls save_regs itself. */
+		int nb = (int)ro->rv1, q;
+		/* The shadow stack is only synced at ops that carry a vstack snapshot,
+		   and the last operand's push may still be outstanding here -- reconcile
+		   against the mark's own snapshot before counting. */
+		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+		if (nb <= 0 || nb > rir_shn)
+			break;
+		/* An operand the shadow stack could not reconstruct leaves the body no
+		   worse off under the old spill model than it would be under a partial
+		   ASMOPS, so decline rather than mismatch the whole body. */
+		for (q = rir_shn - nb; q < rir_shn; q++) {
+			a = rir_sh[q];
+			if (a == AST_NONE || ast_parent(rir_arena, a) != AST_NONE)
+				return;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, AST_OP_ASMOPS);
+		ast_set_ival(rir_arena, n, (uint64_t)ro->rv2);
+		for (q = rir_shn - nb; q < rir_shn; q++)
+			ast_add_child(rir_arena, n, rir_sh[q]);
+		/* Leave the entries in place: the parser's vstack still holds them
+		   through save_regs and both asm_gen_code halves, and a shorter shadow
+		   stack reads as a depth mismatch at the next op.  Parenting them is
+		   what takes them out of play -- every consumer declines a node that
+		   already has a parent, the spill model included. */
+		rir_stmt(n);
+		break;
+	}
+#endif
 	default:
 		break;
 	}
@@ -3650,6 +3690,9 @@ static int rir_emit_safe(void) {
 					 ast_op(rir_arena, n) == AST_OP_ASM) &&
 					nc == 0)
 				break;
+			/* ASMOPS carries one child per asm operand, however many that is. */
+			if (ast_op(rir_arena, n) == AST_OP_ASMOPS)
+				break;
 			if (nc != 1)
 				return rir_unsafe("Unary", n, nc);
 			if (ast_op(rir_arena, n) == AST_OP_ADDR &&
@@ -3865,11 +3908,13 @@ static void rir_to_arena(void) {
 		{
 			const char *e = getenv("RIRDBG");
 			if (e && funcname && !strcmp(e, funcname))
-				fprintf(stderr, "[ent] %3d %-6s %-10s shn=%d lorn=%d ternn=%d cond=%d\n", i,
+				fprintf(stderr, "[ent] %3d %-6s %-10s nc=%x shn=%d lorn=%d ternn=%d cond=%d\n", i,
 								ro->tag == RIR_T_OP ? "OP" : ro->tag == RIR_T_MARK ? "MARK"
 								: ro->tag == RIR_T_RBEGIN ? "RBEGIN" : "REND",
 								ro->tag == RIR_T_OP ? jrn_op_name(ro->p.kind)
 																		: rir_region_name(ro->rkind),
+								ro->tag == RIR_T_OP ? (unsigned)ro->p.nocode
+																		: (unsigned)ro->rnocode,
 								rir_shn, rir_lorn, rir_ternn, rir_cond_depth);
 		}
 #endif
@@ -4407,8 +4452,11 @@ void rir_verify(void) {
 	}
 
 #if MCC_REPLAY_IR_C2
-	if (rir_env >= 5 && faithful && body_len > 0 && rir_arena_mismatch)
+	if (rir_env >= 5 && faithful && body_len > 0 && rir_arena_mismatch) {
 		rir_tot_c2_skip++;
+		if (getenv("RIRSKIP"))
+			fprintf(stderr, "[rir-c2skip] %s mism=%d\n", funcname, rir_arena_mismatch);
+	}
 	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) {
 		rir_tot_c2_try++;
 		ind = ast_body_ind_sv;
