@@ -1063,6 +1063,8 @@ static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) 
 								sym->st_shndx, s1->sections[sym->st_shndx]->name, name); }
 	} else
 		{ MCC_TRACE("br\n"); n.n_sect = mo->elfsectomacho[sym->st_shndx]; }
+	if (s1->output_type != MCC_OUTPUT_OBJ && !strcmp(name, "___dso_handle"))
+		{ MCC_TRACE("br\n"); n.n_type = N_ABS, n.n_sect = 0; }
 	if (ELFW(ST_BIND)(sym->st_info) == STB_GLOBAL)
 		{ MCC_TRACE("br\n"); n.n_type |= N_EXT; }
 	else if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
