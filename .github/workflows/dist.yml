@@ -6,7 +6,9 @@ name: Dist
 # not gate and its Windows cells were the slowest jobs, so it moved to a
 # nightly cadence with bench/matrix. The cell matrices come from the preset
 # ledger via `ci plan --job dist-unix` / `--job dist-windows`, and every flow
-# step is a `ci` tool verb.
+# step is a `ci` tool verb. Every cell also runs a self-host pass (the staged
+# mcc rebuilds mcc via the stage2 `release` feature) and ships the result as
+# the mcc-selfhost-<ver>-<plat> bundle next to the host-built ones.
 
 on:
   schedule:
@@ -68,7 +70,7 @@ jobs:
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
       - uses: ./.github/actions/ci
-      - name: dist (configure + build + install + strip + package; bench on release)
+      - name: dist (configure + build + install + strip + self-host + package; bench on release)
         # `ci dist` runs the whole flow (the macOS local-symbol strip is
         # folded in); Rosetta's cross flags pass through after `--`. The
         # compile-speed bench is skipped (--no-bench) unless inputs.bench.
@@ -124,7 +126,7 @@ jobs:
           ver="${ver#v}"
           echo "VER=$ver" >> "$GITHUB_ENV"
           mkdir -p dist fuse/x fuse/y
-          for kind in mcc libmcc mcc-cross; do
+          for kind in mcc libmcc mcc-cross mcc-selfhost; do
             a="fuse/arm64/$kind-$ver-macos-arm64-clang.tar.xz"
             b="fuse/x86_64/$kind-$ver-macos-x86_64-clang.tar.xz"
             if [ ! -f "$a" ] || [ ! -f "$b" ]; then
@@ -176,6 +178,11 @@ jobs:
     needs: plan
     name: ${{ matrix.plat }}
     runs-on: ${{ matrix.runner }}
+    # windows-arm64-mingw is experimental (continue-on-error) like its
+    # PLAN_MINGW nightly sibling: the arm64-PE selfhost hang is a live
+    # discovery item, and the timeout keeps a hang from squatting the runner.
+    timeout-minutes: 180
+    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -188,21 +195,24 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: ${{ matrix.msvcarch }}
-      - name: install ninja
-        if: matrix.mingw
+      - name: install ninja (mingw superbuild + the Ninja-based self-host pass)
         run: choco install ninja -y
-      - name: cache winlibs mingw toolchain (superbuild download target)
+      - name: cache the mingw toolchain (superbuild download target)
         if: matrix.mingw
         uses: actions/cache@v5
         with:
-          path: vendor/winlibs-mingw-w64-*
-          key: winlibs-x86_64-${{ hashFiles('cmake/winlibs.cmake') }}
+          # arm64 pulls llvm-mingw (aarch64), not winlibs, into vendor/llvm-mingw-*
+          path: |
+            vendor/winlibs-mingw-w64-*
+            vendor/llvm-mingw-*
+          key: winlibs-${{ matrix.mingwarch }}-${{ hashFiles('cmake/winlibs.cmake') }}
       - uses: ./.github/actions/ci
-      - name: dist (configure + build + install + package)
+      - name: dist (configure + build + install + self-host + package)
         run: |
           if (-not $env:VERSION) { $env:VERSION = "ci-" + $env:GITHUB_SHA.Substring(0,12) }
           $bench = if ("${{ inputs.bench }}" -eq "true") { @() } else { ,"--no-bench" }
-          mcc-ci dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "$env:VERSION" @bench
+          $extra = if ("${{ matrix.mingw }}" -eq "true") { @("--", "-DMCC_MINGW_ARCH=${{ matrix.mingwarch }}") } else { @() }
+          mcc-ci dist --preset ${{ matrix.preset }} --plat ${{ matrix.plat }} --version "$env:VERSION" @bench @extra
       - name: benchmark summary
         if: ${{ inputs.bench }}
         run: mcc-ci bench-summary --plat "${{ matrix.plat }}" --append "${env:GITHUB_STEP_SUMMARY}"

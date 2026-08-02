@@ -471,13 +471,18 @@ static const struct {
 		{PS_DIST_MACOS, "macos-x86_64-clang", "macos-15", 1},
 		{0, 0, 0, 0}};
 static const struct {
-	const char *preset, *plat, *runner, *msvcarch;
-	int mingw;
+	const char *preset, *plat, *runner, *msvcarch, *mingwarch;
+	int mingw, experimental;
 } PLAN_DIST_WIN[] = {
-		{PS_DIST_MSVC, "windows-x86_64-msvc", "windows-latest", "x64", 0},
-		{PS_DIST_MSVC, "windows-arm64-msvc", "windows-11-arm", "arm64", 0},
-		{PS_DIST_MINGW, "windows-x86_64-mingw", "windows-latest", "x64", 1},
-		{0, 0, 0, 0, 0}};
+		{PS_DIST_MSVC, "windows-x86_64-msvc", "windows-latest", "x64", "", 0, 0},
+		{PS_DIST_MSVC, "windows-arm64-msvc", "windows-11-arm", "arm64", "", 0, 0},
+		{PS_DIST_MINGW, "windows-x86_64-mingw", "windows-latest", "x64",
+				"x86_64", 1, 0},
+		/* llvm-mingw aarch64 (WinLibs has no arm64 gcc); experimental like the
+		 * PLAN_MINGW arm64 cell until the arm64-PE selfhost hang resolves. */
+		{PS_DIST_MINGW, "windows-arm64-mingw", "windows-11-arm", "arm64",
+				"arm64", 1, 1},
+		{0, 0, 0, 0, 0, 0, 0}};
 
 /* One compile-speed benchmark cell per OS family: a representative native
  * preset whose reference compilers (gcc+clang+mingw on Linux, native clang+gcc
@@ -826,7 +831,8 @@ static int loc_fetch_clang(void) {
 }
 
 static int run_dist(const char *preset, const char *plat, const char *ver,
-										char **extra, int n_extra, int no_bench) {
+										char **extra, int n_extra, int no_bench,
+										int no_selfhost) {
 	char pdv[256], pdp[256], bdir[128];
 	int msvc = strstr(preset, "msvc") != NULL, i;
 
@@ -871,6 +877,31 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 		}
 	}
 #endif
+	/* self-host pass: the freshly staged mcc rebuilds mcc via the stage2
+	 * `release` feature cell, installing under <stage>/selfhost so `ci pkg`
+	 * ships it as the mcc-selfhost-<ver>-<plat> bundle next to the host-built
+	 * ones. The cell-specific extra -D flags are deliberately NOT forwarded:
+	 * they specialize the host toolchain (Rosetta arch flags, MCC_MINGW_ARCH),
+	 * and stage2 drives mcc directly -- same shape as the nightly stage2 cells.
+	 */
+	if (!no_selfhost) {
+		char mccbin[4200], outdir[4200];
+		char *absdist = host_path_canonical("dist");
+		char *a[6];
+		int na = 0, rc;
+		ts_path(mccbin, sizeof mccbin, "dist", "bin/mcc%s",
+				MCC_HOST_WIN32 ? ".exe" : "");
+		ts_path(outdir, sizeof outdir, absdist ? absdist : "dist", "selfhost");
+		free(absdist);
+		a[na++] = (char *)"release";
+		a[na++] = (char *)"--mcc";
+		a[na++] = mccbin;
+		a[na++] = (char *)"--out";
+		a[na++] = outdir;
+		rc = do_stage2(na, a);
+		if (rc && rc != TS_SKIP_CODE)
+			return rc;
+	}
 	if (!no_bench) {
 		const char *a[] = {
 				ci_cmake(), "--build", "--preset",
@@ -1200,7 +1231,7 @@ static int do_local(int argc, char **argv) {
 			snprintf(dflag, sizeof dflag, "-DCMAKE_C_COMPILER=%s", vclang);
 			extra[n_extra++] = dflag;
 		}
-		rc = run_dist(dist[i].preset, dist[i].plat, ver, extra, n_extra, 0);
+		rc = run_dist(dist[i].preset, dist[i].plat, ver, extra, n_extra, 0, 0);
 		if (rc == 0) {
 			snprintf(results[n_res++], 192, "PASS  dist %.63s -> %.63s",
 							 dist[i].preset, dist[i].plat);
@@ -1236,7 +1267,7 @@ static int do_local(int argc, char **argv) {
 static int do_dist(int argc, char **argv) {
 	const char *preset = NULL, *plat = NULL, *ver = "v0.0.0-local";
 	char **extra = NULL;
-	int n_extra = 0, i, no_bench = 0;
+	int n_extra = 0, i, no_bench = 0, no_selfhost = 0;
 
 	for (i = 0; i < argc; i++) {
 		if (!strcmp(argv[i], "--preset") && i + 1 < argc)
@@ -1247,6 +1278,8 @@ static int do_dist(int argc, char **argv) {
 			ver = argv[++i];
 		else if (!strcmp(argv[i], "--no-bench"))
 			no_bench = 1;
+		else if (!strcmp(argv[i], "--no-selfhost"))
+			no_selfhost = 1;
 		else if (!strcmp(argv[i], "--")) {
 			extra = &argv[i + 1];
 			n_extra = argc - (i + 1);
@@ -1255,10 +1288,11 @@ static int do_dist(int argc, char **argv) {
 	}
 	if (!preset || !plat) {
 		fprintf(stderr, "usage: ci dist --preset P --plat PLAT [--version V] "
-										"[--no-bench] [-- <extra -D configure args>]\n");
+										"[--no-bench] [--no-selfhost] "
+										"[-- <extra -D configure args>]\n");
 		return 2;
 	}
-	return run_dist(preset, plat, ver, extra, n_extra, no_bench);
+	return run_dist(preset, plat, ver, extra, n_extra, no_bench, no_selfhost);
 }
 
 static const char *g_filter;
@@ -1707,12 +1741,18 @@ static int do_plan(int argc, char **argv) {
 								PLAN_DIST_UNIX[i].os,
 								PLAN_DIST_UNIX[i].rosetta ? ",\"rosetta\":true" : "");
 	} else if (!strcmp(job, "dist-windows")) {
-		for (i = 0; PLAN_DIST_WIN[i].preset; i++)
+		for (i = 0; PLAN_DIST_WIN[i].preset; i++) {
+			char mgw[64];
+			mgw[0] = 0;
+			if (PLAN_DIST_WIN[i].mingw)
+				snprintf(mgw, sizeof mgw, ",\"mingw\":true,\"mingwarch\":\"%s\"",
+						PLAN_DIST_WIN[i].mingwarch);
 			plan_cell(&first,
-								"\"preset\":\"%s\",\"plat\":\"%s\",\"runner\":\"%s\",\"msvcarch\":\"%s\"%s",
+								"\"preset\":\"%s\",\"plat\":\"%s\",\"runner\":\"%s\",\"msvcarch\":\"%s\"%s%s",
 								PLAN_DIST_WIN[i].preset, PLAN_DIST_WIN[i].plat,
-								PLAN_DIST_WIN[i].runner, PLAN_DIST_WIN[i].msvcarch,
-								PLAN_DIST_WIN[i].mingw ? ",\"mingw\":true" : "");
+								PLAN_DIST_WIN[i].runner, PLAN_DIST_WIN[i].msvcarch, mgw,
+								PLAN_DIST_WIN[i].experimental ? ",\"experimental\":true" : "");
+		}
 	} else if (!strcmp(job, "bench")) {
 		for (i = 0; PLAN_BENCH[i].preset; i++)
 			plan_cell(&first,
@@ -2379,6 +2419,39 @@ static int do_pkg(int argc, char **argv) {
 				return 1;
 		} else
 			printf("ci pkg: no cross compilers in stage/bin; skipping cross bundle\n");
+	}
+
+	/* mcc-selfhost bundle: `ci dist` installs the mcc-built-by-mcc tree under
+	 * <stage>/selfhost; ship it when present (a plain `ci pkg` run without the
+	 * self-host pass just skips it). */
+	{
+		char shstage[8192], shlib64[8192];
+		const char *shlibdir;
+		ts_path(shstage, sizeof shstage, stage, "selfhost");
+		ts_path(probe, sizeof probe, shstage, "bin/mcc%s", xsuf);
+		if (host_stat(probe, &isd, NULL, NULL) == 0) {
+			ts_path(shlib64, sizeof shlib64, shstage, "lib64");
+			shlibdir = (host_stat(shlib64, &isd, NULL, NULL) == 0 && isd)
+					? "lib64" : "lib";
+			snprintf(d, sizeof d, "mcc-selfhost-%s-%s", ver_s, plat);
+			ts_path(dd, sizeof dd, pkg, "%s", d);
+			ts_path(dstbin, sizeof dstbin, dd, "bin");
+			host_mkdirs(dstbin);
+			ts_path(dstlib, sizeof dstlib, dd, "lib");
+			host_mkdirs(dstlib);
+			pkg_copy_into(probe, dstbin);
+			if (iswin) {
+				char binstage[8192];
+				ts_path(binstage, sizeof binstage, shstage, "bin");
+				pkg_copy_glob(binstage, "libmcc*.dll", dstbin);
+			}
+			ts_path(src, sizeof src, shstage, "%s/mcc", shlibdir);
+			pkg_copy_into(src, dstlib);
+			if (pkg_archive(pkg, out, d, ext, &names))
+				return 1;
+		} else
+			printf("ci pkg: no self-hosted stage at %s; skipping selfhost bundle\n",
+					shstage);
 	}
 
 	if (names.n > 1) {
