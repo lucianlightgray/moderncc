@@ -441,6 +441,37 @@ static int arm64_local_pcrel_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
+/* r += d, in place, without touching the flags -- the LEA-equivalent
+   save_regdisp_group needs to materialise a folded displacement before spilling
+   a base register, and to undo it afterwards when the bare register is still
+   live. arm64's ADD/SUB immediate forms do not set flags (ADDS/SUBS do), so the
+   only care needed is the 12-bit immediate: one instruction below 4096, one
+   shifted form for a multiple of 4096, two for anything up to 24 bits, and x30
+   as the scratch beyond that -- the same scratch arm64_sym and load() use. */
+ST_FUNC void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
+	uint32_t x = (uint32_t)intr(r);
+	uint32_t op = d < 0 ? ARM64_SUB_IMM : ARM64_ADD_IMM;
+	uint64_t a = d < 0 ? (uint64_t)-(uint64_t)d : (uint64_t)d;
+
+	if (!d)
+		{ MCC_TRACE("br\n"); return; }
+	if (a <= 0xfff) { MCC_TRACE("br\n");
+		o(op | ARM64_SF(1) | ARM64_RN(x) | ARM64_RD(x) | ARM64_IMM12(a));
+		return;
+	}
+	if (a <= 0xffffff) { MCC_TRACE("br\n");
+		/* Same shifted-ADD pair arm64_sym uses for a large addend. */
+		if (a & 0xfff)
+			{ MCC_TRACE("br\n"); o(op | ARM64_SF(1) | ARM64_RN(x) | ARM64_RD(x) |
+				ARM64_IMM12(a & 0xfff)); }
+		o(op | ARM64_SF(1) | ARM64_SH(1) | ARM64_RN(x) | ARM64_RD(x) |
+			ARM64_IMM12(a >> 12));
+		return;
+	}
+	arm64_movimm(30, (uint64_t)d);
+	o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(30) | ARM64_RN(x) | ARM64_RD(x));
+}
+
 static void arm64_sym(int r, Sym *sym, unsigned long addend) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_PE
 	greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
@@ -549,7 +580,16 @@ static void arm64_tls_desc_x30(Sym *sym) { MCC_TRACE("enter\n");
 ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	mcc_stackref_note(sv->r);
 	int svtt = sv->type.t;
-	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_MUSTCAST);
+	/* VT_REGDISP joins the masked-off set: it is an ADDRESSING-MODE note, not a
+	   value kind, so every `svr == ...` test below must still match. The
+	   displacement it carries then rides into the register-base case as the
+	   ldr/str immediate instead of a materialised add -- which is the whole
+	   point of the gate. x86_64 does the same in gen_modrm_impl. */
+	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_MUSTCAST |
+											VT_REGDISP);
+	uint64_t regdisp = (sv->r & VT_REGDISP)
+												 ? (uint64_t)(int64_t)(int32_t)sv->c.i
+												 : 0;
 	int svrv = svr & VT_VALMASK;
 	uint64_t svcul = sv->c.i;
 	uint64_t svcoff = (uint64_t)(int64_t)(int32_t)sv->c.i;
@@ -583,10 +623,10 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	if ((svr & ~VT_VALMASK) == VT_LVAL && svrv < VT_CONST) { MCC_TRACE("br\n");
 		if ((svtt & VT_BTYPE) != VT_VOID) { MCC_TRACE("br\n");
 			if (IS_FREG(r))
-				{ MCC_TRACE("br\n"); arm64_ldrv(arm64_type_size(svtt), fltr(r), intr(svrv), 0); }
+				{ MCC_TRACE("br\n"); arm64_ldrv(arm64_type_size(svtt), fltr(r), intr(svrv), regdisp); }
 			else
 				{ MCC_TRACE("br\n"); arm64_ldrx(!(svtt & VT_UNSIGNED), arm64_type_size(svtt),
-									 intr(r), intr(svrv), 0); }
+									 intr(r), intr(svrv), regdisp); }
 		}
 		return;
 	}
@@ -740,7 +780,10 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 	mcc_stackref_note(sv->r);
 	int svtt = sv->type.t;
-	int svr = sv->r & ~VT_BOUNDED;
+	int svr = sv->r & ~(VT_BOUNDED | VT_REGDISP);
+	uint64_t regdisp = (sv->r & VT_REGDISP)
+												 ? (uint64_t)(int64_t)(int32_t)sv->c.i
+												 : 0;
 	int svrv = svr & VT_VALMASK;
 	uint64_t svcoff = (uint64_t)(int64_t)(int32_t)sv->c.i;
 
@@ -805,9 +848,9 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 
 	if ((svr & ~VT_VALMASK) == VT_LVAL && svrv < VT_CONST) { MCC_TRACE("br\n");
 		if (IS_FREG(r))
-			{ MCC_TRACE("br\n"); arm64_strv(arm64_type_size(svtt), fltr(r), intr(svrv), 0); }
+			{ MCC_TRACE("br\n"); arm64_strv(arm64_type_size(svtt), fltr(r), intr(svrv), regdisp); }
 		else
-			{ MCC_TRACE("br\n"); arm64_strx(arm64_type_size(svtt), intr(r), intr(svrv), 0); }
+			{ MCC_TRACE("br\n"); arm64_strx(arm64_type_size(svtt), intr(r), intr(svrv), regdisp); }
 		return;
 	}
 

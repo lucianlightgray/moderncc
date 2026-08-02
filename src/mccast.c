@@ -2439,6 +2439,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_X86_64
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP",
 																 o4 || s1->optimize_size || s1->optimize >= 1);
+#elif defined MCC_TARGET_ARM64
+	/* arm64 load/store fold the displacement into the ldr/str immediate the same
+	   way gen_modrm_impl does, but the default stays OFF here until the flip bar
+	   is met on this target -- x86_64's default is not evidence for arm64. */
+	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
 #else
 	ast_regdisp_env = 0;
 #endif
@@ -16462,7 +16467,7 @@ int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	return rv;
 }
 
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_JRN_HAVE_REGADDI
 void jrn_gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	jrn_begin(JOP_REGADDI, NULL);
 	if (JRN_REC) { MCC_TRACE("br\n");
@@ -16550,7 +16555,7 @@ static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
 #if MCC_HAVE_INT128
 	case JOP_MULWIDEN: (gen_mul_widen)(); break;
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_JRN_HAVE_REGADDI
 	case JOP_REGADDI: (gen_reg_addi)(o->a0, o->d64); break;
 #endif
 #ifdef MCC_JRN_HAVE_FABS_SQRT

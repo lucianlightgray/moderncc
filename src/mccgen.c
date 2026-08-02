@@ -107,7 +107,7 @@ void jrn_gen_mulh(int sign);
 #if MCC_HAVE_INT128
 void jrn_gen_mul_widen(void);
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_JRN_HAVE_REGADDI
 void jrn_gen_reg_addi(int r, int64_t d);
 #endif
 void jrn_gen_fabs(void);
@@ -200,7 +200,7 @@ void jrn_gen_va_arg(CType *t);
 #if MCC_HAVE_INT128
 #define gen_mul_widen() jrn_gen_mul_widen()
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_JRN_HAVE_REGADDI
 #define gen_reg_addi(r, d) jrn_gen_reg_addi((r), (d))
 #endif
 #define gen_fabs() jrn_gen_fabs()
@@ -1885,7 +1885,8 @@ ST_FUNC void save_reg(int r) { MCC_TRACE("enter\n");
 	save_reg_upstack(r, 0);
 }
 
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && \
+    (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
 /* Spill one folded-displacement group: every upstack entry whose address is
    "r + d". The generic spill below stores the bare base register and retags the
    entry VT_LLOCAL, which would drop d silently, so each distinct d gets its own
@@ -1933,7 +1934,8 @@ ST_FUNC void save_reg_upstack(int r, int n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (nocode_wanted)
 		{ MCC_TRACE("br\n"); return; }
-#if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_X86_64)
+#if MCC_CONFIG_OPTIMIZER && \
+    (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
 	for (;;) { MCC_TRACE("br\n");
 		int64_t d = 0;
 		for (p = vstack, p1 = vtop - n; p <= p1; p++) { MCC_TRACE("br\n");

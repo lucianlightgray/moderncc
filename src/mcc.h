@@ -1087,6 +1087,16 @@ struct filespec {
 #undef MCC_JOURNAL_HOOKS
 #endif
 
+/* gen_reg_addi has its own journal-capability macro rather than riding
+   MCC_JRN_HAVE_X86_PRIMS: it is the one primitive in that bundle arm64 also
+   declares (for MCC_AST_REGDISP's spill path), and the rest -- gen_bswap,
+   gen_bitscan, the gen_atomic_* -- genuinely are x86_64-only. It lives here,
+   not in mccgen.c beside the bundle, so every TU sees it in a multi-source
+   build; without that the shim and the hook disagree across TUs. */
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
+#define MCC_JRN_HAVE_REGADDI 1
+#endif
+
 #ifndef MCC_REPLAY_IR
 #ifdef MCC_JOURNAL_HOOKS
 #define MCC_REPLAY_IR 1
@@ -1838,7 +1848,7 @@ ST_FUNC void gen_increment_tcov(SValue *sv);
 ST_FUNC void gen_mulh(int sign);
 #endif
 
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 ST_FUNC void gen_reg_addi(int r, int64_t d);
 #endif
 #ifdef MCC_TARGET_ARM64

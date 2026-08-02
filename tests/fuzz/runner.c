@@ -303,6 +303,9 @@ static const gate_t GATES[] = {
 	 * sequence. Inert off arm64, and a wrong local/global classification is a
 	 * wrong address, so it belongs in the differential set. */
 	{"ARM64_LOCAL_PCREL", "MCC_ARM64_LOCAL_PCREL=1"},
+	/* Default-on for x86_64 at -O1+, so forcing it there is a no-op; the row
+	 * exists for arm64, where it is new and default-off. */
+	{"REGDISP", "MCC_AST_REGDISP=1"},
 	{"REASSOC", "MCC_AST_REASSOC=1"},
 	{"INTERCHANGE", "MCC_AST_INTERCHANGE=1"},
 	{"FUSION", "MCC_AST_FUSION=1"},
