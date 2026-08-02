@@ -26,6 +26,7 @@ typedef struct RirOp {
 	int pt;
 	int rval;
 	int rnocode;
+	int rinop;
 	long long rv1, rv2, rv3;
 	int mvs_off, mvs_n;
 	JrnOp p;
@@ -41,6 +42,7 @@ typedef struct RirMark {
 	int kind;
 	int val;
 	int nocode;
+	int inop;
 	long long v1, v2, v3;
 	int at;
 	int vs_off, vs_n;
@@ -213,6 +215,7 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	   reconstruction built a real loop for it and emitted a backward jump the
 	   parser never wrote (`eb fe`). */
 	m->nocode = nocode_wanted;
+	m->inop = jrn_depth;
 	m->v1 = a;
 	m->v2 = b;
 	m->at = jrn_n;
@@ -705,6 +708,7 @@ static void rir_build(void) {
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
 			o->rnocode = rir_marks[m].nocode;
+			o->rinop = rir_marks[m].inop;
 			o->rv3 = rir_marks[m].v3;
 			o->rv1 = rir_marks[m].v1;
 			o->rv2 = rir_marks[m].v2;
@@ -731,6 +735,10 @@ static AstArena *rir_arena;
 static AstLocal rir_sh[VSTACK_SIZE + 1];
 static unsigned char rir_shtype[VSTACK_SIZE + 1];
 static int rir_shn;
+static CType rir_pvt[VSTACK_SIZE + 1];
+static int rir_pvr[VSTACK_SIZE + 1];
+static CValue rir_pvc[VSTACK_SIZE + 1];
+static unsigned char rir_pvok[VSTACK_SIZE + 1];
 static AstLocal rir_bb[64];
 static int rir_bbn;
 static AstLocal rir_cf[64];
@@ -826,15 +834,42 @@ void rir_snap_types(SValue *sv, int n) {
 			sv[i].type.ref = rir_xtype_ref(sv[i].type.ref, 0, 1);
 }
 
+static int rir_tcore(int t) {
+	return t & ~(unsigned)(VT_DEFSIGN | VT_LONG | VT_STORAGE);
+}
+
 static int rir_same_width(const CType *a, const CType *b) {
 	int al, bl;
 	CType x = *a, y = *b;
 	return type_size(&x, &al) == type_size(&y, &bl);
 }
 
-static AstLocal rir_leaf(const SValue *sv) {
+static int rir_prov_ok(int slot, const SValue *sv) {
+	int pt, st;
+	if (slot < 0 || slot > VSTACK_SIZE || !rir_pvok[slot])
+		return 0;
+	if (rir_pvr[slot] != sv->r || rir_pvc[slot].i != sv->c.i)
+		return 0;
+	pt = rir_pvt[slot].t;
+	st = sv->type.t;
+	if (rir_tcore(pt) == rir_tcore(st))
+		return 0;
+	if ((pt & (VT_BTYPE | VT_ARRAY | VT_VLA | VT_BITFIELD)) != (pt & VT_BTYPE) ||
+			(st & (VT_BTYPE | VT_ARRAY | VT_VLA | VT_BITFIELD)) != (st & VT_BTYPE))
+		return 0;
+	if ((pt & VT_BTYPE) == VT_STRUCT || (pt & VT_BTYPE) == VT_FUNC ||
+			(pt & VT_BTYPE) == VT_VOID || (st & VT_BTYPE) == VT_STRUCT ||
+			(st & VT_BTYPE) == VT_FUNC || (st & VT_BTYPE) == VT_VOID)
+		return 0;
+	if (is_float(pt) != is_float(st))
+		return 0;
+	return 1;
+}
+
+static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
+	int prov = rir_prov_ok(slot, sv);
 	ast_set_op(rir_arena, n, sv->r);
 	/* A string literal reaches the op boundary already DECAYED: the snapshot
 	   says char * where the tree's leaf still says char[N]. The tree builds its
@@ -877,10 +912,24 @@ static AstLocal rir_leaf(const SValue *sv) {
 		cv = ast_node(rir_arena, AST_Convert);
 		ast_set_type(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
 		ast_add_child(rir_arena, cv, n);
+		if (prov)
+			rir_pvok[slot] = 0;
+		return cv;
+	}
+	if (prov) {
+		AstLocal cv;
+		ast_set_type(rir_arena, n, rir_pvt[slot].t,
+								 (uint64_t)(uintptr_t)rir_pvt[slot].ref);
+		cv = ast_node(rir_arena, AST_Convert);
+		ast_set_type(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_add_child(rir_arena, cv, n);
+		rir_pvok[slot] = 0;
 		return cv;
 	}
 	return n;
 }
+
+static AstLocal rir_leaf(const SValue *sv) { return rir_leaf_slot(sv, -1); }
 
 #ifdef MCC_JRN_HAVE_X86_PRIMS
 static int rir_has_atomic(AstLocal n, int depth) {
@@ -1383,8 +1432,7 @@ static int rir_child_has_type(AstLocal n, int st) {
 		AstLocal c = ast_child(rir_arena, n, i);
 		if (c == AST_NONE)
 			continue;
-		if ((ast_type_t(rir_arena, c) & ~(unsigned)VT_DEFSIGN) ==
-				(unsigned)(st & ~(unsigned)VT_DEFSIGN))
+		if (rir_tcore(ast_type_t(rir_arena, c)) == rir_tcore(st))
 			return 1;
 	}
 	return 0;
@@ -1679,7 +1727,7 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		const SValue *sv3 = &base[ast_base_depth + k];
 		AstLocal sp = rir_spill_take(sv3);
 		rir_tot_leaf++;
-		rir_push(sp == AST_NONE ? rir_leaf(sv3) : sp);
+		rir_push(sp == AST_NONE ? rir_leaf_slot(sv3, ast_base_depth + k) : sp);
 		/* gfunc_return pushes its own operands (vset/indir/vswap) which Replay_IR
 		   deliberately does not model, because the tree does not either and
 		   ast_replay_value re-runs gfunc_return itself. Those pushes make the
@@ -1793,8 +1841,8 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
-			int q, opdiff = jrn_vs[o->vs_off + o->vs_n - 1].type.t !=
-											jrn_vs[o->vs_off + o->vs_n - 2].type.t;
+			int q, opdiff = rir_tcore(jrn_vs[o->vs_off + o->vs_n - 1].type.t) !=
+											rir_tcore(jrn_vs[o->vs_off + o->vs_n - 2].type.t);
 			for (q = 0; q < 2; q++) {
 				AstLocal cur = rir_sh[rir_shn - 1 - q];
 				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
@@ -1803,6 +1851,8 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				if (ast_type_t(rir_arena, cur) != 0 ||
 						ast_kind(rir_arena, cur) != AST_Binary)
+					continue;
+				if (TOK_ISCOND(ast_op(rir_arena, cur)))
 					continue;
 				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
 						(st & VT_BTYPE) == VT_FUNC || is_float(st))
@@ -2122,6 +2172,15 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case JOP_PUSHLIT:
 	case JOP_VSETC:
+		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
+			int q;
+			rir_pvt[o->vs_n] = o->ctype;
+			rir_pvr[o->vs_n] = o->a0;
+			rir_pvc[o->vs_n] = o->cval;
+			rir_pvok[o->vs_n] = 1;
+			for (q = o->vs_n + 1; q <= VSTACK_SIZE; q++)
+				rir_pvok[q] = 0;
+		}
 		if (rir_pending_call != AST_NONE) {
 			/* A call's result comes back in a REGISTER, so the vsetc that lands it
 			   names one. The aggregate atomic lowerings call a void helper and then
@@ -2525,10 +2584,12 @@ static void rir_mark_apply(const RirOp *ro) {
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Binary) {
 				int bop = ast_op(rir_arena, top);
+				int inflags = ro->mvs_n > 0 &&
+						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].r & VT_VALMASK) == VT_CMP;
 				if (bop == TOK_LAND || bop == TOK_LOR)
 					ast_set_fbits(rir_arena, top,
 												ast_fbits(rir_arena, top) ^ AST_FB_LANDOR_INVERT);
-				else if (ast_cmp_invert_late(rir_arena, top, bop))
+				else if (inflags || ast_cmp_invert_late(rir_arena, top, bop))
 					ast_set_fbits(rir_arena, top,
 												ast_fbits(rir_arena, top) ^ AST_FB_CMP_INVERT_LATE);
 				else
@@ -3016,7 +3077,7 @@ static void rir_region(const RirOp *ro) {
 			   nests -- an inner region whose ops the outer one already dropped must
 			   not pop the stale shadow slot. */
 			int act = 0;
-			if (!rir_cvt_depth && !rir_cond_depth && !rir_inc_depth &&
+			if (!ro->rinop && !rir_cvt_depth && !rir_cond_depth && !rir_inc_depth &&
 					!rir_member_depth && !rir_retexpr_pending && !rir_vstruct_depth &&
 					!rir_vla_depth && rir_cvt_n < RIR_CVT_MAX && rir_shn > 0 &&
 					rir_sh[rir_shn - 1] != AST_NONE &&
@@ -3819,6 +3880,7 @@ static void rir_to_arena(void) {
 	rir_cvt_depth = 0;
 	rir_cvt_n = 0;
 	rir_argcast_n = 0;
+	memset(rir_pvok, 0, sizeof rir_pvok);
 	rir_ternn = 0;
 	rir_tholdn = 0;
 	rir_incr_bb = AST_NONE;
