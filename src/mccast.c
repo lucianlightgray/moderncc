@@ -1550,6 +1550,7 @@ static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for lo
 static int ast_tile_env; /* MCC_AST_TILE: strip-mine the inner loop of a permutable nest + hoist the strip loop outermost (§27 tile-and-interchange) */
 static int ast_tile_size; /* MCC_AST_TILE_SIZE: strip length (default 32) */
 static int ast_vlat_env;
+int mccjit_recompiling;
 static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
 static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
 static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt, 3=non-null speculative, 4=const-param, 5=value-range (§26 W2.2/W2.3) */
@@ -2635,7 +2636,8 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	if (ast_tile_size < 2)
 		{ MCC_TRACE("br\n"); ast_tile_size = 32; }
 	ast_vlat_env = ast_env_gate("MCC_AST_VLAT", o4 || s1->optimize >= 2);
-	ast_jit_env = s1 && (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
+	ast_jit_env = s1 && !mccjit_recompiling &&
+			(s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = ast_env_gate("MCC_AST_JIT_SPLICE", 0);
 	ast_jit_dispatch_env = ast_env_int("MCC_AST_JIT_DISPATCH",
 			(ast_jit_env || mcc_env_on("MCC_JIT_SUBMIT_AOT")) ? 6 : 0);

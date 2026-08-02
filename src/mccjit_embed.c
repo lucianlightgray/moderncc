@@ -372,6 +372,7 @@ MCCJIT_LOCAL unsigned mccjit_role_for_base(int t) { MCC_TRACE("enter\n");
 }
 
 void ast_reemit_extern(Sym *sym, AstArena *ast);
+extern int mccjit_recompiling;
 void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask);
 int ast_jit_fold_consts(AstArena *ast);
 int ast_jit_search_vocab(uint64_t *out, int max);
@@ -651,6 +652,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	js = mcc_new();
 	if (!js)
 		{ MCC_TRACE("br\n"); return NULL; }
+	mccjit_recompiling++;
 	js->optimize = 0;
 	js->nostdlib = 1;
 #if defined(MCCJIT_I386)
@@ -686,6 +688,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	if (mccjit_intent_deserialize(buf, len, &it) != 0) { MCC_TRACE("br\n");
 		mcc_exit_state(js);
 		mcc_delete(js);
+		mccjit_recompiling--;
 		return NULL;
 	}
 
@@ -816,6 +819,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	} else { MCC_TRACE("br\n");
 		mcc_delete(js);
 	}
+	mccjit_recompiling--;
 	return entry;
 }
 
