@@ -401,6 +401,7 @@ GlobalGetAtomNameW
 GlobalHandle
 GlobalLock
 GlobalMemoryStatus
+GlobalMemoryStatusEx
 GlobalReAlloc
 GlobalSize
 GlobalUnWire
