@@ -37,12 +37,27 @@
 #include <unistd.h>
 #include <ucontext.h>
 #define OFF 0x7fff8000UL
+#define SH_LO 0x7fff8000UL
+#if defined(__aarch64__)
+#define SH_HI 0x210000000000UL
+#elif defined(__i386__) || defined(__arm__)
+#define SH_HI 0x9fff8000UL
+#else
+#define SH_HI 0x10007fff8000UL
+#endif
 #define RZ 16
 #define GRZ 0xf9
 struct asan_global { void *addr; size_t size; };
 extern struct asan_global __start___asan_globals[] __attribute__((weak));
 extern struct asan_global __stop___asan_globals[] __attribute__((weak));
 static unsigned char *shadow(void *a){ return (unsigned char*)(((uintptr_t)a>>3)+OFF); }
+static int sh_mapped(const unsigned char *s,long lo,long hi){
+    uintptr_t p=(uintptr_t)s;
+    if(p<SH_LO||p>=SH_HI) return 0;
+    if(lo<0&&p<SH_LO+(uintptr_t)(-lo)) return 0;
+    if(hi>0&&p+(uintptr_t)hi>=SH_HI) return 0;
+    return 1;
+}
 static void set_sh(void*a,size_t n,unsigned char v){ uintptr_t p=(uintptr_t)a; for(size_t i=0;i<n;i+=8) *shadow((void*)(p+i))=v; }
 static void unpoison(void*a,long n){ uintptr_t p=(uintptr_t)a; size_t full=((size_t)n/8)*8; set_sh(a,full,0); if((size_t)n%8) *shadow((void*)(p+full))=(unsigned char)((size_t)n%8); }
 static void wstr(const char*s){ long n=0; while(s[n])n++; (void)!write(2,s,(size_t)n); }
@@ -112,6 +127,7 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
         /* granule offset = (addr&7) + size-1  ->  size = off - (addr&7) + 1 */
         long asz = off - (long)(addr&7) + 1;
         unsigned char *s = shadow((void*)addr);
+        int sok = sh_mapped(s,-8,8);
         wstr("    at faulting address "); whex(addr);
         wstr("    access size "); wdec((uintptr_t)(asz>0?asz:0)); wstr("\n");
         { uintptr_t rb,re,ro; int rd;
@@ -120,10 +136,16 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
             wstr(rd==0?" bytes to the right of a ":rd==1?" bytes to the left of a ":" bytes inside a ");
             wdec(re-rb); wstr("-byte region ["); whexa(rb); wstr(", "); whexa(re); wstr(")\n");
           } }
-        wstr("  shadow bytes around 0x"); whexn((uintptr_t)s,PW,1);
-        wstr("   ");
-        for(int c=-8;c<8;c++){ if(c==0)wstr("["); whexn((uintptr_t)(s[c]&0xff),2,0); if(c==0)wstr("]"); else wstr(" "); }
-        wstr("\n");
+        if(sok){
+            wstr("  shadow bytes around 0x"); whexn((uintptr_t)s,PW,1);
+            wstr("   ");
+            for(int c=-8;c<8;c++){ if(c==0)wstr("["); whexn((uintptr_t)(s[c]&0xff),2,0); if(c==0)wstr("]"); else wstr(" "); }
+            wstr("\n");
+        } else {
+            wstr("  shadow address 0x"); whexn((uintptr_t)s,PW,0);
+            wstr(" is outside the mapped shadow region ["); whexn(SH_LO,PW,0);
+            wstr(", "); whexn(SH_HI,PW,0); wstr("); dump suppressed\n");
+        }
     }
     wstr("    pc "); whex((uintptr_t)si->si_addr);
     wstr("    shadow byte 0x"); whexn((uintptr_t)(sh&0xff),2,0);
@@ -154,7 +176,7 @@ __attribute__((constructor)) static void asan_init(void){
        stack (top-down) live, so one sparse NORESERVE region covers all of it.
        (Robustness for 39-bit VA / bottom-up mmap is a follow-up.) The trap is a
        brk -> SIGTRAP, and w17/w16 (shadow/granule) map to regs[17]/regs[16]. */
-    mmap((void*)0x7fff8000UL,(size_t)(0x210000000000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #elif defined(__riscv)
     /* riscv64/Linux (Sv48-class user VA): qemu-riscv64 user mode places libc/heap/
        stack/mmap near the top of a 47-bit space (~0x7effffffffff), so shadow
@@ -164,7 +186,7 @@ __attribute__((constructor)) static void asan_init(void){
        empty). (Sv39-only / bottom-up-mmap tightening is a follow-up.) The trap is
        an ebreak -> SIGTRAP, and t0/t1/t2 (x5/x6/x7 = shadow/granule/faulting-addr)
        map to __gregs[5]/[6]/[7]. */
-    mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #elif defined(__i386__) || defined(__arm__)
     /* i386/arm Linux (32-bit VA): shadow((a>>3)+OFF) of the whole 4GB space
        [0,2^32) lands in [OFF, 2^29+OFF) = [0x7fff8000, 0x9fff8000), a single 512MB
@@ -173,9 +195,9 @@ __attribute__((constructor)) static void asan_init(void){
        stack/global. The trap is ud2/udf -> SIGILL; on i386 eax/edx/ecx and on arm
        r0/r1/r2 (shadow/granule/faulting-addr) map to gregs[REG_EAX]/[REG_EDX]/
        [REG_ECX] and uc_mcontext.arm_r0/arm_r1/arm_r2 respectively. */
-    mmap((void*)0x7fff8000UL,(size_t)(0x9fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #else
-    mmap((void*)0x7fff8000UL,(size_t)(0x10007fff8000UL-0x7fff8000UL),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
     struct sigaction sa; for(size_t i=0;i<sizeof sa;i++) ((char*)&sa)[i]=0;
     sa.sa_sigaction=on_sigill; sa.sa_flags=SA_SIGINFO;
