@@ -2516,7 +2516,7 @@ function(_mcc_mccrt_src obj outvar)
 endfunction()
 
 function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir out_extra)
-    set(_common stdatomic atomic builtin alloca alloca-bt complex)
+    set(_common stdatomic atomic builtin alloca alloca-bt complex complexabi)
     set(_rt_gcc OFF)
     if(native AND (MCC_MCCRT_USE_HOSTCC OR MCC_EMBED_MCCRT)
        AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
