@@ -16445,7 +16445,7 @@ void jrn_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
 
 #ifdef MCC_JRN_HAVE_VA_ARG
 void jrn_gen_va_arg(CType *t) { MCC_TRACE("enter\n");
-	if ((t->t & VT_BTYPE) == VT_STRUCT || (t->t & VT_ARRAY)) { MCC_TRACE("br\n");
+	if (t->t & VT_ARRAY) { MCC_TRACE("br\n");
 		(gen_va_arg)(t);
 		return;
 	}
