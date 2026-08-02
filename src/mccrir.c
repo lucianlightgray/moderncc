@@ -2390,6 +2390,10 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	case JOP_STORE: {
 		AstLocal v, n, ad, ld;
+		const SValue *spv = NULL;
+		SValue tsv;
+		CType pt;
+		Sym *ps;
 		int q, slot = -1, lv = 0;
 		if (o->vs_n <= 0 ||
 				(o->svarg.r & (VT_VALMASK | VT_LVAL | VT_SYM)) !=
@@ -2401,6 +2405,7 @@ static void rir_op_effect(const RirOp *ro) {
 			if ((sv4->r & VT_VALMASK) == (o->a0 & VT_VALMASK)) {
 				slot = q;
 				lv = (sv4->r & VT_LVAL) != 0;
+				spv = sv4;
 				break;
 			}
 		}
@@ -2429,17 +2434,29 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_shtype[slot] = 0;
 			break;
 		}
+		/* save_reg_upstack builds its spill target as a stack SValue and never
+		 * sets type.ref, so the snapshot's pointee is indeterminate -- reading
+		 * it back at the Load below dereferences whatever the stack held.  The
+		 * slot takes the ADDRESS of the spilled lvalue, so the pointee is that
+		 * entry's own type; intern it in Replay_IR's own pointer pool rather
+		 * than trusting the capture. */
+		pt.t = spv->type.t;
+		pt.ref = spv->type.ref;
+		ps = rir_ptr_sym(&pt);
+		if (!ps)
+			break;
+		tsv = o->svarg;
+		tsv.type.ref = ps;
 		ad = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, ad, AST_OP_ADDR);
-		ast_set_type(rir_arena, ad, o->svarg.type.t,
-								 (uint64_t)(uintptr_t)o->svarg.type.ref);
+		ast_set_type(rir_arena, ad, tsv.type.t, (uint64_t)(uintptr_t)tsv.type.ref);
 		ast_add_child(rir_arena, ad, v);
 		n = ast_node(rir_arena, AST_Store);
-		ast_add_child(rir_arena, n, rir_leaf(&o->svarg));
+		ast_add_child(rir_arena, n, rir_leaf(&tsv));
 		ast_add_child(rir_arena, n, ad);
 		rir_stmt(n);
 		ld = ast_node(rir_arena, AST_Load);
-		ast_add_child(rir_arena, ld, rir_leaf(&o->svarg));
+		ast_add_child(rir_arena, ld, rir_leaf(&tsv));
 		rir_sh[slot] = ld;
 		rir_shtype[slot] = 0;
 		break;
