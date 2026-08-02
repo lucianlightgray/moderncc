@@ -4089,6 +4089,29 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 300)
         endforeach()
 
+        # No target may CRASH the compiler on the corpus. Every other
+        # per-target check counts ok/fail, and a SIGABRT lands in the fail
+        # column next to the files that legitimately do not compile -- which
+        # is how riscv64's arch_transfer_ret_regs abort survived. This asserts
+        # on the SIGNAL, so it does not care how many files compile and is
+        # immune to the low-fn sysroot trap.
+        foreach(_na riscv64 arm arm64 i386
+                    x86_64-win32 i386-win32 arm64-win32 arm-win32
+                    x86_64-osx arm64-osx)
+            set(_na_sr "-")
+            if(_na MATCHES "^(riscv64|arm|arm64|i386)$")
+                set(_na_sr "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_na}-glibc")
+            endif()
+            add_test(NAME cross/no-compiler-abort-${_na}
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/no-compiler-abort.sh"
+                        "${_na}" "${MCC_CROSS_DIR}/mcc-${_na}" "${MCC_CROSS_DIR}"
+                        "${_na_sr}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        -O1 -O2)
+            set_tests_properties(cross/no-compiler-abort-${_na} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 1800)
+        endforeach()
+
         # A struct returned in two registers of different classes drives
         # arch_transfer_ret_regs, and the AST replay pushed the sret temp with
         # VT_NONLVAL already set -- riscv64's assert(vtop->r == (VT_LOCAL |
