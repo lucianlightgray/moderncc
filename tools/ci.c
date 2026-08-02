@@ -554,40 +554,55 @@ static const struct {
  * are the extra -D flags on top of the stage2 base (semicolon-separated;
  * tokenized by ci_add_dflags). `self_os` is the set of OS families mcc can
  * self-host the feature on; a cell whose host OS is not in the set skips (77)
- * with `blocker` rather than falling back to a host compiler. */
+ * with `blocker` rather than falling back to a host compiler. On a host whose
+ * OS bit is in `xdflags_os`, `xdflags` is used instead of `dflags`. */
 static const struct {
-	const char *name, *dflags, *blocker;
-	unsigned self_os;
+	const char *name, *dflags, *blocker, *xdflags;
+	unsigned self_os, xdflags_os;
 } FEATURES[] = {
 		{"static", "-DMCC_BUILD_STATIC_EXE=ON",
-				"static exe unsupported on Apple (no static libc)",
-				OS_LINUX | OS_WIN},
-		{"dynamic", "-DMCC_BUILD_STATIC_EXE=OFF", "",
-				OS_LINUX | OS_MAC | OS_WIN},
-		{"release", "-DCMAKE_BUILD_TYPE=Release;-DMCC_BUILD_STRIP=ON", "",
-				OS_LINUX | OS_MAC | OS_WIN},
-		{"multisource", "-DMCC_SINGLE_SOURCE=OFF", "",
-				OS_LINUX | OS_MAC | OS_WIN},
-		{"predefs-off", "-DMCC_CONFIG_PREDEFS=OFF", "",
-				OS_LINUX | OS_MAC | OS_WIN},
+				"static exe unsupported on Apple (no static libc)", "",
+				OS_LINUX | OS_WIN, 0},
+		{"dynamic", "-DMCC_BUILD_STATIC_EXE=OFF", "", "",
+				OS_LINUX | OS_MAC | OS_WIN, 0},
+		{"release", "-DCMAKE_BUILD_TYPE=Release;-DMCC_BUILD_STRIP=ON", "", "",
+				OS_LINUX | OS_MAC | OS_WIN, 0},
+		{"multisource", "-DMCC_SINGLE_SOURCE=OFF", "", "",
+				OS_LINUX | OS_MAC | OS_WIN, 0},
+		{"predefs-off", "-DMCC_CONFIG_PREDEFS=OFF", "", "",
+				OS_LINUX | OS_MAC | OS_WIN, 0},
 		{"pie", "-DMCC_CONFIG_PIE=ON;-DMCC_CONFIG_PIC=ON",
-				"PIE/PIC codegen is ELF-only (Linux)", OS_LINUX},
+				"PIE/PIC codegen is ELF-only (Linux)", "", OS_LINUX, 0},
 		{"dwarf", "-DMCC_CONFIG_DWARF=5",
-				"DWARF-5 debug info is ELF-only (Linux)", OS_LINUX},
-		{"diagnostics", "-DMCC_ALL_DIAGNOSTICS=ON", "",
-				OS_LINUX | OS_MAC | OS_WIN},
+				"DWARF-5 debug info is ELF-only (Linux)", "", OS_LINUX, 0},
+		{"diagnostics", "-DMCC_ALL_DIAGNOSTICS=ON", "", "",
+				OS_LINUX | OS_MAC | OS_WIN, 0},
 		{"macho", "-DMCC_CONFIG_NEW_MACHO=yes",
-				"macho object format only self-hosts on a Darwin host", OS_MAC},
+				"no Mach-O validator on a Windows host (the seccomp image "
+				"loader and the structural/reloc cells are Linux-only, native "
+				"Mach-O execution is Darwin-only)",
+				"-DMCC_ENABLE_CROSS=ON;-DMCC_CROSS_TARGETS=x86_64-osx,arm64-osx",
+				OS_MAC | OS_LINUX, OS_LINUX},
 		{"pe", "-DMCC_CONFIG_MINGW=ON",
-				"PE object format only self-hosts on a Windows host", OS_WIN},
+				"no PE validator on a Darwin host (pe-wine-conformance needs "
+				"wine, pe-native-conformance needs a WIN32 host)",
+				"-DMCC_ENABLE_CROSS=ON;"
+				"-DMCC_CROSS_TARGETS=i386-win32,x86_64-win32,arm64-win32",
+				OS_WIN | OS_LINUX, OS_LINUX},
 		{"asm-off", "-DMCC_CONFIG_ASM=OFF",
 				"asm-off self-host builds mccrt with CMAKE_C_COMPILER (the "
 				"stage1 mcc, asm-on) via MCC_MCCRT_USE_HOSTCC; the Windows/PE "
 				"path is not yet confirmed",
-				OS_LINUX | OS_MAC},
-		{"sanitize", "-DMCC_BUILD_SANITIZE=ON", "",
-				OS_LINUX | OS_MAC | OS_WIN},
-		{0, 0, 0, 0}};
+				"", OS_LINUX | OS_MAC, 0},
+		{"sanitize", "-DMCC_BUILD_SANITIZE=ON", "", "",
+				OS_LINUX | OS_MAC | OS_WIN, 0},
+		{0, 0, 0, 0, 0, 0}};
+
+static const char *feature_dflags(int f) {
+	if (FEATURES[f].xdflags_os & ci_host_osbit())
+		return FEATURES[f].xdflags;
+	return FEATURES[f].dflags;
+}
 
 /* axis 3 -- stage-3 consumers. `needs_cross` cells require the stage-2 build to
  * enable the cross compilers: `dist` ships them, `emulate` runs their
@@ -2614,7 +2629,7 @@ static int do_stage2(int argc, char **argv) {
 		ts_arg(&v, "Ninja");
 		ts_arg(&v, mccflag);
 		ts_arg(&v, "-DMCC_TOOLCHAIN_PROFILE=mcc");
-		ci_add_dflags(&v, FEATURES[f].dflags, dfbuf, sizeof dfbuf);
+		ci_add_dflags(&v, feature_dflags(f), dfbuf, sizeof dfbuf);
 		if (cross)
 			ts_arg(&v, "-DMCC_ENABLE_CROSS=ON");
 		for (i = extra_start; i < argc; i++)

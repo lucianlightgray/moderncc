@@ -115,6 +115,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3
+      - name: install wine (linux pe cell drives pe-wine-conformance)
+        if: ${{ startsWith(matrix.runner, 'ubuntu') && matrix.feature == 'pe' && !matrix.skip }}
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64 wine32 || \
+            sudo apt-get install -y --no-install-recommends wine
+          wine64 --version || wine --version || true
       - name: install deps (macos)
         if: startsWith(matrix.runner, 'macos')
         run: |
@@ -154,7 +162,7 @@ jobs:
     needs: [plan, stage1]
     name: emulate / ${{ matrix.host }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:

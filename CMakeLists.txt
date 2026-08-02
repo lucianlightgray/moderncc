@@ -1146,6 +1146,9 @@ mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
 mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_ENABLE_CROSS"
     HELP "Compile MCC_CONFIG_OPTIMIZER=1 into the cross compilers (mcc-<arch>). ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
+mcc_config_node(MCC_CROSS_TARGETS TYPE STRING DEFAULT "" GROUP "Build targets" ADVANCED
+    EMPTY_OK VISIBLE_WHEN "MCC_ENABLE_CROSS"
+    HELP "Subset of cross triples to build under MCC_ENABLE_CROSS, comma- or semicolon-separated (e.g. x86_64-osx,arm64-osx). Empty (default) builds every triple. Each entry must name one of: i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-win32 arm-win32 arm-wince riscv64 arm64-osx. Narrowing it lets a CI cell build only the object-format compilers its validators need instead of all twelve.")
 
 mcc_config_node(MCC_BUILD_STATIC_LIB TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build libmcc.a (ON) instead of shared libmcc (OFF)")
@@ -3079,6 +3082,18 @@ if(MCC_ENABLE_CROSS)
 
     set(MCC_X i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64
               arm64-win32 arm-win32 arm-wince riscv64 arm64-osx)
+    if(NOT "${MCC_CROSS_TARGETS}" STREQUAL "")
+        string(REPLACE "," ";" _xwant "${MCC_CROSS_TARGETS}")
+        foreach(_w IN LISTS _xwant)
+            if(NOT _w IN_LIST MCC_X)
+                message(FATAL_ERROR
+                    "MCC_CROSS_TARGETS: unknown cross triple '${_w}' (known: ${MCC_X})")
+            endif()
+        endforeach()
+        set(MCC_X ${_xwant})
+        message(STATUS "mcc: cross targets narrowed to ${MCC_X}")
+        unset(_xwant)
+    endif()
     foreach(_t IN LISTS MCC_X)
         set(_cdefs "")
         set(_cos "Linux")
@@ -6717,10 +6732,21 @@ endif()
 get_property(_mcc_all_tests DIRECTORY PROPERTY TESTS)
 foreach(_t IN LISTS _mcc_all_tests)
     get_property(_l TEST "${_t}" PROPERTY LABELS)
-    if(NOT "qemu" IN_LIST _l)
+    if(_t MATCHES "-docker$" AND NOT "docker" IN_LIST _l)
+        set_property(TEST "${_t}" APPEND PROPERTY LABELS docker)
+        list(APPEND _l docker)
+    endif()
+    set(_mcc_emu OFF)
+    foreach(_el IN ITEMS qemu wine macho docker)
+        if("${_el}" IN_LIST _l)
+            set(_mcc_emu ON)
+        endif()
+    endforeach()
+    if(NOT _mcc_emu)
         set_property(TEST "${_t}" APPEND PROPERTY LABELS native)
     endif()
 endforeach()
+unset(_mcc_emu)
 unset(_mcc_all_tests)
 
 file(GLOB_RECURSE MCC_TAGFILES

@@ -149,6 +149,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build gcc python3
+      - name: install wine (pe cell drives pe-wine-conformance)
+        if: ${{ matrix.feature == 'pe' && !matrix.skip }}
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wine64 wine32 || \
+            sudo apt-get install -y --no-install-recommends wine
+          wine64 --version || wine --version || true
       - uses: ./.github/actions/ci
       - uses: actions/download-artifact@v7
         with:
