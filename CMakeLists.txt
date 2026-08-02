@@ -4058,6 +4058,21 @@ if(MCC_BUILD_TESTS)
         # carries the sysroot: --sysroot ALONE silently shrinks the sweep to the
         # include-free files, so the explicit usr/include is load-bearing, and
         # arm's hard-float PCS is not the default.
+        # A shared object must not get local-exec TLS. Guards a silent wrong
+        # answer: before the refusal these three linked rc=0 and baked a
+        # thread-pointer offset of 0, so the library read the executable's
+        # thread-local instead of its own.
+        foreach(_st riscv64 arm arm64)
+            add_test(NAME cross/shared-tls-refused-${_st}
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/shared-tls-refused.sh"
+                        "${_st}" "${MCC_CROSS_DIR}/mcc-${_st}" "${MCC_CROSS_DIR}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_st}-glibc"
+                        "${CMAKE_BINARY_DIR}/shared-tls-${_st}")
+            set_tests_properties(cross/shared-tls-refused-${_st} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 300)
+        endforeach()
+
         # A compile-only census needs no emulator and no loader, which is what
         # makes the PE and Darwin triples reachable here too -- they stage
         # against mcc's own bundled headers instead of a sysroot.
