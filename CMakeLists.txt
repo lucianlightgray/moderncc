@@ -4085,6 +4085,29 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 1800)
         endforeach()
 
+        # -O0 is the one level the loop above cannot cover, and it is the level
+        # the deletion bar is stated over just as much as -O1..-O3: ast_replay_env
+        # needs optimize >= 1, so an -O0 cell added to that foreach would journal
+        # nothing and pass vacuously. FORCE lifts the replay gate and turns on
+        # every optimize>=1 pass gate, derived from SRCDIR at run time; see the
+        # header of rir_parity.cmake for why the list is derived and not copied.
+        # It is its own add_test rather than a fourth loop iteration because the
+        # c3 cell has no forced-O0 counterpart -- the pass-equivalence question
+        # it asks is about the optimizer running, not about -O0 emit.
+        add_test(NAME ast/rir-parity-O0
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}"
+                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-O0"
+                    "-DOPT=-O0"
+                    "-DFORCE=1"
+                    "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
+        set_tests_properties(ast/rir-parity-O0 PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+            TIMEOUT 900)
+
         add_custom_target(rir-c3
             COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=${_mcc_exe}"
@@ -4229,6 +4252,50 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(ast/rir-c3-${_rp} PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
+
+            # The -O0 half of the same bar, on the same compiler. Without this
+            # the matrix reads "every target at every -O" while covering one -O
+            # natively and one -O per cross target; -O0 was the level no cell
+            # anywhere measured. FORCE is mandatory here for the reason given in
+            # rir_parity.cmake's header -- the gate list is derived from SRCDIR
+            # per run, so a cross cell cannot drift from the native one.
+            add_test(NAME ast/rir-parity-${_rp}-O0
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rp}-O0"
+                        "-DOPT=-O0"
+                        "-DFORCE=1"
+                        "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
+                        "-DMCCFLAGS=${_rpf}"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
+            set_tests_properties(ast/rir-parity-${_rp}-O0 PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 1800)
+
+            # -O2 and -O3 complete "every target at every -O": the cell above
+            # covers -O1 and the one before it -O0, and the native loop already
+            # covers all four, so without these two the matrix asserts the bar
+            # on four levels natively and two per cross target. They reuse
+            # ${_rpf} rather than hand-rolled flags for the reason the header
+            # of rir_parity.cmake gives -- a wrong sysroot does not fail, it
+            # shrinks the census to the include-free files and passes.
+            foreach(_rpo -O2 -O3)
+                string(REPLACE "-" "" _rpot "${_rpo}")
+                add_test(NAME ast/rir-parity-${_rp}-${_rpot}
+                    COMMAND "${CMAKE_COMMAND}"
+                            "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
+                            "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                            "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                            "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rp}-${_rpot}"
+                            "-DOPT=${_rpo}"
+                            "-DMCCFLAGS=${_rpf}"
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
+                set_tests_properties(ast/rir-parity-${_rp}-${_rpot} PROPERTIES
+                    FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                    LABELS "cross" TIMEOUT 1800)
+            endforeach()
         endforeach()
 
         if(TARGET mcc_nojrn)

@@ -22,13 +22,23 @@ cmake_minimum_required(VERSION 3.22)
 # Pinning them here would turn a word-width property into a false regression.
 #
 # Required -D args: MCC CORPUS EXTRA TMPDIR
-# Optional: OPT (default -O1), MCCFLAGS (default empty)
+# Optional: OPT (default -O1), MCCFLAGS (default empty), FORCE + SRCDIR
 #
 # MCCFLAGS is what makes this runnable against a CROSS compiler: a sysroot, its
 # usr/include and an ABI flag. --sysroot alone is not enough -- the explicit
 # -I<sysroot>/usr/include is what makes the system headers resolve, and without
 # it the sweep silently shrinks to the include-free files and reports a
 # plausible, wrong census (journal_sweep.cmake:167 records the same trap).
+#
+# FORCE is what makes -O0 measurable at all. ast_replay_env needs optimize >= 1,
+# so a bare -O0 sweep journals nothing and reports fn=0 -- caught below as a
+# vacuous pass rather than mistaken for one. MCC_FORCE_REPLAY=1 lifts that, but
+# alone it measures a different compiler: the gates whose default is
+# `o4 || optimize >= 1` are all off at -O0, so the replay is asked to reproduce
+# an emit no other cell covers. Forcing every one of them on is what makes the
+# -O0 census comparable to -O1's. The list is DERIVED from SRCDIR rather than
+# copied, because a copied list silently shrinks as gates are added or renamed,
+# and a short list reads as a pass over fewer bodies rather than as a defect.
 #
 
 if(NOT MCC OR NOT CORPUS OR NOT EXTRA OR NOT TMPDIR)
@@ -42,6 +52,42 @@ if(MCCFLAGS)
     separate_arguments(_mccflags NATIVE_COMMAND "${MCCFLAGS}")
 endif()
 
+# Env prefix shared by the probe and every sweep compile. Both must carry it or
+# the probe decides SKIP against a different compiler than the sweep measures.
+set(_env "MCC_REPLAY_IR=1")
+if(FORCE)
+    if(NOT SRCDIR)
+        message(FATAL_ERROR "rir_parity: FORCE requires SRCDIR to derive the "
+                            "optimize>=1 gate list from")
+    endif()
+    file(GLOB _gsrcs "${SRCDIR}/*.c")
+    set(_gates "")
+    foreach(_gs ${_gsrcs})
+        file(READ "${_gs}" _gtext)
+        string(REGEX MATCHALL
+               "ast_env_gate\\(\"MCC_AST_[A-Z0-9_]+\", *o4 \\|\\| s1->optimize >= 1\\)"
+               _gm "${_gtext}")
+        foreach(_g ${_gm})
+            string(REGEX REPLACE "^.*\"(MCC_AST_[A-Z0-9_]+)\".*$" "\\1" _gn "${_g}")
+            list(APPEND _gates "${_gn}")
+        endforeach()
+    endforeach()
+    list(REMOVE_DUPLICATES _gates)
+    list(SORT _gates)
+    list(LENGTH _gates _ngates)
+    if(_ngates EQUAL 0)
+        message(FATAL_ERROR "rir_parity: FORCE derived 0 gates from ${SRCDIR} — "
+                            "the ast_env_gate spelling changed, so this run "
+                            "would measure -O0 with every pass off and call it "
+                            "parity")
+    endif()
+    list(APPEND _env "MCC_FORCE_REPLAY=1")
+    foreach(_g ${_gates})
+        list(APPEND _env "${_g}=1")
+    endforeach()
+    message(STATUS "rir_parity: FORCE — ${_ngates} optimize>=1 gate(s) forced on")
+endif()
+
 file(MAKE_DIRECTORY "${TMPDIR}")
 set(ENV{SOURCE_DATE_EPOCH} "1000000000")
 
@@ -49,7 +95,7 @@ set(ENV{SOURCE_DATE_EPOCH} "1000000000")
 # SKIP rather than a vacuous pass.
 file(WRITE "${TMPDIR}/probe.c" "int rir_probe(int a, int b) { return a * b + 1; }\n")
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" -E env "MCC_REPLAY_IR=1"
+    COMMAND "${CMAKE_COMMAND}" -E env ${_env}
             "${MCC}" -w "${OPT}" ${_mccflags} -c -o "${TMPDIR}/probe.o" "${TMPDIR}/probe.c"
     OUTPUT_QUIET ERROR_VARIABLE _perr RESULT_VARIABLE _prc)
 if(NOT _perr MATCHES "\\[rir-total\\]")
@@ -71,7 +117,7 @@ set(_files 0)
 set(_badnames "")
 foreach(_f ${_srcs})
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E env "MCC_REPLAY_IR=1"
+        COMMAND "${CMAKE_COMMAND}" -E env ${_env}
                 "${MCC}" -w "${OPT}" ${_mccflags} -c -o "${TMPDIR}/a.o" "${_f}"
         OUTPUT_QUIET ERROR_VARIABLE _err RESULT_VARIABLE _rc)
     if(NOT _rc EQUAL 0)

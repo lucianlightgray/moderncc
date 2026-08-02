@@ -59,22 +59,51 @@ int rir_active;
 #define RIR_LOCREC_MAX 512
 static int rir_locrec[RIR_LOCREC_MAX];
 static int rir_locrec_pos[RIR_LOCREC_MAX];
+static int rir_locrec_nc[RIR_LOCREC_MAX];
 static int rir_locrec_n, rir_locrec_i;
 
 void rir_loc_record(int loc_in) {
 	if (rir_locrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_locrec_pos[rir_locrec_n] = ind;
+	rir_locrec_nc[rir_locrec_n] = nocode_wanted;
 	rir_locrec[rir_locrec_n++] = loc_in;
 }
 
 int rir_loc_replay(int *loc_out) {
-	while (rir_locrec_i + 1 < rir_locrec_n && rir_locrec_pos[rir_locrec_i + 1] <= ind)
+	while (rir_locrec_i + 1 < rir_locrec_n && rir_locrec_pos[rir_locrec_i + 1] <= ind &&
+	       ((rir_locrec_nc[rir_locrec_i] & RIR_NOEVAL_MASK) ||
+	        rir_locrec_pos[rir_locrec_i + 1] > rir_locrec_pos[rir_locrec_i]))
 		rir_locrec_i++;
 	if (rir_locrec_i >= rir_locrec_n)
 		return 0;
 	*loc_out = rir_locrec[rir_locrec_i++];
 	return 1;
+}
+
+static int rir_fcrec[RIR_LOCREC_MAX];
+static int rir_fcrec_pos[RIR_LOCREC_MAX];
+static int rir_fcrec_nc[RIR_LOCREC_MAX];
+static int rir_fcrec_n, rir_fcrec_i;
+
+void rir_hook_fconst_record(int c) {
+	if (!rir_capture_live() || rir_fcrec_n >= RIR_LOCREC_MAX)
+		return;
+	rir_fcrec_pos[rir_fcrec_n] = ind;
+	rir_fcrec_nc[rir_fcrec_n] = nocode_wanted;
+	rir_fcrec[rir_fcrec_n++] = c;
+}
+
+int rir_hook_fconst_reuse(void) {
+	if (!rir_c2_active)
+		return -1;
+	while (rir_fcrec_i + 1 < rir_fcrec_n && rir_fcrec_pos[rir_fcrec_i + 1] <= ind &&
+	       ((rir_fcrec_nc[rir_fcrec_i] & RIR_NOEVAL_MASK) ||
+	        rir_fcrec_pos[rir_fcrec_i + 1] > rir_fcrec_pos[rir_fcrec_i]))
+		rir_fcrec_i++;
+	if (rir_fcrec_i >= rir_fcrec_n)
+		return 0;
+	return rir_fcrec[rir_fcrec_i++];
 }
 
 /* alloc_local_slot bumps `loc` directly, so it is outside both the tree's
@@ -715,6 +744,8 @@ void rir_reset(void) {
 	rir_slotrec_i = 0;
 	rir_tvrec_n = 0;
 	rir_tvrec_i = 0;
+	rir_fcrec_n = 0;
+	rir_fcrec_i = 0;
 	rir_body_hasheq = 0;
 	rir_xtn = 0;
 	rir_ptn = 0;
@@ -4911,6 +4942,7 @@ void rir_verify(void) {
 			rir_locrec_i = 0;
 			rir_slotrec_i = 0;
 			rir_tvrec_i = 0;
+			rir_fcrec_i = 0;
 			rir_c2_active = 1;
 			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
 													? ast_cur

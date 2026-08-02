@@ -2636,6 +2636,13 @@ void ast_fconst_reuse_disable(int off) { MCC_TRACE("enter\n"); ast_fconst_reuse_
 
 int ast_fconst_reuse(void) { MCC_TRACE("enter\n");
 	int jfc;
+#if MCC_REPLAY_IR
+	{
+		int rfc = rir_hook_fconst_reuse();
+		if (rfc >= 0)
+			{ MCC_TRACE("br\n"); return rfc; }
+	}
+#endif
 	if (jrn_fconst_take(&jfc))
 		{ MCC_TRACE("br\n"); return jfc; }
 	if (ast_replaying && !ast_fconst_reuse_off && ast_fconst_i < ast_fconst_n)
@@ -2644,6 +2651,9 @@ int ast_fconst_reuse(void) { MCC_TRACE("enter\n");
 }
 void ast_fconst_record(int c) { MCC_TRACE("enter\n");
 	jrn_fconst_note(c);
+#if MCC_REPLAY_IR
+	rir_hook_fconst_record(c);
+#endif
 	if (!ast_active || ast_replaying)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_fconst_n == ast_fconst_cap) { MCC_TRACE("br\n");
