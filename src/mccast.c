@@ -7010,7 +7010,7 @@ static void ast_finalize_chainstores(AstArena *a) { MCC_TRACE("enter\n");
 		if (nx == AST_NONE || ast_kind(a, nx) != AST_Store ||
 				!(ast_fbits(a, nx) & 1u) || ast_nchild(a, nx) != 2)
 			{ MCC_TRACE("br\n"); continue; }
-		if (ast_op(a, nx) == AST_OP_OPASSIGN || ast_op(a, n) == AST_OP_OPASSIGN)
+		if (ast_op(a, nx) == AST_OP_OPASSIGN)
 			{ MCC_TRACE("br\n"); continue; }
 		{
 			AstLocal ov = ast_child(a, nx, 1);
