@@ -4071,7 +4071,29 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(ast/rir-parity-${_rotag} PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                 TIMEOUT 900)
+
+            add_test(NAME ast/rir-c3-${_rotag}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${_mcc_exe}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c3-${_rotag}"
+                        "-DOPT=${_ro}"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c3.cmake")
+            set_tests_properties(ast/rir-c3-${_rotag} PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 1800)
         endforeach()
+
+        add_custom_target(rir-c3
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DMCC=${_mcc_exe}"
+                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c3-target"
+                    "-DOPT=-O1"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c3.cmake"
+            DEPENDS mcc USES_TERMINAL)
 
         # Phase D's bar is per-TARGET, and running it by hand is how a gate goes
         # stale. The cross compilers in MCC_CROSS_DIR emit for these four and the
@@ -4192,6 +4214,19 @@ if(MCC_BUILD_TESTS)
                         "-DMCCFLAGS=${_rpf}"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
             set_tests_properties(ast/rir-parity-${_rp} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 1800)
+
+            add_test(NAME ast/rir-c3-${_rp}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c3-${_rp}"
+                        "-DOPT=-O1"
+                        "-DMCCFLAGS=${_rpf}"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c3.cmake")
+            set_tests_properties(ast/rir-c3-${_rp} PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
         endforeach()
