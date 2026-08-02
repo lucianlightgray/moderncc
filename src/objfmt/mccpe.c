@@ -2044,7 +2044,23 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_ARM64_ADDR64: *etype = R_AARCH64_ABS64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
 	case IMAGE_REL_ARM64_ADDR32: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_RELATIVE; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
-	case IMAGE_REL_ARM64_BRANCH26: *etype = R_AARCH64_CALL26; return 1;
+	case IMAGE_REL_ARM64_BRANCH26:
+		/* COFF has ONE BRANCH26 for both `bl` and the tail-call `b`, where ELF
+		   has two relocations -- and the arm64 resolver SYNTHESIZES the
+		   instruction word from the type (0x14000000 | (CALL26 << 31), see
+		   arm64-link.c relocate) rather than patching the immediate, so calling
+		   every branch a CALL26 rewrites every sibling call in a foreign COFF
+		   object into `bl`; clang emits sibling calls from -O1 up, so this
+		   corrupts the vendored mingw CRT and the self-hosted binary crashes at
+		   startup. The Mach-O reader had the identical defect (macho_load_relocs).
+		   Decode bit 31: set is `bl`, clear is `b`. Windows-host only, so POSIX
+		   cross output stays byte-identical to the recorded baselines. */
+#if MCC_HOST_WIN32
+		*etype = (coff_rd32(fld) & 0x80000000u) ? R_AARCH64_CALL26 : R_AARCH64_JUMP26;
+#else
+		*etype = R_AARCH64_CALL26;
+#endif
+		return 1;
 	case IMAGE_REL_ARM64_PAGEBASE_REL21: *etype = R_AARCH64_ADR_PREL_PG_HI21; return 1;
 	case IMAGE_REL_ARM64_PAGEOFFSET_12A: *etype = R_AARCH64_ADD_ABS_LO12_NC; return 1;
 	case IMAGE_REL_ARM64_PAGEOFFSET_12L: *etype = R_AARCH64_LDST64_ABS_LO12_NC; return 1;
