@@ -44,6 +44,8 @@ void rir_loc_record(int loc_in);
 int rir_loc_replay(int *loc_out);
 void rir_slot_record(int loc_in);
 int rir_slot_replay(int *loc_out);
+void rir_tvar_record(int loc_in, int r2);
+int rir_tvar_replay(int *loc_out, int *r2_out);
 void rir_configure(void);
 void rir_reset(void);
 void rir_verify(void);
@@ -159,6 +161,8 @@ void rir_vla_begin(void);
 #define rir_loc_replay(p) 0
 #define rir_slot_record(l) ((void)0)
 #define rir_slot_replay(p) 0
+#define rir_tvar_record(l, r) ((void)0)
+#define rir_tvar_replay(p, q) 0
 
 #endif
 

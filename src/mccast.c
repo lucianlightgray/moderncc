@@ -2104,6 +2104,27 @@ int ast_alloc_slot(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
+/* get_temp_local_var lives in mccgen.c and cannot reach Replay_IR's list
+   directly; these are the bridge, in the same shape as ast_alloc_slot's. */
+int ast_tvar_replay(int *loc_out, int *r2_out) { MCC_TRACE("enter\n");
+#if MCC_REPLAY_IR
+	if (rir_c2_active)
+		{ MCC_TRACE("br\n"); return rir_tvar_replay(loc_out, r2_out); }
+#else
+	(void)loc_out, (void)r2_out;
+#endif
+	return 0;
+}
+
+void ast_tvar_record(int loc_in, int r2) { MCC_TRACE("enter\n");
+#if MCC_REPLAY_IR
+	if (rir_active && !ast_replaying && !jrn_replaying)
+		{ MCC_TRACE("br\n"); rir_tvar_record(loc_in, r2); }
+#else
+	(void)loc_in, (void)r2;
+#endif
+}
+
 /* True iff [lo, lo+sz) overlaps any reserved ast_ltemp slot (each 8 bytes, the
  * size every ast_ltemp_* mint uses: `off = (ast_ltemp_cur - 8) & -8`). The temp-
  * slot allocator (get_temp_local_var) consults this so it never hands a spill

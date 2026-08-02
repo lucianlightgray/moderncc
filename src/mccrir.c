@@ -95,6 +95,37 @@ int rir_slot_replay(int *loc_out) {
 	*loc_out = rir_slotrec[rir_slotrec_i++];
 	return 1;
 }
+
+/* get_temp_local_var is a third allocator and the only one that REUSES: it scans
+   arr_temp_local_vars for a free slot of the right shape before minting one, and
+   that array is not reset between the parse and the C2 trial. So the trial finds
+   the slot the parse had just created and returns it where the parse allocated a
+   fresh one -- i386's struct-return pointer spill landed one temp apart, self
+   consistently, on all six cleanup.c bodies. Recording the RESULT of the call
+   (offset and r2 index together, since r2 drives the liveness mask) covers the
+   reuse and the mint on one list. Position-keyed like rir_locrec: allocation
+   ORDER is not enough, because the two phases reach the reuse scan differently. */
+static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
+static int rir_tvrec_pos[RIR_LOCREC_MAX];
+static int rir_tvrec_n, rir_tvrec_i;
+
+void rir_tvar_record(int loc_in, int r2) {
+	if (rir_tvrec_n >= RIR_LOCREC_MAX)
+		return;
+	rir_tvrec_pos[rir_tvrec_n] = ind;
+	rir_tvrec_r2[rir_tvrec_n] = r2;
+	rir_tvrec[rir_tvrec_n++] = loc_in;
+}
+
+int rir_tvar_replay(int *loc_out, int *r2_out) {
+	while (rir_tvrec_i + 1 < rir_tvrec_n && rir_tvrec_pos[rir_tvrec_i + 1] <= ind)
+		rir_tvrec_i++;
+	if (rir_tvrec_i >= rir_tvrec_n)
+		return 0;
+	*r2_out = rir_tvrec_r2[rir_tvrec_i];
+	*loc_out = rir_tvrec[rir_tvrec_i++];
+	return 1;
+}
 int rir_c2_active;
 int rir_started;
 
@@ -354,6 +385,8 @@ void rir_reset(void) {
 	rir_locrec_i = 0;
 	rir_slotrec_n = 0;
 	rir_slotrec_i = 0;
+	rir_tvrec_n = 0;
+	rir_tvrec_i = 0;
 	rir_body_hasheq = 0;
 	rir_xtn = 0;
 	rir_ptn = 0;
@@ -4462,6 +4495,7 @@ void rir_verify(void) {
 			}
 			rir_locrec_i = 0;
 			rir_slotrec_i = 0;
+			rir_tvrec_i = 0;
 			rir_c2_active = 1;
 			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
 													? ast_cur

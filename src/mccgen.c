@@ -2067,6 +2067,20 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	int tmploc;
 	unsigned used = 0;
 
+#if MCC_CONFIG_OPTIMIZER
+	/* arr_temp_local_vars is not reset between the parse and the C2 trial, so the
+	   trial's reuse scan finds the slot the parse had just minted and hands it
+	   back where the parse allocated a fresh one. Replay the recorded result --
+	   offset and r2 index together, since r2 drives the liveness mask. */
+	{
+		int rl, rr;
+		if (ast_tvar_replay(&rl, &rr)) { MCC_TRACE("br\n");
+			*r2 = rr;
+			return rl;
+		}
+	}
+#endif
+
 	for (p = vstack; p <= vtop; p++) { MCC_TRACE("br\n");
 		r = p->r & VT_VALMASK;
 		if (r == VT_LOCAL || r == VT_LLOCAL) { MCC_TRACE("br\n");
@@ -2080,6 +2094,9 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 		if (!(used & 1 << i) && temp_var->size >= size && temp_var->align >= align) { MCC_TRACE("br\n");
 		ret_tmp:
 			*r2 = (VT_CONST + 1) + i;
+#if MCC_CONFIG_OPTIMIZER
+			ast_tvar_record(temp_var->location, *r2);
+#endif
 			return temp_var->location;
 		}
 	}
@@ -2123,6 +2140,9 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 		goto ret_tmp;
 	}
 	*r2 = VT_CONST;
+#if MCC_CONFIG_OPTIMIZER
+	ast_tvar_record(tmploc, *r2);
+#endif
 	return tmploc;
 }
 
