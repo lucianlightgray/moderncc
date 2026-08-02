@@ -14444,6 +14444,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		seqp_reset();
 #if MCC_CONFIG_OPTIMIZER
 		unsigned long zbss_rel0 = data_section->reloc ? data_section->reloc->data_offset : 0;
+		unsigned long ztls_rel0 =
+				tdata_section && tdata_section->reloc ? tdata_section->reloc->data_offset : 0;
 #endif
 		decl_initializer(&p, type, addr, DIF_FIRST);
 		seqp_check();
@@ -14474,6 +14476,22 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			new_addr = (int)section_add(bss_section, size, align);
 			put_extern_sym(sym, bss_section, new_addr, size);
 			MCC_TRACE("zero-bss move v=%d size=%d data@%d -> bss@%d\n", v, size, addr, new_addr);
+		}
+		if (ast_zero_bss_env && v && sym && size > 0 && sec == tdata_section &&
+				tdata_section && tbss_section &&
+#if MCC_CONFIG_DIAG_RT >= 2
+				!bcheck &&
+#endif
+				!asan_g && !flexible_array &&
+				(unsigned long)(addr + size) == tdata_section->data_offset &&
+				(tdata_section->reloc ? tdata_section->reloc->data_offset : 0) == ztls_rel0 &&
+				ast_data_all_zero(tdata_section, addr, size)) { MCC_TRACE("br\n");
+			int new_addr;
+			tdata_section->data_offset = addr;
+			new_addr = (int)section_add(tbss_section, size, align);
+			put_extern_sym(sym, tbss_section, new_addr, size);
+			MCC_TRACE("zero-tbss move v=%d size=%d tdata@%d -> tbss@%d\n", v, size, addr,
+								new_addr);
 		}
 		/* -fmerge-constants: an anonymous rodata string literal (v==0, put in rodata via
 		 * str_init) whose exact bytes already appeared this TU can share the prior copy.
