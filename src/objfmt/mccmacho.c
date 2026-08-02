@@ -2707,7 +2707,16 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) { MCC_TRACE("enter\n");
 	}
 	cstr_free(&path);
 }
+#endif
 
+/* The SDK header path is the same universal SDK for arm64 and x86_64, so a
+   cross osx compiler built ON a macOS host resolves <stdio.h> et al from it
+   too. Gated on the build host being Apple (__APPLE__) rather than on the
+   target being the host: without it, cross x86_64-osx on an arm64 mac finds no
+   system headers, compiles a fraction of the corpus, and reads a false 100%.
+   host_macos_sdk_root() returns NULL off Apple, so a Linux-hosted cross build
+   adds only the (absent, harmless) fallback paths. */
+#if defined MCC_TARGET_IS_HOST || defined __APPLE__
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) { MCC_TRACE("enter\n");
 	const char *sdk = host_macos_sdk_root();
 	CString path;
@@ -2723,7 +2732,9 @@ ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) { MCC_TRACE("enter\n");
 	}
 	cstr_free(&path);
 }
+#endif
 
+#ifdef MCC_TARGET_IS_HOST
 ST_FUNC char *macho_tbd_soname(int fd) { MCC_TRACE("enter\n");
 	char *soname, *data, *pos;
 	char *ret = 0;
