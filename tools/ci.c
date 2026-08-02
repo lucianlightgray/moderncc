@@ -2062,6 +2062,157 @@ static int pkg_archive(const char *pkg, const char *out, const char *d,
 	return 0;
 }
 
+/* A thin Mach-O, i.e. a fuse candidate. Fat files, archives, headers, scripts
+   and cmake fragments all fall through to a plain copy. */
+static int fat_is_thin_macho(const char *path) {
+	unsigned char m[4];
+	size_t n;
+	FILE *f = fopen(path, "rb");
+	if (!f)
+		return 0;
+	n = fread(m, 1, sizeof m, f);
+	fclose(f);
+	return n == sizeof m && (m[0] == 0xcf || m[0] == 0xce) && m[1] == 0xfa &&
+				 m[2] == 0xed && m[3] == 0xfe;
+}
+
+struct fatctx {
+	const char *a, *b, *dst, *fat;
+	size_t alen;
+	int fused, copied, failed;
+};
+
+static int fat_walk_cb(const char *path, int is_dir, void *ud) {
+	struct fatctx *c = ud;
+	const char *rel = path + c->alen;
+	char bp[8192], dp[8192];
+	int bisd;
+
+	while (*rel == '/')
+		rel++;
+	ts_path(dp, sizeof dp, c->dst, "%s", rel);
+	if (is_dir) {
+		host_mkdirs(dp);
+		return 0;
+	}
+	ts_path(bp, sizeof bp, c->b, "%s", rel);
+	if (host_stat(bp, &bisd, NULL, NULL) == 0 && !bisd &&
+			fat_is_thin_macho(path) && fat_is_thin_macho(bp)) {
+		const char *av[] = {c->fat, dp, path, bp, 0};
+		if (ts_run(av)) {
+			fprintf(stderr, "ci fat: machofat failed on %s\n", rel);
+			c->failed++;
+		} else
+			c->fused++;
+		return 0;
+	}
+	if (host_copy_file(path, dp, 1)) {
+		fprintf(stderr, "ci fat: copy failed: %s\n", rel);
+		c->failed++;
+	} else
+		c->copied++;
+	return 0;
+}
+
+/* Fuse two same-version single-arch bundles into one universal bundle. The dist
+   flow already uploads macos-arm64-clang and macos-x86_64-clang as separate
+   artifacts, so the fuse inputs exist; what was missing was the step that turns
+   them into the universal binary a macOS release is expected to ship.
+
+   machofat is verify-and-skip rather than re-sign: MCC_MACHO_ADHOC_SIGN is
+   default-on so every slice arrives self-signed, and a CodeDirectory covers
+   slice-relative offsets, so fusing preserves each slice's signature. */
+static int do_fat(int argc, char **argv) {
+	const char *ver = NULL, *plat = "macos-universal", *out = "dist";
+	const char *fat = NULL, *a = NULL, *b = NULL, *name = NULL, *fmt = "tar.xz";
+	char ver_s[128], pkg[8192], dd[8192], d[512];
+	struct fatctx c;
+	Argv names = {{0}, 0};
+	int i, isd;
+
+	for (i = 0; i < argc; i++) {
+		if (!strcmp(argv[i], "--ver") && i + 1 < argc)
+			ver = argv[++i];
+		else if (!strcmp(argv[i], "--plat") && i + 1 < argc)
+			plat = argv[++i];
+		else if (!strcmp(argv[i], "--out") && i + 1 < argc)
+			out = argv[++i];
+		else if (!strcmp(argv[i], "--fat") && i + 1 < argc)
+			fat = argv[++i];
+		else if (!strcmp(argv[i], "--a") && i + 1 < argc)
+			a = argv[++i];
+		else if (!strcmp(argv[i], "--b") && i + 1 < argc)
+			b = argv[++i];
+		else if (!strcmp(argv[i], "--name") && i + 1 < argc)
+			name = argv[++i];
+		else if (!strcmp(argv[i], "--format") && i + 1 < argc)
+			fmt = argv[++i];
+	}
+	if (!ver || !fat || !a || !b) {
+		fprintf(stderr, "usage: ci fat --ver V --fat <machofat> --a <dirA> "
+										"--b <dirB> [--plat P] [--out D] [--name N] [--format F]\n");
+		return 2;
+	}
+	if (host_stat(a, &isd, NULL, NULL) || !isd) {
+		fprintf(stderr, "ci fat: --a is not a directory: %s\n", a);
+		return 1;
+	}
+	if (host_stat(b, &isd, NULL, NULL) || !isd) {
+		fprintf(stderr, "ci fat: --b is not a directory: %s\n", b);
+		return 1;
+	}
+	{
+		const char *v = ver;
+		if (*v == 'v')
+			v++;
+		snprintf(ver_s, sizeof ver_s, "%s", v);
+	}
+	if (name)
+		snprintf(d, sizeof d, "%s", name);
+	else
+		snprintf(d, sizeof d, "mcc-%s-%s", ver_s, plat);
+
+	ts_path(pkg, sizeof pkg, out, ".fat");
+	{
+		const char *rm[] = {ci_cmake(), "-E", "rm", "-rf", pkg, 0};
+		ts_run(rm);
+	}
+	host_mkdirs(out);
+	ts_path(dd, sizeof dd, pkg, "%s", d);
+	host_mkdirs(dd);
+
+	memset(&c, 0, sizeof c);
+	c.a = a;
+	c.b = b;
+	c.dst = dd;
+	c.fat = fat;
+	c.alen = strlen(a);
+	if (host_dir_walk(a, 1, fat_walk_cb, &c) < 0) {
+		fprintf(stderr, "ci fat: cannot walk %s\n", a);
+		return 1;
+	}
+	printf("ci fat: %d fused, %d copied, %d failed\n", c.fused, c.copied,
+				 c.failed);
+	if (c.failed)
+		return 1;
+	if (!c.fused) {
+		fprintf(stderr, "ci fat: nothing was fused -- the two trees share no thin "
+										"Mach-O file, so this bundle would ship single-arch\n");
+		return 1;
+	}
+	if (pkg_archive(pkg, out, d, fmt, &names))
+		return 1;
+	{
+		const char *rm[] = {ci_cmake(), "-E", "rm", "-rf", pkg, 0};
+		ts_run(rm);
+	}
+	for (i = 0; i < names.n; i++) {
+		printf("  %s\n", names.a[i]);
+		free((void *)names.a[i]);
+	}
+	return 0;
+}
+
 static int do_pkg(int argc, char **argv) {
 	const char *ver = NULL, *plat = NULL, *stage = "stage", *out = "out", *fmt = NULL;
 	const char *ext, *xsuf, *libdir, *pkg = "pkg";
@@ -2869,6 +3020,8 @@ int main(int argc, char **argv) {
 		return do_bench_summary(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "pkg"))
 		return do_pkg(argc - 2, argv + 2);
+	if (!strcmp(argv[1], "fat"))
+		return do_fat(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "sha256sums"))
 		return do_sha256sums(argc - 2, argv + 2);
 	if (!strcmp(argv[1], "junit-summary"))

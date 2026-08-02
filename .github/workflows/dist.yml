@@ -92,6 +92,73 @@ jobs:
             dist/checksums-*.txt
             dist/bench-*.txt
 
+  # The two macOS cells above ship one slice each. A macOS release is expected to
+  # be universal, and dist-macos sets no CMAKE_OSX_ARCHITECTURES, so the fuse has
+  # to happen after both cells: download both artifacts, run every bundle pair
+  # through `ci fat` (machofat per thin Mach-O file, plain copy for everything
+  # else), and upload the universal set. Signatures survive the fuse -- every
+  # slice is self-signed by MCC_MACHO_ADHOC_SIGN and a CodeDirectory covers
+  # slice-relative offsets -- so nothing is re-signed here.
+  macos-universal:
+    needs: unix
+    name: macos-universal
+    runs-on: macos-15
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/ci
+      - uses: actions/download-artifact@v7
+        with:
+          name: mcc-macos-arm64-clang
+          path: fuse/arm64
+      - uses: actions/download-artifact@v7
+        with:
+          name: mcc-macos-x86_64-clang
+          path: fuse/x86_64
+      - name: fuse the two slices into universal bundles
+        run: |
+          set -eux
+          cc -O2 -o "$RUNNER_TEMP/machofat" tools/machofat.c
+          ver="${VERSION:-ci-${GITHUB_SHA::12}}"
+          ver="${ver#v}"
+          echo "VER=$ver" >> "$GITHUB_ENV"
+          mkdir -p dist fuse/x fuse/y
+          for kind in mcc libmcc mcc-cross; do
+            a="fuse/arm64/$kind-$ver-macos-arm64-clang.tar.xz"
+            b="fuse/x86_64/$kind-$ver-macos-x86_64-clang.tar.xz"
+            if [ ! -f "$a" ] || [ ! -f "$b" ]; then
+              echo "skip $kind: one side is missing ($a / $b)"
+              continue
+            fi
+            rm -rf fuse/x fuse/y && mkdir -p fuse/x fuse/y
+            tar xf "$a" -C fuse/x
+            tar xf "$b" -C fuse/y
+            mcc-ci fat --ver "$ver" --plat macos-universal \
+              --fat "$RUNNER_TEMP/machofat" --out dist \
+              --name "$kind-$ver-macos-universal" \
+              --a "fuse/x/$kind-$ver-macos-arm64-clang" \
+              --b "fuse/y/$kind-$ver-macos-x86_64-clang"
+          done
+          mcc-ci sha256sums dist --out dist/checksums-macos-universal.txt
+      - name: verify every fused binary is universal and runs
+        run: |
+          set -eux
+          rm -rf verify && mkdir verify
+          tar xf "dist/mcc-$VER-macos-universal.tar.xz" -C verify
+          bin=$(find verify -type f -name mcc | head -1)
+          lipo -info "$bin" | grep -q 'arm64'
+          lipo -info "$bin" | grep -q 'x86_64'
+          codesign -v --deep "$bin"
+          arch -arm64 "$bin" -version
+          arch -x86_64 "$bin" -version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcc-macos-universal
+          path: |
+            dist/*.tar.xz
+            dist/checksums-*.txt
+
   windows:
     needs: plan
     name: ${{ matrix.plat }}
