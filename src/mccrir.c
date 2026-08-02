@@ -4580,6 +4580,18 @@ void rir_verify(void) {
 					from = fb > 16 ? fb - 16 : 0;
 					{
 						int bi = rir_blame(fb);
+						if (getenv("RIRDUMP")) {
+							int z;
+							for (z = (bi > 6 ? bi - 6 : 0); z < bi + 3 && z < rir_n; z++)
+								fprintf(stderr, "    [%d] tag=%d kind=%s win=[%d,%d)\n", z,
+												rir_ops[z].tag,
+												rir_ops[z].tag == RIR_T_OP
+														? jrn_op_name(rir_ops[z].p.kind) : "MARK",
+												rir_ops[z].tag == RIR_T_OP
+														? rir_ops[z].p.ind_pre - ast_body_ind_sv : -1,
+												rir_ops[z].tag == RIR_T_OP
+														? rir_ops[z].p.ind_post - ast_body_ind_sv : -1);
+						}
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, fd, fb,
 										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
