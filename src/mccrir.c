@@ -1973,7 +1973,8 @@ static void rir_op_effect(const RirOp *ro) {
 			const SValue *ls = &jrn_vs[o->vs_off + o->vs_n - 2];
 			if ((rs->r & VT_VALMASK) < VT_CONST && !(rs->r & VT_LVAL) &&
 					(ls->r & VT_LVAL) && (ls->r & VT_VALMASK) >= VT_CONST &&
-					b != AST_NONE && ast_kind(rir_arena, b) == AST_Load)
+					b != AST_NONE && (ast_kind(rir_arena, b) == AST_Load ||
+														ast_kind(rir_arena, b) == AST_Ref))
 				ast_set_fbits(rir_arena, n,
 											ast_fbits(rir_arena, n) | AST_FB_BINARY_RHS_GV);
 		}
