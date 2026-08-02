@@ -370,6 +370,27 @@ Ranked. Everything below is measured on `tests/exec` + `tests/diff/full_language
 
 **CROSS-TARGET C2, measured for the first time 2026-08-01.** Host-hosted amalgamations, one per target, built exactly as instruction 28 describes plus `-DMCC_REPLAY_IR_C2=1` (x86_64 also needs `-Isrc/arch/i386`, and every target needs `-B runtime` or `mccdefs.h` is not found). Corpus `tests/exec` + `full_language.c` at `-O1`. The containment column compares against a stock build of the SAME amalgamation with the probe compiled out, on files AND on `fn` — instruction 26.
 
+**REFRESHED 2026-08-02, after the struct-`va_arg` journalling fix and the `VT_NONLVAL` crash fix.** `c2err` is now **zero on every
+target** and containment is clean on every target (no compile aborts anywhere over the corpus). Aggregate: **12966 of 13111 tried =
+98.89%**, ranging 97.7% (riscv64) to 100% (both x86_64 triples). What is left is entirely `c2len`/`c2bytes` tails plus riscv64's 5
+`c2invalid` / 2 `c2skip`.
+
+| target | fn | c2try | c2ok | % | len | bytes | err | invalid | skip | containment |
+|---|---|---|---|---|---|---|---|---|---|---|
+| x86_64 | 1182 | 1146 | **1146** | 100.0 | 0 | 0 | 0 | 0 | 0 | clean |
+| x86_64-osx | 1182 | 1146 | **1146** | 100.0 | 0 | 0 | 0 | 0 | 0 | clean |
+| arm64-osx | 1216 | 1180 | 1173 | 99.4 | 3 | 4 | 0 | 0 | 0 | clean |
+| arm64-win32 | 1322 | 1286 | 1277 | 99.3 | 5 | 4 | 0 | 0 | 0 | clean |
+| arm64 | 1216 | 1180 | 1171 | 99.2 | 4 | 5 | 0 | 0 | 0 | clean |
+| x86_64-win32 | 1278 | 1243 | 1229 | 98.9 | 12 | 2 | 0 | 0 | 0 | clean |
+| i386 | 1185 | 1150 | 1134 | 98.6 | 11 | 5 | 0 | 0 | 0 | clean |
+| arm | 1162 | 1127 | 1108 | 98.3 | 11 | 8 | 0 | 0 | 0 | clean |
+| arm-win32 | 1275 | 1240 | 1219 | 98.3 | 13 | 8 | 0 | 0 | 0 | clean |
+| i386-win32 | 1298 | 1263 | 1239 | 98.1 | 19 | 5 | 0 | 0 | 0 | clean |
+| riscv64 | 1187 | 1150 | 1124 | 97.7 | 20 | 1 | 0 | 5 | 2 | clean |
+
+The superseded 2026-08-01 table, kept for the deltas it anchors:
+
 | target | files ok/fail | fn | c2try | c2ok | len | bytes | err | invalid | skip | containment |
 |---|---|---|---|---|---|---|---|---|---|---|
 | x86_64 | 261/15 | 1164 | 1128 | **1128** | 0 | 0 | 0 | 0 | 0 | clean |

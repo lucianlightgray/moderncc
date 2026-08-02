@@ -4106,7 +4106,7 @@ if(MCC_BUILD_TESTS)
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/no-compiler-abort.sh"
                         "${_na}" "${MCC_CROSS_DIR}/mcc-${_na}" "${MCC_CROSS_DIR}"
                         "${_na_sr}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                        -O1 -O2)
+                        -O0 -O1 -O2 -O3 -Os)
             set_tests_properties(cross/no-compiler-abort-${_na} PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
