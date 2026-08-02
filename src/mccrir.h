@@ -91,13 +91,15 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 									int align, int result);
 void rir_vla_begin(void);
 
-/* Direct capture path: statement control flow (A), then the call/store/return
-   spine (B1). These are called from src/mccgen.c immediately before the matching
+/* Direct capture path. Called from src/mccgen.c immediately before the matching
    ast_hook_*, in the position the lifted rir_* statements held at the head of
-   those hook bodies, so the capture no longer rides the tree recorder.
-   Everything here reads only its own arguments and the live parser globals
+   those hook bodies, so the capture no longer rides the tree recorder. Almost
+   everything here reads only its own arguments and the live parser globals
    rir_mark_v2 already samples (vstack, vtop, nocode_wanted, ind, jrn_n), which
-   is what makes the lift order-exact. */
+   is what makes the lift order-exact; the exceptions carry Replay_IR's own
+   state, which lives in src/mccrir.c with them -- the member arrow bit, the
+   builtin-complex lowering bit, and the ternary and logical-and/or nesting
+   stacks rir_hook_body_begin() resets per body. */
 void rir_hook_if_begin(void);
 void rir_hook_if_gvtst_done(void);
 void rir_hook_if_else(void);
@@ -143,6 +145,10 @@ void rir_hook_member_end(int cumofs, int nonlval);
 void rir_hook_builtin_complex_lower(void);
 void rir_hook_builtin_complex_end(void);
 void rir_hook_body_begin(void);
+int rir_dbg_on(void);
+int rir_capture_live(void);
+int rir_hook_slot_replay(void);
+void rir_hook_slot_record(void);
 void rir_hook_ternary_begin(int c, int g);
 void rir_hook_ternary_branch(int which);
 void rir_hook_ternary_branch_done(int which);
@@ -287,6 +293,11 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define rir_hook_builtin_complex_lower() ((void)0)
 #define rir_hook_builtin_complex_end() ((void)0)
 #define rir_hook_body_begin() ((void)0)
+#define rir_dbg_on() 0
+#define rir_capture_live() 0
+#define rir_hook_slot_replay() 0
+#define rir_hook_slot_record() ((void)0)
+#define rir_configure() ((void)0)
 #define rir_hook_ternary_begin(c, g) ((void)0)
 #define rir_hook_ternary_branch(w) ((void)0)
 #define rir_hook_ternary_branch_done(w) ((void)0)

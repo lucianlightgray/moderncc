@@ -995,6 +995,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) { MCC_TRACE("enter\n");
 	global_expr = 0;
 
 #if MCC_CONFIG_OPTIMIZER
+	rir_configure();
 	ast_configure(s1);
 #endif
 
@@ -2080,7 +2081,7 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	   offset and r2 index together, since r2 drives the liveness mask. */
 	{
 		int rl, rr;
-		if (ast_tvar_replay(&rl, &rr)) { MCC_TRACE("br\n");
+		if (rir_c2_active && rir_tvar_replay(&rl, &rr)) { MCC_TRACE("br\n");
 			*r2 = rr;
 			return rl;
 		}
@@ -2101,7 +2102,8 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 		ret_tmp:
 			*r2 = (VT_CONST + 1) + i;
 #if MCC_CONFIG_OPTIMIZER
-			ast_tvar_record(temp_var->location, *r2);
+			if (rir_capture_live())
+				{ MCC_TRACE("br\n"); rir_tvar_record(temp_var->location, *r2); }
 #endif
 			return temp_var->location;
 		}
@@ -2147,7 +2149,8 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	}
 	*r2 = VT_CONST;
 #if MCC_CONFIG_OPTIMIZER
-	ast_tvar_record(tmploc, *r2);
+	if (rir_capture_live())
+		{ MCC_TRACE("br\n"); rir_tvar_record(tmploc, *r2); }
 #endif
 	return tmploc;
 }
@@ -7786,11 +7789,14 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 static int alloc_local_slot(int size, int align) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 	ast_hook_bail();
-	return ast_alloc_slot(size, align);
-#else
-	loc = (loc - size) & -align;
-	return loc;
+	if (rir_hook_slot_replay())
+		{ MCC_TRACE("br\n"); return loc; }
 #endif
+	loc = (loc - size) & -align;
+#if MCC_CONFIG_OPTIMIZER
+	rir_hook_slot_record();
+#endif
+	return loc;
 }
 
 static int atomic_cas_size(SValue *sv) { MCC_TRACE("enter\n");

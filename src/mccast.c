@@ -1999,7 +1999,6 @@ static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
-int rir_body_loc_sv;
 static int ast_tern_suppress;
 /* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
    condition selects. A constant `?:` emits ONLY that arm, so the recorder must
@@ -2031,13 +2030,6 @@ static int ast_loc_low;
 static int ast_locrec_min;
 static int ast_temp_frontier;
 static int jrn_replaying;
-
-#if RIR_DBG_STRUCTCPY || RIR_DBG_OPTRACE
-static int rir_dbg_on(void) { MCC_TRACE("enter\n");
-	const char *e = getenv("RIRDBG");
-	return e && funcname && !strcmp(e, funcname);
-}
-#endif
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
@@ -2082,52 +2074,6 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); ast_locrec_min = loc; }
 	}
 	return loc;
-}
-
-/* The atomic aggregate lowerings mint their scratch slot straight off `loc`,
-   outside both ast_locrec and Replay_IR's own declaration list, so the C2 trial
-   -- which restores `loc` to the body's opening value -- handed the __atomic
-   helper a different frame slot than the parse did. Record and replay them on a
-   list of their own: parse and emission reach these lowerings in the same
-   statement order, while sharing the declaration list would consume a declared
-   local's offset. */
-int ast_alloc_slot(int size, int align) { MCC_TRACE("enter\n");
-#if MCC_REPLAY_IR
-	if (rir_c2_active) { MCC_TRACE("br\n");
-		int rl;
-		if (rir_slot_replay(&rl)) { MCC_TRACE("br\n");
-			loc = rl;
-			return loc;
-		}
-	}
-#endif
-	loc = (loc - size) & -align;
-#if MCC_REPLAY_IR
-	if (rir_active && !ast_replaying && !jrn_replaying)
-		{ MCC_TRACE("br\n"); rir_slot_record(loc); }
-#endif
-	return loc;
-}
-
-/* get_temp_local_var lives in mccgen.c and cannot reach Replay_IR's list
-   directly; these are the bridge, in the same shape as ast_alloc_slot's. */
-int ast_tvar_replay(int *loc_out, int *r2_out) { MCC_TRACE("enter\n");
-#if MCC_REPLAY_IR
-	if (rir_c2_active)
-		{ MCC_TRACE("br\n"); return rir_tvar_replay(loc_out, r2_out); }
-#else
-	(void)loc_out, (void)r2_out;
-#endif
-	return 0;
-}
-
-void ast_tvar_record(int loc_in, int r2) { MCC_TRACE("enter\n");
-#if MCC_REPLAY_IR
-	if (rir_active && !ast_replaying && !jrn_replaying)
-		{ MCC_TRACE("br\n"); rir_tvar_record(loc_in, r2); }
-#else
-	(void)loc_in, (void)r2;
-#endif
 }
 
 /* True iff [lo, lo+sz) overlaps any reserved ast_ltemp slot (each 8 bytes, the
@@ -2330,9 +2276,6 @@ static void jrn_configure(void);
 
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	jrn_configure();
-#if MCC_REPLAY_IR
-	rir_configure();
-#endif
 	int opt_promote = 0;
 	/* Resolve the ISA before any gate consults it, so a build that never saw
 	   -march= still has the triple baseline rather than an empty mask. */
@@ -17190,11 +17133,6 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	ast_try_active = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
 								!ast_ret_bad;
 	ast_body_ind_sv = ind;
-	/* The frame pointer as the body OPENS. The C2 trial re-runs the emission
-	   from a reconstructed arena, and a struct return allocates its temp
-	   straight off `loc` -- restoring the value from the END of the body made
-	   every one of those allocations land 8 bytes low. */
-	rir_body_loc_sv = loc;
 	ast_reloc0_sv =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
 	if (ast_try_active) { MCC_TRACE("br\n");
@@ -17236,9 +17174,6 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_sym_defer_on = 1;
 	}
 	jrn_started = 0;
-#if MCC_REPLAY_IR
-	rir_started = 0;
-#endif
 	if ((jrn_env || rir_env) && ast_try_active) { MCC_TRACE("br\n");
 		jrn_reset();
 #ifdef MCC_JOURNAL_HOOKS

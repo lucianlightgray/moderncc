@@ -130,6 +130,7 @@ int rir_tvar_replay(int *loc_out, int *r2_out) {
 }
 int rir_c2_active;
 int rir_started;
+int rir_body_loc_sv;
 
 static const char *rir_out;
 static RirOp *rir_ops;
@@ -509,8 +510,33 @@ static unsigned char rir_lor_late[16];
 static int rir_lor_n;
 
 void rir_hook_body_begin(void) {
+	rir_body_loc_sv = loc;
+	rir_started = 0;
 	rir_tern_n = 0;
 	rir_lor_n = 0;
+}
+
+int rir_dbg_on(void) {
+	const char *e = getenv("RIRDBG");
+	return e && funcname && !strcmp(e, funcname);
+}
+
+int rir_capture_live(void) {
+	return rir_active && !ast_replaying && !jrn_replaying;
+}
+
+int rir_hook_slot_replay(void) {
+	int rl;
+	if (rir_c2_active && rir_slot_replay(&rl)) {
+		loc = rl;
+		return 1;
+	}
+	return 0;
+}
+
+void rir_hook_slot_record(void) {
+	if (rir_capture_live())
+		rir_slot_record(loc);
 }
 
 void rir_hook_ternary_begin(int c, int g) {
