@@ -37,6 +37,7 @@ case "$(uname -m)" in
   aarch64|arm64) HP_PLAT=linux/arm64 ;;
   *)             HP_PLAT=linux/amd64 ;;
 esac
+dg_need_platform "$HP_PLAT" "$IMAGE"
 dg_docker run --rm --platform "$HP_PLAT" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
 set -e
