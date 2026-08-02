@@ -467,7 +467,13 @@ void rir_hook_call_end(void) { rir_rend_to(RIR_R_CALL); }
    call the parser synthesises (init_putz's memset, the helper families). The
    tree records that difference as Convert nodes it builds while evaluating each
    argument; Replay_IR has no other witness for it. */
-void rir_hook_call_argcast(void) { rir_mark_pt(RIR_M_ARGCAST); }
+int rir_cast_seq;
+
+void rir_hook_convert(void) { rir_cast_seq++; }
+
+void rir_hook_call_argcast(int pre_seq) {
+	rir_mark_val(RIR_M_ARGCAST, rir_cast_seq != pre_seq);
+}
 
 void rir_hook_call_noreturn(void) { rir_mark_pt(RIR_M_NORETURN); }
 
@@ -1601,6 +1607,8 @@ static void rir_push_typed_addr(AstLocal n) {
 /* One assignment cast per argument of a PARSED call and none for a synthesised
    one, counted between calls: the tree's Invoke children carry a Convert each
    for the first and bare nodes for the second, and this is the only witness. */
+#define RIR_ARGCAST_MAX 64
+static unsigned char rir_argcast_ch[RIR_ARGCAST_MAX];
 static int rir_argcast_n;
 
 static AstLocal rir_pending_call = AST_NONE;
@@ -2432,6 +2440,24 @@ static void rir_op_effect(const RirOp *ro) {
 				AstLocal cur = rir_sh[si];
 				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv2->type.t;
+				int ai = rir_argcast_n - 1 - q;
+				if (q < na && cur != AST_NONE &&
+						ast_kind(rir_arena, cur) == AST_Load &&
+						ai >= 0 && ai < RIR_ARGCAST_MAX && !rir_argcast_ch[ai])
+					continue;
+#if RIR_DBG_OPTRACE
+				{
+					const char *e = getenv("RIRDBG");
+					if (e && funcname && !strcmp(e, funcname))
+						fprintf(stderr,
+										"[arg] ent=%d q=%d na=%d nfixed=%d hidden=%d si=%d cur=%s shtype=%d curt=%x st=%x\n",
+										rir_dbg_ent, q, na, nfixed, hidden, si,
+										cur == AST_NONE ? "-" : ast_kind_name(ast_kind(rir_arena, cur)),
+										si >= 0 ? rir_shtype[si] : -1,
+										cur == AST_NONE ? 0 : (unsigned)ast_type_t(rir_arena, cur),
+										(unsigned)st);
+				}
+#endif
 				if (cur == AST_NONE || rir_shtype[si] ||
 						ast_kind(rir_arena, cur) == AST_Convert)
 					continue;
@@ -2440,7 +2466,8 @@ static void rir_op_effect(const RirOp *ro) {
 				/* An untyped Binary is legitimately t=0 and wants the wrap; a node
 				   that really is void does not, and gen_cast rejects it outright. */
 				if ((ast_type_t(rir_arena, cur) & VT_BTYPE) == VT_VOID &&
-						ast_kind(rir_arena, cur) != AST_Binary)
+						ast_kind(rir_arena, cur) != AST_Binary &&
+						ast_kind(rir_arena, cur) != AST_Load)
 					continue;
 				/* A wide constant carries a high word the cast CHAIN determines, and
 				   the chain in hand is one link short: the casts that fold emit no op,
@@ -3183,6 +3210,8 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	}
 	case RIR_M_ARGCAST:
+		if (rir_argcast_n < RIR_ARGCAST_MAX)
+			rir_argcast_ch[rir_argcast_n] = ro->rval ? 1 : 0;
 		rir_argcast_n++;
 		break;
 	case RIR_M_CASTGV:

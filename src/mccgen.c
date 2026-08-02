@@ -4376,6 +4376,7 @@ ST_FUNC void gen_cast_s(int t) { MCC_TRACE("enter\n");
 static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 	int sbt, dbt, sf, df, c;
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_convert();
 	ast_hook_convert(type);
 #endif
 	int dbt_bt, sbt_bt, ds, ss, bits, trunc;
@@ -11325,10 +11326,12 @@ tok_next:
 						skip_or_save_block(&p2);
 						p2->prev = p, p = p2;
 					} else { MCC_TRACE("br\n");
+						int pre_seq;
 						expr_eq();
+						pre_seq = rir_cast_seq;
 						gfunc_param_typed(s, sa);
 #if MCC_CONFIG_OPTIMIZER
-						rir_hook_call_argcast();
+						rir_hook_call_argcast(pre_seq);
 #endif
 						seqp_flush();
 					}

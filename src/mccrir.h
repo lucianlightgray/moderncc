@@ -127,7 +127,9 @@ void rir_hook_goto(int v);
 void rir_hook_break_continue(int is_continue);
 void rir_hook_call_begin(void);
 void rir_hook_call_end(void);
-void rir_hook_call_argcast(void);
+void rir_hook_call_argcast(int pre_seq);
+void rir_hook_convert(void);
+extern int rir_cast_seq;
 void rir_hook_call_noreturn(void);
 void rir_hook_call_effect_end(void);
 void rir_hook_vstore(void);
@@ -277,7 +279,9 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define rir_hook_break_continue(c) ((void)0)
 #define rir_hook_call_begin() ((void)0)
 #define rir_hook_call_end() ((void)0)
-#define rir_hook_call_argcast() ((void)0)
+#define rir_hook_call_argcast(p) ((void)0)
+#define rir_hook_convert() ((void)0)
+#define rir_cast_seq 0
 #define rir_hook_call_noreturn() ((void)0)
 #define rir_hook_call_effect_end() ((void)0)
 #define rir_hook_vstore() ((void)0)
