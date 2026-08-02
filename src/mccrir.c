@@ -1601,6 +1601,11 @@ static void rir_op_effect(const RirOp *ro) {
 	case JOP_OPL:
 	case JOP_OPF: {
 		AstLocal b, a, n;
+		/* Same guard as JOP_ADDROF's: after the Return is bound, gfunc_return's
+		   own lowering runs against a shadow stack Replay_IR deliberately leaves
+		   empty, and riscv64's and i386's reach genop as well as addrof. */
+		if (rir_after_ret && rir_shn == 0)
+			break;
 		/* gen_opf(TOK_NEG) is UNARY -- it is how a float negate is emitted, and
 		   the tree models it as AST_Unary/AST_OP_FNEG via ast_hook_fneg_begin.
 		   Popping two operands for it built Binary(TOK_NEG, member, member),
@@ -2196,7 +2201,18 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	case JOP_ADDROF: {
-		AstLocal a = rir_pop(), n;
+		AstLocal a;
+		AstLocal n;
+		/* gfunc_return's own lowering runs after the Return is bound and
+		   Replay_IR deliberately does not model it -- ast_replay_bb's Return arm
+		   re-runs gfunc_return itself -- so rir_reconcile_sv declines to refill
+		   there and the shadow stack is empty ON PURPOSE. Flagging that as an
+		   arena mismatch excluded the whole MEMORY-class struct return from the
+		   C2 denominator. The x86_64 lowering reaches RIR_M_LOAD, which already
+		   carries this guard; riscv64's and i386's reach addrof and genop. */
+		if (rir_after_ret && rir_shn == 0)
+			break;
+		a = rir_pop();
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
 			break;
