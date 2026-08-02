@@ -1940,6 +1940,7 @@ static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT clas
 int ast_fmov_imm_env; /* MCC_AST_FMOV_IMM: arm64 materialises VFPExpandImm-encodable FP constants with FMOV #imm instead of a PC-relative rodata load */
 int ast_reloc_equiv_env; /* MCC_AST_RELOC_EQUIV: judge replay faithfulness by structural relocation equality instead of raw bytes, so an anonymous local label re-emitted at a new symbol index does not read as divergence */
 int ast_regdisp_env; /* MCC_AST_REGDISP: keep a member/array constant offset as a register-base displacement instead of materialising an add */
+static int ast_cost_ops_env;
 static int ast_cost_spill_env; /* MCC_AST_COST_SPILL: add a loop register-pressure term to ast_cost_score so spill-reducing passes score a real benefit */
 static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
 static int ast_no_callful_env;
@@ -2448,6 +2449,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_voidret_expr_env = ast_env_gate("MCC_AST_VOIDRET_EXPR", 0);
 	ast_landor_invert_env = ast_env_gate("MCC_AST_LANDOR_INVERT", o4 || s1->optimize >= 1);
 	ast_promo_leaf_xmm_env = ast_env_gate("MCC_AST_PROMO_LEAF_XMM", o4);
+	ast_cost_ops_env = ast_env_gate("MCC_AST_COST_OPS", 0);
 	ast_cost_spill_env = ast_env_gate("MCC_AST_COST_SPILL", 0);
 	ast_reloc_equiv_env = ast_env_gate("MCC_AST_RELOC_EQUIV", 1);
 #ifdef MCC_TARGET_ARM64
@@ -11106,9 +11108,31 @@ static long ast_cost_spill(AstArena *a) { MCC_TRACE("enter\n");
 	return pen;
 }
 
+static int ast_cost_opw(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (ast_kind(a, n) != AST_Binary)
+		{ MCC_TRACE("br\n"); return 1; }
+	switch (ast_op(a, n)) { MCC_TRACE("br\n");
+	case '/':
+	case '%':
+	case TOK_PDIV:
+	case TOK_UDIV:
+	case TOK_UMOD:
+		return 20;
+	case '*':
+		return 3;
+	default:
+		return 1;
+	}
+}
+
 long ast_cost_score(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n, p;
 	int nodes = (int)nn, calls = 0, maxdepth = 0;
+	if (ast_cost_ops_env) { MCC_TRACE("br\n");
+		nodes = 0;
+		for (n = 0; n < nn; n++)
+			{ MCC_TRACE("br\n"); nodes += ast_cost_opw(a, n); }
+	}
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_kind(a, n) == AST_Invoke)
 			{ MCC_TRACE("br\n"); calls++; }
