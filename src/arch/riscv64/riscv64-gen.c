@@ -1233,11 +1233,22 @@ void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	riscv64_ubsan_body(UBK_NULLPTR);
 }
 
+static Section *asan_type_sec;
 static int asan_type_patch = -1;
+static int asan_type_end;
 
 void gen_asan_mark_write(void) { MCC_TRACE("enter\n");
 	if (asan_type_patch < 0 || !cur_text_section)
 		{ MCC_TRACE("br\n"); return; }
+	if (cur_text_section != asan_type_sec || ind < asan_type_end) { MCC_TRACE("br\n");
+		asan_type_patch = -1;
+		return;
+	}
+	if (read32le(cur_text_section->data + asan_type_patch) !=
+			(0x13u | 6u << 12 | 6u << 7 | 6u << 15 | 0x40u << 20)) { MCC_TRACE("br\n");
+		asan_type_patch = -1;
+		return;
+	}
 	write32le(cur_text_section->data + asan_type_patch,
 						0x13u | 6u << 12 | 6u << 7 | 6u << 15 | 0xc0u << 20);
 	asan_type_patch = -1;
@@ -1264,6 +1275,7 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	EI(0x13, 7, 6, a, 7);
 	EI(0x13, 0, 6, 6, (uint32_t)(sz - 1));
 	o(0x63 | 4u << 12 | 6u << 15 | 5u << 20 | riscv64_btype_imm(12));
+	asan_type_sec = cur_text_section;
 	asan_type_patch = ind;
 	o(0x13u | 6u << 12 | 6u << 7 | 6u << 15 | 0x40u << 20);
 	o(0x00100073);
@@ -1271,6 +1283,7 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	EI(0x03, 3, 6, 2, 8);
 	EI(0x03, 3, 7, 2, 16);
 	EIu(0x13, 0, 2, 2, 32);
+	asan_type_end = ind;
 }
 
 void gen_trap(void) { MCC_TRACE("enter\n");

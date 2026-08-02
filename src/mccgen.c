@@ -14110,6 +14110,9 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 	int bcheck = mcc_state->do_bounds_check && !NODATA_WANTED;
 #endif
 	int asan_g = mcc_state->do_asan_shadow && !NODATA_WANTED;
+#if MCC_CONFIG_OPTIMIZER
+	unsigned long zbss_end = 0;
+#endif
 	init_params p = {0};
 
 	if (scope == VT_CONST) { MCC_TRACE("br\n");
@@ -14359,6 +14362,9 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #endif
 			if (asan_g && v && size && !(type->t & VT_TLS))
 				{ MCC_TRACE("br\n"); section_add(sec, ((size + 7) & ~7) - size + MCC_ASAN_REDZONE, 1); }
+#if MCC_CONFIG_OPTIMIZER
+			zbss_end = sec->data_offset;
+#endif
 		} else { MCC_TRACE("br\n");
 			addr = align;
 			sec = common_section;
@@ -14486,31 +14492,36 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		 * reloc), all bytes zero. Relocations are symbol-keyed, so re-binding the symbol fixes
 		 * every reference. Opt-in via MCC_ZERO_BSS. */
 		if (ast_zero_bss_env && v && sym && size > 0 && sec == data_section &&
-#if MCC_CONFIG_DIAG_RT >= 2
-				!bcheck &&
-#endif
-				!asan_g && !flexible_array && !(type->t & VT_TLS) &&
-				(unsigned long)(addr + size) == data_section->data_offset &&
+				!flexible_array && !(type->t & VT_TLS) &&
+				zbss_end == data_section->data_offset &&
+				zbss_end >= (unsigned long)(addr + size) &&
 				(data_section->reloc ? data_section->reloc->data_offset : 0) == zbss_rel0 &&
-				ast_data_all_zero(data_section, addr, size)) { MCC_TRACE("br\n");
+				ast_data_all_zero(data_section, addr, (int)(zbss_end - (unsigned long)addr))) { MCC_TRACE("br\n");
 			int new_addr;
 			data_section->data_offset = addr;
 			new_addr = (int)section_add(bss_section, size, align);
+#if MCC_CONFIG_DIAG_RT >= 2
+			if (bcheck)
+				{ MCC_TRACE("br\n"); section_add(bss_section, 1, 1); }
+#endif
+			if (asan_g && v && size)
+				{ MCC_TRACE("br\n"); section_add(bss_section, ((size + 7) & ~7) - size + MCC_ASAN_REDZONE, 1); }
 			put_extern_sym(sym, bss_section, new_addr, size);
 			MCC_TRACE("zero-bss move v=%d size=%d data@%d -> bss@%d\n", v, size, addr, new_addr);
 		}
 		if (ast_zero_bss_env && v && sym && size > 0 && sec == tdata_section &&
-				tdata_section && tbss_section &&
-#if MCC_CONFIG_DIAG_RT >= 2
-				!bcheck &&
-#endif
-				!asan_g && !flexible_array &&
-				(unsigned long)(addr + size) == tdata_section->data_offset &&
+				tdata_section && tbss_section && !flexible_array &&
+				zbss_end == tdata_section->data_offset &&
+				zbss_end >= (unsigned long)(addr + size) &&
 				(tdata_section->reloc ? tdata_section->reloc->data_offset : 0) == ztls_rel0 &&
-				ast_data_all_zero(tdata_section, addr, size)) { MCC_TRACE("br\n");
+				ast_data_all_zero(tdata_section, addr, (int)(zbss_end - (unsigned long)addr))) { MCC_TRACE("br\n");
 			int new_addr;
 			tdata_section->data_offset = addr;
 			new_addr = (int)section_add(tbss_section, size, align);
+#if MCC_CONFIG_DIAG_RT >= 2
+			if (bcheck)
+				{ MCC_TRACE("br\n"); section_add(tbss_section, 1, 1); }
+#endif
 			put_extern_sym(sym, tbss_section, new_addr, size);
 			MCC_TRACE("zero-tbss move v=%d size=%d tdata@%d -> tbss@%d\n", v, size, addr,
 								new_addr);

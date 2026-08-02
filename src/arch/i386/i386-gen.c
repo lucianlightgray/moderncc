@@ -1415,11 +1415,21 @@ void gen_trap(void) { MCC_TRACE("enter\n");
 	o(0x0b0f);
 }
 
+static Section *asan_type_sec;
 static int asan_type_patch = -1;
+static int asan_type_end;
 
 void gen_asan_mark_write(void) { MCC_TRACE("enter\n");
 	if (asan_type_patch < 0 || !cur_text_section)
 		{ MCC_TRACE("br\n"); return; }
+	if (cur_text_section != asan_type_sec || ind < asan_type_end) { MCC_TRACE("br\n");
+		asan_type_patch = -1;
+		return;
+	}
+	if (cur_text_section->data[asan_type_patch] != 0x40) { MCC_TRACE("br\n");
+		asan_type_patch = -1;
+		return;
+	}
 	cur_text_section->data[asan_type_patch] = 0xc0;
 	asan_type_patch = -1;
 }
@@ -1464,6 +1474,7 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	t = gjmp2(0x8c, t);
 	g(0x83);
 	g(0xca);
+	asan_type_sec = cur_text_section;
 	asan_type_patch = ind;
 	g(0x40);
 	o(0x0b0f);
@@ -1471,6 +1482,7 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	g(0x59);
 	g(0x5a);
 	g(0x58);
+	asan_type_end = ind;
 }
 
 ST_FUNC void gen_vla_alloc(CType *type, int align) {

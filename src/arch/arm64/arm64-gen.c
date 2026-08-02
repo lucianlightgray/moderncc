@@ -2166,11 +2166,21 @@ static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) { MCC_TRACE("enter
    (x30 is a save-pair filler). All saved/restored so the probe is transparent to the
    pointer register, even when it IS x15/x16/x17. At the brk the runtime SIGTRAP handler
    reads x15=faulting address, w16=granule offset, w17=shadow byte (runtime/lib/mccasan.c). */
+static Section *asan_type_sec;
 static int asan_type_patch = -1;
+static int asan_type_end;
 
 void gen_asan_mark_write(void) { MCC_TRACE("enter\n");
 	if (asan_type_patch < 0 || !cur_text_section)
 		{ MCC_TRACE("br\n"); return; }
+	if (cur_text_section != asan_type_sec || ind < asan_type_end) { MCC_TRACE("br\n");
+		asan_type_patch = -1;
+		return;
+	}
+	if (read32le(cur_text_section->data + asan_type_patch) != 0x321a0210) { MCC_TRACE("br\n");
+		asan_type_patch = -1;
+		return;
+	}
 	write32le(cur_text_section->data + asan_type_patch, 0x321a0610);
 	asan_type_patch = -1;
 }
@@ -2195,11 +2205,13 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	o(0x11000210 | ((uint32_t)(sz - 1) << 10)); /* add   w16, w16, #(sz-1)       */
 	o(0x6b11021f);                              /* cmp   w16, w17                */
 	o(0x5400006b);                              /* b.lt  ok  (+3 insns)          */
+	asan_type_sec = cur_text_section;
 	asan_type_patch = ind;
 	o(0x321a0210);                              /* orr   w16, w16, #0x40         */
 	o(0xd4200000);                              /* brk   #0  (poison -> trap)    */
 	o(0xa8c17bef);                              /* ok: ldp x15, x30, [sp], #16   */
 	o(0xa8c147f0);                              /*     ldp x16, x17, [sp], #16   */
+	asan_type_end = ind;
 }
 
 static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");

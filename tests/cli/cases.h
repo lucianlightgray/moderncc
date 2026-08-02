@@ -2409,6 +2409,21 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -fasan-shadow {W}/asmc.c -o {W}/asmc && "
 		 "{W}/asmc; echo rc=$?",
 		 "rc=0\n"},
+		{"zero_bss_under_asan", "cpu=x86_64,os=linux",
+		 "printf 'int z0=0;long za[16]={0};int nz=7;\\nint main(void){za[3]=z0+nz;return za[3]==7?0:1;}\\n' > {W}/zba.c && "
+		 "{MCC} -B{B} -O2 -fasan-shadow -c {W}/zba.c -o {W}/zba.o && "
+		 "readelf -SW {W}/zba.o | awk '/ [.]bss /{print ($6==\"000000\")?\"bss-empty\":\"bss-used\"}'",
+		 "bss-used\n"},
+		{"zero_bss_under_bcheck", "cpu=x86_64,os=linux",
+		 "printf 'int z0=0;long za[16]={0};int nz=7;\\nint main(void){za[3]=z0+nz;return za[3]==7?0:1;}\\n' > {W}/zbb.c && "
+		 "{MCC} -B{B} -O2 -b -c {W}/zbb.c -o {W}/zbb.o && "
+		 "readelf -SW {W}/zbb.o | awk '/ [.]bss /{print ($6==\"000000\")?\"bss-empty\":\"bss-used\"}'",
+		 "bss-used\n"},
+		{"zero_bss_asan_still_catches_global", "cpu=x86_64,os=linux",
+		 "printf 'int g[10]={0};\\nint main(void){g[0]=1;volatile int i=10;return g[i];}\\n' > {W}/zbg.c && "
+		 "{MCC} -B{B} -O2 -fasan-shadow {W}/zbg.c -o {W}/zbg && "
+		 "{W}/zbg 2>&1 | grep -oE 'AddressSanitizer: global-buffer-overflow' | head -1",
+		 "AddressSanitizer: global-buffer-overflow\n"},
 		{"asan_shadow_manual_link", "cpu=x86_64,os=linux",
 		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan_m.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/anm.c && "
