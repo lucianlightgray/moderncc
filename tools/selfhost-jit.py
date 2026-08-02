@@ -48,8 +48,9 @@ def gen_workload(path, nfuncs=120):
 
 def main():
     if len(sys.argv) < 3:
-        sys.exit("usage: selfhost-jit.py <build-dir> <cpu> [KNOB=VAL ...]")
+        sys.exit("usage: selfhost-jit.py <build-dir> <cpu> [KNOB=VAL ...] [-f...]")
     bdir, cpu = sys.argv[1], sys.argv[2]
+    xflags = [a for a in sys.argv[3:] if a.startswith("-")]
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = bdir if os.path.isabs(bdir) else os.path.join(root, bdir)
 
@@ -94,7 +95,7 @@ def main():
             "-I" + os.path.join(src, "arch", "i386"),
             "-I" + os.path.join(src, "arch", cpu),
             "-I" + os.path.join(root, "include")]
-    brt = ["-B" + root, "-B" + bdir]
+    brt = ["-B" + root, "-B" + bdir] + xflags
 
     env = dict(os.environ)
     env.update(MCC_JIT="1", MCC_AST_SEARCH="1", MCC_SEARCH_WORKER="1",
@@ -106,7 +107,7 @@ def main():
     # lands in the CI log even though the child then dies with 0xC0000005.
     if win:
         env["MCC_JIT_CRASH_DIAG"] = "1"
-    for kv in sys.argv[3:]:
+    for kv in [a for a in sys.argv[3:] if not a.startswith("-")]:
         k, _, v = kv.partition("=")
         env[k] = v
 
