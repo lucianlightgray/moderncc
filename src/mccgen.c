@@ -5334,6 +5334,12 @@ redo:
 			ad->f.func_call = FUNC_THISCALL;
 			break;
 #endif
+		case TOK_VECTOR_SIZE1:
+		case TOK_VECTOR_SIZE2:
+			mcc_error("__attribute__((vector_size)) is not supported: mcc has no "
+								"vector type, and silently ignoring it gives the object the "
+								"scalar size");
+			goto skip_param;
 		case TOK_MODE1:
 		case TOK_MODE2:
 			skip('(');

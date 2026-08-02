@@ -152,6 +152,8 @@ DEF(TOK_GNU_INLINE2, "__gnu_inline__")
 DEF(TOK_PURE1, "pure")
 DEF(TOK_PURE2, "__pure__")
 
+DEF(TOK_VECTOR_SIZE1, "vector_size")
+DEF(TOK_VECTOR_SIZE2, "__vector_size__")
 DEF(TOK_MODE1, "mode")
 DEF(TOK_MODE2, "__mode__")
 DEF(TOK_MODE_QI1, "QI")

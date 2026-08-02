@@ -102,6 +102,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/et.c -o {W}/et 2>&1 | grep -oE 'external thread-local .* unsupported' | head -1",
 		 "external thread-local '_c' is unsupported\n"},
 
+		{"vector_size_refused", "",
+		 "printf 'typedef double v2 __attribute__((vector_size(16)));\\nv2 g;\\n' > {W}/vs.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/vs.c -o {W}/vs.o 2>&1 | grep -oE 'vector_size.. is not supported' | head -1",
+		 "vector_size)) is not supported\n"},
+
 		{"visibility_attribute", "cpu=x86_64,os=linux",
 		 "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "
 		 "readelf -s {W}/v.o | grep -E 'hidden_att|shown_one|plain_one' | awk '{print $6, $8}' | sort",
