@@ -4068,7 +4068,7 @@ if(MCC_BUILD_TESTS)
         # memoised AST query and aborts on a mismatch, so this is a hard assert.
         foreach(_sv x86_64 i386 arm arm64 riscv64)
             add_test(NAME cross/shadow-iv-${_sv}
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
+                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
             set_tests_properties(cross/shadow-iv-${_sv} PROPERTIES
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 3600)
