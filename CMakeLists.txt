@@ -5702,6 +5702,27 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(selfhost-fixpoint-O3 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
+            # The same fixpoint on the CROSS targets, under qemu-user. These use
+            # cmake-cross's compilers and the vendored sysroots, so they carry
+            # MCC_CROSS_BUILT for the same reason the macho/wine cells do -- the
+            # artifacts they read are not rebuilt by building this tree. The
+            # script exits 77 when qemu, the cross mcc, the sysroot or the
+            # runtime archive is missing, so a machine without them SKIPs.
+            # qemu-user is not native silicon; a hardware-only defect is out of
+            # reach here and the script's header says so.
+            foreach(_qa riscv64 arm arm64 i386)
+                foreach(_qo -O1 -O2)
+                    string(REPLACE "-" "" _qon "${_qo}")
+                    add_test(NAME selfhost-qemu-${_qa}-${_qon}
+                        COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/qemu-selfhost.sh"
+                                "${_qa}" "${CMAKE_BINARY_DIR}/selfhost-qemu-${_qa}-${_qon}"
+                                "${_qo}")
+                    set_tests_properties(selfhost-qemu-${_qa}-${_qon} PROPERTIES
+                        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
+                        LABELS "qemu" SKIP_RETURN_CODE 77 TIMEOUT 1800)
+                endforeach()
+            endforeach()
+
             # -O1 was blind for the opposite reason: it emitted -O0's bytes, so
             # there was nothing for a fixpoint to catch. REGDISP and OPASSIGN
             # are staged there as of 2026-07-29, so it now has content.
