@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #define FAT_MAGIC 0xcafebabeu
@@ -18,8 +17,11 @@
 #define CPU_TYPE_ARM 12u
 #define CPU_TYPE_ARM64 (CPU_TYPE_ARM | CPU_ARCH_ABI64)
 
+#define LC_CODE_SIGNATURE 0x1du
+
 struct slice {
 	uint32_t cputype, cpusubtype, align, offset, size;
+	int has_sig;
 	unsigned char *data;
 };
 
@@ -121,6 +123,35 @@ int main(int argc, char **argv) {
 		sl[i].cpusubtype = cs;
 		sl[i].size = len;
 		sl[i].align = align_exp(ct);
+
+		/* Whether this slice is already code-signed. mcc self-signs by default,
+		   so the fuse needs no signer of its own -- a slice's CodeDirectory
+		   covers slice-relative offsets, so it survives being placed at a fat
+		   offset. Walk the load commands for an LC_CODE_SIGNATURE. */
+		{
+			int is64 = (magic == MH_MAGIC_64 || magic == MH_CIGAM_64);
+			uint32_t ncmds, lc = is64 ? 32u : 28u;
+			uint32_t c;
+			memcpy(&ncmds, d + 16, 4);
+			if (swap)
+				ncmds = bswap32(ncmds);
+			for (c = 0; c < ncmds; c++) {
+				uint32_t cmd, cmdsize;
+				if ((uint64_t)lc + 8u > len)
+					break;
+				memcpy(&cmd, d + lc, 4);
+				memcpy(&cmdsize, d + lc + 4, 4);
+				if (swap)
+					cmd = bswap32(cmd), cmdsize = bswap32(cmdsize);
+				if (cmd == LC_CODE_SIGNATURE) {
+					sl[i].has_sig = 1;
+					break;
+				}
+				if (cmdsize < 8)
+					break;
+				lc += cmdsize;
+			}
+		}
 	}
 
 	hdr = 8u + (uint32_t)nin * 20u;
@@ -161,22 +192,19 @@ int main(int argc, char **argv) {
 	}
 	rc = fclose(out) ? 1 : 0;
 	if (rc == 0) {
+		/* Verify and skip, rather than re-sign: mcc self-signs every slice, and
+		   fusing preserves each slice's signature (a CodeDirectory covers slice-
+		   relative offsets), so codesign is pure redundancy here -- and it does
+		   not exist off-Darwin, the one place a signer would matter. Only an
+		   already-unsigned slice is a problem, and that is exactly the case the
+		   shell-out could never fix. */
 		chmod(argv[1], 0755);
-		pid_t pid = fork();
-		if (pid == 0) {
-			execlp("codesign", "codesign", "-f", "-s", "-", argv[1], (char *)NULL);
-			_exit(127);
-		} else if (pid > 0) {
-			int st;
-			if (waitpid(pid, &st, 0) > 0 && WIFEXITED(st)) {
-				int cs = WEXITSTATUS(st);
-				if (cs != 0 && cs != 127)
-					fprintf(stderr,
-									"machofat: warning: codesign failed (exit %d); '%s' "
-									"may be rejected by AMFI on Apple silicon\n",
-									cs, argv[1]);
-			}
-		}
+		for (i = 0; i < nin; i++)
+			if (!sl[i].has_sig)
+				fprintf(stderr,
+								"machofat: warning: slice (cputype 0x%08x) is not code-signed; "
+								"'%s' may be rejected by AMFI on Apple silicon\n",
+								sl[i].cputype, argv[1]);
 	}
 
 done:
