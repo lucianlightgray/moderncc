@@ -10,10 +10,12 @@ cmake_minimum_required(VERSION 3.22)
 #   cmake -DKEY=arm64-linux-glibc -DMODE=native -DROOT=<srcdir> -DXDIR=<crossdir> \
 #         -DTMPROOT=<dir> [-DOPT=-O1] [-DJREGEN=1] -P tests/ast/journal_sweep.cmake
 #
-# KEY is <cpu>-<os>[-<libc>], but the BASELINE key is <cpu>-<os> alone: libc is
-# not a filename axis. A non-default libc therefore has no bank of its own and
-# skips with that reason, rather than scoring itself against the default libc's
-# corpus -- which is a different corpus, and would read as a verdict.
+# KEY is <cpu>-<os>[-<libc>]. The BASELINE key is <cpu>-<os> at the OS's default
+# libc and <cpu>-<os>-<libc> otherwise, so a non-default libc banks against its
+# own corpus instead of being scored against the default one's -- that is a
+# different corpus, and the comparison would read as a verdict rather than as
+# the gap it is. An unbanked key skips on the missing baseline, which names the
+# regen that closes it.
 #
 # MODE:
 #   cross  - run the host-hosted cross compiler. Fast, and valid for the honesty
@@ -101,6 +103,9 @@ elseif(_os STREQUAL "wince")
 endif()
 
 set(_bkey "${_cpu}-${_os}")
+if(NOT _libc STREQUAL "${_default_libc}")
+    set(_bkey "${_cpu}-${_os}-${_libc}")
+endif()
 
 # ------------------------------------------------------- journal gate check
 # The gate in src/mcc.h admits these five CPUs. Anything else journals 0 rows,
@@ -108,11 +113,6 @@ set(_bkey "${_cpu}-${_os}")
 if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64|arm)$")
     _skip("cpu '${_cpu}' is outside the MCC_JOURNAL_HOOKS gate in src/mcc.h -- \
 it journals 0 rows, so there is no oracle to compare. Widen the gate first")
-endif()
-if(NOT _libc STREQUAL "${_default_libc}")
-    _skip("baselines are keyed by <cpu>-<os> alone, so '${_libc}' has no bank of \
-its own and the '${_default_libc}' one measures a different corpus. Scoring \
-against it would read as a verdict rather than as the gap it is")
 endif()
 if(_os STREQUAL "darwin" AND NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
     _skip("darwin needs a macOS host; there is no Darwin loader on \
@@ -192,9 +192,21 @@ elseif(_os STREQUAL "win32")
                 _skip("no ucrt PE runtime at ${_sysroot}")
             endif()
         endif()
+    elseif(_libc STREQUAL "msvcrt")
+        # msvcrt now has a bank of its own, so what blocks it is measurement and
+        # not naming: _incflags below stages mcc's own bundled win32 headers for
+        # EVERY PE key, so a cross sweep cannot tell msvcrt from ucrt and would
+        # bank two byte-identical files under two names, claiming an axis it
+        # never measured. Only a Windows host reaches a real msvcrt CRT, and
+        # that run regenerates both keys.
+        if(NOT MODE STREQUAL "native")
+            _skip("msvcrt is measurable only on a Windows host: a cross sweep \
+stages the same bundled win32 headers for every PE key, so it would bank a copy \
+of the ucrt figures under the msvcrt name. Run journal-regen-${KEY} there")
+        endif()
     else()
-        _skip("libc '${_libc}' is not vendored for PE -- only the winlibs ucrt \
-runtimes are in tree. Vendor an msvcrt toolchain (mstorsjo-llvm-msvcrt) first")
+        _skip("libc '${_libc}' is not a PE libc this tree knows -- the PE keys \
+are ucrt and msvcrt")
     endif()
     set(_incflags "-B${ROOT}/runtime/win32" "-I${ROOT}/runtime/include")
 elseif(_os STREQUAL "wince")
