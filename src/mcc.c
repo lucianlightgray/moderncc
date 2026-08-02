@@ -1674,7 +1674,7 @@ redo:
 					s->filetype |= AFF_WHOLE_ARCHIVE;
 					if (host_exe_path(exe, sizeof exe) > 0 && (sl = strrchr(exe, '/'))) { MCC_TRACE("br\n");
 						*sl = 0;
-						for (ei = 0; ei < 2; ei++) {
+						for (ei = 0; ei < 2; ei++) { MCC_TRACE("br\n");
 							if (snprintf(engbuf, sizeof engbuf, "%s/%s", exe,
 											engnames[ei]) < (int)sizeof engbuf) { MCC_TRACE("br\n");
 								FILE *ef = fopen(engbuf, "rb");
