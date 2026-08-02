@@ -96,15 +96,24 @@ int rir_hook_fconst_reuse(void) {
 }
 
 static int rir_slotrec[RIR_LOCREC_MAX];
+static int rir_slotrec_pos[RIR_LOCREC_MAX];
+static int rir_slotrec_nc[RIR_LOCREC_MAX];
 static int rir_slotrec_n, rir_slotrec_i;
 
 void rir_slot_record(int loc_in) {
 	if (rir_slotrec_n >= RIR_LOCREC_MAX)
 		return;
+	rir_slotrec_pos[rir_slotrec_n] = ind;
+	rir_slotrec_nc[rir_slotrec_n] = nocode_wanted;
 	rir_slotrec[rir_slotrec_n++] = loc_in;
 }
 
 int rir_slot_replay(int *loc_out) {
+	while (rir_slotrec_i + 1 < rir_slotrec_n &&
+				 rir_slotrec_pos[rir_slotrec_i + 1] <= ind &&
+				 ((rir_slotrec_nc[rir_slotrec_i] & RIR_NOEVAL_MASK) ||
+					rir_slotrec_pos[rir_slotrec_i + 1] > rir_slotrec_pos[rir_slotrec_i]))
+		rir_slotrec_i++;
 	if (rir_slotrec_i >= rir_slotrec_n)
 		return 0;
 	*loc_out = rir_slotrec[rir_slotrec_i++];
