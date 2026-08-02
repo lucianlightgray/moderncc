@@ -1594,6 +1594,58 @@ static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
+static int rir_const_eval(AstLocal n, long long *out, int depth) {
+	long long a, b;
+	int op;
+	if (n == AST_NONE || depth > 8)
+		return 0;
+	if (is_float(ast_type_t(rir_arena, n)))
+		return 0;
+	switch (ast_kind(rir_arena, n)) {
+	case AST_Literal:
+		*out = (long long)ast_ival(rir_arena, n);
+		return 1;
+	case AST_Convert:
+		return ast_nchild(rir_arena, n) == 1 &&
+					 rir_const_eval(ast_first_child(rir_arena, n), out, depth + 1);
+	case AST_Binary:
+		break;
+	default:
+		return 0;
+	}
+	if (ast_nchild(rir_arena, n) != 2)
+		return 0;
+	if (!rir_const_eval(ast_child(rir_arena, n, 0), &a, depth + 1) ||
+			!rir_const_eval(ast_child(rir_arena, n, 1), &b, depth + 1))
+		return 0;
+	op = ast_op(rir_arena, n);
+	if (op == '+')
+		*out = a + b;
+	else if (op == '-')
+		*out = a - b;
+	else if (op == '*')
+		*out = a * b;
+	else if (op == '&')
+		*out = a & b;
+	else if (op == '|')
+		*out = a | b;
+	else if (op == '^')
+		*out = a ^ b;
+	else
+		return 0;
+	return 1;
+}
+
+/* The parser folds a constant through its cast CHAIN and keeps only the answer;
+   the arena keeps the arithmetic and whichever Convert left an op. Evaluating
+   the subtree as if no conversion happened and comparing against the recorded
+   constant is exactly the test for "a conversion in that chain changed the
+   value", which is when the parser's own folded constant has to be used. */
+static int rir_const_val_differs(AstLocal n, long long want) {
+	long long v;
+	return rir_const_eval(n, &v, 0) && v != want;
+}
+
 static int rir_ptr_elem_size(int t, uint64_t ref) {
 	Sym *r = (Sym *)(uintptr_t)ref;
 	CType pt;
@@ -2238,7 +2290,11 @@ static void rir_op_effect(const RirOp *ro) {
 				if (nfixed >= 0 && q < na && na - 1 - q >= nfixed &&
 					rir_sh[si] != AST_NONE &&
 					ast_type_t(rir_arena, rir_sh[si]) ==
-						jrn_vs[o->vs_off + o->vs_n - 1 - q].type.t)
+						jrn_vs[o->vs_off + o->vs_n - 1 - q].type.t &&
+					!((jrn_vs[o->vs_off + o->vs_n - 1 - q].r &
+						 (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+						rir_const_val_differs(rir_sh[si],
+																	 jrn_vs[o->vs_off + o->vs_n - 1 - q].c.i)))
 					continue;
 				AstLocal cur = rir_sh[si];
 				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
@@ -2273,9 +2329,10 @@ static void rir_op_effect(const RirOp *ro) {
 						ast_kind(rir_arena, cur) != AST_Binary &&
 						ast_kind(rir_arena, cur) != AST_Load)
 					continue;
-				if (((st & VT_BTYPE) == VT_INT128 || (st & VT_BTYPE) == VT_QLONG) &&
-						(sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
-						rir_const_subtree(cur, 0)) {
+				if ((sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+						rir_const_subtree(cur, 0) &&
+						(((st & VT_BTYPE) == VT_INT128 || (st & VT_BTYPE) == VT_QLONG) ||
+						 (!is_float(st) && rir_const_val_differs(cur, sv2->c.i)))) {
 					rir_sh[si] = rir_leaf(sv2);
 					continue;
 				}
