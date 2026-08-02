@@ -2248,6 +2248,8 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_ACASRMW 0x40020
 #define AST_OP_GGOTO 0x40021
 #define AST_OP_CPLXBUILD 0x40022
+#define AST_OP_VAARG 0x40023
+#define AST_OP_VASTART 0x40024
 void ast_hook_indir(void);
 void ast_hook_gaddrof(void);
 void ast_hook_member_begin(int is_arrow);
@@ -6796,6 +6798,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		} else if (uop == AST_OP_BITSCAN) { MCC_TRACE("br\n");
 			gen_bitscan((int)ast_ival(a, n), (int)(ast_ival(a, n) >> 32));
 #endif
+#ifdef MCC_JRN_HAVE_VA_ARG
+		} else if (uop == AST_OP_VAARG) { MCC_TRACE("br\n");
+			CType vat;
+			vat.t = ast_type_t(a, n);
+			vat.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+			gen_va_arg(&vat);
+			vtop->type = vat;
+#endif
 		} else if (uop == AST_OP_BITB) { MCC_TRACE("br\n");
 			gen_bit_builtin((int)ast_ival(a, n), (int)(ast_ival(a, n) >> 32));
 		} else if (uop == AST_OP_IMAG) { MCC_TRACE("br\n");
@@ -7248,6 +7258,19 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			}
 			break;
 		case AST_Binary:
+#ifdef MCC_JRN_VA_START_VOID
+			/* arm64's gen_va_start consumes both operands and pushes nothing, so
+			   it is a STATEMENT over the two the parser handed it. Unmodelled it
+			   emitted none of the 40-byte va_list prologue. riscv64's leaves a
+			   value in their place and needs no node, which is why this is
+			   arm64-scoped rather than keyed on MCC_JRN_HAVE_VA_START. */
+			if (ast_op(a, s) == AST_OP_VASTART) { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, s, 0));
+				ast_replay_value(a, ast_child(a, s, 1));
+				gen_va_start();
+				break;
+			}
+#endif
 			if (ast_fbits(a, s) & (AST_FB_LANDOR_MATERIAL | AST_FB_STMT_DISCARD)) { MCC_TRACE("br\n");
 				ast_replay_value(a, s);
 				vpop();

@@ -2185,6 +2185,37 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
+#ifdef MCC_JRN_VA_START_VOID
+	case JOP_VA_START: {
+		/* arm64's gen_va_start consumes both operands and pushes nothing. */
+		AstLocal b = rir_pop(), a2 = rir_pop(), n;
+		if (a2 == AST_NONE || b == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Binary);
+		ast_set_op(rir_arena, n, AST_OP_VASTART);
+		ast_add_child(rir_arena, n, a2);
+		ast_add_child(rir_arena, n, b);
+		rir_stmt(n);
+		break;
+	}
+#endif
+#ifdef MCC_JRN_HAVE_VA_ARG
+	case JOP_VA_ARG: {
+		AstLocal a = rir_pop(), n;
+		if (a == AST_NONE) {
+			rir_arena_mismatch++;
+			break;
+		}
+		n = ast_node(rir_arena, AST_Unary);
+		ast_set_op(rir_arena, n, AST_OP_VAARG);
+		ast_set_type(rir_arena, n, o->ctype.t, (uint64_t)(uintptr_t)o->ctype.ref);
+		ast_add_child(rir_arena, n, a);
+		rir_push(n);
+		break;
+	}
+#endif
 	case JOP_GGOTO: {
 		/* `goto *expr` consumes the address off the vstack and the tree bails on
 		   the whole body, so there is no tree node to mirror: one AST_Unary over

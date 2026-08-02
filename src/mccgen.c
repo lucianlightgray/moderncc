@@ -57,6 +57,12 @@
 #ifdef MCC_TARGET_ARM64
 #define MCC_JRN_HAVE_GFUNC_RETURN 1
 #define MCC_JRN_HAVE_VA_ARG 1
+/* gen_va_start is defined by two backends and they have DIFFERENT vstack
+   effects: arm64's consumes both operands and pushes nothing, riscv64's
+   consumes one and vsets the va_list lvalue in its place. Only the first shape
+   needs a node of its own -- the second leaves a value the refill already
+   models. Mirror the definitions, not the declaration. */
+#define MCC_JRN_VA_START_VOID 1
 #endif
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 #define MCC_JRN_HAVE_VA_START 1
