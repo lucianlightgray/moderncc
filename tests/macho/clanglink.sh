@@ -52,7 +52,16 @@ CASES="programs/quicksort programs/hanoi programs/grep
 statements/tentative_array statements/bracket_evaluation statements/scopes
 statements/conditional_operator types/storage_tentative types/floating_point
 types/types types/typedef pointers_arrays/pointer
-features_c99_c11/constructor functions_abi/func_name lexical/string_literals"
+features_c99_c11/constructor functions_abi/func_name lexical/string_literals
+features_c99_c11/complex features_c99_c11/complex_annexg
+features_c99_c11/c11_complex_convert features_c99_c11/c11_complex_decls
+programs/random_stuff
+structs_unions/struct_byval structs_unions/union_byval
+structs_unions/bitfields functions_abi/variadic_promotions
+codegen/bswap_inline codegen/popcount_inline codegen/signbit_inline
+expressions/integer_promotion expressions/div_mod_shift
+optimizer/loop_fusion optimizer/loop_interchange
+types/int128 types/bool"
 
 fails=0
 ran=0
