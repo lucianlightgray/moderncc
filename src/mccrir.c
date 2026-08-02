@@ -1546,24 +1546,30 @@ static int rir_eff_size(AstLocal n, int depth) {
 	return best;
 }
 
-static int rir_child_wider(AstLocal n, int st) {
-	int i, nc = ast_nchild(rir_arena, n), al, ss;
+static int rir_type_size(int st, uint64_t ref) {
+	int al;
 	CType b1;
 	b1.t = st;
-	b1.ref = NULL;
-	ss = type_size(&b1, &al);
+	b1.ref = (Sym *)(uintptr_t)ref;
+	if (IS_ENUM(st) && !b1.ref)
+		b1.t = (st & ~(unsigned)VT_BTYPE) | VT_INT;
+	return type_size(&b1, &al);
+}
+
+static int rir_node_wider(AstLocal n, int st, uint64_t ref) {
+	return rir_eff_size(n, 0) > rir_type_size(st, ref);
+}
+
+static int rir_child_wider(AstLocal n, int st, uint64_t ref) {
+	int i, nc = ast_nchild(rir_arena, n), ss = rir_type_size(st, ref);
 	for (i = 0; i < nc; i++)
 		if (rir_eff_size(ast_child(rir_arena, n, i), 0) > ss)
 			return 1;
 	return 0;
 }
 
-static int rir_child_width_differs(AstLocal n, int st) {
-	int i, nc = ast_nchild(rir_arena, n), al, ss;
-	CType b1;
-	b1.t = st;
-	b1.ref = NULL;
-	ss = type_size(&b1, &al);
+static int rir_child_width_differs(AstLocal n, int st, uint64_t ref) {
+	int i, nc = ast_nchild(rir_arena, n), al, ss = rir_type_size(st, ref);
 	for (i = 0; i < nc; i++) {
 		AstLocal c = ast_child(rir_arena, n, i);
 		CType a1;
@@ -1898,13 +1904,13 @@ static void rir_op_effect(const RirOp *ro) {
 										rir_dbg_ent, q, o->a0, (unsigned)st,
 										(unsigned)ast_type_t(rir_arena, cur),
 										rir_child_has_type(cur, st), opdiff,
-										rir_child_width_differs(cur, st));
+										rir_child_width_differs(cur, st, (uint64_t)(uintptr_t)sv2->type.ref));
 				}
 #endif
-				if (rir_child_has_type(cur, st) && !rir_child_wider(cur, st))
+				if (rir_child_has_type(cur, st) && !rir_child_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref))
 					continue;
-				if (!opdiff && !rir_child_width_differs(cur, st) &&
-						!rir_child_wider(cur, st))
+				if (!opdiff && !rir_child_width_differs(cur, st, (uint64_t)(uintptr_t)sv2->type.ref) &&
+						!rir_child_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref))
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
@@ -2157,8 +2163,11 @@ static void rir_op_effect(const RirOp *ro) {
 										(unsigned)st);
 				}
 #endif
-				if (cur == AST_NONE || rir_shtype[si] ||
-						ast_kind(rir_arena, cur) == AST_Convert)
+				if (cur == AST_NONE || rir_shtype[si])
+					continue;
+				if (ast_kind(rir_arena, cur) == AST_Convert &&
+						!((st & VT_BTYPE) != VT_STRUCT && (st & VT_BTYPE) != VT_FUNC &&
+							rir_node_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref)))
 					continue;
 				if (st == 0 || (st & VT_BTYPE) == VT_FUNC)
 					continue;
