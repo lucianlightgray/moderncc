@@ -4058,6 +4058,17 @@ if(MCC_BUILD_TESTS)
         # carries the sysroot: --sysroot ALONE silently shrinks the sweep to the
         # include-free files, so the explicit usr/include is load-bearing, and
         # arm's hard-float PCS is not the default.
+        # instruction 2 lists shadow-IV zero divergence in the flip bar, and it
+        # had only ever been run on x86_64 by hand. The side-car recomputes every
+        # memoised AST query and aborts on a mismatch, so this is a hard assert.
+        foreach(_sv x86_64 i386 arm arm64 riscv64)
+            add_test(NAME cross/shadow-iv-${_sv}
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
+            set_tests_properties(cross/shadow-iv-${_sv} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 3600)
+        endforeach()
+
         # A shared object must not get local-exec TLS. Guards a silent wrong
         # answer: before the refusal these three linked rc=0 and baked a
         # thread-pointer offset of 0, so the library read the executable's
