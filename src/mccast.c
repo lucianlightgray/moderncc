@@ -2931,7 +2931,7 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
    main. Record the negation instead and let the replay redo it after the
    compare, exactly as gen_test_zero did. */
 static int ast_cmp_invert_late(AstArena *a, AstLocal n, int op) { MCC_TRACE("enter\n");
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 	uint32_t k;
 	if (op != TOK_LT && op != TOK_GE && op != TOK_LE && op != TOK_GT)
 		return 0;
