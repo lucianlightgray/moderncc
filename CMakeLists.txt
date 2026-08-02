@@ -3863,6 +3863,21 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(ast/rir-c3-${_rotag} PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                 TIMEOUT 1800)
+
+            add_test(NAME ast/rir-c2-${_rotag}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${_mcc_exe}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c2-${_rotag}"
+                        "-DOPT=${_ro}"
+                        "-DBANKGAP=0"
+                        "-DBANKSKIP=0"
+                        "-DBANKFN=1149"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c2.cmake")
+            set_tests_properties(ast/rir-c2-${_rotag} PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 1800)
         endforeach()
 
         add_test(NAME ast/rir-parity-O0
@@ -3873,7 +3888,6 @@ if(MCC_BUILD_TESTS)
                     "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-O0"
                     "-DOPT=-O0"
                     "-DFORCE=1"
-                    "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
         set_tests_properties(ast/rir-parity-O0 PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
@@ -3947,6 +3961,18 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 600)
         endforeach()
 
+        set(_c2bank_riscv64 "4;2;1156")
+        set(_c2bank_arm "2;0;1130")
+        set(_c2bank_arm64 "2;0;1199")
+        set(_c2bank_i386 "2;0;1152")
+        set(_c2bank_x86_64-win32 "0;0;1237")
+        set(_c2bank_i386-win32 "2;0;1257")
+        set(_c2bank_arm64-win32 "2;0;1297")
+        set(_c2bank_arm-win32 "3;0;1235")
+        set(_c2bank_arm-wince "3;0;1235")
+        set(_c2bank_x86_64-osx "0;0;1142")
+        set(_c2bank_arm64-osx "1;0;1224")
+
         foreach(_rp riscv64 arm arm64 i386
                     x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
                     x86_64-osx arm64-osx)
@@ -3986,6 +4012,31 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
 
+            set(_rpc2f "${_rpf}")
+            if(_rp STREQUAL "arm")
+                set(_rpc2f "-B ${MCC_CROSS_DIR} -mfloat-abi hard -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include --sysroot=${_rpsr} -I${_rpsr}/usr/include")
+            elseif(NOT _rp MATCHES "(win32|wince|osx)$")
+                set(_rpc2f "-B ${MCC_CROSS_DIR} -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include --sysroot=${_rpsr} -I${_rpsr}/usr/include")
+            endif()
+            list(GET _c2bank_${_rp} 0 _c2gap)
+            list(GET _c2bank_${_rp} 1 _c2skip)
+            list(GET _c2bank_${_rp} 2 _c2fn)
+            add_test(NAME ast/rir-c2-${_rp}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c2-${_rp}"
+                        "-DOPT=-O1"
+                        "-DMCCFLAGS=${_rpc2f}"
+                        "-DBANKGAP=${_c2gap}"
+                        "-DBANKSKIP=${_c2skip}"
+                        "-DBANKFN=${_c2fn}"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c2.cmake")
+            set_tests_properties(ast/rir-c2-${_rp} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 1800)
+
             add_test(NAME ast/rir-parity-${_rp}-O0
                 COMMAND "${CMAKE_COMMAND}"
                         "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
@@ -3994,7 +4045,6 @@ if(MCC_BUILD_TESTS)
                         "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rp}-O0"
                         "-DOPT=-O0"
                         "-DFORCE=1"
-                        "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
                         "-DMCCFLAGS=${_rpf}"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
             set_tests_properties(ast/rir-parity-${_rp}-O0 PROPERTIES
