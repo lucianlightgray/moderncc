@@ -615,6 +615,12 @@ static int rir_cfn;
 static int rir_arena_mismatch;
 static int rir_cplx_depth;
 static int rir_acas_depth;
+/* Set while a vstore region that models its own copy is open, so the whole
+   interior is skipped the way RIR_R_CPLX's is. Suppressing only the OPS is not
+   enough: `double _Complex wd = fc;` lowers through four member regions inside
+   vstore, and those popped the very operands the rebuild needs. */
+static int rir_vsup_depth;
+static int rir_vsup_nest;
 static int rir_acas_val;
 static int rir_after_ret;
 static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
@@ -1145,6 +1151,15 @@ static unsigned char rir_vst_sup[16];
    rather than by position. */
 static long long rir_vst_tc[16], rir_vst_vc[16];
 static unsigned char rir_vst_bf[16];
+/* `double _Complex z = 3.0;` reaches vstore() with a scalar over a complex
+   VT_STRUCT lvalue, so vstore's own gen_cast(&vtop[-1].type) widens the value
+   into a complex pair and the store then takes the block-copy path. The marker
+   snapshot is taken before that cast, so the both-struct admission cannot see
+   it and JOP_STRUCTCOPY builds no node at all -- the statement vanished. Keep
+   the two operands the region opened with and let the emitter's own vstore()
+   re-run the cast, exactly as for a struct copy. */
+static unsigned char rir_vst_cx[16];
+static int rir_cx_depth;
 static unsigned char rir_vst_gret[16];
 static int rir_gret_depth;
 static int rir_vbf_depth;
@@ -2826,7 +2841,12 @@ static void rir_region(const RirOp *ro) {
 				   rebuilt Store(printf, "big %ld\n"), which left the Invoke's callee
 				   a StoreVal and is the whole Invoke-callee-notfunc refusal on
 				   struct_abi.c and aggregate_perm.c. */
-				fit = (n2 >= 2 && !rir_call_depth);
+				/* A vstore nested inside a suppressing one models nothing of its own:
+				   its primitives are already dropped and its operands are whatever the
+				   outer region left on the shadow stack, so a rebuild there is a
+				   second Store over the outer one's operands. */
+				fit = (n2 >= 2 && !rir_call_depth && !rir_vstruct_depth &&
+							 !rir_cx_depth);
 				if (fit &&
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 1].type.t & VT_BTYPE) ==
 								VT_STRUCT &&
@@ -2859,6 +2879,24 @@ static void rir_region(const RirOp *ro) {
 						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 					}
 				}
+				rir_vst_cx[rir_vstn] = 0;
+				if (n2 == 2 && !rir_vst_sup[rir_vstn] && !rir_vst_bf[rir_vstn] &&
+						!after_ret && rir_pending_ret == AST_NONE &&
+						rir_pending_call == AST_NONE && !rir_cond_depth &&
+						!rir_synth_depth && !rir_call_depth && !rir_inc_depth &&
+						!rir_member_depth && !rir_vstruct_depth && !rir_vbf_depth &&
+						!rir_cx_depth && !rir_vla_depth && !rir_retexpr_pending) {
+					SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+					SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
+					int ct = is_complex_type(&t->type), cv = is_complex_type(&v->type);
+					if (ct != cv &&
+							((ct ? v : t)->type.t & VT_BTYPE) != VT_STRUCT &&
+							!((v->type.t | t->type.t) & (VT_ARRAY | VT_BITFIELD))) {
+						rir_vst_cx[rir_vstn] = 1;
+						rir_cx_depth++;
+						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+					}
+				}
 				if (n2 >= 2) {
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
@@ -2878,7 +2916,7 @@ static void rir_region(const RirOp *ro) {
 											(t->type.t & VT_BTYPE) == VT_STRUCT)) &&
 									!((v->type.t | t->type.t) & VT_BITFIELD);
 				}
-				if (rir_vst_bf[rir_vstn])
+				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn])
 					allow = 1;
 				rir_vst_gret[rir_vstn] = (unsigned char)(after_ret != 0);
 				if (after_ret)
@@ -2886,6 +2924,10 @@ static void rir_region(const RirOp *ro) {
 				rir_vst_ok[rir_vstn] = (unsigned char)allow;
 				rir_vst_shn[rir_vstn] = (short)rir_shn;
 				rir_vst_seen[rir_vstn++] = 0;
+				if (rir_vst_sup[rir_vstn - 1] || rir_vst_cx[rir_vstn - 1]) {
+					rir_vsup_depth = 1;
+					rir_vsup_nest = 0;
+				}
 			}
 			break;
 		case RIR_R_LANDOR: {
@@ -2986,13 +3028,25 @@ static void rir_region(const RirOp *ro) {
 			rir_cond_depth--;
 		break;
 	case RIR_R_VSTORE:
-		if (rir_vstruct_depth)
+		if (!rir_vstn && rir_vstruct_depth)
 			rir_vstruct_depth--;
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
+			/* The decrement has to be tied to the region that made it, not to any
+			   vstore end: `double _Complex wd = fc;` opens a suppressing struct
+			   region and then a plain scalar region per part inside it, and an
+			   unconditional decrement let the first part's end cancel the outer
+			   suppression -- the second part's JOP_VSTORE then built a Store the
+			   emitter re-ran after the copy. */
+			if (rir_vst_sup[rir_vstn] || rir_vst_cx[rir_vstn])
+				rir_vsup_depth = 0;
+			if (rir_vst_sup[rir_vstn] && rir_vstruct_depth)
+				rir_vstruct_depth--;
 			if (rir_vst_bf[rir_vstn] && rir_vbf_depth)
 				rir_vbf_depth--;
+			if (rir_vst_cx[rir_vstn] && rir_cx_depth)
+				rir_cx_depth--;
 			if (rir_vst_gret[rir_vstn] && rir_gret_depth)
 				rir_gret_depth--;
 			/* gfunc_return copies a struct result through vstore(), so the return
@@ -3023,7 +3077,7 @@ static void rir_region(const RirOp *ro) {
 				   value on top, target under it. Unsuppressed, the region's ops have
 				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
-				if (rir_vst_bf[rir_vstn]) {
+				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn]) {
 					AstLocal sw = t;
 					t = v;
 					v = sw;
@@ -3506,6 +3560,7 @@ static void rir_to_arena(void) {
 	rir_member_depth = 0;
 	rir_vstruct_depth = 0;
 	rir_vbf_depth = 0;
+	rir_cx_depth = 0;
 	rir_gret_depth = 0;
 	rir_vla_depth = 0;
 	rir_cvt_depth = 0;
@@ -3532,6 +3587,8 @@ static void rir_to_arena(void) {
 	rir_arena_mismatch = 0;
 	rir_cplx_depth = 0;
 	rir_acas_depth = 0;
+	rir_vsup_depth = 0;
+	rir_vsup_nest = 0;
 	rir_clg_n = 0;
 	rir_clg_pending = NULL;
 	rir_clg_syn = 0;
@@ -3590,6 +3647,24 @@ static void rir_to_arena(void) {
 		}
 		if (rir_acas_depth)
 			continue;
+		/* A vstore region that rebuilds its own Store models the whole copy, so
+		   its interior is inert -- primitives AND regions. Nested vstore regions
+		   are counted rather than dispatched so the matching end is found. */
+		if (rir_vsup_depth) {
+			if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
+					ro->rkind == RIR_R_VSTORE) {
+				if (ro->tag == RIR_T_RBEGIN) {
+					rir_vsup_nest++;
+					continue;
+				}
+				if (rir_vsup_nest) {
+					rir_vsup_nest--;
+					continue;
+				}
+			} else {
+				continue;
+			}
+		}
 #if RIR_DBG_OPTRACE
 		{
 			const char *e = getenv("RIRDBG");
@@ -3666,7 +3741,7 @@ static void rir_to_arena(void) {
 		}
 		if (rir_cond_depth || rir_inc_depth || rir_member_depth ||
 				rir_retexpr_pending || rir_vstruct_depth || rir_vbf_depth ||
-				rir_vla_depth || rir_cvt_depth)
+				rir_cx_depth || rir_vla_depth || rir_cvt_depth)
 			continue;
 		rir_cvt_next = rir_is_cvt(ro->p.kind);
 		rir_reconcile(&ro->p);
