@@ -1789,8 +1789,11 @@ static void rir_stamp_sv(const SValue *base, int n) {
 								 (uint64_t)(uintptr_t)v->type.ref);
 		if (rir_sh[k] == rir_fcs_node) {
 			rir_fcs_node = AST_NONE;
-			if ((v->type.t & VT_BTYPE) == VT_BOOL)
+			if ((v->type.t & VT_BTYPE) == VT_BOOL) {
 				ast_set_type(rir_arena, rir_sh[k], VT_BYTE | VT_UNSIGNED, 0);
+				ast_set_fbits(rir_arena, rir_sh[k],
+											ast_fbits(rir_arena, rir_sh[k]) | AST_FB_CONVERT_FCS);
+			}
 		}
 		/* An AST_Invoke carries its RESULT's SValue, not just its type:
 		   ast_replay_value rebuilds the return with `sv.r = ast_op(a, n)`, so a

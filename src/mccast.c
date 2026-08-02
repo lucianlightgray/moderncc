@@ -97,6 +97,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_CMP_INVERT_LATE 262144u
 
+#define AST_FB_CONVERT_FCS 524288u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -6546,6 +6548,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		MCC_TRACE_IF("CVT from t=%#x r=%#x -> t=%#x\n", vtop->type.t, vtop->r, ct.t);
 		gen_cast(&ct);
+		if (ast_fbits(a, n) & AST_FB_CONVERT_FCS)
+			{ MCC_TRACE("br\n"); vtop->type.t = VT_BOOL; }
 		if (ast_fbits(a, n) & AST_FB_CONVERT_GV)
 			{ MCC_TRACE("br\n"); gv_cast_rvalue(); }
 		break;
