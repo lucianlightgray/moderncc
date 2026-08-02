@@ -1161,6 +1161,10 @@ static unsigned char rir_vst_bf[16];
    the two operands the region opened with and let the emitter's own vstore()
    re-run the cast, exactly as for a struct copy. */
 static unsigned char rir_vst_cx[16];
+/* Set when the region opened with nocode_wanted. Its own primitives are then
+   filtered out of the stream, so the shadow stack still holds the parser's
+   vstore order -- value on top -- exactly as a suppressed region does. */
+static unsigned char rir_vst_nc[16];
 static int rir_cx_depth;
 static unsigned char rir_vst_gret[16];
 static int rir_gret_depth;
@@ -2951,6 +2955,7 @@ static void rir_region(const RirOp *ro) {
 				}
 				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn])
 					allow = 1;
+				rir_vst_nc[rir_vstn] = (unsigned char)(ro->rnocode != 0);
 				rir_vst_gret[rir_vstn] = (unsigned char)(after_ret != 0);
 				if (after_ret)
 					rir_gret_depth++;
@@ -3110,7 +3115,8 @@ static void rir_region(const RirOp *ro) {
 				   value on top, target under it. Unsuppressed, the region's ops have
 				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
-				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn]) {
+				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn] ||
+						rir_vst_nc[rir_vstn]) {
 					AstLocal sw = t;
 					t = v;
 					v = sw;
