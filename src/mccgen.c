@@ -12240,6 +12240,7 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		Sym *vs = cls->cleanup_sym;
 		save_lvalues();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_cleanup_call_begin();
 		ast_hook_cleanup_call_begin();
 #endif
 		vpushsym(&fs->type, fs);
@@ -12255,6 +12256,7 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_effect_end();
 		ast_hook_call_effect_end();
+		rir_hook_cleanup_call_end();
 		ast_hook_cleanup_call_end();
 #endif
 	}

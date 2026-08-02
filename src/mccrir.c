@@ -144,6 +144,10 @@ int rir_tvar_replay(int *loc_out, int *r2_out) {
 int rir_c2_active;
 int rir_started;
 int rir_body_loc_sv;
+static int rir_base_depth;
+static int rir_body_ind_sv;
+static addr_t rir_reloc0_sv;
+static int rir_cleanup_depth_sv = -1;
 
 static const char *rir_out;
 static RirOp *rir_ops;
@@ -492,9 +496,30 @@ static int rir_lor_n;
 
 void rir_hook_body_begin(void) {
 	rir_body_loc_sv = loc;
+	rir_body_ind_sv = ind;
+	rir_reloc0_sv =
+			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
+	rir_base_depth = (int)(vtop - vstack + 1);
+	rir_cleanup_depth_sv = -1;
 	rir_started = 0;
 	rir_tern_n = 0;
 	rir_lor_n = 0;
+}
+
+void rir_hook_cleanup_call_begin(void) {
+	int d = (int)(vtop - vstack + 1);
+	rir_cleanup_depth_sv = -1;
+	if (d < rir_base_depth)
+		return;
+	rir_cleanup_depth_sv = rir_base_depth;
+	rir_base_depth = d;
+}
+
+void rir_hook_cleanup_call_end(void) {
+	if (rir_cleanup_depth_sv < 0)
+		return;
+	rir_base_depth = rir_cleanup_depth_sv;
+	rir_cleanup_depth_sv = -1;
 }
 
 int rir_dbg_on(void) {
@@ -1710,13 +1735,13 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
 		return;
-	want = n - ast_base_depth;
+	want = n - rir_base_depth;
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v;
 		AstLocal sk;
 		if (!rir_shtype[k])
 			continue;
-		v = &base[ast_base_depth + k];
+		v = &base[rir_base_depth + k];
 		sk = rir_val_node(rir_sh[k]);
 		ast_set_type(rir_arena, sk, v->type.t,
 								 (uint64_t)(uintptr_t)v->type.ref);
@@ -1747,7 +1772,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	if (rir_cvt_next)
 		return;
 	for (k = 0; k < rir_shn && k < want; k++) {
-		const SValue *v = &base[ast_base_depth + k];
+		const SValue *v = &base[rir_base_depth + k];
 		AstLocal cur = rir_sh[k];
 		int ct, cs, vs2, al;
 		CType a1, b1;
@@ -1792,7 +1817,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		}
 	}
 	for (k = 0; k < rir_shn && k < want; k++) {
-		const SValue *v = &base[ast_base_depth + k];
+		const SValue *v = &base[rir_base_depth + k];
 		AstLocal cur = rir_sh[k], cv, ld;
 		int ct;
 		uint16_t ck;
@@ -1837,7 +1862,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 }
 
 static void rir_stamp_call_top(const SValue *base, int n) {
-	int k = n - ast_base_depth - 1;
+	int k = n - rir_base_depth - 1;
 	const SValue *v;
 	AstLocal sk;
 	if (k < 0 || k != rir_shn - 1 || rir_shn <= 0)
@@ -1846,7 +1871,7 @@ static void rir_stamp_call_top(const SValue *base, int n) {
 	if (rir_shtype[k] != 2 || sk == AST_NONE ||
 			ast_kind(rir_arena, sk) != AST_Invoke)
 		return;
-	v = &base[ast_base_depth + k];
+	v = &base[rir_base_depth + k];
 	ast_set_type(rir_arena, sk, v->type.t, (uint64_t)(uintptr_t)v->type.ref);
 	ast_set_op(rir_arena, sk, v->r);
 	ast_set_ival(rir_arena, sk, (uint64_t)v->c.i);
@@ -1889,7 +1914,7 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 	if (n < 0)
 		return;
 	rir_stamp_sv(base, n);
-	want = n - ast_base_depth;
+	want = n - rir_base_depth;
 	if (want < 0)
 		want = 0;
 	if (want > VSTACK_SIZE)
@@ -1904,10 +1929,10 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 	if (rir_shn < want)
 		rir_tot_refill++;
 	for (k = rir_shn; k < want; k++) {
-		const SValue *sv3 = &base[ast_base_depth + k];
+		const SValue *sv3 = &base[rir_base_depth + k];
 		AstLocal sp = rir_spill_take(sv3);
 		rir_tot_leaf++;
-		rir_push(sp == AST_NONE ? rir_leaf_slot(sv3, ast_base_depth + k) : sp);
+		rir_push(sp == AST_NONE ? rir_leaf_slot(sv3, rir_base_depth + k) : sp);
 		if (k < want - 1 && rir_pending_ret == AST_NONE && !rir_gret_depth)
 			rir_arena_mismatch++;
 	}
@@ -1958,7 +1983,7 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_push_typed(n);
 			break;
 		}
-		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
+		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
 			int q;
 			for (q = 0; q < 2; q++) {
 				AstLocal cur = rir_sh[rir_shn - 1 - q], ch;
@@ -1980,7 +2005,7 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 			}
 		}
-		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
+		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
 			int q, opdiff = rir_tcore(jrn_vs[o->vs_off + o->vs_n - 1].type.t) !=
 											rir_tcore(jrn_vs[o->vs_off + o->vs_n - 2].type.t);
 			for (q = 0; q < 2; q++) {
@@ -2024,7 +2049,7 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		if ((o->a0 == '+' || o->a0 == '-') &&
-				o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
+				o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
 			int q;
 			for (q = 0; q < 2; q++) {
 				int si = rir_shn - 1 - q, ct;
@@ -2056,7 +2081,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Binary);
 		ast_set_op(rir_arena, n, o->a0);
-		if (o->vs_n - ast_base_depth >= 2) {
+		if (o->vs_n - rir_base_depth >= 2) {
 			const SValue *rs = &jrn_vs[o->vs_off + o->vs_n - 1];
 			const SValue *ls = &jrn_vs[o->vs_off + o->vs_n - 2];
 			if ((rs->r & VT_VALMASK) < VT_CONST && !(rs->r & VT_LVAL) &&
@@ -2080,21 +2105,21 @@ static void rir_op_effect(const RirOp *ro) {
 #if RIR_DBG_OPTRACE
 		{
 			const char *e = getenv("RIRDBG");
-			const SValue *ds = o->vs_n - ast_base_depth >= 2
+			const SValue *ds = o->vs_n - rir_base_depth >= 2
 													 ? &jrn_vs[o->vs_off + o->vs_n - 2] : 0;
 			if (e && funcname && !strcmp(e, funcname))
 				fprintf(stderr,
 								"[vst] ent=%d cd=%d vkind=%s vpar=%d depth=%d tgt(r=%x sym=%d c=%lld) tkind=%s\n",
 								rir_dbg_ent, rir_call_depth,
 								ast_kind_name(ast_kind(rir_arena, rir_val_node(v))),
-								(int)ast_parent(rir_arena, v), o->vs_n - ast_base_depth,
+								(int)ast_parent(rir_arena, v), o->vs_n - rir_base_depth,
 								ds ? (unsigned)ds->r : 0u, ds && ds->sym ? 1 : 0,
 								ds ? (long long)ds->c.i : 0LL,
 								ast_kind_name(ast_kind(rir_arena, t)));
 		}
 #endif
 		if (rir_call_depth && ast_parent(rir_arena, v) == AST_NONE &&
-				o->vs_n - ast_base_depth >= 2) {
+				o->vs_n - rir_base_depth >= 2) {
 			const SValue *ts = &jrn_vs[o->vs_off + o->vs_n - 2];
 			int isinv = ast_kind(rir_arena, rir_val_node(v)) == AST_Invoke;
 			int istail = !isinv && ast_kind(rir_arena, v) == AST_Ref &&
@@ -2111,7 +2136,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		if (ast_kind(rir_arena, t) == AST_Binary &&
 				ast_op(rir_arena, t) == '+' && ast_nchild(rir_arena, t) == 2 &&
-				o->vs_n - ast_base_depth >= 2) {
+				o->vs_n - rir_base_depth >= 2) {
 			AstLocal ad = ast_child(rir_arena, t, 0);
 			AstLocal lt = ast_child(rir_arena, t, 1);
 			if (ad != AST_NONE && lt != AST_NONE &&
@@ -2146,7 +2171,7 @@ static void rir_op_effect(const RirOp *ro) {
 			n = ast_node(rir_arena, AST_Store);
 			if (chained)
 				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
-			if (rir_is_cmp_binary(v) && o->vs_n - ast_base_depth >= 2 &&
+			if (rir_is_cmp_binary(v) && o->vs_n - rir_base_depth >= 2 &&
 					jrn_vs[o->vs_off + o->vs_n - 1].r != VT_CMP &&
 					(jrn_vs[o->vs_off + o->vs_n - 1].type.t & VT_BTYPE) != VT_BOOL &&
 					(jrn_vs[o->vs_off + o->vs_n - 2].type.t & VT_BTYPE) == VT_BOOL)
@@ -2263,7 +2288,7 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			na = 0;
 		}
-		if (o->vs_n - ast_base_depth >= na + 1 && rir_shn >= na + 1) {
+		if (o->vs_n - rir_base_depth >= na + 1 && rir_shn >= na + 1) {
 			int q;
 			int hidden = -1;
 			{
@@ -2396,8 +2421,8 @@ static void rir_op_effect(const RirOp *ro) {
 						(VT_LOCAL | VT_LVAL) ||
 				o->svarg.sym)
 			break;
-		for (q = 0; q <= o->vs_n - 1 - ast_base_depth; q++) {
-			const SValue *sv4 = &jrn_vs[o->vs_off + ast_base_depth + q];
+		for (q = 0; q <= o->vs_n - 1 - rir_base_depth; q++) {
+			const SValue *sv4 = &jrn_vs[o->vs_off + rir_base_depth + q];
 			if ((sv4->r & VT_VALMASK) == (o->a0 & VT_VALMASK)) {
 				slot = q;
 				lv = (sv4->r & VT_LVAL) != 0;
@@ -2837,7 +2862,7 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_LOAD:
 		if (rir_after_ret && rir_shn == 0)
 			break;
-		if (rir_shn > 0 && ro->mvs_n - ast_base_depth > 0) {
+		if (rir_shn > 0 && ro->mvs_n - rir_base_depth > 0) {
 			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
@@ -2959,7 +2984,7 @@ static void rir_mark_apply(const RirOp *ro) {
 			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert)
 				ast_set_fbits(rir_arena, top,
 											ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
-			else if (ro->mvs_n - ast_base_depth > 0) {
+			else if (ro->mvs_n - rir_base_depth > 0) {
 				const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 				if (top != AST_NONE && !rir_shtype[rir_shn - 1] &&
 						ast_parent(rir_arena, top) == AST_NONE &&
@@ -3146,7 +3171,7 @@ static void rir_region(const RirOp *ro) {
 			break;
 		case RIR_R_VSTORE:
 			if (rir_vstn < 16) {
-				int n2 = ro->mvs_n - ast_base_depth;
+				int n2 = ro->mvs_n - rir_base_depth;
 				int allow = 0, fit;
 				rir_vst_tc[rir_vstn] = 0;
 				rir_vst_vc[rir_vstn] = 0;
@@ -3463,7 +3488,7 @@ static void rir_region(const RirOp *ro) {
 		ast_set_ival(rir_arena, m, (uint64_t)(unsigned)(ro->rval >> 2));
 		ast_set_fbits(rir_arena, m, (ro->rval & 1) ? (uint64_t)VT_NONLVAL : 0);
 		ast_add_child(rir_arena, m, base);
-		if (ro->mvs_n - ast_base_depth > 0) {
+		if (ro->mvs_n - rir_base_depth > 0) {
 			const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			ast_set_type(rir_arena, m, v->type.t,
 									 (uint64_t)(uintptr_t)v->type.ref);
@@ -3867,13 +3892,13 @@ static void rir_to_arena(void) {
 							!rir_cx_depth && !rir_vla_depth && !rir_cvt_depth)
 						rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
 					rir_cplxb_on =
-							(rir_shn >= 2 && rir_shn == ro->mvs_n - ast_base_depth);
+							(rir_shn >= 2 && rir_shn == ro->mvs_n - rir_base_depth);
 				}
 				rir_cplxb_depth++;
 			} else if (rir_cplxb_depth && !--rir_cplxb_depth && rir_cplxb_on) {
 				AstLocal ci = rir_pop(), cr = rir_pop(), cn;
 				if (cr == AST_NONE || ci == AST_NONE ||
-						ro->mvs_n - ast_base_depth <= 0) {
+						ro->mvs_n - rir_base_depth <= 0) {
 					rir_arena_mismatch++;
 				} else {
 					const SValue *cv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
@@ -4102,7 +4127,7 @@ static void rir_emit_line(const char *verdict, int ops, int regions) {
 
 static int rir_blame(int diff_off) {
 	int i;
-	int at = ast_body_ind_sv + diff_off;
+	int at = rir_body_ind_sv + diff_off;
 	for (i = 0; i < rir_n; i++) {
 		if (rir_ops[i].tag != RIR_T_OP)
 			continue;
@@ -4116,8 +4141,8 @@ void rir_verify(void) {
 	Section *rsec = cur_text_section->reloc;
 	int rel1 = rsec ? (int)rsec->data_offset : 0;
 	int orig_ind = ind, orig_rsym = rsym;
-	int body_len = orig_ind - ast_body_ind_sv;
-	int rel_len = rel1 - (int)ast_reloc0_sv;
+	int body_len = orig_ind - rir_body_ind_sv;
+	int rel_len = rel1 - (int)rir_reloc0_sv;
 	unsigned char *orig, *orig_rel, *repl = NULL;
 	int new_len_fin = 0;
 	SValue *vsave;
@@ -4194,7 +4219,7 @@ void rir_verify(void) {
 				}
 			}
 		}
-		if (ast_try_active && ast_cur && ast_replay_ok(ast_cur)) {
+		if (rir_started && ast_cur && ast_replay_ok(ast_cur)) {
 			rir_tot_arena_cmp++;
 			rir_tot_tree_nodes += ast_count(ast_cur);
 			rir_tot_arena_cmp_nodes += ast_count(rir_arena);
@@ -4260,18 +4285,18 @@ void rir_verify(void) {
 	}
 
 	orig = mcc_malloc(body_len > 0 ? (size_t)body_len : 1);
-	memcpy(orig, cur_text_section->data + ast_body_ind_sv, (size_t)body_len);
+	memcpy(orig, cur_text_section->data + rir_body_ind_sv, (size_t)body_len);
 	orig_rel = mcc_malloc(rel_len > 0 ? (size_t)rel_len : 1);
 	if (rel_len > 0)
-		memcpy(orig_rel, rsec->data + ast_reloc0_sv, (size_t)rel_len);
+		memcpy(orig_rel, rsec->data + rir_reloc0_sv, (size_t)rel_len);
 	vsave = mcc_malloc(sizeof(SValue) * (VSTACK_SIZE + 1));
 	memcpy(vsave, vstack - 1, sizeof(SValue) * (VSTACK_SIZE + 1));
 	memcpy(saved_tlv, arr_temp_local_vars, sizeof saved_tlv);
 
-	ind = ast_body_ind_sv;
+	ind = rir_body_ind_sv;
 	rsym = 0;
 	if (rsec)
-		rsec->data_offset = ast_reloc0_sv;
+		rsec->data_offset = rir_reloc0_sv;
 	nocode_wanted = 0;
 	mcc_state->warn_none = 1;
 	sym_free_first = NULL;
@@ -4293,22 +4318,22 @@ void rir_verify(void) {
 		rir_run();
 		if (rir_fail_op < 0) {
 			int new_rel = rsec ? (int)rsec->data_offset : 0;
-			int new_len = ind - ast_body_ind_sv;
+			int new_len = ind - rir_body_ind_sv;
 			faithful = new_len == body_len &&
-								 memcmp(cur_text_section->data + ast_body_ind_sv, orig,
+								 memcmp(cur_text_section->data + rir_body_ind_sv, orig,
 												(size_t)body_len) == 0 &&
-								 new_rel - (int)ast_reloc0_sv == rel_len &&
+								 new_rel - (int)rir_reloc0_sv == rel_len &&
 								 (rel_len == 0 ||
-									ast_reloc_range_equiv(rsec->data + ast_reloc0_sv, orig_rel,
+									ast_reloc_range_equiv(rsec->data + rir_reloc0_sv, orig_rel,
 																				rel_len));
 		}
 	} else {
 		errored = 1;
 	}
-	new_len_fin = ind - ast_body_ind_sv;
+	new_len_fin = ind - rir_body_ind_sv;
 	if (new_len_fin > 0 && !faithful && !errored) {
 		repl = mcc_malloc((size_t)new_len_fin);
-		memcpy(repl, cur_text_section->data + ast_body_ind_sv, (size_t)new_len_fin);
+		memcpy(repl, cur_text_section->data + rir_body_ind_sv, (size_t)new_len_fin);
 	}
 
 	if (rir_env >= 3 && faithful && body_len > 0) {
@@ -4324,14 +4349,14 @@ void rir_verify(void) {
 			rir_tot_shift_skip++;
 		} else {
 			int shift = RIR_SHIFT;
-			int base2 = ast_body_ind_sv + shift;
+			int base2 = rir_body_ind_sv + shift;
 			section_realloc(cur_text_section, base2 + body_len + 64);
-			memset(cur_text_section->data + ast_body_ind_sv, 0,
+			memset(cur_text_section->data + rir_body_ind_sv, 0,
 						 (size_t)(shift + body_len));
 			ind = base2;
 			rsym = 0;
 			if (rsec)
-				rsec->data_offset = ast_reloc0_sv;
+				rsec->data_offset = rir_reloc0_sv;
 			nocode_wanted = 0;
 			mcc_state->cg_func_alloca = 0;
 			rir_delta = shift;
@@ -4352,7 +4377,7 @@ void rir_verify(void) {
 				}
 				if (rir_fail_op < 0 && ind - base2 == body_len &&
 						memcmp(cur_text_section->data + base2, orig, (size_t)body_len) == 0 &&
-						(rsec ? (int)rsec->data_offset - (int)ast_reloc0_sv : 0) == rel_len) {
+						(rsec ? (int)rsec->data_offset - (int)rir_reloc0_sv : 0) == rel_len) {
 					rir_shift_verdict = "ok";
 					rir_tot_shift_ok++;
 				} else {
@@ -4394,10 +4419,10 @@ void rir_verify(void) {
 		rir_tot_c2_skip++;
 	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) {
 		rir_tot_c2_try++;
-		ind = ast_body_ind_sv;
+		ind = rir_body_ind_sv;
 		rsym = 0;
 		if (rsec)
-			rsec->data_offset = ast_reloc0_sv;
+			rsec->data_offset = rir_reloc0_sv;
 		nocode_wanted = 0;
 		mcc_state->cg_func_alloca = 0;
 		ast_fconst_i = 0;
@@ -4468,19 +4493,19 @@ void rir_verify(void) {
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2part] %s heq=%d ok=%d\n", funcname,
 					rir_body_hasheq,
-					ind - ast_body_ind_sv == body_len &&
-						memcmp(cur_text_section->data + ast_body_ind_sv, orig,
+					ind - rir_body_ind_sv == body_len &&
+						memcmp(cur_text_section->data + rir_body_ind_sv, orig,
 							(size_t)body_len) == 0);
-			if (ind - ast_body_ind_sv == body_len &&
-					memcmp(cur_text_section->data + ast_body_ind_sv, orig,
+			if (ind - rir_body_ind_sv == body_len &&
+					memcmp(cur_text_section->data + rir_body_ind_sv, orig,
 								 (size_t)body_len) == 0)
 				rir_tot_c2_ok++;
-			else if (ind - ast_body_ind_sv == body_len) {
+			else if (ind - rir_body_ind_sv == body_len) {
 				rir_tot_c2_bytes++;
 				if (rir_env >= 5) {
 					int q, d = -1;
 					for (q = 0; q < body_len; q++)
-						if (cur_text_section->data[ast_body_ind_sv + q] != orig[q]) {
+						if (cur_text_section->data[rir_body_ind_sv + q] != orig[q]) {
 							d = q;
 							break;
 						}
@@ -4489,8 +4514,8 @@ void rir_verify(void) {
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, d,
 										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
-										bi >= 0 ? rir_ops[bi].p.ind_pre - ast_body_ind_sv : -1,
-										bi >= 0 ? rir_ops[bi].p.ind_post - ast_body_ind_sv : -1);
+										bi >= 0 ? rir_ops[bi].p.ind_pre - rir_body_ind_sv : -1,
+										bi >= 0 ? rir_ops[bi].p.ind_post - rir_body_ind_sv : -1);
 					}
 					int w0 = d > 16 ? d - 16 : 0, w1 = d + 32;
 					if (w1 > body_len)
@@ -4502,17 +4527,17 @@ void rir_verify(void) {
 					fprintf(stderr, "\n  rir   :");
 					for (q = w0; q < w1; q++)
 						fprintf(stderr, " %02x",
-										cur_text_section->data[ast_body_ind_sv + q]);
+										cur_text_section->data[rir_body_ind_sv + q]);
 					fprintf(stderr, "\n");
 				}
 			} else {
 				rir_tot_c2_len++;
 				if (rir_env >= 5) {
-					int q, gl = ind - ast_body_ind_sv;
+					int q, gl = ind - rir_body_ind_sv;
 					int lim = gl < body_len ? gl : body_len, fd = -1, from, run = 0,
 							fb = -1;
 					for (q = 0; q < lim; q++)
-						if (cur_text_section->data[ast_body_ind_sv + q] != orig[q]) {
+						if (cur_text_section->data[rir_body_ind_sv + q] != orig[q]) {
 							if (fd < 0)
 								fd = q;
 							if (++run >= 3 && fb < 0)
@@ -4535,15 +4560,15 @@ void rir_verify(void) {
 												rir_ops[z].tag == RIR_T_OP
 														? jrn_op_name(rir_ops[z].p.kind) : "MARK",
 												rir_ops[z].tag == RIR_T_OP
-														? rir_ops[z].p.ind_pre - ast_body_ind_sv : -1,
+														? rir_ops[z].p.ind_pre - rir_body_ind_sv : -1,
 												rir_ops[z].tag == RIR_T_OP
-														? rir_ops[z].p.ind_post - ast_body_ind_sv : -1);
+														? rir_ops[z].p.ind_post - rir_body_ind_sv : -1);
 						}
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, fd, fb,
 										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
-														bi >= 0 ? rir_ops[bi].p.ind_pre - ast_body_ind_sv : -1,
-														bi >= 0 ? rir_ops[bi].p.ind_post - ast_body_ind_sv : -1);
+														bi >= 0 ? rir_ops[bi].p.ind_pre - rir_body_ind_sv : -1,
+														bi >= 0 ? rir_ops[bi].p.ind_post - rir_body_ind_sv : -1);
 					}
 					fprintf(stderr,
 									"[rir-c2len] %s want=%d got=%d firstdiff=%d firstblk=%d\n"
@@ -4554,7 +4579,7 @@ void rir_verify(void) {
 					fprintf(stderr, "\n  rir   :");
 					for (q = from; q < gl && q < from + 40; q++)
 						fprintf(stderr, " %02x",
-										cur_text_section->data[ast_body_ind_sv + q]);
+										cur_text_section->data[rir_body_ind_sv + q]);
 					fprintf(stderr, "\n");
 				}
 			}
@@ -4595,9 +4620,9 @@ void rir_verify(void) {
 	sym_free_first = saved_free;
 	mcc_state->warn_none = sv_warn;
 
-	memcpy(cur_text_section->data + ast_body_ind_sv, orig, (size_t)body_len);
+	memcpy(cur_text_section->data + rir_body_ind_sv, orig, (size_t)body_len);
 	if (rel_len > 0)
-		memcpy(rsec->data + ast_reloc0_sv, orig_rel, (size_t)rel_len);
+		memcpy(rsec->data + rir_reloc0_sv, orig_rel, (size_t)rel_len);
 	if (rsec)
 		rsec->data_offset = rel1;
 	ind = orig_ind;

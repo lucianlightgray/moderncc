@@ -138,6 +138,8 @@ void rir_hook_member_end(int cumofs, int nonlval);
 void rir_hook_builtin_complex_lower(void);
 void rir_hook_builtin_complex_end(void);
 void rir_hook_body_begin(void);
+void rir_hook_cleanup_call_begin(void);
+void rir_hook_cleanup_call_end(void);
 int rir_dbg_on(void);
 int rir_capture_live(void);
 int rir_hook_slot_replay(void);
@@ -290,6 +292,8 @@ void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 #define rir_hook_builtin_complex_lower() ((void)0)
 #define rir_hook_builtin_complex_end() ((void)0)
 #define rir_hook_body_begin() ((void)0)
+#define rir_hook_cleanup_call_begin() ((void)0)
+#define rir_hook_cleanup_call_end() ((void)0)
 #define rir_dbg_on() 0
 #define rir_capture_live() 0
 #define rir_hook_slot_replay() 0
