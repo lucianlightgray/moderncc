@@ -1,5 +1,6 @@
 #define USING_GLOBALS
 #include "mcc.h"
+#include "mccrir.h"
 
 #include "mccforecast.h"
 
@@ -12705,10 +12706,12 @@ again:
 																			"assignment used as a truth value"); }
 		seqp_check();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_if_begin();
 		ast_hook_if_begin();
 #endif
 		a = gvtst(1, 0);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_if_gvtst_done();
 		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
@@ -12718,6 +12721,7 @@ again:
 			gsym(a);
 			next();
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_if_else();
 			ast_hook_if_else();
 #endif
 			block(0);
@@ -12726,6 +12730,7 @@ again:
 			gsym(a);
 		}
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_if_end();
 		ast_hook_if_end();
 #endif
 		prev_scope_s(&o);
@@ -12733,6 +12738,7 @@ again:
 		new_scope_s(&o);
 		d = gind();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_while_cond_start();
 		ast_hook_while_cond_start();
 #endif
 		skip('(');
@@ -12742,16 +12748,19 @@ again:
 																			"assignment used as a truth value"); }
 		seqp_check();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_while_begin();
 		ast_hook_while_begin();
 #endif
 		a = gvtst(1, 0);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_if_gvtst_done();
 		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
 		b = 0;
 		lblock(&a, &b);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_while_end();
 		ast_hook_while_end();
 #endif
 		gjmp_addr(d);
@@ -12850,6 +12859,7 @@ again:
 			{ MCC_TRACE("br\n"); leave_scope(loop_scope); }
 		*cur_scope->bsym = gjmp(*cur_scope->bsym);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_break_continue(0);
 		ast_hook_break_continue(0);
 #endif
 		skip(';');
@@ -12859,6 +12869,7 @@ again:
 		leave_scope(loop_scope);
 		*cur_scope->csym = gjmp(*cur_scope->csym);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_break_continue(1);
 		ast_hook_break_continue(1);
 #endif
 		skip(';');
@@ -12884,6 +12895,7 @@ again:
 		a = b = 0;
 		c = d = gind();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_for_begin();
 		ast_hook_for_begin(tok != ';');
 #endif
 		if (tok != ';') { MCC_TRACE("br\n");
@@ -12892,10 +12904,12 @@ again:
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_parentheses)("suggest parentheses around "
 																				"assignment used as a truth value"); }
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_for_cond();
 			ast_hook_for_cond();
 #endif
 			a = gvtst(1, 0);
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_if_gvtst_done();
 			ast_hook_if_gvtst_done();
 #endif
 		}
@@ -12905,12 +12919,14 @@ again:
 			e = gjmp(0);
 			d = gind();
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_for_incr_begin();
 			ast_hook_for_incr_begin();
 #endif
 			gexpr();
 			seqp_check();
 			vpop();
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_for_incr_end();
 			ast_hook_for_incr_end();
 #endif
 			gjmp_addr(c);
@@ -12918,14 +12934,16 @@ again:
 		}
 #if MCC_CONFIG_OPTIMIZER
 		else
-			{ MCC_TRACE("br\n"); ast_hook_for_no_incr(); }
+			{ MCC_TRACE("br\n"); rir_hook_for_no_incr(); ast_hook_for_no_incr(); }
 #endif
 		skip(')');
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_for_body_begin();
 		ast_hook_for_body_begin();
 #endif
 		lblock(&a, &b);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_for_end();
 		ast_hook_for_end();
 #endif
 		gjmp_addr(d);
@@ -12937,10 +12955,12 @@ again:
 		a = b = 0;
 		d = gind();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_do_begin();
 		ast_hook_do_begin();
 #endif
 		lblock(&a, &b);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_do_body_end();
 		ast_hook_do_body_end();
 #endif
 		gsym(b);
@@ -12952,10 +12972,12 @@ again:
 																			"assignment used as a truth value"); }
 		seqp_check();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_do_cond();
 		ast_hook_do_cond();
 #endif
 		c = gvtst(0, 0);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_if_gvtst_done();
 		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
@@ -12963,6 +12985,7 @@ again:
 		gsym_addr(c, d);
 		gsym(a);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_do_end();
 		ast_hook_do_end();
 #endif
 		prev_scope_s(&o);
@@ -12985,6 +13008,7 @@ again:
 			{ MCC_TRACE("br\n"); mcc_error("switch value not an integer"); }
 		skip(')');
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_switch_begin();
 		ast_hook_switch_begin();
 #endif
 		sw->sv = *vtop--;
@@ -13034,6 +13058,7 @@ again:
 		gsym(a);
 		end_switch();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_switch_end();
 		ast_hook_switch_end();
 #endif
 	} else if (t == TOK_CASE) { MCC_TRACE("br\n");
@@ -13060,6 +13085,7 @@ again:
 			{ MCC_TRACE("br\n"); cr->ind = gind(); }
 		cr->line = file->line_num;
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_case((long long)cr->v1, (long long)cr->v2);
 		ast_hook_case(cr->v1, cr->v2, t);
 #endif
 		skip(':');
@@ -13073,6 +13099,7 @@ again:
 			{ MCC_TRACE("br\n"); mcc_error("too many 'default'"); }
 		cur_switch->def_sym = cur_switch->nocode_wanted ? -1 : gind();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_default();
 		ast_hook_default();
 #endif
 		skip(':');
@@ -13118,6 +13145,7 @@ again:
 				gjmp_addr(s->jind);
 			}
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_goto(tok);
 			ast_hook_goto(tok);
 #endif
 			next();
@@ -13164,6 +13192,7 @@ again:
 			if (s->vla_min_goto_gpp < s->vla_inner_id)
 				{ MCC_TRACE("br\n"); mcc_error("goto jumps into the scope of a variably modified declaration"); }
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_label(t);
 			ast_hook_label(t);
 #endif
 

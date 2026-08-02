@@ -345,6 +345,86 @@ void rir_vla_begin(void) {
 	rir_rbegin(RIR_R_VLA);
 }
 
+/* Direct capture path, phase A. One entry point per statement-level control-flow
+   hook, holding exactly the statements that used to open the matching
+   ast_hook_* body, called from src/mccgen.c immediately before that hook. The
+   arguments are the parser's, not the recorder's: nothing here reads ast_* state,
+   which is why the whole group lifts without moving a static out of mccast.c.
+   The named-per-hook shape rather than an inlined rir_rbegin at the call site is
+   what lets the later slices -- ternary, landor, complex -- carry their own
+   nesting state here instead of in mccast.c. */
+void rir_hook_if_begin(void) {
+	rir_rbegin(RIR_R_IF);
+	rir_rbegin(RIR_R_COND);
+}
+
+void rir_hook_if_gvtst_done(void) { rir_rcond_done(); }
+
+void rir_hook_if_else(void) {
+	rir_rend_to(RIR_R_THEN);
+	rir_rbegin(RIR_R_ELSE);
+}
+
+void rir_hook_if_end(void) { rir_rend_to(RIR_R_IF); }
+
+void rir_hook_while_cond_start(void) { rir_mark_pt(RIR_M_WHILECOND); }
+
+void rir_hook_while_begin(void) {
+	rir_rbegin(RIR_R_WHILE);
+	rir_rbegin(RIR_R_COND);
+}
+
+void rir_hook_while_end(void) { rir_rend_to(RIR_R_WHILE); }
+
+void rir_hook_do_begin(void) {
+	rir_rbegin(RIR_R_DO);
+	rir_rbegin(RIR_R_BODY);
+}
+
+void rir_hook_do_body_end(void) { rir_rend_to(RIR_R_BODY); }
+
+void rir_hook_do_cond(void) { rir_rbegin(RIR_R_COND); }
+
+void rir_hook_do_end(void) { rir_rend_to(RIR_R_DO); }
+
+void rir_hook_for_begin(void) { rir_rbegin(RIR_R_FOR); }
+
+void rir_hook_for_cond(void) { rir_rbegin(RIR_R_COND); }
+
+void rir_hook_for_incr_begin(void) { rir_rbegin_val(RIR_R_INCR, 1); }
+
+void rir_hook_for_incr_end(void) { rir_rend_to(RIR_R_INCR); }
+
+void rir_hook_for_no_incr(void) {
+	rir_rbegin(RIR_R_INCR);
+	rir_rend_to(RIR_R_INCR);
+}
+
+void rir_hook_for_body_begin(void) { rir_rbegin(RIR_R_BODY); }
+
+void rir_hook_for_end(void) { rir_rend_to(RIR_R_FOR); }
+
+void rir_hook_switch_begin(void) {
+	rir_rbegin(RIR_R_SWITCH);
+	rir_rbegin(RIR_R_BODY);
+}
+
+void rir_hook_switch_end(void) { rir_rend_to(RIR_R_SWITCH); }
+
+void rir_hook_case(long long v1, long long v2) {
+	rir_mark_val2(RIR_M_CASE, v1, v2);
+}
+
+void rir_hook_default(void) { rir_mark_pt(RIR_M_DEFAULT); }
+
+void rir_hook_label(int v) { rir_mark_val(RIR_M_LABEL, v); }
+
+void rir_hook_goto(int v) { rir_mark_val(RIR_M_GOTO, v); }
+
+void rir_hook_break_continue(int is_continue) {
+	rir_mark_val(RIR_M_JUMP, is_continue);
+}
+
 #define RIR_XT_MAX 16384
 static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];

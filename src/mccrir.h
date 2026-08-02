@@ -91,6 +91,38 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 									int align, int result);
 void rir_vla_begin(void);
 
+/* Direct capture path, phase A: statement-level control flow. These are called
+   from src/mccgen.c immediately before the matching ast_hook_*, in the position
+   the lifted rir_* statements held at the head of those hook bodies, so the
+   capture no longer rides the tree recorder. Everything here reads only its own
+   arguments and the live parser globals rir_mark_v2 already samples (vstack,
+   vtop, nocode_wanted, ind, jrn_n), which is what makes the lift order-exact. */
+void rir_hook_if_begin(void);
+void rir_hook_if_gvtst_done(void);
+void rir_hook_if_else(void);
+void rir_hook_if_end(void);
+void rir_hook_while_cond_start(void);
+void rir_hook_while_begin(void);
+void rir_hook_while_end(void);
+void rir_hook_do_begin(void);
+void rir_hook_do_body_end(void);
+void rir_hook_do_cond(void);
+void rir_hook_do_end(void);
+void rir_hook_for_begin(void);
+void rir_hook_for_cond(void);
+void rir_hook_for_incr_begin(void);
+void rir_hook_for_incr_end(void);
+void rir_hook_for_no_incr(void);
+void rir_hook_for_body_begin(void);
+void rir_hook_for_end(void);
+void rir_hook_switch_begin(void);
+void rir_hook_switch_end(void);
+void rir_hook_case(long long v1, long long v2);
+void rir_hook_default(void);
+void rir_hook_label(int v);
+void rir_hook_goto(int v);
+void rir_hook_break_continue(int is_continue);
+
 #else
 
 #define RIR_R_IF 0
@@ -163,6 +195,31 @@ void rir_vla_begin(void);
 #define rir_slot_replay(p) 0
 #define rir_tvar_record(l, r) ((void)0)
 #define rir_tvar_replay(p, q) 0
+#define rir_hook_if_begin() ((void)0)
+#define rir_hook_if_gvtst_done() ((void)0)
+#define rir_hook_if_else() ((void)0)
+#define rir_hook_if_end() ((void)0)
+#define rir_hook_while_cond_start() ((void)0)
+#define rir_hook_while_begin() ((void)0)
+#define rir_hook_while_end() ((void)0)
+#define rir_hook_do_begin() ((void)0)
+#define rir_hook_do_body_end() ((void)0)
+#define rir_hook_do_cond() ((void)0)
+#define rir_hook_do_end() ((void)0)
+#define rir_hook_for_begin() ((void)0)
+#define rir_hook_for_cond() ((void)0)
+#define rir_hook_for_incr_begin() ((void)0)
+#define rir_hook_for_incr_end() ((void)0)
+#define rir_hook_for_no_incr() ((void)0)
+#define rir_hook_for_body_begin() ((void)0)
+#define rir_hook_for_end() ((void)0)
+#define rir_hook_switch_begin() ((void)0)
+#define rir_hook_switch_end() ((void)0)
+#define rir_hook_case(a, b) ((void)0)
+#define rir_hook_default() ((void)0)
+#define rir_hook_label(v) ((void)0)
+#define rir_hook_goto(v) ((void)0)
+#define rir_hook_break_continue(c) ((void)0)
 
 #endif
 
