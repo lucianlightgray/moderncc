@@ -286,8 +286,9 @@ void ast_hook_builtin_complex_begin(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
 void ast_hook_vla_alloc_end(struct CType *type, int addr, int new_save,
-														int locorig);
+														int locorig, int align);
 void ast_hook_vla_restore(int loc);
+void ast_hook_store_addr_late(void);
 void ast_hook_ternary_begin(int c, int g);
 void ast_hook_ternary_branch(int which);
 void ast_hook_ternary_branch_done(int which);

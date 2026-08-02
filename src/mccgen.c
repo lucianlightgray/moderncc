@@ -13662,6 +13662,9 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 		vtop->type = dtype;
 		vtop->r = rr | VT_LVAL;
 		vtop->c.i = 0;
+#if MCC_CONFIG_OPTIMIZER
+		ast_hook_store_addr_late();
+#endif
 		vswap();
 		vstore();
 		vpop();
@@ -14173,7 +14176,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #endif
 			cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
-			ast_hook_vla_alloc_end(type, ptr_slot, vla_new_save, cur_scope->vla.locorig);
+			ast_hook_vla_alloc_end(type, ptr_slot, vla_new_save, cur_scope->vla.locorig,
+														 align);
 #endif
 			addr = 0;
 			p.llocal = ptr_slot;
@@ -14386,7 +14390,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		cur_scope->vla.loc = addr;
 		cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
-		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig);
+		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a);
 #endif
 	} else if (has_init) { MCC_TRACE("br\n");
 		p.sec = sec;

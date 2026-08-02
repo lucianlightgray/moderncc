@@ -295,12 +295,13 @@ void rir_mark_val2(int kind, long long a, long long b) {
    sym and "this scope needs its own save" in fbits -- and ast_replay_bb re-runs
    gen_vla_alloc from it. The primitives that computed the size are replayed by
    that call, so the region they sit in is suppressed the way a call region is. */
-void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig) {
+void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
+									int align) {
 	RirMark *m;
 	if (!rir_active)
 		return;
-	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, new_save, (long long)(unsigned)t,
-							(long long)ref);
+	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, (new_save ? 1 : 0) | (align << 1),
+							(long long)(unsigned)t, (long long)ref);
 	m = &rir_marks[rir_markn - 1];
 	m->v3 = ((long long)(unsigned)addr) |
 					(((long long)(unsigned)locorig) << 32);
@@ -876,8 +877,9 @@ static void rir_drop(AstLocal d) {
 	if (!rir_effectful(d))
 		return;
 	if (rir_lorn && rir_lheldn < RIR_LHELD_MAX &&
-			ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
-			ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) {
+			((ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
+				ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) ||
+			 ast_kind(rir_arena, d) == AST_Invoke)) {
 		rir_lheld[rir_lheldn++] = d;
 		return;
 	}
@@ -1017,6 +1019,7 @@ static int rir_cvt_next;
    `printf("%llx", (unsigned long long)ull)` is that case, and the Convert is
    not inert: gen_cast materialises, which is the 8 bytes promote_main lost. */
 static int rir_castgv_pend;
+static AstLocal rir_castgv_top;
 static int rir_castgv_t;
 static uint64_t rir_castgv_ref;
 
@@ -1366,6 +1369,7 @@ static void rir_reconcile(const JrnOp *o) {
 }
 
 static int rir_opassign_pending;
+static int rir_addr_late;
 
 static int rir_ternn;
 static int rir_lorn;
@@ -1544,7 +1548,11 @@ static void rir_op_effect(const RirOp *ro) {
 					(jrn_vs[o->vs_off + o->vs_n - 2].type.t & VT_BTYPE) == VT_BOOL)
 				ast_set_fbits(rir_arena, n,
 											ast_fbits(rir_arena, n) | AST_FB_STORE_CMP_GV);
+			if (rir_addr_late)
+				ast_set_fbits(rir_arena, n,
+											ast_fbits(rir_arena, n) | AST_FB_STORE_ADDR_LATE);
 		}
+		rir_addr_late = 0;
 		if (rir_lorn || rir_ternn) {
 			ast_add_child(rir_arena, n, t);
 			ast_add_child(rir_arena, n, v);
@@ -2326,7 +2334,9 @@ static void rir_mark_apply(const RirOp *ro) {
 		ast_set_ival(rir_arena, u, (uint64_t)(int64_t)(int)(ro->rv3 & 0xffffffff));
 		ast_set_sym(rir_arena, u,
 								(uint64_t)(int64_t)(int)((ro->rv3 >> 32) & 0xffffffff));
-		ast_set_fbits(rir_arena, u, (uint64_t)(unsigned)ro->rval);
+		ast_set_fbits(rir_arena, u, (uint64_t)(unsigned)(ro->rval & 1));
+		ast_set_wide(rir_arena, u, (uint64_t)(unsigned)(ro->rval >> 1),
+								 AST_R2_NONE);
 		rir_stmt(u);
 		break;
 	}
@@ -2370,7 +2380,22 @@ static void rir_mark_apply(const RirOp *ro) {
 											ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
 			else if (ro->mvs_n - ast_base_depth > 0) {
 				const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
+				if (top != AST_NONE && !rir_shtype[rir_shn - 1] &&
+						ast_parent(rir_arena, top) == AST_NONE &&
+						(ast_kind(rir_arena, top) == AST_Ref ||
+						 ast_kind(rir_arena, top) == AST_Literal) &&
+						ast_type_t(rir_arena, top) == (int)pv->type.t &&
+						ast_type_ref(rir_arena, top) == (uint64_t)(uintptr_t)pv->type.ref) {
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, pv->type.t,
+											 (uint64_t)(uintptr_t)pv->type.ref);
+					ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
+					ast_add_child(rir_arena, cv, top);
+					rir_sh[rir_shn - 1] = cv;
+					break;
+				}
 				rir_castgv_pend = 2;
+				rir_castgv_top = top;
 				rir_castgv_t = pv->type.t;
 				rir_castgv_ref = (uint64_t)(uintptr_t)pv->type.ref;
 			}
@@ -2407,6 +2432,9 @@ static void rir_mark_apply(const RirOp *ro) {
 			else
 				rir_push(drop);
 		}
+		break;
+	case RIR_M_ADDRLATE:
+		rir_addr_late = 1;
 		break;
 	default:
 		break;
@@ -2862,6 +2890,9 @@ static void rir_region(const RirOp *ro) {
 				ast_set_fbits(rir_arena, n,
 											ast_fbits(rir_arena, n) | AST_FB_LANDOR_MATERIAL);
 				ast_set_ival(rir_arena, n, (uint64_t)((ro->rval >> 2) & 1));
+				if (rir_shn &&
+						ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Literal)
+					rir_pop();
 				rir_push(n);
 			} else if ((ro->rval & 1) ||
 					ast_nchild(rir_arena, n) < ((ro->rval & 2) ? 1 : 2))
@@ -3228,6 +3259,8 @@ static void rir_castgv_apply(void) {
 	   DAG, which ast_validate rejects as a parent link mismatch. */
 	if (ast_parent(rir_arena, top) != AST_NONE)
 		return;
+	if (top != rir_castgv_top)
+		return;
 	cv = ast_node(rir_arena, AST_Convert);
 	ast_set_type(rir_arena, cv, rir_castgv_t, rir_castgv_ref);
 	ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
@@ -3276,9 +3309,11 @@ static void rir_to_arena(void) {
 	rir_pending_call = AST_NONE;
 	rir_spill_node = AST_NONE;
 	rir_opassign_pending = 0;
+	rir_addr_late = 0;
 	rir_retexpr = AST_NONE;
 	rir_retexpr_pending = 0;
 	rir_castgv_pend = 0;
+	rir_castgv_top = AST_NONE;
 	rir_arena_mismatch = 0;
 	rir_cplx_depth = 0;
 	rir_acas_depth = 0;

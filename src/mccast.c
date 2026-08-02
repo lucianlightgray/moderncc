@@ -93,6 +93,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
    the value was already in a register. */
 #define AST_FB_STORE_CMP_GV 65536u
 
+#define AST_FB_STORE_ADDR_LATE 131072u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -2256,7 +2258,9 @@ void ast_hook_imag_end(int t);
 void ast_hook_builtin_complex_begin(void);
 void ast_hook_builtin_complex_end(void);
 void ast_hook_vla_alloc_begin(void);
-void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig);
+void ast_hook_vla_alloc_end(CType *type, int addr, int new_save, int locorig,
+														int align);
+void ast_hook_store_addr_late(void);
 void ast_hook_vla_restore(int loc);
 static int ast_bad_type(int tt);
 static int ast_bad_vtype(int tt);
@@ -4118,16 +4122,16 @@ void ast_hook_vla_alloc_begin(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
-																	 int locorig) { MCC_TRACE("enter\n");
+																	 int locorig, int align) { MCC_TRACE("enter\n");
 	rir_rend_to(RIR_R_VLA);
 	rir_mark_vla(type->t, (uint64_t)(uintptr_t)type->ref, addr, new_save,
-							 locorig);
+							 locorig, align);
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
 	if (ast_active && ast_in_op > 0)
 		{ MCC_TRACE("br\n"); ast_in_op--; }
 	if (ast_active)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
-	(void)type, (void)addr, (void)new_save, (void)locorig;
+	(void)type, (void)addr, (void)new_save, (void)locorig, (void)align;
 #else
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -4146,8 +4150,13 @@ void ast_hook_vla_alloc_end(CType *type, int addr, int new_save,
 	ast_set_ival(ast_cur, n, (uint64_t)(int64_t)addr);
 	ast_set_sym(ast_cur, n, (uint64_t)(int64_t)locorig);
 	ast_set_fbits(ast_cur, n, (uint64_t)(unsigned)new_save);
+	ast_set_wide(ast_cur, n, (uint64_t)(unsigned)align, AST_R2_NONE);
 	ast_add_child(ast_cur, ast_cur_bb, n);
 #endif
+}
+
+void ast_hook_store_addr_late(void) { MCC_TRACE("enter\n");
+	rir_mark_pt(RIR_M_ADDRLATE);
 }
 
 void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
@@ -6823,7 +6832,12 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); mk_pointer(&vtop->type); }
 		combine_types(&type, &sv, vtop, '?');
+		int islv = VT_STRUCT == (type.t & VT_BTYPE);
 		gen_cast(&type);
+		if (islv) { MCC_TRACE("br\n");
+			mk_pointer(&vtop->type);
+			gaddrof();
+		}
 		rc = MCC_RC_TYPE(type.t);
 		if (USING_TWO_WORDS(type.t))
 			{ MCC_TRACE("br\n"); rc = MCC_RC_RET(type.t); }
@@ -6832,10 +6846,16 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		gsym(u);
 		*vtop = sv;
 		gen_cast(&type);
+		if (islv) { MCC_TRACE("br\n");
+			mk_pointer(&vtop->type);
+			gaddrof();
+		}
 		r1 = gv(rc);
-		move_reg(r2, r1, type.t);
+		move_reg(r2, r1, islv ? VT_PTR : type.t);
 		vtop->r = r2;
 		gsym(tt);
+		if (islv)
+			{ MCC_TRACE("br\n"); indir(); }
 		break;
 	}
 	case AST_Invoke: {
@@ -7118,8 +7138,14 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				}
 			}
 #endif
-			ast_replay_value(a, ast_child(a, s, 0));
-			ast_replay_value(a, ast_child(a, s, 1));
+			if (ast_fbits(a, s) & AST_FB_STORE_ADDR_LATE) { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, s, 1));
+				ast_replay_value(a, ast_child(a, s, 0));
+				vswap();
+			} else { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, s, 0));
+				ast_replay_value(a, ast_child(a, s, 1));
+			}
 			if (ast_fbits(a, s) & AST_FB_STORE_CMP_GV)
 				{ MCC_TRACE("br\n"); vcheck_cmp(); }
 			vstore();
@@ -7217,6 +7243,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (ast_fbits(a, s))
 					{ MCC_TRACE("br\n"); gen_vla_sp_save(locorig); }
 				vpush_type_size(&vt, &al);
+				if (ast_wide_hi(a, s))
+					{ MCC_TRACE("br\n"); al = (int)(unsigned)ast_wide_hi(a, s); }
 				gen_vla_alloc(&vt, al);
 				gen_vla_sp_save(addr);
 				break;

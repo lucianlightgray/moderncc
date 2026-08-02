@@ -72,6 +72,7 @@ enum {
 	RIR_M_CLGOTO,
 	RIR_M_CLTHUNK,
 	RIR_M_CLJMP,
+	RIR_M_ADDRLATE,
 	RIR_M_COUNT
 };
 
@@ -83,7 +84,8 @@ void rir_rcond_done(void);
 void rir_mark_pt(int kind);
 void rir_mark_val(int kind, int val);
 void rir_mark_val2(int kind, long long a, long long b);
-void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig);
+void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
+									int align);
 void rir_vla_begin(void);
 
 #else
@@ -137,6 +139,7 @@ void rir_vla_begin(void);
 #define RIR_M_CLGOTO 0
 #define RIR_M_CLTHUNK 0
 #define RIR_M_CLJMP 0
+#define RIR_M_ADDRLATE 0
 #define rir_rbegin(k) ((void)0)
 #define rir_rbegin_val(k, v) ((void)0)
 #define rir_rend_to(k) ((void)0)
@@ -145,7 +148,7 @@ void rir_vla_begin(void);
 #define rir_mark_pt(k) ((void)0)
 #define rir_mark_val(k, v) ((void)0)
 #define rir_mark_val2(k, a, b) ((void)0)
-#define rir_mark_vla(t, r, a, n, l) ((void)0)
+#define rir_mark_vla(t, r, a, n, l, al) ((void)0)
 #define rir_vla_begin() ((void)0)
 #define rir_env 0
 #define rir_c2_active 0
