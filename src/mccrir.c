@@ -1903,7 +1903,8 @@ static void rir_op_effect(const RirOp *ro) {
 #endif
 				if (rir_child_has_type(cur, st) && !rir_child_wider(cur, st))
 					continue;
-				if (!opdiff && !rir_child_width_differs(cur, st))
+				if (!opdiff && !rir_child_width_differs(cur, st) &&
+						!rir_child_wider(cur, st))
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
