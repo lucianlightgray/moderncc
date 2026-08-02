@@ -2833,15 +2833,19 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         "Path to an mcc that emits this target's PE (e.g. mcc-i386-win32), used to build the --embed-jit blob engine with no gcc footprint (fixes the i386-PE embed startup crash).")
     set(_me_cc "${MCC_EMBED_JIT_MCC_ENGINE_CC}")
     set(_me_cc_dep "")
-    # i386-PE default: two-stage self-bake. A native i686 build has no cross
-    # mcc-i386-win32 to point the cache var at, so bootstrap one from the same
-    # amalgamation WITHOUT the blob sources (no target_sources(mccjit_blob.c),
-    # no MCC_EMBED_JIT_BLOB) -- it emits i386 PE but does not depend on the
-    # engine bake, breaking the cycle -- and let it compile the engine the real
-    # mcc embeds. An explicit MCC_EMBED_JIT_MCC_ENGINE_CC wins; self-host
-    # (MCC_CC_NAME == mcc) already compiles the blob with mcc and needs none.
+    # PE default (i386 + x86_64): two-stage self-bake. A gcc-built engine blob
+    # breaks the --embed-jit OUTPUT at runtime -- on i386 the unbound gcc
+    # import-library idata 0xC0000005s at startup even with the JIT off, and on
+    # x86_64 the winlibs engine fail-fasts 0xC0000409 the moment MCC_JIT=1
+    # boots it, while the same program with an mcc-compiled engine runs clean
+    # (both measured 2026-08-01). So bootstrap a blob-free mcc from the same
+    # amalgamation (no target_sources(mccjit_blob.c), no MCC_EMBED_JIT_BLOB --
+    # it emits this host's PE but does not depend on the engine bake, breaking
+    # the cycle) and let it compile the engine the real mcc embeds. An explicit
+    # MCC_EMBED_JIT_MCC_ENGINE_CC wins; self-host (MCC_CC_NAME == mcc) already
+    # compiles the blob with mcc and needs none.
     if(NOT MCC_EMBED_JIT_MCC_ENGINE_CC
-       AND MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU STREQUAL "i386"
+       AND MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU MATCHES "^(i386|x86_64)$"
        AND NOT MSVC AND NOT MCC_CC_NAME STREQUAL "mcc"
        AND NOT CMAKE_CROSSCOMPILING)
         add_executable(mcc_ejboot src/mcc.c)
