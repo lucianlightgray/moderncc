@@ -1143,6 +1143,17 @@ endif()
 
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
+
+
+# Defined here rather than next to its first test consumer: the ast/rir-parity
+# cross cells are registered ~2000 lines earlier and need the same directory.
+if(MCC_ENABLE_CROSS)
+    set(_mcc_cross_default "${CMAKE_BINARY_DIR}")
+else()
+    set(_mcc_cross_default "${CMAKE_SOURCE_DIR}/cmake-cross")
+endif()
+set(MCC_CROSS_DIR "${_mcc_cross_default}"
+    CACHE PATH "cross-compiler build dir for the cross test cells")
 mcc_config_node(MCC_CROSS_OPTIMIZER TYPE BOOL DEFAULT ON GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_ENABLE_CROSS"
     HELP "Compile MCC_CONFIG_OPTIMIZER=1 into the cross compilers (mcc-<arch>). ON (default) makes the cross reemit/JIT parity axes (divmagic/select/promotion/replay-inline/embed-jit) real on every triple, matching native; also appends MCC_EMBED_JIT=1. OFF builds the cross compilers without the AST reemit optimizer (smaller/faster cross build, byte-identical to the pre-ungate cross output) but leaves those per-triple parity axes compiled out so they silently no-op.")
@@ -4041,6 +4052,32 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 900)
         endforeach()
 
+        # Phase D's bar is per-TARGET, and running it by hand is how a gate goes
+        # stale. The cross compilers in MCC_CROSS_DIR emit for these four and the
+        # sysroots are vendored, so the same assert runs against each. MCCFLAGS
+        # carries the sysroot: --sysroot ALONE silently shrinks the sweep to the
+        # include-free files, so the explicit usr/include is load-bearing, and
+        # arm's hard-float PCS is not the default.
+        foreach(_rp riscv64 arm arm64 i386)
+            set(_rpabi "")
+            if(_rp STREQUAL "arm")
+                set(_rpabi "-mfloat-abi hard ")
+            endif()
+            set(_rpsr "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_rp}-glibc")
+            add_test(NAME ast/rir-parity-${_rp}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rp}"
+                        "-DOPT=-O1"
+                        "-DMCCFLAGS=-B ${MCC_CROSS_DIR} ${_rpabi}--sysroot=${_rpsr} -I${_rpsr}/usr/include"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
+            set_tests_properties(ast/rir-parity-${_rp} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 1800)
+        endforeach()
+
         if(TARGET mcc_nojrn)
             add_test(NAME ast/journal-inert-build
                 COMMAND "${CMAKE_COMMAND}"
@@ -6324,13 +6361,6 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(compile.win32 "requires WIN32 target (win32 runtime examples)")
     endif()
 
-    if(MCC_ENABLE_CROSS)
-        set(_mcc_cross_default "${CMAKE_BINARY_DIR}")
-    else()
-        set(_mcc_cross_default "${CMAKE_SOURCE_DIR}/cmake-cross")
-    endif()
-    set(MCC_CROSS_DIR "${_mcc_cross_default}"
-        CACHE PATH "cross-compiler build dir for the wine PE runtime test")
 
     # Every cell below consumes prebuilt artifacts from MCC_CROSS_DIR, and the
     # mcc_build fixture rebuilds only CMAKE_BINARY_DIR -- so a ctest run happily

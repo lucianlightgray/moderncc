@@ -22,7 +22,13 @@ cmake_minimum_required(VERSION 3.22)
 # Pinning them here would turn a word-width property into a false regression.
 #
 # Required -D args: MCC CORPUS EXTRA TMPDIR
-# Optional: OPT (default -O1)
+# Optional: OPT (default -O1), MCCFLAGS (default empty)
+#
+# MCCFLAGS is what makes this runnable against a CROSS compiler: a sysroot, its
+# usr/include and an ABI flag. --sysroot alone is not enough -- the explicit
+# -I<sysroot>/usr/include is what makes the system headers resolve, and without
+# it the sweep silently shrinks to the include-free files and reports a
+# plausible, wrong census (journal_sweep.cmake:167 records the same trap).
 #
 
 if(NOT MCC OR NOT CORPUS OR NOT EXTRA OR NOT TMPDIR)
@@ -30,6 +36,10 @@ if(NOT MCC OR NOT CORPUS OR NOT EXTRA OR NOT TMPDIR)
 endif()
 if(NOT OPT)
     set(OPT "-O1")
+endif()
+set(_mccflags "")
+if(MCCFLAGS)
+    separate_arguments(_mccflags NATIVE_COMMAND "${MCCFLAGS}")
 endif()
 
 file(MAKE_DIRECTORY "${TMPDIR}")
@@ -40,7 +50,7 @@ set(ENV{SOURCE_DATE_EPOCH} "1000000000")
 file(WRITE "${TMPDIR}/probe.c" "int rir_probe(int a, int b) { return a * b + 1; }\n")
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env "MCC_REPLAY_IR=1"
-            "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/probe.o" "${TMPDIR}/probe.c"
+            "${MCC}" -w "${OPT}" ${_mccflags} -c -o "${TMPDIR}/probe.o" "${TMPDIR}/probe.c"
     OUTPUT_QUIET ERROR_VARIABLE _perr RESULT_VARIABLE _prc)
 if(NOT _perr MATCHES "\\[rir-total\\]")
     message(STATUS "rir_parity: no [rir-total] output — build has no "
@@ -62,7 +72,7 @@ set(_badnames "")
 foreach(_f ${_srcs})
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "MCC_REPLAY_IR=1"
-                "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/a.o" "${_f}"
+                "${MCC}" -w "${OPT}" ${_mccflags} -c -o "${TMPDIR}/a.o" "${_f}"
         OUTPUT_QUIET ERROR_VARIABLE _err RESULT_VARIABLE _rc)
     if(NOT _rc EQUAL 0)
         continue()
