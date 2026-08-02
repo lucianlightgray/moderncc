@@ -5616,7 +5616,7 @@ if(MCC_BUILD_TESTS)
             "requires x86 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
 
-    if(MCC_CPU STREQUAL "x86_64" AND MCC_CONFIG_ASM
+    if((MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "i386") AND MCC_CONFIG_ASM
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/dash_s_roundtrip/prog.c")
         add_test(NAME dash-s-roundtrip COMMAND "$<TARGET_FILE:mccharness>" dashs
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
@@ -5625,7 +5625,7 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(dash-s-roundtrip PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     else()
         mcc_skip_test(dash-s-roundtrip
-            "requires x86_64 target with integrated assembler (host target: ${MCC_CPU})")
+            "requires x86_64/i386 target with integrated assembler (host target: ${MCC_CPU})")
     endif()
 
     add_executable(seccmp tests/support/seccmp.c)
