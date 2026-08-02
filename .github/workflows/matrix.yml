@@ -279,3 +279,12 @@ jobs:
           if (Test-Path cmake-mingw/mingw-native) {
             python -u tools/selfhost-smoke.py cmake-mingw/mingw-native
           } else { "no inner build dir" }
+      - name: surface mcctest output (i686 reference-program crash diagnosis)
+        if: always() && matrix.arch == 'i686'
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          if (Test-Path cmake-mingw/mingw-native) {
+            ctest --test-dir cmake-mingw/mingw-native -R "^mcctest$" -VV --timeout 300
+          } else { "no inner build dir" }

@@ -110,14 +110,18 @@ def main():
                 pass
         r = subprocess.run([exe], capture_output=True, text=True, env=env, timeout=60)
         out = (r.stdout or "").strip()
-        # The i386-PE embedded engine still 0xC0000005s at startup even with the
-        # JIT off (the gcc engine's emutls/ctor init on i686) -- a separate,
-        # deeper runtime blocker than the LINK this gate proves. Skip-mark it
-        # honestly rather than FAIL, the same class as the winlibs runtime-JIT
-        # 0xC0000005 selfhost-jit skips. Tracked in docs/TODO.
+        # A gcc-built i386-PE engine 0xC0000005s at startup even with the JIT
+        # off (unbound gcc import-library idata) -- a host-toolchain limitation,
+        # not a mcc link regression, so it skip-marks honestly. But when the
+        # build self-baked the engine WITH mcc (the libmccjitengine-mcc.a
+        # artifact), that crash class is FIXED and a recurrence is a real
+        # regression: FAIL it so the promoted i686 cell cannot false-green.
         if r.returncode in (-1073741819, 3221225477):
+            if os.path.exists(os.path.join(bdir, "libmccjitengine-mcc.a")):
+                sys.exit("FAIL: embedded exe 0xC0000005 at startup with the "
+                         "mcc-built engine (self-bake regression)")
             print("embed-jit-smoke: SKIP (embedded exe 0xC0000005 at MCC_JIT=0 "
-                  "-- i386-PE engine startup residual; LINK succeeded, tracked in docs/TODO)")
+                  "-- gcc-engine startup residual; LINK succeeded, tracked in docs/TODO)")
             sys.exit(SKIP)
         if r.returncode != EXPECT_RC or EXPECT_STDOUT not in out:
             sys.exit(f"FAIL: embedded exe wrong result (rc={r.returncode} "
