@@ -16,7 +16,7 @@
 #include <sys/sysctl.h>
 #endif
 
-#if defined(_MSC_VER)
+#if (defined(_M_X64) || defined(_M_IX86)) && !defined(__MCC__)
 #include <intrin.h>
 #elif defined(__x86_64__) || defined(__i386__)
 #include <cpuid.h>
@@ -768,7 +768,7 @@ struct hostinfo {
 };
 
 static int hypervisor_present(void) {
-#if defined(_MSC_VER)
+#if (defined(_M_X64) || defined(_M_IX86)) && !defined(__MCC__)
 	int r[4];
 	__cpuid(r, 1);
 	return (r[2] & (1 << 31)) ? 1 : 0;
