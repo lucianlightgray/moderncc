@@ -43,6 +43,36 @@ ARCH=$5
 [ "$(uname -s)" = "Darwin" ] || { echo "SKIP: needs a Darwin host"; exit 77; }
 [ -x "$MCC" ] || { echo "SKIP: no mcc at $MCC"; exit 77; }
 [ -n "$ARCH" ] || ARCH=$(uname -m)
+
+# The x86_64 leg only reaches an arm64 host via Rosetta, and a Rosetta-translated
+# image can wedge in uninterruptible (U-state) sleep that neither SIGKILL nor the
+# watchdog below can reap -- it once stalled a whole ctest run for 2h+. Skip it
+# here, before any x86_64 child is compiled or run. The native Intel CI runner
+# (uname -m = x86_64) still exercises the X86_64_RELOC_TLV path for real.
+if [ "$(uname -m)" = arm64 ] && [ "$ARCH" = x86_64 ]; then
+	echo "SKIP: x86_64 TLV under Rosetta wedges on an arm64 host; run natively"
+	exit 77
+fi
+
+# Bounded child execution: even off the Rosetta path a broken TLV image can hang,
+# and ctest waits on the child's inherited pipe forever -- --timeout reaps the
+# script, not a wedged grandchild holding the pipe. This is the POSIX analog of
+# the Windows exec-runner watchdog. Callers redirect stdout/stderr to files so an
+# abandoned child never holds the pipe ctest reads. A normal hang is killable and
+# surfaces as rc=137 (a real failure); a U-state child is unreachable, which is
+# why the Rosetta leg is skipped outright above rather than merely guarded here.
+TIMEOUT=${MCC_TEST_TIMEOUT:-60}
+run_bounded() {
+	"$@" &
+	_cp=$!
+	( sleep "$TIMEOUT"; kill -9 "$_cp" 2>/dev/null ) &
+	_kp=$!
+	_rc=0
+	wait "$_cp" || _rc=$?
+	kill "$_kp" 2>/dev/null || true
+	wait "$_kp" 2>/dev/null || true
+	return "$_rc"
+}
 # Pinned to clang rather than honouring $CC: the subject is Apple's TLV ABI, and
 # clang is the only Darwin compiler that emits it. Homebrew GCC falls back to
 # emutls (___emutls_v.tv plus a call to ___emutls_get_address, which lives in
@@ -64,7 +94,9 @@ sdk=$(xcrun --show-sdk-path 2>/dev/null || true)
 echo 'int main(void) { return 0; }' > "$WORK/probe.c"
 "$CC" -arch "$ARCH" "$WORK/probe.c" -o "$WORK/probe" 2>/dev/null ||
 	{ echo "SKIP: this clang cannot target $ARCH"; exit 77; }
-"$WORK/probe" || { echo "SKIP: this host cannot execute $ARCH images"; exit 77; }
+prc=0
+run_bounded "$WORK/probe" >/dev/null 2>&1 || prc=$?
+[ "$prc" = 0 ] || { echo "SKIP: this host cannot execute $ARCH images (rc=$prc)"; exit 77; }
 
 # The imported half: TLS defined in an object mcc did not compile.
 cat > "$WORK/lib.c" <<'EOF'
@@ -124,12 +156,14 @@ for case in own imported mixed; do
 	# Capture the status before testing it: inside `if ! cmd`, $? is the negation's
 	# result, not the command's, and the diagnostic would always read rc=0.
 	rc=0
-	"$WORK/$case.mcc" > "$WORK/$case.out" 2>"$WORK/$case.rt" || rc=$?
+	run_bounded "$WORK/$case.mcc" > "$WORK/$case.out" 2>"$WORK/$case.rt" || rc=$?
 	if [ "$rc" != 0 ]; then
 		echo "FAIL[$case]: mcc-linked image did not run (rc=$rc):"; sed 's/^/    /' "$WORK/$case.rt"
 		fail=1; continue
 	fi
-	"$WORK/$case.ref" > "$WORK/$case.refout"
+	run_bounded "$WORK/$case.ref" > "$WORK/$case.refout" 2>/dev/null || {
+		echo "FAIL[$case]: the $CC-built reference did not run cleanly"; fail=1; continue
+	}
 	if ! cmp -s "$WORK/$case.out" "$WORK/$case.refout"; then
 		echo "FAIL[$case]: output differs from the $CC-built reference"
 		diff "$WORK/$case.refout" "$WORK/$case.out" | sed 's/^/    /' || true
