@@ -311,6 +311,8 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"const_branch_fold", "run", "exec/optimizer/const_branch_fold.c", "chk=4795743129665478947 g=22\nOK\n", "", "", ""},
 		{"tail_call_loop", "run", "exec/optimizer/tail_call_loop.c", "chk=2376757668953582540 g=10665\nOK\n", "", "", ""},
 		{"jump_thread", "run", "exec/optimizer/jump_thread.c", "chk=8600891625247101411 g=27\nOK\n", "", "", ""},
+		{"pre_partial_redundancy", "run", "exec/optimizer/pre_partial_redundancy.c", "14 0\n", "", "", ""},
+		{"bitflag_cluster", "run", "exec/optimizer/bitflag_cluster.c", "5 1\n", "", "", ""},
 		{"redundant_cast", "run", "exec/optimizer/redundant_cast.c", "chk=18444010340373568468 g=2\nOK\n", "", "", ""},
 		{"narrow_ranged", "run", "exec/optimizer/narrow_ranged.c", "chk=10780901990224392681\nOK\n", "", "", ""},
 		{"loop_interchange", "run", "exec/optimizer/loop_interchange.c", "6727813338129931117 -7361308579892106783\n", "", "", ""},
