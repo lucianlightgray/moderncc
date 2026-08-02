@@ -152,6 +152,7 @@ static int rir_lblcap;
 static int *rir_ptaddr;
 static int rir_ptcap;
 static int *rir_vslbl, *rir_vslbl2;
+static unsigned char *rir_vscapt;
 static int rir_vscap;
 static int *rir_jsvlbl;
 static int rir_jmpsv_fb;
@@ -517,10 +518,18 @@ static void rir_cmap_bind(int addr, int label) {
 	rir_cmapn++;
 }
 
-static int rir_chain_label(int addr) {
+static int rir_chain_adopt(int addr, int opi, unsigned char *fl,
+													 unsigned char bit) {
+	int L;
 	if (!addr)
 		return -1;
-	return rir_cmap_find(addr);
+	L = rir_cmap_find(addr);
+	if (L >= 0 || opi <= 0)
+		return L;
+	L = rir_nlbl++;
+	rir_cmap_bind(addr, L);
+	*fl |= bit;
+	return L;
 }
 
 static int rir_point_of(int addr) {
@@ -550,13 +559,16 @@ static void rir_resolve(void) {
 		rir_vscap = jrn_vsn;
 		rir_vslbl = mcc_realloc(rir_vslbl, (size_t)rir_vscap * sizeof *rir_vslbl);
 		rir_vslbl2 = mcc_realloc(rir_vslbl2, (size_t)rir_vscap * sizeof *rir_vslbl2);
+		rir_vscapt = mcc_realloc(rir_vscapt, (size_t)rir_vscap * sizeof *rir_vscapt);
 	}
 	rir_cmapn = 0;
 	rir_nlbl = 0;
 	rir_fallback = 0;
 	rir_jmpsv_fb = 0;
-	for (i = 0; i < jrn_vsn; i++)
+	for (i = 0; i < jrn_vsn; i++) {
 		rir_vslbl[i] = rir_vslbl2[i] = -1;
+		rir_vscapt[i] = 0;
+	}
 	for (i = 0; i < jrn_n; i++) {
 		JrnOp *o = &jrn_ops[i];
 		int in = 0, out = 0, L = -1, k;
@@ -567,17 +579,18 @@ static void rir_resolve(void) {
 		for (k = 0; k < o->vs_n; k++) {
 			SValue *v = &jrn_vs[o->vs_off + k];
 			int vv = v->r & VT_VALMASK;
+			unsigned char *fl = &rir_vscapt[o->vs_off + k];
 			if (vv == VT_JMP || vv == VT_JMPI) {
 				rir_tot_jmpsv++;
-				rir_vslbl[o->vs_off + k] = rir_chain_label((int)v->c.i);
+				rir_vslbl[o->vs_off + k] = rir_chain_adopt((int)v->c.i, i, fl, 1);
 				if (v->c.i && rir_vslbl[o->vs_off + k] < 0) {
 					rir_jmpsv_fb++;
 					rir_tot_jmpsv_fb++;
 				}
 			} else if (v->r == VT_CMP) {
 				rir_tot_jmpsv++;
-				rir_vslbl[o->vs_off + k] = rir_chain_label(v->jtrue);
-				rir_vslbl2[o->vs_off + k] = rir_chain_label(v->jfalse);
+				rir_vslbl[o->vs_off + k] = rir_chain_adopt(v->jtrue, i, fl, 1);
+				rir_vslbl2[o->vs_off + k] = rir_chain_adopt(v->jfalse, i, fl, 2);
 				if ((v->jtrue && rir_vslbl[o->vs_off + k] < 0) ||
 						(v->jfalse && rir_vslbl2[o->vs_off + k] < 0)) {
 					rir_jmpsv_fb++;
@@ -4130,6 +4143,19 @@ static void rir_run(void) {
 		if (o->p.vs_n >= 0) {
 			if (o->p.vs_n) {
 				int k;
+				int live = (int)(vtop - vstack);
+				for (k = 0; k < o->p.vs_n && k <= live; k++) {
+					unsigned char fl = rir_vscapt[o->p.vs_off + k];
+					int L = rir_vslbl[o->p.vs_off + k];
+					int L2 = rir_vslbl2[o->p.vs_off + k];
+					if (!fl)
+						continue;
+					if ((fl & 1) && L >= 0)
+						rir_lblhead[L] = vstack[k].r == VT_CMP ? vstack[k].jtrue
+																									: (int)vstack[k].c.i;
+					if ((fl & 2) && L2 >= 0 && vstack[k].r == VT_CMP)
+						rir_lblhead[L2] = vstack[k].jfalse;
+				}
 				memcpy(vstack, jrn_vs + o->p.vs_off,
 							 (size_t)o->p.vs_n * sizeof(SValue));
 				if (rir_delta)
