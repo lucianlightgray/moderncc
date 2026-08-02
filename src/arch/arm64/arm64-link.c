@@ -428,6 +428,14 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC: {
 		addr_t tls_start = 0;
+		/* See the riscv64 peer: a shared object does not own the TLS block this
+		   offset is relative to, so baking it silently reads the EXECUTABLE's
+		   thread-local instead. Dynamic TLS is not implemented here. */
+		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
+			mcc_error_noabort("local-exec TLS in a shared object is not valid; "
+												"dynamic TLS is not implemented for arm64");
+			return;
+		}
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];
 
