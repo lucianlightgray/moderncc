@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Native-in-container optimizer validation for a Linux arch, driven from any host
-# (built for the macOS dev host, where user-mode qemu is unavailable — see
-# tests/qemu/docker/README.md).
+# (built for the macOS dev host, where user-mode qemu is unavailable).
 #
 # The tests/qemu/docker CONFORMANCE matrix cross-builds the per-arch `<arch>-mcc`
 # WITHOUT MCC_CONFIG_OPTIMIZER, so it never exercises the AST optimizer (replay,

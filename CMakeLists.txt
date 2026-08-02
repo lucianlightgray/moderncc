@@ -6821,7 +6821,7 @@ if(MCC_BUILD_TESTS)
         endforeach()
     else()
         mcc_skip_test(macho-libsystem-kernel-fused
-            "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant — see tests/qemu/apple-libc/PROVENANCE.md")
+            "libmalloc/locale-stdio/dyld/pthread/GCD/ObjC need a macOS or darling host (-DMCC_DARWIN_HOST=ON); kernel-fused, no portable variant")
     endif()
 
     option(MCC_QEMU_TESTS
@@ -7002,8 +7002,7 @@ if(DOCKER_EXE)
         USES_TERMINAL VERBATIM
         COMMENT "qemu-user cross matrix in Docker (image mcc-qemu)")
 else()
-    message(STATUS "mcc: docker not found — `qemu-docker` target unavailable "
-                   "(see tests/qemu/docker/README.md)")
+    message(STATUS "mcc: docker not found — `qemu-docker` target unavailable")
 endif()
 
 get_property(_mcc_all_tests DIRECTORY PROPERTY TESTS)
