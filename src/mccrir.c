@@ -2310,11 +2310,22 @@ static void rir_op_effect(const RirOp *ro) {
 				break;
 			}
 		}
-		if (slot < 0 || slot >= rir_shn || !lv)
+		if (slot < 0 || slot >= rir_shn)
 			break;
 		v = rir_sh[slot];
 		if (v == AST_NONE || ast_parent(rir_arena, v) != AST_NONE)
 			break;
+		if (!lv) {
+			if (!is_float(o->svarg.type.t))
+				break;
+			n = ast_node(rir_arena, AST_Store);
+			ast_add_child(rir_arena, n, rir_leaf(&o->svarg));
+			ast_add_child(rir_arena, n, v);
+			rir_stmt(n);
+			rir_sh[slot] = rir_leaf(&o->svarg);
+			rir_shtype[slot] = 0;
+			break;
+		}
 		ad = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, ad, AST_OP_ADDR);
 		ast_set_type(rir_arena, ad, o->svarg.type.t,
