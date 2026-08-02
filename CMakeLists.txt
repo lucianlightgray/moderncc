@@ -6040,7 +6040,12 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(runtime-bench-check PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 900)
 
-        if(MCC_CONFIG_OPTIMIZER AND MCC_CPU STREQUAL "x86_64"
+        # No longer x86_64-only: the gate-win assertion measures instructions
+        # retired wherever a counter exists (perf, or Apple Silicon's
+        # /usr/bin/time -l) and only falls back to cpu time otherwise, so arm64
+        # macOS now runs it for real. Still native-only -- an emulated or cross
+        # binary has neither a meaningful counter nor a meaningful clock.
+        if(MCC_CONFIG_OPTIMIZER
            AND NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
             add_test(NAME runtime-bench-gatewin
@@ -6050,7 +6055,7 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 900)
         else()
             mcc_skip_test(runtime-bench-gatewin
-                "wall-clock gate-win assertion runs on a native x86_64 optimizer build only (emulated/cross timing is meaningless)")
+                "gate-win assertion runs on a native optimizer build only (emulated/cross timing and counters are meaningless)")
         endif()
     endif()
 

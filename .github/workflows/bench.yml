@@ -86,6 +86,33 @@ jobs:
           [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
           mcc-ci stage2 release --mcc "$mccexe" -- -DMCC_BENCH=ON -DMCC_DIST_PLAT=${{ matrix.host }}
           mcc-ci stage3 --consume bench --build cmake-stage2-release
+      # Generated-code speed, judged on instructions retired against the
+      # committed per-<cpu>-<os> baseline. Instructions are the metric because a
+      # time delta with no instruction delta is layout, not codegen -- and
+      # because the counter reproduces to within 0.04% run to run where wall
+      # clock on a shared runner does not. Exit 77 means this host has no
+      # counter (no usable perf, not Apple Silicon) or no baseline for its key,
+      # which is a skip, not a failure.
+      - name: runtime-bench vs the stored instruction baseline
+        if: always()
+        run: |
+          mcc="$PWD/cmake-stage2-release/mcc"
+          [ -x "$mcc.exe" ] && mcc="$mcc.exe"
+          if [ ! -x "$mcc" ]; then
+            echo "SKIP runtime-bench: no stage2 mcc at $mcc" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          set +e
+          python3 tools/runtime-bench.py --mcc "$mcc" --runs 1 \
+            --baseline --assert-baseline
+          rc=$?
+          set -e
+          if [ "$rc" = 77 ]; then
+            echo "SKIP runtime-bench: no instruction counter or no baseline for this host" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          exit "$rc"
       - name: benchmark summary
         if: always()
         run: mcc-ci bench-summary --plat ${{ matrix.host }} --append "$GITHUB_STEP_SUMMARY"

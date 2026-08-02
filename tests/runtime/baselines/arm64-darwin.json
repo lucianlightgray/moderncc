@@ -1,0 +1,27 @@
+{
+  "cc": "gcc",
+  "config": "defaults",
+  "kernels": {
+    "mandelbrot": {
+      "ins": 10351608023,
+      "ref_ins": 3080242572
+    },
+    "matmul": {
+      "ins": 67603503630,
+      "ref_ins": 3524454122
+    },
+    "nbody": {
+      "ins": 12808117274,
+      "ref_ins": 5004574214
+    },
+    "nsieve": {
+      "ins": 5212781378,
+      "ref_ins": 1293623588
+    },
+    "spectral": {
+      "ins": 14606102394,
+      "ref_ins": 4160996205
+    }
+  },
+  "key": "arm64-darwin"
+}

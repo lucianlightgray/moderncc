@@ -24,16 +24,26 @@ re-discovers them:
 Usage:
   tools/runtime-bench.py [--mcc PATH] [--cc PATH] [--runs N] [--check-only]
                          [--gates "K=V K=V"]...  [--json] [--assert-gate-wins]
+                         [--write-baseline [PATH]] [--baseline [PATH]]
+                         [--assert-baseline] [--json-out PATH]
 
   --gates may be repeated to compare configurations; the first is the baseline
   and later ones are reported as a delta against it. An empty --gates "" means
   stock defaults.
 
-  --assert-gate-wins is the one timing mode that IS a pass/fail gate: it times
-  the GATE_WINS table's default-on flips against the single kernel each one
-  moves and fails if the win is gone. It asserts only that a large win still
-  exists, and skips (77) whenever the box is too noisy to say -- see the
-  comments on GATE_WINS and assert_gate_wins.
+  --assert-gate-wins is a pass/fail gate: it measures the GATE_WINS table's
+  default-on flips against the single kernel each one moves and fails if the
+  win is gone. Where an instructions-retired counter exists it asserts on
+  INSTRUCTIONS, which do not drift; only a host with no counter falls back to
+  cpu time and its noise machinery (see assert_gate_wins).
+
+  --write-baseline records this run's per-kernel instruction counts under
+  tests/runtime/baselines/<cpu>-<os>.json, and --baseline diffs a later run
+  against it -- the regression store the timing table could never be, because
+  instructions are a property of the emitted code and milliseconds are a
+  property of the box. --assert-baseline turns the diff into a gate at
+  --baseline-tolerance percent (default 2%, against a measured run-to-run
+  spread of 0.04%).
 
 Exit status: 0 all good, 1 an output mismatch or build failure, 77 skip (no
 reference compiler, or kernels missing).
@@ -171,6 +181,17 @@ def perf_instructions(exe, argv):
     return None
 
 
+def instructions_retired_min(exe, argv, backend, reads=3):
+    """Minimum of `reads` counts. The counter is architectural but not
+    deterministic across runs: a kernel that first-touches a large allocation
+    pays page-fault work that lands in the same rusage counter, and nsieve
+    measured 5.2116..5.2826 G (1.4%) from ONE binary that way. The minimum is
+    the run that faulted least, which is the reproducible end."""
+    vals = [instructions_retired(exe, argv, backend) for _ in range(reads)]
+    vals = [v for v in vals if v]
+    return min(vals) if vals else None
+
+
 def instructions_retired(exe, argv, backend):
     """Dynamic instruction count -- the metric that separates 'emits less work'
     from 'got lucky on code layout'. nsieve showed why this belongs here:
@@ -238,6 +259,82 @@ def gate_win_best_pair(times):
     talking, not a lost optimization."""
     pairs = zip(times["on"], times["off"])
     return max(((off - on) / off * 100.0) for on, off in pairs)
+
+
+def gate_win_insns(mcc, cc, backend):
+    """The GATE_WINS ratchet measured in instructions retired instead of cpu ms.
+
+    This is the metric instruction 15 asks for, and it is deterministic where
+    the timing path is not: three reads of the same binary here land within
+    0.05% of each other (6.412 / 6.411 / 6.409 G on nbody), against the 12%
+    self-drift the timing path has to tolerate. So none of the noise machinery
+    below applies -- no load circuit-breaker, no re-measure round, no
+    best-pair rescue -- and the gate stops being x86_64-only, because Apple
+    Silicon reports the counter through /usr/bin/time -l.
+
+    Returns None when a kernel cannot be built or the counter refuses, so the
+    caller can fall back to timing rather than reporting a false verdict."""
+    entries = [e for e in GATE_WINS if os.path.exists(e[2])]
+    if not entries:
+        return None
+    rows, failures = [], []
+    with tempfile.TemporaryDirectory() as td:
+        for gate, name, src, argv, mflags, min_win in entries:
+            ref = os.path.join(td, name + ".ref")
+            ok, err = build(cc, src, ref)
+            if not ok:
+                return None
+            rc, expect, _ = run_once(ref, argv)
+            if rc != 0:
+                return None
+            ins = {}
+            for label, env in (("on", None), ("off", {gate: "0"})):
+                exe = os.path.join(td, f"{name}.{label}")
+                ok, err = build(mcc, src, exe, env, mcc=True, flags=mflags, opt="-O3")
+                if not ok:
+                    failures.append(f"{gate}/{name}: mcc -O3 {label} build failed: "
+                                    f"{err.strip()[:160]}")
+                    break
+                rc, out, _ = run_once(exe, argv)
+                if rc != 0 or out != expect:
+                    failures.append(f"{gate}/{name} [{label}]: output mismatch\n"
+                                    f"    want: {expect}\n    got:  {out}")
+                    break
+                got = instructions_retired_min(exe, argv, backend)
+                if got is None:
+                    return None
+                ins[label] = got
+            if len(ins) != 2:
+                continue
+            win = (ins["off"] - ins["on"]) / ins["off"] * 100.0
+            rows.append((gate, name, ins["on"], ins["off"], win, min_win))
+    return rows, failures
+
+
+def assert_gate_wins_insns(mcc, cc, backend):
+    got = gate_win_insns(mcc, cc, backend)
+    if got is None:
+        return None
+    rows, failures = got
+    for gate, name, on, off, win, min_win in rows:
+        print(f"{gate:<20} {name:<10} on {on / 1e9:7.3f}G  off {off / 1e9:7.3f}G"
+              f"  win {win:+6.1f}%  (insns, need >= {min_win:.0f}%)")
+        if win < min_win:
+            failures.append(
+                f"{gate}/{name}: win collapsed to {win:+.1f}% of instructions "
+                f"(need >= {min_win:.0f}%; on {on / 1e9:.3f}G vs off {off / 1e9:.3f}G). "
+                f"Instructions retired do not drift, so this is the gate no longer "
+                f"firing on this kernel, not box noise")
+    for f in failures:
+        print(f"FAIL {f}")
+    if failures:
+        return 1
+    if not rows:
+        print("no gate-win kernel could be counted; skipping")
+        return 77
+    print(f"\nruntime-bench: gate wins OK ({len(rows)} gate(s), instructions "
+          f"retired via {backend}, output verified vs {os.path.basename(cc)})")
+    return 0
 
 
 def assert_gate_wins(mcc, cc, runs):
@@ -356,6 +453,79 @@ def assert_gate_wins(mcc, cc, runs):
     return 0
 
 
+BASELINE_DIR = os.path.join(RT, "baselines")
+
+
+def baseline_key():
+    """<cpu>-<os>, the same shape the journal/recorder baselines use. Kernel
+    instruction counts are comparable across boxes of one key and meaningless
+    across keys, which is why the file is keyed rather than global."""
+    import platform
+    m = platform.machine()
+    m = {"aarch64": "arm64", "AMD64": "x86_64", "amd64": "x86_64"}.get(m, m)
+    o = {"darwin": "darwin", "linux": "linux", "win32": "win32"}.get(sys.platform,
+                                                                    sys.platform)
+    return f"{m}-{o}"
+
+
+def baseline_path(explicit):
+    if explicit:
+        return explicit
+    return os.path.join(BASELINE_DIR, baseline_key() + ".json")
+
+
+def baseline_snapshot(results, cols, cc):
+    """Instructions only. Wall-clock and cpu ms are properties of the box on the
+    day, so storing them would produce a file nothing can honestly diff; the
+    instruction count is a property of the emitted code."""
+    kern = {}
+    for name, r in results.items():
+        ins = r.get("ins", {}).get(cols[0])
+        if ins:
+            kern[name] = {"ins": ins, "ref_ins": r.get("ref_ins")}
+    return {"key": baseline_key(), "cc": os.path.basename(cc),
+            "config": cols[0], "kernels": kern}
+
+
+def baseline_report(cur, path, tolerance):
+    """Print the per-kernel instruction delta against a stored baseline.
+
+    Returns the number of kernels that regressed past `tolerance` percent, or
+    None when there is nothing to compare -- a missing file, a different key,
+    or a run with no counter."""
+    try:
+        with open(path) as f:
+            base = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"runtime-bench: no usable baseline at {path} ({e})")
+        return None
+    if base.get("key") != cur["key"]:
+        print(f"runtime-bench: baseline is for {base.get('key')}, this host is "
+              f"{cur['key']}; instruction counts are not comparable across keys")
+        return None
+    if not cur["kernels"]:
+        print("runtime-bench: this run counted no instructions; nothing to diff")
+        return None
+    regressed, rows = 0, []
+    for name in sorted(set(base["kernels"]) | set(cur["kernels"])):
+        b = base["kernels"].get(name, {}).get("ins")
+        c = cur["kernels"].get(name, {}).get("ins")
+        if not b or not c:
+            rows.append((name, b, c, None))
+            continue
+        d = (c - b) / b * 100.0
+        rows.append((name, b, c, d))
+        if d > tolerance:
+            regressed += 1
+    print(f"\n{'kernel':<12}{'base(G)':>10}{'now(G)':>10}{'delta':>9}   (vs {path})")
+    for name, b, c, d in rows:
+        bs = f"{b / 1e9:>10.3f}" if b else f"{'-':>10}"
+        cs = f"{c / 1e9:>10.3f}" if c else f"{'-':>10}"
+        ds = f"{d:>+8.2f}%" if d is not None else f"{'-':>9}"
+        print(f"{name:<12}{bs}{cs}{ds}")
+    return regressed
+
+
 def parse_gates(s):
     env = {}
     for tok in (s or "").split():
@@ -379,6 +549,22 @@ def main():
                          "counter is available (perf, or Apple Silicon time -l)")
     ap.add_argument("--assert-gate-wins", action="store_true",
                     help="ratchet: fail if a GATE_WINS flip's measured win is gone")
+    ap.add_argument("--write-baseline", nargs="?", const="", default=None,
+                    metavar="PATH",
+                    help="record this run's instruction counts as the baseline "
+                         "for this <cpu>-<os> (default tests/runtime/baselines/)")
+    ap.add_argument("--baseline", nargs="?", const="", default=None,
+                    metavar="PATH",
+                    help="diff this run's instruction counts against a stored "
+                         "baseline (default tests/runtime/baselines/<cpu>-<os>.json)")
+    ap.add_argument("--assert-baseline", action="store_true",
+                    help="with --baseline, exit 1 when a kernel regresses past "
+                         "--baseline-tolerance")
+    ap.add_argument("--baseline-tolerance", type=float, default=2.0,
+                    metavar="PCT",
+                    help="instruction regression allowed per kernel (default 2%%)")
+    ap.add_argument("--json-out", metavar="PATH",
+                    help="write the --json payload to a file as well as stdout")
     args = ap.parse_args()
 
     cc = find_cc(args.cc)
@@ -389,6 +575,15 @@ def main():
         print(f"no mcc at {args.mcc}; skipping")
         return 77
     if args.assert_gate_wins:
+        # Instructions first: deterministic, and available wherever a counter
+        # is. Timing is the fallback for a host with neither perf nor Apple
+        # Silicon's /usr/bin/time -l.
+        backend = None if args.no_perf else counter_backend()
+        if backend:
+            rc = assert_gate_wins_insns(args.mcc, cc, backend)
+            if rc is not None:
+                return rc
+            print("instructions-retired path could not measure; falling back to cpu time")
         return assert_gate_wins(args.mcc, cc, max(args.runs, 4))
     kernels = [k for k in KERNELS if os.path.exists(k[1])]
     if not kernels:
@@ -422,7 +617,7 @@ def main():
                 _, _, t = run_once(ref, argv)
                 ref_ms = min(ref_ms, t)
             if use_perf:
-                ref_ins = instructions_retired(ref, argv, backend)
+                ref_ins = instructions_retired_min(ref, argv, backend)
                 if ref_ins is not None:
                     results.setdefault(name, {})["ref_ins"] = ref_ins
 
@@ -447,7 +642,7 @@ def main():
                     results.setdefault(name, {})["ref"] = ref_ms
                     results[name][gates or "defaults"] = best
                     if use_perf:
-                        ins = instructions_retired(exe, argv, backend)
+                        ins = instructions_retired_min(exe, argv, backend)
                         if ins is not None:
                             results[name].setdefault("ins", {})[gates or "defaults"] = ins
 
@@ -492,8 +687,35 @@ def main():
             print("A time delta with NO insn delta is layout, not codegen --")
             print("judge flips on the insn columns, not the time columns")
 
+    payload = {"results": results, "failures": failures}
     if args.json:
-        print(json.dumps({"results": results, "failures": failures}, indent=2))
+        print(json.dumps(payload, indent=2))
+    if args.json_out:
+        with open(args.json_out, "w") as f:
+            json.dump(payload, f, indent=2)
+        print(f"runtime-bench: wrote {args.json_out}")
+
+    snap = baseline_snapshot(results, [g or "defaults" for g in gate_sets], cc)
+    if args.write_baseline is not None:
+        path = baseline_path(args.write_baseline)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(snap, f, indent=2, sort_keys=True)
+            f.write("\n")
+        print(f"runtime-bench: wrote baseline {path} "
+              f"({len(snap['kernels'])} kernel(s), key {snap['key']})")
+    if args.baseline is not None:
+        regressed = baseline_report(snap, baseline_path(args.baseline),
+                                    args.baseline_tolerance)
+        if regressed is None:
+            if args.assert_baseline:
+                print("runtime-bench: nothing comparable; skipping")
+                return 77
+        elif regressed and args.assert_baseline:
+            failures.append(f"{regressed} kernel(s) retired more than "
+                            f"{args.baseline_tolerance:.1f}% extra instructions "
+                            f"against the stored baseline")
+
     for f in failures:
         print(f"FAIL {f}")
     if failures:
