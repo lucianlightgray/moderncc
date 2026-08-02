@@ -16,11 +16,18 @@
 #     constructors that did link never fired
 #   * a scalar LDRSB decoded as a 128-bit SIMD load, scaling its LO12 immediate
 #     by 16 and truncating every offset below 16 to zero
+#   * every arm64 sibling call rewritten into `bl`, because Mach-O has one
+#     BRANCH26 for both and the reader called all of them CALL26
 #
 # Each program is compiled by clang with -g (DWARF) and the stack protector
 # left ON (it is what pulls in __stack_chk_guard, the imported data symbol),
 # linked twice -- once by clang as the reference, once by mcc -- and both are
 # run and compared on stdout AND exit status.
+#
+# Every case is swept at -O0 AND -O2. This cell ran unoptimized only until
+# 2026-08-02, and that is precisely why the sibling-call rewrite above survived:
+# clang emits tail calls from -O1 up, so no object this cell produced contained
+# one.
 #
 # Usage: clanglink.sh <mcc> <srcdir> <workdir> [-B<prefix>]
 set -e
@@ -50,36 +57,40 @@ features_c99_c11/constructor functions_abi/func_name lexical/string_literals"
 fails=0
 ran=0
 for c in $CASES; do
-	name=$(basename "$c")
+	base=$(basename "$c")
 	csrc="$SRC/tests/exec/$c.c"
-	[ -f "$csrc" ] || { echo "SKIP $name: $csrc missing"; continue; }
+	[ -f "$csrc" ] || { echo "SKIP $base: $csrc missing"; continue; }
 
-	clang -w -g -c "$csrc" -o "$WORK/$name.o" 2>/dev/null || {
-		echo "SKIP $name: clang could not compile it"
-		continue
-	}
-	clang "$WORK/$name.o" -o "$WORK/$name.ref" 2>/dev/null || {
-		echo "SKIP $name: not standalone-linkable"
-		continue
-	}
+	for opt in -O0 -O2; do
+		name="$base$opt"
 
-	if ! "$MCC" $BFLAG "$WORK/$name.o" -o "$WORK/$name" 2>"$WORK/$name.err"; then
-		echo "FAIL $name: mcc could not link a clang object: $(head -1 "$WORK/$name.err")" >&2
-		fails=$((fails + 1))
-		continue
-	fi
+		clang -w -g $opt -c "$csrc" -o "$WORK/$name.o" 2>/dev/null || {
+			echo "SKIP $name: clang could not compile it"
+			continue
+		}
+		clang "$WORK/$name.o" -o "$WORK/$name.ref" 2>/dev/null || {
+			echo "SKIP $name: not standalone-linkable"
+			continue
+		}
 
-	ran=$((ran + 1))
-	refout=$("$WORK/$name.ref" 2>&1) || true
-	refrc=$?
-	gotout=$("$WORK/$name" 2>&1) || true
-	gotrc=$?
-	if [ "$refout" != "$gotout" ] || [ "$refrc" != "$gotrc" ]; then
-		echo "FAIL $name: mcc-linked image disagrees with the clang-linked one" >&2
-		echo "  ref rc=$refrc: $(printf '%s' "$refout" | head -3)" >&2
-		echo "  mcc rc=$gotrc: $(printf '%s' "$gotout" | head -3)" >&2
-		fails=$((fails + 1))
-	fi
+		if ! "$MCC" $BFLAG "$WORK/$name.o" -o "$WORK/$name" 2>"$WORK/$name.err"; then
+			echo "FAIL $name: mcc could not link a clang object: $(head -1 "$WORK/$name.err")" >&2
+			fails=$((fails + 1))
+			continue
+		fi
+
+		ran=$((ran + 1))
+		refout=$("$WORK/$name.ref" 2>&1) || true
+		refrc=$?
+		gotout=$("$WORK/$name" 2>&1) || true
+		gotrc=$?
+		if [ "$refout" != "$gotout" ] || [ "$refrc" != "$gotrc" ]; then
+			echo "FAIL $name: mcc-linked image disagrees with the clang-linked one" >&2
+			echo "  ref rc=$refrc: $(printf '%s' "$refout" | head -3)" >&2
+			echo "  mcc rc=$gotrc: $(printf '%s' "$gotout" | head -3)" >&2
+			fails=$((fails + 1))
+		fi
+	done
 done
 
 [ "$ran" -gt 0 ] || { echo "SKIP: no case survived the clang reference build"; exit 77; }

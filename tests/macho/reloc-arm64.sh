@@ -11,6 +11,15 @@
 #     R_AARCH64_ADD_ABS_LO12_NC for an ADD and R_AARCH64_LDST<n>_ABS_LO12_NC for
 #     a load/store, with <n> decoded from the instruction's size field.
 #
+#   * Mach-O has ONE ARM64_RELOC_BRANCH26 where ELF has two relocations, so the
+#     reader has to decode bit 31 to tell `bl` from a tail-call `b`. Calling
+#     every branch a CALL26 made the arm64 writer -- which synthesizes the
+#     instruction word from the relocation type rather than patching the
+#     immediate -- rewrite every sibling call into `bl`, and the callee then
+#     returned into a frameless caller and fell through into the next function.
+#     clang emits sibling calls from -O1 up, so this corrupted every optimized
+#     object mcc linked; the last section below pins it.
+#
 # As with the x86_64 cell, the checks are on RESOLVED TARGETS -- an ignored
 # relocation does not fail the link, it leaves a branch to itself.
 #
@@ -127,5 +136,79 @@ if target != want + 5:
 print("PASS: PAGE21+PAGEOFF12 compute 0x%x, matching _msg+5 (offset %d kept)"
       % (target, off))
 PY
+
+cat >"$WORK/tail.c" <<'EOF'
+extern int callee(int);
+int tailer(int a) { return callee(a + 1); }
+EOF
+cat >"$WORK/tailmain.c" <<'EOF'
+extern int tailer(int);
+int callee(int a) { return a * 7; }
+int main(void) { return tailer(5) == 42 ? 0 : 3; }
+EOF
+
+clang -target arm64-apple-macos11 -O2 -c "$WORK/tail.c" -o "$WORK/tail.o" 2>/dev/null || {
+	echo "SKIP: this clang cannot target arm64-apple-macos at -O2"
+	exit 77
+}
+
+if llvm-objdump --macho -d "$WORK/tail.o" 2>/dev/null |
+	grep -qE '[[:space:]]b[[:space:]]+_callee'; then
+	"$MCC" -B"$BASE" -c "$WORK/tailmain.c" -o "$WORK/tailmain.o"
+	if "$MCC" -B"$BASE" -nostdlib "$WORK/tailmain.o" "$WORK/tail.o" \
+		-o "$WORK/tailout" 2>"$WORK/tailerr"; then
+		llvm-objdump --macho -d "$WORK/tailout" >"$WORK/taildis" 2>/dev/null
+		python3 - "$WORK/taildis" <<'PY' || rc=1
+import re, sys
+
+body = []
+seen = False
+for line in open(sys.argv[1], errors="replace"):
+    if line.startswith("_tailer:"):
+        seen = True
+        continue
+    if seen:
+        if re.match(r"^_\w+:", line):
+            break
+        body.append(line)
+if not seen:
+    print("FAIL: _tailer is not in the linked disassembly")
+    sys.exit(1)
+text = "".join(body)
+mnemonics = []
+for line in body:
+    cols = line.rstrip("\n").split("\t")
+    if len(cols) >= 3 and re.match(r"^[0-9a-f]+:$", cols[0]):
+        mnemonics.append(cols[2].split()[0] if cols[2].split() else "")
+if "bl" in mnemonics:
+    print("FAIL: the sibling call in _tailer linked as 'bl' -- BRANCH26 was "
+          "read as CALL26 and the writer rewrote the opcode, so _callee returns "
+          "into a frameless _tailer and falls through")
+    print(text.rstrip())
+    sys.exit(1)
+if "b" not in mnemonics:
+    print("FAIL: no branch in _tailer at all")
+    print(text.rstrip())
+    sys.exit(1)
+print("PASS: the sibling call stayed a 'b' (opcode preserved through BRANCH26)")
+PY
+		if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+			if "$WORK/tailout"; then
+				echo "PASS: the tail-called image runs and returns through the caller"
+			else
+				echo "FAIL: the tail-call image exited $? (want 0) -- control did not"
+				echo "  return through _tailer's caller"
+				rc=1
+			fi
+		fi
+	else
+		echo "FAIL: linking the sibling-call object failed:"
+		sed 's/^/  /' "$WORK/tailerr" | head -3
+		rc=1
+	fi
+else
+	echo "SKIP-PART: this clang emitted no sibling call at -O2; the tail-call"
+	echo "  assertions below would be vacuous"
+fi
 
 exit $rc

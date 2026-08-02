@@ -127,7 +127,28 @@ def main():
             sys.exit(f"FAIL: embedded exe wrong result (rc={r.returncode} "
                      f"want {EXPECT_RC}; stdout={out!r} want {EXPECT_STDOUT!r})")
 
-    print(f"embed-jit-smoke: OK (--embed-jit linked the engine + exe ran correct: {out})")
+        jit_on = None
+        if os.name != "nt":
+            # And again with the JIT ON. Without this leg the gate proves only that
+            # the engine LINKS: the arm64 Mach-O BRANCH26 defect that rewrote every
+            # clang sibling call into `bl` produced an engine that ran correct at
+            # MCC_JIT=0 and SIGSEGV'd at MCC_JIT=1, in every optimized build, and
+            # nothing in ctest saw it. Stays off Windows, where the runtime JIT has
+            # its own open blockers (see docs/TODO).
+            env_on = dict(os.environ)
+            env_on["MCC_JIT"] = "1"
+            jit_on = subprocess.run([exe], capture_output=True, text=True,
+                                    env=env_on, timeout=120)
+            on_out = (jit_on.stdout or "").strip()
+            if jit_on.returncode != EXPECT_RC or EXPECT_STDOUT not in on_out:
+                sys.exit(f"FAIL: embedded exe wrong result under MCC_JIT=1 "
+                         f"(rc={jit_on.returncode} want {EXPECT_RC}; "
+                         f"stdout={on_out!r} want {EXPECT_STDOUT!r}) -- it is "
+                         f"correct at MCC_JIT=0, so the baked engine itself is "
+                         f"broken, not the link")
+
+    jit_note = " + ran correct under MCC_JIT=1" if jit_on is not None else ""
+    print(f"embed-jit-smoke: OK (--embed-jit linked the engine + exe ran correct: {out}{jit_note})")
 
 if __name__ == "__main__":
     main()

@@ -717,7 +717,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 													 attr->plt_offset + 2,
 													 R_X86_64_GOTPCREL, sym_index, -4);
 #elif defined MCC_TARGET_ARM64
-						if (type != R_AARCH64_CALL26)
+						if (type != R_AARCH64_CALL26 && type != R_AARCH64_JUMP26)
 							{ MCC_TRACE("br\n"); continue; }
 						jmp = section_ptr_add(mo->stubs, 12);
 						put_elf_reloc(s1->symtab, mo->stubs,
@@ -906,7 +906,7 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 													 mo->stub_helper->data_offset - 10);
 						section_ptr_add(mo->la_symbol_ptr, MCC_PTR_SIZE);
 #elif defined MCC_TARGET_ARM64
-						if (type != R_AARCH64_CALL26)
+						if (type != R_AARCH64_CALL26 && type != R_AARCH64_JUMP26)
 							{ MCC_TRACE("br\n"); continue; }
 						jmp = section_ptr_add(mo->stubs, 12);
 						put_elf_reloca(s1->symtab, mo->stubs,
@@ -2948,7 +2948,15 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				addend = have_pending ? pending : 0;
 				switch (type) { MCC_TRACE("br\n");
 				case 2:
-					etype = R_AARCH64_CALL26;
+					/* Mach-O has ONE BRANCH26 for both `bl` and the tail-call `b`,
+					   where ELF has two relocations -- and the arm64 writer
+					   SYNTHESIZES the instruction word from the type (0x14000000 |
+					   (CALL26 << 31)) rather than patching the immediate, so calling
+					   every branch a CALL26 rewrote every sibling call into `bl`. The
+					   callee then returned into a function that had already dropped
+					   its frame and fell through into whatever followed. Decode bit 31
+					   instead: set is `bl`, clear is `b`. */
+					etype = (insn & 0x80000000u) ? R_AARCH64_CALL26 : R_AARCH64_JUMP26;
 					break;
 				case 3:
 					etype = R_AARCH64_ADR_PREL_PG_HI21;
