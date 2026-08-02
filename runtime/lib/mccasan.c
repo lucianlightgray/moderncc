@@ -91,6 +91,10 @@ static int asan_locate(uintptr_t addr,uintptr_t*rbeg,uintptr_t*rend,uintptr_t*ro
     if(fd){ endL=dg+(uintptr_t)(dv?dv:8); uintptr_t b=dg; int i; for(i=0;i<MAXG&&b>=8;i++){ if(*shadow((void*)(b-8))==0) b-=8; else break; } begL=b; if(b<8||i>=MAXG) fd=0; }
     if(fu){ begR=ug; uintptr_t e=ug; int i,bnd=0; for(i=0;i<MAXG;i++){ unsigned v=*shadow((void*)e); if(v==0){ e+=8; continue; } if(v<=7) e+=v; bnd=1; break; } endR=e; if(!bnd) fu=0; }
     if(fd && addr<endL){ *rbeg=begL; *rend=endL; *roff=addr-begL; *rdir=2; return 1; }
+    if(fu && begR<addr) fu=0;
+    if(fu && begR-addr>(uintptr_t)MAXG*8) fu=0;
+    if(fd && addr<endL) fd=0;
+    if(fd && addr-endL>(uintptr_t)MAXG*8) fd=0;
     uintptr_t db=fd?(addr-endL):(uintptr_t)-1, da=fu?(begR-addr):(uintptr_t)-1;
     if(!fd&&!fu) return 0;
     if(db<=da){ *rbeg=begL; *rend=endL; *roff=db; *rdir=0; }
