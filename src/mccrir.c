@@ -2095,6 +2095,37 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
+	case JOP_GV: {
+		/* A top-level gv() is the parser stating "this value is materialised
+		   HERE". The arena has no node for it, so the emission re-derives the
+		   value lazily at its consumer -- after the operands it should have
+		   preceded -- and the two streams part company on register choice with
+		   the same instructions in a different order. AST_FB_CONVERT_GV on a
+		   type-preserving Convert is the tree's own way of saying it.
+		   Narrow, and every widening was measured: unconditional reads c2ok 1163
+		   -> 1150, call-scoped over any node 1154, and admitting the non-pointer
+		   scalars gains nothing while costing an arena its field-identity. The
+		   shape that pays is a frame-loaded pointer argument, which is precisely
+		   the value gfunc_call would otherwise defer past the later ones. */
+		AstLocal top;
+		if (rir_shn < 1 || !rir_callee_pending())
+			break;
+		top = rir_sh[rir_shn - 1];
+		if (top == AST_NONE || rir_shtype[rir_shn - 1] ||
+				ast_parent(rir_arena, top) != AST_NONE)
+			break;
+		if (ast_kind(rir_arena, top) == AST_Ref &&
+				!(ast_type_t(rir_arena, top) & (VT_BITFIELD | VT_ARRAY)) &&
+				(ast_type_t(rir_arena, top) & VT_BTYPE) == VT_PTR) {
+			AstLocal cv = ast_node(rir_arena, AST_Convert);
+			ast_set_type(rir_arena, cv, ast_type_t(rir_arena, top),
+									 ast_type_ref(rir_arena, top));
+			ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
+			ast_add_child(rir_arena, cv, top);
+			rir_sh[rir_shn - 1] = cv;
+		}
+		break;
+	}
 	case JOP_VSWAP:
 		if (rir_shn >= 2) {
 			AstLocal t = rir_sh[rir_shn - 1];
