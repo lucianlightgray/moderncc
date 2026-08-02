@@ -370,6 +370,21 @@ Ranked. Everything below is measured on `tests/exec` + `tests/diff/full_language
 
 **CROSS-TARGET C2, measured for the first time 2026-08-01.** Host-hosted amalgamations, one per target, built exactly as instruction 28 describes plus `-DMCC_REPLAY_IR_C2=1` (x86_64 also needs `-Isrc/arch/i386`, and every target needs `-B runtime` or `mccdefs.h` is not found). Corpus `tests/exec` + `full_language.c` at `-O1`. The containment column compares against a stock build of the SAME amalgamation with the probe compiled out, on files AND on `fn` — instruction 26.
 
+**FULL VERIFICATION ROUND, 2026-08-02, over everything landed this session** (ASan READ/WRITE on all five backends, the ASan struct-member check, the access-type patch-safety fix, `MCC_ZERO_BSS` under asan/bcheck, struct `va_arg` journalling, the riscv64 `VT_NONLVAL` crash fix, the cross crash gate, win64 `gen_vla_result`). Everything in instruction 2's bar that is runnable on this host passes:
+
+| check | result |
+|---|---|
+| ctest | **8035 / 8035** |
+| 3-stage self-host fixpoint | **byte-identical**, o1 = o2 = o3 = 2856687 |
+| `selfhost-output-parity --opt=-O2` | 252 checked, **0 mismatches** (24 skipped) |
+| differential fuzz vs gcc + clang | seeds 9000..9199, **196 agree, 0 miscompile, 0 mcc-buildfail**, 4 dropped UB |
+| shadow-IV sweep, `-O1 -O2` | **zero divergence** on riscv64, arm64, arm, i386 |
+| `journal-sweep-x86_64-linux-glibc` | parity OK (0 non-faithful), honesty matches baseline |
+| `MCC_JIT=1` vs `MCC_JIT=0` self-host | **byte-identical** in-memory vs AOT |
+| `cross/no-compiler-abort-*` | 11 targets x 5 `-O` levels, **0 crashes** |
+
+The one thing that does NOT report is the journal **depth ceiling**, and it is a pre-existing environment mismatch the tool names itself: the banked baseline was taken over 1176 journalled rows / 795697 ops and this host measures 1182 / 795179, i.e. different system headers, so the check SKIPS rather than reporting a false regression. Rebanking with `JREGEN=1` in this environment is what would restore it, and that is deliberately not done here because the banked file is the shared one.
+
 **REFRESHED 2026-08-02, after the struct-`va_arg` journalling fix and the `VT_NONLVAL` crash fix.** `c2err` is now **zero on every
 target** and containment is clean on every target (no compile aborts anywhere over the corpus). Aggregate: **12966 of 13111 tried =
 98.89%**, ranging 97.7% (riscv64) to 100% (both x86_64 triples). What is left is entirely `c2len`/`c2bytes` tails plus riscv64's 5
