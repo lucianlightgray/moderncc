@@ -2524,6 +2524,25 @@ static void rir_mark_apply(const RirOp *ro) {
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
 			}
+			/* The same no-code cast over a node that is TYPED and not a pointer:
+			   `*(unsigned *)(tf->esp)` reaches the boundary as an `unsigned` member
+			   access, so none of the arms below match and indir() is handed an
+			   integer -- "pointer expected", 6 emission errors on each i386 target.
+			   The snapshot is the witness here exactly as it is for the untyped
+			   Binary, so the admission is the same: it says pointer and the node
+			   does not. */
+			else if (top != AST_NONE && ast_type_t(rir_arena, top) != 0 &&
+							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) != VT_PTR &&
+							 !is_float(ast_type_t(rir_arena, top)) &&
+							 (ast_type_t(rir_arena, top) & VT_BTYPE) != VT_STRUCT &&
+							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
+				AstLocal cv = ast_node(rir_arena, AST_Convert);
+				ast_set_type(rir_arena, cv, pv->type.t,
+										 (uint64_t)(uintptr_t)pv->type.ref);
+				ast_add_child(rir_arena, cv, top);
+				rir_sh[rir_shn - 1] = cv;
+				rir_shtype[rir_shn - 1] = 0;
+			}
 			/* `*(int *)(void *)full` casts twice; the duplicate-cast rule keeps one
 			   Convert and it is the FIRST, so the dereference runs on a `void *`
 			   and indir() derives a void lvalue that emits no load at all. The
