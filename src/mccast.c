@@ -95,6 +95,8 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 
 #define AST_FB_STORE_ADDR_LATE 131072u
 
+#define AST_FB_CMP_INVERT_LATE 262144u
+
 struct AstArena {
 	uint16_t *kind;
 	AstLocal *parent;
@@ -2867,6 +2869,31 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn++] = b;
 }
 
+/* `op ^ 1` models `!cmp` as the paired comparison, which is what `cmp_op ^= 1`
+   means for an integer compare: same encoding, one condition bit. x86_64's
+   gen_opf does not lower a float compare that way -- TOK_LE and TOK_LT flip its
+   `swapped`, which decides whether the second operand is gv'd, so the pair
+   `inf > 1.79e308` / `inf <= 1.79e308` come out as comisd reg,reg with a parity
+   guard versus comisd mem,reg: a different LENGTH, 8 bytes on fp_builtins.c
+   main. Record the negation instead and let the replay redo it after the
+   compare, exactly as gen_test_zero did. */
+static int ast_cmp_invert_late(AstArena *a, AstLocal n, int op) { MCC_TRACE("enter\n");
+#ifdef MCC_TARGET_X86_64
+	uint32_t k;
+	if (op != TOK_LT && op != TOK_GE && op != TOK_LE && op != TOK_GT)
+		return 0;
+	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2)
+		return 0;
+	for (k = 0; k < 2; k++)
+		if (is_float(ast_type_t(a, ast_child(a, n, k))))
+			return 1;
+	return 0;
+#else
+	(void)a, (void)n, (void)op;
+	return 0;
+#endif
+}
+
 void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	rir_mark_pt(RIR_M_CMPINV);
 	AstLocal n;
@@ -2914,6 +2941,11 @@ void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n"
 	AST_SET_DESYNC();
 	return;
 #else
+	if (ast_cmp_invert_late(ast_cur, n, op)) { MCC_TRACE("br\n");
+		ast_set_fbits(ast_cur, n,
+									ast_fbits(ast_cur, n) ^ AST_FB_CMP_INVERT_LATE);
+		return;
+	}
 	ast_set_op(ast_cur, n, op ^ 1);
 #endif
 }
@@ -6665,6 +6697,13 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		ast_replay_value(a, ast_child(a, n, 0));
 		ast_replay_value(a, ast_child(a, n, 1));
 		gen_op(bop);
+		if ((ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) &&
+				vtop->r == VT_CMP) { MCC_TRACE("br\n");
+			int j = vtop->jfalse;
+			vtop->jfalse = vtop->jtrue;
+			vtop->jtrue = j;
+			vtop->cmp_op ^= 1;
+		}
 		break;
 	}
 	case AST_Convert: {

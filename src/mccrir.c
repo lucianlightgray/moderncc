@@ -2302,6 +2302,9 @@ static void rir_mark_apply(const RirOp *ro) {
 				if (bop == TOK_LAND || bop == TOK_LOR)
 					ast_set_fbits(rir_arena, top,
 												ast_fbits(rir_arena, top) ^ AST_FB_LANDOR_INVERT);
+				else if (ast_cmp_invert_late(rir_arena, top, bop))
+					ast_set_fbits(rir_arena, top,
+												ast_fbits(rir_arena, top) ^ AST_FB_CMP_INVERT_LATE);
 				else
 					ast_set_op(rir_arena, top, bop ^ 1);
 			}
