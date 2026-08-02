@@ -2795,7 +2795,33 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     # MCC_EMBED_JIT_MINGW_CC when both are set.
     set(MCC_EMBED_JIT_MCC_ENGINE_CC "" CACHE STRING
         "Path to an mcc that emits this target's PE (e.g. mcc-i386-win32), used to build the --embed-jit blob engine with no gcc footprint (fixes the i386-PE embed startup crash).")
-    if(MCC_EMBED_JIT_MCC_ENGINE_CC AND MCC_SINGLE_SOURCE AND MCC_TARGETOS STREQUAL "WIN32")
+    set(_me_cc "${MCC_EMBED_JIT_MCC_ENGINE_CC}")
+    set(_me_cc_dep "")
+    # i386-PE default: two-stage self-bake. A native i686 build has no cross
+    # mcc-i386-win32 to point the cache var at, so bootstrap one from the same
+    # amalgamation WITHOUT the blob sources (no target_sources(mccjit_blob.c),
+    # no MCC_EMBED_JIT_BLOB) -- it emits i386 PE but does not depend on the
+    # engine bake, breaking the cycle -- and let it compile the engine the real
+    # mcc embeds. An explicit MCC_EMBED_JIT_MCC_ENGINE_CC wins; self-host
+    # (MCC_CC_NAME == mcc) already compiles the blob with mcc and needs none.
+    if(NOT MCC_EMBED_JIT_MCC_ENGINE_CC AND MCC_SINGLE_SOURCE
+       AND MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU STREQUAL "i386"
+       AND NOT MSVC AND NOT MCC_CC_NAME STREQUAL "mcc"
+       AND NOT CMAKE_CROSSCOMPILING)
+        add_executable(mcc_ejboot src/mcc.c)
+        set_target_properties(mcc_ejboot PROPERTIES OUTPUT_NAME mcc-ejboot)
+        target_include_directories(mcc_ejboot PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+        target_compile_definitions(mcc_ejboot PRIVATE ${_mccdefs})
+        if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
+            target_link_libraries(mcc_ejboot PRIVATE ${_mcc_extra_libs})
+        endif()
+        if(TARGET mcc_mccdefs)
+            add_dependencies(mcc_ejboot mcc_mccdefs)
+        endif()
+        set(_me_cc "$<TARGET_FILE:mcc_ejboot>")
+        set(_me_cc_dep mcc_ejboot)
+    endif()
+    if(_me_cc AND MCC_SINGLE_SOURCE AND MCC_TARGETOS STREQUAL "WIN32")
         get_directory_property(_me_dirdefs COMPILE_DEFINITIONS)
         set(_me_dflags "")
         foreach(_d IN LISTS _me_dirdefs)
@@ -2805,6 +2831,9 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         if(TARGET mcc_mccdefs)
             list(APPEND _me_deps mcc_mccdefs)
         endif()
+        if(_me_cc_dep)
+            list(APPEND _me_deps ${_me_cc_dep})
+        endif()
         set(_me_o "${CMAKE_BINARY_DIR}/mccjit_engine_mcc.o")
         set(_me_a "${CMAKE_BINARY_DIR}/libmccjitengine-mcc.a")
         # mcc needs its freestanding + PE headers (-B runtime/win32, -I
@@ -2813,7 +2842,7 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         # target's MCC_EMBED_JIT=1/MCC_JIT_DEFAULT=1 are what expose
         # mccjit_boot_swap/mccjit_set_search_budget, which the host mcc imports.
         add_custom_command(OUTPUT "${_me_o}"
-            COMMAND "${MCC_EMBED_JIT_MCC_ENGINE_CC}" -c -w -O1
+            COMMAND "${_me_cc}" -c -w -O1
                 "-B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32"
                 "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include"
                 ${_me_dflags}
@@ -2823,10 +2852,10 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/libmcc.c"
                 -o "${_me_o}"
             DEPENDS ${_me_deps}
-            COMMENT "embed-jit: compiling the blob engine WITH mcc (${MCC_EMBED_JIT_MCC_ENGINE_CC}) -- no gcc footprint"
+            COMMENT "embed-jit: compiling the blob engine WITH mcc -- no gcc footprint"
             VERBATIM COMMAND_EXPAND_LISTS)
         add_custom_command(OUTPUT "${_me_a}"
-            COMMAND "${MCC_EMBED_JIT_MCC_ENGINE_CC}" -ar "${_me_a}" "${_me_o}"
+            COMMAND "${_me_cc}" -ar "${_me_a}" "${_me_o}"
             DEPENDS "${_me_o}"
             COMMENT "embed-jit: archiving the mcc-built blob engine"
             VERBATIM)
