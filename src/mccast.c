@@ -7085,8 +7085,12 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 					sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
 					vpushv(&sv);
 #if defined(MCC_TARGET_RISCV64) || (defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE))
-					if (rnx < 0)
-						{ MCC_TRACE("br\n"); arch_transfer_ret_regs(1); }
+					if (rnx < 0) { MCC_TRACE("br\n");
+						unsigned short rsv = vtop->r;
+						vtop->r &= (unsigned short)~VT_NONLVAL;
+						arch_transfer_ret_regs(1);
+						vtop->r = rsv;
+					}
 #endif
 					vtop->r |= VT_NONLVAL;
 					break;

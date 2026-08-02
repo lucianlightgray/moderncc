@@ -4089,6 +4089,23 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 300)
         endforeach()
 
+        # A struct returned in two registers of different classes drives
+        # arch_transfer_ret_regs, and the AST replay pushed the sret temp with
+        # VT_NONLVAL already set -- riscv64's assert(vtop->r == (VT_LOCAL |
+        # VT_LVAL)) then aborted the compiler outright at -O1 and above. x86_64
+        # has no assert there and silently tolerated it, so only riscv64 shows
+        # it. Compile-only: the abort was in the compiler, not the program.
+        add_test(NAME cross/xferret-nonlval-riscv64
+            COMMAND "${MCC_CROSS_DIR}/mcc-riscv64" -w -O2
+                    -B "${MCC_CROSS_DIR}"
+                    "--sysroot=${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-riscv64-glibc"
+                    "-I${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-riscv64-glibc/usr/include"
+                    -c "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/structs_unions/struct_byval.c"
+                    -o "${CMAKE_BINARY_DIR}/xferret-nonlval-riscv64.o")
+        set_tests_properties(cross/xferret-nonlval-riscv64 PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
+            LABELS "cross" TIMEOUT 300)
+
         # -fasan-shadow must name the access direction, and the clean case must
         # still not trap: the instruction that carries the direction shifts the
         # trap one slot later, and on the three backends whose skip branch is
