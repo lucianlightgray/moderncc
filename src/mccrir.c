@@ -842,9 +842,112 @@ static AstLocal rir_clg_get(void *k) {
 	return AST_NONE;
 }
 
+#define RIR_IHOLD_MAX 32
+static AstLocal rir_ihold[RIR_IHOLD_MAX];
+static short rir_iholdd[RIR_IHOLD_MAX];
+static int rir_iholdn;
+static void rir_stmt(AstLocal n);
+
+static int rir_ihold_off;
+
+static void rir_ihold_flush(void) {
+	int q, k = rir_iholdn;
+	rir_iholdn = 0;
+	rir_ihold_off++;
+	for (q = 0; q < k; q++)
+		rir_stmt(rir_ihold[q]);
+	rir_ihold_off--;
+}
+
+/* A statement the parser emitted PART-WAY THROUGH an expression is not the
+   enclosing block's: a compound literal used as a call argument zero-fills its
+   slot and stores its initialisers right there, between the arguments already
+   evaluated and the one being built. rir_stmt puts those in front of the whole
+   expression, so `printf("%d", tu_first((TU){.pv=&n}))` ran the memset before
+   the earlier arguments' calls, and the held statements bind as a comma onto the
+   next value computed at or below the depth they were dropped at.
+   The trigger is the DISCARDED CALL, not the depth: keying on "a non-empty
+   shadow stack" alone costs 23 bodies -- a cleanup destructor call, the atomic
+   helpers' write-back and a short-circuit operand's spill are all statements the
+   parser really does emit at the enclosing block's level with operands live.
+   Only an initialiser's zero-fill opens a group, and only the initialiser stores
+   that follow it at its own depth join. */
+static int rir_ihold_arm;
+static int rir_lorn;
+
+/* Mid-argument-evaluation, which is the only place this reordering is right: the
+   callee is already on the shadow stack under the arguments parsed so far. A
+   plain `struct rect r = (struct rect){...};` also drops its zero-fill with the
+   stack non-empty and must NOT be moved -- that costs compound_literals.c main.
+*/
+static int rir_callee_pending(void) {
+	int k;
+	for (k = 0; k < rir_shn; k++)
+		if (rir_sh[k] != AST_NONE &&
+				(ast_type_t(rir_arena, rir_sh[k]) & VT_BTYPE) == VT_FUNC)
+			return 1;
+	return 0;
+}
+
+static int rir_hold_inline(AstLocal n) {
+	uint16_t k;
+	if (n == AST_NONE || rir_shn <= 0 || !rir_bbn || rir_ihold_off ||
+			rir_iholdn >= RIR_IHOLD_MAX || rir_pending_ret != AST_NONE || rir_lorn)
+		return 0;
+	if (!rir_iholdn && !rir_callee_pending())
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Invoke) {
+		if (!rir_ihold_arm)
+			return 0;
+	} else if (k == AST_Store) {
+		if (!rir_iholdn || rir_shn < rir_iholdd[rir_iholdn - 1])
+			return 0;
+	} else {
+		return 0;
+	}
+	rir_iholdd[rir_iholdn] = (short)rir_shn;
+	rir_ihold[rir_iholdn++] = n;
+	return 1;
+}
+
+/* Bind the trailing run of held statements whose drop depth is at or above the
+   depth this value comes to rest at: those are the ones the operand just
+   finished evaluated, and anything held shallower belongs to an outer operand
+   that has not closed yet. */
+static AstLocal rir_ihold_bind(AstLocal n) {
+	AstLocal bb;
+	int q, i, r;
+	if (!rir_iholdn || n == AST_NONE)
+		return n;
+	r = rir_shn + 1;
+	for (i = rir_iholdn; i > 0 && rir_iholdd[i - 1] >= r; i--)
+		;
+	if (i == rir_iholdn)
+		return n;
+	if (i == rir_iholdn - 1 &&
+			ast_kind(rir_arena, rir_ihold[i]) == AST_Invoke) {
+		rir_iholdn = i;
+		rir_ihold_off++;
+		rir_stmt(rir_ihold[i]);
+		rir_ihold_off--;
+		return n;
+	}
+	bb = ast_node(rir_arena, AST_BasicBlock);
+	for (q = i; q < rir_iholdn; q++)
+		ast_add_child(rir_arena, bb, rir_ihold[q]);
+	ast_add_child(rir_arena, bb, n);
+	rir_iholdn = i;
+	return bb;
+}
+
 static void rir_stmt(AstLocal n) {
 	if (n == AST_NONE || !rir_bbn)
 		return;
+	if (rir_hold_inline(n))
+		return;
+	if (rir_iholdn && rir_shn <= 0)
+		rir_ihold_flush();
 	/* A held Return is waiting for the destructor calls a cleanup attribute puts
 	   between the value and the ret, so those must not flush it. A JUMP is
 	   different: nothing in a return's own lowering is a jump statement, so one
@@ -993,6 +1096,7 @@ static void rir_push(AstLocal n) {
 static void rir_push_typed(AstLocal n) {
 	if (rir_shn > VSTACK_SIZE)
 		return;
+	n = rir_ihold_bind(n);
 	rir_shtype[rir_shn] = 1;
 	rir_sh[rir_shn++] = n;
 }
@@ -1159,6 +1263,17 @@ static int rir_child_width_differs(AstLocal n, int st) {
 	return 0;
 }
 
+/* A value carrying held statements is wrapped in a comma BasicBlock, and every
+   stamp aimed at that slot has to reach the value itself -- an Invoke left at
+   VT_VOID because the stamp landed on the wrapper pushes no result at all. */
+static AstLocal rir_val_node(AstLocal n) {
+	int guard = 0;
+	while (n != AST_NONE && ast_kind(rir_arena, n) == AST_BasicBlock &&
+				 ast_nchild(rir_arena, n) > 0 && ++guard < 16)
+		n = ast_child(rir_arena, n, ast_nchild(rir_arena, n) - 1);
+	return n;
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -1166,10 +1281,12 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	want = n - ast_base_depth;
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v;
+		AstLocal sk;
 		if (!rir_shtype[k])
 			continue;
 		v = &base[ast_base_depth + k];
-		ast_set_type(rir_arena, rir_sh[k], v->type.t,
+		sk = rir_val_node(rir_sh[k]);
+		ast_set_type(rir_arena, sk, v->type.t,
 								 (uint64_t)(uintptr_t)v->type.ref);
 		if (rir_sh[k] == rir_fcs_node) {
 			rir_fcs_node = AST_NONE;
@@ -1182,17 +1299,17 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		   then trips load()'s XMM assert. Stamp the whole leaf encoding, exactly
 		   as rir_leaf does. */
 		if (rir_shtype[k] == 3) {
-			AstLocal c = ast_first_child(rir_arena, rir_sh[k]);
+			AstLocal c = ast_first_child(rir_arena, sk);
 			uint16_t ck = c == AST_NONE ? 0 : ast_kind(rir_arena, c);
 			if (ck == AST_Ref || ck == AST_Literal)
 				ast_set_type(rir_arena, c, v->type.t,
 										 (uint64_t)(uintptr_t)v->type.ref);
 		}
 		if (rir_shtype[k] == 2) {
-			ast_set_op(rir_arena, rir_sh[k], v->r);
-			ast_set_ival(rir_arena, rir_sh[k], (uint64_t)v->c.i);
-			ast_set_sym(rir_arena, rir_sh[k], (uint64_t)(uintptr_t)v->sym);
-			ast_set_wide(rir_arena, rir_sh[k], ast_sv_hi(v),
+			ast_set_op(rir_arena, sk, v->r);
+			ast_set_ival(rir_arena, sk, (uint64_t)v->c.i);
+			ast_set_sym(rir_arena, sk, (uint64_t)(uintptr_t)v->sym);
+			ast_set_wide(rir_arena, sk, ast_sv_hi(v),
 									 v->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)v->r2);
 		}
 		rir_shtype[k] = 0;
@@ -1340,18 +1457,19 @@ static void rir_stamp_sv(const SValue *base, int n) {
 static void rir_stamp_call_top(const SValue *base, int n) {
 	int k = n - ast_base_depth - 1;
 	const SValue *v;
+	AstLocal sk;
 	if (k < 0 || k != rir_shn - 1 || rir_shn <= 0)
 		return;
-	if (rir_shtype[k] != 2 || rir_sh[k] == AST_NONE ||
-			ast_kind(rir_arena, rir_sh[k]) != AST_Invoke)
+	sk = rir_sh[k] == AST_NONE ? AST_NONE : rir_val_node(rir_sh[k]);
+	if (rir_shtype[k] != 2 || sk == AST_NONE ||
+			ast_kind(rir_arena, sk) != AST_Invoke)
 		return;
 	v = &base[ast_base_depth + k];
-	ast_set_type(rir_arena, rir_sh[k], v->type.t,
-							 (uint64_t)(uintptr_t)v->type.ref);
-	ast_set_op(rir_arena, rir_sh[k], v->r);
-	ast_set_ival(rir_arena, rir_sh[k], (uint64_t)v->c.i);
-	ast_set_sym(rir_arena, rir_sh[k], (uint64_t)(uintptr_t)v->sym);
-	ast_set_wide(rir_arena, rir_sh[k], ast_sv_hi(v),
+	ast_set_type(rir_arena, sk, v->type.t, (uint64_t)(uintptr_t)v->type.ref);
+	ast_set_op(rir_arena, sk, v->r);
+	ast_set_ival(rir_arena, sk, (uint64_t)v->c.i);
+	ast_set_sym(rir_arena, sk, (uint64_t)(uintptr_t)v->sym);
+	ast_set_wide(rir_arena, sk, ast_sv_hi(v),
 							 v->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)v->r2);
 	rir_shtype[k] = 0;
 }
@@ -1380,10 +1498,13 @@ static AstLocal rir_spill_take(const SValue *sv) {
 	rir_spill_node = AST_NONE;
 	if (ast_parent(rir_arena, n) != AST_NONE)
 		return AST_NONE;
-	ast_set_type(rir_arena, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
-	ast_set_op(rir_arena, n, sv->r);
-	ast_set_ival(rir_arena, n, (uint64_t)sv->c.i);
-	ast_set_sym(rir_arena, n, 0);
+	{
+		AstLocal iv = rir_val_node(n);
+		ast_set_type(rir_arena, iv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_set_op(rir_arena, iv, sv->r);
+		ast_set_ival(rir_arena, iv, (uint64_t)sv->c.i);
+		ast_set_sym(rir_arena, iv, 0);
+	}
 	return n;
 }
 
@@ -1576,7 +1697,7 @@ static void rir_op_effect(const RirOp *ro) {
 		   to be a placeholder, because the parser's `vtop--` after the spill
 		   truncates the stack again and a live node there would be re-emitted as a
 		   statement. */
-		if (rir_call_depth && ast_kind(rir_arena, v) == AST_Invoke &&
+		if (rir_call_depth && ast_kind(rir_arena, rir_val_node(v)) == AST_Invoke &&
 				ast_parent(rir_arena, v) == AST_NONE &&
 				o->vs_n - ast_base_depth >= 2) {
 			const SValue *ts = &jrn_vs[o->vs_off + o->vs_n - 2];
@@ -2841,13 +2962,15 @@ static void rir_region(const RirOp *ro) {
 		if (ro->rval && !rir_call_depth) {
 			AstLocal inv = rir_pending_call;
 			if (inv == AST_NONE && rir_shn > 0 &&
-					ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Invoke)
+					ast_kind(rir_arena, rir_val_node(rir_sh[rir_shn - 1])) == AST_Invoke)
 				inv = rir_pop();
 			else if (inv != AST_NONE)
 				rir_pending_call = AST_NONE;
 			if (inv != AST_NONE) {
-				ast_set_type(rir_arena, inv, VT_VOID, 0);
+				ast_set_type(rir_arena, rir_val_node(inv), VT_VOID, 0);
+				rir_ihold_arm = 1;
 				rir_stmt(inv);
+				rir_ihold_arm = 0;
 			}
 		}
 		break;
@@ -3393,6 +3516,8 @@ static void rir_to_arena(void) {
 	rir_docond = 0;
 	rir_dheldn = 0;
 	rir_fcs_node = AST_NONE;
+	rir_iholdn = 0;
+	rir_ihold_off = 0;
 	rir_pending_call = AST_NONE;
 	rir_spill_node = AST_NONE;
 	rir_opassign_pending = 0;
@@ -3555,6 +3680,7 @@ static void rir_to_arena(void) {
 		if (rir_effectful(d))
 			rir_stmt(d);
 	}
+	rir_ihold_flush();
 }
 
 static int rir_pt_addr(const RirOp *o, int fallback) {

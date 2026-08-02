@@ -6453,19 +6453,24 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 			{ MCC_TRACE("br\n"); last = c; }
 		for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
+			int d0;
 			if (c == last) { MCC_TRACE("br\n");
 				ast_replay_value(a, c);
 				break;
 			}
+			d0 = (int)(vtop - vstack);
 			if (ast_kind(a, c) == AST_Store && ast_nchild(a, c) == 2) { MCC_TRACE("br\n");
 				ast_replay_value(a, ast_child(a, c, 0));
 				ast_replay_value(a, ast_child(a, c, 1));
 				vstore();
-				vpop();
 			} else { MCC_TRACE("br\n");
 				ast_replay_value(a, c);
-				vpop();
 			}
+			/* A statement child leaves whatever its own lowering leaves -- a VOID
+			   Invoke leaves nothing, a Store leaves its value -- so unwind to the
+			   depth this child started at rather than assuming exactly one. */
+			while ((int)(vtop - vstack) > d0)
+				{ MCC_TRACE("br\n"); vpop(); }
 		}
 		break;
 	}
