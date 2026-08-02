@@ -868,6 +868,14 @@ static int rir_lorn;
 static AstLocal rir_lheld[RIR_LHELD_MAX];
 static int rir_lheldn;
 
+static int rir_synth_depth;
+static AstLocal rir_fcs_node = AST_NONE;
+
+#define RIR_DHELD_MAX 8
+static int rir_docond;
+static AstLocal rir_dheld[RIR_DHELD_MAX];
+static int rir_dheldn;
+
 /* A value dropped inside a short-circuit OPERAND is not the enclosing block's
    statement: the parser emits it after the previous operand's branch, and
    rir_stmt puts it in front of the whole expression. Hold it for RIR_R_LOPND to
@@ -883,7 +891,20 @@ static void rir_drop(AstLocal d) {
 		rir_lheld[rir_lheldn++] = d;
 		return;
 	}
+	if (rir_docond && rir_dheldn < RIR_DHELD_MAX &&
+			ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
+			ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) {
+		rir_dheld[rir_dheldn++] = d;
+		return;
+	}
 	rir_stmt(d);
+}
+
+static void rir_dheld_flush(void) {
+	int q;
+	for (q = 0; q < rir_dheldn; q++)
+		rir_stmt(rir_dheld[q]);
+	rir_dheldn = 0;
 }
 
 static int rir_ret_spilled;
@@ -920,6 +941,37 @@ static void rir_ret_follow_spill(AstLocal t, AstLocal v) {
 	ast_set_ival(rir_arena, rv, ast_ival(rir_arena, t));
 	ast_set_sym(rir_arena, rv, ast_sym(rir_arena, t));
 	rir_ret_spilled = 1;
+}
+
+static void rir_spill_follow_sh(AstLocal t, AstLocal v) {
+	int k, hit = -1;
+	if (rir_pending_ret != AST_NONE || t == AST_NONE || v == AST_NONE ||
+			ast_nchild(rir_arena, t) != 0 || ast_nchild(rir_arena, v) != 0 ||
+			ast_kind(rir_arena, t) != ast_kind(rir_arena, v) ||
+			ast_sym(rir_arena, t) != 0 ||
+			ast_ival(rir_arena, t) == ast_ival(rir_arena, v))
+		return;
+	for (k = 0; k < rir_shn; k++) {
+		AstLocal s = rir_sh[k];
+		if (s == AST_NONE || ast_nchild(rir_arena, s) != 0 ||
+				ast_parent(rir_arena, s) != AST_NONE)
+			continue;
+		if (ast_kind(rir_arena, s) == ast_kind(rir_arena, v) &&
+				ast_op(rir_arena, s) == ast_op(rir_arena, v) &&
+				ast_ival(rir_arena, s) == ast_ival(rir_arena, v) &&
+				ast_sym(rir_arena, s) == ast_sym(rir_arena, v)) {
+			if (hit >= 0)
+				return;
+			hit = k;
+		}
+	}
+	if (hit < 0)
+		return;
+	ast_set_op(rir_arena, rir_sh[hit], ast_op(rir_arena, t));
+	ast_set_type(rir_arena, rir_sh[hit], ast_type_t(rir_arena, t),
+							 ast_type_ref(rir_arena, t));
+	ast_set_ival(rir_arena, rir_sh[hit], ast_ival(rir_arena, t));
+	ast_set_sym(rir_arena, rir_sh[hit], ast_sym(rir_arena, t));
 }
 
 static AstLocal rir_pop(void) {
@@ -1119,6 +1171,11 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		v = &base[ast_base_depth + k];
 		ast_set_type(rir_arena, rir_sh[k], v->type.t,
 								 (uint64_t)(uintptr_t)v->type.ref);
+		if (rir_sh[k] == rir_fcs_node) {
+			rir_fcs_node = AST_NONE;
+			if ((v->type.t & VT_BTYPE) == VT_BOOL)
+				ast_set_type(rir_arena, rir_sh[k], VT_BYTE | VT_UNSIGNED, 0);
+		}
 		/* An AST_Invoke carries its RESULT's SValue, not just its type:
 		   ast_replay_value rebuilds the return with `sv.r = ast_op(a, n)`, so a
 		   node left at op 0 claims the value is in register 0 and a double return
@@ -1193,8 +1250,17 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		b1.ref = v->type.ref;
 		cs = type_size(&a1, &al);
 		vs2 = type_size(&b1, &al);
-		if (cs == vs2)
+		if (cs >= vs2) {
+#ifdef MCC_JRN_HAVE_X86_PRIMS
+			int bop = ast_op(rir_arena, cur);
+			if (cs > vs2 && ast_kind(rir_arena, cur) == AST_Binary &&
+					(bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
+					 bop == AST_OP_ACMPXCHG))
+				ast_set_type(rir_arena, cur, v->type.t,
+										 (uint64_t)(uintptr_t)v->type.ref);
+#endif
 			continue;
+		}
 		{
 			AstLocal cv = ast_node(rir_arena, AST_Convert);
 			ast_set_type(rir_arena, cv, v->type.t,
@@ -1553,7 +1619,7 @@ static void rir_op_effect(const RirOp *ro) {
 											ast_fbits(rir_arena, n) | AST_FB_STORE_ADDR_LATE);
 		}
 		rir_addr_late = 0;
-		if (rir_lorn || rir_ternn) {
+		if (rir_lorn || rir_ternn || rir_docond) {
 			ast_add_child(rir_arena, n, t);
 			ast_add_child(rir_arena, n, v);
 			rir_push(n);
@@ -1572,6 +1638,7 @@ static void rir_op_effect(const RirOp *ro) {
 		ast_add_child(rir_arena, n, v);
 		rir_stmt(n);
 		rir_ret_follow_spill(t, v);
+		rir_spill_follow_sh(t, v);
 		{
 			AstLocal mv = ast_node(rir_arena, AST_StoreVal);
 			ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
@@ -1912,6 +1979,8 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Convert);
 		ast_add_child(rir_arena, n, a);
+		if (o->kind == JOP_CVT_CSTI && rir_synth_depth)
+			rir_fcs_node = n;
 		rir_push_typed(n);
 		break;
 	}
@@ -2467,6 +2536,16 @@ static void rir_cf_cond(void) {
 	cond = rir_shn ? rir_pop() : AST_NONE;
 	if (cond == AST_NONE)
 		return;
+	if (rir_dheldn && rir_docond && rir_cfkind[rir_cfn - 1] == RIR_R_DO) {
+		AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
+		int q;
+		for (q = 0; q < rir_dheldn; q++)
+			ast_add_child(rir_arena, bb, rir_dheld[q]);
+		ast_add_child(rir_arena, bb, cond);
+		rir_dheldn = 0;
+		cond = bb;
+	}
+	rir_docond = 0;
 	ast_add_child(rir_arena, rir_cf[rir_cfn - 1], cond);
 	rir_cfcond[rir_cfn - 1] = 1;
 }
@@ -2988,12 +3067,17 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_ELSE:
 		if (rir_bbn > 1)
 			rir_bbn--;
+		if (ro->rkind == RIR_R_BODY && rir_cfn &&
+				rir_cfkind[rir_cfn - 1] == RIR_R_DO && !rir_cfcond[rir_cfn - 1])
+			rir_docond = 1;
 		break;
 	case RIR_R_IF:
 	case RIR_R_WHILE:
 	case RIR_R_DO:
 	case RIR_R_FOR:
 	case RIR_R_SWITCH:
+		rir_docond = 0;
+		rir_dheld_flush();
 		if (rir_cfn) {
 			rir_cfn--;
 			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
@@ -3306,6 +3390,9 @@ static void rir_to_arena(void) {
 	rir_incr_bb = AST_NONE;
 	rir_incr_live = 0;
 	rir_lorn = 0;
+	rir_docond = 0;
+	rir_dheldn = 0;
+	rir_fcs_node = AST_NONE;
 	rir_pending_call = AST_NONE;
 	rir_spill_node = AST_NONE;
 	rir_opassign_pending = 0;
