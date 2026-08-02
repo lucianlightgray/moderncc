@@ -178,6 +178,13 @@ static int do_run_preset(int argc, char **argv) {
 			snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out);
 			ts_arg(&v, prefix);
 		}
+		/* Superbuild presets (mingw) attach a ctest step to each cell's build
+		 * (MCC_SUPERBUILD_TEST defaults ON, DEPENDEES build), so skipping the
+		 * top-level ctest below is not enough: the suite would still run
+		 * inside `cmake --build`. An explicit -DMCC_SUPERBUILD_TEST=... in
+		 * argv comes later on the command line and wins. */
+		if (no_test)
+			ts_arg(&v, "-DMCC_SUPERBUILD_TEST=OFF");
 		for (i = 0; i < extra_start; i++)
 			if (!strncmp(argv[i], "-D", 2))
 				ts_arg(&v, argv[i]);
