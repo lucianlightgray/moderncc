@@ -6523,6 +6523,22 @@ if(MCC_BUILD_TESTS)
         endforeach()
     endif()
 
+    # --embed-jit through a CROSS osx compiler. A cross target bakes no blob, so
+    # it takes mcc_add_file() on a real on-disk Mach-O archive -- a path the
+    # synthetic macho-archive fixture does not cover -- and the cell then RUNS
+    # the image at MCC_JIT=0 AND MCC_JIT=1. arm64 only: x86_64-osx bakes and runs
+    # correct at MCC_JIT=0 and SIGSEGVs at MCC_JIT=1 inside mccpp_new under
+    # mccjit_recompile_common, at both -O0 and -O1 engine builds (docs/TODO).
+    if(UNIX)
+        add_test(NAME macho-embedjit-arm64-osx
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/embedjit.sh"
+                    "${MCC_CROSS_DIR}/mcc-arm64-osx" "${MCC_CROSS_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-embedjit-arm64-work" arm64)
+        set_tests_properties(macho-embedjit-arm64-osx PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77
+            TIMEOUT 300)
+    endif()
+
     # -march= was accepted and discarded too. This cell pins that the flag
     # reaches CODEGEN (roundsd appears only at x86-64-v2+) and that -O4 alone
     # never raises the ISA floor, which is the rule the whole axis exists for.
