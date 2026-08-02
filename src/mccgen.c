@@ -4937,6 +4937,7 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_vstore();
 	ast_hook_vstore();
 #endif
 
@@ -5094,6 +5095,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		vtop--;
 	}
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_vstore_end();
 	ast_hook_vstore_end();
 #endif
 }
@@ -7744,6 +7746,7 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 	vpush_helper_func(tok_alloc_const(buf));
 	vrott(4);
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_call_begin();
 	ast_hook_call_begin(3, 0, 1, 0);
 #endif
 	gfunc_call(3);
@@ -7760,6 +7763,7 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 	}
 	gen_cast(&atomtype);
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_call_end();
 	ast_hook_call_end();
 #endif
 	atomic_lowering--;
@@ -8000,6 +8004,7 @@ static void gen_atomic_load_scalar(void) { MCC_TRACE("enter\n");
 	vpush_helper_func(tok_alloc_const(buf));
 	vrott(3);
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_call_begin();
 	ast_hook_call_begin(2, 0, 1, 0);
 #endif
 	gfunc_call(2);
@@ -8009,6 +8014,7 @@ static void gen_atomic_load_scalar(void) { MCC_TRACE("enter\n");
 	if (bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL)
 		{ MCC_TRACE("br\n"); vtop->type.t = VT_INT; }
 #if MCC_CONFIG_OPTIMIZER
+	rir_hook_call_end();
 	ast_hook_call_end();
 #endif
 	atomic_lowering--;
@@ -11296,7 +11302,7 @@ tok_next:
 						expr_eq();
 						gfunc_param_typed(s, sa);
 #if MCC_CONFIG_OPTIMIZER
-						ast_hook_call_argcast();
+						rir_hook_call_argcast();
 #endif
 						seqp_flush();
 					}
@@ -11351,6 +11357,7 @@ tok_next:
 				goto call_folded;
 			}
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_call_begin();
 			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT,
 													ret_nregs, s->f.func_type == FUNC_ELLIPSIS);
 #endif
@@ -11417,10 +11424,12 @@ tok_next:
 					{ MCC_TRACE("br\n"); mcc_tcov_block_end(mcc_state, -1); }
 				CODE_OFF();
 #if MCC_CONFIG_OPTIMIZER
+				rir_hook_call_noreturn();
 				ast_hook_call_noreturn();
 #endif
 			}
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_call_end();
 			ast_hook_call_end();
 #endif
 		call_folded:;
@@ -12012,6 +12021,7 @@ static void check_func_return(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if ((!strcmp(funcname, "main") || func_old) && (func_vt.t & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_implicit_return();
 		ast_hook_implicit_return();
 #endif
 		vpushi(0);
@@ -12385,10 +12395,12 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		mk_pointer(&vtop->type);
 		gaddrof();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_call_begin();
 		ast_hook_call_begin(1, 0, 1, 0);
 #endif
 		gfunc_call(1);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_call_effect_end();
 		ast_hook_call_effect_end();
 		ast_hook_cleanup_call_end();
 #endif
@@ -12815,6 +12827,7 @@ again:
 		if (tok != ';') { MCC_TRACE("br\n");
 			gexpr();
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_ret_expr_done();
 			ast_hook_ret_expr_done();
 #endif
 			seqp_check();
@@ -12833,6 +12846,7 @@ again:
 			b = 0;
 		}
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_return(b);
 		ast_hook_return(b);
 #endif
 		leave_scope(root_scope);
@@ -12844,6 +12858,7 @@ again:
 			if (ret_jumps)
 				{ MCC_TRACE("br\n"); rsym = gjmp(rsym); }
 #if MCC_CONFIG_OPTIMIZER
+			rir_hook_return_jmp(ret_jumps);
 			ast_hook_return_jmp(ret_jumps);
 #endif
 		}
@@ -13334,10 +13349,12 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 		vswap();
 #endif
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_call_begin();
 		ast_hook_call_begin(3, 0, 1, 0);
 #endif
 		gfunc_call(3);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_call_effect_end();
 		ast_hook_call_effect_end();
 #endif
 	} else { MCC_TRACE("br\n");
@@ -13349,10 +13366,12 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 		vswap();
 #endif
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_call_begin();
 		ast_hook_call_begin(3, 0, 1, 0);
 #endif
 		gfunc_call(3);
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_call_effect_end();
 		ast_hook_call_effect_end();
 #endif
 	}

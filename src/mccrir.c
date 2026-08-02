@@ -429,6 +429,37 @@ void rir_hook_break_continue(int is_continue) {
 	rir_mark_val(RIR_M_JUMP, is_continue);
 }
 
+void rir_hook_call_begin(void) { rir_rbegin(RIR_R_CALL); }
+
+void rir_hook_call_end(void) { rir_rend_to(RIR_R_CALL); }
+
+/* One assignment cast per argument of a PARSED call, and none at all for a
+   call the parser synthesises (init_putz's memset, the helper families). The
+   tree records that difference as Convert nodes it builds while evaluating each
+   argument; Replay_IR has no other witness for it. */
+void rir_hook_call_argcast(void) { rir_mark_pt(RIR_M_ARGCAST); }
+
+void rir_hook_call_noreturn(void) { rir_mark_pt(RIR_M_NORETURN); }
+
+/* This end, and not rir_hook_call_end, is what a call whose RESULT IS
+   DISCARDED closes with -- the synthesised memset behind a struct initialiser
+   among them. The tree types that Invoke VT_VOID and attaches it as a
+   statement; Replay_IR needs the same discriminator, so the region end carries
+   it. */
+void rir_hook_call_effect_end(void) { rir_rend_to_val(RIR_R_CALL, 1); }
+
+void rir_hook_vstore(void) { rir_rbegin(RIR_R_VSTORE); }
+
+void rir_hook_vstore_end(void) { rir_rend_to(RIR_R_VSTORE); }
+
+void rir_hook_ret_expr_done(void) { rir_mark_val(RIR_M_RETEXPR, 0); }
+
+void rir_hook_return(int has_val) { rir_mark_val(RIR_M_RETURN, has_val); }
+
+void rir_hook_return_jmp(int jumps) { rir_mark_val(RIR_M_RETJMP, jumps); }
+
+void rir_hook_implicit_return(void) { rir_mark_pt(RIR_M_IRETURN); }
+
 #define RIR_XT_MAX 16384
 static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];

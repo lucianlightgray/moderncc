@@ -4250,7 +4250,6 @@ void ast_hook_vla_restore(int loc) { MCC_TRACE("enter\n");
 
 void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 																int variadic) { MCC_TRACE("enter\n");
-	rir_rbegin(RIR_R_CALL);
 	ast_call_pending = AST_NONE;
 	if (!ast_capture || ast_desync || ast_in_op || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -4307,7 +4306,6 @@ void ast_hook_call_begin(int nb_args, int is_struct_ret, int ret_nregs,
 }
 
 void ast_hook_call_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_CALL);
 	if (nocode_wanted) { MCC_TRACE("br\n"); ast_saw_nocode = 1; }
 	if (ast_call_dead) { MCC_TRACE("br\n");
 		ast_call_dead = 0;
@@ -4349,16 +4347,7 @@ void ast_hook_call_end(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
 }
 
-/* One assignment cast per argument of a PARSED call, and none at all for a
-   call the parser synthesises (init_putz's memset, the helper families). The
-   tree records that difference as Convert nodes it builds while evaluating each
-   argument; Replay_IR has no other witness for it. */
-void ast_hook_call_argcast(void) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_ARGCAST);
-}
-
 void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_NORETURN);
 	if (!ast_call_noreturn_env)
 		{ MCC_TRACE("br\n"); return; }
 	if (!ast_capture || ast_desync || ast_call_pending == AST_NONE)
@@ -4368,12 +4357,6 @@ void ast_hook_call_noreturn(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_call_effect_end(void) { MCC_TRACE("enter\n");
-	/* This end, and not ast_hook_call_end, is what a call whose RESULT IS
-	   DISCARDED closes with -- the synthesised memset behind a struct
-	   initialiser among them. The tree types that Invoke VT_VOID and attaches it
-	   as a statement; Replay_IR needs the same discriminator, so the region end
-	   carries it. */
-	rir_rend_to_val(RIR_R_CALL, 1);
 	if (ast_call_dead) { MCC_TRACE("br\n");
 		ast_call_dead = 0;
 		ast_in_call = 0;
@@ -4476,7 +4459,6 @@ void ast_hook_vpop(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
-	rir_rbegin(RIR_R_VSTORE);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	int model = ast_in_op == 0 && ast_capture && !ast_desync && !ast_in_call;
@@ -4598,7 +4580,6 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 }
 
 void ast_hook_vstore_end(void) { MCC_TRACE("enter\n");
-	rir_rend_to(RIR_R_VSTORE);
 	if (!ast_active || ast_in_op == 0)
 		{ MCC_TRACE("br\n"); return; }
 	ast_in_op--;
@@ -4610,7 +4591,6 @@ void ast_hook_vstore_end(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_ret_expr_done(void) { MCC_TRACE("enter\n");
-	rir_mark_val(RIR_M_RETEXPR, 0);
 	ast_ret_val = AST_NONE;
 	if (!ast_capture || ast_in_call)
 		{ MCC_TRACE("br\n"); return; }
@@ -4625,7 +4605,6 @@ void ast_hook_ret_expr_done(void) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
-	rir_mark_val(RIR_M_RETURN, has_val);
 	ast_last_return = AST_NONE;
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
@@ -4658,7 +4637,6 @@ void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_return_jmp(int jumps) { MCC_TRACE("enter\n");
-	rir_mark_val(RIR_M_RETJMP, jumps);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	if (ast_last_return != AST_NONE)
@@ -4673,7 +4651,6 @@ void ast_hook_return_jmp(int jumps) { MCC_TRACE("enter\n");
 }
 
 void ast_hook_implicit_return(void) { MCC_TRACE("enter\n");
-	rir_mark_pt(RIR_M_IRETURN);
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
 	ast_capture = 0;

@@ -91,12 +91,13 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 									int align, int result);
 void rir_vla_begin(void);
 
-/* Direct capture path, phase A: statement-level control flow. These are called
-   from src/mccgen.c immediately before the matching ast_hook_*, in the position
-   the lifted rir_* statements held at the head of those hook bodies, so the
-   capture no longer rides the tree recorder. Everything here reads only its own
-   arguments and the live parser globals rir_mark_v2 already samples (vstack,
-   vtop, nocode_wanted, ind, jrn_n), which is what makes the lift order-exact. */
+/* Direct capture path: statement control flow (A), then the call/store/return
+   spine (B1). These are called from src/mccgen.c immediately before the matching
+   ast_hook_*, in the position the lifted rir_* statements held at the head of
+   those hook bodies, so the capture no longer rides the tree recorder.
+   Everything here reads only its own arguments and the live parser globals
+   rir_mark_v2 already samples (vstack, vtop, nocode_wanted, ind, jrn_n), which
+   is what makes the lift order-exact. */
 void rir_hook_if_begin(void);
 void rir_hook_if_gvtst_done(void);
 void rir_hook_if_else(void);
@@ -122,6 +123,17 @@ void rir_hook_default(void);
 void rir_hook_label(int v);
 void rir_hook_goto(int v);
 void rir_hook_break_continue(int is_continue);
+void rir_hook_call_begin(void);
+void rir_hook_call_end(void);
+void rir_hook_call_argcast(void);
+void rir_hook_call_noreturn(void);
+void rir_hook_call_effect_end(void);
+void rir_hook_vstore(void);
+void rir_hook_vstore_end(void);
+void rir_hook_ret_expr_done(void);
+void rir_hook_return(int has_val);
+void rir_hook_return_jmp(int jumps);
+void rir_hook_implicit_return(void);
 
 #else
 
@@ -220,6 +232,17 @@ void rir_hook_break_continue(int is_continue);
 #define rir_hook_label(v) ((void)0)
 #define rir_hook_goto(v) ((void)0)
 #define rir_hook_break_continue(c) ((void)0)
+#define rir_hook_call_begin() ((void)0)
+#define rir_hook_call_end() ((void)0)
+#define rir_hook_call_argcast() ((void)0)
+#define rir_hook_call_noreturn() ((void)0)
+#define rir_hook_call_effect_end() ((void)0)
+#define rir_hook_vstore() ((void)0)
+#define rir_hook_vstore_end() ((void)0)
+#define rir_hook_ret_expr_done() ((void)0)
+#define rir_hook_return(v) ((void)0)
+#define rir_hook_return_jmp(j) ((void)0)
+#define rir_hook_implicit_return() ((void)0)
 
 #endif
 
