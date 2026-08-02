@@ -1981,6 +1981,28 @@ static void rir_op_effect(const RirOp *ro) {
 				break;
 			}
 		}
+		if (ast_kind(rir_arena, t) == AST_Binary &&
+				ast_op(rir_arena, t) == '+' && ast_nchild(rir_arena, t) == 2 &&
+				o->vs_n - ast_base_depth >= 2) {
+			AstLocal ad = ast_child(rir_arena, t, 0);
+			AstLocal lt = ast_child(rir_arena, t, 1);
+			if (ad != AST_NONE && lt != AST_NONE &&
+					ast_kind(rir_arena, ad) == AST_Unary &&
+					ast_op(rir_arena, ad) == AST_OP_ADDR &&
+					ast_nchild(rir_arena, ad) == 1 &&
+					ast_kind(rir_arena, lt) == AST_Literal &&
+					(ast_op(rir_arena, lt) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
+				const SValue *tsv = &jrn_vs[o->vs_off + o->vs_n - 2];
+				AstLocal mb = ast_node(rir_arena, AST_Unary);
+				ast_set_op(rir_arena, mb, AST_OP_MEMBER);
+				ast_set_ival(rir_arena, mb, ast_ival(rir_arena, lt));
+				ast_set_type(rir_arena, mb, tsv->type.t,
+										 (uint64_t)(uintptr_t)tsv->type.ref);
+				ast_add_child(rir_arena, mb,
+											ast_dup_sub(rir_arena, ast_first_child(rir_arena, ad)));
+				t = mb;
+			}
+		}
 		{
 			int chained = 0;
 			if (ast_kind(rir_arena, v) == AST_StoreVal &&
