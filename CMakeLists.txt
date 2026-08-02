@@ -3605,6 +3605,13 @@ if(MCC_BUILD_TESTS)
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(trace-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        add_executable(schemagate tools/schemagate.c tools/toolsupport.c)
+        target_link_libraries(schemagate ${CMAKE_DL_LIBS})
+        add_test(NAME schema-gate-invariant
+            COMMAND "$<TARGET_FILE:schemagate>" src
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties(schema-gate-invariant PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
         add_executable(fixpointgate tools/fixpointgate.c tools/toolsupport.c)
         target_link_libraries(fixpointgate ${CMAKE_DL_LIBS})
         if(NOT WIN32 AND CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
