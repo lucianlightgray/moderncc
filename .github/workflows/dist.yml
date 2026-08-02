@@ -134,6 +134,19 @@ jobs:
             rm -rf fuse/x fuse/y && mkdir -p fuse/x fuse/y
             tar xf "$a" -C fuse/x
             tar xf "$b" -C fuse/y
+            # These bundles are built by clang/ld64, not by mcc, so
+            # MCC_MACHO_ADHOC_SIGN never touched them -- and ld64 ad-hoc signs
+            # arm64 (the kernel demands it) but leaves x86_64 unsigned, which
+            # machofat then warns about and `codesign -v --deep` rejects on the
+            # fused image. Sign every thin slice ad-hoc before fusing, which is
+            # the shape machofat's verify-and-skip design expects.
+            for t in fuse/x fuse/y; do
+              find "$t" -type f -perm -u+x -exec sh -c '
+                for f do
+                  head -c4 "$f" | od -An -tx1 | tr -d " \n" | grep -qE "^(cf|ce)faedfe$" || continue
+                  codesign -s - --force "$f" >/dev/null 2>&1 || true
+                done' sh {} +
+            done
             mcc-ci fat --ver "$ver" --plat macos-universal \
               --fat "$RUNNER_TEMP/machofat" --out dist \
               --name "$kind-$ver-macos-universal" \

@@ -2125,7 +2125,7 @@ static int fat_walk_cb(const char *path, int is_dir, void *ud) {
 static int do_fat(int argc, char **argv) {
 	const char *ver = NULL, *plat = "macos-universal", *out = "dist";
 	const char *fat = NULL, *a = NULL, *b = NULL, *name = NULL, *fmt = "tar.xz";
-	char ver_s[128], pkg[8192], dd[8192], d[512];
+	char ver_s[128], pkg[8192], dd[8192], d[512], outbuf[4096];
 	struct fatctx c;
 	Argv names = {{0}, 0};
 	int i, isd;
@@ -2180,6 +2180,17 @@ static int do_fat(int argc, char **argv) {
 	host_mkdirs(out);
 	ts_path(dd, sizeof dd, pkg, "%s", d);
 	host_mkdirs(dd);
+	/* pkg_archive tars with cwd=pkg and writes to out/<d>.<ext>, so a RELATIVE
+	   --out resolves against the scratch dir and cmake -E tar fails with "cannot
+	   open output file". do_pkg canonicalizes for the same reason. */
+	{
+		char *ao = host_path_canonical(out);
+		if (ao) {
+			snprintf(outbuf, sizeof outbuf, "%s", ao);
+			free(ao);
+			out = outbuf;
+		}
+	}
 
 	memset(&c, 0, sizeof c);
 	c.a = a;
