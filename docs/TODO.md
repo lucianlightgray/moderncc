@@ -2,41 +2,31 @@
 
 Finish Replay_IR: reproduce the parser's machine code byte-for-byte on every target at every `-O`, `-O0` included, then delete the AST recorder and the operation journal.
 
-Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells. C2 is at a **57-body gap** over the eleven distinct keys, down from 114, with three keys already at 100%.
+Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells. C2 is at a **57-body gap** over the eleven distinct keys on the `tests/exec` corpus, down from 114, with three keys at 100%. `tests/diff/full_language.c` is a separate and comparable-sized front; see the scoreboard.
 
 ## Scoreboard
 
-Per key at HEAD, `c2ok/c2try (c2bytes+c2len+c2skip+c2invalid)`, full 278-file corpus, `c2err=0` everywhere. Reproduce with `tools/c2_sweep.sh <builddir> <key> -O1`, which needs an mcc built `-DMCC_REPLAY_IR_C2=1` and run in place. The whole twelve-key sweep takes about 30 seconds, so re-measure rather than copying a row forward.
+Per key at HEAD, `c2ok/c2try (c2bytes+c2len+c2skip+c2invalid)`, `c2err=0` everywhere, produced by `C2_NO_EXTRA=1 tools/c2_sweep.sh <builddir> <key> -O1` against an mcc built `-DMCC_REPLAY_IR_C2=1` and run in place. The whole twelve-key sweep takes about 30 seconds; re-measure rather than copying a row forward.
 
-| key | c2ok/c2try | gap | arenahasheq |
-| --- | --- | --- | --- |
-| x86_64 | 1146/1146 | 0 | 786/1182 |
-| x86_64-osx | 1139/1139 | 0 | 785/1175 |
-| x86_64-win32 | 1243/1243 | 0 | 852/1278 |
-| arm64-osx | 1204/1205 | 1 (1 len) | 812/1241 |
-| arm64-win32 | 1284/1286 | 2 (2 len) | 869/1322 |
-| arm64 | 1169/1172 | 3 (1 bytes + 2 len) | 792/1208 |
-| i386 | 1134/1142 | 8 (2 bytes + 6 len) | 769/1177 |
-| i386-win32 | 1255/1263 | 8 (2 bytes + 6 len) | 854/1298 |
-| arm | 1109/1119 | 10 (5 bytes + 5 len) | 759/1154 |
-| arm-win32 / arm-wince | 1228/1240 each | 12 (5 bytes + 7 len) | 842/1275 |
-| riscv64 | 1129/1142 | 13 (1 bytes + 7 len + 2 skip + 5 invalid) | 783/1179 |
+Read `ok=` on every row before believing it. `rir_report` is an **atexit** handler, so a file that fails to compile still prints `[rir-total]` and still contributes bodies — counting `[rir-total]` lines is not an honesty check, and every scoreboard in this file before this one was measured on a population that silently counted partial output from 8 to 20 failing compiles per key. The sweep now counts only files that exited 0, exactly as `rir_parity.cmake` does, and prints that count.
 
-The gap is **22 distinct bodies**. Fix per body, not per key — every remaining class is one source body seen from several keys:
+`tests/exec` only, 277 files, `ok=` in parentheses:
 
-| bodies | keys | op |
-| --- | --- | --- |
-| `ternary_op.c::tst_yarpgen` | 6 | store |
-| `atomic_inlang_rmw.c::main` | 2 len + 2 bytes | vstore |
-| `overflow_narrow.c::main` | 4 | load |
-| `div_mod_shift.c::main`, `cmp_invert.c::main` | 4 each | jmpcond (bytes) |
-| `signbit_inline.c::main`, `popcount_inline.c::ref_clrsb64` | 4 each | genop |
-| `bitfields.c::main` | 3 | call |
-| `variadic_macros.c::sum_impl`, `variadic_promotions.c::sum_ints` | 2+1 each | gv (bytes) + vstore |
-| `grep.c::pmatch`, `runner.c::run_capture` | 2 each | genop |
-| `utf8_string_literal.c::main` | 2 | call |
-| `arm64.c::myprintf` | riscv64, arm64 | vstore, va_arg |
-| `integer_promotion.c::main`, `struct_abi.c::vsum`, `struct_packed_indirect.c::main`, `variadic_promotions.c::sum_doubles` | 1 each | genop/jmpcond, vstore, call, vstore |
+| key | c2ok/c2try | gap | arenahasheq | ok |
+| --- | --- | --- | --- | --- |
+| x86_64 | 1130/1130 | 0 | 773/1166 | 270 |
+| x86_64-osx | 1123/1123 | 0 | 772/1159 | 267 |
+| x86_64-win32 | 1223/1223 | 0 | 835/1258 | 268 |
+| arm64-osx | 1204/1205 | 1 (1 len) | 812/1241 | 266 |
+| arm64-win32 | 1280/1282 | 2 (2 len) | 865/1318 | 265 |
+| arm64 | 1167/1170 | 3 (1 bytes + 2 len) | 790/1206 | 261 |
+| i386 | 1116/1124 | 8 (2 bytes + 6 len) | 754/1159 | 263 |
+| i386-win32 | 1235/1243 | 8 (2 bytes + 6 len) | 837/1278 | 267 |
+| arm | 1092/1102 | 10 (5 bytes + 5 len) | 744/1137 | 258 |
+| arm-win32 / arm-wince | 1209/1221 each | 12 (5 bytes + 7 len) | 825/1256 | 262 |
+| riscv64 | 1096/1109 | 13 (1 bytes + 7 len + 2 skip + 5 invalid) | 755/1146 | 258 |
+
+`tests/diff/full_language.c` is a **second front, not a row on this board**. It needs `-I <repo root> -DCC_NAME=CC_gcc` to compile at all, is worth 135 to 302 bodies depending on which `#if` arms the key takes, and enters the population on exactly the 7 keys where the C2 probe's own error does not abort the compile — x86_64-osx, x86_64-win32, arm64-osx, arm64-win32, i386-win32, arm-win32, arm-wince, each with `c2err=2`. On x86_64, arm64, i386, arm and riscv64 the probe aborts it and the file is dropped. The default sweep includes it and prints `extra=`; a board that mixes `extra=1` and `extra=0` rows is not comparable, which is what `C2_NO_EXTRA=1` is for. With it in, those seven keys read 13 to 20 divergences MORE than above, so closing it is roughly as much work again as the 57 below. `rir_parity.cmake` passes neither flag, so the replay gate has never included this file either.
 
 `arm-win32` and `arm-wince` share a define set and must read identically. Any sweep where those two rows differ has a harness bug, not a codegen one — cheapest available check that a run measured what it thinks.
 
@@ -70,7 +60,7 @@ Instruments, in the order they pay: `RIRDUMP=1` for ops either side of the blame
 - Keep the C2 harness mirroring the tree's replay prologue exactly across `vstack`/`vtop`, `loc`, `anon_sym`, `ast_pinned_regs`, `ast_rp_bsym`, `ast_rp_csym`, `ast_rp_switch`, `ast_temp_frontier`, `ast_rp_nlabel`, `ast_fconst_i`, `ast_locrec_i`, `sym_free_first`. Leftover allocator state reads as a codegen difference; one omission, a dirty vstack, costs 194 bodies.
 - Keep the `-O0` cells honest. `ast_replay_env` needs `optimize >= 1`, so `-O0` without `FORCE` journals nothing; the cell exits 1 on "0 bodies journalled" rather than 77, and `FORCE` without `SRCDIR` is fatal. The 38 `o4 || optimize >= 1` gate names are derived by regex over `${SRCDIR}/*.c` per run so a cross cell cannot drift from the native one. Forced `-O0` legitimately reads 3 bodies fewer than `-O1` on every ELF and Mach-O key and 0 fewer on the PE keys — `grep.c::tolower`, `c11_threads.c::thrd_equal`, `arm64.c::putchar`, all `static inline` shims whose out-of-line copy `-O1` emits and `-O0` does not. That is an emit difference, not a census loss.
 - **Done** (`fix(macho)`): the cross `x86_64-osx` compiler now gets the macOS SDK include path when built on an Apple host — `mcc_add_macos_sdkincludepath` was `MCC_TARGET_IS_HOST`-only, now `MCC_TARGET_IS_HOST || __APPLE__`. On native arm64-osx the x86_64-osx cross went from the false `fn=483 c2ok=452/452` to a real full-corpus `fn=1219 c2ok=1183/1183` (bytes=0 len=0). A Linux-hosted cross-osx build is unchanged (`host_macos_sdk_root()` is NULL off Apple).
-- **Done** (`fix(tools)`): `c2_sweep.sh` no longer silently drops `full_language.c`. Its computed include `#include INC(42test)` → `<tests/diff/42test.h>` resolves only against the repo root, so without `-I "$S"` it failed on **every** key and the EXTRA file contributed zero bodies to the "278-file corpus". With it, x86_64-osx reads `files=278 fn=1278`. Re-sweep every key: the scoreboard rows and the 23-body table were measured on a 277-file corpus and undercount by up to four bodies each — `full_language.c`'s own `array_test` (genop, same-length), `char_short_test` (cvt_csti, +12), `optimize_out_test` (jmp, +8) and `struct_assign_test` (call, +24), all confirmed diverging on native arm64-osx and none previously in the table. Note the cross keys additionally need `CC_NAME` predefined for the file to compile fully, which only the host build has.
+- **Done** (`fix(tools)`): `c2_sweep.sh` no longer silently drops `full_language.c`, no longer counts files that failed to compile, and says which population it measured. Three separate defects, each of which produced a plausible wrong row: the file's computed include `#include INC(42test)` → `<tests/diff/42test.h>` resolves only against the repo root, so it needs `-I <repo root>`; it also needs `-DCC_NAME=CC_gcc`, undefined without which it stops at `legacy_aggregates.h:1009` on **every** key including the host build; and `rir_report` is an atexit handler, so before the `ok=` counter a failing compile still printed `[rir-total]` and still contributed its partial body count. Adding only the `-I` made the file fail LATER rather than earlier and added 59 partial bodies per key to the census — strictly worse than dropping it. See the scoreboard for what it is worth once it does compile, and for why it is not a row on the board.
 - Extend the native-versus-cross cross-check to riscv64 and i386. arm64 has it: measured natively in a `linux/arm64` container, `c2ok=1175/1180` identical to the cross reading, so C2 is cross/native-invariant there. Neither of the other two can run natively on this host.
 - Measure the `MCC_AST_*` gate ledger at more than one `-O`. The six `STOREVAL_*` gates are worth +5 bodies at `-O0` and fire nowhere at `-O1`, so a single-gate ledger at one level — what `tools/gate-ledger.sh` produces — is a lower bound.
 - Keep the fifteen files the repo-wide comment strip deliberately skipped, since in each the comment is the test payload and not prose. The ten `tests/diagnostics/dg-error/*.c` carry the expected diagnostic in a `/* dg-error: ... */` marker that `run_dgerror.cmake` greps out and hard-fails on when it is absent; `tests/exec/preprocessor/comment.c` is the comment-lexing permutation corpus whose golden turns on a backslash-spliced line comment swallowing the statement after it; `tests/cst/kinds/comment.c` and `tests/cst/hashinv/spaced.c` exercise CST comment promotion and the H_s/H_t comment-invariance split; `tests/preprocess/asm/gas_comments.S` is the GAS comment corpus; and `tests/exec/programs/grep.c` is greped as its own input by the `{SELF}` golden, which expects the trailing vim modeline in the output. The strip also preserved line numbering in `tests/**` C sources because `tests/exec/goldens.h` pins diagnostics as `file.c:line:`, so a reflow that renumbers those files breaks goldens without touching a single test assertion.

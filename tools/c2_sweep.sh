@@ -30,21 +30,34 @@ SOURCE_DATE_EPOCH=1000000000
 export SOURCE_DATE_EPOCH
 
 files=$(find "$S/tests/exec" -name '*.c' | sort)
-files="$files $S/tests/diff/full_language.c"
+# The EXTRA file enters the population only where the C2 probe does not abort
+# it -- 7 of 12 keys -- so a board that mixes extra=1 and extra=0 rows is not
+# comparable. C2_NO_EXTRA=1 drops it for a like-for-like sweep.
+if [ -z "$C2_NO_EXTRA" ]; then
+	files="$files $S/tests/diff/full_language.c"
+fi
 
 nfile=0
+nok=0
 for f in $files; do
 	nfile=$((nfile + 1))
 	xflags=
 	case "$f" in
-	*/full_language.c) xflags="-I $S" ;;
+	*/full_language.c) xflags="-I $S -DCC_NAME=CC_gcc" ;;
 	esac
-	echo "### $f" >> "$LOG"
-	MCC_REPLAY_IR=5 "$MCC" -w $OPT $FLAGS $xflags -c -o "$OUT/a-$KEY.o" "$f" >> "$LOG" 2>&1 || true
+	if MCC_REPLAY_IR=5 "$MCC" -w $OPT $FLAGS $xflags -c -o "$OUT/a-$KEY.o" "$f" \
+			> "$OUT/f.log" 2>&1; then
+		nok=$((nok + 1))
+		echo "### $f" >> "$LOG"
+		grep -E '^\[rir-(total|c2|c2op|c2len|c2byte|c2part)' "$OUT/f.log" >> "$LOG" \
+			|| true
+	else
+		echo "!!! rc!=0 $f" >> "$LOG"
+	fi
 done
 
-awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" '
-/^### / { cur = $2; next }
+awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" -v nok="$nok" '
+/^### / { cur = $2; if (cur ~ /full_language\.c$/) extra = 1; next }
 /^\[rir-total\]/ {
 	seen++
 	for (i = 1; i <= NF; i++) {
@@ -58,8 +71,8 @@ BEGIN {
 	for (i in a) want[a[i]] = 1
 }
 END {
-	printf "%-14s %-4s files=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) arenahasheq=%d/%d\n",
-		key, opt, nfile, seen, tot["fn"], tot["faithful"], tot["c2ok"], tot["c2try"],
+	printf "%-14s %-4s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) arenahasheq=%d/%d\n",
+		key, opt, nfile, nok, extra + 0, seen, tot["fn"], tot["faithful"], tot["c2ok"], tot["c2try"],
 		tot["c2bytes"], tot["c2len"], tot["c2skip"], tot["c2invalid"], tot["c2err"],
 		tot["arenahasheq"], tot["arenafn"]
 }
