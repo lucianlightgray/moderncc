@@ -522,11 +522,6 @@ static void mcc_macho_add_destructor(MCCState *s1) { MCC_TRACE("enter\n");
 	mh_execute_header = put_elf_sym(s1->symtab, -4096, 0,
 																	ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0,
 																	text_section->sh_num, "__mh_execute_header");
-	/* ld64 resolves ___dso_handle to the mach header and absorbs the symbol, so
-	   its linked images show only __mh_execute_header. clang emits the reference
-	   from any TU with a constructor or destructor (__cxa_atexit's third
-	   argument), and without a definition here every such clang -c object fails
-	   to link. Local, to match ld64 leaving it out of the export trie. */
 	set_elf_sym(s1->symtab, -4096, 0,
 							ELFW(ST_INFO)(STB_GLOBAL, STT_OBJECT), 0,
 							text_section->sh_num, "___dso_handle");
@@ -641,11 +636,6 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	mo->nr_plt = mo->n_got = 0;
 	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		/* .DWARF_* is what macho_sect_to_elf_name calls an imported __DWARF
-		   section, so the .debug_ test alone never matched a clang -c object's
-		   debug info. Its relocations then reached the chained-fixup rebase
-		   list, whose 4-byte alignment rule DWARF's byte-packed fields do not
-		   obey, and the link died on a section that is never even loaded. */
 		if (s->sh_type != SHT_RELX ||
 				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7) ||
 				!strncmp(s1->sections[s->sh_info]->name, ".DWARF_", 7))
@@ -674,14 +664,6 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 						goti[mo->n_got++] = INDIRECT_SYMBOL_LOCAL;
 					} else { MCC_TRACE("br\n");
 						goti[mo->n_got++] = mo->e2msym[sym_index];
-						/* Whichever GOT relocation for this symbol arrives FIRST is the
-						   one that creates the slot, and only that one reaches here.
-						   arm64 needs both spellings: mcc's own objects emit
-						   ADR_GOT_PAGE before LD64_GOT_LO12_NC, but Mach-O stores
-						   relocations in DESCENDING address order, so a clang -c object
-						   presents the LO12 half first -- and the slot was then built
-						   with no bind at all. Every imported DATA symbol reached
-						   through the GOT read an unwritten slot and faulted. */
 						if (sym->st_shndx == SHN_UNDEF
 #ifdef MCC_TARGET_X86_64
 								&& type == R_X86_64_GOTPCREL
@@ -743,13 +725,6 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 				}
 			}
 			if (type == R_DATA_PTR || type == R_JMP_SLOT) { MCC_TRACE("br\n");
-				/* The third word of a TLV descriptor triple is the variable's OFFSET
-				   within the thread-local image, not a pointer. Handing it to
-				   bind_rebase_add makes the chained-fixups writer encode a chain entry
-				   over it, and dyld then rejects the image with "malformed
-				   thread-local". macho_tls_rebase_imported computes the offset after
-				   relocation instead. Descriptors mcc mints itself never get here --
-				   macho_tls_setup does not relocate word 2 at all. */
 				Section *ts = s->sh_info < s1->nb_sections ? s1->sections[s->sh_info] : NULL;
 				if (ts && !strcmp(ts->name, ".tlv_descriptors") &&
 						(save_rel.r_offset % (3 * MCC_PTR_SIZE)) == 2 * MCC_PTR_SIZE)
@@ -818,11 +793,6 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	mo->nr_plt = mo->n_got = 0;
 	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		s = s1->sections[i];
-		/* .DWARF_* is what macho_sect_to_elf_name calls an imported __DWARF
-		   section, so the .debug_ test alone never matched a clang -c object's
-		   debug info. Its relocations then reached the chained-fixup rebase
-		   list, whose 4-byte alignment rule DWARF's byte-packed fields do not
-		   obey, and the link died on a section that is never even loaded. */
 		if (s->sh_type != SHT_RELX ||
 				!strncmp(s1->sections[s->sh_info]->name, ".debug_", 7) ||
 				!strncmp(s1->sections[s->sh_info]->name, ".DWARF_", 7))
@@ -851,14 +821,6 @@ static void check_relocs(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 						goti[mo->n_got++] = INDIRECT_SYMBOL_LOCAL;
 					} else { MCC_TRACE("br\n");
 						goti[mo->n_got++] = mo->e2msym[sym_index];
-						/* Whichever GOT relocation for this symbol arrives FIRST is the
-						   one that creates the slot, and only that one reaches here.
-						   arm64 needs both spellings: mcc's own objects emit
-						   ADR_GOT_PAGE before LD64_GOT_LO12_NC, but Mach-O stores
-						   relocations in DESCENDING address order, so a clang -c object
-						   presents the LO12 half first -- and the slot was then built
-						   with no bind at all. Every imported DATA symbol reached
-						   through the GOT read an unwritten slot and faulted. */
 						if (sym->st_shndx == SHN_UNDEF
 #ifdef MCC_TARGET_X86_64
 								&& type == R_X86_64_GOTPCREL
@@ -1251,11 +1213,6 @@ static void macho_be64(unsigned char *p, uint64_t v) { MCC_TRACE("enter\n");
 	macho_be32(p + 4, (uint32_t)v);
 }
 
-/* MCC_MACHO_ADHOC_SIGN: sign in-process rather than spawning /usr/bin/codesign.
-   Default ON: it is the only signer that works off-Darwin (codesign does not
-   exist on Linux, and arm64 Darwin refuses an unsigned image), it is bit-
-   reproducible where codesign is not, and it is ~2x faster per link. Set
-   MCC_MACHO_ADHOC_SIGN=0 to emit an unsigned image for external signing. */
 static int macho_adhoc_sign_env(MCCState *s1) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_CODESIGN
 	const char *v = getenv("MCC_MACHO_ADHOC_SIGN");
@@ -1276,10 +1233,6 @@ static const char *macho_sign_ident(const char *filename) { MCC_TRACE("enter\n")
 	return *base ? base : "a.out";
 }
 
-/* An ad-hoc signature is a CodeDirectory over SHA-256 page hashes, wrapped in
-   an embedded superblob, everything big-endian. No CMS and no requirements
-   blob: that is what the kernel accepts for CS_ADHOC, and what ld64 -adhoc and
-   lld emit. The identifier is the output basename, as codesign's default is. */
 static uint32_t macho_codesig_size(const char *filename, uint64_t code_limit) { MCC_TRACE("enter\n");
 	uint32_t idlen = (uint32_t)strlen(macho_sign_ident(filename)) + 1;
 	uint64_t slots = (code_limit + (1u << CS_PAGE_SHIFT) - 1) >> CS_PAGE_SHIFT;
@@ -1377,12 +1330,6 @@ static int macho_elf_boundary_sym(const char *name) { MCC_TRACE("enter\n");
 	return !strncmp(name, "__start_", 8) || !strncmp(name, "__stop_", 7);
 }
 
-/* mcc_add_linker_symbols synthesises the ELF-convention section boundaries for
-   every target. On Mach-O they land on the first function's address, and dyld's
-   dladdr then answers __init_array_end where ld64's answers the real name. They
-   are resolved inside this link, so demoting them to STB_LOCAL keeps every
-   reference working while taking them out of the export trie and the DYSYMTAB
-   external range. ld64 emits none of them. */
 static void macho_hide_elf_boundary_syms(MCCState *s1) { MCC_TRACE("enter\n");
 	int sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
 	for (int i = 1; i < sym_end; i++) { MCC_TRACE("br\n");
@@ -1436,9 +1383,6 @@ static void create_symtab(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n")
 
 	mo->symtab = new_section(s1, "LESYMTAB", SHT_LINKEDIT, SHF_ALLOC | SHF_WRITE);
 	mo->strtab = new_section(s1, "LESTRTAB", SHT_LINKEDIT, SHF_ALLOC | SHF_WRITE);
-	/* Created last so it lands last in __LINKEDIT: collect_sections walks the
-	   section array downwards and pushes, so the list replays creation order and
-	   the signature must cover every byte before it. Sized after layout. */
 	if (macho_adhoc_sign_env(s1)) { MCC_TRACE("br\n");
 		mo->codesig = new_section(s1, "CODESIG", SHT_LINKEDIT, SHF_ALLOC | SHF_WRITE);
 		mo->codesig->sh_addralign = 16;
@@ -1908,9 +1852,6 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 			case SHT_PROGBITS:
 				if (s == mo->stubs)
 					{ MCC_TRACE("br\n"); sk = sk_stubs; }
-				/* Match by name as well as identity: mo->tls_vars only ever names the
-				   section mcc mints for TLS it compiled itself, but an imported object
-				   brings its own descriptors under the same ELF name. */
 				else if (s == mo->tls_vars || !strcmp(s->name, ".tlv_descriptors"))
 					{ MCC_TRACE("br\n"); sk = sk_tls_vars; mo->has_tlv = 1; }
 				else if (flags & SHF_TLS)
@@ -2174,10 +2115,6 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 		seg->filesize = fileofs - seg->fileoff;
 	}
 
-	/* The signature is sized only now: it covers every byte before itself, so
-	   its own offset -- which layout has just assigned, the section having been
-	   laid out empty -- is the code limit. Growing it after the fact only moves
-	   the end of __LINKEDIT, which is the last segment. */
 	if (mo->codesig) { MCC_TRACE("br\n");
 		uint64_t limit = mo->codesig->sh_offset;
 		uint32_t size = macho_codesig_size(filename, limit);
@@ -2478,11 +2415,6 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n
 		}
 
 		if (!mo->tls_vars) { MCC_TRACE("br\n");
-			/* Reuse the imported descriptor section if a loaded object already
-			   brought one. Minting a second section with the same name splits the
-			   descriptors across two sections, and only one of them gets its offsets
-			   rebased -- which is a link mixing mcc's own _Thread_local with an
-			   imported one, and it fails at load. */
 			int k;
 			for (k = 1; k < s1->nb_sections; k++)
 				{ MCC_TRACE("br\n"); if (!strcmp(s1->sections[k]->name, ".tlv_descriptors")) { MCC_TRACE("br\n");
@@ -2494,8 +2426,6 @@ static void macho_tls_setup(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n
 																	 SHF_ALLOC | SHF_WRITE);
 				mo->tls_vars->sh_addralign = MCC_PTR_SIZE;
 			}
-			/* Both paths need the bootstrap thunk symbol and the header flag: a
-			   reused section still gets mcc's own descriptors appended to it. */
 			tlv_sym = put_elf_sym(symtab_section, 0, 0,
 														ELFW(ST_INFO)(STB_GLOBAL, STT_FUNC), 0,
 														SHN_UNDEF, "__tlv_bootstrap");
@@ -2549,11 +2479,6 @@ static void macho_tls_finalize(MCCState *s1, struct macho *mo) { MCC_TRACE("ente
 	}
 }
 
-/* Imported TLV descriptors carry their variable's offset in word 2, but the
-   generic UNSIGNED relocation resolves it to an absolute address. Rebase it by
-   the thread-local image base. This must run AFTER relocate_sections -- inside
-   macho_tls_finalize the relocation lands on top of the fix. Descriptors mcc
-   minted itself already hold the right value and are skipped. */
 static void macho_tls_rebase_imported(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	addr_t base = (addr_t)-1;
 	addr_t off;
@@ -2709,13 +2634,6 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) { MCC_TRACE("enter\n");
 }
 #endif
 
-/* The SDK header path is the same universal SDK for arm64 and x86_64, so a
-   cross osx compiler built ON a macOS host resolves <stdio.h> et al from it
-   too. Gated on the build host being Apple (__APPLE__) rather than on the
-   target being the host: without it, cross x86_64-osx on an arm64 mac finds no
-   system headers, compiles a fraction of the corpus, and reads a false 100%.
-   host_macos_sdk_root() returns NULL off Apple, so a Linux-hosted cross build
-   adds only the (absent, harmless) fallback paths. */
 #if defined MCC_TARGET_IS_HOST || defined __APPLE__
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) { MCC_TRACE("enter\n");
 	const char *sdk = host_macos_sdk_root();
@@ -2764,8 +2682,6 @@ the_end:
 #define MACHO_CPU_TYPE CPU_TYPE_X86_64
 #endif
 
-/* __TEXT,__text -> .text so the loaded sections merge with mcc's ELF-internal
-   section table, the same way the COFF path maps ".text$mn" -> ".text". */
 static const char *macho_sect_to_elf_name(const char *seg, const char *sect,
 																					char *buf, size_t bufsz) { MCC_TRACE("enter\n");
 	char sn[17], sg[17];
@@ -2784,16 +2700,10 @@ static const char *macho_sect_to_elf_name(const char *seg, const char *sect,
 		{ MCC_TRACE("br\n"); return ".bss"; }
 	if (!strcmp(sn, "__const") || !strcmp(sn, "__cstring"))
 		{ MCC_TRACE("br\n"); return ".rodata"; }
-	/* Mach-O's spelling of the ELF init/fini arrays. Without these a clang -c
-	   object's constructors and destructors landed in a section nothing runs. */
 	if (!strcmp(sn, "__mod_init_func"))
 		{ MCC_TRACE("br\n"); return ".init_array"; }
 	if (!strcmp(sn, "__mod_term_func"))
 		{ MCC_TRACE("br\n"); return ".fini_array"; }
-	/* Darwin TLS. An incoming object carries the descriptor triples in
-	   __thread_vars and the initial image in __thread_data/__thread_bss. Map them
-	   onto the names the writer already classifies; without this they land under
-	   the generic ".DATA_thread_vars" spelling and nothing recognizes them. */
 	if (!strcmp(sn, "__thread_vars"))
 		{ MCC_TRACE("br\n"); return ".tlv_descriptors"; }
 	if (!strcmp(sn, "__thread_data"))
@@ -2818,17 +2728,6 @@ ST_FUNC int macho_object_type(int fd, unsigned long file_offset) { MCC_TRACE("en
 
 struct macho_sm { Section *s; unsigned long offset; };
 
-/* Apply a loaded Mach-O object's relocations. Mach-O stores relocations REL-style
-   (the addend lives in the instruction field) while mcc's internal form is RELA,
-   so each addend is read back out of the section data. pcrel entries are also
-   biased differently: Mach-O measures from the END of the relocated field, ELF
-   from its start, hence the -4 (and the extra -1/-2/-4 for SIGNED_1/2/4, which
-   name the immediate bytes that follow the displacement).
-
-   Anything not understood is a HARD ERROR. Silently skipping relocations is what
-   the loader did before, and it does not fail the link -- it emits a call whose
-   displacement is still 0, so the binary links clean and jumps to the next
-   instruction. A wrong answer is worse than a refusal here. */
 #ifdef MCC_TARGET_ARM64
 #define MACHO_RELOC_SUBTRACTOR 1
 #define MACHO_ELF_PCREL32 R_AARCH64_PREL32
@@ -2937,11 +2836,6 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 			}
 
 #ifdef MCC_TARGET_ARM64
-			/* ARM64_RELOC_ADDEND is a PSEUDO entry: it carries a 24-bit addend in
-			   r_symbolnum for the entry that follows it, because an arm64
-			   instruction has nowhere to store one. Everything except UNSIGNED
-			   therefore takes its addend from here rather than from the field,
-			   which holds instruction bits. */
 			if (type == 10) { MCC_TRACE("br\n");
 				pending = (addr_t)symnum;
 				have_pending = 1;
@@ -2959,14 +2853,6 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				addend = have_pending ? pending : 0;
 				switch (type) { MCC_TRACE("br\n");
 				case 2:
-					/* Mach-O has ONE BRANCH26 for both `bl` and the tail-call `b`,
-					   where ELF has two relocations -- and the arm64 writer
-					   SYNTHESIZES the instruction word from the type (0x14000000 |
-					   (CALL26 << 31)) rather than patching the immediate, so calling
-					   every branch a CALL26 rewrote every sibling call into `bl`. The
-					   callee then returned into a function that had already dropped
-					   its frame and fell through into whatever followed. Decode bit 31
-					   instead: set is `bl`, clear is `b`. */
 					etype = (insn & 0x80000000u) ? R_AARCH64_CALL26 : R_AARCH64_JUMP26;
 					break;
 				case 3:
@@ -2976,11 +2862,6 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 					if ((insn & 0xff000000u) == 0x91000000u) { MCC_TRACE("br\n");
 						etype = R_AARCH64_ADD_ABS_LO12_NC;
 					} else if ((insn & 0x3b000000u) == 0x39000000u) { MCC_TRACE("br\n");
-						/* size==0 with opc 2 or 3 is a 128-bit LDR/STR Q only when the V
-						   bit (26) says SIMD&FP. With V clear the same encoding is a
-						   scalar LDRSB, and calling it 128-bit scaled its LO12 immediate
-						   by 16 -- every offset below 16 truncated to 0, so subscripting
-						   a string literal read the start of the section instead. */
 						uint32_t sz = (insn >> 30) & 3, opc = (insn >> 22) & 3;
 						uint32_t simd = (insn >> 26) & 1;
 						if (sz == 0 && simd && (opc == 2 || opc == 3)) { MCC_TRACE("br\n"); etype = R_AARCH64_LDST128_ABS_LO12_NC; }
@@ -3000,12 +2881,6 @@ static int macho_load_relocs(MCCState *s1, int fd, unsigned long file_offset,
 				case 6:
 					etype = R_AARCH64_LD64_GOT_LO12_NC;
 					break;
-				/* TLVP_LOAD_PAGE21/PAGEOFF12 are GOT-shaped: `adrp; ldr` fetches a
-				   pointer to the variable's TLV descriptor, which the caller invokes
-				   through its first word. In Mach-O the descriptor carries the
-				   variable's own name -- the initial image is `<name>$tlv$init` -- so
-				   the symbol already resolves to the address TLVP wants. This is not
-				   an ELF TLSIE GOTTPREL offset. */
 				case 8:
 					etype = R_AARCH64_ADR_GOT_PAGE;
 					break;
@@ -3223,13 +3098,6 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		bind = (ns->n_type & N_EXT) ? STB_GLOBAL : STB_LOCAL;
 		switch (ns->n_type & N_TYPE) { MCC_TRACE("br\n");
 		case N_UNDF:
-			/* A Mach-O COMMON (tentative) definition is N_UNDF | N_EXT with a
-			   non-zero n_value carrying the byte size and n_desc bits 8-11 the
-			   log2 alignment. Read as a plain undefined it became an unresolved
-			   reference to every file-scope `int x;` clang had compiled -- 24 of
-			   241 clang-linkable exec programs failed to link on that alone.
-			   ELF spells the same thing st_value=alignment, st_size=size, which
-			   resolve_common_syms already knows how to place. */
 			if ((ns->n_type & N_EXT) && ns->n_value) { MCC_TRACE("br\n");
 				shndx = SHN_COMMON;
 				size = ns->n_value;

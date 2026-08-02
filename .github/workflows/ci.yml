@@ -7,41 +7,11 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Cancel superseded runs on PRs and on main: a newer push to the same ref
-  # supersedes the in-progress run, so consecutive commits stop queueing behind
-  # (and starving the shared runner pools of) each other. Tag pushes are
-  # excluded so a release-tag run always completes.
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 permissions:
   contents: read
 
-# The gating CI is a 3-stage hierarchy, fanned out one job per cell:
-#
-#   stage1-<host>  builds a plain mcc with the host toolchain
-#                  (gcc/clang/msvc/mingw) and uploads it (bin + runtime) as
-#                  `stage1-<host>`. Two hosts are build-only (gate=2 in the
-#                  tools/ci.c ledger): linux-x86_64-clang and
-#                  windows-x86_64-mingw publish per push so a host-toolchain
-#                  break reds the push, but their stage2 self-hosts run nightly.
-#   stage2 / <host> / <feature>
-#                  downloads that mcc and rebuilds mcc WITH mcc
-#                  (CMAKE_C_COMPILER=<stage1 mcc>, MCC_TOOLCHAIN_PROFILE=mcc) --
-#                  a self-host -- then runs ctest on the result (stage3).
-#
-# Fan-out, not sequential loops: every cell is its own job so the whole gate
-# finishes in ~one-cell wall-clock (~13 min) rather than the sum. The macOS
-# gate is sized to the free plan's 5-runner sub-cap (5 cells: clang x
-# {dynamic,sanitize,macho} + gcc x {dynamic,sanitize} -- gcc restores the
-# gcc-on-Darwin coverage the pre-hierarchy CI had); Linux fans out its full
-# feature matrix (ubuntu runners are plentiful); Windows fans out 3 cells and
-# shares the 20-job total. The full host x feature matrix, the emulated
-# x86_64/Rosetta cells and the qemu/wine/docker cross validators run nightly
-# (matrix.yml).
-#
-# All matrices come from the preset ledger in tools/ci.c (`ci plan --job
-# stage1-gate` / `--job stage2` / `--job stage2-gate`), the single source of
-# truth shared with `ci local` and checked by `ci parity`.
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -54,16 +24,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci
       - id: gen
-        # Linux fans out one job per feature (ubuntu runners are plentiful);
-        # macOS/Windows fan out the curated gate cells (`stage2-gate`), split
-        # here by runner OS. The macOS split must stay <= the 5-runner sub-cap.
         run: |
           echo "stage1=$(mcc-ci plan --job stage1-gate)" >> "$GITHUB_OUTPUT"
           echo "stage2_linux=$(mcc-ci plan --job stage2 | jq -c '[.[]|select(.runner|startswith("ubuntu"))]')" >> "$GITHUB_OUTPUT"
           echo "stage2_macos=$(mcc-ci plan --job stage2-gate | jq -c '[.[]|select(.runner|startswith("macos"))]')" >> "$GITHUB_OUTPUT"
           echo "stage2_windows=$(mcc-ci plan --job stage2-gate | jq -c '[.[]|select(.runner|startswith("windows"))]')" >> "$GITHUB_OUTPUT"
-
-  # ---- stage 1: build a plain mcc per representative host, publish it --------
 
   stage1:
     needs: plan
@@ -75,11 +40,6 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.stage1) }}
     env:
-      # clang hosts pin CC directly; the macOS gcc host resolves a Homebrew
-      # gcc-N below; the Linux gcc host leaves CC unset (ubuntu `cc` is gcc);
-      # msvc picks `cl` from the dev shell; mingw leaves CC unset too -- its
-      # preset sets MCC_TOOLCHAIN_PROFILE=mingw and the superbuild fetches
-      # winlibs gcc itself.
       CC: ${{ matrix.hostcc == 'clang' && 'clang' || '' }}
     defaults:
       run:
@@ -138,8 +98,6 @@ jobs:
           name: stage1-${{ matrix.host }}
           path: stage1-${{ matrix.host }}.tar
 
-  # ---- stage 2: mcc rebuilds mcc across the feature matrix, then stage 3 test -
-
   stage2-linux:
     needs: [plan, stage1]
     name: stage2 / linux / ${{ matrix.feature }}
@@ -184,11 +142,6 @@ jobs:
           mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
             "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
-  # macOS fans out the curated gate cells (5, sized to the 5-runner sub-cap):
-  # clang x {dynamic,sanitize,macho} + gcc x {dynamic,sanitize}. Each cell grabs
-  # a runner in parallel and self-hosts + tests one feature, so the whole macOS
-  # gate is ~one-cell wall-clock (~13 min) instead of the ~34 min the old
-  # single sequential job cost.
   stage2-macos:
     needs: [plan, stage1]
     name: stage2 / macos / ${{ matrix.host }} / ${{ matrix.feature }}
@@ -199,13 +152,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.stage2_macos) }}
     env:
-      # stage2 configures with CMAKE_C_COMPILER=<stage1 mcc>; CC only covers any
-      # incidental host compile, so clang is fine for the gcc-built stage1 mcc too.
       CC: clang
-      # Drop the differential fuzzer on macOS: it spawns a reference cc per
-      # iteration and generates programs that crash the compiler, each of which
-      # macOS ReportCrash intercepts and serializes (~14 min/cell). It is fully
-      # covered by the native arm64-Linux fuzz cell + the nightly.
       MCC_CI_CTEST_EXCLUDE: '^fuzz/'
     steps:
       - uses: actions/checkout@v5
@@ -229,15 +176,6 @@ jobs:
           mcc-ci junit-summary "cmake-stage2-${{ matrix.feature }}/ctest-junit.xml" \
             "${{ matrix.feature }} / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
-  # Windows fans out 3 gate cells (dynamic/sanitize/pe; macho 77-skips
-  # off-Windows). It shares the 20-job total (no OS sub-cap). GATING since
-  # 2026-08-01 (run 30716657762, the first full green sweep): the
-  # POSIX-under-Win32 self-host gaps are closed (strtok_r, GetTickCount64, the
-  # JobObject kernel32 exports, the .def-implib CMake arrangement, the
-  # selfhost-* compile_commands backslash repair) -- see "Windows stage2
-  # self-host" in docs/TODO.md. The sequential job that first proved this green
-  # ran dynamic/sanitize/pe at 100%; it is now fanned out one cell per feature,
-  # with per-cell stage2+stage3 commands byte-identical to that job's loop body.
   stage2-windows:
     needs: [plan, stage1]
     name: stage2 / windows / ${{ matrix.feature }}

@@ -1,23 +1,23 @@
-/* §26 2B — arm64 JIT KGC differential-verify stub tail: validates that a
-   hand-emitted AArch64 known-good-cache stub works end-to-end (the mechanism the
-   libmcc `mccjit_make_kgc_stub_n` port will use, the last data-path stub before
-   the interdependent libmcc port). Freestanding so it runs under `qemu-aarch64`
-   with no arm64 libc. It exercises the x86 KGC-stub marshalling semantics on
-   AArch64 for a mixed wide/narrow 3-arg signature (long, int, long):
-     - gather the incoming arg registers into a FORWARD-order argv array on the
-       frame (argv[i] == arg i, unlike the reversed counter-stub layout), with
-       narrow (32-bit) args sign-extended (`sxtw`) — the arm64 analogue of the
-       x86 `movsxd`; a zero-extend would corrupt a negative arg and fail the
-       arithmetic assert below,
-     - call the C verifier `long (kgc, variant, baseline, argv, nargs, *flagged)`
-       (x0..x5) that runs both variant + baseline, compares, sets *flagged on a
-       mismatch, and returns the baseline (deopt) result,
-     - return the verifier's result to the caller.
-   Validated here as a directly-callable unit; the mode-6 dispatch entry that
-   jumps into it is validated separately by `jit_arm64_dispatch.c`. Exit 0 = PASS.
-   Encodings (llvm-mc -triple=aarch64): stp x29,x30,[sp,#-16]! ->0xa9bf7bfd
-     sxtw x8,w1 ->0x93407c28  mov x3,sp ->0x910003e3  mov w4,#3 ->0x52800064
-     blr x16 ->0xd63f0200  ldp x29,x30,[sp],#16 ->0xa8c17bfd  ret ->0xd65f03c0 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static long sysc6(long n, long a, long b, long c, long d, long e, long f) {
 	register long x8 asm("x8") = n;
 	register long x0 asm("x0") = a, x1 asm("x1") = b, x2 asm("x2") = c;

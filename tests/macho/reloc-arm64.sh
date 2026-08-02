@@ -1,29 +1,4 @@
 #!/bin/sh
-# arm64 Mach-O relocations (ARM64_RELOC_BRANCH26 / PAGE21 / PAGEOFF12).
-#
-# The arm64 half is harder than x86_64 in two ways, and both are checked here:
-#   * arm64 instructions have nowhere to store an addend, so Mach-O either uses
-#     the ARM64_RELOC_ADDEND pseudo-entry or folds the constant into the
-#     instruction's own immediate. clang does the LATTER for `msg[5]`, which
-#     means a LO12 relocation that OVERWRITES the immediate silently loses the
-#     +5 and reads the wrong byte. The final assertion below pins exactly that.
-#   * PAGEOFF12 does not map to one ELF relocation: it becomes
-#     R_AARCH64_ADD_ABS_LO12_NC for an ADD and R_AARCH64_LDST<n>_ABS_LO12_NC for
-#     a load/store, with <n> decoded from the instruction's size field.
-#
-#   * Mach-O has ONE ARM64_RELOC_BRANCH26 where ELF has two relocations, so the
-#     reader has to decode bit 31 to tell `bl` from a tail-call `b`. Calling
-#     every branch a CALL26 made the arm64 writer -- which synthesizes the
-#     instruction word from the relocation type rather than patching the
-#     immediate -- rewrite every sibling call into `bl`, and the callee then
-#     returned into a frameless caller and fell through into the next function.
-#     clang emits sibling calls from -O1 up, so this corrupted every optimized
-#     object mcc linked; the last section below pins it.
-#
-# As with the x86_64 cell, the checks are on RESOLVED TARGETS -- an ignored
-# relocation does not fail the link, it leaves a branch to itself.
-#
-# Usage: reloc-arm64.sh <arm64-macho-mcc> <mccbase> <workdir>
 set -e
 
 MCC=$1
@@ -107,7 +82,6 @@ if imm & (1 << 20):
     imm -= 1 << 21
 page = (adrp_at & ~0xFFF) + (imm << 12)
 
-# ldrsb is an 8-bit load, so the unsigned-offset immediate scales by 1.
 off = (ldr >> 10) & 0xFFF
 target = page + off
 
@@ -122,9 +96,6 @@ if want is None:
     print("FAIL: _msg is not in the linked symbol table")
     sys.exit(1)
 
-# The source reads msg[5]; clang folds the +5 into the ldrsb immediate rather
-# than emitting ARM64_RELOC_ADDEND, so a LO12 relocation that overwrites the
-# immediate loses it and silently reads msg[0].
 if off == 0:
     print("FAIL: the ldrsb offset is 0, but the source reads msg[5] -- the "
           "PAGEOFF12 relocation overwrote clang's folded immediate")

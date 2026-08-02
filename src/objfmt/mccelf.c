@@ -1688,8 +1688,7 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 #else
 		if (MCC_MCCRT[0]) { MCC_TRACE("br\n");
 			if (s1->output_type == MCC_OUTPUT_MEMORY)
-				{ MCC_TRACE("br\n"); mcc_add_support_opt(s1, MCC_MCCRT); } /* arch-aware; silent if absent
-																					-> undefined helpers bind in-process via dlsym */
+				{ MCC_TRACE("br\n"); mcc_add_support_opt(s1, MCC_MCCRT); }
 			else
 				{ MCC_TRACE("br\n"); mcc_add_support(s1, MCC_MCCRT); }
 		}
@@ -3084,9 +3083,6 @@ static void alloc_sec_names(MCCState *s1, int is_obj) { MCC_TRACE("enter\n");
 
 	strsec = new_section(s1, ".shstrtab", SHT_STRTAB, 0);
 	put_elf_str(strsec, "");
-	/* Executables normally drop .symtab (its sh_size is never set for the
-	   non-obj path). Retain it for embed-JIT `-g` outputs so the runtime
-	   engine's crashes are symbolizable in gdb/perf. */
 	if (!is_obj && s1->embed_jit && s1->do_debug && !s1->do_strip &&
 			s1->symtab) { MCC_TRACE("br\n");
 		s1->symtab->sh_size = s1->symtab->data_offset;
@@ -3517,13 +3513,6 @@ static int coff_resolve_import_dll(MCCState *s1, int fd, const char *headsym,
 }
 #endif
 
-/* Track archive-member data offsets already pulled by the a la carte loader.
-   A pulled object member defines all its symbols in one load, so re-pulling it
-   is never legitimate — and if a member fails to actually define the armap-
-   claimed symbol (a name-decoration gap in some import archives, e.g. this
-   host's ucrt), the fixpoint below would re-pull it every pass and never
-   terminate. Deduping object pulls bounds the loop by the member count, turning
-   a hang into a clean undefined-symbol error. Returns 1 if already seen. */
 static int alacarte_pulled(unsigned long long **arr, int *n, unsigned long long v) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; i < *n; i++)
@@ -3534,14 +3523,6 @@ static int alacarte_pulled(unsigned long long **arr, int *n, unsigned long long 
 	return 0;
 }
 
-/* BSD archive symbol index (`__.SYMDEF`), which is what llvm-ar writes for
-   Mach-O members and what Apple's ar/libtool produce. Layout differs from the
-   SysV index in both structure and byte order: a uint32 byte-count, then an
-   array of {uint32 string-offset, uint32 member-offset} ranlib entries, then a
-   uint32 string-table size and the NUL-separated names -- all LITTLE-endian,
-   where the SysV index above is big-endian. GNU ar cannot even index Mach-O
-   members (`nm -s` lists nothing), so an archive built with it is invalid by
-   construction; use llvm-ar. */
 #ifdef MCC_TARGET_MACHO
 static int mcc_load_alacarte_bsd(MCCState *s1, int fd, int size) { MCC_TRACE("enter\n");
 	int i, bound, nsyms, sym_index, len, ret = -1;
@@ -3751,16 +3732,6 @@ ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte) { MCC_TRACE("en
 	}
 }
 
-/* Pure architecture probe for mcc_add_support: which of `libmccrt.a` vs
-   `<arch>[-<os>]-libmccrt.a` (a cross build stages both, side by side) is right
-   for THIS target. Searches the library paths for `filename` and returns 1 if it
-   resolves to a bare object -- or an archive whose first relocatable member --
-   targets EM_MCC_TARGET, 0 if it resolves but is the WRONG arch (or is not an ELF
-   object at all, e.g. a Mach-O/COFF archive on a non-ELF target), and -1 if it is
-   not found. Opens read-only and raises no error / touches no link state, so a
-   wrong-arch hit does NOT poison the link the way a load attempt would (a member
-   whose e_machine mismatches trips mcc_error_noabort, and nb_errors != 0 fails
-   the whole link even after a later archive resolves). */
 ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	char buf[1024];
 	int i;
@@ -3788,8 +3759,6 @@ ST_FUNC int mcc_support_arch_match(MCCState *s1, const char *filename) { MCC_TRA
 				if (len <= 0)
 					{ MCC_TRACE("br\n"); break; }
 				off += len;
-				/* skip the symbol index ("/", "/SYM64/") and long-name table ("//"),
-				   which are not objects; any other member is a candidate object. */
 				if (strcmp(hdr.ar_name, "/") && strcmp(hdr.ar_name, "//") &&
 						strcmp(hdr.ar_name, "/SYM64/")) { MCC_TRACE("br\n");
 					ElfW(Ehdr) me;

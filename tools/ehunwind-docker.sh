@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
-# Runtime .eh_frame CFI guard: a C++ exception must unwind THROUGH an
-# mcc-compiled C frame. extlink only checks that mcc's FDEs LINK (no overlapping
-# FDEs); nothing exercises the .eh_frame at RUNTIME. Here a g++ main throws an
-# exception from a callback invoked by an mcc-compiled C bridge, and the catch in
-# main only fires if the C++ unwinder (libgcc _Unwind) can walk mcc's CFI for the
-# bridge frame. This is the mcc-C-in-a-C++-codebase interop scenario.
-#
-# CFI is per-arch, so this validates each arch's unwind opcodes. arm64 runs
-# host-native; riscv64/armv7 use a cross g++ + qemu-user (static so no target
-# sysroot needed at run time).
-#
-# Usage:  tools/ehunwind-docker.sh <arch> [workdir]
-#           arch: arm64 | amd64 | riscv64 | arm
-# Exit:   0 pass · 1 an unwind failure · 77 skipped (no docker / toolchain / plat)
 set -eu
 . "$(dirname "$0")/dockergate.sh"
 
@@ -57,7 +43,6 @@ cd /b
 echo "== build cross mcc ($MDEF) =="
 gcc -O1 -w -DMCC_CONFIG_OPTIMIZER=1 $MDEF $INC src/mcc.c -o /w/mcc
 
-# mcc-compiled C bridge frames the C++ exception must unwind through.
 cat > /w/bridge.c <<EOF
 void run_cb(void (*f)(void)){ f(); f(); }
 long deep(void (*f)(void), long a, long b, long c){ long s = a + b + c; f(); return s; }
@@ -91,7 +76,6 @@ echo "== g++ main + mcc bridge: exception unwinds through the mcc frame =="
 rc=0; OUT=$($RUNNER /w/prog) || rc=$?
 echo "   mcc-bridge: $OUT (rc=$rc)"
 
-# all-g++ reference: same program with a g++-compiled bridge.
 cat > /w/bridge2.cpp <<EOF
 extern "C" void run_cb(void (*f)(void)){ f(); f(); }
 extern "C" long deep(void (*f)(void), long a, long b, long c){ long s=a+b+c; f(); return s; }

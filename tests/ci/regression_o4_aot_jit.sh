@@ -1,8 +1,4 @@
 #!/bin/sh
-# Two-part -O4 regression:
-#  Part 1: AOT optimizer (JIT off) engages the ~4s search budget with const-guided ranges.
-#  Part 2: JIT on + -O4 recompiles hot functions and hot-swaps the AST via the backend.
-# Args: $1 = mcc binary, $2 = repo root, $3 = build dir (for -I/-B).
 set -e
 MCC="$1"
 ROOT="$2"
@@ -15,11 +11,6 @@ mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT
 fail=0
 
-# Force a COLD search cache so the 4s budget actually engages this run. mcc's
-# cache dir (host_cache_dir) is HOME/Library/Caches on macOS, LOCALAPPDATA on
-# Windows, and XDG_CACHE_HOME (else HOME/.cache) elsewhere -- so isolating only
-# XDG_CACHE_HOME is a no-op on macOS/Windows and the search would short-circuit
-# on a warm user cache. Override all three branches to a throwaway dir.
 CACHE_ISO="HOME=$TMP/home XDG_CACHE_HOME=$TMP/xc LOCALAPPDATA=$TMP/la"
 mkdir -p "$TMP/home" "$TMP/xc" "$TMP/la"
 
@@ -34,27 +25,12 @@ evald=$(printf '%s' "$clean1" | grep -oE 'evaluated [0-9]+' | tail -1 | grep -oE
 range_on=$(printf '%s' "$clean1" | grep -cE '●range' || true)
 echo "Part1: wall=${wall}s evaluated=${evald} range_gate_lines=${range_on}"
 
-# Lower bound proves the 4s budget engaged (cold cache -> the search actually
-# ran, not a memoized-instant return). Upper bound is a generous runaway guard:
-# it must clear the slowest host's base mcc.c compile + 4s search (~18s on
-# arm64-macOS) yet still trip if the budget failed to cap the search. The old
-# 8s window was calibrated to a fast x86 host and spuriously failed on slower
-# arm64-macOS, where the same mcc.c AOT compile alone dominates the wall.
 awk "BEGIN{exit !($wall > 3.0 && $wall < 60.0)}" || { echo "Part1 FAIL: wall ${wall}s outside 3..60s (4s budget did not engage / ran unbounded)"; fail=1; }
 [ "${evald:-0}" -gt 1000 ] || { echo "Part1 FAIL: only $evald candidates evaluated (search did not run)"; fail=1; }
 [ "${range_on:-0}" -ge 1 ] || { echo "Part1 FAIL: RANGE gate (const-guided ranges) not shown active"; fail=1; }
 [ "$fail" = 0 ] && echo "Part1 PASS: 4s AOT search engaged, $evald candidates, const-guided ranges active"
 
 echo "== Part 2: JIT on + -O4, backend hands its compiled AST to the JIT (mcc_jit_submit_ast override) =="
-# This part exercises the runtime mode-6 JIT dispatch/submit path, which on arm64
-# is MUTUALLY EXCLUSIVE with the -O4 superoptimizer search: the search re-emits
-# each candidate to MEMORY for scoring, and the arm64 GOT/ABS64 dispatch slot
-# corrupts the function symbol in that re-emit context, so the arm64 mode-6 entry
-# is gated on !ast_search_env (mccast.c, commit 77bd8ba8 -- "-O4 IS the JIT: the
-# search produces optimized static code, not a runtime-swapped slot"). Since the
-# -O search became default-ON at -O4 (commit 672b4ffb), we must explicitly turn it
-# OFF here so the runtime submit/override path this part validates actually fires.
-# (Part 1 above tests the search itself, with MCC_AST_SEARCH=1.)
 printf '%s\n' \
 	'__attribute__((noinline)) static unsigned busy(unsigned x){ unsigned s=0,i; for(i=0;i<64;i++) s += (x+i)/7u + (x*i)%13u; return s; }' \
 	'#include <stdio.h>' \

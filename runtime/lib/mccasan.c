@@ -1,32 +1,3 @@
-/* mccasan.c — native AddressSanitizer shadow runtime for -fasan-shadow (x86_64).
- *
- * ASan 1/8 shadow scheme: shadow(addr) = (addr>>3) + 0x7fff8000. The compiler
- * (x86_64-gen.c gen_asan_shadow_check) emits an inline shadow probe before every
- * pointer dereference; a poisoned slot traps (UD2), caught here by a SIGILL
- * handler that prints an AddressSanitizer-style diagnostic.
- *
- * This runtime maps the full ASan Linux/x86_64 shadow layout (LowShadow +
- * HighShadow, sparse via MAP_NORESERVE) so it works with real allocations at
- * any address (heap/PIE), and intercepts malloc/free/calloc/realloc to redzone
- * allocations and poison freed regions -> detects heap out-of-bounds AND
- * use-after-free, with no false positives on ordinary stack/global/heap access.
- *
- * Global redzones: the compiler emits a {addr,size} table into the
- * __asan_globals section and asan_register_globals() poisons each global's right
- * redzone at startup (required for bss globals with no compile-time bytes).
- *
- * Stack redzones: the compiler emits a per-function {rbp-offset,size} table into
- * .asan_lstack and calls __asan_stack_enter/leave (passing rbp) in the prologue/
- * epilogue; enter poisons each local's right redzone then unpoisons the objects
- * (redzones-first => no false positives on slot reuse), leave clears the span.
- *
- * The SIGILL handler classifies the fault from the shadow-poison byte left in
- * rax at the ud2 (heap-buffer-overflow / heap-use-after-free / stack- and
- * global-buffer-overflow / partial). Remaining follow-ups: the faulting address
- * + a shadow-byte dump (needs the address preserved to the trap) and
- * arm64/riscv64 stack instrumentation. Complements the shipped bcheck-based
- * -fsanitize=address (self-contained, clang-verified).
- */
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -75,13 +46,6 @@ static const char *asan_class(int sh){
     default:   return (sh>=1&&sh<=7) ? "buffer-overflow" : "bad memory access";
     }
 }
-/* Walk the shadow outward from the faulting granule to find the nearest run of
-   addressable bytes (shadow 0 or a 1..7 partial) that is bounded by poison (a
-   redzone) on its far side: that run is a K-byte region, and the fault's offset
-   from the nearer edge gives the gcc/clang-style locator line (right/left/
-   inside). Walks are bounded so a wild address can't loop; a run that reaches
-   the bound without hitting a redzone is treated as unbounded (not a region)
-   so untouched shadow-0 memory and freed blocks fall back to no locator. */
 static int asan_locate(uintptr_t addr,uintptr_t*rbeg,uintptr_t*rend,uintptr_t*roff,int*rdir){
     uintptr_t g=addr&~(uintptr_t)7; const int MAXG=1<<16;
     int fd=0,fu=0; uintptr_t dg=0; int dv=0; uintptr_t ug=0;
@@ -130,7 +94,6 @@ static void on_sigill(int sig,siginfo_t*si,void*ucv){
     wstr("==ERROR: AddressSanitizer: "); wstr(asan_class((int)sh));
     wstr(" (mcc native shadow)\n");
     if(addr){
-        /* granule offset = (addr&7) + size-1  ->  size = off - (addr&7) + 1 */
         long asz = off - (long)(addr&7) + 1;
         unsigned char *s = shadow((void*)addr);
         int sok = sh_mapped(s,-8,8);
@@ -178,30 +141,10 @@ static void asan_register_globals(void){
 }
 __attribute__((constructor)) static void asan_init(void){
 #if defined(__aarch64__)
-    /* arm64/Linux (top-down, 48-bit VA): shadow((a>>3)+OFF) of the entire 48-bit
-       address space lands in [OFF, 2^45+OFF) ~ [2GB, 32TB), below where PIE/heap/
-       stack (top-down) live, so one sparse NORESERVE region covers all of it.
-       (Robustness for 39-bit VA / bottom-up mmap is a follow-up.) The trap is a
-       brk -> SIGTRAP, and w17/w16 (shadow/granule) map to regs[17]/regs[16]. */
     mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #elif defined(__riscv)
-    /* riscv64/Linux (Sv48-class user VA): qemu-riscv64 user mode places libc/heap/
-       stack/mmap near the top of a 47-bit space (~0x7effffffffff), so shadow
-       ((a>>3)+OFF) of the accessible user range lands in [OFF, 2^44+OFF), the same
-       LowShadow+HighShadow span the x86_64 ASan layout reserves; one sparse
-       NORESERVE region covers it (the low 2GB..16TB guest window is otherwise
-       empty). (Sv39-only / bottom-up-mmap tightening is a follow-up.) The trap is
-       an ebreak -> SIGTRAP, and t0/t1/t2 (x5/x6/x7 = shadow/granule/faulting-addr)
-       map to __gregs[5]/[6]/[7]. */
     mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #elif defined(__i386__) || defined(__arm__)
-    /* i386/arm Linux (32-bit VA): shadow((a>>3)+OFF) of the whole 4GB space
-       [0,2^32) lands in [OFF, 2^29+OFF) = [0x7fff8000, 0x9fff8000), a single 512MB
-       window at ~2GB that qemu-i386/qemu-arm leaves empty (program/heap sit low,
-       stack near the 3-4GB top). One sparse NORESERVE region covers all of heap/
-       stack/global. The trap is ud2/udf -> SIGILL; on i386 eax/edx/ecx and on arm
-       r0/r1/r2 (shadow/granule/faulting-addr) map to gregs[REG_EAX]/[REG_EDX]/
-       [REG_ECX] and uc_mcontext.arm_r0/arm_r1/arm_r2 respectively. */
     mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #else
     mmap((void*)SH_LO,(size_t)(SH_HI-SH_LO),PROT_READ|PROT_WRITE,MAP_FIXED|MAP_NORESERVE|MAP_PRIVATE|MAP_ANONYMOUS,-1,0);

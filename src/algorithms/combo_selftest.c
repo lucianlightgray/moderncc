@@ -1,7 +1,3 @@
-/* Self-test for the mcccombo wrapper: combinatorial enumeration, codec-pipeline
- * search, and the compressed key->value memo (hits + LFU eviction). Lives outside the
- * globbed src source set (it carries a main()); build with -I src so mcccombo.h
- * resolves. Build: cc -std=c99 -Wall -Wextra -I src src/algorithms/combo_selftest.c */
 #include "mcccombo.h"
 #include <stdio.h>
 #include <string.h>
@@ -21,8 +17,6 @@ static int fails, checks;
 			printf("ok   %s\n", msg);                                                       \
 	} while (0)
 
-/* A toy score for combo_run: prefer the smallest-index subset of a given size. The
- * score is the sum of selected indices, so the best k=2 combination is {0,1}=1. */
 static long sum_score(const int *sel, int k, void *user) { MCC_TRACE("enter\n");
 	long s = 0;
 	int i;
@@ -49,7 +43,6 @@ static void test_enumerate(void) { MCC_TRACE("enter\n");
 	CHECK(best.evaluated == 10, "C(5,2) = 10 combinations enumerated");
 	CHECK(best.exhausted, "space exhausted within budget");
 
-	/* Permutations: 3 items, all orderings of the full set = 3! = 6 candidates. */
 	spec.nitems = 3;
 	spec.min_k = 3;
 	spec.max_k = 3;
@@ -57,7 +50,6 @@ static void test_enumerate(void) { MCC_TRACE("enter\n");
 	combo_run(&spec, &best);
 	CHECK(best.evaluated == 6, "ordered full-set enumeration visits 3! = 6 permutations");
 
-	/* Budget cuts the search short and flags non-exhaustion. */
 	spec.nitems = 5;
 	spec.min_k = 1;
 	spec.max_k = 5;
@@ -72,12 +64,12 @@ static void fill(unsigned char *b, long n, int mode) { MCC_TRACE("enter\n");
 	unsigned long r = 0x2545f491u;
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		if (mode == 0)
-			{ MCC_TRACE("br\n"); b[i] = (unsigned char)('A' + (i % 7)); } /* repetitive text */
+			{ MCC_TRACE("br\n"); b[i] = (unsigned char)('A' + (i % 7)); }
 		else if (mode == 1)
-			{ MCC_TRACE("br\n"); b[i] = 0x5a; } /* one long run */
+			{ MCC_TRACE("br\n"); b[i] = 0x5a; }
 		else { MCC_TRACE("br\n");
 			r = r * 1103515245u + 12345u;
-			b[i] = (unsigned char)(r >> 16); /* pseudo-random */
+			b[i] = (unsigned char)(r >> 16);
 		}
 	}
 }
@@ -99,10 +91,9 @@ static void test_pipeline(void) { MCC_TRACE("enter\n");
 					 100.0 * best.score / (double)sizeof data);
 	}
 	CHECK(best.score < (long)sizeof data, "best chain actually compresses text");
-	/* Round-trip the winning chain. */
 	clen = combo_pipe_apply(best.sel, best.k, data, sizeof data, a, b, sizeof a, &comp);
 	CHECK(clen == best.score, "apply reproduces the searched size");
-	memcpy(out, comp, (size_t)clen); /* detach before reusing a/b for decode */
+	memcpy(out, comp, (size_t)clen);
 	blen = combo_pipe_unapply(best.sel, best.k, out, clen, a, b, sizeof a, &back);
 	CHECK(blen == (long)sizeof data && memcmp(back, data, sizeof data) == 0,
 				"pipeline round-trips exactly");
@@ -114,7 +105,7 @@ static void test_memo(void) { MCC_TRACE("enter\n");
 	combo_u64 k0, k1;
 	long r;
 	int code;
-	combo_memo_init(&m, 1ull << 20); /* 1 MiB cap */
+	combo_memo_init(&m, 1ull << 20);
 
 	fill(val, sizeof val, 0);
 	k0 = combo_hash(val, sizeof val);
@@ -130,7 +121,6 @@ static void test_memo(void) { MCC_TRACE("enter\n");
 	CHECK(combo_memo_get(&m, k0 ^ 0xdeadbeefULL, got, sizeof got) == -1,
 				"cache miss on an unknown key");
 
-	/* A second distinct key coexists; both refcounts survive. */
 	fill(val, sizeof val, 1);
 	k1 = combo_hash(val, sizeof val);
 	combo_memo_put(&m, k1, val, sizeof val);
@@ -139,10 +129,6 @@ static void test_memo(void) { MCC_TRACE("enter\n");
 					memcmp(got, val, sizeof val) == 0,
 				"second key round-trips too");
 
-	/* LFU eviction. Use incompressible (random) 400-byte values so each stores at ~400
-	 * bytes verbatim and the byte math is deterministic: cap 900 holds two, so the
-	 * third put must evict exactly one — the least-referenced. ka gets 2 hits, kb/kc
-	 * get 0, so kb (first-found minimum) is the one dropped. */
 	{
 		static ComboMemo tm;
 		static unsigned char t[400];
@@ -153,14 +139,14 @@ static void test_memo(void) { MCC_TRACE("enter\n");
 		ka = combo_hash(t, sizeof t);
 		combo_memo_put(&tm, ka, t, sizeof t);
 		combo_memo_get(&tm, ka, got, sizeof got);
-		combo_memo_get(&tm, ka, got, sizeof got); /* ka: 2 refs */
+		combo_memo_get(&tm, ka, got, sizeof got);
 		fill(t, sizeof t, 2);
 		t[0] = 2;
 		kb = combo_hash(t, sizeof t);
-		combo_memo_put(&tm, kb, t, sizeof t); /* kb: 0 refs */
+		combo_memo_put(&tm, kb, t, sizeof t);
 		fill(t, sizeof t, 2);
 		t[0] = 3;
-		kc = combo_hash(t, sizeof t); /* third put pushes past the cap */
+		kc = combo_hash(t, sizeof t);
 		combo_memo_put(&tm, kc, t, sizeof t);
 		CHECK(tm.n == 2, "cap holds two of three incompressible values");
 		CHECK(tm.bytes <= tm.cap_bytes, "memo stays under the byte cap after eviction");

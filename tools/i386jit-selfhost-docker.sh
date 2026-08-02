@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# i386-linux self-host UNDER ITS OWN JIT.
-#
-# The JIT is `-run`-only: a `-c` self-compile reports recompiles=0 and cannot
-# exercise it at all, so proving the i386 JIT needs an i386 mcc running its own
-# source through -run and compiling something inside that. The assertion is
-# instruction 2's MCC_JIT=1 == MCC_JIT=0 invariant, on the object the
-# JIT-recompiled compiler emits -- not merely that the run succeeded.
-#
-# A linux/386 container is the vehicle because i386 binaries execute natively on
-# an x86_64 kernel; no emulator is involved. -DMCC_TARGET_ARCH=i386 is REQUIRED:
-# CMAKE_SYSTEM_PROCESSOR reads the KERNEL's x86_64 inside a linux/386 container,
-# so without it the build silently produces an x86_64-targeting mcc that reports
-# "(x86_64 Linux)" while gcc reports i686-linux-gnu.
-#
-# Usage: i386jit-selfhost-docker.sh [workdir]
 set -eu
 . "$(dirname "$0")/dockergate.sh"
 
@@ -48,8 +33,6 @@ esac
 INC="-I/usr/include/i386-linux-gnu -I/work/src -I/work/include -I/work/src/formats
      -I/work/src/objfmt -I/work/src/arch/i386 -L/usr/lib/i386-linux-gnu -L/lib/i386-linux-gnu"
 
-# mcc runs its OWN SOURCE under -run, and that in-memory compiler compiles
-# src/mcc.c. Anything smaller leaves the JIT with nothing hot to recompile.
 MCC_JIT=1 /work/b/mcc -B/work/b $INC -O1 --stats -run src/mcc.c \
     -B/work/b $INC -c src/mcc.c -o /work/jit1.o >/work/o1 2>/work/e1 || true
 MCC_JIT=0 /work/b/mcc -B/work/b $INC -O1 --stats -run src/mcc.c \
@@ -59,7 +42,6 @@ grep -q "error:" /work/e1 && { echo "FAIL: MCC_JIT=1 run errored:"; grep "error:
 grep -q "error:" /work/e0 && { echo "FAIL: MCC_JIT=0 run errored:"; grep "error:" /work/e0 | head -3; exit 1; }
 [ -s /work/jit1.o ] && [ -s /work/jit0.o ] || { echo "FAIL: no object produced"; exit 1; }
 
-# --stats prints to STDERR, so parse the captured stderr, not stdout.
 n1=$(cat /work/o1 /work/e1 | sed -n "s/.*recompiles=\([0-9]*\).*/\1/p" | head -1)
 n0=$(cat /work/o0 /work/e0 | sed -n "s/.*recompiles=\([0-9]*\).*/\1/p" | head -1)
 echo "MCC_JIT=1 recompiles=$n1   MCC_JIT=0 recompiles=$n0   object=$(wc -c </work/jit1.o) bytes"

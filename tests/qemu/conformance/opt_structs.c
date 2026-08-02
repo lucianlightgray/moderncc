@@ -1,12 +1,12 @@
-/* Struct/pointer-transform conformance: the gates that only become default-on
- * at -Os (PROMO_ARROW, PROMO_INCDEC, REGDISP) and -O3 (OPASSIGN, CHAINSTORE).
- * These are register-promotion and addressing-mode transforms, so they need
- * member access through a pointer, compound assignment and inc/dec through
- * `->`, and chains of stores -- none of which the ABI-shaped corpus has.
- *
- * Same self-validating pattern as opt_loops.c: each result is computed once in
- * an optimizable form and once through `volatile`, so there are no hardcoded
- * expected values. Integer-only (see the note in opt_loops.c about i386 x87). */
+
+
+
+
+
+
+
+
+
 
 struct inner {
 	int a;
@@ -129,14 +129,14 @@ int main(void)
 			return 5;
 	}
 
-	/* the original must be untouched by the copies above -- a promotion that
-	 * writes back to the wrong slot shows up here rather than in the sums */
+
+
 	if (o.in.a != 2 || o.in.b != 3 || o.c != 5 || o.d != 7)
 		return 6;
 	if (o.p != &side || side.a != 11 || side.b != 13)
 		return 7;
 
-	/* zero-trip: the promoted value must still be written back correctly */
+
 	{
 		struct outer t = o;
 		if (arrow_opassign(&t, 0) != o.c + o.d + o.in.a + o.in.b)

@@ -1,30 +1,6 @@
 #ifndef MCC_COMBO_H
 #define MCC_COMBO_H
 
-/*
- * mcccombo — a wrapper around the recurring pattern in mcc's optimizer: "try
- * permutations of formulaic combinations, score each, keep the best, and memoize
- * the winner by a key->value cache." Three concerns the search and disk memo
- * currently hand-roll are factored here into one reusable, header-only module:
- *
- *   1. combo_run   — enumerate combinations (subsets) x permutations (orderings) of
- *                    a set of pluggable "formulas" (fold-gate strategies, forecast
- *                    predictors, compression codecs, ...), scoring each candidate
- *                    through a caller callback and keeping the lowest score.
- *   2. codecs      — the src/algorithms compressors as a first-class formula family:
- *                    they can BE the thing being permuted (combo_pipeline_search
- *                    finds the best codec chain), AND they compress cached values.
- *   3. ComboMemo   — a key->value cache whose values are stored best-of-3 compressed
- *                    with refcount + LFU size-cap eviction. A hit decompresses and
- *                    returns the value instead of recomputing it: the compression
- *                    algorithms and the cache-hit key->value optimization are the
- *                    same mechanism, which is exactly why they live together here.
- *
- * The AST fold search (ast_strategies subset lattice) and the -O4 disk memo are two
- * instantiations of this concept; this wrapper is the substrate they can be
- * refactored onto. No libc beyond memcpy, no heap: callers own all buffers.
- */
-
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -35,12 +11,8 @@ typedef uint64_t combo_u64;
 #include "algorithms/lzw.h"
 #include "algorithms/rle.h"
 
-/* ------------------------------------------------------------------ formulas */
+#define COMBO_MAX 16
 
-#define COMBO_MAX 16 /* subset enumeration is 2^n; cap matches the AST search */
-
-/* Score a candidate. `sel` is the length-`k` ordered list of formula indices in
- * application order; return a score (lower is better) or COMBO_REJECT to discard. */
 #define COMBO_REJECT ((long)-1)
 typedef long (*ComboScoreFn)(const int *sel, int k, void *user);
 
@@ -65,11 +37,11 @@ static const char *combo_walk_name(int w) {
 }
 
 typedef struct ComboSpec {
-	int nitems;         /* number of formulas to choose from (<= COMBO_MAX) */
-	int min_k, max_k;   /* inclusive bounds on selection size */
-	int ordered;        /* 0: combinations only; 1: also every ordering (permutations) */
+	int nitems;
+	int min_k, max_k;
+	int ordered;
 	int walk;
-	long budget;        /* max candidates to score (0 = whole space) */
+	long budget;
 	ComboScoreFn score;
 	void (*visit)(const int *sel, int k, int depth, int walk, void *user);
 	void *user;
@@ -79,11 +51,10 @@ typedef struct ComboBest {
 	int sel[COMBO_MAX];
 	int k;
 	long score;
-	long evaluated;     /* candidates actually scored */
-	int exhausted;      /* 1 iff the whole space fit within budget */
+	long evaluated;
+	int exhausted;
 } ComboBest;
 
-/* Lexicographic next permutation of the k ints in a[]; 0 when a[] is the last one. */
 static int combo_next_perm(int *a, int k) {
 	int i = k - 2, j = k - 1, t;
 	while (i >= 0 && a[i] >= a[i + 1])
@@ -214,8 +185,6 @@ static int combo_walk_run(const ComboSpec *s, ComboBest *best) {
 	return best->k > 0;
 }
 
-/* Enumerate combinations x (optionally) permutations, scoring each; fills `best`.
- * Returns 1 if any candidate was accepted. */
 static int combo_run(const ComboSpec *s, ComboBest *best) {
 	unsigned mask, full;
 	int members[COMBO_MAX], k, i, n = s->nitems;
@@ -232,7 +201,7 @@ static int combo_run(const ComboSpec *s, ComboBest *best) {
 		k = 0;
 		for (i = 0; i < n; i++)
 			if (mask & (1u << i))
-				members[k++] = i; /* ascending, so the first ordering is canonical */
+				members[k++] = i;
 		if (k < s->min_k || k > s->max_k)
 			continue;
 		do {
@@ -260,8 +229,6 @@ done:
 	return best->k > 0;
 }
 
-/* -------------------------------------------------------------------- codecs */
-
 typedef struct ComboCodec {
 	const char *name;
 	long (*enc)(const unsigned char *, long, unsigned char *, long);
@@ -275,10 +242,8 @@ static const ComboCodec combo_codecs[COMBO_NCODEC] = {
 	{"lzw", lzw_compress, lzw_decompress},
 };
 
-#define COMBO_STORED 0xff /* value kept verbatim: no codec beat it */
+#define COMBO_STORED 0xff
 
-/* Best-of-3 single-shot compress of in[0..n) into out[0..cap). Returns the codec id
- * (0..COMBO_NCODEC-1) or COMBO_STORED, and sets *olen. -1 if it will not fit. */
 static long combo_pack(const unsigned char *in, long n, unsigned char *out, long cap,
 											 unsigned char *scratch, long scap, long *olen) {
 	long best = n, l;
@@ -311,16 +276,13 @@ static long combo_unpack(int codec, const unsigned char *in, long n, unsigned ch
 	return combo_codecs[codec].dec(in, n, out, cap);
 }
 
-/* ------------------------------------------------- codec-pipeline (perm*comb) */
-
 typedef struct ComboPipeCtx {
 	const unsigned char *data;
 	long n;
-	unsigned char *a, *b; /* two ping-pong scratch buffers, each of `cap` bytes */
+	unsigned char *a, *b;
 	long cap;
 } ComboPipeCtx;
 
-/* Score a codec chain by the size it compresses ctx->data to (rejecting overflow). */
 static long combo_pipe_score(const int *sel, int k, void *user) {
 	ComboPipeCtx *c = (ComboPipeCtx *)user;
 	const unsigned char *src = c->data;
@@ -337,7 +299,6 @@ static long combo_pipe_score(const int *sel, int k, void *user) {
 	return slen;
 }
 
-/* Run a codec chain forward; sets *outp to the buffer holding the result. */
 static long combo_pipe_apply(const int *sel, int k, const unsigned char *in, long n,
 														 unsigned char *a, unsigned char *b, long cap,
 														 unsigned char **outp) {
@@ -356,7 +317,6 @@ static long combo_pipe_apply(const int *sel, int k, const unsigned char *in, lon
 	return slen;
 }
 
-/* Reverse a codec chain (decoders in reverse order); sets *outp to the result. */
 static long combo_pipe_unapply(const int *sel, int k, const unsigned char *comp,
 															 long clen, unsigned char *a, unsigned char *b,
 															 long cap, unsigned char **outp) {
@@ -375,7 +335,6 @@ static long combo_pipe_unapply(const int *sel, int k, const unsigned char *comp,
 	return slen;
 }
 
-/* Find the codec chain (up to `maxdepth` stages) that compresses data smallest. */
 static int combo_pipeline_search(const unsigned char *data, long n, int maxdepth,
 																 unsigned char *a, unsigned char *b, long cap,
 																 ComboBest *best) {
@@ -389,7 +348,7 @@ static int combo_pipeline_search(const unsigned char *data, long n, int maxdepth
 	spec.nitems = COMBO_NCODEC;
 	spec.min_k = 1;
 	spec.max_k = maxdepth < 1 ? 1 : maxdepth;
-	spec.ordered = 1; /* order matters: rle-then-lzw != lzw-then-rle */
+	spec.ordered = 1;
 	spec.walk = COMBO_WALK_LINEAR;
 	spec.budget = 0;
 	spec.score = combo_pipe_score;
@@ -397,8 +356,6 @@ static int combo_pipeline_search(const unsigned char *data, long n, int maxdepth
 	spec.user = &ctx;
 	return combo_run(&spec, best);
 }
-
-/* --------------------------------------------------- key->value compressed memo */
 
 #ifndef COMBO_MEMO_CAP
 #define COMBO_MEMO_CAP 256
@@ -409,8 +366,8 @@ static int combo_pipeline_search(const unsigned char *data, long n, int maxdepth
 
 typedef struct ComboMemoRec {
 	combo_u64 key;
-	int codec;         /* how val is stored: 0..COMBO_NCODEC-1 or COMBO_STORED */
-	long rawlen, vlen; /* decompressed length, stored (compressed) length */
+	int codec;
+	long rawlen, vlen;
 	unsigned refcount;
 	unsigned char val[COMBO_VAL_MAX];
 } ComboMemoRec;
@@ -418,7 +375,7 @@ typedef struct ComboMemoRec {
 typedef struct ComboMemo {
 	ComboMemoRec rec[COMBO_MEMO_CAP];
 	int n;
-	combo_u64 bytes;    /* sum of stored vlen — the quantity the cap bounds */
+	combo_u64 bytes;
 	combo_u64 cap_bytes;
 	unsigned char scratch[COMBO_VAL_MAX * 2 + 64];
 } ComboMemo;
@@ -429,7 +386,6 @@ static void combo_memo_init(ComboMemo *m, combo_u64 cap_bytes) {
 	m->cap_bytes = cap_bytes;
 }
 
-/* 64-bit FNV-1a — a convenience key hash for callers with raw-byte keys. */
 static combo_u64 combo_hash(const unsigned char *p, long n) {
 	combo_u64 h = 1469598103934665603ULL;
 	long i;
@@ -448,7 +404,6 @@ static int combo_memo_find(const ComboMemo *m, combo_u64 key) {
 	return -1;
 }
 
-/* Drop the lowest-refcount record (LFU); returns 0 if none to drop. */
 static int combo_memo_evict_one(ComboMemo *m) {
 	int i, lo = -1;
 	if (m->n == 0)
@@ -457,13 +412,11 @@ static int combo_memo_evict_one(ComboMemo *m) {
 		if (lo < 0 || m->rec[i].refcount < m->rec[lo].refcount)
 			lo = i;
 	m->bytes -= (combo_u64)m->rec[lo].vlen;
-	m->rec[lo] = m->rec[m->n - 1]; /* swap-remove */
+	m->rec[lo] = m->rec[m->n - 1];
 	m->n--;
 	return 1;
 }
 
-/* Insert/refresh key -> val (compressed best-of-3). Evicts by LFU until the stored
- * bytes are under cap_bytes. Returns the codec used, or -1 if val cannot fit. */
 static int combo_memo_put(ComboMemo *m, combo_u64 key, const unsigned char *val,
 													long n) {
 	long vlen = 0, codec;
@@ -496,8 +449,6 @@ static int combo_memo_put(ComboMemo *m, combo_u64 key, const unsigned char *val,
 	return (int)codec;
 }
 
-/* Cache hit: decompress key's value into out; bumps refcount. Returns the raw length,
- * or -1 on miss / undersized out. */
 static long combo_memo_get(ComboMemo *m, combo_u64 key, unsigned char *out, long cap) {
 	int idx = combo_memo_find(m, key);
 	long r;

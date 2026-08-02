@@ -1,30 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# Replay_IR position-independence gate (portable; POSIX and Win32).
-#
-# Phase B's claim is that Replay_IR's control flow is symbolic: jump chains are
-# label ids and jump targets are program points, so a body re-emits identically
-# at an address it was never recorded at. MCC_REPLAY_IR=3 proves it per body by
-# replaying a second time at base+64 and byte-comparing against the parser's own
-# output. The verdicts are:
-#
-#   ok    replayed byte-identically at the shifted base
-#   open  a jump chain was still unresolved at end of body (rsym is the usual
-#         one -- it is closed by gsym(rsym) AFTER ast_func_end). Such a jump's
-#         displacement field still holds the raw chain-link address, so byte
-#         comparison at a shifted base is not a valid test for it. Explained,
-#         not failing.
-#   skip  the body had a raw blob or an unsymbolisable chain, so it was not
-#         attempted
-#   bad   replayed, but the bytes differ -- a real position-dependence defect
-#
-# This gate asserts bad == 0 and that the sweep actually measured something. It
-# does NOT ratchet ok/open/skip: those move with corpus and codegen, and pinning
-# them here would duplicate the journal baselines' job.
-#
-# Required -D args: MCC CORPUS EXTRA TMPDIR
-# Optional: OPT (default -O1)
-#
 
 if(NOT MCC OR NOT CORPUS OR NOT EXTRA OR NOT TMPDIR)
     message(FATAL_ERROR "rir_position: MCC, CORPUS, EXTRA, TMPDIR are required")
@@ -36,8 +10,6 @@ endif()
 file(MAKE_DIRECTORY "${TMPDIR}")
 set(ENV{SOURCE_DATE_EPOCH} "1000000000")
 
-# A build without MCC_REPLAY_IR emits no [rir-total] at all; that is an honest
-# SKIP rather than a vacuous pass.
 file(WRITE "${TMPDIR}/probe.c" "int rir_probe(int a, int b) { return a * b + 1; }\n")
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env "MCC_REPLAY_IR=3"
@@ -78,7 +50,6 @@ foreach(_f ${_srcs})
     if(_err MATCHES "\\[rir-total\\] fn=([0-9]+)")
         math(EXPR _fn "${_fn} + ${CMAKE_MATCH_1}")
     endif()
-    # Name the offenders rather than only counting them.
     string(REGEX MATCHALL "\\[rir-verify\\][^\n]*shift=bad[^\n]*" _lines "${_err}")
     foreach(_l ${_lines})
         list(APPEND _badnames "${_l}")
@@ -94,9 +65,6 @@ endforeach()
 if(_files EQUAL 0)
     message(FATAL_ERROR "rir_position: compiled nothing")
 endif()
-# A run where nothing was shifted would report bad=0 and mean nothing. Per the
-# repo's instruction 18, a zero is not a finding until the instrument has
-# produced a non-zero on the same population.
 if(_ok EQUAL 0)
     message(FATAL_ERROR "rir_position: 0 bodies replayed at a shifted base — "
                         "the instrument measured nothing, so bad=0 is vacuous")

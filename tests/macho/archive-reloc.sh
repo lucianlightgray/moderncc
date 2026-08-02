@@ -1,31 +1,4 @@
 #!/bin/sh
-# Mach-O archives and relocations TOGETHER, with a non-zero addend.
-#
-# This cell exists because the two narrower cells each had a blind spot and the
-# gap between them hid a real bug:
-#   * macho-archive links the synthetic fixture, which deliberately has NO
-#     relocations.
-#   * macho-reloc links a relocated object, but as a BARE object and with a
-#     zero addend (`msg[0]`).
-#
-# mcc's relocation appliers ADD into the existing field (REL semantics, tcc
-# heritage) rather than overwriting it. Passing the field's existing value as
-# the RELA addend therefore counts it TWICE -- which is invisible whenever the
-# addend is zero, and exactly what the two cells above were testing. With
-# `tag[3]` the reference resolved to _tag+6.
-#
-# So this builds a REAL multi-member archive from clang-produced objects with
-# cross-member references and non-zero addends:
-#   a.o -> b.o -> c.o    (transitive pull; b and c are only reachable through a)
-#   a.o reads tag[3]     (non-zero addend, the case that was wrong)
-#   b.o reads tbl[2]     (non-zero addend, different width, different member)
-#   unused.o             (references a symbol that does not exist anywhere, so
-#                         if the loader pulls it unconditionally the link FAILS)
-#
-# Every data reference is checked ARITHMETICALLY against llvm-nm rather than by
-# pattern, because a wrong addend still disassembles to a plausible instruction.
-#
-# Usage: archive-reloc.sh <macho-mcc> <mccbase> <workdir>
 set -e
 
 MCC=$1
@@ -73,7 +46,6 @@ for f in a b c unused; do
 	}
 done
 
-# A non-zero addend must actually be present, or this cell re-tests nothing.
 llvm-objdump --macho -r "$WORK/a.o" 2>/dev/null | grep -q 'SIGNED' || {
 	echo "FAIL: clang emitted no SIGNED relocation in a.o; this cell would be"
 	echo "  vacuous -- it exists to cover the non-zero-addend case"
@@ -144,7 +116,6 @@ def riprel(mnemonic):
     return at + len(raw) + disp
 
 rc = 0
-# tag[3]: an 8-bit signed load, addend 3 folded into the field by clang.
 tag, got = sym("_tag"), riprel("movsbl")
 if tag is None or got is None:
     print("FAIL: could not locate _tag or its movsbl reference")
@@ -156,7 +127,6 @@ elif got != tag + 3:
 else:
     print("PASS: tag[3] resolves to 0x%x = _tag+3" % got)
 
-# tbl[2]: a 32-bit load from a DIFFERENT member, addend 8.
 tbl = sym("_tbl")
 if tbl is not None:
     m = [x for x in re.finditer(

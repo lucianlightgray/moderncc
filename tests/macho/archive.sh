@@ -1,32 +1,4 @@
 #!/bin/sh
-# Mach-O ARCHIVE member loading -- the `--embed-jit` path into libmcc_jitengine.a.
-#
-# TODO recorded this as "reserved for macOS" on the grounds that GNU ar cannot
-# index Mach-O members, so any archive built on Linux is invalid by construction.
-# That is true of GNU ar and false of llvm-ar, which writes a correct BSD armap;
-# with llvm-ar the whole path is testable on Linux against the synthetic fixture.
-#
-# Two things had to be true and neither was:
-#   * BSD extended names. llvm-ar writes `#1/<len>` headers where the member NAME
-#     is stored in the first <len> bytes of the member DATA. Without handling
-#     that, the computed data offset points at the filename rather than the
-#     Mach-O header -- which is why a previous attempt's hooks "never pulled the
-#     member" despite being in the right places.
-#   * A BSD symbol index. The a la carte loader only recognized the SysV names
-#     (`/`, `/SYM64/`); a `__.SYMDEF` archive matched nothing, walked every
-#     member, and silently loaded NOTHING. Note the BSD index is little-endian
-#     where the SysV one is big-endian.
-#
-# Checks, in increasing strength:
-#   1. the archive link SUCCEEDS (it used to fail "unresolved reference")
-#   2. it is BYTE-IDENTICAL to linking the same member as a bare object
-#   3. the pulled member's actual code is present in the output
-#   4. an archive whose symbols are unreferenced pulls NOTHING (a la carte is
-#      selective, not "load everything")
-#
-# Skips unless llvm-ar and a MACHO-target mcc are both present.
-#
-# Usage: archive.sh <macho-mcc> <mccbase> <fixture-script> <workdir>
 set -e
 
 MCC=$1
@@ -69,7 +41,6 @@ EOF
 llvm-ar rcs "$WORK/fix.a" "$WORK/fixture.o"
 llvm-ar rcs "$WORK/unused.a" "$WORK/unused.o"
 
-# The armap must actually name the symbol, or this test proves nothing.
 llvm-nm --print-armap "$WORK/fix.a" 2>/dev/null | grep -q '_mcc_fixture_defined in' || {
 	echo "FAIL: llvm-ar produced no armap entry for _mcc_fixture_defined; the"
 	echo "  archive is not indexed and the rest of this test is vacuous"
@@ -78,9 +49,6 @@ llvm-nm --print-armap "$WORK/fix.a" 2>/dev/null | grep -q '_mcc_fixture_defined 
 
 rc=0
 
-# Every output is named `out` in a directory of its own: an ad-hoc signature's
-# identifier is the output basename, so linking to out.ar vs out.bare would
-# differ in the CodeDirectory alone and defeat the byte comparisons below.
 if ! "$MCC" -B"$BASE" -nostdlib "$WORK/usefx.o" "$WORK/fix.a" "$WORK/prov.o" \
 	-o "$WORK/ar/out" 2>"$WORK/err.ar"; then
 	echo "FAIL: linking against the Mach-O archive failed:"
@@ -110,7 +78,6 @@ if command -v llvm-objdump >/dev/null 2>&1; then
 	fi
 fi
 
-# A la carte must be SELECTIVE: an archive nothing references contributes nothing.
 if "$MCC" -B"$BASE" -nostdlib "$WORK/usefx.o" "$WORK/fix.a" "$WORK/unused.a" \
 	"$WORK/prov.o" -o "$WORK/un/out" 2>/dev/null; then
 	if cmp -s "$WORK/ar/out" "$WORK/un/out"; then

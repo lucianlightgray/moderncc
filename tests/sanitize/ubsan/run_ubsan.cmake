@@ -6,17 +6,9 @@ set(_levels -O0 -O1 -O2 -O3)
 
 set(_recover_flags "")
 if(MODE STREQUAL "recover")
-	# NEW gated recover/diagnostic path (do_sanitize_recover, default OFF): a UB
-	# check calls the clang-minimal-ABI __ubsan_handle_*_minimal runtime handler
-	# which logs to stderr and RETURNS, so execution continues (clang's
-	# -fsanitize-recover=undefined semantics).
 	set(_recover_flags -fsanitize-recover=undefined)
 endif()
 
-# EMU (optional) is the cross emulator launch prefix (== MCC_EMULATOR /
-# CMAKE_CROSSCOMPILING_EMULATOR, a possibly-multi-token list). Empty on a
-# native host, so the ${EMU} expansion below is byte-identical to running
-# mcc / the produced binary directly.
 foreach(_opt IN LISTS _levels)
 	execute_process(
 		COMMAND ${EMU} "${MCC}" "-B${BDIR}" -fsanitize=undefined ${_recover_flags} ${_opt} "${SRC}" -o "${OUT}"
@@ -30,8 +22,6 @@ foreach(_opt IN LISTS _levels)
 		RESULT_VARIABLE _rrc OUTPUT_VARIABLE _rout ERROR_VARIABLE _rerr)
 
 	if(MODE STREQUAL "recover")
-		# Recover mode: the program must survive the UB (clean exit 0), print its
-		# post-UB output, and the handler must have logged the diagnostic to stderr.
 		if(NOT _rrc EQUAL 0)
 			message(FATAL_ERROR
 				"recover program did NOT survive at ${_opt}: exit=${_rrc} "
@@ -47,10 +37,6 @@ foreach(_opt IN LISTS _levels)
 				"recover handler did NOT log a diagnostic at ${_opt}:\n  stderr=[${_rerr}]")
 		endif()
 	elseif(MODE STREQUAL "trap")
-		# A fired trap crashes the process: POSIX raises SIGILL/SIGTRAP (exit
-		# 128+signo); Windows raises EXCEPTION_ILLEGAL_INSTRUCTION (0xC000001D,
-		# reported by CMake as a negative / >2^31 code). Only a clean small exit
-		# (0..127) means the check did NOT fire.
 		if(_rrc GREATER_EQUAL 0 AND _rrc LESS 128)
 			message(FATAL_ERROR
 				"UB check did NOT fire at ${_opt}: exit=${_rrc}, output=[${_rout}] "

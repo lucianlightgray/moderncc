@@ -211,9 +211,9 @@ ST_FUNC void arm64_veneer_memory_calls(MCCState *s1) { MCC_TRACE("enter\n");
 				}
 				off = vs->data_offset;
 				p = section_ptr_add(vs, 16);
-				write32le(p, 0x58000050);     /* ldr x16, [pc, #8] */
-				write32le(p + 4, 0xd61f0200); /* br  x16          */
-				write64le(p + 8, 0);          /* .quad <resolved abs> (ABS64 reloc) */
+				write32le(p, 0x58000050);
+				write32le(p + 4, 0xd61f0200);
+				write64le(p + 8, 0);
 				put_elf_reloc(symtab_section, vs, off + 8, R_AARCH64_ABS64, si);
 				vmap[si] = put_elf_sym(symtab_section, off, 16,
 															 ELFW(ST_INFO)(STB_LOCAL, STT_FUNC), 0,
@@ -415,9 +415,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
-	/* _NC is the no-overflow-check twin of _LO12 (gcc's default local-exec
-	   ADD form is HI12 + LO12_NC); we only mask the low 12 bits below, which
-	   is exactly the checked variant's value, so treat them identically. */
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
 	case R_AARCH64_TLSLE_LDST8_TPREL_LO12:
 	case R_AARCH64_TLSLE_LDST8_TPREL_LO12_NC:
@@ -428,9 +425,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC: {
 		addr_t tls_start = 0;
-		/* See the riscv64 peer: a shared object does not own the TLS block this
-		   offset is relative to, so baking it silently reads the EXECUTABLE's
-		   thread-local instead. Dynamic TLS is not implemented here. */
 		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_error_noabort("local-exec TLS in a shared object is not valid; "
 												"dynamic TLS is not implemented for arm64");
@@ -514,4 +508,3 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	}
 }
-

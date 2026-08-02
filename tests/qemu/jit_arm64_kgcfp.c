@@ -1,19 +1,19 @@
-/* §26 2B — arm64 JIT KGC differential-verify stub, all-double (SSE-class) tail:
-   validates the hand-emitted AArch64 FP known-good-cache stub the libmcc
-   `mccjit_make_kgc_stub_fp` port will use (the K4A scalar all-double marshalling
-   path, the 4th and last data-path stub mechanism). Freestanding so it runs
-   under `qemu-aarch64` with no arm64 libc. For a 2-`double` signature it:
-     - spills the FP arg registers (d0-d1, the AArch64 analogue of the x86
-       `movsd` xmm0-7 spill) as doubles into an argv frame,
-     - calls the C verifier `double (kgc, variant, baseline, argv, nargs,
-       *flagged)` with the GP arg regs (x0-x5) — the double argv is passed by
-       POINTER (x3), not in FP regs, exactly as `mccjit_kgc_calln_fp` expects,
-     - the verifier runs both variant + baseline, compares RAW return bits, sets
-       *flagged on a mismatch, and returns the baseline (deopt) double,
-     - the stub returns leaving d0 untouched, so the verifier's double return
-       propagates to the caller (the x86 stub relies on the same xmm0 pass-through).
-   Exit 0 = PASS. Encodings (llvm-mc -triple=aarch64): str d0,[sp] ->0xfd0003e0
-     str d1,[sp,#8] ->0xfd0007e1  mov w4,#2 ->0x52800044  blr x16 ->0xd63f0200 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static long sysc6(long n, long a, long b, long c, long d, long e, long f) {
 	register long x8 asm("x8") = n;
 	register long x0 asm("x0") = a, x1 asm("x1") = b, x2 asm("x2") = c;

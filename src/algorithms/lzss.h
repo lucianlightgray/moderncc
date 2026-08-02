@@ -1,18 +1,6 @@
 #ifndef MCC_ALG_LZSS_H
 #define MCC_ALG_LZSS_H
 
-/*
- * LZSS (Storer–Szymanski variant of LZ77) — the smallest feature-complete
- * general-purpose dictionary compressor: a sliding window over the already-emitted
- * bytes, a flag bit per token (literal byte vs. back-reference), matches of 3..18
- * bytes within a 4096-byte window. Header-only, fully inlined, no libc, no heap.
- *
- * Token stream: one flag byte carries 8 tokens (bit set = literal, next 1 byte;
- * bit clear = match, next 2 bytes = 12-bit distance-1 and 4-bit length-3). Returns
- * the output length, or -1 on output-buffer overflow. Decompress stops when the
- * input is exhausted, bounds-checking every read.
- */
-
 #include <stddef.h>
 
 #define LZSS_WINDOW 4096
@@ -49,7 +37,7 @@ static inline long lzss_compress(const unsigned char *s, long n, unsigned char *
 				d[o++] = (unsigned char)(((dd & 0xf) << 4) | ll);
 				i += best_len;
 			} else {
-				flags |= (unsigned char)(1u << b); /* literal */
+				flags |= (unsigned char)(1u << b);
 				if (o + 1 > cap)
 					return -1;
 				d[o++] = s[i++];
@@ -69,11 +57,11 @@ static inline long lzss_decompress(const unsigned char *s, long n,
 		for (b = 0; b < 8; b++) {
 			if (i >= n)
 				return o;
-			if (flags & (1u << b)) { /* literal */
+			if (flags & (1u << b)) {
 				if (o >= cap)
 					return -1;
 				d[o++] = s[i++];
-			} else { /* match */
+			} else {
 				long dist, len, k;
 				int b0, b1;
 				if (i + 1 >= n)

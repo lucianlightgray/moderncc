@@ -19,7 +19,7 @@ unsigned mcc_stats_mask = 0;
 static void (*mcc_stats_flush_hook)(void);
 
 #if MCC_HOST_POSIX
-static long mcc_stats_owner_pid = -1; /* process that owns the panel; forks never flush */
+static long mcc_stats_owner_pid = -1;
 #endif
 
 void mcc_stats_set_flush_hook(void (*fn)(void)) { MCC_TRACE("enter\n");
@@ -37,9 +37,6 @@ static const char *const mccstats_strat_name[MCCSTATS_STRAT_N] = {
 		"pre", "licm", "dse", "sccp", "jt", "bf", "range",
 		"divmagic", "abs", "select", "reassoc", "sethi", "tco", "inline"};
 
-/* Strategy slot indices into the delta vector passed to mcc_stats_fold_cycle.
-   These MUST stay aligned with mccstats_strat_name above and the AST_STRAT_*
-   enum in mccast.c (the same fixed order the strat_hits path already relies on). */
 enum {
 	MCCSTATS_S_BFOLD = 0,
 	MCCSTATS_S_IDENT = 1,
@@ -91,21 +88,21 @@ typedef struct McccStats {
 	long evaluated;
 	long total_evaluated;
 	int funcs_searched;
-	unsigned long funcs_eligible;   /* entered the search driver (coverage denominator) */
-	unsigned long funcs_scored;     /* searches whose baseline cost was known */
-	unsigned long funcs_improved;   /* searches whose winner beat the baseline */
-	unsigned long long cost_base;   /* summed baseline cost over scored searches (raw) */
-	unsigned long long cost_best;   /* summed winning cost over scored searches (raw) */
+	unsigned long funcs_eligible;
+	unsigned long funcs_scored;
+	unsigned long funcs_improved;
+	unsigned long long cost_base;
+	unsigned long long cost_best;
 	int memo_n;
 	unsigned elapsed_ms;
 	unsigned budget_ms;
 	unsigned expect_ms;
 
-	unsigned long combo_perm;    /* candidates enumerated in permutation (ordered) mode */
-	unsigned long combo_subset;  /* candidates enumerated in combination (subset) mode */
-	unsigned long combo_hits;    /* candidates that improved the running best */
-	unsigned long combo_misses;  /* candidates measured but no improvement */
-	unsigned long combo_rejects; /* candidates that scored invalid (budget/unfaithful) */
+	unsigned long combo_perm;
+	unsigned long combo_subset;
+	unsigned long combo_hits;
+	unsigned long combo_misses;
+	unsigned long combo_rejects;
 	unsigned long search_memo_hits;
 	unsigned long search_memo_misses;
 
@@ -120,8 +117,8 @@ typedef struct McccStats {
 	unsigned long jit_kgc_hits;
 	unsigned long jit_kgc_misses;
 	unsigned long jit_poison;
-	unsigned long jit_kgc_corrections; /* K-patch: (input->baseline) entries recorded */
-	unsigned long jit_nearmatch;       /* K-patch: variants kept via near-match */
+	unsigned long jit_kgc_corrections;
+	unsigned long jit_nearmatch;
 	unsigned long jit_promote_sync;
 	unsigned long jit_promote_async;
 	unsigned long jit_memo_arrays;
@@ -166,7 +163,7 @@ typedef struct McccStats {
 	unsigned long fold_strength_reduced;
 	unsigned long fold_idents_unlocked;
 	unsigned long fold_narrowed;
-	int fold_seen_producer; /* transient: producer fired earlier in this cycle */
+	int fold_seen_producer;
 } McccStats;
 
 static McccStats mcs;
@@ -502,7 +499,7 @@ void mcc_stats_enable(unsigned mask) { MCC_TRACE("enter\n");
 	if (!mask)
 		{ MCC_TRACE("br\n"); return; }
 	if (started)
-		{ MCC_TRACE("br\n"); return; } /* one stats session per process: never wipe accumulators */
+		{ MCC_TRACE("br\n"); return; }
 	started = 1;
 	memset(&mcs, 0, sizeof mcs);
 	mcs.active = 1;
@@ -548,10 +545,10 @@ void mcc_stats_finish(void) { MCC_TRACE("enter\n");
 		h();
 	}
 	if (finished || !mcs.active)
-		{ MCC_TRACE("br\n"); return; } /* exactly one final flush per process */
+		{ MCC_TRACE("br\n"); return; }
 #if MCC_HOST_POSIX
 	if (mcc_stats_owner_pid >= 0 && (long)getpid() != mcc_stats_owner_pid)
-		{ MCC_TRACE("br\n"); return; } /* forked search/JIT child: never paint the panel */
+		{ MCC_TRACE("br\n"); return; }
 #endif
 	finished = 1;
 	mccstats_paint(1);
@@ -636,9 +633,6 @@ void mcc_stats_search_end(uint64_t best_gates, long best_score, long base_score,
 		mcs.best_score = best_score;
 		mcs.best_gates = best_gates;
 	}
-	/* Outcome: how much cost the search removed. Winner is base when it found nothing
-	   better (best_score<0 = no valid candidate, or worse than base). Clamp so a
-	   budget-starved search counts as unchanged, never as a spurious gain. */
 	if (base_score >= 0) { MCC_TRACE("br\n");
 		long win = (best_score >= 0 && best_score < base_score) ? best_score : base_score;
 		mcs.funcs_scored++;
@@ -837,10 +831,6 @@ void mcc_stats_fold_cycle(const int *delta, int n, int iter) { MCC_TRACE("enter\
 	producers = MCCSTATS_D(MCCSTATS_S_BFOLD) + MCCSTATS_D(MCCSTATS_S_CPROP) +
 							MCCSTATS_D(MCCSTATS_S_SCCP);
 	mcs.fold_producer_fires += (unsigned long)producers;
-	/* Attribute consumer fires to folding once a producer has run in this cycle.
-	   The frozen strategy order runs producers (bfold/cprop/sccp) before consumers,
-	   so same-pass consumer fires already act on the freshly folded constants;
-	   later-iteration fires are cross-round enablement. */
 	if (!mcs.fold_seen_producer && producers <= 0)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.fold_seen_producer = 1;

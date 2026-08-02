@@ -1,45 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# Replay_IR faithfulness gate (portable; POSIX and Win32).
-#
-# Instruction 36's deletion bar is absolute: 100% of bodies faithful on every
-# target at every -O. That makes this a hard assert rather than a ratchet
-# against a banked number -- unlike the journal, which needs an honesty bank
-# because it legitimately carries raw blobs on some targets, Replay_IR has one
-# permitted verdict per body:
-#
-#   rfaithful  replayed byte-identically against the parser's own output
-#   rempty     the body emitted no bytes, so there was nothing to reproduce
-#
-# Anything else is a failure. The gate therefore asserts faithful + empty == fn,
-# and separately that the sweep measured something at all, so a run that
-# journalled nothing cannot report a vacuous pass (instruction 18).
-#
-# It deliberately does NOT ratchet the fallback / label / region counts. Those
-# move with corpus and codegen and are target-specific by design -- i386 and arm
-# report 483 chain fallbacks where x86_64 reports 7, because a value wider than
-# the target register lowers its comparison chain inside a single journalled op.
-# Pinning them here would turn a word-width property into a false regression.
-#
-# Required -D args: MCC CORPUS EXTRA TMPDIR
-# Optional: OPT (default -O1), MCCFLAGS (default empty), FORCE + SRCDIR
-#
-# MCCFLAGS is what makes this runnable against a CROSS compiler: a sysroot, its
-# usr/include and an ABI flag. --sysroot alone is not enough -- the explicit
-# -I<sysroot>/usr/include is what makes the system headers resolve, and without
-# it the sweep silently shrinks to the include-free files and reports a
-# plausible, wrong census (journal_sweep.cmake:167 records the same trap).
-#
-# FORCE is what makes -O0 measurable at all. ast_replay_env needs optimize >= 1,
-# so a bare -O0 sweep journals nothing and reports fn=0 -- caught below as a
-# vacuous pass rather than mistaken for one. MCC_FORCE_REPLAY=1 lifts that, but
-# alone it measures a different compiler: the gates whose default is
-# `o4 || optimize >= 1` are all off at -O0, so the replay is asked to reproduce
-# an emit no other cell covers. Forcing every one of them on is what makes the
-# -O0 census comparable to -O1's. The list is DERIVED from SRCDIR rather than
-# copied, because a copied list silently shrinks as gates are added or renamed,
-# and a short list reads as a pass over fewer bodies rather than as a defect.
-#
 
 if(NOT MCC OR NOT CORPUS OR NOT EXTRA OR NOT TMPDIR)
     message(FATAL_ERROR "rir_parity: MCC, CORPUS, EXTRA, TMPDIR are required")
@@ -52,8 +11,6 @@ if(MCCFLAGS)
     separate_arguments(_mccflags NATIVE_COMMAND "${MCCFLAGS}")
 endif()
 
-# Env prefix shared by the probe and every sweep compile. Both must carry it or
-# the probe decides SKIP against a different compiler than the sweep measures.
 set(_env "MCC_REPLAY_IR=1")
 if(FORCE)
     if(NOT SRCDIR)
@@ -91,8 +48,6 @@ endif()
 file(MAKE_DIRECTORY "${TMPDIR}")
 set(ENV{SOURCE_DATE_EPOCH} "1000000000")
 
-# A build without MCC_REPLAY_IR emits no [rir-total] at all; that is an honest
-# SKIP rather than a vacuous pass.
 file(WRITE "${TMPDIR}/probe.c" "int rir_probe(int a, int b) { return a * b + 1; }\n")
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env ${_env}
@@ -123,9 +78,6 @@ foreach(_f ${_srcs})
     if(NOT _rc EQUAL 0)
         continue()
     endif()
-    # A file that aborted mid-way prints per-body verdicts but no total, which
-    # would silently shrink the census -- count files that produced a total, not
-    # files that exited 0.
     if(NOT _err MATCHES "\\[rir-total\\]")
         continue()
     endif()

@@ -5,21 +5,15 @@
 /stage/
 /vc140.pdb
 
-# CI log bundles downloaded for triage (transient)
 logs_*.zip
 
-# valgrind core dumps
 vgcore.*
 
-# transient artifacts written by exec tests run from the repo root
 fred.txt
 
-# qemu-user core dumps from trap tests
 qemu_*.core
 *.core
 
-# persistent fuzz miscompile-class scoreboard (written by `runner.c campaign`)
 /tests/fuzz/corpus/scoreboard.tsv
 
-# CTest scratch written when ctest runs from the repo root (not a build dir)
 /Testing/

@@ -1,35 +1,4 @@
 #!/bin/sh
-# optfire: assert an optimizer pass FIRED, not merely that output was correct.
-#
-#   counter <mcc> <src.c> <work> <name> <olevel> <counter>
-#   differ  <mcc> <src.c> <work> <name> <olevel> <env> <extra-env|->
-#   level   <mcc> <src.c> <work> <name> <unused> <counter> <spec>
-#   defstate <mcc> <src.c> <work> <name> <olevel> <env> <on|off>
-#   cdelta  <mcc> <src.c> <work> <name> <olevel> <counter> <env>
-#
-# cdelta asserts the pass FIRED by counter delta: the counter must be 0 with the
-# gate forced off and nonzero with it on. Stronger than differ mode and portable
-# -- it measures the transform rather than the emitted bytes, so it still works
-# on a target where the transform is real but object-invisible (the reassoc
-# sub-knobs on i386 are exactly that).
-#
-# defstate asserts a gate's DEFAULT state at an -O level, which differ mode
-# cannot: it compiles with NO env and again with the gate forced to 0. If those
-# objects differ the gate was default-ON; if identical it was default-OFF. That
-# locks the "flipped default-on at -O2" claims, which nothing else checks.
-#
-# OPTFIRE_NORUN=1 asserts only that the pass FIRED and skips the -O0 oracle and
-# the program runs. That is the cross-compiler mode: a cross mcc cannot link a
-# runnable host binary, but the differ assertion is still meaningful there.
-#
-# level mode locks the -O curation: `spec` is -O1:on,-O2:on,-O3:on,-Os:off and
-# each listed level must have the counter nonzero (on) or zero (off) with NO env
-# set. It catches a default-on condition silently drifting between -O levels,
-# which no other test in the suite would notice.
-#
-# Every mode also re-checks correctness by requiring the optimized program's
-# stdout to equal the -O0 build's stdout, so a pass that fires but miscompiles
-# fails here rather than silently passing a fired-only check.
 set -e
 
 mode=$1 MCC=$2 SRC=$3 WORK=$4 NAME=$5 OLEVEL=$6
@@ -43,7 +12,6 @@ opt=$WORK/$NAME.opt
 
 strip_ansi() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 
-# -O0 reference behaviour: the oracle every mode compares against.
 norun=${OPTFIRE_NORUN:-0}
 MCCFLAGS=${OPTFIRE_MCCFLAGS:-}
 case $mode in
@@ -55,13 +23,10 @@ cdelta)  LDF= ;;
 esac
 [ "$LDF" = "-" ] && LDF=
 refout=""
-# level mode only reads counters; it never runs the program, so building the
-# -O0 oracle would just be a way to fail on unrelated link flags.
 [ "$mode" = "level" ] && norun=1
 [ "$mode" = "defstate" ] && norun=1
 [ "$mode" = "cdelta" ] && norun=1
 if [ "$norun" != "1" ]; then
-	# shellcheck disable=SC2086
 	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >/dev/null 2>&1 || { echo "FAIL $NAME: -O0 reference build failed"; exit 1; }
 	refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; exit 1; }
 fi
@@ -77,7 +42,6 @@ counter)
 		echo "FAIL $NAME: pass DID NOT FIRE ($COUNTER=$got at $OLEVEL)"
 		exit 1
 	}
-	# shellcheck disable=SC2086
 	if [ "$norun" = "1" ]; then
 		echo "PASS $NAME: $COUNTER=$got at $OLEVEL (norun: fired-only)"
 		exit 0
@@ -97,10 +61,8 @@ differ)
 	EXTRA=$8
 	[ -n "$ENVV" ] || { echo "FAIL $NAME: no gate env given"; exit 2; }
 	[ "$EXTRA" = "-" ] && EXTRA=
-	# shellcheck disable=SC2086
 	env $EXTRA "$ENVV=0" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.off.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: gate-off compile failed"; exit 1; }
-	# shellcheck disable=SC2086
 	env $EXTRA "$ENVV=1" "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.on.o" >/dev/null 2>&1 ||
 		{ echo "FAIL $NAME: gate-on compile failed"; exit 1; }
 	if cmp -s "$WORK/$NAME.off.o" "$WORK/$NAME.on.o"; then
@@ -112,7 +74,6 @@ differ)
 		exit 0
 	fi
 	for v in 0 1; do
-		# shellcheck disable=SC2086
 		env $EXTRA "$ENVV=$v" "$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt.$v" $LDF >/dev/null 2>&1 ||
 			{ echo "FAIL $NAME: $ENVV=$v build failed"; exit 1; }
 		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $ENVV=$v run failed"; exit 1; }

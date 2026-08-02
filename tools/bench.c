@@ -37,7 +37,7 @@ struct compiler {
 	const char *ccmacro;
 	char version[128];
 	const char *opt;
-	int reps; /* 0 = use the run's --repeats; -O4 overrides it, see the sweep */
+	int reps;
 };
 
 struct workload {
@@ -600,10 +600,6 @@ static void vs_ref(char *b, int n, const struct compiler *ccs, int nccs,
 	b[0] = 0;
 	if (strcmp(ccs[i].key, "mcc") || !cells[i].m.ok || !cells[i].nwall)
 		return;
-	/* -O4 is mcc's out-of-process superopt SEARCH, not a compile. gcc/clang accept
-	   -O4 but treat it as -O3, so the same-opt reference row is an ordinary
-	   compile: the ratio measures a search against a compile and means nothing.
-	   Report the size trade instead, which is what -O4 is actually buying. */
 	if (ccs[i].opt && !strcmp(ccs[i].opt, "-O4")) {
 		snprintf(b, n, "n/a (superopt search, not a compile)");
 		return;

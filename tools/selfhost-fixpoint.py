@@ -20,9 +20,6 @@ def main():
         sys.exit("usage: selfhost-fixpoint.py <build-dir> [--opt=-ON] [KNOB=VAL ...]")
     bdir = sys.argv[1]
     env = dict(os.environ)
-    # --opt=<level> picks the -O level under test. Defaults to -O2 for
-    # compatibility, but -O2 alone never exercises the -O3 defaults (CYCLE,
-    # OPASSIGN, CHAINSTORE, INLINE), so the fixpoint gate was blind to them.
     opt = "-O2"
     rest = []
     for a in sys.argv[2:]:
@@ -33,13 +30,6 @@ def main():
     for kv in rest:
         k, _, v = kv.partition("=")
         env[k] = v
-    # A self-hosted mcc that faults (0xC0000005) must FAIL FAST with its crash
-    # code, not hang for the ctest timeout: Windows Error Reporting otherwise
-    # intercepts the crash and the child never returns. SEM_NOGPFAULTERRORBOX is
-    # inherited by children, mirroring the exec runner (instruction 32) and
-    # selfhost-smoke.py. Measured on the arm64-PE self-host (run 30731059619):
-    # selfhost-smoke failed in 3.65s with SEM set, selfhost-fixpoint (without it)
-    # still hit the 300s timeout.
     if os.name == "nt":
         try:
             import ctypes
@@ -48,8 +38,6 @@ def main():
             pass
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
-    # On win32 the stage compiler is mcc.exe; PE-keyed behaviour (below) follows
-    # from that suffix, so the POSIX path is untouched.
     if not os.access(mcc, os.X_OK) and os.access(mcc + ".exe", os.X_OK):
         mcc += ".exe"
     pe = mcc.endswith(".exe")
@@ -63,18 +51,10 @@ def main():
     rec = [x for x in cc if x["file"].endswith("/mcc.c")][0]
     cmd = rec["command"]
     if os.name == "nt":
-        # Same backslash repair as selfhost-smoke.py: a TinyCC-toolchain ninja
-        # build writes backslash -I paths while still POSIX-escaping quotes, so
-        # a plain shlex.split eats the path backslashes. Double every backslash
-        # NOT escaping a quote so the paths survive the POSIX split.
         cmd = re.sub(r'\\(?!")', r'\\\\', cmd)
     flags = [a for a in shlex.split(cmd)[1:]
              if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
-    # MCC_EMBED_MCCRT bakes the runtime into the compiler as mccrt_blob.c.o, and
-    # every stage links that object. Darwin and WIN32 force the option off and
-    # ship the sidecar libmccrt.a instead; a stage compiler lives in a temp dir
-    # so its auto-mccdir cannot see it, and -B points it back at the build dir.
     link_objs = []
     link_flags = []
     if os.path.exists(blob):
@@ -85,8 +65,6 @@ def main():
         sys.exit(f"no runtime blob at {blob} and no sidecar libmccrt.a in "
                  f"{os.path.join(root, bdir)} (build the mcc target first)")
     if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
-        # The object suffix is .o on POSIX, .obj under the win32 (clang-cl/ninja)
-        # toolchain; take whichever the build produced.
         jbase = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c")
         jitblob = next((jbase + ext for ext in (".o", ".obj")
                         if os.path.exists(jbase + ext)), None)
@@ -96,13 +74,7 @@ def main():
 
     src = os.path.join(root, "src/mcc.c")
     inc = os.path.join(root, "runtime/include")
-    # win32 layers runtime/win32/include over runtime/include, so a stage
-    # compiler in a temp dir needs the win32 prefix as well to resolve its
-    # freestanding + PE system headers; the CRT startup/import libs also come
-    # from there at link. POSIX resolves both from the sidecar -B alone.
     win32_pre = ["-B", os.path.join(root, "runtime/win32")] if pe else []
-    # msvcrt is mcc's output CRT and mcc auto-links kernel32/msvcrt on PE; there
-    # is no -lm/-ldl to add (they do not exist), and a bare -ldl would error.
     link_libs = [] if pe else ["-lm", "-ldl"]
 
     def compile_mcc(cc_bin, obj, extra_inc):

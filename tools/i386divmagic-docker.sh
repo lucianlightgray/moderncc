@@ -1,24 +1,4 @@
 #!/bin/sh
-# i386 divmagic soak, docker-gated and self-contained.
-#
-# The AST-reemit divmagic pass replaces constant integer divides/mods with
-# reciprocal-multiply sequences (imul/sar, plus __mcc_?mulh64 for the 64-bit
-# path). The normal build's mcc-i386 is compiled WITHOUT the optimizer, so it
-# cannot exercise this pass. This test therefore builds its own optimizer-enabled
-# i386 cross mcc from the repo sources inside a linux/amd64 container, uses it to
-# compile a soak whose every constant divide/mod lives in its own leaf function
-# (so divmagic fires), links against mcc's i386 runtime (for __mcc_?mulh64), and
-# runs the result under linux/386. Each rewritten divide is checked against a
-# volatile-divisor hardware idiv oracle over a wide input sweep; any mismatch is
-# a real divmagic miscompile.
-#
-# Usage:  tools/i386divmagic-docker.sh <mcc-i386> <i386-libmccrt.a> [workdir]
-#   <mcc-i386>        host mcc-i386 binary; only its presence gates the test
-#                     (the actual compiler used is rebuilt in-container).
-#   <i386-libmccrt.a> mcc's i386 runtime archive (provides __mcc_?mulh64).
-# Exit:   0 all checks pass, 0 fails · 1 a divmagic miscompile · 77 skipped
-#         (no docker / no mcc-i386 / no runtime / cannot build cross mcc /
-#          cannot run linux/386).
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -35,10 +15,8 @@ dg_need_docker
 dg_need_platform linux/amd64 "$IMAGE_BUILD"
 dg_need_platform linux/386 "$IMAGE_386"
 
-# Repo root is the parent of this script's tools/ dir.
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$SCRIPT_DIR/.." && pwd)
-# git-bash: prefer a Windows-native path for the RO bind mount.
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
 
 rm -rf "$WORK"; mkdir -p "$WORK"
@@ -46,7 +24,6 @@ WORK_ABS=$(cd "$WORK" && pwd)
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 cp "$RT" "$WORK_ABS/i386-libmccrt.a"
 
-# --- generate the soak C (bash: dash's echo mangles the \n in printf fmts) ---
 cat > "$WORK_ABS/gen.sh" <<'GEN'
 #!/usr/bin/env bash
 set -eu
@@ -101,17 +78,9 @@ cat <<'EOF'
 static int in32[]={0,1,-1,2,-2,3,-3,7,-7,8,-8,15,16,100,-100,127,128,255,256,1000,-1000,12345,-12345,65535,65536,65537,-65536,1000000,-1000000,IMAX,IMIN,IMAX-1,IMIN+1};
 static ll in64[]={0,1,-1,7,-7,1000,-1000,100000,-100000,4294967295LL,4294967296LL,4294967297LL,-4294967296LL,1000000000000LL,-1000000000000LL,LMAX,LMIN,LMAX-1,LMIN+1};
 
-/* Regression for the i386 temp-slot-aliasing miscompile (get_temp_local_var):
- * a 32-bit signed constant `%C` whose operand is a SPILLED expression
- * `(s&0x7fffffff)`, living in a function that ALSO passes/returns a >16B struct by
- * value. The struct raises temp/frame pressure so the divmagic-spilled operand's
- * slot got reused -> `_m` (constant divisor, divmagic fires) diverged from `_r`
- * (volatile divisor, hardware idiv). See the `MCC_AST_DIVMAGIC` i386 item in TODO. */
 struct BigDM { long long a[8]; };
 static struct BigDM bdm_make(int x){ struct BigDM b; int i; for(i=0;i<8;i++) b.a[i]=(long long)x*i*100003; return b; }
-static int bdm_use(struct BigDM b){ int s=0,i; for(i=0;i<8;i++) s+=(int)b.a[i]; return s; } /* pass-by-value: sub esp copy */
-/* mirrors the d9 repro: a loop making + PASSING a >16B struct by value, then a
- * 32-bit signed constant %C on the accumulated int. */
+static int bdm_use(struct BigDM b){ int s=0,i; for(i=0;i<8;i++) s+=(int)b.a[i]; return s; }
 #define BIGDM(C) \
 	static int bdm_m_##C(int x){ int s=0,i; for(i=1;i<=10;i++){ struct BigDM b=bdm_make(x+i); s+=bdm_use(b); } return (s&0x7fffffff)%(C); } \
 	static int bdm_r_##C(int x){ int s=0,i; for(i=1;i<=10;i++){ struct BigDM b=bdm_make(x+i); s+=bdm_use(b); } volatile int vd=(C); return (s&0x7fffffff)%vd; }
@@ -141,7 +110,6 @@ int main(void){
 		checks++; if(u64[i].d(xv)!=rU64(xv,u64[i].c)) rep("u64/",(ll)u64[i].c,(ll)xv,(ll)u64[i].d(xv),(ll)rU64(xv,u64[i].c));
 		checks++; if(u64[i].m(xv)!=rU64m(xv,u64[i].c)) rep("u64%",(ll)u64[i].c,(ll)xv,(ll)u64[i].m(xv),(ll)rU64m(xv,u64[i].c)); }
 
-	/* wide strided sweeps for the hottest divisors */
 	for(i=0;i<n32;i++) for(x=-3000000L;x<=3000000L;x+=101){ int xv=(int)x; if(xv==IMIN&&s32[i].c==-1)continue;
 		checks++; if(s32[i].d(xv)!=rS(xv,s32[i].c)) rep("sw-s32/",s32[i].c,xv,s32[i].d(xv),rS(xv,s32[i].c));
 		checks++; if(s32[i].m(xv)!=rSm(xv,s32[i].c)) rep("sw-s32%",s32[i].c,xv,s32[i].m(xv),rSm(xv,s32[i].c)); }
@@ -155,7 +123,6 @@ int main(void){
 		checks++; if(u64[i].d(xv)!=rU64(xv,u64[i].c)) rep("sw-u64/",(ll)u64[i].c,(ll)xv,(ll)u64[i].d(xv),(ll)rU64(xv,u64[i].c));
 		checks++; if(u64[i].m(xv)!=rU64m(xv,u64[i].c)) rep("sw-u64%",(ll)u64[i].c,(ll)xv,(ll)u64[i].m(xv),(ll)rU64m(xv,u64[i].c)); }
 
-	/* large-struct-by-value + constant %C (temp-slot-aliasing regression) */
 	for(x=-200000L;x<=200000L;x+=7){ int xv=(int)x;
 		checks++; if(bdm_m_251(xv)!=bdm_r_251(xv)) rep("big%251",251,xv,bdm_m_251(xv),bdm_r_251(xv));
 		checks++; if(bdm_m_7(xv)!=bdm_r_7(xv)) rep("big%7",7,xv,bdm_m_7(xv),bdm_r_7(xv));
@@ -169,9 +136,6 @@ EOF
 echo "generated $OUT ($(wc -l < "$OUT") lines)"
 GEN
 
-# --- stage 1: build the optimizer-enabled i386 cross mcc in a linux/amd64
-#     container. Mount the repo RO (slow bind), copy the needed sources into the
-#     container fs (fast) before building, then compile the soak with divmagic. ---
 echo "== docker linux/amd64: build optimizer-enabled i386 cross mcc + compile soak =="
 dg_docker run --rm --platform linux/amd64 \
 	-v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
@@ -181,7 +145,6 @@ dg_docker run --rm --platform linux/amd64 \
 		apt-get update >/dev/null 2>&1
 		apt-get install -y gcc binutils bash >/dev/null 2>&1
 	}
-	# fast local copy of the pieces the build reads (RO bind is slow for many small reads)
 	mkdir -p /b
 	cp -a /repo/src /repo/include /repo/runtime /b/
 	cd /b
@@ -206,16 +169,7 @@ dg_docker run --rm --platform linux/amd64 \
 	echo "PASS  divmagic fired"
 '
 
-# --- stage 2: link + run under linux/386 against the mcc i386 runtime ---
 echo "== docker linux/386: link soak.o + i386-libmccrt.a and run =="
-# Provisioning is gated the way i386inline-docker.sh already gates it, for two
-# reasons this cell hit in CI (nightly Matrix run 30742545269): `apt-get install
-# gcc` alone does NOT pull libc6-dev, so the link below dies for want of crti.o;
-# and with BOTH apt commands' stdout and stderr suppressed under `set -e`, an apt
-# failure killed the container before it printed anything at all -- the cell went
-# red with a completely empty stage-2 log, which is unactionable. An unavailable
-# archive is an environment fact, so it skips 77; the soak's own verdict below is
-# untouched and still fails the cell on a real divmagic miscompile.
 dg_docker run --rm --platform linux/386 -v "$WP":/w -w /w "$IMAGE_386" sh -c '
 	set -e
 	if ! command -v gcc >/dev/null || { [ ! -e /usr/lib/i386-linux-gnu/crti.o ] && [ ! -e /usr/lib/crti.o ]; }; then

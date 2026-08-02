@@ -94,4 +94,4 @@ int main(void) {
 }
 #endif
 
-#endif /* MCC_JIT_H */
+#endif

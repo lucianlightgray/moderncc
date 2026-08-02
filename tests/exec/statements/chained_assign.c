@@ -1,11 +1,11 @@
-/* Chained assignment `a = b = v`, which the AST recorder models by leaving the
-   inner assignment's value as the expression result. Two defects lived here:
-   the shared value node was reparented (a non-tree AST), and the outer store
-   reads the value from the register the inner store left it in -- which a
-   PROMOTED inner target never writes, so the result was a wrong starting value
-   (a constant +512 offset on the reduction below). The reduction form is the
-   one that matters: plb spectral-norm writes `for (sum = j = 0; ...)`. Integer
-   output where possible so the golden is exact. */
+
+
+
+
+
+
+
+
 #include <stdio.h>
 
 static double v[64];

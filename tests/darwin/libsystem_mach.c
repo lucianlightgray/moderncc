@@ -1,7 +1,7 @@
-/* Mach IPC and the Darwin VM: MIG round-trips to the kernel (task_info,
-   host_info, vm_allocate/vm_protect/vm_deallocate), port right management, and
-   the commpage-backed timebase. The layer tests/qemu/apple-libc documents as
-   kernel-bound by definition. */
+
+
+
+
 #include <stdio.h>
 #include <string.h>
 #include <mach/mach.h>
@@ -21,9 +21,9 @@ int main(void) {
 	mach_port_t self = mach_task_self();
 	CHECK(self != MACH_PORT_NULL);
 
-	/* task_info is a real MIG round-trip: the message is built, sent through
-	   the kernel and the reply unpacked, so a broken struct layout or a wrong
-	   call ABI shows up as KERN_INVALID_ARGUMENT rather than a wrong number. */
+
+
+
 	mach_msg_type_number_t cnt = TASK_BASIC_INFO_64_COUNT;
 	struct task_basic_info_64 tbi;
 	memset(&tbi, 0, sizeof tbi);
@@ -45,7 +45,7 @@ int main(void) {
 	CHECK(host_page_size(mach_host_self(), &page) == KERN_SUCCESS);
 	CHECK(page >= 4096);
 
-	/* mach_vm_allocate/protect/deallocate on the task's own VM map. */
+
 	mach_vm_address_t addr = 0;
 	mach_vm_size_t len = page * 4;
 	CHECK(mach_vm_allocate(self, &addr, len, VM_FLAGS_ANYWHERE) == KERN_SUCCESS);
@@ -63,7 +63,7 @@ int main(void) {
 		CHECK(mach_vm_deallocate(self, addr, len) == KERN_SUCCESS);
 	}
 
-	/* mach_absolute_time reads the commpage; the timebase converts it to ns. */
+
 	mach_timebase_info_data_t tb;
 	memset(&tb, 0, sizeof tb);
 	CHECK(mach_timebase_info(&tb) == KERN_SUCCESS);
@@ -77,7 +77,7 @@ int main(void) {
 	uint64_t ns = (t1 - t0) * tb.numer / tb.denom;
 	CHECK(ns > 1000);
 
-	/* A fresh receive right, then a send right on it, then both released. */
+
 	mach_port_t port = MACH_PORT_NULL;
 	CHECK(mach_port_allocate(self, MACH_PORT_RIGHT_RECEIVE, &port) == KERN_SUCCESS);
 	CHECK(port != MACH_PORT_NULL);

@@ -15,8 +15,6 @@ concurrency:
 jobs:
 
   dist:
-    # Shared dist pipeline (.github/workflows/dist.yml, same one ci.yml runs
-    # per push), stamped with the tag instead of ci-<sha12>.
     uses: ./.github/workflows/dist.yml
     permissions:
       contents: read

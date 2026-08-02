@@ -91,15 +91,6 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 									int align, int result);
 void rir_vla_begin(void);
 
-/* Direct capture path. Called from src/mccgen.c immediately before the matching
-   ast_hook_*, in the position the lifted rir_* statements held at the head of
-   those hook bodies, so the capture no longer rides the tree recorder. Almost
-   everything here reads only its own arguments and the live parser globals
-   rir_mark_v2 already samples (vstack, vtop, nocode_wanted, ind, jrn_n), which
-   is what makes the lift order-exact; the exceptions carry Replay_IR's own
-   state, which lives in src/mccrir.c with them -- the member arrow bit, the
-   builtin-complex lowering bit, and the ternary and logical-and/or nesting
-   stacks rir_hook_body_begin() resets per body. */
 void rir_hook_if_begin(void);
 void rir_hook_if_gvtst_done(void);
 void rir_hook_if_else(void);

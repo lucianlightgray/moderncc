@@ -1,29 +1,4 @@
 #!/bin/sh
-# Mach-O GOT and SUBTRACTOR relocations, against real clang-produced objects.
-#
-# TODO listed both as macOS-reserved. Neither is: clang targets
-# x86_64-apple-macos / arm64-apple-macos from Linux and emits genuine GOT_LOAD
-# (GOT_LOAD_PAGE21 + GOT_LOAD_PAGEOFF12 on arm64) and SUBTRACTOR entries, which
-# is all the loader consumes.
-#
-# Both were HARD ERRORS before, so a link failure is the OLD behaviour and
-# "the link succeeded" proves nothing on its own. Every assertion below is
-# arithmetic against llvm-nm:
-#   1. the GOT load's own encoding must compute a slot address inside __got,
-#      and that slot must CONTAIN the address nm reports for the target symbol
-#      -- an unrelocated or misdirected slot fails this even though the binary
-#      links and disassembles plausibly
-#   2. the SUBTRACTOR fields must hold exactly nm(_f) - nm(_d), at both 4 and 8
-#      bytes; a difference is invariant under load address, so a wrong answer
-#      here is a wrong answer everywhere
-#   3. a SUBTRACTOR whose subtrahend is NOT in the relocated section must be
-#      REFUSED. That case cannot be expressed as a single ELF relocation, and
-#      emitting the nearest one produces a binary that links and holds the
-#      wrong number.
-#
-# Skips unless clang can target the triple and llvm-objdump/llvm-nm exist.
-#
-# Usage: got-sub.sh <macho-mcc> <mccbase> <workdir> <arch>
 set -e
 
 MCC=$1
@@ -72,8 +47,6 @@ _delta32:
 _delta64:
 	.quad _f - _d
 EOF
-# The subtrahend (_d) lives in __DATA while the field lives in __TEXT, so the
-# difference is not a section-internal constant the assembler can fold.
 cat >"$WORK/cross.s" <<'EOF'
 	.section __DATA,__data
 	.globl _dd

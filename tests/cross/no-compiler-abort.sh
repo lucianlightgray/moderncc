@@ -1,20 +1,4 @@
 #!/bin/sh
-# No target may CRASH the compiler on the corpus.
-#
-# A failed compile is a diagnostic; a SIGABRT or SIGSEGV is a bug in mcc with
-# no output file and no message the user can act on. riscv64 aborted on
-# tests/exec/structs_unions/struct_byval.c at -O1 and above for an unknown
-# number of rounds -- assert(vtop->r == (VT_LOCAL | VT_LVAL)) in
-# arch_transfer_ret_regs -- because every existing per-target check counts
-# ok/fail and a crash simply lands in the fail column next to the files that
-# legitimately do not compile for want of a header.
-#
-# So this asserts on the SIGNAL, not on the exit status: rc >= 128 fails,
-# anything else is fine. It deliberately does not care how many files compile,
-# which keeps it immune to the low-fn sysroot trap that makes census numbers
-# unreliable.
-#
-# Usage: no-compiler-abort.sh <arch> <mcc> <crossdir> <sysroot|-> <corpus> [opt ...]
 set -eu
 
 ARCH=$1
@@ -53,7 +37,6 @@ for o in $OPTS; do
 	for f in $(find "$CORPUS" -name '*.c' ! -name 'runner.c' | sort); do
 		n=$((n + 1))
 		rc=0
-		# shellcheck disable=SC2086
 		"$MCC" -w "$o" -B "$CROSS" $EXTRA -c "$f" -o "$OBJ" >/dev/null 2>&1 || rc=$?
 		if [ "$rc" -ge 128 ]; then
 			crashed=$((crashed + 1))

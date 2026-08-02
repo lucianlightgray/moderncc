@@ -1,16 +1,6 @@
 #ifndef MCCJIT_WIN32_H
 #define MCCJIT_WIN32_H
 
-/* Win32 portability shim for src/mccjit_embed.c.
-
-   The JIT-embed layer is written against POSIX/glibc (mmap, pthread, the
-   __atomic builtins, a MAP_SHARED file map for the KGC store). This header
-   provides just-enough equivalents over the Win32 API so the same body builds
-   and runs on the PE target with both mingw-gcc and MSVC cl, WITHOUT touching
-   the POSIX path (every symbol below is a function-like macro or a static
-   inline, defined only under _WIN32). The compatibility names are introduced
-   AFTER the system headers so we never rename a CRT declaration. */
-
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS 1
 #endif
@@ -38,21 +28,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#if !defined(__GNUC__) && !defined(__clang__) /* MSVC */
+#if !defined(__GNUC__) && !defined(__clang__)
 #include <intrin.h>
 #endif
 
-/* ----------------------------------------------- Vista sync primitives --
-   mcc's own curated <windows.h> (runtime/win32/include/winapi) is a pre-Vista
-   mingw snapshot: it carries VirtualAlloc/CreateFileMapping/HeapAlloc/QPC but
-   NOT the slim reader/writer lock, condition variable, or one-time-init types.
-   Without them an mcc-self-hosted embed-JIT build (mcc compiling mcc.c) can't
-   parse this header, forcing a dependency on an external toolchain's windows.h.
-   Provide the exact subset used below when absent, so the self-host is
-   self-contained. Every real toolchain windows.h (mingw/MSVC) defines the
-   matching *_INIT macros, so these blocks are skipped verbatim there — no
-   redefinition, zero change to the normal gcc/cl build. kernel32 exports the
-   entry points (runtime/win32/lib/kernel32.def), so the link resolves. */
 #ifndef SRWLOCK_INIT
 typedef struct _MCCJIT_SRWLOCK { PVOID Ptr; } SRWLOCK, *PSRWLOCK;
 #define SRWLOCK_INIT {0}
@@ -78,11 +57,6 @@ WINBASEAPI BOOL WINAPI InitOnceExecuteOnce(PINIT_ONCE,
 																					 PVOID, LPVOID *);
 #endif
 
-/* ------------------------------------------------------------------ arch --
-   The exec-memory / stub builders in mccjit_embed.c are host-arch specific
-   (they emit raw machine code for the machine mcc itself runs on). GCC/Clang
-   expose __x86_64__ / __aarch64__; MSVC exposes _M_X64 / _M_ARM64. Normalize
-   to internal names so an MSVC-built mcc still gets real JIT on the same box. */
 #if defined(__x86_64__) || defined(_M_X64)
 #ifndef MCCJIT_X64
 #define MCCJIT_X64 1
@@ -93,15 +67,6 @@ WINBASEAPI BOOL WINAPI InitOnceExecuteOnce(PINIT_ONCE,
 #define MCCJIT_ARM64 1
 #endif
 #endif
-
-/* ssize_t is already available in this TU: <sys/types.h> (above) on mingw, and
-   mcchost.h's `#define ssize_t intptr_t` under MSVC. */
-
-/* ------------------------------------------------------------ mmap/munmap --
-   mccjit_embed.c uses mmap two ways: anonymous exec/rw pages (VirtualAlloc)
-   and a MAP_SHARED view onto an fd (the KGC store — CreateFileMapping). A tiny
-   registry lets a single munmap() dispatch: a registered base is a file view
-   (UnmapViewOfFile + CloseHandle), everything else is a VirtualAlloc region. */
 
 #define PROT_NONE 0x0
 #define PROT_READ 0x1
@@ -115,7 +80,7 @@ WINBASEAPI BOOL WINAPI InitOnceExecuteOnce(PINIT_ONCE,
 #define MAP_ANON MAP_ANONYMOUS
 
 #ifndef MAP_FAILED
-#define MAP_FAILED ((void *)0) /* NULL so `p == MAP_FAILED` reads as a NULL check */
+#define MAP_FAILED ((void *)0)
 #endif
 
 #define MS_ASYNC 1
@@ -145,8 +110,6 @@ static void mccjit_win32_map_register(void *base, HANDLE hmap, size_t len) {
 	ReleaseSRWLockExclusive(&mccjit_win32_map_lock);
 }
 
-/* Detach a registered view. Returns its mapping handle (and clears the slot),
-   or INVALID_HANDLE_VALUE if `base` was not a file view. */
 static HANDLE mccjit_win32_map_take(void *base) {
 	HANDLE h = INVALID_HANDLE_VALUE;
 	int i;
@@ -220,10 +183,6 @@ static MAYBE_UNUSED int mccjit_win32_msync(void *addr, size_t len, int flags) {
 #define munmap(a, l) mccjit_win32_munmap((a), (l))
 #define msync(a, l, f) mccjit_win32_msync((a), (l), (f))
 
-/* -------------------------------------------------------------- file I/O --
-   The KGC store opens/grows a backing file. msvcrt has fstat/struct stat and
-   fopen family; open/close/ftruncate/pread/mkstemp need thin adapters. */
-
 static MAYBE_UNUSED int mccjit_win32_open(const char *path, int flags, ...) {
 	return _open(path, flags | _O_BINARY, _S_IREAD | _S_IWRITE);
 }
@@ -255,7 +214,6 @@ static MAYBE_UNUSED int mccjit_win32_mkstemp(char *tmpl) {
 #define O_CREAT _O_CREAT
 #endif
 
-/* --------------------------------------------------------------- timing --- */
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME 0
 #endif
@@ -281,9 +239,6 @@ static MAYBE_UNUSED int mccjit_win32_nanosleep(const struct timespec *req,
 	(void)rem;
 	if (ns <= 0)
 		return 0;
-	/* Sleep(1) rounds up to the ~15 ms scheduler tick, which turns a 1 ms JIT
-	   pool-nap into a multi-second spin. For sub-2 ms requests, spin-yield
-	   against QPC instead so short naps stay short. */
 	if (ns < 2000000LL) {
 		LARGE_INTEGER f, s, c;
 		QueryPerformanceFrequency(&f);
@@ -303,23 +258,16 @@ static MAYBE_UNUSED int mccjit_win32_nanosleep(const struct timespec *req,
 #define clock_gettime(clk, ts) mccjit_win32_clock_gettime((clk), (ts))
 #define nanosleep(req, rem) mccjit_win32_nanosleep((req), (rem))
 
-/* -------------------------------------------------------------- environ --- */
 static MAYBE_UNUSED int mccjit_win32_setenv(const char *name, const char *val,
 																						int overwrite) {
 	(void)overwrite;
 	return _putenv_s(name, val);
 }
 static MAYBE_UNUSED int mccjit_win32_unsetenv(const char *name) {
-	return _putenv_s(name, ""); /* empty value removes the var in msvcrt */
+	return _putenv_s(name, "");
 }
 #define setenv(n, v, o) mccjit_win32_setenv((n), (v), (o))
 #define unsetenv(n) mccjit_win32_unsetenv(n)
-
-/* ---------------------------------------------------------------- pthread --
-   The pool/QSBR/KGC use a small pthread subset. Back mutexes with SRWLOCK and
-   conds with CONDITION_VARIABLE — both have zero-value static initializers, so
-   PTHREAD_*_INITIALIZER maps cleanly and neither needs a destroy. Locks here
-   are never taken recursively. */
 
 typedef SRWLOCK pthread_mutex_t;
 typedef CONDITION_VARIABLE pthread_cond_t;
@@ -400,8 +348,6 @@ static MAYBE_UNUSED int pthread_create(pthread_t *t, const void *attr,
 	struct mccjit_win32_thr *s;
 	uintptr_t h;
 	(void)attr;
-	/* mcc poisons raw malloc/free (mcc.h), so allocate the thread control block
-	   from the process heap directly. */
 	s = (struct mccjit_win32_thr *)HeapAlloc(GetProcessHeap(), 0, sizeof *s);
 	if (!s)
 		return -1;
@@ -427,12 +373,7 @@ static MAYBE_UNUSED int pthread_join(pthread_t t, void **ret) {
 	return 0;
 }
 
-/* ---------------------------------------------------------------- atomics --
-   GCC/Clang provide the __atomic builtins natively; only MSVC needs a shim.
-   Every atomic target in mccjit_embed.c is a naturally-aligned 8-byte object
-   (a uint64_t epoch or a pointer on the x64/arm64 hosts that actually JIT), so
-   an Interlocked-on-64 mapping is correct there. */
-#if !defined(__GNUC__) && !defined(__clang__) /* MSVC: no __atomic builtins */
+#if !defined(__GNUC__) && !defined(__clang__)
 #define __ATOMIC_RELAXED 0
 #define __ATOMIC_CONSUME 1
 #define __ATOMIC_ACQUIRE 2
@@ -449,4 +390,4 @@ static MAYBE_UNUSED int pthread_join(pthread_t t, void **ret) {
 												(__int64)(v)))
 #endif
 
-#endif /* MCCJIT_WIN32_H */
+#endif

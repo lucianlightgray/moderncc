@@ -1,23 +1,4 @@
 #!/usr/bin/env bash
-# mcc<->gcc mixed-object ABI differential for a 64-bit ELF target.
-#
-# extlink-docker.sh only links a SINGLE mcc object with GNU ld -- it never
-# crosses the mcc/gcc calling-convention boundary. This guard does: it compiles
-# a self-contained ABI corpus (struct-by-value in registers / with padding /
-# indirect >16B / mixed INTEGER+SSE / homogeneous-float aggregate, plus
-# char/short/int/long-long/stack args, float/double args, varargs, and
-# struct-by-value returns) with BOTH mcc and gcc, then links every cross mix
-# (mcc-lib+gcc-main, gcc-lib+mcc-main, both-mcc) and requires the program's
-# exit code to match the all-gcc reference. main() computes each expected value
-# inline and returns the 1-based index of the first mismatch (0 = all pass), so
-# any exit != the gcc reference is a real mcc<->gcc ABI-boundary bug.
-#
-# The corpus has NO system headers (the in-container cross mcc has no sysroot):
-# it is freestanding, self-checking, and needs no libc beyond _start/exit.
-#
-# Usage:  tools/abidiff-docker.sh <arch> [workdir]
-#           arch: arm64 | amd64
-# Exit:   0 pass · 1 an ABI mismatch/link failure · 77 skipped (no docker etc.)
 set -eu
 . "$(dirname "$0")/dockergate.sh"
 
@@ -29,11 +10,6 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 WORK_ABS="$(cd "$WORK" && pwd)"
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 
-# Native-run arches (arm64/amd64) run the linked program directly on a matching
-# container. Cross arches (riscv64) have no native execution here, so they build
-# mcc with the container's native gcc (mcc runs on the host arch but EMITS the
-# target ISA), compile/link the gcc side with a cross toolchain, and run under
-# qemu-user in a HOST-NATIVE container (arm64 on Apple Silicon, amd64 on CI x86).
 HOSTM="$(uname -m)"
 case "$HOSTM" in aarch64|arm64) NPLAT="linux/arm64"; NIMG="arm64v8/debian:bookworm-slim" ;; *) NPLAT="linux/amd64"; NIMG="debian:bookworm-slim" ;; esac
 CROSS=""; RUNNER=""; LINKFLAGS=""; MAINDEF=""; PKG="gcc libc6-dev ca-certificates"
@@ -67,61 +43,55 @@ echo "== build cross mcc ($MDEF) with the container native gcc =="
 gcc -O1 -w -DMCC_CONFIG_OPTIMIZER=1 $MDEF $INC src/mcc.c -o /w/mcc
 echo "   built /w/mcc"
 
-# mcc lowers SysV x86_64 va_arg to a call to its runtime helper __va_arg (defined
-# in runtime/lib/va_list.c; other arches inline va_arg, so the object is empty
-# there). When an mcc-compiled varargs *callee* is linked with plain gcc (no
-# libmcc) the helper is unresolved, so compile it with mcc and add it to every
-# link. It only needs glibc memcpy/abort; empty + harmless on non-x86_64.
 /w/mcc -O1 -I /b/runtime/include -c /b/runtime/lib/va_list.c -o /w/va.o
 
-# --- self-contained ABI corpus (no system headers) ---------------------------
 cat > /w/shared.h <<EOF
-struct Small    { int a, b; };                 /* 8B reg-pair */
-struct Odd      { char c; int i; short s; };   /* padded */
-struct Big      { long long a, b, c, d; };     /* 32B indirect */
-struct Mixed    { int i; double d; };          /* INTEGER+SSE (x86_64) */
-struct Mixed2   { double d; int i; };          /* SSE+INTEGER (eightbyte order swapped) */
-struct M3       { float f; long l; };          /* SSE(low4)+INTEGER: mixed 16B */
-struct FA       { float f[2]; int i; };        /* array eightbyte: EB0 SSE(float[2]), EB1 INTEGER */
-struct F4A      { float f[4]; };               /* HFA via array (all SSE) */
-struct D2A      { double d[2]; };              /* HFA via array (all SSE) */
+struct Small    { int a, b; };
+struct Odd      { char c; int i; short s; };
+struct Big      { long long a, b, c, d; };
+struct Mixed    { int i; double d; };
+struct Mixed2   { double d; int i; };
+struct M3       { float f; long l; };
+struct FA       { float f[2]; int i; };
+struct F4A      { float f[4]; };
+struct D2A      { double d[2]; };
 struct In2      { float a, b; };
-struct NHFA     { struct In2 p; float c; };    /* nested HFA: 3 float members */
-struct DNest    { struct { double x; } a; double b; }; /* nested double HFA: 2 members */
-struct SArr     { struct In2 v[2]; };          /* array-of-struct HFA: 4 float members */
-struct BoolM    { _Bool ok; double d; };       /* _Bool + double (mixed on x86_64) */
-struct S3       { char a,b,c; };               /* 3B odd-size struct */
-struct S7       { char a,b,c,d,e,f,g; };       /* 7B odd-size struct */
-struct SF1      { float f; };                  /* single-float HFA (1 member) */
-struct LD1      { long double ld; };           /* struct wrapping long double */
-struct FB       { float f; int b:20; };        /* float + bitfield (riscv64 FP-struct flatten) */
-struct DB       { double d; int b:20; };       /* double + bitfield (flatten sibling) */
-struct FCS      { float _Complex z; };         /* struct wrapping float _Complex */
-struct DFI      { double d; float f; int i; }; /* 16B double+float+int */
-struct Float4   { float a, b, c, d; };          /* homogeneous float aggregate (arm64 HFA) */
-struct DblPair  { double x, y; };               /* 2xSSE / HFA-double */
-struct Three    { int a, b, c; };              /* 12B: crosses arm64 2-reg / SysV split */
-struct Nest     { struct Small s; int z; };    /* 12B nested aggregate */
-struct HFA3     { float a, b, c; };            /* odd-count (3) homogeneous float aggregate */
-struct IntFloat { int i; float f; };           /* mixed 8B: NOT an HFA (INTEGER+SSE) */
-union  Uni      { int i; float f; long long l; }; /* 8B union by value */
-struct Bits     { unsigned a:5, b:11, c:16; }; /* 4B bitfields by value */
-struct HFA4     { double a, b, c, d; };        /* 32B: arm64/armv7 HFA (v0-v3), riscv64 indirect */
-struct Wide     { double a; long b; double c; long d; }; /* 32B mixed non-HFA: indirect return + FP+INT args */
-struct Ten      { double a,b,c,d,e,f,g,h,i,j; }; /* 80B indirect return; maker spills FP args past fa0-fa7 */
-struct A16      { long long a, b; } __attribute__((aligned(16))); /* 16B, 16-aligned: even reg-pair rule */
-struct Packed   { char a; long long b; int c; } __attribute__((packed)); /* 13B, unaligned members */
-struct PackS    { char a; int b; } __attribute__((packed));              /* 5B: <=8B packed (would be 1 reg) */
-struct PackN    { char x; struct PackS s; } __attribute__((packed));     /* nested packed */
-struct GData    { int a; char b; double c; long long d[3]; long e; }; /* global init-data layout */
-extern struct GData g_data;   /* defined in lib.c, read cross-object */
-extern __thread long g_tls;   /* thread-local, defined in lib.c: cross-object TLS interop */
+struct NHFA     { struct In2 p; float c; };
+struct DNest    { struct { double x; } a; double b; };
+struct SArr     { struct In2 v[2]; };
+struct BoolM    { _Bool ok; double d; };
+struct S3       { char a,b,c; };
+struct S7       { char a,b,c,d,e,f,g; };
+struct SF1      { float f; };
+struct LD1      { long double ld; };
+struct FB       { float f; int b:20; };
+struct DB       { double d; int b:20; };
+struct FCS      { float _Complex z; };
+struct DFI      { double d; float f; int i; };
+struct Float4   { float a, b, c, d; };
+struct DblPair  { double x, y; };
+struct Three    { int a, b, c; };
+struct Nest     { struct Small s; int z; };
+struct HFA3     { float a, b, c; };
+struct IntFloat { int i; float f; };
+union  Uni      { int i; float f; long long l; };
+struct Bits     { unsigned a:5, b:11, c:16; };
+struct HFA4     { double a, b, c, d; };
+struct Wide     { double a; long b; double c; long d; };
+struct Ten      { double a,b,c,d,e,f,g,h,i,j; };
+struct A16      { long long a, b; } __attribute__((aligned(16)));
+struct Packed   { char a; long long b; int c; } __attribute__((packed));
+struct PackS    { char a; int b; } __attribute__((packed));
+struct PackN    { char x; struct PackS s; } __attribute__((packed));
+struct GData    { int a; char b; double c; long long d[3]; long e; };
+extern struct GData g_data;
+extern __thread long g_tls;
 long tls_get(void); void tls_set(long v);
-extern __thread long g_tls_z; /* zero-init __thread -> .tbss */
-extern int the_alias;         /* __attribute__((alias)) in lib.c */
+extern __thread long g_tls_z;
+extern int the_alias;
 long get_wk(void); long get_alias(void); long get_tlsz(void);
-struct P16      { long long a, b; };           /* 16B struct straddling reg/stack after 7 GP args */
-struct BF       { unsigned a:3; int b:5; unsigned c:20; long long d:40; int e:12; }; /* bitfield insert/extract codegen */
+struct P16      { long long a, b; };
+struct BF       { unsigned a:3; int b:5; unsigned c:20; long long d:40; int e:12; };
 
 int            small_sum(struct Small p);
 struct Small   small_make(int a, int b);
@@ -203,9 +173,9 @@ struct GData   g_data = { 7, 88, 2.5, {100, 200, 300}, -99 };
 __thread long  g_tls = 555;
 long           tls_get(void){ return g_tls; }
 void           tls_set(long v){ g_tls = v; }
-__thread long  g_tls_z;        /* zero-init -> .tbss */
+__thread long  g_tls_z;
 long           get_tlsz(void){ return g_tls_z; }
-__attribute__((weak)) int wk_ovr = 111; /* main.c defines it strong -> override */
+__attribute__((weak)) int wk_ovr = 111;
 int            alias_target = 42;
 extern int     the_alias __attribute__((alias("alias_target")));
 long           get_wk(void){ return wk_ovr; }
@@ -305,12 +275,9 @@ double hfx_nsrn(double a,double b,double c,double d,double e,double f,double g, 
 double hfx_full(double a,double b,double c,double d,double e,double f,double g,double h, struct Float4 s, double x){ return a+b+c+d+e+f+g+h+s.a+s.b+s.c+s.d+x; }
 EOF
 
-# main.c: NO system headers so the cross mcc can compile it. Each check compares
-# the boundary-crossing callee return to an inline-computed expected value;
-# main returns the 1-based index of the first mismatch (0 = all pass).
 cat > /w/main.c <<EOF
 #include "shared.h"
-int wk_ovr = 999;   /* strong def overrides the weak one in lib.c */
+int wk_ovr = 999;
 int main(void){
   int k=0;
   { struct Small p; p.a=111; p.b=-40; k++; if(small_sum(p)!=71) return k; }
@@ -318,15 +285,6 @@ int main(void){
   { struct Odd o; o.c=(char)5; o.i=100000; o.s=(short)-30000; k++; if(odd_sum(o)!=(long long)5+100000-30000) return k; }
   { struct Big b; b.a=1; b.b=2; b.c=3; b.d=4; k++; if(big_sum(b)!=10) return k; }
   { struct Big b,r; b.a=1; b.b=2; b.c=3; b.d=4; r=big_scale(b,10); k++; if(r.a!=10||r.b!=20||r.c!=30||r.d!=40) return k; }
-  /* Mixed-class small structs: a <=16B aggregate whose two eightbytes have
-     DIFFERENT classes (one INTEGER, one SSE). SysV passes them in {GP,XMM} (not
-     two GP) and returns them in {rax,xmm0}. mcc used to collapse the aggregate to
-     a single whole-struct class (INTEGER wins) -- caller AND callee diverged from
-     gcc/clang. FIXED via per-eightbyte classification (x86_64_mixed_class) in
-     gfunc_call/gfunc_prolog + the arch_transfer_ret_regs return path. Covers
-     {int;double}, the eightbyte-order swap {double;int}, {float;long}, and a
-     mixed arg after 5 GP args (register-pressure). arm64/riscv64/armv7 were
-     conformant all along (they return/pass these per their own rules). */
   { struct Mixed m; m.i=3; m.d=0.5; k++; if(mixed_sum(m)!=3.5) return k; }
   { struct Mixed r=mixed_make(7, 1.25); k++; if(r.i!=7||r.d!=1.25) return k; }
   { struct Mixed2 m; m.d=2.5; m.i=4; k++; if(mixed2_sum(m)!=6.5) return k; }
@@ -334,29 +292,16 @@ int main(void){
   { struct M3 m; m.f=1.5f; m.l=100; k++; if(m3_sum(m)!=101) return k; }
   { struct Mixed m; m.i=1; m.d=2.0; struct Mixed r=mixed_after(1,2,3,4,5,m);
     k++; if(r.i!=16||r.d!=2.0) return k; }
-  /* Array-typed eightbytes: a struct member that is an array is VT_PTR|VT_ARRAY
-     internally; it must be classified by its ELEMENT type, not as a pointer.
-     FA{float[2];int} is mixed SSE+INTEGER; F4A{float[4]}/D2A{double[2]} are HFAs
-     passed/returned entirely in SSE regs (mcc used to put them in GP regs). */
   { struct FA x; x.f[0]=1.5f; x.f[1]=2.5f; x.i=10; k++; if(fa_sum(x)!=14.0) return k; }
   { struct F4A x; x.f[0]=1.5f;x.f[1]=2.5f;x.f[2]=3.0f;x.f[3]=4.0f; k++; if(f4a_sum(x)!=11.0f) return k; }
   { struct F4A r=f4a_mk(1,2,3,4); k++; if(r.f[0]!=1||r.f[3]!=4) return k; }
   { struct D2A x; x.d[0]=2.5;x.d[1]=8.0; k++; if(d2a_sum(x)!=10.5) return k; }
   { struct D2A r=d2a_mk(3.5,4.5); k++; if(r.d[0]!=3.5||r.d[1]!=4.5) return k; }
-  /* Nested / array-of-struct HFAs: an HFA is homogeneous float/double RECURSIVELY
-     (AAPCS). NHFA{struct In2;float}=3 floats, DNest=2 doubles, SArr{In2[2]}=4
-     floats -- all passed in VFP/SSE regs. BoolM{_Bool;double} is mixed on x86_64.
-     The armv7 is_hgen_float_aggr now recurses nested structs + arrays. */
   { struct NHFA x; x.p.a=1.5f;x.p.b=2.5f;x.c=3.0f; k++; if(nhfa_sum(x)!=7.0f) return k; }
   { struct NHFA r=nhfa_mk(2,3,4); k++; if(r.p.a!=2||r.p.b!=3||r.c!=4) return k; }
   { struct DNest x; x.a.x=2.5;x.b=8.0; k++; if(dnest_sum(x)!=10.5) return k; }
   { struct SArr x; x.v[0].a=1;x.v[0].b=2;x.v[1].a=3;x.v[1].b=4; k++; if(sarr_sum(x)!=10.0f) return k; }
   { struct BoolM x; x.ok=1;x.d=4.5; k++; if(boolm_sum(x)!=5.5) return k; }
-  /* Odd-size small structs, a single-float HFA, a long-double-wrapping struct,
-     and a float+bitfield struct. FB{float f; int b:20} exercised a riscv64 callee
-     bug: the flattened integer field of a hardware-FP struct was homed at i*8
-     instead of its real byte offset, so a packed int (offset 4, not 8) was stored
-     to the wrong slot -- fixed in reg-pass prolog to use fieldofs. */
   { struct S3 x; x.a=1;x.b=2;x.c=3; k++; if(s3_sum(x)!=6) return k; }
   { struct S7 x; x.a=1;x.b=2;x.c=3;x.d=4;x.e=5;x.f=6;x.g=7; k++; if(s7_sum(x)!=28) return k; }
   { struct SF1 x; x.f=3.5f; k++; if(sf1_sum(x)!=3.5f) return k; }
@@ -381,39 +326,20 @@ int main(void){
   { union Uni u; u.i=-12345; k++; if(uni_int(u)!=-12345) return k; }
   { struct Bits b; b.a=17u; b.b=1000u; b.c=40000u; k++; if(bits_sum(b)!=(long long)17+1000+40000) return k; }
   { struct HFA4 h; h.a=1.5; h.b=2.5; h.c=3.5; h.d=4.5; k++; if(hfa4_sum(h)!=12.0) return k; }
-  /* Returning a >16B all-float struct (indirect / hidden-pointer return) while
-     also passing FP args exercised the riscv64 caller sret-pointer + FP-arg
-     accounting bug (fixed: gfunc_call no longer advances the param walk for the
-     implicit sret arg). Correct on arm64/armv7 (HFA returned in v0-v3/d0-d3). */
   { struct HFA4 r=hfa4_make(10.0,20.0,30.0,40.0); k++; if(r.a!=10.0||r.b!=20.0||r.c!=30.0||r.d!=40.0) return k; }
   { long double r=ld_add(1.5L, 2.25L); k++; if(r!=3.75L) return k; }
   { long double r=ld_mix(3, 2.5L, 1.5); k++; if(r!=9.0L) return k; }
   { struct Wide r=wide_make(1.5, 100L, 2.5, 200L); k++; if(r.a!=1.5||r.b!=100||r.c!=2.5||r.d!=200) return k; }
   { k++; if(vsum_d(4, 1.5, 2.25, 4.0, 8.0)!=15.75) return k; }
   { k++; if(vmix_id(3, 2, 1.5, 5, 2.0, 10, 0.5)!=(double)(2*1.5+5*2.0+10*0.5)) return k; }
-  /* 10 double args: a-h fill fa0-fa7, then i,j spill. riscv64 LP64D passes
-     exhausted FP args in GP arg regs first (a1,a2 here) then stack; mcc now
-     re-classifies an exhausted scalar FP arg as INT so it flows through the
-     GP path (gfunc_call + func prolog), matching gcc. */
   { struct Ten r=ten_make(1,2,3,4,5,6,7,8,9,10); k++;
     if(r.a!=1||r.b!=2||r.c!=3||r.d!=4||r.e!=5||r.f!=6||r.g!=7||r.h!=8||r.i!=9||r.j!=10) return k; }
-  /* Over-aligned struct by value after an odd reg: gcc AND clang pass a
-     __attribute__((aligned(16))) struct in consecutive regs (x1,x2 on arm64) --
-     the PCS register even-rounding tracks NATURAL alignment (__int128 on arm64;
-     the 8-aligned member on armv7), not an artificial aligned attribute. FIXED on
-     arm64 (arm64_natural_align16) and armv7 (arm_pcs_natural_align). riscv64/
-     x86_64 agree with gcc. */
   { struct A16 s; s.a=10; s.b=20; k++; if(a16_after_int(1, s)!=31) return k; }
   { struct P16 s; s.a=100; s.b=200; k++; if(straddle(1,2,3,4,5,6,7,s)!=328) return k; }
-  /* Bitfield insert/extract codegen: signed (b,e) test sign-extension, unsigned
-     (a,c) zero-extension, d is a 40-bit field straddling the 32-bit boundary. */
   { struct BF x; x.a=5; x.b=-10; x.c=1000000; x.d=-500000000000LL; x.e=-100;
     k++; if(x.a!=5u||x.b!=-10||x.c!=1000000u||x.d!=-500000000000LL||x.e!=-100) return k; }
   { struct BF x; x.a=7; x.b=15; x.c=1048575; x.d=549755813887LL; x.e=2047;
     k++; if(x.a!=7u||x.b!=15||x.c!=1048575u||x.d!=549755813887LL||x.e!=2047) return k; }
-  /* Narrow-type return extension: callee-vs-caller extension responsibility
-     differs by arch (AAPCS64: caller extends; RISC-V: callee sign/zero-extends
-     to XLEN). Values chosen so the high bits matter. */
   { k++; if(sc_make(-1)!=-1) return k; }
   { k++; if(sc_make(200)!=-56) return k; }
   { k++; if(uc_make(300)!=44) return k; }
@@ -421,45 +347,19 @@ int main(void){
   { k++; if(ush_make(-1)!=65535) return k; }
   { long long r=sc_make(200); k++; if(r!=-56) return k; }
   { unsigned long long r=uc_make(-1); k++; if(r!=255) return k; }
-  /* Packed struct by value (unaligned members). The SysV AMD64 psABI 3.2.3 rule
-     "an aggregate with unaligned fields has class MEMORY" applies -- gcc AND clang
-     both pass/return such a struct in memory (verified via an mcc/gcc/clang
-     differential). mcc used to classify it as INTEGER and pass it in GP regs
-     (caller AND callee diverged from gcc; both-mcc self-consistent-but-wrong);
-     FIXED by x86_64_has_unaligned_field in classify_x86_64_arg (memory class),
-     which also routes the struct RETURN through the indirect sret path. Covers
-     the 13B, the <=8B (would otherwise be 1 reg), and the nested-packed shapes.
-     Conformant on arm64/riscv64/armv7 all along (no unaligned->memory rule there;
-     gcc agrees), and now on x86_64. */
   { struct Packed p; p.a=5; p.b=1000000000000LL; p.c=-7; k++; if(packed_sum(p)!=(long long)5+1000000000000LL-7) return k; }
   { struct Packed r=packed_make(9, 123456789012LL, 42); k++; if(r.a!=9||r.b!=123456789012LL||r.c!=42) return k; }
   { struct PackS p; p.a=3; p.b=1000000; k++; if(packs_sum(p)!=1000003) return k; }
   { struct PackS r=packs_make(7,-9); k++; if(r.a!=7||r.b!=-9) return k; }
   { struct PackN p; p.x=1; p.s.a=2; p.s.b=30000; k++; if(packn_sum(p)!=30003) return k; }
-  /* Global initialized-data layout across the boundary: reader (mcc or gcc)
-     accesses fields of a global struct+array defined in the other TU. */
   { k++; if(g_data.a!=7||g_data.b!=88||g_data.c!=2.5||g_data.d[0]!=100||g_data.d[2]!=300||g_data.e!=-99) return k; }
-  /* Cross-object TLS: the main-side direct extern-__thread access, the lib
-     tls_get, and the lib tls_set must all refer to the SAME thread-local slot.
-     Guards the STT_TLS undef-symbol fix -- mcc used to reset extern __thread refs
-     to STT_NOTYPE at object write, so GNU ld rejected linking against a TLS def. */
   { k++; if(g_tls!=555) return k; }
   { tls_set(999); k++; if(g_tls!=999) return k; }
   { g_tls = 314; k++; if(tls_get()!=314) return k; }
-  /* zero-init __thread (.tbss): default 0, and shared slot across the boundary. */
   { k++; if(g_tls_z!=0) return k; }
   { g_tls_z = 777; k++; if(get_tlsz()!=777) return k; }
-  /* weak-def override (main strong wk_ovr=999 beats lib weak 111) + alias. */
   { k++; if(get_wk()!=999) return k; }
   { k++; if(get_alias()!=42) return k; }
-  /* _Complex arg/return ABI (float/double, pass+return). The cx_*_after7 cases
-     pass a _Complex after 7 same-size FP args, exhausting the FP arg regs: the
-     RISC-V LP64D rule then passes the 2-FP-member complex via the INTEGER
-     convention (double _Complex -> 2 GP regs a_n,a_n+1; float _Complex -> 1 GP
-     reg packed), not the stack. mcc used to send it to the stack (self-consistent
-     but non-conformant), so a gcc peer disagreed -- FIXED in riscv64-gen.c by
-     re-classifying a 2-FP aggregate as integer when FP regs are insufficient.
-     arm64/armv7/x86_64 were already conformant; no runtime helper (mul/div) used. */
   { float _Complex z=__builtin_complex(1.5f,-2.5f); float _Complex r=cx_cf_id(z);
     k++; if(__real__ r!=1.5f || __imag__ r!=-2.5f) return k; }
   { double _Complex z=__builtin_complex(3.5,4.5); double _Complex r=cx_cd_id(z);
@@ -470,14 +370,6 @@ int main(void){
   { float _Complex z=__builtin_complex(0.25f,-0.5f);
     float _Complex r=cx_cf_after7(1,2,3,4,5,6,7,z);
     k++; if(__real__ r!=28.25f || __imag__ r!=-0.5f) return k; }
-  /* HFA argument-register EXHAUSTION. AAPCS64 rule C.3: an HFA that does not fit
-     in the remaining SIMD regs goes on the STACK and sets NSRN=8, so the trailing
-     scalar double x must ALSO go on the stack (no backfill of the leftover reg).
-     hfx_nsrn: 7 doubles fill v0-v6, DblPair needs 2 (only v7 free) -> stack; x on
-     stack. hfx_full: 8 doubles fill v0-v7, Float4 -> stack; x on stack. riscv64
-     puts the exhausted 2-FP DblPair in GP regs per the integer convention (same
-     path as the _Complex fix); x86_64 SysV overflows to memory. Conformant on all
-     four arches. */
   { struct DblPair s; s.x=100; s.y=200; k++; if(hfx_nsrn(1,2,3,4,5,6,7,s,1000)!=1328.0) return k; }
   { struct Float4 s; s.a=10; s.b=20; s.c=40; s.d=80; k++; if(hfx_full(1,2,3,4,5,6,7,8,s,1000)!=1186.0) return k; }
   return 0;
@@ -491,7 +383,7 @@ echo "== compile each TU with mcc and $GCC =="
 "$GCC"  -O2       -I /w -c /w/lib.c  -o /w/lib_gcc.o
 "$GCC"  -O2 $MAINDEF -I /w -c /w/main.c -o /w/main_gcc.o
 
-link_run() { # lib.o main.o -> prints exit code on stdout, "LINKFAIL" if link fails
+link_run() {
   if ! "$GCC" $LINKFLAGS "$1" "$2" /w/va.o -o /w/prog 2>/w/lderr; then
     sed "s/^/      /" /w/lderr >&2; echo LINKFAIL; return
   fi

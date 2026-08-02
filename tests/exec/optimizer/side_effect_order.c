@@ -1,22 +1,22 @@
 extern int printf(const char *, ...);
 
-/* Side-effect ORDER and COUNT across every construct the AST recorder models
- * with a dedicated hook: ternary arms, && / || short-circuit, comma, compound
- * assignment, pre/post increment, nested calls, and function arguments.
- *
- * This exists because a MODEL bug is invisible to everything else. The replay
- * is byte-compared against the parser before it is used, so a bad replay only
- * costs optimization -- but once a body is accepted, the optimizer passes
- * transform the model and re-emit, and THAT output is compared against nothing.
- * A model that misplaces when an effect happens therefore miscompiles only at
- * -O2 and above. That exact bug was caught here once already (see TODO F3a,
- * "emit-at-marker"), and only because the effects were COUNTED: the repo's other
- * optimizer goldens fold results into a checksum, which a reordered or dropped
- * side effect can leave unchanged.
- *
- * Each function records the sequence of effects into a log; main compares the
- * log to the exact expected string. Order, count and short-circuiting are all
- * pinned. Integer-only and no headers, so it runs on every target. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 static char log_buf[256];
 static int log_n;
@@ -112,7 +112,7 @@ int main(void)
 	if (ternary_arms(0) != 20 || !log_is("F"))
 		return 2;
 
-	/* short-circuit: the right operand must not be evaluated at all */
+
 	log_reset();
 	if (andor_short(0, 1) != 0 || !log_is("a"))
 		return 3;

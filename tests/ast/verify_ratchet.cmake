@@ -1,55 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# AST recorder-fidelity ratchet.
-#
-# Sweeps the exec-golden corpus under MCC_AST_VERIFY=1 and compares the set of
-# non-faithful functions (desync / unfaithful / stackresidue) against a checked-in
-# per-target baseline. Fails on any drift so the gap set can only shrink:
-#   - a function that regressed into a gap not in the baseline (a real regression)
-#   - a baseline gap that is now faithful but still listed (regenerate to record the win)
-#
-# Regenerate the baseline after intentionally changing the gap set:
-#   ctest -R ast-verify-ratchet ...            (fails, prints the diff)
-#   cmake -DMCC=<mcc> -DCORPUS=<dir> -DEXTRA=<file;...> -DBASELINE=<file> \
-#         -DTMPDIR=<dir> -DREGEN=1 -P tests/ast/verify_ratchet.cmake
-#
-# Required -D args: MCC CORPUS BASELINE TMPDIR
-# Optional: EXTRA (extra ;-list of sources), REGEN (0/1), OPT (default -O2),
-#           JOURNAL (0/1)
-#
-# OPT selects the sweep optimization level. The recorder-modelling gates are
-# enabled from -O1 up, so the -O1 and -O2 gap sets are identical and both levels
-# share one baseline; sweeping each guards against them drifting apart.
-#
-# JOURNAL COLUMN
-#
-# The same sweep runs with MCC_JOURNAL=1, so the operation journal's per-function
-# verdicts arrive on the same stderr as the recorder's and cost one extra pass
-# over the vstack rather than a second compile. The journal is an oracle running
-# ALONGSIDE the tree recorder, gated off by default, and it does not replace the
-# tree until it is at parity or better -- this column is the mechanism that
-# decides that, mechanically and every run, instead of a hand sweep.
-#
-# The invariant: a function the TREE reproduces byte-faithfully must also be one
-# the JOURNAL reproduces byte-faithfully. Journal regression on ground the tree
-# already holds is a hard failure. The converse -- journal faithful where the
-# tree is not -- is the expected win and is only counted, never failed on; that
-# count IS the parity metric, reported as a delta each run.
-#
-# `jempty` (the journal recorded no operation) is accepted opposite a faithful
-# tree: it means the body emitted zero bytes, which replays vacuously. The two
-# systems disagree only on naming there -- the recorder calls a zero-byte body
-# `faithful` and reserves `empty` for a childless tree that did NOT replay.
-# A childless tree over a body the journal also calls vacuous is a naming
-# disagreement too, so it is excluded from the delta rather than counted as a
-# journal win; a childless tree over a body the journal really replayed is a
-# lost model and stays counted.
-#
-# With JOURNAL=1 the script checks ONLY that column and SKIPs (77) when the
-# build has no MCC_JOURNAL_HOOKS, so the parity test never fails a build that
-# simply did not compile the journal in. Without it the column is reported but
-# not enforced, and the baseline ratchet is the verdict.
-#
 
 if(NOT MCC OR NOT CORPUS OR NOT BASELINE OR NOT TMPDIR)
     message(FATAL_ERROR "verify_ratchet: MCC, CORPUS, BASELINE, TMPDIR are required")
@@ -59,11 +8,6 @@ if(NOT OPT)
     set(OPT "-O2")
 endif()
 
-# Cross/emulated sweeps. MCCLAUNCH prepends an emulator (qemu-user, wine),
-# MCCFLAGS supplies the target's sysroot/prefix, and MCCPATHPREFIX rewrites the
-# absolute paths handed to the compiler -- wine maps / onto Z:, so a PE mcc
-# reads a bare unix path as a Windows one and reports "file not found". All
-# three default empty, which is exactly the native invocation this ran before.
 if(NOT DEFINED MCCLAUNCH)
     set(MCCLAUNCH "")
 endif()
@@ -83,14 +27,14 @@ endif()
 list(SORT _srcs)
 
 set(_gaps "")
-set(_ast_faithful "")   # keys the tree reproduces byte-faithfully
-set(_ast_empty "")      # keys with a childless tree, which never reached replay
-set(_ast_tried 0)       # recorder rows that are not skip:* (i.e. journal ran too)
+set(_ast_faithful "")
+set(_ast_empty "")
+set(_ast_tried 0)
 set(_jrn_rows 0)
 set(_jrn_faithful 0)
 set(_jrn_empty 0)
-set(_jrn_vac "")        # keys the journal certifies as a zero-byte body
-set(_jrn_bad "")        # keys whose journal verdict is a failure
+set(_jrn_vac "")
+set(_jrn_bad "")
 set(_jrn_clean 0)
 set(_jrn_rawops 0)
 set(_jrn_rawbytes 0)
@@ -108,14 +52,10 @@ foreach(_f ${_srcs})
         OUTPUT_QUIET ERROR_VARIABLE _err RESULT_VARIABLE _rc)
     string(REPLACE "\n" ";" _lines "${_err}")
     foreach(_ln ${_lines})
-        # "[ast-verify] <verdict>[:<line>]\t?\t<func>"
         if(_ln MATCHES "\\[ast-verify\\] (desync|unfaithful|stackresidue|bail)(:[0-9]+)?\t[^\t]*\t(.+)")
             list(APPEND _gaps "${_rel}\t${CMAKE_MATCH_3}\t${CMAKE_MATCH_1}")
         endif()
         if(_ln MATCHES "\\[ast-verify\\] ([^\t]+)\t[^\t]*\t(.+)")
-            # The skip: test below is itself a MATCHES, which rewrites every
-            # CMAKE_MATCH_<n>; latch the captures before running it or the keys
-            # end up with an empty function name.
             set(_v "${CMAKE_MATCH_1}")
             set(_fn "${CMAKE_MATCH_2}")
             if(NOT _v MATCHES "^skip:")
@@ -127,7 +67,6 @@ foreach(_f ${_srcs})
                 list(APPEND _ast_empty "${_rel}\t${_fn}")
             endif()
         endif()
-        # "[jrn-verify] <verdict>\t?\t<func>\tops=..."
         if(_ln MATCHES "\\[jrn-verify\\] ([^\t]+)\t[^\t]*\t([^\t]+)\tops=")
             set(_v "${CMAKE_MATCH_1}")
             math(EXPR _jrn_rows "${_jrn_rows} + 1")
@@ -160,19 +99,6 @@ list(JOIN _gaps "\n" _current)
 
 list(LENGTH _ast_faithful _n_ast_faithful)
 
-# The journal column. `_jrn_ok` is jfaithful plus the vacuous jempty; the delta
-# against the tree is the parity metric this whole column exists to publish.
-#
-# A body the journal calls `jempty` emitted zero bytes: jrn_verify flushes the
-# trailing gap op before testing jrn_n, so any byte emitted anywhere in the body
-# produces a JOP_RAW and jempty cannot fire. When the tree calls that same body
-# `empty` -- a childless tree, so ast_replay_ok declined and it never reached
-# replay -- neither system modelled anything and there is nothing for the
-# journal to have won. Crediting it inflated the delta by exactly the size of
-# that bucket. The tree's `empty` is credited only where the journal
-# independently certifies the zero-byte body, so a childless tree opposite a
-# body the journal really did replay stays a delta, which is what a lost model
-# looks like.
 set(_both_vacuous 0)
 foreach(_e ${_ast_empty})
     if(_e IN_LIST _jrn_vac)
@@ -203,9 +129,6 @@ if(JOURNAL)
                        "MCC_JOURNAL_HOOKS; journal column SKIP")
         cmake_language(EXIT 77)
     endif()
-    # A journal that quietly stops observing functions would show perfect parity
-    # on the handful it still sees, so require it to have covered every function
-    # the recorder actually attempted.
     if(NOT _jrn_rows EQUAL _ast_tried)
         message(FATAL_ERROR "verify_ratchet: journal observed ${_jrn_rows} functions but the "
                             "recorder attempted ${_ast_tried} — the journal hooks are not firing "
@@ -237,16 +160,6 @@ if(JOURNAL)
     else()
         string(REGEX REPLACE "\\.txt$" ".depth.txt" _jdepth "${JBASELINE}")
     endif()
-    # The two banks are separated by the consistency of their source. Breadth --
-    # which constructs the model cannot express at all -- is a property of the
-    # code emitted FOR a target, so a cross-hosted compiler and a target-native
-    # one write byte-identical honesty files. Depth -- how far below the top two
-    # vstack slots the model can see -- is a property of the compiler process's
-    # own vstack while it runs, so a compiler hosted ON the target reads
-    # differently: cross is native-1 on arm64/riscv64 and exactly native on
-    # i386. A cross run may therefore bank breadth and must never bank depth.
-    # JREGEN alone banks breadth; JDEPTHREGEN, which journal_sweep.cmake sets
-    # only for MODE=native, is what unlocks the ceiling.
     if(JREGEN AND JDEPTHREGEN)
         file(WRITE "${_jdepth}"
              "fix=${_jrn_fix}\ndeep=${_jrn_deep}\nrows=${_jrn_rows}\nops=${_jrn_ops}\n")
@@ -298,9 +211,6 @@ if(JOURNAL)
             message(STATUS "verify_ratchet: journal model depth matches ceiling — OK")
         endif()
     else()
-        # Breadth is banked and depth is not. Checking half the model and
-        # reporting a pass is exactly the green-skip-is-not-a-green-pass failure:
-        # nothing downstream can tell this apart from a fully ratcheted key.
         set(_depth_unbanked 1)
     endif()
     list(SORT _jrn_dirty)
@@ -406,9 +316,6 @@ if(NOT _base_raw STREQUAL "")
 endif()
 list(SORT _baseline)
 
-# Compare on the (file, func) key only, not the verdict: a gap being reclassified
-# (e.g. unfaithful -> desync as the recorder learns to decline a shape it cannot
-# model) is not a regression. The verdict stays in the baseline as information.
 set(_gap_keys "")
 foreach(_g ${_gaps})
     string(REGEX REPLACE "\t[^\t]+$" "" _k "${_g}")

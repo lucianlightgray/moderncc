@@ -7,7 +7,7 @@ static int a[N], b[N], c[N], d[N];
 static unsigned long long hh;
 static void mix(long long v) { hh = hh * 1099511628211ULL ^ (unsigned long long)v; }
 
-/* distinct induction variables, same trip, disjoint arrays: fusable. */
+
 static void distinct_iv(void) {
 	for (int i = 0; i < N; i++)
 		a[i] = i * 3 + 1;
@@ -15,7 +15,7 @@ static void distinct_iv(void) {
 		b[j] = a[j] + 2;
 }
 
-/* forward (loop-independent) dependence c[i] -> c[i]: fusable, result preserved. */
+
 static void forward_dep(void) {
 	for (int i = 0; i < N; i++)
 		c[i] = a[i] + b[i];
@@ -23,8 +23,8 @@ static void forward_dep(void) {
 		d[i] = c[i] * 2 - 1;
 }
 
-/* backward cross-loop dependence a[i] written, then a[i+1] read, and a shorter
-   trip: fusion is illegal and must be refused; result must be preserved. */
+
+
 static void backward_dep(void) {
 	for (int i = 0; i < N; i++)
 		a[i] = i + 7;

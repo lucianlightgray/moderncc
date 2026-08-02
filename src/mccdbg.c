@@ -940,10 +940,6 @@ static void mcc_debug_frame_end(MCCState *s1, int size) { MCC_TRACE("enter\n");
 	cfi[n++] = DW_CFA_def_cfa_offset;
 	n += mcc_cfi_uleb(cfi + n, 0);
 #endif
-	/* The FDE must relocate against the section the function was actually
-	   emitted into, not `.text` -- under -ffunction-sections that is
-	   `.text.<name>`, and pointing every FDE at `.text` makes their ranges
-	   overlap, which GNU ld rejects outright ("overlapping FDEs"). */
 	mcc_eh_frame_fde(s1, cur_text_section ? cur_text_section : text_section,
 									 func_ind, range, cfi, n);
 }
@@ -1924,13 +1920,6 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 		}
 	} else if ((type & VT_BTYPE) != VT_FUNC) { MCC_TRACE("br\n");
 		type &= ~VT_STRUCT_MASK;
-		/* VT_QLONG is the two-register ABI class for a 128-bit value, VT_INT128
-		   is the declared type; both must find the __int128 base type. Keying
-		   the table on VT_QLONG alone made every __int128 lookup MISS and fall
-		   through to `return 0`, which the caller then wrote as DW_AT_type: <0>.
-		   A null DIE reference makes gdb reject the whole compilation unit --
-		   "Cannot find DIE at 0x0" -- so a single unused typedef in mccdefs.h
-		   cost every -gdwarf build its debug info. */
 		if ((type & VT_BTYPE) == VT_QLONG)
 			{ MCC_TRACE("br\n"); type = (type & ~VT_BTYPE) | VT_INT128; }
 		for (i = 1; i <= N_DEFAULT_DEBUG; i++)

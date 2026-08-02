@@ -17,8 +17,6 @@ CC="${CC:-cc}"
 
 /tmp/mcc-ci stage "$SRC_MOUNT" "$SRC"
 
-# Download-once, share-everywhere: reuse the host's vendor toolchains when the
-# launcher bind-mounted them at /vendor (staging excludes vendor/ by design).
 if [ -d /vendor ]; then
     ln -sfn /vendor "$SRC/vendor"
     echo "==> sharing vendor toolchains from the /vendor mount"
@@ -26,9 +24,6 @@ fi
 
 cd "$SRC"
 
-# Install/stage into the shared /dist mount (per-artifact subdir when ART is set),
-# so build outputs land in the host's dist/ tree — the output counterpart of the
-# /vendor input mount.
 DEST="/dist${ART:+/$ART}"
 if [ -d /dist ] && [ -w /dist ]; then
     mkdir -p "$DEST"

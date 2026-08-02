@@ -1,38 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# Per-triple operation-journal sweep driver.
-#
-# One entry point for every arch/triple/libc the tree can measure, so a sweep is
-# `cmake --build . --target journal-sweep-<key>` instead of a hand-built wrapper
-# script. Resolves a key to (compiler, sysroot, launcher, baseline), probes every
-# prerequisite, and delegates to verify_ratchet.cmake.
-#
-#   cmake -DKEY=arm64-linux-glibc -DMODE=native -DROOT=<srcdir> -DXDIR=<crossdir> \
-#         -DTMPROOT=<dir> [-DOPT=-O1] [-DJREGEN=1] -P tests/ast/journal_sweep.cmake
-#
-# KEY is <cpu>-<os>[-<libc>]. The BASELINE key is <cpu>-<os> at the OS's default
-# libc and <cpu>-<os>-<libc> otherwise, so a non-default libc banks against its
-# own corpus instead of being scored against the default one's -- that is a
-# different corpus, and the comparison would read as a verdict rather than as
-# the gap it is. An unbanked key skips on the missing baseline, which names the
-# regen that closes it.
-#
-# MODE:
-#   cross  - run the host-hosted cross compiler. Fast, and valid for the honesty
-#            census: cross and native honesty files are byte-identical (measured
-#            2026-07-31 on i386/arm64/riscv64).
-#   native - build a target-native mcc with the cross compiler, then run it under
-#            qemu-user or wine. REQUIRED to bank a depth ceiling: cross reads
-#            native-1 on arm64/riscv64 and exactly native on i386, so a ceiling
-#            banked from a cross run is wrong on two targets out of three.
-#
-# Exits 77 (ctest SKIP) with a specific reason whenever a prerequisite is absent,
-# so a machine that lacks qemu, wine or a sysroot reports honestly instead of
-# silently measuring a narrower corpus. That last failure mode is the one this
-# script exists to prevent: sweeping a cross target with no sysroot compiles only
-# the freestanding subset (77 of 275 files) and reports a 28% census as if it
-# were the whole thing.
-#
 foreach(_req KEY ROOT)
     if(NOT ${_req})
         message(FATAL_ERROR "journal_sweep: ${_req} is required")
@@ -53,18 +19,12 @@ endif()
 
 file(MAKE_DIRECTORY "${TMPROOT}")
 
-# A macro, not a function: `return()` inside a macro unwinds the CALLER, which
-# at script top level ends the script. A function would only return from itself
-# and the sweep would carry on with an unmet prerequisite. Exits 0 by design --
-# an unavailable target is not a build failure, and the marker file is what the
-# journal-sweep-report target reads to say so out loud.
 macro(_skip msg)
     message(STATUS "journal-sweep[${KEY}/${MODE}]: SKIP -- ${msg}")
     file(WRITE "${TMPROOT}/${KEY}-${MODE}.status" "SKIP\t${msg}\n")
     return()
 endmacro()
 
-# ---------------------------------------------------------------- key parsing
 set(_libc "")
 set(_k "${KEY}")
 foreach(_l glibc musl ucrt msvcrt)
@@ -74,7 +34,6 @@ foreach(_l glibc musl ucrt msvcrt)
         break()
     endif()
 endforeach()
-# _k is now <cpu>-<os>
 if(_k MATCHES "^([a-z0-9_]+)-([a-z0-9]+)$")
     set(_cpu "${CMAKE_MATCH_1}")
     set(_os "${CMAKE_MATCH_2}")
@@ -82,7 +41,6 @@ else()
     message(FATAL_ERROR "journal_sweep: cannot parse KEY '${KEY}' as <cpu>-<os>[-<libc>]")
 endif()
 
-# default libc per OS, and the cross-compiler triple name used by cmake-cross
 set(_default_libc "glibc")
 if(_os STREQUAL "win32")
     set(_default_libc "ucrt")
@@ -107,9 +65,6 @@ if(NOT _libc STREQUAL "${_default_libc}")
     set(_bkey "${_cpu}-${_os}-${_libc}")
 endif()
 
-# ------------------------------------------------------- journal gate check
-# The gate in src/mcc.h admits these five CPUs. Anything else journals 0 rows,
-# which would otherwise look like a clean sweep rather than an absent oracle.
 if(NOT _cpu MATCHES "^(x86_64|arm64|i386|riscv64|arm)$")
     _skip("cpu '${_cpu}' is outside the MCC_JOURNAL_HOOKS gate in src/mcc.h -- \
 it journals 0 rows, so there is no oracle to compare. Widen the gate first")
@@ -120,16 +75,11 @@ ${CMAKE_HOST_SYSTEM_NAME} and docker's foreign-arch path is unusable (host \
 binfmt is flags:OC with no F). Run this same target ON macOS -- it is gated on \
 the host, not disabled")
 endif()
-# wince is INSIDE the journal gate: it is MCC_TARGET_ARM plus MCC_TARGET_PE,
-# the same define set as arm-win32, and the gate keys on the cpu macro alone.
-# Only the native mode is blocked, and by the loader rather than by the gate --
-# there is no wince emulator here and wine does not run an ARM PE image.
 if(_os STREQUAL "wince" AND MODE STREQUAL "native")
     _skip("wince has no emulator or device here, so a native depth ceiling \
 cannot be measured; the cross mode of this same target does run")
 endif()
 
-# ------------------------------------------------------------- the compiler
 set(_mcc "${XDIR}/mcc-${_triple}")
 if(NOT _libc STREQUAL "${_default_libc}" AND _os STREQUAL "linux")
     set(_mcc "${XDIR}/mcc-${_triple}-${_libc}")
@@ -139,19 +89,10 @@ if(NOT EXISTS "${_mcc}")
 (cmake --preset cross), and for a non-default libc set MCC_BUILD_MUSL=ON")
 endif()
 
-# ---------------------------------------------------------------- the sysroot
 set(_sysroot "")
 set(_incflags "")
 set(_hosthdrs 0)
 if(_os STREQUAL "linux")
-    # The HOST triple at its default libc is the one key the native ctest cell
-    # (ast-journal-parity) also banks, and it banks it with the host's own
-    # headers rather than a vendored sysroot. That is a DIFFERENT corpus from
-    # the gentoo stage3 one swept below, so each has its own bank: <key>.txt /
-    # <key>.depth.txt on this path, <key>-sysroot.* on that one. Sharing one
-    # file is what let x86_64 read fix=30027/792584 ops against a banked
-    # 31003/795697 and PASS, because lower reads as "IMPROVED". Use the host
-    # build's compiler and host headers so this path compares like with like.
     if(HOSTMCC AND HOSTKEY AND _bkey STREQUAL "${HOSTKEY}" AND MODE STREQUAL "cross")
         if(NOT EXISTS "${HOSTMCC}")
             _skip("host key ${_bkey} needs the host build's mcc at ${HOSTMCC}")
@@ -168,18 +109,10 @@ host build's mcc and host headers, matching how this baseline was banked")
             _skip("no ${_libc} sysroot at ${_sysroot} -- without it the sweep \
 compiles only the freestanding subset and silently reports a partial census")
         endif()
-        # --sysroot alone is not enough: it yields 77 of 275 files. The explicit
-        # usr/include is what takes it to 261.
         set(_incflags "--sysroot=${_sysroot}" "-I${_sysroot}/usr/include")
     endif()
 elseif(_os STREQUAL "win32")
     if(_libc STREQUAL "ucrt")
-        # winlibs ships x86 only, and the compile flags below never name it --
-        # every PE sweep stages against mcc's own bundled headers. So the
-        # vendored runtime is checked for the two cpus it can actually be
-        # present for, and an arm PE key is NOT gated on an i686 directory
-        # that has nothing to do with it: that read as "no ucrt runtime" and
-        # skipped a triple the sweep can measure.
         set(_mingw "")
         if(_cpu STREQUAL "i386")
             set(_mingw "i686")
@@ -193,12 +126,6 @@ elseif(_os STREQUAL "win32")
             endif()
         endif()
     elseif(_libc STREQUAL "msvcrt")
-        # msvcrt now has a bank of its own, so what blocks it is measurement and
-        # not naming: _incflags below stages mcc's own bundled win32 headers for
-        # EVERY PE key, so a cross sweep cannot tell msvcrt from ucrt and would
-        # bank two byte-identical files under two names, claiming an axis it
-        # never measured. Only a Windows host reaches a real msvcrt CRT, and
-        # that run regenerates both keys.
         if(NOT MODE STREQUAL "native")
             _skip("msvcrt is measurable only on a Windows host: a cross sweep \
 stages the same bundled win32 headers for every PE key, so it would bank a copy \
@@ -210,12 +137,9 @@ are ucrt and msvcrt")
     endif()
     set(_incflags "-B${ROOT}/runtime/win32" "-I${ROOT}/runtime/include")
 elseif(_os STREQUAL "wince")
-    # Same staging as win32: a wince mcc is arm-win32's define set with a
-    # different PE subsystem, and it reads the same bundled PE headers.
     set(_incflags "-B${ROOT}/runtime/win32" "-I${ROOT}/runtime/include")
 endif()
 
-# ------------------------------------------------------------------ the mode
 set(_launch "")
 set(_pathprefix "")
 if(MODE STREQUAL "native")
@@ -230,9 +154,6 @@ if(MODE STREQUAL "native")
         endif()
         set(_launch "${_qemubin}" "-L" "${_sysroot}")
     elseif(_os STREQUAL "win32")
-        # On Windows a PE mcc IS native -- no emulator, no Z: rewriting. Wine is
-        # only the stand-in when the host is not Windows, and whether it is a
-        # faithful one is still unvalidated against real hardware (TODO).
         if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
             set(_launch "")
             set(_pathprefix "")
@@ -245,7 +166,6 @@ if(MODE STREQUAL "native")
             set(_pathprefix "Z:")
         endif()
     endif()
-    # the native compiler itself
     set(_natdir "${TMPROOT}/native-${_bkey}")
     set(_natmcc "${_natdir}/mcc")
     if(_os STREQUAL "win32")
@@ -257,8 +177,6 @@ journal-native-${KEY} target, which compiles src/mcc.c with the cross mcc")
     endif()
     set(_mcc "${_natmcc}")
     if(_os STREQUAL "win32")
-        # Under wine the PE mcc needs its base dir as a Windows path; on a real
-        # Windows host _pathprefix is empty and these are plain paths.
         set(_incflags "-B${_pathprefix}${ROOT}/runtime/win32"
                       "-I${_pathprefix}${ROOT}/runtime/include")
     else()
@@ -268,19 +186,10 @@ elseif(NOT MODE STREQUAL "cross")
     message(FATAL_ERROR "journal_sweep: MODE must be 'cross' or 'native'")
 endif()
 
-# ---------------------------------------------------------------- the corpus
 set(_corpus "${ROOT}/tests/exec")
-# riscv64 aborts on this one file (pre-existing arch_transfer_ret_regs assert,
-# tracked P0 in docs/TODO). The abort truncates the sweep and desyncs the census,
-# so exclude it rather than let the whole target report nothing.
 if(_cpu STREQUAL "riscv64")
     set(_corpus "${TMPROOT}/corpus-riscv64")
     if(NOT IS_DIRECTORY "${_corpus}")
-        # Copy the WHOLE tree, not just *.c. The corpus has 4 headers
-        # (goldens.h, preprocessor/{include,inc_header,include2}.h) and a
-        # .c-only copy makes every file that includes one fail to compile --
-        # which reads as a smaller op count, not as an error, and so shows up
-        # as a spurious depth IMPROVEMENT that the ratchet happily accepts.
         file(COPY "${ROOT}/tests/exec/" DESTINATION "${_corpus}")
         file(REMOVE "${_corpus}/structs_unions/struct_byval.c")
     endif()
@@ -315,11 +224,6 @@ message(STATUS "journal-sweep[${KEY}/${MODE}]: baseline key=${_bkey} libc=${_lib
 
 set(_regen "")
 if(JREGEN)
-    # Each bank is written only from a source that is consistent for it. Cross
-    # and native honesty files are byte-identical, so a cross run banks breadth;
-    # the depth ceiling is native-sensitive, so only MODE=native unlocks it.
-    # This used to warn and bank both, which wrote a wrong ceiling on two of
-    # three targets and then ratcheted against it.
     if(MODE STREQUAL "cross")
         message(STATUS "journal-sweep[${KEY}]: banking BREADTH from a cross run, which \
 is valid -- cross and native honesty files are byte-identical. The depth ceiling is \
@@ -348,9 +252,6 @@ execute_process(
             -P "${ROOT}/tests/ast/verify_ratchet.cmake"
     RESULT_VARIABLE _rc)
 if(_rc EQUAL 77)
-    # verify_ratchet exits 77 for more than one reason now, and attributing all
-    # of them to absent hooks hides the one that is actionable. Its own STATUS
-    # line above states which; name the two here rather than guess.
     if(NOT EXISTS "${_jdepth_path}")
         message(STATUS "journal-sweep[${KEY}/${MODE}]: SKIP -- breadth is banked and \
 checked, depth is not: no ceiling at ${_jdepth_path}, and depth may only be banked from \
@@ -361,11 +262,6 @@ a MODE=native run. Half-ratcheted, so not reported as a pass")
     file(WRITE "${TMPROOT}/${KEY}-${MODE}.status" "SKIP\tbuild has no MCC_JOURNAL_HOOKS\n")
 elseif(NOT _rc EQUAL 0)
     file(WRITE "${TMPROOT}/${KEY}-${MODE}.status" "FAIL\trc=${_rc}\n")
-    # KEEPGOING lets the aggregate target measure the WHOLE matrix and defer the
-    # verdict to journal-sweep-report. Without it the first failing triple stops
-    # ninja and every later key silently reads as "not run" -- which looks the
-    # same as a machine that cannot host them, and that ambiguity is the thing
-    # this matrix exists to remove. A directly-invoked single target still fails.
     if(KEEPGOING)
         message(STATUS "journal-sweep[${KEY}/${MODE}]: FAILED (rc=${_rc}) -- continuing, see journal-sweep-report")
     else()

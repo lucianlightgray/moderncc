@@ -178,11 +178,6 @@ static int do_run_preset(int argc, char **argv) {
 			snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out);
 			ts_arg(&v, prefix);
 		}
-		/* Superbuild presets (mingw) attach a ctest step to each cell's build
-		 * (MCC_SUPERBUILD_TEST defaults ON, DEPENDEES build), so skipping the
-		 * top-level ctest below is not enough: the suite would still run
-		 * inside `cmake --build`. An explicit -DMCC_SUPERBUILD_TEST=... in
-		 * argv comes later on the command line and wins. */
 		if (no_test)
 			ts_arg(&v, "-DMCC_SUPERBUILD_TEST=OFF");
 		for (i = 0; i < extra_start; i++)
@@ -433,11 +428,6 @@ static const char *QBIN[] = {
 		"qemu-x86_64", "qemu-i386", "qemu-arm",
 		"qemu-aarch64", "qemu-riscv64", 0};
 
-/* One qemu job per (host x batch): each batch runs its arches x {glibc,musl}
- * in a single umbrella `qemu` build, so a whole host collapses from 10 cells
- * to 2. The emulated work per (arch,libc) is tiny; the per-cell cost was
- * mostly redundant apt/checkout/cache, which batching pays once. Batches are
- * balanced by measured wall-time (arm64+riscv64 are the slow emulated pair).*/
 static const struct {
 	const char *name, *archs, *label;
 } QBATCH[] = {
@@ -485,16 +475,10 @@ static const struct {
 		{PS_DIST_MSVC, "windows-arm64-msvc", "windows-11-arm", "arm64", "", 0, 0},
 		{PS_DIST_MINGW, "windows-x86_64-mingw", "windows-latest", "x64",
 				"x86_64", 1, 0},
-		/* llvm-mingw aarch64 (WinLibs has no arm64 gcc); experimental like the
-		 * PLAN_MINGW arm64 cell until the arm64-PE selfhost hang resolves. */
 		{PS_DIST_MINGW, "windows-arm64-mingw", "windows-11-arm", "arm64",
 				"arm64", 1, 1},
 		{0, 0, 0, 0, 0, 0, 0}};
 
-/* One compile-speed benchmark cell per OS family: a representative native
- * preset whose reference compilers (gcc+clang+mingw on Linux, native clang+gcc
- * on macOS, msvc on Windows) cover the differential without re-running the
- * build matrix. Same ledger as the rest so `ci parity` sees the presets. */
 static const struct {
 	const char *preset, *plat, *runner, *cc, *msvcarch;
 } PLAN_BENCH[] = {
@@ -502,17 +486,6 @@ static const struct {
 		{"macos", "macos-arm64", "macos-15", "clang", ""},
 		{"msvc", "windows-x86_64-msvc", "windows-latest", "", "x64"},
 		{0, 0, 0, 0, 0}};
-
-/* ============================================================================
- * Staged CI axes: host (stage1) -> feature (stage2) -> consume (stage3).
- *
- * The flat PS_ and PLAN_ ledger above stays a compatibility shim while the
- * workflows migrate; these three tables are the single source of truth for the
- * new `ci stage1/stage2/stage3` verbs and `ci plan --job stage*`. The key
- * change is stage2: instead of a host compiler (gcc/clang) rebuilding mcc under
- * each feature flag, the *stage1 mcc* rebuilds mcc (CMAKE_C_COMPILER=<stage1
- * mcc> + MCC_TOOLCHAIN_PROFILE=mcc) -- so the feature matrix is a self-host.
- * ==========================================================================*/
 
 enum { OS_LINUX = 1, OS_MAC = 2, OS_WIN = 4 };
 
@@ -526,14 +499,6 @@ static unsigned ci_host_osbit(void) {
 #endif
 }
 
-/* axis 1 -- stage-1 host producers. Each row builds a plain mcc (+ its cross
- * compilers) with the named host toolchain via `preset`, then publishes it.
- * `gate` is a level: 1 marks the representative host per OS family that the
- * per-push CI builds AND fans stage2 cells out from (and that `stage3-emulate`
- * / `ci local` self-host on); 2 is a per-push stage1 BUILD-ONLY host -- the
- * gate builds and publishes it so a host-toolchain break reds the push, but no
- * per-push stage2 cells hang off it (its self-host runs nightly). 0 is
- * nightly-only. `runner`/`msvcarch` drive the plan JSON. */
 static const struct {
 	const char *name, *arch, *hostcc, *libc, *preset, *runner, *msvcarch;
 	unsigned osbit;
@@ -543,21 +508,12 @@ static const struct {
 				"ubuntu-latest", "", OS_LINUX, 1},
 		{"linux-arm64-gcc", "arm64", "gcc", "glibc", "linux-gcc",
 				"ubuntu-24.04-arm", "", OS_LINUX, 0},
-		/* gate=2: the clang-built mcc is a per-push stage1 build (the clang
-		 * host axis breaks differently from gcc -- -Wmost, blocks-vs-nested-fn,
-		 * integer-overflow UB diagnostics); its stage2 self-host stays nightly
-		 * so the Linux feature fan-out is not doubled per push. */
 		{"linux-x86_64-clang", "x86_64", "clang", "glibc", "linux-clang",
 				"ubuntu-latest", "", OS_LINUX, 2},
 		{"linux-x86_64-musl", "x86_64", "gcc", "musl", "linux-gcc-musl",
 				"ubuntu-latest", "", OS_LINUX, 0},
 		{"macos-arm64-clang", "arm64", "clang", "", "macos",
 				"macos-15", "", OS_MAC, 1},
-		/* Second macOS gate host: the gcc-built mcc. Restores the gcc-on-Darwin
-		 * coverage the pre-hierarchy CI had (main ran the macos preset under both
-		 * cc=clang and cc=gcc). Its CC resolves to a Homebrew gcc-N in the
-		 * workflow. gate=1 so stage1-gate builds it and the per-push gate can
-		 * self-host correctness features off it. */
 		{"macos-arm64-gcc", "arm64", "gcc", "", "macos",
 				"macos-15", "", OS_MAC, 1},
 		{"macos-x86_64-clang", "x86_64", "clang", "", "macos",
@@ -566,21 +522,10 @@ static const struct {
 				"windows-latest", "x64", OS_WIN, 1},
 		{"windows-arm64-msvc", "arm64", "msvc", "", "msvc",
 				"windows-11-arm", "arm64", OS_WIN, 0},
-		/* gate=2: the mingw-built mcc is a per-push stage1 build -- the win32
-		 * parity work (recorder-fidelity baselines, the i386 CRT shim) is
-		 * developed against winlibs gcc, so a break in the mingw superbuild
-		 * should red the push, not wait for the nightly. Build-only: the
-		 * Windows stage2 gate cells stay on the msvc stage1 mcc. */
 		{"windows-x86_64-mingw", "x86_64", "mingw", "", "mingw",
 				"windows-latest", "x64", OS_WIN, 2},
 		{0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
-/* axis 2 -- stage-2 feature matrix, built by the stage-1 mcc itself. `dflags`
- * are the extra -D flags on top of the stage2 base (semicolon-separated;
- * tokenized by ci_add_dflags). `self_os` is the set of OS families mcc can
- * self-host the feature on; a cell whose host OS is not in the set skips (77)
- * with `blocker` rather than falling back to a host compiler. On a host whose
- * OS bit is in `xdflags_os`, `xdflags` is used instead of `dflags`. */
 static const struct {
 	const char *name, *dflags, *blocker, *xdflags;
 	unsigned self_os, xdflags_os;
@@ -629,9 +574,6 @@ static const char *feature_dflags(int f) {
 	return FEATURES[f].dflags;
 }
 
-/* axis 3 -- stage-3 consumers. `needs_cross` cells require the stage-2 build to
- * enable the cross compilers: `dist` ships them, `emulate` runs their
- * foreign-arch output under qemu/wine/docker validators. */
 static const struct {
 	const char *name;
 	int needs_cross;
@@ -639,25 +581,6 @@ static const struct {
 		{"test", 0}, {"bench", 0}, {"dist", 1},
 		{"fuzz", 0}, {"emulate", 1}, {0, 0}};
 
-/* Per-push gate stage2 cells for the scarce/slow hosted pools (macOS, Windows).
- * Each entry is one fanned-out `stage2 / <host> / <feature>` job -- NOT a
- * sequential loop -- so the whole gate runs in ~one-cell wall-clock (~13 min)
- * instead of the sum. The macOS set is sized to the 5-runner sub-cap on the
- * free plan; Windows shares the 20-job total (no OS sub-cap) and stays
- * non-gating until its first green sweep (see stage2-windows in ci.yml).
- *
- * Allocation rationale:
- *   - Correctness features (dynamic, sanitize) run under BOTH host compilers
- *     (clang + gcc) -- a gcc-built mcc and a clang-built mcc are different
- *     binaries that can miscompile differently; this restores the gcc-on-macOS
- *     coverage the pre-hierarchy CI had.
- *   - Object-format features (macho, pe) are host-cc-independent (same mcc
- *     object writer whichever cc built mcc), so only the representative host
- *     runs them once.
- * Every cell must self-host on its host OS (feature.self_os & host.osbit); the
- * do_plan stage2-gate branch asserts this so a mis-edit can't silently spend a
- * runner on a 77-skip. The full host x feature matrix (incl. the platform-
- * locked skip cells) runs nightly in matrix.yml. */
 static const struct {
 	const char *host, *feature;
 } GATE_CELLS[] = {
@@ -671,9 +594,6 @@ static const struct {
 		{"windows-x86_64-msvc", "pe"},
 		{0, 0}};
 
-/* Tokenize a semicolon-separated -D flag string into `v`. `buf` must outlive
- * the eventual ts_run (ts_arg stores pointers, not copies), so the caller
- * passes a buffer that stays in scope. */
 static void ci_add_dflags(Argv *v, const char *dflags, char *buf, size_t bufsz) {
 	char *s, *p;
 	if (!dflags || !*dflags)
@@ -709,8 +629,6 @@ static int feature_find(const char *name) {
 	return -1;
 }
 
-/* the staged verbs are defined near main(); forward-declare them for the
- * opt-in stage2 loop in do_local (LOCAL_CI_STAGE2). */
 static int do_stage1(int argc, char **argv);
 static int do_stage2(int argc, char **argv);
 
@@ -725,11 +643,6 @@ static const struct {
 		{"diagnostics", "alias: = linux-gcc-diagnostics with unpinned cc"},
 		{"cross", "alias: = linux-gcc-cross with unpinned cc"},
 		{"stage2", "convenience anchor for the -D-driven stage2 feature axis"},
-		/* Superseded by the staged hierarchy. The feature presets are now
-		 * stage2 -D cells (`ci stage2 <feature>`); the *-cross / qemu presets
-		 * are folded into `ci stage3 --consume emulate`; `matrix` (the gcc;clang
-		 * superbuild) is replaced by per-host stage1. Kept as presets so the old
-		 * flow and `ci local` still work during the transition. */
 		{"linux-gcc-static", "stage2 feature: static"},
 		{"linux-gcc-multisource", "stage2 feature: multisource"},
 		{"linux-gcc-asm-off", "stage2 feature: asm-off"},
@@ -884,13 +797,6 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 		}
 	}
 #endif
-	/* self-host pass: the freshly staged mcc rebuilds mcc via the stage2
-	 * `release` feature cell, installing under <stage>/selfhost so `ci pkg`
-	 * ships it as the mcc-selfhost-<ver>-<plat> bundle next to the host-built
-	 * ones. The cell-specific extra -D flags are deliberately NOT forwarded:
-	 * they specialize the host toolchain (Rosetta arch flags, MCC_MINGW_ARCH),
-	 * and stage2 drives mcc directly -- same shape as the nightly stage2 cells.
-	 */
 	if (!no_selfhost) {
 		char mccbin[4200], outdir[4200];
 		char *absdist = host_path_canonical("dist");
@@ -926,9 +832,6 @@ static int run_dist(const char *preset, const char *plat, const char *ver,
 	return 0;
 }
 
-/* LOCAL_CI_STAGE2 mode: build the representative stage1 host for this OS, then
- * loop every FEATURE through `ci stage2` off it -- the local reproduction of the
- * per-push stage1 -> stage2 self-host, skip-marking the platform-locked cells. */
 static int do_local_stage2(void) {
 	unsigned os = ci_host_osbit();
 	int h, f, fail = 0, npass = 0, nskip = 0;
@@ -1635,16 +1538,11 @@ static void plan_presets(const char *job, StrSet *s) {
 		for (i = 0; PLAN_BENCH[i].preset; i++)
 			set_add(s, PLAN_BENCH[i].preset, (int)strlen(PLAN_BENCH[i].preset));
 	} else if (!strcmp(job, "stage1-gate") || !strcmp(job, "stage1-nightly")) {
-		/* stage1 hosts map to their producer presets (linux-gcc, macos, msvc,
-		 * ...), so a workflow that runs `--job stage1-*` keeps those presets
-		 * covered under `ci parity`. */
 		int allhosts = !strcmp(job, "stage1-nightly");
 		for (i = 0; HOSTS[i].name; i++)
 			if (allhosts || HOSTS[i].gate)
 				set_add(s, HOSTS[i].preset, (int)strlen(HOSTS[i].preset));
 	}
-	/* stage2/stage2-nightly/stage3-emulate drive the -D-based feature axis,
-	 * not named presets; the `stage2` convenience preset is parity-exempt. */
 }
 
 static void yml_plan_jobs(const char *text, StrSet *jobs) {
@@ -1785,13 +1683,9 @@ static int do_plan(int argc, char **argv) {
 		int allhosts = !strcmp(job, "stage2-nightly");
 		int f;
 		for (i = 0; HOSTS[i].name; i++) {
-			/* gate=2 hosts are stage1 build-only: no per-push stage2 fan-out. */
 			if (!allhosts && HOSTS[i].gate != 1)
 				continue;
 			for (f = 0; FEATURES[f].name; f++) {
-				/* A cell whose host OS is not in the feature's self_os set
-				 * carries its blocker as data so the workflow renders a neutral
-				 * (skipped) cell instead of a red one. */
 				if (!(FEATURES[f].self_os & HOSTS[i].osbit))
 					plan_cell(&first,
 										"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
@@ -1811,11 +1705,6 @@ static int do_plan(int argc, char **argv) {
 			}
 		}
 	} else if (!strcmp(job, "stage2-gate")) {
-		/* Per-push gate cells for the scarce pools (macOS/Windows), fanned out
-		 * one job per (host,feature) from the GATE_CELLS ledger. Every cell runs
-		 * on its host OS by construction; a curated cell that is platform-locked
-		 * would waste a runner echoing SKIP, so warn + drop it rather than emit a
-		 * skip cell. ci.yml splits the output by runner OS. */
 		int c;
 		for (c = 0; GATE_CELLS[c].host; c++) {
 			int hi = host_find(GATE_CELLS[c].host);
@@ -1840,11 +1729,6 @@ static int do_plan(int argc, char **argv) {
 								GATE_CELLS[c].feature, HOSTS[hi].name);
 		}
 	} else if (!strcmp(job, "stage3-emulate")) {
-		/* One emulate cell per representative host: it rebuilds a cross-enabled
-		 * stage2 mcc and runs the qemu/wine/docker/rosetta validators, which
-		 * self-skip 77 where the foreign platform is unavailable. An OS family
-		 * with several gate hosts (macOS: clang + gcc) still emulates once -- the
-		 * emulators are host-cc-independent -- so take the first gate host per OS. */
 		unsigned emu_os = 0;
 		for (i = 0; HOSTS[i].name; i++) {
 			if (HOSTS[i].gate != 1 || (emu_os & HOSTS[i].osbit))
@@ -2119,8 +2003,6 @@ static int pkg_archive(const char *pkg, const char *out, const char *d,
 	return 0;
 }
 
-/* A thin Mach-O, i.e. a fuse candidate. Fat files, archives, headers, scripts
-   and cmake fragments all fall through to a plain copy. */
 static int fat_is_thin_macho(const char *path) {
 	unsigned char m[4];
 	size_t n;
@@ -2171,14 +2053,6 @@ static int fat_walk_cb(const char *path, int is_dir, void *ud) {
 	return 0;
 }
 
-/* Fuse two same-version single-arch bundles into one universal bundle. The dist
-   flow already uploads macos-arm64-clang and macos-x86_64-clang as separate
-   artifacts, so the fuse inputs exist; what was missing was the step that turns
-   them into the universal binary a macOS release is expected to ship.
-
-   machofat is verify-and-skip rather than re-sign: MCC_MACHO_ADHOC_SIGN is
-   default-on so every slice arrives self-signed, and a CodeDirectory covers
-   slice-relative offsets, so fusing preserves each slice's signature. */
 static int do_fat(int argc, char **argv) {
 	const char *ver = NULL, *plat = "macos-universal", *out = "dist";
 	const char *fat = NULL, *a = NULL, *b = NULL, *name = NULL, *fmt = "tar.xz";
@@ -2237,9 +2111,6 @@ static int do_fat(int argc, char **argv) {
 	host_mkdirs(out);
 	ts_path(dd, sizeof dd, pkg, "%s", d);
 	host_mkdirs(dd);
-	/* pkg_archive tars with cwd=pkg and writes to out/<d>.<ext>, so a RELATIVE
-	   --out resolves against the scratch dir and cmake -E tar fails with "cannot
-	   open output file". do_pkg canonicalizes for the same reason. */
 	{
 		char *ao = host_path_canonical(out);
 		if (ao) {
@@ -2428,9 +2299,6 @@ static int do_pkg(int argc, char **argv) {
 			printf("ci pkg: no cross compilers in stage/bin; skipping cross bundle\n");
 	}
 
-	/* mcc-selfhost bundle: `ci dist` installs the mcc-built-by-mcc tree under
-	 * <stage>/selfhost; ship it when present (a plain `ci pkg` run without the
-	 * self-host pass just skips it). */
 	{
 		char shstage[8192], shlib64[8192];
 		const char *shlibdir;
@@ -2704,10 +2572,6 @@ static int do_junit_assert(int argc, char **argv) {
 	return bad ? 1 : 0;
 }
 
-/* Differential-fuzz campaign (fuzz-nightly.yml). Configures the debug preset
- * with gcc+clang as the same-ISA oracle, builds mcc + fuzz_runner, and runs the
- * whole-pipeline miscompile campaign. The campaign's exit code is this verb's
- * status (nonzero = a new miscompile class), so the workflow gates on it. */
 static int do_fuzz(int argc, char **argv) {
 	const char *budget = "5400", *batch = "50", *stopclass = "20";
 	const char *builddir = "cmake-debug", *work = NULL;
@@ -2788,11 +2652,6 @@ static int do_fuzz(int argc, char **argv) {
 	}
 }
 
-/* ---- staged verbs (host -> feature -> consume) ------------------------- */
-
-/* stage1: build a plain mcc (+ cross compilers) for one host and install it.
- * Maps the host row to its existing preset and reuses the run-preset machinery
- * (which already encodes the compiler/generator); pure producer, no ctest. */
 static int do_stage1(int argc, char **argv) {
 	const char *host = NULL, *out = NULL;
 	int i, h, na = 0, cross = 0;
@@ -2827,17 +2686,11 @@ static int do_stage1(int argc, char **argv) {
 		a[na++] = (char *)"--config";
 		a[na++] = (char *)"Release";
 	}
-	/* Cross compilers are only needed by the `emulate` consumer (nightly);
-	 * gating stage2 -> test does not use them, so keep them opt-in. */
 	if (cross)
 		a[na++] = (char *)"-DMCC_ENABLE_CROSS=ON";
 	return do_run_preset(na, a);
 }
 
-/* stage2: rebuild mcc under one feature flag using the *stage1 mcc* as the C
- * compiler. A feature whose host OS is not in `self_os` skips (77) rather than
- * silently falling back to a host compiler. Leaves cmake-stage2-<feature> for
- * a following `ci stage3`. */
 static int do_stage2(int argc, char **argv) {
 	const char *feature = NULL, *mcc = NULL, *out = NULL;
 	int i, f, cross = 0, jobs = host_nproc(), extra_start = argc;
@@ -2873,8 +2726,6 @@ static int do_stage2(int argc, char **argv) {
 	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
 	snprintf(builddir, sizeof builddir, "cmake-stage2-%s", feature);
 
-	/* CMAKE_C_COMPILER is baked into the cache and the stage1 mcc lives at a
-	 * run-specific abspath, so always configure a fresh build dir. */
 	{
 		const char *rm[] = {ci_cmake(), "-E", "rm", "-rf", builddir, 0};
 		ts_run(rm);
@@ -2913,10 +2764,6 @@ static int do_stage2(int argc, char **argv) {
 	}
 	free(mccabs);
 
-	/* A missed TinyCC/ModernCC detection would silently misfire every
-	 * id-guarded default in CMakeLists.txt, so verify the stage1 mcc really
-	 * self-identified. Absent the probe file (path/version quirk) warn only;
-	 * a positively-wrong id is a hard fail (never false-green). */
 	{
 		char *g[8];
 		int ng = ts_glob(builddir, "CMakeCCompiler.cmake", 1, g, 8);
@@ -2965,10 +2812,6 @@ static int do_stage2(int argc, char **argv) {
 	return 0;
 }
 
-/* stage3: consume a stage-2 build dir. `test` runs ctest; the other consumers
- * produce the corresponding pipeline output (bench/dist/emulate build a target
- * or run the emulation ctests; fuzz delegates to the self-configuring
- * campaign). */
 static int do_stage3(int argc, char **argv) {
 	const char *consume = NULL, *build = NULL, *plat = NULL, *ver = NULL;
 	int i, jobs = host_nproc();
@@ -3002,8 +2845,6 @@ static int do_stage3(int argc, char **argv) {
 	}
 	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
 
-	/* fuzz self-configures its own oracle build (do_fuzz), so it needs no
-	 * stage-2 dir; everything else consumes one. */
 	if (!strcmp(consume, "fuzz"))
 		return do_fuzz(argc, argv);
 
@@ -3021,15 +2862,9 @@ static int do_stage3(int argc, char **argv) {
 		ts_arg(&v, build);
 		ts_arg(&v, jflag);
 		ts_arg(&v, "--output-on-failure");
-		/* Per-test wall-clock cap so a single hung/crash-suspended test (e.g. a
-		 * macOS ReportCrash-serialized child) is killed and named instead of
-		 * stalling the whole job until the runner ceiling. */
 		ts_arg(&v, "--timeout");
 		ts_arg(&v, "900");
 		if (!strcmp(consume, "emulate")) {
-			/* the cross/emulation validators are exactly the non-`native`
-			 * tests (qemu/wine/macho/docker); the *-docker.sh scripts still
-			 * self-skip 77 when the foreign platform is unavailable. */
 			ts_arg(&v, "-LE");
 			ts_arg(&v, "native");
 		} else {
@@ -3064,13 +2899,6 @@ static int do_stage3(int argc, char **argv) {
 	return 2;
 }
 
-/* Print the stage2 feature axis. Plain `ci features` lists every feature name,
- * one per line. `ci features --gate` lists the per-push gate cells as
- * `<host>\t<feature>` (the GATE_CELLS ledger) so a local reproduction can walk
- * exactly what the fanned-out macOS/Windows gate jobs run. The per-push
- * workflows no longer shell-loop this -- they fan out one job per cell from
- * `ci plan --job stage2-gate` -- but it stays the human-readable view of the
- * same ledger. */
 static int do_features(int argc, char **argv) {
 	int i, gate = 0;
 	for (i = 0; i < argc; i++)

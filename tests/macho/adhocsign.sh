@@ -1,19 +1,4 @@
 #!/bin/sh
-# MCC_MACHO_ADHOC_SIGN: mcc's own ad-hoc code signer, instead of spawning
-# /usr/bin/codesign.
-#
-# Four things have to hold, and only the first is obvious:
-#   1. the kernel accepts it -- an arm64 image whose signature is malformed is
-#      SIGKILLed at exec, so "it ran" is a real assertion
-#   2. codesign -v agrees, which checks the CodeDirectory shape and every page
-#      hash rather than just the load command
-#   3. flipping one byte of __TEXT invalidates it -- without this the page
-#      hashes could be constant and everything above would still pass
-#   4. it is REPRODUCIBLE. /usr/bin/codesign is not: signing byte-identical
-#      input twice yields different bytes, which is why an mcc-linked binary
-#      could never be bit-reproducible while mcc shelled out to it.
-#
-# Usage: adhocsign.sh <mcc> <srcdir> <workdir> [-B<prefix>]
 set -e
 
 MCC=$1
@@ -61,9 +46,6 @@ codesign -d --verbose=2 "$WORK/a" 2>&1 | grep -q "flags=0x2(adhoc)" || {
 }
 echo "ok: codesign validates it as ad-hoc"
 
-# Reproducibility: two links of identical input must be byte-identical. Same
-# basename both times -- the identifier is the output basename, as it is for
-# codesign, so a different name is legitimately a different signature.
 sign "$WORK/two/a"
 cmp "$WORK/one/a" "$WORK/two/a" || {
 	echo "FAIL: two signs of identical input differ; the signature is not reproducible" >&2
@@ -71,14 +53,11 @@ cmp "$WORK/one/a" "$WORK/two/a" || {
 }
 echo "ok: signature is reproducible"
 
-# Known positive for the page hashes: without this the rest passes on constants.
 cp "$WORK/a" "$WORK/tampered"
 python3 - "$WORK/tampered" <<'EOF'
 import struct, sys
 p = sys.argv[1]
 blob = open(p, "rb").read()
-# Find the __TEXT,__text section's file offset the cheap way: the entry point
-# region is well past the header, and any byte inside it is inside a hashed page.
 off = 0x1010
 f = open(p, "r+b")
 f.seek(off)

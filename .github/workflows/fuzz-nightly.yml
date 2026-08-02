@@ -1,11 +1,5 @@
 name: fuzz-nightly
 
-# Scheduled differential-fuzz campaign (TODO §0). Runs the whole-pipeline
-# miscompile fuzzer for a time budget against gcc+clang as the same-ISA oracle,
-# with the "no-new-class in K batches" stop rule and crash-class dedup in
-# `fuzz_runner campaign`. x86_64-Linux only (the oracle needs native gcc AND
-# clang executing mcc's own target ISA). Also runnable on demand.
-
 on:
   schedule:
     - cron: '17 4 * * *'
@@ -37,11 +31,6 @@ jobs:
             cmake ninja-build build-essential gcc clang git
       - uses: ./.github/actions/ci
       - name: run campaign
-        # stage3's `fuzz` consumer is the differential campaign: it configures the
-        # debug preset with gcc+clang as the same-ISA oracle, builds mcc +
-        # fuzz_runner, and runs the campaign (the fuzzer is an oracle differential,
-        # not a feature self-host, so it self-configures rather than consuming a
-        # stage2 dir). Its exit code (nonzero = a new miscompile class) gates below.
         env:
           MCC_FUZZ_SEED: ${{ github.run_number }}0000
         run: |

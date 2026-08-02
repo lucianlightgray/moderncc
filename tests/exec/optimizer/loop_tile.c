@@ -8,21 +8,21 @@ static int A[N][M], B[N][M];
 static unsigned long long hh;
 static void mix(long long v) { hh = hh * 1099511628211ULL ^ (unsigned long long)v; }
 
-/* permutable elementwise nest: tileable, result must be identical. */
+
 static void elementwise(void) {
 	for (int i = 0; i < N; i++)
 		for (int j = 0; j < M; j++)
 			A[i][j] = B[i][j] * 3 + i - j;
 }
 
-/* forward (=, <) carried dependence: still fully permutable, tileable. */
+
 static void forward(void) {
 	for (int i = 0; i < N; i++)
 		for (int j = 1; j < M; j++)
 			A[i][j] = A[i][j - 1] + B[i][j];
 }
 
-/* (<, >) dependence: not permutable -> tiling must be refused; result preserved. */
+
 static void skewed(void) {
 	for (int i = 1; i < N; i++)
 		for (int j = 0; j < M - 1; j++)

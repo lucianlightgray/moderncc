@@ -1,19 +1,19 @@
-/* §26 2B — arm64 JIT counter/profiling-stub tail: validates that a hand-emitted
-   AArch64 hot-counter stub works end-to-end (the mechanism the libmcc
-   `mccjit_make_counter_stub` port will use, the piece after the dispatch tail in
-   `jit_arm64_dispatch.c`). Freestanding so it runs under `qemu-aarch64` with no
-   arm64 libc. It exercises the full x86 counter-stub semantics on AArch64:
-     - spill the 6 GP arg registers (x0-x5) + LR to a frame,
-     - call the C tick `long *(state, regs)` with x0=state, x1=&spilled regs,
-       in the same `regs[MCCJIT_KGC_MAXARG-1-i] == param i` layout the profiler
-       (`mccjit_counter_capture`) reads (regs[0]=x5 … regs[5]=x0),
-     - restore x0-x5 so the returned target sees the ORIGINAL args,
-     - tail `br` to the tick-returned target (its `ret` uses the restored LR, so
-       control returns to the stub's caller — the arm64 analogue of x86 `jmp rax`).
-   Exit code 0 = PASS. Validated encodings (llvm-mc -triple=aarch64):
-     sub sp,sp,#64 ->0xd10103ff  ldr x0,#56 ->0x580001c0  mov x1,sp ->0x910003e1
-     ldr x16,#56 ->0x580001d0    blr x16 ->0xd63f0200      mov x16,x0 ->0xaa0003f0
-     add sp,sp,#64 ->0x910103ff  br x16 ->0xd61f0200 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static long sysc6(long n, long a, long b, long c, long d, long e, long f) {
 	register long x8 asm("x8") = n;
 	register long x0 asm("x0") = a, x1 asm("x1") = b, x2 asm("x2") = c;

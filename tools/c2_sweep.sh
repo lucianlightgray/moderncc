@@ -1,11 +1,4 @@
 #!/bin/sh
-# Corpus-wide C2 sweep for one target key. Needs an mcc built -DMCC_REPLAY_IR_C2=1
-# and run IN PLACE from its build dir (MCC_CONFIG_AUTO_MCCDIR resolves mcc's own
-# freestanding headers from argv[0]'s directory).
-#
-#   tools/c2_sweep.sh <builddir> <key> [OPT] [outdir]
-#
-# Prints one summary line plus the per-body divergence list on stderr.
 set -e
 
 BUILD=$1
@@ -42,11 +35,6 @@ files="$files $S/tests/diff/full_language.c"
 nfile=0
 for f in $files; do
 	nfile=$((nfile + 1))
-	# full_language.c's computed include #include INC(42test) expands to the
-	# angle form <tests/diff/42test.h>, which resolves only against the repo
-	# root. Without -I "$S" it fails to compile on EVERY key and is silently
-	# dropped from the census -- the EXTRA file then contributes zero bodies to
-	# what the scoreboard calls the 278-file corpus.
 	xflags=
 	case "$f" in
 	*/full_language.c) xflags="-I $S" ;;

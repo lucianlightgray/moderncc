@@ -1,20 +1,4 @@
 #!/usr/bin/env bash
-# 3-stage self-host fixpoint for a cross target, under qemu-user.
-#
-# Stage 1 is the host cross compiler (an x86_64 binary emitting <arch>); stages
-# 2 and 3 are <arch> binaries run under qemu against the vendored sysroot. The
-# assertion is stage2 == stage3 BYTE-IDENTICAL, plus that stage 3 produces a
-# working executable -- byte-identity passes a stable miscompile, so the run is
-# not optional (instruction 3). s1 != s2 is EXPECTED: s1 came from a different
-# compiler.
-#
-# Scope, stated rather than implied: this is qemu-user, NOT native silicon. A
-# self-compile fixpoint is a compile-time property so the emulator is a
-# legitimate vehicle for it, but a defect that appears only on real hardware is
-# out of this script's reach.
-#
-# Usage: qemu-selfhost.sh <arch> [workdir] [opt-level]
-#   arch: riscv64 | arm | arm64 | i386
 set -eu
 
 ARCH="${1:?usage: qemu-selfhost.sh <arch> [workdir] [opt]}"
@@ -28,8 +12,6 @@ MCC0="$CROSS/mcc-$ARCH"
 case "$ARCH" in
 riscv64) QEMU=qemu-riscv64; LIBD="usr/lib64 lib64"; ABI="" ;;
 arm64)   QEMU=qemu-aarch64; LIBD="usr/lib64 lib64 usr/lib lib"; ABI="" ;;
-# arm's hard-float PCS is not the default; without it the output links against
-# the wrong interpreter and dies before main.
 arm)     QEMU=qemu-arm;     LIBD="usr/lib lib"; ABI="-mfloat-abi hard" ;;
 i386)    QEMU=qemu-i386;    LIBD="usr/lib lib"; ABI="" ;;
 *) echo "unsupported arch '$ARCH'"; exit 2 ;;
@@ -46,9 +28,6 @@ cp "$CROSS/$ARCH-libmccrt.a" "$WORK/bd/libmccrt.a"
 
 cd "$REPO"
 INC="-Isrc -Iinclude -Isrc/formats -Isrc/objfmt -Isrc/arch/$ARCH"
-# --sysroot alone resolves neither the system headers nor the CRT: the explicit
-# usr/include is what makes <stdio.h> land (the same trap journal_sweep.cmake:167
-# records) and the -L pair is what makes crt1.o and libc resolvable.
 SYS="--sysroot=$SR -I$SR/usr/include"
 for d in $LIBD; do [ -d "$SR/$d" ] && SYS="$SYS -L$SR/$d"; done
 Q="$QEMU -L $SR"

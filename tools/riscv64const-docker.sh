@@ -1,22 +1,4 @@
 #!/bin/sh
-# riscv64 64-bit constant-materialization differential, docker-gated.
-#
-# RISC-V has no load-64-bit-immediate instruction, so mcc materializes a 64-bit
-# constant with a lui + shifted-addi chain (load_large_constant, riscv64-gen.c).
-# The signed 12-bit addi pieces carry between each other and into the high word;
-# a mishandled top-piece carry silently corrupts constants whose low-32 word sits
-# near 2^31 (regression guard for that fix). This builds the riscv64 cross mcc
-# in-container (constant loading is base codegen, no optimizer needed), compiles a
-# wide sweep of 64-bit constants (dense around the low-32 boundary region + a
-# full-range stride + a deterministic pseudo-random tail), runs it under
-# qemu-riscv64, and diffs its printed values against the same program built by
-# riscv64-linux-gnu-gcc. Any divergence is a constant-materialization miscompile.
-#
-# Usage:  tools/riscv64const-docker.sh <mcc-riscv64> [workdir]
-#   <mcc-riscv64>  host mcc-riscv64 binary; only its presence gates the test
-#                  (the actual compiler used is rebuilt in-container).
-# Exit:   0 mcc==gcc for all constants · 1 a miscompile · 77 skipped
-#         (no docker / no mcc-riscv64 / unrunnable build platform / no qemu-riscv64).
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -24,8 +6,6 @@ set -eu
 MCC="${1:-}"
 WORK="${2:-./w-riscv64const}"
 IMAGE_BUILD="${MCC_DIVMAGIC_BUILD_IMAGE:-debian:bookworm-slim}"
-# Host-native build container: only the riscv64 cross toolchain + qemu-riscv64
-# matter, and both install on amd64 and arm64 debian alike.
 HP_PLAT=$(dg_host_plat)
 
 dg_need_bin "$MCC" "riscv64 mcc"
@@ -49,7 +29,6 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 WORK_ABS=$(cd "$WORK" && pwd)
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 
-# constant-sweep generator (kept out of the docker -c string to avoid quote hell)
 cat > "$WORK_ABS/gen.py" <<'GEN'
 print("extern int printf(const char*,...);")
 vals=[]

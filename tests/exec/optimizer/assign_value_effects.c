@@ -1,13 +1,13 @@
 extern int printf(const char *, ...);
 
-/* An assignment used as a VALUE must evaluate its right-hand side exactly once.
- * The AST recorder currently models the residual value of a store as the RHS
- * SUBTREE (ast_hook_vstore, mccast.c), so a replay of `if ((h = f()))` emits the
- * call twice; the faithfulness check catches that and the body is discarded, so
- * nothing miscompiles today. This test exists so a future fix to that modelling
- * cannot reintroduce the duplication silently: every case below counts its own
- * side effects, so an extra (or missing) evaluation changes stdout rather than
- * hiding inside a checksum. See TODO F3a. */
+
+
+
+
+
+
+
+
 
 static long calls;
 static long calls2;
@@ -88,10 +88,10 @@ static void take2(int v, int w)
 	arg_sink += v * w;
 }
 
-/* MCC_AST_STOREVAL_CALL: the store is a STATEMENT and its value is the FIRST
- * ARGUMENT of the call that immediately follows. The recorder may hand the
- * live register to the call instead of re-emitting the RHS -- which is only
- * correct if the RHS still runs exactly once. */
+
+
+
+
 static int stmt_assign_call_arg(int v)
 {
 	int a;
@@ -165,7 +165,7 @@ int main(void)
 	d0 = calls2;
 	if (shortcircuit_both(0, 4) != 0)
 		return 11;
-	/* left operand is 0, so the right side must NOT be evaluated at all */
+
 	if (calls - c0 != 1 || calls2 - d0 != 0)
 		return 12;
 

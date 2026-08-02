@@ -1,6 +1,6 @@
-/* Real libmalloc: the nano/magazine/large tiers, malloc_size, alignment, and
-   realloc's copy. tests/qemu/apple-libc documents why none of this can run
-   off-Darwin -- libmalloc is fused to os_unfair_lock, Darwin TSD and mach_vm. */
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,8 +15,8 @@ static int fails;
 	} \
 } while (0)
 
-/* Each tier has a different allocator inside libmalloc: <=256 nano, then the
-   tiny/small magazines, then a mach_vm_allocate-backed large block. */
+
+
 static const size_t SIZES[] = {1, 16, 33, 256, 1024, 4096, 65536, 1 << 20};
 
 int main(void) {
@@ -43,8 +43,8 @@ int main(void) {
 		free(c);
 	}
 
-	/* realloc across the tier boundary has to copy through a different
-	   allocator, which is where a wrong malloc_size shows up. */
+
+
 	unsigned char *r = malloc(64);
 	CHECK(r != NULL);
 	if (r) {
@@ -78,8 +78,8 @@ int main(void) {
 	CHECK(s != NULL && !strcmp(s, "libmalloc"));
 	free(s);
 
-	/* Churn: a straight free-list bug shows up as a repeat address handed out
-	   while still live, or a crash inside the magazine. */
+
+
 	void *live[64];
 	for (int round = 0; round < 200; round++) {
 		for (int i = 0; i < 64; i++) {

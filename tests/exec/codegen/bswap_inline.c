@@ -19,7 +19,7 @@ int main(void)
 	unsigned long long acc = 0;
 	int i;
 
-	/* fixed edges first, so a failure names itself */
+
 	printf("%04x %08x %016llx\n", (unsigned)b16(0x1234), b32(0x11223344u),
 				 b64(0x1122334455667788ull));
 	printf("%04x %08x %016llx\n", (unsigned)b16(0), b32(0), b64(0));
@@ -33,7 +33,7 @@ int main(void)
 		acc = acc * 31 + b16((unsigned short)v);
 		acc = acc * 31 + b32((unsigned int)v);
 		acc = acc * 31 + b64(v);
-		/* round trip must be the identity at every width */
+
 		if (b16(b16((unsigned short)v)) != (unsigned short)v)
 			return 1;
 		if (b32(b32((unsigned int)v)) != (unsigned int)v)

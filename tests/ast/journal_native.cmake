@@ -1,17 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# Build a TARGET-NATIVE mcc with the in-tree cross compiler, so journal_sweep.cmake
-# can run it under qemu-user or wine.
-#
-#   cmake -DKEY=arm64-linux-glibc -DROOT=<srcdir> -DXDIR=<crossdir> -DTMPROOT=<dir> \
-#         -P tests/ast/journal_native.cmake
-#
-# Why this exists at all: the depth ceiling (fix=/deep=) is native-sensitive.
-# Measured 2026-07-31, a cross run reads native-1 on arm64 and riscv64 and exactly
-# native on i386, so a ceiling banked from a cross run is wrong on two of three
-# targets. The honesty census is NOT native-sensitive -- cross and native produce
-# byte-identical files -- so MODE=cross is fine for that axis alone.
-#
 foreach(_req KEY ROOT)
     if(NOT ${_req})
         message(FATAL_ERROR "journal_native: ${_req} is required")
@@ -78,14 +65,10 @@ endif()
 set(_out "${TMPROOT}/native-${_bkey}")
 file(MAKE_DIRECTORY "${_out}")
 
-# The arch source dir the backend needs on the include path. x86_64 reuses
-# i386-tok.h, which is why it lists both.
 set(_archinc "-I${ROOT}/src/arch/${_cpu}")
 if(_cpu STREQUAL "x86_64")
     set(_archinc "-I${ROOT}/src/arch/x86_64" "-I${ROOT}/src/arch/i386")
 endif()
-# Project includes MUST precede any sysroot include, or the system elf.h shadows
-# src/formats/elf.h and the build dies on R_RISCV_SET_ULEB128.
 set(_inc "-I${ROOT}/src" "-I${ROOT}/src/formats" "-I${ROOT}/src/objfmt"
          ${_archinc} "-I${ROOT}/include")
 
@@ -96,8 +79,6 @@ if(_os STREQUAL "linux")
     if(NOT IS_DIRECTORY "${_sysroot}")
         _skip("no ${_libc} sysroot at ${_sysroot}")
     endif()
-    # crt1.o/crti.o live in usr/lib64 on the 64-bit stage3s; without these -L the
-    # link fails with "file 'crt1.o' not found".
     set(_args "-B${XDIR}" "--sysroot=${_sysroot}"
               "-L${_sysroot}/usr/lib64" "-L${_sysroot}/lib64"
               "-L${_sysroot}/usr/lib" "-L${_sysroot}/lib"

@@ -66,9 +66,6 @@ __asm__(
 		"    sub     $4096,%rax\n"
 		"    jmp p1\n"
 		"p2:\n");
-/* win64: the callee of the caller's next call homes its register args
-   in the 32-byte shadow space at the caller's rsp, so the returned
-   block must sit above it or the homing stores corrupt the block */
 __asm__(
 		"    sub     %rax,%rsp\n"
 		"    sub     $32,%rsp\n"

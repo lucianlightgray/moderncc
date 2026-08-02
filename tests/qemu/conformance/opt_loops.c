@@ -1,15 +1,15 @@
-/* Loop-transform conformance. The existing corpus is ABI/libc shaped, so -O3
- * and -Os produced byte-identical output to -O2/-O0 on every triple and the
- * level cells asserted nothing. These shapes exercise the transforms those
- * levels unlock: LICM, induction-variable strength reduction, loop interchange,
- * fusion and tiling.
- *
- * Every check computes the same value twice -- once in a form the optimizer is
- * free to rewrite, once through `volatile` so it cannot -- and compares. That
- * needs no hardcoded expected values, so the file stays correct on every target
- * and cannot silently rot. Integer-only on purpose: i386 keeps x87 excess
- * precision under -fexcess-precision=fast, so an FP equality check here would
- * fail for reasons unrelated to the loop transforms. */
+
+
+
+
+
+
+
+
+
+
+
+
 
 static int licm(int n, int a, int b)
 {
@@ -118,8 +118,8 @@ int main(void)
 			return 5;
 	}
 
-	/* a zero-trip loop must still produce the identity, which is where a
-	 * mis-rotated or mis-guarded loop transform shows up first */
+
+
 	if (licm(0, 5, 3) != 0)
 		return 6;
 	if (ivsr(0, 4) != 0)

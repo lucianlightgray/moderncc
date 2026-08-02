@@ -348,12 +348,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_RISCV_TPREL_LO12_I: {
 		addr_t tls_start = 0;
 		int64_t tp_offset;
-		/* Local-exec resolves the offset against the IMAGE's own TLS block, which
-		   a shared object does not own -- it is handed one at dlopen time. Baking
-		   it produced a .so that linked rc=0 with no diagnostic and then read the
-		   EXECUTABLE's thread-local instead: `get()` returned the main program's
-		   first __thread word rather than the library's own. Dynamic TLS (GD) is
-		   not implemented here, so refuse rather than emit that. */
 		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_error_noabort("local-exec TLS in a shared object is not valid; "
 												"dynamic TLS is not implemented for riscv64");

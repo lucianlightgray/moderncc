@@ -1,15 +1,6 @@
 #ifndef MCC_ALG_LZW_H
 #define MCC_ALG_LZW_H
 
-/*
- * LZW (Lempel–Ziv–Welch) — the canonical smallest feature-complete adaptive
- * compressor (compress(1), GIF, PDF/LZWDecode): both sides build the same
- * dictionary as they go, so nothing but the code stream is transmitted. Codes are
- * 16-bit little-endian; the dictionary grows to LZW_MAX entries then freezes.
- * Header-only, fully inlined, no libc, no heap. Handles the KwKwK self-referential
- * code. Returns the output length, or -1 on overflow / corrupt input.
- */
-
 #include <stddef.h>
 
 #define LZW_MAX 4096
@@ -23,7 +14,7 @@ static inline long lzw_compress(const unsigned char *s, long n, unsigned char *d
 	int next = 256, w, c;
 	unsigned h;
 	for (i = 0; i < LZW_HASH; i++)
-		htk[i] = 0; /* 0 = empty; stored key is key+1 */
+		htk[i] = 0;
 	if (n == 0)
 		return 0;
 	w = s[0];
@@ -45,7 +36,7 @@ static inline long lzw_compress(const unsigned char *s, long n, unsigned char *d
 				return -1;
 			d[o++] = (unsigned char)(w & 0xff);
 			d[o++] = (unsigned char)((w >> 8) & 0xff);
-			if (next < LZW_MAX) { /* h is the empty slot */
+			if (next < LZW_MAX) {
 				htk[h] = key + 1;
 				htv[h] = next++;
 			}
@@ -77,7 +68,7 @@ static inline long lzw_decompress(const unsigned char *s, long n, unsigned char 
 	for (i = 2; i + 1 < n; i += 2) {
 		newc = s[i] | (s[i + 1] << 8);
 		sp = 0;
-		if (newc >= next) { /* KwKwK: emit translate(old) + oldfirst */
+		if (newc >= next) {
 			stack[sp++] = (unsigned char)oldfirst;
 			c = oldc;
 		} else {
@@ -94,7 +85,7 @@ static inline long lzw_decompress(const unsigned char *s, long n, unsigned char 
 			return -1;
 		while (sp)
 			d[o++] = stack[--sp];
-		if (next < LZW_MAX) { /* dict[next] = translate(old) + firstchar(current) */
+		if (next < LZW_MAX) {
 			pre[next] = oldc;
 			byt[next] = (unsigned char)c;
 			next++;

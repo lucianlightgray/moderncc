@@ -1,7 +1,4 @@
 #!/bin/sh
-# J4A ship-gate test: an --embed-jit executable static-linked against the
-# engine archive must be self-contained (no libmcc.so at load) and still
-# self-recompile + hot-swap its own function at runtime.
 set -e
 MCC="$1"
 BD="$2"

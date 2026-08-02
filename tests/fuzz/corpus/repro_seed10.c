@@ -1,5 +1,5 @@
 #include <stdio.h>
-/* auto-reduced miscompile repro: seed=10 attributed=-O2 (default gates) */
+
 union U { unsigned long w; unsigned int h[2]; };
 static union U u = {0x1122334455667788UL};
 static unsigned long v0 = 14480184UL;

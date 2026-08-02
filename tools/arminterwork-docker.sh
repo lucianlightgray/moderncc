@@ -1,21 +1,4 @@
 #!/usr/bin/env bash
-# Regression guard for the arm ARM/Thumb interworking bug on EABI-helper calls.
-#
-# mcc emits A32 code and reaches runtime helpers (__aeabi_memmove/memcpy,
-# __stack_chk_fail, bounds/asan/ubsan) through a `bl`. Historically that `bl`
-# carried the deprecated R_ARM_PC24 reloc, which GNU ld does NOT treat as
-# interworking-capable: linked against a THUMB helper it emits a plain ARM->Thumb
-# veneer that SIGILLs when entered from mcc's ARM caller. The fix emits R_ARM_CALL
-# (for `bl`) / R_ARM_JUMP24 (for `b`) so ld performs the standard BL<->BLX
-# interworking substitution.
-#
-# This guard, run under qemu-arm, (1) asserts mcc's call relocs are R_ARM_CALL and
-# zero R_ARM_PC24 remain, and (2) links an mcc-compiled struct-copy program (which
-# emits __aeabi_memmove8) against a *Thumb* shim helper, static-links with GNU ld,
-# and requires it to run correctly under qemu-arm -- a SIGILL here means the reloc
-# regressed. NB: on Apple Silicon `--platform linux/amd64` breaks qemu-arm's 32-bit
-# VA reservation, so we run on the host-native platform (amd64 on CI x86, arm64 on
-# Apple Silicon) where qemu-arm works either way.
 set -eu
 . "$(dirname "$0")/dockergate.sh"
 
@@ -29,9 +12,6 @@ IMAGE="debian:bookworm-slim"
 
 dg_need_docker
 
-# Pin the host-native platform (amd64 on x86 CI, arm64 on an arm64 runner) so a
-# prior amd64-pinned run's cached debian image can't poison this one with an
-# amd64 variant that fails "exec format error" on arm64.
 case "$(uname -m)" in
   x86_64|amd64)  HP_PLAT=linux/amd64 ;;
   aarch64|arm64) HP_PLAT=linux/arm64 ;;
@@ -70,9 +50,6 @@ int main(void){
 }
 EOF
 
-# Thumb shim: DEFINES the aeabi helpers mcc calls, as Thumb code. Its strong .o
-# defs win over the (ARM) libc archive members, forcing the ARM-caller ->
-# Thumb-callee interworking edge that R_ARM_PC24 mis-relocates.
 cat > /w/shim.c <<EOF
 extern void *memmove(void*, const void*, unsigned long);
 extern void *memcpy(void*, const void*, unsigned long);

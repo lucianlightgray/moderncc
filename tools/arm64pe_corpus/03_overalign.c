@@ -1,9 +1,3 @@
-/* Over-aligned types: the Tier-2 "over-align" work item. Stack and static
-   objects with alignment > natural. The codegen (sp rounding, aligned stores)
-   must match ELF-vs-PE; only the addressing of the static over-aligned global
-   may diverge (benign GOT-vs-direct). Uses long long (width-stable) so the only
-   expected diffs are addressing, not int-width. */
-
 struct __attribute__((aligned(64))) Cacheline { long long v[8]; };
 
 _Alignas(128) static long long g_over[16];

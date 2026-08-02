@@ -1,27 +1,27 @@
 extern int printf(const char *, ...);
 
-/* `!(a OP b)` on arm64 used to emit `cmp; cset OP; eor #1`. arm64_load_cmp now
- * inverts the already-emitted cset's condition in place, so the eor is gone.
- * Every cset condition and its inverse differ in exactly one encoding bit, and
- * writing the wrong bit silently swaps the comparison's sense.
- *
- * Three things are needed to actually catch that, the first two learned by
- * mutating the peephole to the wrong bit and watching earlier versions of this
- * test stay green:
- *
- *  - The result must be MATERIALIZED into a register. Inlined into a branch the
- *    comparison never reaches arm64_load_cmp, so the peephole never runs and the
- *    assertions hold whatever condition is written. mat() forces materialization
- *    through a volatile.
- *  - The expected value must NOT itself be written as `!(a OP b)`, or both sides
- *    go through the same peephole, are wrong identically, and compare equal.
- *    Every expectation is built as `1 - (a OP b)`: the plain comparison emits a
- *    cset the peephole does not touch.
- *  - All the inversions live in ONE function on purpose. The recorder desyncs on
- *    any `!cmp` body (it does so with the peephole reverted too, so this is a
- *    pre-existing gap class, not something this change introduced), and one body
- *    costs the arm64-darwin ratchet one baseline gap instead of fifteen.
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 static volatile int sink;
 
@@ -34,7 +34,7 @@ static int mat(int x)
 enum { C_EQ, C_NE, C_LT, C_LE, C_GT, C_GE, C_ULT, C_ULE, C_UGT, C_UGE, C_NN_LT,
 			 C_LLT, C_LGE, C_ULLT, C_ULGE, C_COUNT };
 
-/* every arm materializes its own cset, so each one exercises the peephole */
+
 static int inv(int which, long long a, long long b)
 {
 	unsigned long long ua = (unsigned long long)a, ub = (unsigned long long)b;
@@ -61,7 +61,7 @@ static int inv(int which, long long a, long long b)
 	}
 }
 
-/* reference sense, built without any `!cmp` so the peephole cannot touch it */
+
 static int ref(int which, long long a, long long b)
 {
 	unsigned long long ua = (unsigned long long)a, ub = (unsigned long long)b;

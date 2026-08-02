@@ -753,12 +753,6 @@ static void gen_bounds_epilog(void) { MCC_TRACE("enter\n");
 }
 #endif
 
-/* Count the homogeneous float/double members of an HFA-eligible type, recursing
-   into nested structs and arrays (AAPCS: an HFA is an aggregate all of whose
-   members are the same floating-point type). *pbt latches that base type across
-   the whole aggregate. Returns the member count, or -1 if a non-float member or a
-   second float type is seen. array f[4] => 4 members; struct{struct In2 p; float c}
-   => 3 members. */
 static int arm_hfa_members(CType *type, int *pbt) { MCC_TRACE("enter\n");
 	CType *ft = type;
 	int count = 1;
@@ -2398,4 +2392,3 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	}
 #endif
 }
-

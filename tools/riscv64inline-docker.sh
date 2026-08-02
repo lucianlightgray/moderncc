@@ -12,10 +12,6 @@ IMAGE="debian:bookworm-slim"
 
 dg_need_docker
 
-# Host-native build container (linux/amd64 on x86 CI, linux/arm64 on an arm64
-# runner): only the riscv64 cross toolchain + qemu-riscv64 matter, and both
-# install on either host arch. Pinning amd64 on an arm64 host would run the
-# whole build stage (gcc + mcc + qemu-riscv64) under nested emulation.
 HP_PLAT=$(dg_host_plat)
 dg_need_platform "$HP_PLAT" "$IMAGE"
 
@@ -53,8 +49,6 @@ echo "-- riscv64 candidate classification (graftable vs retained-only) --"
 grep -E "\[ast-inline\] candidate (sumpt|addpt|sumbig|mkpair|add) " /w/fxdump.txt || true
 
 echo "== graft-fires objdump evidence: leaf caller programs, OFF vs ON =="
-# Each caller is a REPLAYED leaf whose callee is a static helper. With graft ON
-# the callee body is spliced into the caller and the direct jalr/call is gone.
 cat > /w/gate.c <<EOF
 extern int printf(const char*,...);
 struct Pair { int a, b; };
@@ -81,21 +75,14 @@ echo "-- graft dump for gate callers --"
 grep -E "\[ast-inline\] (grafted|candidate) (addf|scalef|areaf|sumpair|sumbigf|derefsum)" /w/gatedump.txt || true
 
 GRAFT_OK=1
-# Ground truth for "did the callee graft" is the compiler`s own marker
-# [ast-inline] grafted <callee> (this is exactly what tests/ast/replay.cmake
-# asserts). We require the marker for every case that must inline, and require
-# every case, including the >16B struct passed indirectly. objdump -dr then
-# corroborates: a grafted callee leaves NO R_RISCV_CALL_PLT reloc to that callee
-# symbol in the caller body (residual memmove/memcpy relocs for struct-by-value
-# arg marshalling are expected and are NOT calls to the callee).
 $OD -dr /w/gate_on.o > /w/gate_on.dis
-marker_graft() { # callee expect(yes|no) note
+marker_graft() {
   ce="$1"; e="$2"; nt="$3"
   if grep -q "\[ast-inline\] grafted $ce$" /w/gatedump.txt; then g=yes; else g=no; fi
   if [ "$g" = "$e" ]; then echo "   OK   $ce : grafted=$g $nt";
   else echo "   MISS $ce : grafted=$g, expected $e $nt"; GRAFT_OK=0; fi
 }
-call_reloc() { # caller callee -> prints count of call relocs to callee in caller body
+call_reloc() {
   awk -v f="<$1>:" -v s="$2" "/<.*>:/{p=(\$0 ~ f)} p && /R_RISCV_CALL(_PLT)?[[:space:]]/ && \$0 ~ (s\"\$\"){c++} END{print c+0}" /w/gate_on.dis
 }
 echo "-- [ast-inline] grafted markers (compiler ground truth) + objdump corroboration --"
@@ -104,10 +91,6 @@ marker_graft scalef   yes "(scalar args)"
 marker_graft areaf    yes "(double args)"
 marker_graft sumpair  yes "(8-byte reg-pair struct-by-value)"
 marker_graft derefsum yes "(pointer + loop)"
-# Large struct (>16B) passes INDIRECTLY on the riscv64 psABI (hidden pointer +
-# memcpy). The Tier-4 capture now models the VT_LLOCAL|VT_LVAL|VT_STRUCT
-# indirect class, so sumbigf grafts here (the by-value copy is re-materialised
-# inline), matching the direct-stack graft on x86_64.
 marker_graft sumbigf  yes "(32-byte struct-by-value: indirect ABI, now modeled)"
 echo "-- objdump: residual R_RISCV_CALL reloc to each grafted callee (must be 0) --"
 for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_smallstruct sumpair" "c_pointer derefsum" "c_bigstruct sumbigf"; do
@@ -118,8 +101,6 @@ for pair in "c_scalar addf" "c_scalar scalef" "c_float areaf" "c_smallstruct sum
 done
 
 echo "== differential vs riscv64-linux-gnu-gcc -O2 under qemu =="
-# tested.c: callers compiled by mcc with graft ON.  ref TU: SAME callers renamed
-# *_REF compiled by gcc -O2.  main sweeps inputs and compares.
 cat > /w/tested.c <<EOF
 struct Pair { int a, b; };
 struct Big  { long a, b, c, d; };

@@ -1,6 +1,6 @@
-/* Apple's libpthread: thread creation, the __ulock-backed mutex/cond/rwlock,
-   pthread_once, and Darwin TSD (%gs / TPIDRRO_EL0) through pthread_key_t.
-   Kernel-fused by definition (tests/qemu/apple-libc). */
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,7 +60,7 @@ static void *worker(void *arg) {
 		pthread_rwlock_unlock(&rw);
 	}
 
-	/* The TSD slot must still be this thread's own after all that contention. */
+
 	long *back = pthread_getspecific(key);
 	CHECK(back != NULL && *back == id);
 	return (void *)(id * 2);

@@ -7,11 +7,6 @@
 #define MCC_TREG_R30 19
 #define MCC_TREG_F(x) (x + 20)
 
-/* Callee-saved integer registers x19..x28, exposed only to the Tier-3
-   register-promotion pool (reg_classes[] entry 0, so the general allocator
-   never picks them).  intr() maps these indices to their physical encoding.
-   Indices 28..37 sit above the float block (20..27); the 64-bit ast_pinned_regs
-   mask makes indices >31 representable. */
 #define MCC_TREG_SAVED(x) (28 + (x))
 #define MCC_NB_SAVED 10
 

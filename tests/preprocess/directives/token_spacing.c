@@ -10,9 +10,3 @@ return n(A)n(++)n(+)n(+)n(B);
 
 
 return n(0x1E)n(-1);
-
-
-
-
-
-

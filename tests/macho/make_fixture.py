@@ -20,9 +20,7 @@ N_EXT, N_SECT, N_UNDF = 0x01, 0x0E, 0x00
 S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS = 0x80000000, 0x00000400
 
 TEXT = {
-    # mov eax, 42 ; ret
     "x86_64": bytes([0xB8, 0x2A, 0x00, 0x00, 0x00, 0xC3]),
-    # mov w0, #42 ; ret
     "arm64": struct.pack("<II", 0x52800540, 0xD65F03C0),
 }
 

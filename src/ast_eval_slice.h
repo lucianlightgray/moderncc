@@ -694,6 +694,6 @@ static int ast_eval_slice_equiv(AstArena *a, AstLocal aroot, AstArena *b,
 	return evaluated > 0;
 }
 
-#endif /* AST_EVAL_SLICE_KERNEL_ONLY */
+#endif
 
-#endif /* AST_EVAL_SLICE_PROVIDED */
+#endif

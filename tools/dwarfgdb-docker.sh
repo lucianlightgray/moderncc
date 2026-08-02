@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# DWARF debug-info correctness guard: does gdb, driven by mcc's -gdwarf output,
-# report correct source lines for EVERY frame in a backtrace (not just the
-# innermost)? mcc used to emit the .debug_line end_sequence at the last
-# line-change address instead of the code end, so the last function got a
-# zero-length final line range and gdb showed "main ()" with no "at file:line"
-# in a backtrace. The extlink guard only checks distinct DW_AT_low_pc; nothing
-# exercised the line table through an external consumer (gdb) until this.
-#
-# gdb needs real ptrace, which qemu-user does not fully support, so this runs on
-# the HOST-NATIVE platform (arm64 on Apple Silicon, amd64 on CI x86). mcc's line
-# table is emitted by arch-independent mccdbg.c, so validating one native arch
-# covers the fix for all.
-#
-# Usage:  tools/dwarfgdb-docker.sh [workdir]
-# Exit:   0 pass · 1 a failure · 77 skipped (no docker / gdb / platform)
 set -eu
 . "$(dirname "$0")/dockergate.sh"
 
@@ -71,9 +56,6 @@ run
 bt
 quit
 EOF
-# getval is a SINGLE-LINE function: its declaration line == its statement line, so
-# without a prologue-end line-table row gdb break-skip overshoots into the next
-# function. Assert break lands IN getval and reads its args correctly.
 cat > /w/g.gdb <<EOF
 set pagination off
 break getval
@@ -81,10 +63,6 @@ run
 info args
 quit
 EOF
-# Line stepping + variable-location accuracy: single-step past the three
-# assignments in steps(10) (x=10 -> a=11, b=22, c=19) and read the locals; a
-# wrong line table (stepping to the wrong line) or wrong DW_AT_location would
-# read wrong values.
 cat > /w/st.gdb <<EOF
 set pagination off
 break steps

@@ -18,7 +18,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET
                 OUTPUT_VARIABLE _mcc_osver OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET RESULT_VARIABLE _mcc_osrc)
             if(NOT _mcc_osrc EQUAL 0 OR NOT _mcc_osver MATCHES "^[0-9]+")
-                set(_mcc_osver "11.0")   
+                set(_mcc_osver "11.0")
             endif()
             set(CMAKE_OSX_DEPLOYMENT_TARGET "${_mcc_osver}" CACHE STRING
                 "macOS deployment target (pinned for a Homebrew GNU gcc host build)")
@@ -502,8 +502,6 @@ function(mcc_mingw_resolve)
         set(_m "${MCC_MINGW_DIR}/mingw-w64-multilib/${MCC_MINGW_MULTILIB_SUBDIR}/bin/gcc.exe")
         set(_x "${_m}")
     endif()
-    # arm64 always comes from llvm-mingw (WinLibs has no aarch64); the zip nests an
-    # inner llvm-mingw-<ver>-ucrt-aarch64/ dir inside the download dest.
     set(_a "${MCC_MINGW_DIR}/llvm-mingw-${MCC_LLVMMINGW_VER}-aarch64/llvm-mingw-${MCC_LLVMMINGW_VER}-ucrt-aarch64/bin/aarch64-w64-mingw32-gcc.exe")
     set(_MCC_MINGW_X86_64_GCC   "${_x}" PARENT_SCOPE)
     set(_MCC_MINGW_I686_GCC     "${_i}" PARENT_SCOPE)
@@ -695,7 +693,6 @@ file(APPEND "${_musl_fetch}" [==[
 if(GIT STREQUAL "" OR NOT EXISTS "${GIT}")
     message(FATAL_ERROR "vendor-musl: git not found. Install git or pass -DGIT_EXECUTABLE=<path>.")
 endif()
-# A git checkout has .git; a tarball-extracted tree is marked with a stamp.
 if(EXISTS "${DEST}/.git" OR EXISTS "${DEST}/.vendor-musl.stamp")
     message(STATUS "vendor-musl: ${DEST} already present (delete it to re-fetch)")
     return()
@@ -707,14 +704,6 @@ if(NOT REF STREQUAL "")
     set(_branchargs --branch "${REF}")
 endif()
 
-# Disable interactive credential prompting for every git invocation below: CI
-# runners have no TTY, so an anonymous clone that draws an auth challenge (e.g.
-# a mistyped/renamed mirror, which GitHub answers with 401, not 404) would
-# otherwise fail with "could not read Username ... No such device or address"
-# -- or hang waiting on a credential manager. GIT_TERMINAL_PROMPT=0 turns that
-# into an immediate error; the low-speed limits abort a stalled transfer. These
-# go on the script's own environment (inherited by execute_process) rather than
-# a `cmake -E env` wrapper, which is unreliable when re-invoked nested here.
 set(ENV{GIT_TERMINAL_PROMPT} "0")
 set(ENV{GIT_HTTP_LOW_SPEED_LIMIT} "1000")
 set(ENV{GIT_HTTP_LOW_SPEED_TIME} "30")
@@ -736,10 +725,6 @@ if(NOT _rc EQUAL 0 AND NOT MIRROR STREQUAL "")
     _musl_git_clone("${MIRROR}" _rc)
 endif()
 
-# Last resort: a plain HTTPS tarball via libcurl, which bypasses git's
-# credential machinery entirely (the path that works behind restricted egress
-# where anonymous git-over-https is challenged). The extracted tree has no
-# .git, but musl-sysroot only needs the source, so a stamp file suffices.
 if(NOT _rc EQUAL 0 AND NOT TARBALL STREQUAL "")
     file(REMOVE_RECURSE "${DEST}")
     string(REPLACE "@REF@" "${REF}" _turl "${TARBALL}")
@@ -1007,7 +992,7 @@ if(_is_matrix AND NOT MCC_SUPERBUILD_CHILD)
         mcc_map_toolchain_cc("${_tc}" _cc)
         set(_cell_is_msvc OFF)
         if(_tc STREQUAL "msvc")
-            set(_cell_is_msvc ON)   
+            set(_cell_is_msvc ON)
         endif()
         if(NOT _tc STREQUAL "auto" AND _cc STREQUAL "" AND NOT _cell_is_msvc)
             message(FATAL_ERROR
@@ -1144,9 +1129,6 @@ endif()
 mcc_config_node(MCC_ENABLE_CROSS  TYPE BOOL DEFAULT OFF GROUP "Build targets"
     HELP "Build all cross compilers (Makefile: make cross)")
 
-
-# Defined here rather than next to its first test consumer: the ast/rir-parity
-# cross cells are registered ~2000 lines earlier and need the same directory.
 if(MCC_ENABLE_CROSS)
     set(_mcc_cross_default "${CMAKE_BINARY_DIR}")
 else()
@@ -1439,38 +1421,13 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
 else()
     set(MCC_CC_NAME unknown)
 endif()
-# CMake's built-in TinyCC support does not define the shared-library RUNPATH
-# link flag, so when mcc is CMAKE_C_COMPILER (self-host / stage2 builds) the
-# build-tree consumers of libmcc.so (jit selftests, libtest, abitest,
-# hypervisor, tls-models, ...) are linked with no RUNPATH and fail to load it
-# at test time ("libmcc.so: cannot open shared object file"). mcc supports
-# -Wl,-rpath,<dir> (link_option "rpath="), so teach CMake to bake the build-tree
-# rpath. ELF/Mach-O only; Windows resolves the DLL via PATH.
 if(MCC_CC_NAME STREQUAL "mcc" AND NOT WIN32
    AND NOT CMAKE_EXECUTABLE_RUNTIME_C_FLAG)
-    # Both the executable and shared-library rpath flags: the build-tree
-    # consumers that fail are executables (libtest, jit_selftest, abitest, ...)
-    # linking libmcc.so, which use CMAKE_EXECUTABLE_RUNTIME_C_FLAG.
     set(CMAKE_EXECUTABLE_RUNTIME_C_FLAG "-Wl,-rpath,")
     set(CMAKE_EXECUTABLE_RUNTIME_C_FLAG_SEP ":")
     set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG "-Wl,-rpath,")
     set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG_SEP ":")
 endif()
-# CMake also has no Windows platform module for TinyCC, so it falls back to
-# MSVC-style import-library naming (mcc.lib) that mcc never produces --
-# build-tree consumers of libmcc.dll (libtest, jit selftests, ...) then fail
-# to link ("file 'mcc.lib' not found"). mcc's native import format is the
-# .def it already writes next to every -shared DLL (LIBRARY + EXPORTS lines),
-# and mcc links `libmcc.def` given on the command line directly, so name the
-# import library lib<name>.def: the artifact mcc -shared emits IS the implib.
-# The same missing platform module also leaves the plain-library link style a
-# hybrid: CMAKE_LINK_LIBRARY_FLAG is the GNU `-l` while CMAKE_LINK_LIBRARY_SUFFIX
-# is still Windows.cmake's `.lib`, so a bare `target_link_libraries(mccbench
-# psapi)` is emitted as `-lpsapi.lib`. mcc's PE library search spells the
-# candidates itself (`psapi.def`, `libpsapi.def`, `psapi.dll`, ... -- see
-# mcc_add_library), so the baked-in `.lib` makes every one of them miss:
-# "library 'psapi.lib' not found", which is where the MCC_BENCH self-host link
-# died. Clear the suffix; the `-l` flag alone is what mcc's driver expects.
 if(MCC_CC_NAME STREQUAL "mcc" AND WIN32)
     set(CMAKE_IMPORT_LIBRARY_PREFIX "lib")
     set(CMAKE_IMPORT_LIBRARY_SUFFIX ".def")
@@ -1579,15 +1536,6 @@ if(MCC_CC_NAME STREQUAL "gcc" AND MCC_GCC_MAJOR EQUAL 4
     add_compile_options(-D_FORTIFY_SOURCE=0)
 endif()
 
-# NOTE: MSVC/arm64 fails a fixed set of tests (exec-replay run_atexit +
-# errors_and_warnings, and 7 jit/selftest-*). A prior theory blamed the cl ARM64
-# optimizer and forced /Od here; that was DISPROVEN — CI still fails identically
-# with /Od genuinely applied (verified <Optimization>Disabled in the generated
-# vcxproj), so it is not an optimizer miscompile. The fault is unreproducible off
-# real arm64-Windows hardware (wine masks it), so those tests are skip-gated at
-# their registration sites (tests/exec/goldens.h + the jit selftest block below),
-# matching the exec/tls precedent. No build-flag override belongs here.
-
 set(MCC_DIAG_FLAGS "")
 if(MCC_ALL_DIAGNOSTICS)
     if(MSVC)
@@ -1620,14 +1568,6 @@ if(MCC_TARGETOS STREQUAL "Darwin" AND NOT MCC_CC_NAME STREQUAL "mcc")
     if(MCC_CC_NAME STREQUAL "clang" AND MCC_GCC_MAJOR LESS 15)
         add_link_options(-undefined warning)
     endif()
-    # 10.7 (was 10.6): macOS 10.6 predates the TLS runtime (__tlv_bootstrap), so
-    # clang rejects _Thread_local under a 10.6 min. 10.7 is the floor for the
-    # thread-local optimizer state (docs/TODO.md, JIT runtime §).
-    # Bump when unset OR when a stale sub-10.7 value was seeded: some SDK/clang
-    # combos pre-seed CMAKE_OSX_DEPLOYMENT_TARGET=10.6 before this point, which a
-    # plain `if(NOT ...)` would leave in place and break the local clang build.
-    # The gcc-on-macOS path (top of file) pins this to the host OS version
-    # (>= 10.7), so it is never < 10.7 here and is left untouched.
     if(NOT CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS "10.7")
         set(CMAKE_OSX_DEPLOYMENT_TARGET "10.7" CACHE STRING
             "Makefile: MACOSX_DEPLOYMENT_TARGET" FORCE)
@@ -2073,23 +2013,6 @@ if(MCC_BUILD_STATIC_LIB AND MCC_BUILD_DYNAMIC_LIB)
 endif()
 
 if(MCC_EMBED_JIT)
-    # The embed-blob (libmcc-jitengine.a → bin2c → linked into emitted programs
-    # by mcc's OWN linker). On WIN32 the host CC produces a COFF/PE archive; mcc's
-    # linker now reads COFF objects/archives (coff_load_object_file in mccpe.c),
-    # so the blob links on Windows too. mcc's own -run JIT and the selftests do
-    # not need the blob (the engine is compiled into mcc itself); only standalone
-    # --embed-jit output does.
-    #
-    # The engine is ALWAYS the single-source amalgamation compiled as one TU:
-    # baking a multi-member (per-TU) archive as the in-memory blob produces an
-    # engine that links but loops forever in its own static initializer
-    # (mccjit_boot_swap -> pthread_once on a mis-resolved symbol), where the
-    # 1-object shape boots -- measured on dist-macos 2026-07-31. That is also
-    # why dist builds (MCC_BUILD_STATIC_LIB=ON, MCC_SINGLE_SOURCE=OFF) build it
-    # from src/libmcc.c directly here rather than through mcc_add_libmcc, and
-    # why the archive has its own name: `libmcc-static.a` is the real per-TU
-    # static lib in those builds (and the two are byte-indistinguishable at a
-    # glance -- both ~1.8 MB).
     if(NOT MCC_BUILD_STATIC_LIB AND MCC_SINGLE_SOURCE)
         mcc_add_libmcc(libmcc_jitengine STATIC FALSE)
     else()
@@ -2457,9 +2380,6 @@ if(MCC_BUILD_SANITIZE)
     endif()
 endif()
 
-# ThreadSanitizer variant (mcc_t) — separate from mcc_s because TSan and ASan
-# cannot be combined. Used to drive the multi-threaded-optimizer data-race
-# audit (docs/TODO.md, JIT runtime §). GCC/Clang only.
 if(MCC_BUILD_TSAN)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT MCC_TARGETOS STREQUAL "WIN32")
         message(STATUS "mcc tsan (mcc_t): ThreadSanitizer (-fsanitize=thread)")
@@ -2540,11 +2460,6 @@ function(mcc_build_mccrt tname mcctgt cpu os native prefix san archive objdir ou
     else()
         message(FATAL_ERROR "mcc_build_mccrt: unknown cpu '${cpu}'")
     endif()
-    # Only where the front end can emit the calls. Every *ti* helper reference
-    # lives in gen_opq under `#if MCC_HAVE_INT128`, which is x86_64-and-not-PE,
-    # so arm64 and riscv64 were shipping ~40 routines nothing could ever reach:
-    # 28710 B of an arm64 libmccrt.a and 30120 B of a riscv64 one. Restore this
-    # line the moment __int128 reaches either target.
     if(cpu STREQUAL "x86_64")
         list(APPEND _objs int128)
     endif()
@@ -2792,13 +2707,6 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         add_executable(bin2c tools/bin2c.c)
     endif()
 
-    # On an MSVC host cl compiles the engine against UCRT/vcruntime/RTC internals
-    # (__stdio_common_*, __GSHandlerCheck, _RTC_*) that mcc's msvcrt --embed-jit
-    # output cannot resolve, so --embed-jit fails to link. Point this at a
-    # msvcrt-targeting mingw gcc (the toolchain class mcc's own output matches)
-    # to build the blob engine with it instead; the resulting engine references
-    # only msvcrt/mingw symbols the baked libdirs below resolve. Empty (default)
-    # keeps the cl-built engine, so the MSVC build is unchanged unless opted in.
     set(MCC_EMBED_JIT_MINGW_CC "" CACHE STRING
         "Path to a msvcrt-targeting mingw gcc used to build the --embed-jit blob engine on MSVC hosts.")
 
@@ -2821,9 +2729,6 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         endif()
         set(_je_o "${CMAKE_BINARY_DIR}/mccjit_engine_mingw.o")
         set(_je_a "${CMAKE_BINARY_DIR}/libmccjitengine-mingw.a")
-        # Reconstruct the cl target's exact define/include set (directory-level
-        # add_compile_definitions + the target's own defs + its includes) so the
-        # mingw engine is byte-configured identically, only a different CRT.
         add_custom_command(OUTPUT "${_je_o}"
             COMMAND "${MCC_EMBED_JIT_MINGW_CC}" -c -w -O1
                 ${_je_dflags}
@@ -2844,31 +2749,10 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         set(_jitengine_blob_dep "${_je_a}")
     endif()
 
-    # Alternatively, build the blob engine WITH mcc itself -- a cross mcc that
-    # emits this target's PE (e.g. mcc-i386-win32). An mcc-built engine has no gcc
-    # footprint (no emutls, no gcc import-library idata), so --embed-jit takes the
-    # clean MCC_EMBED_JIT_MCC_ENGINE link path (libmccrt + mcc-def msvcrt/kernel32,
-    # all loader-bindable) instead of pulling gcc's libmingwex/mingw32/libmsvcrt.
-    # This is the fix for the i386-PE embed-jit startup 0xC0000005: the gcc engine
-    # leaves its msvcrt idata unbound in the image and the loader jumps into a
-    # hint/name string. PoC-proven 2026-07-31 (bake runs clean at MCC_JIT=0/1).
-    # Empty (default) keeps the host-CC/mingw engine; takes precedence over
-    # MCC_EMBED_JIT_MINGW_CC when both are set.
     set(MCC_EMBED_JIT_MCC_ENGINE_CC "" CACHE STRING
         "Path to an mcc that emits this target's PE (e.g. mcc-i386-win32), used to build the --embed-jit blob engine with no gcc footprint (fixes the i386-PE embed startup crash).")
     set(_me_cc "${MCC_EMBED_JIT_MCC_ENGINE_CC}")
     set(_me_cc_dep "")
-    # PE default (i386 + x86_64): two-stage self-bake. A gcc-built engine blob
-    # breaks the --embed-jit OUTPUT at runtime -- on i386 the unbound gcc
-    # import-library idata 0xC0000005s at startup even with the JIT off, and on
-    # x86_64 the winlibs engine fail-fasts 0xC0000409 the moment MCC_JIT=1
-    # boots it, while the same program with an mcc-compiled engine runs clean
-    # (both measured 2026-08-01). So bootstrap a blob-free mcc from the same
-    # amalgamation (no target_sources(mccjit_blob.c), no MCC_EMBED_JIT_BLOB --
-    # it emits this host's PE but does not depend on the engine bake, breaking
-    # the cycle) and let it compile the engine the real mcc embeds. An explicit
-    # MCC_EMBED_JIT_MCC_ENGINE_CC wins; self-host (MCC_CC_NAME == mcc) already
-    # compiles the blob with mcc and needs none.
     if(NOT MCC_EMBED_JIT_MCC_ENGINE_CC
        AND MCC_TARGETOS STREQUAL "WIN32" AND MCC_CPU MATCHES "^(i386|x86_64)$"
        AND NOT MSVC AND NOT MCC_CC_NAME STREQUAL "mcc"
@@ -2901,11 +2785,6 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
         endif()
         set(_me_o "${CMAKE_BINARY_DIR}/mccjit_engine_mcc.o")
         set(_me_a "${CMAKE_BINARY_DIR}/libmccjitengine-mcc.a")
-        # mcc needs its freestanding + PE headers (-B runtime/win32, -I
-        # runtime/include); the rest of the define/include set matches the
-        # libmcc_jitengine target so the engine is configured identically. The
-        # target's MCC_EMBED_JIT=1/MCC_JIT_DEFAULT=1 are what expose
-        # mccjit_boot_swap/mccjit_set_search_budget, which the host mcc imports.
         add_custom_command(OUTPUT "${_me_o}"
             COMMAND "${_me_cc}" -c -w -O1
                 "-B${CMAKE_CURRENT_SOURCE_DIR}/runtime/win32"
@@ -2939,21 +2818,7 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     target_sources(mcc PRIVATE "${CMAKE_BINARY_DIR}/mccjit_blob.c")
     target_compile_definitions(mcc PRIVATE MCC_EMBED_JIT_BLOB=1)
     if(MCC_CC_NAME STREQUAL "mcc")
-        # Self-host: the engine blob is compiled by mcc itself and references
-        # only mcc's own runtime, so there is no gcc/mingw libdir to bake --
-        # and probing mcc with -print-libgcc-file-name below just prints an
-        # invalid-option error on every self-host configure.
     elseif(MCC_TARGETOS STREQUAL "WIN32")
-        # The blob is the JIT engine compiled by the host mingw gcc, so it
-        # references that toolchain's runtime (libmingwex __mingw_*/ldexpl,
-        # libgcc __chkstk_ms, ucrt/kernel32 import stubs). Bake the toolchain lib
-        # dirs (queried from the compiler) so mcc can resolve them when it links
-        # the blob into --embed-jit output.
-        # _jit_bake_cc is the host CC on a mingw build, or the msvcrt-mingw gcc on
-        # an opted-in MSVC host -- either way the toolchain that built the blob,
-        # whose libdirs resolve its runtime references. cl has no -print-file-name,
-        # so on MSVC without the opt-in these queries yield nothing and the block
-        # below stays inert.
         execute_process(COMMAND "${_jit_bake_cc}" -print-file-name=libmingwex.a
             OUTPUT_VARIABLE _mccjit_mingwex OUTPUT_STRIP_TRAILING_WHITESPACE)
         execute_process(COMMAND "${_jit_bake_cc}" -print-libgcc-file-name
@@ -2969,14 +2834,6 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
             message(STATUS "mcc: embed-jit runtime libs: ${_mccjit_mingw_libdir} + ${_mccjit_gcc_libdir}")
         endif()
     elseif(NOT WIN32 AND NOT APPLE)
-        # ELF/Linux peer of the WIN32 mingw bake above. The engine blob is the
-        # JIT engine compiled by the host gcc with its default -moutline-atomics,
-        # so it references libgcc outline-atomics / soft-arith helpers
-        # (__aarch64_ldadd8_acq_rel, __divtf3, …). The blob is linked LAST, so
-        # bake the host libgcc dir (queried from the compiler) into
-        # MCC_EMBED_JIT_GCC_LIBDIR; src/libmcc.c adds it to the search path and
-        # links libgcc AFTER the blob, removing the -mno-outline-atomics
-        # workaround the engine bake would otherwise need.
         execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-libgcc-file-name
             OUTPUT_VARIABLE _mccjit_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
         get_filename_component(_mccjit_gcc_libdir "${_mccjit_libgcc}" DIRECTORY)
@@ -2989,29 +2846,11 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
     endif()
 endif()
 
-# --- JIT self-host bootstrap (EXPERIMENTAL) ------------------------------
-# mcc-jit: a stage-2 mcc produced by mcc compiling its OWN source with
-# --embed-jit, so the resulting binary carries the JIT engine and, at runtime
-# under MCC_JIT=1, profile-guided-recompiles and hot-swaps its own hot
-# functions in-process. Requires the reemit optimizer + the engine blob.
-# Baking needs -O1+ (never -O0). The PE bake path still has an open blocker, so
-# that triple builds the tool but skips the self-host; ELF and Apple Mach-O are
-# wired up. STATUS (2026-07-22): builds + self-JITs on linux/arm64 and
-# arm64/macOS (MCC_JIT=0 output is correct; MCC_JIT=1 re-JITs its baked
-# search-optimized variants at boot via the KGC cache — 57 recompiles + 717 KGC
-# hits/run on macOS — and self-compiles the amalgamation crash-free). A JIT'd
-# variant of a complex mcc function can still SIGBUS on the runtime hot-swap
-# path under heavier promotion (open JIT-codegen robustness bug, docs/TODO.md).
-# Default OFF; opt-in only.
 mcc_config_node(MCC_BUILD_JIT_SELFHOST TYPE BOOL DEFAULT OFF GROUP "Build targets" ADVANCED
     VISIBLE_WHEN "MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER"
     HELP "EXPERIMENTAL. Build mcc-jit: a stage-2 mcc self-compiled with --embed-jit (JITs its own hot functions at runtime). ELF + Apple Mach-O; PE bake path still gated off. The runtime hot-swap path can still SIGBUS on a complex JIT'd variant under heavier promotion — boots + self-compiles crash-free but is not yet proven crash-free under full runtime promotion.")
 
 function(mcc_add_jit_selfhost out_path stage0_mcc)
-    # Reconstruct the exact compile flags the stage-0 mcc target was built with:
-    # directory-level defs (add_compile_definitions) + the target's own defs +
-    # its include dirs. The string defines (e.g. MCC_CONFIG_MCCDIR="...") carry
-    # their quotes verbatim through VERBATIM/COMMAND_EXPAND_LISTS.
     get_directory_property(_dirdefs COMPILE_DEFINITIONS)
     set(_dflags "")
     foreach(_d IN LISTS _dirdefs)
@@ -3021,9 +2860,6 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
     if(EXISTS "${CMAKE_BINARY_DIR}/mccrt_blob.c" OR MCC_EMBED_MCCRT)
         list(APPEND _blobs "${CMAKE_BINARY_DIR}/mccrt_blob.c")
     endif()
-    # System libs mcc.c needs: -lm is a no-op on PE, but -lpthread/-ldl are
-    # POSIX-only and error on WIN32 (threads/dlopen come from the win32 runtime
-    # shim + kernel32 there). Pass them only off-Windows.
     set(_shlibs -lm -lpthread -ldl)
     if(MCC_TARGETOS STREQUAL "WIN32")
         set(_shlibs "")
@@ -3044,12 +2880,6 @@ function(mcc_add_jit_selfhost out_path stage0_mcc)
 endfunction()
 
 if(MCC_BUILD_JIT_SELFHOST AND MCC_EMBED_JIT AND MCC_CONFIG_OPTIMIZER AND TARGET libmcc_jitengine)
-    # PE --embed-jit self-host now works (native-TLS COFF reading, a la carte
-    # loader termination, __ImageBase, compiler-rt fallback, K32GetProcessMemoryInfo
-    # def — 2026-07-27). The BAKE is proven crash-free and byte-identical under
-    # MCC_JIT=0/1 on llvm-mingw; on winlibs-gcc the RUNTIME JIT of the resulting
-    # mcc-jit may still hit the 0xC0000005 (P0 step 5), so this target only BUILDS
-    # (bakes) mcc-jit — any RUN-under-JIT test stays skip-guarded on winlibs.
     if(WIN32)
         set(_mccjit_out "${CMAKE_BINARY_DIR}/mcc-jit.exe")
     else()
@@ -3295,9 +3125,6 @@ if(MCC_ENABLE_CROSS)
     endforeach()
 endif()
 
-# Under CC=mcc on Windows the def is already the declared import library of
-# the libmcc link itself (see the CMAKE_IMPORT_LIBRARY_SUFFIX block), so this
-# impdef step would be a second rule generating libmcc.def.
 if(MCC_TARGETOS STREQUAL "WIN32" AND _libmcc_shared
    AND NOT (WIN32 AND MCC_CC_NAME STREQUAL "mcc"))
     add_custom_command(
@@ -3492,11 +3319,6 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 600)
     endif()
 
-    # UBSan trap + -fsanitize-recover land on x86_64 (ELF/Mach-O/PE, native) and
-    # on the four ELF cross arches (arm64/i386/arm/riscv64), validated natively +
-    # under qemu (docs/TODO.md Sanitizers). run_ubsan.cmake prefixes both the mcc
-    # invocation and the produced binary with ${EMU} (== MCC_EMULATOR), so a cross
-    # ELF target runs under its emulator; EMU is empty (byte-identical) natively.
     set(_ubsan_run OFF)
     if(MCC_CPU STREQUAL "x86_64" AND NOT MCC_EMULATOR)
         set(_ubsan_run ON)
@@ -3534,10 +3356,6 @@ if(MCC_BUILD_TESTS)
             "-DEXPECT=3705032704 1983905792 2147483648"
             -P "${_ubsan_dir}/run_ubsan.cmake")
         set_tests_properties("ubsan/clean_unsigned_wrap" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-        # NEW recover/diagnostic path (do_sanitize_recover, gated OFF by default):
-        # -fsanitize-recover=undefined swaps the trapping ud2 for a call to the
-        # minimal-ABI __ubsan_handle_*_minimal runtime handler (runtime/lib/
-        # mccubsan.c) which logs to stderr and RETURNS -> the program survives.
         add_test(NAME "ubsan/recover_signed_add" COMMAND "${CMAKE_COMMAND}"
             "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DEMU=${MCC_EMULATOR}"
             "-DSRC=${_ubsan_dir}/recover_signed_add.c"
@@ -3714,9 +3532,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/replay-vla" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
             if(MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
-                # Tier-3 register promotion: x86_64 (caller-saved R10/R9/R8 + callee-saved
-                # RBX/R12–R15 + XMM) and arm64 (caller-saved x9–x15 + callee-saved x19–x28 +
-                # v2–v5) both promote leaf, callful, and float functions.
                 add_test(NAME "ast/replay-promote" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
@@ -3724,9 +3539,6 @@ if(MCC_BUILD_TESTS)
                     "-DEXPECT_RC=42" "-DREPLAYED=loopy" "-DPROMOTE=1" "-DPROMOTES=loopy,callful,sumptr,fdot"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay.cmake")
                 set_tests_properties("ast/replay-promote" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
-                # Same, but through the graph-coloring allocator + spill-slot sharing
-                # (MCC_AST_COLOR + MCC_AST_SPILL_SHARE): promotion must still fire and
-                # stay correct. On arm64 this path was inert until x19–x28 were exposed.
                 add_test(NAME "ast/replay-promote-color" COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=$<TARGET_FILE:mcc>" "-DBDIR=${CMAKE_BINARY_DIR}"
                     "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/replay/promote.c"
@@ -3740,12 +3552,6 @@ if(MCC_BUILD_TESTS)
             endif()
 
             if(MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
-                # sumbig takes a 32-byte struct by value. On x86_64 the argument
-                # lands in the caller's stack frame and the Tier-4 capture grafts
-                # it; on arm64 (AAPCS64) aggregates >16 bytes are passed indirectly
-                # via a hidden pointer (VT_LLOCAL), which the capture does not model
-                # yet, so sumbig desyncs and stays retained-only. Every other case,
-                # including the 8-byte struct sumpt/addpt, grafts on both arches.
                 set(_inline_fns "add,scale,madd,clamp,sgn,area,quad,pick,firsthit,mkpair,gsum,sumpt,sumbig,addpt")
                 if(MCC_CPU STREQUAL "arm64")
                     set(_inline_fns "add,scale,madd,clamp,sgn,area,quad,pick,firsthit,mkpair,gsum,sumpt,addpt")
@@ -3940,11 +3746,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=1;MCC_AST_INLINE=0")
         endforeach()
 
-        # AST recorder-fidelity ratchet: sweep the exec corpus under MCC_AST_VERIFY
-        # and fail if the set of non-faithful (desync/unfaithful/stackresidue)
-        # functions drifts from the checked-in per-target baseline. This is the
-        # guardrail for eventually retiring desync/faithfulness: the gap set can
-        # only shrink. Targets with no baseline yet SKIP (regenerate with REGEN=1).
         string(TOLOWER "${MCC_CPU}-${MCC_TARGETOS}" _verify_key)
         if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
             foreach(_vopt O1 O2 O3)
@@ -3957,9 +3758,6 @@ if(MCC_BUILD_TESTS)
                     "recorder-fidelity baseline is generated with the integrated assembler on; asm-off makes the inline_asm/* bodies trivially faithful, so the ${_verify_key} gap set diverges from the checked-in (asm-on) baseline")
             endforeach()
         else()
-            # Sweep -O1/-O2/-O3 against the SAME baseline: the recorder-modelling
-            # gates are on from -O1 up, so all three produce an identical gap
-            # set. Running each is what keeps them from silently diverging.
             foreach(_vopt O1 O2 O3)
                 add_test(NAME ast-verify-ratchet-${_vopt}
                     COMMAND "${CMAKE_COMMAND}"
@@ -3975,14 +3773,6 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endif()
 
-        # Operation-journal parity column. The journal is an oracle that runs
-        # ALONGSIDE the tree recorder, gated off by default, and does not replace
-        # it until it is at parity or better -- this is what decides that, every
-        # run, instead of a hand sweep. The invariant it locks: a function the
-        # tree reproduces byte-faithfully must be one the journal reproduces
-        # byte-faithfully. The converse (journal faithful where the tree is not)
-        # is the win, and is reported as the delta rather than failed on. Builds
-        # without MCC_JOURNAL_HOOKS SKIP the column instead of failing it.
         if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
             foreach(_vopt O1 O2 O3)
                 mcc_skip_test(ast-journal-parity-${_vopt}
@@ -4011,13 +3801,6 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endif()
 
-        # Journal inertness: MCC_JOURNAL=1 must not move a byte of the object it
-        # observes. Without this the oracle could start steering the very output
-        # it exists to certify, and nothing else in the suite would notice --
-        # every other journal check reads the journal's own verdicts. Driven by a
-        # portable -P script (not a .sh) so it runs on Win32 too, where ctest
-        # cannot exec a shebang; a build with no MCC_JOURNAL_HOOKS self-SKIPs via
-        # the probe, so registering it unconditionally never false-greens.
         add_test(NAME ast/journal-inert
             COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=${_mcc_exe}"
@@ -4055,9 +3838,6 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
             TIMEOUT 900)
 
-        # Instruction 36's bar is absolute -- 100% of bodies faithful on every
-        # target at every -O -- so this is a hard assert, not a ratchet against
-        # a banked number, and it needs no baseline family of its own.
         foreach(_ro -O1 -O2 -O3)
             string(REPLACE "-" "" _rotag "${_ro}")
             add_test(NAME ast/rir-parity-${_rotag}
@@ -4085,15 +3865,6 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 1800)
         endforeach()
 
-        # -O0 is the one level the loop above cannot cover, and it is the level
-        # the deletion bar is stated over just as much as -O1..-O3: ast_replay_env
-        # needs optimize >= 1, so an -O0 cell added to that foreach would journal
-        # nothing and pass vacuously. FORCE lifts the replay gate and turns on
-        # every optimize>=1 pass gate, derived from SRCDIR at run time; see the
-        # header of rir_parity.cmake for why the list is derived and not copied.
-        # It is its own add_test rather than a fourth loop iteration because the
-        # c3 cell has no forced-O0 counterpart -- the pass-equivalence question
-        # it asks is about the optimizer running, not about -O0 emit.
         add_test(NAME ast/rir-parity-O0
             COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=${_mcc_exe}"
@@ -4118,15 +3889,6 @@ if(MCC_BUILD_TESTS)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c3.cmake"
             DEPENDS mcc USES_TERMINAL)
 
-        # Phase D's bar is per-TARGET, and running it by hand is how a gate goes
-        # stale. The cross compilers in MCC_CROSS_DIR emit for these four and the
-        # sysroots are vendored, so the same assert runs against each. MCCFLAGS
-        # carries the sysroot: --sysroot ALONE silently shrinks the sweep to the
-        # include-free files, so the explicit usr/include is load-bearing, and
-        # arm's hard-float PCS is not the default.
-        # instruction 2 lists shadow-IV zero divergence in the flip bar, and it
-        # had only ever been run on x86_64 by hand. The side-car recomputes every
-        # memoised AST query and aborts on a mismatch, so this is a hard assert.
         foreach(_sv x86_64 i386 arm arm64 riscv64)
             add_test(NAME cross/shadow-iv-${_sv}
                 COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
@@ -4135,10 +3897,6 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 3600)
         endforeach()
 
-        # A shared object must not get local-exec TLS. Guards a silent wrong
-        # answer: before the refusal these three linked rc=0 and baked a
-        # thread-pointer offset of 0, so the library read the executable's
-        # thread-local instead of its own.
         foreach(_st riscv64 arm arm64)
             add_test(NAME cross/shared-tls-refused-${_st}
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/shared-tls-refused.sh"
@@ -4150,12 +3908,6 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 300)
         endforeach()
 
-        # No target may CRASH the compiler on the corpus. Every other
-        # per-target check counts ok/fail, and a SIGABRT lands in the fail
-        # column next to the files that legitimately do not compile -- which
-        # is how riscv64's arch_transfer_ret_regs abort survived. This asserts
-        # on the SIGNAL, so it does not care how many files compile and is
-        # immune to the low-fn sysroot trap.
         foreach(_na riscv64 arm arm64 i386
                     x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
                     x86_64-osx arm64-osx)
@@ -4173,12 +3925,6 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 1800)
         endforeach()
 
-        # A struct returned in two registers of different classes drives
-        # arch_transfer_ret_regs, and the AST replay pushed the sret temp with
-        # VT_NONLVAL already set -- riscv64's assert(vtop->r == (VT_LOCAL |
-        # VT_LVAL)) then aborted the compiler outright at -O1 and above. x86_64
-        # has no assert there and silently tolerated it, so only riscv64 shows
-        # it. Compile-only: the abort was in the compiler, not the program.
         add_test(NAME cross/xferret-nonlval-riscv64
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/xferret-nonlval.sh"
                     "${MCC_CROSS_DIR}/mcc-riscv64" "${MCC_CROSS_DIR}"
@@ -4189,12 +3935,6 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
             LABELS "cross" TIMEOUT 300)
 
-        # -fasan-shadow must name the access direction, and the clean case must
-        # still not trap: the instruction that carries the direction shifts the
-        # trap one slot later, and on the three backends whose skip branch is
-        # hand-encoded the riscv64 port left that branch aimed at the trap for
-        # one build, so every VALID access trapped while both fault cases still
-        # printed the right label.
         foreach(_aa riscv64 arm64 i386 arm)
             add_test(NAME cross/asan-accesstype-${_aa}
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/asan-accesstype.sh"
@@ -4207,13 +3947,6 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 600)
         endforeach()
 
-        # A compile-only census needs no emulator and no loader, which is what
-        # makes the PE and Darwin triples reachable here too -- they stage
-        # against mcc's own bundled headers instead of a sysroot. arm-wince is
-        # here because it is the twelfth cross triple and its compiler is not
-        # arm-win32's: the two share a define set, so a divergence between them
-        # can only come from the PE subsystem or the crossprefix, and nothing
-        # else in the suite would see it.
         foreach(_rp riscv64 arm arm64 i386
                     x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
                     x86_64-osx arm64-osx)
@@ -4253,12 +3986,6 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
 
-            # The -O0 half of the same bar, on the same compiler. Without this
-            # the matrix reads "every target at every -O" while covering one -O
-            # natively and one -O per cross target; -O0 was the level no cell
-            # anywhere measured. FORCE is mandatory here for the reason given in
-            # rir_parity.cmake's header -- the gate list is derived from SRCDIR
-            # per run, so a cross cell cannot drift from the native one.
             add_test(NAME ast/rir-parity-${_rp}-O0
                 COMMAND "${CMAKE_COMMAND}"
                         "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
@@ -4274,13 +4001,6 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
 
-            # -O2 and -O3 complete "every target at every -O": the cell above
-            # covers -O1 and the one before it -O0, and the native loop already
-            # covers all four, so without these two the matrix asserts the bar
-            # on four levels natively and two per cross target. They reuse
-            # ${_rpf} rather than hand-rolled flags for the reason the header
-            # of rir_parity.cmake gives -- a wrong sysroot does not fail, it
-            # shrinks the census to the include-free files and passes.
             foreach(_rpo -O2 -O3)
                 string(REPLACE "-" "" _rpot "${_rpo}")
                 add_test(NAME ast/rir-parity-${_rp}-${_rpot}
@@ -4316,25 +4036,6 @@ if(MCC_BUILD_TESTS)
                 "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON, MCC_CONFIG_OPTIMIZER, a non-cross build and a CPU the journal hooks compile on (x86_64, arm64, i386 or riscv64); this is ${MCC_CPU}, single-source=${MCC_SINGLE_SOURCE}, cross=${CMAKE_CROSSCOMPILING}")
         endif()
 
-        # ------------------------------------------------------------------
-        # Per-triple journal sweep matrix.
-        #
-        # Before this, measuring a non-host target meant hand-building a wrapper
-        # script per triple to inject the sysroot -- which is how a sweep once
-        # got run with an extra -I, lifting coverage from 261 to 266 files and
-        # inflating the depth count into a false "regression". These targets
-        # pin one prefix per (triple, libc) so the number is reproducible.
-        #
-        #   cmake --build . --target journal-sweep-arm64-linux-glibc
-        #   cmake --build . --target journal-sweep-all          (every key, cross)
-        #   cmake --build . --target journal-sweep-all-native   (under qemu/wine)
-        #   cmake --build . --target journal-sweep-report       (matrix summary)
-        #
-        # cross vs native is a real distinction, not a convenience: the honesty
-        # census is byte-identical either way, but the depth ceiling reads
-        # native-1 on arm64/riscv64, so `journal-regen-*` defaults to native.
-        # Keys that cannot run here (darwin, arm*, msvcrt) still get a target and
-        # report exactly why, so the matrix documents its own gaps.
         set(_jsw_root "${CMAKE_CURRENT_SOURCE_DIR}")
         if(MCC_ENABLE_CROSS)
             set(_jsw_xdir "${CMAKE_BINARY_DIR}")
@@ -4342,19 +4043,11 @@ if(MCC_BUILD_TESTS)
             set(_jsw_xdir "${CMAKE_SOURCE_DIR}/cmake-cross")
         endif()
         set(_jsw_tmp "${CMAKE_BINARY_DIR}/journal-sweep")
-        # The host triple's baseline is banked by the native ctest cell with the
-        # host's own headers, not through a vendored sysroot. Hand the driver the
-        # host compiler and key so it compares like with like instead of scoring
-        # a different corpus expansion against that baseline.
         string(TOLOWER "${MCC_CPU}-${MCC_TARGETOS}" _jsw_hostkey)
         set(_jsw_hostmcc "${_mcc_exe}")
         set(_jsw_drv "${_jsw_root}/tests/ast/journal_sweep.cmake")
         set(_jsw_nat "${_jsw_root}/tests/ast/journal_native.cmake")
 
-        # The full matrix: every triple mcc can emit, crossed with every C
-        # library the tree knows how to point it at. Unbuildable combinations
-        # are NOT pruned here -- the driver skips them with a specific reason,
-        # which is the whole point of enumerating them.
         set(_jsw_keys "")
         foreach(_jc x86_64 i386 arm64 riscv64 arm)
             foreach(_jl glibc musl)
@@ -4383,8 +4076,6 @@ if(MCC_BUILD_TESTS)
                         "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
                         -P "${_jsw_drv}"
                 COMMENT "journal sweep ${_jk} (cross)" USES_TERMINAL VERBATIM)
-            # The -all member is a separate target carrying KEEPGOING, so one
-            # failing triple cannot mask every triple after it as "not run".
             add_custom_target(journal-sweep-${_jk}-keepgoing
                 COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=cross" "-DKEEPGOING=1"
                         "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
@@ -4419,8 +4110,6 @@ if(MCC_BUILD_TESTS)
             add_dependencies(journal-sweep-${_jk}-native-keepgoing journal-native-${_jk})
             add_dependencies(journal-sweep-all-native journal-sweep-${_jk}-native-keepgoing)
 
-            # Banking defaults to native: a cross-banked depth ceiling is wrong
-            # on arm64 and riscv64, and nothing downstream would notice.
             add_custom_target(journal-regen-${_jk}
                 COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native" "-DJREGEN=1"
                         "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
@@ -4437,17 +4126,6 @@ if(MCC_BUILD_TESTS)
                     "-DKEYS=${_jsw_keys}" -P "${_jsw_root}/tests/ast/journal_report.cmake"
             COMMENT "Summarise the journal sweep matrix" USES_TERMINAL VERBATIM)
 
-        # -O4's superopt driver scores by SIZE, and promotion trades size for
-        # speed -- which is how -O4 came to be slower than -O3 on every plb
-        # kernel. so_setenv_cfg now treats MCC_AST_PROMOTE as add-only. This
-        # locks that floor deterministically (byte compare, no timing): -O4
-        # output must equal -O4 with promotion pinned on.
-        # The arena is meant to be a TREE, but ast_add_child re-parents without
-        # unlinking, so a node can sit in two child chains and replay emits it
-        # once per chain (F3a). This asserts the property that keeps that
-        # harmless: such a body is always REJECTED as unfaithful, never handed
-        # to the optimizer passes -- a pass transforming an invalid model is the
-        # one failure mode the always-on replay byte-comparison cannot catch.
         if(UNIX)
             add_test(NAME ast/treecheck
                 COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/treecheck.sh"
@@ -4458,11 +4136,6 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 900)
         endif()
 
-        # Guard the TRACE-based divergence workflow: MCC_TRACE_FILE scoping must
-        # keep narrowing the trace, the recorder hooks must keep printing values
-        # rather than a bare "enter", and AST_SET_DESYNC must keep dumping state.
-        # Without all three, finding where two configurations diverge goes back
-        # to hand-patching a temporary fprintf into a suspect guard.
         if(UNIX)
             add_test(NAME ast/tracediff
                 COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/tracediff.sh"
@@ -4485,11 +4158,6 @@ if(MCC_BUILD_TESTS)
                 TIMEOUT 600)
         endif()
 
-        # Force the opt-in search knobs (V-narrow(a) narrow-to-fixpoint, V-sethi(a)
-        # leaf-aware Sethi-Ullman) ON directly at -O2 across the whole exec corpus, so
-        # their codegen is exercised end-to-end and validated for correct runtime output.
-        # Cheap (no -O4 search / superopt) — the knobs are normally only reachable via the
-        # search, so without this their code paths have no ctest coverage.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4501,12 +4169,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_NARROW_FIX=1;MCC_AST_SETHI_LEAF=1;MCC_AST_SCCP_FIX=1;MCC_AST_LICM_TEMP=1;MCC_AST_IVSR=1;MCC_AST_PRE=1;MCC_AST_DSE_CALL=1;MCC_AST_TCO_PTR=1;MCC_AST_CSE_COMM=1;MCC_AST_RANGE=1;MCC_AST_DIVMAGIC=1;MCC_AST_ABS=1;MCC_AST_REASSOC=1;MCC_AST_CSE_WINDOW=256;MCC_AST_CPROP_WINDOW=512")
         endforeach()
 
-        # Gate COMBINATION coverage. Single-gate runs are not enough: MCC_AST_CHAINSTORE
-        # and MCC_AST_PROMO_INCDEC each passed the whole corpus alone while the PAIR
-        # miscompiled (the chained store reads the register the inner store left the
-        # value in, which a promoted inner target never writes). Every single-gate
-        # check was green -- corpus, five runtime kernels, three self-host fixpoints --
-        # so the pair is what needs exercising, not the parts.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4518,13 +4180,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_OPASSIGN=1")
         endforeach()
 
-        # Force the pointer-index strength reduction (MCC_AST_IVSR_PTR) ON, together
-        # with MCC_AST_OPASSIGN which is what makes compound-assign loops replayable
-        # enough for it to reach them. Two independent miscompiles hid in this pass
-        # (a[i][i] read a[i][0]; a row pointer taken inside the loop read out of
-        # bounds) precisely because nothing exercised the corpus with it enabled --
-        # its own validation was a fixed 6-pattern differential. Value-changing, so an
-        # exec (runtime) variant rather than a golden.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4536,14 +4191,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_OPASSIGN=1;MCC_AST_IVSR_PTR=1")
         endforeach()
 
-        # All four 2026-07-26 gates at once on the PE targets. The pair cells above
-        # exercise CHAINSTORE+PROMO_INCDEC and IVSR_PTR+OPASSIGN separately; the
-        # full combination is otherwise only covered by the arm64-native memmodel
-        # self-host. The Win64 ABI is where it matters -- a different callee-saved
-        # set and the 32-byte shadow space are exactly what a promotion/chainstore
-        # interaction can get wrong -- so run the whole corpus with all four forced.
-        # PE-only: verified here on x86_64-PE (289 pass / 0 fail); Linux keeps the
-        # per-pair cells.
         if(MCC_TARGETOS STREQUAL "WIN32")
             foreach(_gl IN LISTS _exec_glines)
                 string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
@@ -4557,10 +4204,6 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endif()
 
-        # P1 PR-2: force the value-lattice ranged-narrowing consumer (MCC_AST_VLAT) ON at
-        # -O2 across the whole exec corpus, so the non-distributive narrowings (unsigned / %,
-        # << const-count) are exercised end-to-end and their runtime output validated. Value-
-        # changing (narrows long-long->int ops), so an exec variant, not a golden.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4572,11 +4215,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_VLAT=1")
         endforeach()
 
-        # 4B-A branchless select: force MCC_AST_SELECT on across the exec corpus so every
-        # min/max/sign/clamp ternary with side-effect-free arms is lowered to a branchless
-        # cmov/csel/mask select and its runtime output validated (a wrong condition sense,
-        # swapped arm, or clobbered register would surface as a wrong result). Byte-changing,
-        # so it lives as an exec (runtime) variant, not a golden.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4588,10 +4226,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_SELECT=1")
         endforeach()
 
-        # M6z: force zero-init .bss placement ON across the whole exec corpus, so every
-        # all-zero writable static that qualifies is relocated .data -> .bss and the program's
-        # runtime behavior is validated (a dropped relocation or wrong address would surface as
-        # a wrong result). Byte-changing, so it lives as an exec (runtime) variant, not a golden.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4603,10 +4237,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_ZERO_BSS=1")
         endforeach()
 
-        # §27 loop interchange: force MCC_AST_INTERCHANGE on across the exec corpus so every
-        # interchange-legal + locality-beneficial perfect nest is swapped and its runtime output
-        # validated (a wrong swap — reordered side effect, mis-moved IV init — would surface as a
-        # wrong result). Value-changing (reorders iterations), so an exec (runtime) variant.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4618,10 +4248,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_INTERCHANGE=1")
         endforeach()
 
-        # §27 loop fusion: force MCC_AST_FUSION on across the exec corpus so every fusion-legal
-        # adjacent same-trip loop pair is merged and its runtime output validated (a wrong merge —
-        # dropped/duplicated increment, mis-hoisted IV init, illegal fuse across a backward dep —
-        # would surface as a wrong result). Value-changing, so an exec (runtime) variant.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4633,10 +4259,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_FUSION=1")
         endforeach()
 
-        # §27 loop tiling (tile-and-interchange): force MCC_AST_TILE on across the exec corpus with a
-        # small strip (7) so the partial-last-tile boundary is exercised, and every permutable nest is
-        # strip-mined + hoisted and its runtime output validated (a wrong permutation, a mis-synthesized
-        # strip cond/bound, or an aliasing strip IV would surface as a wrong result). Value-changing.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4648,10 +4270,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_TILE=1;MCC_AST_TILE_SIZE=7")
         endforeach()
 
-        # -fmerge-constants string pooling: force MCC_MERGE_STRINGS on across the exec corpus so
-        # every identical rodata literal is merged and re-homed, and the runtime output validates
-        # that the shared storage + symbol re-bind is correct (a lost NUL or wrong offset shows up
-        # as wrong output). Byte-changing, so an exec (runtime) variant, not a golden.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4663,15 +4281,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_MERGE_STRINGS=1")
         endforeach()
 
-        # Exercise the live -O4 combo search (M1 enumeration on combo_run, the
-        # ast_intention_hash memo + 5-word disk record, hit-count/static-cost scoring,
-        # and the opt-in knobs reached via `searchable`) across the whole exec corpus,
-        # validating that whatever config the search selects emits a correct executable.
-        # MCC_SEARCH_WORKER=1 runs the in-process search directly and suppresses the
-        # out-of-process superopt spawn (whose fork+exec + argv-rewriting collides with
-        # the runner's -o handling) — the in-process search is what these items added.
-        # -O4 search output is non-reproducible by design; the runtime OUTPUT is stable
-        # (any selected gate config is correct-by-construction), which is what is checked.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4683,9 +4292,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_SEARCH_WORKER=1")
         endforeach()
 
-        # Emitted-byte-size scoring path (ast_search_emit_size: fold each candidate to
-        # completion, replay into the live text section, measure, rewind every cursor) —
-        # a distinct, complex code path from the static-cost search, otherwise unexercised.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4697,13 +4303,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_SEARCH_WORKER=1")
         endforeach()
 
-        # §22 scratch-Section emit isolation (MCC_AST_SEARCH_EMITISO): the emit-size measurement
-        # replays each candidate into a private .mcc.scratch.text section (own reloc sub-section)
-        # instead of the live text section, then rewinds and asserts a zero-leak on the real section
-        # (ast_scratch_enter/measure_exit, hard mcc_internal_error guard). This variant exercises that
-        # isolation path across the corpus so a leak (a promo/loc desync, an unrewound cursor, a
-        # symbol-scope leak) trips the guard or shows as a wrong runtime result. Fires heavily on the
-        # optimizer sources (100s-1000s of scratch measurements each).
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4715,8 +4314,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O4;MCC_AST_SEARCH=1;MCC_AST_SEARCH_EMITSIZE=1;MCC_AST_SEARCH_EMITISO=1;MCC_SEARCH_WORKER=1")
         endforeach()
 
-        # NCores-1 fork score-only pool (ast_search_pool) — a distinct concurrency path
-        # (fork COW isolation, pipe collection, single-threaded winner apply).
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4750,10 +4347,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3")
         endforeach()
 
-        # -O1 had NO exec lane until 2026-07-29, which was tolerable only while
-        # -O1 emitted -O0's bytes. It no longer does (REGDISP and OPASSIGN are
-        # staged there), so the level needs its own correctness lane like every
-        # other one.
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
             set(_gn "${CMAKE_MATCH_1}")
@@ -4776,22 +4369,9 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-Os")
         endforeach()
 
-        # optfire: assert each optimizer pass ACTUALLY FIRED. Every exec-* family
-        # above asserts only that output is correct, so a pass stubbed to do
-        # nothing passes all 298 goldens. These cells fail when the pass is inert:
-        # a --stats transform counter must be nonzero, or toggling the gate must
-        # change the object. Both modes also require the program's stdout to equal
-        # the -O0 build's, so a pass that fires but miscompiles fails here too.
-        # Manifests are additive: counters*.txt (counter mode) and differs*.txt
-        # (differ mode) are globbed, and a name already registered is skipped so
-        # two manifests claiming the same pass cannot break the configure.
         if(UNIX)
             set(_of_seen "")
             set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
-            # Cases that only exist on some targets. arch.txt is <name>|<cpu>[,<cpu>...];
-            # a case listed there is registered only when MCC_CPU matches, so a
-            # compile-time-inert gate (regdisp is hard-0 off x86_64) cannot report a
-            # spurious DID-NOT-FIRE once optfire runs on other triples.
             set(_of_archnames "")
             set(_of_archcpus "")
             if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/arch.txt")
@@ -4806,13 +4386,6 @@ if(MCC_BUILD_TESTS)
                     endif()
                 endforeach()
             endif()
-        # Cross-target optfire: the same differ/cdelta cases run through a cross
-        # compiler with OPTFIRE_NORUN=1, which asserts only that the pass FIRED and
-        # skips the -O0 oracle and the program run (a cross mcc cannot link a
-        # runnable host binary). Registered only when the cross target exists, so the
-        # default MCC_ENABLE_CROSS=OFF build is unaffected. arch.txt is honoured
-        # against the CROSS target's cpu, not the host's, so a case that is
-        # compile-time inert on a target cannot report a spurious DID-NOT-FIRE.
             foreach(_ofx_cpu IN ITEMS arm64 i386 riscv64)
             if(UNIX AND TARGET mcc-${_ofx_cpu})
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
@@ -5116,14 +4689,6 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(diff3-suite "needs native host + >=2 distinct reference compilers (gcc/clang, or add -DMCC_DIFF3_EXTRA_REFS=label=path; build the clang-toolchain target for a self-contained clang)")
     endif()
 
-    # Differential random-program miscompile fuzzer (TODO.md §0). Native
-    # x86_64/arm64-Linux: the oracle is a pure gcc+clang majority-vote
-    # differential (UBSan/ASan-gated), so it is arch-portable — it only needs
-    # two distinct reference compilers executing mcc's own target ISA natively
-    # (hence NOT MCC_EMULATOR and a same-ISA host). It is not the x86-only
-    # shadow-IV oracle (MCC_CONFIG_AST_SHADOW), which is a separate mechanism.
-    # arm64 makes the real-silicon runner a weak-memory-model backstop for all
-    # arm64 codegen (TODO.md cross-arch parity: "a linux-arm64 CI fuzz cell").
     if(NOT MCC_EMULATOR AND _diff3_nref GREATER_EQUAL 2 AND _diff3_sh_ok
        AND (MCC_CPU STREQUAL "x86_64" OR MCC_CPU STREQUAL "arm64")
        AND NOT MCC_TARGETOS STREQUAL "WIN32")
@@ -5134,12 +4699,6 @@ if(MCC_BUILD_TESTS)
                     --seed 1 --count 40)
         set_tests_properties("fuzz/smoke" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 ENVIRONMENT "${_diff3_env}")
-        # -O4 leg. The base sweep is -O0..-O3, so the whole out-of-process
-        # superopt path -- and every gate that is inert below -O4 -- was never
-        # differentially tested. It is opt-in and base-only because -O4 spends
-        # the full search budget: 4010 ms per compile against 6 ms at -O3, so a
-        # small count is the affordable shape (8 programs is ~38 s against ~2 s
-        # for the same count without it).
         add_test(NAME "fuzz/o4"
             COMMAND fuzz_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
                     "${CMAKE_BINARY_DIR}/fuzz-o4" ${_diff3_ref_args}
@@ -5241,10 +4800,6 @@ if(MCC_BUILD_TESTS)
             add_executable(jit_selftest_nearmatch tests/embed/jit_selftest_nearmatch.c)
             target_link_libraries(jit_selftest_nearmatch PRIVATE libmcc)
             target_include_directories(jit_selftest_nearmatch PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-            # Previously skipped on arm64-Windows (a deterministic SIGSEGV); that was
-            # the mccjit_invoke LLP64 arg-truncation bug, fixed 2026-07-31, and the
-            # bench now runs clean on real windows-11-arm hardware. Registered on
-            # every target again.
             add_test(NAME jit/selftest-nearmatch COMMAND jit_selftest_nearmatch)
             set_tests_properties(jit/selftest-nearmatch PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
@@ -5408,20 +4963,6 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-search-live COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_THRESHOLD=2 $<TARGET_FILE:jit_selftest>)
             set_tests_properties(jit/selftest-search-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # The runtime-JIT backend-override path (mcc_jit_submit_ast /
-            # MCC_JIT_SUBMIT_AOT) fires-and-is-correct wherever the runtime -run
-            # JIT is fully functional: x86_64 non-MSVC (Linux + mingw-x86_64),
-            # arm64-Linux (ELF), and arm64-macOS (Mach-O). arm64-Linux was fixed
-            # by emitting the dispatch stub before the prologue so every swapped-in
-            # target is entered with a clean frame (the frameless-leaf return
-            # corruption; see git history / TODO). arm64-macOS runs the JIT under
-            # split-page W^X (mmap RW -> mprotect RX; the executable-memory probe
-            # succeeds), so the override fires there too. Still gated off/broken:
-            #   - MSVC (x86_64 + arm64): -run is non-functional (empty output)
-            #   - arm64-Windows (PE): frameless-leaf corruption + MSVC-arm64 miscompile
-            #   - i686: correct output but the override never fires
-            # Run these two differential guards only on the cells where the path
-            # is exercised for real; skip (not fail) the rest.
             if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC") OR
                (MCC_CPU STREQUAL "arm64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC"
                 AND NOT WIN32))
@@ -5500,9 +5041,6 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-benchwire COMMAND jit_selftest_benchwire)
             set_tests_properties(jit/selftest-benchwire PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            # J4A ship gate: a static-linked --embed-jit exe must run standalone
-            # (no libmcc.so at load) and still self-recompile. Needs the static
-            # engine archive (MCC_BUILD_STATIC_LIB) — libmcc is then the archive.
             if(MCC_BUILD_STATIC_LIB AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 add_test(NAME jit/standalone-static
                     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/jit_standalone.sh"
@@ -5513,12 +5051,6 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties(jit/standalone-static PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             endif()
 
-            # MSVC/arm64 only: these 7 selftests (the ones that JIT-compile a
-            # function and CALL it) SEGFAULT on the arm64-Windows runner. Not an
-            # optimizer bug (/Od does not help — see note near MCC_DIAG_FLAGS) and
-            # not reproducible without arm64-Windows hardware (wine masks the
-            # fault). The JIT logic is proven correct on arm64-Linux and x86_64
-            # MSVC passes all of these. Skip this one cell until root-caused on HW.
             if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MCC_CPU STREQUAL "arm64")
                 foreach(_jt leaf-int kgc purity struct liverun poison fparg
                             reemit-gates fold-consts search-live search-live-kgc
@@ -5528,29 +5060,19 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
 
-        # §26 2B — arm64 JIT dispatch tail validator (freestanding aarch64 run
-        # under qemu-aarch64; self-skips without a clang cross-toolchain + qemu).
-        # Independent of MCC_EMBED_JIT — validates the hand-emitted arm64
-        # pointer-swap dispatch + icache-flush the libmcc port will use.
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_test(NAME jit/arm64-dispatch
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_dispatch.c"
                         "${CMAKE_BINARY_DIR}")
-            # §26 2B — arm64 counter/profiling-stub tail validator (the piece
-            # after the dispatch tail): spill args + tick + restore + tail-br.
             add_test(NAME jit/arm64-counter
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_counter.c"
                         "${CMAKE_BINARY_DIR}")
-            # §26 2B — arm64 KGC differential-verify stub validator (last
-            # data-path stub): gather argv + sxtw narrow args + verify + return.
             add_test(NAME jit/arm64-kgc
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgc.c"
                         "${CMAKE_BINARY_DIR}")
-            # §26 2B — arm64 all-double (K4A SSE-class) KGC stub validator:
-            # d0-d spill + verify (raw-bits compare) + d0 return pass-through.
             add_test(NAME jit/arm64-kgcfp
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgcfp.sh"
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/qemu/jit_arm64_kgcfp.c"
@@ -5649,11 +5171,6 @@ if(MCC_BUILD_TESTS)
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/static/smoke.c")
         if(MCC_CC_NAME STREQUAL "mcc" AND MCC_CPU STREQUAL "x86_64")
-            # x86_64 self-host: mcc lacks __float128, so it cannot compile
-            # runtime/lib/float128.c and the mcc-built mccrt has no
-            # __unordtf2/__letf2. A static exe (no libgcc) then cannot resolve
-            # the TF-mode long-double helpers mcc's x86_64 codegen emits. See
-            # the "x86_64 self-host __float128" item in docs/TODO.md.
             mcc_skip_test(static-glibc-run "x86_64 self-host: mcc-built mccrt lacks __unordtf2/__letf2 (no __float128); a static TF-helper link is unresolved")
         elseif(NOT MCC_EMULATOR AND NOT MCC_BUILD_MUSL
            AND MCC_TARGETOS STREQUAL "Linux" AND MCC_CPU STREQUAL "x86_64")
@@ -5678,11 +5195,6 @@ if(MCC_BUILD_TESTS)
         if(NOT MCC_EMULATOR AND MCC_TARGETOS STREQUAL "Linux"
            AND MCC_CPU STREQUAL "x86_64")
             set(_tls_static 0)
-            # The static TLS variant needs the same x86_64 TF-helper static link
-            # static-glibc-run does, so an mcc-built (self-host) mccrt cannot
-            # resolve it (no __float128 -> no float128.o). Run only the dynamic
-            # TLS models under CC=mcc; the static variant stays covered by the
-            # gcc/clang-built cells. (docs/TODO.md: x86_64 self-host __float128.)
             if(NOT MCC_BUILD_MUSL AND NOT MCC_CC_NAME STREQUAL "mcc")
                 execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-file-name=libc.a
                     OUTPUT_VARIABLE _tls_libc OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
@@ -5709,11 +5221,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(vla_test-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    # -fc99-inline-body weak out-of-line body across two TUs (portable): both TUs
-    # take the address of the same plain-`inline` function, so the flag must emit a
-    # weak copy in each and collapse them at link (else: unresolved reference or a
-    # duplicate-symbol error). Self-checks the values AND the cross-TU address
-    # identity, exit 0 on success. Previously untested on PE (docs/TODO).
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/c99inline_a.c")
         add_test(NAME c99-inline-body-2tu COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
@@ -5733,7 +5240,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(abitest-cc PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    # Short-import (IMPORT_OBJECT_HEADER) COFF-reader regression (MSVC/LLVM/SDK libs).
     if(MCC_TARGETOS STREQUAL "WIN32" AND MCC_TARGET_IS_HOST AND NOT MCC_EMULATOR
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/pe/shortimport_main.c")
         if(MCC_CPU STREQUAL "x86_64")
@@ -5916,15 +5422,6 @@ if(MCC_BUILD_TESTS)
         endif()
 
         find_program(MCC_PYTHON3 NAMES python3 python)
-        # Darwin forces MCC_EMBED_MCCRT off (mcc reads ELF objects only), but the
-        # sidecar libmccrt.a links a stage compiler just as well once -B points at
-        # the build dir, so the self-host cells run there too. This is the tree's
-        # only non-qemu arm64 3-stage self-host. WIN32 (mingw) joins on the same
-        # sidecar path -- the driver is PE-aware (mcc.exe, no -lm/-ldl, the
-        # runtime/win32 header+CRT prefix) and the mcc-built win32 chain is proven
-        # byte-identical at O1/O2/O3/Os/gates, refuting the earlier nondeterminism
-        # concern. MSVC stays out: its VS/NMake generator emits no
-        # compile_commands.json, which the drivers read for the build's flags.
         if(MCC_PYTHON3 AND (MCC_EMBED_MCCRT OR MCC_TARGETOS STREQUAL "Darwin"
                             OR (MCC_TARGETOS STREQUAL "WIN32"
                                 AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")))
@@ -5960,23 +5457,12 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(selfhost-fixpoint PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
-            # -O2 alone never exercises the -O3 defaults (CYCLE, OPASSIGN,
-            # CHAINSTORE, INLINE) or the -Os ones (PROMO_ARROW, PROMO_INCDEC,
-            # REGDISP), so the fixpoint gate was blind to both. Both hold.
             add_test(NAME selfhost-fixpoint-O3
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}" --opt=-O3)
             set_tests_properties(selfhost-fixpoint-O3 PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
-            # The same fixpoint on the CROSS targets, under qemu-user. These use
-            # cmake-cross's compilers and the vendored sysroots, so they carry
-            # MCC_CROSS_BUILT for the same reason the macho/wine cells do -- the
-            # artifacts they read are not rebuilt by building this tree. The
-            # script exits 77 when qemu, the cross mcc, the sysroot or the
-            # runtime archive is missing, so a machine without them SKIPs.
-            # qemu-user is not native silicon; a hardware-only defect is out of
-            # reach here and the script's header says so.
             foreach(_qa riscv64 arm arm64 i386)
                 foreach(_qo -O1 -O2)
                     string(REPLACE "-" "" _qon "${_qo}")
@@ -5990,9 +5476,6 @@ if(MCC_BUILD_TESTS)
                 endforeach()
             endforeach()
 
-            # -O1 was blind for the opposite reason: it emitted -O0's bytes, so
-            # there was nothing for a fixpoint to catch. REGDISP and OPASSIGN
-            # are staged there as of 2026-07-29, so it now has content.
             add_test(NAME selfhost-fixpoint-O1
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}" --opt=-O1)
@@ -6015,11 +5498,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(selfhost-fixpoint-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
-            # The store-shape gates on real arm64 silicon. qemu-user runs on
-            # x86-TSO, so a native arm64 host is the only place these three see a
-            # weak memory model; all three are measured to change src/mcc.c's
-            # object there, so the cell is not vacuous. -O2, -O3 and -Os because
-            # each carries a different default gate set.
             if(MCC_CPU STREQUAL "arm64" AND NOT CMAKE_CROSSCOMPILING)
                 foreach(_shopt IN ITEMS -O2 -O3 -Os)
                     add_test(NAME "selfhost-fixpoint-memmodel${_shopt}"
@@ -6041,17 +5519,6 @@ if(MCC_BUILD_TESTS)
             endif()
         endif()
 
-        # The Windows/x64 icache flush (mcc_jit_publish + host_icache_flush, genuinely
-        # needed cross-modifying-code hardening per Intel SDM §8.1.3) did NOT cure the
-        # x86_64 PE self-host JIT 0xC0000005 — un-skipping it once re-crashed the
-        # msvc + mingw-x86_64 + sanitize-msvc cells (exit 3221225477). The residual is
-        # the x86_64 swapped-variant/KGC-stub path, not locally reproducible (15 local
-        # stress runs stayed clean + byte-identical). Rather than a blanket Windows
-        # skip, selfhost-jit.py now self-classifies on Windows: a residual 0xC0000005
-        # SKIPs (77, never reds the cell), a clean byte-identical run PASSES like every
-        # other platform, and a miscompile FAILs — so the gate un-skips itself the
-        # moment the crash is fixed and reports the current CI status. find_mcc handles
-        # the VS multi-config layout. Tracked in docs/TODO.
         if(MCC_PYTHON3 AND MCC_EMBED_JIT)
             add_test(NAME selfhost-jit
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-jit.py"
@@ -6060,13 +5527,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 TIMEOUT 300)
         endif()
 
-        # PE --embed-jit LINK smoke: bake a small program with the JIT engine and
-        # run it JIT-OFF, exercising mcc's own linker over the COFF engine blob
-        # (native-TLS SECREL reads, a-la-carte loader, __ImageBase, compiler-rt/
-        # libgcc fallback). mingw only — MSVC embed needs the ucrt/vcruntime wiring
-        # (docs/TODO task) — and JIT-OFF only, so it never touches the winlibs
-        # runtime-JIT 0xC0000005 (P0 step 5). Self-skips (77) if the toolchain has
-        # no compiler-support runtime for the engine.
         if(MCC_PYTHON3 AND MCC_EMBED_JIT AND WIN32 AND NOT MSVC)
             add_test(NAME embed-jit-smoke
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed-jit-smoke.py"
@@ -6091,10 +5551,6 @@ if(MCC_BUILD_TESTS)
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         endif()
 
-        # Link the amalgamation once per target define set. Catches a function
-        # CALLED under one target guard but DEFINED under a narrower one -- a link
-        # error no other cell can see, because every other build here is the host
-        # target. mcc-x86_64-win32 broke exactly this way.
         if(UNIX)
             add_test(NAME target-link-gate
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/target-link-gate.sh")
@@ -6114,10 +5570,6 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(cross-factory PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
-            # ILP32 leg of the same factory. The x86_64 run cannot see a runtime
-            # header whose prototypes disagree with the definitions only when
-            # `long` is 4 bytes -- that shipped once and broke every 32-bit
-            # target while the whole native suite stayed green.
             add_test(NAME cross-factory-i386 COMMAND "$<TARGET_FILE:mccbuild>"
                 --cross i386 --cc "${_ref_cc}"
                 --out "${CMAKE_BINARY_DIR}/cross-factory-i386")
@@ -6220,24 +5672,12 @@ if(MCC_BUILD_TESTS)
             "requires an i386 cross-compiler (target mcc-i386 is not configured)")
     endif()
 
-    # DWARF debug-info correctness through gdb: build a host-native mcc, compile
-    # with -gdwarf, link with gcc, and require gdb to report a source line for
-    # EVERY backtrace frame. Regression guard for the .debug_line end_sequence
-    # bug (last function got a zero-length final line range -> "main ()" with no
-    # "at file:line" in a backtrace). Self-builds mcc; runs host-native (gdb needs
-    # ptrace, unavailable under qemu-user); the line table is arch-independent
-    # (mccdbg.c) so one native arch covers all.
     add_test(NAME dwarf-gdb-docker
         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/dwarfgdb-docker.sh"
             "${CMAKE_BINARY_DIR}/dwarf-gdb-docker")
     set_tests_properties(dwarf-gdb-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
         SKIP_RETURN_CODE 77)
 
-    # Runtime .eh_frame CFI: a C++ exception (g++) must unwind THROUGH an
-    # mcc-compiled C frame -- the mcc-C-in-a-C++-codebase interop scenario that
-    # extlink (link-only) never exercises. CFI is per-arch; arm64 runs native,
-    # riscv64 uses a cross g++ + qemu. (armv7 uses ARM EHABI not .eh_frame and its
-    # C default has no unwind tables in both mcc and gcc -> the harness SKIPs it.)
     foreach(_eharch arm64 riscv64 amd64)
         add_test(NAME eh-unwind-${_eharch}-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/ehunwind-docker.sh"
@@ -6246,11 +5686,6 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77)
     endforeach()
 
-    # External-linker interop for the 64-bit ELF (RELA) targets: link an mcc
-    # object with GNU ld (not mcc's own linker) and require it to link+run and
-    # to keep distinct per-function DWARF low_pc. Regression guard for the RELA
-    # addend-0 FDE/DW_AT_low_pc bugs; nothing else in the suite links a 64-bit
-    # mcc object externally. i386/arm are REL and structurally immune.
     if(TARGET mcc-x86_64)
         add_test(NAME extlink-x86_64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/extlink-docker.sh"
@@ -6259,10 +5694,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(extlink-x86_64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # mcc<->gcc mixed-object ABI differential (x86_64 SysV): see the arm64
-        # variant below. Crosses the SysV calling-convention boundary (INTEGER/
-        # SSE class merge, MEMORY indirect >16B, varargs AL). Builds its own
-        # in-container mcc; runs under linux/amd64.
         add_test(NAME abi-diff-amd64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "amd64" "${CMAKE_BINARY_DIR}/abi-diff-amd64-docker")
@@ -6277,24 +5708,12 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(extlink-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # AAPCS64 Tier-4 graft-inline validation: build an optimizer-enabled arm64
-        # cross mcc in-container, prove graft via the compiler's [ast-inline]
-        # grafted marker + objdump (0 residual R_AARCH64_CALL26 call relocs,
-        # including the >16B struct sumbig now that the indirect-param capture
-        # models the AAPCS64 hidden-pointer class), and run a differential vs
-        # aarch64-linux-gnu-gcc -O2 under qemu-aarch64.
         add_test(NAME arm64-inline-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64inline-docker.sh"
                 "${CMAKE_BINARY_DIR}/arm64-inline-docker")
         set_tests_properties(arm64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # arm64 divmagic soak: build an optimizer-enabled arm64 cross mcc
-        # in-container, compile a constant-divide soak with MCC_AST_DIVMAGIC=1
-        # (native smulh/umulh — no runtime helpers, unlike i386), and run it
-        # under qemu-aarch64 against a volatile-divisor hardware-div oracle.
-        # The arm64 half of the divmagic flip's cross-arch soak (see the
-        # MCC_AST_DIVMAGIC item in docs/TODO.md); sibling of i386-divmagic-soak.
         add_test(NAME arm64-divmagic-soak-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arm64divmagic-docker.sh"
                 "$<TARGET_FILE:mcc-arm64>"
@@ -6302,25 +5721,12 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(arm64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # mcc<->gcc mixed-object ABI differential (arm64): compile a self-
-        # contained ABI corpus (reg-pair/padded/indirect/INTEGER+SSE/HFA-float/
-        # HFA-double structs, struct returns, stack args, float/double args,
-        # varargs) with both mcc and gcc, link every cross mix, and require the
-        # exit code to match the all-gcc reference. Unlike extlink (single mcc
-        # object) this crosses the AAPCS64 calling-convention boundary. Runs
-        # natively on an arm64 host (no qemu). Builds its own in-container mcc.
         add_test(NAME abi-diff-arm64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "arm64" "${CMAKE_BINARY_DIR}/abi-diff-arm64-docker")
         set_tests_properties(abi-diff-arm64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
     endif()
-    # riscv64 has no user-mode emulator here, so link+DWARF only (no exec) in a
-    # host-native container with the riscv64 cross toolchain.
-    # Runtime (generated-code speed) gate. CI runs --check-only: wall-clock on a
-    # shared runner is noise, so only the output check against the reference
-    # compiler is a pass/fail condition. Run it by hand with --runs/--gates to
-    # compare configurations when deciding a flip.
     if(MCC_PYTHON3)
         add_test(NAME runtime-bench-check
             COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/runtime-bench.py"
@@ -6328,11 +5734,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(runtime-bench-check PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 900)
 
-        # No longer x86_64-only: the gate-win assertion measures instructions
-        # retired wherever a counter exists (perf, or Apple Silicon's
-        # /usr/bin/time -l) and only falls back to cpu time otherwise, so arm64
-        # macOS now runs it for real. Still native-only -- an emulated or cross
-        # binary has neither a meaningful counter nor a meaningful clock.
         if(MCC_CONFIG_OPTIMIZER
            AND NOT MCC_EMULATOR AND NOT CMAKE_CROSSCOMPILING
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
@@ -6347,42 +5748,17 @@ if(MCC_BUILD_TESTS)
         endif()
     endif()
 
-    # 3-stage riscv64 self-host fixpoint: stages 2 and 3 run the mcc-built
-    # riscv64 mcc under qemu, so o1 == o2 == o3 is a real cross-arch gate
-    # rather than a host-arch one. Deliberately NOT inside if(TARGET
-    # mcc-riscv64) -- the script builds its own riscv64-emitting stage0 from
-    # source in the container, so gating it on the cross build would silently
-    # drop the only cross-arch self-host gate in the common configuration.
     if(UNIX)
         add_test(NAME selfhost-riscv64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-riscv64-docker.sh")
         set_tests_properties(selfhost-riscv64-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 1800)
 
-        # arm64 leg of the same gate. Native-only (no docker path): it needs the
-        # vendored arm64 stage3 sysroot + arm64-libmccrt.a + qemu-aarch64, and
-        # skips 77 when any is missing.
         add_test(NAME selfhost-arm64-native
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-cross-native.sh" arm64)
         set_tests_properties(selfhost-arm64-native PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77 TIMEOUT 1800)
 
-        # In-memory `-run` JIT-parity gate (peer of selfhost-cross-native.sh,
-        # which gates AOT self-host). For each target arch it builds a
-        # -DMCC_CONFIG_STATIC mcc from the amalgamation, then runs hi.c/hot.c
-        # in-process under MCC_JIT=0 and MCC_JIT=1 and asserts both match the
-        # reference value AND each other -- locking the just-verified
-        # riscv64/arm/arm64 `-run` parity so a codegen/JIT change can't silently
-        # regress it. Each leg skips 77 when its cross-gcc / qemu / sysroot /
-        # libmccrt.a is absent (arm64 leg additionally needs an aarch64 host).
-        # RUN_SERIAL: each leg builds a full mcc and runs it under qemu.
-        # Host `-run` JIT parity. The run-parity-<arch> cells below cover only the
-        # CROSS triples and skip without cross tooling, so on an ordinary host
-        # nothing gated MCC_JIT=1 == MCC_JIT=0 -- a P0 bar item. This runs each
-        # program under MCC_JIT=0, MCC_JIT=1, and MCC_JIT=1 with widened
-        # admission, and asserts all three agree. It also asserts the widened leg
-        # actually INSTALLS a variant, so it cannot decay into comparing a JIT
-        # that swapped nothing against no JIT.
         add_test(NAME jit/run-parity-host
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-parity.sh"
                     "${_mcc_exe}" "${CMAKE_BINARY_DIR}"
@@ -6431,12 +5807,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(riscv64-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # riscv64 divmagic soak: build an optimizer-enabled riscv64 cross mcc
-        # in-container, compile a constant-divide soak with MCC_AST_DIVMAGIC=1
-        # (native mulh/mulhu/mulhsu — no runtime helpers, like arm64), and run it
-        # under qemu-riscv64 against a volatile-divisor hardware-div oracle.
-        # Completes the divmagic flip's cross-arch soak across every
-        # optimizer-capable arch; sibling of i386/arm64-divmagic-soak.
         add_test(NAME riscv64-divmagic-soak-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64divmagic-docker.sh"
                 "$<TARGET_FILE:mcc-riscv64>"
@@ -6444,10 +5814,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(riscv64-divmagic-soak-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # riscv64 64-bit constant-materialization differential vs gcc under
-        # qemu-riscv64. RISC-V builds 64-bit immediates from a lui + shifted-addi
-        # chain (load_large_constant); this guards the top-piece-carry fix by
-        # sweeping constants across the low-32 boundary region + random values.
         add_test(NAME riscv64-const-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/riscv64const-docker.sh"
                 "$<TARGET_FILE:mcc-riscv64>"
@@ -6455,11 +5821,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(riscv64-const-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # mcc<->gcc mixed-object ABI differential (riscv64 LP64D): same corpus and
-        # cross-mix strategy as abi-diff-arm64-docker, but compiled/linked with the
-        # riscv64 cross toolchain and run under qemu-riscv64 (LP64D struct/vararg
-        # ABI boundary vs gcc). Builds its own in-container mcc; static-links so
-        # qemu-user needs no target sysroot.
         add_test(NAME abi-diff-riscv64-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "riscv64" "${CMAKE_BINARY_DIR}/abi-diff-riscv64-docker")
@@ -6467,11 +5828,6 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77)
     endif()
 
-    # armv7 (AAPCS) Tier-4 graft-inline validation: build an optimizer-enabled
-    # arm cross mcc in-container, prove graft via the compiler's [ast-inline]
-    # grafted marker + objdump (0 residual R_ARM_PC24 call relocs), and run a
-    # differential vs arm-linux-gnueabihf-gcc -O2 under qemu-arm. The script is
-    # self-contained (builds its own opt mcc); the TARGET gate only registers it.
     if(TARGET mcc-arm)
         add_test(NAME arm-inline-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arminline-docker.sh"
@@ -6479,11 +5835,6 @@ if(MCC_BUILD_TESTS)
         set_tests_properties(arm-inline-docker PROPERTIES FIXTURES_REQUIRED MCC_BUILT
             SKIP_RETURN_CODE 77)
 
-        # mcc<->gcc mixed-object ABI differential (armv7 AAPCS/hardfloat) under
-        # qemu-arm. Same corpus/cross-mix strategy as the other arches; also
-        # stresses ARM/Thumb interworking at the call boundary (mcc emits A32,
-        # gcc-armhf is Thumb -> R_ARM_CALL/BLX substitution, cf. e74fe22a). Builds
-        # its own in-container mcc; static-links so qemu needs no target sysroot.
         add_test(NAME abi-diff-arm-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/abidiff-docker.sh"
                 "arm" "${CMAKE_BINARY_DIR}/abi-diff-arm-docker")
@@ -6491,9 +5842,6 @@ if(MCC_BUILD_TESTS)
             SKIP_RETURN_CODE 77)
     endif()
 
-    # arm Thumb-interworking guard: assert mcc emits R_ARM_CALL (not the deprecated
-    # R_ARM_PC24) for `bl`, and that an mcc object calling a THUMB __aeabi helper
-    # runs under qemu-arm (a regression to R_ARM_PC24 SIGILLs via ld's veneer).
     if(TARGET mcc-arm)
         add_test(NAME arm-interwork-docker
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/arminterwork-docker.sh"
@@ -6591,16 +5939,6 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test(compile.win32 "requires WIN32 target (win32 runtime examples)")
     endif()
 
-
-    # Every cell below consumes prebuilt artifacts from MCC_CROSS_DIR, and the
-    # mcc_build fixture rebuilds only CMAKE_BINARY_DIR -- so a ctest run happily
-    # tests cross compilers from an arbitrarily old build. That is not
-    # hypothetical: the six macho cells and pe-wine-conformance were recorded in
-    # docs/TODO.md as "real codegen faults" for a whole day, and every one of them
-    # passes once cmake-cross is rebuilt (the macho six wanted the ___dso_handle
-    # N_ABS fix; the wine cell wanted the *-win32-libmccrt.a archives, which the
-    # cross dir's default target does build). Rebuild it as a fixture, and SKIP
-    # cleanly when there is no configured cross dir rather than failing.
     add_test(NAME mcc_cross_build COMMAND "${CMAKE_COMMAND}"
         "-DXDIR=${MCC_CROSS_DIR}" "-DBDIR=${CMAKE_BINARY_DIR}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cross_build.cmake")
@@ -6645,11 +5983,6 @@ if(MCC_BUILD_TESTS)
     set_tests_properties(macho-structural PROPERTIES
         FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
 
-    # Mach-O WEAK DEFINITIONS from -fc99-inline-body. The export trie and the
-    # symtab are written by separate paths in mccmacho.c and used to disagree:
-    # the trie said weak-def, the nlist said non-external. The image still ran,
-    # so no other cell caught it. Needs a linked Mach-O image, hence the native
-    # mcc; the cross cells self-skip (77) inside the script.
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-weakdef
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/weakdef.sh"
@@ -6662,10 +5995,6 @@ if(MCC_BUILD_TESTS)
             "the trie/symtab pairing needs a linked Mach-O image, which needs a Darwin host")
     endif()
 
-    # mcc linking REAL clang -c Mach-O objects. Nothing else in the suite does
-    # this, which is how three reader defects (common symbols, DWARF relocations
-    # in the fixup list, unbound imported-data GOT slots) all stayed hidden.
-    # Needs a Darwin host: both images are run and compared.
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-clanglink
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/clanglink.sh"
@@ -6678,11 +6007,6 @@ if(MCC_BUILD_TESTS)
             "running both the clang-linked and the mcc-linked image needs a Darwin host")
     endif()
 
-    # Darwin thread-local variables across a link boundary: TLS arriving inside an
-    # object the system compiler built, which needs the imported __thread_vars
-    # descriptors, the TLVP relocations, MH_HAS_TLV_DESCRIPTORS and the
-    # descriptor offset fixup. Needs a Darwin host to run the images -- dyld
-    # rejects a malformed TLV image before main, so "it ran" is the assertion.
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-tlv
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/tlv.sh"
@@ -6695,12 +6019,6 @@ if(MCC_BUILD_TESTS)
             "linking and running a Darwin TLV image needs a Darwin host")
     endif()
 
-    # The same three shapes for x86_64-darwin, whose TLVP relocation is a
-    # different entry (X86_64_RELOC_TLV) in a different switch. Separate cell
-    # rather than an arch loop in the script: on an arm64 host this needs the
-    # CROSS mcc and Rosetta, so it can skip while the native cell passes. Rosetta
-    # runs these -- they are AOT images, not the dynamically-generated code it
-    # hangs on. The script self-skips when the cross build is absent.
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-tlv-x86_64
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/tlv.sh"
@@ -6714,9 +6032,6 @@ if(MCC_BUILD_TESTS)
             "linking and running a Darwin TLV image needs a Darwin host")
     endif()
 
-    # mcc's own ad-hoc code signer (MCC_MACHO_ADHOC_SIGN, default off). Needs a
-    # Darwin host: the assertions are that the kernel does not SIGKILL the image
-    # and that /usr/bin/codesign validates what mcc wrote.
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-adhocsign
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/adhocsign.sh"
@@ -6729,11 +6044,6 @@ if(MCC_BUILD_TESTS)
             "verifying a code signature needs a Darwin host (kernel acceptance + codesign -v)")
     endif()
 
-    # Mach-O ARCHIVE members -- the --embed-jit path into libmcc_jitengine.a.
-    # Testable on Linux despite the "reserved for macOS" note, because llvm-ar
-    # writes a correct BSD armap for Mach-O members where GNU ar indexes nothing.
-    # Needs both BSD `#1/<len>` extended names and the little-endian __.SYMDEF
-    # index; without either, members are silently never pulled.
     if(UNIX)
         add_test(NAME macho-archive
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/archive.sh"
@@ -6745,11 +6055,6 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
-    # Mach-O RELOCATIONS against real clang-produced objects. Also testable on
-    # Linux: clang targets x86_64-apple-macos and emits genuine X86_64_RELOC_*
-    # entries. Guards a SILENT wrong answer -- ignoring relocations does not fail
-    # the link, it leaves `e8 00 00 00 00` calls that jump to the next
-    # instruction, so the cell checks resolved targets rather than link success.
     if(UNIX)
         add_test(NAME macho-reloc
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/reloc.sh"
@@ -6760,11 +6065,6 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
-    # arm64 Mach-O relocations. Separate from the x86_64 cell because the arm64
-    # cases differ in kind: PAGEOFF12 maps to different ELF relocations per
-    # instruction, and clang folds small constants into the instruction's own
-    # immediate instead of emitting ARM64_RELOC_ADDEND -- so a LO12 relocation
-    # that overwrites the immediate silently reads the wrong byte.
     if(UNIX)
         add_test(NAME macho-reloc-arm64
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/reloc-arm64.sh"
@@ -6775,11 +6075,6 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
-    # Archives and relocations TOGETHER, with a NON-ZERO addend. The two cells
-    # above each had a blind spot -- macho-archive uses the relocation-free
-    # fixture, macho-reloc uses a bare object with a zero addend -- and the gap
-    # between them hid a real double-counted-addend bug. Also covers transitive
-    # cross-member pull and a member that must NOT be pulled.
     if(UNIX)
         add_test(NAME macho-archive-reloc
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/archive-reloc.sh"
@@ -6790,13 +6085,6 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
-    # Mach-O GOT and SUBTRACTOR relocations. Both were hard errors, so "the link
-    # succeeded" is not evidence -- the cell computes the GOT slot address from
-    # the load's own encoding and asserts the slot CONTAINS the target symbol's
-    # address, and asserts the SUBTRACTOR fields hold exactly nm(_f) - nm(_d) at
-    # 4 and 8 bytes. It also pins the refusal: a SUBTRACTOR whose subtrahend is
-    # in another section is not expressible as one ELF relocation, and the
-    # nearest one links clean while holding the wrong number.
     if(UNIX)
         foreach(_ma x86_64 arm64)
             add_test(NAME macho-got-sub-${_ma}
@@ -6809,12 +6097,6 @@ if(MCC_BUILD_TESTS)
         endforeach()
     endif()
 
-    # --embed-jit through a CROSS osx compiler. A cross target bakes no blob, so
-    # it takes mcc_add_file() on a real on-disk Mach-O archive -- a path the
-    # synthetic macho-archive fixture does not cover -- and the cell then RUNS
-    # the image at MCC_JIT=0 AND MCC_JIT=1. arm64 only: x86_64-osx bakes and runs
-    # correct at MCC_JIT=0 and SIGSEGVs at MCC_JIT=1 inside mccpp_new under
-    # mccjit_recompile_common, at both -O0 and -O1 engine builds (docs/TODO).
     if(UNIX)
         add_test(NAME macho-embedjit-arm64-osx
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/embedjit.sh"
@@ -6825,9 +6107,6 @@ if(MCC_BUILD_TESTS)
             TIMEOUT 300)
     endif()
 
-    # -march= was accepted and discarded too. This cell pins that the flag
-    # reaches CODEGEN (roundsd appears only at x86-64-v2+) and that -O4 alone
-    # never raises the ISA floor, which is the rule the whole axis exists for.
     if(UNIX)
         add_test(NAME cli/march-isa
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/march-isa.sh"
@@ -6837,11 +6116,6 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 300)
     endif()
 
-    # -ffunction-sections was accepted and discarded; this cell fails if it
-    # regresses to a no-op. It asserts the PURPOSE (a linker can drop an
-    # unreferenced function) rather than the section names, and carries a
-    # control showing the static survives --gc-sections WITHOUT the flag, so
-    # the assertion cannot pass vacuously.
     if(UNIX)
         add_test(NAME cli/function-sections
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli/function-sections.sh"
@@ -6912,11 +6186,6 @@ if(MCC_BUILD_TESTS)
     endif()
 
     option(MCC_DARWIN_HOST "Tests run on a macOS/darling host with real libSystem" OFF)
-    # tests/qemu/apple-libc runs Apple's PORTABLE sources off-Darwin and
-    # documents the rest as kernel-fused. These are that rest, exercised where
-    # the platform actually is: one cell per subsystem so a failure name says
-    # which one. Split rather than bundled because they share no code path.
-    # -lobjc for the runtime cell; the others resolve through libSystem.
     if(MCC_DARWIN_HOST AND CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         foreach(_dt malloc stdio dyld pthread gcd mach objc)
             set(_dt_extra "")
@@ -7029,17 +6298,6 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties(${_tn} PROPERTIES
                     FIXTURES_REQUIRED "MCC_BUILT;FX_${_tn}" LABELS qemu TIMEOUT 600)
 
-                # Level sweep per triple. -O2/-O3/-Os are the levels that unlock
-                # DISTINCT default gate sets: -O3 adds CYCLE/OPASSIGN/CHAINSTORE/
-                # INLINE, -Os adds PROMO_ARROW/PROMO_INCDEC/REGDISP. These cells
-                # were briefly added and reverted once because the corpus was
-                # ABI/libc shaped and could not tell the levels apart (-O3 was
-                # byte-identical to -O2 and -Os to -O0 on all 30 artifacts);
-                # opt_loops.c and opt_structs.c exist to close that, and every
-                # triple now has a program where each level diverges. If those go
-                # away, re-check before trusting these cells. -O1 is skipped as a
-                # subset of -O2, and -O4 needs its own budget (out-of-process
-                # superopt, ~20 s per compile).
                 foreach(_qopt IN ITEMS O2 O3 Os)
                     add_test(NAME ${_tn}-${_qopt} COMMAND "$<TARGET_FILE:mccharness>" qemurun
                         --mcc "${_qcc}" --mccbase "${CMAKE_BINARY_DIR}"

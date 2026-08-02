@@ -21,8 +21,6 @@ import filecmp, os, subprocess, sys, tempfile
 SKIP = 77
 
 def find_mcc(bdir):
-    # Single-config (Makefiles/Ninja) drops mcc[.exe] directly in the build dir;
-    # multi-config generators (Visual Studio) nest it under a per-config subdir.
     for name in ("mcc", "mcc.exe"):
         p = os.path.join(bdir, name)
         if os.path.exists(p):
@@ -54,25 +52,8 @@ def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = bdir if os.path.isabs(bdir) else os.path.join(root, bdir)
 
-    # A PE self-host JIT 0xC0000005 still crashes the x86_64 Windows CI cells (msvc +
-    # mingw x86_64 + sanitize-msvc, exit 3221225477). The Windows/x64 icache flush
-    # (host_icache_flush + mcc_jit_publish) is necessary hardening but did NOT resolve
-    # it — un-skipping x86_64 PE re-exposed the fault, so the residual crash is a
-    # SEPARATE defect (the x86_64-only swapped-variant/KGC-stub path; does not
-    # reproduce on a local x86_64 UCRT build — confirmed by 15 stress runs with
-    # admission-widening knobs, all clean and byte-identical). Rather than a blanket
-    # Windows skip, run the scenario and self-classify: a residual 0xC0000005 SKIPs
-    # (77, non-fatal — the honest skip-mark, never reds the cell), while a clean
-    # byte-identical run PASSES like every other platform. So the test un-skips
-    # itself the moment the crash is fixed and surfaces a real miscompile as a FAIL.
-    # Suppress WER dialogs first so a crashing child returns its code fast.
     win = os.name == "nt" or sys.platform.startswith("win")
     if win and cpu == "arm64" and not os.environ.get("MCC_JIT_FORCE_ARM64"):
-        # arm64-Windows has its own open JIT-parity defects (SEH unwind through JIT
-        # frames, the MSVC JIT-exec wild-jump miscompile) that need real arm64
-        # hardware to fix; a wild jump can hang rather than fault, so don't let this
-        # gate red the arm64-msvc cell. Separately tracked in docs/TODO.
-        # MCC_JIT_FORCE_ARM64 overrides the skip for the arm64-win-jit-debug loop.
         print("selfhost-jit: SKIP (arm64-Windows JIT parity defects; tracked in docs/TODO)")
         sys.exit(SKIP)
     if win:
@@ -100,11 +81,6 @@ def main():
     env = dict(os.environ)
     env.update(MCC_JIT="1", MCC_AST_SEARCH="1", MCC_SEARCH_WORKER="1",
                MCC_JIT_HOT_THRESHOLD="50")
-    # Arm the embed-JIT crash diagnostic (Windows-only, no-op elsewhere). The PE
-    # 0xC0000005 only reproduces on the windows-2025 CI host, so this is the only
-    # way to see the faulting PC/bytes/nearest-JIT-slot: the vectored handler
-    # dumps them to the child's stderr, which we capture and re-emit below so it
-    # lands in the CI log even though the child then dies with 0xC0000005.
     if win:
         env["MCC_JIT_CRASH_DIAG"] = "1"
     for kv in [a for a in sys.argv[3:] if not a.startswith("-")]:
@@ -121,16 +97,10 @@ def main():
 
         out = os.path.join(work, "jit.o")
         mccsrc = os.path.join(src, "mcc.c")
-        # The in-memory (-run) mcc is built without MCC_CONFIG_PREDEFS, so it
-        # injects `#include <mccdefs.h>` when it compiles the workload. That inner
-        # compile only sees the argv after `-run src/mcc.c`, not the outer -I set,
-        # so point it at the generated mccdefs.h (build tree, then source fallback).
         inner_inc = ["-I" + os.path.join(bdir, "include"),
                      "-I" + os.path.join(root, "runtime", "include")]
         print(f"selfhost-jit: {mcc} --jit -O4 -run src/mcc.c -> inner -c workload  "
               f"knobs={sys.argv[3:] or '(none)'}")
-        # Capture on Windows so the crash-diagnostic stderr survives the child's
-        # death and can be re-emitted into the CI log; stream live elsewhere.
         cap = win
         r = subprocess.run([mcc, "--jit", "-O4", *incs, *brt,
                             "-run", mccsrc, *inner_inc, "-c", wl, "-o", out],

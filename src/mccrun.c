@@ -195,9 +195,6 @@ static void cleanup_sections(MCCState *s1) { MCC_TRACE("enter\n");
 	} while (++p, f);
 }
 
-/* ------------------------------------------------------------------------ */
-/* _Thread_local support for the in-memory (-run) JIT engine.                */
-
 #if MCC_HOST_DARWIN && (defined(__aarch64__) || defined(__x86_64__))
 #define MCC_RUN_TLS_MACHO 1
 #endif
@@ -214,9 +211,6 @@ static void cleanup_sections(MCCState *s1) { MCC_TRACE("enter\n");
 #define MCC_ASM_SYM(x) #x
 #endif
 
-/* Layout mirrors the AOT Mach-O tlv descriptor (mccmacho.c): a 3-pointer
-   record {thunk, key, off}. In -run we supply our own thunk instead of the
-   dyld __tlv_bootstrap import, so the descriptor is self-contained. */
 struct mcc_tlv_desc {
 	void *(*thunk)(struct mcc_tlv_desc *);
 	unsigned long key;
@@ -236,8 +230,6 @@ struct mcc_tls_var {
 	addr_t orig_val;
 };
 
-/* Process-global registry mapping a pthread key -> its TLS init image. Guarded
-   by its own mutex; mirrors how st_link/st_unlink serialize shared state. */
 #define MCC_TLS_IMG_MAX 64
 static struct mcc_tls_img mcc_tls_imgs[MCC_TLS_IMG_MAX];
 static int mcc_tls_img_count;
@@ -254,9 +246,6 @@ static struct mcc_tls_img *mcc_tls_img_lookup(pthread_key_t key) { MCC_TRACE("en
 	return r;
 }
 
-/* Descriptor thunk body. Lazily allocates a per-thread TLS block for the
-   calling thread, seeds it from the init image, and returns &block[off]. Called
-   only through the register-preserving trampoline below. */
 __attribute__((used)) void *mcc_tlv_get_addr(struct mcc_tlv_desc *d) { MCC_TRACE("enter\n");
 	void *blk = pthread_getspecific((pthread_key_t)d->key);
 	if (!blk) { MCC_TRACE("br\n");
@@ -271,15 +260,6 @@ __attribute__((used)) void *mcc_tlv_get_addr(struct mcc_tlv_desc *d) { MCC_TRACE
 
 extern void mcc_tlv_thunk(void);
 
-/* Register-preserving trampoline. The tlv access ABI (arm64-gen.c /
-   x86_64-gen.c) spills only x0/x16/x17 (arm64) or rax/rdi (x86_64) around the
-   indirect call, so the thunk must preserve every other register that mcc's
-   own codegen can hold live across the access. mcc allocates only x0-x18/x30
-   and v0-v7 (arm64) or the general regs and xmm0-7 (x86_64), all scalar; the
-   C helper preserves the callee-saved set per the platform ABI, so we save
-   the caller-saved regs mcc uses. Register names/mnemonics here stay within
-   what mcc's own assembler accepts (no 128-bit q/xmm8-15), so mccrun.c still
-   self-hosts through mcc. */
 #if defined(__aarch64__)
 __asm__(
 	".text\n"
@@ -360,9 +340,6 @@ __asm__(
 	"	ret\n");
 #endif
 
-/* Called during size computation (ptr==NULL). Synthesizes the descriptor
-   section and rewrites each STT_TLS symbol so the existing adrp/add (or
-   lea) of the variable lands on its descriptor instead. */
 static void tls_setup_macho(MCCState *s1) { MCC_TRACE("enter\n");
 	int i, sym_end = symtab_section->data_offset / sizeof(ElfW(Sym));
 	Section *desc = NULL;
@@ -410,9 +387,6 @@ static void tls_setup_macho(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->run_tls_nrecs = nrecs;
 }
 
-/* Called after relocate_sections, once section addresses are assigned but
-   before the section data is copied into run memory. Registers the TLS init
-   image under a fresh pthread key and fills in each descriptor. */
 static void tls_finalize_macho(MCCState *s1) { MCC_TRACE("enter\n");
 	struct mcc_tls_var *recs = s1->run_tls_recs;
 	Section *desc = s1->run_tls_desc;
@@ -424,7 +398,6 @@ static void tls_finalize_macho(MCCState *s1) { MCC_TRACE("enter\n");
 	if (!desc || !s1->run_tls_nrecs)
 		{ MCC_TRACE("br\n"); return; }
 
-	/* sh_size is unset in the -run layout; the actual span is data_offset. */
 	td_sz = tdata_section->sh_size ? tdata_section->sh_size : tdata_section->data_offset;
 	tb_sz = tbss_section->sh_size ? tbss_section->sh_size : tbss_section->data_offset;
 
@@ -472,14 +445,9 @@ static void tls_finalize_macho(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->run_tls_recs = NULL;
 	s1->run_tls_nrecs = 0;
 }
-#endif /* MCC_RUN_TLS_MACHO */
+#endif
 
 #if MCC_HOST_LINUX
-/* Local-Exec model for -run on Linux. mcc emits TPOFF relocations resolved
-   against the run-memory TLS layout, but the CPU adds the host thread pointer.
-   We reserve a compiler-owned slab (mcchost.c) and retarget the emitted TPOFF
-   into it (see x86_64-link.c / arm64-link.c), then seed the running thread's
-   slab with the section's initial bytes. */
 static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	int i;
 	int have_tls = 0;
@@ -502,10 +470,6 @@ static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->run_tls_active = 1;
 }
 
-/* Copy each TLS section's initial image into the running thread's slab so the
-   -run thread observes correct initial values. Program-spawned threads receive
-   a zeroed slab (documented first-cut limitation). Called after section data is
-   laid into run memory. */
 static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	int i;
 	addr_t base = (addr_t)-1;
@@ -528,7 +492,7 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 		memcpy(slab + (s->sh_addr - base), s->data, s->data_offset);
 	}
 }
-#endif /* MCC_HOST_LINUX */
+#endif
 
 static int mcc_relocate_ex(MCCState *s1, void *ptr, unsigned ptr_diff) { MCC_TRACE("enter\n");
 	Section *s;

@@ -1,25 +1,4 @@
 #!/bin/sh
-# Mach-O RELOCATIONS against real clang-produced objects.
-#
-# TODO reserved this for macOS. It does not need macOS: clang targets
-# x86_64-apple-macos from Linux and emits genuine Mach-O relocatables with
-# genuine X86_64_RELOC_* entries, which is all the loader has to consume.
-#
-# What this guards is a SILENT WRONG ANSWER, not a link failure. Before the
-# relocation pass existed, `reloff`/`nreloc` were read and ignored, so a call
-# into a Mach-O object linked cleanly and kept its placeholder displacement --
-# `e8 00 00 00 00`, a call to the next instruction. Nothing failed; the binary
-# was simply wrong. So the assertions below check RESOLVED TARGETS, never merely
-# that the link succeeded:
-#   1. the call must disassemble to the callee's NAME (objdump symbolizes a
-#      branch only when its displacement actually lands on that symbol)
-#   2. no placeholder `e8 00 00 00 00` may remain
-#   3. the rip-relative data reference must compute to the address `nm` reports
-#      for the target symbol -- arithmetic, not pattern matching
-#
-# Skips unless clang can target x86_64-apple-macos and llvm-objdump/llvm-nm exist.
-#
-# Usage: reloc.sh <macho-mcc> <mccbase> <workdir>
 set -e
 
 MCC=$1
@@ -54,7 +33,6 @@ clang -target x86_64-apple-macos11 -c "$WORK/foreign.c" -o "$WORK/foreign.o" 2>/
 	exit 77
 }
 
-# If clang emitted no relocations the rest of the test proves nothing.
 llvm-objdump --macho -r "$WORK/foreign.o" 2>/dev/null | grep -qE 'BRANCH|SIGNED' || {
 	echo "FAIL: clang produced no BRANCH/SIGNED relocations; this test would be"
 	echo "  vacuous -- check the clang version or the source above"
@@ -86,7 +64,6 @@ else
 	echo "PASS: no unrelocated placeholder calls remain"
 fi
 
-# The rip-relative reference to _msg must compute to _msg's real address.
 python3 - "$WORK/dis" "$WORK/out" <<'PY' || rc=1
 import re, subprocess, sys
 

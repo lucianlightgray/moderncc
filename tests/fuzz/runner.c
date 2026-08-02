@@ -80,15 +80,15 @@ static void timeout_wrap(const char *cmd, char *out, size_t n) {
 	else if (have_gtimeout)
 		snprintf(out, n, "gtimeout %d %s", RUN_TIMEOUT, cmd);
 	else
-		/* No `timeout`/`gtimeout` (default on the macOS runners). Poll the
-		   command's own PID once a second and SIGKILL it only after N whole
-		   seconds elapse; the watcher self-exits the instant the command is
-		   gone, so its `sleep 1` grandchild never outlives the command by more
-		   than a second. An earlier form backgrounded `sleep N` and had the
-		   watcher `wait` on it, but `$__s` is the watcher's SIBLING, not its
-		   child, so `wait` returned immediately and every compile was killed on
-		   the spot; a still earlier form killed the watcher subshell and orphaned
-		   its `sleep N` for the full N seconds, piling up until RLIMIT_NPROC. */
+
+
+
+
+
+
+
+
+
 		snprintf(out, n,
 				 "{ %s & __p=$!; "
 				 "{ __i=0; while [ $__i -lt %d ]; do sleep 1; "
@@ -181,15 +181,15 @@ static int runres_majority(const runres *r, const int *ok, int n, int *wc) {
 	return (nok >= 2 && bestc * 2 > nok) ? best : -1;
 }
 
-/* Cross mode. Empty by default, so a host run is byte-identical to before.
-   MCC_FUZZ_MCC_FLAGS and MCC_FUZZ_REF_FLAGS are appended to the compile line of
-   mcc and of every reference compiler respectively -- a sysroot, an -I, an ABI
-   flag -- and MCC_FUZZ_RUN_PREFIX is prepended to the RUN, which is where an
-   emulator goes. With the three set, the differential loop compares an mcc
-   cross build against a cross reference with both programs executed under the
-   same emulator, which is what the arm/riscv64 legs of instruction 8 need and
-   what this runner previously had no way to express. UB detection deliberately
-   stays on the host: the generated program is target-independent C. */
+
+
+
+
+
+
+
+
+
 static const char *fz_mcc_flags(void) { return hc_envv("MCC_FUZZ_MCC_FLAGS", ""); }
 static const char *fz_ref_flags(void) { return hc_envv("MCC_FUZZ_REF_FLAGS", ""); }
 static const char *fz_run_prefix(void) { return hc_envv("MCC_FUZZ_RUN_PREFIX", ""); }
@@ -260,10 +260,10 @@ static int has_ub(const char *gcc, const char *work, const char *src) {
 	return ub;
 }
 
-/* -O4 is opt-in (--o4) and BASE-SWEEP ONLY. It costs the whole search budget --
- * measured at 4010 ms against 6 ms for -O3 on a generated program -- so putting
- * it in the per-gate loop would multiply that by NGATES and is never affordable.
- * n_opts covers the base loops; the gate loop stays on NOPTS. */
+
+
+
+
 static const char *const OPTS[] = {"-O0", "-O1", "-O2", "-O3", "-O4"};
 #define NOPTS 4
 static int n_opts = NOPTS;
@@ -285,10 +285,10 @@ static const gate_t GATES[] = {
 	{"LICM_TEMP", "MCC_AST_LICM_TEMP=1"},
 	{"IVSR", "MCC_AST_IVSR=1"},
 	{"PRE", "MCC_AST_PRE=1"},
-	/* Opt-in -O4 search knobs (normally reached only via the gate search). Forcing
-	 * them on directly lets the differential fuzzer stress their codegen against
-	 * gcc/clang across random programs — V-narrow(a) narrow-to-fixpoint and
-	 * V-sethi(a) leaf-aware Sethi-Ullman. */
+
+
+
+
 	{"NARROW_FIX", "MCC_AST_NARROW_FIX=1"},
 	{"SETHI_LEAF", "MCC_AST_SETHI_LEAF=1"},
 	{"SCCP_FIX", "MCC_AST_SCCP_FIX=1"},
@@ -299,12 +299,12 @@ static const gate_t GATES[] = {
 	{"DIVMAGIC", "MCC_AST_DIVMAGIC=1"},
 	{"ABS", "MCC_AST_ABS=1"},
 	{"REGPAIR", "MCC_AST_REGPAIR=1"},
-	/* Backend, not AST: adrp+add for a file-local symbol in place of the GOT
-	 * sequence. Inert off arm64, and a wrong local/global classification is a
-	 * wrong address, so it belongs in the differential set. */
+
+
+
 	{"ARM64_LOCAL_PCREL", "MCC_ARM64_LOCAL_PCREL=1"},
-	/* Default-on for x86_64 at -O1+, so forcing it there is a no-op; the row
-	 * exists for arm64, where it is new and default-off. */
+
+
 	{"REGDISP", "MCC_AST_REGDISP=1"},
 	{"REASSOC", "MCC_AST_REASSOC=1"},
 	{"INTERCHANGE", "MCC_AST_INTERCHANGE=1"},
@@ -328,10 +328,10 @@ static const gate_t GATES[] = {
 	{"LANDOR_FOLD", "MCC_AST_LANDOR_FOLD=1"},
 	{"CLEANUP_RET", "MCC_AST_CLEANUP_RET=1"},
 	{"VOIDRET_EXPR", "MCC_AST_VOIDRET_EXPR=1"},
-	/* Default-off gates that measurably change -O1..-O3 codegen but had no row.
-	 * The other 14 unswept default-off gates are -O4 search knobs or otherwise
-	 * inert below -O4: forcing each one on changes ZERO objects over 60 corpus
-	 * files at -O1/-O2/-O3, so a row for them would buy no coverage. */
+
+
+
+
 	{"SLICE", "MCC_AST_SLICE=1"},
 	{"NO_CALLFUL", "MCC_AST_NO_CALLFUL=1"},
 	{"JIT_SPLICE", "MCC_AST_JIT_SPLICE=1"},
@@ -714,12 +714,12 @@ static void score_save(const char *path, ScoreClass *sb, int n) {
 	rename(tmp, path);
 }
 
-/* Nightly differential-fuzz campaign: loop the batch runner over fresh seed
-   batches until the wall-clock budget is spent or K consecutive batches surface
-   no new miscompile *class* (attribution = the -O level + MCC_AST_* gate the
-   runner blames). Found repros are reduced+saved into the corpus by the batch
-   runner; this driver dedups their attribution classes and enforces the stop
-   rule -- exiting nonzero exactly when a new class was found. */
+
+
+
+
+
+
 static int campaign_main(const char *self, int argc, char **argv) {
 	Refs refs = {{0}, {0}, 0};
 	const char *pos[16];
@@ -844,9 +844,9 @@ static int campaign_main(const char *self, int argc, char **argv) {
 	}
 }
 
-/* git-bisect predicate for a saved repro: rebuild the preset at the current
-   commit, then replay the repro through the freshly built runner. Prints the
-   bisect protocol codes (0=good, 1=bad, 125=skip). */
+
+
+
 static int bisect_main(int argc, char **argv) {
 	const char *repro = argc > 1 ? argv[1] : NULL;
 	const char *preset = argc > 2 ? argv[2] : "debug";
@@ -895,7 +895,7 @@ static int bisect_main(int argc, char **argv) {
 	exitc = WIFEXITED(rc) ? WEXITSTATUS(rc) : rc;
 	snprintf(cmd, sizeof cmd, "rm -rf \"%s\"", work);
 	if (HC_SYSTEM_SH(cmd)) {
-		/* best-effort cleanup */
+
 	}
 	free(root);
 	free(gcc);

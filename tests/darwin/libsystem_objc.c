@@ -1,6 +1,6 @@
-/* The Objective-C runtime through its pure-C API: class lookup in the dyld
-   shared cache, selector interning, objc_msgSend's variadic-cast ABI, and
-   runtime class construction. No ObjC syntax -- mcc compiles C. */
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,8 +45,8 @@ int main(void) {
 		CHECK(method_getImplementation(m) != NULL);
 	}
 
-	/* objc_msgSend has no prototype that matches every selector, so every
-	   caller casts it -- the ABI detail an incorrect Mach-O stub would break. */
+
+
 	id (*msg_id)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
 	unsigned long (*msg_ul)(id, SEL) = (unsigned long (*)(id, SEL))objc_msgSend;
 	void (*msg_void)(id, SEL) = (void (*)(id, SEL))objc_msgSend;
@@ -59,7 +59,7 @@ int main(void) {
 		msg_void(obj, sel_dealloc);
 	}
 
-	/* A runtime-built class exercises the writable half of the runtime. */
+
 	Class made = objc_allocateClassPair(nsobject, "MccDarwinTestClass", 0);
 	CHECK(made != NULL);
 	if (made) {

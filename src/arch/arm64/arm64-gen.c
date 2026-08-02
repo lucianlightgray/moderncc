@@ -424,14 +424,6 @@ static void arm64_strv(int sz_, int dst, int bas, uint64_t off) { MCC_TRACE("ent
 	}
 }
 
-/* MCC_ARM64_LOCAL_PCREL: address a file-local symbol with adrp+add instead of
-   the GOT sequence. ELF and Mach-O took the GOT path for EVERY symbol, so a
-   `static` -- non-preemptible and defined in this TU -- cost 3 instructions, a
-   GOT slot and a load where 2 instructions reach it directly. PE already does
-   this. The predicate is x86_64's: gen_modrm64 picks GOTPCREL over PC32 on
-   !(sym->type.t & VT_STATIC), and VT_STATIC is exactly the file-scope and
-   function-local statics. Default OFF: a wrong classification is a wrong
-   address, not a slow one. */
 static int arm64_local_pcrel_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
@@ -441,13 +433,6 @@ static int arm64_local_pcrel_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
-/* r += d, in place, without touching the flags -- the LEA-equivalent
-   save_regdisp_group needs to materialise a folded displacement before spilling
-   a base register, and to undo it afterwards when the bare register is still
-   live. arm64's ADD/SUB immediate forms do not set flags (ADDS/SUBS do), so the
-   only care needed is the 12-bit immediate: one instruction below 4096, one
-   shifted form for a multiple of 4096, two for anything up to 24 bits, and x30
-   as the scratch beyond that -- the same scratch arm64_sym and load() use. */
 ST_FUNC void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	uint32_t x = (uint32_t)intr(r);
 	uint32_t op = d < 0 ? ARM64_SUB_IMM : ARM64_ADD_IMM;
@@ -460,7 +445,6 @@ ST_FUNC void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (a <= 0xffffff) { MCC_TRACE("br\n");
-		/* Same shifted-ADD pair arm64_sym uses for a large addend. */
 		if (a & 0xfff)
 			{ MCC_TRACE("br\n"); o(op | ARM64_SF(1) | ARM64_RN(x) | ARM64_RD(x) |
 				ARM64_IMM12(a & 0xfff)); }
@@ -557,22 +541,22 @@ static void arm64_tls_base_x30(void) { MCC_TRACE("enter\n");
 
 #ifndef MCC_TARGET_PE
 static void arm64_tls_desc_x30(Sym *sym) { MCC_TRACE("enter\n");
-	o(ARM64_SUB_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(16)); /* sub sp, sp, #16 */
-	arm64_strx(3, 0, 31, 0);                                                        /* str x0, [sp]      */
-	arm64_strx(3, 1, 31, 8);                                                        /* str x1, [sp, #8]  */
+	o(ARM64_SUB_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(16));
+	arm64_strx(3, 0, 31, 0);
+	arm64_strx(3, 1, 31, 8);
 	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_ADR_PAGE21, 0);
-	o(ARM64_ADRP | ARM64_RD(0));                     /* adrp x0, :tlsdesc:sym            */
+	o(ARM64_ADRP | ARM64_RD(0));
 	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_LD64_LO12, 0);
-	o(ARM64_LDR_X | ARM64_RN(0) | ARM64_RT(1));      /* ldr  x1, [x0, :tlsdesc_lo12:sym] */
+	o(ARM64_LDR_X | ARM64_RN(0) | ARM64_RT(1));
 	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_ADD_LO12, 0);
-	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(0) | ARM64_RD(0)); /* add x0, x0, :tlsdesc_lo12:sym */
+	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(0) | ARM64_RD(0));
 	greloca(cur_text_section, sym, ind, R_AARCH64_TLSDESC_CALL, 0);
-	o(ARM64_BLR | ARM64_RN(1));                       /* blr  x1                          */
-	o(0xd53bd041);                                    /* mrs  x1, tpidr_el0               */
-	o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(0) | ARM64_RN(1) | ARM64_RD(30)); /* add x30, x1, x0 */
-	arm64_ldrx(0, 3, 0, 31, 0);                       /* ldr  x0, [sp]                    */
-	arm64_ldrx(0, 3, 1, 31, 8);                       /* ldr  x1, [sp, #8]                */
-	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(16)); /* add sp, sp, #16 */
+	o(ARM64_BLR | ARM64_RN(1));
+	o(0xd53bd041);
+	o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(0) | ARM64_RN(1) | ARM64_RD(30));
+	arm64_ldrx(0, 3, 0, 31, 0);
+	arm64_ldrx(0, 3, 1, 31, 8);
+	o(ARM64_ADD_IMM | ARM64_SF(1) | ARM64_RN(31) | ARM64_RD(31) | ARM64_IMM12(16));
 }
 #endif
 #endif
@@ -580,11 +564,6 @@ static void arm64_tls_desc_x30(Sym *sym) { MCC_TRACE("enter\n");
 ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	mcc_stackref_note(sv->r);
 	int svtt = sv->type.t;
-	/* VT_REGDISP joins the masked-off set: it is an ADDRESSING-MODE note, not a
-	   value kind, so every `svr == ...` test below must still match. The
-	   displacement it carries then rides into the register-base case as the
-	   ldr/str immediate instead of a materialised add -- which is the whole
-	   point of the gate. x86_64 does the same in gen_modrm_impl. */
 	int svr = sv->r & ~(VT_BOUNDED | VT_NONCONST | VT_NONLVAL | VT_MUSTCAST |
 											VT_REGDISP);
 	uint64_t regdisp = (sv->r & VT_REGDISP)
@@ -1439,22 +1418,16 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 }
 #endif
 
-/* -fasan-shadow stack redzones (mirrors x86_64 gen_asan_stack_{prolog,epilog}):
-   the prologue reserves a slot and, once every local is known, the epilogue
-   patches in a __asan_stack_enter(table, x29) call there and emits a
-   __asan_stack_leave(table, x29) call. add_asan_locals (mccgen.c) records each
-   local's x29-relative offset + size into .asan_lstack (arm64 locals sit below
-   x29 like x86 locals sit below rbp, so the runtime's fp+offset works as-is). */
 #define ARM64_ASAN_ENTER_SLOTS 4
 static addr_t arm64_asan_off;
 static addr_t arm64_asan_ind;
 
 static void arm64_asan_stack_call(Sym *tab, const char *name) { MCC_TRACE("enter\n");
-	arm64_sym(0, tab, 0);       /* x0 = &table (adrp + GOT ldr, 2 insns) */
-	o(0xaa1d03e1);              /* mov x1, x29                           */
+	arm64_sym(0, tab, 0);
+	o(0xaa1d03e1);
 	greloca(cur_text_section, external_helper_sym(tok_alloc_const(name)), ind,
 					R_AARCH64_CALL26, 0);
-	o(ARM64_BL);                /* bl <name>                             */
+	o(ARM64_BL);
 }
 
 static void gen_asan_stack_prolog(void) { MCC_TRACE("enter\n");
@@ -1480,16 +1453,15 @@ static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
 	ind = arm64_asan_ind;
 	arm64_asan_stack_call(tab, "__asan_stack_enter");
 	ind = saved_ind;
-	/* leave runs in the epilogue where x0/d0 hold the return value */
-	o(0xd10043ff); /* sub  sp, sp, #16   */
-	o(0xf90003e0); /* str  x0, [sp]       */
-	o(0x9e660000); /* fmov x0, d0         */
-	o(0xf90007e0); /* str  x0, [sp, #8]   */
+	o(0xd10043ff);
+	o(0xf90003e0);
+	o(0x9e660000);
+	o(0xf90007e0);
 	arm64_asan_stack_call(tab, "__asan_stack_leave");
-	o(0xf94007e0); /* ldr  x0, [sp, #8]   */
-	o(0x9e670000); /* fmov d0, x0         */
-	o(0xf94003e0); /* ldr  x0, [sp]       */
-	o(0x910043ff); /* add  sp, sp, #16    */
+	o(0xf94007e0);
+	o(0x9e670000);
+	o(0xf94003e0);
+	o(0x910043ff);
 }
 
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
@@ -1891,20 +1863,6 @@ void arm64_vset_VT_CMP(int op) { MCC_TRACE("enter\n");
 
 static void arm64_gen_opil(int op, uint32_t l);
 
-/* Invert the condition of the `cset` that produced this comparison, in place,
- * when it is still the last instruction emitted. arm64_gen_opil emits `cmp` and
- * `cset` eagerly, so a later `!` cannot pick a different condition and would
- * otherwise pay an `eor #1`. Every cset condition and its inverse differ in
- * exactly bit 12 (EQ/NE, GE/LT, GT/LE, CS/CC, HI/LS), so the fix is a one-bit
- * rewrite. It is length-preserving: nothing moves, so the jump-chain hazard that
- * blocks byte-moving transforms here (absolute displacements threaded through
- * the stream) does not apply.
- *
- * Safety rests on two checks together. The word must decode as `cset Rd, cond`
- * -- CSINC Rd, ZR, ZR with op2=01, i.e. (w & 0x7fff0fe0) == 0x1a9f07e0, leaving
- * sf/cond/Rd free -- and its Rd must be this value's own register. A later cset
- * into the same register cannot be a different value's: it would have clobbered
- * this one, and get_reg does not hand out a live register. */
 static int arm64_invert_last_cset(int r) { MCC_TRACE("enter\n");
 	unsigned char *p;
 	uint32_t w;
@@ -1937,11 +1895,6 @@ static void arm64_load_cmp(int r, SValue *sv) { MCC_TRACE("enter\n");
 ST_FUNC int gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
 	uint32_t l = ll ? 1u : 0u;
 	o(0x7100001f | l << 31 | intr(rb) << 5);
-	/* csel rf, rt, rf, ne  — result in rf (the false-value reg), matching the
-	 * x86_64/riscv64 gen_cmov contract that gen_select relies on: the caller
-	 * only relocates the *false* operand (vtop[0]) when it is pinned, so the
-	 * clobbered destination must be rf, never rt.  Clobbering rt here destroyed
-	 * a promoted loop counter held in the true-value reg (select_branchless). */
 	o(0x1a800000 | l << 31 | intr(rf) | intr(rt) << 5 | intr(rf) << 16 | (1u << 12));
 	return rf;
 }
@@ -2160,12 +2113,6 @@ static void arm64_ubsan_shift_check(uint32_t cnt, uint32_t l) { MCC_TRACE("enter
 	arm64_ubsan_trap_cond(3, UBK_SHIFT);
 }
 
-/* Inline ASan shadow probe for -fasan-shadow (mirrors x86_64 gen_asan_shadow_check):
-   shadow = (int8)*(( addr>>3 ) + ASAN_OFF); trap if shadow!=0 && (addr&7)+sz-1 >= shadow.
-   x16/x17 are the scratch pair; x15 additionally carries the full faulting address
-   (x30 is a save-pair filler). All saved/restored so the probe is transparent to the
-   pointer register, even when it IS x15/x16/x17. At the brk the runtime SIGTRAP handler
-   reads x15=faulting address, w16=granule offset, w17=shadow byte (runtime/lib/mccasan.c). */
 static Section *asan_type_sec;
 static int asan_type_patch = -1;
 static int asan_type_end;
@@ -2193,24 +2140,24 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
 		{ MCC_TRACE("br\n"); return; }
 	a = intr(vtop->r);
-	o(0xa9bf47f0);                              /* stp   x16, x17, [sp, #-16]!   */
-	o(0xa9bf7bef);                              /* stp   x15, x30, [sp, #-16]!   */
-	o(0xaa0003f0 | (a << 16));                  /* mov   x16, Xaddr              */
-	arm64_movimm(17, 0x7fff8000);               /* mov   x17, #ASAN_OFF          */
-	o(0x8b500e31);                              /* add   x17, x17, x16, lsr #3   */
-	o(0x39c00231);                              /* ldrsb w17, [x17]              */
-	o(0x34000111);                              /* cbz   w17, ok  (+8 insns)     */
-	o(0xaa1003ef);                              /* mov   x15, x16  (fault addr)  */
-	o(0x12000a10);                              /* and   w16, w16, #7            */
-	o(0x11000210 | ((uint32_t)(sz - 1) << 10)); /* add   w16, w16, #(sz-1)       */
-	o(0x6b11021f);                              /* cmp   w16, w17                */
-	o(0x5400006b);                              /* b.lt  ok  (+3 insns)          */
+	o(0xa9bf47f0);
+	o(0xa9bf7bef);
+	o(0xaa0003f0 | (a << 16));
+	arm64_movimm(17, 0x7fff8000);
+	o(0x8b500e31);
+	o(0x39c00231);
+	o(0x34000111);
+	o(0xaa1003ef);
+	o(0x12000a10);
+	o(0x11000210 | ((uint32_t)(sz - 1) << 10));
+	o(0x6b11021f);
+	o(0x5400006b);
 	asan_type_sec = cur_text_section;
 	asan_type_patch = ind;
-	o(0x321a0210);                              /* orr   w16, w16, #0x40         */
-	o(0xd4200000);                              /* brk   #0  (poison -> trap)    */
-	o(0xa8c17bef);                              /* ok: ldp x15, x30, [sp], #16   */
-	o(0xa8c147f0);                              /*     ldp x16, x17, [sp], #16   */
+	o(0x321a0210);
+	o(0xd4200000);
+	o(0xa8c17bef);
+	o(0xa8c147f0);
 	asan_type_end = ind;
 }
 
@@ -2393,14 +2340,6 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	o((sign ? 0x9b407c00u : 0x9bc07c00u) | x | a << 5 | b << 16);
 }
 
-/* FMOV (scalar, immediate): 0x1E201000 | ftype<<22 | imm8<<13 | Rd, encoding a
-   VFPExpandImm 8-bit literal instead of a PC-relative rodata load. Only values
-   of the form +/-(1 + m/16) * 2^n (m 0..15, n -3..4) are representable; anything
-   else -- including 0.0, inf, NaN and every denormal -- returns 0 so the caller
-   falls back to the rodata path rather than mis-encoding. The exponent test
-   rejects inf/NaN (biased 0x7ff => 1024) and zero/denormals (biased 0 => -1023)
-   without needing separate cases. Verified against llvm-mc for 1.0/-1.0/0.5/2.0/
-   31.0/-4.75 (double) and 1.0/-0.125 (single). */
 ST_FUNC int arm64_fmov_imm(int r, int is_dbl, uint64_t bits) { MCC_TRACE("enter\n");
 	uint64_t sign, mant;
 	int64_t exp;
@@ -2428,11 +2367,6 @@ ST_FUNC int arm64_fmov_imm(int r, int is_dbl, uint64_t bits) { MCC_TRACE("enter\
 	return 1;
 }
 
-/* Scalar FP data-processing (1 source): 0x1E204000 | ftype<<22 | opcode<<15
- * | Rn<<5 | Rd. Mirrors gen_opf's FNEG. ftype: single=0, double=1 (bit22).
- * FABS opcode=1, FSQRT=3, FRINTP(ceil)=9, FRINTM(floor)=10, FRINTZ(trunc)=11.
- * All bit-exact vs libm (incl. NaN/inf); FSQRT sets no errno (caller gates on
- * a provably-nonneg arg, like x86_64). ARMv8 baseline — no feature gate. */
 ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
 	uint32_t a, d, dbl;
 	gv(MCC_RC_FLOAT);
@@ -2440,15 +2374,13 @@ ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
 	a = fltr(vtop->r);
 	d = a;
 #if MCC_CONFIG_OPTIMIZER
-	/* FABS is destructive (Rd==Rn). Don't clobber a PINNED (promoted) source whose
-	 * value is still live — write to a fresh reg (see x86_64 gen_sqrt). */
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = fltr(nr);
 	}
 #endif
-	o(0x1e20c000u | dbl << 22 | d | a << 5); /* FABS Rd=d, Rn=a */
+	o(0x1e20c000u | dbl << 22 | d | a << 5);
 }
 
 ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
@@ -2464,17 +2396,17 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 		d = fltr(nr);
 	}
 #endif
-	o(0x1e21c000u | dbl << 22 | d | a << 5); /* FSQRT Rd=d, Rn=a */
+	o(0x1e21c000u | dbl << 22 | d | a << 5);
 }
 
 ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
 	uint32_t a, dbl, base;
-	base = mode == 0 ? 0x1e254000u   /* FRINTM floor              */
-			 : mode == 1 ? 0x1e24c000u   /* FRINTP ceil               */
-			 : mode == 2 ? 0x1e25c000u   /* FRINTZ trunc              */
-			 : mode == 4 ? 0x1e274000u   /* FRINTX rint (raise inexact) */
-			 : mode == 5 ? 0x1e27c000u   /* FRINTI nearbyint (current mode) */
-									 : 0x1e264000u;  /* FRINTA round (ties away)  */
+	base = mode == 0 ? 0x1e254000u
+			 : mode == 1 ? 0x1e24c000u
+			 : mode == 2 ? 0x1e25c000u
+			 : mode == 4 ? 0x1e274000u
+			 : mode == 5 ? 0x1e27c000u
+									 : 0x1e264000u;
 	gv(MCC_RC_FLOAT);
 	dbl = (vtop->type.t & VT_BTYPE) == VT_DOUBLE;
 	a = fltr(vtop->r);
@@ -2486,13 +2418,9 @@ ST_FUNC void gen_round(int mode) { MCC_TRACE("enter\n");
 		d = fltr(nr);
 	}
 #endif
-	o(base | dbl << 22 | d | a << 5); /* FRINT* Rd=d, Rn=a */
+	o(base | dbl << 22 | d | a << 5);
 }
 
-/* copysign(x,y) = |x| with sign(y). No single insn on arm64: GP round-trip —
- * fmov x/y to GP, `and` off the sign of x (0x7fff.. imm) and keep the sign of y
- * (0x8000.. imm), orr, fmov back. Two distinct GP scratch (pin the first so the
- * second get_reg differs). vtop[-1]=x, vtop=y; result -> x's FP reg, y popped. */
 ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	int dbl = (vtop[-1].type.t & VT_BTYPE) == VT_DOUBLE;
 	int gyr, gxr;
@@ -2501,11 +2429,6 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	fx = fltr(vtop[-1].r);
 	fy = fltr(vtop[0].r);
 	gyr = get_reg(MCC_RC_INT);
-	/* Pin the first scratch so the second get_reg differs. ast_pinned_regs (and
-	 * get_reg's honoring of it) only exists under MCC_CONFIG_OPTIMIZER; gen_copysign
-	 * is itself dispatched solely from the AST optimizer (mccast.c, MCC_AST_COPYSIGN_INLINE),
-	 * so it is never reached in a non-optimizer build. Guard to match every other
-	 * ast_pinned_regs use and to keep the non-optimizer self-compile building. */
 #if MCC_CONFIG_OPTIMIZER
 	ast_pinned_regs |= (uint64_t)1 << gyr;
 #endif
@@ -2516,28 +2439,23 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	gx = intr(gxr);
 	gy = intr(gyr);
 	if (dbl) { MCC_TRACE("br\n");
-		o(0x9e660000u | fx << 5 | gx);        /* fmov Xgx, Dfx           */
-		o(0x9e660000u | fy << 5 | gy);        /* fmov Xgy, Dfy           */
-		o(0x9240f800u | gx << 5 | gx);        /* and  Xgx, Xgx, #0x7fff..(|x|) */
-		o(0x92410000u | gy << 5 | gy);        /* and  Xgy, Xgy, #0x8000..(sgn y) */
-		o(0xaa000000u | gy << 16 | gx << 5 | gx); /* orr Xgx, Xgx, Xgy   */
-		o(0x9e670000u | gx << 5 | fx);        /* fmov Dfx, Xgx           */
+		o(0x9e660000u | fx << 5 | gx);
+		o(0x9e660000u | fy << 5 | gy);
+		o(0x9240f800u | gx << 5 | gx);
+		o(0x92410000u | gy << 5 | gy);
+		o(0xaa000000u | gy << 16 | gx << 5 | gx);
+		o(0x9e670000u | gx << 5 | fx);
 	} else { MCC_TRACE("br\n");
-		o(0x1e260000u | fx << 5 | gx);        /* fmov Wgx, Sfx           */
-		o(0x1e260000u | fy << 5 | gy);        /* fmov Wgy, Sfy           */
-		o(0x12007800u | gx << 5 | gx);        /* and  Wgx, Wgx, #0x7fffffff */
-		o(0x12010000u | gy << 5 | gy);        /* and  Wgy, Wgy, #0x80000000 */
-		o(0x2a000000u | gy << 16 | gx << 5 | gx); /* orr Wgx, Wgx, Wgy   */
-		o(0x1e270000u | gx << 5 | fx);        /* fmov Sfx, Wgx           */
+		o(0x1e260000u | fx << 5 | gx);
+		o(0x1e260000u | fy << 5 | gy);
+		o(0x12007800u | gx << 5 | gx);
+		o(0x12010000u | gy << 5 | gy);
+		o(0x2a000000u | gy << 16 | gx << 5 | gx);
+		o(0x1e270000u | gx << 5 | fx);
 	}
 	vtop--;
 }
 
-/* fmin/fmax(x,y): FMINNM/FMAXNM — the IEEE-754 minNum/maxNum forms that return
- * the numeric operand when the other is a quiet NaN (and treat -0 < +0), exactly
- * matching C fmin/fmax — unlike FMIN/FMAX (and x86 minsd/maxsd) which propagate
- * NaN and mishandle signed zero. Baseline ARMv8, no ISA-extension gate. Mirrors
- * gen_opf's FP 2-source path. vtop[-1]=x, vtop=y; result -> a fresh FP reg. */
 ST_FUNC void gen_fminmax(int is_max) { MCC_TRACE("enter\n");
 	uint32_t x, a, b, dbl;
 	int bt = vtop[0].type.t & VT_BTYPE;
@@ -2550,15 +2468,9 @@ ST_FUNC void gen_fminmax(int is_max) { MCC_TRACE("enter\n");
 	++vtop;
 	vtop[0].r = x;
 	x = fltr(x);
-	/* FMAXNM=opcode 0110 (0x6800), FMINNM=opcode 0111 (0x7800) */
 	o((is_max ? 0x1e206800u : 0x1e207800u) | dbl << 22 | x | a << 5 | b << 16);
 }
 
-/* fma(x,y,z) = x*y+z with a SINGLE rounding: FMADD Dd,Dn,Dm,Da (Dd = Dn*Dm+Da),
- * FP data-processing 3-source (0x1F400000 double / 0x1F000000 single |
- * Rm<<16 | Ra<<10 | Rn<<5 | Rd). vtop[-2]=x, vtop[-1]=y, vtop=z. Force all three
- * into FP regs (each gv while the others are protected by being on the vstack,
- * rotating the target to the top), then emit into a fresh reg; pop to one value. */
 ST_FUNC void gen_fma(void) { MCC_TRACE("enter\n");
 	uint32_t rx, ry, rz, rd, dbl;
 	int k;
@@ -2934,4 +2846,3 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 	}
 #endif
 }
-

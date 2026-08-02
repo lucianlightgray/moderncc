@@ -1,46 +1,10 @@
 #!/bin/sh
-# 3-stage riscv64 self-host fixpoint (M8 cross-arch gate, the last non-x86 arch).
-#
-# Unlike tools/selfhost-fixpoint.py, which self-hosts on the HOST arch, this
-# builds a riscv64-targeting mcc, then runs the mcc-built riscv64 mcc under
-# qemu-riscv64 so stages 2 and 3 are executed by actual riscv64 code:
-#
-#   stage0: gcc builds a host tool that emits riscv64          (mcc0)
-#   stage1: mcc0 compiles src/mcc.c -> o1, cross-gcc links     (mcc1, riscv64)
-#   stage2: qemu(mcc1) compiles src/mcc.c -> o2, links         (mcc2, riscv64)
-#   stage3: qemu(mcc2) compiles src/mcc.c -> o3
-#   require o1 == o2 == o3
-#
-# o1 == o2 says the gcc-built and mcc-built compilers emit identical code;
-# o2 == o3 is the fixpoint. Any drift means unstable or nondeterministic
-# riscv64 self-host codegen.
-#
-# Two things this script must not do, both of which produced a false green
-# while it was being written:
-#   - compare stale objects. Every stage removes its output first and the run
-#     aborts if a stage produced nothing, because a crashed stage otherwise
-#     leaves the previous run's object in place and compares equal.
-#   - put the riscv64 sysroot includes before the project ones. The system
-#     elf.h then shadows src/formats/elf.h and the build fails on
-#     R_RISCV_SET_ULEB128.
-#
-# Usage: tools/selfhost-riscv64-docker.sh [KNOB=VAL ...]
-#   Extra args are passed as environment to every stage, so gate sets can be
-#   soaked: tools/selfhost-riscv64-docker.sh MCC_AST_RELOC_EQUIV=1
-#
-# Exit 77 (ctest SKIP) when docker is unavailable.
 set -e
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 img=debian:bookworm-slim
 name=mcc-selfhost-rv64-$$
 
-# Prefer the no-docker path: mcc can link its own riscv64 output against the
-# in-tree gentoo stage3 sysroot, and the host qemu runs it, so the only real
-# requirements are a host cc, qemu-riscv64, the vendored sysroot and the
-# per-arch runtime archive from cmake-cross. That makes this gate runnable on
-# any dev box instead of only where a docker daemon happens to be up -- it was
-# skipping (77) exactly when it was most wanted.
 SR="$root/vendor/gentoo-stage3-riscv64-glibc"
 RTA="$root/cmake-cross/riscv64-libmccrt.a"
 if command -v qemu-riscv64 >/dev/null 2>&1 && command -v cc >/dev/null 2>&1 \
@@ -48,10 +12,6 @@ if command -v qemu-riscv64 >/dev/null 2>&1 && command -v cc >/dev/null 2>&1 \
     exec "$(dirname "$0")/selfhost-cross-native.sh" riscv64 "$@"
 fi
 
-# Use the shared docker gating (skip-77 on no daemon / unrunnable platform) so a
-# transient Docker Hub pull timeout skips like every sibling *-docker.sh harness
-# instead of failing CI. dg_need_platform pre-pulls the image via a probe run, so
-# the `docker run -d` below hits the local cache and cannot time out mid-pull.
 . "$(dirname "$0")/dockergate.sh"
 dg_need_docker
 dg_need_platform "" "$img"
@@ -68,7 +28,6 @@ docker exec -e KNOBS="$*" "$name" sh -c '
 set -e
 cd /tmp
 Q="qemu-riscv64 -L /usr/riscv64-linux-gnu"
-# project includes FIRST so src/formats/elf.h wins over the sysroot elf.h
 INC="-I/work/src -I/work/src/formats -I/work/src/objfmt -I/work/src/arch/riscv64 -I/work/include"
 SYS="-I/usr/riscv64-linux-gnu/include -I/usr/lib/gcc-cross/riscv64-linux-gnu/12/include"
 DEF="-DMCC_CONFIG_OPTIMIZER=1 -DMCC_TARGET_RISCV64"
@@ -103,8 +62,6 @@ cmp /tmp/o1.o /tmp/o2.o || { echo "FAIL: o1 != o2"; exit 1; }
 cmp /tmp/o2.o /tmp/o3.o || { echo "FAIL: o2 != o3"; exit 1; }
 echo "riscv64 selfhost: OK (o1 == o2 == o3, byte-identical)"
 
-# the fixpoint alone does not prove the compiler works, only that it is
-# stable, so also require mcc1 to build a running program matching gcc
 cat > /tmp/sanity.c <<EOF
 #include <stdio.h>
 #include <string.h>

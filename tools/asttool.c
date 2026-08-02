@@ -1,6 +1,6 @@
 #include "mccast.c"
-#include "mccgate.h" /* the gate vocabulary + M3 bridge (MCC_INTERNAL-independent) */
-#include "mccmagic.h" /* constant-division magic numbers, selftested before wiring */
+#include "mccgate.h"
+#include "mccmagic.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -387,7 +387,7 @@ static void suite_forecast(void) {
 	}
 	{
 		double y[4] = {1, 2, 3, 4};
-		double p = ast_fc_lin(y, 4); /* slope 1 at t=4 -> 5 */
+		double p = ast_fc_lin(y, 4);
 		CHECK(p > 4.5 && p < 5.5, "lin extrapolates a ramp");
 	}
 	{
@@ -417,8 +417,6 @@ static void suite_forecast(void) {
 static void suite_gatemap(void) {
 	unsigned g, c;
 	AstGateMask m;
-	/* superopt-search 4-bit gate <-> unified AstGateMask: lossless round-trip over
-	 * the whole 16-value space, both directions. */
 	for (g = 0; g < 16; g++)
 		CHECK(ast_gate_to_so(ast_gate_from_so(g)) == g,
 					"so_gate round-trips through the unified mask");
@@ -429,7 +427,6 @@ static void suite_gatemap(void) {
 		CHECK(ast_gate_from_so(ast_gate_to_so(keep)) == keep,
 					"unified so-subset round-trips back through so_gate");
 	}
-	/* exact bit correspondences (mirror so_setenv_cfg). */
 	CHECK(ast_gate_from_so(SO_GATE_TEMPLATES) == AST_SG_TEMPLATES, "so templates bit");
 	CHECK(ast_gate_from_so(SO_GATE_PROMOTE) == AST_SG_PROMOTE, "so promote bit");
 	CHECK(ast_gate_from_so(SO_GATE_INLINE) == AST_SG_INLINE, "so inline bit");
@@ -437,7 +434,6 @@ static void suite_gatemap(void) {
 	CHECK(ast_gate_from_so(15) ==
 					(AST_SG_TEMPLATES | AST_SG_PROMOTE | AST_SG_INLINE | AST_SG_NOCALLFUL),
 				"all four so bits map to all four unified bits");
-	/* perfn best_cfg (bit0=tmpl, bit1=promo, bit2=inl; the drivers use values 1/3/7). */
 	for (c = 0; c < 8; c++)
 		CHECK(ast_gate_to_perfn(ast_gate_from_perfn(c)) == c, "perfn cfg round-trips");
 	CHECK(ast_gate_from_perfn(1) == AST_SG_TEMPLATES, "perfn cfg=1 is templates only");
@@ -446,8 +442,6 @@ static void suite_gatemap(void) {
 	CHECK(ast_gate_from_perfn(7) ==
 					(AST_SG_TEMPLATES | AST_SG_PROMOTE | AST_SG_INLINE),
 				"perfn cfg=7 is templates+promote+inline");
-	/* the superopt-only unified bits sit ABOVE the six in-process fold-gate/knob bits,
-	 * so the two vocabularies never collide in one mask. */
 	CHECK((AST_SG_PROMOTE | AST_SG_INLINE | AST_SG_NOCALLFUL | AST_SG_CPROPJOIN |
 				 AST_SG_CSEJOIN) >
 					(AST_SG_TEMPLATES | AST_SG_NARROW | AST_SG_BITFLAG | AST_SG_SETHI |
@@ -455,11 +449,6 @@ static void suite_gatemap(void) {
 				"superopt-only unified bits are disjoint above the fold-gate/knob bits");
 }
 
-/* Exhaustively prove the constant-division magic numbers against native `/` and `%`
- * before any AST transform trusts them. For each divisor in a large range, apply the
- * magic to a dense, boundary-heavy dividend set (0, 1, near multiples, the sign/word
- * extremes) and require an exact match. A single mismatch would be a silent arithmetic
- * miscompile, so this is the gate that lets the fold be built with confidence. */
 static void suite_magic(void) {
 	static const uint32_t uedge[] = {0u,        1u,        2u,          3u,
 																	 0x7FFFFFFFu, 0x80000000u, 0x80000001u, 0xFFFFFFFEu,
@@ -475,7 +464,6 @@ static void suite_magic(void) {
 		for (i = 0; i < (int)(sizeof uedge / sizeof uedge[0]); i++)
 			if (mcc_divu_apply(uedge[i], mu) != uedge[i] / d)
 				uok = 0;
-		/* dense sweep around every multiple boundary up to a cap */
 		for (n = 0; n < 40000u; n++)
 			if (mcc_divu_apply(n, mu) != n / d)
 				uok = 0;
@@ -709,9 +697,6 @@ static void suite_combo_walk(void) {
 				"the deterministic winner is the singleton {0}");
 }
 
-/* Build `local(offa) <op> local(offb)` as a standalone expression; return the
-   Binary root. Refs are pure VT_LOCAL reads (offset in ival, no sym) so they hit
-   ast_slice_ident_hash's offset-interning path. */
 static AstLocal build_binop(AstArena *a, int op, int32_t offa, int32_t offb) {
 	AstLocal l = ast_node(a, AST_Ref);
 	ast_set_op(a, l, VT_LOCAL);
@@ -727,42 +712,31 @@ static AstLocal build_binop(AstArena *a, int op, int32_t offa, int32_t offb) {
 }
 
 static void suite_slice_ident(void) {
-	/* Baseline: `l(-8) + l(-16)` (input pattern [distinct, distinct]). */
 	AstArena *a = ast_arena_new();
 	AstLocal ra = build_binop(a, '+', -8, -16);
 	uint64_t ha = ast_slice_ident_hash(a, ra);
 	CHECK(ha != 0, "slice identity is nonzero");
 	CHECK(ha == ast_slice_ident_hash(a, ra), "slice identity is stable");
 
-	/* Frame-offset invariance / cross-function reuse: the SAME computation reading
-	   different actual slots (-32,-40) has the SAME identity -- this is what lets a
-	   variant proved in one function be reused in another. */
 	AstArena *b = ast_arena_new();
 	AstLocal rb = build_binop(b, '+', -32, -40);
 	CHECK(ha == ast_slice_ident_hash(b, rb),
 				"identity is invariant to the actual frame offsets");
 	ast_arena_free(b);
 
-	/* Sharing-pattern sensitivity: `l(-8) + l(-8)` (pattern [x,x]) must DIFFER from
-	   `l(-8) + l(-16)` (pattern [x,y]) -- they are different computations. */
 	b = ast_arena_new();
 	AstLocal rxx = build_binop(b, '+', -8, -8);
 	CHECK(ha != ast_slice_ident_hash(b, rxx),
 				"x+x and x+y have distinct identities (input sharing matters)");
-	/* ...where the coarse whole-function intention hash canNOT tell them apart. */
 	CHECK(ast_intention_hash(a, ra) == ast_intention_hash(b, rxx),
 				"intention hash is offset-blind (why slice identity refines it)");
 	ast_arena_free(b);
 
-	/* Operator sensitivity. */
 	b = ast_arena_new();
 	AstLocal rsub = build_binop(b, '-', -8, -16);
 	CHECK(ha != ast_slice_ident_hash(b, rsub), "operator changes identity");
 	ast_arena_free(b);
 
-	/* Context-freedom: the same slice hashed at its root is identical whether it
-	   sits under a Return or as an Invoke argument -- enclosing scope is irrelevant,
-	   so the slice keeps its identity through inlining and other passes. */
 	b = ast_arena_new();
 	AstLocal bb = ast_node(b, AST_BasicBlock);
 	AstLocal ret = ast_node(b, AST_Return);
@@ -778,13 +752,10 @@ static void suite_slice_ident(void) {
 }
 
 static void suite_slice_window(void) {
-	/* Reset the module-global cache (asttool includes mccast.c, so the statics are
-	   in scope) to make the suite order-independent. */
 	ast_slice_memo_n = 0;
 	ast_slice_seen = 0;
 	ast_slice_reuse = 0;
 
-	/* A function body holding one compute slice `l(-8) + l(-16)` under a Return. */
 	AstArena *a = ast_arena_new();
 	AstLocal bb = ast_node(a, AST_BasicBlock);
 	AstLocal ret = ast_node(a, AST_Return);
@@ -801,8 +772,6 @@ static void suite_slice_window(void) {
 	CHECK(m && m->gates == 0x5u, "the enclosing function's gate config is stored");
 	CHECK(m && m->refcount == 1, "refcount starts at 1");
 
-	/* A DIFFERENT function computing the SAME slice from other slots reuses the
-	   cache entry by identity -- the cross-function memoization win. */
 	AstArena *b = ast_arena_new();
 	AstLocal bb2 = ast_node(b, AST_BasicBlock);
 	AstLocal ret2 = ast_node(b, AST_Return);
@@ -815,7 +784,6 @@ static void suite_slice_window(void) {
 	CHECK(m && m->refcount == 2, "the shared identity's refcount grew to 2");
 	CHECK(ast_slice_reuse == 1, "the second scan counted as a reuse hit");
 
-	/* A structurally different slice adds a distinct entry. */
 	AstArena *c = ast_arena_new();
 	AstLocal bb3 = ast_node(c, AST_BasicBlock);
 	AstLocal ret3 = ast_node(c, AST_Return);
@@ -833,15 +801,11 @@ static void suite_slice_window(void) {
 	ast_slice_reuse = 0;
 }
 
-/* Phase 3: the pure (host-I/O-free) half of the disk substrate — record
-   (de)serialization and the per-function probe/warm-start decision. */
 static void suite_slice_persist(void) {
 	ast_slice_memo_n = 0;
 	ast_slice_seen = 0;
 	ast_slice_reuse = 0;
 
-	/* Populate one slice, then round-trip the memo through the on-disk record
-	   format and confirm every field survives. */
 	AstArena *a = ast_arena_new();
 	AstLocal bb = ast_node(a, AST_BasicBlock);
 	AstLocal ret = ast_node(a, AST_Return);
@@ -864,30 +828,25 @@ static void suite_slice_persist(void) {
 	CHECK(table[0].size == 3, "size round-trips");
 	CHECK(table[0].refcount == 1, "refcount round-trips");
 
-	/* A too-small buffer fails cleanly rather than overrunning. */
 	CHECK(ast_slice_rec_serialize(ast_slice_memo, ast_slice_memo_n, buf, 8) == -1,
 				"serialize into a too-small buffer returns -1");
 
-	/* A word quad without the MAGIC tag (torn/foreign) is skipped on parse. */
 	unsigned char junk[AST_SLICE_RECBYTES];
 	memset(junk, 0, sizeof junk);
 	CHECK(ast_slice_rec_deserialize(junk, sizeof junk, table, 8) == 0,
 				"a record without the MAGIC tag is skipped");
 
-	/* Probe HIT: a different function computing the same slice warm-starts. */
 	tn = ast_slice_rec_deserialize(buf, nb, table, 8);
 	AstArena *f = ast_arena_new();
 	AstLocal fbb = ast_node(f, AST_BasicBlock);
 	AstLocal fret = ast_node(f, AST_Return);
-	AstLocal fadd = build_binop(f, '+', -64, -72); /* same shape, other slots */
+	AstLocal fadd = build_binop(f, '+', -64, -72);
 	ast_add_child(f, fret, fadd);
 	ast_add_child(f, fbb, fret);
 	uint64_t g = 0;
 	CHECK(ast_slice_probe_table(f, table, tn, &g) == 1, "probe hits the recurring slice");
 	CHECK(g == 0x5u, "probe returns the cached gate config");
 
-	/* Probe MISS: a structurally different function does not warm-start, and
-	   leaves the caller's out_gates untouched. */
 	AstArena *m = ast_arena_new();
 	AstLocal mbb = ast_node(m, AST_BasicBlock);
 	AstLocal mret = ast_node(m, AST_Return);
@@ -898,16 +857,14 @@ static void suite_slice_persist(void) {
 	CHECK(ast_slice_probe_table(m, table, tn, &g) == 0, "probe misses an unknown slice");
 	CHECK(g == 0xdead, "out_gates untouched on a miss");
 
-	/* Dominant selection: a function containing both a small and a large cached
-	   slice warm-starts from the LARGEST one's config. */
 	AstArena *d = ast_arena_new();
 	AstLocal dbb = ast_node(d, AST_BasicBlock);
 	AstLocal dret = ast_node(d, AST_Return);
-	AstLocal inner = build_binop(d, '+', -8, -16); /* 3 nodes */
+	AstLocal inner = build_binop(d, '+', -8, -16);
 	AstLocal tail = ast_node(d, AST_Ref);
 	ast_set_op(d, tail, VT_LOCAL);
 	ast_set_ival(d, tail, (uint64_t)(int64_t)-24);
-	AstLocal outer = ast_node(d, AST_Binary); /* (inner) + l(-24) = 5 nodes */
+	AstLocal outer = ast_node(d, AST_Binary);
 	ast_set_op(d, outer, '+');
 	ast_add_child(d, outer, inner);
 	ast_add_child(d, outer, tail);
@@ -931,11 +888,6 @@ static void suite_slice_persist(void) {
 	CHECK(ast_slice_probe_table(d, dtab, 2, &g) == 1, "dominant probe hits");
 	CHECK(g == 0x2u, "dominant slice (largest) config wins");
 
-	/* The consume path must hand back the winning record's CANDIDATE SPACE, not
-	   only the config that won. Without this the runtime can replay the AOT
-	   decision but cannot benchmark anything against it, which is the whole point
-	   of recording `eligible`. `chosen` and `eligible` are reported separately so
-	   a caller can intersect the space with what its own target permits. */
 	dtab[0].eligible = 0xF0u;
 	dtab[1].eligible = 0xFFu;
 	{
@@ -956,10 +908,7 @@ static void suite_slice_persist(void) {
 	ast_slice_reuse = 0;
 }
 
-/* Phase 4: benchmark-proven records round-trip through the on-disk format and
-   outrank static records both in the per-ident merge and in the dominant probe. */
 static void suite_slice_graduate(void) {
-	/* PROVEN flag survives serialize -> deserialize (word-3 bit 32). */
 	AstSliceMemo recs[2];
 	unsigned char buf[256];
 	AstSliceMemo table[8];
@@ -970,12 +919,12 @@ static void suite_slice_graduate(void) {
 	recs[0].gates = 0xAu;
 	recs[0].size = 4;
 	recs[0].refcount = 1;
-	recs[0].proven = 1; /* bench-proven */
+	recs[0].proven = 1;
 	recs[1].ident = 0x2222;
 	recs[1].gates = 0xBu;
 	recs[1].size = 7;
 	recs[1].refcount = 2;
-	recs[1].proven = 0; /* static */
+	recs[1].proven = 0;
 	nb = ast_slice_rec_serialize(recs, 2, buf, sizeof buf);
 	CHECK(nb == 2 * AST_SLICE_RECBYTES, "two records serialize");
 	tn = ast_slice_rec_deserialize(buf, nb, table, 8);
@@ -986,14 +935,8 @@ static void suite_slice_graduate(void) {
 	CHECK(table[0].refcount == 1 && table[1].refcount == 2,
 				"refcount unaffected by proven bit");
 
-	/* `eligible` is the candidate SPACE the JIT may benchmark, distinct from the
-	   `gates` the AOT compile happened to choose. These pin the properties the
-	   runtime depends on: it survives the round trip, it is independent of
-	   `gates`, and a record may legitimately carry an eligible set WIDER than its
-	   chosen one (that is the whole point -- a gate switched off for this compile
-	   is still a candidate the JIT can try). */
-	recs[0].eligible = 0xFFu; /* wider than chosen 0xA */
-	recs[1].eligible = 0u;    /* not recorded, e.g. a no-optimizer build */
+	recs[0].eligible = 0xFFu;
+	recs[1].eligible = 0u;
 	nb = ast_slice_rec_serialize(recs, 2, buf, sizeof buf);
 	tn = ast_slice_rec_deserialize(buf, nb, table, 8);
 	CHECK(tn == 2, "records with eligible deserialize");
@@ -1005,15 +948,6 @@ static void suite_slice_graduate(void) {
 	CHECK(table[0].eligible != table[0].gates,
 				"eligible may be strictly wider than chosen");
 
-	/* Back-compat: a legacy pre-Phase-4 record wrote word 3 as (refcount|MAGIC<<48)
-	   with the proven bit region zero. It used to deserialize cleanly as static,
-	   because `proven` was packed into a spare region of an existing word and the
-	   record stayed 4 words. Adding `eligible` widened the record to 5 words, which
-	   a stride-based parser CANNOT read compatibly, so AST_SLICE_REC_MAGIC was
-	   bumped ('SL' -> 'SM') and a legacy record must now be SKIPPED rather than
-	   misparsed at the wrong stride. Asserting the skip is the point: silently
-	   reading 4-word records at a 5-word stride would fabricate gates and
-	   refcounts out of adjacent records. */
 	{
 		uint64_t legacy[4];
 		AstSliceMemo lt[2];
@@ -1021,20 +955,18 @@ static void suite_slice_graduate(void) {
 		legacy[0] = 0x3333;
 		legacy[1] = 0xCu;
 		legacy[2] = 6;
-		legacy[3] = (uint64_t)4 | ((uint64_t)0x534cu << 48); /* old 'SL' magic */
+		legacy[3] = (uint64_t)4 | ((uint64_t)0x534cu << 48);
 		memcpy(buf, legacy, sizeof legacy);
 		ln = ast_slice_rec_deserialize(buf, (long)sizeof legacy, lt, 2);
 		CHECK(ln == 0, "legacy 4-word record is skipped, not misparsed");
 	}
 
-	/* Per-ident merge: a PROVEN record overrides an existing STATIC one for the
-	   same slice — proven config wins regardless of size, refcounts sum. */
 	{
 		AstSliceMemo tab[8];
 		int n = 0;
 		AstSliceMemo st, pv;
 		st.ident = 0xABCD; st.gates = 0x1u; st.size = 3; st.refcount = 5; st.proven = 0;
-		pv.ident = 0xABCD; pv.gates = 0x2u; pv.size = 9 /*bigger*/; pv.refcount = 1; pv.proven = 1;
+		pv.ident = 0xABCD; pv.gates = 0x2u; pv.size = 9 ; pv.refcount = 1; pv.proven = 1;
 		ast_slice_merge_one(tab, &n, 8, &st);
 		CHECK(n == 1 && tab[0].proven == 0 && tab[0].gates == 0x1u, "static seeded first");
 		ast_slice_merge_one(tab, &n, 8, &pv);
@@ -1043,10 +975,9 @@ static void suite_slice_graduate(void) {
 		CHECK(tab[0].gates == 0x2u, "merged gates are the proven config");
 		CHECK(tab[0].size == 9, "merged size follows the proven record");
 		CHECK(tab[0].refcount == 6, "refcounts sum across merge");
-		/* A later STATIC record for the same ident must NOT clobber the proven one. */
 		{
 			AstSliceMemo st2;
-			st2.ident = 0xABCD; st2.gates = 0x4u; st2.size = 1 /*cheaper*/; st2.refcount = 1;
+			st2.ident = 0xABCD; st2.gates = 0x4u; st2.size = 1 ; st2.refcount = 1;
 			st2.proven = 0;
 			ast_slice_merge_one(tab, &n, 8, &st2);
 			CHECK(tab[0].proven == 1 && tab[0].gates == 0x2u,
@@ -1055,21 +986,18 @@ static void suite_slice_graduate(void) {
 		}
 	}
 
-	/* Probe preference: with BOTH a proven (small) slice and a static (large)
-	   slice matching a function, the proven one wins even though it is smaller —
-	   inverting the size-only dominant rule. */
 	{
 		AstArena *d = ast_arena_new();
 		AstLocal dbb = ast_node(d, AST_BasicBlock);
 		AstLocal dret = ast_node(d, AST_Return);
-		AstLocal inner = build_binop(d, '+', -8, -16); /* 3 nodes */
+		AstLocal inner = build_binop(d, '+', -8, -16);
 		AstLocal tail = ast_node(d, AST_Ref);
 		AstLocal outer;
 		uint64_t id_inner, id_outer, g;
 		AstSliceMemo pt[2];
 		ast_set_op(d, tail, VT_LOCAL);
 		ast_set_ival(d, tail, (uint64_t)(int64_t)-24);
-		outer = ast_node(d, AST_Binary); /* (inner) + l(-24) = 5 nodes */
+		outer = ast_node(d, AST_Binary);
 		ast_set_op(d, outer, '+');
 		ast_add_child(d, outer, inner);
 		ast_add_child(d, outer, tail);
@@ -1077,13 +1005,11 @@ static void suite_slice_graduate(void) {
 		ast_add_child(d, dbb, dret);
 		id_inner = ast_slice_ident_hash(d, inner);
 		id_outer = ast_slice_ident_hash(d, outer);
-		/* larger slice is STATIC, smaller slice is PROVEN */
 		pt[0].ident = id_outer; pt[0].gates = 0x2u; pt[0].size = 5; pt[0].refcount = 1; pt[0].proven = 0;
 		pt[1].ident = id_inner; pt[1].gates = 0x1u; pt[1].size = 3; pt[1].refcount = 1; pt[1].proven = 1;
 		g = 0;
 		CHECK(ast_slice_probe_table(d, pt, 2, &g) == 1, "probe hits with mixed proven/static");
 		CHECK(g == 0x1u, "proven slice config wins over a larger static slice");
-		/* Flip: make the larger slice ALSO proven -> now the largest proven wins. */
 		pt[0].proven = 1;
 		g = 0;
 		CHECK(ast_slice_probe_table(d, pt, 2, &g) == 1, "probe hits with both proven");
@@ -1092,10 +1018,6 @@ static void suite_slice_graduate(void) {
 	}
 }
 
-/* Phase 5 roadmap 14: node-stable in-arena splice primitive. Builds a site
-   function, extracts-then-modifies a kernel, splices it back, and asserts the
-   documented node-stability guarantee (indices/fields outside the replaced
-   subtree are preserved), plus arena validity and subtree equality. */
 static int subtree_eq(const AstArena *x, AstLocal xr, const AstArena *y, AstLocal yr) {
 	AstLocal cx, cy;
 	if (ast_kind(x, xr) != ast_kind(y, yr) || ast_op(x, xr) != ast_op(y, yr) ||
@@ -1115,17 +1037,14 @@ static int subtree_eq(const AstArena *x, AstLocal xr, const AstArena *y, AstLoca
 
 static void suite_slice_splice(void) {
 	char msg[128];
-	/* Site: a function `return l(-8) - l(-16);`  plus a sibling BasicBlock holding
-	   `return l(-24) + l(-32);` so there is a well-defined "outside" region whose
-	   node identity we assert is preserved across the splice. */
 	AstArena *a = ast_arena_new();
-	AstLocal tu = ast_node(a, AST_BasicBlock); /* synthetic multi-child container root */
+	AstLocal tu = ast_node(a, AST_BasicBlock);
 	AstLocal bb1 = ast_node(a, AST_BasicBlock);
 	AstLocal ret1 = ast_node(a, AST_Return);
-	AstLocal site = build_binop(a, '-', -8, -16); /* the slice to replace */
+	AstLocal site = build_binop(a, '-', -8, -16);
 	AstLocal bb2 = ast_node(a, AST_BasicBlock);
 	AstLocal ret2 = ast_node(a, AST_Return);
-	AstLocal keep = build_binop(a, '+', -24, -32); /* the "outside" slice */
+	AstLocal keep = build_binop(a, '+', -24, -32);
 	AstLocal outside_l, outside_r;
 	AstLocal count_before, i;
 	int spliced;
@@ -1140,8 +1059,6 @@ static void suite_slice_splice(void) {
 	outside_r = ast_next_sib(a, outside_l);
 	CHECK(ast_validate(a, msg, sizeof msg) == 0, "site arena validates");
 
-	/* Kernel: a distinct arena holding `l(-100) * l(-100)` (a 3-node slice with a
-	   different shape/arity-of-1-distinct-input than the site). */
 	AstArena *k = ast_arena_new();
 	AstLocal kroot = build_binop(k, '*', -100, -100);
 	CHECK(ast_validate(k, msg, sizeof msg) == 0, "kernel arena validates");
@@ -1155,19 +1072,15 @@ static void suite_slice_splice(void) {
 	CHECK(spliced == 3, "splice reports the kernel node count (3)");
 	CHECK(ast_validate(a, msg, sizeof msg) == 0, "arena validates after splice");
 
-	/* Guarantee 1: the spliced subtree at `site` equals the kernel. */
 	CHECK(subtree_eq(a, site, k, kroot), "spliced subtree matches the kernel");
 	CHECK(ast_slice_ident_hash(a, site) == ast_slice_ident_hash(k, kroot),
 				"spliced site has the kernel's slice identity");
 	CHECK(ast_op(a, site) == '*', "site root op replaced with kernel's");
 
-	/* Guarantee 2: site_root slot re-used -> its parent/sibling links unchanged. */
 	CHECK(ast_parent(a, site) == site_parent_before, "site_root parent link preserved");
 	CHECK(ast_next_sib(a, site) == site_sib_before, "site_root sibling link preserved");
 	CHECK(ast_first_child(a, ret1) == site, "enclosing Return still points at site slot");
 
-	/* Guarantee 3: every LIVE node outside the replaced subtree keeps its index and
-	   fields -- the untouched sibling slice is byte-identical, ident unchanged. */
 	CHECK(ast_slice_ident_hash(a, keep) == keep_ident_before,
 				"outside slice identity is preserved");
 	CHECK(ast_op(a, keep) == '+' && ast_nchild(a, keep) == 2, "outside slice fields intact");
@@ -1176,12 +1089,10 @@ static void suite_slice_splice(void) {
 	CHECK(ast_parent(a, bb2) == tu && ast_first_child(a, bb2) == ret2,
 				"outside block structure intact");
 
-	/* Kernel body nodes were appended at the tail (no compaction of live nodes). */
 	CHECK(ast_count(a) == count_before + 2, "kernel's 2 non-root nodes appended at tail");
 	for (i = 0; i < count_before; i++)
-		(void)i; /* indices < count_before still address the same live/dead nodes */
+		(void)i;
 
-	/* Error paths. */
 	CHECK(ast_slice_splice(NULL, 0, k, kroot) == 0, "NULL site arena rejected");
 	CHECK(ast_slice_splice(a, ast_count(a), k, kroot) == 0, "out-of-range site rejected");
 	CHECK(ast_slice_splice(a, site, k, ast_count(k)) == 0, "out-of-range kernel root rejected");
@@ -1190,18 +1101,13 @@ static void suite_slice_splice(void) {
 	ast_arena_free(k);
 }
 
-/* Phase 5 roadmap 15: hierarchical locator. Finds every occurrence of a repeated
-   slice identity and none of a distinct one, so a single optimized kernel can be
-   spliced at all occurrences. */
 static void suite_slice_locate(void) {
 	AstArena *a = ast_arena_new();
-	AstLocal tu = ast_node(a, AST_BasicBlock); /* synthetic multi-child container root */
-	/* Three occurrences of `l+l` reading DIFFERENT slots (same identity), plus one
-	   distinct `l-l` slice. */
+	AstLocal tu = ast_node(a, AST_BasicBlock);
 	AstLocal s1 = build_binop(a, '+', -8, -16);
-	AstLocal s2 = build_binop(a, '+', -32, -40);   /* same identity as s1 */
-	AstLocal s3 = build_binop(a, '+', -64, -72);   /* same identity as s1 */
-	AstLocal d1 = build_binop(a, '-', -8, -16);    /* distinct identity */
+	AstLocal s2 = build_binop(a, '+', -32, -40);
+	AstLocal s3 = build_binop(a, '+', -64, -72);
+	AstLocal d1 = build_binop(a, '-', -8, -16);
 	AstLocal sites[8];
 	uint64_t idadd, idsub, idnone;
 	int n;
@@ -1223,21 +1129,17 @@ static void suite_slice_locate(void) {
 	CHECK(n == 1, "locate finds the single distinct slice");
 	CHECK(sites[0] == d1, "located site is the '-' root");
 
-	/* An identity present nowhere yields zero sites. */
 	idnone = idadd ^ 0x9e3779b97f4a7c15ull;
 	CHECK(ast_slice_locate(a, idnone, sites, 8) == 0, "absent identity locates nothing");
 
-	/* `max` caps writes but the true count is still returned. */
 	n = ast_slice_locate(a, idadd, sites, 2);
 	CHECK(n == 3, "return is the total match count even when it exceeds max");
 	CHECK(sites[0] == s1 && sites[1] == s2, "only the first `max` sites are written");
 
-	/* Guard/error paths. */
 	CHECK(ast_slice_locate(NULL, idadd, sites, 8) == 0, "NULL arena locates nothing");
 	CHECK(ast_slice_locate(a, 0, sites, 8) == 0, "zero identity locates nothing");
 	CHECK(ast_slice_locate(a, idadd, sites, 0) == 0, "non-positive max locates nothing");
 
-	/* The static promotion gate: strict-cheaper keeps, ties/unmeasurable reject. */
 	CHECK(ast_slice_promote_static(10, 7) == 1, "cheaper candidate is kept");
 	CHECK(ast_slice_promote_static(7, 10) == 0, "costlier candidate is rejected");
 	CHECK(ast_slice_promote_static(7, 7) == 0, "a tie rejects (incumbent wins)");

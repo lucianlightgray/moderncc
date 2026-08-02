@@ -1,15 +1,5 @@
 name: Dist
 
-# Dist pipeline: runs nightly (packaging smoke, version ci-<sha12>), is
-# callable by release.yml (tagged bundles, version = the tag), and on demand.
-# It was on every per-push/PR run via ci.yml, but packaging verification does
-# not gate and its Windows cells were the slowest jobs, so it moved to a
-# nightly cadence with bench/matrix. The cell matrices come from the preset
-# ledger via `ci plan --job dist-unix` / `--job dist-windows`, and every flow
-# step is a `ci` tool verb. Every cell also runs a self-host pass (the staged
-# mcc rebuilds mcc via the stage2 `release` feature) and ships the result as
-# the mcc-selfhost-<ver>-<plat> bundle next to the host-built ones.
-
 on:
   schedule:
     - cron: '15 5 * * *'
@@ -71,9 +61,6 @@ jobs:
           brew install cmake ninja
       - uses: ./.github/actions/ci
       - name: dist (configure + build + install + strip + self-host + package; bench on release)
-        # `ci dist` runs the whole flow (the macOS local-symbol strip is
-        # folded in); Rosetta's cross flags pass through after `--`. The
-        # compile-speed bench is skipped (--no-bench) unless inputs.bench.
         run: |
           set -eux
           extra=""
@@ -94,13 +81,6 @@ jobs:
             dist/checksums-*.txt
             dist/bench-*.txt
 
-  # The two macOS cells above ship one slice each. A macOS release is expected to
-  # be universal, and dist-macos sets no CMAKE_OSX_ARCHITECTURES, so the fuse has
-  # to happen after both cells: download both artifacts, run every bundle pair
-  # through `ci fat` (machofat per thin Mach-O file, plain copy for everything
-  # else), and upload the universal set. Signatures survive the fuse -- every
-  # slice is self-signed by MCC_MACHO_ADHOC_SIGN and a CodeDirectory covers
-  # slice-relative offsets -- so nothing is re-signed here.
   macos-universal:
     needs: unix
     name: macos-universal
@@ -136,12 +116,6 @@ jobs:
             rm -rf fuse/x fuse/y && mkdir -p fuse/x fuse/y
             tar xf "$a" -C fuse/x
             tar xf "$b" -C fuse/y
-            # These bundles are built by clang/ld64, not by mcc, so
-            # MCC_MACHO_ADHOC_SIGN never touched them -- and ld64 ad-hoc signs
-            # arm64 (the kernel demands it) but leaves x86_64 unsigned, which
-            # machofat then warns about and `codesign -v --deep` rejects on the
-            # fused image. Sign every thin slice ad-hoc before fusing, which is
-            # the shape machofat's verify-and-skip design expects.
             for t in fuse/x fuse/y; do
               find "$t" -type f -perm -u+x -exec sh -c '
                 for f do
@@ -178,9 +152,6 @@ jobs:
     needs: plan
     name: ${{ matrix.plat }}
     runs-on: ${{ matrix.runner }}
-    # windows-arm64-mingw is experimental (continue-on-error) like its
-    # PLAN_MINGW nightly sibling: the arm64-PE selfhost hang is a live
-    # discovery item, and the timeout keeps a hang from squatting the runner.
     timeout-minutes: 180
     continue-on-error: ${{ matrix.experimental || false }}
     strategy:
@@ -201,7 +172,6 @@ jobs:
         if: matrix.mingw
         uses: actions/cache@v5
         with:
-          # arm64 pulls llvm-mingw (aarch64), not winlibs, into vendor/llvm-mingw-*
           path: |
             vendor/winlibs-mingw-w64-*
             vendor/llvm-mingw-*

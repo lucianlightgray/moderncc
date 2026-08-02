@@ -1,8 +1,3 @@
-/* Large switch that shrinks when a value is register-promoted: this is the
-   exact shape (a big case ladder where each case's store is elided) that hit
-   the stale-.text tail bug on arm64-PE (commit 80ea9843). Meaningful only when
-   the cross pair is built WITH the optimizer (see README: MCC_CONFIG_OPTIMIZER
-   is a SILENT no-op in the default cross build). Harmless otherwise. */
 int classify(int k) {
     int r = 0;
     switch (k) {

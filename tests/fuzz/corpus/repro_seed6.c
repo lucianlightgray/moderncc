@@ -1,5 +1,5 @@
 #include <stdio.h>
-/* auto-reduced miscompile repro: seed=6 attributed=?  */
+
 static unsigned long v0 = 10741356UL;
 static unsigned long v1 = 3294721UL;
 static unsigned long v2 = 15593137UL;

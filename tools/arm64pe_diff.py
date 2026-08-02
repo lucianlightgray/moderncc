@@ -56,11 +56,6 @@ except ImportError:
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 
-# ---------------------------------------------------------------------------
-# Locating the cross compilers
-# ---------------------------------------------------------------------------
-# The cross build lands the arm64 pair here (cross preset -> ${sourceDir}/cmake-cross).
-# build-cross/ is the documented prebuilt location; check both.
 _CANDIDATE_DIRS = [
     os.environ.get("MCC_CROSS_DIR", ""),
     os.path.join(REPO, "cmake-cross"),
@@ -93,10 +88,6 @@ def find_compiler(basename, override):
         f"(searched: {[d for d in _CANDIDATE_DIRS if d]})"
     )
 
-
-# ---------------------------------------------------------------------------
-# Minimal ELF64 reader (little-endian, the only layout mcc emits)
-# ---------------------------------------------------------------------------
 class Elf:
     def __init__(self, path):
         self.path = path
@@ -117,7 +108,6 @@ class Elf:
         stroff = self.sh[e_shstrndx]["off"]
         for s in self.sh:
             s["nm"] = self._cstr(stroff + s["name"])
-        # symbol table (for reloc target names)
         self.syms = []
         symtab = self._by_name(".symtab")
         if symtab:
@@ -134,8 +124,6 @@ class Elf:
         for s in self.sh:
             if s["nm"] == nm:
                 return s
-        # fall back to a normalized (aliased) match: e.g. asking for ".rodata"
-        # resolves this object's ".data.ro" (ELF) or ".rdata" (PE).
         target = _norm_sec(nm)
         for s in self.sh:
             if _norm_sec(s["nm"]) == target:
@@ -146,7 +134,7 @@ class Elf:
         s = self._by_name(nm)
         if not s:
             return b""
-        if s["typ"] == 8:  # SHT_NOBITS (.bss) -- no file bytes
+        if s["typ"] == 8:
             return b"\x00" * s["size"]
         return self.b[s["off"]: s["off"] + s["size"]]
 
@@ -166,17 +154,11 @@ class Elf:
         return out
 
     def code_section_names(self):
-        # SHT_PROGBITS with SHF_EXECINSTR(0x4)
         return [s["nm"] for s in self.sh if s["typ"] == 1 and (s["flags"] & 0x4)]
 
     def all_section_names(self):
         return [s["nm"] for s in self.sh if s["nm"]]
 
-
-# ---------------------------------------------------------------------------
-# arm64 relocation classification
-# ---------------------------------------------------------------------------
-# Canonical R_AARCH64_* numbers (src/formats/elf.h).
 R_AARCH64 = {
     0: "NONE", 257: "ABS64", 258: "ABS32", 259: "ABS16",
     260: "PREL64", 261: "PREL32", 262: "PREL16",
@@ -193,12 +175,6 @@ R_AARCH64 = {
 def reloc_name(t):
     return "R_AARCH64_" + R_AARCH64.get(t, f"0x{t:x}")
 
-
-# A pair (ELF-side type, PE-side type) that is a known-benign encoding of the
-# *same* symbol reference: ELF-Linux uses GOT-indirect page addressing for
-# extern data (PIC), arm64-PE resolves it direct (image-relative page+lo12).
-# Both name the same target symbol; only the fixup class differs. This is the
-# "GOT-vs-direct" benign class from the prior analysis.
 _BENIGN_RELOC_SWAPS = {
     frozenset({"ADR_GOT_PAGE", "ADR_PREL_PG_HI21"}),
     frozenset({"LD64_GOT_LO12_NC", "LDST64_ABS_LO12_NC"}),
@@ -206,17 +182,9 @@ _BENIGN_RELOC_SWAPS = {
     frozenset({"ADR_GOT_PAGE", "ADR_PREL_PG_HI21_NC"}),
 }
 
-# Sections whose presence/absence is a pure PE-vs-ELF structural artifact,
-# never a codegen bug in itself:
-#   .eh_frame  -> ELF DWARF CFI          .pdata/.xdata -> PE SEH/unwind
-#   *reloc lists on those follow suit.  TLS/import structures likewise.
 _PE_ONLY_SECTIONS = {".pdata", ".xdata"}
 _ELF_ONLY_SECTIONS = {".eh_frame", ".eh_frame_hdr", ".note.GNU-stack"}
 
-# Read-only data carries the same content under a target-specific *name*: mcc
-# names it .data.ro for ELF and .rdata for PE. Normalize so the data comparison
-# lines the pair up instead of diffing each against an absent same-name section.
-# (Also .text.<fn> COMDAT-style splits fold to .text, if any appear.)
 _SEC_ALIAS = {".data.ro": ".rodata", ".rdata": ".rodata"}
 
 
@@ -225,18 +193,12 @@ def _norm_sec(nm):
 
 
 def _local_label(sym):
-    # mcc numbers anonymous local labels L.<n> (string literals, jump targets).
-    # The <n> is an allocation-order artifact and differs benignly ELF-vs-PE.
     return sym.startswith("L.") or sym.startswith(".L")
 
 
 def _strip_local_num(sym):
     return "L.*" if _local_label(sym) else sym
 
-
-# ---------------------------------------------------------------------------
-# Disassembly
-# ---------------------------------------------------------------------------
 _MD = capstone.Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_ARM)
 
 
@@ -246,14 +208,9 @@ def disasm(code):
         out.append((ins.address, ins.bytes.hex(), ins.mnemonic, ins.op_str))
     consumed = out[-1][0] + 4 if out else 0
     if consumed < len(code):
-        # trailing bytes capstone could not decode (padding/data literal)
         out.append((consumed, code[consumed:].hex(), ".byte", "<undecoded tail>"))
     return out
 
-
-# ---------------------------------------------------------------------------
-# Compile
-# ---------------------------------------------------------------------------
 def compile_obj(mcc, src, obj, cflags):
     cmd = [mcc, "-c", "-o", obj, src] + cflags
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -263,16 +220,12 @@ def compile_obj(mcc, src, obj, cflags):
         )
     return obj
 
-
-# ---------------------------------------------------------------------------
-# Diff one source
-# ---------------------------------------------------------------------------
 class Report:
     def __init__(self, src):
         self.src = src
-        self.suspicious = []   # list[str]
-        self.benign = []       # list[str]
-        self.info = []         # list[str]
+        self.suspicious = []
+        self.benign = []
+        self.info = []
 
     def sus(self, m):
         self.suspicious.append(m)
@@ -287,7 +240,6 @@ class Report:
 def diff_relocs(sec, elf, pe, rep):
     er = elf.relocs(sec)
     pr = pe.relocs(sec)
-    # index by code offset
     em = {off: (t, s, a) for (off, t, s, a) in er}
     pm = {off: (t, s, a) for (off, t, s, a) in pr}
     for off in sorted(set(em) | set(pm)):
@@ -299,7 +251,7 @@ def diff_relocs(sec, elf, pe, rep):
             en, pn = reloc_name(et), reloc_name(pt)
             same_sym = _strip_local_num(es) == _strip_local_num(ps)
             if et == pt and same_sym and ea == pa:
-                continue  # identical
+                continue
             swap = frozenset({R_AARCH64.get(et, ""), R_AARCH64.get(pt, "")})
             if same_sym and swap in _BENIGN_RELOC_SWAPS:
                 rep.ben(f"reloc @{sec}+0x{off:x}: {es} "
@@ -328,13 +280,9 @@ def diff_code_section(sec, elf, pe, rep, verbose):
     if ec == pc:
         rep.note(f"{sec}: {len(ec)} bytes IDENTICAL")
     else:
-        # The .text may differ ONLY in the reloc'd immediate fields; the reloc
-        # diff pass classifies those. Here we report the raw byte divergence and,
-        # if it is not explainable by reloc sites, escalate.
         n = min(len(ec), len(pc))
         difs = [i for i in range(n) if ec[i] != pc[i]]
         reloc_offs = {o for (o, _, _, _) in elf.relocs(sec)} | {o for (o, _, _, _) in pe.relocs(sec)}
-        # bytes within 4 of a reloc site are the patched immediate -> benign
         unexplained = [i for i in difs if not any(o <= i < o + 4 for o in reloc_offs)]
         if len(ec) != len(pc):
             rep.sus(f"{sec}: SIZE differs ELF={len(ec)} PE={len(pc)} bytes")
@@ -347,7 +295,6 @@ def diff_code_section(sec, elf, pe, rep, verbose):
                     f"immediate fields (symbol addressing) -- expected")
         if verbose:
             _print_side_by_side(sec, ec, pc)
-    # relocation classification (independent of byte identity)
     diff_relocs(sec, elf, pe, rep)
 
 
@@ -403,17 +350,12 @@ def diff_source(src, mcc_elf, mcc_pe, cflags, keep, verbose):
         if elf.e_machine != 183 or pe.e_machine != 183:
             rep.sus(f"unexpected e_machine ELF={elf.e_machine} PE={pe.e_machine} "
                     f"(expected 183/EM_AARCH64)")
-        # code sections
         code = sorted(set(elf.code_section_names()) | set(pe.code_section_names()))
         for sec in code:
             diff_code_section(sec, elf, pe, rep, verbose)
-        # notable data sections that carry codegen (rodata literals, ctors).
-        # Use normalized names so .data.ro (ELF) and .rdata (PE) line up as one.
         for sec in (".rodata", ".data", ".data.rel.ro"):
             if elf.section_bytes(sec) or pe.section_bytes(sec):
                 diff_data_section(sec, elf, pe, rep)
-        # structural section presence (normalized so target-renamed sections
-        # such as .data.ro/.rdata are not falsely reported as one-sided)
         es = {_norm_sec(n) for n in elf.all_section_names()}
         ps = {_norm_sec(n) for n in pe.all_section_names()}
         for sec in sorted((es | ps)):
@@ -426,17 +368,12 @@ def diff_source(src, mcc_elf, mcc_pe, cflags, keep, verbose):
             elif base in _ELF_ONLY_SECTIONS and in_e:
                 rep.ben(f"section {sec}: ELF-only (DWARF CFI) -- expected")
             elif sec.startswith(".rela"):
-                # reloc section for a section we already classified; skip noise
                 continue
             else:
                 where = "ELF" if in_e else "PE"
                 rep.note(f"section {sec}: present only in {where}")
     return rep
 
-
-# ---------------------------------------------------------------------------
-# Corpus
-# ---------------------------------------------------------------------------
 def corpus_dir():
     return os.path.join(HERE, "arm64pe_corpus")
 
@@ -447,10 +384,6 @@ def corpus_files():
         return []
     return sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".c"))
 
-
-# ---------------------------------------------------------------------------
-# main
-# ---------------------------------------------------------------------------
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)

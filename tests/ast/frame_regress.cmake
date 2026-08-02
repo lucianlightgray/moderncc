@@ -1,8 +1,3 @@
-# Regression for the AST-replay frame-size low-water bug (TODO §34b): mcc's
-# default -O1/-O2 must not under-size main's stack frame (which caused an
-# uninitialized-stack read / non-deterministic wrong exit code). Compile the
-# TU at every -O level with the plain default optimizer (no forced inline —
-# inlining masked the bug) and require the deterministic correct exit code.
 if(NOT MCC OR NOT SRC OR NOT OUT)
     message(FATAL_ERROR "usage: -DMCC= -DSRC= -DOUT= [-DEXPECT_RC=] -P frame_regress.cmake")
 endif()
@@ -18,7 +13,6 @@ foreach(_o O0 O1 O2 O3)
     if(NOT _crc EQUAL 0)
         message(FATAL_ERROR "compile -${_o} failed (${_crc}):\n${_out}${_err}")
     endif()
-    # Run several times: the bug was a non-deterministic uninitialized read.
     foreach(_i 1 2 3 4)
         execute_process(COMMAND "${_exe}" RESULT_VARIABLE _rrc)
         if(NOT _rrc EQUAL EXPECT_RC)

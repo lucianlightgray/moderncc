@@ -15,7 +15,7 @@ unsigned char mcc_log_verbose = 0;
 #include <string.h>
 #include <time.h>
 
-#include "mcchost.h" /* MCC_THREAD_LOCAL (MSVC __declspec(thread) vs _Thread_local); needs FILE */
+#include "mcchost.h"
 
 #include "mccforecast.h"
 
@@ -29,7 +29,7 @@ void mccjit_embed_note(const char *name, AstArena *ast, Sym *sym, uint64_t warm_
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #endif
 #include "mcccombo.h"
-#include "mccmagic.h" /* constant-division magic (selftested in tools/asttool.c:suite_magic) */
+#include "mccmagic.h"
 
 #ifndef AST_ASSERT
 #include <assert.h>
@@ -43,8 +43,6 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #undef realloc
 #undef free
 
-/* AST_Store fbit 1: this store's value is CONSUMED by the immediately following
-   statement, so replay must leave it on the vstack instead of popping it. */
 #define AST_FB_STORE_VALUE_LIVE 2u
 
 #define AST_FB_CALL_STOREVAL_ARG 4u
@@ -68,29 +66,12 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #define AST_FB_STORE_LIVE_ROT 2048u
 #define AST_FB_LANDOR_MATERIAL 4096u
 
-/* AST_Store fbit 4096: a bitfield assignment leaves the bitfield LVALUE rather
-   than the stored value, and gexpr() materialises it when it is an expression
-   statement's value (mccgen.c:11798) -- a whole re-read neither model recorded.
-   Replay_IR sets this from the gv() tap that witnesses the read. */
 #define AST_FB_STORE_BF_GV 8192u
 
-/* A pure expression the parser still EMITTED and then discarded -- `(void)(q +
-   1);`. The tree drops it (it models the value, not the emission), so this bit
-   is only ever set by the Replay_IR reconstruction, whose bar is the parser's
-   bytes rather than the tree's shape. */
 #define AST_FB_STMT_DISCARD 16384u
 
-/* A `for` whose increment clause is WRITTEN but emits nothing -- `for (;;
-   sizeof(enum{in=1}))`. The parser still lays out the jump-over-increment and
-   the back edge (7 bytes), and both models otherwise decide on the increment
-   block being non-empty. Only Replay_IR sets this. */
 #define AST_FB_FOR_INCR_LIVE 32768u
 
-/* The parser pushes the store TARGET after the value, and vsetc's vcheck_cmp
-   materialises a live VT_CMP at that point; replay pushes the target first, so
-   the comparison is still VT_CMP when vstore's gen_cast runs and a _Bool cast
-   folds away. Only Replay_IR sets this, from the recorded snapshot that says
-   the value was already in a register. */
 #define AST_FB_STORE_CMP_GV 65536u
 
 #define AST_FB_STORE_ADDR_LATE 131072u
@@ -632,10 +613,6 @@ static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) { MCC_TRACE("enter\n");
 	return m->nsym;
 }
 
-/* VT_* value-storage flags (source of truth: mcc.h:1026-1034), reachable here in
-   the amalgamated / MCC_INTERNAL build. Provide the same constants for the
-   standalone asttool compile (it includes mccast.c without mcc.h) so the local-Ref
-   detection below is identical in both; skipped whenever mcc.h already defined them. */
 #ifndef VT_VALMASK
 #define VT_VALMASK 0x007f
 #endif
@@ -701,12 +678,6 @@ uint64_t ast_intention_hash(const AstArena *a, AstLocal root) { MCC_TRACE("enter
 	return m.oom ? 0 : h;
 }
 
-
-/* Positional intern of a slice's live-in local offsets: distinct offsets map to
-   dense ordinals (1,2,...) in first-seen order, a repeat returns its prior ordinal.
-   Fixed capacity (live-ins are few); overflow poisons the hash to 0 rather than
-   silently colliding. Mirrors ast_ih_sym for syms so identity is alpha-invariant
-   in BOTH symbols and frame offsets while preserving the input-sharing pattern. */
 #define AST_SID_MAXOFF 64
 typedef struct {
 	int32_t off[AST_SID_MAXOFF];
@@ -724,14 +695,6 @@ static uint64_t ast_sid_off(AstSidOffs *m, int32_t off) { MCC_TRACE("enter\n");
 	return (uint64_t)m->n;
 }
 
-/* Slice-identity width normalization (MCC_AST_SLICE_WIDTHNORM, default OFF).
-   VT_LONG is a spelling tag, not a width: i386 `long` is VT_INT|VT_LONG (4 bytes)
-   while x86_64 `long` is VT_LLONG|VT_LONG (8). Dropping the tag makes an i386
-   `long` slice hash equal to a 4-byte `int` slice -- the cross-triple match the
-   slice store wants -- while i386 `long` (VT_INT) and x86_64 `long` (VT_LLONG)
-   stay distinct, which is correct because their widths genuinely differ. Loose by
-   design: a hit only warm-starts a gate config, and ast_slice_equiv still gates
-   codegen per reuse. */
 static int ast_sid_widthnorm_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
@@ -745,12 +708,6 @@ static uint32_t ast_sid_type_norm(uint32_t t) { MCC_TRACE("enter\n");
 	return ast_sid_widthnorm_on() ? (t & ~(uint32_t)VT_LONG) : t;
 }
 
-/* Companion to ast_sid_type_norm under the same gate. A VT_PTR-typed node's ival
-   is a byte offset already scaled by the target pointer size, so the SAME address
-   computation reads 8/16 on a 64-bit target and 4/8 on a 32-bit one -- measured,
-   that is the entire remaining cross-triple mismatch for pointer-shaped slices.
-   Fold quotient and remainder separately so nothing is lost: a genuinely
-   unscaled value still separates, while scaled offsets align across targets. */
 static uint64_t ast_sid_ival_norm(const AstArena *a, AstLocal n, uint64_t v) { MCC_TRACE("enter\n");
 	if (!ast_sid_widthnorm_on() ||
 			((uint32_t)a->type_t[n] & VT_BTYPE) != VT_PTR)
@@ -797,43 +754,23 @@ uint64_t ast_slice_ident_hash(const AstArena *a, AstLocal root) { MCC_TRACE("ent
 #pragma pop_macro("realloc")
 #pragma pop_macro("free")
 
-/* ---- Growing-window slice cache (MCC_AST_SLICE) ---------------------------
- * A leaf-first rolling window over the captured arena records each maximal
- * compute slice under its context-free identity (ast_slice_ident_hash). Arena
- * index order IS post-order, so scanning n=0..count-1 closes subtrees bottom-up
- * (leaf-most first) and the window "grows" as larger enclosing slices close.
- * The cached value is the enclosing function's chosen gate config + a size proxy,
- * so a recurring slice -- in another function, TU, or a later AOT build -- is
- * found by identity alone (the JIT<->AOT bridge, consumed in Phase 3).
- *
- * Phase 2 only POPULATES this table; nothing reads it to steer codegen yet, so
- * MCC_AST_SLICE=1 stays byte-identical. Kept in the non-MCC_INTERNAL region (so
- * tools/asttool.c can unit-test it) => plain `static` (no MCC_OPT_TLS here) and
- * uint64_t for the gate mask (AstGateMask is a uint64_t defined later). The
- * populate call runs only on the single-threaded main-compile path, never in a
- * search-pool worker, so plain static is race-free for now; TLS is a threading
- * follow-up alongside the pool. Gate string keyed by the MCC_AST_SLICE env. */
 #define AST_SLICE_MEMO_CAP 8192
-#define AST_SLICE_MIN_NODES 3   /* skip trivial leaves / single ops */
+#define AST_SLICE_MIN_NODES 3
 #define AST_SLICE_MAX_NODES 65536
 
 typedef struct AstSliceMemo {
-	uint64_t ident;    /* ast_slice_ident_hash of the slice (context-free key) */
-	uint64_t gates;    /* enclosing function's chosen gate config (AstGateMask) */
-	int64_t size;      /* slice node count as a cheap cost proxy (-1 = unknown) */
-	unsigned refcount; /* how many times this identity has been recorded */
-	unsigned proven;   /* 1 = benchmark-proven by a JIT run (Phase 4); 0 = static-size-best */
-	uint64_t eligible; /* every gate that was LEGAL to vary here, not just the one
-											  chosen — ast_search_searchable() for the recording target.
-											  The JIT's candidate space: `chosen` warm-starts, `eligible`
-											  says what may be benchmarked against it. 0 = not recorded
-											  (old file, or a build with no optimizer). */
+	uint64_t ident;
+	uint64_t gates;
+	int64_t size;
+	unsigned refcount;
+	unsigned proven;
+	uint64_t eligible;
 } AstSliceMemo;
 
 static AstSliceMemo ast_slice_memo[AST_SLICE_MEMO_CAP];
 static int ast_slice_memo_n;
-static long ast_slice_seen;   /* stats: total slices scanned (all functions) */
-static long ast_slice_reuse;  /* stats: scans whose identity was already cached */
+static long ast_slice_seen;
+static long ast_slice_reuse;
 
 static const AstSliceMemo *ast_slice_memo_get(uint64_t ident) { MCC_TRACE("enter\n");
 	for (int i = 0; i < ast_slice_memo_n; i++)
@@ -842,9 +779,6 @@ static const AstSliceMemo *ast_slice_memo_get(uint64_t ident) { MCC_TRACE("enter
 	return NULL;
 }
 
-/* Set once per compile from ast_search_searchable(); 0 when there is no
-   optimizer. Stamped on every record so the JIT inherits the candidate SPACE,
-   not just the decision. */
 static uint64_t ast_slice_eligible_now;
 
 static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { MCC_TRACE("enter\n");
@@ -852,7 +786,6 @@ static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { M
 		if (ast_slice_memo[i].ident == ident) { MCC_TRACE("br\n");
 			ast_slice_memo[i].refcount++;
 			ast_slice_memo[i].eligible |= ast_slice_eligible_now;
-			/* keep the lower-cost config once cost is known (Phase 3 scoring). */
 			if (size >= 0 && (ast_slice_memo[i].size < 0 || size < ast_slice_memo[i].size)) {
 				MCC_TRACE("br\n");
 				ast_slice_memo[i].size = size;
@@ -862,13 +795,13 @@ static void ast_slice_memo_put(uint64_t ident, uint64_t gates, int64_t size) { M
 		}
 	}
 	if (ast_slice_memo_n >= AST_SLICE_MEMO_CAP)
-		{ MCC_TRACE("br\n"); return; } /* bounded; silently drop on overflow (Phase 3 evicts) */
+		{ MCC_TRACE("br\n"); return; }
 	ast_slice_memo[ast_slice_memo_n].ident = ident;
 	ast_slice_memo[ast_slice_memo_n].gates = gates;
 	ast_slice_memo[ast_slice_memo_n].size = size;
 	ast_slice_memo[ast_slice_memo_n].eligible = ast_slice_eligible_now;
 	ast_slice_memo[ast_slice_memo_n].refcount = 1;
-	ast_slice_memo[ast_slice_memo_n].proven = 0; /* populate side is static (Phase 2/3) */
+	ast_slice_memo[ast_slice_memo_n].proven = 0;
 	ast_slice_memo_n++;
 }
 
@@ -879,20 +812,12 @@ static int ast_slice_win_nodes(const AstArena *a, AstLocal n) { MCC_TRACE("enter
 	return k;
 }
 
-/* A slice root is a value-producing compute node with operands. Purely
-   structural (no eval-slice / JIT dependency) so AOT with the JIT off enumerates
-   exactly the same slices as a JIT run -- required for cross-mode cache hits. */
 static int ast_slice_win_root_ok(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	uint16_t k = ast_kind(a, n);
 	return (k == AST_Binary || k == AST_Unary || k == AST_Convert || k == AST_Load) &&
 				 ast_first_child(a, n) != AST_NONE;
 }
 
-/* Shared slice enumerator: walk arena `a` in post-order and invoke `visit` on
-   every maximal compute slice (structural root, node count in bounds, hashable
-   identity). Populate (window_scan) and probe (Phase 3 consume) MUST see the
-   exact same slice set so a JIT-populated slice is hit by a later AOT probe, so
-   both funnel through here. Returns the number of slices visited. */
 typedef void (*AstSliceVisitFn)(uint64_t ident, int size, uint64_t gates, void *ctx);
 
 static long ast_slice_enum(const AstArena *a, uint64_t gates,
@@ -919,7 +844,6 @@ static long ast_slice_enum(const AstArena *a, uint64_t gates,
 	return recorded;
 }
 
-/* Populate visitor: record each slice into the in-memory memo under `gates`. */
 static void ast_slice_visit_put(uint64_t ident, int size, uint64_t gates, void *ctx) { MCC_TRACE("enter\n");
 	(void)ctx;
 	ast_slice_seen++;
@@ -928,35 +852,15 @@ static void ast_slice_visit_put(uint64_t ident, int size, uint64_t gates, void *
 	ast_slice_memo_put(ident, gates, (int64_t)size);
 }
 
-/* Populate the slice cache from one function's captured arena `a`, tagging each
-   slice with the function's chosen `gates`. Returns the number of slices recorded. */
 static long ast_slice_window_scan(const AstArena *a, uint64_t gates) { MCC_TRACE("enter\n");
 	return ast_slice_enum(a, gates, ast_slice_visit_put, NULL);
 }
 
-/* ---- Slice-record (de)serialization -------------------------------------
-   A slice record persists as 4 little-endian-agnostic uint64 words (the same
-   host writes and reads): {ident, gates, (u64)size, refcount | proven<<32 |
-   MAGIC<<48}. The MAGIC tag in the high 16 bits of the refcount word lets a
-   torn or foreign record be skipped without a global header (mirrors the search
-   memo). Word 3 layout: bits 0..31 refcount, bit 32 the Phase-4 `proven` flag
-   (a JIT bench-proven config outranks a static-size-best one), bits 33..47
-   reserved, bits 48..63 MAGIC. The proven bit reuses previously-zero bits, so
-   an old (proven-less) file deserializes cleanly as all-static — no MAGIC bump.
-   Pure logic in the non-MCC_INTERNAL region so tools/asttool can unit-test it. */
 #define AST_SLICE_REC_PROVEN_BIT ((uint64_t)1 << 32)
 #define AST_SLICE_RECWORDS 5
 #define AST_SLICE_RECBYTES (AST_SLICE_RECWORDS * 8)
-#define AST_SLICE_REC_MAGIC 0x534fu /* 'SO' — bumped from 'SN' when the wide-value
-                                       column joined the identity fold; 'SN' was
-                                       the AST kind renumbering
-                                       (AST_InitList/AST_Data removed); 'SM' was
-                                       the 4-to-5-word widening. Old files skip
-                                       as foreign rather than hit a stale ident
-                                       that now names a different slice. */
+#define AST_SLICE_REC_MAGIC 0x534fu
 
-/* Serialize `n` records into `buf`; returns bytes written or -1 if `cap` is too
-   small. */
 static long ast_slice_rec_serialize(const AstSliceMemo *recs, int n,
 																		unsigned char *buf, long cap) { MCC_TRACE("enter\n");
 	long off = 0;
@@ -980,8 +884,6 @@ static long ast_slice_rec_serialize(const AstSliceMemo *recs, int n,
 	return off;
 }
 
-/* Parse up to `cap` records from `buf[0..len)`, skipping any word quad missing
-   the MAGIC tag (torn/foreign). Returns the number written to `out`. */
 static int ast_slice_rec_deserialize(const unsigned char *buf, long len,
 																		 AstSliceMemo *out, int cap) { MCC_TRACE("enter\n");
 	long off = 0;
@@ -1005,24 +907,6 @@ static int ast_slice_rec_deserialize(const unsigned char *buf, long len,
 	return n;
 }
 
-/* ---- Slice-record merge (shared by disk merge-store and JIT graduate) -----
-   Merge one record `rec` into table `tab[0..*n)` (capacity `cap`), keyed by
-   ident. Refcounts sum. Config preference (Phase 4):
-     - a benchmark-PROVEN record always wins over a static one (proven wins,
-       regardless of size — a live-bench verdict outranks the static cost proxy);
-     - between two records of equal proven-ness, the lower `size` (cheaper proxy)
-       config is kept, matching the Phase-3 static rule.
-   Pure logic in the non-MCC_INTERNAL region so tools/asttool can unit-test the
-   proven-preference directly. */
-/* MCC_AST_SLICE_MULTI (default OFF). Off, the store keeps ONE record per slice
-   ident -- a fixed decision, where merge_one collapses competing configs and the
-   consumer takes what it is given, then masks it. On, records are keyed by
-   (ident, gates) so several CANDIDATE configs for the same slice coexist, and the
-   consumer picks the candidate that best survives the CURRENT target's searchable
-   mask instead of degrading whichever single config happened to be stored. This
-   is what makes a shared cross-triple store useful rather than merely legal: an
-   x86_64-proven config may name gates i386 cannot run, and masking it can leave a
-   worse mask than a different stored candidate would give. */
 static int ast_slice_multi_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
@@ -1043,30 +927,21 @@ static void ast_slice_merge_one(AstSliceMemo *tab, int *n, int cap,
 			{ MCC_TRACE("br\n"); continue; }
 		tab[j].refcount += rec->refcount;
 		if (rec->proven && !tab[j].proven) { MCC_TRACE("br\n");
-			/* first proof for this slice: adopt the proven config outright. */
 			tab[j].proven = 1;
 			tab[j].gates = rec->gates;
 			tab[j].size = rec->size;
 		} else if (rec->proven == tab[j].proven &&
 							 rec->size >= 0 && (tab[j].size < 0 || rec->size < tab[j].size)) {
 			MCC_TRACE("br\n");
-			/* same class (both static or both proven): cheaper proxy wins. */
 			tab[j].size = rec->size;
 			tab[j].gates = rec->gates;
 		}
-		/* else: incoming static cannot override an existing proven record. */
 		return;
 	}
 	if (*n < cap)
 		{ MCC_TRACE("br\n"); tab[(*n)++] = *rec; }
 }
 
-/* ---- Slice probe (Phase 3 consume decision) -----------------------------
-   Enumerate arena `a`'s slices and look each up in `table`; the DOMINANT slice
-   drives the function-level warm-start. Ranking (Phase 4): a PROVEN match
-   outranks any static match; within the same proven-ness the LARGEST recurring
-   slice wins. Pure (no host I/O), so the consume decision is unit-testable.
-   Returns 1 and sets *out_gates to the dominant match's cached gate config. */
 typedef struct AstSliceProbeCtx {
 	const AstSliceMemo *table;
 	int table_n;
@@ -1094,10 +969,6 @@ static void ast_slice_visit_probe(uint64_t ident, int size, uint64_t gates, void
 		if (p->table[i].ident == ident) { MCC_TRACE("br\n");
 			int prov = p->table[i].proven ? 1 : 0;
 			int surv = multi ? ast_slice_popcount(p->table[i].gates & p->allow) : 0;
-			/* rank by (proven desc, size desc): a proven match always outranks a
-			   static one, and within a class the largest recurring slice wins.
-			   In multi mode a middle criterion is inserted: prefer the candidate
-			   that keeps the MOST gates once masked for this target. */
 			int better = !p->found || prov > p->best_proven ||
 									 (prov == p->best_proven && multi && surv > p->best_surv) ||
 									 (prov == p->best_proven && (!multi || surv == p->best_surv) &&
@@ -1139,11 +1010,6 @@ static int ast_slice_probe_table_ex(const AstArena *a, const AstSliceMemo *table
 	return p.found;
 }
 
-/* Consume-side accessor for the runtime: reports the winning record's CHOSEN
-   config and its ELIGIBLE candidate space separately. The chosen config
-   warm-starts codegen exactly as before; the eligible space is what a JIT may
-   benchmark against it, and is meaningless without being intersected with what
-   the consuming target itself permits. */
 static int ast_slice_probe_table_cand(const AstArena *a, const AstSliceMemo *table,
 																			int table_n, uint64_t *out_chosen,
 																			uint64_t *out_elig) { MCC_TRACE("enter\n");
@@ -1168,30 +1034,6 @@ static int ast_subtree_has_storeval(const AstArena *a, AstLocal n) { MCC_TRACE("
 	return 0;
 }
 
-/* ---- Node-stable in-arena splice (roadmap 14) ----------------------------
-   Inverse of ast_slice_extract: replace the subtree rooted at `site_root` in
-   arena `a` with a deep copy of the (optimized) kernel subtree rooted at
-   `kernel_root` in `kernel_src`. Kept in the non-MCC_INTERNAL region (plain
-   extern, no MCC_EMBED_JIT guard) so tools/asttool can unit-test it and both
-   the AOT-visible API and the JIT wiring can call it.
-
-   NODE-STABILITY GUARANTEE (what the SoA arena lets us keep):
-     - The site_root slot is RE-USED as the spliced kernel's root, so its
-       parent[], next_sib[], and its position in the parent's child list are
-       left bit-for-bit unchanged. Only site_root's own payload columns (kind,
-       op, type, ival, fbits, sym) and its child links are overwritten.
-     - Therefore EVERY live node index OUTSIDE the replaced subtree keeps its
-       index AND all of its SoA field values unchanged -- ancestors, siblings,
-       and unrelated subtrees are untouched (no renumbering / compaction).
-     - The kernel's NON-root nodes are appended at fresh indices at the tail.
-     - The old subtree's descendant slots are left in place as unreferenced
-       "dead" nodes (the arena is deliberately not compacted); they stay
-       self-consistent so ast_validate still passes, but no LIVE index moves.
-   CONTRACT: `kernel_src` must be a distinct arena from `a` (or at least the
-   kernel subtree must not overlap site_root's subtree) -- the site's children
-   are cleared before the kernel is read. In practice the kernel is always a
-   standalone ast_slice_extract()/wrap result, so this always holds.
-   Returns the number of nodes in the spliced-in subtree (>=1), or 0 on error. */
 static AstLocal ast_slice_graft_rec(AstArena *a, const AstArena *k,
 																		AstLocal ksrc) { MCC_TRACE("enter\n");
 	AstLocal c, cc, n = ast_node(a, ast_kind(k, ksrc));
@@ -1218,8 +1060,6 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_subtree_has_storeval(kernel_src, kernel_root))
 		{ MCC_TRACE("br\n"); return 0; }
-	/* Re-use site_root's slot for the kernel root (preserves its parent/sibling
-	   links); orphan the old descendants in place; append the kernel body. */
 	ast_clear_children(a, site_root);
 	ast_set_kind(a, site_root, ast_kind(kernel_src, kernel_root));
 	ast_set_op(a, site_root, ast_op(kernel_src, kernel_root));
@@ -1240,13 +1080,6 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 	return spliced;
 }
 
-/* ---- Hierarchical locator (roadmap 15) -----------------------------------
-   Fill `sites[0..min(return,max))` with every node index in `a` whose slice
-   identity (ast_slice_ident_hash) equals `ident`, so a single cached/optimized
-   kernel can be spliced at ALL of its occurrences. Uses the exact same slice
-   membership filter as ast_slice_enum so a located site is always splice-able.
-   Returns the TOTAL number of matching occurrences (may exceed `max`; only the
-   first `max` are written). Non-MCC_INTERNAL so asttool can unit-test it. */
 int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites,
 										 int max) { MCC_TRACE("enter\n");
 	int found = 0;
@@ -1272,15 +1105,6 @@ int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites,
 	return found;
 }
 
-/* ---- Benchmark-gated promotion, static (AOT / no-runtime) fallback -------
-   The TERMINAL accept decision for a spliced/optimized slice, static-cost arm.
-   `baseline_cost`/`candidate_cost` are the cost-model scores (ast_cost_score /
-   node-count proxy; lower is cheaper). Keep (1) the candidate iff it is a
-   strict win; ties and unmeasurable candidates reject (0), preserving the
-   incumbent -- the same incumbent-wins-on-tie hysteresis the search scorer and
-   mccjit_bench_pair use. The JIT/runtime arm instead uses mccjit_bench_pair's
-   live differential verdict; this is the "no runtime available" fallback. One
-   shared decision helper so AOT and JIT agree on the keep/reject semantics. */
 int ast_slice_promote_static(int64_t baseline_cost, int64_t candidate_cost) { MCC_TRACE("enter\n");
 	if (candidate_cost < 0)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -1491,10 +1315,6 @@ static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
 static int ast_cost_env;
-/* Multi-threaded optimizer (docs/TODO.md, JIT runtime §): scored-path globals marked MCC_OPT_TLS are
-   thread-local so the pthread search pool scores candidates concurrently without racing.
-   Single-threaded (the main compile) this is identical to a plain global. Enabled now that
-   the -run/JIT engine executes _Thread_local (10.7 target + runmem TLS setup). */
 #ifndef MCC_OPT_TLS
 #define MCC_OPT_TLS MCC_THREAD_LOCAL
 #endif
@@ -1506,9 +1326,9 @@ static int ast_bitflag_report_env;
 static int ast_bitflag_min;
 static int ast_cprop_join_env;
 static MCC_OPT_TLS int ast_narrow_env;
-int ast_inline_static_env; /* MCC_AST_INLINE_STATIC: generate a `static inline` body in place so the inliner can see it, instead of parking it to end-of-TU */
-static MCC_OPT_TLS int ast_switch_expr_env; /* MCC_AST_SWITCH_EXPR: model a switch whose SELECTOR is a computed expression */
-int ast_trunc32_env; /* MCC_AST_TRUNC32: emit a 64->32 narrowing as a 32-bit move instead of the shl/sar/shr triple */
+int ast_inline_static_env;
+static MCC_OPT_TLS int ast_switch_expr_env;
+int ast_trunc32_env;
 static MCC_OPT_TLS int ast_narrow_fix_env;
 static MCC_OPT_TLS int ast_narrow_c0_env;
 static MCC_OPT_TLS int ast_narrow_c1_env;
@@ -1525,12 +1345,12 @@ static MCC_OPT_TLS int ast_ident_urange_env;
 static MCC_OPT_TLS int ast_dse_call_env;
 static MCC_OPT_TLS int ast_tco_ptr_env;
 static MCC_OPT_TLS int ast_cse_comm_env;
-static MCC_OPT_TLS int ast_range_env; /* MCC_AST_RANGE: fold lo<=x && x<=hi to one unsigned compare */
-static MCC_OPT_TLS int ast_divmagic_env; /* MCC_AST_DIVMAGIC: strength-reduce unsigned x/C, x%C */
-static MCC_OPT_TLS int ast_abs_env; /* MCC_AST_ABS: branchless abs from x<0?-x:x */
+static MCC_OPT_TLS int ast_range_env;
+static MCC_OPT_TLS int ast_divmagic_env;
+static MCC_OPT_TLS int ast_abs_env;
 static int ast_select_env;
 #define AST_SEL_MARK ((uint64_t)0x5E1EC7)
-static MCC_OPT_TLS int ast_reassoc_env; /* MCC_AST_REASSOC: combine (x OP c1) OP c2 */
+static MCC_OPT_TLS int ast_reassoc_env;
 static MCC_OPT_TLS int ast_reassoc_assoc_env;
 static MCC_OPT_TLS int ast_reassoc_shlshr_env;
 static MCC_OPT_TLS int ast_reassoc_shrshl_env;
@@ -1542,51 +1362,39 @@ static MCC_OPT_TLS int ast_bfold_minmax_env;
 static MCC_OPT_TLS int ast_math_inline_env;
 static MCC_OPT_TLS int ast_math_inline_prepass_env;
 static MCC_OPT_TLS int ast_round_inline_env;
-static MCC_OPT_TLS int ast_copysign_env; /* MCC_AST_COPYSIGN_INLINE: inline copysign (default off, opt-in, all arches) */
-static MCC_OPT_TLS int ast_minmax_inline_env; /* MCC_AST_MINMAX_INLINE: inline fmin/fmax via FMINNM/FMAXNM (arm64 only; default ON at -O1+ there, off elsewhere) */
-static MCC_OPT_TLS int ast_fma_env; /* MCC_AST_FMA_INLINE: inline fma via FMADD/fmadd.d (arm64/riscv64, default off) */
-static MCC_OPT_TLS int ast_no_math_errno; /* -fno-math-errno: inline sqrt of ANY sign */
+static MCC_OPT_TLS int ast_copysign_env;
+static MCC_OPT_TLS int ast_minmax_inline_env;
+static MCC_OPT_TLS int ast_fma_env;
+static MCC_OPT_TLS int ast_no_math_errno;
 static int ast_inline_pass_env;
-static int ast_interchange_env; /* MCC_AST_INTERCHANGE: swap adjacent perfectly-nested for loops for locality (§27) */
-static int ast_fusion_env; /* MCC_AST_FUSION: fuse two adjacent same-trip for loops into one (§27) */
-static int ast_tile_env; /* MCC_AST_TILE: strip-mine the inner loop of a permutable nest + hoist the strip loop outermost (§27 tile-and-interchange) */
-static int ast_tile_size; /* MCC_AST_TILE_SIZE: strip length (default 32) */
+static int ast_interchange_env;
+static int ast_fusion_env;
+static int ast_tile_env;
+static int ast_tile_size;
 static int ast_vlat_env;
 int mccjit_recompiling;
-static int ast_jit_env; /* MCC_AST_JIT: retain byte-faithful baseline + AST per function as the guarded-deopt fallback (§26 W1) */
-static int ast_jit_splice_env; /* MCC_AST_JIT_SPLICE: re-emit each faithful body from its retained baseline bytes at a shifted offset (§26 W2 splice-primitive validation) */
-static int ast_jit_dispatch_env; /* MCC_AST_JIT_DISPATCH: wrap each faithful body in an entry dispatcher {guard; jcc deopt; AOT arm; jmp; deopt: AOT-baseline splice} — 1=never-deopt, 2=always-deopt, 3=non-null speculative, 4=const-param, 5=value-range (§26 W2.2/W2.3) */
+static int ast_jit_env;
+static int ast_jit_splice_env;
+static int ast_jit_dispatch_env;
 static int ast_jit_guard_env;
-static int ast_data_report_env; /* MCC_AST_DATA_REPORT: dump const-data records to stderr */
-static int ast_data_reemit_env; /* MCC_AST_DATA_REEMIT: exercise the M5 re-emit primitive (identity round-trip, byte-neutral) */
-int ast_zero_bss_env;           /* MCC_ZERO_BSS: move all-zero .data statics into .bss */
-int ast_merge_strings_env;      /* MCC_MERGE_STRINGS: pool identical rodata string literals */
-static int ast_strpool_n;       /* live entries in the per-TU string-content pool */
-/* Array capacity for the CSE availability window; the *effective* window is the runtime
- * `ast_cse_window` (V-cse(d): MCC_AST_CSE_WINDOW, default 64 → byte-identical; raise up to
- * AST_CSE_MAX to catch more common subexpressions in large functions). */
+static int ast_data_report_env;
+static int ast_data_reemit_env;
+int ast_zero_bss_env;
+int ast_merge_strings_env;
+static int ast_strpool_n;
 #define AST_CSE_MAX 256
 static int ast_cse_window = 64;
-/* V-cprop(d): same pattern for the const-propagation state cap — default 128 (the
- * former fixed AST_CPROP_MAX) → byte-identical; raise to catch more live constants. */
 #define AST_CPROP_MAX 512
 static int ast_cprop_window = 128;
-/* §23 inliner budget: the recursion-depth cap. Array sized to the max; the effective
- * cap is the runtime `ast_inline_depth_max` (MCC_AST_INLINE_DEPTH, default 8 →
- * byte-identical; raise for deeper inlining — the graft/node/limit budgets are already
- * env-knobs, this completes "widen the §23 inliner budgets"). */
 #define AST_INLINE_MAX_DEPTH 32
 static int ast_inline_depth_max = 8;
-/* V-tco: the max tail-recursion params handled (former fixed AST_TCO_MAXP=16). Array
- * cap 64; effective cap is runtime `ast_tco_maxp` (MCC_AST_TCO_MAXP, default 16 →
- * byte-identical; raise so functions with more params can be TCO'd to a loop). */
 #define AST_TCO_MAXP 64
 static int ast_tco_maxp = 16;
 static int ast_cse_join_env;
 static int ast_call_window_env;
 static MCC_OPT_TLS int ast_licm_temp_env;
 static MCC_OPT_TLS int ast_ivsr_env;
-static MCC_OPT_TLS int ast_ivsr_ptr_env; /* MCC_AST_IVSR_PTR: strength-reduce the pointer-index address `base + i` (a[i], the codegen-implicit element-size scaling that the mul-based ivsr can't see) to a pointer advanced each iteration */
+static MCC_OPT_TLS int ast_ivsr_ptr_env;
 static MCC_OPT_TLS int ast_pre_env;
 static int ast_loopnest_dump_env;
 static int ast_loopdep_dump_env;
@@ -1601,38 +1409,17 @@ static MCC_OPT_TLS int ast_ltemp_cur;
 static int ast_color_env;
 static int ast_spill_share_env;
 static int ast_search_worker;
-/* MCC_AST_SEARCH_FLOOR (default OFF). The -O4 search may currently pick a gate
-   config that turns OFF optimizations -O3 applies by default, so -O4 can emit
-   worse code than the level below it (measured: nbody 0.285 s at -O4 vs 0.246 s
-   at -O3). With this on, the config captured at ast_configure -- i.e. exactly the
-   -O3 default set at -O4, since -O4 sets optimize=3 -- becomes a floor the search
-   may only ADD to, never subtract from. */
 typedef unsigned long AstGateMask_fwd_check;
 static unsigned long ast_search_floor;
 static int ast_search_floor_env;
 static unsigned long ast_search_gates_now(void);
 static unsigned long ast_search_searchable(unsigned long base);
 
-/* The ISA term the cache key carries for the function being compiled: the
-   features THIS ARENA's codegen can be changed by, ANDed with what -march
-   permits. Zero unless the function holds a construct an ISA-dependent
-   transform can rewrite, so a generic function keeps one key on every host and
-   stays shareable, while a host-dependent one separates itself from the generic
-   form of the same slice.
-
-   Folding the whole ISA mask instead would key every entry per-host and destroy
-   the cross-host sharing the slice store exists for. And a "what did we consume"
-   counter cannot work at all: the key is taken from the PRISTINE arena, before
-   any transform has run, so a consumption count is always one function late. */
 static MCC_OPT_TLS uint32_t ast_isa_key_term;
 
 static uint64_t ast_intention_acc;
 static const char *ast_hash_out;
 
-/* Append "<tag:><fn> <hash>" to MCC_AST_HASH_OUT. Exposed so the JIT can record
-   the arena it reconstructs from an intent blob: ast_func_end only runs on the
-   PARSER path, so without this the JIT-shaped identity is never observable and
-   an AOT-vs-JIT ident mismatch cannot be diffed at all. No-op when unset. */
 void ast_hash_out_emit(const char *tag, const char *fn, uint64_t h) { MCC_TRACE("enter\n");
 	FILE *f;
 	if (!ast_hash_out || !ast_hash_out[0] || !fn)
@@ -1808,7 +1595,7 @@ int ast_jit_eval_refused_count(void) { MCC_TRACE("enter\n"); return ast_jit_eval
 
 static MCC_OPT_TLS int ast_templates_env;
 static int ast_search_env;
-static int ast_slice_env; /* MCC_AST_SLICE: growing-window slice cache (Phase 2 populate) */
+static int ast_slice_env;
 static int ast_search_emitsize_env;
 static int ast_search_emitiso_env;
 static int ast_search_inline_env;
@@ -1816,9 +1603,9 @@ static int ast_search_want_inline;
 static int ast_search_axis_ran;
 static int ast_search_pick_inline;
 static int ast_search_threads_env;
-static int ast_search_pthreads_env; /* item-1: pthread scoring fan-out (audit; default off) */
+static int ast_search_pthreads_env;
 static int ast_search_ordered_env;
-static int ast_search_verbose_env; /* MCC_AST_SEARCH_VERBOSE: one line per continue/store */
+static int ast_search_verbose_env;
 static int ast_search_walk_env;
 static unsigned ast_search_seconds;
 
@@ -1932,30 +1719,27 @@ static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
 															 AstLocal node);
 static int ast_landor_invert_env;
 static int ast_call_dead;
-static int ast_chainstore_env; /* MCC_AST_CHAINSTORE: keep the AST a tree when an assignment's value is re-adopted by an enclosing assignment (`a = b = v`) */
-int ast_promo_incdec_env; /* MCC_AST_PROMO_INCDEC: promote locals that are only ++/--'d in statement context (loop counters) */
-int ast_promo_arrow_env; /* MCC_AST_PROMO_ARROW: promote pointer locals used via `->` (don't poison MEMBER_ARROW) */
-static int ast_promo_leaf_xmm_env; /* MCC_AST_PROMO_LEAF_XMM: widen the leaf FP promotion pool (x86_64 xmm6,7 -> xmm2..7) for spill-heavy leaves; safe now that gen_sqrt/gen_round don't clobber promoted FP regs */
+static int ast_chainstore_env;
+int ast_promo_incdec_env;
+int ast_promo_arrow_env;
+static int ast_promo_leaf_xmm_env;
 #ifdef MCC_TARGET_X86_64
-static int ast_xmm_hi_env; /* MCC_AST_XMM_HI: give xmm8-15 the MCC_RC_FLOAT class so the backend allocator uses all 16 FP registers */
+static int ast_xmm_hi_env;
 #endif
-int ast_fmov_imm_env; /* MCC_AST_FMOV_IMM: arm64 materialises VFPExpandImm-encodable FP constants with FMOV #imm instead of a PC-relative rodata load */
-int ast_reloc_equiv_env; /* MCC_AST_RELOC_EQUIV: judge replay faithfulness by structural relocation equality instead of raw bytes, so an anonymous local label re-emitted at a new symbol index does not read as divergence */
-int ast_regdisp_env; /* MCC_AST_REGDISP: keep a member/array constant offset as a register-base displacement instead of materialising an add */
+int ast_fmov_imm_env;
+int ast_reloc_equiv_env;
+int ast_regdisp_env;
 static int ast_cost_ops_env;
-static int ast_cost_spill_env; /* MCC_AST_COST_SPILL: add a loop register-pressure term to ast_cost_score so spill-reducing passes score a real benefit */
-static int ast_promo_leaf_callee_env; /* MCC_AST_PROMO_LEAF_CALLEE: let leaf fns also promote into the callee-saved GP pool (save/restore), not just the tiny caller-saved pool */
+static int ast_cost_spill_env;
+static int ast_promo_leaf_callee_env;
 static int ast_no_callful_env;
 static int ast_no_callful_promo;
 static int ast_inline_env;
 static int ast_tmpl_folds;
 static MCC_OPT_TLS AstArena *ast_cur;
 int ast_bail;
-int ast_bail_line; /* where ast_bail was first set, so `bail` is attributable like `desync` */
+int ast_bail_line;
 static void ast_gap_note(void);
-/* Mirrors AST_SET_DESYNC: record WHERE we declined. 22 sites set ast_bail and the
-   verdict was a bare "bail", so the whole bucket was unattributable -- the same
-   defect the vpush/vstore desync sites had, minus even a line number. */
 #define AST_SET_BAIL() do { if (!ast_bail) { ast_bail_line = __LINE__; ast_gap_note(); } ast_bail = 1; } while (0)
 static int ast_reemit_poison;
 static AstLocal ast_ret_val;
@@ -1965,23 +1749,9 @@ static AstLocal ast_last_return;
 static AstLocal ast_vs[AST_VS_MAX];
 static int ast_vn;
 static int ast_capture;
-/* MCC_AST_OPASSIGN (default ON at -O2+): model compound assignment (`lval op= rhs`)
- * through a pointer to a struct member. Codegen does `vdup()` on the member
- * lvalue to reload it (mccgen.c expr_eq), which pushes a register-resident
- * lvalue (r=VT_LVAL|reg). ast_hook_vpush cannot model that leaf, so the whole
- * function desyncs and ast_replay_ok rejects it — leaving hot functions like
- * nbody's advance() entirely un-optimized (they never enter the replay/optimizer
- * path). When the gate is ON, ast_hook_vdup recognizes the compound-assign vdup
- * (guarded to a PURE lval so the re-emit is sound) and duplicates the top ast_vs
- * AST node instead of desyncing; the recorded shape is the ordinary
- * Store(lval, Binary(op, lval_copy, rhs)) — transparent to every optimizer pass —
- * and the Store is tagged AST_OP_OPASSIGN so replay re-emits the byte-faithful
- * vdup form (one address computation) instead of the naive two-computation form.
- * OFF ⇒ byte-identical; ON changes only which functions become
- * replayable/optimizable (validated by exec/self-host parity, not byte-identity). */
 static int ast_opassign_env;
-static int ast_vdup_pending;         /* one-shot: ast_hook_vdup -> ast_hook_vpush */
-static int ast_opassign_store_pending; /* one-shot: tag the next Store as op-assign */
+static int ast_vdup_pending;
+static int ast_opassign_store_pending;
 static int ast_desync;
 static int ast_desync_line;
 static int ast_bail_first;
@@ -2002,21 +1772,11 @@ static int *ast_rp_bsym, *ast_rp_csym;
 static AstLocal ast_tern[16];
 static int ast_tern_top;
 static int ast_tern_suppress;
-/* Per-level: 0 = ordinary ternary, else 1 + index of the arm the constant
-   condition selects. A constant `?:` emits ONLY that arm, so the recorder must
-   not build an If node -- it passes the taken arm's value straight through and
-   discards the other, matching what the parser emitted (TODO F4). */
 static unsigned char ast_tern_const[16];
-static AstLocal ast_tern_val[16]; /* constant `?:`: the taken arm's node */
+static AstLocal ast_tern_val[16];
 static AstLocal ast_lor[16];
 static int ast_lor_top;
 static int ast_lor_suppress;
-/* Per-level flag: the `&&`/`||` short-circuited on a CONSTANT first operand, so
-   the parser folded the whole expression to that constant and never evaluated
-   the right-hand side. Measured over mcc's own TU: all 45 such desyncs are this
-   one form (26 x `0 && X`, 19 x `1 || X`), none has a constant at a later
-   operand. The constant's own node is already the result, so no Binary is
-   built and nothing is consumed. */
 static unsigned char ast_lor_const[16];
 static unsigned char ast_lor_consumed[16];
 
@@ -2038,11 +1798,6 @@ int ast_func_has_asm;
 
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 #if MCC_REPLAY_IR
-	/* The C2 trial re-emits a body whose frame slots the parse already chose, and
-	   ast_locrec[] only covers the allocations made while the tree recorder was
-	   active -- not the declaration-time ones -- so replaying it hands out the
-	   wrong offset for any body with declared locals. Replay Replay_IR's own list,
-	   which spans the whole body. */
 	if (rir_c2_active) { MCC_TRACE("br\n");
 		int rl;
 		if (rir_loc_replay(&rl)) { MCC_TRACE("br\n");
@@ -2078,13 +1833,6 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
-/* True iff [lo, lo+sz) overlaps any reserved ast_ltemp slot (each 8 bytes, the
- * size every ast_ltemp_* mint uses: `off = (ast_ltemp_cur - 8) & -8`). The temp-
- * slot allocator (get_temp_local_var) consults this so it never hands a spill
- * slot that aliases a materialized-but-still-live value parked in an ltemp slot
- * (e.g. the i386 divmagic dividend). Inert unless the temp frontier actually
- * descends into the reserved region, which only happens under i386's register
- * pressure — byte-identical on arches where it doesn't. */
 int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 	for (int t = 0; t < ast_ltemp_n; t++) { MCC_TRACE("br\n");
 		int a = ast_ltemp_off[t];
@@ -2201,27 +1949,23 @@ static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
 	}
 	return 0;
 }
-/* Inline asm: the journal already records the post-substitution template text
-   and the operand/clobber blob, and is byte-faithful on every asm body, so the
-   arena only has to carry a handle to that payload and re-issue the same two
-   calls. ival packs the raw offset and length, sym the two int arguments. */
 #define AST_OP_ASMGEN 0x4001a
 #define AST_OP_ASM 0x4001b
 #define AST_OP_MULHU 0x40006
 #define AST_OP_MULHS 0x40007
 #define AST_OP_FABS 0x40008
 #define AST_OP_SQRT 0x40009
-#define AST_OP_OPASSIGN 0x4000A /* tags a Store recorded from a compound assignment (`op=`) */
+#define AST_OP_OPASSIGN 0x4000A
 #define AST_OP_FLOOR 0x4000B
 #define AST_OP_CEIL  0x4000C
 #define AST_OP_TRUNC 0x4000D
-#define AST_OP_COPYSIGN 0x4000E /* binary: |arg0| with sign of arg1 */
-#define AST_OP_ROUND 0x4000F /* round() — nearest, ties away (arm64 FRINTA only) */
-#define AST_OP_FMIN 0x40010 /* binary fmin (arm64 FMINNM only) */
-#define AST_OP_FMAX 0x40011 /* binary fmax (arm64 FMAXNM only) */
-#define AST_OP_RINT 0x40012 /* rint() — current rounding mode, raises inexact */
-#define AST_OP_NEARBYINT 0x40013 /* nearbyint() — current mode, no inexact */
-#define AST_OP_FMA 0x40014 /* ternary fma(x,y,z)=x*y+z single-rounding (arm64/riscv64) */
+#define AST_OP_COPYSIGN 0x4000E
+#define AST_OP_ROUND 0x4000F
+#define AST_OP_FMIN 0x40010
+#define AST_OP_FMAX 0x40011
+#define AST_OP_RINT 0x40012
+#define AST_OP_NEARBYINT 0x40013
+#define AST_OP_FMA 0x40014
 #define AST_OP_FNEG 0x40015
 #define AST_OP_BSWAP 0x40016
 #define AST_OP_SIGNBIT 0x40017
@@ -2279,12 +2023,7 @@ static void jrn_configure(void);
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	jrn_configure();
 	int opt_promote = 0;
-	/* Resolve the ISA before any gate consults it, so a build that never saw
-	   -march= still has the triple baseline rather than an empty mask. */
 	mcc_isa_init(s1);
-	/* -O>=4 means the user asked for a search budget: run EVERY implemented optimizer,
-	 * including the ones no lower -O level reaches. Not a preprocessor gate — one
-	 * runtime term ORed into each default below, so -O0..-O3 stay byte-identical. */
 	int o4 = s1->optimize_search_seconds > 0;
 	ast_reemit_n = 0;
 	ast_inline_n = 0;
@@ -2298,9 +2037,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
-	/* Default ON whenever the user asked for a search budget (-O>=4). The per-tick
-	 * budget and memo still bound it; at -O0..3 optimize_search_seconds==0 so the
-	 * search never runs and codegen is byte-identical regardless of this default. */
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", s1->optimize_search_seconds > 0);
 	ast_search_verbose_env = ast_env_gate("MCC_AST_SEARCH_VERBOSE", 0);
 	ast_slice_env = ast_env_gate("MCC_AST_SLICE", 0);
@@ -2311,21 +2047,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_search_pthreads_env = ast_env_gate("MCC_AST_SEARCH_PTHREADS", 0);
 	ast_search_ordered_env = ast_env_gate("MCC_AST_SEARCH_ORDERED", 0);
 	ast_search_order_env = ast_env_gate("MCC_AST_SEARCH_ORDER", 0);
-	/* After the emit-size combo search picks its (possibly subset) winning order,
-	 * append every remaining gated strategy so each ticks >=1x within the budget —
-	 * the search's size-optimized order leads, the omitted passes (bfold/ivsr/…)
-	 * still get a turn in the fixpoint cycle. On by default. */
 	ast_search_fullset_env = ast_env_gate("MCC_AST_SEARCH_FULLSET", 1);
-	/* ROI strategy scheduler (MCC_AST_ROI): instead of the emit-size combo search,
-	 * measure each strategy's benefit (cost- or emit-size reduction) per unit
-	 * apply-cost on a clone and order the round-robin by that ROI, high first. Every
-	 * strategy still ticks (full-set order). DEFAULT ON whenever the -O search runs
-	 * (-O>=4). Safe to default now that the apply-cost is a DETERMINISTIC transform
-	 * count (graft/promo/opt deltas), not wall-clock clock(): the strategy order — and
-	 * therefore codegen — is identical across the AOT and JIT compile of a function,
-	 * so the AOT==JIT invariant holds. (The earlier clock() timing was the reason this
-	 * was reverted to opt-in in 9c3d3930; ast_search_roi_order now removes it.)
-	 * Set MCC_AST_ROI=0 to fall back to the emit-size order search. */
 	ast_roi_env = ast_env_gate("MCC_AST_ROI", s1->optimize_search_seconds > 0);
 	ast_roi_dump = ast_env_gate("MCC_AST_ROI_DUMP", 0);
 	ast_opassign_env = ast_env_gate("MCC_AST_OPASSIGN", o4 || s1->optimize >= 1);
@@ -2356,15 +2078,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_fneg_env = ast_env_gate("MCC_AST_FNEG", o4 || s1->optimize >= 1);
 	ast_ldouble_env = ast_env_gate("MCC_AST_LDOUBLE", o4 || s1->optimize >= 1);
 	ast_int128_env = ast_env_gate("MCC_AST_INT128", o4 || s1->optimize >= 1);
-	/* MCC_AST_REGPAIR models a value's second register (wide_r2) so 64-bit
-	   register-pair values on 32-bit targets stay faithful instead of desyncing.
-	   It was defaulted OFF on i386/arm because the ON path miscompiled a nested
-	   register-pair result -- the recorded physical register did not survive the
-	   template-family re-emit, so __builtin_bswap64(__builtin_bswap64(x)) read a
-	   stale high half. That is fixed (mccast.c's invoke re-emit reconstructs the
-	   pair from REG_IRET/REG_IRE2), and the i386 and arm legs of instruction 2
-	   are now both measured, so the special case is gone and every target takes
-	   the standard default. */
 	ast_regpair_env = ast_env_gate("MCC_AST_REGPAIR", o4 || s1->optimize >= 1);
 	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 1);
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
@@ -2392,9 +2105,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP",
 																 o4 || s1->optimize_size || s1->optimize >= 1);
 #elif defined MCC_TARGET_ARM64
-	/* arm64 load/store fold the displacement into the ldr/str immediate the same
-	   way gen_modrm_impl does, but the default stays OFF here until the flip bar
-	   is met on this target -- x86_64's default is not evidence for arm64. */
 	ast_regdisp_env = ast_env_gate("MCC_AST_REGDISP", 0);
 #else
 	ast_regdisp_env = 0;
@@ -2408,11 +2118,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); reg_classes[hr] &= ~MCC_RC_FLOAT; }
 	}
 #endif
-	/* Let leaf functions (no calls) tap the callee-saved GP pool too — a leaf
-	 * otherwise only gets the tiny caller-saved pool (3 GP on x86_64), which is
-	 * the regalloc cliff a function falls off once its last call (e.g. sqrt) is
-	 * inlined away. The callee-saved regs are saved/restored per-reg by
-	 * ast_promo_entry_init/_exit_restore. Default OFF ⇒ byte-identical. */
 	ast_promo_leaf_callee_env = ast_env_gate("MCC_AST_PROMO_LEAF_CALLEE", o4);
 	ast_no_callful_env = ast_env_gate("MCC_AST_NO_CALLFUL", 0);
 	ast_inline_env = ast_env_gate("MCC_AST_INLINE",
@@ -2465,17 +2170,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_tco_ptr_env = ast_env_gate("MCC_AST_TCO_PTR", o4 || s1->optimize >= 2);
 	ast_cse_comm_env = ast_env_gate("MCC_AST_CSE_COMM", o4 || s1->optimize >= 1);
 	ast_range_env = ast_env_gate("MCC_AST_RANGE", o4 || s1->optimize >= 1);
-	/* i386 divmagic default-ON at -O2+ (like the other optimizer-capable arches). The
-	 * 2026-07-25 lift was briefly reverted 2026-07-30 for a real spill-slot-reuse bug
-	 * (i386-codegen-diff `d2`: `(s&0x7fffffff)%251` gave 131 vs 91 at -O2), then RE-ENABLED
-	 * the same day once the actual root cause was fixed: the divmagic materialize parks the
-	 * dividend `x` in a reserved ast_ltemp slot, but the value-stack spill allocator
-	 * (get_temp_local_var) didn't exclude ltemp slots, so under i386 register pressure it
-	 * reused xoff for the 64-bit mul's low-product spill and clobbered the still-live x.
-	 * Fixed by making get_temp_local_var ltemp-aware (ast_ltemp_overlaps) — it now pushes
-	 * the spill below the reserved slot. Byte-inert on arches whose temp frontier never
-	 * reaches the ltemp region (fixpoint-invariant byte-identical). Validated: d1..d14 ×
-	 * -O0..-O3 vs gcc -m32, struct-pressure soak, ~26M randomized div/mod-vs-idiv checks. */
 	ast_divmagic_env = ast_env_gate("MCC_AST_DIVMAGIC", o4 || s1->optimize >= 2);
 	ast_abs_env = ast_env_gate("MCC_AST_ABS", o4 || s1->optimize >= 2);
 	ast_select_env = ast_env_gate("MCC_AST_SELECT", o4 || s1->optimize >= 2);
@@ -2488,80 +2182,28 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_bfold_sign_env = ast_env_gate("MCC_AST_BFOLD_SIGN", o4 || 1);
 	ast_bfold_round_env = ast_env_gate("MCC_AST_BFOLD_ROUND", o4 || 1);
 	ast_bfold_minmax_env = ast_env_gate("MCC_AST_BFOLD_MINMAX", o4 || 1);
-	/* Runtime math-builtin -> inline hardware FP (fabs/sqrt-nonneg). x86_64:
-	 * default-on at -O2+ (soaked/shipped). arm64: same rewrites via native
-	 * FABS/FSQRT, but default-OFF (opt-in `MCC_AST_MATH_INLINE=1`) pending the
-	 * arm64 golden-regen + soak, so default arm64 codegen stays byte-identical. */
-	/* Staged on ALL arches 2026-07-29. The old non-x86 `o4` default was a
-	 * golden-regen debt, not an ISA limit: sqrtsd/FSQRT/FABS are baseline
-	 * everywhere this is implemented, and leaving it off made arm64 pay a libm
-	 * call for sqrt where x86_64 did not. */
 	ast_math_inline_env = ast_env_gate("MCC_AST_MATH_INLINE", o4 || s1->optimize >= 1);
-	/* MCC_AST_MATH_INLINE_PREPASS (default OFF): also run the fabs/sqrt(nonneg)
-	 * math-inline rewrites as an UNCONDITIONAL pre-pass (ast_math_inline_run),
-	 * before the -O>=4 strategy search. Fixes an -O4-vs-O2 regression: the search's
-	 * winning order can drop `bfold`, so sqrt(x*x) inlines to sqrtsd at -O2/-O3 but
-	 * reverts to a `call sqrt` libcall at -O4. Idempotent with the bfold strategy;
-	 * byte-identical at -O2 (bfold does the same rewrite there anyway). */
 	ast_math_inline_prepass_env = ast_env_gate("MCC_AST_MATH_INLINE_PREPASS", o4);
-	/* MCC_AST_ROUND_INLINE (default OFF, opt-in): inline floor/ceil/trunc to a
-	 * single `roundsd`/`roundss` (imm floor=0x9/ceil=0xA/trunc=0xB, bit3 suppresses
-	 * the precision exception to match libm). Default OFF because roundsd is SSE4.1,
-	 * not the SSE2 baseline — the user opts in for an SSE4.1 target (like gcc's
-	 * -msse4.1). Bit-exact vs libm for all inputs incl. NaN/inf/large. x86_64 only.
-	 * NOT in the o4 blanket: -O4 means "run every optimizer", but this one changes
-	 * the required ISA rather than just the code, so folding it in made -O4 output
-	 * silently demand an SSE4.1 CPU with nothing in the compiler recording that.
-	 * Now keyed on the ISA instead of on optimization effort: -march= is what
-	 * records the requirement, so roundsd is emitted exactly when the user has
-	 * said the target has SSE4.1. The env var remains a manual override. */
 #ifdef MCC_TARGET_X86_64
 	ast_round_inline_env =
 			ast_env_gate("MCC_AST_ROUND_INLINE", mcc_isa_has(s1, MCC_ISA_SSE41));
 #else
 	ast_round_inline_env = ast_env_gate("MCC_AST_ROUND_INLINE", 0);
 #endif
-	/* copysign inline (fsgnj on riscv64, SSE mask on x86_64, GP round-trip on
-	 * arm64). Staged at -O1+ 2026-07-29: every lowering it uses is BASELINE for
-	 * its triple — an SSE2 bit-mask on x86_64, F/D fsgnj on rv64gc, a GP
-	 * round-trip on armv8-a — so none of them raises the ISA floor, which is the
-	 * only reason this axis exists. Measured: one libm call removed for +16 bytes
-	 * of .text on x86_64, and gcc inlines copysign at plain -O2 too. */
 	ast_copysign_env = ast_env_gate("MCC_AST_COPYSIGN_INLINE", o4 || s1->optimize >= 1);
-	/* fmin/fmax inline via FMINNM/FMAXNM — armv8-a BASELINE, and IEEE minNum/maxNum
-	 * is exactly C's fmin/fmax, so it is staged at -O1+ there like the other
-	 * baseline lowerings. x86 stays `o4`: minsd/maxsd have the WRONG NaN/±0
-	 * semantics, so inlining there would be a miscompile, not a missing feature.
-	 * Verified behaviour-preserving on arm64 over NaN, ±0, ±inf and NaN-in-either
-	 * -operand: gate ON and gate OFF give identical output. */
 #ifdef MCC_TARGET_ARM64
 	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4 || s1->optimize >= 1);
 #else
 	ast_minmax_inline_env = ast_env_gate("MCC_AST_MINMAX_INLINE", o4);
 #endif
-	/* fma inline via FMADD (arm64) / fmadd.d/.s (riscv64) — single-rounding, both
-	 * baseline; matches gcc default. Staged at -O1+ on those two triples 2026-07-29
-	 * precisely because the instruction is baseline there, so it turns on with the
-	 * TRIPLE rather than waiting for a flag. x86 is left at `o4`: FMA3 is not
-	 * baseline AND mcc emits no vfmadd anyway, so staging it there would advertise
-	 * a transform that cannot fire. */
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4 || s1->optimize >= 1);
 #else
 	ast_fma_env = ast_env_gate("MCC_AST_FMA_INLINE", o4);
 #endif
-	/* -fno-math-errno (or MCC_AST_NO_MATH_ERRNO=1): drop the errno-EDOM guard on
-	 * sqrt, so sqrt of a possibly-negative arg can also inline to hardware
-	 * (sqrtsd/fsqrt gives the same NaN value libm would; only errno is skipped) —
-	 * matches gcc -fno-math-errno. Default: honor errno (nonneg-only inline). */
 	ast_no_math_errno = ast_env_gate("MCC_AST_NO_MATH_ERRNO",
 																	 s1 && s1->no_math_errno);
 	ast_inline_pass_env = ast_env_gate("MCC_AST_INLINE_PASS", o4 || s1->optimize >= 2);
-	/* Loop interchange/fusion/tiling: flipped default-on at -O2+ (were opt-in
-	 * pending a correctness proof). Each still runs only on `faithful` functions
-	 * and its rewrite is re-verified downstream; validated bit-identical to gcc on
-	 * the plb loop benchmarks + the full x86_64 ctest. Revert an individual one to 0
-	 * if a differential regression surfaces. */
 	ast_interchange_env = ast_env_gate("MCC_AST_INTERCHANGE", o4 || s1->optimize >= 2);
 	ast_fusion_env = ast_env_gate("MCC_AST_FUSION", o4 || s1->optimize >= 2);
 	ast_tile_env = ast_env_gate("MCC_AST_TILE", o4 || s1->optimize >= 2);
@@ -2578,7 +2220,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_data_reemit_env = ast_env_gate("MCC_AST_DATA_REEMIT", 0);
 	ast_zero_bss_env = ast_env_gate("MCC_ZERO_BSS", o4 || s1->optimize >= 2);
 	ast_merge_strings_env = ast_env_gate("MCC_MERGE_STRINGS", o4 || s1->optimize >= 2);
-	ast_strpool_n = 0; /* content pool is per translation unit */
+	ast_strpool_n = 0;
 	ast_cse_window = ast_env_int("MCC_AST_CSE_WINDOW", 64);
 	if (ast_cse_window < 1)
 		{ MCC_TRACE("br\n"); ast_cse_window = 1; }
@@ -2603,14 +2245,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_call_window_env = ast_env_gate("MCC_AST_CALL_WINDOW", o4 || s1->optimize >= 1);
 	ast_licm_temp_env = ast_env_gate("MCC_AST_LICM_TEMP", o4 || s1->optimize >= 2);
 	ast_ivsr_env = ast_env_gate("MCC_AST_IVSR", o4 || (s1->optimize >= 1 && !s1->optimize_size));
-	/* Pointer-index LSR. The mul-based ivsr only matches an explicit `Binary('*',
-	 * iv, C)`, but the common `a[i]` case is `Binary('+', ptr, iv)` where the
-	 * element-size scaling is IMPLICIT in the pointer-add's codegen — no AST mul
-	 * node exists, so the mul-ivsr scan never finds a target. This pass reduces
-	 * that pointer-add to a pointer advanced by the stride each iteration (what
-	 * gcc does; mcc otherwise re-`imul`s the index every iteration for a
-	 * non-power-of-2 element size). Default OFF ⇒ byte-identical (it changes
-	 * addressing codegen; validate value-equivalence vs gcc, not byte-identity). */
 	ast_ivsr_ptr_env = ast_env_gate("MCC_AST_IVSR_PTR", o4);
 	ast_pre_env = ast_env_gate("MCC_AST_PRE", o4 || s1->optimize >= 1);
 	ast_loopnest_dump_env = ast_env_gate("MCC_AST_LOOPNEST_DUMP", 0);
@@ -2683,10 +2317,6 @@ void ast_hook_stmt(int t) { MCC_TRACE("enter\n");
 
 void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	if (ast_vdup_pending) { MCC_TRACE("br\n");
-		/* This push is the compound-assignment vdup (ast_hook_vdup validated the
-		 * state and LHS purity just before vdup ran). Duplicate the top ast_vs AST
-		 * node via a deep copy so the model stays a tree — Store's target keeps the
-		 * original lval, the op's operand gets the copy — and arm the Store tag. */
 		ast_vdup_pending = 0;
 		int rel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_capture && !ast_desync && !ast_in_op && !ast_in_call &&
@@ -2717,20 +2347,12 @@ void ast_hook_vpush(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vto
 			(r & VT_VALMASK) == VT_LLOCAL && (r & VT_LVAL) && !(r & VT_SYM);
 	int agg_lval = (tt & VT_BTYPE) == VT_STRUCT && !(tt & VT_BITFIELD) &&
 								 (is_local || is_sym || is_llocal_lval);
-	/* Split into two, deliberately, so the two causes get DIFFERENT desync line
-	   numbers. They are different in kind -- an unmodellable TYPE versus an
-	   unmodellable VALUE KIND -- and while they shared one AST_SET_DESYNC the
-	   site reported a single number, which is what made it look like one problem
-	   with "one producer to find". The verdict is the instrument; if it cannot
-	   tell two causes apart, every reader re-derives the split by hand.
-	   (The ratchet records only the verdict WORD, not the line, so the
-	   checked-in gap set is unaffected by the renumbering.) */
 	if (ast_bad_vtype(tt) && !agg_lval) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* unmodellable TYPE: long double / __int128 / _Complex / bitfield */
+		AST_SET_DESYNC();
 		return;
 	}
 	if (!is_const && !is_sym && !is_local && !(agg_lval && is_llocal_lval)) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* unmodellable VALUE KIND: e.g. a register-held call result */
+		AST_SET_DESYNC();
 		return;
 	}
 	if (vtop->r2 != VT_CONST && vtop->r2 >= VT_CONST) { MCC_TRACE("br\n");
@@ -2863,14 +2485,6 @@ void ast_hook_genop(int op) { MCC_TRACE("enter\n");
 	ast_vs[ast_vn++] = b;
 }
 
-/* `op ^ 1` models `!cmp` as the paired comparison, which is what `cmp_op ^= 1`
-   means for an integer compare: same encoding, one condition bit. x86_64's
-   gen_opf does not lower a float compare that way -- TOK_LE and TOK_LT flip its
-   `swapped`, which decides whether the second operand is gv'd, so the pair
-   `inf > 1.79e308` / `inf <= 1.79e308` come out as comisd reg,reg with a parity
-   guard versus comisd mem,reg: a different LENGTH, 8 bytes on fp_builtins.c
-   main. Record the negation instead and let the replay redo it after the
-   compare, exactly as gen_test_zero did. */
 static int ast_cmp_invert_late(AstArena *a, AstLocal n, int op) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 	uint32_t k;
@@ -2923,13 +2537,6 @@ void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n"
 	if (ast_kind(ast_cur, n) != AST_Binary)
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); return; }
 #ifdef MCC_TARGET_ARM64
-	/* arm64 materialises a comparison result with CSINC rather than a
-	   compare-and-setcc pair, so the inversion is not a token flip there: the
-	   replay comes out a different LENGTH (32 B vs 28 B on the `!!` reproducer),
-	   not merely a different condition. Flipping the op would model it WRONGLY,
-	   and a wrong model that happens to replay identically is the latent
-	   miscompile path this hook exists to close. Desync instead until the CSINC
-	   form is modelled. */
 	(void)op;
 	AST_SET_DESYNC();
 	return;
@@ -3039,14 +2646,6 @@ void ast_hook_inc_end(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
 }
 
-/* Called from vdup() in the compound-assignment path (mccgen.c expr_eq). At this
- * point the LHS lvalue is the modeled top of ast_vs and vdup is about to push a
- * register-resident copy of it. When MCC_AST_OPASSIGN is on and the state is in
- * sync AND the LHS is PURE (so re-emitting its address twice is sound), arm a
- * one-shot so the immediately-following ast_hook_vpush duplicates the top ast_vs
- * node (deep copy) instead of desyncing on the reg-lvalue leaf. Otherwise leave
- * ast_vdup_pending clear ⇒ the normal vpush desync fires (current safe behavior,
- * function falls back to its un-optimized baseline). */
 void ast_hook_vdup(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vtop->r, vtop->type.t, ast_vn, (int)(vtop - vstack + 1) - ast_base_depth);
 	ast_vdup_pending = 0;
 	if (!ast_opassign_env || !ast_active || !ast_capture || ast_desync ||
@@ -3073,8 +2672,6 @@ void ast_hook_ternary_begin(int c, int g) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (c >= 0) { MCC_TRACE("br\n");
-		/* Constant condition: the parser emits one arm only. Drop the condition
-		   node and remember which arm survives; no If node is built. */
 		ast_vn--;
 		ast_tern[ast_tern_top] = AST_NONE;
 		ast_tern_const[ast_tern_top] = (unsigned char)(c ? 1 : 2);
@@ -3112,10 +2709,6 @@ void ast_hook_ternary_branch_done(int which) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (ast_tern_const[ast_tern_top - 1]) { MCC_TRACE("br\n");
-		/* Constant condition: both arms occupy the SAME vstack slot -- the parser
-		   pops it between them and re-pushes -- so mirror its decrement for both,
-		   stash the selected arm's node, and re-push that node at _end. Retaining
-		   it in place instead desyncs whenever the taken arm is not the last one. */
 		int taken = ast_tern_const[ast_tern_top - 1] - 1;
 		if (which == taken) { MCC_TRACE("br\n");
 			ast_finalize_leaf(ast_vs[ast_vn - 1], vtop);
@@ -3180,11 +2773,6 @@ void ast_hook_landor_operand(int op, int c, int first) { MCC_TRACE("enter\n");
 			return;
 		}
 		if (c >= 0) { MCC_TRACE("br\n");
-			/* Folded. The parser DISCARDS the first operand's vstack slot and pushes
-			   the folded constant in its place (expr_landor -> vset), so drop the
-			   operand's node here and let that push be modelled as an ordinary
-			   Literal. Keeping the old node instead leaves the model one ahead and
-			   desyncs at the replacement push. */
 			ast_vn--;
 			ast_lor[ast_lor_top] = AST_NONE;
 			ast_lor_const[ast_lor_top] = 1;
@@ -3260,7 +2848,6 @@ void ast_hook_landor_end(int materialized) { MCC_TRACE("enter\n");
 	if (ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }
 	if (was_const) { MCC_TRACE("br\n");
-		/* the folded constant is already the top of ast_vs; nothing to push */
 		int crel = (int)(vtop - vstack + 1) - ast_base_depth;
 		if (ast_vn != crel)
 			{ MCC_TRACE("br\n"); AST_SET_DESYNC(); }
@@ -3597,12 +3184,6 @@ void ast_hook_switch_begin(void) { MCC_TRACE("enter\n");
 	ast_finalize_leaf(ast_vs[0], vtop);
 	AstLocal val = ast_vs[0];
 	uint16_t vk = ast_kind(ast_cur, val);
-	/* The selector used to have to be a bare Ref or Literal, which bailed 40 of
-	   mcc's own functions -- 80% of ALL bails -- on `switch (a + b)`,
-	   `switch (g(a))`, `switch (p->f)`. That was conservative, not fundamental:
-	   the replay side already calls the GENERIC ast_replay_value() on child 0, so
-	   it never needed a leaf. Only the type restriction is real. Measured on
-	   mcc's own TU: bail 34 -> 4, faithful 1470 -> 1492. Default ON. */
 	if ((!ast_switch_expr_env && vk != AST_Ref && vk != AST_Literal) ||
 			ast_bad_type(ast_type_t(ast_cur, val))) { MCC_TRACE("br\n");
 		AST_SET_BAIL();
@@ -3865,13 +3446,6 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	if (ast_desync)
 		{ MCC_TRACE("br\n"); return; }
 	int mt_bf_ok = (mtype->t & VT_BITFIELD) && (mtype->t & VT_BTYPE) != VT_STRUCT;
-	/* MCC_AST_MEMBER_AGG (default ON since 2026-07-27). The VALUE-model guard
-	   already has an
-	   aggregate-lvalue escape (`agg_lval`), but this member guard rejects a
-	   struct-typed member outright via ast_bad_type. Measured over mcc's own TU:
-	   all 214 struct-member rejections are lvalues (nonlval=0), i.e. exactly the
-	   shape the value site permits -- a nested `a.b.c` path whose intermediate is
-	   never loaded as a value. */
 	{ static int agg = -1;
 	  if (agg < 0) { MCC_TRACE("br\n");
 	    const char *e = getenv("MCC_AST_MEMBER_AGG");
@@ -3879,15 +3453,6 @@ void ast_hook_member_end(int cumofs, CType *mtype, int nonlval, int qual,
 	  if (agg && !nonlval && (mtype->t & VT_BTYPE) == VT_STRUCT &&
 	      !(mtype->t & VT_BITFIELD))
 	    { MCC_TRACE("br\n"); mt_bf_ok = 1; } }
-	/* MCC_AST_MEMBER_CONST (default ON since 2026-07-27). A `const`-qualified
-	   member desyncs the recorder purely on the qualifier: the values themselves
-	   are ordinary (VT_PTR/VT_INT/VT_LLONG/VT_BYTE/VT_SHORT), so 73 of the 287
-	   member-access desyncs in mcc's own TU are rejected for qualification alone.
-	   Dropping a lone VT_CONSTANT recovers 51 of them. It is NOT purely
-	   conservative -- 4 functions then replay to different bytes and land in
-	   `unfaithful` instead -- but unfaithful functions are excluded from
-	   optimization anyway, so the net is +47 optimizable with no path to a
-	   miscompile. Opt-in until that residue is understood. */
 	{ static int relax = -1;
 	  if (relax < 0) { MCC_TRACE("br\n");
 	    const char *e = getenv("MCC_AST_MEMBER_CONST");
@@ -4266,17 +3831,12 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 	ast_in_op++;
 	if (!model)
 		{ MCC_TRACE("br\n"); return; }
-	/* Split per cause so the verdict line says WHICH region, and below so it says
-	   which of the three depth/type conditions fired. Same conditions, same
-	   short-circuit order -- only the reported line differs. See the vpush site:
-	   collapsing distinct causes onto one line is what makes a bucket look like
-	   one problem and forces every reader to re-derive the split by hand. */
 	if (ast_tern_top > 0) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* store inside a TERNARY region */
+		AST_SET_DESYNC();
 		return;
 	}
 	if (ast_lor_top > 0) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* store inside a SHORT-CIRCUIT region */
+		AST_SET_DESYNC();
 		return;
 	}
 	int rel = (int)(vtop - vstack + 1) - ast_base_depth;
@@ -4285,16 +3845,16 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 	int bf_store = (vtop[-1].type.t & VT_BITFIELD) &&
 								 (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT && !ast_bad_vtype(vtop->type.t);
 	if (ast_vn != rel) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* model depth does not match the codegen vstack */
+		AST_SET_DESYNC();
 		return;
 	}
 	if (ast_vn < 2) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* fewer than the two values a store needs */
+		AST_SET_DESYNC();
 		return;
 	}
 	if ((ast_bad_vtype(vtop->type.t) || ast_bad_vtype(vtop[-1].type.t)) &&
 			!agg_store && !bf_store) { MCC_TRACE("br\n");
-		AST_SET_DESYNC(); /* unmodellable TYPE on either side of the store */
+		AST_SET_DESYNC();
 		return;
 	}
 	AstLocal lhs = ast_vs[ast_vn - 2];
@@ -4310,19 +3870,6 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 		}
 	}
 	AstLocal value = ast_vs[ast_vn - 1];
-	/* The copy is taken BEFORE ast_finalize_leaf on purpose. At the outer store of
-	 * `a = b = v` the value node is SHARED with the inner store, and finalizing it
-	 * here would overwrite its recorded SValue with the state vtop has NOW -- the
-	 * register the inner vstore left the value in. The inner store's value would
-	 * then claim to be register-resident, its replay would skip the
-	 * materialisation (`mov $0x0,%eax`), and both stores would read a stale
-	 * register. Copy first and finalize only the copy, so the inner store keeps
-	 * the constant it actually recorded. */
-	/* A store feeding another store (`a = b = c`) hands the outer store a MARKER
-	   for the inner store's value. CHAINSTORE detects chaining by "this value
-	   already has a parent", which a freshly made marker fails -- so resolve the
-	   marker back to the inner store's RHS first. Without this the gate silently
-	   stops firing (caught by optfire/chainstore and runtime-bench-gatewin). */
 	int mkr = value != AST_NONE && ast_kind(ast_cur, value) == AST_StoreVal;
 	AstLocal inner = mkr ? (AstLocal)ast_ival(ast_cur, value) : AST_NONE;
 	if (mkr && inner != AST_NONE && inner < ast_cur->count &&
@@ -4336,34 +3883,11 @@ void ast_hook_vstore(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n", vt
 		{ MCC_TRACE("br\n"); value = ast_dup_sub(ast_cur, value); }
 	ast_finalize_leaf(ast_vs[ast_vn - 2], vtop - 1);
 	ast_finalize_leaf(value, vtop);
-	/* The copy is finalized with vtop, i.e. it records "the value is in the
-	 * register the inner vstore left it in". That is only true if the inner store
-	 * actually materialises it there -- and a PROMOTED inner target does not: it
-	 * writes straight to its promoted register, leaving the recorded one stale, so
-	 * the outer store reads garbage. Tag the pair here so ast_plan_promotion can
-	 * decline to promote the inner target. */
-	/* MCC_AST_CHAINSTORE: an assignment yields its value, so in `a = b = v` the
-	 * inner store's value node is left as the expression result and THIS store
-	 * adopts it -- but ast_add_child reparents, so the node stays in the inner
-	 * store's child list while its parent points here. The model is then not a
-	 * tree. Measurable on unmodified mcc with a print in ast_add_child:
-	 * `k = j = 0` logs one reparent, the equivalent `k = 0, j = 0` logs none, and
-	 * compiling mcc's own amalgamation logs 314. Give this store its own deep
-	 * copy, exactly as ast_hook_vpush does for the compound-assign vdup ("so the
-	 * model stays a tree"). Only a value that ALREADY has a parent is copied, so
-	 * an ordinary `a = expr;` is untouched -- which is why this is byte-identical.
-	 * NOTE this does NOT make the chained-assignment idiom faithful; that has a
-	 * separate cause (the parser materialises the value once and chains two
-	 * vstores, the replay emits two independent stores). This is a
-	 * well-formedness repair only. */
 	AstLocal lval = ast_vs[ast_vn - 2];
 	AstLocal st = ast_node(ast_cur, AST_Store);
 	if (chained)
 		{ MCC_TRACE("br\n"); ast_set_fbits(ast_cur, st, ast_fbits(ast_cur, st) | 1u); }
 	if (ast_opassign_store_pending) { MCC_TRACE("br\n");
-		/* the first store after a compound-assign vdup: tag it so replay re-emits
-		 * the byte-faithful vdup form. Correctness does not rely on the tag alone —
-		 * replay also structurally verifies value == Binary(op, pure-equal-lval, …). */
 		ast_set_op(ast_cur, st, AST_OP_OPASSIGN);
 		ast_opassign_store_pending = 0;
 	}
@@ -4409,13 +3933,6 @@ void ast_hook_return(int has_val) { MCC_TRACE("enter\n");
 	ast_last_return = AST_NONE;
 	if (!ast_active)
 		{ MCC_TRACE("br\n"); return; }
-	/* A valueless `return;` used to bail the whole function, which cost more
-	   coverage than any other single construct -- it is the guard-clause idiom
-	   (`void f(void){ if (!ok) return; ... }`) this file is built from. Replay has
-	   always handled a Return with no value child (it emits only the epilogue
-	   jump), so the node just needs to be BUILT. Only a return that HAD a value we
-	   failed to model still bails. Passes that consume a Return's value must
-	   tolerate the missing child -- see the AST_NONE guards below. */
 	if (has_val && ast_ret_val == AST_NONE) { MCC_TRACE("br\n");
 		AST_SET_BAIL();
 		return;
@@ -4468,22 +3985,6 @@ void ast_hook_implicit_return(void) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 #define AST_PROMO_MAX 5
 #if defined(MCC_TARGET_RISCV64)
-/* riscv64 has NO leaf (caller-saved) promotion pool, and that is deliberate.
-   The only caller-saved registers mcc models here are a0-a7 (ids 0-7) and
-   fa0-fa7 (ids 8-15) — which are exactly the ABI ARGUMENT registers. A leaf is
-   only call-free as far as the AST can see: a struct copy or return lowers to a
-   hidden memcpy, and gfunc_call materialises each argument with
-   gv(MCC_RC_R(n)) / gv(MCC_RC_F(n)), a class holding exactly ONE register. Pin
-   that register by promotion and get_reg has nothing to hand back, returns -1,
-   and the -1 sentinel reaches load()/store() as a register id — riscv64's
-   freg() then asserts. `struct M { int a; }; struct M u(int d){...return m;}`
-   under MCC_AST_PROMOTE=1 aborted the compiler exactly this way (sizes 4/12/24
-   crash, 8/16 do not, because only the former need the memcpy).
-   So leaves promote only into the callee-saved pool via
-   MCC_AST_PROMO_LEAF_CALLEE, whose per-reg ast_promo_reg_is_callee save/restore
-   already covers a leaf holding s-registers. A real caller-saved pool needs
-   register ids for t0-t6, and an FP pool needs fs0-fs11 (the deferred PR-3
-   callee-saved float pool) — neither is modelled today. */
 #define AST_PROMO_CALLER_N 0
 #define AST_PROMO_CALLEE_N 11
 #define AST_PROMO_XMM_N 0
@@ -4504,15 +4005,6 @@ static const int ast_promo_xmm[AST_PROMO_XMM_N] = {22, 23};
 static const int ast_promo_xmm_leaf[AST_PROMO_XMM_LEAF_N] = {24, 25, 26, 27, 28, 29, 30, 31,
 			22, 23, 21, 20, 19, 18};
 #else
-/* arm64 (PR-2): callful functions promote into the callee-saved pool x19..x28
-   (indices 28..37, mapped by intr()); their incoming values are saved/restored
-   by ast_promo_entry_init/_exit_restore, so no prolog change is needed and the
-   value survives every call.  Leaf functions promote into caller-saved x9..x15
-   (no save needed) and floats into v2..v5 — but a caller-saved value is
-   clobbered by any hidden libcall, and on arm64 the only scalar op that lowers
-   to a libcall (unlike x86 x87) is quad long double, so ast_plan_promotion
-   forces has_call when a long-double op is present (routing it to the saved
-   callee pool). */
 #define AST_PROMO_CALLER_N 7
 #define AST_PROMO_CALLEE_N 10
 #define AST_PROMO_XMM_N 4
@@ -4529,15 +4021,7 @@ static int ast_promo_typ[AST_PROMO_SLOTS];
 static int ast_promo_reg[AST_PROMO_SLOTS];
 static int ast_promo_n;
 static int ast_promo_callful;
-/* Combined leaf pool = caller-saved regs first (no save cost), then callee-saved
- * (save/restore cost), used when MCC_AST_PROMO_LEAF_CALLEE lets a leaf overflow
- * past the caller-saved pool. Caller-first ordering makes the graph colorer
- * prefer the no-save regs. */
 static int ast_promo_leaf_pool[AST_PROMO_CALLER_N + AST_PROMO_CALLEE_N];
-/* Is `reg` a callee-saved reg (i.e. in the callee pool)? Such a reg's incoming
- * value belongs to the caller and MUST be saved/restored when we promote into
- * it. Independent of leaf/callful — for a callful fn every promoted reg is
- * callee-saved (so this is all of them, matching the old behavior). */
 static int ast_promo_reg_is_callee(int reg) { MCC_TRACE("enter\n");
 	for (int i = 0; i < AST_PROMO_CALLEE_N; i++)
 		{ MCC_TRACE("br\n"); if (ast_promo_callee[i] == reg) { MCC_TRACE("br\n"); return 1; } }
@@ -4550,8 +4034,6 @@ static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 
 #if MCC_CONFIG_OPTIMIZER
 #if MCC_CONFIG_ASM
-/* Defined with the journal's raw store below; the inline-asm replay arms in
-   ast_replay_bb need them and sit above that point. */
 static unsigned char *jrn_raw;
 static SValue *jrn_vs;
 #endif
@@ -4611,13 +4093,6 @@ static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
 static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	if ((!ast_inline_env && !ast_inline_pass_env) || ast_bail || ast_desync)
 		{ MCC_TRACE("br\n"); return 0; }
-	/* A non-static definition is normally off-limits: the linker may bind the call
-	 * to another TU's definition. The exception is a plain C99 `inline` under
-	 * -fc99-inline-body -- 6.7.4p7 leaves it unspecified whether a call uses the
-	 * inline definition or the external one, so using it here is exactly what the
-	 * standard intends, and the weak out-of-line body that flag emits covers the
-	 * address-taken and un-inlined uses. a.weak is the marker: the flag sets it
-	 * when it strips VT_INLINE at declaration time. */
 	if (!(sym->type.t & VT_STATIC) &&
 			!(mcc_state->c99_inline_body && sym->a.weak))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -5031,14 +4506,6 @@ static struct AstBaselineFn {
 } ast_baseline_pool[AST_INLINE_MAX];
 static int ast_baseline_n;
 
-/*
- * Retain the AOT baseline: a snapshot of the *final* (shipped, possibly optimized)
- * emit for `sym`, taken from the live text section after the strategy pipeline has
- * run — this is the deopt fallback the dispatcher reverts to on guard-fail / key-miss,
- * and the seed the runtime recompiler specializes. Called at the end of ast_func_end
- * with `src_base`=ast_body_ind_sv, `reloc0`=ast_reloc0_sv, `chain_head`=the shipped
- * body's open return-jump chain (rsym).
- */
 static int ast_baseline_retain(Sym *sym, AstArena *a, int src_base, addr_t reloc0,
 															 int chain_head) { MCC_TRACE("enter\n");
 	if (!ast_jit_env || ast_baseline_n >= AST_INLINE_MAX)
@@ -5065,18 +4532,6 @@ static int ast_baseline_retain(Sym *sym, AstArena *a, int src_base, addr_t reloc
 	return 1;
 }
 
-/*
- * Splice a retained byte-faithful function body into cur_text_section at the live
- * emit cursor `ind`, resolving to the new location. `code`/`rel` are the retained
- * orig/orig_rel buffers, `src_base` is the ast_body_ind_sv they were captured at,
- * `chain_head` is the open return-jump chain head (orig_rsym) inside `code`.
- *
- * Relocations rebase by r_offset only (r_info + addend are position-independent for
- * every x86_64 body reloc kind); intra-body relative branches survive the verbatim
- * byte copy unchanged; the still-open return-jump chain is re-threaded into the live
- * `rsym` so the caller's terminal gsym(rsym) retargets both arms' returns to the one
- * shared epilogue.
- */
 static void ast_baseline_splice(const unsigned char *code, int code_len,
 																const unsigned char *rel, int rel_len, int src_base,
 																int chain_head) { MCC_TRACE("enter\n");
@@ -5142,28 +4597,6 @@ static int ast_local_is_readonly_scan(AstArena *a, int off) { MCC_TRACE("enter\n
 	return 1;
 }
 
-/*
- * Side-car def/use projection (rollout step 1). One O(n) sweep records, per
- * VT_LOCAL slot offset, whether it is written (Store target or any Unary over an
- * lvalue local ref) and whether it escapes (address/member Unary over the slot).
- * The two whole-arena scanners (ast_local_is_readonly, ast_cprop_escapes) then
- * answer from the table in O(k) over distinct slots instead of O(n) per call.
- * The table is rebuilt lazily when a->epoch changes; every arena mutator bumps
- * epoch, so a query never sees a stale answer. On overflow it falls back to the
- * scan. Pure accelerator: it must agree with the scanners bit-for-bit, which the
- * MCC_CONFIG_AST_SHADOW build asserts on every query.
- */
-/*
- * M5 const-data visibility side-car (roadmap step M5, first bounded/byte-neutral step).
- * Initialized static/global data is written into Section->data at PARSE time, OUTSIDE
- * the per-function AST capture window (init_putv / decl_initializer_alloc, mccgen.c), so
- * it is never recorded as AstKind nodes and a pass cannot yet rewrite it. This side-car
- * records one entry per emitted object — (section, offset, size, is_rodata) — read-only,
- * changing no bytes, mirroring the def/use side-car (ast_du_*) below. It makes the const-
- * data footprint queryable (a diagnostic today; M4 data-size scoring / M6 datacomp later);
- * bringing the bytes *under* the AST for rewrite (a data AstKind + re-emit pass) is the
- * next, non-neutral step this visibility unblocks.
- */
 #define AST_DATA_CAP 4096
 typedef struct {
 	void *sec;
@@ -5173,36 +4606,21 @@ typedef struct {
 } AstDataRec;
 static AstDataRec ast_data_recs[AST_DATA_CAP];
 static int ast_data_n;
-static long ast_data_total_ro; /* total .rodata (const) bytes */
-static long ast_data_total_rw; /* total .data (mutable init) bytes */
+static long ast_data_total_ro;
+static long ast_data_total_rw;
 
-/* M6 datacomp candidate identification (read-only): the visibility side-car searches a
- * codec CHAIN (combo_pipeline_search, mcccombo.h — the same combo_run permutation engine
- * the -O4 gate search rides) over each object's just-emitted bytes to estimate how much a
- * datacomp pass would save. A chain (e.g. lzss-then-rle) can beat any single codec, so the
- * estimate is tighter than a best-of-3 pack, and the winning chain is exactly the recipe
- * M6's rewrite step would emit. This changes no emitted bytes — it only measures — and
- * answers "which const objects are worth compressing, and with what codec chain?". Objects
- * below AST_DATA_PACKMIN are skipped (codec headers dominate); above AST_DATA_PACKMAX the
- * estimate is skipped to bound the ping-pong scratch buffers. */
 #define AST_DATA_PACKMIN 32
 #define AST_DATA_PACKMAX 8192
 #define AST_DATA_PIPE_DEPTH 3
 static unsigned char ast_data_pipe_a[AST_DATA_PACKMAX * 2];
 static unsigned char ast_data_pipe_b[AST_DATA_PACKMAX * 2];
-static unsigned char ast_data_pipe_c[AST_DATA_PACKMAX * 2]; /* holds the compressed blob */
-static int ast_data_ncompressible; /* objects whose best chain packs to <50%, round-trip OK */
-static long ast_data_saved;        /* estimated bytes a datacomp pass could reclaim */
-static int ast_data_nlossy;        /* chains that FAILED to round-trip (codec bug signal) */
-static int ast_data_nzerobss;      /* all-zero writable objects (belong in .bss, not .data) */
-static long ast_data_zerobytes;    /* disk bytes reclaimable by moving them to .bss (NOBITS) */
+static unsigned char ast_data_pipe_c[AST_DATA_PACKMAX * 2];
+static int ast_data_ncompressible;
+static long ast_data_saved;
+static int ast_data_nlossy;
+static int ast_data_nzerobss;
+static long ast_data_zerobytes;
 
-/* Detect an all-zero object emitted into a writable PROGBITS section (.data). C11 6.7.9:
- * a static object with an all-zero initializer is identical to one with none, so it belongs
- * in .bss (NOBITS — zero disk bytes) rather than occupying `size` zero bytes on disk. This
- * is the read-only ANALYSIS half of a future zero-init-placement optimization (mirrors the
- * M6 estimate→rewrite split): it quantifies the reclaimable disk without moving anything.
- * .rodata all-zero objects are excluded — const zeros are a separate placement question. */
 int ast_data_all_zero(void *sec, long off, long size) { MCC_TRACE("enter\n");
 	const unsigned char *bytes = ((Section *)sec)->data + off;
 	long i;
@@ -5212,10 +4630,6 @@ int ast_data_all_zero(void *sec, long off, long size) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* Content pool for -fmerge-constants-style string-literal sharing. Keyed on the exact bytes
- * plus (size, align) so a wide literal never aliases a byte literal and a reused slot always
- * satisfies the dup's alignment. Linear probe with a hash prefilter — bounded by AST_STRPOOL_CAP
- * per TU. Offsets index rodata_section->data, valid for the whole TU (rodata only grows). */
 #define AST_STRPOOL_CAP 8192
 typedef struct {
 	uint32_t hash;
@@ -5240,11 +4654,6 @@ long ast_strpool_find_or_add(void *sec, long addr, long size, int align) { MCC_T
 	const unsigned char *bytes = data + addr;
 	uint32_t h = ast_str_hash(bytes, size);
 	int i;
-	/* Reuse the exact bytes OR a suffix of a longer pooled literal (C11 6.5.2.5 footnote
-	 * permits sharing literals with overlapping representations). A pooled entry r covers
-	 * this one if this literal's bytes equal r's last `size` bytes AND that interior offset
-	 * meets this literal's alignment — then references (symbol + addend) re-home cleanly into
-	 * the middle of r. Exact match is the r->size == size case (off == r->addr). */
 	for (i = 0; i < ast_strpool_n; i++) { MCC_TRACE("br\n");
 		AstStrRec *r = &ast_strpool[i];
 		long off;
@@ -5285,10 +4694,6 @@ static void ast_data_zero_check(void *sec, long off, long size, int is_ro) { MCC
 						off, size, ast_data_zerobytes); }
 }
 
-/* Verify the winning chain actually decodes back to the exact source bytes. A datacomp
- * rewrite that trusted a lossy chain would silently miscompile, so a candidate is only
- * counted if compress→decompress is bit-exact. Doubles as a decoder bug-hunt: every const
- * object in every compiled TU exercises the chosen dec() path against a known original. */
 static int ast_data_roundtrips(const unsigned char *bytes, long size, const ComboBest *best) { MCC_TRACE("enter\n");
 	unsigned char *comp, *back;
 	long clen, blen;
@@ -5394,7 +4799,7 @@ void ast_hook_data(void *sec, long off, long size, int is_ro) { MCC_TRACE("enter
 #define AST_DU_ESCAPED 2u
 static MCC_OPT_TLS const AstArena *ast_du_arena;
 static MCC_OPT_TLS uint64_t ast_du_epoch;
-static MCC_OPT_TLS int ast_du_state; /* 0 = must build, 1 = valid, -1 = overflowed */
+static MCC_OPT_TLS int ast_du_state;
 static MCC_OPT_TLS int ast_du_n;
 static MCC_OPT_TLS int ast_du_off[AST_DU_CAP];
 static MCC_OPT_TLS uint8_t ast_du_flags[AST_DU_CAP];
@@ -5491,15 +4896,6 @@ static void ast_du_diverge(const char *q, int off, int tab, int scan) { MCC_TRAC
 }
 #endif
 
-/*
- * Per-node property memos (rollout step 2). The four monotone subtree predicates
- * (ast_ident_pure, ast_cprop_safe, ast_sccp_has_label, ast_cse_regpure) are pure
- * functions of the subtree rooted at a node (its fields plus the stable volatile
- * bits of any referenced Sym), so each node's verdict is cached in a per-predicate
- * byte array (0 unknown, 1 true, 2 false) and reused in O(1). The whole memo is
- * cleared whenever a->epoch changes (any mutation) and grown to a->count on
- * demand. Shadow build asserts each memoized answer equals a fresh recompute.
- */
 enum {
 	AST_MEMO_PURE,
 	AST_MEMO_CPROPSAFE,
@@ -5575,15 +4971,6 @@ AST_MEMO_QUERY(cprop_safe, AST_MEMO_CPROPSAFE)
 AST_MEMO_QUERY(sccp_has_label, AST_MEMO_HASLABEL)
 AST_MEMO_QUERY(cse_regpure, AST_MEMO_REGPURE)
 
-/*
- * Structural subtree hash (rollout step 3). h[n] folds the exact ast_ident_same
- * tuple (kind, op, type_t, type_ref, ival, fbits, sym, nchild) with the ordered
- * child hashes, so structurally-equal subtrees always hash equal. Used as a
- * collision-proof fast reject: h[x] != h[y] proves the subtrees differ in O(1);
- * on a hash match ast_ident_same falls through to the full ast_ident_same_scan
- * (confirm-on-fire), so a collision can never make it report a false equality.
- * The side-car is filled lazily per node and cleared when a->epoch changes.
- */
 static MCC_OPT_TLS const AstArena *ast_hash_arena;
 static MCC_OPT_TLS uint64_t ast_hash_epoch;
 static MCC_OPT_TLS int ast_hash_cap;
@@ -5819,20 +5206,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				sz = type_size(&ct.ref->type, &al);
 			}
 		}
-		/* MCC_AST_PROMO_ARROW: a pointer local read via `->` (AST_OP_MEMBER_ARROW)
-		 * does NOT escape — the pointer VALUE is loaded and dereferenced to other
-		 * memory; the pointer's own slot is neither addressed nor aliased. The base
-		 * poison loop conservatively poisons the local for ANY unary with a
-		 * local-Ref child (via coff[j]==off, sz==0 for non-ADDR ops), which blocks
-		 * promoting hot pointers like nbody advance()'s p=&b[i]/q=&b[j] (reloaded
-		 * from the stack on every field access). Skipping the poison here lets them
-		 * promote. AST_OP_ADDR (real address escape) and its sz-range poison are
-		 * unaffected. Gated, default OFF ⇒ byte-identical. */
 		int skip_arrow = ast_promo_arrow_env && ast_op(a, n) == AST_OP_MEMBER_ARROW;
-		/* ++/-- in STATEMENT context does not escape the local and is handled by
-		 * the promoted-register path in ast_replay_bb; a value-producing ++ still
-		 * needs the old value preserved, which that path does not do, so only the
-		 * statement form is exempted here. */
 		if (ast_promo_incdec_env &&
 				(ast_op(a, n) == TOK_INC || ast_op(a, n) == TOK_DEC) &&
 				ast_parent(a, n) != AST_NONE &&
@@ -5889,12 +5263,6 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				cpoison[j] = 1;
 				break;
 			} } }
-	/* MCC_AST_CHAINSTORE: the outer store of `a = b = v` reads the value from the
-	 * register the INNER store left it in. Promoting b breaks that -- the inner
-	 * store writes to b's promoted register and never materialises into the
-	 * recorded one, so the outer store reads a stale register (measured: a
-	 * constant +512 offset on a chained-init reduction loop). Decline to promote
-	 * the inner target. */
 	if (ast_chainstore_env) { MCC_TRACE("br\n");
 		for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 			if (ast_kind(a, n) != AST_Store || !(ast_fbits(a, n) & 1u))
@@ -5914,13 +5282,6 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			for (int j = 0; j < nc; j++)
 				{ MCC_TRACE("br\n"); if (coff[j] == toff)
 					{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
-			/* Same hazard for the chained store's VALUE SOURCE: in `a = b = i`
-			 * with i a promoted local (e.g. a promoted loop counter), the inner
-			 * store reads i straight from its promoted register -- on arm64 a
-			 * `stur w_i,[b]` -- and never materialises it into the register the
-			 * outer store reads, so the outer store gets a stale register (x86
-			 * happens to route it through the accumulator; arm64 does not).
-			 * Decline to promote the source too. */
 			AstLocal val = ast_child(a, prev, 1);
 			if (val != AST_NONE && ast_kind(a, val) == AST_Ref &&
 					(ast_op(a, val) & VT_VALMASK) == VT_LOCAL &&
@@ -5945,8 +5306,6 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		xmm_max = AST_PROMO_XMM_LEAF_N;
 	}
 	if (!has_call && ast_promo_leaf_callee_env) { MCC_TRACE("br\n");
-		/* leaf may overflow past caller-saved into the callee-saved pool
-		 * (saved/restored per-reg); caller-saved first so they're preferred. */
 		int k = 0;
 		for (int i = 0; i < AST_PROMO_CALLER_N; i++)
 			{ MCC_TRACE("br\n"); ast_promo_leaf_pool[k++] = ast_promo_caller[i]; }
@@ -6180,11 +5539,6 @@ static void ast_promo_write(int reg, CType *ct) { MCC_TRACE("enter\n");
 
 static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 	ast_promo_save_plan();
-	/* Save the INCOMING value of every promoted callee-saved reg (belongs to the
-	 * caller). For a callful fn all promoted regs are callee-saved ⇒ identical to
-	 * the old "if (callful) save all"; for a leaf with only caller-saved regs
-	 * nothing is saved (byte-identical); a leaf that overflowed into the callee
-	 * pool (MCC_AST_PROMO_LEAF_CALLEE) saves just those. */
 	int any_save = 0;
 	for (int i = 0; i < ast_promo_n; i++)
 		{ MCC_TRACE("br\n"); if (ast_promo_reg_is_callee(ast_promo_reg[i])) { MCC_TRACE("br\n");
@@ -6238,9 +5592,6 @@ static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 
 static void ast_promo_exit_restore(void) { MCC_TRACE("enter\n");
 	SValue sv;
-	/* Restore each promoted callee-saved reg's incoming value. Mirrors
-	 * ast_promo_entry_init's per-reg save condition (callful: all; leaf-gate-off:
-	 * none — same as the old early return; leaf-gate-on: just the callee ones). */
 	for (int i = ast_promo_n - 1; i >= 0; i--) { MCC_TRACE("br\n");
 		if (!ast_promo_reg_is_callee(ast_promo_reg[i]))
 			{ MCC_TRACE("br\n"); continue; }
@@ -6290,12 +5641,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 							 (int)ind, (int)(vtop - vstack));
 	switch (ast_kind(a, n)) { MCC_TRACE("br\n");
 	case AST_BasicBlock: {
-		/* A comma in value position: every child but the last for effect, the last
-		   for the value. Replay_IR builds this for a short-circuit operand that
-		   evaluated a statement of its own -- an inline atomic load's temp spill --
-		   which otherwise ran ahead of the whole expression. The tree never places
-		   a block where a value is expected, so this arm is unreachable from a
-		   hook-built arena. */
 		AstLocal c, last = AST_NONE;
 		for (c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 			{ MCC_TRACE("br\n"); last = c; }
@@ -6313,22 +5658,12 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			} else { MCC_TRACE("br\n");
 				ast_replay_value(a, c);
 			}
-			/* A statement child leaves whatever its own lowering leaves -- a VOID
-			   Invoke leaves nothing, a Store leaves its value -- so unwind to the
-			   depth this child started at rather than assuming exactly one. */
 			while ((int)(vtop - vstack) > d0)
 				{ MCC_TRACE("br\n"); vpop(); }
 		}
 		break;
 	}
 	case AST_Store: {
-		/* A store in VALUE context -- `c && (*out = 7)`, `c ? (*out = 1) : (*out
-		   = 2)` -- which the parser evaluates for its value inside the branch.
-		   The tree never places a Store where a value is expected, so this arm is
-		   unreachable from a hook-built arena and the default build is unchanged;
-		   it exists for the Replay_IR arenas, which model those operands the way
-		   the parser evaluates them. Same emission as ast_replay_bb's plain Store
-		   path, without the vpop that discards the result. */
 		if (ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, 0));
 			ast_replay_value(a, ast_child(a, n, 1));
@@ -6337,10 +5672,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		break;
 	}
 	case AST_StoreVal: {
-		/* Value-live: already on the vstack, emit nothing. Otherwise it was
-		   popped, so re-emit the RHS -- the pre-F3a double evaluation, which is
-		   merely unfaithful. Emitting nothing would leave the consumer short an
-		   operand and gfunc_call would read past the vstack. */
 		AstLocal st = (AstLocal)ast_ival(a, n);
 		if (st != AST_NONE && st < a->count && ast_kind(a, st) == AST_Store) {
 			MCC_TRACE("br\n");
@@ -6408,10 +5739,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	case AST_Binary: {
 		int bop = ast_op(a, n);
 		if (bop == AST_OP_CPLXBUILD) { MCC_TRACE("br\n");
-			/* __builtin_complex's own lowering: both operands are evaluated and
-			   materialised BEFORE either half is stored, so the two halves are live
-			   at once. Two sibling Stores cannot express that -- each would
-			   rematerialise its own operand into the same register. */
 			CType ccplx, cbase;
 			SValue r;
 			ccplx.t = ast_type_t(a, n);
@@ -6472,8 +5799,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 #endif
 #if defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 		if (bop == AST_OP_COPYSIGN) { MCC_TRACE("br\n");
-			ast_replay_value(a, ast_child(a, n, 0)); /* x (magnitude) */
-			ast_replay_value(a, ast_child(a, n, 1)); /* y (sign)      */
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
 			gen_copysign();
 			vtop->type.t = ast_type_t(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
@@ -6492,9 +5819,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 #endif
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
 		if (bop == AST_OP_FMA) { MCC_TRACE("br\n");
-			ast_replay_value(a, ast_child(a, n, 0)); /* x */
-			ast_replay_value(a, ast_child(a, n, 1)); /* y */
-			ast_replay_value(a, ast_child(a, n, 2)); /* z */
+			ast_replay_value(a, ast_child(a, n, 0));
+			ast_replay_value(a, ast_child(a, n, 1));
+			ast_replay_value(a, ast_child(a, n, 2));
 			gen_fma();
 			vtop->type.t = ast_type_t(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
@@ -6637,7 +5964,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			ct.t = ast_type_t(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
-			gen_round(uop == AST_OP_RINT ? 4 : 5); /* FRINTX / FRINTI */
+			gen_round(uop == AST_OP_RINT ? 4 : 5);
 			vtop->type = ct;
 #endif
 #if defined(MCC_TARGET_ARM64)
@@ -6646,7 +5973,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			ct.t = ast_type_t(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
-			gen_round(3); /* FRINTA */
+			gen_round(3);
 			vtop->type = ct;
 #endif
 #endif
@@ -6707,10 +6034,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		save_regs(1);
 		tt = gvtst(1, 0);
 		ast_replay_value(a, ast_child(a, n, 1));
-		/* expr_cond decays a VT_FUNC arm one step AFTER the branch tap, so a
-		   reconstruction bound from that snapshot carries the function type
-		   itself and combine_types/gv then hand gfunc_call a callee it cannot
-		   walk. Mirror the parser's own mk_pointer here. */
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); mk_pointer(&vtop->type); }
 		sv = *vtop;
@@ -6780,17 +6103,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 					(vtop->type.ref->type.t & VT_BTYPE) == VT_FUNC)
 				{ MCC_TRACE("br\n"); vtop->type = *pointed_type(&vtop->type); }
 			if (i == 0 && live_arg) { MCC_TRACE("br\n");
-				/* The storeval-arg admission (ast_finalize_storevals) is a
-				   STRUCTURAL walk on the recorded AST; it cannot see the replay
-				   value-stack, so the store context it assumes (the store target
-				   / consumed value) is not guaranteed to be present here. When it
-				   is absent the rotation below underflows vstack -- which sits
-				   just after nb_sym_pools/sym_pools in MCCState, so vrotb(3)'s
-				   vtop[-2] write silently corrupts the symbol-pool bookkeeping and
-				   the compiler crashes later in __sym_malloc. Verify the depth and
-				   bail to byte-faithful baseline codegen if it is short (the replay
-				   runs under a setjmp for exactly this). vrotb(3) needs 3 live
-				   values, vswap needs 2. */
 				int sv_need = (ast_fbits(a, n) & AST_FB_CALL_STOREVAL_STORE) ? 3 : 2;
 				if (vtop - vstack + 1 < sv_need)
 					{ MCC_TRACE("br\n"); mcc_error("ast-replay: storeval-arg stack underflow"); }
@@ -6891,14 +6203,6 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		sv.c.q.hi = ast_wide_hi(a, n);
 		sv.sym = (Sym *)(uintptr_t)ast_sym(a, n);
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_ARM)
-		/* A call's wide-integer result always lands in the ABI return-register
-		   pair. A synthetic invoke -- e.g. a nested-call argument that replay
-		   double-evaluates -- records no wide_r2, so ast_wide_r2 returns
-		   AST_R2_NONE and the high half would otherwise materialise from the
-		   absent constant q.hi (a zero), corrupting the pair. Reconstruct the
-		   pair from the ABI. Only reachable with MCC_AST_REGPAIR on (off desyncs
-		   a register-pair call result before replay), so the default i386/arm
-		   output is unchanged. */
 		if (sv.r2 == AST_R2_NONE && (sv.type.t & VT_BTYPE) == VT_LLONG) {
 			MCC_TRACE("br\n");
 			sv.r = REG_IRET;
@@ -7007,12 +6311,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			}
 #endif
 #if MCC_CONFIG_OPTIMIZER
-			/* Compound assignment (`lval op= rhs`, MCC_AST_OPASSIGN): re-emit the
-			 * byte-faithful vdup form — compute the lval address ONCE, dup it, load,
-			 * apply the op, store — matching the baseline codegen (mccgen.c expr_eq),
-			 * instead of the naive form below which would compute the address twice.
-			 * The tag is a hint; correctness is guaranteed here by structurally
-			 * requiring value == Binary(op, X, rhs) with X == lval and lval pure. */
 			if (ast_op(a, s) == AST_OP_OPASSIGN) { MCC_TRACE("br\n");
 				AstLocal c0 = ast_child(a, s, 0), c1 = ast_child(a, s, 1);
 				if (c1 != AST_NONE && ast_kind(a, c1) == AST_Binary &&
@@ -7020,7 +6318,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 						ast_struct_eq(a, c0, ast_child(a, c1, 0), 16) &&
 						ast_expr_pure(a, c0, 16)) { MCC_TRACE("br\n");
 					ast_replay_value(a, c0);
-					vpushv(vtop); /* vdup: duplicate the lval descriptor (one addr compute) */
+					vpushv(vtop);
 					ast_replay_value(a, ast_child(a, c1, 1));
 					gen_op(ast_op(a, c1));
 					vstore();
@@ -7061,11 +6359,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			break;
 		case AST_Binary:
 #ifdef MCC_JRN_VA_START_VOID
-			/* arm64's gen_va_start consumes both operands and pushes nothing, so
-			   it is a STATEMENT over the two the parser handed it. Unmodelled it
-			   emitted none of the 40-byte va_list prologue. riscv64's leaves a
-			   value in their place and needs no node, which is why this is
-			   arm64-scoped rather than keyed on MCC_JRN_HAVE_VA_START. */
 			if (ast_op(a, s) == AST_OP_VASTART) { MCC_TRACE("br\n");
 				ast_replay_value(a, ast_child(a, s, 0));
 				ast_replay_value(a, ast_child(a, s, 1));
@@ -7106,16 +6399,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			break;
 		case AST_Unary:
 #if MCC_CONFIG_OPTIMIZER && (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
-			/* MCC_AST_PROMO_INCDEC: `i++;` as a STATEMENT on a promoted local. The
-			 * generic path calls inc(), which begins with test_lvalue() -- but the
-			 * Ref replay rewrites a promoted local to a plain register RVALUE
-			 * (sv.r = preg drops VT_LVAL), so inc() cannot be used and the planner
-			 * poisons any incremented local to avoid producing a plan the backend
-			 * would drop. That poison hits the induction variable of every counted
-			 * loop. Here the result is unused (statement context), so no old-value
-			 * copy is needed and the update is just `reg += 1` -- which is exactly
-			 * the loop-increment case. The value-producing forms (i++ inside an
-			 * expression) still need the copy and stay poisoned. */
 			if ((ast_op(a, s) == TOK_INC || ast_op(a, s) == TOK_DEC) &&
 					ast_promo_incdec_env && ast_promo_n && !ast_in_graft) { MCC_TRACE("br\n");
 				AstLocal ic = ast_first_child(a, s);
@@ -7177,12 +6460,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				uint8_t cr[MCC_NB_ASM_REGS];
 				const unsigned char *p = jrn_raw + (int)(ast_ival(a, s) & 0xffffffff);
 				int nb_operands, nb_outputs;
-				/* Every ASMOperand holds an SValue* INTO the vstack, so the output
-				   stores are only correct against the stack the parser had. The
-				   journal replay gets that from its per-op snapshot restore; here the
-				   node carries the same snapshot handle and the arm restores it around
-				   the call. Without it the four output stores of
-				   asm_constraints_x86.c came out addressing nonsense. */
 				SValue sv_stack[VSTACK_SIZE + 1];
 				SValue *sv_top = vtop;
 				int vs_off = (int)(ast_fbits(a, s) & 0xffffffff);
@@ -7473,19 +6750,6 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	}
 }
 
-/* MCC_AST_TREECHK: assert the arena really is a TREE. ast_add_child re-parents
-   by overwriting parent[child] WITHOUT unlinking the node from its previous
-   parent's first_child/next_sib chain, so a node can end up reachable from two
-   child chains while parent[] names only one of them. Replay walks the chains,
-   so such a node is emitted once per chain -- that is the F3a call duplication.
-   This checker answers the question that decides how much F3a matters: does a
-   stolen node ever survive into a FAITHFUL body, where the optimizer passes
-   would then transform an invalid model and re-emit from it? That is the one
-   failure mode the always-on byte comparison cannot catch.
-
-   Two violations are reported: a node that appears in more than one chain, and
-   a node whose parent[] disagrees with the chain it was actually found in.
-   Opt-in and O(nodes), so it costs nothing unless asked for. */
 static int ast_treechk_env_cached = -1;
 
 static const char *ast_relsym_name(int idx) { MCC_TRACE("enter\n");
@@ -7583,14 +6847,6 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 		par = ast_parent(a, n);
 		if (par == AST_NONE)
 			{ MCC_TRACE("br\n"); continue; }
-		/* Only safe when nothing touches the vstack between the store and the
-		   read. That holds when the marker is the LEFTMOST leaf of the statement
-		   that immediately follows the store -- it is then the first thing that
-		   statement evaluates, so the store's value is still on top. Walk up
-		   requiring first-child at every step. A call argument fails this
-		   (gfunc_call pushes around it) and keeps the old, unfaithful behaviour,
-		   except under MCC_AST_STOREVAL_CALL, which admits it as the call's first
-		   argument and has replay swap the callee under the live value. */
 		{
 			AstLocal cur = n, up, call_up = AST_NONE;
 			int leftmost = 1, constl = 0, call_store = 0, docond = 0, rot = 0;
@@ -7601,12 +6857,6 @@ static void ast_finalize_storevals(AstArena *a) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); break; }
 				if (ast_kind(a, up) == AST_Invoke) { MCC_TRACE("br\n");
 					AstLocal pst = ast_parent(a, up);
-					/* A store whose value feeds a LATER argument -- printf("%d\n",
-					   (y = c + d)) -- cannot use the callee swap, because the
-					   arguments between the callee and it have already been pushed.
-					   The live value is then k entries down and the existing
-					   AST_FB_STORE_LIVE_ROT / vrotb(k + 1) path lifts it, so no call
-					   fbit is needed at all. */
 					if (ast_storeval_calllast_env && call_up == AST_NONE && !constl &&
 							!docond && !rot && ast_nchild(a, up) >= 3 &&
 							ast_child(a, up, ast_nchild(a, up) - 1) == cur &&
@@ -8014,7 +7264,6 @@ static int ast_bfold_eval_f(int id, uint32_t b0, uint32_t b1, uint64_t *out) { M
 		break;
 	case 9:
 	case 10:
-		/* rint/nearbyint depend on the dynamic rounding mode — don't const-fold */
 		return 0;
 	default:
 		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 31))
@@ -8059,7 +7308,6 @@ static int ast_bfold_eval_d(int id, uint64_t b0, uint64_t b1, uint64_t *out) { M
 		break;
 	case 9:
 	case 10:
-		/* rint/nearbyint depend on the dynamic rounding mode — don't const-fold */
 		return 0;
 	default:
 		if (x0 == 0 && x1 == 0 && ((b0 ^ b1) >> 63))
@@ -8107,8 +7355,6 @@ static int ast_bfold_minmax_inf(AstArena *a, AstLocal n, int bid, int bt,
 	return 0;
 }
 
-/* Structural equality of two AST subtrees (bounded). Used to spot a square
- * x*x where both operands are the same expression. */
 static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth) { MCC_TRACE("enter\n");
 	if (x == y)
 		{ MCC_TRACE("br\n"); return 1; }
@@ -8128,8 +7374,6 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth) { MCC_T
 	return 1;
 }
 
-/* An expression is "pure" here if evaluating it twice yields the same value:
- * no calls, no volatile access. Conservative — unknown nodes are still walked. */
 static int ast_expr_pure(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 1; }
@@ -8144,10 +7388,6 @@ static int ast_expr_pure(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\
 	return 1;
 }
 
-/* Conservatively decide whether n is provably >= 0 (never a negative real), so
- * sqrt(n) can be a bare sqrtsd with no errno=EDOM branch (gcc does the same
- * elision under VRP). A false negative just keeps the libcall; a false positive
- * would only drop errno on a domain error, never corrupt the numeric result. */
 static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth);
 
 static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
@@ -8156,18 +7396,12 @@ static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("ente
 	while (ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
 		{ MCC_TRACE("br\n"); n = ast_first_child(a, n); }
 	int k = ast_kind(a, n);
-	/* A local whose single reaching def is a nonneg expr (and whose address is
-	 * never taken) reads nonneg at every use — lets sqrt(d2) inline when d2 is a
-	 * temp holding e.g. dx*dx+dy*dy+dz*dz (nbody advance). Gated with the
-	 * math-inline pre-pass so default -O2/-O4 stays byte-identical; the failure
-	 * mode is safe regardless (a false positive only drops errno on a domain
-	 * error, never corrupts the sqrt result). */
 	if (k == AST_Ref && ast_math_inline_prepass_env)
 		{ MCC_TRACE("br\n"); return ast_local_nonneg(a, n, depth); }
 	if (k == AST_Literal) { MCC_TRACE("br\n");
 		int bt = ast_type_t(a, n) & VT_BTYPE;
 		uint64_t v = ast_ival(a, n);
-		if (bt == VT_DOUBLE) /* sign bit clear and not a NaN */
+		if (bt == VT_DOUBLE)
 			{ MCC_TRACE("br\n"); return !(v >> 63) &&
 				!((v & 0x7ff0000000000000ull) == 0x7ff0000000000000ull &&
 					(v & 0x000fffffffffffffull)); }
@@ -8182,7 +7416,7 @@ static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("ente
 		int op = ast_op(a, n);
 		AstLocal l = ast_child(a, n, 0), r = ast_child(a, n, 1);
 		if (op == '*' && ast_struct_eq(a, l, r, 12) && ast_expr_pure(a, l, 16))
-			{ MCC_TRACE("br\n"); return 1; } /* a square of a repeatable expr */
+			{ MCC_TRACE("br\n"); return 1; }
 		if (op == '+' || op == '*' || op == '/')
 			{ MCC_TRACE("br\n"); return ast_expr_nonneg(a, l, depth - 1) &&
 				ast_expr_nonneg(a, r, depth - 1); }
@@ -8191,11 +7425,6 @@ static int ast_expr_nonneg(AstArena *a, AstLocal n, int depth) { MCC_TRACE("ente
 	return 0;
 }
 
-/* `ref` is a Ref. Return 1 if it refers to a local (VT_LOCAL, non-SYM) that
- * (a) has its address NEVER taken anywhere in the function (no aliasing writes),
- * and (b) has EXACTLY ONE defining Store whose value is provably nonneg. Then
- * every load of the local reads a nonneg value. Whole-arena scan; bounded by
- * `depth` recursion. Used only under MCC_AST_MATH_INLINE_PREPASS. */
 static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth) { MCC_TRACE("enter\n");
 	if (depth <= 0 || ast_kind(a, ref) != AST_Ref)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -8212,7 +7441,7 @@ static int ast_local_nonneg(AstArena *a, AstLocal ref, int depth) { MCC_TRACE("e
 			if (c != AST_NONE && ast_kind(a, c) == AST_Ref &&
 					(ast_op(a, c) & VT_VALMASK) == VT_LOCAL && !(ast_op(a, c) & VT_SYM) &&
 					(int64_t)ast_ival(a, c) == off)
-				{ MCC_TRACE("br\n"); return 0; } /* address taken -> may alias */
+				{ MCC_TRACE("br\n"); return 0; }
 		}
 		if (mk == AST_Store) { MCC_TRACE("br\n");
 			AstLocal tgt = ast_child(a, m, 0);
@@ -8264,16 +7493,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 		if ((ast_type_t(a, n) & VT_BTYPE) != bt ||
 				(int)ast_nchild(a, n) != nargs + 1)
 			{ MCC_TRACE("br\n"); continue; }
-		/* fma(x,y,z) is the only 3-arg builtin — intercept it BEFORE the 2-slot
-		 * ab[] const-fold machinery below (which would overflow at nargs==3). It is
-		 * never const-folded (correctly-rounded fma is host-mode-dependent) — always
-		 * either the runtime FMADD inline (arm64/riscv64, gate on) or the libcall. */
 		if (bid == 11) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
-			/* fused x*y+z: single-rounding FMADD, faster AND more accurate than
-			 * x*y+z. Baseline on arm64 (FMADD) and riscv64 (fmadd.d/.s) — matches
-			 * gcc default. Opt-in MCC_AST_FMA_INLINE. x86 needs FMA3 (not baseline)
-			 * so it stays a libcall there. */
 			if (nargs == 3 && ast_fma_env) { MCC_TRACE("br\n");
 				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2),
 								 z = ast_child(a, n, 3);
@@ -8302,9 +7523,6 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 		}
 		if (i < nargs) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
-			/* fabs(x) with a runtime x: lower to an inline sign-clear (andpd)
-			 * instead of a libcall. Bit-exact, SSE2-baseline. The parser already
-			 * coerced the arg to bt, and the replay re-casts to bt before emit. */
 			if (bid == 1 && nargs == 1 && ast_math_inline_env) { MCC_TRACE("br\n");
 				AstLocal arg = ast_child(a, n, 1);
 				ast_clear_children(a, n);
@@ -8318,9 +7536,6 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-			/* sqrt(x) with a provably-nonnegative runtime x: bare sqrtsd, no
-			 * errno branch (matches gcc's VRP elision). Negative/unknown args
-			 * keep the libcall so errno=EDOM is still set. */
 			if (bid == 0 && nargs == 1 && ast_math_inline_env &&
 					(ast_no_math_errno ||
 					 ast_expr_nonneg(a, ast_child(a, n, 1), 24))) { MCC_TRACE("br\n");
@@ -8336,11 +7551,6 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-			/* floor/ceil/trunc(x) with a runtime x: single roundsd/ss (bit-exact
-			 * vs libm, incl. NaN/inf/large). Opt-in (roundsd is SSE4.1, not the
-			 * SSE2 baseline) via MCC_AST_ROUND_INLINE. bid 2=floor,3=ceil,4=trunc.
-			 * x86_64/arm64 only — riscv64 baseline has no round-to-integral insn
-			 * (gcc keeps the libcall too). */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 			if ((bid == 2 || bid == 3 || bid == 4) && nargs == 1 &&
 					ast_round_inline_env) { MCC_TRACE("br\n");
@@ -8358,9 +7568,6 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-			/* rint/nearbyint(x): round to integral using the DYNAMIC rounding mode
-			 * (default nearest-even). x86 roundsd imm 0x4 (rint, raises inexact) /
-			 * 0xC (nearbyint, suppresses); arm64 FRINTX / FRINTI. Same opt-in gate. */
 			if ((bid == 9 || bid == 10) && nargs == 1 &&
 					ast_round_inline_env) { MCC_TRACE("br\n");
 				AstLocal arg = ast_child(a, n, 1);
@@ -8375,12 +7582,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-#endif /* round: x86_64 || arm64 */
+#endif
 #if defined(MCC_TARGET_ARM64)
-			/* round/roundf(x): arm64 FRINTA (round-to-nearest, ties AWAY) — an
-			 * EXACT match for C round() and it doesn't raise inexact. x86 roundsd
-			 * can only do ties-to-even, so round stays a libcall there (bid 8 is
-			 * not in the floor/ceil/trunc block above). Opt-in MCC_AST_ROUND_INLINE. */
 			if (bid == 8 && nargs == 1 && ast_round_inline_env) { MCC_TRACE("br\n");
 				AstLocal arg = ast_child(a, n, 1);
 				ast_clear_children(a, n);
@@ -8394,12 +7597,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-#endif /* round(FRINTA): arm64 */
+#endif
 #if defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
-			/* copysign(x,y): |x| with sign of y. riscv64 = fsgnj.d/.s (1 insn);
-			 * x86_64 = SSE mask sequence; arm64 = GP round-trip (fmov+and+orr).
-			 * i386 keeps the libcall (x87 has no cheap bit-mask path).
-			 * id 5, nargs 2; gated by the sign-family bfold gate. */
 			if (bid == 5 && nargs == 2 && ast_copysign_env &&
 					ast_bfold_sign_env) { MCC_TRACE("br\n");
 				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2);
@@ -8415,12 +7614,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-#endif /* copysign: riscv64 || x86_64 || arm64 */
+#endif
 #if defined(MCC_TARGET_ARM64)
-			/* fmin/fmax(x,y): arm64 FMINNM/FMAXNM (IEEE minNum/maxNum — return the
-			 * number vs a quiet NaN, -0<+0), exactly C fmin/fmax. x86 minsd/maxsd
-			 * mishandle NaN/±0 so they stay libcalls. bid 6=fmin, 7=fmax; nargs 2.
-			 * Opt-in MCC_AST_MINMAX_INLINE (fminnm is ARMv8 baseline). */
 			if ((bid == 6 || bid == 7) && nargs == 2 && ast_minmax_inline_env &&
 					ast_bfold_minmax_env) { MCC_TRACE("br\n");
 				AstLocal x = ast_child(a, n, 1), y = ast_child(a, n, 2);
@@ -8436,8 +7631,8 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 				folds++;
 				continue;
 			}
-#endif /* fmin/fmax(FMINNM/FMAXNM): arm64 */
-#endif /* fabs/sqrt: x86_64 || arm64 || riscv64 || i386 */
+#endif
+#endif
 			uint64_t pres;
 			if ((bid == 6 || bid == 7) &&
 					ast_bfold_minmax_inf(a, n, bid, bt, &pres)) { MCC_TRACE("br\n");
@@ -8464,16 +7659,6 @@ static int ast_bfold_run(AstArena *a) { MCC_TRACE("enter\n");
 	return folds;
 }
 
-/* Unconditional math-inline pre-pass (MCC_AST_MATH_INLINE_PREPASS). Applies the
- * SAME fabs/sqrt(nonneg) Invoke->Unary rewrites ast_bfold_run does (kept in sync
- * with the two blocks there), but as a standalone pass runnable BEFORE the
- * -O>=4 strategy search — which can otherwise drop `bfold` from its winning
- * order, regressing -O4 below -O2 (sqrt(x*x) -> sqrtsd at -O2/-O3 becomes a
- * `call sqrt` libcall at -O4). The rewrites are always a strict improvement and
- * independent of emit-size scoring. Idempotent with ast_bfold_run (which skips
- * the already-rewritten AST_Unary nodes). Only RUNTIME args are rewritten;
- * constant args are left for bfold's compile-time fold. x86_64 + arm64 + riscv64
- * + i386 (mirrors the ast_bfold_run math-inline guard; round is x86_64/arm64-only). */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_math_inline_env)
@@ -8500,10 +7685,7 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		if (bi == nfn)
 			{ MCC_TRACE("br\n"); continue; }
 		int bid = ast_bfold_tab[bi].id;
-		/* sqrt(0), fabs(1); floor(2)/ceil(3)/trunc(4) only when opt-in AND on an
-		 * arch with a round-to-integral instruction (x86_64/arm64, not riscv64). */
 #if defined(MCC_TARGET_ARM64)
-		/* arm64 also inlines round() (bid 8, FRINTA). rint/nearbyint (9/10) both arches. */
 		int is_round = (bid == 2 || bid == 3 || bid == 4 || bid == 8 ||
 										bid == 9 || bid == 10) && ast_round_inline_env;
 #elif defined(MCC_TARGET_X86_64)
@@ -8522,11 +7704,8 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		int bt = ast_bfold_tab[bi].flt ? VT_FLOAT : VT_DOUBLE;
 		if ((ast_type_t(a, n) & VT_BTYPE) != bt || (int)ast_nchild(a, n) != 2)
 			{ MCC_TRACE("br\n"); continue; }
-		/* constant arg -> leave for bfold's compile-time fold */
 		if (ast_bfold_arg(a, ast_child(a, n, 1), bt) != AST_NONE)
 			{ MCC_TRACE("br\n"); continue; }
-		/* sqrt only inlines with a provably-nonnegative arg (errno-EDOM elision),
-		 * unless -fno-math-errno drops the errno requirement (any-sign inline). */
 		if (bid == 0 && !ast_no_math_errno &&
 				!ast_expr_nonneg(a, ast_child(a, n, 1), 24))
 			{ MCC_TRACE("br\n"); continue; }
@@ -8538,9 +7717,9 @@ static int ast_math_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 						: bid == 2 ? AST_OP_FLOOR
 						: bid == 3 ? AST_OP_CEIL
 						: bid == 4 ? AST_OP_TRUNC
-						: bid == 8 ? AST_OP_ROUND /* arm64 only */
+						: bid == 8 ? AST_OP_ROUND
 						: bid == 9 ? AST_OP_RINT
-											 : AST_OP_NEARBYINT); /* bid 10 */
+											 : AST_OP_NEARBYINT);
 		ast_set_type(a, n, bt, 0);
 		ast_set_ival(a, n, 0);
 		ast_set_sym(a, n, 0);
@@ -8802,16 +7981,6 @@ void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out) { MCC_TRACE("
 	}
 }
 
-/* Escape-aware purity: like ast_fn_purity, but a Store to a NON-ESCAPING local
-   scalar is not treated as an observable side effect, so loop bodies that
-   accumulate into a plain local (the common case ast_fn_purity rejects
-   outright) can still be pure. A store counts as non-escaping only when its
-   target is a direct local lvalue (VT_LOCAL|VT_LVAL, !VT_SYM) — a pointer store
-   or a global (VT_SYM) store is externally observable. Any address-of-local
-   (VT_LOCAL, !VT_LVAL, !VT_SYM) or Invoke forfeits the guarantee (an escaped
-   address could be aliased; a call may do anything), returning IMPURE. Loads
-   still demote to TIER1 as in ast_fn_purity. This is intentionally a separate
-   function: ast_fn_purity gates KGC memoization and must stay conservative. */
 int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int has_load = 0;
@@ -9149,40 +8318,30 @@ static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	case TOK_UGT:
 	case TOK_ULE:
 	case TOK_UGE:
-		/* V-ident(c): `x OP x` folds to a compile-time 0/1 for any relational OP and any
-		 * pure integer x (the operands are integer — the ast_ident_intt gate at entry — so
-		 * there is no float NaN concern). `<`,`>`,`!=` are always 0; `<=`,`>=`,`==` always 1;
-		 * signed/unsigned is immaterial when comparing a value to itself. A relational node
-		 * stores no result type (type_t==0); the C result type is int (VT_INT). */
 		if (ast_ident_rel_env && ast_ident_same(a, x, y) && ast_ident_pure(a, x)) { MCC_TRACE("br\n");
 			int one = (op == TOK_EQ || op == TOK_LE || op == TOK_GE || op == TOK_ULE ||
 								 op == TOK_UGE);
 			ast_ident_setlit(a, n, VT_INT, one ? 1u : 0u);
 			return 2;
 		}
-		/* V-ident(c): unsigned range against 0 — the unsigned minimum is 0, so for any
-		 * unsigned u: `u >= 0` and `0 <= u` are always 1, `u < 0` and `0 > u` always 0.
-		 * The relational op is the SIGNED token (TOK_GE/LT/LE/GT); the comparison is
-		 * unsigned iff the operand type carries VT_UNSIGNED (checked on the non-zero side).
-		 * The discarded operand must be pure. Signed `x >= 0` is left alone (value-dependent). */
 		if (ast_ident_urange_env && op == TOK_GE && (tx & VT_UNSIGNED) &&
 				ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_pure(a, x)) { MCC_TRACE("br\n");
-			ast_ident_setlit(a, n, VT_INT, 1u); /* u >= 0 */
+			ast_ident_setlit(a, n, VT_INT, 1u);
 			return 2;
 		}
 		if (ast_ident_urange_env && op == TOK_LT && (tx & VT_UNSIGNED) &&
 				ast_ident_cval(a, y, &lt, &lv) && lv == 0 && ast_ident_pure(a, x)) { MCC_TRACE("br\n");
-			ast_ident_setlit(a, n, VT_INT, 0u); /* u < 0 */
+			ast_ident_setlit(a, n, VT_INT, 0u);
 			return 2;
 		}
 		if (ast_ident_urange_env && op == TOK_LE && (ty & VT_UNSIGNED) &&
 				ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_pure(a, y)) { MCC_TRACE("br\n");
-			ast_ident_setlit(a, n, VT_INT, 1u); /* 0 <= u */
+			ast_ident_setlit(a, n, VT_INT, 1u);
 			return 2;
 		}
 		if (ast_ident_urange_env && op == TOK_GT && (ty & VT_UNSIGNED) &&
 				ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_pure(a, y)) { MCC_TRACE("br\n");
-			ast_ident_setlit(a, n, VT_INT, 0u); /* 0 > u */
+			ast_ident_setlit(a, n, VT_INT, 0u);
 			return 2;
 		}
 		return 0;
@@ -9520,12 +8679,6 @@ static int ast_narrow_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 
 static int ast_narrow_run(AstArena *a) { MCC_TRACE("enter\n");
 	int total = ast_narrow_rec(a, ast_root(a));
-	/* V-narrow(a): iterate to a fixpoint (MCC_AST_NARROW_FIX) so a narrowing that
-	 * exposes another — a freshly narrowed operand letting its parent narrow — is
-	 * caught in one strategy invocation instead of leaving residue for the next
-	 * whole-pipeline round. Default off → single post-order pass (byte-identical);
-	 * a search knob when on (each pass is individually sound, so the fixpoint only
-	 * removes more casts, never changes semantics). */
 	if (ast_narrow_fix_env) { MCC_TRACE("br\n");
 		int sig;
 		do { MCC_TRACE("br\n");
@@ -9712,8 +8865,6 @@ static void ast_cprop_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); ast_cprop_kill(off); }
 			}
 		} else if (k == AST_Return) { MCC_TRACE("br\n");
-			/* A valueless return has nothing to rewrite, but must still kill the
-			   known-value set: control leaves the block either way. */
 			AstLocal rv = ast_first_child(a, s);
 			if (rv != AST_NONE && ast_cprop_safe(a, rv))
 				{ MCC_TRACE("br\n"); ast_cprop_rewrite(a, rv, 0); }
@@ -10048,15 +9199,6 @@ static void ast_dse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	ast_dse_kn = 0;
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
 		if (ast_kind(a, s) != AST_Store) { MCC_TRACE("br\n");
-			/* V-dse: a bare call statement cannot write a NON-ESCAPING tracked local (its
-			 * address never escaped, so no pointer — global or argument — can reach it) and
-			 * reads it only via its own arguments. So instead of the conservative full reset,
-			 * kill only the locals the call reads (kill_reads scans the arg subtree; a nested
-			 * store to a local reads its Ref lval → also killed, staying conservative) and
-			 * keep the rest of the dead-store tracking. Correct by the same escape analysis
-			 * DSE already relies on. Off by default (MCC_AST_DSE_CALL) → full reset, byte-
-			 * identical; a search-explorable knob when on. Control-flow / asm / other kinds
-			 * still reset — only AST_Invoke (a call) is seen through. */
 			if (ast_dse_call_env && ast_kind(a, s) == AST_Invoke) { MCC_TRACE("br\n");
 				ast_dse_kill_reads(a, s);
 				continue;
@@ -10107,8 +9249,6 @@ static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) { MCC_TRACE("ente
 	return 0;
 }
 
-/* One scan: fold every constant-condition two-arm If to its taken arm. Returns the
- * number folded this scan. */
 static int ast_sccp_scan(AstArena *a) { MCC_TRACE("enter\n");
 	int folded = 0;
 	AstLocal nn = ast_count(a);
@@ -10154,8 +9294,6 @@ static int ast_nonnull_ref(AstArena *a, AstLocal op, const int *offs, int noff) 
 }
 
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-/* Collect the frame offsets of the pointer parameters of `fsym` (the assumed-non-null
- * set for a speculative variant). Same param-chain walk / local-Sym gate as ast_tco_run. */
 static int ast_nonnull_params(AstArena *a, Sym *fsym, int *offs, int max) { MCC_TRACE("enter\n");
 	int n = 0;
 	if (!fsym || !fsym->type.ref || fsym->type.ref->f.func_type != FUNC_NEW)
@@ -10171,8 +9309,6 @@ static int ast_nonnull_params(AstArena *a, Sym *fsym, int *offs, int max) { MCC_
 			{ MCC_TRACE("br\n"); continue; }
 		if ((ls->type.t & VT_BTYPE) != VT_PTR)
 			{ MCC_TRACE("br\n"); continue; }
-		/* Only read-only param slots: a reassigned/address-taken slot may hold null
-		 * later even though the incoming argument (all the guard checks) was non-null. */
 		if (!ast_local_is_readonly(a, (int)ls->c))
 			{ MCC_TRACE("br\n"); continue; }
 		if (n < max)
@@ -10181,9 +9317,6 @@ static int ast_nonnull_params(AstArena *a, Sym *fsym, int *offs, int max) { MCC_
 	return n;
 }
 
-/* Speculative non-null fold: assuming the params at `offs` are non-null, rewrite
- * `p == 0` -> 0 and `p != 0` -> 1 to literals. ast_sccp_run then drops the now-dead
- * `if (!p) ...` arms. Only sound behind a runtime guard that deopts when a param is null. */
 static int ast_nonnull_fold(AstArena *a, const int *offs, int noff) { MCC_TRACE("enter\n");
 	int folds = 0;
 	AstLocal nn = ast_count(a);
@@ -10325,13 +9458,6 @@ static int ast_rangeparam_params(AstArena *a, Sym *fsym, int *offs, int64_t *los
 
 static int ast_sccp_run(AstArena *a) { MCC_TRACE("enter\n");
 	ast_sccp_folds = ast_sccp_scan(a);
-	/* V-sccp: fuse cprop+sccp to a fixpoint (MCC_AST_SCCP_FIX). Folding a constant
-	 * branch can expose new constants (a value written only on the removed arm becomes
-	 * provably constant); cprop propagates them, sccp folds the newly-constant branches,
-	 * and so on. Correct-by-construction and terminating: cprop only *adds* constants and
-	 * sccp only *removes* dead branches — both monotonic, neither reverts the other, so
-	 * the loop converges (bounded by node count). Default off → single scan (byte-
-	 * identical); a search knob when on. */
 	if (ast_sccp_fix_env) { MCC_TRACE("br\n");
 		for (;;) { MCC_TRACE("br\n");
 			int c = ast_cprop_run(a);
@@ -10346,9 +9472,6 @@ static int ast_sccp_run(AstArena *a) { MCC_TRACE("enter\n");
 
 static int ast_jt_folds;
 
-/* Not named `arm`: an arm-targeting mcc predefines the bare `arm` macro, as gcc
-   does outside strict mode, so that spelling makes this file unparseable to a
-   self-hosting arm build. */
 static int ast_jt_arm_empty(AstArena *a, AstLocal br) { MCC_TRACE("enter\n");
 	return br == AST_NONE ||
 				 (ast_kind(a, br) == AST_BasicBlock && ast_nchild(a, br) == 0);
@@ -10422,10 +9545,6 @@ static int ast_tco_run(AstArena *a, Sym *fsym) { MCC_TRACE("enter\n");
 		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
 			{ MCC_TRACE("br\n"); return 0; }
 		int t = ls->type.t;
-		/* V-tco(c): pointer params. The param store/reload below is type-generic
-		 * (ast_set_type with the captured ptt/pref), so a pointer stores/reloads exactly
-		 * like an integer of the same width — accept VT_PTR under MCC_AST_TCO_PTR (default
-		 * off → int-only, byte-identical). Arrays/VLAs/volatile still excluded. */
 		if ((!ast_ident_intt(t) &&
 				 !(ast_tco_ptr_env && (t & VT_BTYPE) == VT_PTR)) ||
 				(t & VT_VOLATILE) || (t & (VT_ARRAY | VT_VLA)))
@@ -10625,11 +9744,6 @@ static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) { MCC_TRACE("e
 	a->sym[n] = a->sym[ref];
 }
 
-/* V-cse(b): commutative-aware match. `a OP b` and `b OP a` compute the same value
- * for a commutative OP (+ * & | ^ on int or float — IEEE add/mul are commutative), so
- * reusing the first's cached result for the second is correct. Only the top-level
- * commutative pair is reordered; deeper structure still needs exact ast_ident_same.
- * Off by default (MCC_AST_CSE_COMM) → exact match only, byte-identical. */
 static int ast_cse_commutative_op(int op) { MCC_TRACE("enter\n");
 	return op == '+' || op == '*' || op == '&' || op == '|' || op == '^';
 }
@@ -10710,14 +9824,6 @@ static int ast_licm_operands_ok(AstArena *a, AstLocal loop, AstLocal e) { MCC_TR
 	if (e == AST_NONE)
 		{ MCC_TRACE("br\n"); return 1; }
 	int off, tt;
-	/* Recognise a local by its Ref form, NOT via ast_cprop_is_local: that helper
-	 * belongs to const-propagation and additionally requires an integer type, so
-	 * routing this test through it silently exempts pointer- and float-typed
-	 * local operands from the "is it written in the loop?" question. Callers that
-	 * also demand ast_cse_regpure never saw the gap (regpure rejects non-integer
-	 * local Refs outright); MCC_AST_IVSR_PTR deliberately drops regpure and was
-	 * miscompiled by it twice. Ask the structural question here so the next
-	 * caller does not inherit the trap. */
 	if (ast_kind(a, e) == AST_Ref) { MCC_TRACE("br\n");
 		int r = ast_op(a, e);
 		if ((r & VT_VALMASK) == VT_LOCAL && (r & VT_LVAL) && !(r & VT_SYM)) { MCC_TRACE("br\n");
@@ -11305,8 +10411,6 @@ static AstLocal ast_bf_bin(AstArena *a, int op, int tt, AstLocal l, AstLocal r) 
 }
 
 #ifdef MCC_TARGET_I386
-/* A fresh Ref to a local frame slot at `off` (lvalue; read yields the stored value).
- * Used by the i386 divmagic operand-materialization below. */
 static AstLocal ast_bf_localref(AstArena *a, int off, int tt, uint64_t tref) { MCC_TRACE("enter\n");
 	AstLocal r = ast_node(a, AST_Ref);
 	ast_set_op(a, r, VT_LOCAL | VT_LVAL);
@@ -11398,10 +10502,6 @@ static int ast_bf_try_if(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	if (!ast_bf_window(vals, cnt, &mask, &base))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal cond = ast_bf_build(a, key, mask, base);
-	/* `member` tests x IN {vals}. For `if(x==a || ...)` that IS the condition, but
-	   `if(!(x==a || ...))` carries AST_FB_LANDOR_INVERT on the parsed LOR -- the
-	   `member` bit-test is not a landor so the invert fixup never runs, so bake the
-	   negation in here (member ^ 1 = "not in set"). See the landor-invert fold class. */
 	if (ast_fbits(a, cond0) & AST_FB_LANDOR_INVERT)
 		{ MCC_TRACE("br\n"); cond = ast_bf_bin(a, '^', VT_INT, cond, ast_bf_lit(a, VT_INT, 1)); }
 	ast_clear_children(a, s);
@@ -11455,8 +10555,6 @@ static int ast_bf_try_ifne(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	if (!ast_bf_window(vals, cnt, &mask, &base))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal member = ast_bf_build(a, key, mask, base);
-	/* `if(x!=a && ...)` is "not in set" = member^1; but `if(!(x!=a && ...))` carries
-	   AST_FB_LANDOR_INVERT, which negates it back to "in set" = member. See try_if. */
 	AstLocal cond = (ast_fbits(a, cond0) & AST_FB_LANDOR_INVERT)
 			? member
 			: ast_bf_bin(a, '^', VT_INT, member, ast_bf_lit(a, VT_INT, 1));
@@ -11473,12 +10571,6 @@ static int ast_bf_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal key = AST_NONE;
 	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
 	int cnt = 0;
-	/* A negated value-context chain (`!(x==a||...)`) carries AST_FB_LANDOR_INVERT;
-	   this in-place rewrite to the `&` bit-test would drop it (the bit-test is not a
-	   landor, so the invert fixup at ast_replay_value never runs). Leave it un-folded
-	   -- the LAND/LOR replay handles the negation. (try_if/try_ifne bake it into the
-	   op instead; the in-place rewrite here makes that awkward, and the value-context
-	   negated chain is rare.) See the landor-invert fold class. */
 	if (ast_fbits(a, n) & AST_FB_LANDOR_INVERT)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_bf_cond_parse(a, n, &key, vals, &cnt))
@@ -11506,7 +10598,6 @@ static int ast_bf_try_land(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal key = AST_NONE;
 	uint64_t vals[AST_BF_MAXVALS], mask = 0, base = 0;
 	int cnt = 0;
-	/* See ast_bf_try_lor: a negated value-context chain must not fold (invert lost). */
 	if (ast_fbits(a, n) & AST_FB_LANDOR_INVERT)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_bf_cond_parse_op(a, n, TOK_LAND, TOK_NE, &key, vals, &cnt))
@@ -11548,15 +10639,8 @@ static int ast_bf_run(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_bf_folds;
 }
 
-/* V-bf(a) range-predicate fold: rewrite a signed range test `lo <= x && x <= hi`
- * (as a condition, so the `&&` is a TOK_LAND AST_Binary node) into the branchless
- * `(unsigned)(x - lo) <= (hi - lo)`. Correct-by-construction for constant lo <= hi and a
- * pure integer key x (standard unsigned-subtract range identity); gcc emits this as
- * `sub; cmp; setbe`, mcc otherwise leaves two signed compares + two branches. */
 static MCC_OPT_TLS int ast_range_folds;
 
-/* Parse one signed relational `x REL const` (literal on either side) into an inclusive
- * bound on the pure integer key: *is_lower=1 => x >= *bound, else x <= *bound. */
 static int ast_range_bound(AstArena *a, AstLocal n, AstLocal *key, int64_t *bound,
 													 int *is_lower) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), eff, ct, kt, keyleft;
@@ -11586,9 +10670,9 @@ static int ast_range_bound(AstArena *a, AstLocal n, AstLocal *key, int64_t *boun
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_pure(a, k))
 		{ MCC_TRACE("br\n"); return 0; }
-	cval = (int64_t)cv; /* value64 already sign-extended the signed literal */
+	cval = (int64_t)cv;
 	eff = op;
-	if (!keyleft) /* `C REL x` mirrors to `x REL' C` */
+	if (!keyleft)
 		{ MCC_TRACE("br\n"); eff = op == TOK_LE ? TOK_GE : op == TOK_GE ? TOK_LE : op == TOK_LT ? TOK_GT : TOK_LT; }
 	switch (eff) { MCC_TRACE("br\n");
 	case TOK_LE:
@@ -11597,7 +10681,7 @@ static int ast_range_bound(AstArena *a, AstLocal n, AstLocal *key, int64_t *boun
 		break;
 	case TOK_LT:
 		if (cval == INT64_MIN)
-			{ MCC_TRACE("br\n"); return 0; } /* x < INT64_MIN: empty half-range, and cval-1 would overflow */
+			{ MCC_TRACE("br\n"); return 0; }
 		*is_lower = 0;
 		*bound = cval - 1;
 		break;
@@ -11878,7 +10962,7 @@ static int ast_range_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (!ast_range_bound(a, c0, &k0, &b0, &low0) ||
 			!ast_range_bound(a, c1, &k1, &b1, &low1))
 		{ MCC_TRACE("br\n"); return 0; }
-	if (low0 == low1 || !ast_ident_same(a, k0, k1)) /* need one lower + one upper on same x */
+	if (low0 == low1 || !ast_ident_same(a, k0, k1))
 		{ MCC_TRACE("br\n"); return 0; }
 	key = k0;
 	if (low0) { MCC_TRACE("br\n");
@@ -11888,22 +10972,15 @@ static int ast_range_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		lo = b1;
 		hi = b0;
 	}
-	if (lo > hi) /* empty/inverted range: leave it (rare, and folds to a constant elsewhere) */
+	if (lo > hi)
 		{ MCC_TRACE("br\n"); return 0; }
 	ast_ident_etype(a, key, &kt, &kref);
 	kw = (kt & VT_BTYPE) == VT_LLONG ? VT_LLONG | VT_UNSIGNED : VT_INT | VT_UNSIGNED;
-	span = (uint64_t)hi - (uint64_t)lo; /* fits: modular width matches the key type */
+	span = (uint64_t)hi - (uint64_t)lo;
 	kexpr = ast_bf_keyexpr(a, kw, key, (uint64_t)lo);
 	hlit = ast_bf_lit(a, kw, span);
 	MCC_TRACE("range fold key=%u lo=%lld hi=%lld span=%llu kw=0x%x\n", (unsigned)key,
 						(long long)lo, (long long)hi, (unsigned long long)span, kw);
-	/* AST_FB_LANDOR_INVERT on the LAND means the parser recorded `!(lo<=x && x<=hi)`
-	   -- the landor consumer honors it by swapping the branch, but the folded node is
-	   a plain comparison (the else path in ast_replay_value) which does NOT, so the
-	   negation would be lost. Bake it into the comparison instead: the negation of
-	   `(unsigned)(x-lo) <= span` (TOK_ULE 0x96) is `> span` (TOK_UGT 0x97 = ULE^1),
-	   exactly the paired-op inversion the consumer uses (`cmp_op ^= 1`). Missing this
-	   silently inverted range-check asserts, e.g. arm64 `intr`. */
 	ast_set_op(a, n, (unsigned)TOK_ULE ^ ((ast_fbits(a, n) & AST_FB_LANDOR_INVERT) ? 1u : 0u));
 	ast_set_type(a, n, VT_INT, 0);
 	ast_set_ival(a, n, 0);
@@ -11915,9 +10992,6 @@ static int ast_range_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* OR/out-of-range form: parse a signed relational into a KEPT-range bound. `is_below=1`
- * means the term excludes values below the range (sets the kept lower bound); else it
- * excludes values above (sets the kept upper bound). Mirror of ast_range_bound. */
 static int ast_range_bound_or(AstArena *a, AstLocal n, AstLocal *key, int64_t *bound,
 															int *is_below) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), eff, ct, kt, keyleft;
@@ -11952,21 +11026,21 @@ static int ast_range_bound_or(AstArena *a, AstLocal n, AstLocal *key, int64_t *b
 	if (!keyleft)
 		{ MCC_TRACE("br\n"); eff = op == TOK_LE ? TOK_GE : op == TOK_GE ? TOK_LE : op == TOK_LT ? TOK_GT : TOK_LT; }
 	switch (eff) { MCC_TRACE("br\n");
-	case TOK_LT: /* x<C excluded -> kept lo=C */
+	case TOK_LT:
 		*is_below = 1;
 		*bound = cval;
 		break;
-	case TOK_LE: /* x<=C excluded -> kept lo=C+1 */
+	case TOK_LE:
 		if (cval == INT64_MAX)
 			{ MCC_TRACE("br\n"); return 0; }
 		*is_below = 1;
 		*bound = cval + 1;
 		break;
-	case TOK_GT: /* x>C excluded -> kept hi=C */
+	case TOK_GT:
 		*is_below = 0;
 		*bound = cval;
 		break;
-	case TOK_GE: /* x>=C excluded -> kept hi=C-1 */
+	case TOK_GE:
 		if (cval == INT64_MIN)
 			{ MCC_TRACE("br\n"); return 0; }
 		*is_below = 0;
@@ -11979,8 +11053,6 @@ static int ast_range_bound_or(AstArena *a, AstLocal n, AstLocal *key, int64_t *b
 	return 1;
 }
 
-/* `x < lo || x > hi` (an out-of-range/bounds check, TOK_LOR of two relationals) ->
- * `(unsigned)(x - lo) > (hi - lo)`. The complement of ast_range_try; same identity. */
 static int ast_range_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal c0 = ast_child(a, n, 0), c1 = ast_child(a, n, 1), k0, k1, key, kexpr, hlit;
 	int64_t b0, b1, lo, hi;
@@ -12008,8 +11080,6 @@ static int ast_range_try_lor(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	hlit = ast_bf_lit(a, kw, span);
 	MCC_TRACE("range fold(or) key=%u lo=%lld hi=%lld span=%llu kw=0x%x\n", (unsigned)key,
 						(long long)lo, (long long)hi, (unsigned long long)span, kw);
-	/* Same landor-invert handling as ast_range_try: `!(x<lo || x>hi)` (in-range)
-	   must fold to the negated op. UGT^1 = TOK_ULE. See the note there. */
 	ast_set_op(a, n, (unsigned)TOK_UGT ^ ((ast_fbits(a, n) & AST_FB_LANDOR_INVERT) ? 1u : 0u));
 	ast_set_type(a, n, VT_INT, 0);
 	ast_set_ival(a, n, 0);
@@ -12036,14 +11106,6 @@ static int ast_range_run(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_range_folds;
 }
 
-/* Constant unsigned division/remainder strength reduction: `x / C` and `x % C` for a
- * 32-bit unsigned x and a non-power-of-2 constant C become a high-multiply + shift, using
- * the magic (M, s) proven exhaustively in tools/asttool.c:suite_magic. This first cut
- * handles the clean subset where the magic needs no overflow-add correction (`mag.a==0`),
- * so x is evaluated exactly once (in the mul-high) — no expensive duplication. The magic
- * arithmetic is trusted (selftested); the remaining risk is only this AST construction,
- * which the full M8 regimen validates. Signed division and the add-correction case are
- * deferred (they need a shared-quotient temp / duplication). */
 static MCC_OPT_TLS int ast_divmagic_folds;
 
 #ifdef MCC_TARGET_I386
@@ -12059,22 +11121,20 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	MccMagicU mag;
 	const int U64 = VT_LLONG | VT_UNSIGNED, U32 = VT_INT | VT_UNSIGNED;
 	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != U32)
-		{ MCC_TRACE("br\n"); return 0; } /* only 32-bit unsigned division */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
 		{ MCC_TRACE("br\n"); return 0; }
 	C = (uint32_t)cv;
-	if (C < 3 || (C & (C - 1)) == 0) /* skip 0/1/2 and powers of 2 (backend does shr/and) */
+	if (C < 3 || (C & (C - 1)) == 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != U32)
-		{ MCC_TRACE("br\n"); return 0; } /* dividend must be a genuine unsigned int (u64 cast zero-extends) */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_pure(a, x))
 		{ MCC_TRACE("br\n"); return 0; }
 	mag = mcc_magicu(C);
-	if (mag.a && mag.s < 1) /* add-correction needs s>=1 for the (s-1) shift; skip degenerate */
+	if (mag.a && mag.s < 1)
 		{ MCC_TRACE("br\n"); return 0; }
 #ifdef MCC_TARGET_I386
-	/* i386: materialize x once (see ast_divmagic_try_signed) so the several x-reads
-	 * don't re-read x's source slot, which the 5-reg allocator reuses as scratch. */
 	int xoff;
 	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12085,24 +11145,23 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	{
 		AstLocal inner;
 		uint64_t shamt;
-		/* hi32 = (uint32)(((uint64)x * M) >> 32)  — the mul-high, mirrors mcc_divu_apply */
 #ifdef MCC_TARGET_I386
-		xu = ast_bf_ucast(a, U64, ast_bf_localref(a, xoff, xt, xref)); /* read materialized x */
+		xu = ast_bf_ucast(a, U64, ast_bf_localref(a, xoff, xt, xref));
 #else
-		xu = ast_bf_ucast(a, U64, x); /* (u64)x, dups x */
+		xu = ast_bf_ucast(a, U64, x);
 #endif
 		prod = ast_bf_bin(a, '*', U64, xu, ast_bf_lit(a, U64, mag.M));
 		hi = ast_bf_bin(a, TOK_SHR, U64, prod, ast_bf_lit(a, U64, 32));
 		hi32 = ast_node(a, AST_Convert);
 		ast_set_type(a, hi32, U32, 0);
 		ast_add_child(a, hi32, hi);
-		if (!mag.a) { MCC_TRACE("br\n"); /* quotient = hi32 >> s */
+		if (!mag.a) { MCC_TRACE("br\n");
 			inner = hi32;
 			shamt = (uint64_t)mag.s;
-		} else { MCC_TRACE("br\n"); /* add-correction: t = ((x - hi32) >> 1) + hi32; quotient = t >> (s-1) */
+		} else { MCC_TRACE("br\n");
 			AstLocal sub = ast_bf_bin(a, '-', U32, DMX(), hi32);
 			AstLocal shr1 = ast_bf_bin(a, TOK_SHR, U32, sub, ast_bf_lit(a, U32, 1));
-			inner = ast_bf_bin(a, '+', U32, shr1, ast_dup_sub(a, hi32)); /* dup -> 2x mul-high */
+			inner = ast_bf_bin(a, '+', U32, shr1, ast_dup_sub(a, hi32));
 			shamt = (uint64_t)(mag.s - 1);
 		}
 		MCC_TRACE("divmagic %s C=%u M=0x%x s=%d add=%d\n", op == '/' ? "div" : "rem", C, mag.M,
@@ -12112,11 +11171,11 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
 		ast_clear_children(a, n);
-		if (op == '/') { MCC_TRACE("br\n"); /* n := inner >> shamt */
+		if (op == '/') { MCC_TRACE("br\n");
 			ast_set_op(a, n, TOK_SHR);
 			ast_add_child(a, n, inner);
 			ast_add_child(a, n, ast_bf_lit(a, U32, shamt));
-		} else { MCC_TRACE("br\n"); /* x % C = x - (x/C)*C */
+		} else { MCC_TRACE("br\n");
 			AstLocal q = ast_bf_bin(a, TOK_SHR, U32, inner, ast_bf_lit(a, U32, shamt));
 			AstLocal qC = ast_bf_bin(a, '*', U32, q, ast_bf_lit(a, U32, C));
 			ast_set_op(a, n, '-');
@@ -12128,12 +11187,6 @@ static int ast_divmagic_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* Signed division/remainder by a positive power of two, which mcc otherwise lowers to a
- * `cltd; idiv` (~20-40 cyc) instead of gcc's cheap shift/and sequence. Correct-by-
- * construction round-toward-zero identity: `x / 2^k = (x + ((x>>31) & (2^k-1))) >> k`
- * (arithmetic shifts), and `x % 2^k = x - (x/2^k << k)`. Only the pure dividend x is
- * duplicated (a cheap re-load, no multiply), so unlike the general signed magic this needs
- * no shared-quotient temp. */
 static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, ct, xt, k, neg;
 	AstLocal x = ast_child(a, n, 0), cnode = ast_child(a, n, 1), bias, sum;
@@ -12141,13 +11194,13 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	int64_t C;
 	const int S32 = VT_INT;
 	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
-		{ MCC_TRACE("br\n"); return 0; } /* signed 32-bit only */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
 		{ MCC_TRACE("br\n"); return 0; }
 	C = (int64_t)cv;
 	neg = C < 0;
-	ac = (uint64_t)(neg ? -C : C); /* |C| */
-	if (ac < 2 || (ac & (ac - 1)) != 0) /* |C| a power of two >= 2 (handles negative C too) */
+	ac = (uint64_t)(neg ? -C : C);
+	if (ac < 2 || (ac & (ac - 1)) != 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12155,30 +11208,29 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 		{ MCC_TRACE("br\n"); return 0; }
 	for (k = 0, t = ac; t > 1; t >>= 1)
 		{ MCC_TRACE("br\n"); k++; }
-	/* bias = (x >> 31) & (|C|-1); sum = x + bias */
 	bias = ast_bf_bin(a, '&', S32,
 										ast_bf_bin(a, TOK_SAR, S32, ast_dup_sub(a, x), ast_bf_lit(a, S32, 31)),
 										ast_bf_lit(a, S32, ac - 1));
 	sum = ast_bf_bin(a, '+', S32, ast_dup_sub(a, x), bias);
 	MCC_TRACE("divmagic spow2 %s C=%lld k=%d neg=%d\n", op == '/' ? "div" : "rem", (long long)C,
 						k, neg);
-	if (op == '/') { MCC_TRACE("br\n"); /* q = sum >> k (arithmetic); x/(-2^k) = -q */
+	if (op == '/') { MCC_TRACE("br\n");
 		ast_set_type(a, n, S32, 0);
 		ast_set_ival(a, n, 0);
 		ast_set_fbits(a, n, 0);
 		ast_set_sym(a, n, 0);
 		ast_clear_children(a, n);
-		if (neg) { MCC_TRACE("br\n"); /* n := 0 - (sum >> k) */
+		if (neg) { MCC_TRACE("br\n");
 			AstLocal q = ast_bf_bin(a, TOK_SAR, S32, sum, ast_bf_lit(a, S32, (uint64_t)k));
 			ast_set_op(a, n, '-');
 			ast_add_child(a, n, ast_bf_lit(a, S32, 0));
 			ast_add_child(a, n, q);
-		} else { MCC_TRACE("br\n"); /* n := sum >> k */
+		} else { MCC_TRACE("br\n");
 			ast_set_op(a, n, TOK_SAR);
 			ast_add_child(a, n, sum);
 			ast_add_child(a, n, ast_bf_lit(a, S32, (uint64_t)k));
 		}
-	} else { MCC_TRACE("br\n"); /* n := x - ((sum >> k) << k)  — same result for -2^k as for 2^k (x%C == x%|C|) */
+	} else { MCC_TRACE("br\n");
 		AstLocal quot = ast_bf_bin(a, TOK_SAR, S32, sum, ast_bf_lit(a, S32, (uint64_t)k));
 		AstLocal shl = ast_bf_bin(a, TOK_SHL, S32, quot, ast_bf_lit(a, S32, (uint64_t)k));
 		AstLocal xdup = ast_dup_sub(a, x);
@@ -12194,23 +11246,10 @@ static int ast_divmagic_try_spow2(AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	return 1;
 }
 
-/* Signed non-power-of-two `x / C` and `x % C` via the (exhaustively selftested) signed
- * magic, mirroring mcc_divs_apply. The sign-bit correction reuses the shifted quotient, so
- * the mul-high is duplicated once (CSE runs earlier in the pipeline, so it isn't merged) — a
- * 2× multiply for `/` (3× for `% = x - (x/C)*C`), still a clear win over `idiv`. */
 #ifdef MCC_TARGET_I386
 static int ast_ltemp_insert_before(AstArena *a, AstLocal parent, AstLocal pivot,
 																	 AstLocal node);
 
-/* Materialize a PURE divmagic operand `x` (of node `n`) ONCE into a reserved
- * (non-reuse-pool) ltemp slot: insert `store(slot, x)` before n's enclosing
- * statement, so the several x-reads the magic sequence emits all read the stable
- * slot rather than re-reading x's SOURCE (which the temp allocator can hand back
- * out as scratch between reads — the i386 struct-loop `%C` miscompile, v_251).
- * Only needed on i386 (5-register model spills the operand); other backends keep
- * `x` in a register across the reads, so this is i386-gated to stay byte-identical
- * there. Returns 1 + `*off_out` on success; 0 if it cannot materialize (caller
- * then keeps the hardware divide). */
 static int ast_divmagic_materialize(AstArena *a, AstLocal n, AstLocal x, int xt,
 																		uint64_t xref, int *off_out) { MCC_TRACE("enter\n");
 	if (ast_ltemp_n >= AST_LTEMP_MAX)
@@ -12234,7 +11273,7 @@ static int ast_divmagic_materialize(AstArena *a, AstLocal n, AstLocal x, int xt,
 	*off_out = off;
 	return 1;
 }
-#endif /* MCC_TARGET_I386 */
+#endif
 
 static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, ct, xt;
@@ -12245,24 +11284,20 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	MccMagicS mag;
 	const int S64 = VT_LLONG, S32 = VT_INT, U32 = VT_INT | VT_UNSIGNED;
 	if (!ast_ident_etype(a, n, &nt, &nref) || (nt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
-		{ MCC_TRACE("br\n"); return 0; } /* signed 32-bit */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_kind(a, cnode) != AST_Literal || !ast_ident_cval(a, cnode, &ct, &cv))
 		{ MCC_TRACE("br\n"); return 0; }
 	C = (int64_t)cv;
 	if (C >= -1 && C <= 1)
 		{ MCC_TRACE("br\n"); return 0; }
 	ac = (uint64_t)(C < 0 ? -C : C);
-	if ((ac & (ac - 1)) == 0) /* power of two: pos handled by spow2, neg left as idiv */
+	if ((ac & (ac - 1)) == 0)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_etype(a, x, &xt, &xref) || (xt & (VT_BTYPE | VT_UNSIGNED)) != VT_INT)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_pure(a, x))
 		{ MCC_TRACE("br\n"); return 0; }
 #ifdef MCC_TARGET_I386
-	/* i386: materialize x once into a reserved slot so the magic sequence's several
-	 * x-reads don't re-read x's source (which the 5-reg allocator reuses as scratch
-	 * between reads -> the struct-loop `%C` miscompile). Bail to hw-divide if we
-	 * can't. Other backends keep the dup-based form (byte-identical). */
 	int xoff;
 	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12271,12 +11306,11 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 #define DMX() ast_dup_sub(a, x)
 #endif
 	mag = mcc_magics((int32_t)C);
-	/* q0 = (int32)((int64)M * (int64)x >> 32) */
 	Mi = ast_bf_lit(a, S64, (uint64_t)(int64_t)mag.M);
 #ifdef MCC_TARGET_I386
-	xi = ast_bf_ucast(a, S64, ast_bf_localref(a, xoff, xt, xref)); /* read materialized x */
+	xi = ast_bf_ucast(a, S64, ast_bf_localref(a, xoff, xt, xref));
 #else
-	xi = ast_bf_ucast(a, S64, x); /* Convert to i64, dups x (sign-extends: signed dest) */
+	xi = ast_bf_ucast(a, S64, x);
 #endif
 	prod = ast_bf_bin(a, '*', S64, Mi, xi);
 	hi = ast_bf_bin(a, TOK_SAR, S64, prod, ast_bf_lit(a, S64, 32));
@@ -12290,7 +11324,6 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	else
 		{ MCC_TRACE("br\n"); q1 = q0; }
 	q2 = ast_bf_bin(a, TOK_SAR, S32, q1, ast_bf_lit(a, S32, (uint64_t)mag.s));
-	/* signbit = (uint32)q2 >> 31 (logical) */
 	cvt = ast_node(a, AST_Convert);
 	ast_set_type(a, cvt, U32, 0);
 	ast_add_child(a, cvt, ast_dup_sub(a, q2));
@@ -12308,11 +11341,11 @@ static int ast_divmagic_try_signed(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
 	ast_clear_children(a, n);
-	if (op == '/') { MCC_TRACE("br\n"); /* n := q2 + signbit (the quotient) */
+	if (op == '/') { MCC_TRACE("br\n");
 		ast_set_op(a, n, '+');
 		ast_add_child(a, n, q2);
 		ast_add_child(a, n, signbit);
-	} else { MCC_TRACE("br\n"); /* n := x - (x/C)*C */
+	} else { MCC_TRACE("br\n");
 		AstLocal qexpr = ast_bf_bin(a, '+', S32, q2, signbit);
 		AstLocal qC = ast_bf_bin(a, '*', S32, qexpr, ast_bf_lit(a, S32, (uint64_t)(uint32_t)C));
 		ast_set_op(a, n, '-');
@@ -12346,10 +11379,6 @@ static int ast_divmagic_try_u64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (mag.a && mag.s < 1)
 		{ MCC_TRACE("br\n"); return 0; }
 #ifdef MCC_TARGET_I386
-	/* i386: materialize x once (see ast_divmagic_try_signed) so the 64-bit magic
-	 * sequence's several x-reads don't re-read x's source slot, which the 5-register
-	 * allocator recycles as scratch between reads. Other backends keep the dup form
-	 * (byte-identical). */
 	int xoff;
 	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12472,8 +11501,6 @@ static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	mag = mcc_magics64(C);
 #ifdef MCC_TARGET_I386
-	/* i386: materialize x once (see ast_divmagic_try_signed) so the several x-reads
-	 * don't re-read x's source slot (recycled as scratch). Byte-identical elsewhere. */
 	int xoff;
 	if (!ast_divmagic_materialize(a, n, x, xt, xref, &xoff))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12494,11 +11521,6 @@ static int ast_divmagic_try_s64(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_add_child(a, cvt, ast_dup_sub(a, q2));
 	signbit = ast_bf_bin(a, TOK_SHR, U64, cvt, ast_bf_lit(a, U64, 63));
 	{
-		/* Convert the logical-shift sign bit back to SIGNED before it is added
-		 * into the quotient: an S64 + U64 add would apply the usual arithmetic
-		 * conversions and leave the quotient (and thus x - q*C) unsigned, so a
-		 * `(x % C) < 0` test on the result emits unsigned branches and never
-		 * negates a negative remainder. Mirrors ast_divmagic_try_signed. */
 		AstLocal sbs = ast_node(a, AST_Convert);
 		ast_set_type(a, sbs, S64, 0);
 		ast_add_child(a, sbs, signbit);
@@ -12533,11 +11555,11 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 	for (AstLocal n = 0; n < nn; n++)
 		{ MCC_TRACE("br\n"); if (ast_kind(a, n) == AST_Binary && (ast_op(a, n) == '/' || ast_op(a, n) == '%') &&
 				ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
-			int f = ast_divmagic_try(a, n); /* unsigned magic */
+			int f = ast_divmagic_try(a, n);
 			if (!f)
-				{ MCC_TRACE("br\n"); f = ast_divmagic_try_spow2(a, n); } /* signed power-of-two */
+				{ MCC_TRACE("br\n"); f = ast_divmagic_try_spow2(a, n); }
 			if (!f)
-				{ MCC_TRACE("br\n"); f = ast_divmagic_try_signed(a, n); } /* signed non-power-of-two division */
+				{ MCC_TRACE("br\n"); f = ast_divmagic_try_signed(a, n); }
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)
 			if (!f)
 				{ MCC_TRACE("br\n"); f = ast_divmagic_try_u64(a, n); }
@@ -12551,12 +11573,8 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_divmagic_folds;
 }
 
-/* Branchless abs/-abs: mcc lowers `x < 0 ? -x : x` to a compare + branch; the identity
- * `abs(x) = (x ^ (x>>31)) - (x>>31)` (arithmetic shift) is branchless and target-independent,
- * duplicating only the pure x (cheap, no temp/cmov). A strict win over the branch. */
 static MCC_OPT_TLS int ast_abs_folds;
 
-/* `0 - k` -> k, else AST_NONE. Unary minus is lowered to `0 - x` (mccgen `vpushi(0);gen_op('-')`). */
 static AstLocal ast_abs_neg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal l;
 	int ct;
@@ -12569,14 +11587,12 @@ static AstLocal ast_abs_neg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return ast_child(a, n, 1);
 }
 
-/* Is n the integer literal 0? (for clamp-to-zero max(x,0)/min(x,0) recognition) */
 static int ast_abs_is_zero(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int ct;
 	uint64_t cv;
 	return ast_kind(a, n) == AST_Literal && ast_ident_cval(a, n, &ct, &cv) && cv == 0;
 }
 
-/* `x REL 0` -> key + rel normalized onto x (LT/LE/GT/GE); literal must be exactly 0. */
 static int ast_abs_cmp_zero(AstArena *a, AstLocal n, AstLocal *key, int *rel) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), ct, keyleft;
 	AstLocal l, r, k, c;
@@ -12606,18 +11622,13 @@ static int ast_abs_cmp_zero(AstArena *a, AstLocal n, AstLocal *key, int *rel) { 
 	return 1;
 }
 
-/* `S(x) = x >> (width-1)` (arithmetic sign mask: 0 if x>=0, -1 if x<0). */
 static AstLocal ast_abs_signmask(AstArena *a, AstLocal key, int ty, int sh) { MCC_TRACE("enter\n");
 	return ast_bf_bin(a, TOK_SAR, ty, ast_dup_sub(a, key), ast_bf_lit(a, ty, (uint64_t)sh));
 }
 
-/* Recognize a signed `x REL 0 ? A : B` ternary and lower it branchlessly (32- or 64-bit):
- *  abs(x)      = (x^s) - s     -abs(x)     = s - (x^s)          (s = x>>(w-1))
- *  max(x,0)    = x - (x & s)   min(x,0)    = x & s
- * where {A,B} is {x,-x} (abs) or {x,0} (clamp). Only pure signed x is duplicated. */
 static int ast_abs_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal cond, tval, fval, key, negval, posval;
-	int rel, kt, neg_is_t, mode, ty, sh; /* mode: 0 abs, 1 -abs, 2 max(x,0), 3 min(x,0) */
+	int rel, kt, neg_is_t, mode, ty, sh;
 	uint64_t kref;
 	if (ast_kind(a, n) != AST_If || ast_op(a, n) != 5 || ast_nchild(a, n) != 3)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12627,7 +11638,7 @@ static int ast_abs_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (!ast_abs_cmp_zero(a, cond, &key, &rel))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_etype(a, key, &kt, &kref) || (kt & VT_UNSIGNED))
-		{ MCC_TRACE("br\n"); return 0; } /* signed integer key */
+		{ MCC_TRACE("br\n"); return 0; }
 	if ((kt & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
 		ty = VT_INT;
 		sh = 31;
@@ -12635,24 +11646,23 @@ static int ast_abs_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		ty = VT_LLONG;
 		sh = 63;
 	} else { MCC_TRACE("br\n");
-		return 0; /* 32- or 64-bit signed only */
+		return 0;
 	}
 	if (!ast_ident_pure(a, key))
 		{ MCC_TRACE("br\n"); return 0; }
-	/* which value is chosen when x < 0? */
 	neg_is_t = (rel == TOK_LT || rel == TOK_LE);
-	negval = neg_is_t ? tval : fval; /* value for x<0 */
-	posval = neg_is_t ? fval : tval; /* value for x>=0 */
+	negval = neg_is_t ? tval : fval;
+	posval = neg_is_t ? fval : tval;
 	{
 		AstLocal nn = ast_abs_neg_of(a, negval), pn = ast_abs_neg_of(a, posval);
 		if (nn != AST_NONE && ast_ident_same(a, nn, key) && ast_ident_same(a, posval, key))
-			{ MCC_TRACE("br\n"); mode = 0; } /* x<0 -> -x, x>=0 -> x  ==> abs */
+			{ MCC_TRACE("br\n"); mode = 0; }
 		else if (pn != AST_NONE && ast_ident_same(a, pn, key) && ast_ident_same(a, negval, key))
-			{ MCC_TRACE("br\n"); mode = 1; } /* x<0 -> x, x>=0 -> -x  ==> -abs */
+			{ MCC_TRACE("br\n"); mode = 1; }
 		else if (ast_abs_is_zero(a, negval) && ast_ident_same(a, posval, key))
-			{ MCC_TRACE("br\n"); mode = 2; } /* x<0 -> 0, x>=0 -> x  ==> max(x,0) */
+			{ MCC_TRACE("br\n"); mode = 2; }
 		else if (ast_abs_is_zero(a, posval) && ast_ident_same(a, negval, key))
-			{ MCC_TRACE("br\n"); mode = 3; } /* x<0 -> x, x>=0 -> 0  ==> min(x,0) */
+			{ MCC_TRACE("br\n"); mode = 3; }
 		else
 			{ MCC_TRACE("br\n"); return 0; }
 	}
@@ -12661,24 +11671,24 @@ static int ast_abs_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	ast_set_ival(a, n, 0);
 	ast_set_fbits(a, n, 0);
 	ast_set_sym(a, n, 0);
-	ast_set_kind(a, n, AST_Binary); /* was AST_If (ternary) */
+	ast_set_kind(a, n, AST_Binary);
 	ast_clear_children(a, n);
-	if (mode == 0) { MCC_TRACE("br\n"); /* abs = (x^s) - s */
+	if (mode == 0) { MCC_TRACE("br\n");
 		ast_set_op(a, n, '-');
 		ast_add_child(a, n,
 									ast_bf_bin(a, '^', ty, ast_dup_sub(a, key), ast_abs_signmask(a, key, ty, sh)));
 		ast_add_child(a, n, ast_abs_signmask(a, key, ty, sh));
-	} else if (mode == 1) { MCC_TRACE("br\n"); /* -abs = s - (x^s) */
+	} else if (mode == 1) { MCC_TRACE("br\n");
 		ast_set_op(a, n, '-');
 		ast_add_child(a, n, ast_abs_signmask(a, key, ty, sh));
 		ast_add_child(a, n,
 									ast_bf_bin(a, '^', ty, ast_dup_sub(a, key), ast_abs_signmask(a, key, ty, sh)));
-	} else if (mode == 2) { MCC_TRACE("br\n"); /* max(x,0) = x - (x & s) */
+	} else if (mode == 2) { MCC_TRACE("br\n");
 		ast_set_op(a, n, '-');
 		ast_add_child(a, n, ast_dup_sub(a, key));
 		ast_add_child(a, n,
 									ast_bf_bin(a, '&', ty, ast_dup_sub(a, key), ast_abs_signmask(a, key, ty, sh)));
-	} else { MCC_TRACE("br\n"); /* min(x,0) = x & s */
+	} else { MCC_TRACE("br\n");
 		ast_set_op(a, n, '&');
 		ast_add_child(a, n, ast_dup_sub(a, key));
 		ast_add_child(a, n, ast_abs_signmask(a, key, ty, sh));
@@ -12797,11 +11807,6 @@ static int ast_select_run(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_select_folds;
 }
 
-/* Constant reassociation: `(x OP c1) OP c2` -> `x OP combine(c1,c2)` for a same-op nest with
- * two integer-literal constants. mcc otherwise emits both ops (e.g. `shr;shr`, `and;and`).
- * Correct-by-construction: &/|/^ combine exactly; +/* are modular (machine-equivalent); shifts
- * combine only when the summed count stays below the type width (else the double shift ≠ a
- * single one). x is duplicated so it must be pure. */
 static MCC_OPT_TLS int ast_reassoc_folds;
 
 static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -12813,8 +11818,6 @@ static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_nchild(a, n) != 2)
 		{ MCC_TRACE("br\n"); return 0; }
-	/* Find the outer constant (c2) and the inner subtree. For a commutative op the constant
-	 * may be on either side (`3 + (x+5)`); for `-`/shifts it must be the right operand. */
 	{
 		AstLocal ch0 = ast_child(a, n, 0), ch1 = ast_child(a, n, 1);
 		int comm = (op == '+' || op == '*' || op == '&' || op == '|' || op == '^');
@@ -12828,12 +11831,10 @@ static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	(void)c2n;
 	if (ast_kind(a, inner) != AST_Binary || ast_nchild(a, inner) != 2)
 		{ MCC_TRACE("br\n"); return 0; }
-	/* +/- are one additive group: allow mixing (`(x+c1)-c2`); other ops need a same-op nest. */
 	iop = ast_op(a, inner);
 	additive = (op == '+' || op == '-');
 	if (additive ? (iop != '+' && iop != '-') : (iop != op))
 		{ MCC_TRACE("br\n"); return 0; }
-	/* extract the inner's constant (c1) + the variable x, const on either side if commutative. */
 	{
 		AstLocal ich0 = ast_child(a, inner, 0), ich1 = ast_child(a, inner, 1);
 		int icomm = (iop == '+' || iop == '*' || iop == '&' || iop == '|' || iop == '^');
@@ -12851,7 +11852,7 @@ static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	width = (nt & VT_BTYPE) == VT_LLONG ? 64 : 32;
 	result_op = op;
-	if (additive) { MCC_TRACE("br\n"); /* net offset; always emit `x + net` (backend turns +neg into sub) */
+	if (additive) { MCC_TRACE("br\n");
 		combined = (iop == '+' ? c1v : (uint64_t)(0 - c1v)) +
 							 (op == '+' ? c2v : (uint64_t)(0 - c2v));
 		result_op = '+';
@@ -12861,7 +11862,7 @@ static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		case '|': combined = c1v | c2v; break;
 		case '^': combined = c1v ^ c2v; break;
 		case '*': combined = c1v * c2v; break;
-		default: /* shifts: only when the combined count stays in range */
+		default:
 			if (c1v >= width || c2v >= width || c1v + c2v >= width)
 				{ MCC_TRACE("br\n"); return 0; }
 			combined = c1v + c2v;
@@ -12881,15 +11882,10 @@ static int ast_reassoc_try(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* `(x << c) >> c` for UNSIGNED (logical shifts) clears the top c bits -> `x & (~0 >> c)`.
- * mcc otherwise emits two shifts. Only unsigned: for signed the arithmetic `>>` sign-extends
- * (not a mask). Same shift count, c in (0,width). x duplicated so must be pure. */
 static int ast_reassoc_shlshr(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int nt, ct, ict, xt;
 	AstLocal inner, c2n, x, c1n;
 	uint64_t c1v, c2v, nref, xref, width, mask;
-	/* the parser emits TOK_SAR ('>') for `>>`; logical-vs-arithmetic is the operand TYPE, so
-	 * the VT_UNSIGNED check below is what makes this a logical (mask-equivalent) shift. */
 	if (ast_op(a, n) != TOK_SAR || ast_nchild(a, n) != 2)
 		{ MCC_TRACE("br\n"); return 0; }
 	inner = ast_child(a, n, 0);
@@ -12904,7 +11900,7 @@ static int ast_reassoc_shlshr(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_kind(a, c1n) != AST_Literal || !ast_ident_cval(a, c1n, &ict, &c1v) || c1v != c2v)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_intt(nt) || !(nt & VT_UNSIGNED))
-		{ MCC_TRACE("br\n"); return 0; } /* unsigned only */
+		{ MCC_TRACE("br\n"); return 0; }
 	width = (nt & VT_BTYPE) == VT_LLONG ? 64 : 32;
 	if (c1v == 0 || c1v >= width)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12924,20 +11920,17 @@ static int ast_reassoc_shlshr(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* `(x >> c) << c` clears the LOW c bits -> `x & ~((1<<c)-1)` (align-down). Works for BOTH
- * signed and unsigned: clearing low bits is sign-independent (arith `>>` then `<<` still just
- * zeros the low c bits). Same shift count, c in (0,width). x duplicated so must be pure. */
 static int ast_reassoc_shrshl(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int nt, ct, ict, xt;
 	AstLocal inner, c2n, x, c1n;
 	uint64_t c1v, c2v, nref, xref, width, mask;
-	if (ast_op(a, n) != TOK_SHL || ast_nchild(a, n) != 2) /* outer `<<` */
+	if (ast_op(a, n) != TOK_SHL || ast_nchild(a, n) != 2)
 		{ MCC_TRACE("br\n"); return 0; }
 	inner = ast_child(a, n, 0);
 	c2n = ast_child(a, n, 1);
 	if (ast_kind(a, c2n) != AST_Literal || !ast_ident_cval(a, c2n, &ct, &c2v))
 		{ MCC_TRACE("br\n"); return 0; }
-	if (ast_kind(a, inner) != AST_Binary || ast_op(a, inner) != TOK_SAR || /* inner `>>` */
+	if (ast_kind(a, inner) != AST_Binary || ast_op(a, inner) != TOK_SAR ||
 			ast_nchild(a, inner) != 2)
 		{ MCC_TRACE("br\n"); return 0; }
 	x = ast_child(a, inner, 0);
@@ -12945,7 +11938,7 @@ static int ast_reassoc_shrshl(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_kind(a, c1n) != AST_Literal || !ast_ident_cval(a, c1n, &ict, &c1v) || c1v != c2v)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_etype(a, n, &nt, &nref) || !ast_ident_intt(nt))
-		{ MCC_TRACE("br\n"); return 0; } /* signed OR unsigned — clearing low bits is sign-independent */
+		{ MCC_TRACE("br\n"); return 0; }
 	width = (nt & VT_BTYPE) == VT_LLONG ? 64 : 32;
 	if (c1v == 0 || c1v >= width)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -12965,7 +11958,6 @@ static int ast_reassoc_shrshl(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* Extract (x, const) from a commutative `x * const` node. */
 static int ast_reassoc_mulconst(AstArena *a, AstLocal n, AstLocal *x, uint64_t *cv) { MCC_TRACE("enter\n");
 	AstLocal l, r;
 	int ct;
@@ -12984,10 +11976,6 @@ static int ast_reassoc_mulconst(AstArena *a, AstLocal n, AstLocal *x, uint64_t *
 	return 0;
 }
 
-/* Multiply distribution: `(x*C1) + (x*C2)` -> `x*(C1+C2)`, `(x*C1) - (x*C2)` -> `x*(C1-C2)`
- * (same x, both constants). mcc otherwise emits two multiplies; the combined constant multiply
- * is one imul (or a shl when the product is a power of two). Distributive, exact modulo 2^w.
- * x is duplicated so must be pure. combined 0/1 collapse to 0 / x. */
 static int ast_reassoc_muldist(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	int op = ast_op(a, n), nt, xt;
 	AstLocal l, r, x1, x2;
@@ -12997,8 +11985,6 @@ static int ast_reassoc_muldist(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	l = ast_child(a, n, 0);
 	r = ast_child(a, n, 1);
 	{
-		/* Each operand is `x*const`, or a bare `x` (treated as x*1). At least one must be a
-		 * multiply — else it's `x+x`/`x-x`, better left to the backend. */
 		int got_l = ast_reassoc_mulconst(a, l, &x1, &c1);
 		int got_r = ast_reassoc_mulconst(a, r, &x2, &c2);
 		if (!got_l && !got_r)
@@ -13019,7 +12005,7 @@ static int ast_reassoc_muldist(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (!ast_ident_etype(a, x1, &xt, &xref) || !ast_ident_pure(a, x1))
 		{ MCC_TRACE("br\n"); return 0; }
 	combined = op == '+' ? c1 + c2 : c1 - c2;
-	if (combined == 0 || combined == 1) /* x*0=0, x*1=x — rare degenerate; leave to keep it simple */
+	if (combined == 0 || combined == 1)
 		{ MCC_TRACE("br\n"); return 0; }
 	MCC_TRACE("reassoc muldist op=%d c1=%llu c2=%llu -> x*%llu\n", op, (unsigned long long)c1,
 						(unsigned long long)c2, (unsigned long long)combined);
@@ -13082,10 +12068,6 @@ static int ast_sethi_num(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_kind(a, n) != AST_Binary || ast_nchild(a, n) != 2) { MCC_TRACE("br\n");
-		/* V-sethi(a): a literal leaf is an immediate operand (0 registers); other
-		 * leaves (a variable ref / load) need 1. Off by default -> every leaf counts
-		 * 1 (byte-identical); the AST_SG_SETHILEAF search knob turns on the refinement
-		 * so the higher-register-need subtree, not just the deeper one, sorts first. */
 		if (ast_sethi_leaf_env && ast_kind(a, n) == AST_Literal)
 			{ MCC_TRACE("br\n"); return 0; }
 		return 1;
@@ -13583,8 +12565,6 @@ static int ast_ivsr_run(AstArena *a) { MCC_TRACE("enter\n");
 	return did;
 }
 
-/* Is `n` a reference to the IV local (off `ivoff`), possibly through a widening
- * Convert (int index → 64-bit pointer arithmetic)? */
 static int ast_ivsr_is_iv_ref(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("enter\n");
 	while (n != AST_NONE && ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
 		{ MCC_TRACE("br\n"); n = ast_first_child(a, n); }
@@ -13593,14 +12573,6 @@ static int ast_ivsr_is_iv_ref(AstArena *a, AstLocal n, int ivoff) { MCC_TRACE("e
 
 static MCC_OPT_TLS AstLocal ast_ivsr_ptr_target;
 
-/* Is the candidate base actually loop-VARYING? `ast_licm_operands_ok` is not
- * sufficient on its own: it delegates "is this a local?" to ast_cprop_is_local,
- * a const-propagation helper that also demands an INTEGER type, so a
- * POINTER-typed local slips through unchecked even when the loop assigns it.
- * That is how `int *r = g2[i]; … r[i]` was strength-reduced against a base the
- * body rewrites every iteration. Ask the question directly here, for any local
- * ref regardless of type, and cover the induction variable itself (whose store
- * lives in the increment block, not the body). */
 static int ast_ivsr_ptr_base_varies(AstArena *a, AstLocal loop, AstLocal n,
 																		int ivoff) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
@@ -13619,21 +12591,15 @@ static int ast_ivsr_ptr_base_varies(AstArena *a, AstLocal loop, AstLocal n,
 	return 0;
 }
 
-/* Match `Binary('+', base_invariant, iv)` whose result is a POINTER (so codegen
- * scales the index by the element size). Returns the '+' node, else AST_NONE. */
 static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
 																			int ivoff) { MCC_TRACE("enter\n");
 	int et;
 	uint64_t er;
-	/* NOTE: no whole-node regpure check — a pointer-index address `base + i` isn't
-	 * "register-pure" (it feeds a Load), but it's still safe to strength-reduce as
-	 * long as the base is pure + loop-invariant (checked below) and the other
-	 * operand is the IV. */
 	if (ast_kind(a, n) != AST_Binary || ast_op(a, n) != '+' ||
 			ast_nchild(a, n) != 2)
 		{ MCC_TRACE("br\n"); return AST_NONE; }
 	if (!ast_ident_etype(a, n, &et, &er) || (et & VT_BTYPE) != VT_PTR)
-		{ MCC_TRACE("br\n"); return AST_NONE; } /* must be a pointer add (implicit scale) */
+		{ MCC_TRACE("br\n"); return AST_NONE; }
 	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1), base;
 	if (ast_ivsr_is_iv_ref(a, y, ivoff))
 		{ MCC_TRACE("br\n"); base = x; }
@@ -13641,33 +12607,13 @@ static AstLocal ast_ivsr_ptr_cofactor(AstArena *a, AstLocal loop, AstLocal n,
 		{ MCC_TRACE("br\n"); base = y; }
 	else
 		{ MCC_TRACE("br\n"); return AST_NONE; }
-	/* base must be loop-invariant (safe to evaluate once at the preheader). We use
-	 * the LICM hoistability check, NOT ast_cse_regpure — the base is typically a
-	 * pointer local/param (a memory-load Ref) which isn't "register-pure" but is
-	 * perfectly safe to re-read outside the loop. */
 	if (!ast_licm_operands_ok(a, loop, base) || !ast_expr_pure(a, base, 16))
 		{ MCC_TRACE("br\n"); return AST_NONE; }
-	/* …and it must not be a function of the loop counter. `a[i][i]` is the case
-	 * that breaks: the pass runs to fixpoint, so after the inner `&a + i` has
-	 * been strength-reduced to a pointer p, the OUTER add reappears next cycle as
-	 * `p + i` — which looks exactly like "invariant base + IV" even though p is
-	 * itself an induction pointer. Hoisting that to the preheader and stepping it
-	 * yields a[i][0]. ast_licm_operands_ok does not catch it: it asks whether the
-	 * base's memory operands are WRITTEN in the loop, and both the IV and p are
-	 * locals updated in the increment block, so the base reads as invariant.
-	 * Only the READ of a[i][i] is wrong, which is what makes it hard to spot. */
 	if (ast_ivsr_ptr_base_varies(a, loop, base, ivoff))
 		{ MCC_TRACE("br\n"); return AST_NONE; }
 	return n;
 }
 
-/* Replace every occurrence of the pointer-add `e` (structurally) with `ref`.
- * Unlike ast_licm_subst this has NO lvalue guard: a pointer-add `base + i` is
- * ALWAYS an rvalue (a computed address), so substituting it is safe even when it
- * sits inside a store target's address computation (e.g. `p[i].vx -= …`) — the
- * store still writes the same location. That is what ast_licm_subst's coarse
- * lval propagation would (wrongly) skip, blocking LSR on write/compound-assign
- * loops. */
 static void ast_ivsr_ptr_subst(AstArena *a, AstLocal n, AstLocal e,
 															 AstLocal ref) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || n == ref)
@@ -13693,11 +12639,6 @@ static void ast_ivsr_ptr_scan(AstArena *a, AstLocal loop, AstLocal n,
 		{ MCC_TRACE("br\n"); ast_ivsr_ptr_scan(a, loop, c, ivoff); }
 }
 
-/* Pointer-index strength reduction: replace a loop-invariant-base `base + i`
- * pointer-add (a[i]) with a pointer `p` initialized to `base + i` before the
- * loop and advanced by the IV stride each iteration (pointer-add scales by the
- * element size). Mirrors ast_ivsr_run's materialize/init/increment/subst, but
- * the increment is a pointer-add by `stride` (no explicit *cofactor). */
 static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 	int did = 0;
 	AstLocal nn = ast_count(a);
@@ -13716,13 +12657,6 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 				ast_kind(a, incrbb) != AST_BasicBlock ||
 				ast_kind(a, body) != AST_BasicBlock)
 			{ MCC_TRACE("br\n"); continue; }
-		/* Only bail on a label DEFINITION inside the loop BODY (op-4) — that is a
-		 * potential external goto-into-loop target that could bypass the `p` init.
-		 * A `continue`/`break` compiles to a goto (op-5) in the body targeting the
-		 * loop's own increment/exit label (which lives in incrbb/after the loop,
-		 * NOT in the body), so those are safe: the increment does `p += stride` in
-		 * lockstep with `i++`, keeping p == base+i at every body use regardless of
-		 * intra-loop control flow. (The mul-based ivsr stays fully conservative.) */
 		if (ast_sccp_has_label(a, body))
 			{ MCC_TRACE("br\n"); continue; }
 		int ivoff = 0, ivtt = 0, found = 0;
@@ -13750,7 +12684,6 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		uint64_t er;
 		ast_ident_etype(a, padd, &et, &er);
 		int off = (ast_ltemp_cur - 8) & -8;
-		/* init: p = base + i  (dup the whole pointer-add, evaluated at loop entry) */
 		AstLocal lref = ast_node(a, AST_Ref);
 		ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
 		ast_set_ival(a, lref, (uint64_t)off);
@@ -13763,7 +12696,6 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_add_child(a, st, cvt);
 		if (!ast_ltemp_insert_before(a, parent, n, st))
 			{ MCC_TRACE("br\n"); continue; }
-		/* back-edge: p = p + stride  (pointer-add; codegen scales by elemsize) */
 		AstLocal iref = ast_node(a, AST_Ref);
 		ast_set_op(a, iref, VT_LOCAL | VT_LVAL);
 		ast_set_ival(a, iref, (uint64_t)off);
@@ -13788,7 +12720,6 @@ static int ast_ivsr_ptr_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_add_child(a, ist, iwref);
 		ast_add_child(a, ist, cvt2);
 		ast_add_child(a, incrbb, ist);
-		/* body: replace every `base + i` with p */
 		AstLocal uref = ast_node(a, AST_Ref);
 		ast_set_op(a, uref, VT_LOCAL | VT_LVAL);
 		ast_set_ival(a, uref, (uint64_t)off);
@@ -14774,14 +13705,6 @@ static int ast_interchange_is_init(AstArena *a, AstLocal store, int iv_off) { MC
 	return rhs != AST_NONE && ast_kind(a, rhs) == AST_Literal;
 }
 
-/* Interchange reorders iterations, so it is only sound when EVERY order-sensitive
- * side effect of the body is captured by the affine-array dependence test. That
- * test models memory stores/loads whose address is a computed `AST_Load`; it does
- * NOT model function calls, scalar-local carried dependences (a store straight to
- * an `AST_Ref`, e.g. a non-associative accumulator), early exits, or nested
- * control flow. Whitelist the node kinds the analysis fully accounts for; reject
- * anything else. Non-affine array accesses are already blocked upstream (they
- * decode to `!ok` refs → `ast_loop_interchange_legal` returns 0). */
 static int ast_interchange_body_ok(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 1; }
@@ -14796,10 +13719,10 @@ static int ast_interchange_body_ok(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		break;
 	case AST_Store:
 		if (ast_nchild(a, n) < 2 || ast_kind(a, ast_child(a, n, 0)) != AST_Load)
-			{ MCC_TRACE("br\n"); return 0; } /* scalar / register store — carried dep the dep test misses */
+			{ MCC_TRACE("br\n"); return 0; }
 		break;
 	default:
-		return 0; /* Invoke, If (nested loop/branch), Jump, Return, InitList, ... */
+		return 0;
 	}
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); if (!ast_interchange_body_ok(a, c))
@@ -14825,7 +13748,7 @@ static int ast_interchange_beneficial(AstArena *a, AstLocal outer, AstLocal inne
 			{ MCC_TRACE("br\n"); continue; }
 		for (int d = 0; d < refs[i].ndim; d++) { MCC_TRACE("br\n");
 			int64_t co = refs[i].sub[d].coeff[0], ci = refs[i].sub[d].coeff[1];
-			int64_t w = refs[i].ndim - d; /* earlier dim = larger memory stride */
+			int64_t w = refs[i].ndim - d;
 			outer_w += w * (co < 0 ? -co : co);
 			inner_w += w * (ci < 0 ? -ci : ci);
 		}
@@ -14945,16 +13868,6 @@ static void ast_li_append_children(AstArena *a, AstLocal dst, AstLocal src) { MC
 	a->nchild[src] = 0;
 }
 
-/* Fuse two adjacent same-trip `for` loops (l1 before l2) into one. Legality
- * (`ast_loop_fusion_legal`: adjacency, identical trip, no backward cross-loop
- * array dependence) is proven by the §27 analysis; here we additionally require
- * that every order-sensitive effect is dependence-modeled (`ast_interchange_body_ok`
- * on both bodies rejects calls / scalar carried deps / nested control) and that
- * the only statement between the two loops is loop2's IV-init literal store.
- * Keep-both-IVs: body2 continues to reference its own IV, which stays in lockstep
- * because we graft loop2's increment into loop1's incr block and hoist loop2's
- * init ahead of the fused loop; when both loops share one IV we instead drop the
- * mid re-init and leave the single increment. */
 static int ast_fusion_apply(AstArena *a, AstLocal l1, AstLocal l2) { MCC_TRACE("enter\n");
 	if (ast_op(a, l1) != 3 || ast_op(a, l2) != 3)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -14980,10 +13893,10 @@ static int ast_fusion_apply(AstArena *a, AstLocal l1, AstLocal l2) { MCC_TRACE("
 	if (!ast_interchange_is_init(a, init2, o2))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_li_prev_sib(a, init2) != l1)
-		{ MCC_TRACE("br\n"); return 0; } /* only loop2's init may sit between the two loops */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (o1 != o2 &&
 			(ast_li_refs_off(a, body1, o2) || ast_li_refs_off(a, incr1, o2)))
-		{ MCC_TRACE("br\n"); return 0; } /* loop1 must not read loop2's (soon-hoisted) IV */
+		{ MCC_TRACE("br\n"); return 0; }
 	ast_li_append_children(a, body1, body2);
 	if (o1 != o2) { MCC_TRACE("br\n");
 		ast_li_append_children(a, incr1, incr2);
@@ -15027,15 +13940,6 @@ static int ast_fusion_run(AstArena *a) { MCC_TRACE("enter\n");
 	return total;
 }
 
-/* §27 tile-and-interchange. Strip-mine the inner loop of a 2-deep perfect nest and
- * hoist the strip loop OUTERMOST:
- *   for(i=0;i<N;i++) for(j=0;j<M;j++) BODY
- *     -> for(jj=0;jj<M;jj+=T) for(i=0;i<N;i++) for(j=jj; j<M && j<jj+T; j++) BODY
- * Correct iff the nest is fully permutable, which for a 2-deep nest is exactly
- * `ast_loop_interchange_legal` (both canonicalize dependence vectors and reject the
- * lone `(<,>)`); the body-safety whitelist rejects effects the affine dep test can't
- * model. The strip IV `jj` is a fresh replay-time stack slot, minted the same way the
- * ast_ltemp pass mints temporaries (frame reserved via `loc = ast_ltemp_cur`). */
 static AstLocal ast_tile_local_ref(AstArena *a, int off, int op, int tt,
 																	 uint64_t tr) { MCC_TRACE("enter\n");
 	AstLocal r = ast_node(a, AST_Ref);
@@ -15063,12 +13967,11 @@ static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) { MCC_TRA
 			!ast_loop_iv(a, inner, &ivj, &t, &stj))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (stj != 1)
-		{ MCC_TRACE("br\n"); return 0; } /* strip step +T assumes unit inner stride */
+		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal ibody, iincr;
 	ast_loop_parts(a, inner, ast_op(a, inner), &ibody, &iincr);
 	if (!ast_interchange_body_ok(a, ibody))
 		{ MCC_TRACE("br\n"); return 0; }
-	/* inner cond must be `Ref(j) < LiteralM`; reuse its op/M for the strip cond. */
 	AstLocal cond_j = ast_child(a, inner, 0);
 	if (cond_j == AST_NONE || ast_kind(a, cond_j) != AST_Binary ||
 			ast_op(a, cond_j) != TOK_LT || ast_nchild(a, cond_j) != 2)
@@ -15078,15 +13981,14 @@ static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) { MCC_TRA
 		{ MCC_TRACE("br\n"); return 0; }
 	int T = ast_tile_size;
 	if ((int64_t)ast_ival(a, mexpr) <= T)
-		{ MCC_TRACE("br\n"); return 0; } /* nothing to subdivide */
-	/* inits: outer i-init and inner j-init are the literal stores before each loop. */
+		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal i_init = ast_li_prev_sib(a, outer);
 	AstLocal j_init = ast_li_prev_sib(a, inner);
 	if (!ast_interchange_is_init(a, i_init, ivo) ||
 			!ast_interchange_is_init(a, j_init, ivj))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_li_prev_sib(a, j_init) != AST_NONE)
-		{ MCC_TRACE("br\n"); return 0; } /* inner body is exactly [j_init, inner] (perfect nest) */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_ltemp_n >= AST_LTEMP_MAX)
 		{ MCC_TRACE("br\n"); return 0; }
 	int jop = ast_op(a, jref), jtt = ast_type_t(a, jref);
@@ -15095,20 +13997,16 @@ static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) { MCC_TRA
 	AstLocal afterOuter = ast_next_sib(a, outer);
 	int64_t jstart = (int64_t)ast_ival(a, ast_dep_strip(a, ast_child(a, j_init, 1)));
 
-	/* mint the strip induction variable jj (fresh slot below the frame low-water). */
 	int jjoff = (ast_ltemp_cur - 8) & -8;
 	ast_ltemp_cur = jjoff;
 	ast_ltemp_off[ast_ltemp_n++] = jjoff;
 
-	/* jj = jstart; before the (new outer) strip loop. */
 	AstLocal jj_init = ast_node(a, AST_Store);
 	ast_add_child(a, jj_init, ast_tile_local_ref(a, jjoff, jop, jtt, jtr));
 	ast_add_child(a, jj_init, ast_bf_lit(a, jtt, (uint64_t)jstart));
-	/* strip cond: jj < M (same op + M literal as the inner cond). */
 	AstLocal cond_jj = ast_bf_bin(a, TOK_LT, ctt,
 															 ast_tile_local_ref(a, jjoff, jop, jtt, jtr),
 															 ast_dup_sub(a, mexpr));
-	/* strip incr block: jj = jj + T. */
 	AstLocal incr_jj = ast_node(a, AST_BasicBlock);
 	AstLocal jj_step = ast_node(a, AST_Store);
 	ast_add_child(a, jj_step, ast_tile_local_ref(a, jjoff, jop, jtt, jtr));
@@ -15117,26 +14015,20 @@ static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) { MCC_TRA
 													 ast_tile_local_ref(a, jjoff, jop, jtt, jtr),
 													 ast_bf_lit(a, jtt, (uint64_t)T)));
 	ast_add_child(a, incr_jj, jj_step);
-	/* tile body: [i_init, outer], moved under the strip loop. */
 	AstLocal tbody = ast_node(a, AST_BasicBlock);
-	/* strip loop node. */
 	AstLocal tile = ast_node(a, AST_If);
 	ast_set_op(a, tile, 3);
 
-	/* inner cond -> (j < M) && (j < jj + T). */
 	AstLocal guard = ast_bf_bin(a, TOK_LT, ctt,
 														 ast_tile_local_ref(a, ivj, jop, jtt, jtr),
 														 ast_bf_bin(a, '+', jtt,
 																				ast_tile_local_ref(a, jjoff, jop, jtt, jtr),
 																				ast_bf_lit(a, jtt, (uint64_t)T)));
-	/* Detach cond_j from inner BEFORE grafting it under the new `&&`: ast_add_child
-	 * clobbers cond_j's next_sib, which would sever inner's [incr, body] children. */
 	AstLocal incr_j = ast_child(a, inner, 1);
 	ast_li_list_remove(a, inner, cond_j);
 	AstLocal newcond = ast_bf_bin(a, TOK_LAND, ctt, cond_j, guard);
 	ast_li_list_insert_before(a, inner, incr_j, newcond);
 
-	/* inner init: j = jstart -> j = jj (Convert-wrapped, matching the emit shape). */
 	AstLocal j_start_val = ast_child(a, j_init, 1);
 	AstLocal jj_as_j = ast_node(a, AST_Convert);
 	ast_set_type(a, jj_as_j, jtt, jtr);
@@ -15144,7 +14036,6 @@ static int ast_tile_apply(AstArena *a, AstLocal outer, AstLocal inner) { MCC_TRA
 	ast_li_list_insert_before(a, j_init, j_start_val, jj_as_j);
 	ast_li_list_remove(a, j_init, j_start_val);
 
-	/* splice: [.. i_init, outer ..] -> [.. jj_init, tile{ i_init; outer } ..]. */
 	ast_li_list_remove(a, pbb, i_init);
 	ast_li_list_remove(a, pbb, outer);
 	ast_add_child(a, tbody, i_init);
@@ -15163,9 +14054,6 @@ static int ast_tile_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_tile_env)
 		{ MCC_TRACE("br\n"); return 0; }
 	ast_loopnest_sync(a);
-	/* At most one tile per function: tiling turns the 2-deep nest into a 3-deep
-	 * one, and re-scanning could re-tile the freshly created strip loop. A single
-	 * strip keeps the transform bounded and the output predictable. */
 	for (int i = 0; i < ast_loopnest_n; i++) { MCC_TRACE("br\n");
 		AstLocal inner = ast_loopnest[i].header;
 		AstLocal outer = ast_loopnest[i].parent;
@@ -15323,8 +14211,6 @@ static void ast_cse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ast_cse_n = 0;
 			}
 		} else if (k == AST_Return) { MCC_TRACE("br\n");
-			/* valueless return: no value to substitute into, but the available-
-			   expression set still dies here. */
 			{
 				AstLocal rv = ast_first_child(a, s);
 				if (rv != AST_NONE)
@@ -15425,8 +14311,6 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ast_cse_n = 0;
 			}
 		} else if (k == AST_Return) { MCC_TRACE("br\n");
-			/* valueless return: no value to substitute into, but the available-
-			   expression set still dies here. */
 			{
 				AstLocal rv = ast_first_child(a, s);
 				if (rv != AST_NONE)
@@ -15544,14 +14428,6 @@ static void ast_gap_note(void) { MCC_TRACE("enter\n");
 	ast_gap_nocode = nocode_wanted;
 }
 
-/* Two symbol indices denote the same thing when their symbol-table entries are
-   indistinguishable: both LOCAL, same name text, type, visibility, section,
-   value and size. riscv64's PC-relative pair anchors its R_RISCV_PCREL_LO12_*
-   to a fresh label put at the AUIPC site (riscv64-gen.c load_symofs), and that
-   label is anonymous, so baseline and replay emit two separate symbols that
-   carry the same placeholder name at different strtab offsets — a byte-equal
-   re-emit therefore references a different index for the same address. The
-   comparison is on the name TEXT, not st_name, for exactly that reason. */
 static int ast_reloc_sym_equiv(unsigned s1, unsigned s2) { MCC_TRACE("enter\n");
 	ElfSym *e1, *e2;
 	const char *n1, *n2;
@@ -15580,8 +14456,6 @@ static int ast_reloc_sym_equiv(unsigned s1, unsigned s2) { MCC_TRACE("enter\n");
 	return strcmp(n1, n2) == 0;
 }
 
-/* Structural equality of a body's relocation range: identical offsets, types
-   and addends, with symbol indices compared through ast_reloc_sym_equiv. */
 static int ast_reloc_range_equiv(const unsigned char *ra, const unsigned char *rb,
 																 int len) { MCC_TRACE("enter\n");
 	int i, n;
@@ -15918,10 +14792,6 @@ static void jrn_gap(void) { MCC_TRACE("enter\n");
 static void jrn_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
 	JrnOp *o;
 #if RIR_DBG_OPTRACE
-	/* Both the parse and the C2 emission reach the primitives through these
-	   wrappers, so one tap gives both streams and diffing them shows the first
-	   structural divergence -- which op the reconstruction never issued, or
-	   issued out of order. */
 	if (rir_dbg_on())
 		fprintf(stderr, "[optrace] %s %s ind=%d vn=%d\n",
 						rir_c2_active ? "C2   " : (jrn_replaying ? "JRN  " : "PARSE"),
@@ -16943,17 +15813,6 @@ static void jrn_oracle_ops(int bi, const unsigned char *base, int blen) { MCC_TR
 	}
 }
 
-/*
- * Oracle: the diagnostic the tree recorder cannot produce for itself.
- *
- * ast_verify_dump_diff already says WHERE the tree replay and the parser part
- * company. What it cannot say is what the parser was doing at that offset,
- * because the tree is exactly the model that failed. When the journal replayed
- * this same body byte-faithfully it has certified the parser's stream as
- * reproducible from a flat op list, and every op carries the [ind_pre,ind_post)
- * span it emitted -- so the first differing offset can be blamed on a named
- * codegen operation and shown in its op-segmented form.
- */
 static void jrn_oracle_dump(const char *fn, const unsigned char *base, int blen,
 														const unsigned char *repl, int rlen) { MCC_TRACE("enter\n");
 	int lim = blen < rlen ? blen : rlen;
@@ -17204,20 +16063,9 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	}
 }
 
-/*
- * Strategy engine (rollout step 4). Each fixed-pipeline pass is wrapped as an
- * AstStrategy {name, gate, apply} and the pipeline order is a frozen data table
- * (ast_strategies) rather than a hand-ordered call sequence. ast_func_end always
- * consumes this table — it is the sole pipeline (the earlier legacy inline block
- * and its MCC_AST_ENGINE toggle have been removed). The table order, gates, and
- * arguments reproduced the legacy block byte-for-byte, so making it the only
- * engine changed no emitted bytes. `match` is the gate; `est_cost_delta` (the
- * step-5 search's ranking key) is deferred.
- */
 typedef struct AstStrategy {
 	const char *name;
-	int (*gate)(void); /* accessor, not &flag: the gate flags are MCC_OPT_TLS (per-thread),
-	                      whose address is not a compile-time constant for a static table */
+	int (*gate)(void);
 	int (*apply)(AstArena *a, Sym *sym);
 } AstStrategy;
 
@@ -17356,60 +16204,12 @@ static long ast_run_strat_cycle(AstArena *a, Sym *sym, int faithful,
 	return total;
 }
 
-/*
- * Live -O4+ search (rollout step 5). Opt-in via MCC_AST_SEARCH at -O4+
- * (optimize_search_seconds>0, so the driver has budget for a search): ast_func_end
- * runs a best-first per-function search over the four toggleable fold gates
- * (templates, narrow, bitflag, sethi) instead of applying the single frozen order.
- * It is a separate opt-in (not the default -O4+ path) so it does not perturb the
- * out-of-process superopt's per-worker gate measurements.
- *
- * Execution model (shared shape with the future runtime JIT). Each candidate gate
- * config is a stackless coroutine whose one "tick" applies exactly one strategy
- * pass to its own isolated clone. The scheduler does not round-robin: it always
- * advances the live candidate that has consumed the least total time so far (the
- * running sum of its tick durations; ties break to the lowest index, so the
- * baseline config finishes first as the safe fallback). Equalizing accumulated
- * time keeps the schedule fair — no candidate starves or monopolizes the budget.
- * A rolling window of
- * the last 10 tick durations predicts the next tick cost; the search stops once
- * that predicted cost would exceed the budget remaining. The budget is the -ON
- * seconds, absolute from the first search tick; when it is spent the search stops
- * at the next tick boundary and any unfinished candidate is abandoned.
- * ast_search_abort is a forced-abort hook (for the pool / JIT / a deadline signal):
- * it is checked at every tick boundary and, because each candidate mutates only a
- * throwaway clone, an abort discards in-progress work safely — the pool's "kill and
- * restart the worker" reduces to this discard.
- *
- * Correctness. The search only SELECTS a gate configuration — the winning config is
- * produced by the normal, unmodified pipeline+emit path on the untouched captured
- * tree, so a search bug (or a time-truncated / aborted search) can only pick a
- * larger-but-correct config, never a miscompile. Measurement scores by the static
- * cost model with no emit, so the emit-cursor / promo-plan / *_total-counter hazards
- * do not arise; the module counters are saved/restored regardless. Winners are
- * memoized by intention hash so a recurring function skips the search. -O1..-O3
- * (no budget) never search and stay byte-reproducible.
- *
- * Single-threaded and statically scored here. The NCores-1 coroutine thread pool
- * (the round-robin generalized across workers), emitted-size / JIT-runtime scoring
- * (needs scratch-Section emit isolation), the disk-backed cross-build memo, and
- * runtime deopt are the documented step-5+ continuations in docs/TODO.md.
- */
-/* The strategy/knob bitset (AstGateMask), the AST_SG_* gates, and the M3 superopt
- * vocabulary bridge live in a shared, dependency-free header so the unit harness
- * (tools/asttool.c) can selftest the bridge without the MCC_INTERNAL search body. */
 #include "mccgate.h"
 
 typedef struct AstSearchMemo {
 	uint64_t hash;
 	AstGateMask gates;
 	unsigned refcount;
-	/* M3 blocker A: fields the out-of-process drivers keep in SoPfCkpt so one record
-	 * can serve both searches. `score` = the winning config's search score (the packed
-	 * cost/emit-size ranking key, -1 if unknown); `tried` = a bitmask of which candidate
-	 * configs have been measured, for a resumable per-function search (0 = not tracked by
-	 * the in-process search yet). Both persisted so a future unified driver can resume /
-	 * compare against the superopt's best_size + tried without a second substrate. */
 	int64_t score;
 	uint64_t tried;
 	uint64_t order_packed;
@@ -17435,56 +16235,16 @@ static void ast_order_unpack(uint64_t p, int n, int *seq) { MCC_TRACE("enter\n")
 }
 
 #define AST_SEARCH_MEMO_CAP 4096
-/* Max candidates the per-function search enumerates (budget cap on the subset lattice
- * of `searchable`; the per-tick time budget is the primary bound). Also sizes the fork
- * pool's gatelist. 128 comfortably covers 4 fold gates + the opt-in knobs (<=2^9). */
 #define AST_SEARCH_MAX_CAND 128
-/* The combo enumeration is capped here (not at AST_SEARCH_MAX_CAND) so the whole
- * candidate space fits the 64-bit `tried`/`skip` bitmask — the precondition for the
- * resumable per-function search to converge to COMPLETE across continued runs. */
 #define AST_SEARCH_CAND_MAX 64
 static AstSearchMemo ast_search_memo[AST_SEARCH_MEMO_CAP];
 static int ast_search_memo_n;
 
-/*
- * Cross-build persistence of the per-function search winner, as REFCOUNTED
- * permutations. Each record is {uint64 intention-hash, uint64 (gates | MAGIC<<8),
- * uint64 refcount} appended to a file in the per-user cache dir; the MAGIC in every
- * record lets a torn/stale record be skipped without a global header. A hit bumps
- * the winning permutation's refcount and re-appends it (last-wins on load).
- *
- * Eviction: every cache accessor (load / store / hit — all route through
- * ast_search_disk_store) checks the *shared* disk usage of the whole cache dir; once
- * it reaches AST_SEARCH_DISK_MAX (10 GiB, shared across concurrent builds) it drops
- * the lowest-refcount quarter of the working set and rewrites the file (temp +
- * rename), keeping the most-reused permutations. Cleared by `mcc --clear-cache`;
- * opt-in with MCC_AST_SEARCH; a missing/unwritable cache dir degrades to the
- * in-memory memo. The in-memory working set is capped (AST_SEARCH_MEMO_CAP), so an
- * eviction rewrite also compacts the file down to that hot set. */
-#define AST_SEARCH_MEMO_MAGIC 0x4646u /* 'FF' — order-carrying 7-word record;
- * bumped from 'FE' when the wide-value column joined the intention-hash fold,
- * and from 'FD' when the AST kind renumbering changed every intention hash. */
-/* On-disk record word layout: the low AST_GATE_BITS hold the AstGateMask (up to 48
- * strategy knobs — past any host's native width), MAGIC occupies the high 16 bits so
- * a torn/stale record is still skippable without a global header. Widened from the
- * original 8-bit gate field so added knobs are never truncated on persist/reload. */
+#define AST_SEARCH_MEMO_MAGIC 0x4646u
 #define AST_GATE_BITS 48
 #define AST_GATE_DISK_MASK ((uint64_t)(((uint64_t)1 << AST_GATE_BITS) - 1))
-#define AST_SEARCH_DISK_MAX (10ull << 30) /* 10 GiB shared cache-dir cap */
+#define AST_SEARCH_DISK_MAX (10ull << 30)
 
-/* Salt the search-memo key with the build version + target triplet (mirrors
- * so_pf_key in mcc.c, roadmap M2 blocker B): ast_intention_hash folds only AST
- * structure, so without this a winner cached by an incompatible mcc build or a
- * different target would be silently reused across the shared cache dir. The
- * version string is only visible when mccast.c is compiled inside the mcc TU
- * (mcc.h present); the asttool unit harness includes it standalone, so guard on
- * the macro and fall back to triplet-only (which is a compile define everywhere). */
-/* Does this arena hold anything whose CODEGEN an -march feature can change?
-   Today that is the round family (floor/ceil/trunc/round/rint/nearbyint), which
-   MCC_AST_ROUND_INLINE lowers to roundsd once SSE4.1 is permitted. Any transform
-   added to the ISA-dependent set in step 4 of the -march plan belongs here too;
-   the cost of forgetting is a cache entry shared between two hosts that must not
-   share one, so keep this beside the gates it mirrors. */
 static void ast_isa_key_update(const AstArena *a) { MCC_TRACE("enter\n");
 	ast_isa_key_term = 0;
 #ifdef MCC_TARGET_X86_64
@@ -17539,9 +16299,6 @@ static uint64_t ast_search_key_salt_ex(uint64_t h, int per_triple) { MCC_TRACE("
 			{ MCC_TRACE("br\n"); h = (h ^ (unsigned char)*s) * 0x100000001b3ull; }
 	}
 #endif
-	/* Only the features THIS arena is sensitive to. Zero for the overwhelming
-	   majority of functions, which therefore keep the key they had before
-	   -march existed and stay shareable across hosts. */
 	if (ast_isa_key_term) { MCC_TRACE("br\n");
 		h = (h ^ (uint64_t)ast_isa_key_term) * 0x100000001b3ull;
 	}
@@ -17552,14 +16309,6 @@ static uint64_t ast_search_key_salt(uint64_t h) { MCC_TRACE("enter\n");
 	return ast_search_key_salt_ex(h, 1);
 }
 
-/* Slice store only. The stored value is a set of POTENTIAL gates, and every hit
-   is intersected with ast_search_searchable() for the CURRENT target before it
-   reaches codegen, so a foreign-triple entry can only ever select a subset of
-   gates this target already permits -- never enable one it does not. Dropping
-   the triplet therefore lets triples share proven slices instead of each
-   re-deriving them, and the worst a wrong hit can do is pick a suboptimal (but
-   legal) gate subset. The version stays in the salt: it guards the record
-   FORMAT, which is not target-independent. */
 static uint64_t ast_slice_key_salt(uint64_t h) { MCC_TRACE("enter\n");
 	return ast_search_key_salt_ex(h, 0);
 }
@@ -17577,8 +16326,6 @@ static int ast_search_disk_path(char *buf, int cap) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-/* Total bytes of the shared cache dir (all users' files). POSIX: sum the regular
- * files; else fall back to just the memo file's size. */
 #if MCC_HOST_POSIX
 #include <dirent.h>
 #include <sys/stat.h>
@@ -17619,8 +16366,6 @@ static unsigned long long ast_search_disk_usage(void) { MCC_TRACE("enter\n");
 }
 #endif
 
-/* Returns 1 if the working set changed (new record, or a bumped gate/refcount), 0
- * if the call was a no-op — the disk store uses this to skip a pointless rewrite. */
 static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 															 int64_t score, uint64_t tried,
 															 uint64_t order_packed, uint64_t order_n) { MCC_TRACE("enter\n");
@@ -17640,7 +16385,7 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 				changed = 1;
 			}
 			if ((tried | ast_search_memo[i].tried) != ast_search_memo[i].tried) { MCC_TRACE("br\n");
-				ast_search_memo[i].tried |= tried; /* accumulate measured-config progress */
+				ast_search_memo[i].tried |= tried;
 				changed = 1;
 			}
 			if (order_n > 0 && (ast_search_memo[i].order_packed != order_packed ||
@@ -17665,26 +16410,14 @@ static int ast_search_memo_add(uint64_t h, AstGateMask gates, unsigned refcount,
 	return changed;
 }
 
-/*
- * On-disk container. The working set is serialized to a raw record image, then
- * compressed with the best of the three src/algorithms codecs (rle/lzss/lzw) and
- * written whole (temp + atomic rename): {u32 magic, u32 codec, u32 raw_len,
- * u32 comp_len} followed by the payload. Compressing each build's memo file keeps
- * every user's cache small so far more permutations fit under the shared 10 GiB cap
- * before eviction. The container magic differs from the old raw append-log format,
- * so a pre-compression file simply reads as empty (a harmless cache rebuild). The
- * memo image is highly compressible (a repeated per-record MAGIC, small gate masks,
- * structured 64-bit fields), so a codec almost always beats codec 0 (stored). */
-#define AST_MEMO_CONT_MAGIC 0x315a534dUL /* "MSZ1" */
-#define AST_MEMO_RECWORDS 7 /* {hash, gates|magic, refcount, score, tried, order_packed, order_n} */
+#define AST_MEMO_CONT_MAGIC 0x315a534dUL
+#define AST_MEMO_RECWORDS 7
 #define AST_MEMO_RECBYTES (AST_MEMO_RECWORDS * 8)
 #define AST_MEMO_RAWMAX (AST_SEARCH_MEMO_CAP * AST_MEMO_RECBYTES)
 static unsigned char ast_memo_raw[AST_MEMO_RAWMAX];
 static unsigned char ast_memo_pk[AST_MEMO_RAWMAX * 2 + 64];
 static unsigned char ast_memo_try[AST_MEMO_RAWMAX * 2 + 64];
 
-/* Compress ast_memo_raw[0..rn) into ast_memo_pk with the smallest of the three
- * codecs; returns the codec id (0 = stored, when nothing beats raw) and sets *plen. */
 static int ast_memo_pack(long rn, long *plen) { MCC_TRACE("enter\n");
 	long best = rn, l;
 	int codec = 0;
@@ -17708,8 +16441,6 @@ static int ast_memo_pack(long rn, long *plen) { MCC_TRACE("enter\n");
 	return codec;
 }
 
-/* Decompress a container payload in ast_memo_pk[0..clen) into ast_memo_raw; returns
- * the raw length, or -1 on a corrupt/oversized payload. */
 static long ast_memo_unpack(int codec, long clen) { MCC_TRACE("enter\n");
 	switch (codec) { MCC_TRACE("br\n");
 	case 0:
@@ -17727,7 +16458,6 @@ static long ast_memo_unpack(int codec, long clen) { MCC_TRACE("enter\n");
 	return -1;
 }
 
-/* Rewrite the memo file as a compressed container from the in-memory working set. */
 static void ast_search_disk_rewrite(void) { MCC_TRACE("enter\n");
 	char path[1152], tmp[1200];
 	FILE *f;
@@ -17770,14 +16500,12 @@ static void ast_search_disk_rewrite(void) { MCC_TRACE("enter\n");
 static int ast_search_memo_cmp(const void *a, const void *b) { MCC_TRACE("enter\n");
 	const AstSearchMemo *x = a, *y = b;
 	if (x->refcount < y->refcount)
-		{ MCC_TRACE("br\n"); return 1; } /* descending: high refcount first */
+		{ MCC_TRACE("br\n"); return 1; }
 	if (x->refcount > y->refcount)
 		{ MCC_TRACE("br\n"); return -1; }
 	return 0;
 }
 
-/* Triggered by each accessor: if the shared cache dir has reached the cap, evict the
- * lowest-refcount quarter of the working set and rewrite the file. */
 static void ast_search_disk_evict(void) { MCC_TRACE("enter\n");
 	if (ast_search_memo_n < 4)
 		{ MCC_TRACE("br\n"); return; }
@@ -17803,7 +16531,7 @@ static void ast_search_disk_load(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	if (fread(hdr, sizeof hdr, 1, f) != 1 || hdr[0] != (unsigned)AST_MEMO_CONT_MAGIC ||
 			hdr[2] > (unsigned)AST_MEMO_RAWMAX || hdr[3] > (unsigned)sizeof ast_memo_pk) { MCC_TRACE("br\n");
-		fclose(f); /* absent / old raw-log / corrupt: start empty (cache rebuilds) */
+		fclose(f);
 		return;
 	}
 	clen = (long)hdr[3];
@@ -17814,7 +16542,7 @@ static void ast_search_disk_load(void) { MCC_TRACE("enter\n");
 	fclose(f);
 	rl = ast_memo_unpack((int)hdr[1], clen);
 	if (rl != (long)hdr[2])
-		{ MCC_TRACE("br\n"); return; } /* codec/length mismatch: corrupt container */
+		{ MCC_TRACE("br\n"); return; }
 	for (i = 0; i + AST_MEMO_RECBYTES <= rl && ast_search_memo_n < AST_SEARCH_MEMO_CAP;
 			 i += AST_MEMO_RECBYTES) { MCC_TRACE("br\n");
 		uint64_t rec[AST_MEMO_RECWORDS];
@@ -17828,9 +16556,6 @@ static void ast_search_disk_load(void) { MCC_TRACE("enter\n");
 	ast_search_disk_evict();
 }
 
-/* Persist a permutation: fold it into the working set and, if that changed the set,
- * rewrite the compressed container. Every accessor also triggers the shared-disk
- * eviction check. */
 static void ast_search_disk_store(uint64_t h, AstGateMask gates, unsigned refcount,
 																	int64_t score, uint64_t tried,
 																	uint64_t order_packed, uint64_t order_n) { MCC_TRACE("enter\n");
@@ -17839,25 +16564,12 @@ static void ast_search_disk_store(uint64_t h, AstGateMask gates, unsigned refcou
 	ast_search_disk_evict();
 }
 
-/* ---- Slice cache disk substrate (MCC_AST_SLICE, Phase 3) -------------------
- * The slice memo is the shared JIT<->AOT substrate on disk: persisted across
- * builds/runs in the per-user cache dir, partitioned by version+triplet via the
- * filename salt (sl-<key>.ck, distinct from mcc-search.memo so the two coexist),
- * and merged across concurrent processes under an flock (refcount summed, lower
- * `size` kept). AOT at -O4+ LOADS it (once, lazily) into a read-only disk view
- * and warm-starts each function from its dominant recurring slice -- with the
- * JIT off. Consumption reads ONLY the disk view, never this run's populate
- * table, so an empty/absent cache is a strict no-op (byte-identical) and only a
- * warm cache from a prior run can steer codegen. The write side is flushed once
- * at process exit (atexit), so parent + every -O4 search worker contributes. */
-static AstSliceMemo ast_slice_disk[AST_SLICE_MEMO_CAP]; /* read-only loaded view */
+static AstSliceMemo ast_slice_disk[AST_SLICE_MEMO_CAP];
 static int ast_slice_disk_n;
 static int ast_slice_disk_loaded;
 static int ast_slice_flush_armed;
 static unsigned char ast_slice_io_raw[AST_SLICE_MEMO_CAP * AST_SLICE_RECBYTES];
 
-/* sl-<salt>.ck in the per-user cache dir; the salt folds version + triplet so a
- * config cached by an incompatible build/target is never reused. */
 static int ast_slice_disk_path(char *buf, int cap) { MCC_TRACE("enter\n");
 	char dir[1024];
 	uint64_t key = ast_slice_key_salt(0xcbf29ce484222325ULL);
@@ -17868,8 +16580,6 @@ static int ast_slice_disk_path(char *buf, int cap) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-/* Read the whole slice file into ast_slice_io_raw; returns its length (0 if
- * absent/empty), clamped to the buffer. */
 static long ast_slice_disk_slurp(const char *path) { MCC_TRACE("enter\n");
 	FILE *f = fopen(path, "rb");
 	long len;
@@ -17888,8 +16598,6 @@ static long ast_slice_disk_slurp(const char *path) { MCC_TRACE("enter\n");
 	return len;
 }
 
-/* Lazy-once load of the on-disk slice view (mirrors ast_search_disk_load's
- * load-once-per-process pattern). Consumption probes this view only. */
 static void ast_slice_disk_load(void) { MCC_TRACE("enter\n");
 	char path[1152];
 	long len;
@@ -17927,16 +16635,11 @@ static void ast_slice_unlock(int fd) { MCC_TRACE("enter\n");
 #else
 static int ast_slice_lock(const char *path) { MCC_TRACE("enter\n");
 	(void)path;
-	return -1; /* no interprocess lock off POSIX; tmp+rename still keeps files intact */
+	return -1;
 }
 static void ast_slice_unlock(int fd) { MCC_TRACE("enter\n"); (void)fd; }
 #endif
 
-/* Commit `n` local records into the on-disk file under an flock: re-read the
- * current file (a concurrent process may have written since our load), merge
- * each record via ast_slice_merge_one (refcounts sum, proven wins, cheaper proxy
- * wins within a class), then atomically replace via tmp + rename. Shared by the
- * populate flush (static records) and the JIT graduate (proven records). */
 static void ast_slice_disk_commit(const AstSliceMemo *recs, int n) { MCC_TRACE("enter\n");
 	{ const char *d = getenv("MCC_SLICE_DUMP");
 	  if (d && d[0]) { MCC_TRACE("br\n");
@@ -17985,8 +16688,6 @@ static void ast_slice_disk_commit(const AstSliceMemo *recs, int n) { MCC_TRACE("
 	MCC_TRACE("slice disk commit: %s <- %d local -> %d total\n", path, n, merged_n);
 }
 
-/* Merge this process's populate table (ast_slice_memo, all static) into the
- * on-disk file. */
 static void ast_slice_disk_merge_store(void) { MCC_TRACE("enter\n");
 	if (ast_slice_memo_n <= 0)
 		{ MCC_TRACE("br\n"); return; }
@@ -17994,17 +16695,7 @@ static void ast_slice_disk_merge_store(void) { MCC_TRACE("enter\n");
 }
 
 #if MCC_EMBED_JIT
-/* ---- Phase 4 JIT graduation (WRITE side) ----------------------------------
- * The runtime JIT is the only writer of benchmark-PROVEN records: this whole
- * block is compiled solely under MCC_EMBED_JIT and only fires at JIT runtime, so
- * a pure-AOT -c/-o compile (which never benchmarks) cannot write a proven record
- * and stays byte-identical. Gated additionally by ast_slice_env so MCC_AST_SLICE
- * unset means no disk writes at all. */
 
-/* Merge one benchmark-PROVEN record (marked proven) into the on-disk slice
- * store, so a later AOT ast_slice_consume prefers this config over any merely
- * static-size-best one for the same slice identity. Non-static so the JIT
- * engine TU can graduate a single slice directly by identity if it wants. */
 void ast_slice_graduate(uint64_t ident, uint64_t gates, int64_t size) { MCC_TRACE("enter\n");
 	AstSliceMemo rec;
 	if (!ast_slice_env || !ident)
@@ -18017,8 +16708,6 @@ void ast_slice_graduate(uint64_t ident, uint64_t gates, int64_t size) { MCC_TRAC
 	ast_slice_disk_commit(&rec, 1);
 }
 
-/* Collect every slice of a graduated function arena into a local proven table
- * (deduped via merge_one), keyed under the winning gate config. */
 typedef struct AstSliceGradCtx {
 	AstSliceMemo *tab;
 	int n;
@@ -18038,13 +16727,6 @@ static void ast_slice_visit_graduate(uint64_t ident, int size, uint64_t gates, v
 	ast_slice_merge_one(g->tab, &g->n, g->cap, &rec);
 }
 
-/* Phase 4 graduate entry point for the JIT: a variant of the function `a` has
- * just been benchmark-proven under gate config `gate_mask`. Record every slice
- * of `a` as PROVEN under that config, so a later AOT compile that hits the same
- * slice identity warm-starts from the bench-winning config (ast_slice_consume
- * prefers proven over static). One flock/commit for the whole function. Strict
- * no-op when the slice cache is off (byte-identity preserved). Non-static so the
- * JIT engine TU (mccjit_embed.c) can call it. */
 void ast_slice_graduate_arena(const AstArena *a, uint64_t gate_mask) { MCC_TRACE("enter\n");
 	static AstSliceMemo grad[AST_SLICE_MEMO_CAP];
 	AstSliceGradCtx g;
@@ -18061,24 +16743,15 @@ void ast_slice_graduate_arena(const AstArena *a, uint64_t gate_mask) { MCC_TRACE
 						(unsigned long long)gate_mask);
 }
 
-/* Read-side accessor for the JIT engine TU: is the slice cache enabled this
- * run? Lets the JIT skip the (heavy) blob-deserialize graduation path entirely
- * when MCC_AST_SLICE is unset. */
 int ast_slice_enabled(void) { MCC_TRACE("enter\n");
 	return ast_slice_env;
 }
-#endif /* MCC_EMBED_JIT */
+#endif
 
-/* atexit flush: persist this process's observations once, at exit, so parent +
- * every -O4 search worker (which run ast_func_end then exit) contribute. */
 static void ast_slice_flush_atexit(void) { MCC_TRACE("enter\n");
 	ast_slice_disk_merge_store();
 }
 
-/* Round-robin time accounting (see the block comment above). Durations are in
- * milliseconds of CPU time (clock()), an accurate wall-clock proxy for the
- * single-threaded CPU-bound search and portable to every host — including the
- * asttool unit harness, which includes mccast.c without the mcchost timer. */
 #define AST_SEARCH_WIN 10
 static int ast_search_started;
 static unsigned ast_search_start_ms;
@@ -18099,10 +16772,6 @@ static void ast_search_durwin_push(unsigned dt) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_search_durwin_n++; }
 }
 
-/* Predict the next tick's duration from the rolling window via the forecasting
- * ensemble (mccforecast.h): the samples are extracted oldest->newest and handed to
- * ast_fc_forecast, which picks the least-outlier of its three most accurate
- * one-step predictors. */
 static unsigned ast_search_expect_ms(void) { MCC_TRACE("enter\n");
 	double y[AST_SEARCH_WIN], pred;
 	int n = ast_search_durwin_n, start, i;
@@ -18122,8 +16791,6 @@ static unsigned ast_search_remaining_ms(void) { MCC_TRACE("enter\n");
 	return el >= ast_search_budget_ms ? 0 : ast_search_budget_ms - el;
 }
 
-/* stop before the next tick: forced abort, no budget left, or the predicted next
- * tick would overrun the remaining budget. */
 static int ast_search_should_stop(void) { MCC_TRACE("enter\n");
 	unsigned rem;
 	if (ast_search_abort)
@@ -18531,19 +17198,6 @@ static int ast_scratch_measure_exit(AstScratchSave *sv) { MCC_TRACE("enter\n");
 	return size;
 }
 
-/*
- * Emitted-byte-size scoring (MCC_AST_SEARCH_EMITSIZE). Replay the fully-folded
- * candidate into the private scratch Section (ast_scratch_enter/measure_exit,
- * always — never the live text section, whose partial-rewind was an unbounded
- * state-leak surface: measuring in-place had to hand-restore every shared codegen
- * cursor and any miss corrupted the subsequent real emit), with promotion off (so
- * the promotion save/restore desync never arises) and inline gated on
- * ast_search_want_inline only under EMITISO, read the byte length, then discard
- * the scratch. Correctness is unaffected: this only produces a score; the winning
- * gate config is emitted by the normal pipeline on the untouched captured tree.
- * Used only in the run-to-completion path below (the fair-interleave tick
- * scheduler thrashes the shared ltemp/fconst emit state across candidates, so a
- * candidate is only emit-measurable right after it folds to completion). */
 static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MCC_TRACE("enter\n");
 	AstScratchSave scr;
 	Section *rsec;
@@ -18590,27 +17244,16 @@ static int ast_search_emit_size(AstArena *a, int saved_loc, int saved_anon) { MC
 	return size;
 }
 
-/*
- * Pack the primary metric (static cost or emitted size, lower better) with the
- * candidate's total hit count (the sum of fold-counts every applied strategy
- * reported on this AST window) so a single `long` ranks by cost first and, WITHIN
- * an equal cost, favors the config whose algorithms actually fired more on this
- * slice — a config that enables a gate which lands many folds beats one where the
- * gate does nothing. The primary occupies the high bits; the low AST_SCORE_HITBITS
- * hold (max_hits - clamp(hits)) so more hits lowers the packed score. Ties in cost
- * therefore break to more hits, and the primary ordering is otherwise unchanged. */
 #define AST_SCORE_HITBITS 12
 #define AST_SCORE_HITMAX ((1L << AST_SCORE_HITBITS) - 1)
 static long ast_search_pack_score(long primary, long hits) { MCC_TRACE("enter\n");
 	long h;
 	if (primary < 0)
-		{ MCC_TRACE("br\n"); return -1; } /* propagate clone failure / reject */
+		{ MCC_TRACE("br\n"); return -1; }
 	h = hits < 0 ? 0 : (hits > AST_SCORE_HITMAX ? AST_SCORE_HITMAX : hits);
 	return (primary << AST_SCORE_HITBITS) + (AST_SCORE_HITMAX - h);
 }
 
-/* Fold a candidate to completion and score it by emitted size (run-to-completion,
- * so its ltemp/fconst emit state is current). */
 static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful,
 																			AstGateMask gates, int saved_loc,
 																			int saved_anon) { MCC_TRACE("enter\n");
@@ -18628,8 +17271,6 @@ static long ast_search_score_emitsize(AstArena *pristine, Sym *sym, int faithful
 	return ast_search_pack_score(size, hits);
 }
 
-/* Score one candidate (static cost or emit-size) — used by both the serial paths
- * and the fork-pool workers. */
 static long ast_search_score_one(AstArena *pristine, Sym *sym, int faithful,
 																 AstGateMask gates, int saved_loc, int saved_anon) { MCC_TRACE("enter\n");
 	AstArena *saved_cur, *trial;
@@ -18702,17 +17343,6 @@ static long ast_search_order_combo_score(const int *sel, int k, void *user) { MC
 	return sc;
 }
 
-/*
- * combo substrate wiring (roadmap M1). The -O4 gate search runs on combo_run
- * (src/mcccombo.h): each combo item is one baseline-enabled fold gate, sel[] is a
- * subset (subset mode) or ordering (MCC_AST_SEARCH_ORDERED) of those items, and the
- * score fn maps sel[] back to an AST_SG_* mask and scores it with the existing
- * ast_search_score_one (static cost or emit-size, whichever the env selects). The
- * fn owns the process-global save/restore inside ast_search_score_one, so combo_run
- * stays a pure enumerator. Budget/abort is enforced here: once the time budget is
- * spent every remaining candidate is rejected (combo_run keeps iterating the <=16
- * space but each check is O(1)). Lower score wins; ties resolve to the base config
- * in ast_search_select (scored first, strict-less keep-rule). */
 typedef struct AstComboCtx {
 	AstArena *pristine;
 	Sym *sym;
@@ -18720,13 +17350,10 @@ typedef struct AstComboCtx {
 	int saved_loc;
 	int saved_anon;
 	const AstGateMask *items;
-	uint64_t tried; /* bit per candidate actually measured (M3 blocker A progress) */
-	uint64_t skip;  /* CONTINUE: ordinals measured in a PRIOR run (from the memo's
-									 * `tried`); combo_score skips re-measuring these and re-marks them
-									 * tried, so a budget-truncated per-function search picks up at its
-									 * first unmeasured candidate instead of restarting. */
-	int ord;        /* running candidate ordinal, capped at 63 */
-	long best_score; /* running best across measured candidates (-1 = none yet) */
+	uint64_t tried;
+	uint64_t skip;
+	int ord;
+	long best_score;
 } AstComboCtx;
 
 static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRACE("enter\n");
@@ -18736,17 +17363,14 @@ static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRAC
 	long sc;
 	int i;
 	if (ast_search_should_stop())
-		{ MCC_TRACE("br\n"); return COMBO_REJECT; } /* budget spent: this candidate is NOT measured/tried */
+		{ MCC_TRACE("br\n"); return COMBO_REJECT; }
 	if (cx->ord < 64 && (cx->skip & ((uint64_t)1 << cx->ord))) { MCC_TRACE("br\n");
-		/* CONTINUE: this ordinal was already measured in a prior run; the seeded
-		 * best already reflects it. Re-mark tried (so the persisted set stays whole),
-		 * advance the ordinal to keep alignment, and skip re-scoring. */
 		cx->tried |= (uint64_t)1 << cx->ord;
 		cx->ord++;
 		return COMBO_REJECT;
 	}
 	if (cx->ord < 64)
-		{ MCC_TRACE("br\n"); cx->tried |= (uint64_t)1 << cx->ord; } /* record that this candidate was measured */
+		{ MCC_TRACE("br\n"); cx->tried |= (uint64_t)1 << cx->ord; }
 	cx->ord++;
 	for (i = 0; i < k; i++)
 		{ MCC_TRACE("br\n"); gates |= cx->items[sel[i]]; }
@@ -18769,16 +17393,6 @@ static long ast_search_combo_score(const int *sel, int k, void *user) { MCC_TRAC
 	return sc;
 }
 
-/*
- * NCores-1 process pool. Fork up to nproc-1 score-only workers over the candidate
- * set. A fork gives each worker its own copy of every optimizer global (COW), so a
- * worker folds+scores its candidates with zero shared-state contention and no
- * _Thread_local marking — the fork isolation replaces the whole per-context state
- * refactor for the scoring step. Workers only read the shared pristine tree (COW)
- * and write {index, score} records to a pipe, then _exit without flushing; the
- * parent (which never mutates shared state during the fork window) collects the
- * records and applies the winner single-threaded. POSIX only; elsewhere the caller
- * falls back to the serial loop. Returns 1 if it produced a result. */
 #if MCC_HOST_POSIX
 #include <sys/wait.h>
 #include <unistd.h>
@@ -18798,7 +17412,7 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 	long best_score = -1;
 	AstScoreRec rec;
 	if (nw < 2)
-		{ MCC_TRACE("br\n"); return 0; } /* not worth forking */
+		{ MCC_TRACE("br\n"); return 0; }
 	if (nw > nc)
 		{ MCC_TRACE("br\n"); nw = nc; }
 	if (nw > 64)
@@ -18820,7 +17434,7 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 			close(pipefd[1]);
 			_exit(0);
 		}
-		pids[w] = pid; /* pid<0 (fork failed): recorded, waitpid skips it */
+		pids[w] = pid;
 	}
 	close(pipefd[1]);
 	while (read(pipefd[0], &rec, sizeof rec) == (ssize_t)sizeof rec) { MCC_TRACE("br\n");
@@ -18837,19 +17451,12 @@ static int ast_search_pool(AstArena *pristine, Sym *sym, int faithful,
 			waitpid(pids[w], &st, 0);
 		} }
 	if (!done)
-		{ MCC_TRACE("br\n"); return 0; } /* every fork failed: fall back to serial */
+		{ MCC_TRACE("br\n"); return 0; }
 	*best_out = best;
 	*best_score_out = best_score;
 	return 1;
 }
 
-/* Multi-threaded optimizer pthread scoring fan-out (docs/TODO.md, JIT runtime §). Same shape as
-   the fork pool, but workers are threads sharing one address space — so unlike the
-   fork pool it is NOT yet correct: ast_search_score_one still mutates process-global
-   optimizer state (ast_cur, the ast_*_env gate flags, fold counters, scratch pools).
-   Gated off by default and used under mcc_t (TSan) to enumerate exactly those races
-   before they are made _Thread_local. Selection is deterministic (by index,
-   strict-less -> lowest index) regardless of thread completion order. */
 #include <pthread.h>
 typedef struct AstScoreThreadArg {
 	AstArena *pristine;
@@ -18861,7 +17468,7 @@ typedef struct AstScoreThreadArg {
 	int saved_anon;
 	int wid;
 	int nw;
-	long *results; /* shared; each thread writes only its disjoint i == wid (mod nw) */
+	long *results;
 } AstScoreThreadArg;
 
 static void *ast_search_thread_fn(void *p) { MCC_TRACE("enter\n");
@@ -18919,7 +17526,7 @@ static int ast_search_pool_pthreads(AstArena *pristine, Sym *sym, int faithful,
 	}
 	for (w = 0; w < nw; w++)
 		{ MCC_TRACE("br\n"); pthread_join(th[w], NULL); }
-	for (i = 0; i < nc; i++) /* deterministic select: lowest index wins ties */
+	for (i = 0; i < nc; i++)
 		{ MCC_TRACE("br\n"); if (results[i] >= 0 && (best_score < 0 || results[i] < best_score)) { MCC_TRACE("br\n");
 			best_score = results[i];
 			best = gatelist[i];
@@ -18956,8 +17563,6 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 						if (r >= 0 && r < AST_STRAT_COUNT && ast_strategies[r].gate())
 							{ MCC_TRACE("br\n"); ast_strat_order[kk++] = r; }
 					}
-					/* Same coverage guarantee for a cached (possibly subset) order:
-					 * append any gated strategy missing from the memo so each ticks. */
 					if (ast_search_fullset_env) { MCC_TRACE("br\n");
 						int rj, mm;
 						for (rj = 0; rj < nrows && kk < AST_STRAT_COUNT_MAX; rj++) { MCC_TRACE("br\n");
@@ -19022,10 +17627,6 @@ static void ast_search_select_order(Sym *sym, int faithful, int saved_loc,
 	ast_graft_total = g0;
 	ast_promo_total = p0;
 	ast_opt_total = o0;
-	/* Coverage guarantee: append any gated strategy the size search dropped, so
-	 * every strategy ticks at least once within the budget (see ast_search_fullset_env).
-	 * best_seq is sized AST_STRAT_COUNT_MAX and nrows <= AST_STRAT_COUNT < that, so
-	 * this never overflows regardless of combo_run's COMBO_MAX subset cap. */
 	if (ast_search_fullset_env) { MCC_TRACE("br\n");
 		int j, m;
 		for (j = 0; j < nrows && best_k < AST_STRAT_COUNT_MAX; j++) { MCC_TRACE("br\n");
@@ -19085,34 +17686,15 @@ static void ast_search_axis_pick(Sym *sym, int faithful, int saved_loc,
 	MCC_TRACE("search picks inline=%d\n", bi);
 }
 
-/* searchable = base plus the opt-in enablement knobs the search may ADD this
- * build. These are off in every -O baseline, so the subset lattice can never
- * reach them by dropping bits — the search enables them. narrow-fixpoint only
- * bites when narrow itself is enabled, so gate it on AST_SG_NARROW. Factored so
- * the Phase 3 slice warm-start intersects a cached config with the exact same
- * set (never enabling a knob unsound at this build's -O). */
 static unsigned long ast_search_searchable(unsigned long base) { MCC_TRACE("enter\n");
-	return base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC | /* standalone */
+	return base | AST_SG_RANGE | AST_SG_DIVMAGIC | AST_SG_ABS | AST_SG_REASSOC |
 				 AST_SG_REASSOC_ASSOC | AST_SG_REASSOC_SHLSHR | AST_SG_REASSOC_SHRSHL | AST_SG_REASSOC_MULDIST |
 				 ((base & AST_SG_NARROW) ? (AST_SG_NARROWFIX | AST_SG_NARROW_C0 | AST_SG_NARROW_C1 | AST_SG_NARROW_C2 | AST_SG_NARROW_C3) : 0) |
 				 ((base & AST_SG_SETHI) ? AST_SG_SETHILEAF : 0) |
-				 /* ltemp/ivsr/pre run inside cse (templates-gated), so offer them only
-					* when templates is in base. Safe to add now that the candidate count is
-					* budget-capped (AST_SEARCH_MAX_CAND) — otherwise 4 gates + 5 knobs = 2^9. */
 				 ((base & AST_SG_TEMPLATES) ? (AST_SG_LTEMP | AST_SG_IVSR | AST_SG_PRE | AST_SG_DSECALL | AST_SG_TCOPTR | AST_SG_CSECOMM | AST_SG_SCCPFIX | AST_SG_IDENT_CONV | AST_SG_IDENT_SHIFT | AST_SG_IDENT_ARITH | AST_SG_IDENT_BIT | AST_SG_IDENT_REL | AST_SG_IDENT_URANGE | AST_SG_BFOLD_SQRT | AST_SG_BFOLD_SIGN | AST_SG_BFOLD_ROUND | AST_SG_BFOLD_MINMAX)
 																			 : 0);
 }
 
-/* Phase 3 consume: generalizes the per-function jit_graduated_find seam to a
- * per-slice lookup, and — unlike that seam — is compiled and active with the
- * JIT OFF. Lazy-loads the on-disk slice substrate, probes it for ast_cur's
- * slices, and if the dominant recurring slice has a cached gate config, applies
- * it as this function's config (intersected with `searchable`, so a config
- * cached under a different -O never enables a knob unsound here). Function-level
- * warm-start via the existing whole-function gate machinery (per-slice
- * differential application is Phase 5). Strict no-op on an empty/absent cache,
- * preserving byte-identity; only a warm cache from a prior run steers codegen.
- * Arms the atexit write-back so this run's observations persist. */
 static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	AstGateMask base, searchable, warm;
 	uint64_t cached = 0;
@@ -19122,7 +17704,7 @@ static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	}
 	ast_slice_disk_load();
 	if (ast_slice_disk_n <= 0)
-		{ MCC_TRACE("br\n"); return; } /* empty/absent cache: strict no-op (byte-identical) */
+		{ MCC_TRACE("br\n"); return; }
 	base = ast_search_gates_now();
 	searchable = ast_search_searchable(base);
 	if (!ast_slice_probe_table_ex(ast_cur, ast_slice_disk, ast_slice_disk_n,
@@ -19134,17 +17716,6 @@ static void ast_slice_consume(void) { MCC_TRACE("enter\n");
 	ast_search_gates_set(warm);
 }
 
-/* ROI strategy scheduler. For each eligible strategy, measure its marginal benefit
- * (reduction in the emit-size or static-cost metric) and its DETERMINISTIC apply-cost
- * (transforms applied: graft/promo/opt counter deltas, not wall-clock time) on a
- * fresh clone of the pristine AST, then order the round-robin cycle by ROI =
- * benefit/cost, highest first. Every strategy is still included exactly once (full
- * coverage); ROI only sorts them. Because both benefit and cost are pure functions of
- * the cloned AST, the order is identical across the AOT and JIT compile of a function
- * (AOT==JIT safe). Replaces the emit-size combo search under MCC_AST_ROI. Phase 1
- * benefit is a static proxy (cost or emit size); phase 2 will fold in a measured
- * runtime (JIT-score) signal so strength-reduction-class passes that grow static size
- * but cut runtime rank by real speed rather than sinking. */
 static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 																 int saved_anon, AstArena *pristine) { MCC_TRACE("enter\n");
 	int rows[AST_STRAT_COUNT_MAX], nrows = 0, i, j;
@@ -19164,46 +17735,26 @@ static void ast_search_roi_order(Sym *sym, int faithful, int saved_loc,
 			{ MCC_TRACE("br\n"); roi[i] = 0; ben[i] = 0; tim[i] = 0; continue; }
 		saved_cur = ast_cur;
 		ast_cur = trial;
-		/* Benefit is ALWAYS the pure static cost (ast_cost_score), never the emit-size
-		 * probe, EVEN under MCC_AST_SEARCH_EMITSIZE. ast_search_emit_size replays the
-		 * fully-folded function to MEMORY and is NOT side-effect-free when invoked
-		 * speculatively here — it perturbs the shared emit cursors, so ROI+emitsize
-		 * MISCOMPILED (a struct-free int loop returned 1163150798 vs the correct
-		 * 1126360398). ast_cost_score is a pure function of the clone. This is
-		 * byte-identical for every non-emitsize config (the default ROI path already
-		 * took the cost branch since MCC_AST_SEARCH_EMITSIZE defaults off); it only
-		 * changes the previously-broken ROI+emitsize combination, now made sound. */
 		(void)saved_loc; (void)saved_anon;
 		m0 = ast_cost_score(trial);
-		/* DETERMINISTIC cost-of-applying proxy: the number of transforms this strategy
-		 * applies (graft/promo/opt counter deltas), NOT wall-clock time. clock() timing
-		 * made the benefit/time sort non-deterministic — the strategy order, and thus
-		 * codegen, could then differ between the AOT and JIT compile of the same
-		 * function, threatening the AOT==JIT invariant. The transform-count delta is a
-		 * pure function of the (identical) cloned AST, so it is stable across runs. */
 		wg = ast_graft_total; wp = ast_promo_total; wo = ast_opt_total;
 		(void)ast_strategies[rows[i]].apply(trial, sym);
 		work = (long)(ast_graft_total - wg) + (ast_promo_total - wp) + (ast_opt_total - wo);
 		if (work < 0)
 			{ MCC_TRACE("br\n"); work = 0; }
-		tim[i] = (unsigned)work; /* reused as the deterministic apply-cost (transforms) */
-		m1 = ast_cost_score(trial); /* pure metric — see the m0 note above */
+		tim[i] = (unsigned)work;
+		m1 = ast_cost_score(trial);
 		ast_cur = saved_cur;
 		ast_arena_free(trial);
-		b = m0 - m1; /* positive == metric reduced (a win) */
+		b = m0 - m1;
 		if (b < 0)
-			{ MCC_TRACE("br\n"); b = 0; } /* a pass that grows the static metric ranks last */
+			{ MCC_TRACE("br\n"); b = 0; }
 		ben[i] = b;
-		/* ROI = benefit per unit apply-cost; floor cost at 1 so a free win isn't a
-		 * div-by-0 and a cheaper pass outranks an equally-beneficial costlier one. */
 		roi[i] = (b * 1000L) / (long)(tim[i] + 1u);
 	}
-	/* measurement is side-effect-free: undo any budget-counter drift from the trial
-	 * applies so the real compile's graft/promo/opt budgets are unchanged. */
 	ast_graft_total = g0;
 	ast_promo_total = p0;
 	ast_opt_total = o0;
-	/* insertion sort rows by ROI descending (stable, nrows <= AST_STRAT_COUNT) */
 	for (i = 1; i < nrows; i++) { MCC_TRACE("br\n");
 		int kr = rows[i];
 		long kv = roi[i], kb = ben[i];
@@ -19238,24 +17789,16 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	uint64_t h;
 	AstGateMask base, best, searchable;
 	long best_score = -1;
-	long base_cost = -1; /* baseline (pre-search) cost, for the stats cost-saved outcome */
-	uint64_t tried_mask = 0; /* which candidates were measured (M3 blocker A progress) */
-	/* CONTINUE/RESUME: when a prior run left this function's search INCOMPLETE
-	 * (order_n==0 in the memo) and budget remains, we don't just replay the winner —
-	 * we seed `best` from it and continue measuring the untried candidates. */
-	uint64_t resume_skip = 0;      /* ordinals a prior run already measured */
-	AstGateMask resume_best = 0;   /* prior winner, re-scored + used as the seed */
-	int resume_active = 0;         /* 1 = continuing an incomplete search */
-	int search_complete = 0;       /* 1 = the candidate space was fully enumerated */
+	long base_cost = -1;
+	uint64_t tried_mask = 0;
+	uint64_t resume_skip = 0;
+	AstGateMask resume_best = 0;
+	int resume_active = 0;
+	int search_complete = 0;
 	int g0, p0, o0, nc = 0;
-	/* Budget-scaling the candidate count: the subset lattice of `searchable` can be as
-	 * large as 2^(fold gates + opt-in knobs) (up to 2^9 once ltemp/ivsr/pre are offered),
-	 * so both the combo enumeration (spec.budget) and the fork pool's gatelist are capped
-	 * at AST_SEARCH_MAX_CAND. The per-tick time budget (ast_search_should_stop) remains the
-	 * primary bound; this cap prevents pathological enumeration and gatelist overflow. */
 	AstGateMask gatelist[AST_SEARCH_MAX_CAND];
 	if (mcc_stats_mask)
-		{ MCC_TRACE("br\n"); mcc_stats_search_enter(); } /* count before any budget/memo early-out */
+		{ MCC_TRACE("br\n"); mcc_stats_search_enter(); }
 	if (!ast_search_started) { MCC_TRACE("br\n");
 		ast_search_started = 1;
 		ast_search_start_ms = ast_now_ms();
@@ -19265,14 +17808,14 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	base = ast_search_gates_now();
 	searchable = ast_search_searchable(base);
 	if (ast_search_should_stop())
-		{ MCC_TRACE("br\n"); return; } /* budget spent / aborted: keep the frozen order */
+		{ MCC_TRACE("br\n"); return; }
 	pristine = ast_arena_clone(ast_cur);
 	if (!pristine)
 		{ MCC_TRACE("br\n"); return; }
 	ast_isa_key_update(pristine);
 	h = ast_intention_hash(pristine, AST_NONE);
 	if (h)
-		{ MCC_TRACE("br\n"); h = ast_search_key_salt(h); } /* partition by version + triplet + the ISA this arena is sensitive to */
+		{ MCC_TRACE("br\n"); h = ast_search_key_salt(h); }
 #ifdef MCC_EMBED_JIT
 	if (h) { MCC_TRACE("br\n");
 		const JitGraduatedRecord *gr =
@@ -19294,14 +17837,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	if (h) { MCC_TRACE("br\n");
 		for (int i = 0; i < ast_search_memo_n; i++)
 			{ MCC_TRACE("br\n"); if (ast_search_memo[i].hash == h) { MCC_TRACE("br\n");
-				/* hit: bump this permutation's refcount and persist it (also triggers
-				 * the shared-disk eviction check). intersect gates with `searchable`
-				 * (base + this build's opt-in knobs): a winner cached under a different -O
-				 * base must not enable a fold gate this build disabled, but MUST be allowed
-				 * to re-enable an opt-in knob (narrow-fixpoint) the search legitimately
-				 * reaches here — `& base` alone would wrongly strip it. The refcount bump is
-				 * applied by ast_search_disk_store -> ast_search_memo_add (refcount+1 >
-				 * current), so the store sees a real change and rewrites the container. */
 				MCC_TRACE("memo hit %s hash=%016llx gates=%llx&%llx->%llx refcount=%u->%u complete=%llu\n",
 									funcname, (unsigned long long)h,
 									(unsigned long long)ast_search_memo[i].gates,
@@ -19310,9 +17845,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 									ast_search_memo[i].refcount, ast_search_memo[i].refcount + 1,
 									(unsigned long long)ast_search_memo[i].order_n);
 				if (ast_search_memo[i].order_n == 0 && !ast_search_should_stop()) { MCC_TRACE("br\n");
-					/* CONTINUE: the prior run's search was budget-truncated (not marked
-					 * complete) and we still have budget — seed from its winner and resume
-					 * the enumeration below at the first unmeasured candidate. */
 					resume_active = 1;
 					resume_best = ast_search_memo[i].gates;
 					resume_skip = ast_search_memo[i].tried;
@@ -19343,13 +17875,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 	p0 = ast_promo_total;
 	o0 = ast_opt_total;
 	best = base;
-	/* Candidate space = the subset lattice of `searchable` (the baseline-enabled
-	 * fold gates plus this build's opt-in enablement knobs), driven by the combo
-	 * substrate (roadmap M1 + "widen the search space"). items[i] is one AST_SG_*
-	 * bit; combo_run enumerates every non-empty subset (subset mode) or every
-	 * ordering (MCC_AST_SEARCH_ORDERED) of them. base (opt-in knobs off) is still
-	 * scored first as the safe fallback. The fork pool consumes an explicit
-	 * base-first submask gatelist over the same `searchable` set. */
 	{
 		AstGateMask items[64];
 		int nitems = 0, b;
@@ -19369,14 +17894,12 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				else { MCC_TRACE("br\n");
 					MCC_TRACE("fork pool: submask space > %d, capped (budget)\n",
 										AST_SEARCH_MAX_CAND);
-					break; /* budget cap: don't silently overrun gatelist */
+					break;
 				}
 				if (sub == 0)
 					{ MCC_TRACE("br\n"); break; }
 				sub = (sub - 1) & searchable;
 			}
-			/* pthreads is the item-1 audit path (default off); fork pool is the shipping
-			 * default when MCC_AST_SEARCH_THREADS is set. */
 			pooled = ast_search_pthreads_env
 									 ? ast_search_pool_pthreads(pristine, sym, faithful, gatelist, nc,
 																							saved_loc, saved_anon, &best, &best_score)
@@ -19384,7 +17907,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 																		 saved_anon, &best, &best_score);
 			if (pooled)
 				{ MCC_TRACE("br\n"); goto search_done; }
-			best_score = -1; /* pool declined (too few cores / all forks failed) */
+			best_score = -1;
 		}
 #endif
 		if (best_score < 0) { MCC_TRACE("br\n");
@@ -19398,7 +17921,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			cx.saved_anon = saved_anon;
 			cx.items = items;
 			cx.tried = 0;
-			cx.skip = resume_active ? resume_skip : 0; /* CONTINUE: don't re-measure prior ordinals */
+			cx.skip = resume_active ? resume_skip : 0;
 			cx.ord = 0;
 			cx.best_score = -1;
 			spec.nitems = nitems;
@@ -19406,26 +17929,15 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			spec.max_k = nitems;
 			spec.ordered = ast_search_ordered_env ? 1 : 0;
 			spec.walk = ast_search_walk_env;
-			/* Cap the enumerated candidates at the width of the `tried` bitmask (64) so
-			 * every candidate the search will ever consider is trackable — this makes the
-			 * per-function search finish in a bounded number of continued runs (RESUME)
-			 * and latch COMPLETE, after which the winner is replayed deterministically. */
 			spec.budget = AST_SEARCH_CAND_MAX;
 			spec.score = ast_search_combo_score;
 			spec.visit = ast_search_walk_trace;
 			spec.user = &cx;
-			/* base (the full enabled set) is the safe fallback and wins ties: score it
-			 * first, then let combo_run search every non-empty subset/ordering and
-			 * finally the empty (all-off) config; the strict-less keep-rule below only
-			 * displaces base on a real improvement. */
 			best = base;
 			best_score = ast_search_score_one(pristine, sym, faithful, base, saved_loc,
 																				saved_anon);
-			base_cost = best_score; /* snapshot before combo_run lowers best_score */
+			base_cost = best_score;
 			if (resume_active) { MCC_TRACE("br\n");
-				/* Seed from the prior run's winner. Re-score it now (rather than trust the
-				 * stored score, which may come from a different -O base) so the keep-rule
-				 * compares apples to apples; intersect with `searchable` for this build. */
 				AstGateMask rg = resume_best & searchable;
 				long rs = ast_search_score_one(pristine, sym, faithful, rg, saved_loc,
 																			 saved_anon);
@@ -19434,16 +17946,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					best_score = rs;
 				}
 			}
-			/* Best-first frontier + forecast-driven ordering (est_cost_delta): when the
-			 * vocabulary is large enough that the AST_SEARCH_MAX_CAND budget truncates the
-			 * enumeration, combo_run's ascending-mask order can miss base's single-toggle
-			 * neighbours (drop one enabled gate / add one opt-in knob) — the highest-value
-			 * nearby configs. Score each explicitly first (so they are never crowded out by
-			 * the cap), record its marginal delta, then REORDER items[] by that measured
-			 * delta so the capped combo enumeration spends its candidates on the most-
-			 * promising gate combinations first. Scheduling only (any order → correct
-			 * winner); skipped when the whole space fits under the cap, so small-vocabulary
-			 * searches are byte-identical. */
 			if (((AstGateMask)1 << nitems) > AST_SEARCH_CAND_MAX) { MCC_TRACE("br\n");
 				long idelta[64];
 				int i, j;
@@ -19451,7 +17953,7 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 					AstGateMask cand = base ^ items[i];
 					long sc;
 					if (ast_search_should_stop()) { MCC_TRACE("br\n");
-						idelta[i] = LONG_MAX; /* untried: sort last */
+						idelta[i] = LONG_MAX;
 						continue;
 					}
 					sc = ast_search_score_one(pristine, sym, faithful, cand, saved_loc,
@@ -19462,7 +17964,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 						best_score = sc;
 					}
 				}
-				/* insertion sort items[] by measured delta, most-improving (lowest) first */
 				for (i = 1; i < nitems; i++) { MCC_TRACE("br\n");
 					AstGateMask ki = items[i];
 					long kd = idelta[i];
@@ -19498,11 +17999,6 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 				}
 			}
 			tried_mask = cx.tried;
-			/* COMPLETE iff the whole candidate space was enumerated (combo count-budget
-			 * not hit) AND the time budget did not cut scoring short. A complete search
-			 * latches in the memo (order_n=1) so future runs replay its winner instead of
-			 * re-searching; an incomplete one stays resumable (order_n=0) and is continued
-			 * from its first unmeasured candidate on the next run. */
 			search_complete = (cbest.exhausted || cbest.evaluated >= spec.budget) &&
 												!ast_search_should_stop();
 			MCC_TRACE("combo winner gates=%llx base=%llx searchable=%llx score=%ld "
@@ -19520,11 +18016,7 @@ search_done:
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_search_end(best, best_score, base_cost, (long)nc,
 																								ast_search_memo_n); }
-	if (h) /* store folds the winner into the memo (memo_add) and rewrites the file.
-					* score = the winning config's search score; tried = the bitmask of candidates
-					* measured so far (accumulated across runs); order_n = the COMPLETE latch
-					* (1 once the whole space has been enumerated). A later run reads tried to
-					* skip re-measuring and order_n to know whether to keep searching. */
+	if (h)
 		{ MCC_TRACE("br\n"); ast_search_disk_store(h, best, 1, best_score, tried_mask, 0,
 																								search_complete ? 1 : 0);
 			if (ast_search_verbose_env)
@@ -19551,17 +18043,6 @@ __attribute__((optimize("O0")))
 #endif
 void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
-	/* A function the recorder never ATTEMPTED still belongs in the census.
-	   ast_try_active is false for a `bad` return type (long double, __int128,
-	   _Complex), for -g/debug modes, and for an extern-inline body -- and the
-	   whole verdict block below sits inside it, so those functions previously
-	   emitted NO line at all: not bail, not desync, nothing. That silently
-	   removed them from the denominator of every fidelity ratio in docs/TODO.md,
-	   and an absent function is indistinguishable from one that does not exist.
-	   `skip:<reason>` is deliberately NOT one of the gap verdicts the ratchet
-	   collects (desync/unfaithful/stackresidue/bail), so the checked-in baseline
-	   is unaffected -- this makes the omission visible without reclassifying it
-	   as a failure. */
 	if (!ast_try_active && ast_verify_env) { MCC_TRACE("br\n");
 		const char *why = debug_modes                ? "skip:debug"
 											: cur_func_inline_extern    ? "skip:externinline"
@@ -19797,23 +18278,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					ast_search_select(sym, faithful, saved_loc, saved_anon);
 					ast_search_axis_pick(sym, faithful, saved_loc, saved_anon);
 				}
-				/* ROI strategy scheduler (MCC_AST_ROI): after the gate search fixes the
-				 * gate config, reorder the round-robin by measured benefit/time. This
-				 * composes with — does not replace — the gate/subset search; it measures
-				 * on a clone of the gate-selected AST so the order reflects the gates in
-				 * effect, then sets ast_strat_order (full strategy coverage retained). */
 				if (faithful && ast_roi_env) { MCC_TRACE("br\n");
 					AstArena *roi_pr = ast_arena_clone(ast_cur);
 					if (roi_pr)
 						{ MCC_TRACE("br\n"); ast_search_roi_order(sym, faithful, saved_loc,
 																								saved_anon, roi_pr); }
 				}
-				/* Slice cache (MCC_AST_SLICE), BEFORE the strategy cycle rewrites ast_cur:
-				   Phase 3 CONSUME first — warm-start this function's gate config from the
-				   on-disk substrate if its dominant slice recurs (no-op on an empty cache,
-				   so output stays byte-identical until a prior run has warmed it) — then
-				   Phase 2 POPULATE, recording this function's input slices under the config
-				   now in effect. Gated off by default. */
 				if (faithful && ast_slice_env) { MCC_TRACE("br\n");
 					ast_slice_consume();
 					(void)ast_slice_window_scan(ast_cur, (uint64_t)ast_search_gates_now());
@@ -20080,10 +18550,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						unsigned char *slotp = data_section->data + slot_off;
 						Sym *slot_sym, *body_sym;
 						memset(slotp, 0, MCC_PTR_SIZE);
-						/* Name the slot as a global data symbol so it survives an
-						 * EXTERNAL link (object output) and so an embed-JIT engine can
-						 * find __mccjit_slot_<fn> by name. Emitted regardless of
-						 * MCC_EMBED_JIT — object output needs the named slot too. */
 						{ MCC_TRACE("br\n");
 							char slotname[256];
 							snprintf(slotname, sizeof slotname, "%s__mccjit_slot_%s",
@@ -20105,18 +18571,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						nocode_wanted = 0;
 						slot_sym =
 							get_sym_ref(&char_pointer_type, data_section, slot_off, MCC_PTR_SIZE);
-						/* Self-contained PC-relative address-of-slot (survives external
-						 * static/PIE link; the GOT idiom forced a synthesized GOT entry
-						 * for a local data sym and corrupted the fn symbol under the
-						 * in-memory search re-emit). Same 16-byte footprint as the old
-						 * adrp/ldr/ldr/br. Encodings match the dense-switch jump table:
-						 * adrp x16 = 0x90000010, add x16,x16,#:lo12: = 0x91000210. */
 						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
-						o(0x90000010); /* adrp x16, slot                -> x16 = slot&~0xfff */
+						o(0x90000010);
 						greloca(cur_text_section, slot_sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
-						o(0x91000210); /* add  x16,x16,#:lo12:slot       -> x16 = &slot */
-						o(0xf9400210); /* ldr x16,[x16] -> x16 = *slot */
-						o(0xd61f0200); /* br x16 */
+						o(0x91000210);
+						o(0xf9400210);
+						o(0xd61f0200);
 						body_sym = get_sym_ref(&char_pointer_type, cur_text_section,
 																	 aot_base + 16, MCC_PTR_SIZE);
 						greloca(data_section, body_sym, slot_off, R_AARCH64_ABS64, 0);
@@ -20142,7 +18602,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						{ MCC_TRACE("br\n"); npoff = ast_constparam_params(ast_cur, sym, poffs, pvals, AST_TCO_MAXP); }
 					else if (specmode == 5)
 						{ MCC_TRACE("br\n"); npoff = ast_rangeparam_params(ast_cur, sym, poffs, plos, phis, AST_TCO_MAXP); }
-					/* Specialize a CLONE (ast_cur stays pristine → still inline-graftable / sound). */
 					AstArena *ast_spec = NULL;
 					if (npoff > 0 && (ast_spec = ast_arena_clone(ast_cur))) { MCC_TRACE("br\n");
 						AstArena *sv = ast_cur;
@@ -20177,10 +18636,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 									abort();
 								}
 #endif
-								/* 7A hard gate: refuse an unsound spec-slice — discard the
-								   speculative clone and fall back to the unspecialized
-								   dispatch. Always correctness-safe (never emits an unsound
-								   variant); opt-in during the soak rollout. */
 								if (gate) { MCC_TRACE("br\n");
 									ast_arena_free(ast_spec);
 									ast_spec = NULL;
@@ -20252,16 +18707,16 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						}
 					} else if (spec) { MCC_TRACE("br\n");
 						for (int i = 0; i < npoff; i++) { MCC_TRACE("br\n");
-							g(0x48); /* cmp qword [rbp+off32], 0 */
+							g(0x48);
 							g(0x83);
 							g(0xbd);
 							gen_le32(poffs[i]);
 							g(0x00);
-							g(0x0f); /* jz deopt */
+							g(0x0f);
 							ast_guard_slots[ast_guard_n++] = oad(0x84, 0);
 						}
 					} else { MCC_TRACE("br\n");
-						o(0xc031); /* xor %eax,%eax (dead-at-entry scratch) */
+						o(0xc031);
 						o(0x0f);
 						ast_guard_slots[ast_guard_n++] = oad(ast_jit_dispatch_env >= 2 ? 0x84 : 0x85, 0);
 					}
@@ -20540,13 +18995,6 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	ast_graft_budget = ast_graft_budget_max;
 	ast_loc_low = loc;
 	ast_replay_body(ast);
-	/* Grafted inlining synthesizes locals/temps at replay time (the callee frame
-	 * and call-spilled temporaries) that are not in `ast`, so the AST-local scan
-	 * above never widened `loc` for them. Fold in the replay low-water mark so
-	 * gfunc_epilog sizes the frame to cover them; without this the deepest grafted
-	 * temp lands below %esp and an outgoing call's pushed args clobber it (i386,
-	 * push-based calls + no red zone, deterministically; x86_64 only under some
-	 * stack layouts). Mirrors the search-trial path. */
 	if (ast_loc_low < loc)
 		{ MCC_TRACE("br\n"); loc = ast_loc_low; }
 	ast_inline_active = 0;

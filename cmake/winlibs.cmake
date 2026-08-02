@@ -16,11 +16,6 @@ set(MCC_MINGW_WINLIBS_I686_SHA256
     CACHE STRING "SHA256 of the WinLibs i686 zip")
 unset(_wl)
 
-# llvm-mingw (mstorsjo) is the only self-contained mingw toolchain that ships an
-# aarch64-w64-mingw32 compiler; WinLibs is x86_64/i686 only. MCC_MINGW_ARCH=arm64
-# pulls this instead. The zip unpacks to an inner llvm-mingw-<ver>-ucrt-aarch64/
-# directory (unlike WinLibs' mingw64/); the arm64 resolve path accounts for that.
-# The aarch64-host bundle is what windows-11-arm runs natively.
 set(MCC_LLVMMINGW_VER "20260616" CACHE STRING
     "llvm-mingw release tag for the aarch64 mingw toolchain profile")
 set(MCC_LLVMMINGW_AARCH64_URL

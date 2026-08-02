@@ -223,15 +223,15 @@ static const cli_case_t cli_cases[] = {
 		 "1\nrc=6\nrc=6\nrc=6\n"},
 
 		{"slice_eligible_set", "cpu=x86_64,os=linux,optimizer",
-		 /* AOT must cache the ELIGIBLE optimization set, not only the config it
-		    chose, so a runtime JIT has a candidate space to benchmark. Forcing two
-		    gates OFF makes the distinction observable: `g=` loses those bits while
-		    `e=` still lists them as legal to vary. A plain compile would show g==e
-		    and prove nothing, which is why this forces gates off. XDG_CACHE_HOME is
-		    isolated so an accumulated cache cannot mask the write. */
+
+
+
+
+
+
 		 "printf 'int f(int a){int i,s=0;for(i=1;i<40;i++)s+=i/7+a%%7;return s;}int main(void){return f(3)&1;}\\n' > {W}/el.c && "
-		 /* MCC_SLICE_DUMP APPENDS, so a stale el.txt from an earlier run would make
-		    NR==1 read someone else's record and the check vacuous. Remove it. */
+
+
 		 "rm -rf {W}/elc {W}/el.txt && mkdir -p {W}/elc && "
 		 "XDG_CACHE_HOME={W}/elc MCC_AST_SLICE=1 MCC_SLICE_DUMP={W}/el.txt "
 		 "MCC_AST_DIVMAGIC=0 MCC_AST_RANGE=0 {MCC} -B{B} -I{I} -O2 -c {W}/el.c -o {W}/el.o && "
@@ -242,9 +242,9 @@ static const cli_case_t cli_cases[] = {
 		 "WIDER\nHAS_ELIGIBLE\n"},
 
 		{"pre_diamond", "cpu=x86_64,os=linux,optimizer",
-		 /* PRE is default-on at -O2 since the optimizer ungate, so the OFF side must
-		    force MCC_AST_PRE=0 to keep this a live "PRE materially changes O2 codegen"
-		    probe (a plain -O2 baseline would already run PRE and compare SAME). */
+
+
+
 		 "printf 'int f(int a,int b,int c){int x=0,y=0,r;if(c){x=a+b;}else{y=a+b;}r=a+b;return x+y+r;}int main(void){return f(3,4,1)+f(3,4,0);}\\n' > {W}/pre.c && "
 		 "MCC_AST_PRE=0 {MCC} -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.off.o && "
 		 "MCC_AST_PRE=1 {MCC} -B{B} -I{I} -O2 -c {W}/pre.c -o {W}/pre.on.o && "
@@ -255,10 +255,10 @@ static const cli_case_t cli_cases[] = {
 		 "DIFFER\nrc=28\nrc=28\nrc=28\n"},
 
 		{"perfn_inproc", "cpu=x86_64,os=linux,optimizer",
-		 /* PERFN_INPROC stays default-OFF, but since the optimizer ungate its marginal
-		    per-function effect is subsumed by the now-default -O3 pipeline (REASSOC/PRE/
-		    LICM_TEMP/IVSR), so toggling it produces byte-identical output: SAME. The rc
-		    lines still assert PERFN_INPROC-on and -O0 both stay runtime-correct (28). */
+
+
+
+
 		 "printf 'static int big(int x,int y){int s=0;for(int i=0;i<x;i++){s+=(i*y)^(i+x);s-=(i&y)|(x^i);s+=(i*i)-(y*y);}return s;}static int tiny(int x){return x+1;}int main(void){int s=0;s+=big(5,3)+big(7,2)+big(9,4)+big(3,6);s+=tiny(10)+tiny(20)+tiny(30);return s&0x7f;}\\n' > {W}/pfi.c && "
 		 "MCC_AST_INLINE_PASS=0 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.off.o && "
 		 "MCC_AST_INLINE_PASS=0 MCC_AST_PERFN_INPROC=1 {MCC} -B{B} -I{I} -O3 -c {W}/pfi.c -o {W}/pfi.on.o && "

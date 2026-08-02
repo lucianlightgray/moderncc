@@ -6,9 +6,6 @@ static int is_id(int c) {
 	return isalnum((unsigned char)c) || c == '_';
 }
 
-/* Blank comments, string/char literals, and preprocessor logical lines to
-   spaces (length-preserving, newlines kept) so a stripped offset maps 1:1 back
-   to the raw text. */
 static void strip(char *s) {
 	char *w = s;
 	int at_bol = 1;
@@ -89,10 +86,8 @@ static int lineno(const char *base, const char *p) {
 	return ln;
 }
 
-/* raw+off begins "MCC_TRACE"; verify its format arg starts with `want`
-   ("enter" for functions, "br" for branches). */
 static int arg_is(const char *rawtok, int off, const char *want) {
-	const char *p = rawtok + off; /* past the macro name */
+	const char *p = rawtok + off;
 	while (*p == ' ' || *p == '\t')
 		++p;
 	if (*p != '(')
@@ -106,8 +101,6 @@ static int arg_is(const char *rawtok, int off, const char *want) {
 	return !strncmp(p, want, strlen(want));
 }
 
-/* `brace` points at '{' in the stripped buffer; `raw` is the untouched text at
-   the same base. Require the block to open with MCC_TRACE(`want`...). */
 static void check_open(const char *path, const char *s, const char *raw,
 											 const char *brace, const char *kind, const char *want) {
 	const char *t = skip_ws(brace + 1);
@@ -143,8 +136,6 @@ static const char *match_paren(const char *p) {
 	return p;
 }
 
-/* Control-flow branches: every braced if/else/for/while/switch/do block opens
-   with MCC_TRACE("br\n"). */
 static void scan_branches(const char *path, const char *s, const char *raw) {
 	const char *p = s;
 	while (*p) {
@@ -192,8 +183,6 @@ static void scan_branches(const char *path, const char *s, const char *raw) {
 	}
 }
 
-/* Function definitions: a top-level `) {` opens a function body, which must
-   open with MCC_TRACE("enter\n"). */
 static void scan_functions(const char *path, const char *s, const char *raw) {
 	const char *p;
 	int depth = 0;
@@ -234,8 +223,6 @@ static int scan_file(const char *path, int is_dir, void *ud) {
 		if (s) {
 			memcpy(s, raw, len + 1);
 			strip(s);
-			/* opt-in: only files that actually call MCC_TRACE (a real call
-				 survives strip; a #define or a comment mention does not). */
 			if (strstr(s, "MCC_TRACE(")) {
 				scan_branches(path, s, raw);
 				scan_functions(path, s, raw);

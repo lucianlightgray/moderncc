@@ -1,35 +1,4 @@
 #!/bin/sh
-# Host `-run` JIT parity: MCC_JIT=1 must produce byte-identical output to
-# MCC_JIT=0. That is a P0 bar item, and the existing run-parity-<arch> cells
-# only cover the CROSS triples (riscv64/arm/arm64) with two programs, and skip
-# entirely when cross tooling is absent -- so on an ordinary host machine
-# nothing gates it at all.
-#
-# Each program is run under three configurations:
-#   * MCC_JIT=0                      -- the reference
-#   * MCC_JIT=1                      -- default admission
-#   * MCC_JIT=1 + widened admission  -- MCC_JIT_PURITY_NOESCAPE/LAZY/SEARCH
-#
-# The widened leg matters because default admission REFUSES almost everything
-# (see TODO "KGC verification refuses almost everything"), so a parity check
-# that only runs the default gate is nearly vacuous -- it compares a JIT that
-# installed no variant against no JIT. MCC_JIT_NEARMATCH is default-ON and by
-# design keeps a variant that mismatches the baseline on a small input set, so
-# the widened leg is exactly where a parity violation would show up.
-#
-# NON-VACUITY IS ASSERTED, not assumed: across the corpus the widened leg must
-# INSTALL at least one variant (`mccjit-lazy[install]`), or this cell would be
-# comparing a JIT that swapped nothing against no JIT at all. Measured when this
-# landed: the default gate installs 0 for every program, the widened gate
-# installs 1 each for int_mod and fp_div_accum, and 0 for float_narrow (a
-# `float` signature is in neither the GP nor the FP verified set). So the
-# requirement is corpus-wide rather than per-program.
-#
-# Do NOT count the token `verified`: the refusal message "signature not in the
-# verified GP-int set" contains it, so grepping for it counts REFUSALS and the
-# guard passes while nothing is verified. That mistake was made and caught here.
-#
-# Usage: run-parity.sh <mcc> <mccbase> <srcdir>
 set -e
 
 MCC=$1

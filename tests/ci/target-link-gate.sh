@@ -1,8 +1,4 @@
 #!/bin/sh
-# Link the amalgamation once per target define set. Catches a function that is
-# CALLED under one target guard but DEFINED under a narrower one -- a link error
-# that no native ctest cell can see, because ctest only ever builds the host
-# target. mcc-x86_64-win32 broke exactly this way once.
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cc=${CC:-cc}

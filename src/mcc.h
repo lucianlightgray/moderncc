@@ -632,7 +632,7 @@ struct MCCState {
 	unsigned char reverse_funcargs;
 	unsigned char macro_eval;
 	unsigned char gnu89_inline;
-	unsigned char c99_inline_body; /* -fc99-inline-body: emit a weak out-of-line body for a referenced plain-inline function */
+	unsigned char c99_inline_body;
 	unsigned char std_strict_ansi;
 	unsigned char unwind_tables;
 	unsigned char short_enums;
@@ -640,9 +640,9 @@ struct MCCState {
 	unsigned char omit_frame_pointer;
 	unsigned char function_sections;
 	unsigned char data_sections;
-	unsigned char print_isa; /* -print-isa: report the resolved ISA and exit */
-	uint32_t isa_mask;      /* -march=: MCC_ISA_* features the target may use */
-	const char *isa_level;  /* the resolved level name, for -print-isa */
+	unsigned char print_isa;
+	uint32_t isa_mask;
+	const char *isa_level;
 	unsigned char wrapv;
 	unsigned char trigraphs;
 	unsigned char freestanding;
@@ -805,7 +805,7 @@ struct MCCState {
 
 	unsigned char cx_limited_range;
 	unsigned char fold_math;
-	unsigned char no_math_errno; /* -fno-math-errno: don't preserve errno for math builtins (lets sqrt of any sign inline) */
+	unsigned char no_math_errno;
 
 	struct InlineFunc **inline_fns;
 	int nb_inline_fns;
@@ -907,17 +907,11 @@ struct MCCState {
 	void *run_lj, *run_jb;
 	MCCBtFunc *bt_func;
 	void *bt_data;
-	/* -run TLS (Mach-O descriptor model): the synthesized .tlv_run_desc
-	   section plus per-variable bookkeeping recorded at setup and consumed at
-	   finalize (see tls_setup_macho/tls_finalize_macho in mccrun.c). */
 	Section *run_tls_desc;
 	void *run_tls_recs;
 	int run_tls_nrecs;
 #endif
 
-	/* -run TLS (in-memory JIT): on Linux the Local-Exec model retargets the
-	   emitted TPOFF into a compiler-owned slab; these fields carry the slab's
-	   thread-pointer offset and whether retargeting is active for this state. */
 	addr_t run_tls_slab_tpoff;
 	int run_tls_active;
 
@@ -1087,12 +1081,6 @@ struct filespec {
 #undef MCC_JOURNAL_HOOKS
 #endif
 
-/* gen_reg_addi has its own journal-capability macro rather than riding
-   MCC_JRN_HAVE_X86_PRIMS: it is the one primitive in that bundle arm64 also
-   declares (for MCC_AST_REGDISP's spill path), and the rest -- gen_bswap,
-   gen_bitscan, the gen_atomic_* -- genuinely are x86_64-only. It lives here,
-   not in mccgen.c beside the bundle, so every TU sees it in a multi-source
-   build; without that the shim and the hook disagree across TUs. */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 #define MCC_JRN_HAVE_REGADDI 1
 #endif
@@ -1118,10 +1106,6 @@ struct filespec {
 #define VT_VLA 0x0400
 #define VT_LONG 0x0800
 
-/* The VT_ type of size_t / ptrdiff_t for this target (LONG_SIZE is set above).
-   Lives here, not in mccgen.c, so the backend TUs that reference it (e.g.
-   x86_64-gen.c's inline alloca) still see it when compiled STANDALONE in the
-   multisource build, where mccgen.c's macros are not in scope. */
 #if MCC_PTR_SIZE == 4
 #define VT_SIZE_T (VT_INT | VT_UNSIGNED)
 #define VT_PTRDIFF_T VT_INT
@@ -1347,9 +1331,6 @@ ST_FUNC void mcc_close(void);
 #define cstr_new_s(cstr) (cstr_new(cstr), stk_push(&(cstr)->data))
 #define cstr_free_s(cstr) (cstr_free(cstr), stk_pop())
 
-/* -march= ISA features. A bit per capability rather than an ordered level, so
-   a predicate reads as "may I emit roundsd" instead of "is the level >= 2".
-   The named levels below are just conventional bundles of these bits. */
 #define MCC_ISA_SSE2    0x0001
 #define MCC_ISA_SSE3    0x0002
 #define MCC_ISA_SSSE3   0x0004
@@ -1856,7 +1837,6 @@ ST_FUNC void gen_reg_addi(int r, int64_t d);
 ST_FUNC int arm64_fmov_imm(int r, int is_dbl, uint64_t bits);
 #endif
 
-/* math-builtin hardware inlines: x86_64 (SSE) + arm64 (native FP) */
 ST_FUNC void gen_fabs(void);
 ST_FUNC void gen_sqrt(void);
 #if defined(MCC_TARGET_X86_64)
@@ -1872,9 +1852,9 @@ ST_FUNC void gen_atomic_xchg(int size);
 ST_FUNC void gen_atomic_cmpxchg(int size);
 #endif
 ST_FUNC void gen_round(int mode);
-ST_FUNC void gen_copysign(void); /* riscv64: fsgnj.d; result=|vtop[-1]| with sign(vtop) */
-ST_FUNC void gen_fminmax(int is_max); /* arm64: FMINNM/FMAXNM; result=fmin/fmax(vtop[-1],vtop) */
-ST_FUNC void gen_fma(void); /* arm64 FMADD / riscv64 fmadd.d; vtop[-2]*vtop[-1]+vtop, single rounding */
+ST_FUNC void gen_copysign(void);
+ST_FUNC void gen_fminmax(int is_max);
+ST_FUNC void gen_fma(void);
 #ifdef MCC_TARGET_X86_64
 ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_mulh(int sign);

@@ -1,16 +1,4 @@
 #!/bin/sh
-# Validate the i386 __attribute__((fastcall)) ABI of an mcc i386 cross-compiler
-# against a native i386 gcc, using a linux/386 Docker container for the parts
-# that must run as i386 (the reference gcc build, the cross-link, and execution).
-#
-# The host arch is irrelevant: mcc runs on the host and emits i386 ELF objects;
-# everything i386-native happens inside the container. This is the execution
-# path that lets non-i386 hosts (e.g. arm64 macOS, where qemu-i386 user-mode and
-# 32-bit wine are unavailable) exercise the fastcall ABI that CMake's
-# i386-fastcall-abi test otherwise skips.
-#
-# Usage:  tools/i386fastcall-docker.sh <mcc-i386> [workdir]
-# Exit:   0 all checks pass · 1 a check failed · 77 skipped (no docker/mcc-i386)
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -54,7 +42,6 @@ int main(void){
 }
 EOF
 
-# float-in-a-register-position fastcall is unsupported; mcc must reject it.
 cat > "$WORK_ABS/unsup.c" <<'EOF'
 int __attribute__((fastcall)) f(double a,int b); int g(){ return f(1.0,2); }
 EOF

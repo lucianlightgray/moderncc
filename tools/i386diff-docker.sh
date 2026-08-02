@@ -1,16 +1,4 @@
 #!/bin/sh
-# Broad i386 codegen differential: compile a battery of freestanding C programs
-# with an mcc i386 cross-compiler AND with a native i386 gcc, run both inside a
-# linux/386 Docker container, and require identical exit codes. Each program
-# folds its computation into a checksum returned as the process exit code, so no
-# libc/headers are needed at compile time (mcc-i386 has no libc headers on the
-# host) and the comparison is a pure mcc-vs-gcc differential.
-#
-# mcc objects are linked with mcc's i386 runtime (i386-libmccrt.a) so builtin
-# helper calls (e.g. __builtin_popcount) resolve; gcc builds from source.
-#
-# Usage:  tools/i386diff-docker.sh <mcc-i386> <i386-libmccrt.a> [workdir]
-# Exit:   0 all match · 1 a divergence · 77 skipped (no docker/mcc-i386/runtime)
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"

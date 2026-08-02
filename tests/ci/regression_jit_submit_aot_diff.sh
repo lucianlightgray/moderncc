@@ -1,11 +1,4 @@
 #!/bin/sh
-# Differential guard for the backend-override codegen path (mcc_jit_submit_ast /
-# MCC_JIT_SUBMIT_AOT): the runtime JIT recompiles hot functions FROM the backend-
-# submitted AST instead of the shipped intent. This path is a fresh codegen route,
-# so it must match the JIT-off reference on real programs (the historical default-on
-# failure mode was JIT variants miscompiling real code). Each program is run three
-# ways and all three outputs must agree; the override path must actually fire.
-# Args: $1 = mcc binary.
 set -e
 MCC="$1"
 [ -x "$MCC" ] || { echo "regression_jit_submit_aot_diff: mcc not executable: $MCC"; exit 1; }
@@ -35,13 +28,6 @@ EOF
 
 san() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | tr -d '\r' | sed 's/[[:space:]]*$//'; }
 
-# The MCC_JIT_SUBMIT_AOT / override path is the runtime mode-6 JIT dispatch. On
-# arm64 that path is mutually exclusive with the -O4 superoptimizer search (the
-# search's MEMORY re-emit corrupts the arm64 dispatch slot's symbol), so the arm64
-# mode-6 entry is gated on !ast_search_env (mccast.c, commit 77bd8ba8). Since the
-# -O search became default-ON at -O4 (commit 672b4ffb), pin MCC_AST_SEARCH=0 on the
-# -O4 JIT runs below so the override actually fires on arm64. The -O2 MCC_JIT=0
-# reference never runs the search regardless.
 for p in p1 p2 p3; do
 	ref=$(env MCC_JIT=0 "$MCC" -O2 -run "$TMP/$p.c" 2>/dev/null | san)
 	nos=$(env XDG_CACHE_HOME="$TMP/n-$p" MCC_AST_SEARCH=0 MCC_JIT=1 MCC_JIT_HOT_THRESHOLD=50 \

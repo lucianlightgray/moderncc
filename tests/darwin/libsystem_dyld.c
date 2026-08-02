@@ -1,6 +1,6 @@
-/* dyld: the shared-cache lookup path, dlopen/dlsym/dlclose, dladdr against an
-   mcc-emitted __TEXT symbol, and the _dyld_* image APIs. Kernel- and
-   shared-cache-bound by definition (tests/qemu/apple-libc). */
+
+
+
 #include <stdio.h>
 #include <string.h>
 #include <dlfcn.h>
@@ -47,10 +47,10 @@ int main(void) {
 		dlclose(self);
 	}
 
-	/* dladdr has to map a __TEXT address mcc emitted back to its nlist entry.
-	   The name matters: mcc used to leave the ELF-convention boundary symbols
-	   external at the first function's address, so dyld answered
-	   __init_array_end here. */
+
+
+
+
 	Dl_info info;
 	memset(&info, 0, sizeof info);
 	CHECK(dladdr((void *)marker_fn, &info) != 0);

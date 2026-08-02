@@ -12,10 +12,6 @@ IMAGE="debian:bookworm-slim"
 
 dg_need_docker
 
-# Host-native build container (linux/amd64 on x86 CI, linux/arm64 on an arm64
-# runner): only the riscv64 cross toolchain + qemu-riscv64 matter, and both
-# install on either host arch. Pinning amd64 on an arm64 host would run the
-# whole build stage (gcc + mcc + qemu-riscv64) under nested emulation.
 HP_PLAT=$(dg_host_plat)
 dg_need_platform "$HP_PLAT" "$IMAGE"
 
@@ -87,7 +83,6 @@ echo "== gate-fires objdump evidence: leaf + callful, OFF vs ON =="
 cat > /w/gate.c <<'EOF'
 extern int printf(const char*,...);
 extern int ext(int);
-/* callful: promoted vars must survive the call in callee-saved s-regs */
 int callful(int a, int b) {
   int acc = a * 3 + 7;
   int base = b ^ 0x55;
@@ -96,7 +91,6 @@ int callful(int a, int b) {
   int r2 = ext(acc + base);
   return acc + base + r0 + r1 + r2;
 }
-/* leaf: hot vars promoted to caller-saved regs, loads/stores elided */
 int leaf(int n) {
   int s = 0, p = 1, i;
   for (i = 1; i <= n; i++) { s += i; p += s * i; }
@@ -125,7 +119,6 @@ extern int refcall(int);
 static long fails=0, checks=0;
 static void rep(const char*k,ll x,ll g,ll e){ if(fails<40) printf("MISMATCH %s x=%lld got=%lld exp=%lld\n",k,x,g,e); fails++; }
 
-/* callful: values live across calls (must survive in s-regs when promoted) */
 int cf(int a,int b){
   int acc=a*3+7, base=b^0x55, keep=a-b;
   int r0=refcall(acc);
@@ -133,15 +126,11 @@ int cf(int a,int b){
   int r2=refcall(acc+base+r0);
   return acc+base+keep+r0+r1+r2;
 }
-/* leaf int */
 int leafi(int n){int s=0,p=1,i;for(i=1;i<=n;i++){s+=i*3-1;p+=s^i;}return s*7+p;}
-/* leaf mixed int/float */
 double leaff(int n){double s=0.0,q=2.0;int i;for(i=1;i<=n;i++){s+=(double)i*4.0;q=q+(double)(i&7);}return s*3.0-q;}
-/* wide long */
 ll leafl(ll a,ll b){ll x=a*100003LL,y=b^0x5a5a5a5aLL,z=x+y;int i;for(i=0;i<6;i++){z=z*3+x-y;x^=z;}return x^y^z;}
 
 EOF
-# reference impl: identical source compiled by gcc -O2
 cat > /w/ref.c <<'EOF'
 int refcall(int x){ return (x*2654435761u) ^ (x>>3) ^ 0x1234; }
 EOF
@@ -170,10 +159,6 @@ int main(void){
 }
 EOF
 
-# Build two variants of diff.c:
-#  - mcc (promote ON) compiles cf/leafi/leaff/leafl; gcc compiles the *_REF via #define aliasing to a second gcc-built TU
-# Approach: compile the tested functions with mcc; compile a gcc reference TU that
-# provides CF_REF/LEAFI_REF/... as gcc -O2 versions of the same functions, plus main+refcall.
 cat > /w/refimpl.c <<'EOF'
 typedef long long ll; typedef unsigned long long ull; typedef unsigned u;
 int refcall(int x){ return (x*2654435761u) ^ (x>>3) ^  0x1234; }
@@ -189,7 +174,6 @@ double LEAFF_REF(double x,double y){double a=x+y,b=a+x,c=b-y,d=c+a,e=a-b,f=e+c;r
 ll LEAFL_REF(ll a,ll b){ll x=a*100003LL,y=b^0x5a5a5a5aLL,z=x+y;int i;for(i=0;i<6;i++){z=z*3+x-y;x^=z;}return x^y^z;}
 EOF
 
-# main TU references CF_REF etc as externs
 cat > /w/main.c <<'EOF'
 extern int printf(const char*,...);
 typedef long long ll; typedef unsigned long long ull; typedef unsigned u;
@@ -216,7 +200,6 @@ int main(void){
   return fails?1:0;
 }
 EOF
-# tested functions (mcc, promote ON)
 cat > /w/tested.c <<'EOF'
 typedef long long ll; typedef unsigned long long ull; typedef unsigned u;
 extern int refcall(int);

@@ -252,13 +252,6 @@ __asm__(".globl __builtin_bswap64\n\t.set __builtin_bswap64,__mcc_builtin_bswap6
 #endif
 #endif
 
-/* T is narrower than the widened accumulator W: the builtin's operands arrive
-   already promoted to W, so overflow has two independent sources. The W-wide
-   add/sub/mul can itself overflow (e.g. two unsigned long long inputs whose sum
-   carries out of 64 bits), and the W-wide result may not fit back into T.
-   Either is an overflow. The wrapped narrowing test (T)s != s is only reliable
-   when W did not overflow, so it is OR-ed with an explicit W-overflow test that
-   mirrors the full-width MCC_OV_BIG_{S,U} helpers. */
 #define MCC_OV_SMALL_U(T, W, NM)                \
 	int __mcc_addo_##NM(W a, W b, T *r) {         \
 		W s = a + b;                                \

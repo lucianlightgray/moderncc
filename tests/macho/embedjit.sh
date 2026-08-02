@@ -1,22 +1,4 @@
 #!/bin/sh
-# --embed-jit through a CROSS osx compiler, and through the on-disk Mach-O
-# archive reader rather than the bin2c'd blob.
-#
-# Two things had no coverage before this cell:
-#   * no osx triple exercised --embed-jit at all. The native host mcc bakes
-#     mccjit_blob.c and takes the in-memory path, so mcc_add_file() on a real
-#     Mach-O archive -- the fallback a cross mcc uses, since no blob is baked
-#     for a cross target -- was only ever tested against the synthetic fixture
-#     in macho-archive.
-#   * the produced image was never RUN with the JIT on. --embed-jit output that
-#     is correct at MCC_JIT=0 and faults at MCC_JIT=1 is the exact shape the
-#     arm64 BRANCH26 sibling-call defect produced, and nothing caught it.
-#
-# Skips when the engine archive next to the cross mcc is not this target's
-# cputype -- a Linux host building mcc-arm64-osx has an x86_64 ELF engine and
-# there is nothing to bake.
-#
-# Usage: embedjit.sh <cross-mcc> <mccbase> <workdir> <arch> [extra-flags...]
 set -e
 
 MCC=$1

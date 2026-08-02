@@ -49,9 +49,6 @@ extern float strtof(const char *__nptr, char **__endptr);
 extern long double strtold(const char *__nptr, char **__endptr);
 #endif
 
-/* Self-contained: host_sem_wait() below reads errno/EINTR. The mcc.h include
-   chain pulls <errno.h> first, but standalone includers (e.g. mccast.c in the
-   multisource/asm-off builds) don't, so include it here. */
 #include <errno.h>
 
 #ifdef _WIN32
@@ -96,9 +93,6 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #endif
 #endif
 #if defined(__MCC__) && !defined(_MSC_VER)
-/* Self-host: mcc's Win32 headers declare strtok_s (msvcrt exports it) but
-   not the POSIX strtok_r the tools use. Same mapping as the _MSC_VER branch
-   above. */
 #define strtok_r strtok_s
 #endif
 #if defined(_M_ARM64) && !defined(__aarch64__)
@@ -130,8 +124,6 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #define ALIGNED(x) __declspec(align(x))
 #define PRINTF_LIKE(x, y)
 #define MAYBE_UNUSED
-/* MSVC's C frontend doesn't accept the C11 keyword _Thread_local; its
-   thread-local storage-class is __declspec(thread). */
 #define MCC_THREAD_LOCAL __declspec(thread)
 #else
 #define NORETURN __attribute__((noreturn))

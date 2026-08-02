@@ -124,10 +124,6 @@ int main(int argc, char **argv) {
 		sl[i].size = len;
 		sl[i].align = align_exp(ct);
 
-		/* Whether this slice is already code-signed. mcc self-signs by default,
-		   so the fuse needs no signer of its own -- a slice's CodeDirectory
-		   covers slice-relative offsets, so it survives being placed at a fat
-		   offset. Walk the load commands for an LC_CODE_SIGNATURE. */
 		{
 			int is64 = (magic == MH_MAGIC_64 || magic == MH_CIGAM_64);
 			uint32_t ncmds, lc = is64 ? 32u : 28u;
@@ -192,12 +188,6 @@ int main(int argc, char **argv) {
 	}
 	rc = fclose(out) ? 1 : 0;
 	if (rc == 0) {
-		/* Verify and skip, rather than re-sign: mcc self-signs every slice, and
-		   fusing preserves each slice's signature (a CodeDirectory covers slice-
-		   relative offsets), so codesign is pure redundancy here -- and it does
-		   not exist off-Darwin, the one place a signer would matter. Only an
-		   already-unsigned slice is a problem, and that is exactly the case the
-		   shell-out could never fix. */
 		chmod(argv[1], 0755);
 		for (i = 0; i < nin; i++)
 			if (!sl[i].has_sig)

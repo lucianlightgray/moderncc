@@ -1,5 +1,3 @@
-/* Round-trip + never-corrupt self-test for the src/algorithms compressors.
- * Build: cc -I src/algorithms src/algorithms/selftest.c -o selftest && ./selftest */
 #include "lzss.h"
 #include "lzw.h"
 #include "rle.h"
@@ -70,7 +68,6 @@ int main(void) { MCC_TRACE("enter\n");
 			}
 		}
 		roundtrip(codecs[ci].codec, "random", codecs[ci].enc, codecs[ci].dec, buf, 40000);
-		/* KwKwK stressor: repeated short cycles that trigger self-referential codes */
 		for (i = 0; i < 40000; i++)
 			{ MCC_TRACE("br\n"); buf[i] = (unsigned char)('a' + (i % 3)); }
 		roundtrip(codecs[ci].codec, "cycle", codecs[ci].enc, codecs[ci].dec, buf, 40000);

@@ -1,24 +1,4 @@
 #!/bin/sh
-# riscv64 divmagic soak, docker-gated and self-contained.
-#
-# The AST-reemit divmagic pass replaces constant integer divides/mods with
-# reciprocal-multiply sequences. On riscv64 the high multiply is a native
-# instruction (mulh/mulhu/mulhsu), so — like arm64 and unlike i386 — no runtime
-# helper archive is needed; the linked soak is self-contained. The normal build's
-# mcc-riscv64 is compiled WITHOUT the optimizer, so it cannot exercise this pass.
-# This test therefore builds its own optimizer-enabled riscv64 cross mcc from the
-# repo sources inside a host-native container (a host binary that EMITS
-# riscv64), uses it to compile a soak whose every constant divide/mod lives in its
-# own leaf function (so divmagic fires), links it with the riscv64 cross gcc, and
-# runs it under qemu-riscv64. Each rewritten divide is checked against a
-# volatile-divisor hardware-div oracle over a wide input sweep; any mismatch is a
-# real divmagic miscompile.
-#
-# Usage:  tools/riscv64divmagic-docker.sh <mcc-riscv64> [workdir]
-#   <mcc-riscv64>  host mcc-riscv64 binary; only its presence gates the test
-#                  (the actual compiler used is rebuilt in-container).
-# Exit:   0 all checks pass, 0 fails · 1 a divmagic miscompile · 77 skipped
-#         (no docker / no mcc-riscv64 / unrunnable build platform / no qemu-riscv64).
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -26,14 +6,11 @@ set -eu
 MCC="${1:-}"
 WORK="${2:-./w-riscv64divmagic}"
 IMAGE_BUILD="${MCC_DIVMAGIC_BUILD_IMAGE:-debian:bookworm-slim}"
-# Host-native build container: only the riscv64 cross toolchain + qemu-riscv64
-# matter, and both install on amd64 and arm64 debian alike.
 HP_PLAT=$(dg_host_plat)
 
 dg_need_bin "$MCC" "riscv64 mcc"
 dg_need_docker
 dg_need_platform "$HP_PLAT" "$IMAGE_BUILD"
-# qemu-riscv64 gate: only proceed if the build image can run a riscv64 binary.
 if ! dg_docker run --rm --platform "$HP_PLAT" "$IMAGE_BUILD" sh -c '
        export DEBIAN_FRONTEND=noninteractive
        apt-get update -qq >/dev/null 2>&1
@@ -44,7 +21,6 @@ if ! dg_docker run --rm --platform "$HP_PLAT" "$IMAGE_BUILD" sh -c '
 	echo "SKIP: cannot build/run a riscv64 binary under qemu-riscv64 in the container"; exit 77
 fi
 
-# Repo root is the parent of this script's tools/ dir.
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$SCRIPT_DIR/.." && pwd)
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
@@ -53,7 +29,6 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 WORK_ABS=$(cd "$WORK" && pwd)
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 
-# --- generate the soak C (bash: dash's echo mangles the \n in printf fmts) ---
 cat > "$WORK_ABS/gen.sh" <<'GEN'
 #!/usr/bin/env bash
 set -eu
@@ -130,7 +105,6 @@ int main(void){
 		checks++; if(u64[i].d(xv)!=rU64(xv,u64[i].c)) rep("u64/",(ll)u64[i].c,(ll)xv,(ll)u64[i].d(xv),(ll)rU64(xv,u64[i].c));
 		checks++; if(u64[i].m(xv)!=rU64m(xv,u64[i].c)) rep("u64%",(ll)u64[i].c,(ll)xv,(ll)u64[i].m(xv),(ll)rU64m(xv,u64[i].c)); }
 
-	/* wide strided sweeps for the hottest divisors */
 	for(i=0;i<n32;i++) for(x=-3000000L;x<=3000000L;x+=101){ int xv=(int)x; if(xv==IMIN&&s32[i].c==-1)continue;
 		checks++; if(s32[i].d(xv)!=rS(xv,s32[i].c)) rep("sw-s32/",s32[i].c,xv,s32[i].d(xv),rS(xv,s32[i].c));
 		checks++; if(s32[i].m(xv)!=rSm(xv,s32[i].c)) rep("sw-s32%",s32[i].c,xv,s32[i].m(xv),rSm(xv,s32[i].c)); }
@@ -152,9 +126,6 @@ EOF
 echo "generated $OUT ($(wc -l < "$OUT") lines)"
 GEN
 
-# --- single host-native container: build the optimizer-enabled riscv64 cross mcc
-#     (host binary emitting riscv64), compile the soak with divmagic, confirm
-#     it fired, link with the riscv64 cross gcc, and run under qemu-riscv64. ---
 echo "== docker $HP_PLAT: build optimizer-enabled riscv64 cross mcc + soak + qemu run =="
 dg_docker run --rm --platform "$HP_PLAT" \
 	-v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE_BUILD" bash -c '
@@ -162,7 +133,6 @@ dg_docker run --rm --platform "$HP_PLAT" \
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update >/dev/null 2>&1
 	apt-get install -y gcc binutils bash gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu qemu-user-static >/dev/null 2>&1
-	# fast local copy of the pieces the build reads (RO bind is slow for many small reads)
 	mkdir -p /b
 	cp -a /repo/src /repo/include /repo/runtime /b/
 	cd /b

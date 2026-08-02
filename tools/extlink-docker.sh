@@ -1,30 +1,4 @@
 #!/bin/sh
-# External-linker interop for a 64-bit ELF mcc cross target: compile a
-# multi-function TU with mcc, then link the resulting object with the
-# container's *native* toolchain (GNU ld via gcc) rather than mcc's own
-# linker, and require it to (a) link without error and (b) run correct.
-# Also compile a -gdwarf variant and require the linked binary's per-function
-# DW_AT_low_pc values to be distinct.
-#
-# This is the regression guard for the RELA addend-0 bugs: mcc emitted FDE
-# initial_location (.eh_frame) and DWARF DW_AT_low_pc/DW_OP_addr relocations
-# with a hardcoded addend of 0 and the real value only in-place. mcc's own
-# relocator adds the in-place value, so self-host worked; standard RELA
-# linkers (GNU ld/lld) use S+A and ignored it, so .eh_frame FDEs collapsed
-# (overlapping-FDE link failure) and every subprogram low_pc collapsed onto
-# .text+0. i386/arm are REL and were never affected; only x86_64/arm64/riscv64
-# (RELA) are, and nothing else in the suite links an mcc 64-bit object with an
-# external linker. The program is freestanding (exit code = self-check result)
-# so mcc needs no libc headers on the host.
-#
-# Usage:  tools/extlink-docker.sh <mcc> <docker-platform> [workdir] [cross-prefix]
-#           docker-platform: linux/amd64 | linux/arm64
-#           cross-prefix:    optional binutils/gcc triplet prefix (e.g.
-#                            riscv64-linux-gnu-). When given, the container runs
-#                            a NATIVE-platform image with that cross toolchain
-#                            and the test is link-only + DWARF (no execution),
-#                            for arches with no user-mode emulator here.
-# Exit:   0 pass · 1 a failure · 77 skipped (no docker / mcc / platform)
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"
@@ -89,7 +63,6 @@ dg_docker run --rm --platform "$PLAT" -e CROSS="$CROSS" -v "$WORK_ABS":/w -w /w 
 		rc=0; ./m${o} || rc=$?
 		if [ "$rc" = 0 ]; then echo "OK    -O$o link+run (exit 0)"; else echo "FAIL  -O$o run exit=$rc (should be 0)"; fail=1; fi
 	done
-	# -gdwarf: link and require distinct per-function DW_AT_low_pc
 	if ! "$GCC" -g mg.o -o mg 2>gcc_err; then
 		echo "FAIL  -gdwarf external link:"; sed "s/^/    /" gcc_err; fail=1
 	else

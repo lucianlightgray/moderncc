@@ -1,10 +1,10 @@
-/* Multi-dimensional indexing where the SAME induction variable appears in more
-   than one subscript. MCC_AST_IVSR_PTR strength-reduces `base + i` when base is
-   loop-invariant; for a[i][i] the pass runs to fixpoint and, once the inner
-   `&a + i` has become an induction pointer p, the outer add reappears as
-   `p + i`, which looks invariant-plus-IV but is not. That read a[i][0] and went
-   unnoticed because every row was still written correctly -- only same-index
-   reads were wrong. Integer output throughout so the golden is exact. */
+
+
+
+
+
+
+
 #include <stdio.h>
 
 static int g2[8][8];

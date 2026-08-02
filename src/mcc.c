@@ -392,16 +392,9 @@ static uint64_t so_key(MCCState *s) { MCC_TRACE("enter\n");
 #ifdef MCC_CONFIG_TRIPLET
 	h = so_fnv(h, MCC_CONFIG_TRIPLET, strlen(MCC_CONFIG_TRIPLET));
 #endif
-	/* The resolved -march. This key hashes the SOURCE BYTES, so without it a
-	   winner measured where roundsd was legal is replayed on a target where it
-	   is not -- the checkpoint records best_gate/best_text obtained under one
-	   ISA and nothing else distinguishes them. Whole-file granularity here, so
-	   the whole mask is the right term; the per-function AST cache uses a
-	   narrower one (ast_isa_key_term) to keep generic slices shareable. */
 	{
 		uint32_t isa;
-		mcc_isa_init(s); /* idempotent; resolves the default so an implicit
-		                    baseline and an explicit -march=x86-64 agree */
+		mcc_isa_init(s);
 		isa = s->isa_mask;
 		h = so_fnv(h, &isa, sizeof isa);
 	}
@@ -561,8 +554,6 @@ static void so_setenv_axis(const char *name, const char *val) { MCC_TRACE("enter
 	host_setenv(name, val);
 }
 
-/* Restore an axis to the compiler's OWN default (or the user's pin) rather than
-   forcing it off, so the search can only ever ADD that gate, never subtract it. */
 static void so_unsetenv_axis(const char *name) { MCC_TRACE("enter\n");
 	for (int i = 0; i < SO_NAXES; i++)
 		{ MCC_TRACE("br\n"); if (!strcmp(so_axes[i].name, name)) { MCC_TRACE("br\n");
@@ -633,10 +624,6 @@ static int so_pe_is_machine(uint16_t m) { MCC_TRACE("enter\n");
 				 m == 0x01c4;
 }
 
-/* Offset of the COFF file header inside `f`: for a PE image ('MZ' + "PE\0\0")
-   it is e_lfanew+4; for a bare COFF object (whose first word is a known machine
-   id) it is 0. Returns -1 when `h` (the first 64 bytes) is neither. Leaves the
-   stream position undefined. */
 static long so_coff_off(FILE *f, const unsigned char *h) { MCC_TRACE("enter\n");
 	if (h[0] == 'M' && h[1] == 'Z') { MCC_TRACE("br\n");
 		uint32_t lfanew;
@@ -653,9 +640,6 @@ static long so_coff_off(FILE *f, const unsigned char *h) { MCC_TRACE("enter\n");
 	}
 }
 
-/* Sum of the sizes of executable sections (IMAGE_SCN_CNT_CODE / _MEM_EXECUTE)
-   in a PE image or COFF object; -1 if `f` is not PE/COFF. VirtualSize is the
-   unpadded code size in an image; objects carry it in SizeOfRawData. */
 static long so_pe_textsize(FILE *f, const unsigned char *h) { MCC_TRACE("enter\n");
 	long coff_off = so_coff_off(f, h);
 	unsigned char fh[20];
@@ -725,10 +709,6 @@ struct so_fn {
 	unsigned cfg;
 };
 
-/* Per-function .text sizes from a COFF object/PE image. COFF symbols carry no
-   size, so it is the gap from each function symbol to the next symbol in the
-   same code section (last one runs to the section end). Best-effort; used only
-   by the opt-in MCC_AST_PERFN mode. */
 static int so_coff_fn_sizes(FILE *f, const unsigned char *h, struct so_fn *out,
 														int max) { MCC_TRACE("enter\n");
 	long coff_off = so_coff_off(f, h);
@@ -783,7 +763,7 @@ static int so_coff_fn_sizes(FILE *f, const unsigned char *h, struct so_fn *out,
 		i += 1 + (int)naux;
 		if (secnum < 1 || secnum > (int)nsec || !seccode[secnum - 1])
 			{ MCC_TRACE("br\n"); continue; }
-		if ((type & 0x30) != 0x20) /* IMAGE_SYM_DTYPE_FUNCTION */
+		if ((type & 0x30) != 0x20)
 			{ MCC_TRACE("br\n"); continue; }
 		nm[0] = 0;
 		if (name0 == 0) { MCC_TRACE("br\n");
@@ -802,11 +782,11 @@ static int so_coff_fn_sizes(FILE *f, const unsigned char *h, struct so_fn *out,
 		if (!nm[0])
 			{ MCC_TRACE("br\n"); continue; }
 		snprintf(out[n].name, sizeof out[n].name, "%s", nm);
-		out[n].size = (long)val;      /* holds the symbol value for now */
-		out[n].cfg = (unsigned)secnum; /* holds the section for now */
+		out[n].size = (long)val;
+		out[n].cfg = (unsigned)secnum;
 		n++;
 	}
-	for (i = 1; i < n; i++) { MCC_TRACE("br\n"); /* sort by (section, value) */
+	for (i = 1; i < n; i++) { MCC_TRACE("br\n");
 		struct so_fn key = out[i];
 		j = i - 1;
 		while (j >= 0 && (out[j].cfg > key.cfg ||
@@ -845,7 +825,7 @@ static int so_fn_sizes(const char *path, struct so_fn *out, int max) { MCC_TRACE
 		return -1;
 	}
 	if (!(h[0] == 0x7f && h[1] == 'E' && h[2] == 'L' && h[3] == 'F' &&
-				h[4] == 2)) { MCC_TRACE("br\n"); /* not 64-bit ELF: try PE/COFF */
+				h[4] == 2)) { MCC_TRACE("br\n");
 		n = so_coff_fn_sizes(f, h, out, max);
 		fclose(f);
 		return n;
@@ -905,20 +885,17 @@ static int so_copy(const char *src, const char *dst) { MCC_TRACE("enter\n");
 	return host_copy_file(src, dst, 1);
 }
 
-/* Copy argv[1..argc) into cv (advancing *pn), dropping the user's own output
-   option (`-o file` or `-ofile`). The search appends its own `-o <candidate>`,
-   so keeping the user's would make every worker warn "multiple -o option". */
 static void so_copy_args_drop_o(const char **cv, int *pn, int argc,
 																char **argv) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 1; i < argc; i++) { MCC_TRACE("br\n");
 		if (!strcmp(argv[i], "-o")) { MCC_TRACE("br\n");
 			if (i + 1 < argc)
-				{ MCC_TRACE("br\n"); i++; } /* skip the filename operand too */
+				{ MCC_TRACE("br\n"); i++; }
 			continue;
 		}
 		if (argv[i][0] == '-' && argv[i][1] == 'o' && argv[i][2])
-			{ MCC_TRACE("br\n"); continue; } /* single-token -ofile form */
+			{ MCC_TRACE("br\n"); continue; }
 		cv[(*pn)++] = argv[i];
 	}
 }
@@ -1360,12 +1337,6 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 
 	while (!so_stop && host_clock_ms() - start < budget_ms) { MCC_TRACE("br\n");
 		unsigned slice = base_ms << (round < 16 ? round : 16);
-		/* Each round explores three axes in turn (gate, budget, limit). A slice
-		   wider than a third of the run's budget lets the FIRST axis consume the
-		   whole run, so the later two are never reached at all -- measured on a
-		   warm checkpoint after 8 compiles: claim_gate had advanced to 576 while
-		   budget_cursor and limit_cursor were both still 0. Cap the slice so
-		   every axis gets a turn. */
 		{
 			unsigned el = host_clock_ms() - start;
 			unsigned rem = el < budget_ms ? budget_ms - el : 0u;
@@ -1499,9 +1470,6 @@ redo:
 	opt = mcc_parse_args(s, &argc, &argv);
 
 	if (n == 0 && s->print_isa) { MCC_TRACE("br\n");
-		/* Checked before the OPT_HELP dispatch: with no input files
-		   mcc_parse_args reports OPT_HELP, which would print usage over the
-		   answer the user asked for. */
 		mcc_isa_print(s);
 		mcc_delete(s);
 		return 0;

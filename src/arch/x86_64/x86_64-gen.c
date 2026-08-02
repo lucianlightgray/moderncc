@@ -220,9 +220,6 @@ ST_FUNC int signbit_inline_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
-/* MOVMSKPS/MOVMSKPD put lane 0's sign bit in bit 0 of a GP register, which is
-   __builtin_signbit with one AND. Both are SSE2, so no ISA floor moves. x87 long
-   double has no such instruction and keeps the helper. */
 void gen_signbit(int isfloat) { MCC_TRACE("enter\n");
 	int r, d;
 
@@ -1142,9 +1139,6 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	Sym *f;
 
-	/* An array member is represented as VT_PTR|VT_ARRAY; classify it by its
-	   ELEMENT type, not as a pointer (which would wrongly make a float array
-	   INTEGER). Descend multi-dimensional arrays to the base element. */
 	while ((ty->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY))
 		{ MCC_TRACE("br\n"); ty = &ty->ref->type; }
 
@@ -1182,12 +1176,6 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-/* SysV AMD64 psABI 3.2.3 argument classification: "if the aggregate [...]
-   contains unaligned fields, it has class MEMORY." A packed struct places a
-   member at an offset that is not a multiple of that member's natural
-   alignment; gcc and clang both then pass/return the whole aggregate in memory
-   (verified via the mcc/gcc/clang differential). Recurse so a nested packed
-   struct is caught even when its own base offset is aligned. */
 static int x86_64_has_unaligned_field(CType *ty, int base) { MCC_TRACE("enter\n");
 	Sym *f;
 	if ((ty->t & VT_BTYPE) != VT_STRUCT)
@@ -1203,11 +1191,6 @@ static int x86_64_has_unaligned_field(CType *ty, int base) { MCC_TRACE("enter\n"
 	return 0;
 }
 
-/* Fill cls[0..1] with the per-eightbyte register class of a <=16B aggregate, per
-   SysV AMD64 3.2.3 (each field marks the eightbyte(s) it spans; SSE for
-   float/double, INTEGER otherwise). off is ty's byte offset within the top
-   aggregate. Unlike classify_x86_64_inner (one whole-aggregate mode), this keeps
-   the two eightbytes distinct so a {INTEGER,SSE} struct is not collapsed. */
 static void classify_x86_64_eb(CType *ty, int off, X86_64_Mode cls[2]) { MCC_TRACE("enter\n");
 	if ((ty->t & VT_BTYPE) == VT_STRUCT && !(ty->t & VT_ARRAY)) { MCC_TRACE("br\n");
 		Sym *f;
@@ -1224,11 +1207,6 @@ static void classify_x86_64_eb(CType *ty, int off, X86_64_Mode cls[2]) { MCC_TRA
 	}
 }
 
-/* True iff ty is a 9..16B struct whose two eightbytes have DIFFERENT register
-   classes (one INTEGER, one SSE) — the SysV case that classify_x86_64_inner
-   collapses to a single class (INTEGER wins), miscompiling both the argument
-   (should be {GP,XMM}, not two GP) and the return ({rax,xmm0}). Fills cls[0..1].
-   Excludes the unaligned-field case (that is MEMORY, handled separately). */
 static int x86_64_mixed_class(CType *ty, X86_64_Mode cls[2]) { MCC_TRACE("enter\n");
 	int align, sz;
 	if ((ty->t & VT_BTYPE) != VT_STRUCT || (ty->t & VT_ARRAY))
@@ -1348,9 +1326,6 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 	{
 		X86_64_Mode cls[2];
 		if (x86_64_mixed_class(vt, cls)) { MCC_TRACE("br\n");
-			/* {INTEGER,SSE} eightbytes -> rax/rdx + xmm0/xmm1 can't be expressed by
-			   the shared same-class multi-reg return glue; route through the
-			   arch_transfer_ret_regs escape hatch (like complex long double). */
 			*ret_align = 1;
 			*regsize = 8;
 			ret->t = 0;
@@ -1372,9 +1347,6 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 	int fc = sv->c.i;
 	X86_64_Mode cls[2];
 	if (x86_64_mixed_class(&sv->type, cls)) { MCC_TRACE("br\n");
-		/* Move each eightbyte between its return register (INTEGER->rax,
-		   SSE->xmm0) and the in-memory struct slot at that eightbyte offset,
-		   reusing load()/store() so the mov/movsd encodings are shared. */
 		int e;
 		for (e = 0; e < 2; e++) { MCC_TRACE("br\n");
 			SValue s;
@@ -1435,11 +1407,6 @@ static int ovf_inline_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
-/* __builtin_add_overflow/sub_overflow arrive here as calls to the mccdefs
-   dispatch helpers (__mcc_addo_i and friends), so the inline form intercepts the
-   CALL rather than a builtin token. Signed overflow is OF, unsigned is CF, and
-   the flag has to be captured before the result store touches anything. Widths 4
-   and 8 only: the byte and word forms need extra prefixes for no real gain. */
 static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 	const char *nm;
 	int sub, uns, size, align, ra, rb, rr, sc;
@@ -1555,12 +1522,6 @@ static int gen_ovf_addsub(int nb_args) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* alloca(n) is `sub rsp` and nothing else: the block must survive to the
-   function epilogue, so unlike a VLA it is NOT registered in cur_scope->vla and
-   nothing reclaims it early -- `leave` restores rsp from rbp. Locals and spills
-   are rbp-relative, so moving rsp underneath them is safe, and rounding the
-   request up to 16 keeps rsp aligned. Declines when bounds checking is on: that
-   path needs the real call so __bound_alloca_nr can record the block. */
 static int gen_alloca_inline(int nb_args) { MCC_TRACE("enter\n");
 	int r;
 
@@ -1619,7 +1580,6 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		if (size == 0)
 			{ MCC_TRACE("br\n"); continue; }
 		if (x86_64_mixed_class(&vtop[-i].type, cls)) { MCC_TRACE("br\n");
-			/* one INTEGER + one SSE eightbyte: needs one GP AND one SSE reg */
 			if (nb_reg_args + 1 <= REGN && nb_sse_args + 1 <= 8) { MCC_TRACE("br\n");
 				nb_reg_args++;
 				nb_sse_args++;
@@ -1743,8 +1703,6 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		if (size == 0)
 			{ MCC_TRACE("br\n"); continue; }
 		if (x86_64_mixed_class(&vtop->type, cls)) { MCC_TRACE("br\n");
-			/* load the INTEGER eightbyte into its GP arg reg and the SSE eightbyte
-			   into its XMM arg reg directly from the struct's memory slots. */
 			int ebint = (cls[0] == x86_64_mode_integer) ? 0 : 1;
 			SValue s;
 			s.type.ref = NULL;
@@ -1979,8 +1937,6 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		type = &sym->type;
 		mode = classify_x86_64_arg(type, NULL, &size, &align, &reg_count);
 		if (x86_64_mixed_class(type, cls)) { MCC_TRACE("br\n");
-			/* store the incoming GP + XMM regs into the struct's home slots at
-			   their eightbyte offsets (mirrors gfunc_call's split placement). */
 			if (reg_param_index + 1 <= REGN && sse_param_index + 1 <= 8) { MCC_TRACE("br\n");
 				int ebint = (cls[0] == x86_64_mode_integer) ? 0 : 1;
 				loc -= 16;
@@ -2228,47 +2184,47 @@ void gen_asan_shadow_check(int sz) { MCC_TRACE("enter\n");
 	if ((vtop->r & VT_VALMASK) >= VT_CONST || sz <= 0 || sz > 8)
 		{ MCC_TRACE("br\n"); return; }
 	r = vtop->r & VT_VALMASK;
-	g(0x50);                         /* push rax                     */
-	g(0x52);                         /* push rdx                     */
-	g(0x51);                         /* push rcx                     */
-	orex(1, 1, r, 0x89);             /* mov rcx, r  (fault addr)     */
+	g(0x50);
+	g(0x52);
+	g(0x51);
+	orex(1, 1, r, 0x89);
 	o(0xc0 | REG_VALUE(r) << 3 | 1);
-	orex(1, 2, r, 0x89);             /* mov rdx, r                   */
+	orex(1, 2, r, 0x89);
 	o(0xc0 | REG_VALUE(r) << 3 | 2);
-	orex(1, 0, r, 0x89);             /* mov rax, r                   */
+	orex(1, 0, r, 0x89);
 	o(0xc0 | REG_VALUE(r) << 3 | 0);
-	g(0x48);                         /* shr rax, 3                   */
+	g(0x48);
 	g(0xc1);
 	g(0xe8);
 	g(0x03);
-	g(0x0f);                         /* movsbl 0x7fff8000(rax), eax  */
+	g(0x0f);
 	g(0xbe);
 	g(0x80);
 	gen_le32(0x7fff8000);
-	g(0x85);                         /* test eax, eax                */
+	g(0x85);
 	g(0xc0);
-	g(0x0f);                         /* jz ok                        */
+	g(0x0f);
 	t = gjmp2(0x84, t);
-	g(0x83);                         /* and edx, 7                   */
+	g(0x83);
 	g(0xe2);
 	g(0x07);
-	g(0x83);                         /* add edx, sz-1                */
+	g(0x83);
 	g(0xc2);
 	g(sz - 1);
-	g(0x39);                         /* cmp edx, eax                 */
+	g(0x39);
 	g(0xc2);
-	g(0x0f);                         /* jl ok                        */
+	g(0x0f);
 	t = gjmp2(0x8c, t);
-	g(0x83);                         /* or edx, 0x40 (access-type known) */
+	g(0x83);
 	g(0xca);
 	asan_type_sec = cur_text_section;
 	asan_type_patch = ind;
 	g(0x40);
-	o(0x0b0f);                       /* ud2 (rax=shadow,rdx=gran,rcx=addr) */
-	gsym(t);                         /* ok:                          */
-	g(0x59);                         /* pop rcx                      */
-	g(0x5a);                         /* pop rdx                      */
-	g(0x58);                         /* pop rax                      */
+	o(0x0b0f);
+	gsym(t);
+	g(0x59);
+	g(0x5a);
+	g(0x58);
 	asan_type_end = ind;
 }
 
@@ -2422,11 +2378,6 @@ void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	vtop->r = MCC_TREG_RDX;
 }
 
-/* Unsigned 64x64 -> 128 widening multiply, leaving ONE value: the 128-bit product
- * as a register pair (r = RAX = low 64, r2 = RDX = high 64). One `mul` op, so
- * (unlike a split low-mul + gen_mulh over duplicated operands, which aliases the
- * operand registers between two multiplies) the __int128 `*` emitter can get both
- * halves cleanly. Caller marks the value VT_INT128 and qexpand()s it into [lo,hi]. */
 void gen_mul_widen(void) { MCC_TRACE("enter\n");
 	int fr, ll;
 	ll = is64_type(vtop[-1].type.t);
@@ -2435,7 +2386,7 @@ void gen_mul_widen(void) { MCC_TRACE("enter\n");
 	vtop--;
 	save_reg(MCC_TREG_RDX);
 	orex(ll, fr, 0, 0xf7);
-	o(0xe0 + REG_VALUE(fr)); /* mul r/m -> RDX:RAX (unsigned) */
+	o(0xe0 + REG_VALUE(fr));
 	vtop->r = MCC_TREG_RAX;
 	vtop->r2 = MCC_TREG_RDX;
 }
@@ -2449,40 +2400,24 @@ void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	gen_le32((int)d);
 }
 
-/* fabs(x): clear the IEEE-754 sign bit in place. Mirrors the SSE float-negate
-   path in gen_opf (spill, byte-op the sign byte, reload) but ANDs the sign byte
-   with 0x7f (group-1 /4) instead of XORing with 0x80 (/6). Bit-exact for every
-   input (normals, +/-0, inf, NaN), needs no rodata constant, SSE2-baseline. */
 void gen_fabs(void) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 		gv(MCC_RC_ST0);
-		o(0xe1d9); /* D9 E1 = fabs (x87) */
+		o(0xe1d9);
 		return;
 	}
 	gv(MCC_RC_FLOAT);
 	save_reg(vtop->r);
-	o(0x80); /* group-1 r/m8, imm8 */
-	gen_modrm(4, vtop->r, NULL, vtop->c.i + (bt == VT_DOUBLE ? 7 : 3)); /* /4 = AND */
-	o(0x7f); /* clear the sign bit */
+	o(0x80);
+	gen_modrm(4, vtop->r, NULL, vtop->c.i + (bt == VT_DOUBLE ? 7 : 3));
+	o(0x7f);
 	gv(MCC_RC_FLOAT);
 }
 
-/* CMPXCHG pins the expected value in %rax and reports through ZF, so the
-   lowering is: load *expected into rax, `lock cmpxchg desired, (ptr)`, capture ZF
-   into a byte scratch BEFORE anything else touches the flags, and on failure
-   write the actual value back through the expected pointer -- that write-back is
-   architecturally required and is what a naive lowering drops. The byte
-   set/movzx forms need a REX for regs 4-7 or they would name ah/ch/dh/bh. */
 void gen_atomic_cmpxchg(int size) { MCC_TRACE("enter\n");
 	int rp, re, rd, sc, t;
 #ifdef MCC_TARGET_PE
-	/* Win64 makes RSI/RDI callee-saved, but mcc's non-optimizing codegen never
-	   emits a save/restore for them (it only ever scratches the caller-saved
-	   RAX/RCX/RDX/R8-R11). Scratching RSI/RDI here would silently clobber them
-	   for the caller -- e.g. under -run the compiled function trashes the host's
-	   RSI/RDI. Use the caller-saved R8/R9 instead. System V keeps RSI/RDI: both
-	   are caller-saved there, so its codegen stays byte-identical. */
 	const int rc_re = MCC_RC_R8, rc_rp = MCC_RC_R9;
 #else
 	const int rc_re = MCC_RC_RSI, rc_rp = MCC_RC_RDI;
@@ -2532,9 +2467,6 @@ void gen_atomic_cmpxchg(int size) { MCC_TRACE("enter\n");
 	vtop->r = sc;
 }
 
-/* XCHG r, m is implicitly LOCKed, so it is both the seq_cst store (discard the
-   result) and __atomic_exchange (keep it). Leaves the previous contents in the
-   value register, same shape as gen_atomic_xadd. */
 void gen_atomic_xchg(int size) { MCC_TRACE("enter\n");
 	int rp, rv;
 	gv2(MCC_RC_INT, MCC_RC_INT);
@@ -2544,11 +2476,6 @@ void gen_atomic_xchg(int size) { MCC_TRACE("enter\n");
 	gen_modrm(rv, rp, NULL, 0);
 }
 
-/* `lock xadd` for __atomic_fetch_add/sub at sizes 4 and 8: the value register
-   comes back holding the PREVIOUS contents, which is exactly fetch semantics.
-   LOCK makes it seq_cst, so the memory order argument needs no extra fence on
-   x86. Sizes 1 and 2 stay on the helper -- the byte form needs a REX just to
-   name sil/dil, which is not worth a special case here. */
 void gen_atomic_xadd(int size) { MCC_TRACE("enter\n");
 	int rp, rv;
 	gv2(MCC_RC_INT, MCC_RC_INT);
@@ -2560,11 +2487,6 @@ void gen_atomic_xadd(int size) { MCC_TRACE("enter\n");
 	gen_modrm(rv, rp, NULL, 0);
 }
 
-/* ffs(x) = x ? ctz(x) + 1 : 0. BSF sets ZF when the source is zero and leaves
-   the destination undefined there, so the zero case needs a real select: load -1
-   into a scratch and CMOVZ it in, then increment. CMOV is baseline on x86_64.
-   The tail runs 32-bit on purpose -- the answer is at most 64, and REX.W on the
-   `mov $-1` form would make it a 10-byte movabs. */
 void gen_ffs(int size) { MCC_TRACE("enter\n");
 	int r, sc;
 	gv(MCC_RC_INT);
@@ -2583,11 +2505,6 @@ void gen_ffs(int size) { MCC_TRACE("enter\n");
 	vtop->type.t = VT_INT;
 }
 
-/* clz/ctz on the 386-baseline scan instructions: BSR gives the index of the
-   highest set bit, so clz is `31 - idx` == `idx ^ 31` for a 5-bit index (63 for
-   a 6-bit one), and ctz is BSF outright. Both are undefined at zero, which is
-   exactly what __builtin_clz/__builtin_ctz document. No lzcnt/tzcnt, so no ISA
-   floor is raised. */
 void gen_bitscan(int ctz, int size) { MCC_TRACE("enter\n");
 	int r;
 	gv(MCC_RC_INT);
@@ -2618,10 +2535,6 @@ void gen_bswap(int size) { MCC_TRACE("enter\n");
 	o(0xc8 + REG_VALUE(r));
 }
 
-/* sqrt(x): single hardware sqrtsd/sqrtss, computed in place (src==dst). Only
-   emitted when the caller proved x >= 0 (so the IEEE result can never be a NaN
-   that would set errno=EDOM), matching gcc's VRP-driven bare-sqrtsd elision.
-   The MCC_RC_FLOAT class is xmm0-7, so no REX is needed for the reg-reg form. */
 void gen_sqrt(void) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	int r, d;
@@ -2629,31 +2542,19 @@ void gen_sqrt(void) { MCC_TRACE("enter\n");
 	r = vtop->r & VT_VALMASK;
 	d = r;
 #if MCC_CONFIG_OPTIMIZER
-	/* sqrtsd is destructive (dst==src). If the source is a PINNED (promoted)
-	 * register, its value is still live for other uses — computing in place would
-	 * clobber it (e.g. `d2 * sqrt(d2)` would read sqrt(d2) for both). Emit into a
-	 * fresh scratch reg instead, leaving the promoted source intact. */
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = nr;
 	}
 #endif
-	o(bt == VT_DOUBLE ? 0xf2 : 0xf3); /* F2=sqrtsd, F3=sqrtss */
+	o(bt == VT_DOUBLE ? 0xf2 : 0xf3);
 	sse_rex(d, r);
 	o(0x0f);
 	o(0x51);
-	o(0xc0 + REG_VALUE(r) + REG_VALUE(d) * 8); /* sqrtsd xmm_d, xmm_r */
+	o(0xc0 + REG_VALUE(r) + REG_VALUE(d) * 8);
 }
 
-/* floor(0)/ceil(1)/trunc(2) -> single roundsd/roundss. imm = mode | 0x8
- * (bit3 suppresses the precision/inexact exception, matching libm). SSE4.1;
- * mcc only allocates xmm0-7 so no REX is needed (as in gen_sqrt). */
-/* roundsd/ss imm[3:0]: bits[1:0]=direction, bit[2]=use MXCSR mode (ignore
- * [1:0]), bit[3]=suppress the precision (inexact) exception. mode 0/1/2 =
- * floor/ceil/trunc (down/up/zero, suppress); 4/5 = rint/nearbyint (MXCSR mode;
- * rint RAISES inexact, nearbyint suppresses). mode 3 (round ties-away) has no
- * roundsd form (arm64 FRINTA only) and is never emitted here. */
 void gen_round(int mode) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE;
 	int imm = mode == 0 ? 0x9 : mode == 1 ? 0xa : mode == 2 ? 0xb
@@ -2663,9 +2564,6 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 	r = vtop->r & VT_VALMASK;
 	d = r;
 #if MCC_CONFIG_OPTIMIZER
-	/* roundsd is destructive (dst==src). Don't clobber a PINNED (promoted) source
-	 * whose value is still live — round into a fresh scratch reg instead (see
-	 * gen_sqrt). */
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
@@ -2676,15 +2574,11 @@ void gen_round(int mode) { MCC_TRACE("enter\n");
 	sse_rex(d, r);
 	o(0x0f);
 	o(0x3a);
-	o(bt == VT_DOUBLE ? 0x0b : 0x0a); /* 0B=roundsd, 0A=roundss */
+	o(bt == VT_DOUBLE ? 0x0b : 0x0a);
 	o(0xc0 + REG_VALUE(d) * 8 + REG_VALUE(r));
 	g(imm);
 }
 
-/* copysign(x,y) = |x| with sign(y), no rodata. Build the sign mask in a scratch
- * xmm (pcmpeqd all-ones then psllq/pslld the sign bit), then
- * m=|x| via andnpd(~mask & x), y=sign(y) via andpd, m|=y. MCC_RC_FLOAT is
- * xmm0-7 so no REX. vtop[-1]=x, vtop=y; result left in the scratch, y popped. */
 void gen_copysign(void) { MCC_TRACE("enter\n");
 	int dbl = (vtop[-1].type.t & VT_BTYPE) == VT_DOUBLE;
 	int x, y, mreg, m;
@@ -3171,11 +3065,6 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 #endif
 	if (use_call) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
-		/* Over-aligned (_Alignas > 16): win64 alloca only 16-aligns and returns
-		   the block in rax ABOVE its 32-byte shadow (rsp = block - 32). Ask for
-		   `align` extra bytes so the returned block can be rounded UP to `align`
-		   without overrunning; rsp/shadow are left intact (the caller saves the
-		   rounded rax via gen_vla_result, and rsp separately for the vla chain). */
 		if (align > 16) { MCC_TRACE("br\n");
 			vpushi(align);
 			gen_op('+');
@@ -3186,9 +3075,9 @@ ST_FUNC void gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
 		gfunc_call(1);
 #ifdef MCC_TARGET_PE
 		if (align > 16) { MCC_TRACE("br\n");
-			o(0x0548); /* add rax, imm32 */
+			o(0x0548);
 			gen_le32(align - 1);
-			o(0x2548); /* and rax, imm32 */
+			o(0x2548);
 			gen_le32(-align);
 		}
 #endif
@@ -3235,4 +3124,3 @@ ST_FUNC void gen_struct_copy(int size) { MCC_TRACE("enter\n");
 	vpop();
 	vpop();
 }
-

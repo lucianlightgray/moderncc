@@ -47,7 +47,6 @@ diff "$T/o0" "$T/o1" | grep '^<' | awk '{print $2}' | sort -u > "$T/do"
 CELL
 chmod +x "$WORK/cell.sh"
 
-# shellcheck disable=SC2086
 "$WORK/cell.sh" "$REPO" "$MCC" "$OPT" "$WORK" MCC_AST_GATELEDGER_CONTROL $MCCFLAGS
 awk '{print $1" "$2}' "$WORK/cells/MCC_AST_GATELEDGER_CONTROL/dh" | sort -u > "$WORK/noise.fn"
 sort -u "$WORK/cells/MCC_AST_GATELEDGER_CONTROL/do" > "$WORK/noise.tu"
@@ -57,7 +56,6 @@ echo "gate-ledger: $NG gate(s), corpus $(wc -l < "$WORK/corpus.txt" | tr -d ' ')
 echo "gate-ledger: control cell (a name the compiler never reads) is not silent:"
 echo "             $NF function(s) and $NT object(s) differ run-to-run; both are subtracted"
 
-# shellcheck disable=SC2086
 xargs -P "$JOBS" -I@ "$WORK/cell.sh" "$REPO" "$MCC" "$OPT" "$WORK" @ $MCCFLAGS < "$WORK/gates.txt"
 
 : > "$WORK/ledger.txt"

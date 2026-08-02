@@ -1361,12 +1361,6 @@ static int pe_check_symbols(struct pe_info *pe) { MCC_TRACE("enter\n");
 			const char *name = (char *)symtab_section->link->data + sym->st_name;
 			unsigned type = ELFW(ST_TYPE)(sym->st_info);
 			int imp_sym = 0;
-			/* Image-base marker symbol. MSVC/lld objects reference __ImageBase
-			   (mingw: __image_base__/_image_base__) for RVA arithmetic, SEH and
-			   /GS; it resolves to the PE load base. Define it as an absolute
-			   symbol at pe->imagebase (finalized by pe_set_options, which runs
-			   before this) so image-relative (ADDR32NB→R_X86_64_RELATIVE) relocs
-			   against it are 0 and absolute relocs yield the base. */
 			if (!strcmp(name, "__ImageBase") || !strcmp(name, "__image_base__") ||
 					!strcmp(name, "_image_base__")) { MCC_TRACE("br\n");
 				sym->st_shndx = SHN_ABS;
@@ -1864,15 +1858,6 @@ static int pe_load_dll(MCCState *s1, int fd, const char *filename) { MCC_TRACE("
 	return 0;
 }
 
-/* ---- COFF/PE object + archive-member reader ------------------------------
-   Lets mcc's own linker consume native COFF objects (host-CC output on
-   Windows), so `--embed-jit` can whole-archive-link the JIT engine archive.
-   Maps COFF sections/symbols/relocs onto mcc's internal ELF structures. */
-
-/* Uniquely-tagged records so they never collide with winnt.h's IMAGE_SYMBOL /
-   IMAGE_RELOCATION (present when the host is mingw). The constants below are
-   #ifndef-guarded for the same reason: winnt.h supplies them on a Windows host,
-   and mcc supplies them when cross-building to PE from a non-Windows host. */
 #pragma pack(push, 1)
 typedef struct _mcc_coff_sym {
 	union {
@@ -1987,11 +1972,6 @@ static long long coff_rd64(const unsigned char *p) { MCC_TRACE("enter\n");
 	return v;
 }
 
-/* Translate a COFF object reloc into an mcc internal reloc type + RELA addend.
-   For RELA targets (x86_64/arm64) the in-field value becomes the addend (the
-   final value is written over the field); for REL targets (i386) the addend
-   stays in the field and 0 is passed. Returns 0 on an unsupported type, and a
-   negative sentinel (-1 mapped to *skip=1) for a no-op ABSOLUTE reloc. */
 static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend, int *skip) { MCC_TRACE("enter\n");
 	*addend = 0;
 	*skip = 0;
@@ -2001,11 +1981,6 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_AMD64_ADDR64: *etype = R_X86_64_64; *addend = coff_rd64(fld); memset(fld, 0, 8); return 1;
 	case IMAGE_REL_AMD64_ADDR32: *etype = R_X86_64_32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_AMD64_ADDR32NB: *etype = R_X86_64_RELATIVE; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
-	/* Section-relative 32 (native Windows TLS access in .text: the offset of a
-	   _Thread_local target within its .tls section). mcc's own PE codegen emits
-	   R_X86_64_TPOFF32 for the same construct and resolves it against the SHF_TLS
-	   section base at link time, so map SECREL onto it — the target symbols are
-	   marked SHT_TLS in pass 2 and their .tls section SHF_TLS in pass 1. */
 	case IMAGE_REL_AMD64_SECREL: *etype = R_X86_64_TPOFF32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	default:
 		if (t >= IMAGE_REL_AMD64_REL32 && t <= IMAGE_REL_AMD64_REL32_5) { MCC_TRACE("br\n");
@@ -2022,18 +1997,9 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_I386_DIR32: *etype = R_386_32; return 1;
 	case IMAGE_REL_I386_DIR32NB: *etype = R_386_32; return 1;
 	case IMAGE_REL_I386_REL32:
-		/* COFF REL32 is relative to the field end (P+4); R_386_PC32 is relative
-		   to P. On a REL target the addend lives in the field, so pre-bias it. */
 		{ int v = coff_rd32(fld) - 4; memcpy(fld, &v, 4); }
 		*etype = R_386_PC32;
 		return 1;
-	/* Section-relative 32 (native Windows TLS access in .text: the offset of a
-	   _Thread_local target within its .tls section). The i386 peer of the
-	   AMD64_SECREL case above -- gcc/mingw's engine reaches TLS this way, and
-	   mcc's own i386 PE codegen emits R_386_TLS_LE for the same construct, whose
-	   PE resolution (i386-link.c) computes val - tls_start, the symbol's offset
-	   within the TLS block, and adds it to the field. On a REL target the addend
-	   stays in the field, so keep the in-field value and do not zero it. */
 	case IMAGE_REL_I386_SECREL: *etype = R_386_TLS_LE; return 1;
 	default:
 		return 0;
@@ -2045,16 +2011,6 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 	case IMAGE_REL_ARM64_ADDR32: *etype = R_AARCH64_ABS32; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_ARM64_ADDR32NB: *etype = R_AARCH64_RELATIVE; *addend = coff_rd32(fld); memset(fld, 0, 4); return 1;
 	case IMAGE_REL_ARM64_BRANCH26:
-		/* COFF has ONE BRANCH26 for both `bl` and the tail-call `b`, where ELF
-		   has two relocations -- and the arm64 resolver SYNTHESIZES the
-		   instruction word from the type (0x14000000 | (CALL26 << 31), see
-		   arm64-link.c relocate) rather than patching the immediate, so calling
-		   every branch a CALL26 rewrites every sibling call in a foreign COFF
-		   object into `bl`; clang emits sibling calls from -O1 up, so this
-		   corrupts the vendored mingw CRT and the self-hosted binary crashes at
-		   startup. The Mach-O reader had the identical defect (macho_load_relocs).
-		   Decode bit 31: set is `bl`, clear is `b`. Windows-host only, so POSIX
-		   cross output stays byte-identical to the recorded baselines. */
 #if MCC_HOST_WIN32
 		*etype = (coff_rd32(fld) & 0x80000000u) ? R_AARCH64_CALL26 : R_AARCH64_JUMP26;
 #else
@@ -2091,8 +2047,6 @@ static int coff_map_reloc(WORD t, unsigned char *fld, int *etype, addr_t *addend
 #endif
 }
 
-/* True iff the file at file_offset begins with a native COFF object header for
-   this target (a regular object; import/anon objects report machine 0). */
 ST_FUNC int coff_object_type(int fd, unsigned long file_offset) { MCC_TRACE("enter\n");
 	WORD machine = 0;
 	lseek(fd, file_offset, SEEK_SET);
@@ -2101,8 +2055,6 @@ ST_FUNC int coff_object_type(int fd, unsigned long file_offset) { MCC_TRACE("ent
 	return machine == (WORD)IMAGE_FILE_MACHINE;
 }
 
-/* The external symbol that identifies a COMDAT (link-once) section, so
-   duplicate copies across archive members can be deduplicated (SELECT_ANY). */
 static const char *coff_comdat_extsym(const unsigned char *symtab, int nsym,
 																			const char *strtab, unsigned long strtab_size,
 																			int secidx, char *nb) { MCC_TRACE("enter\n");
@@ -2154,7 +2106,6 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		strtab = load_data(fd, strtab_off, strtab_size);
 	}
 
-	/* pass 1: sections -> internal Sections (merge by name, like the ELF path) */
 	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
 		IMAGE_SECTION_HEADER *sh = &shdr[i];
 		DWORD ch = sh->Characteristics;
@@ -2175,7 +2126,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			nbuf[k] = 0;
 			name = nbuf;
 		}
-		dollar = strchr(name, '$');		/* merge grouped ".text$mn" -> ".text" */
+		dollar = strchr(name, '$');
 		if (dollar) { MCC_TRACE("br\n");
 			int k = (int)(dollar - name);
 			if (k > 31) { MCC_TRACE("br\n"); k = 31; }
@@ -2188,9 +2139,6 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 				0 == strncmp(name, ".debug", 6))
 			{ MCC_TRACE("br\n"); continue; }
 
-		/* COMDAT (link-once): if a prior member already defined this section's
-		   external symbol, this copy is a duplicate — drop it and remap its
-		   symbols to the kept copy (mirrors the ELF .gnu.linkonce path). */
 		if (ch & IMAGE_SCN_LNK_COMDAT) { MCC_TRACE("br\n");
 			char kb[9];
 			const char *key = coff_comdat_extsym(symtab, nsym, strtab, strtab_size, i + 1, kb);
@@ -2209,10 +2157,6 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_EXECINSTR; }
 		if (ch & IMAGE_SCN_MEM_WRITE)
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_WRITE; }
-		/* Native Windows TLS: the COFF `.tls`/`.tls$*` section (grouped name already
-		   collapsed to `.tls` above) is the thread-local template. Flag it SHF_TLS so
-		   the PE writer lays it out as the TLS block and the SECREL→TPOFF32 relocs above
-		   resolve against its base (pe->has_tls auto-arms off any SHF_TLS section). */
 		if (0 == strcmp(name, ".tls"))
 			{ MCC_TRACE("br\n"); sh_flags |= SHF_TLS | SHF_WRITE; }
 		align = (ch & COFF_SCN_ALIGN_MASK) ? (1 << (((ch >> 20) & 0xf) - 1)) : 1;
@@ -2235,7 +2179,6 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		}
 	}
 
-	/* pass 2: symbols -> internal symtab (aux records consume indices) */
 	if (nsym) { MCC_TRACE("br\n");
 		old_to_new = mcc_mallocz(nsym * sizeof(int));
 		for (i = 0; i < nsym;) { MCC_TRACE("br\n");
@@ -2294,9 +2237,6 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 				bind = (scls == IMAGE_SYM_CLASS_EXTERNAL) ? STB_GLOBAL : STB_LOCAL;
 				if (scls == IMAGE_SYM_CLASS_SECTION || scls == IMAGE_SYM_CLASS_LABEL)
 					{ MCC_TRACE("br\n"); bind = STB_LOCAL; type = STT_NOTYPE; }
-				/* A symbol defined in the SHF_TLS section is thread-local; type it
-				   STT_TLS so its value is treated as a TLS-block offset (matches the
-				   SECREL→TPOFF32 reloc mapping). */
 				if (smap[secnum].s->sh_flags & SHF_TLS)
 					{ MCC_TRACE("br\n"); type = STT_TLS; }
 			}
@@ -2310,7 +2250,6 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		}
 	}
 
-	/* pass 3: relocations */
 	for (i = 0; i < nsec; i++) { MCC_TRACE("br\n");
 		IMAGE_SECTION_HEADER *sh = &shdr[i];
 		Section *s = smap[i + 1].s;
@@ -2329,7 +2268,7 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 			addr_t addend = 0;
 
 			if (!coff_map_reloc(rl->Type, s->data + roff, &etype, &addend, &skip)) { MCC_TRACE("br\n");
-				WORD bad = rl->Type;		/* capture before freeing (rl aliases rels) */
+				WORD bad = rl->Type;
 				mcc_free(rels);
 				mcc_error_noabort("COFF: unsupported reloc type 0x%x in %s", bad, s->name);
 				goto the_end;
@@ -2740,10 +2679,6 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 	int pe_type;
 
 #ifdef MCC_EMBED_JIT
-	/* Emit the runtime-JIT registry + `.init_array` boot ctor. The ELF/Mach-O
-	   mcc_add_runtime does this; PE has its own runtime path, so mirror it here
-	   (before the .init_array bounds are taken) or -run/--embed-jit programs get
-	   no JIT machinery on Windows. */
 	{
 		extern void mccjit_embed_finalize(MCCState * s);
 		if (s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY)

@@ -22,25 +22,12 @@ import os, subprocess, sys, tempfile
 
 SKIP = 77
 
-# stderr fragments that mean "this toolchain has no compiler-support runtime for
-# the baked engine" — a host limitation, not a mcc regression => SKIP not FAIL.
-# __emutls_get_address is libgcc's emulated-TLS entry point: winlibs GCC lowers
-# the engine's thread-locals to emulated TLS (llvm-mingw uses native SECREL TLS,
-# which the a-la-carte loader handles). mcc's --embed-jit now resolves that whole
-# winlibs chain from the baked mingw lib dirs — __emutls_get_address from
-# libgcc_eh.a, its pthread-keyed state from libwinpthread.a, and _tls_used from
-# libmingw32's tlssup.o — so a toolchain that ships those links and PASSES; the
-# marker stays as the SKIP path for a toolchain that genuinely lacks them (e.g.
-# a compiler-rt-only i686 mingw). The i686 engine's SRW-lock kernel32 imports are
-# deliberately NOT markers (OS imports, not compiler runtime — listing them could
-# mask a genuine import-emission linker regression).
 TOOLCHAIN_LIB_MARKERS = (
     "___chkstk_ms", "__chkstk_ms", "__emutls_get_address", "libgcc",
     "clang_rt", "mingwex", "mingw32",
     "library 'gcc' not found", "library 'mingwex' not found",
 )
 
-# A self-contained workload: sum fib(i%15) for i in 0..29 == 1972; return low byte.
 PROG = r"""
 extern int printf(const char *, ...);
 static int fib(int n){ return n < 2 ? n : fib(n-1) + fib(n-2); }
@@ -52,7 +39,7 @@ int main(void){
 }
 """
 EXPECT_STDOUT = "emb 1972"
-EXPECT_RC = 1972 & 0xff  # 180
+EXPECT_RC = 1972 & 0xff
 
 def find_mcc(bdir):
     for name in ("mcc", "mcc.exe"):
@@ -98,8 +85,6 @@ def main():
         if not os.path.exists(exe):
             sys.exit("FAIL: --embed-jit produced no output exe")
 
-        # Run the engine-embedded exe with the JIT OFF (the LINK path is what this
-        # gate covers; the runtime JIT is P0 step 5 and stays out of CI on winlibs).
         env = dict(os.environ)
         env["MCC_JIT"] = "0"
         if os.name == "nt":
@@ -110,12 +95,6 @@ def main():
                 pass
         r = subprocess.run([exe], capture_output=True, text=True, env=env, timeout=60)
         out = (r.stdout or "").strip()
-        # A gcc-built i386-PE engine 0xC0000005s at startup even with the JIT
-        # off (unbound gcc import-library idata) -- a host-toolchain limitation,
-        # not a mcc link regression, so it skip-marks honestly. But when the
-        # build self-baked the engine WITH mcc (the libmccjitengine-mcc.a
-        # artifact), that crash class is FIXED and a recurrence is a real
-        # regression: FAIL it so the promoted i686 cell cannot false-green.
         if r.returncode in (-1073741819, 3221225477):
             if os.path.exists(os.path.join(bdir, "libmccjitengine-mcc.a")):
                 sys.exit("FAIL: embedded exe 0xC0000005 at startup with the "
@@ -129,12 +108,6 @@ def main():
 
         jit_on = None
         if os.name != "nt":
-            # And again with the JIT ON. Without this leg the gate proves only that
-            # the engine LINKS: the arm64 Mach-O BRANCH26 defect that rewrote every
-            # clang sibling call into `bl` produced an engine that ran correct at
-            # MCC_JIT=0 and SIGSEGV'd at MCC_JIT=1, in every optimized build, and
-            # nothing in ctest saw it. Stays off Windows, where the runtime JIT has
-            # its own open blockers (see docs/TODO).
             env_on = dict(os.environ)
             env_on["MCC_JIT"] = "1"
             jit_on = subprocess.run([exe], capture_output=True, text=True,

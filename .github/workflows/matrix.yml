@@ -1,24 +1,5 @@
 name: Matrix
 
-# Nightly full fan-out of the 3-stage hierarchy, plus the emulation matrix.
-# Never gates a PR; also runnable on demand.
-#
-#   stage1  - every host in the ledger (all arches, gcc/clang/musl/mingw, macOS
-#             under Rosetta), each built WITH cross compilers (--cross) so the
-#             emulate consumer can exercise the foreign-arch output.
-#   stage2  - every host x feature cell, self-hosted (mcc builds mcc) + ctest.
-#   emulate - absorbs the qemu-user / docker cross-arch validators, wine (PE,
-#             incl. Windows-via-wine), Rosetta and the *-docker.sh differential
-#             validators. It builds a cross-enabled stage2 mcc and runs the
-#             non-`native` ctests (`ci stage3 --consume emulate`), which
-#             self-skip 77 where a foreign platform is unavailable.
-#   mingw   - the winlibs/llvm-mingw superbuild cells (x86_64, i686, arm64-PE)
-#             with the superbuild's own full native ctest; no hierarchy
-#             counterpart exists for i686/arm64-PE.
-#
-# Matrices come from the same ledger as ci.yml (`ci plan --job stage1-nightly /
-# stage2-nightly / stage3-emulate`), so `ci parity` covers them too.
-
 on:
   schedule:
     - cron: '47 4 * * *'
@@ -198,11 +179,6 @@ jobs:
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
           HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable || true
-      # `stage3-emulate` plans one cell per gate-host OS, Windows included, and
-      # the ci composite action bootstraps mcc-ci with `cl` -- so this job needs
-      # the dev shell exactly like stage1/stage2/mingw do. Without it the job
-      # died at "The term 'cl' is not recognized" before running a single
-      # validator.
       - name: set up MSVC dev shell (windows)
         if: startsWith(matrix.runner, 'windows')
         uses: TheMrMilchmann/setup-msvc-dev@v4
@@ -227,15 +203,6 @@ jobs:
           mcc-ci junit-summary "cmake-stage2-dynamic/ctest-junit.xml" \
             "emulate / ${{ matrix.host }}" >> "$GITHUB_STEP_SUMMARY" || true
 
-  # The winlibs/llvm-mingw superbuild cells. The staged hierarchy carries mingw
-  # only as the build-only windows-x86_64-mingw stage1 host (+ its nightly
-  # self-host); the i686 and arm64-PE superbuild cells -- and the superbuild's
-  # own full native ctest suite (embed-jit-smoke on the gcc-built mcc, the
-  # i386win32 soak, mcctest vs the winlibs reference) -- have no hierarchy
-  # counterpart, so they run here from the PLAN_MINGW ledger rows (`ci plan
-  # --job windows`, mingw cells only). i686 and arm64 stay experimental /
-  # continue-on-error: their job is discovering defects on real silicon
-  # (the arm64-PE selfhost hang, the embed-jit-smoke skips).
   mingw:
     needs: plan
     name: mingw / ${{ matrix.arch }}
@@ -257,15 +224,12 @@ jobs:
       - name: cache the mingw toolchain (superbuild download target)
         uses: actions/cache@v5
         with:
-          # arm64 pulls llvm-mingw (aarch64), not winlibs, into vendor/llvm-mingw-*
           path: |
             vendor/winlibs-mingw-w64-*
             vendor/llvm-mingw-*
           key: winlibs-${{ matrix.arch }}-${{ hashFiles('cmake/winlibs.cmake') }}
       - uses: ./.github/actions/ci
       - name: run the mingw superbuild (fetches the toolchain; builds + full native ctest)
-        # --no-test suppresses only the empty top-level ctest; the winlibs cell
-        # runs the full suite (and emits ctest-junit.xml) inside the superbuild.
         run: |
           mcc-ci run-preset mingw --no-test "-DMCC_MINGW_ARCH=${{ matrix.arch }}"
       - name: test summary

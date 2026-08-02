@@ -1,34 +1,4 @@
 #!/bin/sh
-# 3-stage CROSS self-host fixpoint WITHOUT docker or a cross toolchain.
-#
-#   tools/selfhost-cross-native.sh <arch> [KNOB=VAL ...]      arch: riscv64|arm64
-#
-# Same gate as tools/selfhost-riscv64-docker.sh -- o1 == o2 == o3 with stages 2
-# and 3 executed by actual riscv64 code -- but it links with mcc's OWN linker
-# against the in-tree gentoo stage3 sysroot and runs under the host qemu, so it
-# needs only: a host cc, qemu-riscv64, vendor/gentoo-stage3-riscv64-glibc, and
-# cmake-cross/riscv64-libmccrt.a. The docker script delegates here when those
-# are present, because the only cross-arch self-host gate in the tree was
-# skipping (77) on any box without a running docker daemon.
-#
-# Three things must line up, and each fails loudly rather than subtly:
-#   - -B points straight at cmake-cross. mcc_add_support keeps the plain name
-#     only when it is arch-correct; the plain `libmccrt.a` here is the host
-#     x86_64 one (wrong arch for this cross target), so it falls back to
-#     `<arch>[-<os>]-libmccrt.a` and picks the right archive with the host one
-#     sitting beside it (it used to fail with "invalid object file" plus
-#     unresolved __clear_cache/__floatunsitf, which is why this staged a scratch
-#     copy before 2026-07-27).
-#   - --sysroot is required, or mcc picks up the host /usr/lib/crt1.o and again
-#     reports "invalid object file".
-#   - project includes must precede the sysroot includes, or the system elf.h
-#     shadows src/formats/elf.h and the build dies on R_RISCV_SET_ULEB128.
-#
-# Usage: tools/selfhost-cross-native.sh <arch> [KNOB=VAL ...]
-#   Extra args are passed as environment to every stage, so gate sets can be
-#   soaked: tools/selfhost-cross-native.sh arm64 MCC_AST_IVSR_PTR=1
-#
-# Exit 77 (ctest SKIP) when the prerequisites are missing.
 set -e
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -54,7 +24,6 @@ trap 'rm -rf "$work"' EXIT
 KNOBS="$*"
 Q="$QEMU -L $SR"
 DEF="-DMCC_CONFIG_OPTIMIZER=1 -D$TDEF"
-# project includes FIRST (see header)
 INC="-I$root/src -I$root/src/formats -I$root/src/objfmt -I$root/src/arch/$ADIR -I$root/include"
 ARGS="-B$root/cmake-cross --sysroot=$SR -I$root/runtime/include $INC -I$SR/usr/include $DEF"
 
@@ -85,8 +54,6 @@ cmp "$work/o1.o" "$work/o2.o" || { echo "FAIL: o1 != o2"; exit 1; }
 cmp "$work/o2.o" "$work/o3.o" || { echo "FAIL: o2 != o3"; exit 1; }
 echo "$arch selfhost: OK (o1 == o2 == o3, byte-identical, no docker)"
 
-# a fixpoint proves stability, not correctness, so also require the
-# mcc-built $arch mcc to compile a running program matching the host cc
 cat > "$work/sanity.c" <<'EOF'
 #include <stdio.h>
 #include <string.h>

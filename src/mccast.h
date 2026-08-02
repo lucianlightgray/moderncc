@@ -7,11 +7,6 @@
 #include "mccname.h"
 
 typedef enum AstKind {
-	/* Whole-unit vs sub-slice is NOT an AST kind — it is metadata on the
-	   serialized intent header (MccjitIntent.unit_kind), so the slice-identity
-	   hash stays context-free: an inline slice identical to a whole function
-	   body hashes equal regardless of which it is. The root of every real arena
-	   is AST_BasicBlock (kind 0); ast_root() is positional (index 0). */
 	AST_BasicBlock = 0,
 	AST_If,
 	AST_Jump,
@@ -25,9 +20,6 @@ typedef enum AstKind {
 	AST_Convert,
 	AST_Invoke,
 	AST_Poison,
-	/* Marker standing for "the value the referenced Store already produced".
-	   Carries the Store's index in ival; it is NOT a parent link, so the model
-	   stays a tree. See TODO F3a. */
 	AST_StoreVal,
 
 	AST_KIND_COUNT
@@ -88,30 +80,8 @@ size_t ast_dump(const AstArena *a, AstLocal root, char *out, size_t cap);
 int ast_validate(const AstArena *a, char *msg, size_t msgcap);
 uint64_t ast_intention_hash(const AstArena *a, AstLocal root);
 void ast_hash_out_emit(const char *tag, const char *fn, uint64_t h);
-/* Context-free normalized identity of the slice rooted at `root` (the rolling-
-   window slice cache key). Refines ast_intention_hash: it stays invariant to the
-   surrounding frame layout, inlining, and prior passes (like the intention hash,
-   Ref frame offsets are excluded) but ADDS live-in sharing-pattern sensitivity --
-   each distinct local-Ref offset is positionally interned, so `x+x` and `x+y`
-   differ while the actual slot offsets do not. This is the "purest input/output
-   form" identity a slice keeps wherever it appears, so a variant a JIT run proved
-   good can be found and reused by a later AOT compile. Declared outside the
-   MCC_EMBED_JIT guard so AOT (-O4+) can key the cache with the JIT off. */
 uint64_t ast_slice_ident_hash(const AstArena *a, AstLocal root);
 
-/* Phase 5 per-slice hot-patch primitives (roadmap 14/15). Declared outside the
-   MCC_EMBED_JIT guard so tools/asttool (no MCC_EMBED_JIT) can unit-test them and
-   AOT can use them with the JIT off.
-   - ast_slice_splice: node-stable in-arena replacement of the subtree at
-     `site_root` in `a` with a copy of `kernel_src`@`kernel_root` (inverse of
-     ast_slice_extract). Every live index outside the replaced subtree keeps its
-     index and fields; the site_root slot is re-used as the new root. Returns the
-     spliced node count (>=1), 0 on error. `kernel_src` must be a distinct arena.
-   - ast_slice_locate: every node index in `a` whose slice identity == `ident`
-     (so one optimized kernel can be spliced at all occurrences). Returns the
-     total match count; writes up to `max`.
-   - ast_slice_promote_static: static-cost keep/reject gate (lower cost wins,
-     ties reject) -- the AOT / no-runtime arm of the benchmark-gated promotion. */
 int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src,
 										 AstLocal kernel_root);
 int ast_slice_locate(const AstArena *a, uint64_t ident, AstLocal *sites, int max);
@@ -130,16 +100,11 @@ typedef enum AstPurity {
 int ast_fn_purity(const AstArena *a);
 int ast_fn_purity_noescape(const AstArena *a);
 
-/* M5c slicing foundation: partition a function into a pure register/value
-   computation kernel + the impure "bound" ops (Store / Invoke / volatile)
-   that must stay on the C ABI. This is the analysis the non-ABI kernel
-   codegen (K7) and inline-vs-shim (K8) will consume — a function with many
-   pure_compute nodes and few impure_ops is the strong slicing candidate. */
 typedef struct AstSliceProfile {
-	int impure_ops;	 /* C-ABI boundary ops: Store, Invoke, volatile access */
-	int loads;			 /* memory-value reads (TIER1) */
-	int pure_compute; /* register-value-only compute nodes (the kernel body) */
-	int nodes;			 /* total nodes */
+	int impure_ops;
+	int loads;
+	int pure_compute;
+	int nodes;
 } AstSliceProfile;
 
 void ast_fn_slice_profile(const AstArena *a, AstSliceProfile *out);
@@ -150,8 +115,6 @@ int ast_slice_live_ins(AstArena *a, AstLocal root, int32_t *offs, int max);
 AstArena *ast_slice_wrap_kernel(const AstArena *a, AstLocal root);
 int ast_slice_search(AstArena *a, AstLocal root, int budget, AstLocal *out, int max);
 
-/* 7A eval-slice hard gate: cumulative count of speculative spec-slices refused
-   because the UB-soundness oracle flagged them (opt-in `MCC_AST_JIT_EVAL_GATE`). */
 int ast_jit_eval_refused_count(void);
 int ast_jit_const_fn(AstArena *a, int64_t *out);
 int ast_jit_fold_consts(AstArena *a);
@@ -188,11 +151,7 @@ void ast_func_epilog(void);
 void ast_reemit_forward_inlines(void);
 void ast_reemit_with_gates(struct Sym *sym, AstArena *ast, uint64_t gate_mask);
 
-/* Read an integer from an environment variable, falling back to dflt when unset
-   or empty. Shared with the JIT search/tuning code (mccjit_embed.c). */
 int ast_env_int(const char *name, int dflt);
-/* Static cost-model score of an AST arena; used by the JIT recompile/search
-   loop to detect plateaus without re-timing every candidate. */
 long ast_cost_score(AstArena *a);
 
 int ast_sym_defer(struct Sym *sym);
@@ -249,7 +208,7 @@ void ast_hook_for_no_incr(void);
 void ast_hook_for_body_begin(void);
 void ast_hook_for_end(void);
 void ast_hook_switch_begin(void);
-void ast_hook_bail(void); /* mark the current function un-replayable (skip AST opt) — used when the baseline codegen emits a form the AST replay wouldn't reproduce (e.g. a switch jump table) */
+void ast_hook_bail(void);
 void ast_hook_case(int64_t v1, int64_t v2, int type);
 void ast_hook_default(void);
 void ast_hook_switch_body_end(void);
@@ -285,25 +244,11 @@ void ast_hook_landor_operand(int op, int c, int first);
 void ast_hook_landor_next(void);
 void ast_hook_landor_end(int materialized);
 
-/* M5 const-data visibility (roadmap step M5, first bounded/byte-neutral step). Records
- * one entry per initialized static/global object emitted at parse time — the const data
- * that lives OUTSIDE the per-function AST capture window. Read-only: it observes
- * (section, offset, size) and never changes emitted bytes. The later, non-neutral step
- * (an AstKind for data + a pass that re-emits, enabling M6 datacomp) builds on this
- * visibility. `is_ro` = the object went to .rodata (const). */
 void ast_hook_data(void *sec, long off, long size, int is_ro);
 
-/* M6z zero-init .bss placement. `ast_zero_bss_env` (MCC_ZERO_BSS, default on at -O2+) enables
- * moving an all-zero writable static from .data to .bss (NOBITS) — see decl_initializer_alloc.
- * `ast_data_all_zero` is the byte-scan predicate shared by the mover and the analysis. */
 extern int ast_zero_bss_env;
 int ast_data_all_zero(void *sec, long off, long size);
 
-/* -fmerge-constants-style rodata string-literal pooling (roadmap M6-adjacent). C11 6.4.5p7
- * leaves identical string literals' distinctness unspecified, so sharing storage is sound.
- * `ast_merge_strings_env` (MCC_MERGE_STRINGS, default on at -O2+) enables it in decl_initializer_alloc.
- * `ast_strpool_find_or_add` returns the offset of a byte-identical prior rodata literal (same
- * size+align), or -1 after recording this one. Content-keyed; reset per translation unit. */
 extern int ast_merge_strings_env;
 long ast_strpool_find_or_add(void *sec, long addr, long size, int align);
 

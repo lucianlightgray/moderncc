@@ -24,12 +24,6 @@ def main():
     for kv in sys.argv[2:]:
         k, _, v = kv.partition("=")
         env[k] = v
-    # A self-hosted mcc that faults (0xC0000005) must FAIL FAST with its crash
-    # code, not hang the cell for the ctest timeout: without this, Windows Error
-    # Reporting intercepts the crash and the child never returns, so all 11
-    # selfhost-* cells time out at 300s instead of reporting the real defect
-    # (measured on the arm64-PE selfhost, run 30729371841). SEM_NOGPFAULTERRORBOX
-    # is inherited by children, mirroring the exec runner (instruction 32).
     if os.name == "nt":
         try:
             import ctypes
@@ -38,8 +32,6 @@ def main():
             pass
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     mcc = os.path.join(root, bdir, "mcc")
-    # On win32 the stage compiler is mcc.exe; PE-keyed behaviour follows from the
-    # suffix, leaving the POSIX path untouched.
     if not os.access(mcc, os.X_OK) and os.access(mcc + ".exe", os.X_OK):
         mcc += ".exe"
     pe = mcc.endswith(".exe")
@@ -53,19 +45,10 @@ def main():
     rec = [x for x in cc if x["file"].endswith("/mcc.c")][0]
     cmd = rec["command"]
     if os.name == "nt":
-        # A TinyCC-toolchain ninja build writes backslash -I paths into
-        # compile_commands.json while still POSIX-escaping quotes (\"), so a
-        # plain shlex.split eats the path backslashes (-IC:UsersX...) and the
-        # self-host compile then cannot find libmcc.h. Double every backslash
-        # NOT escaping a quote so the paths survive the POSIX split.
         cmd = re.sub(r'\\(?!")', r'\\\\', cmd)
     flags = [a for a in shlex.split(cmd)[1:]
              if (a.startswith("-D") or a.startswith("-I")) and not a.endswith(".c")]
 
-    # MCC_EMBED_MCCRT bakes the runtime into the compiler as mccrt_blob.c.o, and
-    # the self-hosted link consumes that object. Darwin and WIN32 force the
-    # option off and ship the sidecar libmccrt.a instead; the self-hosted binary
-    # lives in a temp dir so its auto-mccdir cannot see it, and -B points it back.
     link_objs = []
     link_flags = []
     if os.path.exists(blob):
@@ -76,7 +59,6 @@ def main():
         sys.exit(f"no runtime blob at {blob} and no sidecar libmccrt.a in "
                  f"{os.path.join(root, bdir)} (build the mcc target first)")
     if any(a.startswith("-DMCC_EMBED_JIT_BLOB") for a in flags):
-        # .o on POSIX, .obj under the win32 (clang-cl/ninja) toolchain.
         jbase = os.path.join(root, bdir, "CMakeFiles", "mcc.dir", "mccjit_blob.c")
         jitblob = next((jbase + ext for ext in (".o", ".obj")
                         if os.path.exists(jbase + ext)), None)
@@ -84,9 +66,6 @@ def main():
             sys.exit(f"no JIT blob at {jbase}.o[bj] (build the mcc target first)")
         link_objs.append(jitblob)
 
-    # win32 layers runtime/win32/include over runtime/include and supplies the
-    # PE CRT startup/import at link; POSIX resolves both from the sidecar -B.
-    # There is no -lm/-ldl on msvcrt, and mcc auto-links kernel32/msvcrt.
     win32_pre = ["-B", os.path.join(root, "runtime/win32")] if pe else []
     link_libs = [] if pe else ["-lm", "-ldl"]
     exe = ".exe" if pe else ""
@@ -112,18 +91,10 @@ def main():
         try:
             subprocess.run([shbin, *link_flags, *win32_pre, "-I" + inc, tc, "-o", te], check=True)
         except subprocess.CalledProcessError as e:
-            # Classify a self-hosted-mcc crash: does mcc-sh fault at its own
-            # startup (a stage1 miscompile of mcc's init, or the embedded-blob
-            # boot), or only while compiling? Probe --version, then a no-include
-            # translation unit, then report. shbin is still in the temp dir here.
             print(f"self-host: shbin compile FAILED (exit {e.returncode}); classifying", flush=True)
             ver = subprocess.run([shbin, "--version"], capture_output=True, text=True)
             print(f"self-host:   shbin --version -> exit {ver.returncode} "
                   f"out={(ver.stdout or ver.stderr).strip()[:120]!r}", flush=True)
-            # A crash at --version is at startup. Re-probe with MCC_JIT=0: if the
-            # embedded-JIT boot ctor is the miscompiled culprit and it honours the
-            # env gate, this stops crashing and pins the JIT boot; if it still
-            # crashes, the fault is in CRT/TLS/SEH init, not the JIT boot.
             nojit_env = dict(os.environ, MCC_JIT="0")
             vnj = subprocess.run([shbin, "--version"], capture_output=True, text=True, env=nojit_env)
             print(f"self-host:   shbin --version MCC_JIT=0 -> exit {vnj.returncode} "

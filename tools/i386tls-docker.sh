@@ -1,21 +1,4 @@
 #!/bin/sh
-# Validate an mcc i386 cross-compiler's thread-local (__thread) codegen using a
-# linux/386 Docker container for the parts that must run as i386 (the link
-# against 32-bit libc + TLS runtime, and execution).
-#
-# Two checks:
-#   1. non-PIC __thread: mcc emits R_386_TLS_LE; the linked exe must run and see
-#      correct per-thread values (exit 0).
-#   2. -fPIC __thread: mcc emits global-dynamic (GD) for globals and local-dynamic
-#      (LDM) for statics; the linked PIE must run and see correct per-thread
-#      values (exit 0). A compile-time error or a runtime mismatch is a regression.
-#
-# mcc runs on the host and emits i386 ELF; everything i386-native happens in the
-# container. Lets non-i386 hosts (arm64 macOS: no qemu-i386 user-mode, no viable
-# 32-bit wine) exercise i386 TLS codegen.
-#
-# Usage:  tools/i386tls-docker.sh <mcc-i386> [workdir]
-# Exit:   0 all checks pass · 1 a check failed · 77 skipped (no docker/mcc-i386)
 
 set -eu
 . "$(dirname "$0")/dockergate.sh"

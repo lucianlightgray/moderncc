@@ -1,6 +1,6 @@
-/* FILE-backed stdio and xlocale -- the half of Libc that tests/qemu/apple-libc
-   documents as out of reach off-Darwin: __sFILE internals, __current_locale,
-   the extensible-printf engine and gdtoa for the floating conversions. */
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,8 +29,8 @@ int main(void) {
 
 	CHECK(setlocale(LC_ALL, "C") != NULL);
 
-	/* gdtoa drives every one of these; a wrong path prints plausible garbage
-	   rather than failing, so the comparison is byte-for-byte. */
+
+
 	snprintf(b, sizeof b, "%f", 3.5);            CHECK_STR(b, "3.500000");
 	snprintf(b, sizeof b, "%.3f", 2.0 / 3.0);    CHECK_STR(b, "0.667");
 	snprintf(b, sizeof b, "%e", 1234.5);         CHECK_STR(b, "1.234500e+03");
@@ -45,8 +45,8 @@ int main(void) {
 			 255u, 8u, (void *)0);
 	CHECK_STR(b, "-1 18446744073709551615 ff 010 0x0");
 
-	/* snprintf must return the length it WOULD have written and still NUL-
-	   terminate within the buffer. */
+
+
 	char small[4];
 	int n = snprintf(small, sizeof small, "%d", 123456);
 	CHECK(n == 6);
@@ -91,8 +91,8 @@ int main(void) {
 		fclose(f);
 	}
 
-	/* setvbuf touches __sFILEX, which is exactly the private layout the
-	   portable sources cannot reach. */
+
+
 	FILE *g2 = tmpfile();
 	CHECK(g2 != NULL);
 	if (g2) {

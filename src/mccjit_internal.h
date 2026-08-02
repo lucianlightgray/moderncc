@@ -2,15 +2,6 @@
 #define MCC_JIT_INTERNAL_H
 #ifdef MCC_EMBED_JIT
 
-/*
- * Shared internal surface for the runtime-JIT engine, split across
- * mccjit_intent.c (serialize/deserialize) and mccjit_embed.c (recompile,
- * stubs, pool, boot, selftests). Types and helpers used across those TUs
- * live here so the concern files compile independently in the multisource
- * build (and via #include in the amalgamation). Requires mcc.h + mccast.h
- * (Sym, AstArena, VT_*) to be included first.
- */
-
 #if defined(__GNUC__) || defined(__clang__)
 #define MCCJIT_LOCAL __attribute__((visibility("hidden")))
 #else
@@ -21,24 +12,8 @@
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
-	11u /* 11: a sparse wide-value section follows the node table — one          \
-			 (node, CValue.q.hi, r2) triple per node whose value needs more than    \
-			 the 64-bit ival and a single register. Absent nodes keep hi=0 and      \
-			 r2=VT_CONST, so the section is a lone zero count for an intent with    \
-			 no 128-bit or long double leaf. 10: dropped the always-zero per-node   \
-			 cst word and removed the unused                                        \
-			 AST_InitList/AST_Data kinds, which renumbers AST_Poison and           \
-			 AST_StoreVal — old blobs must fail closed rather than misparse a      \
-			 kind ordinal or read at the wrong node stride. 9: header carries      \
-			 unit_kind (whole-function vs promoted sub-slice) — the marker that    \
-			 used to be implied by the now-removed AST_TranslationUnit kind.       \
-			 Header-only metadata: it is NEVER folded into the slice-identity      \
-			 hash, so a sub-slice identical to a whole function still hashes       \
-			 equal. 8: header carried the warm-start gate mask. */
+	11u
 
-/* Whole-unit vs sub-slice, carried in the intent header (not an AST kind, not
-   hashed). WHOLE = a complete function (has the fn_name/nparam signature
-   trailer); KERNEL = a promoted AST sub-slice with no owning function. */
 #define MCCJIT_UNIT_WHOLE 0u
 #define MCCJIT_UNIT_KERNEL 1u
 
@@ -94,8 +69,8 @@ typedef struct MccjitIntent {
 	uint32_t *param_type_t;
 	int64_t *param_off;
 	char **param_name;
-	uint64_t warm_gates; /* AOT-selected gate mask to warm-start the JIT search (0 = none) */
-	uint8_t unit_kind; /* MCCJIT_UNIT_WHOLE | MCCJIT_UNIT_KERNEL — header metadata only, never hashed */
+	uint64_t warm_gates;
+	uint8_t unit_kind;
 } MccjitIntent;
 
 MCCJIT_LOCAL unsigned mccjit_role_for_base(int t);
@@ -111,5 +86,5 @@ MCCJIT_LOCAL void mccjit_intent_release(MccjitIntent *it);
 MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it);
 MCCJIT_LOCAL void mccjit_note_export_name(const char *name);
 
-#endif /* MCC_EMBED_JIT */
-#endif /* MCC_JIT_INTERNAL_H */
+#endif
+#endif

@@ -9,11 +9,6 @@
 #endif
 
 #ifdef MCC_CONFIG_BACKTRACE_ONLY
-/* The backtrace-only runtime objects (bt-exe/bt-log/bt-dll) #include this file
- * and are linked BOTH into standalone bounds-checked programs (which need this
- * global) AND into mcc itself when it builds mcc_s / the diag-rt targets (which
- * already define it strongly). Emit a weak definition here so the two coalesce
- * instead of colliding as a duplicate strong symbol under mcc's own linker. */
 __attribute__((weak)) unsigned char mcc_log_verbose = 0;
 #else
 unsigned char mcc_log_verbose = 0;
@@ -171,8 +166,6 @@ ST_FUNC int host_temp_file(char *path, int size) { MCC_TRACE("enter\n");
 }
 
 #ifdef MCC_HOST_AUTO_MCCDIR_W32
-/* True when <base>/include/mccdefs.h exists -- the marker that <base> holds the
- * freestanding compiler headers, the same probe POSIX auto-mccdir uses. */
 static int w32_mccdir_has_include(const char *base) { MCC_TRACE("enter\n");
 	char probe[MAX_PATH];
 	struct stat st;
@@ -181,13 +174,6 @@ static int w32_mccdir_has_include(const char *base) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC char *host_w32_mccdir(char *path) { MCC_TRACE("enter\n");
-	/* Probe the same candidates POSIX auto-mccdir does, relative to the exe
-	 * dir: the dir itself, its parent, and .../lib/mcc. The parent matters
-	 * because the Visual Studio (multi-config) generator puts mcc.exe in
-	 * <build>/<Config>/ while the bundled headers land in <build>/include, so
-	 * the bare exe dir has no include/ and the win32 stdio.h is invisible
-	 * unless -B is passed by hand. Falls back to the bare exe dir (the prior
-	 * behaviour) when no candidate carries the marker. */
 	static const char *const rel[] = {"", "/..", "/../lib/mcc", NULL};
 	char exedir[MAX_PATH], cand[MAX_PATH];
 	char *p;
@@ -351,8 +337,6 @@ static BOOL WINAPI host_console_ctrl(DWORD type) { MCC_TRACE("enter\n");
 }
 #endif
 
-/* Install a handler for interactive interruption (Ctrl-C / terminate). Used by
-   the superopt search to checkpoint-and-exit on cancellation. */
 ST_FUNC MAYBE_UNUSED void host_install_interrupt(void (*fn)(int)) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	host_interrupt_fn = fn;
@@ -379,8 +363,6 @@ ST_FUNC MAYBE_UNUSED int host_unsetenv(const char *name) { MCC_TRACE("enter\n");
 #endif
 }
 
-/* Exclusive advisory lock on a lock file (created if absent). Returns an opaque
-   non-NULL handle on success, NULL on failure. */
 ST_FUNC MAYBE_UNUSED void *host_file_lock(const char *path) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	HANDLE h = CreateFileA(path, GENERIC_READ | GENERIC_WRITE,
@@ -443,7 +425,6 @@ ST_FUNC MAYBE_UNUSED void host_fsync(FILE *f) { MCC_TRACE("enter\n");
 #endif
 }
 
-/* Atomic replace-existing rename. Returns 0 on success. */
 ST_FUNC MAYBE_UNUSED int host_rename(const char *src, const char *dst) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) ? 0 : -1;
@@ -769,8 +750,6 @@ ST_FUNC MAYBE_UNUSED int host_spawn_ex(const char *const *argv, const HostSpawnO
 }
 
 #ifdef _WIN32
-/* Build a CreateProcess command-line from an argv, using the same
-   backslash/quote rules as host_spawn_ex. Caller mcc_free()s the result. */
 static char *host_w32_cmdline(const char *const *argv) { MCC_TRACE("enter\n");
 	char *cmd, *p;
 	int i, len = 1;
@@ -789,8 +768,6 @@ static char *host_w32_cmdline(const char *const *argv) { MCC_TRACE("enter\n");
 	return cmd;
 }
 
-/* K32GetProcessMemoryInfo is exported from kernel32 (unlike GetProcessMemoryInfo
-   which needs psapi). Declare it here so no extra header/link is required. */
 typedef struct host_w32_pmc {
 	DWORD cb;
 	DWORD PageFaultCount;
@@ -806,8 +783,6 @@ typedef struct host_w32_pmc {
 __declspec(dllimport) BOOL WINAPI K32GetProcessMemoryInfo(HANDLE, host_w32_pmc *, DWORD);
 #endif
 
-/* Spawn cv, poll to the deadline honoring *stop, kill on timeout/abort.
-   Returns the child's exit code (>=0) or -1. */
 ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned timeout_ms,
 																						const volatile int *stop) { MCC_TRACE("enter\n");
 #ifdef _WIN32
@@ -872,8 +847,6 @@ ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned time
 #endif
 }
 
-/* Retry host_spawn_timeout up to `tries` times with a small linear backoff,
-   honoring *stop. Returns the last exit code (>=0) or -1. */
 ST_FUNC MAYBE_UNUSED int host_spawn_retry(const char *const *cv, unsigned timeout_ms,
 																					int tries, const volatile int *stop) { MCC_TRACE("enter\n");
 	int rc = -1, k;
@@ -890,8 +863,6 @@ ST_FUNC MAYBE_UNUSED int host_spawn_retry(const char *const *cv, unsigned timeou
 	return rc;
 }
 
-/* Spawn cv with stdout/stderr suppressed, measuring wall-clock microseconds and
-   peak RSS in KB. Returns 0 iff the child exited 0. */
 ST_FUNC MAYBE_UNUSED int host_spawn_run(const char *const *cv, unsigned timeout_ms,
 																				long *usec, long *rss_kb, const volatile int *stop) { MCC_TRACE("enter\n");
 #ifdef _WIN32
@@ -1445,11 +1416,6 @@ ST_FUNC MAYBE_UNUSED const char *host_elf_interp_override(void) { MCC_TRACE("ent
 	return getenv("LD_SO");
 }
 
-/* The host runmem/JIT-memory primitives execute on the *host* regardless of
-   the compile target: the -run engine (MCC_TARGET_IS_HOST) and, since the
-   cross-optimizer ungate, the embedded JIT baked into every cross triple
-   (MCC_EMBED_JIT — it emits host-arch code, keying off __aarch64__/__x86_64__/
-   etc, not MCC_TARGET_*). Compile them whenever either consumer is present. */
 #if defined MCC_TARGET_IS_HOST || defined MCC_EMBED_JIT
 
 #ifndef _WIN32
@@ -1469,10 +1435,7 @@ ST_FUNC size_t host_pagesize(void) { MCC_TRACE("enter\n");
 }
 
 #if defined(__linux__)
-/* Compiler-owned TLS slab for the -run Local-Exec model: emitted TPOFF
-   relocations are retargeted into this slab (mccrun.c / *-link.c) so the CPU's
-   thread-pointer add resolves to real memory. Sized generously for -run TLS. */
-#define MCC_JIT_TLS_MAX 65536 /* headroom for a JIT'd mcc's own ~12KB of _Thread_local optimizer state */
+#define MCC_JIT_TLS_MAX 65536
 static _Alignas(64) __thread unsigned char mcc_jit_tls_slab[MCC_JIT_TLS_MAX];
 
 ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void) { MCC_TRACE("enter\n");
@@ -1485,15 +1448,6 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_size(void) { MCC_TRACE("ent
 
 ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("enter\n");
 	unsigned long tp = 0;
-	/* The thread-pointer read is inline asm, which mcc rejects when built
-	   without MCC_CONFIG_ASM. Emit it whenever the compiling compiler can parse
-	   asm: any non-mcc host cc (the shipped binary is built by one, so exec/tls
-	   works on both presets), or an mcc that itself has asm enabled (full-preset
-	   self-host keeps a correct tpoff). Key off __MCC_ASM__ — the predef mcc emits
-	   only when its own assembler is compiled in — not MCC_CONFIG_ASM, which
-	   re-defaults to 1 inside this unit under the -run/JIT self-host (mccpp
-	   doesn't pass -DMCC_CONFIG_ASM=0). Only the asm-off self-hosted mcc falls to
-	   tp=0, and its -run TLS path is never exercised. */
 #if !defined(__MCC__) || defined(__MCC_ASM__)
 #if defined(__x86_64__)
 	__asm__ volatile("mov %%fs:0, %0" : "=r"(tp));
@@ -1503,7 +1457,7 @@ ST_FUNC MAYBE_UNUSED unsigned long host_run_tls_slab_tpoff(void) { MCC_TRACE("en
 #endif
 	return (unsigned long)mcc_jit_tls_slab - tp;
 }
-#endif /* __linux__ */
+#endif
 
 ST_FUNC int host_runmem_dual(void) { MCC_TRACE("enter\n");
 #ifdef _WIN32
@@ -1577,23 +1531,7 @@ ST_FUNC void host_runmem_free(void *ptr, unsigned size) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void host_icache_flush(void *ptr, unsigned long length) { MCC_TRACE("enter\n");
-	/* Keys off the *host* CPU (compiler-predefined macros), not MCC_TARGET_*:
-	   the JIT writes host-arch code, so in a cross build the flush must follow
-	   the host, not the compile target. For a host build the two coincide. */
 #if defined _WIN32
-	/* Windows does not flush the I-cache on VirtualProtect. arm/arm64 obviously
-	   need it, but x86/x64 do too when the code is published to *another* thread:
-	   x86 keeps the L1i coherent by snooping, yet a core that already prefetched or
-	   decoded (uop-cache) the OLD bytes at a *reused* address won't re-fetch on its
-	   own — the Intel SDM cross-modifying-code protocol requires a serializing event
-	   on the executing core. On multiprocessor Windows FlushInstructionCache issues
-	   that cross-processor serialization (IPI) for the whole process, so calling it
-	   on the writer before the variant pointer is published covers the executor
-	   core. Skipping it here is exactly what MSDN warns against for generated code.
-	   (This flush is necessary hardening but did NOT cure the x86_64 PE self-host JIT
-	   0xC0000005 — un-skipping selfhost-jit with it in place still crashed the CI
-	   Windows cells, so that residual fault is a separate defect; see docs/TODO.)
-	   Cheap (once per hot-function promotion), so unconditional. */
 	FlushInstructionCache(GetCurrentProcess(), ptr, length);
 #elif (defined __arm__ && !MCC_TARGETOS_BSD) || defined __aarch64__ || (defined __riscv && defined __LP64__)
 	void __clear_cache(void *beginning, void *end);

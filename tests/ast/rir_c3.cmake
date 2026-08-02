@@ -1,48 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# Replay_IR C3 gate: the optimizer passes must survive an arena the AST hooks
-# never built.
-#
-# C2 asks whether a reconstructed arena re-emits the parser's bytes. C3 asks a
-# different question -- whether that arena can be OPTIMIZED. Bytes are
-# deliberately NOT the oracle: a pass that folds is expected to change them.
-#
-# The probe has two halves, and they are compiled in independently:
-#
-#   PASS EQUIVALENCE (always compiled in) runs the pass pipeline over the tree's
-#   arena and over Replay_IR's for the same body and compares the results. This
-#   is the half the C3 phase is named for, and it carries the hard assertion:
-#
-#     samehash == pair    every paired body reaches the same post-pass hash
-#
-#   ARENA SURVIVAL (needs MCC_REPLAY_IR_C2) clones the reconstruction, runs the
-#   passes on the clone -- C2's byte comparison must still see the unoptimized
-#   arena -- and re-validates that what comes out is still something
-#   ast_replay_* can be handed. Its assertion is likewise a hard zero:
-#
-#     broke == 0          no body came out of the passes structurally invalid
-#
-# Everything else -- folds, samefolds, pairfired -- moves with corpus and
-# codegen and is printed, not pinned. Pinning it would turn a coverage property
-# into a false regression, the same reason rir_parity.cmake refuses to ratchet
-# the fallback counts. samefolds in particular is legitimately below pair: two
-# arenas can reach the same hash by different fold counts.
-#
-# Non-vacuity is asserted separately: a run that paired nothing cannot report a
-# pass, and the arena-survival assertions are skipped rather than faked when
-# that half is not compiled in. Without that, a build which quietly lost
-# Replay_IR reports green -- the failure mode this whole family exists to
-# prevent.
-#
-# Required -D args: MCC CORPUS EXTRA TMPDIR
-# Optional: OPT (default -O1), MCCFLAGS (default empty)
-#
-# MCCFLAGS is what makes this runnable against a CROSS compiler: a sysroot, its
-# usr/include and an ABI flag. --sysroot alone is not enough -- the explicit
-# -I<sysroot>/usr/include is what makes the system headers resolve, and without
-# it the sweep silently shrinks to the include-free files and reports a
-# plausible, wrong census.
-#
 
 if(NOT MCC OR NOT CORPUS OR NOT EXTRA OR NOT TMPDIR)
     message(FATAL_ERROR "rir_c3: MCC, CORPUS, EXTRA, TMPDIR are required")
@@ -58,9 +14,6 @@ endif()
 file(MAKE_DIRECTORY "${TMPDIR}")
 set(ENV{SOURCE_DATE_EPOCH} "1000000000")
 
-# A build without MCC_REPLAY_IR emits no [rir-total] at all, and one whose C3
-# probe is compiled out emits no [rir-c3]; both are honest SKIPs rather than
-# vacuous passes.
 file(WRITE "${TMPDIR}/probe.c" "int rir_c3_probe(int a, int b) { return a * b + 1; }\n")
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env "MCC_REPLAY_IR=6"
@@ -98,9 +51,6 @@ foreach(_f ${_srcs})
     if(NOT _rc EQUAL 0)
         continue()
     endif()
-    # A file that aborted mid-way prints per-body lines but no total, which would
-    # silently shrink the census -- count files that produced a total, not files
-    # that exited 0.
     if(NOT _err MATCHES "\\[rir-total\\]")
         continue()
     endif()
@@ -142,8 +92,6 @@ if(NOT _samehash EQUAL _pair)
                         "passes are arena-parameterized, so the same passes over "
                         "the same body must converge whichever arena carried it")
 endif()
-# The arena-survival half lives behind MCC_REPLAY_IR_C2. Report honestly which
-# assertions actually ran rather than reporting a full pass for half a check.
 if(_try EQUAL 0)
     message(STATUS "rir_c3: arena-survival half NOT CHECKED — it needs a "
                    "-DMCC_REPLAY_IR_C2=1 build; pass equivalence was checked")

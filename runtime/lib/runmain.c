@@ -4,9 +4,6 @@
 #define _(s) _##s
 #endif
 
-/* PE also synthesizes __init_array_start/__init_array_end (see
-   runtime/win32/lib/crtinit.c), so `mcc -run` runs constructors on WIN32 too —
-   without this the baked JIT boot ctor never fires under -run on Windows. */
 extern void (*_(_init_array_start)[])(int argc, char **argv, char **envp);
 extern void (*_(_init_array_end)[])(int argc, char **argv, char **envp);
 

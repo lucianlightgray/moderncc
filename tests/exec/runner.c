@@ -173,13 +173,13 @@ HC_UNUSED static char *slurp(FILE *f, size_t *outlen) {
 	return buf;
 }
 
-/* Wall-clock cap (seconds) for a single captured command. A wedged child --
- * infinite-looping from a codegen miscompile, deadlocked, or crash-suspended
- * by macOS ReportCrash awaiting a report -- keeps the write end of the capture
- * pipe open, so a bare popen()+fread() would block until the CI job is killed
- * by hand (observed: a 48-min stall on select_branchless). The default matches
- * the CI job timeout-minutes and is overridable via MCC_TEST_TIMEOUT; 0 or
- * negative disables the cap. Belt to ctest's --timeout suspenders. */
+
+
+
+
+
+
+
 static long run_capture_timeout(void) {
 	const char *s = hc_envv("MCC_TEST_TIMEOUT", "1200");
 	char *end;
@@ -188,11 +188,11 @@ static long run_capture_timeout(void) {
 }
 
 #ifndef _WIN32
-/* POSIX capture that can actually kill a hung child: run cmd via /bin/sh in its
- * OWN process group, poll the output pipe against a deadline, and killpg the
- * whole group on timeout (SIGKILL reaches grandchildren a bare pclose can't).
- * On timeout, *status is set nonzero and a marker is appended so the offending
- * golden fails loudly and by name instead of stalling the suite. */
+
+
+
+
+
 static char *run_capture(const char *cmd, int *status) {
 	int pipefd[2];
 	if (pipe(pipefd) != 0) {
@@ -217,7 +217,7 @@ static char *run_capture(const char *cmd, int *status) {
 		execl("/bin/sh", "sh", "-c", cmd, (char *)NULL);
 		_exit(127);
 	}
-	setpgid(pid, pid); /* race-free with the child's own setpgid */
+	setpgid(pid, pid);
 	close(pipefd[1]);
 
 	long timeout_s = run_capture_timeout();
@@ -232,7 +232,7 @@ static char *run_capture(const char *cmd, int *status) {
 			break;
 		}
 		struct pollfd pfd = {pipefd[0], POLLIN, 0};
-		int pr = poll(&pfd, 1, 1000); /* 1s slices; deadline re-checked each loop */
+		int pr = poll(&pfd, 1, 1000);
 		if (pr < 0) {
 			if (errno == EINTR)
 				continue;
@@ -248,7 +248,7 @@ static char *run_capture(const char *cmd, int *status) {
 				buf = realloc(buf, cap);
 			}
 		} else if (n == 0) {
-			break; /* EOF: child closed its output */
+			break;
 		} else if (errno != EINTR) {
 			break;
 		}
@@ -276,18 +276,18 @@ static char *run_capture(const char *cmd, int *status) {
 	return buf;
 }
 #else
-/* Windows capture that can actually kill a hung child. A bare popen()+fread()
- * blocks until the child closes its output pipe -- but a child wedged by an
- * infinite-looping miscompile, or suspended by a load-time hard-error / crash
- * dialog (e.g. STATUS_ENTRYPOINT_NOT_FOUND, 0xC0000139, from an import the CRT
- * does not export), never does, so the suite stalls until ctest --timeout kills
- * the whole job by hand. Instead run the command via cmd.exe inside a Job
- * Object, poll the output pipe against a deadline, and TerminateJobObject the
- * whole tree on timeout (reaching grandchildren a plain TerminateProcess would
- * miss). main() sets SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX process-wide,
- * inherited by the child, so a crashing/unloadable child returns its status
- * promptly instead of popping a modal dialog. Mirrors the POSIX killpg path;
- * MCC_TEST_TIMEOUT governs both. */
+
+
+
+
+
+
+
+
+
+
+
+
 static char *run_capture(const char *cmd, int *status) {
 	HANDLE rd = NULL, wr = NULL, job = NULL;
 	SECURITY_ATTRIBUTES sa;
@@ -308,12 +308,12 @@ static char *run_capture(const char *cmd, int *status) {
 			*status = -1;
 		return xstrdup("");
 	}
-	SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0); /* keep read end private */
+	SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
-	/* Match HC_POPEN_CMD's wrapping: cmd.exe /C "<cmd>". The goldens embed
-	   `cd "..." && ... 2>&1` (cmd syntax) with inner-quoted paths; cmd strips the
-	   outermost pair and runs the remainder. Both child std handles feed the pipe
-	   so the redirect is redundant but harmless. */
+
+
+
+
 	cmdline = malloc(strlen(cmd) + 16);
 	sprintf(cmdline, "cmd.exe /C \"%s\"", cmd);
 
@@ -334,9 +334,9 @@ static char *run_capture(const char *cmd, int *status) {
 		return xstrdup("");
 	}
 
-	/* Kill-on-close job so a timeout reaps the whole process tree. If the child
-	   is already in a non-nestable job (older Windows), the assign fails and we
-	   fall back to killing just the top process. */
+
+
+
 	job = CreateJobObjectA(NULL, NULL);
 	if (job) {
 		JOBOBJECT_EXTENDED_LIMIT_INFORMATION ji;
@@ -349,7 +349,7 @@ static char *run_capture(const char *cmd, int *status) {
 		}
 	}
 	ResumeThread(pi.hThread);
-	CloseHandle(wr); /* only the child keeps the write end now */
+	CloseHandle(wr);
 
 	buf = malloc(cap);
 	start = GetTickCount64();
@@ -374,16 +374,16 @@ static char *run_capture(const char *cmd, int *status) {
 			if (ReadFile(rd, buf + len, avail, &got, NULL) && got > 0)
 				len += got;
 			else
-				break; /* pipe broken: child gone */
-			continue; /* drain fast while data is flowing */
+				break;
+			continue;
 		}
-		/* No data right now: exit once the child is gone and the pipe is dry. */
+
 		if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
 			if (!PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL) || avail == 0)
 				break;
 			continue;
 		}
-		Sleep(20); /* deadline re-checked at the top each slice */
+		Sleep(20);
 	}
 	buf[len] = 0;
 
@@ -562,9 +562,9 @@ int main(int argc, char **argv) {
 		return 2;
 	}
 #ifdef _WIN32
-	/* Suppress the modal hard-error / crash dialogs; a broken child (unloadable
-	   import, GP fault) then returns its status code so run_capture's watchdog
-	   can act, instead of the child hanging on a dialog nobody will dismiss. */
+
+
+
 	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 #endif
 	const char *mcc = argv[1], *bdir = argv[2], *idir = argv[3];

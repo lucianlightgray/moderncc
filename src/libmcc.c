@@ -898,14 +898,6 @@ static int mcc_dir_has_include(const char *base) { MCC_TRACE("enter\n");
 	if (!base || !base[0])
 		{ MCC_TRACE("br\n"); return 0; }
 	pstrcpy(probe, sizeof probe, base);
-	/* Require the freestanding compiler headers (probe for the always-present
-	 * `mccdefs.h` marker), NOT merely an `include/` directory: a `cmake --install`
-	 * tree has BOTH `<prefix>/include` (public API — libmcc.h, no `stddef.h`) and
-	 * `<prefix>/lib/mcc/include` (the real compiler headers). Checking the marker
-	 * makes the `<exe>/../lib/mcc` candidate win instead of the header-less
-	 * `<exe>/..`, so an installed mcc auto-discovers its headers without `-B`. The
-	 * build tree copies runtime/include (incl. mccdefs.h) to `<builddir>/include`,
-	 * so the `<exe>` candidate still matches there — no regression. */
 	pstrcat(probe, sizeof probe, "/include/mccdefs.h");
 	return stat(probe, &st) == 0 && S_ISREG(st.st_mode);
 }
@@ -946,16 +938,6 @@ static const char *mcc_auto_mccdir(void) { MCC_TRACE("enter\n");
 #define MCC_MCCDIR_DEFAULT MCC_CONFIG_MCCDIR
 #endif
 
-/* -march=. A feature MASK rather than a string comparison, because the
-   question a backend asks is "may I emit roundsd", not "which level did the
-   user type". The named levels are the conventional bundles.
-
-   The DEFAULT is the triple baseline, NOT native. Making native the default
-   would make output host-dependent, which collides with the two invariants
-   this project leans on -- golden byte-identity and the 3-stage self-host
-   fixpoint would disagree between an AVX-512 host and an SSE2 one. native
-   stays opt-in and is resolved honestly by CPUID rather than aliased to the
-   baseline. */
 #define MCC_ISA_V1 (MCC_ISA_SSE2)
 #define MCC_ISA_V2 (MCC_ISA_V1 | MCC_ISA_SSE3 | MCC_ISA_SSSE3 | MCC_ISA_SSE41 | \
                     MCC_ISA_SSE42 | MCC_ISA_POPCNT)
@@ -969,8 +951,6 @@ static const struct {
 } mcc_isa_levels[] = {
 		{"x86-64", MCC_ISA_V1},    {"x86-64-v2", MCC_ISA_V2},
 		{"x86-64-v3", MCC_ISA_V3}, {"x86-64-v4", MCC_ISA_V4},
-		/* gcc spells the baseline several ways; accept the common aliases so a
-		   command line that works there does not have to be rewritten. */
 		{"nocona", MCC_ISA_V1},    {"core2", MCC_ISA_V1 | MCC_ISA_SSE3 | MCC_ISA_SSSE3},
 		{"nehalem", MCC_ISA_V2},   {"westmere", MCC_ISA_V2},
 		{"sandybridge", MCC_ISA_V2 | MCC_ISA_AVX},
@@ -984,13 +964,6 @@ ST_FUNC int mcc_isa_has(MCCState *s1, uint32_t feat) { MCC_TRACE("enter\n");
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_I386)
 static void mcc_cpuid(uint32_t leaf, uint32_t sub, uint32_t r[4]) { MCC_TRACE("enter\n");
-	/* cpuid is inline asm, which mcc rejects when built without MCC_CONFIG_ASM.
-	   Emit it whenever the compiling compiler can parse asm (any non-mcc host cc,
-	   or an mcc with its assembler compiled in), keying off __MCC_ASM__ rather
-	   than MCC_CONFIG_ASM -- the latter re-defaults to 1 under the -run/JIT
-	   self-host. Only the asm-off self-hosted mcc falls to zeros, which resolves
-	   -march=native to the baseline ISA -- acceptable, as it never links a native
-	   backend. See host_run_tls_slab_tpoff() for the same pattern. */
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)) && \
     (!defined(__MCC__) || defined(__MCC_ASM__))
 	__asm__ volatile("cpuid"
@@ -1030,22 +1003,9 @@ static uint32_t mcc_isa_native(void) { MCC_TRACE("enter\n");
 #endif
 
 ST_FUNC void mcc_isa_init(MCCState *s1) { MCC_TRACE("enter\n");
-	/* Idempotence keys on the LEVEL, not the mask: non-x86 targets legitimately
-	   resolve to an empty feature mask, so guarding on the mask made every later
-	   call re-run and clobber a level the user had already selected with
-	   -march=armv8-a. */
 	if (s1->isa_level)
 		{ MCC_TRACE("br\n"); return; }
 #if defined(MCC_TARGET_X86_64)
-	/* native is the DEFAULT: mcc targets the machine it is running on unless
-	   told otherwise, the same way gcc -march=native does when asked. The
-	   host-dependence this creates is represented by the CACHE -- so_key folds
-	   the resolved mask and ast_isa_key_term separates the slices that are
-	   actually ISA-sensitive -- rather than avoided by pessimising the default.
-	   CROSS-COMPILATION falls back to the triple baseline for free: mcc_isa_native
-	   only reads CPUID under __x86_64__/__i386__, so an x86_64-targeting mcc
-	   hosted on another arch gets MCC_ISA_V1 and never bakes host-only
-	   instructions into cross output. */
 	s1->isa_mask = mcc_isa_native();
 	s1->isa_level = "native";
 #elif defined(MCC_TARGET_I386)
@@ -1086,12 +1046,6 @@ ST_FUNC int mcc_isa_set_arch(MCCState *s1, const char *name) { MCC_TRACE("enter\
 	}
 	return -1;
 #else
-	/* Other targets have no FEATURE bits wired up yet, but they must still
-	   REJECT a name they do not know: accepting anything silently is the exact
-	   bug -march= had before it meant something, and having x86 diagnose
-	   `-march=nonsense` while arm64 shrugs is worse than either alone. So the
-	   level is validated against the triple's known names and recorded for
-	   -print-isa; the mask stays empty until the per-arch feature bits land. */
 #if defined(MCC_TARGET_ARM)
 	{
 		static const struct {
@@ -1163,16 +1117,9 @@ ST_FUNC void mcc_isa_print(MCCState *s1) { MCC_TRACE("enter\n");
 	};
 	size_t i;
 	mcc_isa_init(s1);
-	/* Name the TARGET too. Step 6's purpose is that a bug report or CI log can
-	   state the ISA a build targeted, and a bare "level: armv8-a" does not say
-	   which compiler produced it -- every cross compiler in the tree answers
-	   -print-isa. */
 #ifdef MCC_CONFIG_TRIPLET
 	printf("target: %s\n", MCC_CONFIG_TRIPLET);
 #else
-	/* Cross compilers in this tree are built without MCC_CONFIG_TRIPLET, so fall
-	   back to the target macro rather than printing nothing -- an unlabelled
-	   report is exactly what this line exists to prevent. */
 	printf("target: %s\n",
 #if defined(MCC_TARGET_X86_64)
 				 "x86_64"
@@ -1622,10 +1569,6 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) { MCC_TRAC
 																	s->library_paths, s->nb_library_paths);
 }
 
-/* Support-archive name for THIS target, matching the cmake-cross staging layout
-   (`<arch>[-<os>]-libmccrt.a` beside a host-arch `libmccrt.a`). Deliberately not
-   MCC_EMBED_RT_ARCH, which follows the compiler-rt spelling (aarch64) rather
-   than cmake's (arm64). */
 #if defined MCC_TARGET_X86_64
 #define MCC_SUPPORT_ARCH "x86_64"
 #elif defined MCC_TARGET_I386
@@ -1647,11 +1590,6 @@ ST_FUNC int mcc_add_dll(MCCState *s, const char *filename, int flags) { MCC_TRAC
 #define MCC_SUPPORT_OS ""
 #endif
 
-/* -run / MCC_OUTPUT_MEMORY variant. Absence is fine there (undefined helpers bind
-   in-process via dlsym), but a WRONG-ARCH archive is not: the loader raises
-   mcc_error_noabort from inside, which no caller flag suppresses, and nb_errors
-   then fails the link. So load only what the read-only probe confirms is this
-   target's, checking the arch-tagged staging name too, and otherwise stay quiet. */
 ST_FUNC int mcc_add_support_opt(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	char arch[128];
 	if (mcc_support_arch_match(s1, filename) == 1)
@@ -1667,29 +1605,7 @@ ST_FUNC int mcc_add_support_opt(MCCState *s1, const char *filename) { MCC_TRACE(
 ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	char plain[128], arch[128];
 	int arch_ok;
-	/* Two support archives can sit side by side in a `-B` dir: the plain
-	   `[<crossprefix>]libmccrt.a` and the cmake-cross-staged `<arch>[-<os>]-libmccrt.a`.
-	   Which to trust depends on whether the plain one is arch-correct:
 
-	   - Plain ARCH-CORRECT (native / self-host, e.g. cmake's own build dir): it is
-	     authoritative and complete, so add it FIRST -- linking the arch-tagged one
-	     instead is a DIFFERENT build of the runtime and diverges from self-host
-	     byte-identity, breaking the 3-stage fixpoint (fd108bd4's arch-first probe
-	     wrongly overrode this). Then add the arch-tagged archive as an a la carte
-	     SUPPLEMENT: it pulls only members for still-undefined symbols, so a complete
-	     plain archive makes it inert (byte-identity preserved), while a leaner plain
-	     one (a cross-staging dir whose plain `libmccrt.a` happens to match the target
-	     arch but omits some soft-float/atomics helpers) gets the remainder filled in.
-
-	   - Plain ABSENT or WRONG arch (a stage-built cross mcc, empty MCC_CONFIG_CROSSPREFIX,
-	     `-B` at a multi-target dir whose plain `libmccrt.a` is the HOST arch -- the
-	     "invalid object file" + unresolved __ashldi3/__clear_cache/__floatunsitf trap
-	     fd108bd4 fixed): use `<arch>[-<os>]-libmccrt.a`, then the plain name with an
-	     error as the last resort.
-
-	   The plain/arch choice is a pure read-only arch probe, never a load attempt:
-	   loading a wrong-arch member trips mcc_error_noabort, and nb_errors != 0 fails
-	   the whole link even after the arch-specific archive later resolves. */
 	if (MCC_CONFIG_CROSSPREFIX[0])
 		{ MCC_TRACE("br\n"); strcat(strcpy(plain, MCC_CONFIG_CROSSPREFIX), filename); }
 	else
@@ -1700,14 +1616,6 @@ ST_FUNC int mcc_add_support(MCCState *s1, const char *filename) { MCC_TRACE("ent
 
 	if (mcc_support_arch_match(s1, plain) == 1) { MCC_TRACE("br\n");
 		int ret = mcc_add_dll(s1, plain, AFF_PRINT_ERROR);
-		/* Supplement with the arch-tagged copy only for an ARCHIVE. The a la carte
-		   pull -- taking just the members for still-undefined symbols -- is what
-		   makes a complete plain `.a` inert and a leaner one filled in; for a plain
-		   `.o`, which is linked wholesale, the second copy instead defines every
-		   symbol twice. The cross build now stages <arch>-runmain.o (and bcheck /
-		   mccasan / mccubsan / bt-*) beside the plain ones, so on an arch==host link
-		   -- where the plain object is arch-correct -- this guard is what stops
-		   `<arch>-runmain.o: '_runmain' defined twice`. */
 		size_t fl = strlen(filename);
 		if (arch_ok && fl >= 2 && !strcmp(filename + fl - 2, ".a"))
 			{ MCC_TRACE("br\n"); mcc_add_dll(s1, arch, 0); }
@@ -1750,7 +1658,6 @@ ST_FUNC int mcc_add_mccrt_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 extern const unsigned char mccjit_blob[];
 extern const unsigned int mccjit_blob_len;
 
-/* compiler-rt builtins archive suffix for this target (libclang_rt.builtins-<arch>.a) */
 #if defined MCC_TARGET_X86_64
 #define MCC_EMBED_RT_ARCH "x86_64"
 #elif defined MCC_TARGET_I386
@@ -1789,15 +1696,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 		int saved = s1->filetype;
 		s1->filetype &= ~AFF_WHOLE_ARCHIVE;
 #ifdef MCC_EMBED_JIT_MCC_ENGINE
-		/* An mcc-BUILT engine (e.g. a cross bake compiling the engine with
-		   mcc-<arch>-win32) carries none of the gcc footprint -- no emulated TLS,
-		   no libmingwex ANSI-stdio wrappers -- so its only compiler-support refs
-		   (__chkstk and the soft-arith) all live in mcc's own runtime. Re-add that
-		   a la carte after the blob and skip libgcc entirely: libgcc's 64-bit
-		   soft-arith object would collide with libmccrt's ('__divdi3'/'__udivdi3'/
-		   ... defined twice). Keyed on how the engine was BUILT, not the target
-		   arch: a native i686 build (winlibs i686 gcc) bakes a gcc engine that
-		   DOES need the gcc path below, exactly like x86_64. */
 		mcc_add_support(s1, "libmccrt.a");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
@@ -1808,12 +1706,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 #endif
 		mcc_add_library(s1, "mingwex");
 		mcc_add_library(s1, "mingw32");
-		/* Compiler support library (___chkstk_ms stack probe, __udivti3 soft
-		   arithmetic, …). gcc ships these in libgcc; the llvm/clang-mingw
-		   toolchain has no libgcc but the same symbols live in compiler-rt
-		   (libclang_rt.builtins-<arch>.a). Disk-probe the baked lib dir and add
-		   whichever exists so --embed-jit links out-of-the-box on both
-		   toolchains (probing avoids a spurious 'library not found' error). */
 #ifdef MCC_EMBED_JIT_GCC_LIBDIR
 		{
 			char lp[1024];
@@ -1822,9 +1714,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 			if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
 				fclose(lf);
 				mcc_add_library(s1, "gcc");
-				/* __emutls_get_address (gcc's emulated-TLS accessor the engine's
-				   _Thread_local state needs on mingw) lives in libgcc_eh.a, not
-				   libgcc.a. Add it when present so --embed-jit resolves it. */
 				snprintf(lp, sizeof lp, "%s/libgcc_eh.a", MCC_EMBED_JIT_GCC_LIBDIR);
 				if ((lf = fopen(lp, "rb"))) { MCC_TRACE("br\n");
 					fclose(lf);
@@ -1838,17 +1727,13 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 					fclose(lf);
 					mcc_add_library(s1, "clang_rt.builtins-" MCC_EMBED_RT_ARCH);
 				} else { MCC_TRACE("br\n");
-					mcc_add_library(s1, "gcc");	/* neither: surface the honest error */
+					mcc_add_library(s1, "gcc");
 				}
 			}
 		}
 #else
 		mcc_add_library(s1, "gcc");
 #endif
-		/* gcc's emulated-TLS uses posix-thread keys for its per-thread state, so
-		   the emutls accessor pulls pthread_once/key_create/getspecific. On a
-		   posix-threads mingw those live in libwinpthread.a (on the baked mingw
-		   lib dir already added above). Add it when present. */
 		{
 			char lp[1024];
 			FILE *lf;
@@ -1858,21 +1743,12 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 				mcc_add_library(s1, "winpthread");
 			}
 		}
-		/* The emutls/gcc_eh members pulled above themselves reference the mingw
-		   CRT's TLS-directory symbol (_tls_used, in libmingw32's tlssup.o) and
-		   more libmingwex helpers. mcc's linker is single-pass, so re-add the two
-		   base libs after the compiler-support libs to satisfy those late refs. */
 		mcc_add_library(s1, "mingw32");
 		mcc_add_library(s1, "mingwex");
 		mcc_add_library(s1, "ucrt");
 		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
 #ifdef MCC_TARGET_I386
-		/* i386-only: the gcc-built engine references stdcall-DECORATED kernel32
-		   thunks (_AcquireSRWLockExclusive@4) that mcc's own kernel32.def import
-		   emits undecorated (correct for x64/arm64 and for mcc's own i386 code,
-		   which matches the DLL export name). Supplement with the mingw i686
-		   import lib, which carries the @N-decorated thunks the engine wants. */
 		{
 			char lp[1024];
 			FILE *lf;
@@ -1888,17 +1764,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 #endif
 #if !defined MCC_TARGET_PE && !defined MCC_TARGET_MACHO && defined MCC_EMBED_JIT_GCC_LIBDIR
-	/* ELF/Linux peer of the WIN32 mingw libgcc bake above. The engine blob is
-	   compiled by the host gcc with its default -moutline-atomics, so it
-	   references libgcc outline-atomics / soft-arith helpers
-	   (__aarch64_ldadd8_acq_rel, __divtf3, …). The blob is linked LAST, after
-	   all command-line libs are consumed, so nothing on the search path can
-	   satisfy those refs — the bake would otherwise need the engine forced
-	   -mno-outline-atomics. Add the host libgcc dir to the search path and link
-	   libgcc AFTER the blob so the helpers resolve. gcc ships them in libgcc;
-	   a clang host has the same symbols in compiler-rt
-	   (libclang_rt.builtins-<arch>.a), so disk-probe the baked dir and add
-	   whichever exists (probing avoids a spurious 'library not found'). */
 	if (ret == 0) { MCC_TRACE("br\n");
 		int saved = s1->filetype;
 		char lp[1024];
@@ -1917,7 +1782,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 				fclose(lf);
 				mcc_add_library(s1, "clang_rt.builtins-" MCC_EMBED_RT_ARCH);
 			}
-			/* neither present: leave the link unchanged (no spurious error) */
 		}
 		s1->filetype = saved;
 	}
@@ -2182,19 +2046,9 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 		} else if (link_option(&o, "single_module")) { MCC_TRACE("br\n");
 			ignoring = 1;
 		} else if (link_option(&o, "search_paths_first")) { MCC_TRACE("br\n");
-			/* Apple ld search order; mcc's own -L search suffices. CMake's
-			 * Darwin link rules pass this on every link, so accept it as a
-			 * silent no-op (a warning here would fire on every link). */
 		} else if (link_option(&o, "headerpad_max_install_names")) { MCC_TRACE("br\n");
-			/* pads the Mach-O header for later install_name_tool edits; mcc
-			 * does not need it. CMake's Darwin link rules pass it on every
-			 * link, so accept it as a silent no-op. */
 #endif
 		} else if (link_option(&o, "x")) { MCC_TRACE("br\n");
-			/* strip local symbols (-Wl,-x): MCC_BUILD_STRIP passes this on both
-			 * ld64 and GNU ld. mcc does not yet strip locals itself, so accept
-			 * it as a silent no-op (a self-hosted release still links; the
-			 * separate `strip` pass in `ci dist` does the real strip). */
 		} else if (link_option(&o, "as-needed")) { MCC_TRACE("br\n");
 			ignoring = 1;
 		} else if (link_option(&o, "O")) { MCC_TRACE("br\n");
@@ -2751,27 +2605,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			mcc_add_library_path(s, optarg);
 			break;
 		case MCC_OPTION_B:
-			/* -B sets mcc's private base ({B} in the default path templates).
-			   gcc/clang ACCUMULATE multiple -B prefixes; mcc historically kept
-			   only the last, silently dropping earlier ones — yet several callers
-			   pass `-B<src> -B<build>` (tools/selfhost-jit.py,
-			   tests/ci/regression_o4_aot_jit.sh, the CMake JIT self-host) expecting
-			   both to be searched. Keep the NEWEST as the {B} template base so the
-			   last-wins output stays byte-identical, but demote each previous base
-			   to explicit library search prefixes so it is no longer lost. Add both
-			   `<dir>` (ELF-style {B}) and `<dir>/lib` (PE-style {B}/lib) to cover
-			   either target's default library layout. */
 			if (s->mcc_lib_path && s->mcc_lib_path[0]) { MCC_TRACE("br\n");
 				char sub[2048];
 				const char *b = s->mcc_lib_path;
-				/* library search: `<dir>` (ELF {B}) and `<dir>/lib` (PE {B}/lib) */
 				mcc_add_library_path(s, b);
 				if ((size_t)snprintf(sub, sizeof sub, "%s/lib", b) < sizeof sub)
 					{ MCC_TRACE("br\n"); mcc_add_library_path(s, sub); }
-				/* header search: {B} also drives the sysinclude default
-				   (`{B}/include`, plus `{B}/include/winapi` on PE) — demote those
-				   too so an earlier -B's bundled headers are not lost. Nonexistent
-				   dirs (e.g. winapi off-PE) are simply never matched. */
 				if ((size_t)snprintf(sub, sizeof sub, "%s/include", b) < sizeof sub)
 					{ MCC_TRACE("br\n"); mcc_add_sysinclude_path(s, sub); }
 				if ((size_t)snprintf(sub, sizeof sub, "%s/include/winapi", b) < sizeof sub)
@@ -3046,12 +2885,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			break;
 #endif
 		case MCC_OPTION_v:
-			/* -v<N> ORs an arbitrary category bitmask; -v / -vv / -vvv set the low
-			 * tier bits (CMD/PATHS/INCL) cumulatively — see mcclog.h. */
 			if (optarg[0] >= '0' && optarg[0] <= '9') { MCC_TRACE("br\n");
 				s->verbose |= (unsigned char)strtoul(optarg, NULL, 0);
 			} else { MCC_TRACE("br\n");
-				/* each -v sets the lowest clear tier bit: x | (x+1). */
 				do
 					{ MCC_TRACE("br\n"); s->verbose = (unsigned char)(s->verbose | (s->verbose + 1)); }
 				while (*optarg++ == 'v');
@@ -3122,10 +2958,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || \
 		defined MCC_TARGET_RISCV64 || defined MCC_TARGET_I386 || \
 		defined MCC_TARGET_ARM
-						/* Trap mode (ud2/brk/ebreak) is pure arch instruction emission with no
-						   runtime handler, so it works on PE too — the trap crashes the process
-						   with EXCEPTION_ILLEGAL_INSTRUCTION on Windows just as it raises SIGILL
-						   on ELF. */
 						s->do_sanitize_undefined = 1;
 #else
 						mcc_warning_c(warn_unsupported)(
@@ -3200,11 +3032,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 						{ MCC_TRACE("br\n"); return mcc_error_noabort("unknown -march= value '%s'", marg); }
 					break;
 				}
-				/* -mtune/-mcpu pick a scheduling model, not an ISA floor, and mcc
-				   has no scheduler; -mcmodel/-mfpmath likewise change nothing here.
-				   Still accepted so no command line regresses -- unlike -march=,
-				   which now means something and so must reject what it cannot
-				   honour rather than silently ignoring it. */
 				if (strstart("tune=", &marg) || strstart("cpu=", &marg) ||
 						strstart("cmodel=", &marg) || strstart("fpmath=", &marg))
 					{ MCC_TRACE("br\n"); break; }

@@ -1,39 +1,6 @@
 #ifndef MCCLOG_H
 #define MCCLOG_H
 
-/*
- * Leveled diagnostic logging over the verbosity BITMASK (the mcc_log_verbose
- * global, an unsigned char). Each category is an independent power-of-two bit, so categories
- * can be enabled/disabled independently; a message tagged with category C is
- * emitted to stderr only when that bit is set in verbose.
- *
- *   -v / -vv / -vvv    set the low tier bits cumulatively (MCC_V1 / MCC_V2 / MCC_V3);
- *                      these first bits are the usual command / search-path / include
- *                      trace that -v has always controlled.
- *   -v<N>              OR an arbitrary bitmask (e.g. -v64 enables [DEBUG] alone,
- *                      -v128 enables [TRACE]).
- *
- * Eight categories (bit index -> tag): 0 [CMD] 1 [PATHS] 2 [INCL] 3 [INFO]
- * 4 [NOTE] 5 [STATUS] 6 [DEBUG] 7 [TRACE] (the 8th / high bit).
- *
- *   mcc_logf(MCC_LOG_DEBUG, "value=%d\n", v);   // "[DEBUG] value=%d" if that bit set
- *   MCC_DEBUG("value=%d\n", v);                 // shorthand
- *   MCC_TRACE("enter %s\n", name);              // "[TRACE] file:line func: ..." when
- *                                               // the TRACE bit is set; compiled out
- *                                               // unless the build sets MCC_CONFIG_TRACE.
- *
- * The plain macros read the mcc_log_verbose global (mirrored from the active
- * state's verbose in mcc_enter_state). The _v variants take an explicit verbose
- * byte so tracing fires in driver/link phases that run before mcc_enter_state,
- * or against a specific state:
- *
- *   mcc_logf_v(s->verbose, MCC_LOG_DEBUG, "%d evals\n", n);
- *   MCC_TRACE_V(s->verbose, "output %s\n", file);       // pre-mcc_enter_state
- *
- * Self-contained: no MCCState dependency; the sole global (mcc_log_verbose) is
- * defined in mcchost.c (standalone builds define their own copy).
- */
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,14 +22,10 @@ enum {
 	MCC_LOG_CATS = 8
 };
 
-/* Cumulative -v / -vv / -vvv tier masks (the low CMD/PATHS/INCL bits). */
 #define MCC_V1 ((MccLogMask)MCC_LOG_CMD)
 #define MCC_V2 ((MccLogMask)(MCC_LOG_CMD | MCC_LOG_PATHS))
 #define MCC_V3 ((MccLogMask)(MCC_LOG_CMD | MCC_LOG_PATHS | MCC_LOG_INCL))
 
-/* The -v tier bits alone, ignoring the independent diagnostic categories (INFO..
- * TRACE). Compare against MCC_V1/V2/V3 so a diagnostic bit such as TRACE can be
- * enabled at the same time without silencing the regular -v/-vv/-vvv output. */
 #define MCC_VTIER(v) ((MccLogMask)((v) & MCC_V3))
 
 static const char *const mcc_log_tags[MCC_LOG_CATS] = {

@@ -5,23 +5,12 @@
 #include "mccforecast.h"
 
 #ifdef MCC_JOURNAL_HOOKS
-/* Not every backend defines every journalled primitive. These predicates mirror
- * the declaration guards in mcc.h exactly, so a primitive the target does not
- * have is simply never wrapped and never replayed. Nothing is lost by that: any
- * bytes such a target emits from an unjournalled path are already picked up
- * verbatim by the JOP_RAW gap capture in jrn_gap(). */
 #ifdef MCC_TARGET_X86_64
-/* gen_bswap / gen_bitscan / gen_signbit / gen_ffs / the three gen_atomic_* /
- * gen_cvt_trunc32 / gen_reg_addi are all declared x86_64-only. */
 #define MCC_JRN_HAVE_X86_PRIMS 1
 #endif
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
 #define MCC_JRN_HAVE_STRUCT_COPY 1
 #endif
-/* gen_cvt_sxtw (sign-extend 32->64) exists only where mcc.h declares it: the
-   64-bit backends X86_64/ARM64/RISCV64. i386 (and arm) have no such primitive,
-   so mirror the declaration guard here so admitting i386 to the gate does not
-   wrap or replay an op the target never emits. */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_RISCV64)
 #define MCC_JRN_HAVE_CVT_SXTW 1
@@ -30,14 +19,6 @@
 		(defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE))
 #define MCC_JRN_HAVE_XFERRET 1
 #endif
-/* gen_round / gen_copysign are the FP round-mode / sign-copy hardware inlines,
-   defined on the SSE/NEON/RVF backends but NOT i386 -- x87 needs a memory
-   round-trip and rounding-control juggling (tracked in docs/TODO Codegen), so
-   i386-gen.c defines neither. gen_fabs/gen_sqrt exist on i386 (x87 fabs/fsqrt)
-   but NOT on arm, so they get MCC_JRN_HAVE_FABS_SQRT above rather than staying
-   unconditional. The two are gated separately because riscv64
-   defines fsgnj.d but no round-mode inline. Mirror the definition set so the
-   journal does not reference a primitive a target never links. */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 #define MCC_JRN_HAVE_ROUND 1
 #endif
@@ -45,10 +26,6 @@
 		defined(MCC_TARGET_RISCV64)
 #define MCC_JRN_HAVE_COPYSIGN 1
 #endif
-/* gen_cvt_csti and gen_mulh are declared for i386/x86_64 only (mcc.h:1833,
-   :1838) but DEFINED by x86_64, arm64, i386 and riscv64 -- every CPU the gate
-   admitted before arm -- which is why journalling them unconditionally worked.
-   arm defines neither, so mirror the definition set, not the declaration. */
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64)
 #define MCC_JRN_HAVE_CVT_CSTI 1
@@ -58,11 +35,6 @@
 #ifdef MCC_TARGET_ARM64
 #define MCC_JRN_HAVE_GFUNC_RETURN 1
 #define MCC_JRN_HAVE_VA_ARG 1
-/* gen_va_start is defined by two backends and they have DIFFERENT vstack
-   effects: arm64's consumes both operands and pushes nothing, riscv64's
-   consumes one and vsets the va_list lvalue in its place. Only the first shape
-   needs a node of its own -- the second leaves a value the refill already
-   models. Mirror the definitions, not the declaration. */
 #define MCC_JRN_VA_START_VOID 1
 #endif
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
@@ -336,9 +308,6 @@ ST_DATA int func_ind;
 ST_DATA const char *funcname;
 ST_DATA CType int_type, func_old_type, char_type, char_pointer_type;
 #define initstr (mcc_state->initstr)
-
-/* VT_SIZE_T / VT_PTRDIFF_T moved to mcc.h so the standalone-compiled backend TUs
-   (multisource build) can see them too. */
 
 #define cur_switch (mcc_state->cur_switch)
 
@@ -745,40 +714,22 @@ static int popcount_inline_on(void) { MCC_TRACE("enter\n");
 	return on;
 }
 
-/* __int128 PHASE 2: inline a CONSTANT-count 128-bit shift instead of calling
- * __ashlti3/__lshrti3/__ashrti3 (a direct port of gen_opl's 32-bit-half arm to
- * 64-bit halves). DEFAULT ON as of 2026-07-30 -- fully validated on x86_64:
- * every count 0..127 x {SHL,SHR,SAR} matches gcc, 400 fuzzer seeds 0 fails, AND
- * the project's own exec/types/int128.c run-golden's shl/shr/sar output matches
- * at -O0/-O1/-O2/-O3. The flip is byte-safe: mcc.c compiles byte-identically
- * with the gate on/off (mcc's own source uses no __int128 const shifts, so
- * self-host is unaffected -- verified with cmp), no byte-golden compiles a
- * __int128 const shift (int128.c is a run/output golden), and the gate lives in
- * gen_opq codegen, downstream of the AST recorder, so it cannot perturb the
- * recorder-fidelity ratchet. Inert on non-x86_64 (MCC_HAVE_INT128=0). Set
- * MCC_I128_NATIVE_SHIFT=0 to force the old helper-call path. */
 static int i128_native_shift_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_I128_NATIVE_SHIFT");
-		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; /* default ON */
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
 	}
 	return on;
 }
 
 #if MCC_HAVE_INT128
-ST_FUNC void (gen_mul_widen)(void); /* x86_64-gen.c: 64x64->128 unsigned, result pair RAX:RDX */
-/* __int128 PHASE 2: inline a 128-bit `*` instead of calling __multi3, by porting
- * gen_opl's `*` arm to 64-bit halves -- gen_opl's single `TOK_UMULL; lexpand()`
- * (which leaves [lo,hi] of the low 64x64 product) becomes `gen_mul_widen();
- * qexpand()` (one `mul`, split into [lo,hi]). Default OFF => byte-identical helper
- * call. Unsigned throughout is correct for signed __int128 too (low 128 bits of a
- * two's-complement product are sign-agnostic -- only __multi3 exists). */
+ST_FUNC void (gen_mul_widen)(void);
 static int i128_native_mul_on(void) { MCC_TRACE("enter\n");
 	static int on = -1;
 	if (on < 0) { MCC_TRACE("br\n");
 		const char *e = getenv("MCC_I128_NATIVE_MUL");
-		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1; /* default ON (validated) */
+		on = e && e[0] ? (strcmp(e, "0") ? 1 : 0) : 1;
 	}
 	return on;
 }
@@ -1892,11 +1843,6 @@ ST_FUNC void save_reg(int r) { MCC_TRACE("enter\n");
 
 #if MCC_CONFIG_OPTIMIZER && \
     (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64))
-/* Spill one folded-displacement group: every upstack entry whose address is
-   "r + d". The generic spill below stores the bare base register and retags the
-   entry VT_LLOCAL, which would drop d silently, so each distinct d gets its own
-   temp slot holding the already-added address. gen_reg_addi is an LEA, so r is
-   restored afterwards and the flags survive. */
 static void save_regdisp_group(int r, int n, int64_t d) { MCC_TRACE("enter\n");
 	SValue *p, *p1, sv;
 	CType pt;
@@ -2075,10 +2021,6 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	unsigned used = 0;
 
 #if MCC_CONFIG_OPTIMIZER
-	/* arr_temp_local_vars is not reset between the parse and the C2 trial, so the
-	   trial's reuse scan finds the slot the parse had just minted and hands it
-	   back where the parse allocated a fresh one. Replay the recorded result --
-	   offset and r2 index together, since r2 drives the liveness mask. */
 	{
 		int rl, rr;
 		if (rir_c2_active && rir_tvar_replay(&rl, &rr)) { MCC_TRACE("br\n");
@@ -2110,28 +2052,15 @@ static int get_temp_local_var(int size, int align, int *r2) { MCC_TRACE("enter\n
 	}
 #if MCC_CONFIG_OPTIMIZER
 	tmploc = ast_alloc_temp_loc(size, align);
-	/* The replay temp frontier (ast_alloc_temp_loc) seeds its floor from loc/locrec_min.
-	 * When a replay subtree (e.g. a divmagic-rewritten `x%C`) is emitted inside an otherwise
-	 * non-replayed function, that floor can sit ABOVE a temp slot allocated via the non-replay
-	 * `loc -= size` path whose spilled value is still live (marked in `used`) — so the frontier
-	 * re-hands-out that offset, aliasing two temp slots onto one stack word and corrupting the
-	 * live value (the i386 divmagic + large-struct-by-value miscompile). Never return an offset
-	 * that overlaps a live temp slot: keep allocating lower (ast_alloc_temp_loc is monotonic)
-	 * until it is clear. Inert when no aliasing occurs (byte-identical on unaffected arches). */
 	for (i = 0; i < nb_temp_local_vars; i++) { MCC_TRACE("br\n");
 		if (!(used & (1u << i)))
 			{ MCC_TRACE("br\n"); continue; }
 		int lo = arr_temp_local_vars[i].location, sz = arr_temp_local_vars[i].size;
 		if (tmploc < lo + sz && lo < tmploc + size) { MCC_TRACE("br\n");
 			tmploc = ast_alloc_temp_loc(size, align);
-			i = -1; /* restart the overlap scan against the new, lower offset */
+			i = -1;
 		}
 	}
-	/* Also never alias a reserved ast_ltemp slot holding a still-live materialized
-	 * value (the i386 divmagic dividend x): the frontier can descend into that region
-	 * because its floor is seeded from loc/locrec_min, not ast_ltemp_cur. Keep going
-	 * lower until clear (monotonic). Inert when no ltemp slot overlaps -- byte-identical
-	 * on arches whose temp frontier never reaches the reserved region. */
 	while (ast_ltemp_overlaps(tmploc, size)) { MCC_TRACE("br\n");
 		tmploc = ast_alloc_temp_loc(size, align);
 	}
@@ -2492,11 +2421,6 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 		if (is_float(vtop->type.t) &&
 				(vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_TARGET_ARM64)
-			/* An FP literal only exists as a value here; by load() time it has
-			   already become a rodata symbol, so this is the one place FMOV #imm
-			   can replace the adrp/ldr (and, in a loop, a per-iteration GOT
-			   round-trip). Restricted to float/double: arm64 long double is
-			   quad, which FMOV cannot encode. */
 			if (ast_fmov_imm_env && !nocode_wanted) { MCC_TRACE("br\n");
 				int fbt = vtop->type.t & VT_BTYPE;
 				if (fbt == VT_DOUBLE || fbt == VT_FLOAT) { MCC_TRACE("br\n");
@@ -2511,9 +2435,6 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 						memcpy(&f32, &fv, 4);
 						fbits = f32;
 					}
-					/* rc is MCC_RC_FRET for a return value, which does NOT carry
-					   the MCC_RC_FLOAT bit, so test the register we actually get
-					   rather than the requested class. */
 					fr = get_reg(rc);
 					if ((reg_classes[fr] & MCC_RC_FLOAT) &&
 							arm64_fmov_imm(fr, fbt == VT_DOUBLE, fbits)) { MCC_TRACE("br\n");
@@ -3132,9 +3053,6 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 #if MCC_HAVE_INT128
 		if (i128_native_mul_on()) { MCC_TRACE("br\n");
 			int i;
-			/* Port of gen_opl's `*` arm to 64-bit halves; the low 64x64 product's
-			 * [lo,hi] comes from gen_mul_widen()+qexpand() (one `mul`, no operand
-			 * aliasing) in place of gen_opl's TOK_UMULL+lexpand. */
 			t = vtop->type.t;
 			vswap();
 			qexpand();
@@ -3150,7 +3068,7 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 			vpushv(vtop - 1);
 			vpushv(vtop - 1);
 			gen_mul_widen();
-			vtop->type.t = VT_INT128 | VT_UNSIGNED; /* 128-bit pair for qexpand to split */
+			vtop->type.t = VT_INT128 | VT_UNSIGNED;
 			qexpand();
 			for (i = 0; i < 4; i++)
 				{ MCC_TRACE("br\n"); vrotb(6); }
@@ -3177,19 +3095,9 @@ static void gen_opq(int op) { MCC_TRACE("enter\n");
 	case TOK_SHL:
 		func = TOK___ashlti3;
 	gen_shift:
-		/* Inline a compile-time-constant shift count (the easy 80%): a direct
-		 * port of gen_opl's constant arm with the half width 32->64 (sign shift
-		 * 31->63, lexpand/lbuild -> qexpand/qbuild). Variable counts and the
-		 * gate-off path still call the helper (byte-identical). The half-level
-		 * gen_op() runs on VT_LLONG halves, native 64-bit on x86_64. */
 		if (i128_native_shift_on() &&
 				(vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
 			int c;
-			/* Shift by 0 is the identity. gen_opl never sees this (the 32-bit
-			 * fold eats `x << 0`), but the 128-bit constant fold does not, so it
-			 * reaches here -- and the `64 - c` sub-shift would be a shift by 64
-			 * (UB, x86 masks to 0) and corrupt the result. Drop the count, keep
-			 * the value. */
 			if ((int)vtop->c.i == 0) { MCC_TRACE("br\n");
 				vpop();
 				break;
@@ -3602,14 +3510,6 @@ void gen_negf(int op) { MCC_TRACE("enter\n");
 	vpushi(0), vswap(), gen_op('-');
 }
 #else
-/* No hardware FP negate on this target, so the sign bit is flipped in memory:
-   spill, XOR 0x80 into the top byte, reload. Those vdup/gen_op/vstore calls are
-   backend-synthesized, but they run through the AST recorder hooks all the same,
-   which records the byte-address sign-flip as if the program had written it. The
-   replay then re-emits that sequence against a value that is no longer an lvalue
-   (riscv64 store() asserts `sv->r & VT_LVAL`), so any function negating a float
-   crashed the compiler at -O1+. Decline to record the function instead; it keeps
-   the byte-faithful baseline and only forgoes AST optimization for it. */
 void gen_negf(int op) { MCC_TRACE("enter\n");
 	int align, size, bt;
 #if MCC_CONFIG_OPTIMIZER
@@ -4696,11 +4596,6 @@ again:
 		}
 #endif
 #if defined MCC_TARGET_X86_64 && MCC_CONFIG_OPTIMIZER
-		/* A 64->32 narrowing is a 32-bit move: every 32-bit write zero-extends
-		   into the full register, which is bit-for-bit what the shl/sar/shr
-		   triple below computes, in two bytes instead of eight. The value is
-		   always in a register here -- an lvalue with ds <= ss already left via
-		   ALLOW_SUBTYPE_ACCESS above, where the load itself does the narrowing. */
 		if (ss == 8 && ds == 4 && trunc == 32 && ast_trunc32_env) { MCC_TRACE("br\n");
 			vtop->type.t = VT_INT | (dbt & VT_UNSIGNED);
 			gen_cvt_trunc32();
@@ -7540,12 +7435,6 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 			gen_assign_cast(&int_type);
 			break;
 		case 'b':
-			/* `weak` selects the weak vs strong builtin form, but no runtime
-			   __atomic_compare_exchange helper -- generic or sized -- takes it: they
-			   are all strong, a valid lowering of a weak CAS. Drop it here for every
-			   path so it is never passed on as the success memory-order argument
-			   (doing so would silently demote a seq_cst CAS to relaxed). The x86_64
-			   inline path below and the sized-helper call account for the drop. */
 			vpop();
 			break;
 		}
@@ -7619,8 +7508,8 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 			(size == 4 || size == 8) &&
 			atok == TOK___atomic_compare_exchange) { MCC_TRACE("br\n");
 		CType bt2;
-		vpop(); /* failure memory order */
-		vpop(); /* success memory order (weak was dropped in the 'b' case) */
+		vpop();
+		vpop();
 		atomic_lowering++;
 		gen_atomic_cmpxchg(size);
 		atomic_lowering--;
@@ -7671,9 +7560,6 @@ static void parse_atomic(int atok) { MCC_TRACE("enter\n");
 		return;
 	}
 #endif
-	/* compare_exchange dropped its `weak` operand in the 'b' case, so the sized
-	   helper (ptr, expected, desired, success, failure) takes one fewer argument
-	   than the template has slots. */
 	int nargs = arg - save - (atok == TOK___atomic_compare_exchange ? 1 : 0);
 	snprintf(buf, sizeof(buf), "%s_%d", get_tok_str(atok, 0), size);
 	vpush_helper_func(tok_alloc_const(buf));
@@ -8322,9 +8208,6 @@ static double foldm_hilo0(double x) { MCC_TRACE("enter\n");
 }
 
 static double foldm_fabs(double x) { MCC_TRACE("enter\n");
-	/* clear the sign bit -- `x < 0 ? -x : x` leaves -0.0 unchanged (it is not
-	 * < 0), so fabs(-0.0) wrongly kept the sign. Bit-clear is correct for every
-	 * value incl. -0.0/NaN/Inf. */
 	union { double d; unsigned long long u; } v;
 	v.d = x;
 	v.u &= 0x7fffffffffffffffULL;
@@ -9867,16 +9750,9 @@ static int foldmath_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/*
- * -ffold-math for the time-series forecasting formulas (mccforecast.h). A call to
- * one of the mcc_fc_<model> builtins with all-constant double arguments folds at
- * compile time to that model's one-step-ahead prediction over the argument vector
- * (mcc_fc_forecast uses the full ensemble). Same implementation as the -O4+ search
- * predictor — one module, two consumers.
- */
 static const struct {
 	const char *name;
-	int model; /* index into ast_fc_models, or -1 for the ensemble */
+	int model;
 } foldfc_tab[] = {
 		{"mcc_fc_forecast", -1}, {"mcc_fc_rw", 0},     {"mcc_fc_ses", 1},
 		{"mcc_fc_ar1", 2},       {"mcc_fc_lin", 3},    {"mcc_fc_pspline", 4},
@@ -10304,10 +10180,6 @@ tok_next:
 		sizeof_parsed_type = 0;
 		if (tok == '(')
 			{ MCC_TRACE("br\n"); tok = TOK_SOTYPE; }
-		/* The operand of sizeof/_Alignof is UNEVALUATED: the parser walks it to get
-		   a type and emits nothing. Hide the walk from the recorder, or a call in
-		   there is modelled as a real Invoke and replay emits a call the parser
-		   never did. The pushed constant that follows is modelled normally. */
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_begin();
 		ast_hook_synth_begin();
@@ -12121,18 +11993,6 @@ static void case_sort(struct switch_t *sw) { MCC_TRACE("enter\n");
 }
 
 #if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64) || defined(MCC_TARGET_I386)) && MCC_CONFIG_OPTIMIZER
-/* MCC_SWITCH_JUMPTABLE (default off): dense switch -> O(1) rodata jump table
- * (x86_64 + arm64 + riscv64 + i386), vs gcase's O(log n) compare tree. Emits
- * `idx=val-lo; if ((unsigned)idx > hi-lo) goto default; jmp table[idx]`, with an
- * (hi-lo+1)-entry rodata table (gaps -> a default trampoline). Bails the AST
- * recorder for the function (ast_hook_bail) so the baseline table is kept
- * without a faithfulness mismatch vs the gcase-based replay. x86_64 uses an
- * absolute 8-byte pointer table (or, under PIC, a 32-bit self-relative offset
- * table); i386 uses an absolute 4-byte pointer table (non-PIC only -- i386 PIC
- * bails to gcase, since i386 has no PC-relative addressing for a self-relative
- * table); arm64 and riscv64 always use a 32-bit self-relative offset table
- * (their adrp/add resp. auipc/addi symbol addressing is PC-relative, so no
- * separate PIC path is needed). */
 #if defined(MCC_TARGET_ARM64)
 ST_FUNC uint32_t intr(int r);
 #endif
@@ -12154,20 +12014,16 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 	int i;
 	if (sw->n < 4 || (sw->sv.type.t & VT_BTYPE) == VT_LLONG ||
 			(sw->sv.type.t & VT_BTYPE) == VT_INT128)
-		{ MCC_TRACE("br\n"); return 0; } /* PIC handled: gcase_jumptable emits a PC-relative offset table */
+		{ MCC_TRACE("br\n"); return 0; }
 #if defined(MCC_TARGET_I386)
 	if (mcc_state->pic)
-		{ MCC_TRACE("br\n"); return 0; } /* i386 PIC jump table unimplemented (no PC-relative addressing) */
+		{ MCC_TRACE("br\n"); return 0; }
 #endif
 	if (mcc_state->output_type == MCC_OUTPUT_MEMORY)
-		{ MCC_TRACE("br\n"); return 0; } /* -run maps code above the 32-bit range: an absolute
-		                                  * table's R_X86_64_32S/R_386_32 entries cannot reach */
+		{ MCC_TRACE("br\n"); return 0; }
 #if defined(MCC_TARGET_MACHO) && defined(MCC_TARGET_X86_64)
 	if (!mcc_state->pic)
-		{ MCC_TRACE("br\n"); return 0; } /* Mach-O x86_64 execs are PIE (image base above 4 GB),
-		                                  * so the non-PIC dispatch's absolute R_X86_64_32S table
-		                                  * displacement is out of range — same as -run. arm64-osx
-		                                  * is unaffected (adrp/add is PC-relative). */
+		{ MCC_TRACE("br\n"); return 0; }
 #endif
 	lo = sw->p[0]->v1;
 	hi = sw->p[sw->n - 1]->v2;
@@ -12178,7 +12034,7 @@ static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return 0; }
 	for (i = 0; i < sw->n; i++)
 		{ MCC_TRACE("br\n"); covered += sw->p[i]->v2 - sw->p[i]->v1 + 1; }
-	if ((uint64_t)covered * 2 < span) /* require >= 50% density */
+	if ((uint64_t)covered * 2 < span)
 		{ MCC_TRACE("br\n"); return 0; }
 	return 1;
 }
@@ -12187,123 +12043,88 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 	uint64_t span = (uint64_t)(hi - lo) + 1, i;
 	int r, dsym, tramp, j;
 #if defined(MCC_TARGET_X86_64)
-	/* x86_64 non-PIC uses an absolute 8-byte pointer table; PIC uses a 32-bit
-	 * self-relative offset table (see the per-entry reloc note below). */
 	int pic = mcc_state->pic;
 	int elt = pic ? 4 : MCC_PTR_SIZE;
 #elif defined(MCC_TARGET_I386)
-	/* i386: absolute 4-byte pointer table (non-PIC only; PIC bailed in switch_jt_dense). */
 	int elt = MCC_PTR_SIZE;
 #else
-	/* arm64: always a 32-bit self-relative offset table (adrp/add is PC-relative). */
 	int elt = 4;
 #endif
 	unsigned long tab_off;
 	Sym *tab_sym;
 	if (lo) { MCC_TRACE("br\n"); vpush64(VT_INT, lo); gen_op('-'); }
-	vdup(); /* [idx, idx] */
+	vdup();
 	vtop->type.t = VT_INT | VT_UNSIGNED;
 	vpush64(VT_INT | VT_UNSIGNED, (int64_t)(span - 1));
-	gen_op(TOK_GT); /* (unsigned)idx > span-1 */
-	dsym = gvtst(0, 0); /* -> default when out of range */
+	gen_op(TOK_GT);
+	dsym = gvtst(0, 0);
 	gv(MCC_RC_INT);
 	r = vtop->r & VT_VALMASK;
-	/* The switch dispatch is emitted after the body's terminating jump, so mcc's
-	 * linear reachability has nocode_wanted set here even though the dispatch IS
-	 * reached (via the switch value). put_extern_sym() is a no-op for
-	 * cur_text_section symbols while nocode_wanted, which would drop the per-case
-	 * position symbols the table relocs need. Clear it around symbol creation (it
-	 * doesn't gate the raw code bytes, which are already emitted). */
 	int nsave = nocode_wanted;
 	nocode_wanted = 0;
 	tab_off = rodata_section->data_offset;
 	section_ptr_add(rodata_section, span * elt);
 	tab_sym = get_sym_ref(&char_pointer_type, rodata_section, tab_off, span * elt);
 #if defined(MCC_TARGET_X86_64)
-	/* zero-extend idx to 64 bits (clear upper 32) for use as a scaled index */
 	if (r >= 8) { MCC_TRACE("br\n"); g(0x45); }
-	g(0x89); g(0xc0 | ((r & 7) << 3) | (r & 7)); /* mov r32,r32 */
+	g(0x89); g(0xc0 | ((r & 7) << 3) | (r & 7));
 	if (!pic) { MCC_TRACE("br\n");
-		/* jmp *[r*8 + tab] : FF /4, ModRM 0x24 (SIB), SIB scale8/no-base/disp32 */
-		if (r >= 8) { MCC_TRACE("br\n"); g(0x42); } /* REX.X for r8-r15 index */
+		if (r >= 8) { MCC_TRACE("br\n"); g(0x42); }
 		g(0xff); g(0x24); g((3 << 6) | ((r & 7) << 3) | 5);
 		greloca(cur_text_section, tab_sym, ind, R_X86_64_32S, 0);
 		gen_le32(0);
 	} else { MCC_TRACE("br\n");
-		/* PIC dispatch (base = a fresh scratch, distinct from the idx reg r which
-		 * still holds vtop): lea tab(%rip),base; movslq 0(base,r,4),r;
-		 * add base,r; jmp *r. The mov r32,r32 above already zero-extended r. */
 		int base = get_reg(MCC_RC_INT) & VT_VALMASK;
-		/* lea tab(%rip), base : REX.W[+REX.R] 8d /5 disp32 (RIP), reloc PC32-4 */
 		g(0x48 | (base >= 8 ? 4 : 0)); g(0x8d); g(0x05 | ((base & 7) << 3));
 		greloca(cur_text_section, tab_sym, ind, R_X86_64_PC32, -4);
 		gen_le32(0);
-		/* movslq 0(base, r*4), r : REX.W|R(dst r)|X(index r)|B(base) 63 /r SIB.
-		 * mod=01 disp8=0 so it is correct for any base (incl. rbp/r13 = base&7==5). */
 		g(0x48 | (r >= 8 ? 4 : 0) | (r >= 8 ? 2 : 0) | (base >= 8 ? 1 : 0));
 		g(0x63); g(0x44 | ((r & 7) << 3)); g(0x80 | ((r & 7) << 3) | (base & 7)); g(0x00);
-		/* add base, r  (r += base) : REX.W|R(base)|B(r) 01 /r mod11 */
 		g(0x48 | (base >= 8 ? 4 : 0) | (r >= 8 ? 1 : 0));
 		g(0x01); g(0xc0 | ((base & 7) << 3) | (r & 7));
-		/* jmp *r : FF /4 mod11 */
 		if (r >= 8) { MCC_TRACE("br\n"); g(0x41); }
 		g(0xff); g(0xe0 | (r & 7));
 	}
 #elif defined(MCC_TARGET_I386)
-	/* i386 non-PIC dispatch: jmp *tab(,idx,4). The idx reg (r) is a full 32-bit
-	 * register already constrained to [0,span-1] by the range check, so no
-	 * zero-extension is needed. FF /4, ModRM 0x24 (mod=00, reg=4, rm=4 SIB),
-	 * SIB scale4/index=r/no-base(5) -> disp32 = R_386_32 (REL, addend 0 inline)
-	 * to the table symbol. */
 	g(0xff); g(0x24); g((2 << 6) | ((r & 7) << 3) | 5);
 	greloc(cur_text_section, tab_sym, ind, R_386_32);
 	gen_le32(0);
 #elif defined(MCC_TARGET_ARM64)
 	{
-		/* arm64 dispatch: mov w_idx,w_idx (zero-extend); adrp base,tab;
-		 * add base,base,:lo12:tab; ldrsw idx,[base,idx,lsl 2]; add base,base,idx;
-		 * br base. base = a fresh scratch distinct from the idx reg (r holds vtop);
-		 * idx is reused as the loaded-offset temp. Encodings verified with
-		 * aarch64-as. */
 		uint32_t ir = intr(r);
 		uint32_t base = intr(get_reg(MCC_RC_INT));
-		o(0x2A0003E0u | (ir << 16) | ir);                    /* mov  Wir, Wir      */
+		o(0x2A0003E0u | (ir << 16) | ir);
 		greloca(cur_text_section, tab_sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
-		o(0x90000000u | base);                               /* adrp Xbase, tab    */
+		o(0x90000000u | base);
 		greloca(cur_text_section, tab_sym, ind, R_AARCH64_ADD_ABS_LO12_NC, 0);
-		o(0x91000000u | (base << 5) | base);                 /* add  Xbase, :lo12: */
-		o(0xB8A07800u | (ir << 16) | (base << 5) | ir);      /* ldrsw Xir,[base,ir,lsl2] */
-		o(0x8B000000u | (ir << 16) | (base << 5) | base);    /* add  Xbase,Xbase,Xir */
-		o(0xD61F0000u | (base << 5));                        /* br   Xbase         */
+		o(0x91000000u | (base << 5) | base);
+		o(0xB8A07800u | (ir << 16) | (base << 5) | ir);
+		o(0x8B000000u | (ir << 16) | (base << 5) | base);
+		o(0xD61F0000u | (base << 5));
 	}
 #elif defined(MCC_TARGET_RISCV64)
 	{
-		/* riscv64 dispatch: zext.w idx; auipc base,%pcrel_hi(tab);
-		 * addi base,base,%pcrel_lo(label); slli idx,idx,2; add idx,base,idx;
-		 * lw idx,0(idx); add base,base,idx; jr base. base = a fresh scratch (r
-		 * holds vtop); idx reused as &tab[idx] then the loaded 32-bit offset (lw
-		 * sign-extends to 64). Encodings verified with riscv64-as. */
 		Sym label = {0};
 		int idx = ireg(r);
 		int base = ireg(get_reg(MCC_RC_INT));
-		o(0x00001013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (32u << 20)); /* slli idx,idx,32 */
-		o(0x00005013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (32u << 20)); /* srli idx,idx,32 */
+		o(0x00001013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (32u << 20));
+		o(0x00005013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (32u << 20));
 		greloca(cur_text_section, tab_sym, ind, R_RISCV_PCREL_HI20, 0);
 		label.type.t = VT_VOID | VT_STATIC;
-		put_extern_sym(&label, cur_text_section, ind, 0); /* label at the auipc site */
-		o(0x00000017u | ((uint32_t)base << 7));           /* auipc base, %pcrel_hi(tab) */
+		put_extern_sym(&label, cur_text_section, ind, 0);
+		o(0x00000017u | ((uint32_t)base << 7));
 		greloca(cur_text_section, &label, ind, R_RISCV_PCREL_LO12_I, 0);
-		o(0x00000013u | ((uint32_t)base << 7) | ((uint32_t)base << 15)); /* addi base,base,%pcrel_lo */
-		o(0x00001013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (2u << 20)); /* slli idx,idx,2 */
-		o(0x00000033u | ((uint32_t)idx << 7) | ((uint32_t)base << 15) | ((uint32_t)idx << 20)); /* add idx,base,idx */
-		o(0x00002003u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15)); /* lw idx,0(idx) */
-		o(0x00000033u | ((uint32_t)base << 7) | ((uint32_t)base << 15) | ((uint32_t)idx << 20)); /* add base,base,idx */
-		o(0x00000067u | ((uint32_t)base << 15)); /* jalr x0,base,0 (jr base) */
+		o(0x00000013u | ((uint32_t)base << 7) | ((uint32_t)base << 15));
+		o(0x00001013u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15) | (2u << 20));
+		o(0x00000033u | ((uint32_t)idx << 7) | ((uint32_t)base << 15) | ((uint32_t)idx << 20));
+		o(0x00002003u | ((uint32_t)idx << 7) | ((uint32_t)idx << 15));
+		o(0x00000033u | ((uint32_t)base << 7) | ((uint32_t)base << 15) | ((uint32_t)idx << 20));
+		o(0x00000067u | ((uint32_t)base << 15));
 	}
 #endif
-	tramp = ind; /* gaps land here -> jmp default */
+	tramp = ind;
 	dsym = gjmp(dsym);
-	nocode_wanted = 0; /* gjmp set nocode_wanted; re-clear for the entry symbols */
+	nocode_wanted = 0;
 	j = 0;
 	for (i = 0; i < span; i++) { MCC_TRACE("br\n");
 		int64_t val = lo + (int64_t)i;
@@ -12314,11 +12135,6 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); target = sw->p[j]->ind; }
 		else
 			{ MCC_TRACE("br\n"); target = tramp; }
-		/* Table entry -> the case (or default trampoline) code position.
-		 * x86_64 non-PIC: absolute pointer (R_DATA_PTR).
-		 * x86_64 PIC / arm64: 32-bit self-relative offset (case - table_base) via a
-		 * PC-relative reloc with addend = the entry's own offset within the table,
-		 * so S + A - P = case + i*4 - (tab_base + i*4) = case - table_base. */
 #if defined(MCC_TARGET_X86_64)
 		if (!pic) { MCC_TRACE("br\n");
 			greloca(rodata_section,
@@ -12330,8 +12146,6 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 							tab_off + i * elt, R_X86_64_PC32, (int)(i * elt));
 		}
 #elif defined(MCC_TARGET_I386)
-		/* i386 non-PIC: absolute 4-byte pointer (R_386_32, REL, addend 0 inline
-		 * from the zero-filled rodata). */
 		greloc(rodata_section,
 					 get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
 					 tab_off + i * elt, R_386_32);
@@ -12340,8 +12154,6 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
 						tab_off + i * elt, R_AARCH64_PREL32, (int)(i * elt));
 #elif defined(MCC_TARGET_RISCV64)
-		/* riscv64 expresses the cross-section difference case - table_base as an
-		 * ADD32(case) + SUB32(tab_sym) pair at the same table-entry offset. */
 		greloca(rodata_section,
 						get_sym_ref(&char_pointer_type, cur_text_section, target, 0),
 						tab_off + i * elt, R_RISCV_ADD32, 0);
@@ -14309,9 +14121,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			gen_vla_alloc(type, align);
 			int vla_res_slot = 0, vla_hook_slot = ptr_slot;
 #if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
-			/* win64 alloca returns the (rounded) block in rax above its shadow
-			   space, not at rsp — save rax as the object pointer, and rsp in a
-			   separate slot for the vla chain (mirrors the plain-VLA path). */
 			vla_res_slot = ptr_slot;
 			gen_vla_result(ptr_slot);
 			{
@@ -14413,23 +14222,10 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 				{ MCC_TRACE("br\n"); sec = bss_section; }
 		}
 
-		/* -fdata-sections: give each object its own `.data.<name>` (or .bss./
-		   .rodata.) so a linker can drop the ones nothing references, exactly as
-		   -ffunction-sections does for code. Applied only where the section was
-		   CHOSEN above -- an explicit __attribute__((section(...))) keeps it, and
-		   TLS is left alone because the tdata/tbss pair is laid out as a unit.
-		   Was parsed into MCCState.data_sections and read by nothing: the fourth
-		   flag in this tree accepted and silently discarded. */
 		if (mcc_state->data_sections && !ad->section && sec && v &&
 				!(type->t & VT_TLS)) { MCC_TRACE("br\n");
 			const char *nm = get_tok_str(v, NULL);
 			char dsbuf[256];
-			/* Collision guard: mcc already owns names like `.data.ro`, so a global
-			   actually called `ro` would otherwise be MERGED into that existing
-			   section instead of getting its own. Fall back to the base section.
-			   Scanned inline rather than via have_section(), which is static to
-			   mccelf.c -- calling it here would break the multisource build the
-			   same way pp_in_system_header did. */
 			if (nm && snprintf(dsbuf, sizeof dsbuf, "%s.%s", sec->name, nm) <
 									(int)sizeof dsbuf) { MCC_TRACE("br\n");
 				int taken = 0, si;
@@ -14582,17 +14378,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		if (flexible_array)
 			{ MCC_TRACE("br\n"); flexible_array->type.ref->c = -1; }
 #if MCC_CONFIG_OPTIMIZER
-		/* M5 const-data visibility: record this initialized static/global object AFTER
-		 * its bytes are written, so the side-car can also estimate datacomp
-		 * compressibility (M6 candidate ID). Read-only; changes no emitted bytes. */
 		if (sec && size > 0)
 			{ MCC_TRACE("br\n"); ast_hook_data(sec, addr, size, sec == rodata_section); }
-		/* M6z: an all-zero writable static is semantically identical to an uninitialized one
-		 * (C11 6.7.9), so relocate it from .data (zero disk bytes) to .bss (NOBITS). Guarded
-		 * to a provably-safe subset — named object, last allocation in data_section, its
-		 * initializer emitted no relocation (excludes pointer inits whose zero bytes carry a
-		 * reloc), all bytes zero. Relocations are symbol-keyed, so re-binding the symbol fixes
-		 * every reference. Opt-in via MCC_ZERO_BSS. */
 		if (ast_zero_bss_env && v && sym && size > 0 && sec == data_section &&
 				!flexible_array && !(type->t & VT_TLS) &&
 				zbss_end == data_section->data_offset &&
@@ -14628,19 +14415,10 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			MCC_TRACE("zero-tbss move v=%d size=%d tdata@%d -> tbss@%d\n", v, size, addr,
 								new_addr);
 		}
-		/* -fmerge-constants: an anonymous rodata string literal (v==0, put in rodata via
-		 * str_init) whose exact bytes already appeared this TU can share the prior copy.
-		 * C11 6.4.5p7 leaves identical literals' distinctness unspecified, so this is sound.
-		 * Same symbol-rebind mechanism as M6z: re-home the literal's anon symbol at the shared
-		 * offset (references are symbol-keyed) and roll back the just-written duplicate bytes.
-		 * Guarded to the last allocation so the truncation is safe. Opt-in via MCC_MERGE_STRINGS. */
 		if (ast_merge_strings_env && v == 0 && sym && size > 0 && sec == rodata_section &&
 				(unsigned long)(addr + size) == rodata_section->data_offset) { MCC_TRACE("br\n");
 			long shared = ast_strpool_find_or_add(sec, addr, size, align);
 			if (shared >= 0 && shared != addr) { MCC_TRACE("br\n");
-				/* Zero the reclaimed slot: the duplicate's bytes are still in the buffer, and
-				 * the next allocation's initializer may rely on pre-zeroed tail padding (string
-				 * literals memcpy only their content, expecting the trailing NUL already zero). */
 				memset(rodata_section->data + addr, 0, (size_t)size);
 				rodata_section->data_offset = addr;
 				put_extern_sym(sym, rodata_section, shared, size);
@@ -14735,11 +14513,6 @@ static void sym_push_params(Sym *ref) {
 	}
 }
 
-/* -ffunction-sections: give each function its own `.text.<name>` so a linker
-   can drop the ones nothing references. Until this, the flag was parsed into
-   MCCState.function_sections and never read by anything -- accepted and
-   silently discarded, like -march= still is. Functions carrying an explicit
-   __attribute__((section(...))) keep it; the caller handles that case. */
 static Section *fnsec_for(Sym *sym) { MCC_TRACE("enter\n");
 	char buf[256];
 	const char *nm;
@@ -14875,16 +14648,6 @@ static void gen_inline_functions(MCCState *s) {
 				{ MCC_TRACE("br\n"); continue; }
 			int emit = !(sym->type.t & VT_INLINE) ||
 								 ((sym->type.t & VT_STATIC) && sym->c);
-			/* A plain `inline` definition (no static, no extern) supplies an
-			   INLINE definition only: C99 6.7.4 leaves the program ill-formed
-			   unless some TU also provides an external definition. mcc inlines
-			   nothing here and emits nothing, so a call that is not inlined ends
-			   as an unresolved reference. Emitting the body WEAK gives the
-			   external definition while letting every TU that does the same
-			   collapse onto one copy at link time. Gated, since programs that
-			   link today must stay byte-identical -- clearing VT_INLINE matters
-			   as much as setting a.weak, because put_extern_sym2 forces
-			   STB_LOCAL for VT_INLINE and would otherwise bury the body. */
 			if (mcc_state->c99_inline_body && !emit && sym->c &&
 					(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
 				sym->type.t &= ~VT_INLINE;
@@ -14985,12 +14748,6 @@ static void pe_check_linkage(CType *type, AttributeDef *ad) {
 }
 #endif
 
-/* True while the tokens being parsed come from the builtin preamble (the
- * `<command line>` buffer and the `mccdefs.h` it pulls in — __va_list_tag etc.),
- * not the user's translation unit. Used so the empty-TU pedantic diagnostic
- * isn't suppressed by the preamble's own typedefs. The preamble buffer
- * (`<command line>`) is only on the include stack while it (and its includes)
- * are being read; a user file / user #include never has it in its prev chain. */
 static int decl_in_preamble(void) { MCC_TRACE("enter\n");
 	BufferedFile *bf;
 	for (bf = file; bf; bf = bf->prev)
@@ -15025,7 +14782,7 @@ static int decl(int l) {
 				continue;
 			}
 			if (tok == TOK_STATIC_ASSERT) { MCC_TRACE("br\n");
-				if (!decl_in_preamble()) got_decl = 1; /* _Static_assert is a declaration */
+				if (!decl_in_preamble()) got_decl = 1;
 				do_Static_assert();
 				continue;
 			}
@@ -15035,7 +14792,7 @@ static int decl(int l) {
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
 					{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
 #if MCC_CONFIG_ASM
-				if (!decl_in_preamble()) got_decl = 1; /* file-scope asm: don't flag the TU as empty */
+				if (!decl_in_preamble()) got_decl = 1;
 				asm_global_instr();
 				continue;
 #else
@@ -15053,7 +14810,7 @@ static int decl(int l) {
 				break;
 			}
 		}
-		if (!decl_in_preamble()) got_decl = 1; /* committed to parsing a real external declaration */
+		if (!decl_in_preamble()) got_decl = 1;
 
 		if (tok == ';') { MCC_TRACE("br\n");
 			if ((btype.t & VT_BTYPE) == VT_STRUCT && (btype.ref->v & ~SYM_STRUCT) < SYM_FIRST_ANOM)
@@ -15094,35 +14851,9 @@ static int decl(int l) {
 					type.t &= ~VT_INLINE;
 				} else if (mcc_state->c99_inline_body &&
 									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) { MCC_TRACE("br\n");
-					/* -fc99-inline-body: drop VT_INLINE here rather than parking the
-					 * body in inline_fns. Parked bodies are generated at the END of the
-					 * TU, long after their callers, so ast_inline_capture never has them
-					 * in the pool and an `inline` function is NEVER inlined -- measured:
-					 * plb spectral-norm calls A() per element and costs 7.29x gcc's
-					 * instructions, while the same function written `static` inlines and
-					 * costs 5.64x. Generating it in place makes it inlinable like any
-					 * other function; a.weak keeps the out-of-line copy mergeable across
-					 * TUs, which is the property the end-of-TU path provided. */
 					type.t &= ~VT_INLINE;
 					ad.a.weak = 1;
 				}
-				/* `static inline` is the ordinary way to write an inlinable helper,
-				 * and parking it defeats the inliner exactly as it does for plain
-				 * `inline` above -- the body lands at the end of the TU, after every
-				 * caller, so ast_inline_capture never sees it. Dropping VT_INLINE
-				 * makes it the plain `static` function that already inlines;
-				 * internal linkage is already correct, so unlike the
-				 * c99_inline_body case this needs no a.weak.
-				 *
-				 * SYSTEM HEADERS ARE EXCLUDED, and that is the whole design. mcc
-				 * has no dead-static elimination -- the pass near gen_inline_functions
-				 * that looks like one only WARNS -- so a body generated in place is
-				 * emitted whether or not anything calls it. Parking is what keeps
-				 * the thousands of `static inline`/__extern_inline helpers in libc
-				 * headers out of the object, and generating those in place costs
-				 * +2135 bytes and 31 symbols on a hello-world-sized TU while
-				 * inlining nothing anybody called. Restricting to the user's own
-				 * files bounds the emitted set to functions the TU actually wrote. */
 #if MCC_CONFIG_OPTIMIZER
 				if (ast_inline_static_env && !pp_in_system_header() &&
 						(type.t & (VT_INLINE | VT_STATIC)) == (VT_INLINE | VT_STATIC))
@@ -15361,12 +15092,6 @@ static int decl(int l) {
 						{
 							int aci_prev = assign_ctx_is_init;
 							assign_ctx_is_init = has_init ? 1 : aci_prev;
-							/* A STATIC-storage initializer is compile-time data written into a
-							   section: the parser emits no code for it, but the value it walks
-							   goes through gen_cast, so ast_hook_convert leaves a Convert on the
-							   model stack that nothing pops -- the model then runs one ahead and
-							   the next real push desyncs. Hide the walk. Autos are NOT bracketed:
-							   their initializer emits real code that must be modelled. */
 #if MCC_CONFIG_OPTIMIZER
 							int ast_sq = (r & VT_VALMASK) == VT_CONST && has_init;
 							if (ast_sq)

@@ -3923,10 +3923,6 @@ static int macro_subst_tok(
 		} else if (v == TOK___DATE__ || v == TOK___TIME__) { MCC_TRACE("br\n");
 			time_t ti;
 			struct tm *tm = NULL;
-			/* Reproducible builds: when SOURCE_DATE_EPOCH holds a valid
-			   integer, pin __DATE__/__TIME__ to that instant (UTC) so the
-			   output is deterministic across compiler processes. Otherwise
-			   fall back to the wall clock. */
 			const char *sde = getenv("SOURCE_DATE_EPOCH");
 			if (sde && *sde) { MCC_TRACE("br\n");
 				char *end;
@@ -4207,10 +4203,6 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	if (is_asm)
 		{ MCC_TRACE("br\n"); putdef(cs, "__ASSEMBLER__"); }
 #if MCC_CONFIG_ASM
-	/* This mcc has the integrated assembler compiled in, so the code it builds
-	   may keep inline asm. Sources that must strip asm when built by an asm-off
-	   mcc (e.g. mcchost.c's thread-pointer read) key off this predef rather than
-	   MCC_CONFIG_ASM, which would otherwise re-default to 1 in the compiled unit. */
 	putdef(cs, "__MCC_ASM__");
 #endif
 	if (s1->output_type == MCC_OUTPUT_PREPROCESS)

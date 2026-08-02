@@ -1,20 +1,4 @@
 #!/bin/sh
-# The AST arena is supposed to be a TREE, but ast_add_child re-parents by
-# overwriting parent[child] WITHOUT unlinking the node from its previous
-# parent's first_child/next_sib chain. A node can therefore end up reachable
-# from two child chains, and replay -- which walks the chains -- emits it once
-# per chain. That is the F3a call duplication.
-#
-# This asserts the property that keeps that defect harmless: a violation may
-# exist in a body the recorder REJECTED, but never in one it accepted. Only
-# `faithful` bodies are handed to the optimizer passes, and a pass transforming
-# an invalid model and re-emitting from it is the one failure mode the always-on
-# replay byte-comparison cannot catch. So: zero violations in FAITHFUL bodies.
-#
-# Measured when this landed: 187 violations over mcc's own TU and 44 over the
-# exec corpus, ALL in non-faithful bodies, at -O2/-O3/-Os alike.
-#
-# Usage: treecheck.sh <mcc> <corpus-dir> [olevel ...]
 set -e
 
 MCC=$1

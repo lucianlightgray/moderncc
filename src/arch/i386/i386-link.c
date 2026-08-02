@@ -286,4 +286,3 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	}
 }
-

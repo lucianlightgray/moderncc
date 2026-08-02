@@ -1,14 +1,5 @@
 name: Bench
 
-# Compile-speed benchmark of the SELF-HOSTED release mcc (stage2) vs the
-# reference compilers (gcc/clang/mingw on Linux, clang/gcc on macOS, msvc on
-# Windows), one representative host per OS family. Split out of the gating CI
-# onto a nightly trigger. The flow is the standard hierarchy with `bench` as the
-# stage-3 consumer: stage1 (host build) -> stage2 `release` (mcc builds a
-# stripped release mcc + mccbench) -> stage3 --consume bench. Matrix comes from
-# the same ledger as ci.yml (`ci plan --job stage1-gate`). Non-gating; also
-# runnable on demand.
-
 on:
   schedule:
     - cron: '31 4 * * *'
@@ -30,12 +21,6 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/ci
       - id: gen
-        # One representative host per OS family (bench's design). stage1-gate
-        # now carries two macOS gate hosts (clang + gcc, for the CI self-host
-        # matrix); a gcc-vs-clang-built mcc has ~identical compile speed, so
-        # dedup by OS keeps the first gate host per family (clang on macOS) and
-        # drops the redundant second -- which also avoids a cell whose CC would
-        # need the gcc-N resolve bench does not carry.
         run: echo "bench=$(mcc-ci plan --job stage1-gate | jq -c 'unique_by(.runner|split("-")[0])')" >> "$GITHUB_OUTPUT"
 
   bench:
@@ -86,13 +71,6 @@ jobs:
           [ -x "$mccexe.exe" ] && mccexe="$mccexe.exe"
           mcc-ci stage2 release --mcc "$mccexe" -- -DMCC_BENCH=ON -DMCC_DIST_PLAT=${{ matrix.host }}
           mcc-ci stage3 --consume bench --build cmake-stage2-release
-      # Generated-code speed, judged on instructions retired against the
-      # committed per-<cpu>-<os> baseline. Instructions are the metric because a
-      # time delta with no instruction delta is layout, not codegen -- and
-      # because the counter reproduces to within 0.04% run to run where wall
-      # clock on a shared runner does not. Exit 77 means this host has no
-      # counter (no usable perf, not Apple Silicon) or no baseline for its key,
-      # which is a skip, not a failure.
       - name: runtime-bench vs the stored instruction baseline
         if: always()
         run: |

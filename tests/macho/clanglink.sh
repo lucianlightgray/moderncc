@@ -1,35 +1,4 @@
 #!/bin/sh
-# mcc linking REAL clang -c Mach-O objects.
-#
-# Nothing else in the suite does this, which is why three separate reader
-# defects sat unnoticed until the corpus was swept by hand:
-#   * a Mach-O COMMON (tentative) definition read as a plain undefined, so
-#     every file-scope `int x;` clang compiled was an unresolved reference
-#   * DWARF relocations reaching the chained-fixup rebase list, whose 4-byte
-#     alignment rule DWARF's byte-packed fields do not obey
-#   * the GOT slot of an imported DATA symbol never bound, because only the
-#     FIRST GOT relocation for a symbol creates the slot and Mach-O stores
-#     relocations in descending address order -- so clang's LO12 half arrived
-#     first and the ADR_GOT_PAGE case never ran
-#   * ___dso_handle undefined, so no TU with a constructor or destructor linked
-#   * __DATA,__mod_init_func mapped to a section nothing runs, so the
-#     constructors that did link never fired
-#   * a scalar LDRSB decoded as a 128-bit SIMD load, scaling its LO12 immediate
-#     by 16 and truncating every offset below 16 to zero
-#   * every arm64 sibling call rewritten into `bl`, because Mach-O has one
-#     BRANCH26 for both and the reader called all of them CALL26
-#
-# Each program is compiled by clang with -g (DWARF) and the stack protector
-# left ON (it is what pulls in __stack_chk_guard, the imported data symbol),
-# linked twice -- once by clang as the reference, once by mcc -- and both are
-# run and compared on stdout AND exit status.
-#
-# Every case is swept at -O0 AND -O2. This cell ran unoptimized only until
-# 2026-08-02, and that is precisely why the sibling-call rewrite above survived:
-# clang emits tail calls from -O1 up, so no object this cell produced contained
-# one.
-#
-# Usage: clanglink.sh <mcc> <srcdir> <workdir> [-B<prefix>]
 set -e
 
 MCC=$1
@@ -62,25 +31,6 @@ codegen/bswap_inline codegen/popcount_inline codegen/signbit_inline
 expressions/integer_promotion expressions/div_mod_shift
 optimizer/loop_fusion optimizer/loop_interchange
 types/bool"
-
-# types/int128 is DELIBERATELY not in that list, and the reason is a real gap
-# rather than a quirk of one file: nothing on an mcc DARWIN link line provides
-# compiler-rt. mcc spells its own overflow helpers __mcc_mulo_ti
-# (runtime/lib/int128.c), and that file has been x86_64-only since 2026-08-02, so
-# an arm64 Darwin link offers no *ti* helper at all. On ELF the same objects
-# resolve because mcc_add_runtime puts -lgcc_s ahead of libmccrt and libgcc
-# defines the compiler-rt names -- which is why the 2026-08-02 widening,
-# validated on Linux, did not see it.
-#
-# What makes this case UNSTABLE rather than simply broken is that whether it
-# trips depends on the clang version, so it must not gate CI either way. Its
-# __builtin_mul_overflow over __int128 is lowered to a ___muloti4 CALL by the
-# clang on the macOS runner -- mcc links the image and dyld then rejects it at
-# load with "symbol not found in flat namespace '___muloti4'" (nightly Matrix run
-# 30742545269) -- while Apple clang 21 inlines the same builtin and leaves only
-# ___divti3/___modti3/___udivti3/___umodti3 undefined, all of which do resolve,
-# so the identical case passes on a current Xcode. Restore it when a Darwin link
-# line gains a compiler-rt provider.
 
 fails=0
 ran=0

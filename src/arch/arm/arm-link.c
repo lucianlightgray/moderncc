@@ -138,15 +138,6 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 }
 
-/* In -run (MCC_OUTPUT_MEMORY) the external call target (e.g. printf resolved via
-   dlopen) can land far outside the ±32MB reach of an ARM BL/B, and no PLT is
-   built for AUTO_GOTPLT_ENTRY relocs in MEMORY mode (mccelf.c build_got_entries).
-   Mirror arm64_veneer_memory_calls: for each ARM branch reloc to an undefined or
-   absolute symbol, emit a nearby long-branch veneer
-       ldr pc, [pc, #-4]   ; e51ff004
-       .word <target>      ; R_ARM_ABS32 -> resolved absolute address
-   and retarget the branch to the (in-range) veneer symbol. AOT paths are
-   unaffected because this only runs for MCC_OUTPUT_MEMORY. */
 ST_FUNC void arm_veneer_memory_calls(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *vs = NULL;
 	int i, nsyms, nsec, *vmap;
@@ -186,8 +177,8 @@ ST_FUNC void arm_veneer_memory_calls(MCCState *s1) { MCC_TRACE("enter\n");
 				}
 				off = vs->data_offset;
 				p = section_ptr_add(vs, 8);
-				write32le(p, 0xe51ff004);     /* ldr pc, [pc, #-4] */
-				write32le(p + 4, 0);          /* .word <resolved abs> (ABS32 reloc) */
+				write32le(p, 0xe51ff004);
+				write32le(p + 4, 0);
 				put_elf_reloc(symtab_section, vs, off + 4, R_ARM_ABS32, si);
 				vmap[si] = put_elf_sym(symtab_section, off, 8,
 															 ELFW(ST_INFO)(STB_LOCAL, STT_FUNC), 0,
@@ -431,9 +422,6 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		int32_t x;
 		addr_t tls_start = 0, tls_end = 0, tls_align = 1;
 
-		/* See the riscv64 peer: a shared object does not own the TLS block this
-		   offset is relative to, so baking it silently reads the executable's
-		   thread-local instead. Dynamic TLS is not implemented here. */
 		if (s1->output_type & MCC_OUTPUT_DLL) { MCC_TRACE("br\n");
 			mcc_error_noabort("local-exec TLS in a shared object is not valid; "
 												"dynamic TLS is not implemented for arm");
@@ -508,4 +496,3 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 		return;
 	}
 }
-

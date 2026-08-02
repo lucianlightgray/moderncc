@@ -1,6 +1,6 @@
-/* libdispatch (GCD): queues, semaphores, groups, barriers and dispatch_apply.
-   Uses only the _f function-pointer entry points -- Apple blocks are a clang
-   language extension mcc does not implement, and GCD ships both forms. */
+
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,8 +30,8 @@ static void signal_sem(void *ctx) { dispatch_semaphore_signal((dispatch_semaphor
 static void group_work(void *ctx) { __sync_fetch_and_add((int *)ctx, 1); }
 
 int main(void) {
-	/* A serial queue must apply every async in submission order, so the sum is
-	   exact rather than merely "some of them ran". */
+
+
 	dispatch_queue_t q = dispatch_queue_create("mcc.darwin.serial", NULL);
 	CHECK(q != NULL);
 	long expect = 0;
@@ -48,7 +48,7 @@ int main(void) {
 	CHECK(dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW,
 													 5LL * NSEC_PER_SEC)) == 0);
 
-	/* dispatch_apply_f is the concurrent path: every index exactly once. */
+
 	dispatch_queue_t gq = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 	CHECK(gq != NULL);
 	dispatch_apply_f(NITEMS, gq, NULL, mark);
@@ -66,7 +66,7 @@ int main(void) {
 												 10LL * NSEC_PER_SEC)) == 0);
 	CHECK(group_count == 256);
 
-	/* A concurrent queue's barrier has to drain everything before it. */
+
 	dispatch_queue_t cq = dispatch_queue_create(
 			"mcc.darwin.concurrent", DISPATCH_QUEUE_CONCURRENT);
 	CHECK(cq != NULL);
@@ -76,10 +76,10 @@ int main(void) {
 	dispatch_barrier_sync_f(cq, NULL, bump_serial);
 	CHECK(bar_count == 512);
 
-	/* dispatch_release takes dispatch_object_t, a transparent_union: each of
-	   these owned objects is a distinct member type, so the calls only compile
-	   once mcc applies transparent_union member conversion. gq is a global
-	   queue and is not owned, so it is not released. */
+
+
+
+
 	dispatch_release(q);
 	dispatch_release(sem);
 	dispatch_release(grp);

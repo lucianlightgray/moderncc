@@ -1,10 +1,4 @@
 cmake_minimum_required(VERSION 3.22)
-#
-# Summarise the journal sweep matrix from the .status files journal_sweep.cmake
-# drops. Reports OK / SKIP / FAIL per key with the reason, and -- deliberately --
-# prints keys that were never run at all as "not run" rather than omitting them.
-# A matrix that silently lists only what succeeded reads as full coverage.
-#
 if(NOT TMPROOT)
     message(FATAL_ERROR "journal_report: TMPROOT is required")
 endif()

@@ -955,9 +955,6 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 				} else if (prc[1 + i] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 					ES(0x27, (size / regcount) == 4 ? 2 : 3, 8, 10 + areg[1]++, loc + (fieldofs[i + 1] >> 4));
 				} else { MCC_TRACE("br\n");
-					/* store at the field's real byte offset (fieldofs), not i*8 -- a
-					   packed integer field (e.g. the int in {float@0; int@4}) is not
-					   8-byte spaced. Mirrors the FLOAT branch above. */
 					ES(0x23, 3, 8, 10 + areg[0]++, loc + (fieldofs[i + 1] >> 4));
 				}
 			}
@@ -1524,27 +1521,19 @@ ST_FUNC void gen_mulh(int sign) { MCC_TRACE("enter\n");
 	ER(0x33, sign ? 1 : 3, d, a, b, 1);
 }
 
-/* math-builtin hardware inlines (RV64 F/D baseline). fabs = fsgnjx.d rd,rs,rs
- * (func3=2, func7=0x11 double / 0x10 single); fsqrt.d rd,rs (func3=rm=7 dynamic,
- * rs2=0, func7=0x2D double / 0x2C single). Bit-exact vs libm; fsqrt sets no
- * errno (caller gates on a provably-nonneg arg). No floor/ceil/trunc: RV64
- * baseline has no round-to-integral insn (gcc keeps the libcall too), so
- * gen_round is not provided here and never referenced on riscv64. */
 ST_FUNC void gen_fabs(void) { MCC_TRACE("enter\n");
 	int bt = vtop->type.t & VT_BTYPE, r, d;
 	gv(MCC_RC_FLOAT);
 	r = freg(vtop->r);
 	d = r;
 #if MCC_CONFIG_OPTIMIZER
-	/* fsgnjx.d is destructive (rd==rs1==rs2). Don't clobber a PINNED (promoted)
-	 * source still live — write to a fresh reg (see x86_64 gen_sqrt). */
 	if (ast_pinned_regs & ((uint64_t)1 << (vtop->r & VT_VALMASK))) { MCC_TRACE("br\n");
 		int nr = get_reg(MCC_RC_FLOAT);
 		vtop->r = nr;
 		d = freg(nr);
 	}
 #endif
-	ER(0x53, 2, d, r, r, bt == VT_DOUBLE ? 0x11 : 0x10); /* fabs.d rd=d, rs1=r */
+	ER(0x53, 2, d, r, r, bt == VT_DOUBLE ? 0x11 : 0x10);
 }
 
 ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
@@ -1559,12 +1548,9 @@ ST_FUNC void gen_sqrt(void) { MCC_TRACE("enter\n");
 		d = freg(nr);
 	}
 #endif
-	ER(0x53, 7, d, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c); /* fsqrt.d rd=d, rs1=r */
+	ER(0x53, 7, d, r, 0, bt == VT_DOUBLE ? 0x2d : 0x2c);
 }
 
-/* copysign(x,y) = fsgnj.d/.s rd, x, y  (rd = {sign(y), magnitude(x)}).
- * vtop[-1]=x, vtop=y; result overwrites x's reg, y popped. func3=0 (fsgnj),
- * func7=0x11 double / 0x10 single. */
 ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	int bt = vtop[-1].type.t & VT_BTYPE, a, b;
 	gv2(MCC_RC_FLOAT, MCC_RC_FLOAT);
@@ -1574,12 +1560,6 @@ ST_FUNC void gen_copysign(void) { MCC_TRACE("enter\n");
 	ER(0x53, 0, a, a, b, bt == VT_DOUBLE ? 0x11 : 0x10);
 }
 
-/* fma(x,y,z) = x*y+z single-rounding: fmadd.d/.s rd, rs1(x), rs2(y), rs3(z).
- * R4-type (rs3[31:27], funct2[26:25], rm[14:12]) reuses ER() with
- * func7 = (rs3<<2)|funct2 (so func7<<25 == rs3<<27 | funct2<<25); opcode 0x43
- * (FMADD), rm=7 (dynamic mode). vtop[-2]=x, vtop[-1]=y, vtop=z. Force all three
- * into FP regs (rotating each to the top; others stay protected on the vstack),
- * emit into a fresh reg, pop to one value. */
 ST_FUNC void gen_fma(void) { MCC_TRACE("enter\n");
 	int rs1, rs2, rs3, rd, dbl, k;
 	dbl = (vtop[-2].type.t & VT_BTYPE) == VT_DOUBLE;

@@ -1,23 +1,3 @@
-/* i386-win32 single-precision float math fallback.
- *
- * The 32-bit msvcrt.dll (SysWOW64) does NOT export the single-precision float
- * math family (sqrtf/expf/powf/hypotf/...); the 64-bit msvcrt.dll does. mcc's
- * msvcrt import def is shared across win32 arches, so on i386 an undefined
- * `sqrtf` would otherwise be bound to a msvcrt export that does not exist, and
- * the resulting PE fails to LOAD with STATUS_ENTRYPOINT_NOT_FOUND (0xC0000139)
- * before main runs.
- *
- * gcc/mingw avoid this because their i686 libmsvcrt.a omits these symbols and
- * libmingwex.a supplies them statically. This file is mcc's libmingwex peer:
- * thin wrappers over the double-precision msvcrt entries (which ARE exported on
- * 32-bit), pulled from libmccrt.a on demand only when the float symbol is still
- * undefined after the command line — so a program that links a real libm (e.g.
- * winlibs -lm on the mingw CI cell) uses that instead, no duplicate symbol.
- *
- * Guarded to i386: x86_64/arm64 win32 keep binding these to their own CRT and
- * this object is empty for them (never archived-in). Double-rounding through
- * (float)f((double)x) matches a true single-precision result for these entries.
- */
 #if defined(__i386__)
 
 extern double __cdecl sqrt(double);
@@ -63,4 +43,4 @@ float __cdecl fabsf(float x) { return (float)fabs((double)x); }
 float __cdecl hypotf(float x, float y) { return (float)_hypot((double)x, (double)y); }
 float __cdecl _hypotf(float x, float y) { return (float)_hypot((double)x, (double)y); }
 
-#endif /* __i386__ */
+#endif

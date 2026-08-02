@@ -12,11 +12,6 @@ IMAGE="debian:bookworm-slim"
 
 dg_need_docker
 
-# Run on the host-native platform (amd64 on CI x86, arm64 on Apple Silicon or an
-# arm64 runner). On arm64 `--platform linux/amd64` breaks qemu-arm's 32-bit VA
-# reservation AND a prior amd64-pinned run (e.g. arm64inline) may have cached the
-# amd64 debian variant under this tag, so we PIN the host-native platform to avoid
-# picking up that amd64 image (which would fail with "exec format error").
 case "$(uname -m)" in
   x86_64|amd64)  HP_PLAT=linux/amd64 ;;
   aarch64|arm64) HP_PLAT=linux/arm64 ;;
@@ -57,11 +52,6 @@ echo "-- arm candidate classification (graftable vs retained-only) --"
 grep -E "\[ast-inline\] candidate (sumpt|addpt|sumbig|mkpair|add) " /w/fxdump.txt || true
 
 echo "== graft-fires objdump evidence: leaf caller programs, OFF vs ON =="
-# Each caller is a REPLAYED leaf whose callee is a static helper. arm AAPCS
-# passes small structs (<=16B = up to 4 words) in r0-r3; on this mcc arm backend
-# a larger struct-by-value arg is a direct stack copy (NOT the VT_LLOCAL hidden-
-# pointer class the indirect-param capture models), so it stays a retained gap
-# like i386. We test which cases graft.
 cat > /w/gate.c <<EOF
 extern int printf(const char*,...);
 struct Pair { int a, b; };
@@ -92,19 +82,14 @@ echo "-- graft dump for gate callers --"
 grep -E "\[ast-inline\] (grafted|candidate) (addf|scalef|llmul|areaf|fmixf|sumpair|sumbigf|derefsum)" /w/gatedump.txt || true
 
 GRAFT_OK=1
-# Ground truth for "did the callee graft" is the compilers own marker
-# [ast-inline] grafted <callee>. objdump -dr corroborates: a grafted callee
-# leaves NO R_ARM_CALL/R_ARM_PLT32/R_ARM_JUMP24 reloc to that callee symbol in
-# the caller body (struct-marshalling memcpy/memmove relocs are expected and are
-# NOT calls to the callee).
 $OD -dr /w/gate_on.o > /w/gate_on.dis
-marker_graft() { # callee expect(yes|no) note
+marker_graft() {
   ce="$1"; e="$2"; nt="$3"
   if grep -q "\[ast-inline\] grafted $ce$" /w/gatedump.txt; then g=yes; else g=no; fi
   if [ "$g" = "$e" ]; then echo "   OK   $ce : grafted=$g $nt";
   else echo "   MISS $ce : grafted=$g, expected $e $nt"; GRAFT_OK=0; fi
 }
-call_reloc() { # caller callee -> count of call relocs to callee in caller body
+call_reloc() {
   awk -v f="<$1>:" -v s="$2" "/<.*>:/{p=(\$0 ~ f)} p && /R_ARM_(PC24|CALL|PLT32|JUMP24|THM_CALL)[[:space:]]/ && \$0 ~ (s\"\$\"){c++} END{print c+0}" /w/gate_on.dis
 }
 echo "-- [ast-inline] grafted markers (compiler ground truth) + objdump corroboration --"
@@ -114,18 +99,6 @@ marker_graft areaf    yes "(double args)"
 marker_graft fmixf    yes "(float args)"
 marker_graft sumpair  yes "(8-byte reg-struct r0-r3)"
 marker_graft derefsum yes "(pointer + loop)"
-# Both callees below carry 64-bit values: llmul takes long long args, and every
-# member and the return of struct Big{long long a,b,c,d;} is 64-bit too. On a
-# 32-bit target both therefore hinge on the recorder modelling the second
-# register of a value. They stayed retained-only, and were recorded here as
-# EMPIRICAL arm desyncs, for exactly as long as MCC_AST_REGPAIR was defaulted
-# OFF on i386/arm. 9d90c8b5 (2026-08-02) removed that special case once the
-# nested-register-pair re-emit was fixed and the arm leg of instruction 2 was
-# measured, and both callees graft from that commit on. The graft is correct
-# rather than merely newly-firing: the qemu differential below agrees with
-# arm-linux-gnueabihf-gcc -O2 over 83911 checks with graft ON, and the objdump
-# pass now demands 0 residual call relocs for these two exactly like every other
-# grafted callee.
 marker_graft llmul    yes "(long long args: 64-bit reg pair, modeled since MCC_AST_REGPAIR)"
 marker_graft sumbigf  yes "(32-byte struct-by-value of long long members, same)"
 echo "-- objdump: residual R_ARM call reloc to each grafted callee (must be 0) --"
@@ -210,12 +183,6 @@ EOF
 
 echo "-- compile tested.c with mcc graft ON --"
 env $INLENV /w/mcc-arm-opt -O1 -I $RD -c /w/tested.c -o /w/tested.o >/dev/null 2>&1
-# mcc emits A32 (ARM) code and references __aeabi_memmove/memcpy for struct-by-
-# value marshalling via bl. With the R_ARM_CALL/R_ARM_JUMP24 interworking fix
-# ld performs the standard BL<->BLX substitution, so these resolve directly to
-# the real (Thumb) armhf libc helpers -- no ARM-mode shim needed. Linking
-# against the genuine Thumb helpers also implicitly guards interworking: a reloc
-# regression would SIGILL here (cf. arminterwork-docker.sh).
 echo "-- compile ref + main with gcc -marm -O2 --"
 arm-linux-gnueabihf-gcc -marm -O2 -c /w/refimpl.c -o /w/refimpl.o
 arm-linux-gnueabihf-gcc -marm -O2 -c /w/main.c    -o /w/main.o

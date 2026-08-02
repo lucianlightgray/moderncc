@@ -9,11 +9,6 @@ enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 #define RIR_PT_HERE (-2)
 #define RIR_SHIFT 64
 
-/* C2 research probe, compile-time OFF. Driving the tree's emitter speculatively
-   from a reconstructed arena is not containable in-process: an emit that errors
-   leaves compiler state the surrounding save/restore does not cover, and 17 of
-   276 corpus files stop compiling with it on. Build -DMCC_REPLAY_IR_C2=1 to
-   measure it; never ship it on. */
 #ifndef MCC_REPLAY_IR_C2
 #define MCC_REPLAY_IR_C2 0
 #endif
@@ -50,12 +45,6 @@ typedef struct RirMark {
 
 int rir_env;
 int rir_active;
-/* Every frame slot the body allocates, in order, recorded across the WHOLE body
-   rather than only while the tree recorder is active -- ast_locrec[] misses the
-   declaration-time allocations, so replaying it in the C2 trial hands out the
-   wrong offsets for any body with declared locals. The tree's own replay path is
-   the precedent; this is the same mechanism, RIR-owned, so neither list disturbs
-   the other. */
 #define RIR_LOCREC_MAX 512
 static int rir_locrec[RIR_LOCREC_MAX];
 static int rir_locrec_pos[RIR_LOCREC_MAX];
@@ -106,11 +95,6 @@ int rir_hook_fconst_reuse(void) {
 	return rir_fcrec[rir_fcrec_i++];
 }
 
-/* alloc_local_slot bumps `loc` directly, so it is outside both the tree's
-   ast_locrec and Replay_IR's list above. Only the atomic aggregate lowerings
-   reach it, and they run in the same order in the parse and in the C2 emission
-   (the arena keeps statement order), so a list of its own stays in step where
-   sharing rir_locrec would consume a declaration's slot instead. */
 static int rir_slotrec[RIR_LOCREC_MAX];
 static int rir_slotrec_n, rir_slotrec_i;
 
@@ -127,15 +111,6 @@ int rir_slot_replay(int *loc_out) {
 	return 1;
 }
 
-/* get_temp_local_var is a third allocator and the only one that REUSES: it scans
-   arr_temp_local_vars for a free slot of the right shape before minting one, and
-   that array is not reset between the parse and the C2 trial. So the trial finds
-   the slot the parse had just created and returns it where the parse allocated a
-   fresh one -- i386's struct-return pointer spill landed one temp apart, self
-   consistently, on all six cleanup.c bodies. Recording the RESULT of the call
-   (offset and r2 index together, since r2 drives the liveness mask) covers the
-   reuse and the mint on one list. Position-keyed like rir_locrec: allocation
-   ORDER is not enough, because the two phases reach the reuse scan differently. */
 static int rir_tvrec[RIR_LOCREC_MAX], rir_tvrec_r2[RIR_LOCREC_MAX];
 static int rir_tvrec_pos[RIR_LOCREC_MAX];
 static int rir_tvrec_n, rir_tvrec_i;
@@ -239,22 +214,11 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	m->tag = tag;
 	m->kind = kind;
 	m->val = val;
-	/* The dead arm of `1 ? live : ({ while (1) ... })` is parsed with
-	   nocode_wanted set and emits nothing, and the op filter already drops its
-	   primitives -- but its region and point markers were still applied, so the
-	   reconstruction built a real loop for it and emitted a backward jump the
-	   parser never wrote (`eb fe`). */
 	m->nocode = nocode_wanted;
 	m->inop = jrn_depth;
 	m->v1 = a;
 	m->v2 = b;
 	m->at = jrn_n;
-	/* The marker's own vstack, captured live. A region or point marker consumes
-	   the value the parser has in hand AT the tap, and no neighbouring op's
-	   snapshot is that state: the op before it predates the push and the op after
-	   it may already have consumed it (a switch pops its selector with no op at
-	   all). This is the operand binding for markers, read rather than derived,
-	   the same way the op snapshots are for ops. */
 	{
 		int n = (int)(vtop - vstack + 1);
 		if (n < 0)
@@ -355,11 +319,6 @@ void rir_mark_val2(int kind, long long a, long long b) {
 	rir_mark_v2(RIR_T_MARK, kind, 0, a, b);
 }
 
-/* A VLA declaration is one statement in the tree -- AST_Unary AST_OP_VLA with
-   the element type, the sp-save slot in ival, the scope's original save slot in
-   sym and "this scope needs its own save" in fbits -- and ast_replay_bb re-runs
-   gen_vla_alloc from it. The primitives that computed the size are replayed by
-   that call, so the region they sit in is suppressed the way a call region is. */
 void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 									int align, int result) {
 	RirMark *m;
@@ -379,14 +338,6 @@ void rir_vla_begin(void) {
 	rir_rbegin(RIR_R_VLA);
 }
 
-/* Direct capture path, phase A. One entry point per statement-level control-flow
-   hook, holding exactly the statements that used to open the matching
-   ast_hook_* body, called from src/mccgen.c immediately before that hook. The
-   arguments are the parser's, not the recorder's: nothing here reads ast_* state,
-   which is why the whole group lifts without moving a static out of mccast.c.
-   The named-per-hook shape rather than an inlined rir_rbegin at the call site is
-   what lets the later slices -- ternary, landor, complex -- carry their own
-   nesting state here instead of in mccast.c. */
 void rir_hook_if_begin(void) {
 	rir_rbegin(RIR_R_IF);
 	rir_rbegin(RIR_R_COND);
@@ -463,10 +414,6 @@ void rir_hook_call_begin(void) { rir_rbegin(RIR_R_CALL); }
 
 void rir_hook_call_end(void) { rir_rend_to(RIR_R_CALL); }
 
-/* One assignment cast per argument of a PARSED call, and none at all for a
-   call the parser synthesises (init_putz's memset, the helper families). The
-   tree records that difference as Convert nodes it builds while evaluating each
-   argument; Replay_IR has no other witness for it. */
 int rir_cast_seq;
 
 void rir_hook_convert(void) { rir_cast_seq++; }
@@ -477,11 +424,6 @@ void rir_hook_call_argcast(int pre_seq) {
 
 void rir_hook_call_noreturn(void) { rir_mark_pt(RIR_M_NORETURN); }
 
-/* This end, and not rir_hook_call_end, is what a call whose RESULT IS
-   DISCARDED closes with -- the synthesised memset behind a struct initialiser
-   among them. The tree types that Invoke VT_VOID and attaches it as a
-   statement; Replay_IR needs the same discriminator, so the region end carries
-   it. */
 void rir_hook_call_effect_end(void) { rir_rend_to_val(RIR_R_CALL, 1); }
 
 void rir_hook_vstore(void) { rir_rbegin(RIR_R_VSTORE); }
@@ -520,11 +462,6 @@ void rir_hook_member_end(int cumofs, int nonlval) {
 																		(nonlval ? 1 : 0));
 }
 
-/* The parser has both operands on the vstack here and lowers from this point
-   on: a frame temp, then a cast and a part store per half. Replay_IR brackets
-   that lowering as one node so both operands are bound -- and materialised --
-   before either store, which is what the parser's own order does and what two
-   sibling Stores each rematerialising their own operand cannot. */
 void rir_hook_builtin_complex_lower(void) {
 	rir_bcplx_low = 1;
 	rir_rbegin(RIR_R_CPLXB);
@@ -629,12 +566,6 @@ void rir_hook_landor_operand(int op, int c, int first) {
 		}
 	} else if (rir_lor_n && rir_lor_on[rir_lor_n - 1] == 2 && c < 0 &&
 			tok == op) {
-		/* A chain whose leading operands fold to the identity -- `sizeof x == 4 &&
-		   a && b` -- emits code for the survivors only: the parser vpops each
-		   folded slot before the next operand is parsed. Opening the region at the
-		   first SURVIVING operand lets those vpops clear the shadow stack on their
-		   own, and keeps a chain that folds away ENTIRELY out of the region path,
-		   where its materialised ending would read as a reconstruction defect. */
 		rir_lor_on[rir_lor_n - 1] = 1;
 		rir_lor_late[rir_lor_n - 1] = 1;
 		rir_rbegin_val(RIR_R_LANDOR, op);
@@ -717,10 +648,6 @@ static void *rir_xt_nx[RIR_XT_MAX];
 static void *rir_xt_tr[RIR_XT_MAX];
 static int rir_xtn;
 
-/* mk_pointer's sym_push lands on the parser's local stack and is popped long
-   before the C2 trial runs, so a pointer type the reconstruction needs has to
-   come out of a pool Replay_IR owns, the way rir_xtype_ref already owns its
-   struct copies. */
 #define RIR_PT_MAX 4096
 static Sym rir_pt[RIR_PT_MAX];
 static int rir_ptn;
@@ -1032,10 +959,6 @@ static int rir_cplx_depth;
 static int rir_cplxb_depth;
 static int rir_cplxb_on;
 static int rir_acas_depth;
-/* Set while a vstore region that models its own copy is open, so the whole
-   interior is skipped the way RIR_R_CPLX's is. Suppressing only the OPS is not
-   enough: `double _Complex wd = fc;` lowers through four member regions inside
-   vstore, and those popped the very operands the rebuild needs. */
 static int rir_vsup_depth;
 static int rir_vsup_nest;
 static int rir_acas_val;
@@ -1059,25 +982,10 @@ static void rir_c2_sink(void *opaque, const char *msg) {
 }
 static long rir_kindhist[AST_KIND_COUNT], rir_treekindhist[AST_KIND_COUNT];
 
-/* sym_free returns a struct's field Syms to the free list and later parsing in
- the SAME function reuses them, so by replay time the field chain can be cyclic
- and x86_64_has_unaligned_field recurses on ty->ref->next forever. The chain is
- well formed at CAPTURE time, so clone it there into storage the recycler does
- not own. Sym::next is a UNION -- the field chain only for struct and function
- types, vla_array_str (an int *) for a VLA -- so follow it only inside a real
- chain and leave VLA types alone; following it blindly stops vla/basic.c and
- vla_param_side_effects.c compiling at all. */
 static int rir_xt_chain(int t) {
 	return (t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC;
 }
 
-/* The memo is keyed on the Sym's ADDRESS, and decl_designator's block-copy type
-   is a Sym on ITS OWN STACK FRAME (`Sym aref = {0}; aref.c = elem_size`,
-   src/mccgen.c:13414) -- so every range initialiser in a function reuses the
-   same address with a different element size, and the first clone was handed to
-   all of them. `char m2[][2][3] = {[0 ... 2] = ...}` copied 8 bytes with the
-   `fptr tabl1[4]` size. A hit now has to agree on the fields that make the type,
-   which still terminates on a cycle because a re-entry compares equal. */
 static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
 	int k;
 	Sym *c;
@@ -1151,17 +1059,9 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
 	int prov = rir_prov_ok(slot, sv);
 	ast_set_op(rir_arena, n, sv->r);
-	/* A string literal reaches the op boundary already DECAYED: the snapshot
-	   says char * where the tree's leaf still says char[N]. The tree builds its
-	   leaf before the argument conversion decays it, and no snapshot Replay_IR
-	   can see holds the array type -- but the Sym does. Restore it from there.
-	   34 of the near-miss bodies differ in exactly this. */
 	if (sv->sym && (sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) &&
 		(sv->sym->type.t & VT_ARRAY) &&
 		(sv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR)
-		/* Take VT_ARRAY and the element ref from the Sym, but the rest of the
-		   type from the snapshot: the Sym also carries storage-class bits the
-		   tree's leaf never sees (t=0x2045 against its 0x45). */
 		ast_set_type(rir_arena, n, sv->type.t | VT_ARRAY,
 			(uint64_t)(uintptr_t)sv->sym->type.ref);
 	else
@@ -1171,12 +1071,6 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	ast_set_wide(rir_arena, n, ast_sv_hi(sv),
 							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
 	ast_set_sym(rir_arena, n, (uint64_t)(uintptr_t)sv->sym);
-	/* A cast that emits no code leaves the snapshot carrying the CAST type over
-	   a symbol whose declaration says something else -- `((int (*)(int,int))p)(a,b)`
-	   with `void *p` is the shape. The tree's leaf keeps the declared type and
-	   the cast is its own Convert, which is not inert: gen_cast materialises and
-	   spills, 8 bytes in via_cast. The Sym is the only witness to the declared
-	   type at this boundary. */
 	if (sv->sym && (sv->r & VT_LVAL) && !(sv->sym->type.t & (VT_ARRAY | VT_VLA)) &&
 			(sv->sym->type.t & VT_BTYPE) != VT_STRUCT &&
 			(sv->sym->type.t & VT_BTYPE) != VT_FUNC &&
@@ -1228,10 +1122,6 @@ static int rir_has_atomic(AstLocal n, int depth) {
 }
 #endif
 
-/* A value dropped off the shadow stack still has to become a statement if
-   emitting it is the point: a discarded `a++` is a Unary, not a Store, and
-   letting it fall off orphans the node and emits nothing. Address-of and the
-   other AST_OP_* unaries are pure and stay droppable. */
 static int rir_effectful(AstLocal n) {
 	uint16_t k;
 	if (n == AST_NONE)
@@ -1239,14 +1129,8 @@ static int rir_effectful(AstLocal n) {
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
 		return 1;
-	/* A ternary whose value is discarded is a STATEMENT -- the tree records it
-	   as an AST_If with op 7 and emits both arms for their effects. Dropped off
-	   the shadow stack it was orphaned and the body emitted nothing at all. */
 	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
 		return 1;
-	/* A short-circuit whose fold materialised a constant still emitted a real
-	   gvtst per operand parsed before the fold, so discarding it off the shadow
-	   stack loses that jump chain -- the same shape as the discarded ternary. */
 	if (k == AST_Binary && (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL))
 		return 1;
 #ifdef MCC_JRN_HAVE_X86_PRIMS
@@ -1261,12 +1145,6 @@ static int rir_effectful(AstLocal n) {
 	return k == AST_Unary && ast_op(rir_arena, n) < AST_OP_ADDR;
 }
 
-/* The C3 pass set. Widened from templates+SCCP to every pass that is a pure
-   AstArena -> AstArena transform, so "the passes consume a Replay_IR arena and
-   agree with the tree" covers the pipeline rather than two of it. ast_tco_run
-   is excluded because it takes the function Sym as well, and the loop
-   transforms are excluded because they need ast_vlat_sync's lattice state which
-   the probe does not set up. */
 static int rir_c3_pipeline(AstArena *a) {
 	int n = 0;
 	n += ast_sccp_run(a);
@@ -1323,27 +1201,9 @@ static void rir_ihold_flush(void) {
 	rir_ihold_off--;
 }
 
-/* A statement the parser emitted PART-WAY THROUGH an expression is not the
-   enclosing block's: a compound literal used as a call argument zero-fills its
-   slot and stores its initialisers right there, between the arguments already
-   evaluated and the one being built. rir_stmt puts those in front of the whole
-   expression, so `printf("%d", tu_first((TU){.pv=&n}))` ran the memset before
-   the earlier arguments' calls, and the held statements bind as a comma onto the
-   next value computed at or below the depth they were dropped at.
-   The trigger is the DISCARDED CALL, not the depth: keying on "a non-empty
-   shadow stack" alone costs 23 bodies -- a cleanup destructor call, the atomic
-   helpers' write-back and a short-circuit operand's spill are all statements the
-   parser really does emit at the enclosing block's level with operands live.
-   Only an initialiser's zero-fill opens a group, and only the initialiser stores
-   that follow it at its own depth join. */
 static int rir_ihold_arm;
 static int rir_lorn;
 
-/* Mid-argument-evaluation, which is the only place this reordering is right: the
-   callee is already on the shadow stack under the arguments parsed so far. A
-   plain `struct rect r = (struct rect){...};` also drops its zero-fill with the
-   stack non-empty and must NOT be moved -- that costs compound_literals.c main.
-*/
 static int rir_callee_pending(void) {
 	int k;
 	for (k = 0; k < rir_shn; k++)
@@ -1375,10 +1235,6 @@ static int rir_hold_inline(AstLocal n) {
 	return 1;
 }
 
-/* Bind the trailing run of held statements whose drop depth is at or above the
-   depth this value comes to rest at: those are the ones the operand just
-   finished evaluated, and anything held shallower belongs to an outer operand
-   that has not closed yet. */
 static AstLocal rir_ihold_bind(AstLocal n) {
 	AstLocal bb;
 	int q, i, r;
@@ -1423,19 +1279,12 @@ static void rir_stmt(AstLocal n) {
 		return;
 	if (rir_iholdn && rir_shn <= 0)
 		rir_ihold_flush();
-	/* A held Return is waiting for the destructor calls a cleanup attribute puts
-	   between the value and the ret, so those must not flush it. A JUMP is
-	   different: nothing in a return's own lowering is a jump statement, so one
-	   arriving means the return is over. Without this the `return 0;` between an
-	   `asm goto` and its label landed after the label's jump. */
 	if (rir_pending_ret != AST_NONE && n != rir_pending_ret &&
 			ast_kind(rir_arena, n) == AST_Jump) {
 		AstLocal held = rir_pending_ret;
 		rir_pending_ret = AST_NONE;
 		rir_stmt(held);
 	}
-	/* ast_replay_bb dispatches an AST_If on its op, and the tree's encoding for
-	   a ternary in statement context is 7 rather than the value form's 5. */
 	if (ast_kind(rir_arena, n) == AST_If && ast_op(rir_arena, n) == 5)
 		ast_set_op(rir_arena, n, 7);
 	ast_add_child(rir_arena, rir_bb[rir_bbn - 1], n);
@@ -1454,11 +1303,6 @@ static int rir_docond;
 static AstLocal rir_dheld[RIR_DHELD_MAX];
 static int rir_dheldn;
 
-/* A value dropped inside a short-circuit OPERAND is not the enclosing block's
-   statement: the parser emits it after the previous operand's branch, and
-   rir_stmt puts it in front of the whole expression. Hold it for RIR_R_LOPND to
-   bind as a comma. Scoped to a plain Store, which is the shape the inline
-   atomic load's temp spill has. */
 static void rir_drop(AstLocal d) {
 	if (!rir_effectful(d))
 		return;
@@ -1487,15 +1331,6 @@ static void rir_dheld_flush(void) {
 
 static int rir_ret_spilled;
 
-/* A cleanup attribute spills the pending return value to a temp before the
-   destructor call and the parser reloads from THAT temp, so the held Return has
-   to follow the value to its new home. The tree does not model this at all --
-   it is unfaithful on these bodies -- and reproducing it is the point of
-   Replay_IR. The value is bound at RIR_M_RETEXPR, before gen_assign_cast, so
-   the node the spill stores is that value under the Convert the cast left on
-   the shadow; match through it. Retype in place rather than re-parenting:
-   swapping the child would leave the old one an orphan whose parent still names
-   the Return, which ast_validate rejects. */
 static void rir_ret_follow_spill(AstLocal t, AstLocal v) {
 	AstLocal rv;
 	if (rir_pending_ret == AST_NONE || rir_ret_spilled ||
@@ -1565,9 +1400,6 @@ static void rir_push(AstLocal n) {
 	rir_sh[rir_shn++] = n;
 }
 
-/* A computed node's result type is not in the op that produced it -- it is in
-   the NEXT op's snapshot, as the SValue occupying that slot. Push it untyped and
-   stamp it at the next boundary. */
 static void rir_push_typed(AstLocal n) {
 	if (rir_shn > VSTACK_SIZE)
 		return;
@@ -1576,11 +1408,6 @@ static void rir_push_typed(AstLocal n) {
 	rir_sh[rir_shn++] = n;
 }
 
-/* ast_hook_gaddrof runs at the TOP of gaddrof(), which the parser reaches with
-   mk_pointer already applied, so the tree stamps the address-of's OPERAND leaf
-   with the pointer type while its r still carries VT_LVAL. Replay_IR builds that
-   leaf from an op snapshot taken before the retype and reads the pointee type.
-   Stamp the operand with whatever the Unary itself resolves to. */
 static void rir_push_typed_addr(AstLocal n) {
 	if (rir_shn > VSTACK_SIZE)
 		return;
@@ -1588,25 +1415,6 @@ static void rir_push_typed_addr(AstLocal n) {
 	rir_sh[rir_shn++] = n;
 }
 
-/* Reconcile the shadow stack against the state the op actually saw. The
-   recorded snapshot is the dataflow made explicit: any slot the model does not
-   already hold is materialised as a leaf straight from its SValue, and any slot
-   the model holds past the recorded depth is dropped. Divergences are counted
-   rather than smoothed over -- rir_arena_mismatch is the honest quality signal
-   for this reconstruction, the same role fix= plays for replay. */
-/* gfunc_call pops the callee and the CALLER pushes the return value afterwards
-   with its own vsetc, so between the two the parser's stack is one shallower
-   than an Invoke pushed at call time -- the reconcile flushes that Invoke as a
-   statement and the next boundary re-materialises its result as a bare register
-   leaf, which replays as "already in that register" and skips the spill the
-   parser emitted (`return f() - f();` came out as `sub eax,eax`). Hold the node
-   instead and let the vsetc that pushes the result claim it. Reading the depth
-   delta and skipping one drop was tried and is wrong: it cannot tell a
-   single-slot integer return from a float or struct one, and aborts 17 corpus
-   files. */
-/* One assignment cast per argument of a PARSED call and none for a synthesised
-   one, counted between calls: the tree's Invoke children carry a Convert each
-   for the first and bare nodes for the second, and this is the only witness. */
 #define RIR_ARGCAST_MAX 64
 static unsigned char rir_argcast_ch[RIR_ARGCAST_MAX];
 static int rir_argcast_n;
@@ -1616,23 +1424,9 @@ static unsigned char rir_vst_seen[16];
 static unsigned char rir_vst_ok[16];
 static short rir_vst_shn[16];
 static unsigned char rir_vst_sup[16];
-/* The two operands' frame offsets as the region OPENED. Which shadow slot holds
-   the target is not fixed -- va_start's copy leaves it under the value and a
-   cleanup spill leaves it on top -- so the rebuild matches them by offset
-   rather than by position. */
 static long long rir_vst_tc[16], rir_vst_vc[16];
 static unsigned char rir_vst_bf[16];
-/* `double _Complex z = 3.0;` reaches vstore() with a scalar over a complex
-   VT_STRUCT lvalue, so vstore's own gen_cast(&vtop[-1].type) widens the value
-   into a complex pair and the store then takes the block-copy path. The marker
-   snapshot is taken before that cast, so the both-struct admission cannot see
-   it and JOP_STRUCTCOPY builds no node at all -- the statement vanished. Keep
-   the two operands the region opened with and let the emitter's own vstore()
-   re-run the cast, exactly as for a struct copy. */
 static unsigned char rir_vst_cx[16];
-/* Set when the region opened with nocode_wanted. Its own primitives are then
-   filtered out of the stream, so the shadow stack still holds the parser's
-   vstore order -- value on top -- exactly as a suppressed region does. */
 static unsigned char rir_vst_nc[16];
 static int rir_cx_depth;
 static unsigned char rir_vst_gret[16];
@@ -1640,13 +1434,6 @@ static int rir_gret_depth;
 static int rir_vbf_depth;
 static int rir_call_depth;
 static int rir_vstn;
-/* gfunc_call spills a register-returned struct into a frame temp of its own and
-   vstore() journals that spill, so `a = f()` reconstructs as Store(temp, Invoke)
-   plus Store(a, temp) where the tree holds one Store(a, Invoke) --
-   ast_replay_value's Invoke arm re-runs the whole call tail, spill included, so
-   the recorded copy is a second one. The Invoke is held here across the spill
-   and re-enters the shadow stack when the parser materialises the temp's own
-   lvalue, keyed on that frame offset. */
 static AstLocal rir_spill_node = AST_NONE;
 static long long rir_spill_addr;
 
@@ -1658,12 +1445,6 @@ static void rir_flush_pending_call(void) {
 }
 
 static int rir_cvt_next;
-/* ast_hook_cast_gv fires one step ahead of the op that lowers the cast, so the
-   Convert it annotates may not exist yet: hold the mark for one entry, then
-   either set the bit on the Convert the op built or -- for an identity cast,
-   which emits no op at all -- build the type-preserving Convert the tree has.
-   `printf("%llx", (unsigned long long)ull)` is that case, and the Convert is
-   not inert: gen_cast materialises, which is the 8 bytes promote_main lost. */
 static int rir_castgv_pend;
 static AstLocal rir_castgv_top;
 static int rir_castgv_t;
@@ -1752,9 +1533,6 @@ static int rir_child_width_differs(AstLocal n, int st) {
 	return 0;
 }
 
-/* A value carrying held statements is wrapped in a comma BasicBlock, and every
-   stamp aimed at that slot has to reach the value itself -- an Invoke left at
-   VT_VOID because the stamp landed on the wrapper pushes no result at all. */
 static int rir_sh_unbound_invoke(void) {
 	int k;
 	for (k = 0; k < rir_shn; k++)
@@ -1795,11 +1573,6 @@ static void rir_stamp_sv(const SValue *base, int n) {
 											ast_fbits(rir_arena, rir_sh[k]) | AST_FB_CONVERT_FCS);
 			}
 		}
-		/* An AST_Invoke carries its RESULT's SValue, not just its type:
-		   ast_replay_value rebuilds the return with `sv.r = ast_op(a, n)`, so a
-		   node left at op 0 claims the value is in register 0 and a double return
-		   then trips load()'s XMM assert. Stamp the whole leaf encoding, exactly
-		   as rir_leaf does. */
 		if (rir_shtype[k] == 3) {
 			AstLocal c = ast_first_child(rir_arena, sk);
 			uint16_t ck = c == AST_NONE ? 0 : ast_kind(rir_arena, c);
@@ -1816,20 +1589,6 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		}
 		rir_shtype[k] = 0;
 	}
-	/* The missing Converts are the casts that emit NO op: a widening the parser
-	   performs by retyping a value already in a register. The dump for
-	   `(unsigned long long)x << c` shows the tree wrapping the operand in a
-	   Convert to the wider type while the leaf keeps the narrower one, and the
-	   next op's snapshot is where that retype becomes visible -- which is also
-	   exactly where the Binary consumes it, so wrapping here lands it inside the
-	   Binary as the tree has it. Admission is by SIZE: an unexplained type
-	   difference that does not change the width is representation drift, not a
-	   cast, and wrapping those is measured worse. */
-	/* A cast that DOES emit gets its Convert from the op itself, and the parser
-	   retypes the value before emitting -- so the boundary in front of that op
-	   shows the post-cast type over a node still carrying the pre-cast one, and
-	   this loop wrapped the same cast a second time. `return (int)(long)i;` came
-	   out three Converts deep against the tree's two. */
 	if (rir_cvt_next)
 		return;
 	for (k = 0; k < rir_shn && k < want; k++) {
@@ -1846,21 +1605,10 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			continue;
 		if (is_float(ct) != is_float(v->type.t))
 			continue;
-		/* A callee slot legitimately reads VT_FUNC at one boundary and VT_PTR at
-		   the next; type_size differs, but that is the call lowering retyping its
-		   own operand, not a cast. Wrapping it breaks every indirect call --
-		   measured: 50 regressions, all func_pointers / indirect_call_shapes /
-		   c11_threads / noreturn shapes. */
 		if ((ct & VT_BTYPE) == VT_FUNC || (v->type.t & VT_BTYPE) == VT_FUNC)
 			continue;
 		if ((ct & VT_BTYPE) == VT_PTR || (v->type.t & VT_BTYPE) == VT_PTR)
 			continue;
-		/* An AST_StoreVal is a chained assignment's value back-linked to the store
-		   that produced it, not a value with a type of its own, and the tree never
-		   wraps one. Skipping it removes 9 Converts the tree does not have
-		   (node-count-equality 542 -> 551). It is byte-inert, and it specifically
-		   does NOT fix chained_assign.c -- chain_in_expr stays at +6, so the
-		   reload there has another cause. */
 		if (ast_kind(rir_arena, cur) == AST_StoreVal)
 			continue;
 		a1.t = ct;
@@ -1888,17 +1636,6 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			rir_sh[k] = cv;
 		}
 	}
-	/* An lvalue whose ADDRESS is computed at run time can be built without ever
-	   calling indir(): `init_putv`'s over-aligned-local arm does
-	   `gv(); vtop->type = dtype; vtop->r = rr | VT_LVAL; vtop->c.i = 0;` by hand,
-	   so no op and no RIR_M_LOAD records the dereference and the model keeps the
-	   byte pointer it started from -- `alignas(64) double lad[4] = {1.0, ...}`
-	   reached vstore as Store(Ref<char *>, Literal<double>) and gen_cast refused
-	   the float/pointer pair. The boundary AFTER the retype states the whole fact:
-	   an LVALUE IN A REGISTER at offset zero over a node that is still a pointer.
-	   A register lvalue is only ever produced by a dereference, and the one the
-	   model already sees is an AST_Load, so a node that is not one means the
-	   dereference was hand-rolled. */
 	for (k = 0; k < rir_shn && k < want; k++) {
 		const SValue *v = &base[ast_base_depth + k];
 		AstLocal cur = rir_sh[k], cv, ld;
@@ -1921,10 +1658,6 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		ct = ast_type_t(rir_arena, cur);
 		if (ct != 0 && (ct & (VT_BTYPE | VT_ARRAY)) != VT_PTR)
 			continue;
-		/* Same type on both sides means the model is already saying what the
-		   snapshot says, so nothing was reinterpreted -- `runner.c` `main` has a
-		   pointer-typed Unary under a pointer-typed register lvalue and wrapping
-		   it emitted a load the parser never wrote (+3 bytes). */
 		if (ct == (int)v->type.t)
 			continue;
 		if (ct == 0 && ck != AST_Binary)
@@ -1948,14 +1681,6 @@ static void rir_stamp_sv(const SValue *base, int n) {
 	}
 }
 
-/* A suppressed struct assignment drops every op inside its region, so a value
-   whose type is still deferred when the region opens never reaches another
-   boundary and stays unstamped. `data = init(data)` -- a struct returned in
-   MEMORY, so the call tail pushes the hidden temp's lvalue rather than spilling
-   -- kept its Invoke at op 0 ival 0 where the tree's carries that temp's own
-   SValue, and ast_replay_value then rebuilt the return in register 0: the copy
-   read from the destination instead of from the temp. The region marker's own
-   snapshot is the missing boundary. */
 static void rir_stamp_call_top(const SValue *base, int n) {
 	int k = n - ast_base_depth - 1;
 	const SValue *v;
@@ -1976,12 +1701,6 @@ static void rir_stamp_call_top(const SValue *base, int n) {
 	rir_shtype[k] = 0;
 }
 
-/* The held call-result Invoke re-enters the shadow stack at the boundary where
-   the parser pushes `vset(&s->type, VT_LOCAL | VT_LVAL, addr)` -- the same
-   anonymous frame slot the spill wrote, now carrying the struct type. Stamp it
-   with that SValue, because the tree's Invoke carries exactly it: the
-   struct-copy rebuild matches its operands by frame offset, and an Invoke at
-   ival 0 would order them the wrong way round. */
 static AstLocal rir_spill_take(const SValue *sv) {
 	AstLocal n;
 	int al, sz;
@@ -2034,12 +1753,6 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 		AstLocal sp = rir_spill_take(sv3);
 		rir_tot_leaf++;
 		rir_push(sp == AST_NONE ? rir_leaf_slot(sv3, ast_base_depth + k) : sp);
-		/* gfunc_return pushes its own operands (vset/indir/vswap) which Replay_IR
-		   deliberately does not model, because the tree does not either and
-		   ast_replay_value re-runs gfunc_return itself. Those pushes make the
-		   snapshot deeper than the shadow stack, and flagging them as arena
-		   mismatches is what excluded the struct-return bodies from the C2
-		   census entirely. Materialise the leaf, but do not call it a defect. */
 		if (k < want - 1 && rir_pending_ret == AST_NONE && !rir_gret_depth)
 			rir_arena_mismatch++;
 	}
@@ -2068,12 +1781,6 @@ static void rir_op_effect(const RirOp *ro) {
 	int k;
 	if (o->kind != JOP_VSETC && o->kind != JOP_PUSHLIT)
 		rir_flush_pending_call();
-	/* The journal records ops the parser emitted no bytes for. A cleanup call
-	   after `return n;` runs with nocode_wanted set, so gfunc_call journals a
-	   JOP_CALL and emits nothing. Op-replay is safe because it restores
-	   o->p.nocode per op; the arena carries no such state, so an unfiltered
-	   reconstruction turns dead code into real instructions -- test_cleanup1
-	   emits the cleanup twice and a duplicated load, exactly the +12. */
 	if (o->nocode)
 		return;
 	switch (o->kind) {
@@ -2082,16 +1789,8 @@ static void rir_op_effect(const RirOp *ro) {
 	case JOP_OPL:
 	case JOP_OPF: {
 		AstLocal b, a, n;
-		/* Same guard as JOP_ADDROF's: after the Return is bound, gfunc_return's
-		   own lowering runs against a shadow stack Replay_IR deliberately leaves
-		   empty, and riscv64's and i386's reach genop as well as addrof. */
 		if (rir_after_ret && rir_shn == 0)
 			break;
-		/* gen_opf(TOK_NEG) is UNARY -- it is how a float negate is emitted, and
-		   the tree models it as AST_Unary/AST_OP_FNEG via ast_hook_fneg_begin.
-		   Popping two operands for it built Binary(TOK_NEG, member, member),
-		   which handed gen_op what looks like a shift over two doubles: the whole
-		   struct-by-value / varargs error class in C2. */
 		if (o->kind == JOP_OPF && o->a0 == TOK_NEG) {
 			a = rir_pop();
 			if (a == AST_NONE) {
@@ -2104,26 +1803,6 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_push_typed(n);
 			break;
 		}
-		/* The tree wraps a binary operand in a Convert when a cast happened that
-		   emitted no code -- `(long long)(x - y) & mask` in __va_arg_inline gives
-		   Convert(->VT_LLONG, Binary(-, ..)) as the left operand. The node is an
-		   UNTYPED AST_Binary by design, so a rule keyed on the node's own type
-		   cannot see it; this op's own snapshot is the witness. */
-		/* The two operands agreeing does NOT mean neither was cast: a constant
-		   fold and the explicit cast over it both emit nothing, so `i < (int)(sizeof
-		   a / sizeof a[0])` reaches gen_op with an untyped Binary whose children
-		   are size_t and a snapshot that says int, and re-derived as unsigned long
-		   it came out as a 64-bit unsigned compare. Admit that by WIDTH, so the
-		   same-type case only wraps where a real narrowing or widening happened. */
-		/* gen_op's usual arithmetic conversion reads the operand's BITFIELD bits:
-		   an unsigned int bitfield narrower than 32 bits promotes to SIGNED int
-		   (src/mccgen.c:4049). RIR_M_BFGV has already replaced that operand with
-		   the Convert to gv's own UNSIGNED result type -- which is what turns the
-		   extraction's sar into a shr and must stay -- so the promotion is lost and
-		   `(1 ? s.u3 : 1) - 100 < 0` came out as an unsigned compare. Carry it on a
-		   second, type-only Convert, and only HERE: an explicit cast of the same
-		   value (`printf("%lu", s.bf)`) converts from the unsigned bitfield type and
-		   must not see the promotion. */
 		if (o->vs_n - ast_base_depth >= 2 && rir_shn >= 2) {
 			int q;
 			for (q = 0; q < 2; q++) {
@@ -2163,9 +1842,6 @@ static void rir_op_effect(const RirOp *ro) {
 				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
 						(st & VT_BTYPE) == VT_FUNC || is_float(st))
 					continue;
-				/* An operand that already carries the snapshot's type was not cast
-				   into it -- `arg_sink += v * w` wrapped its int Binary in an int
-				   Convert the tree does not have. VT_DEFSIGN is spelling, not type. */
 				if (rir_child_has_type(cur, st))
 					continue;
 				if (!opdiff && !rir_child_width_differs(cur, st))
@@ -2198,14 +1874,6 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			break;
 		}
-		/* The call tail's own spill, and only it: inside a call region, the value
-		   is the Invoke this region just built and the target is an anonymous
-		   frame slot. Every other vstore under a call region -- a nested call's
-		   arguments, the atomic helpers' write-back -- fails one of the two tests.
-		   Drop the Store and hold the Invoke; the slot the shadow stack keeps has
-		   to be a placeholder, because the parser's `vtop--` after the spill
-		   truncates the stack again and a live node there would be re-emitted as a
-		   statement. */
 #if RIR_DBG_OPTRACE
 		{
 			const char *e = getenv("RIRDBG");
@@ -2238,12 +1906,6 @@ static void rir_op_effect(const RirOp *ro) {
 				break;
 			}
 		}
-		/* `s = j = 0` chains two stores over ONE value, and the tree keeps the
-		   model a tree by giving the outer store a deep COPY of the inner store's
-		   value (ast_hook_vstore's chained path) rather than a back-link. An
-		   AST_StoreVal here is that back-link, and ast_replay_value resolves it
-		   through the Store it names, which is a different emission. Mirror the
-		   tree: copy the subtree and tag the store chained. */
 		{
 			int chained = 0;
 			if (ast_kind(rir_arena, v) == AST_StoreVal &&
@@ -2276,10 +1938,6 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_push(n);
 			break;
 		}
-		/* `lval op= rhs`: the tag makes ast_replay_bb re-emit the vdup form the
-		   parser used -- one address computation, dup, op, store -- instead of the
-		   naive two-address form. It is only a hint; that arm still checks the
-		   shape and the lval's purity itself. */
 		if (rir_vstn)
 			rir_vst_seen[rir_vstn - 1] = 1;
 		if (rir_opassign_pending)
@@ -2304,11 +1962,6 @@ static void rir_op_effect(const RirOp *ro) {
 	case JOP_FFS:
 	case JOP_BITSCAN:
 	case JOP_BSWAP: {
-		/* gen_bswap is journalled and op-replay handles it, which is why faithful
-		   has always been 100% here, but the arena had no node for it and emitted
-		   nothing -- b64 came out 4 bytes against the parser's 7, missing the
-		   48 0f c8 entirely. Model it the way the tree models its other
-		   intrinsics: an AST_Unary carrying the operand size in ival. */
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
 		if (v == AST_NONE) {
@@ -2362,12 +2015,6 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 #endif
 	case JOP_BITBUILTIN: {
-		/* __builtin_popcount / parity / clrsb lower to a ~20-primitive SWAR
-		   expansion built on gv_dup, and gv_dup pushes a vstack slot no hook
-		   models -- the refill turns the duplicate into a bare register Ref and
-		   the reconstruction reorders the whole chain. Journal the expansion as
-		   one primitive, the way gen_bswap already is, and carry it as the same
-		   shape: an AST_Unary with the selector and width in ival. */
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
 		if (v == AST_NONE) {
@@ -2391,28 +2038,12 @@ static void rir_op_effect(const RirOp *ro) {
 			rir_arena_mismatch++;
 			na = 0;
 		}
-		/* The tree wraps every Invoke child -- callee and each argument -- in a
-		   Convert to the type gen_func_call saw. Those Converts are frequently
-		   type-preserving (Convert t=5 over a t=5 Ref), so no rule keyed on a type
-		   DIFFERENCE can see them, yet they are not inert: ast_replay_value's
-		   Convert arm runs gen_cast, which spills the value. In via_cast the
-		   parser stores the cast callee to a temp and reloads it after the
-		   arguments are set up; without the Convert the arena reloads the pointer
-		   variable directly and the body comes out 8 bytes short. */
 		if (o->vs_n - ast_base_depth >= na + 1 && rir_shn >= na + 1) {
 			int q;
 			int hidden = -1;
-			/* The tree wraps an argument only where an assignment cast applied, i.e.
-			   for a DECLARED parameter. `printf("...", a)` gets a Convert on the
-			   format string and a bare Ref on the int, because the int is in the
-			   varargs tail; `via_cast(a, b)` gets one on both, because both are
-			   declared. Wrapping the tail as well is 30 of the +1 node-count bodies. */
 			{
 				const SValue *cs = &jrn_vs[o->vs_off + o->vs_n - 1 - na];
 				const Sym *fs = (const Sym *)(uintptr_t)cs->type.ref;
-				/* A function Sym's own type is its RETURN type, so do not test it for
-				   VT_FUNC. Reach it from the callee slot: VT_FUNC means type.ref is the
-				   Sym already, VT_PTR means one more hop. */
 				if (fs && (cs->type.t & VT_BTYPE) == VT_PTR)
 					fs = fs->type.ref;
 				nfixed = -1;
@@ -2431,10 +2062,6 @@ static void rir_op_effect(const RirOp *ro) {
 				int si = rir_shn - 1 - q;
 				if (q == hidden)
 					continue;
-				/* In the varargs tail there is no assignment cast -- but the DEFAULT
-				   argument promotions still apply (float->double, char/short->int), and
-				   the tree records those. So skip the tail only where the type is
-				   actually unchanged. */
 				if (nfixed >= 0 && q < na && na - 1 - q >= nfixed &&
 					rir_sh[si] != AST_NONE &&
 					ast_type_t(rir_arena, rir_sh[si]) ==
@@ -2466,18 +2093,10 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				if (st == 0 || (st & VT_BTYPE) == VT_FUNC)
 					continue;
-				/* An untyped Binary is legitimately t=0 and wants the wrap; a node
-				   that really is void does not, and gen_cast rejects it outright. */
 				if ((ast_type_t(rir_arena, cur) & VT_BTYPE) == VT_VOID &&
 						ast_kind(rir_arena, cur) != AST_Binary &&
 						ast_kind(rir_arena, cur) != AST_Load)
 					continue;
-				/* A wide constant carries a high word the cast CHAIN determines, and
-				   the chain in hand is one link short: the casts that fold emit no op,
-				   so `(u128)(unsigned long long)-5` reaches the boundary as the u128
-				   assignment cast over a bare int Binary and gen_cast sign-extends
-				   where the parser zero-extended. The snapshot holds the value the
-				   parser folded, high word included. */
 				if (((st & VT_BTYPE) == VT_INT128 || (st & VT_BTYPE) == VT_QLONG) &&
 						(sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
 						rir_const_subtree(cur, 0)) {
@@ -2493,10 +2112,6 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		rir_argcast_n = 0;
-		/* The tree builds each child's Convert while EVALUATING that argument, so
-		   they precede the Invoke in node order. Allocating the Invoke first put
-		   it ahead of its own Converts and showed up as paired Invoke<->Convert
-		   divergences -- 21 and 20 of them in the near-miss class. */
 		n = ast_node(rir_arena, AST_Invoke);
 		for (k = na - 1; k >= 0; k--) {
 			args[k] = rir_pop();
@@ -2528,10 +2143,6 @@ static void rir_op_effect(const RirOp *ro) {
 				rir_pvok[q] = 0;
 		}
 		if (rir_pending_call != AST_NONE) {
-			/* A call's result comes back in a REGISTER, so the vsetc that lands it
-			   names one. The aggregate atomic lowerings call a void helper and then
-			   vset the frame slot it filled, which is not the result and binding it
-			   took the Invoke where the parser had a local address. */
 			if (o->kind == JOP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST ||
 					((o->ctype.t & VT_BTYPE) == VT_STRUCT &&
 					 (o->a0 & VT_VALMASK) == VT_LOCAL && (o->a0 & VT_LVAL))) {
@@ -2594,11 +2205,6 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	case JOP_VROTB: {
-		/* The shadow stack modelled vswap but not the rotates, so any lowering
-		   that pushes its helper function AFTER the arguments and rotates it into
-		   place -- gen_opl's __divdi3/__udivdi3 family and the atomic helpers --
-		   left JOP_CALL popping an argument as the callee. That is the whole
-		   Invoke-callee-notfunc refusal class. Mirrors mccgen.c's (vrotb). */
 		int m = o->a0 - 1;
 		if (m >= 1 && rir_shn > m) {
 			AstLocal tmp = rir_sh[rir_shn - 1 - m];
@@ -2639,17 +2245,6 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 	case JOP_GV: {
-		/* A top-level gv() is the parser stating "this value is materialised
-		   HERE". The arena has no node for it, so the emission re-derives the
-		   value lazily at its consumer -- after the operands it should have
-		   preceded -- and the two streams part company on register choice with
-		   the same instructions in a different order. AST_FB_CONVERT_GV on a
-		   type-preserving Convert is the tree's own way of saying it.
-		   Narrow, and every widening was measured: unconditional reads c2ok 1163
-		   -> 1150, call-scoped over any node 1154, and admitting the non-pointer
-		   scalars gains nothing while costing an arena its field-identity. The
-		   shape that pays is a frame-loaded pointer argument, which is precisely
-		   the value gfunc_call would otherwise defer past the later ones. */
 		AstLocal top;
 		if (rir_shn < 1 || !rir_callee_pending())
 			break;
@@ -2697,11 +2292,6 @@ static void rir_op_effect(const RirOp *ro) {
 #if MCC_CONFIG_ASM
 	case JOP_ASMGEN:
 	case JOP_ASM: {
-		/* Both asm primitives are parse-time and the journal already records the
-		   whole payload -- the operand/clobber blob for one, the post-substitution
-		   template for the other -- and replays them byte-faithfully. The arena
-		   only needs a handle to it: ival packs the raw offset and length, sym the
-		   two int arguments. Statements, so no operands are consumed. */
 		AstLocal u = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, u,
 							 o->kind == JOP_ASMGEN ? AST_OP_ASMGEN : AST_OP_ASM);
@@ -2719,7 +2309,6 @@ static void rir_op_effect(const RirOp *ro) {
 #endif
 #ifdef MCC_JRN_VA_START_VOID
 	case JOP_VA_START: {
-		/* arm64's gen_va_start consumes both operands and pushes nothing. */
 		AstLocal b = rir_pop(), a2 = rir_pop(), n;
 		if (a2 == AST_NONE || b == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2749,9 +2338,6 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 #endif
 	case JOP_GGOTO: {
-		/* `goto *expr` consumes the address off the vstack and the tree bails on
-		   the whole body, so there is no tree node to mirror: one AST_Unary over
-		   the address value, re-issuing ggoto() at replay. */
 		AstLocal a = rir_pop(), n;
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2766,13 +2352,6 @@ static void rir_op_effect(const RirOp *ro) {
 	case JOP_ADDROF: {
 		AstLocal a;
 		AstLocal n;
-		/* gfunc_return's own lowering runs after the Return is bound and
-		   Replay_IR deliberately does not model it -- ast_replay_bb's Return arm
-		   re-runs gfunc_return itself -- so rir_reconcile_sv declines to refill
-		   there and the shadow stack is empty ON PURPOSE. Flagging that as an
-		   arena mismatch excluded the whole MEMORY-class struct return from the
-		   C2 denominator. The x86_64 lowering reaches RIR_M_LOAD, which already
-		   carries this guard; riscv64's and i386's reach addrof and genop. */
 		if (rir_after_ret && rir_shn == 0)
 			break;
 		a = rir_pop();
@@ -2796,29 +2375,13 @@ static int rir_cond_depth, rir_synth_depth, rir_call_depth, rir_inc_depth;
 static int rir_cvt_depth, rir_cvt_n;
 static unsigned char rir_cvt_on[RIR_CVT_MAX];
 static int rir_member_depth;
-/* A struct vstore's own lowering -- gaddrof on both sides then gen_struct_copy
-   -- re-materialises what it consumes, and the refill names the DESTINATION
-   slot for both operands, so va_start's copy came out as a va_list copied onto
-   itself. The emitter re-runs vstore() and derives the copy itself, exactly as
-   the parser does, so the region's primitives model nothing: suppress them and
-   keep the two lvalues the region opened with. */
 static int rir_vstruct_depth;
 static int rir_vla_depth;
-/* A store inside a short-circuit operand or a ternary arm is evaluated INSIDE
-   the branch. Attaching it to the enclosing block emits it unconditionally and
-   ahead of the test, which is what region_store.c showed: the store first and
-   the compare after. While either region has a node under construction, keep
-   the Store on the shadow stack so the operand binding takes it. */
 static AstLocal rir_incr_bb = AST_NONE;
 static int rir_incr_live;
 static AstLocal rir_tern[16];
 static int rir_tern_cf[16];
 static AstLocal rir_lor[16];
-/* `a[3]` is pointer arithmetic that ends at the same pointer type it started
-   from, and the tree holds a bare Binary under its Load. `*(T *)(base + off)`
-   is a cast, and the tree holds a Convert. Both reach RIR_M_LOAD as an untyped
-   Binary under a VT_PTR snapshot, so the discriminator is whether an operand
-   already carries that exact pointer type. */
 #define RIR_TMASK                                                              \
 	(~(unsigned)(VT_ARRAY | VT_CONSTANT | VT_VOLATILE | VT_NONCONST |            \
 							 VT_NONLVAL | VT_DEFSIGN))
@@ -2827,10 +2390,6 @@ static int rir_ptr_arith(AstLocal n, const SValue *pv) {
 	int i, nc = ast_nchild(rir_arena, n);
 	for (i = 0; i < nc; i++) {
 		AstLocal c = ast_child(rir_arena, n, i);
-		/* An array designator carries VT_ARRAY and a file-scope symbol carries
-		   storage-class bits the snapshot's decayed pointer does not, so the
-		   comparison has to be on the underlying type: `g[j]` over a static array
-		   read as a cast and put a Convert under the Load the tree does not have. */
 		if (c != AST_NONE &&
 				(ast_type_t(rir_arena, c) & RIR_TMASK) ==
 						((unsigned)pv->type.t & RIR_TMASK) &&
@@ -2852,12 +2411,6 @@ static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
 	case RIR_M_RETEXPR:
-		/* The tree takes the return's value at THIS tap, before
-		   gen_assign_cast(&func_vt) runs, and ast_replay_bb's Return arm re-runs
-		   that cast itself. Replay_IR's own RETURN marker fires after it, so the
-		   assignment cast was landing in the arena -- a Convert the tree never
-		   builds, or a leaf carrying the post-cast type. Bind the value here and
-		   suppress the lowering in between. */
 		if (rir_shn > 0) {
 			rir_retexpr = rir_sh[rir_shn - 1];
 			rir_retexpr_depth = rir_shn;
@@ -2885,15 +2438,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_retexpr = AST_NONE;
 		if (a != AST_NONE)
 			ast_add_child(rir_arena, n, a);
-		/* A cleanup attribute makes the parser emit the destructor calls BETWEEN
-		   the return value and the ret -- compute, spill, call, reload. Attaching
-		   the Return the moment the marker fires puts it ahead of those calls and
-		   the x87 reload lands 20 bytes early. At top level nothing can follow a
-		   return but that trailing code, so hold it and attach at body end. */
 		if (rir_bbn == 1) {
-			/* One slot, and a body can have several top-level returns -- `asm goto`
-			   then `return 0;` then a label with `return 1;` is two. Flush the one
-			   already held or the first is dropped and never emitted. */
 			if (rir_pending_ret != AST_NONE)
 				rir_stmt(rir_pending_ret);
 			rir_pending_ret = n;
@@ -2904,9 +2449,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_after_ret = 1;
 		break;
 	case RIR_M_IRETURN: {
-		/* main's fallthrough return, marked before its own vpushi, so no snapshot
-		   carries the value yet. It is a fixed one: check_func_return pushes a
-		   VT_INT 0, exactly what ast_hook_implicit_return models. */
 		AstLocal lit;
 		n = ast_node(rir_arena, AST_Return);
 		lit = ast_node(rir_arena, AST_Literal);
@@ -2920,12 +2462,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	}
 	case RIR_M_CMPINV:
-		/* `!cond` is not a node in the tree, it is an in-place edit of the one
-		   already built: a short-circuit Binary flips AST_FB_LANDOR_INVERT (which
-		   ast_replay_value's landor arm reads to swap jtrue/jfalse and the cmp
-		   op), and any other comparison flips its own op with ^1. Without it a
-		   negated `&&` chain replays the same LENGTH with an inverted jcc --
-		   `0f 84` where the parser emitted `0f 85`. */
 		if (rir_shn > 0) {
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Binary) {
@@ -2950,17 +2486,9 @@ static void rir_mark_apply(const RirOp *ro) {
 		if (rir_last_return != AST_NONE)
 			ast_set_op(rir_arena, rir_last_return, ro->rval ? 1 : 0);
 		rir_last_return = AST_NONE;
-		/* The return statement is over once its jump is emitted, so the
-		   post-return guard ends here too. What runs next can be a whole new
-		   statement: a switch emits its DISPATCH chain after the arms, and with
-		   the flag still set from the last arm's `return` the chain's first genop
-		   got no refill -- the residual mismatch in cmp_invert.c ref and inv. */
 		rir_after_ret = 0;
 		break;
 	case RIR_M_JUMP:
-		/* ast_replay_bb dispatches AST_Jump on its op: 0 break, 1 continue,
-		   2 case, 3 default, 4 label, 5 goto. Emitting a bare node meant every
-		   one of them replayed as a break. */
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, ro->rval ? 1 : 0);
 		rir_stmt(n);
@@ -2997,14 +2525,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_clg_bind((void *)(uintptr_t)ro->rv1, n);
 		break;
 	case RIR_M_CASE:
-		/* A new arm or label ENDS the post-return aftermath. That guard exists for
-		   gfunc_return's own pushes, which arrive with the shadow stack empty; in a
-		   switch whose every arm is `return <expr>;` it stayed set across the arm
-		   boundary, so the reconcile refused to refill and the arm's own genop
-		   popped nothing -- 16 arena mismatches per body in cmp_invert.c, which is
-		   what kept ref and inv out of the C2 census entirely. Clearing it whenever
-		   values are live instead admits 25 more bodies and costs 11 that were
-		   passing; the statement boundary is the right scope. */
 		rir_after_ret = 0;
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, 2);
@@ -3026,14 +2546,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_BFGV:
-		/* gv() lowers a bitfield READ in place -- gen_cast plus a shl/sar pair --
-		   and the journal shows the whole thing as ONE gv op, so the arena kept a
-		   bitfield-typed lvalue and replay's own gv() re-derived the lowering
-		   wherever it next needed a register: after the jump in a switch head,
-		   after the subtraction in a promotion compare, or not at all when the
-		   consumer took the lvalue. Wrap the operand in the Convert to gv's own
-		   result type: gen_cast sees VT_BITFIELD, calls gv() itself, and the
-		   lowering lands at the parser's point with no cast of its own. */
 		if (rir_shn > 0) {
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && (ast_type_t(rir_arena, top) & VT_BITFIELD) &&
@@ -3045,11 +2557,6 @@ static void rir_mark_apply(const RirOp *ro) {
 				rir_shtype[rir_shn - 1] = 0;
 			} else if (top != AST_NONE &&
 								 ast_kind(rir_arena, top) == AST_StoreVal) {
-				/* The value in hand is a bitfield store's, so what gv() is reading is
-				   the LVALUE vstore left on the stack, not the value -- and rebuilding
-				   the read from a copy of the Store's target recomputes an address the
-				   parser had already spilled to a temp (+4 bytes). Tag the Store and
-				   let replay's own vstore() hand the same lvalue to the same gv. */
 				AstLocal st = (AstLocal)ast_ival(rir_arena, top);
 				AstLocal tgt = st == AST_NONE ? AST_NONE
 																			: ast_child(rir_arena, st, 0);
@@ -3063,21 +2570,9 @@ static void rir_mark_apply(const RirOp *ro) {
 	case RIR_M_LOAD:
 		if (rir_after_ret && rir_shn == 0)
 			break;
-		/* An integer->pointer cast before a dereference emits no code, so no op
-		   records it and the operand node stays UNTYPED -- the tree builds
-		   Convert(->VT_PTR, Binary(+/-, ..)) under its Load, Replay_IR built the
-		   Load straight over the Binary, and gen_op later saw `ptr & int`. Every
-		   earlier Convert rule missed this because they all skip a node whose own
-		   type reads 0, which is exactly what an AST_Binary carries by design.
-		   This marker's own snapshot witnesses the pointer type at the moment of
-		   the dereference, which is the one place it is observable. */
 		if (rir_shn > 0 && ro->mvs_n - ast_base_depth > 0) {
 			const SValue *pv = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 			AstLocal top = rir_sh[rir_shn - 1];
-			/* Scoped to the shape described above: an untyped AST_Binary. That used
-			   to be the only untyped node this could see, but AST_Load is untyped
-			   now too, so without the kind test the rule fires on an ordinary `p->a`
-			   and interposes a Convert between two Loads the tree does not have. */
 			if (top != AST_NONE && ast_type_t(rir_arena, top) == 0 &&
 					ast_kind(rir_arena, top) == AST_Binary &&
 					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
@@ -3089,13 +2584,6 @@ static void rir_mark_apply(const RirOp *ro) {
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
 			}
-			/* The same no-code cast over a node that is TYPED and not a pointer:
-			   `*(unsigned *)(tf->esp)` reaches the boundary as an `unsigned` member
-			   access, so none of the arms below match and indir() is handed an
-			   integer -- "pointer expected", 6 emission errors on each i386 target.
-			   The snapshot is the witness here exactly as it is for the untyped
-			   Binary, so the admission is the same: it says pointer and the node
-			   does not. */
 			else if (top != AST_NONE && ast_type_t(rir_arena, top) != 0 &&
 							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) != VT_PTR &&
 							 !is_float(ast_type_t(rir_arena, top)) &&
@@ -3108,11 +2596,6 @@ static void rir_mark_apply(const RirOp *ro) {
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
 			}
-			/* `*(int *)(void *)full` casts twice; the duplicate-cast rule keeps one
-			   Convert and it is the FIRST, so the dereference runs on a `void *`
-			   and indir() derives a void lvalue that emits no load at all. The
-			   marker's snapshot witnesses the pointer type the parser actually
-			   dereferenced, so retype rather than add a second node. */
 			else if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert &&
 							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
 							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
@@ -3151,17 +2634,9 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Load);
 		ast_add_child(rir_arena, n, a);
-		/* An AST_Load is untyped in the tree too -- indir() derives the type from
-		   the pointer it dereferences. Stamping it read as `Load t=5 ref=X`
-		   against the tree's `t=0 ref=0` in 18 near-miss bodies. */
 		rir_push(n);
 		break;
 	case RIR_M_NORETURN:
-		/* A call to a _Noreturn function is followed by CODE_OFF(), so the parser
-		   drops the jump that would follow it. The tree records that on the node
-		   as AST_FB_CALL_NORETURN and ast_replay_value re-runs the CODE_OFF; the
-		   marker fires inside the CALL region, where the Invoke is still pending.
-		   This is the recorded "model that this branch ends unreachable" class. */
 		{
 			AstLocal inv = rir_pending_call;
 			if (inv == AST_NONE && rir_shn > 0 &&
@@ -3192,12 +2667,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		AstLocal u;
 		if (!ro->rval)
 			break;
-		/* The parser restores the stack pointer as part of a return, and the tree
-		   records that in the Return's ival rather than as a node of its own --
-		   keyed on ast_last_return, which covers EVERY return, not just one held
-		   to body end. Keying on the held one instead put a standalone restore
-		   inside the `if` that owned the return and dropped the parser's own, four
-		   bytes short in vla/label.c f1. */
 		if (rir_pending_ret != AST_NONE) {
 			ast_set_ival(rir_arena, rir_pending_ret, (uint64_t)(int64_t)ro->rval);
 			break;
@@ -3218,11 +2687,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_argcast_n++;
 		break;
 	case RIR_M_CASTGV:
-		/* The parser materialises an explicit cast's result when
-		   gv_cast_rvalue() says so, and the tree records that on the node as
-		   AST_FB_CONVERT_GV -- ast_replay_value's Convert arm re-runs it. Without
-		   the bit the callee of `((int (*)(int,int))p)(a,b)` is never spilled and
-		   the call reloads the pre-cast slot, 8 bytes short. */
 		if (rir_shn > 0) {
 			AstLocal top = rir_sh[rir_shn - 1];
 			if (top != AST_NONE && ast_kind(rir_arena, top) == AST_Convert)
@@ -3261,13 +2725,6 @@ static void rir_mark_apply(const RirOp *ro) {
 		ast_add_child(rir_arena, n, a);
 		rir_push_typed(n);
 		break;
-	/* `1 ? X : Y` emits ONLY X, and the parser carries it across Y's parse in a
-	   plain C local -- `sv = *vtop; vtop--;` then `*vtop = sv;` -- so nothing in
-	   the op stream says the slot changed hands. The dead arm still journals its
-	   ops (they run under nocode_wanted and build no nodes), but the reconcile
-	   between them pops X's node and refills the slot from Y's snapshot, so the
-	   model ends up holding the arm the parser threw away. These two markers are
-	   the parser's own save and restore points. */
 	case RIR_M_TERNHOLD:
 		if (rir_tholdn < (int)(sizeof rir_thold / sizeof rir_thold[0]))
 			rir_thold[rir_tholdn++] = rir_pop();
@@ -3291,10 +2748,6 @@ static void rir_mark_apply(const RirOp *ro) {
 	}
 }
 
-/* The tree's AST_If op encoding, which ast_replay_bb dispatches on: 0 plain if,
-   2 while, 3 for-with-condition, 4 do, 6 switch, 8 for-without. A region kind is
-   not that encoding, and emitting one for the other routes a for through the
-   switch arm. */
 static int rir_cf_op(int rkind) {
 	switch (rkind) {
 	case RIR_R_WHILE:
@@ -3361,18 +2814,12 @@ static void rir_region(const RirOp *ro) {
 				rir_cfpfx[rir_cfn] = pfx;
 				rir_cfn++;
 			}
-			/* if/while/switch open their region with the condition value already
-			   evaluated; for/do reach it later and bind it at the COND marker. */
 			if (ro->rkind != RIR_R_FOR && ro->rkind != RIR_R_DO)
 				rir_cf_cond();
 			break;
 		}
 		case RIR_R_COND:
 			rir_cond_depth++;
-			/* Only a for/do COND binds a condition here, and only then may it
-			   reconcile: the ternary reuses COND purely to suppress its own
-			   lowering, and reconciling there materialises a stray leaf that
-			   displaces the ternary node on the shadow stack. */
 			if (rir_cfn && (rir_cfkind[rir_cfn - 1] == RIR_R_FOR ||
 											rir_cfkind[rir_cfn - 1] == RIR_R_DO) &&
 					!(rir_ternn && rir_tern_cf[rir_ternn - 1] == rir_cfn)) {
@@ -3387,11 +2834,6 @@ static void rir_region(const RirOp *ro) {
 			rir_call_depth++;
 			break;
 		case RIR_R_INC: {
-			/* `a++` is one node in the tree and a seven-primitive lowering in the
-			   journal (vdup / gv_dup / vrotb / vpushi / gen_op / vstore / vpop).
-			   Rebuilding it from the primitives loses the load the parser emits for
-			   the old value, so bracket the lowering and keep the tree's shape:
-			   ast_replay_value's inc() arm re-issues the whole sequence. */
 			AstLocal a = rir_pop(), u;
 			rir_inc_depth++;
 			if (a == AST_NONE) {
@@ -3402,8 +2844,6 @@ static void rir_region(const RirOp *ro) {
 			ast_set_op(rir_arena, u, ro->rval >> 1);
 			ast_set_ival(rir_arena, u, (uint64_t)(ro->rval & 1));
 			ast_add_child(rir_arena, u, a);
-			/* Same for an inc/dec AST_Unary: the tree records op and ival and
-			   leaves t at 0. */
 			rir_push(u);
 			break;
 		}
@@ -3411,19 +2851,6 @@ static void rir_region(const RirOp *ro) {
 			rir_member_depth++;
 			break;
 		case RIR_R_CVT: {
-			/* gen_cast's generic narrowing is a shl/sar/shr triple issued through
-			   gen_op, so the journal shows three Binaries where the tree has one
-			   Convert. Replaying the triple reproduces the bytes but not the
-			   `vtop->type = *type` stamp that follows it, so the value stays 64-bit
-			   and every consumer downstream re-widens and re-narrows it. Take the
-			   tree's shape: one Convert over the operand, lowering suppressed. */
-			/* Take it only when the operand is a free node. `return -value;` has
-			   already been bound as the Return's child by the time the return cast
-			   lowers, and re-parenting it there produced an arena ast_validate
-			   rejects ("child parent link mismatch"). The tree has no Convert on
-			   that shape either. The shift operands are themselves cast, so this
-			   nests -- an inner region whose ops the outer one already dropped must
-			   not pop the stale shadow slot. */
 			int act = 0;
 			if (!ro->rinop && !rir_cvt_depth && !rir_cond_depth && !rir_inc_depth &&
 					!rir_member_depth && !rir_retexpr_pending && !rir_vstruct_depth &&
@@ -3451,15 +2878,6 @@ static void rir_region(const RirOp *ro) {
 			rir_cond_depth++;
 			break;
 		case RIR_R_VSTORE:
-			/* jrn_vstore records JOP_VSTORE only when neither operand is a struct,
-			   an array or a bitfield, so a string-literal initialiser reaches the
-			   stream as bare gv + store primitives and no Store node is built.
-			   vstore() itself is the 1:1 tap. The admission test has to read the
-			   MARKER's own snapshot, not the reconstructed nodes: their types are
-			   deferred and read 0 here, which is why guarding on the node let a
-			   struct vstore through and segfaulted struct_init.c. Struct and
-			   bitfield operands stay out — replay runs after sym_free has
-			   clobbered function-local type Syms and their type.ref dangles. */
 			if (rir_vstn < 16) {
 				int n2 = ro->mvs_n - ast_base_depth;
 				int allow = 0, fit;
@@ -3475,18 +2893,6 @@ static void rir_region(const RirOp *ro) {
 						(rir_mvs[ro->mvs_off + ro->mvs_n - 2].type.t & VT_BTYPE) ==
 								VT_STRUCT)
 					rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
-				/* The rebuild takes the region's two operands off the TOP of the
-				   shadow stack, so it is only defined where the shadow models the
-				   whole vstack. gfunc_param_typed copies a by-value struct argument
-				   through vstore() as well, and there the marker is 12 slots deep
-				   over a 2-slot shadow: `printf("big %ld\n", big(100, s1, ...))`
-				   rebuilt Store(printf, "big %ld\n"), which left the Invoke's callee
-				   a StoreVal and is the whole Invoke-callee-notfunc refusal on
-				   struct_abi.c and aggregate_perm.c. */
-				/* A vstore nested inside a suppressing one models nothing of its own:
-				   its primitives are already dropped and its operands are whatever the
-				   outer region left on the shadow stack, so a rebuild there is a
-				   second Store over the outer one's operands. */
 				fit = (n2 >= 2 && !rir_call_depth && !rir_vstruct_depth &&
 							 !rir_cx_depth);
 				if (fit &&
@@ -3542,15 +2948,6 @@ static void rir_region(const RirOp *ro) {
 				if (n2 >= 2) {
 					const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
 					const SValue *t = &rir_mvs[ro->mvs_off + ro->mvs_n - 2];
-					/* Narrowed to the case this exists for: an ARRAY value, i.e. the
-					   string-literal initialiser jrn_vstore declines on its array
-					   test. Admitting every non-struct non-bitfield vstore also
-					   rebuilds ones the primitive path already handled and costs
-					   13 bodies net. */
-					/* A struct value is the block-copy case: vstore takes both addresses and
-					   calls gen_struct_copy, so the region's own ops leave ADDR unaries on
-					   the shadow stack and rebuilding from those gives a POINTER assignment.
-					   Admit it here and unwind to the pre-region operands at the end. */
 					allow = (((v->type.t & VT_ARRAY) != 0 &&
 										(v->type.t & VT_BTYPE) != VT_STRUCT &&
 										(t->type.t & VT_BTYPE) != VT_STRUCT) ||
@@ -3574,12 +2971,6 @@ static void rir_region(const RirOp *ro) {
 			}
 			break;
 		case RIR_R_LANDOR: {
-			/* `a && b && c` is one n-ary AST_Binary in the tree: ast_replay_value
-			   walks the children, gvtst's between them and gvtst_set's at the end.
-			   Built from primitives each operand is dropped by the gvtst that
-			   consumes it and only the last survives. Only the all-non-constant
-			   shape is marked; the folded and materialized endings are the tree's
-			   own open problem and are left to the primitive path. */
 			AstLocal n = ast_node(rir_arena, AST_Binary);
 			ast_set_op(rir_arena, n, ro->rval);
 			if (rir_lorn < 16)
@@ -3587,9 +2978,6 @@ static void rir_region(const RirOp *ro) {
 			break;
 		}
 		case RIR_R_TERNARY: {
-			/* `c ? a : b` is one AST_If op 5 with [cond, arm0, arm1], evaluated as
-			   a VALUE by ast_replay_value. Only the c<0 non-GNU shape is marked;
-			   a constant condition emits one arm and needs no If at all. */
 			AstLocal n = ast_node(rir_arena, AST_If);
 			AstLocal cond = rir_shn ? rir_pop() : AST_NONE;
 			ast_set_op(rir_arena, n, ro->rval ? 9 : 5);
@@ -3642,11 +3030,6 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_CALL:
 		if (rir_call_depth)
 			rir_call_depth--;
-		/* A call closed by ast_hook_call_effect_end has its result discarded: the
-		   tree types the Invoke VT_VOID and makes it a statement. Held pending
-		   instead, it was claimed by whatever consumed the stack next -- the
-		   member access in struct_packed_indirect.c addp took the memset's Invoke
-		   as its own operand. */
 		if (ro->rval && !rir_call_depth) {
 			AstLocal inv = rir_pending_call;
 			if (inv == AST_NONE && rir_shn > 0 &&
@@ -3676,12 +3059,6 @@ static void rir_region(const RirOp *ro) {
 		if (rir_vstn) {
 			int seen = rir_vst_seen[--rir_vstn];
 			int allow = rir_vst_ok[rir_vstn];
-			/* The decrement has to be tied to the region that made it, not to any
-			   vstore end: `double _Complex wd = fc;` opens a suppressing struct
-			   region and then a plain scalar region per part inside it, and an
-			   unconditional decrement let the first part's end cancel the outer
-			   suppression -- the second part's JOP_VSTORE then built a Store the
-			   emitter re-ran after the copy. */
 			if (rir_vst_sup[rir_vstn] || rir_vst_cx[rir_vstn])
 				rir_vsup_depth = 0;
 			if (rir_vst_sup[rir_vstn] && rir_vstruct_depth)
@@ -3692,17 +3069,6 @@ static void rir_region(const RirOp *ro) {
 				rir_cx_depth--;
 			if (rir_vst_gret[rir_vstn] && rir_gret_depth)
 				rir_gret_depth--;
-			/* gfunc_return copies a struct result through vstore(), so the return
-			   statement opens a RIR_R_VSTORE region of its own. The tree records none
-			   of it -- its arena for `return s1;` is Return(Ref) alone and
-			   ast_replay_value re-runs gfunc_return itself -- so rebuilding it adds a
-			   Store the tree does not have and desynchronises the shadow stack. A
-			   pending Return is exactly that case and nothing else. */
-			/* But NOT every vstore under a pending Return is gfunc_return's own: a
-			   cleanup attribute spills the return value to a temp before the
-			   destructor call and reloads it after, and that copy has to be
-			   modelled or the reload comes off the original slot. gfunc_return's
-			   shape is two AST_OP_ADDR unaries; the spill's is two lvalues. */
 			if ((rir_pending_ret != AST_NONE || rir_vst_gret[rir_vstn]) &&
 					(rir_ret_spilled || rir_shn < 2 ||
 					 (ast_kind(rir_arena, rir_sh[rir_shn - 1]) == AST_Unary &&
@@ -3716,9 +3082,6 @@ static void rir_region(const RirOp *ro) {
 			if (rir_vst_shn[rir_vstn] >= 2 && rir_shn > rir_vst_shn[rir_vstn])
 				rir_shn = rir_vst_shn[rir_vstn];
 			if (!seen && allow && rir_shn >= 2) {
-				/* Suppressed, the region ends with the parser's own vstore order --
-				   value on top, target under it. Unsuppressed, the region's ops have
-				   already rearranged them the other way. */
 				AstLocal t = rir_pop(), v = rir_pop(), n;
 				if (rir_vst_bf[rir_vstn] || rir_vst_cx[rir_vstn] ||
 						rir_vst_nc[rir_vstn]) {
@@ -3729,9 +3092,6 @@ static void rir_region(const RirOp *ro) {
 					long long tc = rir_vst_tc[rir_vstn], vc = rir_vst_vc[rir_vstn];
 					long long ti = (long long)ast_ival(rir_arena, t);
 					long long vi = (long long)ast_ival(rir_arena, v);
-					/* t is the popped TOP: swap only when the target is the slot under
-					   it, decided by the offsets the region opened with and falling
-					   back to the parser's own vstore order when they do not tell. */
 					if (!(tc != vc && ti == tc && vi == vc)) {
 						AstLocal sw = t;
 						t = v;
@@ -3764,10 +3124,6 @@ static void rir_region(const RirOp *ro) {
 			rir_lheldn = 0;
 			break;
 		}
-		/* Statements the operand evaluated for effect -- the temp spill an inline
-		   atomic load leaves behind -- were rir_stmt'd into the ENCLOSING block and
-		   so ran ahead of the short-circuit's own compare. They belong to the
-		   operand: bind them as a comma, statements then value. */
 		if (rir_lheldn) {
 			AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
 			int q;
@@ -3784,11 +3140,6 @@ static void rir_region(const RirOp *ro) {
 		rir_lheldn = 0;
 		if (rir_lorn) {
 			AstLocal n = rir_lor[--rir_lorn];
-			/* rval bit 0 is the materialised ending, bit 1 says the chain's leading
-			   operands folded away, bit 2 carries the constant expr_landor pushed.
-			   A materialised tail is modelled rather than dropped: the parser still
-			   emitted a real gvtst per operand parsed before the fold, and dropping
-			   the region loses that jump chain. */
 			if ((ro->rval & 1) && ast_nchild(rir_arena, n) >= 1) {
 				ast_set_fbits(rir_arena, n,
 											ast_fbits(rir_arena, n) | AST_FB_LANDOR_MATERIAL);
@@ -3801,9 +3152,6 @@ static void rir_region(const RirOp *ro) {
 					ast_nchild(rir_arena, n) < ((ro->rval & 2) ? 1 : 2))
 				rir_arena_mismatch++;
 			else
-				/* A short-circuit region is an AST_Binary, and the tree leaves those
-				   untyped for the emitter to derive -- the same convention as the
-				   ternary AST_If and the inc/dec AST_Unary. */
 				rir_push(n);
 		}
 		break;
@@ -3826,10 +3174,6 @@ static void rir_region(const RirOp *ro) {
 			if (ast_nchild(rir_arena, n) !=
 					(ast_op(rir_arena, n) == 9 ? 2u : 3u))
 				rir_arena_mismatch++;
-			/* The tree leaves a ternary AST_If UNTYPED and lets the emitter derive
-			   the result -- the same convention as AST_Binary, already a recorded
-			   trap. Stamping it read as `If op=5 t=3` against the tree's `t=0` in
-			   18 of the near-miss bodies. */
 			rir_push(n);
 		}
 		break;
@@ -3838,13 +3182,6 @@ static void rir_region(const RirOp *ro) {
 			rir_vla_depth--;
 		break;
 	case RIR_R_MEMBER: {
-		/* `a.b` is one AST_Unary in the tree — op AST_OP_MEMBER, the byte offset
-		   in ival, the member type stamped on the node — and gaddrof + vpushi +
-		   gen_op('+') in the journal. Rebuilt from the primitives it becomes
-		   Binary(+, addr, offset) carrying a pointer type where the member type
-		   belongs, which is where the `cannot cast between a floating type and a
-		   pointer` class comes from. The end marker's own snapshot holds vtop
-		   after the parser retyped it, which is exactly what the node needs. */
 		AstLocal base, m;
 		if (rir_member_depth)
 			rir_member_depth--;
@@ -3870,12 +3207,6 @@ static void rir_region(const RirOp *ro) {
 		break;
 	}
 	case RIR_R_INCR:
-		/* An increment clause that is WRITTEN but emits nothing -- `for (;;
-		   sizeof(enum{in=1}))` -- still gets the parser's jump-over-increment and
-		   back edge, 7 bytes the emitter otherwise decides against on the block
-		   being empty. Tag only that case: an increment that produced statements
-		   is already decided correctly, and tagging it too costs 48 arenas their
-		   field-identity with the tree for nothing. */
 		if (rir_incr_live && rir_cfn && rir_incr_bb != AST_NONE &&
 				ast_first_child(rir_arena, rir_incr_bb) == AST_NONE)
 			ast_set_fbits(rir_arena, rir_cf[rir_cfn - 1],
@@ -3918,21 +3249,12 @@ static void rir_region(const RirOp *ro) {
 }
 
 #if MCC_REPLAY_IR_C2
-/* ast_validate checks link consistency, not arity. ast_replay_bb assumes the
-   shapes the hooks always produce -- an If with a condition and at least one
-   block, a Store with two children, and so on -- and walks off the end when a
-   reconstruction is short. Reject those here so an incomplete arena is an
-   honest skip instead of a segfault in the emitter. */
 static int rir_unsafe(const char *why, AstLocal n, uint32_t nc) {
 	snprintf(rir_c2_msg, sizeof rir_c2_msg, "arity %s n=%u nc=%u op=%d", why,
 					 (unsigned)n, (unsigned)nc, ast_op(rir_arena, n));
 	return 0;
 }
 
-/* Each AST_If op has its own child contract in ast_replay_bb: which slot is the
-   condition, which are blocks, and how many are mandatory. A slot it walks as a
-   block must really be one -- ast_replay_bb dereferences first_child[] without
-   checking, so AST_NONE or a value node there is a fault, not a bad emit. */
 static int rir_bb_slot(AstLocal n, uint32_t i, uint32_t nc) {
 	AstLocal c;
 	if (i >= nc)
@@ -3971,10 +3293,6 @@ static int rir_if_safe(AstLocal n, uint32_t nc) {
 	}
 }
 
-/* A leaf that names a register must agree with its own type about which bank
-   that register is in: load() asserts rather than erroring when asked to move a
-   VT_DOUBLE out of an integer register, and a reconstruction can mint that pair
-   where the parser never does. */
 static int rir_leaf_reg_ok(AstLocal n) {
 	int r = ast_op(rir_arena, n), v;
 	if (r & VT_LVAL)
@@ -3985,9 +3303,6 @@ static int rir_leaf_reg_ok(AstLocal n) {
 	{
 		int fl = (reg_classes[v] & MCC_RC_FLOAT) != 0;
 #ifdef MCC_RC_ST0
-		/* The x87 stack register is a float bank of its own -- reg_classes[ST0] is
-		   MCC_RC_ST0 and does NOT carry MCC_RC_FLOAT, so a `long double` living
-		   there read as a bank mismatch and refused the whole body. */
 		if (reg_classes[v] & MCC_RC_ST0)
 			fl = 1;
 #endif
@@ -4012,22 +3327,10 @@ static int rir_emit_safe(void) {
 		case AST_Store:
 			if (nc != 2)
 				return rir_unsafe("Store", n, nc);
-			/* A store target has to be an lvalue, and a computed AST_Binary is not
-			   one. The backends disagree about what they do with it: x86_64's
-			   store() never checks, riscv64's asserts `sv->r & VT_LVAL` and arm64's
-			   falls through to assert(0), so the probe ABORTED rather than erring.
-			   The shape is gen_negf's memory sign-flip on the targets with no
-			   hardware FP negate -- spill, XOR 0x80 into the top byte, reload -- and
-			   the tree's own answer to it is to decline to RECORD the function (see
-			   the comment on gen_negf). Replay_IR's bar is byte-faithful replay, so
-			   it records the body and refuses only the emission. */
 			if (ast_kind(rir_arena, ast_child(rir_arena, n, 0)) == AST_Binary)
 				return rir_unsafe("Store-target", n, nc);
 			break;
 		case AST_Binary: {
-			/* A short-circuit Binary is n-ary: ast_replay_value walks every child,
-			   gvtst's between them and gvtst_set's at the end. Every other Binary
-			   is strictly two-operand. */
 			int bop = ast_op(rir_arena, n);
 			if (bop == TOK_LAND || bop == TOK_LOR) {
 				if (nc < (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL ? 1u : 2u))
@@ -4039,8 +3342,6 @@ static int rir_emit_safe(void) {
 					return rir_unsafe("Binary-atomic", n, nc);
 #endif
 			} else if (bop == AST_OP_CPLXBUILD) {
-				/* ast_replay_value reads the base type through ref->next, so a node
-				   whose type is not a complex struct would walk a null chain. */
 				Sym *cr = (Sym *)(uintptr_t)ast_type_ref(rir_arena, n);
 				if (nc != 2 || (ast_type_t(rir_arena, n) & VT_BTYPE) != VT_STRUCT ||
 						!cr || !cr->a.is_complex || !cr->next)
@@ -4059,8 +3360,6 @@ static int rir_emit_safe(void) {
 				return rir_unsafe("Load", n, nc);
 			break;
 		case AST_Unary:
-			/* A VLA declaration and its stack restore are childless statements --
-			   ast_replay_bb reads everything they need off the node itself. */
 			if ((ast_op(rir_arena, n) == AST_OP_VLA ||
 					 ast_op(rir_arena, n) == AST_OP_VLA_RESTORE ||
 					 ast_op(rir_arena, n) == AST_OP_ASMGEN ||
@@ -4069,11 +3368,6 @@ static int rir_emit_safe(void) {
 				break;
 			if (nc != 1)
 				return rir_unsafe("Unary", n, nc);
-			/* ast_replay_value stamps an ADDR node's own type straight onto the
-			   address gaddrof produced. A float type there hands gfunc_call a
-			   VT_DOUBLE living in an integer register and load() asserts on the
-			   bank mismatch. Non-pointer integer and struct types are NOT a defect
-			   -- gaddrof does not retype, so the tree stamps those too. */
 			if (ast_op(rir_arena, n) == AST_OP_ADDR &&
 					is_float(ast_type_t(rir_arena, n)))
 				return rir_unsafe("Unary-addr-float", n, nc);
@@ -4084,40 +3378,24 @@ static int rir_emit_safe(void) {
 			if (nc < 1)
 				return rir_unsafe("Invoke-nc", n, nc);
 			callee = ast_child(rir_arena, n, 0);
-			/* An AST_Load is untyped by the tree's own convention -- indir() derives
-			   the type from the pointer it dereferences -- so a call through a
-			   dereferenced function pointer has an untyped callee and is still
-			   emittable. Check the pointer it loads instead of refusing outright. */
 			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
 				ast_kind(rir_arena, callee) == AST_Load &&
 				ast_nchild(rir_arena, callee) == 1) {
 				callee = ast_child(rir_arena, callee, 0);
 				via_load = 1;
 			}
-			/* Same for an untyped Binary callee -- pointer arithmetic that lands on a
-			   function pointer. gen_op derives the type at emission, so the node
-			   carrying none is by design, not a defect to refuse on. */
 			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
 				ast_kind(rir_arena, callee) == AST_Binary)
 				via_load = 1;
-			/* A ternary is untyped by the same convention, and `(fp ? f : f)()`
-			   makes one the callee; ast_replay_value derives the type through
-			   combine_types and the Invoke arm's pointed_type retype. */
 			if (callee != AST_NONE && ast_type_t(rir_arena, callee) == 0 &&
 				ast_kind(rir_arena, callee) == AST_If)
 				via_load = 1;
 			if (callee == AST_NONE ||
 				(ast_type_t(rir_arena, callee) == 0 && !via_load))
 				return rir_unsafe("Invoke-callee-untyped", n, nc);
-			/* gfunc_call walks the callee's signature Sym for the ABI; a callee
-			   with no type ref, or one that is not a function, faults there. */
 			if (!via_load && ast_type_ref(rir_arena, callee) == 0)
 				return rir_unsafe("Invoke-callee-noref", n, nc);
 			if ((ast_type_t(rir_arena, callee) & VT_BTYPE) != VT_FUNC) {
-				/* An indirect call's callee is a pointer to function, which
-				   ast_replay_value's AST_Invoke arm retypes through pointed_type
-				   before gfunc_call sees it. Only a callee that reaches neither
-				   shape is unsafe. */
 				const Sym *r =
 						(const Sym *)(uintptr_t)ast_type_ref(rir_arena, callee);
 				if (!via_load &&
@@ -4135,20 +3413,12 @@ static int rir_emit_safe(void) {
 				return rir_unsafe("Return", n, nc);
 			if (nc == 0)
 				break;
-			/* ast_replay_bb runs gen_assign_cast(&func_vt) on the return value, and
-			   gen_cast asserts rather than erroring when the pair is one it never
-			   sees from the parser -- a VT_QFLOAT reconstructed out of a snapshot
-			   against a struct-returning func_vt aborts inside gen_cvt_ftoi. */
 			v = ast_child(rir_arena, n, 0);
 			if (v == AST_NONE)
 				return rir_unsafe("Return-none", n, nc);
 			vb = ast_type_t(rir_arena, v) & VT_BTYPE;
 			if (vb == VT_QFLOAT || vb == VT_QLONG)
 				return rir_unsafe("Return-wide", n, nc);
-			/* A _Complex return type is a VT_STRUCT carrying ref->a.is_complex, and
-			   `return 7.0;` from one is a scalar value gen_assign_cast widens --
-			   the tree records exactly that shape, so refusing it is this net
-			   declining a body the emitter handles. */
 			if (((func_vt.t & VT_BTYPE) == VT_STRUCT) != (vb == VT_STRUCT) &&
 					!(ast_kind(rir_arena, v) == AST_Load &&
 						ast_type_t(rir_arena, v) == 0) &&
@@ -4180,9 +3450,6 @@ static void rir_castgv_apply(void) {
 									ast_fbits(rir_arena, top) | AST_FB_CONVERT_GV);
 		return;
 	}
-	/* Only a node still on the shadow stack and not yet attached anywhere can be
-	   wrapped: re-parenting one the model has already placed makes the arena a
-	   DAG, which ast_validate rejects as a parent link mismatch. */
 	if (ast_parent(rir_arena, top) != AST_NONE)
 		return;
 	if (top != rir_castgv_top)
@@ -4192,9 +3459,6 @@ static void rir_castgv_apply(void) {
 	ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
 	ast_add_child(rir_arena, cv, top);
 	rir_sh[rir_shn - 1] = cv;
-	/* Any handle the model is holding for later attachment has to move with it,
-	   or the Return attaches the operand the Convert now owns and the arena has
-	   two parents for one node. */
 	if (rir_retexpr == top)
 		rir_retexpr = cv;
 	if (rir_pending_call == top)
@@ -4260,10 +3524,6 @@ static void rir_to_arena(void) {
 	rir_bb[rir_bbn++] = ast_node(rir_arena, AST_BasicBlock);
 	for (i = 0; i < rir_n; i++) {
 		RirOp *ro = &rir_ops[i];
-		/* rkind is a SHARED number space: RIR_R_* and RIR_M_* both live in it and
-		   are told apart only by the tag. A `tag != RIR_T_OP` test therefore also
-		   catches the point marker whose ordinal happens to equal this region's,
-		   which silently swallowed RIR_M_TERNPICK (22 == RIR_R_CPLX). */
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
 				ro->rkind == RIR_R_CPLX) {
 			if (ro->tag == RIR_T_RBEGIN)
@@ -4274,12 +3534,6 @@ static void rir_to_arena(void) {
 		}
 		if (rir_cplx_depth)
 			continue;
-		/* gen_atomic_cas_rmw synthesises its own retry loop out of backend
-		   primitives -- gind() for the head, gvtst()+gsym_addr() for the backward
-		   branch -- so no parser region delimits it and the reconstruction dropped
-		   the compare and the branch entirely. Model the whole lowering as one
-		   node over the two operands it consumes, the way the atomic primitives
-		   are modelled, and let the emitter re-run it. */
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
 				ro->rkind == RIR_R_ACAS) {
 			if (ro->tag == RIR_T_RBEGIN) {
@@ -4295,11 +3549,6 @@ static void rir_to_arena(void) {
 				} else {
 					rn = ast_node(rir_arena, AST_Binary);
 					ast_set_op(rir_arena, rn, AST_OP_ACASRMW);
-					/* The four frame slots the lowering allocates are chosen off `loc`,
-					   which the trial cannot reconstruct: the atomic load/store
-					   lowerings move it too and those are replayed as plain ops, never
-					   re-run. Carry the parser's `loc` at entry on the node and restore
-					   it, so the re-run picks the same slots. */
 					ast_set_ival(rir_arena, rn,
 											 (uint64_t)(unsigned)rir_acas_val |
 													 ((uint64_t)(unsigned)ro->rval << 32));
@@ -4312,9 +3561,6 @@ static void rir_to_arena(void) {
 		}
 		if (rir_acas_depth)
 			continue;
-		/* A vstore region that rebuilds its own Store models the whole copy, so
-		   its interior is inert -- primitives AND regions. Nested vstore regions
-		   are counted rather than dispatched so the matching end is found. */
 		if (rir_vsup_depth) {
 			if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
 					ro->rkind == RIR_R_VSTORE) {
@@ -4343,46 +3589,12 @@ static void rir_to_arena(void) {
 								rir_shn, rir_lorn, rir_ternn, rir_cond_depth);
 		}
 #endif
-		/* A construct parsed with nocode_wanted set emits nothing -- the dead arm
-		   of `1 ? live : ({ while (1) ... })`. The op filter already drops its
-		   primitives; without dropping its control-flow regions too the
-		   reconstruction builds a real loop for it and emits the backward jump
-		   the parser never wrote (`eb fe`). Scoped to control flow: nocode_wanted
-		   is also set transiently after a return, where the markers are still
-		   load-bearing. */
-		/* A construct parsed in an UNEVALUATED context emits nothing -- the dead
-		   arm of `1 ? live : ({ while (1) ... })`. The op filter already drops its
-		   primitives; its regions and markers were still applied, so the
-		   reconstruction built a real loop for it and emitted the backward jump
-		   the parser never wrote (`eb fe`). The mask matters and was measured:
-		   raw nocode_wanted costs 105 bodies and the control-flow-region subset
-		   101, because CODE_OFF is also set transiently after a return where
-		   these markers are load-bearing. Only the NOEVAL bits mean "parsed but
-		   not evaluated". */
 		if (ro->tag != RIR_T_OP && (ro->rnocode & RIR_NOEVAL_MASK))
 			continue;
-		/* __builtin_complex evaluates both operands, then allocates a frame temp
-		   and casts+stores each half, so both halves are live at once and the
-		   parser's register choice reflects that. Two sibling Stores cannot say
-		   it -- each rematerialises its own operand into the same register, and
-		   `CMPLX(inf, inf)` came out as the same instructions in the other order.
-		   Both operands are already on the shadow stack when this region opens,
-		   so the lowering is skipped wholesale and rebuilt as one node the
-		   emitter re-runs. Admitted only where the operands really are there:
-		   inside a suppressing region the ops that would have pushed them never
-		   ran, and 2 of complex_annexg.c's 26 sites are exactly that. */
 		if ((ro->tag == RIR_T_RBEGIN || ro->tag == RIR_T_REND) &&
 				ro->rkind == RIR_R_CPLXB) {
 			if (ro->tag == RIR_T_RBEGIN) {
 				if (!rir_cplxb_depth) {
-					/* Reconcile first, then decide. The region's own snapshot is the
-					   only boundary the two operands ever get: rir_push_typed defers a
-					   node's type to the NEXT op's snapshot and that op is inside the
-					   lowering this region skips, so `CMPLX(inf, -inf)` handed gen_cast
-					   an untyped AST_OP_FNEG -- VT_VOID. It is also the only thing that
-					   supplies a constant-folded operand: `CMPLX(inf, 0)` emits no op
-					   for `(double)0` at all, so the shadow stack is one short and the
-					   refill is what puts it there. */
 					if (!rir_cond_depth && !rir_inc_depth && !rir_member_depth &&
 							!rir_retexpr_pending && !rir_vstruct_depth && !rir_vbf_depth &&
 							!rir_cx_depth && !rir_vla_depth && !rir_cvt_depth)
@@ -4415,8 +3627,6 @@ static void rir_to_arena(void) {
 			rir_castgv_apply();
 		if (ro->tag == RIR_T_MARK) {
 			int bound = rir_retexpr_pending && ro->rkind == RIR_M_RETURN && ro->rval;
-			/* RIR_M_NORETURN fires INSIDE the call region it annotates, so it is
-			   the one marker the region suppression must let through. */
 			if ((ro->rkind == RIR_M_NORETURN ||
 					 (!rir_cond_depth && !rir_synth_depth && !rir_call_depth &&
 						!rir_inc_depth && !rir_member_depth && !rir_vstruct_depth &&
@@ -4425,13 +3635,6 @@ static void rir_to_arena(void) {
 					 ro->rkind == RIR_M_NORETURN)) {
 				if (bound || ro->rkind == RIR_M_NORETURN)
 					;
-				/* RIR_M_BFGV fires MID-lowering: gv has already cleared
-				   VT_STRUCT_MASK and adjust_bf has retyped the lvalue to the
-				   access type, so the snapshot is exactly the state the marker
-				   exists to bracket. Stamping it wrapped the operand in a
-				   Convert to that access type -- a `long long x : 16` read came
-				   out with an extra `0f bf c0` -- and hid the VT_BITFIELD the
-				   apply reads. */
 				else if (ro->rkind == RIR_M_BFGV)
 					;
 				else if (ro->rkind == RIR_M_LOAD || ro->rkind == RIR_M_RETEXPR ||
@@ -4741,13 +3944,6 @@ void rir_verify(void) {
 					ast_intention_hash(ast_cur, ast_root(ast_cur))) {
 				rir_tot_arena_hash_eq++;
 				rir_body_hasheq = 1;
-				/* C3 equivalence, on the population where it is actually defined.
-				   When the two arenas are already field-identical, running the
-				   same pipeline on each and comparing fold counts and the
-				   post-pass intention hash asks "do the passes DO the same thing
-				   on a Replay_IR arena" without touching emitter state at all --
-				   bytes would need a second tap after the tree's own replay, and
-				   a mismatched input would make any difference meaningless. */
 				if (rir_env >= 6) {
 					AstArena *pa = ast_arena_clone(rir_arena);
 					AstArena *pb = ast_arena_clone(ast_cur);
@@ -4878,14 +4074,6 @@ void rir_verify(void) {
 				for (i = 0; i < rir_nlbl; i++)
 					if (rir_lblhead[i])
 						rir_open_chains++;
-				/* The win64 alloca chain threads raw section addresses through
-				   the `add rax, imm32` slots and is only closed by
-				   gfunc_epilog's gsym_addr(func_alloca, -func_scratch), AFTER
-				   ast_func_end — the same deferred fixup as rsym. The shifted
-				   replay rebuilds it at base2, so those imm32 slots differ from
-				   the original by exactly `shift`; rebase them so every other
-				   byte of the body still gets compared. cg_func_alloca is 0 on
-				   targets without the chain. */
 				{
 					int L = mcc_state->cg_func_alloca;
 					while (L >= base2 && L + 4 <= ind) {
@@ -4935,9 +4123,6 @@ void rir_verify(void) {
 	}
 
 #if MCC_REPLAY_IR_C2
-	/* Bodies excluded from the trial are NOT in the c2ok denominator, so count
-	   them separately -- an arena Replay_IR already knows is wrong still needs an
-	   emission path before the tree can be deleted. */
 	if (rir_env >= 5 && faithful && body_len > 0 && rir_arena_mismatch)
 		rir_tot_c2_skip++;
 	if (rir_env >= 5 && faithful && body_len > 0 && !rir_arena_mismatch) {
@@ -4971,9 +4156,6 @@ void rir_verify(void) {
 		rir_c2_msg[0] = 0;
 		memcpy(vstack - 1, vsave, sizeof(SValue) * (VSTACK_SIZE + 1));
 		vtop = vstack + saved_vn - 1;
-		/* Not saved_loc: that is the frame pointer at the END of the body, so a
-		   struct return's temp allocated during the trial landed one slot below
-		   the parser's. Start where the body started. */
 		loc = rir_body_loc_sv;
 		anon_sym = saved_anon;
 		ast_pinned_regs = saved_pin;
@@ -4988,13 +4170,6 @@ void rir_verify(void) {
 			if (rir_env >= 5)
 				fprintf(stderr, "[rir-c2] %s\tINVALID %s\n", funcname, rir_c2_msg);
 		} else if (setjmp(mcc_state->error_jmp_buf) == 0) {
-			/* C3 probe: the optimizer passes are arena-parameterized, so the
-			   question is whether they can consume an arena the hooks never
-			   built. Run them on a CLONE -- the C2 byte comparison below must
-			   still see the unoptimized reconstruction -- and re-check that what
-			   comes out is still something ast_replay_* can be handed. A pass
-			   that folds is expected to change the bytes, so bytes are not the
-			   oracle here; surviving validate + the arity contract is. */
 			if (rir_env >= 6) {
 				AstArena *c3 = ast_arena_clone(rir_arena);
 				char c3msg[256];
@@ -5042,10 +4217,6 @@ void rir_verify(void) {
 							d = q;
 							break;
 						}
-					/* The JOURNAL is byte-correct on every one of these bodies, so the
-					   op it was executing at the first divergent byte names what the
-					   arena got wrong. This is the same oracle MCC_JOURNAL_ORACLE gives
-					   the tree, pointed at the C2 emission instead of the replay. */
 					{
 						int bi = rir_blame(d);
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d win=[%d,%d)\n",
@@ -5071,15 +4242,6 @@ void rir_verify(void) {
 				rir_tot_c2_len++;
 				if (rir_env >= 5) {
 					int q, gl = ind - ast_body_ind_sv;
-					/* A long body with a small length delta diverges at ONE place, and
-					   the first 48 bytes are almost always identical -- print where the
-					   two streams part company and a window around it, or the whole
-					   thing when it is short. */
-					/* A jump DISPLACEMENT differs whenever anything downstream of it
-					   changes size, so the first differing byte is routinely 1-4 bytes
-					   inside a jcc and the real divergence is later. Report the first
-					   run of 3+ consecutive differing bytes as well: that one cannot be
-					   a displacement and is where the emission actually parts company. */
 					int lim = gl < body_len ? gl : body_len, fd = -1, from, run = 0,
 							fb = -1;
 					for (q = 0; q < lim; q++)

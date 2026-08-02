@@ -1,23 +1,6 @@
 #ifndef MCCFORECAST_H
 #define MCCFORECAST_H
 
-/*
- * One-step-ahead time-series forecasting ensemble, self-contained (no libm) so it
- * works in every build including the asttool harness. Each predictor takes a short
- * sample vector y[0..n-1] (chronological) and predicts y[n]. The driver
- * ast_fc_forecast scores every predictor's online one-step accuracy across the
- * window, keeps the three most accurate, and returns the one whose next-step
- * prediction is closest to their consensus (median) — the least-outlier of the
- * best three. Used by the -O4+ search to predict the next tick's duration
- * (mccast.c) and exposed to the -ffold-math optimizer (mccgen.c).
- *
- * Predictors: random walk, simple exponential smoothing, AR(1), linear regression
- * in time, penalized (ridge) spline, GAM with a truncated-power spline basis,
- * Bayesian dynamic linear model (local-level Kalman / BSTS), Bayesian ridge
- * regression, Gaussian-process regression (RBF kernel), gradient-boosted stumps on
- * a lag feature, Holt linear trend, Theil-Sen robust regression, moving median.
- */
-
 #include <stdint.h>
 
 #define AST_FC_MAXN 16
@@ -28,7 +11,6 @@ static int ast_fc_finite(double x) {
 	return x == x && x < 1e18 && x > -1e18;
 }
 
-/* self-contained exp, adequate over the RBF-kernel range (x <= 0 in practice). */
 static double ast_fc_exp(double x) {
 	double u, e;
 	int i;
@@ -41,7 +23,7 @@ static double ast_fc_exp(double x) {
 	u = x / 64.0;
 	e = 1.0 + u * (1.0 + u * (0.5 + u * ((1.0 / 6.0) + u * (1.0 / 24.0))));
 	for (i = 0; i < 6; i++)
-		e *= e; /* (exp(x/64))^64 = exp(x) */
+		e *= e;
 	return e;
 }
 
@@ -90,8 +72,6 @@ static double ast_fc_var(const double *y, int n) {
 	return s / (n - 1);
 }
 
-/* Gaussian elimination with partial pivoting; A row-major m x m (m <= 16). Solves
- * A x = b; returns 0 if (near-)singular. Destroys A and b. */
 static int ast_fc_solve(double *A, double *b, int m, double *x) {
 	int c, r, k;
 	for (c = 0; c < m; c++) {
@@ -195,7 +175,6 @@ static double ast_fc_lin(const double *y, int n) {
 	return a + b * n;
 }
 
-/* ridge quadratic (penalized spline proxy): minimize ||y - poly2||^2 + lam*c2^2 */
 static double ast_fc_pspline(const double *y, int n) {
 	double A[9], b[3], x[3], lam = 1.0;
 	double s0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, sy = 0, sty = 0, st2y = 0, t;
@@ -223,8 +202,6 @@ static double ast_fc_pspline(const double *y, int n) {
 	return x[0] + x[1] * t + x[2] * t * t;
 }
 
-/* GAM: additive truncated-power spline basis [1, t, (t-k1)+, (t-k2)+], ridge on
- * the hinge coefficients. */
 static double ast_fc_gam(const double *y, int n) {
 	double A[16], b[4], x[4], lam = 1.0, k1, k2, t, ph[4];
 	int i, r, c;
@@ -260,8 +237,6 @@ static double ast_fc_gam(const double *y, int n) {
 	return x[0] * ph[0] + x[1] * ph[1] + x[2] * ph[2] + x[3] * ph[3];
 }
 
-/* Bayesian dynamic linear model: local-level (random-walk + noise) Kalman filter;
- * the filtered level is the one-step-ahead forecast (BSTS local level). */
 static double ast_fc_bsts(const double *y, int n) {
 	double var, q, r, level, P;
 	int i;
@@ -283,7 +258,6 @@ static double ast_fc_bsts(const double *y, int n) {
 	return level;
 }
 
-/* Bayesian ridge regression: (X'X + lam I) w = X'y, X = [1, t]; posterior mean. */
 static double ast_fc_bridge(const double *y, int n) {
 	double A[4], b[2], x[2], lam = 1.0, s0, s1 = 0, s2 = 0, sy = 0, sty = 0;
 	int i;
@@ -305,8 +279,6 @@ static double ast_fc_bridge(const double *y, int n) {
 	return x[0] + x[1] * n;
 }
 
-/* Gaussian-process regression with an RBF kernel over time; predictive mean at
- * the next index (uses the last m <= 10 samples). */
 static double ast_fc_gp(const double *y, int n) {
 	double K[100], b[10], alpha[10], mu, var, l, sig, tstar, pred;
 	int i, j, m = n, off;
@@ -341,7 +313,6 @@ static double ast_fc_gp(const double *y, int n) {
 	return pred;
 }
 
-/* Gradient-boosted regression stumps on a lag-1 feature. */
 static double ast_fc_gbm(const double *y, int n) {
 	double feat[AST_FC_MAXN], targ[AST_FC_MAXN], f[AST_FC_MAXN], res[AST_FC_MAXN];
 	double base, predx, px, eta = 0.3;
@@ -396,7 +367,6 @@ static double ast_fc_gbm(const double *y, int n) {
 	return predx;
 }
 
-/* Holt linear trend (double exponential smoothing). */
 static double ast_fc_holt(const double *y, int n) {
 	double a = 0.5, bt = 0.3, level, trend;
 	int i;
@@ -412,7 +382,6 @@ static double ast_fc_holt(const double *y, int n) {
 	return level + trend;
 }
 
-/* Theil-Sen robust regression: median pairwise slope, median intercept. */
 static double ast_fc_theilsen(const double *y, int n) {
 	double slopes[AST_FC_MAXN * AST_FC_MAXN], inter[AST_FC_MAXN], b, a;
 	int i, j, ns = 0, ni;
@@ -458,10 +427,6 @@ static double ast_fc_call(int k, const double *y, int n) {
 	return v;
 }
 
-/* Ensemble one-step-ahead forecast of y[n]: score every predictor's online
- * one-step accuracy over the window, take the three most accurate, and return the
- * one whose next-step prediction is nearest the median of the three (least
- * distance to consensus). */
 static double ast_fc_forecast(const double *y, int n) {
 	double err[32], next[32], three[3], cons, bestd, d;
 	int k, s, t, top[3], best;

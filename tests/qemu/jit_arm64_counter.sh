@@ -1,8 +1,4 @@
 #!/bin/sh
-# §26 2B — build the freestanding arm64 JIT counter/profiling-stub validator with
-# a cross clang + lld and run it under qemu-aarch64. Skips (pass) when the
-# aarch64 cross-toolchain or user-mode qemu isn't present, so it only bites where
-# it can actually validate.
 set -e
 SRC="$1"
 WORK="$2"

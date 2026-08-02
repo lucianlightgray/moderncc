@@ -1,26 +1,4 @@
 #!/bin/sh
-# -fasan-shadow must label the faulting access READ or WRITE on every backend
-# that implements the native shadow.
-#
-# The check is emitted once, at indir(), where the parser does not yet know
-# whether the lvalue will be loaded or stored, so gen_asan_shadow_check sets
-# bit 6 of the granule-offset register on the trap path and expr_eq patches the
-# immediate to also set bit 7 when it sees an assignment token.
-#
-# The struct case is a separate coverage hole this also closes: the check at
-# indir() looks at the POINTED-TO type, so a struct wider than 8 bytes was
-# skipped entirely and `s->e` on a short malloc did not fault at all. The
-# member access now checks the member's own address and size.
-#
-# The clean case is not optional here. On the three backends whose skip branch
-# is hand-encoded rather than resolved through gjmp2/gsym -- riscv64, arm64,
-# arm -- inserting that instruction shifts the trap one slot later, and the
-# riscv64 port did exactly that for one build with the "shadow byte is zero,
-# skip" branch still aimed at the trap: EVERY VALID ACCESS trapped. Both fault
-# cases still printed the right label, so only a program that must not fault
-# catches it.
-#
-# Usage: asan-accesstype.sh <arch> <mcc> <crossdir> <sysroot> <workdir> <runtime-src>
 set -e
 
 ARCH=$1
@@ -53,7 +31,6 @@ rm -rf "$W"; mkdir -p "$W"
 CC="$MCC $ABI -B $CROSS --sysroot=$SR -I$SR/usr/include"
 CC="$CC -L$SR/usr/lib64 -L$SR/lib64 -L$SR/usr/lib -L$SR/lib"
 
-# shellcheck disable=SC2086
 $CC -c "$RTSRC" -o "$W/asan.o" >"$W/rt.log" 2>&1 || {
 	echo "SKIP: $ARCH mcc could not build the asan runtime"
 	sed 's/^/  /' "$W/rt.log" | head -5
@@ -61,9 +38,7 @@ $CC -c "$RTSRC" -o "$W/asan.o" >"$W/rt.log" 2>&1 || {
 }
 
 build_run() {
-	# shellcheck disable=SC2086
 	$CC -fasan-shadow -c "$W/$1.c" -o "$W/$1.o" >"$W/$1.log" 2>&1 || return 1
-	# shellcheck disable=SC2086
 	$CC "$W/$1.o" "$W/asan.o" -o "$W/$1.bin" >>"$W/$1.log" 2>&1 || return 1
 	"$QEMU" -L "$SR" "$W/$1.bin" >"$W/$1.out" 2>&1
 	return 0

@@ -276,9 +276,6 @@ static void mccjit_emit_type_record(MccjitBuf *buf, MccjitHandles *h, uint32_t i
 																 h, (uint64_t)(uintptr_t)s->type.ref,
 																 mccjit_role_for_base(s->type.t))
 													 : 0);
-		/* s->c carries the array element count for a VT_ARRAY ref (and -1 for a
-			 plain pointer, per mk_pointer); without it type_size() sees a bogus
-			 negative count on replay and aborts with "unknown type size". */
 		mccjit_put_u32(buf, (uint32_t)s->c);
 		break;
 	case MCCJIT_ROLE_FUNC: {
@@ -412,9 +409,6 @@ MCCJIT_LOCAL int mccjit_intent_serialize(const AstArena *a, Sym *sym, MccjitBuf 
 	mccjit_put_u32(buf, (uint32_t)count);
 	mccjit_put_u32(buf, (uint32_t)ast_root(a));
 	mccjit_put_u64(buf, warm_gates);
-	/* Whole function vs promoted sub-slice. Derived from `sym`: a kernel slice
-	   has no owning Sym (and thus no signature trailer). Header-only — it does
-	   not enter any node field or the slice-identity hash. */
 	mccjit_put_u8(buf, sym ? (uint8_t)MCCJIT_UNIT_WHOLE : (uint8_t)MCCJIT_UNIT_KERNEL);
 
 	mccjit_put_u32(buf, handles.count);
@@ -650,8 +644,6 @@ static Sym *mccjit_build_rec(MccjitIntent *it, uint32_t id1) { MCC_TRACE("enter\
 	return res;
 }
 
-/* Read only the fixed header prefix to recover the warm-start gate mask without a
-   full deserialize. Returns 0 on any mismatch (bad magic/format/truncation). */
 MCCJIT_LOCAL uint64_t mccjit_intent_peek_warm_gates(const void *buf, size_t len) { MCC_TRACE("enter\n");
 	MccjitReader r;
 	uint64_t warm;
@@ -665,10 +657,10 @@ MCCJIT_LOCAL uint64_t mccjit_intent_peek_warm_gates(const void *buf, size_t len)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (mccjit_get_u32(&r) != MCCJIT_INTENT_FORMAT)
 		{ MCC_TRACE("br\n"); return 0; }
-	(void)mccjit_get_u64(&r); /* salt */
-	(void)mccjit_get_u64(&r); /* anchor_sym_v */
-	(void)mccjit_get_u32(&r); /* count */
-	(void)mccjit_get_u32(&r); /* ast_root */
+	(void)mccjit_get_u64(&r);
+	(void)mccjit_get_u64(&r);
+	(void)mccjit_get_u32(&r);
+	(void)mccjit_get_u32(&r);
 	warm = mccjit_get_u64(&r);
 	return r.err ? 0 : warm;
 }
@@ -948,4 +940,4 @@ MCCJIT_LOCAL Sym *mccjit_rebuild_sym(const MccjitIntent *it) { MCC_TRACE("enter\
 	return external_global_sym(tok_alloc(it->fn_name, (int)strlen(it->fn_name))->tok,
 														 &functype);
 }
-#endif /* MCC_EMBED_JIT */
+#endif

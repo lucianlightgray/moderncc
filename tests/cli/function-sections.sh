@@ -1,21 +1,4 @@
 #!/bin/sh
-# -ffunction-sections: one `.text.<name>` per function.
-#
-# The flag was parsed into MCCState.function_sections and read by NOTHING --
-# accepted and silently discarded, so `mcc -ffunction-sections` produced
-# byte-identical output and every user who passed it got nothing. This cell
-# fails if it ever goes back to being a no-op.
-#
-# The assertions are about what the flag is FOR, not about the section names:
-# a linker must be able to drop a function nobody references. So the cell
-# checks that an unreferenced static survives a normal link and DISAPPEARS
-# under --gc-sections, and that the program still produces the right answer
-# both ways. A cell that only grepped for `.text.a` would pass on an object
-# whose relocations made it unlinkable -- which is exactly the state the
-# first cut of this feature was in, because every FDE still pointed at
-# `.text` and GNU ld rejected the result with "overlapping FDEs".
-#
-# Usage: function-sections.sh <mcc> <mccbase> <workdir>
 set -e
 
 MCC=$1
@@ -46,7 +29,6 @@ EOF
 
 rc=0
 
-# 1. The flag must actually change the object.
 if cmp -s "$WORK/plain.o" "$WORK/fs.o"; then
 	echo "FAIL: -ffunction-sections produced a byte-identical object; the flag"
 	echo "  is being accepted and discarded again"
@@ -63,7 +45,6 @@ for fn in a b main unused_helper; do
 done
 [ $rc = 0 ] && echo "PASS: each function has its own .text.<name>"
 
-# 2. It must still link and run, through mcc's own linker.
 if "$MCC" -B"$BASE" -O2 -ffunction-sections "$WORK/fs.c" -o "$WORK/own" 2>"$WORK/e1"; then
 	out=$("$WORK/own")
 	if [ "$out" = "6" ]; then
@@ -78,7 +59,6 @@ else
 	rc=1
 fi
 
-# 3. An external linker must accept it too -- this is what caught the FDEs.
 if command -v cc >/dev/null 2>&1 && cc -c -x c /dev/null -o "$WORK/probe.o" 2>/dev/null; then
 	if cc "$WORK/fs.o" -o "$WORK/ext" 2>"$WORK/e2"; then
 		out=$("$WORK/ext")
@@ -94,7 +74,6 @@ if command -v cc >/dev/null 2>&1 && cc -c -x c /dev/null -o "$WORK/probe.o" 2>/d
 		rc=1
 	fi
 
-	# 4. The point of the flag: --gc-sections drops what nothing references.
 	if cc -Wl,--gc-sections "$WORK/fs.o" -o "$WORK/gc" 2>"$WORK/e3"; then
 		if [ "$("$WORK/gc")" != "6" ]; then
 			echo "FAIL: --gc-sections build gives the wrong answer"
@@ -106,8 +85,6 @@ if command -v cc >/dev/null 2>&1 && cc -c -x c /dev/null -o "$WORK/probe.o" 2>/d
 		else
 			echo "PASS: --gc-sections drops the unreferenced static"
 		fi
-		# And the control: without per-function sections it must NOT be dropped,
-		# so the check above is measuring the flag rather than the linker.
 		if cc -Wl,--gc-sections "$WORK/plain.o" -o "$WORK/gc0" 2>/dev/null; then
 			if nm "$WORK/gc0" 2>/dev/null | grep -q unused_helper; then
 				echo "PASS: control -- without the flag the static survives --gc-sections"
@@ -126,12 +103,6 @@ else
 	echo "SKIP-PART: no usable external cc; mcc-linker assertions still ran"
 fi
 
-# -fdata-sections: the same idea for OBJECTS. Same class of flag -- it was also
-# parsed into MCCState and read by nothing -- and it has a sharper failure mode:
-# mcc already owns a section literally named `.data.ro`, so a global called `ro`
-# can be silently MERGED into it instead of getting its own. That is checked at
-# the SYMBOL level, because comparing section-name lists cannot tell "ro got its
-# own section" from "ro was absorbed by the existing one".
 cat >"$WORK/ds.c" <<'EOF'
 extern int printf(const char *, ...);
 int ro = 7;
@@ -153,7 +124,6 @@ else
 	rc=1
 fi
 
-# The collision case, by symbol index rather than by name.
 dsec=$(readelf -SW "$WORK/ds.o" | sed 's/[][]//g' | awk '$2==".data"{print $1}')
 rosec=$(readelf -sW "$WORK/ds.o" | awk '$8=="ro"{print $7}')
 if [ -n "$dsec" ] && [ "$rosec" = "$dsec" ]; then

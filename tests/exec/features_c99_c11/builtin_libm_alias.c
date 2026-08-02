@@ -39,11 +39,11 @@ int main(void) {
 	CHK1(trunc)
 	CHK1(round)
 	CHK1(rint)
-	/* msvcrt.dll exports only C89 math; the C99 additions nearbyint/erf/erfc/
-	   fma/remainder live in libmingwex (which mcc does not link) and are absent
-	   from mcc's msvcrt.def, so a call to them fails to link, or loads a symbol
-	   msvcrt.dll lacks, on Windows. Skip them there; every non-PE target still
-	   exercises the whole family. */
+
+
+
+
+
 #ifndef _WIN32
 	CHK1(nearbyint)
 #endif

@@ -1,13 +1,4 @@
 #!/bin/sh
-# Build one tests/darwin/<name>.c with mcc and run it against the host's real
-# libSystem. This is the MCC_DARWIN_HOST=ON half of the Mach-O story: everything
-# tests/qemu/apple-libc documents as unreachable off-Darwin -- libmalloc, the
-# FILE/locale stdio, dyld, libpthread, GCD, the ObjC runtime and Mach IPC.
-#
-# Each program is self-checking and exits non-zero with a file:line on the first
-# wrong value, so the cell name identifies the subsystem without a lookup.
-#
-# Usage: run.sh <mcc> <srcdir> <workdir> <name> [-B<prefix>] [extra ld args...]
 set -e
 
 MCC=$1

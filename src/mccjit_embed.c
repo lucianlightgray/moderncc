@@ -29,16 +29,6 @@
 #define MCCJIT_I386 1
 #endif
 
-/* The runtime KGC verify-stub / dispatch tail (mccjit_make_kgc_stub_*) is
-   hand-emitted machine code. x86_64 and arm64 are always on. i386 (cdecl,
-   x87 FP return — the "FP(x87)" path) is compiled in too and, as of the P0
-   step 4 flip (2026-07-27), the MCC_JIT_I386_STUBS runtime gate DEFAULTS ON
-   (validated at parity — see mccjit_i386_stubs_enabled); MCC_JIT_I386_STUBS=0
-   restores the historical bail-to-NULL where i386 JIT promotion keeps the AOT
-   baseline. MCCJIT_HAVE_STUB_TAIL is
-   the *compile-time* "an arch emitter exists" flag; mccjit_stub_tail_active()
-   is the *runtime* predicate the selftests gate on (it additionally honors the
-   i386 env gate). */
 #if defined(MCCJIT_X64) || defined(MCCJIT_ARM64) || defined(MCCJIT_I386)
 #define MCCJIT_HAVE_STUB_TAIL 1
 #else
@@ -49,20 +39,6 @@
 #define MCC_JIT_DEFAULT 1
 #endif
 
-/* ------------------------------------------------------------- crash diag --
-   The x86_64-PE runtime-JIT 0xC0000005 (docs/TODO) reproduces ONLY on the
-   windows-2025 CI host and never on a local Win10 box, so it can be debugged
-   only from the CI log. When MCC_JIT_CRASH_DIAG is set (tools/selfhost-jit.py
-   sets it on the child), arm a vectored exception handler that, on an access
-   violation, dumps the faulting PC, the machine bytes there, the region
-   protection, the faulting address, and the recently-published JIT
-   entries/slots plus boot context (variant/baseline/entry) -- then returns
-   EXCEPTION_CONTINUE_SEARCH so the process still dies with 0xC0000005 and the
-   gate self-skips exactly as before. This is instrumentation, not a fix: it
-   changes no codegen and no control flow, it only prints on a fault that was
-   already going to kill the process. Windows-only and opt-in -- every
-   non-Windows build (the macros below are no-ops) and every un-opted Windows
-   run is byte- and behaviour-identical. */
 #if MCC_HOST_WIN32
 #ifndef EXCEPTION_ACCESS_VIOLATION
 #define EXCEPTION_ACCESS_VIOLATION 0xC0000005L
@@ -180,7 +156,7 @@ static LONG CALLBACK mccjit_diag_veh(EXCEPTION_POINTERS *ep) { MCC_TRACE("enter\
 	if (er->ExceptionCode != (DWORD)EXCEPTION_ACCESS_VIOLATION)
 		return EXCEPTION_CONTINUE_SEARCH;
 	if (mccjit_diag_fired)
-		return EXCEPTION_CONTINUE_SEARCH; /* dump once; the process is dying anyway */
+		return EXCEPTION_CONTINUE_SEARCH;
 	mccjit_diag_fired = 1;
 #if defined(MCCJIT_X64)
 	pc = (void *)cx->Rip;
@@ -316,36 +292,20 @@ static void mccjit_diag_note_boot(void *variant, void *baseline, void *entry,
 #else
 #define MCCJIT_DIAG_NOTE_PUB(s, e) ((void)0)
 #define MCCJIT_DIAG_NOTE_BOOT(v, b, e, n, m, pt, rw) ((void)0)
-#endif /* MCC_HOST_WIN32 */
+#endif
 
 #if defined(MCCJIT_I386)
-/* MCC_JIT_I386_STUBS gate — DEFAULT ON as of the P0 step 4 flip (2026-07-27),
-   i386-only so the x86_64/arm64 object stays byte-identical to the pristine tree
-   (these helpers are defined and referenced ONLY on i386). The i386 KGC/FP(x87)/
-   mixed stub tail is validated: the local WoW64 soak (tools/i386win32-soak.sh)
-   shows MCC_JIT=1 (stubs) ≡ MCC_JIT=0 byte-identical on a `-c` compile AND the
-   `-run src/mcc.c` self-host, 36/37 stub-tail selftests green (all three stub
-   types faithful), and differential-vs-gcc/clang clean on well-defined programs.
-   Setting MCC_JIT_I386_STUBS=0 explicitly restores the historical bail-to-NULL
-   behavior (i386 JIT promotion keeps the AOT baseline). NOTE: this only affects
-   the runtime-JIT path; AOT output is unchanged, and the proven parity means the
-   default JIT output is byte-identical to the pre-flip (stubs-off) output. */
 static int mccjit_i386_stubs_enabled(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_I386_STUBS");
 	if (!e || !e[0]) { MCC_TRACE("br\n"); return 1; }
 	return e[0] != '0';
 }
 
-/* Runtime predicate the i386 selftests gate on: is the i386 stub tail active
-   (env gate on) right now? */
 static int mccjit_stub_tail_active(void) { MCC_TRACE("enter\n");
 	return mccjit_i386_stubs_enabled();
 }
-#endif /* MCCJIT_I386 */
+#endif
 
-/* perf JIT-map path. Linux `perf` reads /tmp/perf-<pid>.map; on Windows there
-   is no perf, but the observability selftest still round-trips the file, so
-   place it in the OS temp directory instead of a non-existent /tmp. */
 static void mccjit_perf_map_path(char *buf, size_t n) { MCC_TRACE("enter\n");
 #if MCC_HOST_WIN32
 	char dir[MAX_PATH];
@@ -380,9 +340,6 @@ int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
 void mcc_jit_publish(void **slot, void *variant);
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 void mcc_jit_export_local(MCCState *s1, const char *name);
-/* Phase 4 slice-cache graduation (WRITE side, mccast.c, MCC_EMBED_JIT only):
-   record a benchmark-proven function AST's slices as PROVEN under the winning
-   gate config, and query whether the slice cache is enabled this run. */
 void ast_slice_graduate_arena(const AstArena *ast, uint64_t gate_mask);
 int ast_slice_enabled(void);
 
@@ -398,9 +355,6 @@ static int mccjit_purity_noescape_enabled(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); v = mcc_env_on("MCC_JIT_PURITY_NOESCAPE"); }
 	return v;
 }
-/* Static cost-model score of the just-recompiled AST (ast_cost_score); -1 when
-   unavailable. mccjit_variant_cost snapshots it for the gated variant only, so a
-   following baseline recompile in the same lazy build does not clobber it. */
 MCCJIT_LOCAL long mccjit_last_cost = -1;
 MCCJIT_LOCAL long mccjit_variant_cost = -1;
 
@@ -551,26 +505,6 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags) {
 	return 0;
 }
 
-/* Phase 5 per-slice hot-patch (roadmap 14/15): optimize one maximal slice of a
-   hot function IN ISOLATION and splice the optimized kernel back, promoting only
-   if it wins the cost gate. Wired ONLY here, on the JIT recompile-from-scratch
-   path, where mccjit_recompile_common re-derives EVERY emit cursor (stack-slot
-   record, float-const pool, relocation offsets) after this returns -- so a
-   reshaped subtree is safe. Deliberately NOT wired into the AOT in-place
-   ast_func_end replay: that path re-emits from three whole-function ordered
-   cursors captured during parsing, and splicing a differently-shaped subtree
-   there would desync them (ast_desync) and miscompile or fail the faithful
-   check. The AOT side keeps only its Phase-3 function-level warm-start.
-
-   Two-gate design: ast_slice_enabled() (MCC_AST_SLICE) is the hard gate that
-   keeps an off run byte-identical; MCC_AST_SLICE_SPLICE is an additional opt-in
-   so that a plain MCC_AST_SLICE=1 exec/JIT run stays on the validated Phase-1..4
-   paths and this experimental first-increment splice never perturbs them.
-
-   Promotion oracle: the static cost model (ast_cost_score) via the shared
-   ast_slice_promote_static decision helper -- the "no runtime available" arm of
-   the benchmark-gated promotion. The live differential bench (mccjit_bench_pair)
-   remains the whole-function oracle in mccjit_lazy_search. Returns nodes spliced. */
 static AstLocal mccjit_slice_ret_expr(const AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal n, nn = ast_count(a);
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
@@ -593,7 +527,6 @@ static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
 	site = mccjit_slice_ret_expr(arena);
 	if (site == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
-	/* Optimize the slice in isolation: wrap as a mini-function and constant-fold. */
 	base_wrap = ast_slice_wrap_kernel(arena, site);
 	opt_wrap = ast_slice_wrap_kernel(arena, site);
 	if (!base_wrap || !opt_wrap)
@@ -612,11 +545,9 @@ static int mccjit_slice_hotpatch(AstArena *arena) { MCC_TRACE("enter\n");
 	opt_expr = mccjit_slice_ret_expr(opt_wrap);
 	if (opt_expr == AST_NONE)
 		{ MCC_TRACE("br\n"); goto done; }
-	opt_k = ast_slice_extract(opt_wrap, opt_expr); /* standalone splice source */
+	opt_k = ast_slice_extract(opt_wrap, opt_expr);
 	if (!opt_k)
 		{ MCC_TRACE("br\n"); goto done; }
-	/* Splice the optimized kernel at EVERY occurrence of the slice identity
-	   (roadmap 15 hierarchical locator). */
 	ident = ast_slice_ident_hash(arena, site);
 	nsites = ast_slice_locate(arena, ident, sites, 64);
 	if (nsites <= 0)
@@ -656,17 +587,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	js->optimize = 0;
 	js->nostdlib = 1;
 #if defined(MCCJIT_I386)
-	/* i386 codegen emits libgcc-style runtime helpers (__fixdfdi, __divdi3,
-	   __floatundidf, ...) for ops the wider backends fold to hardware (x86_64
-	   double->long is cvttsd2si; arm64/riscv64 have native converts). Those
-	   helpers are NOT source-level externals, so the has_external check below
-	   never clears nostdlib for them, and the in-memory recompile of any
-	   helper-using function fails to bind its callee -> returns NULL (the i386
-	   `mixed`/helper selftests hit this as "baseline recompile NULL"). Let the
-	   i386 MEMORY recompile resolve them from libmccrt. Compile-gated to i386 so
-	   x86_64 / arm64 / riscv64 recompiles are byte-identical by construction; and
-	   the i386 recompile path only runs with MCC_JIT_I386_STUBS on, so the
-	   default gate-off build is unaffected. */
 	js->nostdlib = 0;
 #endif
 	mcc_set_output_type(js, MCC_OUTPUT_MEMORY);
@@ -677,11 +597,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	anon_sym = SYM_FIRST_ANOM;
 	funcname = "";
 	func_ind = -1;
-	/* global_stack/local_stack are process-shared, not per-MCCState, and this
-		 recompile skips the normal mccgen_finish teardown. Snapshot the tops so we
-		 can drain exactly the parser symbols this recompile pushes; leaving them on
-		 the shared stack corrupts the host compiler's own sym_pop at mccgen_finish
-		 (it later unlinks a stale token → NULL table_ident deref). */
 	sav_global = global_stack;
 	sav_local = local_stack;
 
@@ -716,10 +631,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	mccjit_last_purity = ast_fn_purity(it.arena);
 	mccjit_last_purity_ne = ast_fn_purity_noescape(it.arena);
-	/* Record the identity of the arena the JIT actually reconstructed, so an
-	   AOT-vs-JIT ident mismatch is a diff rather than a hypothesis. ast_func_end
-	   only fires on the parser path, so this is the sole observation point for
-	   the JIT-shaped hash. Tagged to keep both sides in one file. */
 	ast_hash_out_emit("jit:", it.fn_name ? it.fn_name : "?",
 										ast_intention_hash(it.arena, AST_NONE));
 
@@ -729,7 +640,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		uint32_t ngp = 0, nsse = 0;
 		mccjit_last_nparam = it.nparam;
 		mccjit_last_ret_wide = mccjit_type_wide((int)it.ret_type_t);
-		/* K4A all-double (SSE) class: 1-6 double params + a double return. */
 		allfp = (it.nparam >= 1 && it.nparam <= MCCJIT_KGC_MAXARG &&
 						 ((int)it.ret_type_t & VT_BTYPE) == VT_DOUBLE);
 		for (qi = 0; allfp && qi < it.nparam && qi < MCCJIT_KGC_MAXARG; qi++)
@@ -738,13 +648,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		mccjit_last_allfp = allfp;
 		for (qi = 0; qi < MCCJIT_KGC_MAXARG; qi++)
 			{ MCC_TRACE("br\n"); mccjit_last_param_t[qi] = 0; }
-		/* K4A/L12A scalar mixed GP+FP: each param and the return is either a GP
-			 (int/ptr, non-bitfield) or a scalar double. SysV assigns GP args to
-			 rdi.. and SSE args to xmm0.. with independent counters, so the two
-			 per-class occupancy counts fully determine the marshalling — no
-			 per-arg class vector is needed. all-GP routes to the n-stub and
-			 all-double+double-ret to the fp-stub (both unchanged); every other
-			 scalar case routes to the new mixed stub. */
 		ret_gp = mccjit_type_gp((int)it.ret_type_t) && !(it.ret_type_t & VT_BITFIELD);
 		ret_fp = mccjit_type_fp((int)it.ret_type_t);
 		scalar_ok = (it.func_type != FUNC_ELLIPSIS && it.nparam >= 1 &&
@@ -781,7 +684,7 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 		ast_fconst_reuse_disable(1);
 		if (mcc_env_on("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
-		mccjit_slice_hotpatch(it.arena); /* Phase 5 per-slice hot-patch (gated) */
+		mccjit_slice_hotpatch(it.arena);
 		if (mccjit_recompile_use_gates)
 			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
 		else if (have_override && override_mask)
@@ -795,10 +698,6 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	} else { MCC_TRACE("br\n");
 		mccjit_last_cost = -1;
 	}
-	/* Drain the parser symbols pushed above (rebuild_sym + reemit) — unlinks them
-		 from the shared token buckets and returns them to the sym pool, exactly as
-		 mccgen_finish would. The variant's code is already relocated via js's ELF
-		 symtab, so these transient C-level symbols are no longer needed. */
 	sym_pop(&local_stack, sav_local, 0);
 	sym_pop(&global_stack, sav_global, 0);
 	mcc_exit_state(js);
@@ -922,10 +821,6 @@ MCCJIT_LOCAL void mccjit_note_export_name(const char *name) { MCC_TRACE("enter\n
 	mccjit_export_names[mccjit_export_n++] = mcc_strdup(name);
 }
 
-/* Functions the JIT engine itself calls (directly or via MCC_TRACE/logging)
-   must never be JIT-swapped: doing so re-enters the swap machinery when the
-   engine runs and recurses to a stack overflow. Only self-host builds carry
-   these names, so this is a no-op for ordinary programs. */
 static int mccjit_engine_internal(const char *name) { MCC_TRACE("enter\n");
 	if (!strncmp(name, "mccjit_", 7) || !strncmp(name, "mcc_jit_", 8))
 		{ MCC_TRACE("br\n"); return 1; }
@@ -980,9 +875,6 @@ static void *mccjit_make_trampoline(void *variant) { MCC_TRACE("enter\n");
 	return p;
 }
 #elif defined(MCCJIT_I386)
-/* i386 dispatch-only trampoline: opens with `leave` (the mode-6 entry quirk) and
-   tail-jumps the variant with the cdecl arg stack intact. Behind the gate; falls
-   back to the raw variant pointer when disabled or on mmap failure. */
 static void *mccjit_make_trampoline(void *variant) { MCC_TRACE("enter\n");
 	unsigned char *p;
 	if (!mccjit_i386_stubs_enabled())
@@ -991,10 +883,10 @@ static void *mccjit_make_trampoline(void *variant) { MCC_TRACE("enter\n");
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return variant; }
-	p[0] = 0xc9;                        /* leave */
-	p[1] = 0xb8;                        /* mov eax, imm32 */
+	p[0] = 0xc9;
+	p[1] = 0xb8;
 	{ uint32_t v = (uint32_t)(uintptr_t)variant; memcpy(p + 2, &v, 4); }
-	p[6] = 0xff; p[7] = 0xe0;           /* jmp eax */
+	p[6] = 0xff; p[7] = 0xe0;
 	return p;
 }
 #else
@@ -1118,14 +1010,6 @@ static int mccjit_bench_enabled(void) { MCC_TRACE("enter\n");
 	return e && e[0] && e[0] != '0';
 }
 
-/* Phase 4: a gate-config variant of the function in `blob` has just been proven
-   faster than its baseline by the live differential benchmark. Deserialize the
-   function AST (same standalone recipe as mccjit_slice_profile_blob — a throwaway
-   MCCState so rebuild/arena allocation has a valid parser context) and graduate
-   every slice of it into the on-disk slice cache as PROVEN under `gate_mask`, so
-   a later AOT compile that hits the same slice identity warm-starts from this
-   bench-winning config. No-op unless the slice cache (MCC_AST_SLICE) is on, so an
-   off run never deserializes here and never writes. Runtime-JIT only. */
 static void mccjit_graduate_slices_blob(const void *blob, size_t len,
 																				uint64_t gate_mask) { MCC_TRACE("enter\n");
 	MccjitIntent it;
@@ -1170,7 +1054,7 @@ static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 													? mcc_jit_recompile_blob_gated(blob, (size_t)len, gate_mask)
 													: mcc_jit_recompile_blob(blob, (size_t)len);
 	void *entry = NULL;
-	mccjit_variant_cost = mccjit_last_cost; /* before the KGC baseline recompile clobbers it */
+	mccjit_variant_cost = mccjit_last_cost;
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = 0; }
 	if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
@@ -1259,12 +1143,9 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	long gs_cands = 0, gs_admits = 0;
 	int gs_budget_hit = 0;
 	uint64_t gs_best_mask = 0;
-	int gs_bench_won = 0; /* set once a live differential bench admitted a variant over
-													 a real incumbent — the Phase-4 graduation trigger */
-	long best_cost = -1; /* static cost-model score of the current best */
-	int stale = 0;       /* consecutive candidates with no static-cost improvement */
-	/* Stop once the static cost model has plateaued for this many candidates,
-	   instead of relying purely on the wall-clock budget. Env override for tuning. */
+	int gs_bench_won = 0;
+	long best_cost = -1;
+	int stale = 0;
 	int stale_max = ast_env_int("MCC_JIT_SEARCH_PLATEAU", 3);
 	if (e && e[0])
 		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
@@ -1277,9 +1158,6 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	if (stale_max < 1)
 		{ MCC_TRACE("br\n"); stale_max = 1; }
 	timed = (clock_gettime(CLOCK_MONOTONIC, &t0) == 0);
-	/* Warm start: seed the search with the AOT-selected gate mask baked into the
-	   intent, so the vocab sweep only has to beat a known-good config (and the
-	   plateau stop can short-circuit immediately when it cannot). */
 	{
 		uint64_t warm = mccjit_intent_peek_warm_gates(st->blob, st->len);
 		if (warm) { MCC_TRACE("br\n");
@@ -1305,13 +1183,11 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		if (best && timed && budget_s > 0 && mccjit_elapsed(&t0) > budget_s)
 			{ MCC_TRACE("br\n"); gs_budget_hit = 1; break; }
 		cand = mccjit_lazy_build_masked(st->blob, st->len, vocab[i], 1, &r);
-		cc = mccjit_variant_cost; /* static cost of this candidate's gated variant */
+		cc = mccjit_variant_cost;
 		gs_cands++;
 		if (!cand)
 			{ MCC_TRACE("br\n"); continue; }
 		improved = (cc >= 0 && (best_cost < 0 || cc < best_cost));
-		/* Admission: with MCC_JIT_BENCH the runtime differential decides; otherwise
-		   keep the statically-cheapest variant (strictly better than last-wins). */
 		if (!best)
 			{ MCC_TRACE("br\n"); admit = 1; }
 		else if (mccjit_bench_enabled())
@@ -1320,10 +1196,6 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		else
 			{ MCC_TRACE("br\n"); admit = improved; }
 		if (admit) { MCC_TRACE("br\n");
-			/* A genuine bench win: MCC_JIT_BENCH on, an incumbent (`best`) existed,
-			   and this candidate is benchable (routed, not all-fp, has args) — i.e.
-			   mccjit_bench_admit actually ran mccjit_promote_by_profile, not the
-			   can't-bench passthrough. Marks the winning config as PROVEN-worthy. */
 			if (mccjit_bench_enabled() && best && r && !mccjit_last_allfp &&
 					mccjit_last_nparam > 0) { MCC_TRACE("br\n"); gs_bench_won = 1; }
 			best = cand;
@@ -1337,7 +1209,6 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 			{ MCC_TRACE("br\n"); best_cost = cc; stale = 0; }
 		else
 			{ MCC_TRACE("br\n"); stale++; }
-		/* Flatten stop: only when static costs are meaningful (else fall back to budget). */
 		if (best && best_cost >= 0 && stale >= stale_max)
 			{ MCC_TRACE("br\n"); break; }
 	}
@@ -1345,28 +1216,13 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 		{ MCC_TRACE("br\n"); *routed = best_routed; }
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_gsearch(gs_cands, gs_admits, gs_budget_hit, gs_best_mask); }
-	/* Phase 4: persist the bench-winning gate config into the shared slice cache
-	   as PROVEN, so a later AOT compile of a function sharing any slice identity
-	   warm-starts from this runtime-proven config. Only when a live bench actually
-	   picked the winner (gs_bench_won) and the slice cache is on (checked inside). */
 	if (gs_bench_won && best)
 		{ MCC_TRACE("br\n"); mccjit_graduate_slices_blob(st->blob, st->len, gs_best_mask); }
 	return best;
 }
 
-/* STEP 3 live wiring: choose the hot-recompile entry. Default path (no env) is
-   byte-identical to the historical inline ternary. MCC_JIT_SLICE_SEARCH engages
-   the partial-slice pillar (ast_slice_search -> kernel wrap -> reemit -> live-in
-   differential verify) on the async pool path; on any miss it falls back to the
-   whole-function search / faithful build, so it never regresses. */
 static void *mccjit_lazy_entry(MccjitCounterState *st, int *routed, int async);
 
-/* J6A jit-profile: runtime live-in capture riding the D5 hot counter. The
-   counter stub spills the 6 GP arg registers and hands their address to the
-   tick as `regs`; regs[MCCJIT_KGC_MAXARG-1-i] is param i (rdi..r9 pushed in
-   order, so the pointer walks r9..rdi). We accumulate a per-param min/max
-   range (feeds dispatch mode 5's range guard + J7A) and a small ring of real
-   observed tuples (the safe live-in set for the K5 promotion benchmark). */
 static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; i < MCCJIT_KGC_MAXARG; i++) { MCC_TRACE("br\n");
@@ -1389,11 +1245,6 @@ static void mccjit_counter_capture(MccjitCounterState *st, const int64_t *regs) 
 	st->argseen++;
 }
 
-/* J7A value-range speculation: the actionable fact from J6A's captured range
-   is the collapsed case — a param observed to hold a single value over the
-   whole profile (argmin==argmax) is a speculative constant. We only consider
-   the first `nargs` params (the counter also captures unused arg registers,
-   whose "range" is meaningless). Returns 1 + the param index/value to fold. */
 static int mccjit_profile_pick_const(const MccjitCounterState *st, uint32_t nargs,
 																		 long min_samples, int *pidx, int64_t *pval) { MCC_TRACE("enter\n");
 	uint32_t i;
@@ -1411,12 +1262,6 @@ static int mccjit_profile_pick_const(const MccjitCounterState *st, uint32_t narg
 	return 0;
 }
 
-/* Build the hot variant, speculating on the J6A profile: if a param is
-   observed constant, const-specialize on it (mode-4 fold). The speculation is
-   guarded downstream by the KGC differential verify (a wrong fold returns the
-   baseline result) and the K1C poison policy (a frequently-wrong fold is
-   discarded), so it needs no static soundness proof here. Falls back to the
-   plain recompile when the profile shows no constant param. */
 MCCJIT_LOCAL void *mccjit_recompile_profiled(const void *blob, size_t len,
 																						 const MccjitCounterState *st,
 																						 uint32_t nargs, long min_samples) { MCC_TRACE("enter\n");
@@ -1478,8 +1323,6 @@ static void mccjit_atfork_child(void) { MCC_TRACE("enter\n");
 
 static void mccjit_fork_setup(void) { MCC_TRACE("enter\n");
 #if !MCC_HOST_WIN32
-	/* Win32 has no fork(): the pool's post-fork reset is moot (there is no
-	   child to reset), so skip atfork registration entirely. */
 	pthread_atfork(mccjit_atfork_prepare, mccjit_atfork_parent,
 								 mccjit_atfork_child);
 #endif
@@ -1673,35 +1516,29 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return NULL; }
 #if MCC_HOST_WIN32
-	/* Microsoft x64 ABI: int args in rcx/rdx/r8/r9, callee needs 32-byte shadow
-	   space, rsp must be 16-aligned before a call. Spill the 4 register args into
-	   a 6-slot regs array laid out so regs[MCCJIT_KGC_MAXARG-1-i] == arg i (the
-	   layout mccjit_counter_capture reads); the 2 stack-passed args are zeroed
-	   (spec on args 4-5 is rare and poison-guarded). Then tail-jmp the target
-	   tick() returned, args restored. */
-	p[o++] = 0x51;                                /* push rcx  (arg0 -> regs[5]) */
-	p[o++] = 0x52;                                /* push rdx  (arg1 -> regs[4]) */
-	p[o++] = 0x41; p[o++] = 0x50;                 /* push r8   (arg2 -> regs[3]) */
-	p[o++] = 0x41; p[o++] = 0x51;                 /* push r9   (arg3 -> regs[2]) */
-	p[o++] = 0x6a; p[o++] = 0x00;                 /* push 0    (arg4 -> regs[1]) */
-	p[o++] = 0x6a; p[o++] = 0x00;                 /* push 0    (arg5 -> regs[0]) */
-	p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0xe2;  /* mov rdx, rsp    (regs ptr) */
-	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x28; /* sub rsp, 40 */
-	p[o++] = 0x48; p[o++] = 0xb9;                 /* mov rcx, imm64  (st) */
+	p[o++] = 0x51;
+	p[o++] = 0x52;
+	p[o++] = 0x41; p[o++] = 0x50;
+	p[o++] = 0x41; p[o++] = 0x51;
+	p[o++] = 0x6a; p[o++] = 0x00;
+	p[o++] = 0x6a; p[o++] = 0x00;
+	p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0xe2;
+	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x28;
+	p[o++] = 0x48; p[o++] = 0xb9;
 	memcpy(p + o, &st, 8);
 	o += 8;
-	p[o++] = 0x48; p[o++] = 0xb8;                 /* mov rax, imm64  (tick) */
+	p[o++] = 0x48; p[o++] = 0xb8;
 	memcpy(p + o, &tick, 8);
 	o += 8;
-	p[o++] = 0xff; p[o++] = 0xd0;                 /* call rax */
-	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x28; /* add rsp, 40 */
-	p[o++] = 0x41; p[o++] = 0x5a;                 /* pop r10   (arg5, discard) */
-	p[o++] = 0x41; p[o++] = 0x5a;                 /* pop r10   (arg4, discard) */
-	p[o++] = 0x41; p[o++] = 0x59;                 /* pop r9    (arg3) */
-	p[o++] = 0x41; p[o++] = 0x58;                 /* pop r8    (arg2) */
-	p[o++] = 0x5a;                                /* pop rdx   (arg1) */
-	p[o++] = 0x59;                                /* pop rcx   (arg0) */
-	p[o++] = 0xff; p[o++] = 0xe0;                 /* jmp rax */
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x28;
+	p[o++] = 0x41; p[o++] = 0x5a;
+	p[o++] = 0x41; p[o++] = 0x5a;
+	p[o++] = 0x41; p[o++] = 0x59;
+	p[o++] = 0x41; p[o++] = 0x58;
+	p[o++] = 0x5a;
+	p[o++] = 0x59;
+	p[o++] = 0xff; p[o++] = 0xe0;
 #else
 	p[o++] = 0x57;
 	p[o++] = 0x56;
@@ -1742,45 +1579,37 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 	void *tick = (void *)mccjit_counter_tick;
 	size_t page = host_pagesize();
 	unsigned char *p;
-	/* The GP arg registers x0-x5 are stored REVERSE (x0 at the highest slot, x5
-	   at [sp,#0]) so x1=sp gives mccjit_counter_tick a regs[] where
-	   regs[MCCJIT_KGC_MAXARG-1-i] == arg i (mccjit_counter_capture's contract).
-	   The FP/SIMD arg registers v0-v7 must ALSO be preserved: mccjit_counter_tick
-	   calls into libc (pthread) which clobbers the caller-saved v0-v7, and an
-	   installed function's `double`/`float` args live there (AAPCS64). Saving only
-	   the GP regs corrupted every FP-arg function's arguments before the baseline
-	   even ran -- the MCC_JIT_LAZY FP-parity failure. */
 	static const uint32_t code[30] = {
-			0xd10303ffu, /* sub  sp,sp,#192 */
-			0xf90003e5u, /* str  x5,[sp,#0]  (regs[0]) */
-			0xf90007e4u, /* str  x4,[sp,#8]  (regs[1]) */
-			0xf9000be3u, /* str  x3,[sp,#16] (regs[2]) */
-			0xf9000fe2u, /* str  x2,[sp,#24] (regs[3]) */
-			0xf90013e1u, /* str  x1,[sp,#32] (regs[4]) */
-			0xf90017e0u, /* str  x0,[sp,#40] (regs[5]) */
-			0xf9001bfeu, /* str  x30,[sp,#48] */
-			0xad0207e0u, /* stp  q0,q1,[sp,#64] */
-			0xad030fe2u, /* stp  q2,q3,[sp,#96] */
-			0xad0417e4u, /* stp  q4,q5,[sp,#128] */
-			0xad051fe6u, /* stp  q6,q7,[sp,#160] */
-			0x58000240u, /* ldr  x0,#72   (state @ +120) */
-			0x910003e1u, /* mov  x1,sp */
-			0x58000250u, /* ldr  x16,#72  (tick @ +128) */
-			0xd63f0200u, /* blr  x16 */
-			0xaa0003f0u, /* mov  x16,x0 */
-			0xf9401bfeu, /* ldr  x30,[sp,#48] */
-			0xf94017e0u, /* ldr  x0,[sp,#40] */
-			0xf94013e1u, /* ldr  x1,[sp,#32] */
-			0xf9400fe2u, /* ldr  x2,[sp,#24] */
-			0xf9400be3u, /* ldr  x3,[sp,#16] */
-			0xf94007e4u, /* ldr  x4,[sp,#8] */
-			0xf94003e5u, /* ldr  x5,[sp,#0] */
-			0xad4207e0u, /* ldp  q0,q1,[sp,#64] */
-			0xad430fe2u, /* ldp  q2,q3,[sp,#96] */
-			0xad4417e4u, /* ldp  q4,q5,[sp,#128] */
-			0xad451fe6u, /* ldp  q6,q7,[sp,#160] */
-			0x910303ffu, /* add  sp,sp,#192 */
-			0xd61f0200u, /* br   x16 */
+			0xd10303ffu,
+			0xf90003e5u,
+			0xf90007e4u,
+			0xf9000be3u,
+			0xf9000fe2u,
+			0xf90013e1u,
+			0xf90017e0u,
+			0xf9001bfeu,
+			0xad0207e0u,
+			0xad030fe2u,
+			0xad0417e4u,
+			0xad051fe6u,
+			0x58000240u,
+			0x910003e1u,
+			0x58000250u,
+			0xd63f0200u,
+			0xaa0003f0u,
+			0xf9401bfeu,
+			0xf94017e0u,
+			0xf94013e1u,
+			0xf9400fe2u,
+			0xf9400be3u,
+			0xf94007e4u,
+			0xf94003e5u,
+			0xad4207e0u,
+			0xad430fe2u,
+			0xad4417e4u,
+			0xad451fe6u,
+			0x910303ffu,
+			0xd61f0200u,
 	};
 	p = mmap(0, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
@@ -1795,49 +1624,39 @@ static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter
 	return p;
 }
 #elif defined(MCCJIT_I386)
-/* i386 cdecl hot-counter stub. Behind the MCC_JIT_I386_STUBS gate. Entered as
-   the function; on i386 all args are on the caller's stack ([esp+4+i*4] after
-   the tick frame is torn down), so it snapshots the first 6 stack dwords into a
-   regs[6] array (regs[MCCJIT_KGC_MAXARG-1-i] == arg i, matching the layout
-   mccjit_counter_capture reads), calls tick(st,regs) which returns the target,
-   then tears its frame down and `jmp target` with the original cdecl stack
-   image untouched. long-long/double args read as their low dword (range
-   profiling only samples GP-width values, and mis-sampling is poison-guarded). */
 static void *mccjit_make_counter_stub(MccjitCounterState *st) { MCC_TRACE("enter\n");
 	void *tick = (void *)mccjit_counter_tick;
 	unsigned char *p;
 	size_t o = 0;
 	int i;
-	const int REGS = 8; /* [esp+REGS ..) = int64 regs[6] scratch on our frame */
+	const int REGS = 8;
 	if (!mccjit_i386_stubs_enabled())
 		{ MCC_TRACE("br\n"); return NULL; }
 	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return NULL; }
-	p[o++] = 0x55;                                  /* push ebp */
-	p[o++] = 0x89; p[o++] = 0xe5;                   /* mov ebp, esp */
-	p[o++] = 0x81; p[o++] = 0xec;                   /* sub esp, imm32 */
+	p[o++] = 0x55;
+	p[o++] = 0x89; p[o++] = 0xe5;
+	p[o++] = 0x81; p[o++] = 0xec;
 	{ uint32_t fr = (uint32_t)(REGS + 8 * MCCJIT_KGC_MAXARG + 16);
 		memcpy(p + o, &fr, 4); o += 4; }
-	/* regs[MAXARG-1-i] = (int64)(caller arg i). Args at [ebp+8+i*4]. */
 	for (i = 0; i < MCCJIT_KGC_MAXARG; i++) { MCC_TRACE("br\n");
 		int d = REGS + (MCCJIT_KGC_MAXARG - 1 - i) * 8;
-		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(8 + i * 4); /* mov eax,[ebp+8+i*4] */
-		p[o++] = 0x99;                                                     /* cdq */
-		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d;       /* mov [esp+d],eax */
-		p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4); /* mov [esp+d+4],edx */
+		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(8 + i * 4);
+		p[o++] = 0x99;
+		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d;
+		p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4);
 	}
-	/* tick(st, regs) — cdecl: [esp+0]=st, [esp+4]=&regs. */
-	p[o++] = 0xc7; p[o++] = 0x04; p[o++] = 0x24;    /* mov dword [esp], st */
+	p[o++] = 0xc7; p[o++] = 0x04; p[o++] = 0x24;
 	{ uint32_t s = (uint32_t)(uintptr_t)st; memcpy(p + o, &s, 4); o += 4; }
-	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)REGS; /* lea eax,[esp+REGS] */
-	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 4;                   /* mov [esp+4],eax */
-	p[o++] = 0xb8; { uint32_t t = (uint32_t)(uintptr_t)tick; memcpy(p + o, &t, 4); o += 4; } /* mov eax,tick */
-	p[o++] = 0xff; p[o++] = 0xd0;                   /* call eax (-> target in eax) */
-	p[o++] = 0x89; p[o++] = 0xec;                   /* mov esp, ebp */
-	p[o++] = 0x5d;                                  /* pop ebp */
-	p[o++] = 0xff; p[o++] = 0xe0;                   /* jmp eax (tail-call target, cdecl args intact) */
+	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)REGS;
+	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 4;
+	p[o++] = 0xb8; { uint32_t t = (uint32_t)(uintptr_t)tick; memcpy(p + o, &t, 4); o += 4; }
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x89; p[o++] = 0xec;
+	p[o++] = 0x5d;
+	p[o++] = 0xff; p[o++] = 0xe0;
 	return p;
 }
 #else
@@ -1895,8 +1714,8 @@ static int mccjit_probe_exec_mem(void) { MCC_TRACE("enter\n");
 	int got;
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return 0; }
-	code[0] = 0x52800b40u; /* mov w0, #0x5a */
-	code[1] = 0xd65f03c0u; /* ret */
+	code[0] = 0x52800b40u;
+	code[1] = 0xd65f03c0u;
 	memcpy(p, code, sizeof code);
 	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
 		munmap(p, page);
@@ -1944,16 +1763,6 @@ static int mccjit_feasible(void) { MCC_TRACE("enter\n");
 	return mccjit_feasible_flag;
 }
 
-/* K9/L2A/L3 — QSBR reclamation. Pointer-swap is the always-correct default: it
-   never mutates bytes a running thread may execute, so an old variant can only
-   be *freed* once no thread can still be inside it. This is the epoch core:
-   each participating thread holds a slot with a local epoch; retiring an old
-   variant tags it with the bumped global epoch; a retiree is reclaimed once
-   every registered thread has announced a quiescent state at or after that
-   epoch (min local >= tag), i.e. every thread has left any JIT call since the
-   swap. Quiescent points (L2A: function-entry + loop back-edges) and the
-   swap-path retire wiring are the deferred integration; the default stays
-   leak-and-cap so a QSBR bug can never free a live variant. */
 #define MCCJIT_QSBR_SLOTS 64
 #define MCCJIT_QSBR_LIMBO 256
 
@@ -1995,7 +1804,6 @@ static void mccjit_qsbr_unregister(int slot) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
-/* Lock-free hot path: announce this thread has observed the current epoch. */
 static void mccjit_qsbr_quiescent(int slot) { MCC_TRACE("enter\n");
 	if (slot < 0 || slot >= MCCJIT_QSBR_SLOTS)
 		{ MCC_TRACE("br\n"); return; }
@@ -2037,8 +1845,6 @@ static void mccjit_qsbr_reclaim(void) { MCC_TRACE("enter\n");
 	pthread_mutex_unlock(&mccjit_qsbr.lock);
 }
 
-/* Defer-free an old variant after its slot has been pointer-swapped away.
-   MUST be called only after the publish, so no thread can newly enter it. */
 static void mccjit_qsbr_retire(void *ptr, size_t size) { MCC_TRACE("enter\n");
 	pthread_mutex_lock(&mccjit_qsbr.lock);
 	{
@@ -2049,7 +1855,7 @@ static void mccjit_qsbr_retire(void *ptr, size_t size) { MCC_TRACE("enter\n");
 			mccjit_qsbr.limbo[mccjit_qsbr.nlimbo].epoch = e;
 			mccjit_qsbr.nlimbo++;
 		} else { MCC_TRACE("br\n");
-			mccjit_qsbr.leaked++; /* leak-and-cap fallback: never free a live variant */
+			mccjit_qsbr.leaked++;
 		}
 		mccjit_qsbr_reclaim_locked();
 	}
@@ -2158,10 +1964,6 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		mcc_add_symbol(s1, "mccjit_boot_swap_async",
 									 (void *)mccjit_boot_swap_async);
 #if MCC_HOST_WIN32
-		/* The boot ctor calls getenv("MCC_JIT"); for an in-memory relocate that
-		   isn't a full mcc_run (e.g. a selftest extracting the AOT baseline) the
-		   host getenv is otherwise unresolved on PE (ELF resolves it via the
-		   host process). Bind it to the host's. */
 		mcc_add_symbol(s1, "getenv", (void *)getenv);
 #endif
 	} else if (mcc_env_on("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
@@ -2697,20 +2499,13 @@ typedef struct MccjitKgc {
 	uint64_t hits;
 	uint64_t misses;
 	int poisoned;
-	/* K-patch (near-match) state. When enabled (default) and the variant mismatches
-	   the baseline only on a SMALL input set that ALSO benchmarks slower than the
-	   variant, the variant is KEPT instead of poisoned and those mismatching inputs
-	   are served from `corr` — a sorted (arity inputs -> baseline output) correction
-	   table, the "jmp table that fills the gaps". Novel (never-verified) inputs still
-	   go through the differential verify below, so the composite stays 100%% correct.
-	   corr is anonymous/in-memory and (arity+1) int64 wide: arity keys then output. */
-	int nearmatch_on;     /* feature enabled for this KGC (default on) */
-	int nearmatch;        /* accepted: keep + patch (set once the bench gate passes) */
-	int nm_decided;       /* the accept/reject bench has been run (latched) */
-	int nm_benching;      /* a thread is running the accept/reject bench OFF the lock */
-	uint64_t nm_total;    /* near-match: total dispatched calls (call-frequency weighted) */
-	uint64_t nm_match;    /* near-match: calls the variant got right (memo-hit + verify-match) */
-	uint64_t nm_last_corr; /* nm_total at the last NEW correction (stability clock) */
+	int nearmatch_on;
+	int nearmatch;
+	int nm_decided;
+	int nm_benching;
+	uint64_t nm_total;
+	uint64_t nm_match;
+	uint64_t nm_last_corr;
 	int64_t *corr;
 	uint64_t corr_n;
 	uint64_t corr_cap;
@@ -2718,15 +2513,13 @@ typedef struct MccjitKgc {
 	void *mx_baseline;
 	uint32_t mx_ngp;
 	uint32_t mx_nsse;
-	uint32_t mx_nargs;    /* Win64: total scalar args (positional layout) */
-	uint32_t mx_argclass; /* Win64: bit i set => arg position i is FP (xmm-i), else GP */
+	uint32_t mx_nargs;
+	uint32_t mx_argclass;
 	int mx_ret_fp;
 	int *mx_flag;
 #if defined(MCCJIT_I386)
-	/* i386-only: keeps the struct layout (and sizeof) byte-identical on
-	   x86_64/arm64, since these are referenced only by the i386 mixed path. */
-	void *mx_thunk;       /* per-signature cdecl reconstruction thunk (else NULL) */
-	uint32_t mx_argsz;    /* bit i set => arg position i is 8 bytes on the stack */
+	void *mx_thunk;
+	uint32_t mx_argsz;
 #endif
 	pthread_mutex_t lock;
 } MccjitKgc;
@@ -2751,12 +2544,6 @@ static int mccjit_poison_pct(void) { MCC_TRACE("enter\n");
 	return 50;
 }
 
-/* K-patch near-match acceptance. DEFAULT ON (disable with MCC_JIT_NEARMATCH=0).
-   A variant that mismatches the baseline only on a SMALL set of inputs (one that
-   fits a small jump table, MCCJIT_NEARMATCH_CORR_MAX) is KEPT rather than poisoned
-   IFF it also benchmarks faster than the baseline it would replace; its minority of
-   mismatching inputs are then served from the correction table. Novel inputs still
-   go through the differential verify, so the composite is always 100%% correct. */
 static int mccjit_nearmatch_on(void) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_NEARMATCH");
 	if (e && e[0] && (e[0] == '0' || e[0] == 'n' || e[0] == 'N'))
@@ -2764,11 +2551,9 @@ static int mccjit_nearmatch_on(void) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-/* "Small jump table": the mismatch set must fit this many entries or the variant is
-   rejected (not resolvable by a small patch). */
 #define MCCJIT_NEARMATCH_CORR_MAX ((uint64_t)64)
-#define MCCJIT_NEARMATCH_WARMUP 64 /* min dispatched calls before deciding */
-#define MCCJIT_NEARMATCH_STABLE 64 /* calls with no NEW correction => mismatch domain closed */
+#define MCCJIT_NEARMATCH_WARMUP 64
+#define MCCJIT_NEARMATCH_STABLE 64
 
 #define MCCJIT_KGC_MAX ((uint64_t)1 << 16)
 
@@ -3153,8 +2938,6 @@ static int mccjit_kgc_insert(MccjitKgc *k, const int64_t *tuple) { MCC_TRACE("en
 	return 1;
 }
 
-/* --- K-patch correction table: sorted array of (arity keys + 1 output) int64,
-   binary-searched on the keys. Anonymous/in-memory; caller holds k->lock. --- */
 static int mccjit_nearmatch_active(const MccjitKgc *k) { MCC_TRACE("enter\n");
 	return k->nearmatch_on && k->memoize_ok;
 }
@@ -3178,7 +2961,6 @@ static uint64_t mccjit_corr_lower(const MccjitKgc *k, const int64_t *tuple,
 	return lo;
 }
 
-/* Return a pointer to the stored baseline output for `tuple`, or NULL if unrecorded. */
 static int64_t *mccjit_corr_find(MccjitKgc *k, const int64_t *tuple) { MCC_TRACE("enter\n");
 	int found;
 	uint64_t at;
@@ -3190,7 +2972,6 @@ static int64_t *mccjit_corr_find(MccjitKgc *k, const int64_t *tuple) { MCC_TRACE
 	return k->corr + at * ((uint64_t)k->arity + 1) + k->arity;
 }
 
-/* Record tuple -> out. Returns 1 on insert, 0 if already present / full / OOM. */
 static int mccjit_corr_insert(MccjitKgc *k, const int64_t *tuple, int64_t out) { MCC_TRACE("enter\n");
 	uint64_t stride = (uint64_t)k->arity + 1;
 	int found;
@@ -3199,7 +2980,7 @@ static int mccjit_corr_insert(MccjitKgc *k, const int64_t *tuple, int64_t out) {
 	if (k->corr) { MCC_TRACE("br\n");
 		at = mccjit_corr_lower(k, tuple, &found);
 		if (found) { MCC_TRACE("br\n");
-			k->corr[at * stride + k->arity] = out; /* refresh (baseline is deterministic) */
+			k->corr[at * stride + k->arity] = out;
 			return 0;
 		}
 	} else { MCC_TRACE("br\n");
@@ -3229,18 +3010,9 @@ static int mccjit_corr_insert(MccjitKgc *k, const int64_t *tuple, int64_t out) {
 	return 1;
 }
 
-/* On a verified mismatch under near-match mode: record the correction and decide
-   whether the variant is still worth keeping. Returns 1 to SUPPRESS poisoning
-   (near-match accepted), 0 to let the caller's poison logic run. Caller holds lock. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 														 uint32_t ntuples, uint32_t nargs, int wide, int fp);
 
-/* The "benchmarks better" gate: does the variant beat the baseline on the observed
-   hot inputs? Sample the memo (the verified-correct inputs the hot distribution is
-   made of); a win there means the 98%-common variant path wins, and the rare patched
-   path is a table lookup that is <= a baseline call, so the composite wins too. */
-/* Copy up to `cap` memo tuples into `sample` (MCCJIT_KGC_ARITY-wide rows). MUST be called
-   with k->lock held (reads the memo). Returns the number of rows built. */
 static uint32_t mccjit_nearmatch_build_sample(MccjitKgc *k, int64_t *sample,
 																							uint32_t cap) { MCC_TRACE("enter\n");
 	uint32_t n = 0, i;
@@ -3253,24 +3025,6 @@ static uint32_t mccjit_nearmatch_build_sample(MccjitKgc *k, int64_t *sample,
 	return n;
 }
 
-/* Run once per dispatched call (near-match active, not yet decided) — placed on the
-   common path so the verdict can fire even when the mismatch domain has closed and no
-   further misses occur. Latches: mismatch set overflows the small-jump-table budget ->
-   REJECT (poison); a stable small table (no new correction for STABLE calls, past the
-   warmup floor) -> BENCH -> accept iff the variant is faster, else poison. Caller holds
-   k->lock. Faithful variants (no corrections) are never decided and pay only this guard.
-   Returns with k->lock HELD: to keep the ~100k-iteration bench off the lock, the sample is
-   built under the lock, then the lock is DROPPED across mccjit_bench_pair and RE-ACQUIRED
-   before latching the verdict. While dropped, other threads see nm_benching and skip the
-   re-bench, falling through to the normal verify/corr path (novel inputs stay verified, so
-   the composite is still 100%% correct); only one bench ever runs. */
-/* fp!=0 => all-double KGC (bench via the FP ABI). benchable==0 => the caller has no
-   ABI-correct way to bench this variant (the MIXED GP+FP path: a faithful bench would
-   need a per-arg GP/FP class vector the sample rows do not carry, and benching mixed
-   doubles through the int signature would call the wrong ABI). Rather than risk a wrong
-   verdict, an un-benchable variant is REJECTED (poisoned) once its mismatch set is
-   stable — corrections are still recorded and served on the path leading here, but the
-   variant is never ACCEPTED without a valid faster-than-baseline bench. */
 static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline,
 																		int fp, int benchable) { MCC_TRACE("enter\n");
 	int64_t *sample;
@@ -3278,7 +3032,7 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline,
 	int win;
 	if (k->nm_decided)
 		{ MCC_TRACE("br\n"); return; }
-	if (k->corr_n >= MCCJIT_NEARMATCH_CORR_MAX) { MCC_TRACE("br\n"); /* open/large domain */
+	if (k->corr_n >= MCCJIT_NEARMATCH_CORR_MAX) { MCC_TRACE("br\n");
 		k->nm_decided = 1;
 		if (mcc_stats_mask && !k->poisoned)
 			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
@@ -3286,20 +3040,20 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline,
 		return;
 	}
 	if (k->corr_n == 0)
-		{ MCC_TRACE("br\n"); return; } /* faithful so far: nothing to patch, nothing to decide */
+		{ MCC_TRACE("br\n"); return; }
 	if (k->nm_total < MCCJIT_NEARMATCH_WARMUP ||
 			k->nm_total - k->nm_last_corr < MCCJIT_NEARMATCH_STABLE)
-		{ MCC_TRACE("br\n"); return; } /* mismatch set not yet closed */
+		{ MCC_TRACE("br\n"); return; }
 	if (k->nm_benching)
-		{ MCC_TRACE("br\n"); return; } /* another thread is already benching this variant */
-	if (!benchable) { MCC_TRACE("br\n"); /* no ABI-correct bench (mixed) -> never accept */
+		{ MCC_TRACE("br\n"); return; }
+	if (!benchable) { MCC_TRACE("br\n");
 		k->nm_decided = 1;
 		if (mcc_stats_mask && !k->poisoned)
 			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
 		k->poisoned = 1;
 		return;
 	}
-	if (!variant || !baseline || k->hdr->count == 0) { MCC_TRACE("br\n"); /* nothing to bench */
+	if (!variant || !baseline || k->hdr->count == 0) { MCC_TRACE("br\n");
 		k->nm_decided = 1;
 		if (mcc_stats_mask && !k->poisoned)
 			{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
@@ -3308,20 +3062,20 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline,
 	}
 	sample = mcc_mallocz((size_t)cap * MCCJIT_KGC_ARITY * sizeof(int64_t));
 	if (!sample)
-		{ MCC_TRACE("br\n"); return; } /* retry on a later call */
-	n = mccjit_nearmatch_build_sample(k, sample, cap); /* memo read: under lock */
+		{ MCC_TRACE("br\n"); return; }
+	n = mccjit_nearmatch_build_sample(k, sample, cap);
 	k->nm_benching = 1;
-	pthread_mutex_unlock(&k->lock); /* run the multi-threaded bench OFF the lock */
+	pthread_mutex_unlock(&k->lock);
 	win = mccjit_bench_pair(variant, baseline, sample, n, k->arity, k->ret_wide, fp);
 	pthread_mutex_lock(&k->lock);
 	mcc_free(sample);
-	if (!k->nm_decided) { MCC_TRACE("br\n"); /* we own the verdict */
+	if (!k->nm_decided) { MCC_TRACE("br\n");
 		k->nm_decided = 1;
 		if (win) { MCC_TRACE("br\n");
-			k->nearmatch = 1; /* small stable table + benchmarks better -> keep and patch */
+			k->nearmatch = 1;
 			if (mcc_stats_mask)
 				{ MCC_TRACE("br\n"); mcc_stats_jit_nearmatch(); }
-		} else { MCC_TRACE("br\n"); /* not faster: near-match cannot help -> poison */
+		} else { MCC_TRACE("br\n");
 			if (mcc_stats_mask && !k->poisoned)
 				{ MCC_TRACE("br\n"); mcc_stats_jit_poison(); }
 			k->poisoned = 1;
@@ -3330,9 +3084,6 @@ static void mccjit_nearmatch_decide(MccjitKgc *k, void *variant, void *baseline,
 	k->nm_benching = 0;
 }
 
-/* On a verified mismatch under near-match mode: record the (tuple -> baseline) patch
-   and reset the stability clock. The accept/reject verdict is owned by _decide above.
-   Returns 1 to suppress the caller's legacy miss-rate poison, 0 when the feature is off. */
 static int mccjit_nearmatch_miss(MccjitKgc *k, const int64_t *tuple, int64_t bval) { MCC_TRACE("enter\n");
 	if (!mccjit_nearmatch_active(k))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -3365,19 +3116,19 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 		int64_t *co;
 		k->nm_total++;
 		mccjit_nearmatch_decide(k, variant, baseline, 0, 1);
-		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
+		if (k->poisoned) { MCC_TRACE("br\n");
 			pthread_mutex_unlock(&k->lock);
 			return (int64_t)bf((int)x);
 		}
 		co = mccjit_corr_find(k, tuple);
-		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched from the correction table */
+		if (co) { MCC_TRACE("br\n");
 			int64_t v = *co;
 			pthread_mutex_unlock(&k->lock);
 			return v;
 		}
 	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
-		k->nm_match++; /* memo hit = variant verified correct for this input */
+		k->nm_match++;
 		pthread_mutex_unlock(&k->lock);
 		return (int64_t)vf((int)x);
 	}
@@ -3432,10 +3183,6 @@ static int64_t mccjit_invoke(void *fn, const int64_t *a, uint32_t n, int wide) {
 	}
 }
 
-/* K4A: scalar all-double marshalling (SSE class). Args come in via a spilled
-   xmm0-7 double vector; the return is a double (xmm0). Fixed C signatures let
-   the compiler place args in xmm and read the xmm0 return, so no hand-emitted
-   argument classifier is needed for the all-FP case. */
 static double mccjit_invoke_fp(void *fn, const double *a, uint32_t n) { MCC_TRACE("enter\n");
 	switch (n) { MCC_TRACE("br\n");
 	case 1:
@@ -3496,10 +3243,6 @@ static double mccjit_ts_delta(const struct timespec *a,
 				 (double)(b->tv_nsec - a->tv_nsec) / 1000000000.0;
 }
 
-/* When fp!=0 the sample rows are raw double bit-patterns (all-double KGC) and the
-   candidate/incumbent are double(double,...) functions: invoke through the FP ABI
-   (mccjit_invoke_fp), reinterpreting the int64 row as the double args it encodes.
-   The result double is folded into the int64 sink via its bits (timing only). */
 static void mccjit_bench_run_pair(void *cand, void *incumbent,
 																	const int64_t *tuples, uint32_t ntuples,
 																	uint32_t nargs, int wide, uint32_t reps,
@@ -3595,10 +3338,6 @@ static void *mccjit_bench_sibling_thread(void *arg) { MCC_TRACE("enter\n");
 	return NULL;
 }
 
-/* fp!=0 => all-double KGC: bench through the FP ABI (mccjit_invoke_fp) with the
-   sample rows read as raw double bits. Passing fp=1 through an int signature (or
-   vice versa) would call the function through the wrong ABI, so callers MUST set
-   fp to match the KGC's return/arg class. */
 static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 														 uint32_t ntuples, uint32_t nargs, int wide, int fp) { MCC_TRACE("enter\n");
 	MccjitBenchSib sib[MCCJIT_BENCH_MAXCORES];
@@ -3649,12 +3388,6 @@ static int mccjit_bench_pair(void *cand, void *incumbent, const int64_t *tuples,
 	return votes * 2 > cores;
 }
 
-/* L4A — the K5 promotion scorer over the REAL observed distribution: benchmark
-   a candidate vs the incumbent on the live-in tuples J6A captured on the hot
-   counter (st->sample), not a synthetic sweep. Real observed values are the
-   only safe input (a synthesized pointer/divisor would crash the callee). With
-   no observed samples yet there is no basis to reject, so promotion is allowed
-   (the incumbent-wins-on-tie hysteresis still lives in mccjit_bench_pair). */
 MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 																					 const MccjitCounterState *st,
 																					 uint32_t nargs, int wide) { MCC_TRACE("enter\n");
@@ -3691,19 +3424,19 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 		int64_t *co;
 		k->nm_total++;
 		mccjit_nearmatch_decide(k, variant, baseline, 0, 1);
-		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
+		if (k->poisoned) { MCC_TRACE("br\n");
 			pthread_mutex_unlock(&k->lock);
 			return mccjit_invoke(baseline, argv, nargs, wide);
 		}
 		co = mccjit_corr_find(k, tuple);
-		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched from the correction table */
+		if (co) { MCC_TRACE("br\n");
 			int64_t v = *co;
 			pthread_mutex_unlock(&k->lock);
 			return v;
 		}
 	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
-		k->nm_match++; /* memo hit = variant verified correct for this input */
+		k->nm_match++;
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke(variant, argv, nargs, wide);
 	}
@@ -3722,8 +3455,6 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	k->misses++;
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_miss(); }
-	/* Near-match: record the patch (verdict is owned by _decide on the common path);
-	   when the feature is off this returns 0 and the legacy miss-rate poison runs. */
 	if (!mccjit_nearmatch_miss(k, tuple, bval)) { MCC_TRACE("br\n");
 		uint64_t total = k->hits + k->misses;
 		if (total >= (uint64_t)mccjit_poison_min() &&
@@ -3739,10 +3470,6 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 	return bval;
 }
 
-/* All-double differential verify. Args/return are doubles; the memo key and
-   the mismatch check use the raw bit pattern (a faithful recompile is
-   bit-identical, and treating +0/-0 or a NaN-bit difference as a mismatch is
-   the conservative-correct choice — it just returns the baseline). */
 static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 																	const double *argv, uint32_t nargs,
 																	int *flagged) { MCC_TRACE("enter\n");
@@ -3759,19 +3486,16 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_fp(baseline, argv, nargs);
 	}
-	/* K-patch near-match (all-double): the correction table stores the baseline
-	   output as raw double BITS (an int64), and the accept/reject bench is FP-aware
-	   (fp=1 -> mccjit_invoke_fp through the double ABI). */
 	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
 		int64_t *co;
 		k->nm_total++;
 		mccjit_nearmatch_decide(k, variant, baseline, 1, 1);
-		if (k->poisoned) { MCC_TRACE("br\n"); /* decide() just rejected the variant */
+		if (k->poisoned) { MCC_TRACE("br\n");
 			pthread_mutex_unlock(&k->lock);
 			return mccjit_invoke_fp(baseline, argv, nargs);
 		}
 		co = mccjit_corr_find(k, tuple);
-		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched (stored double bits) */
+		if (co) { MCC_TRACE("br\n");
 			double v;
 			memcpy(&v, co, sizeof v);
 			pthread_mutex_unlock(&k->lock);
@@ -3779,7 +3503,7 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 		}
 	}
 	if (k->memoize_ok && mccjit_kgc_contains(k, tuple)) { MCC_TRACE("br\n");
-		k->nm_match++; /* memo hit = variant verified correct for this input */
+		k->nm_match++;
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_fp(variant, argv, nargs);
 	}
@@ -3796,8 +3520,6 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 		return bval;
 	}
 	k->misses++;
-	/* Record the (args -> baseline output bits) patch; when near-match is off this
-	   returns 0 and the legacy miss-rate poison runs. bbits is the raw double bits. */
 	if (!mccjit_nearmatch_miss(k, tuple, (int64_t)bbits)) { MCC_TRACE("br\n");
 		uint64_t total = k->hits + k->misses;
 		if (total >= (uint64_t)mccjit_poison_min() &&
@@ -3811,38 +3533,22 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 }
 
 #if defined(MCCJIT_X64) || defined(MCCJIT_I386) || defined(MCCJIT_ARM64)
-/* K4A/L12A scalar mixed GP+FP marshalling. One signature-agnostic forwarding
-   thunk reconstructs any scalar SysV call: it loads gpv[0..5] into rdi..r9 and
-   fpv[0..7] into xmm0..7 and tail-calls the target. Because SysV assigns
-   INTEGER-class args to the GP regs and SSE-class args to the XMM regs with
-   independent counters, per-class arrays (gpv,fpv) placed in class order fully
-   reconstruct the call — no per-arg class vector is needed. Unused registers are
-   loaded with harmless garbage the callee ignores. Same bytes, cast to a GP-int
-   or a double return per the callee's return class. */
 #if defined(MCCJIT_X64)
 #if MCC_HOST_WIN32
-/* Win64 positional reload-and-call thunk. Unlike SysV (class-based), the Win64
-   ABI assigns the Nth scalar arg to (rcx/rdx/r8/r9)[N] if GP OR (xmm0..3)[N] if
-   FP — by POSITION. The stub captures both files positionally (gp[N], fp[N]),
-   and this thunk reloads all four positional slots of each file before the call
-   (unused slots carry harmless garbage the callee ignores). Win64 args: rcx=fn,
-   rdx=gp(int64*), r8=fp(double*). Same bytes for int (rax) or double (xmm0)
-   return. rsp stays 16-aligned (leaf: entry rsp%16==8, +0x28 shadow => call at
-   aligned). */
 static const unsigned char mccjit_mixed_thunk_code[] = {
-		0x49, 0x89, 0xca,                   /* mov r10, rcx (fn) */
-		0xf2, 0x41, 0x0f, 0x10, 0x00,       /* movsd xmm0,[r8]    */
-		0xf2, 0x41, 0x0f, 0x10, 0x48, 0x08, /* movsd xmm1,[r8+8]  */
-		0xf2, 0x41, 0x0f, 0x10, 0x50, 0x10, /* movsd xmm2,[r8+16] */
-		0xf2, 0x41, 0x0f, 0x10, 0x58, 0x18, /* movsd xmm3,[r8+24] */
-		0x48, 0x8b, 0x0a,                   /* mov rcx,[rdx]      */
-		0x4c, 0x8b, 0x4a, 0x18,             /* mov r9, [rdx+24]   */
-		0x4c, 0x8b, 0x42, 0x10,             /* mov r8, [rdx+16]   */
-		0x48, 0x8b, 0x52, 0x08,             /* mov rdx,[rdx+8]    */
-		0x48, 0x83, 0xec, 0x28,             /* sub rsp,0x28       */
-		0x41, 0xff, 0xd2,                   /* call r10           */
-		0x48, 0x83, 0xc4, 0x28,             /* add rsp,0x28       */
-		0xc3};                              /* ret                */
+		0x49, 0x89, 0xca,
+		0xf2, 0x41, 0x0f, 0x10, 0x00,
+		0xf2, 0x41, 0x0f, 0x10, 0x48, 0x08,
+		0xf2, 0x41, 0x0f, 0x10, 0x50, 0x10,
+		0xf2, 0x41, 0x0f, 0x10, 0x58, 0x18,
+		0x48, 0x8b, 0x0a,
+		0x4c, 0x8b, 0x4a, 0x18,
+		0x4c, 0x8b, 0x42, 0x10,
+		0x48, 0x8b, 0x52, 0x08,
+		0x48, 0x83, 0xec, 0x28,
+		0x41, 0xff, 0xd2,
+		0x48, 0x83, 0xc4, 0x28,
+		0xc3};
 #else
 static const unsigned char mccjit_mixed_thunk_code[] = {
 		0x55, 0x48, 0x89, 0xe5, 0x49, 0x89, 0xfb, 0x49, 0x89, 0xd2, 0xf2, 0x41,
@@ -3887,29 +3593,21 @@ static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
 	return ((MccjitThunkD)mccjit_mixed_thunk_get())(fn, gpv, fpv);
 }
 #elif defined(MCCJIT_ARM64)
-/* AAPCS64 reconstruction thunk (fn=x0, gpv=x1, fpv=x2). AArch64 assigns
-   INTEGER-class args to x0..x7 and FP-class args to v0..v7 with independent
-   counters, exactly like SysV — so class-ordered gpv/fpv fully reconstruct the
-   call. Save fn to x16, reload d0..d5 from fpv (still in x2) and x0..x5 from gpv
-   (x1 loaded last so the base survives), then tail-branch fn. Unused arg regs
-   carry harmless garbage the callee ignores. sp is untouched so the callee's
-   ret returns straight to mccjit_invoke_mixed_*; same bytes for int (x0) or
-   double (d0) return. */
 static const unsigned char mccjit_mixed_thunk_code[] = {
-		0xf0, 0x03, 0x00, 0xaa, /* mov x16, x0        */
-		0x40, 0x00, 0x40, 0xfd, /* ldr d0, [x2]       */
-		0x41, 0x04, 0x40, 0xfd, /* ldr d1, [x2, #8]   */
-		0x42, 0x08, 0x40, 0xfd, /* ldr d2, [x2, #16]  */
-		0x43, 0x0c, 0x40, 0xfd, /* ldr d3, [x2, #24]  */
-		0x44, 0x10, 0x40, 0xfd, /* ldr d4, [x2, #32]  */
-		0x45, 0x14, 0x40, 0xfd, /* ldr d5, [x2, #40]  */
-		0x20, 0x00, 0x40, 0xf9, /* ldr x0, [x1]       */
-		0x22, 0x08, 0x40, 0xf9, /* ldr x2, [x1, #16]  */
-		0x23, 0x0c, 0x40, 0xf9, /* ldr x3, [x1, #24]  */
-		0x24, 0x10, 0x40, 0xf9, /* ldr x4, [x1, #32]  */
-		0x25, 0x14, 0x40, 0xf9, /* ldr x5, [x1, #40]  */
-		0x21, 0x04, 0x40, 0xf9, /* ldr x1, [x1, #8]   */
-		0x00, 0x02, 0x1f, 0xd6  /* br x16             */
+		0xf0, 0x03, 0x00, 0xaa,
+		0x40, 0x00, 0x40, 0xfd,
+		0x41, 0x04, 0x40, 0xfd,
+		0x42, 0x08, 0x40, 0xfd,
+		0x43, 0x0c, 0x40, 0xfd,
+		0x44, 0x10, 0x40, 0xfd,
+		0x45, 0x14, 0x40, 0xfd,
+		0x20, 0x00, 0x40, 0xf9,
+		0x22, 0x08, 0x40, 0xf9,
+		0x23, 0x0c, 0x40, 0xf9,
+		0x24, 0x10, 0x40, 0xf9,
+		0x25, 0x14, 0x40, 0xf9,
+		0x21, 0x04, 0x40, 0xf9,
+		0x00, 0x02, 0x1f, 0xd6
 };
 
 typedef int64_t (*MccjitThunkI)(void *fn, const int64_t *gpv, const double *fpv);
@@ -3948,17 +3646,7 @@ static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
 																		const double *fpv) { MCC_TRACE("enter\n");
 	return ((MccjitThunkD)mccjit_mixed_thunk_get())(fn, gpv, fpv);
 }
-#else /* MCCJIT_I386 */
-/* i386 has a single cdecl arg stack (not separate GP/FP files), so the
-   reconstruction thunk is signature-specific: it is built per-kgc by
-   mccjit_make_kgc_stub_mixed and stored in k->mx_thunk. To keep the shared
-   calln_mixed_{i,d} bodies (and hence the x86_64/arm64 object) byte-identical
-   to the pristine tree, mccjit_invoke_mixed_{i,d} keep the original
-   (fn,gpv,fpv) signature; the active per-kgc thunk is parked in a file-scope
-   pointer that calln_mixed sets under k->lock right before invoking (see the
-   MCCJIT_I386-only lines there). The forwarding thunk pushes each positional
-   arg (from gp[pos]/fp[pos] per mx_argclass, 4 or 8 bytes per mx_argsz) onto
-   the cdecl stack and calls fn. Return: int64 in edx:eax, double in st(0). */
+#else
 typedef int64_t (*MccjitI386ThunkI)(void *fn, const int64_t *gp,
 																		const double *fp);
 typedef double (*MccjitI386ThunkD)(void *fn, const int64_t *gp,
@@ -3966,8 +3654,6 @@ typedef double (*MccjitI386ThunkD)(void *fn, const int64_t *gp,
 
 static void *mccjit_i386_active_thunk;
 
-/* Sentinel: on i386 the "shared" thunk is not used; return non-NULL so callers
-   that gate on availability proceed to build the per-kgc thunk. */
 static void *mccjit_mixed_thunk_get(void) { MCC_TRACE("enter\n"); return (void *)1; }
 
 static int64_t mccjit_invoke_mixed_i(void *fn, const int64_t *gpv,
@@ -3979,7 +3665,7 @@ static double mccjit_invoke_mixed_d(void *fn, const int64_t *gpv,
 																		const double *fpv) { MCC_TRACE("enter\n");
 	return ((MccjitI386ThunkD)mccjit_i386_active_thunk)(fn, gpv, fpv);
 }
-#endif /* MCCJIT_X64 / MCCJIT_ARM64 / MCCJIT_I386 */
+#endif
 
 static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 														 const double *fpv, int64_t *tuple) { MCC_TRACE("enter\n");
@@ -3987,8 +3673,6 @@ static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 	for (i = 0; i < MCCJIT_KGC_ARITY; i++)
 		{ MCC_TRACE("br\n"); tuple[i] = 0; }
 #if MCC_HOST_WIN32
-	/* Win64: gpv/fpv are POSITIONAL (index = arg position). Key each position
-	   from its own file per the class bitmask, preserving arg order. */
 	for (i = 0; i < k->mx_nargs && a < MCCJIT_KGC_ARITY; i++, a++) { MCC_TRACE("br\n");
 		if (k->mx_argclass & (1u << i))
 			{ MCC_TRACE("br\n"); memcpy(&tuple[a], &fpv[i], sizeof tuple[a]); }
@@ -3996,7 +3680,6 @@ static void mccjit_mixed_key(const MccjitKgc *k, const int64_t *gpv,
 			{ MCC_TRACE("br\n"); tuple[a] = gpv[i]; }
 	}
 #else
-	/* SysV: gpv/fpv are CLASS-ordered (independent GP/SSE counters). */
 	for (i = 0; i < k->mx_ngp && a < MCCJIT_KGC_ARITY; i++, a++)
 		{ MCC_TRACE("br\n"); tuple[a] = gpv[i]; }
 	for (i = 0; i < k->mx_nsse && a < MCCJIT_KGC_ARITY; i++, a++)
@@ -4018,9 +3701,6 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 	int64_t bval, vval, bc, vc;
 	mccjit_mixed_key(k, gpv, fpv, tuple);
 #if defined(MCCJIT_I386)
-	/* i386-only: publish this kgc's per-signature cdecl thunk for the shared
-	   mccjit_invoke_mixed_i() calls below (keeps their signature — and thus the
-	   x86_64/arm64 object — pristine). */
 	mccjit_i386_active_thunk = k->mx_thunk;
 #endif
 	pthread_mutex_lock(&k->lock);
@@ -4028,11 +3708,6 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_i(baseline, gpv, fpv);
 	}
-	/* K-patch near-match (mixed GP+FP, int return): record + patch mismatches, but
-	   NEVER accept — a faithful bench of a mixed variant needs a per-arg GP/FP class
-	   vector the flat sample rows do not carry (benching through either the pure-int
-	   or pure-fp ABI would misplace args), so decide is called benchable=0 and rejects
-	   once the mismatch set stabilizes. Known mismatches are still served from corr. */
 	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
 		int64_t *co;
 		k->nm_total++;
@@ -4042,7 +3717,7 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 			return mccjit_invoke_mixed_i(baseline, gpv, fpv);
 		}
 		co = mccjit_corr_find(k, tuple);
-		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched from the correction table */
+		if (co) { MCC_TRACE("br\n");
 			int64_t v = *co;
 			pthread_mutex_unlock(&k->lock);
 			return v;
@@ -4066,8 +3741,6 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 		return bval;
 	}
 	k->misses++;
-	/* Record the (args -> baseline output) patch; when near-match is off, run the
-	   legacy poison update. bc is the ABI-correct (ret-width) baseline value. */
 	if (!mccjit_nearmatch_miss(k, tuple, bc))
 		{ MCC_TRACE("br\n"); mccjit_mixed_poison_update(k); }
 	pthread_mutex_unlock(&k->lock);
@@ -4084,16 +3757,13 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 	uint64_t bbits = 0, vbits = 0;
 	mccjit_mixed_key(k, gpv, fpv, tuple);
 #if defined(MCCJIT_I386)
-	mccjit_i386_active_thunk = k->mx_thunk; /* see calln_mixed_i note */
+	mccjit_i386_active_thunk = k->mx_thunk;
 #endif
 	pthread_mutex_lock(&k->lock);
 	if (k->poisoned) { MCC_TRACE("br\n");
 		pthread_mutex_unlock(&k->lock);
 		return mccjit_invoke_mixed_d(baseline, gpv, fpv);
 	}
-	/* K-patch near-match (mixed GP+FP, double return): the correction stores the
-	   baseline output as raw double BITS. As in calln_mixed_i, decide is benchable=0
-	   (no ABI-correct bench for a mixed signature) -> record+patch, never accept. */
 	if (mccjit_nearmatch_active(k)) { MCC_TRACE("br\n");
 		int64_t *co;
 		k->nm_total++;
@@ -4103,7 +3773,7 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 			return mccjit_invoke_mixed_d(baseline, gpv, fpv);
 		}
 		co = mccjit_corr_find(k, tuple);
-		if (co) { MCC_TRACE("br\n"); /* known mismatch: patched (stored double bits) */
+		if (co) { MCC_TRACE("br\n");
 			double v;
 			memcpy(&v, co, sizeof v);
 			pthread_mutex_unlock(&k->lock);
@@ -4128,7 +3798,6 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 		return bval;
 	}
 	k->misses++;
-	/* Record (args -> baseline output bits); off => legacy poison. */
 	if (!mccjit_nearmatch_miss(k, tuple, (int64_t)bbits))
 		{ MCC_TRACE("br\n"); mccjit_mixed_poison_update(k); }
 	pthread_mutex_unlock(&k->lock);
@@ -4136,10 +3805,8 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 		{ MCC_TRACE("br\n"); *k->mx_flag = 1; }
 	return bval;
 }
-#endif /* mixed helpers: MCCJIT_X64 || MCCJIT_ARM64 || MCCJIT_I386 */
+#endif
 
-/* -------------------------------------------------------------- stub tail --
-   The hand-emitted KGC verify-stub / dispatch tail, one arch per branch. */
 #if defined(MCCJIT_X64)
 static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 																		 int memoize_ok, uint32_t nargs) { MCC_TRACE("enter\n");
@@ -4172,41 +3839,38 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	*flag = 0;
 	fp = flag;
 #if MCC_HOST_WIN32
-	/* Microsoft x64 ABI, all-double args in xmm0..xmm3 (+caller stack for 5-6);
-	   spill to argv[] (doubles) and call mccjit_kgc_calln_fp with nargs/flagged
-	   on the stack above the 32-byte shadow. Frame 0x60 as in kgc_stub_n. */
-	p[o++] = 0xc9;                                       /* leave */
-	p[o++] = 0x55;                                       /* push rbp */
-	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60; /* sub rsp,0x60 */
+	p[o++] = 0xc9;
+	p[o++] = 0x55;
+	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60;
 	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 		unsigned char disp = (unsigned char)(0x30 + i * 8);
 		if (i < 4) { MCC_TRACE("br\n");
 			p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11;
 			p[o++] = (unsigned char)(0x44 + i * 8);
 			p[o++] = 0x24;
-			p[o++] = disp;                                   /* movsd [rsp+d], xmm_i */
+			p[o++] = disp;
 		} else { MCC_TRACE("br\n");
 			uint32_t src = 0x90u + (uint32_t)(i - 4) * 8u;
-			p[o++] = 0x48; p[o++] = 0x8b; p[o++] = 0x84; p[o++] = 0x24; /* mov rax,[rsp+disp32] */
+			p[o++] = 0x48; p[o++] = 0x8b; p[o++] = 0x84; p[o++] = 0x24;
 			memcpy(p + o, &src, 4);
 			o += 4;
 			p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24;
-			p[o++] = disp;                                   /* mov [rsp+d], rax */
+			p[o++] = disp;
 		}
 	}
-	p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8; /* mov rcx,kgc */
-	p[o++] = 0x48; p[o++] = 0xba; memcpy(p + o, &variant, 8); o += 8; /* mov rdx,variant */
-	p[o++] = 0x49; p[o++] = 0xb8; memcpy(p + o, &baseline, 8); o += 8; /* mov r8,baseline */
-	p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x30; /* lea r9,[rsp+0x30] */
-	p[o++] = 0xc7; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x20; /* mov dword[rsp+0x20],nargs */
+	p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8;
+	p[o++] = 0x48; p[o++] = 0xba; memcpy(p + o, &variant, 8); o += 8;
+	p[o++] = 0x49; p[o++] = 0xb8; memcpy(p + o, &baseline, 8); o += 8;
+	p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x30;
+	p[o++] = 0xc7; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x20;
 	memcpy(p + o, &nargs, 4); o += 4;
-	p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &fp, 8); o += 8; /* mov rax,flagged */
-	p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x28; /* mov [rsp+0x28],rax */
-	p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8; /* mov rax,calln_fp */
-	p[o++] = 0xff; p[o++] = 0xd0;                        /* call rax */
-	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60; /* add rsp,0x60 */
-	p[o++] = 0x5d;                                       /* pop rbp */
-	p[o++] = 0xc3;                                       /* ret */
+	p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &fp, 8); o += 8;
+	p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x28;
+	p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8;
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
 #else
 	p[o++] = 0xc9;
 	p[o++] = 0x55;
@@ -4301,29 +3965,22 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	*flag = 0;
 	fp = flag;
 #if MCC_HOST_WIN32
-	/* Microsoft x64 ABI. Same mode-6 entry (dispatch did push rbp;mov rbp,rsp,
-	   so `leave` restores the incoming frame) and the same job: spill the GP arg
-	   registers into an argv[] and call mccjit_kgc_calln(k,variant,baseline,argv,
-	   nargs,flagged). But args are rcx/rdx/r8/r9 (+caller stack for 5-6), calln's
-	   5th/6th args (nargs,flagged) go on the stack above the 32-byte shadow, and
-	   rsp must be 16-aligned at the call. Frame (0x60): [0,32) shadow · [32] nargs
-	   · [40] flagged · [48,96) argv. */
 	{
 		static const unsigned char win_st_wide[4][4] = {
-				{0x48, 0x89, 0x4c, 0x24}, /* mov [rsp+d], rcx */
-				{0x48, 0x89, 0x54, 0x24}, /* mov [rsp+d], rdx */
-				{0x4c, 0x89, 0x44, 0x24}, /* mov [rsp+d], r8  */
-				{0x4c, 0x89, 0x4c, 0x24}, /* mov [rsp+d], r9  */
+				{0x48, 0x89, 0x4c, 0x24},
+				{0x48, 0x89, 0x54, 0x24},
+				{0x4c, 0x89, 0x44, 0x24},
+				{0x4c, 0x89, 0x4c, 0x24},
 		};
 		static const unsigned char win_movsxd[4][3] = {
-				{0x48, 0x63, 0xc1}, /* movsxd rax, ecx */
-				{0x48, 0x63, 0xc2}, /* movsxd rax, edx */
-				{0x49, 0x63, 0xc0}, /* movsxd rax, r8d */
-				{0x49, 0x63, 0xc1}, /* movsxd rax, r9d */
+				{0x48, 0x63, 0xc1},
+				{0x48, 0x63, 0xc2},
+				{0x49, 0x63, 0xc0},
+				{0x49, 0x63, 0xc1},
 		};
-		p[o++] = 0xc9;                                       /* leave */
-		p[o++] = 0x55;                                       /* push rbp */
-		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60; /* sub rsp,0x60 */
+		p[o++] = 0xc9;
+		p[o++] = 0x55;
+		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60;
 		for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 			unsigned char disp = (unsigned char)(0x30 + i * 8);
 			int wide = mccjit_type_wide((int)param_t[i]);
@@ -4336,32 +3993,31 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 					memcpy(p + o, win_movsxd[i], 3);
 					o += 3;
 					p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24;
-					p[o++] = disp; /* mov [rsp+d], rax */
+					p[o++] = disp;
 				}
 			} else { MCC_TRACE("br\n");
-				/* arg 5,6 arrive on the caller's stack at [rsp+0x90 + (i-4)*8]. */
 				uint32_t src = 0x90u + (uint32_t)(i - 4) * 8u;
 				p[o++] = 0x48; p[o++] = wide ? 0x8b : 0x63;
-				p[o++] = 0x84; p[o++] = 0x24; /* rax <- (movsxd|mov) [rsp+disp32] */
+				p[o++] = 0x84; p[o++] = 0x24;
 				memcpy(p + o, &src, 4);
 				o += 4;
 				p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24;
-				p[o++] = disp; /* mov [rsp+d], rax */
+				p[o++] = disp;
 			}
 		}
-		p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8; /* mov rcx,kgc */
-		p[o++] = 0x48; p[o++] = 0xba; memcpy(p + o, &variant, 8); o += 8; /* mov rdx,variant */
-		p[o++] = 0x49; p[o++] = 0xb8; memcpy(p + o, &baseline, 8); o += 8; /* mov r8,baseline */
-		p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x30; /* lea r9,[rsp+0x30] */
-		p[o++] = 0xc7; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x20; /* mov dword[rsp+0x20],nargs */
+		p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8;
+		p[o++] = 0x48; p[o++] = 0xba; memcpy(p + o, &variant, 8); o += 8;
+		p[o++] = 0x49; p[o++] = 0xb8; memcpy(p + o, &baseline, 8); o += 8;
+		p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x30;
+		p[o++] = 0xc7; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x20;
 		memcpy(p + o, &nargs, 4); o += 4;
-		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &fp, 8); o += 8; /* mov rax,flagged */
-		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x28; /* mov [rsp+0x28],rax */
-		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8; /* mov rax,calln */
-		p[o++] = 0xff; p[o++] = 0xd0;                        /* call rax */
-		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60; /* add rsp,0x60 */
-		p[o++] = 0x5d;                                       /* pop rbp */
-		p[o++] = 0xc3;                                       /* ret */
+		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &fp, 8); o += 8;
+		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x28;
+		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8;
+		p[o++] = 0xff; p[o++] = 0xd0;
+		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60;
+		p[o++] = 0x5d;
+		p[o++] = 0xc3;
 	}
 #else
 	p[o++] = 0xc9;
@@ -4425,25 +4081,10 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	return p;
 }
 
-/* K4A/L12A mixed stub: spill ALL 6 GP arg regs to gpv[0..5] and ALL 8 XMM to
-   fpv[0..7] (uniform, no per-arg logic — SysV's independent GP/SSE counters mean
-   gpv[k]/fpv[k] are exactly the k-th arg of that class), then call the mixed
-   verify calln (i or d by the return class). Leading `leave` is the dispatch-only
-   entry quirk shared with the GP/FP stubs. The kgc immediate is patched at
-   offset 88, the calln address at offset 106 (both movabs-loaded). */
 static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
 																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
 #if MCC_HOST_WIN32
-	/* Win64 positional mixed stub. Entered AS the recompiled function, so the args
-	   are already in the Win64 register slots: position N in (rcx/rdx/r8/r9)[N] if
-	   GP or (xmm0..3)[N] if FP. Spill BOTH files positionally into gp[4]/fp[4],
-	   then call the shared C verifier calln_mixed_{i,d}(kgc, gp, fp) — which keys
-	   by class bitmask and re-issues the call through the positional reload thunk.
-	   Only the 4 register-arg slots are captured, so >4 args bail to the AOT
-	   baseline. `leave` is the mode-6 dispatch-entry quirk (dispatch did push rbp;
-	   mov rbp,rsp). Frame 0x60: [0,0x20) callee shadow · [0x20,0x40) gp[4] ·
-	   [0x40,0x60) fp[4]. */
 	{
 		unsigned char *p;
 		MccjitKgc *kgc;
@@ -4453,7 +4094,7 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 		uint32_t nargs = ngp + nsse, argclass = 0, qi;
 		size_t o = 0;
 		if (nargs < 1 || nargs > 4)
-			{ MCC_TRACE("br\n"); return NULL; } /* >4 => stack args, unsupported */
+			{ MCC_TRACE("br\n"); return NULL; }
 		if (!mccjit_mixed_thunk_get())
 			{ MCC_TRACE("br\n"); return NULL; }
 		for (qi = 0; qi < nargs && qi < MCCJIT_KGC_MAXARG; qi++)
@@ -4485,25 +4126,25 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 		flag = (int *)(p + 256);
 		*flag = 0;
 		kgc->mx_flag = flag;
-		p[o++] = 0xc9;                                              /* leave */
-		p[o++] = 0x55;                                              /* push rbp */
-		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60; /* sub rsp,0x60 */
-		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x20; /* mov [rsp+0x20],rcx */
-		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x28; /* mov [rsp+0x28],rdx */
-		p[o++] = 0x4c; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x30; /* mov [rsp+0x30],r8 */
-		p[o++] = 0x4c; p[o++] = 0x89; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x38; /* mov [rsp+0x38],r9 */
-		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x40; /* movsd [rsp+0x40],xmm0 */
-		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x48; /* movsd [rsp+0x48],xmm1 */
-		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x50; /* movsd [rsp+0x50],xmm2 */
-		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x5c; p[o++] = 0x24; p[o++] = 0x58; /* movsd [rsp+0x58],xmm3 */
-		p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8;              /* mov rcx,kgc */
-		p[o++] = 0x48; p[o++] = 0x8d; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x20; /* lea rdx,[rsp+0x20] */
-		p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x40; /* lea r8,[rsp+0x40] */
-		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8;            /* mov rax,calln */
-		p[o++] = 0xff; p[o++] = 0xd0;                              /* call rax */
-		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60; /* add rsp,0x60 */
-		p[o++] = 0x5d;                                             /* pop rbp */
-		p[o++] = 0xc3;                                             /* ret */
+		p[o++] = 0xc9;
+		p[o++] = 0x55;
+		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xec; p[o++] = 0x60;
+		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x20;
+		p[o++] = 0x48; p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x28;
+		p[o++] = 0x4c; p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x30;
+		p[o++] = 0x4c; p[o++] = 0x89; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x38;
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x40;
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x4c; p[o++] = 0x24; p[o++] = 0x48;
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x50;
+		p[o++] = 0xf2; p[o++] = 0x0f; p[o++] = 0x11; p[o++] = 0x5c; p[o++] = 0x24; p[o++] = 0x58;
+		p[o++] = 0x48; p[o++] = 0xb9; memcpy(p + o, &kgc, 8); o += 8;
+		p[o++] = 0x48; p[o++] = 0x8d; p[o++] = 0x54; p[o++] = 0x24; p[o++] = 0x20;
+		p[o++] = 0x4c; p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 0x40;
+		p[o++] = 0x48; p[o++] = 0xb8; memcpy(p + o, &calln, 8); o += 8;
+		p[o++] = 0xff; p[o++] = 0xd0;
+		p[o++] = 0x48; p[o++] = 0x83; p[o++] = 0xc4; p[o++] = 0x60;
+		p[o++] = 0x5d;
+		p[o++] = 0xc3;
 		return p;
 	}
 #else
@@ -4597,27 +4238,27 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 		mcc_free(flag);
 		return NULL;
 	}
-	MCCJIT_A64_W(0xa9bf7bfdu); /* stp x29,x30,[sp,#-16]! */
-	MCCJIT_A64_W(0xd100c3ffu); /* sub sp,sp,#48 */
+	MCCJIT_A64_W(0xa9bf7bfdu);
+	MCCJIT_A64_W(0xd100c3ffu);
 	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 		if (mccjit_type_wide((int)param_t[i]))
-			{ MCC_TRACE("br\n"); MCCJIT_A64_W(0xf90003e0u | (i << 10) | i); } /* str x_i,[sp,#i*8] */
+			{ MCC_TRACE("br\n"); MCCJIT_A64_W(0xf90003e0u | (i << 10) | i); }
 		else { MCC_TRACE("br\n");
-			MCCJIT_A64_W(0x93407c00u | (i << 5) | 8); /* sxtw x8,w_i */
-			MCCJIT_A64_W(0xf90003e8u | (i << 10));    /* str x8,[sp,#i*8] */
+			MCCJIT_A64_W(0x93407c00u | (i << 5) | 8);
+			MCCJIT_A64_W(0xf90003e8u | (i << 10));
 		}
 	}
-	MCCJIT_A64_LDR(0, D + 0);  /* ldr x0,[kgc] */
-	MCCJIT_A64_LDR(1, D + 8);  /* ldr x1,[variant] */
-	MCCJIT_A64_LDR(2, D + 16); /* ldr x2,[baseline] */
-	MCCJIT_A64_W(0x910003e3u); /* mov x3,sp */
-	MCCJIT_A64_W(0x52800004u | (nargs << 5)); /* mov w4,#nargs */
-	MCCJIT_A64_LDR(5, D + 24);  /* ldr x5,[&flag] */
-	MCCJIT_A64_LDR(16, D + 32); /* ldr x16,[verify] */
-	MCCJIT_A64_W(0xd63f0200u);  /* blr x16 */
-	MCCJIT_A64_W(0x9100c3ffu);  /* add sp,sp,#48 */
-	MCCJIT_A64_W(0xa8c17bfdu);  /* ldp x29,x30,[sp],#16 */
-	MCCJIT_A64_W(0xd65f03c0u);  /* ret */
+	MCCJIT_A64_LDR(0, D + 0);
+	MCCJIT_A64_LDR(1, D + 8);
+	MCCJIT_A64_LDR(2, D + 16);
+	MCCJIT_A64_W(0x910003e3u);
+	MCCJIT_A64_W(0x52800004u | (nargs << 5));
+	MCCJIT_A64_LDR(5, D + 24);
+	MCCJIT_A64_LDR(16, D + 32);
+	MCCJIT_A64_W(0xd63f0200u);
+	MCCJIT_A64_W(0x9100c3ffu);
+	MCCJIT_A64_W(0xa8c17bfdu);
+	MCCJIT_A64_W(0xd65f03c0u);
 	*flag = 0;
 	flagaddr = (uint64_t)(uintptr_t)flag;
 	kp = (uint64_t)(uintptr_t)kgc;
@@ -4671,22 +4312,22 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 		mcc_free(flag);
 		return NULL;
 	}
-	MCCJIT_A64_W(0xa9bf7bfdu); /* stp x29,x30,[sp,#-16]! */
-	MCCJIT_A64_W(0xd100c3ffu); /* sub sp,sp,#48 */
+	MCCJIT_A64_W(0xa9bf7bfdu);
+	MCCJIT_A64_W(0xd100c3ffu);
 	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
-		MCCJIT_A64_W(0xfd0003e0u | (i << 10) | i); /* str d_i,[sp,#i*8] */
+		MCCJIT_A64_W(0xfd0003e0u | (i << 10) | i);
 	}
-	MCCJIT_A64_LDR(0, D + 0);  /* ldr x0,[kgc] */
-	MCCJIT_A64_LDR(1, D + 8);  /* ldr x1,[variant] */
-	MCCJIT_A64_LDR(2, D + 16); /* ldr x2,[baseline] */
-	MCCJIT_A64_W(0x910003e3u); /* mov x3,sp (argv of doubles by pointer) */
-	MCCJIT_A64_W(0x52800004u | (nargs << 5)); /* mov w4,#nargs */
-	MCCJIT_A64_LDR(5, D + 24);  /* ldr x5,[&flag] */
-	MCCJIT_A64_LDR(16, D + 32); /* ldr x16,[verify] */
-	MCCJIT_A64_W(0xd63f0200u);  /* blr x16 */
-	MCCJIT_A64_W(0x9100c3ffu);  /* add sp,sp,#48 */
-	MCCJIT_A64_W(0xa8c17bfdu);  /* ldp x29,x30,[sp],#16 */
-	MCCJIT_A64_W(0xd65f03c0u);  /* ret */
+	MCCJIT_A64_LDR(0, D + 0);
+	MCCJIT_A64_LDR(1, D + 8);
+	MCCJIT_A64_LDR(2, D + 16);
+	MCCJIT_A64_W(0x910003e3u);
+	MCCJIT_A64_W(0x52800004u | (nargs << 5));
+	MCCJIT_A64_LDR(5, D + 24);
+	MCCJIT_A64_LDR(16, D + 32);
+	MCCJIT_A64_W(0xd63f0200u);
+	MCCJIT_A64_W(0x9100c3ffu);
+	MCCJIT_A64_W(0xa8c17bfdu);
+	MCCJIT_A64_W(0xd65f03c0u);
 	*flag = 0;
 	flagaddr = (uint64_t)(uintptr_t)flag;
 	kp = (uint64_t)(uintptr_t)kgc;
@@ -4752,22 +4393,22 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 	}
 	*flag = 0;
 	kgc->mx_flag = flag;
-	MCCJIT_A64_W(0xa9bf7bfdu); /* stp x29,x30,[sp,#-16]! */
-	MCCJIT_A64_W(0xd10183ffu); /* sub sp,sp,#96 */
+	MCCJIT_A64_W(0xa9bf7bfdu);
+	MCCJIT_A64_W(0xd10183ffu);
 	for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
-		MCCJIT_A64_W(0xf90003e0u | (i << 10) | i); /* str x_i,[sp,#i*8] */
+		MCCJIT_A64_W(0xf90003e0u | (i << 10) | i);
 	}
 	for (i = 0; i < 6; i++) { MCC_TRACE("br\n");
-		MCCJIT_A64_W(0xfd0003e0u | ((6 + i) << 10) | i); /* str d_i,[sp,#(6+i)*8] */
+		MCCJIT_A64_W(0xfd0003e0u | ((6 + i) << 10) | i);
 	}
-	MCCJIT_A64_LDR(0, D + 0);  /* ldr x0,[kgc] */
-	MCCJIT_A64_W(0x910003e1u);  /* mov x1,sp (gpv) */
-	MCCJIT_A64_W(0x9100c3e2u);  /* add x2,sp,#48 (fpv) */
-	MCCJIT_A64_LDR(16, D + 8); /* ldr x16,[calln] */
-	MCCJIT_A64_W(0xd63f0200u);  /* blr x16 */
-	MCCJIT_A64_W(0x910183ffu);  /* add sp,sp,#96 */
-	MCCJIT_A64_W(0xa8c17bfdu);  /* ldp x29,x30,[sp],#16 */
-	MCCJIT_A64_W(0xd65f03c0u);  /* ret */
+	MCCJIT_A64_LDR(0, D + 0);
+	MCCJIT_A64_W(0x910003e1u);
+	MCCJIT_A64_W(0x9100c3e2u);
+	MCCJIT_A64_LDR(16, D + 8);
+	MCCJIT_A64_W(0xd63f0200u);
+	MCCJIT_A64_W(0x910183ffu);
+	MCCJIT_A64_W(0xa8c17bfdu);
+	MCCJIT_A64_W(0xd65f03c0u);
 	kp = (uint64_t)(uintptr_t)kgc;
 	cp = (uint64_t)(uintptr_t)calln;
 	memcpy(p + D + 0, &kp, 8);
@@ -4784,34 +4425,16 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 #undef MCCJIT_A64_W
 #undef MCCJIT_A64_LDR
 #elif defined(MCCJIT_I386)
-/* --------------------------------------------------------------- i386 tail --
-   Hand-emitted i386 (cdecl) KGC verify-stub / dispatch tail — the "FP(x87)/
-   mixed" promotion path for the 32-bit x86 target (i386-PE on Windows, and the
-   Linux i386 gap). Behind the MCC_JIT_I386_STUBS runtime gate: with the gate
-   off every builder returns NULL, exactly as the pre-existing non-x86_64 stub
-   (default byte-identity preserved).
 
-   ABI recap (System V i386 == Win32 cdecl for these plain scalar signatures):
-   all args on the stack; int/long/pointer are 4 bytes, long long/double are 8;
-   an int return comes back in eax, a 64-bit (long long) return in edx:eax, and
-   a floating return in st(0). The stub is entered via the mode-6 dispatch slot
-   (`push ebp; mov ebp,esp; jmp *slot`), so it opens with `leave` to undo that
-   frame; the selftests enter at stub+1 (past the leave) to drive it as an
-   ordinary cdecl function. The divergence flag is parked at stub+256. */
-
-/* i386 stack width of a scalar arg: 8 bytes only for long long / double, 4
-   otherwise (unlike mccjit_type_wide, which is 64-bit-host oriented and calls
-   VT_PTR "wide"). */
 static int mccjit_i386_arg8(int t) { MCC_TRACE("enter\n");
 	int b = t & VT_BTYPE;
 	if (b == VT_LLONG || b == VT_DOUBLE)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (b == VT_INT && (t & VT_LONG))
-		{ MCC_TRACE("br\n"); return 0; } /* i386 long is 4 bytes */
+		{ MCC_TRACE("br\n"); return 0; }
 	return 0;
 }
 
-/* Emit `mov dword [esp+d8], imm32`. */
 #define MCCJIT_I386_MOVMI(d8, imm)             \
 	do { MCC_TRACE("br\n");                       \
 		uint32_t imm_ = (uint32_t)(uintptr_t)(imm); \
@@ -4828,8 +4451,8 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	void *calln = (void *)mccjit_kgc_calln;
 	size_t o = 0;
 	uint32_t i;
-	int src;                 /* byte offset of the next incoming arg (from ebp+8) */
-	const int ARGV = 24;     /* [esp+ARGV .. ) = int64 argv[] */
+	int src;
+	const int ARGV = 24;
 	if (!mccjit_i386_stubs_enabled())
 		{ MCC_TRACE("br\n"); return NULL; }
 	if (nargs < 1 || nargs > MCCJIT_KGC_MAXARG)
@@ -4852,46 +4475,41 @@ static void *mccjit_make_kgc_stub_n(void *variant, void *baseline, int memoize_o
 	}
 	flag = (int *)(p + 256);
 	*flag = 0;
-	p[o++] = 0xc9;                                  /* leave */
-	p[o++] = 0x55;                                  /* push ebp */
-	p[o++] = 0x89; p[o++] = 0xe5;                   /* mov ebp, esp */
-	p[o++] = 0x81; p[o++] = 0xec;                   /* sub esp, imm32 */
+	p[o++] = 0xc9;
+	p[o++] = 0x55;
+	p[o++] = 0x89; p[o++] = 0xe5;
+	p[o++] = 0x81; p[o++] = 0xec;
 	{ uint32_t fr = (uint32_t)(ARGV + 8 * MCCJIT_KGC_MAXARG + 16);
 		memcpy(p + o, &fr, 4); o += 4; }
-	/* Spill each incoming GP arg into argv[i] (int64 slot). 32-bit args are
-	   sign-extended into edx:eax then stored; 64-bit (long long) args are copied
-	   as two dwords. mccjit_invoke re-truncates to `long` (4 bytes) so the high
-	   half of a widened 32-bit arg is harmless. */
-	src = 8; /* [ebp+8] = arg0 */
+	src = 8;
 	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 		int d = ARGV + (int)i * 8;
 		if (mccjit_i386_arg8((int)param_t[i])) { MCC_TRACE("br\n");
-			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)src;       /* mov eax,[ebp+src] */
-			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d; /* mov [esp+d],eax */
-			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(src + 4); /* mov eax,[ebp+src+4] */
-			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4); /* mov [esp+d+4],eax */
+			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)src;
+			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d;
+			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(src + 4);
+			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4);
 			src += 8;
 		} else { MCC_TRACE("br\n");
-			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)src;       /* mov eax,[ebp+src] */
-			p[o++] = 0x99;                                                   /* cdq (eax->edx:eax) */
-			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d; /* mov [esp+d],eax */
-			p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4); /* mov [esp+d+4],edx */
+			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)src;
+			p[o++] = 0x99;
+			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d;
+			p[o++] = 0x89; p[o++] = 0x54; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4);
 			src += 4;
 		}
 	}
-	/* Outgoing cdecl call: calln(kgc, variant, baseline, argv, nargs, flag). */
 	MCCJIT_I386_MOVMI(0, kgc);
 	MCCJIT_I386_MOVMI(4, variant);
 	MCCJIT_I386_MOVMI(8, baseline);
-	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)ARGV; /* lea eax,[esp+ARGV] */
-	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 12;                  /* mov [esp+12],eax */
+	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)ARGV;
+	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 12;
 	MCCJIT_I386_MOVMI(16, nargs);
 	MCCJIT_I386_MOVMI(20, flag);
-	p[o++] = 0xb8; { uint32_t c = (uint32_t)(uintptr_t)calln; memcpy(p + o, &c, 4); o += 4; } /* mov eax,calln */
-	p[o++] = 0xff; p[o++] = 0xd0;                   /* call eax */
-	p[o++] = 0x89; p[o++] = 0xec;                   /* mov esp, ebp */
-	p[o++] = 0x5d;                                  /* pop ebp */
-	p[o++] = 0xc3;                                  /* ret */
+	p[o++] = 0xb8; { uint32_t c = (uint32_t)(uintptr_t)calln; memcpy(p + o, &c, 4); o += 4; }
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x89; p[o++] = 0xec;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
 	return p;
 }
 
@@ -4903,7 +4521,7 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	void *calln = (void *)mccjit_kgc_calln_fp;
 	size_t o = 0;
 	uint32_t i;
-	const int ARGV = 24; /* [esp+ARGV ..) = double argv[] (8 bytes each) */
+	const int ARGV = 24;
 	if (!mccjit_i386_stubs_enabled())
 		{ MCC_TRACE("br\n"); return NULL; }
 	if (nargs < 1 || nargs > MCCJIT_KGC_MAXARG)
@@ -4926,44 +4544,35 @@ static void *mccjit_make_kgc_stub_fp(void *variant, void *baseline,
 	}
 	flag = (int *)(p + 256);
 	*flag = 0;
-	p[o++] = 0xc9;                                  /* leave */
-	p[o++] = 0x55;                                  /* push ebp */
-	p[o++] = 0x89; p[o++] = 0xe5;                   /* mov ebp, esp */
-	p[o++] = 0x81; p[o++] = 0xec;                   /* sub esp, imm32 */
+	p[o++] = 0xc9;
+	p[o++] = 0x55;
+	p[o++] = 0x89; p[o++] = 0xe5;
+	p[o++] = 0x81; p[o++] = 0xec;
 	{ uint32_t fr = (uint32_t)(ARGV + 8 * MCCJIT_KGC_MAXARG + 16);
 		memcpy(p + o, &fr, 4); o += 4; }
-	/* All-double args: each occupies 8 stack bytes at [ebp+8+i*8]; copy verbatim
-	   into the double argv[] as two dwords. */
 	for (i = 0; i < nargs; i++) { MCC_TRACE("br\n");
 		int s = 8 + (int)i * 8;
 		int d = ARGV + (int)i * 8;
-		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)s;           /* mov eax,[ebp+s] */
+		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)s;
 		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d;
-		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(s + 4);     /* mov eax,[ebp+s+4] */
+		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(s + 4);
 		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4);
 	}
 	MCCJIT_I386_MOVMI(0, kgc);
 	MCCJIT_I386_MOVMI(4, variant);
 	MCCJIT_I386_MOVMI(8, baseline);
-	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)ARGV; /* lea eax,[esp+ARGV] */
-	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 12;                  /* mov [esp+12],eax */
+	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)ARGV;
+	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 12;
 	MCCJIT_I386_MOVMI(16, nargs);
 	MCCJIT_I386_MOVMI(20, flag);
 	p[o++] = 0xb8; { uint32_t c = (uint32_t)(uintptr_t)calln; memcpy(p + o, &c, 4); o += 4; }
-	p[o++] = 0xff; p[o++] = 0xd0;                   /* call eax (returns double in st(0)) */
-	p[o++] = 0x89; p[o++] = 0xec;                   /* mov esp, ebp */
-	p[o++] = 0x5d;                                  /* pop ebp */
-	p[o++] = 0xc3;                                  /* ret */
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x89; p[o++] = 0xec;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
 	return p;
 }
 
-/* Per-signature i386 cdecl reconstruction thunk. Signature:
-     int64_t/double thunk(void *fn, const int64_t *gp, const double *fp)
-   (fn=[ebp+8], gp=[ebp+12], fp=[ebp+16]). It rebuilds the positional cdecl
-   arg image on the stack (position pos comes from fp[pos] if argclass bit pos
-   is set, else gp[pos]; 8 bytes if argsz bit pos is set, else the low 4 bytes)
-   and calls fn. cdecl callee returns int in eax / int64 in edx:eax / double in
-   st(0), which is exactly what this thunk returns to calln_mixed_{i,d}. */
 static void *mccjit_i386_mixed_thunk_build(uint32_t nargs, uint32_t argclass,
 																					 uint32_t argsz) { MCC_TRACE("enter\n");
 	unsigned char *p;
@@ -4975,28 +4584,27 @@ static void *mccjit_i386_mixed_thunk_build(uint32_t nargs, uint32_t argclass,
 	for (pos = 0; pos < nargs; pos++)
 		{ MCC_TRACE("br\n"); stksz += (argsz & (1u << pos)) ? 8 : 4; }
 	if (stksz & 15)
-		{ MCC_TRACE("br\n"); stksz = (stksz + 15) & ~15; } /* keep esp 16-aligned at call */
+		{ MCC_TRACE("br\n"); stksz = (stksz + 15) & ~15; }
 	p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return NULL; }
-	p[o++] = 0x55;                                  /* push ebp */
-	p[o++] = 0x89; p[o++] = 0xe5;                   /* mov ebp, esp */
-	p[o++] = 0x56;                                  /* push esi */
-	p[o++] = 0x57;                                  /* push edi */
-	p[o++] = 0x81; p[o++] = 0xec;                   /* sub esp, stksz (outgoing args) */
+	p[o++] = 0x55;
+	p[o++] = 0x89; p[o++] = 0xe5;
+	p[o++] = 0x56;
+	p[o++] = 0x57;
+	p[o++] = 0x81; p[o++] = 0xec;
 	{ uint32_t fr = (uint32_t)stksz; memcpy(p + o, &fr, 4); o += 4; }
-	p[o++] = 0x8b; p[o++] = 0x75; p[o++] = 12;      /* mov esi,[ebp+12] (gp) */
-	p[o++] = 0x8b; p[o++] = 0x7d; p[o++] = 16;      /* mov edi,[ebp+16] (fp) */
+	p[o++] = 0x8b; p[o++] = 0x75; p[o++] = 12;
+	p[o++] = 0x8b; p[o++] = 0x7d; p[o++] = 16;
 	{ int out = 0; for (pos = 0; pos < nargs; pos++) { MCC_TRACE("br\n");
 		int fp_arg = (argclass & (1u << pos)) != 0;
 		int wide8 = (argsz & (1u << pos)) != 0;
-		unsigned char reg = fp_arg ? 0x7f : 0x7e;     /* modrm base: edi(fp)=111, esi(gp)=110 */
-		int soff = (int)pos * 8;                      /* both files are 8-byte-slotted */
-		/* mov eax,[reg+soff]; mov [esp+out],eax */
-		p[o++] = 0x8b; p[o++] = (unsigned char)(0x80 | (reg & 7)); /* mov eax,[base+disp32] */
+		unsigned char reg = fp_arg ? 0x7f : 0x7e;
+		int soff = (int)pos * 8;
+		p[o++] = 0x8b; p[o++] = (unsigned char)(0x80 | (reg & 7));
 		{ uint32_t d = (uint32_t)soff; memcpy(p + o, &d, 4); o += 4; }
-		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)out; /* mov [esp+out],eax */
+		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)out;
 		out += 4;
 		if (wide8) { MCC_TRACE("br\n");
 			p[o++] = 0x8b; p[o++] = (unsigned char)(0x80 | (reg & 7));
@@ -5005,22 +4613,16 @@ static void *mccjit_i386_mixed_thunk_build(uint32_t nargs, uint32_t argclass,
 			out += 4;
 		}
 	} }
-	p[o++] = 0x8b; p[o++] = 0x45; p[o++] = 8;       /* mov eax,[ebp+8] (fn) */
-	p[o++] = 0xff; p[o++] = 0xd0;                   /* call eax */
-	p[o++] = 0x8d; p[o++] = 0x65; p[o++] = 0xf8;    /* lea esp,[ebp-8] (restore, drop args) */
-	p[o++] = 0x5f;                                  /* pop edi */
-	p[o++] = 0x5e;                                  /* pop esi */
-	p[o++] = 0x5d;                                  /* pop ebp */
-	p[o++] = 0xc3;                                  /* ret */
+	p[o++] = 0x8b; p[o++] = 0x45; p[o++] = 8;
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x8d; p[o++] = 0x65; p[o++] = 0xf8;
+	p[o++] = 0x5f;
+	p[o++] = 0x5e;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
 	return p;
 }
 
-/* i386 mixed GP+FP: the incoming args are a positional cdecl stack image
-   (GP=4/8 bytes, double=8). We spill them into two positional files gp[4]/fp[4]
-   (each 8-byte slots, matching the Win64 positional convention the C verifier
-   calln_mixed_{i,d} already implements) and call it with (kgc, gp, fp). An int
-   return comes back in edx:eax; a double return in st(0). >4 args, or the calln
-   thunk being unavailable, bails to the AOT baseline (NULL). */
 static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 																				int memoize_ok, uint32_t ngp,
 																				uint32_t nsse, int ret_fp, int ret_wide) { MCC_TRACE("enter\n");
@@ -5033,8 +4635,8 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 	void *thunk;
 	size_t o = 0;
 	int src;
-	const int GP = 12;       /* [esp+GP ..)  gp[4] positional (8 bytes each) */
-	const int FP = GP + 32;  /* [esp+FP ..)  fp[4] positional (8 bytes each) */
+	const int GP = 12;
+	const int FP = GP + 32;
 	if (!mccjit_i386_stubs_enabled())
 		{ MCC_TRACE("br\n"); return NULL; }
 	if (nargs < 1 || nargs > 4)
@@ -5077,47 +4679,42 @@ static void *mccjit_make_kgc_stub_mixed(void *variant, void *baseline,
 	flag = (int *)(p + 256);
 	*flag = 0;
 	kgc->mx_flag = flag;
-	p[o++] = 0xc9;                                  /* leave */
-	p[o++] = 0x55;                                  /* push ebp */
-	p[o++] = 0x89; p[o++] = 0xe5;                   /* mov ebp, esp */
-	p[o++] = 0x81; p[o++] = 0xec;                   /* sub esp, imm32 */
+	p[o++] = 0xc9;
+	p[o++] = 0x55;
+	p[o++] = 0x89; p[o++] = 0xe5;
+	p[o++] = 0x81; p[o++] = 0xec;
 	{ uint32_t fr = (uint32_t)(FP + 32 + 16);
 		memcpy(p + o, &fr, 4); o += 4; }
-	/* Zero gp[4]/fp[4] first (unused positions carry harmless garbage otherwise,
-	   but the C keyer reads mx_nargs slots so only used ones matter — still, zero
-	   for determinism). */
-	p[o++] = 0x31; p[o++] = 0xc0;                   /* xor eax,eax */
+	p[o++] = 0x31; p[o++] = 0xc0;
 	{ int z; for (z = 0; z < 8; z++) { MCC_TRACE("br\n");
 		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)(GP + z * 8);
 		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)(GP + z * 8 + 4);
 	} }
-	/* Positional spill: for each arg position, copy its stack image into gp[pos]
-	   or fp[pos] verbatim (8 bytes for double/long long, else 4 + zero-fill). */
 	src = 8;
 	for (qi = 0; qi < nargs; qi++) { MCC_TRACE("br\n");
 		int fp_arg = (argclass & (1u << qi)) != 0;
 		int wide8 = mccjit_i386_arg8((int)mccjit_last_param_t[qi]);
 		int d = (fp_arg ? FP : GP) + (int)qi * 8;
-		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)src;         /* mov eax,[ebp+src] */
+		p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)src;
 		p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)d;
 		if (wide8) { MCC_TRACE("br\n");
-			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(src + 4); /* mov eax,[ebp+src+4] */
+			p[o++] = 0x8b; p[o++] = 0x45; p[o++] = (unsigned char)(src + 4);
 			p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)(d + 4);
 			src += 8;
 		} else { MCC_TRACE("br\n");
-			src += 4; /* high dword already zeroed above */
+			src += 4;
 		}
 	}
 	MCCJIT_I386_MOVMI(0, kgc);
-	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)GP; /* lea eax,[esp+GP] */
-	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 4;                 /* mov [esp+4],eax */
-	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)FP; /* lea eax,[esp+FP] */
-	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 8;                 /* mov [esp+8],eax */
+	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)GP;
+	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 4;
+	p[o++] = 0x8d; p[o++] = 0x44; p[o++] = 0x24; p[o++] = (unsigned char)FP;
+	p[o++] = 0x89; p[o++] = 0x44; p[o++] = 0x24; p[o++] = 8;
 	p[o++] = 0xb8; { uint32_t c = (uint32_t)(uintptr_t)calln; memcpy(p + o, &c, 4); o += 4; }
-	p[o++] = 0xff; p[o++] = 0xd0;                   /* call eax */
-	p[o++] = 0x89; p[o++] = 0xec;                   /* mov esp, ebp */
-	p[o++] = 0x5d;                                  /* pop ebp */
-	p[o++] = 0xc3;                                  /* ret */
+	p[o++] = 0xff; p[o++] = 0xd0;
+	p[o++] = 0x89; p[o++] = 0xec;
+	p[o++] = 0x5d;
+	p[o++] = 0xc3;
 	return p;
 }
 #undef MCCJIT_I386_MOVMI
@@ -5264,7 +4861,7 @@ PUB_FUNC int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 
 	{
 #if MCC_HOST_WIN32
-		char path[] = "mccjit_kgc_XXXXXX"; /* CWD (build/test dir); no /tmp on Win32 */
+		char path[] = "mccjit_kgc_XXXXXX";
 #else
 		char path[] = "/tmp/mccjit_kgc_XXXXXX";
 #endif
@@ -5332,7 +4929,6 @@ PUB_FUNC int mccjit_selftest_kgc(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
-/* Compile one `int NAME(int){...}` to a callable pointer; keeps its state alive. */
 static void *mccjit_nm_compile(const char *src, const char *name, MCCState **out) { MCC_TRACE("enter\n");
 	MCCState *s = mcc_new();
 	void *fn = NULL;
@@ -5349,8 +4945,6 @@ static void *mccjit_nm_compile(const char *src, const char *name, MCCState **out
 	return fn;
 }
 
-/* Drive `calls` through a KGC with a hot value + a chooser for the off-profile input,
-   asserting EVERY returned value equals the baseline (soundness). Returns wrong count. */
 static int mccjit_nm_drive(MccjitKgc *k, void *variant, int (*baseline)(int),
 													 int calls, int period, const int64_t *offv, int noff,
 													 int distinct) { MCC_TRACE("enter\n");
@@ -5368,9 +4962,6 @@ static int mccjit_nm_drive(MccjitKgc *k, void *variant, int (*baseline)(int),
 	return wrong;
 }
 
-/* All-double analogue of mccjit_nm_drive: drives calls through mccjit_kgc_calln_fp
-   with a hot value (7.0) + off-profile doubles, asserting EVERY returned double is
-   bit-identical to the baseline (soundness). Returns wrong count. */
 static int mccjit_nm_drive_fp(MccjitKgc *k, void *variant, void *baseline,
 															double (*base_fn)(double), int calls, int period,
 															const double *offv, int noff) { MCC_TRACE("enter\n");
@@ -5389,29 +4980,15 @@ static int mccjit_nm_drive_fp(MccjitKgc *k, void *variant, void *baseline,
 	return wrong;
 }
 
-/* K-patch near-match selftest for the DEFAULT-ON, benchmark-gated feature. Scenarios:
-   ACCEPT  — expensive baseline + a cheap constant variant that agrees only on the hot
-             value x==7: small mismatch set + benchmarks faster -> KEPT, mismatches
-             patched, zero wrong results.
-   OFF     — MCC_JIT_NEARMATCH disabled -> dormant (no corrections, never accepted).
-   SLOW    — cheap baseline + a slower variant: mismatch set small but the bench says
-             it is NOT faster -> rejected (poisoned).
-   BIGTABLE— cheap-enough variant but the mismatch set overflows the small-jump-table
-             budget -> rejected (poisoned).
-   FPACCEPT— the ACCEPT scenario for the ALL-DOUBLE path: an expensive double baseline
-             + a cheap constant double variant driven through mccjit_kgc_calln_fp; the
-             FP-aware bench (invoke_fp) accepts it and off-profile inputs are patched
-             from raw double bits, every returned double bit-identical to the baseline.
-   All keep returning the correct baseline value on every call. */
 PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
-	int (*base_slow)(int) = NULL; /* expensive baseline */
-	int (*base_fast)(int) = NULL; /* cheap baseline */
-	double (*base_dslow)(double) = NULL; /* expensive all-double baseline */
+	int (*base_slow)(int) = NULL;
+	int (*base_fast)(int) = NULL;
+	double (*base_dslow)(double) = NULL;
 	MCCState *sbs = NULL, *sbf = NULL, *svc = NULL, *svs = NULL;
 	MCCState *sbds = NULL, *svdc = NULL;
-	void *var_const = NULL; /* cheap constant variant (== base_slow only at x==7) */
-	void *var_slow = NULL;  /* slow constant variant  (== base_fast only at x==7) */
-	void *var_dconst = NULL; /* cheap constant double variant (== base_dslow only at 7.0) */
+	void *var_const = NULL;
+	void *var_slow = NULL;
+	void *var_dconst = NULL;
 	MccjitKgc kgc;
 	int fails = 0, wrong;
 	int64_t offv[4] = {5, 0, 3, 100};
@@ -5440,8 +5017,6 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		fails = 1;
 		goto done;
 	}
-	/* All-double baseline (expensive loop) + a cheap constant double variant that
-	   agrees only at the hot value 7.0. %.17g round-trips the constant exactly. */
 	base_dslow = (double (*)(double))mccjit_nm_compile(
 			"double f(double x){double a=x;int k;for(k=0;k<160;k++)a=a*1.0000001+0.5;return a;}",
 			"f", &sbds);
@@ -5456,7 +5031,6 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		goto done;
 	}
 
-	/* ACCEPT: expensive baseline, cheap constant variant, 4 distinct off-profile. */
 	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
 		wrong = mccjit_nm_drive(&kgc, var_const, base_slow, 4000, 50, offv, 4, 0);
 		printf("mccjit-selftest-nearmatch: ACCEPT wrong=%d nearmatch=%d poisoned=%d "
@@ -5480,7 +5054,6 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		mccjit_kgc_close(&kgc);
 	}
 
-	/* OFF: same as ACCEPT but feature disabled -> dormant. */
 	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
 		kgc.nearmatch_on = 0;
 		wrong = mccjit_nm_drive(&kgc, var_const, base_slow, 4000, 50, offv, 4, 0);
@@ -5490,7 +5063,6 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		mccjit_kgc_close(&kgc);
 	}
 
-	/* SLOW: small mismatch set but the variant is slower -> rejected/poisoned. */
 	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
 		wrong = mccjit_nm_drive(&kgc, var_slow, base_fast, 4000, 50, offv, 4, 0);
 		printf("mccjit-selftest-nearmatch: SLOW wrong=%d nearmatch=%d poisoned=%d (expect 0/0/1)\n",
@@ -5499,8 +5071,6 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		mccjit_kgc_close(&kgc);
 	}
 
-	/* BIGTABLE: cheap+fast variant but the mismatch set is large (distinct each call)
-	   -> not a small jump table -> rejected/poisoned. */
 	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
 		wrong = mccjit_nm_drive(&kgc, var_const, base_slow, 4000, 2, offv, 4, 1);
 		printf("mccjit-selftest-nearmatch: BIGTABLE wrong=%d nearmatch=%d poisoned=%d corr=%llu (expect 0/0/1)\n",
@@ -5509,10 +5079,6 @@ PUB_FUNC int mccjit_selftest_nearmatch(void) { MCC_TRACE("enter\n");
 		mccjit_kgc_close(&kgc);
 	}
 
-	/* FPACCEPT: all-double path. Expensive double baseline, cheap constant double
-	   variant, 98/2 hot/off-profile mix (period=50). The FP-aware bench accepts the
-	   variant; off-profile doubles are patched from raw bits; every returned double
-	   is bit-identical to the baseline. ret_wide=1 matches make_kgc_stub_fp. */
 	if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 1) == 0) { MCC_TRACE("br\n");
 		kgc.ret_wide = 1;
 		wrong = mccjit_nm_drive_fp(&kgc, var_dconst, (void *)base_dslow, base_dslow,
@@ -6167,11 +5733,6 @@ static void mccjit_pool_nap(void) { MCC_TRACE("enter\n");
 	nanosleep(&ts, NULL);
 }
 
-/* KGC/trampoline dispatch stubs are dispatch-only: they open with `leave` and
- * must be entered via `jmp *slot` (the mode-6 dispatch convention), never a
- * direct call. This builds a minimal dispatcher — push rbp; mov rbp,rsp; jmp
- * *[slot] — so a test can invoke a published stub through its correct entry.
- * Non-x86_64 hosts fall back to the raw pointer (their stub shapes differ). */
 static void *mccjit_dispatch_entry(void **slot, void *fallback) { MCC_TRACE("enter\n");
 #if defined(MCCJIT_X64)
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
@@ -6179,12 +5740,12 @@ static void *mccjit_dispatch_entry(void **slot, void *fallback) { MCC_TRACE("ent
 	int o = 0;
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return fallback; }
-	p[o++] = 0x55;                                    /* push rbp */
-	p[o++] = 0x48, p[o++] = 0x89, p[o++] = 0xe5;      /* mov rbp, rsp */
-	p[o++] = 0x48, p[o++] = 0xb8;                     /* movabs rax, imm64 */
+	p[o++] = 0x55;
+	p[o++] = 0x48, p[o++] = 0x89, p[o++] = 0xe5;
+	p[o++] = 0x48, p[o++] = 0xb8;
 	memcpy(p + o, &slot, 8), o += 8;
-	p[o++] = 0x48, p[o++] = 0x8b, p[o++] = 0x00;      /* mov rax, [rax] */
-	p[o++] = 0xff, p[o++] = 0xe0;                     /* jmp rax */
+	p[o++] = 0x48, p[o++] = 0x8b, p[o++] = 0x00;
+	p[o++] = 0xff, p[o++] = 0xe0;
 	return p;
 #elif defined(MCCJIT_I386)
 	unsigned char *p;
@@ -6196,12 +5757,12 @@ static void *mccjit_dispatch_entry(void **slot, void *fallback) { MCC_TRACE("ent
 					 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return fallback; }
-	p[o++] = 0x55;                                    /* push ebp */
-	p[o++] = 0x89, p[o++] = 0xe5;                     /* mov ebp, esp */
-	p[o++] = 0xa1;                                    /* mov eax, [slot] */
+	p[o++] = 0x55;
+	p[o++] = 0x89, p[o++] = 0xe5;
+	p[o++] = 0xa1;
 	sp = (uint32_t)(uintptr_t)slot;
 	memcpy(p + o, &sp, 4), o += 4;
-	p[o++] = 0xff, p[o++] = 0xe0;                     /* jmp eax */
+	p[o++] = 0xff, p[o++] = 0xe0;
 	return p;
 #else
 	(void)slot;
@@ -6370,11 +5931,6 @@ PUB_FUNC int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
-/* STEP 3 live-wiring selftest: drive a TIER0-pure int fn through the async pool
-   promote seam under MCC_JIT_SLICE_SEARCH with captured live-ins seeded, so the
-   partial-slice hot path (mccjit_slice_search: ast_slice_search -> kernel wrap ->
-   reemit -> live-in differential verify) actually fires and publishes, and the
-   promoted slice-kernel entry computes correct results. */
 PUB_FUNC int mccjit_selftest_slicelive(void) { MCC_TRACE("enter\n");
 	static const char src[] = "int f(int x){return x*2+1;}";
 	static void *slot;
@@ -6428,8 +5984,6 @@ PUB_FUNC int mccjit_selftest_slicelive(void) { MCC_TRACE("enter\n");
 	st.baseline = (void *)baseline;
 	st.threshold = 4;
 	pthread_mutex_init(&st.lock, NULL);
-	/* seed captured live-ins as the KGC counter stub would (mccjit_slice_search
-	   requires nsample>0 to differential-verify) */
 	st.nsample = 6;
 	for (i = 0; i < 6; i++)
 		{ MCC_TRACE("br\n"); st.sample[i][0] = inputs[i]; }
@@ -6617,9 +6171,6 @@ done:
 
 PUB_FUNC int mccjit_selftest_fork(void) { MCC_TRACE("enter\n");
 #if MCC_HOST_WIN32
-	/* fork()/pthread_atfork are POSIX-only; the pool's post-fork reset invariant
-	   this exercises does not exist on Windows. Report PASS to keep the suite
-	   green (real JIT is validated by every other selftest). */
 	printf("mccjit-selftest-fork: begin\n");
 	printf("mccjit-selftest-fork: skipped — no fork() on Windows\n");
 	printf("mccjit-selftest-fork: PASS (0 failures)\n");
@@ -6950,9 +6501,6 @@ PUB_FUNC int mccjit_selftest_poison(void) { MCC_TRACE("enter\n");
 		printf("mccjit-selftest-poison: kgc open failed FAIL\n");
 		fails++;
 	} else { MCC_TRACE("br\n");
-		/* This exercises the LEGACY miss-rate poison path in isolation; near-match
-		   (default on) would instead patch the repeated mismatch from the correction
-		   table and never let the miss rate climb, so disable it here. */
 		kgc.nearmatch_on = 0;
 		for (i = 0; i < 10; i++) { MCC_TRACE("br\n");
 			int64_t args[1];
@@ -7060,12 +6608,6 @@ PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
-/* J10 — hot-patch is a strategy family: the how-to-patch mechanism is itself a
-   search dial. These are two direct-callable (tail-jump) dispatch shapes for
-   the benchmark harness:
-     - slot dispatch  (pointer-swap): jmp *[rip+slot]; swap = 1 store to the slot
-     - trampoline     (in-place patch): movabs rax,imm; jmp rax; swap = rewrite imm
-   both forward to *slot / imm and tail-return to the caller (no frame). */
 #if defined(MCCJIT_X64)
 static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MCC_TRACE("enter\n");
 	unsigned char *p = mmap(0, 4096, PROT_READ | PROT_WRITE | PROT_EXEC,
@@ -7075,7 +6617,7 @@ static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MC
 		{ MCC_TRACE("br\n"); return NULL; }
 	p[0] = 0xff;
 	p[1] = 0x25;
-	disp = 2; /* slot at p+8, next insn at p+6 -> disp = 2 */
+	disp = 2;
 	memcpy(p + 2, &disp, 4);
 	memcpy(p + 8, &target, 8);
 	if (slotout)
@@ -7114,12 +6656,12 @@ static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MC
 		return NULL;
 	}
 	a = (uint64_t)(uintptr_t)slot;
-	insns[0] = 0xd2800011u | (uint32_t)((a & 0xffff) << 5);         /* movz x17,#a0 */
-	insns[1] = 0xf2a00011u | (uint32_t)(((a >> 16) & 0xffff) << 5); /* movk x17,#a1,lsl16 */
-	insns[2] = 0xf2c00011u | (uint32_t)(((a >> 32) & 0xffff) << 5); /* movk x17,#a2,lsl32 */
-	insns[3] = 0xf2e00011u | (uint32_t)(((a >> 48) & 0xffff) << 5); /* movk x17,#a3,lsl48 */
-	insns[4] = 0xf9400230u; /* ldr x16,[x17] */
-	insns[5] = 0xd61f0200u; /* br  x16 */
+	insns[0] = 0xd2800011u | (uint32_t)((a & 0xffff) << 5);
+	insns[1] = 0xf2a00011u | (uint32_t)(((a >> 16) & 0xffff) << 5);
+	insns[2] = 0xf2c00011u | (uint32_t)(((a >> 32) & 0xffff) << 5);
+	insns[3] = 0xf2e00011u | (uint32_t)(((a >> 48) & 0xffff) << 5);
+	insns[4] = 0xf9400230u;
+	insns[5] = 0xd61f0200u;
 	memcpy(p, insns, sizeof insns);
 	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
 		munmap(p, page);
@@ -7131,16 +6673,11 @@ static unsigned char *mccjit_patch_make_slot(void *target, void ***slotout) { MC
 	return p;
 }
 
-/* In-place trampoline: the target address lives in the MOVZ/MOVK *instruction
-   immediates* (not a data slot), so a redirect is a genuine code patch — rewrite
-   the four halfword-immediate words in place, then flip RX (which flushes the
-   I-cache). Uses x16 (IP0) as scratch to stay visibly distinct from the
-   ptr-swap-slot row, which parks the slot address in x17. */
 static void mccjit_patch_tramp_words(uint64_t a, uint32_t w[4]) { MCC_TRACE("enter\n");
-	w[0] = 0xd2800010u | (uint32_t)((a & 0xffff) << 5);         /* movz x16,#a0 */
-	w[1] = 0xf2a00010u | (uint32_t)(((a >> 16) & 0xffff) << 5); /* movk x16,#a1,lsl16 */
-	w[2] = 0xf2c00010u | (uint32_t)(((a >> 32) & 0xffff) << 5); /* movk x16,#a2,lsl32 */
-	w[3] = 0xf2e00010u | (uint32_t)(((a >> 48) & 0xffff) << 5); /* movk x16,#a3,lsl48 */
+	w[0] = 0xd2800010u | (uint32_t)((a & 0xffff) << 5);
+	w[1] = 0xf2a00010u | (uint32_t)(((a >> 16) & 0xffff) << 5);
+	w[2] = 0xf2c00010u | (uint32_t)(((a >> 32) & 0xffff) << 5);
+	w[3] = 0xf2e00010u | (uint32_t)(((a >> 48) & 0xffff) << 5);
 }
 
 static unsigned char *mccjit_patch_make_tramp(void *target,
@@ -7153,7 +6690,7 @@ static unsigned char *mccjit_patch_make_tramp(void *target,
 	if (p == MAP_FAILED)
 		{ MCC_TRACE("br\n"); return NULL; }
 	mccjit_patch_tramp_words(a, insns);
-	insns[4] = 0xd61f0200u; /* br x16 */
+	insns[4] = 0xd61f0200u;
 	memcpy(p, insns, sizeof insns);
 	if (host_runmem_protect(p, page, HOST_PROT_RX) != 0) { MCC_TRACE("br\n");
 		munmap(p, page);
@@ -7250,7 +6787,7 @@ static void *mccjit_patch_mk_tramp(void *target, void **handle) { MCC_TRACE("ent
 	if (!entry)
 		{ MCC_TRACE("br\n"); return NULL; }
 	if (handle)
-		{ MCC_TRACE("br\n"); *handle = code; } /* handle = code page (holds the imms) */
+		{ MCC_TRACE("br\n"); *handle = code; }
 	return entry;
 }
 
@@ -7261,8 +6798,7 @@ static void mccjit_patch_swap_imm(void *handle, void *target) { MCC_TRACE("enter
 	mccjit_patch_tramp_words((uint64_t)(uintptr_t)target, words);
 	if (host_runmem_protect(p, page, HOST_PROT_RW) != 0)
 		{ MCC_TRACE("br\n"); return; }
-	memcpy(p, words, sizeof words); /* rewrite MOVZ/MOVK imms in place */
-	/* RX transition re-flushes the I-cache (host_runmem_protect does this). */
+	memcpy(p, words, sizeof words);
 	host_runmem_protect(p, page, HOST_PROT_RX);
 }
 #endif
@@ -7628,9 +7164,6 @@ PUB_FUNC int mccjit_selftest_fparg(const char *libpath, const char *incpath) { M
 	vstate = mccjit_last_state;
 	mccjit_last_state = NULL;
 
-	/* FP differential-verify marshalling (mccjit_invoke_fp + bitwise compare),
-	   driven directly — a faithful variant must agree with the baseline and not
-	   flag; a divergent one (g) must return the baseline and flag. */
 	if (variant) { MCC_TRACE("br\n");
 		MccjitKgc kgc;
 		if (mccjit_kgc_open(&kgc, NULL, mccjit_salt_witness(), 2) == 0) { MCC_TRACE("br\n");
@@ -7694,10 +7227,6 @@ PUB_FUNC int mccjit_selftest_fparg(const char *libpath, const char *incpath) { M
 			{ MCC_TRACE("br\n"); mcc_delete(sg); }
 	}
 
-	/* End-to-end: a -run program self-recompiles its all-double f and calls it
-	   through the mode-6 dispatch slot -> the hand-emitted FP stub (movsd spill
-	   + calln_fp). This exercises the stub via its correct entry (jmp *slot);
-	   direct-calling a dispatch stub corrupts the frame. */
 	{
 		static const char prog[] =
 				"double f(double a, double b){return a*b + a;}\n"
@@ -7769,13 +7298,6 @@ PUB_FUNC int mccjit_selftest_mixed(const char *libpath, const char *incpath) { M
 	printf("mccjit-selftest-mixed: non-x86_64 SKIP\n");
 	return 0;
 #elif MCC_HOST_WIN32 || defined(MCCJIT_I386)
-	/* Positional mixed KGC path (Win64 register-slot positional, and i386 cdecl
-	   positional). gpv/fpv are POSITIONAL (index = arg position); mx_argclass
-	   marks which positions are FP. The emitted stub is entered via the mode-6
-	   dispatch (push {r,e}bp;mov {r,e}bp,{r,e}sp) so it opens with `leave`; the
-	   selftest enters at stub+1 (past the leave) to drive it as an ordinary
-	   function, and reads the divergence flag the stub parks at stub+256. On
-	   i386 the whole path is behind the MCC_JIT_I386_STUBS gate — SKIP when off. */
 #if defined(MCCJIT_I386)
 	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
 		(void)libpath;
@@ -7836,11 +7358,8 @@ PUB_FUNC int mccjit_selftest_mixed(const char *libpath, const char *incpath) { M
 		double fp[4] = {0, 2.5, 0, 0};
 		long direct = fbase(5, 2.5, 3);
 #if defined(MCCJIT_I386)
-		/* i386 has no shared thunk: build a per-signature one (pos0=GP, pos1=FP,
-		   pos2=GP; the double is 8-byte on the i386 stack) for f(long,double,long)
-		   and publish it for mccjit_invoke_mixed_i (which reads the active thunk). */
-		void *i386_thunk = mccjit_i386_mixed_thunk_build(3, /*argclass*/0x2u,
-																										 /*argsz*/0x2u);
+		void *i386_thunk = mccjit_i386_mixed_thunk_build(3, 0x2u,
+																										 0x2u);
 		int64_t thunked;
 		if (!i386_thunk) { MCC_TRACE("br\n");
 			printf("mccjit-selftest-mixed: i386 thunk build NULL FAIL\n");
@@ -8212,9 +7731,6 @@ PUB_FUNC int mccjit_selftest_mixed(const char *libpath, const char *incpath) { M
 #endif
 }
 
-/* 64-bit params so the counter-stub register capture is width-unambiguous on
-   both LP64 and LLP64 (Windows `long` is 32-bit — a `long` arg would leave the
-   captured register's upper bits caller-defined). */
 static long long mccjit_profile_id1(long long x) { MCC_TRACE("enter\n"); return x; }
 static long long mccjit_profile_sum2(long long a, long long b) { MCC_TRACE("enter\n"); return a + b; }
 
@@ -8417,13 +7933,6 @@ PUB_FUNC int mccjit_selftest_profile(void) { MCC_TRACE("enter\n");
 					 (long long)st.argmin[0], (long long)st.argmax[0],
 					 (long long)st.argmin[1], (long long)st.argmax[1]);
 #if defined(MCCJIT_I386)
-		/* i386 has no arg registers: the signature-agnostic counter stub captures
-		   the first stack dwords, so it can only range-profile 32-bit-wide args.
-		   long long args straddle two dwords, so the per-position 64-bit range is
-		   not recoverable here — this is a documented i386 profiling limitation
-		   (soundness is preserved: any speculative fold it feeds is KGC-verified).
-		   Assert only the narrow-arg 1-arg case above; treat 2-arg long long as
-		   informational. */
 		(void)0;
 #else
 		if (st.argmin[0] != -2 || st.argmax[0] != 3 || st.argmin[1] != 7 ||
@@ -8906,9 +8415,9 @@ PUB_FUNC int mccjit_selftest_gated(void) { MCC_TRACE("enter\n");
 	int inputs[4] = {5, 0, -3, 100};
 	int fails = 0, m, i;
 	masks[0] = 0;
-	masks[1] = 1;                    /* AST_SG_TEMPLATES */
-	masks[2] = (uint64_t)0x20001;    /* RANGE + a fold gate */
-	masks[3] = (uint64_t)0xffffffffffffULL; /* all 48 gate bits */
+	masks[1] = 1;
+	masks[2] = (uint64_t)0x20001;
+	masks[3] = (uint64_t)0xffffffffffffULL;
 	blob = mccjit_stash_one("int f(int x){return x*2+1;}", "f", 1, &blen, &s1);
 	if (!blob) { MCC_TRACE("br\n");
 		printf("mccjit-selftest-gated: stash failed\n");
@@ -9234,12 +8743,6 @@ static AstArena *mccjit_kernel_from_blob(const void *buf, size_t len) { MCC_TRAC
 	return k;
 }
 
-/* STEP 3 slice localizer: deserialize the shipped intent, run the H1b region
-   search (ast_slice_search) to confirm a certifiable pure slice exists, and
-   wrap the function's return slice as a standalone kernel. Gated to TIER0
-   purity (no loads/stores/invoke/volatile) so the kernel reemit is the whole
-   function by construction and can be differential-verified by direct call
-   without executing any side effect. Returns NULL (no slice path) otherwise. */
 static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len) { MCC_TRACE("enter\n");
 	MccjitIntent it;
 	MCCState *js;
@@ -9270,16 +8773,6 @@ static AstArena *mccjit_kernel_search_from_blob(const void *buf, size_t len) { M
 	return k;
 }
 
-/* STEP 3 slice hot path (async only). For a TIER0-pure, int-returning fn of
-   1..3 int params with captured live-ins, localize+wrap the return slice and
-   reemit the whole function from that kernel. Correctness net: reemit the same
-   intent FAITHFULLY (whole function) as ground truth and require the slice
-   kernel to match it on EVERY captured live-in tuple before the variant is
-   offered. A mismatch discards it (deopt) so an unverified slice never
-   promotes. Both entries come from mccjit_reemit_arena_blob (mcc_get_symbol),
-   so they are directly callable — we never direct-call the shipped baseline,
-   which is a dispatch-only KGC stub. Async only: the recompile runs on the
-   pool worker, mirroring the whole-function search. */
 static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
 	uint32_t np = mccjit_last_nparam;
 	AstArena *k;
@@ -9329,10 +8822,6 @@ static void *mccjit_slice_search(MccjitCounterState *st, int *routed, int async)
 		{ MCC_TRACE("br\n"); fprintf(stderr,
 						"mccjit-slice[promote]: slot=%p slice-kernel verified over %d live-ins\n",
 						(void *)st->slot, st->nsample); }
-	/* Publish through the leading-`leave` trampoline so the entry is
-	   slot-enterable (jmp*slot from the counter stub), exactly like the
-	   whole-function search path wraps its winner. The raw kernel is only
-	   safe to CALL directly (as the verify loop above does). */
 	return mccjit_make_trampoline(kern);
 }
 
@@ -9625,31 +9114,19 @@ static int mccjit_noescape_one(const char *src, const char *fn,
 	return fails;
 }
 
-/* STEP 2(i) escape-analysis foundation: ast_fn_purity_noescape reclassifies a
-   function whose only writes are to non-escaping local scalars as pure
-   (TIER0/TIER1), where the conservative ast_fn_purity returns IMPURE. The delta
-   is what unblocks const-folding a loop that accumulates into a local. */
 PUB_FUNC int mccjit_selftest_noescape(void) { MCC_TRACE("enter\n");
 	int fails = 0;
 
 	printf("mccjit-selftest-noescape: begin (escape-aware purity vs conservative purity)\n");
-	/* loop accumulating into local scalars: base says IMPURE (Store), noescape
-	   says pure — THE unblocking delta */
 	fails += mccjit_noescape_one(
 			"int acc(int n){int s=0,i; for(i=0;i<n;i++)s=s+i; return s;}", "acc", 0, 1);
-	/* straight-line local temp: same delta */
 	fails += mccjit_noescape_one("int t(int x){int a=x+1; int b=a*2; return b-3;}", "t",
 															 0, 1);
-	/* no stores at all: pure on both */
 	fails += mccjit_noescape_one("int p(int x){return x*x+3;}", "p", 0, 0);
-	/* store THROUGH a pointer: externally observable -> impure on both */
 	fails += mccjit_noescape_one("int wp(int *p){*p=5; return 0;}", "wp", 1, 1);
-	/* store to a GLOBAL: externally observable -> impure on both */
 	fails += mccjit_noescape_one("int G; int wg(int x){G=x; return G;}", "wg", 1, 1);
-	/* address-of-local escapes -> impure on noescape (an alias could store) */
 	fails += mccjit_noescape_one("int at(int x){int a=x; int *q=&a; *q=7; return a;}",
 															 "at", 1, 1);
-	/* a call may have arbitrary side effects -> impure on both */
 	fails += mccjit_noescape_one("extern int ext(int); int cl(int x){return ext(x)+1;}",
 															 "cl", 1, 1);
 
@@ -9798,14 +9275,6 @@ void mcc_jit_publish(void **slot, void *variant) { MCC_TRACE("enter\n");
 	if (!slot)
 		{ MCC_TRACE("br\n"); return; }
 	MCCJIT_DIAG_NOTE_PUB(slot, variant);
-	/* Cross-thread code publication: the async search worker / hot-recompile writes
-	   variant bodies (mccrun protect path) and raw-RWX stubs/trampolines (this file's
-	   mmap emitters, which never hit host_runmem_protect) on one core, then hands the
-	   entry to a caller that runs it on another. Serialize the instruction stream on
-	   the writer here — BEFORE the release store makes the pointer observable — so an
-	   executor core cannot fetch stale bytes at a reused address (see host_icache_flush).
-	   Bodies are already flushed at RX-protect time; this additionally covers the
-	   single-page stubs. No-op on hosts that don't need it. */
 	if (variant)
 		{ MCC_TRACE("br\n"); host_icache_flush(variant, (unsigned long)host_pagesize()); }
 	__atomic_store_n(slot, variant, __ATOMIC_RELEASE);
@@ -9828,4 +9297,4 @@ int mccjit_embed_manifest(MCCState *s) { MCC_TRACE("enter\n");
 
 #else
 typedef int mccjit_embed_translation_unit_not_empty;
-#endif /* MCC_EMBED_JIT */
+#endif
