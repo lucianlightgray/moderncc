@@ -118,7 +118,6 @@ statements/scopes.c	f4	desync
 statements/scopes.c	main_1	unfaithful
 statements/tentative_array.c	main	desync
 statements/ternary_op.c	call_fp	desync
-statements/ternary_op.c	main	unfaithful
 statements/ternary_op.c	tst_yarpgen	desync
 statements/translation_limits.c	main	desync
 statements/void_expr.c	main	unfaithful
