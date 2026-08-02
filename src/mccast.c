@@ -2402,19 +2402,14 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_int128_env = ast_env_gate("MCC_AST_INT128", o4 || s1->optimize >= 1);
 	/* MCC_AST_REGPAIR models a value's second register (wide_r2) so 64-bit
 	   register-pair values on 32-bit targets stay faithful instead of desyncing.
-	   Its default-on ON path miscompiles on i386/arm, though: the recorded
-	   physical register is not portable across the template-family re-emit, so a
-	   nested register-pair result (e.g. __builtin_bswap64(__builtin_bswap64(x)))
-	   reads its high half from a stale register and zeroes the low 32 bits. The
-	   plain replay is correct (ast-verify passes), so this only bites the
-	   optimized path -- default it OFF on the 32-bit register-pair targets until
-	   the re-emit tracks the pair, keeping the validated x86_64 (__int128) default
-	   on. Neither i386 nor arm has a recorder-fidelity baseline, so no churn. */
-#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_ARM)
-	ast_regpair_env = ast_env_gate("MCC_AST_REGPAIR", 0);
-#else
+	   It was defaulted OFF on i386/arm because the ON path miscompiled a nested
+	   register-pair result -- the recorded physical register did not survive the
+	   template-family re-emit, so __builtin_bswap64(__builtin_bswap64(x)) read a
+	   stale high half. That is fixed (mccast.c's invoke re-emit reconstructs the
+	   pair from REG_IRET/REG_IRE2), and the i386 and arm legs of instruction 2
+	   are now both measured, so the special case is gone and every target takes
+	   the standard default. */
 	ast_regpair_env = ast_env_gate("MCC_AST_REGPAIR", o4 || s1->optimize >= 1);
-#endif
 	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 1);
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 1);
