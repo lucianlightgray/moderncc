@@ -5749,6 +5749,16 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(selfhost-smoke-gates PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                 TIMEOUT 300)
 
+            foreach(_op -O2 -O3)
+                string(REPLACE "-" "" _optag "${_op}")
+                add_test(NAME selfhost-output-parity-${_optag}
+                    COMMAND "${MCC_PYTHON3}"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-output-parity.py"
+                            "${CMAKE_BINARY_DIR}" "--opt=${_op}")
+                set_tests_properties(selfhost-output-parity-${_optag} PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
+            endforeach()
+
             add_test(NAME selfhost-fixpoint
                 COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                         "${CMAKE_BINARY_DIR}")
