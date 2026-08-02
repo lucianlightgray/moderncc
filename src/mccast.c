@@ -81,6 +81,9 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #define AST_FB_CONVERT_FCS 524288u
 
 #define AST_FB_BINARY_RHS_GV 1048576u
+/* The parser had CODE_OFF set across this whole statement, so it emitted
+   nothing for it. Replaying it would write code the parser never did. */
+#define AST_FB_NOCODE 2097152u
 
 struct AstArena {
 	uint16_t *kind;
@@ -6268,6 +6271,10 @@ static int ast_has_atomic(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter
 static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 	for (AstLocal s = ast_first_child(a, bb); s != AST_NONE;
 			 s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
+		/* Only AST_If carries this flag; other kinds pack raw values into fbits
+		   (ASMGEN its vstack window, MEMBER its VT_NONLVAL) and would alias it. */
+		if (ast_kind(a, s) == AST_If && (ast_fbits(a, s) & AST_FB_NOCODE))
+			{ MCC_TRACE("br\n"); continue; }
 		switch (ast_kind(a, s)) { MCC_TRACE("br\n");
 		case AST_Store: {
 			if (ast_fbits(a, s) & AST_FB_STORE_CHAIN_SKIP)

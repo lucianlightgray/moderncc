@@ -21,6 +21,7 @@ typedef struct RirOp {
 	int pt;
 	int rval;
 	int rnocode;
+	int rind;
 	int rinop;
 	long long rv1, rv2, rv3;
 	int mvs_off, mvs_n;
@@ -40,6 +41,7 @@ typedef struct RirMark {
 	int inop;
 	long long v1, v2, v3;
 	int at;
+	int ind;
 	int vs_off, vs_n;
 } RirMark;
 
@@ -224,6 +226,7 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	m->kind = kind;
 	m->val = val;
 	m->nocode = nocode_wanted;
+	m->ind = ind;
 	m->inop = jrn_depth;
 	m->v1 = a;
 	m->v2 = b;
@@ -415,7 +418,14 @@ void rir_hook_label(int v) { rir_mark_val(RIR_M_LABEL, v); }
 
 void rir_hook_goto(int v) { rir_mark_val(RIR_M_GOTO, v); }
 
-void rir_hook_break_continue(int is_continue) {
+/* nc_pre is nocode_wanted as it stood BEFORE the gjmp, which is the only way
+   to tell a live break from a dead one: gjmp_acs sets CODE_OFF_BIT on the way
+   out, so by the time this hook runs every break looks unreachable. A break in
+   statically dead code emits no jump, and an arena Jump for it would make
+   replay write one the parser never did. */
+void rir_hook_break_continue(int is_continue, int nc_pre) {
+	if (nc_pre)
+		return;
 	rir_mark_val(RIR_M_JUMP, is_continue);
 }
 
@@ -928,6 +938,7 @@ static void rir_build(void) {
 			o->rkind = rir_marks[m].kind;
 			o->rval = rir_marks[m].val;
 			o->rnocode = rir_marks[m].nocode;
+			o->rind = rir_marks[m].ind;
 			o->rinop = rir_marks[m].inop;
 			o->rv3 = rir_marks[m].v3;
 			o->rv1 = rir_marks[m].v1;
@@ -965,6 +976,7 @@ static AstLocal rir_cf[64];
 static int rir_cfkind[64];
 static int rir_cfcond[64];
 static AstLocal rir_cfpfx[64];
+static int rir_cfind[64];
 static AstLocal rir_while_pfx = AST_NONE;
 static int rir_cfn;
 static int rir_arena_mismatch;
@@ -3134,6 +3146,7 @@ static void rir_region(const RirOp *ro) {
 			if (rir_cfn < 64) {
 				rir_cf[rir_cfn] = n;
 				rir_cfkind[rir_cfn] = ro->rkind;
+				rir_cfind[rir_cfn] = ro->rind;
 				rir_cfcond[rir_cfn] = 0;
 				rir_cfpfx[rir_cfn] = pfx;
 				rir_cfn++;
@@ -3559,6 +3572,16 @@ static void rir_region(const RirOp *ro) {
 		rir_dheld_flush();
 		if (rir_cfn) {
 			rir_cfn--;
+			/* The parser advanced ind by nothing across this whole construct, so
+			   it was statically dead. Its ops are already dropped by
+			   rir_op_effect's nocode test, but the construct's own branch -- a
+			   switch's dispatch jump, a loop's back edge -- comes from replaying
+			   the node, not from an op. Being dead at the RBEGIN alone does not
+			   say this: a case label inside turns code back on, and gjmp_acs
+			   leaves CODE_OFF set after every break. Zero bytes emitted does. */
+			if (ro->rind == rir_cfind[rir_cfn])
+				ast_set_fbits(rir_arena, rir_cf[rir_cfn],
+											ast_fbits(rir_arena, rir_cf[rir_cfn]) | AST_FB_NOCODE);
 			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
 				ast_set_op(rir_arena, rir_cf[rir_cfn], 8);
 			if (rir_cfpfx[rir_cfn] != AST_NONE &&

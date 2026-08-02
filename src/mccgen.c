@@ -12534,7 +12534,7 @@ static void warn_return_local_addr(void) { MCC_TRACE("enter\n");
 }
 
 static void block(int flags) { MCC_TRACE("enter\n");
-	int a, b, c, d, e, t;
+	int a, b, c, d, e, t, nc_pre;
 	struct scope o;
 	Sym *s;
 	unsigned char stdc_save_fp, stdc_save_fenv, stdc_save_cx;
@@ -12726,9 +12726,10 @@ again:
 			{ MCC_TRACE("br\n"); leave_scope(cur_switch->scope); }
 		else
 			{ MCC_TRACE("br\n"); leave_scope(loop_scope); }
+		nc_pre = nocode_wanted;
 		*cur_scope->bsym = gjmp(*cur_scope->bsym);
 #if MCC_CONFIG_OPTIMIZER
-		rir_hook_break_continue(0);
+		rir_hook_break_continue(0, nc_pre);
 		ast_hook_break_continue(0);
 #endif
 		skip(';');
@@ -12736,9 +12737,10 @@ again:
 		if (!cur_scope->csym)
 			{ MCC_TRACE("br\n"); mcc_error("cannot continue"); }
 		leave_scope(loop_scope);
+		nc_pre = nocode_wanted;
 		*cur_scope->csym = gjmp(*cur_scope->csym);
 #if MCC_CONFIG_OPTIMIZER
-		rir_hook_break_continue(1);
+		rir_hook_break_continue(1, nc_pre);
 		ast_hook_break_continue(1);
 #endif
 		skip(';');

@@ -116,7 +116,7 @@ void rir_hook_case(long long v1, long long v2);
 void rir_hook_default(void);
 void rir_hook_label(int v);
 void rir_hook_goto(int v);
-void rir_hook_break_continue(int is_continue);
+void rir_hook_break_continue(int is_continue, int nc_pre);
 void rir_hook_call_begin(void);
 void rir_hook_call_end(void);
 void rir_hook_call_argcast(int pre_seq);
@@ -270,7 +270,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_hook_default() ((void)0)
 #define rir_hook_label(v) ((void)0)
 #define rir_hook_goto(v) ((void)0)
-#define rir_hook_break_continue(c) ((void)0)
+#define rir_hook_break_continue(c, n) ((void)0)
 #define rir_hook_call_begin() ((void)0)
 #define rir_hook_call_end() ((void)0)
 #define rir_hook_call_argcast(p) ((void)0)
