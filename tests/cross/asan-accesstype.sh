@@ -7,6 +7,11 @@
 # bit 6 of the granule-offset register on the trap path and expr_eq patches the
 # immediate to also set bit 7 when it sees an assignment token.
 #
+# The struct case is a separate coverage hole this also closes: the check at
+# indir() looks at the POINTED-TO type, so a struct wider than 8 bytes was
+# skipped entirely and `s->e` on a short malloc did not fault at all. The
+# member access now checks the member's own address and size.
+#
 # The clean case is not optional here. On the three backends whose skip branch
 # is hand-encoded rather than resolved through gjmp2/gsym -- riscv64, arm64,
 # arm -- inserting that instruction shifts the trap one slot later, and the
@@ -100,14 +105,23 @@ extern void free(void *);
 extern int printf(const char *, ...);
 int main(void) { char *p = malloc(8); free(p); printf("%d\n", p[0]); return 0; }
 EOF
+cat >"$W/sm.c" <<'EOF'
+extern void *malloc(unsigned long);
+struct S { int a, b, c, d, e; };
+int main(void) { struct S *s = malloc(8); s->e = 1; return 0; }
+EOF
 cat >"$W/ok.c" <<'EOF'
 extern void *malloc(unsigned long);
+struct S { int a, b, c, d, e; };
 int main(void) {
 	char *p = malloc(64);
+	struct S *s = malloc(sizeof(struct S));
 	int i;
 	for (i = 0; i < 64; i++)
 		p[i] = (char)i;
-	return p[63] == 63 ? 0 : 7;
+	s->a = 1;
+	s->e = 5;
+	return (p[63] == 63 && s->a + s->e == 6) ? 0 : 7;
 }
 EOF
 
@@ -115,6 +129,7 @@ expect wr "WRITE of size 1"
 expect rd "READ of size 1"
 expect w4 "WRITE of size 4"
 expect uaf "READ of size 1"
+expect sm "WRITE of size 4"
 
 if ! build_run ok; then
 	echo "FAIL: could not build/link the clean program"

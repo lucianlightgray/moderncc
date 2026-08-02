@@ -2399,6 +2399,16 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -fasan-shadow {W}/atx.c -o {W}/atx && "
 		 "{W}/atx 2>&1 | grep -oE '(READ|WRITE) of size [0-9]+' | head -1",
 		 "WRITE of size 4\n"},
+		{"asan_shadow_struct_member_overflow", "cpu=x86_64,os=linux",
+		 "printf 'extern void*malloc(unsigned long);\\nstruct S{int a,b,c,d,e;};\\nint main(void){struct S*s=malloc(8);s->e=1;return 0;}\\n' > {W}/asm.c && "
+		 "{MCC} -B{B} -fasan-shadow {W}/asm.c -o {W}/asm && "
+		 "{W}/asm 2>&1 | grep -oE '(READ|WRITE) of size [0-9]+' | head -1",
+		 "WRITE of size 4\n"},
+		{"asan_shadow_struct_member_clean", "cpu=x86_64,os=linux",
+		 "printf 'extern void*malloc(unsigned long);\\nstruct S{int a,b,c,d,e;};\\nint main(void){struct S*s=malloc(sizeof(struct S));s->a=1;s->e=5;return s->a+s->e==6?0:7;}\\n' > {W}/asmc.c && "
+		 "{MCC} -B{B} -fasan-shadow {W}/asmc.c -o {W}/asmc && "
+		 "{W}/asmc; echo rc=$?",
+		 "rc=0\n"},
 		{"asan_shadow_manual_link", "cpu=x86_64,os=linux",
 		 "cc -O2 -c {D}/../../runtime/lib/mccasan.c -o {W}/mccasan_m.o 2>/dev/null && "
 		 "printf 'extern void*malloc(unsigned long);\\nint main(void){int*p=malloc(40);p[0]=1;return p[100];}\\n' > {W}/anm.c && "

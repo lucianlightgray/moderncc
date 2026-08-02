@@ -11159,6 +11159,7 @@ tok_next:
 			vtop->type = char_pointer_type;
 #if MCC_CONFIG_OPTIMIZER
 			if (ast_regdisp_env && cumofs && !(s->type.t & VT_ARRAY) &&
+					!mcc_state->do_asan_shadow &&
 					(vtop->r & VT_VALMASK) < VT_CONST &&
 					!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))) { MCC_TRACE("br\n");
 				vtop->c.i = cumofs;
@@ -11168,6 +11169,17 @@ tok_next:
 			{ MCC_TRACE("br\n");
 				vpushi(cumofs);
 				gen_op('+');
+			}
+			if (mcc_state->do_asan_shadow && !(s->type.t & VT_ARRAY) &&
+					(s->type.t & VT_BTYPE) != VT_STRUCT &&
+					(s->type.t & VT_BTYPE) != VT_FUNC && !(s->type.t & VT_BITFIELD)) { MCC_TRACE("br\n");
+				int msz, mal;
+				msz = type_size(&s->type, &mal);
+				if (msz > 0 && msz <= 8) { MCC_TRACE("br\n");
+					if ((vtop->r & VT_VALMASK) >= VT_CONST)
+						{ MCC_TRACE("br\n"); gv(MCC_RC_INT); }
+					gen_asan_shadow_check(msz);
+				}
 			}
 			vtop->type = s->type;
 			if (qualifiers)
