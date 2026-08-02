@@ -42,8 +42,17 @@ files="$files $S/tests/diff/full_language.c"
 nfile=0
 for f in $files; do
 	nfile=$((nfile + 1))
+	# full_language.c's computed include #include INC(42test) expands to the
+	# angle form <tests/diff/42test.h>, which resolves only against the repo
+	# root. Without -I "$S" it fails to compile on EVERY key and is silently
+	# dropped from the census -- the EXTRA file then contributes zero bodies to
+	# what the scoreboard calls the 278-file corpus.
+	xflags=
+	case "$f" in
+	*/full_language.c) xflags="-I $S" ;;
+	esac
 	echo "### $f" >> "$LOG"
-	MCC_REPLAY_IR=5 "$MCC" -w $OPT $FLAGS -c -o "$OUT/a-$KEY.o" "$f" >> "$LOG" 2>&1 || true
+	MCC_REPLAY_IR=5 "$MCC" -w $OPT $FLAGS $xflags -c -o "$OUT/a-$KEY.o" "$f" >> "$LOG" 2>&1 || true
 done
 
 awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" '
