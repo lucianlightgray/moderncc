@@ -15864,91 +15864,101 @@ static int ast_reloc_range_equiv(const unsigned char *ra, const unsigned char *r
 #pragma push_macro("gjmp_addr")
 #undef gjmp
 #undef gjmp_addr
+#define JRN_OP_LIST(X) \
+	X(JOP_RAW = 0, "raw") \
+	X(JOP_LOAD, "load") \
+	X(JOP_STORE, "store") \
+	X(JOP_OPI, "opi") \
+	X(JOP_OPL, "opl") \
+	X(JOP_OPF, "opf") \
+	X(JOP_CALL, "call") \
+	X(JOP_JMP, "jmp") \
+	X(JOP_JMPADDR, "jmpaddr") \
+	X(JOP_JMPCOND, "jmpcond") \
+	X(JOP_JMPAPPEND, "jmpappend") \
+	X(JOP_GSYMADDR, "gsymaddr") \
+	X(JOP_CVT_ITOF, "cvt_itof") \
+	X(JOP_CVT_FTOF, "cvt_ftof") \
+	X(JOP_CVT_FTOI, "cvt_ftoi") \
+	X(JOP_CVT_SXTW, "cvt_sxtw") \
+	X(JOP_CVT_TRUNC32, "cvt_trunc") \
+	X(JOP_CVT_CSTI, "cvt_csti") \
+	X(JOP_STRUCTCOPY, "structcpy") \
+	X(JOP_GGOTO, "ggoto") \
+	X(JOP_CMOV, "cmov") \
+	X(JOP_FILLNOPS, "fillnops") \
+	X(JOP_VLA_SPSAVE, "vla_save") \
+	X(JOP_VLA_SPREST, "vla_rest") \
+	X(JOP_VLA_RESULT, "vla_res") \
+	X(JOP_VLA_ALLOC, "vla_alloc") \
+	X(JOP_MULH, "mulh") \
+	X(JOP_MULWIDEN, "mulwiden") \
+	X(JOP_REGADDI, "regaddi") \
+	X(JOP_FABS, "fabs") \
+	X(JOP_BSWAP, "bswap") \
+	X(JOP_SQRT, "sqrt") \
+	X(JOP_ROUND, "round") \
+	X(JOP_COPYSIGN, "copysign") \
+	X(JOP_SIGNBIT, "signbit") \
+	X(JOP_FFS, "ffs") \
+	X(JOP_BITSCAN, "bitscan") \
+	X(JOP_TRAP, "trap") \
+	X(JOP_TCOV, "tcov") \
+	X(JOP_ATOMIC_CMPXCHG, "acmpxchg") \
+	X(JOP_ATOMIC_XCHG, "axchg") \
+	X(JOP_ATOMIC_XADD, "axadd") \
+	X(JOP_ASAN_SHADOW, "asan") \
+	X(JOP_ASAN_MARK_WRITE, "asanwr") \
+	X(JOP_UBSAN_NULLPTR, "ubsannull") \
+	X(JOP_XFERRET, "xferret") \
+	X(JOP_X87POP, "x87pop") \
+	X(JOP_VSETC, "vsetc") \
+	X(JOP_VPUSHSYM, "vpushsym") \
+	X(JOP_VPUSHV, "vpushv") \
+	X(JOP_VSWAP, "vswap") \
+	X(JOP_VPOP, "vpop") \
+	X(JOP_VROTB, "vrotb") \
+	X(JOP_VROTT, "vrott") \
+	X(JOP_VREV, "vrev") \
+	X(JOP_PUSHLIT, "pushlit") \
+	X(JOP_GV, "gv") \
+	X(JOP_VSTORE, "vstore") \
+	X(JOP_GENOP, "genop") \
+	X(JOP_MKPTR, "mkptr") \
+	X(JOP_ADDROF, "addrof") \
+	X(JOP_RETVAL, "retval") \
+	X(JOP_VA_START, "va_start") \
+	X(JOP_VA_ARG, "va_arg") \
+	X(JOP_ASM, "asm") \
+	X(JOP_ASMGEN, "asmgen") \
+	X(JOP_BITBUILTIN, "bitbuiltin")
+
 enum {
-	JOP_RAW = 0,
-	JOP_LOAD,
-	JOP_STORE,
-	JOP_OPI,
-	JOP_OPL,
-	JOP_OPF,
-	JOP_CALL,
-	JOP_JMP,
-	JOP_JMPADDR,
-	JOP_JMPCOND,
-	JOP_JMPAPPEND,
-	JOP_GSYMADDR,
-	JOP_CVT_ITOF,
-	JOP_CVT_FTOF,
-	JOP_CVT_FTOI,
-	JOP_CVT_SXTW,
-	JOP_CVT_TRUNC32,
-	JOP_CVT_CSTI,
-	JOP_STRUCTCOPY,
-	JOP_GGOTO,
-	JOP_CMOV,
-	JOP_FILLNOPS,
-	JOP_VLA_SPSAVE,
-	JOP_VLA_SPREST,
-	JOP_VLA_RESULT,
-	JOP_VLA_ALLOC,
-	JOP_MULH,
-	JOP_MULWIDEN,
-	JOP_REGADDI,
-	JOP_FABS,
-	JOP_BSWAP,
-	JOP_SQRT,
-	JOP_ROUND,
-	JOP_COPYSIGN,
-	JOP_SIGNBIT,
-	JOP_FFS,
-	JOP_BITSCAN,
-	JOP_TRAP,
-	JOP_TCOV,
-	JOP_ATOMIC_CMPXCHG,
-	JOP_ATOMIC_XCHG,
-	JOP_ATOMIC_XADD,
-	JOP_ASAN_SHADOW,
-	JOP_ASAN_MARK_WRITE,
-	JOP_UBSAN_NULLPTR,
-	JOP_XFERRET,
-	JOP_X87POP,
-	JOP_VSETC,
-	JOP_VPUSHSYM,
-	JOP_VPUSHV,
-	JOP_VSWAP,
-	JOP_VPOP,
-	JOP_VROTB,
-	JOP_VROTT,
-	JOP_VREV,
-	JOP_PUSHLIT,
-	JOP_GV,
-	JOP_VSTORE,
-	JOP_GENOP,
-	JOP_MKPTR,
-	JOP_ADDROF,
-	JOP_RETVAL,
-	JOP_VA_START,
-	JOP_VA_ARG,
-	JOP_ASM,
-	JOP_ASMGEN,
-	JOP_BITBUILTIN,
+#define JRN_OP_ENUM(N, S) N,
+	JRN_OP_LIST(JRN_OP_ENUM)
+#undef JRN_OP_ENUM
 	JOP_COUNT
 };
 
+#define JRN_FIX_LIST(X) \
+	X(JFIX_NONE = 0, "none") \
+	X(JFIX_PUSHCONST, "pushconst") \
+	X(JFIX_PUSHADDR, "pushaddr") \
+	X(JFIX_DUP, "dup") \
+	X(JFIX_PUSHOTHER, "pushother") \
+	X(JFIX_POP, "pop") \
+	X(JFIX_SWAP, "swap") \
+	X(JFIX_RETYPE, "retype") \
+	X(JFIX_TOPREG, "topreg") \
+	X(JFIX_TOPDIFF, "topdiff") \
+	X(JFIX_MULTI, "multi") \
+	X(JFIX_DEPTH, "depth") \
+	X(JFIX_OTHER, "other")
+
 enum {
-	JFIX_NONE = 0,
-	JFIX_PUSHCONST,
-	JFIX_PUSHADDR,
-	JFIX_DUP,
-	JFIX_PUSHOTHER,
-	JFIX_POP,
-	JFIX_SWAP,
-	JFIX_RETYPE,
-	JFIX_TOPREG,
-	JFIX_TOPDIFF,
-	JFIX_MULTI,
-	JFIX_DEPTH,
-	JFIX_OTHER,
+#define JRN_FIX_ENUM(N, S) N,
+	JRN_FIX_LIST(JRN_FIX_ENUM)
+#undef JRN_FIX_ENUM
 	JFIX_COUNT
 };
 
@@ -16050,20 +16060,10 @@ static long jrn_regdiff_n;
 
 static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 	static const char *const n[JOP_COUNT] = {
-			"raw",       "load",      "store",     "opi",       "opl",
-			"opf",       "call",      "jmp",       "jmpaddr",   "jmpcond",
-			"jmpappend", "gsymaddr",  "cvt_itof",  "cvt_ftof",  "cvt_ftoi",
-			"cvt_sxtw",  "cvt_trunc", "cvt_csti",  "structcpy", "ggoto",
-			"cmov",      "fillnops",  "vla_save",  "vla_rest",  "vla_res",
-			"vla_alloc", "mulh",      "mulwiden",  "regaddi",   "fabs",
-			"bswap",     "sqrt",      "round",     "copysign",  "signbit",
-			"ffs",       "bitscan",   "trap",      "tcov",      "acmpxchg",
-			"axchg",     "axadd",     "asan",      "ubsannull", "xferret",
-			"x87pop",    "vsetc",     "vpushsym",  "vpushv",    "vswap",
-			"vpop",      "vrotb",     "vrott",     "vrev",      "pushlit",
-			"gv",        "vstore",    "genop",     "mkptr",     "addrof",
-			"retval",    "va_start",  "va_arg",    "asm",       "asmgen",
-			"bitbuiltin"};
+#define JRN_OP_NAME(N, S) S,
+			JRN_OP_LIST(JRN_OP_NAME)
+#undef JRN_OP_NAME
+	};
 	if (k < 0 || k >= JOP_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
@@ -16071,9 +16071,10 @@ static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
 
 static const char *jrn_fix_name(int k) { MCC_TRACE("enter\n");
 	static const char *const n[JFIX_COUNT] = {
-			"none",    "pushconst", "pushaddr", "dup",   "pushother",
-			"pop",     "swap",      "retype",   "topreg", "topdiff",
-			"multi",   "depth",     "other"};
+#define JRN_FIX_NAME(N, S) S,
+			JRN_FIX_LIST(JRN_FIX_NAME)
+#undef JRN_FIX_NAME
+	};
 	if (k < 0 || k >= JFIX_COUNT)
 		{ MCC_TRACE("br\n"); return "?"; }
 	return n[k];
