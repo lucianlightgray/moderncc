@@ -1420,8 +1420,8 @@ static int do_bench_summary(int argc, char **argv) {
 	return 0;
 }
 
-#define PAR_MAX 128
-#define PAR_LEN 64
+#define PAR_MAX 512
+#define PAR_LEN 96
 
 typedef struct {
 	char v[PAR_MAX][PAR_LEN];
@@ -1430,16 +1430,26 @@ typedef struct {
 
 static void set_add(StrSet *s, const char *nm, int len) {
 	int i;
-	if (len >= PAR_LEN)
-		len = PAR_LEN - 1;
+	if (len >= PAR_LEN) {
+		fprintf(stderr,
+						"ci parity: name '%.*s' is %d chars, over PAR_LEN %d -- truncating "
+						"would let two distinct names collide and pass\n",
+						len, nm, len, PAR_LEN);
+		exit(2);
+	}
 	for (i = 0; i < s->n; i++)
 		if ((int)strlen(s->v[i]) == len && !strncmp(s->v[i], nm, (size_t)len))
 			return;
-	if (s->n < PAR_MAX) {
-		memcpy(s->v[s->n], nm, (size_t)len);
-		s->v[s->n][len] = 0;
-		s->n++;
+	if (s->n >= PAR_MAX) {
+		fprintf(stderr,
+						"ci parity: more than PAR_MAX %d names -- dropping the rest would "
+						"report a false green\n",
+						PAR_MAX);
+		exit(2);
 	}
+	memcpy(s->v[s->n], nm, (size_t)len);
+	s->v[s->n][len] = 0;
+	s->n++;
 }
 
 static int set_has(const StrSet *s, const char *nm) {
