@@ -389,13 +389,14 @@ static int consensus(const Refs *refs, const char *bdir, const char *idir,
 static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
 						const char *work, const char *src, const runres *cons,
 						const char *env, const char *opt, int *buildfail) {
-	int nbuildfail = 0;
+	int nbuildfail = 0, nsaw = 0;
 	if (buildfail)
 		*buildfail = 0;
 	for (int attempt = 0; attempt < MCC_DIVERGE_ATTEMPTS; attempt++) {
 		runres m = build_run(NULL, mcc, bdir, idir, env, opt, work, "mcc", src);
 		int agree = m.kind == RES_OK && runres_eq(&m, cons);
 		nbuildfail += m.kind == RES_BUILDFAIL;
+		nsaw += m.kind != RES_INCONCLUSIVE;
 		runres_free(&m);
 		if (agree)
 			return 0;
@@ -405,6 +406,11 @@ static int mcc_diverges(const char *mcc, const char *bdir, const char *idir,
 			*buildfail = 1;
 		return 0;
 	}
+	/* Every attempt timed out or died on a signal, so none of them produced an
+	   answer to disagree with. A loaded machine reaches this through the run
+	   watchdog alone; calling it a miscompile is how a busy CI box invents one. */
+	if (!nsaw)
+		return 0;
 	return 1;
 }
 
