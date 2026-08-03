@@ -447,6 +447,14 @@ static int decl(int l);
 static void expr_eq(void);
 static void vpush_type_size(CType *type, int *a);
 static void gen_complex_op(int op);
+#define MCC_VECTOR_MAX_ELEM 1024
+static void gen_vector_op(int op);
+static int vector_nelem(CType *type);
+static inline int is_vector_type(CType *type);
+static void gen_vector_shuffle(int two_src);
+static void gen_vector_convert(CType *dt);
+static void gen_vector_cast(CType *dt);
+static int apply_attr_vector_size(CType *type, int vsize, int hard);
 static void gen_complex_cast(CType *type);
 static int is_compatible_unqualified_types(CType *type1, CType *type2);
 static inline int64_t expr_const64(void);
@@ -597,6 +605,14 @@ ST_INLN int is_float(int t) { MCC_TRACE("enter\n");
 
 static inline int is_complex_type(CType *type) { MCC_TRACE("enter\n");
 	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_complex;
+}
+
+static inline int is_vector_type(CType *type) { MCC_TRACE("enter\n");
+	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_vector;
+}
+
+static inline CType *vector_elem_type(CType *type) { MCC_TRACE("enter\n");
+	return &type->ref->next->type;
 }
 
 static inline int is_integer_btype(int bt) { MCC_TRACE("enter\n");
@@ -1542,6 +1558,8 @@ static void gvtst_set(int inv, int t) { MCC_TRACE("enter\n");
 static int gvtst(int inv, int t) { MCC_TRACE("enter\n");
 	int op, x, u;
 
+	if (is_vector_type(&vtop->type))
+		{ MCC_TRACE("br\n"); mcc_error("used vector type where a scalar is required"); }
 	gvtst_set(inv, t);
 	t = vtop->jtrue, u = vtop->jfalse;
 	if (inv)
@@ -1667,6 +1685,8 @@ static void merge_attr(AttributeDef *ad, AttributeDef *ad1) { MCC_TRACE("enter\n
 		{ MCC_TRACE("br\n"); ad->asm_label = ad1->asm_label; }
 	if (ad1->attr_mode)
 		{ MCC_TRACE("br\n"); ad->attr_mode = ad1->attr_mode; }
+	if (ad1->attr_vector_size)
+		{ MCC_TRACE("br\n"); ad->attr_vector_size = ad1->attr_vector_size; }
 }
 
 static void patch_type(Sym *sym, CType *type) { MCC_TRACE("enter\n");
@@ -3811,6 +3831,11 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRACE("enter\n");
 	int bt1, t1, t2;
 
+	if (is_vector_type(type1) && is_vector_type(type2)) { MCC_TRACE("br\n");
+		return type1->ref->c == type2->ref->c &&
+					 vector_nelem(type1) == vector_nelem(type2);
+	}
+
 	if (IS_ENUM(type1->t)) { MCC_TRACE("br\n");
 		if (IS_ENUM(type2->t))
 			{ MCC_TRACE("br\n"); return type1->ref == type2->ref; }
@@ -3990,6 +4015,11 @@ redo:
 	t2 = vtop[0].type.t;
 	bt1 = t1 & VT_BTYPE;
 	bt2 = t2 & VT_BTYPE;
+
+	if (is_vector_type(&vtop[-1].type) || is_vector_type(&vtop[0].type)) { MCC_TRACE("br\n");
+		gen_vector_op(op);
+		return;
+	}
 
 	if (is_complex_type(&vtop[-1].type) || is_complex_type(&vtop[0].type)) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
@@ -4779,6 +4809,12 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 }
 
 static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
+	if (is_vector_type(dt) && is_vector_type(&vtop->type) &&
+			dt->ref != vtop->type.ref) { MCC_TRACE("br\n");
+		int a1, a2;
+		if (type_size(dt, &a1) == type_size(&vtop->type, &a2))
+			{ MCC_TRACE("br\n"); gen_vector_cast(dt); return; }
+	}
 	verify_assign_cast(dt);
 	gen_cast(dt);
 }
@@ -5189,10 +5225,13 @@ redo:
 #endif
 		case TOK_VECTOR_SIZE1:
 		case TOK_VECTOR_SIZE2:
-			mcc_error("__attribute__((vector_size)) is not supported: mcc has no "
-								"vector type, and silently ignoring it gives the object the "
-								"scalar size");
-			goto skip_param;
+			skip('(');
+			n = expr_const();
+			if (n <= 0 || (n & (n - 1)) != 0)
+				{ MCC_TRACE("br\n"); mcc_error("vector_size must be a positive power of two"); }
+			ad->attr_vector_size = n;
+			skip(')');
+			break;
 		case TOK_MODE1:
 		case TOK_MODE2:
 			skip('(');
@@ -5898,6 +5937,411 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 	memset(&ad, 0, sizeof ad);
 	struct_layout(type, &ad);
 	cache[idx] = *type;
+}
+
+static void mk_vector_type(CType *type, CType *base, int nelem) { MCC_TRACE("enter\n");
+	Sym *s, *f, *prev = NULL;
+	AttributeDef ad;
+	int i, align, esz = type_size(base, &align);
+	CType *cache = mcc_state->gen_vector_type_cache;
+	int bkey = base->t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
+
+	for (i = 0; i < mcc_state->gen_vector_type_cache_n; i++) { MCC_TRACE("br\n");
+		CType *c = &cache[i];
+		Sym *e = c->ref->next;
+		if ((e->type.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) == bkey &&
+				e->type.ref == base->ref && c->ref->c == esz * nelem) { MCC_TRACE("br\n");
+			*type = *c;
+			return;
+		}
+	}
+
+	s = sym_push2(&global_stack, anon_sym++ | SYM_STRUCT, VT_STRUCT, -1);
+	s->r = 0;
+	s->a.is_vector = 1;
+	s->next = NULL;
+	for (i = 0; i < nelem; i++) { MCC_TRACE("br\n");
+		char nm[24];
+		int v;
+		snprintf(nm, sizeof nm, "__v%d", i);
+		v = tok_alloc(nm, (int)strlen(nm))->tok;
+		f = sym_push2(&global_stack, (v | SYM_FIELD), base->t, 0);
+		f->type.ref = base->ref;
+		f->next = NULL;
+		if (prev)
+			{ MCC_TRACE("br\n"); prev->next = f; }
+		else
+			{ MCC_TRACE("br\n"); s->next = f; }
+		prev = f;
+	}
+	type->t = VT_STRUCT;
+	type->ref = s;
+	memset(&ad, 0, sizeof ad);
+	ad.a.aligned = exact_log2p1(esz * nelem <= MCC_MAX_ALIGN ? esz * nelem
+																													 : MCC_MAX_ALIGN);
+	struct_layout(type, &ad);
+	if (mcc_state->gen_vector_type_cache_n <
+			(int)(sizeof(mcc_state->gen_vector_type_cache) / sizeof(CType)))
+		{ MCC_TRACE("br\n"); cache[mcc_state->gen_vector_type_cache_n++] = *type; }
+}
+
+static int apply_attr_vector_size(CType *type, int vsize, int hard) { MCC_TRACE("enter\n");
+	CType base;
+	int align, esz, storage, bt = type->t & VT_BTYPE;
+
+	if ((type->t & (VT_ARRAY | VT_VLA)) ||
+			!(is_integer_btype(bt) || bt == VT_FLOAT || bt == VT_DOUBLE)) { MCC_TRACE("br\n");
+		if (hard)
+			{ MCC_TRACE("br\n"); mcc_error("'vector_size' applies to integer or "
+												"floating-point types only"); }
+		return 0;
+	}
+	storage = type->t & (VT_STORAGE | VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT |
+											 VT_DEFSIGN | VT_INLINE);
+	base.t = type->t & ~storage;
+	base.ref = type->ref;
+	esz = type_size(&base, &align);
+	if (esz <= 0 || vsize % esz) { MCC_TRACE("br\n");
+		if (hard)
+			{ MCC_TRACE("br\n"); mcc_error("'vector_size' %d is not a multiple of the "
+												"element size %d", vsize, esz); }
+		return 0;
+	}
+	if (vsize / esz > MCC_VECTOR_MAX_ELEM) { MCC_TRACE("br\n");
+		if (hard)
+			{ MCC_TRACE("br\n"); mcc_error("'vector_size' %d is larger than implemented "
+												"(at most %d elements)", vsize,
+												MCC_VECTOR_MAX_ELEM); }
+		return 0;
+	}
+	mk_vector_type(type, &base, vsize / esz);
+	type->t |= storage;
+	return 1;
+}
+
+static int vector_nelem(CType *type) { MCC_TRACE("enter\n");
+	int align, esz = type_size(vector_elem_type(type), &align);
+	return esz > 0 ? type->ref->c / esz : 0;
+}
+
+static void vector_part(int idx) { MCC_TRACE("enter\n");
+	CType base = *vector_elem_type(&vtop->type);
+	int align, esz = type_size(&base, &align);
+
+	test_lvalue();
+	gaddrof();
+	vtop->type = char_pointer_type;
+	vpushi(idx * esz);
+	gen_op('+');
+	vtop->type = base;
+	vtop->r |= VT_LVAL;
+}
+
+static void vector_local(CType *vt, SValue *out) { MCC_TRACE("enter\n");
+	int align, size = type_size(vt, &align);
+#if MCC_CONFIG_OPTIMIZER
+	loc = ast_alloc_loc(size, align);
+#else
+	loc = (loc - size) & -align;
+#endif
+	out->type = *vt;
+	out->r = VT_LOCAL | VT_LVAL;
+	out->r2 = VT_CONST;
+	out->c.i = loc;
+	out->sym = NULL;
+}
+
+static void vector_materialize(CType *vt, SValue *out) { MCC_TRACE("enter\n");
+	int i, n = vector_nelem(vt);
+	CType base = *vector_elem_type(vt);
+
+	vector_local(vt, out);
+	if (is_vector_type(&vtop->type)) { MCC_TRACE("br\n");
+		vpushv(out);
+		vswap();
+		vstore();
+		vpop();
+		return;
+	}
+	gen_cast(&base);
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		if (i + 1 < n)
+			{ MCC_TRACE("br\n"); vdup(); }
+		vpushv(out);
+		vector_part(i);
+		vswap();
+		vstore();
+		vpop();
+	}
+}
+
+static void gen_vector_cast(CType *dt) { MCC_TRACE("enter\n");
+	SValue res;
+	int align, dsz = type_size(dt, &align), ssz = type_size(&vtop->type, &align);
+
+	vcheck_cmp();
+
+	if (!is_vector_type(dt)) { MCC_TRACE("br\n");
+		if (dsz != ssz)
+			{ MCC_TRACE("br\n"); mcc_error("cannot convert a vector to a value of a "
+												"different size"); }
+		test_lvalue();
+		gaddrof();
+		vtop->type = *dt;
+		mk_pointer(&vtop->type);
+		indir();
+		return;
+	}
+	if (dsz != ssz)
+		{ MCC_TRACE("br\n"); mcc_error("cannot convert to a vector of a different size"); }
+	vector_local(dt, &res);
+	vpushv(&res);
+	vtop->type = vtop[-1].type;
+	vswap();
+	vstore();
+	vpop();
+	vpushv(&res);
+}
+
+static void gen_vector_convert(CType *dt) { MCC_TRACE("enter\n");
+	SValue src, res;
+	int i, n;
+
+	vcheck_cmp();
+	if (!is_vector_type(&vtop->type) || !is_vector_type(dt))
+		{ MCC_TRACE("br\n"); mcc_error("'__builtin_convertvector' takes a vector "
+											"value and a vector type"); }
+	n = vector_nelem(&vtop->type);
+	if (n != vector_nelem(dt))
+		{ MCC_TRACE("br\n"); mcc_error("'__builtin_convertvector' operands must have "
+											"the same number of elements"); }
+	vector_materialize(&vtop->type, &src);
+	vector_local(dt, &res);
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		vpushv(&src);
+		vector_part(i);
+		gen_cast(vector_elem_type(dt));
+		vpushv(&res);
+		vector_part(i);
+		vswap();
+		vstore();
+		vpop();
+	}
+	vpushv(&res);
+}
+
+static void gen_vector_shuffle(int two_src) { MCC_TRACE("enter\n");
+	SValue a, b, m, tmp, res;
+	CType vt, rt, dbl, ebase;
+	int i, n, mn, align, esz;
+
+	skip('(');
+	expr_eq();
+	vcheck_cmp();
+	if (!is_vector_type(&vtop->type))
+		{ MCC_TRACE("br\n"); mcc_error("'__builtin_shuffle' takes vector arguments"); }
+	vt = vtop->type;
+	n = vector_nelem(&vt);
+	ebase = *vector_elem_type(&vt);
+	esz = type_size(&ebase, &align);
+	vector_materialize(&vt, &a);
+	b = a;
+	skip(',');
+	expr_eq();
+	vcheck_cmp();
+
+	if (two_src) { MCC_TRACE("br\n");
+		int nsel = 0, idx[MCC_VECTOR_MAX_ELEM];
+		if (!is_vector_type(&vtop->type))
+			{ MCC_TRACE("br\n"); mcc_error("'__builtin_shufflevector' takes two vectors "
+												"and constant indices"); }
+		vector_materialize(&vt, &b);
+		while (tok == ',') { MCC_TRACE("br\n");
+			next();
+			if (nsel >= MCC_VECTOR_MAX_ELEM)
+				{ MCC_TRACE("br\n"); mcc_error("too many '__builtin_shufflevector' indices"); }
+			idx[nsel++] = (int)expr_const64();
+		}
+		skip(')');
+		if (nsel == 0)
+			{ MCC_TRACE("br\n"); mcc_error("'__builtin_shufflevector' needs at least one "
+												"index"); }
+		rt = vt;
+		if (nsel != n)
+			{ MCC_TRACE("br\n"); mk_vector_type(&rt, &ebase, nsel); }
+		vector_local(&rt, &res);
+		for (i = 0; i < nsel; i++) { MCC_TRACE("br\n");
+			int k = idx[i];
+			if (k < 0) { MCC_TRACE("br\n");
+				vpushi(0);
+				gen_cast(&ebase);
+			} else if (k < n) { MCC_TRACE("br\n");
+				vpushv(&a);
+				vector_part(k);
+			} else if (k < 2 * n) { MCC_TRACE("br\n");
+				vpushv(&b);
+				vector_part(k - n);
+			} else { MCC_TRACE("br\n");
+				mcc_error("'__builtin_shufflevector' index %d is out of range", k);
+			}
+			vpushv(&res);
+			vector_part(i);
+			vswap();
+			vstore();
+			vpop();
+		}
+		vpushv(&res);
+		return;
+	}
+
+	if (tok == ',') { MCC_TRACE("br\n");
+		vector_materialize(&vt, &b);
+		next();
+		expr_eq();
+		vcheck_cmp();
+	}
+	if (!is_vector_type(&vtop->type))
+		{ MCC_TRACE("br\n"); mcc_error("the '__builtin_shuffle' mask must be an integer "
+											"vector"); }
+	mn = vector_nelem(&vtop->type);
+	vector_materialize(&vtop->type, &m);
+	skip(')');
+
+	mk_vector_type(&dbl, &ebase, 2 * n);
+	vector_local(&dbl, &tmp);
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		vpushv(&a);
+		vector_part(i);
+		vpushv(&tmp);
+		vector_part(i);
+		vswap();
+		vstore();
+		vpop();
+		vpushv(&b);
+		vector_part(i);
+		vpushv(&tmp);
+		vector_part(n + i);
+		vswap();
+		vstore();
+		vpop();
+	}
+
+	rt = vt;
+	if (mn != n)
+		{ MCC_TRACE("br\n"); mk_vector_type(&rt, &ebase, mn); }
+	vector_local(&rt, &res);
+	for (i = 0; i < mn; i++) { MCC_TRACE("br\n");
+		vpushv(&tmp);
+		gaddrof();
+		vtop->type = char_pointer_type;
+		vpushv(&m);
+		vector_part(i);
+		gen_cast_s(VT_INT);
+		vpushi(2 * n - 1);
+		gen_op('&');
+		vpushi(esz);
+		gen_op('*');
+		gen_op('+');
+		vtop->type = ebase;
+		mk_pointer(&vtop->type);
+		indir();
+		vpushv(&res);
+		vector_part(i);
+		vswap();
+		vstore();
+		vpop();
+	}
+	vpushv(&res);
+}
+
+static int vector_op_ok(int op) { MCC_TRACE("enter\n");
+	switch (op) { MCC_TRACE("br\n");
+	case '+':
+	case '-':
+	case '*':
+	case '/':
+	case '%':
+	case '&':
+	case '|':
+	case '^':
+	case TOK_SHL:
+	case TOK_SHR:
+	case TOK_SAR:
+	case TOK_EQ:
+	case TOK_NE:
+	case TOK_LT:
+	case TOK_GT:
+	case TOK_LE:
+	case TOK_GE:
+	case TOK_ULT:
+	case TOK_UGT:
+	case TOK_ULE:
+	case TOK_UGE:
+		return 1;
+	}
+	return 0;
+}
+
+static int vector_op_is_cmp(int op) { MCC_TRACE("enter\n");
+	return op >= TOK_ULT && op <= TOK_GT;
+}
+
+static void gen_vector_op(int op) { MCC_TRACE("enter\n");
+	CType vt, rt;
+	SValue lhs, rhs, res;
+	int i, n, cmp = vector_op_is_cmp(op);
+
+	vcheck_cmp();
+	vswap();
+	vcheck_cmp();
+	vswap();
+	vt = is_vector_type(&vtop[-1].type) ? vtop[-1].type : vtop[0].type;
+	n = vector_nelem(&vt);
+	if (!vector_op_ok(op))
+		{ MCC_TRACE("br\n"); mcc_error("operator is not defined on vector types"); }
+	if (is_vector_type(&vtop[-1].type) && is_vector_type(&vtop[0].type) &&
+			(vtop[-1].type.ref->c != vtop[0].type.ref->c ||
+			 vector_nelem(&vtop[-1].type) != vector_nelem(&vtop[0].type)))
+		{ MCC_TRACE("br\n"); mcc_error("operands of a vector operation must have the "
+											"same number of elements"); }
+
+	vector_materialize(&vt, &rhs);
+	vector_materialize(&vt, &lhs);
+
+	rt = vt;
+	if (cmp) { MCC_TRACE("br\n");
+		CType ebase;
+		int align, esz = type_size(vector_elem_type(&vt), &align);
+		ebase.t = esz == 1	 ? VT_BYTE
+							: esz == 2 ? VT_SHORT
+							: esz == 8 ? VT_LLONG
+													: VT_INT;
+		ebase.ref = NULL;
+		mk_vector_type(&rt, &ebase, n);
+	}
+	vector_local(&rt, &res);
+
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		vpushv(&lhs);
+		vector_part(i);
+		vpushv(&rhs);
+		vector_part(i);
+		gen_op(op);
+		if (cmp) { MCC_TRACE("br\n");
+			CType *et = vector_elem_type(&rt);
+			gen_cast(et);
+			vpushi(0);
+			vswap();
+			gen_op('-');
+			gen_cast(et);
+		}
+		vpushv(&res);
+		vector_part(i);
+		vswap();
+		vstore();
+		vpop();
+	}
+	vpushv(&res);
 }
 
 static void complex_part(int imag) { MCC_TRACE("enter\n");
@@ -6718,6 +7162,9 @@ the_end:
 		return type_found;
 	}
 	type->t = t;
+	if (ad->attr_vector_size && typespec_found &&
+			apply_attr_vector_size(type, ad->attr_vector_size, 0))
+		{ MCC_TRACE("br\n"); ad->attr_vector_size = 0; }
 	if (ad->storage_class & 16) { MCC_TRACE("br\n");
 		if (t & VT_ARRAY)
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to an array type"); }
@@ -7093,6 +7540,10 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) { MCC_TRA
 		if (!(type->t & (VT_ARRAY | VT_VLA)) && (is_integer_btype(mbt) || is_float(mbt)))
 			{ MCC_TRACE("br\n"); type->t = (type->t & ~(VT_BTYPE | VT_LONG)) | (ad->attr_mode - 1); }
 		ad->attr_mode = 0;
+	}
+	if (ad->attr_vector_size) { MCC_TRACE("br\n");
+		apply_attr_vector_size(type, ad->attr_vector_size, 1);
+		ad->attr_vector_size = 0;
 	}
 	while (rc.nb)
 		{ MCC_TRACE("br\n"); if ((rc.pointee[--rc.nb]->type.t & VT_BTYPE) == VT_FUNC)
@@ -10000,6 +10451,10 @@ tok_next:
 				unary();
 				if (type.t & (VT_ARRAY | VT_VLA))
 					{ MCC_TRACE("br\n"); mcc_error("conversion to non-scalar type requested"); }
+				if (is_vector_type(&type) || is_vector_type(&vtop->type)) { MCC_TRACE("br\n");
+					gen_vector_cast(&type);
+					break;
+				}
 				if ((type.t & VT_BTYPE) == VT_STRUCT && type.ref->type.t != VT_UNION && !is_complex_type(&type)) { MCC_TRACE("br\n");
 					if (!is_compatible_unqualified_types(&type, &vtop->type))
 						{ MCC_TRACE("br\n"); mcc_error("conversion to non-scalar type requested"); }
@@ -10289,6 +10744,24 @@ tok_next:
 		vpop();
 		skip(')');
 		break;
+	case TOK_builtin_shuffle:
+	case TOK_builtin_shufflevector: {
+		int kind = tok;
+		next();
+		gen_vector_shuffle(kind == TOK_builtin_shufflevector);
+		break;
+	}
+	case TOK_builtin_convertvector: {
+		CType dt;
+		next();
+		skip('(');
+		expr_eq();
+		skip(',');
+		parse_type(&dt);
+		skip(')');
+		gen_vector_convert(&dt);
+		break;
+	}
 	case TOK_builtin_object_size:
 	case TOK_builtin_dynamic_object_size:
 		parse_builtin_params(1, "ei");
@@ -11013,9 +11486,20 @@ tok_next:
 #endif
 		} else if (tok == '[') { MCC_TRACE("br\n");
 			next();
-			gexpr();
-			gen_op('+');
-			indir();
+			if (is_vector_type(&vtop->type)) { MCC_TRACE("br\n");
+				CType base = *vector_elem_type(&vtop->type);
+				test_lvalue();
+				gaddrof();
+				vtop->type = base;
+				mk_pointer(&vtop->type);
+				gexpr();
+				gen_op('+');
+				indir();
+			} else { MCC_TRACE("br\n");
+				gexpr();
+				gen_op('+');
+				indir();
+			}
 			skip(']');
 #if MCC_CONFIG_LSP
 			CST_OPEN_AT(CST_Index, cst_um);

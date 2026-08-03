@@ -279,6 +279,7 @@ struct SymAttr {
 			nodebug : 1,
 			transp_union : 1,
 			is_complex : 1,
+			is_vector : 1,
 			tentative_array : 1,
 			is_register : 1,
 			used : 1,
@@ -452,6 +453,7 @@ typedef struct AttributeDef {
 	int alias_target;
 	int asm_label;
 	char attr_mode;
+	int attr_vector_size;
 	char storage_class;
 	char implicit_int;
 } AttributeDef;
@@ -945,6 +947,8 @@ struct MCCState {
 	int gen_sizeof_parsed_align;
 	int gen_complex_re_tok, gen_complex_im_tok;
 	CType gen_complex_type_cache[4];
+	CType gen_vector_type_cache[64];
+	int gen_vector_type_cache_n;
 	Sym *gen_complex_call_ftype[4];
 	unsigned char gen_prec[256];
 

@@ -717,3 +717,46 @@ function the inliner takes), `pr85582-2`, `20000715-1`, `pr54877`, and the
 `link_error` idiom in `bcp-1`/`pure-1`/`compare-3`, which is optimizer quality
 rather than a defect — those tests require a fold `-O0` already performs and
 `-O3`'s inlining undoes.
+
+## Vector types
+
+`__attribute__((vector_size(N)))` is implemented, on the shape `_Complex`
+already established: an anonymous struct of N/sizeof(elem) fields carrying
+`SymAttr.is_vector`, with the struct's alignment set to the vector's size.
+Everything the aggregate machinery already does — `sizeof`, `_Alignof`, brace
+initialization, assignment, parameter passing, return, compound literals —
+comes for free and needed no new code. The operations are lowered element-wise
+against a stack temp, which is correct but scalar: there is no SIMD codegen
+behind this, and the ABI is the one mcc gives a struct of that size, not the
+SysV vector classification, so a vector crossing a translation-unit boundary to
+gcc-compiled code is not yet ABI-compatible.
+
+What is covered: element-wise `+ - * / % & | ^ << >>` and unary `- ~`; the six
+comparisons, which yield a signed-integer vector of the same width with -1 for
+true as GCC does; scalar broadcast on either side; subscripting as both rvalue
+and assignment target; casts between vectors of the same size and between a
+vector and a same-size scalar; `__builtin_shuffle` with a one- or two-vector
+source and a *runtime* mask; `__builtin_shufflevector` with constant indices;
+and `__builtin_convertvector`.
+
+Two type-system decisions worth recording. Vector types are **interned** by
+(element type, count) in `gen_vector_type_cache` — without that, the type minted
+for a comparison result is a distinct anonymous struct from the operand's and
+every `v4si e = a == b;` fails as an incompatible initializer. And
+`compare_types` treats two vectors of the same size and element count as
+compatible, which is GCC's `-flax-vector-conversions` rather than its default;
+the strict rule needs the element type carried in the comparison result, which
+is the natural next step.
+
+**The board**: of the 914 runs (457 tests × two columns) that the sweep had
+blocked on `vector_size`, **777 pass**. The remaining 134 are a long tail —
+30 parse shapes, 16 conversions, 16 other builtins (`__builtin_reduce_*`, the
+`ia32` intrinsics), 10 that assign to a read-only location, 8 `_Complex`
+element types, and 4 `__mode__(vector_size)`.
+
+Two guards came out of this work rather than the feature: `||`/`&&`/`?:` on a
+vector reached `gvtst` and crashed on a bogus jump chain, and now says *used
+vector type where a scalar is required* as GCC does; and a vector whose element
+count exceeds 1024 is refused rather than materialized, because the struct
+representation makes `vector_size(1 << 29)` into 134 million field syms
+(`gcc.dg/pr69973.c` hung the compiler before the cap).

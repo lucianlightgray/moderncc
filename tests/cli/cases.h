@@ -102,10 +102,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/et.c -o {W}/et 2>&1 | grep -oE 'external thread-local .* unsupported' | head -1",
 		 "external thread-local '_c' is unsupported\n"},
 
-		{"vector_size_refused", "",
-		 "printf 'typedef double v2 __attribute__((vector_size(16)));\\nv2 g;\\n' > {W}/vs.c && "
-		 "{MCC} -B{B} -I{I} -c {W}/vs.c -o {W}/vs.o 2>&1 | grep -oE 'vector_size.. is not supported' | head -1",
-		 "vector_size)) is not supported\n"},
+		{"vector_size_elementwise", "",
+		 "printf 'typedef double v2 __attribute__((vector_size(16)));\\n"
+		 "typedef int v4 __attribute__((vector_size(16)));\\n"
+		 "int main(void){ v2 a={1,2},b={3,4},c=a+b; v4 x={1,2,3,4},y={4,3,2,1},e=x<y;\\n"
+		 "return !(c[0]==4&&c[1]==6&&e[0]==-1&&e[3]==0&&x[1]==2\\n"
+		 "&&sizeof(v2)==16&&__alignof__(v2)==16); }\\n' > {W}/vs.c && "
+		 "{MCC} -B{B} -I{I} {W}/vs.c -o {W}/vs && {W}/vs && echo VEC_OK",
+		 "VEC_OK\n"},
 
 		{"visibility_attribute", "cpu=x86_64,os=linux",
 		 "{MCC} -B{B} -I{I} -c {D}/vis.c -o {W}/v.o && "
