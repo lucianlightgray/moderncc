@@ -163,7 +163,6 @@ void ast_fconst_reuse_disable(int off);
 void ast_fconst_record(int c);
 void ast_fconst_push_ref(struct CType *type, int fc);
 
-void ast_hook_stmt(int t);
 void ast_hook_return(int has_val);
 void ast_hook_return_jmp(int jumps);
 void ast_hook_implicit_return(void);
@@ -244,7 +243,6 @@ void ast_hook_landor_operand(int op, int c, int first);
 void ast_hook_landor_next(void);
 void ast_hook_landor_end(int materialized);
 
-void ast_hook_data(void *sec, long off, long size, int is_ro);
 
 extern int ast_zero_bss_env;
 int ast_data_all_zero(void *sec, long off, long size);

@@ -1,2 +1,0 @@
-#rows=1210
-arch/arm64.c	myprintf	raw=14	rawb=688
