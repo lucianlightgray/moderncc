@@ -1,3 +1,7 @@
+#ifndef ASM_REGVAR_ASMREG
+#define ASM_REGVAR_ASMREG(r) (r)
+#endif
+
 static void asm_constraints_prologue(ASMOperand *operands, int nb_operands,
 																		 int nb_outputs,
 																		 const uint8_t *clobber_regs,
@@ -28,7 +32,9 @@ static void asm_constraints_prologue(ASMOperand *operands, int nb_operands,
 				mcc_error("cannot reference twice the same operand");
 			operands[k].input_index = i;
 			op->priority = 5;
-		} else if ((op->vt->r & VT_VALMASK) == VT_LOCAL && op->vt->sym && (reg = op->vt->sym->r & VT_VALMASK) < VT_CONST) {
+		} else if ((op->vt->r & VT_VALMASK) == VT_LOCAL && op->vt->sym &&
+							 (reg = op->vt->sym->r & VT_VALMASK) < VT_CONST &&
+							 (reg = ASM_REGVAR_ASMREG(reg)) >= 0) {
 			op->priority = 1;
 			op->reg = reg;
 		} else {

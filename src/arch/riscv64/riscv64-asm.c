@@ -2272,6 +2272,16 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 
 #define is_reg_allocated(reg) (regs_allocated[reg] & reg_mask)
 
+static int rv_regvar_asmreg(int r) { MCC_TRACE("enter\n");
+	if (r >= MCC_TREG_R(0) && r <= MCC_TREG_R(7))
+		{ MCC_TRACE("br\n"); return r - MCC_TREG_R(0) + 10; }
+	if (r >= MCC_TREG_F(0) && r <= MCC_TREG_F(7))
+		{ MCC_TRACE("br\n"); return r - MCC_TREG_F(0) + REG_FLOAT_MASK + 10; }
+	return -1;
+}
+
+#define ASM_REGVAR_ASMREG(r) rv_regvar_asmreg(r)
+
 #include "arch/asm-constraints.inc.c"
 
 ST_FUNC void asm_compute_constraints(ASMOperand *operands,
