@@ -3289,6 +3289,8 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 	int t2 = v2->type.t & VT_BTYPE;
 	int c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	int asym1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM);
+	int asym2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM);
 	uint64_t l1 = c1 ? value64(v1->c.i, v1->type.t) : 0;
 	uint64_t l2 = c2 ? value64(v2->c.i, v2->type.t) : 0;
 	int shm = (t1 == VT_LLONG) ? 63 : 31;
@@ -3426,6 +3428,16 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 		}
 		v1->c.i = value64(l1, v1->type.t);
 		v1->r |= v2->r & VT_NONCONST;
+		vtop--;
+	} else if (asym1 && asym2 && v1->sym && v1->sym == v2->sym &&
+						 (op == '-' || op == TOK_EQ || op == TOK_NE)) { MCC_TRACE("br\n");
+		int64_t diff = (int64_t)v1->c.i - (int64_t)v2->c.i;
+		if (op == '-')
+			{ MCC_TRACE("br\n"); v1->c.i = diff; }
+		else
+			{ MCC_TRACE("br\n"); v1->c.i = (op == TOK_EQ) ? (diff == 0) : (diff != 0); }
+		v1->r = (v1->r & ~(VT_VALMASK | VT_LVAL | VT_SYM)) | VT_CONST;
+		v1->sym = NULL;
 		vtop--;
 	} else { MCC_TRACE("br\n");
 		if (c1 && (op == '+' || op == '&' || op == '^' ||
@@ -7085,7 +7097,7 @@ static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
 }
 
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
-	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen;
+	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
 	Sym *s;
 	CType type1;
 
@@ -7093,6 +7105,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	type_found = 0;
 	typespec_found = 0;
 	complex_seen = 0;
+	ext_seen = 0;
 	t = VT_INT;
 	bt = st = -1;
 	type->ref = NULL;
@@ -7100,6 +7113,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	while (1) { MCC_TRACE("br\n");
 		switch (tok) { MCC_TRACE("br\n");
 		case TOK_EXTENSION:
+			ext_seen++;
 			next();
 			continue;
 
@@ -7336,7 +7350,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			continue;
 		case TOK_TYPEOF1:
 			if (mcc_state->std_strict_ansi)
-				{ MCC_TRACE("br\n"); mcc_error("'typeof' is a GNU extension"); }
+				{ MCC_TRACE("br\n"); mcc_pedantic("'typeof' is a GNU extension"); }
 		case TOK_TYPEOF2:
 		case TOK_TYPEOF3:
 			next();
@@ -7426,6 +7440,10 @@ the_end:
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to an array type"); }
 		if ((t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to a function type"); }
+	}
+	if (!type_found && ext_seen) { MCC_TRACE("br\n");
+		while (ext_seen--)
+			{ MCC_TRACE("br\n"); unget_tok(TOK_EXTENSION); }
 	}
 	return type_found;
 }
@@ -10524,6 +10542,8 @@ static Sym *builtin_libm_alias(int v) { MCC_TRACE("enter\n");
 ST_FUNC void unary(void) { MCC_TRACE("enter\n");
 	int n, t, align, size, r;
 	CType type;
+	unsigned char save_warn_pedantic = mcc_state->warn_pedantic;
+	unsigned char save_pedantic_errors = mcc_state->pedantic_errors;
 #if MCC_CONFIG_LSP
 	uint32_t cst_um = CST_MARK();
 	uint16_t cst_nk = 0;
@@ -10569,6 +10589,8 @@ tok_next:
 #endif
 	switch (tok) { MCC_TRACE("br\n");
 	case TOK_EXTENSION:
+		mcc_state->warn_pedantic = 0;
+		mcc_state->pedantic_errors = 0;
 		next();
 		goto tok_next;
 	case TOK_U16CHAR:
@@ -10702,6 +10724,8 @@ tok_next:
 				sizeof_parsed_type = 1;
 				sizeof_parsed_align = ad.a.aligned;
 				vpush(&type);
+				mcc_state->warn_pedantic = save_warn_pedantic;
+				mcc_state->pedantic_errors = save_pedantic_errors;
 				return;
 			} else { MCC_TRACE("br\n");
 				unary();
@@ -12026,6 +12050,8 @@ tok_next:
 		CST_CLOSE();
 	}
 #endif
+	mcc_state->warn_pedantic = save_warn_pedantic;
+	mcc_state->pedantic_errors = save_pedantic_errors;
 }
 #undef CST_PRIMARY
 
@@ -13650,7 +13676,7 @@ again:
 		skip(';');
 	} else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) { MCC_TRACE("br\n");
 		if (t == TOK_ASM1 && mcc_state->std_strict_ansi)
-			{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
+			{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
 #if MCC_CONFIG_OPTIMIZER
 		ast_func_has_asm = 1;
 #endif
@@ -15401,7 +15427,7 @@ static int decl(int l) {
 				{ MCC_TRACE("br\n"); break; }
 			if (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
-					{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
+					{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
 #if MCC_CONFIG_ASM
 				if (!decl_in_preamble()) got_decl = 1;
 				asm_global_instr();
@@ -15520,7 +15546,7 @@ static int decl(int l) {
 
 			if (gnu_ext && (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3)) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
-					{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
+					{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
 				ad.asm_label = asm_label_instr();
 				parse_attribute(&ad);
 			}

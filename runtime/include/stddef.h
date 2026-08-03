@@ -24,6 +24,13 @@ typedef union {
 #undef offsetof
 #define offsetof(type, field) __builtin_offsetof(type, field)
 
+#if __STDC_VERSION__ >= 202311L
+#define __STDC_VERSION_STDDEF_H__ 202311L
+#ifndef unreachable
+#define unreachable() ((void)0)
+#endif
+#endif
+
 #endif
 
 #if defined(__need_wint_t)
