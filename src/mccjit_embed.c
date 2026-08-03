@@ -680,30 +680,39 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 
 	sym = mccjit_rebuild_sym(&it);
 	mccjit_internal_compile = 1;
-	if (sym) { MCC_TRACE("br\n");
-		ast_fconst_reuse_disable(1);
-		if (mcc_env_on("MCC_JIT_SELFTEST_FOLD_CONSTS"))
-			{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
-		mccjit_slice_hotpatch(it.arena);
-		if (mccjit_recompile_use_gates)
-			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
-		else if (have_override && override_mask)
-			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, override_mask); }
-		else if (mcc_env_on("MCC_JIT_SELFTEST_REEMIT_GATES"))
-			{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
-		else
-			{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
-		ast_fconst_reuse_disable(0);
-		mccjit_last_cost = ast_cost_score(it.arena);
-	} else { MCC_TRACE("br\n");
-		mccjit_last_cost = -1;
+	volatile int reemit_ok = 0;
+	int sv_stk_floor = stk_data_floor;
+	stk_data_floor = nb_stk_data;
+	js->error_set_jmp_enabled = 1;
+	if (setjmp(js->error_jmp_buf) == 0) { MCC_TRACE("br\n");
+		if (sym) { MCC_TRACE("br\n");
+			ast_fconst_reuse_disable(1);
+			if (mcc_env_on("MCC_JIT_SELFTEST_FOLD_CONSTS"))
+				{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
+			mccjit_slice_hotpatch(it.arena);
+			if (mccjit_recompile_use_gates)
+				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
+			else if (have_override && override_mask)
+				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, override_mask); }
+			else if (mcc_env_on("MCC_JIT_SELFTEST_REEMIT_GATES"))
+				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, 0); }
+			else
+				{ MCC_TRACE("br\n"); ast_reemit_extern(sym, it.arena); }
+			mccjit_last_cost = ast_cost_score(it.arena);
+			reemit_ok = 1;
+		}
 	}
+	js->error_set_jmp_enabled = 0;
+	stk_data_floor = sv_stk_floor;
+	ast_fconst_reuse_disable(0);
+	if (!reemit_ok)
+		{ MCC_TRACE("br\n"); mccjit_last_cost = -1; }
 	sym_pop(&local_stack, sav_local, 0);
 	sym_pop(&global_stack, sav_global, 0);
 	mcc_exit_state(js);
 
 	mccjit_error_quiet = 1;
-	if (sym && mcc_relocate(js) == 0)
+	if (reemit_ok && mcc_relocate(js) == 0)
 		{ MCC_TRACE("br\n"); entry = mcc_get_symbol(js, it.fn_name); }
 	mccjit_error_quiet = 0;
 	mccjit_internal_compile = 0;

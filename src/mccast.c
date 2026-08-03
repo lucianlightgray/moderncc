@@ -16550,20 +16550,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		int ast_rir_arena = 0;
 #if MCC_REPLAY_IR
 		if (ast_rir_prod) { MCC_TRACE("br\n");
-			int ast_rir_seam =
-					!ast_jit_env && !ast_jit_splice_env && !ast_jit_dispatch_env &&
-					ast_jit_fns_n == 0 && !ast_search_env && !ast_roi_env &&
-					!ast_slice_env &&
-					!(mcc_state && (mcc_state->embed_jit ||
-													mcc_state->output_type == MCC_OUTPUT_MEMORY));
-			if (ast_rir_seam && ast_cur && ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
+			if (ast_cur && ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
 				ast_arena_free(ast_cur);
 				ast_cur = ast_rir_prod;
 				ast_rir_used = 1;
 				ast_rir_arena = 1;
 			} else { MCC_TRACE("br\n");
 				ast_arena_free(ast_rir_prod);
-				rir_prod_note(ast_rir_seam ? "noreplay" : "nojit");
+				rir_prod_note("noreplay");
 			}
 			ast_rir_prod = NULL;
 		}
@@ -17483,7 +17477,12 @@ static void ast_reemit(Sym *sym, AstArena *ast) { MCC_TRACE("enter\n");
 	ast_inline_active = 1;
 	ast_graft_budget = ast_graft_budget_max;
 	ast_loc_low = loc;
+	unsigned char ast_re_warn = mcc_state ? mcc_state->warn_none : 0;
+	if (mcc_state)
+		{ MCC_TRACE("br\n"); mcc_state->warn_none = 1; }
 	ast_replay_body(ast);
+	if (mcc_state)
+		{ MCC_TRACE("br\n"); mcc_state->warn_none = ast_re_warn; }
 	if (ast_loc_low < loc)
 		{ MCC_TRACE("br\n"); loc = ast_loc_low; }
 	ast_inline_active = 0;
