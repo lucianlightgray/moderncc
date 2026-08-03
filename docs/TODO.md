@@ -317,6 +317,32 @@ The `-O2`/`-O3` explosion on the x86_64 and arm64 keys was **one cause**: `opt_p
 
 **Still owed by P4, deliberately not attempted.** Flipping `MCC_REPLAY_IR_C2` on per target as each key reaches 100% on the `all` corpus (no key is there). Ungating `MCC_REPLAY_IR` — dropping the CMake option, removing the `REPLAY_IR` row from `GATES[]` in `tests/fuzz/runner.c`, making capture unconditional while verify stays gated (`rir_verify` costs +7.7% wall clock, 4.30 s against 4.63 s over 266 corpus compiles at `-O1`), and turning `rir_parity.cmake`/`rir_c3.cmake`'s 77 skip paths into hard failures. Both of those belong after the default flips, not before: ungating capture for every user build is only worth its cost once the arena is the producer.
 
+### The object-move columns, all twelve keys
+
+Same binary, `MCC_RIR_PROD` on versus off, `all` corpus minus `full_language.c`, `SOURCE_DATE_EPOCH` pinned. This is what the switch currently costs in changed code, and it is the column the array-extent work moved most (x86_64 `-O2` was 367 before promotion came back).
+
+| key | `-O2` | `-O3` | population |
+| --- | --- | --- | --- |
+| arm-win32 / arm-wince | 32 each | 33 each | 518 |
+| i386-win32 | 36 | 36 | 525 |
+| arm | 38 | 39 | 553 |
+| arm64-win32 | 39 | 39 | 521 |
+| i386 | 42 | 42 | 559 |
+| arm64 | 46 | 46 | 555 |
+| arm64-osx | 47 | 47 | 557 |
+| x86_64-win32 | 50 | 50 | 526 |
+| x86_64-osx | 56 | 56 | 523 |
+| x86_64 | 69 | 69 | 562 |
+| riscv64 | 76 | 76 | 551 |
+
+`arm-win32` and `arm-wince` agree at both levels, as they must.
+
+**`-O2` and `-O3` are identical on nine of twelve keys, and differ by exactly one body on the three arm keys** — `tests/exec/pointers_arrays/array_in_struct_init.c`, which moves at `-O3` and not at `-O2`. The file's earlier claim that `-O2`/`-O3` are byte-identical on every counter was measured on five keys and is very nearly right; this is the one exception, and it is worth one look before the switch flips.
+
+**Two traps in taking this measurement, both of which produced a wrong answer first.** Without `SOURCE_DATE_EPOCH` pinned, an embedded timestamp makes a file differ between its own two compiles, which inflated the arm `-O3` count from 39 to 40 and invented a second `-O3`-only body. And a per-file enumeration must skip a file the *off* leg fails to compile, or a pre-existing failure reads as a move.
+
+**A pre-existing riscv64 crash, unrelated to the switch.** `tests/diff/complex_abi/complex_abi.c` aborts at `-O2` with `mcc-riscv64: src/arch/riscv64/riscv64-gen.c:83: freg: Assertion 'r >= 8 && r < 16' failed`, with the switch **off**. Same family as the `riscv64-gen.c:431` store assertion and the `:438` `sv->r & VT_LVAL` abort this file already records, and probably the same missing float-register path. It is excluded from the board above by the `rc` check, so nothing measured it until now.
+
 ### The `MCC_RIR_PROD=1` census — the remaining work list
 
 Measured on a **short checkout path**, which matters: the 22 `exec*/bound_global` failures both P4 and the array-extent work reported as pre-existing are an artifact of a long worktree path (`bt_info.file` is `char[100]`). On `/home/llg/Projects/moderncc` the suite is **8255/8255 with the switch off**, so the prod-on comparison is exact and noise-free.
