@@ -285,10 +285,11 @@ function(mcc_validate_config)
             "mcc config: MCC_CONFIG_SEMLOCK='${MCC_CONFIG_SEMLOCK}' must be a number")
     endif()
 
-    if(MCC_BUILD_PROFILE AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    if(MCC_BUILD_PROFILE AND (NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
+                              OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"))
         message(FATAL_ERROR
-            "mcc config: MCC_BUILD_PROFILE (mcc_p, -pg) needs a GCC/Clang host "
-            "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
+            "mcc config: MCC_BUILD_PROFILE (mcc_p, -pg) needs a GNU-ABI GCC/Clang "
+            "host compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
             "-DCMAKE_C_COMPILER to gcc/clang.")
     endif()
     if(MCC_BUILD_SANITIZE
@@ -1198,6 +1199,8 @@ if(MCC_ALL_DIAGNOSTICS)
 
         if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
             message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
+        elseif(CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
+            message(STATUS "mcc diagnostics: skipping mcc_p (-pg -static) with an MSVC-ABI clang (no gprof runtime, no libm)")
         else()
             mcc_profile_seed(MCC_BUILD_PROFILE  ON)
         endif()
