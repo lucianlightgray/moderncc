@@ -13,6 +13,19 @@ enum { RIR_T_OP = 0, RIR_T_RBEGIN, RIR_T_REND, RIR_T_MARK };
 #define MCC_REPLAY_IR_C2 0
 #endif
 
+/* mccgen.c wraps these two MCCState fields in object-like macros, so in the
+   amalgamated build the token nb_seqp already expands to (mcc_state->nb_seqp)
+   and spelling the member out would expand inside the arrow. With
+   MCC_SINGLE_SOURCE=OFF this file is its own translation unit and mccgen.c's
+   macros are not visible, so define them the same way rather than reaching for
+   the member directly -- that is the spelling that compiles in both builds. */
+#ifndef nb_seqp
+#define nb_seqp (mcc_state->nb_seqp)
+#endif
+#ifndef seqp_overflow
+#define seqp_overflow (mcc_state->seqp_overflow)
+#endif
+
 typedef struct RirOp {
 	int tag;
 	int rkind;
@@ -4566,6 +4579,7 @@ void rir_verify(void) {
 	int saved_ntlv = nb_temp_local_vars;
 	struct temp_local_variable saved_tlv[MAX_TEMP_LOCAL_VARIABLE_NUMBER];
 	int sv_ast_active, sv_ast_replaying;
+	int sv_nb_seqp, sv_seqp_overflow;
 
 	rir_active = 0;
 	rir_tot_fn++;
@@ -4691,6 +4705,17 @@ void rir_verify(void) {
 	sym_free_first = NULL;
 	sv_ast_active = ast_active;
 	sv_ast_replaying = ast_replaying;
+	/* The sequence-point recorder is parse-time diagnostic state, and replay
+	   re-runs the same stores. warn_none above silences a warning raised DURING
+	   the replay, but the events outlive it: seqp_check runs at the next
+	   statement boundary in the parser, with warnings back on, and counts the
+	   parser's write plus the replay's as two writes to one object. That is a
+	   spurious "operation on 'x' may be undefined" attributed to whatever line
+	   the parser has reached by then. Same class as every other leftover the
+	   prologue resets -- see "Keep the C2 harness mirroring the tree's replay
+	   prologue" in docs/TODO.md. */
+	sv_nb_seqp = nb_seqp;
+	sv_seqp_overflow = seqp_overflow;
 	ast_active = 0;
 	ast_replaying = 1;
 	ast_fconst_i = 0;
@@ -5002,6 +5027,8 @@ void rir_verify(void) {
 	mcc_state->cg_func_alloca = saved_func_alloca;
 	ast_active = sv_ast_active;
 	ast_replaying = sv_ast_replaying;
+	nb_seqp = sv_nb_seqp;
+	seqp_overflow = sv_seqp_overflow;
 	ast_fconst_i = 0;
 	ast_locrec_i = 0;
 	memcpy(mcc_state->error_jmp_buf, outer, sizeof(jmp_buf));

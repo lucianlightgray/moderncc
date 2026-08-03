@@ -438,14 +438,25 @@ change verdict"*, and the script is the env plumbing plus two refusals.
 Identical at all three `-O` levels, and `arena-only` is **empty everywhere** — no
 golden ever fails under the arena that passes under the parser.
 
-**And the one differential is not behavioural.** `struct_init` fails in the parser
-leg only because that leg emits a compiler *diagnostic* the arena leg does not —
-`struct_init.c:407: warning: operation on 'i' may be undefined` — which shifts every
-line and fails the golden compare. Line 407 is `tst_bf arr[] = {{1, 2, 3}};`: no
-`i`, no sequence point, so the warning is spurious and its line number is wrong.
-Confirmed two ways: compiling the file directly gives **0 warnings with
-`MCC_REPLAY_IR` unset and 1 with it set**, and the captured output on both x86_64 and
-riscv64 is that warning followed by output that then matches line for line.
+**The one differential was a real defect in the replay harness, and it is fixed.**
+`struct_init` failed in the parser leg because that leg emitted a diagnostic the
+arena leg did not — `struct_init.c:407: warning: operation on 'i' may be undefined`,
+where line 407 is `tst_bf arr[] = {{1, 2, 3}};`: no `i`, no sequence point. **The
+replay prologue already sets `mcc_state->warn_none = 1`, so the warning was not
+raised during replay — its *events* outlived it.** `seqp_record_sv`
+(`src/mccgen.c:371`) appends to `mcc_state->nb_seqp` on every store, replay re-runs
+the same stores, and the next `seqp_flush()` at a statement boundary in the parser —
+with warnings back on — saw the parser's write plus the replay's and counted two
+writes to one object. The line number was wrong for the same reason: it was wherever
+the parser had reached by then. Fixed by saving and restoring `nb_seqp` and
+`seqp_overflow` across the replay, alongside the state the prologue already handles.
+**Exactly the leftover-state class "Keep the measurement honest" warns about**, and
+the second instance of it — one omission there once cost 194 bodies.
+
+**After the fix all fifteen cells read `differential: NONE`** and both legs report
+equal pass counts (299/299, 250/250, 247/247, 246/246, 241/241). The byte board is
+identical on every counter either side of the fix, which is what a diagnostic-only
+change must be.
 
 So across every key whose output this host can execute, **the arena's emission and
 the parser's bytes are behaviourally identical at every optimisation level**, against
@@ -460,13 +471,21 @@ byte board uses. And eight goldens (`atomic_misc`, `bound_global`, `bound_test_b
 **both** legs under a single batch invocation while passing under ctest's per-test
 isolation, so they cancel out of the differential but were never compared.
 
-**`MCC_REPLAY_IR=1` is not diagnostic-transparent, and that is a defect in the
-control leg itself.** The verify path re-runs enough of codegen to re-trigger a
-warning the normal path does not emit, at a wrong line. Same family as the
-`combine_types` "pointer type mismatch in comparison" case already recorded above —
-a divergence whose only observable is a diagnostic. Any harness built on this leg has
-to either fix that or filter diagnostics out of the compared text, and filtering is
-the worse choice because it discards the one signal that found this.
+**`MCC_REPLAY_IR=1` was not diagnostic-transparent; that was a defect in the control
+leg itself and is now closed** (the `nb_seqp` leak above). Recorded because the shape
+recurs: a divergence whose only observable is a diagnostic, same family as the
+`combine_types` "pointer type mismatch in comparison" case. The temptation when one
+appears is to filter diagnostics out of the compared text — **do not**, because the
+compared text is the only thing that surfaced this one. Fix the leak instead.
+
+**Anything the replay prologue does not save is a candidate for the same bug.** The
+prologue resets `vstack`/`vtop`, `loc`, `anon_sym`, `ast_pinned_regs`, the
+break/continue/switch symbols, `sym_free_first`, `ast_fconst_i`, `ast_locrec_i`,
+`nb_stk_data`, the label allocator, and now `nb_seqp`/`seqp_overflow`. Two more
+diagnostic-side pieces of state are mutated by `seqp_record_sv` and are **not** saved:
+`obj->a.inited`, which drives `"'%s' is used uninitialized"`, and `obj->a.addrtaken`.
+Replay setting `inited` on a `Sym` can only *suppress* a later warning, which is why
+no golden caught it — but it is the same leak with a quieter symptom.
 
 ### The cross-key trap, paid for once already
 
@@ -515,7 +534,8 @@ each one produced a plausible-looking wrong answer:
    it actually ran. Without it the harness proves "this program behaves the same",
    which is not the same claim as "this body is equivalent" — a body on an untaken
    path proves nothing. This is the load-bearing half and the reason step 1 alone is
-   not enough.
+   not enough. **See the section below for why the obvious implementations do not
+   work and what does.**
 3. **Feed the attributed body names to `RIREQUIV`** and re-measure. `c2unproven` is
    then the real number: byte-divergent *and* unwitnessed by execution.
 4. **A purpose-built control-flow corpus**, because the claim is "regardless of
@@ -529,6 +549,133 @@ each one produced a plausible-looking wrong answer:
    recursion, and `setjmp`/`longjmp`. Four of the five open classes below are exactly
    these shapes, which is the tell that the corpus gap and the defect list are the
    same list.
+
+### The per-body tap: why `MCC_TRACE` and `fprintf` cannot do it
+
+**Both instrument the wrong process.** `MCC_TRACE`, and any `fprintf(stderr, "%s:%d",
+__FILE__, __LINE__, ...)` added to `src/`, are compiled into **mcc**. They report
+which *compiler* functions ran while compiling. The question the tap has to answer is
+which *compiled body* ran when the **test program** was executed, minutes later, in a
+different process — often under `qemu` or `wine`. No amount of instrumentation in the
+compiler can observe that, because the compiler is not running at the time. This is
+the same category error as trying to prove program equivalence by diffing `-O0`
+against `-O1` compiler traces.
+
+To observe the test program from inside, mcc would have to **emit** the tap into the
+code it generates — a function-entry counter per body. That is a codegen change, and
+it moves every byte in the corpus, so it cannot run in the same build the byte board
+measures. It is not disqualified by that (the differential compares two legs and
+identical instrumentation cancels), but it is a large change to gain something two
+cheaper routes already give.
+
+**Three routes that do work, cheapest first:**
+
+- **Debugger breakpoints on the divergent symbols.** The set that needs witnessing is
+  small — ten over twelve keys on `exec`, and the per-key `all` gap is 8-31. Set a
+  breakpoint per divergent symbol, run the golden, record which fire. Exact, no
+  compiler change, no byte movement. `gdb --batch -ex 'break f' -ex run` works on
+  native and on `qemu-<arch> -g`. Note the caveat already banked above: both vendored
+  and scoop gdb crash loading mcc's PE DWARF, so on PE keys use the un-stripped twin
+  and `addr2line`, or fall back to the next route.
+- **A `qemu-user` TCG plugin** logging executed translation-block addresses, mapped
+  back through the symbol table. Covers the four ELF cross keys in one pass with no
+  per-symbol setup, and is the only route that scales to "which of all 2,156 bodies
+  ran" rather than "did these ten run".
+- **Per-body arena selection, which needs no runtime observation at all.** Give
+  production a `RIRONLY=<funcname>` filter in `rir_prod_take` (`src/mccrir.c:4424`) —
+  the M6 refusal site, which already exists to decline shapes and *cannot move a C2
+  counter by construction*. Then compile a golden with the arena enabled for exactly
+  one divergent body and the parser's bytes everywhere else. If the program still
+  produces golden output, that body's arena emission is witnessed **in isolation**,
+  which is a strictly stronger claim than the whole-program differential makes — it
+  cannot be masked by another body compensating. Cost is one compile-and-run per
+  divergent body per key, which at 8-31 bodies and 3.6s per compile is seconds.
+
+**The third route is the one to build.** It reuses a site that already exists, it
+needs no debugger, no plugin, and no emitted instrumentation, it is identical across
+all twelve keys including the ones that cannot execute here, and its verdict is
+per-body by construction rather than by inference. Its output feeds `RIREQUIV`
+directly.
+
+### On "`-O0` matching `-O1` proves it", and the JIT
+
+**The intuition is right and the axis is wrong, for one structural reason.**
+Behavioural equivalence *is* the correct completion bar for Replay_IR — that is the
+whole argument of this section, and the fifteen clean cells above are the evidence.
+But `-O0` versus `-O1` cannot be the comparison, because `ast_replay_env` requires
+`optimize >= 1` (`src/mccast.c:1923`): **at `-O0` no arena is built at all.** The
+`-O0` leg has zero Replay_IR involvement, so that comparison measures the optimizer
+and says nothing about the arena. It is a good test — the external-suite cross-`-O`
+run found three genuine optimizer miscompiles — but it is a different test, and the
+`exec/` and `exec-O1/` ctest families already run it.
+
+The comparison that isolates the arena holds `-O` **constant** and flips
+`MCC_REPLAY_IR`, because `rir_prod_env = ast_replay_env && !rir_env` is the only term
+that decides whose bytes ship. That is what `tools/c2_equiv.sh` does.
+
+**The JIT extension is real and is the natural next consumer.** `mccjit_recompile_common`
+(`src/mccjit_embed.c:571`) drives runtime recompilation, and its promotion path runs
+the same arena. The same differential applies unchanged — run a JIT workload twice
+with `MCC_REPLAY_IR` flipped and compare observable behaviour — and it reaches
+something the static corpus cannot: bodies that are only ever recompiled, and the
+promotion decisions themselves. Two cautions before building it. `embed_jit` is a
+term in `ast_replay_env` (`src/mccast.c:1923`), so the JIT arms the arena
+independently of `-O` and the flip may not partition the same way; check that first.
+And P4 defect 3 was a JIT-seam defect (`7133295b`, the runtime recompile lacking an
+error `jmp` context), so the seam has form.
+
+### For the Windows and macOS hosts: validate the semantic bar on the five keys this host cannot execute
+
+**This is the highest-value thing either of those machines can do right now**, and it
+closes W1/W2 in a way the byte compare never could. Seven of twelve keys have a byte
+gap that has *only* ever been byte-compared — `x86_64-osx` 12, `arm64-osx` 19,
+`arm64-win32` 16, `arm-win32` 17, `arm-wince` 17 — and the whole point of the fifteen
+clean cells above is that a byte gap is not evidence of a defect. Until those keys are
+*executed*, nobody knows whether their gap is the same benign shape or something real.
+
+Run this **before** attacking any individual body on those keys.
+
+**macOS (both hosts, or one Apple-silicon machine for both keys).**
+
+1. `cmake -S . -B bc2 -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1 && ninja -C bc2`
+2. `ctest --test-dir bc2 -j 8` — a full suite on a Mach-O host, which this file has
+   never had a clean reading of. Expect `selfhost-fixpoint-O3` to need attention: W3
+   records it as *"green again by side effect, and the defect underneath it was never
+   found"*, and macOS is the only host that can tell whether it is fixed or dormant.
+3. `tools/c2_equiv.sh bc2 all -O1` and again at `-O2`/`-O3`. **The script needs a
+   Mach-O arm first** — it currently only knows sysroot+qemu keys. On an
+   Apple-silicon host `arm64-osx` is native (no runner prefix, no sysroot) and
+   `x86_64-osx` runs under Rosetta; on an Intel host the reverse, with no runner for
+   `arm64-osx`. Flags are `-B runtime -I runtime/include` per `tools/c2_sweep.sh:21`.
+4. `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh bc2 all` — the `-O0` object bank was
+   taken on Linux; confirm it reproduces.
+
+**Windows x86_64.**
+
+1. Same two builds, then `ctest`. The preset sweep at the top of this file lists
+   `matrix`, `diagnostics`, `msvc`, `sanitize-msvc`, `mingw`, `stage2`, `dist-mingw`
+   and `dist-msvc` as unrun — `stage2` is W4 and is the one that needs a real 1MB-default
+   PE process to confirm the 8MB `SizeOfStackReserve` fix at `src/objfmt/mccpe.c:738`.
+2. `tools/c2_equiv.sh bc2 all` once it has a **PE arm**: `x86_64-win32` and
+   `i386-win32` execute *natively* on that host, so the runner prefix is empty rather
+   than `wine`, and the flags are `-B runtime/win32 -B runtime -I runtime/include`
+   (`tools/c2_sweep.sh:20`) with no sysroot. Those two keys carry gaps of 12 and 14.
+3. `arm64-win32`, `arm-win32` and `arm-wince` still need a **Windows-on-ARM** machine;
+   they are W2 and W5 and remain byte-only until one exists. `arm-win32` and
+   `arm-wince` must read identically on every counter — a differential where they
+   disagree is a harness bug, not a codegen one.
+
+**What to report back, in this order**, because each answers a different open question:
+
+- The `differential:` line per key per `-O`. **`NONE` with a non-zero pass count on a
+  key whose byte gap is non-zero is the result that matters**: it says that key's gap
+  is the same benign class as the five measured here.
+- Any key where the script prints `UNMEASURABLE`. That is the script refusing to score
+  an empty population, and it means the host plumbing is wrong, not the compiler.
+- Any golden in `arena-only:[...]`. That column is empty on all fifteen cells measured
+  here, and a non-empty one is a genuine arena defect that the byte board could not
+  distinguish from the benign majority — the highest-priority finding this exercise
+  can produce.
 
 ### The bar this replaces, and the one it does not
 
@@ -594,7 +741,15 @@ diagnoses below marked *"re-measured at `bc85ce70`"* were taken on x86_64 at for
 `-O0` with `cmake-verify` rebuilt at that commit; the older counts beside them are
 from `da3a461b` and have not been re-taken per body.
 
-**Uncommitted at the time of writing, so that the next person is not surprised by a
+**`riscv64-promote-docker` is not idempotent and will fail your second `ctest`.** The
+cell passes on a clean directory and then leaves `corpus/{a,b}.c` owned by **root**
+(the container writes as root; the cleanup runs as you), so the *next* run dies with
+`rm: cannot remove ...: Permission denied` before compiling anything. It is not a
+codegen failure and not caused by whatever you just changed. Clear it with
+`sudo rm -rf <builddir>/riscv64-promote-docker` and it passes again. Fixing it
+properly means the cell chowning or removing its workdir from inside the container.
+
+**Tree state at `bd9026df`+1, so that the next person is not surprised by a
 dirty tree**: the `c2equiv`/`c2unproven` seam in `src/mccrir.c` and its column in
 `tools/c2_sweep.sh`; this file; and a staged `git rm -r` of `b/`, a 126 MB build
 directory committed by accident in `bc85ce70` — `.gitignore` carries only
