@@ -2082,27 +2082,6 @@ if(MCC_ALL_DIAGNOSTICS)
     target_compile_options(mcc PRIVATE ${MCC_DIAG_FLAGS})
 endif()
 
-if(MCC_BUILD_TESTS AND MCC_SINGLE_SOURCE AND MCC_CONFIG_OPTIMIZER
-   AND MCC_CPU MATCHES "x86_64|arm64|aarch64|i386|riscv64" AND NOT CMAKE_CROSSCOMPILING)
-    add_executable(mcc_nojrn src/mcc.c)
-    set_target_properties(mcc_nojrn PROPERTIES OUTPUT_NAME mcc-nojrn)
-    target_include_directories(mcc_nojrn PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(mcc_nojrn PRIVATE MCC_IR_CAPTURE=0)
-    if(NOT MCC_TARGETOS STREQUAL "WIN32")
-        target_link_libraries(mcc_nojrn PRIVATE m)
-        find_package(Threads)
-        if(Threads_FOUND)
-            target_link_libraries(mcc_nojrn PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
-        endif()
-    endif()
-    if(NOT "${MCC_EXTRA_LIBS}" STREQUAL "")
-        target_link_libraries(mcc_nojrn PRIVATE ${_mcc_extra_libs})
-    endif()
-    if(TARGET mcc_mccdefs)
-        add_dependencies(mcc_nojrn mcc_mccdefs)
-    endif()
-endif()
-
 if(MCC_BUILD_STATIC_EXE)
     add_executable(mcc_static src/mcc.c)
     set_source_files_properties(src/mcc.c PROPERTIES OBJECT_DEPENDS
@@ -2411,7 +2390,7 @@ if(MCC_BUILD_TSAN)
     endif()
 endif()
 
-foreach(_nt mcc mcc_static mcc_dynamic mcc_nojrn libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s mcc_t)
+foreach(_nt mcc mcc_static mcc_dynamic libmcc libmcc_shared libmcc_jitengine mcc_p mcc_s mcc_t)
     if(TARGET ${_nt})
         target_compile_definitions(${_nt} PRIVATE ${_mccdefs})
     endif()
@@ -3752,19 +3731,6 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O1;MCC_AST_TEMPLATES=0;MCC_AST_PROMOTE=1;MCC_AST_INLINE=0")
         endforeach()
 
-        add_test(NAME ast/rir-inert
-            COMMAND "${CMAKE_COMMAND}"
-                    "-DMCC=${_mcc_exe}"
-                    "-DRIR=1"
-                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
-                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-inert"
-                    "-DOPT=-O1"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
-        set_tests_properties(ast/rir-inert PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
-            TIMEOUT 900)
-
         add_test(NAME ast/rir-position
             COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=${_mcc_exe}"
@@ -3971,24 +3937,6 @@ if(MCC_BUILD_TESTS)
                     LABELS "cross" TIMEOUT 1800)
             endforeach()
         endforeach()
-
-        if(TARGET mcc_nojrn)
-            add_test(NAME ast/journal-inert-build
-                COMMAND "${CMAKE_COMMAND}"
-                        "-DMCC=${_mcc_exe}"
-                        "-DNOJRN=$<TARGET_FILE:mcc_nojrn>"
-                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
-                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-hooks-inert"
-                        "-DOPT=-O1"
-                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
-            set_tests_properties(ast/journal-inert-build PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
-                TIMEOUT 900)
-        else()
-            mcc_skip_test(ast/journal-inert-build
-                "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON, MCC_CONFIG_OPTIMIZER, a non-cross build and a CPU the journal hooks compile on (x86_64, arm64, i386 or riscv64); this is ${MCC_CPU}, single-source=${MCC_SINGLE_SOURCE}, cross=${CMAKE_CROSSCOMPILING}")
-        endif()
 
         find_program(MCC_OBJCOPY objcopy)
         if(UNIX AND MCC_OBJCOPY)

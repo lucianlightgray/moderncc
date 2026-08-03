@@ -17,18 +17,17 @@ The tree is green: `ctest -j 8` **8252/8252** with no env set, on a short checko
 | P0 harness, P1 journal verify-half cut, P2 decouple + admission predicate, P3 capture rebrand | landed |
 | P4 cutover | landed; **`MCC_RIR_PROD` defaults to 1**, arena drives **91.5%** of bodies (`used=2011 fallback=11 skip=176` of 2198, x86_64 `-O2`, whole corpus) |
 | P5 switch | **landed. `MCC_RIR_ONLY` defaults to 1**; the three `optfire` cells that died with it are deleted and the suite is 8252/8252 |
-| P5 deletion | **the hooks are gone** — -1,618 lines of `mccast.c`, 124 call sites, 76 declarations, 20 dead cells, 12 readerless gates. Tree green at 8232/8232. The recorder's *state* (`ast_bail`, `ast_desync`, the shadow vstack, `ast_try_active`, `ast_verify_env`) is dead code and still present; see **What the deletion still owes** |
-| `fix-imaginary` | branch ready, merges clean, blocked only on the three `ast-verify-ratchet` cells the deletion removes |
+| P5 deletion | **done.** The hooks, the state, all 14 gates, `MCC_RIR_ONLY`, `MCC_AST_VERIFY` and 22 dead cells are gone. Nothing named `ast_hook_`, `ast_bail`, `ast_desync`, `ast_vn` or `ast_try_active` survives under `src/`. Tree green at 8231/8231 |
+| `fix-imaginary` | branch ready, merges clean, **unblocked** — the three `ast-verify-ratchet` cells are deleted |
 | P6 split + `ast_*` → `ir_*` | not started |
 
 ### Next steps, in order
 
-1. **Finish the deletion** — the hooks are out, the state is not. See **What the deletion still owes** below.
-2. **Land `fix-imaginary`** — `ast-verify-ratchet-{O1,O2,O3}` are deleted, which were the only three cells blocking it. It merges clean and needs no rebase. **This is unblocked now.**
-3. **P6**: split `mccast.c` and rename `ast_*` → `ir_*`. The `ir_`/`IR_` namespace is verified empty.
-4. Then the items under **Open work raised after the cutover** — the poison-over-deletion change, the `ast_cycle_env` convergence, the pointer test, glibc headers, and `MCC_TRACE` on `full_language.c`.
+1. **Land `fix-imaginary`** — `ast-verify-ratchet-{O1,O2,O3}` are deleted, which were the only three cells blocking it. It merges clean and needs no rebase. **This is unblocked now.**
+2. **P6**: split `mccast.c` and rename `ast_*` → `ir_*`. The `ir_`/`IR_` namespace is verified empty.
+3. Then the items under **Open work raised after the cutover** — the poison-over-deletion change, the `ast_cycle_env` convergence, the pointer test, glibc headers, and `MCC_TRACE` on `full_language.c`.
 
-### What the deletion did, and what it still owes
+### What the deletion did
 
 **Done, and gated.** `-1,618` lines of `src/mccast.c` (76 hook definitions plus their 64 forward declarations), all **124** call sites in `src/mccgen.c` with the 26 `#if MCC_CONFIG_OPTIMIZER` blocks they left empty, all **76** declarations in `src/mccast.h`, and **12 of the 14** recorder-shape gates, which measurement confirmed had exactly two references each — a declaration and an assignment, no reader. **The six keepers are kept**: `ast_label_id`, `ast_label_forget`, `ast_sv_hi`, `ast_cmp_invert_late`, `ast_bad_type`, `ast_func_has_asm`. Verified mechanically — the set of top-level definitions lost is *exactly* the `ast_hook_*` set, nothing else.
 
@@ -36,14 +35,11 @@ Twenty cells died with it and are deleted: `ast-verify-ratchet-{O1,O2,O3}` with 
 
 Gates met: the twelve-key object A/B reads **19,425 compared, 12 differ** — the single `-O3` `scopes.c` widening described above and nothing else, unchanged before and after the gate removal, which is what proves those 12 gates were readerless. `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh` passes against the bank on all twelve keys with `arm-win32 == arm-wince`. `tracegate`/`schemagate`/`targetgate` clean.
 
-**Still owed, and none of it is load-bearing — it is dead code that still compiles.**
+**The state went too, and the recorder is now gone entirely.** `ast_bail`, `ast_desync`, `AST_SET_BAIL`/`AST_SET_DESYNC`, `ast_gap_note` and the whole gap-note block, the shadow vstack (`ast_vs`, `ast_vn`, `ast_cf_if`/`ast_cf_savebb`/`ast_cf_top`), `ast_capture`, `ast_in_op` (with its ten increment/decrement sites in `src/mccgen.c` and the lone `ast_bail = 1` in `va_arg`), `ast_in_call`, the ternary and land/or stacks, `ast_ret_val`, `ast_last_return`, `ast_saw_nocode`/`ast_saw_chain`, `ast_call_pending`/`ast_inc_pending`/`ast_vdup_pending`/`ast_opassign_store_pending` — all deleted. `ast_replay_ok` is now literally "the arena has a body". `ast_try_active` is gone and `rir_try_active`, which `src/mccrir.c` has owned since P2, gates `ast_func_begin` and `ast_func_end` directly; `ast_ret_bad`, `ast_bad_vtype` and `ast_wide_vtype` went with it, and with them the last two recorder gates, `MCC_AST_INT128` and `MCC_AST_LDOUBLE`. `ast_verify_env`, `MCC_AST_VERIFY`, `MCC_AST_VERIFY_OUT` and both `[ast-verify]` verdict blocks are gone. `tests/fuzz/runner.c`'s `GATES[]` lost its eight dead rows and the `RECORDER_2026_07_31` combination that consisted entirely of them; every `MCC_AST_*` the fuzzer still names is verified to exist in `src/mccast.c`.
 
-- **The recorder's state.** `ast_bail`, `ast_desync`, `AST_SET_BAIL`/`AST_SET_DESYNC`, `ast_gap_note`, the shadow vstack (`ast_vs`, `ast_vn`, `ast_cf_if`/`ast_cf_savebb`/`ast_cf_top`) and `ast_replay_ok`'s first four terms are all still declared. Nothing writes them any more, so `ast_replay_ok` has already collapsed to "the arena has a body" *in effect* — the deletion's whole premise, now true by construction rather than by the `MCC_RIR_ONLY` bypass.
-- **`ast_try_active`** still gates `ast_func_end`. It wants to become `rir_try_active`, which `src/mccrir.c` already owns (P2 landed it).
-- **`ast_verify_env` and the `[ast-verify]` verdict block** (`src/mccast.c:15851` area). Its consumers — the ratchet cells and the baselines — are deleted, so it now reports on an arena nothing fills.
-- **`ast_ret_bad`, `ast_bad_vtype`, `ast_wide_vtype`** and with them the last two gates, `ast_int128_env` and `ast_ldouble_env`. These are the *only* reason those two gates still have a reader; the file already said they "survive only as long as `ast_try_active`'s `ast_ret_bad` term does", and that is still exactly right.
-- **`MCC_RIR_PROD` and `MCC_RIR_ONLY` themselves**, once `ast_func_end` adopts unconditionally.
-- **`tests/fuzz/runner.c`'s `GATES[]`** still lists rows for the twelve deleted gates (`REGPAIR`, `CONVERT_GV`, `CALL_NORETURN`, `FNEG`, `INDIRECT_LOAD`, `LANDOR_FOLD`, `CLEANUP_RET`, `VOIDRET_EXPR`, and the combination strings at `:340-344`). They now set environment variables nothing reads, so the fuzzer spends configurations on no-ops. Not wrong, but it is a stale measurement of exactly the kind this file exists to prevent.
+**`MCC_RIR_ONLY` is gone and `MCC_RIR_PROD` is now report-only.** `ast_func_end` adopts the arena unconditionally: `rir_prod_env` is `ast_replay_env && !rir_env`, with no gate and no `ast_verify_env` term. `MCC_RIR_PROD` survives *only* as the verbosity level the measurement recipes in this file are written against — unset or `0` is silent, `2` still prints `[rir-prod] <verdict>` per body and the `[rir-prod-total]` atexit line. **It can no longer turn production off**, which is the point: there is nothing left to fall back to.
+
+**Two more cells died with the off-switch, and the inventory had no row for them.** `ast/rir-inert` and `ast/journal-inert-build`, with `tests/ast/journal_inert.cmake` and the `mcc_nojrn` target they existed to drive. Both proved the capture substrate is *byte-inert* by compiling the corpus twice under `MCC_RIR_PROD=0` and comparing. That property is now vacuous and the cells are unsatisfiable by construction: with capture as the sole producer, a compiler built `MCC_IR_CAPTURE=0` has no arena at all, so it keeps the parser's bytes while `mcc` re-emits from the arena — the two legs *must* differ. P4 saw the shape of this coming ("with the cutover on, `mcc` and `mcc_nojrn` legitimately differ because one has a different producer") and re-pointed the cell rather than retiring it; the off-switch's removal is what finally made it unanswerable. 8232 → **8230** cells; upstream has since added one back, so the tree reads 8231.
 
 ### The `MCC_RIR_ONLY` flip, as measured
 

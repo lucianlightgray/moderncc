@@ -133,8 +133,6 @@ struct CType;
 
 extern int ast_active;
 extern int ast_replaying;
-extern int ast_in_op;
-extern int ast_bail;
 extern int ast_func_has_asm;
 extern uint64_t ast_pinned_regs;
 extern int ast_regdisp_env;

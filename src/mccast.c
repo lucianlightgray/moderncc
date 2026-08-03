@@ -1308,8 +1308,6 @@ int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
 int ast_active;
 static int ast_replay_env;
 static int ast_replay_dump;
-static int ast_verify_env;
-static const char *ast_verify_out;
 static const char *ast_verify_diff;
 static int ast_graft_limit;
 static int ast_graft_total;
@@ -1695,8 +1693,6 @@ static int ast_storeval_callup_env;
 static int ast_storeval_rot_env;
 static int ast_storeval_calllast_env;
 static int ast_sv_live_depth;
-static int ast_ldouble_env;
-static int ast_int128_env;
 static int ast_cmp_mat_env;
 static int ast_chainstore_live_env;
 static int ast_chainstore_member_env;
@@ -1729,48 +1725,11 @@ static int ast_no_callful_promo;
 static int ast_inline_env;
 static int ast_tmpl_folds;
 static MCC_OPT_TLS AstArena *ast_cur;
-int ast_bail;
-static int ast_rir_only_env;
-int ast_bail_line;
-static void ast_gap_note(void);
-#define AST_SET_BAIL() do { if (!ast_bail) { ast_bail_line = __LINE__; ast_gap_note(); } ast_bail = 1; } while (0)
 static int ast_reemit_poison;
-static AstLocal ast_ret_val;
-static AstLocal ast_last_return;
 
-#define AST_VS_MAX 64
-static AstLocal ast_vs[AST_VS_MAX];
-static int ast_vn;
-static int ast_capture;
-static int ast_vdup_pending;
-static int ast_opassign_store_pending;
-static int ast_desync;
-static int ast_desync_line;
-static int ast_bail_first;
-#define AST_SET_DESYNC() do { if (!ast_desync) { if (ast_bail) { ast_bail_first = 1; } ast_desync = 1; ast_desync_line = __LINE__; ast_gap_note(); MCC_TRACE_IF("DESYNC vn=%d inop=%d incall=%d bail=%d\n", ast_vn, ast_in_op, ast_in_call, ast_bail); } } while (0)
 static int ast_base_depth;
-static int ast_saw_chain;
-static int ast_saw_nocode;
-int ast_in_op;
-static int ast_in_call;
-static AstLocal ast_call_pending;
-static AstLocal ast_inc_pending;
 static AstLocal ast_cur_bb;
-#define AST_CF_MAX 32
-static AstLocal ast_cf_if[AST_CF_MAX];
-static AstLocal ast_cf_savebb[AST_CF_MAX];
-static int ast_cf_top;
 static int *ast_rp_bsym, *ast_rp_csym;
-static AstLocal ast_tern[16];
-static int ast_tern_top;
-static int ast_tern_suppress;
-static unsigned char ast_tern_const[16];
-static AstLocal ast_tern_val[16];
-static AstLocal ast_lor[16];
-static int ast_lor_top;
-static int ast_lor_suppress;
-static unsigned char ast_lor_const[16];
-static unsigned char ast_lor_consumed[16];
 
 static int *ast_fconst;
 static int ast_fconst_n;
@@ -1929,7 +1888,6 @@ static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
 #define AST_OP_VASTART 0x40024
 #define AST_OP_ASMOPS 0x40025
 static int ast_bad_type(int tt);
-static int ast_bad_vtype(int tt);
 static uint64_t ast_sv_hi(const SValue *sv);
 
 static Sym *ast_sym_deferred;
@@ -1958,10 +1916,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit ||
 									 ast_env_int("MCC_FORCE_REPLAY", 0) ||
 									 ast_env_int("MCC_RIR_FORCE", 0);
-	ast_rir_only_env = ast_env_gate("MCC_RIR_ONLY", 1);
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
-	ast_verify_env = ast_env_int("MCC_AST_VERIFY", 0);
-	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", s1->optimize_search_seconds > 0);
@@ -1999,8 +1954,6 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_storeval_rot_env = ast_env_gate("MCC_AST_STOREVAL_ROT", o4 || s1->optimize >= 1);
 	ast_storeval_calllast_env =
 			ast_env_gate("MCC_AST_STOREVAL_CALLLAST", o4 || s1->optimize >= 1);
-	ast_ldouble_env = ast_env_gate("MCC_AST_LDOUBLE", o4 || s1->optimize >= 1);
-	ast_int128_env = ast_env_gate("MCC_AST_INT128", o4 || s1->optimize >= 1);
 	ast_cmp_mat_env = ast_env_gate("MCC_AST_CMP_MAT", o4 || s1->optimize >= 1);
 	ast_chainstore_live_env = ast_env_gate("MCC_AST_CHAINSTORE_LIVE", o4 || s1->optimize >= 1);
 	ast_chainstore_member_env = ast_env_gate("MCC_AST_CHAINSTORE_MEMBER", o4 || s1->optimize >= 1);
@@ -2278,21 +2231,6 @@ static int ast_bad_type(int tt) { MCC_TRACE("enter\n");
 
 typedef char ast_r2_none_check[AST_R2_NONE == VT_CONST ? 1 : -1];
 
-static int ast_wide_vtype(int tt) { MCC_TRACE("enter\n");
-	int bt = tt & VT_BTYPE;
-	if (tt & VT_BITFIELD)
-		{ MCC_TRACE("br\n"); return 0; }
-	if (bt == VT_LDOUBLE)
-		{ MCC_TRACE("br\n"); return ast_ldouble_env; }
-	if (bt == VT_INT128 || bt == VT_QLONG)
-		{ MCC_TRACE("br\n"); return ast_int128_env; }
-	return 0;
-}
-
-static int ast_bad_vtype(int tt) { MCC_TRACE("enter\n");
-	return ast_bad_type(tt) && !ast_wide_vtype(tt);
-}
-
 static uint64_t ast_sv_hi(const SValue *sv) { MCC_TRACE("enter\n");
 	int bt = sv->type.t & VT_BTYPE;
 	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
@@ -2489,7 +2427,7 @@ static AstArena *ast_inline_lookup(void *sym) { MCC_TRACE("enter\n");
 }
 
 static int ast_fn_inlinable(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
-	if ((!ast_inline_env && !ast_inline_pass_env) || ast_bail || ast_desync)
+	if (!ast_inline_env && !ast_inline_pass_env)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!(sym->type.t & VT_STATIC) &&
 			!(mcc_state->c99_inline_body && sym->a.weak))
@@ -2868,7 +2806,7 @@ static int ast_inline_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 }
 
 static int ast_reemit_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
-	if (!ast_inline_env || ast_bail || ast_desync || ast_reemit_poison ||
+	if (!ast_inline_env || ast_reemit_poison ||
 			ast_reemit_n >= AST_INLINE_MAX)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
@@ -12814,33 +12752,11 @@ static int ast_cse_run(AstArena *a) { MCC_TRACE("enter\n");
 }
 
 static int ast_replay_ok(AstArena *a) { MCC_TRACE("enter\n");
-	if (!(ast_rir_only_env && rir_prod_env) &&
-			(ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0))
-		{ MCC_TRACE("br\n"); return 0; }
 	return ast_first_child(a, ast_root(a)) != AST_NONE;
 }
 
-static int ast_try_active;
 static int ast_body_ind_sv;
 static addr_t ast_reloc0_sv;
-
-static int ast_gap_noted;
-static int ast_gap_ind;
-static int ast_gap_vn, ast_gap_cf, ast_gap_inop, ast_gap_incall;
-static int ast_gap_vdepth, ast_gap_nocode;
-
-static void ast_gap_note(void) { MCC_TRACE("enter\n");
-	if (ast_gap_noted)
-		{ MCC_TRACE("br\n"); return; }
-	ast_gap_noted = 1;
-	ast_gap_ind = ind;
-	ast_gap_vn = ast_vn;
-	ast_gap_cf = ast_cf_top;
-	ast_gap_inop = ast_in_op;
-	ast_gap_incall = ast_in_call;
-	ast_gap_vdepth = (int)(vtop - vstack + 1);
-	ast_gap_nocode = nocode_wanted;
-}
 
 static int ast_reloc_sym_equiv(unsigned s1, unsigned s2) { MCC_TRACE("enter\n");
 	ElfSym *e1, *e2;
@@ -12937,39 +12853,13 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
 	ast_fn_switch = 0;
 	ast_inline_capture(sym);
-	int ast_ret_bad = ast_bad_vtype(func_vt.t) &&
-										(func_vt.t & VT_BTYPE) != VT_STRUCT;
-	ast_try_active = ast_replay_env && !debug_modes && !cur_func_inline_extern &&
-								!ast_ret_bad;
 	ast_body_ind_sv = ind;
 	ast_reloc0_sv =
 			cur_text_section->reloc ? cur_text_section->reloc->data_offset : 0;
-	if (ast_try_active) { MCC_TRACE("br\n");
+	if (rir_try_active) { MCC_TRACE("br\n");
 		ast_cur = ast_arena_new();
 		ast_cur_bb = ast_node(ast_cur, AST_BasicBlock);
-		ast_cf_top = 0;
-		ast_tern_top = 0;
-		ast_tern_suppress = 0;
-		ast_lor_top = 0;
-		ast_lor_suppress = 0;
-		ast_bail = 0;
-		ast_bail_line = 0;
-		ast_bail_first = 0;
-		ast_desync = 0;
-		ast_gap_noted = 0;
-		ast_saw_nocode = 0;
-		ast_saw_chain = 0;
 		ast_reemit_poison = 0;
-		ast_in_op = 0;
-		ast_in_call = 0;
-		ast_call_pending = AST_NONE;
-		ast_call_dead = 0;
-		ast_inc_pending = AST_NONE;
-		ast_vdup_pending = 0;
-		ast_opassign_store_pending = 0;
-		ast_vn = 0;
-		ast_ret_val = AST_NONE;
-		ast_last_return = AST_NONE;
 		ast_base_depth = (int)(vtop - vstack + 1);
 		ast_fconst_n = 0;
 		ast_locrec_n = 0;
@@ -12978,7 +12868,6 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_switch_node = AST_NONE;
 		ast_func_has_asm = 0;
 		ast_active = 1;
-		ast_capture = 1;
 		ast_sym_deferred = NULL;
 		ast_sym_defer_on = 1;
 	}
@@ -14975,24 +14864,6 @@ __attribute__((optimize("O0")))
 #endif
 void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 	MCC_TRACE("%s\n", funcname);
-	if (!ast_try_active && ast_verify_env) { MCC_TRACE("br\n");
-		const char *why = debug_modes                ? "skip:debug"
-											: cur_func_inline_extern    ? "skip:externinline"
-											: !ast_replay_env           ? "skip:noreplay"
-																									: "skip:rettype";
-		const char *vf = mcc_state && mcc_state->current_filename
-												 ? mcc_state->current_filename
-												 : "?";
-		if (ast_verify_out && ast_verify_out[0]) { MCC_TRACE("br\n");
-			FILE *f = fopen(ast_verify_out, "a");
-			if (f) { MCC_TRACE("br\n");
-				fprintf(f, "%s\t%s\t%s\n", why, vf, funcname);
-				fclose(f);
-			}
-		} else { MCC_TRACE("br\n");
-			fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", why, vf, funcname);
-		}
-	}
 #ifdef MCC_IR_CAPTURE
 	ir_cap_active = 0;
 #endif
@@ -15011,21 +14882,20 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		rir_started = 0;
 	}
 	rir_active = 0;
-	if (ast_rir_prod && !ast_try_active) { MCC_TRACE("br\n");
+	if (ast_rir_prod && !rir_try_active) { MCC_TRACE("br\n");
 		ast_arena_free(ast_rir_prod);
 		ast_rir_prod = NULL;
 	}
 #endif
-	if (ast_try_active) { MCC_TRACE("br\n");
+	if (rir_try_active) { MCC_TRACE("br\n");
 		Section *ast_rsec = cur_text_section->reloc;
 		addr_t ast_reloc1 = ast_rsec ? ast_rsec->data_offset : 0;
 		ast_active = 0;
-		ast_capture = 0;
 		ast_fn_faithful = 0;
 		ast_fn_tco = 0;
 		int ast_rir_arena = 0;
 #if MCC_REPLAY_IR
-		if (ast_rir_only_env && rir_prod_env) { MCC_TRACE("br\n");
+		if (rir_prod_env) { MCC_TRACE("br\n");
 			ast_arena_free(ast_cur);
 			if (ast_rir_prod) { MCC_TRACE("br\n");
 				ast_cur = ast_rir_prod;
@@ -15036,18 +14906,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				ast_cur = ast_arena_new();
 				ast_node(ast_cur, AST_BasicBlock);
 			}
-		}
-		if (ast_rir_prod) { MCC_TRACE("br\n");
-			if (ast_cur && ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
-				ast_arena_free(ast_cur);
-				ast_cur = ast_rir_prod;
-				ast_rir_used = 1;
-				ast_rir_arena = 1;
-			} else { MCC_TRACE("br\n");
-				ast_arena_free(ast_rir_prod);
-				rir_prod_note("noreplay");
-			}
-			ast_rir_prod = NULL;
 		}
 #endif
 		uint64_t ast_fnh = ast_intention_hash(ast_cur, AST_NONE);
@@ -15165,10 +15023,9 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						if (cur_text_section->data[ast_body_ind_sv + ast_i] != orig[ast_i])
 							{ MCC_TRACE("br\n"); ast_bd = ast_i; break; }
 					MCC_TRACE_IF("UNFAITHFUL %s newlen=%d oldlen=%d firstdiff=%d "
-											 "relnew=%d relold=%d nocode=%d chain=%d\n",
+											 "relnew=%d relold=%d\n",
 											 funcname ? funcname : "?", new_len, (int)body_len, ast_bd,
-											 (int)(new_rel - ast_reloc0_sv), (int)rel_len, ast_saw_nocode,
-											 ast_saw_chain);
+											 (int)(new_rel - ast_reloc0_sv), (int)rel_len);
 					if (getenv("MCC_AST_UNFAITHFUL_DUMP")) { MCC_TRACE("br\n");
 						int ast_win = atoi(getenv("MCC_AST_UNFAITHFUL_DUMP"));
 						int ast_w = ast_bd >= 0 ? ast_bd - 8 : (int)body_len - 24;
@@ -15819,51 +15676,6 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																						ast_reloc0_sv, rsym); }
 			mcc_free(orig);
 			mcc_free(orig_rel);
-		}
-		if (ast_verify_env) { MCC_TRACE("br\n");
-			const char *ast_verdict;
-			char ast_verdict_buf[32];
-			int ast_gap = 0;
-			if (ast_fn_faithful) { MCC_TRACE("br\n");
-				ast_verdict = "faithful";
-			} else if (ast_bail_first) { MCC_TRACE("br\n");
-				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "bail:%d", ast_bail_line);
-				ast_verdict = ast_verdict_buf;
-			} else if (ast_desync) { MCC_TRACE("br\n");
-				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "desync:%d",
-								ast_desync_line);
-				ast_verdict = ast_verdict_buf;
-				ast_gap = 1;
-			} else if (ast_first_child(ast_cur, ast_root(ast_cur)) == AST_NONE) { MCC_TRACE("br\n");
-				ast_verdict = "empty";
-			} else if (ast_bail) { MCC_TRACE("br\n");
-				snprintf(ast_verdict_buf, sizeof(ast_verdict_buf), "bail:%d", ast_bail_line);
-				ast_verdict = ast_verdict_buf;
-			} else if (ast_vn != 0 || ast_cf_top != 0) { MCC_TRACE("br\n");
-				ast_verdict = "stackresidue";
-				ast_gap = 1;
-			} else { MCC_TRACE("br\n");
-				ast_verdict = "unfaithful";
-				ast_gap = 1;
-			}
-			if (ast_verify_env) { MCC_TRACE("br\n");
-				const char *ast_vfile = mcc_state && mcc_state->current_filename
-																		? mcc_state->current_filename
-																		: "?";
-				if (ast_verify_out && ast_verify_out[0]) { MCC_TRACE("br\n");
-					FILE *ast_vf = fopen(ast_verify_out, "a");
-					if (ast_vf) { MCC_TRACE("br\n");
-						fprintf(ast_vf, "%s\t%s\t%s\n", ast_verdict, ast_vfile, funcname);
-						fclose(ast_vf);
-					}
-				} else { MCC_TRACE("br\n");
-					fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", ast_verdict, ast_vfile,
-									funcname);
-				}
-				if (ast_verify_env >= 2 && ast_gap)
-					{ MCC_TRACE("br\n"); mcc_error_noabort("ast-verify: %s replay for '%s'", ast_verdict,
-														funcname); }
-			}
 		}
 #ifdef MCC_EMBED_JIT
 		if ((ast_jit_dispatch_env || ast_jit_fns_n > 0) && ast_fn_faithful &&

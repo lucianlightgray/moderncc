@@ -1393,11 +1393,7 @@ static void vcheck_cmp(void) { MCC_TRACE("enter\n");
 	if (vtop->r == VT_CMP && 0 == (nocode_wanted & ~CODE_OFF_BIT)) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
 		int sup = ast_active && !ast_replaying;
-		if (sup)
-			{ MCC_TRACE("br\n"); ast_in_op++; }
 		gv(MCC_RC_INT);
-		if (sup)
-			{ MCC_TRACE("br\n"); ast_in_op--; }
 #else
 		gv(MCC_RC_INT);
 #endif
@@ -4255,11 +4251,7 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return; }
 #if MCC_CONFIG_OPTIMIZER
 		int sup = ast_active && !ast_replaying;
-		if (sup)
-			{ MCC_TRACE("br\n"); ast_in_op++; }
 		gen_complex_cast(type);
-		if (sup)
-			{ MCC_TRACE("br\n"); ast_in_op--; }
 #else
 		gen_complex_cast(type);
 #endif
@@ -4414,15 +4406,11 @@ again:
 #if MCC_CONFIG_OPTIMIZER
 				int sup_itof = ast_active && !ast_replaying;
 				int rgn_itof = gen_cvt_itof1_helper();
-				if (sup_itof)
-					{ MCC_TRACE("br\n"); ast_in_op++; }
 				if (rgn_itof)
 					{ MCC_TRACE("br\n"); rir_hook_castlower_begin(type); }
 				gen_cvt_itof1(dbt);
 				if (rgn_itof)
 					{ MCC_TRACE("br\n"); rir_hook_castlower_end(); }
-				if (sup_itof)
-					{ MCC_TRACE("br\n"); ast_in_op--; }
 #else
 				gen_cvt_itof1(dbt);
 #endif
@@ -4433,15 +4421,11 @@ again:
 #if MCC_CONFIG_OPTIMIZER
 				int sup_ftoi = ast_active && !ast_replaying;
 				int rgn_ftoi = gen_cvt_ftoi1_helper(sbt);
-				if (sup_ftoi)
-					{ MCC_TRACE("br\n"); ast_in_op++; }
 				if (rgn_ftoi)
 					{ MCC_TRACE("br\n"); rir_hook_castlower_begin(type); }
 				gen_cvt_ftoi1(sbt);
 				if (rgn_ftoi)
 					{ MCC_TRACE("br\n"); rir_hook_castlower_end(); }
-				if (sup_ftoi)
-					{ MCC_TRACE("br\n"); ast_in_op--; }
 #else
 				gen_cvt_ftoi1(sbt);
 #endif
@@ -4566,8 +4550,6 @@ again:
 	{
 #if MCC_CONFIG_OPTIMIZER
 			int sup = ast_active && !ast_replaying;
-			if (sup)
-				{ MCC_TRACE("br\n"); ast_in_op++; }
 			rir_hook_castlower_begin(type);
 #endif
 			bits = (ss - ds) * 8;
@@ -4580,8 +4562,6 @@ again:
 			gen_op(TOK_SHR);
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_castlower_end();
-			if (sup)
-				{ MCC_TRACE("br\n"); ast_in_op--; }
 #endif
 		}
 	}
@@ -10715,10 +10695,6 @@ tok_next:
 		vpop();
 		gen_va_arg(&type);
 		vtop->type = type;
-#if MCC_CONFIG_OPTIMIZER
-		if (ast_active)
-			{ MCC_TRACE("br\n"); ast_bail = 1; }
-#endif
 		break;
 	}
 #endif
