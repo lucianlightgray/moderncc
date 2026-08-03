@@ -1314,6 +1314,87 @@ static void asm_x87_wrap(ASMOperand *operands, int nb_operands,
 	cstr_cat(astr, buf.data, buf.size);
 	cstr_free_s(&buf);
 }
+
+static const char *asm_flag_cc_names[] = {
+	"a", "ae", "b", "be", "c", "e", "g", "ge", "l", "le",
+	"na", "nae", "nb", "nbe", "nc", "ne", "ng", "nge", "nl", "nle",
+	"no", "np", "ns", "nz", "o", "p", "pe", "po", "s", "z", NULL
+};
+
+static int asm_flag_cc_valid(const char *name) { MCC_TRACE("enter\n");
+	for (int i = 0; asm_flag_cc_names[i]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(asm_flag_cc_names[i], name))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
+static int asm_flag_prepare(ASMOperand *operands, int nb_outputs,
+														 int *flag_idx, char flag_cc[][8]) { MCC_TRACE("enter\n");
+	ASMOperand *op;
+	const char *cc;
+	int n = 0;
+
+	for (int i = 0; i < nb_outputs; i++) { MCC_TRACE("br\n");
+		op = &operands[i];
+		if (op->constraint[0] != '=' || op->constraint[1] != '@' ||
+				op->constraint[2] != 'c' || op->constraint[3] != 'c')
+			{ MCC_TRACE("br\n"); continue; }
+		cc = op->constraint + 4;
+		if (!asm_flag_cc_valid(cc))
+			{ MCC_TRACE("br\n"); mcc_error("invalid asm flag output constraint '%s'", op->constraint); }
+		pstrcpy(flag_cc[n], 8, cc);
+		flag_idx[n] = i;
+		n++;
+		pstrcpy(op->constraint, sizeof op->constraint, "=r");
+	}
+	return n;
+}
+
+static void asm_flag_wrap(ASMOperand *operands, const int *flag_idx,
+													 char flag_cc[][8], int nb_flag, CString *astr) { MCC_TRACE("enter\n");
+	ASMOperand *op;
+	int reg, width;
+	char bytebuf[8], dwordbuf[8];
+	const char *bytename, *dwordname;
+
+	if (astr->size)
+		{ MCC_TRACE("br\n"); astr->size--; }
+	for (int k = 0; k < nb_flag; k++) { MCC_TRACE("br\n");
+		op = &operands[flag_idx[k]];
+		reg = op->reg;
+		if (reg < 0)
+			{ MCC_TRACE("br\n"); continue; }
+		if (reg < 4) { MCC_TRACE("br\n");
+			bytename = get_tok_str(TOK_ASM_al + reg, NULL);
+			dwordname = get_tok_str(TOK_ASM_eax + reg, NULL);
+		} else if (reg == 6) { MCC_TRACE("br\n");
+			bytename = "sil";
+			dwordname = get_tok_str(TOK_ASM_eax + reg, NULL);
+		} else if (reg == 7) { MCC_TRACE("br\n");
+			bytename = "dil";
+			dwordname = get_tok_str(TOK_ASM_eax + reg, NULL);
+		} else { MCC_TRACE("br\n");
+			snprintf(bytebuf, sizeof bytebuf, "r%db", reg);
+			snprintf(dwordbuf, sizeof dwordbuf, "r%dd", reg);
+			bytename = bytebuf;
+			dwordname = dwordbuf;
+		}
+		switch (op->vt->type.t & VT_BTYPE) { MCC_TRACE("br\n");
+		case VT_BYTE:
+		case VT_BOOL:
+			width = 1;
+			break;
+		default:
+			width = 4;
+			break;
+		}
+		cstr_printf(astr, "\n\tset%s %%%s", flag_cc[k], bytename);
+		if (width != 1)
+			{ MCC_TRACE("br\n"); cstr_printf(astr, "\n\tmovzbl %%%s,%%%s", bytename, dwordname); }
+	}
+	cstr_ccat(astr, '\0');
+}
 #endif
 
 static void subst_asm_operands(ASMOperand *operands, int nb_operands,
@@ -1351,6 +1432,9 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 #endif
 #ifdef MCC_TARGET_RISCV64
 					*str == 'z' ||
+#endif
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+					*str == 'p' ||
 #endif
 					*str == 'P')
 				modifier = *str++;
@@ -1472,6 +1556,10 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	uint64_t asm_gvmask;
 	uint8_t clobber_regs[MCC_NB_ASM_REGS];
 	Section *sec;
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+	int flag_idx[MAX_ASM_OPERANDS], nb_flag;
+	char flag_cc[MAX_ASM_OPERANDS][8];
+#endif
 
 	while (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3 || tok == TOK_GOTO) { MCC_TRACE("br\n");
 		next();
@@ -1486,12 +1574,18 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	nb_labels = 0;
 	asm_gvmask = 0;
 	must_subst = 0;
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+	nb_flag = 0;
+#endif
 	memset(clobber_regs, 0, sizeof(clobber_regs));
 	if (tok == ':') { MCC_TRACE("br\n");
 		next();
 		must_subst = 1;
 		parse_asm_operands(operands, &nb_operands, 1, &asm_gvmask);
 		nb_outputs = nb_operands;
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+		nb_flag = asm_flag_prepare(operands, nb_outputs, flag_idx, flag_cc);
+#endif
 		if (tok == ':') { MCC_TRACE("br\n");
 			next();
 			if (tok != ')') { MCC_TRACE("br\n");
@@ -1569,6 +1663,8 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	}
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	asm_x87_wrap(operands, nb_operands, nb_outputs, &astr);
+	if (nb_flag)
+		{ MCC_TRACE("br\n"); asm_flag_wrap(operands, flag_idx, flag_cc, nb_flag, &astr); }
 #endif
 
 	if (g_debug & MCC_DBG_ASM)
