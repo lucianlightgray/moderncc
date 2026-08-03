@@ -1377,9 +1377,12 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) { MCC_TRACE("enter\n");
 		}
 		if (s->r != LABEL_GONE)
 			{ MCC_TRACE("br\n"); table_ident[s->v - TOK_IDENT]->sym_label = s->prev_tok; }
-		if (!keep)
-			{ MCC_TRACE("br\n"); ast_label_forget(s); sym_free(s); }
-		else
+		if (!keep) { MCC_TRACE("br\n");
+#if MCC_CONFIG_OPTIMIZER
+			ast_label_forget(s);
+#endif
+			sym_free(s);
+		} else
 			{ MCC_TRACE("br\n"); s->r = LABEL_GONE; }
 	}
 	if (!keep)
