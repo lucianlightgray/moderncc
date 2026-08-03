@@ -222,6 +222,18 @@
 	#define __builtin_nansl(s) (0.0L / 0.0L)
 	#endif
 	#define __builtin_isnan(x) ((x) != (x))
+	#define __builtin_isnanf(x) __builtin_isnan(x)
+	#define __builtin_isnanl(x) __builtin_isnan(x)
+	#define __builtin_annotation(x, ...) (x)
+	#define __builtin_creal(z) (__real__(double _Complex)(z))
+	#define __builtin_crealf(z) (__real__(float _Complex)(z))
+	#define __builtin_creall(z) (__real__(long double _Complex)(z))
+	#define __builtin_cimag(z) (__imag__(double _Complex)(z))
+	#define __builtin_cimagf(z) (__imag__(float _Complex)(z))
+	#define __builtin_cimagl(z) (__imag__(long double _Complex)(z))
+	#define __builtin_conj(z) __builtin_complex(__builtin_creal(z), -__builtin_cimag(z))
+	#define __builtin_conjf(z) __builtin_complex(__builtin_crealf(z), -__builtin_cimagf(z))
+	#define __builtin_conjl(z) __builtin_complex(__builtin_creall(z), -__builtin_cimagl(z))
 	#define __builtin_isinf(x) ((x) == __builtin_inf() || (x) == -__builtin_inf())
 	#define __builtin_isfinite(x) (!__builtin_isnan(x) && !__builtin_isinf(x))
 	#define __builtin_isunordered(a, b) (__builtin_isnan(a) || __builtin_isnan(b))
@@ -419,12 +431,153 @@
 	__BOUND(void*, mmap, ())
 	__BOUND(int, munmap, ())
 #endif
+	__BUILTIN(int, printf, (const char*, ...))
+	__BUILTIN(int, fprintf, (void*, const char*, ...))
+	__BUILTIN(int, sprintf, (char*, const char*, ...))
+	__BUILTIN(int, snprintf, (char*, __SIZE_TYPE__, const char*, ...))
+	__BUILTIN(int, vsprintf, (char*, const char*, __builtin_va_list))
+	__BUILTIN(int, vsnprintf, (char*, __SIZE_TYPE__, const char*, __builtin_va_list))
+	__BUILTIN(int, puts, (const char*))
+	__BUILTIN(int, fputs, (const char*, void*))
+	__BUILTIN(int, fputc, (int, void*))
+	__BUILTIN(int, putchar, (int))
+	__BUILTIN(__SIZE_TYPE__, fwrite, (const void*, __SIZE_TYPE__, __SIZE_TYPE__, void*))
+	__BUILTIN(int, fprintf_unlocked, (void*, const char*, ...))
+	__BUILTIN(int, fputs_unlocked, (const char*, void*))
+	__BUILTIN(int, printf_unlocked, (const char*, ...))
+	__BUILTIN(void, exit, (int))
+	__BUILTIN(void*, memchr, (const void*, int, __SIZE_TYPE__))
+	__BUILTIN(void*, mempcpy, (void*, const void*, __SIZE_TYPE__))
+	__BUILTIN(char*, stpcpy, (char*, const char*))
+	__BUILTIN(char*, stpncpy, (char*, const char*, __SIZE_TYPE__))
+	__BUILTIN(__SIZE_TYPE__, strnlen, (const char*, __SIZE_TYPE__))
+	__BUILTIN(char*, strstr, (const char*, const char*))
+	__BUILTIN(__SIZE_TYPE__, strspn, (const char*, const char*))
+	__BUILTIN(__SIZE_TYPE__, strcspn, (const char*, const char*))
+	__BUILTIN(char*, strpbrk, (const char*, const char*))
+	__BUILTIN(void, bcopy, (const void*, void*, __SIZE_TYPE__))
+	__BUILTIN(int, bcmp, (const void*, const void*, __SIZE_TYPE__))
+	__BUILTIN(char*, index, (const char*, int))
+	__BUILTIN(char*, rindex, (const char*, int))
+#ifndef __builtin_bzero
+	__BUILTIN(void, bzero, (void*, __SIZE_TYPE__))
+#endif
+	__BUILTIN(void*, aligned_alloc, (__SIZE_TYPE__, __SIZE_TYPE__))
+	__BUILTIN(double, cabs, (double _Complex))
+	__BUILTIN(float, cabsf, (float _Complex))
+	__BUILTIN(long double, cabsl, (long double _Complex))
+	__BUILTIN(int, strcasecmp, (const char*, const char*))
+	__BUILTIN(int, strncasecmp, (const char*, const char*, __SIZE_TYPE__))
+	__BUILTIN(char*, strndup, (const char*, __SIZE_TYPE__))
 	#undef __BUILTINBC
 	#undef __BUILTIN
 	#undef __BOUND
 	#undef __BOTH
 	#undef __MAYBE_REDIR
 	#undef __RENAME
+
+	extern void __chk_fail(void) __attribute__((noreturn));
+
+	static __inline void *__builtin___memcpy_chk(void *dst, const void *src, __mcc_size_t len, __mcc_size_t dstlen) {
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_memcpy(dst, src, len);
+	}
+	static __inline void *__builtin___mempcpy_chk(void *dst, const void *src, __mcc_size_t len, __mcc_size_t dstlen) {
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_mempcpy(dst, src, len);
+	}
+	static __inline void *__builtin___memmove_chk(void *dst, const void *src, __mcc_size_t len, __mcc_size_t dstlen) {
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_memmove(dst, src, len);
+	}
+	static __inline void *__builtin___memset_chk(void *dst, int val, __mcc_size_t len, __mcc_size_t dstlen) {
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_memset(dst, val, len);
+	}
+	static __inline char *__builtin___strcpy_chk(char *dst, const char *src, __mcc_size_t dstlen) {
+	__mcc_size_t len = __builtin_strlen(src) + 1;
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_strcpy(dst, src);
+	}
+	static __inline char *__builtin___stpcpy_chk(char *dst, const char *src, __mcc_size_t dstlen) {
+	__mcc_size_t len = __builtin_strlen(src) + 1;
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_stpcpy(dst, src);
+	}
+	static __inline char *__builtin___strcat_chk(char *dst, const char *src, __mcc_size_t dstlen) {
+	__mcc_size_t dl = __builtin_strlen(dst);
+	__mcc_size_t sl = __builtin_strlen(src);
+	if (dstlen != (__mcc_size_t)-1 && dl + sl + 1 > dstlen)
+	__chk_fail();
+	return __builtin_strcat(dst, src);
+	}
+	static __inline char *__builtin___strncpy_chk(char *dst, const char *src, __mcc_size_t len, __mcc_size_t dstlen) {
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_strncpy(dst, src, len);
+	}
+	static __inline char *__builtin___stpncpy_chk(char *dst, const char *src, __mcc_size_t len, __mcc_size_t dstlen) {
+	if (dstlen != (__mcc_size_t)-1 && len > dstlen)
+	__chk_fail();
+	return __builtin_stpncpy(dst, src, len);
+	}
+	static __inline char *__builtin___strncat_chk(char *dst, const char *src, __mcc_size_t len, __mcc_size_t dstlen) {
+	__mcc_size_t dl = __builtin_strlen(dst);
+	__mcc_size_t sl = __builtin_strlen(src);
+	__mcc_size_t addlen = sl < len ? sl : len;
+	if (dstlen != (__mcc_size_t)-1 && dl + addlen + 1 > dstlen)
+	__chk_fail();
+	return __builtin_strncat(dst, src, len);
+	}
+	static __inline int __builtin___vsnprintf_chk(char *s, __mcc_size_t n, int flag, __mcc_size_t slen, const char *fmt, __builtin_va_list ap) {
+	(void)flag;
+	if (slen != (__mcc_size_t)-1 && n > slen)
+	__chk_fail();
+	return __builtin_vsnprintf(s, n, fmt, ap);
+	}
+	static __inline int __builtin___snprintf_chk(char *s, __mcc_size_t n, int flag, __mcc_size_t slen, const char *fmt, ...) {
+	__builtin_va_list ap;
+	int r;
+	(void)flag;
+	if (slen != (__mcc_size_t)-1 && n > slen)
+	__chk_fail();
+	__builtin_va_start(ap, fmt);
+	r = __builtin_vsnprintf(s, n, fmt, ap);
+	__builtin_va_end(ap);
+	return r;
+	}
+	static __inline int __builtin___vsprintf_chk(char *s, int flag, __mcc_size_t slen, const char *fmt, __builtin_va_list ap) {
+	(void)flag;
+	if (slen == (__mcc_size_t)-1)
+	return __builtin_vsprintf(s, fmt, ap);
+	{
+	int r = __builtin_vsnprintf(s, slen, fmt, ap);
+	if ((__mcc_size_t)r >= slen)
+	__chk_fail();
+	return r;
+	}
+	}
+	static __inline int __builtin___sprintf_chk(char *s, int flag, __mcc_size_t slen, const char *fmt, ...) {
+	__builtin_va_list ap;
+	int r;
+	(void)flag;
+	__builtin_va_start(ap, fmt);
+	if (slen == (__mcc_size_t)-1) {
+	r = __builtin_vsprintf(s, fmt, ap);
+	} else {
+	r = __builtin_vsnprintf(s, slen, fmt, ap);
+	if ((__mcc_size_t)r >= slen)
+	__chk_fail();
+	}
+	__builtin_va_end(ap);
+	return r;
+	}
 
 	#define __MCC_OV_DECL(T, NM)			\
 	int __mcc_addo_##NM(T, T, T*);		\
@@ -476,5 +629,13 @@
 	(__mcc_ov_disp(sub, *(res))((a), (b), (res)))
 	#define __builtin_mul_overflow(a, b, res) \
 	(__mcc_ov_disp(mul, *(res))((a), (b), (res)))
+	#define __builtin_add_overflow_p(a, b, c) \
+	({ __typeof__(c) __mcc_ovp_r; __builtin_add_overflow((a), (b), &__mcc_ovp_r); })
+	#define __builtin_sub_overflow_p(a, b, c) \
+	({ __typeof__(c) __mcc_ovp_r; __builtin_sub_overflow((a), (b), &__mcc_ovp_r); })
+	#define __builtin_mul_overflow_p(a, b, c) \
+	({ __typeof__(c) __mcc_ovp_r; __builtin_mul_overflow((a), (b), &__mcc_ovp_r); })
+	#define __builtin_assoc_barrier(x) (x)
+	#define __builtin_assume(cond) ((void)0)
 
 	#endif

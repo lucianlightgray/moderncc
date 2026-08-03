@@ -10705,6 +10705,44 @@ tok_next:
 		vpush(&type);
 		CODE_OFF();
 		break;
+	case TOK_builtin_classify_type: {
+		int cls, nn;
+		next();
+		skip('(');
+		if (parse_btype(&type, &ad, 0)) { MCC_TRACE("br\n");
+			type_decl(&type, &ad, &nn, TYPE_ABSTRACT);
+		} else { MCC_TRACE("br\n");
+			expr_type(&type, gexpr);
+			type.t &= ~(VT_ARRAY | VT_VLA);
+		}
+		skip(')');
+		if ((type.t & VT_BTYPE) == VT_VOID)
+			{ MCC_TRACE("br\n"); cls = 0; }
+		else if ((type.t & VT_BTYPE) == VT_BOOL)
+			{ MCC_TRACE("br\n"); cls = 4; }
+		else if (IS_ENUM(type.t))
+			{ MCC_TRACE("br\n"); cls = 3; }
+		else if (is_complex_type(&type))
+			{ MCC_TRACE("br\n"); cls = 9; }
+		else if (type.t & (VT_ARRAY | VT_VLA))
+			{ MCC_TRACE("br\n"); cls = 14; }
+		else if ((type.t & VT_BTYPE) == VT_FUNC)
+			{ MCC_TRACE("br\n"); cls = 10; }
+		else if ((type.t & VT_BTYPE) == VT_PTR)
+			{ MCC_TRACE("br\n"); cls = 5; }
+		else if (is_float(type.t))
+			{ MCC_TRACE("br\n"); cls = 8; }
+		else if (IS_UNION(type.t))
+			{ MCC_TRACE("br\n"); cls = 13; }
+		else if ((type.t & VT_BTYPE) == VT_STRUCT)
+			{ MCC_TRACE("br\n"); cls = 12; }
+		else if (is_integer_btype(type.t & VT_BTYPE))
+			{ MCC_TRACE("br\n"); cls = 1; }
+		else
+			{ MCC_TRACE("br\n"); cls = -1; }
+		vpushi(cls);
+		break;
+	}
 	case TOK_builtin_LINE:
 		next();
 		skip('(');
