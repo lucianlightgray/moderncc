@@ -544,3 +544,88 @@ Why that entry was reached at all is the real defect, and it is the *second* hal
 ### P6 — split and rename
 
 `mccast.c` (19,082 lines) splits along the boundaries the map already found: arena + replay + hashing (`85-1117`, `5640-7082`, `14413-14494`), the passes (`7083-14412`), slice/search/JIT infrastructure (`16076-18053`), and the drivers. Then `ast_*` → `ir_*`, `AST_*` → `IR_*` across the seven files and `tools/asttool.c`. Rename the things that were never AST while the diff is already open: `ast_data_all_zero`, `ast_strpool_find_or_add`, `ast_pinned_regs`, `ast_alloc_loc`, and the six `ast_*_env` codegen gates are all genuine compiler machinery carrying the prefix by accident. `tools/targetgate.c:3-7` whitelists `src/mccast.c` by name and needs the new unit names. Run `./cmake-debug/tracegate src` and `./cmake-debug/schemagate src` before every push, and keep the new units free of any `MCC_TRACE(` call for the reason recorded above.
+
+## External suites: the gcc and llvm C tests over a self-hosted `-O3` mcc
+
+The compiler under test is `mcc` self-hosted at `-O3` — `tools/selfhost-o3.py cmake-release cmake-release/mcc-o3 -O3` compiles `src/mcc.c` with the release `mcc` and links with `mcc` itself (its runtime supplies the x87 long-double helpers GNU ld cannot resolve). `tools/selfhost-fixpoint.py cmake-release --opt=-O3` is clean: `o1 == o2 == o3`, 2,921,935 bytes, byte-identical across all three stages, so the `-O3` self-host is a fixpoint and not merely a build that happened to link.
+
+`tools/xsuite.py` runs the two external trees and `tools/xsuite-report.py` reads its `results.jsonl`. The harness honors each suite's own directives rather than compiling everything blind: DejaGnu `dg-do`/`dg-error`/`dg-options`/`dg-require-effective-target`/target selectors on the gcc side, lit `RUN:`/`REQUIRES:`/`UNSUPPORTED:`/`-verify` on the llvm side. A test whose directives ask for something this host or this compiler cannot express — another architecture's intrinsics, `-mavx512f`, OpenMP, LTO, a `%clang_cc1 -triple aarch64` — is **skipped with the reason recorded**, never scored as a failure. 47,715 `.c` files in, 24,242 skipped by directive, **23,473 tests run at each of `-O0` and `-O3`**.
+
+| suite | tests | `-O0` pass | `-O3` pass | skipped |
+|---|---:|---:|---:|---:|
+| `gcc.c-torture/compile` | 1,834 | 92.2% | 91.9% | 182 |
+| `gcc.c-torture/execute` | 1,853 | 83.0% | 81.8% | 64 |
+| `gcc.dg` | 13,396 | 76.5% | 76.4% | 5,518 |
+| `c-c++-common` | 2,304 | 64.7% | 64.6% | 1,102 |
+| `gcc.target/{i386,x86_64}` | 803 | 65.9% | 65.9% | 9,018 |
+| `gcc.misc-tests` | 32 | 81.2% | 81.2% | 44 |
+| `gcc.c-torture/unsorted` | 1 | 0.0% | 0.0% | 0 |
+| `clang/test` | 2,972 | 70.0% | 70.0% | 7,725 |
+| `compiler-rt/test` | 278 | 38.8% | 38.8% | 566 |
+| **total** | **23,473** | **75.5%** | **75.3%** | **24,242** |
+
+Most of the failing column is a **known feature boundary, not a defect**: 952 `__attribute__((vector_size))`, 1,305 implicit-declaration/implicit-int rejections the tests still rely on, 798 unresolvable GNU or clang headers, 276 nested functions, 217 inline-asm opcodes and constraints, 112 `_Complex`, 48 `#embed`/C23. That leaves 1,885 in `other` — the bucket worth mining, and the only one that is a work list.
+
+### The `-O3` column is where the defects are
+
+**46 tests pass at `-O0` and fail at `-O3`; 3 go the other way.** The list is `cmake-release/xsuite/o3-only-failures.txt`. Five are confirmed by hand, outside the harness:
+
+1. `gcc.c-torture/execute/{20000412-2,conversion,medce-1}.c` — **wrong code at `-O3`**: each compiles clean and aborts at runtime (`rc=134`), and each runs to 0 at `-O0`. Three separate optimizer miscompiles, and the nearest thing to the P4 wrong-code classes this sweep found.
+2. `gcc.c-torture/execute/pr68506.c` — **`internal compiler error: vstack leak (-1)`** at `-O3` only.
+3. `gcc.c-torture/compile/930503-2.c` — mcc **segfaults** at `-O3`; at `-O0` it compiles.
+
+Two more shapes in that list are optimizer *quality*, not correctness, and should not be filed as bugs: the `link_error0` idiom (`pure-1.c`, `compare-3.c`, `ieee/fp-cmp-{6,9}.c`) fails only because `-O3`'s inlining leaves a call `-O0`'s folding had already removed, and the `builtin-convert-*`/`builtin-ctype-*` rows want `__builtin_` forms mcc does not carry.
+
+### Open items, in the order they are worth paying for
+
+1. The three `-O3` wrong-code aborts above. Bisect each against the pass set the way P4's classes were bisected — they are the only runtime-visible optimizer defects in 23,473 tests.
+2. The `vstack leak (-1)` ICE and the `930503-2.c` segfault: both are `-O3`-only compiler crashes, both single files, both cheap to reduce.
+3. **142 `FAILEXE` at `-O0`** — programs that build and then abort with the optimizer off. `gcc.c-torture/execute/{20020412-1,pr41935,pr82210}.c` and `gcc.dg/{20050527-1,field-merge-6,gnu23-empty-init-1}.c` fault with `SIGSEGV`, the rest with the test's own `abort()`. This is a baseline-codegen list, not an optimizer list, and it is the larger of the two.
+4. **1,386 `XPASS`** — tests carrying `dg-error`/`expected-error` that mcc accepted silently (664 `gcc.dg`, 441 `c-c++-common`, 248 `clang/test`). Each is a missing diagnostic. Low severity individually; as a set it is the honest measure of how much of C's constraint checking mcc does not do.
+5. `gcc.dg/pr97459-{2,4,5,6}.c` hang at runtime at both opt levels (15s timeout), and `gcc.dg/O16384.c` never finishes compiling — the latter is pathological by construction and is not a defect.
+
+**Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
+
+### Phase 1 — the `-O0` defects the sweep found, and what closed
+
+The board above reads `-O0` and `-O3` as the harness ran them, but a test's own
+`dg-options "-O2"` overrides the column: 111 of the 142 baseline failures are
+genuine `-O0` defects, the rest only fail with the optimizer the test asked for.
+`tools/xsuite.py --force-opt` strips the test's `-O` and re-runs at the column's
+level; that is the list phase 1 works from.
+
+**Closed, with `ctest` at 8096 of 8096 and the `-O3` self-host fixpoint still byte-identical:**
+
+1. `__attribute__((aligned(N)))` on a **member** was replacing the natural alignment instead of only raising it. GCC lowers alignment only when `packed` is also present. `gcc.dg/align-1.c`, `c-c++-common/attr-aligned-1.c`, and `gcc.dg/bf-ms-layout-2.c`.
+2. The same attribute on a **typedef** *may* lower alignment — the kernel's `unaligned_u64` idiom — and the naive form of fix 1 breaks it. The two cases are now distinguished by a new `SymAttr.type_aligned` bit set in `sym_to_attr` and cleared by an explicit declarator attribute. `tests/diff/parts/legacy_expr.h`'s `aligntest9` is the regression that catches this.
+3. `__alignof__` applied to a **typedef name** dropped the typedef's alignment entirely (`__alignof__(T)` read 8 where the type was `aligned(16)`). The type-name branch of `unary` now carries the parsed alignment out through `gen_sizeof_parsed_align`.
+4. A union whose only member is a zero-width bitfield took that member's alignment; GCC gives it 1. `gcc.dg/empty1.c`.
+5. Eight missing `__SIZEOF_*` predefines — `SHORT`, `FLOAT`, `DOUBLE`, `LONG_DOUBLE`, `SIZE_T`, `PTRDIFF_T`, `WCHAR_T`, `WINT_T`. Tests gate whole bodies on these, so the absence read as a silent pass-with-nothing-executed rather than an error. `gcc.dg/torture/pr58416.c`.
+6. `__INCLUDE_LEVEL__` was undefined. `gcc.dg/cpp/strify2.c`.
+7. `//` is not a comment in strict ISO C89/C90 — `1 //**/ 2` is `1/2` there, and mcc read it as `1`. Gated on `std_strict_ansi`, so `-std=gnu89` keeps the extension. `gcc.dg/cpp/pr61854-1.c`, `-5.c`.
+
+**Converted from silent wrong code to a diagnostic:** a struct or union member
+with a variable-length array type. mcc accepted `struct S { int a[n]; }`, computed
+a *static* size for it (7 read as 8, and `{int a; char b[n]; int c;}` read as 16
+with `c` overlapping `b`), and the resulting binaries segfaulted or corrupted the
+frame. Eleven tests were failing this way — `20040423-1`, `20041218-2`, `pr41935`,
+`pr82210`, `gnu23-empty-init-1`, `packed-vla`, `vla-stexp-*`, `typename-vla-*`,
+`pr99122-2`. They now fail to compile with a named error instead of building a
+wrong program. `tests/cli/cases.h`'s `pedantic_diagnostics` case banked the old
+accept-and-miscompile behaviour and moves with it.
+
+**The feature that replaces that diagnostic** is runtime-sized structs, and it is
+the largest single item the sweep found: the member's size, every offset after it,
+the struct's own size and any copy of it all become runtime expressions. The
+machinery for the scalar case already exists — `vpush_type_size` reads a VLA's
+size out of a frame slot (`type->ref->c`) — so the shape of the work is to give a
+struct carrying a VLA member the same treatment, plus `alloca` at declaration and
+runtime offsets in member access. Nineteen tests ride on it, `pr51990`/`pr99122-1`
+among them, and it is phase 2's first entry.
+
+**Still open at `-O0`, largest clusters first:** `hardbool` (14, a GCC 14 type
+attribute), preprocessor conformance (~10 — digraph spelling must survive
+stringification, C90 pp-number rules, comments inside skipped groups),
+`__builtin_object_size` and its dynamic form (7), `scalar_storage_order` (4),
+`_Complex` division checks (5), and the varargs ABI for over-aligned and
+`__int128` arguments (`pr92904`, `stdarg-3`).
