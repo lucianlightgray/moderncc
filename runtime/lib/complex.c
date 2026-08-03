@@ -104,3 +104,22 @@ GEN_MUL(__mcc_cmull, long double)
 GEN_DIV(__mcc_cdivf, float)
 GEN_DIV(__mcc_cdiv, double)
 GEN_DIV(__mcc_cdivl, long double)
+
+#define GEN_DIV_INT(NAME, T)                     \
+	void NAME(T *res, T a, T b, T c, T d) {         \
+		T r, den;                                     \
+		if ((c < 0 ? (T)-c : c) >= (d < 0 ? (T)-d : d)) { \
+			r = d / c;                                   \
+			den = c + d * r;                             \
+			res[0] = (a + b * r) / den;                  \
+			res[1] = (b - a * r) / den;                  \
+		} else {                                       \
+			r = c / d;                                   \
+			den = c * r + d;                             \
+			res[0] = (a * r + b) / den;                  \
+			res[1] = (b * r - a) / den;                  \
+		}                                             \
+	}
+
+GEN_DIV_INT(__mcc_cdivi64, long long)
+GEN_DIV_INT(__mcc_cdivu64, unsigned long long)
