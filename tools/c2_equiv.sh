@@ -48,31 +48,50 @@ mkdir -p "$OUT"
 # Mach-O keys and the ARM/ARM64 PE keys cannot execute on an x86_64 Linux host
 # at all (W1/W2), so they are not listed rather than listed and skipped -- a
 # semantic differential is meaningless without execution.
-KEYS_ALL="x86_64 i386 arm arm64 riscv64"
+#
+# On a Windows x86_64 host (Git Bash) the executable keys are the two x86 PE
+# keys instead: x86_64-win32 is the native compiler and i386-win32 runs under
+# WOW64. The ELF keys are the unmeasurable ones there.
+case "$(uname -s 2>/dev/null)" in
+MINGW*|MSYS*|CYGWIN*) HOSTKIND=win32 ;;
+*)                    HOSTKIND=linux ;;
+esac
+if [ "$HOSTKIND" = win32 ]; then
+	KEYS_ALL="x86_64-win32 i386-win32"
+	# Env var VALUES are not path-converted by MSYS (argv is), so the parser
+	# leg's MCC_REPLAY_IR_OUT must be a native path or mcc fails to open it and
+	# the [rir-*] diagnostics land in the captured output -- every golden then
+	# mismatches on leg B for a harness reason.
+	NATOUT=$(cygpath -m "$OUT")
+else
+	KEYS_ALL="x86_64 i386 arm arm64 riscv64"
+	NATOUT=$OUT
+fi
 
 case "$KEYARG" in
 all) KEYS=$KEYS_ALL ;;
 *)   KEYS=$KEYARG ;;
 esac
 
-# leg <tag> <key> <mcc> <sysroot> <runemu> <cpu>  -> writes $OUT/<key>.<tag>.txt
+# leg <tag> <key> <mcc> <bdir> <sysroot> <runemu> <cpu> <os>
+#   -> writes $OUT/<key>.<tag>.txt
 leg() {
-	_tag=$1; _key=$2; _mcc=$3; _sys=$4; _emu=$5; _cpu=$6
+	_tag=$1; _key=$2; _mcc=$3; _bdir=$4; _sys=$5; _emu=$6; _cpu=$7; _os=$8
 	_work=$OUT/$_key.$_tag.work
 	rm -rf "$_work"
 	if [ "$_tag" = parser ]; then
-		_extra="MCC_REPLAY_IR=1 MCC_REPLAY_IR_OUT=$OUT/$_key.rir.log"
+		_extra="MCC_REPLAY_IR=1 MCC_REPLAY_IR_OUT=$NATOUT/$_key.rir.log"
 	else
 		_extra=
 	fi
 	# MCC_TEST_RUNEMU, never MCC_TEST_EMU: the latter prefixes the COMPILER, and
 	# mcc-<key> is a host binary that merely targets <key>, so qemu rejects it as
 	# "Invalid ELF image for this architecture".
-	env MCC_TEST_EMU= MCC_TEST_CPU="$_cpu" MCC_TEST_OS=Linux \
+	env MCC_TEST_EMU= MCC_TEST_CPU="$_cpu" MCC_TEST_OS="$_os" \
 		MCC_TEST_ASM=1 MCC_TEST_BCHECK=0 MCC_TEST_BACKTRACE=0 \
 		MCC_TEST_SYSROOT="$_sys" MCC_TEST_RUNEMU="$_emu" MCC_TEST_OPT="$OPT" \
 		$_extra \
-		"$R" "$_mcc" "$BUILD" "$S/runtime/include" "$S/tests" "$_work" \
+		"$R" "$_mcc" "$_bdir" "$S/runtime/include" "$S/tests" "$_work" \
 		> "$OUT/$_key.$_tag.txt" 2>/dev/null || true
 }
 
@@ -85,7 +104,40 @@ for k in $KEYS; do
 	sysroot=
 	emu=
 	cpu=$k
+	os=Linux
+	bdir=$BUILD
 	mcc=$BUILD/mcc-$k
+	if [ "$HOSTKIND" = win32 ]; then
+		case "$k" in
+		x86_64-win32)
+			# The exact configuration the native exec/ ctest cells run green
+			# with: mcc + -B <builddir>, no sysroot, no runner prefix.
+			mcc=$BUILD/mcc; cpu=x86_64; os=WIN32 ;;
+		i386-win32)
+			cpu=i386; os=WIN32
+			# The runner passes a single -B and mcc-i386-win32's baked MCCDIR
+			# is the INSTALL prefix, which need not exist. -B <builddir> alone
+			# fails: the archive is at <builddir>/i386-win32-libmccrt.a, the
+			# crt objects in <builddir>/lib-i386-win32/, and the .def import
+			# stubs only in runtime/win32/lib/. Assemble the one <B>/lib the
+			# runner can point at, plus <B>/include for the win32 headers.
+			bdir=$OUT/pe-bdir-$k
+			if [ ! -f "$BUILD/i386-win32-libmccrt.a" ] || \
+			   [ ! -d "$BUILD/lib-i386-win32" ] || [ ! -d "$BUILD/include" ]; then
+				printf '%-9s UNMEASURABLE  runtime pieces absent in %s (need i386-win32-libmccrt.a, lib-i386-win32/, include/)\n' "$k" "$BUILD"
+				rc=1; continue
+			fi
+			rm -rf "$bdir"
+			mkdir -p "$bdir/lib"
+			cp "$BUILD/i386-win32-libmccrt.a" "$BUILD"/i386-win32-*.o "$bdir/lib/"
+			cp "$BUILD/lib-i386-win32/"* "$bdir/lib/"
+			cp "$S/runtime/win32/lib/"*.def "$bdir/lib/"
+			cp -r "$BUILD/include" "$bdir/include" ;;
+		*)
+			printf '%-9s UNMEASURABLE  no runner on this host (see W1/W2)\n' "$k"
+			continue ;;
+		esac
+	else
 	case "$k" in
 	x86_64)  mcc=$BUILD/mcc; emu=; sysroot= ;;
 	i386)    emu=qemu-i386 ;;
@@ -112,13 +164,14 @@ for k in $KEYS; do
 		# one. The sysroot has to be handed to the emulator, not only to mcc.
 		emu="$emu -L $sysroot"
 	fi
+	fi
 	if [ ! -x "$mcc" ]; then
 		printf '%-9s UNMEASURABLE  no compiler: %s\n' "$k" "$mcc"
 		rc=1; continue
 	fi
 
-	leg arena  "$k" "$mcc" "$sysroot" "$emu" "$cpu"
-	leg parser "$k" "$mcc" "$sysroot" "$emu" "$cpu"
+	leg arena  "$k" "$mcc" "$bdir" "$sysroot" "$emu" "$cpu" "$os"
+	leg parser "$k" "$mcc" "$bdir" "$sysroot" "$emu" "$cpu" "$os"
 
 	pa=$(passof "$OUT/$k.arena.txt"); pb=$(passof "$OUT/$k.parser.txt")
 	fa=$(failof "$OUT/$k.arena.txt"); fb=$(failof "$OUT/$k.parser.txt")

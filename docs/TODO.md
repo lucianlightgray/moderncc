@@ -523,13 +523,13 @@ each one produced a plausible-looking wrong answer:
 ### What to build, in order
 
 1. ~~**`tools/c2_equiv.sh`**~~ — **done**, and clean on all five keys it can reach.
-   Still to add: the two x86 PE keys under `wine`, which this host can execute
-   (`docs/TODO.md` records a `printf` binary from `mcc-x86_64-win32` and
-   `mcc-i386-win32` both running clean) but which need PE-shaped flags rather than a
-   sysroot — `-B runtime/win32 -B runtime`, per `tools/c2_sweep.sh:20-21` — and
-   `wine` as the runner rather than `qemu -L`. That would take the differential from
-   five keys to seven. The remaining five are Mach-O and ARM/ARM64 PE, W1/W2, and
-   stay byte-only.
+   ~~Still to add: the two x86 PE keys~~ — **the PE arm landed and was measured
+   *natively* on the Windows x86_64 host (2026-08-03, `ad0dc1e0`), which is a
+   stronger reading than the planned `wine` leg**; see **the Windows measurement
+   below**. The differential now covers seven of twelve keys. A `wine` leg on the
+   Linux host would only re-measure the same two keys under emulation — redundant
+   now, do not build it. The remaining five are Mach-O and ARM/ARM64 PE, W1/W2,
+   and stay byte-only.
 2. **A per-body execution tap**, so a passing program can be attributed to the bodies
    it actually ran. Without it the harness proves "this program behaves the same",
    which is not the same claim as "this body is equivalent" — a body on an untaken
@@ -627,11 +627,13 @@ error `jmp` context), so the seam has form.
 ### For the Windows and macOS hosts: validate the semantic bar on the five keys this host cannot execute
 
 **This is the highest-value thing either of those machines can do right now**, and it
-closes W1/W2 in a way the byte compare never could. Seven of twelve keys have a byte
-gap that has *only* ever been byte-compared — `x86_64-osx` 12, `arm64-osx` 19,
-`arm64-win32` 16, `arm-win32` 17, `arm-wince` 17 — and the whole point of the fifteen
-clean cells above is that a byte gap is not evidence of a defect. Until those keys are
-*executed*, nobody knows whether their gap is the same benign shape or something real.
+closes W1/W2 in a way the byte compare never could. **Five** of twelve keys now have a
+byte gap that has *only* ever been byte-compared — `x86_64-osx` 12, `arm64-osx` 19,
+`arm64-win32` 16, `arm-win32` 17, `arm-wince` 17 — down from seven: the Windows host
+measured `x86_64-win32` and `i386-win32` natively on 2026-08-03, both clean (see item
+2 below). The whole point of the fifteen clean cells above is that a byte gap is not
+evidence of a defect. Until those keys are *executed*, nobody knows whether their gap
+is the same benign shape or something real.
 
 Run this **before** attacking any individual body on those keys.
 
@@ -656,10 +658,46 @@ Run this **before** attacking any individual body on those keys.
    `matrix`, `diagnostics`, `msvc`, `sanitize-msvc`, `mingw`, `stage2`, `dist-mingw`
    and `dist-msvc` as unrun — `stage2` is W4 and is the one that needs a real 1MB-default
    PE process to confirm the 8MB `SizeOfStackReserve` fix at `src/objfmt/mccpe.c:738`.
-2. `tools/c2_equiv.sh bc2 all` once it has a **PE arm**: `x86_64-win32` and
-   `i386-win32` execute *natively* on that host, so the runner prefix is empty rather
-   than `wine`, and the flags are `-B runtime/win32 -B runtime -I runtime/include`
-   (`tools/c2_sweep.sh:20`) with no sysroot. Those two keys carry gaps of 12 and 14.
+2. ~~`tools/c2_equiv.sh bc2 all` once it has a **PE arm**~~ — **done and measured,
+   2026-08-03 at `ad0dc1e0`, on the Windows x86_64 host** (`cmake-c2`: Debug,
+   `-DMCC_ENABLE_CROSS=ON`, `-DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1 -DRIR_DBG_OPTRACE=1`,
+   winlibs gcc, rebuilt at that commit). **Eight cells, two keys x
+   `-O0`/`-O1`/`-O2`/`-O3`, every one `differential: NONE`:**
+
+   | key | passing goldens (arena/parser) | differential | uncompared (fail both legs) |
+   | --- | --- | --- | --- |
+   | x86_64-win32 | 293 / 293 (of 317, 24 skip) | NONE at all four `-O` | none — zero batch failures |
+   | i386-win32 | 288 / 288 (of 317, 25 skip) | NONE at all four `-O` | `atomic_misc`, `errors_and_warnings`, `nodata_wanted`, `run_atexit` |
+
+   So the two x86 PE keys' byte gaps are the **same benign class as the five Linux
+   keys** — byte-divergent, behaviourally unobservable on the exec corpus.
+   `arena-only` is empty everywhere. The four i386-win32 both-leg failures are
+   identical mismatches in both legs (arch-specific expectation drift, not arena),
+   cancel out of the differential, and were never compared — same caveat class as
+   the eight both-leg goldens on Linux. Three findings the next reader needs:
+   - **The prescription above was wrong about the flags.** The runner passes a
+     *single* `-B`, so `-B runtime/win32 -B runtime` cannot be handed to it. What
+     works: `x86_64-win32` is exactly the ctest-green native configuration
+     (`mcc` + `-B <builddir>`); for `i386-win32` the script now *assembles* a
+     synthetic `-B` dir — the archive sits at `<builddir>/i386-win32-libmccrt.a`,
+     the crt objects in `<builddir>/lib-i386-win32/`, the `.def` import stubs only
+     in `runtime/win32/lib/`, and headers in `<builddir>/include` — because the
+     cross mcc's baked `MCC_CONFIG_MCCDIR` points at the *install* prefix
+     (`dist/lib/mcc/win32`), which need not exist. All inside `tools/c2_equiv.sh`.
+   - **Two Git-Bash traps handled in the script**: `MCC_TEST_OS=WIN32` must be set
+     or the goldens' `expect_win32` variants are not selected; and env-var *values*
+     are not MSYS-path-converted (argv is), so `MCC_REPLAY_IR_OUT` needs `cygpath -m`
+     or the parser leg's `[rir-*]` diagnostics leak into the captured output and
+     every golden mismatches for a harness reason.
+   - **The `-O0` row is a vacuous control on this build, for a subtler reason than
+     "no arena at -O0".** This mcc embeds the JIT, and `embed_jit` is a term in
+     `ast_replay_env` (`src/mccast.c:1923`) — so capture *and* the verify replay run
+     even at `-O0` (`rfaithful` fires, the rir.log fills). But production still does
+     not adopt: `MCC_RIR_PROD=2` reads `used=0` at `-O0` against `used=1` at `-O1`
+     on the same file, so both `-O0` legs ship the parser's bytes and the row proves
+     plumbing only. This is the `embed_jit` partition check the JIT paragraph above
+     said to run first — **the flip still partitions correctly at `-O1`+ on an
+     embed-jit build; at `-O0` it partitions nothing.**
 3. `arm64-win32`, `arm-win32` and `arm-wince` still need a **Windows-on-ARM** machine;
    they are W2 and W5 and remain byte-only until one exists. `arm-win32` and
    `arm-wince` must read identically on every counter — a differential where they
