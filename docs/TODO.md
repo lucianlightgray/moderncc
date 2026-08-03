@@ -859,3 +859,58 @@ The lesson worth keeping: the P5 board was green on `ctest` 8073 of 8073 through
 the whole merge. The external suites are what read the difference, and only
 because the sweep was re-run over the whole tree rather than over the tests that
 had failed before.
+
+## The eight-cluster sweep over gcc and clang
+
+The external board, re-measured over the whole tree from this commit:
+**20,513 tests per column, 82.6% at `-O0` and 82.4% at `-O3`**, from 78.3/78.1.
+**1,965 runs moved from failing to passing.** Against that, 198 rows moved to
+`XPASS` — tests asserting a diagnostic mcc now doesn't emit, a consequence of
+the lax vector-conversion rule and the loosened function-compatibility check —
+and exactly one file regressed, `builtin-issignaling-1.c`, which now reaches the
+link and stops on a builtin mcc does not have.
+
+The work was split into eight disjoint clusters, each taken by an agent in its
+own worktree with the same two hard gates (`ctest` clean, `-O3` self-host
+fixpoint byte-identical) and a standing rule that a test is never weakened and
+the harness is never edited.
+
+| cluster | gained | the lever |
+|---|---:|---|
+| parse / C23 syntax | 382 | `[[...]]` attribute-specifier-sequences; ~225 files were blocked on a *missing predefine*, not on syntax |
+| missing `__builtin_*` | 299 | `runtime/include/mccdefs.h` already maps builtins onto libc symbols by asm label — most were simply never added to that table |
+| `_Complex` | 47 | integer complex, and GCC's overflow-avoiding wide/ratio division, which it applies to integer complex too |
+| semantic rejections | 49 | `__extension__` was parsed and then ignored, so it never suppressed anything |
+| `#embed` | 20 | full C23 form including `limit`/`prefix`/`suffix`/`if_empty` and `__has_embed` |
+| VLA struct members | 42 | see below |
+| missing diagnostics | 18 | `is_compatible_func` never looked at the other side's parameter list |
+| inline asm | ~35 | flag-output operands (`=@ccCOND`), the missing constraint letters, `xgetbv` |
+| headers | 4 | 202 of the remaining 249 want another architecture's intrinsics |
+
+**Three findings worth keeping.**
+
+*The VLA-member miscompile was not in the new code.* The first version of
+runtime-sized structs passed its own 79-file cluster at `-O0` and miscompiled at
+`-O1`: after a loop wrote through the VLA member, reading the member at offset 0
+returned the array's first four bytes. The cause was a **pre-existing** REGDISP
+fast path in member access that defers a field's constant offset to be folded
+into a later addressing mode, guarded on *the field is not an array*. No
+ordinary member carries `VT_VLA`, so that guard had never seen one; the deferred
+offset was dropped rather than folded. It was reverted, diagnosed properly, and
+re-landed. The lesson is the testing one: validating a codegen feature at `-O0`
+alone is not validation.
+
+*Three regressions only the combined tree could show.* Each agent's branch was
+green on its own and two of them still broke things together — a
+function-compatibility rewrite that was too strict in two directions, an
+`__extension__` unget that left `decl()` looking at the wrong token, and a
+`__BITINT_MAXWIDTH__` predefine advertising a `_BitInt` mcc cannot parse.
+Per-cluster gates do not compose; only the whole-tree re-run reads them.
+
+*The harness understates mcc.* Three agents independently found that
+`tools/xsuite.py`'s `KEEP_OPT_RE` drops flags the tests depend on — `-Werror`,
+`-idirafter`, `--embed-dir` — and never expands `${srcdir}`. Whole families
+(`gcc.dg/spellcheck-options-*`, the `Werror-*` set) are unpassable for that
+reason alone, and several `#embed` tests fail only because the flag never
+arrives. That is a measurement bug in our tooling, not a gap in the compiler,
+and it is the next thing to fix before the board is quoted again.
