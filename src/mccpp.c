@@ -2654,6 +2654,10 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 					(long double)bn[1] * 4294967296.0L +
 					(long double)bn[0];
 			d = ldexpl(d, exp_val - frac_bits);
+			if (ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J') { MCC_TRACE("br\n");
+				tok_imaginary = 1;
+				ch = *p++;
+			}
 			t = toup(ch);
 			if (t == 'F') { MCC_TRACE("br\n");
 				ch = *p++;
@@ -2702,6 +2706,10 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				}
 			}
 			*q = '\0';
+			if (ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J') { MCC_TRACE("br\n");
+				tok_imaginary = 1;
+				ch = *p++;
+			}
 			t = toup(ch);
 			errno = 0;
 			if (t == 'F') { MCC_TRACE("br\n");
@@ -2772,6 +2780,9 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				if (ucount >= 1)
 					{ MCC_TRACE("br\n"); mcc_error("two 'u's in integer constant"); }
 				ucount++;
+				ch = *p++;
+			} else if (t == 'I' || t == 'J') { MCC_TRACE("br\n");
+				tok_imaginary = 1;
 				ch = *p++;
 			} else { MCC_TRACE("br\n");
 				break;

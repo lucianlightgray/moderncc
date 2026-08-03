@@ -1042,7 +1042,9 @@ ST_FUNC void mccgen_finish(MCCState *s1) { MCC_TRACE("enter\n");
 	free_inline_functions(s1);
 	sym_pop(&global_stack, NULL, 0);
 	memset(s1->gen_complex_type_cache, 0, sizeof s1->gen_complex_type_cache);
+	s1->gen_complex_type_cache_n = 0;
 	memset(s1->gen_complex_call_ftype, 0, sizeof s1->gen_complex_call_ftype);
+	memset(s1->gen_complex_idiv_ftype, 0, sizeof s1->gen_complex_idiv_ftype);
 	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
 	sym_pop(&local_stack, NULL, 0);
 	free_defines(NULL);
@@ -5907,18 +5909,17 @@ static void parse_btype_qualify(CType *type, int qualifiers) { MCC_TRACE("enter\
 
 static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 	CType *cache = mcc_state->gen_complex_type_cache;
-	int idx, bt = base->t & VT_BTYPE;
+	int i, n = mcc_state->gen_complex_type_cache_n;
+	int bkey = base->t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
 	Sym *s, *f0, *f1;
 	AttributeDef ad;
 
-	idx = bt == VT_FLOAT
-						? 0
-				: bt == VT_DOUBLE
-						? ((base->t & VT_LONG) ? 3 : 1)
-						: 2;
-	if (cache[idx].ref) { MCC_TRACE("br\n");
-		*type = cache[idx];
-		return;
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		Sym *e = cache[i].ref->next;
+		if ((e->type.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) == bkey && e->type.ref == base->ref) { MCC_TRACE("br\n");
+			*type = cache[i];
+			return;
+		}
 	}
 	if (!mcc_state->gen_complex_re_tok) { MCC_TRACE("br\n");
 		mcc_state->gen_complex_re_tok = tok_alloc_const("__real");
@@ -5936,7 +5937,8 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 	type->ref = s;
 	memset(&ad, 0, sizeof ad);
 	struct_layout(type, &ad);
-	cache[idx] = *type;
+	if (n < (int)(sizeof(mcc_state->gen_complex_type_cache) / sizeof(CType)))
+		{ MCC_TRACE("br\n"); cache[mcc_state->gen_complex_type_cache_n++] = *type; }
 }
 
 static void mk_vector_type(CType *type, CType *base, int nelem) { MCC_TRACE("enter\n");
@@ -6395,9 +6397,32 @@ static void cplx_store_part(SValue *dst, int imag) { MCC_TRACE("enter\n");
 static void gen_imaginary_complex(int t) { MCC_TRACE("enter\n");
 	CType cbase, ccplx;
 	SValue r;
-	cbase.t = t & (VT_BTYPE | VT_LONG);
+	cbase.t = t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
 	cbase.ref = NULL;
 	mk_complex_type(&ccplx, &cbase);
+	if (CONST_WANTED && (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+		init_params pp = {.sec = rodata_section};
+		unsigned long offset;
+		int bsz, bal, csz, cal;
+		SValue im = *vtop;
+		vtop--;
+		bsz = type_size(&cbase, &bal);
+		csz = type_size(&ccplx, &cal);
+		if (NODATA_WANTED) { MCC_TRACE("br\n");
+			csz = 0;
+			cal = 1;
+		}
+		offset = section_add(pp.sec, csz, cal);
+		vpushi(0);
+		gen_cast(&cbase);
+		init_putv(&pp, &cbase, offset);
+		vpushv(&im);
+		gen_cast(&cbase);
+		init_putv(&pp, &cbase, offset + bsz);
+		vpush_ref(&ccplx, pp.sec, offset, csz);
+		vtop->r |= VT_LVAL;
+		return;
+	}
 	cplx_local(&ccplx, &r);
 	cplx_store_part(&r, 1);
 	vpushi(0);
@@ -6482,6 +6507,68 @@ static void gen_complex_call(int op, CType *cplx, CType *base, SValue *a, SValue
 	vpushv(&r);
 }
 
+static void gen_complex_int_div(CType *cplx, CType *base, SValue *a, SValue *b) { MCC_TRACE("enter\n");
+	int uns = !!(base->t & VT_UNSIGNED);
+	CType wide, wcplx;
+	Sym *fsym, *p, *prev;
+	CType functype, ptype;
+	SValue wr, r;
+	int i;
+
+	wide.t = VT_LLONG | (uns ? VT_UNSIGNED : 0);
+	wide.ref = NULL;
+	mk_complex_type(&wcplx, &wide);
+	cplx_local(&wcplx, &wr);
+
+	fsym = mcc_state->gen_complex_idiv_ftype[uns];
+	if (!fsym) { MCC_TRACE("br\n");
+		ptype = wide;
+		mk_pointer(&ptype);
+		fsym = sym_push2(&global_stack, SYM_FIELD, VT_VOID, 0);
+		fsym->type.ref = NULL;
+		fsym->f.func_call = FUNC_CDECL;
+		fsym->f.func_type = FUNC_NEW;
+		fsym->f.func_args = 5;
+		prev = NULL;
+		for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+			p = sym_push2(&global_stack, SYM_FIELD, wide.t, 0);
+			p->type.ref = wide.ref;
+			p->next = prev;
+			prev = p;
+		}
+		p = sym_push2(&global_stack, SYM_FIELD, ptype.t, 0);
+		p->type.ref = ptype.ref;
+		p->next = prev;
+		fsym->next = p;
+		mcc_state->gen_complex_idiv_ftype[uns] = fsym;
+	}
+	functype.t = VT_FUNC;
+	functype.ref = fsym;
+
+	vpushsym(&functype, external_global_sym(tok_alloc_const(uns ? "__mcc_cdivu64" : "__mcc_cdivi64"), &functype));
+	vpushv(&wr);
+	mk_pointer(&vtop->type);
+	gaddrof();
+	cplx_push_part(a, 0);
+	gen_cast(&wide);
+	cplx_push_part(a, 1);
+	gen_cast(&wide);
+	cplx_push_part(b, 0);
+	gen_cast(&wide);
+	cplx_push_part(b, 1);
+	gen_cast(&wide);
+	gfunc_call(5);
+
+	cplx_local(cplx, &r);
+	cplx_push_part(&wr, 0);
+	gen_cast(base);
+	cplx_store_part(&r, 0);
+	cplx_push_part(&wr, 1);
+	gen_cast(base);
+	cplx_store_part(&r, 1);
+	vpushv(&r);
+}
+
 static int cplx_extract_const(SValue *sv, SValue *re, SValue *im) { MCC_TRACE("enter\n");
 	if (is_complex_type(&sv->type)) { MCC_TRACE("br\n");
 		CType sb = sv->type.ref->next->type;
@@ -6489,7 +6576,7 @@ static int cplx_extract_const(SValue *sv, SValue *re, SValue *im) { MCC_TRACE("e
 		Section *ssec;
 		ElfSym *esym;
 		unsigned char *p;
-		if (sbt != VT_FLOAT && sbt != VT_DOUBLE)
+		if (sbt != VT_FLOAT && sbt != VT_DOUBLE && !is_integer_btype(sbt))
 			{ MCC_TRACE("br\n"); return 0; }
 		if ((sv->r & (VT_SYM | VT_CONST | VT_LVAL)) != (VT_SYM | VT_CONST | VT_LVAL) || !sv->sym || sv->sym->v < SYM_FIRST_ANOM)
 			{ MCC_TRACE("br\n"); return 0; }
@@ -6500,6 +6587,8 @@ static int cplx_extract_const(SValue *sv, SValue *re, SValue *im) { MCC_TRACE("e
 		if (!ssec || !ssec->data || ssec->reloc)
 			{ MCC_TRACE("br\n"); return 0; }
 		bsz = type_size(&sb, &al);
+		if (sbt != VT_FLOAT && sbt != VT_DOUBLE && bsz > 8)
+			{ MCC_TRACE("br\n"); return 0; }
 		p = ssec->data + esym->st_value + (unsigned)sv->c.i;
 		memset(re, 0, sizeof *re);
 		memset(im, 0, sizeof *im);
@@ -6511,12 +6600,23 @@ static int cplx_extract_const(SValue *sv, SValue *re, SValue *im) { MCC_TRACE("e
 			memcpy(&fi, p + bsz, 4);
 			re->c.f = fr;
 			im->c.f = fi;
-		} else { MCC_TRACE("br\n");
+		} else if (sbt == VT_DOUBLE) { MCC_TRACE("br\n");
 			double dr, di;
 			memcpy(&dr, p, 8);
 			memcpy(&di, p + bsz, 8);
 			re->c.d = dr;
 			im->c.d = di;
+		} else { MCC_TRACE("br\n");
+			uint64_t ur = 0, ui = 0;
+			int bits = bsz * 8;
+			memcpy(&ur, p, bsz);
+			memcpy(&ui, p + bsz, bsz);
+			if (!(sb.t & VT_UNSIGNED) && bits < 64 && (ur & ((uint64_t)1 << (bits - 1))))
+				{ MCC_TRACE("br\n"); ur |= (uint64_t)-1 << bits; }
+			if (!(sb.t & VT_UNSIGNED) && bits < 64 && (ui & ((uint64_t)1 << (bits - 1))))
+				{ MCC_TRACE("br\n"); ui |= (uint64_t)-1 << bits; }
+			re->c.i = ur;
+			im->c.i = ui;
 		}
 		return 1;
 	}
@@ -6536,15 +6636,93 @@ static void cplx_push_cst(SValue *v, CType *base) { MCC_TRACE("enter\n");
 	gen_cast(base);
 }
 
-static int float_rank(int t) { MCC_TRACE("enter\n");
-	int bt = t & VT_BTYPE;
-	if (bt == VT_LDOUBLE)
-		{ MCC_TRACE("br\n"); return 3; }
-	if (bt == VT_DOUBLE)
-		{ MCC_TRACE("br\n"); return (t & VT_LONG) ? 3 : 2; }
-	if (bt == VT_FLOAT)
-		{ MCC_TRACE("br\n"); return 1; }
-	return 0;
+static void combine_complex_base(CType *r0, CType *r1, CType *out) { MCC_TRACE("enter\n");
+	int bt0 = r0->t & VT_BTYPE, bt1 = r1->t & VT_BTYPE;
+	int t0 = r0->t, t1 = r1->t;
+	CType type;
+	type.ref = NULL;
+	if (is_float(bt0) || is_float(bt1)) { MCC_TRACE("br\n");
+		if (bt0 == VT_LDOUBLE || bt1 == VT_LDOUBLE)
+			{ MCC_TRACE("br\n"); type.t = VT_LDOUBLE; }
+		else if (bt0 == VT_DOUBLE || bt1 == VT_DOUBLE)
+			{ MCC_TRACE("br\n"); type.t = VT_DOUBLE; }
+		else
+			{ MCC_TRACE("br\n"); type.t = VT_FLOAT; }
+	} else if (bt0 == VT_INT128 || bt1 == VT_INT128) { MCC_TRACE("br\n");
+		type.t = VT_INT128;
+		if ((bt0 == VT_INT128 && (t0 & VT_UNSIGNED)) || (bt1 == VT_INT128 && (t1 & VT_UNSIGNED)))
+			{ MCC_TRACE("br\n"); type.t |= VT_UNSIGNED; }
+	} else if (bt0 == VT_LLONG || bt1 == VT_LLONG) { MCC_TRACE("br\n");
+		type.t = VT_LLONG | VT_LONG;
+		if (bt0 == VT_LLONG)
+			{ MCC_TRACE("br\n"); type.t &= t0; }
+		if (bt1 == VT_LLONG)
+			{ MCC_TRACE("br\n"); type.t &= t1; }
+		if ((t0 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED) ||
+				(t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED))
+			{ MCC_TRACE("br\n"); type.t |= VT_UNSIGNED; }
+	} else { MCC_TRACE("br\n");
+		int al, sz0 = type_size(r0, &al), sz1 = type_size(r1, &al);
+		if (sz0 > sz1)
+			{ MCC_TRACE("br\n"); type = *r0; }
+		else if (sz1 > sz0)
+			{ MCC_TRACE("br\n"); type = *r1; }
+		else if (t0 & VT_UNSIGNED)
+			{ MCC_TRACE("br\n"); type = *r0; }
+		else if (t1 & VT_UNSIGNED)
+			{ MCC_TRACE("br\n"); type = *r1; }
+		else
+			{ MCC_TRACE("br\n"); type = *r0; }
+	}
+	*out = type;
+}
+
+static CType complex_operand_real_type(SValue *v) { MCC_TRACE("enter\n");
+	CType r;
+	int bt;
+	if (is_complex_type(&v->type))
+		{ MCC_TRACE("br\n"); return v->type.ref->next->type; }
+	r = v->type;
+	bt = r.t & VT_BTYPE;
+	if (is_integer_btype(bt) && bt != VT_INT && bt != VT_LLONG && bt != VT_INT128)
+		{ MCC_TRACE("br\n"); r.t = (r.t & ~(VT_BTYPE | VT_UNSIGNED)) | VT_INT; }
+	return r;
+}
+
+static void cplx_const_int_div(int bsz, int uns, uint64_t ar, uint64_t ai, uint64_t br, uint64_t bi, uint64_t *rr, uint64_t *ri) { MCC_TRACE("enter\n");
+#define IDIV_CASE(T)                                                     \
+	do { MCC_TRACE("br\n");                                                 \
+		T a = (T)ar, b = (T)ai, c = (T)br, d = (T)bi, r, den, x, y;           \
+		if ((c < 0 ? (T)-c : c) >= (d < 0 ? (T)-d : d)) { MCC_TRACE("br\n");  \
+			r = d / c, den = c + d * r;                                         \
+			x = (a + b * r) / den, y = (b - a * r) / den;                       \
+		} else { MCC_TRACE("br\n");                                           \
+			r = c / d, den = c * r + d;                                         \
+			x = (a * r + b) / den, y = (b * r - a) / den;                       \
+		}                                                                      \
+		*rr = (uint64_t)(T)x, *ri = (uint64_t)(T)y;                           \
+	} while (0)
+
+	if (uns) { MCC_TRACE("br\n");
+		if (bsz == 1)
+			{ MCC_TRACE("br\n"); IDIV_CASE(uint8_t); }
+		else if (bsz == 2)
+			{ MCC_TRACE("br\n"); IDIV_CASE(uint16_t); }
+		else if (bsz == 4)
+			{ MCC_TRACE("br\n"); IDIV_CASE(uint32_t); }
+		else
+			{ MCC_TRACE("br\n"); IDIV_CASE(uint64_t); }
+	} else { MCC_TRACE("br\n");
+		if (bsz == 1)
+			{ MCC_TRACE("br\n"); IDIV_CASE(int8_t); }
+		else if (bsz == 2)
+			{ MCC_TRACE("br\n"); IDIV_CASE(int16_t); }
+		else if (bsz == 4)
+			{ MCC_TRACE("br\n"); IDIV_CASE(int32_t); }
+		else
+			{ MCC_TRACE("br\n"); IDIV_CASE(int64_t); }
+	}
+#undef IDIV_CASE
 }
 
 static void gen_complex_op(int op) { MCC_TRACE("enter\n");
@@ -6555,33 +6733,24 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 	base = cplx.ref->next->type;
 
 	{
-		CType *r0 = NULL, *r1 = NULL, *wb = NULL;
-		int k0, k1, kc;
-		if (is_complex_type(&vtop[-1].type))
-			{ MCC_TRACE("br\n"); r0 = &vtop[-1].type.ref->next->type; }
-		else if (is_float(vtop[-1].type.t))
-			{ MCC_TRACE("br\n"); r0 = &vtop[-1].type; }
-		if (is_complex_type(&vtop[0].type))
-			{ MCC_TRACE("br\n"); r1 = &vtop[0].type.ref->next->type; }
-		else if (is_float(vtop[0].type.t))
-			{ MCC_TRACE("br\n"); r1 = &vtop[0].type; }
-		kc = float_rank(base.t);
-		k0 = r0 ? float_rank(r0->t) : 0;
-		k1 = r1 ? float_rank(r1->t) : 0;
-		if (k0 >= k1 && k0 > kc)
-			{ MCC_TRACE("br\n"); wb = r0; }
-		else if (k1 > k0 && k1 > kc)
-			{ MCC_TRACE("br\n"); wb = r1; }
-		if (wb) { MCC_TRACE("br\n");
-			mk_complex_type(&cplx, wb);
-			base = cplx.ref->next->type;
+		CType r0, r1, wb;
+		int bt0, bt1;
+		r0 = complex_operand_real_type(&vtop[-1]);
+		r1 = complex_operand_real_type(&vtop[0]);
+		bt0 = r0.t & VT_BTYPE, bt1 = r1.t & VT_BTYPE;
+		if ((is_float(bt0) || is_integer_btype(bt0)) && (is_float(bt1) || is_integer_btype(bt1))) { MCC_TRACE("br\n");
+			combine_complex_base(&r0, &r1, &wb);
+			if ((wb.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) != (base.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED))) { MCC_TRACE("br\n");
+				mk_complex_type(&cplx, &wb);
+				base = cplx.ref->next->type;
+			}
 		}
 	}
 
 	{
 		SValue are, aim, bre, bim;
 		int ebt = base.t & VT_BTYPE;
-		if ((ebt == VT_FLOAT || ebt == VT_DOUBLE) && CONST_WANTED && (op == '+' || op == '-' || op == '*' || op == '/') && cplx_extract_const(&vtop[-1], &are, &aim) && cplx_extract_const(&vtop[0], &bre, &bim)) { MCC_TRACE("br\n");
+		if ((ebt == VT_FLOAT || ebt == VT_DOUBLE || is_integer_btype(ebt)) && CONST_WANTED && (op == '+' || op == '-' || op == '*' || op == '/') && cplx_extract_const(&vtop[-1], &are, &aim) && cplx_extract_const(&vtop[0], &bre, &bim)) { MCC_TRACE("br\n");
 			init_params pp = {.sec = rodata_section};
 			unsigned long offset;
 			int bsz, bal, csz, cal;
@@ -6592,6 +6761,26 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 				cal = 1;
 			}
 			offset = section_add(pp.sec, csz, cal);
+			if (op == '/' && is_integer_btype(ebt) && bsz <= 8) { MCC_TRACE("br\n");
+				uint64_t rr, ri;
+				int uns = !!(base.t & VT_UNSIGNED);
+				SValue rre, rim;
+				cplx_const_int_div(bsz, uns, are.c.i, aim.c.i, bre.c.i, bim.c.i, &rr, &ri);
+				memset(&rre, 0, sizeof rre);
+				memset(&rim, 0, sizeof rim);
+				rre.type = rim.type = base;
+				rre.r = rim.r = VT_CONST;
+				rre.c.i = rr;
+				rim.c.i = ri;
+				cplx_push_cst(&rre, &base);
+				init_putv(&pp, &base, offset);
+				cplx_push_cst(&rim, &base);
+				init_putv(&pp, &base, offset + bsz);
+				vtop -= 2;
+				vpush_ref(&cplx, pp.sec, offset, csz);
+				vtop->r |= VT_LVAL;
+				return;
+			}
 			switch (op) { MCC_TRACE("br\n");
 			case '+':
 			case '-':
@@ -6688,9 +6877,14 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 		return;
 	}
 
-	if ((op == '*' || op == '/') &&
+	if ((op == '*' || op == '/') && is_float(base.t) &&
 			!(mcc_state->cx_limited_range || stdc_cx_limited(mcc_state))) { MCC_TRACE("br\n");
 		gen_complex_call(op, &cplx, &base, &a, &b);
+		return;
+	}
+
+	if (op == '/' && is_integer_btype(base.t & VT_BTYPE) && (base.t & VT_BTYPE) != VT_INT128) { MCC_TRACE("br\n");
+		gen_complex_int_div(&cplx, &base, &a, &b);
 		return;
 	}
 
@@ -6755,6 +6949,22 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		mcc_error("invalid operation on complex operands");
 	}
+	vpushv(&r);
+}
+
+static void gen_complex_conj(void) { MCC_TRACE("enter\n");
+	CType cplx = vtop->type, base = cplx.ref->next->type;
+	SValue a, r;
+
+	cplx_materialize(&cplx, &base, &a);
+	cplx_local(&cplx, &r);
+	cplx_push_part(&a, 0);
+	cplx_store_part(&r, 0);
+	vpushi(0);
+	gen_cast(&base);
+	cplx_push_part(&a, 1);
+	gen_op('-');
+	cplx_store_part(&r, 1);
 	vpushv(&r);
 }
 
@@ -6939,6 +7149,12 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_COMPLEX:
 			if (mcc_state->cversion < 199901)
 				{ MCC_TRACE("br\n"); mcc_pedantic("'_Complex' is a C99 feature"); }
+			complex_seen = 1;
+			next();
+			typespec_found = 1;
+			break;
+		case TOK_COMPLEX2:
+		case TOK_COMPLEX3:
 			complex_seen = 1;
 			next();
 			typespec_found = 1;
@@ -7139,6 +7355,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 the_end:
 	if (type_found && !typespec_found)
 		{ MCC_TRACE("br\n"); ad->implicit_int = 1; }
+	if (complex_seen && bt == -1 && st == -1 && !(t & VT_DEFSIGN))
+		{ MCC_TRACE("br\n"); t = (t & ~(VT_BTYPE | VT_LONG)) | VT_DOUBLE; }
 	if (mcc_state->char_is_unsigned) { MCC_TRACE("br\n");
 		if ((t & (VT_DEFSIGN | VT_BTYPE)) == VT_BYTE)
 			{ MCC_TRACE("br\n"); t |= VT_UNSIGNED; }
@@ -7152,10 +7370,14 @@ the_end:
 #endif
 	if (complex_seen) { MCC_TRACE("br\n");
 		CType base;
-		base.t = t & (VT_BTYPE | VT_LONG);
+		base.t = t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
 		base.ref = NULL;
-		if (!is_float(base.t))
+		if (!is_float(base.t) && !is_integer_btype(base.t & VT_BTYPE))
 			{ MCC_TRACE("br\n"); mcc_error("_Complex requires a floating-point type"); }
+		else if ((base.t & VT_BTYPE) == VT_BOOL)
+			{ MCC_TRACE("br\n"); mcc_error("_Complex _Bool is invalid"); }
+		else if (!is_float(base.t))
+			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not support complex integer types"); }
 		mk_complex_type(type, &base);
 		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_DEFSIGN | VT_EXTERN | VT_STATIC | VT_TYPEDEF |
 										VT_INLINE);
@@ -10524,8 +10746,12 @@ tok_next:
 	case '~':
 		next();
 		unary();
-		vpushi(-1);
-		gen_op('^');
+		if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+			gen_complex_conj();
+		} else { MCC_TRACE("br\n");
+			vpushi(-1);
+			gen_op('^');
+		}
 		break;
 	case TOK_REALPART1:
 	case TOK_REALPART2:
@@ -12813,6 +13039,8 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_LONG:
 	case TOK_BOOL:
 	case TOK_COMPLEX:
+	case TOK_COMPLEX2:
+	case TOK_COMPLEX3:
 	case TOK_IMAGINARY:
 	case TOK_FLOAT:
 	case TOK_DOUBLE:
