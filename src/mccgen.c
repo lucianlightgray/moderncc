@@ -10392,21 +10392,12 @@ tok_next:
 		n = 0;
 		if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
 			{ MCC_TRACE("br\n"); n = (int)vtop->c.i; }
-		{
-			addr_t osz = (n & 2) ? 0 : (addr_t)-1;
-			if ((n & 1) && (vtop[-1].type.t & VT_ARRAY) &&
-					!(vtop[-1].type.t & VT_VLA)) { MCC_TRACE("br\n");
-				int oa, osize = type_size(&vtop[-1].type, &oa);
-				if (osize >= 0)
-					{ MCC_TRACE("br\n"); osz = (addr_t)osize; }
-			}
 #if MCC_CONFIG_OPTIMIZER
-			ast_hook_vpop();
-			ast_hook_vpop();
+		ast_hook_vpop();
+		ast_hook_vpop();
 #endif
-			vtop -= 2;
-			vpushs(osz);
-		}
+		vtop -= 2;
+		vpushs((n & 2) ? 0 : (addr_t)-1);
 		break;
 	case TOK_builtin_speculation_safe_value:
 		next();
