@@ -32,7 +32,7 @@ endif()
 
 function(_jrn_count outvar mcc)
     file(WRITE "${TMPDIR}/probe.c"
-         "int jrn_probe(int a, int b) { return a * b + 1; }\n")
+         "int ir_cap_probe(int a, int b) { return a * b + 1; }\n")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env "${_gate_env}"
                 "${mcc}" -w "${OPT}" -c -o "${TMPDIR}/probe.o" "${TMPDIR}/probe.c"
@@ -52,7 +52,7 @@ endif()
 if(_hooks_mode)
     _jrn_count(_anti "${NOJRN}")
     if(NOT _anti EQUAL 0)
-        message(FATAL_ERROR "journal_inert: the -DMCC_JOURNAL_HOOKS=0 build still "
+        message(FATAL_ERROR "journal_inert: the -DMCC_IR_CAPTURE=0 build still "
                             "emits [${_gate_marker}]")
     endif()
 endif()

@@ -1,6 +1,6 @@
 # TODO
 
-Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0, P1 and P2 have landed. Everything above it is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
+Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0, P1, P2 and P3 have landed. Everything above it is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
 
 Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells.
 
@@ -172,13 +172,17 @@ What the transfer turned out to rest on:
 
 ### P3 — rebrand the capture substrate
 
-`jrn_*` → `ir_cap_*`, `JrnOp` → `IrCapOp`, `JOP_*` → `IR_OP_*`, `JRN_OP_LIST` → `IR_OP_LIST`, `MCC_JOURNAL_HOOKS` → `MCC_IR_CAPTURE`; the record substrate moves out of `mccast.c` into its own unit next to `mccrir.c`. 612 `jrn_` sites and 187 `JRN_` sites across `mccast.c` (418/132), `mccgen.c` (130/46), `mccrir.c` (59/8), `mccasm.c` (3/0) and `mcc.h` (2/1).
+**Done.** `jrn_*` → `ir_cap_*`, `JrnOp` → `IrCapOp`, `JOP_*` → `IR_OP_*`, `JRN_OP_LIST`/`_ENUM`/`_NAME` → `IR_OP_*`, `JRN_W0`/`W1`/`W2`/`R1`/`R2`/`WSV`/`REC` → `IR_CAP_*`, `MCC_JOURNAL_HOOKS` → `MCC_IR_CAPTURE`, `MCC_JRN_HAVE_*` → `MCC_IR_HAVE_*`, `MCC_JRN_VA_START_VOID` → `MCC_IR_VA_START_VOID`. Nothing named `jrn`/`JRN`/`JOP` survives under `src/`, `tools/` or `include/`. Line-for-line: `mcc.h` 11/11, `mccasm.c` 6/6, `mccrir.c` 135/135, `mccgen.c` 213/209 (the four extra lines are the new include).
 
-**Do P1 first.** A blind rename collides on 20 names that already exist as `rir_*` — but 17 of them (`blame`, `configure`, `emit_line`, `env`, `fail_kind`, `fail_op`, `out`, `report`, `run`, `started`, `verify`, `tot_*`) die in P1, leaving only `jrn_n`, `jrn_ops`, `jrn_cap`, `jrn_vscap`, `jrn_active`, `jrn_reset` needing the distinct `ir_cap_` prefix.
+**The substrate is `src/mccircap.c`**, 813 lines, joined to the include chain between `mccast.c` and `mccrir.c` in both places that build the translation unit — `src/libmcc.c` and the `!MCC_AMALGAMATED` block at the foot of `src/mccgen.c`. It is not a link unit and must never become one. The move is exact: the file is `src/mccast.c:14416-15224` verbatim under the rename, `#pragma push_macro("gjmp")`/`pop_macro` still bracketing the whole region, wrapped in `mccrir.c`'s own `#if MCC_CONFIG_OPTIMIZER && (defined(MCC_INTERNAL) || !defined(MCC_AMALGAMATED))`.
 
-Four places test each `MCC_JRN_HAVE_*` flag in lockstep — the `#define` table (`src/mccgen.c:154-233`), the `#undef` table (`:15167-15206`), the wrapper instantiations (`src/mccast.c:14932-15311`) and the `jrn_issue` dispatch (`:15219-15311`) — plus `mccrir.c` and the AST replayer. Move all six together or the build breaks per target, not globally. `tools/schemagate.c:296-299/873-889` needs its define spaces renamed with them.
+What the split rested on:
 
-*Gate: byte-identical objects at every `-O` on twelve keys. A rename must move nothing.*
+- **`tools/asttool.c` `#include`s `mccast.c` and is unaffected**, because everything from `src/mccast.c:1289`'s `#ifdef MCC_INTERNAL` down is already invisible to it — `MCC_INTERNAL` comes from `mcc.h:4` and `asttool` never includes `mcc.h`. Had the substrate been outside that guard, `asttool` would have needed the new unit too.
+- **Four references run backwards into the substrate** and now need declarations at `src/mccast.c:2272-2277`: `ir_cap_reset`, `ir_cap_gap`, `ir_cap_active`. `ir_cap_fconst_take`/`ir_cap_fconst_note` already had them. `ir_cap_active`, `ir_cap_raw` and `ir_cap_vs` are declared as tentative definitions in both files, which is one object in one translation unit, and is the idiom `src/mccast.c:4068` was already using.
+- **`tools/targetgate.c`'s `ALLOWED[]` had to learn the new name** — the substrate carries two `MCC_TARGET_I386`/`MCC_TARGET_X86_64` conditionals. `tools/schemagate.c` did not: `IR_OP_` does not intersect the `AST_OP_`/`AST_FB_`/`RIR_R_`/`RIR_M_` define spaces, and its counts are unmoved at 38/21/27/28/18.
+
+*Gate held: the twelve-key `C2_CORPUS=exec` `-O1` board is identical row for row before and after (`arm-win32` and `arm-wince` agreeing, as they must); `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh` passes against the bank unchanged; a direct object-sha256 A/B against the merge base over 656 corpus files × `-O1`/`-O2`/`-O3` × twelve keys is byte-identical on all 23,616 cells; 153 of 153 `^ast` cells pass; `tracegate` and `schemagate` clean.*
 
 ### P4 — the cutover
 

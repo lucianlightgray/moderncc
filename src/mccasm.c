@@ -1571,16 +1571,16 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	if (g_debug & MCC_DBG_ASM)
 		{ MCC_TRACE("br\n"); printf("subst_asm: \"%s\"\n", (char *)astr.data); }
 
-#ifdef MCC_JOURNAL_HOOKS
-	jrn_asm_gen_code(operands, nb_operands, nb_outputs, 0, clobber_regs, out_reg);
+#ifdef MCC_IR_CAPTURE
+	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, 0, clobber_regs, out_reg);
 #else
 	asm_gen_code(operands, nb_operands, nb_outputs, 0,
 							 clobber_regs, out_reg);
 #endif
 
 	sec = cur_text_section;
-#ifdef MCC_JOURNAL_HOOKS
-	jrn_asm(astr.data, astr.size - 1, 0);
+#ifdef MCC_IR_CAPTURE
+	ir_cap_asm(astr.data, astr.size - 1, 0);
 #else
 	mcc_assemble_inline(mcc_state, astr.data, astr.size - 1, 0);
 #endif
@@ -1592,8 +1592,8 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 
 	next();
 
-#ifdef MCC_JOURNAL_HOOKS
-	jrn_asm_gen_code(operands, nb_operands, nb_outputs, 1, clobber_regs, out_reg);
+#ifdef MCC_IR_CAPTURE
+	ir_cap_asm_gen_code(operands, nb_operands, nb_outputs, 1, clobber_regs, out_reg);
 #else
 	asm_gen_code(operands, nb_operands, nb_outputs, 1,
 							 clobber_regs, out_reg);

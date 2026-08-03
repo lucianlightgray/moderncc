@@ -4,234 +4,234 @@
 
 #include "mccforecast.h"
 
-#ifdef MCC_JOURNAL_HOOKS
+#ifdef MCC_IR_CAPTURE
 #ifdef MCC_TARGET_X86_64
-#define MCC_JRN_HAVE_X86_PRIMS 1
+#define MCC_IR_HAVE_X86_PRIMS 1
 #endif
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
-#define MCC_JRN_HAVE_STRUCT_COPY 1
+#define MCC_IR_HAVE_STRUCT_COPY 1
 #endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_RISCV64)
-#define MCC_JRN_HAVE_CVT_SXTW 1
+#define MCC_IR_HAVE_CVT_SXTW 1
 #endif
 #if defined(MCC_TARGET_RISCV64) ||                                             \
 		(defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE))
-#define MCC_JRN_HAVE_XFERRET 1
+#define MCC_IR_HAVE_XFERRET 1
 #endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
-#define MCC_JRN_HAVE_ROUND 1
+#define MCC_IR_HAVE_ROUND 1
 #endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_RISCV64)
-#define MCC_JRN_HAVE_COPYSIGN 1
+#define MCC_IR_HAVE_COPYSIGN 1
 #endif
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64)
-#define MCC_JRN_HAVE_CVT_CSTI 1
-#define MCC_JRN_HAVE_MULH 1
-#define MCC_JRN_HAVE_FABS_SQRT 1
+#define MCC_IR_HAVE_CVT_CSTI 1
+#define MCC_IR_HAVE_MULH 1
+#define MCC_IR_HAVE_FABS_SQRT 1
 #endif
 #ifdef MCC_TARGET_ARM64
-#define MCC_JRN_HAVE_GFUNC_RETURN 1
-#define MCC_JRN_HAVE_VA_ARG 1
-#define MCC_JRN_VA_START_VOID 1
+#define MCC_IR_HAVE_GFUNC_RETURN 1
+#define MCC_IR_HAVE_VA_ARG 1
+#define MCC_IR_VA_START_VOID 1
 #endif
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
-#define MCC_JRN_HAVE_VA_START 1
+#define MCC_IR_HAVE_VA_START 1
 #endif
 #if defined(MCC_TARGET_X86_64) && defined(MCC_TARGET_PE)
-#define MCC_JRN_HAVE_VLA_RESULT 1
+#define MCC_IR_HAVE_VLA_RESULT 1
 #endif
-static int jrn_replaying;
-void jrn_load(int r, SValue *sv);
-void jrn_store(int r, SValue *v);
-void jrn_gen_opi(int op);
-void jrn_gen_opl(int op);
-void jrn_gen_opf(int op);
-void jrn_gfunc_call(int nb_args);
-int jrn_gjmp(int t);
-void jrn_gjmp_addr(int a);
-int jrn_gjmp_cond(int op, int t);
-void jrn_gsym_addr(int t, int a);
-void jrn_gen_cvt_itof(int t);
-void jrn_gen_cvt_ftof(int t);
-void jrn_gen_cvt_ftoi(int t);
-#ifdef MCC_JRN_HAVE_CVT_SXTW
-void jrn_gen_cvt_sxtw(void);
+static int ir_cap_replaying;
+void ir_cap_load(int r, SValue *sv);
+void ir_cap_store(int r, SValue *v);
+void ir_cap_gen_opi(int op);
+void ir_cap_gen_opl(int op);
+void ir_cap_gen_opf(int op);
+void ir_cap_gfunc_call(int nb_args);
+int ir_cap_gjmp(int t);
+void ir_cap_gjmp_addr(int a);
+int ir_cap_gjmp_cond(int op, int t);
+void ir_cap_gsym_addr(int t, int a);
+void ir_cap_gen_cvt_itof(int t);
+void ir_cap_gen_cvt_ftof(int t);
+void ir_cap_gen_cvt_ftoi(int t);
+#ifdef MCC_IR_HAVE_CVT_SXTW
+void ir_cap_gen_cvt_sxtw(void);
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-void jrn_gen_cvt_trunc32(void);
+#ifdef MCC_IR_HAVE_X86_PRIMS
+void ir_cap_gen_cvt_trunc32(void);
 #endif
-void jrn_gen_cvt_csti(int t);
-#ifdef MCC_JRN_HAVE_STRUCT_COPY
-void jrn_gen_struct_copy(int size);
+void ir_cap_gen_cvt_csti(int t);
+#ifdef MCC_IR_HAVE_STRUCT_COPY
+void ir_cap_gen_struct_copy(int size);
 #endif
-void jrn_ggoto(void);
-int jrn_gen_cmov(int rt, int rf, int rb, int ll);
-void jrn_gen_fill_nops(int bytes);
-void jrn_gen_vla_sp_save(int addr);
-void jrn_gen_vla_sp_restore(int addr);
-#ifdef MCC_JRN_HAVE_VLA_RESULT
-void jrn_gen_vla_result(int addr);
+void ir_cap_ggoto(void);
+int ir_cap_gen_cmov(int rt, int rf, int rb, int ll);
+void ir_cap_gen_fill_nops(int bytes);
+void ir_cap_gen_vla_sp_save(int addr);
+void ir_cap_gen_vla_sp_restore(int addr);
+#ifdef MCC_IR_HAVE_VLA_RESULT
+void ir_cap_gen_vla_result(int addr);
 #endif
-void jrn_gen_vla_alloc(CType *type, int align);
-void jrn_gen_mulh(int sign);
+void ir_cap_gen_vla_alloc(CType *type, int align);
+void ir_cap_gen_mulh(int sign);
 #if MCC_HAVE_INT128
-void jrn_gen_mul_widen(void);
+void ir_cap_gen_mul_widen(void);
 #endif
-#ifdef MCC_JRN_HAVE_REGADDI
-void jrn_gen_reg_addi(int r, int64_t d);
+#ifdef MCC_IR_HAVE_REGADDI
+void ir_cap_gen_reg_addi(int r, int64_t d);
 #endif
-void jrn_gen_fabs(void);
-void jrn_gen_sqrt(void);
-#ifdef MCC_JRN_HAVE_ROUND
-void jrn_gen_round(int mode);
+void ir_cap_gen_fabs(void);
+void ir_cap_gen_sqrt(void);
+#ifdef MCC_IR_HAVE_ROUND
+void ir_cap_gen_round(int mode);
 #endif
-#ifdef MCC_JRN_HAVE_COPYSIGN
-void jrn_gen_copysign(void);
+#ifdef MCC_IR_HAVE_COPYSIGN
+void ir_cap_gen_copysign(void);
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-void jrn_gen_bswap(int size);
+#ifdef MCC_IR_HAVE_X86_PRIMS
+void ir_cap_gen_bswap(int size);
 #endif
-void jrn_gen_bit_builtin(int bop, int bw);
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-void jrn_gen_signbit(int isfloat);
-void jrn_gen_ffs(int size);
-void jrn_gen_bitscan(int ctz, int size);
+void ir_cap_gen_bit_builtin(int bop, int bw);
+#ifdef MCC_IR_HAVE_X86_PRIMS
+void ir_cap_gen_signbit(int isfloat);
+void ir_cap_gen_ffs(int size);
+void ir_cap_gen_bitscan(int ctz, int size);
 #endif
-void jrn_gen_trap(void);
-void jrn_gen_increment_tcov(SValue *sv);
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-void jrn_gen_atomic_cmpxchg(int size);
-void jrn_gen_atomic_xchg(int size);
-void jrn_gen_atomic_xadd(int size);
+void ir_cap_gen_trap(void);
+void ir_cap_gen_increment_tcov(SValue *sv);
+#ifdef MCC_IR_HAVE_X86_PRIMS
+void ir_cap_gen_atomic_cmpxchg(int size);
+void ir_cap_gen_atomic_xchg(int size);
+void ir_cap_gen_atomic_xadd(int size);
 #endif
-void jrn_gen_asan_shadow_check(int sz);
-void jrn_gen_asan_mark_write(void);
-void jrn_gen_ubsan_nullptr(void);
-int jrn_gjmp_append(int n, int t);
-#ifdef MCC_JRN_HAVE_XFERRET
-void jrn_arch_transfer_ret_regs(int aftercall);
+void ir_cap_gen_asan_shadow_check(int sz);
+void ir_cap_gen_asan_mark_write(void);
+void ir_cap_gen_ubsan_nullptr(void);
+int ir_cap_gjmp_append(int n, int t);
+#ifdef MCC_IR_HAVE_XFERRET
+void ir_cap_arch_transfer_ret_regs(int aftercall);
 #endif
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-void jrn_gen_x87_pop(void);
+void ir_cap_gen_x87_pop(void);
 #endif
-static void jrn_vsetc(CType *type, int r, CValue *vc);
-void jrn_vpushsym(CType *type, Sym *sym);
-void jrn_vpushv(SValue *v);
-void jrn_vswap(void);
-void jrn_vpop(void);
-void jrn_vrotb(int n);
-void jrn_vrott(int n);
-void jrn_vrev(int n);
-int jrn_gv(int rc);
-void jrn_vstore(void);
-int jrn_pred(int p);
-void jrn_gen_op(int op);
-void jrn_mk_pointer(CType *type);
-void jrn_gaddrof(void);
-#ifdef MCC_JRN_HAVE_GFUNC_RETURN
-void jrn_gfunc_return(CType *func_type);
+static void ir_cap_vsetc(CType *type, int r, CValue *vc);
+void ir_cap_vpushsym(CType *type, Sym *sym);
+void ir_cap_vpushv(SValue *v);
+void ir_cap_vswap(void);
+void ir_cap_vpop(void);
+void ir_cap_vrotb(int n);
+void ir_cap_vrott(int n);
+void ir_cap_vrev(int n);
+int ir_cap_gv(int rc);
+void ir_cap_vstore(void);
+int ir_cap_pred(int p);
+void ir_cap_gen_op(int op);
+void ir_cap_mk_pointer(CType *type);
+void ir_cap_gaddrof(void);
+#ifdef MCC_IR_HAVE_GFUNC_RETURN
+void ir_cap_gfunc_return(CType *func_type);
 #endif
-#ifdef MCC_JRN_HAVE_VA_START
-void jrn_gen_va_start(void);
+#ifdef MCC_IR_HAVE_VA_START
+void ir_cap_gen_va_start(void);
 #endif
-#ifdef MCC_JRN_HAVE_VA_ARG
-void jrn_gen_va_arg(CType *t);
+#ifdef MCC_IR_HAVE_VA_ARG
+void ir_cap_gen_va_arg(CType *t);
 #endif
-#define load(r, sv) jrn_load((r), (sv))
-#define store(r, v) jrn_store((r), (v))
-#define gen_opi(op) jrn_gen_opi((op))
-#define gen_opl(op) jrn_gen_opl((op))
-#define gen_opf(op) jrn_gen_opf((op))
-#define gfunc_call(n) jrn_gfunc_call((n))
-#define gjmp_cond(op, t) jrn_gjmp_cond((op), (t))
-#define gsym_addr(t, a) jrn_gsym_addr((t), (a))
-#define gen_cvt_itof(t) jrn_gen_cvt_itof((t))
-#define gen_cvt_ftof(t) jrn_gen_cvt_ftof((t))
-#define gen_cvt_ftoi(t) jrn_gen_cvt_ftoi((t))
-#ifdef MCC_JRN_HAVE_CVT_SXTW
-#define gen_cvt_sxtw() jrn_gen_cvt_sxtw()
+#define load(r, sv) ir_cap_load((r), (sv))
+#define store(r, v) ir_cap_store((r), (v))
+#define gen_opi(op) ir_cap_gen_opi((op))
+#define gen_opl(op) ir_cap_gen_opl((op))
+#define gen_opf(op) ir_cap_gen_opf((op))
+#define gfunc_call(n) ir_cap_gfunc_call((n))
+#define gjmp_cond(op, t) ir_cap_gjmp_cond((op), (t))
+#define gsym_addr(t, a) ir_cap_gsym_addr((t), (a))
+#define gen_cvt_itof(t) ir_cap_gen_cvt_itof((t))
+#define gen_cvt_ftof(t) ir_cap_gen_cvt_ftof((t))
+#define gen_cvt_ftoi(t) ir_cap_gen_cvt_ftoi((t))
+#ifdef MCC_IR_HAVE_CVT_SXTW
+#define gen_cvt_sxtw() ir_cap_gen_cvt_sxtw()
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-#define gen_cvt_trunc32() jrn_gen_cvt_trunc32()
+#ifdef MCC_IR_HAVE_X86_PRIMS
+#define gen_cvt_trunc32() ir_cap_gen_cvt_trunc32()
 #endif
-#define gen_cvt_csti(t) jrn_gen_cvt_csti((t))
-#ifdef MCC_JRN_HAVE_STRUCT_COPY
-#define gen_struct_copy(s) jrn_gen_struct_copy((s))
+#define gen_cvt_csti(t) ir_cap_gen_cvt_csti((t))
+#ifdef MCC_IR_HAVE_STRUCT_COPY
+#define gen_struct_copy(s) ir_cap_gen_struct_copy((s))
 #endif
-#define ggoto() jrn_ggoto()
-#define gen_cmov(rt, rf, rb, ll) jrn_gen_cmov((rt), (rf), (rb), (ll))
-#define gen_fill_nops(b) jrn_gen_fill_nops((b))
-#define gen_vla_sp_save(a) jrn_gen_vla_sp_save((a))
-#define gen_vla_sp_restore(a) jrn_gen_vla_sp_restore((a))
-#ifdef MCC_JRN_HAVE_VLA_RESULT
-#define gen_vla_result(a) jrn_gen_vla_result((a))
+#define ggoto() ir_cap_ggoto()
+#define gen_cmov(rt, rf, rb, ll) ir_cap_gen_cmov((rt), (rf), (rb), (ll))
+#define gen_fill_nops(b) ir_cap_gen_fill_nops((b))
+#define gen_vla_sp_save(a) ir_cap_gen_vla_sp_save((a))
+#define gen_vla_sp_restore(a) ir_cap_gen_vla_sp_restore((a))
+#ifdef MCC_IR_HAVE_VLA_RESULT
+#define gen_vla_result(a) ir_cap_gen_vla_result((a))
 #endif
-#define gen_vla_alloc(ty, al) jrn_gen_vla_alloc((ty), (al))
-#define gen_mulh(s) jrn_gen_mulh((s))
+#define gen_vla_alloc(ty, al) ir_cap_gen_vla_alloc((ty), (al))
+#define gen_mulh(s) ir_cap_gen_mulh((s))
 #if MCC_HAVE_INT128
-#define gen_mul_widen() jrn_gen_mul_widen()
+#define gen_mul_widen() ir_cap_gen_mul_widen()
 #endif
-#ifdef MCC_JRN_HAVE_REGADDI
-#define gen_reg_addi(r, d) jrn_gen_reg_addi((r), (d))
+#ifdef MCC_IR_HAVE_REGADDI
+#define gen_reg_addi(r, d) ir_cap_gen_reg_addi((r), (d))
 #endif
-#define gen_fabs() jrn_gen_fabs()
-#define gen_sqrt() jrn_gen_sqrt()
-#ifdef MCC_JRN_HAVE_ROUND
-#define gen_round(m) jrn_gen_round((m))
+#define gen_fabs() ir_cap_gen_fabs()
+#define gen_sqrt() ir_cap_gen_sqrt()
+#ifdef MCC_IR_HAVE_ROUND
+#define gen_round(m) ir_cap_gen_round((m))
 #endif
-#ifdef MCC_JRN_HAVE_COPYSIGN
-#define gen_copysign() jrn_gen_copysign()
+#ifdef MCC_IR_HAVE_COPYSIGN
+#define gen_copysign() ir_cap_gen_copysign()
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-#define gen_bswap(s) jrn_gen_bswap((s))
+#ifdef MCC_IR_HAVE_X86_PRIMS
+#define gen_bswap(s) ir_cap_gen_bswap((s))
 #endif
-#define gen_bit_builtin(a, b) jrn_gen_bit_builtin((a), (b))
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-#define gen_signbit(f) jrn_gen_signbit((f))
-#define gen_ffs(s) jrn_gen_ffs((s))
-#define gen_bitscan(c, s) jrn_gen_bitscan((c), (s))
+#define gen_bit_builtin(a, b) ir_cap_gen_bit_builtin((a), (b))
+#ifdef MCC_IR_HAVE_X86_PRIMS
+#define gen_signbit(f) ir_cap_gen_signbit((f))
+#define gen_ffs(s) ir_cap_gen_ffs((s))
+#define gen_bitscan(c, s) ir_cap_gen_bitscan((c), (s))
 #endif
-#define gen_trap() jrn_gen_trap()
-#define gen_increment_tcov(sv) jrn_gen_increment_tcov((sv))
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-#define gen_atomic_cmpxchg(s) jrn_gen_atomic_cmpxchg((s))
-#define gen_atomic_xchg(s) jrn_gen_atomic_xchg((s))
-#define gen_atomic_xadd(s) jrn_gen_atomic_xadd((s))
+#define gen_trap() ir_cap_gen_trap()
+#define gen_increment_tcov(sv) ir_cap_gen_increment_tcov((sv))
+#ifdef MCC_IR_HAVE_X86_PRIMS
+#define gen_atomic_cmpxchg(s) ir_cap_gen_atomic_cmpxchg((s))
+#define gen_atomic_xchg(s) ir_cap_gen_atomic_xchg((s))
+#define gen_atomic_xadd(s) ir_cap_gen_atomic_xadd((s))
 #endif
-#define gen_asan_shadow_check(s) jrn_gen_asan_shadow_check((s))
-#define gen_asan_mark_write() jrn_gen_asan_mark_write()
-#define gen_ubsan_nullptr() jrn_gen_ubsan_nullptr()
-#define gjmp_append(n, t) jrn_gjmp_append((n), (t))
-#ifdef MCC_JRN_HAVE_XFERRET
-#define arch_transfer_ret_regs(a) jrn_arch_transfer_ret_regs((a))
+#define gen_asan_shadow_check(s) ir_cap_gen_asan_shadow_check((s))
+#define gen_asan_mark_write() ir_cap_gen_asan_mark_write()
+#define gen_ubsan_nullptr() ir_cap_gen_ubsan_nullptr()
+#define gjmp_append(n, t) ir_cap_gjmp_append((n), (t))
+#ifdef MCC_IR_HAVE_XFERRET
+#define arch_transfer_ret_regs(a) ir_cap_arch_transfer_ret_regs((a))
 #endif
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-#define gen_x87_pop() jrn_gen_x87_pop()
+#define gen_x87_pop() ir_cap_gen_x87_pop()
 #endif
-#define vsetc(...) jrn_vsetc(__VA_ARGS__)
-#define vpushsym(...) jrn_vpushsym(__VA_ARGS__)
-#define vpushv(...) jrn_vpushv(__VA_ARGS__)
-#define vswap(...) jrn_vswap(__VA_ARGS__)
-#define vpop(...) jrn_vpop(__VA_ARGS__)
-#define vrotb(...) jrn_vrotb(__VA_ARGS__)
-#define vrott(...) jrn_vrott(__VA_ARGS__)
-#define vrev(...) jrn_vrev(__VA_ARGS__)
-#define gv(...) jrn_gv(__VA_ARGS__)
-#define vstore(...) jrn_vstore(__VA_ARGS__)
-#define gen_op(...) jrn_gen_op(__VA_ARGS__)
-#define mk_pointer(...) jrn_mk_pointer(__VA_ARGS__)
-#define gaddrof(...) jrn_gaddrof(__VA_ARGS__)
-#ifdef MCC_JRN_HAVE_GFUNC_RETURN
-#define gfunc_return(t) jrn_gfunc_return((t))
+#define vsetc(...) ir_cap_vsetc(__VA_ARGS__)
+#define vpushsym(...) ir_cap_vpushsym(__VA_ARGS__)
+#define vpushv(...) ir_cap_vpushv(__VA_ARGS__)
+#define vswap(...) ir_cap_vswap(__VA_ARGS__)
+#define vpop(...) ir_cap_vpop(__VA_ARGS__)
+#define vrotb(...) ir_cap_vrotb(__VA_ARGS__)
+#define vrott(...) ir_cap_vrott(__VA_ARGS__)
+#define vrev(...) ir_cap_vrev(__VA_ARGS__)
+#define gv(...) ir_cap_gv(__VA_ARGS__)
+#define vstore(...) ir_cap_vstore(__VA_ARGS__)
+#define gen_op(...) ir_cap_gen_op(__VA_ARGS__)
+#define mk_pointer(...) ir_cap_mk_pointer(__VA_ARGS__)
+#define gaddrof(...) ir_cap_gaddrof(__VA_ARGS__)
+#ifdef MCC_IR_HAVE_GFUNC_RETURN
+#define gfunc_return(t) ir_cap_gfunc_return((t))
 #endif
-#ifdef MCC_JRN_HAVE_VA_START
-#define gen_va_start() jrn_gen_va_start()
+#ifdef MCC_IR_HAVE_VA_START
+#define gen_va_start() ir_cap_gen_va_start()
 #endif
-#ifdef MCC_JRN_HAVE_VA_ARG
-#define gen_va_arg(t) jrn_gen_va_arg((t))
+#ifdef MCC_IR_HAVE_VA_ARG
+#define gen_va_arg(t) ir_cap_gen_va_arg((t))
 #endif
 #endif
 
@@ -569,8 +569,8 @@ static int gind() { MCC_TRACE("enter\n");
 }
 
 static void gjmp_addr_acs(int t) { MCC_TRACE("enter\n");
-#ifdef MCC_JOURNAL_HOOKS
-	jrn_gjmp_addr(t);
+#ifdef MCC_IR_CAPTURE
+	ir_cap_gjmp_addr(t);
 #else
 	gjmp_addr(t);
 #endif
@@ -578,8 +578,8 @@ static void gjmp_addr_acs(int t) { MCC_TRACE("enter\n");
 }
 
 static int gjmp_acs(int t) { MCC_TRACE("enter\n");
-#ifdef MCC_JOURNAL_HOOKS
-	t = jrn_gjmp(t);
+#ifdef MCC_IR_CAPTURE
+	t = ir_cap_gjmp(t);
 #else
 	t = gjmp(t);
 #endif
@@ -2692,8 +2692,8 @@ static void gv_dup(void) { MCC_TRACE("enter\n");
 	vtop->r = r;
 }
 
-#ifdef MCC_JOURNAL_HOOKS
-#define SW_SAVEREGS4() jrn_pred(!cur_switch || cur_switch->bsym)
+#ifdef MCC_IR_CAPTURE
+#define SW_SAVEREGS4() ir_cap_pred(!cur_switch || cur_switch->bsym)
 #else
 #define SW_SAVEREGS4() (!cur_switch || cur_switch->bsym)
 #endif
@@ -4747,8 +4747,8 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	CType *st, *type1, *type2;
 	int dbt, sbt, qualwarn, lvl, deepqual;
 
-#ifdef MCC_JOURNAL_HOOKS
-	if (jrn_replaying)
+#ifdef MCC_IR_CAPTURE
+	if (ir_cap_replaying)
 		{ MCC_TRACE("br\n"); return; }
 #endif
 #if MCC_CONFIG_OPTIMIZER
@@ -15159,7 +15159,7 @@ static int decl(int l) {
 #undef gjmp_addr
 #undef gjmp
 
-#ifdef MCC_JOURNAL_HOOKS
+#ifdef MCC_IR_CAPTURE
 #undef load
 #undef store
 #undef gen_opi
@@ -15171,7 +15171,7 @@ static int decl(int l) {
 #undef gen_cvt_itof
 #undef gen_cvt_ftof
 #undef gen_cvt_ftoi
-#ifdef MCC_JRN_HAVE_CVT_SXTW
+#ifdef MCC_IR_HAVE_CVT_SXTW
 #undef gen_cvt_sxtw
 #endif
 #undef gen_cvt_trunc32
@@ -15189,10 +15189,10 @@ static int decl(int l) {
 #undef gen_reg_addi
 #undef gen_fabs
 #undef gen_sqrt
-#ifdef MCC_JRN_HAVE_ROUND
+#ifdef MCC_IR_HAVE_ROUND
 #undef gen_round
 #endif
-#ifdef MCC_JRN_HAVE_COPYSIGN
+#ifdef MCC_IR_HAVE_COPYSIGN
 #undef gen_copysign
 #endif
 #undef gen_bswap
@@ -15209,7 +15209,7 @@ static int decl(int l) {
 #undef gen_asan_mark_write
 #undef gen_ubsan_nullptr
 #undef gjmp_append
-#ifdef MCC_JRN_HAVE_XFERRET
+#ifdef MCC_IR_HAVE_XFERRET
 #undef arch_transfer_ret_regs
 #endif
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
@@ -15235,6 +15235,10 @@ static int decl(int l) {
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
 #include "mccast.c"
+#endif
+
+#if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
+#include "mccircap.c"
 #endif
 
 #if MCC_CONFIG_OPTIMIZER && defined(MCC_AMALGAMATED) && !MCC_AMALGAMATED
