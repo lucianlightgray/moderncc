@@ -416,18 +416,20 @@ static const cli_case_t cli_cases[] = {
 
 		{"strict_ansi_gnu_keyword_gate", "",
 		 "printf 'int x;\\ntypeof(x) y;\\n' > {W}/gk1.c && "
-		 "{MCC} -B{B} -std=c89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 | "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_BARE_NOPEDANTIC_OK; "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/gk1.c -o {W}/gk1.o 2>&1 | "
 		 "grep -oE \"'typeof' is a GNU extension\"; "
 		 "printf 'int x;\\n__typeof__(x) y;\\nint main(void){return 0;}\\n' > {W}/gk2.c && "
 		 "{MCC} -B{B} -std=c89 -c {W}/gk2.c -o {W}/gk2.o 2>&1 && echo TYPEOF_RSVD_OK; "
 		 "{MCC} -B{B} -std=gnu89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_GNU_OK; "
 		 "printf 'int main(void){ asm(\\042\\042); return 0; }\\n' > {W}/gk3.c && "
-		 "{MCC} -B{B} -std=c89 -c {W}/gk3.c -o {W}/gk3.o 2>&1 | "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk3.c -o {W}/gk3.o 2>&1 >/dev/null && echo ASM_BARE_NOPEDANTIC_OK; "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/gk3.c -o {W}/gk3.o 2>&1 | "
 		 "grep -oE \"'asm' is a GNU extension\"; "
 		 "printf 'int main(void){ __asm__(\\042\\042); return 0; }\\n' > {W}/gk4.c && "
 		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 | "
 		 "grep -oE \"'__asm__' is a GNU extension\"; echo ASM_RSVD_OK; echo END",
-		 "'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
+		 "TYPEOF_BARE_NOPEDANTIC_OK\n'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\nASM_BARE_NOPEDANTIC_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
 
 		{"gnu_ext_pedantic_gate", "",
 		 "printf 'int f(void){ return ({int x=3; x;}); }\\n' > {W}/ge1.c && "
@@ -1037,10 +1039,13 @@ static const cli_case_t cli_cases[] = {
 		 "__atomic_exchange\n__atomic_load\n__atomic_store_8\nSCALAR_OK\n"},
 
 		{"pedantic_diagnostics", "",
-		 "printf 'int f(void){ int n=3; struct S{int a[n];}; struct S s; return sizeof s; }\\n' > {W}/pd1.c && "
+		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
+		 " s.a=1; s.c=2;"
+		 " return (int)sizeof(s)==12 && (int)((char*)&s.c-(char*)&s)==8"
+		 " && s.a==1 && s.c==2; }\\n"
+		 "int main(void){ return f()?0:1; }\\n' > {W}/pd1.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/pd1.c -o {W}/pd1.o 2>&1 | wc -l | tr -d ' '; "
-		 "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd1.c -o {W}/pd1.o 2>&1 | "
-		 "grep -oE 'variably modified type'; "
+		 "{MCC} -B{B} -I{I} -std=c11 {W}/pd1.c -o {W}/pd1 && {W}/pd1 && echo VLA_STRUCT_OK; "
 		 "printf 'enum E{X=0x100000000}; int main(void){return X*0;}\\n' > {W}/pd2.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd2.c -o {W}/pd2.o 2>&1 | "
 		 "grep -oE 'range of .int.'; "
@@ -1068,7 +1073,7 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'struct S{int d[];}; int main(void){return (int)sizeof(struct S);}\\n' > {W}/pd10.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd10.c -o {W}/pd10.o 2>&1 | "
 		 "grep -oE 'flexible array member in a struct with no named members'; echo END",
-		 "3\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n"},
+		 "0\nVLA_STRUCT_OK\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n"},
 
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "

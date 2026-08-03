@@ -173,6 +173,28 @@ function(mcc_map_toolchain_cc tc outvar)
     endif()
 endfunction()
 
+function(mcc_gnu_gcc_links_static cc outvar)
+    if(NOT WIN32)
+        set(${outvar} TRUE PARENT_SCOPE)
+        return()
+    endif()
+    set(_d "${CMAKE_BINARY_DIR}/mcc-gnu-gcc-probe")
+    file(MAKE_DIRECTORY "${_d}")
+    file(WRITE "${_d}/probe.c"
+        "#include <pthread.h>\n"
+        "static void *f(void *a) { return a; }\n"
+        "int main(void) { pthread_t t; pthread_create(&t, 0, f, 0); "
+        "pthread_join(t, 0); return 0; }\n")
+    execute_process(
+        COMMAND "${cc}" -static "${_d}/probe.c" -o "${_d}/probe.exe" -lpthread
+        RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET)
+    if(_rc EQUAL 0)
+        set(${outvar} TRUE PARENT_SCOPE)
+    else()
+        set(${outvar} FALSE PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(mcc_find_gnu_gcc outvar)
     if(MCC_GNU_GCC)
         set(${outvar} "${MCC_GNU_GCC}" PARENT_SCOPE)
@@ -183,6 +205,13 @@ function(mcc_find_gnu_gcc outvar)
     if(MCC_VENDOR_GCC)
         set(${outvar} "${MCC_VENDOR_GCC}" PARENT_SCOPE)
         return()
+    endif()
+    if(WIN32 AND COMMAND mcc_mingw_resolve)
+        mcc_mingw_resolve()
+        if(_MCC_MINGW_X86_64_GCC AND EXISTS "${_MCC_MINGW_X86_64_GCC}")
+            set(${outvar} "${_MCC_MINGW_X86_64_GCC}" PARENT_SCOPE)
+            return()
+        endif()
     endif()
     set(_gnu_probe_dirs "")
     if(WIN32)
@@ -216,8 +245,13 @@ function(mcc_find_gnu_gcc outvar)
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
             if(_rc EQUAL 0 AND _v MATCHES "Free Software Foundation"
                AND NOT _v MATCHES "clang")
-                set(${outvar} "${MCC_CLION_GCC}" PARENT_SCOPE)
-                return()
+                mcc_gnu_gcc_links_static("${MCC_CLION_GCC}" _ok)
+                if(_ok)
+                    set(${outvar} "${MCC_CLION_GCC}" PARENT_SCOPE)
+                    return()
+                endif()
+                message(STATUS "mcc: rejecting ${MCC_CLION_GCC} -- its runtime "
+                               "cannot -static link winpthread")
             endif()
         endif()
     endif()
@@ -230,8 +264,13 @@ function(mcc_find_gnu_gcc outvar)
 
             if(_rc EQUAL 0 AND _v MATCHES "Free Software Foundation"
                AND NOT _v MATCHES "clang")
-                set(${outvar} "${MCC_GNUGCC_${_n}}" PARENT_SCOPE)
-                return()
+                mcc_gnu_gcc_links_static("${MCC_GNUGCC_${_n}}" _ok)
+                if(_ok)
+                    set(${outvar} "${MCC_GNUGCC_${_n}}" PARENT_SCOPE)
+                    return()
+                endif()
+                message(STATUS "mcc: rejecting ${MCC_GNUGCC_${_n}} -- its runtime "
+                               "cannot -static link winpthread")
             endif()
         endif()
     endforeach()
@@ -285,10 +324,11 @@ function(mcc_validate_config)
             "mcc config: MCC_CONFIG_SEMLOCK='${MCC_CONFIG_SEMLOCK}' must be a number")
     endif()
 
-    if(MCC_BUILD_PROFILE AND NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    if(MCC_BUILD_PROFILE AND (NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang"
+                              OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC"))
         message(FATAL_ERROR
-            "mcc config: MCC_BUILD_PROFILE (mcc_p, -pg) needs a GCC/Clang host "
-            "compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
+            "mcc config: MCC_BUILD_PROFILE (mcc_p, -pg) needs a GNU-ABI GCC/Clang "
+            "host compiler (have '${CMAKE_C_COMPILER_ID}'); disable it or set "
             "-DCMAKE_C_COMPILER to gcc/clang.")
     endif()
     if(MCC_BUILD_SANITIZE
@@ -1198,6 +1238,8 @@ if(MCC_ALL_DIAGNOSTICS)
 
         if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
             message(STATUS "mcc diagnostics: skipping mcc_p (-static profiling) on Darwin (no static crt0.o)")
+        elseif(CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
+            message(STATUS "mcc diagnostics: skipping mcc_p (-pg -static) with an MSVC-ABI clang (no gprof runtime, no libm)")
         else()
             mcc_profile_seed(MCC_BUILD_PROFILE  ON)
         endif()
@@ -1420,6 +1462,17 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU")
     set(MCC_CC_NAME gcc)
 else()
     set(MCC_CC_NAME unknown)
+endif()
+if(WIN32 AND NOT MCC_CC_NAME STREQUAL "mcc")
+    if(MSVC OR CMAKE_C_SIMULATE_ID STREQUAL "MSVC")
+        if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
+            add_link_options(-Wl,/STACK:8388608)
+        else()
+            add_link_options(/STACK:8388608)
+        endif()
+    else()
+        add_link_options(-Wl,--stack,8388608)
+    endif()
 endif()
 if(MCC_CC_NAME STREQUAL "mcc" AND NOT WIN32
    AND NOT CMAKE_EXECUTABLE_RUNTIME_C_FLAG)

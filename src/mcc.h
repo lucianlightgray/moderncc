@@ -283,7 +283,8 @@ struct SymAttr {
 			tentative_array : 1,
 			is_register : 1,
 			used : 1,
-			inited : 1;
+			inited : 1,
+			has_vla_member : 1;
 };
 
 struct FuncAttr {
@@ -337,6 +338,7 @@ typedef struct Sym {
 
 	int vla_inner_id;
 	int vla_min_goto_gpp;
+	int vla_dyn_slot;
 	struct Sym *prev;
 
 	union {
@@ -456,6 +458,7 @@ typedef struct AttributeDef {
 	int attr_vector_size;
 	char storage_class;
 	char implicit_int;
+	char had_attr;
 } AttributeDef;
 
 typedef struct InlineFunc {
@@ -477,6 +480,12 @@ typedef struct CachedInclude {
 } CachedInclude;
 
 #define CACHED_INCLUDES_HASH_SIZE 32
+
+typedef struct MCCAssertion {
+	int pred_tok;
+	char **answers;
+	int nb_answers;
+} MCCAssertion;
 
 #if MCC_CONFIG_ASM
 typedef struct ExprValue {
@@ -798,6 +807,12 @@ struct MCCState {
 	CachedInclude **cached_includes;
 	int nb_cached_includes;
 
+	char **embed_paths;
+	int nb_embed_paths;
+
+	MCCAssertion **assertions;
+	int nb_assertions;
+
 	int pack_stack[PACK_STACK_SIZE];
 	int *pack_stack_ptr;
 	char **pragma_libs;
@@ -947,10 +962,12 @@ struct MCCState {
 	int gen_sizeof_parsed_type;
 	int gen_sizeof_parsed_align;
 	int gen_complex_re_tok, gen_complex_im_tok;
-	CType gen_complex_type_cache[4];
+	CType gen_complex_type_cache[32];
+	int gen_complex_type_cache_n;
 	CType gen_vector_type_cache[64];
 	int gen_vector_type_cache_n;
 	Sym *gen_complex_call_ftype[4];
+	Sym *gen_complex_idiv_ftype[2];
 	unsigned char gen_prec[256];
 
 	Sym *sym_free_first;

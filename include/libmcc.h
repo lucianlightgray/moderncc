@@ -30,6 +30,8 @@ LIBMCCAPI int mcc_add_include_path(MCCState *s, const char *pathname);
 
 LIBMCCAPI int mcc_add_sysinclude_path(MCCState *s, const char *pathname);
 
+LIBMCCAPI int mcc_add_embed_path(MCCState *s, const char *pathname);
+
 LIBMCCAPI void mcc_define_symbol(MCCState *s, const char *sym, const char *value);
 
 LIBMCCAPI void mcc_undefine_symbol(MCCState *s, const char *sym);

@@ -45,7 +45,7 @@ host-native self-host unmeasurable on this machine.
 | W4 | **Windows host stage2 (`pe`, `sanitize`, `dynamic`)** | The three reds at the P5 merge were closed by raising `SizeOfStackReserve` to 8MB, which is present at `src/objfmt/mccpe.c:738` and verified by reading. The *stack-overflow behaviour it fixes* needs a real 1MB-default PE process to confirm; wine's stack handling is not the same test. |
 | W5 | **mcc cannot self-host on Windows arm64** | Still open, still unreachable. Stage1 mcc takes an access violation (`0xC0000005`) on `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c`. Host ABI — varargs, `alloca`, stack probe — and it needs a Windows arm64 machine. |
 | W6 | **Re-bank `verify-baseline` — now moot, record the closure** | The prediction that `x86_64-darwin.txt` and `x86_64-win32.txt` needed re-banking on their own hosts is **dead**: P5 deleted all four files and `tests/ast/verify-baseline/` no longer exists. Nothing to do; do not carry it forward. |
-| W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so every number under **External suites** and the **Vector types** board is unverified at this commit. Fetch the trees and re-run before trusting any of it. |
+| W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so nothing under **External suites** or **Vector types** could be checked on this host. **Partly answered upstream**: `214ed40f` re-ran the whole tree and reports 82.6/82.4 over 20,513 tests — see **The eight-cluster sweep**. The gap that remains is that this host still cannot reproduce it. |
 
 Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0 through P4 have landed and `MCC_RIR_PROD` now defaults to **1**, so Replay_IR is the production arena — read P4 before touching the arena, it is where the three wrong-code classes are written down. **`MCC_RIR_ONLY` now defaults to 1 as well**: the recorder's per-body decline verdict was the arena's admission gate, and with it bypassed the arena is adopted on its own pre-flight alone. That widened the optimized population by 6.3% of bodies; the eight defects the widening exposed are closed, the three `optfire` cells that died with the gates they measure are deleted, and the tree is green at **8252/8252**. **The next step is the deletion itself** — read P5, which is now a pure deletion that moves nothing by construction. Everything above P5 is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
 
@@ -1015,7 +1015,80 @@ the whole merge. The external suites are what read the difference, and only
 because the sweep was re-run over the whole tree rather than over the tests that
 had failed before.
 
+## The eight-cluster sweep over gcc and clang
+
+The external board, re-measured over the whole tree from this commit:
+**20,513 tests per column, 82.6% at `-O0` and 82.4% at `-O3`**, from 78.3/78.1.
+**1,965 runs moved from failing to passing.** Against that, 198 rows moved to
+`XPASS` — tests asserting a diagnostic mcc now doesn't emit, a consequence of
+the lax vector-conversion rule and the loosened function-compatibility check —
+and exactly one file regressed, `builtin-issignaling-1.c`, which now reaches the
+link and stops on a builtin mcc does not have.
+
+The work was split into eight disjoint clusters, each taken by an agent in its
+own worktree with the same two hard gates (`ctest` clean, `-O3` self-host
+fixpoint byte-identical) and a standing rule that a test is never weakened and
+the harness is never edited.
+
+| cluster | gained | the lever |
+|---|---:|---|
+| parse / C23 syntax | 382 | `[[...]]` attribute-specifier-sequences; ~225 files were blocked on a *missing predefine*, not on syntax |
+| missing `__builtin_*` | 299 | `runtime/include/mccdefs.h` already maps builtins onto libc symbols by asm label — most were simply never added to that table |
+| `_Complex` | 47 | integer complex, and GCC's overflow-avoiding wide/ratio division, which it applies to integer complex too |
+| semantic rejections | 49 | `__extension__` was parsed and then ignored, so it never suppressed anything |
+| `#embed` | 20 | full C23 form including `limit`/`prefix`/`suffix`/`if_empty` and `__has_embed` |
+| VLA struct members | 42 | see below |
+| missing diagnostics | 18 | `is_compatible_func` never looked at the other side's parameter list |
+| inline asm | ~35 | flag-output operands (`=@ccCOND`), the missing constraint letters, `xgetbv` |
+| headers | 4 | 202 of the remaining 249 want another architecture's intrinsics |
+
+**Three findings worth keeping.**
+
+*The VLA-member miscompile was not in the new code.* The first version of
+runtime-sized structs passed its own 79-file cluster at `-O0` and miscompiled at
+`-O1`: after a loop wrote through the VLA member, reading the member at offset 0
+returned the array's first four bytes. The cause was a **pre-existing** REGDISP
+fast path in member access that defers a field's constant offset to be folded
+into a later addressing mode, guarded on *the field is not an array*. No
+ordinary member carries `VT_VLA`, so that guard had never seen one; the deferred
+offset was dropped rather than folded. It was reverted, diagnosed properly, and
+re-landed. The lesson is the testing one: validating a codegen feature at `-O0`
+alone is not validation.
+
+*Three regressions only the combined tree could show.* Each agent's branch was
+green on its own and two of them still broke things together — a
+function-compatibility rewrite that was too strict in two directions, an
+`__extension__` unget that left `decl()` looking at the wrong token, and a
+`__BITINT_MAXWIDTH__` predefine advertising a `_BitInt` mcc cannot parse.
+Per-cluster gates do not compose; only the whole-tree re-run reads them.
+
+*The harness understates mcc.* Three agents independently found that
+`tools/xsuite.py`'s `KEEP_OPT_RE` drops flags the tests depend on — `-Werror`,
+`-idirafter`, `--embed-dir` — and never expands `${srcdir}`. Whole families
+(`gcc.dg/spellcheck-options-*`, the `Werror-*` set) are unpassable for that
+reason alone, and several `#embed` tests fail only because the flag never
+arrives. That is a measurement bug in our tooling, not a gap in the compiler,
+and it is the next thing to fix before the board is quoted again.
+
 ## Verification pass — `da3a461b`, 2026-08-03
+
+**Read this first: the tree moved 31 commits under this pass.** Everything below was
+measured against `da3a461b`; `origin/main` reached `38d3f650` while it was running,
+bringing VLA struct members, C23 attributes, `#embed`, integer `_Complex` and the
+eight-cluster sweep above — **+850 lines of `src/mccgen.c`** and another **+193 of
+`runtime/include/mccdefs.h`**. So:
+
+- **The structural findings hold** — `src/mccast.c` and `src/mccrir.c` were not
+  touched by any of the 31 commits, so the deletion inventory, the deletion residue,
+  the `ir_`/`IR_` namespace count and every `mccast.c`/`mccrir.c` line number below
+  are still exact. The `mcc.h`, `mccgen.c` and `libmcc.c` references have been
+  re-resolved against the merged tree.
+- **The methodological findings hold** — the `104` is still the `C2_NO_EXTRA=1`
+  board and not the `all` board, whatever the numbers now are; the `-O0` bank is
+  still stale and is now *more* stale, since `mccdefs.h` grew a second time.
+- **Every number is provisional**: the 194/104 boards, `ctest` 8254, the `fn` counts
+  and the `c2err` attribution were all taken before the merge. **Re-run before
+  quoting any of them** — which is what this file has said all along.
 
 Every mechanically checkable statement in this file was re-run against the tree at
 `da3a461b` in a fresh build (`cmake -S . -B cmake-verify -G Ninja
@@ -1042,19 +1115,19 @@ Only `src/libmcc.c:651` and `:825` still point where this file says they do.
 | `mccast.c:7037` | **`mccast.c:1892`** | `ast_bad_type` |
 | `mccast.c:16060` | **`mccast.c:12932`** | the Replay_IR arming block (`rir_reset()`) |
 | `mccast.c:16553` | **`mccast.c:12805`** | `ast_replay_ok` |
-| `mcc.h:1662` | **`mcc.h:1669`** | `for_each_elem` |
-| `mcc.h:2128` | **`mcc.h:2130`** | `MCC_SET_STATE` |
+| `mcc.h:1662` | **`mcc.h:1686`** | `for_each_elem` (was 1669 pre-merge) |
+| `mcc.h:2128` | **`mcc.h:2147`** | `MCC_SET_STATE` (was 2130 pre-merge) |
 | `mccrun.c:783` | **`mccrun.c:783`** ✓ | `char file[100]` — correct |
-| `mccgen.c:1921` | **`mccgen.c:1838`** | `save_reg_upstack` |
-| `mccgen.c:4060` | **`mccgen.c:4052`** | `warn_extra_ptr_zero_cmp` |
+| `mccgen.c:1921` | **`mccgen.c:1846`** | `save_reg_upstack` |
+| `mccgen.c:4060` | **`mccgen.c:4127`** | `warn_extra_ptr_zero_cmp` |
 | `mccgen.c:4547` | **`mccgen.c:426`** | `gen_cast` |
-| `mccgen.c:7679` | **`mccgen.c:8071`** | `rir_hook_slot_record` |
+| `mccgen.c:7679` | **`mccgen.c:8636`** | `rir_hook_slot_record` |
 | `mccgen.c:11030` / `:11771` | re-derive | `unary`'s `vtop->sym = s`; the op-assign vdup |
-| `mccgen.c:12243` | **`mccgen.c:12644`** | `rir_hook_cleanup_call_begin` |
-| `mccgen.c:13391` | **`mccgen.c:13641`** | `decl_designator` |
-| `mccgen.c:14588` | **`mccgen.c:14937`** | `rir_hook_body_begin` call site |
+| `mccgen.c:12243` | **`mccgen.c:13233`** | `rir_hook_cleanup_call_begin` |
+| `mccgen.c:13391` | **`mccgen.c:14237`** | `decl_designator` |
+| `mccgen.c:14588` | **`mccgen.c:15581`** | `rir_hook_body_begin` call site |
 | `mccjit_embed.c:594` | **`mccjit_embed.c:571`** | `mccjit_recompile_common` |
-| `mccast.c` "19,082 lines" | **15,910** | also `mccgen.c` 15,588, `mccrir.c` 5,092, `mcc.h` 2,137 |
+| `mccast.c` "19,082 lines" | **15,910** | unmoved by the merge; `mccgen.c` is now **16,244**, `mccrir.c` 5,092, `mcc.h` 2,154 |
 
 ### Verified true — do not re-check these
 
