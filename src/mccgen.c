@@ -5177,6 +5177,7 @@ redo:
 				n = MCC_MAX_ALIGN;
 			}
 			ad->a.aligned = exact_log2p1(n);
+			ad->a.type_aligned = 0;
 			if (n != 1 << (ad->a.aligned - 1))
 				{ MCC_TRACE("br\n"); mcc_error("alignment of %d is larger than implemented", n); }
 			break;
@@ -5442,12 +5443,15 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); a = 0; }
 			}
 		}
-		if (a)
+		if (a && (a > align || f->a.type_aligned || packed || f->a.packed ||
+							ad->a.packed || pragma_pack))
 			{ MCC_TRACE("br\n"); align = a; }
 
 		if (type->ref->type.t == VT_UNION) { MCC_TRACE("br\n");
 			if (pcc && bit_size >= 0)
 				{ MCC_TRACE("br\n"); size = (bit_size + 7) >> 3; }
+			if (bit_size == 0 && !a)
+				{ MCC_TRACE("br\n"); align = 1; }
 			offset = 0;
 			if (size > c)
 				{ MCC_TRACE("br\n"); c = size; }
@@ -5828,8 +5832,9 @@ do_decl:
 							{ MCC_TRACE("br\n"); mcc_error("invalid type for '%s'",
 												get_tok_str(v, NULL)); }
 						if (type1.t & VT_VLA)
-							{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a member with a "
-													 "variably modified type"); }
+							{ MCC_TRACE("br\n"); mcc_error("member '%s' has a variably modified type: "
+												"a variable-length array member is not supported",
+												v ? get_tok_str(v, NULL) : "<anonymous>"); }
 						if (struct_has_flexible_member(&type1))
 							{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a member that is a "
 													 "structure with a flexible array member"); }
@@ -5912,8 +5917,11 @@ do_decl:
 }
 
 static void sym_to_attr(AttributeDef *ad, Sym *s) { MCC_TRACE("enter\n");
+	int had = ad->a.aligned;
 	merge_symattr(&ad->a, &s->a);
 	merge_funcattr(&ad->f, &s->f);
+	if (!had && ad->a.aligned)
+		{ MCC_TRACE("br\n"); ad->a.type_aligned = 1; }
 }
 
 static void parse_btype_qualify(CType *type, int qualifiers) { MCC_TRACE("enter\n");
@@ -8099,6 +8107,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 }
 
 #define sizeof_parsed_type (mcc_state->gen_sizeof_parsed_type)
+#define sizeof_parsed_align (mcc_state->gen_sizeof_parsed_align)
 
 #define MACRO_EVAL_MAX_ARGS 16
 
@@ -10067,6 +10076,7 @@ tok_next:
 				}
 			} else if (t == TOK_SOTYPE) { MCC_TRACE("br\n");
 				sizeof_parsed_type = 1;
+				sizeof_parsed_align = ad.a.aligned;
 				vpush(&type);
 				return;
 			} else { MCC_TRACE("br\n");
@@ -10181,6 +10191,7 @@ tok_next:
 			{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignof' is a C11 feature"); }
 		next();
 		sizeof_parsed_type = 0;
+		sizeof_parsed_align = 0;
 		if (tok == '(')
 			{ MCC_TRACE("br\n"); tok = TOK_SOTYPE; }
 #if MCC_CONFIG_OPTIMIZER
@@ -10218,6 +10229,8 @@ tok_next:
 				{ MCC_TRACE("br\n"); s = vtop[1].sym; }
 			if (s && s->a.aligned)
 				{ MCC_TRACE("br\n"); align = 1 << (s->a.aligned - 1); }
+			if (sizeof_parsed_type && sizeof_parsed_align)
+				{ MCC_TRACE("br\n"); align = 1 << (sizeof_parsed_align - 1); }
 			vpushs(align);
 		}
 		break;

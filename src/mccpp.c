@@ -1601,7 +1601,8 @@ ST_FUNC void pp_error(CString *cs) { MCC_TRACE("enter\n");
 
 static int is_predef_macro(int v) { MCC_TRACE("enter\n");
 	const char *n;
-	if (v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__ || v == TOK___TIME__ || v == TOK___COUNTER__)
+	if (v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__ || v == TOK___TIME__ ||
+			v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (v >= TOK_IDENT) { MCC_TRACE("br\n");
 		n = get_tok_str(v, NULL);
@@ -3428,6 +3429,11 @@ redo_no_start:
 			tok = ' ';
 			goto maybe_space;
 		} else if (c == '/') { MCC_TRACE("br\n");
+			if (mcc_state->std_strict_ansi && mcc_state->cversion < 199901 &&
+					!pp_in_system_header()) { MCC_TRACE("br\n");
+				tok = '/';
+				break;
+			}
 			if (mcc_state->warn_pedantic && mcc_state->cversion < 199901 &&
 					!pp_in_system_header()) { MCC_TRACE("br\n");
 				if (mcc_state->pedantic_errors)
@@ -3912,8 +3918,10 @@ static int macro_subst_tok(
 		CValue cval;
 		char buf[32], *cstrval = buf;
 
-		if (v == TOK___LINE__ || v == TOK___COUNTER__) { MCC_TRACE("br\n");
-			t = v == TOK___LINE__ ? file->line_num : pp_counter++;
+		if (v == TOK___LINE__ || v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__) { MCC_TRACE("br\n");
+			t = v == TOK___LINE__	 ? file->line_num
+					: v == TOK___COUNTER__ ? pp_counter++
+																 : (int)(mcc_state->include_stack_ptr - mcc_state->include_stack);
 			snprintf(buf, sizeof(buf), "%d", t);
 			t = TOK_PPNUM;
 			goto add_cstr1;
@@ -4237,6 +4245,14 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 		{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __USER_LABEL_PREFIX__\n"); }
 	cstr_printf(cs, "#define __SIZEOF_POINTER__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_LONG__ %d\n", LONG_SIZE);
+	cstr_printf(cs, "#define __SIZEOF_SHORT__ 2\n");
+	cstr_printf(cs, "#define __SIZEOF_FLOAT__ 4\n");
+	cstr_printf(cs, "#define __SIZEOF_DOUBLE__ 8\n");
+	cstr_printf(cs, "#define __SIZEOF_LONG_DOUBLE__ %d\n", MCC_LDOUBLE_SIZE);
+	cstr_printf(cs, "#define __SIZEOF_SIZE_T__ %d\n", MCC_PTR_SIZE);
+	cstr_printf(cs, "#define __SIZEOF_PTRDIFF_T__ %d\n", MCC_PTR_SIZE);
+	cstr_printf(cs, "#define __SIZEOF_WCHAR_T__ %d\n", (int)sizeof(nwchar_t));
+	cstr_printf(cs, "#define __SIZEOF_WINT_T__ 4\n");
 	if (!is_asm) { MCC_TRACE("br\n");
 		putdef(cs, "__STDC__");
 		if (s1->std_strict_ansi)
@@ -4363,6 +4379,7 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 	define_push(TOK___DATE__, MACRO_OBJ, NULL, NULL);
 	define_push(TOK___TIME__, MACRO_OBJ, NULL, NULL);
 	define_push(TOK___COUNTER__, MACRO_OBJ, NULL, NULL);
+	define_push(TOK___INCLUDE_LEVEL__, MACRO_OBJ, NULL, NULL);
 }
 
 ST_FUNC void mccpp_delete(MCCState *s) { MCC_TRACE("enter\n");

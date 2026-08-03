@@ -267,6 +267,7 @@ typedef struct SValue {
 struct SymAttr {
 	unsigned int
 			aligned : 5,
+			type_aligned : 1,
 			packed : 1,
 			weak : 1,
 			visibility : 2,
@@ -941,6 +942,7 @@ struct MCCState {
 	int link_argc, link_optind;
 
 	int gen_sizeof_parsed_type;
+	int gen_sizeof_parsed_align;
 	int gen_complex_re_tok, gen_complex_im_tok;
 	CType gen_complex_type_cache[4];
 	Sym *gen_complex_call_ftype[4];
