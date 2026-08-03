@@ -336,6 +336,8 @@ With `MCC_RIR_PROD=1`: **36 failures of 8255**, and they are only five distinct 
 
 The instrument for this list is the runtime A/B, not the byte compare: compile and run every `tests/exec` file at `-O1` with and without the switch and diff stdout and exit code. C2 calls every one of these bodies clean, because it validates un-optimized emission.
 
+**P5 readiness, measured rather than assumed.** The 45 `ast/replay-*` cells — the fixture suite the plan says survives the recorder and becomes Replay_IR's regression suite — pass **100% with `MCC_RIR_PROD=1` as well as with it off**. They assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic, so that inheritance is confirmed and not merely hoped for. Whatever else P5 has to do, it does not have to rewrite those 45 cells.
+
 ### P5 — delete the recorder
 
 1,716 lines of hooks and their 126 call sites; the shadow vstack (`ast_vs`, `ast_cf`, `ast_vn`); `ast_bail`/`ast_desync`/`AST_SET_BAIL`/`AST_SET_DESYNC`/`ast_gap_note`/`ast_replay_ok`; `ast_try_active`; the ~31 recorder-shape `MCC_AST_*` gates in `ast_configure` (`src/mccast.c:2055-2247`); `ast_ltemp_overlaps` if the LICM-temp table goes with it; the 4 `tests/ast/verify-baseline/` files; `ast-verify-ratchet-{O1,O2,O3}`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half.
