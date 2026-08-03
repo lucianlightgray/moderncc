@@ -2571,7 +2571,8 @@ static void rir_op_effect(const RirOp *ro) {
 			int bt = tv->type.t & VT_BTYPE;
 			AstLocal t2 = rir_sh[rir_shn - 1];
 			if ((tv->r & VT_LVAL) && !(tv->type.t & (VT_ARRAY | VT_BITFIELD)) &&
-					(bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL) &&
+					(bt == VT_BYTE || bt == VT_SHORT || bt == VT_BOOL ||
+					 bt == VT_INT) &&
 					t2 != AST_NONE && ast_kind(rir_arena, t2) == AST_Load &&
 					ast_parent(rir_arena, t2) == AST_NONE) {
 				int nt = (int)ast_type_t(rir_arena, t2);
@@ -2580,7 +2581,7 @@ static void rir_op_effect(const RirOp *ro) {
 				   cast that only flipped signedness leaves no op behind -- the
 				   node still says char where the parser has unsigned char, and
 				   replay writes movsx for the parser's movzx. */
-				if (!nt && (tv->type.t & VT_UNSIGNED))
+				if (!nt && ((tv->type.t & VT_UNSIGNED) || bt == VT_INT))
 					want = tv->type.t;
 				else if (rir_ternn)
 					want = VT_INT;
