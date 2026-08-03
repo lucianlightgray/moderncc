@@ -44,6 +44,7 @@ DEF_ASM_OP0L(vmcall, 0xc1, 0, OPC_0F01)
 DEF_ASM_OP0L(vmlaunch, 0xc2, 0, OPC_0F01)
 DEF_ASM_OP0L(vmresume, 0xc3, 0, OPC_0F01)
 DEF_ASM_OP0L(vmxoff, 0xc4, 0, OPC_0F01)
+DEF_ASM_OP0L(xgetbv, 0xd0, 0, OPC_0F01)
 
 ALT(DEF_ASM_OP0L(cmpsb, 0xa6, 0, OPC_BWLX))
 ALT(DEF_ASM_OP0L(scmpb, 0xa6, 0, OPC_BWLX))

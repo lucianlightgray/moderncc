@@ -1105,6 +1105,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 		case 'r':
 		case 'R':
 		case 'p':
+		case 'l':
 			pr = 3;
 			break;
 #ifdef MCC_TARGET_X86_64
@@ -1117,9 +1118,23 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 		case 'I':
 		case 'e':
 		case 'i':
+		case 'n':
+		case 's':
+		case 'X':
 		case 'm':
 		case 'g':
 			pr = 4;
+			break;
+		case 'W':
+			if (*str == 's')
+				{ MCC_TRACE("br\n"); str++; pr = 4; }
+			else
+				{ MCC_TRACE("br\n"); pr = 0; }
+			break;
+		case '&':
+		case '%':
+		case ',':
+			pr = 0;
 			break;
 		default:
 			mcc_error("unknown constraint '%c'", c);
@@ -1189,6 +1204,8 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		str = op->constraint;
 		if (op->ref_index >= 0)
 			{ MCC_TRACE("br\n"); continue; }
+		if (*skip_constraint_modifiers(str) == '\0')
+			{ MCC_TRACE("br\n"); continue; }
 		if (op->input_index >= 0) { MCC_TRACE("br\n");
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 		} else if (j < nb_outputs) { MCC_TRACE("br\n");
@@ -1205,6 +1222,8 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		c = *str++;
 		switch (c) { MCC_TRACE("br\n");
 		case '=':
+		case '%':
+		case ',':
 			goto try_next;
 		case '+':
 			op->is_rw = 1;
@@ -1268,6 +1287,7 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		case 'r':
 		case 'R':
 		case 'p':
+		case 'l':
 			if ((reg = op->reg) >= 0)
 				{ MCC_TRACE("br\n"); goto reg_found; }
 			else
@@ -1307,9 +1327,21 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 #endif
 		case 'e':
 		case 'i':
+		case 'n':
+		case 's':
 			if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
 				{ MCC_TRACE("br\n"); goto try_next; }
 			break;
+		case 'X':
+			break;
+		case 'W':
+			if (*str == 's') { MCC_TRACE("br\n");
+				str++;
+				if (!((op->vt->r & (VT_VALMASK | VT_LVAL)) == VT_CONST))
+					{ MCC_TRACE("br\n"); goto try_next; }
+				break;
+			}
+			goto try_next;
 		case 'I':
 		case 'N':
 		case 'M':
@@ -1383,7 +1415,7 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 	r = sv->r;
 	if ((r & VT_VALMASK) == VT_CONST) { MCC_TRACE("br\n");
 		if (!(r & VT_LVAL) && modifier != 'c' && modifier != 'n' &&
-				modifier != 'P')
+				modifier != 'P' && modifier != 'p')
 			{ MCC_TRACE("br\n"); cstr_ccat(add_str, '$'); }
 		if (r & VT_SYM) { MCC_TRACE("br\n");
 			const char *name = get_tok_str(sv->sym->v, NULL);
