@@ -16817,7 +16817,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (ast_search_axis_ran && !ast_search_pick_inline)
 					{ MCC_TRACE("br\n"); do_inline = 0; }
 				ast_no_callful_promo = do_inline;
-				int do_promote = faithful && !do_tco && !ast_rir_arena &&
+				int do_promote = faithful && !do_tco &&
 												 ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				MCC_TRACE("branch %s faithful=%d inline=%d promote=%d tco=%d\n",
