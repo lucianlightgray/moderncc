@@ -2549,14 +2549,16 @@ static void rir_op_effect(const RirOp *ro) {
 		v = rir_sh[slot];
 		if (v == AST_NONE || ast_parent(rir_arena, v) != AST_NONE)
 			break;
+		tsv = o->svarg;
+		tsv.r2 = VT_CONST;
 		if (!lv) {
-			if (!is_float(o->svarg.type.t))
+			if (!is_float(tsv.type.t))
 				break;
 			n = ast_node(rir_arena, AST_Store);
-			ast_add_child(rir_arena, n, rir_leaf(&o->svarg));
+			ast_add_child(rir_arena, n, rir_leaf(&tsv));
 			ast_add_child(rir_arena, n, v);
 			rir_stmt(n);
-			rir_sh[slot] = rir_leaf(&o->svarg);
+			rir_sh[slot] = rir_leaf(&tsv);
 			rir_shtype[slot] = 0;
 			break;
 		}
@@ -2571,7 +2573,6 @@ static void rir_op_effect(const RirOp *ro) {
 		ps = rir_ptr_sym(&pt);
 		if (!ps)
 			break;
-		tsv = o->svarg;
 		tsv.type.ref = ps;
 		ad = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, ad, AST_OP_ADDR);

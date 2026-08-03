@@ -4848,6 +4848,7 @@ enum {
 	AST_MEMO_PURE,
 	AST_MEMO_CPROPSAFE,
 	AST_MEMO_HASLABEL,
+	AST_MEMO_HASCASE,
 	AST_MEMO_REGPURE,
 	AST_MEMO_PRED_COUNT
 };
@@ -4917,6 +4918,7 @@ static void ast_memo_diverge(const char *q, AstLocal n, int memo, int scan) { MC
 AST_MEMO_QUERY(ident_pure, AST_MEMO_PURE)
 AST_MEMO_QUERY(cprop_safe, AST_MEMO_CPROPSAFE)
 AST_MEMO_QUERY(sccp_has_label, AST_MEMO_HASLABEL)
+AST_MEMO_QUERY(sccp_has_case, AST_MEMO_HASCASE)
 AST_MEMO_QUERY(cse_regpure, AST_MEMO_REGPURE)
 
 static MCC_OPT_TLS const AstArena *ast_hash_arena;
@@ -9283,6 +9285,20 @@ static int ast_sccp_has_label_compute(AstArena *a, AstLocal n) { MCC_TRACE("ente
 	return 0;
 }
 
+static int ast_sccp_has_case_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Jump &&
+			(ast_op(a, n) == 2 || ast_op(a, n) == 3))
+		{ MCC_TRACE("br\n"); return 1; }
+	if (ast_kind(a, n) == AST_If && ast_op(a, n) == 6)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_sccp_has_case(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static int ast_sccp_scan(AstArena *a) { MCC_TRACE("enter\n");
 	int folded = 0;
 	AstLocal nn = ast_count(a);
@@ -9298,7 +9314,7 @@ static int ast_sccp_scan(AstArena *a) { MCC_TRACE("enter\n");
 		AstLocal elsebb = ast_child(a, n, 2);
 		AstLocal taken = v ? thenbb : elsebb;
 		AstLocal dead = v ? elsebb : thenbb;
-		if (ast_sccp_has_label(a, dead))
+		if (ast_sccp_has_label(a, dead) || ast_sccp_has_case(a, dead))
 			{ MCC_TRACE("br\n"); continue; }
 		if (taken == AST_NONE) { MCC_TRACE("br\n");
 			ast_set_kind(a, n, AST_Poison);
