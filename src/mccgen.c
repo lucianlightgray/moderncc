@@ -7088,7 +7088,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			continue;
 		case TOK_TYPEOF1:
 			if (mcc_state->std_strict_ansi)
-				{ MCC_TRACE("br\n"); mcc_error("'typeof' is a GNU extension"); }
+				{ MCC_TRACE("br\n"); mcc_pedantic("'typeof' is a GNU extension"); }
 		case TOK_TYPEOF2:
 		case TOK_TYPEOF3:
 			next();
@@ -13364,7 +13364,7 @@ again:
 		skip(';');
 	} else if (t == TOK_ASM1 || t == TOK_ASM2 || t == TOK_ASM3) { MCC_TRACE("br\n");
 		if (t == TOK_ASM1 && mcc_state->std_strict_ansi)
-			{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
+			{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
 #if MCC_CONFIG_OPTIMIZER
 		ast_func_has_asm = 1;
 #endif
@@ -15115,7 +15115,7 @@ static int decl(int l) {
 				{ MCC_TRACE("br\n"); break; }
 			if (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
-					{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
+					{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
 #if MCC_CONFIG_ASM
 				if (!decl_in_preamble()) got_decl = 1;
 				asm_global_instr();
@@ -15234,7 +15234,7 @@ static int decl(int l) {
 
 			if (gnu_ext && (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3)) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
-					{ MCC_TRACE("br\n"); mcc_error("'asm' is a GNU extension"); }
+					{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
 				ad.asm_label = asm_label_instr();
 				parse_attribute(&ad);
 			}

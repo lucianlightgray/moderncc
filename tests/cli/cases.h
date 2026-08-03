@@ -416,18 +416,20 @@ static const cli_case_t cli_cases[] = {
 
 		{"strict_ansi_gnu_keyword_gate", "",
 		 "printf 'int x;\\ntypeof(x) y;\\n' > {W}/gk1.c && "
-		 "{MCC} -B{B} -std=c89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 | "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_BARE_NOPEDANTIC_OK; "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/gk1.c -o {W}/gk1.o 2>&1 | "
 		 "grep -oE \"'typeof' is a GNU extension\"; "
 		 "printf 'int x;\\n__typeof__(x) y;\\nint main(void){return 0;}\\n' > {W}/gk2.c && "
 		 "{MCC} -B{B} -std=c89 -c {W}/gk2.c -o {W}/gk2.o 2>&1 && echo TYPEOF_RSVD_OK; "
 		 "{MCC} -B{B} -std=gnu89 -c {W}/gk1.c -o {W}/gk1.o 2>&1 >/dev/null && echo TYPEOF_GNU_OK; "
 		 "printf 'int main(void){ asm(\\042\\042); return 0; }\\n' > {W}/gk3.c && "
-		 "{MCC} -B{B} -std=c89 -c {W}/gk3.c -o {W}/gk3.o 2>&1 | "
+		 "{MCC} -B{B} -std=c89 -c {W}/gk3.c -o {W}/gk3.o 2>&1 >/dev/null && echo ASM_BARE_NOPEDANTIC_OK; "
+		 "{MCC} -B{B} -std=c89 -pedantic-errors -c {W}/gk3.c -o {W}/gk3.o 2>&1 | "
 		 "grep -oE \"'asm' is a GNU extension\"; "
 		 "printf 'int main(void){ __asm__(\\042\\042); return 0; }\\n' > {W}/gk4.c && "
 		 "{MCC} -B{B} -std=c89 -c {W}/gk4.c -o {W}/gk4.o 2>&1 | "
 		 "grep -oE \"'__asm__' is a GNU extension\"; echo ASM_RSVD_OK; echo END",
-		 "'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
+		 "TYPEOF_BARE_NOPEDANTIC_OK\n'typeof' is a GNU extension\nTYPEOF_RSVD_OK\nTYPEOF_GNU_OK\nASM_BARE_NOPEDANTIC_OK\n'asm' is a GNU extension\nASM_RSVD_OK\nEND\n"},
 
 		{"gnu_ext_pedantic_gate", "",
 		 "printf 'int f(void){ return ({int x=3; x;}); }\\n' > {W}/ge1.c && "
