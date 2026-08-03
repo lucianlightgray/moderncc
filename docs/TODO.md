@@ -3,30 +3,87 @@
 ## URGENT — gates that are red or unmeasurable right now
 
 Re-verified mechanically against `da3a461b` on 2026-08-03 in a fresh `cmake-verify`
-(`-DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`). **Three gates this
-file records as green are not**, and none of the three is the cut's fault — all
-three are the two feature commits of 2026-08-03 (`9142c751` inline-asm, `8ab42063`
-builtins) landing without their banks moving.
+(`-DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`), which found three
+gates this file recorded as green and were not. **Two of the three closed in
+`bc85ce70`**; what is left is item 2, which is a reading error and not a red gate.
 
-1. **`tools/o0_ab.sh` fails on all twelve keys and has since `8ab42063`.** It reports
-   *"an -O0 object moved"* for roughly **250 objects per key, 6,016 diff lines in
-   total** — very nearly the whole corpus, on every key, not one file on one target.
-   The cause is not a phase of the cut: `8ab42063` adds **161 lines to
+1. ~~**`tools/o0_ab.sh` fails on all twelve keys and has since `8ab42063`.**~~
+   **Closed in `bc85ce70`.** It reported *"an -O0 object moved"* for roughly 250
+   objects per key, 6,016 diff lines — very nearly the whole corpus, on every key.
+   The cause was never a phase of the cut: `8ab42063` adds **161 lines to
    `runtime/include/mccdefs.h`**, which every compile includes, so `-O0` output
-   shifts tree-wide by construction. **This is legitimate and the bank simply has to
-   be re-taken** — but until it is, the `-O0` A/B, which is the gate every phase of
-   this plan is diffed against, cannot pass and cannot detect a real `-O0`
-   regression hiding behind the feature commit's noise. Rebank
-   `tests/ast/o0-baseline/*.obj.txt` **before** the next phase, and take it on a
-   short checkout path with `SOURCE_DATE_EPOCH` pinned.
-2. **The `C2_CORPUS=all` board is 194, not 104.** See **Scoreboard** — the 104 this
-   file quotes everywhere is the `C2_NO_EXTRA=1` number, i.e. measured with
-   `full_language.c` *excluded*, while the surrounding prose says `all` is the bar.
-3. **`tests/ast/rir_c2.cmake`'s `BANKFN` floor is one body low on every key.** The
-   corpus gained a body, so `fn` reads exactly +1 against every banked figure
-   (x86_64 1150 v 1149, arm64 1200 v 1199, and so on, all twelve). The cells pass —
-   a floor only catches population *loss* — but rebank them so the floor keeps
-   meaning what it says.
+   shifted tree-wide by construction. The shift was **checked rather than assumed**
+   before rebanking: building the compiler at `8ab42063^` and diffing objects over
+   the corpus, `.text`, `.rodata` and `.data` are byte-identical and the only
+   difference is the *names* of local labels in the symbol table and relocations —
+   `L.6` becomes `L.9`, because the added declarations consume three anonymous-symbol
+   ids. No `-O0` codegen moved, which is what the gate exists to prove. Both boards
+   re-taken with the documented recipe on a cross-enabled Debug build,
+   `SOURCE_DATE_EPOCH` pinned by the tool itself; only the twelve `.obj.txt` files
+   moved, every `.rir.txt` and `.gated.rir.txt` is byte-identical, so no counter
+   changed. `C2_NO_EXTRA=1 O0_AB_CHECK=1` over all twelve keys exits 0 and
+   `arm-win32 == arm-wince` still holds on counters and object sha256 both.
+2. **The `C2_CORPUS=all` board is the bar, and the number this file quotes
+   everywhere is not it.** Still open, because it is a documentation defect and not a
+   measurement one. See **Scoreboard** — the low number this file quotes is the
+   `C2_NO_EXTRA=1` figure, i.e. measured with `full_language.c` *excluded*, while the
+   surrounding prose says `all` is the bar. As re-measured at `bc85ce70`: `all` is
+   **201** and `C2_NO_EXTRA=1` is **111**, with `full_language.c` costing **90**.
+   Anywhere this file still says 194/104, it is quoting the `da3a461b` reading of the
+   same pair.
+3. ~~**`tests/ast/rir_c2.cmake`'s `BANKFN` floor is one body low on every key.**~~
+   **Closed in `bc85ce70`.** The corpus gained a body, so `fn` read exactly +1
+   against every banked figure. Measured rather than assumed — a
+   `MCC_REPLAY_IR_C2=1` build reads `fn=1150` against the banked 1149 on x86_64, the
+   +1 the notes predicted — so all twelve moved up by one, and all 16 `rir-c2` cells
+   pass against the tightened floors. The floor only catches population *loss*, so
+   this restored its meaning rather than fixing a red cell.
+4. **Four things this file and `tools/o0_ab.sh` still describe as live are not**,
+   found by grepping the tree at `bc85ce70` rather than reading the prose. None is a
+   red gate; each will mislead the next person who acts on it.
+   - **`MCC_AST_INT128` no longer exists in `src/` at all** — zero occurrences
+     tree-wide outside this file. It died with the recorder in P5. Five paragraphs
+     below (**Keep the measurement honest**, the P5 inventory, and the two
+     forced-`-O0` notes) still weigh whether to keep it in an env list. All
+     historical; the only live forced-`-O0` gating is `MCC_RIR_FORCE` /
+     `MCC_FORCE_REPLAY` at **`src/mccast.c:1923-1925`**, which is one predicate with
+     two spellings.
+   - **`o0_ab.sh:9` still cites `src/mccast.c:2035`** for that gate. The line-reference
+     table below has the correct `:1923`; the script's header does not.
+   - **The "38 gates" figure is stale in both scripts' comments.** The live
+     derivation yields **28**, as **Verified true** already records. Harmless — both
+     scripts print the live count and abort at zero — but the comment misleads.
+   - **There is no `-O0` cell for `rir_c2.cmake`.** The twelve `ast/rir-parity-*-O0`
+     cells enforce the replay bar at `-O0` and `rir_c2.cmake` banks the C2 gap at
+     `-O1`/`-O2`/`-O3`, so the forced-`-O0` C2 gap is reachable *only* by hand
+     through `tools/c2_sweep.sh` and is banked only as prose in **Scoreboard**.
+     `tools/o0_ab.sh` is likewise not a ctest cell. Now that a twelve-key sweep is
+     45 seconds rather than the twelve minutes this file assumed, the argument that
+     kept these out of ctest no longer holds — reconsider it.
+   - **Both tree-versus-arena instruments are dead, and this file still opens its
+     debugging recipe with one of them.** `RIRC2TREE` was deleted in `ebda09c2` —
+     `:353` documents it as live and `:607` records its removal, and the two
+     contradict outright; zero occurrences in `src/` or `tools/`. `MCC_REPLAY_IR=6`'s
+     `[rir-diff]` half is worse, because it *looks* alive: it is guarded on
+     `ast_replay_ok(ast_cur)` (`src/mccrir.c:4559`), and since P5 `ast_func_begin`
+     sets `ast_cur = ast_arena_new()` (`src/mccast.c:12911`) — a fresh *empty* arena
+     with no recorder to fill it — so the comparison never runs and prints nothing.
+     Verified by running it: `[rir-dump]` fires, `TREE:` sections and `[rir-diff]`
+     lines are **zero**. `:291`'s *"a structural `[rir-dump]` diff against the tree
+     found nearly everything that closed"* describes a capability the tree no longer
+     has. **Diagnosis is one-sided from here**: the arena dump, `RIRDUMP`'s op
+     window, the `[ent]`/`[stmt]`/`[vst]`/`[gop]`/`[arg]` streams, and byte windows.
+     Restoring a control leg means re-adding the ternary at `src/mccrir.c:4852`
+     *plus* a leg marker in `[rir-c2part]`, or `:353`'s silent-fallback caveat
+     returns with it.
+5. **The class E scope in `:399` is wrong, and it is wrong in the optimistic
+   direction.** That line says `fuzz/runner.c::triage`/`::interesting`/`::main` are
+   *"27 on the nine non-x86_64 keys only — the x86_64 keys closed with the store-chain
+   fix."* Measured at `bc85ce70`: the x86_64 close holds **only at `-O1`**. The same
+   three bodies, with the same signature, diverge at `-O1` on **arm64, riscv64, arm
+   and i386**, and at forced `-O0` on **x86_64**. One defect, roughly 15 divergences
+   at `-O1` plus 3 at `-O0` — not a three-body `-O0` curiosity. Root cause is
+   established (see **Still open**); the arena node is not yet pinned.
 
 ### New urgent items — Windows and macOS, which this host cannot reach
 
@@ -182,7 +239,7 @@ Every phase was gated on a number measured before and after, and the phases that
 
 ## Scoreboard
 
-Per key at HEAD, produced by `tools/c2_sweep.sh <builddir> <key> <opt>` against an mcc built `-DMCC_REPLAY_IR_C2=1` under `-DMCC_ENABLE_CROSS=ON`, run in place. One twelve-key corpus takes about 12 minutes; re-measure rather than copying a row forward.
+Per key at HEAD, produced by `tools/c2_sweep.sh <builddir> <key> <opt>` against an mcc built `-DMCC_REPLAY_IR_C2=1` under `-DMCC_ENABLE_CROSS=ON`, run in place. **One twelve-key `all` corpus takes about 45 seconds**, roughly 3.6s per key — measured at `bc85ce70`, and the "about 12 minutes" this file used to say was wrong by an order of magnitude and was the reason several rows here were copied forward instead of re-run. Re-measure rather than copying a row forward; it is nearly free.
 
 Read `ok=` on every row before believing it. `rir_report` is an **atexit** handler, so a file that fails to compile still prints `[rir-total]` and still contributes bodies — counting `[rir-total]` lines is not an honesty check. The sweep counts only files that exited 0 and prints that count.
 
@@ -204,26 +261,32 @@ Read `ok=` on every row before believing it. `rir_report` is an **atexit** handl
 
 **The table above predates P4 and its `ok` column no longer matches the tree** (it reads 522 files on x86_64 where the same sweep now reads 562), so do not diff a fresh row against it.
 
-### The `all` board is 194. The 104 is the board with `full_language.c` taken out.
+### The `all` board is 201. The 111 is the board with `full_language.c` taken out.
 
-**Re-measured at `da3a461b`, 2026-08-03, `C2_CORPUS=all`, `-O1`, twelve keys, on the
-660-file corpus.** Run twice, once as the default and once with `C2_NO_EXTRA=1`,
-which is the only difference between the two columns:
+**Re-measured at `bc85ce70`, 2026-08-03, `C2_CORPUS=all`, `-O1`, twelve keys, on the
+660-file corpus**, in a `cmake-verify` rebuilt at that commit. Run twice, once as the
+default and once with `C2_NO_EXTRA=1`, which is the only difference between the two
+columns. The `da3a461b` reading of the same pair — **194 / 104**, the numbers most of
+this file still quotes — is kept in the row below each figure:
 
 | key | `all` (the bar) | `all` with `C2_NO_EXTRA=1` | `full_language.c` costs | `c2try` |
 | --- | --- | --- | --- | --- |
-| x86_64 | 7 | 7 | — (does not enter) | 2134 |
-| i386 | 11 | 11 | — (does not enter) | 2133 |
-| x86_64-win32 | **11** | 4 | 7 | 2327 |
-| arm64-win32 | **15** | 7 | 8 | 2356 |
-| x86_64-osx | **12** | 4 | 8 | 2179 |
-| i386-win32 | **16** | 8 | 8 | 2337 |
-| arm-win32 / arm-wince | **16** each | 8 each | 8 | 2297 |
-| arm64 | **20** | 11 | 9 | 2445 |
-| arm64-osx | **18** | 9 | 9 | 2429 |
-| arm | **21** | 12 | 9 | 2383 |
-| riscv64 | **31** | 15 | 16 | 2378 |
-| **total** | **194** | **104** | **90** | |
+| x86_64 | 7 (was 7) | 7 (was 7) | — (does not enter) | 2134 |
+| i386 | 11 (was 11) | 11 (was 11) | — (does not enter) | 2133 |
+| x86_64-win32 | **12** (was 11) | 5 (was 4) | 7 | 2327 |
+| x86_64-osx | **12** (was 12) | 4 (was 4) | 8 | 2179 |
+| arm64-win32 | **16** (was 15) | 8 (was 7) | 8 | 2356 |
+| i386-win32 | **17** (was 16) | 9 (was 8) | 8 | 2337 |
+| arm-win32 / arm-wince | **17** each (was 16) | 9 each (was 8) | 8 | 2297 |
+| arm64-osx | **19** (was 18) | 10 (was 9) | 9 | 2429 |
+| arm64 | **20** (was 20) | 11 (was 11) | 9 | 2445 |
+| arm | **22** (was 21) | 13 (was 12) | 9 | 2383 |
+| riscv64 | **31** (was 31) | 15 (was 15) | 16 | 2378 |
+| **total** | **201** (was 194) | **111** (was 104) | **90** (unmoved) | |
+
+**The `full_language.c` costs column is unmoved row for row**, which localises the
++7: it is entirely outside that file, spread one body each across seven keys, with
+x86_64, i386, x86_64-osx, arm64 and riscv64 unmoved on both columns.
 
 The `C2_NO_EXTRA=1` column reproduces this file's historical board **row for row,
 exactly**, which is what identifies it: every "104" in this document was taken with
@@ -278,11 +341,119 @@ against the banks in **Keep the measurement honest** (x86_64 1150 v 1149, x86_64
 1143 v 1142, x86_64-win32 1238 v 1237, i386 1153 v 1152, i386-win32 1258 v 1257, arm
 1131 v 1130, arm-win32/wince 1236 v 1235, arm64 1200 v 1199, arm64-osx 1225 v 1224,
 arm64-win32 1298 v 1297, riscv64 1157 v 1156) — one body arriving uniformly, which is
-the corpus growing, not a population drift. Rebank the `BANKFN` floors.
+the corpus growing, not a population drift. **The `BANKFN` floors were rebanked to
+those figures in `bc85ce70`**; `CMakeLists.txt` now carries them and all 16 `rir-c2`
+cells pass against the tightened floors.
 
-**Forced `-O0` tracks `-O1` to within three bodies on every key** (`C2_FORCE=1 C2_CORPUS=all … -O0`): x86_64 7, x86_64-osx 18, x86_64-win32 15, arm64 10, arm64-osx 21, arm64-win32 16, i386 9, i386-win32 18, arm 11, arm-win32 18, arm-wince 18, riscv64 13. `-O2` and `-O3` were byte-identical to `-O1` on every counter when last measured on five keys. C2 replays the arena's own emission and the optimizer passes are a separate question (C3), so this is what one would expect; it means the completion bar's "at every `-O`" is close to one measurement, but the -O0 column is now cheap enough to keep printing and it is NOT identical, so print it.
+**Forced `-O0` is 189 against the `-O1` board's 201, and tracks it to within three bodies on every key.** Re-measured at `bc85ce70` alongside the `-O1` board above, same build, same 660-file corpus (`C2_FORCE=1 C2_CORPUS=all … -O0`, 28 gates forced):
+
+| key | `-O0` | `-O1` | Δ | bytes / len / invalid / err |
+| --- | --- | --- | --- | --- |
+| x86_64 | 8 | 7 | +1 | 1 / 7 / 0 / 0 |
+| i386 | 9 | 11 | −2 | 1 / 8 / 0 / 0 |
+| x86_64-osx | 10 | 12 | −3 | 2 / 6 / 0 / 2 |
+| x86_64-win32 | 15 | 12 | +3 | 2 / 10 / 1 / 2 |
+| arm64-osx | 16 | 19 | −3 | 4 / 9 / 1 / 2 |
+| arm64-win32 | 16 | 16 | 0 | 2 / 11 / 1 / 2 |
+| arm64 | 17 | 20 | −3 | 3 / 12 / 0 / 2 |
+| i386-win32 | 17 | 17 | 0 | 3 / 11 / 1 / 2 |
+| arm-win32 / arm-wince | 17 each | 17 each | 0 | 3 / 11 / 1 / 2 |
+| arm | 19 | 22 | −3 | 4 / 12 / 1 / 2 |
+| riscv64 | 28 | 31 | −3 | 12 / 14 / 2 / 0 (+8 skip) |
+| **total** | **189** | **201** | **−12** | 40 / 122 / 9 / 18 |
+
+**Read the two rows only as a pair taken from one build.** The previous reading of this line — x86_64 7, x86_64-osx 18, x86_64-win32 15, arm64 10, arm64-osx 21, arm64-win32 16, i386 9, i386-win32 18, arm 11, arm-win32 18, arm-wince 18, riscv64 13, total 174 — was taken against a *different* tree from the `-O1` board printed beside it, and the pair does not satisfy the three-body claim it was making: it reads arm 11 against an `-O1` of 21, arm64 10 against 20, riscv64 13 against 31. The claim is true of the `bc85ce70` pair above and was not true as previously printed. Any future `-O0` row belongs in the same commit as its `-O1` row.
+
+**The `-O0`→`-O1` movement is almost entirely the `bytes` class.** Same-length/different-bytes goes 40 → 51 across the twelve keys while `len` is flat at 122 → 123, and `invalid` (9) and `err` (18) are identical at both levels. So the twelve bodies `-O1` loses against `-O0` are all same-length divergences. `-O2` and `-O3` were byte-identical to `-O1` on every counter when last measured on five keys. C2 replays the arena's own emission and the optimizer passes are a separate question (C3), so this is what one would expect; it means the completion bar's "at every `-O`" is close to one measurement, but the `-O0` column is cheap — the whole twelve-key sweep is under a minute on this host, not the twelve minutes this file estimates elsewhere — and it is NOT identical, so print it.
 
 `arm-win32` and `arm-wince` share a define set and must read identically. Any sweep where those two rows differ has a harness bug, not a codegen one — the cheapest available check that a run measured what it thinks.
+
+## Semantic equivalence — the second bar, and the one that can actually reach 100%
+
+**Byte identity is a proxy. The property the arena has to have is that it does the
+same thing, not that it emits the same bytes.** A body can be byte-divergent and
+correct — a load placed at a different point, a different register, an instruction
+reordered — and the C2 board counts every one of those against the gap. It can also
+be byte-divergent and *wrong*, and the board counts that identically. The board
+cannot tell them apart, so the number it prints is an upper bound on the defect
+count and nothing more.
+
+**The seam exists and is empty.** `[rir-total]` now prints `c2equiv=` and
+`c2unproven=`, which partition `c2bytes + c2len` — every byte-comparable divergence
+is one or the other, and `invalid`/`err` are excluded because they never produced a
+byte comparison. The verdict comes from `rir_c2_equiv_proven` (`src/mccrir.c:4423`),
+which reads `RIREQUIV`, a comma-separated list of function names. **Unset — the
+default — proves nothing**, so today every key reads `equiv=0/N`. `tools/c2_sweep.sh`
+carries the column as `equiv=N/M`. The byte columns are untouched and must stay that
+way: a body that is byte-divergent and semantically proven has to read as *both*, or
+the instrument that found the wrong-code classes is gone.
+
+**No in-compiler prover, and the reason is not effort.** `mcc_disasm_insn`
+(`src/mcc.h:1719`) returns instruction text and boundaries, not a read/write set per
+instruction. The only check implementable on that interface — a permutation over
+instruction encodings — calls two reordered memory operations equivalent when they
+are not. Making it sound needs per-ISA effect models for six architectures. **Do not
+implement a byte-level or encoding-level prover.** If one appears in a diff, it is
+unsound unless it carries those models.
+
+### Where the proof actually comes from: differential execution
+
+`rir_prod_env = ast_replay_env && !rir_env` (`src/mccrir.c:521`), with no gate term.
+That single line is the whole instrument:
+
+- **`MCC_REPLAY_IR` unset, `-O1`+** — production is on and the **arena's** emission
+  ships.
+- **`MCC_REPLAY_IR=1`, `-O1`+** — verify mode, production off, the **parser's** bytes
+  ship.
+
+So the same source, built twice with one env var flipped, produces two binaries that
+differ exactly where the arena and the parser differ. **Run both and compare
+observable behaviour — stdout, stderr, exit status — and a match is a semantic proof
+for every body that executed.** It is architecture-independent, needs no effect
+model, and is indifferent to looping, nesting and expression complexity because it
+observes the whole program rather than a window of instructions.
+
+This is also why the tree is already in better shape than the board suggests: the
+exec suites pass with production on, so the arena's emission is *already* validated
+by execution for every body those tests reach. What is missing is not a checker but a
+**record of which bodies that evidence covers**.
+
+### What to build, in order
+
+1. **`tools/c2_equiv.sh` — the differential harness.** For each executable corpus
+   program: build twice as above at `-O1`/`-O2`/`-O3`, run both, compare stdout,
+   stderr and exit status. Reachable here for six of twelve keys (four ELF cross keys
+   under `qemu-user`, both x86 PE keys under `wine`); the other six are W1/W2 and stay
+   byte-only. Refuse to score a key whose runner is absent rather than printing a
+   green row — the same trap `tools/o0_ab.sh:174` already guards.
+2. **A per-body execution tap**, so a passing program can be attributed to the bodies
+   it actually ran. Without it the harness proves "this program behaves the same",
+   which is not the same claim as "this body is equivalent" — a body on an untaken
+   path proves nothing. This is the load-bearing half and the reason step 1 alone is
+   not enough.
+3. **Feed the attributed body names to `RIREQUIV`** and re-measure. `c2unproven` is
+   then the real number: byte-divergent *and* unwitnessed by execution.
+4. **A purpose-built control-flow corpus**, because the claim is "regardless of
+   looping/nesting/complexity" and coverage is what makes that true. The existing
+   corpus was not written to stress the arena. Needed shapes, each with observable
+   output and each currently under-represented: nested loops with `break`/`continue`
+   to outer levels, `switch` inside a loop with fallthrough, `goto` webs and computed
+   `goto`, deeply nested ternaries, long `&&`/`||` chains as loop and ternary
+   conditions, statement expressions in argument position, VLA and `alloca` inside
+   loops, compound literals in expressions, chained assignment across struct members,
+   recursion, and `setjmp`/`longjmp`. Four of the five open classes below are exactly
+   these shapes, which is the tell that the corpus gap and the defect list are the
+   same list.
+
+### The bar this replaces, and the one it does not
+
+`c2unproven == 0` is a *stronger* completion bar than `gap == 0` on the bodies
+execution reaches, and a *weaker* one everywhere else. It does not retire the byte
+board: the six keys that cannot execute here have no other instrument, and
+`docs/TODO.md`'s own history has two wrong-code classes the byte compare could not
+see (**The class that only Replay_IR can reach**). **Report both columns forever.**
+A proposal to drop the byte column is a proposal to stop measuring the six
+byte-only keys.
 
 ## Close the C2 gap
 
@@ -333,13 +504,26 @@ Instruments, in the order they pay: `RIRDUMP=1` for ops either side of the blame
 
 ### Still open, largest first
 
-Counts are divergences over the twelve keys on the `all` corpus.
+Counts are divergences over the twelve keys on the `all` corpus. The per-body
+diagnoses below marked *"re-measured at `bc85ce70`"* were taken on x86_64 at forced
+`-O0` with `cmake-verify` rebuilt at that commit; the older counts beside them are
+from `da3a461b` and have not been re-taken per body.
+
+**Uncommitted at the time of writing, so that the next person is not surprised by a
+dirty tree**: the `c2equiv`/`c2unproven` seam in `src/mccrir.c` and its column in
+`tools/c2_sweep.sh`; this file; and a staged `git rm -r` of `b/`, a 126 MB build
+directory committed by accident in `bc85ce70` — `.gitignore` carries only
+`/cmake-*/`, so **`b/` and `bc2/` are both still unignored** and the next `git add -A`
+re-adds them. Not yet run for the seam: the full `ctest` (only the 237 `ast`/`optfire`
+cells, all passing). Nothing to rebank — the seam moved no `BANKGAP`, and the
+twelve-key byte board is identical on every pre-existing counter either side of it.
 
 - `bounds_stress.c::test16` and `::test17`, **24**, both on all twelve keys: `strcpy(q = alloca(strlen(demo) + 1), demo)` inside a call argument. The trial re-evaluates `strlen(demo) + 1` and calls `alloca` a second time instead of reusing the value. Nested call in an argument, so the same family as `struct_assign_test`.
-- `fuzz/runner.c::triage`, `::interesting`, `::main`, **27**, on the nine non-x86_64 keys only — the x86_64 keys closed with the store-chain fix. On arm64-osx the trial emits one extra `ldr x0,[x0]` at a `genop`: an extra dereference the parser did not make.
+- `fuzz/runner.c::triage`, `::interesting`, `::main` — **the scope on this line was wrong; see URGENT item 5.** Open at `-O1` on **arm64, riscv64, arm and i386** and at forced `-O0` on **x86_64**; the store-chain fix closed x86_64 at `-O1` only. **Root-caused at `bc85ce70`, x86_64 `-O0`:** all three insert the *identical* three bytes, `48 8b 09` (`mov (%rcx),%rcx`) — the same "extra dereference the parser did not make" seen as `ldr x0,[x0]` on arm64-osx, so it is one defect on every key. The source shape is `GATES[g].env` (a member at offset 8 of an array element) passed as a call argument. **The parser defers the load to argument-marshalling time**: it computes *all* argument addresses first, then loads each at push time inside `gfunc_call`, in reverse order — `add $0x8,%rcx` … `mov (%rdx),%rdx; push %rdx; mov (%rcx),%rcx; push %rcx`. Replay emits the `AST_Load` eagerly at expression position instead. `AST_Load` replays as `ast_replay_value(child); indir();` (`src/mccast.c:4319-4322`) and `indir()` emits a load **only when its operand arrives `VT_LVAL`**, so the address subtree is reaching replay as an lvalue where the parser had a plain rvalue. **Not yet pinned: which arena node makes it lvalue** — and that decides between the argcast use site (`src/mccrir.c:2435`, legal) and the `RIR_M_LOAD` mark (`src/mccrir.c:3073`, a capture site, the category that produced two core dumps and a compiler abort in the banked negatives). `[arg]` reports the two operands as `cur=Load … curt=0 st=5`, an **untyped** Load — the case `:413`'s banked negative N13 says the argcast wrap was special-cased for, and widening that wrap cost −16 `c2ok` on every key. **Two synthetic reducers were written and neither reproduces** (`ok=1` both times), which is banked negative N20 exactly: work from the real body, not a model of it. Instrument `runner.c::interesting` directly with `RIRDBG` and read the arena node for that argument.
 - `statement_expr_test`, **7**, is what is left of the statement-expression class after `local_label_test` closed. It is now a `c2bytes` divergence at identical length -- pure ordering, not a missing or extra instruction. The two defects that made up the class are described under "what closed"; whatever is left is a third.
 - `full_language.c`, **42** over its seven keys, six bodies: `struct_assign_test` (call), `statement_expr_test` (jmp), `s7_9_iso646_test` (store, and a BYTE divergence not a length one), `local_label_test` (call), `coherency_test` (genop), `char_short_test` (cvt_csti). Of these, `struct_assign_test` and `char_short_test` are confirmed RIR-model defects (the tree leg gets them right or differs); the rest reproduce identically in the tree leg and are shared-replay work. `longlong_test` adds 5 more on the keys where it diverges.
-- `rev64_mt.c::main`, **12**, still open on all keys — a different and much larger divergence (want 2056 got 2009) from the ternary one that closed in the same file's sibling.
+- `rev64_mt.c::main`, **12**, still open on all keys — a different and much larger divergence from the ternary one that closed in the same file's sibling. Re-measured at `bc85ce70`, x86_64 forced `-O0`: want **2044** got **2006**. The divergence is `add $0x18,%rdx` in the parser against `add $0x28,%rdx` in the trial — **a different member offset** — followed by `xor %eax,%eax; mov %rax,(%rdx); mov %rax,(%rcx)`. Source is the chained `jb[i].n = jb[i].xsum = jb[i].asum = jb[i].psum = 0;`. **Whether this is equivalent is undecided and has to be decided before any semantic verdict is recorded for it**: if the trial writes all four members in a different order it is equivalent, and if it writes only two of the four it is wrong code. Being 38 bytes shorter is consistent with either. Decide it by execution, not by reading.
+- `coherency_test` — **not a shape difference; the re-emission is missing content.** Re-measured at `bc85ce70`, x86_64 forced `-O0`: want **930** got **806**, and the trial's last bytes are `48 8b 65 e8` (`mov -0x18(%rbp),%rsp`, the VLA stack restore) immediately after the previous `call`. The final statement — `printf("coh compound-literal-sum: %d\n", (int)(vla[1] + (int[]){10, 20, 30}[2] + COH_C))` — is absent from the re-emission entirely. **Capture is complete**: the `[rir-op]` stream carries the three `vstore`s that materialise the compound literal (ops 472/479/486, parser offsets advancing `909→920→931→942`), the `genop` chain at 493-498 and the `call` at 501. So the loss is in the **arena reconstruction in `rir_build`**, not in `ast_replay_bb`/`ast_replay_value` — compensating in the replay would be patching downstream of where the content goes missing. `:401` classifies this body as shared-replay on the strength of `70c7d6f7`; that measurement is from the deleted tree leg and **the arena-truncation evidence above points the other way**. Note also that compound literals have **no** RIR prior art anywhere in this file, and every place a VLA or array shape has met the arena the landed decision was to *exclude* it, never to model it — so there is no banked negative to steer by here, in either direction.
 - `ternary_op.c::tst_yarpgen`, **7**: a `JOP_STORE` register spill the parser makes mid-expression and the trial does not. Scheduling and allocation, not model shape — a single yarpgen expression with enough live values to spill, and the trial reaching that point with fewer live registers is the symptom. Expect it last.
 - `s7_9_iso646_test`, **12** including `run_s7_9.c`: a pure ORDERING difference at identical length. The parser stores then loads the next condition; the trial hoists the load before the store and picks a different register for it. Same family as `AST_FB_STORE_ADDR_LATE`.
 - `zero_bss.c::main` **5**, `smoke.c::main` **5**, `struct_ret_variadic.c::mkv` **3**, `varargs.c::mix` **3**, `strpbrk.c::strpbrk` **2**, `struct_packed_indirect.c::main` **1**, `integer_promotion.c::main` **1** (riscv64 only), `run_s7_28.c::s7_28_wconv` **1**, `run_s_annFGK.c::s_annFGK_annex_test` **1**. `overflow_narrow.c::main` is closed.
@@ -1099,12 +1283,15 @@ eight-cluster sweep above — **+850 lines of `src/mccgen.c`** and another **+19
   the `ir_`/`IR_` namespace count and every `mccast.c`/`mccrir.c` line number below
   are still exact. The `mcc.h`, `mccgen.c` and `libmcc.c` references have been
   re-resolved against the merged tree.
-- **The methodological findings hold** — the `104` is still the `C2_NO_EXTRA=1`
-  board and not the `all` board, whatever the numbers now are; the `-O0` bank is
-  still stale and is now *more* stale, since `mccdefs.h` grew a second time.
-- **Every number is provisional**: the 194/104 boards, `ctest` 8254, the `fn` counts
-  and the `c2err` attribution were all taken before the merge. **Re-run before
-  quoting any of them** — which is what this file has said all along.
+- **The methodological findings hold** — the low board figure is still the
+  `C2_NO_EXTRA=1` board and not the `all` board, whatever the numbers now are. The
+  `-O0` bank *was* stale and doubly so, since `mccdefs.h` grew a second time; it was
+  re-taken in `bc85ce70` and URGENT item 1 records how the shift was proved cosmetic
+  first.
+- **Every number is provisional**: `ctest` 8254, the `fn` counts and the `c2err`
+  attribution were all taken before the merge. **Re-run before quoting any of them** —
+  which is what this file has said all along. The 194/104 boards have since been
+  re-run at `bc85ce70` and read **201/111**; see **Scoreboard**.
 
 Every mechanically checkable statement in this file was re-run against the tree at
 `da3a461b` in a fresh build (`cmake -S . -B cmake-verify -G Ninja

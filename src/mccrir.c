@@ -1037,6 +1037,7 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 		rir_tot_c2_err;
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
+static long rir_tot_c2_equiv, rir_tot_c2_unproven;
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
 static long rir_tot_c3_pair_fired;
@@ -4411,6 +4412,32 @@ static int rir_blame(int diff_off) {
 	return -1;
 }
 
+/* A byte divergence is not by itself a semantic divergence, but nothing here
+   can decide that from the bytes. Proving two instruction streams equivalent
+   needs a read/write set per instruction; mcc_disasm_insn yields text and
+   boundaries only, so a permutation check over encodings would call a pair of
+   reordered memory operations equivalent when they are not. The verdict is
+   therefore taken from outside the compiler: RIREQUIV is a comma-separated list
+   of function names an external run has shown to behave identically. Unset --
+   the default -- proves nothing, and every divergence counts as unproven. */
+static int rir_c2_equiv_proven(void) {
+	const char *e = getenv("RIREQUIV");
+	const char *p;
+	size_t n;
+	if (!e || !funcname)
+		return 0;
+	n = strlen(funcname);
+	for (p = e; *p;) {
+		const char *q = p;
+		while (*q && *q != ',')
+			q++;
+		if ((size_t)(q - p) == n && !memcmp(p, funcname, n))
+			return 1;
+		p = *q ? q + 1 : q;
+	}
+	return 0;
+}
+
 static int rir_prod_reg_dangle(AstLocal n) {
 	int r;
 	if (ast_kind(rir_arena, n) != AST_Ref || ast_nchild(rir_arena, n) != 0)
@@ -4862,6 +4889,10 @@ void rir_verify(void) {
 				rir_tot_c2_ok++;
 			else if (ind - rir_body_ind_sv == body_len) {
 				rir_tot_c2_bytes++;
+				if (rir_c2_equiv_proven())
+					rir_tot_c2_equiv++;
+				else
+					rir_tot_c2_unproven++;
 				if (rir_env >= 5) {
 					int q, d = -1;
 					for (q = 0; q < body_len; q++)
@@ -4892,6 +4923,10 @@ void rir_verify(void) {
 				}
 			} else {
 				rir_tot_c2_len++;
+				if (rir_c2_equiv_proven())
+					rir_tot_c2_equiv++;
+				else
+					rir_tot_c2_unproven++;
 				if (rir_env >= 5) {
 					int q, gl = ind - rir_body_ind_sv;
 					int lim = gl < body_len ? gl : body_len, fd = -1, from, run = 0,
@@ -5042,7 +5077,8 @@ static void rir_report(void) {
 					"jumps=%ld fallback=%ld fallbackfn=%ld fbchain=%ld fbpoint=%ld "
 					"unbal=%ld ovf=%ld jmpsv=%ld jmpsvfb=%ld shiftok=%ld shiftbad=%ld "
 					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld "
-					"leaf=%ld refill=%ld c2try=%ld c2skip=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld\n",
+					"leaf=%ld refill=%ld c2try=%ld c2skip=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld "
+					"c2equiv=%ld c2unproven=%ld\n",
 					rir_tot_fn, rir_tot_faithful, rir_tot_ops, rir_tot_regions,
 					rir_tot_labels, rir_tot_jumps, rir_tot_fallback,
 					rir_tot_fallback_fn, rir_tot_fb_chain, rir_tot_fb_point,
@@ -5051,7 +5087,7 @@ static void rir_report(void) {
 					rir_tot_shift_open, rir_tot_arena_fn, rir_tot_arena_nodes,
 					rir_tot_leaf, rir_tot_refill, rir_tot_c2_try, rir_tot_c2_skip,
 					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
-					rir_tot_c2_invalid);
+					rir_tot_c2_invalid, rir_tot_c2_equiv, rir_tot_c2_unproven);
 	if (rir_tot_c3_try || rir_tot_c3_pair)
 		fprintf(f,
 						"[rir-c3] try=%ld ran=%ld folds=%ld broke=%ld pair=%ld "
