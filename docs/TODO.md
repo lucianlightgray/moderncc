@@ -4,7 +4,7 @@ Finish Replay_IR: reproduce the parser's machine code byte-for-byte on every tar
 
 Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells.
 
-**The corpus is now all of `tests/`, not `tests/exec`.** 657 files against 277, and about twice the bodies per key — 1980–2521 against 1146–1318. `tests/exec` was never a wrong measurement, but it was a narrow one: it reads a 14-body gap where the whole tree reads 153, and it says `c2bytes=0` everywhere where the whole tree finds byte divergences on ten of twelve keys. `C2_CORPUS=exec` still produces the historical board for continuity; `C2_CORPUS=all` is the default and is the bar.
+**The corpus is now all of `tests/`, not `tests/exec`.** 657 files against 277, and about twice the bodies per key — 1980–2521 against 1146–1318. `tests/exec` was never a wrong measurement, but it was a narrow one: it reads a 14-body gap where the whole tree reads 148, and it says `c2bytes=0` everywhere where the whole tree finds byte divergences on ten of twelve keys. `C2_CORPUS=exec` still produces the historical board for continuity; `C2_CORPUS=all` is the default and is the bar.
 
 ## Scoreboard
 
@@ -16,17 +16,17 @@ Read `ok=` on every row before believing it. `rir_report` is an **atexit** handl
 
 | key | c2ok/c2try | gap | classes | arenahasheq | ok |
 | --- | --- | --- | --- | --- | --- |
-| x86_64 | 1943/1948 | 5 | 5 len | 1414/1988 | 522 |
+| x86_64 | 1944/1948 | 4 | 4 len | 1414/1988 | 522 |
 | x86_64-win32 | 2306/2317 | 11 | 2 bytes + 7 len + 2 err | 1616/2364 | 527 |
-| arm64 | 2113/2124 | 11 | 1 byte + 9 len + 1 invalid | 1506/2164 | 543 |
+| arm64 | 2114/2124 | 10 | 1 byte + 8 len + 1 invalid | 1506/2164 | 543 |
 | i386 | 1937/1947 | 10 | 10 len | 1384/1987 | 519 |
 | arm | 2052/2064 | 12 | 2 bytes + 9 len + 1 invalid | 1442/2104 | 541 |
 | arm64-win32 | 2331/2346 | 15 | 2 bytes + 11 len + 2 err | 1637/2392 | 522 |
-| x86_64-osx | 2448/2462 | 14 | 3 bytes + 9 len + 2 err | 1656/2508 | 571 |
+| x86_64-osx | 2449/2462 | 13 | 3 bytes + 8 len + 2 err | 1656/2508 | 571 |
 | i386-win32 | 2310/2327 | 17 | 2 bytes + 13 len + 2 err | 1593/2378 | 526 |
 | arm-win32 / arm-wince | 2270/2287 each | 17 | 3 bytes + 12 len + 2 err | 1575/2334 | 519 |
-| riscv64 | 2034/2048 | 14 | 2 bytes + 10 len + 2 invalid, plus 7 skip | 1463/2094 | 539 |
-| arm64-osx | 2457/2477 | 20 | 4 bytes + 14 len + 2 err | 1679/2521 | 566 |
+| riscv64 | 2035/2048 | 13 | 2 bytes + 9 len + 2 invalid, plus 7 skip | 1463/2094 | 539 |
+| arm64-osx | 2458/2477 | 19 | 4 bytes + 13 len + 2 err | 1679/2521 | 566 |
 
 `C2_CORPUS=exec` for continuity with every earlier board in this file, `-O1`, gap only: x86_64 **0**, x86_64-osx **0**, x86_64-win32 **0**, arm64 1, arm64-osx 1, arm64-win32 1, i386 2, i386-win32 2, arm 2, arm-win32 2, arm-wince 2, riscv64 3 (plus 2 skip). Fourteen over twelve keys, down from 18.
 
@@ -46,6 +46,7 @@ Instruments, in the order they pay: `RIRDUMP=1` for ops either side of the blame
 
 - **The inline-asm operand class.** `asm_instr` evaluates the operands, then `save_regs(0)`, then two `asm_gen_code` calls; only the last three were journalled, and `JOP_ASMGEN` replays off the parser's own vstack snapshot so its bytes were always right. The operand evaluation — pointer gv, deref, spills — was orphaned shadow-stack nodes nothing emitted. A `RIR_M_ASMOPS` mark taken immediately before `save_regs(0)` collects them into one `AST_OP_ASMOPS` statement whose replay calls `save_regs` itself. Closed `fancy_copy`, `fancy_copy2`, `sigaddset1`, `sigdelset1`, `memcpy1`, `memcpy2`, `mconstraint_test`, `other_constraints_test`.
 - **The dead-code jump class.** `rir_op_effect` drops ops under `nocode_wanted`, but a break's arena `Jump` comes from a mark and a switch's dispatch jump comes from replaying the `AST_If` — neither is an op. `CODE_OFF_BIT` lives outside `RIR_NOEVAL_MASK`, so the mark filter let both through. Closed `optimize_out_test`.
+- **A narrowing cast on an lvalue, at the `gv`.** `(int)zeros_c[1]` where `zeros_c` is `long` makes the parser's gv load 32 bits; the arena's untyped Load still named the long, so replay loaded 64, added 64 and truncated after. The gv's snapshot is where the narrowed type survives. Same wrap as the line below, widened to `VT_INT`.
 - **`gv` on a sub-int lvalue.** `gv` on a char or short lvalue emits the widening load itself, and both the placement (inside a ternary arm) and the signedness (`(unsigned char)` leaves no op) were missing from the arena. Wrapping the operand in a `Convert` at the `JOP_GV` site closed `mt_workload.c::main`, `rev64_mt.c::main` on x86_64 and `corpus.c::str_hash`.
 - **A label's identity in the arena.** `rir_hook_label` and `rir_hook_goto` were handed the label's *token*, and two `__label__ l1` in different statement-expression scopes are the same token, so the arena's labels aliased where the parser's `label_find` scoping keeps them apart -- `ast_rp_label_floor` scopes only the inline-graft path. A monotonic id per label Sym, forgotten when `label_pop` frees it, fixes the identity; a bare Sym pointer does not, because `label_pop` frees at every scope exit and the allocator recycles. Two call sites needed reading rather than replacing: the goto arm reassigns `s` to a per-goto cleanup thunk before the hook runs, and `rir_hook_cleanup_thunk` records the same label from `g->cleanup_label->v`, which has to move to the id too or the thunk and the goto stop agreeing.
 - **A discarded call's statement position.** A call whose value is discarded becomes an arena statement only when the shadow stack drops it, and inside a statement expression the parser's `vpop` lands AFTER the following goto's and label's marks. `rir_flush_effect_top` takes an unparented effectful `AST_Invoke` off the shadow stack at those two marks; it must BLANK the entry, because `rir_drop` re-`rir_stmt`s any effectful node it pops without checking for a parent and a node added to one BasicBlock twice reads as "nchild disagrees with sibling chain". Neither this nor the label id closes anything alone; together they closed `local_label_test`.
