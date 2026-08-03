@@ -1,5 +1,9 @@
 #define USING_GLOBALS
 #include "mcc.h"
+/* gen_va_arg calls rir_hook_slot_replay/rir_hook_slot_record; in a multi-TU
+   build this file is its own translation unit and does not get mccrir.h
+   through mccgen.c. */
+#include "mccrir.h"
 #include <assert.h>
 
 ST_DATA const char *const target_machine_defs =
