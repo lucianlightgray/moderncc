@@ -633,13 +633,13 @@ void store(int r, SValue *v) { MCC_TRACE("enter\n");
 			gen_modrm64(op64, r, v->r, v->sym, fc);
 		} else if (fr != r) { MCC_TRACE("br\n");
 			orex(1, fr, r, op64);
-			o(0xc0 + fr + r * 8);
+			o(0xc0 + REG_VALUE(fr) + REG_VALUE(r) * 8);
 		}
 	} else { MCC_TRACE("br\n");
 		if (fr == VT_CONST || fr == VT_LOCAL || (v->r & VT_LVAL)) { MCC_TRACE("br\n");
 			gen_modrm(r, v->r, v->sym, fc);
 		} else if (fr != r) { MCC_TRACE("br\n");
-			o(0xc0 + fr + r * 8);
+			o(0xc0 + REG_VALUE(fr) + REG_VALUE(r) * 8);
 		}
 	}
 }

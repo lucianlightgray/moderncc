@@ -5020,6 +5020,26 @@ static int ast_promo_reg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return -1;
 }
 
+static int ast_subtree_has_call(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Invoke)
+		{ MCC_TRACE("br\n"); return 1; }
+	uint32_t nc = ast_nchild(a, n);
+	for (uint32_t i = 0; i < nc; i++)
+		{ MCC_TRACE("br\n"); if (ast_subtree_has_call(a, ast_child(a, n, i)))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
+static int ast_promo_store_late(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
+	if (!ast_promo_n || ast_in_graft || ast_nchild(a, s) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_promo_reg_of(a, ast_child(a, s, 0)) < 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_subtree_has_call(a, ast_child(a, s, 1));
+}
+
 static int ast_subtree_refs_local(AstArena *a, AstLocal n, int off) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -5485,6 +5505,14 @@ static void ast_promo_write(int reg, CType *ct) { MCC_TRACE("enter\n");
 	}
 }
 
+static void ast_promo_store_reg(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
+	AstLocal t = ast_child(a, s, 0);
+	CType tct;
+	tct.t = ast_type_t(a, t) & ~(VT_ARRAY | VT_VLA);
+	tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, t);
+	ast_promo_write(ast_promo_reg_of(a, t), &tct);
+}
+
 static void ast_promo_entry_init(void) { MCC_TRACE("enter\n");
 	ast_promo_save_plan();
 	int any_save = 0;
@@ -5576,6 +5604,15 @@ static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 	(void)i;
 	return 0;
 }
+static int ast_promo_store_late(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
+	(void)a;
+	(void)s;
+	return 0;
+}
+static void ast_promo_store_reg(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
+	(void)a;
+	(void)s;
+}
 #endif
 
 static void ast_error_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n");
@@ -5600,9 +5637,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			}
 			d0 = (int)(vtop - vstack);
 			if (ast_kind(a, c) == AST_Store && ast_nchild(a, c) == 2) { MCC_TRACE("br\n");
-				ast_replay_value(a, ast_child(a, c, 0));
-				ast_replay_value(a, ast_child(a, c, 1));
-				vstore();
+				if (ast_promo_store_late(a, c)) { MCC_TRACE("br\n");
+					ast_replay_value(a, ast_child(a, c, 1));
+					ast_promo_store_reg(a, c);
+				} else { MCC_TRACE("br\n");
+					ast_replay_value(a, ast_child(a, c, 0));
+					ast_replay_value(a, ast_child(a, c, 1));
+					vstore();
+				}
 			} else { MCC_TRACE("br\n");
 				ast_replay_value(a, c);
 			}
@@ -5613,9 +5655,14 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	}
 	case AST_Store: {
 		if (ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
-			ast_replay_value(a, ast_child(a, n, 0));
-			ast_replay_value(a, ast_child(a, n, 1));
-			vstore();
+			if (ast_promo_store_late(a, n)) { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, n, 1));
+				ast_promo_store_reg(a, n);
+			} else { MCC_TRACE("br\n");
+				ast_replay_value(a, ast_child(a, n, 0));
+				ast_replay_value(a, ast_child(a, n, 1));
+				vstore();
+			}
 		}
 		break;
 	}
