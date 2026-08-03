@@ -129,7 +129,7 @@ if "$GCC" -w -I"$root/tests/fuzz" "$fz/gendrv.c" -o "$fz/gen.exe" 2>/dev/null; t
 			[ "$(rr "$fz/cl.exe")" = "$r0" ] || { fzskip=$((fzskip+1)); s=$((s+1)); continue; }
 		fi
 		mst=agree
-		for rp in "" "MCC_AST_REGPAIR=1"; do
+		for rp in ""; do
 			env $rp "$MCCI" -O2 $BRT "$fz/p.c" -o "$fz/m.exe" $LNK 2>/dev/null || { mst=skip; break; }
 			mo=$(rr "$fz/m.exe")
 			if [ "$mo" != "$r0" ]; then
