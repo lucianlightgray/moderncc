@@ -2299,6 +2299,8 @@ void ast_fconst_record(int c) { MCC_TRACE("enter\n");
 #endif
 	if (!ast_active || ast_replaying)
 		{ MCC_TRACE("br\n"); return; }
+	if (!c)
+		{ MCC_TRACE("br\n"); return; }
 	if (ast_fconst_n == ast_fconst_cap) { MCC_TRACE("br\n");
 		ast_fconst_cap = ast_fconst_cap ? ast_fconst_cap * 2 : 16;
 		ast_fconst = mcc_realloc(ast_fconst, ast_fconst_cap * sizeof *ast_fconst);

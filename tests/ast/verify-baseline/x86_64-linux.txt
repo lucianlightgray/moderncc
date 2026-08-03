@@ -63,7 +63,6 @@ features_c99_c11/cleanup.c	test_ret2	unfaithful
 features_c99_c11/complex.c	main	desync
 features_c99_c11/complex_annexg.c	main	desync
 features_c99_c11/complex_cmplx_special.c	main	desync
-features_c99_c11/flt_eval_method.c	main	unfaithful
 features_c99_c11/fp_builtins.c	main	desync
 features_c99_c11/generic.c	main	unfaithful
 features_c99_c11/noreturn.c	drive_int	unfaithful
