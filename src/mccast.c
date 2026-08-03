@@ -1741,6 +1741,7 @@ static int ast_inline_env;
 static int ast_tmpl_folds;
 static MCC_OPT_TLS AstArena *ast_cur;
 int ast_bail;
+static int ast_rir_only_env;
 int ast_bail_line;
 static void ast_gap_note(void);
 #define AST_SET_BAIL() do { if (!ast_bail) { ast_bail_line = __LINE__; ast_gap_note(); } ast_bail = 1; } while (0)
@@ -2036,6 +2037,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit ||
 									 ast_env_int("MCC_FORCE_REPLAY", 0) ||
 									 ast_env_int("MCC_RIR_FORCE", 0);
+	ast_rir_only_env = ast_env_gate("MCC_RIR_ONLY", 0);
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_verify_env = ast_env_int("MCC_AST_VERIFY", 0);
 	ast_verify_out = getenv("MCC_AST_VERIFY_OUT");
@@ -14339,7 +14341,8 @@ static int ast_cse_run(AstArena *a) { MCC_TRACE("enter\n");
 }
 
 static int ast_replay_ok(AstArena *a) { MCC_TRACE("enter\n");
-	if (ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0)
+	if (!(ast_rir_only_env && rir_prod_env) &&
+			(ast_bail || ast_desync || ast_vn != 0 || ast_cf_top != 0))
 		{ MCC_TRACE("br\n"); return 0; }
 	return ast_first_child(a, ast_root(a)) != AST_NONE;
 }
@@ -16549,6 +16552,18 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_fn_tco = 0;
 		int ast_rir_arena = 0;
 #if MCC_REPLAY_IR
+		if (ast_rir_only_env && rir_prod_env) { MCC_TRACE("br\n");
+			ast_arena_free(ast_cur);
+			if (ast_rir_prod) { MCC_TRACE("br\n");
+				ast_cur = ast_rir_prod;
+				ast_rir_used = 1;
+				ast_rir_arena = 1;
+				ast_rir_prod = NULL;
+			} else { MCC_TRACE("br\n");
+				ast_cur = ast_arena_new();
+				ast_node(ast_cur, AST_BasicBlock);
+			}
+		}
 		if (ast_rir_prod) { MCC_TRACE("br\n");
 			if (ast_cur && ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
 				ast_arena_free(ast_cur);

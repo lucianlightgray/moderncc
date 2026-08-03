@@ -410,11 +410,40 @@ What the flip rests on, all measured on a short checkout path with nothing else 
 
 **A weak check worth not repeating.** "Compile one file with and without the switch and diff the object" proves nothing — only 69 of 562 files differ at `-O2` on x86_64, so most files are identical either way and read as "the flip did not take effect". Verify against a file already known to differ, or against the `[rir-prod-total]` counters at `MCC_RIR_PROD=2`.
 
-### P5 — delete the recorder
+### P5 — delete the recorder — blocked, and on exactly one thing
 
-1,716 lines of hooks and their 126 call sites; the shadow vstack (`ast_vs`, `ast_cf`, `ast_vn`); `ast_bail`/`ast_desync`/`AST_SET_BAIL`/`AST_SET_DESYNC`/`ast_gap_note`/`ast_replay_ok`; `ast_try_active`; the ~31 recorder-shape `MCC_AST_*` gates in `ast_configure` (`src/mccast.c:2055-2247`); `ast_ltemp_overlaps` if the LICM-temp table goes with it; the 4 `tests/ast/verify-baseline/` files; `ast-verify-ratchet-{O1,O2,O3}`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half.
+**The premise "nothing consumes the recorder's tree" is false, and the counter-example is one line.** `ast_replay_ok(ast_cur)` at `src/mccast.c:16553` is evaluated on the **tree**, and it is the arena's admission gate: `rir_prod_take()`'s arena is adopted only for a body the *recorder* also came out replayable on, and is otherwise freed with the verdict `noreplay`. `ast_replay_ok` is `!ast_bail && !ast_desync && ast_vn == 0 && ast_cf_top == 0 &&` root-has-a-child, and the first four terms are recorder state. With the recorder gone the predicate collapses to "the arena has a body", which is true of every arena the pre-flight admitted — so **the deletion widens the optimized population by every body the recorder declines, and those bodies have never been through a single pass.**
+
+There is a second consumer, and it turns out to be free: when the pre-flight refuses (`nomodel`), `ast_cur` stays the tree and **the tree is optimized and re-emitted**. That path is not a fallback to the parser's bytes, contrary to how P4 reads.
+
+**Measured at HEAD on x86_64 over `find tests -name '*.c'`, 657 files.** Per-body verdicts at `-O1` (`MCC_RIR_PROD=2`), 2503 bodies: `used` 2244, `fallback` 22, `nomodel` 80 (3.2%), `noreplay` **157 (6.3%)**. The two halves of the deletion were then simulated separately against the same binary with `SOURCE_DATE_EPOCH` pinned — files whose object moves, of files that compiled:
+
+| what the deletion changes | `-O1` | `-O2` |
+| --- | --- | --- |
+| widen — adopt the arena on its own pre-flight, ignoring the recorder's verdict | **36/562** | **67/562** |
+| narrow — drop the tree as the `nomodel` producer | **0/565** | **0/564** |
+| both, i.e. the P5 end state | **36/563** | **66/561** |
+
+**The narrow half is free; the widen half is the whole cost.** So exactly one property of the recorder is load-bearing — its per-body decline verdict, which keeps 6.3% of bodies out of the optimizer entirely. Everything else P5 lists really is dead.
+
+**And the widened population does not compile.** Three files stop terminating at `-O1` on x86_64 with the recorder's verdict ignored, each on a body that has never been optimized before: `tests/exec/structs_unions/struct_init.c` (the newly-admitted body is `test_multi_relocs` — over 2 GB resident and still growing after four minutes at `-O2`), `tests/exec/pointers_arrays/range_designator_copy.c`, and `tests/exec/features_c99_c11/cleanup.c`. Two of the three are range-designator initialisers (`[0 ... 3] = ...`), so this is probably one defect and not three. This is the "class that only Replay_IR can reach" arriving in bulk: a body the recorder declines is a body whose replay and pass defects have never been executed.
+
+**`MCC_RIR_ONLY` is the switch, and it is off by default.** On, `ast_func_end` adopts `rir_prod_take()`'s arena on the pre-flight alone and keeps the parser's bytes when the pre-flight refuses — exactly the state the deletion produces, measurable while the recorder is still there to be compared against. It is the same shape `MCC_RIR_PROD` had for P4, and it exists so that P5 does not have to be a 3,000-line deletion and a behaviour change in one commit. `MCC_RIR_ONLY` is inert under `MCC_REPLAY_IR` and `MCC_AST_VERIFY`, because `rir_prod_env` already is.
+
+**The order P5 now has to run in.**
+
+1. Close the three hangs; they are the only reason the switch cannot be turned on today.
+2. Take the twelve-key object A/B under `MCC_RIR_ONLY=1` and justify the moves the way P4 justified its own — the instrument is the runtime A/B (compile and run every `tests/exec` file, diff stdout and exit code), not the byte compare, because the byte compare cannot see a pass reading a type off the arena.
+3. Flip `MCC_RIR_ONLY` on by default.
+4. *Then* delete, and only then is P5's byte-identity gate achievable — with the switch already on, the deletion moves nothing by construction.
+
+**The inventory, verified against the tree at this commit** (the line numbers in earlier revisions of this section had all moved): the hook bodies are `src/mccast.c:2318-4023`, 1,706 lines; 76 declarations in `src/mccast.h` and 124 call sites in `src/mccgen.c`; the shadow vstack (`ast_vs`, `ast_cf_if`/`ast_cf_savebb`/`ast_cf_top`, `ast_vn`); `ast_bail`/`ast_desync`/`AST_SET_BAIL`/`AST_SET_DESYNC`/`ast_gap_note`/`ast_replay_ok`/`ast_try_active`; the recorder-shape `MCC_AST_*` gates in `ast_configure` (14 have no reader outside the hook block: `CALL_NORETURN`, `CLEANUP_RET`, `CONVERT_GV`, `FNEG`, `INDIRECT_LOAD`, `INT128`, `LANDOR_FOLD`, `LANDOR_INVERT`, `LDOUBLE`, `NOCODE_CALL`, `OPASSIGN`, `REGPAIR`, `TERNARY_DISCARD`, `VOIDRET_EXPR` — and `ast_jit_guard_env` at `src/mccast.c:1384` is already dead today, declared and never assigned); the 4 `tests/ast/verify-baseline/` files; `ast-verify-ratchet-{O1,O2,O3}`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half; `MCC_AST_INT128=1` in `rir_parity.cmake`'s forced-`-O0` env; and `MCC_RIR_PROD` and `MCC_RIR_ONLY` themselves.
+
+**Six things inside the hook block are not the recorder's and must stay**: `ast_label_id` and `ast_label_forget` (`src/mccgen.c` calls both, and `rir_hook_goto`/`rir_hook_label`/`rir_hook_cleanup_thunk` are the reason the id exists at all), `ast_sv_hi` and `ast_cmp_invert_late` (three and one call sites in `src/mccrir.c`), `ast_bad_type` (`src/mccast.c:7037`, in the passes), and `ast_func_has_asm` (`src/mccrir.c:2541`). `ast_bad_vtype`/`ast_wide_vtype` survive only as long as `ast_try_active`'s `ast_ret_bad` term does.
 
 **The 44 `ast/replay-*` cells survive and become Replay_IR's regression suite for free** — they assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic. So do the 20 `asttool` suites, which never touch the recorder.
+
+**The compile-time dividend cannot be measured until the deletion happens.** `MCC_RIR_ONLY=1` still builds the shadow tree; it only stops reading it. Whatever the recorder costs per compile is still there, and the first honest reading of it is the deletion's own before/after.
 
 ### P6 — split and rename
 
