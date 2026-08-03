@@ -1009,11 +1009,32 @@ over, is the clean `Load(Binary +)`.
 `vpushi(cofs); gen_op('+')`, then re-set `VT_LVAL`. That reaches the same address by
 a different route, and somewhere in that route the load is materialised eagerly.
 
-**Still not pinned: what makes it eager.** The `Convert t=5` above the `MEMBER` is the
-prime suspect — replaying a `Convert` calls `gen_cast`, which `gv`s an lvalue and
-would emit exactly the observed `mov (%rcx),%rcx` — **but this is unverified**, and
-the `OPTS` argument carries a `Convert` too without diverging, so the discriminator
-between the two is not established. Do not fix on the suspicion alone: **this class is
+**The emitting op is now identified.** `-DRIR_DBG_OPTRACE=1` with
+`RIRDBG=interesting` labels the C2 leg's own op stream `C2`, and at the divergence
+offset (body-relative 439; first C2 `ind=16335`, so absolute 16774) it reads:
+
+```
+[optrace] C2  pushlit  ind=16767      <- MEMBER's vpushi(cofs)
+[optrace] C2  genop    ind=16767      <- MEMBER's gen_op('+'), the +8
+[optrace] C2  vswap    ind=16767
+[optrace] C2  gv       ind=16767
+[optrace] C2  load     ind=16767      <- 3 bytes; next op sits at 16770
+```
+
+Three bytes at exactly the diverging offset, which is the `48 8b 09`. So **the
+`VT_LVAL` that `AST_OP_MEMBER` sets at `src/mccast.c:4241` is `gv`'d immediately**,
+where the parser carries the same lvalue to `gfunc_call` and loads it at push time.
+Note the op sequences cannot be diffed positionally to find this — the C2 leg replays
+a tree through different primitives (245 ops against the parser's 382) — so align by
+`ind=` and not by position.
+
+**What is still not established is the discriminator.** `Convert t=5` above the
+`MEMBER` remains the prime suspect, since replaying a `Convert` calls `gen_cast`,
+which `gv`s an lvalue. But the `OPTS[i]` argument carries a `Convert t=5` too and does
+*not* load early, and `[arg]` reports **both** operands as `cur=Load … curt=0 st=5` —
+untyped children in both cases. So "the child is untyped so the cast is real" does not
+by itself separate them, and the next step is to find what does: read `gen_cast`'s
+early-out against both shapes, or tap the two `Convert` replays directly. Do not fix on the suspicion alone: **this class is
 LIVE**, so unlike every other entry here a wrong fix ships as wrong code instead of
 sitting behind the fallback.
 
