@@ -7008,6 +7008,11 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			next();
 			typespec_found = 1;
 			break;
+		case TOK_COMPLEX2:
+			complex_seen = 1;
+			next();
+			typespec_found = 1;
+			break;
 		case TOK_IMAGINARY:
 			mcc_error("imaginary types are not supported");
 			break;
@@ -10602,6 +10607,14 @@ tok_next:
 			CST_CLOSE();
 		}
 		break;
+	case TOK_TRANSACTION_ATOMIC:
+	case TOK_TRANSACTION_RELAXED:
+		next();
+		parse_attribute(NULL);
+		skip('(');
+		gexpr();
+		skip(')');
+		break;
 	case '*':
 		next();
 		unary();
@@ -12922,6 +12935,7 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_LONG:
 	case TOK_BOOL:
 	case TOK_COMPLEX:
+	case TOK_COMPLEX2:
 	case TOK_IMAGINARY:
 	case TOK_FLOAT:
 	case TOK_DOUBLE:
@@ -13091,6 +13105,11 @@ again:
 		gsym_addr(b, d);
 		gsym(a);
 		prev_scope_s(&o);
+	} else if (t == TOK_TRANSACTION_ATOMIC || t == TOK_TRANSACTION_RELAXED) { MCC_TRACE("br\n");
+		parse_attribute(NULL);
+		block(flags);
+	} else if (t == TOK_TRANSACTION_CANCEL) { MCC_TRACE("br\n");
+		skip(';');
 	} else if (t == '{') { MCC_TRACE("br\n");
 		if (debug_modes)
 			{ MCC_TRACE("br\n"); mcc_debug_stabn(mcc_state, N_LBRAC, ind - func_ind); }

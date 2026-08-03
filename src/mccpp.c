@@ -2815,6 +2815,18 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 	if ((ch == 'i' || ch == 'I' || ch == 'j' || ch == 'J') && (tok == TOK_CFLOAT || tok == TOK_CDOUBLE || tok == TOK_CLDOUBLE || (tok >= TOK_CINT && tok <= TOK_CULONG))) { MCC_TRACE("br\n");
 		tok_imaginary = 1;
 		ch = *p++;
+		if (tok == TOK_CDOUBLE) { MCC_TRACE("br\n");
+			t = toup(ch);
+			if (t == 'F') { MCC_TRACE("br\n");
+				ch = *p++;
+				tok = TOK_CFLOAT;
+				tokc.f = (float)tokc.d;
+			} else if (t == 'L') { MCC_TRACE("br\n");
+				ch = *p++;
+				tok = TOK_CLDOUBLE;
+				tokc.ld = (long double)tokc.d;
+			}
+		}
 	}
 	if (ch)
 		{ MCC_TRACE("br\n"); mcc_error("invalid number"); }
