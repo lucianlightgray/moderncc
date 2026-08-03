@@ -2008,17 +2008,33 @@ static int rir_addr_pure(AstLocal n, int depth) {
 		return ast_nchild(rir_arena, n) == 1 &&
 					 rir_addr_pure(ast_first_child(rir_arena, n), depth + 1);
 	}
+	if (k == AST_Binary) {
+		int op = ast_op(rir_arena, n);
+		if (op != '+' && op != '-' && op != '*' && op != '&' && op != '|' &&
+				op != '^' && op != TOK_SHL && op != TOK_SHR && op != TOK_SAR)
+			return 0;
+		return ast_nchild(rir_arena, n) == 2 &&
+					 rir_addr_pure(ast_child(rir_arena, n, 0), depth + 1) &&
+					 rir_addr_pure(ast_child(rir_arena, n, 1), depth + 1);
+	}
 	return 0;
 }
 
 static int rir_lvalue_shape(AstLocal n) {
 	int op;
-	if (n == AST_NONE || ast_kind(rir_arena, n) != AST_Unary)
+	uint16_t k;
+	if (n == AST_NONE)
+		return 0;
+	if (ast_type_t(rir_arena, n) & (VT_BITFIELD | VT_ARRAY | VT_VLA))
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Load)
+		return ast_nchild(rir_arena, n) == 1 &&
+					 rir_addr_pure(ast_first_child(rir_arena, n), 0);
+	if (k != AST_Unary)
 		return 0;
 	op = ast_op(rir_arena, n);
 	if (op != AST_OP_MEMBER && op != AST_OP_MEMBER_ARROW)
-		return 0;
-	if (ast_type_t(rir_arena, n) & (VT_BITFIELD | VT_ARRAY | VT_VLA))
 		return 0;
 	return ast_nchild(rir_arena, n) == 1 &&
 				 rir_addr_pure(ast_first_child(rir_arena, n), 0);
