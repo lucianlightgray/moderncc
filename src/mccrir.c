@@ -2771,6 +2771,30 @@ static AstLocal rir_retexpr = AST_NONE;
 static int rir_retexpr_depth;
 static int rir_retexpr_pending;
 
+/* A call whose value is discarded becomes a statement only when the shadow
+   stack drops it, and inside a statement expression the parser's vpop for it
+   lands AFTER the following goto's and label's marks -- so the arena reads
+   Jump, Jump, Invoke where the parser emitted the call first. A goto or a
+   label is a point no value crosses in the emitted stream, so an unparented
+   effectful top here has already been emitted and belongs before the jump.
+   The entry is blanked rather than left in place: rir_drop re-stmts any
+   effectful node it pops without checking whether it already has a parent,
+   and a node added to one BasicBlock twice reads as "nchild disagrees with
+   sibling chain". Blanking keeps the depth and drops the second add. */
+static void rir_flush_effect_top(void) {
+	AstLocal t;
+	if (rir_shn <= 0 || rir_call_depth || rir_cond_depth || rir_lorn ||
+			rir_ternn || rir_iholdn)
+		return;
+	t = rir_sh[rir_shn - 1];
+	if (t == AST_NONE || ast_parent(rir_arena, t) != AST_NONE ||
+			ast_kind(rir_arena, t) != AST_Invoke)
+		return;
+	rir_stmt(t);
+	rir_sh[rir_shn - 1] = AST_NONE;
+	rir_shtype[rir_shn - 1] = 0;
+}
+
 static void rir_mark_apply(const RirOp *ro) {
 	AstLocal a, n;
 	switch (ro->rkind) {
@@ -2858,6 +2882,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	case RIR_M_GOTO:
+		rir_flush_effect_top();
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, 5);
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);
@@ -2904,6 +2929,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	case RIR_M_LABEL:
 		rir_after_ret = 0;
+		rir_flush_effect_top();
 		n = ast_node(rir_arena, AST_Jump);
 		ast_set_op(rir_arena, n, 4);
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)ro->rval);

@@ -3242,6 +3242,44 @@ void ast_hook_switch_end(void) { MCC_TRACE("enter\n");
 	ast_switch_node = AST_NONE;
 }
 
+/* A label's identity in the arena cannot be its token. Two `__label__ l1`
+   declarations in different statement-expression scopes are the same token,
+   and ast_rp_label_get keys on it, so the arena's labels alias where the
+   parser's label_find scoping keeps them apart -- ast_rp_label_floor scopes
+   only the inline-graft path. The Sym is unique while it lives, so hand out a
+   monotonic id per Sym and forget it when label_pop frees the Sym; a bare
+   pointer would alias again as soon as the allocator recycled the address. */
+#define AST_LBLMAP_MAX 512
+static void *ast_lblmap_sym[AST_LBLMAP_MAX];
+static int ast_lblmap_id[AST_LBLMAP_MAX];
+static int ast_lblmap_n;
+static int ast_lblseq;
+
+int ast_label_id(void *s) { MCC_TRACE("enter\n");
+	int i;
+	if (!s)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < ast_lblmap_n; i++)
+		{ MCC_TRACE("br\n"); if (ast_lblmap_sym[i] == s)
+			{ MCC_TRACE("br\n"); return ast_lblmap_id[i]; } }
+	if (ast_lblmap_n >= AST_LBLMAP_MAX)
+		{ MCC_TRACE("br\n"); return 0; }
+	ast_lblmap_sym[ast_lblmap_n] = s;
+	ast_lblmap_id[ast_lblmap_n] = ++ast_lblseq;
+	return ast_lblmap_id[ast_lblmap_n++];
+}
+
+void ast_label_forget(void *s) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < ast_lblmap_n; i++)
+		{ MCC_TRACE("br\n"); if (ast_lblmap_sym[i] == s) { MCC_TRACE("br\n");
+			ast_lblmap_sym[i] = ast_lblmap_sym[ast_lblmap_n - 1];
+			ast_lblmap_id[i] = ast_lblmap_id[ast_lblmap_n - 1];
+			ast_lblmap_n--;
+			return;
+		} }
+}
+
 void ast_hook_label(int v) { MCC_TRACE("enter\n");
 	if (!ast_active || ast_desync || ast_bail)
 		{ MCC_TRACE("br\n"); return; }

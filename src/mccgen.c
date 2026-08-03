@@ -1378,7 +1378,7 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) { MCC_TRACE("enter\n");
 		if (s->r != LABEL_GONE)
 			{ MCC_TRACE("br\n"); table_ident[s->v - TOK_IDENT]->sym_label = s->prev_tok; }
 		if (!keep)
-			{ MCC_TRACE("br\n"); sym_free(s); }
+			{ MCC_TRACE("br\n"); ast_label_forget(s); sym_free(s); }
 		else
 			{ MCC_TRACE("br\n"); s->r = LABEL_GONE; }
 	}
@@ -12289,13 +12289,13 @@ static void block_cleanup(struct scope *o) { MCC_TRACE("enter\n");
 			if (!jmp)
 				{ MCC_TRACE("br\n"); jmp = gjmp(0); }
 #if MCC_CONFIG_OPTIMIZER
-			rir_hook_cleanup_thunk(pcl, g->cleanup_label->v, 0);
+			rir_hook_cleanup_thunk(pcl, ast_label_id(g->cleanup_label), 0);
 #endif
 			gsym(pcl->jnext);
 			try_call_scope_cleanup(o->cl.s);
 			pcl->jnext = gjmp(0);
 #if MCC_CONFIG_OPTIMIZER
-			rir_hook_cleanup_thunk(pcl, g->cleanup_label->v, 1);
+			rir_hook_cleanup_thunk(pcl, ast_label_id(g->cleanup_label), 1);
 #endif
 			if (!o->cl.n)
 				{ MCC_TRACE("br\n"); goto remove_pending; }
@@ -12989,11 +12989,15 @@ again:
 #endif
 			ggoto();
 		} else if (tok >= TOK_UIDENT) { MCC_TRACE("br\n");
+			Sym *lsym;
 			s = label_find(tok);
 			if (!s)
 				{ MCC_TRACE("br\n"); s = label_push(&global_label_stack, tok, LABEL_FORWARD); }
 			else if (s->r == LABEL_DECLARED)
 				{ MCC_TRACE("br\n"); s->r = LABEL_FORWARD; }
+			/* The cleanup arm below reassigns s to a per-goto thunk Sym, so the
+			   label's own identity has to be taken before it. */
+			lsym = s;
 
 			if (s->r & LABEL_FORWARD) { MCC_TRACE("br\n");
 				if (vla_seq < s->vla_min_goto_gpp)
@@ -13015,8 +13019,8 @@ again:
 				gjmp_addr(s->jind);
 			}
 #if MCC_CONFIG_OPTIMIZER
-			rir_hook_goto(tok);
-			ast_hook_goto(tok);
+			rir_hook_goto(ast_label_id(lsym));
+			ast_hook_goto(ast_label_id(lsym));
 #endif
 			next();
 		} else { MCC_TRACE("br\n");
@@ -13062,8 +13066,8 @@ again:
 			if (s->vla_min_goto_gpp < s->vla_inner_id)
 				{ MCC_TRACE("br\n"); mcc_error("goto jumps into the scope of a variably modified declaration"); }
 #if MCC_CONFIG_OPTIMIZER
-			rir_hook_label(t);
-			ast_hook_label(t);
+			rir_hook_label(ast_label_id(s));
+			ast_hook_label(ast_label_id(s));
 #endif
 
 		block_after_label:
