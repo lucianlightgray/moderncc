@@ -81,8 +81,6 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 	case R_AARCH64_TLSLE_LDST32_TPREL_LO12_NC:
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12:
 	case R_AARCH64_TLSLE_LDST64_TPREL_LO12_NC:
-	case R_AARCH64_TLSDESC_ADR_PAGE21:
-	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
 	case R_AARCH64_TLSDESC_CALL:
 		return NO_GOTPLT_ENTRY;
@@ -95,6 +93,8 @@ ST_FUNC int gotplt_entry_type(int reloc_type) { MCC_TRACE("enter\n");
 
 	case R_AARCH64_ADR_GOT_PAGE:
 	case R_AARCH64_LD64_GOT_LO12_NC:
+	case R_AARCH64_TLSDESC_ADR_PAGE21:
+	case R_AARCH64_TLSDESC_LD64_LO12:
 		return ALWAYS_GOTPLT_ENTRY;
 	}
 	return -1;
@@ -468,11 +468,25 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 	case R_AARCH64_TLSDESC_LD64_LO12:
 	case R_AARCH64_TLSDESC_ADD_LO12:
 	case R_AARCH64_TLSDESC_CALL: {
-		if ((s1->output_type & MCC_OUTPUT_DLL) && !(s1->output_type & MCC_OUTPUT_EXE)) { MCC_TRACE("br\n");
-			mcc_error_noabort("R_AARCH64_TLSDESC relocation type 0x%x to shared object not supported",
-												(unsigned)type);
+#ifndef MCC_TARGET_PE
+		if (s1->output_type & MCC_OUTPUT_DYN) { MCC_TRACE("br\n");
+			addr_t slot = s1->got->sh_addr +
+										get_sym_attr(s1, sym_index, 0)->got_offset;
+			if (type == R_AARCH64_TLSDESC_ADR_PAGE21) { MCC_TRACE("br\n");
+				uint64_t off = (slot >> 12) - (addr >> 12);
+				if ((off + ((uint64_t)1 << 20)) >> 21)
+					{ MCC_TRACE("br\n"); mcc_error_noabort("R_AARCH64_TLSDESC_ADR_PAGE21 relocation failed"); }
+				write32le(ptr, ARM64_ADRP | ARM64_RD(0) |
+											 (uint32_t)((off & 0x1ffffc) << 3) |
+											 (uint32_t)((off & 3) << 29));
+			} else if (type == R_AARCH64_TLSDESC_LD64_LO12) { MCC_TRACE("br\n");
+				write32le(ptr, ARM64_LDR_X | ARM64_RN(0) | ARM64_RT(0) |
+											 (uint32_t)((slot & 0xff8) << 7));
+			} else
+				{ MCC_TRACE("br\n"); write32le(ptr, ARM64_NOP); }
 			return;
 		}
+#endif
 		addr_t tls_start = 0;
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			Section *s = s1->sections[i];

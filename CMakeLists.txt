@@ -1433,6 +1433,12 @@ if(MCC_CC_NAME STREQUAL "mcc" AND WIN32)
     set(CMAKE_IMPORT_LIBRARY_SUFFIX ".def")
     set(CMAKE_LINK_LIBRARY_SUFFIX "")
 endif()
+if(MCC_CC_NAME STREQUAL "mcc" AND NOT WIN32
+   AND NOT CMAKE_C_COMPILE_OPTIONS_PIC)
+
+    set(CMAKE_C_COMPILE_OPTIONS_PIC "-fPIC")
+    set(CMAKE_C_COMPILE_OPTIONS_PIE "-fPIE")
+endif()
 if("${CMAKE_C_COMPILER_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)")
     set(MCC_GCC_MAJOR "${CMAKE_MATCH_1}")
     set(MCC_GCC_MINOR "${CMAKE_MATCH_2}")
@@ -5130,6 +5136,20 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(tls-models PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
         else()
             mcc_skip_test(tls-models "tls-models gate: native x86_64 Linux only")
+        endif()
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/shared.c")
+        if(MCC_CPU STREQUAL "arm64" AND NOT MCC_TARGETOS STREQUAL "WIN32"
+           AND NOT MCC_TARGETOS STREQUAL "Darwin")
+            add_test(NAME tls-shared COMMAND "${CMAKE_COMMAND}"
+                "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}"
+                "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/shared.c"
+                "-DOUT=${CMAKE_BINARY_DIR}/tls-shared.so"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/tls/run_shared.cmake")
+            set_tests_properties(tls-shared PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        else()
+            mcc_skip_test(tls-shared "tls-shared gate: arm64 ELF only; dynamic TLS is unimplemented on arm and riscv64, and Mach-O/PE reach the thread block through their own loaders")
         endif()
     endif()
 

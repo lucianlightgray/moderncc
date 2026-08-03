@@ -518,6 +518,7 @@ static void reduce(const char *mcc, const Refs *refs,
 	if (!d.n)
 		return;
 	char *keep = malloc(d.n);
+	char *cleared = calloc(d.n, 1);
 	memset(keep, 1, d.n);
 	char cand[2048];
 	snprintf(cand, sizeof cand, "%s/reduce_cand.c", work);
@@ -529,6 +530,7 @@ static void reduce(const char *mcc, const Refs *refs,
 			for (int i = start; i < start + chunk && i < d.n; i++)
 				if (keep[i]) {
 					keep[i] = 0;
+					cleared[i] = 1;
 					any = 1;
 				}
 			if (!any)
@@ -537,17 +539,33 @@ static void reduce(const char *mcc, const Refs *refs,
 			if (interesting(mcc, refs, bdir, idir, work, cand))
 				changed = 1;
 			else
+				/* Undo THIS attempt, not the whole chunk: a line an earlier
+				   accepted step removed must stay removed. Restoring it here
+				   revives a `}` whose `for (...) {` is gone, and keep[] stops
+				   describing any candidate that was ever tested. */
 				for (int i = start; i < start + chunk && i < d.n; i++)
-					keep[i] = 1;
+					if (!keep[i] && cleared[i])
+						keep[i] = 1;
+			for (int i = start; i < start + chunk && i < d.n; i++)
+				cleared[i] = 0;
 		}
 		if (!changed && chunk > 1)
 			chunk = (chunk + 1) / 2;
+	}
+	doc_write(&d, cand, keep);
+	if (!interesting(mcc, refs, bdir, idir, work, cand)) {
+		/* Never bank a repro that does not reproduce: the corpus is checked in
+		   and replayed, and a file that no longer diverges reads as a pass. */
+		fprintf(stderr, "reduce: final candidate is not interesting; "
+						"saving the unreduced program\n");
+		memset(keep, 1, d.n);
 	}
 	doc_write(&d, outpath, keep);
 	for (int i = 0; i < d.n; i++)
 		free(d.line[i]);
 	free(d.line);
 	free(keep);
+	free(cleared);
 }
 
 static int ends_with(const char *s, const char *sfx) {

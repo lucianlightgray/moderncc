@@ -2548,12 +2548,15 @@ void ast_hook_cmp_invert(void) { MCC_TRACE_IF("enter r=%#x t=%#x vn=%d rel=%d\n"
 	AST_SET_DESYNC();
 	return;
 #else
+	/* Either way the node's operator becomes the inverted one -- that is what
+	   the source asked for and what every pass reading it must see. The flag
+	   records only that the parser reached it by inverting flags, which replay
+	   has to reproduce instruction for instruction. */
+	ast_set_op(ast_cur, n, op ^ 1);
 	if (ast_cmp_invert_late(ast_cur, n, op)) { MCC_TRACE("br\n");
 		ast_set_fbits(ast_cur, n,
 									ast_fbits(ast_cur, n) ^ AST_FB_CMP_INVERT_LATE);
-		return;
 	}
-	ast_set_op(ast_cur, n, op ^ 1);
 #endif
 }
 
@@ -5864,7 +5867,12 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); gv(USING_TWO_WORDS(vtop->type.t)
 															? MCC_RC_RET(vtop->type.t)
 															: MCC_RC_TYPE(vtop->type.t)); }
-		gen_op(bop);
+
+		/* The node's operator is the one the source asked for. The parser got
+		   there by running the opposite comparison and swapping the flags, and
+		   on arm64 that is a different instruction pair than the operator taken
+		   straight, so reproduce the act rather than the result. */
+		gen_op((ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) ? bop ^ 1 : bop);
 		if (ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) { MCC_TRACE("br\n");
 			if (vtop->r == VT_CMP) { MCC_TRACE("br\n");
 				int j = vtop->jfalse;
@@ -5872,6 +5880,9 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				vtop->jtrue = j;
 				vtop->cmp_op ^= 1;
 			} else if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+				/* Both operands folded, so there are no flags left to swap and
+				   the opposite comparison above stands as the answer. Negate it
+				   to get back to the operator the source asked for. */
 				vtop->c.i = !vtop->c.i;
 			} else { MCC_TRACE("br\n");
 				mcc_error("ast-replay: late comparison inversion lost");
