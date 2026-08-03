@@ -4695,29 +4695,76 @@ long ast_strpool_find_or_add(void *sec, long addr, long size, int align) { MCC_T
 	return -1;
 }
 
-#define AST_DU_CAP 2048
 #define AST_DU_WRITTEN 1u
 #define AST_DU_ESCAPED 2u
 static MCC_OPT_TLS const AstArena *ast_du_arena;
 static MCC_OPT_TLS uint64_t ast_du_epoch;
 static MCC_OPT_TLS int ast_du_state;
 static MCC_OPT_TLS int ast_du_n;
-static MCC_OPT_TLS int ast_du_off[AST_DU_CAP];
-static MCC_OPT_TLS uint8_t ast_du_flags[AST_DU_CAP];
+static MCC_OPT_TLS int ast_du_cap;
+static MCC_OPT_TLS int *ast_du_off;
+static MCC_OPT_TLS uint8_t *ast_du_flags;
+static MCC_OPT_TLS int ast_du_hn;
+static MCC_OPT_TLS int *ast_du_hash;
+
+static unsigned ast_du_bucket(int off) { MCC_TRACE("enter\n");
+	unsigned h = (unsigned)off * 2654435761u;
+	return h ^ (h >> 15);
+}
+
+static void ast_du_rehash(void) { MCC_TRACE("enter\n");
+	unsigned m = (unsigned)ast_du_hn - 1;
+	memset(ast_du_hash, 0, (size_t)ast_du_hn * sizeof *ast_du_hash);
+	for (int i = 0; i < ast_du_n; i++) { MCC_TRACE("br\n");
+		unsigned j = ast_du_bucket(ast_du_off[i]) & m;
+		while (ast_du_hash[j])
+			{ MCC_TRACE("br\n"); j = (j + 1) & m; }
+		ast_du_hash[j] = i + 1;
+	}
+}
 
 static uint8_t *ast_du_find(int off, int create) { MCC_TRACE("enter\n");
-	for (int i = 0; i < ast_du_n; i++)
-		{ MCC_TRACE("br\n"); if (ast_du_off[i] == off)
-			{ MCC_TRACE("br\n"); return &ast_du_flags[i]; } }
-	if (!create || ast_du_n >= AST_DU_CAP)
+	unsigned m, j;
+	if (!ast_du_hn) { MCC_TRACE("br\n");
+		ast_du_hn = 256;
+		ast_du_hash =
+				mcc_realloc(ast_du_hash, (size_t)ast_du_hn * sizeof *ast_du_hash);
+		memset(ast_du_hash, 0, (size_t)ast_du_hn * sizeof *ast_du_hash);
+	}
+	m = (unsigned)ast_du_hn - 1;
+	j = ast_du_bucket(off) & m;
+	while (ast_du_hash[j]) { MCC_TRACE("br\n");
+		int i = ast_du_hash[j] - 1;
+		if (ast_du_off[i] == off)
+			{ MCC_TRACE("br\n"); return &ast_du_flags[i]; }
+		j = (j + 1) & m;
+	}
+	if (!create)
 		{ MCC_TRACE("br\n"); return NULL; }
+	if (ast_du_n >= ast_du_cap) { MCC_TRACE("br\n");
+		ast_du_cap = ast_du_cap ? ast_du_cap * 2 : 256;
+		ast_du_off = mcc_realloc(ast_du_off, (size_t)ast_du_cap * sizeof *ast_du_off);
+		ast_du_flags =
+				mcc_realloc(ast_du_flags, (size_t)ast_du_cap * sizeof *ast_du_flags);
+	}
 	ast_du_off[ast_du_n] = off;
 	ast_du_flags[ast_du_n] = 0;
-	return &ast_du_flags[ast_du_n++];
+	ast_du_n++;
+	if (ast_du_n * 2 >= ast_du_hn) { MCC_TRACE("br\n");
+		ast_du_hn *= 2;
+		ast_du_hash =
+				mcc_realloc(ast_du_hash, (size_t)ast_du_hn * sizeof *ast_du_hash);
+		ast_du_rehash();
+	} else { MCC_TRACE("br\n");
+		ast_du_hash[j] = ast_du_n;
+	}
+	return &ast_du_flags[ast_du_n - 1];
 }
 
 static void ast_du_build(const AstArena *a) { MCC_TRACE("enter\n");
 	ast_du_n = 0;
+	if (ast_du_hn)
+		{ MCC_TRACE("br\n"); memset(ast_du_hash, 0, (size_t)ast_du_hn * sizeof *ast_du_hash); }
 	ast_du_state = 1;
 	AstLocal nn = ast_count(a);
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");

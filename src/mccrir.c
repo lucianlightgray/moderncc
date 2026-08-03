@@ -167,6 +167,7 @@ static int rir_stack[256];
 static int rir_stackn;
 static int rir_unbal;
 static int rir_ovf;
+static int rir_prod_bail;
 static int rir_fail_op, rir_fail_kind;
 static int *rir_jlbl, *rir_jlbl2, *rir_jpt;
 static int rir_jcap;
@@ -527,9 +528,12 @@ void rir_hook_body_begin(void) {
 	rir_base_depth = (int)(vtop - vstack + 1);
 	rir_cleanup_depth_sv = -1;
 	rir_started = 0;
+	rir_prod_bail = 0;
 	rir_tern_n = 0;
 	rir_lor_n = 0;
 }
+
+void rir_hook_bail(void) { rir_prod_bail = 1; }
 
 void rir_hook_cleanup_call_begin(void) {
 	int d = (int)(vtop - vstack + 1);
@@ -4412,7 +4416,7 @@ struct AstArena *rir_prod_take(void) {
 	char msg[256];
 	AstArena *a;
 	int i, nops = 0;
-	if (!rir_prod_env || rir_env)
+	if (!rir_prod_env || rir_env || rir_prod_bail)
 		return NULL;
 	rir_build();
 	for (i = 0; i < rir_n; i++)
