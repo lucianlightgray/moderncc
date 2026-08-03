@@ -93,7 +93,7 @@ static void timeout_wrap(const char *cmd, char *out, size_t n) {
 				 "{ %s & __p=$!; "
 				 "{ __i=0; while [ $__i -lt %d ]; do sleep 1; "
 				 "kill -0 $__p 2>/dev/null || exit 0; __i=$((__i+1)); done; "
-				 "kill -9 $__p 2>/dev/null; } & __w=$!; "
+				 "kill -9 $__p 2>/dev/null; } >/dev/null 2>&1 & __w=$!; "
 				 "wait $__p; __r=$?; kill $__w 2>/dev/null; exit $__r; }",
 				 cmd, RUN_TIMEOUT);
 }
