@@ -986,84 +986,48 @@ cells, all passing). Nothing to rebank — the seam moved no `BANKGAP`, and the
 twelve-key byte board is identical on every pre-existing counter either side of it.
 
 - `bounds_stress.c::test16` and `::test17`, **24**, both on all twelve keys: `strcpy(q = alloca(strlen(demo) + 1), demo)` inside a call argument. The trial re-evaluates `strlen(demo) + 1` and calls `alloca` a second time instead of reusing the value. Nested call in an argument, so the same family as `struct_assign_test`. **INERT — both read `[rir-prod] fallback`**, so the double-`alloca` never ships; an earlier revision called it *"likely not equivalent"*, which was true of the re-emission and irrelevant to the binary. Largest model gap on the board, still worth closing for deletion completeness, but not a wrong-code item.
-- `fuzz/runner.c::triage`, `::interesting`, `::main` — **LIVE, and the only live class on this list. `[rir-prod-total] used=49 fallback=0`**: the pre-flight accepts all 49 bodies, so the arena's bytes — including the extra dereference — actually ship at `-O1`+. This is the one entry where correctness rests on the arena and the parser being equivalent rather than on the fallback, which makes it the highest-priority item here even though its byte count is not the largest. The extra `mov (%rcx),%rcx` loads the same pointer the parser loads later, so it is very probably equivalent, and the goldens are green — but "probably" is doing work no other entry on this list needs. **The scope on this line was also wrong; see URGENT item 5.** Open at `-O1` on **arm64, riscv64, arm and i386** and at forced `-O0` on **x86_64**; the store-chain fix closed x86_64 at `-O1` only. **Root-caused at `bc85ce70`, x86_64 `-O0`:** all three insert the *identical* three bytes, `48 8b 09` (`mov (%rcx),%rcx`) — the same "extra dereference the parser did not make" seen as `ldr x0,[x0]` on arm64-osx, so it is one defect on every key. The source shape is `GATES[g].env` (a member at offset 8 of an array element) passed as a call argument. **The parser defers the load to argument-marshalling time**: it computes *all* argument addresses first, then loads each at push time inside `gfunc_call`, in reverse order — `add $0x8,%rcx` … `mov (%rdx),%rdx; push %rdx; mov (%rcx),%rcx; push %rcx`. Replay emits the `AST_Load` eagerly at expression position instead. `AST_Load` replays as `ast_replay_value(child); indir();` (`src/mccast.c:4319-4322`) and `indir()` emits a load **only when its operand arrives `VT_LVAL`**, so the address subtree is reaching replay as an lvalue where the parser had a plain rvalue. **The arena shape is now known, from `MCC_REPLAY_IR=6`'s `[rir-dump]` of `interesting`.**
-The two arguments of the same call are built asymmetrically, and the correct shape is
-visible right beside the wrong one:
+- `fuzz/runner.c::triage`, `::interesting`, `::main` — **LIVE, and the only live class on this list. `[rir-prod-total] used=49 fallback=0`**: the pre-flight accepts all 49 bodies, so the arena's bytes — including the extra dereference — actually ship at `-O1`+. This is the one entry where correctness rests on the arena and the parser being equivalent rather than on the fallback, which makes it the highest-priority item here even though its byte count is not the largest. The extra `mov (%rcx),%rcx` loads the same pointer the parser loads later, so it is very probably equivalent, and the goldens are green — but "probably" is doing work no other entry on this list needs. **The scope on this line was also wrong; see URGENT item 5.** Open at `-O1` on **arm64, riscv64, arm and i386** and at forced `-O0` on **x86_64**; the store-chain fix closed x86_64 at `-O1` only. **Root-caused at `bc85ce70`, x86_64 `-O0`:** all three insert the *identical* three bytes, `48 8b 09` (`mov (%rcx),%rcx`) — the same "extra dereference the parser did not make" seen as `ldr x0,[x0]` on arm64-osx, so it is one defect on every key. The source shape is `GATES[g].env` (a member at offset 8 of an array element) passed as a call argument. **The parser defers the load to argument-marshalling time**: it computes *all* argument addresses first, then loads each at push time inside `gfunc_call`, in reverse order — `add $0x8,%rcx` … `mov (%rdx),%rdx; push %rdx; mov (%rcx),%rcx; push %rcx`. Replay emits the `AST_Load` eagerly at expression position instead. `AST_Load` replays as `ast_replay_value(child); indir();` (`src/mccast.c:4319-4322`) and `indir()` emits a load **only when its operand arrives `VT_LVAL`**, so the address subtree is reaching replay as an lvalue where the parser had a plain rvalue. **The arena builds one `Load` too many, and the earlier entries here were taken in
+the wrong configuration.** `runner.c` is **`c2ok` at `-O1` on x86_64** — the
+store-chain fix closed it there — and diverges only at **forced `-O0`** on that key
+(and at `-O1` on arm64/riscv64/arm/i386). Two prior revisions of this entry dumped the
+arena and the optrace at `-O1` on x86_64, i.e. of the **passing** body, and drew
+conclusions from it. Everything they concluded about `MEMBER(Load(...))` being the
+defect shape was describing the *correct* shape. Re-take any measurement here with
+`MCC_FORCE_REPLAY=1` + the 28 gates at `-O0`, or on a cross key.
+
+At the configuration that actually diverges, `[rir-dump]` reads:
 
 ```
-    Convert t=5                        Convert t=5
-      Unary op#262145   <- MEMBER        Load            <- OPTS[i], matches parser
-        Load                              Binary +
-          Binary +                          Ref OPTS
-            Ref GATES                       Ref index
-            Ref index
+Load                          <- EXTRA; absent from the passing -O1 shape
+  Convert t=5
+    Unary op#262145           <- AST_OP_MEMBER
+      Load
+        Binary +
+          Ref GATES
+          Ref index
 ```
 
-`op#262145` is `0x40001`, `AST_OP_MEMBER` (`src/mccast.c:1841`). So `GATES[g].env`
-reaches the arena as **`MEMBER(Load(base+index))`** — deref first, member second —
-where the parser folds the member offset into the address arithmetic and derefs once
-(`add $0x8,%rcx` … then `mov (%rcx),%rcx` at push time). `OPTS[i]`, one argument
-over, is the clean `Load(Binary +)`.
+against the neighbouring `OPTS[i]` argument, which is the plain `Convert(Load(Binary +))`.
 
-`AST_OP_MEMBER`'s replay arm is `src/mccast.c:4221-4241`: `gaddrof()`, then
-`vpushi(cofs); gen_op('+')`, then re-set `VT_LVAL`. That reaches the same address by
-a different route, and somewhere in that route the load is materialised eagerly.
+**The mechanism follows directly.** `AST_Load` replays as `ast_replay_value(child);
+indir();` (`src/mccast.c:4319-4322`), and `indir()` emits a load only when its operand
+already carries `VT_LVAL`. `AST_OP_MEMBER`'s arm sets exactly that at
+`src/mccast.c:4241` (`vtop->r |= VT_LVAL | fbits`). So the outer `Load` finds an
+lvalue, calls `gv(MCC_RC_INT)`, and emits the 3-byte `mov (%rcx),%rcx`. The parser's
+corresponding `indir()` ran on a computed address that was *not* yet an lvalue and
+emitted nothing, deferring the load to `gfunc_call`'s push.
 
-**The emitting op is now identified.** `-DRIR_DBG_OPTRACE=1` with
-`RIRDBG=interesting` labels the C2 leg's own op stream `C2`, and at the divergence
-offset (body-relative 439; first C2 `ind=16335`, so absolute 16774) it reads:
+**Both earlier suspects are dead and stay dead** — `gen_cast` no-ops on same type
+(`if (sbt != dbt)`, `src/mccgen.c:4378`), and every `Convert` in the body reads
+`fb=0`, so `AST_FB_CONVERT_GV` never fires. The `Convert` is not involved.
 
-```
-[optrace] C2  pushlit  ind=16767      <- MEMBER's vpushi(cofs)
-[optrace] C2  genop    ind=16767      <- MEMBER's gen_op('+'), the +8
-[optrace] C2  vswap    ind=16767
-[optrace] C2  gv       ind=16767
-[optrace] C2  load     ind=16767      <- 3 bytes; next op sits at 16770
-```
-
-Three bytes at exactly the diverging offset, which is the `48 8b 09`. So **the
-`VT_LVAL` that `AST_OP_MEMBER` sets at `src/mccast.c:4241` is `gv`'d immediately**,
-where the parser carries the same lvalue to `gfunc_call` and loads it at push time.
-Note the op sequences cannot be diffed positionally to find this — the C2 leg replays
-a tree through different primitives (245 ops against the parser's 382) — so align by
-`ind=` and not by position.
-
-**The cast itself is eliminated as the emitter, and one candidate remains.**
-`gen_cast` opens its conversion block with `if (sbt != dbt)` (`src/mccgen.c:4378`), so
-a same-type `Convert` is a genuine no-op and cannot be what forces the register. The
-`MCC_TRACE_IF("CVT from …")` already at `src/mccast.c:4206` confirms the shape is
-same-type over an lvalue — enable it with a `MCC_CONFIG_TRACE=ON` build and
-`MCC_TRACE_FILE=mccast MCC_TRACE_FUNC=ast_replay_value -v128`, and `runner.c` reports
-**505** `CVT from t=0x5 r=0x132 -> t=0x5` (`0x100` is `VT_LVAL`) against **61**
-`t=0x5 r=0x32 -> t=0x5` with the bit clear.
-
-**`AST_FB_CONVERT_GV` is eliminated too, by measurement.** It would have been the
-remaining way to force a register past a no-op cast — `gv_cast_rvalue()` at
-`src/mccast.c:4210` runs unconditionally when the flag is set. The `CVT` trace now
-prints `fbits`, and **every `Convert` replayed in `runner.c` reads `fb=0`**. The flag
-is never set in this body, so it cannot be the emitter. Both suspects are dead:
-`gen_cast` no-ops on same type, and nothing forces a `gv` past it.
-
-**So the `Convert` is not involved at all, and the search should move off it.** What
-remains unexplained is the `vswap; gv; load` the C2 optrace shows immediately after
-`AST_OP_MEMBER`'s `pushlit; genop`. Two cautions for whoever picks this up, both
-learned the hard way here:
-
-- **Anchoring by `ind=` is not as simple as first-C2-`ind` plus the body-relative
-  offset.** The C2 leg's first traced op need not sit at `rir_body_ind_sv`, and an
-  off-by-a-few anchor lands on the wrong op — a 3-byte `load` in that window is just
-  as likely to be `mov -0x58(%rbp),%eax` loading the loop index as the `mov (%rcx),%rcx`
-  in question. Establish the anchor from `rir_body_ind_sv` directly before drawing a
-  conclusion from a windowed trace.
-- **`gen_op` and the argument marshalling both emit `vswap`/`gv` of their own**, so a
-  `gv` following `MEMBER` is not by itself evidence that something consumed the
-  `MEMBER`'s lvalue.
-
-The untried instrument is the one that does not depend on anchoring: `RIRDUMP=1`,
-which prints the ops either side of the blamed index with their byte windows, and
-which is only consulted on `c2len` bodies — exactly this class. Start there. Do not fix on the suspicion alone: **this class is
-LIVE**, so unlike every other entry here a wrong fix ships as wrong code instead of
-sitting behind the fallback.
+**What is not yet decided is the fix site**, and it is a genuine three-way choice:
+whether the arena should not build the outer `Load` at all (construction, i.e. the
+`RIR_M_LOAD` mark firing once more at `-O0` than the shape needs); whether
+`AST_OP_MEMBER` should not set `VT_LVAL` when its result feeds a `Load`; or whether
+the `Load` replay should skip `indir()` on an already-lvalue operand. The first is a
+capture-site change and the banked negatives are unanimous about those. **Measure any
+of them on the twelve-key board before and after, and remember this class is LIVE.**
 
 The older framing of the open question, kept because it is still the second half:
 **which arena node makes the address lvalue** — and that decides between the argcast use site (`src/mccrir.c:2435`, legal) and the `RIR_M_LOAD` mark (`src/mccrir.c:3073`, a capture site, the category that produced two core dumps and a compiler abort in the banked negatives). `[arg]` reports the two operands as `cur=Load … curt=0 st=5`, an **untyped** Load — the case `:413`'s banked negative N13 says the argcast wrap was special-cased for, and widening that wrap cost −16 `c2ok` on every key. **Two synthetic reducers were written and neither reproduces** (`ok=1` both times), which is banked negative N20 exactly: work from the real body, not a model of it. Instrument `runner.c::interesting` directly with `RIRDBG` and read the arena node for that argument.
