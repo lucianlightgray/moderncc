@@ -1115,14 +1115,24 @@ static int rir_prov_ok(int slot, const SValue *sv) {
 	return 1;
 }
 
+static int rir_decayed_array(const SValue *sv) {
+	if (!sv->sym || !(sv->sym->type.t & VT_ARRAY) ||
+			(sv->sym->type.t & VT_VLA) || !sv->sym->type.ref)
+		return 0;
+	if ((sv->type.t & (VT_BTYPE | VT_ARRAY | VT_VLA)) != VT_PTR)
+		return 0;
+	if ((sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM))
+		return 1;
+	return (sv->r & (VT_VALMASK | VT_SYM | VT_LVAL)) == VT_LOCAL &&
+				 sv->c.i == (uint64_t)(int64_t)sv->sym->c;
+}
+
 static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	int is_const = (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	AstLocal n = ast_node(rir_arena, is_const ? AST_Literal : AST_Ref);
 	int prov = rir_prov_ok(slot, sv);
 	ast_set_op(rir_arena, n, sv->r);
-	if (sv->sym && (sv->r & (VT_VALMASK | VT_SYM)) == (VT_CONST | VT_SYM) &&
-		(sv->sym->type.t & VT_ARRAY) &&
-		(sv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR)
+	if (rir_decayed_array(sv))
 		ast_set_type(rir_arena, n, sv->type.t | VT_ARRAY,
 			(uint64_t)(uintptr_t)sv->sym->type.ref);
 	else
@@ -1977,7 +1987,45 @@ static void rir_reconcile(const IrCapOp *o) {
 	rir_reconcile_sv(ir_cap_vs + o->vs_off, o->vs_n);
 }
 
+static int rir_addr_pure(AstLocal n, int depth) {
+	uint16_t k;
+	if (n == AST_NONE || depth > 8)
+		return 0;
+	if (ast_type_t(rir_arena, n) & VT_VOLATILE)
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Literal)
+		return 1;
+	if (k == AST_Ref)
+		return ast_nchild(rir_arena, n) == 0;
+	if (k == AST_Load || k == AST_Convert)
+		return ast_nchild(rir_arena, n) == 1 &&
+					 rir_addr_pure(ast_first_child(rir_arena, n), depth + 1);
+	if (k == AST_Unary) {
+		int op = ast_op(rir_arena, n);
+		if (op != AST_OP_MEMBER && op != AST_OP_MEMBER_ARROW && op != AST_OP_ADDR)
+			return 0;
+		return ast_nchild(rir_arena, n) == 1 &&
+					 rir_addr_pure(ast_first_child(rir_arena, n), depth + 1);
+	}
+	return 0;
+}
+
+static int rir_lvalue_shape(AstLocal n) {
+	int op;
+	if (n == AST_NONE || ast_kind(rir_arena, n) != AST_Unary)
+		return 0;
+	op = ast_op(rir_arena, n);
+	if (op != AST_OP_MEMBER && op != AST_OP_MEMBER_ARROW)
+		return 0;
+	if (ast_type_t(rir_arena, n) & (VT_BITFIELD | VT_ARRAY | VT_VLA))
+		return 0;
+	return ast_nchild(rir_arena, n) == 1 &&
+				 rir_addr_pure(ast_first_child(rir_arena, n), 0);
+}
+
 static int rir_opassign_pending;
+static int rir_opassign_dup;
 static int rir_addr_late;
 
 static int rir_ternn;
@@ -1986,6 +2034,8 @@ static int rir_lorn;
 static void rir_op_effect(const RirOp *ro) {
 	const IrCapOp *o = &ro->p;
 	int k;
+	int dupwant = rir_opassign_dup;
+	rir_opassign_dup = 0;
 	if (o->kind != IR_OP_VSETC && o->kind != IR_OP_PUSHLIT)
 		rir_flush_pending_call();
 	if (o->nocode)
@@ -2517,6 +2567,23 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_shtype[slot] = 0;
 		break;
 	}
+	case IR_OP_VPUSHV: {
+		AstLocal top;
+		const SValue *tv;
+		if (!dupwant || rir_shn < 1 || rir_shtype[rir_shn - 1])
+			break;
+		if (o->vs_n - rir_base_depth != rir_shn || o->vs_n < 1)
+			break;
+		tv = &ir_cap_vs[o->vs_off + o->vs_n - 1];
+		if (!(tv->r & VT_LVAL) || (tv->r & VT_VALMASK) >= VT_CONST)
+			break;
+		top = rir_sh[rir_shn - 1];
+		if (top == AST_NONE || ast_parent(rir_arena, top) != AST_NONE ||
+				!rir_lvalue_shape(top))
+			break;
+		rir_push(ast_dup_sub(rir_arena, top));
+		break;
+	}
 	case IR_OP_VPOP: {
 		AstLocal d = rir_pop();
 		if (d != AST_NONE && rir_shn == 0 &&
@@ -2885,6 +2952,7 @@ static void rir_mark_apply(const RirOp *ro) {
 		break;
 	case RIR_M_OPASSIGN:
 		rir_opassign_pending = 1;
+		rir_opassign_dup = 1;
 		break;
 	case RIR_M_RETJMP:
 		if (rir_last_return != AST_NONE)
@@ -3972,6 +4040,7 @@ static void rir_to_arena(void) {
 	rir_pending_call = AST_NONE;
 	rir_spill_node = AST_NONE;
 	rir_opassign_pending = 0;
+	rir_opassign_dup = 0;
 	rir_addr_late = 0;
 	rir_retexpr = AST_NONE;
 	rir_retexpr_pending = 0;
