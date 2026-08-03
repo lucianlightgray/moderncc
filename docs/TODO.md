@@ -96,7 +96,7 @@ host-native self-host unmeasurable on this machine.
 
 | # | what | why it needs the other host |
 | --- | --- | --- |
-| W1 | **`arm64-osx` and `x86_64-osx` runtime A/B and self-host** | Mach-O will not execute here at all. Both keys carry C2 gap (18 and 12) that has only ever been byte-compared, never run. The runtime A/B is the instrument this file says the byte compare cannot replace. |
+| W1 | **`arm64-osx` and `x86_64-osx` runtime A/B and self-host** — **the A/B half is done** | Mach-O will not execute here at all. **Closed on 2026-08-03 for the differential**: the macOS arm64 host ran `tools/c2_equiv.sh` on both keys at forced `-O0`/`-O1`/`-O2`/`-O3`, eight cells, all `differential: NONE`, and the whole byte gap on both keys measures `[rir-prod] fallback` per body — see the macOS item under **For the Windows and macOS hosts**. **Still open on that host: the full `ctest` suite and `o0_ab.sh`,** which are the larger half and which this file has still never had a Mach-O reading of. |
 | W2 | **`arm64-win32`, `arm-win32`, `arm-wince` execution** | wine on an x86_64 host runs x86 PE only; ARM and ARM64 PE do not load. Three keys, 47 divergences between them, never executed. |
 | W3 | **`selfhost-fixpoint-O3` on macOS** | Recorded as *"green again by side effect, and the defect underneath it was never found… treat this as latent, not fixed."* It is green here. The failure was macOS-only, so this host cannot tell whether it is fixed or dormant. Re-run with the `MCC_AST_INLINE_LIMIT` bisect against a fresh probe, per the recipe already in this file. |
 | W4 | **Windows host stage2 (`pe`, `sanitize`, `dynamic`)** | The three reds at the P5 merge were closed by raising `SizeOfStackReserve` to 8MB, which is present at `src/objfmt/mccpe.c:738` and verified by reading. The *stack-overflow behaviour it fixes* needs a real 1MB-default PE process to confirm; wine's stack handling is not the same test. |
@@ -688,13 +688,16 @@ more, so the 8255-cell correctness oracle that covers the other seven has simply
 run on them. That is the gap, and `ctest` closes most of it; the `c2_equiv` run is the
 cheaper follow-up that says *arena or optimizer* if a cell goes red.
 
-**Down from seven**: the Windows host measured `x86_64-win32` and `i386-win32`
-natively on 2026-08-03 and both are clean at every `-O` (see item 2 below). Their byte
-gaps — 12 and 14 — turned out to be the same benign class as the five Linux keys,
-which is exactly the outcome the inert/live split predicts and a useful confirmation
-that a byte gap is not a defect count. The five that remain carry gaps of
-`x86_64-osx` 12, `arm64-osx` 19, `arm64-win32` 16, `arm-win32` 17, `arm-wince` 17 —
-**listed as census, not as suspicion**.
+**Down from seven, then from five to three**: the Windows host measured
+`x86_64-win32` and `i386-win32` natively on 2026-08-03 and both are clean at every
+`-O` (see item 2 below); the **macOS arm64 host measured both Mach-O keys the same
+day** and both are clean at every `-O` *including a non-vacuous forced `-O0`* (see
+the macOS item below). Their byte gaps — 12 and 14 on PE, 13 and 20 on Mach-O —
+turned out to be the same benign class as the five Linux keys, which is exactly the
+outcome the inert/live split predicts and a useful confirmation that a byte gap is
+not a defect count. **The three that remain are `arm64-win32` 16, `arm-win32` 17 and
+`arm-wince` 17, all Windows-on-ARM (W2/W5)** — **listed as census, not as
+suspicion**.
 
 Priority order is `ctest` first, `c2_equiv` second. An earlier revision had this
 backwards, on the since-corrected assumption that a byte gap was evidence of a defect
@@ -710,13 +713,118 @@ anything. The reason is that the goldens have never executed there.
    never had a clean reading of. Expect `selfhost-fixpoint-O3` to need attention: W3
    records it as *"green again by side effect, and the defect underneath it was never
    found"*, and macOS is the only host that can tell whether it is fixed or dormant.
-3. `tools/c2_equiv.sh bc2 all -O1` and again at `-O2`/`-O3`. **The script needs a
-   Mach-O arm first** — it currently only knows sysroot+qemu keys. On an
-   Apple-silicon host `arm64-osx` is native (no runner prefix, no sysroot) and
-   `x86_64-osx` runs under Rosetta; on an Intel host the reverse, with no runner for
-   `arm64-osx`. Flags are `-B runtime -I runtime/include` per `tools/c2_sweep.sh:21`.
+3. ~~`tools/c2_equiv.sh bc2 all -O1` and again at `-O2`/`-O3`. **The script needs a
+   Mach-O arm first.**~~ — **done and measured, 2026-08-03 on the macOS 26.5.2
+   arm64 host** (`cmake-c2all`: Debug, `-DMCC_ENABLE_CROSS=ON`,
+   `-DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`, rebuilt at `ad0dc1e0`; rows re-verified
+   against the script as rebased onto `68025a58`). **Eight cells, two keys x
+   forced `-O0`/`-O1`/`-O2`/`-O3`, every one `differential: NONE`:**
+
+   | key | passing goldens (arena/parser) | differential | uncompared (fail both legs) |
+   | --- | --- | --- | --- |
+   | arm64-osx (native) | 295 / 295 (of 317, 22 skip) | NONE at all four `-O` | none — zero batch failures |
+   | x86_64-osx (Rosetta) | 251 / 251 (of 317, 65 skip) | NONE at all four `-O` | `c11_freestanding_headers` |
+
+   `arena-only` is empty on all eight. Four findings the next reader needs:
+   - **The prescribed flags above were wrong, the same way the Windows ones were.**
+     `-B runtime -I runtime/include` is `tools/c2_sweep.sh`'s compile line, not the
+     runner's: `tests/runner.c` takes a *bdir* and emits a single `-B`, and what
+     works is `-B <builddir>` — the Mach-O runtime pieces are already there as
+     `<builddir>/arm64-osx-libmccrt.a` and `x86_64-osx-libmccrt.a`, so no synthetic
+     `-B` dir is needed the way `i386-win32` needed one.
+   - **`x86_64-osx` needs the Rosetta prefix and the SDK sysroot *together*, and
+     neither works without the other.** A cross Mach-O link needs the SDK's
+     `libSystem`, and the runner only emits `-L<sys>/usr/lib` when it thinks it is
+     cross — which it decides from `MCC_TEST_RUNEMU` alone (`tests/runner.c:578`).
+     So the *run* prefix is also what turns the *link* flag on. Without the pair,
+     every compile fails with `library 'c' not found` /
+     `unresolved reference to '_memset'`, which reads as a codegen failure and is
+     not one. `MCC_TEST_SYSROOT` is `xcrun --show-sdk-path`; `MCC_TEST_RUNEMU` is
+     `arch -x86_64`. Both are in the script.
+   - **`MCC_TEST_OS=Darwin` and `MCC_TEST_CPU=arm64|x86_64` are required**, or
+     `req_met` (`tests/runner.c:32-33`) runs the ELF-only goldens and reports them
+     as mismatches. This is why `x86_64-osx` skips 65 against `arm64-osx`'s 22.
+   - **The `-O0` row here is NOT the vacuous control the Windows `-O0` row was**,
+     because `tools/c2_equiv.sh` now has a `C2_FORCE=1` arm — see below.
 4. `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh bc2 all` — the `-O0` object bank was
-   taken on Linux; confirm it reproduces.
+   taken on Linux; confirm it reproduces. **Not run yet.**
+
+**`C2_FORCE=1` makes the `-O0` differential real, and it is a different thing from
+`C2_FORCE` in `tools/c2_sweep.sh`.** The differential turns on *production*, and
+production is `rir_prod_env = ast_replay_env && !rir_env` with `ast_replay_env =
+optimize >= 1 || embed_jit || MCC_FORCE_REPLAY || MCC_RIR_FORCE`
+(`src/mccast.c:1923-1925`). Measured on this build at `-O0` on
+`tests/exec/programs/grep.c`: `[rir-prod-total] used=0` plain, `used=9 fallback=4`
+with `MCC_FORCE_REPLAY=1` plus the 28 derived gates. So a plain `-O0` row ships the
+parser's bytes in *both* legs and proves plumbing only — exactly what the Windows
+`-O0` row turned out to be. With the force it is a real population: over the whole
+660-file corpus, `arm64-osx` reads `used=2108 fallback=65 skip=88` and `x86_64-osx`
+`used=2104 fallback=77 skip=56`. **Read no `-O0` differential that was taken without
+it.**
+
+Two corrections that fall out of this, both measured rather than reasoned:
+
+- **`tools/c2_sweep.sh:40-42`'s stated reason for `C2_FORCE` is wrong.** It says *"a
+  plain `-O0` run journals nothing at all and would read as a perfect board over an
+  empty population."* It does not. Capture is armed by `rir_env || rir_prod_env`
+  (`src/mccrir.c:535`), and the sweep runs under `MCC_REPLAY_IR=5`, so `rir_env`
+  alone gives the byte board a **full** `-O0` population and `MCC_FORCE_REPLAY` is
+  inert there — the 28 gates are the entire effect. Measured on `arm64-osx`, `all`
+  corpus: plain `-O0` reads `c2ok=2389/2487`, a gap of **98** (`bytes=8 len=87`),
+  against forced `-O0`'s **17** and `-O1`'s **20**. Forcing is still the right thing
+  to do; the comment's reason for it is not, and a reader who trusts it will
+  misread a `-O0` sweep row as empty when it is merely bad.
+- **The same `rir_env` term, not `embed_jit`, is the simpler explanation of the
+  Windows `-O0` observation** that *"capture and the verify replay run even at
+  `-O0`"*. It reproduces here: `MCC_REPLAY_IR=1` at `-O0` fills the rir.log (14
+  `faithful` on `grep.c`) on a build where `embed_jit` is not in play. Both
+  statements can be true; `rir_env || rir_prod_env` is the one that always holds.
+
+**The inert/live split on the two Mach-O keys — first measurement, and the gap is
+100% inert.** This is the `MCC_RIR_PROD=2` reading the report list below asks for and
+that nobody had taken on a Mach-O key. Aggregate over the 660-file corpus at `-O1`:
+
+| key | used | fallback | skip | adopt rate |
+| --- | --- | --- | --- | --- |
+| arm64-osx | 2153 | 20 | 88 | 95.2% of 2261 bodies |
+| x86_64-osx | 2164 | 17 | 56 | 96.7% of 2237 bodies |
+
+**Per body it is unanimous: every C2-divergent body on both keys reads
+`[rir-prod] fallback`.** Checked one at a time, not inferred from the totals —
+`bounds_stress::test16`/`::test17`, `run_coherency::coherency_test`,
+`run_s7_28::s7_28_wconv`, `run_s7_9::s7_9_iso646_test`, `ternary_op::tst_yarpgen`,
+`fuzz/runner::triage`/`::interesting`/`::main`, `rev64_mt::main`,
+`apple-libc/strpbrk::strpbrk`, and the six inside `full_language.c`
+(`char_short_test`, `struct_assign_test`, `longlong_test`, `statement_expr_test`,
+`s7_9_iso646_test`, `coherency_test`). **The live half is empty on both Mach-O
+keys**, so their whole byte gap is fallback census and carries no correctness weight
+— which is what the clean differential independently says, by a different route.
+
+Note this contradicts nothing but does narrow `:399`'s class E: `fuzz/runner.c`'s
+three bodies are recorded there as *live* (`used=49 fallback=0`) on the keys measured
+on Linux. On both Mach-O keys the same three bodies fall back. Whether that is a
+per-key pre-flight difference or corpus drift since that reading is not settled here.
+
+**The Mach-O byte board, taken on a Mach-O host for the first time** (same build,
+`C2_CORPUS=all`, 660 files):
+
+| key | `-O1` = `-O2` = `-O3` | forced `-O0` | plain `-O0` | c2try |
+| --- | --- | --- | --- | --- |
+| arm64-osx | **20** (bytes 4 / len 13 / invalid 1 / err 2) | **20** (identical on every counter) | 98 (bytes 8 / len 87) | 2487 |
+| x86_64-osx | **13** (bytes 3 / len 8 / err 2) | **16** (bytes 3 / len 11 / err 2) | — | 2472 |
+
+Against this file's Linux-measured `all` board (`arm64-osx` 19, `x86_64-osx` 12) both
+are **+1**, which is corpus growth and not a host difference — the same uniform +1
+the `fn` banks took. `-O2` and `-O3` are byte-identical to `-O1` on every counter on
+both keys, as everywhere else. `arm64-osx`'s forced `-O0` being identical to its
+`-O1` on all four sub-counters is worth one re-measurement by the next reader before
+it is trusted: `x86_64-osx` moves (8 → 11 `len`), so the equality is a property of
+the key, not of the harness.
+
+**Still not run on this host**: step 2 (`ctest` on a Mach-O host, which this file has
+never had a reading of — including the `selfhost-fixpoint-O3` W3 question) and step 4
+(`o0_ab.sh`). Those remain the larger deliverable; the differential above is the
+cheaper follow-up, taken first only because it was what was asked for.
 
 **Windows x86_64.**
 

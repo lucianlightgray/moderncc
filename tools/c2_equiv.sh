@@ -31,6 +31,7 @@ set -e
 BUILD=$1
 KEYARG=${2:-all}
 OPT=${3:--O1}
+OPTLBL=$OPT${C2_FORCE:+ FORCED}
 OUT=${4:-/tmp/c2equiv}
 
 if [ -z "$BUILD" ]; then
@@ -52,10 +53,17 @@ mkdir -p "$OUT"
 # On a Windows x86_64 host (Git Bash) the executable keys are the two x86 PE
 # keys instead: x86_64-win32 is the native compiler and i386-win32 runs under
 # WOW64. The ELF keys are the unmeasurable ones there.
+#
+# On a Darwin host they are the two Mach-O keys, and which of the two is native
+# depends on the silicon: on Apple silicon arm64-osx is native and x86_64-osx
+# runs under Rosetta; on an Intel mac x86_64-osx is native and arm64-osx has no
+# runner at all. Nothing ELF and nothing PE executes there.
 case "$(uname -s 2>/dev/null)" in
 MINGW*|MSYS*|CYGWIN*) HOSTKIND=win32 ;;
+Darwin)               HOSTKIND=darwin ;;
 *)                    HOSTKIND=linux ;;
 esac
+NATOUT=$OUT
 if [ "$HOSTKIND" = win32 ]; then
 	KEYS_ALL="x86_64-win32 i386-win32"
 	# Env var VALUES are not path-converted by MSYS (argv is), so the parser
@@ -63,9 +71,13 @@ if [ "$HOSTKIND" = win32 ]; then
 	# the [rir-*] diagnostics land in the captured output -- every golden then
 	# mismatches on leg B for a harness reason.
 	NATOUT=$(cygpath -m "$OUT")
+elif [ "$HOSTKIND" = darwin ]; then
+	case "$(uname -m)" in
+	arm64)  KEYS_ALL="arm64-osx x86_64-osx" ;;
+	*)      KEYS_ALL="x86_64-osx" ;;
+	esac
 else
 	KEYS_ALL="x86_64 i386 arm arm64 riscv64"
-	NATOUT=$OUT
 fi
 
 case "$KEYARG" in
@@ -90,10 +102,48 @@ leg() {
 	env MCC_TEST_EMU= MCC_TEST_CPU="$_cpu" MCC_TEST_OS="$_os" \
 		MCC_TEST_ASM=1 MCC_TEST_BCHECK=0 MCC_TEST_BACKTRACE=0 \
 		MCC_TEST_SYSROOT="$_sys" MCC_TEST_RUNEMU="$_emu" MCC_TEST_OPT="$OPT" \
-		$_extra \
+		$FORCEENV $_extra \
 		"$R" "$_mcc" "$_bdir" "$S/runtime/include" "$S/tests" "$_work" \
 		> "$OUT/$_key.$_tag.txt" 2>/dev/null || true
 }
+
+# C2_FORCE=1 -- the forced--O0 arm, and the ONLY way -O0 enters this instrument.
+# The differential turns on production, and production is
+# rir_prod_env = ast_replay_env && !rir_env with ast_replay_env =
+# `optimize >= 1 || embed_jit || MCC_FORCE_REPLAY || MCC_RIR_FORCE`
+# (src/mccast.c:1923-1925). At a plain -O0 no term holds, so BOTH legs ship the
+# parser's bytes and the differential is NONE over a population with zero
+# Replay_IR in it -- a green row that measures nothing. Measured on this tree at
+# -O0 on tests/exec/programs/grep.c: [rir-prod-total] used=0 without this, used=9
+# fallback=4 with it. Do not read a -O0 row that was taken without it.
+#
+# Note this is NOT the same thing C2_FORCE does in tools/c2_sweep.sh. That
+# script runs under MCC_REPLAY_IR=5, and capture is armed by
+# `rir_env || rir_prod_env` (src/mccrir.c:535), so rir_env alone already gives
+# the byte board a full -O0 population -- there the 28 gates are the whole
+# effect and MCC_FORCE_REPLAY is inert. Here rir_env is 0 in the arena leg, so
+# MCC_FORCE_REPLAY is what arms the arena and the gates only make the -O0 leg
+# comparable with an optimized one.
+#
+# The gate list is derived by the same regex over src/ that tools/c2_sweep.sh
+# uses, so a renamed gate cannot silently drop out of the set, and a derivation
+# of zero aborts rather than measuring -O0 with every pass off and calling it
+# parity.
+FORCEENV=
+if [ -n "$C2_FORCE" ]; then
+	gates=$(grep -hoE 'ast_env_gate\("MCC_AST_[A-Z0-9_]+", *o4 \|\| s1->optimize >= 1\)' \
+			"$S"/src/*.c | sed -E 's/.*"(MCC_AST_[A-Z0-9_]+)".*/\1/' | sort -u)
+	ngate=$(printf '%s\n' $gates | grep -c .)
+	if [ "$ngate" -eq 0 ]; then
+		echo "c2_equiv: C2_FORCE derived 0 gates from $S/src -- the ast_env_gate" >&2
+		echo "  spelling changed, so this run would measure -O0 with every pass" >&2
+		echo "  off and call it parity" >&2
+		exit 1
+	fi
+	FORCEENV="MCC_FORCE_REPLAY=1"
+	for g in $gates; do FORCEENV="$FORCEENV $g=1"; done
+	echo "c2_equiv: C2_FORCE -- $ngate optimize>=1 gate(s) forced on" >&2
+fi
 
 # summary line is "exec runner: N passed, M failed, K skipped (of T)"
 passof() { sed -n 's/^exec runner: \([0-9]*\) passed.*/\1/p' "$1"; }
@@ -124,7 +174,7 @@ for k in $KEYS; do
 			bdir=$OUT/pe-bdir-$k
 			if [ ! -f "$BUILD/i386-win32-libmccrt.a" ] || \
 			   [ ! -d "$BUILD/lib-i386-win32" ] || [ ! -d "$BUILD/include" ]; then
-				printf '%-9s UNMEASURABLE  runtime pieces absent in %s (need i386-win32-libmccrt.a, lib-i386-win32/, include/)\n' "$k" "$BUILD"
+				printf '%-10s UNMEASURABLE  runtime pieces absent in %s (need i386-win32-libmccrt.a, lib-i386-win32/, include/)\n' "$k" "$BUILD"
 				rc=1; continue
 			fi
 			rm -rf "$bdir"
@@ -134,9 +184,41 @@ for k in $KEYS; do
 			cp "$S/runtime/win32/lib/"*.def "$bdir/lib/"
 			cp -r "$BUILD/include" "$bdir/include" ;;
 		*)
-			printf '%-9s UNMEASURABLE  no runner on this host (see W1/W2)\n' "$k"
+			printf '%-10s UNMEASURABLE  no runner on this host (see W1/W2)\n' "$k"
 			continue ;;
 		esac
+	elif [ "$HOSTKIND" = darwin ]; then
+		# Mach-O. cpu/os drive req_met (tests/runner.c:32-33); getting them wrong
+		# does not fail a golden loudly, it silently runs the ELF-only ones and
+		# reports them as mismatches, or skips ones that should have run.
+		os=Darwin
+		cpu=${k%-osx}
+		case "$k" in
+		*-osx) ;;
+		*)
+			printf '%-10s UNMEASURABLE  no runner on this host (see W1/W2)\n' "$k"
+			continue ;;
+		esac
+		if [ "$cpu" != "$(uname -m)" ]; then
+			# The non-native Mach-O key. On Apple silicon x86_64 runs under
+			# Rosetta, which is a RUN-time prefix only -- the compiler is a host
+			# binary either way. And a cross Mach-O link needs the SDK's
+			# libSystem, which the runner only adds when it thinks it is cross,
+			# and it decides that from MCC_TEST_RUNEMU alone (tests/runner.c:578).
+			# So the run prefix is also what turns the -L on: both are required,
+			# and neither works without the other.
+			[ "$cpu/$(uname -m)" = "x86_64/arm64" ] || {
+				printf '%-10s UNMEASURABLE  no runner for %s on %s (W1)\n' "$k" "$cpu" "$(uname -m)"
+				rc=1; continue; }
+			arch -x86_64 /usr/bin/true >/dev/null 2>&1 || {
+				printf '%-10s UNMEASURABLE  Rosetta absent: arch -x86_64 cannot execute\n' "$k"
+				rc=1; continue; }
+			emu="arch -x86_64"
+			sysroot=$(xcrun --show-sdk-path 2>/dev/null || true)
+			[ -n "$sysroot" ] && [ -d "$sysroot/usr/lib" ] || {
+				printf '%-10s UNMEASURABLE  no macOS SDK (xcrun --show-sdk-path)\n' "$k"
+				rc=1; continue; }
+		fi
 	else
 	case "$k" in
 	x86_64)  mcc=$BUILD/mcc; emu=; sysroot= ;;
@@ -145,17 +227,17 @@ for k in $KEYS; do
 	arm64)   emu=qemu-aarch64 ;;
 	riscv64) emu=qemu-riscv64 ;;
 	*)
-		printf '%-9s UNMEASURABLE  no runner on this host (see W1/W2)\n' "$k"
+		printf '%-10s UNMEASURABLE  no runner on this host (see W1/W2)\n' "$k"
 		continue ;;
 	esac
 	if [ "$k" != x86_64 ]; then
 		sysroot=$S/vendor/gentoo-stage3-$k-glibc
 		if [ ! -d "$sysroot" ]; then
-			printf '%-9s UNMEASURABLE  sysroot absent: %s\n' "$k" "$sysroot"
+			printf '%-10s UNMEASURABLE  sysroot absent: %s\n' "$k" "$sysroot"
 			rc=1; continue
 		fi
 		if ! command -v "$emu" >/dev/null 2>&1; then
-			printf '%-9s UNMEASURABLE  emulator absent: %s\n' "$k" "$emu"
+			printf '%-10s UNMEASURABLE  emulator absent: %s\n' "$k" "$emu"
 			rc=1; continue
 		fi
 		# qemu-user without -L resolves the interpreter against the HOST root, so
@@ -166,7 +248,7 @@ for k in $KEYS; do
 	fi
 	fi
 	if [ ! -x "$mcc" ]; then
-		printf '%-9s UNMEASURABLE  no compiler: %s\n' "$k" "$mcc"
+		printf '%-10s UNMEASURABLE  no compiler: %s\n' "$k" "$mcc"
 		rc=1; continue
 	fi
 
@@ -180,8 +262,8 @@ for k in $KEYS; do
 	# The refusal that matters. A differential over a population that never ran
 	# is not "NONE", it is nothing, and it reads identical to a clean result.
 	if [ "$pa" -eq 0 ] || [ "$pb" -eq 0 ]; then
-		printf '%-9s %s UNMEASURABLE  pass=%s/%s fail=%s/%s -- nothing executed, no differential reported\n' \
-			"$k" "$OPT" "$pa" "$pb" "$fa" "$fb"
+		printf '%-10s %s UNMEASURABLE  pass=%s/%s fail=%s/%s -- nothing executed, no differential reported\n' \
+			"$k" "$OPTLBL" "$pa" "$pb" "$fa" "$fb"
 		rc=1; continue
 	fi
 
@@ -191,11 +273,11 @@ for k in $KEYS; do
 	only_arena=$(comm -23 "$OUT/$k.arena.fail" "$OUT/$k.parser.fail" | tr '\n' ' ')
 
 	if [ -z "$only_parser" ] && [ -z "$only_arena" ]; then
-		printf '%-9s %s pass=%s/%s  differential: NONE  (%s goldens agree)\n' \
-			"$k" "$OPT" "$pa" "$pb" "$pa"
+		printf '%-10s %s pass=%s/%s  differential: NONE  (%s goldens agree)\n' \
+			"$k" "$OPTLBL" "$pa" "$pb" "$pa"
 	else
-		printf '%-9s %s pass=%s/%s  DIFFERENTIAL  arena-only:[%s] parser-only:[%s]\n' \
-			"$k" "$OPT" "$pa" "$pb" "$only_arena" "$only_parser"
+		printf '%-10s %s pass=%s/%s  DIFFERENTIAL  arena-only:[%s] parser-only:[%s]\n' \
+			"$k" "$OPTLBL" "$pa" "$pb" "$only_arena" "$only_parser"
 		rc=1
 	fi
 done
