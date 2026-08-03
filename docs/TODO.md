@@ -418,14 +418,82 @@ exec suites pass with production on, so the arena's emission is *already* valida
 by execution for every body those tests reach. What is missing is not a checker but a
 **record of which bodies that evidence covers**.
 
+### Measured at `06cb8ed0`: native x86_64 is clean at every `-O`
+
+**Run, not proposed.** `tests/runner.c` already compares program stdout against a
+golden (`texts_equal(expect, out)`, `tests/runner.c:743`), so the differential needs
+no new harness on native — only the env flip. The recipe, which works today:
+
+```sh
+R=cmake-verify/exec_runner; EE="MCC_TEST_EMU= MCC_TEST_CPU=x86_64 MCC_TEST_OS=Linux \
+MCC_TEST_ASM=1 MCC_TEST_BCHECK=1 MCC_TEST_BACKTRACE=1"
+# leg A -- arena emission ships
+env $EE MCC_TEST_OPT=-O1 $R cmake-verify/mcc cmake-verify runtime/include tests /tmp/A
+# leg B -- parser bytes ship. MCC_REPLAY_IR_OUT is REQUIRED: without it the
+# [rir-*] lines land in the captured output and every golden mismatches.
+env $EE MCC_TEST_OPT=-O1 MCC_REPLAY_IR=1 MCC_REPLAY_IR_OUT=/tmp/rir.log \
+    $R cmake-verify/mcc cmake-verify runtime/include tests /tmp/B
+```
+
+**Result, identical at `-O1`, `-O2` and `-O3`: the two legs differ on exactly one
+golden of 317, and that one is not a behavioural difference.** `struct_init` fails
+in leg B only because leg B emits a compiler *diagnostic* leg A does not —
+`struct_init.c:407: warning: operation on 'i' may be undefined` — which shifts every
+line and fails the golden compare. Line 407 is `tst_bf arr[] = {{1, 2, 3}};`: no
+`i`, no sequence point, so the warning is spurious and its line number is wrong.
+Confirmed by compiling the file directly: **0 warnings with `MCC_REPLAY_IR` unset, 1
+with it set**. Program output is otherwise line-for-line identical.
+
+So on the native exec corpus, **the arena's emission and the parser's bytes are
+behaviourally identical at every optimisation level**, against a byte board that
+reads a gap of 201. That is the gap between what the byte compare counts and what is
+actually wrong.
+
+**Two things that finding is not.** It does not attribute per body — it proves
+programs behave the same, not which bodies ran; that is still the step below. And
+eight goldens (`atomic_misc`, `bound_global`, `bound_test_b`, `builtins`,
+`errors_and_warnings`, `grep`, `nodata_wanted`, `run_atexit`) fail in **both** legs
+under a single batch invocation while passing under ctest's per-test isolation, so
+they cancel out of the differential but were never meaningfully compared.
+
+**`MCC_REPLAY_IR=1` is not diagnostic-transparent, and that is a defect in the
+control leg itself.** The verify path re-runs enough of codegen to re-trigger a
+warning the normal path does not emit, at a wrong line. Same family as the
+`combine_types` "pointer type mismatch in comparison" case already recorded above —
+a divergence whose only observable is a diagnostic. Any harness built on this leg has
+to either fix that or filter diagnostics out of the compared text, and filtering is
+the worse choice because it discards the one signal that found this.
+
+### The cross-key trap, paid for once already
+
+**Do not read a cross-key differential without reading its pass count first.** The
+four ELF keys were run under `qemu-user` and all four reported *"differential:
+NONE"* — which was **worthless**: `0 passed, 252 failed (compile), 65 skipped` on
+i386, and the same shape on arm, arm64 and riscv64. Nothing compiled, so nothing was
+compared, and a green-looking row came out of an empty population. This is the trap
+`tools/o0_ab.sh:174` guards for object banks and it has now been hit once on the
+execution side too.
+
+Two things the cross leg needs before it means anything:
+
+- **The sysroot flags.** The runner is not handed `-I`/`-L` for the target sysroot,
+  so every compile fails. `arm64` and `riscv64` additionally need
+  `-L<sysroot>/usr/lib64 -L<sysroot>/lib64` on the link line or `crt1.o` is not
+  found, which reads as a compiler failure and is not one.
+- **`MCC_TEST_RUNEMU`, not `MCC_TEST_EMU`.** `MCC_TEST_EMU` prefixes the **compiler**
+  invocation (`tests/runner.c:684`, `:690`, `:696`, `:703`, `:716`); `MCC_TEST_RUNEMU`
+  prefixes the **produced executable** and is what sets `cross` (`:577-579`, and
+  `cross ? "" : emu` at `:716`, `cross ? runemu : emu` at `:726`). Setting the former
+  for a cross key runs `qemu-i386` on `mcc-i386` — a host x86_64 binary that merely
+  *targets* i386 — and yields *"Invalid ELF image for this architecture"*.
+
 ### What to build, in order
 
-1. **`tools/c2_equiv.sh` — the differential harness.** For each executable corpus
-   program: build twice as above at `-O1`/`-O2`/`-O3`, run both, compare stdout,
-   stderr and exit status. Reachable here for six of twelve keys (four ELF cross keys
-   under `qemu-user`, both x86 PE keys under `wine`); the other six are W1/W2 and stay
-   byte-only. Refuse to score a key whose runner is absent rather than printing a
-   green row — the same trap `tools/o0_ab.sh:174` already guards.
+1. **`tools/c2_equiv.sh` — wrap the recipe above** so it is repeatable and so the
+   cross keys get their sysroot flags. It must **refuse to print a differential for
+   any key whose pass count is zero**, for the reason directly above. Reachable here
+   for six of twelve keys (four ELF cross keys under `qemu-user`, both x86 PE keys
+   under `wine`); the other six are W1/W2 and stay byte-only.
 2. **A per-body execution tap**, so a passing program can be attributed to the bodies
    it actually ran. Without it the harness proves "this program behaves the same",
    which is not the same claim as "this body is equivalent" — a body on an untaken
