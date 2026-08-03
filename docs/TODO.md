@@ -368,25 +368,60 @@ cells pass against the tightened floors.
 
 `arm-win32` and `arm-wince` share a define set and must read identically. Any sweep where those two rows differ has a harness bug, not a codegen one — the cheapest available check that a run measured what it thinks.
 
-## Semantic equivalence — the second bar, and the one that can actually reach 100%
+## What the C2 gap actually measures — read this before treating a divergence as a bug
 
-**Byte identity is a proxy. The property the arena has to have is that it does the
-same thing, not that it emits the same bytes.** A body can be byte-divergent and
-correct — a load placed at a different point, a different register, an instruction
-reordered — and the C2 board counts every one of those against the gap. It can also
-be byte-divergent and *wrong*, and the board counts that identically. The board
-cannot tell them apart, so the number it prints is an upper bound on the defect
-count and nothing more.
+**The C2 gap is a migration-completeness number, not a defect count.** This was got
+wrong once in this file, at length, and the correction is worth stating first because
+every "still open" entry below reads differently under it.
 
-**The seam exists and is empty.** `[rir-total]` now prints `c2equiv=` and
-`c2unproven=`, which partition `c2bytes + c2len` — every byte-comparable divergence
-is one or the other, and `invalid`/`err` are excluded because they never produced a
-byte comparison. The verdict comes from `rir_c2_equiv_proven` (`src/mccrir.c:4423`),
-which reads `RIREQUIV`, a comma-separated list of function names. **Unset — the
-default — proves nothing**, so today every key reads `equiv=0/N`. `tools/c2_sweep.sh`
-carries the column as `equiv=N/M`. The byte columns are untouched and must stay that
-way: a body that is byte-divergent and semantically proven has to read as *both*, or
-the instrument that found the wrong-code classes is gone.
+**Correctness is measured by the goldens, and that bar is already green.** 8255 ctest
+cells, of which the `exec` families check the same `tests/exec/goldens.h` expected
+output at `-O0` (`exec/`, `MCC_TEST_OPT` default, `tests/runner.c:574`), `-O1`, `-O3`
+and `-Os`, all passing. `-O0` is independently corroborated against gcc and clang.
+That is the oracle, it covers unit through integration, and nothing below changes it.
+
+**A C2 divergence is not a golden failure, and usually cannot become one.** C2 is a
+*verification* leg: it re-emits from the reconstructed arena into the text section,
+compares, and then restores the parser's bytes (`src/mccrir.c:5017`). Its output is
+discarded by construction. What ships is decided separately by `rir_prod_take`'s
+pre-flight, which **refuses** shapes it cannot model and falls back to the parser's
+bytes for that body.
+
+So the gap splits in two, and only one half is a correctness question at all:
+
+- **Inert** — byte-divergent *and* refused by the pre-flight. The parser's bytes
+  ship, the divergence never reaches a binary, and the number is telling you how much
+  still falls back rather than how much is wrong. Verified per body with
+  `MCC_RIR_PROD=2`: `coherency_test`, `bounds_stress::test16`/`::test17`,
+  `rev64_mt::main` and `s7_9_iso646_test` all read `[rir-prod] fallback`.
+- **Live** — byte-divergent *and* used in production. The arena's bytes ship and
+  differ from the parser's, so correctness there rests on the two being equivalent.
+  `tests/fuzz/runner.c` is this case: `[rir-prod-total] used=49 fallback=0`, with
+  `triage`/`interesting`/`main` C2-divergent and shipping anyway.
+
+**Only the live half needs a semantic argument.** The inert half needs a *model*
+improvement to shrink the fallback list, which is the deletion's completeness goal,
+not a bug hunt. Any entry below that reads like a wrong-code claim must first be
+checked with `MCC_RIR_PROD=2`; if it says `fallback`, the divergence is inert and the
+urgency is wrong.
+
+### The counters, and what they should be
+
+`[rir-total]` prints `c2equiv=` and `c2unproven=`, partitioning `c2bytes + c2len`,
+fed by `rir_c2_equiv_proven` (`src/mccrir.c:4423`) reading a `RIREQUIV` name list.
+`tools/c2_sweep.sh` carries it as `equiv=N/M`. **As shipped it defaults to proving
+nothing, so every key reads `equiv=0/N`, and in that state `c2unproven` merely
+restates `bytes+len`.**
+
+**The useful redefinition, which needs no oracle: `c2unproven` should be
+byte-divergent AND live.** That is the set where correctness actually depends on
+equivalence, it is derivable from the pre-flight verdict the compiler already
+computes, and it turns the column into a number with a meaning instead of a
+placeholder. The obstacle is scheduling, not information: `rir_prod_env =
+ast_replay_env && !rir_env`, so during a `MCC_REPLAY_IR=5` run production is off and
+`rir_prod_take` returns NULL — the C2 leg cannot read the verdict it needs. Factoring
+the pre-flight predicate out of `rir_prod_take` so both legs can call it is the whole
+change. Until that lands, treat `equiv=0/N` as unpopulated rather than as a finding.
 
 **No in-compiler prover, and the reason is not effort.** `mcc_disasm_insn`
 (`src/mcc.h:1719`) returns instruction text and boundaries, not a read/write set per
@@ -396,7 +431,7 @@ are not. Making it sound needs per-ISA effect models for six architectures. **Do
 implement a byte-level or encoding-level prover.** If one appears in a diff, it is
 unsound unless it carries those models.
 
-### Where the proof actually comes from: differential execution
+### How to localise a failure to the arena: differential execution
 
 `rir_prod_env = ast_replay_env && !rir_env` (`src/mccrir.c:521`), with no gate term.
 That single line is the whole instrument:
@@ -407,16 +442,17 @@ That single line is the whole instrument:
   ship.
 
 So the same source, built twice with one env var flipped, produces two binaries that
-differ exactly where the arena and the parser differ. **Run both and compare
-observable behaviour — stdout, stderr, exit status — and a match is a semantic proof
-for every body that executed.** It is architecture-independent, needs no effect
-model, and is indifferent to looping, nesting and expression complexity because it
-observes the whole program rather than a window of instructions.
+differ exactly where the arena and the parser differ. Run both, compare observable
+behaviour, and a divergence names the arena as the culprit. It is
+architecture-independent, needs no effect model, and is indifferent to looping and
+nesting because it observes the whole program.
 
-This is also why the tree is already in better shape than the board suggests: the
-exec suites pass with production on, so the arena's emission is *already* validated
-by execution for every body those tests reach. What is missing is not a checker but a
-**record of which bodies that evidence covers**.
+**Keep its status straight.** This localises; it does not certify. The exec suites
+already run with production on, so the arena's emission is validated by execution for
+every body those tests reach — that validation comes from the goldens, and it is
+present whether or not anyone ever runs the flip. A clean differential adds
+reassurance, not a completion claim. Its real value is the failing case: when a
+golden goes red, one run says arena or optimizer instead of a bisect.
 
 ### Measured at `9d588502`: clean on all five executable keys, at every `-O`
 
@@ -425,7 +461,8 @@ no new comparison logic — `tests/runner.c` already compares program stdout aga
 golden (`texts_equal`, `tests/runner.c:743`) — so a key's leg is *"did any golden
 change verdict"*, and the script is the env plumbing plus two refusals.
 
-**Fifteen cells, five keys x `-O1`/`-O2`/`-O3`. Every one reads the same:**
+**Fifteen cells, five keys x `-O1`/`-O2`/`-O3`. As first measured — before the
+`nb_seqp` fix below, which is what the one differential turned out to be:**
 
 | key | passing goldens (arena/parser) | differential |
 | --- | --- | --- |
@@ -550,7 +587,33 @@ each one produced a plausible-looking wrong answer:
    these shapes, which is the tell that the corpus gap and the defect list are the
    same list.
 
-### The per-body tap: why `MCC_TRACE` and `fprintf` cannot do it
+### A per-body execution oracle is NOT needed. Do not build one.
+
+**This was proposed in an earlier revision of this section and the reasoning was
+circular.** The argument was: the whole-program differential proves "this program
+behaves the same", not "this body is equivalent", because a body on an untaken path
+is unwitnessed — therefore build a tap that attributes execution per body.
+
+The flaw is that an unwitnessed body is a **test-coverage** gap, and the answer to a
+coverage gap is a test, not an oracle. Detection is already covered: 8255 goldens
+check expected output at four `-O` levels, so an arena miscompile in anything a test
+touches fails a golden, and `tools/c2_equiv.sh` then localises it to the arena or the
+optimizer in one run. Nothing about that chain needs to know *which* body ran; when a
+golden fails you bisect. Building an observer to answer a question the suite already
+answers is machinery for its own sake.
+
+**What replaces it, if you want per-body confidence:** a test, not an oracle. Give
+the pre-flight a `RIRONLY=<funcname>` filter (`rir_prod_take`, `src/mccrir.c:4424` —
+the M6 refusal site, which cannot move a C2 counter by construction), compile a
+golden with the arena enabled for exactly one live divergent body and the parser's
+bytes everywhere else, and run it. Golden output means that body's emission is
+correct **in isolation**, which is stronger than the whole-program run because it
+cannot be masked by another body compensating. Cost is one compile-and-run per live
+divergent body, seconds at 3.6s a compile, and it works identically on keys that
+cannot execute here because the verdict is the golden, not a trace. This is worth
+doing only for the **live** half of the gap; the inert half ships nothing.
+
+### Historical note: why `MCC_TRACE` and `fprintf` were never the mechanism
 
 **Both instrument the wrong process.** `MCC_TRACE`, and any `fprintf(stderr, "%s:%d",
 __FILE__, __LINE__, ...)` added to `src/`, are compiled into **mcc**. They report
@@ -568,50 +631,42 @@ measures. It is not disqualified by that (the differential compares two legs and
 identical instrumentation cancels), but it is a large change to gain something two
 cheaper routes already give.
 
-**Three routes that do work, cheapest first:**
+Emitting a tap into generated code would work but is a codegen change that moves
+every byte in the corpus, and per the section above it is not needed anyway.
 
-- **Debugger breakpoints on the divergent symbols.** The set that needs witnessing is
-  small — ten over twelve keys on `exec`, and the per-key `all` gap is 8-31. Set a
-  breakpoint per divergent symbol, run the golden, record which fire. Exact, no
-  compiler change, no byte movement. `gdb --batch -ex 'break f' -ex run` works on
-  native and on `qemu-<arch> -g`. Note the caveat already banked above: both vendored
-  and scoop gdb crash loading mcc's PE DWARF, so on PE keys use the un-stripped twin
-  and `addr2line`, or fall back to the next route.
-- **A `qemu-user` TCG plugin** logging executed translation-block addresses, mapped
-  back through the symbol table. Covers the four ELF cross keys in one pass with no
-  per-symbol setup, and is the only route that scales to "which of all 2,156 bodies
-  ran" rather than "did these ten run".
-- **Per-body arena selection, which needs no runtime observation at all.** Give
-  production a `RIRONLY=<funcname>` filter in `rir_prod_take` (`src/mccrir.c:4424`) —
-  the M6 refusal site, which already exists to decline shapes and *cannot move a C2
-  counter by construction*. Then compile a golden with the arena enabled for exactly
-  one divergent body and the parser's bytes everywhere else. If the program still
-  produces golden output, that body's arena emission is witnessed **in isolation**,
-  which is a strictly stronger claim than the whole-program differential makes — it
-  cannot be masked by another body compensating. Cost is one compile-and-run per
-  divergent body per key, which at 8-31 bodies and 3.6s per compile is seconds.
+### `-O0` versus `-O1+` IS the correctness oracle. The `MCC_REPLAY_IR` flip is the localiser.
 
-**The third route is the one to build.** It reuses a site that already exists, it
-needs no debugger, no plugin, and no emitted instrumentation, it is identical across
-all twelve keys including the ones that cannot execute here, and its verdict is
-per-body by construction rather than by inference. Its output feeds `RIREQUIV`
-directly.
+These answer different questions and an earlier revision of this file conflated them,
+objecting to the first because *"at `-O0` no arena is built"*. That objection is
+technically true and beside the point:
 
-### On "`-O0` matching `-O1` proves it", and the JIT
+- **`-O0` vs `-O1+` against the goldens is the correctness bar.** `-O0` is the
+  reference — corroborated by gcc and clang — and the goldens encode the expected
+  output, so every `-O` level is checked against the same ground truth. A divergence
+  anywhere in that matrix is a real bug in whatever the higher level added, arena and
+  optimizer together. This already runs as the `exec/`, `exec-O1/`, `exec-O3/` and
+  `exec-Os/` families and is green. **It is the primary bar and it does not need
+  Replay_IR to be mentioned at all.**
+- **The `MCC_REPLAY_IR` flip is what you reach for when that bar goes red**, because
+  it holds `-O` constant and changes only whose bytes ship (`rir_prod_env =
+  ast_replay_env && !rir_env`). It answers "arena or optimizer", which the `-O0`
+  comparison cannot. That is `tools/c2_equiv.sh`, and it is a debugging saving, not a
+  completion criterion.
 
-**The intuition is right and the axis is wrong, for one structural reason.**
-Behavioural equivalence *is* the correct completion bar for Replay_IR — that is the
-whole argument of this section, and the fifteen clean cells above are the evidence.
-But `-O0` versus `-O1` cannot be the comparison, because `ast_replay_env` requires
-`optimize >= 1` (`src/mccast.c:1923`): **at `-O0` no arena is built at all.** The
-`-O0` leg has zero Replay_IR involvement, so that comparison measures the optimizer
-and says nothing about the arena. It is a good test — the external-suite cross-`-O`
-run found three genuine optimizer miscompiles — but it is a different test, and the
-`exec/` and `exec-O1/` ctest families already run it.
+Fifteen clean `c2_equiv` cells are therefore reassurance rather than proof of
+anything the goldens had not already established.
 
-The comparison that isolates the arena holds `-O` **constant** and flips
-`MCC_REPLAY_IR`, because `rir_prod_env = ast_replay_env && !rir_env` is the only term
-that decides whose bytes ship. That is what `tools/c2_equiv.sh` does.
+### The JIT is the natural next consumer
+
+`mccjit_recompile_common` (`src/mccjit_embed.c:571`) drives runtime recompilation and
+its promotion path runs the same arena, so the same flip applies unchanged — run a
+JIT workload twice with `MCC_REPLAY_IR` flipped and compare observable behaviour. It
+reaches what the static corpus cannot: bodies only ever recompiled, and the promotion
+decisions themselves. Two cautions. `embed_jit` is a term in `ast_replay_env`
+(`src/mccast.c:1923`), so the JIT arms the arena independently of `-O` and the flip
+may not partition the same way — check that first. And P4 defect 3 was a JIT-seam
+defect (`7133295b`, the runtime recompile lacking an error `jmp` context), so the seam
+has form.
 
 **The JIT extension is real and is the natural next consumer.** `mccjit_recompile_common`
 (`src/mccjit_embed.c:571`) drives runtime recompilation, and its promotion path runs
@@ -624,18 +679,29 @@ independently of `-O` and the flip may not partition the same way; check that fi
 And P4 defect 3 was a JIT-seam defect (`7133295b`, the runtime recompile lacking an
 error `jmp` context), so the seam has form.
 
-### For the Windows and macOS hosts: validate the semantic bar on the five keys this host cannot execute
+### For the Windows and macOS hosts: run the goldens on the five keys that have never executed them
 
-**This is the highest-value thing either of those machines can do right now**, and it
-closes W1/W2 in a way the byte compare never could. **Five** of twelve keys now have a
-byte gap that has *only* ever been byte-compared — `x86_64-osx` 12, `arm64-osx` 19,
-`arm64-win32` 16, `arm-win32` 17, `arm-wince` 17 — down from seven: the Windows host
-measured `x86_64-win32` and `i386-win32` natively on 2026-08-03, both clean (see item
-2 below). The whole point of the fifteen clean cells above is that a byte gap is not
-evidence of a defect. Until those keys are *executed*, nobody knows whether their gap
-is the same benign shape or something real.
+**The point is that five of twelve keys have never had their goldens executed at
+all** — not that a "semantic bar" needs validating. `x86_64-osx`, `arm64-osx`,
+`arm64-win32`, `arm-win32` and `arm-wince` are compiled and byte-compared and nothing
+more, so the 8255-cell correctness oracle that covers the other seven has simply never
+run on them. That is the gap, and `ctest` closes most of it; the `c2_equiv` run is the
+cheaper follow-up that says *arena or optimizer* if a cell goes red.
 
-Run this **before** attacking any individual body on those keys.
+**Down from seven**: the Windows host measured `x86_64-win32` and `i386-win32`
+natively on 2026-08-03 and both are clean at every `-O` (see item 2 below). Their byte
+gaps — 12 and 14 — turned out to be the same benign class as the five Linux keys,
+which is exactly the outcome the inert/live split predicts and a useful confirmation
+that a byte gap is not a defect count. The five that remain carry gaps of
+`x86_64-osx` 12, `arm64-osx` 19, `arm64-win32` 16, `arm-win32` 17, `arm-wince` 17 —
+**listed as census, not as suspicion**.
+
+Priority order is `ctest` first, `c2_equiv` second. An earlier revision had this
+backwards, on the since-corrected assumption that a byte gap was evidence of a defect
+needing semantic adjudication. It is not — see the inert/live split at the head of
+this section — so the byte gaps on those keys (`x86_64-osx` 12, `arm64-osx` 19,
+`arm64-win32` 16, `arm-win32` 17, `arm-wince` 17) are **not** the reason to run
+anything. The reason is that the goldens have never executed there.
 
 **macOS (both hosts, or one Apple-silicon machine for both keys).**
 
@@ -703,27 +769,42 @@ Run this **before** attacking any individual body on those keys.
    `arm-wince` must read identically on every counter — a differential where they
    disagree is a harness bug, not a codegen one.
 
-**What to report back, in this order**, because each answers a different open question:
+**What to report back, in this order:**
 
-- The `differential:` line per key per `-O`. **`NONE` with a non-zero pass count on a
-  key whose byte gap is non-zero is the result that matters**: it says that key's gap
-  is the same benign class as the five measured here.
-- Any key where the script prints `UNMEASURABLE`. That is the script refusing to score
-  an empty population, and it means the host plumbing is wrong, not the compiler.
-- Any golden in `arena-only:[...]`. That column is empty on all fifteen cells measured
-  here, and a non-empty one is a genuine arena defect that the byte board could not
-  distinguish from the benign majority — the highest-priority finding this exercise
-  can produce.
+- **The `ctest` result.** This is the actual deliverable — the first execution of the
+  correctness oracle on those keys. A failing cell there is a real bug regardless of
+  what any byte board says.
+- **`MCC_RIR_PROD=2` totals per key**, i.e. `used=` versus `fallback=`. That splits
+  each key's byte gap into the inert half (falls back, ships nothing) and the live
+  half (arena bytes ship). Only the live half can matter for correctness, and nobody
+  has ever measured that split on a Mach-O or ARM-PE key.
+- The `c2_equiv` `differential:` line per key per `-O`, and any key printing
+  `UNMEASURABLE` — the script refusing an empty population, which means host plumbing
+  is wrong rather than the compiler. A non-empty `arena-only:[...]` is a genuine arena
+  defect; that column is empty on all fifteen cells measured here.
 
-### The bar this replaces, and the one it does not
+### What replaces what — the corrected hierarchy
 
-`c2unproven == 0` is a *stronger* completion bar than `gap == 0` on the bodies
-execution reaches, and a *weaker* one everywhere else. It does not retire the byte
-board: the six keys that cannot execute here have no other instrument, and
-`docs/TODO.md`'s own history has two wrong-code classes the byte compare could not
-see (**The class that only Replay_IR can reach**). **Report both columns forever.**
-A proposal to drop the byte column is a proposal to stop measuring the six
-byte-only keys.
+An earlier revision proposed `c2unproven == 0` as a replacement completion bar. It is
+not a bar at all in its shipped form, and the hierarchy is simpler than that revision
+made it:
+
+1. **The goldens are the correctness bar.** 8255 cells, expected output checked at
+   four `-O` levels, `-O0` corroborated against gcc and clang. Green. Nothing on this
+   page outranks it, and no byte number can contradict it.
+2. **`gap == 0` is the deletion-completeness bar.** It measures how many bodies still
+   fall back to the parser rather than how many are wrong. Driving it to zero is what
+   lets the fallback path be removed; leaving it non-zero costs coverage, not
+   correctness.
+3. **`tools/c2_equiv.sh` is a localiser.** When (1) goes red it says arena or
+   optimizer in one run. It is not a bar and a clean run is not a completion claim.
+
+**The byte board is not retired by any of this.** Five keys cannot execute here and
+have no other instrument, and this file's own history holds wrong-code classes the
+byte compare could not see (**The class that only Replay_IR can reach**) — so the
+byte column stays. What changes is how a non-zero gap should be *read*: as a fallback
+census first, and as a defect candidate only for bodies the pre-flight actually
+accepts.
 
 ## Close the C2 gap
 
@@ -796,12 +877,19 @@ re-adds them. Not yet run for the seam: the full `ctest` (only the 237 `ast`/`op
 cells, all passing). Nothing to rebank — the seam moved no `BANKGAP`, and the
 twelve-key byte board is identical on every pre-existing counter either side of it.
 
-- `bounds_stress.c::test16` and `::test17`, **24**, both on all twelve keys: `strcpy(q = alloca(strlen(demo) + 1), demo)` inside a call argument. The trial re-evaluates `strlen(demo) + 1` and calls `alloca` a second time instead of reusing the value. Nested call in an argument, so the same family as `struct_assign_test`.
-- `fuzz/runner.c::triage`, `::interesting`, `::main` — **the scope on this line was wrong; see URGENT item 5.** Open at `-O1` on **arm64, riscv64, arm and i386** and at forced `-O0` on **x86_64**; the store-chain fix closed x86_64 at `-O1` only. **Root-caused at `bc85ce70`, x86_64 `-O0`:** all three insert the *identical* three bytes, `48 8b 09` (`mov (%rcx),%rcx`) — the same "extra dereference the parser did not make" seen as `ldr x0,[x0]` on arm64-osx, so it is one defect on every key. The source shape is `GATES[g].env` (a member at offset 8 of an array element) passed as a call argument. **The parser defers the load to argument-marshalling time**: it computes *all* argument addresses first, then loads each at push time inside `gfunc_call`, in reverse order — `add $0x8,%rcx` … `mov (%rdx),%rdx; push %rdx; mov (%rcx),%rcx; push %rcx`. Replay emits the `AST_Load` eagerly at expression position instead. `AST_Load` replays as `ast_replay_value(child); indir();` (`src/mccast.c:4319-4322`) and `indir()` emits a load **only when its operand arrives `VT_LVAL`**, so the address subtree is reaching replay as an lvalue where the parser had a plain rvalue. **Not yet pinned: which arena node makes it lvalue** — and that decides between the argcast use site (`src/mccrir.c:2435`, legal) and the `RIR_M_LOAD` mark (`src/mccrir.c:3073`, a capture site, the category that produced two core dumps and a compiler abort in the banked negatives). `[arg]` reports the two operands as `cur=Load … curt=0 st=5`, an **untyped** Load — the case `:413`'s banked negative N13 says the argcast wrap was special-cased for, and widening that wrap cost −16 `c2ok` on every key. **Two synthetic reducers were written and neither reproduces** (`ok=1` both times), which is banked negative N20 exactly: work from the real body, not a model of it. Instrument `runner.c::interesting` directly with `RIRDBG` and read the arena node for that argument.
+- `bounds_stress.c::test16` and `::test17`, **24**, both on all twelve keys: `strcpy(q = alloca(strlen(demo) + 1), demo)` inside a call argument. The trial re-evaluates `strlen(demo) + 1` and calls `alloca` a second time instead of reusing the value. Nested call in an argument, so the same family as `struct_assign_test`. **INERT — both read `[rir-prod] fallback`**, so the double-`alloca` never ships; an earlier revision called it *"likely not equivalent"*, which was true of the re-emission and irrelevant to the binary. Largest model gap on the board, still worth closing for deletion completeness, but not a wrong-code item.
+- `fuzz/runner.c::triage`, `::interesting`, `::main` — **LIVE, and the only live class on this list. `[rir-prod-total] used=49 fallback=0`**: the pre-flight accepts all 49 bodies, so the arena's bytes — including the extra dereference — actually ship at `-O1`+. This is the one entry where correctness rests on the arena and the parser being equivalent rather than on the fallback, which makes it the highest-priority item here even though its byte count is not the largest. The extra `mov (%rcx),%rcx` loads the same pointer the parser loads later, so it is very probably equivalent, and the goldens are green — but "probably" is doing work no other entry on this list needs. **The scope on this line was also wrong; see URGENT item 5.** Open at `-O1` on **arm64, riscv64, arm and i386** and at forced `-O0` on **x86_64**; the store-chain fix closed x86_64 at `-O1` only. **Root-caused at `bc85ce70`, x86_64 `-O0`:** all three insert the *identical* three bytes, `48 8b 09` (`mov (%rcx),%rcx`) — the same "extra dereference the parser did not make" seen as `ldr x0,[x0]` on arm64-osx, so it is one defect on every key. The source shape is `GATES[g].env` (a member at offset 8 of an array element) passed as a call argument. **The parser defers the load to argument-marshalling time**: it computes *all* argument addresses first, then loads each at push time inside `gfunc_call`, in reverse order — `add $0x8,%rcx` … `mov (%rdx),%rdx; push %rdx; mov (%rcx),%rcx; push %rcx`. Replay emits the `AST_Load` eagerly at expression position instead. `AST_Load` replays as `ast_replay_value(child); indir();` (`src/mccast.c:4319-4322`) and `indir()` emits a load **only when its operand arrives `VT_LVAL`**, so the address subtree is reaching replay as an lvalue where the parser had a plain rvalue. **Not yet pinned: which arena node makes it lvalue** — and that decides between the argcast use site (`src/mccrir.c:2435`, legal) and the `RIR_M_LOAD` mark (`src/mccrir.c:3073`, a capture site, the category that produced two core dumps and a compiler abort in the banked negatives). `[arg]` reports the two operands as `cur=Load … curt=0 st=5`, an **untyped** Load — the case `:413`'s banked negative N13 says the argcast wrap was special-cased for, and widening that wrap cost −16 `c2ok` on every key. **Two synthetic reducers were written and neither reproduces** (`ok=1` both times), which is banked negative N20 exactly: work from the real body, not a model of it. Instrument `runner.c::interesting` directly with `RIRDBG` and read the arena node for that argument.
 - `statement_expr_test`, **7**, is what is left of the statement-expression class after `local_label_test` closed. It is now a `c2bytes` divergence at identical length -- pure ordering, not a missing or extra instruction. The two defects that made up the class are described under "what closed"; whatever is left is a third.
 - `full_language.c`, **42** over its seven keys, six bodies: `struct_assign_test` (call), `statement_expr_test` (jmp), `s7_9_iso646_test` (store, and a BYTE divergence not a length one), `local_label_test` (call), `coherency_test` (genop), `char_short_test` (cvt_csti). Of these, `struct_assign_test` and `char_short_test` are confirmed RIR-model defects (the tree leg gets them right or differs); the rest reproduce identically in the tree leg and are shared-replay work. `longlong_test` adds 5 more on the keys where it diverges.
-- `rev64_mt.c::main`, **12**, still open on all keys — a different and much larger divergence from the ternary one that closed in the same file's sibling. Re-measured at `bc85ce70`, x86_64 forced `-O0`: want **2044** got **2006**. The divergence is `add $0x18,%rdx` in the parser against `add $0x28,%rdx` in the trial — **a different member offset** — followed by `xor %eax,%eax; mov %rax,(%rdx); mov %rax,(%rcx)`. Source is the chained `jb[i].n = jb[i].xsum = jb[i].asum = jb[i].psum = 0;`. **Whether this is equivalent is undecided and has to be decided before any semantic verdict is recorded for it**: if the trial writes all four members in a different order it is equivalent, and if it writes only two of the four it is wrong code. Being 38 bytes shorter is consistent with either. Decide it by execution, not by reading.
-- `coherency_test` — **not a shape difference; the re-emission is missing content.** Re-measured at `bc85ce70`, x86_64 forced `-O0`: want **930** got **806**, and the trial's last bytes are `48 8b 65 e8` (`mov -0x18(%rbp),%rsp`, the VLA stack restore) immediately after the previous `call`. The final statement — `printf("coh compound-literal-sum: %d\n", (int)(vla[1] + (int[]){10, 20, 30}[2] + COH_C))` — is absent from the re-emission entirely. **Capture is complete**: the `[rir-op]` stream carries the three `vstore`s that materialise the compound literal (ops 472/479/486, parser offsets advancing `909→920→931→942`), the `genop` chain at 493-498 and the `call` at 501. So the loss is in the **arena reconstruction in `rir_build`**, not in `ast_replay_bb`/`ast_replay_value` — compensating in the replay would be patching downstream of where the content goes missing. `:401` classifies this body as shared-replay on the strength of `70c7d6f7`; that measurement is from the deleted tree leg and **the arena-truncation evidence above points the other way**. Note also that compound literals have **no** RIR prior art anywhere in this file, and every place a VLA or array shape has met the arena the landed decision was to *exclude* it, never to model it — so there is no banked negative to steer by here, in either direction.
+- `rev64_mt.c::main`, **12**, still open on all keys — a different and much larger divergence from the ternary one that closed in the same file's sibling. Re-measured at `bc85ce70`, x86_64 forced `-O0`: want **2044** got **2006**. The divergence is `add $0x18,%rdx` in the parser against `add $0x28,%rdx` in the trial — **a different member offset** — followed by `xor %eax,%eax; mov %rax,(%rdx); mov %rax,(%rcx)`. Source is the chained `jb[i].n = jb[i].xsum = jb[i].asum = jb[i].psum = 0;`. **INERT — `[rir-prod] fallback`**, so those bytes never ship and the "is it equivalent" question an earlier revision raised is moot for correctness. It is a model gap: the arena cannot re-emit this shape, so the body cannot stop falling back.
+- `coherency_test` — **INERT. `[rir-prod] fallback`, so the parser's bytes ship and
+  nothing below reaches a binary.** An earlier revision called this *"likely a real
+  bug"* on the strength of the byte evidence alone; that was wrong, and it is the
+  reason this file now opens with the inert/live split. Checked directly: mcc prints
+  `coh compound-literal-sum: 41` at `-O0`, `-O1`, `-O2` and `-O3`, byte-identical to
+  gcc. The finding below is a **model** gap — a body the arena cannot re-emit and
+  therefore cannot stop falling back — not a defect. Its priority is deletion
+  completeness, not correctness. The re-emission is missing content: Re-measured at `bc85ce70`, x86_64 forced `-O0`: want **930** got **806**, and the trial's last bytes are `48 8b 65 e8` (`mov -0x18(%rbp),%rsp`, the VLA stack restore) immediately after the previous `call`. The final statement — `printf("coh compound-literal-sum: %d\n", (int)(vla[1] + (int[]){10, 20, 30}[2] + COH_C))` — is absent from the re-emission entirely. **Capture is complete**: the `[rir-op]` stream carries the three `vstore`s that materialise the compound literal (ops 472/479/486, parser offsets advancing `909→920→931→942`), the `genop` chain at 493-498 and the `call` at 501. So the loss is in the **arena reconstruction in `rir_build`**, not in `ast_replay_bb`/`ast_replay_value` — compensating in the replay would be patching downstream of where the content goes missing. `:401` classifies this body as shared-replay on the strength of `70c7d6f7`; that measurement is from the deleted tree leg and **the arena-truncation evidence above points the other way**. Note also that compound literals have **no** RIR prior art anywhere in this file, and every place a VLA or array shape has met the arena the landed decision was to *exclude* it, never to model it — so there is no banked negative to steer by here, in either direction.
 - `ternary_op.c::tst_yarpgen`, **7**: a `JOP_STORE` register spill the parser makes mid-expression and the trial does not. Scheduling and allocation, not model shape — a single yarpgen expression with enough live values to spill, and the trial reaching that point with fewer live registers is the symptom. Expect it last.
 - `s7_9_iso646_test`, **12** including `run_s7_9.c`: a pure ORDERING difference at identical length. The parser stores then loads the next condition; the trial hoists the load before the store and picks a different register for it. Same family as `AST_FB_STORE_ADDR_LATE`.
 - `zero_bss.c::main` **5**, `smoke.c::main` **5**, `struct_ret_variadic.c::mkv` **3**, `varargs.c::mix` **3**, `strpbrk.c::strpbrk` **2**, `struct_packed_indirect.c::main` **1**, `integer_promotion.c::main` **1** (riscv64 only), `run_s7_28.c::s7_28_wconv` **1**, `run_s_annFGK.c::s_annFGK_annex_test` **1**. `overflow_narrow.c::main` is closed.
