@@ -3968,7 +3968,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-chainstore-${_gn}" --only "${_gn}")
             set_tests_properties("exec-chainstore/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_OPASSIGN=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -3979,7 +3979,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-ivsrptr-${_gn}" --only "${_gn}")
             set_tests_properties("exec-ivsrptr/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_OPASSIGN=1;MCC_AST_IVSR_PTR=1")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_IVSR_PTR=1")
         endforeach()
 
         if(MCC_TARGETOS STREQUAL "WIN32")
@@ -3991,7 +3991,7 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                             "${CMAKE_BINARY_DIR}/exec-gatecombo-${_gn}" --only "${_gn}")
                 set_tests_properties("exec-gatecombo/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_IVSR_PTR=1;MCC_AST_OPASSIGN=1")
+                    SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O2;MCC_AST_CHAINSTORE=1;MCC_AST_PROMO_INCDEC=1;MCC_AST_IVSR_PTR=1")
             endforeach()
         endif()
 
@@ -4124,7 +4124,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-gatesoff-${_gn}" --only "${_gn}")
             set_tests_properties("exec-gatesoff/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3;MCC_AST_OPASSIGN=0;MCC_AST_CHAINSTORE=0")
+                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O3;MCC_AST_CHAINSTORE=0")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -5309,7 +5309,7 @@ if(MCC_BUILD_TESTS)
                         COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-fixpoint.py"
                                 "${CMAKE_BINARY_DIR}" "--opt=${_shopt}"
                                 MCC_AST_CHAINSTORE=1 MCC_AST_PROMO_INCDEC=1
-                                MCC_AST_IVSR_PTR=1 MCC_AST_OPASSIGN=1)
+                                MCC_AST_IVSR_PTR=1)
                     set_tests_properties("selfhost-fixpoint-memmodel${_shopt}"
                         PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
                 endforeach()
@@ -5318,7 +5318,7 @@ if(MCC_BUILD_TESTS)
                     COMMAND "${MCC_PYTHON3}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/selfhost-smoke.py"
                             "${CMAKE_BINARY_DIR}"
                             MCC_AST_CHAINSTORE=1 MCC_AST_PROMO_INCDEC=1
-                            MCC_AST_IVSR_PTR=1 MCC_AST_OPASSIGN=1)
+                            MCC_AST_IVSR_PTR=1)
                 set_tests_properties(selfhost-smoke-memmodel PROPERTIES FIXTURES_REQUIRED MCC_BUILT
                     TIMEOUT 300)
             endif()

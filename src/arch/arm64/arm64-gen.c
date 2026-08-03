@@ -756,6 +756,13 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		return;
 	}
 
+	/* Walking a statically dead arm reaches here with an operand the parser
+	   const-folded under nocode_wanted -- a store target that collapsed to a
+	   bare VT_CONST, say. Every o() above this point is already a no-op, so
+	   there is nothing to diagnose and nothing to emit. */
+	if (nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+
 	printf("load(%x, (%x, %x, %lx))\n", r, svtt, sv->r, (long)svcul);
 	assert(0);
 }
@@ -897,6 +904,9 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); assert(0); }
 		return;
 	}
+
+	if (nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
 
 	printf("store(%x, (%x, %x, %lx))\n", r, svtt, sv->r, (long)svcoff);
 	assert(0);
