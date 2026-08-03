@@ -47,6 +47,22 @@ host-native self-host unmeasurable on this machine.
 | W6 | **Re-bank `verify-baseline` — now moot, record the closure** | The prediction that `x86_64-darwin.txt` and `x86_64-win32.txt` needed re-banking on their own hosts is **dead**: P5 deleted all four files and `tests/ast/verify-baseline/` no longer exists. Nothing to do; do not carry it forward. |
 | W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so nothing under **External suites** or **Vector types** could be checked on this host. **Partly answered upstream**: `214ed40f` re-ran the whole tree and reports 82.6/82.4 over 20,513 tests — see **The eight-cluster sweep**. The gap that remains is that this host still cannot reproduce it. |
 
+**W4 and W5 above are live work on the Windows host — see the section below.** The
+preset sweep already closed the 8MB host-exe stack reserve and the `_WIN32_WINNT`
+0x0600 floor; `stage2` is listed there as not started, which is exactly W4. Do not
+open a second front on either.
+
+## Open — the Windows-host preset sweep, interrupted by a reboot (2026-08-03)
+
+A full presets-x-tests sweep on the Windows x86_64 host (scoop clang MSVC-ABI as default CC), four host-build defects fixed and pushed: the `_WIN32_WINNT` 0x0600 floor (SRWLocks), the 8MB host-exe stack reserve (mcc-ejboot 0xC00000FD), the diagnostics `mcc_p` skip under MSVC-ABI clang, and gcc discovery preferring vendored winlibs over CLion's bundle (whose clang-built libpthread.a references `__intrinsic_setjmpex` its GNU runtime never defines — probe-linked now, do not re-diagnose).
+
+State when the machine went down: `cross`/`debug`/`release`/`sanitize`/`cst` green at 8160-8184 each, on the pre-rebase base. Still to run, all on the pushed HEAD:
+
+- `matrix` — clean rebuild was in flight when the reboot killed it; `rm -rf cmake-matrix` and rerun (config log should print the winlibs gcc, not CLion's).
+- `diagnostics` — rerun with the mcc_p skip; everything cascaded from that one link before.
+- `msvc`, `sanitize-msvc` (VS 18 is installed), `mingw`, `stage2` (stage1 = the release mcc), `dist-mingw`, `dist-msvc` — not started.
+- Re-verify one full suite at the final HEAD: the green five above tested the tree before ~30 upstream commits landed mid-batch.
+
 Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0 through P4 have landed and `MCC_RIR_PROD` now defaults to **1**, so Replay_IR is the production arena — read P4 before touching the arena, it is where the three wrong-code classes are written down. **`MCC_RIR_ONLY` now defaults to 1 as well**: the recorder's per-body decline verdict was the arena's admission gate, and with it bypassed the arena is adopted on its own pre-flight alone. That widened the optimized population by 6.3% of bodies; the eight defects the widening exposed are closed, the three `optfire` cells that died with the gates they measure are deleted, and the tree is green at **8252/8252**. **The next step is the deletion itself** — read P5, which is now a pure deletion that moves nothing by construction. Everything above P5 is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
 
 Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells.
