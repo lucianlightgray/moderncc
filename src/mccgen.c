@@ -1043,6 +1043,8 @@ ST_FUNC void mccgen_finish(MCCState *s1) { MCC_TRACE("enter\n");
 	sym_pop(&global_stack, NULL, 0);
 	memset(s1->gen_complex_type_cache, 0, sizeof s1->gen_complex_type_cache);
 	s1->gen_complex_type_cache_n = 0;
+	memset(s1->gen_vector_type_cache, 0, sizeof s1->gen_vector_type_cache);
+	s1->gen_vector_type_cache_n = 0;
 	memset(s1->gen_complex_call_ftype, 0, sizeof s1->gen_complex_call_ftype);
 	memset(s1->gen_complex_idiv_ftype, 0, sizeof s1->gen_complex_idiv_ftype);
 	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
