@@ -247,7 +247,6 @@
 
 	#define __BIGGEST_ALIGNMENT__ 16
 	#define __FLT_EVAL_METHOD__ 0
-	#define __BITINT_MAXWIDTH__ 65535
 
 	#define __FLT_RADIX__ 2
 	#define __FLT_MANT_DIG__ 24

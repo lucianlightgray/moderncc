@@ -3842,12 +3842,20 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 			Sym *old = s1->f.func_type == FUNC_OLD ? s1 : s2;
 			Sym *proto = old == s1 ? s2 : s1;
 			Sym *op, *pp;
-			if (proto->f.func_type == FUNC_ELLIPSIS)
-				{ MCC_TRACE("br\n"); return 0; }
+			if (proto->f.func_type == FUNC_ELLIPSIS) { MCC_TRACE("br\n");
+				if (!old->next)
+					{ MCC_TRACE("br\n"); return 0; }
+				mcc_warning("'%s' defined as a variadic function without a prototype",
+										get_tok_str(old->v & ~SYM_FIELD, NULL));
+				return 1;
+			}
 			if (!old->next) { MCC_TRACE("br\n");
 				for (pp = proto->next; pp; pp = pp->next)
 					{ MCC_TRACE("br\n"); if (type_needs_default_promotion(&pp->type))
-						{ MCC_TRACE("br\n"); return 0; } }
+						{ MCC_TRACE("br\n"); mcc_pedantic("prototype parameter type does not "
+																	"survive the default argument promotions "
+																	"of a prior declaration without a prototype");
+							break; } }
 			} else { MCC_TRACE("br\n");
 				for (op = old->next, pp = proto->next; op && pp; op = op->next, pp = pp->next) { MCC_TRACE("br\n");
 					if (type_needs_default_promotion(&op->type))
@@ -7522,7 +7530,7 @@ the_end:
 		if ((t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to a function type"); }
 	}
-	if (!type_found && ext_seen) { MCC_TRACE("br\n");
+	if (!type_found && ext_seen && tok != TOK_STATIC_ASSERT) { MCC_TRACE("br\n");
 		while (ext_seen--)
 			{ MCC_TRACE("br\n"); unget_tok(TOK_EXTENSION); }
 	}
