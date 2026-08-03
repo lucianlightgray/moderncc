@@ -123,8 +123,174 @@
 	#define __INTPTR_TYPE__ __PTRDIFF_TYPE__
 #endif
 	#define __INT32_TYPE__ int
+	#define __UINT32_TYPE__ unsigned int
 	#define __CHAR16_TYPE__ unsigned short
 	#define __CHAR32_TYPE__ unsigned int
+	#define __CHAR8_TYPE__ unsigned char
+
+	#define __SCHAR_MAX__ 0x7f
+	#define __SHRT_MAX__ 0x7fff
+	#define __INT_MIN__ (-__INT_MAX__ - 1)
+	#define __LONG_MIN__ (-__LONG_MAX__ - 1L)
+	#define __LONG_LONG_MIN__ (-__LONG_LONG_MAX__ - 1LL)
+
+	#define __INT8_TYPE__ signed char
+	#define __UINT8_TYPE__ unsigned char
+	#define __INT8_MAX__ 0x7f
+	#define __UINT8_MAX__ 0xff
+	#define __INT16_TYPE__ short int
+	#define __UINT16_TYPE__ short unsigned int
+	#define __INT16_MAX__ 0x7fff
+	#define __UINT16_MAX__ 0xffff
+	#define __INT32_MAX__ 0x7fffffff
+	#define __UINT32_MAX__ 0xffffffffU
+
+#if __SIZEOF_LONG__ == 8 && defined __linux__
+	#define __UINT64_TYPE__ long unsigned int
+	#define __INT64_MAX__ 0x7fffffffffffffffL
+	#define __UINT64_MAX__ 0xffffffffffffffffUL
+#else
+	#define __UINT64_TYPE__ long long unsigned int
+	#define __INT64_MAX__ 0x7fffffffffffffffLL
+	#define __UINT64_MAX__ 0xffffffffffffffffULL
+#endif
+
+	#define __INTMAX_TYPE__ __INT64_TYPE__
+	#define __UINTMAX_TYPE__ __UINT64_TYPE__
+	#define __INTMAX_MAX__ __INT64_MAX__
+	#define __UINTMAX_MAX__ __UINT64_MAX__
+
+	#define __INT_LEAST8_TYPE__ __INT8_TYPE__
+	#define __UINT_LEAST8_TYPE__ __UINT8_TYPE__
+	#define __INT_LEAST8_MAX__ __INT8_MAX__
+	#define __UINT_LEAST8_MAX__ __UINT8_MAX__
+	#define __INT_LEAST16_TYPE__ __INT16_TYPE__
+	#define __UINT_LEAST16_TYPE__ __UINT16_TYPE__
+	#define __INT_LEAST16_MAX__ __INT16_MAX__
+	#define __UINT_LEAST16_MAX__ __UINT16_MAX__
+	#define __INT_LEAST32_TYPE__ __INT32_TYPE__
+	#define __UINT_LEAST32_TYPE__ __UINT32_TYPE__
+	#define __INT_LEAST32_MAX__ __INT32_MAX__
+	#define __UINT_LEAST32_MAX__ __UINT32_MAX__
+	#define __INT_LEAST64_TYPE__ __INT64_TYPE__
+	#define __UINT_LEAST64_TYPE__ __UINT64_TYPE__
+	#define __INT_LEAST64_MAX__ __INT64_MAX__
+	#define __UINT_LEAST64_MAX__ __UINT64_MAX__
+
+	#define __INT_FAST8_TYPE__ signed char
+	#define __UINT_FAST8_TYPE__ unsigned char
+	#define __INT_FAST8_MAX__ __INT8_MAX__
+	#define __UINT_FAST8_MAX__ __UINT8_MAX__
+#if __SIZEOF_LONG__ == 8 && defined __linux__
+	#define __INT_FAST16_TYPE__ long int
+	#define __UINT_FAST16_TYPE__ long unsigned int
+	#define __INT_FAST32_TYPE__ long int
+	#define __UINT_FAST32_TYPE__ long unsigned int
+	#define __INT_FAST64_TYPE__ long int
+	#define __UINT_FAST64_TYPE__ long unsigned int
+	#define __INT_FAST16_MAX__ __INT64_MAX__
+	#define __UINT_FAST16_MAX__ __UINT64_MAX__
+	#define __INT_FAST32_MAX__ __INT64_MAX__
+	#define __UINT_FAST32_MAX__ __UINT64_MAX__
+	#define __INT_FAST64_MAX__ __INT64_MAX__
+	#define __UINT_FAST64_MAX__ __UINT64_MAX__
+#else
+	#define __INT_FAST16_TYPE__ int
+	#define __UINT_FAST16_TYPE__ unsigned int
+	#define __INT_FAST32_TYPE__ int
+	#define __UINT_FAST32_TYPE__ unsigned int
+	#define __INT_FAST64_TYPE__ __INT64_TYPE__
+	#define __UINT_FAST64_TYPE__ __UINT64_TYPE__
+	#define __INT_FAST16_MAX__ __INT32_MAX__
+	#define __UINT_FAST16_MAX__ __UINT32_MAX__
+	#define __INT_FAST32_MAX__ __INT32_MAX__
+	#define __UINT_FAST32_MAX__ __UINT32_MAX__
+	#define __INT_FAST64_MAX__ __INT64_MAX__
+	#define __UINT_FAST64_MAX__ __UINT64_MAX__
+#endif
+
+#if __SIZEOF_PTRDIFF_T__ == 8
+	#define __PTRDIFF_MAX__ 0x7fffffffffffffffL
+#else
+	#define __PTRDIFF_MAX__ 0x7fffffff
+#endif
+	#define __PTRDIFF_MIN__ (-__PTRDIFF_MAX__ - 1)
+#if __SIZEOF_SIZE_T__ == 8
+	#define __SIZE_MAX__ 0xffffffffffffffffUL
+#else
+	#define __SIZE_MAX__ 0xffffffffU
+#endif
+
+#if defined __linux__ && (defined __arm__ || defined __aarch64__)
+	#define __WCHAR_MAX__ 0xffffffffU
+	#define __WCHAR_MIN__ 0U
+#else
+	#define __WCHAR_MAX__ 0x7fffffff
+	#define __WCHAR_MIN__ (-__WCHAR_MAX__ - 1)
+#endif
+	#define __WINT_MAX__ 0xffffffffU
+	#define __WINT_MIN__ 0U
+
+	#define __SIG_ATOMIC_TYPE__ int
+	#define __SIG_ATOMIC_MAX__ 0x7fffffff
+	#define __SIG_ATOMIC_MIN__ (-__SIG_ATOMIC_MAX__ - 1)
+
+	#define __BIGGEST_ALIGNMENT__ 16
+	#define __FLT_EVAL_METHOD__ 0
+	#define __BITINT_MAXWIDTH__ 65535
+
+	#define __FLT_RADIX__ 2
+	#define __FLT_MANT_DIG__ 24
+	#define __FLT_DIG__ 6
+	#define __FLT_MIN_EXP__ (-125)
+	#define __FLT_MIN_10_EXP__ (-37)
+	#define __FLT_MAX_EXP__ 128
+	#define __FLT_MAX_10_EXP__ 38
+	#define __FLT_MAX__ 3.40282346638528859811704183484516925e+38F
+	#define __FLT_EPSILON__ 1.19209289550781250000000000000000000e-7F
+	#define __FLT_DENORM_MIN__ 1.40129846432481707092372958328991613e-45F
+	#define __FLT_HAS_DENORM__ 1
+	#define __FLT_HAS_INFINITY__ 1
+	#define __FLT_HAS_QUIET_NAN__ 1
+
+	#define __DBL_MANT_DIG__ 53
+	#define __DBL_DIG__ 15
+	#define __DBL_MIN_EXP__ (-1021)
+	#define __DBL_MIN_10_EXP__ (-307)
+	#define __DBL_MAX_EXP__ 1024
+	#define __DBL_MAX_10_EXP__ 308
+	#define __DBL_MAX__ ((double)1.79769313486231570814527423731704357e+308L)
+	#define __DBL_EPSILON__ ((double)2.22044604925031308084726333618164062e-16L)
+	#define __DBL_DENORM_MIN__ ((double)4.94065645841246544176568792868221372e-324L)
+	#define __DBL_HAS_DENORM__ 1
+	#define __DBL_HAS_INFINITY__ 1
+	#define __DBL_HAS_QUIET_NAN__ 1
+
+#if defined __x86_64__ || defined __i386__
+	#define __LDBL_MANT_DIG__ 64
+	#define __LDBL_DIG__ 18
+	#define __LDBL_MIN_EXP__ (-16381)
+	#define __LDBL_MIN_10_EXP__ (-4931)
+	#define __LDBL_MAX_EXP__ 16384
+	#define __LDBL_MAX_10_EXP__ 4932
+	#define __LDBL_MAX__ 1.18973149535723176502126385303097021e+4932L
+	#define __LDBL_EPSILON__ 1.08420217248550443400745280086994171e-19L
+	#define __LDBL_DENORM_MIN__ 3.64519953188247460252840593361941982e-4951L
+#else
+	#define __LDBL_MANT_DIG__ __DBL_MANT_DIG__
+	#define __LDBL_DIG__ __DBL_DIG__
+	#define __LDBL_MIN_EXP__ __DBL_MIN_EXP__
+	#define __LDBL_MIN_10_EXP__ __DBL_MIN_10_EXP__
+	#define __LDBL_MAX_EXP__ __DBL_MAX_EXP__
+	#define __LDBL_MAX_10_EXP__ __DBL_MAX_10_EXP__
+	#define __LDBL_MAX__ __DBL_MAX__
+	#define __LDBL_EPSILON__ __DBL_EPSILON__
+	#define __LDBL_DENORM_MIN__ __DBL_DENORM_MIN__
+#endif
+	#define __LDBL_HAS_DENORM__ 1
+	#define __LDBL_HAS_INFINITY__ 1
+	#define __LDBL_HAS_QUIET_NAN__ 1
+
 	#define __ATOMIC_RELAXED 0
 	#define __ATOMIC_CONSUME 1
 	#define __ATOMIC_ACQUIRE 2
