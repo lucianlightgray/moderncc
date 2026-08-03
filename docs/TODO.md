@@ -1028,13 +1028,30 @@ Note the op sequences cannot be diffed positionally to find this — the C2 leg 
 a tree through different primitives (245 ops against the parser's 382) — so align by
 `ind=` and not by position.
 
-**What is still not established is the discriminator.** `Convert t=5` above the
-`MEMBER` remains the prime suspect, since replaying a `Convert` calls `gen_cast`,
-which `gv`s an lvalue. But the `OPTS[i]` argument carries a `Convert t=5` too and does
-*not* load early, and `[arg]` reports **both** operands as `cur=Load … curt=0 st=5` —
-untyped children in both cases. So "the child is untyped so the cast is real" does not
-by itself separate them, and the next step is to find what does: read `gen_cast`'s
-early-out against both shapes, or tap the two `Convert` replays directly. Do not fix on the suspicion alone: **this class is
+**The cast itself is eliminated as the emitter, and one candidate remains.**
+`gen_cast` opens its conversion block with `if (sbt != dbt)` (`src/mccgen.c:4378`), so
+a same-type `Convert` is a genuine no-op and cannot be what forces the register. The
+`MCC_TRACE_IF("CVT from …")` already at `src/mccast.c:4206` confirms the shape is
+same-type over an lvalue — enable it with a `MCC_CONFIG_TRACE=ON` build and
+`MCC_TRACE_FILE=mccast MCC_TRACE_FUNC=ast_replay_value -v128`, and `runner.c` reports
+**505** `CVT from t=0x5 r=0x132 -> t=0x5` (`0x100` is `VT_LVAL`) against **61**
+`t=0x5 r=0x32 -> t=0x5` with the bit clear.
+
+That leaves **`AST_FB_CONVERT_GV` → `gv_cast_rvalue()`** (`src/mccast.c:4210`), which
+runs *unconditionally after* `gen_cast` whenever the flag is set, type equality
+notwithstanding. On an lvalue it forces a register, which is the load. The flag is set
+at seven sites in `src/mccrir.c` (`:2709 :2729 :3138 :3211 :3223 :4027 :4036`); the
+one inside `RIR_M_LOAD` is guarded by `rir_castgv_pend`, i.e. by the `RIR_M_CASTGV`
+mark, which is the parser saying *"a cast-and-gv happened here"* — and in this body
+the parser's gv happened at **push time**, not at the member.
+
+**Next step, and the measurement it needs.** Confirm the flag is set on the `MEMBER`'s
+parent `Convert` and clear on the `OPTS` one — `ast_dump` does not print `fbits`, so
+this needs either a temporary print or correlating `gv_cast_rvalue` call counts. Then
+decide the site. Do not simply stop setting the flag: it exists because the parser's
+own cast-gv had to be reproduced, and **`docs/TODO.md`'s N13 records that loosening
+the argcast wrap cost −16 `c2ok` on every key**. Measure before and after on the
+twelve-key board, and remember this class is LIVE. Do not fix on the suspicion alone: **this class is
 LIVE**, so unlike every other entry here a wrong fix ships as wrong code instead of
 sitting behind the fallback.
 
