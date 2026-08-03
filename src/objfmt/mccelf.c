@@ -1054,9 +1054,60 @@ static void relocate_section(MCCState *s1, Section *s, Section *sr) { MCC_TRACE(
 #endif
 }
 
+#ifdef R_TLS_TPOFF
+
+static void relocate_tls_got(MCCState *s1) { MCC_TRACE("enter\n");
+	ElfW_Rel *rel;
+	ElfW(Sym) * sym;
+	addr_t tls_start = 0;
+
+	if (!(s1->output_type & MCC_OUTPUT_DYN))
+		{ MCC_TRACE("br\n"); return; }
+	for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if ((s->sh_flags & SHF_TLS) && ssz && (!tls_start || s->sh_addr < tls_start))
+			{ MCC_TRACE("br\n"); tls_start = s->sh_addr; }
+	}
+	if (!tls_start)
+		{ MCC_TRACE("br\n"); return; }
+
+	if (s1->dynsym) { MCC_TRACE("br\n");
+		for_each_elem(s1->dynsym, 1, sym, ElfW(Sym)) {
+			if (ELFW(ST_TYPE)(sym->st_info) == STT_TLS &&
+					sym->st_shndx != SHN_UNDEF && sym->st_value >= tls_start)
+				{ MCC_TRACE("br\n"); sym->st_value -= tls_start; }
+		}
+	}
+
+	if (!s1->got || !s1->got->reloc)
+		{ MCC_TRACE("br\n"); return; }
+	for_each_elem(s1->got->reloc, 0, rel, ElfW_Rel) {
+		int sym_index = ELFW(R_SYM)(rel->r_info);
+		if (ELFW(R_TYPE)(rel->r_info) != R_TLS_TPOFF)
+			{ MCC_TRACE("br\n"); continue; }
+		sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+		int dynindex = get_sym_attr(s1, sym_index, 0)->dyn_index;
+		int preemptible = ELFW(ST_BIND)(sym->st_info) != STB_LOCAL &&
+											ELFW(ST_VISIBILITY)(sym->st_other) == STV_DEFAULT;
+		if (dynindex && (sym->st_shndx == SHN_UNDEF || preemptible)) { MCC_TRACE("br\n");
+			rel->r_info = ELFW(R_INFO)(dynindex, R_TLS_TPOFF);
+			rel->r_addend = 0;
+		} else { MCC_TRACE("br\n");
+			rel->r_info = ELFW(R_INFO)(0, R_TLS_TPOFF);
+			rel->r_addend = (addr_t)(sym->st_value - tls_start);
+		}
+	}
+}
+
+#endif
+
 ST_FUNC void relocate_sections(MCCState *s1) { MCC_TRACE("enter\n");
 	Section *s, *sr;
 
+#ifdef R_TLS_TPOFF
+	relocate_tls_got(s1);
+#endif
 	for (int i = 1; i < s1->nb_sections; ++i) { MCC_TRACE("br\n");
 		sr = s1->sections[i];
 		if (sr->sh_type != SHT_RELX)
@@ -1189,6 +1240,18 @@ static struct sym_attr *put_got_entry(MCCState *s1, int dyn_reloc_type,
 	name = (char *)symtab_section->link->data + sym->st_name;
 
 	if (s1->dynsym) { MCC_TRACE("br\n");
+#ifdef R_TLS_TPOFF
+		if (dyn_reloc_type == R_TLS_TPOFF) { MCC_TRACE("br\n");
+			if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL && 0 == attr->dyn_index)
+				{ MCC_TRACE("br\n"); attr->dyn_index = set_elf_sym(s1->dynsym, sym->st_value,
+																			sym->st_size, sym->st_info, 0,
+																			sym->st_shndx, name); }
+			put_elf_reloc(s1->dynsym, s1->got, got_offset, R_TLS_TPOFF,
+										sym_index);
+			attr->got_offset = got_offset;
+			return attr;
+		}
+#endif
 		if (ELFW(ST_BIND)(sym->st_info) == STB_LOCAL) { MCC_TRACE("br\n");
 			put_elf_reloc(s1->dynsym, s1->got, got_offset, R_RELATIVE,
 										sym_index);
@@ -1307,6 +1370,21 @@ redo:
 				if (pass != 0)
 					{ MCC_TRACE("br\n"); continue; }
 				rel->r_info = ELFW(R_INFO)(sym_index, R_X86_64_PC32);
+				continue;
+			}
+#endif
+#ifdef MCC_TARGET_ARM64
+			if (type == R_AARCH64_TLSDESC_ADR_PAGE21 ||
+					type == R_AARCH64_TLSDESC_LD64_LO12) { MCC_TRACE("br\n");
+				if (!(s1->output_type & MCC_OUTPUT_DYN))
+					{ MCC_TRACE("br\n"); continue; }
+				if (pass != 1)
+					{ MCC_TRACE("br\n"); continue; }
+				if (!s1->got)
+					{ MCC_TRACE("br\n"); got_sym = build_got(s1); }
+				if (gotplt_entry == BUILD_GOT_ONLY)
+					{ MCC_TRACE("br\n"); continue; }
+				put_got_entry(s1, R_AARCH64_TLS_TPREL64, sym_index);
 				continue;
 			}
 #endif
@@ -2279,16 +2357,28 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 		{ MCC_TRACE("br\n"); ++phnum; }
 	++phnum;
 	{
-		int has_tls = 0;
+		Section *tls_first = NULL;
+		addr_t tls_align = 1;
+
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			s = s1->sections[i];
 			if (s->sh_flags & SHF_TLS) { MCC_TRACE("br\n");
-				has_tls = 1;
-				break;
+				if (!tls_first)
+					{ MCC_TRACE("br\n"); tls_first = s; }
+				if (s->sh_addralign > tls_align)
+					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 			}
 		}
-		if (has_tls)
-			{ MCC_TRACE("br\n"); ++phnum; }
+
+		/* A thread-local's address is its offset from the block base, and the
+		   loader aligns only the base. Unless the block starts at the strictest
+		   alignment any member asks for, an _Alignas(64) object placed at a
+		   64-aligned *link* address still lands misaligned at run time. */
+		if (tls_first) { MCC_TRACE("br\n");
+			if (tls_first->sh_addralign < tls_align)
+				{ MCC_TRACE("br\n"); tls_first->sh_addralign = tls_align; }
+			++phnum;
+		}
 	}
 	d->phnum = phnum;
 	d->phdr = mcc_mallocz(phnum * sizeof(ElfW(Phdr)));
@@ -2408,7 +2498,7 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 	}
 	{
 		Section *tls_start_sec = NULL;
-		addr_t tls_start = 0, tls_end = 0, tls_file_end = 0;
+		addr_t tls_start = 0, tls_end = 0, tls_file_end = 0, tls_align = 1;
 		for (int i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 			s = s1->sections[i];
 			if (s->sh_flags & SHF_TLS && s->sh_size) { MCC_TRACE("br\n");
@@ -2422,6 +2512,8 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 					if (s->sh_addr + s->sh_size > tls_end)
 						{ MCC_TRACE("br\n"); tls_end = s->sh_addr + s->sh_size; }
 				}
+				if (s->sh_addralign > tls_align)
+					{ MCC_TRACE("br\n"); tls_align = s->sh_addralign; }
 				if (s->sh_type != SHT_NOBITS &&
 						s->sh_addr + s->sh_size > tls_file_end)
 					{ MCC_TRACE("br\n"); tls_file_end = s->sh_addr + s->sh_size; }
@@ -2433,7 +2525,8 @@ static int layout_sections(MCCState *s1, int *sec_order, struct dyn_inf *d) { MC
 			ph->p_paddr = tls_start;
 			ph->p_filesz = tls_file_end > tls_start ? tls_file_end - tls_start : 0;
 			ph->p_memsz = tls_end - tls_start;
-			ph->p_align = tls_start_sec->sh_addralign;
+
+			ph->p_align = tls_align;
 		}
 	}
 	if (d->interp)
