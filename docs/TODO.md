@@ -1,5 +1,52 @@
 # TODO
 
+## URGENT — gates that are red or unmeasurable right now
+
+Re-verified mechanically against `da3a461b` on 2026-08-03 in a fresh `cmake-verify`
+(`-DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`). **Three gates this
+file records as green are not**, and none of the three is the cut's fault — all
+three are the two feature commits of 2026-08-03 (`9142c751` inline-asm, `8ab42063`
+builtins) landing without their banks moving.
+
+1. **`tools/o0_ab.sh` fails on all twelve keys and has since `8ab42063`.** It reports
+   *"an -O0 object moved"* for roughly **250 objects per key, 6,016 diff lines in
+   total** — very nearly the whole corpus, on every key, not one file on one target.
+   The cause is not a phase of the cut: `8ab42063` adds **161 lines to
+   `runtime/include/mccdefs.h`**, which every compile includes, so `-O0` output
+   shifts tree-wide by construction. **This is legitimate and the bank simply has to
+   be re-taken** — but until it is, the `-O0` A/B, which is the gate every phase of
+   this plan is diffed against, cannot pass and cannot detect a real `-O0`
+   regression hiding behind the feature commit's noise. Rebank
+   `tests/ast/o0-baseline/*.obj.txt` **before** the next phase, and take it on a
+   short checkout path with `SOURCE_DATE_EPOCH` pinned.
+2. **The `C2_CORPUS=all` board is 194, not 104.** See **Scoreboard** — the 104 this
+   file quotes everywhere is the `C2_NO_EXTRA=1` number, i.e. measured with
+   `full_language.c` *excluded*, while the surrounding prose says `all` is the bar.
+3. **`tests/ast/rir_c2.cmake`'s `BANKFN` floor is one body low on every key.** The
+   corpus gained a body, so `fn` reads exactly +1 against every banked figure
+   (x86_64 1150 v 1149, arm64 1200 v 1199, and so on, all twelve). The cells pass —
+   a floor only catches population *loss* — but rebank them so the floor keeps
+   meaning what it says.
+
+### New urgent items — Windows and macOS, which this host cannot reach
+
+Everything below was **attempted locally and could not be measured**, not skipped.
+This host runs x86_64 Linux with docker, wine, and `qemu-{i386,arm,aarch64,riscv64}`.
+Verified reachable here: the four ELF cross keys execute under `qemu-user` and both
+x86 PE keys execute under `wine` (a `printf` binary from `mcc-x86_64-win32` and
+`mcc-i386-win32` both run clean). That leaves six of the twelve keys and every
+host-native self-host unmeasurable on this machine.
+
+| # | what | why it needs the other host |
+| --- | --- | --- |
+| W1 | **`arm64-osx` and `x86_64-osx` runtime A/B and self-host** | Mach-O will not execute here at all. Both keys carry C2 gap (18 and 12) that has only ever been byte-compared, never run. The runtime A/B is the instrument this file says the byte compare cannot replace. |
+| W2 | **`arm64-win32`, `arm-win32`, `arm-wince` execution** | wine on an x86_64 host runs x86 PE only; ARM and ARM64 PE do not load. Three keys, 47 divergences between them, never executed. |
+| W3 | **`selfhost-fixpoint-O3` on macOS** | Recorded as *"green again by side effect, and the defect underneath it was never found… treat this as latent, not fixed."* It is green here. The failure was macOS-only, so this host cannot tell whether it is fixed or dormant. Re-run with the `MCC_AST_INLINE_LIMIT` bisect against a fresh probe, per the recipe already in this file. |
+| W4 | **Windows host stage2 (`pe`, `sanitize`, `dynamic`)** | The three reds at the P5 merge were closed by raising `SizeOfStackReserve` to 8MB, which is present at `src/objfmt/mccpe.c:738` and verified by reading. The *stack-overflow behaviour it fixes* needs a real 1MB-default PE process to confirm; wine's stack handling is not the same test. |
+| W5 | **mcc cannot self-host on Windows arm64** | Still open, still unreachable. Stage1 mcc takes an access violation (`0xC0000005`) on `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c`. Host ABI — varargs, `alloca`, stack probe — and it needs a Windows arm64 machine. |
+| W6 | **Re-bank `verify-baseline` — now moot, record the closure** | The prediction that `x86_64-darwin.txt` and `x86_64-win32.txt` needed re-banking on their own hosts is **dead**: P5 deleted all four files and `tests/ast/verify-baseline/` no longer exists. Nothing to do; do not carry it forward. |
+| W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so every number under **External suites** and the **Vector types** board is unverified at this commit. Fetch the trees and re-run before trusting any of it. |
+
 Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0 through P4 have landed and `MCC_RIR_PROD` now defaults to **1**, so Replay_IR is the production arena — read P4 before touching the arena, it is where the three wrong-code classes are written down. **`MCC_RIR_ONLY` now defaults to 1 as well**: the recorder's per-body decline verdict was the arena's admission gate, and with it bypassed the arena is adopted on its own pre-flight alone. That widened the optimized population by 6.3% of bodies; the eight defects the widening exposed are closed, the three `optfire` cells that died with the gates they measure are deleted, and the tree is green at **8252/8252**. **The next step is the deletion itself** — read P5, which is now a pure deletion that moves nothing by construction. Everything above P5 is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
 
 Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells.
@@ -8,7 +55,13 @@ Two bars, both required. **Replay** (`rir_verify`) replays a captured body again
 
 ## Handoff — state at this checkpoint
 
-The tree is green: `ctest -j 8` **8252/8252** with no env set, on a short checkout path with nothing else running.
+**Re-measured at `da3a461b`, 2026-08-03: `ctest -j 8` registers 8254 cells and reads
+8253 passed, 1 failed.** The one failure is `selfhost-output-parity-O3`, and it
+**passes standalone in 15.4 s** — it is the `-j 8` contention artifact this file
+already documents for the `selfhost-*` family, not a regression. Treat the tree as
+**8254/8254**. The earlier figures in this section (8252, 8232, 8231) are all
+superseded; the count rose because the two feature commits of 2026-08-03 added
+cells, not because anything was un-deleted.
 
 ### Where the cut stands
 
@@ -17,14 +70,44 @@ The tree is green: `ctest -j 8` **8252/8252** with no env set, on a short checko
 | P0 harness, P1 journal verify-half cut, P2 decouple + admission predicate, P3 capture rebrand | landed |
 | P4 cutover | landed; **`MCC_RIR_PROD` defaults to 1**, arena drives **91.5%** of bodies (`used=2011 fallback=11 skip=176` of 2198, x86_64 `-O2`, whole corpus) |
 | P5 switch | **landed. `MCC_RIR_ONLY` defaults to 1**; the three `optfire` cells that died with it are deleted and the suite is 8252/8252 |
-| P5 deletion | **done.** The hooks, the state, all 14 gates, `MCC_RIR_ONLY`, `MCC_AST_VERIFY` and 22 dead cells are gone. Nothing named `ast_hook_`, `ast_bail`, `ast_desync`, `ast_vn` or `ast_try_active` survives under `src/`. Tree green at 8231/8231 |
-| `fix-imaginary` | branch ready, merges clean, **unblocked** — the three `ast-verify-ratchet` cells are deleted |
-| P6 split + `ast_*` → `ir_*` | not started |
+| P5 deletion | **done, and re-verified mechanically.** All 33 recorder symbols read 0 occurrences under `src/`: `ast_hook_`, `ast_bail`, `ast_desync`, `ast_vn`, `ast_try_active`, `ast_gap_note`, `AST_SET_BAIL`/`_DESYNC`, `ast_capture`, `ast_in_op`, `ast_in_call`, `ast_ret_val`, `ast_last_return`, `ast_saw_nocode`/`_chain`, the four `*_pending`, `ast_cf_top`/`_if`/`_savebb`, `ast_vs`, `ast_ret_bad`, `ast_bad_vtype`, `ast_wide_vtype`, `ast_verify_env`, `MCC_AST_INT128`, `MCC_AST_LDOUBLE`, `MCC_RIR_ONLY`, `ast_rir_seam`. All 12 named recorder-shape gates read 0 in `src/` **and** in `tests/`. All six keepers are present. **Four pieces of residue survive — see "Deletion residue" below.** |
+| `fix-imaginary` | branch ready, merges clean, **unblocked** — `tests/ast/verify-baseline/` and `verify_ratchet.cmake` are confirmed absent from the tree |
+| P6 split + `ast_*` → `ir_*` | not started. **Its stated precondition is false** — see P6. |
+
+### Deletion residue — four things P5 was supposed to take and did not
+
+Found by re-grepping the inventory at `da3a461b`. None is load-bearing; all four are
+one-line removals that belong in the P6 diff at the latest.
+
+- **`MCC_AST_VERIFY_DIFF` and its whole facility survive.** The inventory listed
+  `ast_verify_env`, `MCC_AST_VERIFY` and `MCC_AST_VERIFY_OUT` and those three are
+  gone, but `ast_verify_diff` (`src/mccast.c:1311`, read at `:1927`),
+  `ast_verify_diff_match` (`:12866`), `ast_verify_dump_diff` (`:12879`) and the call
+  site at `:15122` are all live, as is `ast_treechk`/`ast_treechk_on`/`MCC_AST_TREECHK`
+  (`:5125`–`:5143`, called at `:15118`). The `ast/treecheck` **cell** is gone; the
+  machinery it drove is not. Decide whether the diff-dump is worth keeping as a
+  Replay_IR instrument, or delete it — but do not leave it undecided.
+- **`ast_jit_guard_env` (`src/mccast.c:1382`) is still there.** This file's own P5
+  inventory names it and calls it *"already dead today, declared and never assigned"*.
+  It is still declared, still never assigned, still never read.
+- **`ast_rir_arena` is now a dead local.** `src/mccast.c:14948` declares it and
+  `:14955` assigns it; nothing reads it. It is the stump of the `do_promote`
+  carve-out, and that carve-out really is gone from `do_promote` (`:15213`) as
+  claimed — this is just what it left behind.
+- **`tools/tracediff.sh` survives** although the deletion note says `ast/treecheck`
+  and `ast/tracediff` went *"with their two scripts"*. The two **cells** are gone;
+  one script is not, and this file still recommends it as an instrument under
+  **Open work raised after the cutover**. Keep it and fix the note, or delete both.
+
+Also: **`tools/gate-ledger.sh` still runs the recorder half.** It drives
+`MCC_AST_HASH_OUT` at `:34` and prints *"changes the recorded AST"* at `:77`. The P5
+inventory lists `tools/gate-ledger.sh`'s recorder half as dying with the recorder.
+It did not.
 
 ### Next steps, in order
 
 1. **Land `fix-imaginary`** — `ast-verify-ratchet-{O1,O2,O3}` are deleted, which were the only three cells blocking it. It merges clean and needs no rebase. **This is unblocked now.**
-2. **P6**: split `mccast.c` and rename `ast_*` → `ir_*`. The `ir_`/`IR_` namespace is verified empty.
+2. **P6**: split `mccast.c` and rename `ast_*` → `ir_*`. **Its precondition is false** — the `ir_`/`IR_` namespace holds 835 occurrences under `src/` (`ir_cap_*` 478, `IR_OP_*` 280, `IR_CAP_*` 77), all of them P3's own rebrand. Settle the target spelling first; see P6.
 3. Then the items under **Open work raised after the cutover** — the poison-over-deletion change, the `ast_cycle_env` convergence, the pointer test, glibc headers, and `MCC_TRACE` on `full_language.c`.
 
 ### What the deletion did
@@ -103,7 +186,57 @@ Read `ok=` on every row before believing it. `rir_report` is an **atexit** handl
 | riscv64 | 2035/2048 | 13 | 2 bytes + 9 len + 2 invalid, plus 7 skip | 1463/2094 | 539 |
 | arm64-osx | 2458/2477 | 19 | 4 bytes + 13 len + 2 err | 1679/2521 | 566 |
 
-**The table above predates P4 and its `ok` column no longer matches the tree** (it reads 522 files on x86_64 where the same sweep now reads 562), so do not diff a fresh row against it. The `all` board as re-measured at the lost-intermediate commit, `C2_CORPUS=all C2_NO_EXTRA=1`, `-O1`, twelve keys, before → after, as `gap` over `c2try`:
+**The table above predates P4 and its `ok` column no longer matches the tree** (it reads 522 files on x86_64 where the same sweep now reads 562), so do not diff a fresh row against it.
+
+### The `all` board is 194. The 104 is the board with `full_language.c` taken out.
+
+**Re-measured at `da3a461b`, 2026-08-03, `C2_CORPUS=all`, `-O1`, twelve keys, on the
+660-file corpus.** Run twice, once as the default and once with `C2_NO_EXTRA=1`,
+which is the only difference between the two columns:
+
+| key | `all` (the bar) | `all` with `C2_NO_EXTRA=1` | `full_language.c` costs | `c2try` |
+| --- | --- | --- | --- | --- |
+| x86_64 | 7 | 7 | — (does not enter) | 2134 |
+| i386 | 11 | 11 | — (does not enter) | 2133 |
+| x86_64-win32 | **11** | 4 | 7 | 2327 |
+| arm64-win32 | **15** | 7 | 8 | 2356 |
+| x86_64-osx | **12** | 4 | 8 | 2179 |
+| i386-win32 | **16** | 8 | 8 | 2337 |
+| arm-win32 / arm-wince | **16** each | 8 each | 8 | 2297 |
+| arm64 | **20** | 11 | 9 | 2445 |
+| arm64-osx | **18** | 9 | 9 | 2429 |
+| arm | **21** | 12 | 9 | 2383 |
+| riscv64 | **31** | 15 | 16 | 2378 |
+| **total** | **194** | **104** | **90** | |
+
+The `C2_NO_EXTRA=1` column reproduces this file's historical board **row for row,
+exactly**, which is what identifies it: every "104" in this document was taken with
+`full_language.c` excluded, while the prose around it says *"`C2_CORPUS=all` is the
+default and is the bar."* Both statements cannot be true. **194 is the bar**; 104 is
+the bar minus the one file this document elsewhere calls *"the second front and the
+only file that reaches classes `tests/exec` does not."*
+
+Three consequences worth acting on:
+
+- **`full_language.c` now enters the census on ten keys, not seven.** It compiles
+  clean at `-O0`, `-O1`, `-O2` **and** `-O3` on all twelve keys — 48 of 48 rc=0,
+  measured directly. The "seven keys" figure and the note that it *"aborts the C2
+  probe on several keys"* were taken on a compiler that **segfaulted** on it at
+  `-O2`/`-O3`; that crash is fixed and the file's census moved with it.
+- **The `c2err=2` column is `full_language.c`, not a PE/Mach-O property.** It reads
+  exactly 2 on the ten keys where the file enters and **0** on x86_64 and i386 where
+  it does not. Earlier revisions read it as a per-target constant because those were
+  the only keys the file entered on.
+- **It still drops out on x86_64 and i386, and the reason is a known open defect.**
+  Under `MCC_REPLAY_IR=5` both keys fail with `tests/diff/parts/legacy_meta.h:376:
+  error: ';' expected (got '0')` — which is *verbatim* the `AST_OP_ASM` replay defect
+  written up as P4 defect 4. The pre-flight refuses an `AST_OP_ASM` arena in
+  **production**, so production is safe; the **verify** path still replays it and
+  still corrupts the tokenizer stack. That defect is not closed, it is only
+  contained, and it is what keeps two keys' worth of coverage off the board.
+
+For continuity, the older `C2_NO_EXTRA=1` before → after readings at the
+lost-intermediate commit, which the column above still matches:
 
 | key | before | after | c2try |
 | --- | --- | --- | --- |
@@ -122,6 +255,14 @@ Read `ok=` on every row before believing it. `rir_report` is an **atexit** handl
 110 → 104. `faithful` is identical on all twelve keys either side, which is the check that matters: a capture-stream perturbation shows up there first.
 
 `C2_CORPUS=exec` for continuity with every earlier board in this file, `-O1`, gap only: x86_64 **0**, x86_64-osx **0**, x86_64-win32 **0**, i386 **0**, arm64 1, arm64-osx 1, arm64-win32 1, i386-win32 1, arm 1, arm-win32 1, arm-wince 1, riscv64 3 (plus 2 skip). Ten over twelve keys, down from 16 when the lost-intermediate class closed.
+
+**Re-measured at `da3a461b`: the `exec` board is unmoved, row for row, all twelve
+keys, gap still 10, `arm-win32 == arm-wince`.** `fn` is exactly **+1 on every key**
+against the banks in **Keep the measurement honest** (x86_64 1150 v 1149, x86_64-osx
+1143 v 1142, x86_64-win32 1238 v 1237, i386 1153 v 1152, i386-win32 1258 v 1257, arm
+1131 v 1130, arm-win32/wince 1236 v 1235, arm64 1200 v 1199, arm64-osx 1225 v 1224,
+arm64-win32 1298 v 1297, riscv64 1157 v 1156) — one body arriving uniformly, which is
+the corpus growing, not a population drift. Rebank the `BANKFN` floors.
 
 **Forced `-O0` tracks `-O1` to within three bodies on every key** (`C2_FORCE=1 C2_CORPUS=all … -O0`): x86_64 7, x86_64-osx 18, x86_64-win32 15, arm64 10, arm64-osx 21, arm64-win32 16, i386 9, i386-win32 18, arm 11, arm-win32 18, arm-wince 18, riscv64 13. `-O2` and `-O3` were byte-identical to `-O1` on every counter when last measured on five keys. C2 replays the arena's own emission and the optimizer passes are a separate question (C3), so this is what one would expect; it means the completion bar's "at every `-O`" is close to one measurement, but the -O0 column is now cheap enough to keep printing and it is NOT identical, so print it.
 
@@ -267,10 +408,10 @@ Two further findings from it, neither a complex defect, both filed here so they 
 ## Open work raised after the cutover
 
 - **Use `AST_Poison` for dead arms instead of deleting them.** The `dead_code.c::main` defect was `ast_sccp_scan` folding `if (const)` by *discarding* the dead arm, guarded by an enumeration — `ast_sccp_has_label` counted only `AST_Jump op == 4` (a label definition) and missed `op == 2` (case) and `op == 3` (default), so the fold deleted case entries whose bodies were live. The fix added a second memoized predicate beside it, which closes the bug but leaves the shape: **a deletion guarded by an enumeration of everything that must not be deleted, which is only ever as complete as its last audit.** Poisoning the subtree instead keeps the node, so every existing scan — labels, cases, defaults, and whatever is added next — still sees it, and correctness stops depending on the guard being exhaustive. `AST_Poison` already exists, five passes already produce it (`ast_narrow_make`, `ast_dse_kill`, `ast_sccp`, `ast_jt_run`, `ast_bf_drop`) and `rir_op_effect` emits it, so the vocabulary is there. Before doing it, confirm two things: that replay emits nothing for a poisoned subtree, and that every pass treats `AST_Poison` as opaque rather than walking into it. If both hold, the two `has_label`/`has_case` predicates and their negative can go with the change.
-- **`array_in_struct_init.c` is `ast_cycle_env`, not an `-O3` anomaly.** Measured on arm: the prod-on/prod-off objects agree at `-O2` and differ at `-O3`; `MCC_AST_CYCLE=0` at `-O3` makes them agree, and `MCC_AST_CYCLE=1` at `-O2` reproduces the divergence. `ast_cycle_env` is `optimize >= 3` (`src/mccast.c:2060`) and re-runs the strategy cycle to a fixpoint, so the arena and the tree converge to different fixpoints on this body. **The three `-O` levels should agree**; that they do not on exactly one body is the tell. Fix the convergence, do not special-case the file.
+- **`array_in_struct_init.c` is `ast_cycle_env`, not an `-O3` anomaly — but the item is now UNMEASURABLE AS WRITTEN.** The recipe is a prod-on/prod-off A/B, and **production can no longer be turned off**: `rir_prod_env = ast_replay_env && !rir_env` (`src/mccrir.c:521`) has no gate term, and `MCC_RIR_PROD` now only sets `rir_prod_gate`, the verbosity level (`src/mccrir.c:5082`). The original reading was: on arm, prod-on/prod-off agree at `-O2` and differ at `-O3`; `MCC_AST_CYCLE=0` at `-O3` makes them agree. What is still measurable is the cycle gate alone, and **at `da3a461b` it moves nothing** — `MCC_AST_CYCLE=1` versus `=0` on that file at `-O2` and at `-O3` on arm is byte-identical at both levels. So either the convergence defect closed with something else, or it needs a different instrument than the one recorded. `ast_cycle_env` is `optimize >= 3` (`src/mccast.c:1942`, not `:2060`) and re-runs the strategy cycle to a fixpoint. **Re-derive an instrument before re-opening this**; do not special-case the file.
 - **Instrument a test for the lost-intermediate over a pointer.** `for_each_elem` (`src/mcc.h:1662`) expands to `elem < (type *)(sec->data + sec->data_offset)`; the `(ElfW_Rel *)` on an `unsigned char *` emits no op, so the arena keeps `unsigned char *` and replay compares mismatched pointer types. It costs **zero C2 counters**, which is exactly why it went unseen for so long, and it is benign only because nothing downstream reads the pointee — a `+`, `-` or `[]` on such an operand would scale by the wrong size. There is no test for it. Write one that *does* scale: a code-free pointer cast whose result is then indexed or offset, so the wrong pointee size becomes a wrong address rather than a wrong type. It should fail today.
 - **Finish real glibc header support.** mcc advertises `__GNUC__ 4` / `__GNUC_MINOR__ 2`. glibc gates `CMPLX` on `__GNUC_PREREQ (4, 7)`, so `CMPLX(5.0, 6.0)` parses as a call to an implicitly-declared function; and `bits/floatn.h` leaves `__HAVE_FLOAT128 0` against an unconditional `__HAVE_FLOAT64X 1`, which `tgmath.h:66` `#error`s on. With the imaginary-literal fix the complex family goes from 2/8 to 6/8 files against glibc's own headers on the five ELF keys, and those two are the remainder. One version-advertisement question underlies both — decide what mcc should claim and what it must then implement, rather than raising the number and finding out. The sweep's `-I runtime/include`-first ordering is a *preference* once this lands, not a requirement.
-- **`MCC_TRACE` `full_language.c` to isolate its remaining defects.** It is the second front and the only file that reaches classes `tests/exec` does not, but it is also the file that aborts the C2 probe on several keys and fails to parse under `MCC_REPLAY_IR=1` with an armed recorder. Build with `-DMCC_CONFIG_TRACE=ON` and use `tools/tracediff.sh` to diff the trace of a passing key against a failing one; that is the instrument the tree-era work used to localise `ast_hook_vdup`, and nothing has pointed it at this file. Do it before attacking any individual body.
+- **`MCC_TRACE` `full_language.c` to isolate its remaining defects — and it is now worth 90 divergences, not a footnote.** It is the second front and the only file that reaches classes `tests/exec` does not. **Re-measured at `da3a461b`, the premises of this item have changed and the item got bigger:** it compiles clean at all four `-O` levels on all twelve keys (48/48 rc=0), enters the C2 census on **ten** keys rather than seven, and contributes **90 of the 194-gap `all` board** — 7 to 9 divergences per key, 16 on riscv64. The clause *"fails to parse under `MCC_REPLAY_IR=1` with an armed recorder"* is dead; there is no recorder. What replaces it is sharper: on **x86_64 and i386** the file still fails outright under `MCC_REPLAY_IR=5` with `tests/diff/parts/legacy_meta.h:376: error: ';' expected (got '0')`, which is the `AST_OP_ASM` re-assembly defect (P4 defect 4) reproducing verbatim in the verify path. **Close that first** — it is one named defect standing between two keys and their coverage — then trace the rest. Build with `-DMCC_CONFIG_TRACE=ON` and use `tools/tracediff.sh` (which still exists, despite the deletion note saying otherwise) to diff a passing key's trace against a failing one.
 - **Audit the rest of the arena for fields that do not mean what they say.** The `!cmp` defect was not that a pass was wrong; it was that the arena carried an operator whose sense lived in a *separate flag*, so a pass reading the operator alone was reading a half-truth. `AST_FB_LANDOR_INVERT` is the same shape and is still live — `ast_replay_value` applies it, and nothing else consults it. The general rule the two suggest: **a flag may say how replay reaches a value; it may never be the only place the value's meaning is written.** `AST_FB_CMP_INVERT_LATE` now obeys that. Walk the remaining `AST_FB_*` bits and the `ast_op` conventions and decide, one at a time, which side of the line each is on. The cheap standing check is the runtime A/B (`-O1` with and without `MCC_RIR_PROD=1`, stdout and exit code) — it is what the fuzzer effectively ran.
 - **`selfhost-fixpoint-O3` is green again, by side effect, and the defect underneath it was never found.** The gate failed on every macOS stage2 cell from the P5 merge; it passes at `c850da2c` and after, in both the Release and the local-ci configurations. **Bisected**: `b4dd48a7` (docs only) fails, `c850da2c` — `feat(gen): __attribute__((vector_size))` — passes. Nothing in that commit touches the inliner, promotion or the narrow pass, so treat this as **latent, not fixed**.
 
@@ -305,7 +446,7 @@ So "delete `mccast.c`" would delete the optimizer and the JIT. The correct state
 
 - **Cutover: per-body fallback.** Production uses `rir_arena` when that body's C2 check passes and keeps the parser's bytes when it does not. This is not new machinery — the `-O1` path already is *emit from the arena → compare against the parser → restore on mismatch*, and per-body fallback is that same shape with `rir_arena` substituted for `ast_cur`. It converts the remaining 18-body C2 gap from a precondition for deleting 4,500 lines into an optimization gap on 18 bodies per key. Close them because they are worth closing, not because the deletion waits on them.
 - **Scope: refactor the optimizer and the JIT onto Replay_IR**, rather than leaving them mechanically re-producered. The pass drivers, the retain pools, the `-O3` forward-inline re-emit and the JIT blob producers each get rewired to the Replay_IR arena as a first-class source.
-- **Renames: full split and `ast_*` → `ir_*`.** `src/mccast.c` splits into arena+replay, passes, and slice/search units, and the prefix goes with it. The `ir_`/`IR_` namespace is verified empty across `src/`, `tools/` and `include/`. Size: ~10,800 `ast_` and ~2,750 `AST_` tokens over `mccast.c`, `mccrir.c`, `mccgen.c`, `mccjit_embed.c`, `mccjit_intent.c`, `mccast.h` and `tools/asttool.c`.
+- **Renames: full split and `ast_*` → `ir_*`.** `src/mccast.c` splits into arena+replay, passes, and slice/search units, and the prefix goes with it. ~~The `ir_`/`IR_` namespace is verified empty across `src/`, `tools/` and `include/`.~~ **Superseded — P3's rebrand filled it; 835 occurrences under `src/` at `da3a461b`. See P6.** Size, re-counted at `da3a461b`: **12,163 `ast_`/`AST_` tokens over 1,231 distinct identifiers**, across `mccast.c` (9,065), `mccrir.c` (1,255), `tools/asttool.c` (629), `ast_eval_slice.h` (224), `mccjit_embed.c` (196), `mccast.h` (117), `mccforecast.h` (104), `mccgen.c` (65), `mccgate.h` (60), `mccjit_intent.c` (36) and the arch backends (11).
 
 **The split must extend the include chain, not create link units.** `mccast.c` and `mccrir.c` are `#include`d back to back into one translation unit (`src/libmcc.c:11-12`; `src/mccgen.c:15229-15235`), and `mccrir.c` reads `mccast.c`'s file statics — `jrn_ops`, `jrn_vs`, `ast_cur`, `ast_base_depth`, `ast_body_ind_sv`. The ordering is load-bearing for the journal's macro trick as well: `src/mccgen.c:143-234` `#define`s 61 codegen primitives to `jrn_` twins and `src/mccgen.c:15155-15234` `#undef`s all 61 *before* the includes, which is the only reason `JRN_W0(load, …)` can define `jrn_load` whose body calls `(load)(…)`.
 
@@ -372,7 +513,7 @@ What the split rested on:
 
 - **`tools/asttool.c` `#include`s `mccast.c` and is unaffected**, because everything from `src/mccast.c:1289`'s `#ifdef MCC_INTERNAL` down is already invisible to it — `MCC_INTERNAL` comes from `mcc.h:4` and `asttool` never includes `mcc.h`. Had the substrate been outside that guard, `asttool` would have needed the new unit too.
 - **Four references run backwards into the substrate** and now need declarations at `src/mccast.c:2272-2277`: `ir_cap_reset`, `ir_cap_gap`, `ir_cap_active`. `ir_cap_fconst_take`/`ir_cap_fconst_note` already had them. `ir_cap_active`, `ir_cap_raw` and `ir_cap_vs` are declared as tentative definitions in both files, which is one object in one translation unit, and is the idiom `src/mccast.c:4068` was already using.
-- **`tools/targetgate.c`'s `ALLOWED[]` had to learn the new name** — the substrate carries two `MCC_TARGET_I386`/`MCC_TARGET_X86_64` conditionals. `tools/schemagate.c` did not: `IR_OP_` does not intersect the `AST_OP_`/`AST_FB_`/`RIR_R_`/`RIR_M_` define spaces, and its counts are unmoved at 38/21/27/28/18.
+- **`tools/targetgate.c`'s `ALLOWED[]` had to learn the new name** — the substrate carries two `MCC_TARGET_I386`/`MCC_TARGET_X86_64` conditionals. `tools/schemagate.c` did not: `IR_OP_` does not intersect the `AST_OP_`/`AST_FB_`/`RIR_R_`/`RIR_M_` define spaces, and its counts are unmoved at 38/21/27/28/18. **Re-measured at `da3a461b`: 38/21/27/28/19** — the region rend-value term count moved by one, which is the `RIR_R_SYNTH` region value the lost-intermediate fix added. `schemagate` is clean; the figure in this line is simply one revision old.
 
 *Gate held: the twelve-key `C2_CORPUS=exec` `-O1` board is identical row for row before and after (`arm-win32` and `arm-wince` agreeing, as they must); `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh` passes against the bank unchanged; a direct object-sha256 A/B against the merge base over 656 corpus files × `-O1`/`-O2`/`-O3` × twelve keys is byte-identical on all 23,616 cells; 153 of 153 `^ast` cells pass; `tracegate` and `schemagate` clean.*
 
@@ -462,7 +603,7 @@ The `-O2`/`-O3` explosion on the x86_64 and arm64 keys was **one cause**: `opt_p
 - **Done**: the local-array extent and the op-assign vdup, and with them `do_promote`'s `!ast_rir_arena`. It did come from the SValue after all — see defect 1 above.
 - **Done, and it was worth the whole `-O2` column.** Object-move A/B against the same binary with the switch off, `all` corpus minus `full_language.c`: x86_64 `-O2` **367/564 → 69/562**, arm64 `-O2` **290/555 → 46/555**, x86_64 `-O1` 31/565 → 30/562 (unmoved; the population differs by the dropped file). The remaining `-O2` moves are the arena's own effect, not the missing pass. The other nine keys' `-O2`/`-O3` columns are still at P4's reading and want re-measuring.
 - **Done — the JIT seam, defect 3.** `selfhost-jit` passes under `MCC_RIR_PROD=1` with the `ast_rir_seam` carve-out deleted; the diagnosis and the two banked negatives are under defect 3 above. **All three of P4's blockers are closed.**
-- `tests/exec/optimizer/*` and the 26 `optfire*` cells are the sensitive instrument for "a pass fired differently". **All 26 pass under `MCC_RIR_PROD=1` at HEAD**, `chainstore` included; the list of movers this line used to carry is closed. They are the right regression suite for each of the steps above; do not rebank them, use them.
+- `tests/exec/optimizer/*` and the `optfire*` cells are the sensitive instrument for "a pass fired differently". **All pass under `MCC_RIR_PROD=1` at HEAD** (the count is **243** at `da3a461b` — 105 `optfire/`, 49 `optfire-arm64/`, 45 `optfire-riscv64/`, 44 `optfire-i386/`; the "26" this line used to carry predates the per-arch scoping), `chainstore` included; the list of movers this line used to carry is closed. They are the right regression suite for each of the steps above; do not rebank them, use them.
 
 **Two measurement traps banked while doing this.**
 
@@ -530,7 +671,7 @@ The census read **36 failures of 8255** and named five distinct compiler defects
 
 The instrument for this list is the runtime A/B, not the byte compare: compile and run every `tests/exec` file at `-O1` with and without the switch and diff stdout and exit code. C2 calls every one of these bodies clean, because it validates un-optimized emission. **Run it under the failing cell's own gates** — the three modelled bodies all read SAME at a plain `-O1`; `ptr_longlong_arith32` needs `-O2`, `array_2d_iv` needs `-O2 MCC_AST_OPASSIGN=1 MCC_AST_IVSR_PTR=1`, and `flt_eval_method` needs `-O1 MCC_AST_TEMPLATES=0 MCC_AST_PROMOTE=1` (neither gate alone reproduces it). The gate sets are on the suite's `set_tests_properties` line in `CMakeLists.txt`.
 
-**P5 readiness, measured rather than assumed.** The 45 `ast/replay-*` cells — the fixture suite the plan says survives the recorder and becomes Replay_IR's regression suite — pass **100% with `MCC_RIR_PROD=1` as well as with it off**. They assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic, so that inheritance is confirmed and not merely hoped for. Whatever else P5 has to do, it does not have to rewrite those 45 cells.
+**P5 readiness, measured rather than assumed.** The 44 `ast/replay-*` cells — the fixture suite the plan says survives the recorder and becomes Replay_IR's regression suite — pass **100% with `MCC_RIR_PROD=1` as well as with it off**. They assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic, so that inheritance is confirmed and not merely hoped for. Whatever else P5 has to do, it does not have to rewrite those 44 cells. (**44 confirmed by `ctest -N` at `da3a461b`**; this line read 45 and the P5 inventory read 44 — the inventory was right.)
 
 ### P4 is complete — Replay_IR is the production arena by default
 
@@ -627,13 +768,27 @@ Why that entry was reached at all is the real defect, and it is the *second* hal
 
 **Six things inside the hook block are not the recorder's and must stay**: `ast_label_id` and `ast_label_forget` (`src/mccgen.c` calls both, and `rir_hook_goto`/`rir_hook_label`/`rir_hook_cleanup_thunk` are the reason the id exists at all), `ast_sv_hi` and `ast_cmp_invert_late` (three and one call sites in `src/mccrir.c`), `ast_bad_type` (`src/mccast.c:7037`, in the passes), and `ast_func_has_asm` (`src/mccrir.c:2541`). `ast_bad_vtype`/`ast_wide_vtype` survive only as long as `ast_try_active`'s `ast_ret_bad` term does.
 
-**The 44 `ast/replay-*` cells survive and become Replay_IR's regression suite for free** — they assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic. So do the 20 `asttool` suites, which never touch the recorder.
+**The 44 `ast/replay-*` cells survive and become Replay_IR's regression suite for free** — they assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic. So do the 20 `asttool` suites, which never touch the recorder. (**Both counts confirmed at `da3a461b`: 44 and 20. The `asttool` cells register as `ast/<name>` — `arena clone wide validate dump cfg template intention color forecast gatemap magic vlat combo_walk slice_ident slice_window slice_persist slice_graduate slice_splice slice_locate` — so grepping the cell list for "asttool" finds none.**)
 
 **The compile-time dividend cannot be measured until the deletion happens.** `MCC_RIR_ONLY=1` still builds the shadow tree; it only stops reading it. Whatever the recorder costs per compile is still there, and the first honest reading of it is the deletion's own before/after.
 
 ### P6 — split and rename
 
-`mccast.c` (19,082 lines) splits along the boundaries the map already found: arena + replay + hashing (`85-1117`, `5640-7082`, `14413-14494`), the passes (`7083-14412`), slice/search/JIT infrastructure (`16076-18053`), and the drivers. Then `ast_*` → `ir_*`, `AST_*` → `IR_*` across the seven files and `tools/asttool.c`. Rename the things that were never AST while the diff is already open: `ast_data_all_zero`, `ast_strpool_find_or_add`, `ast_pinned_regs`, `ast_alloc_loc`, and the six `ast_*_env` codegen gates are all genuine compiler machinery carrying the prefix by accident. `tools/targetgate.c:3-7` whitelists `src/mccast.c` by name and needs the new unit names. Run `./cmake-debug/tracegate src` and `./cmake-debug/schemagate src` before every push, and keep the new units free of any `MCC_TRACE(` call for the reason recorded above.
+**The `ir_`/`IR_` namespace is NOT empty, and this is P6's stated precondition.**
+Both the Handoff's next-steps list and **Decisions taken** assert it is "verified
+empty". It was, before P3 — and P3's own rebrand is what filled it. Measured at
+`da3a461b` under `src/`: **835 occurrences — `ir_cap_*` 478, `IR_OP_*` 280,
+`IR_CAP_*` 77.** A blanket `ast_*` → `ir_*` will collide with the capture substrate
+P3 created. Decide the target spelling before the diff opens; `ir_cap_` is already
+taken by capture, so the arena/replay side needs its own prefix or the two have to be
+re-partitioned deliberately.
+
+**The line ranges below are all stale** — they describe a 19,082-line `mccast.c` and
+the file is now **15,910** lines, P5 having removed 1,618 and the passes having moved
+with them. Re-derive every boundary against the current file before splitting;
+none of the six numbers in the next sentence survives.
+
+`mccast.c` splits along the boundaries the map already found: arena + replay + hashing (`85-1117`, `5640-7082`, `14413-14494`), the passes (`7083-14412`), slice/search/JIT infrastructure (`16076-18053`), and the drivers. Then `ast_*` → `ir_*`, `AST_*` → `IR_*` across the seven files and `tools/asttool.c`. Rename the things that were never AST while the diff is already open: `ast_data_all_zero`, `ast_strpool_find_or_add`, `ast_pinned_regs`, `ast_alloc_loc`, and the six `ast_*_env` codegen gates are all genuine compiler machinery carrying the prefix by accident. `tools/targetgate.c:3-7` whitelists `src/mccast.c` by name and needs the new unit names. Run `./cmake-debug/tracegate src` and `./cmake-debug/schemagate src` before every push, and keep the new units free of any `MCC_TRACE(` call for the reason recorded above.
 
 ## External suites: the gcc and llvm C tests over a self-hosted `-O3` mcc
 
@@ -859,3 +1014,107 @@ The lesson worth keeping: the P5 board was green on `ctest` 8073 of 8073 through
 the whole merge. The external suites are what read the difference, and only
 because the sweep was re-run over the whole tree rather than over the tests that
 had failed before.
+
+## Verification pass — `da3a461b`, 2026-08-03
+
+Every mechanically checkable statement in this file was re-run against the tree at
+`da3a461b` in a fresh build (`cmake -S . -B cmake-verify -G Ninja
+-DCMAKE_BUILD_TYPE=Debug -DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`)
+on the short path `/home/llg/Projects/moderncc`, with `vendor/` present and all five
+ELF sysroots resolving. What follows is the result, so the next person diffs against
+a measurement and not a memory.
+
+### Line references — 28 of 30 were stale, here are the current ones
+
+The deletion moved 1,618 lines out of `mccast.c` and the feature commits moved more.
+Only `src/libmcc.c:651` and `:825` still point where this file says they do.
+
+| this file says | actually at | what it is |
+| --- | --- | --- |
+| `mccast.c:2035` | **`mccast.c:1923`** | `ast_replay_env` (and `MCC_RIR_FORCE` at `:1925`) |
+| `mccast.c:2040` | **gone** | `MCC_RIR_ONLY` — deleted, the switch no longer exists |
+| `mccast.c:2060` | **`mccast.c:1942`** | `ast_cycle_env` |
+| `mccast.c:2279` | **`mccast.c:2139`** | `ast_fconst_reuse` |
+| `mccast.c:2449` | **`mccast.c:2449`** ✓ | `ast_fn_inlinable` — correct |
+| `mccast.c:2828` | **`mccast.c:2828`** ✓ | `ast_reemit_retain` — correct |
+| `mccast.c:2516` / `:2895` | **`:2449` / `:2828`** | duplicate references to the same two functions, both one revision old |
+| `mccast.c:5117` / `:5138` | **`mccast.c:3413`** | `ast_plan_promotion` and its loops |
+| `mccast.c:7037` | **`mccast.c:1892`** | `ast_bad_type` |
+| `mccast.c:16060` | **`mccast.c:12932`** | the Replay_IR arming block (`rir_reset()`) |
+| `mccast.c:16553` | **`mccast.c:12805`** | `ast_replay_ok` |
+| `mcc.h:1662` | **`mcc.h:1669`** | `for_each_elem` |
+| `mcc.h:2128` | **`mcc.h:2130`** | `MCC_SET_STATE` |
+| `mccrun.c:783` | **`mccrun.c:783`** ✓ | `char file[100]` — correct |
+| `mccgen.c:1921` | **`mccgen.c:1838`** | `save_reg_upstack` |
+| `mccgen.c:4060` | **`mccgen.c:4052`** | `warn_extra_ptr_zero_cmp` |
+| `mccgen.c:4547` | **`mccgen.c:426`** | `gen_cast` |
+| `mccgen.c:7679` | **`mccgen.c:8071`** | `rir_hook_slot_record` |
+| `mccgen.c:11030` / `:11771` | re-derive | `unary`'s `vtop->sym = s`; the op-assign vdup |
+| `mccgen.c:12243` | **`mccgen.c:12644`** | `rir_hook_cleanup_call_begin` |
+| `mccgen.c:13391` | **`mccgen.c:13641`** | `decl_designator` |
+| `mccgen.c:14588` | **`mccgen.c:14937`** | `rir_hook_body_begin` call site |
+| `mccjit_embed.c:594` | **`mccjit_embed.c:571`** | `mccjit_recompile_common` |
+| `mccast.c` "19,082 lines" | **15,910** | also `mccgen.c` 15,588, `mccrir.c` 5,092, `mcc.h` 2,137 |
+
+### Verified true — do not re-check these
+
+- **The P5 deletion is complete.** All 33 recorder symbols and all 12 named
+  recorder-shape gates read 0 under `src/`, and the gates read 0 under `tests/` too.
+  All six keepers are present. Four residue items survive and are listed under
+  **Deletion residue**.
+- **Every file this document says was deleted is gone**: `verify_ratchet.cmake`,
+  `rir_c3.cmake`, `journal_inert.cmake`, `jrn_sweep.sh`, `journal_{sweep,native,report}.cmake`,
+  and the `verify-baseline/` and `journal-baseline/` directories.
+- **Cell counts**: 48 `ast/rir-parity-*`, 14 `ast/rir-c2-*`, **0** `ast/rir-c3-*`, 0
+  `ast-verify-ratchet-*`, 0 `ast/treecheck`, 0 `ast/tracediff`, 0 `ast/rir-inert`, 0
+  `ast/journal-*`, 44 `ast/replay-*`, 20 `asttool`, 20 `selfhost-*`.
+- **All 26 symbols this file claims exist, exist**: `ast_func_has_labeladdr`,
+  `ast_sccp_has_case`, `ASM_REGVAR_ASMREG`, `AST_Poison` (5 producers in `mccast.c`
+  at `:6785 :7607 :7672 :7894 :8863`, plus `mccrir.c:2180`), `rir_flush_effect_top`,
+  `rir_lvalue_shape`, `rir_addr_pure`, `rir_hook_castsynth_end`, `RIR_R_SYNTH`,
+  `RIR_M_ASMOPS`, `AST_OP_ASMOPS`, `rir_prod_take`, `rir_try_active`, `ast_ii_cval_fits`,
+  `gen_vector_type_cache`, `rir_cfpfx`, `ast_promo_write`, and the rest.
+- **The two `-O3` graft predicates read exactly as described** — `ast_fn_inlinable`
+  opens `if (!ast_inline_env && !ast_inline_pass_env)`, `ast_reemit_retain` opens
+  `if (!ast_inline_env || ast_reemit_poison || ast_reemit_n >= AST_INLINE_MAX)`.
+  The widening is real and still undecided.
+- **`tracegate`, `schemagate`, `targetgate` all clean**; `src/mccrir.c` contains
+  **0** `MCC_TRACE(` calls.
+- **All four side configurations build green** in distinct directories:
+  `MCC_SINGLE_SOURCE=OFF`, `MCC_CONFIG_OPTIMIZER=OFF`, `MCC_REPLAY_IR=OFF`,
+  `MCC_CONFIG_ASM=OFF`.
+- **`MCC_AST_INT128=1` is out of `rir_parity.cmake`**, exactly as **Keep the
+  measurement honest** said to do it, and the forced-`-O0` board is unmoved: all
+  twelve keys read `empty=35 unfaithful=0 diverge=0 rewind=0 error=0 unbal=0 ovf=0`.
+- **`C2_FORCE`'s gate derivation survives the deletion** — it now derives **28**
+  `optimize >= 1` gates where it once derived 38, and does not hard-fail. Forced
+  `-O0` on x86_64/`exec` reads `c2ok=1111/1111`, gap 0.
+- **Production cannot be turned off.** `rir_prod_env = ast_replay_env && !rir_env`
+  (`mccrir.c:521`), no gate term. `MCC_RIR_PROD` sets only `rir_prod_gate`
+  (`mccrir.c:5082`). Any recipe in this file phrased as a prod-on/prod-off A/B is
+  dead as written.
+- **Two regressions this file records as closed are genuinely closed**, re-run
+  directly: the computed-goto/label-address case prints `10 20` at all four `-O`
+  levels, and `dead_code.c` produces identical output at all four.
+- **Vector types work** at all four `-O` levels (`v4si` arithmetic, `==` yielding
+  -1, `sizeof` 16), and the scalar-context guard fires with *"used vector type where
+  a scalar is required"*.
+- **The i386 static-TLS defect is still open and still reproduces**: `-static` over
+  a `__thread` variable prints *"Unknown relocation type for got: 16"*; the same
+  source links clean dynamically.
+- **`SizeOfStackReserve` is 8MB for all PE targets** (`src/objfmt/mccpe.c:738`).
+
+### What this host could and could not execute
+
+Verified reachable and used: `qemu-i386`, `qemu-arm`, `qemu-aarch64`, `qemu-riscv64`
+all run mcc-built cross binaries (each prints `hello 42`, rc=0) — note arm64 and
+riscv64 need `-L<sysroot>/usr/lib64 -L<sysroot>/lib64` on the mcc link line or
+`crt1.o` is not found, which reads as a compiler failure and is not one. `wine` runs
+both x86 PE keys. `docker` is available.
+
+Unreachable here, and the reason each one is a real gap rather than an omission:
+Mach-O does not execute on Linux, so `x86_64-osx` and `arm64-osx` are byte-compared
+only; `wine` on an x86_64 host does not load ARM or ARM64 PE, so `arm-win32`,
+`arm-wince` and `arm64-win32` are byte-compared only; and no self-host on a Windows
+or macOS *host* can be attempted at all. Those are items **W1**–**W5** at the top of
+this file.
