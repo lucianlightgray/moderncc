@@ -39,6 +39,13 @@ extern int rir_active;
 extern int rir_c2_active;
 extern int rir_body_loc_sv;
 extern int rir_started;
+extern int rir_prod_env;
+
+struct AstArena;
+struct AstArena *rir_prod_take(void);
+void rir_prod_replay_begin(void);
+void rir_prod_replay_end(void);
+void rir_prod_note(const char *verdict);
 
 void rir_snap_types(SValue *sv, int n);
 void rir_loc_record(int loc_in);
@@ -243,6 +250,11 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_env 0
 #define rir_try_active 0
 #define rir_c2_active 0
+#define rir_prod_env 0
+#define rir_prod_take() NULL
+#define rir_prod_replay_begin() ((void)0)
+#define rir_prod_replay_end() ((void)0)
+#define rir_prod_note(v) ((void)0)
 #define rir_snap_types(sv, n) ((void)0)
 #define rir_loc_record(l) ((void)0)
 #define rir_loc_replay(p) 0

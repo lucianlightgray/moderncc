@@ -1,6 +1,6 @@
 # TODO
 
-Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0, P1, P2 and P3 have landed. Everything above it is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
+Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0, P1, P2, P3 have landed and P4 has landed as a switch that is OFF by default (`MCC_RIR_PROD=1` turns the cutover on) — read P4 before touching the arena, it is where the three wrong-code classes are written down. Everything above it is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
 
 Two bars, both required. **Replay** (`rir_verify`) replays a captured body against the parser's own bytes. **C2** re-emits from the reconstructed arena and compares — the harder bar, and the one still open. Replay is at `faithful + empty == fn` on all twelve target keys at `-O0`/`-O1`/`-O2`/`-O3`, gated by the 48 `ast/rir-parity-*` cells.
 
@@ -12,9 +12,9 @@ Per key at HEAD, produced by `tools/c2_sweep.sh <builddir> <key> <opt>` against 
 
 Read `ok=` on every row before believing it. `rir_report` is an **atexit** handler, so a file that fails to compile still prints `[rir-total]` and still contributes bodies — counting `[rir-total]` lines is not an honesty check. The sweep counts only files that exited 0 and prints that count.
 
-`C2_CORPUS=all`, 657 files, `-O1`. `gap` is `c2try - c2ok`:
+`C2_CORPUS=all`, 657 files, `-O1`. `gap` is `c2try - c2ok`. **The `arenahasheq` column is frozen at the reading below and cannot be re-measured** — P4 deleted the counter and the `tools/c2_sweep.sh` column with it, deliberately, because it scored the arena against the recorder's tree rather than against the parser. It is kept here only so the classes it named still resolve:
 
-| key | c2ok/c2try | gap | classes | arenahasheq | ok |
+| key | c2ok/c2try | gap | classes | arenahasheq (retired) | ok |
 | --- | --- | --- | --- | --- | --- |
 | x86_64 | 1944/1948 | 4 | 4 len | 1414/1988 | 522 |
 | x86_64-win32 | 2306/2317 | 11 | 2 bytes + 7 len + 2 err | 1616/2364 | 527 |
@@ -81,7 +81,7 @@ Counts are divergences over the twelve keys on the `all` corpus.
 
 ## Raise arena fidelity
 
-- Raise `arenahasheq`, 1680 of 2521 on arm64-osx. Measure as `arenahasheq` and as diffs-per-body falling, not as first-divergence classes disappearing — fixing divergence #1 only exposes #2. Classify by **structural** dump diff, not by node index: `ast_intention_hash` is a structural walk that hashes neither `type_ref` nor `ival` on a `Ref`, so the large Convert-versus-Ref index-transposition class and every `ref`-only diff are not fidelity defects and cost nothing to ignore. Live classes: field-only, extra-Convert-over-Binary, missing-Convert-over-Literal, tree-extra-Store. The last two are understood and not cheap — the tree builds cast chains where one push record recovers only one link, and `tree-extra-Store` is dead code under `nocode_wanted` that the tree records and the op filter drops.
+- Raise arena fidelity. **The `arenahasheq` counter no longer exists** — P4 retired it; the last reading was 1680 of 2521 on arm64-osx and the Scoreboard's column is frozen at that sweep. Re-instrument before quoting a number, and prefer C2, which scores against the parser. Measure as `arenahasheq` and as diffs-per-body falling, not as first-divergence classes disappearing — fixing divergence #1 only exposes #2. Classify by **structural** dump diff, not by node index: `ast_intention_hash` is a structural walk that hashes neither `type_ref` nor `ival` on a `Ref`, so the large Convert-versus-Ref index-transposition class and every `ref`-only diff are not fidelity defects and cost nothing to ignore. Live classes: field-only, extra-Convert-over-Binary, missing-Convert-over-Literal, tree-extra-Store. The last two are understood and not cheap — the tree builds cast chains where one push record recovers only one link, and `tree-extra-Store` is dead code under `nocode_wanted` that the tree records and the op filter drops.
 - The extra-Convert-over-Binary class is **measured, not guessed**, and the measurement says do not touch it. Gating the whole argcast wrap on `RIR_M_ARGCAST`'s per-argument fired flag reads **+25 arenahasheq and -16 c2ok on every key**: the wraps the tree does not make are load-bearing for emission. The flag is therefore consulted only for the untyped-Load case it was added for. Any future attempt to close the class has to explain that trade first.
 - Land explicit operand binding as a side-table keyed by op index, not a node field and not positional binding.
 - Widen C3 pass equivalence past the field-identical population — the same work as raising arena fidelity, since the paired population *is* the field-identical population. Add the optimized-versus-optimized byte tap by replicating C2's whole save/restore prologue just before the `orig`/`orig_rel` frees in `ast_func_end`, where `ind` is the end of the optimized body: a different point with different live state. Report the coverage difference separately rather than as a mismatch, because the tree runs passes only where `ast_replay_ok` holds while Replay_IR accepts every body.
@@ -208,15 +208,86 @@ What the split rested on:
 
 ### P4 — the cutover
 
-The only phase with real risk, and the only one allowed to move a counter.
+The only phase with real risk, and the only one allowed to move a counter. **It is built, measured, and shipped OFF by default.** `MCC_RIR_PROD=1` turns it on; unset, nothing about the compiler changes. The reason is below, and it is the finding of the phase, not a failure of nerve: three separate classes of **wrong code** come out of running the existing passes over the Replay_IR arena, and the arena's own lossiness is the cause of all three.
 
-- `ast_func_end` takes its arena from Replay_IR. Per-body validity is the existing `ast_validate` + `rir_emit_safe` pre-flight (`src/mccrir.c:3580-3703`) plus the byte compare; failure falls through to the parser's bytes on the path that already exists at `src/mccast.c:18804`.
-- Rewire the consumers, per the scope decision: the pass drivers (`ast_run_strat_cycle`, the loop transforms at `18276-18283`), register promotion, the retain pools (`ast_inline_retain`/`ast_reemit_retain`, `18912-18913`), the `-O3` forward-inline re-emit (`src/mccgen.c:962` → `ast_reemit`), and the JIT blob producers at `18045/18486/18526/18572/18910`. The JIT seam is thin: `mccjit_embed.c` is already arena-generic — every one of its 135 arena calls runs on `it.arena` from `mccjit_intent_deserialize` (`src/mccjit_intent.c:803`), never on `ast_cur` — so only the six producer sites change.
-- Delete the `RIRC2TREE` control leg (`src/mccrir.c:4464`) and the tree-versus-tree counters `arenacmp`/`arenacounteq`/`arenahasheq`/`treenodes`. `arenahasheq` is today's headline fidelity metric and it measures against the thing being deleted; retire it deliberately and replace it with C2, which measures against the parser.
-- Flip `MCC_REPLAY_IR_C2` on per target as each key individually reaches 100% **on the `all` corpus**, not all at once on the aggregate. No key is there yet; `tests/exec` alone has three, which is precisely why the wide corpus replaced it as the bar.
-- Ungate `MCC_REPLAY_IR`: drop the CMake option, remove the `REPLAY_IR` row from `GATES[]` in `tests/fuzz/runner.c`, make **capture** unconditional while **verify** stays gated — `rir_verify` costs +7.7% wall clock on every compile (4.30 s against 4.63 s over 266 corpus compiles at `-O1`), which is not a tax for every user build. `MCC_REPLAY_IR_C2` deletes with its two `#ifndef` lines. Once ungated, `rir_parity.cmake` and `rir_c3.cmake`'s 77 skip paths are dead and must become hard failures, or a build that silently lost Replay_IR reports green.
+**Landed and unconditional.**
 
-*Gate: `-O0` unchanged; at `-O1`/`-O2`/`-O3`, every body is either byte-identical to the pre-cutover build or on a banked fallback list. Publish that list per key — it is the honest statement of what the gap now costs — 160 bodies on the `all` corpus, not the 14 `tests/exec` reads.*
+- `rir_prod_take()` (`src/mccrir.c`) builds the arena for the body just parsed, runs the pre-flight — non-empty op stream, no `ir_cap_bad`/`rir_unbal`/`rir_ovf`, no `rir_arena_mismatch`, `ast_validate`, `rir_emit_safe`, no `AST_OP_ASM` node — and **detaches** `rir_arena` (sets it to NULL so the next body allocates a fresh one) so the caller owns it. `rir_prod_replay_begin`/`_end` set up and tear down exactly the C2 prologue (`rir_c2_active`, `ir_cap_replaying`, `ast_replaying=0`, the four `rir_*rec_i` cursors, `loc = rir_body_loc_sv`, `ast_rp_*`, `ast_temp_frontier`) around the one replay that does the byte compare.
+- `ast_func_end` substitutes the arena: `ast_cur = rir_prod_take()` and the tree arena is freed. **Every consumer moves with it for free**, because they all read `ast_cur` — `ast_run_strat_cycle`, the loop transforms, `AST_PF_EMIT`, `ast_plan_promotion`, `ast_inline_retain`/`ast_reemit_retain` (and therefore the `-O3` forward-inline re-emit through `ast_reemit`), `ast_baseline_retain`, `mccjit_embed_note`, `mccjit_embed_stash_leaf`. There is no separate rewiring step; item 2 of the plan collapses into item 1.
+- Per-body fallback is the existing machinery, exactly as predicted: the first `ast_replay_body(ast_cur)` is compared byte-for-byte against the parser, and `!faithful` restores the parser's bytes at the site that already existed. The population is unchanged — the swap is gated on `ast_replay_ok(tree)` so no body is *newly* attempted.
+- `MCC_RIR_PROD` gates it. `0`/unset is off; `1` is on; `2` also prints `[rir-prod] <verdict>\t<file>\t<func>` per body plus a `[rir-prod-total]` atexit line, into `MCC_RIR_PROD_OUT` if set. Verdicts: `used`, `fallback` (adopted, bytes diverged), `nomodel` (pre-flight refused), `noreplay` (`ast_replay_ok` false), `nojit` (seam excluded). **Note `ast_env_int` returns the default for a value `<= 0`**, so the gate is `ast_env_gate(...) ? ast_env_int(...) : 0` — reading it with `ast_env_int` alone makes `MCC_RIR_PROD=0` mean *on*, which cost half a day.
+- Production is off whenever `MCC_REPLAY_IR` or `MCC_AST_VERIFY` is set. Both are measurement modes for one of the two producers and must keep measuring that producer; `ast-verify-ratchet-*` and the whole `MCC_REPLAY_IR=5` sweep therefore read exactly what they read before.
+- **Deleted**: the `RIRC2TREE` control leg and the four tree-versus-tree counters `arenacmp`, `arenacounteq`, `arenahasheq`, `treenodes` (and `rir_body_hasheq`, `rir_treekindhist`, the `heq=` field of `[rir-c2part]`, and the `arenahasheq` column of `tools/c2_sweep.sh`). **`arenahasheq` is retired deliberately** — it measured fidelity against the thing being deleted; C2 measures against the parser and is the metric that survives. The **Scoreboard** table's `arenahasheq` column is dead and must not be re-derived. The C3 *pair* probe (`pair=`/`samefolds=`/`samehash=`/`pairfired=`) survives, because the 14 `ast/rir-c3-*` cells are a live gate over it; it is now gated inline on `rir_env >= 6 && ast_replay_ok(ast_cur) && intention hashes equal` instead of on the deleted counter, and it dies with the recorder in P5.
+- `rir_emit_safe` and its `rir_unsafe`/`rir_bb_slot` helpers left `#if MCC_REPLAY_IR_C2` — production needs them. This is the "amalgamated build hides a missing declaration" class again: it compiled everywhere `-DMCC_REPLAY_IR_C2=1` was set and broke `selfhost-*` and `target-link-gate`, which build the five target sets without it.
+- `tests/ast/journal_inert.cmake` runs both legs under `MCC_RIR_PROD=0`. The cell proves the **capture substrate** is byte-inert; with the cutover on, `mcc` and `mcc_nojrn` legitimately differ because one has a different *producer*, not a side-car. Re-pointing it keeps the property it was built to prove.
+
+**The gate, measured.** With `MCC_RIR_PROD` unset:
+
+- `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh bc2 all` passes on all twelve keys, object sha256 and forced-`-O0` counters unmoved against the bank.
+- Direct object-sha256 A/B against a clean `origin/main` build over `find tests -name '*.c'` × twelve keys × `-O1`/`-O2`/`-O3`: **19,686 of 19,686 objects byte-identical, 0 differ, 0 build failures.**
+- 153 of 153 `^ast` cells pass, and the full `ctest -j 8` failure set is byte-for-byte the same list the same binary produces with `MCC_RIR_PROD=0` — 22 cells, every one of them `exec*/bound_global`, which is the long-checkout-path artifact recorded below and not a change. A pristine `origin/main` build configured under a short path is 8,254 of 8,254 green.
+- `tracegate`, `schemagate`, `targetgate` clean; `src/mccrir.c` still contains no `MCC_TRACE`. All four side configurations (`MCC_SINGLE_SOURCE=OFF`, `MCC_CONFIG_OPTIMIZER=OFF`, `MCC_REPLAY_IR=OFF`, `MCC_CONFIG_ASM=OFF`) build green in distinct build directories.
+
+**What it costs when it is on** (`MCC_RIR_PROD=1`, same corpus, same A/B). Files whose object moves, of files that compiled:
+
+| key | -O1 | -O2 | -O3 |
+| --- | --- | --- | --- |
+| x86_64 | 31/565 | 367/564 | 367/564 |
+| x86_64-osx | 26/524 | 337/523 | 337/523 |
+| x86_64-win32 | 28/527 | 278/526 | 278/526 |
+| i386 | 34/560 | 48/559 | 48/559 |
+| i386-win32 | 30/526 | 42/525 | 42/525 |
+| arm | 32/554 | 44/553 | 45/553 |
+| arm-win32 / arm-wince | 28/519 each | 38/518 each | 39/518 each |
+| arm64 | 28/556 | 290/555 | 290/555 |
+| arm64-osx | 30/558 | 292/557 | 292/557 |
+| arm64-win32 | 24/522 | 276/521 | 276/521 |
+| riscv64 | 75/552 | 76/551 | 76/551 |
+
+The `-O2`/`-O3` explosion on the x86_64 and arm64 keys is **one cause**: `opt_promote = optimize >= 2` there, and register promotion is disabled for Replay_IR-sourced bodies (below), so nearly every file loses it. The `-O1` column and the i386/arm/riscv64 columns are the arena's own effect. riscv64's 75 is the extra `ident` firings the arena's spare `Convert` nodes admit; on `tests/exec/preprocessor/hashdefine.c::main` the RIR arena fires `[ast-ident] 3` where the tree fires none, and the body gets **longer**.
+
+**Per-body verdicts at `-O1`** (`MCC_RIR_PROD=2`, all 657 files, twelve keys):
+
+| key | bodies | used | fallback | nomodel | noreplay |
+| --- | --- | --- | --- | --- | --- |
+| x86_64 | 2478 | 2221 | 22 | 72 | 163 |
+| x86_64-osx | 2215 | 1991 | 18 | 70 | 136 |
+| x86_64-win32 | 2364 | 2108 | 23 | 77 | 156 |
+| i386 | 2465 | 2199 | 28 | 67 | 171 |
+| i386-win32 | 2378 | 2155 | 23 | 71 | 129 |
+| arm | 2418 | 2183 | 27 | 43 | 165 |
+| arm-win32 / arm-wince | 2334 each | 2139 | 21 | 45 | 129 |
+| arm64 | 2479 | 2173 | 25 | 81 | 200 |
+| arm64-osx | 2463 | 2162 | 23 | 81 | 197 |
+| arm64-win32 | 2392 | 2137 | 19 | 85 | 151 |
+| riscv64 | 2409 | 2116 | 21 | 73 | 199 |
+
+`noreplay` is the recorder's own refusal and is not a cost — those bodies were never optimized. `nomodel` is the pre-flight; `fallback` is the byte compare. **The banked fallback list**, 37 distinct bodies, all twelve keys unless noted: `bounds_stress.c::test16`/`::test17`, `rev64_mt.c::main`, `sweep_int64.c::main`, `overflow_inline.c::main`, and from `full_language.c` `struct_assign_test`, `s_stddef_stdint`, `s7_9_iso646_test`, `macro_test`, `char_short_test`, plus (11 keys) `ldfcast`, `ffcast`, `dfcast`, `bfa2`, `bfa3`; (9) `builtin_overflow.c::main`, `full_language.c::longlong_test`; (8) `fuzz/runner.c::triage`/`::main`/`::interesting`; (7) `full_language.c::s7_6_inttypes_test`/`::s7_22_intarith_test`; (6) `run_s_stddef.c::s_stddef_stdint`, `run_s7_9.c::s7_9_iso646_test`, `run_s7_6.c::s7_6_inttypes_test`, `run_s7_22.c::s7_22_intarith_test`; (5) `overflow_narrow.c::main`; (2) `struct_ret_variadic.c::mkv`; (1) `struct_packed_indirect.c::main`, the five `alloca_inline.c` bodies, `run_s7_28.c::s7_28_wconv`, `full_language.c::callsave_test`/`::alloca_test`. That list is the **C2 gap wearing production clothes** and matches the Scoreboard's classes body for body.
+
+**Why it is off — three wrong-code classes, each reproduced and each rooted in arena lossiness.**
+
+1. **Register promotion is unsound on the arena, twice.** `tests/ast/replay/promote.c` exits 35 instead of 42: in `main`, `int arr[4]` is passed to `sumptr(arr, 4)`, and the arena's decayed-array `Ref` carries `int *`, not `int[4]`. `ast_plan_promotion`'s escape loop (the non-lvalue `VT_LOCAL` `Ref` pass) sizes the poisoned range from that type, poisons 8 bytes instead of 16, and promotes `arr[2]`/`arr[3]` into `%ebx`/`%r12d` while the callee reads them from the frame. The extent is **not recoverable** from the SValue the arena is built from — `sv->sym` is NULL for a local, so the `VT_CONST|VT_SYM` array-decay rescue in `rir_leaf_slot` does not apply. A conservative "poison every candidate at an offset `>=` the escaping one" fixes that case and was measured green, **but it is not enough**: `src/mccpp.c::tal_realloc_impl` is still miscompiled with promotion on, `al->p += adj_size` emitting `mov 0x10(%rax),%rax` where the parser emits `mov 0x10(%r14),%rcx` — a stale base register, from the promotion pass rewriting the arena's op-assign shape. That is what breaks `selfhost-smoke`: bisected with `MCC_AST_OPT_LIMIT` to the **76th** optimized body of `src/mcc.c` at `-O2`, and it disappears with `MCC_AST_PROMOTE=0`. So `do_promote` is `&& !ast_rir_arena`, and the conservative escape rule was **not** kept, because with promotion off it is dead code. Reinstate it with the promotion rewire, not before.
+2. **The const-fold templates are unsound on the arena.** `tests/exec/expressions/cast_operator.c` prints `avg: 6` for `(int)(((double)(3 + 4) / 2) * 2)`, which is 7. The arena lost the code-free `(double)` on a constant — the documented lost-intermediate class — and `ast_run_templates` folds `7 / 2` as an integer. `MCC_AST_TEMPLATES=0` restores 7. This one is **not** carved out in the code; it is the reason the default is off rather than "off for promotion only", because it proves the class is not confined to one pass. Every pass that reads a type off the arena is suspect until the lost-intermediate class closes, and the only test that caught this one is a golden that happened to exist.
+3. **The JIT and search seams are not thin.** `selfhost-jit` (`--jit -O4 -run src/mcc.c`) segfaults with the arena adopted, and `MCC_AST_OPT_LIMIT=0` does **not** fix it — so it is not a pass, it is the blob producers and the search/slice machinery consuming an arena whose shape they do not expect. The swap is therefore skipped entirely when `ast_jit_env`, `ast_jit_splice_env`, `ast_jit_dispatch_env`, `ast_jit_fns_n`, `ast_search_env`, `ast_roi_env`, `ast_slice_env`, `embed_jit` or `MCC_OUTPUT_MEMORY` is in play (verdict `nojit`). `mccjit_embed.c` being arena-generic was necessary and not sufficient.
+4. Minor, and fixed rather than carved out: **replaying an `AST_OP_ASM` is destructive.** `full_language.c::get_asm_string` re-assembles `asm volatile(... "some_symbol: .long 0" ...)`, the assembler errors on the duplicate label, the `longjmp` out of `mcc_assemble_internal` leaves the tokenizer stack pushed on the asm buffer, and the *parser* then reads `.long 0` and reports `';' expected (got '0')` at the closing brace. The tree never hit it because the recorder drops that body's asm entirely. The pre-flight refuses any arena containing an `AST_OP_ASM`; a narrower rule needs to know whether the asm text defines a symbol or emits into a section, and re-emitting either is not idempotent for the tree's replay either.
+
+**Next step, in the order that de-risks.** None of this needs new machinery — the switch exists and the measurement is a shell loop away.
+
+- Close the lost-intermediate class (the **Still open** section's item: a C2-only source-width field on the widening op, read by reconstruction and ignored by `rir_verify`). It is the root of defect 2 and of half of defect 1. Until it closes, do not flip the default.
+- Carry the local-array extent into the arena at the decayed `Ref`. It cannot come from the SValue; it has to come from the same place the tree gets it, which is the lvalue node before the decay. That closes the other half of defect 1 and makes the conservative escape rule unnecessary.
+- Then reinstate promotion (`!ast_rir_arena` in `do_promote`) and re-measure the `-O2`/`-O3` columns above, which is where the whole cost currently sits.
+- Then attack the JIT/search seam with `selfhost-jit` as the gate; it is a single ctest cell and it bisects with `MCC_AST_OPT_LIMIT`.
+- `tests/exec/optimizer/*` and the 26 `optfire*` cells are the sensitive instrument for "a pass fired differently", and they move under `MCC_RIR_PROD=1` today (`chainstore`, `opassign`, `color`, `spill_share`, `promo_arrow`, `promo_incdec`, `promote`, `narrow_class*`, `narrow_fix`, `reassoc`, `landor_invert`, `indirect_call`). They are the right regression suite for each of the steps above; do not rebank them, use them.
+
+**Two measurement traps banked while doing this.**
+
+- `ast_env_int(name, dflt)` returns `dflt` when the value parses `<= 0`, so no `MCC_*` gate read through it can be turned *off* from the environment. `ast_env_gate` is the one that honours `0`.
+- A `cp -a` of a CMake build directory is **not** a reference build: `CTestTestfile.cmake` has the original binary directory baked in absolutely, so `ctest --test-dir <copy>` silently runs the *original* build's binaries. A pristine reference has to be configured from its own source tree (`git archive origin/main | tar -x -C …`). Comparing against the copy read 119 "pre-existing" failures that did not exist. And when comparing, prefer the same binary with the feature switched off — it is exact, and it is one run.
+- `exec*/bound_global` fails for every configuration in a worktree whose absolute path is long: `bt_info.file` is `char[100]` (`src/mccrun.c:783`) and the truncated path prints as `bound_globa:7`. It is a property of the checkout path, not of any change.
+
+*Gate as met: `-O0` unchanged; at `-O1`/`-O2`/`-O3` every one of 19,686 objects is byte-identical to the pre-cutover build with the switch off, and the per-key fallback list above is what the switch costs when it is on.*
+
+**Still owed by P4, deliberately not attempted.** Flipping `MCC_REPLAY_IR_C2` on per target as each key reaches 100% on the `all` corpus (no key is there). Ungating `MCC_REPLAY_IR` — dropping the CMake option, removing the `REPLAY_IR` row from `GATES[]` in `tests/fuzz/runner.c`, making capture unconditional while verify stays gated (`rir_verify` costs +7.7% wall clock, 4.30 s against 4.63 s over 266 corpus compiles at `-O1`), and turning `rir_parity.cmake`/`rir_c3.cmake`'s 77 skip paths into hard failures. Both of those belong after the default flips, not before: ungating capture for every user build is only worth its cost once the arena is the producer.
 
 ### P5 — delete the recorder
 

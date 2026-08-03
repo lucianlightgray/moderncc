@@ -46,6 +46,10 @@ typedef struct RirMark {
 } RirMark;
 
 int rir_env;
+int rir_prod_env;
+static int rir_prod_gate;
+static const char *rir_prod_out;
+static long rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip;
 int rir_try_active;
 int rir_active;
 #define RIR_LOCREC_MAX 512
@@ -506,7 +510,9 @@ static unsigned char rir_lor_late[16];
 static int rir_lor_n;
 
 void rir_hook_body_begin(void) {
-	rir_try_active = rir_env && !debug_modes && !cur_func_inline_extern;
+	rir_prod_env = rir_prod_gate && ast_replay_env && !rir_env && !ast_verify_env;
+	rir_try_active =
+			(rir_env || rir_prod_env) && !debug_modes && !cur_func_inline_extern;
 	rir_body_loc_sv = loc;
 	rir_body_ind_sv = ind;
 	rir_reloc0_sv =
@@ -718,7 +724,6 @@ static Sym *rir_ptr_sym(const CType *t) {
 	return s;
 }
 
-static int rir_body_hasheq;
 
 void rir_reset(void) {
 	rir_locrec_n = 0;
@@ -729,7 +734,6 @@ void rir_reset(void) {
 	rir_tvrec_i = 0;
 	rir_fcrec_n = 0;
 	rir_fcrec_i = 0;
-	rir_body_hasheq = 0;
 	rir_xtn = 0;
 	rir_ptn = 0;
 	rir_n = 0;
@@ -1015,9 +1019,7 @@ static int rir_vsup_depth;
 static int rir_vsup_nest;
 static int rir_acas_val;
 static int rir_after_ret;
-static long rir_tot_arena_fn, rir_tot_arena_nodes, rir_tot_arena_hash_eq;
-static long rir_tot_arena_cmp, rir_tot_arena_count_eq;
-static long rir_tot_tree_nodes, rir_tot_arena_cmp_nodes;
+static long rir_tot_arena_fn, rir_tot_arena_nodes;
 static long rir_tot_c2_skip;
 static long rir_tot_leaf, rir_tot_refill;
 static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
@@ -1032,7 +1034,7 @@ static void rir_c2_sink(void *opaque, const char *msg) {
 	(void)opaque;
 	snprintf(rir_c2_msg, sizeof rir_c2_msg, "%s", msg ? msg : "?");
 }
-static long rir_kindhist[AST_KIND_COUNT], rir_treekindhist[AST_KIND_COUNT];
+static long rir_kindhist[AST_KIND_COUNT];
 
 static int rir_xt_chain(int t) {
 	return (t & VT_BTYPE) == VT_STRUCT || (t & VT_BTYPE) == VT_FUNC;
@@ -3688,7 +3690,6 @@ static void rir_region(const RirOp *ro) {
 	}
 }
 
-#if MCC_REPLAY_IR_C2
 static int rir_unsafe(const char *why, AstLocal n, uint32_t nc) {
 	snprintf(rir_c2_msg, sizeof rir_c2_msg, "arity %s n=%u nc=%u op=%d", why,
 					 (unsigned)n, (unsigned)nc, ast_op(rir_arena, n));
@@ -3877,7 +3878,6 @@ static int rir_emit_safe(void) {
 	}
 	return 1;
 }
-#endif
 
 static void rir_castgv_apply(void) {
 	AstLocal top, cv;
@@ -4290,6 +4290,93 @@ static int rir_blame(int diff_off) {
 	return -1;
 }
 
+struct AstArena *rir_prod_take(void) {
+	char msg[256];
+	AstArena *a;
+	int i, nops = 0;
+	if (!rir_prod_env || rir_env)
+		return NULL;
+	rir_build();
+	for (i = 0; i < rir_n; i++)
+		if (rir_ops[i].tag == RIR_T_OP)
+			nops++;
+	if (!nops || ir_cap_bad || rir_unbal || rir_ovf)
+		return NULL;
+	rir_to_arena();
+	if (rir_arena_mismatch)
+		return NULL;
+	msg[0] = 0;
+	if (ast_validate(rir_arena, msg, sizeof msg) != 0)
+		return NULL;
+	if (!rir_emit_safe())
+		return NULL;
+	{
+		AstLocal n;
+		for (n = 0; n < ast_count(rir_arena); n++)
+			if (ast_op(rir_arena, n) == AST_OP_ASM)
+				return NULL;
+	}
+	a = rir_arena;
+	rir_arena = NULL;
+	return a;
+}
+
+void rir_prod_replay_begin(void) {
+	rir_locrec_i = 0;
+	rir_slotrec_i = 0;
+	rir_tvrec_i = 0;
+	rir_fcrec_i = 0;
+	ast_fconst_i = 0;
+	ast_locrec_i = 0;
+	ast_replaying = 0;
+	ir_cap_replaying = 1;
+	rir_c2_active = 1;
+	ast_rp_nlabel = 0;
+	ast_rp_label_floor = 0;
+	ast_rp_bsym = NULL;
+	ast_rp_csym = NULL;
+	ast_rp_switch = NULL;
+	ast_temp_frontier = 1;
+	loc = rir_body_loc_sv;
+}
+
+void rir_prod_note(const char *verdict) {
+	const char *f;
+	if (!strcmp(verdict, "used"))
+		rir_tot_prod_used++;
+	else if (!strcmp(verdict, "fallback"))
+		rir_tot_prod_fb++;
+	else
+		rir_tot_prod_skip++;
+	if (rir_prod_gate < 2)
+		return;
+	f = mcc_state && mcc_state->current_filename ? mcc_state->current_filename
+																							 : "?";
+	if (rir_prod_out) {
+		FILE *o = fopen(rir_prod_out, "a");
+		if (o) {
+			fprintf(o, "%s\t%s\t%s\n", verdict, f, funcname ? funcname : "?");
+			fclose(o);
+		}
+		return;
+	}
+	fprintf(stderr, "[rir-prod] %s\t%s\t%s\n", verdict, f,
+					funcname ? funcname : "?");
+}
+
+static void rir_prod_report(void) {
+	fprintf(stderr, "[rir-prod-total] used=%ld fallback=%ld skip=%ld\n",
+					rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip);
+}
+
+void rir_prod_replay_end(void) {
+	rir_c2_active = 0;
+	ir_cap_replaying = 0;
+	ast_replaying = 0;
+	ast_fconst_i = 0;
+	ast_locrec_i = 0;
+}
+
 void rir_verify(void) {
 	Section *rsec = cur_text_section->reloc;
 	int rel1 = rsec ? (int)rsec->data_offset : 0;
@@ -4372,49 +4459,37 @@ void rir_verify(void) {
 				}
 			}
 		}
-		if (rir_started && ast_cur && ast_replay_ok(ast_cur)) {
-			rir_tot_arena_cmp++;
-			rir_tot_tree_nodes += ast_count(ast_cur);
-			rir_tot_arena_cmp_nodes += ast_count(rir_arena);
-			{
-				AstLocal q;
-				for (q = 0; q < ast_count(rir_arena); q++)
-					rir_kindhist[ast_kind(rir_arena, q) % AST_KIND_COUNT]++;
-				for (q = 0; q < ast_count(ast_cur); q++)
-					rir_treekindhist[ast_kind(ast_cur, q) % AST_KIND_COUNT]++;
-			}
-			if (ast_count(rir_arena) == ast_count(ast_cur))
-				rir_tot_arena_count_eq++;
-			if (ast_intention_hash(rir_arena, ast_root(rir_arena)) ==
-					ast_intention_hash(ast_cur, ast_root(ast_cur))) {
-				rir_tot_arena_hash_eq++;
-				rir_body_hasheq = 1;
-				if (rir_env >= 6) {
-					AstArena *pa = ast_arena_clone(rir_arena);
-					AstArena *pb = ast_arena_clone(ast_cur);
-					int fa, fb;
-					rir_tot_c3_pair++;
-					ast_tmpl_folds = 0;
-					ast_run_templates(pa);
-					fa = ast_tmpl_folds + rir_c3_pipeline(pa);
-					ast_tmpl_folds = 0;
-					ast_run_templates(pb);
-					fb = ast_tmpl_folds + rir_c3_pipeline(pb);
-					ast_tmpl_folds = 0;
-					if (fa > 0 || fb > 0)
-						rir_tot_c3_pair_fired++;
-					if (fa == fb)
-						rir_tot_c3_same_folds++;
-					if (ast_intention_hash(pa, ast_root(pa)) ==
-							ast_intention_hash(pb, ast_root(pb)))
-						rir_tot_c3_same_hash++;
-					else
-						fprintf(stderr, "[rir-c3] %s\tPASS-DIVERGED folds %d vs %d\n",
-										funcname, fa, fb);
-					ast_arena_free(pa);
-					ast_arena_free(pb);
-				}
-			}
+		{
+			AstLocal q;
+			for (q = 0; q < ast_count(rir_arena); q++)
+				rir_kindhist[ast_kind(rir_arena, q) % AST_KIND_COUNT]++;
+		}
+		if (rir_env >= 6 && rir_started && ast_cur && ast_replay_ok(ast_cur) &&
+				ast_intention_hash(rir_arena, ast_root(rir_arena)) ==
+						ast_intention_hash(ast_cur, ast_root(ast_cur))) {
+			AstArena *pa = ast_arena_clone(rir_arena);
+			AstArena *pb = ast_arena_clone(ast_cur);
+			int fa, fb;
+			rir_tot_c3_pair++;
+			ast_tmpl_folds = 0;
+			ast_run_templates(pa);
+			fa = ast_tmpl_folds + rir_c3_pipeline(pa);
+			ast_tmpl_folds = 0;
+			ast_run_templates(pb);
+			fb = ast_tmpl_folds + rir_c3_pipeline(pb);
+			ast_tmpl_folds = 0;
+			if (fa > 0 || fb > 0)
+				rir_tot_c3_pair_fired++;
+			if (fa == fb)
+				rir_tot_c3_same_folds++;
+			if (ast_intention_hash(pa, ast_root(pa)) ==
+					ast_intention_hash(pb, ast_root(pb)))
+				rir_tot_c3_same_hash++;
+			else
+				fprintf(stderr, "[rir-c3] %s\tPASS-DIVERGED folds %d vs %d\n",
+								funcname, fa, fb);
+			ast_arena_free(pa);
+			ast_arena_free(pb);
 		}
 	}
 	for (i = 0; i < rir_n; i++) {
@@ -4642,13 +4717,10 @@ void rir_verify(void) {
 			rir_tvrec_i = 0;
 			rir_fcrec_i = 0;
 			rir_c2_active = 1;
-			ast_replay_body(getenv("RIRC2TREE") && ast_cur && ast_replay_ok(ast_cur)
-													? ast_cur
-													: rir_arena);
+			ast_replay_body(rir_arena);
 			rir_c2_active = 0;
 			if (rir_env >= 5)
-				fprintf(stderr, "[rir-c2part] %s heq=%d ok=%d\n", funcname,
-					rir_body_hasheq,
+				fprintf(stderr, "[rir-c2part] %s ok=%d\n", funcname,
 					ind - rir_body_ind_sv == body_len &&
 						memcmp(cur_text_section->data + rir_body_ind_sv, orig,
 							(size_t)body_len) == 0);
@@ -4838,8 +4910,7 @@ static void rir_report(void) {
 					"[rir-total] fn=%ld faithful=%ld ops=%ld regions=%ld labels=%ld "
 					"jumps=%ld fallback=%ld fallbackfn=%ld fbchain=%ld fbpoint=%ld "
 					"unbal=%ld ovf=%ld jmpsv=%ld jmpsvfb=%ld shiftok=%ld shiftbad=%ld "
-					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld arenacmp=%ld "
-					"arenacounteq=%ld arenahasheq=%ld treenodes=%ld cmpnodes=%ld "
+					"shiftskip=%ld shiftopen=%ld arenafn=%ld arenanodes=%ld "
 					"leaf=%ld refill=%ld c2try=%ld c2skip=%ld c2ok=%ld c2bytes=%ld c2len=%ld c2err=%ld c2invalid=%ld\n",
 					rir_tot_fn, rir_tot_faithful, rir_tot_ops, rir_tot_regions,
 					rir_tot_labels, rir_tot_jumps, rir_tot_fallback,
@@ -4847,8 +4918,7 @@ static void rir_report(void) {
 					rir_tot_unbal, rir_tot_ovf, rir_tot_jmpsv, rir_tot_jmpsv_fb,
 					rir_tot_shift_ok, rir_tot_shift_bad, rir_tot_shift_skip,
 					rir_tot_shift_open, rir_tot_arena_fn, rir_tot_arena_nodes,
-					rir_tot_arena_cmp, rir_tot_arena_count_eq, rir_tot_arena_hash_eq,
-					rir_tot_tree_nodes, rir_tot_arena_cmp_nodes, rir_tot_leaf, rir_tot_refill, rir_tot_c2_try, rir_tot_c2_skip,
+					rir_tot_leaf, rir_tot_refill, rir_tot_c2_try, rir_tot_c2_skip,
 					rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len, rir_tot_c2_err,
 					rir_tot_c2_invalid);
 	if (rir_tot_c3_try || rir_tot_c3_pair)
@@ -4860,9 +4930,8 @@ static void rir_report(void) {
 						rir_tot_c3_same_hash, rir_tot_c3_pair_fired);
 	fprintf(f, "[rir-kind]");
 	for (k = 0; k < AST_KIND_COUNT; k++)
-		if (rir_kindhist[k] || rir_treekindhist[k])
-			fprintf(f, " %s=%ld/%ld", ast_kind_name((uint16_t)k), rir_kindhist[k],
-							rir_treekindhist[k]);
+		if (rir_kindhist[k])
+			fprintf(f, " %s=%ld", ast_kind_name((uint16_t)k), rir_kindhist[k]);
 	fprintf(f, "\n");
 	fprintf(f, "[rir-region]");
 	for (k = 1; k < RIR_R_COUNT; k++)
@@ -4879,9 +4948,14 @@ void rir_configure(void) {
 		return;
 	done = 1;
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
+	rir_prod_gate =
+			ast_env_gate("MCC_RIR_PROD", 0) ? ast_env_int("MCC_RIR_PROD", 1) : 0;
+	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
 	if (rir_env)
 		atexit(rir_report);
+	if (rir_prod_gate >= 2)
+		atexit(rir_prod_report);
 }
 
 #endif

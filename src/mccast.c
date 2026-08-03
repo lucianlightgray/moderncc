@@ -16519,12 +16519,24 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 	ir_cap_active = 0;
 #endif
 #if MCC_REPLAY_IR
+	AstArena *ast_rir_prod = NULL;
+	int ast_rir_used = 0;
 	if (rir_started) { MCC_TRACE("br\n");
 		ir_cap_gap();
-		rir_verify();
+		if (rir_prod_env) { MCC_TRACE("br\n");
+			ast_rir_prod = rir_prod_take();
+			if (!ast_rir_prod)
+				{ MCC_TRACE("br\n"); rir_prod_note("nomodel"); }
+		}
+		if (rir_env)
+			{ MCC_TRACE("br\n"); rir_verify(); }
 		rir_started = 0;
 	}
 	rir_active = 0;
+	if (ast_rir_prod && !ast_try_active) { MCC_TRACE("br\n");
+		ast_arena_free(ast_rir_prod);
+		ast_rir_prod = NULL;
+	}
 #endif
 	if (ast_try_active) { MCC_TRACE("br\n");
 		Section *ast_rsec = cur_text_section->reloc;
@@ -16533,6 +16545,27 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_capture = 0;
 		ast_fn_faithful = 0;
 		ast_fn_tco = 0;
+		int ast_rir_arena = 0;
+#if MCC_REPLAY_IR
+		if (ast_rir_prod) { MCC_TRACE("br\n");
+			int ast_rir_seam =
+					!ast_jit_env && !ast_jit_splice_env && !ast_jit_dispatch_env &&
+					ast_jit_fns_n == 0 && !ast_search_env && !ast_roi_env &&
+					!ast_slice_env &&
+					!(mcc_state && (mcc_state->embed_jit ||
+													mcc_state->output_type == MCC_OUTPUT_MEMORY));
+			if (ast_rir_seam && ast_cur && ast_replay_ok(ast_cur)) { MCC_TRACE("br\n");
+				ast_arena_free(ast_cur);
+				ast_cur = ast_rir_prod;
+				ast_rir_used = 1;
+				ast_rir_arena = 1;
+			} else { MCC_TRACE("br\n");
+				ast_arena_free(ast_rir_prod);
+				rir_prod_note(ast_rir_seam ? "noreplay" : "nojit");
+			}
+			ast_rir_prod = NULL;
+		}
+#endif
 		uint64_t ast_fnh = ast_intention_hash(ast_cur, AST_NONE);
 		ast_intention_acc = ast_intention_acc * 0x100000001b3u ^ ast_fnh;
 		ast_hash_out_emit(NULL, funcname, ast_fnh);
@@ -16621,7 +16654,15 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				mcc_state->error_set_jmp_enabled = 1;
 				ast_promo_n = 0;
 				ast_pinned_regs = 0;
+#if MCC_REPLAY_IR
+				if (ast_rir_used)
+					{ MCC_TRACE("br\n"); rir_prod_replay_begin(); }
+#endif
 				ast_replay_body(ast_cur);
+#if MCC_REPLAY_IR
+				if (ast_rir_used)
+					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
+#endif
 				ast_replaying = 0;
 
 				addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
@@ -16776,7 +16817,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (ast_search_axis_ran && !ast_search_pick_inline)
 					{ MCC_TRACE("br\n"); do_inline = 0; }
 				ast_no_callful_promo = do_inline;
-				int do_promote = faithful && !do_tco && ast_promote_env && ast_plan_promotion(ast_cur) > 0;
+				int do_promote = faithful && !do_tco && !ast_rir_arena &&
+												 ast_promote_env && ast_plan_promotion(ast_cur) > 0;
 				ast_no_callful_promo = 0;
 				MCC_TRACE("branch %s faithful=%d inline=%d promote=%d tco=%d\n",
 									funcname, faithful, do_inline, do_promote, do_tco);
@@ -17214,6 +17256,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 				}
 			} else { MCC_TRACE("br\n");
+#if MCC_REPLAY_IR
+				if (ast_rir_used)
+					{ MCC_TRACE("br\n"); rir_prod_replay_end(); }
+#endif
 				mcc_state->nb_errors = ast_saved_nberr;
 				vtop = vstack + ast_base_depth - 1;
 				ast_replaying = 0;
@@ -17235,6 +17281,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			sym_free_first = ast_saved_free;
 			mcc_state->warn_none = ast_sv_warn;
 			seqp_reset();
+#if MCC_REPLAY_IR
+			if (ast_rir_used)
+				{ MCC_TRACE("br\n"); rir_prod_note(faithful ? "used" : "fallback"); }
+#endif
 			if (!faithful) { MCC_TRACE("br\n");
 				memcpy(cur_text_section->data + ast_body_ind_sv, orig, body_len);
 				if (rel_len)

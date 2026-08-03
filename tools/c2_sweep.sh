@@ -107,13 +107,13 @@ awk -v key="$KEY" -v opt="$OPT" -v nfile="$nfile" -v nok="$nok" -v corpus="$CORP
 	next
 }
 BEGIN {
-	split("fn faithful c2try c2skip c2ok c2bytes c2len c2err c2invalid arenafn arenahasheq", a, " ")
+	split("fn faithful c2try c2skip c2ok c2bytes c2len c2err c2invalid arenafn", a, " ")
 	for (i in a) want[a[i]] = 1
 }
 END {
-	printf "%-14s %-4s %-5s%s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) arenahasheq=%d/%d\n",
+	printf "%-14s %-4s %-5s%s files=%d ok=%d extra=%d rirfiles=%d fn=%d faithful=%d c2ok=%d/%d (bytes=%d len=%d skip=%d invalid=%d err=%d) arenafn=%d\n",
 		key, opt, corpus, native ? " NATIVE" : "", nfile, nok, extra + 0, seen, tot["fn"], tot["faithful"], tot["c2ok"], tot["c2try"],
 		tot["c2bytes"], tot["c2len"], tot["c2skip"], tot["c2invalid"], tot["c2err"],
-		tot["arenahasheq"], tot["arenafn"]
+		tot["arenafn"]
 }
 ' "$LOG"
