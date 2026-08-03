@@ -508,6 +508,7 @@ struct sym_attr {
 	unsigned plt_offset;
 	int plt_sym;
 	int dyn_index;
+	unsigned char linker_sym : 1;
 #ifdef MCC_TARGET_ARM
 	unsigned char plt_thumb_stub : 1;
 #endif

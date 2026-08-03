@@ -1779,13 +1779,98 @@ ST_FUNC void mcc_add_runtime(MCCState *s1) { MCC_TRACE("enter\n");
 }
 #endif
 
+static int set_linker_sym(MCCState *s1, const char *name, Section *sec,
+													addr_t offs) { MCC_TRACE("enter\n");
+	int sym_index = find_elf_sym(symtab_section, name);
+	ElfW(Sym) *sym =
+			sym_index ? &((ElfW(Sym) *)symtab_section->data)[sym_index] : NULL;
+	/* Mirror the set_elf_sym cases where the new definition wins. */
+	int is_linker_sym = !sym || sym->st_shndx == SHN_UNDEF ||
+											ELFW(ST_BIND)(sym->st_info) == STB_WEAK ||
+											(sec && sec != bss_section &&
+											 ((sym->st_other & ST_ASM_SET) ||
+												sym->st_shndx == SHN_COMMON ||
+												sym->st_shndx == bss_section->sh_num));
+
+	sym_index = set_global_sym(s1, name, sec, offs);
+	if (is_linker_sym)
+		{ MCC_TRACE("br\n"); get_sym_attr(s1, sym_index, 1)->linker_sym = 1; }
+	return sym_index;
+}
+
+static void provide_linker_sym(MCCState *s1, const char *name, Section *sec,
+															 addr_t offs) { MCC_TRACE("enter\n");
+	int sym_index = find_elf_sym(symtab_section, name);
+
+	if (sym_index) { MCC_TRACE("br\n");
+		if (((ElfW(Sym) *)symtab_section->data)[sym_index].st_shndx != SHN_UNDEF)
+			{ MCC_TRACE("br\n"); return; }
+	} else if (!s1->dynsymtab_section ||
+						 !find_elf_sym(s1->dynsymtab_section, name)) { MCC_TRACE("br\n");
+		return;
+	}
+	set_linker_sym(s1, name, sec, offs);
+}
+
+static void update_linker_sym(MCCState *s1, const char *name, Section *sec,
+															addr_t offs) { MCC_TRACE("enter\n");
+	int sym_index = find_elf_sym(symtab_section, name);
+
+	if (sym_index && sym_index < s1->nb_sym_attrs &&
+			s1->sym_attrs[sym_index].linker_sym) { MCC_TRACE("br\n");
+		ElfW(Sym) *sym = &((ElfW(Sym) *)symtab_section->data)[sym_index];
+
+		sym->st_value = offs;
+		sym->st_shndx = sec->sh_num;
+		if (s1->dynsym) { MCC_TRACE("br\n");
+			sym_index = find_elf_sym(s1->dynsym, name);
+			if (sym_index) { MCC_TRACE("br\n");
+				sym = &((ElfW(Sym) *)s1->dynsym->data)[sym_index];
+				sym->st_value = offs;
+				sym->st_shndx = sec->sh_num;
+			}
+		}
+	}
+}
+
+static void finalize_linker_symbols(MCCState *s1, int *sec_order) { MCC_TRACE("enter\n");
+	Section *etext = text_section;
+	Section *edata = data_section;
+	Section *end = bss_section;
+	Section *s;
+	int i;
+
+	/* Follow the final loadable-section order rather than assuming that
+		 .text, .data and .bss are the last sections of their regions. */
+	for (i = 1; i < s1->nb_sections; ++i) { MCC_TRACE("br\n");
+		s = s1->sections[sec_order[i]];
+		if (!(s->sh_flags & SHF_ALLOC))
+			{ MCC_TRACE("br\n"); continue; }
+		end = s;
+		if (!(s->sh_flags & SHF_WRITE))
+			{ MCC_TRACE("br\n"); etext = s; }
+		if (s->sh_type != SHT_NOBITS)
+			{ MCC_TRACE("br\n"); edata = s; }
+	}
+	update_linker_sym(s1, "_etext", etext, etext->sh_size);
+	update_linker_sym(s1, "etext", etext, etext->sh_size);
+	update_linker_sym(s1, "_edata", edata, edata->sh_size);
+	update_linker_sym(s1, "edata", edata, edata->sh_size);
+	update_linker_sym(s1, "_end", end, end->sh_size);
+	update_linker_sym(s1, "end", end, end->sh_size);
+}
+
 static void mcc_add_linker_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 	char buf[1024];
 	Section *s;
 
-	set_global_sym(s1, "_etext", text_section, -1);
-	set_global_sym(s1, "_edata", data_section, -1);
-	set_global_sym(s1, "_end", bss_section, -1);
+	set_linker_sym(s1, "_etext", text_section, -1);
+	set_linker_sym(s1, "_edata", data_section, -1);
+	set_linker_sym(s1, "_end", bss_section, -1);
+	/* These conventional ELF symbols have PROVIDE semantics. */
+	provide_linker_sym(s1, "etext", text_section, -1);
+	provide_linker_sym(s1, "edata", data_section, -1);
+	provide_linker_sym(s1, "end", bss_section, -1);
 #if MCC_TARGETOS_OpenBSD
 	set_global_sym(s1, "__executable_start", NULL, ELF_START_ADDR);
 #endif
@@ -3131,6 +3216,7 @@ static int elf_output_file(MCCState *s1, const char *filename) { MCC_TRACE("ente
 	alloc_sec_names(s1, 0);
 	sec_order = mcc_malloc(sizeof(int) * 2 * s1->nb_sections);
 	layout_sections(s1, sec_order, &dyninf);
+	finalize_linker_symbols(s1, sec_order);
 
 	if (dynamic) { MCC_TRACE("br\n");
 		write32le(s1->got->data, dynamic->sh_addr);

@@ -2423,7 +2423,7 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 		val = sv->c.i;
 		if (modifier == 'n')
 			{ MCC_TRACE("br\n"); val = -val; }
-		cstr_printf(add_str, "%d", (int)sv->c.i);
+		cstr_printf(add_str, "%d", val);
 	no_offset:;
 	} else if ((r & VT_VALMASK) == VT_LOCAL) { MCC_TRACE("br\n");
 		cstr_printf(add_str, "[fp,#%d]", (int)sv->c.i);

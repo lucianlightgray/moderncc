@@ -460,7 +460,7 @@ ST_FUNC void gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
 	o(ARM64_ADD_REG | ARM64_SF(1) | ARM64_RM(30) | ARM64_RN(x) | ARM64_RD(x));
 }
 
-static void arm64_sym(int r, Sym *sym, unsigned long addend) { MCC_TRACE("enter\n");
+static void arm64_sym(int r, Sym *sym, addr_t addend) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_PE
 	greloca(cur_text_section, sym, ind, R_AARCH64_ADR_PREL_PG_HI21, 0);
 	o(ARM64_ADRP | r);

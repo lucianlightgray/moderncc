@@ -1790,9 +1790,24 @@ static char *get_token(char **s, char *f) { MCC_TRACE("enter\n");
 	return p;
 }
 
+/* Read a LIBRARY argument whose quotes may protect whitespace. */
+static char *get_libname(char **s, char *f) { MCC_TRACE("enter\n");
+	char *p = trimfront(*s), *e;
+	if (*p != '"')
+		{ MCC_TRACE("br\n"); return get_token(s, f); }
+	for (e = ++p; *e && *e != '"' && *e != '\r' && *e != '\n'; ++e)
+		{ MCC_TRACE("br\n"); }
+	if (*e != '"' || (unsigned char)e[1] > ' ')
+		{ MCC_TRACE("br\n"); return NULL; }
+	*s = trimfront(e + 1);
+	*f = **s;
+	*e = 0;
+	return p;
+}
+
 static int pe_load_def(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 	int state = 0, ret = -1, dllindex = 0, ord;
-	char dllname[80], *buf, *line, *p, *x, next;
+	char *dllname = NULL, *buf, *line, *p, *x, next;
 
 	buf = mcc_load_text(fd);
 	if (!buf)
@@ -1806,7 +1821,13 @@ static int pe_load_def(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 		case 0:
 			if (0 != stricmp(p, "LIBRARY") || next == '\n')
 				{ MCC_TRACE("br\n"); goto quit; }
-			pstrcpy(dllname, sizeof dllname, get_token(&line, &next));
+			p = get_libname(&line, &next);
+			if (!p || !*p)
+				{ MCC_TRACE("br\n"); goto quit; }
+			dllname = mcc_malloc(strlen(p) + 5);
+			strcpy(dllname, p);
+			if (!*mcc_fileextension(dllname))
+				{ MCC_TRACE("br\n"); strcat(dllname, ".dll"); }
 			++state;
 			break;
 		case 1:
@@ -1835,6 +1856,7 @@ static int pe_load_def(MCCState *s1, int fd) { MCC_TRACE("enter\n");
 	}
 	ret = 0;
 quit:
+	mcc_free(dllname);
 	mcc_free(buf);
 	return ret;
 }

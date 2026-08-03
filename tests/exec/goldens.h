@@ -4,6 +4,7 @@ typedef struct {
 static const mcc_golden_t mcc_goldens[] = {
 		{"assignment", "run", "exec/statements/assignment.c", "42\n64\n12, 34\n", "", "", ""},
 		{"comment", "run", "exec/preprocessor/comment.c", "x=6\ny=3\nz=13\n/* not a comment */ // also not\nw=7\nq=4\n/*\n", "", "", ""},
+		{"linker_symbols", "run", "exec/programs/linker_symbols.c", "1\n1\n1\n1\n1\n", "", "", ""},
 		{"printf", "run", "exec/programs/printf.c", "Hello world\nCount = -5\nCount = -4\nCount = -3\nCount = -2\nCount = -1\nCount = 0\nCount = 1\nCount = 2\nCount = 3\nCount = 4\nCount = 5\nString 'hello', 'there' is 'hello', 'there'\nCharacter 'A' is 'A'\nCharacter 'a' is 'a'\n", "", "", ""},
 		{"struct", "run", "exec/structs_unions/struct.c", "struct.c:12: warning: attribute '__cleanup__' ignored on type\n12\n34\n12\n34\n56\n78\n~fred()\n", "", "", ""},
 		{"for", "run", "exec/statements/for.c", "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n", "", "", ""},

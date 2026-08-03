@@ -1400,7 +1400,7 @@ ST_FUNC void subst_asm_operand(CString *add_str,
 		val = sv->c.i;
 		if (modifier == 'n')
 			{ MCC_TRACE("br\n"); val = -val; }
-		cstr_printf(add_str, "%d", (int)sv->c.i);
+		cstr_printf(add_str, "%d", val);
 	no_offset:;
 #ifdef MCC_TARGET_X86_64
 		if (r & VT_LVAL)

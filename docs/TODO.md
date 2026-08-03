@@ -202,6 +202,36 @@ Counts are divergences over the twelve keys on the `all` corpus.
 - Phase F: un-embed `RirOp` from `JrnOp`. This is a design change, not a lift — Replay_IR must own an op stream with its own vstack buffer (the shape `rir_mvs`/`mvs_off`/`mvs_n` already has for marks) instead of reading `jrn_ops[]` and indexing `jrn_vs[]`. `jrn_snap_vstack` falls out of the same change: it has no `mccgen.c` call site to hang on, so it cannot be lifted independently.
 - Discharge F against the same obligation every prior slice met: byte-identical `MCC_REPLAY_IR=5` sweep log and identical object sha256 at `-O0`, `-O1`, `-O2`, `-O3` and forced `-O0`. That compares capture against parser, tree and journal at once and is strictly stronger than cross-checking two capture paths against each other. Replace site by site; do not run both paths side by side.
 
+## The TinyCC upstream sync
+
+`tinycc/mob` is fetched as the `tinycc` remote. The merge base is `a338258d` (2026-06-13); `main` descends from tcc linearly and has never carried a merge commit from it.
+
+**A plain `git merge tinycc/mob` is unusable and always will be.** Every file is renamed and relocated (`tccgen.c` → `src/mccgen.c`, `tccelf.c` → `src/objfmt/mccelf.c`, `x86_64-gen.c` → `src/arch/x86_64/x86_64-gen.c`) and every identifier with them, so git's rename detection finds nothing: the trial merge produced **31 modify/delete conflicts** and would have resurrected `tccgen.c` alongside `src/mccgen.c`. Sync by porting semantics per commit, never by merging.
+
+**Synced at `2be0218b` (2026-07-30), 17 commits.** What they were and what happened to each:
+
+| upstream | disposition |
+| --- | --- |
+| `85ba3ae8` `'n'` operand modifier not negating | **ported.** moderncc had the identical bug — `val = -val` computed then `(int)sv->c.i` printed — in all four sites (`i386-asm.c`, `arm-asm.c`, `riscv64-asm.c` ×2, the last also needing `val == 0` for `'z'`) |
+| `2be0218b` arm64 addend on LLP64 | **ported.** `arm64_sym`'s `unsigned long addend` → `addr_t`; `unsigned long` is 32-bit on LLP64 so large addends truncated |
+| `31020bf9` quoted `LIBRARY` in `.def` | **ported.** New `get_libname`, heap `dllname`, `.dll` default extension |
+| `384614a9` + `43158eaa` ELF boundary symbols | **ported.** `linker_sym` bit on `struct sym_attr`, `set_linker_sym`/`provide_linker_sym`/`update_linker_sym`/`finalize_linker_symbols`, called after `layout_sections` so the final section order decides `_etext`/`_edata`/`_end`. Verified against gcc: all six names agree, and a user definition of `end` correctly wins (PROVIDE semantics) |
+| `5673055a` `b895aa7e` `04206d29` `97a6d8c7` `38059770` TLS | **already present, and moderncc is ahead.** See below |
+| `a667b53f` `ff85981b` `d9d02c56` `add111e6` win32 self-host with tcc 0.9.27 | not applicable — moderncc does not bootstrap from tcc 0.9.27 |
+| `4ed845d0` Makefile doc targets, `.github/workflows` | not applicable — CMake, and a different CI |
+| `da58264a` tests2 fixtures | moderncc has its own test tree; the boundary-symbol behaviour is covered by the new `exec/programs/linker_symbols.c` golden, which self-gates so ELF, PE and Mach-O all print the same thing |
+| `7f7845cd` review some recent changes | one applicable hunk, deliberately **not** taken — see below |
+
+**The TLS group was already reconciled, item by item, and mostly by moderncc arriving first.** Checked individually rather than assumed: riscv64 carries the addend on *both* halves of the TPREL pair, byte-identical to upstream's final form; `mcc_elf_end_file` already keeps undefined TLS symbols typed `STT_TLS`; i386 local-exec already emits `fc` rather than `0` (different encoding, same effect); PE TLS already exists on i386 and arm64 (`gen_pe_tls_base`, `pe_tls_index_sym`), which is what `38059770` adds upstream. x86_64 float and `long double` TLS were verified behaviourally against gcc. And moderncc is **ahead** on two counts upstream has no equivalent for: riscv64 general-dynamic TLS (`riscv64_tls_gd_a0`) and arm64 dynamic TLS in a shared object (`9f76b124`).
+
+What is left of the TLS commits is *refactor* — "remove stupid copy&paste code", "integrate tls into gen_modrm()", "remove stupid loops" — with no behavioural delta. Upstream moved TLS **into** `gen_modrm`; moderncc handles it at the `load`/`store` sites. Porting that reshaping into backends carrying Replay_IR capture hooks would perturb the captured stream, move objects, invalidate the byte-identity gates, and buy nothing. Not done, and it should not be done later either.
+
+**One real upstream fix was deliberately declined.** `7f7845cd` adds `vpop(), vpushi(0)` to `gen_cast`'s `dbt_bt == VT_VOID` arm, "do not confuse backends with VT_VOID in registers". That is a capture-site change in the single most banked-dangerous function in this tree, and moderncc shows no symptom: a void-cast battery (`(void)(a+b)`, `(void)g()`, `(void)dg()`, `(void)(a?g():b)`, `(void)(void)a`, comma-expression) matches gcc at `-O0`/`-O1`/`-O2`/`-O3` and compiles clean on all eleven cross keys. **Re-measure before taking it**; if a symptom ever appears, the fix belongs at the use site.
+
+**A pre-existing gap this sync found, not caused by it.** A *static* i386 link of a TLS program fails with `Unknown relocation type for got: 16` (`R_386_TLS_GOTIE`). Reproduced identically on a build from before any of this work, so it is not a regression; upstream's commits do not fix it either.
+
+*Gate as met: `ctest -j 8` **8254 of 8254**, zero failures; twelve-key object A/B against the pre-port build **19,557 of 19,557 byte-identical, 0 differ** — the port touches only link-time and asm-operand paths, so no codegen moved; `tools/o0_ab.sh` re-banked because the corpus gained one file, and the rebank is **+12 lines, -0** across the twelve object banks, i.e. exactly one new sha256 per key with every pre-existing hash unchanged; `tracegate`/`schemagate`/`targetgate` clean; four side configurations green.*
+
 ## Keep the measurement honest
 
 - Bank the corpus census against header resolution, never against a remembered number. `MCC_CONFIG_AUTO_MCCDIR` resolves mcc's own freestanding headers from **argv[0]'s directory**, so a compiler built into a scratch dir with no sibling `include/` silently loses `stdarg.h`/`stdbool.h`/`stdatomic.h`/`threads.h`; a build omitting `-DMCC_CONFIG_MCCDIR` finds no system headers at all and reads 476; a glibc sysroot resolves `<threads.h>` to glibc's rather than mcc's shim and costs 25 functions. Every one of these leaves `rc`, the file count and the failing-file list unchanged — the census is the only thing that moves, which is what makes it a trap.
