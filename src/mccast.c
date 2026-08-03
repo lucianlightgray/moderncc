@@ -1732,6 +1732,7 @@ static AstLocal ast_cur_bb;
 static int *ast_rp_bsym, *ast_rp_csym;
 
 static int *ast_fconst;
+static unsigned char *ast_fconst_cplx;
 static int ast_fconst_n;
 static int ast_fconst_cap;
 static int ast_fconst_i;
@@ -2146,7 +2147,7 @@ static void ir_cap_gap(void);
 
 void ast_fconst_reuse_disable(int off) { MCC_TRACE("enter\n"); ast_fconst_reuse_off = off; }
 
-int ast_fconst_reuse(void) { MCC_TRACE("enter\n");
+int ast_fconst_reuse(int cplx) { MCC_TRACE("enter\n");
 	int jfc;
 #if MCC_REPLAY_IR
 	{
@@ -2157,11 +2158,21 @@ int ast_fconst_reuse(void) { MCC_TRACE("enter\n");
 #endif
 	if (ir_cap_fconst_take(&jfc))
 		{ MCC_TRACE("br\n"); return jfc; }
-	if (ast_replaying && !ast_fconst_reuse_off && ast_fconst_i < ast_fconst_n)
-		{ MCC_TRACE("br\n"); return ast_fconst[ast_fconst_i++]; }
+	if (ast_replaying && !ast_fconst_reuse_off) { MCC_TRACE("br\n");
+		/* A recorded constant whose arena node is a materialized ref replays
+		   without re-asking (the complex-cast constants), so the head of the
+		   list can hold an entry this consumer must not take. Record order is
+		   emission order, so a kind mismatch at the head is an entry whose
+		   consumer already passed or will never ask -- skip it. */
+		while (ast_fconst_i < ast_fconst_n &&
+					 ast_fconst_cplx[ast_fconst_i] != (unsigned char)cplx)
+			{ MCC_TRACE("br\n"); ast_fconst_i++; }
+		if (ast_fconst_i < ast_fconst_n)
+			{ MCC_TRACE("br\n"); return ast_fconst[ast_fconst_i++]; }
+	}
 	return 0;
 }
-void ast_fconst_record(int c) { MCC_TRACE("enter\n");
+void ast_fconst_record(int c, int cplx) { MCC_TRACE("enter\n");
 	ir_cap_fconst_note(c);
 #if MCC_REPLAY_IR
 	rir_hook_fconst_record(c);
@@ -2173,7 +2184,10 @@ void ast_fconst_record(int c) { MCC_TRACE("enter\n");
 	if (ast_fconst_n == ast_fconst_cap) { MCC_TRACE("br\n");
 		ast_fconst_cap = ast_fconst_cap ? ast_fconst_cap * 2 : 16;
 		ast_fconst = mcc_realloc(ast_fconst, ast_fconst_cap * sizeof *ast_fconst);
+		ast_fconst_cplx = mcc_realloc(ast_fconst_cplx,
+																	ast_fconst_cap * sizeof *ast_fconst_cplx);
 	}
+	ast_fconst_cplx[ast_fconst_n] = (unsigned char)cplx;
 	ast_fconst[ast_fconst_n++] = c;
 }
 void ast_fconst_push_ref(CType *type, int fc) { MCC_TRACE("enter\n");

@@ -2424,7 +2424,7 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 			if (NODATA_WANTED)
 				{ MCC_TRACE("br\n"); size = 0, align = 1; }
 #if MCC_CONFIG_OPTIMIZER
-			int fc = ast_fconst_reuse();
+			int fc = ast_fconst_reuse(0);
 			if (fc) { MCC_TRACE("br\n");
 				vpop();
 				ast_fconst_push_ref(&ltype, fc);
@@ -2434,7 +2434,7 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 				offset = section_add(p.sec, size, align);
 				vpush_ref(&ltype, p.sec, offset, size);
 #if MCC_CONFIG_OPTIMIZER
-				ast_fconst_record(vtop->sym->c);
+				ast_fconst_record(vtop->sym->c, 0);
 #endif
 				vswap();
 				init_putv(&p, &vtop->type, offset);
@@ -6332,7 +6332,7 @@ static void gen_complex_cast(CType *dt) { MCC_TRACE("enter\n");
 					cal = 1;
 				}
 #if MCC_CONFIG_OPTIMIZER
-				int fc = ast_fconst_reuse();
+				int fc = ast_fconst_reuse(1);
 				if (fc) { MCC_TRACE("br\n");
 					vtop--;
 					ast_fconst_push_ref(dt, fc);
@@ -6348,7 +6348,7 @@ static void gen_complex_cast(CType *dt) { MCC_TRACE("enter\n");
 					vpush_ref(dt, pp.sec, offset, csz);
 					vtop->r |= VT_LVAL;
 #if MCC_CONFIG_OPTIMIZER
-					ast_fconst_record(vtop->sym->c);
+					ast_fconst_record(vtop->sym->c, 1);
 #endif
 				}
 			} else { MCC_TRACE("br\n");
