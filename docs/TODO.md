@@ -1037,21 +1037,31 @@ same-type over an lvalue — enable it with a `MCC_CONFIG_TRACE=ON` build and
 **505** `CVT from t=0x5 r=0x132 -> t=0x5` (`0x100` is `VT_LVAL`) against **61**
 `t=0x5 r=0x32 -> t=0x5` with the bit clear.
 
-That leaves **`AST_FB_CONVERT_GV` → `gv_cast_rvalue()`** (`src/mccast.c:4210`), which
-runs *unconditionally after* `gen_cast` whenever the flag is set, type equality
-notwithstanding. On an lvalue it forces a register, which is the load. The flag is set
-at seven sites in `src/mccrir.c` (`:2709 :2729 :3138 :3211 :3223 :4027 :4036`); the
-one inside `RIR_M_LOAD` is guarded by `rir_castgv_pend`, i.e. by the `RIR_M_CASTGV`
-mark, which is the parser saying *"a cast-and-gv happened here"* — and in this body
-the parser's gv happened at **push time**, not at the member.
+**`AST_FB_CONVERT_GV` is eliminated too, by measurement.** It would have been the
+remaining way to force a register past a no-op cast — `gv_cast_rvalue()` at
+`src/mccast.c:4210` runs unconditionally when the flag is set. The `CVT` trace now
+prints `fbits`, and **every `Convert` replayed in `runner.c` reads `fb=0`**. The flag
+is never set in this body, so it cannot be the emitter. Both suspects are dead:
+`gen_cast` no-ops on same type, and nothing forces a `gv` past it.
 
-**Next step, and the measurement it needs.** Confirm the flag is set on the `MEMBER`'s
-parent `Convert` and clear on the `OPTS` one — `ast_dump` does not print `fbits`, so
-this needs either a temporary print or correlating `gv_cast_rvalue` call counts. Then
-decide the site. Do not simply stop setting the flag: it exists because the parser's
-own cast-gv had to be reproduced, and **`docs/TODO.md`'s N13 records that loosening
-the argcast wrap cost −16 `c2ok` on every key**. Measure before and after on the
-twelve-key board, and remember this class is LIVE. Do not fix on the suspicion alone: **this class is
+**So the `Convert` is not involved at all, and the search should move off it.** What
+remains unexplained is the `vswap; gv; load` the C2 optrace shows immediately after
+`AST_OP_MEMBER`'s `pushlit; genop`. Two cautions for whoever picks this up, both
+learned the hard way here:
+
+- **Anchoring by `ind=` is not as simple as first-C2-`ind` plus the body-relative
+  offset.** The C2 leg's first traced op need not sit at `rir_body_ind_sv`, and an
+  off-by-a-few anchor lands on the wrong op — a 3-byte `load` in that window is just
+  as likely to be `mov -0x58(%rbp),%eax` loading the loop index as the `mov (%rcx),%rcx`
+  in question. Establish the anchor from `rir_body_ind_sv` directly before drawing a
+  conclusion from a windowed trace.
+- **`gen_op` and the argument marshalling both emit `vswap`/`gv` of their own**, so a
+  `gv` following `MEMBER` is not by itself evidence that something consumed the
+  `MEMBER`'s lvalue.
+
+The untried instrument is the one that does not depend on anchoring: `RIRDUMP=1`,
+which prints the ops either side of the blamed index with their byte windows, and
+which is only consulted on `c2len` bodies — exactly this class. Start there. Do not fix on the suspicion alone: **this class is
 LIVE**, so unlike every other entry here a wrong fix ships as wrong code instead of
 sitting behind the fallback.
 
