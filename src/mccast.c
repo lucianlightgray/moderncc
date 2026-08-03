@@ -1307,6 +1307,7 @@ int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
 }
 int ast_active;
 static int ast_replay_env;
+static int ast_rir_nofb_env;
 static int ast_replay_dump;
 static const char *ast_verify_diff;
 static int ast_graft_limit;
@@ -1923,6 +1924,13 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit ||
 									 ast_env_int("MCC_FORCE_REPLAY", 0) ||
 									 ast_env_int("MCC_RIR_FORCE", 0);
+	/* Production trusts a body only when its replay reproduces the parser's bytes
+	   exactly (the `faithful` compare in ast_func_end), and falls back otherwise.
+	   That is a byte bar on a path whose real obligation is semantic. Setting this
+	   accepts a byte-divergent replay into production so the fallback census can be
+	   driven to zero and the result judged by the goldens instead. Off by default;
+	   turning it on is only meaningful alongside a full test run. */
+	ast_rir_nofb_env = ast_env_gate("MCC_RIR_NOFB", 0);
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
@@ -15068,6 +15076,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 									 (rel_len == 0 ||
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
 																					(int)rel_len));
+				if (ast_rir_nofb_env && !faithful)
+					faithful = 1;
 				ast_fn_faithful = faithful;
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
 					int ast_bd = -1, ast_i;

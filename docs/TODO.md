@@ -368,6 +368,85 @@ cells pass against the tightened floors.
 
 `arm-win32` and `arm-wince` share a define set and must read identically. Any sweep where those two rows differ has a harness bug, not a codegen one — the cheapest available check that a run measured what it thinks.
 
+## Finishing RIR: the fallback census, and the five defects that block 100%
+
+**The completion bar is `fallback == 0` with the goldens green.** Byte identity is not
+the obligation; semantic correctness is. This section is the measured route to that
+bar, and it replaces guessing at the C2 gap with a list of five named defects.
+
+### The census, measured at `-O1` over all 660 corpus files on x86_64
+
+`rir_prod_take` now records *which* of its conditions refused a body
+(`rir_prod_why`, `src/mccrir.c`), and `[rir-prod-why]` prints the histogram at exit.
+Run it with `MCC_RIR_PROD=2`.
+
+| verdict | n | meaning |
+| --- | --- | --- |
+| `used` | **2158** | arena shipped |
+| `nomodel` | **57** | the pre-flight refused the body |
+| `fallback` | **17** | arena accepted, then the replay's bytes differed |
+
+`nomodel` breaks down as **`noops` 39, `asm` 10, `regdangle` 5, `bail` 3**. The
+`noops` bodies have no captured ops at all and are the cheap half; `asm` is the known
+`AST_OP_ASM` pre-flight refusal; `regdangle` and `bail` are the two deliberate M6
+refusals.
+
+### The `fallback` 17 are a BYTE gate, and removing it costs exactly five goldens
+
+`faithful` in `ast_func_end` (`src/mccast.c:15065`) is a pure `memcmp` of the replay
+against the parser's bytes, and `rir_prod_note(faithful ? "used" : "fallback")`
+(`:15680`) is driven entirely by it. The optimizer is gated on it too —
+`ast_run_strat_seq` opens `if (faithful && ast_strategies[si].gate())`
+(`src/mccast.c:13044`) — so an unfaithful body is neither trusted nor optimized.
+
+`MCC_RIR_NOFB=1` (`ast_rir_nofb_env`, off by default) accepts a byte-divergent replay
+into production so the bar can be measured rather than argued about. **With it on,
+`fallback` goes 17 → 0 and `used` 2158 → 2175.**
+
+**And the goldens say that is not yet safe.** Same build, same corpus, x86_64:
+
+| | passed | failed |
+| --- | --- | --- |
+| baseline | 297 | 8 |
+| `MCC_RIR_NOFB=1` | 293 | 13 |
+
+Identical at `-O1`, `-O2` and `-O3`. The eight baseline failures are the known
+batch-invocation artifacts that pass under ctest isolation; the delta is **five
+regressions**, and nothing is fixed by the change:
+
+- `atomic_inlang_rmw`
+- `atomic_ptr`
+- `builtin_overflow`
+- `line`
+- `overflow_inline`
+
+**This is the single most useful thing measured about RIR so far**, because it turns
+the completion bar into a finite list. The byte-faithful gate is **load-bearing for
+correctness**, not merely conservative — at least some of the 17 byte-divergent
+bodies are genuinely wrong when used. Two of the five names are atomics and two are
+overflow builtins, which suggests the arena mismodels a lowering shared by those,
+rather than five unrelated defects.
+
+**The route to the bar, in order:**
+
+1. Fix the five above. Reproduce each with
+   `MCC_RIR_NOFB=1 MCC_TEST_OPT=-O1 <builddir>/exec_runner … --only <name>`, and
+   diff its output against the baseline run. These are real wrong-code defects and
+   the goldens name them precisely — no oracle, no byte board, no bisect needed.
+2. Then `noops` 39 — confirm an empty arena is legitimate for a body with no captured
+   ops (prologue and epilogue are emitted outside the body), in which case these are
+   a naming problem rather than a gap and the census should count them separately.
+3. Then `asm` 10, which is P4 defect 4 and the one genuinely hard item.
+4. `regdangle` 5 and `bail` 3 are deliberate M6 refusals; each needs its shape
+   modelled rather than refused, and `docs/TODO.md:760` already argues modelling
+   beats refusing where both were tried.
+5. Only when `fallback == 0` **and** the goldens are green on every executable key
+   does the fallback path come out.
+
+**Do not turn `MCC_RIR_NOFB` on by default until step 1 is done** — it is a
+measurement switch, and with five known regressions behind it, shipping it would be
+shipping wrong code.
+
 ## What the C2 gap actually measures — read this before treating a divergence as a bug
 
 **The C2 gap is a migration-completeness number, not a defect count.** This was got

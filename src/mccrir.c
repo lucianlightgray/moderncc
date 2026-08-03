@@ -1051,6 +1051,11 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
 static long rir_tot_c2_equiv, rir_tot_c2_unproven;
+#define RIR_PROD_NWHY 10
+static const char *const rir_prod_why_name[RIR_PROD_NWHY] = {
+		"bail",     "noops",   "capbad", "unbal", "ovf",
+		"mismatch", "invalid", "unsafe", "asm",   "regdangle"};
+static long rir_prod_why_n[RIR_PROD_NWHY];
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
 static long rir_tot_c3_pair_fired;
@@ -4461,33 +4466,66 @@ static int rir_prod_reg_dangle(AstLocal n) {
 	return ast_parent(rir_arena, n) != AST_NONE;
 }
 
+/* Why the pre-flight last refused a body. Every `return NULL` below sets this,
+   so a fallback can be attributed to the condition that caused it instead of
+   being counted as an undifferentiated total -- which is what the fallback
+   census needs to be driven to zero. */
+const char *rir_prod_why = "";
+
 struct AstArena *rir_prod_take(void) {
 	char msg[256];
 	AstArena *a;
 	int i, nops = 0;
-	if (!rir_prod_env || rir_env || rir_prod_bail)
+	rir_prod_why = "";
+	if (!rir_prod_env || rir_env || rir_prod_bail) {
+		rir_prod_why = "bail";
 		return NULL;
+	}
 	rir_build();
 	for (i = 0; i < rir_n; i++)
 		if (rir_ops[i].tag == RIR_T_OP)
 			nops++;
-	if (!nops || ir_cap_bad || rir_unbal || rir_ovf)
+	if (!nops) {
+		rir_prod_why = "noops";
 		return NULL;
+	}
+	if (ir_cap_bad) {
+		rir_prod_why = "capbad";
+		return NULL;
+	}
+	if (rir_unbal) {
+		rir_prod_why = "unbal";
+		return NULL;
+	}
+	if (rir_ovf) {
+		rir_prod_why = "ovf";
+		return NULL;
+	}
 	rir_to_arena();
-	if (rir_arena_mismatch)
+	if (rir_arena_mismatch) {
+		rir_prod_why = "mismatch";
 		return NULL;
+	}
 	msg[0] = 0;
-	if (ast_validate(rir_arena, msg, sizeof msg) != 0)
+	if (ast_validate(rir_arena, msg, sizeof msg) != 0) {
+		rir_prod_why = "invalid";
 		return NULL;
-	if (!rir_emit_safe())
+	}
+	if (!rir_emit_safe()) {
+		rir_prod_why = "unsafe";
 		return NULL;
+	}
 	{
 		AstLocal n;
 		for (n = 0; n < ast_count(rir_arena); n++) {
-			if (ast_op(rir_arena, n) == AST_OP_ASM)
+			if (ast_op(rir_arena, n) == AST_OP_ASM) {
+				rir_prod_why = "asm";
 				return NULL;
-			if (rir_prod_reg_dangle(n))
+			}
+			if (rir_prod_reg_dangle(n)) {
+				rir_prod_why = "regdangle";
 				return NULL;
+			}
 		}
 	}
 	a = rir_arena;
@@ -4518,9 +4556,15 @@ void rir_prod_note(const char *verdict) {
 	const char *f;
 	if (!strcmp(verdict, "used"))
 		rir_tot_prod_used++;
-	else if (!strcmp(verdict, "fallback"))
+	else if (!strcmp(verdict, "fallback")) {
+		int i;
 		rir_tot_prod_fb++;
-	else
+		for (i = 0; i < RIR_PROD_NWHY; i++)
+			if (!strcmp(rir_prod_why_name[i], rir_prod_why)) {
+				rir_prod_why_n[i]++;
+				break;
+			}
+	} else
 		rir_tot_prod_skip++;
 	if (rir_prod_gate < 2)
 		return;
@@ -4529,18 +4573,24 @@ void rir_prod_note(const char *verdict) {
 	if (rir_prod_out) {
 		FILE *o = fopen(rir_prod_out, "a");
 		if (o) {
-			fprintf(o, "%s\t%s\t%s\n", verdict, f, funcname ? funcname : "?");
+			fprintf(o, "%s\t%s\t%s\t%s\n", verdict, f, funcname ? funcname : "?",
+							rir_prod_why);
 			fclose(o);
 		}
 		return;
 	}
-	fprintf(stderr, "[rir-prod] %s\t%s\t%s\n", verdict, f,
-					funcname ? funcname : "?");
+	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\n", verdict, f,
+					funcname ? funcname : "?", rir_prod_why);
 }
 
 static void rir_prod_report(void) {
+	int i;
 	fprintf(stderr, "[rir-prod-total] used=%ld fallback=%ld skip=%ld\n",
 					rir_tot_prod_used, rir_tot_prod_fb, rir_tot_prod_skip);
+	for (i = 0; i < RIR_PROD_NWHY; i++)
+		if (rir_prod_why_n[i])
+			fprintf(stderr, "[rir-prod-why] %s=%ld\n", rir_prod_why_name[i],
+							rir_prod_why_n[i]);
 }
 
 void rir_prod_replay_end(void) {
