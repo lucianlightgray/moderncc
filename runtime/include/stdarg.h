@@ -10,4 +10,8 @@ typedef __builtin_va_list va_list;
 typedef va_list __gnuc_va_list;
 #define _VA_LIST_DEFINED
 
+#if __STDC_VERSION__ >= 202311L
+#define __STDC_VERSION_STDARG_H__ 202311L
+#endif
+
 #endif

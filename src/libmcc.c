@@ -2804,6 +2804,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 					{ MCC_TRACE("br\n"); std = "11"; }
 				else if (!strcmp(std, "2017") || !strcmp(std, "2018"))
 					{ MCC_TRACE("br\n"); std = "17"; }
+				else if (!strcmp(std, "2024"))
+					{ MCC_TRACE("br\n"); std = "23"; }
 			} else { MCC_TRACE("br\n");
 				mcc_warning("unsupported language standard '%s'", disp);
 				break;

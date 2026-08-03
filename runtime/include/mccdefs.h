@@ -56,6 +56,8 @@
 
 	#define __STDC_IEC_559__ 1
 	#define __STDC_IEC_559_COMPLEX__ 1
+	#define __GCC_IEC_559 2
+	#define __GCC_IEC_559_COMPLEX 2
 
 	#define __STDC_UTF_16__ 1
 	#define __STDC_UTF_32__ 1
@@ -113,6 +115,10 @@
 
 #elif defined __ANDROID__
 	#define  BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD
+	#define __ELF__ 1
+
+#elif defined __linux__
+	#define __ELF__ 1
 
 #else
 
@@ -122,7 +128,13 @@
 	#define __UINTPTR_TYPE__ unsigned __PTRDIFF_TYPE__
 	#define __INTPTR_TYPE__ __PTRDIFF_TYPE__
 #endif
+	#define __INT8_TYPE__ signed char
+	#define __UINT8_TYPE__ unsigned char
+	#define __INT16_TYPE__ short
+	#define __UINT16_TYPE__ unsigned short
 	#define __INT32_TYPE__ int
+	#define __UINT32_TYPE__ unsigned int
+	#define __UINT64_TYPE__ unsigned __INT64_TYPE__
 	#define __CHAR16_TYPE__ unsigned short
 	#define __CHAR32_TYPE__ unsigned int
 	#define __ATOMIC_RELAXED 0

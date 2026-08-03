@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#if __STDC_VERSION__ >= 202311L
+#define __STDC_VERSION_STDATOMIC_H__ 202311L
+#endif
+
 #define __ATOMIC_RELAXED 0
 #define __ATOMIC_CONSUME 1
 #define __ATOMIC_ACQUIRE 2
