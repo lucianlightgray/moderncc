@@ -2308,6 +2308,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_error), 0, "error"},
 		{offsetof(MCCState, warn_write_strings), 0, "write-strings"},
 		{offsetof(MCCState, warn_unsupported), 0, "unsupported"},
+		{offsetof(MCCState, warn_unsupported), 0, "attributes"},
 		{offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration"},
 		{offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers"},
 		{offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point"},

@@ -3805,6 +3805,11 @@ static inline int is_null_pointer(SValue *p) { MCC_TRACE("enter\n");
 					0 == (pointed_type(&p->type)->t & VT_QUALIFY));
 }
 
+static int type_needs_default_promotion(CType *type) { MCC_TRACE("enter\n");
+	int bt = type->t & VT_BTYPE;
+	return bt == VT_BYTE || bt == VT_BOOL || bt == VT_SHORT || bt == VT_FLOAT;
+}
+
 static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n");
 	Sym *s1, *s2;
 
@@ -3814,17 +3819,44 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); return 0; }
 	if (s1->f.func_type != s2->f.func_type && s1->f.func_type != FUNC_OLD && s2->f.func_type != FUNC_OLD)
 		{ MCC_TRACE("br\n"); return 0; }
+	if (!is_compatible_unqualified_types(&s1->type, &s2->type))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (s1->f.func_type == FUNC_OLD || s2->f.func_type == FUNC_OLD) { MCC_TRACE("br\n");
+		if (s1->f.func_type != s2->f.func_type) { MCC_TRACE("br\n");
+			Sym *old = s1->f.func_type == FUNC_OLD ? s1 : s2;
+			Sym *proto = old == s1 ? s2 : s1;
+			Sym *op, *pp;
+			if (proto->f.func_type == FUNC_ELLIPSIS)
+				{ MCC_TRACE("br\n"); return 0; }
+			if (!old->next) { MCC_TRACE("br\n");
+				for (pp = proto->next; pp; pp = pp->next)
+					{ MCC_TRACE("br\n"); if (type_needs_default_promotion(&pp->type))
+						{ MCC_TRACE("br\n"); return 0; } }
+			} else { MCC_TRACE("br\n");
+				for (op = old->next, pp = proto->next; op && pp; op = op->next, pp = pp->next) { MCC_TRACE("br\n");
+					if (type_needs_default_promotion(&op->type))
+						{ MCC_TRACE("br\n"); mcc_pedantic("prototype does not match promoted "
+																"parameter types of prior old-style definition"); }
+					else if (!is_compatible_unqualified_types(&op->type, &pp->type))
+						{ MCC_TRACE("br\n"); return 0; }
+				}
+				if (op || pp)
+					{ MCC_TRACE("br\n"); return 0; }
+			}
+		}
+		return 1;
+	}
+	s1 = s1->next;
+	s2 = s2->next;
 	for (;;) { MCC_TRACE("br\n");
-		if (!is_compatible_unqualified_types(&s1->type, &s2->type))
-			{ MCC_TRACE("br\n"); return 0; }
-		if (s1->f.func_type == FUNC_OLD || s2->f.func_type == FUNC_OLD)
-			{ MCC_TRACE("br\n"); return 1; }
-		s1 = s1->next;
-		s2 = s2->next;
 		if (!s1)
 			{ MCC_TRACE("br\n"); return !s2; }
 		if (!s2)
 			{ MCC_TRACE("br\n"); return 0; }
+		if (!is_compatible_unqualified_types(&s1->type, &s2->type))
+			{ MCC_TRACE("br\n"); return 0; }
+		s1 = s1->next;
+		s2 = s2->next;
 	}
 }
 
@@ -15365,6 +15397,13 @@ static int decl(int l) {
 						sym->type = type;
 					} else { MCC_TRACE("br\n");
 						sym = sym_push(v, &type, 0, 0);
+						if (local_scope && type_is_vm(&type)) { MCC_TRACE("br\n");
+							if (nb_vla_open < VLA_TRACK_MAX)
+								{ MCC_TRACE("br\n"); vla_open_birth[nb_vla_open++] = ++vla_seq; }
+							else
+								{ MCC_TRACE("br\n"); vla_track_ovf = 1; }
+							cur_scope->vla_diag++;
+						}
 					}
 					sym->a = ad.a;
 					if (ad.a.transp_union && IS_UNION(type.t))
