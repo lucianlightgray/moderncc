@@ -1039,13 +1039,10 @@ static const cli_case_t cli_cases[] = {
 		 "__atomic_exchange\n__atomic_load\n__atomic_store_8\nSCALAR_OK\n"},
 
 		{"pedantic_diagnostics", "",
-		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
-		 " s.a=1; s.c=2;"
-		 " return (int)sizeof(s)==12 && (int)((char*)&s.c-(char*)&s)==8"
-		 " && s.a==1 && s.c==2; }\\n"
-		 "int main(void){ return f()?0:1; }\\n' > {W}/pd1.c && "
+		 "printf 'int f(void){ int n=3; struct S{int a[n];}; struct S s; return sizeof s; }\\n' > {W}/pd1.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/pd1.c -o {W}/pd1.o 2>&1 | wc -l | tr -d ' '; "
-		 "{MCC} -B{B} -I{I} -std=c11 {W}/pd1.c -o {W}/pd1 && {W}/pd1 && echo VLA_STRUCT_OK; "
+		 "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd1.c -o {W}/pd1.o 2>&1 | "
+		 "grep -oE 'variably modified type'; "
 		 "printf 'enum E{X=0x100000000}; int main(void){return X*0;}\\n' > {W}/pd2.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd2.c -o {W}/pd2.o 2>&1 | "
 		 "grep -oE 'range of .int.'; "
@@ -1073,7 +1070,7 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'struct S{int d[];}; int main(void){return (int)sizeof(struct S);}\\n' > {W}/pd10.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 -pedantic -c {W}/pd10.c -o {W}/pd10.o 2>&1 | "
 		 "grep -oE 'flexible array member in a struct with no named members'; echo END",
-		 "0\nVLA_STRUCT_OK\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n"},
+		 "3\nvariably modified type\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n"},
 
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "

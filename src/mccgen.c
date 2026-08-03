@@ -630,10 +630,6 @@ static int type_is_vm(CType *type) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-static inline int is_vla_struct(CType *type) { MCC_TRACE("enter\n");
-	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.has_vla_member;
-}
-
 static int btype_size(int bt) { MCC_TRACE("enter\n");
 	return bt == VT_BYTE || bt == VT_BOOL
 						 ? 1
@@ -2117,13 +2113,6 @@ ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
 		rir_hook_synth_end();
 	}
 #endif
-	if ((vtop->r & VT_LVAL) && vtop->sym && (vtop->sym->type.t & VT_VLA) &&
-			is_vla_struct(&vtop->sym->type)) { MCC_TRACE("br\n");
-		vtop->type.t = VT_PTR;
-		gv(MCC_RC_INT);
-		vtop->sym = NULL;
-		return;
-	}
 	vtop->r &= ~VT_LVAL;
 	if ((vtop->r & VT_VALMASK) == VT_LLOCAL)
 		{ MCC_TRACE("br\n"); vtop->r = (vtop->r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL; }
@@ -3908,10 +3897,6 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 		t1 &= ~VT_QUALIFY;
 		t2 &= ~VT_QUALIFY;
 	}
-	if ((t1 & VT_BTYPE) == VT_STRUCT)
-		{ MCC_TRACE("br\n"); t1 &= ~VT_VLA; }
-	if ((t2 & VT_BTYPE) == VT_STRUCT)
-		{ MCC_TRACE("br\n"); t2 &= ~VT_VLA; }
 
 	if ((t1 & VT_BTYPE) != VT_BYTE) { MCC_TRACE("br\n");
 		t1 &= ~VT_DEFSIGN;
@@ -4671,8 +4656,6 @@ ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
 	if (bt == VT_STRUCT) { MCC_TRACE("br\n");
 		s = type->ref;
 		*a = s->r;
-		if (s->a.has_vla_member)
-			{ MCC_TRACE("br\n"); return MCC_PTR_SIZE; }
 		return s->c;
 	} else if (bt == VT_PTR) { MCC_TRACE("br\n");
 		if (type->t & VT_ARRAY) { MCC_TRACE("br\n");
@@ -4718,10 +4701,7 @@ ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
 }
 
 static void vpush_type_size(CType *type, int *a) { MCC_TRACE("enter\n");
-	if (is_vla_struct(type)) { MCC_TRACE("br\n");
-		*a = type->ref->r;
-		vset(&int_type, VT_LOCAL | VT_LVAL, type->ref->vla_dyn_slot);
-	} else if (type->t & VT_VLA) { MCC_TRACE("br\n");
+	if (type->t & VT_VLA) { MCC_TRACE("br\n");
 		type_size(&type->ref->type, a);
 		vset(&int_type, VT_LOCAL | VT_LVAL, type->ref->c);
 	} else { MCC_TRACE("br\n");
@@ -4915,8 +4895,6 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	}
 
 	if (sbt == VT_STRUCT) { MCC_TRACE("br\n");
-		int dyn_struct = is_vla_struct(&vtop->type);
-		CType dyn_type = vtop->type;
 		size = type_size(&vtop->type, &align);
 		vpushv(vtop - 1);
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -4933,12 +4911,6 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		vtop->type.t = VT_PTR;
 		gaddrof();
 
-		if (dyn_struct) { MCC_TRACE("br\n");
-			vpush_type_size(&dyn_type, &align);
-			vpush_helper_func(TOK_memmove);
-			vrott(4);
-			gfunc_call(3);
-		} else
 #ifdef MCC_TARGET_NATIVE_STRUCT_COPY
 		if (1
 #if MCC_CONFIG_DIAG_RT >= 2
@@ -5484,7 +5456,7 @@ static Sym *find_field(CType *type, int v, int *cumofs) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); expect("struct or union"); }
 		if (v < TOK_UIDENT)
 			{ MCC_TRACE("br\n"); expect("field name"); }
-		if (s->c < 0 && !s->a.has_vla_member)
+		if (s->c < 0)
 			{ MCC_TRACE("br\n"); mcc_error("dereferencing incomplete type '%s'",
 								get_tok_str(s->v & ~SYM_STRUCT, 0)); }
 	}
@@ -5731,139 +5703,6 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	}
 }
 
-static int vla_member_align(CType *type) { MCC_TRACE("enter\n");
-	int a;
-	while ((type->t & VT_BTYPE) == VT_PTR && (type->t & (VT_ARRAY | VT_VLA)))
-		{ MCC_TRACE("br\n"); type = &type->ref->type; }
-	type_size(type, &a);
-	return a;
-}
-
-static int new_vla_dyn_slot(void) { MCC_TRACE("enter\n");
-	int align;
-	loc -= type_size(&int_type, &align);
-	loc &= -align;
-	return loc;
-}
-
-static void store_vla_dyn_slot(int slot) { MCC_TRACE("enter\n");
-	vset(&int_type, VT_LOCAL | VT_LVAL, slot);
-	vswap();
-	vstore();
-	vpop();
-}
-
-static void struct_layout_vla(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
-	int maxalign, align, size, a, c, offset;
-	int is_union = IS_UNION(type->t);
-	int seen_dyn = 0;
-	int prev_slot = 0;
-	int union_static_max = 0;
-	int union_dyn_count = 0;
-	Sym *union_dyn_field = NULL;
-	Sym *f;
-
-	maxalign = 1;
-	c = 0;
-
-	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
-		int member_vla = (f->type.t & VT_VLA) != 0;
-
-		if (f->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
-			mcc_error("bit-field '%s' in a struct or union with a variable-length "
-								"array member is not supported",
-								get_tok_str(f->v & ~SYM_FIELD, NULL));
-		} else if (member_vla) { MCC_TRACE("br\n");
-			align = vla_member_align(&f->type);
-			size = -1;
-		} else { MCC_TRACE("br\n");
-			size = type_size(&f->type, &align);
-		}
-
-		a = f->a.aligned ? 1 << (f->a.aligned - 1) : 0;
-		if (ad->a.packed || f->a.packed)
-			{ MCC_TRACE("br\n"); align = 1; }
-		if (a > align)
-			{ MCC_TRACE("br\n"); align = a; }
-
-		if (is_union) { MCC_TRACE("br\n");
-			offset = 0;
-			if (member_vla) { MCC_TRACE("br\n");
-				if (++union_dyn_count > 1)
-					{ MCC_TRACE("br\n"); mcc_error("more than one variable-length array member "
-										"in a union is not supported"); }
-				seen_dyn = 1;
-				union_dyn_field = f;
-			} else if (size > union_static_max)
-				{ MCC_TRACE("br\n"); union_static_max = size; }
-		} else if (!seen_dyn) { MCC_TRACE("br\n");
-			c = (c + align - 1) & -align;
-			offset = c;
-			if (member_vla) { MCC_TRACE("br\n");
-				seen_dyn = 1;
-				vpushi(offset);
-				vpush_type_size(&f->type, &a);
-				gen_op('+');
-				prev_slot = new_vla_dyn_slot();
-				store_vla_dyn_slot(prev_slot);
-			} else if (size > 0)
-				{ MCC_TRACE("br\n"); c += size; }
-		} else { MCC_TRACE("br\n");
-			vset(&int_type, VT_LOCAL | VT_LVAL, prev_slot);
-			vpushi(align - 1);
-			gen_op('+');
-			vpushi(~(align - 1));
-			gen_op('&');
-			prev_slot = new_vla_dyn_slot();
-			store_vla_dyn_slot(prev_slot);
-			f->vla_dyn_slot = prev_slot;
-			offset = 0;
-			if (member_vla) { MCC_TRACE("br\n");
-				vset(&int_type, VT_LOCAL | VT_LVAL, prev_slot);
-				vpush_type_size(&f->type, &a);
-				gen_op('+');
-				prev_slot = new_vla_dyn_slot();
-				store_vla_dyn_slot(prev_slot);
-			} else if (size > 0) { MCC_TRACE("br\n");
-				vset(&int_type, VT_LOCAL | VT_LVAL, prev_slot);
-				vpushi(size);
-				gen_op('+');
-				prev_slot = new_vla_dyn_slot();
-				store_vla_dyn_slot(prev_slot);
-			}
-		}
-
-		f->c = offset;
-		f->r = 0;
-		if (align > maxalign)
-			{ MCC_TRACE("br\n"); maxalign = align; }
-	}
-
-	a = ad->a.aligned ? 1 << (ad->a.aligned - 1) : 1;
-	if (a < maxalign)
-		{ MCC_TRACE("br\n"); a = maxalign; }
-	type->ref->r = a;
-
-	if (is_union) { MCC_TRACE("br\n");
-		if (union_static_max > 0)
-			{ MCC_TRACE("br\n"); mcc_error("a union combining a fixed-size member with a "
-								"variable-length array member is not supported"); }
-		vpush_type_size(&union_dyn_field->type, &align);
-	} else { MCC_TRACE("br\n");
-		vset(&int_type, VT_LOCAL | VT_LVAL, prev_slot);
-	}
-	vpushi(a - 1);
-	gen_op('+');
-	vpushi(~(a - 1));
-	gen_op('&');
-	prev_slot = new_vla_dyn_slot();
-	store_vla_dyn_slot(prev_slot);
-
-	type->ref->c = -2;
-	type->ref->vla_dyn_slot = prev_slot;
-	type->ref->a.has_vla_member = 1;
-}
-
 static int in_range(long long n, int t) { MCC_TRACE("enter\n");
 	unsigned long long m;
 	if ((t & VT_BTYPE) == VT_INT128)
@@ -5875,7 +5714,7 @@ static int in_range(long long n, int t) { MCC_TRACE("enter\n");
 }
 
 static void struct_decl(CType *type, int u) { MCC_TRACE("enter\n");
-	int v, c, size, align, flexible, saw_vla;
+	int v, c, size, align, flexible;
 	int bit_size, bsize, bt, ut;
 	Sym *s, *ss, **ps;
 	AttributeDef ad, ad1;
@@ -6024,7 +5863,6 @@ do_decl:
 		} else { MCC_TRACE("br\n");
 			c = 0;
 			flexible = 0;
-			saw_vla = 0;
 			while (tok != '}') { MCC_TRACE("br\n");
 				if (!parse_btype(&btype, &ad1, 0)) { MCC_TRACE("br\n");
 					if (tok == TOK_STATIC_ASSERT) { MCC_TRACE("br\n");
@@ -6080,7 +5918,9 @@ do_decl:
 							{ MCC_TRACE("br\n"); mcc_error("invalid type for '%s'",
 												get_tok_str(v, NULL)); }
 						if (type1.t & VT_VLA)
-							{ MCC_TRACE("br\n"); saw_vla = 1; }
+							{ MCC_TRACE("br\n"); mcc_error("member '%s' has a variably modified type: "
+												"a variable-length array member is not supported",
+												v ? get_tok_str(v, NULL) : "<anonymous>"); }
 						if (struct_has_flexible_member(&type1))
 							{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a member that is a "
 													 "structure with a flexible array member"); }
@@ -6154,10 +5994,7 @@ do_decl:
 			}
 			check_fields(type, 1);
 			check_fields(type, 0);
-			if (saw_vla)
-				{ MCC_TRACE("br\n"); struct_layout_vla(type, &ad); }
-			else
-				{ MCC_TRACE("br\n"); struct_layout(type, &ad); }
+			struct_layout(type, &ad);
 		}
 		if (debug_modes)
 			{ MCC_TRACE("br\n"); mcc_debug_fix_forw(mcc_state, type); }
@@ -7933,9 +7770,6 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 			{ MCC_TRACE("br\n"); mcc_error("declaration of an array of functions"); }
 		if ((type->t & VT_BTYPE) == VT_VOID || type_size(type, &align) < 0)
 			{ MCC_TRACE("br\n"); mcc_error("declaration of an array of incomplete type elements"); }
-		if (is_vla_struct(type))
-			{ MCC_TRACE("br\n"); mcc_error("array of a variably sized struct or union "
-									"type is not supported"); }
 		if (struct_has_flexible_member(type))
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids an array of a structure with a "
 									 "flexible array member"); }
@@ -8173,10 +8007,6 @@ static void gfunc_param_typed(Sym *func, Sym *arg) { MCC_TRACE("enter\n");
 	int func_type;
 	Sym *tu;
 	CType type;
-
-	if (is_vla_struct(&vtop->type))
-		{ MCC_TRACE("br\n"); mcc_error("passing a variably sized struct or union by value "
-									"is not supported"); }
 
 	func_type = func->f.func_type;
 	if (func_type == FUNC_OLD ||
@@ -12048,10 +11878,6 @@ tok_next:
 			s = find_field(&vtop->type, tok, &cumofs);
 			gaddrof();
 			vtop->type = char_pointer_type;
-			if (s->vla_dyn_slot) { MCC_TRACE("br\n");
-				vset(&int_type, VT_LOCAL | VT_LVAL, s->vla_dyn_slot);
-				gen_op('+');
-			} else
 #if MCC_CONFIG_OPTIMIZER
 			if (ast_regdisp_env && cumofs && !(s->type.t & VT_ARRAY) &&
 					!mcc_state->do_asan_shadow &&
@@ -12079,7 +11905,7 @@ tok_next:
 			vtop->type = s->type;
 			if (qualifiers)
 				{ MCC_TRACE("br\n"); parse_btype_qualify(&vtop->type, qualifiers); }
-			if (!(vtop->type.t & (VT_ARRAY | VT_VLA))) { MCC_TRACE("br\n");
+			if (!(vtop->type.t & VT_ARRAY)) { MCC_TRACE("br\n");
 				vtop->r |= VT_LVAL | base_nonlval;
 #if MCC_CONFIG_DIAG_RT >= 2
 				if (mcc_state->do_bounds_check)
@@ -14954,11 +14780,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 #endif
 	init_params p = {0};
 
-	if (is_vla_struct(type) && (r & VT_VALMASK) != VT_LOCAL)
-		{ MCC_TRACE("br\n"); mcc_error("variably sized object must have automatic storage duration"); }
-	if (is_vla_struct(type) && has_init)
-		{ MCC_TRACE("br\n"); mcc_error("variably sized object cannot be initialized"); }
-
 	if (scope == VT_CONST) { MCC_TRACE("br\n");
 		sym = sym_find(v);
 		if (sym) { MCC_TRACE("br\n");
@@ -15035,8 +14856,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		sec = NULL;
 #ifdef STACK_OVERALIGN_MAX
 		overalign_indirect = v && align > STACK_OVERALIGN_MAX &&
-												 !(type->t & VT_VLA) && !is_vla_struct(type) &&
-												 size > 0 && !NODATA_WANTED &&
+												 !(type->t & VT_VLA) && size > 0 && !NODATA_WANTED &&
 												 !asan_g
 #if MCC_CONFIG_DIAG_RT >= 2
 												 && !bcheck
@@ -15286,48 +15106,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		gen_vla_sp_save(addr);
 		cur_scope->vla.loc = addr;
 		cur_scope->vla.num++;
-#if MCC_CONFIG_OPTIMIZER
-		rir_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a,
-																	 vla_res_slot);
-#endif
-	} else if (is_vla_struct(type)) { MCC_TRACE("br\n");
-		int a;
-
-		if (nb_vla_open < VLA_TRACK_MAX)
-			{ MCC_TRACE("br\n"); vla_open_birth[nb_vla_open++] = ++vla_seq; }
-		else
-			{ MCC_TRACE("br\n"); vla_track_ovf = 1; }
-		cur_scope->vla_diag++;
-
-		if (NODATA_WANTED)
-			{ MCC_TRACE("br\n"); goto no_alloc; }
-
-		int vla_new_save = 0;
-#if MCC_CONFIG_OPTIMIZER
-		rir_hook_vla_alloc_begin();
-#endif
-		if (cur_scope->vla.num == 0) { MCC_TRACE("br\n");
-			if (cur_scope->prev && cur_scope->prev->vla.num) { MCC_TRACE("br\n");
-				cur_scope->vla.locorig = cur_scope->prev->vla.loc;
-			} else { MCC_TRACE("br\n");
-				gen_vla_sp_save(loc -= MCC_PTR_SIZE);
-				cur_scope->vla.locorig = loc;
-				vla_new_save = 1;
-			}
-		}
-
-		vpush_type_size(type, &a);
-		gen_vla_alloc(type, a);
-		int vla_res_slot = 0;
-#if defined MCC_TARGET_PE && defined MCC_TARGET_X86_64
-		vla_res_slot = addr;
-		gen_vla_result(addr), addr = (loc -= MCC_PTR_SIZE);
-#endif
-		gen_vla_sp_save(addr);
-		cur_scope->vla.loc = addr;
-		cur_scope->vla.num++;
-		if (sym)
-			{ MCC_TRACE("br\n"); sym->type.t |= VT_VLA; }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a,
 																	 vla_res_slot);
@@ -15870,8 +15648,7 @@ static int decl(int l) {
 			}
 			if ((type.t & VT_BTYPE) != VT_FUNC && (type.t & VT_INLINE))
 				{ MCC_TRACE("br\n"); mcc_error("'inline' used outside of a function declaration"); }
-			if (((type.t & VT_VLA) || is_vla_struct(&type)) && (type.t & VT_EXTERN) &&
-					(type.t & VT_BTYPE) != VT_FUNC)
+			if ((type.t & VT_VLA) && (type.t & VT_EXTERN) && (type.t & VT_BTYPE) != VT_FUNC)
 				{ MCC_TRACE("br\n"); mcc_error("object with variably modified type must have no linkage"); }
 			if ((ad.storage_class & 128) && (type.t & VT_BTYPE) != VT_FUNC)
 				{ MCC_TRACE("br\n"); mcc_pedantic("'_Noreturn' used outside of a function declaration"); }
@@ -15993,8 +15770,7 @@ static int decl(int l) {
 						if (!is_compatible_types(&sym->type, &type) || !(sym->type.t & VT_TYPEDEF))
 							{ MCC_TRACE("br\n"); mcc_error("incompatible redefinition of '%s'",
 												get_tok_str(v, NULL)); }
-						else if ((sym->type.t & VT_VLA) || (type.t & VT_VLA) ||
-								is_vla_struct(&sym->type) || is_vla_struct(&type))
+						else if ((sym->type.t & VT_VLA) || (type.t & VT_VLA))
 							{ MCC_TRACE("br\n"); mcc_error("redefinition of variably modified typedef '%s'",
 												get_tok_str(v, NULL)); }
 						else if (mcc_state->cversion < 201112)
