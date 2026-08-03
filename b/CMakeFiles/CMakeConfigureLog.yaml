@@ -1,0 +1,2959 @@
+
+---
+events:
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineSystem.cmake:12 (find_program)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_UNAME"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "uname"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/uname"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/uname"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/uname"
+    found: "/usr/bin/uname"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineSystem.cmake:212 (message)"
+      - "CMakeLists.txt:31 (project)"
+    message: |
+      The system is: Linux - 6.18.39-gentoo-dist-bin - x86_64
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeNinjaFindMake.cmake:5 (find_program)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_MAKE_PROGRAM"
+    description: "Program used to build from build.ninja files."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ninja-build"
+      - "ninja"
+      - "samu"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/ninja-build"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/ninja"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/samu"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/ninja-build"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/ninja"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/samu"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/ninja-build"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/ninja"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/samu"
+      - "/usr/bin/ninja-build"
+    found: "/usr/bin/ninja"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompiler.cmake:73 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:64 (_cmake_find_compiler)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER"
+    description: "C compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "cc"
+      - "gcc"
+      - "cl"
+      - "bcc"
+      - "xlc"
+      - "icx"
+      - "clang"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/cc"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/cc"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/cc"
+    found: "/usr/bin/cc"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:468 (find_file)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:506 (CMAKE_DETERMINE_COMPILER_ID_WRITE)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:8 (CMAKE_DETERMINE_COMPILER_ID_BUILD)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "file"
+    variable: "src_in"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "CMakeCCompilerId.c.in"
+    candidate_directories:
+      - "/usr/share/cmake/Modules/"
+    found: "/usr/share/cmake/Modules/CMakeCCompilerId.c.in"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:122 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:31 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /usr/bin/cc 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is GNU, found in:
+        /home/llg/Projects/mcc/b/CMakeFiles/4.3.4/CompilerIdC/a.out
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_AR"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/ar"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_RANLIB"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/ranlib"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_STRIP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "strip"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/strip"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_LINKER"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ld"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/ld"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_NM"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "nm"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/nm"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJDUMP"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objdump"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/objdump"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_OBJCOPY"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objcopy"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/objcopy"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_READELF"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "readelf"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/readelf"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_DLLTOOL"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "dlltool"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/bin/dlltool"
+      - "/home/llg/.cargo/bin/dlltool"
+      - "/home/llg/.local/bin/dlltool"
+      - "/usr/local/cuda-13.3/bin/dlltool"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/dlltool"
+      - "/usr/local/sbin/dlltool"
+      - "/usr/local/bin/dlltool"
+      - "/opt/bin/dlltool"
+      - "/usr/lib/llvm/22/bin/dlltool"
+      - "/usr/lib/llvm/19/bin/dlltool"
+      - "/etc/eselect/wine/bin/dlltool"
+      - "/home/llg/.lmstudio/bin/dlltool"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/dlltool"
+      - "/home/llg/.platformio/penv/bin/dlltool"
+    found: false
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_ADDR2LINE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "addr2line"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    found: "/usr/bin/addr2line"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeFindBinUtils.cmake:243 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:200 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_TAPI"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "tapi"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/bin/tapi"
+      - "/home/llg/.cargo/bin/tapi"
+      - "/home/llg/.local/bin/tapi"
+      - "/usr/local/cuda-13.3/bin/tapi"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/tapi"
+      - "/usr/local/sbin/tapi"
+      - "/usr/local/bin/tapi"
+      - "/opt/bin/tapi"
+      - "/usr/lib/llvm/22/bin/tapi"
+      - "/usr/lib/llvm/19/bin/tapi"
+      - "/etc/eselect/wine/bin/tapi"
+      - "/home/llg/.lmstudio/bin/tapi"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/tapi"
+      - "/home/llg/.platformio/penv/bin/tapi"
+    found: false
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake:18 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:201 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER_AR"
+    description: "A wrapper around 'ar' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ar-15.3"
+      - "gcc-ar-15"
+      - "gcc-ar15"
+      - "gcc-ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/bin/gcc-ar-15.3"
+      - "/home/llg/.cargo/bin/gcc-ar-15.3"
+      - "/home/llg/.local/bin/gcc-ar-15.3"
+      - "/usr/local/cuda-13.3/bin/gcc-ar-15.3"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ar-15.3"
+      - "/usr/local/sbin/gcc-ar-15.3"
+      - "/usr/local/bin/gcc-ar-15.3"
+      - "/opt/bin/gcc-ar-15.3"
+      - "/usr/lib/llvm/22/bin/gcc-ar-15.3"
+      - "/usr/lib/llvm/19/bin/gcc-ar-15.3"
+      - "/etc/eselect/wine/bin/gcc-ar-15.3"
+      - "/home/llg/.lmstudio/bin/gcc-ar-15.3"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ar-15.3"
+      - "/home/llg/.platformio/penv/bin/gcc-ar-15.3"
+      - "/usr/bin/gcc-ar-15"
+      - "/home/llg/.cargo/bin/gcc-ar-15"
+      - "/home/llg/.local/bin/gcc-ar-15"
+      - "/usr/local/cuda-13.3/bin/gcc-ar-15"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ar-15"
+      - "/usr/local/sbin/gcc-ar-15"
+      - "/usr/local/bin/gcc-ar-15"
+      - "/opt/bin/gcc-ar-15"
+      - "/usr/lib/llvm/22/bin/gcc-ar-15"
+      - "/usr/lib/llvm/19/bin/gcc-ar-15"
+      - "/etc/eselect/wine/bin/gcc-ar-15"
+      - "/home/llg/.lmstudio/bin/gcc-ar-15"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ar-15"
+      - "/home/llg/.platformio/penv/bin/gcc-ar-15"
+      - "/usr/bin/gcc-ar15"
+      - "/home/llg/.cargo/bin/gcc-ar15"
+      - "/home/llg/.local/bin/gcc-ar15"
+      - "/usr/local/cuda-13.3/bin/gcc-ar15"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ar15"
+      - "/usr/local/sbin/gcc-ar15"
+      - "/usr/local/bin/gcc-ar15"
+      - "/opt/bin/gcc-ar15"
+      - "/usr/lib/llvm/22/bin/gcc-ar15"
+      - "/usr/lib/llvm/19/bin/gcc-ar15"
+      - "/etc/eselect/wine/bin/gcc-ar15"
+      - "/home/llg/.lmstudio/bin/gcc-ar15"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ar15"
+      - "/home/llg/.platformio/penv/bin/gcc-ar15"
+    found: "/usr/bin/gcc-ar"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake:30 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:201 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_C_COMPILER_RANLIB"
+    description: "A wrapper around 'ranlib' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ranlib-15.3"
+      - "gcc-ranlib-15"
+      - "gcc-ranlib15"
+      - "gcc-ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/bin/gcc-ranlib-15.3"
+      - "/home/llg/.cargo/bin/gcc-ranlib-15.3"
+      - "/home/llg/.local/bin/gcc-ranlib-15.3"
+      - "/usr/local/cuda-13.3/bin/gcc-ranlib-15.3"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ranlib-15.3"
+      - "/usr/local/sbin/gcc-ranlib-15.3"
+      - "/usr/local/bin/gcc-ranlib-15.3"
+      - "/opt/bin/gcc-ranlib-15.3"
+      - "/usr/lib/llvm/22/bin/gcc-ranlib-15.3"
+      - "/usr/lib/llvm/19/bin/gcc-ranlib-15.3"
+      - "/etc/eselect/wine/bin/gcc-ranlib-15.3"
+      - "/home/llg/.lmstudio/bin/gcc-ranlib-15.3"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ranlib-15.3"
+      - "/home/llg/.platformio/penv/bin/gcc-ranlib-15.3"
+      - "/usr/bin/gcc-ranlib-15"
+      - "/home/llg/.cargo/bin/gcc-ranlib-15"
+      - "/home/llg/.local/bin/gcc-ranlib-15"
+      - "/usr/local/cuda-13.3/bin/gcc-ranlib-15"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ranlib-15"
+      - "/usr/local/sbin/gcc-ranlib-15"
+      - "/usr/local/bin/gcc-ranlib-15"
+      - "/opt/bin/gcc-ranlib-15"
+      - "/usr/lib/llvm/22/bin/gcc-ranlib-15"
+      - "/usr/lib/llvm/19/bin/gcc-ranlib-15"
+      - "/etc/eselect/wine/bin/gcc-ranlib-15"
+      - "/home/llg/.lmstudio/bin/gcc-ranlib-15"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ranlib-15"
+      - "/home/llg/.platformio/penv/bin/gcc-ranlib-15"
+      - "/usr/bin/gcc-ranlib15"
+      - "/home/llg/.cargo/bin/gcc-ranlib15"
+      - "/home/llg/.local/bin/gcc-ranlib15"
+      - "/usr/local/cuda-13.3/bin/gcc-ranlib15"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ranlib15"
+      - "/usr/local/sbin/gcc-ranlib15"
+      - "/usr/local/bin/gcc-ranlib15"
+      - "/opt/bin/gcc-ranlib15"
+      - "/usr/lib/llvm/22/bin/gcc-ranlib15"
+      - "/usr/lib/llvm/19/bin/gcc-ranlib15"
+      - "/etc/eselect/wine/bin/gcc-ranlib15"
+      - "/home/llg/.lmstudio/bin/gcc-ranlib15"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ranlib15"
+      - "/home/llg/.platformio/penv/bin/gcc-ranlib15"
+    found: "/usr/bin/gcc-ranlib"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompiler.cmake:54 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineASMCompiler.cmake:61 (_cmake_find_compiler)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_ASM_COMPILER"
+    description: "ASM compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "/usr/bin/cc"
+    candidate_directories:
+      - "/usr/bin/"
+    found: "/usr/bin/cc"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:1296 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineASMCompiler.cmake:170 (CMAKE_DETERMINE_COMPILER_ID_VENDOR)"
+      - "CMakeLists.txt:31 (project)"
+    message: |
+      Checking whether the ASM compiler is GNU using "--version" matched "(GNU assembler)|(GCC)|(Free Software Foundation)":
+      cc (Gentoo 15.3.0 p8) 15.3.0
+      Copyright (C) 2025 Free Software Foundation, Inc.
+      This is free software; see the source for copying conditions.  There is NO
+      warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+      
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake:18 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineASMCompiler.cmake:268 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_ASM_COMPILER_AR"
+    description: "A wrapper around 'ar' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ar-"
+      - "gcc-ar-"
+      - "gcc-ar"
+      - "gcc-ar"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/bin/gcc-ar-"
+      - "/home/llg/.cargo/bin/gcc-ar-"
+      - "/home/llg/.local/bin/gcc-ar-"
+      - "/usr/local/cuda-13.3/bin/gcc-ar-"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ar-"
+      - "/usr/local/sbin/gcc-ar-"
+      - "/usr/local/bin/gcc-ar-"
+      - "/opt/bin/gcc-ar-"
+      - "/usr/lib/llvm/22/bin/gcc-ar-"
+      - "/usr/lib/llvm/19/bin/gcc-ar-"
+      - "/etc/eselect/wine/bin/gcc-ar-"
+      - "/home/llg/.lmstudio/bin/gcc-ar-"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ar-"
+      - "/home/llg/.platformio/penv/bin/gcc-ar-"
+      - "/usr/bin/gcc-ar-"
+      - "/home/llg/.cargo/bin/gcc-ar-"
+      - "/home/llg/.local/bin/gcc-ar-"
+      - "/usr/local/cuda-13.3/bin/gcc-ar-"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ar-"
+      - "/usr/local/sbin/gcc-ar-"
+      - "/usr/local/bin/gcc-ar-"
+      - "/opt/bin/gcc-ar-"
+      - "/usr/lib/llvm/22/bin/gcc-ar-"
+      - "/usr/lib/llvm/19/bin/gcc-ar-"
+      - "/etc/eselect/wine/bin/gcc-ar-"
+      - "/home/llg/.lmstudio/bin/gcc-ar-"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ar-"
+      - "/home/llg/.platformio/penv/bin/gcc-ar-"
+    found: "/usr/bin/gcc-ar"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Compiler/GNU-FindBinUtils.cmake:30 (find_program)"
+      - "/usr/share/cmake/Modules/CMakeDetermineASMCompiler.cmake:268 (include)"
+      - "CMakeLists.txt:31 (project)"
+    mode: "program"
+    variable: "CMAKE_ASM_COMPILER_RANLIB"
+    description: "A wrapper around 'ranlib' adding the appropriate '--plugin' option for the GCC compiler"
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: false
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: false
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-ranlib-"
+      - "gcc-ranlib-"
+      - "gcc-ranlib"
+      - "gcc-ranlib"
+    candidate_directories:
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+    searched_directories:
+      - "/usr/bin/gcc-ranlib-"
+      - "/home/llg/.cargo/bin/gcc-ranlib-"
+      - "/home/llg/.local/bin/gcc-ranlib-"
+      - "/usr/local/cuda-13.3/bin/gcc-ranlib-"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ranlib-"
+      - "/usr/local/sbin/gcc-ranlib-"
+      - "/usr/local/bin/gcc-ranlib-"
+      - "/opt/bin/gcc-ranlib-"
+      - "/usr/lib/llvm/22/bin/gcc-ranlib-"
+      - "/usr/lib/llvm/19/bin/gcc-ranlib-"
+      - "/etc/eselect/wine/bin/gcc-ranlib-"
+      - "/home/llg/.lmstudio/bin/gcc-ranlib-"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ranlib-"
+      - "/home/llg/.platformio/penv/bin/gcc-ranlib-"
+      - "/usr/bin/gcc-ranlib-"
+      - "/home/llg/.cargo/bin/gcc-ranlib-"
+      - "/home/llg/.local/bin/gcc-ranlib-"
+      - "/usr/local/cuda-13.3/bin/gcc-ranlib-"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-ranlib-"
+      - "/usr/local/sbin/gcc-ranlib-"
+      - "/usr/local/bin/gcc-ranlib-"
+      - "/opt/bin/gcc-ranlib-"
+      - "/usr/lib/llvm/22/bin/gcc-ranlib-"
+      - "/usr/lib/llvm/19/bin/gcc-ranlib-"
+      - "/etc/eselect/wine/bin/gcc-ranlib-"
+      - "/home/llg/.lmstudio/bin/gcc-ranlib-"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-ranlib-"
+      - "/home/llg/.platformio/penv/bin/gcc-ranlib-"
+    found: "/usr/bin/gcc-ranlib"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:31 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-kW0Jrl"
+      binary: "/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-kW0Jrl"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-kW0Jrl'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_38eac
+        [1/2] /usr/bin/cc   -v -o CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake/Modules/CMakeCCompilerABI.c
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        OFFLOAD_TARGET_NAMES=nvptx-none
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-pc-linux-gnu
+        Configured with: /var/tmp/portage/sys-devel/gcc-15.3.0/work/gcc-15.3.0/configure --host=x86_64-pc-linux-gnu --build=x86_64-pc-linux-gnu --prefix=/usr --bindir=/usr/x86_64-pc-linux-gnu/gcc-bin/15 --includedir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include --datadir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15 --mandir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/man --infodir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/info --with-gxx-include-dir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15 --disable-silent-rules --disable-dependency-tracking --with-python-dir=/share/gcc-data/x86_64-pc-linux-gnu/15/python --enable-languages=c,c++,fortran,rust --enable-obsolete --enable-secureplt --disable-werror --with-system-zlib --enable-nls --without-included-gettext --disable-libunwind-exceptions --enable-checking=release --with-bugurl=https://bugs.gentoo.org/ --with-pkgversion='Gentoo 15.3.0 p8' --with-gcc-major-version-only --enable-libstdcxx-time --enable-lto --disable-libstdcxx-pch --enable-linker-build-id --disable-libada --enable-shared --enable-threads=posix --enable-__cxa_atexit --enable-clocale=gnu --enable-multilib --with-multilib-list=m32,m64 --disable-fixed-point --enable-targets=all --enable-offload-defaulted --enable-offload-targets=nvptx-none --enable-libgomp --disable-libssp --enable-cet --disable-systemtap --disable-valgrind-annotations --disable-vtable-verify --disable-libvtv --with-zstd --without-isl --enable-default-pie --enable-host-pie --enable-host-bind-now --enable-default-ssp --disable-fixincludes --with-gxx-libcxx-include-dir=/usr/include/c++/v1 --with-build-config=bootstrap-cet
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 15.3.0 (Gentoo 15.3.0 p8) 
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_38eac.dir/'
+         /usr/libexec/gcc/x86_64-pc-linux-gnu/15/cc1 -quiet -v /usr/share/cmake/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_38eac.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -foffload-options=-fno-stack-protector -fcf-protection -foffload-options=-fcf-protection=none -o /tmp/ccQPP2Da.s
+        GNU C23 (Gentoo 15.3.0 p8) version 15.3.0 (x86_64-pc-linux-gnu)
+        	compiled by GNU C version 15.3.0, GMP version 6.3.0, MPFR version 4.2.2, MPC version 1.4.1, isl version none
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring nonexistent directory "/usr/local/include"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-pc-linux-gnu/15/include-fixed"
+        ignoring nonexistent directory "/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/include"
+        ignoring duplicate directory "/usr/local/cuda-13.3/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/local/cuda-13.3/include
+         .
+         /usr/lib/gcc/x86_64-pc-linux-gnu/15/include
+         /usr/include
+        End of search list.
+        Compiler executable checksum: 86a5ee844b9b398c1c8f1f976aac5b76
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_38eac.dir/'
+         /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/as -v --64 -o CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o /tmp/ccQPP2Da.s
+        GNU assembler version 2.46.0 (x86_64-pc-linux-gnu) using BFD version (Gentoo 2.46.0 p1) 2.46.0
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.'
+        [2/2] : && /usr/bin/cc  -v -Wl,-v CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -o cmTC_38eac   && :
+        Using built-in specs.
+        COLLECT_GCC=/usr/bin/cc
+        COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper
+        OFFLOAD_TARGET_NAMES=nvptx-none
+        OFFLOAD_TARGET_DEFAULT=1
+        Target: x86_64-pc-linux-gnu
+        Configured with: /var/tmp/portage/sys-devel/gcc-15.3.0/work/gcc-15.3.0/configure --host=x86_64-pc-linux-gnu --build=x86_64-pc-linux-gnu --prefix=/usr --bindir=/usr/x86_64-pc-linux-gnu/gcc-bin/15 --includedir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include --datadir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15 --mandir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/man --infodir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/info --with-gxx-include-dir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15 --disable-silent-rules --disable-dependency-tracking --with-python-dir=/share/gcc-data/x86_64-pc-linux-gnu/15/python --enable-languages=c,c++,fortran,rust --enable-obsolete --enable-secureplt --disable-werror --with-system-zlib --enable-nls --without-included-gettext --disable-libunwind-exceptions --enable-checking=release --with-bugurl=https://bugs.gentoo.org/ --with-pkgversion='Gentoo 15.3.0 p8' --with-gcc-major-version-only --enable-libstdcxx-time --enable-lto --disable-libstdcxx-pch --enable-linker-build-id --disable-libada --enable-shared --enable-threads=posix --enable-__cxa_atexit --enable-clocale=gnu --enable-multilib --with-multilib-list=m32,m64 --disable-fixed-point --enable-targets=all --enable-offload-defaulted --enable-offload-targets=nvptx-none --enable-libgomp --disable-libssp --enable-cet --disable-systemtap --disable-valgrind-annotations --disable-vtable-verify --disable-libvtv --with-zstd --without-isl --enable-default-pie --enable-host-pie --enable-host-bind-now --enable-default-ssp --disable-fixincludes --with-gxx-libcxx-include-dir=/usr/include/c++/v1 --with-build-config=bootstrap-cet
+        Thread model: posix
+        Supported LTO compression algorithms: zlib zstd
+        gcc version 15.3.0 (Gentoo 15.3.0 p8) 
+        COMPILER_PATH=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/
+        LIBRARY_PATH=/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../:/lib/:/usr/lib/
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_38eac' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_38eac.'
+         /usr/libexec/gcc/x86_64-pc-linux-gnu/15/collect2 -plugin /usr/libexec/gcc/x86_64-pc-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/tmp/ccp7pVki.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -o cmTC_38eac /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-pc-linux-gnu/15 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o
+        collect2 version 15.3.0
+        /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/ld -plugin /usr/libexec/gcc/x86_64-pc-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/tmp/ccp7pVki.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -o cmTC_38eac /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-pc-linux-gnu/15 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o
+        GNU ld (Gentoo 2.46.0 p1) 2.46.0
+        COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_38eac' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_38eac.'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:217 (message)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:31 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/local/cuda-13.3/include]
+          add: [.]
+          add: [/usr/lib/gcc/x86_64-pc-linux-gnu/15/include]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/local/cuda-13.3/include] ==> [/usr/local/cuda-13.3/include]
+        skipping relative include dir [.]
+        collapse include dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/include] ==> [/usr/lib/gcc/x86_64-pc-linux-gnu/15/include]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/local/cuda-13.3/include;/usr/lib/gcc/x86_64-pc-linux-gnu/15/include;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:253 (message)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:31 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)))("|,| |$)]
+        ignore line: [Change Dir: '/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-kW0Jrl']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/bin/ninja -v cmTC_38eac]
+        ignore line: [[1/2] /usr/bin/cc   -v -o CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake/Modules/CMakeCCompilerABI.c]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-pc-linux-gnu]
+        ignore line: [Configured with: /var/tmp/portage/sys-devel/gcc-15.3.0/work/gcc-15.3.0/configure --host=x86_64-pc-linux-gnu --build=x86_64-pc-linux-gnu --prefix=/usr --bindir=/usr/x86_64-pc-linux-gnu/gcc-bin/15 --includedir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include --datadir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15 --mandir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/man --infodir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/info --with-gxx-include-dir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15 --disable-silent-rules --disable-dependency-tracking --with-python-dir=/share/gcc-data/x86_64-pc-linux-gnu/15/python --enable-languages=c c++ fortran rust --enable-obsolete --enable-secureplt --disable-werror --with-system-zlib --enable-nls --without-included-gettext --disable-libunwind-exceptions --enable-checking=release --with-bugurl=https://bugs.gentoo.org/ --with-pkgversion='Gentoo 15.3.0 p8' --with-gcc-major-version-only --enable-libstdcxx-time --enable-lto --disable-libstdcxx-pch --enable-linker-build-id --disable-libada --enable-shared --enable-threads=posix --enable-__cxa_atexit --enable-clocale=gnu --enable-multilib --with-multilib-list=m32 m64 --disable-fixed-point --enable-targets=all --enable-offload-defaulted --enable-offload-targets=nvptx-none --enable-libgomp --disable-libssp --enable-cet --disable-systemtap --disable-valgrind-annotations --disable-vtable-verify --disable-libvtv --with-zstd --without-isl --enable-default-pie --enable-host-pie --enable-host-bind-now --enable-default-ssp --disable-fixincludes --with-gxx-libcxx-include-dir=/usr/include/c++/v1 --with-build-config=bootstrap-cet]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 15.3.0 (Gentoo 15.3.0 p8) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_38eac.dir/']
+        ignore line: [ /usr/libexec/gcc/x86_64-pc-linux-gnu/15/cc1 -quiet -v /usr/share/cmake/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_38eac.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -foffload-options=-fno-stack-protector -fcf-protection -foffload-options=-fcf-protection=none -o /tmp/ccQPP2Da.s]
+        ignore line: [GNU C23 (Gentoo 15.3.0 p8) version 15.3.0 (x86_64-pc-linux-gnu)]
+        ignore line: [	compiled by GNU C version 15.3.0  GMP version 6.3.0  MPFR version 4.2.2  MPC version 1.4.1  isl version none]
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring nonexistent directory "/usr/local/include"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-pc-linux-gnu/15/include-fixed"]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/include"]
+        ignore line: [ignoring duplicate directory "/usr/local/cuda-13.3/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/local/cuda-13.3/include]
+        ignore line: [ .]
+        ignore line: [ /usr/lib/gcc/x86_64-pc-linux-gnu/15/include]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [Compiler executable checksum: 86a5ee844b9b398c1c8f1f976aac5b76]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_38eac.dir/']
+        ignore line: [ /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/as -v --64 -o CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o /tmp/ccQPP2Da.s]
+        ignore line: [GNU assembler version 2.46.0 (x86_64-pc-linux-gnu) using BFD version (Gentoo 2.46.0 p1) 2.46.0]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.']
+        ignore line: [[2/2] : && /usr/bin/cc  -v -Wl -v CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -o cmTC_38eac   && :]
+        ignore line: [Using built-in specs.]
+        ignore line: [COLLECT_GCC=/usr/bin/cc]
+        ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper]
+        ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+        ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+        ignore line: [Target: x86_64-pc-linux-gnu]
+        ignore line: [Configured with: /var/tmp/portage/sys-devel/gcc-15.3.0/work/gcc-15.3.0/configure --host=x86_64-pc-linux-gnu --build=x86_64-pc-linux-gnu --prefix=/usr --bindir=/usr/x86_64-pc-linux-gnu/gcc-bin/15 --includedir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include --datadir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15 --mandir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/man --infodir=/usr/share/gcc-data/x86_64-pc-linux-gnu/15/info --with-gxx-include-dir=/usr/lib/gcc/x86_64-pc-linux-gnu/15/include/g++-v15 --disable-silent-rules --disable-dependency-tracking --with-python-dir=/share/gcc-data/x86_64-pc-linux-gnu/15/python --enable-languages=c c++ fortran rust --enable-obsolete --enable-secureplt --disable-werror --with-system-zlib --enable-nls --without-included-gettext --disable-libunwind-exceptions --enable-checking=release --with-bugurl=https://bugs.gentoo.org/ --with-pkgversion='Gentoo 15.3.0 p8' --with-gcc-major-version-only --enable-libstdcxx-time --enable-lto --disable-libstdcxx-pch --enable-linker-build-id --disable-libada --enable-shared --enable-threads=posix --enable-__cxa_atexit --enable-clocale=gnu --enable-multilib --with-multilib-list=m32 m64 --disable-fixed-point --enable-targets=all --enable-offload-defaulted --enable-offload-targets=nvptx-none --enable-libgomp --disable-libssp --enable-cet --disable-systemtap --disable-valgrind-annotations --disable-vtable-verify --disable-libvtv --with-zstd --without-isl --enable-default-pie --enable-host-pie --enable-host-bind-now --enable-default-ssp --disable-fixincludes --with-gxx-libcxx-include-dir=/usr/include/c++/v1 --with-build-config=bootstrap-cet]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib zstd]
+        ignore line: [gcc version 15.3.0 (Gentoo 15.3.0 p8) ]
+        ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/15/:/usr/libexec/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/]
+        ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-pc-linux-gnu/15/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib/:/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../:/lib/:/usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_38eac' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_38eac.']
+        link line: [ /usr/libexec/gcc/x86_64-pc-linux-gnu/15/collect2 -plugin /usr/libexec/gcc/x86_64-pc-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/tmp/ccp7pVki.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -o cmTC_38eac /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-pc-linux-gnu/15 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o]
+          arg [/usr/libexec/gcc/x86_64-pc-linux-gnu/15/collect2] ==> ignore
+          arg [-plugin] ==> ignore
+          arg [/usr/libexec/gcc/x86_64-pc-linux-gnu/15/liblto_plugin.so] ==> ignore
+          arg [-plugin-opt=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper] ==> ignore
+          arg [-plugin-opt=-fresolution=/tmp/ccp7pVki.res] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [-plugin-opt=-pass-through=-lc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+          arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-znow] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_38eac] ==> ignore
+          arg [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o] ==> obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o]
+          arg [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o] ==> obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o]
+          arg [/usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o] ==> obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o]
+          arg [-L/usr/lib/gcc/x86_64-pc-linux-gnu/15] ==> dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15]
+          arg [-L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64] ==> dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64]
+          arg [-L/lib/../lib64] ==> dir [/lib/../lib64]
+          arg [-L/usr/lib/../lib64] ==> dir [/usr/lib/../lib64]
+          arg [-L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib] ==> dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib]
+          arg [-L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../..] ==> dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../..]
+          arg [-L/lib] ==> dir [/lib]
+          arg [-L/usr/lib] ==> dir [/usr/lib]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [/usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o] ==> obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o]
+          arg [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o] ==> obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o]
+        ignore line: [collect2 version 15.3.0]
+        ignore line: [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/ld -plugin /usr/libexec/gcc/x86_64-pc-linux-gnu/15/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-pc-linux-gnu/15/lto-wrapper -plugin-opt=-fresolution=/tmp/ccp7pVki.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -o cmTC_38eac /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o -L/usr/lib/gcc/x86_64-pc-linux-gnu/15 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib -L/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../.. -L/lib -L/usr/lib -v CMakeFiles/cmTC_38eac.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o]
+        linker tool for 'C': /usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/ld
+        collapse obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/Scrt1.o] ==> [/usr/lib64/Scrt1.o]
+        collapse obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crti.o] ==> [/usr/lib64/crti.o]
+        collapse obj [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64/crtn.o] ==> [/usr/lib64/crtn.o]
+        collapse library dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15] ==> [/usr/lib/gcc/x86_64-pc-linux-gnu/15]
+        collapse library dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../lib64] ==> [/usr/lib64]
+        collapse library dir [/lib/../lib64] ==> [/lib64]
+        collapse library dir [/usr/lib/../lib64] ==> [/usr/lib64]
+        collapse library dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/lib] ==> [/usr/x86_64-pc-linux-gnu/lib]
+        collapse library dir [/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../..] ==> [/usr/lib]
+        collapse library dir [/lib] ==> [/lib]
+        collapse library dir [/usr/lib] ==> [/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/usr/lib64/Scrt1.o;/usr/lib64/crti.o;/usr/lib/gcc/x86_64-pc-linux-gnu/15/crtbeginS.o;/usr/lib/gcc/x86_64-pc-linux-gnu/15/crtendS.o;/usr/lib64/crtn.o]
+        implicit dirs: [/usr/lib/gcc/x86_64-pc-linux-gnu/15;/usr/lib64;/lib64;/usr/x86_64-pc-linux-gnu/lib;/usr/lib;/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake:38 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:299 (cmake_determine_linker_id)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:31 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/lib/gcc/x86_64-pc-linux-gnu/15/../../../../x86_64-pc-linux-gnu/bin/ld" "-v"
+      GNU ld (Gentoo 2.46.0 p1) 2.46.0
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:712 (find_program)"
+    mode: "program"
+    variable: "GIT_EXECUTABLE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "git"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/git"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/git"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/git"
+    found: "/usr/bin/git"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/usr/local"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CheckSourceCompiles.cmake:104 (try_compile)"
+      - "/usr/share/cmake/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/share/cmake/Modules/CheckCCompilerFlag.cmake:105 (cmake_check_compiler_flag)"
+      - "CMakeLists.txt:1587 (check_c_compiler_flag)"
+    checks:
+      - "Performing Test MCC_HAS_WNO_UNUSED_RESULT"
+    directories:
+      source: "/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-JNTtgh"
+      binary: "/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-JNTtgh"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+    buildResult:
+      variable: "MCC_HAS_WNO_UNUSED_RESULT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-JNTtgh'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_841b1
+        [1/2] /usr/bin/cc -DMCC_HAS_WNO_UNUSED_RESULT  -Wno-unused-result -o CMakeFiles/cmTC_841b1.dir/src.c.o -c /home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-JNTtgh/src.c
+        [2/2] : && /usr/bin/cc   CMakeFiles/cmTC_841b1.dir/src.c.o -o cmTC_841b1   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CheckSourceCompiles.cmake:104 (try_compile)"
+      - "/usr/share/cmake/Modules/CheckCSourceCompiles.cmake:103 (cmake_check_source_compiles)"
+      - "/usr/share/cmake/Modules/FindThreads.cmake:160 (check_c_source_compiles)"
+      - "/usr/share/cmake/Modules/FindThreads.cmake:226 (_threads_check_libc)"
+      - "CMakeLists.txt:2020 (find_package)"
+      - "CMakeLists.txt:2061 (mcc_add_libmcc)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-qsHeAI"
+      binary: "/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-qsHeAI"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-qsHeAI'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_0eacb
+        [1/2] /usr/bin/cc -DCMAKE_HAVE_LIBC_PTHREAD   -o CMakeFiles/cmTC_0eacb.dir/src.c.o -c /home/llg/Projects/mcc/b/CMakeFiles/CMakeScratch/TryCompile-qsHeAI/src.c
+        [2/2] : && /usr/bin/cc   CMakeFiles/cmTC_0eacb.dir/src.c.o -o cmTC_0eacb   && :
+        
+      exitCode: 0
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:2981 (find_program)"
+    mode: "program"
+    variable: "MCC_PYTHON3"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "python3"
+      - "python"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/python3"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/python3"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/python3"
+    found: "/usr/bin/python3"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:3994 (find_program)"
+    mode: "program"
+    variable: "MCC_OBJCOPY"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "objcopy"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/objcopy"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/objcopy"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/objcopy"
+    found: "/usr/bin/objcopy"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:4448 (find_program)"
+    mode: "program"
+    variable: "DIFF3_GCC"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc"
+      - "cc"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/gcc"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/gcc"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/gcc"
+    found: "/usr/bin/gcc"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:203 (find_program)"
+      - "CMakeLists.txt:4450 (mcc_find_gnu_gcc)"
+    mode: "program"
+    variable: "MCC_VENDOR_GCC"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc"
+      - "cc"
+    candidate_directories:
+      - "/home/llg/Projects/mcc/vendor/gnu-gcc/bin/"
+    searched_directories:
+      - "/home/llg/Projects/mcc/vendor/gnu-gcc/bin/gcc"
+      - "/home/llg/Projects/mcc/vendor/gnu-gcc/bin/cc"
+    found: false
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:259 (find_program)"
+      - "CMakeLists.txt:4450 (mcc_find_gnu_gcc)"
+    mode: "program"
+    variable: "MCC_GNUGCC_gcc-16"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-16"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/gcc-16"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/gcc-16"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/gcc-16"
+      - "/usr/bin/gcc-16"
+      - "/home/llg/.cargo/bin/gcc-16"
+      - "/home/llg/.local/bin/gcc-16"
+      - "/usr/local/cuda-13.3/bin/gcc-16"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/gcc-16"
+      - "/usr/local/sbin/gcc-16"
+      - "/usr/local/bin/gcc-16"
+      - "/opt/bin/gcc-16"
+      - "/usr/lib/llvm/22/bin/gcc-16"
+      - "/usr/lib/llvm/19/bin/gcc-16"
+      - "/etc/eselect/wine/bin/gcc-16"
+      - "/home/llg/.lmstudio/bin/gcc-16"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/gcc-16"
+      - "/home/llg/.platformio/penv/bin/gcc-16"
+      - "/usr/local/bin/gcc-16"
+      - "/usr/local/sbin/gcc-16"
+      - "/usr/local/gcc-16"
+      - "/usr/bin/gcc-16"
+      - "/usr/sbin/gcc-16"
+      - "/usr/gcc-16"
+      - "/bin/gcc-16"
+      - "/sbin/gcc-16"
+      - "/usr/X11R6/bin/gcc-16"
+      - "/usr/X11R6/sbin/gcc-16"
+      - "/usr/X11R6/gcc-16"
+      - "/usr/pkg/bin/gcc-16"
+      - "/usr/pkg/sbin/gcc-16"
+      - "/usr/pkg/gcc-16"
+      - "/opt/bin/gcc-16"
+      - "/opt/sbin/gcc-16"
+      - "/opt/gcc-16"
+      - "/bin/gcc-16"
+    found: false
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:259 (find_program)"
+      - "CMakeLists.txt:4450 (mcc_find_gnu_gcc)"
+    mode: "program"
+    variable: "MCC_GNUGCC_gcc-15"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "gcc-15"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/gcc-15"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/gcc-15"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/gcc-15"
+    found: "/usr/bin/gcc-15"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:4466 (find_program)"
+    mode: "program"
+    variable: "DIFF3_CLANG"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "clang"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/clang"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/clang"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/clang"
+      - "/usr/bin/clang"
+      - "/home/llg/.cargo/bin/clang"
+      - "/home/llg/.local/bin/clang"
+      - "/usr/local/cuda-13.3/bin/clang"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/clang"
+      - "/usr/local/sbin/clang"
+      - "/usr/local/bin/clang"
+      - "/opt/bin/clang"
+    found: "/usr/lib/llvm/22/bin/clang"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:5752 (find_path)"
+    mode: "path"
+    variable: "MCC_X11_INCLUDE_DIR"
+    description: "Path to a file."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "X11/Xlib.h"
+    candidate_directories:
+      - "/usr/include/"
+      - "/opt/X11/include/"
+      - "/usr/X11R6/include/"
+      - "/usr/local/include/"
+      - "/opt/homebrew/include/"
+    found: "/usr/include/"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_INCLUDE_PATH:
+        - "/usr/include"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:6210 (find_program)"
+    mode: "program"
+    variable: "DOCKER_EXE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "docker"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/docker"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/docker"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/docker"
+    found: "/usr/bin/docker"
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:6262 (find_program)"
+    mode: "program"
+    variable: "CTAGS_EXE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "ctags"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/ctags"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/ctags"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/ctags"
+      - "/usr/bin/ctags"
+      - "/home/llg/.cargo/bin/ctags"
+      - "/home/llg/.local/bin/ctags"
+      - "/usr/local/cuda-13.3/bin/ctags"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/ctags"
+      - "/usr/local/sbin/ctags"
+      - "/usr/local/bin/ctags"
+      - "/opt/bin/ctags"
+      - "/usr/lib/llvm/22/bin/ctags"
+      - "/usr/lib/llvm/19/bin/ctags"
+      - "/etc/eselect/wine/bin/ctags"
+      - "/home/llg/.lmstudio/bin/ctags"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/ctags"
+      - "/home/llg/.platformio/penv/bin/ctags"
+      - "/usr/local/bin/ctags"
+      - "/usr/local/sbin/ctags"
+      - "/usr/local/ctags"
+      - "/usr/bin/ctags"
+      - "/usr/sbin/ctags"
+      - "/usr/ctags"
+      - "/bin/ctags"
+      - "/sbin/ctags"
+      - "/usr/X11R6/bin/ctags"
+      - "/usr/X11R6/sbin/ctags"
+      - "/usr/X11R6/ctags"
+      - "/usr/pkg/bin/ctags"
+      - "/usr/pkg/sbin/ctags"
+      - "/usr/pkg/ctags"
+      - "/opt/bin/ctags"
+      - "/opt/sbin/ctags"
+      - "/opt/ctags"
+      - "/bin/ctags"
+    found: false
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+  -
+    kind: "find-v1"
+    backtrace:
+      - "CMakeLists.txt:6269 (find_program)"
+    mode: "program"
+    variable: "ETAGS_EXE"
+    description: "Path to a program."
+    settings:
+      SearchFramework: "NEVER"
+      SearchAppBundle: "NEVER"
+      CMAKE_FIND_USE_CMAKE_PATH: true
+      CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH: true
+      CMAKE_FIND_USE_CMAKE_SYSTEM_PATH: true
+      CMAKE_FIND_USE_INSTALL_PREFIX: true
+    names:
+      - "etags"
+    candidate_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/"
+      - "/usr/bin/"
+      - "/home/llg/.cargo/bin/"
+      - "/home/llg/.local/bin/"
+      - "/usr/local/cuda-13.3/bin/"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/bin/"
+      - "/opt/bin/"
+      - "/usr/lib/llvm/22/bin/"
+      - "/usr/lib/llvm/19/bin/"
+      - "/etc/eselect/wine/bin/"
+      - "/home/llg/.lmstudio/bin/"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/"
+      - "/home/llg/.platformio/penv/bin/"
+      - "/usr/local/bin/"
+      - "/usr/local/sbin/"
+      - "/usr/local/"
+      - "/usr/bin/"
+      - "/usr/sbin/"
+      - "/usr/"
+      - "/bin/"
+      - "/sbin/"
+      - "/usr/X11R6/bin/"
+      - "/usr/X11R6/sbin/"
+      - "/usr/X11R6/"
+      - "/usr/pkg/bin/"
+      - "/usr/pkg/sbin/"
+      - "/usr/pkg/"
+      - "/opt/bin/"
+      - "/opt/sbin/"
+      - "/opt/"
+      - "/bin/"
+    searched_directories:
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/bin/etags"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/sbin/etags"
+      - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib/etags"
+      - "/usr/bin/etags"
+      - "/home/llg/.cargo/bin/etags"
+      - "/home/llg/.local/bin/etags"
+      - "/usr/local/cuda-13.3/bin/etags"
+      - "/home/llg/.config/nvm/versions/node/v24.16.0/bin/etags"
+      - "/usr/local/sbin/etags"
+      - "/usr/local/bin/etags"
+      - "/opt/bin/etags"
+      - "/usr/lib/llvm/22/bin/etags"
+      - "/usr/lib/llvm/19/bin/etags"
+      - "/etc/eselect/wine/bin/etags"
+      - "/home/llg/.lmstudio/bin/etags"
+      - "/home/llg/.local/share/JetBrains/Toolbox/scripts/etags"
+      - "/home/llg/.platformio/penv/bin/etags"
+      - "/usr/local/bin/etags"
+      - "/usr/local/sbin/etags"
+      - "/usr/local/etags"
+      - "/usr/bin/etags"
+      - "/usr/sbin/etags"
+      - "/usr/etags"
+      - "/bin/etags"
+      - "/sbin/etags"
+      - "/usr/X11R6/bin/etags"
+      - "/usr/X11R6/sbin/etags"
+      - "/usr/X11R6/etags"
+      - "/usr/pkg/bin/etags"
+      - "/usr/pkg/sbin/etags"
+      - "/usr/pkg/etags"
+      - "/opt/bin/etags"
+      - "/opt/sbin/etags"
+      - "/opt/etags"
+      - "/bin/etags"
+    found: false
+    search_context:
+      ENV{CMAKE_PREFIX_PATH}:
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+        - "/usr/local/cuda-13.3/cccl/targets/x86_64-linux/lib"
+      ENV{PATH}:
+        - "/usr/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.cargo/bin"
+        - "/home/llg/.local/bin"
+        - "/home/llg/.config/nvm/versions/node/v24.16.0/bin"
+        - "/usr/local/cuda-13.3/bin"
+        - "/home/llg/.local/bin"
+        - "/usr/local/sbin"
+        - "/usr/local/bin"
+        - "/usr/bin"
+        - "/opt/bin"
+        - "/usr/lib/llvm/22/bin"
+        - "/usr/lib/llvm/19/bin"
+        - "/etc/eselect/wine/bin"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.local/share/JetBrains/Toolbox/scripts"
+        - "/home/llg/.lmstudio/bin"
+        - "/home/llg/.platformio/penv/bin"
+        - "/home/llg/.lmstudio/bin"
+      CMAKE_INSTALL_PREFIX: "/home/llg/Projects/mcc/dist"
+      CMAKE_SYSTEM_PREFIX_PATH:
+        - "/usr/local"
+        - "/usr"
+        - "/"
+        - "/usr"
+        - "/usr/local"
+        - "/usr/X11R6"
+        - "/usr/pkg"
+        - "/opt"
+      CMAKE_SYSTEM_PROGRAM_PATH:
+        - "/usr/bin"
+        - "/bin"
+...

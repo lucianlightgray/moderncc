@@ -3819,7 +3819,7 @@ if(MCC_BUILD_TESTS)
                         "-DOPT=${_ro}"
                         "-DBANKGAP=0"
                         "-DBANKSKIP=0"
-                        "-DBANKFN=1149"
+                        "-DBANKFN=1150"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c2.cmake")
             set_tests_properties(ast/rir-c2-${_rotag} PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
@@ -3897,17 +3897,17 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 600)
         endforeach()
 
-        set(_c2bank_riscv64 "3;2;1156")
-        set(_c2bank_arm "1;0;1130")
-        set(_c2bank_arm64 "1;0;1199")
-        set(_c2bank_i386 "0;0;1152")
-        set(_c2bank_x86_64-win32 "0;0;1237")
-        set(_c2bank_i386-win32 "1;0;1257")
-        set(_c2bank_arm64-win32 "1;0;1297")
-        set(_c2bank_arm-win32 "1;0;1235")
-        set(_c2bank_arm-wince "1;0;1235")
-        set(_c2bank_x86_64-osx "0;0;1142")
-        set(_c2bank_arm64-osx "1;0;1224")
+        set(_c2bank_riscv64 "3;2;1157")
+        set(_c2bank_arm "1;0;1131")
+        set(_c2bank_arm64 "1;0;1200")
+        set(_c2bank_i386 "0;0;1153")
+        set(_c2bank_x86_64-win32 "0;0;1238")
+        set(_c2bank_i386-win32 "1;0;1258")
+        set(_c2bank_arm64-win32 "1;0;1298")
+        set(_c2bank_arm-win32 "1;0;1236")
+        set(_c2bank_arm-wince "1;0;1236")
+        set(_c2bank_x86_64-osx "0;0;1143")
+        set(_c2bank_arm64-osx "1;0;1225")
 
         foreach(_rp riscv64 arm arm64 i386
                     x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
