@@ -46,6 +46,7 @@ typedef struct RirMark {
 } RirMark;
 
 int rir_env;
+int rir_try_active;
 int rir_active;
 #define RIR_LOCREC_MAX 512
 static int rir_locrec[RIR_LOCREC_MAX];
@@ -505,6 +506,7 @@ static unsigned char rir_lor_late[16];
 static int rir_lor_n;
 
 void rir_hook_body_begin(void) {
+	rir_try_active = rir_env && !debug_modes && !cur_func_inline_extern;
 	rir_body_loc_sv = loc;
 	rir_body_ind_sv = ind;
 	rir_reloc0_sv =

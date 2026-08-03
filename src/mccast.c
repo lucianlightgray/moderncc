@@ -15309,17 +15309,15 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_sym_deferred = NULL;
 		ast_sym_defer_on = 1;
 	}
-	if (rir_env && ast_try_active) { MCC_TRACE("br\n");
+	if (rir_try_active) { MCC_TRACE("br\n");
 		jrn_reset();
 #ifdef MCC_JOURNAL_HOOKS
 		jrn_active = 1;
 #endif
 #if MCC_REPLAY_IR
-		if (rir_env) { MCC_TRACE("br\n");
-			rir_reset();
-			rir_active = 1;
-			rir_started = 1;
-		}
+		rir_reset();
+		rir_active = 1;
+		rir_started = 1;
 #endif
 	}
 }
