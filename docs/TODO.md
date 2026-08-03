@@ -633,3 +633,55 @@ stringification, C90 pp-number rules, comments inside skipped groups),
 `__builtin_object_size` and its dynamic form (7), `scalar_storage_order` (4),
 `_Complex` division checks (5), and the varargs ABI for over-aligned and
 `__int128` arguments (`pr92904`, `stdarg-3`).
+
+### Phase 3 — the `-O3` column, and the four defects behind it
+
+The `-O3`-only list was 46 tests. Five were confirmed by hand as wrong code or
+a compiler crash; the causes turned out to be four, and closing them took the
+list to **30**, the `-O3` ICE count from 10 to 5, and the runtime-abort count in
+`c-torture/execute` from 30 to 23. Re-measured over the whole tree from this
+commit: **20,513 tests per column, 76.4% at `-O0` and 76.3% at `-O3`** — the two
+columns are now within 28 tests of each other, against 39 before.
+
+1. **`ast_sym_defer` chained deferred syms through `sym->next`** — the same
+   field that holds a struct's member list. Deferring a function-local struct
+   type turned its field chain into the deferred list, and
+   `x86_64_has_unaligned_field` then walked it until the stack ran out. The
+   trigger is ordinary: any function-local aggregate passed by value to a call,
+   because the replay runs at `ast_func_end`, after the body's scope has been
+   popped. `930503-2`, `930530-1`, `pr26213`, and `pr68506`'s `vstack leak` ICE
+   and `medce-1`'s wrong code fall out of it too. The deferred set is a plain
+   array now and leaves `sym->next` alone. This one was live at every `-O` level
+   and on both arenas — `MCC_RIR_PROD=0` did not move it.
+2. **`AST_FB_CMP_INVERT_LATE` was applied only to a live comparison.** When both
+   operands fold to constants there are no flags to swap and the inversion was
+   dropped, so `!(f < 0)` with `f` known zero emitted **0**. `origin/main`'s own
+   fix for this class (run the opposite operator, then swap) is the right shape
+   and is what arm64's instruction pairing needs, but it leaves the folded case
+   open; the merge keeps both halves. `pr110954-1`.
+3. **`value64` truncates to 32 bits for every type narrower than a long long.**
+   That is what the parser's folding wants, and it makes the function useless as
+   a *does this constant fit in `signed char`* test — which is exactly what the
+   narrowing pass asked it. It answered yes for -1634678893 and eliminated the
+   `(signed char)` conversion. `ast_ii_cval_fits` does the real
+   width-and-signedness check; both narrow paths use it. `pr70941`, `pr81814`,
+   `20001009-1`.
+4. **A call whose target lost its function type** dereferenced a NULL ref in
+   `gfunc_call`. The replay already runs under an error sink with a byte-compare
+   fallback, so raising the error instead lands in the designed path and keeps
+   the parser's bytes. `Wsequence-point-2`.
+
+**Reverted, and worth recording as a trap**: answering `__builtin_object_size`
+subobject queries from the argument's declared array type. It matched gcc on the
+plain cases and closed `pr101836_1`, but a trailing array's answer depends on
+whether the member is flexible, not on its declared bound — the whole-tree
+re-run turned up five tests that went from passing to aborting against the one
+gained. `-1` is a permitted answer and a safe one. A real implementation needs
+the flex-array rules.
+
+**Still open at `-O3`**, from the re-run: `20000412-2` and `conversion` (both
+`va_arg` of a variably-sized type), `990208-1` (a label address inside a
+function the inliner takes), `pr85582-2`, `20000715-1`, `pr54877`, and the
+`link_error` idiom in `bcp-1`/`pure-1`/`compare-3`, which is optimizer quality
+rather than a defect — those tests require a fold `-O0` already performs and
+`-O3`'s inlining undoes.
