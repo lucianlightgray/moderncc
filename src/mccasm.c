@@ -1,5 +1,8 @@
 #define USING_GLOBALS
 #include "mcc.h"
+/* asm_instr calls rir_hook_asm_operands; in a multi-TU build this file is its
+   own translation unit and does not get mccrir.h through mccgen.c. */
+#include "mccrir.h"
 #if MCC_CONFIG_ASM
 
 #define last_text_section (mcc_state->last_text_section)
