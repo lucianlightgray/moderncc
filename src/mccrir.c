@@ -2963,11 +2963,19 @@ static void rir_mark_apply(const RirOp *ro) {
 				if (bop == TOK_LAND || bop == TOK_LOR)
 					ast_set_fbits(rir_arena, top,
 												ast_fbits(rir_arena, top) ^ AST_FB_LANDOR_INVERT);
-				else if (inflags || ast_cmp_invert_late(rir_arena, top, bop))
-					ast_set_fbits(rir_arena, top,
-												ast_fbits(rir_arena, top) ^ AST_FB_CMP_INVERT_LATE);
-				else
+				else {
+
+					/* The operator always moves to the inverted one: a pass that
+					   reads it -- ast_ident_node folds `a > a` to a constant --
+					   has no other way to know the source wrote `!(a > a)`. The
+					   flag says only that replay must re-run the comparison the
+					   other way round and swap the flags, which is a different
+					   instruction pair on arm64. */
 					ast_set_op(rir_arena, top, bop ^ 1);
+					if (inflags || ast_cmp_invert_late(rir_arena, top, bop))
+						ast_set_fbits(rir_arena, top,
+													ast_fbits(rir_arena, top) ^ AST_FB_CMP_INVERT_LATE);
+				}
 			}
 		}
 		break;
