@@ -6,6 +6,48 @@ Two bars, both required. **Replay** (`rir_verify`) replays a captured body again
 
 **The corpus is now all of `tests/`, not `tests/exec`.** 657 files against 277, and about twice the bodies per key — 1980–2521 against 1146–1318. `tests/exec` was never a wrong measurement, but it was a narrow one: it reads a 14-body gap where the whole tree reads 148, and it says `c2bytes=0` everywhere where the whole tree finds byte divergences on ten of twelve keys. `C2_CORPUS=exec` still produces the historical board for continuity; `C2_CORPUS=all` is the default and is the bar.
 
+## Handoff — state at this checkpoint
+
+Everything below is pushed to `main` (`4f94f101`). The tree is green: `ctest -j 8` **8255/8255** with no env set, and **8252/8255** under `MCC_RIR_ONLY=1` with the only failures being the three `optfire` cells named below, which are expected.
+
+### Where the cut stands
+
+| phase | state |
+| --- | --- |
+| P0 harness, P1 journal verify-half cut, P2 decouple + admission predicate, P3 capture rebrand | landed |
+| P4 cutover | landed; **`MCC_RIR_PROD` defaults to 1**, arena drives **91.5%** of bodies (`used=2011 fallback=11 skip=176` of 2198, x86_64 `-O2`, whole corpus) |
+| P5 deletion | **unblocked, not started.** `MCC_RIR_ONLY=1` is the end state as a switch and is clean |
+| `fix-imaginary` | branch ready, merges clean, blocked only on the three `ast-verify-ratchet` cells P5 deletes |
+| P6 split + `ast_*` → `ir_*` | not started |
+
+### Next steps, in order
+
+1. **Flip `MCC_RIR_ONLY` to default on** (`src/mccrir.c`, same one-line shape the `MCC_RIR_PROD` flip used). Gate: `ctest` unset stays 8255/8255 apart from the three `optfire` cells, and the twelve-key object A/B stays byte-identical with the switch *off*.
+2. **Delete the recorder.** The inventory is verified and in P5: hooks at `src/mccast.c:2318-4023`, 76 declarations, 124 call sites in `src/mccgen.c`, 14 recorder-only gates. **Six things inside the hook block are not the recorder's and must stay**: `ast_label_id`, `ast_label_forget`, `ast_sv_hi`, `ast_cmp_invert_late`, `ast_bad_type`, `ast_func_has_asm`. The three `optfire` cells and the four `verify-baseline` files, `ast-verify-ratchet-*`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half, `MCC_AST_INT128=1` in `rir_parity.cmake` and `MCC_RIR_PROD`/`MCC_RIR_ONLY` themselves all die with it.
+3. **Land `fix-imaginary`** the moment step 2 lands. It merges clean and needs no rebase.
+4. **P6**: split `mccast.c` and rename `ast_*` → `ir_*`. The `ir_`/`IR_` namespace is verified empty.
+5. Then the items under **Open work raised after the cutover** — the poison-over-deletion change, the `ast_cycle_env` convergence, the pointer test, glibc headers, and `MCC_TRACE` on `full_language.c`. None of these block the deletion.
+
+### Measurement setup, and the traps that cost time
+
+- Build for measurement: `cmake -S . -B bc2 -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMCC_ENABLE_CROSS=ON -DCMAKE_C_FLAGS=-DMCC_REPLAY_IR_C2=1`.
+- **`vendor/` is gitignored but a *symlink* named `vendor` is not matched by `/vendor/`.** A git worktree has no sysroots, so four ELF cross keys compile ~77 files of 276 and still print a green board. Symlink it, verify `ls vendor/gentoo-stage3-riscv64-glibc/usr/include`, and **never `git add -A`**. The same applies to a `cmake-cross` symlink, which is what makes the docker-gated cells actually run instead of SKIP.
+- **A long checkout path fails 22 `exec*/bound_global`** — `bt_info.file` is `char[100]`. Not a regression. Configure through a short symlink (`/tmp/mccw`) to avoid it.
+- **Root-owned leftovers under `<build>/riscv64-promote-docker/`** fail that cell in 0.00 s with a permission error and read as a real failure. Clear them before believing it.
+- **Do not run a twelve-key sweep and `ctest -j 8` concurrently** — the contention alone fails several `selfhost-*` cells.
+- **Pin `SOURCE_DATE_EPOCH`** for any object A/B, or a file differs from its own second compile.
+- **`ast_env_int` returns its default for values `<= 0`**, so `MCC_RIR_PROD=0` means *on*; unset it instead. `ast_env_gate` handles `0` correctly.
+- **`cp -a` of a build dir is not a reference build** — `CTestTestfile.cmake` bakes the binary dir absolutely and the copy silently runs the original binaries.
+- Verifying a switch by compiling one file and diffing the object proves nothing: only 69 of 562 files differ at `-O2` on x86_64. Use a file already known to differ, or the `[rir-prod-total]` counters at `MCC_RIR_PROD=2`.
+
+### The three expected `optfire` failures
+
+`optfire/opassign`, `optfire-arm64/opassign`, `optfire/default-landor_invert`. `optfire` probes *which* optimizations fire; both gates are recorder-shape gates with no reader outside the hook block, so they correctly stop changing output. **They are resolved by the deletion, not by a code change** — do not attempt to fix them.
+
+### Method that worked, for whoever picks this up
+
+Every phase was gated on a number measured before and after, and the phases that moved nothing said so with a byte-identical object A/B over the whole corpus × twelve keys × three `-O` levels. Three separate agents reported a defect as "pre-existing" that measurement showed was theirs, and two predictions written into this file were falsified by the next measurement. **Re-measure rather than carrying a row forward** — this file says so in several places and it earned every one of them.
+
 ## Scoreboard
 
 Per key at HEAD, produced by `tools/c2_sweep.sh <builddir> <key> <opt>` against an mcc built `-DMCC_REPLAY_IR_C2=1` under `-DMCC_ENABLE_CROSS=ON`, run in place. One twelve-key corpus takes about 12 minutes; re-measure rather than copying a row forward.
