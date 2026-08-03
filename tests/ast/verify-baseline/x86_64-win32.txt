@@ -51,7 +51,6 @@ features_c99_c11/atomic_ptr.c	main	bail
 features_c99_c11/builtin_bitops_fold.c	main	desync
 features_c99_c11/builtin_bswap.c	main	unfaithful
 features_c99_c11/builtin_libm_alias.c	rint	unfaithful
-features_c99_c11/builtin_libm_alias.c	round	unfaithful
 features_c99_c11/builtin_libm_alias.c	trunc	unfaithful
 features_c99_c11/c11_complex_const_fold.c	main	desync
 features_c99_c11/c11_complex_convert.c	main	desync
@@ -75,7 +74,6 @@ features_c99_c11/complex.c	main	desync
 features_c99_c11/complex_annexg.c	main	desync
 features_c99_c11/complex_cmplx_special.c	main	desync
 features_c99_c11/feature_macros.c	main	desync
-features_c99_c11/flt_eval_method.c	main	unfaithful
 features_c99_c11/fp_builtins.c	main	desync
 features_c99_c11/generic.c	main	unfaithful
 features_c99_c11/libm_builtin_fold.c	main	unfaithful
@@ -107,7 +105,6 @@ preprocess/pragma_operator.c	main	desync
 preprocessor/variadic_macros.c	sum_impl	desync
 programs/grep.c	compile	desync
 programs/grep.c	pmatch	desync
-programs/math_library.c	round	unfaithful
 programs/random_stuff.c	tst_adr	desync
 programs/random_stuff.c	tst_branch	bail
 programs/random_stuff.c	tst_pack	unfaithful
