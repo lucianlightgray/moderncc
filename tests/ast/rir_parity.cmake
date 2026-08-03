@@ -13,8 +13,8 @@ endif()
 
 set(_env "MCC_REPLAY_IR=1")
 if(FORCE)
-    list(APPEND _env "MCC_RIR_FORCE=1")
-    message(STATUS "rir_parity: FORCE — MCC_RIR_FORCE=1")
+    list(APPEND _env "MCC_RIR_FORCE=1" "MCC_AST_INT128=1")
+    message(STATUS "rir_parity: FORCE — MCC_RIR_FORCE=1 MCC_AST_INT128=1")
 endif()
 
 file(MAKE_DIRECTORY "${TMPDIR}")
