@@ -411,21 +411,38 @@ into production so the bar can be measured rather than argued about. **With it o
 | `MCC_RIR_NOFB=1` | 293 | 13 |
 
 Identical at `-O1`, `-O2` and `-O3`. The eight baseline failures are the known
-batch-invocation artifacts that pass under ctest isolation; the delta is **five
+batch-invocation artifacts that pass under ctest isolation; the delta is **four
 regressions**, and nothing is fixed by the change:
 
 - `atomic_inlang_rmw`
 - `atomic_ptr`
 - `builtin_overflow`
-- `line`
 - `overflow_inline`
+
+*(An earlier revision listed a fifth, `line`. That was a parsing artifact — `awk
+'{print $2}'` over every line beginning `FAIL` picks words out of the mismatch
+**output** as well as out of `FAIL  <name>` headers. Match `^FAIL  ` with the two
+spaces. There is no golden called `line`.)*
+
+**Worked example, `overflow_inline`.** `MCC_RIR_PROD=2` shows its `main` is the single
+fallback body in the file (`used=7 fallback=1`). Forced into production it exits **5**
+instead of printing `OK`, and `return 5` is
+`!__builtin_add_overflow(9223372036854775807LL, 1LL, &l1) || l1 != -9223372036854775807LL - 1`
+— so the arena mismodels a 64-bit signed overflow builtin. **That is wrong code, and
+the byte-faithful gate is what has been preventing it**, which settles the question of
+whether these 17 are benign shape differences: at least four are not. A minimal
+reproducer of just that `__builtin_add_overflow` call agrees with gcc under both
+settings, so this is N20 for the fourth time — work from `overflow_inline.c::main`,
+not from a model of it.
 
 **This is the single most useful thing measured about RIR so far**, because it turns
 the completion bar into a finite list. The byte-faithful gate is **load-bearing for
-correctness**, not merely conservative — at least some of the 17 byte-divergent
-bodies are genuinely wrong when used. Two of the five names are atomics and two are
-overflow builtins, which suggests the arena mismodels a lowering shared by those,
-rather than five unrelated defects.
+correctness**, not merely conservative — at least four of the 17 byte-divergent bodies
+are genuinely wrong when used, and `overflow_inline` above is proof rather than
+inference. Two of the four names are atomics and two are overflow builtins, which
+suggests the arena mismodels a lowering shared by those rather than four unrelated
+defects — check `atomic_ptr` and `builtin_overflow` against the same
+`__builtin_*_overflow` path before assuming otherwise.
 
 **The route to the bar, in order:**
 
