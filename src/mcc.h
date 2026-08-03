@@ -283,7 +283,8 @@ struct SymAttr {
 			tentative_array : 1,
 			is_register : 1,
 			used : 1,
-			inited : 1;
+			inited : 1,
+			has_vla_member : 1;
 };
 
 struct FuncAttr {
@@ -337,6 +338,7 @@ typedef struct Sym {
 
 	int vla_inner_id;
 	int vla_min_goto_gpp;
+	int vla_dyn_slot;
 	struct Sym *prev;
 
 	union {
