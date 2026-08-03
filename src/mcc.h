@@ -478,6 +478,12 @@ typedef struct CachedInclude {
 
 #define CACHED_INCLUDES_HASH_SIZE 32
 
+typedef struct MCCAssertion {
+	int pred_tok;
+	char **answers;
+	int nb_answers;
+} MCCAssertion;
+
 #if MCC_CONFIG_ASM
 typedef struct ExprValue {
 	uint64_t v;
@@ -797,6 +803,12 @@ struct MCCState {
 	int cached_includes_hash[CACHED_INCLUDES_HASH_SIZE];
 	CachedInclude **cached_includes;
 	int nb_cached_includes;
+
+	char **embed_paths;
+	int nb_embed_paths;
+
+	MCCAssertion **assertions;
+	int nb_assertions;
 
 	int pack_stack[PACK_STACK_SIZE];
 	int *pack_stack_ptr;

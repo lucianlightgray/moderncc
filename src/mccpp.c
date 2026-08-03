@@ -1358,7 +1358,7 @@ search_cached_include(MCCState *s1, const char *filename, int add);
 static BufferedFile *cst_main_bf;
 #endif
 
-static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter\n");
+static int parse_include(MCCState *s1, int do_next, int test, int is_import) { MCC_TRACE("enter\n");
 	int c, i;
 	char name[1024], buf[1024], *p;
 	CachedInclude *e;
@@ -1449,6 +1449,8 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 		if (!fw)
 			{ MCC_TRACE("br\n"); pstrcat(buf, sizeof buf, name); }
 		e = search_cached_include(s1, buf, 0);
+		if (e && is_import)
+			{ MCC_TRACE("br\n"); e->once = 1; }
 		if (e && (define_find(e->ifndef_macro) || e->once)) { MCC_TRACE("br\n");
 			if ((s1->verbose | 1) == 3)
 				{ MCC_TRACE("br\n"); printf("=> %*s%s (cached)\n",
@@ -1469,6 +1471,11 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 	} else { MCC_TRACE("br\n");
 		if (s1->include_stack_ptr >= s1->include_stack + INCLUDE_STACK_SIZE)
 			{ MCC_TRACE("br\n"); mcc_error("#include recursion too deep"); }
+		{ MCC_TRACE("br\n");
+			CachedInclude *ce = search_cached_include(s1, file->true_filename, 1);
+			if (is_import)
+				{ MCC_TRACE("br\n"); ce->once = 1; }
+		}
 		*s1->include_stack_ptr++ = file->prev;
 		file->include_next_index = i;
 		if (s1->gen_deps
@@ -1489,6 +1496,351 @@ static int parse_include(MCCState *s1, int do_next, int test) { MCC_TRACE("enter
 #endif
 	}
 	return 1;
+}
+
+static MCCAssertion *find_assertion(MCCState *s1, int pred_tok) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < s1->nb_assertions; i++)
+		{ MCC_TRACE("br\n"); if (s1->assertions[i]->pred_tok == pred_tok)
+			{ MCC_TRACE("br\n"); return s1->assertions[i]; } }
+	return NULL;
+}
+
+static MCCAssertion *get_assertion(MCCState *s1, int pred_tok) { MCC_TRACE("enter\n");
+	MCCAssertion *a = find_assertion(s1, pred_tok);
+	if (a)
+		{ MCC_TRACE("br\n"); return a; }
+	a = mcc_mallocz(sizeof *a);
+	a->pred_tok = pred_tok;
+	dynarray_add(&s1->assertions, &s1->nb_assertions, a);
+	return a;
+}
+
+static int assertion_has_answer(MCCAssertion *a, const char *answer) { MCC_TRACE("enter\n");
+	int i;
+	if (!answer)
+		{ MCC_TRACE("br\n"); return a->nb_answers > 0; }
+	for (i = 0; i < a->nb_answers; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(a->answers[i], answer))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
+static void assertion_add(MCCState *s1, int pred_tok, char *answer) { MCC_TRACE("enter\n");
+	MCCAssertion *a = get_assertion(s1, pred_tok);
+	if (assertion_has_answer(a, answer)) { MCC_TRACE("br\n");
+		mcc_free(answer);
+		return;
+	}
+	dynarray_add(&a->answers, &a->nb_answers, answer);
+}
+
+static void assertion_remove(MCCState *s1, int pred_tok, const char *answer) { MCC_TRACE("enter\n");
+	int i, j;
+	MCCAssertion *a = find_assertion(s1, pred_tok);
+	if (!a)
+		{ MCC_TRACE("br\n"); return; }
+	if (!answer) { MCC_TRACE("br\n");
+		dynarray_reset(&a->answers, &a->nb_answers);
+		return;
+	}
+	for (i = 0; i < a->nb_answers; i++) { MCC_TRACE("br\n");
+		if (!strcmp(a->answers[i], answer)) { MCC_TRACE("br\n");
+			mcc_free(a->answers[i]);
+			for (j = i + 1; j < a->nb_answers; j++)
+				{ MCC_TRACE("br\n"); a->answers[j - 1] = a->answers[j]; }
+			a->nb_answers--;
+			break;
+		}
+	}
+}
+
+static void free_assertions(MCCState *s1) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < s1->nb_assertions; i++)
+		{ MCC_TRACE("br\n"); dynarray_reset(&s1->assertions[i]->answers, &s1->assertions[i]->nb_answers); }
+	dynarray_reset(&s1->assertions, &s1->nb_assertions);
+}
+
+static char *pp_capture_parens_text(void) { MCC_TRACE("enter\n");
+	CString cs;
+	int depth = 1;
+
+	cstr_new(&cs);
+	next_nomacro();
+	while (depth > 0) { MCC_TRACE("br\n");
+		if (tok == TOK_EOF || tok == TOK_LINEFEED)
+			{ MCC_TRACE("br\n"); mcc_error("missing ')'"); }
+		if (tok == '(')
+			{ MCC_TRACE("br\n"); depth++; }
+		else if (tok == ')') { MCC_TRACE("br\n");
+			depth--;
+			if (depth == 0)
+				{ MCC_TRACE("br\n"); break; }
+		}
+		if (cs.size)
+			{ MCC_TRACE("br\n"); cstr_ccat(&cs, ' '); }
+		cstr_cat(&cs, get_tok_str(tok, &tokc), -1);
+		next_nomacro();
+	}
+	cstr_ccat(&cs, 0);
+	return (char *)cs.data;
+}
+
+typedef struct EmbedParams {
+	int64_t limit;
+	int64_t offset;
+	char *prefix;
+	char *suffix;
+	char *if_empty;
+} EmbedParams;
+
+static void embed_params_init(EmbedParams *ep) { MCC_TRACE("enter\n");
+	ep->limit = -1;
+	ep->offset = 0;
+	ep->prefix = ep->suffix = ep->if_empty = NULL;
+}
+
+static void embed_params_free(EmbedParams *ep) { MCC_TRACE("enter\n");
+	mcc_free(ep->prefix);
+	mcc_free(ep->suffix);
+	mcc_free(ep->if_empty);
+}
+
+static int64_t embed_read_paren_const(void) { MCC_TRACE("enter\n");
+	int64_t v;
+	next_nomacro();
+	if (tok != '(')
+		{ MCC_TRACE("br\n"); expect("'('"); }
+	next();
+	if (tok < TOK_CINT || tok > TOK_CULONG)
+		{ MCC_TRACE("br\n"); mcc_error("embed parameter expects an integer constant"); }
+	v = (int64_t)tokc.i;
+	next_nomacro();
+	if (tok != ')')
+		{ MCC_TRACE("br\n"); expect("')'"); }
+	return v;
+}
+
+static void embed_parse_params(EmbedParams *ep, int stop_at_paren) { MCC_TRACE("enter\n");
+	for (;;) { MCC_TRACE("br\n");
+		if (tok == TOK_LINEFEED || tok == TOK_EOF)
+			{ MCC_TRACE("br\n"); return; }
+		if (stop_at_paren && tok == ')')
+			{ MCC_TRACE("br\n"); return; }
+		if (tok == TOK_EMBED_LIMIT) { MCC_TRACE("br\n");
+			ep->limit = embed_read_paren_const();
+		} else if (tok == TOK_EMBED_PREFIX) { MCC_TRACE("br\n");
+			next_nomacro();
+			if (tok != '(')
+				{ MCC_TRACE("br\n"); expect("'('"); }
+			mcc_free(ep->prefix);
+			ep->prefix = pp_capture_parens_text();
+		} else if (tok == TOK_EMBED_SUFFIX) { MCC_TRACE("br\n");
+			next_nomacro();
+			if (tok != '(')
+				{ MCC_TRACE("br\n"); expect("'('"); }
+			mcc_free(ep->suffix);
+			ep->suffix = pp_capture_parens_text();
+		} else if (tok == TOK_EMBED_IF_EMPTY) { MCC_TRACE("br\n");
+			next_nomacro();
+			if (tok != '(')
+				{ MCC_TRACE("br\n"); expect("'('"); }
+			mcc_free(ep->if_empty);
+			ep->if_empty = pp_capture_parens_text();
+		} else if (tok == TOK_KW_GNU) { MCC_TRACE("br\n");
+			next_nomacro();
+			if (tok != ':')
+				{ MCC_TRACE("br\n"); expect("'::'"); }
+			next_nomacro();
+			if (tok != ':')
+				{ MCC_TRACE("br\n"); expect("'::'"); }
+			next_nomacro();
+			if (tok != TOK_EMBED_OFFSET)
+				{ MCC_TRACE("br\n"); mcc_error("unsupported 'gnu::' embed parameter"); }
+			ep->offset = embed_read_paren_const();
+		} else { MCC_TRACE("br\n");
+			mcc_error("unsupported embed parameter '%s'", get_tok_str(tok, &tokc));
+		}
+		next_nomacro();
+	}
+}
+
+static int embed_parse_name(char *name, int namesize) { MCC_TRACE("enter\n");
+	int c, i;
+	char *p;
+	int saved_parse_flags = parse_flags;
+
+	c = skip_spaces();
+	if (c == '<' || c == '\"') { MCC_TRACE("br\n");
+		cstr_reset(&tokcstr);
+		file->buf_ptr = parse_pp_string(file->buf_ptr, c == '<' ? '>' : c, &tokcstr);
+		i = tokcstr.size;
+		pstrncpy(name, namesize, tokcstr.data, i);
+		next_nomacro();
+	} else { MCC_TRACE("br\n");
+		parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_LINEFEED | (parse_flags & PARSE_FLAG_ASM_FILE);
+		name[0] = 0;
+		for (;;) { MCC_TRACE("br\n");
+			next();
+			p = name, i = strlen(p) - 1;
+			if (i > 0 && ((p[0] == '"' && p[i] == '"') || (p[0] == '<' && p[i] == '>')))
+				{ MCC_TRACE("br\n"); break; }
+			if (tok == TOK_LINEFEED)
+				{ MCC_TRACE("br\n"); mcc_error("'#embed' expects \"FILENAME\" or <FILENAME>"); }
+			pstrcat(name, namesize, get_tok_str(tok, &tokc));
+		}
+		c = p[0];
+		memmove(p, p + 1, i - 1), p[i - 1] = 0;
+		parse_flags = saved_parse_flags;
+	}
+	return c;
+}
+
+static unsigned char *embed_read_file(const char *path, long *out_size) { MCC_TRACE("enter\n");
+	int fd = open(path, O_RDONLY | O_BINARY);
+	long size;
+	unsigned char *data;
+
+	if (fd < 0)
+		{ MCC_TRACE("br\n"); return NULL; }
+	size = lseek(fd, 0, SEEK_END);
+	if (size < 0) { MCC_TRACE("br\n"); close(fd); return NULL; }
+	lseek(fd, 0, SEEK_SET);
+	data = mcc_malloc(size ? size : 1);
+	if (size && read(fd, data, size) != size) { MCC_TRACE("br\n");
+		close(fd);
+		mcc_free(data);
+		return NULL;
+	}
+	close(fd);
+	*out_size = size;
+	return data;
+}
+
+static unsigned char *embed_resolve(MCCState *s1, const char *name, int delim, long *out_size) { MCC_TRACE("enter\n");
+	char buf[1024];
+	unsigned char *data;
+	int i;
+
+	if (HOST_IS_ABSPATH(name))
+		{ MCC_TRACE("br\n"); return embed_read_file(name, out_size); }
+	if (delim == '\"') { MCC_TRACE("br\n");
+		char *p = file->true_filename;
+		pstrncpy(buf, sizeof buf, p, mcc_basename(p) - p);
+		pstrcat(buf, sizeof buf, name);
+		data = embed_read_file(buf, out_size);
+		if (data)
+			{ MCC_TRACE("br\n"); return data; }
+	}
+	for (i = 0; i < s1->nb_embed_paths; i++) { MCC_TRACE("br\n");
+		pstrcpy(buf, sizeof buf, s1->embed_paths[i]);
+		pstrcat(buf, sizeof buf, "/");
+		pstrcat(buf, sizeof buf, name);
+		data = embed_read_file(buf, out_size);
+		if (data)
+			{ MCC_TRACE("br\n"); return data; }
+	}
+	return NULL;
+}
+
+static char *embed_build_text(EmbedParams *ep, unsigned char *data, long off, long count) { MCC_TRACE("enter\n");
+	CString cs;
+	long i;
+	char numbuf[16];
+
+	cstr_new(&cs);
+	if (count == 0) { MCC_TRACE("br\n");
+		if (ep->if_empty)
+			{ MCC_TRACE("br\n"); cstr_cat(&cs, ep->if_empty, -1); }
+	} else { MCC_TRACE("br\n");
+		if (ep->prefix) { MCC_TRACE("br\n");
+			cstr_cat(&cs, ep->prefix, -1);
+			cstr_ccat(&cs, ' ');
+		}
+		for (i = 0; i < count; i++) { MCC_TRACE("br\n");
+			if (i)
+				{ MCC_TRACE("br\n"); cstr_ccat(&cs, ','); }
+			snprintf(numbuf, sizeof numbuf, "%d", (int)data[off + i]);
+			cstr_cat(&cs, numbuf, -1);
+		}
+		if (ep->suffix) { MCC_TRACE("br\n");
+			cstr_ccat(&cs, ' ');
+			cstr_cat(&cs, ep->suffix, -1);
+		}
+	}
+	cstr_ccat(&cs, 0);
+	return (char *)cs.data;
+}
+
+static void embed_emit_text(MCCState *s1, char *text) { MCC_TRACE("enter\n");
+	int len = strlen(text);
+	if (s1->include_stack_ptr >= s1->include_stack + INCLUDE_STACK_SIZE)
+		{ MCC_TRACE("br\n"); mcc_error("#include recursion too deep"); }
+	*s1->include_stack_ptr++ = file;
+	mcc_open_bf(s1, "<embed>", len);
+	memcpy(file->buffer, text, len);
+	mcc_free(text);
+}
+
+static void embed_directive(MCCState *s1) { MCC_TRACE("enter\n");
+	char name[1024];
+	int delim;
+	EmbedParams ep;
+	unsigned char *data;
+	long size = 0, count, off;
+	char *text;
+
+	delim = embed_parse_name(name, sizeof name);
+	embed_params_init(&ep);
+	embed_parse_params(&ep, 0);
+
+	data = embed_resolve(s1, name, delim, &size);
+	if (!data) { MCC_TRACE("br\n");
+		embed_params_free(&ep);
+		mcc_error("embed file '%s' not found", name);
+	}
+
+	off = ep.offset < 0 ? 0 : ep.offset;
+	count = size - off;
+	if (count < 0)
+		{ MCC_TRACE("br\n"); count = 0; }
+	if (ep.limit >= 0 && count > ep.limit)
+		{ MCC_TRACE("br\n"); count = ep.limit; }
+
+	text = embed_build_text(&ep, data, off, count);
+	mcc_free(data);
+	embed_params_free(&ep);
+
+	embed_emit_text(s1, text);
+}
+
+static int has_embed_test(MCCState *s1) { MCC_TRACE("enter\n");
+	char name[1024];
+	int delim, c;
+	EmbedParams ep;
+	unsigned char *data;
+	long size = 0, count, off;
+
+	delim = embed_parse_name(name, sizeof name);
+	embed_params_init(&ep);
+	embed_parse_params(&ep, 1);
+
+	data = embed_resolve(s1, name, delim, &size);
+	if (!data) { MCC_TRACE("br\n");
+		c = 0;
+	} else { MCC_TRACE("br\n");
+		off = ep.offset < 0 ? 0 : ep.offset;
+		count = size - off;
+		if (count < 0)
+			{ MCC_TRACE("br\n"); count = 0; }
+		if (ep.limit >= 0 && count > ep.limit)
+			{ MCC_TRACE("br\n"); count = ep.limit; }
+		c = count > 0 ? 1 : 2;
+		mcc_free(data);
+	}
+	embed_params_free(&ep);
+	return c;
 }
 
 static int pp_builtin_func(int v) { MCC_TRACE("enter\n");
@@ -1515,7 +1867,25 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 	while (1) { MCC_TRACE("br\n");
 		next();
 		t = tok;
-		if (tok < TOK_IDENT) { MCC_TRACE("br\n");
+		if (tok == '#') { MCC_TRACE("br\n");
+			int pred_tok;
+			char *answer = NULL;
+			MCCAssertion *a;
+			next_nomacro();
+			if (tok < TOK_IDENT)
+				{ MCC_TRACE("br\n"); expect("identifier after '#'"); }
+			pred_tok = tok;
+			next_nomacro();
+			if (tok == '(') { MCC_TRACE("br\n");
+				answer = pp_capture_parens_text();
+			} else { MCC_TRACE("br\n");
+				unget_tok(tok);
+			}
+			a = find_assertion(s1, pred_tok);
+			c = a ? assertion_has_answer(a, answer) : 0;
+			mcc_free(answer);
+			goto c_number;
+		} else if (tok < TOK_IDENT) { MCC_TRACE("br\n");
 			if (tok == TOK_LINEFEED || tok == TOK_EOF)
 				{ MCC_TRACE("br\n"); break; }
 			if (tok >= TOK_STR && tok <= TOK_CLDOUBLE)
@@ -1532,7 +1902,8 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 			if (s1->run_test)
 				{ MCC_TRACE("br\n"); maybe_run_test(s1); }
 			c = 0;
-			if (define_find(tok) || tok == TOK___HAS_INCLUDE || tok == TOK___HAS_INCLUDE_NEXT)
+			if (define_find(tok) || tok == TOK___HAS_INCLUDE || tok == TOK___HAS_INCLUDE_NEXT ||
+					tok == TOK___HAS_EMBED)
 				{ MCC_TRACE("br\n"); c = 1; }
 			if (t == '(') { MCC_TRACE("br\n");
 				next();
@@ -1546,7 +1917,15 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 			next();
 			if (tok != '(')
 				{ MCC_TRACE("br\n"); expect("'('"); }
-			c = parse_include(s1, t - TOK___HAS_INCLUDE, 1);
+			c = parse_include(s1, t - TOK___HAS_INCLUDE, 1, 0);
+			if (tok != ')')
+				{ MCC_TRACE("br\n"); expect("')'"); }
+			goto c_number;
+		} else if (tok == TOK___HAS_EMBED) { MCC_TRACE("br\n");
+			next();
+			if (tok != '(')
+				{ MCC_TRACE("br\n"); expect("'('"); }
+			c = has_embed_test(s1);
 			if (tok != ')')
 				{ MCC_TRACE("br\n"); expect("')'"); }
 			goto c_number;
@@ -1999,8 +2378,46 @@ redo:
 		break;
 	case TOK_INCLUDE:
 	case TOK_INCLUDE_NEXT:
-		parse_include(s1, tok - TOK_INCLUDE, 0);
+		parse_include(s1, tok - TOK_INCLUDE, 0, 0);
 		goto the_end;
+	case TOK_IMPORT:
+		parse_include(s1, 0, 0, 1);
+		goto the_end;
+	case TOK_EMBED:
+		embed_directive(s1);
+		goto the_end;
+	case TOK_ASSERT: { MCC_TRACE("br\n");
+		int pred;
+		char *answer;
+		mcc_warning("'#assert' is a deprecated GCC extension");
+		next_nomacro();
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); mcc_error("predicate must be an identifier"); }
+		pred = tok;
+		next_nomacro();
+		if (tok != '(')
+			{ MCC_TRACE("br\n"); mcc_error("missing '(' after predicate"); }
+		answer = pp_capture_parens_text();
+		assertion_add(s1, pred, answer);
+		next_nomacro();
+		break;
+	}
+	case TOK_UNASSERT: { MCC_TRACE("br\n");
+		int pred;
+		char *answer = NULL;
+		next_nomacro();
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); mcc_error("predicate must be an identifier"); }
+		pred = tok;
+		next_nomacro();
+		if (tok == '(') { MCC_TRACE("br\n");
+			answer = pp_capture_parens_text();
+			next_nomacro();
+		}
+		assertion_remove(s1, pred, answer);
+		mcc_free(answer);
+		break;
+	}
 	case TOK_IFNDEF:
 		c = 1;
 		goto do_ifdef;
@@ -2045,6 +2462,34 @@ redo:
 			c = 0;
 		} else { MCC_TRACE("br\n");
 			c = expr_preprocess(s1);
+			s1->ifdef_stack_ptr[-1] = c;
+		}
+		goto test_else;
+	case TOK_ELIFDEF:
+	case TOK_ELIFNDEF:
+		if (mcc_state->cversion < 202311 && mcc_state->warn_pedantic) { MCC_TRACE("br\n");
+			if (mcc_state->pedantic_errors)
+				{ MCC_TRACE("br\n"); mcc_error("'#%s' is a C23 feature", get_tok_str(tok, NULL)); }
+			else
+				{ MCC_TRACE("br\n"); mcc_warning("'#%s' is a C23 feature", get_tok_str(tok, NULL)); }
+		}
+		if (s1->ifdef_stack_ptr == s1->ifdef_stack)
+			{ MCC_TRACE("br\n"); mcc_error("'#%s' without matching #if", get_tok_str(tok, NULL)); }
+		c = s1->ifdef_stack_ptr[-1];
+		if (c > 1)
+			{ MCC_TRACE("br\n"); mcc_error("'#%s' after #else", get_tok_str(tok, NULL)); }
+		if (c == 1) { MCC_TRACE("br\n");
+			skip_to_eol(0);
+			c = 0;
+		} else { MCC_TRACE("br\n");
+			int want_ndef = tok == TOK_ELIFNDEF;
+			next_nomacro();
+			if (tok < TOK_IDENT)
+				{ MCC_TRACE("br\n"); mcc_error("macro name must be an identifier"); }
+			c = !!define_find(tok);
+			if (want_ndef)
+				{ MCC_TRACE("br\n"); c ^= 1; }
+			next_nomacro();
 			s1->ifdef_stack_ptr[-1] = c;
 		}
 	test_else:
@@ -4272,10 +4717,14 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 								(s1->nostdlib || s1->freestanding) ? 0 : 1);
 		if (s1->cversion)
 			{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __STDC_VERSION__ %dL\n", s1->cversion); }
+		cstr_printf(cs, "#define __STDC_EMBED_NOT_FOUND__ 0\n");
+		cstr_printf(cs, "#define __STDC_EMBED_FOUND__ 1\n");
+		cstr_printf(cs, "#define __STDC_EMBED_EMPTY__ 2\n");
 		if (s1->cversion >= 202311) { MCC_TRACE("br\n");
 			cstr_printf(cs, "#define bool _Bool\n");
 			cstr_printf(cs, "#define true ((_Bool)1)\n");
 			cstr_printf(cs, "#define false ((_Bool)0)\n");
+			cstr_printf(cs, "#define static_assert _Static_assert\n");
 		}
 		cstr_cat(cs,
 #if MCC_CONFIG_PREDEFS
@@ -4397,6 +4846,7 @@ ST_FUNC void mccpp_delete(MCCState *s) { MCC_TRACE("enter\n");
 	int n;
 
 	dynarray_reset(&s->cached_includes, &s->nb_cached_includes);
+	free_assertions(s);
 
 	n = tok_ident - TOK_IDENT;
 	if (n > total_idents)

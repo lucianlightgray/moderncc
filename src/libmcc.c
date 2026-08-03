@@ -1214,6 +1214,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	dynarray_reset(&s1->sysinclude_paths, &s1->nb_sysinclude_paths);
 	dynarray_reset(&s1->iquote_paths, &s1->nb_iquote_paths);
 	dynarray_reset(&s1->afterinc_paths, &s1->nb_afterinc_paths);
+	dynarray_reset(&s1->embed_paths, &s1->nb_embed_paths);
 
 	mcc_free(s1->mcc_lib_path);
 	mcc_free(s1->soname);
@@ -1326,6 +1327,11 @@ LIBMCCAPI int mcc_add_iquote_path(MCCState *s, const char *pathname) { MCC_TRACE
 
 LIBMCCAPI int mcc_add_afterinc_path(MCCState *s, const char *pathname) { MCC_TRACE("enter\n");
 	mcc_split_path(s, &s->afterinc_paths, &s->nb_afterinc_paths, pathname);
+	return 0;
+}
+
+LIBMCCAPI int mcc_add_embed_path(MCCState *s, const char *pathname) { MCC_TRACE("enter\n");
+	mcc_split_path(s, &s->embed_paths, &s->nb_embed_paths, pathname);
 	return 0;
 }
 
@@ -2171,6 +2177,7 @@ enum {
 	MCC_OPTION_framework,
 	MCC_OPTION_F,
 	MCC_OPTION_lsp,
+	MCC_OPTION_embed_dir,
 };
 
 #define MCC_OPTION_HAS_ARG 0x0001
@@ -2248,6 +2255,8 @@ static const MCCOption mcc_options[] = {
 		{"imacros", MCC_OPTION_imacros, MCC_OPTION_HAS_ARG},
 		{"-sysroot", MCC_OPTION_sysroot, MCC_OPTION_HAS_ARG},
 		{"isysroot", MCC_OPTION_isysroot, MCC_OPTION_HAS_ARG},
+		{"-embed-dir", MCC_OPTION_embed_dir, MCC_OPTION_HAS_ARG},
+		{"-embed-directory", MCC_OPTION_embed_dir, MCC_OPTION_HAS_ARG},
 		{"include", MCC_OPTION_include, MCC_OPTION_HAS_ARG},
 		{"nostdinc", MCC_OPTION_nostdinc, 0},
 		{"trigraphs", MCC_OPTION_trigraphs, 0},
@@ -2859,6 +2868,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			if (*optarg == '=')
 				{ MCC_TRACE("br\n"); optarg++; }
 			mcc_set_str(&s->sysroot, optarg);
+			break;
+		case MCC_OPTION_embed_dir:
+			if (*optarg == '=')
+				{ MCC_TRACE("br\n"); optarg++; }
+			mcc_add_embed_path(s, optarg);
 			break;
 		case MCC_OPTION_include:
 			cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
