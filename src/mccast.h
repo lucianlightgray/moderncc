@@ -134,6 +134,7 @@ struct CType;
 extern int ast_active;
 extern int ast_replaying;
 extern int ast_func_has_asm;
+extern int ast_func_has_labeladdr;
 extern uint64_t ast_pinned_regs;
 extern int ast_regdisp_env;
 extern int ast_fmov_imm_env;

@@ -11236,6 +11236,9 @@ tok_next:
 		if (!gnu_ext)
 			{ MCC_TRACE("br\n"); goto tok_identifier; }
 		mcc_pedantic("taking the address of a label is a GNU extension");
+#if MCC_CONFIG_OPTIMIZER
+		ast_func_has_labeladdr = 1;
+#endif
 		next();
 		if (tok < TOK_UIDENT)
 			{ MCC_TRACE("br\n"); expect("label identifier"); }

@@ -1747,6 +1747,7 @@ static int ir_cap_replaying;
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
+int ast_func_has_labeladdr;
 
 int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 #if MCC_REPLAY_IR
@@ -3412,7 +3413,7 @@ static int ast_subtree_reads_local(AstArena *a, AstLocal n, int off) { MCC_TRACE
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
-	if (!ast_promote_env || ast_func_has_asm)
+	if (!ast_promote_env || ast_func_has_asm || ast_func_has_labeladdr)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
 	int has_call = 0, has_vla = 0, has_goto = 0, has_loop = 0;
@@ -12917,6 +12918,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_replaying = 0;
 		ast_switch_node = AST_NONE;
 		ast_func_has_asm = 0;
+		ast_func_has_labeladdr = 0;
 		ast_active = 1;
 		ast_sym_deferred_n = 0;
 		ast_sym_defer_on = 1;

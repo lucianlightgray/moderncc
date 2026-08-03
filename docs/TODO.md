@@ -809,3 +809,48 @@ vector type where a scalar is required* as GCC does; and a vector whose element
 count exceeds 1024 is refused rather than materialized, because the struct
 representation makes `vector_size(1 << 29)` into 134 million field syms
 (`gcc.dg/pr69973.c` hung the compiler before the cap).
+
+### The baseline after vectors, and the computed-goto regression the re-run caught
+
+Re-measured over the whole tree with the self-hosted `-O3` compiler:
+**20,513 tests per column, 78.3% at `-O0` and 78.1% at `-O3`**, up from 76.4/76.3
+before vector types. 778 runs moved from failing to passing; the `vector-ext`
+failure bucket went from 914 to 8.
+
+31 runs moved the other way and they split three ways. Twenty are **`XPASS`** —
+tests that assert GCC rejects an invalid vector conversion, which mcc now
+accepts because `compare_types` takes the `-flax-vector-conversions` rule. That
+is the documented cost of the lax rule and it is a missing diagnostic, not wrong
+code. Four are **timeouts under load** that pass when run alone. The remaining
+seven were a real regression, and the re-run is the only reason it was found.
+
+**Taking a label's address disabled nothing, so register promotion ran on the
+body and the label definitions vanished from the output.** `goto *tab[n]` then
+jumped into code that was never emitted, and the program hung. It reproduces in
+nine lines:
+
+```c
+int f(int n) {
+  static const void *tab[] = {&&a, &&b};
+  int r = 0;
+  goto *tab[n];
+a: r = 10; goto done;
+b: r = 20; goto done;
+done: return r;
+}
+```
+
+`-O0` and `-O1` print `10 20`; `-O2` and `-O3` hang. Bisected to the P5 merge —
+`1d7963ac` passes, `1dce997a` does not — and it is not the deletion itself but
+what the deletion exposed: with the recorder gone, nothing declines a body that
+takes a label's address, and `ast_plan_promotion`'s guard only knew about
+`ast_func_has_asm`. `ast_func_has_labeladdr` is set where `&&label` is parsed and
+joins that guard. `920302-1`, `20040302-1`, `20050527-1` are closed; `990208-1`
+still fails, and that one is the inliner rather than promotion — it is a label
+address inside a function the inliner takes, which is the pre-existing entry in
+the `-O3` list.
+
+The lesson worth keeping: the P5 board was green on `ctest` 8073 of 8073 through
+the whole merge. The external suites are what read the difference, and only
+because the sweep was re-run over the whole tree rather than over the tests that
+had failed before.
