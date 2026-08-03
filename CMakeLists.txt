@@ -3695,8 +3695,8 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("cst/increment" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    add_executable(exec_runner tests/exec/runner.c)
-    target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
+    add_executable(exec_runner tests/runner.c)
+    target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
 
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines

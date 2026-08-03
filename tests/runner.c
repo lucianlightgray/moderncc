@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include "../support/hostcompat.h"
+#include "support/hostcompat.h"
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -14,7 +14,7 @@
 #include <windows.h>
 #endif
 
-#include "goldens.h"
+#include "exec/goldens.h"
 
 static char *xstrdup(const char *s) {
 	char *p = malloc(strlen(s) + 1);

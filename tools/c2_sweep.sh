@@ -17,9 +17,9 @@ x86_64)      MCC=$BUILD/mcc;          FLAGS="" ;;
 *osx)        MCC=$BUILD/mcc-$KEY
              FLAGS="-B $S/runtime -I $S/runtime/include" ;;
 arm)         MCC=$BUILD/mcc-arm
-             FLAGS="-B $BUILD -mfloat-abi hard --sysroot=$S/vendor/gentoo-stage3-arm-glibc -I$S/vendor/gentoo-stage3-arm-glibc/usr/include" ;;
+             FLAGS="-B $BUILD -mfloat-abi hard -I $S/runtime/include --sysroot=$S/vendor/gentoo-stage3-arm-glibc -I$S/vendor/gentoo-stage3-arm-glibc/usr/include" ;;
 *)           MCC=$BUILD/mcc-$KEY
-             FLAGS="-B $BUILD --sysroot=$S/vendor/gentoo-stage3-$KEY-glibc -I$S/vendor/gentoo-stage3-$KEY-glibc/usr/include" ;;
+             FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$S/vendor/gentoo-stage3-$KEY-glibc -I$S/vendor/gentoo-stage3-$KEY-glibc/usr/include" ;;
 esac
 
 mkdir -p "$OUT"
