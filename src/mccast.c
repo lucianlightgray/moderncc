@@ -2011,14 +2011,19 @@ void ast_hook_landor_operand(int op, int c, int first);
 void ast_hook_landor_next(void);
 void ast_hook_landor_end(int materialized);
 
-static Sym *ast_sym_deferred;
+static Sym **ast_sym_deferred;
+static int ast_sym_deferred_n, ast_sym_deferred_cap;
 static int ast_sym_defer_on;
 
 int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_sym_defer_on)
 		{ MCC_TRACE("br\n"); return 0; }
-	sym->next = ast_sym_deferred;
-	ast_sym_deferred = sym;
+	if (ast_sym_deferred_n == ast_sym_deferred_cap) { MCC_TRACE("br\n");
+		int nc = ast_sym_deferred_cap ? ast_sym_deferred_cap * 2 : 64;
+		ast_sym_deferred = mcc_realloc(ast_sym_deferred, nc * sizeof(*ast_sym_deferred));
+		ast_sym_deferred_cap = nc;
+	}
+	ast_sym_deferred[ast_sym_deferred_n++] = sym;
 	return 1;
 }
 
@@ -5860,12 +5865,17 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 															? MCC_RC_RET(vtop->type.t)
 															: MCC_RC_TYPE(vtop->type.t)); }
 		gen_op(bop);
-		if ((ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) &&
-				vtop->r == VT_CMP) { MCC_TRACE("br\n");
-			int j = vtop->jfalse;
-			vtop->jfalse = vtop->jtrue;
-			vtop->jtrue = j;
-			vtop->cmp_op ^= 1;
+		if (ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) { MCC_TRACE("br\n");
+			if (vtop->r == VT_CMP) { MCC_TRACE("br\n");
+				int j = vtop->jfalse;
+				vtop->jfalse = vtop->jtrue;
+				vtop->jtrue = j;
+				vtop->cmp_op ^= 1;
+			} else if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+				vtop->c.i = !vtop->c.i;
+			} else { MCC_TRACE("br\n");
+				mcc_error("ast-replay: late comparison inversion lost");
+			}
 		}
 		break;
 	}
@@ -6118,6 +6128,13 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			}
 		}
 		vcheck_cmp();
+		{
+			SValue *fnv = vtop - ((int)nc - 1);
+			if (fnv < vstack || !fnv->type.ref ||
+					((fnv->type.t & VT_BTYPE) != VT_FUNC &&
+					 (fnv->type.t & VT_BTYPE) != VT_PTR))
+				{ MCC_TRACE("br\n"); mcc_error("ast-replay: call target lost its function type"); }
+		}
 		gfunc_call((int)nc - 1);
 		if (ast_fbits(a, n) & AST_FB_CALL_NORETURN)
 			{ MCC_TRACE("br\n"); CODE_OFF(); }
@@ -8503,6 +8520,22 @@ static int ast_narrow_operand_off(AstArena *a, AstLocal op, int *off) { MCC_TRAC
 	return 1;
 }
 
+static int ast_ii_cval_fits(uint64_t lv, int tt) { MCC_TRACE("enter\n");
+	int w = ast_ii_width(tt);
+	uint64_t m, tr;
+	if ((tt & VT_BTYPE) == VT_BOOL)
+		{ MCC_TRACE("br\n"); return lv == 0 || lv == 1; }
+	if (w <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (w >= 8)
+		{ MCC_TRACE("br\n"); return 1; }
+	m = ((uint64_t)1 << (w * 8)) - 1;
+	tr = lv & m;
+	if (!(tt & VT_UNSIGNED) && (tr & ((uint64_t)1 << (w * 8 - 1))))
+		{ MCC_TRACE("br\n"); tr |= ~m; }
+	return tr == lv;
+}
+
 static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) { MCC_TRACE("enter\n");
 	int lt, w;
 	uint64_t lv, umax;
@@ -8511,7 +8544,7 @@ static int ast_narrow_fits(AstArena *a, AstLocal op, int cls, int tt) { MCC_TRAC
 	if (cls == 0 || cls == 1)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (ast_ident_cval(a, op, &lt, &lv))
-		{ MCC_TRACE("br\n"); return value64(lv, tt) == lv; }
+		{ MCC_TRACE("br\n"); return ast_ii_cval_fits(lv, tt); }
 	if (!ast_vlat_context_at(a, op, &ctx))
 		{ MCC_TRACE("br\n"); return 0; }
 	w = ast_ii_width(tt);
@@ -8655,7 +8688,7 @@ static int ast_narrow_elim_fits(AstArena *a, AstLocal c, int tt) { MCC_TRACE("en
 	if (ast_ii_width(tt) < 1 || ast_ii_width(tt) >= 8)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_ident_cval(a, c, &lt, &lv))
-		{ MCC_TRACE("br\n"); return value64(lv, tt) == lv; }
+		{ MCC_TRACE("br\n"); return ast_ii_cval_fits(lv, tt); }
 	if (!ast_narrow_elim_srcrange(a, c, &ctx))
 		{ MCC_TRACE("br\n"); return 0; }
 	return ast_vlat_in_type(&ctx, tt);
@@ -14616,7 +14649,7 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_func_has_asm = 0;
 		ast_active = 1;
 		ast_capture = 1;
-		ast_sym_deferred = NULL;
+		ast_sym_deferred_n = 0;
 		ast_sym_defer_on = 1;
 	}
 	if (rir_try_active) { MCC_TRACE("br\n");
@@ -17513,20 +17546,18 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); ast_arena_free(ast_cur); }
 		ast_cur = NULL;
 		ast_sym_defer_on = 0;
-		if (keep_inline || keep_reemit || keep_baseline) { MCC_TRACE("br\n");
-			ast_sym_deferred = NULL;
-		} else { MCC_TRACE("br\n");
-			while (ast_sym_deferred) { MCC_TRACE("br\n");
-				Sym *nx = ast_sym_deferred->next;
+		if (!(keep_inline || keep_reemit || keep_baseline)) { MCC_TRACE("br\n");
+			while (ast_sym_deferred_n) { MCC_TRACE("br\n");
+				Sym *s = ast_sym_deferred[--ast_sym_deferred_n];
 #ifndef MCC_SYM_DEBUG
-				ast_sym_deferred->next = sym_free_first;
-				sym_free_first = ast_sym_deferred;
+				s->next = sym_free_first;
+				sym_free_first = s;
 #else
-				mcc_free(ast_sym_deferred);
+				mcc_free(s);
 #endif
-				ast_sym_deferred = nx;
 			}
 		}
+		ast_sym_deferred_n = 0;
 		ast_templates_env = ast_sv_tmpl;
 		ast_promote_env = ast_sv_promo;
 		ast_inline_env = ast_sv_inl;
