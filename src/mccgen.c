@@ -5093,25 +5093,11 @@ ST_FUNC int exact_log2p1(int i) { MCC_TRACE("enter\n");
 	return ret;
 }
 
-static void parse_attribute(AttributeDef *ad) { MCC_TRACE("enter\n");
-	int t, n;
+static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
+	int n;
 	char *astr;
-	AttributeDef ad_tmp;
 
-redo:
-	if (tok != TOK_ATTRIBUTE1 && tok != TOK_ATTRIBUTE2)
-		{ MCC_TRACE("br\n"); return; }
-	if (NULL == ad)
-		{ MCC_TRACE("br\n"); ad = &ad_tmp; }
-
-	next();
-	skip('(');
-	skip('(');
-	while (tok != ')') { MCC_TRACE("br\n");
-		if (tok < TOK_IDENT)
-			{ MCC_TRACE("br\n"); expect("attribute name"); }
-		t = tok;
-		next();
+	{
 		switch (t) { MCC_TRACE("br\n");
 		case TOK_CLEANUP1:
 		case TOK_CLEANUP2: {
@@ -5219,7 +5205,20 @@ redo:
 		case TOK_USED2:
 		case TOK_UNUSED1:
 		case TOK_UNUSED2:
+		case TOK_MAYBE_UNUSED1:
+		case TOK_MAYBE_UNUSED2:
+		case TOK_FALLTHROUGH1:
+		case TOK_FALLTHROUGH2:
+		case TOK_UNSEQUENCED1:
+		case TOK_UNSEQUENCED2:
+		case TOK_REPRODUCIBLE1:
+		case TOK_REPRODUCIBLE2:
 			break;
+		case TOK_DEPRECATED1:
+		case TOK_DEPRECATED2:
+		case TOK_NODISCARD1:
+		case TOK_NODISCARD2:
+			goto skip_param;
 		case TOK_CONST1:
 		case TOK_CONST2:
 		case TOK_CONST3:
@@ -5374,6 +5373,72 @@ redo:
 			}
 			break;
 		}
+	}
+}
+
+static int parse_c23_attribute_name(void) { MCC_TRACE("enter\n");
+	int t, n;
+
+	if (tok < TOK_IDENT)
+		{ MCC_TRACE("br\n"); expect("attribute name"); }
+	t = tok;
+	next();
+	if (tok == ':') { MCC_TRACE("br\n");
+		n = tok;
+		next();
+		if (tok == ':') { MCC_TRACE("br\n");
+			next();
+			if (tok < TOK_IDENT)
+				{ MCC_TRACE("br\n"); expect("attribute name"); }
+			t = tok;
+			next();
+		} else
+			{ MCC_TRACE("br\n"); unget_tok(n); }
+	}
+	return t;
+}
+
+static void parse_attribute(AttributeDef *ad) { MCC_TRACE("enter\n");
+	int t;
+	AttributeDef ad_tmp;
+
+redo:
+	if (tok == '[') { MCC_TRACE("br\n");
+		int save = tok;
+
+		next();
+		if (tok != '[') { MCC_TRACE("br\n"); unget_tok(save); return; }
+		if (NULL == ad)
+			{ MCC_TRACE("br\n"); ad = &ad_tmp; }
+		ad->had_attr = 1;
+		next();
+		while (tok != ']') { MCC_TRACE("br\n");
+			if (tok == ',') { MCC_TRACE("br\n"); next(); continue; }
+			t = parse_c23_attribute_name();
+			parse_one_attribute(ad, t);
+			if (tok != ',')
+				{ MCC_TRACE("br\n"); break; }
+			next();
+		}
+		skip(']');
+		skip(']');
+		goto redo;
+	}
+
+	if (tok != TOK_ATTRIBUTE1 && tok != TOK_ATTRIBUTE2)
+		{ MCC_TRACE("br\n"); return; }
+	if (NULL == ad)
+		{ MCC_TRACE("br\n"); ad = &ad_tmp; }
+
+	next();
+	skip('(');
+	skip('(');
+	while (tok != ')') { MCC_TRACE("br\n");
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); expect("attribute name"); }
+		t = tok;
+		next();
+		parse_one_attribute(ad, t);
 		if (tok != ',')
 			{ MCC_TRACE("br\n"); break; }
 		next();
@@ -7348,14 +7413,30 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 				t = apply_attr_mode(t, ad->attr_mode);
 			}
 			continue;
+		case '[': {
+			int save = tok;
+
+			next();
+			if (tok != '[') { MCC_TRACE("br\n"); unget_tok(save); goto the_end; }
+			unget_tok(save);
+			parse_attribute(ad);
+			if (ad->attr_mode) { MCC_TRACE("br\n");
+				t = apply_attr_mode(t, ad->attr_mode);
+			}
+			continue;
+		}
 		case TOK_TYPEOF1:
-			if (mcc_state->std_strict_ansi)
+			if (mcc_state->std_strict_ansi && mcc_state->cversion < 202311)
 				{ MCC_TRACE("br\n"); mcc_pedantic("'typeof' is a GNU extension"); }
 		case TOK_TYPEOF2:
 		case TOK_TYPEOF3:
+		case TOK_TYPEOF_UNQUAL:
+			u = tok;
 			next();
 			parse_expr_type(&type1);
 			type1.t &= ~(VT_STORAGE & ~VT_TYPEDEF);
+			if (u == TOK_TYPEOF_UNQUAL)
+				{ MCC_TRACE("br\n"); type1.t &= ~(VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT); }
 			if (type1.ref) { MCC_TRACE("br\n");
 				sym_to_attr(ad, type1.ref);
 				if (type1.t & VT_ARRAY)
@@ -7497,7 +7578,10 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 
 		if (tok == ')')
 			{ MCC_TRACE("br\n"); l = 0; }
-		else if (parse_btype(&pt, &ad1, 0))
+		else if (tok == TOK_DOTS && mcc_state->cversion >= 202311) { MCC_TRACE("br\n");
+			next();
+			l = FUNC_ELLIPSIS;
+		} else if (parse_btype(&pt, &ad1, 0))
 			{ MCC_TRACE("br\n"); l = FUNC_NEW; }
 		else if (td & (TYPE_DIRECT | TYPE_ABSTRACT)) { MCC_TRACE("br\n");
 			sym_pop(ps, sr->prev, 0);
@@ -7510,7 +7594,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 		first = NULL;
 		plast = &first;
 		arg_size = 0;
-		if (l) { MCC_TRACE("br\n");
+		if (l && l != FUNC_ELLIPSIS) { MCC_TRACE("br\n");
 			for (;;) { MCC_TRACE("br\n");
 				if (l != FUNC_OLD) { MCC_TRACE("br\n");
 					if ((pt.t & VT_BTYPE) == VT_VOID && tok == ')') { MCC_TRACE("br\n");
@@ -7559,7 +7643,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 				if (l == FUNC_NEW && !parse_btype(&pt, &ad1, 0))
 					{ MCC_TRACE("br\n"); mcc_error("invalid type"); }
 			}
-		} else
+		} else if (!l)
 			{ MCC_TRACE("br\n"); l = FUNC_OLD; }
 		if (l == FUNC_OLD && first == NULL)
 			{ MCC_TRACE("br\n"); mcc_warning_c(warn_strict_prototypes)(
@@ -7591,8 +7675,21 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 		sym_pop(ps, sr, 1);
 		--local_scope;
 	} else if (tok == '[') { MCC_TRACE("br\n");
-		int saved_nocode_wanted = nocode_wanted;
-		int saw_static = 0;
+		int saved_nocode_wanted;
+		int saw_static;
+		{
+			int save = tok;
+
+			next();
+			if (tok == '[') { MCC_TRACE("br\n");
+				unget_tok(save);
+				parse_attribute(ad);
+				return post_type(type, ad, storage, td);
+			}
+			unget_tok(save);
+		}
+		saved_nocode_wanted = nocode_wanted;
+		saw_static = 0;
 		next();
 		n = -1;
 		t1 = 0;
@@ -7727,11 +7824,14 @@ static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 	type->t &= ~VT_STORAGE;
 	post = ret = type;
 
+	parse_attribute(ad);
+
 	while (tok == '*') { MCC_TRACE("br\n");
 		qualifiers = 0;
 		restrict_q = 0;
 	redo:
 		next();
+	recheck:
 		switch (tok) { MCC_TRACE("br\n");
 		case TOK__Atomic:
 			qualifiers |= VT_ATOMIC;
@@ -7753,6 +7853,15 @@ static CType *type_decl_1(CType *type, AttributeDef *ad, int *v, int td,
 				{ MCC_TRACE("br\n"); mcc_pedantic("'restrict' is a C99 feature"); }
 			restrict_q = 1;
 			goto redo;
+		case '[': {
+			int save = tok;
+
+			next();
+			if (tok != '[') { MCC_TRACE("br\n"); unget_tok(save); break; }
+			unget_tok(save);
+			parse_attribute(ad);
+			goto recheck;
+		}
 		case TOK_ATTRIBUTE1:
 		case TOK_ATTRIBUTE2:
 			parse_attribute(ad);
@@ -10773,6 +10882,14 @@ tok_next:
 			CST_CLOSE();
 		}
 		break;
+	case TOK_TRANSACTION_ATOMIC:
+	case TOK_TRANSACTION_RELAXED:
+		next();
+		parse_attribute(NULL);
+		skip('(');
+		gexpr();
+		skip(')');
+		break;
 	case '*':
 		next();
 		unary();
@@ -13308,6 +13425,11 @@ again:
 		gsym_addr(b, d);
 		gsym(a);
 		prev_scope_s(&o);
+	} else if (t == TOK_TRANSACTION_ATOMIC || t == TOK_TRANSACTION_RELAXED) { MCC_TRACE("br\n");
+		parse_attribute(NULL);
+		block(flags);
+	} else if (t == TOK_TRANSACTION_CANCEL) { MCC_TRACE("br\n");
+		skip(';');
 	} else if (t == '{') { MCC_TRACE("br\n");
 		if (debug_modes)
 			{ MCC_TRACE("br\n"); mcc_debug_stabn(mcc_state, N_LBRAC, ind - func_ind); }
@@ -15413,7 +15535,7 @@ static int decl(int l) {
 			if (l == VT_JMP)
 				{ MCC_TRACE("br\n"); return 0; }
 			if (tok == ';' && l != VT_CMP) { MCC_TRACE("br\n");
-				if (l == VT_CONST)
+				if (l == VT_CONST && !adbase.had_attr)
 					{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not allow an empty declaration"); }
 				next();
 				continue;
@@ -15580,8 +15702,11 @@ static int decl(int l) {
 				}
 
 				for (sa = sym->type.ref; (sa = sa->next) != NULL;) { MCC_TRACE("br\n");
-					if (!(sa->v & ~SYM_FIELD))
-						{ MCC_TRACE("br\n"); expect("identifier"); }
+					if (!(sa->v & ~SYM_FIELD)) { MCC_TRACE("br\n");
+						if (mcc_state->cversion < 202311)
+							{ MCC_TRACE("br\n"); expect("identifier"); }
+						sa->v = (anon_sym++) | SYM_FIELD;
+					}
 					if (((sa->type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(sa->type.t)) && sa->type.ref->c < 0)
 						{ MCC_TRACE("br\n"); mcc_error("parameter '%s' has incomplete type",
 											get_tok_str(sa->v & ~SYM_FIELD, NULL)); }
