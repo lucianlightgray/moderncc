@@ -418,43 +418,47 @@ exec suites pass with production on, so the arena's emission is *already* valida
 by execution for every body those tests reach. What is missing is not a checker but a
 **record of which bodies that evidence covers**.
 
-### Measured at `06cb8ed0`: native x86_64 is clean at every `-O`
+### Measured at `9d588502`: clean on all five executable keys, at every `-O`
 
-**Run, not proposed.** `tests/runner.c` already compares program stdout against a
-golden (`texts_equal(expect, out)`, `tests/runner.c:743`), so the differential needs
-no new harness on native — only the env flip. The recipe, which works today:
+**`tools/c2_equiv.sh <builddir> [key|all] [opt] [outdir]`** is the harness. It needs
+no new comparison logic — `tests/runner.c` already compares program stdout against a
+golden (`texts_equal`, `tests/runner.c:743`) — so a key's leg is *"did any golden
+change verdict"*, and the script is the env plumbing plus two refusals.
 
-```sh
-R=cmake-verify/exec_runner; EE="MCC_TEST_EMU= MCC_TEST_CPU=x86_64 MCC_TEST_OS=Linux \
-MCC_TEST_ASM=1 MCC_TEST_BCHECK=1 MCC_TEST_BACKTRACE=1"
-# leg A -- arena emission ships
-env $EE MCC_TEST_OPT=-O1 $R cmake-verify/mcc cmake-verify runtime/include tests /tmp/A
-# leg B -- parser bytes ship. MCC_REPLAY_IR_OUT is REQUIRED: without it the
-# [rir-*] lines land in the captured output and every golden mismatches.
-env $EE MCC_TEST_OPT=-O1 MCC_REPLAY_IR=1 MCC_REPLAY_IR_OUT=/tmp/rir.log \
-    $R cmake-verify/mcc cmake-verify runtime/include tests /tmp/B
-```
+**Fifteen cells, five keys x `-O1`/`-O2`/`-O3`. Every one reads the same:**
 
-**Result, identical at `-O1`, `-O2` and `-O3`: the two legs differ on exactly one
-golden of 317, and that one is not a behavioural difference.** `struct_init` fails
-in leg B only because leg B emits a compiler *diagnostic* leg A does not —
+| key | passing goldens (arena/parser) | differential |
+| --- | --- | --- |
+| x86_64 | 299 / 298 | `struct_init` only |
+| arm64 | 250 / 249 | `struct_init` only |
+| riscv64 | 247 / 246 | `struct_init` only |
+| i386 | 246 / 245 | `struct_init` only |
+| arm | 241 / 240 | `struct_init` only |
+
+Identical at all three `-O` levels, and `arena-only` is **empty everywhere** — no
+golden ever fails under the arena that passes under the parser.
+
+**And the one differential is not behavioural.** `struct_init` fails in the parser
+leg only because that leg emits a compiler *diagnostic* the arena leg does not —
 `struct_init.c:407: warning: operation on 'i' may be undefined` — which shifts every
 line and fails the golden compare. Line 407 is `tst_bf arr[] = {{1, 2, 3}};`: no
 `i`, no sequence point, so the warning is spurious and its line number is wrong.
-Confirmed by compiling the file directly: **0 warnings with `MCC_REPLAY_IR` unset, 1
-with it set**. Program output is otherwise line-for-line identical.
+Confirmed two ways: compiling the file directly gives **0 warnings with
+`MCC_REPLAY_IR` unset and 1 with it set**, and the captured output on both x86_64 and
+riscv64 is that warning followed by output that then matches line for line.
 
-So on the native exec corpus, **the arena's emission and the parser's bytes are
-behaviourally identical at every optimisation level**, against a byte board that
-reads a gap of 201. That is the gap between what the byte compare counts and what is
-actually wrong.
+So across every key whose output this host can execute, **the arena's emission and
+the parser's bytes are behaviourally identical at every optimisation level**, against
+a byte board reading a gap of 201. That difference — 201 counted, none observable —
+is the whole argument for the second column.
 
-**Two things that finding is not.** It does not attribute per body — it proves
-programs behave the same, not which bodies ran; that is still the step below. And
-eight goldens (`atomic_misc`, `bound_global`, `bound_test_b`, `builtins`,
-`errors_and_warnings`, `grep`, `nodata_wanted`, `run_atexit`) fail in **both** legs
-under a single batch invocation while passing under ctest's per-test isolation, so
-they cancel out of the differential but were never meaningfully compared.
+**Three things this result is not.** It does not attribute per body: it proves
+*programs* behave the same, not which bodies ran, and a body on an untaken path is
+not witnessed. It covers the `exec` corpus only, not the 660-file `all` corpus the
+byte board uses. And eight goldens (`atomic_misc`, `bound_global`, `bound_test_b`,
+`builtins`, `errors_and_warnings`, `grep`, `nodata_wanted`, `run_atexit`) fail in
+**both** legs under a single batch invocation while passing under ctest's per-test
+isolation, so they cancel out of the differential but were never compared.
 
 **`MCC_REPLAY_IR=1` is not diagnostic-transparent, and that is a defect in the
 control leg itself.** The verify path re-runs enough of codegen to re-trigger a
@@ -474,12 +478,22 @@ compared, and a green-looking row came out of an empty population. This is the t
 `tools/o0_ab.sh:174` guards for object banks and it has now been hit once on the
 execution side too.
 
-Two things the cross leg needs before it means anything:
+**All three causes are now handled inside `tools/c2_equiv.sh`**, and the refusal is
+built in: it prints `UNMEASURABLE` and exits non-zero for any key whose pass count is
+zero, rather than a differential. Keep that refusal. The causes, recorded because
+each one produced a plausible-looking wrong answer:
 
-- **The sysroot flags.** The runner is not handed `-I`/`-L` for the target sysroot,
-  so every compile fails. `arm64` and `riscv64` additionally need
-  `-L<sysroot>/usr/lib64 -L<sysroot>/lib64` on the link line or `crt1.o` is not
-  found, which reads as a compiler failure and is not one.
+- **The sysroot flags.** The runner takes `MCC_TEST_SYSROOT` (`tests/runner.c:578`)
+  and builds `--sysroot`, `-isystem`, and the four `-L` paths itself
+  (`tests/runner.c:710-713`), including the `usr/lib64`/`lib64` pair `arm64` and
+  `riscv64` need or `crt1.o` is not found. Not passing it fails every compile.
+- **`qemu-user` needs `-L <sysroot>` too, not just mcc.** Without it the emulator
+  resolves the interpreter against the **host** root, so an i386 binary loads the
+  host's x86_64 libc and dies with *"CPU ISA level is lower than required"* — which
+  reads as a codegen failure and is not one. The symptom after fixing only the
+  compiler flags is worse than the one before: compiles succeed, every program
+  produces empty output, and every golden reports `(mismatch)` rather than
+  `(compile)`.
 - **`MCC_TEST_RUNEMU`, not `MCC_TEST_EMU`.** `MCC_TEST_EMU` prefixes the **compiler**
   invocation (`tests/runner.c:684`, `:690`, `:696`, `:703`, `:716`); `MCC_TEST_RUNEMU`
   prefixes the **produced executable** and is what sets `cross` (`:577-579`, and
@@ -489,11 +503,14 @@ Two things the cross leg needs before it means anything:
 
 ### What to build, in order
 
-1. **`tools/c2_equiv.sh` — wrap the recipe above** so it is repeatable and so the
-   cross keys get their sysroot flags. It must **refuse to print a differential for
-   any key whose pass count is zero**, for the reason directly above. Reachable here
-   for six of twelve keys (four ELF cross keys under `qemu-user`, both x86 PE keys
-   under `wine`); the other six are W1/W2 and stay byte-only.
+1. ~~**`tools/c2_equiv.sh`**~~ — **done**, and clean on all five keys it can reach.
+   Still to add: the two x86 PE keys under `wine`, which this host can execute
+   (`docs/TODO.md` records a `printf` binary from `mcc-x86_64-win32` and
+   `mcc-i386-win32` both running clean) but which need PE-shaped flags rather than a
+   sysroot — `-B runtime/win32 -B runtime`, per `tools/c2_sweep.sh:20-21` — and
+   `wine` as the runner rather than `qemu -L`. That would take the differential from
+   five keys to seven. The remaining five are Mach-O and ARM/ARM64 PE, W1/W2, and
+   stay byte-only.
 2. **A per-body execution tap**, so a passing program can be attributed to the bodies
    it actually ran. Without it the harness proves "this program behaves the same",
    which is not the same claim as "this body is equivalent" — a body on an untaken
