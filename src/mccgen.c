@@ -1414,16 +1414,10 @@ static void (vsetc)(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
 	vtop->r2 = VT_CONST;
 	vtop->c = *vc;
 	vtop->sym = NULL;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vpush();
-#endif
 }
 
 ST_FUNC void (vswap)(void) { MCC_TRACE("enter\n");
 	SValue tmp;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vswap();
-#endif
 
 	vcheck_cmp();
 	tmp = vtop[0];
@@ -1433,9 +1427,6 @@ ST_FUNC void (vswap)(void) { MCC_TRACE("enter\n");
 
 ST_FUNC void (vpop)(void) { MCC_TRACE("enter\n");
 	int v;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vpop();
-#endif
 	v = vtop->r & VT_VALMASK;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	if (v == MCC_TREG_ST0) { MCC_TRACE("br\n");
@@ -1482,9 +1473,6 @@ ST_FUNC void (vpushv)(SValue *v) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcc_error("memory full (vstack)"); }
 	vtop++;
 	*vtop = *v;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vpush();
-#endif
 }
 
 static void vdup(void) { MCC_TRACE("enter\n");
@@ -1493,9 +1481,6 @@ static void vdup(void) { MCC_TRACE("enter\n");
 
 ST_FUNC void (vrotb)(int n) { MCC_TRACE("enter\n");
 	SValue tmp;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vrotb(n);
-#endif
 	if (--n < 1)
 		{ MCC_TRACE("br\n"); return; }
 	vcheck_cmp();
@@ -1506,9 +1491,6 @@ ST_FUNC void (vrotb)(int n) { MCC_TRACE("enter\n");
 
 ST_FUNC void (vrott)(int n) { MCC_TRACE("enter\n");
 	SValue tmp;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vrott(n);
-#endif
 	if (--n < 1)
 		{ MCC_TRACE("br\n"); return; }
 	vcheck_cmp();
@@ -1520,9 +1502,6 @@ ST_FUNC void (vrott)(int n) { MCC_TRACE("enter\n");
 ST_FUNC void (vrev)(int n) { MCC_TRACE("enter\n");
 	int i;
 	SValue tmp;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_vrev(n);
-#endif
 	vcheck_cmp();
 	for (i = 0, n = -n; i > ++n; --i)
 		{ MCC_TRACE("br\n"); tmp = vtop[i], vtop[i] = vtop[n], vtop[n] = tmp; }
@@ -1593,7 +1572,6 @@ static void gen_test_zero(int op) { MCC_TRACE("enter\n");
 			vtop->cmp_op ^= 1;
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_cmp_invert();
-			ast_hook_cmp_invert();
 #endif
 		}
 	} else { MCC_TRACE("br\n");
@@ -2102,11 +2080,9 @@ static void move_reg(int r, int s, int t) { MCC_TRACE("enter\n");
 
 ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
-	ast_hook_gaddrof();
 	if ((vtop->r & VT_REGDISP) && (vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
 		CType sv_type = vtop->type;
 		rir_hook_synth_begin();
-		ast_hook_synth_begin();
 		vtop->r &= ~(VT_LVAL | VT_REGDISP);
 		vtop->type = char_pointer_type;
 		vpushi(vtop->c.i);
@@ -2115,7 +2091,6 @@ ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
 		vtop->type = sv_type;
 		vtop->r |= VT_LVAL;
 		rir_hook_synth_end();
-		ast_hook_synth_end();
 	}
 #endif
 	vtop->r &= ~VT_LVAL;
@@ -2187,7 +2162,6 @@ static void gbound(void) { MCC_TRACE("enter\n");
 	if (vtop->r & VT_LVAL) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_begin();
-		ast_hook_synth_begin();
 #endif
 		if (!(vtop->r & VT_BOUNDED)) { MCC_TRACE("br\n");
 			type1 = vtop->type;
@@ -2201,7 +2175,6 @@ static void gbound(void) { MCC_TRACE("enter\n");
 		gen_bounded_ptr_deref();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_end();
-		ast_hook_synth_end();
 #endif
 	}
 }
@@ -3515,9 +3488,6 @@ void gen_negf(int op) { MCC_TRACE("enter\n");
 #else
 void gen_negf(int op) { MCC_TRACE("enter\n");
 	int align, size, bt;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_bail();
-#endif
 	size = type_size(&vtop->type, &align);
 	bt = vtop->type.t & VT_BTYPE;
 #if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386
@@ -4009,9 +3979,6 @@ static int bf_operand_bits(int tt) { MCC_TRACE("enter\n");
 ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int t1, t2, bt1, bt2, t;
 	int bf_trunc = 0;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_genop(op);
-#endif
 	CType type1, combtype;
 	int op_class = op;
 
@@ -4035,7 +4002,6 @@ redo:
 		gen_complex_op(op);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_cplx_end();
-		ast_hook_genop_end();
 #endif
 		return;
 	}
@@ -4188,9 +4154,6 @@ redo:
 	}
 	if (vtop->r & VT_LVAL)
 		{ MCC_TRACE("br\n"); gv(MCC_RC_TYPE(vtop->type.t)); }
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_genop_end();
-#endif
 }
 
 #if defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64 || defined MCC_TARGET_ARM
@@ -4262,12 +4225,10 @@ static void force_charshort_cast(void) { MCC_TRACE("enter\n");
 	vtop->type.t = sbt;
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_synth_begin();
-	ast_hook_synth_begin();
 #endif
 	gen_cast_s(dbt == VT_BOOL ? VT_BYTE | VT_UNSIGNED : dbt);
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_synth_end();
-	ast_hook_synth_end();
 #endif
 	vtop->type.t = dbt;
 }
@@ -4280,7 +4241,6 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 	int sbt, dbt, sf, df, c;
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_convert();
-	ast_hook_convert(type);
 #endif
 	int dbt_bt, sbt_bt, ds, ss, bits, trunc;
 
@@ -4546,7 +4506,6 @@ again:
 #if MCC_PTR_SIZE == 4
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_begin();
-		ast_hook_synth_begin();
 #endif
 		if (ds == 8) { MCC_TRACE("br\n");
 			if (sbt & VT_UNSIGNED) { MCC_TRACE("br\n");
@@ -4564,7 +4523,6 @@ again:
 		}
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_castsynth_end(type, ds, ss);
-		ast_hook_synth_end();
 #endif
 		ss = 4;
 
@@ -4849,7 +4807,6 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_vstore();
-	ast_hook_vstore();
 #endif
 
 	seqp_record_sv(vtop - 1, SEQP_WRITE);
@@ -5007,7 +4964,6 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	}
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_vstore_end();
-	ast_hook_vstore_end();
 #endif
 }
 
@@ -5029,7 +4985,6 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 	}
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_inc(post, c);
-	ast_hook_inc(post, c);
 #endif
 	vdup();
 	if (post) { MCC_TRACE("br\n");
@@ -5044,7 +4999,6 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); vpop(); }
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_inc_end();
-	ast_hook_inc_end();
 #endif
 }
 
@@ -5973,7 +5927,6 @@ static void complex_part(int imag) { MCC_TRACE("enter\n");
 
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_member_begin(0);
-	ast_hook_member_begin(0);
 #endif
 	test_lvalue();
 	gaddrof();
@@ -5984,7 +5937,6 @@ static void complex_part(int imag) { MCC_TRACE("enter\n");
 	vtop->r |= VT_LVAL;
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_member_end(ofs, 0);
-	ast_hook_member_end(ofs, &base, 0, 0, 0);
 #endif
 }
 
@@ -7175,7 +7127,6 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) { MCC_TRA
 ST_FUNC void indir(void) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_indir();
-	ast_hook_indir();
 #endif
 	if ((vtop->type.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
@@ -7352,9 +7303,6 @@ static void parse_builtin_params(int nc, const char *args) { MCC_TRACE("enter\n"
 }
 
 static void parse_atomic(int atok) { MCC_TRACE("enter\n");
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_bail();
-#endif
 	int size, align, arg, t, save = 0, use_generic = 0;
 	int is_add_sub = atok == TOK___atomic_fetch_add || atok == TOK___atomic_fetch_sub || atok == TOK___atomic_add_fetch || atok == TOK___atomic_sub_fetch;
 	CType *atom, *atom_ptr, ct = {0};
@@ -7662,7 +7610,6 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 	vrott(4);
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_call_begin();
-	ast_hook_call_begin(3, 0, 1, 0);
 #endif
 	gfunc_call(3);
 
@@ -7679,14 +7626,12 @@ static void gen_atomic_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 	gen_cast(&atomtype);
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_call_end();
-	ast_hook_call_end();
 #endif
 	atomic_lowering--;
 }
 
 static int alloc_local_slot(int size, int align) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
-	ast_hook_bail();
 	if (rir_hook_slot_replay())
 		{ MCC_TRACE("br\n"); return loc; }
 #endif
@@ -7923,7 +7868,6 @@ static void gen_atomic_load_scalar(void) { MCC_TRACE("enter\n");
 	vrott(3);
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_call_begin();
-	ast_hook_call_begin(2, 0, 1, 0);
 #endif
 	gfunc_call(2);
 	vpush(&at);
@@ -7933,7 +7877,6 @@ static void gen_atomic_load_scalar(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); vtop->type.t = VT_INT; }
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_call_end();
-	ast_hook_call_end();
 #endif
 	atomic_lowering--;
 }
@@ -9959,13 +9902,7 @@ tok_next:
 		type.t = t;
 		vsetc(&type, VT_CONST, &tokc);
 		if (tok_imaginary) { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_imag_begin();
-#endif
 			gen_imaginary_complex(t);
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_imag_end(t);
-#endif
 		}
 		next();
 		CST_PRIMARY();
@@ -10096,7 +10033,6 @@ tok_next:
 					{ MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
 					rir_hook_cast_gv();
-					ast_hook_cast_gv();
 #endif
 					}
 				CST_OPEN_AT(CST_Cast, cst_um);
@@ -10196,12 +10132,10 @@ tok_next:
 			{ MCC_TRACE("br\n"); tok = TOK_SOTYPE; }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_begin();
-		ast_hook_synth_begin();
 #endif
 		expr_type(&type, unary);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_end();
-		ast_hook_synth_end();
 #endif
 		if (type.t & VT_BITFIELD)
 			{ MCC_TRACE("br\n"); mcc_error("'%s' cannot be applied to a bit-field",
@@ -10248,10 +10182,6 @@ tok_next:
 		vtop[-1].type.t &= ~VT_QUALIFY;
 		vtop[0].type.t &= ~VT_QUALIFY;
 		n = is_compatible_types(&vtop[-1].type, &vtop[0].type);
-#if MCC_CONFIG_OPTIMIZER
-		ast_hook_vpop();
-		ast_hook_vpop();
-#endif
 		vtop -= 2;
 		vpushi(n);
 		break;
@@ -10284,9 +10214,6 @@ tok_next:
 		CType cbase, ccplx;
 		SValue r;
 		next();
-#if MCC_CONFIG_OPTIMIZER
-		ast_hook_builtin_complex_begin();
-#endif
 		skip('(');
 		expr_eq();
 		skip(',');
@@ -10327,7 +10254,6 @@ tok_next:
 		}
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_builtin_complex_end();
-		ast_hook_builtin_complex_end();
 #endif
 	} break;
 	case TOK_builtin_constant_p:
@@ -10335,9 +10261,6 @@ tok_next:
 		n = 1;
 		if ((vtop->r & (VT_VALMASK | VT_LVAL)) != VT_CONST || ((vtop->r & VT_SYM) && vtop->sym->a.addrtaken))
 			{ MCC_TRACE("br\n"); n = 0; }
-#if MCC_CONFIG_OPTIMIZER
-		ast_hook_vpop();
-#endif
 		vtop--;
 		vpushi(n);
 		break;
@@ -10392,10 +10315,6 @@ tok_next:
 		n = 0;
 		if ((vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST)
 			{ MCC_TRACE("br\n"); n = (int)vtop->c.i; }
-#if MCC_CONFIG_OPTIMIZER
-		ast_hook_vpop();
-		ast_hook_vpop();
-#endif
 		vtop -= 2;
 		vpushs((n & 2) ? 0 : (addr_t)-1);
 		break;
@@ -10464,9 +10383,6 @@ tok_next:
 		else
 			{ MCC_TRACE("br\n"); parse_builtin_params(0, ""); }
 		if (is_nan) { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_vpop();
-#endif
 			vtop--;
 		}
 		if (is_float) { MCC_TRACE("br\n");
@@ -10860,13 +10776,7 @@ tok_next:
 		if ((vtop->type.t & VT_BTYPE) == VT_PTR)
 			{ MCC_TRACE("br\n"); mcc_error("pointer not accepted for unary minus"); }
 		if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_fneg_begin();
-#endif
 			gen_opif(TOK_NEG);
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_fneg_end();
-#endif
 		} else { MCC_TRACE("br\n");
 			vpushi(0);
 			vswap();
@@ -11067,7 +10977,6 @@ tok_next:
 			int qualifiers, cumofs, base_nonlval;
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_member_begin(tok == TOK_ARROW);
-			ast_hook_member_begin(tok == TOK_ARROW);
 #endif
 			if (tok == TOK_ARROW)
 				{ MCC_TRACE("br\n"); indir(); }
@@ -11119,7 +11028,6 @@ tok_next:
 				_mbc = mcc_state->do_bounds_check;
 #endif
 				rir_hook_member_end(cumofs, base_nonlval);
-				ast_hook_member_end(cumofs, &s->type, base_nonlval, qualifiers, _mbc);
 			}
 #endif
 			next();
@@ -11189,9 +11097,6 @@ tok_next:
 #endif
 					ret.c = vtop->c;
 					if (ret_nregs < 0) { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER
-						ast_hook_vpop();
-#endif
 						vtop--;
 					} else
 						{ MCC_TRACE("br\n"); nb_args++; }
@@ -11275,8 +11180,6 @@ tok_next:
 			}
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_call_begin();
-			ast_hook_call_begin(nb_args, (s->type.t & VT_BTYPE) == VT_STRUCT,
-													ret_nregs, s->f.func_type == FUNC_ELLIPSIS);
 #endif
 			gfunc_call(nb_args);
 			expr_has_effect = 1;
@@ -11342,12 +11245,10 @@ tok_next:
 				CODE_OFF();
 #if MCC_CONFIG_OPTIMIZER
 				rir_hook_call_noreturn();
-				ast_hook_call_noreturn();
 #endif
 			}
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_call_end();
-			ast_hook_call_end();
 #endif
 		call_folded:;
 #if MCC_CONFIG_LSP
@@ -11458,7 +11359,6 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); nocode_wanted++, f = 1; }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_landor_operand(op, c, first);
-		ast_hook_landor_operand(op, c, first);
 		first = 0;
 #endif
 		if (tok != op)
@@ -11471,7 +11371,6 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 		seqp_flush();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_landor_next();
-		ast_hook_landor_next();
 #endif
 		expr_landor_next(op);
 	}
@@ -11485,7 +11384,6 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 	}
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_landor_end((cc || f) ? (2 | (i ^ f)) : 0);
-	ast_hook_landor_end((cc || f) ? (2 | (i ^ f)) : 0);
 #endif
 }
 
@@ -11599,7 +11497,6 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids omitting the middle term of a ?: expression"); }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_ternary_begin(c, g);
-		ast_hook_ternary_begin(c, g);
 #endif
 		tt = 0;
 		if (!g) { MCC_TRACE("br\n");
@@ -11619,13 +11516,11 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); nocode_wanted++; }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_ternary_branch(0);
-		ast_hook_ternary_branch(0);
 #endif
 		if (!g)
 			{ MCC_TRACE("br\n"); gexpr(); }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_ternary_branch_done(0);
-		ast_hook_ternary_branch_done(0);
 #endif
 
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
@@ -11648,12 +11543,10 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 		skip(':');
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_ternary_branch(1);
-		ast_hook_ternary_branch(1);
 #endif
 		expr_cond();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_ternary_branch_done(1);
-		ast_hook_ternary_branch_done(1);
 #endif
 #if MCC_CONFIG_LSP
 		CST_OPEN_AT(CST_Cond, cst_m);
@@ -11726,7 +11619,6 @@ static void expr_cond(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); indir(); }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_ternary_end();
-		ast_hook_ternary_end();
 #endif
 	}
 }
@@ -11779,7 +11671,6 @@ static void expr_eq(void) { MCC_TRACE("enter\n");
 		} else { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_vdup();
-			ast_hook_vdup();
 #endif
 			vdup();
 			expr_eq();
@@ -11949,7 +11840,6 @@ static void check_func_return(void) { MCC_TRACE("enter\n");
 	if ((!strcmp(funcname, "main") || func_old) && (func_vt.t & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_implicit_return();
-		ast_hook_implicit_return();
 #endif
 		vpushi(0);
 		gfunc_return(&func_vt);
@@ -12177,7 +12067,6 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 #endif
 	}
 	nocode_wanted = nsave;
-	ast_hook_bail();
 	return dsym;
 }
 #endif
@@ -12229,7 +12118,6 @@ static void save_lvalues(void) { MCC_TRACE("enter\n");
 	SValue *sv = vtop;
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_synth_begin();
-	ast_hook_synth_begin();
 #endif
 	while (sv >= vstack) { MCC_TRACE("br\n");
 		if (sv->sym && (sv->r & VT_LVAL)) { MCC_TRACE("br\n");
@@ -12237,15 +12125,11 @@ static void save_lvalues(void) { MCC_TRACE("enter\n");
 			int r2, l = get_temp_local_var(size, align, &r2);
 			vset(&sv->type, VT_LOCAL | VT_LVAL, l), vtop->r2 = r2;
 			vpushv(sv), *sv = vtop[-1], vstore(), --vtop;
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_spill(l, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
-#endif
 		}
 		--sv;
 	}
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_synth_end();
-	ast_hook_synth_end();
 #endif
 }
 
@@ -12257,7 +12141,6 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		save_lvalues();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_cleanup_call_begin();
-		ast_hook_cleanup_call_begin();
 #endif
 		vpushsym(&fs->type, fs);
 		vset(&vs->type, vs->r, vs->c);
@@ -12266,14 +12149,11 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		gaddrof();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_begin();
-		ast_hook_call_begin(1, 0, 1, 0);
 #endif
 		gfunc_call(1);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_effect_end();
-		ast_hook_call_effect_end();
 		rir_hook_cleanup_call_end();
-		ast_hook_cleanup_call_end();
 #endif
 	}
 }
@@ -12332,7 +12212,6 @@ static void vla_restore(int loc) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); gen_vla_sp_restore(loc); }
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_vla_restore(loc);
-	ast_hook_vla_restore(loc);
 #endif
 }
 
@@ -12588,12 +12467,10 @@ again:
 		seqp_check();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_if_begin();
-		ast_hook_if_begin();
 #endif
 		a = gvtst(1, 0);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_if_gvtst_done();
-		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
 		block(0);
@@ -12603,7 +12480,6 @@ again:
 			next();
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_if_else();
-			ast_hook_if_else();
 #endif
 			block(0);
 			gsym(d);
@@ -12612,7 +12488,6 @@ again:
 		}
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_if_end();
-		ast_hook_if_end();
 #endif
 		prev_scope_s(&o);
 	} else if (t == TOK_WHILE) { MCC_TRACE("br\n");
@@ -12620,7 +12495,6 @@ again:
 		d = gind();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_while_cond_start();
-		ast_hook_while_cond_start();
 #endif
 		skip('(');
 		gexpr();
@@ -12630,19 +12504,16 @@ again:
 		seqp_check();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_while_begin();
-		ast_hook_while_begin();
 #endif
 		a = gvtst(1, 0);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_if_gvtst_done();
-		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
 		b = 0;
 		lblock(&a, &b);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_while_end();
-		ast_hook_while_end();
 #endif
 		gjmp_addr(d);
 		gsym_addr(b, d);
@@ -12697,7 +12568,6 @@ again:
 			gexpr();
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_ret_expr_done();
-			ast_hook_ret_expr_done();
 #endif
 			seqp_check();
 			if (b) { MCC_TRACE("br\n");
@@ -12716,7 +12586,6 @@ again:
 		}
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_return(b);
-		ast_hook_return(b);
 #endif
 		leave_scope(root_scope);
 		if (b)
@@ -12728,7 +12597,6 @@ again:
 				{ MCC_TRACE("br\n"); rsym = gjmp(rsym); }
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_return_jmp(ret_jumps);
-			ast_hook_return_jmp(ret_jumps);
 #endif
 		}
 		if (debug_modes)
@@ -12745,7 +12613,6 @@ again:
 		*cur_scope->bsym = gjmp(*cur_scope->bsym);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_break_continue(0, nc_pre);
-		ast_hook_break_continue(0);
 #endif
 		skip(';');
 	} else if (t == TOK_CONTINUE) { MCC_TRACE("br\n");
@@ -12756,7 +12623,6 @@ again:
 		*cur_scope->csym = gjmp(*cur_scope->csym);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_break_continue(1, nc_pre);
-		ast_hook_break_continue(1);
 #endif
 		skip(';');
 	} else if (t == TOK_FOR) { MCC_TRACE("br\n");
@@ -12782,7 +12648,6 @@ again:
 		c = d = gind();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_for_begin();
-		ast_hook_for_begin(tok != ';');
 #endif
 		if (tok != ';') { MCC_TRACE("br\n");
 			gexpr();
@@ -12791,12 +12656,10 @@ again:
 																				"assignment used as a truth value"); }
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_for_cond();
-			ast_hook_for_cond();
 #endif
 			a = gvtst(1, 0);
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_if_gvtst_done();
-			ast_hook_if_gvtst_done();
 #endif
 		}
 		seqp_flush();
@@ -12806,31 +12669,27 @@ again:
 			d = gind();
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_for_incr_begin();
-			ast_hook_for_incr_begin();
 #endif
 			gexpr();
 			seqp_check();
 			vpop();
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_for_incr_end();
-			ast_hook_for_incr_end();
 #endif
 			gjmp_addr(c);
 			gsym(e);
 		}
 #if MCC_CONFIG_OPTIMIZER
 		else
-			{ MCC_TRACE("br\n"); rir_hook_for_no_incr(); ast_hook_for_no_incr(); }
+			{ MCC_TRACE("br\n"); rir_hook_for_no_incr(); }
 #endif
 		skip(')');
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_for_body_begin();
-		ast_hook_for_body_begin();
 #endif
 		lblock(&a, &b);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_for_end();
-		ast_hook_for_end();
 #endif
 		gjmp_addr(d);
 		gsym_addr(b, d);
@@ -12842,12 +12701,10 @@ again:
 		d = gind();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_do_begin();
-		ast_hook_do_begin();
 #endif
 		lblock(&a, &b);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_do_body_end();
-		ast_hook_do_body_end();
 #endif
 		gsym(b);
 		skip(TOK_WHILE);
@@ -12859,12 +12716,10 @@ again:
 		seqp_check();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_do_cond();
-		ast_hook_do_cond();
 #endif
 		c = gvtst(0, 0);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_if_gvtst_done();
-		ast_hook_if_gvtst_done();
 #endif
 		skip(')');
 		skip(';');
@@ -12872,7 +12727,6 @@ again:
 		gsym(a);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_do_end();
-		ast_hook_do_end();
 #endif
 		prev_scope_s(&o);
 	} else if (t == TOK_SWITCH) { MCC_TRACE("br\n");
@@ -12895,15 +12749,11 @@ again:
 		skip(')');
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_switch_begin();
-		ast_hook_switch_begin();
 #endif
 		sw->sv = *vtop--;
 		a = 0;
 		b = gjmp(0);
 		lblock(&a, NULL);
-#if MCC_CONFIG_OPTIMIZER
-		ast_hook_switch_body_end();
-#endif
 		a = gjmp(a);
 		gsym(b);
 		prev_scope_s(&o);
@@ -12945,7 +12795,6 @@ again:
 		end_switch();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_switch_end();
-		ast_hook_switch_end();
 #endif
 	} else if (t == TOK_CASE) { MCC_TRACE("br\n");
 		struct case_t *cr;
@@ -12972,7 +12821,6 @@ again:
 		cr->line = file->line_num;
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_case((long long)cr->v1, (long long)cr->v2);
-		ast_hook_case(cr->v1, cr->v2, t);
 #endif
 		skip(':');
 		if (cur_switch->vla_gpp < vla_inner_scope())
@@ -12986,7 +12834,6 @@ again:
 		cur_switch->def_sym = cur_switch->nocode_wanted ? -1 : gind();
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_default();
-		ast_hook_default();
 #endif
 		skip(':');
 		if (cur_switch->vla_gpp < vla_inner_scope())
@@ -12999,10 +12846,6 @@ again:
 			gexpr();
 			if ((vtop->type.t & VT_BTYPE) != VT_PTR)
 				{ MCC_TRACE("br\n"); expect("pointer"); }
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_vpop();
-			ast_hook_bail();
-#endif
 			ggoto();
 		} else if (tok >= TOK_UIDENT) { MCC_TRACE("br\n");
 			Sym *lsym;
@@ -13036,7 +12879,6 @@ again:
 			}
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_goto(ast_label_id(lsym));
-			ast_hook_goto(ast_label_id(lsym));
 #endif
 			next();
 		} else { MCC_TRACE("br\n");
@@ -13083,7 +12925,6 @@ again:
 				{ MCC_TRACE("br\n"); mcc_error("goto jumps into the scope of a variably modified declaration"); }
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_label(ast_label_id(s));
-			ast_hook_label(ast_label_id(s));
 #endif
 
 		block_after_label:
@@ -13225,12 +13066,10 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 #endif
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_begin();
-		ast_hook_call_begin(3, 0, 1, 0);
 #endif
 		gfunc_call(3);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_effect_end();
-		ast_hook_call_effect_end();
 #endif
 	} else { MCC_TRACE("br\n");
 		vpush_helper_func(TOK_memset);
@@ -13242,12 +13081,10 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 #endif
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_begin();
-		ast_hook_call_begin(3, 0, 1, 0);
 #endif
 		gfunc_call(3);
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_effect_end();
-		ast_hook_call_effect_end();
 #endif
 	}
 }
@@ -13409,7 +13246,6 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 			t1.t = VT_STRUCT, t1.ref = &aref;
 			type = &t1;
 #if MCC_CONFIG_OPTIMIZER
-			ast_hook_bail();
 			rir_hook_bail();
 #endif
 		}
@@ -13520,9 +13356,6 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 			{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable at load time"); }
 
 		if (NODATA_WANTED) { MCC_TRACE("br\n");
-#if MCC_CONFIG_OPTIMIZER
-			ast_hook_vpop();
-#endif
 			vtop--;
 			return;
 		}
@@ -13628,9 +13461,6 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 					break;
 				}
 		}
-#if MCC_CONFIG_OPTIMIZER
-		ast_hook_vpop();
-#endif
 		vtop--;
 	} else if (p->llocal) { MCC_TRACE("br\n");
 		int rr;
@@ -14127,7 +13957,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			int vla_new_save = 0;
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_vla_alloc_begin();
-			ast_hook_vla_alloc_begin();
 #endif
 			if (cur_scope->vla.num == 0) { MCC_TRACE("br\n");
 				if (cur_scope->prev && cur_scope->prev->vla.num) { MCC_TRACE("br\n");
@@ -14158,8 +13987,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 			cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
 			rir_hook_vla_alloc_end(type, vla_hook_slot, vla_new_save,
-														 cur_scope->vla.locorig, align, vla_res_slot);
-			ast_hook_vla_alloc_end(type, vla_hook_slot, vla_new_save,
 														 cur_scope->vla.locorig, align, vla_res_slot);
 #endif
 			addr = 0;
@@ -14347,7 +14174,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		int vla_new_save = 0;
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_vla_alloc_begin();
-		ast_hook_vla_alloc_begin();
 #endif
 		if (cur_scope->vla.num == 0) { MCC_TRACE("br\n");
 			if (cur_scope->prev && cur_scope->prev->vla.num) { MCC_TRACE("br\n");
@@ -14371,8 +14197,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		cur_scope->vla.num++;
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a,
-																	 vla_res_slot);
-		ast_hook_vla_alloc_end(type, addr, vla_new_save, cur_scope->vla.locorig, a,
 																	 vla_res_slot);
 #endif
 	} else if (has_init) { MCC_TRACE("br\n");
@@ -15119,12 +14943,12 @@ static int decl(int l) {
 #if MCC_CONFIG_OPTIMIZER
 							int ast_sq = (r & VT_VALMASK) == VT_CONST && has_init;
 							if (ast_sq)
-								{ MCC_TRACE("br\n"); rir_hook_synth_begin(); ast_hook_synth_begin(); }
+								{ MCC_TRACE("br\n"); rir_hook_synth_begin(); }
 #endif
 							decl_initializer_alloc(&type, &ad, r, has_init, v, l);
 #if MCC_CONFIG_OPTIMIZER
 							if (ast_sq)
-								{ MCC_TRACE("br\n"); rir_hook_synth_end(); ast_hook_synth_end(); }
+								{ MCC_TRACE("br\n"); rir_hook_synth_end(); }
 #endif
 							assign_ctx_is_init = aci_prev;
 						}

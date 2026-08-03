@@ -17,16 +17,33 @@ The tree is green: `ctest -j 8` **8252/8252** with no env set, on a short checko
 | P0 harness, P1 journal verify-half cut, P2 decouple + admission predicate, P3 capture rebrand | landed |
 | P4 cutover | landed; **`MCC_RIR_PROD` defaults to 1**, arena drives **91.5%** of bodies (`used=2011 fallback=11 skip=176` of 2198, x86_64 `-O2`, whole corpus) |
 | P5 switch | **landed. `MCC_RIR_ONLY` defaults to 1**; the three `optfire` cells that died with it are deleted and the suite is 8252/8252 |
-| P5 deletion | **next, and now a pure deletion.** With the switch already on, removing the recorder moves nothing by construction |
+| P5 deletion | **the hooks are gone** — -1,618 lines of `mccast.c`, 124 call sites, 76 declarations, 20 dead cells, 12 readerless gates. Tree green at 8232/8232. The recorder's *state* (`ast_bail`, `ast_desync`, the shadow vstack, `ast_try_active`, `ast_verify_env`) is dead code and still present; see **What the deletion still owes** |
 | `fix-imaginary` | branch ready, merges clean, blocked only on the three `ast-verify-ratchet` cells the deletion removes |
 | P6 split + `ast_*` → `ir_*` | not started |
 
 ### Next steps, in order
 
-1. **Delete the recorder.** The inventory is verified and in P5: hooks at `src/mccast.c:2318-4023`, 76 declarations, 124 call sites in `src/mccgen.c`, 14 recorder-only gates. **Six things inside the hook block are not the recorder's and must stay**: `ast_label_id`, `ast_label_forget`, `ast_sv_hi`, `ast_cmp_invert_late`, `ast_bad_type`, `ast_func_has_asm`. The four `verify-baseline` files, `ast-verify-ratchet-*`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half, `MCC_AST_INT128=1` in `rir_parity.cmake` and `MCC_RIR_PROD`/`MCC_RIR_ONLY` themselves all die with it. The three `optfire` cells are already gone.
-2. **Land `fix-imaginary`** the moment step 1 lands. It merges clean and needs no rebase.
+1. **Finish the deletion** — the hooks are out, the state is not. See **What the deletion still owes** below.
+2. **Land `fix-imaginary`** — `ast-verify-ratchet-{O1,O2,O3}` are deleted, which were the only three cells blocking it. It merges clean and needs no rebase. **This is unblocked now.**
 3. **P6**: split `mccast.c` and rename `ast_*` → `ir_*`. The `ir_`/`IR_` namespace is verified empty.
-4. Then the items under **Open work raised after the cutover** — the poison-over-deletion change, the `ast_cycle_env` convergence, the pointer test, glibc headers, and `MCC_TRACE` on `full_language.c`. None of these block the deletion.
+4. Then the items under **Open work raised after the cutover** — the poison-over-deletion change, the `ast_cycle_env` convergence, the pointer test, glibc headers, and `MCC_TRACE` on `full_language.c`.
+
+### What the deletion did, and what it still owes
+
+**Done, and gated.** `-1,618` lines of `src/mccast.c` (76 hook definitions plus their 64 forward declarations), all **124** call sites in `src/mccgen.c` with the 26 `#if MCC_CONFIG_OPTIMIZER` blocks they left empty, all **76** declarations in `src/mccast.h`, and **12 of the 14** recorder-shape gates, which measurement confirmed had exactly two references each — a declaration and an assignment, no reader. **The six keepers are kept**: `ast_label_id`, `ast_label_forget`, `ast_sv_hi`, `ast_cmp_invert_late`, `ast_bad_type`, `ast_func_has_asm`. Verified mechanically — the set of top-level definitions lost is *exactly* the `ast_hook_*` set, nothing else.
+
+Twenty cells died with it and are deleted: `ast-verify-ratchet-{O1,O2,O3}` with `tests/ast/verify_ratchet.cmake` and all four `tests/ast/verify-baseline/` files; the **fourteen** `ast/rir-c3-*` cells with `tests/ast/rir_c3.cmake` and the `rir-c3` custom target — P4 predicted these die with the recorder and they did, all fourteen, in one run; `ast/treecheck` and `ast/tracediff` with their two scripts; and `optfire/default-nocode_call`, a fifteenth recorder-shape gate cell the inventory had not listed. `MCC_AST_INT128=1` is out of `rir_parity.cmake`'s forced-`-O0` env, exactly as **Keep the measurement honest** said to do it — *when* the gate dies, not before. 8252 → **8232** registered cells, and `ctest -j 8` is **8232 of 8232, zero failures**.
+
+Gates met: the twelve-key object A/B reads **19,425 compared, 12 differ** — the single `-O3` `scopes.c` widening described above and nothing else, unchanged before and after the gate removal, which is what proves those 12 gates were readerless. `C2_NO_EXTRA=1 O0_AB_CHECK=1 tools/o0_ab.sh` passes against the bank on all twelve keys with `arm-win32 == arm-wince`. `tracegate`/`schemagate`/`targetgate` clean.
+
+**Still owed, and none of it is load-bearing — it is dead code that still compiles.**
+
+- **The recorder's state.** `ast_bail`, `ast_desync`, `AST_SET_BAIL`/`AST_SET_DESYNC`, `ast_gap_note`, the shadow vstack (`ast_vs`, `ast_vn`, `ast_cf_if`/`ast_cf_savebb`/`ast_cf_top`) and `ast_replay_ok`'s first four terms are all still declared. Nothing writes them any more, so `ast_replay_ok` has already collapsed to "the arena has a body" *in effect* — the deletion's whole premise, now true by construction rather than by the `MCC_RIR_ONLY` bypass.
+- **`ast_try_active`** still gates `ast_func_end`. It wants to become `rir_try_active`, which `src/mccrir.c` already owns (P2 landed it).
+- **`ast_verify_env` and the `[ast-verify]` verdict block** (`src/mccast.c:15851` area). Its consumers — the ratchet cells and the baselines — are deleted, so it now reports on an arena nothing fills.
+- **`ast_ret_bad`, `ast_bad_vtype`, `ast_wide_vtype`** and with them the last two gates, `ast_int128_env` and `ast_ldouble_env`. These are the *only* reason those two gates still have a reader; the file already said they "survive only as long as `ast_try_active`'s `ast_ret_bad` term does", and that is still exactly right.
+- **`MCC_RIR_PROD` and `MCC_RIR_ONLY` themselves**, once `ast_func_end` adopts unconditionally.
+- **`tests/fuzz/runner.c`'s `GATES[]`** still lists rows for the twelve deleted gates (`REGPAIR`, `CONVERT_GV`, `CALL_NORETURN`, `FNEG`, `INDIRECT_LOAD`, `LANDOR_FOLD`, `CLEANUP_RET`, `VOIDRET_EXPR`, and the combination strings at `:340-344`). They now set environment variables nothing reads, so the fuzzer spends configurations on no-ops. Not wrong, but it is a stale measurement of exactly the kind this file exists to prevent.
 
 ### The `MCC_RIR_ONLY` flip, as measured
 
@@ -539,7 +556,13 @@ The fix is a second memoized predicate, `ast_sccp_has_case`, consulted beside `a
 
 x86_64 reads 36 and 67 against the 36/562 and 66/561 P5 measured by simulating the widen half alone, so the switch is doing exactly and only what that simulation said it would. `arm-win32` and `arm-wince` agree at both levels, as they must.
 4. **Done** — `MCC_RIR_ONLY` is on by default and the three `optfire` cells are deleted. The switch-off object A/B is **19,425 of 19,425 byte-identical over twelve keys × three `-O` levels**, and `ctest` is 8252/8252. The measurements are written up under **The `MCC_RIR_ONLY` flip, as measured** in the Handoff.
-5. *Then* delete, and only then is P5's byte-identity gate achievable — with the switch already on, the deletion moves nothing by construction.
+5. *Then* delete. **"With the switch already on, the deletion moves nothing by construction" was a prediction, and the measurement falsified it** — see the item below. It moves exactly one file.
+
+**The deletion has a second reader of the recorder's decline verdict, and `MCC_RIR_ONLY` never bypassed it.** With the 1,618 lines of hooks removed, the twelve-key object A/B against the same corpus reads **19,425 compared, 12 differ** — one file, `tests/exec/statements/scopes.c`, on all twelve keys and at **`-O3` only**. The reference leg is exact: the pre-deletion binary under `MCC_RIR_ONLY=1`, which is the flipped state by construction.
+
+The cause is not the arena. `MCC_RIR_PROD=2` reads `used=15 fallback=0 skip=0` on that file in both legs, so adoption is identical. The pass counters are what move: `[ast-inline]` goes **2 → 6**, and the extra lines are `grafted f6`, `specialized f6 (1 const arg)` and `re-emitted main_6 (forward inline)`. **`ast_fn_inlinable` (`src/mccast.c:2516`) and `ast_reemit_retain` (`:2895`) both open with `... || ast_bail || ast_desync`** — the recorder's own per-body decline state. `MCC_RIR_ONLY` bypasses that verdict at the *adoption* site (`ast_replay_ok`) and nowhere else, so the `-O3` forward-inliner kept consulting it right up to the deletion. With the recorder gone those two flags are permanently 0 and the graft path widens.
+
+This is the same finding P5 already made — the decline verdict was load-bearing — with a **second** consumer the inventory missed, and it is intrinsic to the deletion rather than something to preserve: `ast_bail`/`ast_desync` are recorder state and there is nothing left to consult. The widened graft is correct on the one body that moves: `scopes.c` compiled `-O3` and run produces **byte-identical stdout and exit code** either side. Justify any further widening the same way — the runtime A/B, not the byte compare, because a pass reading a type off the arena is invisible to the byte compare.
 
 **Done — the riscv64 self-host abort, and `r=50` is `VT_LOCAL`, not an asm register.** `selfhost-riscv64-docker` aborted under the switch at `freg: Assertion 'r >= 8 && r < 16' failed`, from `store(r=50)` under `ir_cap_store`. 50 also happens to be what `asm_compute_constraints`' `'f'` case allocates last, which makes this look like the `ASM_REGVAR_ASMREG` units bug wearing a different hat. It is not: `VT_LOCAL` is `0x32` and `VT_VALMASK` is `0x7f`, so `store(p->r & VT_VALMASK, &sv)` in `save_reg_upstack` (`src/mccgen.c:1921`) prints exactly 50 when `p` is an ordinary memory lvalue. **Read the constant before believing a register number.**
 
