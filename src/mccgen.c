@@ -3285,6 +3285,8 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 	int t2 = v2->type.t & VT_BTYPE;
 	int c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	int asym1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM);
+	int asym2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM);
 	uint64_t l1 = c1 ? value64(v1->c.i, v1->type.t) : 0;
 	uint64_t l2 = c2 ? value64(v2->c.i, v2->type.t) : 0;
 	int shm = (t1 == VT_LLONG) ? 63 : 31;
@@ -3422,6 +3424,16 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 		}
 		v1->c.i = value64(l1, v1->type.t);
 		v1->r |= v2->r & VT_NONCONST;
+		vtop--;
+	} else if (asym1 && asym2 && v1->sym && v1->sym == v2->sym &&
+						 (op == '-' || op == TOK_EQ || op == TOK_NE)) { MCC_TRACE("br\n");
+		int64_t diff = (int64_t)v1->c.i - (int64_t)v2->c.i;
+		if (op == '-')
+			{ MCC_TRACE("br\n"); v1->c.i = diff; }
+		else
+			{ MCC_TRACE("br\n"); v1->c.i = (op == TOK_EQ) ? (diff == 0) : (diff != 0); }
+		v1->r = (v1->r & ~(VT_VALMASK | VT_LVAL | VT_SYM)) | VT_CONST;
+		v1->sym = NULL;
 		vtop--;
 	} else { MCC_TRACE("br\n");
 		if (c1 && (op == '+' || op == '&' || op == '^' ||
