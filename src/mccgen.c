@@ -4563,7 +4563,7 @@ again:
 			vpop();
 		}
 #if MCC_CONFIG_OPTIMIZER
-		rir_hook_synth_end();
+		rir_hook_castsynth_end(type, ds, ss);
 		ast_hook_synth_end();
 #endif
 		ss = 4;

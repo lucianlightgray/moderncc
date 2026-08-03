@@ -140,6 +140,7 @@ void rir_hook_return_jmp(int jumps);
 void rir_hook_implicit_return(void);
 void rir_hook_synth_begin(void);
 void rir_hook_synth_end(void);
+void rir_hook_castsynth_end(struct CType *type, int ds, int ss);
 void rir_hook_castlower_begin(struct CType *type);
 void rir_hook_castlower_end(void);
 void rir_hook_member_begin(int is_arrow);
@@ -301,6 +302,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_hook_return_jmp(j) ((void)0)
 #define rir_hook_implicit_return() ((void)0)
 #define rir_hook_synth_begin() ((void)0)
+#define rir_hook_castsynth_end(t, d, s) ((void)0)
 #define rir_hook_synth_end() ((void)0)
 #define rir_hook_castlower_begin(t) ((void)0)
 #define rir_hook_castlower_end() ((void)0)

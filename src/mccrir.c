@@ -470,6 +470,13 @@ void rir_hook_synth_begin(void) { rir_rbegin(RIR_R_SYNTH); }
 
 void rir_hook_synth_end(void) { rir_rend_to(RIR_R_SYNTH); }
 
+void rir_hook_castsynth_end(struct CType *type, int ds, int ss) {
+	int t = type->t;
+	if ((ds != 8 && !(ss == 8 && ds >= 4)) || (t & VT_BTYPE) == VT_PTR)
+		t = 0;
+	rir_rend_to_val(RIR_R_SYNTH, t);
+}
+
 void rir_hook_castlower_begin(struct CType *type) {
 	rir_rbegin_val(RIR_R_CVT, type->t);
 }
@@ -2040,7 +2047,11 @@ static void rir_op_effect(const RirOp *ro) {
 				if (TOK_ISCOND(ast_op(rir_arena, cur)))
 					continue;
 				if (st == 0 || (st & VT_BTYPE) == VT_STRUCT ||
-						(st & VT_BTYPE) == VT_FUNC || is_float(st))
+						(st & VT_BTYPE) == VT_FUNC)
+					continue;
+				if (is_float(st) &&
+						((sv2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST ||
+						 !rir_const_subtree(cur, 0)))
 					continue;
 #if RIR_DBG_OPTRACE
 				{
@@ -3451,6 +3462,18 @@ static void rir_region(const RirOp *ro) {
 	case RIR_R_SYNTH:
 		if (rir_synth_depth)
 			rir_synth_depth--;
+		if (ro->rval && !ro->rinop && !rir_synth_depth && !rir_cvt_depth &&
+				!rir_cond_depth && !rir_inc_depth && !rir_member_depth &&
+				!rir_retexpr_pending && !rir_vstruct_depth && !rir_vla_depth &&
+				rir_shn > 0 && rir_sh[rir_shn - 1] != AST_NONE &&
+				!rir_shtype[rir_shn - 1] &&
+				ast_parent(rir_arena, rir_sh[rir_shn - 1]) == AST_NONE) {
+			AstLocal a = rir_pop();
+			AstLocal cv = ast_node(rir_arena, AST_Convert);
+			ast_set_type(rir_arena, cv, ro->rval, 0);
+			ast_add_child(rir_arena, cv, a);
+			rir_push(cv);
+		}
 		break;
 	case RIR_R_CVT:
 		if (rir_cvt_n > 0) {
