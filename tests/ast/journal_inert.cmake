@@ -18,7 +18,8 @@ endif()
 if(_rir_mode AND _hooks_mode)
     message(FATAL_ERROR "journal_inert: RIR and NOJRN are mutually exclusive")
 endif()
-set(_gate_env "MCC_REPLAY_IR=1")
+set(_gate_env MCC_REPLAY_IR=1 MCC_RIR_PROD=0)
+set(_prod_env MCC_RIR_PROD=0)
 set(_gate_marker "rir-verify")
 
 file(MAKE_DIRECTORY "${TMPDIR}")
@@ -34,7 +35,7 @@ function(_jrn_count outvar mcc)
     file(WRITE "${TMPDIR}/probe.c"
          "int ir_cap_probe(int a, int b) { return a * b + 1; }\n")
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E env "${_gate_env}"
+        COMMAND "${CMAKE_COMMAND}" -E env ${_gate_env}
                 "${mcc}" -w "${OPT}" -c -o "${TMPDIR}/probe.o" "${TMPDIR}/probe.c"
         OUTPUT_QUIET ERROR_VARIABLE _err RESULT_VARIABLE _rc)
     string(REGEX MATCHALL "\\[${_gate_marker}\\]" _hits "${_err}")
@@ -66,18 +67,20 @@ set(_bad 0)
 set(_diffs "")
 foreach(_f ${_srcs})
     execute_process(
-        COMMAND "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/a.o" "${_f}"
+        COMMAND "${CMAKE_COMMAND}" -E env ${_prod_env}
+                "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/a.o" "${_f}"
         OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE _rcA)
     if(NOT _rcA EQUAL 0)
         continue()
     endif()
     if(_hooks_mode)
         execute_process(
-            COMMAND "${NOJRN}" -w "${OPT}" -c -o "${TMPDIR}/b.o" "${_f}"
+            COMMAND "${CMAKE_COMMAND}" -E env ${_prod_env}
+                    "${NOJRN}" -w "${OPT}" -c -o "${TMPDIR}/b.o" "${_f}"
             OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE _rcB)
     else()
         execute_process(
-            COMMAND "${CMAKE_COMMAND}" -E env "${_gate_env}"
+            COMMAND "${CMAKE_COMMAND}" -E env ${_gate_env}
                     "${MCC}" -w "${OPT}" -c -o "${TMPDIR}/b.o" "${_f}"
             OUTPUT_QUIET ERROR_QUIET RESULT_VARIABLE _rcB)
     endif()
