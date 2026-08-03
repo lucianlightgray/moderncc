@@ -518,7 +518,7 @@ static unsigned char rir_lor_late[16];
 static int rir_lor_n;
 
 void rir_hook_body_begin(void) {
-	rir_prod_env = rir_prod_gate && ast_replay_env && !rir_env && !ast_verify_env;
+	rir_prod_env = ast_replay_env && !rir_env;
 	rir_try_active =
 			(rir_env || rir_prod_env) && !debug_modes && !cur_func_inline_extern;
 	rir_body_loc_sv = loc;
@@ -4538,7 +4538,7 @@ void rir_verify(void) {
 	uint64_t saved_pin = ast_pinned_regs;
 	int saved_ntlv = nb_temp_local_vars;
 	struct temp_local_variable saved_tlv[MAX_TEMP_LOCAL_VARIABLE_NUMBER];
-	int sv_ast_active, sv_ast_capture, sv_ast_replaying;
+	int sv_ast_active, sv_ast_replaying;
 
 	rir_active = 0;
 	rir_tot_fn++;
@@ -4663,10 +4663,8 @@ void rir_verify(void) {
 	mcc_state->warn_none = 1;
 	sym_free_first = NULL;
 	sv_ast_active = ast_active;
-	sv_ast_capture = ast_capture;
 	sv_ast_replaying = ast_replaying;
 	ast_active = 0;
-	ast_capture = 0;
 	ast_replaying = 1;
 	ast_fconst_i = 0;
 	ast_locrec_i = 0;
@@ -4968,7 +4966,6 @@ void rir_verify(void) {
 	ir_cap_replaying = 0;
 	mcc_state->cg_func_alloca = saved_func_alloca;
 	ast_active = sv_ast_active;
-	ast_capture = sv_ast_capture;
 	ast_replaying = sv_ast_replaying;
 	ast_fconst_i = 0;
 	ast_locrec_i = 0;
@@ -5082,8 +5079,7 @@ void rir_configure(void) {
 		return;
 	done = 1;
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
-	rir_prod_gate =
-			ast_env_gate("MCC_RIR_PROD", 1) ? ast_env_int("MCC_RIR_PROD", 1) : 0;
+	rir_prod_gate = ast_env_int("MCC_RIR_PROD", 0);
 	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
 	if (rir_env)
