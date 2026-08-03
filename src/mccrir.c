@@ -2250,7 +2250,7 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 			}
 			n = ast_node(rir_arena, AST_Store);
-			if (chained)
+			if (chained && ast_chainstore_env)
 				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
 			if (rir_is_cmp_binary(v) && o->vs_n - rir_base_depth >= 2 &&
 					ir_cap_vs[o->vs_off + o->vs_n - 1].r != VT_CMP &&
@@ -3280,14 +3280,14 @@ static void rir_cf_cond(void) {
 	cond = rir_shn ? rir_pop() : AST_NONE;
 	if (cond == AST_NONE)
 		return;
-	if (rir_dheldn && rir_docond && rir_cfkind[rir_cfn - 1] == RIR_R_DO) {
+	if (rir_dheldn && rir_docond && rir_cfkind[rir_cfn - 1] == RIR_R_DO &&
+			rir_cfpfx[rir_cfn - 1] == AST_NONE) {
 		AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
 		int q;
 		for (q = 0; q < rir_dheldn; q++)
 			ast_add_child(rir_arena, bb, rir_dheld[q]);
-		ast_add_child(rir_arena, bb, cond);
 		rir_dheldn = 0;
-		cond = bb;
+		rir_cfpfx[rir_cfn - 1] = bb;
 	}
 	rir_docond = 0;
 	ast_add_child(rir_arena, rir_cf[rir_cfn - 1], cond);
@@ -4382,6 +4382,16 @@ static int rir_blame(int diff_off) {
 	return -1;
 }
 
+static int rir_prod_reg_dangle(AstLocal n) {
+	int r;
+	if (ast_kind(rir_arena, n) != AST_Ref || ast_nchild(rir_arena, n) != 0)
+		return 0;
+	r = ast_op(rir_arena, n);
+	if (!(r & VT_LVAL) || (r & VT_VALMASK) >= VT_CONST)
+		return 0;
+	return ast_parent(rir_arena, n) != AST_NONE;
+}
+
 struct AstArena *rir_prod_take(void) {
 	char msg[256];
 	AstArena *a;
@@ -4404,9 +4414,12 @@ struct AstArena *rir_prod_take(void) {
 		return NULL;
 	{
 		AstLocal n;
-		for (n = 0; n < ast_count(rir_arena); n++)
+		for (n = 0; n < ast_count(rir_arena); n++) {
 			if (ast_op(rir_arena, n) == AST_OP_ASM)
 				return NULL;
+			if (rir_prod_reg_dangle(n))
+				return NULL;
+		}
 	}
 	a = rir_arena;
 	rir_arena = NULL;
