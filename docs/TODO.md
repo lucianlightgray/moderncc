@@ -395,6 +395,21 @@ The instrument for this list is the runtime A/B, not the byte compare: compile a
 
 **P5 readiness, measured rather than assumed.** The 45 `ast/replay-*` cells — the fixture suite the plan says survives the recorder and becomes Replay_IR's regression suite — pass **100% with `MCC_RIR_PROD=1` as well as with it off**. They assert `[ast-replay]`/`[ast-promote]`/`[ast-inline]` markers, which are producer-agnostic, so that inheritance is confirmed and not merely hoped for. Whatever else P5 has to do, it does not have to rewrite those 45 cells.
 
+### P4 is complete — Replay_IR is the production arena by default
+
+`MCC_RIR_PROD` defaults to **1**. `MCC_RIR_PROD=0` still turns it off, and that escape hatch should live until P5 lands.
+
+What the flip rests on, all measured on a short checkout path with nothing else running:
+
+- **Full `ctest` 8255/8255 with the default on**, and 8255/8255 with it off. The census that read 36 failures reads none.
+- **The arena drives 91.5% of bodies** — over the whole `all` corpus at `-O2` on x86_64, `used=2011 fallback=11 skip=176` of 2198. The other 8.5% keep the parser's bytes, which is the per-body fallback working as designed, not a defect.
+- `used` is 2011 and not the 2004 the bitfield refusal measured alone: the op-assign modelling recovered seven bodies the refusal would have declined. **The two fixes compose better than either half**, which is the argument for landing modelling rather than refusals wherever it is affordable.
+- **C2 boards unmoved**: `exec` gap 10 over twelve keys, `all` gap 104. C2 runs under `MCC_REPLAY_IR=5`, which disables production, so this is the control.
+- **`-O0` A/B unmoved** on all twelve keys, objects and counters, `arm-win32 == arm-wince`. The recorder never ran at `-O0` and still does not.
+- `tracegate`/`schemagate`/`targetgate` clean; four side configurations green in distinct build dirs.
+
+**A weak check worth not repeating.** "Compile one file with and without the switch and diff the object" proves nothing — only 69 of 562 files differ at `-O2` on x86_64, so most files are identical either way and read as "the flip did not take effect". Verify against a file already known to differ, or against the `[rir-prod-total]` counters at `MCC_RIR_PROD=2`.
+
 ### P5 — delete the recorder
 
 1,716 lines of hooks and their 126 call sites; the shadow vstack (`ast_vs`, `ast_cf`, `ast_vn`); `ast_bail`/`ast_desync`/`AST_SET_BAIL`/`AST_SET_DESYNC`/`ast_gap_note`/`ast_replay_ok`; `ast_try_active`; the ~31 recorder-shape `MCC_AST_*` gates in `ast_configure` (`src/mccast.c:2055-2247`); `ast_ltemp_overlaps` if the LICM-temp table goes with it; the 4 `tests/ast/verify-baseline/` files; `ast-verify-ratchet-{O1,O2,O3}`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half.

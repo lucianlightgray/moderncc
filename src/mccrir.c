@@ -5070,7 +5070,7 @@ void rir_configure(void) {
 	done = 1;
 	rir_env = ast_env_int("MCC_REPLAY_IR", 0);
 	rir_prod_gate =
-			ast_env_gate("MCC_RIR_PROD", 0) ? ast_env_int("MCC_RIR_PROD", 1) : 0;
+			ast_env_gate("MCC_RIR_PROD", 1) ? ast_env_int("MCC_RIR_PROD", 1) : 0;
 	rir_prod_out = getenv("MCC_RIR_PROD_OUT");
 	rir_out = getenv("MCC_REPLAY_IR_OUT");
 	if (rir_env)
