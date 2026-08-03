@@ -54,7 +54,7 @@ extern long double strtold(const char *__nptr, char **__endptr);
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN 1
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x502
+#define _WIN32_WINNT 0x0600
 #endif
 #include <windows.h>
 #include <io.h>
