@@ -12240,6 +12240,7 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 		Sym *vs = cls->cleanup_sym;
 		save_lvalues();
 #if MCC_CONFIG_OPTIMIZER
+		rir_hook_cleanup_call_begin();
 		ast_hook_cleanup_call_begin();
 #endif
 		vpushsym(&fs->type, fs);
@@ -12255,6 +12256,7 @@ static void try_call_scope_cleanup(Sym *stop) { MCC_TRACE("enter\n");
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_call_effect_end();
 		ast_hook_call_effect_end();
+		rir_hook_cleanup_call_end();
 		ast_hook_cleanup_call_end();
 #endif
 	}
@@ -12548,9 +12550,6 @@ again:
 	cst_lm = CST_MARK();
 #endif
 	t = tok;
-#if MCC_CONFIG_OPTIMIZER
-	ast_hook_stmt(t);
-#endif
 	if (TOK_HAS_VALUE(t))
 		{ MCC_TRACE("br\n"); goto expr; }
 	stdc_save_fp = mcc_state->stdc_fp_contract;
@@ -14384,8 +14383,6 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		if (flexible_array)
 			{ MCC_TRACE("br\n"); flexible_array->type.ref->c = -1; }
 #if MCC_CONFIG_OPTIMIZER
-		if (sec && size > 0)
-			{ MCC_TRACE("br\n"); ast_hook_data(sec, addr, size, sec == rodata_section); }
 		if (ast_zero_bss_env && v && sym && size > 0 && sec == data_section &&
 				!flexible_array && !(type->t & VT_TLS) &&
 				zbss_end == data_section->data_offset &&

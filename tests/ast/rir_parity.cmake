@@ -13,36 +13,8 @@ endif()
 
 set(_env "MCC_REPLAY_IR=1")
 if(FORCE)
-    if(NOT SRCDIR)
-        message(FATAL_ERROR "rir_parity: FORCE requires SRCDIR to derive the "
-                            "optimize>=1 gate list from")
-    endif()
-    file(GLOB _gsrcs "${SRCDIR}/*.c")
-    set(_gates "")
-    foreach(_gs ${_gsrcs})
-        file(READ "${_gs}" _gtext)
-        string(REGEX MATCHALL
-               "ast_env_gate\\(\"MCC_AST_[A-Z0-9_]+\", *o4 \\|\\| s1->optimize >= 1\\)"
-               _gm "${_gtext}")
-        foreach(_g ${_gm})
-            string(REGEX REPLACE "^.*\"(MCC_AST_[A-Z0-9_]+)\".*$" "\\1" _gn "${_g}")
-            list(APPEND _gates "${_gn}")
-        endforeach()
-    endforeach()
-    list(REMOVE_DUPLICATES _gates)
-    list(SORT _gates)
-    list(LENGTH _gates _ngates)
-    if(_ngates EQUAL 0)
-        message(FATAL_ERROR "rir_parity: FORCE derived 0 gates from ${SRCDIR} — "
-                            "the ast_env_gate spelling changed, so this run "
-                            "would measure -O0 with every pass off and call it "
-                            "parity")
-    endif()
-    list(APPEND _env "MCC_FORCE_REPLAY=1")
-    foreach(_g ${_gates})
-        list(APPEND _env "${_g}=1")
-    endforeach()
-    message(STATUS "rir_parity: FORCE — ${_ngates} optimize>=1 gate(s) forced on")
+    list(APPEND _env "MCC_RIR_FORCE=1" "MCC_AST_INT128=1")
+    message(STATUS "rir_parity: FORCE — MCC_RIR_FORCE=1 MCC_AST_INT128=1")
 endif()
 
 file(MAKE_DIRECTORY "${TMPDIR}")

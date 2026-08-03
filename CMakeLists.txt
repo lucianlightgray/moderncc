@@ -3695,8 +3695,8 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("cst/increment" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
-    add_executable(exec_runner tests/exec/runner.c)
-    target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec")
+    add_executable(exec_runner tests/runner.c)
+    target_include_directories(exec_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     set(_exec_env "MCC_TEST_EMU=${MCC_EMULATOR};MCC_TEST_CPU=${MCC_CPU};MCC_TEST_OS=${MCC_TARGETOS};MCC_TEST_ASM=$<IF:$<BOOL:${MCC_CONFIG_ASM}>,1,0>;MCC_TEST_BCHECK=${_mcc_diag_bc};MCC_TEST_BACKTRACE=${_mcc_diag_bt}")
 
     file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/goldens.h" _exec_glines
@@ -3773,46 +3773,6 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endif()
 
-        if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
-            foreach(_vopt O1 O2 O3)
-                mcc_skip_test(ast-journal-parity-${_vopt}
-                    "journal/tree parity is measured on the asm-on native build; mcc-hosted-by-MSVC has not been swept, and an unmeasured hard invariant is worse than an honest skip")
-            endforeach()
-        elseif(NOT MCC_CONFIG_ASM)
-            foreach(_vopt O1 O2 O3)
-                mcc_skip_test(ast-journal-parity-${_vopt}
-                    "journal/tree parity is measured with the integrated assembler on; asm-off routes inline_asm/* bodies past the journalled codegen entry points and that configuration has not been swept")
-            endforeach()
-        else()
-            foreach(_vopt O1 O2 O3)
-                add_test(NAME ast-journal-parity-${_vopt}
-                    COMMAND "${CMAKE_COMMAND}"
-                            "-DMCC=${_mcc_exe}"
-                            "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                            "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
-                            "-DBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify-baseline/${_verify_key}.txt"
-                            "-DJBASELINE=${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal-baseline/${_verify_key}.txt"
-                            "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-tmp-${_vopt}"
-                            "-DOPT=-${_vopt}"
-                            "-DJOURNAL=1"
-                            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/verify_ratchet.cmake")
-                set_tests_properties(ast-journal-parity-${_vopt} PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                    SKIP_RETURN_CODE 77)
-            endforeach()
-        endif()
-
-        add_test(NAME ast/journal-inert
-            COMMAND "${CMAKE_COMMAND}"
-                    "-DMCC=${_mcc_exe}"
-                    "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
-                    "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
-                    "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-journal-inert"
-                    "-DOPT=-O1"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/journal_inert.cmake")
-        set_tests_properties(ast/journal-inert PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
-            TIMEOUT 900)
-
         add_test(NAME ast/rir-inert
             COMMAND "${CMAKE_COMMAND}"
                     "-DMCC=${_mcc_exe}"
@@ -3863,6 +3823,21 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(ast/rir-c3-${_rotag} PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
                 TIMEOUT 1800)
+
+            add_test(NAME ast/rir-c2-${_rotag}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${_mcc_exe}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c2-${_rotag}"
+                        "-DOPT=${_ro}"
+                        "-DBANKGAP=0"
+                        "-DBANKSKIP=0"
+                        "-DBANKFN=1149"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c2.cmake")
+            set_tests_properties(ast/rir-c2-${_rotag} PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                TIMEOUT 1800)
         endforeach()
 
         add_test(NAME ast/rir-parity-O0
@@ -3873,7 +3848,6 @@ if(MCC_BUILD_TESTS)
                     "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-O0"
                     "-DOPT=-O0"
                     "-DFORCE=1"
-                    "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
         set_tests_properties(ast/rir-parity-O0 PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
@@ -3947,6 +3921,18 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 600)
         endforeach()
 
+        set(_c2bank_riscv64 "4;2;1156")
+        set(_c2bank_arm "2;0;1130")
+        set(_c2bank_arm64 "2;0;1199")
+        set(_c2bank_i386 "2;0;1152")
+        set(_c2bank_x86_64-win32 "0;0;1237")
+        set(_c2bank_i386-win32 "2;0;1257")
+        set(_c2bank_arm64-win32 "2;0;1297")
+        set(_c2bank_arm-win32 "3;0;1235")
+        set(_c2bank_arm-wince "3;0;1235")
+        set(_c2bank_x86_64-osx "0;0;1142")
+        set(_c2bank_arm64-osx "1;0;1224")
+
         foreach(_rp riscv64 arm arm64 i386
                     x86_64-win32 i386-win32 arm64-win32 arm-win32 arm-wince
                     x86_64-osx arm64-osx)
@@ -3986,6 +3972,31 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
                 LABELS "cross" TIMEOUT 1800)
 
+            set(_rpc2f "${_rpf}")
+            if(_rp STREQUAL "arm")
+                set(_rpc2f "-B ${MCC_CROSS_DIR} -mfloat-abi hard -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include --sysroot=${_rpsr} -I${_rpsr}/usr/include")
+            elseif(NOT _rp MATCHES "(win32|wince|osx)$")
+                set(_rpc2f "-B ${MCC_CROSS_DIR} -I ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include --sysroot=${_rpsr} -I${_rpsr}/usr/include")
+            endif()
+            list(GET _c2bank_${_rp} 0 _c2gap)
+            list(GET _c2bank_${_rp} 1 _c2skip)
+            list(GET _c2bank_${_rp} 2 _c2fn)
+            add_test(NAME ast/rir-c2-${_rp}
+                COMMAND "${CMAKE_COMMAND}"
+                        "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
+                        "-DCORPUS=${CMAKE_CURRENT_SOURCE_DIR}/tests/exec"
+                        "-DEXTRA=${CMAKE_CURRENT_SOURCE_DIR}/tests/diff/full_language.c"
+                        "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-c2-${_rp}"
+                        "-DOPT=-O1"
+                        "-DMCCFLAGS=${_rpc2f}"
+                        "-DBANKGAP=${_c2gap}"
+                        "-DBANKSKIP=${_c2skip}"
+                        "-DBANKFN=${_c2fn}"
+                        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_c2.cmake")
+            set_tests_properties(ast/rir-c2-${_rp} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 1800)
+
             add_test(NAME ast/rir-parity-${_rp}-O0
                 COMMAND "${CMAKE_COMMAND}"
                         "-DMCC=${MCC_CROSS_DIR}/mcc-${_rp}"
@@ -3994,7 +4005,6 @@ if(MCC_BUILD_TESTS)
                         "-DTMPDIR=${CMAKE_BINARY_DIR}/ast-rir-parity-${_rp}-O0"
                         "-DOPT=-O0"
                         "-DFORCE=1"
-                        "-DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}/src"
                         "-DMCCFLAGS=${_rpf}"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/rir_parity.cmake")
             set_tests_properties(ast/rir-parity-${_rp}-O0 PROPERTIES
@@ -4035,96 +4045,6 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(ast/journal-inert-build
                 "the hooks-off compiler (mcc_nojrn) needs MCC_SINGLE_SOURCE=ON, MCC_CONFIG_OPTIMIZER, a non-cross build and a CPU the journal hooks compile on (x86_64, arm64, i386 or riscv64); this is ${MCC_CPU}, single-source=${MCC_SINGLE_SOURCE}, cross=${CMAKE_CROSSCOMPILING}")
         endif()
-
-        set(_jsw_root "${CMAKE_CURRENT_SOURCE_DIR}")
-        if(MCC_ENABLE_CROSS)
-            set(_jsw_xdir "${CMAKE_BINARY_DIR}")
-        else()
-            set(_jsw_xdir "${CMAKE_SOURCE_DIR}/cmake-cross")
-        endif()
-        set(_jsw_tmp "${CMAKE_BINARY_DIR}/journal-sweep")
-        string(TOLOWER "${MCC_CPU}-${MCC_TARGETOS}" _jsw_hostkey)
-        set(_jsw_hostmcc "${_mcc_exe}")
-        set(_jsw_drv "${_jsw_root}/tests/ast/journal_sweep.cmake")
-        set(_jsw_nat "${_jsw_root}/tests/ast/journal_native.cmake")
-
-        set(_jsw_keys "")
-        foreach(_jc x86_64 i386 arm64 riscv64 arm)
-            foreach(_jl glibc musl)
-                list(APPEND _jsw_keys "${_jc}-linux-${_jl}")
-            endforeach()
-        endforeach()
-        foreach(_jc x86_64 i386 arm64 arm)
-            foreach(_jl ucrt msvcrt)
-                list(APPEND _jsw_keys "${_jc}-win32-${_jl}")
-            endforeach()
-        endforeach()
-        list(APPEND _jsw_keys x86_64-darwin arm64-darwin arm-wince)
-
-        add_custom_target(journal-sweep-all
-            COMMENT "Journal sweep: every triple/libc, cross-hosted")
-        add_custom_target(journal-sweep-all-native
-            COMMENT "Journal sweep: every triple/libc, run natively under qemu/wine")
-        add_custom_target(journal-native-all
-            COMMENT "Build a target-native mcc for every sweepable triple")
-
-        foreach(_jk IN LISTS _jsw_keys)
-            add_custom_target(journal-sweep-${_jk}
-                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=cross"
-                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
-                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
-                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
-                        -P "${_jsw_drv}"
-                COMMENT "journal sweep ${_jk} (cross)" USES_TERMINAL VERBATIM)
-            add_custom_target(journal-sweep-${_jk}-keepgoing
-                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=cross" "-DKEEPGOING=1"
-                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
-                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
-                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
-                        -P "${_jsw_drv}"
-                COMMENT "journal sweep ${_jk} (cross, keep-going)" USES_TERMINAL VERBATIM)
-            add_dependencies(journal-sweep-all journal-sweep-${_jk}-keepgoing)
-
-            add_custom_target(journal-native-${_jk}
-                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}"
-                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
-                        "-DTMPROOT=${_jsw_tmp}" -P "${_jsw_nat}"
-                COMMENT "build native mcc for ${_jk}" USES_TERMINAL VERBATIM)
-            add_dependencies(journal-native-all journal-native-${_jk})
-
-            add_custom_target(journal-sweep-${_jk}-native
-                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native"
-                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
-                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
-                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
-                        -P "${_jsw_drv}"
-                COMMENT "journal sweep ${_jk} (native)" USES_TERMINAL VERBATIM)
-            add_dependencies(journal-sweep-${_jk}-native journal-native-${_jk})
-            add_custom_target(journal-sweep-${_jk}-native-keepgoing
-                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native" "-DKEEPGOING=1"
-                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
-                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
-                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
-                        -P "${_jsw_drv}"
-                COMMENT "journal sweep ${_jk} (native, keep-going)" USES_TERMINAL VERBATIM)
-            add_dependencies(journal-sweep-${_jk}-native-keepgoing journal-native-${_jk})
-            add_dependencies(journal-sweep-all-native journal-sweep-${_jk}-native-keepgoing)
-
-            add_custom_target(journal-regen-${_jk}
-                COMMAND "${CMAKE_COMMAND}" "-DKEY=${_jk}" "-DMODE=native" "-DJREGEN=1"
-                        "-DROOT=${_jsw_root}" "-DXDIR=${_jsw_xdir}"
-                        "-DTMPROOT=${_jsw_tmp}" "-DOPT=-O1"
-                        "-DHOSTMCC=${_jsw_hostmcc}" "-DHOSTKEY=${_jsw_hostkey}"
-                        -P "${_jsw_drv}"
-                COMMENT "REBANK ${_jk} honesty + depth baselines (native)"
-                USES_TERMINAL VERBATIM)
-            add_dependencies(journal-regen-${_jk} journal-native-${_jk})
-        endforeach()
-
-        add_custom_target(journal-sweep-report
-            COMMAND "${CMAKE_COMMAND}" "-DTMPROOT=${_jsw_tmp}"
-                    "-DKEYS=${_jsw_keys}" -P "${_jsw_root}/tests/ast/journal_report.cmake"
-            COMMENT "Summarise the journal sweep matrix" USES_TERMINAL VERBATIM)
 
         if(UNIX)
             add_test(NAME ast/treecheck

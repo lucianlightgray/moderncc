@@ -19,8 +19,8 @@ case "$KEY" in
 *win32|*wince)
              FLAGS="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include" ;;
 *osx)        FLAGS="-B $S/runtime -I $S/runtime/include" ;;
-arm)         FLAGS="-B $BUILD -mfloat-abi hard --sysroot=$S/vendor/gentoo-stage3-arm-glibc -I$S/vendor/gentoo-stage3-arm-glibc/usr/include" ;;
-*)           FLAGS="-B $BUILD --sysroot=$S/vendor/gentoo-stage3-$KEY-glibc -I$S/vendor/gentoo-stage3-$KEY-glibc/usr/include" ;;
+arm)         FLAGS="-B $BUILD -mfloat-abi hard -I $S/runtime/include --sysroot=$S/vendor/gentoo-stage3-arm-glibc -I$S/vendor/gentoo-stage3-arm-glibc/usr/include" ;;
+*)           FLAGS="-B $BUILD -I $S/runtime/include --sysroot=$S/vendor/gentoo-stage3-$KEY-glibc -I$S/vendor/gentoo-stage3-$KEY-glibc/usr/include" ;;
 esac
 if [ -x "$BUILD/mcc-$KEY" ]; then
 	MCC=$BUILD/mcc-$KEY
