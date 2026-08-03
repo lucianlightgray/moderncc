@@ -64,8 +64,6 @@ KERNELS = [
 ]
 
 GATE_WINS = [
-    ("MCC_AST_OPASSIGN",   "nbody",
-     os.path.join(PLB, "nbody", "2.c"), ["5000000"], [], 8.0),
     ("MCC_AST_CHAINSTORE", "spectral",
      os.path.join(PLB, "spectral-norm", "3.c"), ["2000"],
      ["-fc99-inline-body"], 8.0),

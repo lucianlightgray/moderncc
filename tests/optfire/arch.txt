@@ -12,20 +12,11 @@ promo_arrow|x86_64,arm64
 promo_incdec|x86_64,arm64
 spill_share|x86_64,arm64
 color|x86_64,arm64
-# opassign: the GATE is not arch-scoped (its consumers sit outside the promotion
-# #if), but this CASE's observable effect is promotion-MEDIATED -- opassign flips
-# functions to faithful so promotion can act on them. Measured on x86_64: with
-# MCC_AST_PROMOTE=0 forced, toggling OPASSIGN produces a byte-identical object.
-# So on i386, which has no promotion machinery at all, this case cannot show the
-# gate working however correct the gate is. Guarding the CASE, not the gate.
-opassign|x86_64,arm64
-# indirect_call / landor_invert: both gates default-on everywhere, but their only
-# observable effect is on x86_64 codegen -- indirect_call rewrites the callee to
-# the pointed-to function type (changing call-through-register vs -memory form),
-# and landor_invert flips vtop's cmp_op/jtrue/jfalse branch polarity, which folds
-# into x86_64's compare-branch fusion. On arm64 the backend emits byte-identical
-# objects with the gate on or off (verified across return-bool and multi-way
-# branch shapes), and the TODO ledger records this arm64 state as correct and
-# structural, not a bug. So the CASE cannot show the gate working off x86_64.
+# indirect_call: the gate defaults on everywhere, but its only observable effect
+# is on x86_64 codegen -- it rewrites the callee to the pointed-to function type,
+# changing call-through-register vs -memory form. On arm64 the backend emits
+# byte-identical objects with the gate on or off (verified across return-bool and
+# multi-way branch shapes), and the TODO ledger records this arm64 state as
+# correct and structural, not a bug. So the CASE cannot show the gate working off
+# x86_64.
 indirect_call|x86_64
-landor_invert|x86_64
