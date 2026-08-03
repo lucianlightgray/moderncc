@@ -1069,30 +1069,30 @@ struct filespec {
 #define MCC_HAVE_INT128 0
 #endif
 
-#ifndef MCC_JOURNAL_HOOKS
+#ifndef MCC_IR_CAPTURE
 #if MCC_CONFIG_OPTIMIZER &&                                                    \
 		(defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) ||                 \
 		 defined(MCC_TARGET_I386) || defined(MCC_TARGET_RISCV64) ||                 \
 		 defined(MCC_TARGET_ARM))
-#define MCC_JOURNAL_HOOKS 1
+#define MCC_IR_CAPTURE 1
 #endif
 #endif
-#if defined(MCC_JOURNAL_HOOKS) && !MCC_JOURNAL_HOOKS
-#undef MCC_JOURNAL_HOOKS
+#if defined(MCC_IR_CAPTURE) && !MCC_IR_CAPTURE
+#undef MCC_IR_CAPTURE
 #endif
 
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
-#define MCC_JRN_HAVE_REGADDI 1
+#define MCC_IR_HAVE_REGADDI 1
 #endif
 
 #ifndef MCC_REPLAY_IR
-#ifdef MCC_JOURNAL_HOOKS
+#ifdef MCC_IR_CAPTURE
 #define MCC_REPLAY_IR 1
 #else
 #define MCC_REPLAY_IR 0
 #endif
 #endif
-#if MCC_REPLAY_IR && !defined(MCC_JOURNAL_HOOKS)
+#if MCC_REPLAY_IR && !defined(MCC_IR_CAPTURE)
 #undef MCC_REPLAY_IR
 #define MCC_REPLAY_IR 0
 #endif
@@ -1908,10 +1908,10 @@ ST_FUNC void asm_global_instr(void);
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
 #if MCC_CONFIG_ASM
-#ifdef MCC_JOURNAL_HOOKS
-void jrn_asm(const char *str, int len, int global);
-void jrn_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
-											int is_output, uint8_t *clobber_regs, int out_reg);
+#ifdef MCC_IR_CAPTURE
+void ir_cap_asm(const char *str, int len, int global);
+void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
+												 int is_output, uint8_t *clobber_regs, int out_reg);
 #endif
 ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands, const char *name, const char **pp);
 ST_FUNC const char *skip_constraint_modifiers(const char *p);

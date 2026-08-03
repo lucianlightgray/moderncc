@@ -25,7 +25,7 @@ typedef struct RirOp {
 	int rinop;
 	long long rv1, rv2, rv3;
 	int mvs_off, mvs_n;
-	JrnOp p;
+	IrCapOp p;
 } RirOp;
 
 typedef struct RirChainEnt {
@@ -231,10 +231,10 @@ static void rir_mark_v2(int tag, int kind, int val, long long a, long long b) {
 	m->val = val;
 	m->nocode = nocode_wanted;
 	m->ind = ind;
-	m->inop = jrn_depth;
+	m->inop = ir_cap_depth;
 	m->v1 = a;
 	m->v2 = b;
-	m->at = jrn_n;
+	m->at = ir_cap_n;
 	{
 		int n = (int)(vtop - vstack + 1);
 		if (n < 0)
@@ -538,7 +538,7 @@ int rir_dbg_on(void) {
 }
 
 int rir_capture_live(void) {
-	return rir_active && !ast_replaying && !jrn_replaying;
+	return rir_active && !ast_replaying && !ir_cap_replaying;
 }
 
 int rir_hook_slot_replay(void) {
@@ -791,12 +791,12 @@ static int rir_chain_adopt(int addr, int opi, unsigned char *fl,
 }
 
 static int rir_point_of(int addr) {
-	int lo = 0, hi = jrn_n - 1;
+	int lo = 0, hi = ir_cap_n - 1;
 	while (lo <= hi) {
 		int mid = lo + (hi - lo) / 2;
-		if (jrn_ops[mid].ind_pre == addr)
+		if (ir_cap_ops[mid].ind_pre == addr)
 			return mid;
-		if (jrn_ops[mid].ind_pre < addr)
+		if (ir_cap_ops[mid].ind_pre < addr)
 			lo = mid + 1;
 		else
 			hi = mid - 1;
@@ -806,15 +806,15 @@ static int rir_point_of(int addr) {
 
 static void rir_resolve(void) {
 	int i;
-	if (jrn_n > rir_jcap) {
-		rir_jcap = jrn_n;
+	if (ir_cap_n > rir_jcap) {
+		rir_jcap = ir_cap_n;
 		rir_jlbl = mcc_realloc(rir_jlbl, (size_t)rir_jcap * sizeof *rir_jlbl);
 		rir_jlbl2 = mcc_realloc(rir_jlbl2, (size_t)rir_jcap * sizeof *rir_jlbl2);
 		rir_jpt = mcc_realloc(rir_jpt, (size_t)rir_jcap * sizeof *rir_jpt);
 		rir_jsvlbl = mcc_realloc(rir_jsvlbl, (size_t)rir_jcap * sizeof *rir_jsvlbl);
 	}
-	if (jrn_vsn > rir_vscap) {
-		rir_vscap = jrn_vsn;
+	if (ir_cap_vsn > rir_vscap) {
+		rir_vscap = ir_cap_vsn;
 		rir_vslbl = mcc_realloc(rir_vslbl, (size_t)rir_vscap * sizeof *rir_vslbl);
 		rir_vslbl2 = mcc_realloc(rir_vslbl2, (size_t)rir_vscap * sizeof *rir_vslbl2);
 		rir_vscapt = mcc_realloc(rir_vscapt, (size_t)rir_vscap * sizeof *rir_vscapt);
@@ -823,19 +823,19 @@ static void rir_resolve(void) {
 	rir_nlbl = 0;
 	rir_fallback = 0;
 	rir_jmpsv_fb = 0;
-	for (i = 0; i < jrn_vsn; i++) {
+	for (i = 0; i < ir_cap_vsn; i++) {
 		rir_vslbl[i] = rir_vslbl2[i] = -1;
 		rir_vscapt[i] = 0;
 	}
-	for (i = 0; i < jrn_n; i++) {
-		JrnOp *o = &jrn_ops[i];
+	for (i = 0; i < ir_cap_n; i++) {
+		IrCapOp *o = &ir_cap_ops[i];
 		int in = 0, out = 0, L = -1, k;
 		rir_jlbl[i] = -1;
 		rir_jlbl2[i] = -1;
 		rir_jpt[i] = RIR_PT_NONE;
 		rir_jsvlbl[i] = -1;
 		for (k = 0; k < o->vs_n; k++) {
-			SValue *v = &jrn_vs[o->vs_off + k];
+			SValue *v = &ir_cap_vs[o->vs_off + k];
 			int vv = v->r & VT_VALMASK;
 			unsigned char *fl = &rir_vscapt[o->vs_off + k];
 			if (vv == VT_JMP || vv == VT_JMPI) {
@@ -863,11 +863,11 @@ static void rir_resolve(void) {
 				rir_jmpsv_fb++;
 		}
 		switch (o->kind) {
-		case JOP_JMP:
+		case IR_OP_JMP:
 			in = o->a0;
 			out = o->ret;
 			goto chain;
-		case JOP_JMPCOND:
+		case IR_OP_JMPCOND:
 			in = o->a1;
 			out = o->ret;
 			goto chain;
@@ -885,7 +885,7 @@ static void rir_resolve(void) {
 			rir_cmap_drop(in);
 			rir_cmap_bind(out, L);
 			break;
-		case JOP_JMPAPPEND: {
+		case IR_OP_JMPAPPEND: {
 			int Ln, Lt;
 			rir_tot_jumps++;
 			Ln = o->a0 ? rir_cmap_find(o->a0) : -1;
@@ -911,7 +911,7 @@ static void rir_resolve(void) {
 			rir_cmap_bind(o->ret, L);
 			break;
 		}
-		case JOP_GSYMADDR:
+		case IR_OP_GSYMADDR:
 			rir_tot_jumps++;
 			L = o->a0 ? rir_cmap_find(o->a0) : -1;
 			if (o->a0 && L < 0) {
@@ -927,7 +927,7 @@ static void rir_resolve(void) {
 				rir_tot_fb_point++;
 			}
 			break;
-		case JOP_JMPADDR:
+		case IR_OP_JMPADDR:
 			rir_tot_jumps++;
 			rir_jpt[i] = o->a0 == o->ind_pre ? RIR_PT_HERE : rir_point_of(o->a0);
 			if (rir_jpt[i] == RIR_PT_NONE) {
@@ -947,8 +947,8 @@ static void rir_resolve(void) {
 		rir_lblcap = rir_nlbl < 64 ? 64 : rir_nlbl;
 		rir_lblhead = mcc_realloc(rir_lblhead, (size_t)rir_lblcap * sizeof *rir_lblhead);
 	}
-	if (jrn_n > rir_ptcap) {
-		rir_ptcap = jrn_n;
+	if (ir_cap_n > rir_ptcap) {
+		rir_ptcap = ir_cap_n;
 		rir_ptaddr = mcc_realloc(rir_ptaddr, (size_t)rir_ptcap * sizeof *rir_ptaddr);
 	}
 }
@@ -957,7 +957,7 @@ static void rir_build(void) {
 	int i, m = 0;
 	rir_n = 0;
 	rir_resolve();
-	for (i = 0; i <= jrn_n; i++) {
+	for (i = 0; i <= ir_cap_n; i++) {
 		while (m < rir_markn && rir_marks[m].at <= i) {
 			RirOp *o = rir_new(rir_marks[m].tag);
 			o->rkind = rir_marks[m].kind;
@@ -976,9 +976,9 @@ static void rir_build(void) {
 			o->pt = RIR_PT_NONE;
 			m++;
 		}
-		if (i < jrn_n) {
+		if (i < ir_cap_n) {
 			RirOp *o = rir_new(RIR_T_OP);
-			o->p = jrn_ops[i];
+			o->p = ir_cap_ops[i];
 			o->jidx = i;
 			o->lbl = rir_jlbl[i];
 			o->lbl2 = rir_jlbl2[i];
@@ -1155,7 +1155,7 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 
 static AstLocal rir_leaf(const SValue *sv) { return rir_leaf_slot(sv, -1); }
 
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 static int rir_has_atomic(AstLocal n, int depth) {
 	int i, nc, op;
 	if (n == AST_NONE || depth > 8)
@@ -1183,7 +1183,7 @@ static int rir_effectful(AstLocal n) {
 		return 1;
 	if (k == AST_Binary && (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL))
 		return 1;
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 	if (rir_has_atomic(n, 0))
 		return 1;
 #endif
@@ -1502,12 +1502,12 @@ static uint64_t rir_castgv_ref;
 
 static int rir_is_cvt(int kind) {
 	switch (kind) {
-	case JOP_CVT_ITOF:
-	case JOP_CVT_FTOF:
-	case JOP_CVT_FTOI:
-	case JOP_CVT_SXTW:
-	case JOP_CVT_TRUNC32:
-	case JOP_CVT_CSTI:
+	case IR_OP_CVT_ITOF:
+	case IR_OP_CVT_FTOF:
+	case IR_OP_CVT_FTOI:
+	case IR_OP_CVT_SXTW:
+	case IR_OP_CVT_TRUNC32:
+	case IR_OP_CVT_CSTI:
 		return 1;
 	default:
 		return 0;
@@ -1814,7 +1814,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		cs = type_size(&a1, &al);
 		vs2 = type_size(&b1, &al);
 		if (cs >= vs2) {
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 			int bop = ast_op(rir_arena, cur);
 			if (cs > vs2 && ast_kind(rir_arena, cur) == AST_Binary &&
 					(bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
@@ -1954,16 +1954,16 @@ static void rir_reconcile_sv(const SValue *base, int n) {
 	}
 }
 
-static void rir_stamp_types(const JrnOp *o) {
+static void rir_stamp_types(const IrCapOp *o) {
 	if (o->vs_n < 0)
 		return;
-	rir_stamp_sv(jrn_vs + o->vs_off, o->vs_n);
+	rir_stamp_sv(ir_cap_vs + o->vs_off, o->vs_n);
 }
 
-static void rir_reconcile(const JrnOp *o) {
+static void rir_reconcile(const IrCapOp *o) {
 	if (o->vs_n < 0)
 		return;
-	rir_reconcile_sv(jrn_vs + o->vs_off, o->vs_n);
+	rir_reconcile_sv(ir_cap_vs + o->vs_off, o->vs_n);
 }
 
 static int rir_opassign_pending;
@@ -1973,21 +1973,21 @@ static int rir_ternn;
 static int rir_lorn;
 
 static void rir_op_effect(const RirOp *ro) {
-	const JrnOp *o = &ro->p;
+	const IrCapOp *o = &ro->p;
 	int k;
-	if (o->kind != JOP_VSETC && o->kind != JOP_PUSHLIT)
+	if (o->kind != IR_OP_VSETC && o->kind != IR_OP_PUSHLIT)
 		rir_flush_pending_call();
 	if (o->nocode)
 		return;
 	switch (o->kind) {
-	case JOP_GENOP:
-	case JOP_OPI:
-	case JOP_OPL:
-	case JOP_OPF: {
+	case IR_OP_GENOP:
+	case IR_OP_OPI:
+	case IR_OP_OPL:
+	case IR_OP_OPF: {
 		AstLocal b, a, n;
 		if (rir_after_ret && rir_shn == 0)
 			break;
-		if (o->kind == JOP_OPF && o->a0 == TOK_NEG) {
+		if (o->kind == IR_OP_OPF && o->a0 == TOK_NEG) {
 			a = rir_pop();
 			if (a == AST_NONE) {
 				rir_arena_mismatch++;
@@ -2022,11 +2022,11 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		if (o->vs_n - rir_base_depth >= 2 && rir_shn >= 2) {
-			int q, opdiff = rir_tcore(jrn_vs[o->vs_off + o->vs_n - 1].type.t) !=
-											rir_tcore(jrn_vs[o->vs_off + o->vs_n - 2].type.t);
+			int q, opdiff = rir_tcore(ir_cap_vs[o->vs_off + o->vs_n - 1].type.t) !=
+											rir_tcore(ir_cap_vs[o->vs_off + o->vs_n - 2].type.t);
 			for (q = 0; q < 2; q++) {
 				AstLocal cur = rir_sh[rir_shn - 1 - q];
-				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
+				const SValue *sv2 = &ir_cap_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv2->type.t;
 				if (cur == AST_NONE || rir_shtype[rir_shn - 1 - q])
 					continue;
@@ -2070,7 +2070,7 @@ static void rir_op_effect(const RirOp *ro) {
 			for (q = 0; q < 2; q++) {
 				int si = rir_shn - 1 - q, ct;
 				AstLocal cur = rir_sh[si];
-				const SValue *sv3 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
+				const SValue *sv3 = &ir_cap_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv3->type.t;
 				if (cur == AST_NONE || rir_shtype[si])
 					continue;
@@ -2098,8 +2098,8 @@ static void rir_op_effect(const RirOp *ro) {
 		n = ast_node(rir_arena, AST_Binary);
 		ast_set_op(rir_arena, n, o->a0);
 		if (o->vs_n - rir_base_depth >= 2) {
-			const SValue *rs = &jrn_vs[o->vs_off + o->vs_n - 1];
-			const SValue *ls = &jrn_vs[o->vs_off + o->vs_n - 2];
+			const SValue *rs = &ir_cap_vs[o->vs_off + o->vs_n - 1];
+			const SValue *ls = &ir_cap_vs[o->vs_off + o->vs_n - 2];
 			if ((rs->r & VT_VALMASK) < VT_CONST && !(rs->r & VT_LVAL) &&
 					(ls->r & VT_LVAL) && (ls->r & VT_VALMASK) >= VT_CONST &&
 					b != AST_NONE && (ast_kind(rir_arena, b) == AST_Load ||
@@ -2112,7 +2112,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push(n);
 		break;
 	}
-	case JOP_VSTORE: {
+	case IR_OP_VSTORE: {
 		AstLocal v = rir_pop(), t = rir_pop(), n;
 		if (v == AST_NONE || t == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2122,7 +2122,7 @@ static void rir_op_effect(const RirOp *ro) {
 		{
 			const char *e = getenv("RIRDBG");
 			const SValue *ds = o->vs_n - rir_base_depth >= 2
-													 ? &jrn_vs[o->vs_off + o->vs_n - 2] : 0;
+													 ? &ir_cap_vs[o->vs_off + o->vs_n - 2] : 0;
 			if (e && funcname && !strcmp(e, funcname))
 				fprintf(stderr,
 								"[vst] ent=%d cd=%d vkind=%s vpar=%d depth=%d tgt(r=%x sym=%d c=%lld) tkind=%s\n",
@@ -2136,7 +2136,7 @@ static void rir_op_effect(const RirOp *ro) {
 #endif
 		if (rir_call_depth && ast_parent(rir_arena, v) == AST_NONE &&
 				o->vs_n - rir_base_depth >= 2) {
-			const SValue *ts = &jrn_vs[o->vs_off + o->vs_n - 2];
+			const SValue *ts = &ir_cap_vs[o->vs_off + o->vs_n - 2];
 			int isinv = ast_kind(rir_arena, rir_val_node(v)) == AST_Invoke;
 			int istail = !isinv && ast_kind(rir_arena, v) == AST_Ref &&
 									 ast_nchild(rir_arena, v) == 0 && rir_sh_unbound_invoke();
@@ -2161,7 +2161,7 @@ static void rir_op_effect(const RirOp *ro) {
 					ast_nchild(rir_arena, ad) == 1 &&
 					ast_kind(rir_arena, lt) == AST_Literal &&
 					(ast_op(rir_arena, lt) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) {
-				const SValue *tsv = &jrn_vs[o->vs_off + o->vs_n - 2];
+				const SValue *tsv = &ir_cap_vs[o->vs_off + o->vs_n - 2];
 				AstLocal mb = ast_node(rir_arena, AST_Unary);
 				ast_set_op(rir_arena, mb, AST_OP_MEMBER);
 				ast_set_ival(rir_arena, mb, ast_ival(rir_arena, lt));
@@ -2188,9 +2188,9 @@ static void rir_op_effect(const RirOp *ro) {
 			if (chained)
 				ast_set_fbits(rir_arena, n, ast_fbits(rir_arena, n) | 1u);
 			if (rir_is_cmp_binary(v) && o->vs_n - rir_base_depth >= 2 &&
-					jrn_vs[o->vs_off + o->vs_n - 1].r != VT_CMP &&
-					(jrn_vs[o->vs_off + o->vs_n - 1].type.t & VT_BTYPE) != VT_BOOL &&
-					(jrn_vs[o->vs_off + o->vs_n - 2].type.t & VT_BTYPE) == VT_BOOL)
+					ir_cap_vs[o->vs_off + o->vs_n - 1].r != VT_CMP &&
+					(ir_cap_vs[o->vs_off + o->vs_n - 1].type.t & VT_BTYPE) != VT_BOOL &&
+					(ir_cap_vs[o->vs_off + o->vs_n - 2].type.t & VT_BTYPE) == VT_BOOL)
 				ast_set_fbits(rir_arena, n,
 											ast_fbits(rir_arena, n) | AST_FB_STORE_CMP_GV);
 			if (rir_addr_late)
@@ -2223,11 +2223,11 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-	case JOP_SIGNBIT:
-	case JOP_FFS:
-	case JOP_BITSCAN:
-	case JOP_BSWAP: {
+#ifdef MCC_IR_HAVE_X86_PRIMS
+	case IR_OP_SIGNBIT:
+	case IR_OP_FFS:
+	case IR_OP_BITSCAN:
+	case IR_OP_BSWAP: {
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
 		if (v == AST_NONE) {
@@ -2236,9 +2236,9 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, n,
-			o->kind == JOP_BSWAP ? AST_OP_BSWAP
-			: o->kind == JOP_SIGNBIT ? AST_OP_SIGNBIT
-			: o->kind == JOP_FFS ? AST_OP_FFS
+			o->kind == IR_OP_BSWAP ? AST_OP_BSWAP
+			: o->kind == IR_OP_SIGNBIT ? AST_OP_SIGNBIT
+			: o->kind == IR_OP_FFS ? AST_OP_FFS
 			: AST_OP_BITSCAN);
 		ast_set_ival(rir_arena, n,
 			(uint64_t)(unsigned)o->a0 | ((uint64_t)(unsigned)o->a1 << 32));
@@ -2246,10 +2246,10 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push_typed(n);
 		break;
 	}
-	case JOP_ATOMIC_XADD:
-	case JOP_ATOMIC_XCHG:
-	case JOP_ATOMIC_CMPXCHG: {
-		int na = o->kind == JOP_ATOMIC_CMPXCHG ? 3 : 2;
+	case IR_OP_ATOMIC_XADD:
+	case IR_OP_ATOMIC_XCHG:
+	case IR_OP_ATOMIC_CMPXCHG: {
+		int na = o->kind == IR_OP_ATOMIC_CMPXCHG ? 3 : 2;
 		AstLocal aops[3], n;
 		int q, bad = 0;
 		if (rir_shn < na) {
@@ -2267,9 +2267,9 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Binary);
 		ast_set_op(rir_arena, n,
-							 o->kind == JOP_ATOMIC_XADD
+							 o->kind == IR_OP_ATOMIC_XADD
 									 ? AST_OP_AXADD
-									 : o->kind == JOP_ATOMIC_XCHG ? AST_OP_AXCHG
+									 : o->kind == IR_OP_ATOMIC_XCHG ? AST_OP_AXCHG
 																								: AST_OP_ACMPXCHG);
 		ast_set_ival(rir_arena, n, (uint64_t)(unsigned)o->a0);
 		for (q = 0; q < na; q++)
@@ -2280,7 +2280,7 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
-	case JOP_BITBUILTIN: {
+	case IR_OP_BITBUILTIN: {
 		AstLocal v = rir_shn ? rir_pop() : AST_NONE;
 		AstLocal n;
 		if (v == AST_NONE) {
@@ -2295,7 +2295,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_push_typed(n);
 		break;
 	}
-	case JOP_CALL: {
+	case IR_OP_CALL: {
 		AstLocal n;
 		int na = o->a0;
 		AstLocal args[32];
@@ -2308,7 +2308,7 @@ static void rir_op_effect(const RirOp *ro) {
 			int q;
 			int hidden = -1;
 			{
-				const SValue *cs = &jrn_vs[o->vs_off + o->vs_n - 1 - na];
+				const SValue *cs = &ir_cap_vs[o->vs_off + o->vs_n - 1 - na];
 				const Sym *fs = (const Sym *)(uintptr_t)cs->type.ref;
 				if (fs && (cs->type.t & VT_BTYPE) == VT_PTR)
 					fs = fs->type.ref;
@@ -2331,14 +2331,14 @@ static void rir_op_effect(const RirOp *ro) {
 				if (nfixed >= 0 && q < na && na - 1 - q >= nfixed &&
 					rir_sh[si] != AST_NONE &&
 					ast_type_t(rir_arena, rir_sh[si]) ==
-						jrn_vs[o->vs_off + o->vs_n - 1 - q].type.t &&
-					!((jrn_vs[o->vs_off + o->vs_n - 1 - q].r &
+						ir_cap_vs[o->vs_off + o->vs_n - 1 - q].type.t &&
+					!((ir_cap_vs[o->vs_off + o->vs_n - 1 - q].r &
 						 (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
 						rir_const_val_differs(rir_sh[si],
-																	 jrn_vs[o->vs_off + o->vs_n - 1 - q].c.i)))
+																	 ir_cap_vs[o->vs_off + o->vs_n - 1 - q].c.i)))
 					continue;
 				AstLocal cur = rir_sh[si];
-				const SValue *sv2 = &jrn_vs[o->vs_off + o->vs_n - 1 - q];
+				const SValue *sv2 = &ir_cap_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv2->type.t;
 				int ai = rir_argcast_n - 1 - q;
 				if (q < na && cur != AST_NONE &&
@@ -2405,8 +2405,8 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_pending_call = n;
 		break;
 	}
-	case JOP_PUSHLIT:
-	case JOP_VSETC:
+	case IR_OP_PUSHLIT:
+	case IR_OP_VSETC:
 		if (o->vs_n >= 0 && o->vs_n <= VSTACK_SIZE) {
 			int q;
 			rir_pvt[o->vs_n] = o->ctype;
@@ -2417,7 +2417,7 @@ static void rir_op_effect(const RirOp *ro) {
 				rir_pvok[q] = 0;
 		}
 		if (rir_pending_call != AST_NONE) {
-			if (o->kind == JOP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST ||
+			if (o->kind == IR_OP_PUSHLIT || (o->a0 & VT_VALMASK) < VT_CONST ||
 					((o->ctype.t & VT_BTYPE) == VT_STRUCT &&
 					 (o->a0 & VT_VALMASK) == VT_LOCAL && (o->a0 & VT_LVAL))) {
 				rir_push_typed(rir_pending_call);
@@ -2429,7 +2429,7 @@ static void rir_op_effect(const RirOp *ro) {
 			}
 		}
 		break;
-	case JOP_STORE: {
+	case IR_OP_STORE: {
 		AstLocal v, n, ad, ld;
 		const SValue *spv = NULL;
 		SValue tsv;
@@ -2442,7 +2442,7 @@ static void rir_op_effect(const RirOp *ro) {
 				o->svarg.sym)
 			break;
 		for (q = 0; q <= o->vs_n - 1 - rir_base_depth; q++) {
-			const SValue *sv4 = &jrn_vs[o->vs_off + rir_base_depth + q];
+			const SValue *sv4 = &ir_cap_vs[o->vs_off + rir_base_depth + q];
 			if ((sv4->r & VT_VALMASK) == (o->a0 & VT_VALMASK)) {
 				slot = q;
 				lv = (sv4->r & VT_LVAL) != 0;
@@ -2502,7 +2502,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_shtype[slot] = 0;
 		break;
 	}
-	case JOP_VPOP: {
+	case IR_OP_VPOP: {
 		AstLocal d = rir_pop();
 		if (d != AST_NONE && rir_shn == 0 &&
 				ast_parent(rir_arena, d) == AST_NONE &&
@@ -2515,7 +2515,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_drop(d);
 		break;
 	}
-	case JOP_VROTB: {
+	case IR_OP_VROTB: {
 		int m = o->a0 - 1;
 		if (m >= 1 && rir_shn > m) {
 			AstLocal tmp = rir_sh[rir_shn - 1 - m];
@@ -2528,7 +2528,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
-	case JOP_VROTT: {
+	case IR_OP_VROTT: {
 		int m = o->a0 - 1;
 		if (m >= 1 && rir_shn > m) {
 			AstLocal tmp = rir_sh[rir_shn - 1];
@@ -2541,7 +2541,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
-	case JOP_VREV: {
+	case IR_OP_VREV: {
 		int i, j;
 		if (o->a0 >= 2 && rir_shn >= o->a0) {
 			for (i = rir_shn - o->a0, j = rir_shn - 1; i < j; i++, j--) {
@@ -2555,7 +2555,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
-	case JOP_GV: {
+	case IR_OP_GV: {
 		AstLocal top;
 		/* A gv on a sub-int integer lvalue IS the promotion: it emits the
 		   sign- or zero-extending load right here. Inside a ternary arm that
@@ -2565,7 +2565,7 @@ static void rir_op_effect(const RirOp *ro) {
 		   the movsx past the arm's jump. The tree records this as a Convert
 		   over the Load; record the same. */
 		if (rir_shn >= 1 && o->vs_n > 0) {
-			const SValue *tv = &jrn_vs[o->vs_off + o->vs_n - 1];
+			const SValue *tv = &ir_cap_vs[o->vs_off + o->vs_n - 1];
 			int bt = tv->type.t & VT_BTYPE;
 			AstLocal t2 = rir_sh[rir_shn - 1];
 			if ((tv->r & VT_LVAL) && !(tv->type.t & (VT_ARRAY | VT_BITFIELD)) &&
@@ -2614,19 +2614,19 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		break;
 	}
-	case JOP_VSWAP:
+	case IR_OP_VSWAP:
 		if (rir_shn >= 2) {
 			AstLocal t = rir_sh[rir_shn - 1];
 			rir_sh[rir_shn - 1] = rir_sh[rir_shn - 2];
 			rir_sh[rir_shn - 2] = t;
 		}
 		break;
-	case JOP_CVT_ITOF:
-	case JOP_CVT_FTOF:
-	case JOP_CVT_FTOI:
-	case JOP_CVT_SXTW:
-	case JOP_CVT_TRUNC32:
-	case JOP_CVT_CSTI: {
+	case IR_OP_CVT_ITOF:
+	case IR_OP_CVT_FTOF:
+	case IR_OP_CVT_FTOI:
+	case IR_OP_CVT_SXTW:
+	case IR_OP_CVT_TRUNC32:
+	case IR_OP_CVT_CSTI: {
 		AstLocal a = rir_pop(), n;
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2634,17 +2634,17 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Convert);
 		ast_add_child(rir_arena, n, a);
-		if (o->kind == JOP_CVT_CSTI && rir_synth_depth)
+		if (o->kind == IR_OP_CVT_CSTI && rir_synth_depth)
 			rir_fcs_node = n;
 		rir_push_typed(n);
 		break;
 	}
 #if MCC_CONFIG_ASM
-	case JOP_ASMGEN:
-	case JOP_ASM: {
+	case IR_OP_ASMGEN:
+	case IR_OP_ASM: {
 		AstLocal u = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, u,
-							 o->kind == JOP_ASMGEN ? AST_OP_ASMGEN : AST_OP_ASM);
+							 o->kind == IR_OP_ASMGEN ? AST_OP_ASMGEN : AST_OP_ASM);
 		ast_set_ival(rir_arena, u,
 								 (uint64_t)(unsigned)o->raw_off |
 										 ((uint64_t)(unsigned)o->raw_len << 32));
@@ -2657,8 +2657,8 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
-#ifdef MCC_JRN_VA_START_VOID
-	case JOP_VA_START: {
+#ifdef MCC_IR_VA_START_VOID
+	case IR_OP_VA_START: {
 		AstLocal b = rir_pop(), a2 = rir_pop(), n;
 		if (a2 == AST_NONE || b == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2672,8 +2672,8 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
-#if defined(MCC_JRN_HAVE_VA_START) && !defined(MCC_JRN_VA_START_VOID)
-	case JOP_VA_START: {
+#if defined(MCC_IR_HAVE_VA_START) && !defined(MCC_IR_VA_START_VOID)
+	case IR_OP_VA_START: {
 		AstLocal b = rir_pop(), n;
 		if (b == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2686,8 +2686,8 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
-#ifdef MCC_JRN_HAVE_VA_ARG
-	case JOP_VA_ARG: {
+#ifdef MCC_IR_HAVE_VA_ARG
+	case IR_OP_VA_ARG: {
 		AstLocal a = rir_pop(), n;
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2701,7 +2701,7 @@ static void rir_op_effect(const RirOp *ro) {
 		break;
 	}
 #endif
-	case JOP_GGOTO: {
+	case IR_OP_GGOTO: {
 		AstLocal a = rir_pop(), n;
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
@@ -2713,7 +2713,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_stmt(n);
 		break;
 	}
-	case JOP_ADDROF: {
+	case IR_OP_ADDROF: {
 		AstLocal a;
 		AstLocal n;
 		if (rir_after_ret && rir_shn == 0)
@@ -3772,7 +3772,7 @@ static int rir_emit_safe(void) {
 			if (bop == TOK_LAND || bop == TOK_LOR) {
 				if (nc < (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL ? 1u : 2u))
 					return rir_unsafe("Binary-landor", n, nc);
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 			} else if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
 								 bop == AST_OP_ACMPXCHG) {
 				if (nc != (bop == AST_OP_ACMPXCHG ? 3u : 2u))
@@ -4024,7 +4024,7 @@ static void rir_to_arena(void) {
 				fprintf(stderr, "[ent] %3d %-6s %-10s nc=%x shn=%d lorn=%d ternn=%d cond=%d\n", i,
 								ro->tag == RIR_T_OP ? "OP" : ro->tag == RIR_T_MARK ? "MARK"
 								: ro->tag == RIR_T_RBEGIN ? "RBEGIN" : "REND",
-								ro->tag == RIR_T_OP ? jrn_op_name(ro->p.kind)
+								ro->tag == RIR_T_OP ? ir_cap_op_name(ro->p.kind)
 																		: rir_region_name(ro->rkind),
 								ro->tag == RIR_T_OP ? (unsigned)ro->p.nocode
 																		: (unsigned)ro->rnocode,
@@ -4133,19 +4133,19 @@ static int rir_pt_addr(const RirOp *o, int fallback) {
 static int rir_issue_jump(RirOp *o) {
 	int t, nh;
 	switch (o->p.kind) {
-	case JOP_JMP:
+	case IR_OP_JMP:
 		if (o->lbl < 0)
 			return 0;
 		nh = (gjmp)(rir_lblhead[o->lbl]);
 		rir_lblhead[o->lbl] = nh;
 		return 1;
-	case JOP_JMPCOND:
+	case IR_OP_JMPCOND:
 		if (o->lbl < 0)
 			return 0;
 		nh = (gjmp_cond)(o->p.a0, rir_lblhead[o->lbl]);
 		rir_lblhead[o->lbl] = nh;
 		return 1;
-	case JOP_JMPAPPEND: {
+	case IR_OP_JMPAPPEND: {
 		int n = o->p.a0 ? (o->lbl >= 0 ? rir_lblhead[o->lbl] : 0) : 0;
 		int tt = o->p.a1 ? (o->lbl2 >= 0 ? rir_lblhead[o->lbl2] : 0) : 0;
 		if ((o->p.a0 && o->lbl < 0) || (o->p.a1 && o->lbl2 < 0))
@@ -4161,7 +4161,7 @@ static int rir_issue_jump(RirOp *o) {
 		}
 		return 1;
 	}
-	case JOP_GSYMADDR:
+	case IR_OP_GSYMADDR:
 		if (o->p.a0 && o->lbl < 0)
 			return 0;
 		if (o->pt == RIR_PT_NONE)
@@ -4171,7 +4171,7 @@ static int rir_issue_jump(RirOp *o) {
 		if (o->lbl >= 0)
 			rir_lblhead[o->lbl] = 0;
 		return 1;
-	case JOP_JMPADDR:
+	case IR_OP_JMPADDR:
 		if (o->pt == RIR_PT_NONE)
 			return 0;
 		(gjmp_addr)(rir_pt_addr(o, o->p.a0));
@@ -4187,7 +4187,7 @@ static void rir_run(void) {
 	rir_fail_kind = -1;
 	for (i = 0; i < rir_nlbl; i++)
 		rir_lblhead[i] = 0;
-	for (i = 0; i < jrn_n; i++)
+	for (i = 0; i < ir_cap_n; i++)
 		rir_ptaddr[i] = -1;
 	for (i = 0; i < rir_n; i++) {
 		RirOp *o = &rir_ops[i];
@@ -4212,7 +4212,7 @@ static void rir_run(void) {
 					if ((fl & 2) && L2 >= 0 && vstack[k].r == VT_CMP)
 						rir_lblhead[L2] = vstack[k].jfalse;
 				}
-				memcpy(vstack, jrn_vs + o->p.vs_off,
+				memcpy(vstack, ir_cap_vs + o->p.vs_off,
 							 (size_t)o->p.vs_n * sizeof(SValue));
 				if (rir_delta)
 					for (k = 0; k < o->p.vs_n; k++) {
@@ -4235,18 +4235,18 @@ static void rir_run(void) {
 			rir_fail_kind = o->p.kind;
 			return;
 		}
-		jrn_fc_cur = o->p.fc_off;
-		jrn_fc_end = o->p.fc_off + o->p.fc_n;
-		jrn_pred_have = o->p.swpred != 0;
-		jrn_pred_cur = o->p.swpred - 1;
+		ir_cap_fc_cur = o->p.fc_off;
+		ir_cap_fc_end = o->p.fc_off + o->p.fc_n;
+		ir_cap_pred_have = o->p.swpred != 0;
+		ir_cap_pred_cur = o->p.swpred - 1;
 		if (o->jidx >= 0)
 			rir_ptaddr[o->jidx] = ind;
 		if (!rir_issue_jump(o)) {
-			jrn_issue(&o->p);
+			ir_cap_issue(&o->p);
 		}
 		if (rir_env >= 2)
 			fprintf(stderr, "[rir-op] %-4d %-10s pre=%d post=%d now=%d vs=%d\n", i,
-							jrn_op_name(o->p.kind), o->p.ind_pre, o->p.ind_post, ind,
+							ir_cap_op_name(o->p.kind), o->p.ind_pre, o->p.ind_post, ind,
 							o->p.vs_n);
 	}
 }
@@ -4270,7 +4270,7 @@ static void rir_emit_line(const char *verdict, int ops, int regions) {
 						"ovf=%d\tshift=%s\tsfop=%s@%d\tsdiff=%d\topen=%d\n",
 						verdict, vf, funcname, ops, regions, rir_nlbl, rir_fallback,
 						rir_unbal, rir_ovf, rir_shift_verdict,
-						rir_shift_failkind >= 0 ? jrn_op_name(rir_shift_failkind) : "-",
+						rir_shift_failkind >= 0 ? ir_cap_op_name(rir_shift_failkind) : "-",
 						rir_shift_failop, rir_shift_diff, rir_open_chains);
 	}
 }
@@ -4429,7 +4429,7 @@ void rir_verify(void) {
 		rir_emit_line("rempty", 0, nregions);
 		return;
 	}
-	if (jrn_bad) {
+	if (ir_cap_bad) {
 		rir_emit_line("rrewind", nops, nregions);
 		return;
 	}
@@ -4458,7 +4458,7 @@ void rir_verify(void) {
 	ast_replaying = 1;
 	ast_fconst_i = 0;
 	ast_locrec_i = 0;
-	jrn_replaying = 1;
+	ir_cap_replaying = 1;
 	mcc_state->cg_func_alloca = 0;
 	memcpy(outer, mcc_state->error_jmp_buf, sizeof(jmp_buf));
 	mcc_state->error_func = ast_error_sink;
@@ -4488,8 +4488,8 @@ void rir_verify(void) {
 
 	if (rir_env >= 3 && faithful && body_len > 0) {
 		int nraw = 0;
-		for (i = 0; i < jrn_n; i++)
-			if (jrn_ops[i].kind == JOP_RAW)
+		for (i = 0; i < ir_cap_n; i++)
+			if (ir_cap_ops[i].kind == IR_OP_RAW)
 				nraw++;
 		rir_shift_failop = -1;
 		rir_shift_failkind = -1;
@@ -4666,7 +4666,7 @@ void rir_verify(void) {
 						int bi = rir_blame(d);
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, d,
-										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
+										bi >= 0 ? ir_cap_op_name(rir_ops[bi].p.kind) : "-", bi,
 										bi >= 0 ? rir_ops[bi].p.ind_pre - rir_body_ind_sv : -1,
 										bi >= 0 ? rir_ops[bi].p.ind_post - rir_body_ind_sv : -1);
 					}
@@ -4711,7 +4711,7 @@ void rir_verify(void) {
 								fprintf(stderr, "    [%d] tag=%d kind=%s win=[%d,%d)\n", z,
 												rir_ops[z].tag,
 												rir_ops[z].tag == RIR_T_OP
-														? jrn_op_name(rir_ops[z].p.kind) : "MARK",
+														? ir_cap_op_name(rir_ops[z].p.kind) : "MARK",
 												rir_ops[z].tag == RIR_T_OP
 														? rir_ops[z].p.ind_pre - rir_body_ind_sv : -1,
 												rir_ops[z].tag == RIR_T_OP
@@ -4719,7 +4719,7 @@ void rir_verify(void) {
 						}
 						fprintf(stderr, "[rir-c2op] %s firstdiff=%d firstblk=%d op=%s idx=%d win=[%d,%d)\n",
 										funcname, fd, fb,
-										bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind) : "-", bi,
+										bi >= 0 ? ir_cap_op_name(rir_ops[bi].p.kind) : "-", bi,
 														bi >= 0 ? rir_ops[bi].p.ind_pre - rir_body_ind_sv : -1,
 														bi >= 0 ? rir_ops[bi].p.ind_post - rir_body_ind_sv : -1);
 					}
@@ -4756,7 +4756,7 @@ void rir_verify(void) {
 	}
 #endif
 
-	jrn_replaying = 0;
+	ir_cap_replaying = 0;
 	mcc_state->cg_func_alloca = saved_func_alloca;
 	ast_active = sv_ast_active;
 	ast_capture = sv_ast_capture;
@@ -4793,7 +4793,7 @@ void rir_verify(void) {
 	if (errored) {
 		verdict = "rerror";
 	} else if (rir_fail_op >= 0) {
-		snprintf(vbuf, sizeof vbuf, "rdiverge:%s@%d", jrn_op_name(rir_fail_kind),
+		snprintf(vbuf, sizeof vbuf, "rdiverge:%s@%d", ir_cap_op_name(rir_fail_kind),
 						 rir_fail_op);
 		verdict = vbuf;
 	} else if (faithful) {
@@ -4812,7 +4812,7 @@ void rir_verify(void) {
 			d = lim;
 		bi = rir_blame(d);
 		snprintf(vbuf, sizeof vbuf, "runfaithful:%s@%d",
-						 bi >= 0 ? jrn_op_name(rir_ops[bi].p.kind)
+						 bi >= 0 ? ir_cap_op_name(rir_ops[bi].p.kind)
 										 : (new_len_fin == body_len ? "reloc" : "len"),
 						 bi);
 		verdict = vbuf;

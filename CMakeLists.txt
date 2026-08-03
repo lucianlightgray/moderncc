@@ -2081,7 +2081,7 @@ if(MCC_BUILD_TESTS AND MCC_SINGLE_SOURCE AND MCC_CONFIG_OPTIMIZER
     add_executable(mcc_nojrn src/mcc.c)
     set_target_properties(mcc_nojrn PROPERTIES OUTPUT_NAME mcc-nojrn)
     target_include_directories(mcc_nojrn PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_compile_definitions(mcc_nojrn PRIVATE MCC_JOURNAL_HOOKS=0)
+    target_compile_definitions(mcc_nojrn PRIVATE MCC_IR_CAPTURE=0)
     if(NOT MCC_TARGETOS STREQUAL "WIN32")
         target_link_libraries(mcc_nojrn PRIVATE m)
         find_package(Threads)

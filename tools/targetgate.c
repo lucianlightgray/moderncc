@@ -3,7 +3,8 @@
 static const char *ALLOWED[] = {
 		"src/mcc.h", "src/mccdefaults.h", "src/mcc.c", "src/mcctok.h", "src/mcchost.c", "src/libmcc.c",
 		"src/mccpp.c", "src/mccgen.c", "src/mccasm.c", "src/mccdbg.c",
-		"src/mccdis.c", "src/mccrun.c", "src/mccast.c", "src/mcctools.c",
+		"src/mccdis.c", "src/mccrun.c", "src/mccast.c", "src/mccircap.c",
+		"src/mcctools.c",
 		"src/objfmt/mccelf.c", "src/objfmt/mccpe.c", "src/objfmt/mccmacho.c", 0};
 
 static int g_violations;

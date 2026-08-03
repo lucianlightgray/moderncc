@@ -1794,7 +1794,7 @@ static int ast_locrec_n, ast_locrec_cap, ast_locrec_i;
 static int ast_loc_low;
 static int ast_locrec_min;
 static int ast_temp_frontier;
-static int jrn_replaying;
+static int ir_cap_replaying;
 
 uint64_t ast_pinned_regs;
 int ast_func_has_asm;
@@ -1811,7 +1811,7 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 		}
 	}
 #endif
-	if (ast_replaying && !jrn_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
+	if (ast_replaying && !ir_cap_replaying && ast_locrec_i < ast_locrec_n) { MCC_TRACE("br\n");
 		loc = ast_locrec[ast_locrec_i++];
 		if (loc < ast_loc_low)
 			{ MCC_TRACE("br\n"); ast_loc_low = loc; }
@@ -1821,7 +1821,7 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	if (loc < ast_loc_low)
 		{ MCC_TRACE("br\n"); ast_loc_low = loc; }
 #if MCC_REPLAY_IR
-	if (rir_active && !ast_replaying && !jrn_replaying)
+	if (rir_active && !ast_replaying && !ir_cap_replaying)
 		{ MCC_TRACE("br\n"); rir_loc_record(loc); }
 #endif
 	if (ast_active && !ast_replaying) { MCC_TRACE("br\n");
@@ -1846,7 +1846,7 @@ int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 }
 
 int ast_alloc_temp_loc(int size, int align) { MCC_TRACE("enter\n");
-	if (ast_replaying && !jrn_replaying) { MCC_TRACE("br\n");
+	if (ast_replaying && !ir_cap_replaying) { MCC_TRACE("br\n");
 		if (ast_temp_frontier > 0)
 			{ MCC_TRACE("br\n"); ast_temp_frontier = ast_locrec_min < loc ? ast_locrec_min : loc; }
 		ast_temp_frontier = (ast_temp_frontier - size) & -align;
@@ -2267,8 +2267,13 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 
 static int ast_fconst_reuse_off;
 
-static int jrn_fconst_take(int *out);
-static void jrn_fconst_note(int c);
+static int ir_cap_fconst_take(int *out);
+static void ir_cap_fconst_note(int c);
+static void ir_cap_reset(void);
+#ifdef MCC_IR_CAPTURE
+static int ir_cap_active;
+static void ir_cap_gap(void);
+#endif
 
 void ast_fconst_reuse_disable(int off) { MCC_TRACE("enter\n"); ast_fconst_reuse_off = off; }
 
@@ -2281,14 +2286,14 @@ int ast_fconst_reuse(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return rfc; }
 	}
 #endif
-	if (jrn_fconst_take(&jfc))
+	if (ir_cap_fconst_take(&jfc))
 		{ MCC_TRACE("br\n"); return jfc; }
 	if (ast_replaying && !ast_fconst_reuse_off && ast_fconst_i < ast_fconst_n)
 		{ MCC_TRACE("br\n"); return ast_fconst[ast_fconst_i++]; }
 	return 0;
 }
 void ast_fconst_record(int c) { MCC_TRACE("enter\n");
-	jrn_fconst_note(c);
+	ir_cap_fconst_note(c);
 #if MCC_REPLAY_IR
 	rir_hook_fconst_record(c);
 #endif
@@ -4065,8 +4070,8 @@ static int ast_promo_regpool_at(int i) { MCC_TRACE("enter\n");
 
 #if MCC_CONFIG_OPTIMIZER
 #if MCC_CONFIG_ASM
-static unsigned char *jrn_raw;
-static SValue *jrn_vs;
+static unsigned char *ir_cap_raw;
+static SValue *ir_cap_vs;
 #endif
 static void ast_replay_value(AstArena *a, AstLocal n);
 static void ast_replay_bb(AstArena *a, AstLocal bb);
@@ -5654,7 +5659,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_atomic_cas_rmw((int)(alow >> 1), (int)(alow & 1));
 			break;
 		}
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 		if (bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
 				bop == AST_OP_ACMPXCHG) { MCC_TRACE("br\n");
 			uint32_t nc = ast_nchild(a, n), k;
@@ -5809,11 +5814,11 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			gen_opif(TOK_NEG);
 			vtop->type.t = ast_type_t(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
-#if defined(MCC_JRN_HAVE_VA_START) && !defined(MCC_JRN_VA_START_VOID)
+#if defined(MCC_IR_HAVE_VA_START) && !defined(MCC_IR_VA_START_VOID)
 		} else if (uop == AST_OP_VASTART) { MCC_TRACE("br\n");
 			gen_va_start();
 #endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_BSWAP) { MCC_TRACE("br\n");
 			gen_bswap((int)ast_ival(a, n));
 		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
@@ -5823,7 +5828,7 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		} else if (uop == AST_OP_BITSCAN) { MCC_TRACE("br\n");
 			gen_bitscan((int)ast_ival(a, n), (int)(ast_ival(a, n) >> 32));
 #endif
-#ifdef MCC_JRN_HAVE_VA_ARG
+#ifdef MCC_IR_HAVE_VA_ARG
 		} else if (uop == AST_OP_VAARG) { MCC_TRACE("br\n");
 			CType vat;
 			vat.t = ast_type_t(a, n);
@@ -6132,7 +6137,7 @@ static struct ast_rp_label *ast_rp_label_get(int v) { MCC_TRACE("enter\n");
 	return l;
 }
 
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 static int ast_has_atomic(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
 	uint32_t i, nc;
 	int op;
@@ -6262,7 +6267,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			}
 			break;
 		case AST_Binary:
-#ifdef MCC_JRN_VA_START_VOID
+#ifdef MCC_IR_VA_START_VOID
 			if (ast_op(a, s) == AST_OP_VASTART) { MCC_TRACE("br\n");
 				ast_replay_value(a, ast_child(a, s, 0));
 				ast_replay_value(a, ast_child(a, s, 1));
@@ -6276,7 +6281,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				break;
 			}
 			if (ast_op(a, s) == AST_OP_ACASRMW
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 					|| ast_has_atomic(a, s, 0)
 #endif
 			) { MCC_TRACE("br\n");
@@ -6286,7 +6291,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			break;
 		case AST_Convert:
 			if (
-#ifdef MCC_JRN_HAVE_X86_PRIMS
+#ifdef MCC_IR_HAVE_X86_PRIMS
 					ast_has_atomic(a, s, 0) ||
 #endif
 					(ast_fbits(a, s) & AST_FB_STMT_DISCARD) ||
@@ -6339,7 +6344,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (ast_wide_hi(a, s))
 					{ MCC_TRACE("br\n"); al = (int)(unsigned)ast_wide_hi(a, s); }
 				gen_vla_alloc(&vt, al);
-#ifdef MCC_JRN_HAVE_VLA_RESULT
+#ifdef MCC_IR_HAVE_VLA_RESULT
 				{
 					int vres = (int)(uint32_t)(ast_ival(a, s) >> 32);
 					if (vres)
@@ -6381,7 +6386,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			if (ast_op(a, s) == AST_OP_ASMGEN) { MCC_TRACE("br\n");
 				ASMOperand ops[MAX_ASM_OPERANDS];
 				uint8_t cr[MCC_NB_ASM_REGS];
-				const unsigned char *p = jrn_raw + (int)(ast_ival(a, s) & 0xffffffff);
+				const unsigned char *p = ir_cap_raw + (int)(ast_ival(a, s) & 0xffffffff);
 				int nb_operands, nb_outputs;
 				SValue sv_stack[VSTACK_SIZE + 1];
 				SValue *sv_top = vtop;
@@ -6389,7 +6394,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				int vs_n = (int)(ast_fbits(a, s) >> 32);
 				memcpy(sv_stack, vstack, sizeof sv_stack);
 				if (vs_n > 0 && vs_n <= VSTACK_SIZE) { MCC_TRACE("br\n");
-					memcpy(vstack, jrn_vs + vs_off, (size_t)vs_n * sizeof(SValue));
+					memcpy(vstack, ir_cap_vs + vs_off, (size_t)vs_n * sizeof(SValue));
 					vtop = vstack + vs_n - 1;
 				}
 				memcpy(&nb_operands, p, sizeof nb_operands);
@@ -6418,7 +6423,7 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				int sv_tok = tok;
 				CValue sv_tokc = tokc;
 				mcc_assemble_inline(mcc_state,
-														(const char *)(jrn_raw +
+														(const char *)(ir_cap_raw +
 																					 (int)(ast_ival(a, s) & 0xffffffff)),
 														(int)(ast_ival(a, s) >> 32),
 														(int)(ast_sym(a, s) & 0xffffffff));
@@ -14413,816 +14418,6 @@ static int ast_reloc_range_equiv(const unsigned char *ra, const unsigned char *r
 	return 1;
 }
 
-#ifdef MCC_JOURNAL_HOOKS
-#pragma push_macro("gjmp")
-#pragma push_macro("gjmp_addr")
-#undef gjmp
-#undef gjmp_addr
-#define JRN_OP_LIST(X) \
-	X(JOP_RAW = 0, "raw") \
-	X(JOP_LOAD, "load") \
-	X(JOP_STORE, "store") \
-	X(JOP_OPI, "opi") \
-	X(JOP_OPL, "opl") \
-	X(JOP_OPF, "opf") \
-	X(JOP_CALL, "call") \
-	X(JOP_JMP, "jmp") \
-	X(JOP_JMPADDR, "jmpaddr") \
-	X(JOP_JMPCOND, "jmpcond") \
-	X(JOP_JMPAPPEND, "jmpappend") \
-	X(JOP_GSYMADDR, "gsymaddr") \
-	X(JOP_CVT_ITOF, "cvt_itof") \
-	X(JOP_CVT_FTOF, "cvt_ftof") \
-	X(JOP_CVT_FTOI, "cvt_ftoi") \
-	X(JOP_CVT_SXTW, "cvt_sxtw") \
-	X(JOP_CVT_TRUNC32, "cvt_trunc") \
-	X(JOP_CVT_CSTI, "cvt_csti") \
-	X(JOP_STRUCTCOPY, "structcpy") \
-	X(JOP_GGOTO, "ggoto") \
-	X(JOP_CMOV, "cmov") \
-	X(JOP_FILLNOPS, "fillnops") \
-	X(JOP_VLA_SPSAVE, "vla_save") \
-	X(JOP_VLA_SPREST, "vla_rest") \
-	X(JOP_VLA_RESULT, "vla_res") \
-	X(JOP_VLA_ALLOC, "vla_alloc") \
-	X(JOP_MULH, "mulh") \
-	X(JOP_MULWIDEN, "mulwiden") \
-	X(JOP_REGADDI, "regaddi") \
-	X(JOP_FABS, "fabs") \
-	X(JOP_BSWAP, "bswap") \
-	X(JOP_SQRT, "sqrt") \
-	X(JOP_ROUND, "round") \
-	X(JOP_COPYSIGN, "copysign") \
-	X(JOP_SIGNBIT, "signbit") \
-	X(JOP_FFS, "ffs") \
-	X(JOP_BITSCAN, "bitscan") \
-	X(JOP_TRAP, "trap") \
-	X(JOP_TCOV, "tcov") \
-	X(JOP_ATOMIC_CMPXCHG, "acmpxchg") \
-	X(JOP_ATOMIC_XCHG, "axchg") \
-	X(JOP_ATOMIC_XADD, "axadd") \
-	X(JOP_ASAN_SHADOW, "asan") \
-	X(JOP_ASAN_MARK_WRITE, "asanwr") \
-	X(JOP_UBSAN_NULLPTR, "ubsannull") \
-	X(JOP_XFERRET, "xferret") \
-	X(JOP_X87POP, "x87pop") \
-	X(JOP_VSETC, "vsetc") \
-	X(JOP_VPUSHSYM, "vpushsym") \
-	X(JOP_VPUSHV, "vpushv") \
-	X(JOP_VSWAP, "vswap") \
-	X(JOP_VPOP, "vpop") \
-	X(JOP_VROTB, "vrotb") \
-	X(JOP_VROTT, "vrott") \
-	X(JOP_VREV, "vrev") \
-	X(JOP_PUSHLIT, "pushlit") \
-	X(JOP_GV, "gv") \
-	X(JOP_VSTORE, "vstore") \
-	X(JOP_GENOP, "genop") \
-	X(JOP_MKPTR, "mkptr") \
-	X(JOP_ADDROF, "addrof") \
-	X(JOP_RETVAL, "retval") \
-	X(JOP_VA_START, "va_start") \
-	X(JOP_VA_ARG, "va_arg") \
-	X(JOP_ASM, "asm") \
-	X(JOP_ASMGEN, "asmgen") \
-	X(JOP_BITBUILTIN, "bitbuiltin")
-
-enum {
-#define JRN_OP_ENUM(N, S) N,
-	JRN_OP_LIST(JRN_OP_ENUM)
-#undef JRN_OP_ENUM
-	JOP_COUNT
-};
-
-typedef struct JrnOp {
-	int kind;
-	int nocode;
-	int a0, a1, a2, a3;
-	int64_t d64;
-	CType ctype;
-	CValue cval;
-	Sym *sym;
-	SValue svarg;
-	int sv_slot;
-	int vs_off, vs_n;
-	int loc_pre, ntlv_pre;
-	int ind_pre, ind_post;
-	int rel_pre, rel_post;
-	int raw_off, raw_len;
-	int rawrel_off, rawrel_len;
-	int fc_off, fc_n;
-	int swpred;
-	int ret;
-} JrnOp;
-
-static int jrn_active;
-static int jrn_depth;
-static int jrn_bad;
-static int jrn_ind_wm;
-static int jrn_rel_wm;
-
-static JrnOp *jrn_ops;
-static int jrn_n, jrn_cap;
-static SValue *jrn_vs;
-static int jrn_vsn, jrn_vscap;
-static unsigned char *jrn_raw;
-static int jrn_rawn, jrn_rawcap;
-static JrnOp *jrn_pending;
-#define JRN_REC (jrn_pending && jrn_depth == 1)
-
-static int *jrn_fc;
-static int jrn_fcn, jrn_fccap;
-static int jrn_fc_cur, jrn_fc_end;
-
-static int jrn_fconst_take(int *out) { MCC_TRACE("enter\n");
-	if (!jrn_replaying)
-		{ MCC_TRACE("br\n"); return 0; }
-	if (jrn_fc_cur >= jrn_fc_end)
-		{ MCC_TRACE("br\n"); return 0; }
-	*out = jrn_fc[jrn_fc_cur++];
-	return 1;
-}
-
-static void jrn_fconst_note(int c) { MCC_TRACE("enter\n");
-	if (!jrn_active || !jrn_pending || jrn_depth < 1)
-		{ MCC_TRACE("br\n"); return; }
-	if (jrn_fcn >= jrn_fccap) { MCC_TRACE("br\n");
-		jrn_fccap = jrn_fccap ? jrn_fccap * 2 : 64;
-		jrn_fc = mcc_realloc(jrn_fc, (size_t)jrn_fccap * sizeof *jrn_fc);
-	}
-	if (jrn_pending->fc_n == 0)
-		{ MCC_TRACE("br\n"); jrn_pending->fc_off = jrn_fcn; }
-	jrn_fc[jrn_fcn++] = c;
-	jrn_pending->fc_n++;
-}
-
-static int jrn_pred_cur, jrn_pred_have;
-
-int jrn_pred(int p) { MCC_TRACE("enter\n");
-	if (jrn_replaying && jrn_pred_have)
-		{ MCC_TRACE("br\n"); return jrn_pred_cur; }
-	if (jrn_active && jrn_pending && jrn_depth >= 1)
-		{ MCC_TRACE("br\n"); jrn_pending->swpred = p + 1; }
-	return p;
-}
-
-static const char *jrn_op_name(int k) { MCC_TRACE("enter\n");
-	static const char *const n[JOP_COUNT] = {
-#define JRN_OP_NAME(N, S) S,
-			JRN_OP_LIST(JRN_OP_NAME)
-#undef JRN_OP_NAME
-	};
-	if (k < 0 || k >= JOP_COUNT)
-		{ MCC_TRACE("br\n"); return "?"; }
-	return n[k];
-}
-
-static int jrn_relofs(void) { MCC_TRACE("enter\n");
-	Section *rs = cur_text_section ? cur_text_section->reloc : NULL;
-	return rs ? (int)rs->data_offset : 0;
-}
-
-static JrnOp *jrn_new_op(int kind) { MCC_TRACE("enter\n");
-	JrnOp *o;
-	if (jrn_n >= jrn_cap) { MCC_TRACE("br\n");
-		jrn_cap = jrn_cap ? jrn_cap * 2 : 256;
-		jrn_ops = mcc_realloc(jrn_ops, (size_t)jrn_cap * sizeof *jrn_ops);
-	}
-	o = &jrn_ops[jrn_n++];
-	memset(o, 0, sizeof *o);
-	o->kind = kind;
-	o->sv_slot = -1;
-	o->loc_pre = loc;
-	o->ntlv_pre = nb_temp_local_vars;
-	return o;
-}
-
-static void jrn_snap_vstack(JrnOp *o) { MCC_TRACE("enter\n");
-	int n = (int)(vtop - vstack + 1);
-	if (n < 0)
-		{ MCC_TRACE("br\n"); n = 0; }
-	if (jrn_vsn + n > jrn_vscap) { MCC_TRACE("br\n");
-		int ncap = jrn_vscap ? jrn_vscap * 2 : 1024;
-		while (ncap < jrn_vsn + n)
-			{ MCC_TRACE("br\n"); ncap *= 2; }
-		jrn_vs = mcc_realloc(jrn_vs, (size_t)ncap * sizeof *jrn_vs);
-		jrn_vscap = ncap;
-	}
-	if (n)
-		{ MCC_TRACE("br\n"); memcpy(jrn_vs + jrn_vsn, vstack, (size_t)n * sizeof(SValue)); }
-	o->vs_off = jrn_vsn;
-	o->vs_n = n;
-	rir_snap_types(jrn_vs + jrn_vsn, n);
-	jrn_vsn += n;
-}
-
-static int jrn_raw_add(const unsigned char *p, int len) { MCC_TRACE("enter\n");
-	int off = jrn_rawn;
-	if (len <= 0)
-		{ MCC_TRACE("br\n"); return off; }
-	if (jrn_rawn + len > jrn_rawcap) { MCC_TRACE("br\n");
-		int ncap = jrn_rawcap ? jrn_rawcap * 2 : 4096;
-		while (ncap < jrn_rawn + len)
-			{ MCC_TRACE("br\n"); ncap *= 2; }
-		jrn_raw = mcc_realloc(jrn_raw, (size_t)ncap);
-		jrn_rawcap = ncap;
-	}
-	memcpy(jrn_raw + off, p, (size_t)len);
-	jrn_rawn += len;
-	return off;
-}
-
-static void jrn_gap(void) { MCC_TRACE("enter\n");
-	int reln = jrn_relofs();
-	int clen = ind - jrn_ind_wm;
-	int rlen = reln - jrn_rel_wm;
-	JrnOp *o;
-	if (clen == 0 && rlen == 0)
-		{ MCC_TRACE("br\n"); return; }
-	if (clen < 0 || rlen < 0) { MCC_TRACE("br\n");
-		jrn_bad = 1;
-		jrn_ind_wm = ind;
-		jrn_rel_wm = reln;
-		return;
-	}
-	o = jrn_new_op(JOP_RAW);
-	o->ind_pre = jrn_ind_wm;
-	o->ind_post = ind;
-	o->rel_pre = jrn_rel_wm;
-	o->rel_post = reln;
-	o->nocode = nocode_wanted;
-	o->vs_off = 0;
-	o->vs_n = -1;
-	o->raw_len = clen;
-	o->raw_off = jrn_raw_add(cur_text_section->data + jrn_ind_wm, clen);
-	o->rawrel_len = rlen;
-	if (rlen)
-		{ MCC_TRACE("br\n"); o->rawrel_off =
-				jrn_raw_add(cur_text_section->reloc->data + jrn_rel_wm, rlen); }
-	jrn_ind_wm = ind;
-	jrn_rel_wm = reln;
-}
-
-static void jrn_begin(int kind, const SValue *sv) { MCC_TRACE("enter\n");
-	JrnOp *o;
-#if RIR_DBG_OPTRACE
-	if (rir_dbg_on())
-		fprintf(stderr, "[optrace] %s %s ind=%d vn=%d\n",
-						rir_c2_active ? "C2   " : (jrn_replaying ? "JRN  " : "PARSE"),
-						jrn_op_name(kind), ind, (int)(vtop - vstack + 1));
-#endif
-	if (!jrn_active)
-		{ MCC_TRACE("br\n"); return; }
-	if (jrn_depth++ > 0)
-		{ MCC_TRACE("br\n"); return; }
-	jrn_gap();
-	o = jrn_new_op(kind);
-	o->nocode = nocode_wanted;
-	o->ind_pre = ind;
-	o->rel_pre = jrn_relofs();
-	jrn_snap_vstack(o);
-	if (sv) { MCC_TRACE("br\n");
-		o->svarg = *sv;
-		if (sv >= vstack && sv <= vtop)
-			{ MCC_TRACE("br\n"); o->sv_slot = (int)(sv - vstack); }
-	}
-	jrn_pending = o;
-}
-
-static void jrn_end(void) { MCC_TRACE("enter\n");
-	if (!jrn_active)
-		{ MCC_TRACE("br\n"); return; }
-	if (--jrn_depth > 0)
-		{ MCC_TRACE("br\n"); return; }
-	if (jrn_pending) { MCC_TRACE("br\n");
-		jrn_pending->ind_post = ind;
-		jrn_pending->rel_post = jrn_relofs();
-		jrn_pending = NULL;
-	}
-	jrn_ind_wm = ind;
-	jrn_rel_wm = jrn_relofs();
-}
-
-#define JRN_W0(name, KIND)                    \
-	void jrn_##name(void) {                     \
-		jrn_begin(KIND, NULL);                    \
-		(name)();                                 \
-		jrn_end();                                \
-	}
-#define JRN_W1(name, KIND)                    \
-	void jrn_##name(int a0) {                   \
-		jrn_begin(KIND, NULL);                    \
-		if (JRN_REC)                              \
-			jrn_pending->a0 = a0;                   \
-		(name)(a0);                               \
-		jrn_end();                                \
-	}
-#define JRN_W2(name, KIND)                    \
-	void jrn_##name(int a0, int a1) {           \
-		jrn_begin(KIND, NULL);                    \
-		if (JRN_REC) {                            \
-			jrn_pending->a0 = a0;                   \
-			jrn_pending->a1 = a1;                   \
-		}                                         \
-		(name)(a0, a1);                           \
-		jrn_end();                                \
-	}
-#define JRN_R1(name, KIND)                    \
-	int jrn_##name(int a0) {                    \
-		int rv;                                   \
-		jrn_begin(KIND, NULL);                    \
-		if (JRN_REC)                              \
-			jrn_pending->a0 = a0;                   \
-		rv = (name)(a0);                          \
-		if (JRN_REC)                              \
-			jrn_pending->ret = rv;                  \
-		jrn_end();                                \
-		return rv;                                \
-	}
-#define JRN_R2(name, KIND)                    \
-	int jrn_##name(int a0, int a1) {            \
-		int rv;                                   \
-		jrn_begin(KIND, NULL);                    \
-		if (JRN_REC) {                            \
-			jrn_pending->a0 = a0;                   \
-			jrn_pending->a1 = a1;                   \
-		}                                         \
-		rv = (name)(a0, a1);                      \
-		if (JRN_REC)                              \
-			jrn_pending->ret = rv;                  \
-		jrn_end();                                \
-		return rv;                                \
-	}
-#define JRN_WSV(name, KIND)                   \
-	void jrn_##name(int a0, SValue *sv) {       \
-		jrn_begin(KIND, sv);                      \
-		if (JRN_REC)                              \
-			jrn_pending->a0 = a0;                   \
-		(name)(a0, sv);                           \
-		jrn_end();                                \
-	}
-
-JRN_WSV(load, JOP_LOAD)
-JRN_WSV(store, JOP_STORE)
-JRN_W1(gen_opi, JOP_OPI)
-JRN_W1(gen_opl, JOP_OPL)
-JRN_W1(gen_opf, JOP_OPF)
-JRN_W1(gfunc_call, JOP_CALL)
-JRN_R1(gjmp, JOP_JMP)
-JRN_W1(gjmp_addr, JOP_JMPADDR)
-JRN_R2(gjmp_cond, JOP_JMPCOND)
-JRN_R2(gjmp_append, JOP_JMPAPPEND)
-JRN_W2(gsym_addr, JOP_GSYMADDR)
-JRN_W1(gen_cvt_itof, JOP_CVT_ITOF)
-JRN_W1(gen_cvt_ftof, JOP_CVT_FTOF)
-JRN_W1(gen_cvt_ftoi, JOP_CVT_FTOI)
-#ifdef MCC_JRN_HAVE_CVT_SXTW
-JRN_W0(gen_cvt_sxtw, JOP_CVT_SXTW)
-#endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-JRN_W0(gen_cvt_trunc32, JOP_CVT_TRUNC32)
-#endif
-#ifdef MCC_JRN_HAVE_CVT_CSTI
-JRN_W1(gen_cvt_csti, JOP_CVT_CSTI)
-#endif
-#ifdef MCC_JRN_HAVE_STRUCT_COPY
-#if RIR_DBG_STRUCTCPY
-void jrn_gen_struct_copy(int a0) { MCC_TRACE("enter\n");
-	if (rir_dbg_on())
-		fprintf(stderr,
-						"[scpy] %s phase=%s size=%d dst(r=%x c=%lld t=%x) src(r=%x c=%lld "
-						"t=%x) ind=%d loc=%d func_vc=%d ntlv=%d frontier=%d\n",
-						funcname,
-						rir_c2_active ? "C2" : (jrn_replaying ? "JRN" : "PARSE"), a0,
-						vtop[-1].r, (long long)vtop[-1].c.i, vtop[-1].type.t, vtop[0].r,
-						(long long)vtop[0].c.i, vtop[0].type.t, ind, loc, func_vc,
-						nb_temp_local_vars, ast_temp_frontier);
-	jrn_begin(JOP_STRUCTCOPY, NULL);
-	if (JRN_REC)
-		jrn_pending->a0 = a0;
-	(gen_struct_copy)(a0);
-	jrn_end();
-}
-#else
-JRN_W1(gen_struct_copy, JOP_STRUCTCOPY)
-#endif
-#endif
-JRN_W0(ggoto, JOP_GGOTO)
-JRN_W1(gen_fill_nops, JOP_FILLNOPS)
-JRN_W1(gen_vla_sp_save, JOP_VLA_SPSAVE)
-JRN_W1(gen_vla_sp_restore, JOP_VLA_SPREST)
-#ifdef MCC_JRN_HAVE_VLA_RESULT
-JRN_W1(gen_vla_result, JOP_VLA_RESULT)
-#endif
-#ifdef MCC_JRN_HAVE_MULH
-JRN_W1(gen_mulh, JOP_MULH)
-#endif
-#if MCC_HAVE_INT128
-JRN_W0(gen_mul_widen, JOP_MULWIDEN)
-#endif
-#ifdef MCC_JRN_HAVE_FABS_SQRT
-JRN_W0(gen_fabs, JOP_FABS)
-JRN_W0(gen_sqrt, JOP_SQRT)
-#endif
-#ifdef MCC_JRN_HAVE_ROUND
-JRN_W1(gen_round, JOP_ROUND)
-#endif
-#ifdef MCC_JRN_HAVE_COPYSIGN
-JRN_W0(gen_copysign, JOP_COPYSIGN)
-#endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-JRN_W1(gen_bswap, JOP_BSWAP)
-JRN_W1(gen_signbit, JOP_SIGNBIT)
-JRN_W1(gen_ffs, JOP_FFS)
-JRN_W2(gen_bitscan, JOP_BITSCAN)
-#endif
-JRN_W2(gen_bit_builtin, JOP_BITBUILTIN)
-JRN_W0(gen_trap, JOP_TRAP)
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-JRN_W1(gen_atomic_cmpxchg, JOP_ATOMIC_CMPXCHG)
-JRN_W1(gen_atomic_xchg, JOP_ATOMIC_XCHG)
-JRN_W1(gen_atomic_xadd, JOP_ATOMIC_XADD)
-#endif
-JRN_W1(gen_asan_shadow_check, JOP_ASAN_SHADOW)
-JRN_W0(gen_asan_mark_write, JOP_ASAN_MARK_WRITE)
-JRN_W0(gen_ubsan_nullptr, JOP_UBSAN_NULLPTR)
-#ifdef MCC_JRN_HAVE_XFERRET
-JRN_W1(arch_transfer_ret_regs, JOP_XFERRET)
-#endif
-#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-JRN_W0(gen_x87_pop, JOP_X87POP)
-#endif
-
-static void jrn_vsetc(CType *type, int r, CValue *vc) { MCC_TRACE("enter\n");
-	int lit = (r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
-	jrn_begin(lit ? JOP_PUSHLIT : JOP_VSETC, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->ctype = *type;
-		jrn_pending->a0 = r;
-		jrn_pending->cval = *vc;
-	}
-	(vsetc)(type, r, vc);
-	jrn_end();
-}
-
-JRN_W0(vswap, JOP_VSWAP)
-JRN_W0(vpop, JOP_VPOP)
-JRN_W1(vrotb, JOP_VROTB)
-JRN_W1(vrott, JOP_VROTT)
-JRN_W1(vrev, JOP_VREV)
-
-void jrn_vstore(void) { MCC_TRACE("enter\n");
-	int keep = (vtop[-1].type.t & VT_BTYPE) != VT_STRUCT &&
-						 (vtop->type.t & VT_BTYPE) != VT_STRUCT &&
-						 !((vtop[-1].type.t | vtop->type.t) & VT_ARRAY) &&
-						 !(vtop[-1].type.t & VT_BITFIELD);
-	if (!keep) { MCC_TRACE("br\n");
-		(vstore)();
-		return;
-	}
-	jrn_begin(JOP_VSTORE, NULL);
-	(vstore)();
-	jrn_end();
-}
-
-JRN_W1(gen_op, JOP_GENOP)
-JRN_W0(gaddrof, JOP_ADDROF)
-
-#ifdef MCC_JRN_HAVE_GFUNC_RETURN
-void jrn_gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_RETVAL, NULL);
-	(gfunc_return)(func_type);
-	jrn_end();
-}
-#endif
-#ifdef MCC_JRN_HAVE_VA_START
-JRN_W0(gen_va_start, JOP_VA_START)
-#endif
-#if MCC_CONFIG_ASM
-void jrn_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
-											int is_output, uint8_t *clobber_regs, int out_reg) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_ASMGEN, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		int hdr[2];
-		int opbytes = (int)((size_t)nb_operands * sizeof *operands);
-		hdr[0] = nb_operands;
-		hdr[1] = nb_outputs;
-		jrn_pending->raw_off =
-				jrn_raw_add((const unsigned char *)hdr, (int)sizeof hdr);
-		jrn_raw_add((const unsigned char *)operands, opbytes);
-		jrn_raw_add(clobber_regs, MCC_NB_ASM_REGS);
-		jrn_pending->raw_len = (int)sizeof hdr + opbytes + MCC_NB_ASM_REGS;
-		jrn_pending->a0 = is_output;
-		jrn_pending->a1 = out_reg;
-	}
-	asm_gen_code(operands, nb_operands, nb_outputs, is_output, clobber_regs,
-							 out_reg);
-	jrn_end();
-}
-
-void jrn_asm(const char *str, int len, int global) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_ASM, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->raw_off = jrn_raw_add((const unsigned char *)str, len);
-		jrn_pending->raw_len = len;
-		jrn_pending->a0 = global;
-	}
-	mcc_assemble_inline(mcc_state, str, len, global);
-	jrn_end();
-}
-#endif
-
-#ifdef MCC_JRN_HAVE_VA_ARG
-void jrn_gen_va_arg(CType *t) { MCC_TRACE("enter\n");
-	if (t->t & VT_ARRAY) { MCC_TRACE("br\n");
-		(gen_va_arg)(t);
-		return;
-	}
-	jrn_begin(JOP_VA_ARG, NULL);
-	if (JRN_REC)
-		jrn_pending->ctype = *t;
-	(gen_va_arg)(t);
-	jrn_end();
-}
-#endif
-
-void jrn_mk_pointer(CType *type) { MCC_TRACE("enter\n");
-	if (type != &vtop->type) { MCC_TRACE("br\n");
-		(mk_pointer)(type);
-		return;
-	}
-	jrn_begin(JOP_MKPTR, NULL);
-	(mk_pointer)(type);
-	if (JRN_REC)
-		{ MCC_TRACE("br\n"); jrn_pending->ctype = *type; }
-	jrn_end();
-}
-
-void jrn_vpushv(SValue *v) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_VPUSHV, v);
-	(vpushv)(v);
-	jrn_end();
-}
-
-void jrn_vpushsym(CType *type, Sym *sym) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_VPUSHSYM, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->ctype = *type;
-		jrn_pending->sym = sym;
-	}
-	(vpushsym)(type, sym);
-	jrn_end();
-}
-
-int jrn_gv(int rc) { MCC_TRACE("enter\n");
-	int rv;
-	jrn_begin(JOP_GV, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->a0 = rc;
-		jrn_pending->d64 = (int64_t)ast_pinned_regs;
-	}
-	rv = (gv)(rc);
-	if (JRN_REC)
-		{ MCC_TRACE("br\n"); jrn_pending->a1 = rv; }
-	jrn_end();
-	return rv;
-}
-
-int jrn_gen_cmov(int rt, int rf, int rb, int ll) { MCC_TRACE("enter\n");
-	int rv;
-	jrn_begin(JOP_CMOV, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->a0 = rt;
-		jrn_pending->a1 = rf;
-		jrn_pending->a2 = rb;
-		jrn_pending->a3 = ll;
-	}
-	rv = (gen_cmov)(rt, rf, rb, ll);
-	jrn_end();
-	return rv;
-}
-
-#ifdef MCC_JRN_HAVE_REGADDI
-void jrn_gen_reg_addi(int r, int64_t d) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_REGADDI, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->a0 = r;
-		jrn_pending->d64 = d;
-	}
-	(gen_reg_addi)(r, d);
-	jrn_end();
-}
-#endif
-
-void jrn_gen_vla_alloc(CType *type, int align) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_VLA_ALLOC, NULL);
-	if (JRN_REC) { MCC_TRACE("br\n");
-		jrn_pending->ctype = *type;
-		jrn_pending->a0 = align;
-	}
-	(gen_vla_alloc)(type, align);
-	jrn_end();
-}
-
-void jrn_gen_increment_tcov(SValue *sv) { MCC_TRACE("enter\n");
-	jrn_begin(JOP_TCOV, sv);
-	(gen_increment_tcov)(sv);
-	jrn_end();
-}
-
-static void jrn_issue(JrnOp *o) { MCC_TRACE("enter\n");
-	SValue tmp;
-	SValue *p;
-	tmp = o->svarg;
-	p = o->sv_slot >= 0 ? &vstack[o->sv_slot] : &tmp;
-	switch (o->kind) { MCC_TRACE("br\n");
-	case JOP_RAW:
-		if (o->raw_len) { MCC_TRACE("br\n");
-			if (ind + o->raw_len > cur_text_section->data_allocated)
-				{ MCC_TRACE("br\n"); section_realloc(cur_text_section, ind + o->raw_len); }
-			memcpy(cur_text_section->data + ind, jrn_raw + o->raw_off,
-						 (size_t)o->raw_len);
-			ind += o->raw_len;
-		}
-		if (o->rawrel_len && cur_text_section->reloc) { MCC_TRACE("br\n");
-			void *rp = section_ptr_add(cur_text_section->reloc, o->rawrel_len);
-			memcpy(rp, jrn_raw + o->rawrel_off, (size_t)o->rawrel_len);
-		}
-		break;
-	case JOP_LOAD: (load)(o->a0, p); break;
-	case JOP_STORE: (store)(o->a0, p); break;
-	case JOP_OPI: (gen_opi)(o->a0); break;
-	case JOP_OPL: (gen_opl)(o->a0); break;
-	case JOP_OPF: (gen_opf)(o->a0); break;
-	case JOP_CALL: (gfunc_call)(o->a0); break;
-	case JOP_JMP: (void)(gjmp)(o->a0); break;
-	case JOP_JMPADDR: (gjmp_addr)(o->a0); break;
-	case JOP_JMPCOND: (void)(gjmp_cond)(o->a0, o->a1); break;
-	case JOP_JMPAPPEND: (void)(gjmp_append)(o->a0, o->a1); break;
-	case JOP_GSYMADDR: (gsym_addr)(o->a0, o->a1); break;
-	case JOP_CVT_ITOF: (gen_cvt_itof)(o->a0); break;
-	case JOP_CVT_FTOF: (gen_cvt_ftof)(o->a0); break;
-	case JOP_CVT_FTOI: (gen_cvt_ftoi)(o->a0); break;
-#ifdef MCC_JRN_HAVE_CVT_SXTW
-	case JOP_CVT_SXTW: (gen_cvt_sxtw)(); break;
-#endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-	case JOP_CVT_TRUNC32: (gen_cvt_trunc32)(); break;
-#endif
-#ifdef MCC_JRN_HAVE_CVT_CSTI
-	case JOP_CVT_CSTI: (gen_cvt_csti)(o->a0); break;
-#endif
-#ifdef MCC_JRN_HAVE_STRUCT_COPY
-	case JOP_STRUCTCOPY: (gen_struct_copy)(o->a0); break;
-#endif
-	case JOP_GGOTO: (ggoto)(); break;
-	case JOP_CMOV: (void)(gen_cmov)(o->a0, o->a1, o->a2, o->a3); break;
-	case JOP_FILLNOPS: (gen_fill_nops)(o->a0); break;
-	case JOP_VLA_SPSAVE: (gen_vla_sp_save)(o->a0); break;
-	case JOP_VLA_SPREST: (gen_vla_sp_restore)(o->a0); break;
-#ifdef MCC_JRN_HAVE_VLA_RESULT
-	case JOP_VLA_RESULT: (gen_vla_result)(o->a0); break;
-#endif
-	case JOP_VLA_ALLOC: (gen_vla_alloc)(&o->ctype, o->a0); break;
-#ifdef MCC_JRN_HAVE_MULH
-	case JOP_MULH: (gen_mulh)(o->a0); break;
-#endif
-#if MCC_HAVE_INT128
-	case JOP_MULWIDEN: (gen_mul_widen)(); break;
-#endif
-#ifdef MCC_JRN_HAVE_REGADDI
-	case JOP_REGADDI: (gen_reg_addi)(o->a0, o->d64); break;
-#endif
-#ifdef MCC_JRN_HAVE_FABS_SQRT
-	case JOP_FABS: (gen_fabs)(); break;
-	case JOP_SQRT: (gen_sqrt)(); break;
-#endif
-#ifdef MCC_JRN_HAVE_ROUND
-	case JOP_ROUND: (gen_round)(o->a0); break;
-#endif
-#ifdef MCC_JRN_HAVE_COPYSIGN
-	case JOP_COPYSIGN: (gen_copysign)(); break;
-#endif
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-	case JOP_BSWAP: (gen_bswap)(o->a0); break;
-	case JOP_SIGNBIT: (gen_signbit)(o->a0); break;
-	case JOP_FFS: (gen_ffs)(o->a0); break;
-	case JOP_BITSCAN: (gen_bitscan)(o->a0, o->a1); break;
-#endif
-	case JOP_BITBUILTIN: (gen_bit_builtin)(o->a0, o->a1); break;
-	case JOP_TRAP: (gen_trap)(); break;
-	case JOP_TCOV: (gen_increment_tcov)(p); break;
-#ifdef MCC_JRN_HAVE_X86_PRIMS
-	case JOP_ATOMIC_CMPXCHG: (gen_atomic_cmpxchg)(o->a0); break;
-	case JOP_ATOMIC_XCHG: (gen_atomic_xchg)(o->a0); break;
-	case JOP_ATOMIC_XADD: (gen_atomic_xadd)(o->a0); break;
-#endif
-	case JOP_ASAN_SHADOW: (gen_asan_shadow_check)(o->a0); break;
-	case JOP_ASAN_MARK_WRITE: (gen_asan_mark_write)(); break;
-	case JOP_UBSAN_NULLPTR: (gen_ubsan_nullptr)(); break;
-#ifdef MCC_JRN_HAVE_XFERRET
-	case JOP_XFERRET: (arch_transfer_ret_regs)(o->a0); break;
-#endif
-#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-	case JOP_X87POP: (gen_x87_pop)(); break;
-#endif
-	case JOP_VSETC:
-	case JOP_PUSHLIT: { MCC_TRACE("br\n");
-		CValue cv = o->cval;
-		(vsetc)(&o->ctype, o->a0, &cv);
-		break;
-	}
-	case JOP_VPUSHSYM: (vpushsym)(&o->ctype, o->sym); break;
-	case JOP_VPUSHV: (vpushv)(p); break;
-	case JOP_VSWAP: (vswap)(); break;
-	case JOP_VPOP: (vpop)(); break;
-	case JOP_VROTB: (vrotb)(o->a0); break;
-	case JOP_VROTT: (vrott)(o->a0); break;
-	case JOP_VREV: (vrev)(o->a0); break;
-	case JOP_VSTORE: (vstore)(); break;
-	case JOP_GENOP: (gen_op)(o->a0); break;
-	case JOP_MKPTR:
-		if (vtop < vstack) { MCC_TRACE("br\n");
-			jrn_bad = 1;
-			break;
-		}
-		vtop->type = o->ctype;
-		break;
-	case JOP_ADDROF: (gaddrof)(); break;
-#ifdef MCC_JRN_HAVE_GFUNC_RETURN
-	case JOP_RETVAL: (gfunc_return)(&func_vt); break;
-#endif
-#ifdef MCC_JRN_HAVE_VA_START
-	case JOP_VA_START: (gen_va_start)(); break;
-#endif
-#ifdef MCC_JRN_HAVE_VA_ARG
-	case JOP_VA_ARG: (gen_va_arg)(&o->ctype); break;
-#endif
-#if MCC_CONFIG_ASM
-	case JOP_ASMGEN: { MCC_TRACE("br\n");
-		ASMOperand ops[MAX_ASM_OPERANDS];
-		uint8_t cr[MCC_NB_ASM_REGS];
-		const unsigned char *p = jrn_raw + o->raw_off;
-		int nb_operands, nb_outputs;
-		memcpy(&nb_operands, p, sizeof nb_operands);
-		memcpy(&nb_outputs, p + sizeof(int), sizeof nb_outputs);
-		p += 2 * sizeof(int);
-		if (nb_operands > 0)
-			{ MCC_TRACE("br\n"); memcpy(ops, p, (size_t)nb_operands * sizeof *ops); }
-		p += (size_t)nb_operands * sizeof *ops;
-		memcpy(cr, p, sizeof cr);
-		asm_gen_code(ops, nb_operands, nb_outputs, o->a0, cr, o->a1);
-		break;
-	}
-	case JOP_ASM: { MCC_TRACE("br\n");
-		int sv_tok = tok;
-		CValue sv_tokc = tokc;
-		mcc_assemble_inline(mcc_state, (const char *)(jrn_raw + o->raw_off),
-												o->raw_len, o->a0);
-		tok = sv_tok;
-		tokc = sv_tokc;
-		break;
-	}
-#endif
-	case JOP_GV: { MCC_TRACE("br\n");
-		uint64_t pin = ast_pinned_regs;
-		ast_pinned_regs = (uint64_t)o->d64;
-		(void)(gv)(o->a0);
-		ast_pinned_regs = pin;
-		break;
-	}
-	default: break;
-	}
-}
-
-static void jrn_reset(void) { MCC_TRACE("enter\n");
-	jrn_n = 0;
-	jrn_vsn = 0;
-	jrn_rawn = 0;
-	jrn_fcn = 0;
-	jrn_bad = 0;
-	jrn_depth = 0;
-	jrn_pending = NULL;
-	jrn_ind_wm = ind;
-	jrn_rel_wm = jrn_relofs();
-}
-
-#pragma pop_macro("gjmp")
-#pragma pop_macro("gjmp_addr")
-#else
-static int jrn_fconst_take(int *out) { MCC_TRACE("enter\n");
-	(void)out;
-	return 0;
-}
-
-static void jrn_fconst_note(int c) { MCC_TRACE("enter\n");
-	(void)c;
-}
-
-static void jrn_reset(void) { MCC_TRACE("enter\n");
-}
-#endif
-
 static int ast_verify_diff_match(const char *fn) { MCC_TRACE("enter\n");
 	char sel[96];
 	const char *comma = strchr(ast_verify_diff, ',');
@@ -15310,9 +14505,9 @@ void ast_func_begin(Sym *sym) { MCC_TRACE("enter\n");
 		ast_sym_defer_on = 1;
 	}
 	if (rir_env && ast_try_active) { MCC_TRACE("br\n");
-		jrn_reset();
-#ifdef MCC_JOURNAL_HOOKS
-		jrn_active = 1;
+		ir_cap_reset();
+#ifdef MCC_IR_CAPTURE
+		ir_cap_active = 1;
 #endif
 #if MCC_REPLAY_IR
 		if (rir_env) { MCC_TRACE("br\n");
@@ -17322,12 +16517,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			fprintf(stderr, "[ast-verify] %s\t%s\t%s\n", why, vf, funcname);
 		}
 	}
-#ifdef MCC_JOURNAL_HOOKS
-	jrn_active = 0;
+#ifdef MCC_IR_CAPTURE
+	ir_cap_active = 0;
 #endif
 #if MCC_REPLAY_IR
 	if (rir_started) { MCC_TRACE("br\n");
-		jrn_gap();
+		ir_cap_gap();
 		rir_verify();
 		rir_started = 0;
 	}
