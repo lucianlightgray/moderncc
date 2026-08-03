@@ -456,6 +456,7 @@ typedef struct AttributeDef {
 	int attr_vector_size;
 	char storage_class;
 	char implicit_int;
+	char had_attr;
 } AttributeDef;
 
 typedef struct InlineFunc {
