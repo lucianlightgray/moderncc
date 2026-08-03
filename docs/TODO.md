@@ -317,6 +317,25 @@ The `-O2`/`-O3` explosion on the x86_64 and arm64 keys was **one cause**: `opt_p
 
 **Still owed by P4, deliberately not attempted.** Flipping `MCC_REPLAY_IR_C2` on per target as each key reaches 100% on the `all` corpus (no key is there). Ungating `MCC_REPLAY_IR` — dropping the CMake option, removing the `REPLAY_IR` row from `GATES[]` in `tests/fuzz/runner.c`, making capture unconditional while verify stays gated (`rir_verify` costs +7.7% wall clock, 4.30 s against 4.63 s over 266 corpus compiles at `-O1`), and turning `rir_parity.cmake`/`rir_c3.cmake`'s 77 skip paths into hard failures. Both of those belong after the default flips, not before: ungating capture for every user build is only worth its cost once the arena is the producer.
 
+### The `MCC_RIR_PROD=1` census — the remaining work list
+
+Measured on a **short checkout path**, which matters: the 22 `exec*/bound_global` failures both P4 and the array-extent work reported as pre-existing are an artifact of a long worktree path (`bt_info.file` is `char[100]`). On `/home/llg/Projects/moderncc` the suite is **8255/8255 with the switch off**, so the prod-on comparison is exact and noise-free.
+
+With `MCC_RIR_PROD=1`: **36 failures of 8255**, and they are only five distinct compiler defects plus their selfhost consequences.
+
+| body | suites | note |
+| --- | --- | --- |
+| `ptr_longlong_arith32` | 13 | every optimizer variant; **not** cured by the lost-intermediate close, contrary to the prediction recorded when the array-extent work landed |
+| `bitfields_ms` | 11 | the `IR_OP_VPUSHV` clone excludes bitfield targets for C2's sake; the exclusion is not sufficient at runtime |
+| `flt_eval_method` | 1 | `exec-replay-promote` only; also predicted cured by the lost-intermediate close, and also not |
+| `array_2d_iv` | 1 | `exec-ivsrptr` — induction-variable strength reduction on a 2-D array |
+| `chainstore` | 2 | `optfire-i386`, `optfire-riscv64` — a gate-fires probe, so the arena changes *which* optimizations fire, not just their result |
+| `selfhost-*` | 7 | `output-parity-O2/O3`, `fixpoint{,-O3,-Os,-gates}`, `arm64-native` — downstream; expect these to clear with the five above |
+
+**Two predictions were wrong and are worth recording as such.** `flt_eval_method` and `ptr_longlong_arith32` were both attributed to the lost-intermediate class on the evidence that they also failed with `MCC_AST_PROMOTE=0`; that class is now closed and both still fail. "Fails with the pass disabled" localises a defect *away* from that pass, but it does not attribute it to any particular other one.
+
+The instrument for this list is the runtime A/B, not the byte compare: compile and run every `tests/exec` file at `-O1` with and without the switch and diff stdout and exit code. C2 calls every one of these bodies clean, because it validates un-optimized emission.
+
 ### P5 — delete the recorder
 
 1,716 lines of hooks and their 126 call sites; the shadow vstack (`ast_vs`, `ast_cf`, `ast_vn`); `ast_bail`/`ast_desync`/`AST_SET_BAIL`/`AST_SET_DESYNC`/`ast_gap_note`/`ast_replay_ok`; `ast_try_active`; the ~31 recorder-shape `MCC_AST_*` gates in `ast_configure` (`src/mccast.c:2055-2247`); `ast_ltemp_overlaps` if the LICM-temp table goes with it; the 4 `tests/ast/verify-baseline/` files; `ast-verify-ratchet-{O1,O2,O3}`, `ast/treecheck`, `ast/tracediff`, `tools/gate-ledger.sh`'s recorder half.
