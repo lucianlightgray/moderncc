@@ -194,28 +194,28 @@
 	#define __sync_and_and_fetch(p,v) (__atomic_fetch_and((p),(v),__ATOMIC_SEQ_CST)&(v))
 	#define __sync_xor_and_fetch(p,v) (__atomic_fetch_xor((p),(v),__ATOMIC_SEQ_CST)^(v))
 	#define __sync_bool_compare_and_swap(p,o,n) \
-	({ __typeof__(*(p)) __o=(o), __n=(n); \
+	__extension__ ({ __typeof__(*(p)) __o=(o), __n=(n); \
 	__atomic_compare_exchange((p),&__o,&__n,0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); })
 	#define __sync_val_compare_and_swap(p,o,n) \
-	({ __typeof__(*(p)) __o=(o), __n=(n); \
+	__extension__ ({ __typeof__(*(p)) __o=(o), __n=(n); \
 	__atomic_compare_exchange((p),&__o,&__n,0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); __o; })
 	#define __sync_lock_test_and_set(p,v) \
-	({ __typeof__(*(p)) __v=(v), __o; \
+	__extension__ ({ __typeof__(*(p)) __v=(v), __o; \
 	__atomic_exchange((p),&__v,&__o,__ATOMIC_SEQ_CST); __o; })
 	#define __sync_lock_release(p) \
-	({ __typeof__(*(p)) __z=0; __atomic_store((p),&__z,__ATOMIC_SEQ_CST); })
+	__extension__ ({ __typeof__(*(p)) __z=0; __atomic_store((p),&__z,__ATOMIC_SEQ_CST); })
 	#define __sync_synchronize() \
-	({ volatile __mcc_int_t __mcc_bar = 0; \
+	__extension__ ({ volatile __mcc_int_t __mcc_bar = 0; \
 	(void)__atomic_fetch_add(&__mcc_bar, 0, __ATOMIC_SEQ_CST); (void)0; })
 	#define __atomic_load_n(p, o) \
-	({ __typeof__(*(p)) __r; __atomic_load((p), &__r, (o)); __r; })
+	__extension__ ({ __typeof__(*(p)) __r; __atomic_load((p), &__r, (o)); __r; })
 	#define __atomic_store_n(p, v, o) \
-	({ __typeof__(*(p)) __v = (v); __atomic_store((p), &__v, (o)); })
+	__extension__ ({ __typeof__(*(p)) __v = (v); __atomic_store((p), &__v, (o)); })
 	#define __atomic_exchange_n(p, v, o) \
-	({ __typeof__(*(p)) __v = (v), __r; \
+	__extension__ ({ __typeof__(*(p)) __v = (v), __r; \
 	__atomic_exchange((p), &__v, &__r, (o)); __r; })
 	#define __atomic_compare_exchange_n(p, e, d, w, s, f) \
-	({ __typeof__(*(p)) __d = (d); \
+	__extension__ ({ __typeof__(*(p)) __d = (d); \
 	__atomic_compare_exchange((p), (e), &__d, (w), (s), (f)); })
 
 #if !defined __linux__ && !defined _WIN32

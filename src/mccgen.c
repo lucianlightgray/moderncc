@@ -6841,7 +6841,7 @@ static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
 }
 
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
-	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen;
+	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
 	Sym *s;
 	CType type1;
 
@@ -6849,6 +6849,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	type_found = 0;
 	typespec_found = 0;
 	complex_seen = 0;
+	ext_seen = 0;
 	t = VT_INT;
 	bt = st = -1;
 	type->ref = NULL;
@@ -6856,6 +6857,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	while (1) { MCC_TRACE("br\n");
 		switch (tok) { MCC_TRACE("br\n");
 		case TOK_EXTENSION:
+			ext_seen++;
 			next();
 			continue;
 
@@ -7170,6 +7172,10 @@ the_end:
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to an array type"); }
 		if ((t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to a function type"); }
+	}
+	if (!type_found && ext_seen) { MCC_TRACE("br\n");
+		while (ext_seen--)
+			{ MCC_TRACE("br\n"); unget_tok(TOK_EXTENSION); }
 	}
 	return type_found;
 }
@@ -10268,6 +10274,8 @@ static Sym *builtin_libm_alias(int v) { MCC_TRACE("enter\n");
 ST_FUNC void unary(void) { MCC_TRACE("enter\n");
 	int n, t, align, size, r;
 	CType type;
+	unsigned char save_warn_pedantic = mcc_state->warn_pedantic;
+	unsigned char save_pedantic_errors = mcc_state->pedantic_errors;
 #if MCC_CONFIG_LSP
 	uint32_t cst_um = CST_MARK();
 	uint16_t cst_nk = 0;
@@ -10313,6 +10321,8 @@ tok_next:
 #endif
 	switch (tok) { MCC_TRACE("br\n");
 	case TOK_EXTENSION:
+		mcc_state->warn_pedantic = 0;
+		mcc_state->pedantic_errors = 0;
 		next();
 		goto tok_next;
 	case TOK_U16CHAR:
@@ -10446,6 +10456,8 @@ tok_next:
 				sizeof_parsed_type = 1;
 				sizeof_parsed_align = ad.a.aligned;
 				vpush(&type);
+				mcc_state->warn_pedantic = save_warn_pedantic;
+				mcc_state->pedantic_errors = save_pedantic_errors;
 				return;
 			} else { MCC_TRACE("br\n");
 				unary();
@@ -11728,6 +11740,8 @@ tok_next:
 		CST_CLOSE();
 	}
 #endif
+	mcc_state->warn_pedantic = save_warn_pedantic;
+	mcc_state->pedantic_errors = save_pedantic_errors;
 }
 #undef CST_PRIMARY
 

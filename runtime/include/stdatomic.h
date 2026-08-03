@@ -87,7 +87,7 @@ typedef struct
 #define ATOMIC_VAR_INIT(value) (value)
 
 #define kill_dependency(y) \
-	({ __typeof__(y) __mcc_kd_tmp = (y); __mcc_kd_tmp; })
+	__extension__ ({ __typeof__(y) __mcc_kd_tmp = (y); __mcc_kd_tmp; })
 
 #define atomic_init(object, desired) \
 	atomic_store_explicit(object, desired, __ATOMIC_RELAXED)
@@ -97,7 +97,7 @@ typedef struct
 	(*(ptr) = (val), __atomic_store((ptr), &(typeof(*(ptr))){val}, (order)))
 #endif
 #define atomic_store_explicit(object, desired, order) \
-	({                                                  \
+	__extension__ ({                                                  \
 		__typeof__(object) ptr = (object);                \
 		__typeof__(*ptr) tmp = (desired);                 \
 		__atomic_store(ptr, &tmp, (order));               \
@@ -107,12 +107,12 @@ typedef struct
 
 #ifndef __atomic_load_n
 #define __atomic_load_n(ptr, order) \
-	({ typeof(*(ptr)) __val;                                              \
+	__extension__ ({ typeof(*(ptr)) __val;                                              \
 	   __atomic_load((ptr), &__val, (order));                             \
 	   __val; })
 #endif
 #define atomic_load_explicit(object, order) \
-	({                                        \
+	__extension__ ({                                        \
 		__typeof__(object) ptr = (object);      \
 		__typeof__((void)0, *ptr) tmp;          \
 		__atomic_load(ptr, &tmp, (order));      \
@@ -121,7 +121,7 @@ typedef struct
 #define atomic_load(object) atomic_load_explicit(object, __ATOMIC_SEQ_CST)
 
 #define atomic_exchange_explicit(object, desired, order) \
-	({                                                     \
+	__extension__ ({                                                     \
 		__typeof__(object) ptr = (object);                   \
 		__typeof__(*ptr) val = (desired);                    \
 		__typeof__(*ptr) tmp;                                \
@@ -132,12 +132,12 @@ typedef struct
 	atomic_exchange_explicit(object, desired, __ATOMIC_SEQ_CST)
 #ifndef __atomic_compare_exchange_n
 #define __atomic_compare_exchange_n(ptr, expected, desired, weak, success, failure) \
-	({ typeof(*(ptr)) __desired = (desired);                              \
+	__extension__ ({ typeof(*(ptr)) __desired = (desired);                              \
 	   __atomic_compare_exchange((ptr), (expected), &__desired,          \
 		 (weak), (success), (failure)); })
 #endif
 #define atomic_compare_exchange_strong_explicit(object, expected, desired, success, failure) \
-	({                                                                                         \
+	__extension__ ({                                                                                         \
 		__typeof__(object) ptr = (object);                                                       \
 		__typeof__(*ptr) tmp = desired;                                                          \
 		__atomic_compare_exchange(ptr, expected, &tmp, 0, success, failure);                     \
@@ -146,7 +146,7 @@ typedef struct
 	atomic_compare_exchange_strong_explicit(object, expected, desired, \
 																					__ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)
 #define atomic_compare_exchange_weak_explicit(object, expected, desired, success, failure) \
-	({                                                                                       \
+	__extension__ ({                                                                                       \
 		__typeof__(object) ptr = (object);                                                     \
 		__typeof__(*ptr) tmp = desired;                                                        \
 		__atomic_compare_exchange(ptr, expected, &tmp, 1, success, failure);                   \
