@@ -2119,10 +2119,14 @@ ST_FUNC void (gaddrof)(void) { MCC_TRACE("enter\n");
 #endif
 	if ((vtop->r & VT_LVAL) && vtop->sym && (vtop->sym->type.t & VT_VLA) &&
 			is_vla_struct(&vtop->sym->type)) { MCC_TRACE("br\n");
-		vtop->type.t = VT_PTR;
-		gv(MCC_RC_INT);
+		CType orig_type = vtop->type;
+		CType st = vtop->sym->type;
+		st.t &= ~VT_VLA;
+		vtop->type = st;
+		mk_pointer(&vtop->type);
+		indir();
+		vtop->type = orig_type;
 		vtop->sym = NULL;
-		return;
 	}
 	vtop->r &= ~VT_LVAL;
 	if ((vtop->r & VT_VALMASK) == VT_LLOCAL)
@@ -12061,7 +12065,7 @@ tok_next:
 				gen_op('+');
 			} else
 #if MCC_CONFIG_OPTIMIZER
-			if (ast_regdisp_env && cumofs && !(s->type.t & VT_ARRAY) &&
+			if (ast_regdisp_env && cumofs && !(s->type.t & (VT_ARRAY | VT_VLA)) &&
 					!mcc_state->do_asan_shadow &&
 					(vtop->r & VT_VALMASK) < VT_CONST &&
 					!(vtop->r & (VT_SYM | VT_LVAL | VT_MUSTBOUND | VT_BOUNDED))) { MCC_TRACE("br\n");
