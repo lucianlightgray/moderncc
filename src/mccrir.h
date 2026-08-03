@@ -148,6 +148,7 @@ void rir_hook_member_end(int cumofs, int nonlval);
 void rir_hook_builtin_complex_lower(void);
 void rir_hook_builtin_complex_end(void);
 void rir_hook_body_begin(void);
+void rir_hook_bail(void);
 void rir_hook_cleanup_call_begin(void);
 void rir_hook_cleanup_call_end(void);
 int rir_dbg_on(void);
@@ -311,6 +312,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_hook_builtin_complex_lower() ((void)0)
 #define rir_hook_builtin_complex_end() ((void)0)
 #define rir_hook_body_begin() ((void)0)
+#define rir_hook_bail() ((void)0)
 #define rir_hook_cleanup_call_begin() ((void)0)
 #define rir_hook_cleanup_call_end() ((void)0)
 #define rir_dbg_on() 0

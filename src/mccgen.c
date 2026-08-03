@@ -13397,6 +13397,7 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 			type = &t1;
 #if MCC_CONFIG_OPTIMIZER
 			ast_hook_bail();
+			rir_hook_bail();
 #endif
 		}
 		if (p->sec)

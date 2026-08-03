@@ -879,6 +879,21 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 		return;
 	}
 
+	if (svr < VT_CONST) { MCC_TRACE("br\n");
+		if (svr == r)
+			{ MCC_TRACE("br\n"); return; }
+		if (IS_FREG(r) && IS_FREG(svr)) { MCC_TRACE("br\n");
+			if (svtt == VT_LDOUBLE)
+				{ MCC_TRACE("br\n"); o(ARM64_MOV_V16B | fltr(svr) | fltr(r) * 0x10020); }
+			else
+				{ MCC_TRACE("br\n"); o(ARM64_FMOV_SCALAR | fltr(svr) | fltr(r) << 5); }
+		} else if (!IS_FREG(r) && !IS_FREG(svr))
+			{ MCC_TRACE("br\n"); o(ARM64_MOV_REG | ARM64_SF(1) | intr(svr) | intr(r) << 16); }
+		else
+			{ MCC_TRACE("br\n"); assert(0); }
+		return;
+	}
+
 	printf("store(%x, (%x, %x, %lx))\n", r, svtt, sv->r, (long)svcoff);
 	assert(0);
 }
