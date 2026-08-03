@@ -34,6 +34,7 @@ enum {
 };
 
 extern int rir_env;
+extern int rir_try_active;
 extern int rir_active;
 extern int rir_c2_active;
 extern int rir_body_loc_sv;
@@ -240,6 +241,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_mark_vla(t, r, a, n, l, al, rs) ((void)0)
 #define rir_vla_begin() ((void)0)
 #define rir_env 0
+#define rir_try_active 0
 #define rir_c2_active 0
 #define rir_snap_types(sv, n) ((void)0)
 #define rir_loc_record(l) ((void)0)
