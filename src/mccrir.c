@@ -1435,9 +1435,18 @@ static void rir_drop(AstLocal d) {
 		rir_lheld[rir_lheldn++] = d;
 		return;
 	}
+	/* Only plain stores were held here, so a loop condition whose side effect is
+	   not a store -- `while (++p, --f)`, `do {} while (f(), c)` -- fell through to
+	   rir_stmt and landed in the enclosing block AFTER the If. cleanup_sections
+	   came out with `++p` below the conditional branch, skipped on every iteration
+	   that loops; a four-element walk summed a[0] twice and printed 20 for 30.
+	   Anything reaching here is already rir_effectful, so hold the increment and
+	   call forms too and let rir_cf_cond park them in the condition's prefix. */
 	if (rir_docond && rir_dheldn < RIR_DHELD_MAX &&
-			ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
-			ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) {
+			((ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
+				ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) ||
+			 ast_kind(rir_arena, d) == AST_Unary ||
+			 ast_kind(rir_arena, d) == AST_Invoke)) {
 		rir_dheld[rir_dheldn++] = d;
 		return;
 	}
