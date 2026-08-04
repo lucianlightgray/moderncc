@@ -3339,11 +3339,94 @@ static int pp_signed_ovf(int op, uint64_t l1, uint64_t l2) { MCC_TRACE("enter\n"
 	return 0;
 }
 
+static int const_lval_bytes(SValue *v, unsigned char **pp, int *psize) { MCC_TRACE("enter\n");
+	ElfSym *esym;
+	Section *ssec;
+	ElfW_Rel *rel, *rel_end;
+	unsigned long off;
+	int size, align;
+
+	if ((v->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != (VT_CONST | VT_SYM | VT_LVAL))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!v->sym || (v->type.t & (VT_VOLATILE | VT_ARRAY)))
+		{ MCC_TRACE("br\n"); return 0; }
+	esym = elfsym(v->sym);
+	if (!esym || esym->st_shndx == SHN_UNDEF ||
+			esym->st_shndx >= mcc_state->nb_sections)
+		{ MCC_TRACE("br\n"); return 0; }
+	ssec = mcc_state->sections[esym->st_shndx];
+	if (!ssec || !ssec->data || ssec->sh_type == SHT_NOBITS)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (v->sym->v < SYM_FIRST_ANOM && (ssec->sh_flags & SHF_WRITE))
+		{ MCC_TRACE("br\n"); return 0; }
+	size = type_size(&v->type, &align);
+	if (size <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	off = (unsigned long)esym->st_value + (unsigned long)(int64_t)v->c.i;
+	if (off + size > ssec->data_offset)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ssec->reloc) { MCC_TRACE("br\n");
+		rel = (ElfW_Rel *)ssec->reloc->data;
+		rel_end = (ElfW_Rel *)(ssec->reloc->data + ssec->reloc->data_offset);
+		for (; rel < rel_end; rel++) { MCC_TRACE("br\n");
+			if (rel->r_offset < off + size && rel->r_offset + MCC_PTR_SIZE > off)
+				{ MCC_TRACE("br\n"); return 0; }
+		}
+	}
+	*pp = ssec->data + off;
+	*psize = size;
+	return 1;
+}
+
+static int fold_const_lval_at(SValue *v) { MCC_TRACE("enter\n");
+	unsigned char *p;
+	int bt = v->type.t & VT_BTYPE, size, bits;
+	uint64_t u = 0;
+
+	if (bt == VT_STRUCT || bt == VT_VOID || bt == VT_FUNC || bt == VT_PTR ||
+			bt == VT_LDOUBLE || (v->type.t & VT_BITFIELD) || is_complex_type(&v->type))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!const_lval_bytes(v, &p, &size))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt == VT_FLOAT) { MCC_TRACE("br\n");
+		float f;
+		memcpy(&f, p, 4);
+		v->c.f = f;
+	} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
+		double d;
+		memcpy(&d, p, 8);
+		v->c.d = d;
+	} else { MCC_TRACE("br\n");
+		if (size > 8)
+			{ MCC_TRACE("br\n"); return 0; }
+		memcpy(&u, p, size);
+		bits = size * 8;
+		if (bt != VT_BOOL && !(v->type.t & VT_UNSIGNED) && bits < 64 &&
+				(u & ((uint64_t)1 << (bits - 1))))
+			{ MCC_TRACE("br\n"); u |= (uint64_t)-1 << bits; }
+		v->c.i = u;
+	}
+	v->r = (v->r & ~(VT_VALMASK | VT_LVAL | VT_SYM)) | VT_CONST;
+	v->sym = NULL;
+	ice_nonconst = 1;
+	return 1;
+}
+
+static int fold_const_lval(SValue *v) { MCC_TRACE("enter\n");
+	if (!global_expr || !CONST_WANTED)
+		{ MCC_TRACE("br\n"); return 0; }
+	return fold_const_lval_at(v);
+}
+
 static void gen_opic(int op) { MCC_TRACE("enter\n");
 	SValue *v1 = vtop - 1;
 	SValue *v2 = vtop;
-	int t1 = v1->type.t & VT_BTYPE;
-	int t2 = v2->type.t & VT_BTYPE;
+	int t1, t2;
+
+	fold_const_lval(v1);
+	fold_const_lval(v2);
+	t1 = v1->type.t & VT_BTYPE;
+	t2 = v2->type.t & VT_BTYPE;
 	int c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int c2 = (v2->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 	int asym1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM);
@@ -3496,6 +3579,14 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 		v1->r = (v1->r & ~(VT_VALMASK | VT_LVAL | VT_SYM)) | VT_CONST;
 		v1->sym = NULL;
 		vtop--;
+	} else if (CONST_WANTED && asym1 && asym2 && v1->sym && v2->sym &&
+						 v1->sym != v2->sym && !v1->sym->a.weak && !v2->sym->a.weak &&
+						 v1->sym->v < SYM_FIRST_ANOM && v2->sym->v < SYM_FIRST_ANOM &&
+						 (op == TOK_EQ || op == TOK_NE)) { MCC_TRACE("br\n");
+		v1->c.i = op == TOK_NE;
+		v1->r = (v1->r & ~(VT_VALMASK | VT_LVAL | VT_SYM)) | VT_CONST;
+		v1->sym = NULL;
+		vtop--;
 	} else { MCC_TRACE("br\n");
 		if (c1 && (op == '+' || op == '&' || op == '^' ||
 							 op == '|' || op == '*' || op == TOK_EQ || op == TOK_NE)) { MCC_TRACE("br\n");
@@ -3607,6 +3698,8 @@ static void gen_opif(int op) { MCC_TRACE("enter\n");
 	v2 = vtop;
 	if (op == TOK_NEG)
 		{ MCC_TRACE("br\n"); v1 = v2; }
+	fold_const_lval(v1);
+	fold_const_lval(v2);
 	bt = v1->type.t & VT_BTYPE;
 
 	c1 = (v1->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
@@ -3985,6 +4078,10 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 		{ MCC_TRACE("br\n"); t1 &= ~VT_VLA; }
 	if ((t2 & VT_BTYPE) == VT_STRUCT)
 		{ MCC_TRACE("br\n"); t2 &= ~VT_VLA; }
+	if ((t1 & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); t1 &= ~VT_QUALIFY; }
+	if ((t2 & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); t2 &= ~VT_QUALIFY; }
 
 	if ((t1 & VT_BTYPE) != VT_BYTE) { MCC_TRACE("br\n");
 		t1 &= ~VT_DEFSIGN;
@@ -4508,6 +4605,7 @@ again:
 		}
 #endif
 
+		fold_const_lval(vtop);
 		c = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 		if (c) { MCC_TRACE("br\n");
 #if MCC_CONFIG_OPTIMIZER
@@ -5985,7 +6083,7 @@ static int in_range(long long n, int t) { MCC_TRACE("enter\n");
 	return n >= -(long long)m - 1 && n <= (long long)m;
 }
 
-static void struct_decl(CType *type, int u) { MCC_TRACE("enter\n");
+static void struct_decl(CType *type, int u, AttributeDef *ad_out) { MCC_TRACE("enter\n");
 	int v, c, size, align, flexible, saw_vla;
 	int bit_size, bsize, bt, ut;
 	Sym *s, *ss, **ps;
@@ -6089,6 +6187,10 @@ do_decl:
 				}
 			}
 			skip('}');
+			if (ad_out) { MCC_TRACE("br\n");
+				parse_attribute(ad_out);
+				ad.a.packed |= ad_out->a.packed;
+			}
 
 			if (bt) { MCC_TRACE("br\n");
 				t.t = bt;
@@ -6104,15 +6206,15 @@ do_decl:
 			} else if (pl != (int)pl || nl != (int)nl)
 				{ MCC_TRACE("br\n"); t.t = (LONG_SIZE == 8 ? VT_LLONG | VT_LONG : VT_LLONG); }
 
-			if (mcc_state->short_enums && (t.t & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
+			if ((mcc_state->short_enums || ad.a.packed) && (t.t & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
 				if (t.t & VT_UNSIGNED) { MCC_TRACE("br\n");
 					if (pl <= 0xff)
-						{ MCC_TRACE("br\n"); t.t = VT_BYTE | VT_UNSIGNED; }
+						{ MCC_TRACE("br\n"); t.t = VT_BYTE | VT_DEFSIGN | VT_UNSIGNED; }
 					else if (pl <= 0xffff)
 						{ MCC_TRACE("br\n"); t.t = VT_SHORT | VT_UNSIGNED; }
 				} else { MCC_TRACE("br\n");
 					if (nl >= -0x80 && pl <= 0x7f)
-						{ MCC_TRACE("br\n"); t.t = VT_BYTE; }
+						{ MCC_TRACE("br\n"); t.t = VT_BYTE | VT_DEFSIGN; }
 					else if (nl >= -0x8000 && pl <= 0x7fff)
 						{ MCC_TRACE("br\n"); t.t = VT_SHORT; }
 				}
@@ -7670,16 +7772,16 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			next();
 			break;
 		case TOK_ENUM:
-			struct_decl(&type1, VT_ENUM);
+			struct_decl(&type1, VT_ENUM, ad);
 		basic_type2:
 			u = type1.t;
 			type->ref = type1.ref;
 			goto basic_type1;
 		case TOK_STRUCT:
-			struct_decl(&type1, VT_STRUCT);
+			struct_decl(&type1, VT_STRUCT, NULL);
 			goto basic_type2;
 		case TOK_UNION:
-			struct_decl(&type1, VT_UNION);
+			struct_decl(&type1, VT_UNION, NULL);
 			goto basic_type2;
 
 		case TOK__Atomic:
@@ -11056,6 +11158,60 @@ static Sym *builtin_libm_alias(int v) { MCC_TRACE("enter\n");
 	return external_global_sym(tv, &ft);
 }
 
+static unsigned char *const_ref_data(SValue *sv) { MCC_TRACE("enter\n");
+	Section *ssec;
+	ElfSym *esym;
+
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != (VT_CONST | VT_SYM | VT_LVAL) ||
+			!sv->sym || sv->sym->v < SYM_FIRST_ANOM)
+		{ MCC_TRACE("br\n"); return NULL; }
+	esym = elfsym(sv->sym);
+	if (!esym || esym->st_shndx == SHN_UNDEF)
+		{ MCC_TRACE("br\n"); return NULL; }
+	ssec = mcc_state->sections[esym->st_shndx];
+	if (!ssec || !ssec->data || ssec->reloc)
+		{ MCC_TRACE("br\n"); return NULL; }
+	return ssec->data + esym->st_value + (unsigned)sv->c.i;
+}
+
+static int float_sign_byte(int bt, int size) { MCC_TRACE("enter\n");
+	if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
+#if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64
+		return MCC_LDOUBLE_SIZE > 8 ? 9 : 7;
+#else
+		return MCC_LDOUBLE_SIZE - 1;
+#endif
+	}
+	return size - 1;
+}
+
+static int gen_negf_const_ref(void) { MCC_TRACE("enter\n");
+	CType ty;
+	unsigned char *src;
+	unsigned long offset;
+	int bt = vtop->type.t & VT_BTYPE, size, align, sb;
+
+	if (bt != VT_FLOAT && bt != VT_DOUBLE && bt != VT_LDOUBLE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!CONST_WANTED || NODATA_WANTED)
+		{ MCC_TRACE("br\n"); return 0; }
+	src = const_ref_data(vtop);
+	if (!src)
+		{ MCC_TRACE("br\n"); return 0; }
+	ty = vtop->type;
+	size = type_size(&ty, &align);
+	sb = float_sign_byte(bt, size);
+	if (size <= 0 || sb >= size)
+		{ MCC_TRACE("br\n"); return 0; }
+	offset = section_add(rodata_section, size, align);
+	memcpy(rodata_section->data + offset, src, size);
+	rodata_section->data[offset + sb] ^= 0x80;
+	vtop--;
+	vpush_ref(&ty, rodata_section, offset, size);
+	vtop->r |= VT_LVAL;
+	return 1;
+}
+
 static void unary_nested(void) { MCC_TRACE("enter\n");
 	int n, t, align, size, r;
 	CType type;
@@ -11746,6 +11902,12 @@ tok_next:
 			}
 			vpop();
 			vpushi(sb);
+		} else if (const_ref_data(vtop)) { MCC_TRACE("br\n");
+			int align, size = type_size(&vtop->type, &align);
+			int sb = float_sign_byte(bt, size);
+			sb = sb < size ? (const_ref_data(vtop)[sb] >> 7) : 0;
+			vpop();
+			vpushi(sb);
 		} else { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_X86_64)
 			if (bt != VT_LDOUBLE && signbit_inline_on()) { MCC_TRACE("br\n");
@@ -12087,7 +12249,8 @@ tok_next:
 		if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
 			gen_complex_neg();
 		} else if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
-			gen_opif(TOK_NEG);
+			if (!gen_negf_const_ref())
+				{ MCC_TRACE("br\n"); gen_opif(TOK_NEG); }
 		} else { MCC_TRACE("br\n");
 			vpushi(0);
 			vswap();
@@ -14381,6 +14544,7 @@ static void parse_init_elem(int expr_type) { MCC_TRACE("enter\n");
 		global_expr = 1;
 		expr_const1();
 		global_expr = saved_global_expr;
+		fold_const_lval_at(vtop);
 		if (((vtop->r & (VT_VALMASK | VT_LVAL)) != VT_CONST && ((vtop->r & (VT_SYM | VT_LVAL)) != (VT_SYM | VT_LVAL) ||
 																														vtop->sym->v < SYM_FIRST_ANOM))
 #ifdef MCC_TARGET_PE
@@ -14417,6 +14581,8 @@ static void init_llocal_push_addr(init_params *p, unsigned long c) { MCC_TRACE("
 static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("enter\n");
 	init_assert(p, c + size);
 	if (p->sec) { MCC_TRACE("br\n");
+		if (!NODATA_WANTED && size > 0)
+			{ MCC_TRACE("br\n"); memset(p->sec->data + c, 0, size); }
 	} else if (p->llocal) { MCC_TRACE("br\n");
 		vpush_helper_func(TOK_memset);
 		init_llocal_push_addr(p, c);
@@ -14454,6 +14620,8 @@ static void init_putz(init_params *p, unsigned long c, int size) { MCC_TRACE("en
 #define DIF_SIZE_ONLY 2
 #define DIF_HAVE_ELEM 4
 #define DIF_CLEAR 8
+#define DIF_OVERWRITE 16
+#define DIF_ROUTED 32
 
 #if defined MCC_TARGET_X86_64
 #define STACK_OVERALIGN_MAX 16
@@ -14513,7 +14681,8 @@ static int decl_design_excess(init_params *p, int flags, int al) { MCC_TRACE("en
 static int decl_designator(init_params *p, CType *type, unsigned long c,
 													 Sym **cur_field, int flags, int al) { MCC_TRACE("enter\n");
 	Sym *s, *f;
-	int index, index_last, align, l, nb_elems, elem_size, routed = 0;
+	int index, index_last, align, l, nb_elems, elem_size, routed = 0, overwrite;
+	int ncomp = 0, last_bracket = 0, gnu_colon = 0;
 	unsigned long corig = c;
 
 	elem_size = 0;
@@ -14525,7 +14694,7 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 	if (gnu_ext && tok >= TOK_UIDENT) { MCC_TRACE("br\n");
 		l = tok, next();
 		if (tok == ':')
-			{ MCC_TRACE("br\n"); goto struct_field; }
+			{ MCC_TRACE("br\n"); gnu_colon = 1; goto struct_field; }
 		unget_tok(l);
 	}
 
@@ -14553,6 +14722,7 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 			elem_size = type_size(type, &align);
 			c += index * elem_size;
 			nb_elems = index_last - index + 1;
+			last_bracket = 1;
 		} else { MCC_TRACE("br\n");
 			int cumofs;
 			next();
@@ -14564,7 +14734,9 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 				{ MCC_TRACE("br\n"); *cur_field = f; }
 			type = &f->type;
 			c += cumofs;
+			last_bracket = 0;
 		}
+		++ncomp;
 		if (((type->t & VT_ARRAY) || (type->t & VT_BTYPE) == VT_STRUCT) && (tok == '[' || tok == '.')) { MCC_TRACE("br\n");
 			cur_field = NULL;
 			routed = 1;
@@ -14575,7 +14747,8 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 	if (!cur_field) { MCC_TRACE("br\n");
 		if (tok == '=') { MCC_TRACE("br\n");
 			next();
-		} else if (!gnu_ext) { MCC_TRACE("br\n");
+		} else if (!routed && (!gnu_ext || (flags & DIF_ROUTED) ||
+													 !(gnu_colon || (ncomp == 1 && last_bracket)))) { MCC_TRACE("br\n");
 			expect("=");
 		}
 	} else { MCC_TRACE("br\n");
@@ -14604,9 +14777,18 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 	if (!elem_size)
 		{ MCC_TRACE("br\n"); elem_size = type_size(type, &align); }
 
-	if (!routed && !(flags & DIF_SIZE_ONLY) && c - corig < al) { MCC_TRACE("br\n");
-		decl_design_delrels(p->sec, c, elem_size * nb_elems);
-		flags &= ~DIF_CLEAR;
+	overwrite = !(flags & DIF_SIZE_ONLY) &&
+							((flags & DIF_OVERWRITE) || c - corig < al);
+	flags &= ~(DIF_OVERWRITE | DIF_ROUTED);
+	if (routed)
+		{ MCC_TRACE("br\n"); flags |= DIF_ROUTED; }
+	if (overwrite) { MCC_TRACE("br\n");
+		if (routed) { MCC_TRACE("br\n");
+			flags |= DIF_OVERWRITE;
+		} else { MCC_TRACE("br\n");
+			decl_design_delrels(p->sec, c, elem_size * nb_elems);
+			flags &= ~DIF_CLEAR;
+		}
 	}
 
 	decl_initializer(p, type, c, flags & ~DIF_FIRST);
@@ -14982,6 +15164,8 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 					init_assert(p, c + nb);
 					if (!NODATA_WANTED)
 						{ MCC_TRACE("br\n"); memcpy(p->sec->data + c, initstr.data, nb); }
+					if (n > nb && !(flags & DIF_CLEAR))
+						{ MCC_TRACE("br\n"); init_putz(p, c + nb, n - nb); }
 				} else { MCC_TRACE("br\n");
 					for (int i = 0; i < n; i++) { MCC_TRACE("br\n");
 						if (i >= nb) { MCC_TRACE("br\n");
@@ -15030,25 +15214,10 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 			{
 				int sublist_comma = 0;
 				while (tok != '}' || (flags & DIF_HAVE_ELEM)) { MCC_TRACE("br\n");
-					if (no_oblock && sublist_comma && !(flags & DIF_HAVE_ELEM)) { MCC_TRACE("br\n");
-						int climb = 0;
-						if (tok == '[' && !(type->t & VT_ARRAY))
-							{ MCC_TRACE("br\n"); climb = 1; }
-						else if (tok == '.') { MCC_TRACE("br\n");
-							if (type->t & VT_ARRAY) { MCC_TRACE("br\n");
-								climb = 1;
-							} else { MCC_TRACE("br\n");
-								int cumofs;
-								next();
-								if (tok >= TOK_UIDENT && !find_field(type, tok | SYM_FIELD, &cumofs))
-									{ MCC_TRACE("br\n"); climb = 1; }
-								unget_tok('.');
-							}
-						}
-						if (climb) { MCC_TRACE("br\n");
-							unget_tok(',');
-							break;
-						}
+					if (no_oblock && sublist_comma && !(flags & DIF_HAVE_ELEM) &&
+							(tok == '[' || tok == '.')) { MCC_TRACE("br\n");
+						unget_tok(',');
+						break;
 					}
 					len = decl_designator(p, type, c, &f, flags, len);
 					flags &= ~DIF_HAVE_ELEM;
