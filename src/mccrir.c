@@ -3364,7 +3364,17 @@ static void rir_cf_cond(void) {
 	cond = rir_shn ? rir_pop() : AST_NONE;
 	if (cond == AST_NONE)
 		return;
-	if (rir_dheldn && rir_docond && rir_cfkind[rir_cfn - 1] == RIR_R_DO &&
+	/* A store in a loop condition -- `for (; !!(p = *pp); )`, `while (c = f(), c)` --
+	   is held by rir_drop while rir_docond is set, and whatever flushes it later
+	   lands it in the enclosing block AFTER the loop. ptr_unlink then ran its body
+	   with `p` never assigned and segfaulted. Park it in the condition's own prefix,
+	   which both replay arms already know how to run before the condition: the
+	   while/do arm reads it as child 2 and the for arm as child 3. This was
+	   RIR_R_DO-only, which is why only the do-while comma case was ever fixed. */
+	if (rir_dheldn && rir_docond &&
+			(rir_cfkind[rir_cfn - 1] == RIR_R_DO ||
+			 rir_cfkind[rir_cfn - 1] == RIR_R_WHILE ||
+			 rir_cfkind[rir_cfn - 1] == RIR_R_FOR) &&
 			rir_cfpfx[rir_cfn - 1] == AST_NONE) {
 		AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
 		int q;
@@ -3854,8 +3864,13 @@ static void rir_region(const RirOp *ro) {
 											ast_fbits(rir_arena, rir_cf[rir_cfn]) | AST_FB_NOCODE);
 			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
 				ast_set_op(rir_arena, rir_cf[rir_cfn], 8);
+			/* while/do carry (cond, body) so the prefix is child 2; a for carries
+			   (cond, incr, body) so it is child 3. The replay arms read exactly
+			   those slots. */
 			if (rir_cfpfx[rir_cfn] != AST_NONE &&
-					ast_nchild(rir_arena, rir_cf[rir_cfn]) == 2)
+					(ast_nchild(rir_arena, rir_cf[rir_cfn]) == 2 ||
+					 (rir_cfkind[rir_cfn] == RIR_R_FOR &&
+						ast_nchild(rir_arena, rir_cf[rir_cfn]) == 3)))
 				ast_add_child(rir_arena, rir_cf[rir_cfn], rir_cfpfx[rir_cfn]);
 			rir_cfpfx[rir_cfn] = AST_NONE;
 		}

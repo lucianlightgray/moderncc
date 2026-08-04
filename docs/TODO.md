@@ -407,13 +407,35 @@ Both `StoreVal` paths only produce a *value*: one reuses a live register, the ot
 re-derives the value expression. The condition therefore tested the right number while
 `p` stayed uninitialised and the body dereferenced garbage.
 
-**Partly fixed.** An unparented `Store` reached through a `StoreVal` is now performed
-rather than merely evaluated (`src/mccast.c`, the `AST_StoreVal` arm) — that is the
-only chance it will ever be performed. The segfault becomes a hang: the store is
-emitted, but at the loop latch rather than the loop top, so `p` is still not set when
-the body runs. Placement is the remaining half and is unsolved. The change costs
-nothing measurable — `mcc.c` at `-O1` stays at `used 1121, fallback 39`, ctest 8230 of
-8230 — so it is kept as a partial correctness improvement, not as a closure.
+**Root-caused, groundwork landed, not closed.** The `p = *pp` `Store` *is* in the
+arena — parented to the root `BasicBlock` **after** the `If`, so it replays after the
+loop and `p` is never set while the body runs.
+
+`rir_drop` holds a condition store in `rir_dheld` only while `rir_docond` is set, and
+`rir_docond` is armed in exactly one place (`src/mccrir.c:3843`): when a `RIR_R_BODY`
+region ends inside a `RIR_R_DO` whose condition is not yet captured. **That is
+do-while only** — for `for` and `while` the condition precedes the body, so the flag is
+never armed, the store is never held, and it lands in the enclosing block. This is
+precisely why the do-while comma case (`rir_cfpfx`, closed earlier) was the only member
+of this family ever fixed.
+
+Two halves of the fix are in, one is missing:
+
+- *In*: `rir_cf_cond` now parks held condition stores for `RIR_R_WHILE` and
+  `RIR_R_FOR` as well as `RIR_R_DO`, and the loop rend appends the prefix for a `for`
+  as child 3 (it previously required `nchild == 2`, true for while/do and false for
+  `for`, so the `for` replay arm's `nchild >= 4` hook could never fire).
+- *In*: an unparented `Store` reached through a `StoreVal` is now performed rather
+  than merely evaluated — that is its only chance to happen.
+- **Missing**: nothing arms `rir_docond` for a `for`/`while` condition, so
+  `rir_dheld` is still empty when `rir_cf_cond` runs and the parking code does not
+  trigger. The reproducer still hangs. Arming it at the `RIR_R_COND` rbegin when the
+  enclosing construct is `RIR_R_FOR`/`RIR_R_WHILE` is the remaining step; it is a
+  capture-side change, so measure it on the twelve-key board.
+
+Both landed halves are **inert today** — `mcc.c` at `-O1` stays `used 1121,
+fallback 39` and ctest is 8230 of 8230 — so they are groundwork, not a claim of
+closure.
 
 ### The real scope: 39 fallbacks in `src/mcc.c` at `-O1`, not 6
 
