@@ -3953,6 +3953,21 @@ static void ast_error_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n")
 	(void)msg;
 }
 
+/* ast_subtree_has_call is gated to the promotion targets; the StoreVal arm below
+   needs the same question answered on every target. */
+static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
+	MCC_TRACE("enter\n");
+	if (n == AST_NONE || depth > 32)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Invoke)
+		{ MCC_TRACE("br\n"); return 1; }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_val_has_call(a, c, depth + 1))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	MCC_TRACE_IF("RV n=%d kind=%d nchild=%d parent=%d ind=%d vtop=%d\n", (int)n,
 							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
@@ -4016,8 +4031,19 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				}
 				break;
 			}
-			if (ast_nchild(a, st) == 2)
-				{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
+			/* Without AST_FB_STORE_VALUE_LIVE the value is re-derived by replaying
+			   the store's own value expression, which is only sound when that
+			   expression is pure. bounds_stress.c's test16 is
+			   `strcpy(q = alloca(strlen(demo) + 1), demo)`: re-deriving re-runs
+			   strlen AND performs a second alloca, so `q` names the first buffer
+			   while strcpy writes the second. Read the stored location instead
+			   whenever the value could have side effects. */
+			if (ast_nchild(a, st) == 2) { MCC_TRACE("br\n");
+				if (ast_val_has_call(a, ast_child(a, st, 1), 0))
+					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 0)); }
+				else
+					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
+			}
 		}
 		break;
 	}
