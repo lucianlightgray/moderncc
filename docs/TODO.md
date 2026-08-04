@@ -2964,3 +2964,35 @@ instrumentation to triage one is now a single command:
 
     MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=64 mcc -w -O1 ... -c src/mcc.c 2>&1 \
       | grep '^\[unfaithful\] <fn> '
+
+### format_func_spec: a doubled load, and why the obvious fold is not the fix
+
+`format_func_spec` is a clean single-cause `len` case worth finishing. Its
+`strcmp(name, tbl[i].n)` replays as
+
+    parser  lea tbl ; add rcx ; mov rcx,[rcx]
+    replay  lea tbl ; add rcx ; mov rcx,[rcx] ; mov rcx,[rcx]
+
+three bytes longer, which is exactly the `0f 83 a7` -> `0f 83 aa` displacement seen at
+`@33`. The arena subtree is
+
+    Load ( Convert ( Unary op#262145 ( Load ( Binary + tbl idx ) ) ) )
+
+**`op#262145` is `AST_OP_MEMBER` (0x40001), not `AST_OP_ADDR` (0x40000).** Reading it
+as an address-of and folding `&*y -> y` is wrong, and that misreading cost two
+experiments here. The real shape is a member access whose base is already a load, so
+the fold has to account for the member offset rather than cancel a dereference.
+
+Two negatives worth keeping:
+
+- **N24 — fold at the `IR_OP_ADDR` capture site.** `mcc.c -O1` fallback 34 -> 29, but
+  `skip` 10 -> **64** and `used` 1126 -> 1077: 54 bodies came out `invalid`. Folding
+  during capture disturbs the shadow stack. Detaching the inner node first does not
+  help -- the count is identical -- so it is the stack bookkeeping, not re-parenting.
+- **N25 — fold as a post-build rewrite.** Inert, because it tested for
+  `AST_OP_ADDR` and the node is `AST_OP_MEMBER`. The approach is still the right one:
+  a post-build pass leaves capture alone and so avoids N24 entirely. `ast_replace_child`
+  was written for it and is worth re-adding when the pass is written correctly.
+
+The general lesson for this file: a post-build arena rewrite is the safe place for
+canonicalisation. Capture-site edits have now failed this way twice.
