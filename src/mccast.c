@@ -15012,7 +15012,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			if (pd1 && funcname && !strcmp(pd1, funcname)) { MCC_TRACE("br\n");
 				static char pdb1[8192];
 				ast_dump(ast_cur, ast_root(ast_cur), pdb1, sizeof pdb1);
-				fprintf(stderr, "[ast-mid] %s:\n%s\n", funcname, pdb1);
+				fprintf(stderr, "[ast-mid] %s arena=%p:\n%s\n", funcname, (void *)ast_cur, pdb1);
 			}
 		}
 		int keep_baseline = 0;
@@ -15084,6 +15084,17 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			stk_data_floor = nb_stk_data;
 			if (setjmp(mcc_state->error_jmp_buf) == 0) { MCC_TRACE("br\n");
 				mcc_state->error_set_jmp_enabled = 1;
+				{ MCC_TRACE("br\n");
+					const char *pd2 = getenv("RIRPRODDUMP");
+					if (pd2 && funcname && !strcmp(pd2, funcname)) { MCC_TRACE("br\n");
+						static char pdb3[8192];
+						ast_dump(ast_cur, ast_root(ast_cur), pdb3, sizeof pdb3);
+						fprintf(stderr, "[ast-injmp] %s arena=%p: body_len=%d rel_len=%llu reloc1=%llu reloc0=%llu\n%s\n",
+										funcname, (void *)ast_cur, body_len, (unsigned long long)rel_len,
+										(unsigned long long)ast_reloc1,
+										(unsigned long long)ast_reloc0_sv, pdb3);
+					}
+				}
 				ast_promo_n = 0;
 				ast_pinned_regs = 0;
 #if MCC_REPLAY_IR

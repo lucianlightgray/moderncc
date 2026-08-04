@@ -579,11 +579,33 @@ transforms the arena** — it is the `orig`/`orig_rel` capture, `ind = ast_body_
 `ast_pinned_regs = 0`, and `rir_prod_replay_begin()`. The only calls are `mcc_malloc`,
 `memcpy`, `setjmp` and `rir_prod_replay_begin`.
 
-**Finish the bisect by probe, not by reading.** Drop `[ast-predump]`-style dumps every
-few lines through that window — the obvious next split is immediately before and after
-`rir_prod_replay_begin()` — until two adjacent probes disagree. Six theories about this
-defect have now been refuted by measurement, every one of them reached by reading
-source, so do not deviate into another one.
+**The bisect was continued and the window is now ~40 lines, with the arena's identity
+proven constant across it.** A fifth probe, `[ast-injmp]`, sits just inside the
+`setjmp` block after `error_set_jmp_enabled = 1`:
+
+```
+[ast-mid]    arena=0x56177f7577a0   Binary -     correct
+[ast-injmp]  arena=0x56177f7577a0   Literal 0    folded
+```
+
+**Same arena pointer, same root, different contents.** So this is not a handover to a
+different object and not a transform — something writes into the arena's node storage.
+The window is `int keep_baseline = 0;` (`src/mccast.c:15018`) to that probe, and it
+contains **no calls but `mcc_malloc`, `memcpy` and `setjmp`**, plus scalar
+initialisation.
+
+Two candidates checked and eliminated: `body_len=46 rel_len=48 reloc1=48 reloc0=0`, so
+neither length underflows and neither `memcpy` overruns its freshly allocated buffer;
+and the handover block above is correct — `ast_arena_free(ast_cur)` frees the *previous*
+arena before `ast_cur = ast_rir_prod` takes the production one.
+
+**This now looks like heap corruption rather than a compiler-model defect**, which
+would also explain why six model-level theories all fit the symptom and all failed.
+The next moves are diagnostic, not analytical: build with ASan (or `MCC_CONFIG_BCHECK`)
+and run the two-line reproducer; or make `ast_arena_free` poison the freed block and
+see whether the arena being read is one that was freed. Do **not** open a seventh
+model-level theory — the measurement says the bytes are being overwritten, not
+mis-derived.
 
 ### Earlier framing, superseded: the production arena is correct but the replay does not walk it
 
