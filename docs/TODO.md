@@ -2925,3 +2925,42 @@ Refusing would not have served the goal in any case. A refusal makes the body a
 `skip` rather than a `fallback`, so the census improves while the object still ships
 parser bytes. Driving the count down with refusals is gaming the metric; only a
 faithful arena is real progress.
+
+### Correcting the class sizes: chained stores are 2 bodies, not the dominant class
+
+An earlier section called the chained store "the dominant remaining class". That was
+wrong, and the measurement that disproves it was already in hand: nesting *everything*
+moved `mcc.c -O1` from 34 to **32**. Two bodies. The other 32 have unrelated causes.
+Sampling three diffs and generalising from them was the mistake -- exactly the habit
+N20 warns about.
+
+A cheap mechanical split of the 33 dumped diffs (64-byte window around the first
+difference, comparing the byte *multiset*):
+
+- **7 are pure reorders** -- identical bytes, different order:
+  `_mcc_backtrace`, `bind_exe_dynsyms`, `case_adjacent`, `export_global_syms`,
+  `put_elf_sym`, `relocate_syms`, `rt_find_state`. All are `bytes`-class. These are
+  the natural constituency for the semantic-equivalence verdict rather than for byte
+  fixes: if the equivalence proof can carry a reorder, they stop falling back
+  *legitimately* rather than by refusal.
+- **26 have genuinely different bytes** and need individual diagnosis.
+
+The window is 64 bytes, so treat the 7 as a lead rather than a proof -- a reorder that
+spills past the window will not be caught, and a coincidental multiset match is
+possible.
+
+### Honest scope estimate
+
+Reaching zero fallback at `-O1` is not one fix or a few. It is on the order of 26
+separate byte-level diagnoses plus an equivalence path for the 7 reorders, each
+needing the dump-read-fix-measure loop that has taken roughly one working session per
+*class* so far. Nothing found this session suggests a single common root cause behind
+the 26; the four defects fixed this session were four unrelated mechanisms
+(promotion of assigning loop conditions, argument evaluation order, non-store
+condition effects, chained-store duplication).
+
+The per-body work is parallelisable -- each body is independent, and the
+instrumentation to triage one is now a single command:
+
+    MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=64 mcc -w -O1 ... -c src/mcc.c 2>&1 \
+      | grep '^\[unfaithful\] <fn> '
