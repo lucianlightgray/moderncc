@@ -15033,6 +15033,10 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int saved_loc = loc, saved_anon = anon_sym;
 			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
+			/* Set only where the replay ran to completion. The error path below
+			   clears `faithful` for a reason that has nothing to do with the byte
+			   compare, and a body that longjmp'd out must never be kept. */
+			volatile int ast_replay_completed = 0;
 			int promoted = 0;
 			ast_search_axis_ran = 0;
 			int bfolds = 0;
@@ -15085,8 +15089,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 									 (rel_len == 0 ||
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
 																					(int)rel_len));
-				if (ast_rir_nofb_env && !faithful)
-					faithful = 1;
+				ast_replay_completed = 1;
 				ast_fn_faithful = faithful;
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
 					int ast_bd = -1, ast_i;
@@ -15694,11 +15697,20 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			sym_free_first = ast_saved_free;
 			mcc_state->warn_none = ast_sv_warn;
 			seqp_reset();
+			/* `faithful` answers "did the replay reproduce the parser byte for byte,
+			   relocations included", and that is what gates the optimizer above. It
+			   is a much stronger question than "is this body safe to ship", which is
+			   all the keep/restore decision needs. MCC_RIR_NOFB separates the two so
+			   the fallback census can be driven to zero without also turning passes
+			   loose on a body whose replay was never validated -- forcing `faithful`
+			   itself would do both at once, and the four golden regressions banked in
+			   docs/TODO.md are what that looks like. */
+			int keep = faithful || (ast_rir_nofb_env && ast_replay_completed);
 #if MCC_REPLAY_IR
 			if (ast_rir_used)
-				{ MCC_TRACE("br\n"); rir_prod_note(faithful ? "used" : "fallback"); }
+				{ MCC_TRACE("br\n"); rir_prod_note(keep ? "used" : "fallback"); }
 #endif
-			if (!faithful) { MCC_TRACE("br\n");
+			if (!keep) { MCC_TRACE("br\n");
 				memcpy(cur_text_section->data + ast_body_ind_sv, orig, body_len);
 				if (rel_len)
 					{ MCC_TRACE("br\n"); memcpy(ast_rsec->data + ast_reloc0_sv, orig_rel, rel_len); }

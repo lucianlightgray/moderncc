@@ -403,6 +403,25 @@ against the parser's bytes, and `rir_prod_note(faithful ? "used" : "fallback")`
 into production so the bar can be measured rather than argued about. **With it on,
 `fallback` goes 17 → 0 and `used` 2158 → 2175.**
 
+**It separates two questions that `faithful` had conflated, and that separation is the
+point.** `faithful` asks *"did the replay reproduce the parser byte for byte,
+relocations included"*, and that is the right gate for the **optimizer**
+(`ast_run_strat_seq`, `src/mccast.c:13044`) — passes must not run over a body whose
+replay was never validated. It is far too strong a question for the **keep/restore**
+decision, which only needs *"is this body safe to ship"*. So the switch computes
+`keep = faithful || (ast_rir_nofb_env && ast_replay_completed)` and uses `keep` only
+for `rir_prod_note` and the restore, leaving `faithful` — and therefore the optimizer
+gate — untouched. `ast_replay_completed` is set only where the replay ran to
+completion, because the error path clears `faithful` for reasons that have nothing to
+do with the byte compare and a body that longjmp'd out must never be kept.
+
+**Forcing `faithful` itself instead is a trap, and it was measured.** Doing that keeps
+the body *and* turns the optimizer loose on it in the same move, so the two effects
+cannot be told apart. Under the correct separation the golden regressions go **4 → 5**
+(`c11_complex_convert` joins), which says a pass had been *masking* one defect in the
+un-optimized replay. **Five is the honest count**; the four was an artifact of letting
+passes run.
+
 **And the goldens say that is not yet safe.** Same build, same corpus, x86_64:
 
 | | passed | failed |
