@@ -85,6 +85,20 @@ gates this file recorded as green and were not. **Two of the three closed in
    at `-O1` plus 3 at `-O0` — not a three-body `-O0` curiosity. Root cause is
    established (see **Still open**); the arena node is not yet pinned.
 
+6. **`stage2 / linux / predefs-off` failed two `parts/` cells on CI at `9f337e21`
+   (run 30914631434, 2026-08-04), and the cause is in the new reference-std
+   forwarding, not in mcc.** `parts/run_s7_13`: the **gcc reference build** dies
+   with `s7_13.h:40: '__alignas_is_defined' undeclared` — line 40 is the
+   `#else`/pre-C23 arm, so gcc is in a pre-C23 mode without the macro; the file
+   already guards on `__STDC_VERSION__ >= 202311L`, and what changed underneath it
+   is `1f8f7e36` (forward mcc's default std to the reference compiler) on top of
+   the gnu23 default from `4d090f12`. `parts/run_s6_10_4`: *gcc* diverges from
+   **both** clang and mcc on stdout, again pointing at the reference leg. Both
+   cells passed at run 30887204370 the same morning. Not diagnosed further —
+   found while watching CI from the Windows host, which cannot run this job; the
+   other 19 stage2 jobs were cancelled by a concurrent push, so whether the
+   failure is predefs-off-specific or tree-wide is **unmeasured**.
+
 ### New urgent items — Windows and macOS, which this host cannot reach
 
 Everything below was **attempted locally and could not be measured**, not skipped.
@@ -117,7 +131,17 @@ State when the machine went down: `cross`/`debug`/`release`/`sanitize`/`cst` gre
 
 - `matrix` — clean rebuild was in flight when the reboot killed it; `rm -rf cmake-matrix` and rerun (config log should print the winlibs gcc, not CLion's).
 - `diagnostics` — rerun with the mcc_p skip; everything cascaded from that one link before.
-- `msvc`, `sanitize-msvc` (VS 18 is installed), `mingw`, `stage2` (stage1 = the release mcc), `dist-mingw`, `dist-msvc` — not started.
+- ~~`msvc`~~ — **green on 2026-08-04** at `583acfc3` + the shadow-iv bash fix: full
+  suite passes with only the expected skips (no cross sysroots, no docker, macho).
+  Two Windows-host defects closed on the way: `#embed`'s `S_ISREG` (UCRT has no
+  such macro; stage1 windows-x86_64-msvc died at link on CI) and the
+  `cross/shadow-iv-*` cells invoking bare `bash`, which resolves to System32's
+  WSL relay on a real Windows host — the one script test in the tree not going
+  through `sh`. CMake now resolves a real bash (beside the trusted `sh`, or by
+  asking that sh via cygpath — a scoop shim dir holds no bash.exe) and prepends
+  its directory to the test PATH, since bare bash.exe does not bring its own
+  usr/bin along.
+- `sanitize-msvc` (VS 18 is installed), `mingw`, `stage2` (stage1 = the release mcc), `dist-mingw`, `dist-msvc` — not started.
 - Re-verify one full suite at the final HEAD: the green five above tested the tree before ~30 upstream commits landed mid-batch.
 
 Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0 through P4 have landed and `MCC_RIR_PROD` now defaults to **1**, so Replay_IR is the production arena — read P4 before touching the arena, it is where the three wrong-code classes are written down. **`MCC_RIR_ONLY` now defaults to 1 as well**: the recorder's per-body decline verdict was the arena's admission gate, and with it bypassed the arena is adopted on its own pre-flight alone. That widened the optimized population by 6.3% of bodies; the eight defects the widening exposed are closed, the three `optfire` cells that died with the gates they measure are deleted, and the tree is green at **8252/8252**. **The next step is the deletion itself** — read P5, which is now a pure deletion that moves nothing by construction. Everything above P5 is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
