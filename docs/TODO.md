@@ -374,6 +374,31 @@ cells pass against the tightened floors.
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
 
+### `fallback == 0` is one flag away, and the blocker is memory, not correctness
+
+**`MCC_RIR_NOFB=1` drives the `-O1` census to `used 2175, fallback 0`** and the exec
+goldens are clean under it at `-O1`, `-O2` **and** `-O3` — zero regressions at every
+level, after the five fixes below. So the remaining six byte-divergent bodies are
+safe to ship; the byte gate is the only thing still refusing them.
+
+**Defaulting it on does not work yet, and the reason is worth knowing.** With the
+default flipped, `ctest` loses `selfhost-jit`, `selfhost-arm64-native`,
+`selfhost-riscv64-docker`, `cross/no-compiler-abort-x86_64-win32` and two
+`exec-search` cells. `selfhost-jit` fails as **`mcc: memory full`** — a `realloc`
+returning NULL in `mcc_realloc` (`src/libmcc.c:172`), i.e. genuine exhaustion, not a
+miscompile. Neither `MCC_AST_INLINE=0` nor `MCC_AST_TEMPLATES=0` changes it, so it is
+not the inline-retention path that first suggests itself.
+
+**The methodological lesson, which cost a wrong turn:** the 317 exec goldens are *not*
+sufficient validation for a change of this class. They passed at every `-O` while
+selfhost broke. **Run the full suite before believing any codegen-affecting change** —
+self-hosting is the harder bar, and it is the one that caught this.
+
+So the remaining work for `fallback == 0` is a **memory** problem in the JIT self-host
+under always-keep, not a correctness one. Start by measuring where the growth is:
+every body now retains an arena that previously would have been discarded on the
+fallback path, and the JIT's inner compile is where that first bites.
+
 ### OPEN: `void_expr` is a PROMOTION defect, not an arena one
 
 `tests/exec/statements/void_expr.c::main` falls back at `-O2`/`-O3` (not `-O1`) and
