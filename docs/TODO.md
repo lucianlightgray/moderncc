@@ -509,7 +509,51 @@ whatever else may be true of it.
 than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
 `MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
 
-**Where the search stands, for whoever continues.** `&&` is correct and `||` is not,
+### FOUND: a folded negative 64-bit constant reaches the arena as `Literal 0` typed `VT_INT`
+
+**Two lines, no builtin, no `||`, no call:**
+
+```c
+long long a = -9223372036854775807LL - 1;   /* arena: 0   gcc: -9223372036854775808 */
+long long e = 0 - 9223372036854775807LL;    /* arena: 1   gcc: -9223372036854775807 */
+```
+
+against `9223372036854775807LL - 1` and `4294967296LL + 1`, which are both **correct**.
+The failing pair are exactly the ones whose result is negative and whose folded value's
+low 32 bits are degenerate: `INT64_MIN` is `0x8000000000000000`, low half `0`, and
+`0 - 0x7FFFFFFFFFFFFFFF` wraps to `1` in 32 bits. Both observed values are the 32-bit
+truncation of the right answer.
+
+**The `LEAF` trace names it.** With `MCC_CONFIG_TRACE=ON`,
+`MCC_TRACE_FILE=mccast MCC_TRACE_FUNC=ast_replay_value -v128`, the first line replays as
+
+```
+LEAF n=5 r=0x30 t=0x3 ival=0
+```
+
+`t=0x3` is `VT_INT` and `ival=0`, where the node must be `VT_LLONG` holding
+`INT64_MIN`. The arena's own storage is not the problem — `ival` is a `uint64_t *`
+(`src/mccast.c:99`) and `rir_leaf_slot` copies the whole `sv->c.i` and `sv->type.t`
+(`src/mccrir.c:1153-1166`). **So the wrong value is already in the SValue the leaf is
+captured from, or the capture takes the wrong leaf.**
+
+The likeliest shape, and the thing to check first: tcc lowers unary minus as
+`vpushi(0); vswap(); gen_op('-')`. The `vpushi(0)` is an `int` zero. The parser then
+*folds* the pair into one `VT_LLONG` constant, but the arena has already recorded a
+`Literal 0` of type `VT_INT` for the pushed zero. If the fold collapses the parser's
+vstack without the arena's shadow stack replacing that leaf with the folded value, the
+arena keeps the `int 0` and the big operand is gone — which is precisely `a=0`. Note
+the earlier `[rir-dump]` of a *comparison* context preserved the unfolded
+`Binary -(Binary -(0, INT64_MAX), 1)` tree, so the two paths behave differently and
+that difference is the lead.
+
+**This is a real wrong-code defect independent of everything else in this section** —
+no builtin, no short-circuit, no call. It explains `overflow_inline` (whose failing
+check compares against `-9223372036854775807LL - 1`) and it is the first thing to fix.
+Check whether `builtin_overflow`, `atomic_ptr` and `atomic_inlang_rmw` share it before
+treating them as separate defects.
+
+**Where the earlier search stood, superseded by the above.** `&&` is correct and `||` is not,
 and both go through the same arm — the only difference is `i = (bop == TOK_LAND)`
 feeding `gvtst`/`gvtst_set`. Since the materialisation and invert paths are both
 excluded, the remaining candidates are the `gvtst_set(0, t)` path itself for `||`,
