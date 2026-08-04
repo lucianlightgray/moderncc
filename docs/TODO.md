@@ -2622,6 +2622,29 @@ operands. The reported "~30 of 100" is exactly 1376/4800, i.e. a comparison agai
 `-O0` specifically. mcc already matches gcc once optimising and clang everywhere; changing
 it would break both, on a payload IEEE 754 leaves unspecified.
 
+### Board state at `29e0167b` — the goal metric
+
+Goal: every gcc test clang can run should work under mcc. That is exactly the gcc-suite
+`FAIL` + `FAILEXE` set, since `REFFAIL` is by definition what clang cannot run either.
+
+**21,586 run at `-O0`** (up from 19,571 once the ISA corpus stopped being skipped):
+PASS **18,838**, REFFAIL 1,075, FAIL 920, XPASS 389, XPASS_REFOK 232, FAILEXE 132.
+Raw 87.3%, honest **92.9%**.
+
+**Goal metric: 807 remaining** — 675 FAIL + 132 FAILEXE, by suite:
+`gcc.dg` 458, `gcc.target` 288, `c-c++-common` 29, `c-torture/compile` 16,
+`c-torture/execute` 15, `gcc.misc-tests` 1.
+
+**One fix moved 219 tests.** Unskipping the ISA corpus exposed 227 `FAILEXE` in
+`gcc.target`, almost all AVX runtime tests computing wrong answers. They shared a single
+root cause — stack-argument offsets rounded against the wrong base — and after that fix
+`gcc.target` FAILEXE is **8**. That is the strongest argument in this file for clustering
+before patching: 227 symptoms, one defect.
+
+What is left in `gcc.target`'s 280 FAIL is mostly *feature*, not defect: 140 missing
+intrinsics (AVX-512 and friends), 34 unknown types parsed as implicit int, 52 parse
+errors on types mcc lacks, 12 x87 asm tied-operand constraints.
+
 ### The board was hiding ~1,900 gcc.target tests that clang can run
 
 `tools/xsuite.py` skipped **every** `-m*` dg-option via `BAD_OPT_RE`, and `tok_true()`
