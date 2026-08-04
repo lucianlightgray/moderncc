@@ -185,6 +185,7 @@ void rir_hook_indir(void);
 void rir_hook_bfgv(int tt);
 void rir_hook_cmp_invert(void);
 void rir_hook_cast_gv(void);
+void rir_hook_cast_const(int dbt, int sbt, uint64_t pre, uint64_t post);
 void rir_hook_cleanup_goto(void *pcl);
 void rir_hook_cleanup_thunk(void *pcl, int v, int end);
 void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
@@ -349,6 +350,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_hook_bfgv(t) ((void)0)
 #define rir_hook_cmp_invert() ((void)0)
 #define rir_hook_cast_gv() ((void)0)
+#define rir_hook_cast_const(d, s, p, q) ((void)0)
 #define rir_hook_cleanup_goto(p) ((void)0)
 #define rir_hook_cleanup_thunk(p, v, e) ((void)0)
 #define rir_hook_asm_operands(n, m) ((void)0)

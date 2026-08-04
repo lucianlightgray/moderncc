@@ -647,6 +647,7 @@ struct MCCState {
 	unsigned char gnu89_inline;
 	unsigned char c99_inline_body;
 	unsigned char std_strict_ansi;
+	unsigned char permissive;
 	unsigned char unwind_tables;
 	unsigned char short_enums;
 	unsigned char nobuiltin;
@@ -676,6 +677,8 @@ struct MCCState {
 	unsigned char warn_error;
 	unsigned char warn_write_strings;
 	unsigned char warn_unsupported;
+	unsigned char warn_unsupported_option;
+	unsigned char warn_attributes;
 	unsigned char warn_implicit_function_declaration;
 	unsigned char warn_discarded_qualifiers;
 	unsigned char warn_sequence_point;
@@ -684,6 +687,9 @@ struct MCCState {
 	unsigned char warn_undef;
 	unsigned char warn_unknown_pragmas;
 	unsigned char warn_implicit_int;
+	unsigned char warn_incompatible_pointer_types;
+	unsigned char warn_int_conversion;
+	unsigned char warn_excess_initializers;
 	unsigned char warn_sign_compare;
 	unsigned char warn_parentheses;
 	unsigned char warn_switch;
@@ -1219,6 +1225,13 @@ struct filespec {
 #define TOK_PLCHLDR 0xa4
 #define TOK_PPJOIN (TOK_TWOSHARPS | SYM_FIELD)
 #define TOK_SOTYPE 0xa7
+#define TOK_DIG_LBRACK 0xa8
+#define TOK_DIG_RBRACK 0xa9
+#define TOK_DIG_LBRACE 0xaa
+#define TOK_DIG_RBRACE 0xab
+#define TOK_DIG_HASH 0xac
+#define TOK_DIG_TWOSHARPS 0xad
+#define TOK_IS_DIGRAPH(t) ((unsigned)((t) - TOK_DIG_LBRACK) <= (unsigned)(TOK_DIG_TWOSHARPS - TOK_DIG_LBRACK))
 
 #define TOK_A_ADD 0xb0
 #define TOK_A_SUB 0xb1
@@ -1269,6 +1282,7 @@ enum mcc_token {
 #include "mcctok.h"
 
 #undef DEF
+	, TOK_PREDEF_END
 };
 
 #define TOK_UIDENT TOK_DEFINE

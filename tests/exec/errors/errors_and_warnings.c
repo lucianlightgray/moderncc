@@ -61,7 +61,7 @@ enum rgb3 c = 42;
 int i = i++;
 
 #elif defined test_pointer_assignment
-
+#pragma comment(option, "-Wno-error=incompatible-pointer-types")
 void (*f1)(void);
 void f2(void) {
 }
@@ -158,8 +158,8 @@ int bar(const char *(*g)()) {
 	g();
 	return 42;
 }
-int foo(int()) {
-	return 0;
+int foo(int()) { return 0; }
+
 #elif defined test_invalid_1
 void f(char *);
 void g(void) {
@@ -346,7 +346,7 @@ struct zzz {
 } z, *zz;
 
 #elif defined test_long_double_type_for_win32
-
+#pragma comment(option, "-Wno-error=incompatible-pointer-types")
 int main() {
 	double *a = 0;
 	long double *b = a;
@@ -552,7 +552,7 @@ int main() {
 }
 
 #elif defined test_scope_1 || defined test_scope_2 || defined test_scope_3
-
+#pragma comment(option, "-Wno-error=incompatible-pointer-types")
 struct xxx {
 	int x[4];
 };

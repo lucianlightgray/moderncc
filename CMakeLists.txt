@@ -5772,6 +5772,11 @@ if(MCC_BUILD_TESTS)
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/dg-error/*.c")
         foreach(_f IN LISTS _dgerror_srcs)
             get_filename_component(_n "${_f}" NAME_WE)
+            if(_n MATCHES "_lin$" AND NOT CMAKE_HOST_UNIX)
+                mcc_skip_test(diag.dg-error.${_n}
+                    "case depends on POSIX device files under /dev")
+                continue()
+            endif()
             add_test(NAME diag.dg-error.${_n} COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DSRC=${_f}"
                 "-DOUT=${CMAKE_BINARY_DIR}/dgerror_${_n}.o"

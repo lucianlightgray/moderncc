@@ -819,7 +819,36 @@ ST_FUNC int mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+static void permerror_promote(MCCState *s1, const unsigned short *off, unsigned n) { MCC_TRACE("enter\n");
+	unsigned i;
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		unsigned char *f = (unsigned char *)s1 + off[i];
+		if (*f & WARN_ON)
+			{ MCC_TRACE("br\n"); *f |= WARN_ERR; }
+	}
+}
+
+static void mcc_apply_std_permerrors(MCCState *s1) { MCC_TRACE("enter\n");
+	static const unsigned short removed_in_c99[] = {
+			offsetof(MCCState, warn_implicit_function_declaration),
+			offsetof(MCCState, warn_implicit_int)};
+	static const unsigned short constraint_violation[] = {
+			offsetof(MCCState, warn_incompatible_pointer_types),
+			offsetof(MCCState, warn_int_conversion),
+			offsetof(MCCState, warn_return_type)};
+
+	if (s1->permissive)
+		{ MCC_TRACE("br\n"); return; }
+	if (s1->cversion >= 199901)
+		{ MCC_TRACE("br\n"); permerror_promote(s1, removed_in_c99,
+									sizeof(removed_in_c99) / sizeof(removed_in_c99[0])); }
+	if (s1->cversion >= 199901 || s1->pedantic_errors)
+		{ MCC_TRACE("br\n"); permerror_promote(s1, constraint_violation,
+									sizeof(constraint_violation) / sizeof(constraint_violation[0])); }
+}
+
 static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MCC_TRACE("enter\n");
+	mcc_apply_std_permerrors(s1);
 	mcc_enter_state(s1);
 	MCC_TRACE("filetype=%d fd=%d\n", filetype, fd);
 	s1->error_set_jmp_enabled = 1;
@@ -1158,14 +1187,19 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->mcc_ext = 1;
 	s->nocommon = 1;
 	s->dollars_in_identifiers = 1;
-	s->cversion = 201112;
+	s->cversion = 202311;
 	s->pie = -1;
 	s->pic = mcc_target_defaults.pic;
-	s->warn_implicit_function_declaration = WARN_ON | WARN_ERR;
+	s->warn_implicit_function_declaration = WARN_ON;
+	s->warn_unsupported_option = WARN_ON;
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
-	s->warn_implicit_int = 1;
-	s->warn_return_type = WARN_ON | WARN_ERR;
+	s->warn_implicit_int = WARN_ON;
+	s->warn_incompatible_pointer_types = WARN_ON;
+	s->warn_int_conversion = WARN_ON;
+	s->warn_excess_initializers = WARN_ON;
+	s->warn_attributes = WARN_ON;
+	s->warn_return_type = WARN_ON;
 	s->warn_shift_count_negative = WARN_ON;
 	s->warn_shift_count_overflow = WARN_ON;
 	s->warn_undefined_internal = WARN_ON;
@@ -2117,6 +2151,7 @@ enum {
 	MCC_OPTION_debug,
 	MCC_OPTION_static,
 	MCC_OPTION_std,
+	MCC_OPTION_ansi,
 	MCC_OPTION_shared,
 	MCC_OPTION_soname,
 	MCC_OPTION_o,
@@ -2232,6 +2267,7 @@ static const MCCOption mcc_options[] = {
 		{"d", MCC_OPTION_d, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"static", MCC_OPTION_static, 0},
 		{"std", MCC_OPTION_std, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"ansi", MCC_OPTION_ansi, 0},
 		{"shared", MCC_OPTION_shared, 0},
 		{"soname", MCC_OPTION_soname, MCC_OPTION_HAS_ARG},
 		{"o", MCC_OPTION_o, MCC_OPTION_HAS_ARG},
@@ -2317,7 +2353,9 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_error), 0, "error"},
 		{offsetof(MCCState, warn_write_strings), 0, "write-strings"},
 		{offsetof(MCCState, warn_unsupported), 0, "unsupported"},
-		{offsetof(MCCState, warn_unsupported), 0, "attributes"},
+		{offsetof(MCCState, warn_attributes), 0, "attributes"},
+		{offsetof(MCCState, warn_attributes), 0, "unknown-attributes"},
+		{offsetof(MCCState, warn_unsupported_option), 0, "unsupported-option"},
 		{offsetof(MCCState, warn_implicit_function_declaration), WD_ALL, "implicit-function-declaration"},
 		{offsetof(MCCState, warn_discarded_qualifiers), WD_ALL, "discarded-qualifiers"},
 		{offsetof(MCCState, warn_sequence_point), WD_ALL, "sequence-point"},
@@ -2325,6 +2363,9 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_vla), 0, "vla"},
 		{offsetof(MCCState, warn_undef), 0, "undef"},
 		{offsetof(MCCState, warn_implicit_int), 0, "implicit-int"},
+		{offsetof(MCCState, warn_incompatible_pointer_types), 0, "incompatible-pointer-types"},
+		{offsetof(MCCState, warn_int_conversion), 0, "int-conversion"},
+		{offsetof(MCCState, warn_excess_initializers), 0, "excess-initializers"},
 		{offsetof(MCCState, warn_sign_compare), 0, "sign-compare"},
 		{offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses"},
 		{offsetof(MCCState, warn_switch), WD_ALL, "switch"},
@@ -2353,6 +2394,7 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, nocommon), FD_INVERT, "common"},
 		{offsetof(MCCState, leading_underscore), 0, "leading-underscore"},
 		{offsetof(MCCState, ms_extensions), 0, "ms-extensions"},
+		{offsetof(MCCState, permissive), 0, "permissive"},
 		{offsetof(MCCState, dollars_in_identifiers), 0, "dollars-in-identifiers"},
 		{offsetof(MCCState, test_coverage), 0, "test-coverage"},
 		{offsetof(MCCState, reverse_funcargs), 0, "reverse-funcargs"},
@@ -2661,7 +2703,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 #else
 			return mcc_error_noabort("the CST database (--lsp) was not built into this mcc");
 #endif
-		case MCC_OPTION_bt:
+		case MCC_OPTION_bt: {
+			const char *bp = optarg;
+			while (isnum(*bp))
+				{ MCC_TRACE("br\n"); bp++; }
+			if (*bp)
+				{ MCC_TRACE("br\n"); goto unsupported_option; }
+		}
 #if MCC_CONFIG_DIAG_RT >= 1
 			s->rt_num_callers = atoi(optarg);
 #endif
@@ -2709,7 +2757,14 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_stats:
 			if (optarg[0] == '=')
 				{ MCC_TRACE("br\n"); optarg++; }
-			s->stats = optarg[0] ? (unsigned)strtoul(optarg, NULL, 0) : MCC_STATS_ALL;
+			if (optarg[0]) { MCC_TRACE("br\n");
+				char *send;
+				unsigned long sval = strtoul(optarg, &send, 0);
+				if (*send)
+					{ MCC_TRACE("br\n"); goto unsupported_option; }
+				s->stats = (unsigned)sval;
+			} else
+				{ MCC_TRACE("br\n"); s->stats = MCC_STATS_ALL; }
 			mcc_stats_enable(s->stats);
 			break;
 		case MCC_OPTION_b:
@@ -2728,6 +2783,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->dwarf = (*optarg) ? (0 - atoi(optarg)) : DEFAULT_DWARF_VERSION;
 			} else if (0 == strcmp("stabs", optarg)) { MCC_TRACE("br\n");
 				s->dwarf = 0;
+			} else if (strstart("gdb", &optarg)) { MCC_TRACE("br\n");
+				goto g_redo;
 			} else if (isnum(*optarg)) { MCC_TRACE("br\n");
 				x = *optarg++ - '0';
 				s->do_debug = x > 2
@@ -2740,7 +2797,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			} else if (0 == strcmp(".pdb", optarg)) { MCC_TRACE("br\n");
 				s->dwarf = 5, s->do_debug |= 16;
 #endif
-			}
+			} else if (*optarg)
+				{ MCC_TRACE("br\n"); goto unsupported_option; }
 			break;
 		case MCC_OPTION_c:
 			x = MCC_OUTPUT_OBJ;
@@ -2792,6 +2850,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_static:
 			s->static_link = 1;
 			break;
+		case MCC_OPTION_ansi:
+			optarg = "c90";
+			FALLTHROUGH;
 		case MCC_OPTION_std: {
 			const char *std = optarg;
 			if (*std == '=')
@@ -2902,15 +2963,25 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			s->run_stdin = optarg;
 			break;
 #endif
-		case MCC_OPTION_v:
+		case MCC_OPTION_v: {
+			const char *vp = optarg;
 			if (optarg[0] >= '0' && optarg[0] <= '9') { MCC_TRACE("br\n");
-				s->verbose |= (unsigned char)strtoul(optarg, NULL, 0);
+				char *vend;
+				unsigned long vlvl = strtoul(optarg, &vend, 0);
+				if (*vend)
+					{ MCC_TRACE("br\n"); goto unsupported_option; }
+				s->verbose |= (unsigned char)vlvl;
 			} else { MCC_TRACE("br\n");
+				while (*vp == 'v')
+					{ MCC_TRACE("br\n"); vp++; }
+				if (*vp)
+					{ MCC_TRACE("br\n"); goto unsupported_option; }
 				do
 					{ MCC_TRACE("br\n"); s->verbose = (unsigned char)(s->verbose | (s->verbose + 1)); }
 				while (*optarg++ == 'v');
 			}
 			continue;
+		}
 		case MCC_OPTION_f: {
 			const char *vis = optarg;
 			if (strstart("max-errors=", &vis)) { MCC_TRACE("br\n");
@@ -3088,9 +3159,14 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_E:
 			x = MCC_OUTPUT_PREPROCESS;
 			goto set_output_type;
-		case MCC_OPTION_P:
+		case MCC_OPTION_P: {
+			const char *pp = optarg;
+			while (isnum(*pp))
+				{ MCC_TRACE("br\n"); pp++; }
+			if (*pp)
+				{ MCC_TRACE("br\n"); goto unsupported_option; }
 			s->Pflag = atoi(optarg) + 1;
-			break;
+		} break;
 
 		case MCC_OPTION_M:
 			s->include_sys_deps = 1;
@@ -3106,8 +3182,11 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			FALLTHROUGH;
 		case MCC_OPTION_MMD:
 			s->gen_deps = 1;
-			if (*optarg != ',')
-				{ MCC_TRACE("br\n"); break; }
+			if (*optarg != ',') { MCC_TRACE("br\n");
+				if (*optarg)
+					{ MCC_TRACE("br\n"); goto unsupported_option; }
+				break;
+			}
 			++optarg;
 			FALLTHROUGH;
 		case MCC_OPTION_MF:
@@ -3263,8 +3342,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			*pargv = argv + optind;
 			return x;
 		default:
-		unsupported_option:
 			mcc_warning_c(warn_unsupported)("unsupported option '%s'", r);
+			break;
+		unsupported_option:
+			mcc_warning_c(warn_unsupported_option)("unsupported option '%s'", r);
 			break;
 		}
 		empty = 0;

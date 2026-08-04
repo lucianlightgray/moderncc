@@ -19,3 +19,4 @@ qemu_*.core
 /tests/fuzz/corpus/scoreboard.tsv
 
 /Testing/
+__pycache__/

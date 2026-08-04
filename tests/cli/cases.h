@@ -1371,10 +1371,40 @@ static const cli_case_t cli_cases[] = {
 		{"implicit_int_diag", "",
 		 "printf 'const x = 3;\\nstatic y = 7;\\nfoo(void){return 0;}\\n' > {W}/ii.c && "
 		 "printf 'long a; unsigned b; const int c; int g(void){return 0;}\\nint main(void){return g();}\\n' > {W}/iv.c && "
-		 "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/ii.c -o {W}/ii.o 2>&1; "
+		 "{ {MCC} -B{B} -I{I} -std=c11 -Wno-error=implicit-int -c {W}/ii.c -o {W}/ii.o 2>&1; "
 		 "{MCC} -B{B} -I{I} -std=c11 -Wall {W}/iv.c -o {W}/iv 2>&1 && echo CLEAN_OK; } | "
 		 "grep -oE \"type defaults to 'int' in declaration|return type defaults to 'int'|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 return type defaults to 'int'\n2 type defaults to 'int' in declaration\n"},
+
+		{"default_diag_severity", "",
+		 "printf 'char *p; int *q; void f(void){p=q;}\\n' > {W}/a.c && "
+		 "printf 'int *p = 3;\\n' > {W}/b.c && "
+		 "printf 'foo(void){return 0;}\\n' > {W}/c.c && "
+		 "printf '__attribute__((frobnicate)) int x;\\nint main(void){return 0;}\\n' > {W}/d.c && "
+		 "printf 'struct S{int a;};\\nstruct S s={1,2};\\nint main(void){return s.a-1;}\\n' > {W}/e.c && "
+		 "{ {MCC} -B{B} -I{I} -c {W}/a.c -o {W}/o.o 2>&1; "
+		 "{MCC} -B{B} -I{I} -c {W}/b.c -o {W}/o.o 2>&1; "
+		 "{MCC} -B{B} -I{I} -c {W}/c.c -o {W}/o.o 2>&1; "
+		 "{MCC} -B{B} -I{I} -c {W}/d.c -o {W}/o.o 2>&1 && echo ATTR_OK; "
+		 "{MCC} -B{B} -I{I} -c {W}/e.c -o {W}/o.o 2>&1 && echo EXCESS_OK; "
+		 "{MCC} -B{B} -I{I} -fpermissive -c {W}/a.c -o {W}/o.o 2>&1 && echo PERMISSIVE_OK; "
+		 "{MCC} -B{B} -I{I} -std=c89 -c {W}/b.c -o {W}/o.o 2>&1 && echo C89_OK; } | "
+		 "grep -oE \"error: assignment from incompatible pointer type|"
+		 "error: assignment makes pointer from integer without a cast|"
+		 "error: return type defaults to 'int'|"
+		 "warning: 'frobnicate' attribute ignored|"
+		 "warning: excess elements in initializer|"
+		 "warning: assignment from incompatible pointer type|"
+		 "warning: assignment makes pointer from integer without a cast|"
+		 "ATTR_OK|EXCESS_OK|PERMISSIVE_OK|C89_OK\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 ATTR_OK\n1 C89_OK\n1 EXCESS_OK\n1 PERMISSIVE_OK\n"
+		 "1 error: assignment from incompatible pointer type\n"
+		 "1 error: assignment makes pointer from integer without a cast\n"
+		 "1 error: return type defaults to 'int'\n"
+		 "1 warning: 'frobnicate' attribute ignored\n"
+		 "1 warning: assignment from incompatible pointer type\n"
+		 "1 warning: assignment makes pointer from integer without a cast\n"
+		 "1 warning: excess elements in initializer\n"},
 
 		{"wsequence_point_diag", "",
 		 "printf 'void g(void){int i=0;i=i++;}\\n' > {W}/spw.c && "

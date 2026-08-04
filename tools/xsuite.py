@@ -10,7 +10,10 @@ express is skipped with a reason rather than counted as a failure.
 Usage:
   tools/xsuite.py --mcc cmake-release/mcc-o3 --out cmake-release/xsuite \
                   --gcc /home/llg/Projects/gcc --llvm /home/llg/Projects/llvm-project \
-                  --opt -O0 --opt -O3 [--jobs 32] [--limit N] [--suite gcc.dg ...]
+                  --opt=-O0 --opt=-O3 [--jobs 32] [--limit N] [--suite gcc.dg ...]
+
+The `--opt` value must be attached with `=`; argparse reads a bare `--opt -O0`
+as a missing argument followed by an unknown flag.
 """
 import argparse, fnmatch, json, os, re, resource, shlex, subprocess, sys, threading
 from concurrent.futures import ThreadPoolExecutor
@@ -44,9 +47,14 @@ BAD_OPT_RE = re.compile(
     r"fstack-clash|fharden|fipa-|fdevirtualize|fira-|fsched|fmodulo|funroll|"
     r"fpeel|ftracer|fvpt|fauto-profile|fcompare-debug|fdiagnostics-format|"
     r"std=(c\+\+|gnu\+\+))")
-KEEP_OPT_RE = re.compile(r"^-(std=|D|I|U|O|include$|w$|pedantic|Wno-|ansi$|"
+KEEP_OPT_RE = re.compile(r"^-(std=|D|I|U|O|include$|w$|pedantic|ansi$|"
+                         r"W(?![lpa],)|"
                          r"f(no-)?(signed-char|unsigned-char|common|wrapv|builtin|"
-                         r"strict-aliasing|gnu89-inline|short-enums|pic|PIC|pie|PIE))")
+                         r"strict-aliasing|gnu89-inline|short-enums|pic|PIC|pie|PIE|"
+                         r"gnu-tm))")
+
+ANSI_OK = False
+GIMPLE_RE = re.compile(r"__GIMPLE|__RTL")
 
 LIT_BAD_RE = re.compile(
     r"(-fopenmp|-fopenacc|-fcuda|-fhlsl|-fobjc|-x\s+(c\+\+|objective)|"
@@ -109,6 +117,35 @@ DRIVER_DIRS = ("/asan/", "/hwasan/", "/ubsan/", "/tsan/", "/msan/", "/dfsan/",
                "/nsan/", "/gwp_asan/", "/interception/", "/sanitizer_common/")
 
 
+SUITE_SKIP_DIRS = (
+    ("/gcc.c-torture/execute/builtins/",
+     "multi-file-test(builtins/lib half is never linked; every file fails on "
+     "unresolved 'main')"),
+    ("/gcc.dg/vmx/",
+     "wrong-target-suite(vmx.exp returns unless powerpc*-*-* && "
+     "powerpc_altivec_ok; needs altivec.h)"),
+    ("/gcc.dg/goacc/",
+     "openacc-suite(goacc.exp returns unless effective-target fopenacc; "
+     "whole suite runs with -fopenacc)"),
+    ("/gcc.dg/goacc-gomp/",
+     "openacc-suite(goacc-gomp.exp returns unless fopenacc && fopenmp)"),
+    ("/c-c++-common/goacc/",
+     "openacc-suite(driven by gcc.dg/goacc/goacc.exp with -fopenacc; "
+     "effective-target fopenacc is false)"),
+    ("/c-c++-common/goacc-gomp/",
+     "openacc-suite(driven by gcc.dg/goacc-gomp/goacc-gomp.exp with "
+     "-fopenacc -fopenmp)"),
+    ("/clang/test/Driver/",
+     "driver-option-test(the option under test is not forwarded from the RUN "
+     "line and the FileCheck assertions are never evaluated)"),
+)
+
+
+def suite_skip(path):
+    p = path.replace(os.sep, "/")
+    return next((why for d, why in SUITE_SKIP_DIRS if d in p), None)
+
+
 def driver_dir(path):
     p = path.replace(os.sep, "/")
     return next((d.strip("/") for d in DRIVER_DIRS if d in p), None)
@@ -116,9 +153,20 @@ def driver_dir(path):
 
 def gcc_plan(path, text, default_mode):
     flags, mode, expect = [], default_mode, "ok"
+    why = suite_skip(path)
+    if why:
+        return None, None, None, why
     d = driver_dir(path)
     if d:
         return None, None, None, f"suite-driver-flags({d})"
+    p = path.replace(os.sep, "/")
+    if "/gcc.dg/special/" in p and not re.match(r".*[1-9]$",
+                                                os.path.splitext(os.path.basename(p))[0]):
+        return None, None, None, ("multi-file-aux(special.exp globs *[1-9].c only; "
+                                  "this is an additional-source half, not a test)")
+    if GIMPLE_RE.search(text):
+        return None, None, None, ("gcc-ir-frontend(__GIMPLE/__RTL is GCC's internal-IR "
+                                  "frontend, not C)")
 
     m = re.search(r"\{\s*dg-do\s+([a-z-]+)([^}]*)", text)
     if m:
@@ -162,16 +210,22 @@ def gcc_plan(path, text, default_mode):
             ok, _ = sel_ok(sel)
             if not ok:
                 continue
-        for a in shlex.split(m.group(1)):
+        try:
+            args = shlex.split(m.group(1))
+        except ValueError:
+            continue
+        for a in args:
             if BAD_OPT_RE.match(a):
                 return None, None, None, f"dg-options({a})"
+            if a == "-ansi" and not ANSI_OK:
+                return None, None, None, "unsupported-option(-ansi)"
             if KEEP_OPT_RE.match(a):
                 flags.append(a)
 
     for m in re.finditer(r"\{\s*dg-add-options\s+([a-z0-9_]+)", text):
         return None, None, None, f"dg-add-options({m.group(1)})"
 
-    if re.search(r"\{\s*dg-(error|message)\b", text):
+    if re.search(r"\{\s*dg-error\b", text):
         expect = "reject"
         if mode == "run":
             mode = "compile"
@@ -183,6 +237,9 @@ def gcc_plan(path, text, default_mode):
 
 
 def lit_plan(path, text):
+    why = suite_skip(path)
+    if why:
+        return None, None, None, why
     d = driver_dir(path)
     if d:
         return None, None, None, f"runtime-lib-suite({d})"
@@ -238,6 +295,17 @@ def limits_run():
     resource.setrlimit(resource.RLIMIT_AS, (4 << 30, 4 << 30))
     resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 30, 1 << 30))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
+ICE_RE = re.compile(r"internal compiler error", re.I)
+ECHO_RE = re.compile(r"^\s*(?:\d+\s*)?\|")
+
+
+def is_ice(rc, msg):
+    if rc < 0 or rc >= 128:
+        return True
+    body = "\n".join(l for l in (msg or "").splitlines() if not ECHO_RE.match(l))
+    return bool(ICE_RE.search(body))
 
 
 def err_key(msg):
@@ -313,8 +381,8 @@ class Runner:
                 rec["err"] = ""
             return self.emit(rec, base)
         if crc != 0:
-            rec.update(status="ICE" if crc < 0 or crc >= 128 or "internal" in cerr.lower()
-                       else "FAIL", stage="compile", rc=crc, err=err_key(cerr))
+            rec.update(status="ICE" if is_ice(crc, cerr) else "FAIL",
+                       stage="compile", rc=crc, err=err_key(cerr))
             return self.emit(rec, base)
         if mode != "run":
             rec.update(status="PASS", stage="compile", rc=0)
@@ -335,8 +403,33 @@ class Runner:
         return self.emit(rec, base)
 
 
+DG_OPTIONS_RE = re.compile(r"\{\s*dg-(?:additional-)?options\b")
+
+
+def suite_default_flags(path, text, G):
+    if DG_OPTIONS_RE.search(text):
+        return []
+    p = path.replace(os.sep, "/")
+    G = G.replace(os.sep, "/").rstrip("/") + "/"
+    for sub, extra in (("gcc.dg/", ["-ansi", "-pedantic-errors"]),
+                       ("c-c++-common/", ["-Wc++-compat"])):
+        if p.startswith(G + sub) and "/" not in p[len(G + sub):]:
+            return extra
+    return []
+
+
+def probe_opt(mcc, opt):
+    try:
+        p = subprocess.run([mcc, opt, "-E", "-"], input="", capture_output=True,
+                           text=True, errors="replace", timeout=30)
+        return p.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def collect(args):
     tests, skips = [], []
+    dflt_flags = getattr(args, "suite_default_flags", False)
     G = os.path.join(args.gcc, "gcc", "testsuite")
     gsuites = [("gcc.c-torture/execute", "run"), ("gcc.c-torture/compile", "compile"),
                ("gcc.c-torture/unsorted", "compile"), ("gcc.dg", "compile"),
@@ -361,9 +454,11 @@ def collect(args):
                         skips.append({"suite": name, "file": p, "status": "SKIP",
                                       "reason": why})
                         continue
+                    pre = ["-w"] if sub.startswith("gcc.c-torture") else []
+                    if dflt_flags:
+                        pre = pre + suite_default_flags(p, txt, G)
                     tests.append({"suite": name, "file": p, "mode": mode,
-                                  "expect": expect,
-                                  "flags": (["-w"] if sub.startswith("gcc.c-torture") else []) + flags,
+                                  "expect": expect, "flags": pre + flags,
                                   "inc": [G, os.path.join(G, "gcc.dg")]})
     L = args.llvm
     if L and os.path.isdir(L):
@@ -407,10 +502,17 @@ def main():
     ap.add_argument("--rtimeout", type=float, default=15.0)
     ap.add_argument("--force-opt", action="store_true")
     ap.add_argument("--files", default="")
+    ap.add_argument("--suite-default-flags", action="store_true")
     args = ap.parse_args()
     opts = args.opt or ["-O0"]
     args.out = os.path.abspath(args.out)
     os.makedirs(args.out, exist_ok=True)
+
+    global ANSI_OK
+    ANSI_OK = probe_opt(os.path.abspath(args.mcc), "-ansi")
+    print(f"xsuite: mcc accepts -ansi: {ANSI_OK}", flush=True)
+    if args.suite_default_flags and not ANSI_OK:
+        sys.exit("xsuite: --suite-default-flags needs an mcc that accepts -ansi")
 
     tests, skips = collect(args)
     if args.files:

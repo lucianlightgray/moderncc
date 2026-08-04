@@ -17,12 +17,16 @@ typedef pthread_t thrd_t;
 typedef pthread_mutex_t mtx_t;
 typedef pthread_cond_t cnd_t;
 typedef pthread_key_t tss_t;
-typedef pthread_once_t once_flag;
 
 typedef int (*thrd_start_t)(void *);
 typedef void (*tss_dtor_t)(void *);
 
+#ifndef ONCE_FLAG_INIT
+#define __MCC_DEFINE_ONCE_FLAG 1
+typedef pthread_once_t once_flag;
 #define ONCE_FLAG_INIT PTHREAD_ONCE_INIT
+#endif
+
 #ifdef PTHREAD_DESTRUCTOR_ITERATIONS
 #define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
 #else
@@ -105,9 +109,11 @@ static inline int thrd_join(thrd_t __thr, int *__res) {
 	return thrd_success;
 }
 
+#ifdef __MCC_DEFINE_ONCE_FLAG
 static inline void call_once(once_flag *__flag, void (*__func)(void)) {
 	pthread_once(__flag, __func);
 }
+#endif
 
 static inline int mtx_init(mtx_t *__m, int __type) {
 	if (__type & mtx_recursive) {

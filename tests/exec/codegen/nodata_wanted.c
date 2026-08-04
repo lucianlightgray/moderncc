@@ -17,6 +17,7 @@ void foo();
 static short w = (int)&foo;
 
 #elif defined test_local_data_noerror
+#pragma comment(option, "-Wno-error=int-conversion")
 void foo() {
 	short w = &foo;
 }

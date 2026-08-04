@@ -288,6 +288,7 @@ DEF(TOK_builtin_bswap64, "__builtin_bswap64")
 DEF(TOK_builtin_va_start, "__builtin_va_start")
 #elif defined MCC_TARGET_X86_64
 DEF(TOK_builtin_va_arg_types, "__builtin_va_arg_types")
+DEF(TOK_builtin_va_start_check, "__builtin_va_start_check")
 #elif defined MCC_TARGET_ARM64
 DEF(TOK_builtin_va_start, "__builtin_va_start")
 DEF(TOK_builtin_va_arg, "__builtin_va_arg")

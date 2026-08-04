@@ -157,9 +157,10 @@ int ast_sym_defer(struct Sym *sym);
 int ast_alloc_loc(int size, int align);
 int ast_alloc_temp_loc(int size, int align);
 int ast_ltemp_overlaps(int lo, int sz);
-int ast_fconst_reuse(int cplx);
+#define AST_FCONST_KEY 36
+int ast_fconst_reuse(int cplx, const unsigned char *key);
 void ast_fconst_reuse_disable(int off);
-void ast_fconst_record(int c, int cplx);
+void ast_fconst_record(int c, int cplx, const unsigned char *key);
 void ast_fconst_push_ref(struct CType *type, int fc);
 
 int ast_label_id(void *s);

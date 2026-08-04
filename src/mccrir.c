@@ -709,6 +709,33 @@ void rir_hook_cmp_invert(void) { rir_mark_pt(RIR_M_CMPINV); }
 
 void rir_hook_cast_gv(void) { rir_mark_pt(RIR_M_CASTGV); }
 
+void rir_hook_cast_const(int dbt, int sbt, uint64_t pre, uint64_t post) {
+	int bt = sbt & VT_BTYPE;
+	uint64_t sb, sv;
+	if (!rir_active)
+		return;
+	if (pre == post) {
+		if (!((dbt ^ sbt) & VT_UNSIGNED) || (dbt & VT_BTYPE) != bt)
+			return;
+		if (bt == VT_BYTE)
+			sb = 0x80ULL;
+		else if (bt == VT_SHORT)
+			sb = 0x8000ULL;
+		else if (bt == VT_INT)
+			sb = 0x80000000ULL;
+		else if (bt == VT_LLONG)
+			sb = 0x8000000000000000ULL;
+		else
+			return;
+		if (!(pre & sb))
+			return;
+	}
+	sv = vtop->c.i;
+	vtop->c.i = pre;
+	rir_mark_val(RIR_M_CONVERT, dbt);
+	vtop->c.i = sv;
+}
+
 void rir_hook_cleanup_goto(void *pcl) {
 	rir_mark_val2(RIR_M_CLGOTO, (long long)(uintptr_t)pcl, 0);
 }
@@ -3238,14 +3265,20 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		break;
 	case RIR_M_CONVERT:
+		rir_reconcile_sv(rir_mvs + ro->mvs_off, ro->mvs_n);
+		if (rir_shn <= 0 || rir_shtype[rir_shn - 1]) {
+			rir_arena_mismatch++;
+			break;
+		}
 		a = rir_pop();
 		if (a == AST_NONE) {
 			rir_arena_mismatch++;
 			break;
 		}
 		n = ast_node(rir_arena, AST_Convert);
+		ast_set_type(rir_arena, n, ro->rval, 0);
 		ast_add_child(rir_arena, n, a);
-		rir_push_typed(n);
+		rir_push(n);
 		break;
 	case RIR_M_TERNHOLD:
 		if (rir_tholdn < (int)(sizeof rir_thold / sizeof rir_thold[0]))

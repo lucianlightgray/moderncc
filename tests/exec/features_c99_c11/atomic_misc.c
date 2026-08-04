@@ -176,6 +176,7 @@ int main() {
 }
 
 #elif defined test_atomic_warn_1
+#pragma comment(option, "-Wno-error=int-conversion")
 int main() {
 	size_t _Atomic i = 1;
 
@@ -183,6 +184,7 @@ int main() {
 }
 
 #elif defined test_atomic_warn_2
+#pragma comment(option, "-Wno-error=incompatible-pointer-types")
 int main() {
 	int i = 1;
 	char c = 2;

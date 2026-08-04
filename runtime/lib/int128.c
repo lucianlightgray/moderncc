@@ -83,11 +83,102 @@ static unsigned long long int128_bit_at(mcc_int128 value, int index) {
 	return (value.low >> index) & 1ULL;
 }
 
+static int half_leading_zeros(unsigned long long half) {
+	int count = 0;
+	if (half == 0ULL)
+		return MCC_INT128_HALF_BITS;
+	if ((half >> 32) == 0ULL) {
+		count += 32;
+		half <<= 32;
+	}
+	if ((half >> 48) == 0ULL) {
+		count += 16;
+		half <<= 16;
+	}
+	if ((half >> 56) == 0ULL) {
+		count += 8;
+		half <<= 8;
+	}
+	if ((half >> 60) == 0ULL) {
+		count += 4;
+		half <<= 4;
+	}
+	if ((half >> 62) == 0ULL) {
+		count += 2;
+		half <<= 2;
+	}
+	if ((half >> 63) == 0ULL)
+		count += 1;
+	return count;
+}
+
+static unsigned long long half_divide_wide(unsigned long long high, unsigned long long low,
+																					 unsigned long long divisor,
+																					 unsigned long long *remainder) {
+	unsigned long long limb_base = 1ULL << 32;
+	int shift = half_leading_zeros(divisor);
+	unsigned long long divisor_upper, divisor_lower;
+	unsigned long long shifted_high, shifted_low, low_upper, low_lower;
+	unsigned long long quotient_upper, quotient_lower, estimate_rest, partial;
+	divisor <<= shift;
+	divisor_upper = divisor >> 32;
+	divisor_lower = divisor & 0xFFFFFFFFULL;
+	if (shift == 0) {
+		shifted_high = high;
+		shifted_low = low;
+	} else {
+		shifted_high = (high << shift) | (low >> (MCC_INT128_HALF_BITS - shift));
+		shifted_low = low << shift;
+	}
+	low_upper = shifted_low >> 32;
+	low_lower = shifted_low & 0xFFFFFFFFULL;
+	quotient_upper = shifted_high / divisor_upper;
+	estimate_rest = shifted_high % divisor_upper;
+	while (quotient_upper >= limb_base ||
+				 quotient_upper * divisor_lower > (estimate_rest << 32) + low_upper) {
+		quotient_upper--;
+		estimate_rest += divisor_upper;
+		if (estimate_rest >= limb_base)
+			break;
+	}
+	partial = shifted_high * limb_base + low_upper - quotient_upper * divisor;
+	quotient_lower = partial / divisor_upper;
+	estimate_rest = partial % divisor_upper;
+	while (quotient_lower >= limb_base ||
+				 quotient_lower * divisor_lower > (estimate_rest << 32) + low_lower) {
+		quotient_lower--;
+		estimate_rest += divisor_upper;
+		if (estimate_rest >= limb_base)
+			break;
+	}
+	*remainder = (partial * limb_base + low_lower - quotient_lower * divisor) >> shift;
+	return quotient_upper * limb_base + quotient_lower;
+}
+
 static void int128_unsigned_divide(mcc_int128 numerator, mcc_int128 denominator,
 																	 mcc_int128 *quotient, mcc_int128 *remainder) {
 	mcc_int128 partial_quotient = int128_from_halves(0ULL, 0ULL);
 	mcc_int128 partial_remainder = int128_from_halves(0ULL, 0ULL);
 	int index;
+	if (denominator.high == 0ULL && denominator.low != 0ULL) {
+		unsigned long long rest;
+		if (numerator.high == 0ULL) {
+			*quotient = int128_from_halves(0ULL, numerator.low / denominator.low);
+			*remainder = int128_from_halves(0ULL, numerator.low % denominator.low);
+			return;
+		}
+		if (numerator.high < denominator.low) {
+			*quotient = int128_from_halves(
+					0ULL, half_divide_wide(numerator.high, numerator.low, denominator.low, &rest));
+		} else {
+			unsigned long long upper = numerator.high / denominator.low;
+			unsigned long long upper_rest = numerator.high % denominator.low;
+			*quotient = int128_from_halves(
+					upper, half_divide_wide(upper_rest, numerator.low, denominator.low, &rest));
+		}
+		*remainder = int128_from_halves(0ULL, rest);
+		return;
+	}
 	for (index = 127; index >= 0; index--) {
 		partial_remainder = int128_double(partial_remainder);
 		partial_remainder.low |= int128_bit_at(numerator, index);
@@ -127,35 +218,6 @@ static unsigned long long half_shift_right_signed(unsigned long long half, int c
 	if (count == 0)
 		return half;
 	return (half >> count) | (half_sign_fill(half) << (MCC_INT128_HALF_BITS - count));
-}
-
-static int half_leading_zeros(unsigned long long half) {
-	int count = 0;
-	if (half == 0ULL)
-		return MCC_INT128_HALF_BITS;
-	if ((half >> 32) == 0ULL) {
-		count += 32;
-		half <<= 32;
-	}
-	if ((half >> 48) == 0ULL) {
-		count += 16;
-		half <<= 16;
-	}
-	if ((half >> 56) == 0ULL) {
-		count += 8;
-		half <<= 8;
-	}
-	if ((half >> 60) == 0ULL) {
-		count += 4;
-		half <<= 4;
-	}
-	if ((half >> 62) == 0ULL) {
-		count += 2;
-		half <<= 2;
-	}
-	if ((half >> 63) == 0ULL)
-		count += 1;
-	return count;
 }
 
 static int half_trailing_zeros(unsigned long long half) {

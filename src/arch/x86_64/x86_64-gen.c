@@ -1115,6 +1115,7 @@ typedef enum X86_64_Mode {
 	x86_64_mode_memory,
 	x86_64_mode_integer,
 	x86_64_mode_sse,
+	x86_64_mode_sseup,
 	x86_64_mode_x87
 } X86_64_Mode;
 
@@ -1166,6 +1167,13 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	case VT_STRUCT:
 		f = ty->ref;
 
+		if (f->a.is_vector) { MCC_TRACE("br\n");
+			int align, sz = type_size(ty, &align);
+			if (sz == 8 && (f->next->type.t & VT_BTYPE) == VT_DOUBLE)
+				{ MCC_TRACE("br\n"); return x86_64_mode_memory; }
+			return x86_64_mode_sse;
+		}
+
 		mode = x86_64_mode_none;
 		for (f = f->next; f; f = f->next)
 			{ MCC_TRACE("br\n"); mode = classify_x86_64_merge(mode, classify_x86_64_inner(&f->type)); }
@@ -1192,7 +1200,7 @@ static int x86_64_has_unaligned_field(CType *ty, int base) { MCC_TRACE("enter\n"
 }
 
 static void classify_x86_64_eb(CType *ty, int off, X86_64_Mode cls[2]) { MCC_TRACE("enter\n");
-	if ((ty->t & VT_BTYPE) == VT_STRUCT && !(ty->t & VT_ARRAY)) { MCC_TRACE("br\n");
+	if ((ty->t & VT_BTYPE) == VT_STRUCT && !(ty->t & VT_ARRAY) && !ty->ref->a.is_vector) { MCC_TRACE("br\n");
 		Sym *f;
 		for (f = ty->ref->next; f; f = f->next)
 			{ MCC_TRACE("br\n"); classify_x86_64_eb(&f->type, off + f->c, cls); }
@@ -1222,6 +1230,59 @@ static int x86_64_mixed_class(CType *ty, X86_64_Mode cls[2]) { MCC_TRACE("enter\
 	return cls[0] != cls[1];
 }
 
+static int x86_64_is_vec16(CType *ty) { MCC_TRACE("enter\n");
+	Sym *f;
+	int align, sz;
+	while ((ty->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY)) { MCC_TRACE("br\n");
+		if (type_size(ty, &align) != 16)
+			{ MCC_TRACE("br\n"); return 0; }
+		ty = &ty->ref->type;
+	}
+	if ((ty->t & VT_BTYPE) != VT_STRUCT || (ty->t & VT_ARRAY))
+		{ MCC_TRACE("br\n"); return 0; }
+	sz = type_size(ty, &align);
+	if (sz != 16)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ty->ref->a.is_vector)
+		{ MCC_TRACE("br\n"); return 1; }
+	f = ty->ref->next;
+	if (!f || f->next || f->c)
+		{ MCC_TRACE("br\n"); return 0; }
+	return x86_64_is_vec16(&f->type);
+}
+
+static void x86_64_vec16_move(int xr, SValue *sv, int is_store) { MCC_TRACE("enter\n");
+	int fr = sv->r;
+	int fc = sv->c.i;
+	Sym *sym = sv->sym;
+	int v = fr & VT_VALMASK;
+
+	if (v == VT_LLOCAL ||
+			(v == VT_CONST && (fr & VT_SYM) &&
+			 (!(sym->type.t & VT_STATIC) || (sym->type.t & VT_TLS)))) { MCC_TRACE("br\n");
+		SValue v1;
+		int tr = get_reg(MCC_RC_INT);
+		v1.type.t = VT_PTR;
+		v1.type.ref = NULL;
+		v1.r2 = VT_CONST;
+		v1.c.i = fc;
+		if (v == VT_LLOCAL) { MCC_TRACE("br\n");
+			v1.r = VT_LOCAL | VT_LVAL;
+			v1.sym = NULL;
+		} else { MCC_TRACE("br\n");
+			v1.r = fr & ~VT_LVAL;
+			v1.sym = sym;
+		}
+		load(tr, &v1);
+		fr = tr | VT_LVAL;
+		fc = 0;
+		sym = NULL;
+	}
+	sse_rex(xr, fr);
+	o(is_store ? 0x110f : 0x100f);
+	gen_modrm(xr, fr, sym, fc);
+}
+
 static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;
@@ -1240,6 +1301,9 @@ static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *p
 
 		if (size > 16) { MCC_TRACE("br\n");
 			mode = x86_64_mode_memory;
+		} else if (x86_64_is_vec16(ty)) { MCC_TRACE("br\n");
+			mode = x86_64_mode_sseup;
+			*reg_count = 1;
 		} else if ((ty->t & VT_BTYPE) == VT_STRUCT && x86_64_has_unaligned_field(ty, 0)) { MCC_TRACE("br\n");
 			mode = x86_64_mode_memory;
 		} else { MCC_TRACE("br\n");
@@ -1296,10 +1360,17 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty) { MCC_TRACE("enter\n");
 	enum __va_arg_type {
 		__va_gen_reg,
 		__va_float_reg,
-		__va_stack
+		__va_stack,
+		__va_gen_sse,
+		__va_sse_gen,
+		__va_sse_up
 	};
 	int size, align, reg_count;
+	X86_64_Mode cls[2];
 	X86_64_Mode mode = classify_x86_64_arg(ty, NULL, &size, &align, &reg_count);
+	if (mode != x86_64_mode_memory && x86_64_mixed_class(ty, cls)) { MCC_TRACE("br\n");
+		return cls[0] == x86_64_mode_integer ? __va_gen_sse : __va_sse_gen;
+	}
 	switch (mode) { MCC_TRACE("br\n");
 	default:
 		return __va_stack;
@@ -1307,6 +1378,8 @@ ST_FUNC int classify_x86_64_va_arg(CType *ty) { MCC_TRACE("enter\n");
 		return __va_gen_reg;
 	case x86_64_mode_sse:
 		return __va_float_reg;
+	case x86_64_mode_sseup:
+		return __va_sse_up;
 	}
 }
 
@@ -1320,6 +1393,13 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 		*ret_align = 1;
 		*regsize = 16;
 		ret->t = VT_LDOUBLE;
+		ret->ref = NULL;
+		return -1;
+	}
+	if (x86_64_is_vec16(vt)) { MCC_TRACE("br\n");
+		*ret_align = 16;
+		*regsize = 16;
+		ret->t = 0;
 		ret->ref = NULL;
 		return -1;
 	}
@@ -1346,6 +1426,10 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 	int fr = sv->r & VT_VALMASK;
 	int fc = sv->c.i;
 	X86_64_Mode cls[2];
+	if (x86_64_is_vec16(&sv->type)) { MCC_TRACE("br\n");
+		x86_64_vec16_move(MCC_TREG_XMM0, sv, aftercall);
+		return;
+	}
 	if (x86_64_mixed_class(&sv->type, cls)) { MCC_TRACE("br\n");
 		int e;
 		for (e = 0; e < 2; e++) { MCC_TRACE("br\n");
@@ -1592,7 +1676,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); onstack[i] = 1; }
 				stack_adjust += size;
 			}
-		} else if (mode == x86_64_mode_sse && nb_sse_args + reg_count <= 8) { MCC_TRACE("br\n");
+		} else if ((mode == x86_64_mode_sse || mode == x86_64_mode_sseup) &&
+				nb_sse_args + reg_count <= 8) { MCC_TRACE("br\n");
 			nb_sse_args += reg_count;
 			onstack[i] = 0;
 		} else if (mode == x86_64_mode_integer && nb_reg_args + reg_count <= REGN) { MCC_TRACE("br\n");
@@ -1703,20 +1788,30 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		if (size == 0)
 			{ MCC_TRACE("br\n"); continue; }
 		if (x86_64_mixed_class(&vtop->type, cls)) { MCC_TRACE("br\n");
-			int ebint = (cls[0] == x86_64_mode_integer) ? 0 : 1;
-			SValue s;
-			s.type.ref = NULL;
-			s.r = vtop->r;
-			s.r2 = VT_CONST;
-			s.sym = vtop->sym;
+			int gp_first = cls[0] == x86_64_mode_integer;
+			int lo, hi, gr, sr, d, x;
+			vtop->type.t = VT_QLONG;
+			vtop->type.ref = NULL;
+			lo = gv(MCC_RC_INT);
+			hi = vtop->r2;
+			gr = gp_first ? lo : hi;
+			sr = gp_first ? hi : lo;
 			--gen_reg;
-			s.type.t = VT_LLONG;
-			s.c.i = vtop->c.i + ebint * 8;
-			load(arg_prepare_reg(gen_reg), &s);
+			d = arg_prepare_reg(gen_reg);
+			orex(1, d, gr, 0x89);
+			o(0xc0 + REG_VALUE(gr) * 8 + REG_VALUE(d));
 			--sse_reg;
-			s.type.t = VT_DOUBLE;
-			s.c.i = vtop->c.i + (1 - ebint) * 8;
-			load(MCC_TREG_XMM0 + sse_reg, &s);
+			x = MCC_TREG_XMM0 + sse_reg;
+			o(0x66);
+			orex(1, sr, x, 0x0f);
+			o(0x6e);
+			o(0xc0 + REG_VALUE(x) * 8 + REG_VALUE(sr));
+			vtop--;
+			continue;
+		}
+		if (mode == x86_64_mode_sseup) { MCC_TRACE("br\n");
+			--sse_reg;
+			x86_64_vec16_move(MCC_TREG_XMM0 + sse_reg, vtop, 0);
 			vtop--;
 			continue;
 		}
@@ -1890,6 +1985,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 				break;
 
 			case x86_64_mode_sse:
+			case x86_64_mode_sseup:
 				if (seen_sse_num + reg_count > 8)
 					{ MCC_TRACE("br\n"); goto stack_arg; }
 				seen_sse_num += reg_count;
@@ -1912,12 +2008,13 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		for (int i = 0; i < 8; i++) { MCC_TRACE("br\n");
 			loc -= 16;
 			if (!mcc_state->nosse) { MCC_TRACE("br\n");
-				o(0xd60f66);
+				o(0x110f);
 				gen_modrm(7 - i, VT_LOCAL, NULL, loc);
+			} else { MCC_TRACE("br\n");
+				o(0x85c748);
+				gen_le32(loc + 8);
+				gen_le32(0);
 			}
-			o(0x85c748);
-			gen_le32(loc + 8);
-			gen_le32(0);
 		}
 		for (int i = 0; i < REGN; i++) { MCC_TRACE("br\n");
 			push_arg_reg(REGN - 1 - i);
@@ -1955,6 +2052,22 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 			continue;
 		}
 		switch (mode) { MCC_TRACE("br\n");
+		case x86_64_mode_sseup:
+			if (mcc_state->nosse)
+				{ MCC_TRACE("br\n"); mcc_error("SSE disabled but floating point arguments used"); }
+			if (sse_param_index + 1 <= 8) { MCC_TRACE("br\n");
+				loc = (loc - 16) & -16;
+				param_addr = loc;
+				o(0x110f);
+				gen_modrm(sse_param_index, VT_LOCAL, NULL, param_addr);
+				++sse_param_index;
+			} else { MCC_TRACE("br\n");
+				addr = (addr + align - 1) & -align;
+				param_addr = addr;
+				addr += size;
+			}
+			break;
+
 		case x86_64_mode_sse:
 			if (mcc_state->nosse)
 				{ MCC_TRACE("br\n"); mcc_error("SSE disabled but floating point arguments used"); }

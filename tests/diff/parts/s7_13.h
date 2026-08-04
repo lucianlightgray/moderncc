@@ -32,8 +32,13 @@ void s7_13_setjmp_signal_align(void) {
 	printf("s7_13 signal prev_returned=%d\n", prev2 == s7_13_handler);
 #endif
 
+#if __STDC_VERSION__ >= 202311L
+	printf("s7_13 stdalign defs=%d\n",
+				 alignof(int) == _Alignof(int) && alignof(double) == _Alignof(double));
+#else
 	printf("s7_13 stdalign defs=%d\n",
 				 __alignas_is_defined == 1 && __alignof_is_defined == 1);
+#endif
 
 	printf("s7_13 _Alignof int matches=%d\n",
 				 _Alignof(int) == __alignof__(int));

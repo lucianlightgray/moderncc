@@ -2074,44 +2074,534 @@ none of the six numbers in the next sentence survives.
 
 ## External suites: the gcc and llvm C tests over a self-hosted `-O3` mcc
 
-The compiler under test is `mcc` self-hosted at `-O3` — `tools/selfhost-o3.py cmake-release cmake-release/mcc-o3 -O3` compiles `src/mcc.c` with the release `mcc` and links with `mcc` itself (its runtime supplies the x87 long-double helpers GNU ld cannot resolve). `tools/selfhost-fixpoint.py cmake-release --opt=-O3` is clean: `o1 == o2 == o3`, 2,921,935 bytes, byte-identical across all three stages, so the `-O3` self-host is a fixpoint and not merely a build that happened to link.
+The compiler under test is `mcc` self-hosted at `-O3` — `tools/selfhost-o3.py cmake-release cmake-release/mcc-o3 -O3` compiles `src/mcc.c` with the release `mcc` and links with `mcc` itself (its runtime supplies the x87 long-double helpers GNU ld cannot resolve). `tools/selfhost-fixpoint.py cmake-release --opt=-O3` is clean at `64c39bdf`: `o1 == o2 == o3`, **2,910,735 bytes**, byte-identical across all three stages, so the `-O3` self-host is a fixpoint and not merely a build that happened to link. (The 2,921,935 this file used to quote was `ab430dfd`'s; the size moves with `src/`.)
 
-`tools/xsuite.py` runs the two external trees and `tools/xsuite-report.py` reads its `results.jsonl`. The harness honors each suite's own directives rather than compiling everything blind: DejaGnu `dg-do`/`dg-error`/`dg-options`/`dg-require-effective-target`/target selectors on the gcc side, lit `RUN:`/`REQUIRES:`/`UNSUPPORTED:`/`-verify` on the llvm side. A test whose directives ask for something this host or this compiler cannot express — another architecture's intrinsics, `-mavx512f`, OpenMP, LTO, a `%clang_cc1 -triple aarch64` — is **skipped with the reason recorded**, never scored as a failure. 47,715 `.c` files in, 24,242 skipped by directive, **23,473 tests run at each of `-O0` and `-O3`**.
+`tools/xsuite.py` runs the two external trees and `tools/xsuite-report.py` reads its `results.jsonl`. The harness honors each suite's own directives rather than compiling everything blind: DejaGnu `dg-do`/`dg-error`/`dg-options`/`dg-require-effective-target`/target selectors on the gcc side, lit `RUN:`/`REQUIRES:`/`UNSUPPORTED:`/`-verify` on the llvm side. A test whose directives ask for something this host or this compiler cannot express — another architecture's intrinsics, `-mavx512f`, OpenMP, LTO, a `%clang_cc1 -triple aarch64` — is **skipped with the reason recorded**, never scored as a failure. Note the invocation: `--opt=-O0`, not `--opt -O0`; argparse reads the latter as a missing argument and the docstring at `tools/xsuite.py:12` still shows the form that fails.
+
+**Re-measured at `64c39bdf` on 2026-08-03.** 47,715 `.c` files in, 27,202 skipped by directive, **20,513 tests run at each of `-O0` and `-O3`**.
 
 | suite | tests | `-O0` pass | `-O3` pass | skipped |
 |---|---:|---:|---:|---:|
-| `gcc.c-torture/compile` | 1,834 | 92.2% | 91.9% | 182 |
-| `gcc.c-torture/execute` | 1,853 | 83.0% | 81.8% | 64 |
-| `gcc.dg` | 13,396 | 76.5% | 76.4% | 5,518 |
-| `c-c++-common` | 2,304 | 64.7% | 64.6% | 1,102 |
-| `gcc.target/{i386,x86_64}` | 803 | 65.9% | 65.9% | 9,018 |
+| `gcc.c-torture/compile` | 1,834 | 95.9% | 95.8% | 182 |
+| `gcc.c-torture/execute` | 1,853 | 88.8% | 87.8% | 64 |
+| `gcc.dg` | 11,769 | 83.8% | 83.8% | 7,145 |
+| `c-c++-common` | 1,232 | 76.6% | 76.6% | 2,174 |
+| `gcc.target/{i386,x86_64}` | 803 | 70.9% | 70.9% | 9,018 |
 | `gcc.misc-tests` | 32 | 81.2% | 81.2% | 44 |
 | `gcc.c-torture/unsorted` | 1 | 0.0% | 0.0% | 0 |
-| `clang/test` | 2,972 | 70.0% | 70.0% | 7,725 |
-| `compiler-rt/test` | 278 | 38.8% | 38.8% | 566 |
-| **total** | **23,473** | **75.5%** | **75.3%** | **24,242** |
+| `clang/test` | 2,972 | 71.3% | 71.3% | 7,725 |
+| `compiler-rt/test` | 17 | 47.1% | 47.1% | 827 |
+| **total** | **20,513** | **82.6%** | **82.4%** | **27,202** |
 
-Most of the failing column is a **known feature boundary, not a defect**: 952 `__attribute__((vector_size))`, 1,305 implicit-declaration/implicit-int rejections the tests still rely on, 798 unresolvable GNU or clang headers, 276 nested functions, 217 inline-asm opcodes and constraints, 112 `_Complex`, 48 `#embed`/C23. That leaves 1,885 in `other` — the bucket worth mining, and the only one that is a work list.
+**The rise from 75.5% is denominator, not compiler.** This board and the one it replaces disagree by 2,960 tests moved from the run column to the skip column, and the movement is entirely in `gcc.dg` (+1,627), `c-c++-common` (+1,072) and `compiler-rt` (+261) — precisely the three suites carrying `DRIVER_DIRS` subtrees (`/vect/`, `/analyzer/`, `/gomp/`, `/lto/`, `/orc/`, …), which `gcc_plan`/`lit_plan` now skip whole. `gcc.target`, `clang/test` and the three torture suites have no such subtree and their skip counts are unchanged to the test. Checked rather than assumed: both external trees are untouched since **gcc `9d8f85ca333` (Jul 28)** and **llvm `0f1f456263b5` (Jul 3)**, both older than either run, the total is 47,715 files either way, and the skip decision is a pure function of `(path, text)` — no host probe, no compiler invocation. So the committed harness cannot produce 23,473, and the 24,242/23,473 pair quoted in `ab430dfd`'s message and previously here came from a pre-commit draft without the whole-directory skip. **Absolute passes fell** (`gcc.dg` ≈10,248 — back-computed from the old board's rounded 76.5% — → 9,868); it is the failures that were skipped away. Treat 82.6% as a new baseline, not as progress over 75.5%.
+
+Failure buckets after the same re-measure: 1,658 `parse`, 593 implicit-declaration, 544 unresolvable GNU/clang headers, 266 nested functions, 105 inline-asm, 8 `vector_size`, 6 attribute, 2 gnu-builtin — and **1,647 in `other`**, still the only bucket that is a work list. The 952 `vector_size` this file used to report is now 8 for the same reason as above: `/vect/` is skipped whole rather than scored.
 
 ### The `-O3` column is where the defects are
 
-**46 tests pass at `-O0` and fail at `-O3`; 3 go the other way.** The list is `cmake-release/xsuite/o3-only-failures.txt`. Five are confirmed by hand, outside the harness:
+**32 tests pass at `-O0` and fail at `-O3`; 1 goes the other way.** The list is `cmake-release/xsuite/o3-only-failures.txt`. Of the five previously confirmed by hand, **three now pass at both levels**:
 
-1. `gcc.c-torture/execute/{20000412-2,conversion,medce-1}.c` — **wrong code at `-O3`**: each compiles clean and aborts at runtime (`rc=134`), and each runs to 0 at `-O0`. Three separate optimizer miscompiles, and the nearest thing to the P4 wrong-code classes this sweep found.
-2. `gcc.c-torture/execute/pr68506.c` — **`internal compiler error: vstack leak (-1)`** at `-O3` only.
-3. `gcc.c-torture/compile/930503-2.c` — mcc **segfaults** at `-O3`; at `-O0` it compiles.
+1. `gcc.c-torture/execute/{20000412-2,conversion}.c` — **still wrong code at `-O3`**: each compiles clean, aborts at runtime, and runs to 0 at `-O0`. These two are the whole runtime-visible optimizer-defect list in 20,513 tests.
+2. `gcc.c-torture/execute/medce-1.c` — **now PASS at both levels**; the third miscompile is gone.
+3. `gcc.c-torture/execute/pr68506.c` — the **`vstack leak (-1)` ICE is gone**; PASS at both levels.
+4. `gcc.c-torture/compile/930503-2.c` — the **`-O3` segfault is gone**; PASS at both levels.
 
-Two more shapes in that list are optimizer *quality*, not correctness, and should not be filed as bugs: the `link_error0` idiom (`pure-1.c`, `compare-3.c`, `ieee/fp-cmp-{6,9}.c`) fails only because `-O3`'s inlining leaves a call `-O0`'s folding had already removed, and the `builtin-convert-*`/`builtin-ctype-*` rows want `__builtin_` forms mcc does not carry.
+Two more shapes in that list are optimizer *quality*, not correctness, and should not be filed as bugs: the `link_error0` idiom (`pure-1.c`, `compare-3.c`, `ieee/{compare-fp-3,fp-cmp-6,fp-cmp-9}.c`, `20020720-1.c`, `20041114-1.c` — all reporting `unresolved reference`) fails only because `-O3`'s inlining leaves a call `-O0`'s folding had already removed, and the `builtin-convert-*`/`builtin-cproj-2`/`builtin-{c,wc}type-*` rows want `__builtin_` forms mcc does not carry. `compile/{20000922-1,pr27528}.c` are the `X` asm constraint, unsupported at `-O3`'s register pressure only.
+
+Unexamined and new to this board, all `-O3`-only `FAILEXE`: `execute/{20000715-1,990208-1,bcp-1,builtin-constant,pr85582-2}.c`, the four `{,v}{f,}printf-chk-1.c`, and `gcc.dg/{c99-func-3,pr38615,torture/pr117811,torture/pr54877}.c`. `bcp-1.c` and `builtin-constant.c` test `__builtin_constant_p` folding and are likely quality rather than correctness; the rest are unclassified.
 
 ### Open items, in the order they are worth paying for
 
-1. The three `-O3` wrong-code aborts above. Bisect each against the pass set the way P4's classes were bisected — they are the only runtime-visible optimizer defects in 23,473 tests.
-2. The `vstack leak (-1)` ICE and the `930503-2.c` segfault: both are `-O3`-only compiler crashes, both single files, both cheap to reduce.
-3. **142 `FAILEXE` at `-O0`** — programs that build and then abort with the optimizer off. `gcc.c-torture/execute/{20020412-1,pr41935,pr82210}.c` and `gcc.dg/{20050527-1,field-merge-6,gnu23-empty-init-1}.c` fault with `SIGSEGV`, the rest with the test's own `abort()`. This is a baseline-codegen list, not an optimizer list, and it is the larger of the two.
-4. **1,386 `XPASS`** — tests carrying `dg-error`/`expected-error` that mcc accepted silently (664 `gcc.dg`, 441 `c-c++-common`, 248 `clang/test`). Each is a missing diagnostic. Low severity individually; as a set it is the honest measure of how much of C's constraint checking mcc does not do.
-5. `gcc.dg/pr97459-{2,4,5,6}.c` hang at runtime at both opt levels (15s timeout), and `gcc.dg/O16384.c` never finishes compiling — the latter is pathological by construction and is not a defect.
+1. The two remaining `-O3` wrong-code aborts (`20000412-2.c`, `conversion.c`). Bisect each against the pass set the way P4's classes were bisected — they are the only runtime-visible optimizer defects in 20,513 tests.
+2. Classify the eleven unexamined `-O3`-only `FAILEXE` above. Any that abort rather than mis-fold join item 1; the `__builtin_constant_p` pair probably does not.
+3. **153 `FAILEXE` at `-O0`** — programs that build and then abort with the optimizer off (167 at `-O3`). This is a baseline-codegen list, not an optimizer list, and it is the larger of the two. `cmake-release/xsuite/failexe.txt`.
+4. **1,013 `XPASS`** — tests carrying `dg-error`/`expected-error` that mcc accepted silently (530 `gcc.dg`, 263 `clang/test`, 181 `c-c++-common`, 34 `gcc.target`, 5 torture). Each is a missing diagnostic. Low severity individually; as a set it is the honest measure of how much of C's constraint checking mcc does not do.
+5. **4 ICEs**, down from the previous board's set and now a different set: `gcc.c-torture/compile/limits-exprparen.c`, `gcc.dg/pr121081.c`, `gcc.dg/strub-internal-pr113394.c`, `clang/test/Sema/attr-nonblocking-constraints.c`. Both columns, so none is optimizer-specific. `cmake-release/xsuite/ice.txt`.
+6. `gcc.dg/pr97459-{2,4,5,6}.c` hang at runtime at both opt levels (15s timeout) — unchanged. `gcc.dg/O16384.c` is now skipped by directive rather than timing out.
+7. The `DRIVER_DIRS` skip is doing more work than the board admits. 4,341 `gcc.dg` files, 1,720 `c-c++-common` and 554 `compiler-rt` are skipped on their *directory* alone; roughly 2,960 of those would otherwise be scored. `/vect/` and `/analyzer/` are genuinely out of scope, but the list should be re-derived per-directory rather than left as one blanket, or the board keeps flattering itself.
 
 **Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
+
+### OPEN — one wrong-code defect remains: `copysign` at `-O1`+ inside a called function
+
+`gcc.c-torture/execute/ieee/copysign2.c` aborts at `-O1`, `-O2` and `-O3`; passes at
+`-O0`; gcc passes at every level.
+
+**It is not a regression from today's work** — check the board history before assuming so:
+it was `FAILEXE` at *both* `-O0` and `-O3` on the original board and on board2. The
+`__builtin_fabs`/`copysign` fix closed the `-O0` half, which is what made the surviving
+`-O1`+ half visible as an "`-O3`-only" row for the first time. Exposure, not breakage.
+
+Narrowed as far as is useful:
+- Fails for **`float` and `double` at indices 2 and 4** — `copysign(-1.0, y)` and
+  `copysign(-0.0, y)` with `y = -2.0` from a static array — and **not** for `long double`.
+- The test compares with `memcmp`, so it is a **bit-level** difference; `%g` printing of
+  the same values matches gcc, which is why a naive repro looks clean.
+- The same eight operations written inline in `main` are **bit-identical to gcc** at
+  `-O1`. The failure needs the calls to sit in a separate function (the test's
+  `TEST(TYPE, EXT)` macro generates `void testf/test/testl(void)`), which points at a
+  promotion or inlining interaction rather than at the `copysign` lowering itself.
+Next step: bisect with the `MCC_AST_*` gates the way the earlier cluster was, starting
+with the `MCC_AST_PROMOTE` family — three of the fixed miscompiles lived there and all
+involved non-int-sized data.
+
+### Landed — the 16-byte vector ABI now matches SysV, and GNU builtins
+
+**Vector ABI.** `classify_x86_64_arg` had no **SSEUP** class, so mcc passed a 16-byte
+vector as two separate SSE eightbytes (xmm0 *and* xmm1) where SysV puts all 128 bits in
+xmm0 — mcc and gcc objects could not exchange vectors at all. Now classified SSEUP with
+`x86_64_vec16_move()` emitting `movups` (alignment-free, so no frame-slot constraint),
+wired through `gfunc_call`, `gfunc_prolog`, returns via the existing `gfunc_sret`/
+`arch_transfer_ret_regs` escape hatch, and `va_arg`. Cross-compiler differential, 162
+cases, gcc as ground truth: **gcc→mcc 43/162 → 162/162, mcc→gcc 48/162 → 162/162**, also
+green at `-O2`/`-O3`, under the self-hosted compiler, and through the JIT at `-O4`.
+Two findings beyond the brief: the **8-byte** vector paths were *already* wrong (integer
+8-byte vectors went to GPRs instead of xmm), so "keep them working as they are" was not
+achievable and they were made SysV-correct instead; and gcc *and* clang both pass
+`double __attribute__((vector_size(8)))` in **memory** (V1DF is absent from gcc's vector
+mode list), replicated deliberately. Residual risk is deeply nested or exotic aggregates —
+the implementation is a targeted predicate, not a full eightbyte classifier with SSEUP
+post-merge.
+
+**GNU builtins.** The `implicit declaration` bucket was re-derived rather than trusted:
+**282 files, not the 205 this file recorded**, and 278 of them are missing exactly one
+name, so per-builtin flip counts equal file counts. `__builtin_*_overflow_p` was *already*
+present and `__builtin_stdc_*`/`clzg` were 1-3 files each, not ~15. Added the width-generic
+family (`clzg`/`ctzg`/`clrsbg`/`ffsg`/`popcountg`/`parityg`/`bswapg`, `bitreverse*`, all 16
+`__builtin_stdc_*`, the 18 fixed-width overflow forms), `__builtin___clear_cache`,
+`alloca_with_align`, 39 libm declarations with non-uniform signatures, and scalar
+`int x = {};` plus `[[...]]` after a function declarator. All built on 128-bit helpers
+taking `(value, precision)` as **function arguments**, so each operand is evaluated exactly
+once rather than via statement-expression macros. **38 flipped FAIL→PASS.** Of 20 losses,
+17 are PASS→XPASS — tests expecting rejection that mcc used to satisfy by failing to
+*parse* the construct; it now accepts the construct but lacks gcc's appertainment
+diagnostics, which is the cost of having the feature at all.
+
+Deliberately skipped, each for a stated reason: `clear_padding` (needs full layout
+traversal), `va_arg_pack` (needs inlining mcc lacks), `has_attribute` (a partial answer is
+a *wrong* answer), `setjmp`/`longjmp` (frame semantics), `cpu_supports` (needs CPUID),
+`nullptr` and `constexpr` — faking `nullptr` as `((void*)0)` would silently pass tests
+that should fail on the `nullptr_t` type distinction, and approximating `constexpr` as
+`static const` would silently turn `int a[n]` into a VLA.
+
+Two bugs the differential testing caught *before* shipping, both worth the pattern:
+`__builtin_clzg(x, y)` must evaluate **both** arguments even when `x != 0`
+(`gcc.dg/torture/pr122188.c` exists for exactly this), and an early 64-bit-only
+implementation silently miscomputed for `unsigned __int128` because a `-dM -E` probe
+missed that `__SIZEOF_INT128__` is set inside `mccdefs.h`, which that dump does not show.
+
+**`__has_builtin` always returned 0** — `runtime/include/mccdefs.h:317` defined it as the
+literal `0`, so it expanded before the preprocessor logic could ever see it. Removed, and
+`expr_preprocess` now answers it: DEF'd builtins report 1 correctly (verified against gcc
+for `__builtin_clz`, `__builtin_expect`, and a bogus name). **Still incomplete**: builtins
+that are *macros* in `mccdefs.h` (`__builtin_clzg`, `__builtin_memcpy`, the `stdc_*`
+family) still report 0, because `define_find` does not match them in the `#if` context and
+I did not chase it further. That direction is the safe one — a false 0 makes a caller take
+its portable fallback, where a false 1 would make it emit a call that fails. `printf`
+reports 0 where gcc reports 1, deliberately: mcc has no `printf` folding at all, which is
+the same gap behind the four `*printf-chk` failures.
+
+### Landed — D1: the default is now `gnu23`
+
+`src/libmcc.c:1161` is `202311` with `std_strict_ansi` still 0, so the dialect is `gnu23`
+and `__STDC_VERSION__` is `202311L`. **Full external suite: PASS 16,942 → 16,999 (+57),
+FAIL 2,395 → 2,333.** The "58 tests" this file estimated was optimistic-by-luck; +57 net
+is the measured figure.
+
+Both blockers this file recorded were real, but the second was **not** one of the 184
+failures: this host has `/usr/include/threads.h`, so `__has_include_next` wins and mcc's
+fallback body is dead code. It was reproduced only by forcing the fallback path. Fixed
+anyway — the `once_flag` typedef now sits behind an inner `#ifndef ONCE_FLAG_INIT`
+re-tested *after* `<stdlib.h>` is pulled in, and `call_once` is defined only when mcc
+supplied the typedef.
+
+Blocker 1 was fixed by making `bool`/`true`/`false`/`static_assert` genuine keywords
+rather than object-like macros — verified against gcc 15.3 first, which treats them as
+keywords in every respect (`#if true` → 1, `#ifdef true` → *not defined*,
+`defined(true)` → 0, `STR(true)` → `"true"`, `#undef true` → silent no-op). mcc's `-E`
+output for the probe is now character-identical to `gcc -std=gnu23`. The same mechanism
+also added the three C23 keyword spellings `alignas`/`alignof`/`thread_local`, which the
+flip would otherwise have regressed.
+
+**ctest 184 → 47 → 0**, and the 47 were only **4 distinct root causes** (43 were
+pipeline-variant duplicates): 2 stale test expectations, 1 harness bug
+(`tools/mccharness.c` pinned the gcc/clang reference to `-std=gnu11` while mcc ran at its
+default, so the differential was comparing unlike with unlike), and 1 genuine mcc bug —
+`stdalign.h` still defined `__alignas_is_defined`/`__alignof_is_defined`, which C23
+removed. A fifth genuine bug surfaced separately: `float.h` was missing C23's
+`FLT_SNAN`/`DBL_SNAN`/`LDBL_SNAN`/`INFINITY`/`NAN`.
+
+**All 8 external-suite regressions were triaged to zero genuine ones.** Four became
+`XPASS` because gcc *also* accepts them under `gnu23` — mcc's old `PASS` was accidental,
+"correctly rejecting" for the wrong reason, since xsuite derives `expect=reject` from
+`dg-message` even where gcc only warns. `enum-mode-2.c` now *agrees* with gcc, which also
+rejects `enum { false, true }` under C23. Two are load flakes whose emitted executables are
+byte-identical between the two compilers, and `20050527-1.c` is a pre-existing
+nondeterministic VLA-bound segfault, also byte-identical before and after.
+
+Merging it required care: the `errors_and_warnings` golden was edited by *both* this agent
+and the D2/D4a severity work, and the D1 agent's base predated D2/D4a — so taking its
+golden wholesale would have silently reverted the severity changes. Resolved by keeping the
+D2/D4a golden and applying only the one genuine C23 delta (`test_abstract_decls` loses its
+`identifier expected`, because unnamed parameters are legal in C23), then re-running to
+confirm.
+
+Still missing after the flip, and *not* made worse by it: `nullptr` and `constexpr`, both
+needing parser work in `src/mccgen.c`. Their absence is a clean diagnostic rather than
+silent misbehaviour, and faking `nullptr` as `((void*)0)` was deliberately rejected — it
+would silently pass tests that should fail on the type distinction.
+
+### Closed — `--suite-default-flags` is a near-no-op, and the version that said otherwise was wrong
+
+The harness's `--suite-default-flags` (adding `gcc.dg`'s real `dg.exp` defaults
+`-ansi -pedantic-errors`, and `-Wc++-compat` for `c-c++-common`) was left off and
+unmeasured because mcc rejected `-ansi`. With `-ansi` landed it could finally be run, and
+the first run showed **PASS dropping by 1,432** on `gcc.dg` top level, apparently
+revealing a huge C90-conformance gap: 303 *"'X' is a C99 feature"*, 189 *"ISO C90 does not
+support"*, 108 mixed declarations, 97 loop-initial declarations, 59 VLAs, 49 compound
+literals.
+
+**All of it was a harness bug.** In GCC's DejaGnu, `dg-options` **replaces**
+`DEFAULT_CFLAGS`; it does not append to it. `suite_default_flags` applied the defaults to
+every top-level file regardless, so 1,531 of the 1,540 regressions (**99%**) were tests
+carrying their own `dg-options` that gcc would never have compiled in strict C90 at all.
+Fixed by making `suite_default_flags` return nothing when the file contains a
+`dg-options`/`dg-additional-options` directive. Re-measured: **+2 PASS, XPASS unchanged**.
+So the default board was already right, the 83 apparent XPASS→PASS "gains" were artifacts
+too, and this flag is not worth enabling by default.
+
+The lesson generalises to the rest of this file: a flag change that moves a thousand rows
+is far more likely to be a harness defect than a compiler discovery, and the cheap check
+is to ask what fraction of the moved tests share a single structural property.
+
+### CLOSED — all nine known wrong-code defects
+
+`conversion.c` closed last, and with it the recorder blind spot. `ctest` **8,099 of
+8,099**, `-O3` self-host byte-identical fixpoint, `tracegate`/`schemagate` OK.
+
+**The suggested predicate was insufficient and the suggested guard was wrong** — both
+worth recording, because this file proposed both.
+- Firing `RIR_M_CONVERT` only when the top bit is set still left **36 of 988** differential
+  cases failing: narrowing constant casts are the same hole in another guise. The landed
+  test is `pre != post` (the fold actually changed bits), which subsumes it *and* is
+  narrower in practice — `unsigned i = 0;` has `pre == post` and does not fire, which is
+  exactly what regressed the earlier attempt.
+- The proposed defensive guard — force `rir_arena_mismatch` when a reconcile sees a
+  signedness mismatch — was **measured and rejected**. It cannot see this defect class at
+  all (`rir_stamp_sv` bails at `is_float(ct) != is_float(v->type.t)` before reaching any
+  signedness comparison), and where it *can* fire it is mostly wrong: **436 hits across 85
+  functions** in a single `-O3` self-compile, ~3.7% of all optimized bodies, essentially
+  all legitimate. Guard *placement* mattered more than the guard: an initial
+  `cwant == rir_shn` check hit 48 of 53 marks because the shadow stack legitimately lags
+  the vstack, costing 27 bodies their arena.
+- The non-constant arm of the hole (`ds == ss && ds >= 4`) was tested directly with 720
+  non-constant cases at every width and both directions: **0 mismatches on baseline and
+  fixed**. Not currently live — luck rather than design, but the proposed guard is not the
+  instrument that would change that.
+
+**`ast_fconst_reuse` is no longer value-blind.** It now stores a 36-byte key of the
+*emitted* bytes (built with the same `write32le`/`write64le`/`write_ldouble` primitives
+`init_putv` uses, so `long double` padding never enters it) and refuses reuse on mismatch.
+Both call sites are keyed, including the `cplx=1` site a previous agent could not verify —
+`cplx_extract_const` fills `re->type`/`im->type` itself, so the source base type is
+available without reading `vtop->type.ref`. By construction it can only produce false
+*mismatches*, never false matches. Measured: **0 stale rejections** across a full
+`-O1/-O2/-O3` self-compile and 4,388 compiles over `tests/` plus all of
+`gcc.c-torture/execute`; **234 legitimate reuses still hit**, so the guard is live and
+rejects nothing real; and forcing every comparison to fail produced identical correct
+output, confirming the fallback is safe. Arena census went `used=2312` → `used=2315` —
+three bodies *gained* an arena, none lost.
+
+### Historical — the cluster as first found
+
+**All fixed and merged**, `ctest` 8,099 of 8,099, `-O3` self-host a byte-identical
+fixpoint. `pr54877`, `pr117811`, `pr85582-2`, `20000715-1`, `20000412-2` and `pr38615`
+all PASS at `-O0` and `-O3`. `conversion.c` remains — its fix needs the recorder work
+described below and is in flight.
+
+Two root causes were **not** what this file predicted, and both are worth remembering:
+
+**The float `--` bug was not a sign error.** Nothing negated the constant. `ast_fconst_reuse`
+(`src/mccast.c:2166`) is a **positional** replay cache: the record pass appends every float
+constant it materializes and, on replay, `gv()` hands back the next recorded entry *in
+order, without ever comparing values*. The record pass runs `inc()` (`mccgen.c:5099`),
+which pushes `c - TOK_MID` = −1 and interns **−1.0**; the promoted fast path pushed +1
+with a compensating `'-'`, its constant was silently replaced by the recorded −1.0, and
+the sign applied twice. Proven by pushing `7` and observing the emitted operand was still
+−1.0 with no new `.rodata` entry. **That cache is still value-blind** — any future rewrite
+that changes which float constants replay emits, or in what order, will silently
+substitute the wrong one.
+
+**The aggregate-promotion hypothesis was right but incomplete.** The `AST_OP_ADDR` node's
+pointee is literally `VT_VOID` (size 1) — *and* the ADDR node records the converted callee
+parameter type while the child `AST_Ref` has already decayed to a plain pointer, so
+**neither** carries the object size. `void*`/`char*` parameters fail; `int(*)[4]`, `int*`
+and `const S*` all pass.
+
+The `MCC_AST_PROMOTE` leaf test now consults `ast_node_libcall()`, an explicit enumeration
+of backend lowerings (`__int128`/`VT_QLONG` mul/div/mod/shift, `long double` arithmetic,
+the int↔float conversion helpers, `_Atomic`, non-inlined `__builtin_bswap`/`signbit`/
+`ffs`/`clz`, struct stores without `MCC_TARGET_NATIVE_STRUCT_COPY`) rather than
+special-casing `__int128` — verified targeted, since a genuine leaf still uses
+`%r8/%r9/%r10`.
+
+### Also closed — the optimizer's exponential blowup
+
+`ast_divmagic_*_spow2` tripled its operand subtree per level via three `ast_dup_sub` deep
+copies, so a chained `% 2` grew as **3^n**. `n=8` took 5.2s and emitted 296,598 bytes
+where gcc emits 1,392 flat. Now **0.003s and 1,606 bytes**, within 18% of gcc and
+*smaller* than gcc on `960302-1.c` itself. Separately, `ast_memo_sync` memset **all five**
+memo tables on every epoch change — and `epoch++` fires on essentially every mutation, so
+each query inside a mutate-then-query pass cost O(nodes)×5; now per-node epoch stamping,
+O(1) per query. Measured independently on the *unfixed* exponential AST, object sizes
+bit-for-bit unchanged, which is the clean proof the two defects were independent.
+The `ast_dup_sub` audit found the reported case was **not the worst**: `int / 7` grew
+×3.99 per operator (901,382 bytes at n=7). i386 already had the right answer —
+`ast_divmagic_materialize` binds `x` to a stack temp; the other targets took the
+`ast_dup_sub` branch. The landed fix is a *refusal*, not the single-evaluation lowering;
+making `ast_divmagic_materialize` target-independent is the principled follow-up, deferred
+because `ast_ident_pure` admits non-volatile loads, so hoisting the operand's store can
+move a load across a guarding branch.
+
+### Historical — the miscompile inventory as first found
+
+**`double d = 10; d--;` yields 11 at `-O2` and `-O3`.** Correct at `-O0`/`-O1`, correct
+under gcc. Reproduced by hand in the merged tree. Floating-point decrement is being
+compiled as increment: the promoted inc/dec fast path at `src/mccast.c:4764-4784` pushes
+constant `1` and varies the opcode (`gen_op(TOK_INC ? '+' : '-')`), but the constant is
+materialized as `-1.0` while the subtract opcode is kept, so the sign is applied twice
+(`subsd` of `-1.0`). Gate `MCC_AST_PROMO_INCDEC=0` masks it. The convention used
+elsewhere in this compiler (`src/mccgen.c:5078`, `:5099`) is to push `c - TOK_MID` and
+always `gen_op('+')`.
+
+Seven confirmed wrong-code defects at `-O2`+, each isolated to a single env gate by
+bisection and confirmed against generated assembly. Two verified by hand in the merged
+tree (marked ✓). **`-O2` is not trustworthy until these close**, which is why feature
+work is queued behind them.
+
+| Defect | Gate | Site | Repro |
+|---|---|---|---|
+| ✓ FP `--` compiles as `++` | `MCC_AST_PROMO_INCDEC` | `mccast.c:4764-4784` | `double d=10; d--;` → 11 |
+| ✓ cprop survives a side-effecting `if` condition | `MCC_AST_CPROP_JOIN` | `mccast.c:7488-7492` | `int y=2; if(y++!=2){} if(y!=3) BUG` |
+| Promotion ignores backend-synthesized libcalls | `MCC_AST_PROMOTE` | `mccast.c:3435-3438`, `:3601-3602` | `__int128 x<<(y&5)` → 4 not 12 |
+| Promotion of address-taken aggregate | `MCC_AST_PROMOTE` | `mccast.c:3495-3520` | `pr117811.c`; two elements share `%ebx`, never stored |
+| `__func__` merged with an identical string literal | `MCC_MERGE_STRINGS` | `mccgen.c:15410-15419` | `"main" == __func__` true; C99 6.4.2.2 requires distinct objects |
+| Tail call reuses a frame whose local's address escapes | `MCC_AST_TCO_PTR` | `mccast.c:2060` (gate; transform site not located) | `pr38615.c` |
+| `20000412-2.c`, `conversion.c` | not yet isolated | — | the two original `-O3` aborts |
+
+**Two more, root-caused after the table above was written.**
+
+**`conversion.c` — the replay recorder is blind to no-code casts.** `(double)(int)~((~0U)>>1)`
+prints `2147483648.0` at `-O1`+ and `-2147483648.0` at `-O0` and under gcc. `gen_cast`
+(`src/mccgen.c:4425-4487`) folds an integer cast of a constant by rewriting `vtop->type`
+and emitting **no code** (`done:` at `:4670`). The replay-IR recorder builds the
+optimizer's arena from the captured *codegen op stream*, so a cast that emits nothing is
+invisible: `rir_stamp_sv` (`src/mccrir.c:1794`) only inserts an `AST_Convert` when a type
+*shrinks* (`:1860`), and its reconcile points fire only at emitted ops. The replayed tree
+therefore carries `Binary ^` typed *unsigned*, and the later `(double)` takes the unsigned
+branch at `mccgen.c:4438` instead of the signed one at `:4441`. Confirmed under gdb; both
+constants are in `.rodata` with the wrong one selected. The faithfulness check compares
+*code bytes*, which are identical, so the semantically-wrong body is accepted — that is
+why nothing caught it. `MCC_REPLAY_IR=1` masks the bug entirely
+(`rir_prod_env = ast_replay_env && !rir_env`, `src/mccrir.c:534`), which matters for
+future bisects. **The general hole outlives any point fix**: *any* no-code type change in
+`gen_cast` is invisible to the recorder, including the `ds == ss && ds >= 4` path at
+`mccgen.c:4573`.
+
+**Invalid TCO is wider than the `MCC_AST_TCO_PTR` gate suggests.** `ast_tco_run`
+(`src/mccast.c:7949`) checks escapes on **parameter slots only** (`:7979-7981`), never on
+other locals whose address reaches the callee. After frame reuse the caller and callee
+share one object. `int f(int a,int *y){int x=a; if(!a) return *y; return f(a-1,&x);}`
+returns 0 at `-O2` and 1 everywhere else; the `G=&x` variant is wrong even with
+`MCC_AST_TCO_PTR=0`, so the gate does not bound the defect.
+
+Two of these share the `MCC_AST_PROMOTE` family but are distinct defects. The cprop one
+is the broadest in blast radius — *any* `if` whose condition mutates a local corrupts the
+lattice at `-O2`+ — and the fix pattern already exists in the non-join sibling
+`ast_cprop_block`, which does an unconditional `ast_cprop_kn = 0` at `mccast.c:7282`.
+
+Also classified, and **not** bugs: `990208-1.c` (inliner is expression-body-only,
+`mccast.c:8539-8568`), `bcp-1.c` and `builtin-constant.c` (`__builtin_constant_p` is
+resolved at *parse* time from value-stack flags at `mccgen.c:11277`, so it can never
+answer 1 for a constant-propagated local — always standard-conforming, just weak), and
+the four `*printf-chk` tests (mcc has no `__*_chk` builtin knowledge at all; note gcc
+itself also fails `vfprintf-chk-1` on this machine, so that one is not a valid
+expectation here).
+
+### Board after the first six fixes
+
+19,571 tests/column, **`-O0` 85.8%, `-O3` 85.7%, ICE 0, TIMEOUT 0, XPASS 618** (from
+4 ICE / 4 TIMEOUT / 1,013 XPASS). The ICE and timeout columns are now empty for the
+first time. Remember the rate is not comparable to the 82.6% board — see the denominator
+note above.
+
+### Decisions taken 2026-08-03 — direction for the fix program
+
+The owner's standing principle for all of it: **mimic gcc and clang as closely as
+possible; where they disagree or the case is ambiguous, fall back to sane and safe
+behaviour and record the choice.** Apply this rather than inventing mcc-specific
+semantics.
+
+| | Decision | Where |
+|---|---|---|
+| D1 | **Default `-std` becomes `gnu23`**, from C11. mcc already implements C23 unnamed parameters, `(...)`-only prototypes and 1-arg `static_assert` — verified by hand, they are gated off, not missing. 58 tests, one line. | `src/libmcc.c:1161` |
+| D2 | **Conversion diagnostics become errors** — `incompatible-pointer-types`, `int-conversion`, `implicit-int`, matching gcc 14+/clang 16+ and C23. Measured self-host-safe; gcc `-Werror=` over all 87 TUs gives zero errors. 29 tests. | `src/mccgen.c:4797`, `src/libmcc.c:1153-1180` |
+| D3 | **`warn_unsupported` defaults on** — unknown attributes, options and linker options warn, as gcc's `-Wattributes` does. The bit must be **split first**: it also gates four ignored-assembler-directive warnings in `src/mccasm.c`. 39 tests. | `src/libmcc.c:1153-1180`, `:3266` |
+| D4 | **Relax where mcc is stricter than gcc** — excess initializers and `return;` in a non-void function are hard errors in mcc and warnings in gcc/clang. 28 tests. | `src/mccgen.c:14312`, `:14322`, `src/libmcc.c:1168` |
+| D6 | **Implement the three dropped attributes properly** rather than diagnosing them: `scalar_storage_order` (real byte-swapping), `mode(byte)`/`packed` on enums (enum sizing), and `ms_abi` (the Microsoft calling convention). Today all three are parsed and silently ignored, so mcc emits wrong data and wrong calls with no diagnostic at any warning level — verified against gcc both ways. This is the most dangerous item on the board because mcc's objects are meant to link against gcc's. | attribute handling `src/mccgen.c:5402`, struct layout, x86_64 call lowering |
+| D5 | **All four feature areas are in scope**, sequenced by cost: GNU builtins long tail (205 tests, ~100 names, mechanical), C23 small spellings (74 — `nullptr` 21, `[[attr]]` after declarator 16, `alignas`/`alignof`/`thread_local` 13, scalar empty init 13, `constexpr` 11), x86 intrinsic headers (103), fixed-point `_Fract`/`_Accum` (66). | mixed |
+
+**Sequencing constraint, and why the program is not all parallel.** Nearly every item
+above lands in `src/mccgen.c` (16k lines) or `src/libmcc.c`, so the work serialises on
+those two files rather than on ideas. Wave 1 (in flight): the 128-bit division
+slowdown in `runtime/lib/int128.c`, the four crash bugs in `src/mccgen.c`, `-ansi` plus
+unknown-option prefix matching in `src/libmcc.c`, harness accuracy in `tools/xsuite.py`,
+and the x86 intrinsic headers (mostly new files under `include/`). D1-D4 and D6 and the
+remaining features queue behind whichever wave-1 agent owns their file.
+
+### Landed in the working tree 2026-08-03, gated together
+
+`ctest` **8,098 of 8,098** (8,097 baseline plus the new `#embed` regression test), `-O3`
+self-host clean, `tracegate` and `schemagate` both OK. Nothing committed.
+
+1. **`#embed` device files and unbounded reads** — see the section below.
+2. **128-bit division was ~190x slower than gcc's.** `runtime/lib/int128.c` ran an
+   unconditional 128-iteration bit-serial loop for every divide, with no fast paths, and
+   all of `__udivti3`/`__umodti3`/`__divti3`/`__modti3`/`__udivmodti4` funnel through it.
+   Added the compiler-rt prologue: both-halves-64-bit → one hardware divide;
+   `d.high == 0` → Knuth Algorithm D on 32-bit limbs (this is the path the failing tests
+   hit — 2^127-scale dividends with small divisors, so the naive "both fit in 64 bits"
+   check is *not* sufficient); genuinely-128-bit divisors keep the original loop.
+   Divide-by-zero deliberately still falls through to the old loop, because the old code
+   returns `q = ~0, r = n` rather than trapping and a hardware `/0` in the fast path
+   would have turned that into SIGFPE. Verified by 2,479,138 differential checks against
+   host libgcc, **0 failures before and after**, including `INT128_MIN / -1`.
+   **`gcc.dg/pr97459-{2,4,5,6}.c`: 1.6-3.3s → 0.07-0.16s**, so the four runtime timeouts
+   on the board are gone. Microbenchmark 286ms → 14.8ms; the gap to gcc closed from 151x
+   to 7.8x, the residue being call overhead rather than the algorithm.
+3. **Five preprocessor defects**, all measured: digraphs were folded to their primaries
+   at lex time so spelling was unrecoverable and they were wrongly accepted in strict
+   C90 (now carried as distinct `TOK_DIG_*` tokens, converted only when not preprocessing);
+   `#` stringification octal-escaped control characters and failed to escape `"` and `\`;
+   pending whitespace was lost across a nested macro expansion; pp-number swallowed
+   `p+`/`p-` in strict C90; and multi-character constants accumulated *signed* bytes, so
+   `'\234b'` read `-25502` instead of `40034`. **`gcc.dg/cpp` +7 with zero regressions**
+   across all 541 runnable tests in that suite.
+
+4. **Four compiler crashes.** Unbounded parser recursion through `unary()` was a plain
+   SIGSEGV on deeply nested parens (`limits-exprparen.c`); the body is now
+   `unary_nested()` behind a counting wrapper, so the "decrement on every exit path"
+   requirement holds structurally rather than by inspection — the body has an early
+   `return` plus dozens of `break`s. Because `mcc_error` longjmps rather than truly not
+   returning, the depth also resets per translation unit. **2,047 nested parens accepted,
+   2,048 a clean diagnostic** (measured). Plus: calling a function with an incomplete
+   return type was silent and segfaulted (no sret pointer); pointer *subtraction* on an
+   empty aggregate divided by `sizeof == 0` and raised SIGFPE (`p + 1` still works, as in
+   gcc); and `va_start` in a fixed-argument function was silent and segfaulted.
+   **The `va_start` plan in this file was wrong** — un-`#ifdef`-ing
+   `check_va_start_last_param` would have been a no-op twice over: on x86_64 SysV
+   `__builtin_va_start` is a *macro* in `runtime/include/mccdefs.h:499`, not a builtin, so
+   no `case` is ever reached; and the check guards on `cur_func_last_param`, which is only
+   set when `func_var` is true, so it structurally cannot fire in a fixed-arg function.
+   Fixed by routing x86_64 SysV through mccgen like the other three targets, which also
+   revived the previously-dead `-Wvarargs` on this target.
+5. **Driver options.** `-ansi` is now accepted as `-std=c90` — verified byte-identical
+   predefines to `-std=c90`, and it does *not* imply `-pedantic`, matching gcc. This
+   matters far beyond the flag: `gcc.dg/dg.exp:25` puts `-ansi` on the default command
+   line, so mcc was failing files before reading them. Unknown options now warn instead of
+   being swallowed: `-veryodd` previously **enabled verbose mode** via prefix matching.
+   The `warn_unsupported` bit was **split** rather than flipped — a new
+   `warn_unsupported_option` defaults on, while the old bit still gates unknown attributes
+   and the four ignored-directive warnings in `src/mccasm.c`, which is the decision this
+   file records as needing to be made separately.
+6. **Harness accuracy** (`tools/xsuite.py`), with three of the briefed counts corrected on
+   measurement: `dg-message` affects **281 files, not ~10** (mcc was scored XPASS for
+   correctly exiting 0); `gcc.dg/special/` must **not** be directory-skipped because
+   `special.exp` globs `*[1-9].c` and 4 of the files are real passing tests, so only the 5
+   auxiliary halves are skipped; and `dg.exp`'s defaults apply to `gcc.dg` **top level
+   only** (5,910 files), not the subtree. Board **20,513 @ 82.6% → 19,551 @ 85.8%**, of
+   which **+2.07 pts is pure denominator and only +1.16 pts is real** — absolute PASS
+   *fell* by 323, because 776 of the 1,924 skipped artifact rows were passing. `llvm:clang`
+   moved *down* 0.1 pts, which is the evidence this was not number-pumping. ICEs 4 → 1.
+
+7. **Runtime math and the SysV varargs ABI.** `__builtin_fabs` was
+   `(x) <= 0 ? -x : x` — false for NaN, so the sign survived, and `copysign` was built on
+   it and inverted with it; now uses the native `__builtin_signbit`. Complex division was
+   unscaled Smith, annihilating the `a*d` term when `d/c` underflows; now a line-for-line
+   port of libgcc's Baudin-Smith prologue. `__builtin_{add,sub,mul}_overflow` coerced both
+   operands to the *result* type's signedness, so the stored value was always right and
+   the **flag was wrong**; now sign+magnitude in each operand's own type with the result
+   computed in infinite precision. And `classify_x86_64_va_arg`
+   (`arch/x86_64/x86_64-gen.c:1295`) never consulted `x86_64_mixed_class`, so a mixed
+   INTEGER+SSE eightbyte was copied wholesale from the GP save area **and desynchronized
+   the rest of the `va_list`**, corrupting every later `va_arg` in the call.
+   A **second, caller-side** bug was found while fixing it: `gfunc_call`'s mixed-class path
+   at `:1711` built an `SValue` with `c.i + 8`, but `gen_modrm_impl` ignores the
+   displacement for a plain register-indirect lvalue, so *both* eightbytes loaded from
+   offset 0 whenever the struct came from a pointer or a spilled lvalue.
+   Differential vs gcc 15.3: fabs/copysign 14 wrong → **0** of 838; overflow builtins
+   (exhaustive 256×256 × 4 signedness × 3 ops × 8 result types) all 5 digests wrong →
+   **0** of 6,373,015; varargs mixed-class 11 wrong → **0**, including cross-ABI
+   gcc↔mcc caller/callee combinations. Complex division 14,464 wrong → 604, and those 604
+   are **not a defect**: this machine's libgcc built `__divdc3` with FMA, and compiling the
+   same ported source with `gcc -mfma -ffp-contract=fast` gives 0 of 38,416 — identical
+   algorithm, different fused rounding. Named external tests **70 → 78 passing**.
+   Still open, deliberately not attempted: `pr92904.c`'s last 2 checks are a *different*
+   defect — 32-byte-aligned aggregates in the varargs overflow area, isolated by a split
+   build to mcc's **caller** side (`gfunc_call` handles only `align == 16`); fixing it
+   needs dynamic `rsp` over-alignment, a call-sequence change. And `__int128` result types
+   still route to `runtime/lib/int128.c`'s helpers, which retain the old operand-signedness
+   coercion.
+
+**Correction to the `-O0 FAILEXE` figure this file quotes.** The "153 at `-O0`" is not
+153 `-O0` defects. `tools/xsuite.py:292` builds `[mcc] + [opt] + flags`, so a test's own
+`dg-options "-O2"` lands *after* the harness `-O0` and wins — **76 of the 153 ran at their
+own level**. Re-run with `--force-opt`, 151 do still fail at true `-O0`. But compiling all
+153 with real gcc 15.3 at `-O0` gives **68 pass, 71 fail, 14 unbuildable**, so a gcc-`-O0`
+failure means the test needs an optimizer, not that mcc is wrong. **68 is the lower bound
+on genuine defects, not 153.** The largest single lever in the set is
+`__builtin_object_size` (51 tests, stubbed to `-1`/`0` at `src/mccgen.c:11386-11393`) —
+but gcc itself only passes 4 of those 51 at `-O0`, so a front-end-only implementation is
+worth ~5 tests and the rest need the optimizer.
+
+### Closed — `#embed` read the whole file, and trusted `lseek` to say how big it was
+
+`clang/test/Preprocessor/embed-reject-device-files-lin.c` was an `XPASS`: mcc accepted
+`#embed "/dev/urandom"`, `/dev/random`, `/dev/zero` and `/dev/null` and built empty
+arrays, where clang rejects all four. It never hung *here* — `lseek(SEEK_END)` returns
+0 on all four devices on this kernel, so mcc read nothing — but the acceptance was one
+kernel's `lseek` away from an unbounded read, and the same function had a second,
+reachable memory-exhaustion path.
+
+`embed_read_file` (`src/mccpp.c:1700`) took the size from `lseek(SEEK_END)` and did a
+single `mcc_malloc(size)` plus one `read()`. Measured with a 64 TiB sparse file: mcc
+attempts the whole allocation, dying in `mcc: memory full` under an `RLIMIT_AS` cap and
+faulting in pages until RAM is gone without one. It also read the *entire* file before
+applying `limit(N)`, so `#embed "big.bin" limit(8)` paid for all of `big.bin`.
+
+Now: `fstat` replaces `lseek`, non-regular files are refused with clang's own wording
+(`device files are not yet supported by '#embed' directive`), the read is incremental
+and partial-read-safe, and the resolver stops searching the embed path once a candidate
+is rejected rather than falling through to *not found*. `embed_want` passes
+`offset + limit` down so only the bytes actually used are allocated — the 64 TiB file
+with `limit(8)` now compiles instantly. Anything over **1 GiB** (`EMBED_MAX_SIZE`) is a
+named diagnostic instead of an allocation; that ceiling is a policy choice, not a
+measurement, and is one constant if it is wrong.
+
+`__has_embed` deliberately did **not** become fatal: clang reports a device as *found*,
+so `has_embed_test` returns found for a non-regular file without reading it. Verified
+against clang both ways.
+
+Gates: `ctest` 8,096 of 8,096 with the `-O3` self-host re-taken and clean; all 94
+`#embed` tests across both external trees re-run, **exactly one status change** and it
+is the intended `XPASS → PASS`. Regression test at
+`tests/diagnostics/dg-error/embed_device_file_lin.c`; the `dg-error` glob now skips
+`*_lin` cases off POSIX hosts, since that tier runs mcc on the host and `/dev` is a
+host path.
+
+Three `#embed` `XPASS`es remain, all diagnostics rather than memory: `gcc.dg/cpp/embed-2.c`
+(`#embed` before C23 should be a pedantic error under `-std=c17 -pedantic-errors`) and
+`embed-{6,7}.c` (under `-fpreprocessed` gcc requires the `gnu::base64` parameter).
 
 ### Phase 1 — the `-O0` defects the sweep found, and what closed
 

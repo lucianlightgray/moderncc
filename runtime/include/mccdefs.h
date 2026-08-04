@@ -314,7 +314,6 @@
 #endif
 
 	#define  __PRETTY_FUNCTION__ __FUNCTION__
-	#define __has_builtin(x) 0
 	#define __has_feature(x) 0
 	#define __has_attribute(x) 0
 	#define _Nonnull
@@ -417,9 +416,12 @@
 	#define __builtin_isless(a, b) (!__builtin_isunordered(a, b) && (a) < (b))
 	#define __builtin_islessequal(a, b) (!__builtin_isunordered(a, b) && (a) <= (b))
 	#define __builtin_islessgreater(a, b) (!__builtin_isunordered(a, b) && ((a) < (b) || (a) > (b)))
-	#define __builtin_fabsf(x) ((__mcc_float_t)((x) <= 0 ? 0.0f - (x) : (x)))
-	#define __builtin_fabs(x)  ((__mcc_double_t)((x) <= 0 ? 0.0 - (x) : (x)))
-	#define __builtin_fabsl(x) ((__mcc_ldouble_t)((x) <= 0 ? 0.0L - (x) : (x)))
+	#define __builtin_fabsf(x) ((__mcc_float_t)(__builtin_signbitf((__mcc_float_t)(x)) \
+	? -(__mcc_float_t)(x) : (__mcc_float_t)(x)))
+	#define __builtin_fabs(x)  ((__mcc_double_t)(__builtin_signbit((__mcc_double_t)(x)) \
+	? -(__mcc_double_t)(x) : (__mcc_double_t)(x)))
+	#define __builtin_fabsl(x) ((__mcc_ldouble_t)(__builtin_signbitl((__mcc_ldouble_t)(x)) \
+	? -(__mcc_ldouble_t)(x) : (__mcc_ldouble_t)(x)))
 	#define __builtin_abs(x)   ((__mcc_int_t)((x) < 0 ? -(x) : (x)))
 	#define __builtin_labs(x)  ((__mcc_long_t)((x) < 0 ? -(x) : (x)))
 	#define __builtin_llabs(x) ((__mcc_llong_t)((x) < 0 ? -(x) : (x)))
@@ -491,13 +493,33 @@
 	return ap->reg_save_area + ap->fp_offset - 32;
 	}
 	}
+	} else if (arg_type == 3 || arg_type == 4) {
+	if (ap->gp_offset + 8 <= 48 && ap->fp_offset < 128 + 48) {
+	char *__mcc_vg = ap->reg_save_area + ap->gp_offset;
+	char *__mcc_vf = ap->reg_save_area + ap->fp_offset;
+	ap->gp_offset += 8;
+	ap->fp_offset += 16;
+	if (arg_type == 3) {
+	*(long long *)(__mcc_vf + 8) = *(long long *)__mcc_vf;
+	*(long long *)__mcc_vf = *(long long *)__mcc_vg;
+	} else {
+	*(long long *)(__mcc_vf + 8) = *(long long *)__mcc_vg;
+	}
+	return __mcc_vf;
+	}
+	} else if (arg_type == 5) {
+	if (ap->fp_offset < 128 + 48) {
+	ap->fp_offset += 16;
+	return ap->reg_save_area + ap->fp_offset - 16;
+	}
 	}
 	ap->overflow_arg_area += size;
 	ap->overflow_arg_area = (char *)((long long)(ap->overflow_arg_area + align - 1) & -align);
 	return ap->overflow_arg_area - size;
 	}
 	#define __builtin_va_start(ap, last) \
-	(*(ap) = *(struct __va_list_tag *)((__mcc_char_t*)__builtin_frame_address(0) - 24))
+	(__builtin_va_start_check(last), \
+	 *(ap) = *(struct __va_list_tag *)((__mcc_char_t*)__builtin_frame_address(0) - 24))
 	#define __builtin_va_arg(ap, t)   \
 	(*(t *)(__va_arg_inline(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
 	#define __builtin_va_copy(dest, src) (*(dest) = *(src))
@@ -641,6 +663,45 @@
 	__BUILTIN(double, cabs, (double _Complex))
 	__BUILTIN(float, cabsf, (float _Complex))
 	__BUILTIN(long double, cabsl, (long double _Complex))
+	__BUILTIN(int, finite, (double))
+	__BUILTIN(int, finitef, (float))
+	__BUILTIN(int, finitel, (long double))
+	__BUILTIN(int, ilogb, (double))
+	__BUILTIN(int, ilogbf, (float))
+	__BUILTIN(int, ilogbl, (long double))
+	__BUILTIN(double, ldexp, (double, int))
+	__BUILTIN(float, ldexpf, (float, int))
+	__BUILTIN(long double, ldexpl, (long double, int))
+	__BUILTIN(double, scalbn, (double, int))
+	__BUILTIN(float, scalbnf, (float, int))
+	__BUILTIN(long double, scalbnl, (long double, int))
+	__BUILTIN(double, scalbln, (double, long))
+	__BUILTIN(float, scalblnf, (float, long))
+	__BUILTIN(long double, scalblnl, (long double, long))
+	__BUILTIN(long, lrint, (double))
+	__BUILTIN(long, lrintf, (float))
+	__BUILTIN(long, lrintl, (long double))
+	__BUILTIN(long long, llrint, (double))
+	__BUILTIN(long long, llrintf, (float))
+	__BUILTIN(long long, llrintl, (long double))
+	__BUILTIN(long, lround, (double))
+	__BUILTIN(long, lroundf, (float))
+	__BUILTIN(long, lroundl, (long double))
+	__BUILTIN(long long, llround, (double))
+	__BUILTIN(long long, llroundf, (float))
+	__BUILTIN(long long, llroundl, (long double))
+	__BUILTIN(double, frexp, (double, int*))
+	__BUILTIN(float, frexpf, (float, int*))
+	__BUILTIN(long double, frexpl, (long double, int*))
+	__BUILTIN(double, modf, (double, double*))
+	__BUILTIN(float, modff, (float, float*))
+	__BUILTIN(long double, modfl, (long double, long double*))
+	__BUILTIN(void, sincos, (double, double*, double*))
+	__BUILTIN(void, sincosf, (float, float*, float*))
+	__BUILTIN(void, sincosl, (long double, long double*, long double*))
+	__BUILTIN(double, remquo, (double, double, int*))
+	__BUILTIN(float, remquof, (float, float, int*))
+	__BUILTIN(long double, remquol, (long double, long double, int*))
 	__BUILTIN(int, strcasecmp, (const char*, const char*))
 	__BUILTIN(int, strncasecmp, (const char*, const char*, __SIZE_TYPE__))
 	__BUILTIN(char*, strndup, (const char*, __SIZE_TYPE__))
@@ -798,12 +859,80 @@
 	__mcc_uchar_t: __mcc_##op##o_uc, __mcc_ushort_t: __mcc_##op##o_us, \
 	__mcc_uint_t: __mcc_##op##o_u, __mcc_ulong_t: __mcc_##op##o_ul,	\
 	__mcc_ullong_t: __mcc_##op##o_ull)
-	#define __builtin_add_overflow(a, b, res) \
-	(__mcc_ov_disp(add, *(res))((a), (b), (res)))
-	#define __builtin_sub_overflow(a, b, res) \
-	(__mcc_ov_disp(sub, *(res))((a), (b), (res)))
-	#define __builtin_mul_overflow(a, b, res) \
-	(__mcc_ov_disp(mul, *(res))((a), (b), (res)))
+	static __inline __mcc_ullong_t __mcc_ov_lo32(__mcc_ullong_t __v) {
+	return __v & (__mcc_ullong_t)0xffffffffu;
+	}
+	static __inline int __mcc_ov_calc(int __op, int __na, __mcc_ullong_t __ma,
+	int __nb, __mcc_ullong_t __mb, __mcc_ullong_t __tmax, int __tsig,
+	__mcc_ullong_t *__out) {
+	__mcc_ullong_t __m;
+	int __neg, __wide = 0;
+	if (__op == 1)
+	__nb = __mb ? !__nb : 0;
+	if (__op == 2) {
+	__mcc_ullong_t __p0 = __mcc_ov_lo32(__ma) * __mcc_ov_lo32(__mb);
+	__mcc_ullong_t __p1 = (__ma >> 32) * __mcc_ov_lo32(__mb);
+	__mcc_ullong_t __p2 = __mcc_ov_lo32(__ma) * (__mb >> 32);
+	__mcc_ullong_t __p3 = (__ma >> 32) * (__mb >> 32);
+	__mcc_ullong_t __mid = (__p0 >> 32) + __mcc_ov_lo32(__p1) + __mcc_ov_lo32(__p2);
+	__neg = (__ma && __mb) ? (__na ^ __nb) : 0;
+	__m = __mcc_ov_lo32(__p0) | (__mid << 32);
+	__wide = (__p3 + (__p1 >> 32) + (__p2 >> 32) + (__mid >> 32)) != 0;
+	} else if (__na == __nb) {
+	__neg = __na;
+	__m = __ma + __mb;
+	__wide = __m < __ma;
+	} else if (__ma >= __mb) {
+	__neg = __na;
+	__m = __ma - __mb;
+	} else {
+	__neg = __nb;
+	__m = __mb - __ma;
+	}
+	if (!__m && !__wide)
+	__neg = 0;
+	*__out = __neg ? (__mcc_ullong_t)0 - __m : __m;
+	if (__wide)
+	return 1;
+	if (!__neg)
+	return __m > __tmax;
+	if (!__tsig)
+	return 1;
+	return __m > __tmax + 1;
+	}
+	#define __mcc_ov_neg(x) ((x) < 0)
+	#define __mcc_ov_mag(x) ((x) < 0 ? (__mcc_ullong_t)0 - (__mcc_ullong_t)(x) \
+	: (__mcc_ullong_t)(x))
+	#define __mcc_ov_tsig(x) ((__typeof__(x))-1 < 0)
+	#define __mcc_ov_tmax(x) ((__mcc_ullong_t)~(__mcc_ullong_t)0 >> \
+	(8 * sizeof(x) >= 8 * sizeof(__mcc_ullong_t) ? (int)__mcc_ov_tsig(x) \
+	: (int)(8 * sizeof(__mcc_ullong_t) - 8 * sizeof(x) + __mcc_ov_tsig(x))))
+	#ifdef __SIZEOF_INT128__
+	#define __mcc_ov_is_wide(x) _Generic((x), __mcc_int128_t: 1, \
+	__mcc_uint128_t: 1, default: 0)
+	#else
+	#define __mcc_ov_is_wide(x) 0
+	#endif
+	#define __mcc_ov_gen(code, op, a, b, res) __extension__ ({	\
+	__typeof__(a) __mcc_ova = (a);				\
+	__typeof__(b) __mcc_ovb = (b);				\
+	__typeof__(*(res)) *__mcc_ovp = (res);			\
+	__mcc_ullong_t __mcc_ovv;				\
+	int __mcc_ovf;						\
+	if (__mcc_ov_is_wide(*__mcc_ovp)) {			\
+	__mcc_ovf = __mcc_ov_disp(op, *__mcc_ovp)(__mcc_ova, __mcc_ovb, __mcc_ovp); \
+	} else {						\
+	__mcc_ovf = __mcc_ov_calc((code),			\
+	__mcc_ov_neg(__mcc_ova), __mcc_ov_mag(__mcc_ova),	\
+	__mcc_ov_neg(__mcc_ovb), __mcc_ov_mag(__mcc_ovb),	\
+	__mcc_ov_tmax(*__mcc_ovp), __mcc_ov_tsig(*__mcc_ovp),	\
+	&__mcc_ovv);						\
+	*__mcc_ovp = (__typeof__(*__mcc_ovp))__mcc_ovv;		\
+	}							\
+	__mcc_ovf; })
+	#define __builtin_add_overflow(a, b, res) __mcc_ov_gen(0, add, (a), (b), (res))
+	#define __builtin_sub_overflow(a, b, res) __mcc_ov_gen(1, sub, (a), (b), (res))
+	#define __builtin_mul_overflow(a, b, res) __mcc_ov_gen(2, mul, (a), (b), (res))
 	#define __builtin_add_overflow_p(a, b, c) \
 	({ __typeof__(c) __mcc_ovp_r; __builtin_add_overflow((a), (b), &__mcc_ovp_r); })
 	#define __builtin_sub_overflow_p(a, b, c) \
@@ -812,5 +941,214 @@
 	({ __typeof__(c) __mcc_ovp_r; __builtin_mul_overflow((a), (b), &__mcc_ovp_r); })
 	#define __builtin_assoc_barrier(x) (x)
 	#define __builtin_assume(cond) ((void)0)
+	#define __mcc_ovfw(op, T, a, b, r) __builtin_##op##_overflow((T)(a), (T)(b), (r))
+	#define __builtin_sadd_overflow(a, b, r) __mcc_ovfw(add, __mcc_int_t, a, b, r)
+	#define __builtin_saddl_overflow(a, b, r) __mcc_ovfw(add, __mcc_long_t, a, b, r)
+	#define __builtin_saddll_overflow(a, b, r) __mcc_ovfw(add, __mcc_llong_t, a, b, r)
+	#define __builtin_uadd_overflow(a, b, r) __mcc_ovfw(add, __mcc_uint_t, a, b, r)
+	#define __builtin_uaddl_overflow(a, b, r) __mcc_ovfw(add, __mcc_ulong_t, a, b, r)
+	#define __builtin_uaddll_overflow(a, b, r) __mcc_ovfw(add, __mcc_ullong_t, a, b, r)
+	#define __builtin_ssub_overflow(a, b, r) __mcc_ovfw(sub, __mcc_int_t, a, b, r)
+	#define __builtin_ssubl_overflow(a, b, r) __mcc_ovfw(sub, __mcc_long_t, a, b, r)
+	#define __builtin_ssubll_overflow(a, b, r) __mcc_ovfw(sub, __mcc_llong_t, a, b, r)
+	#define __builtin_usub_overflow(a, b, r) __mcc_ovfw(sub, __mcc_uint_t, a, b, r)
+	#define __builtin_usubl_overflow(a, b, r) __mcc_ovfw(sub, __mcc_ulong_t, a, b, r)
+	#define __builtin_usubll_overflow(a, b, r) __mcc_ovfw(sub, __mcc_ullong_t, a, b, r)
+	#define __builtin_smul_overflow(a, b, r) __mcc_ovfw(mul, __mcc_int_t, a, b, r)
+	#define __builtin_smull_overflow(a, b, r) __mcc_ovfw(mul, __mcc_long_t, a, b, r)
+	#define __builtin_smulll_overflow(a, b, r) __mcc_ovfw(mul, __mcc_llong_t, a, b, r)
+	#define __builtin_umul_overflow(a, b, r) __mcc_ovfw(mul, __mcc_uint_t, a, b, r)
+	#define __builtin_umull_overflow(a, b, r) __mcc_ovfw(mul, __mcc_ulong_t, a, b, r)
+	#define __builtin_umulll_overflow(a, b, r) __mcc_ovfw(mul, __mcc_ullong_t, a, b, r)
+
+	#if defined __x86_64__ || defined __i386__
+	#define __builtin___clear_cache(b, e) ((void)(b), (void)(e))
+	#elif defined __aarch64__
+	#define __builtin___clear_cache(b, e) __arm64_clear_cache((b), (e))
+	#elif defined __riscv
+	#define __builtin___clear_cache(b, e) __riscv64_clear_cache((b), (e))
+	#endif
+
+	#define __mcc_awa_bytes(align) ((__mcc_size_t)(align) / 8)
+	#define __builtin_alloca_with_align(size, align) \
+	((void *)(((__mcc_size_t)__builtin_alloca((__mcc_size_t)(size) \
+	+ __mcc_awa_bytes(align) - 1) + __mcc_awa_bytes(align) - 1) \
+	& ~(__mcc_size_t)(__mcc_awa_bytes(align) - 1)))
+	#define __builtin_alloca_with_align_and_max(size, align, max) \
+	__builtin_alloca_with_align((size), (align))
+
+	#ifdef __SIZEOF_INT128__
+	typedef __mcc_uint128_t __mcc_gu_t;
+	typedef __mcc_int128_t __mcc_gs_t;
+	#define __MCC_GBITS 128
+	#else
+	typedef __mcc_ullong_t __mcc_gu_t;
+	typedef __mcc_llong_t __mcc_gs_t;
+	#define __MCC_GBITS 64
+	#endif
+
+	static __inline int __mcc_gclz(__mcc_gu_t __w) {
+	#if __MCC_GBITS > 64
+	__mcc_ullong_t __h = (__mcc_ullong_t)(__w >> 64);
+	__mcc_ullong_t __l = (__mcc_ullong_t)__w;
+	return __h ? __builtin_clzll(__h) : __l ? 64 + __builtin_clzll(__l) : 128;
+	#else
+	return __w ? __builtin_clzll(__w) : 64;
+	#endif
+	}
+	static __inline int __mcc_gctz(__mcc_gu_t __w) {
+	#if __MCC_GBITS > 64
+	__mcc_ullong_t __h = (__mcc_ullong_t)(__w >> 64);
+	__mcc_ullong_t __l = (__mcc_ullong_t)__w;
+	return __l ? __builtin_ctzll(__l) : __h ? 64 + __builtin_ctzll(__h) : 128;
+	#else
+	return __w ? __builtin_ctzll(__w) : 64;
+	#endif
+	}
+	static __inline int __mcc_gpop(__mcc_gu_t __w) {
+	#if __MCC_GBITS > 64
+	return __builtin_popcountll((__mcc_ullong_t)(__w >> 64))
+	+ __builtin_popcountll((__mcc_ullong_t)__w);
+	#else
+	return __builtin_popcountll(__w);
+	#endif
+	}
+	static __inline int __mcc_gclzp(__mcc_gu_t __w, int __p) {
+	int __r = __mcc_gclz(__w) - (__MCC_GBITS - __p);
+	return __r > __p ? __p : __r;
+	}
+	static __inline int __mcc_gctzp(__mcc_gu_t __w, int __p) {
+	int __r = __mcc_gctz(__w);
+	return __r > __p ? __p : __r;
+	}
+	static __inline int __mcc_gclzf(__mcc_gu_t __w, int __p, int __f) {
+	int __r = __mcc_gclzp(__w, __p);
+	return __r == __p ? __f : __r;
+	}
+	static __inline int __mcc_gctzf(__mcc_gu_t __w, int __p, int __f) {
+	int __r = __mcc_gctzp(__w, __p);
+	return __r == __p ? __f : __r;
+	}
+	static __inline int __mcc_gclrsb(__mcc_gs_t __v, int __p) {
+	__mcc_gu_t __w = (__mcc_gu_t)(__v < 0 ? ~__v : __v);
+	return __mcc_gclzp(__w, __p) - 1;
+	}
+	static __inline int __mcc_gffs(__mcc_gs_t __v, int __p) {
+	int __r = __mcc_gctzp((__mcc_gu_t)__v, __p);
+	return __r == __p ? 0 : __r + 1;
+	}
+	static __inline unsigned int __mcc_gflo(__mcc_gu_t __w, int __p) {
+	int __r = __mcc_gclzp(__w, __p);
+	return __r == __p ? 0u : (unsigned int)__r + 1u;
+	}
+	static __inline unsigned int __mcc_gfto(__mcc_gu_t __w, int __p) {
+	int __r = __mcc_gctzp(__w, __p);
+	return __r == __p ? 0u : (unsigned int)__r + 1u;
+	}
+	static __inline __mcc_gu_t __mcc_gbswap(__mcc_gu_t __w, int __n) {
+	__mcc_gu_t __r = 0;
+	int __i;
+	for (__i = 0; __i < __n; __i++) {
+	__r = (__r << 8) | (__w & 0xff);
+	__w >>= 8;
+	}
+	return __r;
+	}
+	static __inline __mcc_gu_t __mcc_gbitrev(__mcc_gu_t __w, int __n) {
+	__mcc_gu_t __r = 0;
+	int __i;
+	for (__i = 0; __i < __n; __i++) {
+	__r = (__r << 1) | (__w & 1);
+	__w >>= 1;
+	}
+	return __r;
+	}
+	static __inline __mcc_gu_t __mcc_gbitfloor(__mcc_gu_t __w, int __p) {
+	int __r = __mcc_gclzp(__w, __p);
+	return __r == __p ? (__mcc_gu_t)0 : (__mcc_gu_t)1 << (__p - 1 - __r);
+	}
+	static __inline __mcc_gu_t __mcc_gbitceil(__mcc_gu_t __w, int __p) {
+	int __r;
+	if (__w <= 1)
+	return (__mcc_gu_t)1;
+	__r = __mcc_gclzp((__mcc_gu_t)(__w - 1), __p);
+	return (__mcc_gu_t)1 << (__p - __r);
+	}
+	static __inline __mcc_gu_t __mcc_grot(__mcc_gu_t __w, int __p, __mcc_llong_t __n,
+	int __left) {
+	int __k = (int)((__n % __p + __p) % __p);
+	if (!__left)
+	__k = (__p - __k) % __p;
+	if (!__k)
+	return __w;
+	return (__mcc_gu_t)((__w << __k) | (__w >> (__p - __k)));
+	}
+
+	#define __mcc_gprec(x) ((int)(8 * sizeof(x)))
+	#define __mcc_gsel(_1, _2, __mcc_gn, ...) __mcc_gn
+	#define __mcc_clzg1(x) __mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x))
+	#define __mcc_clzg2(x, f) __mcc_gclzf((__mcc_gu_t)(x), __mcc_gprec(x), (int)(f))
+	#define __builtin_clzg(...) \
+	__mcc_gsel(__VA_ARGS__, __mcc_clzg2, __mcc_clzg1, 0)(__VA_ARGS__)
+	#define __mcc_ctzg1(x) __mcc_gctzp((__mcc_gu_t)(x), __mcc_gprec(x))
+	#define __mcc_ctzg2(x, f) __mcc_gctzf((__mcc_gu_t)(x), __mcc_gprec(x), (int)(f))
+	#define __builtin_ctzg(...) \
+	__mcc_gsel(__VA_ARGS__, __mcc_ctzg2, __mcc_ctzg1, 0)(__VA_ARGS__)
+	#define __builtin_clrsbg(x) __mcc_gclrsb((__mcc_gs_t)(x), __mcc_gprec(x))
+	#define __builtin_ffsg(x) __mcc_gffs((__mcc_gs_t)(x), __mcc_gprec(x))
+	#define __builtin_popcountg(x) __mcc_gpop((__mcc_gu_t)(x))
+	#define __builtin_parityg(x) (__mcc_gpop((__mcc_gu_t)(x)) & 1)
+	#define __builtin_bswapg(x) \
+	((__typeof__(x))__mcc_gbswap((__mcc_gu_t)(x), (int)sizeof(x)))
+
+	#define __builtin_bitreverse8(x) \
+	((__mcc_uchar_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_uchar_t)(x), 8))
+	#define __builtin_bitreverse16(x) \
+	((__mcc_ushort_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_ushort_t)(x), 16))
+	#define __builtin_bitreverse32(x) \
+	((__mcc_uint_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_uint_t)(x), 32))
+	#define __builtin_bitreverse64(x) \
+	((__mcc_ullong_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_ullong_t)(x), 64))
+	#ifdef __SIZEOF_INT128__
+	#define __builtin_bitreverse128(x) \
+	((__mcc_uint128_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_uint128_t)(x), 128))
+	#endif
+	#define __builtin_bitreverseg(x) \
+	((__typeof__(x))__mcc_gbitrev((__mcc_gu_t)(x), __mcc_gprec(x)))
+
+	#define __mcc_gnot(x) ((__mcc_gu_t)(__typeof__(x))~(x))
+	#define __builtin_stdc_leading_zeros(x) \
+	((unsigned int)__mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x)))
+	#define __builtin_stdc_leading_ones(x) \
+	((unsigned int)__mcc_gclzp(__mcc_gnot(x), __mcc_gprec(x)))
+	#define __builtin_stdc_trailing_zeros(x) \
+	((unsigned int)__mcc_gctzp((__mcc_gu_t)(x), __mcc_gprec(x)))
+	#define __builtin_stdc_trailing_ones(x) \
+	((unsigned int)__mcc_gctzp(__mcc_gnot(x), __mcc_gprec(x)))
+	#define __builtin_stdc_first_leading_one(x) \
+	__mcc_gflo((__mcc_gu_t)(x), __mcc_gprec(x))
+	#define __builtin_stdc_first_leading_zero(x) \
+	__mcc_gflo(__mcc_gnot(x), __mcc_gprec(x))
+	#define __builtin_stdc_first_trailing_one(x) \
+	__mcc_gfto((__mcc_gu_t)(x), __mcc_gprec(x))
+	#define __builtin_stdc_first_trailing_zero(x) \
+	__mcc_gfto(__mcc_gnot(x), __mcc_gprec(x))
+	#define __builtin_stdc_count_ones(x) ((unsigned int)__mcc_gpop((__mcc_gu_t)(x)))
+	#define __builtin_stdc_count_zeros(x) \
+	((unsigned int)(__mcc_gprec(x) - __mcc_gpop((__mcc_gu_t)(x))))
+	#define __builtin_stdc_has_single_bit(x) ((_Bool)(__mcc_gpop((__mcc_gu_t)(x)) == 1))
+	#define __builtin_stdc_bit_width(x) \
+	((unsigned int)(__mcc_gprec(x) - __mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x))))
+	#define __builtin_stdc_bit_floor(x) \
+	((__typeof__(x))__mcc_gbitfloor((__mcc_gu_t)(x), __mcc_gprec(x)))
+	#define __builtin_stdc_bit_ceil(x) \
+	((__typeof__(x))__mcc_gbitceil((__mcc_gu_t)(x), __mcc_gprec(x)))
+	#define __builtin_stdc_rotate_left(x, n) \
+	((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 1))
+	#define __builtin_stdc_rotate_right(x, n) \
+	((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 0))
+
+	#define __builtin_isinf_sign(x) __extension__ ({ __typeof__(x) __mcc_iv = (x); \
+	__builtin_isinf(__mcc_iv) ? (__builtin_signbit(__mcc_iv) ? -1 : 1) : 0; })
 
 	#endif

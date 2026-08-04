@@ -296,7 +296,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Ipart);
 			A(&v, "-w");
 			A(&v, "-O0");
-			A(&v, "-std=gnu11");
+			A(&v, "-std=gnu23");
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, eg);
@@ -321,7 +321,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Ipart);
 			A(&v, "-w");
 			A(&v, "-O0");
-			A(&v, "-std=gnu11");
+			A(&v, "-std=gnu23");
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, ec);
@@ -464,7 +464,7 @@ static int suite_mcctest(int argc, char **argv) {
 		split_append(&v, testdefs);
 		A(&v, "-w");
 		A(&v, "-O0");
-		A(&v, "-std=gnu11");
+		A(&v, "-std=gnu23");
 		A(&v, "-fno-omit-frame-pointer");
 		split_append(&v, refflags);
 		A(&v, "-lm");

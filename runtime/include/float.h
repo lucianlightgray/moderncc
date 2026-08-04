@@ -50,6 +50,16 @@
 #define FLT_IS_IEC_60559 1
 #define DBL_IS_IEC_60559 1
 #define __STDC_VERSION_FLOAT_H__ 202311L
+#undef INFINITY
+#define INFINITY (__builtin_inff ())
+#undef NAN
+#define NAN (__builtin_nanf (""))
+#undef FLT_SNAN
+#define FLT_SNAN (__builtin_nansf (""))
+#undef DBL_SNAN
+#define DBL_SNAN (__builtin_nans (""))
+#undef LDBL_SNAN
+#define LDBL_SNAN (__builtin_nansl (""))
 #endif
 
 #if defined _WIN32 || (defined __APPLE__ && defined __aarch64__)
