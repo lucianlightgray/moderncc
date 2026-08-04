@@ -3021,3 +3021,37 @@ proves nothing about the work, only about the placement.
 
 That is the concrete blocker for the `format_func_spec` fix, and it is a plumbing
 question with a definite answer, not another guess.
+
+### N26 is WRONG — retracted in full
+
+The preceding N26 entry claimed two things and **both are false**. Retained here only
+so the retraction travels with the claim.
+
+1. *"`rir_prod_take` is not the common path -- a pass placed after `rir_build()` ran
+   only 10 times."* **False.** Counting entries directly gives **1172 calls and 1172
+   builds** over a `mcc.c` compile. The placement was on the common path the whole
+   time. The pass ran 10 times because it was wrapped in
+   `mcc_env_on("MCC_RIR_FOLD_MEMLOAD")`, and that gate -- not the placement -- is what
+   suppressed it. Whatever `mcc_env_on` does with a repeatedly-read variable, do not
+   use it to gate a per-body pass without checking it fires per body.
+2. *"The arena is cumulative, so a whole-arena loop rewrites bodies already handed
+   out."* **False.** The `ast_count` sequence 22, 121, **116**, 791, 1320, **445** is
+   non-monotonic, which means it resets per body. I read a rising prefix and inferred
+   accumulation.
+
+Running the `Member(Load(y)) -> Member(y)` fold **unconditionally**, which is the
+experiment those two errors had prevented, leaves the census at **34** and leaves
+`format_func_spec` at `newlen=220 bodylen=217` -- the same +3. So the fold does not
+apply to that body, and the doubled `mov rcx,[rcx]` has some other origin than the
+`Member` node's child being a `Load`. The subtree is
+
+    Load ( Convert ( Unary MEMBER ( Load ( Binary + tbl idx ) ) ) )
+
+and the next step is to establish **which** of the two `Load`s the parser does not
+emit, by reading the replay of this exact body instruction by instruction rather than
+by pattern-matching the tree shape. Three attempts have now been made against a guess
+about the shape; none survived contact.
+
+`ast_replace_child` was written twice for this and reverted twice. It is a correct
+helper -- position-preserving child swap, returns 0 without side effects when `old` is
+not a child -- and is worth re-adding once there is a fold that actually earns it.
