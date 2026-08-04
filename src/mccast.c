@@ -4138,7 +4138,35 @@ static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
 	return 0;
 }
 
+static void ast_replay_value_inner(AstArena *a, AstLocal n);
+
+/* RVATTR=<fn> attributes emitted bytes to the arena node that produced them: one line
+   per node whose replay advanced `ind`, with the byte range. This is how to find a
+   node that emits an instruction the parser does not, instead of guessing from the
+   tree shape. It answered format_func_spec's doubled load in a single run, after
+   several attempts that reasoned from the tree had failed:
+
+     n=33 Binary +  +17   address
+     n=35 MEMBER    +0    lvalue, no code
+     n=37 Load      +3    indir() materialises the pointer
+     n=39 Invoke    +38   15 bytes of marshalling and a second load  */
 static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	const char *e = getenv("RVATTR");
+	int before;
+	if (!e || !funcname || strcmp(e, funcname)) { MCC_TRACE("br\n");
+		ast_replay_value_inner(a, n);
+		return;
+	}
+	before = ind;
+	ast_replay_value_inner(a, n);
+	if (ind != before) { MCC_TRACE("br\n");
+		fprintf(stderr, "[rv] n=%d %s op=%d %d..%d (+%d)\n", (int)n,
+						ast_kind_name(ast_kind(a, n)), (int)ast_op(a, n), before, ind,
+						ind - before);
+	}
+}
+
+static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	MCC_TRACE_IF("RV n=%d kind=%d nchild=%d parent=%d ind=%d vtop=%d\n", (int)n,
 							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
 							 (int)ind, (int)(vtop - vstack));
