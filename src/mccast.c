@@ -1308,6 +1308,8 @@ int ast_env_int(const char *name, int dflt) { MCC_TRACE("enter\n");
 int ast_active;
 static int ast_replay_env;
 static int ast_rir_nofb_env;
+static int ast_rir_nomat_env;
+static int ast_rir_noinv_env;
 static int ast_replay_dump;
 static const char *ast_verify_diff;
 static int ast_graft_limit;
@@ -1931,6 +1933,11 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	   driven to zero and the result judged by the goldens instead. Off by default;
 	   turning it on is only meaningful alongside a full test run. */
 	ast_rir_nofb_env = ast_env_gate("MCC_RIR_NOFB", 0);
+	/* Diagnostic only: ignore AST_FB_LANDOR_MATERIAL and always take the
+	   gvtst_set path. Used to confirm that a short-circuit materialisation is
+	   what miscompiles a given body, since ast_dump does not print fbits. */
+	ast_rir_nomat_env = ast_env_gate("MCC_RIR_NOMAT", 0);
+	ast_rir_noinv_env = ast_env_gate("MCC_RIR_NOINV", 0);
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
@@ -4152,7 +4159,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (bop == TOK_LAND || bop == TOK_LOR) { MCC_TRACE("br\n");
 			int i = bop == TOK_LAND, t = 0;
 			uint32_t nc = ast_nchild(a, n), k;
-			if (ast_fbits(a, n) & AST_FB_LANDOR_MATERIAL) { MCC_TRACE("br\n");
+			if ((ast_fbits(a, n) & AST_FB_LANDOR_MATERIAL) &&
+					!ast_rir_nomat_env) { MCC_TRACE("br\n");
 				for (k = 0; k < nc; k++) { MCC_TRACE("br\n");
 					ast_replay_value(a, ast_child(a, n, k));
 					save_regs(1);
@@ -4169,7 +4177,8 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); t = gvtst(i, t); }
 			}
 			gvtst_set(i, t);
-			if (ast_fbits(a, n) & AST_FB_LANDOR_INVERT) { MCC_TRACE("br\n");
+			if ((ast_fbits(a, n) & AST_FB_LANDOR_INVERT) &&
+					!ast_rir_noinv_env) { MCC_TRACE("br\n");
 				int jt = vtop->jfalse;
 				vtop->jfalse = vtop->jtrue;
 				vtop->jtrue = jt;

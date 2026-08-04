@@ -476,18 +476,49 @@ instead. Both operands here are runtime, so the parser used `gvtst_set` — but
 pushed that bit as a constant and bound the short-circuit label after it. Both paths
 then converge on one constant, which is exactly the observed behaviour.
 
-**One confirmation still owed before fixing**: that this node really carries
-`AST_FB_LANDOR_MATERIAL`. `ast_dump` does not print `fbits` and the `[rir-fb]` line
-lives in the dead tree-diff, so this needs the dump extended or a temporary print.
-Do that first — the diagnosis is strong but the flag has not been read off the node.
+**REFUTED — the materialisation arm is not the culprit.** The confirmation this
+paragraph originally demanded was run instead of assumed, and it killed the
+hypothesis. `MCC_RIR_NOMAT=1` (`ast_rir_nomat_env`, diagnostic, off by default) makes
+`ast_replay_value` ignore `AST_FB_LANDOR_MATERIAL` and always take the `gvtst_set`
+path. With `MCC_RIR_NOFB=1 MCC_RIR_NOMAT=1` the reproducer **still prints `c1=1`**. So
+the constant does not come from that arm, and everything above about `rval & 1`,
+`ival`, and `expr_landor`'s `cc || f` condition is a plausible story that measurement
+does not support. **Do not act on it.**
 
-The fix is then in what `rir_hook_landor`'s rend encodes into `rval`, i.e. a **capture
-site**, where the banked negatives are unanimous. Prefer establishing why `rval & 1`
-reads set for a runtime `||` over changing the replay to second-guess the flag.
-**`docs/TODO.md:491` predicted this**: *"`AST_FB_LANDOR_INVERT` is the same shape [as
-the `!cmp` wrong-code defect] and is still live."* It is the same family, it is now
-wrong code with a reproducer, and it is the reason the byte-faithful gate must stay
-until it is closed.
+Bank the shape of the mistake, because it is the third time in this file: a mechanism
+was reasoned out from source reading, matched the symptom exactly, and was wrong. The
+`MCC_RIR_NOMAT` switch is kept precisely because it turns that class of hypothesis
+into a one-command test.
+
+**What survives** is the reproducer and the narrowing, which are measurements rather
+than inference: it is the `||` and not the `!`; the stored value is correct so only
+the OR's result is wrong; it reads constant 1; passes are not involved; and the
+materialisation arm is now excluded. The remaining candidates are the `gvtst_set`
+path and its `AST_FB_LANDOR_INVERT` handling (`src/mccast.c:4170-4176`), the
+`Binary op#148` node the `!` lowered to, and the `Invoke` operand itself — the
+builtin's result feeding a short-circuit is a shape `[arg]`/`[gop]` have not been
+pointed at yet.
+
+**`AST_FB_LANDOR_INVERT` is refuted as well.** `MCC_RIR_NOINV=1` gates the `INVERT`
+swap at `src/mccast.c:4180`; the reproducer is unmoved with it on, alone or together
+with `MCC_RIR_NOMAT=1`. So `docs/TODO.md:491`'s long-standing suspicion — *"the same
+shape as the `!cmp` defect and still live"* — is **not** what miscompiles this body,
+whatever else may be true of it.
+
+**Neither landor flag is the cause. Two hypotheses, both killed by measurement rather
+than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
+`MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
+
+**Where the search stands, for whoever continues.** `&&` is correct and `||` is not,
+and both go through the same arm — the only difference is `i = (bop == TOK_LAND)`
+feeding `gvtst`/`gvtst_set`. Since the materialisation and invert paths are both
+excluded, the remaining candidates are the `gvtst_set(0, t)` path itself for `||`,
+and the operand shape: the arena rebuilds `!builtin` as a real
+`Binary ==(Invoke, Literal 0)` node, where the parser may have realised the `!` by
+manipulating jump flags without ever emitting a comparison. A reconstructed comparison
+feeding a short-circuit is a different thing from a flag feeding one, and that
+asymmetry is the next thing to test — `builtin == 0 || cmp` fails identically, so the
+explicit form is no safer than the `!`.
 
 **The route to the bar, in order:**
 
