@@ -374,7 +374,50 @@ cells pass against the tightened floors.
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
 
-### `fallback == 0` is one flag away, and the blocker is memory, not correctness
+### The real scope: 39 fallbacks in `src/mcc.c` at `-O1`, not 6
+
+**Every census in this file before this point was corpus-scoped.** `tests/` is not the
+workload that matters; `src/mcc.c` is the largest and most demanding input the compiler
+sees, and it reads:
+
+| input | `-O1` | `-O2` | `-O4` |
+| --- | --- | --- | --- |
+| `src/mcc.c` | **used 1121, fallback 39** | 1118 / 42 | 1091 / 68 |
+| `tests/` (660 files) | used 2169, fallback 6 | — | — |
+
+Classified by failing term at `-O1`: **25 `len`, 13 `bytes`, 1 error-path** (`error1`,
+which N10 says not to touch). Two small examples diffed against the parser —
+`so_filesize` and `ptr_unlink` — show the same shape: **the arena omits a spill the
+parser emits** (`mov %rax,-0x30(%rbp)`). That is the "scheduling and allocation, not
+model shape" class this file already says to *expect last*, and it is the majority of
+what remains.
+
+### `fallback == 0` is NOT one flag away — several bodies genuinely miscompile
+
+`MCC_RIR_NOFB=1` zeroes the census and passes all 317 exec goldens at `-O1`, `-O2` and
+`-O3`. It nonetheless breaks `selfhost-jit`, `selfhost-arm64-native`,
+`selfhost-riscv64-docker`, `cross/no-compiler-abort-x86_64-win32` and two `exec-search`
+cells. `selfhost-jit` dies as **`mcc: memory full`** with peak RSS **1,235 MB against a
+184 MB baseline** — a 6.7x blowup, and a `realloc` returning NULL in `mcc_realloc`.
+
+**`MCC_RIR_NOFB_SKIP=<names>`** is the bisection handle for this: a comma-separated
+list of bodies that keep falling back even with the no-fallback path on, so the culprit
+can be found without rebuilding. Bisecting the 68 `-O4` fallbacks of `mcc.c`:
+
+- skipping all 68 -> passes
+- skipping the first 44 -> passes; the first 43 -> fails
+- skipping **only** `mcc_split_path` -> still fails
+
+So this is **not one bad body**. At least a substantial fraction of the 68 emit wrong
+code, and the byte-`faithful` gate has been the only thing standing between them and
+the shipped compiler. The 6.7x memory blowup is consistent with a miscompiled allocator
+— `host_runmem_alloc` and `cleanup_sections` are both on the fallback list — rather
+than with a leak.
+
+**The methodological lesson, which cost a wrong turn:** the 317 exec goldens are not
+sufficient validation for a codegen-affecting change. They passed at every `-O` while
+self-hosting broke. Run the full suite, and prefer `mcc.c` over `tests/` when measuring
+the census.
 
 **`MCC_RIR_NOFB=1` drives the `-O1` census to `used 2175, fallback 0`** and the exec
 goldens are clean under it at `-O1`, `-O2` **and** `-O3` — zero regressions at every

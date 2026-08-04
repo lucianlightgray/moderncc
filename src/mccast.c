@@ -15825,6 +15825,26 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   itself would do both at once, and the four golden regressions banked in
 			   docs/TODO.md are what that looks like. */
 			int keep = faithful || (ast_rir_nofb_env && ast_replay_completed);
+			/* Bisection handle: MCC_RIR_NOFB_SKIP is a comma-separated list of
+			   function names that keep falling back even with the no-fallback path
+			   on. Turning fallback off wholesale breaks the JIT self-host with
+			   "memory full"; this is how to find which body is responsible without
+			   rebuilding between attempts. */
+			if (keep && !faithful && funcname) { MCC_TRACE("br\n");
+				const char *sk = getenv("MCC_RIR_NOFB_SKIP");
+				if (sk && *sk) { MCC_TRACE("br\n");
+					size_t fl = strlen(funcname);
+					const char *q = sk;
+					while (*q) { MCC_TRACE("br\n");
+						const char *e2 = q;
+						while (*e2 && *e2 != ',')
+							{ MCC_TRACE("br\n"); e2++; }
+						if ((size_t)(e2 - q) == fl && !memcmp(q, funcname, fl))
+							{ MCC_TRACE("br\n"); keep = 0; break; }
+						q = *e2 ? e2 + 1 : e2;
+					}
+				}
+			}
 			/* The frame has to cover every offset the kept body actually references.
 			   Those offsets come from the arena's Refs, which carry the parser's own
 			   local offsets, so the parser's depth is the floor -- and `loc` after a
