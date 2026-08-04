@@ -4559,3 +4559,91 @@ tree had to be rebuilt and re-measured from scratch before anything could be bel
 serialise them. This is the same live-tree confound that invalidated the first
 26-preset matrix run earlier in the same session -- a sweep that reads and builds from
 a tree someone else is writing cannot distinguish its own noise from a regression.
+
+---
+
+## Four semantic gaps closed — `72fedcf1`, 2026-08-04
+
+Board: gcc `FAIL 471 -> 449`, `FAILEXE 123 -> 122`; llvm `FAIL 231 -> 226`.
+27 `FAIL -> PASS`, zero `PASS -> FAIL`. Gates re-run after rebase onto `0db99c4c`:
+ctest 8145/8145, `-O3` fixpoint byte-identical (o1=o2=o3=3059711), tracegate and
+schemagate OK, cross/qemu/wine 90/90.
+
+Three of the four handed-down diagnoses held. Two corrections worth recording:
+
+- **C23 does not mean "further arguments are permitted".** The standard's text allows
+  them; clang 22 *rejects* `va_start(ap, a, b)`. mcc matches clang and keeps rejecting.
+- **Pre-increment on `_Complex` already worked**, and was already bit-exact against gcc.
+  Only *post*-increment was broken -- `gv_dup()` on a 16-byte aggregate. Half of a
+  diagnosis being right is the normal case; probe both halves before costing the work.
+
+Cluster counts measured on `err_raw` came out `9 / 10 / 15 / 8`, not the `9 / 8 / 8 / 8`
+carried forward from the earlier census. The census had been counting normalised `err`.
+
+### The bug that only showed up two backends away
+
+Making post-increment correct meant marking `cplx_local` results `VT_NONLVAL`. That
+propagated into `arm64-gen.c` `store()`, which masked only `VT_BOUNDED|VT_REGDISP`
+before its *exact* `svr ==` comparisons -- while its own `load()` (line 580) and
+`arm64-asm.c` (line 899) also mask `VT_NONCONST|VT_NONLVAL`. Any `VT_NONLVAL` reaching
+`store()` fell through to `assert(0)`. The cross tier sat at 88/90 until the mask was
+aligned. No other backend is affected; they all use `& VT_VALMASK`.
+
+A latent inconsistency between two functions in one file, invisible until an unrelated
+frontend change started producing the value that distinguished them. `ctest` on x86-64
+was green throughout.
+
+### `register` arrays: still wrong, deliberately
+
+`register int a[10]; g(a);` -- gcc and clang reject the decay, mcc accepts. Unchanged
+by this work because the fix belongs at the array-to-pointer decay site, not at `&`.
+
+Also still open and *not* complex-specific: `const`-qualified **parameter** assignment
+(`double f(const double z){ z++; }`) is accepted; the scalar case fails identically, so
+this is a general qualifier-on-parameter gap, not a complex one.
+
+`_Atomic _Complex ++` gives a clean "not supported"; gcc and clang accept it.
+
+### One-argument `va_start`: three targets get a diagnostic, not support
+
+Supported on x86_64 SysV, arm64 and riscv64 -- their `gen_va_start` already ignored
+`last`. i386, arm and x86_64-PE compute the `va_list` from `&last` and would need
+per-function first-vararg-offset tracking in the prologue; they emit a clean
+unsupported diagnostic instead of a wrong answer.
+
+i386 is genuinely small: record `addr` after the parameter loop in `gfunc_prolog` as a
+`func_va_list_ofs`, then mirror riscv64's `vset(&char_pointer_type, VT_LOCAL, ofs)`.
+arm is fiddly -- the first-vararg slot depends on EABI alignment and the `func_var`
+core-register spill. **No test on the board exercises either.**
+
+### Structural tag compatibility (8 files) — assessed, not attempted
+
+`compare_types:4165` does `return (type1->ref == type2->ref)` for `VT_STRUCT`: pure
+`Sym` pointer identity. C23 structural compatibility needs a recursive member walk with
+cycle detection for self-referential tags, composite-type construction so the *result*
+carries the union of both member lists' completeness, and a decision about where the
+composite `Sym` lives and how it interacts with `patch_type`, `_Generic` and typedef
+redefinition. That is a subsystem, not a patch.
+
+It must not be half-done. A structural comparison that stops short of building the
+composite would accept the redefinition and then hand the wrong `Sym` to later member
+lookups -- the silent-wrong-answer mode, not a loud one.
+
+### Remaining cluster root causes, costed
+
+| Cluster | Files | Cost | Blocker |
+|---|---|---|---|
+| block-scope `const` scalars never folded | 3 | medium | folded initializer must be stashed on the `Sym`, plus an address-taken bail-out |
+| `&&label - &&label` | 3 | **large** | needs symbol-difference relocations in the data path, absent tree-wide |
+| file-scope array declarators ICE | 4 | medium | `post_type:8594` `!local_stack` guard must become "size is needed as a value" |
+| `fold_const_lval` gated on `global_expr` | 2 | 1 line | widens folding into every constant context; wants its own full sweep |
+| vector casts never constant | 1 | medium | |
+| `_Complex long double`, complex `==`/`!=` folding | 3 | small | |
+| block-scope prototype not dropped by file-scope unprototyped redeclaration | 1 | medium | new `Sym` bit plus a downgrade branch in `patch_type` |
+
+### Process note, again
+
+`runtime/include/` is copied into the build tree by a configure-time `file(COPY ...)` at
+`CMakeLists.txt:2931`. Editing a runtime header requires re-running `cmake -S . -B
+cmake-release`; `cmake --build` alone silently uses the stale copy. This has now cost
+three separate test cycles in this session.
