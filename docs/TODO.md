@@ -3103,3 +3103,23 @@ scalar. Guarding on a pointer-valued result does, and gives back exactly zero.
 chained-store knob. Not landed. The remaining question is what distinguishes a
 transparent-union argument from `tbl[i].n` at this point in the arena; answer that and
 the five bodies are real.
+
+### N28 — the type-preserving discriminator for N27 does not exist
+
+The obvious split for N27 looked exact: fold the `Load` over `AST_OP_MEMBER` only when
+it does not change the type, on the reasoning that
+
+    format_func_spec   tbl[i].n    char * member read as char *   redundant
+    transparent_union  *u.pi       int * member read as int       real dereference
+
+Measured, that guard gives `mcc.c -O1` **34** -- the baseline -- with always-keep back
+to 9. So **all five bodies N27 gained were type-changing loads**, the same class as
+`*u.pi`. There is no safe subset here: every fold that helps is one that removes a
+dereference something else needs.
+
+That closes the N27 line as stated. Three discriminators have now been tried against
+it -- `VT_ARRAY`, `VT_STRUCT`, type-equality -- and the pointer-result one; each either
+misses the union breakage or erases the entire gain. The next attempt should stop
+looking for a predicate over the *node* and instead ask why five bodies contain a
+`Load` over a `MEMBER` that the parser does not emit at all. That is a capture
+question, not a folding question.
