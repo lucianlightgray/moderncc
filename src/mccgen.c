@@ -451,6 +451,7 @@ static int decl(int l);
 static void expr_eq(void);
 static void vpush_type_size(CType *type, int *a);
 static void gen_complex_op(int op);
+static void cplx_neg_top(CType *base);
 #define MCC_VECTOR_MAX_ELEM 1024
 static void gen_vector_op(int op);
 static int vector_nelem(CType *type);
@@ -7114,9 +7115,14 @@ static void cplx_const_int_div(int bsz, int uns, uint64_t ar, uint64_t ai, uint6
 static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 	SValue a, b, r;
 	CType cplx, base;
+	int amix, bmix, mix;
 
 	cplx = is_complex_type(&vtop[-1].type) ? vtop[-1].type : vtop[0].type;
 	base = cplx.ref->next->type;
+
+	amix = !is_complex_type(&vtop[-1].type);
+	bmix = !is_complex_type(&vtop[0].type);
+	mix = (amix || bmix) && (op == '+' || op == '-' || op == '*' || op == '/') && !(amix && op == '/');
 
 	{
 		CType r0, r1, wb;
@@ -7178,12 +7184,20 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 				cplx_push_cst(&are, &base);
 				cplx_push_cst(&bre, &base);
 				gen_op('*');
-				cplx_push_cst(&aim, &base);
-				cplx_push_cst(&bim, &base);
-				gen_op('*');
-				gen_op('-');
+				if (!mix) { MCC_TRACE("br\n");
+					cplx_push_cst(&aim, &base);
+					cplx_push_cst(&bim, &base);
+					gen_op('*');
+					gen_op('-');
+				}
 				break;
 			default:
+				if (mix) { MCC_TRACE("br\n");
+					cplx_push_cst(&are, &base);
+					cplx_push_cst(&bre, &base);
+					gen_op('/');
+					break;
+				}
 				cplx_push_cst(&are, &base);
 				cplx_push_cst(&bre, &base);
 				gen_op('*');
@@ -7205,11 +7219,23 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 			switch (op) { MCC_TRACE("br\n");
 			case '+':
 			case '-':
+				if (mix) { MCC_TRACE("br\n");
+					cplx_push_cst(bmix ? &aim : &bim, &base);
+					if (amix && op == '-')
+						{ MCC_TRACE("br\n"); cplx_neg_top(&base); }
+					break;
+				}
 				cplx_push_cst(&aim, &base);
 				cplx_push_cst(&bim, &base);
 				gen_op(op);
 				break;
 			case '*':
+				if (mix) { MCC_TRACE("br\n");
+					cplx_push_cst(bmix ? &aim : &are, &base);
+					cplx_push_cst(bmix ? &bre : &bim, &base);
+					gen_op('*');
+					break;
+				}
 				cplx_push_cst(&are, &base);
 				cplx_push_cst(&bim, &base);
 				gen_op('*');
@@ -7219,6 +7245,12 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 				gen_op('+');
 				break;
 			default:
+				if (mix) { MCC_TRACE("br\n");
+					cplx_push_cst(&aim, &base);
+					cplx_push_cst(&bre, &base);
+					gen_op('/');
+					break;
+				}
 				cplx_push_cst(&aim, &base);
 				cplx_push_cst(&bre, &base);
 				gen_op('*');
@@ -7260,6 +7292,26 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 			vpushi(0);
 			gen_op(TOK_EQ);
 		}
+		return;
+	}
+
+	if (mix) { MCC_TRACE("br\n");
+		cplx_local(&cplx, &r);
+		cplx_push_part(&a, 0);
+		cplx_push_part(&b, 0);
+		gen_op(op);
+		cplx_store_part(&r, 0);
+		if (op == '+' || op == '-') { MCC_TRACE("br\n");
+			cplx_push_part(bmix ? &a : &b, 1);
+			if (amix && op == '-')
+				{ MCC_TRACE("br\n"); cplx_neg_top(&base); }
+		} else { MCC_TRACE("br\n");
+			cplx_push_part(bmix ? &a : &b, 1);
+			cplx_push_part(bmix ? &b : &a, 0);
+			gen_op(op);
+		}
+		cplx_store_part(&r, 1);
+		vpushv(&r);
 		return;
 	}
 
@@ -7338,20 +7390,73 @@ static void gen_complex_op(int op) { MCC_TRACE("enter\n");
 	vpushv(&r);
 }
 
-static void gen_complex_conj(void) { MCC_TRACE("enter\n");
+static void cplx_neg_top(CType *base) { MCC_TRACE("enter\n");
+	if (is_float(base->t)) { MCC_TRACE("br\n");
+		gen_opif(TOK_NEG);
+	} else { MCC_TRACE("br\n");
+		vpushi(0);
+		vswap();
+		gen_op('-');
+		gen_cast(base);
+	}
+}
+
+static int cplx_fold_unary_neg(int conj) { MCC_TRACE("enter\n");
+	CType cplx = vtop->type, base = cplx.ref->next->type;
+	SValue re, im;
+	init_params pp = {.sec = rodata_section};
+	unsigned long offset;
+	int ebt = base.t & VT_BTYPE;
+	int bsz, bal, csz, cal;
+
+	if (!CONST_WANTED)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ebt != VT_FLOAT && ebt != VT_DOUBLE && !is_integer_btype(ebt))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!cplx_extract_const(vtop, &re, &im))
+		{ MCC_TRACE("br\n"); return 0; }
+	bsz = type_size(&base, &bal);
+	csz = type_size(&cplx, &cal);
+	if (NODATA_WANTED) { MCC_TRACE("br\n");
+		csz = 0;
+		cal = 1;
+	}
+	offset = section_add(pp.sec, csz, cal);
+	cplx_push_cst(&re, &base);
+	if (!conj) { MCC_TRACE("br\n"); cplx_neg_top(&base); }
+	init_putv(&pp, &base, offset);
+	cplx_push_cst(&im, &base);
+	cplx_neg_top(&base);
+	init_putv(&pp, &base, offset + bsz);
+	vtop--;
+	vpush_ref(&cplx, pp.sec, offset, csz);
+	vtop->r |= VT_LVAL;
+	return 1;
+}
+
+static void gen_complex_unary_neg(int conj) { MCC_TRACE("enter\n");
 	CType cplx = vtop->type, base = cplx.ref->next->type;
 	SValue a, r;
 
+	if (cplx_fold_unary_neg(conj))
+		{ MCC_TRACE("br\n"); return; }
 	cplx_materialize(&cplx, &base, &a);
 	cplx_local(&cplx, &r);
 	cplx_push_part(&a, 0);
+	if (!conj) { MCC_TRACE("br\n"); cplx_neg_top(&base); }
 	cplx_store_part(&r, 0);
-	vpushi(0);
-	gen_cast(&base);
 	cplx_push_part(&a, 1);
-	gen_op('-');
+	cplx_neg_top(&base);
 	cplx_store_part(&r, 1);
 	vpushv(&r);
+}
+
+static void gen_complex_conj(void) { MCC_TRACE("enter\n");
+	gen_complex_unary_neg(1);
+}
+
+static void gen_complex_neg(void) { MCC_TRACE("enter\n");
+	gen_complex_unary_neg(0);
 }
 
 static void gen_complex_cast(CType *dt) { MCC_TRACE("enter\n");
@@ -11979,7 +12084,9 @@ tok_next:
 		unary();
 		if ((vtop->type.t & VT_BTYPE) == VT_PTR)
 			{ MCC_TRACE("br\n"); mcc_error("pointer not accepted for unary minus"); }
-		if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
+		if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
+			gen_complex_neg();
+		} else if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
 			gen_opif(TOK_NEG);
 		} else { MCC_TRACE("br\n");
 			vpushi(0);

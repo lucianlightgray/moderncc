@@ -2388,6 +2388,40 @@ Unexamined and new to this board, all `-O3`-only `FAILEXE`: `execute/{20000715-1
 
 **Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
 
+### The work list, as of the current `main` (clang-oracled)
+
+19,571 run at `-O0`: **16,961 PASS, 999 REFFAIL, 862 FAIL, 384 XPASS, 229 XPASS_REFOK,
+136 FAILEXE, 0 ICE, 0 TIMEOUT.** Raw 86.7%, **honest 92.5%** once the 1,228
+clang-confirmed invalid expectations leave the denominator.
+
+The **862 genuine FAIL** (clang compiles these; mcc does not) cluster as:
+
+| n | signature | what it actually is |
+|---:|---|---|
+| 116 | `'X' expected (got 'X')` | many causes; needs sampling, not one fix |
+| 101 | implicit declaration | the remaining `__builtin_*` tail |
+| 90 | unresolved reference | link-stage, distinct from the `link_error` idiom that `REFFAIL` already absorbs |
+| 43 | `type defaults to 'int'` | **10 are C23 `auto` type inference** (§6.7.9) — `auto i = 1;` is rejected outright; the other 33 are implicit-int diagnostic tests |
+| 39 | `struct or union expected` | **the nested member designator bug**, identified early in this file and never fixed: `{.a.a=1, .a.b=2}` fails while either half alone works |
+| 55 | `redefinition` + `incompatible types for redefinition` | declaration merging / C23 tag compatibility |
+| 20 | `invalid array size` | the mixed bucket recorded earlier — packed bitfields, `__LINE__` across a continuation, array-size ceiling |
+| 19 | `initializer element is not constant` | the incomplete constant-expression evaluator |
+
+Four of those clusters — nested designator (39), declaration merging (55), array size (20),
+constant folding (19) — are **bugs recorded in this file at the very start of the sweep and
+still open**. Together 133 tests, and they are defects rather than features, so they should
+outrank feature work.
+
+By suite the 862 split `gcc.dg` 415, `llvm:clang` 259, `gcc.target` 113, `c-c++-common` 38,
+`c-torture` 34.
+
+**A caveat on the oracle's own fidelity.** clang's default is `gnu17`; mcc's is now `gnu23`.
+For a test carrying no explicit `-std`, the two are being asked different questions, so
+`REFFAIL` can undercount. I checked the specific case that looked most likely to be
+affected — implicit int — and it is not: clang 22 rejects it at its default too. But the
+general mismatch stands and the fix is to forward mcc's default `-std` to the reference
+when the test does not specify one.
+
 ### The board now asks a reference compiler whether a test is a valid expectation
 
 `tools/xsuite.py --ref clang` re-runs **the harness's own command line** with a reference
