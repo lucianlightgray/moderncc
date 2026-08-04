@@ -3055,3 +3055,51 @@ about the shape; none survived contact.
 `ast_replace_child` was written twice for this and reverted twice. It is a correct
 helper -- position-preserving child swap, returns 0 without side effects when `old` is
 not a child -- and is worth re-adding once there is a fold that actually earns it.
+
+## The real placement bug, and the fold it unblocked
+
+Everything above about "the fold does nothing" was measuring a pass that never ran.
+**`rir_to_arena()` -- which creates the arena -- is called at `src/mccrir.c:4647`, well
+after `rir_build()`.** A pass inserted next to `rir_build()` sees `rir_arena == NULL`
+and returns immediately. The ten bodies that did fire were leftovers from calls that
+returned early before the `rir_arena = NULL` at the end of `rir_prod_take`.
+
+Moved after `rir_to_arena()`, the same pass runs on all **1172** bodies. That single
+line of placement is what three earlier "inert" results were actually reporting.
+
+### Byte attribution: use it, it works
+
+`RVATTR=<fn>` -- a wrapper around `ast_replay_value` recording `ind` before and after
+each node -- gave the answer for `format_func_spec` in one run:
+
+    n=33 Binary +   +17   address computation
+    n=34 Load       +0    indir() on an address, emits nothing
+    n=35 MEMBER     +0    lvalue, emits nothing
+    n=37 Load       +3    indir() on an lvalue MATERIALISES the pointer
+    n=39 Invoke     +38   15 bytes of marshalling and a second load
+
+So the outer `Load` is redundant: `AST_OP_MEMBER` already leaves `VT_LVAL` set, and
+the use loads once by itself. Stop pattern-matching tree shapes; attribute the bytes.
+
+### N27 — the Load-over-MEMBER fold: correct for pointers, and worthless there
+
+Turning that `Load` into a same-type `Convert` (mutate in place -- **detaching orphans
+it with `nc=0` and `rir_emit_safe` walks unreachable nodes too, which is the entire
+"unsafe" cluster**) gives, with the default suite **clean at 8253/8253**:
+
+| | `-O1` | `-O2` | `-O4` | used | always-keep |
+|---|---|---|---|---|---|
+| baseline | 34 | 35 | 61 | 1126 | 9 |
+| fold, unguarded | **29** | **30** | **56** | **1131** | **46** |
+| fold, pointer-valued only | 34 | 35 | 61 | 1126 | 9 |
+
+The unguarded fold is a genuine five-body win *and* miscompiles: the 46 are 21
+`union_byval` + 21 `transparent_union`, which pass their arguments as addresses
+instead of values -- `TU 11 22 12 77` becomes `TU -1283239216 ...`. Guarding on
+`VT_ARRAY` or on `VT_STRUCT` does **not** catch it; the member's own type there is
+scalar. Guarding on a pointer-valued result does, and gives back exactly zero.
+
+**The gain lives entirely in the half that is wrong** -- the same shape as the
+chained-store knob. Not landed. The remaining question is what distinguishes a
+transparent-union argument from `tbl[i].n` at this point in the arena; answer that and
+the five bodies are real.
