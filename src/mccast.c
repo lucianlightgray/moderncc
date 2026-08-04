@@ -3431,6 +3431,26 @@ static int ast_subtree_reads_local(AstArena *a, AstLocal n, int off) { MCC_TRACE
 	return 0;
 }
 
+/* Does this subtree assign to anything? A loop condition that does is the shape the
+   promoter mismodels: gjmp_append's `while ((n2 = read32le(p = ...)))` came out with
+   five promoted registers and wrong control flow, and it is the last body standing
+   between the JIT self-host and a fallback-free build. */
+static int ast_cond_has_store(AstArena *a, AstLocal n, int depth) {
+	MCC_TRACE("enter\n");
+	if (n == AST_NONE || depth > 32)
+		{ MCC_TRACE("br\n"); return 0; }
+	{
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Store || k == AST_StoreVal)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_cond_has_store(a, c, depth + 1))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
@@ -3463,6 +3483,10 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				   Treat it as the branch it is. */
 				if (ast_kind(a, s) == AST_Binary &&
 						(so == TOK_LAND || so == TOK_LOR))
+					{ MCC_TRACE("br\n"); has_landor = 1; }
+				if (ast_kind(a, s) == AST_If && (so == 2 || so == 3 || so == 4) &&
+						ast_nchild(a, s) >= 1 &&
+						ast_cond_has_store(a, ast_child(a, s, 0), 0))
 					{ MCC_TRACE("br\n"); has_landor = 1; }
 			}
 		}
