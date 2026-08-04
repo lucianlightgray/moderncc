@@ -15156,6 +15156,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																				: "";
 #endif
 				ast_replay_completed = 1;
+				{ MCC_TRACE("br\n");
+					const char *pd3 = getenv("RIRPRODDUMP");
+					if (pd3 && funcname && !strcmp(pd3, funcname)) { MCC_TRACE("br\n");
+						fprintf(stderr,
+										"[ast-postreplay] %s loc=%d saved_loc=%d newlen=%d bodylen=%d\n",
+										funcname, loc, saved_loc, new_len, body_len);
+					}
+				}
 				ast_fn_faithful = faithful;
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
 					int ast_bd = -1, ast_i;
@@ -15772,6 +15780,16 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   itself would do both at once, and the four golden regressions banked in
 			   docs/TODO.md are what that looks like. */
 			int keep = faithful || (ast_rir_nofb_env && ast_replay_completed);
+			/* The frame has to cover every offset the kept body actually references.
+			   Those offsets come from the arena's Refs, which carry the parser's own
+			   local offsets, so the parser's depth is the floor -- and `loc` after a
+			   replay is not it. The prologue is emitted outside [ast_body_ind_sv,
+			   body_len), so a short frame does NOT fail the byte compare: smoke.c's
+			   main replayed byte-for-byte with loc=0 against the parser's -20 and got
+			   `sub $0x0,%rsp`, which put its locals on top of the caller and aborted
+			   in free(). Take the deeper of the two whenever the body is kept. */
+			if (keep && saved_loc < loc)
+				loc = saved_loc;
 #if MCC_REPLAY_IR
 			if (ast_rir_used)
 				{ MCC_TRACE("br\n"); rir_prod_note(keep ? "used" : "fallback"); }
