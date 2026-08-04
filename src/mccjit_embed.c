@@ -5845,7 +5845,7 @@ PUB_FUNC int mccjit_selftest_pool(void) { MCC_TRACE("enter\n");
 			job->timed = 0;
 			mccjit_pool_enqueue(job);
 			while (spins++ < 5000) { MCC_TRACE("br\n");
-				pub = __atomic_load_n(&slot_a, __ATOMIC_ACQUIRE);
+				pub = (void *)(uintptr_t)__atomic_load_n(&slot_a, __ATOMIC_ACQUIRE);
 				if (pub != (void *)baseline)
 					{ MCC_TRACE("br\n"); break; }
 				mccjit_pool_nap();

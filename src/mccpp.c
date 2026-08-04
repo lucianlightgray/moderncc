@@ -1740,6 +1740,9 @@ static int embed_parse_name(char *name, int namesize) { MCC_TRACE("enter\n");
 }
 
 #include <sys/stat.h>
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#endif
 
 #define EMBED_FOUND 0
 #define EMBED_MISSING 1
