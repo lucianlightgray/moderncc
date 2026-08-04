@@ -246,7 +246,16 @@
 	#define __SIG_ATOMIC_MIN__ (-__SIG_ATOMIC_MAX__ - 1)
 
 	#define __BIGGEST_ALIGNMENT__ 16
+	/* i386 evaluates float and double in the x87 80-bit registers, so the standard
+	   method there is 2, and float.h already says so. glibc's math.h picks float_t
+	   and double_t from THIS macro, so leaving it at 0 handed back float/double
+	   while FLT_EVAL_METHOD claimed long double -- flt_eval_method failed its
+	   sizeof(float_t) == sizeof(long double) check on qemu-i386. */
+	#if defined __i386__ && !defined __SSE2_MATH__
+	#define __FLT_EVAL_METHOD__ 2
+	#else
 	#define __FLT_EVAL_METHOD__ 0
+	#endif
 
 	#define __FLT_RADIX__ 2
 	#define __FLT_MANT_DIG__ 24

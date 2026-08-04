@@ -4291,3 +4291,26 @@ or the `MCC_CONFIG_AST_SHADOW` build aborts -- or add an expression-level
 `v <= 2 || v > 11` into `(unsigned)(v-3) > 8` before any of this is asked, so the fold
 must either happen inside the earlier `ast_ident_run` fixpoint or see through
 `Convert`+`-`.
+---
+
+## W7 — riscv64 dynamic TLS in a shared object (8 qemu-riscv64 cells)
+
+`qemu-riscv64` fails 8 of 23 cells (`-glibc`, `-O2`, `-O3`, `-Os` and the four `-musl`
+equivalents). Every one is the same two conformance cases:
+
+    tls [pic]: compile failed
+    tls_aggr [pic]: compile failed
+    mcc: error: local-exec TLS in a shared object is not valid;
+                dynamic TLS is not implemented for riscv64
+
+This is a missing feature, not a regression: the non-PIC legs pass, and only the
+`[pic]` variants are refused. It is also **not** what this file claims elsewhere.
+The TLS reconciliation note says moderncc is "ahead on two counts upstream has no
+equivalent for: riscv64 general-dynamic TLS (`riscv64_tls_gd_a0`) and arm64 dynamic
+TLS in a shared object". The arm64 half holds; the riscv64 half does not extend to a
+shared object, which is what these cells exercise. Correct that claim when the
+feature lands rather than leaving the two statements side by side.
+
+Scope: implement general-dynamic/local-dynamic TLS for riscv64 shared objects, or
+mark the two `[pic]` cases as a known gap in the qemu conformance list so the preset
+reports the eight cells honestly instead of failing them.

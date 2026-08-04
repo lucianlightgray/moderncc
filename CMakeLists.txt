@@ -4037,7 +4037,7 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/superopt/src/spillheavy.c")
             set_tests_properties(superopt/promote-floor PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
-                TIMEOUT 600)
+                TIMEOUT 600 RUN_SERIAL TRUE)
         endif()
 
         foreach(_gl IN LISTS _exec_glines)
@@ -5175,6 +5175,15 @@ if(MCC_BUILD_TESTS)
             else()
                 find_program(_mcc_ref_gcc NAMES gcc)
                 set(_ref_cc "${_mcc_ref_gcc}")
+            endif()
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+               AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+
+            find_program(_mcc_ref_gcc NAMES gcc)
+            if(_mcc_ref_gcc)
+                set(_ref_cc "${_mcc_ref_gcc}")
+            else()
+                set(_ref_cc "${CMAKE_C_COMPILER}")
             endif()
         else()
             set(_ref_cc "${CMAKE_C_COMPILER}")
