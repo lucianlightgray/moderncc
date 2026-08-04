@@ -2428,7 +2428,58 @@ unconditionally where gcc keys severity to the standard — so `REFFAIL` means "
 rejects this", not "no compiler accepts this". For gcc-dialect tests `--ref gcc` is the
 better question and is a one-word change.
 
-### OPEN — one wrong-code defect remains: `copysign` at `-O1`+ inside a called function
+### CLOSED — it was never a `copysign` bug: the recorder loses in-place float folds
+
+`gcc.c-torture/execute/ieee/copysign2.c` now passes at `-O0/-O1/-O2/-O3`.
+
+**Both leads in this file were wrong, and the sweep is why we know.** `MCC_AST_PROMOTE`
+does *not* flip it — the promotion lead was a false trail. A full sweep of **all 202
+`MCC_*` gates** found exactly one fine-grained gate that changes the bit pattern:
+`MCC_AST_IDENT_CONV`. And `ident-convert` is an integer-only identity, so it is not the
+cause either — it is the *trigger*. It is simply the only transform that fires in the
+failing function, which makes `do_ident` non-zero, which makes mcc re-emit the body from
+the recorded AST instead of keeping the parser's bytes. **The wrong code was in the
+recording; any optimization firing would expose it.** That is why "which gate fixes it"
+was the wrong question and "what does the gate cause mcc to *do* differently" was the
+right one.
+
+Two independent holes, both the same underlying mistake — *the parser folds a float
+constant in place on the value stack and the recorder never refreshes the AST node it
+already materialised for that slot*:
+
+1. `__builtin_copysign(x, y)` expands through `-__builtin_fabs(x)`. That unary minus on a
+   float goes from `unary()` (`src/mccgen.c:11849`) **straight to `gen_opif(TOK_NEG)`**,
+   which folds in place (`f1 = -f1`, `:3618`) and calls no backend `gen_*`, so
+   `src/mccircap.c` captures nothing. Every *other* float fold reaches `gen_opif` via
+   `gen_op`, which is captured as `IR_OP_GENOP`; `TOK_NEG` from `unary()` was the sole
+   uncaptured entry. `RIRPRODDUMP` on the unfixed build shows the ternary recorded as
+   `If(signbit(Y[2]), Literal +1.0, Literal +1.0)` — both arms positive.
+2. `rir_prov_ok` (`src/mccrir.c:1146`) re-typed float constants, guarding on
+   `rir_pvc[slot].i == sv->c.i`. For `long double`, `c.i` is only the **mantissa** — the
+   sign lives in `c.q.hi` — so `+0.0` and `-0.0L` compared equal and `-0.0L` came back
+   positive.
+
+Fixed by `rir_stamp_flt_fold()`, which replaces a shadow node with a literal carrying the
+`SValue`'s actual bits (wide half included) when the parser says the slot is a folded
+float constant, plus one line refusing provenance re-typing for float constants. Sound
+because replaying `Binary -(lit, lit)` re-folds to the same constant — the emitted bytes
+are unchanged in the sound cases and only corrected in the unsound one, which the
+byte-identical fixpoint confirms. `gen_opif` bails to `general_case` for `x/0` and
+non-finite operands, so those never enter the rewrite.
+
+**This is a general recorder defect, not a `copysign` one** — any `-` applied to a folded
+float constant was affected. `copysign2.c` is merely the test that reaches it.
+
+Differential vs gcc, 3,193 bit-pattern comparisons per level: before **132/139/139/139**
+differing at `-O0/-O1/-O2/-O3`; after **132/132/132/132**. The optimization-level delta is
+gone. The residual 132 are identical at `-O0`, unaffected by this change, and **not a
+defect in `copysign`**: `mccdefs.h` defines `__builtin_nans(s)` as `(0.0/0.0)`, so
+signalling-NaN *inputs* are quiet NaNs under mcc (`7ff8…` vs gcc's `7ff4…`); the sign
+handling matches in every one of them. That is an input-fidelity gap in `__builtin_nans`
+worth its own entry.
+
+Whole `gcc.c-torture/execute/ieee/` × 4 levels: PASS 248 → **251**, FAILEXE 3 → **0**,
+FAILCOMPILE 61 unchanged.
 
 `gcc.c-torture/execute/ieee/copysign2.c` aborts at `-O1`, `-O2` and `-O3`; passes at
 `-O0`; gcc passes at every level.

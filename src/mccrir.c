@@ -1176,6 +1176,8 @@ static int rir_prov_ok(int slot, const SValue *sv) {
 		return 0;
 	if (is_float(pt) != is_float(st))
 		return 0;
+	if (is_float(st) && (sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)
+		return 0;
 	return 1;
 }
 
@@ -1855,6 +1857,68 @@ static AstLocal rir_val_node(AstLocal n) {
 	return n;
 }
 
+static int rir_flt_fold_expr(AstLocal n, int depth) {
+	uint16_t k;
+	int op;
+	if (n == AST_NONE || depth > 16)
+		return 0;
+	if (ast_type_t(rir_arena, n) & VT_VOLATILE)
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Literal)
+		return ast_nchild(rir_arena, n) == 0 &&
+					 (ast_op(rir_arena, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	if (k == AST_Convert)
+		return ast_nchild(rir_arena, n) == 1 &&
+					 rir_flt_fold_expr(ast_first_child(rir_arena, n), depth + 1);
+	if (k == AST_Unary) {
+		op = ast_op(rir_arena, n);
+		if (op != AST_OP_FNEG)
+			return 0;
+		return ast_nchild(rir_arena, n) == 1 &&
+					 rir_flt_fold_expr(ast_first_child(rir_arena, n), depth + 1);
+	}
+	if (k == AST_Binary) {
+		op = ast_op(rir_arena, n);
+		if (op != '+' && op != '-' && op != '*' && op != '/')
+			return 0;
+		return ast_nchild(rir_arena, n) == 2 &&
+					 rir_flt_fold_expr(ast_child(rir_arena, n, 0), depth + 1) &&
+					 rir_flt_fold_expr(ast_child(rir_arena, n, 1), depth + 1);
+	}
+	return 0;
+}
+
+static void rir_stamp_flt_fold(const SValue *base, int n) {
+	int k, want = n - rir_base_depth;
+	for (k = 0; k < rir_shn && k < want; k++) {
+		const SValue *v = &base[rir_base_depth + k];
+		AstLocal cur = rir_sh[k], lit;
+		if (cur == AST_NONE || rir_shtype[k] || cur == rir_fcs_node ||
+				cur == rir_spill_node)
+			continue;
+		if (!is_float(v->type.t) || v->sym)
+			continue;
+		if ((v->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+			continue;
+		if (!rir_flt_fold_expr(cur, 0))
+			continue;
+		if (ast_kind(rir_arena, cur) == AST_Literal &&
+				ast_ival(rir_arena, cur) == (uint64_t)v->c.i &&
+				ast_wide_hi(rir_arena, cur) == ast_sv_hi(v) &&
+				ast_type_t(rir_arena, cur) == (int)v->type.t)
+			continue;
+		lit = ast_node(rir_arena, AST_Literal);
+		ast_set_op(rir_arena, lit, v->r);
+		ast_set_type(rir_arena, lit, v->type.t, (uint64_t)(uintptr_t)v->type.ref);
+		ast_set_ival(rir_arena, lit, (uint64_t)v->c.i);
+		ast_set_wide(rir_arena, lit, ast_sv_hi(v),
+								 v->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)v->r2);
+		ast_set_sym(rir_arena, lit, 0);
+		rir_sh[k] = lit;
+	}
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -1893,6 +1957,7 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		}
 		rir_shtype[k] = 0;
 	}
+	rir_stamp_flt_fold(base, n);
 	if (rir_cvt_next)
 		return;
 	for (k = 0; k < rir_shn && k < want; k++) {
