@@ -2996,3 +2996,28 @@ Two negatives worth keeping:
 
 The general lesson for this file: a post-build arena rewrite is the safe place for
 canonicalisation. Capture-site edits have now failed this way twice.
+
+### N26 — the arena is cumulative, which invalidates whole-arena rewrite passes
+
+Both fold attempts above assumed `rir_arena` holds one function. It does not.
+Instrumenting a pass placed after `rir_build()` in `rir_prod_take` and printing
+`ast_count(rir_arena)` per call gives
+
+    host_runmem_dual  22     merge_funcattr 121    merge_attr 116
+    bf_operand_bits   791    type_size     1320    cplx_push_cst 445
+
+-- monotonically growing, then resetting. A pass written as
+`for (n = 0; n < ast_count(rir_arena); n++)` therefore walks **previously built
+bodies as well as the current one**, and rewriting there corrupts arenas already
+handed out. Anything of this shape must be bounded to the current body's node range,
+or run from the per-body entry point rather than over the whole arena.
+
+The same instrumentation turned up a second thing worth knowing: that pass ran only
+**10 times** across a `mcc.c` compile whose census reports 1126 `used` + 34 `fallback`
++ 10 `skip`. So the overwhelming majority of bodies do **not** reach `rir_prod_take`'s
+post-build point. Before writing any pass there, find out which entry point the other
+1160 bodies actually take -- placing work in `rir_prod_take` and measuring no change
+proves nothing about the work, only about the placement.
+
+That is the concrete blocker for the `format_func_spec` fix, and it is a plumbing
+question with a definite answer, not another guess.
