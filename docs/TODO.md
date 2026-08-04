@@ -2388,6 +2388,28 @@ Unexamined and new to this board, all `-O3`-only `FAILEXE`: `execute/{20000715-1
 
 **Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
 
+### Known regression from the sNaN fix — `-FLT_SNAN` no longer folds
+
+`clang/test/C/C2y/n3364.c:25`, `float f3 = -FLT_SNAN;`, now fails with
+*"initializer element is not constant"*. It passed before the `__builtin_nans` fix.
+
+Cause, understood and deliberately not reverted: `__builtin_nans` used to be `(0.0/0.0)`,
+which folded, so `-` on it folded too. That spelling was wrong three ways at once — quiet
+instead of signalling, **wrong sign bit**, payload ignored — and the replacement builds the
+sNaN as a **union compound literal** so it stays a compile-time constant. `FLT_SNAN` alone
+folds fine; what does not fold is **unary `-` on a compound-literal-punned float constant**
+in a static initializer.
+
+This is the same mechanism that broke `cli/builtin_signbit_no_trap` during that work, where
+it was closed by backing the `__builtin_nan` half out. The `nans` half keeps the
+compound-literal form because it is the only way to spell a signalling NaN as a constant.
+
+**Do not fix this by reverting the header.** The trade is one test against
+`nans` going from 135/135 rows wrong versus gcc to 0/135. The fix belongs in
+`src/mccgen.c`: fold unary `-`/`+` on a constant float compound literal in a
+constant-expression context. Negating an sNaN must not quiet it — check bits, not printed
+values (gcc: `7fa00000` for `FLT_SNAN`, `ffa00000` for `-FLT_SNAN`).
+
 ### The 136 `FAILEXE`, clustered and checked against real compilers
 
 Replaying every one through `gcc -O0` and `clang -O0` with the harness's own flags:
