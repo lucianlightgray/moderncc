@@ -18,6 +18,10 @@ ST_DATA int tok_ident;
 ST_DATA TokenSym **table_ident;
 ST_DATA int pp_expr;
 
+static int tok_line_num;
+static struct BufferedFile *tok_line_file;
+static int tok_va_opt;
+
 static int tok_c23_bool;
 static int tok_c23_true;
 static int tok_c23_false;
@@ -1061,7 +1065,8 @@ redo_start:
 				next_nomacro();
 				p = file->buf_ptr;
 				if (a == 0 &&
-						(tok == TOK_ELSE || tok == TOK_ELIF || tok == TOK_ENDIF))
+						(tok == TOK_ELSE || tok == TOK_ELIF || tok == TOK_ELIFDEF ||
+						 tok == TOK_ELIFNDEF || tok == TOK_ENDIF))
 					{ MCC_TRACE("br\n"); goto the_end; }
 				if (tok == TOK_IF || tok == TOK_IFDEF || tok == TOK_IFNDEF)
 					{ MCC_TRACE("br\n"); a++; }
@@ -1153,7 +1158,8 @@ ST_FUNC void end_macro(void) { MCC_TRACE("enter\n");
 	TokenString *str = macro_stack;
 	macro_stack = str->prev;
 	macro_ptr = str->prev_ptr;
-	file->line_num = str->save_line_num;
+	file->line_num = tok_line_num = str->save_line_num;
+	tok_line_file = file;
 	if (str->alloc == 0) { MCC_TRACE("br\n");
 		str->len = str->need_spc = 0;
 	} else { MCC_TRACE("br\n");
@@ -2112,6 +2118,7 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 	Sym *s, *first, **ps;
 	int v, t, varg, is_vaargs, t0;
 	int func_like, hash_pending = 0;
+	int va_opt_pending = 0, va_opt_level = 0, va_opt_start = 0;
 	int saved_parse_flags = parse_flags;
 	TokenString str;
 
@@ -2187,10 +2194,36 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 				tok = TOK_PPJOIN;
 				t |= MACRO_JOIN;
 			}
+			if (va_opt_pending) { MCC_TRACE("br\n");
+				if (tok != '(')
+					{ MCC_TRACE("br\n"); mcc_error("expected '(' after '__VA_OPT__'"); }
+				va_opt_pending = 0;
+				va_opt_level = 1;
+				va_opt_start = 1;
+			} else if (va_opt_level) { MCC_TRACE("br\n");
+				if (tok == '(')
+					{ MCC_TRACE("br\n"); va_opt_level++; }
+				else if (tok == ')')
+					{ MCC_TRACE("br\n"); va_opt_level--; }
+				if (va_opt_start && tok == TOK_PPJOIN)
+					{ MCC_TRACE("br\n"); mcc_error("'##' cannot appear at either end of '__VA_OPT__'"); }
+				if (va_opt_level == 0 && t0 == TOK_PPJOIN)
+					{ MCC_TRACE("br\n"); mcc_error("'##' cannot appear at either end of '__VA_OPT__'"); }
+				va_opt_start = 0;
+			}
+			if (tok == tok_va_opt) { MCC_TRACE("br\n");
+				if (va_opt_level)
+					{ MCC_TRACE("br\n"); mcc_error("'__VA_OPT__' may not appear in a '__VA_OPT__' operand"); }
+				if (!func_like || !is_vaargs)
+					{ MCC_TRACE("br\n"); mcc_warning("'__VA_OPT__' can only appear in the expansion of a "
+											"C23 variadic macro"); }
+				else
+					{ MCC_TRACE("br\n"); va_opt_pending = 1; }
+			}
 			if (hash_pending) { MCC_TRACE("br\n");
 				Sym *pp;
-				int isparam = 0;
-				for (pp = first; pp; pp = pp->next)
+				int isparam = tok == tok_va_opt;
+				for (pp = first; pp && !isparam; pp = pp->next)
 					{ MCC_TRACE("br\n"); if ((pp->v & ~SYM_FIELD) == (tok & ~SYM_FIELD)) { MCC_TRACE("br\n");
 						isparam = 1;
 						break;
@@ -2210,6 +2243,8 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 	}
 	if (hash_pending)
 		{ MCC_TRACE("br\n"); mcc_error("'#' is not followed by a macro parameter"); }
+	if (va_opt_pending || va_opt_level)
+		{ MCC_TRACE("br\n"); mcc_error("unterminated '__VA_OPT__'"); }
 	parse_flags = saved_parse_flags;
 	tok_str_add(&str, 0);
 	if (t0 == TOK_PPJOIN)
@@ -2406,6 +2441,55 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 			}
 		}
 		*slot = state;
+		while (tok != TOK_LINEFEED && tok != TOK_EOF)
+			{ MCC_TRACE("br\n"); next_nomacro(); }
+		return 1;
+	} else if (tok >= TOK_IDENT && !strcmp(get_tok_str(tok, &tokc), "options")) { MCC_TRACE("br\n");
+		const char *am;
+		int val = -1;
+		next_nomacro();
+		if (tok < TOK_IDENT || strcmp(get_tok_str(tok, &tokc), "align")) { MCC_TRACE("br\n");
+			mcc_warning("expected 'align' following '#pragma options'");
+			goto pragma_align_eol;
+		}
+		next_nomacro();
+		if (tok != '=') { MCC_TRACE("br\n");
+			mcc_warning("expected '=' following '#pragma options align'");
+			goto pragma_align_eol;
+		}
+		next_nomacro();
+		if (tok < TOK_IDENT) { MCC_TRACE("br\n");
+			mcc_warning("expected identifier in '#pragma options'");
+			goto pragma_align_eol;
+		}
+		am = get_tok_str(tok, &tokc);
+		if (!strcmp(am, "natural") || !strcmp(am, "native") || !strcmp(am, "power"))
+			{ MCC_TRACE("br\n"); val = 0; }
+		else if (!strcmp(am, "packed"))
+			{ MCC_TRACE("br\n"); val = 1; }
+		else if (!strcmp(am, "mac68k"))
+			{ MCC_TRACE("br\n"); mcc_error("mac68k alignment pragma is not supported"); }
+		else if (strcmp(am, "reset")) { MCC_TRACE("br\n");
+			mcc_warning("invalid alignment option in '#pragma options align'");
+			goto pragma_align_eol;
+		}
+		next_nomacro();
+		if (tok != TOK_LINEFEED && tok != TOK_EOF) { MCC_TRACE("br\n");
+			mcc_warning("extra tokens at end of '#pragma options'");
+			goto pragma_align_eol;
+		}
+		if (val < 0) { MCC_TRACE("br\n");
+			if (s1->pack_stack_ptr <= s1->pack_stack)
+				{ MCC_TRACE("br\n"); mcc_warning("#pragma options align=reset failed: stack empty"); }
+			else
+				{ MCC_TRACE("br\n"); s1->pack_stack_ptr--; }
+		} else if (s1->pack_stack_ptr >= s1->pack_stack + PACK_STACK_SIZE - 1) { MCC_TRACE("br\n");
+			mcc_error("out of pack stack");
+		} else { MCC_TRACE("br\n");
+			s1->pack_stack_ptr++;
+			*s1->pack_stack_ptr = val;
+		}
+	pragma_align_eol:
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
 			{ MCC_TRACE("br\n"); next_nomacro(); }
 		return 1;
@@ -2680,7 +2764,8 @@ redo:
 		}
 		if (file->fd > 0)
 			{ MCC_TRACE("br\n"); total_lines += file->line_num - n; }
-		file->line_num = n;
+		file->line_num = tok_line_num = n;
+		tok_line_file = file;
 		break;
 
 	case TOK_ERROR:
@@ -2833,13 +2918,14 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 				c = '\v';
 				break;
 			case 'e':
+			case 'E':
 				if (!gnu_ext)
 					{ MCC_TRACE("br\n"); goto invalid_escape; }
 				if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 					if (mcc_state->pedantic_errors)
-						{ MCC_TRACE("br\n"); mcc_error("\\e is a non-ISO escape sequence"); }
+						{ MCC_TRACE("br\n"); mcc_error("\\%c is a non-ISO escape sequence", c); }
 					else
-						{ MCC_TRACE("br\n"); mcc_warning("\\e is a non-ISO escape sequence"); }
+						{ MCC_TRACE("br\n"); mcc_warning("\\%c is a non-ISO escape sequence", c); }
 				}
 				c = 27;
 				break;
@@ -3561,6 +3647,7 @@ static void next_nomacro(void) { MCC_TRACE("enter\n");
 
 	p = file->buf_ptr;
 redo_no_start:
+	tok_line_num = file->line_num, tok_line_file = file;
 	c = *p;
 	switch (c) { MCC_TRACE("br\n");
 	case ' ':
@@ -4125,8 +4212,117 @@ static int macro_subst(
 		Sym **nested_list,
 		const int *macro_str);
 
+static int *macro_arg_subst2(Sym **nested_list, const int *macro_str, Sym *args,
+														 int join_pre, int join_post);
+static int *macro_twosharps(const int *ptr0);
+
 static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) { MCC_TRACE("enter\n");
+	return macro_arg_subst2(nested_list, macro_str, args, 0, 0);
+}
+
+static int tok_str_has_join(const int *p) { MCC_TRACE("enter\n");
+	int t;
+	CValue cval;
+
+	while (*p) { MCC_TRACE("br\n");
+		TOK_GET(&t, &p, &cval);
+		if (t == TOK_PPJOIN)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
+static int has_va_args(Sym *args) { MCC_TRACE("enter\n");
+	Sym *s;
+
+	for (s = args; s; s = s->prev) { MCC_TRACE("br\n");
+		if (s->type.t)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
+static int va_args_nonempty(Sym **nested_list, Sym *args) { MCC_TRACE("enter\n");
+	Sym *s;
+	const int *st;
+
+	for (s = args; s; s = s->prev) { MCC_TRACE("br\n");
+		if (!s->type.t)
+			{ MCC_TRACE("br\n"); continue; }
+		if (!s->d)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (!s->e) { MCC_TRACE("br\n");
+			TokenString str2;
+			tok_str_new(&str2);
+			str2.need_spc = 2;
+			macro_subst(&str2, nested_list, s->d);
+			if (str2.need_spc & 1)
+				{ MCC_TRACE("br\n"); tok_str_add(&str2, ' '); }
+			tok_str_add(&str2, TOK_EOF);
+			s->e = str2.str;
+		}
+		st = s->e;
+		while (*st == ' ')
+			{ MCC_TRACE("br\n"); ++st; }
+		return *st != TOK_EOF;
+	}
+	return 0;
+}
+
+static const int *va_opt_group(const int *p, TokenString *out) { MCC_TRACE("enter\n");
+	int t, level;
+	CValue cval;
+
+	while (*p == ' ')
+		{ MCC_TRACE("br\n"); ++p; }
+	if (*p != '(')
+		{ MCC_TRACE("br\n"); return p; }
+	++p;
+	level = 1;
+	while (*p) { MCC_TRACE("br\n");
+		TOK_GET(&t, &p, &cval);
+		if (t == '(')
+			{ MCC_TRACE("br\n"); ++level; }
+		else if (t == ')') { MCC_TRACE("br\n");
+			if (--level == 0)
+				{ MCC_TRACE("br\n"); break; }
+		}
+		tok_str_add2(out, t, &cval);
+	}
+	return p;
+}
+
+static int *va_opt_subst(Sym **nested_list, const int **pmacro_str, Sym *args,
+												 int join_pre, int outer_join_post) { MCC_TRACE("enter\n");
+	TokenString grp;
+	int *res;
+	int n, t2;
+
+	tok_str_new(&grp);
+	*pmacro_str = va_opt_group(*pmacro_str, &grp);
+	tok_str_add(&grp, 0);
+	n = 0;
+	while ((t2 = (*pmacro_str)[n]) == ' ')
+		{ MCC_TRACE("br\n"); ++n; }
+	if (t2 == 0 && outer_join_post)
+		{ MCC_TRACE("br\n"); t2 = TOK_PPJOIN; }
+	if (va_args_nonempty(nested_list, args))
+		{ MCC_TRACE("br\n"); res = macro_arg_subst2(nested_list, grp.str, args, join_pre,
+																								t2 == TOK_PPJOIN); }
+	else { MCC_TRACE("br\n");
+		TokenString empty;
+		tok_str_new(&empty);
+		tok_str_add(&empty, 0);
+		res = empty.str;
+	}
+	tok_str_free_str(grp.str);
+	return res;
+}
+
+static int *macro_arg_subst2(Sym **nested_list, const int *macro_str, Sym *args,
+														 int join_pre, int join_post) { MCC_TRACE("enter\n");
 	int t, t0, t1, t2, n;
+	int at_first, bnd;
 	const int *st;
 	Sym *s;
 	CValue cval;
@@ -4146,19 +4342,45 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 
 	tok_str_new(&str);
 	t0 = t1 = 0;
+	at_first = 1;
 	while (1) { MCC_TRACE("br\n");
 		TOK_GET(&t, &macro_str, &cval);
 		if (!t)
 			{ MCC_TRACE("br\n"); break; }
 		if (t == '#' || t == TOK_DIG_HASH) { MCC_TRACE("br\n");
+			int *vstr = NULL;
 			do
 				{ MCC_TRACE("br\n"); t = *macro_str++; }
 			while (t == ' ');
 			s = sym_find2(args, t);
-			if (s) { MCC_TRACE("br\n");
+			if (!s && t == tok_va_opt && has_va_args(args)) { MCC_TRACE("br\n");
+				int *sub = va_opt_subst(nested_list, &macro_str, args, 0, 0);
+				TokenString vs;
+				const int *sp;
+				if (tok_str_has_join(sub)) { MCC_TRACE("br\n");
+					int *joined = macro_twosharps(sub);
+					tok_str_free_str(sub);
+					sub = joined;
+				}
+				tok_str_new(&vs);
+				for (sp = sub; *sp;) { MCC_TRACE("br\n");
+					TOK_GET(&t2, &sp, &cval);
+					if (t2 == TOK_PLCHLDR)
+						{ MCC_TRACE("br\n"); continue; }
+					if (t2 == ' ' && vs.len == 0)
+						{ MCC_TRACE("br\n"); continue; }
+					tok_str_add2(&vs, t2, &cval);
+				}
+				while (vs.len > 0 && vs.str[vs.len - 1] == ' ')
+					{ MCC_TRACE("br\n"); vs.len--; }
+				tok_str_add(&vs, TOK_EOF);
+				tok_str_free_str(sub);
+				vstr = vs.str;
+			}
+			if (s || vstr) { MCC_TRACE("br\n");
 				cstr_reset(&tokcstr);
 				cstr_ccat(&tokcstr, '\"');
-				st = s->d;
+				st = vstr ? vstr : s->d;
 				while (*st != TOK_EOF) { MCC_TRACE("br\n");
 					const char *s;
 					TOK_GET(&t, &st, &cval);
@@ -4187,12 +4409,37 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 				cval.str.size = tokcstr.size;
 				cval.str.data = tokcstr.data;
 				tok_str_add2(&str, TOK_PPSTR, &cval);
+				if (vstr)
+					{ MCC_TRACE("br\n"); tok_str_free_str(vstr); }
 #ifdef MCC_TARGET_ARM
 			} else if ((parse_flags & PARSE_FLAG_ASM_FILE) && t == TOK_PPNUM) { MCC_TRACE("br\n");
 				--macro_str, tok_str_add(&str, '#');
 #endif
 			} else { MCC_TRACE("br\n");
 				expect("macro parameter after '#'");
+			}
+		} else if (t == tok_va_opt && has_va_args(args) && !sym_find2(args, t)) { MCC_TRACE("br\n");
+			int *sub;
+			const int *sp;
+			int emitted = 0;
+			bnd = at_first && join_pre;
+			sub = va_opt_subst(nested_list, &macro_str, args,
+												 t1 == TOK_PPJOIN || bnd, join_post);
+			for (sp = sub; *sp;) { MCC_TRACE("br\n");
+				TOK_GET(&t2, &sp, &cval);
+				tok_str_add2(&str, t2, &cval);
+				if (t2 != ' ')
+					{ MCC_TRACE("br\n"); emitted = 1; }
+			}
+			tok_str_free_str(sub);
+			if (!emitted) { MCC_TRACE("br\n");
+				n = 0;
+				while ((t2 = macro_str[n]) == ' ')
+					{ MCC_TRACE("br\n"); ++n; }
+				if (t2 == 0 && join_post)
+					{ MCC_TRACE("br\n"); t2 = TOK_PPJOIN; }
+				if (t2 == TOK_PPJOIN || t1 == TOK_PPJOIN || bnd)
+					{ MCC_TRACE("br\n"); tok_str_add(&str, TOK_PLCHLDR); }
 			}
 		} else if (t >= TOK_IDENT) { MCC_TRACE("br\n");
 			s = sym_find2(args, t);
@@ -4201,6 +4448,7 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 				n = 0;
 				while ((t2 = macro_str[n]) == ' ')
 					{ MCC_TRACE("br\n"); ++n; }
+				bnd = (at_first && join_pre) || (t2 == 0 && join_post);
 				if (t2 == TOK_PPJOIN || t1 == TOK_PPJOIN) { MCC_TRACE("br\n");
 					if (t1 == TOK_PPJOIN && t0 == ',' && gnu_ext && s->type.t) { MCC_TRACE("br\n");
 						int c = str.str[str.len - 1];
@@ -4230,6 +4478,13 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 						s->e = str2.str;
 					}
 					st = s->e;
+					if (bnd) { MCC_TRACE("br\n");
+						const int *q = st;
+						while (*q == ' ')
+							{ MCC_TRACE("br\n"); ++q; }
+						if (*q == TOK_EOF)
+							{ MCC_TRACE("br\n"); tok_str_add(&str, TOK_PLCHLDR); }
+					}
 				}
 				while (*st != TOK_EOF) { MCC_TRACE("br\n");
 					TOK_GET(&t2, &st, &cval);
@@ -4242,7 +4497,7 @@ static int *macro_arg_subst(Sym **nested_list, const int *macro_str, Sym *args) 
 			tok_str_add2(&str, t, &cval);
 		}
 		if (t != ' ')
-			{ MCC_TRACE("br\n"); t0 = t1, t1 = t; }
+			{ MCC_TRACE("br\n"); t0 = t1, t1 = t, at_first = 0; }
 	}
 	tok_str_add(&str, 0);
 	PP_PRINT(("areslt:", 0, str.str));
@@ -4448,7 +4703,8 @@ static int macro_subst_tok(
 					else if (t == TOK___LINE__) { MCC_TRACE("br\n");
 						CValue lcv;
 						char lbuf[32];
-						snprintf(lbuf, sizeof(lbuf), "%d", file->line_num);
+						snprintf(lbuf, sizeof(lbuf), "%d",
+												 tok_line_file == file ? tok_line_num : file->line_num);
 						lcv.str.size = strlen(lbuf) + 1;
 						lcv.str.data = lbuf;
 						tok_str_add2_spc(&str, TOK_PPNUM, &lcv);
@@ -4511,7 +4767,8 @@ static int macro_subst_tok(
 		char buf[32], *cstrval = buf;
 
 		if (v == TOK___LINE__ || v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__) { MCC_TRACE("br\n");
-			t = v == TOK___LINE__	 ? file->line_num
+			t = v == TOK___LINE__	 ? (tok_line_file == file ? tok_line_num
+																				 : file->line_num)
 					: v == TOK___COUNTER__ ? pp_counter++
 																 : (int)(mcc_state->include_stack_ptr - mcc_state->include_stack);
 			snprintf(buf, sizeof(buf), "%d", t);
@@ -4684,7 +4941,8 @@ ST_FUNC void next(void) { MCC_TRACE("enter\n");
 		if (TOK_HAS_VALUE(t)) { MCC_TRACE("br\n");
 			tok_get(&tok, &macro_ptr, &tokc);
 			if (t == TOK_LINENUM) { MCC_TRACE("br\n");
-				file->line_num = tokc.i;
+				file->line_num = tok_line_num = tokc.i;
+				tok_line_file = file;
 				goto redo;
 			}
 			goto convert;
@@ -5004,6 +5262,8 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 		tok_alloc(p, r - p - 1);
 		p = r;
 	}
+
+	tok_va_opt = tok_alloc_const("__VA_OPT__");
 
 	tok_c23_bool = tok_alloc_const("bool");
 	tok_c23_true = tok_alloc_const("true");
