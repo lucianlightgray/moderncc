@@ -1549,6 +1549,7 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 				{ MCC_TRACE("br\n"); mcc_error("too many asm operands"); }
 			op = &operands[nb_operands++];
 			op->id = 0;
+			op->is_label = 0;
 			if (tok == '[') { MCC_TRACE("br\n");
 				next();
 				if (tok < TOK_IDENT)
