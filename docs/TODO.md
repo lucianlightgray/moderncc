@@ -2832,3 +2832,55 @@ refusal is a *skip*, not a fallback; meanwhile 21 executing cells went from wron
 right. When the goal is "the replay is correct", count failing cells under
 `MCC_RIR_NOFB=1`. When the goal is "the replay is byte-faithful", count the census.
 Do not report one as though it were the other.
+
+---
+
+## The chained store is the dominant remaining class
+
+`mcc.c -O1` sits at 34 fallbacks: 21 `len`, 12 `bytes`, 1 `error1` (banked, do not
+touch). Sampling the byte diffs rather than the counts, the largest identifiable group
+is one C shape — the chained assignment.
+
+    cleanup_symbols   s->data_offset = s->link->data_offset = s->hash->data_offset = 0;
+    cleanup_sections  s->data = mcc_realloc(s->data, s->data_allocated = s->data_offset);
+    chained (test)    a = b = f(v);
+
+The parser computes the addresses first and then stores; the replay interleaves
+address computation with the stores. `cleanup_symbols` at `+36`:
+
+    parser  load s1 ; load [s1+0x60] ; load s1 ; load [s1+0x70] ; xor ; store ; store
+    replay  load s1 ; load [+0x60] ; load s1 ; load [+0x70] ; xor ; store ; store
+            (same instructions, different registers and a different store order)
+
+**The class splits, and the halves need different treatment:**
+
+- **Pure value** (`= 0`, a constant, a non-volatile load) — the reorder is *benign*.
+  Three independent addresses all set to zero end up zero whatever the order. This
+  costs faithfulness only, and is a candidate for the semantic-equivalence verdict
+  rather than for a byte fix.
+- **Effectful value** (a call) — the duplication is a **wrong-code bug**. `a = b =
+  f(v)` captures two `Invoke` nodes and calls `f` twice. This is the open
+  `assign_value_effects` failure and it is not a faithfulness question at all.
+
+Do not attack these together. The second is a correctness defect and should be fixed
+or refused on its own; the first is a byte-equivalence question and may not be worth
+fixing at all if the equivalence verdict can carry it.
+
+### Reading `firstdiff` correctly
+
+`firstdiff` frequently points at a **jump displacement**, not at the defect.
+`builtin_libm_find` reports `@18`, where the only difference is `0f 8d 4b` against
+`0f 8d 4e` — a forward branch encoding a target three bytes further out. The real
+divergence is downstream and the early offset is an echo of it. Always read the whole
+window (`MCC_AST_UNFAITHFUL_DUMP=<n>` with a large `n`) before believing the offset.
+
+### Instrumentation that works, and one that does not
+
+- `MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=<window>` prints `[unfaithful] <fn> @<off>
+  parser:` / `replay:` byte rows and `[unfaithful-rel]` symbol rows. This is the
+  useful one.
+- `RIRPRODDUMP=<fn>` prints the arena at five stages, and `[ast-postreplay]` gives
+  `newlen`/`bodylen` directly.
+- The `MCC_TRACE_IF("UNFAITHFUL ...")` line next to that dump does **not** reach
+  stderr under `MCC_LOG=0xff`. Do not spend time trying to grep for it; use the
+  `[unfaithful]` rows instead.
