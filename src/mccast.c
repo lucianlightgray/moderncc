@@ -3583,6 +3583,13 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				 lbt == VT_QFLOAT) &&
 				(op == '*' || op == '/' || op == '+' || op == '-'))
 			{ MCC_TRACE("br\n"); return 1; }
+		/* _Float16 is soft-float on every backend: gen_op extends both
+		   operands through __mcc_extendhfsf2 and truncates the result through
+		   __mcc_truncsfhf2, so arithmetic AND comparisons are calls. The
+		   result type of a comparison is int, so the operand type is the one
+		   that must be tested. */
+		if (bt == VT_FLOAT16 || lbt == VT_FLOAT16)
+			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
 	}
 	if (k == AST_Convert) { MCC_TRACE("br\n");
@@ -3603,6 +3610,10 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); return 1; }
 		if ((d & VT_BTYPE) == VT_LDOUBLE && !is_float(st))
 			{ MCC_TRACE("br\n"); return 1; }
+		/* Any conversion with _Float16 on exactly one side goes through the
+		   soft-float helpers (gen_cvt_f16). */
+		if (((s & VT_BTYPE) == VT_FLOAT16) != ((d & VT_BTYPE) == VT_FLOAT16))
+			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
 	}
 	if (k == AST_Unary) { MCC_TRACE("br\n");
@@ -3610,7 +3621,7 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (op == AST_OP_BSWAP || op == AST_OP_SIGNBIT || op == AST_OP_FFS ||
 				op == AST_OP_BITSCAN)
 			{ MCC_TRACE("br\n"); return 1; }
-		if (op == AST_OP_FNEG && bt == VT_LDOUBLE)
+		if (op == AST_OP_FNEG && (bt == VT_LDOUBLE || bt == VT_FLOAT16))
 			{ MCC_TRACE("br\n"); return 1; }
 		return 0;
 	}
