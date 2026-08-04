@@ -84,6 +84,12 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 /* The parser had CODE_OFF set across this whole statement, so it emitted
    nothing for it. Replaying it would write code the parser never did. */
 #define AST_FB_NOCODE 2097152u
+/* The parser's vtop was positively observed NOT to be an lvalue when it emitted this
+   LOAD mark. Recorded at capture because the replay cannot infer it: `tbl[i].n` and
+   `*(int *)u.pv` reach the arena as the same tree, Load(Convert(MEMBER)), and only the
+   parser knows which one needed the dereference.
+ */
+#define AST_FB_LOAD_LVAL 4194304u
 
 struct AstArena {
 	uint16_t *kind;
@@ -4138,6 +4144,17 @@ static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
 	return 0;
 }
 
+/* Is this Load sitting directly on a member access, possibly through casts? Only that
+   shape suffers the double materialisation, so restricting to it keeps the -O4 census
+   from moving: an unrestricted skip cost 64 -> 100 fallbacks there. */
+static int ast_load_over_member(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal c = ast_nchild(a, n) == 1 ? ast_child(a, n, 0) : AST_NONE;
+	while (c != AST_NONE && ast_kind(a, c) == AST_Convert && ast_nchild(a, c) == 1)
+		{ MCC_TRACE("br\n"); c = ast_child(a, c, 0); }
+	return c != AST_NONE && ast_kind(a, c) == AST_Unary &&
+				 (ast_op(a, c) == AST_OP_MEMBER || ast_op(a, c) == AST_OP_MEMBER_ARROW);
+}
+
 static void ast_replay_value_inner(AstArena *a, AstLocal n);
 
 /* RVATTR=<fn> attributes emitted bytes to the arena node that produced them: one line
@@ -4570,7 +4587,17 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 	}
 	case AST_Load:
 		ast_replay_value(a, ast_child(a, n, 0));
-		indir();
+		/* AST_OP_MEMBER leaves VT_LVAL set, and indir() on an lvalue calls gv() to
+		   materialise the pointer before re-flagging it, so the use loads a second
+		   time. ast_bfold_run's `strcmp(nm, ast_bfold_tab[bi].name)` came out with
+		   `mov rcx,[rcx]` twice and handed strcmp the first eight bytes of the string
+		   as a pointer; a compiler built that way segfaults compiling mcc.c. Skip the
+		   indir only where the parser itself was not on an lvalue here -- the capture
+		   records that, because the tree alone cannot distinguish this from a real
+		   dereference like `*(int *)u.pv`. */
+		if ((ast_fbits(a, n) & AST_FB_LOAD_LVAL) || !(vtop->r & VT_LVAL) ||
+				!ast_load_over_member(a, n))
+			{ MCC_TRACE("br\n"); indir(); }
 		break;
 	case AST_If: {
 		SValue sv;

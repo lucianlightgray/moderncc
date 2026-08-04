@@ -3311,6 +3311,10 @@ static void rir_mark_apply(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Load);
 		ast_add_child(rir_arena, n, a);
+		if (ro->mvs_n - rir_base_depth > 0 &&
+				(rir_mvs[ro->mvs_off + ro->mvs_n - 1].r & VT_LVAL))
+			ast_set_fbits(rir_arena, n,
+										ast_fbits(rir_arena, n) | AST_FB_LOAD_LVAL);
 		rir_push(n);
 		break;
 	case RIR_M_NORETURN:

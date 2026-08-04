@@ -3849,3 +3849,44 @@ misses the union breakage or erases the entire gain. The next attempt should sto
 looking for a predicate over the *node* and instead ask why five bodies contain a
 `Load` over a `MEMBER` that the parser does not emit at all. That is a capture
 question, not a folding question.
+
+---
+
+## W6 — i386 C2 gap 6, opened by the AST_FB_LOAD_LVAL fix (needs a Windows/i386 pass)
+
+`ast/rir-c2-i386` and `ast/rir-c2-i386-win32` report
+
+    rir_c2: -O1 srcs=279 ok=269 notok=10 fn=1166 faithful=1131 c2ok=1125/1131
+            gap=6 (bytes=0 len=6 err=0 invalid=0)
+
+against a banked 0. Every other cell of the 8255-cell suite passes. This was landed
+deliberately: the change it comes with closes a wrong-code bug that made a
+self-hosted compiler segfault, and the i386 gap is a byte-faithfulness ratchet, not a
+behaviour failure. Trading a live miscompile for six unfaithful i386 bodies is the
+right way round, but the six should be closed rather than re-banked if that is
+possible.
+
+**What to look at.** The fix skips a redundant `indir()` in `ast_replay_value`'s
+`AST_Load` arm when three things hold: the capture recorded that the parser was *not*
+on an lvalue (`AST_FB_LOAD_LVAL` clear), the replay's `vtop` *is* an lvalue, and the
+load sits over a member access (`ast_load_over_member`). All six i386 bodies fail on
+length, so the skip is firing there where the i386 parser did emit the load.
+
+**Three narrowings already tried, all rejected — do not repeat them:**
+
+| narrowing | i386 C2 | `mcc.c -O1` | selfhost-fixpoint |
+|---|---|---|---|
+| add an `AST_FB_LOAD_SEEN` "we actually looked" bit | still 6 | 37 | SIGSEGV again |
+| restrict `ast_load_over_member` to plain `AST_OP_MEMBER` | **0, passes** | 37 | SIGSEGV again |
+| compare the Load's type to its child's | n/a | 36 | SIGSEGV again |
+
+The second is the informative one: **the entire win lives in the `AST_OP_MEMBER_ARROW`
+path, and that is also exactly what i386 objects to.** So the question to answer is why
+`->` through a member differs between the x86_64 and i386 back ends at this point --
+most likely the i386 `AST_OP_MEMBER_ARROW` arm leaves `vtop->r` in a different state
+than x86_64's, so the `!(vtop->r & VT_LVAL)` test does not mean the same thing on both.
+Compare the two `AST_OP_MEMBER_ARROW` replays under `RVATTR` on one of the six bodies
+before changing anything.
+
+`tests/ast/rir_c2.cmake` reports counts only; naming the six needs instrumentation in
+the C2 leg, which does not exist yet.
