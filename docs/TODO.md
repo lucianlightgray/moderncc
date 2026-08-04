@@ -68,6 +68,24 @@ restriction is a gcc-13-era rule. `__bf16` also **rounds** float→bf16 to
 nearest-even; it does not truncate. `_Float16` is *not* default-argument-promoted in
 varargs, on any `-std=`.
 
+### Post-landing fix: the promoter did not know binary16 arithmetic is a call
+
+The Windows stage2 cells (dynamic/pe/sanitize) failed every `exec-*/float16` at
+`-O2/-O3/-Os`: `ast_node_libcall` had no `VT_FLOAT16` arm, so the promotion
+planner classified a function whose only calls were `__mcc_extendhfsf2` /
+`__mcc_truncsfhf2` as call-free and handed promoted locals the **caller-saved**
+pool. On win64 that is a guaranteed clobber, not a latent one — `gfunc_call`
+stages arguments through r10/r11 before moving them into rcx/rdx, so a loop
+counter promoted into `r10d` dies at the first helper call in the body. Fixed in
+`ast_node_libcall` (binary ops by *operand* type — comparisons have `int` result
+type — conversions with binary16 on exactly one side, and FNEG). Two things worth
+knowing before touching this again: **Linux passed the same suites by luck**
+(SysV marshalling never touches r10 and the mcc-compiled helpers happen to
+preserve it), so a green Linux column is not evidence the promoter models calls
+correctly; and `ast_subtree_has_call` (the `ast_promo_store_late` gate) still
+counts only `AST_Invoke`, not libcall-lowered nodes — benign today because the
+callee-saved pool survives calls, but it is the same mismodel one layer down.
+
 ## URGENT — gates that are red or unmeasurable right now
 
 Re-verified mechanically against `da3a461b` on 2026-08-03 in a fresh `cmake-verify`
