@@ -4919,3 +4919,140 @@ compiler. Flip it on in the same change that fixes `-run`.
 2. **arm64 assembler has no `svc`** — blocks freestanding syscall tests on arm64.
 3. **arm rejects explicit register variables** in inline asm (`arm-gen.c:267`), so the
    ordinary `register long r7 __asm__("r7")` syscall-wrapper idiom does not compile.
+
+---
+
+## All three landed — and two of them were the same shape of bug
+
+### 1. riscv64 `-run`: a ±2 GB call with no range check and no veneer
+
+`-run` maps the program at whatever `host_runmem_alloc` returns (0x6e9000 in the repro)
+while the libc it calls lives wherever the loader put it (0x7fb854bf5aa8). `R_RISCV_CALL`
+/ `R_RISCV_CALL_PLT` is `auipc`+`jalr`, a **signed 32-bit** PC-relative pair, and
+`riscv64-link.c` wrote it with **no range check at all**. 256 GB of displacement was
+silently truncated and the program jumped into nothing.
+
+`build_got_entries` (`mccelf.c:1316`) refuses to create a PLT entry when
+`output_type == MCC_OUTPUT_MEMORY`, so there is nothing to bounce off: in `-run` every
+external call must reach the real `dlsym` address directly. arm and arm64 already solve
+this with `arm_veneer_memory_calls` / `arm64_veneer_memory_calls`, which rewrite every
+call against an `SHN_UNDEF`/`SHN_ABS` symbol to point at a synthesized `.mcc.veneer`
+entry that loads a full-width address and jumps. riscv64 had no equivalent — the whole
+mechanism was arm-only, and nobody noticed because riscv64 `-run` had never run.
+
+`riscv64_veneer_memory_calls` now does the same with `auipc t1,0 / ld t1,16(t1) /
+jr t1 / nop / .quad target(R_RISCV_64)` (encodings checked against `llvm-mc`), and
+`R_RISCV_CALL` gained the range check it never had, so the next time this breaks it says
+so instead of segfaulting. `int main(void){return 3;}` returns 3; `hi`/`hot` match at
+`acc=998508278240` under both JIT tiers. The `need_fallback` withhold in
+`tools/selfhost-run-parity.sh` is gone and **`run-parity-riscv64` Passes**.
+
+The x86_64 arm of the same switch does have the check (`x86_64-link.c:218`) and errors
+out. Only riscv64 was silent.
+
+The signature does not move across the `VT_BTYPE` widening (`7bded795`). Re-checked by
+keeping the new range check and stashing only the `mccrun.c` call site: same symbol,
+same displacement — `'fflush' is 140160382986144 bytes away (val=7f79a2457aa8,
+addr=6e9308)`. Nothing here touches the riscv64 struct packing that commit rewrote.
+
+### 2. arm64 `svc` — the tokens existed, the encoder did not
+
+`DEF_ASM(svc/hvc/smc/brk/hlt)` were already in `arm64-tok.h:454`; `asm_opcode` simply had
+no case for them, so they fell to the `not implemented` default. Added `asm_exception` +
+`gen_exception` next to `asm_barrier` (the same operand-parsing shape) and the five
+`ARM64_*` base words. All twelve forms tested disassemble byte-identically to `llvm-mc`;
+`svc` exits 42 under `qemu-aarch64` and `brk #1` raises SIGTRAP.
+
+### 3. arm register variables — a machine/treg numbering conflation, not a missing class
+
+The diagnosis in the heading above was half right. arm's asm layer is numbered in
+**machine encoding** throughout — `subst_asm_operand` prints `TOK_ASM_r0 + reg`,
+`asm_clobber` and `regs_allocated[13]` index by machine number, the `'r'` scan walks
+`0..8`. But `asm_gen_code` fed those numbers straight into `load()`/`store()`, which take
+**codegen tregs**, and arm only has tregs for r0-r3, r12, sp and lr. So the two
+numberings agreed by accident for r0-r3 and diverged for everything else.
+
+That makes the reported symptom the *narrow* case. The wider one: **six `"r"` operands
+already failed on plain arm** — no register variables involved — because the allocator
+handed out machine r4 and up:
+
+```c
+__asm__ volatile ("add %0, %1, %2\n\t..." : "=&r"(o)
+                  : "r"(a), "r"(b), "r"(c), "r"(d), "r"(e), "r"(f));
+```
+gave `compiler error! register 5 is no int register`. And machine r4 was *worse* than an
+error: `intr(4)` is `MCC_TREG_R12`, so `load(4, …)` silently loaded into **r12** while
+`%4` printed `r4`.
+
+The fix keeps the asm layer machine-numbered (everything else already assumed that) and
+translates at the one boundary that needs tregs: `arm_asm_load`/`arm_asm_store` use the
+treg directly when one exists and otherwise move through a scratch treg picked from
+`{ip, r3, r2, r1, r0}` avoiding the operand registers. `*pout_reg` — used as an address
+base, so it must be a real treg — is now chosen from `{r0..r3, r12}` rather than `0..8`.
+`arm_parse_regvar` and `mccgen.c:16169` were left alone: r7 already passed the
+`< MCC_NB_REGS` guard, so nothing upstream of `asm_gen_code` was ever wrong.
+
+### Freestanding syscall matrix, both idioms, all under qemu
+
+| target | plain asm string | `register long x __asm__("…")` |
+|---|---|---|
+| arm | exit 42 | exit 42 (was `register 7 is no int register`) |
+| arm64 | exit 42 (was `'svc' not implemented`) | exit 42 |
+| riscv64 | exit 42 | exit 42 |
+| i386 | exit 42 | exit 42 |
+
+riscv64 and i386 needed no work: riscv64 already has the `ASM_REGVAR_ASMREG` hook
+(`rv_regvar_asmreg`) that arm was missing the equivalent of, and i386's tregs are its
+machine numbers.
+
+### Sweeping the exec corpus through riscv64 `-run` leaves exactly one real defect
+
+`hi`/`hot` are two programs. Running all 278 `tests/exec/**.c` through riscv64 `-run` and
+diffing against the same source under the native `-run` gives **269 identical, 9 different**
+— and re-running those 9 through riscv64 *compile-and-link* sorts them completely:
+
+| case | verdict |
+|---|---|
+| `al_ax_extend`, `asm_constraints_x86`, `asm_goto`, `asm_lvalue_cast`, `asm_operand_modifiers`, `int128` | fail the same way at compile-and-link — x86 mnemonics, x86 constraints, `__int128`. Not `-run`. |
+| `arch/riscv_asm.c` | native prints `SKIP`, riscv64 actually runs it. Correct. |
+| `types/char_signedness.c` | `255 0` vs `-1 1` — riscv64's `char` is unsigned. Correct. |
+| `features_c99_c11/tls.c` | **the one real one.** Links and runs correctly as a binary (`42 0 42 0 100 200 42 0`); under `-run` every value is `0`. |
+
+So the veneer closes the whole relocation class, and TLS is the single remaining `-run`
+defect on riscv64 — with a corpus test that already catches it.
+
+### The one thing left open: `-run` TLS is broken on **x86_64 too**, not just riscv64
+
+Chasing that last corpus difference produced the more interesting result. It is not an
+arm/riscv64 gap — the **host** target has it. `tests/exec/features_c99_c11/tls.c`, same
+compiler, same source, two invocations:
+
+```
+$ mcc -o tls tls.c && ./tls        $ mcc -run tls.c
+42                                 42
+0                                  0
+42                                 0        <-- diverges here
+0                                  42
+100                                0
+200                                rc=1
+42
+0
+rc=0
+```
+
+So `-run` gets thread-local storage wrong on x86_64, and riscv64 (all zeros) and arm are
+worse rather than uniquely broken. `host_run_tls_slab_tpoff` (`mcchost.c:1449`) only reads
+the real thread pointer on `__x86_64__` and `__aarch64__`, and of the four backends only
+x86_64 and arm64 consult `s1->run_tls_active` / `run_tls_slab_tpoff` in their TPREL
+relocations at all — but consulting it is evidently not sufficient either.
+
+Left alone deliberately: it is pre-existing, it is not the segfault, and it is not
+riscv64-specific, so folding it into this change would have hidden it. What makes it
+worth its own task is that **no gate catches it**. `run-parity` runs exactly two programs
+(`hi`, `hot`), neither uses TLS; `tls.c` is in the exec corpus but the corpus is run
+compile-and-link, where it passes. A `-run` leg for `tls.c` — on the host, before any
+cross target — is the first step, and it should go red immediately.
+
+(arm additionally prints `fsum=0.000` under `-run` where riscv64 correctly gets `10.000`,
+so arm `-run` has a soft-float problem on top of the TLS one. Same test, same command,
+unrelated to everything above.)

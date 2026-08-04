@@ -1212,6 +1212,52 @@ static void asm_barrier(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	gen_barrier(barrier_type, option);
 }
 
+static void gen_exception(uint32_t base, uint16_t imm16) { MCC_TRACE("enter\n");
+	emit_instr32(base | ARM64_IMM16(imm16));
+}
+
+static void asm_exception(MCCState *s1, int token) { MCC_TRACE("enter\n");
+	uint32_t base;
+	Operand op;
+
+	switch (token) { MCC_TRACE("br\n");
+	case TOK_ASM_svc:
+		base = ARM64_SVC;
+		break;
+	case TOK_ASM_hvc:
+		base = ARM64_HVC;
+		break;
+	case TOK_ASM_smc:
+		base = ARM64_SMC;
+		break;
+	case TOK_ASM_brk:
+		base = ARM64_BRK;
+		break;
+	case TOK_ASM_hlt:
+		base = ARM64_HLT;
+		break;
+	default:
+		mcc_error("unknown exception instruction");
+		return;
+	}
+
+	if (tok == TOK_LINEFEED) { MCC_TRACE("br\n");
+		mcc_error("expected immediate operand");
+		return;
+	}
+	parse_operand(s1, &op);
+	if (!(op.type & OP_IM) || op.e.sym) { MCC_TRACE("br\n");
+		mcc_error("expected immediate operand");
+		return;
+	}
+	if ((uint64_t)op.e.v > 0xFFFF) { MCC_TRACE("br\n");
+		mcc_error("exception immediate out of range");
+		return;
+	}
+
+	gen_exception(base, (uint16_t)op.e.v);
+}
+
 static void gen_mov_imm(int rd, uint64_t imm, int is_64bit) { MCC_TRACE("enter\n");
 	uint16_t hw;
 	int first = 1;
@@ -1877,6 +1923,14 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode) { MCC_TRACE("enter\n");
 
 	case TOK_ASM_nop:
 		gen_nop();
+		break;
+
+	case TOK_ASM_svc:
+	case TOK_ASM_hvc:
+	case TOK_ASM_smc:
+	case TOK_ASM_brk:
+	case TOK_ASM_hlt:
+		asm_exception(s1, opcode);
 		break;
 
 	default:

@@ -59,12 +59,6 @@ case "$arch" in
 esac
 
 if [ "$need_fallback" = 1 ]; then
-  case "$arch" in
-    riscv64)
-      echo "SKIP: no '$CROSSCC'; the vendored-sysroot fallback is withheld for riscv64"
-      echo "      because -run segfaults there on any input (see docs/TODO.md)"
-      exit 77 ;;
-  esac
   VSR="$root/vendor/gentoo-stage3-$arch-glibc"
   VMCC="$root/cmake-cross/mcc-$arch"
   [ -x "$VMCC" ] || { echo "SKIP: no '$CROSSCC' and no $VMCC to bootstrap with"; exit 77; }

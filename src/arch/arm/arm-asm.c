@@ -2463,6 +2463,61 @@ ST_FUNC void subst_asm_operand(CString *add_str, SValue *sv, int modifier) { MCC
 	}
 }
 
+/* asm operands are numbered in machine encoding (r0..r15), but load() and
+   store() take codegen tregs, of which arm only has r0-r3, r12, sp and lr.
+   Registers with no treg -- r4..r11, which is where an explicit `register long
+   x __asm__("r7")` lands -- are reached by moving through a scratch treg. */
+static int arm_asm_treg(int reg) { MCC_TRACE("enter\n");
+	if (reg >= 0 && reg <= 3)
+		{ MCC_TRACE("br\n"); return MCC_TREG_R0 + reg; }
+	if (reg == 12)
+		{ MCC_TRACE("br\n"); return MCC_TREG_R12; }
+	if (reg == 13)
+		{ MCC_TRACE("br\n"); return MCC_TREG_SP; }
+	if (reg == 14)
+		{ MCC_TRACE("br\n"); return MCC_TREG_LR; }
+	return -1;
+}
+
+static int arm_asm_scratch(ASMOperand *operands, int nb_operands) { MCC_TRACE("enter\n");
+	static const uint8_t cand[] = {12, 3, 2, 1, 0};
+	for (int c = 0; c < sizeof(cand) / sizeof(cand[0]); c++) { MCC_TRACE("br\n");
+		int taken = 0;
+		for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
+			if (operands[i].reg == cand[c])
+				{ MCC_TRACE("br\n"); taken = 1; }
+		}
+		if (!taken)
+			{ MCC_TRACE("br\n"); return cand[c]; }
+	}
+	mcc_error("no scratch register left for asm operand");
+	return 12;
+}
+
+static void arm_asm_load(ASMOperand *operands, int nb_operands, int reg,
+												 SValue *sv) { MCC_TRACE("enter\n");
+	int t = arm_asm_treg(reg), scratch;
+	if (t >= 0) { MCC_TRACE("br\n");
+		load(t, sv);
+		return;
+	}
+	scratch = arm_asm_scratch(operands, nb_operands);
+	load(arm_asm_treg(scratch), sv);
+	gen_le32(0xE1A00000 | (reg << 12) | scratch);
+}
+
+static void arm_asm_store(ASMOperand *operands, int nb_operands, int reg,
+													SValue *sv) { MCC_TRACE("enter\n");
+	int t = arm_asm_treg(reg), scratch;
+	if (t >= 0) { MCC_TRACE("br\n");
+		store(t, sv);
+		return;
+	}
+	scratch = arm_asm_scratch(operands, nb_operands);
+	gen_le32(0xE1A00000 | (scratch << 12) | reg);
+	store(arm_asm_treg(scratch), sv);
+}
+
 ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 													int nb_outputs, int is_output,
 													uint8_t *clobber_regs,
@@ -2499,9 +2554,9 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 					sv = *op->vt;
 					sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL | VT_LVAL;
 					sv.type.t = VT_PTR;
-					load(op->reg, &sv);
+					arm_asm_load(operands, nb_operands, op->reg, &sv);
 				} else if (i >= nb_outputs || op->is_rw) { MCC_TRACE("br\n");
-					load(op->reg, op->vt);
+					arm_asm_load(operands, nb_operands, op->reg, op->vt);
 					if (op->is_llong)
 						{ MCC_TRACE("br\n"); mcc_error("long long not implemented"); }
 				}
@@ -2517,14 +2572,14 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 						sv = *op->vt;
 						sv.r = (sv.r & ~VT_VALMASK) | VT_LOCAL;
 						sv.type.t = VT_PTR;
-						load(out_reg, &sv);
+						load(arm_asm_treg(out_reg), &sv);
 
 						sv = *op->vt;
-						sv.r = (sv.r & ~VT_VALMASK) | out_reg;
-						store(op->reg, &sv);
+						sv.r = (sv.r & ~VT_VALMASK) | arm_asm_treg(out_reg);
+						arm_asm_store(operands, nb_operands, op->reg, &sv);
 					}
 				} else { MCC_TRACE("br\n");
-					store(op->reg, op->vt);
+					arm_asm_store(operands, nb_operands, op->reg, op->vt);
 					if (op->is_llong)
 						{ MCC_TRACE("br\n"); mcc_error("long long not implemented"); }
 				}
@@ -2683,7 +2738,11 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 		op = &operands[i];
 		if (op->reg >= 0 &&
 				(op->vt->r & VT_VALMASK) == VT_LLOCAL && !op->is_memory) { MCC_TRACE("br\n");
-			for (reg = 0; reg <= 8; reg++) { MCC_TRACE("br\n");
+			/* the reload register is used as an address base, so it has to be
+			   one of the registers that maps onto a codegen treg */
+			static const uint8_t reload_cand[] = {0, 1, 2, 3, 12};
+			for (int c = 0; c < sizeof(reload_cand) / sizeof(reload_cand[0]); c++) { MCC_TRACE("br\n");
+				reg = reload_cand[c];
 				if (!(regs_allocated[reg] & REG_OUT_MASK))
 					{ MCC_TRACE("br\n"); goto reg_found2; }
 			}

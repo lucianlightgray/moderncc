@@ -146,6 +146,61 @@ ST_FUNC void relocate_plt(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 }
 
+ST_FUNC void riscv64_veneer_memory_calls(MCCState *s1) { MCC_TRACE("enter\n");
+	Section *vs = NULL;
+	int i, nsyms, nsec, *vmap;
+
+	if (s1->output_type != MCC_OUTPUT_MEMORY)
+		{ MCC_TRACE("br\n"); return; }
+	nsyms = symtab_section->data_offset / sizeof(ElfW(Sym));
+	nsec = s1->nb_sections;
+	if (nsyms <= 0)
+		{ MCC_TRACE("br\n"); return; }
+	vmap = mcc_mallocz(nsyms * sizeof(int));
+	for (i = 1; i < nsec; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		ElfW_Rel *rel;
+		if (s->sh_type != SHT_RELX || s->link != symtab_section)
+			{ MCC_TRACE("br\n"); continue; }
+		for_each_elem(s, 0, rel, ElfW_Rel) {
+			int type = ELFW(R_TYPE)(rel->r_info);
+			int si = ELFW(R_SYM)(rel->r_info);
+			if (type != R_RISCV_CALL && type != R_RISCV_CALL_PLT &&
+					type != R_RISCV_JAL)
+				{ MCC_TRACE("br\n"); continue; }
+			if (si <= 0 || si >= nsyms)
+				{ MCC_TRACE("br\n"); continue; }
+			{
+				int shn = ((ElfW(Sym) *)symtab_section->data)[si].st_shndx;
+				if (shn != SHN_UNDEF && shn != SHN_ABS)
+					{ MCC_TRACE("br\n"); continue; }
+			}
+			if (!vmap[si]) { MCC_TRACE("br\n");
+				int off;
+				unsigned char *p;
+				if (!vs) { MCC_TRACE("br\n");
+					vs = new_section(s1, ".mcc.veneer", SHT_PROGBITS,
+													 SHF_ALLOC | SHF_EXECINSTR);
+					vs->sh_addralign = 8;
+				}
+				off = vs->data_offset;
+				p = section_ptr_add(vs, 24);
+				write32le(p, 0x00000317);
+				write32le(p + 4, 0x01033303);
+				write32le(p + 8, 0x00030067);
+				write32le(p + 12, 0x00000013);
+				write64le(p + 16, 0);
+				put_elf_reloc(symtab_section, vs, off + 16, R_RISCV_64, si);
+				vmap[si] = put_elf_sym(symtab_section, off, 24,
+															 ELFW(ST_INFO)(STB_LOCAL, STT_FUNC), 0,
+															 vs->sh_num, NULL);
+			}
+			rel->r_info = ELFW(R_INFO)(vmap[si], type);
+		}
+	}
+	mcc_free(vmap);
+}
+
 static void riscv64_record_pcrel_hi(MCCState *s1, addr_t addr, addr_t val) { MCC_TRACE("enter\n");
 	struct pcrel_hi *entry = mcc_malloc(sizeof *entry);
 	entry->addr = addr;
@@ -206,6 +261,12 @@ ST_FUNC void relocate(MCCState *s1, ElfW_Rel *rel, int type, unsigned char *ptr,
 				return;
 			}
 		}
+		off64 = val - addr + 0x800;
+		if ((int64_t)off64 != (int64_t)(int32_t)off64)
+			{ MCC_TRACE("br\n"); mcc_error_noabort("R_RISCV_CALL relocation failed: '%s' is %ld bytes away"
+													" (val=%lx, addr=%lx)",
+													symtab_section->link->data + sym->st_name,
+													(long)(val - addr), (long)val, (long)addr); }
 		write32le(ptr, (read32le(ptr) & 0xfff) | ((val - addr + 0x800) & ~0xfff));
 		write32le(ptr + 4, (read32le(ptr + 4) & 0xfffff) | (((val - addr) & 0xfff) << 20));
 		return;
