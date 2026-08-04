@@ -18,14 +18,16 @@ normalizer) and at `src/mccgen.c:4120-4121` (type compatibility); `VT_LONG` is
 cleared at `src/mccrir.c:1156` too; the `VT_STRUCT_SHIFT` region is masked out of
 `VT_TYPE` by construction. `VT_UNSIGNED` is the only bit never stripped from a user
 type (the two `~VT_UNSIGNED` sites, `src/mccgen.c:4359,4379`, act on a freshly
-pushed `size_t` in pointer arithmetic, never a user type) — so it is the one viable
-overload, at the cost of auditing its 264 read sites. **Widening `VT_BTYPE` to 5 bits
-is a tree-wide flag renumber** and was not attempted.
+pushed `size_t` in pointer arithmetic, never a user type) — so it was the one viable
+overload, at the cost of auditing its 264 read sites.
 
-So the open item is a decision, not a patch: either overload `VT_UNSIGNED` and audit
-its 264 readers, or widen the type word. Do not add `__bf16` by aliasing it onto
-`_Float16` — bf16 and binary16 differ only in the encode/decode helper, so an alias
-miscompiles silently rather than loudly, which is the one outcome worth avoiding.
+**That decision is now moot: `VT_BTYPE` has been widened to 5 bits** — see
+"`VT_BTYPE` widened to 5 bits — step 2" at the end of this file. Slots 16-31 are
+free, `VT_TYPE` is `0x000c1eff`, and no flag needs overloading. The remaining work
+for `__bf16` is the encode/decode helper and the per-backend ABI, not the type word.
+Do not add `__bf16` by aliasing it onto `_Float16` — bf16 and binary16 differ only in
+the encode/decode helper, so an alias miscompiles silently rather than loudly, which
+is the one outcome worth avoiding.
 
 ### What the representation is, so it is not re-derived
 
@@ -4742,6 +4744,122 @@ only because the side-car board run flagged the one status change.
 Note a hand-written reduction of that test does *not* reproduce — mcc rejects the
 `:: label` spelling with a syntax error before reaching the substitution. The crash
 needs the real file's two `+` operands.
+
+## `VT_BTYPE` widened to 5 bits — step 2
+
+`VT_BTYPE` is `0x001f`, all 16 flags moved up one bit, `VT_STRUCT_SHIFT` 20→21,
+`VT_STRUCT_MASK` re-derived as `((1U << 11) - 1) << 21 | VT_BITFIELD`,
+`MCCJIT_INTENT_FORMAT` 12→13. Base-type enum **values** are untouched, so the ~130
+`(t & VT_BTYPE) == VT_X` tests needed no edits — verified by grep, not assumed.
+Slots 16-31 are now free for `__bf16`; **no new type was added.**
+
+### The final map, checked mechanically
+
+Bits 0-4 `VT_BTYPE`; 5-20 the sixteen flags in their old order (`VT_UNSIGNED` 5 …
+`VT_CONSTEXPR` 20); 21-23 the tag enumeration; 24-31 free. `VT_STRUCT_MASK`
+`0xffe00100`, `VT_STORAGE` `0x0013e000`, `VT_TYPE` `0x000c1eff`.
+
+`VT_TYPE` keeps exactly the nine flags it kept before (`VT_UNSIGNED`, `VT_DEFSIGN`,
+`VT_ARRAY`, `VT_CONSTANT`, `VT_VOLATILE`, `VT_VLA`, `VT_LONG`, `VT_ATOMIC_BIT`,
+`VT_NULLPTR`) — so its users' assumptions still hold.
+
+The no-overlap check is a script, not an eyeball: it compiles a probe against the
+real `mcc.h` once per target and asserts `VT_BTYPE` is a contiguous low mask, every
+base-type value fits it, the sixteen flags are sixteen distinct single bits disjoint
+from it, the tag region is disjoint from both, and `VT_STRUCT_MASK` covers the tag
+region plus `VT_BITFIELD` and nothing else. It reports zero errors on the new map
+and also passes on the **old** map, which is what makes it trustworthy.
+
+### The `(1U << (6 + 6))` in `VT_STRUCT_MASK` was a live trap
+
+It is a leftover from when bitfield pos/size lived at bits 20-31. At shift 21 the
+12-bit mask evaluates to `0x1FFE00000`, which **truncates to `0xFFE00000` in a
+32-bit `int`** — silently dropping the top bit and aliasing struct/enum ids. The
+width must go to 11 in the same edit as the shift; they are not separable.
+
+### `riscv64` packed the base type into a hardcoded 4-bit field
+
+This is the one place a renumber broke real codegen, and it is invisible to a green
+x86-64 ctest. `reg_pass_rec` packs `fieldofs[k] = (ofs << 4) | btype`, and
+`gfunc_call` re-packs both into one `int info[]`: btype#1 at bits 12-15, btype#2 at
+16-19, offset at 20+. With `VT_BTYPE` at `0x1f` the decoders `(ii >> 12) & VT_BTYPE`
+and `(ii >> 16) & VT_BTYPE` reach one bit into the *neighbouring field* — wrong
+immediately, for existing base types, not only for future ones.
+
+Fixed by widening the packing to 5 bits throughout (`<< 4`/`>> 4` → `<< 5`/`>> 5`,
+btype#2 to bit 17, offset to bit 22) and making `info[]` `long long`, because at
+shift 22 an 11-bit offset would overrun bit 31. The alternative — pinning those
+sites to a literal `0xf` — was rejected: it re-creates the same landmine exactly
+where the next base type will step.
+
+`x86_64`, `arm`, `arm64` and `i386` have no equivalent packing; riscv64 is the sole
+occurrence.
+
+### `mccast.c`'s fallback block now fails loudly
+
+`tools/asttool.c` `#include`s `mccast.c` **without** `mcc.h`, so the `#ifndef`
+fallbacks are live in that build and dead in the compiler build. They were *not*
+stale at `ff517a43` — all six matched `mcc.h` exactly — but nothing enforced that,
+and a renumber that missed them would give two builds with different type encodings
+and **no compile error**. Each fallback now carries an `#else` arm asserting the
+literal against the real macro (`typedef char ..._check[X == lit ? 1 : -1]`, the
+idiom already used at `mccast.c:2369`). Verified by deliberately corrupting one:
+the compiler build fails with `size of array is negative`.
+
+Note `VT_VALMASK`/`VT_LOCAL`/`VT_SYM` in that block are the **`SValue.r` namespace**
+and must not move; only `VT_BITFIELD`, `VT_LONG`, `VT_BTYPE` did.
+
+### Wire formats: only the JIT intent blob needed action
+
+Of the six, five carry the type word at full 32-bit width with `bp`/`bs` in separate
+fields and never outlive the process — the AST arena (`int32_t type_t`),
+`rir_castgv_*`, `AstInlineFn::param_typ[]`, `rir_xt_t[]`, and `RirMark` (whose one
+bit-pack, `rir_mark_vla`, gives the type word the entire low 32 bits of a 64-bit
+slot). The three `uint32_t` AST hash folds do not truncate and nothing persists a
+hash against a golden constant.
+
+The intent blob is the exception and it is genuinely cross-run: `--embed-jit` bakes
+it into `.data` with a constructor that re-deserializes it at program start. Its
+`salt` is written but **never compared** — confirmed, the only salt equality check
+in the tree is the KGC header — so `MCCJIT_INTENT_FORMAT` is the sole invalidation
+lever. Verified end to end: a blob extracted from a binary built at `ff517a43`
+carries `format=12`, the new compiler stamps `13`, and the new reader returns
+`deserialize_rc=-1` / `peek_warm=0` on the old one. Rejected, not misread.
+
+### Gates
+
+Build clean (0 warnings). **8-backend object comparison: 768 cases
+(8 targets × {-O0,-O2} × 48 files), byte-identical**, corpus extended past structs
+to every base type, `_Float16`, `__int128`, `_Complex`, `long double`, `_Bool`,
+vectors, VLAs, function pointers, atomics, `constexpr`/`nullptr`, and the whole tag
+enumeration including inline asm. `ctest` 8145/8145; cross `ctest -L
+"cross|qemu|wine"` 90/90; `tracegate`/`schemagate` clean; fixpoint byte-identical at
+o1=o2=o3=**3076911** (baseline 3076623 — a stable new size, as expected when the
+compiler's own source changes). Board: 47,715 tests, **one** status change,
+`gcc.dg/flex-array-counted-by-pr121000.c` FAILEXE→PASS — and that object is
+**byte-identical** between the two compilers while the single binary passes 17/30
+and segfaults 13/30, so it is the known flake and not movement.
+
+The object comparison is only worth what it exercises: introducing a deliberate
+one-bit error in the riscv64 decoder changes **10** corpus files, so the
+byte-identical result is a real result and not a vacuous one.
+
+### Two pre-existing bugs found, neither touched
+
+1. **`riscv64` aborts on every mixed int/float two-register struct.**
+   `arch_transfer_ret_regs` asserts `vtop->r == (VT_LOCAL | VT_LVAL)` and it fails
+   for `{int,float}`, `{float,int}`, `{double,int}`, `{int,double}`, `{long,float}`,
+   `{float,long}` and nested `{int}{double}` — 7 of 37 shapes, at `-O0` and `-O2`.
+   **Identical at `ff517a43`**, so it predates the renumber. The other 30 shapes are
+   byte-identical. Worth its own task: this is the `prc[1] != prc[2]` return path,
+   and an assert means every such struct return is a hard abort, not a miscompile.
+2. **`arm64` `store()` still does not strip `VT_MUSTCAST`.** `load()`
+   (`arm64-gen.c:580`) masks `~(VT_BOUNDED|VT_NONCONST|VT_NONLVAL|VT_MUSTCAST|VT_REGDISP)`
+   before its `svr ==` comparisons; `store()` (`:782`) masks the same set **minus
+   `VT_MUSTCAST`**, so a value carrying it takes the fallback path in `store` while
+   `load` matches. This is the same class as the bug that cost a cross-tier failure,
+   one mask narrower. `SValue.r` is a different namespace from the type word and was
+   not renumbered, so this is unrelated to step 2 — but it is still wrong.
 
 ---
 

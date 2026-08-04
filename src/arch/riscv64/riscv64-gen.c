@@ -558,7 +558,7 @@ static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRA
 				{ MCC_TRACE("br\n"); rc[0] = -1; }
 			else if (type->ref->c == 2 && rc[0] && rc[1] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
 				rc[++rc[0]] = MCC_RC_FLOAT;
-				fieldofs[rc[0]] = ((ofs + sz) << 4) | (type->ref->type.t & VT_BTYPE);
+				fieldofs[rc[0]] = ((ofs + sz) << 5) | (type->ref->type.t & VT_BTYPE);
 			} else if (type->ref->c == 2)
 				{ MCC_TRACE("br\n"); rc[0] = -1; }
 		}
@@ -566,7 +566,7 @@ static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRA
 		{ MCC_TRACE("br\n"); rc[0] = -1; }
 	else if (!rc[0] || rc[1] == MCC_RC_FLOAT || is_float_abi(type->t)) { MCC_TRACE("br\n");
 		rc[++rc[0]] = is_float_abi(type->t) ? MCC_RC_FLOAT : MCC_RC_INT;
-		fieldofs[rc[0]] = (ofs << 4) | ((type->t & VT_BTYPE) == VT_PTR ? VT_LLONG : type->t & VT_BTYPE);
+		fieldofs[rc[0]] = (ofs << 5) | ((type->t & VT_BTYPE) == VT_PTR ? VT_LLONG : type->t & VT_BTYPE);
 	} else
 		{ MCC_TRACE("br\n"); rc[0] = -1; }
 }
@@ -578,14 +578,14 @@ static void reg_pass(CType *type, int *prc, int *fieldofs, int named) { MCC_TRAC
 		int align, size = type_size(type, &align);
 		prc[0] = (size + 7) >> 3;
 		prc[1] = prc[2] = MCC_RC_INT;
-		fieldofs[1] = (0 << 4) | (size <= 1
+		fieldofs[1] = (0 << 5) | (size <= 1
 																	? VT_BYTE
 															: size <= 2
 																	? VT_SHORT
 															: size <= 4
 																	? VT_INT
 																	: VT_LLONG);
-		fieldofs[2] = (8 << 4) | (size <= 9
+		fieldofs[2] = (8 << 5) | (size <= 9
 																	? VT_BYTE
 															: size <= 10
 																	? VT_SHORT
@@ -597,7 +597,7 @@ static void reg_pass(CType *type, int *prc, int *fieldofs, int named) { MCC_TRAC
 
 ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	int align, size, areg[2];
-	int *info = mcc_malloc((nb_args + 1) * sizeof(int));
+	long long *info = mcc_malloc((nb_args + 1) * sizeof(long long));
 	int stack_adj = 0, tempspace = 0, stack_add, splitofs = 0;
 	int old = (vtop[-nb_args].type.ref->f.func_type == FUNC_OLD);
 	SValue *sv;
@@ -654,7 +654,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			info[i] = areg[prc[1] - 1]++;
 			if (!byref)
 				{ MCC_TRACE("br\n"); info[i] |= (fieldofs[1] & VT_BTYPE) << 12; }
-			assert(!(fieldofs[1] >> 4));
+			assert(!(fieldofs[1] >> 5));
 			if (nregs == 2) { MCC_TRACE("br\n");
 				if (prc[2] == MCC_RC_FLOAT || areg[0] < 8)
 					{ MCC_TRACE("br\n"); info[i] |= (1 + areg[prc[2] - 1]++) << 7; }
@@ -663,8 +663,8 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 					stack_adj += 8;
 				}
 				if (!byref) { MCC_TRACE("br\n");
-					assert((fieldofs[2] >> 4) < 2048);
-					info[i] |= fieldofs[2] << (12 + 4);
+					assert((fieldofs[2] >> 5) < 2048);
+					info[i] |= (long long)fieldofs[2] << (12 + 5);
 				}
 			}
 		}
@@ -689,7 +689,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				size = type_size(&vtop->type, &align);
 				if (info[i] & 64) { MCC_TRACE("br\n");
 					vset(&char_pointer_type, MCC_TREG_SP, 0);
-					vpushi(stack_adj + (info[i] >> 7));
+					vpushi(stack_adj + (int)(info[i] >> 7));
 					gen_op('+');
 					vpushv(vtop);
 					vrott(3);
@@ -723,7 +723,8 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		}
 	}
 	for (int i = 0; i < nb_args; i++) { MCC_TRACE("br\n");
-		int ii = info[nb_args - 1 - i], r = ii, r2 = r;
+		long long ii = info[nb_args - 1 - i];
+		int r = (int)ii, r2 = r;
 		if (!(r & 32)) { MCC_TRACE("br\n");
 			CType origtype;
 			int loadt;
@@ -737,7 +738,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); goto done; }
 			loadt = vtop->type.t & VT_BTYPE;
 			if (loadt == VT_STRUCT) { MCC_TRACE("br\n");
-				loadt = (ii >> 12) & VT_BTYPE;
+				loadt = (int)(ii >> 12) & VT_BTYPE;
 			}
 			if (info[nb_args - 1 - i] & 16) { MCC_TRACE("br\n");
 				assert(!r2);
@@ -760,7 +761,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				vswap();
 				gaddrof();
 				vtop->type = char_pointer_type;
-				vpushi(ii >> 20);
+				vpushi((int)(ii >> (12 + 5 + 5)));
 #if MCC_CONFIG_DIAG_RT >= 2
 				if ((origtype.t & VT_BTYPE) == VT_STRUCT)
 					{ MCC_TRACE("br\n"); mcc_state->do_bounds_check = 0; }
@@ -773,7 +774,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				vtop->type = origtype;
 				loadt = vtop->type.t & VT_BTYPE;
 				if (loadt == VT_STRUCT) { MCC_TRACE("br\n");
-					loadt = (ii >> 16) & VT_BTYPE;
+					loadt = (int)(ii >> (12 + 5)) & VT_BTYPE;
 				}
 				save_reg_upstack(r2, 1);
 				vtop->type.t = loadt | (vtop->type.t & VT_UNSIGNED);
@@ -953,9 +954,9 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 					addr += 8;
 					ES(0x23, 3, 8, 5, loc + i * 8);
 				} else if (prc[1 + i] == MCC_RC_FLOAT) { MCC_TRACE("br\n");
-					ES(0x27, (size / regcount) == 4 ? 2 : 3, 8, 10 + areg[1]++, loc + (fieldofs[i + 1] >> 4));
+					ES(0x27, (size / regcount) == 4 ? 2 : 3, 8, 10 + areg[1]++, loc + (fieldofs[i + 1] >> 5));
 				} else { MCC_TRACE("br\n");
-					ES(0x23, 3, 8, 10 + areg[0]++, loc + (fieldofs[i + 1] >> 4));
+					ES(0x23, 3, 8, 10 + areg[0]++, loc + (fieldofs[i + 1] >> 5));
 				}
 			}
 		}
@@ -1003,12 +1004,12 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret,
 ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 	int prc[3], fieldofs[3];
 	reg_pass(&vtop->type, prc, fieldofs, 1);
-	assert(prc[0] == 2 && prc[1] != prc[2] && !(fieldofs[1] >> 4));
+	assert(prc[0] == 2 && prc[1] != prc[2] && !(fieldofs[1] >> 5));
 	assert(vtop->r == (VT_LOCAL | VT_LVAL));
 	vpushv(vtop);
 	vtop->type.t = fieldofs[1] & VT_BTYPE;
 	(aftercall ? store : load)(prc[1] == MCC_RC_INT ? REG_IRET : REG_FRET, vtop);
-	vtop->c.i += fieldofs[2] >> 4;
+	vtop->c.i += fieldofs[2] >> 5;
 	vtop->type.t = fieldofs[2] & VT_BTYPE;
 	(aftercall ? store : load)(prc[2] == MCC_RC_INT ? REG_IRET : REG_FRET, vtop);
 	vtop--;

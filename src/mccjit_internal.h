@@ -12,7 +12,7 @@
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
-	12u
+	13u
 
 #define MCCJIT_UNIT_WHOLE 0u
 #define MCCJIT_UNIT_KERNEL 1u

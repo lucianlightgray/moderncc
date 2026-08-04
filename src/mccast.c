@@ -37,7 +37,9 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #endif
 
 #ifndef VT_BITFIELD
-#define VT_BITFIELD 0x0080
+#define VT_BITFIELD 0x0100
+#else
+typedef char ast_vt_bitfield_check[VT_BITFIELD == 0x0100 ? 1 : -1];
 #endif
 
 #pragma push_macro("malloc")
@@ -702,24 +704,36 @@ static uint64_t ast_ih_sym(AstIhSyms *m, uint64_t sym) { MCC_TRACE("enter\n");
 
 #ifndef VT_VALMASK
 #define VT_VALMASK 0x007f
+#else
+typedef char ast_vt_valmask_check[VT_VALMASK == 0x007f ? 1 : -1];
 #endif
 #ifndef VT_LOCAL
 #define VT_LOCAL 0x0032
+#else
+typedef char ast_vt_local_check[VT_LOCAL == 0x0032 ? 1 : -1];
 #endif
 #ifndef VT_SYM
 #define VT_SYM 0x0200
+#else
+typedef char ast_vt_sym_check[VT_SYM == 0x0200 ? 1 : -1];
 #endif
 #ifndef VT_LONG
-#define VT_LONG 0x0800
+#define VT_LONG 0x1000
+#else
+typedef char ast_vt_long_check[VT_LONG == 0x1000 ? 1 : -1];
 #endif
 #ifndef MCC_PTR_SIZE
 #define MCC_PTR_SIZE 8
 #endif
 #ifndef VT_BTYPE
-#define VT_BTYPE 0x000f
+#define VT_BTYPE 0x001f
+#else
+typedef char ast_vt_btype_check[VT_BTYPE == 0x001f ? 1 : -1];
 #endif
 #ifndef VT_PTR
 #define VT_PTR 5
+#else
+typedef char ast_vt_ptr_check[VT_PTR == 5 ? 1 : -1];
 #endif
 
 static int ast_ih_sym_dropped(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");

@@ -1081,7 +1081,7 @@ struct filespec {
 #define VT_NONLVAL 0x2000
 #define VT_MUSTBOUND 0x4000
 #define VT_BOUNDED 0x8000
-#define VT_BTYPE 0x000f
+#define VT_BTYPE 0x001f
 #define VT_VOID 0
 #define VT_BYTE 1
 #define VT_SHORT 2
@@ -1133,14 +1133,14 @@ struct filespec {
 #define MCC_REPLAY_IR 0
 #endif
 
-#define VT_UNSIGNED 0x0010
-#define VT_DEFSIGN 0x0020
-#define VT_ARRAY 0x0040
-#define VT_BITFIELD 0x0080
-#define VT_CONSTANT 0x0100
-#define VT_VOLATILE 0x0200
-#define VT_VLA 0x0400
-#define VT_LONG 0x0800
+#define VT_UNSIGNED 0x0020
+#define VT_DEFSIGN 0x0040
+#define VT_ARRAY 0x0080
+#define VT_BITFIELD 0x0100
+#define VT_CONSTANT 0x0200
+#define VT_VOLATILE 0x0400
+#define VT_VLA 0x0800
+#define VT_LONG 0x1000
 
 #if MCC_PTR_SIZE == 4
 #define VT_SIZE_T (VT_INT | VT_UNSIGNED)
@@ -1153,14 +1153,14 @@ struct filespec {
 #define VT_PTRDIFF_T (VT_LONG | VT_LLONG)
 #endif
 
-#define VT_EXTERN 0x00001000
-#define VT_STATIC 0x00002000
-#define VT_TYPEDEF 0x00004000
-#define VT_INLINE 0x00008000
-#define VT_TLS 0x00010000
+#define VT_EXTERN 0x00002000
+#define VT_STATIC 0x00004000
+#define VT_TYPEDEF 0x00008000
+#define VT_INLINE 0x00010000
+#define VT_TLS 0x00020000
 
-#define VT_STRUCT_SHIFT 20
-#define VT_STRUCT_MASK (((1U << (6 + 6)) - 1) << VT_STRUCT_SHIFT | VT_BITFIELD)
+#define VT_STRUCT_SHIFT 21
+#define VT_STRUCT_MASK (((1U << 11) - 1) << VT_STRUCT_SHIFT | VT_BITFIELD)
 
 #define VT_UNION (1 << VT_STRUCT_SHIFT | VT_STRUCT)
 #define VT_ENUM (2 << VT_STRUCT_SHIFT)
@@ -1170,12 +1170,12 @@ struct filespec {
 #define IS_ENUM_VAL(t) ((t & VT_STRUCT_MASK) == VT_ENUM_VAL)
 #define IS_UNION(t) ((t & (VT_STRUCT_MASK | VT_BTYPE)) == VT_UNION)
 
-#define VT_ATOMIC_BIT 0x00020000
+#define VT_ATOMIC_BIT 0x00040000
 #define VT_ATOMIC (VT_ATOMIC_BIT | VT_VOLATILE)
 #define VT_QUALIFY (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT)
 
-#define VT_NULLPTR 0x00040000
-#define VT_CONSTEXPR 0x00080000
+#define VT_NULLPTR 0x00080000
+#define VT_CONSTEXPR 0x00100000
 
 #define IS_NULLPTR(t) (((t) & (VT_BTYPE | VT_NULLPTR)) == (VT_PTR | VT_NULLPTR))
 
