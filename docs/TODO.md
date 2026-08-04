@@ -599,13 +599,34 @@ neither length underflows and neither `memcpy` overruns its freshly allocated bu
 and the handover block above is correct — `ast_arena_free(ast_cur)` frees the *previous*
 arena before `ast_cur = ast_rir_prod` takes the production one.
 
-**This now looks like heap corruption rather than a compiler-model defect**, which
-would also explain why six model-level theories all fit the symptom and all failed.
-The next moves are diagnostic, not analytical: build with ASan (or `MCC_CONFIG_BCHECK`)
-and run the two-line reproducer; or make `ast_arena_free` poison the freed block and
-see whether the arena being read is one that was freed. Do **not** open a seventh
-model-level theory — the measurement says the bytes are being overwritten, not
-mis-derived.
+**Heap corruption is refuted too — seventh theory down.** An
+`-fsanitize=address,undefined` build of mcc **reproduces the fold** (verified: its
+`[ast-mid]` reads `Binary -` and its `[ast-injmp]` reads `Literal 0`) and reports
+**nothing**. So the write is in bounds and legitimate as far as the allocator is
+concerned.
+
+**And it is not an artifact of the probes.** With the three earlier dumps disabled and
+only `[ast-injmp]` firing, it still reads `Literal 0`.
+
+**What the measurements jointly say**, and this is the tightest statement available:
+across `src/mccast.c:15018` → the `[ast-injmp]` probe, the arena has the **same
+pointer, the same root, and the same node count (16)**, while the `Store`'s value child
+changes from a `Binary -` tree to `Literal 0`. Same count with different contents means
+a node was **rewritten in place** — which is exactly what constant folding does — in a
+window whose only calls are `mcc_malloc`, `memcpy` and `setjmp`.
+
+**Where that leaves it.** Every explanation reachable by reading that window has been
+eliminated by measurement: no transform call, no length underflow, no buffer overrun,
+no use-after-free, no sanitizer finding, no probe artifact, identity constant
+throughout. Something rewrites an arena node from code that does not appear in the
+window — a callback, a macro expanding to more than it looks, an `#if`-selected body
+that differs from what the plain reading suggests, or a second thread. **Check what
+those four lines actually expand to** (`mcc_malloc`, `memcpy` and the `setjmp` macro
+are all candidates for being something other than they appear) before assuming the
+source reads the way it looks.
+
+The probes to continue with are in the tree, all under `RIRPRODDUMP=<funcname>`:
+`[rir-proddump]`, `[ast-handover]`, `[ast-mid]`, `[ast-injmp]`, `[ast-predump]`.
 
 ### Earlier framing, superseded: the production arena is correct but the replay does not walk it
 
