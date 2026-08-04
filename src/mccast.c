@@ -4058,7 +4058,17 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 			   while strcpy writes the second. Read the stored location instead
 			   whenever the value could have side effects. */
 			if (ast_nchild(a, st) == 2) { MCC_TRACE("br\n");
-				if (ast_val_has_call(a, ast_child(a, st, 1), 0))
+				/* An unparented Store is not placed as a statement anywhere, so
+				   nothing else will ever perform it -- this StoreVal is its only
+				   chance. Re-deriving just the value here loses the assignment:
+				   `for (pp = list; !!(p = *pp); pp = nn)` reached the arena with the
+				   `p = *pp` Store absent from the tree, so the condition tested the
+				   right value while `p` itself stayed uninitialised and the body
+				   dereferenced garbage. Perform the store and leave its value, which
+				   is what the parser's vstore does. */
+				if (ast_parent(a, st) == AST_NONE)
+					{ MCC_TRACE("br\n"); ast_replay_value(a, st); }
+				else if (ast_val_has_call(a, ast_child(a, st, 1), 0))
 					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 0)); }
 				else
 					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }

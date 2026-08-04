@@ -374,6 +374,47 @@ cells pass against the tightened floors.
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
 
+### The remaining fallbacks are NOT benign: `ptr_unlink` segfaults under the arena
+
+Ten-line reproducer, no builtin, no optimizer dependence:
+
+```c
+static void ptr_unlink(void *list, void *e, unsigned next) {
+	void **pp, **nn, *p;
+	for (pp = list; !!(p = *pp); pp = nn) {
+		nn = (void *)((char *)p + next);
+		if (p == e) { *pp = *nn; break; }
+	}
+}
+```
+
+Parser: prints the right answer. `MCC_RIR_NOFB=1`: **SIGSEGV**. This is the shape that
+takes down the JIT self-host, and it is a real miscompile rather than a byte
+difference — which settles the question of whether the six/thirty-nine byte-divergent
+bodies are safe to ship. **They are not.**
+
+`RIRPRODDUMP` shows why. The arena is
+
+```
+If
+  Binary op#149 (!=)
+    StoreVal            <- refers to a Store that is NOT in the tree as a statement
+    Literal 0
+```
+
+The `p = *pp` `Store` never appears as a statement anywhere, so nothing performs it.
+Both `StoreVal` paths only produce a *value*: one reuses a live register, the other
+re-derives the value expression. The condition therefore tested the right number while
+`p` stayed uninitialised and the body dereferenced garbage.
+
+**Partly fixed.** An unparented `Store` reached through a `StoreVal` is now performed
+rather than merely evaluated (`src/mccast.c`, the `AST_StoreVal` arm) — that is the
+only chance it will ever be performed. The segfault becomes a hang: the store is
+emitted, but at the loop latch rather than the loop top, so `p` is still not set when
+the body runs. Placement is the remaining half and is unsolved. The change costs
+nothing measurable — `mcc.c` at `-O1` stays at `used 1121, fallback 39`, ctest 8230 of
+8230 — so it is kept as a partial correctness improvement, not as a closure.
+
 ### The real scope: 39 fallbacks in `src/mcc.c` at `-O1`, not 6
 
 **Every census in this file before this point was corpus-scoped.** `tests/` is not the
