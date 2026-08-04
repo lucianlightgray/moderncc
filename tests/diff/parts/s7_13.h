@@ -32,12 +32,16 @@ void s7_13_setjmp_signal_align(void) {
 	printf("s7_13 signal prev_returned=%d\n", prev2 == s7_13_handler);
 #endif
 
-#if __STDC_VERSION__ >= 202311L
-	printf("s7_13 stdalign defs=%d\n",
-				 alignof(int) == _Alignof(int) && alignof(double) == _Alignof(double));
-#else
+/* Keyed on the macro, not on __STDC_VERSION__: gcc's <stdalign.h> drops
+   __alignas_is_defined as soon as __STDC_VERSION__ > 201710L, so a
+   >= 202311L threshold leaves a hole for every C2x-era version in between
+   (gcc 13 -std=gnu23 reports 202000L) where neither arm compiles. */
+#ifdef __alignas_is_defined
 	printf("s7_13 stdalign defs=%d\n",
 				 __alignas_is_defined == 1 && __alignof_is_defined == 1);
+#else
+	printf("s7_13 stdalign defs=%d\n",
+				 alignof(int) == _Alignof(int) && alignof(double) == _Alignof(double));
 #endif
 
 	printf("s7_13 _Alignof int matches=%d\n",

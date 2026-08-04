@@ -260,6 +260,73 @@ static int cmp_str(const void *a, const void *b) {
 	return strcmp(*(const char *const *)a, *(const char *const *)b);
 }
 
+/* __STDC_VERSION__ as <cc> reports it under <stdflag>, or -1 if the probe
+   fails. Preprocess-only, so this costs a fraction of a real compile. */
+static long probe_stdc_version(const char *cc, const char *stdflag,
+															 const char *src, const char *out) {
+	const char *argv[] = {cc, stdflag, "-E", "-dM", src, 0};
+	char *text, *p;
+	long v = -1;
+	if (run_to(argv, out))
+		return -1;
+	text = ts_read_file(out, NULL);
+	if (!text)
+		return -1;
+	/* Anchored on the #define so it cannot match C23's __STDC_VERSION_*_H__. */
+	p = strstr(text, "#define __STDC_VERSION__");
+	if (p) {
+		p += sizeof "#define __STDC_VERSION__" - 1;
+		while (*p == ' ' || *p == '\t')
+			p++;
+		v = strtol(p, NULL, 10);
+	}
+	free(text);
+	return v;
+}
+
+/* The parts suite is a 3-way stdout identity: gcc, clang and mcc must be asked
+   the *same* language question, and a -std name is not that question. gcc 13
+   accepts -std=gnu23 but reports __STDC_VERSION__ 202000L, where clang and mcc
+   report 202311L -- so a hardcoded gnu23 silently compared three compilers
+   against two different language versions. Resolve the newest candidate all
+   three agree on instead, which keeps C23 coverage wherever the reference
+   toolchain implements it and steps down where it does not.
+
+   Agreement, not acceptance: whether a compiler *parses* -std=gnu23 says
+   nothing about which language it then compiles, and it is the mismatch that
+   breaks a 3-way identity. gnu2x is in the list because gcc 12 and earlier
+   reject the gnu23 spelling outright and want that one instead; a rejected
+   probe reports -1 and simply loses the round. */
+static const char *resolve_parts_std(const char *gcc, const char *clang,
+																		 const char *mcc, const char *work) {
+	static const char *const cands[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17",
+																			"-std=gnu11"};
+	char src[4096], out[4096];
+	FILE *f;
+	size_t i;
+	ts_path(src, sizeof src, work, "stdprobe.c");
+	ts_path(out, sizeof out, work, "stdprobe.out");
+	f = fopen(src, "w");
+	if (!f)
+		return cands[0];
+	fclose(f);
+	for (i = 0; i < sizeof cands / sizeof *cands; i++) {
+		long g = probe_stdc_version(gcc, cands[i], src, out);
+		long c = probe_stdc_version(clang, cands[i], src, out);
+		long m = probe_stdc_version(mcc, cands[i], src, out);
+		if (g > 0 && g == c && c == m) {
+			printf("parts-suite: %s -> __STDC_VERSION__ %ldL on gcc, clang and mcc\n",
+						 cands[i], g);
+			return cands[i];
+		}
+		fprintf(stderr,
+						"parts-suite: %s disagrees (gcc %ldL, clang %ldL, mcc %ldL)\n",
+						cands[i], g, c, m);
+	}
+	fprintf(stderr, "parts-suite: no common -std; falling back to %s\n", cands[0]);
+	return cands[0];
+}
+
 static int suite_parts(int argc, char **argv) {
 	const char *gcc = opt(argc, argv, "--gcc", NULL);
 	const char *clang = opt(argc, argv, "--clang", NULL);
@@ -273,6 +340,7 @@ static int suite_parts(int argc, char **argv) {
 	int list_mode = has_flag(argc, argv, "--list");
 	char *wraps[512];
 	char Ipart[4096], Iinc[4096], Bflag[4096];
+	const char *refstd;
 	int nw, i, ok = 0, fail = 0;
 
 	if (!list_mode && (!gcc || !clang || !mcc || !bdir || !idir || !parts || !work)) {
@@ -295,6 +363,7 @@ static int suite_parts(int argc, char **argv) {
 		return 0;
 	}
 	host_mkdirs(work);
+	refstd = resolve_parts_std(gcc, clang, mcc, work);
 	snprintf(Ipart, sizeof Ipart, "-I%s", parts);
 	snprintf(Iinc, sizeof Iinc, "-I%s", idir);
 	snprintf(Bflag, sizeof Bflag, "-B%s", bdir);
@@ -330,7 +399,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Ipart);
 			A(&v, "-w");
 			A(&v, "-O0");
-			A(&v, ref_std_flag(v.a[0]));
+			A(&v, refstd);
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, eg);
@@ -355,7 +424,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Ipart);
 			A(&v, "-w");
 			A(&v, "-O0");
-			A(&v, ref_std_flag(v.a[0]));
+			A(&v, refstd);
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, ec);
@@ -379,6 +448,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Bflag);
 			A(&v, Iinc);
 			A(&v, Ipart);
+			A(&v, refstd);
 			A(&v, w);
 			A(&v, "-lm");
 			A(&v, "-o");
