@@ -311,7 +311,7 @@ One line: `ast_env_gate("MCC_RIR_ONLY", 0)` → `1` at `src/mccast.c:2040`. Note
 - **`vendor/` is gitignored but a *symlink* named `vendor` is not matched by `/vendor/`.** A git worktree has no sysroots, so four ELF cross keys compile ~77 files of 276 and still print a green board. Symlink it, verify `ls vendor/gentoo-stage3-riscv64-glibc/usr/include`, and **never `git add -A`**. The same applies to a `cmake-cross` symlink, which is what makes the docker-gated cells actually run instead of SKIP.
 - **A long checkout path fails 22 `exec*/bound_global`** — `bt_info.file` is `char[100]`. Not a regression. Configure through a short symlink (`/tmp/mccw`) to avoid it.
 - **Root-owned leftovers under `<build>/riscv64-promote-docker/`** fail that cell in 0.00 s with a permission error and read as a real failure. Clear them before believing it.
-- **`superopt/promote-floor` is load-sensitive and will read as a regression.** It compiles at `-O4`, which is the time-budgeted size-scored search, and asserts the search does not subtract `MCC_AST_PROMOTE`. Under `ctest -j 8` it failed once in 1.12 s and passed the next full run in 0.61 s, and it passes standalone every time. A slower run explores fewer candidates and can miss the promoted variant. Re-run it alone before believing it, exactly like the `selfhost-*` contention class below.
+- ~~**`superopt/promote-floor` is load-sensitive and will read as a regression.**~~ **Fixed** — the test is `RUN_SERIAL` now, so it no longer needs re-running by hand. The underlying cause is worth keeping in mind: `-O4` is the *wall-clock*-budgeted search (`host_clock_ms() - start < budget_ms`), so a loaded machine explores fewer candidates and can miss the promoted variant. Any future test that compares two `-O4` outputs has the same exposure, and `RUN_SERIAL` narrows the window rather than closing it — the search is genuinely nondeterministic under load.
 - **Do not run a twelve-key sweep and `ctest -j 8` concurrently** — the contention alone fails several `selfhost-*` cells.
 - **Pin `SOURCE_DATE_EPOCH`** for any object A/B, or a file differs from its own second compile.
 - **`ast_env_int` returns its default for values `<= 0`**, so `MCC_RIR_PROD=0` means *on*; unset it instead. `ast_env_gate` handles `0` correctly.
@@ -4293,60 +4293,141 @@ must either happen inside the earlier `ast_ident_run` fixpoint or see through
 `Convert`+`-`.
 ---
 
-## W7 — riscv64 dynamic TLS in a shared object (8 qemu-riscv64 cells)
+## W7 — riscv64 local-exec TLS in a PIE — CLOSED
 
-`qemu-riscv64` fails 8 of 23 cells (`-glibc`, `-O2`, `-O3`, `-Os` and the four `-musl`
-equivalents). Every one is the same two conformance cases:
+`qemu-riscv64` failed 8 of 23 cells, all of them the same two conformance cases
+(`tls [pic]`, `tls_aggr [pic]`) refusing with
 
-    tls [pic]: compile failed
-    tls_aggr [pic]: compile failed
     mcc: error: local-exec TLS in a shared object is not valid;
                 dynamic TLS is not implemented for riscv64
 
-This is a missing feature, not a regression: the non-PIC legs pass, and only the
-`[pic]` variants are refused. It is also **not** what this file claims elsewhere.
-The TLS reconciliation note says moderncc is "ahead on two counts upstream has no
-equivalent for: riscv64 general-dynamic TLS (`riscv64_tls_gd_a0`) and arm64 dynamic
-TLS in a shared object". The arm64 half holds; the riscv64 half does not extend to a
-shared object, which is what these cells exercise. Correct that claim when the
-feature lands rather than leaving the two statements side by side.
+The message was describing a situation that was not occurring. The `[pic]` leg builds
+`-fPIC -pie` (`tools/mccharness.c:2270`), a position-independent **executable**, and
+`mcc_set_output_type` ORs `MCC_OUTPUT_DYN` -- which *is* `MCC_OUTPUT_DLL` -- into an
+EXE whenever `-pie` is on. So a PIE carries **both** bits.
 
-### The mechanism, traced
+That made the two halves disagree:
 
-The `[pic]` leg is **not** a shared object. `tools/mccharness.c:2270` adds
-`-fPIC -pie` -- a position-independent *executable*. That matters, because local-exec
-TLS is perfectly valid in a PIE and gcc uses it there by default.
+- `riscv64-gen.c` gates general-dynamic on `pic && DLL && !EXE`, so for a PIE it
+  correctly declined GD and emitted local-exec, which is valid there -- a PIE's TLS
+  block sits at a fixed offset from the thread pointer, and gcc uses local-exec too.
+- `riscv64-link.c:353` then refused that local-exec on the DLL bit **alone**, reading
+  a PIE as a shared object.
 
-What actually happens:
+So this was never a missing feature. `riscv64_tls_gd_a0` exists and the non-PIC legs
+always passed; the linker check was simply broader than the codegen condition that
+produces the relocation. Fixed by testing the same condition in both places: refuse
+only a real shared library, `DLL && !EXE`.
 
-1. `src/arch/riscv64/riscv64-gen.c:171` gates the general-dynamic path on
+Verified with qemu-user, not by inspection: both cases build **and run** clean under
+`qemu-riscv64 -L <sysroot>`, and the preset went 15/23 to **23 of 23**. The docker
+tier is 26 of 26.
 
-       mcc_state->pic && (output_type & MCC_OUTPUT_DLL) && !(output_type & MCC_OUTPUT_EXE)
+`arm-link.c:427` and `arm64-link.c:430` carry the identical over-broad check. Neither
+is reachable today because their codegen emits TLSDESC under `pic`, so TPREL never
+arrives -- left alone deliberately rather than changed blind, but they are the same
+latent bug if either target ever emits local-exec under `-pie`.
 
-   `-pie` sets `s->pie`, not the DLL bit, so this is false and the code falls through
-   to local-exec TPREL.
-2. `src/arch/riscv64/riscv64-link.c:353` then refuses TPREL whenever
-   `output_type & MCC_OUTPUT_DLL`, with the "shared object" wording.
 
-**arm64 has the identical linker check** at `src/arch/arm64/arm64-link.c:430` and
-passes anyway, because `arm64-gen.c` gates on `mcc_state->pic` **alone** and emits
-TLSDESC, so TPREL never reaches the linker. `arm-link.c:427` carries the same message.
-So the riscv64 general-dynamic path exists (`riscv64_tls_gd_a0`,
-`src/arch/riscv64/riscv64-gen.c:139`) -- its guard is simply narrower than arm64's.
+---
 
-Note the two are not the same repro: compiling `tests/qemu/conformance/tls.c` with
-`-fPIC -pie` and no sysroot **succeeds**. The failure needs the harness's
-`--sysroot`/`-isystem`/`-L` set, so reproduce it with those, not with a bare command.
+## The 26-preset Linux matrix: all green, and what it took
 
-### Three candidate fixes, in order of preference
+Run clean at `63d1d1fe` — configure, build and test from scratch per preset, nothing
+editing the tree concurrently. **26 of 26 pass.**
 
-1. **Widen the riscv64 codegen guard to match arm64** (`mcc_state->pic`). Smallest
-   change, uses the GD path that already exists. Verify it does not regress the
-   non-PIC legs, which currently pass.
-2. **Narrow the linker check** so it refuses TPREL only for a true shared library
-   rather than anything with the DLL bit. More correct -- local-exec in a PIE is
-   legal and faster than GD -- but touches arm/arm64 wording too.
-3. **Skip the two `[pic]` cases for riscv64** in the qemu conformance list, exactly
-   as `tools/mccharness.c:2255` already does for i386 with the reason "i386 -fPIC TLS
-   unsupported (mcc emits no GD/LDM TLS; errors by design)". Honest, but it is the
-   fallback if 1 and 2 both prove awkward.
+    debug  release  sanitize  diagnostics  cst  cross
+    linux-gcc  -cross  -musl  -release  -static  -multisource
+    linux-gcc-asm-off  -predefs-off  -pie  -dwarf  -diagnostics  -sanitize
+    linux-clang  -cross  -release
+    qemu-x86_64  qemu-i386  qemu-arm  qemu-arm64  qemu-riscv64
+
+Six were red at the start of the run. All six are closed:
+
+| preset(s) | was | cause |
+|---|---|---|
+| `release`, `linux-gcc-pie` | `superopt/promote-floor` | wall-clock search under `-j32`; now `RUN_SERIAL` |
+| `linux-clang` ×3 | `mcctest`, `mcctest-bcheck` | clang was acting as the "GCC-compatible reference"; now prefers gcc on PATH on Linux |
+| `qemu-i386` | `flt_eval_method` | `__FLT_EVAL_METHOD__` was 0 while `FLT_EVAL_METHOD` was 2 |
+| `qemu-riscv64` | 8 cells | W6/W7 — the PIE local-exec TLS refusal |
+
+macOS and MSVC presets are excluded: they cannot run on a Linux host. The docker tier
+is separately green at 26 of 26, and includes `selfhost-riscv64-docker`.
+
+**A methodology note that cost real time.** The first attempt at this matrix ran while
+I was still editing the tree, and it configures and builds from the live source. It
+reported `cross` failing 8216 of 8232, `linux-gcc` as BUILD_FAIL, and `cst` at 10
+failures. **Every one of those was my own mid-edit state, not a defect** — all green on
+the clean re-run. If a sweep like this is worth starting, it is worth freezing the tree
+first; otherwise its output is indistinguishable from a real regression and someone
+will chase it.
+
+### Census at the close
+
+`mcc.c -O1`: **used 1174, fallback 31, skip 11**, down from 34-36 over the session and
+with four wrong-code defects closed underneath it (promotion of assigning loop
+conditions, `-freverse-funcargs` argument order, non-store loop-condition effects, and
+the chained-store duplication). The remaining 31 are catalogued by first-diff offset
+and length delta earlier in this file; `RVATTR` is the tool that makes them tractable.
+
+---
+
+## Three miscompiles the census could not distinguish from reordering
+
+Found by disassembling the fallback bodies and diffing the *instructions* rather than
+the bytes (`docs/fallbacks-O1.md`, regenerate per the note below). All three were
+sitting in the census looking innocuous; two had a **zero** length delta, which is the
+least suspicious row shape there is.
+
+| body | verdict | the difference | consequence |
+|---|---|---|---|
+| `put_stabs` | `bytes`, delta 0 | `sub rax,0xc` → `sub rax,0x1` | pointer 11 bytes off the intended stab record |
+| `next` | `bytes`, delta 0 | `ja` → `jg` | every token below `0xa8` treated as a digraph |
+| `const_ref_data`, `format_str_literal` | `len`, +1 | `mov ecx,[rcx]` → `mov rcx,[rcx]` | 8-byte read of a value cast to `unsigned` |
+
+**One root cause behind all three: a cast that emits no instruction leaves no trace in
+the arena.** `gen_cast` returns without emitting for a pointer→pointer cast, for a
+signedness-only cast on a value already in a register, and for an lvalue narrowing on
+the `ALLOW_SUBTYPE_ACCESS` path. No instruction means no IR op, no hook, and no
+`AST_Convert` node — so the replay re-derives the operation from operand types that no
+longer carry the cast, and picks a different element size, signedness, or width.
+
+`src/mccrir.c` already reconciles arena types against the parser's captured `SValue`
+in three places. Each had a gap on exactly one side:
+
+- the `GENOP` pointer repair read `ast_type_t(cur)` directly, and a `Binary` from a
+  previous `GENOP` carries type 0, so `ptr-arith → cast → ptr-arith` chains bailed out;
+- the genop signedness reconcile had `unsigned → signed` but no mirror;
+- `rir_stamp_sv` reconciled widening (`cs >= vs2`) but discarded narrowing.
+
+**None of the three had a use-site fix.** The information is physically absent from the
+arena by the time the replay runs, which is worth remembering the next time the "fix at
+the USE site" rule is applied — it holds only where the arena still carries what is
+needed.
+
+Measured on the combined tree: `mcc.c -O1` **31 → 24** fallbacks (`-O2` 32 → 25, `-O4`
+60 → 54), `used` 1174 → 1181. ctest 8255 with only the two banked W6 i386 C2 cells,
+docker tier 26 of 26, all four side configurations build.
+
+### Eight bodies proven equivalent, not fixed
+
+Audited separately and all safe: `put_elf_sym`, `relocate_syms`, `bind_exe_dynsyms`,
+`export_global_syms`, `rt_find_state`, `_mcc_backtrace`, `case_adjacent`, `so_filesize`.
+Seven are one transposed pair of *adjacent* loads with no store, call or barrier
+between them — two loads with no intervening write read the same values in either
+order, so aliasing never arises; the hoisted one is always a `[rbp-disp8]` frame slot
+that cannot fault. `so_filesize` is different: a then/else block layout swap in a
+ternary, both arms 55 bytes landing on the same join point.
+
+These are the natural first entries for `RIREQUIV` (`rir_c2_equiv_proven`,
+`src/mccrir.c`), whose comment already says the proof must come from outside the
+compiler. Not wired up yet.
+
+### Regenerating docs/fallbacks-O1.md
+
+Not tracked -- it is a snapshot that goes stale the moment the census moves. Rebuild by
+dumping full bodies (`MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=20000`), disassembling both
+legs with `objdump -D -b binary -m i386:x86-64 -M intel --no-show-raw-insn`, and diffing
+with **addresses dropped and branch targets rewritten as signed displacements** --
+without those two normalisations a body that shifts by a few bytes reads as wholly
+rewritten (`parse_include` showed 256 changed lines instead of 42).
