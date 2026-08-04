@@ -847,6 +847,19 @@ static int handle_stray_noerror(int err) { MCC_TRACE("enter\n");
 		newl:
 			file->line_num++;
 		} else { MCC_TRACE("br\n");
+			if (ch == ' ' || ch == '\t' || ch == '\v' || ch == '\f') { MCC_TRACE("br\n");
+				uint8_t *q = file->buf_ptr;
+				while (q < file->buf_end &&
+							 (*q == ' ' || *q == '\t' || *q == '\v' || *q == '\f'))
+					{ MCC_TRACE("br\n"); q++; }
+				if (q < file->buf_end && *q == '\r')
+					{ MCC_TRACE("br\n"); q++; }
+				if (q < file->buf_end && *q == '\n') { MCC_TRACE("br\n");
+					file->buf_ptr = q;
+					mcc_warning("backslash and newline separated by space");
+					goto newl;
+				}
+			}
 			if (ch == '\r') { MCC_TRACE("br\n");
 				ch = next_c();
 				if (ch == '\n')
@@ -965,6 +978,11 @@ static uint8_t *parse_pp_string(uint8_t *p, int sep, CString *str) { MCC_TRACE("
 			if (c == CH_EOF) { MCC_TRACE("br\n");
 			unterminated_string:
 				tok_flags &= ~TOK_FLAG_BOL;
+				if (sep != '>' && !pp_expr &&
+						mcc_state->output_type == MCC_OUTPUT_PREPROCESS) { MCC_TRACE("br\n");
+					mcc_warning("missing terminating %c character", sep);
+					return p;
+				}
 				mcc_error("missing terminating %c character", sep);
 			} else if (c == '\\') { MCC_TRACE("br\n");
 				if (str)
@@ -1967,6 +1985,37 @@ static int pp_has_builtin_arg(void) { MCC_TRACE("enter\n");
 	return define_find(tok) != NULL;
 }
 
+static int pp_has_attribute_arg(void) { MCC_TRACE("enter\n");
+	static const char * const attrs[] = {
+		"alias", "aligned", "always_inline", "cdecl", "cleanup", "const",
+		"constructor", "deprecated", "destructor", "dllexport", "dllimport",
+		"fallthrough", "fastcall", "format", "gnu_inline", "maybe_unused",
+		"mode", "nodebug", "nodecorate", "nodiscard", "noinline", "noreturn",
+		"packed", "pure", "regparm", "reproducible", "section", "stdcall",
+		"thiscall", "transparent_union", "unsequenced", "unused", "used",
+		"vector_size", "visibility", "weak"
+	};
+	char buf[64];
+	const char *n;
+	size_t l, i;
+
+	if (tok < TOK_IDENT)
+		{ MCC_TRACE("br\n"); return 0; }
+	n = get_tok_str(tok, NULL);
+	l = strlen(n);
+	if (l > 4 && n[0] == '_' && n[1] == '_' && n[l - 1] == '_' && n[l - 2] == '_' &&
+			l - 4 < sizeof buf) { MCC_TRACE("br\n");
+		memcpy(buf, n + 2, l - 4);
+		buf[l - 4] = '\0';
+		n = buf;
+	}
+	for (i = 0; i < sizeof attrs / sizeof attrs[0]; i++) { MCC_TRACE("br\n");
+		if (!strcmp(n, attrs[i]))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 	int c, t;
 	int t0 = tok;
@@ -2046,6 +2095,7 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		} else if (pp_builtin_func(tok)) { MCC_TRACE("br\n");
 			int depth = 1;
 			int want_builtin = !strcmp(get_tok_str(tok, NULL), "__has_builtin");
+			int want_attr = !strcmp(get_tok_str(tok, NULL), "__has_attribute");
 			int first = 1;
 			c = 0;
 			next();
@@ -2062,8 +2112,8 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); depth++; }
 				else if (tok == ')')
 					{ MCC_TRACE("br\n"); depth--; }
-				else if (first && want_builtin) { MCC_TRACE("br\n");
-					c = pp_has_builtin_arg();
+				else if (first && (want_builtin || want_attr)) { MCC_TRACE("br\n");
+					c = want_builtin ? pp_has_builtin_arg() : pp_has_attribute_arg();
 					first = 0;
 				}
 			}
@@ -4720,7 +4770,7 @@ static int macro_subst_tok(
 					if (!sa)
 						{ MCC_TRACE("br\n"); break; }
 					if (sa->type.t && gnu_ext) { MCC_TRACE("br\n");
-						if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
+						if (mcc_state->warn_pedantic && mcc_state->cversion < 202311) { MCC_TRACE("br\n");
 							if (mcc_state->pedantic_errors)
 								{ MCC_TRACE("br\n"); mcc_error("ISO C does not permit a variadic macro "
 													"to be invoked with no argument for the '...'"); }

@@ -461,6 +461,8 @@ typedef struct AttributeDef {
 	char storage_class;
 	char implicit_int;
 	char had_attr;
+	char auto_type;
+	char auto_seen;
 } AttributeDef;
 
 typedef struct InlineFunc {

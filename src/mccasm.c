@@ -1222,8 +1222,24 @@ ST_FUNC int find_constraint(ASMOperand *operands, int nb_operands,
 			index = (index * 10) + (*name) - '0';
 			name++;
 		}
-		if ((unsigned)index >= nb_operands)
-			{ MCC_TRACE("br\n"); index = -1; }
+		if ((unsigned)index >= nb_operands) { MCC_TRACE("br\n");
+			int k = index - nb_operands;
+			int i;
+			index = -1;
+			for (i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
+				const char *q;
+				int rw = 0;
+				for (q = operands[i].constraint;
+						 *q == '=' || *q == '&' || *q == '+' || *q == '%'; q++) { MCC_TRACE("br\n");
+					if (*q == '+')
+						{ MCC_TRACE("br\n"); rw = 1; }
+				}
+				if (!rw)
+					{ MCC_TRACE("br\n"); continue; }
+				if (k-- == 0)
+					{ MCC_TRACE("br\n"); index = i; break; }
+			}
+		}
 	} else if (*name == '[') { MCC_TRACE("br\n");
 		name++;
 		p = strchr(name, ']');

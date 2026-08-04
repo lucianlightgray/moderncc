@@ -6978,6 +6978,102 @@ static int ast_ident_convert(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+static int ast_addr_nonnull(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
+	int k, r, lt;
+	uint64_t lv;
+	AstLocal x, y;
+	if (n == AST_NONE || depth > 8)
+		{ MCC_TRACE("br\n"); return 0; }
+	k = ast_kind(a, n);
+	if (k == AST_Convert && ast_nchild(a, n) == 1)
+		{ MCC_TRACE("br\n"); return ast_addr_nonnull(a, ast_first_child(a, n), depth + 1); }
+	if (k == AST_Unary && ast_op(a, n) == AST_OP_ADDR && ast_nchild(a, n) == 1) { MCC_TRACE("br\n");
+		AstLocal c = ast_first_child(a, n);
+		if (ast_kind(a, c) != AST_Ref || ast_nchild(a, c))
+			{ MCC_TRACE("br\n"); return 0; }
+		r = ast_op(a, c);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM) || !(r & VT_LVAL))
+			{ MCC_TRACE("br\n"); return 0; }
+		return 1;
+	}
+	if (k == AST_Binary && ast_nchild(a, n) == 2 &&
+			(ast_op(a, n) == '+' || ast_op(a, n) == '-')) { MCC_TRACE("br\n");
+		x = ast_child(a, n, 0);
+		y = ast_child(a, n, 1);
+		if (ast_ident_cval(a, y, &lt, &lv)) { MCC_TRACE("br\n"); }
+		else if (ast_op(a, n) == '+' && ast_ident_cval(a, x, &lt, &lv))
+			{ MCC_TRACE("br\n"); x = y; }
+		else
+			{ MCC_TRACE("br\n"); return 0; }
+		if ((int64_t)value64(lv, lt) > ((int64_t)1 << 30) ||
+				(int64_t)value64(lv, lt) < -((int64_t)1 << 30))
+			{ MCC_TRACE("br\n"); return 0; }
+		return ast_addr_nonnull(a, x, depth + 1);
+	}
+	if (k == AST_Ref && !ast_nchild(a, n)) { MCC_TRACE("br\n");
+		Sym *s;
+		r = ast_op(a, n);
+		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) != (VT_CONST | VT_SYM) ||
+				!ast_sym(a, n))
+			{ MCC_TRACE("br\n"); return 0; }
+		s = (Sym *)(uintptr_t)ast_sym(a, n);
+		if (s->a.weak)
+			{ MCC_TRACE("br\n"); return 0; }
+		if ((int64_t)ast_ival(a, n) < 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_addr_iszero(AstArena *a, AstLocal n, int depth) { MCC_TRACE("enter\n");
+	if (n == AST_NONE || depth > 8)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Convert && ast_nchild(a, n) == 1)
+		{ MCC_TRACE("br\n"); return ast_addr_iszero(a, ast_first_child(a, n), depth + 1); }
+	if (ast_kind(a, n) != AST_Literal || ast_nchild(a, n))
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((ast_op(a, n) & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (is_float(ast_type_t(a, n)))
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_ival(a, n) == 0;
+}
+
+static int ast_ident_addk(AstArena *a, AstLocal s, AstLocal e) { MCC_TRACE("enter\n");
+	AstLocal p, q;
+	int sop, lt, w;
+	uint64_t lv;
+	if (ast_kind(a, s) != AST_Binary || ast_nchild(a, s) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	sop = ast_op(a, s);
+	if (sop != '+' && sop != '-')
+		{ MCC_TRACE("br\n"); return 0; }
+	p = ast_child(a, s, 0);
+	q = ast_child(a, s, 1);
+	if (ast_ident_cval(a, q, &lt, &lv)) { MCC_TRACE("br\n"); }
+	else if (sop == '+' && ast_ident_cval(a, p, &lt, &lv))
+		{ MCC_TRACE("br\n"); p = q; }
+	else
+		{ MCC_TRACE("br\n"); return 0; }
+	{
+		int st, et;
+		uint64_t sref, eref;
+		if (!ast_ident_etype(a, s, &st, &sref) || !ast_ident_etype(a, e, &et, &eref))
+			{ MCC_TRACE("br\n"); return 0; }
+		if (!ast_ident_intt(st) || !ast_ident_intt(et))
+			{ MCC_TRACE("br\n"); return 0; }
+		w = ast_ii_width(st);
+		if (w <= 0 || w > 8 || w != ast_ii_width(et))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	if (w < 8)
+		{ MCC_TRACE("br\n"); lv &= ((uint64_t)1 << (w * 8)) - 1; }
+	if (!lv)
+		{ MCC_TRACE("br\n"); return 0; }
+	return ast_ident_same(a, p, e) && ast_ident_pure(a, p);
+}
+
 static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (ast_ident_conv_env) { MCC_TRACE("br\n");
 		int cr = ast_ident_convert(a, n);
@@ -6990,12 +7086,18 @@ static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
 	int tx, ty;
 	uint64_t rx, ry;
+	int lt;
+	uint64_t lv;
+	if (ast_ident_rel_env && (op == TOK_EQ || op == TOK_NE) &&
+			((ast_addr_nonnull(a, x, 0) && ast_addr_iszero(a, y, 0)) ||
+			 (ast_addr_nonnull(a, y, 0) && ast_addr_iszero(a, x, 0)))) { MCC_TRACE("br\n");
+		ast_ident_setlit(a, n, VT_INT, op == TOK_NE ? 1u : 0u);
+		return 2;
+	}
 	if (!ast_ident_etype(a, x, &tx, &rx) || !ast_ident_etype(a, y, &ty, &ry))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ident_intt(tx) || !ast_ident_intt(ty))
 		{ MCC_TRACE("br\n"); return 0; }
-	int lt;
-	uint64_t lv;
 	int ct = ast_ident_common(tx, ty);
 	switch (op) { MCC_TRACE("br\n");
 	case TOK_SHL:
@@ -7199,6 +7301,11 @@ static int ast_ident_node(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		if (ast_ident_urange_env && op == TOK_GT && (ty & VT_UNSIGNED) &&
 				ast_ident_cval(a, x, &lt, &lv) && lv == 0 && ast_ident_pure(a, y)) { MCC_TRACE("br\n");
 			ast_ident_setlit(a, n, VT_INT, 0u);
+			return 2;
+		}
+		if (ast_ident_rel_env && (op == TOK_EQ || op == TOK_NE) &&
+				(ast_ident_addk(a, x, y) || ast_ident_addk(a, y, x))) { MCC_TRACE("br\n");
+			ast_ident_setlit(a, n, VT_INT, op == TOK_NE ? 1u : 0u);
 			return 2;
 		}
 		return 0;
@@ -7696,6 +7803,10 @@ static void ast_cprop_gen(int off, int tt, uint64_t v) { MCC_TRACE("enter\n");
 	ast_cprop_kval[i] = v;
 }
 
+static int ast_cprop_tt_same(int lt, int tt) { MCC_TRACE("enter\n");
+	return (lt & ~VT_CONSTANT) == (tt & ~VT_CONSTANT);
+}
+
 static int ast_cprop_lval_op(int op) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
 	case AST_OP_ADDR:
@@ -7717,7 +7828,7 @@ static void ast_cprop_rewrite(AstArena *a, AstLocal n, int lval) { MCC_TRACE("en
 		int off, tt;
 		if (ast_cprop_is_local(a, n, &off, &tt)) { MCC_TRACE("br\n");
 			int i = ast_cprop_find(off);
-			if (i >= 0 && ast_cprop_ktt[i] == tt) { MCC_TRACE("br\n");
+			if (i >= 0 && ast_cprop_tt_same(ast_cprop_ktt[i], tt)) { MCC_TRACE("br\n");
 				ast_ident_setlit(a, n, tt, ast_cprop_kval[i]);
 				ast_cprop_folds++;
 			}
@@ -7750,7 +7861,7 @@ static void ast_cprop_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			if (ast_cprop_is_local(a, lval, &off, &tt) && !ast_cprop_escapes(a, off)) { MCC_TRACE("br\n");
 				int lt;
 				uint64_t lv;
-				if (ast_ident_cval(a, val, &lt, &lv) && lt == tt)
+				if (ast_ident_cval(a, val, &lt, &lv) && ast_cprop_tt_same(lt, tt))
 					{ MCC_TRACE("br\n"); ast_cprop_gen(off, tt, lv); }
 				else
 					{ MCC_TRACE("br\n"); ast_cprop_kill(off); }
@@ -7985,7 +8096,7 @@ static void ast_cprop_stmt(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 		if (ast_cprop_is_local(a, lval, &off, &tt) && !ast_cprop_escapes(a, off)) { MCC_TRACE("br\n");
 			int lt;
 			uint64_t lv;
-			if (ast_ident_cval(a, val, &lt, &lv) && lt == tt)
+			if (ast_ident_cval(a, val, &lt, &lv) && ast_cprop_tt_same(lt, tt))
 				{ MCC_TRACE("br\n"); ast_cprop_gen(off, tt, lv); }
 			else
 				{ MCC_TRACE("br\n"); ast_cprop_kill(off); }

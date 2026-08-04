@@ -296,6 +296,9 @@ ST_DATA int asm_lvalue_cast;
 #define CONST_WANTED (nocode_wanted & CONST_WANTED_MASK)
 
 static int vm_type_probe;
+static int auto_type_allowed;
+static CType *auto_type_capture;
+static int auto_type_captured;
 
 ST_DATA int global_expr;
 ST_DATA CType func_vt;
@@ -7717,9 +7720,11 @@ static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
 
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
 	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
+	int at_ok = auto_type_allowed;
 	Sym *s;
 	CType type1;
 
+	auto_type_allowed = 0;
 	memset(ad, 0, sizeof(AttributeDef));
 	type_found = 0;
 	typespec_found = 0;
@@ -7908,11 +7913,26 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			typespec_found = 1;
 			break;
 		case TOK_AUTO:
+			if (at_ok && mcc_state->cversion >= 202311 && !sym_find(tok)) { MCC_TRACE("br\n");
+				ad->auto_seen++;
+				next();
+				break;
+			}
 		case TOK_REGISTER:
 			if ((t & (VT_EXTERN | VT_STATIC | VT_TYPEDEF)) || (ad->storage_class & 3))
 				{ MCC_TRACE("br\n"); mcc_error("multiple storage classes"); }
 			ad->storage_class |= (tok == TOK_AUTO) ? 1 : 2;
 			next();
+			break;
+		case TOK_AUTO_TYPE:
+			if (!at_ok)
+				{ MCC_TRACE("br\n"); mcc_error("'__auto_type' is not allowed here"); }
+			if (typespec_found)
+				{ MCC_TRACE("br\n"); mcc_error("two or more data types in declaration specifiers"); }
+			ad->auto_type = 1;
+			next();
+			typespec_found = 1;
+			bt = -2;
 			break;
 		case TOK_RESTRICT1:
 		case TOK_RESTRICT2:
@@ -8048,6 +8068,22 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		type_found = 1;
 	}
 the_end:
+	if (ad->auto_seen) { MCC_TRACE("br\n");
+		if (typespec_found) { MCC_TRACE("br\n");
+			if (t & VT_TLS)
+				{ MCC_TRACE("br\n"); mcc_error("'_Thread_local' used with 'auto'"); }
+			if (ad->auto_seen > 1 || (t & (VT_EXTERN | VT_STATIC | VT_TYPEDEF)) || (ad->storage_class & 3))
+				{ MCC_TRACE("br\n"); mcc_error("multiple storage classes"); }
+			ad->storage_class |= 1;
+		} else { MCC_TRACE("br\n");
+			if (ad->auto_seen > 1)
+				{ MCC_TRACE("br\n"); mcc_error("duplicate 'auto'"); }
+			if (t & VT_TYPEDEF)
+				{ MCC_TRACE("br\n"); mcc_error("'typedef' used with 'auto'"); }
+			ad->auto_type = 2;
+			typespec_found = 1;
+		}
+	}
 	if (type_found && !typespec_found)
 		{ MCC_TRACE("br\n"); ad->implicit_int = 1; }
 	if (complex_seen && bt == -1 && st == -1 && !(t & VT_DEFSIGN))
@@ -14077,6 +14113,7 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_RESTRICT2:
 	case TOK_RESTRICT3:
 	case TOK_AUTO:
+	case TOK_AUTO_TYPE:
 	case TOK_REGISTER:
 	case TOK_EXTERN:
 	case TOK_STATIC:
@@ -14743,6 +14780,10 @@ static void parse_init_elem(int expr_type) { MCC_TRACE("enter\n");
 	case EXPR_ANY:
 		expr_eq();
 		break;
+	}
+	if (auto_type_capture) { MCC_TRACE("br\n");
+		*auto_type_capture = vtop->type;
+		auto_type_captured = 1;
 	}
 }
 
@@ -16531,6 +16572,62 @@ static int decl_in_preamble(void) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+static void auto_type_decay(CType *dt, int v, int kind) { MCC_TRACE("enter\n");
+	if (dt->t & VT_BITFIELD) { MCC_TRACE("br\n");
+		if (kind != 2)
+			{ MCC_TRACE("br\n"); mcc_error("'__auto_type' used with a bit-field initializer"); }
+		dt->t &= ~VT_STRUCT_MASK;
+	}
+	if ((dt->t & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); mk_pointer(dt); }
+	else if (dt->t & (VT_ARRAY | VT_VLA))
+		{ MCC_TRACE("br\n"); dt->t &= ~(VT_ARRAY | VT_VLA | VT_BT_ARRAY); }
+	dt->t &= ~(VT_QUALIFY | VT_STORAGE);
+	if ((dt->t & VT_BTYPE) == VT_VOID)
+		{ MCC_TRACE("br\n"); mcc_error("variable '%s' declared void", get_tok_str(v, NULL)); }
+}
+
+static void auto_type_deduce(CType *type, int v, int const_init, int kind) { MCC_TRACE("enter\n");
+	TokenString *init_str;
+	CType dt;
+	int saved_global_expr;
+
+	skip_or_save_block(&init_str);
+	unget_tok(0);
+	begin_macro(init_str, 1);
+	next();
+
+	saved_global_expr = global_expr;
+	global_expr = const_init;
+	nocode_wanted++;
+	vm_type_probe++;
+	expr_eq();
+	dt = vtop->type;
+	vpop();
+	vm_type_probe--;
+	nocode_wanted--;
+	global_expr = saved_global_expr;
+
+	macro_ptr = init_str->str;
+	next();
+
+	auto_type_decay(&dt, v, kind);
+	type->t = dt.t | (type->t & (VT_QUALIFY | VT_STORAGE));
+	type->ref = dt.ref;
+}
+
+static void auto_type_relink_vm(CType *type, CType *real, int v, int kind) { MCC_TRACE("enter\n");
+	Sym *sym;
+
+	auto_type_decay(real, v, kind);
+	if ((real->t & VT_BTYPE) != (type->t & VT_BTYPE) || !real->ref)
+		{ MCC_TRACE("br\n"); return; }
+	type->ref = real->ref;
+	sym = sym_find(v);
+	if (sym && (sym->type.t & VT_BTYPE) == (real->t & VT_BTYPE))
+		{ MCC_TRACE("br\n"); sym->type.ref = real->ref; }
+}
+
 static int decl(int l) {
 	int v, has_init, r, oldint, gnu_ei, got_decl = 0;
 	CType type, btype;
@@ -16544,6 +16641,7 @@ static int decl(int l) {
 #endif
 
 		oldint = 0;
+		auto_type_allowed = l == VT_CONST || l == VT_LOCAL || l == VT_JMP;
 		if (parse_btype(&btype, &adbase, l == VT_LOCAL)) { MCC_TRACE("br\n");
 			if (adbase.implicit_int)
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("type defaults to 'int' in declaration"); }
@@ -16588,6 +16686,8 @@ static int decl(int l) {
 		if (!decl_in_preamble()) got_decl = 1;
 
 		if (tok == ';') { MCC_TRACE("br\n");
+			if (adbase.auto_type)
+				{ MCC_TRACE("br\n"); mcc_error("ISO C does not allow an empty declaration"); }
 			if ((btype.t & VT_BTYPE) == VT_STRUCT && (btype.ref->v & ~SYM_STRUCT) < SYM_FIRST_ANOM)
 				{ MCC_TRACE("br\n"); ; }
 			else if (IS_ENUM(btype.t))
@@ -16605,6 +16705,19 @@ static int decl(int l) {
 			ad = adbase;
 			type_decl(&type, &ad, &v, l == VT_CMP ? TYPE_DIRECT | TYPE_PARAM : TYPE_DIRECT);
 			gnu_ei = 0;
+			if (ad.auto_type) { MCC_TRACE("br\n");
+				const char *akw = ad.auto_type == 2 ? "auto" : "__auto_type";
+				if ((type.t & (VT_BTYPE | VT_ARRAY)) != VT_INT)
+					{ MCC_TRACE("br\n"); mcc_error("'%s' requires a plain identifier as declarator", akw); }
+				if (type.t & VT_TYPEDEF)
+					{ MCC_TRACE("br\n"); mcc_error("'%s' requires an initialized data declaration", akw); }
+				if (ad.auto_type == 2) { MCC_TRACE("br\n");
+					Sym *pre = sym_find(v);
+					if (pre && (l == VT_CONST || pre->sym_scope == local_scope))
+						{ MCC_TRACE("br\n"); mcc_error("underspecified declaration of '%s', which is "
+															"already declared in this scope", get_tok_str(v, NULL)); }
+				}
+			}
 			if ((type.t & VT_BTYPE) == VT_FUNC) { MCC_TRACE("br\n");
 				if (oldint)
 					{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("return type defaults to 'int'"); }
@@ -16852,6 +16965,10 @@ static int decl(int l) {
 					if (tok == '=')
 						{ MCC_TRACE("br\n"); has_init = 1; }
 
+					if (ad.auto_type && (!has_init || ((type.t & VT_EXTERN) && l != VT_CONST)))
+						{ MCC_TRACE("br\n"); mcc_error("'%s' requires an initialized data declaration",
+															ad.auto_type == 2 ? "auto" : "__auto_type"); }
+
 					if (type.t & VT_CONSTEXPR) { MCC_TRACE("br\n");
 						if (type.t & (VT_EXTERN | VT_TYPEDEF | VT_TLS))
 							{ MCC_TRACE("br\n"); mcc_error("'constexpr' cannot be combined with this "
@@ -16860,7 +16977,16 @@ static int decl(int l) {
 							{ MCC_TRACE("br\n"); mcc_error("'constexpr' object '%s' requires an "
 												"initializer", get_tok_str(v, NULL)); }
 						next();
+						if (ad.auto_type)
+							{ MCC_TRACE("br\n"); auto_type_deduce(&type, v, 1, ad.auto_type); }
 						decl_constexpr(&type, v);
+						if (ad.auto_type) { MCC_TRACE("br\n");
+							end_macro();
+							next();
+							if (tok == ',')
+								{ MCC_TRACE("br\n"); mcc_error("'%s' may only be used with a single declarator",
+																	ad.auto_type == 2 ? "auto" : "__auto_type"); }
+						}
 						goto var_done;
 					}
 
@@ -16887,7 +17013,9 @@ static int decl(int l) {
 						type.t &= ~VT_EXTERN;
 						if (has_init)
 							{ MCC_TRACE("br\n"); next(); }
-						else if (l == VT_CONST) { MCC_TRACE("br\n");
+						if (ad.auto_type)
+							{ MCC_TRACE("br\n"); auto_type_deduce(&type, v, (r & VT_VALMASK) == VT_CONST, ad.auto_type); }
+						if (!has_init && l == VT_CONST) { MCC_TRACE("br\n");
 							if (!(type.t & VT_STATIC)) { MCC_TRACE("br\n");
 								Sym *pe = sym_find(v);
 								if (pe && (pe->type.t & VT_STATIC))
@@ -16902,7 +17030,17 @@ static int decl(int l) {
 #endif
 						{
 							int aci_prev = assign_ctx_is_init;
+							CType at_real;
+							CType *at_prev = auto_type_capture;
+							int at_prev_got = auto_type_captured;
+							int at_vm = ad.auto_type && type_is_vm(&type);
 							assign_ctx_is_init = has_init ? 1 : aci_prev;
+							if (at_vm) { MCC_TRACE("br\n");
+								at_real.t = VT_VOID;
+								at_real.ref = NULL;
+								auto_type_capture = &at_real;
+								auto_type_captured = 0;
+							}
 #if MCC_CONFIG_OPTIMIZER
 							int ast_sq = (r & VT_VALMASK) == VT_CONST && has_init;
 							if (ast_sq)
@@ -16913,7 +17051,20 @@ static int decl(int l) {
 							if (ast_sq)
 								{ MCC_TRACE("br\n"); rir_hook_synth_end(); }
 #endif
+							if (at_vm) { MCC_TRACE("br\n");
+								auto_type_capture = at_prev;
+								if (auto_type_captured)
+									{ MCC_TRACE("br\n"); auto_type_relink_vm(&type, &at_real, v, ad.auto_type); }
+								auto_type_captured = at_prev_got;
+							}
 							assign_ctx_is_init = aci_prev;
+						}
+						if (ad.auto_type) { MCC_TRACE("br\n");
+							end_macro();
+							next();
+							if (tok == ',')
+								{ MCC_TRACE("br\n"); mcc_error("'%s' may only be used with a single declarator",
+																	ad.auto_type == 2 ? "auto" : "__auto_type"); }
 						}
 #if MCC_CONFIG_LSP
 						if (has_init) { MCC_TRACE("br\n");
