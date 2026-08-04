@@ -4742,3 +4742,62 @@ only because the side-car board run flagged the one status change.
 Note a hand-written reduction of that test does *not* reproduce — mcc rejects the
 `:: label` spelling with a syntax error before reaching the substitution. The crash
 needs the real file's two `+` operands.
+
+---
+
+## qemu-user actually reaches arm — the "assembler rejects `svc`" claim was half wrong
+
+Two cells that had **never run** now run and pass, in about a second each:
+
+| Cell | Was | Why it skipped | Now |
+|---|---|---|---|
+| `run-parity-arm` | Skipped | wanted `arm-linux-gnueabihf-gcc` and `/usr/arm-linux-gnueabihf` | **Passed** |
+| `run-parity-arm64` | Skipped | gated on the *host* being aarch64 | **Passed** |
+
+Both were skipping while `vendor/gentoo-stage3-$arch-glibc`, `cmake-cross/mcc-$arch` and
+`qemu-arm`/`qemu-aarch64` were all present. `tools/selfhost-run-parity.sh` now bootstraps
+the target-hosted mcc with mcc itself when the preferred cross compiler is missing
+(`4e0f...`). arm produces `acc=2075865568`, the 32-bit-`long` value only an arm host
+gives — the cell is genuinely exercising arm, not silently falling back to x86.
+
+`tools/qemu-selfhost.sh arm -O1` also passes end to end: **s2 == s3 fixpoint at 798931
+bytes**, s3 executes. The arm sysroot has been in `vendor/` the whole time.
+
+### The claim that was wrong
+
+Recorded earlier as "arm and arm64 are unbuildable — mcc's own assembler rejects `svc`".
+Tested directly:
+
+- **arm: `svc` assembles fine.** `__asm__ volatile ("mov r7, #1\n\tmov r0, #42\n\tsvc #0")`
+  compiles with `mcc-arm -nostdlib -static` and exits 42 under `qemu-arm`. What actually
+  fails is **explicit register variables** — `register long r7 __asm__("r7")` gives
+  `compiler error! register 7 is no int register` from `arm-gen.c:267`. A different bug
+  in a different place, and one that does not block freestanding arm testing at all,
+  because a plain asm string works.
+- **arm64: `svc` genuinely is not implemented** — `ARM64 instruction 'svc' not
+  implemented`. That half of the claim holds.
+
+The lesson is the session's recurring one: the *symptom* was "freestanding test won't
+build on arm", and the first-guess cause survived into the record without being probed
+on its own.
+
+### riscv64 `-run` segfaults on any input — new, and previously invisible
+
+`run-parity-riscv64` has always skipped for want of `riscv64-linux-gnu-gcc`. With the same
+vendored-sysroot bootstrap, the riscv64-hosted mcc **works**: `mcc -v` runs, and it
+compiles and links `hi.c` into a binary that prints `sum=10` under `qemu-riscv64`.
+
+But `-run` segfaults. On `int main(void){return 3;}`. Under **both** `MCC_JIT=0` and
+`MCC_JIT=1`, so it is not the JIT tier — it is the in-memory execution path itself.
+Exit 139. arm on the identical input returns 3.
+
+The fallback is deliberately **withheld** for riscv64 so the tree does not go red on a
+pre-existing bug, and the skip message names the reason instead of blaming a missing
+compiler. Flip it on in the same change that fixes `-run`.
+
+### Three open bugs this exposed
+
+1. **riscv64 `-run` segfaults** on any input, both JIT tiers. Compile-and-link is fine.
+2. **arm64 assembler has no `svc`** — blocks freestanding syscall tests on arm64.
+3. **arm rejects explicit register variables** in inline asm (`arm-gen.c:267`), so the
+   ordinary `register long r7 __asm__("r7")` syscall-wrapper idiom does not compile.
