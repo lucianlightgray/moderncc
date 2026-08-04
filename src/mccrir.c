@@ -3421,6 +3421,8 @@ static void rir_region(const RirOp *ro) {
 			}
 			if (ro->rkind != RIR_R_FOR && ro->rkind != RIR_R_DO)
 				rir_cf_cond();
+			else if (ro->rkind == RIR_R_FOR)
+				rir_docond = 1;
 			break;
 		}
 		case RIR_R_COND:
@@ -3600,7 +3602,12 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_BODY:
 		case RIR_R_THEN:
 		case RIR_R_ELSE: {
-			AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
+			AstLocal bb;
+			/* The condition-store hold is armed at the RIR_R_FOR rbegin and must not
+			   survive into the increment or the body: a store there is a statement,
+			   not a value the condition consumes. */
+			rir_docond = 0;
+			bb = ast_node(rir_arena, AST_BasicBlock);
 			if (rir_cfn)
 				ast_add_child(rir_arena, rir_cf[rir_cfn - 1], bb);
 			if (rir_bbn < 64)
