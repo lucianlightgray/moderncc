@@ -306,6 +306,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"local_const_prop", "run", "exec/optimizer/local_const_prop.c", "chk=16436925606390758899 fx=30\nOK\n", "", "", ""},
 		{"side_effect_order", "run", "exec/optimizer/side_effect_order.c", "effects ok\nOK\n", "", "", ""},
 		{"assign_value_effects", "run", "exec/optimizer/assign_value_effects.c", "calls=16 calls2=2\nOK\n", "", "", ""},
+		{"loop_cond_effects", "run", "exec/optimizer/loop_cond_effects.c", "calls=3\nOK\n", "", "", ""},
 		{"dead_store_elim", "run", "exec/optimizer/dead_store_elim.c", "chk=16121870917244830463 g=9\nOK\n", "", "", ""},
 		{"cse", "run", "exec/optimizer/cse.c", "chk=5411311812928774202 g=22\nOK\n", "", "", ""},
 		{"licm", "run", "exec/optimizer/licm.c", "chk=2286992590266 g=5\nOK\n", "", "", ""},

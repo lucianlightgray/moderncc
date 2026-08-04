@@ -374,6 +374,272 @@ cells pass against the tightened floors.
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
 
+### The remaining fallbacks are NOT benign: `ptr_unlink` segfaults under the arena
+
+Ten-line reproducer, no builtin, no optimizer dependence:
+
+```c
+static void ptr_unlink(void *list, void *e, unsigned next) {
+	void **pp, **nn, *p;
+	for (pp = list; !!(p = *pp); pp = nn) {
+		nn = (void *)((char *)p + next);
+		if (p == e) { *pp = *nn; break; }
+	}
+}
+```
+
+Parser: prints the right answer. `MCC_RIR_NOFB=1`: **SIGSEGV**. This is the shape that
+takes down the JIT self-host, and it is a real miscompile rather than a byte
+difference — which settles the question of whether the six/thirty-nine byte-divergent
+bodies are safe to ship. **They are not.**
+
+`RIRPRODDUMP` shows why. The arena is
+
+```
+If
+  Binary op#149 (!=)
+    StoreVal            <- refers to a Store that is NOT in the tree as a statement
+    Literal 0
+```
+
+The `p = *pp` `Store` never appears as a statement anywhere, so nothing performs it.
+Both `StoreVal` paths only produce a *value*: one reuses a live register, the other
+re-derives the value expression. The condition therefore tested the right number while
+`p` stayed uninitialised and the body dereferenced garbage.
+
+**ROOT CAUSE CONFIRMED BY MEASUREMENT, and the obvious fix is a banked negative.**
+
+The `[stmt]`/`[ent]` traces settle where the store goes:
+
+```
+[ent]  6 RBEGIN for      [stmt] node=5 kind=If      <- the loop node enters the root block
+[ent] 11 OP vstore       [stmt] node=9 kind=Store   <- `p = *pp` enters the root block, AFTER it
+[ent] 17 RBEGIN cond                                <- the cond region opens only here
+```
+
+**A `for`'s condition expression is captured between the `RIR_R_FOR` rbegin and the
+`RIR_R_COND` rbegin.** `rir_stmt` therefore drops any store in it into the *enclosing*
+block, which already holds this loop's `If`, so it replays **after** the loop and the
+body runs with `p` unassigned. That is the segfault.
+
+`rir_docond`/`rir_dheld` exist to hold exactly such stores, but `rir_docond` is armed in
+one place only (`src/mccrir.c:3843`): at a `RIR_R_BODY` rend inside a `RIR_R_DO`. That
+is do-while, where the condition *follows* the body — and it is why the do-while comma
+case was the only member of this family ever fixed.
+
+**Arming at the `RIR_R_COND` rbegin does nothing** — measured; the store is already
+statement'd by then. **Arming at the `RIR_R_FOR` rbegin works and costs too much**:
+`ptr_unlink` becomes correct *and* `used`, but `mcc.c` at `-O1` goes **39 -> 68**
+fallbacks and `tests/` goes **6 -> 9**. The flag parks every store captured before the
+cond region, not just the one feeding the condition, so every `for` whose condition
+touches memory gets a prefix the parser never emitted. **Reverted; do not re-try it
+unnarrowed.**
+
+**The discriminator data, which is the useful artifact.** Arming `rir_docond` at the
+`RIR_R_FOR` rbegin and diffing the `-O1` fallback list of `src/mcc.c` before and after:
+
+*Fixed by arming (5)* — these are the shape that needs it:
+`ptr_unlink`, `decl`, `block_cleanup`, `mcc_split_path`, `move_ref_to_global`
+
+*Broken by arming (34)* — these must NOT get it:
+`asm_expr_logic`, `asm_expr_prod`, `asm_expr_sum`, `constraint_priority`,
+`cstr_vprintf`, `embed_parse_name`, `expr_landor`, `host_find_tool`, `host_spawn_ex`,
+`host_spawn_run`, `host_spawn_timeout`, `ld_next`, `macro_twosharps`,
+`mcc_add_linker_symbols`, `mcc_get_debug_info`, `mcc_get_dwarf_info`,
+`mcc_load_archive`, `mcc_load_ldscript`, `mcc_preprocess`, `mcc_support_arch_match`,
+`mccpp_new`, `next_nomacro`, `parse_comment`, `parse_define`, `parse_escape_string`,
+`parse_line_comment`, `parse_number`, `parse_pp_string`, `peek_file`,
+`preprocess_skip`, `struct_decl`, `struct_layout`, `subst_asm_operands`, `tok_alloc`
+
+Net -29. **Read those 39 functions against each other before designing the
+predicate** — the distinguishing shape is in there, and it is cheaper to find by
+reading five that want the treatment against thirty-four that do not than by
+reasoning about regions.
+
+**The mechanism, so the narrow trigger can be designed rather than guessed.** The
+`IR_OP_VSTORE` handler (`src/mccrir.c:2333`) branches on exactly these flags:
+
+```c
+if (rir_lorn || rir_ternn || rir_docond) {
+    ast_add_child(n, t); ast_add_child(n, v);
+    rir_push(n);          /* push the Store as a VALUE */
+    break;
+}
+...
+rir_stmt(n);              /* else: statement it, and synthesise a StoreVal for its value */
+```
+
+Pushed as a value, the condition consumes the `Store` node itself and replaying the
+condition performs the store — which is why arming `rir_docond` fixes `ptr_unlink` and
+even makes it `used`. Statement'd, the condition instead gets a `StoreVal`, and every
+`StoreVal` path produces only a value, so the assignment is lost.
+
+So the trigger does not need to move nodes after the fact (there is no unlink helper,
+and adding one would be invasive). It needs to decide **at the vstore** whether this
+store's value is what the enclosing loop's condition will consume. Region membership
+alone is too coarse — that is the measured -29.
+
+What is landed and inert, waiting for that trigger: `rir_cf_cond` parks held
+condition stores for `RIR_R_WHILE`/`RIR_R_FOR` as well as `RIR_R_DO`, and the loop rend
+appends the prefix for a `for` as child 3 (it required `nchild == 2`, true for while/do
+and false for `for`, so the `for` replay arm's `nchild >= 4` hook could never fire).
+Both replay arms already run a condition prefix. **The missing piece is a trigger that
+holds only the store whose value the condition consumes** — not a region-wide flag.
+
+### The real scope: 39 fallbacks in `src/mcc.c` at `-O1`, not 6
+
+**Every census in this file before this point was corpus-scoped.** `tests/` is not the
+workload that matters; `src/mcc.c` is the largest and most demanding input the compiler
+sees, and it reads:
+
+| input | `-O1` | `-O2` | `-O4` |
+| --- | --- | --- | --- |
+| `src/mcc.c` | **used 1121, fallback 39** | 1118 / 42 | 1091 / 68 |
+| `tests/` (660 files) | used 2169, fallback 6 | — | — |
+
+Classified by failing term at `-O1`: **25 `len`, 13 `bytes`, 1 error-path** (`error1`,
+which N10 says not to touch). Two small examples diffed against the parser —
+`so_filesize` and `ptr_unlink` — show the same shape: **the arena omits a spill the
+parser emits** (`mov %rax,-0x30(%rbp)`). That is the "scheduling and allocation, not
+model shape" class this file already says to *expect last*, and it is the majority of
+what remains.
+
+### `fallback == 0` is NOT one flag away — several bodies genuinely miscompile
+
+`MCC_RIR_NOFB=1` zeroes the census and passes all 317 exec goldens at `-O1`, `-O2` and
+`-O3`. It nonetheless breaks `selfhost-jit`, `selfhost-arm64-native`,
+`selfhost-riscv64-docker`, `cross/no-compiler-abort-x86_64-win32` and two `exec-search`
+cells. `selfhost-jit` dies as **`mcc: memory full`** with peak RSS **1,235 MB against a
+184 MB baseline** — a 6.7x blowup, and a `realloc` returning NULL in `mcc_realloc`.
+
+**`MCC_RIR_NOFB_SKIP=<names>`** is the bisection handle for this: a comma-separated
+list of bodies that keep falling back even with the no-fallback path on, so the culprit
+can be found without rebuilding. Bisecting the 68 `-O4` fallbacks of `mcc.c`:
+
+- skipping all 68 -> passes
+- skipping the first 44 -> passes; the first 43 -> fails
+- skipping **only** `mcc_split_path` -> still fails
+
+So this is **not one bad body**. At least a substantial fraction of the 68 emit wrong
+code, and the byte-`faithful` gate has been the only thing standing between them and
+the shipped compiler. The 6.7x memory blowup is consistent with a miscompiled allocator
+— `host_runmem_alloc` and `cleanup_sections` are both on the fallback list — rather
+than with a leak.
+
+**The methodological lesson, which cost a wrong turn:** the 317 exec goldens are not
+sufficient validation for a codegen-affecting change. They passed at every `-O` while
+self-hosting broke. Run the full suite, and prefer `mcc.c` over `tests/` when measuring
+the census.
+
+**`MCC_RIR_NOFB=1` drives the `-O1` census to `used 2175, fallback 0`** and the exec
+goldens are clean under it at `-O1`, `-O2` **and** `-O3` — zero regressions at every
+level, after the five fixes below. So the remaining six byte-divergent bodies are
+safe to ship; the byte gate is the only thing still refusing them.
+
+**Defaulting it on does not work yet, and the reason is worth knowing.** With the
+default flipped, `ctest` loses `selfhost-jit`, `selfhost-arm64-native`,
+`selfhost-riscv64-docker`, `cross/no-compiler-abort-x86_64-win32` and two
+`exec-search` cells. `selfhost-jit` fails as **`mcc: memory full`** — a `realloc`
+returning NULL in `mcc_realloc` (`src/libmcc.c:172`), i.e. genuine exhaustion, not a
+miscompile. Neither `MCC_AST_INLINE=0` nor `MCC_AST_TEMPLATES=0` changes it, so it is
+not the inline-retention path that first suggests itself.
+
+**The methodological lesson, which cost a wrong turn:** the 317 exec goldens are *not*
+sufficient validation for a change of this class. They passed at every `-O` while
+selfhost broke. **Run the full suite before believing any codegen-affecting change** —
+self-hosting is the harder bar, and it is the one that caught this.
+
+So the remaining work for `fallback == 0` is a **memory** problem in the JIT self-host
+under always-keep, not a correctness one. Start by measuring where the growth is:
+every body now retains an arena that previously would have been discarded on the
+fallback path, and the JIT's inner compile is where that first bites.
+
+### OPEN: `void_expr` is a PROMOTION defect, not an arena one
+
+`tests/exec/statements/void_expr.c::main` falls back at `-O2`/`-O3` (not `-O1`) and
+miscompiles when forced through. **`MCC_AST_PROMOTE=0` fixes it outright** — that is
+the whole diagnosis, and it clears the arena, the replay and the landor flags
+(`MCC_RIR_NOMAT` and `MCC_RIR_NOINV` both leave it unmoved).
+
+The source is a `for` loop whose body holds a **discarded short-circuit with a call in
+its right operand**:
+
+```c
+for (; i < 3; ++i) {
+	printf("%d\n", i);
+	(void)(i || (f(i), ++count));
+}
+```
+
+Promoted, `i` and `count` land in `%ebx`/`%r12d` and the loop comes out structurally
+broken — `jge` to the immediately following instruction instead of the exit, the
+increment block unreachable, the `||`'s short-circuit branch landing *inside* the
+`f(i)` call it should skip, and no back-edge, so the body runs once and falls into the
+epilogue. Output is `0 f(0)` instead of `0 f(0) 1 2 count 1`.
+
+**Two things in `ast_plan_promotion` (`src/mccast.c:3428`) that fit the symptom:**
+
+- **Short-circuits are invisible to it.** Its scan classifies control flow by looking
+  for `AST_If` with `so == 2|3|4|5`. A landor is an `AST_Binary` (`op#145`/`op#146`),
+  so a body whose only extra branching comes from `&&`/`||` is planned as if it were
+  straight-line.
+- **`has_loop` and `has_goto` are assigned and never read** — the planner gathers those
+  facts in the same scan and discards them. Only `has_call` is used (`:3459`,
+  `:3600-3604`, to pick the callee-saved pool). Whatever they were meant to gate is
+  missing.
+
+**Before changing the planner, read N15**: making `save_reg_upstack` skip pinned
+registers was *"the tempting one-liner, and it is semantically right"* and moved 36
+objects at `-O2`/`-O3`. Promotion changes are measured on the twelve-key board, not
+reasoned about. The cheap correct-first step is to teach the scan that a landor is a
+branch and see what the board says.
+
+**This is the third latent wrong-code bug the fallback was masking** — promotion runs
+regardless of `faithful`, so its output was simply discarded whenever it broke a body.
+Same pattern as the fold and the fconst desync below.
+
+### CLOSED: `ast_fold_rec` folded at the LEFT operand's type instead of the common type
+
+**Found by watchpoint, after eight theories from source reading had all failed.** The
+method that worked: `gdb --batch`, break at a probe, resolve the node index from the
+arena's parallel arrays, `watch ast_cur->kind[$vc]`, continue. It named the writer in
+one run — `ast_set_kind` ← `ast_fold_rec` (`src/mccast.c:5499`) ← `ast_run_templates`
+← `ast_func_end:15040`.
+
+The defect:
+
+```c
+AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+int tt = ast_type_t(a, x);                        /* LEFT operand's type only */
+uint64_t r = ast_fold_eval(op, tt, l1, l2, &ok);  /* folds at that width */
+```
+
+tcc lowers unary minus as `vpushi(0); gen_op('-')`, so the left operand of a negated
+64-bit constant is an **`int` zero** and the fold ran at 32 bits.
+`0 - 9223372036854775807LL` came out **1**; `-9223372036854775807LL - 1` came out
+**0** — both the low 32 bits of the right answer. Fixed by applying the integer half
+of the usual arithmetic conversions before folding, with shifts excluded because their
+result type is the promoted *left* operand's, not the common one.
+
+**Measured effect, `-O1` over the whole corpus:**
+
+| | before | after |
+| --- | --- | --- |
+| `used` | 2158 | **2168** |
+| `fallback` | 17 | **7** |
+| failing terms | `len 13, bytes 3, relcontent 1` | `len 5, bytes 1, relcontent 1` |
+| golden regressions under `MCC_RIR_NOFB=1` | 5 | **1** (`c11_complex_convert`) |
+
+One type bug accounted for **ten of the seventeen fallbacks and four of the five
+miscompilations**. Note what had been protecting the tree: the fold was already
+corrupting arenas in production, and the byte-`faithful` compare caught every instance
+and fell back to the parser. **The fallback path was masking a live wrong-code bug** —
+the strongest argument yet for driving the census to zero rather than living with it.
+
+**Remaining:** `fallback` 7 (`len 5, bytes 1, relcontent 1`) and one golden,
+`c11_complex_convert`. Method note stands: when source reading stalls, put a watchpoint
+on the arena slot and let it name the writer.
+
 ### The census, measured at `-O1` over all 660 corpus files on x86_64
 
 `rir_prod_take` now records *which* of its conditions refused a body
@@ -3020,3 +3286,384 @@ only; `wine` on an x86_64 host does not load ARM or ARM64 PE, so `arm-win32`,
 `arm-wince` and `arm64-win32` are byte-compared only; and no self-host on a Windows
 or macOS *host* can be attempted at all. Those are items **W1**–**W5** at the top of
 this file.
+
+---
+
+## Always-keep (`MCC_RIR_NOFB=1`): 31 failing cells → 10
+
+Driving toward "-O1 never falls back" the useful measurement is not the census but
+`MCC_RIR_NOFB=1 ctest`, which keeps the replay unconditionally and so *executes*
+every body the fallback would have hidden. The default path is 8230/8230 throughout
+everything below; these numbers are the always-keep run only.
+
+Start of this pass: 31 failures. Now 10. The 31 were never 31 distinct bugs — 21 of
+them were one golden replicated across every exec variant.
+
+### Closed
+
+- **`gjmp_append` / promotion of a loop condition that assigns** — `while ((n2 =
+  read32le(p = ...)))` came out at `-O4` with five variables promoted to registers
+  and wrong control flow. Found by bisecting `mcc.c`'s `-O4` fallbacks with
+  `MCC_RIR_NOFB_SKIP`: skipping only `gjmp_append` made `selfhost-jit` pass, and
+  `MCC_AST_PROMOTE=0` made it pass with nothing skipped — which named the *pass*,
+  not the arena. `ast_plan_promotion` now declines a body when an `AST_If` with a
+  loop op has a `Store`/`StoreVal` anywhere in its condition, alongside the existing
+  landor decline. `selfhost-jit` had previously died as "memory full" (that was
+  `ptr_unlink`'s infinite loop) and then as SIGSEGV. Census: `-O2` 37→35, `-O4`
+  63→61, `-O1` unchanged at 34.
+- **`-freverse-funcargs` (21 cells)** — all 21 `errors_and_warnings` cells were the
+  single golden `test_reverse_funcargs`. The other 91 macros in that file agree on
+  diagnostics *exactly*, so this was purely evaluation order:
+
+      printf(" %d %d %d\n", printf("1"), printf("22"), printf("333"));
+      parser  333221 1 2 3
+      replay  122333 1 2 3
+
+  The parser implements right-to-left by saving each argument's tokens, replaying
+  them backwards, then `vrev()`ing the stack — so what reaches the arena is the
+  post-vrev *source* order and a child-order replay evaluates left to right.
+  Faithful modelling needs an order flag on the `Invoke` node and a schema revision.
+  The option is off by default and never appears in the census, so `rir_prod_take`
+  now refuses with a new `revargs` reason. Correctness first.
+
+### Open: `exec-gatesoff/assign_value_effects` — a real arena bug
+
+`gatesoff` is `-O3` with `MCC_AST_CHAINSTORE=0`. Exit 8 is the `chained(5)` check:
+`a = b = f(v)` must call `f` **once**, and the arena calls it twice. The dump is
+unambiguous — two `Invoke` nodes:
+
+    BasicBlock
+      Store  Ref b   Invoke f(v)
+      Store  Ref a   Invoke f(v)      <-- duplicate
+      Return Binary + (Ref a) (Ref b)
+
+`MCC_AST_PROMOTE=0` does **not** change it, so this is the arena, not a pass. This
+is a wrong-code defect that fallback has been masking: at default settings the body
+simply fails `faithful` and ships parser bytes.
+
+Two fixes tried and both **refuted, with costs**:
+
+- **N22 — read the target back.** In the chained branch of the `IR_OP_VSTORE`
+  handler, when the inner store's value `rir_effectful()`, emit `Load(dup(target))`
+  instead of `ast_dup_sub(value)`. Fixes the test, but the parser keeps that value
+  in a *register* rather than reloading, so the bytes stop matching: census `-O1`
+  34→**40**, and the default suite broke — **15 failures**. Reverted. A reload is
+  also wrong outright for a narrow or volatile target.
+- **N23 — bail on an effectful chained store.** Setting `rir_prod_bail` in the same
+  branch changes nothing: `chained` still reports `[rir-prod] used ... len`. The
+  branch is not the site that duplicates. `rir_prod_bail` resets at function begin
+  (`src/mccrir.c:558`), which is before capture, so the reset is not the cause. The
+  duplication therefore comes from the shadow-stack reconstruction that rebuilds the
+  value top (`rir_stamp_call_top` / the `AST_Load` construction near
+  `src/mccrir.c:1946`), **not** from the chained detection at `src/mccrir.c:2309`.
+  That is where the next attempt should start, and it should begin by dumping the
+  capture stream rather than by reading the handler — N20 applies.
+
+### Open: the rest
+
+- 7 selfhost cells — `selfhost-fixpoint`, `-O1`, `-O3`, `-Os`, `-gates`, and
+  `selfhost-output-parity-O2`/`-O3`. Not yet diagnosed. Fixpoint failing while the
+  default suite is green means the *second* generation diverges, so the right first
+  measurement is which stage-2 object differs, not which test fails.
+- `selfhost-arm64-native` — not yet diagnosed.
+- `cross/no-compiler-abort-x86_64-win32` — banked already, do not touch.
+
+### Method note
+
+The census and the always-keep suite answer different questions and the census is
+the weaker one. `mcc.c -O1` sat at 34 before and after the `revargs` fix because a
+refusal is a *skip*, not a fallback; meanwhile 21 executing cells went from wrong to
+right. When the goal is "the replay is correct", count failing cells under
+`MCC_RIR_NOFB=1`. When the goal is "the replay is byte-faithful", count the census.
+Do not report one as though it were the other.
+
+---
+
+## The chained store is the dominant remaining class
+
+`mcc.c -O1` sits at 34 fallbacks: 21 `len`, 12 `bytes`, 1 `error1` (banked, do not
+touch). Sampling the byte diffs rather than the counts, the largest identifiable group
+is one C shape — the chained assignment.
+
+    cleanup_symbols   s->data_offset = s->link->data_offset = s->hash->data_offset = 0;
+    cleanup_sections  s->data = mcc_realloc(s->data, s->data_allocated = s->data_offset);
+    chained (test)    a = b = f(v);
+
+The parser computes the addresses first and then stores; the replay interleaves
+address computation with the stores. `cleanup_symbols` at `+36`:
+
+    parser  load s1 ; load [s1+0x60] ; load s1 ; load [s1+0x70] ; xor ; store ; store
+    replay  load s1 ; load [+0x60] ; load s1 ; load [+0x70] ; xor ; store ; store
+            (same instructions, different registers and a different store order)
+
+**The class splits, and the halves need different treatment:**
+
+- **Pure value** (`= 0`, a constant, a non-volatile load) — the reorder is *benign*.
+  Three independent addresses all set to zero end up zero whatever the order. This
+  costs faithfulness only, and is a candidate for the semantic-equivalence verdict
+  rather than for a byte fix.
+- **Effectful value** (a call) — the duplication is a **wrong-code bug**. `a = b =
+  f(v)` captures two `Invoke` nodes and calls `f` twice. This is the open
+  `assign_value_effects` failure and it is not a faithfulness question at all.
+
+Do not attack these together. The second is a correctness defect and should be fixed
+or refused on its own; the first is a byte-equivalence question and may not be worth
+fixing at all if the equivalence verdict can carry it.
+
+### Reading `firstdiff` correctly
+
+`firstdiff` frequently points at a **jump displacement**, not at the defect.
+`builtin_libm_find` reports `@18`, where the only difference is `0f 8d 4b` against
+`0f 8d 4e` — a forward branch encoding a target three bytes further out. The real
+divergence is downstream and the early offset is an echo of it. Always read the whole
+window (`MCC_AST_UNFAITHFUL_DUMP=<n>` with a large `n`) before believing the offset.
+
+### Instrumentation that works, and one that does not
+
+- `MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=<window>` prints `[unfaithful] <fn> @<off>
+  parser:` / `replay:` byte rows and `[unfaithful-rel]` symbol rows. This is the
+  useful one.
+- `RIRPRODDUMP=<fn>` prints the arena at five stages, and `[ast-postreplay]` gives
+  `newlen`/`bodylen` directly.
+- The `MCC_TRACE_IF("UNFAITHFUL ...")` line next to that dump does **not** reach
+  stderr under `MCC_LOG=0xff`. Do not spend time trying to grep for it; use the
+  `[unfaithful]` rows instead.
+
+### The chained-store nesting knob: three variants, all measured
+
+`ast_detach_last_child` makes the nested shape `Store(a, Store(b, v))` reachable, so
+the outer store can consume the inner one instead of copying its value subtree. What
+gets nested is a tunable, and the three settings tried do **not** trade off the way
+they look like they should:
+
+| variant | `mcc.c -O1` | suite |
+|---|---|---|
+| effectful value only — **shipped** | 34 | clean |
+| nest everything | **32** | `chained_assign` mixed + 2 `optfire/chainstore` fail |
+| nest everything, `Convert`-wrapped when types differ | **79** | 4 fail |
+| nest when base types agree, or effectful | 35 | clean |
+
+The `32` is **not** two real wins. The gain comes precisely from nesting stores whose
+value converts — `a = b = expr` has `b`'s type — and those are the same bodies that
+break: `chained_assign`'s mixed case prints `165.018532` for `162.000000`. Restricting
+to equal types, either on the full type word or on `VT_BTYPE` alone, gives 34 and 35
+respectively, which proves the improvement lived entirely in the wrong half. Wrapping
+the nested store in a `Convert` to the inner store's type is much worse than either,
+so the replay's store-as-value arm is not simply missing a cast.
+
+**Do not re-tune this knob without first answering what the replay's store-as-value
+arm yields for a converting store.** That is the actual unknown, and every variant
+above is a guess about it. Measure it directly.
+
+### Correction to N23
+
+The earlier note said bailing in the chained branch "changed nothing, which locates the
+duplication elsewhere". The second half was wrong. The branch *is* taken -- confirmed
+by instrumenting it, `kind=13` (`AST_StoreVal`), `nchild=0`. `rir_prod_bail` simply
+cannot be set from there: `rir_prod_take` tests it **before** calling `rir_build()`,
+and `IR_OP_VSTORE` runs during the build, so the flag is read a function too late. Any
+refusal decided inside a handler needs a counter checked *after* the build, next to
+the existing `mismatch` test.
+
+Refusing would not have served the goal in any case. A refusal makes the body a
+`skip` rather than a `fallback`, so the census improves while the object still ships
+parser bytes. Driving the count down with refusals is gaming the metric; only a
+faithful arena is real progress.
+
+### Correcting the class sizes: chained stores are 2 bodies, not the dominant class
+
+An earlier section called the chained store "the dominant remaining class". That was
+wrong, and the measurement that disproves it was already in hand: nesting *everything*
+moved `mcc.c -O1` from 34 to **32**. Two bodies. The other 32 have unrelated causes.
+Sampling three diffs and generalising from them was the mistake -- exactly the habit
+N20 warns about.
+
+A cheap mechanical split of the 33 dumped diffs (64-byte window around the first
+difference, comparing the byte *multiset*):
+
+- **7 are pure reorders** -- identical bytes, different order:
+  `_mcc_backtrace`, `bind_exe_dynsyms`, `case_adjacent`, `export_global_syms`,
+  `put_elf_sym`, `relocate_syms`, `rt_find_state`. All are `bytes`-class. These are
+  the natural constituency for the semantic-equivalence verdict rather than for byte
+  fixes: if the equivalence proof can carry a reorder, they stop falling back
+  *legitimately* rather than by refusal.
+- **26 have genuinely different bytes** and need individual diagnosis.
+
+The window is 64 bytes, so treat the 7 as a lead rather than a proof -- a reorder that
+spills past the window will not be caught, and a coincidental multiset match is
+possible.
+
+### Honest scope estimate
+
+Reaching zero fallback at `-O1` is not one fix or a few. It is on the order of 26
+separate byte-level diagnoses plus an equivalence path for the 7 reorders, each
+needing the dump-read-fix-measure loop that has taken roughly one working session per
+*class* so far. Nothing found this session suggests a single common root cause behind
+the 26; the four defects fixed this session were four unrelated mechanisms
+(promotion of assigning loop conditions, argument evaluation order, non-store
+condition effects, chained-store duplication).
+
+The per-body work is parallelisable -- each body is independent, and the
+instrumentation to triage one is now a single command:
+
+    MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=64 mcc -w -O1 ... -c src/mcc.c 2>&1 \
+      | grep '^\[unfaithful\] <fn> '
+
+### format_func_spec: a doubled load, and why the obvious fold is not the fix
+
+`format_func_spec` is a clean single-cause `len` case worth finishing. Its
+`strcmp(name, tbl[i].n)` replays as
+
+    parser  lea tbl ; add rcx ; mov rcx,[rcx]
+    replay  lea tbl ; add rcx ; mov rcx,[rcx] ; mov rcx,[rcx]
+
+three bytes longer, which is exactly the `0f 83 a7` -> `0f 83 aa` displacement seen at
+`@33`. The arena subtree is
+
+    Load ( Convert ( Unary op#262145 ( Load ( Binary + tbl idx ) ) ) )
+
+**`op#262145` is `AST_OP_MEMBER` (0x40001), not `AST_OP_ADDR` (0x40000).** Reading it
+as an address-of and folding `&*y -> y` is wrong, and that misreading cost two
+experiments here. The real shape is a member access whose base is already a load, so
+the fold has to account for the member offset rather than cancel a dereference.
+
+Two negatives worth keeping:
+
+- **N24 — fold at the `IR_OP_ADDR` capture site.** `mcc.c -O1` fallback 34 -> 29, but
+  `skip` 10 -> **64** and `used` 1126 -> 1077: 54 bodies came out `invalid`. Folding
+  during capture disturbs the shadow stack. Detaching the inner node first does not
+  help -- the count is identical -- so it is the stack bookkeeping, not re-parenting.
+- **N25 — fold as a post-build rewrite.** Inert, because it tested for
+  `AST_OP_ADDR` and the node is `AST_OP_MEMBER`. The approach is still the right one:
+  a post-build pass leaves capture alone and so avoids N24 entirely. `ast_replace_child`
+  was written for it and is worth re-adding when the pass is written correctly.
+
+The general lesson for this file: a post-build arena rewrite is the safe place for
+canonicalisation. Capture-site edits have now failed this way twice.
+
+### N26 — the arena is cumulative, which invalidates whole-arena rewrite passes
+
+Both fold attempts above assumed `rir_arena` holds one function. It does not.
+Instrumenting a pass placed after `rir_build()` in `rir_prod_take` and printing
+`ast_count(rir_arena)` per call gives
+
+    host_runmem_dual  22     merge_funcattr 121    merge_attr 116
+    bf_operand_bits   791    type_size     1320    cplx_push_cst 445
+
+-- monotonically growing, then resetting. A pass written as
+`for (n = 0; n < ast_count(rir_arena); n++)` therefore walks **previously built
+bodies as well as the current one**, and rewriting there corrupts arenas already
+handed out. Anything of this shape must be bounded to the current body's node range,
+or run from the per-body entry point rather than over the whole arena.
+
+The same instrumentation turned up a second thing worth knowing: that pass ran only
+**10 times** across a `mcc.c` compile whose census reports 1126 `used` + 34 `fallback`
++ 10 `skip`. So the overwhelming majority of bodies do **not** reach `rir_prod_take`'s
+post-build point. Before writing any pass there, find out which entry point the other
+1160 bodies actually take -- placing work in `rir_prod_take` and measuring no change
+proves nothing about the work, only about the placement.
+
+That is the concrete blocker for the `format_func_spec` fix, and it is a plumbing
+question with a definite answer, not another guess.
+
+### N26 is WRONG — retracted in full
+
+The preceding N26 entry claimed two things and **both are false**. Retained here only
+so the retraction travels with the claim.
+
+1. *"`rir_prod_take` is not the common path -- a pass placed after `rir_build()` ran
+   only 10 times."* **False.** Counting entries directly gives **1172 calls and 1172
+   builds** over a `mcc.c` compile. The placement was on the common path the whole
+   time. The pass ran 10 times because it was wrapped in
+   `mcc_env_on("MCC_RIR_FOLD_MEMLOAD")`, and that gate -- not the placement -- is what
+   suppressed it. Whatever `mcc_env_on` does with a repeatedly-read variable, do not
+   use it to gate a per-body pass without checking it fires per body.
+2. *"The arena is cumulative, so a whole-arena loop rewrites bodies already handed
+   out."* **False.** The `ast_count` sequence 22, 121, **116**, 791, 1320, **445** is
+   non-monotonic, which means it resets per body. I read a rising prefix and inferred
+   accumulation.
+
+Running the `Member(Load(y)) -> Member(y)` fold **unconditionally**, which is the
+experiment those two errors had prevented, leaves the census at **34** and leaves
+`format_func_spec` at `newlen=220 bodylen=217` -- the same +3. So the fold does not
+apply to that body, and the doubled `mov rcx,[rcx]` has some other origin than the
+`Member` node's child being a `Load`. The subtree is
+
+    Load ( Convert ( Unary MEMBER ( Load ( Binary + tbl idx ) ) ) )
+
+and the next step is to establish **which** of the two `Load`s the parser does not
+emit, by reading the replay of this exact body instruction by instruction rather than
+by pattern-matching the tree shape. Three attempts have now been made against a guess
+about the shape; none survived contact.
+
+`ast_replace_child` was written twice for this and reverted twice. It is a correct
+helper -- position-preserving child swap, returns 0 without side effects when `old` is
+not a child -- and is worth re-adding once there is a fold that actually earns it.
+
+## The real placement bug, and the fold it unblocked
+
+Everything above about "the fold does nothing" was measuring a pass that never ran.
+**`rir_to_arena()` -- which creates the arena -- is called at `src/mccrir.c:4647`, well
+after `rir_build()`.** A pass inserted next to `rir_build()` sees `rir_arena == NULL`
+and returns immediately. The ten bodies that did fire were leftovers from calls that
+returned early before the `rir_arena = NULL` at the end of `rir_prod_take`.
+
+Moved after `rir_to_arena()`, the same pass runs on all **1172** bodies. That single
+line of placement is what three earlier "inert" results were actually reporting.
+
+### Byte attribution: use it, it works
+
+`RVATTR=<fn>` -- a wrapper around `ast_replay_value` recording `ind` before and after
+each node -- gave the answer for `format_func_spec` in one run:
+
+    n=33 Binary +   +17   address computation
+    n=34 Load       +0    indir() on an address, emits nothing
+    n=35 MEMBER     +0    lvalue, emits nothing
+    n=37 Load       +3    indir() on an lvalue MATERIALISES the pointer
+    n=39 Invoke     +38   15 bytes of marshalling and a second load
+
+So the outer `Load` is redundant: `AST_OP_MEMBER` already leaves `VT_LVAL` set, and
+the use loads once by itself. Stop pattern-matching tree shapes; attribute the bytes.
+
+### N27 — the Load-over-MEMBER fold: correct for pointers, and worthless there
+
+Turning that `Load` into a same-type `Convert` (mutate in place -- **detaching orphans
+it with `nc=0` and `rir_emit_safe` walks unreachable nodes too, which is the entire
+"unsafe" cluster**) gives, with the default suite **clean at 8253/8253**:
+
+| | `-O1` | `-O2` | `-O4` | used | always-keep |
+|---|---|---|---|---|---|
+| baseline | 34 | 35 | 61 | 1126 | 9 |
+| fold, unguarded | **29** | **30** | **56** | **1131** | **46** |
+| fold, pointer-valued only | 34 | 35 | 61 | 1126 | 9 |
+
+The unguarded fold is a genuine five-body win *and* miscompiles: the 46 are 21
+`union_byval` + 21 `transparent_union`, which pass their arguments as addresses
+instead of values -- `TU 11 22 12 77` becomes `TU -1283239216 ...`. Guarding on
+`VT_ARRAY` or on `VT_STRUCT` does **not** catch it; the member's own type there is
+scalar. Guarding on a pointer-valued result does, and gives back exactly zero.
+
+**The gain lives entirely in the half that is wrong** -- the same shape as the
+chained-store knob. Not landed. The remaining question is what distinguishes a
+transparent-union argument from `tbl[i].n` at this point in the arena; answer that and
+the five bodies are real.
+
+### N28 — the type-preserving discriminator for N27 does not exist
+
+The obvious split for N27 looked exact: fold the `Load` over `AST_OP_MEMBER` only when
+it does not change the type, on the reasoning that
+
+    format_func_spec   tbl[i].n    char * member read as char *   redundant
+    transparent_union  *u.pi       int * member read as int       real dereference
+
+Measured, that guard gives `mcc.c -O1` **34** -- the baseline -- with always-keep back
+to 9. So **all five bodies N27 gained were type-changing loads**, the same class as
+`*u.pi`. There is no safe subset here: every fold that helps is one that removes a
+dereference something else needs.
+
+That closes the N27 line as stated. Three discriminators have now been tried against
+it -- `VT_ARRAY`, `VT_STRUCT`, type-equality -- and the pointer-result one; each either
+misses the union breakage or erases the entire gain. The next attempt should stop
+looking for a predicate over the *node* and instead ask why five bodies contain a
+`Load` over a `MEMBER` that the parser does not emit at all. That is a capture
+question, not a folding question.

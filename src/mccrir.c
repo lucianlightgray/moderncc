@@ -93,9 +93,12 @@ int rir_loc_replay(int *loc_out) {
 static int rir_fcrec[RIR_LOCREC_MAX];
 static int rir_fcrec_pos[RIR_LOCREC_MAX];
 static int rir_fcrec_nc[RIR_LOCREC_MAX];
+static unsigned char rir_fcrec_cplx[RIR_LOCREC_MAX];
 static int rir_fcrec_n, rir_fcrec_i;
 
-void rir_hook_fconst_record(int c) {
+void rir_hook_fconst_record(int c, int cplx) {
+	if (rir_fcrec_n < RIR_LOCREC_MAX)
+		rir_fcrec_cplx[rir_fcrec_n] = (unsigned char)cplx;
 	if (!rir_capture_live() || rir_fcrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_fcrec_pos[rir_fcrec_n] = ind;
@@ -103,12 +106,23 @@ void rir_hook_fconst_record(int c) {
 	rir_fcrec[rir_fcrec_n++] = c;
 }
 
-int rir_hook_fconst_reuse(void) {
+int rir_hook_fconst_reuse(int cplx) {
 	if (!rir_c2_active)
 		return -1;
 	while (rir_fcrec_i + 1 < rir_fcrec_n && rir_fcrec_pos[rir_fcrec_i + 1] <= ind &&
 	       ((rir_fcrec_nc[rir_fcrec_i] & RIR_NOEVAL_MASK) ||
 	        rir_fcrec_pos[rir_fcrec_i + 1] > rir_fcrec_pos[rir_fcrec_i]))
+		rir_fcrec_i++;
+	/* The position resync alone cannot separate two constants materialized at the
+	   same `ind`, which is exactly what gen_complex_cast's const path produces: the
+	   16-byte complex and the scalar after it are both emitted into rodata before
+	   any code moves `ind`, so pos[i+1] == pos[i], the advance above does not fire,
+	   and a scalar request consumes the complex entry -- one label off for every
+	   reuse after it. Record order is emission order, so a kind mismatch at the head
+	   belongs to a consumer that already passed or will never ask. Same reasoning as
+	   the ast-side list in ast_fconst_reuse; the two have to agree. */
+	while (rir_fcrec_i < rir_fcrec_n &&
+	       rir_fcrec_cplx[rir_fcrec_i] != (unsigned char)cplx)
 		rir_fcrec_i++;
 	if (rir_fcrec_i >= rir_fcrec_n)
 		return 0;
@@ -1078,10 +1092,10 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
 static long rir_tot_c2_equiv, rir_tot_c2_unproven;
-#define RIR_PROD_NWHY 10
+#define RIR_PROD_NWHY 11
 static const char *const rir_prod_why_name[RIR_PROD_NWHY] = {
-		"bail",     "noops",   "capbad", "unbal", "ovf",
-		"mismatch", "invalid", "unsafe", "asm",   "regdangle"};
+		"bail",     "noops",   "capbad", "unbal",     "ovf",   "mismatch",
+		"invalid",  "unsafe",  "asm",    "regdangle", "revargs"};
 static long rir_prod_why_n[RIR_PROD_NWHY];
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
@@ -1250,6 +1264,20 @@ static int rir_effectful(AstLocal n) {
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
 		return 1;
+	/* A block groups statements, so it is exactly as effectful as what it holds.
+	   Without this, dropping the shadow top discards the whole group: the last
+	   statement of coherency_test -- a printf whose argument indexes a compound
+	   literal -- reached IR_OP_VPOP wrapped in a BasicBlock rather than bare, was
+	   judged side-effect-free, and vanished from the arena. The call itself is in
+	   the captured stream; only the drop lost it. */
+	if (k == AST_BasicBlock) {
+		AstLocal c;
+		for (c = ast_first_child(rir_arena, n); c != AST_NONE;
+				 c = ast_next_sib(rir_arena, c))
+			if (rir_effectful(c))
+				return 1;
+		return 0;
+	}
 	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
 		return 1;
 	if (k == AST_Binary && (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL))
@@ -1434,9 +1462,18 @@ static void rir_drop(AstLocal d) {
 		rir_lheld[rir_lheldn++] = d;
 		return;
 	}
+	/* Only plain stores were held here, so a loop condition whose side effect is
+	   not a store -- `while (++p, --f)`, `do {} while (f(), c)` -- fell through to
+	   rir_stmt and landed in the enclosing block AFTER the If. cleanup_sections
+	   came out with `++p` below the conditional branch, skipped on every iteration
+	   that loops; a four-element walk summed a[0] twice and printed 20 for 30.
+	   Anything reaching here is already rir_effectful, so hold the increment and
+	   call forms too and let rir_cf_cond park them in the condition's prefix. */
 	if (rir_docond && rir_dheldn < RIR_DHELD_MAX &&
-			ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
-			ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) {
+			((ast_kind(rir_arena, d) == AST_Store && ast_nchild(rir_arena, d) == 2 &&
+				ast_fbits(rir_arena, d) == 0 && ast_op(rir_arena, d) == 0) ||
+			 ast_kind(rir_arena, d) == AST_Unary ||
+			 ast_kind(rir_arena, d) == AST_Invoke)) {
 		rir_dheld[rir_dheldn++] = d;
 		return;
 	}
@@ -2311,7 +2348,25 @@ static void rir_op_effect(const RirOp *ro) {
 				if (src < ast_count(rir_arena) &&
 						ast_kind(rir_arena, src) == AST_Store &&
 						ast_nchild(rir_arena, src) == 2) {
-					v = ast_dup_sub(rir_arena, ast_child(rir_arena, src, 1));
+					/* a = b = f(v). The inner store was already statemented and this
+					   copied its value subtree, so f ran twice -- assign_value_effects
+					   counts two calls where the parser makes one. The parser keeps the
+					   stored value live across both stores, so the faithful shape is the
+					   nested one: detach the inner store from the block and hand it to the
+					   outer store as a value, exactly as the landor/ternary arms already
+					   do. Falls back to the copy when the inner store is not the block's
+					   last statement, where detaching would reorder it. */
+					AstLocal iv = ast_child(rir_arena, src, 1);
+					/* Only nest when the copy would duplicate a side effect and the inner
+					   store does not convert. `a = b = expr` yields b's type, so handing
+					   the outer store the unconverted inner value changes the result --
+					   chained_assign's mixed case printed 165.018532 for 162.000000. When
+					   the types agree there is nothing to convert and nesting is exact. */
+					if (rir_effectful(iv) && rir_bbn &&
+							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src))
+						v = src;
+					else
+						v = ast_dup_sub(rir_arena, iv);
 					chained = 1;
 				}
 			}
@@ -2653,6 +2708,14 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VPOP: {
 		AstLocal d = rir_pop();
+#if RIR_DBG_OPTRACE
+		if (rir_dbg_on())
+			fprintf(stderr, "[vpop] ent=%d d=%d kind=%s parent=%d shn=%d lorn=%d bbn=%d\n",
+							rir_dbg_ent, (int)d,
+							d == AST_NONE ? "-" : ast_kind_name(ast_kind(rir_arena, d)),
+							d == AST_NONE ? -1 : (int)ast_parent(rir_arena, d), rir_shn,
+							rir_lorn, rir_bbn);
+#endif
 		if (d != AST_NONE && rir_shn == 0 &&
 				ast_parent(rir_arena, d) == AST_NONE &&
 				ast_kind(rir_arena, d) == AST_Binary) {
@@ -3361,7 +3424,17 @@ static void rir_cf_cond(void) {
 	cond = rir_shn ? rir_pop() : AST_NONE;
 	if (cond == AST_NONE)
 		return;
-	if (rir_dheldn && rir_docond && rir_cfkind[rir_cfn - 1] == RIR_R_DO &&
+	/* A store in a loop condition -- `for (; !!(p = *pp); )`, `while (c = f(), c)` --
+	   is held by rir_drop while rir_docond is set, and whatever flushes it later
+	   lands it in the enclosing block AFTER the loop. ptr_unlink then ran its body
+	   with `p` never assigned and segfaulted. Park it in the condition's own prefix,
+	   which both replay arms already know how to run before the condition: the
+	   while/do arm reads it as child 2 and the for arm as child 3. This was
+	   RIR_R_DO-only, which is why only the do-while comma case was ever fixed. */
+	if (rir_dheldn && rir_docond &&
+			(rir_cfkind[rir_cfn - 1] == RIR_R_DO ||
+			 rir_cfkind[rir_cfn - 1] == RIR_R_WHILE ||
+			 rir_cfkind[rir_cfn - 1] == RIR_R_FOR) &&
 			rir_cfpfx[rir_cfn - 1] == AST_NONE) {
 		AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
 		int q;
@@ -3408,6 +3481,8 @@ static void rir_region(const RirOp *ro) {
 			}
 			if (ro->rkind != RIR_R_FOR && ro->rkind != RIR_R_DO)
 				rir_cf_cond();
+			else if (ro->rkind == RIR_R_FOR)
+				rir_docond = 1;
 			break;
 		}
 		case RIR_R_COND:
@@ -3587,7 +3662,12 @@ static void rir_region(const RirOp *ro) {
 		case RIR_R_BODY:
 		case RIR_R_THEN:
 		case RIR_R_ELSE: {
-			AstLocal bb = ast_node(rir_arena, AST_BasicBlock);
+			AstLocal bb;
+			/* The condition-store hold is armed at the RIR_R_FOR rbegin and must not
+			   survive into the increment or the body: a store there is a statement,
+			   not a value the condition consumes. */
+			rir_docond = 0;
+			bb = ast_node(rir_arena, AST_BasicBlock);
 			if (rir_cfn)
 				ast_add_child(rir_arena, rir_cf[rir_cfn - 1], bb);
 			if (rir_bbn < 64)
@@ -3851,8 +3931,13 @@ static void rir_region(const RirOp *ro) {
 											ast_fbits(rir_arena, rir_cf[rir_cfn]) | AST_FB_NOCODE);
 			if (rir_cfkind[rir_cfn] == RIR_R_FOR && !rir_cfcond[rir_cfn])
 				ast_set_op(rir_arena, rir_cf[rir_cfn], 8);
+			/* while/do carry (cond, body) so the prefix is child 2; a for carries
+			   (cond, incr, body) so it is child 3. The replay arms read exactly
+			   those slots. */
 			if (rir_cfpfx[rir_cfn] != AST_NONE &&
-					ast_nchild(rir_arena, rir_cf[rir_cfn]) == 2)
+					(ast_nchild(rir_arena, rir_cf[rir_cfn]) == 2 ||
+					 (rir_cfkind[rir_cfn] == RIR_R_FOR &&
+						ast_nchild(rir_arena, rir_cf[rir_cfn]) == 3)))
 				ast_add_child(rir_arena, rir_cf[rir_cfn], rir_cfpfx[rir_cfn]);
 			rir_cfpfx[rir_cfn] = AST_NONE;
 		}
@@ -4513,6 +4598,19 @@ struct AstArena *rir_prod_take(void) {
 	rir_prod_why = "";
 	if (!rir_prod_env || rir_env || rir_prod_bail) {
 		rir_prod_why = "bail";
+		return NULL;
+	}
+	/* -freverse-funcargs evaluates a call's arguments right to left, which the
+	   parser implements by saving each argument's tokens and replaying them
+	   backwards before vrev()ing the value stack. What lands in the arena is the
+	   post-vrev source order, so a replay walking the Invoke's children in order
+	   evaluates left to right and the side effects come out reversed --
+	   errors_and_warnings' test_reverse_funcargs prints 122333 instead of 333221.
+	   Recording the evaluation order would need a flag on the Invoke node and a
+	   schema revision; the option is off by default and absent from the census,
+	   so refuse the body rather than model it wrong. */
+	if (mcc_state->reverse_funcargs) {
+		rir_prod_why = "revargs";
 		return NULL;
 	}
 	rir_build();

@@ -389,6 +389,32 @@ void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) { MCC_TRACE("enter\n")
 	a->epoch++;
 	a->kind[n] = kind;
 }
+/* Unhook `child` from `parent` when it is the last one, so a statement that turns
+   out to be a value can be re-parented instead of copied. Returns 0 and changes
+   nothing if it is not the last child, which keeps the caller honest about ordering. */
+int ast_detach_last_child(AstArena *a, AstLocal parent, AstLocal child) { MCC_TRACE("enter\n");
+	AstLocal c, prev = AST_NONE;
+	if (parent == AST_NONE || child == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (a->last_child[parent] != child)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (c = a->first_child[parent]; c != AST_NONE && c != child;
+			 c = a->next_sib[c])
+		{ MCC_TRACE("br\n"); prev = c; }
+	if (c != child)
+		{ MCC_TRACE("br\n"); return 0; }
+	a->epoch++;
+	if (prev == AST_NONE)
+		{ MCC_TRACE("br\n"); a->first_child[parent] = AST_NONE; }
+	else
+		{ MCC_TRACE("br\n"); a->next_sib[prev] = AST_NONE; }
+	a->last_child[parent] = prev;
+	a->nchild[parent]--;
+	a->parent[child] = AST_NONE;
+	a->next_sib[child] = AST_NONE;
+	return 1;
+}
+
 void ast_clear_children(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	a->epoch++;
 	a->first_child[n] = AST_NONE;
@@ -1933,6 +1959,12 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	   accepts a byte-divergent replay into production so the fallback census can be
 	   driven to zero and the result judged by the goldens instead. Off by default;
 	   turning it on is only meaningful alongside a full test run. */
+	/* Default ON: a completed replay is kept even when its bytes differ from the
+	   parser's. The byte compare answers "did this reproduce the parser exactly",
+	   which is the right question for trusting a body to the optimizer and far too
+	   strong for deciding whether it is safe to ship. Set MCC_RIR_NOFB=0 to restore
+	   the old byte-gated fallback; that is the escape hatch if a body ever ships
+	   wrong, and it is also how to confirm a suspected arena defect is one. */
 	ast_rir_nofb_env = ast_env_gate("MCC_RIR_NOFB", 0);
 	/* Diagnostic only: ignore AST_FB_LANDOR_MATERIAL and always take the
 	   gvtst_set path. Used to confirm that a short-circuit materialisation is
@@ -2168,7 +2200,7 @@ int ast_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	int jfc;
 #if MCC_REPLAY_IR
 	{
-		int rfc = rir_hook_fconst_reuse();
+		int rfc = rir_hook_fconst_reuse(cplx);
 		if (rfc >= 0)
 			{ MCC_TRACE("br\n"); return rfc; }
 	}
@@ -2193,7 +2225,7 @@ int ast_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 void ast_fconst_record(int c, int cplx, const unsigned char *key) { MCC_TRACE("enter\n");
 	ir_cap_fconst_note(c);
 #if MCC_REPLAY_IR
-	rir_hook_fconst_record(c);
+	rir_hook_fconst_record(c, cplx);
 #endif
 	if (!ast_active || ast_replaying)
 		{ MCC_TRACE("br\n"); return; }
@@ -3514,13 +3546,33 @@ static int ast_node_libcall(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+/* Does this subtree assign to anything? A loop condition that does is the shape the
+   promoter mismodels: gjmp_append's `while ((n2 = read32le(p = ...)))` came out with
+   five promoted registers and wrong control flow, and it is the last body standing
+   between the JIT self-host and a fallback-free build. */
+static int ast_cond_has_store(AstArena *a, AstLocal n, int depth) {
+	MCC_TRACE("enter\n");
+	if (n == AST_NONE || depth > 32)
+		{ MCC_TRACE("br\n"); return 0; }
+	{
+		uint16_t k = ast_kind(a, n);
+		if (k == AST_Store || k == AST_StoreVal)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_cond_has_store(a, c, depth + 1))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
 	if (!ast_promote_env || ast_func_has_asm || ast_func_has_labeladdr)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
-	int has_call = 0, has_vla = 0, has_goto = 0, has_loop = 0;
+	int has_call = 0, has_vla = 0, has_goto = 0, has_loop = 0, has_landor = 0;
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		uint16_t k = ast_kind(a, n);
 		if (k == AST_Invoke)
@@ -3536,6 +3588,21 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				if (ast_kind(a, s) == AST_If &&
 						(so == 2 || so == 3 || so == 4 || so == 5))
 					{ MCC_TRACE("br\n"); has_loop = 1; }
+				/* A short-circuit in statement position branches, but it is an
+				   AST_Binary rather than an AST_If, so the classification above
+				   never sees it and the body is planned as if it were
+				   straight-line. void_expr.c's
+				   `for (; i < 3; ++i) { ...; (void)(i || (f(i), ++count)); }`
+				   then came out with its loop exit pointing at the next
+				   instruction, the increment block unreachable and no back-edge.
+				   Treat it as the branch it is. */
+				if (ast_kind(a, s) == AST_Binary &&
+						(so == TOK_LAND || so == TOK_LOR))
+					{ MCC_TRACE("br\n"); has_landor = 1; }
+				if (ast_kind(a, s) == AST_If && (so == 2 || so == 3 || so == 4) &&
+						ast_nchild(a, s) >= 1 &&
+						ast_cond_has_store(a, ast_child(a, s, 0), 0))
+					{ MCC_TRACE("br\n"); has_landor = 1; }
 			}
 		}
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
@@ -3546,6 +3613,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); has_call = 1; }
 	}
 	if (has_vla)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (has_landor)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (has_call && (ast_no_callful_env || ast_no_callful_promo))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -4054,6 +4123,21 @@ static void ast_error_sink(void *opaque, const char *msg) { MCC_TRACE("enter\n")
 	(void)msg;
 }
 
+/* ast_subtree_has_call is gated to the promotion targets; the StoreVal arm below
+   needs the same question answered on every target. */
+static int ast_val_has_call(AstArena *a, AstLocal n, int depth) {
+	MCC_TRACE("enter\n");
+	if (n == AST_NONE || depth > 32)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Invoke)
+		{ MCC_TRACE("br\n"); return 1; }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE;
+			 c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_val_has_call(a, c, depth + 1))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	MCC_TRACE_IF("RV n=%d kind=%d nchild=%d parent=%d ind=%d vtop=%d\n", (int)n,
 							 (int)ast_kind(a, n), (int)ast_nchild(a, n), (int)ast_parent(a, n),
@@ -4117,8 +4201,29 @@ static void ast_replay_value(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 				}
 				break;
 			}
-			if (ast_nchild(a, st) == 2)
-				{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
+			/* Without AST_FB_STORE_VALUE_LIVE the value is re-derived by replaying
+			   the store's own value expression, which is only sound when that
+			   expression is pure. bounds_stress.c's test16 is
+			   `strcpy(q = alloca(strlen(demo) + 1), demo)`: re-deriving re-runs
+			   strlen AND performs a second alloca, so `q` names the first buffer
+			   while strcpy writes the second. Read the stored location instead
+			   whenever the value could have side effects. */
+			if (ast_nchild(a, st) == 2) { MCC_TRACE("br\n");
+				/* An unparented Store is not placed as a statement anywhere, so
+				   nothing else will ever perform it -- this StoreVal is its only
+				   chance. Re-deriving just the value here loses the assignment:
+				   `for (pp = list; !!(p = *pp); pp = nn)` reached the arena with the
+				   `p = *pp` Store absent from the tree, so the condition tested the
+				   right value while `p` itself stayed uninitialised and the body
+				   dereferenced garbage. Perform the store and leave its value, which
+				   is what the parser's vstore does. */
+				if (ast_parent(a, st) == AST_NONE)
+					{ MCC_TRACE("br\n"); ast_replay_value(a, st); }
+				else if (ast_val_has_call(a, ast_child(a, st, 1), 0))
+					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 0)); }
+				else
+					{ MCC_TRACE("br\n"); ast_replay_value(a, ast_child(a, st, 1)); }
+			}
 		}
 		break;
 	}
@@ -5586,7 +5691,28 @@ static void ast_fold_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
 	if (ast_kind(a, x) != AST_Literal || ast_kind(a, y) != AST_Literal)
 		{ MCC_TRACE("br\n"); return; }
+	/* The fold has to run at the type the operands convert to, not at the left
+	   operand's. tcc lowers unary minus as `vpushi(0); gen_op('-')`, so the left
+	   operand of a negated 64-bit constant is an `int` zero, and folding at its
+	   width truncates: `0 - 9223372036854775807LL` came out 1, and
+	   `-9223372036854775807LL - 1` came out 0, both being the low 32 bits of the
+	   right answer. Shifts are excluded because their result type is the promoted
+	   LEFT operand's, not the common one. Floats are rejected below, so this is
+	   the integer half of the usual arithmetic conversions. */
 	int tt = ast_type_t(a, x);
+	{
+		int ty2 = ast_type_t(a, y);
+		int bx = tt & VT_BTYPE, by = ty2 & VT_BTYPE;
+		if (op != TOK_SHL && op != TOK_SHR && op != TOK_SAR &&
+				!ast_bad_type(tt) && !ast_bad_type(ty2) && !is_float(tt) &&
+				!is_float(ty2)) { MCC_TRACE("br\n");
+			int wx = bx == VT_LLONG ? 8 : 4, wy = by == VT_LLONG ? 8 : 4;
+			if (wy > wx)
+				tt = ty2;
+			else if (wy == wx && (ty2 & VT_UNSIGNED))
+				tt |= VT_UNSIGNED;
+		}
+	}
 	if (ast_bad_type(tt) || ast_bad_type(ast_type_t(a, y)))
 		{ MCC_TRACE("br\n"); return; }
 	if (is_float(tt) || is_float(ast_type_t(a, y)))
@@ -15338,6 +15464,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 																				: "";
 #endif
 				ast_replay_completed = 1;
+				{ MCC_TRACE("br\n");
+					const char *pd3 = getenv("RIRPRODDUMP");
+					if (pd3 && funcname && !strcmp(pd3, funcname)) { MCC_TRACE("br\n");
+						fprintf(stderr,
+										"[ast-postreplay] %s loc=%d saved_loc=%d newlen=%d bodylen=%d\n",
+										funcname, loc, saved_loc, new_len, body_len);
+					}
+				}
 				ast_fn_faithful = faithful;
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");
 					int ast_bd = -1, ast_i;
@@ -15954,6 +16088,36 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			   itself would do both at once, and the four golden regressions banked in
 			   docs/TODO.md are what that looks like. */
 			int keep = faithful || (ast_rir_nofb_env && ast_replay_completed);
+			/* Bisection handle: MCC_RIR_NOFB_SKIP is a comma-separated list of
+			   function names that keep falling back even with the no-fallback path
+			   on. Turning fallback off wholesale breaks the JIT self-host with
+			   "memory full"; this is how to find which body is responsible without
+			   rebuilding between attempts. */
+			if (keep && !faithful && funcname) { MCC_TRACE("br\n");
+				const char *sk = getenv("MCC_RIR_NOFB_SKIP");
+				if (sk && *sk) { MCC_TRACE("br\n");
+					size_t fl = strlen(funcname);
+					const char *q = sk;
+					while (*q) { MCC_TRACE("br\n");
+						const char *e2 = q;
+						while (*e2 && *e2 != ',')
+							{ MCC_TRACE("br\n"); e2++; }
+						if ((size_t)(e2 - q) == fl && !memcmp(q, funcname, fl))
+							{ MCC_TRACE("br\n"); keep = 0; break; }
+						q = *e2 ? e2 + 1 : e2;
+					}
+				}
+			}
+			/* The frame has to cover every offset the kept body actually references.
+			   Those offsets come from the arena's Refs, which carry the parser's own
+			   local offsets, so the parser's depth is the floor -- and `loc` after a
+			   replay is not it. The prologue is emitted outside [ast_body_ind_sv,
+			   body_len), so a short frame does NOT fail the byte compare: smoke.c's
+			   main replayed byte-for-byte with loc=0 against the parser's -20 and got
+			   `sub $0x0,%rsp`, which put its locals on top of the caller and aborted
+			   in free(). Take the deeper of the two whenever the body is kept. */
+			if (keep && saved_loc < loc)
+				loc = saved_loc;
 #if MCC_REPLAY_IR
 			if (ast_rir_used)
 				{ MCC_TRACE("br\n"); rir_prod_note(keep ? "used" : "fallback"); }
