@@ -4293,60 +4293,37 @@ must either happen inside the earlier `ast_ident_run` fixpoint or see through
 `Convert`+`-`.
 ---
 
-## W7 — riscv64 dynamic TLS in a shared object (8 qemu-riscv64 cells)
+## W7 — riscv64 local-exec TLS in a PIE — CLOSED
 
-`qemu-riscv64` fails 8 of 23 cells (`-glibc`, `-O2`, `-O3`, `-Os` and the four `-musl`
-equivalents). Every one is the same two conformance cases:
+`qemu-riscv64` failed 8 of 23 cells, all of them the same two conformance cases
+(`tls [pic]`, `tls_aggr [pic]`) refusing with
 
-    tls [pic]: compile failed
-    tls_aggr [pic]: compile failed
     mcc: error: local-exec TLS in a shared object is not valid;
                 dynamic TLS is not implemented for riscv64
 
-This is a missing feature, not a regression: the non-PIC legs pass, and only the
-`[pic]` variants are refused. It is also **not** what this file claims elsewhere.
-The TLS reconciliation note says moderncc is "ahead on two counts upstream has no
-equivalent for: riscv64 general-dynamic TLS (`riscv64_tls_gd_a0`) and arm64 dynamic
-TLS in a shared object". The arm64 half holds; the riscv64 half does not extend to a
-shared object, which is what these cells exercise. Correct that claim when the
-feature lands rather than leaving the two statements side by side.
+The message was describing a situation that was not occurring. The `[pic]` leg builds
+`-fPIC -pie` (`tools/mccharness.c:2270`), a position-independent **executable**, and
+`mcc_set_output_type` ORs `MCC_OUTPUT_DYN` -- which *is* `MCC_OUTPUT_DLL` -- into an
+EXE whenever `-pie` is on. So a PIE carries **both** bits.
 
-### The mechanism, traced
+That made the two halves disagree:
 
-The `[pic]` leg is **not** a shared object. `tools/mccharness.c:2270` adds
-`-fPIC -pie` -- a position-independent *executable*. That matters, because local-exec
-TLS is perfectly valid in a PIE and gcc uses it there by default.
+- `riscv64-gen.c` gates general-dynamic on `pic && DLL && !EXE`, so for a PIE it
+  correctly declined GD and emitted local-exec, which is valid there -- a PIE's TLS
+  block sits at a fixed offset from the thread pointer, and gcc uses local-exec too.
+- `riscv64-link.c:353` then refused that local-exec on the DLL bit **alone**, reading
+  a PIE as a shared object.
 
-What actually happens:
+So this was never a missing feature. `riscv64_tls_gd_a0` exists and the non-PIC legs
+always passed; the linker check was simply broader than the codegen condition that
+produces the relocation. Fixed by testing the same condition in both places: refuse
+only a real shared library, `DLL && !EXE`.
 
-1. `src/arch/riscv64/riscv64-gen.c:171` gates the general-dynamic path on
+Verified with qemu-user, not by inspection: both cases build **and run** clean under
+`qemu-riscv64 -L <sysroot>`, and the preset went 15/23 to **23 of 23**. The docker
+tier is 26 of 26.
 
-       mcc_state->pic && (output_type & MCC_OUTPUT_DLL) && !(output_type & MCC_OUTPUT_EXE)
-
-   `-pie` sets `s->pie`, not the DLL bit, so this is false and the code falls through
-   to local-exec TPREL.
-2. `src/arch/riscv64/riscv64-link.c:353` then refuses TPREL whenever
-   `output_type & MCC_OUTPUT_DLL`, with the "shared object" wording.
-
-**arm64 has the identical linker check** at `src/arch/arm64/arm64-link.c:430` and
-passes anyway, because `arm64-gen.c` gates on `mcc_state->pic` **alone** and emits
-TLSDESC, so TPREL never reaches the linker. `arm-link.c:427` carries the same message.
-So the riscv64 general-dynamic path exists (`riscv64_tls_gd_a0`,
-`src/arch/riscv64/riscv64-gen.c:139`) -- its guard is simply narrower than arm64's.
-
-Note the two are not the same repro: compiling `tests/qemu/conformance/tls.c` with
-`-fPIC -pie` and no sysroot **succeeds**. The failure needs the harness's
-`--sysroot`/`-isystem`/`-L` set, so reproduce it with those, not with a bare command.
-
-### Three candidate fixes, in order of preference
-
-1. **Widen the riscv64 codegen guard to match arm64** (`mcc_state->pic`). Smallest
-   change, uses the GD path that already exists. Verify it does not regress the
-   non-PIC legs, which currently pass.
-2. **Narrow the linker check** so it refuses TPREL only for a true shared library
-   rather than anything with the DLL bit. More correct -- local-exec in a PIE is
-   legal and faster than GD -- but touches arm/arm64 wording too.
-3. **Skip the two `[pic]` cases for riscv64** in the qemu conformance list, exactly
-   as `tools/mccharness.c:2255` already does for i386 with the reason "i386 -fPIC TLS
-   unsupported (mcc emits no GD/LDM TLS; errors by design)". Honest, but it is the
-   fallback if 1 and 2 both prove awkward.
+`arm-link.c:427` and `arm64-link.c:430` carry the identical over-broad check. Neither
+is reachable today because their codegen emits TLSDESC under `pic`, so TPREL never
+arrives -- left alone deliberately rather than changed blind, but they are the same
+latent bug if either target ever emits local-exec under `-pie`.
