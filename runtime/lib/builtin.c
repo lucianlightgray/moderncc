@@ -187,6 +187,124 @@ int __mcc_signbitl(long double x) {
 #endif
 }
 
+#if defined _WIN32 || defined __arm__ || \
+		(defined __aarch64__ && (defined __APPLE__ || defined _WIN32))
+#define MCC_NAN_LD_DBL 1
+#elif defined __i386__ || defined __x86_64__
+#define MCC_NAN_LD_X87 1
+#else
+#define MCC_NAN_LD_Q128 1
+#endif
+
+static int mcc_nan_payload(const char *s, unsigned long long *out) {
+	unsigned long long v = 0;
+	int base = 10;
+	*out = 0;
+	if (!s)
+		return 0;
+	while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\v' || *s == '\f' ||
+				 *s == '\r')
+		s++;
+	if (*s == '-' || *s == '+')
+		s++;
+	if (*s == '0') {
+		s++;
+		if (*s == 'x' || *s == 'X') {
+			base = 16;
+			s++;
+		} else {
+			base = 8;
+		}
+	}
+	for (;;) {
+		int d;
+		if (*s >= '0' && *s <= '9')
+			d = *s - '0';
+		else if (*s >= 'a' && *s <= 'f')
+			d = *s - 'a' + 10;
+		else if (*s >= 'A' && *s <= 'F')
+			d = *s - 'A' + 10;
+		else
+			break;
+		if (d >= base)
+			break;
+		v = v * (unsigned long long)base + (unsigned long long)d;
+		s++;
+	}
+	*out = v;
+	return *s == 0;
+}
+
+float __mcc_nansf(const char *s) {
+	union {
+		unsigned u;
+		float f;
+	} u;
+	unsigned long long v;
+	unsigned p;
+	if (!mcc_nan_payload(s, &v))
+		v = 0;
+	p = (unsigned)(v & 0x3fffffu);
+	if (!p)
+		p = 0x200000u;
+	u.u = 0x7f800000u | p;
+	return u.f;
+}
+
+double __mcc_nans(const char *s) {
+	union {
+		unsigned long long u;
+		double d;
+	} u;
+	unsigned long long v, p;
+	if (!mcc_nan_payload(s, &v))
+		v = 0;
+	p = v & 0x7ffffffffffffULL;
+	if (!p)
+		p = 0x4000000000000ULL;
+	u.u = 0x7ff0000000000000ULL | p;
+	return u.d;
+}
+
+long double __mcc_nansl(const char *s) {
+	union {
+		long double ld;
+		unsigned char b[sizeof(long double)];
+	} u;
+	unsigned long long v, lo, hi;
+	unsigned i, n;
+	if (!mcc_nan_payload(s, &v))
+		v = 0;
+#if defined MCC_NAN_LD_X87
+	lo = v & 0x3fffffffffffffffULL;
+	if (!lo)
+		lo = 0x2000000000000000ULL;
+	lo |= 0x8000000000000000ULL;
+	hi = 0x7fffULL;
+	n = 2;
+#elif defined MCC_NAN_LD_Q128
+	lo = v;
+	hi = 0x7fff000000000000ULL;
+	if (!lo)
+		hi |= 0x400000000000ULL;
+	n = 8;
+#else
+	lo = v & 0x7ffffffffffffULL;
+	if (!lo)
+		lo = 0x4000000000000ULL;
+	lo |= 0x7ff0000000000000ULL;
+	hi = 0;
+	n = 0;
+#endif
+	for (i = 0; i < sizeof u.b; i++)
+		u.b[i] = 0;
+	for (i = 0; i < 8; i++)
+		u.b[i] = (unsigned char)(lo >> (8 * i));
+	for (i = 0; i < n; i++)
+		u.b[8 + i] = (unsigned char)(hi >> (8 * i));
+	return u.ld;
+}
+
 unsigned long long BUILTIN(bswap64)(unsigned long long x) {
 	return ((x & 0xff00000000000000ull) >> 56) | ((x & 0x00ff000000000000ull) >> 40) | ((x & 0x0000ff0000000000ull) >> 24) | ((x & 0x000000ff00000000ull) >> 8) | ((x & 0x00000000ff000000ull) << 8) | ((x & 0x0000000000ff0000ull) << 24) | ((x & 0x000000000000ff00ull) << 40) | ((x & 0x00000000000000ffull) << 56);
 }

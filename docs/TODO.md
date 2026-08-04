@@ -2388,6 +2388,48 @@ Unexamined and new to this board, all `-O3`-only `FAILEXE`: `execute/{20000715-1
 
 **Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
 
+### Needs `src/`: two builtin-fidelity gaps that cannot be closed from a header
+
+Both were implemented, measured to work, and then **backed out** because a header-only
+form breaks file-scope uses. Recording them so the next attempt starts from the answer.
+
+**`__builtin_nan` discards its payload.** `src/mccgen.c:11577` does `vtop--` and always
+emits `0x7ff8000000000000`. The payload-correct version works as a macro but regresses
+`gcc.c-torture/execute/ieee/builtin-nan-1.c`, which writes
+`double n1 = __builtin_nan("0x1");` at **file scope** — a macro cannot make a payloaded
+NaN a constant expression, because the payload is a string literal and the preprocessor
+cannot turn `"0x1"` into `1`. It passed before only because *both* sides ignored the
+payload. There is no header-only escape: mcc's `__builtin_choose_expr` **parses the
+unselected arm**, so the statement-expression trick dies with *"statement expression
+outside of function"*.
+Fix: parse the payload in the `TOK_builtin_nan{,f,l}` case and fold to a constant, then
+add `TOK_builtin_nans{,f,l}` beside it and delete both the macro and the runtime helpers.
+
+**The float-classification macros evaluate their argument many times.** gcc evaluates
+once; mcc re-expands. Measured side-effect counts — `isnan` 2, `isinf` 2, `fabs` 2,
+`abs` 2, `copysign` 3, `isfinite` 4, `isunordered` 4, `isgreater` 6, `isnormal` 7,
+**`fpclassify` 12**. So `__builtin_isnan(*p++)` increments twice and
+`__builtin_fpclassify(…, f())` calls `f` twelve times. The
+`__builtin_choose_expr(__builtin_constant_p(x), …, ({ typeof(x) v = (x); … }))` form takes
+the counts to gcc's exactly (audit 22 → 12 differences) but breaks every file-scope use
+for the same parse-the-unselected-arm reason.
+Fix: either stop `__builtin_choose_expr` parsing the discarded arm, or make these real
+compiler builtins.
+
+Also absent entirely: **`__builtin_issignaling`** — not a token, not a macro. Now
+implementable since sNaN works, but it moves no gate: all nine `builtin-issignaling-*`
+tests are SKIP under `dg-require-effective-target`, not failures.
+
+### Correction to the `ieee/` figures this file quoted
+
+The recorded "PASS 251, FAILEXE 0, FAILCOMPILE 61" is wrong and was not reproducible.
+Re-measured against a baseline `mcc-o3` built from stashed sources with the identical
+command: **PASS 263, FAILEXE 0, FAILCOMPILE 13, SKIP 9**. The 61 figure counted the nine
+`builtin-issignaling-*` variants as FAILCOMPILE when `tools/xsuite.py` actually SKIPs them
+on `dg-require-effective-target` — including `builtin-issignaling-1.c`, skipped for
+`dg-add-options(ieee)` rather than for the missing builtin. The 13 real FAILCOMPILE are
+`compare-fp-3.c` and `fp-cmp-{6,7,9}.c`.
+
 ### The work list, as of the current `main` (clang-oracled)
 
 19,571 run at `-O0`: **16,961 PASS, 999 REFFAIL, 862 FAIL, 384 XPASS, 229 XPASS_REFOK,

@@ -386,14 +386,38 @@
 	#define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))
 # endif
 #endif
+	__mcc_float_t __mcc_nansf(const char *);
+	__mcc_double_t __mcc_nans(const char *);
+	__mcc_ldouble_t __mcc_nansl(const char *);
+	#define __mcc_nanbits_f(u) (__extension__ (union { __mcc_uint_t __u; \
+	__mcc_float_t __f; }){ .__u = (u) }.__f)
+	#define __mcc_nanbits_d(u) (__extension__ (union { __mcc_ullong_t __u; \
+	__mcc_double_t __d; }){ .__u = (u) }.__d)
+	#if defined _WIN32 || defined __arm__ \
+	|| (defined __aarch64__ && (defined __APPLE__ || defined _WIN32))
+	#define __mcc_nanbits_l(hi, lo) (__extension__ (union { __mcc_ullong_t __u; \
+	__mcc_ldouble_t __l; }){ .__u = (lo) }.__l)
+	#define __MCC_SNAN_L __mcc_nanbits_l(0, 0x7ff4000000000000ULL)
+	#elif defined __i386__ || defined __x86_64__
+	#define __mcc_nanbits_l(hi, lo) (__extension__ (union { struct { \
+	__mcc_ullong_t __s; __mcc_ushort_t __e; } __p; __mcc_ldouble_t __l; }) \
+	{ .__p = { (lo), (__mcc_ushort_t)(hi) } }.__l)
+	#define __MCC_SNAN_L __mcc_nanbits_l(0x7fff, 0xa000000000000000ULL)
+	#else
+	#define __mcc_nanbits_l(hi, lo) (__extension__ (union { __mcc_ullong_t __u[2]; \
+	__mcc_ldouble_t __l; }){ .__u = { (lo), (hi) } }.__l)
+	#define __MCC_SNAN_L __mcc_nanbits_l(0x7fff400000000000ULL, 0)
+	#endif
+	#define __MCC_SNAN_F __mcc_nanbits_f(0x7fa00000U)
+	#define __MCC_SNAN_D __mcc_nanbits_d(0x7ff4000000000000ULL)
 	#ifndef __builtin_nansf
-	#define __builtin_nansf(s) (0.0f / 0.0f)
+	#define __builtin_nansf(s) (sizeof(s) == 1 ? __MCC_SNAN_F : __mcc_nansf(s))
 	#endif
 	#ifndef __builtin_nans
-	#define __builtin_nans(s) (0.0 / 0.0)
+	#define __builtin_nans(s) (sizeof(s) == 1 ? __MCC_SNAN_D : __mcc_nans(s))
 	#endif
 	#ifndef __builtin_nansl
-	#define __builtin_nansl(s) (0.0L / 0.0L)
+	#define __builtin_nansl(s) (sizeof(s) == 1 ? __MCC_SNAN_L : __mcc_nansl(s))
 	#endif
 	#define __builtin_isnan(x) ((x) != (x))
 	#define __builtin_isnanf(x) __builtin_isnan(x)
@@ -910,17 +934,75 @@
 	#ifdef __SIZEOF_INT128__
 	#define __mcc_ov_is_wide(x) _Generic((x), __mcc_int128_t: 1, \
 	__mcc_uint128_t: 1, default: 0)
+	typedef __mcc_uint128_t __mcc_ov_wide_t;
+	static __inline __mcc_ov_wide_t __mcc_ov_lo64(__mcc_ov_wide_t __v) {
+	return (__mcc_ov_wide_t)(__mcc_ullong_t)__v;
+	}
+	static __inline int __mcc_ov_calc_w(int __op, int __na, __mcc_ov_wide_t __ma,
+	int __nb, __mcc_ov_wide_t __mb, __mcc_ov_wide_t __tmax, int __tsig,
+	__mcc_ov_wide_t *__out) {
+	__mcc_ov_wide_t __m;
+	int __neg, __wide = 0;
+	if (__op == 1)
+	__nb = __mb ? !__nb : 0;
+	if (__op == 2) {
+	__mcc_ov_wide_t __p0 = __mcc_ov_lo64(__ma) * __mcc_ov_lo64(__mb);
+	__mcc_ov_wide_t __p1 = (__ma >> 64) * __mcc_ov_lo64(__mb);
+	__mcc_ov_wide_t __p2 = __mcc_ov_lo64(__ma) * (__mb >> 64);
+	__mcc_ov_wide_t __p3 = (__ma >> 64) * (__mb >> 64);
+	__mcc_ov_wide_t __mid = (__p0 >> 64) + __mcc_ov_lo64(__p1) + __mcc_ov_lo64(__p2);
+	__neg = (__ma && __mb) ? (__na ^ __nb) : 0;
+	__m = __mcc_ov_lo64(__p0) | (__mid << 64);
+	__wide = (__p3 + (__p1 >> 64) + (__p2 >> 64) + (__mid >> 64)) != 0;
+	} else if (__na == __nb) {
+	__neg = __na;
+	__m = __ma + __mb;
+	__wide = __m < __ma;
+	} else if (__ma >= __mb) {
+	__neg = __na;
+	__m = __ma - __mb;
+	} else {
+	__neg = __nb;
+	__m = __mb - __ma;
+	}
+	if (!__m && !__wide)
+	__neg = 0;
+	*__out = __neg ? (__mcc_ov_wide_t)0 - __m : __m;
+	if (__wide)
+	return 1;
+	if (!__neg)
+	return __m > __tmax;
+	if (!__tsig)
+	return 1;
+	return __m > __tmax + 1;
+	}
+	#define __mcc_ov_mag_w(x) ((x) < 0 ? (__mcc_ov_wide_t)0 - (__mcc_ov_wide_t)(x) \
+	: (__mcc_ov_wide_t)(x))
+	#define __mcc_ov_tmax_w(x) ((__mcc_ov_wide_t)~(__mcc_ov_wide_t)0 >> \
+	(8 * sizeof(x) >= 8 * sizeof(__mcc_ov_wide_t) ? (int)__mcc_ov_tsig(x) \
+	: (int)(8 * sizeof(__mcc_ov_wide_t) - 8 * sizeof(x) + __mcc_ov_tsig(x))))
 	#else
 	#define __mcc_ov_is_wide(x) 0
+	typedef __mcc_ullong_t __mcc_ov_wide_t;
+	#define __mcc_ov_calc_w __mcc_ov_calc
+	#define __mcc_ov_mag_w __mcc_ov_mag
+	#define __mcc_ov_tmax_w __mcc_ov_tmax
 	#endif
 	#define __mcc_ov_gen(code, op, a, b, res) __extension__ ({	\
 	__typeof__(a) __mcc_ova = (a);				\
 	__typeof__(b) __mcc_ovb = (b);				\
 	__typeof__(*(res)) *__mcc_ovp = (res);			\
 	__mcc_ullong_t __mcc_ovv;				\
+	__mcc_ov_wide_t __mcc_ovw;				\
 	int __mcc_ovf;						\
-	if (__mcc_ov_is_wide(*__mcc_ovp)) {			\
-	__mcc_ovf = __mcc_ov_disp(op, *__mcc_ovp)(__mcc_ova, __mcc_ovb, __mcc_ovp); \
+	if (__mcc_ov_is_wide(*__mcc_ovp) || __mcc_ov_is_wide(__mcc_ova)	\
+	|| __mcc_ov_is_wide(__mcc_ovb)) {			\
+	__mcc_ovf = __mcc_ov_calc_w((code),			\
+	__mcc_ov_neg(__mcc_ova), __mcc_ov_mag_w(__mcc_ova),	\
+	__mcc_ov_neg(__mcc_ovb), __mcc_ov_mag_w(__mcc_ovb),	\
+	__mcc_ov_tmax_w(*__mcc_ovp), __mcc_ov_tsig(*__mcc_ovp),	\
+	&__mcc_ovw);						\
+	*__mcc_ovp = (__typeof__(*__mcc_ovp))__mcc_ovw;		\
 	} else {						\
 	__mcc_ovf = __mcc_ov_calc((code),			\
 	__mcc_ov_neg(__mcc_ova), __mcc_ov_mag(__mcc_ova),	\
