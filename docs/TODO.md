@@ -435,7 +435,30 @@ cond region, not just the one feeding the condition, so every `for` whose condit
 touches memory gets a prefix the parser never emitted. **Reverted; do not re-try it
 unnarrowed.**
 
-What is landed and inert, waiting for a narrower trigger: `rir_cf_cond` parks held
+**The mechanism, so the narrow trigger can be designed rather than guessed.** The
+`IR_OP_VSTORE` handler (`src/mccrir.c:2333`) branches on exactly these flags:
+
+```c
+if (rir_lorn || rir_ternn || rir_docond) {
+    ast_add_child(n, t); ast_add_child(n, v);
+    rir_push(n);          /* push the Store as a VALUE */
+    break;
+}
+...
+rir_stmt(n);              /* else: statement it, and synthesise a StoreVal for its value */
+```
+
+Pushed as a value, the condition consumes the `Store` node itself and replaying the
+condition performs the store — which is why arming `rir_docond` fixes `ptr_unlink` and
+even makes it `used`. Statement'd, the condition instead gets a `StoreVal`, and every
+`StoreVal` path produces only a value, so the assignment is lost.
+
+So the trigger does not need to move nodes after the fact (there is no unlink helper,
+and adding one would be invasive). It needs to decide **at the vstore** whether this
+store's value is what the enclosing loop's condition will consume. Region membership
+alone is too coarse — that is the measured -29.
+
+What is landed and inert, waiting for that trigger: `rir_cf_cond` parks held
 condition stores for `RIR_R_WHILE`/`RIR_R_FOR` as well as `RIR_R_DO`, and the loop rend
 appends the prefix for a `for` as child 3 (it required `nchild == 2`, true for while/do
 and false for `for`, so the `for` replay arm's `nchild >= 4` hook could never fire).
