@@ -2742,3 +2742,93 @@ only; `wine` on an x86_64 host does not load ARM or ARM64 PE, so `arm-win32`,
 `arm-wince` and `arm64-win32` are byte-compared only; and no self-host on a Windows
 or macOS *host* can be attempted at all. Those are items **W1**–**W5** at the top of
 this file.
+
+---
+
+## Always-keep (`MCC_RIR_NOFB=1`): 31 failing cells → 10
+
+Driving toward "-O1 never falls back" the useful measurement is not the census but
+`MCC_RIR_NOFB=1 ctest`, which keeps the replay unconditionally and so *executes*
+every body the fallback would have hidden. The default path is 8230/8230 throughout
+everything below; these numbers are the always-keep run only.
+
+Start of this pass: 31 failures. Now 10. The 31 were never 31 distinct bugs — 21 of
+them were one golden replicated across every exec variant.
+
+### Closed
+
+- **`gjmp_append` / promotion of a loop condition that assigns** — `while ((n2 =
+  read32le(p = ...)))` came out at `-O4` with five variables promoted to registers
+  and wrong control flow. Found by bisecting `mcc.c`'s `-O4` fallbacks with
+  `MCC_RIR_NOFB_SKIP`: skipping only `gjmp_append` made `selfhost-jit` pass, and
+  `MCC_AST_PROMOTE=0` made it pass with nothing skipped — which named the *pass*,
+  not the arena. `ast_plan_promotion` now declines a body when an `AST_If` with a
+  loop op has a `Store`/`StoreVal` anywhere in its condition, alongside the existing
+  landor decline. `selfhost-jit` had previously died as "memory full" (that was
+  `ptr_unlink`'s infinite loop) and then as SIGSEGV. Census: `-O2` 37→35, `-O4`
+  63→61, `-O1` unchanged at 34.
+- **`-freverse-funcargs` (21 cells)** — all 21 `errors_and_warnings` cells were the
+  single golden `test_reverse_funcargs`. The other 91 macros in that file agree on
+  diagnostics *exactly*, so this was purely evaluation order:
+
+      printf(" %d %d %d\n", printf("1"), printf("22"), printf("333"));
+      parser  333221 1 2 3
+      replay  122333 1 2 3
+
+  The parser implements right-to-left by saving each argument's tokens, replaying
+  them backwards, then `vrev()`ing the stack — so what reaches the arena is the
+  post-vrev *source* order and a child-order replay evaluates left to right.
+  Faithful modelling needs an order flag on the `Invoke` node and a schema revision.
+  The option is off by default and never appears in the census, so `rir_prod_take`
+  now refuses with a new `revargs` reason. Correctness first.
+
+### Open: `exec-gatesoff/assign_value_effects` — a real arena bug
+
+`gatesoff` is `-O3` with `MCC_AST_CHAINSTORE=0`. Exit 8 is the `chained(5)` check:
+`a = b = f(v)` must call `f` **once**, and the arena calls it twice. The dump is
+unambiguous — two `Invoke` nodes:
+
+    BasicBlock
+      Store  Ref b   Invoke f(v)
+      Store  Ref a   Invoke f(v)      <-- duplicate
+      Return Binary + (Ref a) (Ref b)
+
+`MCC_AST_PROMOTE=0` does **not** change it, so this is the arena, not a pass. This
+is a wrong-code defect that fallback has been masking: at default settings the body
+simply fails `faithful` and ships parser bytes.
+
+Two fixes tried and both **refuted, with costs**:
+
+- **N22 — read the target back.** In the chained branch of the `IR_OP_VSTORE`
+  handler, when the inner store's value `rir_effectful()`, emit `Load(dup(target))`
+  instead of `ast_dup_sub(value)`. Fixes the test, but the parser keeps that value
+  in a *register* rather than reloading, so the bytes stop matching: census `-O1`
+  34→**40**, and the default suite broke — **15 failures**. Reverted. A reload is
+  also wrong outright for a narrow or volatile target.
+- **N23 — bail on an effectful chained store.** Setting `rir_prod_bail` in the same
+  branch changes nothing: `chained` still reports `[rir-prod] used ... len`. The
+  branch is not the site that duplicates. `rir_prod_bail` resets at function begin
+  (`src/mccrir.c:558`), which is before capture, so the reset is not the cause. The
+  duplication therefore comes from the shadow-stack reconstruction that rebuilds the
+  value top (`rir_stamp_call_top` / the `AST_Load` construction near
+  `src/mccrir.c:1946`), **not** from the chained detection at `src/mccrir.c:2309`.
+  That is where the next attempt should start, and it should begin by dumping the
+  capture stream rather than by reading the handler — N20 applies.
+
+### Open: the rest
+
+- 7 selfhost cells — `selfhost-fixpoint`, `-O1`, `-O3`, `-Os`, `-gates`, and
+  `selfhost-output-parity-O2`/`-O3`. Not yet diagnosed. Fixpoint failing while the
+  default suite is green means the *second* generation diverges, so the right first
+  measurement is which stage-2 object differs, not which test fails.
+- `selfhost-arm64-native` — not yet diagnosed.
+- `cross/no-compiler-abort-x86_64-win32` — banked already, do not touch.
+
+### Method note
+
+The census and the always-keep suite answer different questions and the census is
+the weaker one. `mcc.c -O1` sat at 34 before and after the `revargs` fix because a
+refusal is a *skip*, not a fallback; meanwhile 21 executing cells went from wrong to
+right. When the goal is "the replay is correct", count failing cells under
+`MCC_RIR_NOFB=1`. When the goal is "the replay is byte-faithful", count the census.
+Do not report one as though it were the other.
