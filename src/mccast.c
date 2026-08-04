@@ -14978,6 +14978,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			}
 		}
 #endif
+		{ MCC_TRACE("br\n");
+			const char *pd0 = getenv("RIRPRODDUMP");
+			if (pd0 && funcname && !strcmp(pd0, funcname)) { MCC_TRACE("br\n");
+				static char pdb0[8192];
+				ast_dump(ast_cur, ast_root(ast_cur), pdb0, sizeof pdb0);
+				fprintf(stderr, "[ast-handover] %s:\n%s\n", funcname, pdb0);
+			}
+		}
 		uint64_t ast_fnh = ast_intention_hash(ast_cur, AST_NONE);
 		ast_intention_acc = ast_intention_acc * 0x100000001b3u ^ ast_fnh;
 		ast_hash_out_emit(NULL, funcname, ast_fnh);
@@ -14997,6 +15005,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				ast_templates_env = ast_fncfg[fi].tmpl;
 				ast_promote_env = ast_fncfg[fi].promo;
 				ast_inline_env = ast_fncfg[fi].inl;
+			}
+		}
+		{ MCC_TRACE("br\n");
+			const char *pd1 = getenv("RIRPRODDUMP");
+			if (pd1 && funcname && !strcmp(pd1, funcname)) { MCC_TRACE("br\n");
+				static char pdb1[8192];
+				ast_dump(ast_cur, ast_root(ast_cur), pdb1, sizeof pdb1);
+				fprintf(stderr, "[ast-mid] %s:\n%s\n", funcname, pdb1);
 			}
 		}
 		int keep_baseline = 0;
@@ -15074,6 +15090,14 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				if (ast_rir_used)
 					{ MCC_TRACE("br\n"); rir_prod_replay_begin(); }
 #endif
+				{ MCC_TRACE("br\n");
+					const char *pd = getenv("RIRPRODDUMP");
+					if (pd && funcname && !strcmp(pd, funcname)) { MCC_TRACE("br\n");
+						static char pdb2[8192];
+						ast_dump(ast_cur, ast_root(ast_cur), pdb2, sizeof pdb2);
+						fprintf(stderr, "[ast-predump] %s:\n%s\n", funcname, pdb2);
+					}
+				}
 				ast_replay_body(ast_cur);
 #if MCC_REPLAY_IR
 				if (ast_rir_used)

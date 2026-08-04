@@ -528,7 +528,64 @@ whatever else may be true of it.
 than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
 `MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
 
-### The production arena is CORRECT. The production replay does not walk it.
+### LOCALISED TO ~90 LINES: the tree is correct leaving `rir_prod_take` and folded to `Literal 0` before `ast_replay_body`
+
+**Two dumps, one compile, same body** — `RIRPRODDUMP=<funcname>` prints both
+(`[rir-proddump]` from inside `rir_prod_take` just before it hands the arena over,
+`[ast-predump]` from `src/mccast.c` immediately before `ast_replay_body(ast_cur)`):
+
+```
+[rir-proddump] main:            [ast-predump] main:
+  Store                           Store
+    Ref #0                          Ref #0
+    Binary -                        Literal 0        <- the whole subtree, folded to 0
+      Binary -
+        Literal 0
+        Literal 9223372036854775807
+      Literal 1
+```
+
+**The arena leaves `rir_prod_take` correct and arrives at the replay folded to `0`.**
+The fold is a 32-bit truncation: `INT64_MIN`'s low half is `0`. That is the entire
+`overflow_inline` miscompilation, and it happens in the window between those two
+points — roughly `src/mccast.c:14944-15076`, about ninety lines.
+
+**And nothing in that window visibly transforms the arena.** The only call taking
+`ast_cur` is `ast_intention_hash(ast_cur, AST_NONE)` (`:14981`), which takes a
+`const AstArena *`. The rest is `ast_arena_free` of the *previous* `ast_cur`, the
+`ast_cur = ast_rir_prod` handover, per-function gate overrides from `ast_fncfg`, and
+the `orig`/`ind` save. So either something in there mutates through a path that does
+not name `ast_cur`, or the two dumps are not printing the same object.
+
+**The bisect is started and the window is down to ~50 lines.** Three probes are in the
+tree, all gated on the same `RIRPRODDUMP=<funcname>` and all off by default:
+`[rir-proddump]` (inside `rir_prod_take`), `[ast-handover]` (before
+`ast_intention_hash`), `[ast-mid]` (before `int keep_baseline = 0;`) and
+`[ast-predump]` (before `ast_replay_body`). One compile prints all four, exactly once
+each — verified, so this is a single pass and not two invocations being compared:
+
+```
+[rir-proddump]  Binary -      correct
+[ast-handover]  Binary -      correct
+[ast-mid]       Binary -      correct
+[ast-predump]   Literal 0     folded
+```
+
+So the fold happens between `int keep_baseline = 0;` (`src/mccast.c:15018`) and
+`ast_replay_body(ast_cur)`. **Every line in that window has been read and none of it
+transforms the arena** — it is the `orig`/`orig_rel` capture, `ind = ast_body_ind_sv`,
+`rsym = 0`, `nocode_wanted = 0`, the `sym_free_first`/`loc`/`anon_sym` saves, sixteen
+`int … = 0` pass counters, the `setjmp` prologue, `ast_promo_n = 0`,
+`ast_pinned_regs = 0`, and `rir_prod_replay_begin()`. The only calls are `mcc_malloc`,
+`memcpy`, `setjmp` and `rir_prod_replay_begin`.
+
+**Finish the bisect by probe, not by reading.** Drop `[ast-predump]`-style dumps every
+few lines through that window — the obvious next split is immediately before and after
+`rir_prod_replay_begin()` — until two adjacent probes disagree. Six theories about this
+defect have now been refuted by measurement, every one of them reached by reading
+source, so do not deviate into another one.
+
+### Earlier framing, superseded: the production arena is correct but the replay does not walk it
 
 **`RIRPRODDUMP=<funcname>` is new and is the only window onto the arena production
 actually ships** (`rir_prod_take`, `src/mccrir.c`). `[rir-dump]` is gated at
