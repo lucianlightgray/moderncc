@@ -47,7 +47,45 @@ case "$arch" in
     echo "unsupported arch '$arch' (riscv64|arm|arm64)"; exit 77 ;;
 esac
 
-command -v "$CROSSCC" >/dev/null 2>&1 || { echo "SKIP: no compiler '$CROSSCC'"; exit 77; }
+need_fallback=0
+case "$arch" in
+  arm|riscv64)
+    command -v "$CROSSCC" >/dev/null 2>&1 || need_fallback=1
+    [ -n "$SR" ] && [ ! -d "$SR" ] && need_fallback=1
+    ;;
+  arm64)
+    case "$(uname -m)" in aarch64|arm64) : ;; *) need_fallback=1 ;; esac
+    ;;
+esac
+
+if [ "$need_fallback" = 1 ]; then
+  case "$arch" in
+    riscv64)
+      echo "SKIP: no '$CROSSCC'; the vendored-sysroot fallback is withheld for riscv64"
+      echo "      because -run segfaults there on any input (see docs/TODO.md)"
+      exit 77 ;;
+  esac
+  VSR="$root/vendor/gentoo-stage3-$arch-glibc"
+  VMCC="$root/cmake-cross/mcc-$arch"
+  [ -x "$VMCC" ] || { echo "SKIP: no '$CROSSCC' and no $VMCC to bootstrap with"; exit 77; }
+  [ -d "$VSR" ] || { echo "SKIP: no '$CROSSCC' and no vendored sysroot at $VSR"; exit 77; }
+  echo "[$arch] no '$CROSSCC'; bootstrapping with $VMCC against $VSR"
+  CROSSCC="$VMCC"
+  SR="$VSR"
+  LOADER=""
+  SYSINC="-I$SR/usr/include"
+  EXTRALINK=""
+  for d in usr/lib64 lib64 usr/lib lib; do
+    [ -d "$SR/$d" ] && EXTRALINK="$EXTRALINK -L$SR/$d"
+  done
+  BUILDFLAGS="-O1 --sysroot=$SR $SYSINC $EXTRALINK"
+  BUILDLIBS="-lm"
+  case "$arch" in
+    arm64) QEMU=qemu-aarch64 ;;
+  esac
+fi
+
+command -v "$CROSSCC" >/dev/null 2>&1 || [ -x "$CROSSCC" ] || { echo "SKIP: no compiler '$CROSSCC'"; exit 77; }
 if [ -n "$QEMU" ]; then
   command -v "$QEMU" >/dev/null 2>&1 || { echo "SKIP: $QEMU not available"; exit 77; }
 else
