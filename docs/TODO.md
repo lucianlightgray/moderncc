@@ -407,35 +407,40 @@ Both `StoreVal` paths only produce a *value*: one reuses a live register, the ot
 re-derives the value expression. The condition therefore tested the right number while
 `p` stayed uninitialised and the body dereferenced garbage.
 
-**Root-caused, groundwork landed, not closed.** The `p = *pp` `Store` *is* in the
-arena — parented to the root `BasicBlock` **after** the `If`, so it replays after the
-loop and `p` is never set while the body runs.
+**ROOT CAUSE CONFIRMED BY MEASUREMENT, and the obvious fix is a banked negative.**
 
-`rir_drop` holds a condition store in `rir_dheld` only while `rir_docond` is set, and
-`rir_docond` is armed in exactly one place (`src/mccrir.c:3843`): when a `RIR_R_BODY`
-region ends inside a `RIR_R_DO` whose condition is not yet captured. **That is
-do-while only** — for `for` and `while` the condition precedes the body, so the flag is
-never armed, the store is never held, and it lands in the enclosing block. This is
-precisely why the do-while comma case (`rir_cfpfx`, closed earlier) was the only member
-of this family ever fixed.
+The `[stmt]`/`[ent]` traces settle where the store goes:
 
-Two halves of the fix are in, one is missing:
+```
+[ent]  6 RBEGIN for      [stmt] node=5 kind=If      <- the loop node enters the root block
+[ent] 11 OP vstore       [stmt] node=9 kind=Store   <- `p = *pp` enters the root block, AFTER it
+[ent] 17 RBEGIN cond                                <- the cond region opens only here
+```
 
-- *In*: `rir_cf_cond` now parks held condition stores for `RIR_R_WHILE` and
-  `RIR_R_FOR` as well as `RIR_R_DO`, and the loop rend appends the prefix for a `for`
-  as child 3 (it previously required `nchild == 2`, true for while/do and false for
-  `for`, so the `for` replay arm's `nchild >= 4` hook could never fire).
-- *In*: an unparented `Store` reached through a `StoreVal` is now performed rather
-  than merely evaluated — that is its only chance to happen.
-- **Missing**: nothing arms `rir_docond` for a `for`/`while` condition, so
-  `rir_dheld` is still empty when `rir_cf_cond` runs and the parking code does not
-  trigger. The reproducer still hangs. Arming it at the `RIR_R_COND` rbegin when the
-  enclosing construct is `RIR_R_FOR`/`RIR_R_WHILE` is the remaining step; it is a
-  capture-side change, so measure it on the twelve-key board.
+**A `for`'s condition expression is captured between the `RIR_R_FOR` rbegin and the
+`RIR_R_COND` rbegin.** `rir_stmt` therefore drops any store in it into the *enclosing*
+block, which already holds this loop's `If`, so it replays **after** the loop and the
+body runs with `p` unassigned. That is the segfault.
 
-Both landed halves are **inert today** — `mcc.c` at `-O1` stays `used 1121,
-fallback 39` and ctest is 8230 of 8230 — so they are groundwork, not a claim of
-closure.
+`rir_docond`/`rir_dheld` exist to hold exactly such stores, but `rir_docond` is armed in
+one place only (`src/mccrir.c:3843`): at a `RIR_R_BODY` rend inside a `RIR_R_DO`. That
+is do-while, where the condition *follows* the body — and it is why the do-while comma
+case was the only member of this family ever fixed.
+
+**Arming at the `RIR_R_COND` rbegin does nothing** — measured; the store is already
+statement'd by then. **Arming at the `RIR_R_FOR` rbegin works and costs too much**:
+`ptr_unlink` becomes correct *and* `used`, but `mcc.c` at `-O1` goes **39 -> 68**
+fallbacks and `tests/` goes **6 -> 9**. The flag parks every store captured before the
+cond region, not just the one feeding the condition, so every `for` whose condition
+touches memory gets a prefix the parser never emitted. **Reverted; do not re-try it
+unnarrowed.**
+
+What is landed and inert, waiting for a narrower trigger: `rir_cf_cond` parks held
+condition stores for `RIR_R_WHILE`/`RIR_R_FOR` as well as `RIR_R_DO`, and the loop rend
+appends the prefix for a `for` as child 3 (it required `nchild == 2`, true for while/do
+and false for `for`, so the `for` replay arm's `nchild >= 4` hook could never fire).
+Both replay arms already run a condition prefix. **The missing piece is a trigger that
+holds only the store whose value the condition consumes** — not a region-wide flag.
 
 ### The real scope: 39 fallbacks in `src/mcc.c` at `-O1`, not 6
 
