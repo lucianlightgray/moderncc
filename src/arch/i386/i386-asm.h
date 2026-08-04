@@ -39,6 +39,11 @@ DEF_ASM_OP0(xlat, 0xd7)
 
 DEF_ASM_OP0L(endbr32, 0xf30f1e, 7, OPC_MODRM)
 
+DEF_ASM_OP0L(xgetbv, 0xd0, 0, OPC_0F01)
+DEF_ASM_OP0L(xsetbv, 0xd1, 0, OPC_0F01)
+DEF_ASM_OP0L(monitor, 0xc8, 0, OPC_0F01)
+DEF_ASM_OP0L(mwait, 0xc9, 0, OPC_0F01)
+
 ALT(DEF_ASM_OP0L(cmpsb, 0xa6, 0, OPC_BWLX))
 ALT(DEF_ASM_OP0L(scmpb, 0xa6, 0, OPC_BWLX))
 
@@ -332,6 +337,9 @@ DEF_ASM_OP1(ffree, 0xddc0, 4, OPC_REG, OPT_ST)
 DEF_ASM_OP1(ffreep, 0xdfc0, 4, OPC_REG, OPT_ST)
 DEF_ASM_OP1(fxsave, 0x0fae, 0, OPC_MODRM, OPT_EA)
 DEF_ASM_OP1(fxrstor, 0x0fae, 1, OPC_MODRM, OPT_EA)
+DEF_ASM_OP1(xsave, 0x0fae, 4, OPC_MODRM, OPT_EA)
+DEF_ASM_OP1(xrstor, 0x0fae, 5, OPC_MODRM, OPT_EA)
+DEF_ASM_OP1(xsaveopt, 0x0fae, 6, OPC_MODRM, OPT_EA)
 
 DEF_ASM_OP2(arpl, 0x63, 0, OPC_MODRM, OPT_REG16, OPT_REG16| OPT_EA)
 ALT(DEF_ASM_OP2(larw, 0x0f02, 0, OPC_MODRM| OPC_WLX, OPT_REG| OPT_EA, OPT_REG))

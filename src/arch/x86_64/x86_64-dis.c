@@ -834,6 +834,59 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		modrm(d, vsize(d), 0);
 		P(d, "nop%c\t%s", sfx(vsize(d)), d->rm);
 		return d->len;
+	case 0x01:
+	case 0xae: {
+		static const char *const g7m[8] = {"sgdt", "sidt", "lgdt", "lidt",
+																			 "smsw", NULL, "lmsw", "invlpg"};
+		static const char *const g15m[8] = {"fxsave", "fxrstor", "ldmxcsr",
+																				"stmxcsr", "xsave", "xrstor",
+																				"xsaveopt", "clflush"};
+		static const char *const g15q[8] = {"fxsaveq", "fxrstorq", NULL, NULL,
+																				"xsave64", "xrstor64",
+																				"xsaveopt64", NULL};
+		unsigned char m = peek(d, 0);
+		const char *nm = NULL;
+
+		if (d->opsz || d->rep || d->repne)
+			{ MCC_TRACE("br\n"); goto raw0f; }
+		if ((m >> 6) == 3) { MCC_TRACE("br\n");
+			if (d->rex_w)
+				{ MCC_TRACE("br\n"); goto raw0f; }
+			if (op == 0x01) { MCC_TRACE("br\n");
+				switch (m) { MCC_TRACE("br\n");
+				case 0xc1: nm = "vmcall"; break;
+				case 0xc2: nm = "vmlaunch"; break;
+				case 0xc3: nm = "vmresume"; break;
+				case 0xc4: nm = "vmxoff"; break;
+				case 0xc8: nm = "monitor"; break;
+				case 0xc9: nm = "mwait"; break;
+				case 0xd0: nm = "xgetbv"; break;
+				case 0xd1: nm = "xsetbv"; break;
+				case 0xf8: nm = "swapgs"; break;
+				}
+			} else { MCC_TRACE("br\n");
+				nm = m == 0xe8 ? "lfence" : m == 0xf0 ? "mfence"
+									 : m == 0xf8 ? "sfence" : NULL;
+			}
+			if (!nm)
+				{ MCC_TRACE("br\n"); goto raw0f; }
+			get8(d);
+			P(d, "%s", nm);
+			return d->len;
+		}
+		if (op == 0x01) { MCC_TRACE("br\n");
+			if (d->rex_w)
+				{ MCC_TRACE("br\n"); goto raw0f; }
+			nm = g7m[(m >> 3) & 7];
+		} else { MCC_TRACE("br\n");
+			nm = d->rex_w ? g15q[(m >> 3) & 7] : g15m[(m >> 3) & 7];
+		}
+		if (!nm)
+			{ MCC_TRACE("br\n"); goto raw0f; }
+		modrm(d, vsize(d), 0);
+		P(d, "%s\t%s", nm, d->rm);
+		return d->len;
+	}
 	case 0x10:
 	case 0x11: {
 		const char *nm = d->rep
@@ -1126,6 +1179,7 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		P(d, "xadd\t%s, %s", gpr(d, size, d->reg), d->rm);
 		return d->len;
 	default:
+	raw0f:
 		P(d, ".byte\t0x0f, 0x%02x", op);
 		return d->len;
 	}

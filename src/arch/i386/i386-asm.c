@@ -1110,6 +1110,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 			break;
 #ifdef MCC_TARGET_X86_64
 		case 'x':
+		case 'v':
 			pr = 3;
 			break;
 #endif
@@ -1146,14 +1147,47 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 	return priority;
 }
 
+static int asm_gcc_regno(const char *s) { MCC_TRACE("enter\n");
+#ifdef MCC_TARGET_X86_64
+	static const signed char gpr8[8] = {MCC_TREG_XAX, MCC_TREG_XDX, MCC_TREG_XCX,
+																			3, 6, 7, 5, 4};
+#else
+	static const signed char gpr8[8] = {MCC_TREG_XAX, MCC_TREG_XDX, MCC_TREG_XCX,
+																			3, -1, -1, -1, -1};
+#endif
+	int n = 0;
+
+	if (!isnum(*s))
+		{ MCC_TRACE("br\n"); return -2; }
+	while (isnum(*s)) { MCC_TRACE("br\n");
+		n = n * 10 + (*s - '0');
+		s++;
+	}
+	if (*s)
+		{ MCC_TRACE("br\n"); return -2; }
+	if (n < 8)
+		{ MCC_TRACE("br\n"); return gpr8[n]; }
+#ifdef MCC_TARGET_X86_64
+	if (n >= 36 && n <= 43)
+		{ MCC_TRACE("br\n"); return n - 36 + 8; }
+#endif
+	return -1;
+}
+
 ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
 	const char *s;
 	Operand op;
+	int n;
 	if (t < TOK_IDENT || (t & SYM_FIELD))
 		{ MCC_TRACE("br\n"); return -1; }
 	s = table_ident[t - TOK_IDENT]->str;
 	if (s[0] == '%')
 		{ MCC_TRACE("br\n"); ++s; }
+	n = asm_gcc_regno(s);
+	if (n == -1)
+		{ MCC_TRACE("br\n"); mcc_error("unknown register '%s'", s); }
+	if (n != -2)
+		{ MCC_TRACE("br\n"); return n; }
 	t = tok_alloc_const(s);
 	unget_tok(t);
 	unget_tok('%');
@@ -1306,12 +1340,13 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			break;
 #ifdef MCC_TARGET_X86_64
 		case 'x':
+		case 'v':
 			if (op->reg >= 0)
 				{ MCC_TRACE("br\n"); goto try_next; }
 			if (!asm_is_sse_operand(op) ||
 					(op->input_index >= 0 &&
 					 !asm_is_sse_operand(&operands[op->input_index])))
-				{ MCC_TRACE("br\n"); mcc_error("constraint 'x' requires a float or double operand"); }
+				{ MCC_TRACE("br\n"); mcc_error("constraint '%c' requires a float or double operand", c); }
 			for (reg = MCC_TREG_XMM0; reg <= MCC_TREG_XMM15; reg++) { MCC_TRACE("br\n");
 				if (!(reg_classes[reg] & MCC_RC_FLOAT))
 					{ MCC_TRACE("br\n"); continue; }
