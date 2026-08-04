@@ -85,40 +85,80 @@ gates this file recorded as green and were not. **Two of the three closed in
    at `-O1` plus 3 at `-O0` — not a three-body `-O0` curiosity. Root cause is
    established (see **Still open**); the arena node is not yet pinned.
 
-6. ~~**`stage2 / linux / predefs-off` failed two `parts/` cells on CI at `9f337e21`**~~
-   **Root-caused and fixed.** `tools/mccharness.c` passed **`-std=gnu23`
-   unconditionally** at three reference-build sites, added when mcc's own default
-   moved to gnu23 so the differential compared like with like. gcc only accepts
-   that spelling from **13** onward; 12 and earlier want `-std=gnu2x` and reject
-   `-std=gnu23` outright. On a CI image with an older gcc the reference build
-   therefore failed and fell back to a pre-C23 mode, which is exactly the reported
-   symptom: `s7_13.h:40` is the `#else` arm, reached only when
-   `__STDC_VERSION__ < 202311L`, and it needs `__alignas_is_defined`. The
-   `run_s6_10_4` divergence — gcc disagreeing with *both* clang and mcc — has the
-   same shape, the reference leg being the odd one out.
-   `ref_std_flag()` now probes each reference compiler once, `-std=gnu23` →
-   `-std=gnu2x` → `-std=gnu17`, cached per compiler because gcc, clang and `cc`
-   can differ. Verified locally on the `linux-gcc-predefs-off` preset, which was
-   built specifically to reproduce this: both cells pass, as do all 36 `parts/`
-   and `mcctest` cells and the full 8,122.
-   Note this was **not reproducible on this host at all** — local gcc is 15 and
-   accepts `-std=gnu23` — so it was found by reading the failure rather than by
-   running it, and the fix is verified by construction plus the probe's fallback
-   order. Original note kept below for the record.
+6. ~~**`stage2 / linux / predefs-off` failed two `parts/` cells on CI**~~ —
+   **closed 2026-08-04, but note the first fix did not close it.** Two sessions
+   landed on this concurrently. `43243c67` read the failure as a *spelling*
+   problem — gcc 12 and earlier reject `-std=gnu23` and want `-std=gnu2x` — and
+   added `ref_std_flag()`, an acceptance probe. That diagnosis does not survive
+   the log: the runner is **gcc 13.2.0** (`4:13.2.0-7ubuntu1`), the log contains
+   **zero** flag rejections, and the gcc leg failed *inside the source* at
+   `s7_13.h:40:34`. A flag that is rejected does not get you a semantic error on
+   line 40.
 
-   **(original)** `stage2 / linux / predefs-off` failed two `parts/` cells on CI at `9f337e21`
-   (run 30914631434, 2026-08-04), and the cause is in the new reference-std
-   forwarding, not in mcc.** `parts/run_s7_13`: the **gcc reference build** dies
-   with `s7_13.h:40: '__alignas_is_defined' undeclared` — line 40 is the
-   `#else`/pre-C23 arm, so gcc is in a pre-C23 mode without the macro; the file
-   already guards on `__STDC_VERSION__ >= 202311L`, and what changed underneath it
-   is `1f8f7e36` (forward mcc's default std to the reference compiler) on top of
-   the gnu23 default from `4d090f12`. `parts/run_s6_10_4`: *gcc* diverges from
-   **both** clang and mcc on stdout, again pointing at the reference leg. Both
-   cells passed at run 30887204370 the same morning. Not diagnosed further —
-   found while watching CI from the Windows host, which cannot run this job; the
-   other 19 stage2 jobs were cancelled by a concurrent push, so whether the
-   failure is predefs-off-specific or tree-wide is **unmeasured**.
+   What actually happens is that gcc 13 **accepts** `-std=gnu23` and then
+   reports `__STDC_VERSION__` as **202000L**, where clang and mcc report
+   202311L. The suite's whole premise is a 3-way stdout identity, so it was
+   comparing three compilers answering two different language questions. The
+   error proves the version window on its own, with no version lore needed:
+   `<stdalign.h>` drops `__alignas_is_defined` once `__STDC_VERSION__ > 201710L`
+   and `s7_13.h` required it whenever `__STDC_VERSION__ < 202311L`, so reaching
+   that error at all pins the reference between the two. `run_s6_10_4` prints
+   `__STDC_VERSION__` outright, which is the same fact seen from the other side.
+
+   Because an acceptance probe asks whether the flag *parses*, not which
+   language it selects, `ref_std_flag()` picks `gnu23` on this very runner and
+   both cells still fail. Measured head-to-head against a gcc-13 stand-in that
+   reproduces the CI error byte for byte (`s7_13.h:40:34`), over the full suite
+   on identical inputs and the *unmodified* test files: `43243c67` **31/33**,
+   failing exactly `run_s7_13` and `run_s6_10_4` with the CI symptoms; the
+   replacement **33/33**.
+
+   The parts suite now resolves the std by **agreement** instead: probe gcc,
+   clang and mcc for `__STDC_VERSION__` and take the newest of
+   `gnu23`/`gnu2x`/`gnu17`/`gnu11` all three report identically, printing what
+   it resolved. `gnu2x` is kept in the list because `43243c67`'s point about
+   pre-13 gcc is independently true — a rejected probe just loses the round.
+   C23 coverage is retained wherever the reference toolchain implements it
+   (gcc 16: resolves `gnu23`, 33/33) and stepped down only where it does not
+   (gcc-13 stand-in: `gnu23` and `gnu2x` both disagree at 202000L, resolves
+   `gnu17`, 33/33 — and that holds against the *unmodified* test files, so the
+   harness fix alone is sufficient; the `s7_13.h` guard below is belt and
+   braces).
+   `ref_std_flag()` is left in place for `suite_mcctest`, which is a 2-way
+   comparison rather than a 3-way identity.
+
+   `s7_13.h` additionally now keys on `#ifdef __alignas_is_defined` rather than
+   a version threshold, which is what it meant to ask; the old guard misfires on
+   any compiler reporting a C2x-era version, independent of this suite.
+
+   It was also never `predefs-off`-specific, as originally banked: at
+   `3486e3a4` (run 30915974711) **every** linux stage2 job failed the same two
+   cells, 8120/8122. The one green linux job, `asm-off`, is green only because
+   the parts suite is registered under `MCC_CONFIG_ASM` and skipped there. All
+   five macOS jobs passed. The original entry also blamed `1f8f7e36` (xsuite's
+   std forwarding), which the parts suite does not use.
+
+7. **`selfhost-fixpoint` is not stable at the default `-O`, on macOS arm64 and
+   on Windows.** A full local ctest at `3486e3a4` (macOS arm64, stage1 clang
+   build) gives `o1=3396582 o2=3396230 o3=3396582` — `o2 != o3`, so the
+   self-host is not a fixpoint. Every sibling passed in the same run: `-O1`,
+   `-O3`, `-Os`, `-gates`, and all three `memmodel` variants. CI run 30915974711
+   independently failed `selfhost-fixpoint-Os` on **both** Windows stage2 jobs
+   (`dynamic`, `pe`) while linux and macOS passed that cell, so the instability
+   is not one host's quirk. That `o1 == o3 != o2` shape says stage2's output is
+   the odd one out, i.e. mcc1 and mcc2 disagree on codegen for identical input —
+   the same signature as the arena/recorder divergences tracked below. **Not
+   diagnosed.** Unrelated to the item above; that was test-harness only.
+
+8. **`mcctest`/`mcctest-bcheck` fail against Apple clang 21 as the reference.**
+   `tests/diff/parts/legacy_numeric.h:7:23` is `static double nan2 = 0.0 / 0.0;`
+   and the *reference* leg rejects it: `error: cannot compile this constant
+   l-value expression yet`. Verified pre-existing by running the pristine
+   `HEAD:tools/mccharness.c` — identical failure, so it is not fallout from the
+   parts-suite fix. CI does not see it (its macOS images carry an older clang),
+   so this is a local-toolchain gap, not a tree red. `suite_mcctest` still
+   hardcodes `-std=gnu23` at `tools/mccharness.c:467`; if this needs closing,
+   the capability probe added for the parts suite is the obvious lever.
 
 ### New urgent items — Windows and macOS, which this host cannot reach
 

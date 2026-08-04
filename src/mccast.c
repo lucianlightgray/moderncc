@@ -203,6 +203,12 @@ void ast_arena_reset(AstArena *a) { MCC_TRACE("enter\n");
 	a->epoch++;
 }
 
+/* Free the AST-side module caches. Like the Replay_IR journal these grow for the life
+   of the run and nothing released them, so mcc_s counted them all as leaked and
+   sanitize-selfcheck -- green when this area was last green -- went red. Declared
+   after the caches it frees, so it lives near ast_arena_free rather than with them. */
+void ast_teardown(void);
+
 void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	if (!a)
 		{ MCC_TRACE("br\n"); return; }
@@ -1930,6 +1936,12 @@ static uint64_t ast_sv_hi(const SValue *sv);
 
 static Sym **ast_sym_deferred;
 static int ast_sym_deferred_n, ast_sym_deferred_cap;
+/* Syms deferred for a body whose arena was kept. The keep path cannot release them --
+   the arena still refers to them -- but it used to drop the list on the floor, so
+   under MCC_SYM_DEBUG, where every Sym is its own allocation, they were never freed
+   at all. Hold them here and release them in ast_teardown. */
+static Sym **ast_sym_retained;
+static int ast_sym_retained_n, ast_sym_retained_cap;
 static int ast_sym_defer_on;
 
 int ast_sym_defer(Sym *sym) { MCC_TRACE("enter\n");
@@ -3334,6 +3346,59 @@ static void ast_hash_sync(const AstArena *a) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); memset(ast_hash_done, 0, (size_t)ast_hash_cap); }
 	ast_hash_arena = a;
 	ast_hash_epoch = a->epoch;
+}
+
+void ast_teardown(void) { MCC_TRACE("enter\n");
+	int i;
+	mcc_free(ast_locrec);
+#ifdef MCC_SYM_DEBUG
+	/* With MCC_SYM_DEBUG every Sym is its own allocation rather than a slab slot, so
+	   the ones parked here are real heap blocks that nothing releases. Without the
+	   debug allocator they belong to the slab and must not be freed. */
+	for (i = 0; i < ast_sym_deferred_n; i++)
+		{ MCC_TRACE("br\n"); mcc_free(ast_sym_deferred[i]); }
+	for (i = 0; i < ast_sym_retained_n; i++)
+		{ MCC_TRACE("br\n"); mcc_free(ast_sym_retained[i]); }
+#endif
+	ast_sym_deferred_n = 0;
+	ast_sym_retained_n = 0;
+	mcc_free(ast_sym_deferred);
+	mcc_free(ast_sym_retained);
+	ast_sym_retained = NULL;
+	ast_sym_retained_cap = 0;
+	mcc_free(ast_fconst);
+	mcc_free(ast_fconst_cplx);
+	mcc_free(ast_fconst_key);
+	mcc_free(ast_du_hash);
+	mcc_free(ast_du_off);
+	mcc_free(ast_du_flags);
+	mcc_free(ast_memo_stamp);
+	mcc_free(ast_hash);
+	mcc_free(ast_hash_done);
+	mcc_free(ast_rp_labels);
+	for (i = 0; i < AST_MEMO_PRED_COUNT; i++)
+		{ MCC_TRACE("br\n"); mcc_free(ast_memo[i]); ast_memo[i] = NULL; }
+	ast_locrec = NULL;
+	ast_sym_deferred = NULL;
+	ast_fconst = NULL;
+	ast_fconst_cplx = NULL;
+	ast_fconst_key = NULL;
+	ast_du_hash = NULL;
+	ast_du_off = NULL;
+	ast_du_flags = NULL;
+	ast_memo_stamp = NULL;
+	ast_hash = NULL;
+	ast_hash_done = NULL;
+	ast_rp_labels = NULL;
+	ast_locrec_n = ast_locrec_cap = ast_locrec_i = 0;
+	ast_fconst_cap = 0;
+	ast_du_cap = 0;
+	ast_du_hn = 0;
+	ast_memo_cap = 0;
+	ast_memo_arena = NULL;
+	ast_hash_cap = 0;
+	ast_rp_nlabel = ast_rp_caplabel = 0;
+	ast_sym_deferred_cap = 0;
 }
 
 static void ast_hash_invalidate(const AstArena *a) { MCC_TRACE("enter\n");
@@ -16384,7 +16449,16 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 #endif
 			}
 		}
-		ast_sym_deferred_n = 0;
+		while (ast_sym_deferred_n) { MCC_TRACE("br\n");
+			Sym *rs = ast_sym_deferred[--ast_sym_deferred_n];
+			if (ast_sym_retained_n == ast_sym_retained_cap) { MCC_TRACE("br\n");
+				int nc = ast_sym_retained_cap ? ast_sym_retained_cap * 2 : 64;
+				ast_sym_retained =
+						mcc_realloc(ast_sym_retained, nc * sizeof(*ast_sym_retained));
+				ast_sym_retained_cap = nc;
+			}
+			ast_sym_retained[ast_sym_retained_n++] = rs;
+		}
 		ast_templates_env = ast_sv_tmpl;
 		ast_promote_env = ast_sv_promo;
 		ast_inline_env = ast_sv_inl;

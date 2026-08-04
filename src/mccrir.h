@@ -43,6 +43,7 @@ extern int rir_prod_env;
 
 struct AstArena;
 struct AstArena *rir_prod_take(void);
+void rir_teardown(void);
 void rir_prod_replay_begin(void);
 void rir_prod_replay_end(void);
 void rir_prod_note(const char *verdict);
@@ -259,6 +260,7 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_c2_active 0
 #define rir_prod_env 0
 #define rir_prod_take() NULL
+#define rir_teardown() ((void)0)
 #define rir_prod_replay_begin() ((void)0)
 #define rir_prod_replay_end() ((void)0)
 #define rir_prod_note(v) ((void)0)
