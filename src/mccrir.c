@@ -1065,10 +1065,10 @@ static long rir_tot_c2_try, rir_tot_c2_ok, rir_tot_c2_bytes, rir_tot_c2_len,
 static char rir_c2_msg[256];
 static long rir_tot_c2_invalid;
 static long rir_tot_c2_equiv, rir_tot_c2_unproven;
-#define RIR_PROD_NWHY 10
+#define RIR_PROD_NWHY 11
 static const char *const rir_prod_why_name[RIR_PROD_NWHY] = {
-		"bail",     "noops",   "capbad", "unbal", "ovf",
-		"mismatch", "invalid", "unsafe", "asm",   "regdangle"};
+		"bail",     "noops",   "capbad", "unbal",     "ovf",   "mismatch",
+		"invalid",  "unsafe",  "asm",    "regdangle", "revargs"};
 static long rir_prod_why_n[RIR_PROD_NWHY];
 static long rir_tot_c3_try, rir_tot_c3_ran, rir_tot_c3_folds, rir_tot_c3_broke;
 static long rir_tot_c3_pair, rir_tot_c3_same_folds, rir_tot_c3_same_hash;
@@ -4538,6 +4538,19 @@ struct AstArena *rir_prod_take(void) {
 	rir_prod_why = "";
 	if (!rir_prod_env || rir_env || rir_prod_bail) {
 		rir_prod_why = "bail";
+		return NULL;
+	}
+	/* -freverse-funcargs evaluates a call's arguments right to left, which the
+	   parser implements by saving each argument's tokens and replaying them
+	   backwards before vrev()ing the value stack. What lands in the arena is the
+	   post-vrev source order, so a replay walking the Invoke's children in order
+	   evaluates left to right and the side effects come out reversed --
+	   errors_and_warnings' test_reverse_funcargs prints 122333 instead of 333221.
+	   Recording the evaluation order would need a flag on the Invoke node and a
+	   schema revision; the option is off by default and absent from the census,
+	   so refuse the body rather than model it wrong. */
+	if (mcc_state->reverse_funcargs) {
+		rir_prod_why = "revargs";
 		return NULL;
 	}
 	rir_build();
