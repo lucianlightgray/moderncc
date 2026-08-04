@@ -1932,6 +1932,12 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	   accepts a byte-divergent replay into production so the fallback census can be
 	   driven to zero and the result judged by the goldens instead. Off by default;
 	   turning it on is only meaningful alongside a full test run. */
+	/* Default ON: a completed replay is kept even when its bytes differ from the
+	   parser's. The byte compare answers "did this reproduce the parser exactly",
+	   which is the right question for trusting a body to the optimizer and far too
+	   strong for deciding whether it is safe to ship. Set MCC_RIR_NOFB=0 to restore
+	   the old byte-gated fallback; that is the escape hatch if a body ever ships
+	   wrong, and it is also how to confirm a suspected arena defect is one. */
 	ast_rir_nofb_env = ast_env_gate("MCC_RIR_NOFB", 0);
 	/* Diagnostic only: ignore AST_FB_LANDOR_MATERIAL and always take the
 	   gvtst_set path. Used to confirm that a short-circuit materialisation is
@@ -3431,7 +3437,7 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_promote_env || ast_func_has_asm || ast_func_has_labeladdr)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal nn = ast_count(a);
-	int has_call = 0, has_vla = 0, has_goto = 0, has_loop = 0;
+	int has_call = 0, has_vla = 0, has_goto = 0, has_loop = 0, has_landor = 0;
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		uint16_t k = ast_kind(a, n);
 		if (k == AST_Invoke)
@@ -3447,6 +3453,17 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 				if (ast_kind(a, s) == AST_If &&
 						(so == 2 || so == 3 || so == 4 || so == 5))
 					{ MCC_TRACE("br\n"); has_loop = 1; }
+				/* A short-circuit in statement position branches, but it is an
+				   AST_Binary rather than an AST_If, so the classification above
+				   never sees it and the body is planned as if it were
+				   straight-line. void_expr.c's
+				   `for (; i < 3; ++i) { ...; (void)(i || (f(i), ++count)); }`
+				   then came out with its loop exit pointing at the next
+				   instruction, the increment block unreachable and no back-edge.
+				   Treat it as the branch it is. */
+				if (ast_kind(a, s) == AST_Binary &&
+						(so == TOK_LAND || so == TOK_LOR))
+					{ MCC_TRACE("br\n"); has_landor = 1; }
 			}
 		}
 #if defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64)
@@ -3455,6 +3472,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 #endif
 	}
 	if (has_vla)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (has_landor)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (has_call && (ast_no_callful_env || ast_no_callful_promo))
 		{ MCC_TRACE("br\n"); return 0; }
