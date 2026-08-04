@@ -444,6 +444,51 @@ suggests the arena mismodels a lowering shared by those rather than four unrelat
 defects — check `atomic_ptr` and `builtin_overflow` against the same
 `__builtin_*_overflow` path before assuming otherwise.
 
+### `overflow_inline` diagnosed: `AST_FB_LANDOR_MATERIAL` set on a runtime `||`
+
+**Seven-line reproducer**, reduced from the real body by truncating `main` and
+balancing braces — not by building a model up, which failed four times:
+
+```c
+extern int printf(const char *, ...);
+int main(void) {
+	long long a;
+	int c1 = (!__builtin_add_overflow(9223372036854775807LL, 1LL, &a) || a != -9223372036854775807LL - 1);
+	printf("c1=%d\n", c1);   /* want 0; MCC_RIR_NOFB=1 prints 1 */
+	return 0;
+}
+```
+
+Narrowed by substitution: `!builtin` alone is correct, the builtin alone is correct,
+`!builtin && cmp` is correct, and `builtin == 0 || cmp` fails identically — **so it is
+not the `!`, it is the `||`**. `a` holds the right value in every case, so the store
+is fine; only the OR's *result* is wrong, and it comes out **constant 1** (a second
+case whose answer should be 1 also reads 1). Disabling passes does not change it, so
+this is the replay and not a pass misreading a flag.
+
+**Mechanism.** `ast_replay_value`'s materialisation arm (`src/mccast.c:4155-4163`)
+mirrors tcc's `expr_landor` exactly — evaluate operands with `gvtst`, then
+`vpushi(i ^ f); gsym(t);`. tcc reaches that only when the expression folds to a
+constant (`cc || f`); when any operand needs runtime evaluation it takes `gvtst_set`
+instead. Both operands here are runtime, so the parser used `gvtst_set` — but
+`RIR_R_LANDOR`'s rend set `AST_FB_LANDOR_MATERIAL` from `ro->rval & 1` and stashed
+`(ro->rval >> 2) & 1` as the node's `ival` (`src/mccrir.c:3712-3718`), so replay
+pushed that bit as a constant and bound the short-circuit label after it. Both paths
+then converge on one constant, which is exactly the observed behaviour.
+
+**One confirmation still owed before fixing**: that this node really carries
+`AST_FB_LANDOR_MATERIAL`. `ast_dump` does not print `fbits` and the `[rir-fb]` line
+lives in the dead tree-diff, so this needs the dump extended or a temporary print.
+Do that first — the diagnosis is strong but the flag has not been read off the node.
+
+The fix is then in what `rir_hook_landor`'s rend encodes into `rval`, i.e. a **capture
+site**, where the banked negatives are unanimous. Prefer establishing why `rval & 1`
+reads set for a runtime `||` over changing the replay to second-guess the flag.
+**`docs/TODO.md:491` predicted this**: *"`AST_FB_LANDOR_INVERT` is the same shape [as
+the `!cmp` wrong-code defect] and is still live."* It is the same family, it is now
+wrong code with a reproducer, and it is the reason the byte-faithful gate must stay
+until it is closed.
+
 **The route to the bar, in order:**
 
 1. Fix the five above. Reproduce each with
