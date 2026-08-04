@@ -681,6 +681,8 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv) { MCC_TRACE("enter\n");
 
 	case TOK_CFLOAT:
 		return strcpy(p, "<float>");
+	case TOK_CFLOAT16:
+		return strcpy(p, "<_Float16>");
 	case TOK_CDOUBLE:
 		return strcpy(p, "<double>");
 	case TOK_CLDOUBLE:
@@ -1204,6 +1206,7 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 	case TOK_U16CHAR:
 	case TOK_U32CHAR:
 	case TOK_CFLOAT:
+	case TOK_CFLOAT16:
 	case TOK_LINENUM:
 #if LONG_SIZE == 4
 	case TOK_CLONG:
@@ -1292,6 +1295,9 @@ static inline void tok_get(int *t, const int **pp, CValue *cv) { MCC_TRACE("ente
 		break;
 	case TOK_CFLOAT:
 		tab[0] = *p++;
+		break;
+	case TOK_CFLOAT16:
+		cv->i = (unsigned)*p++;
 		break;
 	case TOK_STR:
 	case TOK_LSTR:
@@ -3359,7 +3365,12 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				ch = *p++;
 			}
 			t = toup(ch);
-			if (t == 'F') { MCC_TRACE("br\n");
+			if (t == 'F' && p[0] == '1' && p[1] == '6') { MCC_TRACE("br\n");
+				p += 2;
+				ch = *p++;
+				tok = TOK_CFLOAT16;
+				tokc.i = f32_to_f16_bits(f16_round(d));
+			} else if (t == 'F') { MCC_TRACE("br\n");
 				ch = *p++;
 				tok = TOK_CFLOAT;
 				tokc.f = (float)d;
@@ -3412,7 +3423,12 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			}
 			t = toup(ch);
 			errno = 0;
-			if (t == 'F') { MCC_TRACE("br\n");
+			if (t == 'F' && p[0] == '1' && p[1] == '6') { MCC_TRACE("br\n");
+				p += 2;
+				ch = *p++;
+				tok = TOK_CFLOAT16;
+				tokc.i = f32_to_f16_bits(f16_round(strtold(token_buf, NULL)));
+			} else if (t == 'F') { MCC_TRACE("br\n");
 				ch = *p++;
 				tok = TOK_CFLOAT;
 				tokc.f = strtof(token_buf, NULL);
@@ -5188,6 +5204,7 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_LONG__ %d\n", LONG_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_SHORT__ 2\n");
 	cstr_printf(cs, "#define __SIZEOF_FLOAT__ 4\n");
+	cstr_printf(cs, "#define __SIZEOF_FLOAT16__ 2\n");
 	cstr_printf(cs, "#define __SIZEOF_DOUBLE__ 8\n");
 	cstr_printf(cs, "#define __SIZEOF_LONG_DOUBLE__ %d\n", MCC_LDOUBLE_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_SIZE_T__ %d\n", MCC_PTR_SIZE);

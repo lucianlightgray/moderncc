@@ -279,7 +279,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 						: size == 4
 								? 2
 								: 3;
-		if (size < 4 && !is_float(sv->type.t) && (sv->type.t & VT_UNSIGNED))
+		if (size < 4 && (bt == VT_FLOAT16 || (!is_float(sv->type.t) && (sv->type.t & VT_UNSIGNED))))
 			{ MCC_TRACE("br\n"); func3 |= 4; }
 		if (v == VT_LOCAL || (fr & VT_SYM)) { MCC_TRACE("br\n");
 			br = load_symofs(r, sv, 0, &fc);
@@ -309,7 +309,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		EI(opcode, func3, rr, br, fc);
 	} else if (v == VT_CONST) { MCC_TRACE("br\n");
 		int rb = 0, do32bit = 8, zext = 0;
-		if (is_float(sv->type.t) && bt != VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (is_float_abi(sv->type.t) && bt != VT_LDOUBLE) { MCC_TRACE("br\n");
 			uint64_t val = sv->c.i;
 			int is_dbl = bt == VT_DOUBLE;
 			if (val == 0) { MCC_TRACE("br\n");
@@ -428,7 +428,7 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 	int fc = sv->c.i;
 	int bt = sv->type.t & VT_BTYPE;
 	int align, size = type_size(&sv->type, &align);
-	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE);
+	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE || bt == VT_FLOAT16);
 	if (bt == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); size = align = 8; }
 	if (bt == VT_STRUCT)
@@ -564,8 +564,8 @@ static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRA
 		}
 	} else if (rc[0] == 2 || rc[0] < 0 || (type->t & VT_BTYPE) == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); rc[0] = -1; }
-	else if (!rc[0] || rc[1] == MCC_RC_FLOAT || is_float(type->t)) { MCC_TRACE("br\n");
-		rc[++rc[0]] = is_float(type->t) ? MCC_RC_FLOAT : MCC_RC_INT;
+	else if (!rc[0] || rc[1] == MCC_RC_FLOAT || is_float_abi(type->t)) { MCC_TRACE("br\n");
+		rc[++rc[0]] = is_float_abi(type->t) ? MCC_RC_FLOAT : MCC_RC_INT;
 		fieldofs[rc[0]] = (ofs << 4) | ((type->t & VT_BTYPE) == VT_PTR ? VT_LLONG : type->t & VT_BTYPE);
 	} else
 		{ MCC_TRACE("br\n"); rc[0] = -1; }

@@ -275,6 +275,8 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			opc = 0xbf0f;
 		} else if ((ft & VT_TYPE) == (VT_SHORT | VT_UNSIGNED)) { MCC_TRACE("br\n");
 			opc = 0xb70f;
+		} else if ((ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
+			opc = 0xb70f;
 		} else { MCC_TRACE("br\n");
 			opc = 0x8b;
 		}
@@ -363,7 +365,7 @@ ST_FUNC void store(int r, SValue *v) { MCC_TRACE("enter\n");
 	} else if (bt == VT_LDOUBLE) { MCC_TRACE("br\n");
 		opc = 0xdbc0d9;
 		r = 7;
-	} else if (bt == VT_SHORT) { MCC_TRACE("br\n");
+	} else if (bt == VT_SHORT || bt == VT_FLOAT16) { MCC_TRACE("br\n");
 		opc = 0x8966;
 	} else if (bt == VT_BYTE || bt == VT_BOOL) { MCC_TRACE("br\n");
 		opc = 0x88;
@@ -478,12 +480,12 @@ static const uint8_t fastcallw_regs[2] = {MCC_TREG_ECX, MCC_TREG_EDX};
 
 static int fastcall_arg_inreg(CType *type) { MCC_TRACE("enter\n");
 	int align;
-	return !is_float(type->t) && (type->t & VT_BTYPE) != VT_STRUCT && type_size(type, &align) <= 4;
+	return !is_float_abi(type->t) && (type->t & VT_BTYPE) != VT_STRUCT && type_size(type, &align) <= 4;
 }
 
 static int fastcall_arg_slots(CType *type) { MCC_TRACE("enter\n");
 	int align, words;
-	if (is_float(type->t))
+	if (is_float_abi(type->t))
 		{ MCC_TRACE("br\n"); return 0; }
 	words = (type_size(type, &align) + 3) >> 2;
 	return words > 2 ? 2 : words;
@@ -592,7 +594,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			vswap();
 			vstore();
 			args_size += size;
-		} else if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
+		} else if (is_float_abi(vtop->type.t)) { MCC_TRACE("br\n");
 			gv(MCC_RC_FLOAT);
 			if ((vtop->type.t & VT_BTYPE) == VT_FLOAT)
 				{ MCC_TRACE("br\n"); size = 4; }

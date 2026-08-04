@@ -1096,6 +1096,7 @@ struct filespec {
 #define VT_INT128 12
 #define VT_QLONG 13
 #define VT_QFLOAT 14
+#define VT_FLOAT16 15
 
 #if defined MCC_TARGET_X86_64 && !defined MCC_TARGET_PE
 #define MCC_HAVE_INT128 1
@@ -1277,8 +1278,9 @@ struct filespec {
 #define TOK_U16STR 0xd2
 #define TOK_U32STR 0xd3
 #define TOK_U8STR 0xd4
+#define TOK_CFLOAT16 0xd5
 
-#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_U8STR)
+#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CFLOAT16)
 
 #define TOK_EOF (-1)
 #define TOK_LINEFEED 10
@@ -1571,6 +1573,11 @@ ST_FUNC void mccgen_finish(MCCState *s1);
 ST_FUNC void check_vstack(void);
 
 ST_INLN int is_float(int t);
+ST_INLN int is_float16(int t);
+ST_INLN int is_float_abi(int t);
+ST_FUNC uint16_t f32_to_f16_bits(float x);
+ST_FUNC float f16_bits_to_f32(uint16_t h);
+ST_FUNC float f16_round(long double v);
 ST_FUNC int ieee_finite(double d);
 ST_FUNC int exact_log2p1(int i);
 ST_FUNC void test_lvalue(void);

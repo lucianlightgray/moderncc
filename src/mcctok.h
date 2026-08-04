@@ -50,6 +50,8 @@ DEF(TOK_FLOAT, "float")
 DEF(TOK_DOUBLE, "double")
 DEF(TOK_BOOL, "_Bool")
 DEF(TOK_INT128, "__int128")
+DEF(TOK_FLOAT16, "_Float16")
+DEF(TOK_BFLOAT16, "__bf16")
 DEF(TOK_COMPLEX, "_Complex")
 DEF(TOK_COMPLEX2, "__complex")
 DEF(TOK_COMPLEX3, "__complex__")
@@ -376,6 +378,9 @@ DEF(TOK___fixunsxfdi, "__fixunsxfdi")
 DEF(TOK___fixunssfdi, "__fixunssfdi")
 DEF(TOK___fixunsdfdi, "__fixunsdfdi")
 #endif
+
+DEF(TOK___extendhfsf2, "__mcc_extendhfsf2")
+DEF(TOK___truncsfhf2, "__mcc_truncsfhf2")
 
 #if defined MCC_TARGET_ARM
 #ifdef MCC_ARM_EABI

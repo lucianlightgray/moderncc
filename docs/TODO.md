@@ -1,5 +1,73 @@
 # TODO
 
+## `_Float16` landed on all five backends; `__bf16` is refused, and cannot be added without a type-word change
+
+`_Float16` (IEEE binary16) is implemented and verified on x86_64, i386, arm, arm64
+and riscv64. `__bf16` is **parsed and refused** with
+`'__bf16' is not supported on this target`. That split is not a scoping preference,
+it is forced by the type word, and the next person to pick this up needs the reason
+before they try again.
+
+**`VT_BTYPE` is 4 bits and slot 15 was the only one free** (`src/mcc.h:1081-1097`);
+`_Float16` took it. A second base type needs a discriminator bit that survives
+`t & VT_TYPE`, and there is none: `VT_TYPE` is `0x00060F7F` and every bit in it is
+allocated. The three candidates all fail for the same reason — they are *stripped*
+by existing normalizers, so `__bf16` and `_Float16` would silently compare equal and
+share IR nodes: `VT_DEFSIGN` is cleared at `src/mccrir.c:1156` (the RIR type
+normalizer) and at `src/mccgen.c:4120-4121` (type compatibility); `VT_LONG` is
+cleared at `src/mccrir.c:1156` too; the `VT_STRUCT_SHIFT` region is masked out of
+`VT_TYPE` by construction. `VT_UNSIGNED` is the only bit never stripped from a user
+type (the two `~VT_UNSIGNED` sites, `src/mccgen.c:4359,4379`, act on a freshly
+pushed `size_t` in pointer arithmetic, never a user type) — so it is the one viable
+overload, at the cost of auditing its 264 read sites. **Widening `VT_BTYPE` to 5 bits
+is a tree-wide flag renumber** and was not attempted.
+
+So the open item is a decision, not a patch: either overload `VT_UNSIGNED` and audit
+its 264 readers, or widen the type word. Do not add `__bf16` by aliasing it onto
+`_Float16` — bf16 and binary16 differ only in the encode/decode helper, so an alias
+miscompiles silently rather than loudly, which is the one outcome worth avoiding.
+
+### What the representation is, so it is not re-derived
+
+- `VT_FLOAT16 = 15`; `is_float()` is **true** for it, but `MCC_RC_TYPE`/`R_RET`
+  place it in **integer** registers (`src/mccgen.c`). riscv64 already did exactly
+  this for `long double`, so the "float type in a GP register" shape was not new.
+- Backends therefore need `is_float_abi()` — `is_float() && bt != VT_FLOAT16` — at
+  every site that picks a *register class*. Missing one is loud, not silent: i386
+  pushed 12 bytes as an x87 long double (`i386-gen.c:597`) and segfaulted; arm64 and
+  riscv64 tripped `assert(0)` in `load()`. All are patched.
+- Arithmetic never reaches a backend as `VT_FLOAT16`: `gen_op` computes in `float`
+  and casts the result back (`src/mccgen.c`), and unary `-` does the same. This is
+  safe for `+ - * /` because binary32 has ≥ 2·11+2 bits, so the double rounding is
+  exact — the same reason gcc does it.
+- **A `_Float16` constant holds its raw 16-bit encoding in `c.i`, not a value in
+  `c.f`.** This bit is easy to get wrong and fails quietly: with the value in `c.f`,
+  `(_Float16)3` is `0x40400000`, whose low 16 bits are zero, so every constant
+  materialized through an integer-register immediate read back as `0.0`.
+- Conversions are lowered once, generically, in `gen_cast` — `__mcc_extendhfsf2` /
+  `__mcc_truncsfhf2` in `runtime/lib/float16.c`. The names are deliberately **not**
+  libgcc's `__extendhfsf2`/`__truncsfhf2`: libgcc passes `_Float16` in SSE registers
+  and mcc passes it in integer registers, so sharing the name would be a silent ABI
+  mismatch when mcc objects link against libgcc.
+
+### The one divergence from gcc, and why it is not a bug
+
+Bit-exact against gcc over 3,495 comparisons (every conversion direction, ±0, ±inf,
+qNaN/sNaN, subnormals at both ends, binary16 max/min normal, round-to-even and
+round-to-odd ties, overflow-to-inf, underflow-to-zero and to subnormal, all of
+`+ - * /` and all six comparisons, struct/array layout, by-value and varargs
+passing). The residual is **NaN ⊗ NaN arithmetic only**: when *both* operands are
+NaN, gcc propagates the second, mcc the first. IEEE 754 leaves which NaN propagates
+unspecified. Plain `float` NaN arithmetic is byte-identical between the two, so this
+is operand ordering in the promoted sequence, not a conversion defect.
+
+Verified semantics were taken from gcc 15.3, not from memory — and one brief
+assumption did not survive: **gcc 15 permits `__bf16` arithmetic** (result type
+`__bf16`, `bf16`/`BF16` suffixes accepted), so the "storage and conversion only"
+restriction is a gcc-13-era rule. `__bf16` also **rounds** float→bf16 to
+nearest-even; it does not truncate. `_Float16` is *not* default-argument-promoted in
+varargs, on any `-std=`.
+
 ## URGENT — gates that are red or unmeasurable right now
 
 Re-verified mechanically against `da3a461b` on 2026-08-03 in a fresh `cmake-verify`
@@ -2708,7 +2776,8 @@ points at the confirmed 32-byte vector by-value defect rather than at 227 separa
 Of the 280 FAIL, 140 are further missing intrinsics and 34 are unknown types parsed as
 implicit int.
 
-Still skipped and correctly so: AVX-512, FP16/`__bf16`, and every non-x86 target.
+Still skipped and correctly so: AVX-512, `__bf16`, and every non-x86 target. (`_Float16`
+itself is no longer skipped — see the top of this file.)
 
 ### The work list, as of the current `main` (clang-oracled)
 

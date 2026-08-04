@@ -430,6 +430,12 @@ static void arm_tls_addr(Sym *sym, int coff) { MCC_TRACE("enter\n");
 	o(0xe28dd004);
 }
 
+static int arm_ft_isfp(int ft) { MCC_TRACE("enter\n");
+	if ((ft & VT_BTYPE) == VT_FLOAT16)
+		{ MCC_TRACE("br\n"); return 0; }
+	return is_float(ft);
+}
+
 void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	mcc_stackref_note(sv->r);
 	int v, ft, fc, fr, sign;
@@ -479,7 +485,7 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			v = VT_LOCAL;
 		}
 		if (v == VT_LOCAL) { MCC_TRACE("br\n");
-			if (is_float(ft)) { MCC_TRACE("br\n");
+			if (arm_ft_isfp(ft)) { MCC_TRACE("br\n");
 				calcaddr(&base, &fc, &sign, 1020, 2);
 #ifdef MCC_ARM_VFP
 				op = 0xED100A00;
@@ -500,12 +506,12 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 #endif
 				o(op | (fpr(r) << 12) | (fc >> 2) | (base << 16));
 #endif
-			} else if ((ft & (VT_BTYPE | VT_UNSIGNED)) == VT_BYTE || (ft & VT_BTYPE) == VT_SHORT) { MCC_TRACE("br\n");
+			} else if ((ft & (VT_BTYPE | VT_UNSIGNED)) == VT_BYTE || (ft & VT_BTYPE) == VT_SHORT || (ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
 				calcaddr(&base, &fc, &sign, 255, 0);
 				op = 0xE1500090;
-				if ((ft & VT_BTYPE) == VT_SHORT)
+				if ((ft & VT_BTYPE) == VT_SHORT || (ft & VT_BTYPE) == VT_FLOAT16)
 					{ MCC_TRACE("br\n"); op |= 0x20; }
-				if ((ft & VT_UNSIGNED) == 0)
+				if ((ft & VT_UNSIGNED) == 0 && (ft & VT_BTYPE) != VT_FLOAT16)
 					{ MCC_TRACE("br\n"); op |= 0x40; }
 				if (!sign)
 					{ MCC_TRACE("br\n"); op |= 0x800000; }
@@ -563,7 +569,7 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			o(0xE3A00000 | (intr(r) << 12) | (t ^ 1));
 			return;
 		} else if (v < VT_CONST) { MCC_TRACE("br\n");
-			if (is_float(ft))
+			if (arm_ft_isfp(ft))
 #ifdef MCC_ARM_VFP
 				o(0xEEB00A40 | (vfpr(r) << 12) | vfpr(v) | T2CPR(ft));
 #else
@@ -618,7 +624,7 @@ void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 			v = VT_LOCAL;
 		}
 		if (v == VT_LOCAL) { MCC_TRACE("br\n");
-			if (is_float(ft)) { MCC_TRACE("br\n");
+			if (arm_ft_isfp(ft)) { MCC_TRACE("br\n");
 				calcaddr(&base, &fc, &sign, 1020, 2);
 #ifdef MCC_ARM_VFP
 				op = 0xED000A00;
@@ -640,7 +646,7 @@ void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 				o(op | (fpr(r) << 12) | (fc >> 2) | (base << 16));
 #endif
 				return;
-			} else if ((ft & VT_BTYPE) == VT_SHORT) { MCC_TRACE("br\n");
+			} else if ((ft & VT_BTYPE) == VT_SHORT || (ft & VT_BTYPE) == VT_FLOAT16) { MCC_TRACE("br\n");
 				calcaddr(&base, &fc, &sign, 255, 0);
 				op = 0xE14000B0;
 				if (!sign)
@@ -848,7 +854,7 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 	int size, align;
 	size = type_size(vt, &align);
 	if (cg_float_abi == ARM_HARD_FLOAT && !variadic &&
-			(is_float(vt->t) || is_hgen_float_aggr(vt))) { MCC_TRACE("br\n");
+			(is_float_abi(vt->t) || is_hgen_float_aggr(vt))) { MCC_TRACE("br\n");
 		*ret_align = 8;
 		*regsize = 8;
 		ret->ref = NULL;
@@ -936,7 +942,7 @@ static int assign_regs(int nb_args, int float_abi, struct plan *plan, int *todo)
 			if (float_abi == ARM_HARD_FLOAT) { MCC_TRACE("br\n");
 				int is_hfa = 0;
 
-				if (is_float(vtop[-i].type.t) || (is_hfa = is_hgen_float_aggr(&vtop[-i].type))) { MCC_TRACE("br\n");
+				if (is_float_abi(vtop[-i].type.t) || (is_hfa = is_hgen_float_aggr(&vtop[-i].type))) { MCC_TRACE("br\n");
 					int end_vfpreg;
 
 					start_vfpreg = assign_vfpreg(&avregs, align, size);
@@ -1031,7 +1037,7 @@ again:
 						o(0xECBD0A00 | (first & 1) << 22 | (first >> 1) << 12 | nb);
 					}
 				} else { MCC_TRACE("br\n");
-					if (is_float(pplan->sval->type.t)) { MCC_TRACE("br\n");
+					if (is_float_abi(pplan->sval->type.t)) { MCC_TRACE("br\n");
 #ifdef MCC_ARM_VFP
 						r = vfpr(gv(MCC_RC_FLOAT)) << 12;
 						if ((pplan->sval->type.t & VT_BTYPE) == VT_FLOAT)
@@ -1160,7 +1166,7 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	if (args_size)
 		{ MCC_TRACE("br\n"); gadd_sp(args_size); }
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
-	if (cg_float_abi == ARM_SOFTFP_FLOAT && is_float(vtop->type.ref->type.t)) { MCC_TRACE("br\n");
+	if (cg_float_abi == ARM_SOFTFP_FLOAT && is_float_abi(vtop->type.ref->type.t)) { MCC_TRACE("br\n");
 		if ((vtop->type.ref->type.t & VT_BTYPE) == VT_FLOAT) { MCC_TRACE("br\n");
 			o(0xEE000A10);
 		} else { MCC_TRACE("br\n");
@@ -1290,7 +1296,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		size = type_size(&sym2->type, &align);
 #ifdef MCC_ARM_EABI
 		if (cg_float_abi == ARM_HARD_FLOAT && !func_var &&
-				(is_float(sym2->type.t) || is_hgen_float_aggr(&sym2->type))) { MCC_TRACE("br\n");
+				(is_float_abi(sym2->type.t) || is_hgen_float_aggr(&sym2->type))) { MCC_TRACE("br\n");
 			int tmpnf = assign_vfpreg(&avregs, align, size);
 			tmpnf += (size + 3) / 4;
 			nf = (tmpnf > nf) ? tmpnf : nf;
@@ -1335,7 +1341,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		size = (size + 3) >> 2;
 		align = (align + 3) & ~3;
 #ifdef MCC_ARM_EABI
-		if (cg_float_abi == ARM_HARD_FLOAT && !func_var && (is_float(sym->type.t) || is_hgen_float_aggr(&sym->type))) { MCC_TRACE("br\n");
+		if (cg_float_abi == ARM_HARD_FLOAT && !func_var && (is_float_abi(sym->type.t) || is_hgen_float_aggr(&sym->type))) { MCC_TRACE("br\n");
 			int fpn = assign_vfpreg(&avregs, align, size << 2);
 			if (fpn >= 0)
 				{ MCC_TRACE("br\n"); addr = fpn * 4; }
@@ -1394,7 +1400,7 @@ void gfunc_epilog(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }
 #endif
 #if defined(MCC_ARM_EABI) && defined(MCC_ARM_VFP)
-	if ((cg_float_abi == ARM_SOFTFP_FLOAT || func_var) && is_float(func_vt.t)) { MCC_TRACE("br\n");
+	if ((cg_float_abi == ARM_SOFTFP_FLOAT || func_var) && is_float_abi(func_vt.t)) { MCC_TRACE("br\n");
 		if ((func_vt.t & VT_BTYPE) == VT_FLOAT)
 			{ MCC_TRACE("br\n"); o(0xEE100A10); }
 		else { MCC_TRACE("br\n");

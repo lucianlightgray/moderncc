@@ -62,6 +62,23 @@
 #define LDBL_SNAN (__builtin_nansl (""))
 #endif
 
+#if defined(__FLT16_MANT_DIG__) && defined(__STDC_WANT_IEC_60559_TYPES_EXT__)
+#define FLT16_MANT_DIG __FLT16_MANT_DIG__
+#define FLT16_DIG __FLT16_DIG__
+#define FLT16_MIN_EXP __FLT16_MIN_EXP__
+#define FLT16_MIN_10_EXP __FLT16_MIN_10_EXP__
+#define FLT16_MAX_EXP __FLT16_MAX_EXP__
+#define FLT16_MAX_10_EXP __FLT16_MAX_10_EXP__
+#define FLT16_DECIMAL_DIG __FLT16_DECIMAL_DIG__
+#define FLT16_MAX __FLT16_MAX__
+#define FLT16_NORM_MAX __FLT16_NORM_MAX__
+#define FLT16_MIN __FLT16_MIN__
+#define FLT16_EPSILON __FLT16_EPSILON__
+#define FLT16_TRUE_MIN __FLT16_DENORM_MIN__
+#define FLT16_HAS_SUBNORM __FLT16_HAS_DENORM__
+#define FLT16_IS_IEC_60559 __FLT16_IS_IEC_60559__
+#endif
+
 #if defined _WIN32 || (defined __APPLE__ && defined __aarch64__)
 #define LDBL_MANT_DIG 53
 #define LDBL_DIG 15
