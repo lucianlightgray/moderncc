@@ -41,6 +41,10 @@ ET_FALSE = {
     "ucn", "ucn_nocache", "wchar", "c11_atomics", "openacc",
 }
 
+MCC_ISA_OPT_RE = re.compile(
+    r"^-m(no-)?(mmx|sse|sse2|sse3|ssse3|sse4|sse4\.1|sse4\.2|sse4a|avx|avx2|"
+    r"popcnt|fma|f16c|bmi|bmi2|lzcnt|movbe|aes|pclmul|cx16|abm)$")
+
 BAD_OPT_RE = re.compile(
     r"^-(m(?!s-bitfields|no-sse)|march=|mtune=|flto|fopenmp|fopenacc|fprofile|"
     r"fanalyzer|fsanitize|fgraphite|ftree-parallelize|fcf-protection|fpatchable|"
@@ -52,6 +56,13 @@ KEEP_OPT_RE = re.compile(r"^-(std=|D|I|U|O|include$|w$|pedantic|ansi$|"
                          r"f(no-)?(signed-char|unsigned-char|common|wrapv|builtin|"
                          r"strict-aliasing|gnu89-inline|short-enums|pic|PIC|pie|PIE|"
                          r"gnu-tm))")
+
+MCC_ISA_ET = {
+    "mmx", "mmx_ok", "sse", "sse_runtime", "sse2", "sse2_runtime",
+    "sse3", "sse3_runtime", "ssse3", "ssse3_runtime",
+    "sse4", "sse4_runtime", "sse4_1", "sse4_2",
+    "avx", "avx_runtime", "avx2", "avx2_runtime",
+}
 
 ANSI_OK = False
 GIMPLE_RE = re.compile(r"__GIMPLE|__RTL")
@@ -103,6 +114,8 @@ def tok_true(t):
         return True
     if t in ET_FALSE:
         return False
+    if t in MCC_ISA_ET:
+        return True
     if t.startswith(("vect_", "arm_", "aarch64_", "powerpc_", "s390_", "riscv_",
                      "avx", "sse", "mips_", "sparc_", "amdgcn", "nvptx")):
         return False
@@ -215,6 +228,9 @@ def gcc_plan(path, text, default_mode):
         except ValueError:
             continue
         for a in args:
+            if MCC_ISA_OPT_RE.match(a):
+                flags.append(a)
+                continue
             if BAD_OPT_RE.match(a):
                 return None, None, None, f"dg-options({a})"
             if a == "-ansi" and not ANSI_OK:

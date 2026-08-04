@@ -2530,6 +2530,32 @@ on `dg-require-effective-target` — including `builtin-issignaling-1.c`, skippe
 `dg-add-options(ieee)` rather than for the missing builtin. The 13 real FAILCOMPILE are
 `compare-fp-3.c` and `fp-cmp-{6,7,9}.c`.
 
+### The board was hiding ~1,900 gcc.target tests that clang can run
+
+`tools/xsuite.py` skipped **every** `-m*` dg-option via `BAD_OPT_RE`, and `tok_true()`
+returned false for every effective-target starting with `sse` or `avx`. So the entire ISA
+corpus was dropped before mcc was ever invoked — 4,031 `avx*`, 175 `sse4`, 29 `sse3`,
+19 `ssse3`, and **347 `-msse2` tests for an ISA mcc has always shipped**.
+
+This was found the hard way: an agent was dispatched to add SSE3–SSE4.2 on the premise
+that `gcc.target`'s 112 failures were dominated by missing intrinsics. It measured first
+and found SSE3 through SSE4.2 accounted for **zero** board failures — the real ceiling for
+that task was ~7 tests. The premise was wrong because the instrument was lying.
+
+`MCC_ISA_OPT_RE` now forwards `-m<isa>` for the ISAs mcc supports, and `MCC_ISA_ET` marks
+their effective-targets true. `gcc.target` alone goes **803 run → 2,709 run**, 1,906 newly
+runnable, PASS 614 → **2,065**.
+
+**The failure count went up, and that is the honest outcome:** FAIL 112 → 280,
+FAILEXE **3 → 227**. Those were always failing; they were simply never run. The 227 are
+dominated by AVX *runtime* tests (`avx-set-v8sf`, `avx-vperm2f128-256`,
+`avx-vinsertf128-256`, `avx-vroundpd-256`) — they compile and compute wrong answers, which
+points at the confirmed 32-byte vector by-value defect rather than at 227 separate bugs.
+Of the 280 FAIL, 140 are further missing intrinsics and 34 are unknown types parsed as
+implicit int.
+
+Still skipped and correctly so: AVX-512, FP16/`__bf16`, and every non-x86 target.
+
 ### The work list, as of the current `main` (clang-oracled)
 
 19,571 run at `-O0`: **16,961 PASS, 999 REFFAIL, 862 FAIL, 384 XPASS, 229 XPASS_REFOK,
