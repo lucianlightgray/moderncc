@@ -649,10 +649,25 @@ byte-identical, and `count` stays 16 because the folded result **reuses a node**
 than shrinking the arena. So the rewrite is narrow and targeted, not a wholesale
 rebuild — which argues for a real fold somewhere rather than a stray write.
 
-One lead not yet followed: `mcc_malloc` is a macro onto `mcc_malloc_debug(size,
-__FILE__, __LINE__)` (`src/mcc.h:1316`), so the two allocations in the window are not
-the plain calls they look like. That is the only remaining thing in the window that is
-more than it appears.
+**The macro-expansion lead is dead too.** Preprocessing with the build's own command
+line (`ninja -t commands …`, strip `-MD/-MT/-MF`, swap `-c` for `-E`) shows the window
+is **literally as it reads**: `mcc_malloc` is *not* expanded — the
+`mcc_malloc_debug` macro at `src/mcc.h:1316` is inactive in this configuration —
+`setjmp` becomes plain `_setjmp`, and the only calls between `[ast-mid]` and
+`[ast-injmp]` are two `mcc_malloc`, two `memcpy` and `_setjmp`.
+
+**So every mechanism reachable from this window has been eliminated by measurement**:
+no transform call, no length underflow, no buffer overrun, no use-after-free, no
+sanitizer finding, no probe artifact, no filter artifact, no hidden macro, and the
+arena's pointer, root and node count are all constant across it. The observation is
+stable and reproduces on both a normal and a sanitizer build.
+
+**Eight theories have now been refuted here, all of them reached by reading source.**
+Whoever picks this up should treat that as the main datum and change method rather
+than generate a ninth: single-step the window in a debugger with a **watchpoint on the
+`Store` node's child slot** in the arena's node arrays. That names the writer directly
+and is the one approach not yet tried. `ast_dump`'s output pins which node index to
+watch, and `RIRPRODDUMP` gives the exact body.
 
 ### Earlier framing, superseded: the production arena is correct but the replay does not walk it
 
