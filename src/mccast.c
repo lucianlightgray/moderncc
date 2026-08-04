@@ -389,6 +389,32 @@ void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind) { MCC_TRACE("enter\n")
 	a->epoch++;
 	a->kind[n] = kind;
 }
+/* Unhook `child` from `parent` when it is the last one, so a statement that turns
+   out to be a value can be re-parented instead of copied. Returns 0 and changes
+   nothing if it is not the last child, which keeps the caller honest about ordering. */
+int ast_detach_last_child(AstArena *a, AstLocal parent, AstLocal child) { MCC_TRACE("enter\n");
+	AstLocal c, prev = AST_NONE;
+	if (parent == AST_NONE || child == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (a->last_child[parent] != child)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (c = a->first_child[parent]; c != AST_NONE && c != child;
+			 c = a->next_sib[c])
+		{ MCC_TRACE("br\n"); prev = c; }
+	if (c != child)
+		{ MCC_TRACE("br\n"); return 0; }
+	a->epoch++;
+	if (prev == AST_NONE)
+		{ MCC_TRACE("br\n"); a->first_child[parent] = AST_NONE; }
+	else
+		{ MCC_TRACE("br\n"); a->next_sib[prev] = AST_NONE; }
+	a->last_child[parent] = prev;
+	a->nchild[parent]--;
+	a->parent[child] = AST_NONE;
+	a->next_sib[child] = AST_NONE;
+	return 1;
+}
+
 void ast_clear_children(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	a->epoch++;
 	a->first_child[n] = AST_NONE;

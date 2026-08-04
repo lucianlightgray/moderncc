@@ -2321,7 +2321,25 @@ static void rir_op_effect(const RirOp *ro) {
 				if (src < ast_count(rir_arena) &&
 						ast_kind(rir_arena, src) == AST_Store &&
 						ast_nchild(rir_arena, src) == 2) {
-					v = ast_dup_sub(rir_arena, ast_child(rir_arena, src, 1));
+					/* a = b = f(v). The inner store was already statemented and this
+					   copied its value subtree, so f ran twice -- assign_value_effects
+					   counts two calls where the parser makes one. The parser keeps the
+					   stored value live across both stores, so the faithful shape is the
+					   nested one: detach the inner store from the block and hand it to the
+					   outer store as a value, exactly as the landor/ternary arms already
+					   do. Falls back to the copy when the inner store is not the block's
+					   last statement, where detaching would reorder it. */
+					AstLocal iv = ast_child(rir_arena, src, 1);
+					/* Only nest when the copy would duplicate a side effect and the inner
+					   store does not convert. `a = b = expr` yields b's type, so handing
+					   the outer store the unconverted inner value changes the result --
+					   chained_assign's mixed case printed 165.018532 for 162.000000. When
+					   the types agree there is nothing to convert and nesting is exact. */
+					if (rir_effectful(iv) && rir_bbn &&
+							ast_detach_last_child(rir_arena, rir_bb[rir_bbn - 1], src))
+						v = src;
+					else
+						v = ast_dup_sub(rir_arena, iv);
 					chained = 1;
 				}
 			}

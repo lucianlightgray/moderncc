@@ -46,6 +46,7 @@ void ast_add_child(AstArena *a, AstLocal parent, AstLocal child);
 
 void ast_set_kind(AstArena *a, AstLocal n, uint16_t kind);
 void ast_clear_children(AstArena *a, AstLocal n);
+int ast_detach_last_child(AstArena *a, AstLocal parent, AstLocal child);
 
 void ast_set_op(AstArena *a, AstLocal n, int op);
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref);
