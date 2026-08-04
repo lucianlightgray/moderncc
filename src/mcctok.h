@@ -117,6 +117,8 @@ DEF(TOK_EMBED_SUFFIX, "suffix")
 DEF(TOK_EMBED_IF_EMPTY, "if_empty")
 DEF(TOK_EMBED_OFFSET, "offset")
 DEF(TOK_KW_GNU, "gnu")
+DEF(TOK_CONSTEXPR, "constexpr")
+DEF(TOK_NULLPTR, "nullptr")
 
 DEF(TOK___FUNC__, "__func__")
 

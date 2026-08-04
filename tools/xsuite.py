@@ -327,8 +327,8 @@ def err_key(msg):
 
 
 class Runner:
-    def __init__(self, mcc, out, jobs, ctimeout, rtimeout, force_opt=False):
-        self.mcc, self.out = mcc, out
+    def __init__(self, mcc, out, jobs, ctimeout, rtimeout, force_opt=False, ref=""):
+        self.mcc, self.out, self.ref = mcc, out, ref
         self.ctimeout, self.rtimeout = ctimeout, rtimeout
         self.force_opt = force_opt
         self.lock = threading.Lock()
@@ -347,6 +347,31 @@ class Runner:
             self.n += 1
             if self.n % 2000 == 0:
                 print(f"  ... {self.n} results", flush=True)
+
+    def ref_verdict(self, cmd, base, work, mode):
+        if not self.ref:
+            return None
+        rcmd = [self.ref] + cmd[1:]
+        try:
+            os.unlink(base + ".ref.o")
+        except OSError:
+            pass
+        rcmd = [a if a != base + ".o" else base + ".ref.o" for a in rcmd]
+        rcmd = [a if a != base + ".x" else base + ".ref.x" for a in rcmd]
+        try:
+            p = subprocess.run(rcmd, capture_output=True, text=True, errors="replace",
+                               timeout=self.ctimeout, preexec_fn=limits_compile, cwd=work)
+        except (OSError, subprocess.SubprocessError):
+            return "error"
+        err = (p.stderr or "")
+        if REF_BADFLAG_RE.search(err):
+            return "badflag"
+        for ext in (".ref.o", ".ref.x"):
+            try:
+                os.unlink(base + ext)
+            except OSError:
+                pass
+        return "ok" if p.returncode == 0 else "reject"
 
     def one(self, t, opt, idx):
         work = os.path.join(self.out, "w%02d" % (idx % self.jobs))
@@ -379,10 +404,20 @@ class Runner:
             rec.update(status="PASS" if crc != 0 else "XPASS", stage="compile", rc=crc)
             if crc == 0:
                 rec["err"] = ""
+                v = self.ref_verdict(cmd, base, work, mode)
+                if v:
+                    rec["ref"] = v
+                if v == "ok":
+                    rec["status"] = "XPASS_REFOK"
             return self.emit(rec, base)
         if crc != 0:
             rec.update(status="ICE" if is_ice(crc, cerr) else "FAIL",
                        stage="compile", rc=crc, err=err_key(cerr))
+            v = self.ref_verdict(cmd, base, work, mode)
+            if v:
+                rec["ref"] = v
+            if v == "reject":
+                rec["status"] = "REFFAIL"
             return self.emit(rec, base)
         if mode != "run":
             rec.update(status="PASS", stage="compile", rc=0)
@@ -416,6 +451,11 @@ def suite_default_flags(path, text, G):
         if p.startswith(G + sub) and "/" not in p[len(G + sub):]:
             return extra
     return []
+
+
+REF_BADFLAG_RE = re.compile(
+    r"unknown argument|unsupported option|unrecognized command|"
+    r"no such file or directory: '-|argument unused|not supported")
 
 
 def probe_opt(mcc, opt):
@@ -502,6 +542,7 @@ def main():
     ap.add_argument("--rtimeout", type=float, default=15.0)
     ap.add_argument("--force-opt", action="store_true")
     ap.add_argument("--files", default="")
+    ap.add_argument("--ref", default="")
     ap.add_argument("--suite-default-flags", action="store_true")
     args = ap.parse_args()
     opts = args.opt or ["-O0"]
@@ -529,7 +570,7 @@ def main():
           f"opts={opts}, jobs={args.jobs}", flush=True)
 
     r = Runner(os.path.abspath(args.mcc), args.out, args.jobs, args.ctimeout,
-               args.rtimeout, args.force_opt)
+               args.rtimeout, args.force_opt, args.ref)
     for s in skips:
         r.fh.write(json.dumps(s) + "\n")
     work = [(t, o) for t in tests for o in opts]

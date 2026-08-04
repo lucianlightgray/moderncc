@@ -902,8 +902,12 @@ ST_FUNC int ieee_finite(double d) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void test_lvalue(void) { MCC_TRACE("enter\n");
-	if (!(vtop->r & VT_LVAL))
-		{ MCC_TRACE("br\n"); expect("lvalue"); }
+	if (!(vtop->r & VT_LVAL)) { MCC_TRACE("br\n");
+		if (vtop->type.t & VT_CONSTEXPR)
+			{ MCC_TRACE("br\n"); mcc_error("taking the address of a 'constexpr' object is not "
+								"supported"); }
+		expect("lvalue");
+	}
 }
 
 ST_FUNC void check_vstack(void) { MCC_TRACE("enter\n");
@@ -3735,6 +3739,11 @@ static void type_to_str(char *buf, int buf_size,
 	buf_size -= strlen(buf);
 	buf += strlen(buf);
 
+	if (IS_NULLPTR(t)) { MCC_TRACE("br\n");
+		tstr = "nullptr_t";
+		goto add_tstr;
+	}
+
 	switch (bt) { MCC_TRACE("br\n");
 	case VT_VOID:
 		tstr = "void";
@@ -3871,6 +3880,20 @@ static inline int is_null_pointer(SValue *p) { MCC_TRACE("enter\n");
 					(MCC_PTR_SIZE == 4 ? (uint32_t)p->c.i == 0 : p->c.i == 0) &&
 					((pointed_type(&p->type)->t & VT_BTYPE) == VT_VOID) &&
 					0 == (pointed_type(&p->type)->t & VT_QUALIFY));
+}
+
+static void mk_nullptr_type(CType *type) { MCC_TRACE("enter\n");
+	type->t = VT_VOID;
+	type->ref = NULL;
+	mk_pointer(type);
+	type->t |= VT_NULLPTR;
+}
+
+static void vpush_nullptr(void) { MCC_TRACE("enter\n");
+	CType type;
+	mk_nullptr_type(&type);
+	vset(&type, VT_CONST, 0);
+	vtop->c.i = 0;
 }
 
 static int type_needs_default_promotion(CType *type) { MCC_TRACE("enter\n");
@@ -4156,6 +4179,21 @@ redo:
 			vswap();
 		}
 		goto redo;
+	} else if (IS_NULLPTR(t1) || IS_NULLPTR(t2)) { MCC_TRACE("br\n");
+		int n1 = IS_NULLPTR(t1), n2 = IS_NULLPTR(t2);
+		if (op_class != CMP_OP)
+			{ MCC_TRACE("br\n"); mcc_error("invalid operands to binary operation on 'nullptr_t'"); }
+		if (is_ordered_cmp(op) && n1 && n2)
+			{ MCC_TRACE("br\n"); mcc_error("ordered comparison of 'nullptr_t' values"); }
+		if (!n1 && !is_null_pointer(vtop - 1) && (t1 & VT_BTYPE) != VT_PTR)
+			{ MCC_TRACE("br\n"); mcc_error("invalid operands to comparison with 'nullptr_t'"); }
+		if (!n2 && !is_null_pointer(vtop) && (t2 & VT_BTYPE) != VT_PTR)
+			{ MCC_TRACE("br\n"); mcc_error("invalid operands to comparison with 'nullptr_t'"); }
+		if (n1)
+			{ MCC_TRACE("br\n"); vtop[-1].type.t &= ~VT_NULLPTR; }
+		if (n2)
+			{ MCC_TRACE("br\n"); vtop[0].type.t &= ~VT_NULLPTR; }
+		goto redo;
 	} else if (!combine_types(&combtype, vtop - 1, vtop, op_class)) { MCC_TRACE("br\n");
 	op_err:
 		mcc_error("invalid operand types for binary operation");
@@ -4410,6 +4448,12 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 
 	if (IS_ENUM(type->t) && type->ref->c < 0)
 		{ MCC_TRACE("br\n"); mcc_error("cast to incomplete type"); }
+
+	if (IS_NULLPTR(vtop->type.t) && !IS_NULLPTR(type->t)) { MCC_TRACE("br\n");
+		int nbt = type->t & VT_BTYPE;
+		if (nbt != VT_BOOL && nbt != VT_PTR && nbt != VT_VOID)
+			{ MCC_TRACE("br\n"); cast_error(&vtop->type, type); }
+	}
 
 	dbt = type->t & (VT_BTYPE | VT_UNSIGNED);
 	sbt = vtop->type.t & (VT_BTYPE | VT_UNSIGNED);
@@ -7685,7 +7729,16 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			t |= VT_TLS;
 			next();
 			break;
+		case TOK_CONSTEXPR:
+			if (mcc_state->cversion < 202311 || sym_find(tok))
+				{ MCC_TRACE("br\n"); goto deflt; }
+			if (t & VT_CONSTEXPR)
+				{ MCC_TRACE("br\n"); mcc_error("duplicate 'constexpr'"); }
+			t |= VT_CONSTEXPR | VT_CONSTANT;
+			next();
+			break;
 		default:
+		deflt:
 			if (typespec_found)
 				{ MCC_TRACE("br\n"); goto the_end; }
 			s = sym_find(tok);
@@ -12061,6 +12114,13 @@ tok_next:
 		n = 0x7f800000;
 		goto special_math_val;
 
+	case TOK_NULLPTR:
+		if (mcc_state->cversion < 202311 || sym_find(tok))
+			{ MCC_TRACE("br\n"); goto tok_identifier; }
+		next();
+		vpush_nullptr();
+		break;
+
 	default:
 	tok_identifier:
 		if (tok < TOK_UIDENT)
@@ -12921,7 +12981,7 @@ static uint64_t expr_const64_wide(uint64_t *hi) { MCC_TRACE("enter\n");
 	expr_const1();
 	if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
 		{ MCC_TRACE("br\n"); expect("constant expression"); }
-	if (is_float(vtop->type.t))
+	if (is_float(vtop->type.t) || IS_NULLPTR(vtop->type.t))
 		{ MCC_TRACE("br\n"); mcc_error("integer constant expression must have integer type"); }
 	c = vtop->c.i;
 	if ((vtop->type.t & VT_BTYPE) == VT_INT128)
@@ -15860,6 +15920,113 @@ static void pe_check_linkage(CType *type, AttributeDef *ad) {
 }
 #endif
 
+static long long constexpr_ival(SValue *sv) { MCC_TRACE("enter\n");
+	int bt = sv->type.t & VT_BTYPE;
+	int uns = (sv->type.t & VT_UNSIGNED) != 0;
+	long long v = (long long)sv->c.i;
+
+	if (bt == VT_BOOL)
+		{ MCC_TRACE("br\n"); return v != 0; }
+	if (bt == VT_BYTE)
+		{ MCC_TRACE("br\n"); return uns ? (long long)(unsigned char)v : (long long)(signed char)v; }
+	if (bt == VT_SHORT)
+		{ MCC_TRACE("br\n"); return uns ? (long long)(unsigned short)v : (long long)(short)v; }
+	if (bt == VT_INT)
+		{ MCC_TRACE("br\n"); return uns ? (long long)(unsigned int)v : (long long)(int)v; }
+	return v;
+}
+
+static void decl_constexpr(CType *type, int v) { MCC_TRACE("enter\n");
+	CType dt;
+	CValue cv;
+	Sym *s, *holder;
+	int bt, braced = 0, sbt;
+	long long ll = 0;
+	double dv = 0;
+
+	dt = *type;
+	dt.t &= ~VT_STORAGE;
+	dt.t |= VT_CONSTANT;
+	bt = dt.t & VT_BTYPE;
+
+	if (dt.t & (VT_ARRAY | VT_VLA))
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for an object of array type is not supported"); }
+	if (bt == VT_STRUCT)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for an object of struct or union type is not supported"); }
+	if (bt == VT_PTR)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for an object of pointer type is not supported"); }
+	if (bt == VT_FUNC)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' cannot be applied to a function"); }
+	if (is_complex_type(&dt) || bt == VT_LDOUBLE || bt == VT_INT128)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for this type is not supported"); }
+	if (!is_integer_btype(bt) && bt != VT_FLOAT && bt != VT_DOUBLE)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' requires an object of arithmetic type"); }
+
+	if (tok == '{')
+		{ MCC_TRACE("br\n"); next(); braced = 1; }
+
+	nocode_wanted += CONST_WANTED_BIT;
+	expr_cond();
+	nocode_wanted -= CONST_WANTED_BIT;
+
+	if (braced) { MCC_TRACE("br\n");
+		if (tok == ',')
+			{ MCC_TRACE("br\n"); next(); }
+		skip('}');
+	}
+
+	if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer is not a constant expression"); }
+
+	sbt = vtop->type.t & VT_BTYPE;
+	if (IS_NULLPTR(vtop->type.t) || is_complex_type(&vtop->type) || sbt == VT_LDOUBLE ||
+			sbt == VT_INT128 || (!is_integer_btype(sbt) && !is_float(vtop->type.t)))
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer must have arithmetic type"); }
+
+	memset(&cv, 0, sizeof cv);
+	if (is_float(vtop->type.t)) { MCC_TRACE("br\n");
+		dv = sbt == VT_FLOAT ? (double)vtop->c.f : vtop->c.d;
+		if (bt == VT_FLOAT) { MCC_TRACE("br\n");
+			if ((double)(float)dv != dv)
+				{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer changes value on conversion"); }
+			cv.f = (float)dv;
+		} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
+			cv.d = dv;
+		} else { MCC_TRACE("br\n");
+			mcc_error("'constexpr' integer initializer is not an integer constant expression");
+		}
+	} else { MCC_TRACE("br\n");
+		ll = constexpr_ival(vtop);
+		if (bt == VT_FLOAT) { MCC_TRACE("br\n");
+			if ((long long)(float)ll != ll)
+				{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer changes value on conversion"); }
+			cv.f = (float)ll;
+		} else if (bt == VT_DOUBLE) { MCC_TRACE("br\n");
+			if ((long long)(double)ll != ll)
+				{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer changes value on conversion"); }
+			cv.d = (double)ll;
+		} else { MCC_TRACE("br\n");
+			if (bt == VT_BOOL) { MCC_TRACE("br\n");
+				if (ll != 0 && ll != 1)
+					{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer changes value on conversion"); }
+			} else if (!in_range(ll, dt.t)) { MCC_TRACE("br\n");
+				mcc_error("'constexpr' initializer changes value on conversion");
+			}
+			cv.i = (uint64_t)ll;
+		}
+	}
+	vpop();
+
+	holder = sym_push2(&global_stack, anon_sym++ | SYM_STRUCT, VT_STRUCT, 0);
+	holder->r = 0;
+	holder->sym_scope = local_scope;
+
+	dt.t |= VT_STATIC | VT_CONSTEXPR | VT_ENUM_VAL;
+	dt.ref = holder;
+	s = sym_push(v, &dt, VT_CONST, 0);
+	s->enum_val = (long long)cv.i;
+}
+
 static int decl_in_preamble(void) { MCC_TRACE("enter\n");
 	BufferedFile *bf;
 	for (bf = file; bf; bf = bf->prev)
@@ -16020,6 +16187,13 @@ static int decl(int l) {
 				{ MCC_TRACE("br\n"); mcc_error("invalid storage class for function '%s'",
 									get_tok_str(v, NULL)); }
 
+			if (type.t & VT_CONSTEXPR) { MCC_TRACE("br\n");
+				if (type.t & VT_TYPEDEF)
+					{ MCC_TRACE("br\n"); mcc_error("'constexpr' used with 'typedef'"); }
+				else if ((type.t & VT_BTYPE) == VT_FUNC)
+					{ MCC_TRACE("br\n"); mcc_error("'constexpr' applied to a function"); }
+			}
+
 			if (gnu_ext && (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3)) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
 					{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
@@ -16177,6 +16351,18 @@ static int decl(int l) {
 					if (tok == '=')
 						{ MCC_TRACE("br\n"); has_init = 1; }
 
+					if (type.t & VT_CONSTEXPR) { MCC_TRACE("br\n");
+						if (type.t & (VT_EXTERN | VT_TYPEDEF | VT_TLS))
+							{ MCC_TRACE("br\n"); mcc_error("'constexpr' cannot be combined with this "
+												"storage class"); }
+						if (!has_init)
+							{ MCC_TRACE("br\n"); mcc_error("'constexpr' object '%s' requires an "
+												"initializer", get_tok_str(v, NULL)); }
+						next();
+						decl_constexpr(&type, v);
+						goto var_done;
+					}
+
 					if (((type.t & VT_EXTERN) && (!has_init || l != VT_CONST)) || (type.t & VT_BTYPE) == VT_FUNC || ((type.t & VT_ARRAY) && !has_init && l == VT_CONST && type.ref->c < 0)) { MCC_TRACE("br\n");
 						int was_tentative_flex =
 								!(type.t & VT_EXTERN) && (type.t & VT_ARRAY) && !has_init && l == VT_CONST && type.ref->c < 0;
@@ -16242,6 +16428,7 @@ static int decl(int l) {
 							{ MCC_TRACE("br\n"); rs->a.is_register = 1; }
 					}
 
+				var_done:
 					if (ad.alias_target && l == VT_CONST) { MCC_TRACE("br\n");
 						esym = elfsym(sym_find(ad.alias_target));
 						if (esym && esym->st_shndx != SHN_UNDEF) { MCC_TRACE("br\n");

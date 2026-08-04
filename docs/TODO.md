@@ -2122,6 +2122,46 @@ Unexamined and new to this board, all `-O3`-only `FAILEXE`: `execute/{20000715-1
 
 **Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
 
+### The board now asks a reference compiler whether a test is a valid expectation
+
+`tools/xsuite.py --ref clang` re-runs **the harness's own command line** with a reference
+compiler whenever mcc fails to compile, or accepts something the test says must be
+rejected. Two new statuses fall out:
+
+- **`REFFAIL`** — mcc rejected it and so did clang. Not an mcc defect.
+- **`XPASS_REFOK`** — mcc accepted a should-be-rejected test and clang accepts it too, so
+  the `dg-error` is conditional and does not apply on this host. Not a missing diagnostic.
+- **`ref=badflag`** — clang rejected the *flags*, not the source; counted as inconclusive
+  and never as evidence either way. Without this guard every gcc-only flag would
+  masquerade as "clang rejects this too" and silently inflate the exoneration count — the
+  same trap that contaminated the earlier `-ansi` diagnostics analysis.
+
+Measured over the full board: **999 `REFFAIL` and 229 `XPASS_REFOK` at `-O0`** (1,219 at
+`-O3`), plus 93 inconclusive. So **1,228 of the rows previously counted against mcc are
+not mcc defects** — 53% of the `FAIL` column and 37% of the `XPASS` column.
+
+| | raw | with invalid expectations removed |
+|---|---|---|
+| `-O0` | 86.6% (16947/19571) | **92.4%** (16947/18343) |
+| `-O3` | 86.5% (16920/19571) | **92.2%** (16920/18352) |
+
+Real remaining mcc gaps at `-O0`: **878 `FAIL`, 382 `XPASS`, 136 `FAILEXE`, 0 ICE, 0
+TIMEOUT.**
+
+**Validate a `REFFAIL` the way the harness runs it, not the way that seems obvious.** Two
+of four spot-checked files compiled fine under a hand-written `clang -c`, which looked
+like the oracle over-counting. It was not: both are `dg-do link` tests, and the harness
+*links* them. `gcc.dg/builtins-18.c` is the `link_error` idiom — clang at `-O0` fails it
+with `undefined reference to link_error`, exactly as mcc does. The `-c` spot-check was
+testing something the harness never does. A pleasing side effect: the whole `link_error0`
+family, hand-classified earlier in this file as "optimizer quality, not correctness", is
+now classified automatically.
+
+Caveat on the oracle's authority: clang and gcc genuinely disagree — clang errors
+unconditionally where gcc keys severity to the standard — so `REFFAIL` means "clang also
+rejects this", not "no compiler accepts this". For gcc-dialect tests `--ref gcc` is the
+better question and is a one-word change.
+
 ### OPEN — one wrong-code defect remains: `copysign` at `-O1`+ inside a called function
 
 `gcc.c-torture/execute/ieee/copysign2.c` aborts at `-O1`, `-O2` and `-O3`; passes at
@@ -2191,15 +2231,29 @@ implementation silently miscomputed for `unsigned __int128` because a `-dM -E` p
 missed that `__SIZEOF_INT128__` is set inside `mccdefs.h`, which that dump does not show.
 
 **`__has_builtin` always returned 0** — `runtime/include/mccdefs.h:317` defined it as the
-literal `0`, so it expanded before the preprocessor logic could ever see it. Removed, and
-`expr_preprocess` now answers it: DEF'd builtins report 1 correctly (verified against gcc
-for `__builtin_clz`, `__builtin_expect`, and a bogus name). **Still incomplete**: builtins
-that are *macros* in `mccdefs.h` (`__builtin_clzg`, `__builtin_memcpy`, the `stdc_*`
-family) still report 0, because `define_find` does not match them in the `#if` context and
-I did not chase it further. That direction is the safe one — a false 0 makes a caller take
-its portable fallback, where a false 1 would make it emit a call that fails. `printf`
-reports 0 where gcc reports 1, deliberately: mcc has no `printf` folding at all, which is
-the same gap behind the four `*printf-chk` failures.
+literal `0`, so it expanded before the preprocessor logic could ever see it. Removed;
+`expr_preprocess` now answers it, scanning the argument with `next_nomacro` (gcc and clang
+do not macro-expand it either) and reporting 1 for a DEF'd token or a defined
+`__builtin_*` macro.
+
+**Measure this under `-c`, not `-E`.** A large block of `runtime/include/mccdefs.h` sits
+behind `#ifndef __MCC_PP__` starting at `:324`, so preprocess-only mode does not see the
+macro-defined builtins at all and every one of them reads as absent. An earlier round of
+this work was tested with `-E` and wrongly concluded the macro case was still broken. Under
+`-c`, verified against gcc: `__builtin_clz`, `__builtin_expect`, `__builtin_clzg`,
+`__builtin_stdc_bit_width` and a bogus name all agree.
+
+Three residual differences, all understood:
+- `__builtin_bitreverse32` — mcc says 1, **gcc says 0**. mcc genuinely has it now and gcc
+  does not; mcc is right.
+- `__builtin_clear_padding`, `printf` — mcc says 0, gcc says 1. Honest: mcc implements
+  neither, and the `printf` gap is the same one behind the four `*printf-chk` failures.
+- `__builtin_memcpy` — mcc says 0 but **does compile and run it**, via a generic
+  `__builtin_`-prefix-stripping fallback rather than a token or macro, which
+  `pp_has_builtin_arg` cannot see. This is the one real under-report; closing it means
+  hooking that fallback in `src/mccgen.c`.
+Under-reporting is the safe direction: a false 0 makes a caller take its portable
+fallback, where a false 1 makes it emit a call that fails.
 
 ### Landed — D1: the default is now `gnu23`
 

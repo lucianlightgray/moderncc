@@ -17,6 +17,10 @@ typedef union {
 } max_align_t;
 #endif
 
+#if __STDC_VERSION__ >= 202311L
+typedef __typeof__(nullptr) nullptr_t;
+#endif
+
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
