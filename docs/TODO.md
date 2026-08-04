@@ -374,6 +374,50 @@ cells pass against the tightened floors.
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
 
+### OPEN: `void_expr` is a PROMOTION defect, not an arena one
+
+`tests/exec/statements/void_expr.c::main` falls back at `-O2`/`-O3` (not `-O1`) and
+miscompiles when forced through. **`MCC_AST_PROMOTE=0` fixes it outright** — that is
+the whole diagnosis, and it clears the arena, the replay and the landor flags
+(`MCC_RIR_NOMAT` and `MCC_RIR_NOINV` both leave it unmoved).
+
+The source is a `for` loop whose body holds a **discarded short-circuit with a call in
+its right operand**:
+
+```c
+for (; i < 3; ++i) {
+	printf("%d\n", i);
+	(void)(i || (f(i), ++count));
+}
+```
+
+Promoted, `i` and `count` land in `%ebx`/`%r12d` and the loop comes out structurally
+broken — `jge` to the immediately following instruction instead of the exit, the
+increment block unreachable, the `||`'s short-circuit branch landing *inside* the
+`f(i)` call it should skip, and no back-edge, so the body runs once and falls into the
+epilogue. Output is `0 f(0)` instead of `0 f(0) 1 2 count 1`.
+
+**Two things in `ast_plan_promotion` (`src/mccast.c:3428`) that fit the symptom:**
+
+- **Short-circuits are invisible to it.** Its scan classifies control flow by looking
+  for `AST_If` with `so == 2|3|4|5`. A landor is an `AST_Binary` (`op#145`/`op#146`),
+  so a body whose only extra branching comes from `&&`/`||` is planned as if it were
+  straight-line.
+- **`has_loop` and `has_goto` are assigned and never read** — the planner gathers those
+  facts in the same scan and discards them. Only `has_call` is used (`:3459`,
+  `:3600-3604`, to pick the callee-saved pool). Whatever they were meant to gate is
+  missing.
+
+**Before changing the planner, read N15**: making `save_reg_upstack` skip pinned
+registers was *"the tempting one-liner, and it is semantically right"* and moved 36
+objects at `-O2`/`-O3`. Promotion changes are measured on the twelve-key board, not
+reasoned about. The cheap correct-first step is to teach the scan that a landor is a
+branch and see what the board says.
+
+**This is the third latent wrong-code bug the fallback was masking** — promotion runs
+regardless of `faithful`, so its output was simply discarded whenever it broke a body.
+Same pattern as the fold and the fconst desync below.
+
 ### CLOSED: `ast_fold_rec` folded at the LEFT operand's type instead of the common type
 
 **Found by watchpoint, after eight theories from source reading had all failed.** The
