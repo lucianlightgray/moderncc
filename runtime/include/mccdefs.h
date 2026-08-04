@@ -389,6 +389,27 @@
 	__mcc_float_t __mcc_nansf(const char *);
 	__mcc_double_t __mcc_nans(const char *);
 	__mcc_ldouble_t __mcc_nansl(const char *);
+	#define __mcc_bitsof_f(x) (__extension__ (union { __mcc_float_t __f; \
+	__mcc_uint_t __u; }){ .__f = (x) }.__u)
+	#define __mcc_bitsof_d(x) (__extension__ (union { __mcc_double_t __d; \
+	__mcc_ullong_t __u; }){ .__d = (x) }.__u)
+	#define __mcc_issig_f(x) ((__mcc_bitsof_f(x) & 0x7fc00000U) == 0x7f800000U \
+	&& (__mcc_bitsof_f(x) & 0x003fffffU) != 0)
+	#define __mcc_issig_d(x) ((__mcc_bitsof_d(x) & 0x7ff8000000000000ULL) \
+	== 0x7ff0000000000000ULL && (__mcc_bitsof_d(x) & 0x0007ffffffffffffULL) != 0)
+	#if defined __i386__ || defined __x86_64__
+	#define __mcc_ldparts(x) (__extension__ (union { __mcc_ldouble_t __l; \
+	struct { __mcc_ullong_t __s; __mcc_ushort_t __e; } __p; }){ .__l = (x) }.__p)
+	#define __mcc_issig_l(x) ((__mcc_ldparts(x).__e & 0x7fffU) == 0x7fffU \
+	&& (__mcc_ldparts(x).__s & 0x4000000000000000ULL) == 0 \
+	&& (__mcc_ldparts(x).__s & 0x3fffffffffffffffULL) != 0)
+	#else
+	#define __mcc_issig_l(x) __mcc_issig_d((__mcc_double_t)(x))
+	#endif
+	#define __builtin_issignaling(x) _Generic((x), \
+	__mcc_float_t: __mcc_issig_f((__mcc_float_t)(x)), \
+	__mcc_ldouble_t: __mcc_issig_l((__mcc_ldouble_t)(x)), \
+	default: __mcc_issig_d((__mcc_double_t)(x)))
 	#define __mcc_nanbits_f(u) (__extension__ (union { __mcc_uint_t __u; \
 	__mcc_float_t __f; }){ .__u = (u) }.__f)
 	#define __mcc_nanbits_d(u) (__extension__ (union { __mcc_ullong_t __u; \

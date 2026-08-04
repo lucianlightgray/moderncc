@@ -308,6 +308,13 @@ def is_ice(rc, msg):
     return bool(ICE_RE.search(body))
 
 
+def err_raw(msg):
+    for line in (msg or "").splitlines():
+        if "error:" in line:
+            return line.strip()[:200]
+    return ""
+
+
 def err_key(msg):
     lines = [l.strip() for l in (msg or "").splitlines() if l.strip()]
     cand = [l for l in lines if "error:" in l] or \
@@ -414,7 +421,8 @@ class Runner:
             return self.emit(rec, base)
         if crc != 0:
             rec.update(status="ICE" if is_ice(crc, cerr) else "FAIL",
-                       stage="compile", rc=crc, err=err_key(cerr))
+                       stage="compile", rc=crc, err=err_key(cerr),
+                       err_raw=err_raw(cerr))
             v = self.ref_verdict(cmd, base, work, mode)
             if v:
                 rec["ref"] = v
