@@ -93,9 +93,12 @@ int rir_loc_replay(int *loc_out) {
 static int rir_fcrec[RIR_LOCREC_MAX];
 static int rir_fcrec_pos[RIR_LOCREC_MAX];
 static int rir_fcrec_nc[RIR_LOCREC_MAX];
+static unsigned char rir_fcrec_cplx[RIR_LOCREC_MAX];
 static int rir_fcrec_n, rir_fcrec_i;
 
-void rir_hook_fconst_record(int c) {
+void rir_hook_fconst_record(int c, int cplx) {
+	if (rir_fcrec_n < RIR_LOCREC_MAX)
+		rir_fcrec_cplx[rir_fcrec_n] = (unsigned char)cplx;
 	if (!rir_capture_live() || rir_fcrec_n >= RIR_LOCREC_MAX)
 		return;
 	rir_fcrec_pos[rir_fcrec_n] = ind;
@@ -103,12 +106,23 @@ void rir_hook_fconst_record(int c) {
 	rir_fcrec[rir_fcrec_n++] = c;
 }
 
-int rir_hook_fconst_reuse(void) {
+int rir_hook_fconst_reuse(int cplx) {
 	if (!rir_c2_active)
 		return -1;
 	while (rir_fcrec_i + 1 < rir_fcrec_n && rir_fcrec_pos[rir_fcrec_i + 1] <= ind &&
 	       ((rir_fcrec_nc[rir_fcrec_i] & RIR_NOEVAL_MASK) ||
 	        rir_fcrec_pos[rir_fcrec_i + 1] > rir_fcrec_pos[rir_fcrec_i]))
+		rir_fcrec_i++;
+	/* The position resync alone cannot separate two constants materialized at the
+	   same `ind`, which is exactly what gen_complex_cast's const path produces: the
+	   16-byte complex and the scalar after it are both emitted into rodata before
+	   any code moves `ind`, so pos[i+1] == pos[i], the advance above does not fire,
+	   and a scalar request consumes the complex entry -- one label off for every
+	   reuse after it. Record order is emission order, so a kind mismatch at the head
+	   belongs to a consumer that already passed or will never ask. Same reasoning as
+	   the ast-side list in ast_fconst_reuse; the two have to agree. */
+	while (rir_fcrec_i < rir_fcrec_n &&
+	       rir_fcrec_cplx[rir_fcrec_i] != (unsigned char)cplx)
 		rir_fcrec_i++;
 	if (rir_fcrec_i >= rir_fcrec_n)
 		return 0;

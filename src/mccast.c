@@ -2167,7 +2167,7 @@ int ast_fconst_reuse(int cplx) { MCC_TRACE("enter\n");
 	int jfc;
 #if MCC_REPLAY_IR
 	{
-		int rfc = rir_hook_fconst_reuse();
+		int rfc = rir_hook_fconst_reuse(cplx);
 		if (rfc >= 0)
 			{ MCC_TRACE("br\n"); return rfc; }
 	}
@@ -2191,7 +2191,7 @@ int ast_fconst_reuse(int cplx) { MCC_TRACE("enter\n");
 void ast_fconst_record(int c, int cplx) { MCC_TRACE("enter\n");
 	ir_cap_fconst_note(c);
 #if MCC_REPLAY_IR
-	rir_hook_fconst_record(c);
+	rir_hook_fconst_record(c, cplx);
 #endif
 	if (!ast_active || ast_replaying)
 		{ MCC_TRACE("br\n"); return; }

@@ -159,8 +159,8 @@ int rir_dbg_on(void);
 int rir_capture_live(void);
 int rir_hook_slot_replay(void);
 void rir_hook_slot_record(void);
-void rir_hook_fconst_record(int c);
-int rir_hook_fconst_reuse(void);
+void rir_hook_fconst_record(int c, int cplx);
+int rir_hook_fconst_reuse(int cplx);
 void rir_hook_ternary_begin(int c, int g);
 void rir_hook_ternary_branch(int which);
 void rir_hook_ternary_branch_done(int which);
@@ -323,8 +323,8 @@ void rir_hook_asm_operands(int nb_operands, uint64_t gvmask);
 #define rir_capture_live() 0
 #define rir_hook_slot_replay() 0
 #define rir_hook_slot_record() ((void)0)
-#define rir_hook_fconst_record(c) ((void)0)
-#define rir_hook_fconst_reuse() (-1)
+#define rir_hook_fconst_record(c, cplx) ((void)0)
+#define rir_hook_fconst_reuse(cplx) (-1)
 #define rir_configure() ((void)0)
 #define rir_hook_ternary_begin(c, g) ((void)0)
 #define rir_hook_ternary_branch(w) ((void)0)
