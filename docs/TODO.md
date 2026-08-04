@@ -2884,3 +2884,44 @@ window (`MCC_AST_UNFAITHFUL_DUMP=<n>` with a large `n`) before believing the off
 - The `MCC_TRACE_IF("UNFAITHFUL ...")` line next to that dump does **not** reach
   stderr under `MCC_LOG=0xff`. Do not spend time trying to grep for it; use the
   `[unfaithful]` rows instead.
+
+### The chained-store nesting knob: three variants, all measured
+
+`ast_detach_last_child` makes the nested shape `Store(a, Store(b, v))` reachable, so
+the outer store can consume the inner one instead of copying its value subtree. What
+gets nested is a tunable, and the three settings tried do **not** trade off the way
+they look like they should:
+
+| variant | `mcc.c -O1` | suite |
+|---|---|---|
+| effectful value only — **shipped** | 34 | clean |
+| nest everything | **32** | `chained_assign` mixed + 2 `optfire/chainstore` fail |
+| nest everything, `Convert`-wrapped when types differ | **79** | 4 fail |
+| nest when base types agree, or effectful | 35 | clean |
+
+The `32` is **not** two real wins. The gain comes precisely from nesting stores whose
+value converts — `a = b = expr` has `b`'s type — and those are the same bodies that
+break: `chained_assign`'s mixed case prints `165.018532` for `162.000000`. Restricting
+to equal types, either on the full type word or on `VT_BTYPE` alone, gives 34 and 35
+respectively, which proves the improvement lived entirely in the wrong half. Wrapping
+the nested store in a `Convert` to the inner store's type is much worse than either,
+so the replay's store-as-value arm is not simply missing a cast.
+
+**Do not re-tune this knob without first answering what the replay's store-as-value
+arm yields for a converting store.** That is the actual unknown, and every variant
+above is a guess about it. Measure it directly.
+
+### Correction to N23
+
+The earlier note said bailing in the chained branch "changed nothing, which locates the
+duplication elsewhere". The second half was wrong. The branch *is* taken -- confirmed
+by instrumenting it, `kind=13` (`AST_StoreVal`), `nchild=0`. `rir_prod_bail` simply
+cannot be set from there: `rir_prod_take` tests it **before** calling `rir_build()`,
+and `IR_OP_VSTORE` runs during the build, so the flag is read a function too late. Any
+refusal decided inside a handler needs a counter checked *after* the build, next to
+the existing `mismatch` test.
+
+Refusing would not have served the goal in any case. A refusal makes the body a
+`skip` rather than a `fallback`, so the census improves while the object still ships
+parser bytes. Driving the count down with refusals is gaming the metric; only a
+faithful arena is real progress.
