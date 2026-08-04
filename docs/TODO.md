@@ -311,7 +311,7 @@ One line: `ast_env_gate("MCC_RIR_ONLY", 0)` → `1` at `src/mccast.c:2040`. Note
 - **`vendor/` is gitignored but a *symlink* named `vendor` is not matched by `/vendor/`.** A git worktree has no sysroots, so four ELF cross keys compile ~77 files of 276 and still print a green board. Symlink it, verify `ls vendor/gentoo-stage3-riscv64-glibc/usr/include`, and **never `git add -A`**. The same applies to a `cmake-cross` symlink, which is what makes the docker-gated cells actually run instead of SKIP.
 - **A long checkout path fails 22 `exec*/bound_global`** — `bt_info.file` is `char[100]`. Not a regression. Configure through a short symlink (`/tmp/mccw`) to avoid it.
 - **Root-owned leftovers under `<build>/riscv64-promote-docker/`** fail that cell in 0.00 s with a permission error and read as a real failure. Clear them before believing it.
-- **`superopt/promote-floor` is load-sensitive and will read as a regression.** It compiles at `-O4`, which is the time-budgeted size-scored search, and asserts the search does not subtract `MCC_AST_PROMOTE`. Under `ctest -j 8` it failed once in 1.12 s and passed the next full run in 0.61 s, and it passes standalone every time. A slower run explores fewer candidates and can miss the promoted variant. Re-run it alone before believing it, exactly like the `selfhost-*` contention class below.
+- ~~**`superopt/promote-floor` is load-sensitive and will read as a regression.**~~ **Fixed** — the test is `RUN_SERIAL` now, so it no longer needs re-running by hand. The underlying cause is worth keeping in mind: `-O4` is the *wall-clock*-budgeted search (`host_clock_ms() - start < budget_ms`), so a loaded machine explores fewer candidates and can miss the promoted variant. Any future test that compares two `-O4` outputs has the same exposure, and `RUN_SERIAL` narrows the window rather than closing it — the search is genuinely nondeterministic under load.
 - **Do not run a twelve-key sweep and `ctest -j 8` concurrently** — the contention alone fails several `selfhost-*` cells.
 - **Pin `SOURCE_DATE_EPOCH`** for any object A/B, or a file differs from its own second compile.
 - **`ast_env_int` returns its default for values `<= 0`**, so `MCC_RIR_PROD=0` means *on*; unset it instead. `ast_env_gate` handles `0` correctly.
@@ -4327,3 +4327,45 @@ tier is 26 of 26.
 is reachable today because their codegen emits TLSDESC under `pic`, so TPREL never
 arrives -- left alone deliberately rather than changed blind, but they are the same
 latent bug if either target ever emits local-exec under `-pie`.
+
+
+---
+
+## The 26-preset Linux matrix: all green, and what it took
+
+Run clean at `63d1d1fe` — configure, build and test from scratch per preset, nothing
+editing the tree concurrently. **26 of 26 pass.**
+
+    debug  release  sanitize  diagnostics  cst  cross
+    linux-gcc  -cross  -musl  -release  -static  -multisource
+    linux-gcc-asm-off  -predefs-off  -pie  -dwarf  -diagnostics  -sanitize
+    linux-clang  -cross  -release
+    qemu-x86_64  qemu-i386  qemu-arm  qemu-arm64  qemu-riscv64
+
+Six were red at the start of the run. All six are closed:
+
+| preset(s) | was | cause |
+|---|---|---|
+| `release`, `linux-gcc-pie` | `superopt/promote-floor` | wall-clock search under `-j32`; now `RUN_SERIAL` |
+| `linux-clang` ×3 | `mcctest`, `mcctest-bcheck` | clang was acting as the "GCC-compatible reference"; now prefers gcc on PATH on Linux |
+| `qemu-i386` | `flt_eval_method` | `__FLT_EVAL_METHOD__` was 0 while `FLT_EVAL_METHOD` was 2 |
+| `qemu-riscv64` | 8 cells | W6/W7 — the PIE local-exec TLS refusal |
+
+macOS and MSVC presets are excluded: they cannot run on a Linux host. The docker tier
+is separately green at 26 of 26, and includes `selfhost-riscv64-docker`.
+
+**A methodology note that cost real time.** The first attempt at this matrix ran while
+I was still editing the tree, and it configures and builds from the live source. It
+reported `cross` failing 8216 of 8232, `linux-gcc` as BUILD_FAIL, and `cst` at 10
+failures. **Every one of those was my own mid-edit state, not a defect** — all green on
+the clean re-run. If a sweep like this is worth starting, it is worth freezing the tree
+first; otherwise its output is indistinguishable from a real regression and someone
+will chase it.
+
+### Census at the close
+
+`mcc.c -O1`: **used 1174, fallback 31, skip 11**, down from 34-36 over the session and
+with four wrong-code defects closed underneath it (promotion of assigning loop
+conditions, `-freverse-funcargs` argument order, non-store loop-condition effects, and
+the chained-store duplication). The remaining 31 are catalogued by first-diff offset
+and length delta earlier in this file; `RVATTR` is the tool that makes them tractable.
