@@ -3839,12 +3839,50 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
             TIMEOUT 900)
 
+        set(_shadow_bash bash)
+        if(MCC_TARGETOS STREQUAL "WIN32")
+            # System32's bash.exe is the WSL relay and cannot run these scripts;
+            # find a real one beside sh, or by asking sh itself (a scoop shim's
+            # directory holds no bash, but its sh knows where /usr/bin/bash is)
+            find_program(MCC_TEST_SH NAMES sh bash
+                DOC "POSIX shell used to run the cli test pipelines on Windows")
+            if(MCC_TEST_SH)
+                get_filename_component(_shadow_sh_dir "${MCC_TEST_SH}" DIRECTORY)
+                find_program(MCC_TEST_BASH NAMES bash
+                    HINTS "${_shadow_sh_dir}" NO_DEFAULT_PATH
+                    DOC "bash used to run the shadow-iv sweep on Windows")
+                if(NOT MCC_TEST_BASH)
+                    execute_process(COMMAND "${MCC_TEST_SH}" -c "cygpath -m \"$(command -v bash)\""
+                        OUTPUT_VARIABLE _shadow_bash_probe OUTPUT_STRIP_TRAILING_WHITESPACE
+                        ERROR_QUIET RESULT_VARIABLE _shadow_bash_rc)
+                    if(_shadow_bash_rc EQUAL 0 AND EXISTS "${_shadow_bash_probe}")
+                        set(MCC_TEST_BASH "${_shadow_bash_probe}" CACHE FILEPATH
+                            "bash used to run the shadow-iv sweep on Windows" FORCE)
+                    endif()
+                endif()
+            endif()
+            set(_shadow_bash "${MCC_TEST_BASH}")
+        endif()
+        set(_shadow_pathmod "")
+        if(_shadow_bash AND MCC_TARGETOS STREQUAL "WIN32")
+            # dirname/mktemp/find live beside bash; a bare bash.exe does not put
+            # its own usr/bin on PATH
+            get_filename_component(_shadow_bash_dir "${_shadow_bash}" DIRECTORY)
+            file(TO_NATIVE_PATH "${_shadow_bash_dir}" _shadow_bash_dir)
+            set(_shadow_pathmod ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:${_shadow_bash_dir}")
+        endif()
         foreach(_sv x86_64 i386 arm arm64 riscv64)
-            add_test(NAME cross/shadow-iv-${_sv}
-                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
-            set_tests_properties(cross/shadow-iv-${_sv} PROPERTIES
-                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
-                LABELS "cross" TIMEOUT 3600)
+            if(NOT _shadow_bash)
+                mcc_skip_test(cross/shadow-iv-${_sv} "no usable bash on this Windows host"
+                    LABELS "cross")
+            else()
+                add_test(NAME cross/shadow-iv-${_sv}
+                    COMMAND "${_shadow_bash}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/shadow-iv-sweep.sh" "${_sv}")
+                set_tests_properties(cross/shadow-iv-${_sv} PROPERTIES
+                    FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                    LABELS "cross" TIMEOUT 3600 ${_shadow_pathmod})
+            endif()
         endforeach()
 
         foreach(_st riscv64 arm arm64)
