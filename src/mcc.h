@@ -215,6 +215,7 @@ typedef struct CString {
 
 typedef struct CType {
 	int t;
+	unsigned char bp, bs;
 	struct Sym *ref;
 } CType;
 
@@ -1160,8 +1161,6 @@ struct filespec {
 
 #define VT_STRUCT_SHIFT 20
 #define VT_STRUCT_MASK (((1U << (6 + 6)) - 1) << VT_STRUCT_SHIFT | VT_BITFIELD)
-#define BIT_POS(t) (((t) >> VT_STRUCT_SHIFT) & 0x3f)
-#define BIT_SIZE(t) (((t) >> (VT_STRUCT_SHIFT + 6)) & 0x3f)
 
 #define VT_UNION (1 << VT_STRUCT_SHIFT | VT_STRUCT)
 #define VT_ENUM (2 << VT_STRUCT_SHIFT)

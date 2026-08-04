@@ -1353,6 +1353,8 @@ ST_FUNC Sym *sym_push(int v, CType *type, int r, int c) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ps = &global_stack; }
 	s = sym_push2(ps, v, type->t, c);
 	s->type.ref = type->ref;
+	s->type.bp = (type->t & VT_BITFIELD) ? type->bp : 0;
+	s->type.bs = (type->t & VT_BITFIELD) ? type->bs : 0;
 	s->r = r;
 	if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
 		sym_link(s, 1);
@@ -1672,7 +1674,7 @@ ST_FUNC Sym *external_global_sym(int v, CType *type) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC Sym *external_helper_sym(int v) { MCC_TRACE("enter\n");
-	CType ct = {VT_ASM_FUNC, NULL};
+	CType ct = {VT_ASM_FUNC, 0, 0, NULL};
 	return external_global_sym(v, &ct);
 }
 
@@ -2476,11 +2478,13 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 	if (vtop->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
 		CType type;
 
-		bit_pos = BIT_POS(vtop->type.t);
-		bit_size = BIT_SIZE(vtop->type.t);
+		bit_pos = vtop->type.bp;
+		bit_size = vtop->type.bs;
 		vtop->type.t &= ~VT_STRUCT_MASK;
+		vtop->type.bp = vtop->type.bs = 0;
 
 		type.ref = NULL;
+		type.bp = type.bs = 0;
 		type.t = vtop->type.t & VT_UNSIGNED;
 		if ((vtop->type.t & VT_BTYPE) == VT_BOOL)
 			{ MCC_TRACE("br\n"); type.t |= VT_UNSIGNED; }
@@ -4302,8 +4306,7 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			{ MCC_TRACE("br\n"); type.t |= VT_UNSIGNED; }
 	} else { MCC_TRACE("br\n");
 		type.t = VT_INT | (VT_LONG & (t1 | t2));
-		if (((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT | VT_UNSIGNED) && (!(t1 & VT_BITFIELD) || BIT_SIZE(t1) == 32)) || ((t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT | VT_UNSIGNED) && (!(t2 & VT_BITFIELD) || BIT_SIZE(t2) ==
-																																																																																																								32)))
+		if (((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT | VT_UNSIGNED) && (!(t1 & VT_BITFIELD) || type1->bs == 32)) || ((t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT | VT_UNSIGNED) && (!(t2 & VT_BITFIELD) || type2->bs == 32)))
 			{ MCC_TRACE("br\n"); type.t |= VT_UNSIGNED; }
 	}
 	if (dest)
@@ -4311,14 +4314,15 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 	return ret;
 }
 
-static int bf_operand_bits(int tt) { MCC_TRACE("enter\n");
+static int bf_operand_bits(int tt, int bs) { MCC_TRACE("enter\n");
 	if (tt & VT_BITFIELD)
-		{ MCC_TRACE("br\n"); return BIT_SIZE(tt); }
+		{ MCC_TRACE("br\n"); return bs; }
 	return (tt & VT_BTYPE) == VT_LLONG ? 64 : 32;
 }
 
 ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int t1, t2, bt1, bt2, t;
+	int bs1, bs2;
 	int bf_trunc = 0;
 	CType type1, combtype;
 	int op_class = op;
@@ -4333,6 +4337,8 @@ ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 redo:
 	t1 = vtop[-1].type.t;
 	t2 = vtop[0].type.t;
+	bs1 = vtop[-1].type.bs;
+	bs2 = vtop[0].type.bs;
 	bt1 = t1 & VT_BTYPE;
 	bt2 = t2 & VT_BTYPE;
 
@@ -4454,13 +4460,13 @@ redo:
 		}
 	std_op:
 		if (op_class != CMP_OP && (combtype.t & VT_BTYPE) == VT_LLONG && !is_float(combtype.t)) { MCC_TRACE("br\n");
-			int wide1 = (t1 & VT_BITFIELD) && BIT_SIZE(t1) > 32;
-			int wide2 = (t2 & VT_BITFIELD) && BIT_SIZE(t2) > 32;
+			int wide1 = (t1 & VT_BITFIELD) && bs1 > 32;
+			int wide2 = (t2 & VT_BITFIELD) && bs2 > 32;
 			if (op_class == SHIFT_OP) { MCC_TRACE("br\n");
-				if (wide1 && bf_operand_bits(t1) < 64)
-					{ MCC_TRACE("br\n"); bf_trunc = bf_operand_bits(t1); }
+				if (wide1 && bf_operand_bits(t1, bs1) < 64)
+					{ MCC_TRACE("br\n"); bf_trunc = bf_operand_bits(t1, bs1); }
 			} else if (wide1 || wide2) { MCC_TRACE("br\n");
-				int w1 = bf_operand_bits(t1), w2 = bf_operand_bits(t2);
+				int w1 = bf_operand_bits(t1, bs1), w2 = bf_operand_bits(t2, bs2);
 				int p = w1 > w2 ? w1 : w2;
 				if (p < 64)
 					{ MCC_TRACE("br\n"); bf_trunc = p; }
@@ -5345,6 +5351,7 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 
 ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	int sbt, dbt, ft, r, size, align, bit_size, bit_pos, delayed_cast;
+	int fbp, fbs;
 #if MCC_CONFIG_OPTIMIZER
 	rir_hook_vstore();
 #endif
@@ -5355,6 +5362,8 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); gen_atomic_load_aggregate(); }
 
 	ft = vtop[-1].type.t;
+	fbp = vtop[-1].type.bp;
+	fbs = vtop[-1].type.bs;
 	sbt = vtop->type.t & VT_BTYPE;
 	dbt = ft & VT_BTYPE;
 	verify_assign_cast(&vtop[-1].type);
@@ -5420,9 +5429,10 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	} else if (ft & VT_BITFIELD) { MCC_TRACE("br\n");
 		vdup(), vtop[-1] = vtop[-2];
 
-		bit_pos = BIT_POS(ft);
-		bit_size = BIT_SIZE(ft);
+		bit_pos = fbp;
+		bit_size = fbs;
 		vtop[-1].type.t = ft & ~VT_STRUCT_MASK;
+		vtop[-1].type.bp = vtop[-1].type.bs = 0;
 
 		if (dbt == VT_BOOL) { MCC_TRACE("br\n");
 			gen_cast(&vtop[-1].type);
@@ -5482,6 +5492,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		if (delayed_cast) { MCC_TRACE("br\n");
 			vtop->r |= BFVAL(VT_MUSTCAST, (sbt == VT_LLONG) + 1);
 			vtop->type.t = ft & VT_TYPE;
+			vtop->type.bp = vtop->type.bs = 0;
 		}
 
 		if ((vtop[-1].r & VT_VALMASK) == VT_LLOCAL) { MCC_TRACE("br\n");
@@ -6019,7 +6030,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
 		if (f->type.t & VT_BITFIELD)
-			{ MCC_TRACE("br\n"); bit_size = BIT_SIZE(f->type.t); }
+			{ MCC_TRACE("br\n"); bit_size = f->type.bs; }
 		else
 			{ MCC_TRACE("br\n"); bit_size = -1; }
 		size = type_size(&f->type, &align);
@@ -6100,7 +6111,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 				prev_bit_size = bit_size;
 			}
 
-			f->type.t = (f->type.t & ~(0x3f << VT_STRUCT_SHIFT)) | (bit_pos << VT_STRUCT_SHIFT);
+			f->type.bp = (unsigned char)bit_pos;
 			bit_pos += bit_size;
 		}
 		if (align > maxalign)
@@ -6111,8 +6122,8 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 						 get_tok_str(f->v & ~SYM_FIELD, NULL), offset, size, align);
 			if (f->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
 				printf(" pos %-2d bits %-2d",
-							 BIT_POS(f->type.t),
-							 BIT_SIZE(f->type.t));
+							 f->type.bp,
+							 f->type.bs);
 			}
 			printf("\n");
 		}
@@ -6154,10 +6165,10 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		f->type.ref = f;
 		f->auxtype = -1;
-		bit_size = BIT_SIZE(f->type.t);
+		bit_size = f->type.bs;
 		if (bit_size == 0)
 			{ MCC_TRACE("br\n"); continue; }
-		bit_pos = BIT_POS(f->type.t);
+		bit_pos = f->type.bp;
 		size = type_size(&f->type, &align);
 
 		if (bit_pos + bit_size <= size * 8 && f->c + size <= c
@@ -6196,7 +6207,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 		) { MCC_TRACE("br\n");
 			f->c = cx;
 			bit_pos = px;
-			f->type.t = (f->type.t & ~(0x3f << VT_STRUCT_SHIFT)) | (bit_pos << VT_STRUCT_SHIFT);
+			f->type.bp = (unsigned char)bit_pos;
 			if (s != size)
 				{ MCC_TRACE("br\n"); f->auxtype = t.t; }
 			if (g_debug & MCC_DBG_STRUCT)
@@ -6612,7 +6623,9 @@ do_decl:
 						} else if (bit_size == 64) { MCC_TRACE("br\n");
 							;
 						} else { MCC_TRACE("br\n");
-							type1.t = (type1.t & ~VT_STRUCT_MASK) | VT_BITFIELD | ((unsigned)bit_size << (VT_STRUCT_SHIFT + 6));
+							type1.t = (type1.t & ~VT_STRUCT_MASK) | VT_BITFIELD;
+							type1.bp = 0;
+							type1.bs = (unsigned char)bit_size;
 						}
 					}
 					if (no_field) { MCC_TRACE("br\n");
@@ -6658,7 +6671,9 @@ do_decl:
 				if (!ad.a.packed)
 					{ MCC_TRACE("br\n"); continue; }
 				bsize = type_size(&ss->type, &align) * 8;
-				ss->type.t = (ss->type.t & ~VT_STRUCT_MASK) | VT_BITFIELD | ((unsigned)bsize << (VT_STRUCT_SHIFT + 6));
+				ss->type.t = (ss->type.t & ~VT_STRUCT_MASK) | VT_BITFIELD;
+				ss->type.bp = 0;
+				ss->type.bs = (unsigned char)bsize;
 			}
 			if (ad.cleanup_func) { MCC_TRACE("br\n");
 				mcc_warning("attribute '__cleanup__' ignored on type");
@@ -15421,7 +15436,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 
 	size = type_size(type, &align);
 	if (type->t & VT_BITFIELD)
-		{ MCC_TRACE("br\n"); size = (BIT_POS(type->t) + BIT_SIZE(type->t) + 7) / 8; }
+		{ MCC_TRACE("br\n"); size = (type->bp + type->bs + 7) / 8; }
 	init_assert(p, c + size);
 
 	if (sec) { MCC_TRACE("br\n");
@@ -15480,8 +15495,8 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 			if (type->t & VT_BITFIELD) { MCC_TRACE("br\n");
 				int bit_pos, bit_size, bits, n;
 				unsigned char *p, v, m;
-				bit_pos = BIT_POS(vtop->type.t);
-				bit_size = BIT_SIZE(vtop->type.t);
+				bit_pos = vtop->type.bp;
+				bit_size = vtop->type.bs;
 				p = (unsigned char *)ptr + (bit_pos >> 3);
 				bit_pos &= 7, bits = 0;
 				while (bit_size) { MCC_TRACE("br\n");
@@ -16883,6 +16898,7 @@ static void auto_type_decay(CType *dt, int v, int kind) { MCC_TRACE("enter\n");
 		if (kind != 2)
 			{ MCC_TRACE("br\n"); mcc_error("'__auto_type' used with a bit-field initializer"); }
 		dt->t &= ~VT_STRUCT_MASK;
+		dt->bp = dt->bs = 0;
 	}
 	if ((dt->t & VT_BTYPE) == VT_FUNC)
 		{ MCC_TRACE("br\n"); mk_pointer(dt); }

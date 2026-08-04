@@ -12,7 +12,7 @@
 
 #define MCCJIT_INTENT_MAGIC 0x314a434dul
 #define MCCJIT_INTENT_FORMAT                                                   \
-	11u
+	12u
 
 #define MCCJIT_UNIT_WHOLE 0u
 #define MCCJIT_UNIT_KERNEL 1u
@@ -38,11 +38,13 @@ typedef struct MccjitTypeRec {
 	uint8_t building;
 	uint8_t done;
 	uint32_t a;
+	uint32_t abf;
 	uint32_t b;
 	uint32_t c;
 	uint32_t d;
 	uint32_t nparam;
 	uint32_t *pt;
+	uint32_t *ptbf;
 	uint32_t *pr;
 	uint32_t *foff;
 	char **fnm;

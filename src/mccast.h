@@ -51,6 +51,9 @@ int ast_detach_last_child(AstArena *a, AstLocal parent, AstLocal child);
 
 void ast_set_op(AstArena *a, AstLocal n, int op);
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref);
+void ast_set_type_bf(AstArena *a, AstLocal n, int type_t, uint64_t type_ref,
+										 unsigned bp, unsigned bs);
+void ast_copy_type(AstArena *a, AstLocal n, const AstArena *src, AstLocal m);
 void ast_set_ival(AstArena *a, AstLocal n, uint64_t v);
 void ast_set_fbits(AstArena *a, AstLocal n, uint64_t bits);
 void ast_set_sym(AstArena *a, AstLocal n, uint64_t sym);
@@ -64,6 +67,8 @@ uint16_t ast_kind(const AstArena *a, AstLocal n);
 int ast_op(const AstArena *a, AstLocal n);
 int ast_type_t(const AstArena *a, AstLocal n);
 uint64_t ast_type_ref(const AstArena *a, AstLocal n);
+unsigned ast_type_bp(const AstArena *a, AstLocal n);
+unsigned ast_type_bs(const AstArena *a, AstLocal n);
 uint64_t ast_ival(const AstArena *a, AstLocal n);
 uint64_t ast_fbits(const AstArena *a, AstLocal n);
 uint64_t ast_sym(const AstArena *a, AstLocal n);

@@ -36,6 +36,10 @@ int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 #define AST_ASSERT(x) assert(x)
 #endif
 
+#ifndef VT_BITFIELD
+#define VT_BITFIELD 0x0080
+#endif
+
 #pragma push_macro("malloc")
 #pragma push_macro("realloc")
 #pragma push_macro("free")
@@ -101,6 +105,8 @@ struct AstArena {
 
 	int32_t *op;
 	int32_t *type_t;
+	uint8_t *type_bp;
+	uint8_t *type_bs;
 	uint64_t *type_ref;
 	uint64_t *ival;
 	uint64_t *fbits;
@@ -131,6 +137,8 @@ static void ast_grow(AstArena *a, AstLocal need) { MCC_TRACE("enter\n");
 	AST_REGROW(nchild);
 	AST_REGROW(op);
 	AST_REGROW(type_t);
+	AST_REGROW(type_bp);
+	AST_REGROW(type_bs);
 	AST_REGROW(type_ref);
 	AST_REGROW(ival);
 	AST_REGROW(fbits);
@@ -229,6 +237,8 @@ void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	free(a->nchild);
 	free(a->op);
 	free(a->type_t);
+	free(a->type_bp);
+	free(a->type_bs);
 	free(a->type_ref);
 	free(a->ival);
 	free(a->fbits);
@@ -258,6 +268,8 @@ AstArena *ast_arena_clone(const AstArena *src) { MCC_TRACE("enter\n");
 	AST_DUP(nchild);
 	AST_DUP(op);
 	AST_DUP(type_t);
+	AST_DUP(type_bp);
+	AST_DUP(type_bs);
 	AST_DUP(type_ref);
 	AST_DUP(ival);
 	AST_DUP(fbits);
@@ -314,6 +326,8 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 	AST_SLICE_ALLOC(nchild);
 	AST_SLICE_ALLOC(op);
 	AST_SLICE_ALLOC(type_t);
+	AST_SLICE_ALLOC(type_bp);
+	AST_SLICE_ALLOC(type_bs);
 	AST_SLICE_ALLOC(type_ref);
 	AST_SLICE_ALLOC(ival);
 	AST_SLICE_ALLOC(fbits);
@@ -324,7 +338,8 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 	}
 #undef AST_SLICE_ALLOC
 	if (!a->kind || !a->parent || !a->first_child || !a->last_child ||
-			!a->next_sib || !a->nchild || !a->op || !a->type_t || !a->type_ref ||
+			!a->next_sib || !a->nchild || !a->op || !a->type_t || !a->type_bp ||
+			!a->type_bs || !a->type_ref ||
 			!a->ival || !a->fbits || !a->sym ||
 			(src->wide_hi && (!a->wide_hi || !a->wide_r2))) { MCC_TRACE("br\n");
 		free(map);
@@ -343,6 +358,8 @@ AstArena *ast_slice_extract(const AstArena *src, AstLocal root) { MCC_TRACE("ent
 		a->nchild[i] = src->nchild[s];
 		a->op[i] = src->op[s];
 		a->type_t[i] = src->type_t[s];
+		a->type_bp[i] = src->type_bp[s];
+		a->type_bs[i] = src->type_bs[s];
 		a->type_ref[i] = src->type_ref[s];
 		a->ival[i] = src->ival[s];
 		a->fbits[i] = src->fbits[s];
@@ -370,6 +387,8 @@ AstLocal ast_node(AstArena *a, uint16_t kind) { MCC_TRACE("enter\n");
 	a->nchild[n] = 0;
 	a->op[n] = 0;
 	a->type_t[n] = 0;
+	a->type_bp[n] = 0;
+	a->type_bs[n] = 0;
 	a->type_ref[n] = 0;
 	a->ival[n] = 0;
 	a->fbits[n] = 0;
@@ -443,7 +462,24 @@ void ast_set_op(AstArena *a, AstLocal n, int op) { MCC_TRACE("enter\n");
 void ast_set_type(AstArena *a, AstLocal n, int type_t, uint64_t type_ref) { MCC_TRACE("enter\n");
 	a->epoch++;
 	a->type_t[n] = type_t;
+	a->type_bp[n] = 0;
+	a->type_bs[n] = 0;
 	a->type_ref[n] = type_ref;
+}
+void ast_set_type_bf(AstArena *a, AstLocal n, int type_t, uint64_t type_ref,
+										 unsigned bp, unsigned bs) { MCC_TRACE("enter\n");
+	a->epoch++;
+	a->type_t[n] = type_t;
+	a->type_bp[n] = (type_t & VT_BITFIELD) ? (uint8_t)bp : 0;
+	a->type_bs[n] = (type_t & VT_BITFIELD) ? (uint8_t)bs : 0;
+	a->type_ref[n] = type_ref;
+}
+void ast_copy_type(AstArena *a, AstLocal n, const AstArena *src, AstLocal m) { MCC_TRACE("enter\n");
+	a->epoch++;
+	a->type_t[n] = src->type_t[m];
+	a->type_bp[n] = src->type_bp[m];
+	a->type_bs[n] = src->type_bs[m];
+	a->type_ref[n] = src->type_ref[m];
 }
 void ast_set_ival(AstArena *a, AstLocal n, uint64_t v) { MCC_TRACE("enter\n");
 	a->epoch++;
@@ -468,6 +504,12 @@ int ast_type_t(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 }
 uint64_t ast_type_ref(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->type_ref[n];
+}
+unsigned ast_type_bp(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return a->type_bp[n];
+}
+unsigned ast_type_bs(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	return a->type_bs[n];
 }
 uint64_t ast_ival(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return a->ival[n];
@@ -699,6 +741,7 @@ static uint64_t ast_ih_node(const AstArena *a, AstLocal n, AstIhSyms *m,
 	h = ast_ih_fold(h, a->kind[n]);
 	h = ast_ih_fold(h, (uint32_t)a->op[n]);
 	h = ast_ih_fold(h, (uint32_t)a->type_t[n]);
+	h = ast_ih_fold(h, (uint32_t)a->type_bp[n] | ((uint32_t)a->type_bs[n] << 8));
 	h = ast_ih_fold(h, (a->sym[n] && !ast_ih_sym_dropped(a, n)) ? ast_ih_sym(m, a->sym[n]) : 0);
 	if (a->kind[n] != AST_Ref)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, a->ival[n]); }
@@ -768,6 +811,7 @@ static uint64_t ast_sid_node(const AstArena *a, AstLocal n, AstIhSyms *sm,
 	h = ast_ih_fold(h, a->kind[n]);
 	h = ast_ih_fold(h, (uint32_t)a->op[n]);
 	h = ast_ih_fold(h, ast_sid_type_norm((uint32_t)a->type_t[n]));
+	h = ast_ih_fold(h, (uint32_t)a->type_bp[n] | ((uint32_t)a->type_bs[n] << 8));
 	h = ast_ih_fold(h, (a->sym[n] && !ast_ih_sym_dropped(a, n)) ? ast_ih_sym(sm, a->sym[n]) : 0);
 	if (is_local)
 		{ MCC_TRACE("br\n"); h = ast_ih_fold(h, ast_sid_off(om, (int32_t)(int64_t)a->ival[n])); }
@@ -1083,7 +1127,7 @@ static AstLocal ast_slice_graft_rec(AstArena *a, const AstArena *k,
 																		AstLocal ksrc) { MCC_TRACE("enter\n");
 	AstLocal c, cc, n = ast_node(a, ast_kind(k, ksrc));
 	ast_set_op(a, n, ast_op(k, ksrc));
-	ast_set_type(a, n, ast_type_t(k, ksrc), ast_type_ref(k, ksrc));
+	ast_copy_type(a, n, k, ksrc);
 	ast_set_ival(a, n, ast_ival(k, ksrc));
 	ast_set_fbits(a, n, ast_fbits(k, ksrc));
 	ast_set_sym(a, n, ast_sym(k, ksrc));
@@ -1108,8 +1152,7 @@ int ast_slice_splice(AstArena *a, AstLocal site_root, const AstArena *kernel_src
 	ast_clear_children(a, site_root);
 	ast_set_kind(a, site_root, ast_kind(kernel_src, kernel_root));
 	ast_set_op(a, site_root, ast_op(kernel_src, kernel_root));
-	ast_set_type(a, site_root, ast_type_t(kernel_src, kernel_root),
-							 ast_type_ref(kernel_src, kernel_root));
+	ast_copy_type(a, site_root, kernel_src, kernel_root);
 	ast_set_ival(a, site_root, ast_ival(kernel_src, kernel_root));
 	ast_set_fbits(a, site_root, ast_fbits(kernel_src, kernel_root));
 	ast_set_sym(a, site_root, ast_sym(kernel_src, kernel_root));
@@ -2278,7 +2321,7 @@ static void ast_finalize_leaf(AstLocal n, SValue *sv) { MCC_TRACE("enter\n");
 	if (k != AST_Literal && k != AST_Ref)
 		{ MCC_TRACE("br\n"); return; }
 	ast_set_op(ast_cur, n, sv->r);
-	ast_set_type(ast_cur, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+	ast_set_type_bf(ast_cur, n, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref, sv->type.bp, sv->type.bs);
 	ast_set_ival(ast_cur, n, (uint64_t)sv->c.i);
 	ast_set_wide(ast_cur, n, ast_sv_hi(sv),
 							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
@@ -2808,6 +2851,8 @@ static int ast_inline_graft(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	memcpy(save_argsub_off, ast_argsub_off, sizeof save_argsub_off);
 	memcpy(save_argsub_val, ast_argsub_val, sizeof save_argsub_val);
 	ast_graft_rt.t = ast_type_t(a, n);
+	ast_graft_rt.bp = ast_type_bp(a, n);
+	ast_graft_rt.bs = ast_type_bs(a, n);
 	ast_graft_rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 	int ral, rsz = type_size(&ast_graft_rt, &ral);
 	if (rsz < 1)
@@ -3427,6 +3472,7 @@ static uint64_t ast_hash_of(const AstArena *a, AstLocal n) { MCC_TRACE("enter\n"
 	v = ast_hash_mix(v, a->kind[n]);
 	v = ast_hash_mix(v, (uint64_t)(uint32_t)a->op[n]);
 	v = ast_hash_mix(v, (uint64_t)(uint32_t)a->type_t[n]);
+	v = ast_hash_mix(v, (uint64_t)a->type_bp[n] | ((uint64_t)a->type_bs[n] << 8));
 	v = ast_hash_mix(v, a->type_ref[n]);
 	v = ast_hash_mix(v, a->ival[n]);
 	v = ast_hash_mix(v, a->fbits[n]);
@@ -3664,6 +3710,8 @@ static void ast_promo_poison_vla_size(AstArena *a, AstLocal n, const int *coff,
 	MCC_TRACE("enter\n");
 	CType ct;
 	ct.t = ast_type_t(a, n);
+	ct.bp = ast_type_bp(a, n);
+	ct.bs = ast_type_bs(a, n);
 	ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 	for (int d = 0; d < 16 && ct.ref; d++) { MCC_TRACE("br\n");
 		if ((ct.t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
@@ -3779,11 +3827,15 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 			CType ct, lt;
 			int al;
 			ct.t = ast_type_t(a, n);
+			ct.bp = ast_type_bp(a, n);
+			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref) { MCC_TRACE("br\n");
 				sz = type_size(&ct.ref->type, &al);
 			}
 			lt.t = ast_type_t(a, c);
+			lt.bp = ast_type_bp(a, c);
+			lt.bs = ast_type_bs(a, c);
 			lt.ref = (Sym *)(uintptr_t)ast_type_ref(a, c);
 			if ((lt.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 				int lsz = type_size(&lt, &al);
@@ -3814,6 +3866,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		int off = (int)(int64_t)ast_ival(a, n);
 		CType ct;
 		ct.t = ast_type_t(a, n);
+		ct.bp = ast_type_bp(a, n);
+		ct.bs = ast_type_bs(a, n);
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		int al, sz = 8;
 		if ((ct.t & VT_BTYPE) == VT_PTR && ct.ref)
@@ -4129,6 +4183,8 @@ static void ast_promo_store_reg(AstArena *a, AstLocal s) { MCC_TRACE("enter\n");
 	AstLocal t = ast_child(a, s, 0);
 	CType tct;
 	tct.t = ast_type_t(a, t) & ~(VT_ARRAY | VT_VLA);
+	tct.bp = ast_type_bp(a, t);
+	tct.bs = ast_type_bs(a, t);
 	tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, t);
 	ast_promo_write(ast_promo_reg_of(a, t), &tct);
 }
@@ -4388,6 +4444,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_type_t(a, n);
+		sv.type.bp = ast_type_bp(a, n);
+		sv.type.bs = ast_type_bs(a, n);
 		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		sv.r = (unsigned short)ast_op(a, n);
 		MCC_TRACE_IF("LEAF n=%d r=%#x t=%#x ival=%lld\n", (int)n, sv.r, sv.type.t,
@@ -4432,6 +4490,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			CType ccplx, cbase;
 			SValue r;
 			ccplx.t = ast_type_t(a, n);
+			ccplx.bp = ast_type_bp(a, n);
+			ccplx.bs = ast_type_bs(a, n);
 			ccplx.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			cbase = ccplx.ref->next->type;
 			ast_replay_value(a, ast_child(a, n, 0));
@@ -4472,6 +4532,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			}
 			if (ast_type_t(a, n)) { MCC_TRACE("br\n");
 				vtop->type.t = ast_type_t(a, n);
+				vtop->type.bp = ast_type_bp(a, n);
+				vtop->type.bs = ast_type_bs(a, n);
 				vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			}
 			break;
@@ -4483,6 +4545,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			ast_replay_value(a, ast_child(a, n, 1));
 			gen_mulh(bop == AST_OP_MULHS);
 			vtop->type.t = ast_type_t(a, n);
+			vtop->type.bp = ast_type_bp(a, n);
+			vtop->type.bs = ast_type_bs(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			break;
 		}
@@ -4493,6 +4557,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			ast_replay_value(a, ast_child(a, n, 1));
 			gen_copysign();
 			vtop->type.t = ast_type_t(a, n);
+			vtop->type.bp = ast_type_bp(a, n);
+			vtop->type.bs = ast_type_bs(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			break;
 		}
@@ -4503,6 +4569,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			ast_replay_value(a, ast_child(a, n, 1));
 			gen_fminmax(bop == AST_OP_FMAX);
 			vtop->type.t = ast_type_t(a, n);
+			vtop->type.bp = ast_type_bp(a, n);
+			vtop->type.bs = ast_type_bs(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			break;
 		}
@@ -4514,6 +4582,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			ast_replay_value(a, ast_child(a, n, 2));
 			gen_fma();
 			vtop->type.t = ast_type_t(a, n);
+			vtop->type.bp = ast_type_bp(a, n);
+			vtop->type.bs = ast_type_bs(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			break;
 		}
@@ -4581,6 +4651,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		ast_replay_value(a, ast_child(a, n, 0));
 		CType ct;
 		ct.t = ast_type_t(a, n);
+		ct.bp = ast_type_bp(a, n);
+		ct.bs = ast_type_bs(a, n);
 		ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		MCC_TRACE_IF("CVT from t=%#x r=%#x -> t=%#x fb=%#x\n", vtop->type.t, vtop->r,
 								 ct.t, (unsigned)ast_fbits(a, n));
@@ -4597,6 +4669,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		if (uop == AST_OP_ADDR) { MCC_TRACE("br\n");
 			gaddrof();
 			vtop->type.t = ast_type_t(a, n);
+			vtop->type.bp = ast_type_bp(a, n);
+			vtop->type.bs = ast_type_bs(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		} else if (uop == AST_OP_MEMBER || uop == AST_OP_MEMBER_ARROW) { MCC_TRACE("br\n");
 			if (uop == AST_OP_MEMBER_ARROW)
@@ -4605,6 +4679,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			vtop->type = char_pointer_type;
 			CType mt;
 			mt.t = ast_type_t(a, n);
+			mt.bp = ast_type_bp(a, n);
+			mt.bs = ast_type_bs(a, n);
 			mt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			int cofs = (int)ast_ival(a, n);
 			if (ast_regdisp_env && cofs && !(mt.t & VT_ARRAY) &&
@@ -4622,6 +4698,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_FNEG) { MCC_TRACE("br\n");
 			gen_opif(TOK_NEG);
 			vtop->type.t = ast_type_t(a, n);
+			vtop->type.bp = ast_type_bp(a, n);
+			vtop->type.bs = ast_type_bs(a, n);
 			vtop->type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 #if defined(MCC_IR_HAVE_VA_START) && !defined(MCC_IR_VA_START_VOID)
 		} else if (uop == AST_OP_VASTART) { MCC_TRACE("br\n");
@@ -4641,6 +4719,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_VAARG) { MCC_TRACE("br\n");
 			CType vat;
 			vat.t = ast_type_t(a, n);
+			vat.bp = ast_type_bp(a, n);
+			vat.bs = ast_type_bs(a, n);
 			vat.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_va_arg(&vat);
 			vtop->type = vat;
@@ -4653,6 +4733,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_FABS) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
+			ct.bp = ast_type_bp(a, n);
+			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
 			gen_fabs();
@@ -4660,6 +4742,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_SQRT) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
+			ct.bp = ast_type_bp(a, n);
+			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
 			gen_sqrt();
@@ -4669,6 +4753,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 							 uop == AST_OP_TRUNC) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
+			ct.bp = ast_type_bp(a, n);
+			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
 			gen_round(uop == AST_OP_FLOOR ? 0 : uop == AST_OP_CEIL ? 1 : 2);
@@ -4676,6 +4762,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_RINT || uop == AST_OP_NEARBYINT) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
+			ct.bp = ast_type_bp(a, n);
+			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
 			gen_round(uop == AST_OP_RINT ? 4 : 5);
@@ -4685,6 +4773,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_ROUND) { MCC_TRACE("br\n");
 			CType ct;
 			ct.t = ast_type_t(a, n);
+			ct.bp = ast_type_bp(a, n);
+			ct.bs = ast_type_bs(a, n);
 			ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			gen_cast(&ct);
 			gen_round(3);
@@ -4805,6 +4895,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			CType prt, prtmp;
 			int prax, prsx;
 			prt.t = ast_type_t(a, n);
+			prt.bp = ast_type_bp(a, n);
+			prt.bs = ast_type_bs(a, n);
 			prt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			if (gfunc_sret(&prt, 0, &prtmp, &prax, &prsx) <= 0) { MCC_TRACE("br\n");
 				int psal, pssz = type_size(&prt, &psal);
@@ -4854,6 +4946,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			SValue ret;
 			int ret_nregs, regsize, ret_align, r, nn, size, align, addr, offset;
 			rt.t = ast_type_t(a, n);
+			rt.bp = ast_type_bp(a, n);
+			rt.bs = ast_type_bs(a, n);
 			rt.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 			{
 				CType rtmp;
@@ -4871,6 +4965,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 					SValue sv;
 					memset(&sv, 0, sizeof sv);
 					sv.type.t = ast_type_t(a, n);
+					sv.type.bp = ast_type_bp(a, n);
+					sv.type.bs = ast_type_bs(a, n);
 					sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 					sv.r = (unsigned short)ast_op(a, n);
 					sv.r2 = VT_CONST;
@@ -4927,6 +5023,8 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		SValue sv;
 		memset(&sv, 0, sizeof sv);
 		sv.type.t = ast_type_t(a, n);
+		sv.type.bp = ast_type_bp(a, n);
+		sv.type.bs = ast_type_bs(a, n);
 		sv.type.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
 		sv.r = (unsigned short)ast_op(a, n);
 		sv.r2 = (unsigned short)ast_wide_r2(a, n);
@@ -5013,6 +5111,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (cr_preg >= 0) { MCC_TRACE("br\n");
 					CType crt;
 					crt.t = ast_type_t(a, ast_child(a, s, 0)) & ~(VT_ARRAY | VT_VLA);
+					crt.bp = ast_type_bp(a, ast_child(a, s, 0));
+					crt.bs = ast_type_bs(a, ast_child(a, s, 0));
 					crt.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
 					ast_promo_write(cr_preg, &crt);
 					if (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE)
@@ -5037,6 +5137,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				ast_replay_value(a, ast_child(a, s, 1));
 				CType tct;
 				tct.t = ast_type_t(a, ast_child(a, s, 0)) & ~(VT_ARRAY | VT_VLA);
+				tct.bp = ast_type_bp(a, ast_child(a, s, 0));
+				tct.bs = ast_type_bs(a, ast_child(a, s, 0));
 				tct.ref = (Sym *)(uintptr_t)ast_type_ref(a, ast_child(a, s, 0));
 				ast_promo_write(preg, &tct);
 				if (ast_storeval_call_env && (ast_fbits(a, s) & AST_FB_STORE_VALUE_LIVE))
@@ -5141,6 +5243,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (preg >= 0) { MCC_TRACE("br\n");
 					CType ict;
 					ict.t = ast_type_t(a, ic) & ~(VT_ARRAY | VT_VLA);
+					ict.bp = ast_type_bp(a, ic);
+					ict.bs = ast_type_bs(a, ic);
 					ict.ref = (Sym *)(uintptr_t)ast_type_ref(a, ic);
 					SValue isv;
 					isv.type = ict;
@@ -5160,6 +5264,8 @@ static void ast_replay_bb(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			if (ast_op(a, s) == AST_OP_VLA) { MCC_TRACE("br\n");
 				CType vt;
 				vt.t = ast_type_t(a, s);
+				vt.bp = ast_type_bp(a, s);
+				vt.bs = ast_type_bs(a, s);
 				vt.ref = (Sym *)(uintptr_t)ast_type_ref(a, s);
 				int addr = (int)(int64_t)ast_ival(a, s);
 				int locorig = (int)(int64_t)ast_sym(a, s);
@@ -6803,6 +6909,7 @@ int ast_fn_purity_noescape(const AstArena *a) { MCC_TRACE("enter\n");
 static int ast_ident_same_scan(const AstArena *a, AstLocal x, AstLocal y) { MCC_TRACE("enter\n");
 	if (a->kind[x] != a->kind[y] || a->op[x] != a->op[y] ||
 			a->type_t[x] != a->type_t[y] || a->type_ref[x] != a->type_ref[y] ||
+			a->type_bp[x] != a->type_bp[y] || a->type_bs[x] != a->type_bs[y] ||
 			a->ival[x] != a->ival[y] || a->fbits[x] != a->fbits[y] ||
 			a->sym[x] != a->sym[y] || a->nchild[x] != a->nchild[y])
 		{ MCC_TRACE("br\n"); return 0; }
@@ -6951,6 +7058,8 @@ static void ast_ident_adopt(AstArena *a, AstLocal n, AstLocal x) { MCC_TRACE("en
 	a->kind[n] = a->kind[x];
 	a->op[n] = a->op[x];
 	a->type_t[n] = a->type_t[x];
+	a->type_bp[n] = a->type_bp[x];
+	a->type_bs[n] = a->type_bs[x];
 	a->type_ref[n] = a->type_ref[x];
 	a->ival[n] = a->ival[x];
 	a->fbits[n] = a->fbits[x];
@@ -8853,6 +8962,8 @@ static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) { MCC_TRACE("e
 	a->kind[n] = AST_Ref;
 	a->op[n] = a->op[ref];
 	a->type_t[n] = a->type_t[ref];
+	a->type_bp[n] = a->type_bp[ref];
+	a->type_bs[n] = a->type_bs[ref];
 	a->type_ref[n] = a->type_ref[ref];
 	a->ival[n] = a->ival[ref];
 	a->fbits[n] = a->fbits[ref];
@@ -9204,7 +9315,7 @@ static int ast_bf_folds;
 AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal d = ast_node(a, ast_kind(a, n));
 	ast_set_op(a, d, ast_op(a, n));
-	ast_set_type(a, d, ast_type_t(a, n), ast_type_ref(a, n));
+	ast_copy_type(a, d, a, n);
 	ast_set_ival(a, d, ast_ival(a, n));
 	ast_set_fbits(a, d, ast_fbits(a, n));
 	ast_set_sym(a, d, ast_sym(a, n));
@@ -9307,7 +9418,7 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 			for (int i = 0; i < nparams; i++)
 				{ MCC_TRACE("br\n"); if (param_off[i] == off) { MCC_TRACE("br\n");
 					AstLocal cv = ast_node(dst, AST_Convert);
-					ast_set_type(dst, cv, ast_type_t(src, n), ast_type_ref(src, n));
+					ast_copy_type(dst, cv, src, n);
 					ast_add_child(dst, cv, ast_dup_sub(dst, argmap[i]));
 					return cv;
 				} }
@@ -9316,7 +9427,7 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 	}
 	AstLocal d = ast_node(dst, ast_kind(src, n));
 	ast_set_op(dst, d, ast_op(src, n));
-	ast_set_type(dst, d, ast_type_t(src, n), ast_type_ref(src, n));
+	ast_copy_type(dst, d, src, n);
 	ast_set_ival(dst, d, ast_ival(src, n));
 	ast_set_fbits(dst, d, ast_fbits(src, n));
 	ast_set_sym(dst, d, ast_sym(src, n));
@@ -13935,7 +14046,7 @@ static int ast_cload_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_set_kind(a, n, AST_Literal);
 		ast_clear_children(a, n);
 		ast_set_op(a, n, VT_CONST);
-		ast_set_type(a, n, lt.t, (uint64_t)(uintptr_t)lt.ref);
+		ast_set_type_bf(a, n, lt.t, (uint64_t)(uintptr_t)lt.ref, lt.bp, lt.bs);
 		ast_set_ival(a, n, v.c.i);
 		ast_set_wide(a, n, 0, AST_R2_NONE);
 		ast_set_fbits(a, n, 0);
@@ -14814,7 +14925,7 @@ static AstLocal ast_slice_copy_into(AstArena *dst, const AstArena *src,
 																		AstLocal snode) { MCC_TRACE("enter\n");
 	AstLocal c, cc, n = ast_node(dst, ast_kind(src, snode));
 	ast_set_op(dst, n, ast_op(src, snode));
-	ast_set_type(dst, n, ast_type_t(src, snode), ast_type_ref(src, snode));
+	ast_copy_type(dst, n, src, snode);
 	ast_set_ival(dst, n, ast_ival(src, snode));
 	ast_set_fbits(dst, n, ast_fbits(src, snode));
 	ast_set_sym(dst, n, ast_sym(src, snode));

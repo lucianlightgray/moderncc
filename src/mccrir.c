@@ -769,6 +769,8 @@ static Sym rir_xt[RIR_XT_MAX];
 static Sym *rir_xt_src[RIR_XT_MAX];
 static int rir_xt_c[RIR_XT_MAX];
 static int rir_xt_t[RIR_XT_MAX];
+static unsigned char rir_xt_bp[RIR_XT_MAX];
+static unsigned char rir_xt_bs[RIR_XT_MAX];
 static int rir_xt_v[RIR_XT_MAX];
 static void *rir_xt_nx[RIR_XT_MAX];
 static void *rir_xt_tr[RIR_XT_MAX];
@@ -1123,6 +1125,7 @@ static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
 		return s;
 	for (k = 0; k < rir_xtn; k++)
 		if (rir_xt_src[k] == s && rir_xt_c[k] == s->c && rir_xt_t[k] == s->type.t &&
+				rir_xt_bp[k] == s->type.bp && rir_xt_bs[k] == s->type.bs &&
 				rir_xt_v[k] == s->v && rir_xt_nx[k] == (void *)s->next &&
 				rir_xt_tr[k] == (void *)s->type.ref)
 			return &rir_xt[k];
@@ -1132,6 +1135,8 @@ static Sym *rir_xtype_ref(Sym *s, int depth, int chain) {
 	rir_xt_src[k] = s;
 	rir_xt_c[k] = s->c;
 	rir_xt_t[k] = s->type.t;
+	rir_xt_bp[k] = s->type.bp;
+	rir_xt_bs[k] = s->type.bs;
 	rir_xt_v[k] = s->v;
 	rir_xt_nx[k] = (void *)s->next;
 	rir_xt_tr[k] = (void *)s->type.ref;
@@ -1204,11 +1209,11 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	int prov = rir_prov_ok(slot, sv);
 	ast_set_op(rir_arena, n, sv->r);
 	if (rir_decayed_array(sv))
-		ast_set_type(rir_arena, n, sv->type.t | VT_ARRAY,
-			(uint64_t)(uintptr_t)sv->sym->type.ref);
+		ast_set_type_bf(rir_arena, n, sv->type.t | VT_ARRAY,
+			(uint64_t)(uintptr_t)sv->sym->type.ref, sv->type.bp, sv->type.bs);
 	else
-		ast_set_type(rir_arena, n, sv->type.t,
-			(uint64_t)(uintptr_t)sv->type.ref);
+		ast_set_type_bf(rir_arena, n, sv->type.t,
+			(uint64_t)(uintptr_t)sv->type.ref, sv->type.bp, sv->type.bs);
 	ast_set_ival(rir_arena, n, (uint64_t)sv->c.i);
 	ast_set_wide(rir_arena, n, ast_sv_hi(sv),
 							 sv->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)sv->r2);
@@ -1223,10 +1228,10 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 			 sv->sym->type.ref != sv->type.ref) &&
 			rir_same_width(&sv->sym->type, &sv->type)) {
 		AstLocal cv;
-		ast_set_type(rir_arena, n, sv->sym->type.t,
-								 (uint64_t)(uintptr_t)sv->sym->type.ref);
+		ast_set_type_bf(rir_arena, n, sv->sym->type.t,
+								 (uint64_t)(uintptr_t)sv->sym->type.ref, sv->sym->type.bp, sv->sym->type.bs);
 		cv = ast_node(rir_arena, AST_Convert);
-		ast_set_type(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_set_type_bf(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref, sv->type.bp, sv->type.bs);
 		ast_add_child(rir_arena, cv, n);
 		if (prov)
 			rir_pvok[slot] = 0;
@@ -1234,10 +1239,10 @@ static AstLocal rir_leaf_slot(const SValue *sv, int slot) {
 	}
 	if (prov) {
 		AstLocal cv;
-		ast_set_type(rir_arena, n, rir_pvt[slot].t,
-								 (uint64_t)(uintptr_t)rir_pvt[slot].ref);
+		ast_set_type_bf(rir_arena, n, rir_pvt[slot].t,
+								 (uint64_t)(uintptr_t)rir_pvt[slot].ref, rir_pvt[slot].bp, rir_pvt[slot].bs);
 		cv = ast_node(rir_arena, AST_Convert);
-		ast_set_type(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_set_type_bf(rir_arena, cv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref, sv->type.bp, sv->type.bs);
 		ast_add_child(rir_arena, cv, n);
 		rir_pvok[slot] = 0;
 		return cv;
@@ -1514,8 +1519,7 @@ static void rir_ret_follow_spill(AstLocal t, AstLocal v) {
 		return;
 	ast_set_kind(rir_arena, rv, ast_kind(rir_arena, t));
 	ast_set_op(rir_arena, rv, ast_op(rir_arena, t));
-	ast_set_type(rir_arena, rv, ast_type_t(rir_arena, t),
-							 ast_type_ref(rir_arena, t));
+	ast_copy_type(rir_arena, rv, rir_arena, t);
 	ast_set_ival(rir_arena, rv, ast_ival(rir_arena, t));
 	ast_set_sym(rir_arena, rv, ast_sym(rir_arena, t));
 	rir_ret_spilled = 1;
@@ -1546,8 +1550,7 @@ static void rir_spill_follow_sh(AstLocal t, AstLocal v) {
 	if (hit < 0)
 		return;
 	ast_set_op(rir_arena, rir_sh[hit], ast_op(rir_arena, t));
-	ast_set_type(rir_arena, rir_sh[hit], ast_type_t(rir_arena, t),
-							 ast_type_ref(rir_arena, t));
+	ast_copy_type(rir_arena, rir_sh[hit], rir_arena, t);
 	ast_set_ival(rir_arena, rir_sh[hit], ast_ival(rir_arena, t));
 	ast_set_sym(rir_arena, rir_sh[hit], ast_sym(rir_arena, t));
 }
@@ -1613,6 +1616,8 @@ static int rir_cvt_next;
 static int rir_castgv_pend;
 static AstLocal rir_castgv_top;
 static int rir_castgv_t;
+static unsigned char rir_castgv_bp;
+static unsigned char rir_castgv_bs;
 static uint64_t rir_castgv_ref;
 
 static int rir_is_cvt(int kind) {
@@ -1879,6 +1884,8 @@ static int rir_child_width_differs(AstLocal n, int st, uint64_t ref) {
 		if (c == AST_NONE)
 			continue;
 		a1.t = ast_type_t(rir_arena, c);
+		a1.bp = ast_type_bp(rir_arena, c);
+		a1.bs = ast_type_bs(rir_arena, c);
 		if (a1.t == 0 || (a1.t & VT_BTYPE) == VT_STRUCT ||
 				(a1.t & VT_BTYPE) == VT_FUNC)
 			continue;
@@ -1960,7 +1967,7 @@ static void rir_stamp_flt_fold(const SValue *base, int n) {
 			continue;
 		lit = ast_node(rir_arena, AST_Literal);
 		ast_set_op(rir_arena, lit, v->r);
-		ast_set_type(rir_arena, lit, v->type.t, (uint64_t)(uintptr_t)v->type.ref);
+		ast_set_type_bf(rir_arena, lit, v->type.t, (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 		ast_set_ival(rir_arena, lit, (uint64_t)v->c.i);
 		ast_set_wide(rir_arena, lit, ast_sv_hi(v),
 								 v->r2 >= VT_CONST ? (unsigned)VT_CONST : (unsigned)v->r2);
@@ -2008,8 +2015,8 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			continue;
 		v = &base[rir_base_depth + k];
 		sk = rir_val_node(rir_sh[k]);
-		ast_set_type(rir_arena, sk, v->type.t,
-								 (uint64_t)(uintptr_t)v->type.ref);
+		ast_set_type_bf(rir_arena, sk, v->type.t,
+								 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 		if (rir_sh[k] == rir_fcs_node) {
 			rir_fcs_node = AST_NONE;
 			if ((v->type.t & VT_BTYPE) == VT_BOOL) {
@@ -2022,8 +2029,8 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			AstLocal c = ast_first_child(rir_arena, sk);
 			uint16_t ck = c == AST_NONE ? 0 : ast_kind(rir_arena, c);
 			if (ck == AST_Ref || ck == AST_Literal)
-				ast_set_type(rir_arena, c, v->type.t,
-										 (uint64_t)(uintptr_t)v->type.ref);
+				ast_set_type_bf(rir_arena, c, v->type.t,
+										 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 		}
 		if (rir_shtype[k] == 2) {
 			ast_set_op(rir_arena, sk, v->r);
@@ -2069,16 +2076,16 @@ static void rir_stamp_sv(const SValue *base, int n) {
 			if (cs > vs2 && ast_kind(rir_arena, cur) == AST_Binary &&
 					(bop == AST_OP_AXADD || bop == AST_OP_AXCHG ||
 					 bop == AST_OP_ACMPXCHG))
-				ast_set_type(rir_arena, cur, v->type.t,
-										 (uint64_t)(uintptr_t)v->type.ref);
+				ast_set_type_bf(rir_arena, cur, v->type.t,
+										 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 #endif
 			if (cs > vs2 && (v->r & VT_LVAL) && rir_subtype_bt(ct) &&
 					rir_subtype_bt(v->type.t) && !((ct | v->type.t) & VT_BITFIELD) &&
 					rir_lval_shape(cur))
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, v->type.t,
-											 (uint64_t)(uintptr_t)v->type.ref);
+					ast_set_type_bf(rir_arena, cv, v->type.t,
+											 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 					ast_add_child(rir_arena, cv, cur);
 					rir_sh[k] = cv;
 				}
@@ -2086,8 +2093,8 @@ static void rir_stamp_sv(const SValue *base, int n) {
 		}
 		{
 			AstLocal cv = ast_node(rir_arena, AST_Convert);
-			ast_set_type(rir_arena, cv, v->type.t,
-									 (uint64_t)(uintptr_t)v->type.ref);
+			ast_set_type_bf(rir_arena, cv, v->type.t,
+									 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 			ast_add_child(rir_arena, cv, cur);
 			rir_sh[k] = cv;
 		}
@@ -2148,7 +2155,7 @@ static void rir_stamp_call_top(const SValue *base, int n) {
 			ast_kind(rir_arena, sk) != AST_Invoke)
 		return;
 	v = &base[rir_base_depth + k];
-	ast_set_type(rir_arena, sk, v->type.t, (uint64_t)(uintptr_t)v->type.ref);
+	ast_set_type_bf(rir_arena, sk, v->type.t, (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 	ast_set_op(rir_arena, sk, v->r);
 	ast_set_ival(rir_arena, sk, (uint64_t)v->c.i);
 	ast_set_sym(rir_arena, sk, (uint64_t)(uintptr_t)v->sym);
@@ -2177,7 +2184,7 @@ static AstLocal rir_spill_take(const SValue *sv) {
 		return AST_NONE;
 	{
 		AstLocal iv = rir_val_node(n);
-		ast_set_type(rir_arena, iv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref);
+		ast_set_type_bf(rir_arena, iv, sv->type.t, (uint64_t)(uintptr_t)sv->type.ref, sv->type.bp, sv->type.bs);
 		ast_set_op(rir_arena, iv, sv->r);
 		ast_set_ival(rir_arena, iv, (uint64_t)sv->c.i);
 		ast_set_sym(rir_arena, iv, 0);
@@ -2326,7 +2333,7 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				ch = ast_first_child(rir_arena, cur);
 				if (ch == AST_NONE || !(ast_type_t(rir_arena, ch) & VT_BITFIELD) ||
-						BIT_SIZE(ast_type_t(rir_arena, ch)) == 32)
+						ast_type_bs(rir_arena, ch) == 32)
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
@@ -2380,7 +2387,7 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
+					ast_set_type_bf(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref, sv2->type.bp, sv2->type.bs);
 					ast_add_child(rir_arena, cv, cur);
 					rir_sh[rir_shn - 1 - q] = cv;
 				}
@@ -2406,7 +2413,7 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv3->type.ref);
+					ast_set_type_bf(rir_arena, cv, st, (uint64_t)(uintptr_t)sv3->type.ref, sv3->type.bp, sv3->type.bs);
 					ast_add_child(rir_arena, cv, cur);
 					rir_sh[si] = cv;
 				}
@@ -2489,8 +2496,8 @@ static void rir_op_effect(const RirOp *ro) {
 				AstLocal mb = ast_node(rir_arena, AST_Unary);
 				ast_set_op(rir_arena, mb, AST_OP_MEMBER);
 				ast_set_ival(rir_arena, mb, ast_ival(rir_arena, lt));
-				ast_set_type(rir_arena, mb, tsv->type.t,
-										 (uint64_t)(uintptr_t)tsv->type.ref);
+				ast_set_type_bf(rir_arena, mb, tsv->type.t,
+										 (uint64_t)(uintptr_t)tsv->type.ref, tsv->type.bp, tsv->type.bs);
 				ast_add_child(rir_arena, mb,
 											ast_dup_sub(rir_arena, ast_first_child(rir_arena, ad)));
 				t = mb;
@@ -2558,8 +2565,7 @@ static void rir_op_effect(const RirOp *ro) {
 		rir_spill_follow_sh(t, v);
 		{
 			AstLocal mv = ast_node(rir_arena, AST_StoreVal);
-			ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
-									 ast_type_ref(rir_arena, v));
+			ast_copy_type(rir_arena, mv, rir_arena, v);
 			ast_set_ival(rir_arena, mv, (uint64_t)n);
 			rir_push(mv);
 		}
@@ -2721,7 +2727,7 @@ static void rir_op_effect(const RirOp *ro) {
 				}
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref);
+					ast_set_type_bf(rir_arena, cv, st, (uint64_t)(uintptr_t)sv2->type.ref, sv2->type.bp, sv2->type.bs);
 					ast_add_child(rir_arena, cv, cur);
 					rir_sh[si] = cv;
 				}
@@ -2833,7 +2839,7 @@ static void rir_op_effect(const RirOp *ro) {
 		tsv.type.ref = ps;
 		ad = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, ad, AST_OP_ADDR);
-		ast_set_type(rir_arena, ad, tsv.type.t, (uint64_t)(uintptr_t)tsv.type.ref);
+		ast_set_type_bf(rir_arena, ad, tsv.type.t, (uint64_t)(uintptr_t)tsv.type.ref, tsv.type.bp, tsv.type.bs);
 		ast_add_child(rir_arena, ad, v);
 		n = ast_node(rir_arena, AST_Store);
 		ast_add_child(rir_arena, n, rir_leaf(&tsv));
@@ -2953,10 +2959,12 @@ static void rir_op_effect(const RirOp *ro) {
 					want = VT_INT;
 				if (want >= 0) {
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, want,
+					ast_set_type_bf(rir_arena, cv, want,
 											 want == VT_INT
 													 ? (uint64_t)0
-													 : (uint64_t)(uintptr_t)tv->type.ref);
+													 : (uint64_t)(uintptr_t)tv->type.ref,
+											 want == VT_INT ? 0u : tv->type.bp,
+											 want == VT_INT ? 0u : tv->type.bs);
 					ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
 					ast_add_child(rir_arena, cv, t2);
 					rir_sh[rir_shn - 1] = cv;
@@ -2975,8 +2983,7 @@ static void rir_op_effect(const RirOp *ro) {
 				!(ast_type_t(rir_arena, top) & (VT_BITFIELD | VT_ARRAY)) &&
 				(ast_type_t(rir_arena, top) & VT_BTYPE) == VT_PTR) {
 			AstLocal cv = ast_node(rir_arena, AST_Convert);
-			ast_set_type(rir_arena, cv, ast_type_t(rir_arena, top),
-									 ast_type_ref(rir_arena, top));
+			ast_copy_type(rir_arena, cv, rir_arena, top);
 			ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
 			ast_add_child(rir_arena, cv, top);
 			rir_sh[rir_shn - 1] = cv;
@@ -3064,7 +3071,7 @@ static void rir_op_effect(const RirOp *ro) {
 		}
 		n = ast_node(rir_arena, AST_Unary);
 		ast_set_op(rir_arena, n, AST_OP_VAARG);
-		ast_set_type(rir_arena, n, o->ctype.t, (uint64_t)(uintptr_t)o->ctype.ref);
+		ast_set_type_bf(rir_arena, n, o->ctype.t, (uint64_t)(uintptr_t)o->ctype.ref, o->ctype.bp, o->ctype.bs);
 		ast_add_child(rir_arena, n, a);
 		rir_push(n);
 		break;
@@ -3346,8 +3353,8 @@ static void rir_mark_apply(const RirOp *ro) {
 					(pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
 					!rir_ptr_arith(top, pv)) {
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
-				ast_set_type(rir_arena, cv, pv->type.t,
-										 (uint64_t)(uintptr_t)pv->type.ref);
+				ast_set_type_bf(rir_arena, cv, pv->type.t,
+										 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
 				ast_add_child(rir_arena, cv, top);
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
@@ -3358,8 +3365,8 @@ static void rir_mark_apply(const RirOp *ro) {
 							 (ast_type_t(rir_arena, top) & VT_BTYPE) != VT_STRUCT &&
 							 (pv->type.t & (VT_BTYPE | VT_ARRAY)) == VT_PTR) {
 				AstLocal cv = ast_node(rir_arena, AST_Convert);
-				ast_set_type(rir_arena, cv, pv->type.t,
-										 (uint64_t)(uintptr_t)pv->type.ref);
+				ast_set_type_bf(rir_arena, cv, pv->type.t,
+										 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
 				ast_add_child(rir_arena, cv, top);
 				rir_sh[rir_shn - 1] = cv;
 				rir_shtype[rir_shn - 1] = 0;
@@ -3371,8 +3378,8 @@ static void rir_mark_apply(const RirOp *ro) {
 									 (uint64_t)(uintptr_t)pv->type.ref) {
 				const Sym *ps = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, top);
 				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID)
-					ast_set_type(rir_arena, top, pv->type.t,
-											 (uint64_t)(uintptr_t)pv->type.ref);
+					ast_set_type_bf(rir_arena, top, pv->type.t,
+											 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
 			}
 			else if (top != AST_NONE &&
 							 (ast_type_t(rir_arena, top) & (VT_BTYPE | VT_ARRAY)) == VT_PTR &&
@@ -3382,8 +3389,8 @@ static void rir_mark_apply(const RirOp *ro) {
 				const Sym *ps = (const Sym *)(uintptr_t)ast_type_ref(rir_arena, top);
 				if (ps && (ps->type.t & VT_BTYPE) == VT_VOID) {
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, pv->type.t,
-											 (uint64_t)(uintptr_t)pv->type.ref);
+					ast_set_type_bf(rir_arena, cv, pv->type.t,
+											 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
 					if (rir_castgv_pend && rir_castgv_t == pv->type.t &&
 							rir_castgv_ref == (uint64_t)(uintptr_t)pv->type.ref) {
 						ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
@@ -3473,8 +3480,8 @@ static void rir_mark_apply(const RirOp *ro) {
 						ast_type_t(rir_arena, top) == (int)pv->type.t &&
 						ast_type_ref(rir_arena, top) == (uint64_t)(uintptr_t)pv->type.ref) {
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
-					ast_set_type(rir_arena, cv, pv->type.t,
-											 (uint64_t)(uintptr_t)pv->type.ref);
+					ast_set_type_bf(rir_arena, cv, pv->type.t,
+											 (uint64_t)(uintptr_t)pv->type.ref, pv->type.bp, pv->type.bs);
 					ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
 					ast_add_child(rir_arena, cv, top);
 					rir_sh[rir_shn - 1] = cv;
@@ -3483,6 +3490,8 @@ static void rir_mark_apply(const RirOp *ro) {
 				rir_castgv_pend = 2;
 				rir_castgv_top = top;
 				rir_castgv_t = pv->type.t;
+				rir_castgv_bp = (pv->type.t & VT_BITFIELD) ? pv->type.bp : 0;
+				rir_castgv_bs = (pv->type.t & VT_BITFIELD) ? pv->type.bs : 0;
 				rir_castgv_ref = (uint64_t)(uintptr_t)pv->type.ref;
 			}
 		}
@@ -3949,8 +3958,7 @@ static void rir_region(const RirOp *ro) {
 				rir_ret_follow_spill(t, v);
 				{
 					AstLocal mv = ast_node(rir_arena, AST_StoreVal);
-					ast_set_type(rir_arena, mv, ast_type_t(rir_arena, v),
-											 ast_type_ref(rir_arena, v));
+					ast_copy_type(rir_arena, mv, rir_arena, v);
 					ast_set_ival(rir_arena, mv, (uint64_t)n);
 					rir_push(mv);
 				}
@@ -4042,8 +4050,8 @@ static void rir_region(const RirOp *ro) {
 		ast_add_child(rir_arena, m, base);
 		if (ro->mvs_n - rir_base_depth > 0) {
 			const SValue *v = &rir_mvs[ro->mvs_off + ro->mvs_n - 1];
-			ast_set_type(rir_arena, m, v->type.t,
-									 (uint64_t)(uintptr_t)v->type.ref);
+			ast_set_type_bf(rir_arena, m, v->type.t,
+									 (uint64_t)(uintptr_t)v->type.ref, v->type.bp, v->type.bs);
 			rir_push(m);
 		} else {
 			rir_push_typed(m);
@@ -4315,7 +4323,8 @@ static void rir_castgv_apply(void) {
 	if (top != rir_castgv_top)
 		return;
 	cv = ast_node(rir_arena, AST_Convert);
-	ast_set_type(rir_arena, cv, rir_castgv_t, rir_castgv_ref);
+	ast_set_type_bf(rir_arena, cv, rir_castgv_t, rir_castgv_ref, rir_castgv_bp,
+									rir_castgv_bs);
 	ast_set_fbits(rir_arena, cv, AST_FB_CONVERT_GV);
 	ast_add_child(rir_arena, cv, top);
 	rir_sh[rir_shn - 1] = cv;
@@ -4477,8 +4486,8 @@ static void rir_to_arena(void) {
 					ast_set_op(rir_arena, cn, AST_OP_CPLXBUILD);
 					ast_add_child(rir_arena, cn, cr);
 					ast_add_child(rir_arena, cn, ci);
-					ast_set_type(rir_arena, cn, cv->type.t,
-											 (uint64_t)(uintptr_t)cv->type.ref);
+					ast_set_type_bf(rir_arena, cn, cv->type.t,
+											 (uint64_t)(uintptr_t)cv->type.ref, cv->type.bp, cv->type.bs);
 					rir_push(cn);
 				}
 			}

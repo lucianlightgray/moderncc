@@ -1709,8 +1709,8 @@ static void mcc_get_debug_info(MCCState *s1, Sym *s, CString *result) { MCC_TRAC
 												: get_tok_str(t->v, NULL));
 				mcc_get_debug_info(s1, t, &str);
 				if (t->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
-					pos = t->c * 8 + BIT_POS(t->type.t);
-					size = BIT_SIZE(t->type.t);
+					pos = t->c * 8 + t->type.bp;
+					size = t->type.bs;
 				} else { MCC_TRACE("br\n");
 					pos = t->c * 8;
 					size = type_size(&t->type, &align) * 8;
@@ -1850,8 +1850,8 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 				pos_type[i++] = dwarf_info_section->data_offset;
 				dwarf_data4(dwarf_info_section, 0);
 				if (e->type.t & VT_BITFIELD) { MCC_TRACE("br\n");
-					int pos = e->c * 8 + BIT_POS(e->type.t);
-					int size = BIT_SIZE(e->type.t);
+					int pos = e->c * 8 + e->type.bp;
+					int size = e->type.bs;
 
 					dwarf_uleb128(dwarf_info_section, size);
 					dwarf_uleb128(dwarf_info_section, pos);
