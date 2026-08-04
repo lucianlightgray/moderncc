@@ -528,7 +528,50 @@ whatever else may be true of it.
 than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
 `MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
 
-### THE LEAD: production's replay prologue does not mirror C2's, and that is the whole asymmetry
+### FOUND, and it undercuts the C2 board: setting `MCC_REPLAY_IR` changes the arena
+
+**`MCC_REPLAY_IR` is not side-effect-free with respect to the arena, so the C2 board
+does not necessarily measure the arena production uses.** This is the finding that
+explains every contradiction below, and it should be checked before any further work
+on the fallback list.
+
+`[optrace]` labels both replay legs `C2` (`rir_prod_replay_begin` sets `rir_c2_active`
+too), so the same body can be captured in each mode and diffed. For the two-line
+reproducer:
+
+```
+C2 leg  (MCC_REPLAY_IR=5):   vswap ×4, gv@11, load@11, store@21
+production (unset):                     gv@11, load@11, store@13
+```
+
+Production is missing the four leading `vswap`s **and** its `load` emits **2 bytes**
+where C2's emits **10** — ten bytes being a `movabs $imm64`, two being a truncated
+constant. That is the `INT64_MIN` → `0` miscompilation, seen at the instruction level.
+
+**The two runs are not replaying the same thing.** In the C2 run `rir_env >= 1`, so
+`rir_verify()` replays the captured op stream *before* the arena is built; in the
+production run `rir_env == 0` and verify never runs. `rir_verify` and `rir_build`
+share capture state (`rir_ops`, the vstack snapshots, `rir_sh`), so if verify's replay
+perturbs any of it, `rir_to_arena` produces a **different arena** in the two modes.
+The op-stream diff above is direct evidence that it does.
+
+**Consequences, in order of importance:**
+
+1. **`c2ok` does not certify the arena production ships.** `overflow_inline.c::main`
+   reads `c2ok=1` and miscompiles in production; those are not contradictory once the
+   arenas are known to differ. Every use of the C2 board as evidence about production
+   behaviour needs re-reading in that light — including this file's own framing of the
+   gap as "how much still falls back".
+2. **It explains the five refuted hypotheses below.** Each looked for a defect in the
+   arena or the replay, using C2 measurements to characterise a body whose production
+   arena was a different object. That is why five mechanisms each fit the symptom and
+   each failed under test.
+3. **It is testable directly**: dump the arena in both modes and compare. That needs a
+   dump reachable with `rir_env == 0`, which does not exist today — `[rir-dump]` is
+   gated at `rir_env >= 6`. **Adding a production-side arena dump is the first thing to
+   build**, because without it no statement about production's arena can be checked.
+
+### Superseded: production's replay prologue does not mirror C2's
 
 `faithful` is a four-term conjunction and now records **which** term failed
 (`rir_unfaithful_why`, printed as the fifth field of `[rir-prod]`). Split across all 17
