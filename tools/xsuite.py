@@ -352,6 +352,8 @@ class Runner:
         if not self.ref:
             return None
         rcmd = [self.ref] + cmd[1:]
+        if REF_STD and not any(a.startswith("-std=") or a == "-ansi" for a in rcmd):
+            rcmd.insert(1, REF_STD)
         try:
             os.unlink(base + ".ref.o")
         except OSError:
@@ -453,6 +455,26 @@ def suite_default_flags(path, text, G):
     return []
 
 
+REF_STD = ""
+
+
+def probe_ref_std(mcc):
+    try:
+        p = subprocess.run([mcc, "-E", "-dM", "-"], input="", capture_output=True,
+                           text=True, errors="replace", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    m = re.search(r"__STDC_VERSION__\s+(\d+)L", p.stdout or "")
+    if not m:
+        return ""
+    gnu = "__STRICT_ANSI__" not in (p.stdout or "")
+    ver = {"202311": "23", "201710": "17", "201112": "11",
+           "199901": "99"}.get(m.group(1))
+    if not ver:
+        return ""
+    return "-std=" + ("gnu" if gnu else "c") + ver
+
+
 REF_BADFLAG_RE = re.compile(
     r"unknown argument|unsupported option|unrecognized command|"
     r"no such file or directory: '-|argument unused|not supported")
@@ -549,9 +571,13 @@ def main():
     args.out = os.path.abspath(args.out)
     os.makedirs(args.out, exist_ok=True)
 
-    global ANSI_OK
+    global ANSI_OK, REF_STD
     ANSI_OK = probe_opt(os.path.abspath(args.mcc), "-ansi")
     print(f"xsuite: mcc accepts -ansi: {ANSI_OK}", flush=True)
+    if args.ref:
+        REF_STD = probe_ref_std(os.path.abspath(args.mcc))
+        print(f"xsuite: reference {args.ref}, default std forwarded as "
+              f"{REF_STD or '(none detected)'}", flush=True)
     if args.suite_default_flags and not ANSI_OK:
         sys.exit("xsuite: --suite-default-flags needs an mcc that accepts -ansi")
 
