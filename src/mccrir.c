@@ -4529,6 +4529,19 @@ struct AstArena *rir_prod_take(void) {
 			}
 		}
 	}
+	/* The only window onto the arena PRODUCTION actually ships. [rir-dump] is
+	   gated at rir_env >= 6, and any rir_env >= 1 turns production off, so that
+	   dump can never show this object -- it shows the arena built in a run where
+	   rir_verify() replayed the op stream first. Those are not always the same
+	   arena. RIRPRODDUMP=<funcname> prints this one, at rir_env == 0. */
+	{
+		const char *e = getenv("RIRPRODDUMP");
+		if (e && funcname && !strcmp(e, funcname)) {
+			static char pdb[8192];
+			ast_dump(rir_arena, ast_root(rir_arena), pdb, sizeof pdb);
+			fprintf(stderr, "[rir-proddump] %s:\n%s\n", funcname, pdb);
+		}
+	}
 	a = rir_arena;
 	rir_arena = NULL;
 	return a;

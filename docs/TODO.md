@@ -528,7 +528,52 @@ whatever else may be true of it.
 than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
 `MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
 
-### FOUND, and it undercuts the C2 board: setting `MCC_REPLAY_IR` changes the arena
+### The production arena is CORRECT. The production replay does not walk it.
+
+**`RIRPRODDUMP=<funcname>` is new and is the only window onto the arena production
+actually ships** (`rir_prod_take`, `src/mccrir.c`). `[rir-dump]` is gated at
+`rir_env >= 6` and any `rir_env >= 1` turns production off, so that dump can never
+show this object. Built precisely to test the previous section's claim — and it
+**refuted** it.
+
+For the two-line reproducer, production's own arena is right:
+
+```
+Store
+  Ref #0
+  Binary -
+    Binary -
+      Literal 0
+      Literal 9223372036854775807
+    Literal 1
+```
+
+The 64-bit literal is present and exact. **So the two modes do not build different
+arenas, and the "MCC_REPLAY_IR changes the arena" conclusion below is wrong** — kept
+only so the instrument that killed it is on record.
+
+**What is wrong is the replay of that tree.** With
+`MCC_TRACE_FILE=mccast MCC_TRACE_FUNC=ast_replay_value -v128` on the production path,
+the whole store replays as a **single** leaf:
+
+```
+LEAF n=6 r=0x132 t=0x4 ival=-8      <- the store target
+LEAF n=5 r=0x30  t=0x3 ival=0       <- and that is all
+```
+
+Three `Literal` nodes are in the tree; **one** is visited, the `Literal 0`, typed
+`VT_INT`. The `Binary -` subtree is never walked, which is why 2 bytes are emitted
+where C2 emits 10. So the defect is not the arena and not the constant's capture — it
+is that **something between `rir_prod_take` and the emission replaces or bypasses the
+`Binary` subtree with its left-most leaf**.
+
+`ast_replay_body` runs `ast_finalize_storevals` and `ast_finalize_chainstores` before
+`ast_replay_bb` (`src/mccast.c:5418`), and both rewrite `Store` nodes. **They are the
+first place to look**, with the caveat that C2 calls the same two finalizers and does
+*not* miscompile — so whatever differs is in the state those finalizers read, not in
+the finalizers being called at all.
+
+### Superseded and REFUTED: "setting `MCC_REPLAY_IR` changes the arena"
 
 **`MCC_REPLAY_IR` is not side-effect-free with respect to the arena, so the C2 board
 does not necessarily measure the arena production uses.** This is the finding that
