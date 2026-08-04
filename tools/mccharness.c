@@ -21,6 +21,40 @@ static const char *const *Z(Argv *v) {
 	return ts_argz(v);
 }
 
+static int compile(const char *const *argv, char **err);
+
+static const char *ref_std_flag(const char *cc) {
+	static struct { char cc[256]; char flag[16]; } cache[4];
+	static int ncache;
+	static const char *probe[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17", 0};
+	int i;
+	for (i = 0; i < ncache; i++) {
+		if (!strcmp(cache[i].cc, cc))
+			return cache[i].flag;
+	}
+	for (i = 0; probe[i]; i++) {
+		Argv v = {{0}, 0};
+		char *err = 0;
+		A(&v, cc);
+		A(&v, probe[i]);
+		A(&v, "-E");
+		A(&v, "-");
+		if (!compile(Z(&v), &err)) {
+			free(err);
+			break;
+		}
+		free(err);
+	}
+	if (!probe[i])
+		i--;
+	if (ncache < (int)(sizeof cache / sizeof cache[0])) {
+		snprintf(cache[ncache].cc, sizeof cache[ncache].cc, "%s", cc);
+		snprintf(cache[ncache].flag, sizeof cache[ncache].flag, "%s", probe[i]);
+		return cache[ncache++].flag;
+	}
+	return probe[i];
+}
+
 static int compile_l(const char *const *argv, const char *const *launcher, char **err) {
 	HostSpawnOpts o;
 	memset(&o, 0, sizeof o);
@@ -296,7 +330,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Ipart);
 			A(&v, "-w");
 			A(&v, "-O0");
-			A(&v, "-std=gnu23");
+			A(&v, ref_std_flag(v.a[0]));
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, eg);
@@ -321,7 +355,7 @@ static int suite_parts(int argc, char **argv) {
 			A(&v, Ipart);
 			A(&v, "-w");
 			A(&v, "-O0");
-			A(&v, "-std=gnu23");
+			A(&v, ref_std_flag(v.a[0]));
 			A(&v, "-lm");
 			A(&v, "-o");
 			A(&v, ec);
@@ -464,7 +498,7 @@ static int suite_mcctest(int argc, char **argv) {
 		split_append(&v, testdefs);
 		A(&v, "-w");
 		A(&v, "-O0");
-		A(&v, "-std=gnu23");
+		A(&v, ref_std_flag(v.a[0]));
 		A(&v, "-fno-omit-frame-pointer");
 		split_append(&v, refflags);
 		A(&v, "-lm");

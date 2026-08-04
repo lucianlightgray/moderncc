@@ -85,7 +85,28 @@ gates this file recorded as green and were not. **Two of the three closed in
    at `-O1` plus 3 at `-O0` — not a three-body `-O0` curiosity. Root cause is
    established (see **Still open**); the arena node is not yet pinned.
 
-6. **`stage2 / linux / predefs-off` failed two `parts/` cells on CI at `9f337e21`
+6. ~~**`stage2 / linux / predefs-off` failed two `parts/` cells on CI at `9f337e21`**~~
+   **Root-caused and fixed.** `tools/mccharness.c` passed **`-std=gnu23`
+   unconditionally** at three reference-build sites, added when mcc's own default
+   moved to gnu23 so the differential compared like with like. gcc only accepts
+   that spelling from **13** onward; 12 and earlier want `-std=gnu2x` and reject
+   `-std=gnu23` outright. On a CI image with an older gcc the reference build
+   therefore failed and fell back to a pre-C23 mode, which is exactly the reported
+   symptom: `s7_13.h:40` is the `#else` arm, reached only when
+   `__STDC_VERSION__ < 202311L`, and it needs `__alignas_is_defined`. The
+   `run_s6_10_4` divergence — gcc disagreeing with *both* clang and mcc — has the
+   same shape, the reference leg being the odd one out.
+   `ref_std_flag()` now probes each reference compiler once, `-std=gnu23` →
+   `-std=gnu2x` → `-std=gnu17`, cached per compiler because gcc, clang and `cc`
+   can differ. Verified locally on the `linux-gcc-predefs-off` preset, which was
+   built specifically to reproduce this: both cells pass, as do all 36 `parts/`
+   and `mcctest` cells and the full 8,122.
+   Note this was **not reproducible on this host at all** — local gcc is 15 and
+   accepts `-std=gnu23` — so it was found by reading the failure rather than by
+   running it, and the fix is verified by construction plus the probe's fallback
+   order. Original note kept below for the record.
+
+   **(original)** `stage2 / linux / predefs-off` failed two `parts/` cells on CI at `9f337e21`
    (run 30914631434, 2026-08-04), and the cause is in the new reference-std
    forwarding, not in mcc.** `parts/run_s7_13`: the **gcc reference build** dies
    with `s7_13.h:40: '__alignas_is_defined' undeclared` — line 40 is the
