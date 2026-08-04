@@ -21,40 +21,6 @@ static const char *const *Z(Argv *v) {
 	return ts_argz(v);
 }
 
-static int compile(const char *const *argv, char **err);
-
-static const char *ref_std_flag(const char *cc) {
-	static struct { char cc[256]; char flag[16]; } cache[4];
-	static int ncache;
-	static const char *probe[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17", 0};
-	int i;
-	for (i = 0; i < ncache; i++) {
-		if (!strcmp(cache[i].cc, cc))
-			return cache[i].flag;
-	}
-	for (i = 0; probe[i]; i++) {
-		Argv v = {{0}, 0};
-		char *err = 0;
-		A(&v, cc);
-		A(&v, probe[i]);
-		A(&v, "-E");
-		A(&v, "-");
-		if (!compile(Z(&v), &err)) {
-			free(err);
-			break;
-		}
-		free(err);
-	}
-	if (!probe[i])
-		i--;
-	if (ncache < (int)(sizeof cache / sizeof cache[0])) {
-		snprintf(cache[ncache].cc, sizeof cache[ncache].cc, "%s", cc);
-		snprintf(cache[ncache].flag, sizeof cache[ncache].flag, "%s", probe[i]);
-		return cache[ncache++].flag;
-	}
-	return probe[i];
-}
-
 static int compile_l(const char *const *argv, const char *const *launcher, char **err) {
 	HostSpawnOpts o;
 	memset(&o, 0, sizeof o);
@@ -327,6 +293,31 @@ static const char *resolve_parts_std(const char *gcc, const char *clang,
 	return cands[0];
 }
 
+/* Same principle as resolve_parts_std, for the 2-way mcctest differential:
+   the reference and mcc must compile the same language, not merely accept the
+   same flag spelling. */
+static const char *resolve_pair_std(const char *cc, const char *mcc,
+																		const char *work) {
+	static const char *const cands[] = {"-std=gnu23", "-std=gnu2x", "-std=gnu17",
+																			"-std=gnu11"};
+	char src[4096], out[4096];
+	FILE *f;
+	size_t i;
+	ts_path(src, sizeof src, work, "pairstd.c");
+	ts_path(out, sizeof out, work, "pairstd.out");
+	f = fopen(src, "w");
+	if (!f)
+		return cands[0];
+	fclose(f);
+	for (i = 0; i < sizeof cands / sizeof *cands; i++) {
+		long r = probe_stdc_version(cc, cands[i], src, out);
+		long m = probe_stdc_version(mcc, cands[i], src, out);
+		if (r > 0 && r == m)
+			return cands[i];
+	}
+	return cands[0];
+}
+
 static int suite_parts(int argc, char **argv) {
 	const char *gcc = opt(argc, argv, "--gcc", NULL);
 	const char *clang = opt(argc, argv, "--clang", NULL);
@@ -568,7 +559,7 @@ static int suite_mcctest(int argc, char **argv) {
 		split_append(&v, testdefs);
 		A(&v, "-w");
 		A(&v, "-O0");
-		A(&v, ref_std_flag(v.a[0]));
+		A(&v, resolve_pair_std(cc, mcc, work));
 		A(&v, "-fno-omit-frame-pointer");
 		split_append(&v, refflags);
 		A(&v, "-lm");
