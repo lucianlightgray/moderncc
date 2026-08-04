@@ -3641,6 +3641,35 @@ static int ast_cond_has_store(AstArena *a, AstLocal n, int depth) {
 	return 0;
 }
 
+static void ast_promo_poison_off(int off, const int *coff, int nc,
+																 int *cpoison) { MCC_TRACE("enter\n");
+	for (int j = 0; j < nc; j++)
+		{ MCC_TRACE("br\n"); if (coff[j] == off)
+			{ MCC_TRACE("br\n"); cpoison[j] = 1; } }
+}
+
+static void ast_promo_poison_vla_size(AstArena *a, AstLocal n, const int *coff,
+																			int nc, int *cpoison) {
+	MCC_TRACE("enter\n");
+	CType ct;
+	ct.t = ast_type_t(a, n);
+	ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	for (int d = 0; d < 16 && ct.ref; d++) { MCC_TRACE("br\n");
+		if ((ct.t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
+			if (ct.ref->a.has_vla_member)
+				{ MCC_TRACE("br\n"); ast_promo_poison_off(ct.ref->vla_dyn_slot, coff, nc,
+																									cpoison); }
+			return;
+		}
+		if ((ct.t & VT_BTYPE) != VT_PTR)
+			{ MCC_TRACE("br\n"); return; }
+		if (ct.t & VT_VLA)
+			{ MCC_TRACE("br\n"); ast_promo_poison_off((int)ct.ref->c, coff, nc,
+																							 cpoison); }
+		ct = ct.ref->type;
+	}
+}
+
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 	ast_promo_n = 0;
 	ast_promo_callful = 0;
@@ -3722,6 +3751,8 @@ static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
 		else if (!(ctyp[j] & VT_BTYPE))
 			{ MCC_TRACE("br\n"); ctyp[j] = ast_type_t(a, n); }
 	}
+	for (AstLocal n = 0; n < nn; n++)
+		{ MCC_TRACE("br\n"); ast_promo_poison_vla_size(a, n, coff, nc, cpoison); }
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_kind(a, n) != AST_Unary)
 			{ MCC_TRACE("br\n"); continue; }
