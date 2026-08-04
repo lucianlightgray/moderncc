@@ -5485,7 +5485,28 @@ static void ast_fold_rec(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
 	if (ast_kind(a, x) != AST_Literal || ast_kind(a, y) != AST_Literal)
 		{ MCC_TRACE("br\n"); return; }
+	/* The fold has to run at the type the operands convert to, not at the left
+	   operand's. tcc lowers unary minus as `vpushi(0); gen_op('-')`, so the left
+	   operand of a negated 64-bit constant is an `int` zero, and folding at its
+	   width truncates: `0 - 9223372036854775807LL` came out 1, and
+	   `-9223372036854775807LL - 1` came out 0, both being the low 32 bits of the
+	   right answer. Shifts are excluded because their result type is the promoted
+	   LEFT operand's, not the common one. Floats are rejected below, so this is
+	   the integer half of the usual arithmetic conversions. */
 	int tt = ast_type_t(a, x);
+	{
+		int ty2 = ast_type_t(a, y);
+		int bx = tt & VT_BTYPE, by = ty2 & VT_BTYPE;
+		if (op != TOK_SHL && op != TOK_SHR && op != TOK_SAR &&
+				!ast_bad_type(tt) && !ast_bad_type(ty2) && !is_float(tt) &&
+				!is_float(ty2)) { MCC_TRACE("br\n");
+			int wx = bx == VT_LLONG ? 8 : 4, wy = by == VT_LLONG ? 8 : 4;
+			if (wy > wx)
+				tt = ty2;
+			else if (wy == wx && (ty2 & VT_UNSIGNED))
+				tt |= VT_UNSIGNED;
+		}
+	}
 	if (ast_bad_type(tt) || ast_bad_type(ast_type_t(a, y)))
 		{ MCC_TRACE("br\n"); return; }
 	if (is_float(tt) || is_float(ast_type_t(a, y)))

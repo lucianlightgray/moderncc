@@ -374,6 +374,48 @@ cells pass against the tightened floors.
 the obligation; semantic correctness is. This section is the measured route to that
 bar, and it replaces guessing at the C2 gap with a list of five named defects.
 
+### CLOSED: `ast_fold_rec` folded at the LEFT operand's type instead of the common type
+
+**Found by watchpoint, after eight theories from source reading had all failed.** The
+method that worked: `gdb --batch`, break at a probe, resolve the node index from the
+arena's parallel arrays, `watch ast_cur->kind[$vc]`, continue. It named the writer in
+one run — `ast_set_kind` ← `ast_fold_rec` (`src/mccast.c:5499`) ← `ast_run_templates`
+← `ast_func_end:15040`.
+
+The defect:
+
+```c
+AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1);
+int tt = ast_type_t(a, x);                        /* LEFT operand's type only */
+uint64_t r = ast_fold_eval(op, tt, l1, l2, &ok);  /* folds at that width */
+```
+
+tcc lowers unary minus as `vpushi(0); gen_op('-')`, so the left operand of a negated
+64-bit constant is an **`int` zero** and the fold ran at 32 bits.
+`0 - 9223372036854775807LL` came out **1**; `-9223372036854775807LL - 1` came out
+**0** — both the low 32 bits of the right answer. Fixed by applying the integer half
+of the usual arithmetic conversions before folding, with shifts excluded because their
+result type is the promoted *left* operand's, not the common one.
+
+**Measured effect, `-O1` over the whole corpus:**
+
+| | before | after |
+| --- | --- | --- |
+| `used` | 2158 | **2168** |
+| `fallback` | 17 | **7** |
+| failing terms | `len 13, bytes 3, relcontent 1` | `len 5, bytes 1, relcontent 1` |
+| golden regressions under `MCC_RIR_NOFB=1` | 5 | **1** (`c11_complex_convert`) |
+
+One type bug accounted for **ten of the seventeen fallbacks and four of the five
+miscompilations**. Note what had been protecting the tree: the fold was already
+corrupting arenas in production, and the byte-`faithful` compare caught every instance
+and fell back to the parser. **The fallback path was masking a live wrong-code bug** —
+the strongest argument yet for driving the census to zero rather than living with it.
+
+**Remaining:** `fallback` 7 (`len 5, bytes 1, relcontent 1`) and one golden,
+`c11_complex_convert`. Method note stands: when source reading stalls, put a watchpoint
+on the arena slot and let it name the writer.
+
 ### The census, measured at `-O1` over all 660 corpus files on x86_64
 
 `rir_prod_take` now records *which* of its conditions refused a body
