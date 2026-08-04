@@ -1237,6 +1237,20 @@ static int rir_effectful(AstLocal n) {
 	k = ast_kind(rir_arena, n);
 	if (k == AST_Store || k == AST_Invoke)
 		return 1;
+	/* A block groups statements, so it is exactly as effectful as what it holds.
+	   Without this, dropping the shadow top discards the whole group: the last
+	   statement of coherency_test -- a printf whose argument indexes a compound
+	   literal -- reached IR_OP_VPOP wrapped in a BasicBlock rather than bare, was
+	   judged side-effect-free, and vanished from the arena. The call itself is in
+	   the captured stream; only the drop lost it. */
+	if (k == AST_BasicBlock) {
+		AstLocal c;
+		for (c = ast_first_child(rir_arena, n); c != AST_NONE;
+				 c = ast_next_sib(rir_arena, c))
+			if (rir_effectful(c))
+				return 1;
+		return 0;
+	}
 	if (k == AST_If && ast_op(rir_arena, n) == 5 && ast_nchild(rir_arena, n) == 3)
 		return 1;
 	if (k == AST_Binary && (ast_fbits(rir_arena, n) & AST_FB_LANDOR_MATERIAL))
@@ -2640,6 +2654,14 @@ static void rir_op_effect(const RirOp *ro) {
 	}
 	case IR_OP_VPOP: {
 		AstLocal d = rir_pop();
+#if RIR_DBG_OPTRACE
+		if (rir_dbg_on())
+			fprintf(stderr, "[vpop] ent=%d d=%d kind=%s parent=%d shn=%d lorn=%d bbn=%d\n",
+							rir_dbg_ent, (int)d,
+							d == AST_NONE ? "-" : ast_kind_name(ast_kind(rir_arena, d)),
+							d == AST_NONE ? -1 : (int)ast_parent(rir_arena, d), rir_shn,
+							rir_lorn, rir_bbn);
+#endif
 		if (d != AST_NONE && rir_shn == 0 &&
 				ast_parent(rir_arena, d) == AST_NONE &&
 				ast_kind(rir_arena, d) == AST_Binary) {
