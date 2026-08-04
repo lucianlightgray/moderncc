@@ -1448,4 +1448,427 @@ __MCC_AVX2_INLINE void _mm_maskstore_epi64(long long *__p, __m128i __m, __m128i 
 			((struct __mcc_loadu_si64 *)(__p + __i))->__v = __x[__i];
 }
 
+__MCC_AVX2_INLINE const char *__mcc_gaddr(const void *__b, long long __i, int __s)
+{
+	return (const char *)__b + __i * (long long)__s;
+}
+
+__MCC_AVX2_INLINE float __mcc_gld_ss(const float *__b, long long __i, int __s)
+{
+	return ((const struct __mcc_loadu_f32 *)__mcc_gaddr(__b, __i, __s))->__v;
+}
+
+__MCC_AVX2_INLINE double __mcc_gld_sd(const double *__b, long long __i, int __s)
+{
+	return ((const struct __mcc_loadu_f64 *)__mcc_gaddr(__b, __i, __s))->__v;
+}
+
+__MCC_AVX2_INLINE int __mcc_gld_si(const int *__b, long long __i, int __s)
+{
+	return ((const struct __mcc_loadu_i32 *)__mcc_gaddr(__b, __i, __s))->__v;
+}
+
+__MCC_AVX2_INLINE long long __mcc_gld_sq(const long long *__b, long long __i, int __s)
+{
+	return ((const struct __mcc_loadu_si64 *)__mcc_gaddr(__b, __i, __s))->__v;
+}
+
+__MCC_AVX2_INLINE __m128d _mm_mask_i32gather_pd(__m128d __src, const double *__base,
+																								__m128i __index, __m128d __mask,
+																								const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v2di __mk = (__v2di)__mask;
+	__v2df __r = (__v2df)__src;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sd(__base, (long long)__ix[__i], __scale);
+	return (__m128d)__r;
+}
+
+__MCC_AVX2_INLINE __m128d _mm_i32gather_pd(const double *__base, __m128i __index,
+																					 const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v2df __r;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mcc_gld_sd(__base, (long long)__ix[__i], __scale);
+	return (__m128d)__r;
+}
+
+__MCC_AVX2_INLINE __m256d _mm256_mask_i32gather_pd(__m256d __src, const double *__base,
+																									 __m128i __index, __m256d __mask,
+																									 const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4di __mk = (__v4di)__mask;
+	__v4df __r = (__v4df)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sd(__base, (long long)__ix[__i], __scale);
+	return (__m256d)__r;
+}
+
+__MCC_AVX2_INLINE __m256d _mm256_i32gather_pd(const double *__base, __m128i __index,
+																							const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4df __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_sd(__base, (long long)__ix[__i], __scale);
+	return (__m256d)__r;
+}
+
+__MCC_AVX2_INLINE __m128d _mm_mask_i64gather_pd(__m128d __src, const double *__base,
+																								__m128i __index, __m128d __mask,
+																								const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v2di __mk = (__v2di)__mask;
+	__v2df __r = (__v2df)__src;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sd(__base, __ix[__i], __scale);
+	return (__m128d)__r;
+}
+
+__MCC_AVX2_INLINE __m128d _mm_i64gather_pd(const double *__base, __m128i __index,
+																					 const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v2df __r;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mcc_gld_sd(__base, __ix[__i], __scale);
+	return (__m128d)__r;
+}
+
+__MCC_AVX2_INLINE __m256d _mm256_mask_i64gather_pd(__m256d __src, const double *__base,
+																									 __m256i __index, __m256d __mask,
+																									 const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4di __mk = (__v4di)__mask;
+	__v4df __r = (__v4df)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sd(__base, __ix[__i], __scale);
+	return (__m256d)__r;
+}
+
+__MCC_AVX2_INLINE __m256d _mm256_i64gather_pd(const double *__base, __m256i __index,
+																							const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4df __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_sd(__base, __ix[__i], __scale);
+	return (__m256d)__r;
+}
+
+__MCC_AVX2_INLINE __m128 _mm_mask_i32gather_ps(__m128 __src, const float *__base,
+																							 __m128i __index, __m128 __mask,
+																							 const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4si __mk = (__v4si)__mask;
+	__v4sf __r = (__v4sf)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_ss(__base, (long long)__ix[__i], __scale);
+	return (__m128)__r;
+}
+
+__MCC_AVX2_INLINE __m128 _mm_i32gather_ps(const float *__base, __m128i __index,
+																					const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4sf __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_ss(__base, (long long)__ix[__i], __scale);
+	return (__m128)__r;
+}
+
+__MCC_AVX2_INLINE __m256 _mm256_mask_i32gather_ps(__m256 __src, const float *__base,
+																									__m256i __index, __m256 __mask,
+																									const int __scale)
+{
+	__v8si __ix = (__v8si)__index;
+	__v8si __mk = (__v8si)__mask;
+	__v8sf __r = (__v8sf)__src;
+	int __i;
+	for (__i = 0; __i < 8; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_ss(__base, (long long)__ix[__i], __scale);
+	return (__m256)__r;
+}
+
+__MCC_AVX2_INLINE __m256 _mm256_i32gather_ps(const float *__base, __m256i __index,
+																						 const int __scale)
+{
+	__v8si __ix = (__v8si)__index;
+	__v8sf __r;
+	int __i;
+	for (__i = 0; __i < 8; __i++)
+		__r[__i] = __mcc_gld_ss(__base, (long long)__ix[__i], __scale);
+	return (__m256)__r;
+}
+
+__MCC_AVX2_INLINE __m128 _mm_mask_i64gather_ps(__m128 __src, const float *__base,
+																							 __m128i __index, __m128 __mask,
+																							 const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v4si __mk = (__v4si)__mask;
+	__v4sf __s = (__v4sf)__src, __r = (__v4sf){0, 0, 0, 0};
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mk[__i] < 0 ? __mcc_gld_ss(__base, __ix[__i], __scale) : __s[__i];
+	return (__m128)__r;
+}
+
+__MCC_AVX2_INLINE __m128 _mm_i64gather_ps(const float *__base, __m128i __index,
+																					const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v4sf __r = (__v4sf){0, 0, 0, 0};
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mcc_gld_ss(__base, __ix[__i], __scale);
+	return (__m128)__r;
+}
+
+__MCC_AVX2_INLINE __m128 _mm256_mask_i64gather_ps(__m128 __src, const float *__base,
+																									__m256i __index, __m128 __mask,
+																									const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4si __mk = (__v4si)__mask;
+	__v4sf __r = (__v4sf)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_ss(__base, __ix[__i], __scale);
+	return (__m128)__r;
+}
+
+__MCC_AVX2_INLINE __m128 _mm256_i64gather_ps(const float *__base, __m256i __index,
+																						 const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4sf __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_ss(__base, __ix[__i], __scale);
+	return (__m128)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_mask_i32gather_epi64(__m128i __src, const long long *__base,
+																									 __m128i __index, __m128i __mask,
+																									 const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v2di __mk = (__v2di)__mask;
+	__v2di __r = (__v2di)__src;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sq(__base, (long long)__ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_i32gather_epi64(const long long *__base, __m128i __index,
+																							const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v2di __r;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mcc_gld_sq(__base, (long long)__ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m256i _mm256_mask_i32gather_epi64(__m256i __src, const long long *__base,
+																											__m128i __index, __m256i __mask,
+																											const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4di __mk = (__v4di)__mask;
+	__v4di __r = (__v4di)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sq(__base, (long long)__ix[__i], __scale);
+	return (__m256i)__r;
+}
+
+__MCC_AVX2_INLINE __m256i _mm256_i32gather_epi64(const long long *__base, __m128i __index,
+																								 const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4di __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_sq(__base, (long long)__ix[__i], __scale);
+	return (__m256i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_mask_i64gather_epi64(__m128i __src, const long long *__base,
+																									 __m128i __index, __m128i __mask,
+																									 const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v2di __mk = (__v2di)__mask;
+	__v2di __r = (__v2di)__src;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sq(__base, __ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_i64gather_epi64(const long long *__base, __m128i __index,
+																							const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v2di __r;
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mcc_gld_sq(__base, __ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m256i _mm256_mask_i64gather_epi64(__m256i __src, const long long *__base,
+																											__m256i __index, __m256i __mask,
+																											const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4di __mk = (__v4di)__mask;
+	__v4di __r = (__v4di)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_sq(__base, __ix[__i], __scale);
+	return (__m256i)__r;
+}
+
+__MCC_AVX2_INLINE __m256i _mm256_i64gather_epi64(const long long *__base, __m256i __index,
+																								 const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4di __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_sq(__base, __ix[__i], __scale);
+	return (__m256i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_mask_i32gather_epi32(__m128i __src, const int *__base,
+																									 __m128i __index, __m128i __mask,
+																									 const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4si __mk = (__v4si)__mask;
+	__v4si __r = (__v4si)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_si(__base, (long long)__ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_i32gather_epi32(const int *__base, __m128i __index,
+																							const int __scale)
+{
+	__v4si __ix = (__v4si)__index;
+	__v4si __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_si(__base, (long long)__ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m256i _mm256_mask_i32gather_epi32(__m256i __src, const int *__base,
+																											__m256i __index, __m256i __mask,
+																											const int __scale)
+{
+	__v8si __ix = (__v8si)__index;
+	__v8si __mk = (__v8si)__mask;
+	__v8si __r = (__v8si)__src;
+	int __i;
+	for (__i = 0; __i < 8; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_si(__base, (long long)__ix[__i], __scale);
+	return (__m256i)__r;
+}
+
+__MCC_AVX2_INLINE __m256i _mm256_i32gather_epi32(const int *__base, __m256i __index,
+																								 const int __scale)
+{
+	__v8si __ix = (__v8si)__index;
+	__v8si __r;
+	int __i;
+	for (__i = 0; __i < 8; __i++)
+		__r[__i] = __mcc_gld_si(__base, (long long)__ix[__i], __scale);
+	return (__m256i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_mask_i64gather_epi32(__m128i __src, const int *__base,
+																									 __m128i __index, __m128i __mask,
+																									 const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v4si __mk = (__v4si)__mask;
+	__v4si __s = (__v4si)__src, __r = (__v4si){0, 0, 0, 0};
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mk[__i] < 0 ? __mcc_gld_si(__base, __ix[__i], __scale) : __s[__i];
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm_i64gather_epi32(const int *__base, __m128i __index,
+																							const int __scale)
+{
+	__v2di __ix = (__v2di)__index;
+	__v4si __r = (__v4si){0, 0, 0, 0};
+	int __i;
+	for (__i = 0; __i < 2; __i++)
+		__r[__i] = __mcc_gld_si(__base, __ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm256_mask_i64gather_epi32(__m128i __src, const int *__base,
+																											__m256i __index, __m128i __mask,
+																											const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4si __mk = (__v4si)__mask;
+	__v4si __r = (__v4si)__src;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		if (__mk[__i] < 0)
+			__r[__i] = __mcc_gld_si(__base, __ix[__i], __scale);
+	return (__m128i)__r;
+}
+
+__MCC_AVX2_INLINE __m128i _mm256_i64gather_epi32(const int *__base, __m256i __index,
+																								 const int __scale)
+{
+	__v4di __ix = (__v4di)__index;
+	__v4si __r;
+	int __i;
+	for (__i = 0; __i < 4; __i++)
+		__r[__i] = __mcc_gld_si(__base, __ix[__i], __scale);
+	return (__m128i)__r;
+}
+
 #endif

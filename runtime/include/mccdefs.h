@@ -1254,4 +1254,140 @@
 	#define __builtin_isinf_sign(x) __extension__ ({ __typeof__(x) __mcc_iv = (x); \
 	__builtin_isinf(__mcc_iv) ? (__builtin_signbit(__mcc_iv) ? -1 : 1) : 0; })
 
+	#if defined __x86_64__ || defined __i386__
+	#define __builtin_ia32_ptestz128(a, b) __extension__ ({ \
+	__typeof__(a) __mcc_pa = (a), __mcc_pb = (b); \
+	(int)(((__mcc_pa[0] & __mcc_pb[0]) | (__mcc_pa[1] & __mcc_pb[1])) == 0); })
+	#define __builtin_ia32_ptestc128(a, b) __extension__ ({ \
+	__typeof__(a) __mcc_pa = (a), __mcc_pb = (b); \
+	(int)(((~__mcc_pa[0] & __mcc_pb[0]) | (~__mcc_pa[1] & __mcc_pb[1])) == 0); })
+	#define __builtin_ia32_ptestnzc128(a, b) \
+	(!__builtin_ia32_ptestz128((a), (b)) && !__builtin_ia32_ptestc128((a), (b)))
+	#define __builtin_ia32_ptestz256(a, b) __extension__ ({ \
+	__typeof__(a) __mcc_pa = (a), __mcc_pb = (b); \
+	(int)(((__mcc_pa[0] & __mcc_pb[0]) | (__mcc_pa[1] & __mcc_pb[1]) \
+	| (__mcc_pa[2] & __mcc_pb[2]) | (__mcc_pa[3] & __mcc_pb[3])) == 0); })
+	#define __builtin_ia32_ptestc256(a, b) __extension__ ({ \
+	__typeof__(a) __mcc_pa = (a), __mcc_pb = (b); \
+	(int)(((~__mcc_pa[0] & __mcc_pb[0]) | (~__mcc_pa[1] & __mcc_pb[1]) \
+	| (~__mcc_pa[2] & __mcc_pb[2]) | (~__mcc_pa[3] & __mcc_pb[3])) == 0); })
+	#define __builtin_ia32_ptestnzc256(a, b) \
+	(!__builtin_ia32_ptestz256((a), (b)) && !__builtin_ia32_ptestc256((a), (b)))
+
+	#define __builtin_ia32_vec_ext_v4si(a, i) __extension__ ({ \
+	__typeof__(a) __mcc_ve = (a); (int)__mcc_ve[(i) & 3]; })
+	#define __builtin_ia32_vec_ext_v8hi(a, i) __extension__ ({ \
+	__typeof__(a) __mcc_ve = (a); (int)__mcc_ve[(i) & 7]; })
+	#define __builtin_ia32_vec_ext_v16qi(a, i) __extension__ ({ \
+	__typeof__(a) __mcc_ve = (a); (int)__mcc_ve[(i) & 15]; })
+	#define __builtin_ia32_vec_ext_v2di(a, i) __extension__ ({ \
+	__typeof__(a) __mcc_ve = (a); (__mcc_llong_t)__mcc_ve[(i) & 1]; })
+	#define __builtin_ia32_vec_ext_v4sf(a, i) __extension__ ({ \
+	__typeof__(a) __mcc_ve = (a); (float)__mcc_ve[(i) & 3]; })
+	#define __builtin_ia32_vec_ext_v2df(a, i) __extension__ ({ \
+	__typeof__(a) __mcc_ve = (a); (double)__mcc_ve[(i) & 1]; })
+
+	#define __builtin_ia32_vec_set_v16qi(a, d, i) __extension__ ({ \
+	__typeof__(a) __mcc_vs = (a); __mcc_vs[(i) & 15] = (char)(d); __mcc_vs; })
+	#define __builtin_ia32_vec_set_v8hi(a, d, i) __extension__ ({ \
+	__typeof__(a) __mcc_vs = (a); __mcc_vs[(i) & 7] = (short)(d); __mcc_vs; })
+	#define __builtin_ia32_vec_set_v4si(a, d, i) __extension__ ({ \
+	__typeof__(a) __mcc_vs = (a); __mcc_vs[(i) & 3] = (int)(d); __mcc_vs; })
+	#define __builtin_ia32_vec_set_v2di(a, d, i) __extension__ ({ \
+	__typeof__(a) __mcc_vs = (a); __mcc_vs[(i) & 1] = (__mcc_llong_t)(d); __mcc_vs; })
+
+	#define __builtin_ia32_pshufd(a, n) __extension__ ({ \
+	__typeof__(a) __mcc_ps = (a), __mcc_pr; int __mcc_pn = (int)(n); \
+	__mcc_pr[0] = __mcc_ps[__mcc_pn & 3]; \
+	__mcc_pr[1] = __mcc_ps[(__mcc_pn >> 2) & 3]; \
+	__mcc_pr[2] = __mcc_ps[(__mcc_pn >> 4) & 3]; \
+	__mcc_pr[3] = __mcc_ps[(__mcc_pn >> 6) & 3]; __mcc_pr; })
+
+	#define __builtin_ia32_pmulhrsw128(a, b) __extension__ ({ \
+	__typeof__(a) __mcc_ma = (a), __mcc_mb = (b), __mcc_mr; int __mcc_mi; \
+	for (__mcc_mi = 0; __mcc_mi < 8; __mcc_mi++) \
+	__mcc_mr[__mcc_mi] = (short)((((((int)__mcc_ma[__mcc_mi] \
+	* (int)__mcc_mb[__mcc_mi]) >> 14) + 1) >> 1)); __mcc_mr; })
+
+	#define __builtin_ia32_cvtsd2ss(a, b) __extension__ ({ \
+	__typeof__(a) __mcc_ca = (a); __typeof__(b) __mcc_cb = (b); \
+	__mcc_ca[0] = (float)__mcc_cb[0]; __mcc_ca; })
+
+	#define __builtin_ia32_rdtsc() __extension__ ({ \
+	unsigned int __mcc_tl, __mcc_th; \
+	__asm__ __volatile__("rdtsc" : "=a"(__mcc_tl), "=d"(__mcc_th)); \
+	((__mcc_ullong_t)__mcc_th << 32) | __mcc_tl; })
+
+	#define __builtin_ia32_monitor(p, e, h) __extension__ ({ \
+	__asm__ __volatile__(".byte 0x0f, 0x01, 0xc8" \
+	: : "a"(p), "c"((unsigned int)(e)), "d"((unsigned int)(h))); })
+	#define __builtin_ia32_mwait(e, h) __extension__ ({ \
+	__asm__ __volatile__(".byte 0x0f, 0x01, 0xc9" \
+	: : "a"((unsigned int)(e)), "c"((unsigned int)(h))); })
+
+	#define __builtin_ia32_addcarryx_u32(c, x, y, p) __extension__ ({ \
+	__mcc_ullong_t __mcc_as = (__mcc_ullong_t)(unsigned int)(x) \
+	+ (__mcc_ullong_t)(unsigned int)(y) + (__mcc_ullong_t)((c) != 0); \
+	*(p) = (unsigned int)__mcc_as; (unsigned char)(__mcc_as >> 32); })
+	#define __builtin_ia32_sbb_u32(c, x, y, p) __extension__ ({ \
+	__mcc_ullong_t __mcc_ds = (__mcc_ullong_t)(unsigned int)(x) \
+	- (__mcc_ullong_t)(unsigned int)(y) - (__mcc_ullong_t)((c) != 0); \
+	*(p) = (unsigned int)__mcc_ds; (unsigned char)((__mcc_ds >> 32) & 1); })
+	#ifdef __x86_64__
+	#define __builtin_ia32_addcarryx_u64(c, x, y, p) __extension__ ({ \
+	__mcc_ullong_t __mcc_ax = (__mcc_ullong_t)(x), __mcc_ay = (__mcc_ullong_t)(y); \
+	__mcc_ullong_t __mcc_ac = (__mcc_ullong_t)((c) != 0), __mcc_as = __mcc_ax + __mcc_ay; \
+	unsigned char __mcc_ao = (unsigned char)(__mcc_as < __mcc_ax); \
+	__mcc_as += __mcc_ac; __mcc_ao |= (unsigned char)(__mcc_as < __mcc_ac); \
+	*(p) = __mcc_as; __mcc_ao; })
+	#define __builtin_ia32_sbb_u64(c, x, y, p) __extension__ ({ \
+	__mcc_ullong_t __mcc_dx = (__mcc_ullong_t)(x), __mcc_dy = (__mcc_ullong_t)(y); \
+	__mcc_ullong_t __mcc_dc = (__mcc_ullong_t)((c) != 0), __mcc_dd = __mcc_dx - __mcc_dy; \
+	unsigned char __mcc_do = (unsigned char)(__mcc_dx < __mcc_dy); \
+	__mcc_do |= (unsigned char)(__mcc_dd < __mcc_dc); \
+	*(p) = __mcc_dd - __mcc_dc; __mcc_do; })
+	#endif
+
+	#define __builtin_ia32_bextr_u32(x, y) __extension__ ({ \
+	unsigned int __mcc_bx = (unsigned int)(x), __mcc_by = (unsigned int)(y); \
+	unsigned int __mcc_bs = __mcc_by & 0xffu, __mcc_bl = (__mcc_by >> 8) & 0xffu; \
+	__mcc_bs > 31u ? 0u : (__mcc_bl > 31u ? (__mcc_bx >> __mcc_bs) \
+	: ((__mcc_bx >> __mcc_bs) & ((1u << __mcc_bl) - 1u))); })
+	#define __builtin_ia32_bzhi_si(x, y) __extension__ ({ \
+	unsigned int __mcc_zx = (unsigned int)(x), __mcc_zn = (unsigned int)(y) & 0xffu; \
+	__mcc_zn > 31u ? __mcc_zx : (__mcc_zx & ((1u << __mcc_zn) - 1u)); })
+	#ifdef __x86_64__
+	#define __builtin_ia32_bextr_u64(x, y) __extension__ ({ \
+	__mcc_ullong_t __mcc_bx = (__mcc_ullong_t)(x), __mcc_by = (__mcc_ullong_t)(y); \
+	__mcc_ullong_t __mcc_bs = __mcc_by & 0xffu, __mcc_bl = (__mcc_by >> 8) & 0xffu; \
+	__mcc_bs > 63u ? 0ull : (__mcc_bl > 63u ? (__mcc_bx >> __mcc_bs) \
+	: ((__mcc_bx >> __mcc_bs) & ((1ull << __mcc_bl) - 1ull))); })
+	#define __builtin_ia32_bzhi_di(x, y) __extension__ ({ \
+	__mcc_ullong_t __mcc_zx = (__mcc_ullong_t)(x); \
+	__mcc_ullong_t __mcc_zn = (__mcc_ullong_t)(y) & 0xffu; \
+	__mcc_zn > 63u ? __mcc_zx : (__mcc_zx & ((1ull << __mcc_zn) - 1ull)); })
+	#endif
+
+	#define __builtin_ia32_tzcnt_u16(x) __extension__ ({ \
+	unsigned short __mcc_tv = (unsigned short)(x); \
+	(unsigned short)(__mcc_tv ? __builtin_ctz((unsigned int)__mcc_tv) : 16); })
+	#define __builtin_ia32_lzcnt_u16(x) __extension__ ({ \
+	unsigned short __mcc_lv = (unsigned short)(x); \
+	(unsigned short)(__mcc_lv ? __builtin_clz((unsigned int)__mcc_lv) - 16 : 16); })
+	#define __builtin_ia32_tzcnt_u32(x) __extension__ ({ \
+	unsigned int __mcc_tv = (unsigned int)(x); \
+	(unsigned int)(__mcc_tv ? __builtin_ctz(__mcc_tv) : 32u); })
+	#define __builtin_ia32_lzcnt_u32(x) __extension__ ({ \
+	unsigned int __mcc_lv = (unsigned int)(x); \
+	(unsigned int)(__mcc_lv ? __builtin_clz(__mcc_lv) : 32u); })
+	#ifdef __x86_64__
+	#define __builtin_ia32_tzcnt_u64(x) __extension__ ({ \
+	__mcc_ullong_t __mcc_tv = (__mcc_ullong_t)(x); \
+	(__mcc_ullong_t)(__mcc_tv ? __builtin_ctzll(__mcc_tv) : 64); })
+	#define __builtin_ia32_lzcnt_u64(x) __extension__ ({ \
+	__mcc_ullong_t __mcc_lv = (__mcc_ullong_t)(x); \
+	(__mcc_ullong_t)(__mcc_lv ? __builtin_clzll(__mcc_lv) : 64); })
+	#endif
+	#endif
+
 	#endif

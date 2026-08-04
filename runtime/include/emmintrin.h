@@ -26,6 +26,10 @@ struct __mcc_loadu_f64 {
 	double __v;
 } __attribute__((__packed__, __may_alias__));
 
+struct __mcc_loadu_i16 {
+	short __v;
+} __attribute__((__packed__, __may_alias__));
+
 struct __mcc_loadu_i32 {
 	int __v;
 } __attribute__((__packed__, __may_alias__));
@@ -871,6 +875,12 @@ __MCC_SSE2_INLINE __m128i _mm_loadu_si32(const void *__p)
 	return (__m128i)(__v4si){((const struct __mcc_loadu_i32 *)__p)->__v, 0, 0, 0};
 }
 
+__MCC_SSE2_INLINE __m128i _mm_loadu_si16(const void *__p)
+{
+	return (__m128i)(__v8hi){((const struct __mcc_loadu_i16 *)__p)->__v,
+													 0, 0, 0, 0, 0, 0, 0};
+}
+
 __MCC_SSE2_INLINE void _mm_store_si128(__m128i *__p, __m128i __b)
 {
 	*__p = __b;
@@ -894,6 +904,11 @@ __MCC_SSE2_INLINE void _mm_storeu_si64(void *__p, __m128i __b)
 __MCC_SSE2_INLINE void _mm_storeu_si32(void *__p, __m128i __b)
 {
 	((struct __mcc_loadu_i32 *)__p)->__v = ((__v4si)__b)[0];
+}
+
+__MCC_SSE2_INLINE void _mm_storeu_si16(void *__p, __m128i __b)
+{
+	((struct __mcc_loadu_i16 *)__p)->__v = ((__v8hi)__b)[0];
 }
 
 __MCC_SSE2_INLINE void _mm_stream_si128(__m128i *__p, __m128i __a)

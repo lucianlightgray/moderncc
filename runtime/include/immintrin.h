@@ -13,7 +13,11 @@
 #include <tmmintrin.h>
 #include <smmintrin.h>
 #include <nmmintrin.h>
+#include <wmmintrin.h>
 #include <avxintrin.h>
 #include <avx2intrin.h>
+#include <fmaintrin.h>
+#include <avxvnniintrin.h>
+#include <avxifmaintrin.h>
 
 #endif

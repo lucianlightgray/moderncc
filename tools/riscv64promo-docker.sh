@@ -5,7 +5,7 @@ set -eu
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 HP="$(cd "$REPO" && (pwd -W 2>/dev/null || pwd))"
 WORK="${1:-./w-riscv64promo}"
-rm -rf "$WORK"; mkdir -p "$WORK"
+dg_reset_work "$WORK"
 WORK_ABS="$(cd "$WORK" && pwd)"
 WP="$(cd "$WORK_ABS" && (pwd -W 2>/dev/null || pwd))"
 IMAGE="debian:bookworm-slim"
@@ -16,7 +16,9 @@ HP_PLAT=$(dg_host_plat)
 dg_need_platform "$HP_PLAT" "$IMAGE"
 
 dg_docker run --rm --platform "$HP_PLAT" \
+  -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
   -v "$HP":/repo:ro -v "$WP":/w -w /w "$IMAGE" bash -c '
+trap '"'"'chown -R "${HOST_UID:-0}:${HOST_GID:-0}" /w 2>/dev/null || true'"'"' EXIT
 set -e
 export DEBIAN_FRONTEND=noninteractive
 apt-get update >/dev/null 2>&1 || { echo "SKIP: apt update failed (no network?)"; exit 77; }

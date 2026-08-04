@@ -6,5 +6,6 @@
 #endif
 
 #include <smmintrin.h>
+#include <popcntintrin.h>
 
 #endif

@@ -32,3 +32,12 @@ dg_need_platform() {
 			|| dg_skip "cannot run Linux containers ($2)"
 	fi
 }
+
+dg_reset_work() {
+	if [ -e "$1" ] && ! rm -rf "$1" 2>/dev/null; then
+		dg_docker run --rm -v "$(cd "$(dirname "$1")" && pwd)":/p \
+			alpine:3 sh -c "rm -rf /p/$(basename "$1")" >/dev/null 2>&1 || true
+		rm -rf "$1" 2>/dev/null || true
+	fi
+	mkdir -p "$1"
+}
