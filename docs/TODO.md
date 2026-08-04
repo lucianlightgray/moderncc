@@ -568,10 +568,30 @@ codegen difference; one omission, a dirty vstack, costs 194 bodies."* The rule h
 always been written as an obligation on C2. **The measurement says the omission is on
 the production side**, which is why C2 is byte-exact where production is not.
 
-**This is the thing to fix, and it is a prologue diff rather than a model defect.**
-Diff the two lists, add what production is missing, and re-take the census — expect
-the `len` 13 to move first. Do not assume every one of the 17 has this cause; re-run
-the split after each change, because `bytes` and `relcontent` may be different animals.
+**Most of that list is a false alarm — production resets them at the CALL SITE, not in
+`rir_prod_replay_begin`.** `src/mccast.c:15014-15033` already does `ind =
+ast_body_ind_sv`, `nocode_wanted = 0`, `sym_free_first = NULL`, and saves `loc`/
+`anon_sym`; `:15070-15072` adds `ast_promo_n = 0` and `ast_pinned_regs = 0`. Compare
+the *combined* prologue, not `rir_prod_replay_begin` alone, or you will chase resets
+that are already there.
+
+**The one real difference was tried and does nothing.** C2 clears
+`mcc_state->cg_func_alloca` (`src/mccrir.c:4825`) and production does not — and
+`test16`/`test17`, the two `alloca` bodies, are among the `len` failures, so it looked
+compelling. Adding it to `rir_prod_replay_begin` leaves the census **bit-for-bit
+identical**: still `used 2158, nomodel 57, fallback 17`, still `len 13, bytes 3,
+relcontent 1`. Reverted rather than landed, because an inert change is noise. **Do not
+re-try it.**
+
+So the prologue-asymmetry theory is **refuted** along with the four before it. What
+still stands, and is not explained by any of them, is the bare contradiction: for
+`overflow_inline.c::main`, C2's replay of the arena is byte-identical while
+production's differs in *length*, with no pass involved and the prologues now known to
+be equivalent on every field anyone has checked. Whatever is left is something the
+production path does around `ast_replay_body` that C2 does not, and it is not state
+initialisation. Instrument the two emissions directly — `[optrace]` labels the C2 leg
+`C2`, so capture both streams for one body and diff by `ind=` — rather than reasoning
+about which globals differ.
 
 ### Superseded reading: the arena is byte-exact on the reproducer
 
