@@ -2388,6 +2388,39 @@ Unexamined and new to this board, all `-O3`-only `FAILEXE`: `execute/{20000715-1
 
 **Two harness caveats, so the board is not read as stronger than it is.** A test expected to be rejected is scored `PASS` when mcc exits nonzero *for any reason*, so a file rejected over an unsupported extension rather than the intended constraint violation still counts. And `dg-output` text, `FileCheck` patterns and dump-scan `dg-final` are not verified at all — a `dg-do run` test is scored on its exit status alone. Both make the pass column optimistic; neither affects the `-O3`-only delta, which compares mcc against itself.
 
+### The 136 `FAILEXE`, clustered and checked against real compilers
+
+Replaying every one through `gcc -O0` and `clang -O0` with the harness's own flags:
+**94 of 136 (69%) are not clean mcc defects** — 30 fail under gcc itself (13 `hardbool`,
+4 `guality` needing gdb), 14 the installed gcc cannot even build (`counted_by` postdates
+it), 38 pass only under gcc-specific `-O2` object-size folding that clang also rejects.
+**42 have both references passing** and are the genuine candidate list.
+
+| n | cluster | |
+|---:|---|---|
+| 29 | `__builtin_object_size` / dynamic | 23 need gcc's `-O2` folding — feature gap, not wrong code |
+| 24 | singletons | |
+| 18 | `counted_by` / flexible arrays | 14 unbuildable by the installed gcc |
+| 15 | IPA alias/modref | needs `-O2` IPA |
+| 13 | `hardbool` | gcc extension; gcc itself fails these here |
+| 11 | VLA | 8 genuine — see below |
+| 9 | complex signed zero | **fixed** |
+| 5 | `scalar_storage_order` | |
+| 4 | `guality` | needs gdb |
+
+**Open lead — the VLA cluster (8 genuine).** `expr_type()` at `src/mccgen.c:8441` does an
+unconditional `nocode_wanted++` around the operand of `sizeof`/`typeof`. C99 6.5.3.4p2
+requires a **VLA-typed operand to be evaluated**. Two consequences, both reproduced: side
+effects are dropped (`++i` never runs), and the VLA size slot is never written, so
+`vpush_type_size` reads zero — `sizeof(typeof(*(++i,(char(*)[i])a)))` gives `i=0 j=0`
+where gcc gives `i=1 j=1`.
+Deliberately **not** attempted: the fix needs the operand evaluated-then-discarded *only
+when the type turns out to be a VLA*, which is not knowable until after parsing, and the
+cluster is three sub-causes rather than one (size-expression evaluation; `alloca` versus
+VLA scope in `vla-24`; statement-expression VLAs in `vla-stexp-*`). That is a refactor
+with real regression risk against 8,122 passing tests, and trading ctest passes for
+FAILEXE passes would be a net loss.
+
 ### Needs `src/`: two builtin-fidelity gaps that cannot be closed from a header
 
 Both were implemented, measured to work, and then **backed out** because a header-only
