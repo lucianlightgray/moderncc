@@ -4647,3 +4647,98 @@ lookups -- the silent-wrong-answer mode, not a loud one.
 `CMakeLists.txt:2931`. Editing a runtime header requires re-running `cmake -S . -B
 cmake-release`; `cmake --build` alone silently uses the stale copy. This has now cost
 three separate test cycles in this session.
+
+---
+
+## The bitfield side-car — `d50c480d`, 2026-08-04
+
+`CType` is now `{ int t; unsigned char bp, bs; struct Sym *ref; }`. Still **16 bytes**
+on LP64, `ref` still at offset 8 — the two fields live in padding the ABI was already
+inserting. `BIT_POS`/`BIT_SIZE` were **deleted** from `src/mcc.h` rather than redefined,
+so every consumer became a compile error instead of a silent wrong read.
+
+Layout-neutral by construction *and* by measurement: 7,970 differential cases
+byte-identical before and after, object output byte-identical on **all eight backends**
+over a 1,205-struct corpus, **zero board movement across 47,715 tests**.
+
+### Three premises in the brief were wrong
+
+1. **Bits 20-31 are not all bitfield data.** `VT_UNION`=1, `VT_ENUM`=2, `VT_ENUM_VAL`=3,
+   `VT_ASM`=4, `VT_ASM_FUNC`=5, `VT_BT_ARRAY`=6 are a **tag enumeration** sharing bits
+   20-22, told apart from bitfield data only by `VT_BITFIELD`. This frees bits **23-31**,
+   not 20-31 — and it is why widening `VT_BTYPE` is not a `#define` renumber (below).
+2. **The arena is one of six wire formats** carrying a type word, not one: also the
+   `MccjitTypeRec`/`MccjitIntent` on-disk intent blob, `RirMark` packing, the
+   `rir_castgv_t/ref` statics, `AstInlineFn::param_typ[]`, and the `rir_xt_t[]` snapshot
+   cache. `MCCJIT_INTENT_FORMAT` bumped 11→12; the salt is version-string-only and would
+   **not** have invalidated stale blobs on its own.
+3. **Width-64 bitfields are deliberately not marked `VT_BITFIELD`** (`mccgen.c:6559`)
+   because six bits cannot hold 64. That single special case is the source of **all ten**
+   pre-existing gcc/clang deviations. `unsigned char bs` removes the ceiling; lifting the
+   case is left to a change allowed to move layout.
+
+### The copy-by-`t`-alone hazard was ~100 sites, not 21
+
+- ~100 sites do `CType x; x.t = …; x.ref = …;`, leaving `bp`/`bs` as **stack garbage**,
+  not zero. `gfunc_sret` in five backends writes `ret->t`/`ret->ref` without clearing.
+- **`sym_push` (`mccgen.c:1354`) copied only `.t` and `.ref`** — dropped every bitfield
+  width on the floor. First bug found: `sizeof` went to 0, 7,357/7,970 differential
+  failures.
+- ~32 sites **reconstruct a `CType` from the arena**. Missing these broke
+  `ast/replay-bitfield`: the reemit path rebuilt bitfield types with pos/size zeroed, so
+  replayed codegen stopped matching the parser's and every bitfield body silently fell
+  back to the slow path.
+
+The fix is an invariant rather than ~100 patches: **`bp`/`bs` are zero unless
+`VT_BITFIELD` is set**, enforced at every writer. All 21 readers are already
+`VT_BITFIELD`-guarded, so the indeterminate bytes are unobservable. No "non-zero size"
+assertion — `int : 0;` is legitimately `VT_BITFIELD` with size 0.
+
+### The fixpoint gate paid for itself
+
+A first attempt added `bp`/`bs` to five identity caches, which read those indeterminate
+bytes. `o1 != o2`, 3043679 against 3043583 — a gcc-built and an mcc-built compiler
+disagreeing about their own output, which is the uninitialized-memory signature and
+nothing else. Four of the five compared **pointed-to** types, which are never bitfields,
+and were reverted; only the Sym-keyed `rir_xt_bp/bs` survived.
+
+`ctest` was green for the broken version. Byte-identical self-host is the gate that sees
+this class.
+
+### Step 2 (widen `VT_BTYPE` to 5 bits) — worked out, deliberately not landed
+
+Blocked by premise (1): freeing only bits 23-31 means `VT_CONSTEXPR` lands on bit 20 and
+**collides with the tag enumeration**, so `VT_STRUCT_SHIFT` must move 20→21 and
+`VT_STRUCT_MASK` be re-derived. That is a structural change to a region the brief
+described as free, and it wants its own sweep rather than a tail-end append.
+
+Staged and unapplied at `scratchpad/step2.py`: `VT_BTYPE` → `0x001f`, all 16 flags up one
+bit, `VT_STRUCT_SHIFT` 20→21, `VT_STRUCT_MASK` → `((1U << 11) - 1) << 21 | VT_BITFIELD`,
+`MCCJIT_INTENT_FORMAT` 12→13. Base-type enum **values** are untouched, so the ~130
+`(t & VT_BTYPE) == VT_X` tests need no edits. Bits 24-31 remain free afterwards.
+
+`src/mccast.c` carries an `#ifndef VT_BITFIELD` fallback block because `tools/asttool.c`
+`#include`s it without `mcc.h`. **It already holds stale `VT_BTYPE 0x000f` and
+`VT_LONG 0x0800` and must be updated by step 2.**
+
+### The gate to keep
+
+The **8-backend object comparison** (arm, arm64, riscv64, i386, x86_64, arm64-win32,
+i386-win32, x86_64-osx, byte-identical over the struct corpus) is the one worth
+carrying forward. It reaches arm and arm64, which the qemu cells cannot — those two are
+unbuildable because mcc's own assembler rejects `svc`, which is unrelated and still open.
+It should be the **primary** step-2 gate: a renumber must be emission-identical
+everywhere, and this says so cheaply where ctest is blind.
+
+### Separate pre-existing bug, landed first as `7a31e90b`
+
+`parse_asm_operands` never initialized `op->is_label`, while the label list a few lines
+below memsets its own entries. `find_constraint` maps an out-of-range `%lN` onto the
+k-th `+` operand, so `subst_asm_operands` called `get_tok_str()` on uninitialized stack.
+The compiler at `40b0432a` **dumps core** on
+`llvm-project/clang/test/CodeGen/asm-goto.c`. Nothing to do with bitfields; it surfaced
+only because the side-car board run flagged the one status change.
+
+Note a hand-written reduction of that test does *not* reproduce — mcc rejects the
+`:: label` spelling with a syntax error before reaching the substitution. The crash
+needs the real file's two `+` operands.
