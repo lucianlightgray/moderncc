@@ -435,6 +435,27 @@ cond region, not just the one feeding the condition, so every `for` whose condit
 touches memory gets a prefix the parser never emitted. **Reverted; do not re-try it
 unnarrowed.**
 
+**The discriminator data, which is the useful artifact.** Arming `rir_docond` at the
+`RIR_R_FOR` rbegin and diffing the `-O1` fallback list of `src/mcc.c` before and after:
+
+*Fixed by arming (5)* — these are the shape that needs it:
+`ptr_unlink`, `decl`, `block_cleanup`, `mcc_split_path`, `move_ref_to_global`
+
+*Broken by arming (34)* — these must NOT get it:
+`asm_expr_logic`, `asm_expr_prod`, `asm_expr_sum`, `constraint_priority`,
+`cstr_vprintf`, `embed_parse_name`, `expr_landor`, `host_find_tool`, `host_spawn_ex`,
+`host_spawn_run`, `host_spawn_timeout`, `ld_next`, `macro_twosharps`,
+`mcc_add_linker_symbols`, `mcc_get_debug_info`, `mcc_get_dwarf_info`,
+`mcc_load_archive`, `mcc_load_ldscript`, `mcc_preprocess`, `mcc_support_arch_match`,
+`mccpp_new`, `next_nomacro`, `parse_comment`, `parse_define`, `parse_escape_string`,
+`parse_line_comment`, `parse_number`, `parse_pp_string`, `peek_file`,
+`preprocess_skip`, `struct_decl`, `struct_layout`, `subst_asm_operands`, `tok_alloc`
+
+Net -29. **Read those 39 functions against each other before designing the
+predicate** — the distinguishing shape is in there, and it is cheaper to find by
+reading five that want the treatment against thirty-four that do not than by
+reasoning about regions.
+
 **The mechanism, so the narrow trigger can be designed rather than guessed.** The
 `IR_OP_VSTORE` handler (`src/mccrir.c:2333`) branches on exactly these flags:
 
