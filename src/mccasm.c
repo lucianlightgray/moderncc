@@ -1255,13 +1255,49 @@ static int asm_x87_constraint(ASMOperand *op) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-static void asm_x87_wrap(ASMOperand *operands, int nb_operands,
-												 int nb_outputs, CString *astr) { MCC_TRACE("enter\n");
-	CString buf;
-	ASMOperand *op;
-	int found = -1;
+static int asm_x87_clobber_name(const char *s) { MCC_TRACE("enter\n");
+	if (!strcmp(s, "st"))
+		{ MCC_TRACE("br\n"); return 1; }
+	if (s[0] == 's' && s[1] == 't' && s[2] == '(' &&
+			s[3] >= '0' && s[3] <= '7' && s[4] == ')' && s[5] == '\0')
+		{ MCC_TRACE("br\n"); return 1; }
+	return 0;
+}
+
+static char asm_x87_suffix(ASMOperand *op) { MCC_TRACE("enter\n");
 	int r;
-	char sfx;
+
+	switch (op->vt->type.t & VT_BTYPE) { MCC_TRACE("br\n");
+	case VT_FLOAT:
+		r = 's';
+		break;
+	case VT_DOUBLE:
+		r = 'l';
+		break;
+	case VT_LDOUBLE:
+		r = 't';
+		break;
+	default:
+		mcc_error("x87 asm operand must have floating type");
+		return 0;
+	}
+	return (char)r;
+}
+
+static void asm_x87_check_mem(ASMOperand *op) { MCC_TRACE("enter\n");
+	int r = op->vt->r;
+	if (!(r & VT_LVAL) ||
+			((r & VT_VALMASK) != VT_LOCAL &&
+			 (r & (VT_VALMASK | VT_SYM)) != (VT_CONST | VT_SYM)))
+		{ MCC_TRACE("br\n"); mcc_error("unsupported x87 asm operand"); }
+}
+
+static void asm_x87_wrap(ASMOperand *operands, int nb_operands,
+												 int nb_outputs, int x87_clobber, CString *astr) { MCC_TRACE("enter\n");
+	CString buf;
+	ASMOperand *op, *inop;
+	int found = -1;
+	char sfx, insfx;
 
 	for (int i = 0; i < nb_operands; i++) { MCC_TRACE("br\n");
 		if (!asm_x87_constraint(&operands[i]))
@@ -1274,39 +1310,29 @@ static void asm_x87_wrap(ASMOperand *operands, int nb_operands,
 		{ MCC_TRACE("br\n"); return; }
 
 	op = &operands[found];
-	if (op->input_index >= 0)
-		{ MCC_TRACE("br\n"); mcc_error("x87 asm operand cannot be tied to another operand"); }
-	switch (op->vt->type.t & VT_BTYPE) { MCC_TRACE("br\n");
-	case VT_FLOAT:
-		sfx = 's';
-		break;
-	case VT_DOUBLE:
-		sfx = 'l';
-		break;
-	case VT_LDOUBLE:
-		sfx = 't';
-		break;
-	default:
-		mcc_error("x87 asm operand must have floating type");
-		return;
+	inop = op;
+	if (op->input_index >= 0) { MCC_TRACE("br\n");
+		if (found >= nb_outputs)
+			{ MCC_TRACE("br\n"); mcc_error("x87 asm operand cannot be tied to another operand"); }
+		inop = &operands[op->input_index];
 	}
-	r = op->vt->r;
-	if (!(r & VT_LVAL) ||
-			((r & VT_VALMASK) != VT_LOCAL &&
-			 (r & (VT_VALMASK | VT_SYM)) != (VT_CONST | VT_SYM)))
-		{ MCC_TRACE("br\n"); mcc_error("unsupported x87 asm operand"); }
+	sfx = asm_x87_suffix(op);
+	insfx = asm_x87_suffix(inop);
+	asm_x87_check_mem(op);
+	if (inop != op)
+		{ MCC_TRACE("br\n"); asm_x87_check_mem(inop); }
 
 	cstr_new_s(&buf);
-	if (found >= nb_outputs || op->is_rw) { MCC_TRACE("br\n");
-		cstr_printf(&buf, "fld%c ", sfx);
-		subst_asm_operand(&buf, op->vt, 0);
+	if (found >= nb_outputs || op->is_rw || inop != op) { MCC_TRACE("br\n");
+		cstr_printf(&buf, "fld%c ", insfx);
+		subst_asm_operand(&buf, inop->vt, 0);
 		cstr_ccat(&buf, '\n');
 	}
 	cstr_cat(&buf, astr->data, -1);
 	if (found < nb_outputs) { MCC_TRACE("br\n");
 		cstr_printf(&buf, "\nfstp%c ", sfx);
 		subst_asm_operand(&buf, op->vt, 0);
-	} else { MCC_TRACE("br\n");
+	} else if (!x87_clobber) { MCC_TRACE("br\n");
 		cstr_cat(&buf, "\nfstp %st(0)", -1);
 	}
 	cstr_ccat(&buf, '\0');
@@ -1444,8 +1470,12 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 				mcc_error("invalid operand reference after %%"); }
 			op = &operands[index];
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-			if (asm_x87_constraint(op))
-				{ MCC_TRACE("br\n"); mcc_error("x87 asm operand cannot be referenced in the template"); }
+			if (asm_x87_constraint(op) ||
+					(op->vt && op->ref_index >= 0 &&
+					 asm_x87_constraint(&operands[op->ref_index]))) { MCC_TRACE("br\n");
+				cstr_cat(out_str, "%st", -1);
+				continue;
+			}
 #endif
 			if (modifier == 'l') { MCC_TRACE("br\n");
 				cstr_cat(out_str, get_tok_str(op->is_label, NULL), -1);
@@ -1559,6 +1589,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	int flag_idx[MAX_ASM_OPERANDS], nb_flag;
 	char flag_cc[MAX_ASM_OPERANDS][8];
+	int x87_clobber;
 #endif
 
 	while (tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3 || tok == TOK_GOTO) { MCC_TRACE("br\n");
@@ -1576,6 +1607,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 	must_subst = 0;
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
 	nb_flag = 0;
+	x87_clobber = 0;
 #endif
 	memset(clobber_regs, 0, sizeof(clobber_regs));
 	if (tok == ':') { MCC_TRACE("br\n");
@@ -1597,7 +1629,12 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 							{ MCC_TRACE("br\n"); break; }
 						if (tok != TOK_STR)
 							{ MCC_TRACE("br\n"); expect("string constant"); }
-						asm_clobber(clobber_regs, tokc.str.data);
+#if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
+						if (asm_x87_clobber_name(tokc.str.data)) { MCC_TRACE("br\n");
+							x87_clobber = 1;
+						} else
+#endif
+							{ MCC_TRACE("br\n"); asm_clobber(clobber_regs, tokc.str.data); }
 						next();
 						if (tok == ',') { MCC_TRACE("br\n");
 							next();
@@ -1662,7 +1699,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 		subst_asm_operands(operands, nb_operands + nb_labels, &astr, astr1->data);
 	}
 #if defined(MCC_TARGET_I386) || defined(MCC_TARGET_X86_64)
-	asm_x87_wrap(operands, nb_operands, nb_outputs, &astr);
+	asm_x87_wrap(operands, nb_operands, nb_outputs, x87_clobber, &astr);
 	if (nb_flag)
 		{ MCC_TRACE("br\n"); asm_flag_wrap(operands, flag_idx, flag_cc, nb_flag, &astr); }
 #endif

@@ -295,6 +295,8 @@ ST_DATA int asm_lvalue_cast;
 #define CONST_WANTED_MASK 0x0FFF0000
 #define CONST_WANTED (nocode_wanted & CONST_WANTED_MASK)
 
+static int vm_type_probe;
+
 ST_DATA int global_expr;
 ST_DATA CType func_vt;
 ST_DATA int func_var;
@@ -8318,7 +8320,8 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 			if (!local_stack || (storage & VT_STATIC))
 				{ MCC_TRACE("br\n"); vpushi(expr_const()); }
 			else { MCC_TRACE("br\n");
-				nocode_wanted = 0;
+				if (!vm_type_probe)
+					{ MCC_TRACE("br\n"); nocode_wanted = 0; }
 				gexpr();
 			}
 		check:
@@ -8626,6 +8629,70 @@ static void expr_type(CType *type, void (*expr_fn)(void)) { MCC_TRACE("enter\n")
 	nocode_wanted--;
 }
 
+static TokenString *vm_save_operand(int stop_comma) { MCC_TRACE("enter\n");
+	TokenString *str = tok_str_alloc();
+	int level = 0;
+
+	while (tok != TOK_EOF) { MCC_TRACE("br\n");
+		int t = tok;
+		if (level == 0 && (t == ';' || t == '}' || t == ')' || t == ']'))
+			{ MCC_TRACE("br\n"); break; }
+		if (level == 0 && stop_comma && t == ',')
+			{ MCC_TRACE("br\n"); break; }
+		tok_str_add_tok(str);
+		next();
+		if (t == '{' || t == '(' || t == '[' || t == TOK_SOTYPE)
+			{ MCC_TRACE("br\n"); level++; }
+		else if (t == '}' || t == ')' || t == ']')
+			{ MCC_TRACE("br\n"); level--; }
+	}
+	tok_str_add(str, TOK_EOF);
+	tok_str_add(str, 0);
+	return str;
+}
+
+static void expr_type_vm(CType *type, void (*expr_fn)(void), int vla_only) { MCC_TRACE("enter\n");
+	TokenString *str;
+	const int *end_ptr;
+	CValue end_tokc;
+	int end_tok, sent;
+
+	if (nocode_wanted || !local_stack) { MCC_TRACE("br\n"); expr_type(type, expr_fn); return; }
+
+	str = vm_save_operand(vla_only);
+	sent = str->len - 2;
+	unget_tok(0);
+	begin_macro(str, 1);
+	next();
+
+	nocode_wanted++;
+	vm_type_probe++;
+	expr_fn();
+	*type = vtop->type;
+	vpop();
+	vm_type_probe--;
+	nocode_wanted--;
+
+	if (macro_ptr >= str->str && macro_ptr <= str->str + sent &&
+			(vla_only ? (type->t & VT_VLA) != 0 : type_is_vm(type))) { MCC_TRACE("br\n");
+		end_ptr = macro_ptr;
+		end_tok = tok;
+		end_tokc = tokc;
+		macro_ptr = str->str;
+		next();
+		expr_fn();
+		*type = vtop->type;
+		vpop();
+		macro_ptr = end_ptr;
+		tok = end_tok;
+		tokc = end_tokc;
+	}
+
+	str->str[sent] = 0;
+	if (tok == TOK_EOF && macro_ptr == str->str + sent)
+		{ MCC_TRACE("br\n"); next(); }
+}
+
 static void parse_expr_type(CType *type) { MCC_TRACE("enter\n");
 	int n;
 	AttributeDef ad;
@@ -8634,7 +8701,7 @@ static void parse_expr_type(CType *type) { MCC_TRACE("enter\n");
 	if (parse_btype(type, &ad, 0)) { MCC_TRACE("br\n");
 		type_decl(type, &ad, &n, TYPE_ABSTRACT);
 	} else { MCC_TRACE("br\n");
-		expr_type(type, gexpr);
+		expr_type_vm(type, gexpr, 0);
 	}
 	skip(')');
 }
@@ -11616,7 +11683,10 @@ tok_next:
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_begin();
 #endif
-		expr_type(&type, unary);
+		if (t == TOK_SIZEOF || t == TOK_COUNTOF)
+			{ MCC_TRACE("br\n"); expr_type_vm(&type, unary, 1); }
+		else
+			{ MCC_TRACE("br\n"); expr_type(&type, unary); }
 #if MCC_CONFIG_OPTIMIZER
 		rir_hook_synth_end();
 #endif
