@@ -509,7 +509,42 @@ whatever else may be true of it.
 than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
 `MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
 
-### FOUND: a folded negative 64-bit constant reaches the arena as `Literal 0` typed `VT_INT`
+### READ THIS FIRST: the arena is byte-exact on the reproducer, so the defect is downstream of reconstruction
+
+The two-line reproducer below compiles to a body that reports **both** of these:
+
+```
+[rir-c2part] main ok=1          <- arena re-emits BYTE-IDENTICALLY to the parser
+[rir-prod]   fallback  main     <- production rejects the same body
+```
+
+C2 replays the arena with **no passes** and matches the parser exactly, so **the arena's
+reconstruction of this body is correct**. Whatever makes production reject it is not the
+code bytes. `faithful` (`src/mccast.c:15065`) is a conjunction, and only its first two
+terms are the `memcmp`:
+
+```c
+faithful = new_len == body_len && memcmp(...) == 0 &&
+           new_rel - ast_reloc0_sv == rel_len &&
+           (rel_len == 0 || ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel, rel_len));
+```
+
+so a **relocation** mismatch fails it just as surely as a byte one, and this body's bytes
+are provably fine. **Split the 17 by which term fails before treating any of them as
+arena defects** — the census currently conflates "the arena emitted different code" with
+"the relocations did not line up", and at least one body is the second kind.
+
+That also relocates the wrong code. `MCC_RIR_NOFB=1` does two things, not one: it keeps
+the replayed body *and* it makes `faithful` true, which is what
+`ast_run_strat_seq` gates the **optimizer** on (`src/mccast.c:13044`). So forcing this
+body through runs passes over it for the first time. The miscompilation below may
+therefore be a **pass** defect exposed by the switch rather than an arena defect —
+which is the opposite of what the rest of this section assumed. An earlier
+`MCC_AST_OPT_LIMIT=0` probe appeared to rule passes out, but `docs/TODO.md`'s N17
+warns that gate name produces no measurable change and must not be trusted; confirm
+with `MCC_AST_REPLAY_DUMP=1` and the `[ast-*]` counters instead.
+
+### The reproducer: a folded negative 64-bit constant replays as `Literal 0` typed `VT_INT`
 
 **Two lines, no builtin, no `||`, no call:**
 
