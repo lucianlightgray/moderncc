@@ -15083,12 +15083,22 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 
 				addr_t new_rel = rsec2 ? rsec2->data_offset : 0;
 				int new_len = ind - ast_body_ind_sv;
-				faithful = new_len == body_len &&
-									 memcmp(cur_text_section->data + ast_body_ind_sv, orig, body_len) == 0 &&
-									 new_rel - ast_reloc0_sv == rel_len &&
-									 (rel_len == 0 ||
+				int f_len = new_len == body_len;
+				int f_byte =
+						f_len &&
+						memcmp(cur_text_section->data + ast_body_ind_sv, orig, body_len) == 0;
+				int f_rlen = new_rel - ast_reloc0_sv == rel_len;
+				int f_rel = rel_len == 0 ||
 										ast_reloc_range_equiv(rsec2->data + ast_reloc0_sv, orig_rel,
-																					(int)rel_len));
+																					(int)rel_len);
+				faithful = f_byte && f_rlen && f_rel;
+#if MCC_REPLAY_IR
+				rir_unfaithful_why = !f_len      ? "len"
+														 : !f_byte  ? "bytes"
+														 : !f_rlen  ? "rellen"
+														 : !f_rel   ? "relcontent"
+																				: "";
+#endif
 				ast_replay_completed = 1;
 				ast_fn_faithful = faithful;
 				if (!faithful && mcc_log_enabled(MCC_LOG_TRACE)) { MCC_TRACE("br\n");

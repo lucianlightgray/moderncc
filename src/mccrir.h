@@ -46,6 +46,10 @@ struct AstArena *rir_prod_take(void);
 void rir_prod_replay_begin(void);
 void rir_prod_replay_end(void);
 void rir_prod_note(const char *verdict);
+/* Which term of ast_func_end's `faithful` conjunction failed, so a fallback can be
+   split into "the arena emitted different code" and "the relocations did not line
+   up" -- two very different defects that the census had been counting as one. */
+extern const char *rir_unfaithful_why;
 
 void rir_snap_types(SValue *sv, int n);
 void rir_loc_record(int loc_in);

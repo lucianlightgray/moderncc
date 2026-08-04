@@ -4471,6 +4471,7 @@ static int rir_prod_reg_dangle(AstLocal n) {
    being counted as an undifferentiated total -- which is what the fallback
    census needs to be driven to zero. */
 const char *rir_prod_why = "";
+const char *rir_unfaithful_why = "";
 
 struct AstArena *rir_prod_take(void) {
 	char msg[256];
@@ -4579,8 +4580,9 @@ void rir_prod_note(const char *verdict) {
 		}
 		return;
 	}
-	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s\n", verdict, f,
-					funcname ? funcname : "?", rir_prod_why);
+	fprintf(stderr, "[rir-prod] %s\t%s\t%s\t%s%s\n", verdict, f,
+					funcname ? funcname : "?", rir_prod_why,
+					rir_unfaithful_why);
 }
 
 static void rir_prod_report(void) {

@@ -528,7 +528,52 @@ whatever else may be true of it.
 than landed as wrong fixes.** That is the point of keeping `MCC_RIR_NOMAT` and
 `MCC_RIR_NOINV`: each turns a source-reading hypothesis into one command.
 
-### READ THIS FIRST: the arena is byte-exact on the reproducer, so the defect is downstream of reconstruction
+### THE LEAD: production's replay prologue does not mirror C2's, and that is the whole asymmetry
+
+`faithful` is a four-term conjunction and now records **which** term failed
+(`rir_unfaithful_why`, printed as the fifth field of `[rir-prod]`). Split across all 17
+fallbacks at `-O1` over the corpus:
+
+| failing term | n | meaning |
+| --- | --- | --- |
+| `len` | **13** | the replay emitted a *different amount* of code |
+| `bytes` | 3 | same length, different bytes |
+| `relcontent` | 1 | code identical, relocations differ |
+
+So the relocation theory is **wrong** — 16 of 17 are genuine code differences. Bodies:
+`coherency_test`, `test16`, `test17`, `s7_6_inttypes_test`, `s_stddef_stdint` and nine
+`main`s on `len`; `s7_22_intarith_test`, `s7_9_iso646_test`, `s7_9_limits_test` on
+`bytes`; one `main` on `relcontent`.
+
+**And here is the contradiction that names the defect.** `overflow_inline.c::main`
+fails on **`len`** — production's replay emits a different *length* — while C2's replay
+of the **same arena** is byte-identical (`c2ok=1`). Both call `ast_replay_body` on the
+same nodes, and `faithful` is computed *before* any pass runs (`src/mccast.c:15065`,
+passes at `:15158`), so the optimizer is not involved. The only thing that differs is
+**the prologue**:
+
+- C2's, `src/mccrir.c:4785-4822`, resets `ind`, the reloc offsets, `nocode_wanted`,
+  `cg_func_alloca`, `nb_stk_data`, `arr_temp_local_vars`, the whole `vstack`, `loc`,
+  `anon_sym`, `ast_pinned_regs`, the break/continue/switch symbols, `sym_free_first`
+  and the label allocator.
+- `rir_prod_replay_begin`, `src/mccrir.c:4498-4515`, resets the record indices,
+  `ast_fconst_i`, `ast_locrec_i`, `ast_replaying`, `ir_cap_replaying`,
+  `rir_c2_active`, the label allocator, the break/continue/switch symbols,
+  `ast_temp_frontier` and `loc` — and **not** `anon_sym`, `ast_pinned_regs`,
+  `sym_free_first`, `nb_stk_data`, `nocode_wanted` or `cg_func_alloca`.
+
+**`docs/TODO.md`'s own rule says exactly what that costs**: *"Keep the C2 harness
+mirroring the tree's replay prologue exactly… Leftover allocator state reads as a
+codegen difference; one omission, a dirty vstack, costs 194 bodies."* The rule has
+always been written as an obligation on C2. **The measurement says the omission is on
+the production side**, which is why C2 is byte-exact where production is not.
+
+**This is the thing to fix, and it is a prologue diff rather than a model defect.**
+Diff the two lists, add what production is missing, and re-take the census — expect
+the `len` 13 to move first. Do not assume every one of the 17 has this cause; re-run
+the split after each change, because `bytes` and `relcontent` may be different animals.
+
+### Superseded reading: the arena is byte-exact on the reproducer
 
 The two-line reproducer below compiles to a body that reports **both** of these:
 
