@@ -1205,7 +1205,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->warn_undefined_internal = WARN_ON;
 	s->warn_return_local_addr = WARN_ON;
 	s->warn_varargs = 1;
-	s->ms_extensions = 1;
+	s->ms_extensions = 0;
 	s->unwind_tables = 1;
 	s->embed_jit = 0;
 	s->jit = -1;
@@ -2410,6 +2410,7 @@ static const FlagDef options_f[] = {
 		{offsetof(MCCState, wrapv), 0, "wrapv"},
 		{offsetof(MCCState, trigraphs), 0, "trigraphs"},
 		{offsetof(MCCState, cx_limited_range), 0, "cx-limited-range"},
+		{offsetof(MCCState, stdc_fenv_access), 0, "rounding-math"},
 		{offsetof(MCCState, fold_math), 0, "fold-math"},
 		{offsetof(MCCState, no_math_errno), FD_INVERT, "math-errno"},
 		{offsetof(MCCState, do_asan_shadow), 0, "asan-shadow"},

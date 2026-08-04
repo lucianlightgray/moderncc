@@ -1012,10 +1012,13 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'identifier expected'; "
 
 		 "printf 'struct W{struct T{int a;};};\\n' > {W}/dn3.c && "
-		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn3.c -o {W}/dn3.o 2>&1 | wc -l | tr -d ' '; "
-		 "{MCC} -B{B} -I{I} -std=c11 -fno-ms-extensions -c {W}/dn3.c -o {W}/dn3.o 2>&1 | "
-		 "grep -c 'declaration does not declare anything'",
-		 "2\nDN_OK\nidentifier expected\n0\n1\n"},
+		 "{MCC} -B{B} -I{I} -std=c11 -fms-extensions -c {W}/dn3.c -o {W}/dn3.o 2>&1 | wc -l | tr -d ' '; "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/dn3.c -o {W}/dn3.o 2>&1 | "
+		 "grep -c 'declaration does not declare anything'; "
+		 "printf 'struct A{char a;}; struct B{struct A; char b;};\\n"
+		 "char t[sizeof(struct B)==1?1:-1];\\n' > {W}/dn4.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -w -c {W}/dn4.c -o {W}/dn4.o && echo NOFIELD_OK",
+		 "2\nDN_OK\nidentifier expected\n0\n1\nNOFIELD_OK\n"},
 
 		{"cast_to_nonscalar", "",
 		 "printf 'struct A{int x;}; struct B{int y;}; int f(struct A a){ return ((struct B)a).y; }\\n' > {W}/c1.c && "

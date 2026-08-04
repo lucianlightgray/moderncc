@@ -284,7 +284,9 @@ struct SymAttr {
 			is_register : 1,
 			used : 1,
 			inited : 1,
-			has_vla_member : 1;
+			has_vla_member : 1,
+			gnu_inline_body : 1,
+			full_bitfield : 1;
 };
 
 struct FuncAttr {

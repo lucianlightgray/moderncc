@@ -1707,10 +1707,24 @@ static void merge_attr(AttributeDef *ad, AttributeDef *ad1) { MCC_TRACE("enter\n
 		{ MCC_TRACE("br\n"); ad->attr_vector_size = ad1->attr_vector_size; }
 }
 
+static void drop_gnu_inline_body(Sym *sym) { MCC_TRACE("enter\n");
+	int i;
+	sym->a.gnu_inline_body = 0;
+	sym->type.t &= ~(VT_STATIC | VT_INLINE);
+	for (i = 0; i < mcc_state->nb_inline_fns; ++i)
+		{ MCC_TRACE("br\n"); if (mcc_state->inline_fns[i]->sym == sym)
+			{ MCC_TRACE("br\n"); mcc_state->inline_fns[i]->sym = NULL; } }
+}
+
 static void patch_type(Sym *sym, CType *type) { MCC_TRACE("enter\n");
 	if (!(type->t & VT_EXTERN) || IS_ENUM_VAL(sym->type.t)) { MCC_TRACE("br\n");
-		if (!(sym->type.t & VT_EXTERN))
-			{ MCC_TRACE("br\n"); mcc_error("redefinition of '%s'", get_tok_str(sym->v, NULL)); }
+		if (!(sym->type.t & VT_EXTERN)) { MCC_TRACE("br\n");
+			if (sym->a.gnu_inline_body && !(type->t & (VT_EXTERN | VT_INLINE)) &&
+					(sym->type.t & VT_BTYPE) == VT_FUNC && (type->t & VT_BTYPE) == VT_FUNC)
+				{ MCC_TRACE("br\n"); drop_gnu_inline_body(sym); }
+			else
+				{ MCC_TRACE("br\n"); mcc_error("redefinition of '%s'", get_tok_str(sym->v, NULL)); }
+		}
 		sym->type.t &= ~VT_EXTERN;
 	}
 
@@ -3995,6 +4009,23 @@ static int type_needs_default_promotion(CType *type) { MCC_TRACE("enter\n");
 	return bt == VT_BYTE || bt == VT_BOOL || bt == VT_SHORT || bt == VT_FLOAT;
 }
 
+static int is_compatible_transp_union(CType *tu, CType *other) { MCC_TRACE("enter\n");
+	Sym *m;
+
+	if ((tu->t & VT_BTYPE) != VT_STRUCT || !IS_UNION(tu->t) || tu->ref->c < 0 || !tu->ref->a.transp_union)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (m = tu->ref->next; m; m = m->next)
+		{ MCC_TRACE("br\n"); if (is_compatible_unqualified_types(&m->type, other))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
+static int is_compatible_param(CType *t1, CType *t2) { MCC_TRACE("enter\n");
+	if (is_compatible_unqualified_types(t1, t2))
+		{ MCC_TRACE("br\n"); return 1; }
+	return is_compatible_transp_union(t1, t2) || is_compatible_transp_union(t2, t1);
+}
+
 static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n");
 	Sym *s1, *s2;
 
@@ -4030,7 +4061,7 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 					if (type_needs_default_promotion(&op->type))
 						{ MCC_TRACE("br\n"); mcc_pedantic("prototype does not match promoted "
 																"parameter types of prior old-style definition"); }
-					else if (!is_compatible_unqualified_types(&op->type, &pp->type))
+					else if (!is_compatible_param(&op->type, &pp->type))
 						{ MCC_TRACE("br\n"); return 0; }
 				}
 				if (op || pp)
@@ -4046,7 +4077,7 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 			{ MCC_TRACE("br\n"); return !s2; }
 		if (!s2)
 			{ MCC_TRACE("br\n"); return 0; }
-		if (!is_compatible_unqualified_types(&s1->type, &s2->type))
+		if (!is_compatible_param(&s1->type, &s2->type))
 			{ MCC_TRACE("br\n"); return 0; }
 		s1 = s1->next;
 		s2 = s2->next;
@@ -5481,7 +5512,9 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 		case TOK_STDCALL1:
 		case TOK_STDCALL2:
 		case TOK_STDCALL3:
+#if defined(MCC_TARGET_I386)
 			ad->f.func_call = FUNC_STDCALL;
+#endif
 			break;
 #ifdef MCC_TARGET_I386
 		case TOK_REGPARM1:
@@ -6084,7 +6117,7 @@ static int in_range(long long n, int t) { MCC_TRACE("enter\n");
 }
 
 static void struct_decl(CType *type, int u, AttributeDef *ad_out) { MCC_TRACE("enter\n");
-	int v, c, size, align, flexible, saw_vla;
+	int v, c, size, align, flexible, saw_vla, no_field, late_bf;
 	int bit_size, bsize, bt, ut;
 	Sym *s, *ss, **ps;
 	AttributeDef ad, ad1;
@@ -6253,6 +6286,7 @@ do_decl:
 											get_tok_str(v, NULL)); }
 					bit_size = -1;
 					v = 0;
+					no_field = late_bf = 0;
 					type1 = btype;
 					if (tok != ':') { MCC_TRACE("br\n");
 						if (tok != ';')
@@ -6266,9 +6300,11 @@ do_decl:
 							} else { MCC_TRACE("br\n");
 								int v = btype.ref->v;
 								if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
-									if (mcc_state->ms_extensions == 0)
-										{ MCC_TRACE("br\n"); mcc_warning("declaration does not "
-																"declare anything"); }
+									if (mcc_state->ms_extensions == 0) { MCC_TRACE("br\n");
+										mcc_warning("declaration does not "
+																"declare anything");
+										no_field = 1;
+									}
 								} else if (mcc_state->cversion < 201112)
 									{ MCC_TRACE("br\n"); mcc_pedantic("anonymous structs/unions are a "
 															 "C11 feature"); }
@@ -6329,12 +6365,19 @@ do_decl:
 							mcc_error("width of '%s' exceeds its type",
 												get_tok_str(v, NULL));
 						} else if (bit_size == bsize && bt != VT_BOOL && !*mcc_state->pack_stack_ptr && !ad.a.packed && !ad1.a.packed) { MCC_TRACE("br\n");
-							;
+							if (bit_size != 64)
+								{ MCC_TRACE("br\n"); late_bf = 1; }
 						} else if (bit_size == 64) { MCC_TRACE("br\n");
 							;
 						} else { MCC_TRACE("br\n");
 							type1.t = (type1.t & ~VT_STRUCT_MASK) | VT_BITFIELD | ((unsigned)bit_size << (VT_STRUCT_SHIFT + 6));
 						}
+					}
+					if (no_field) { MCC_TRACE("br\n");
+						if (tok == ';' || tok == TOK_EOF)
+							{ MCC_TRACE("br\n"); break; }
+						skip(',');
+						continue;
 					}
 					if (v != 0 || (type1.t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 						c = 1;
@@ -6347,6 +6390,7 @@ do_decl:
 					if (v) { MCC_TRACE("br\n");
 						ss = sym_push(v | SYM_FIELD, &type1, 0, 0);
 						ss->a = ad1.a;
+						ss->a.full_bitfield = late_bf;
 						*ps = ss;
 						ps = &ss->next;
 					}
@@ -6362,6 +6406,15 @@ do_decl:
 												 ? "ISO C forbids a union with no named members"
 												 : "ISO C forbids a struct with no named members"); }
 			parse_attribute(&ad);
+			for (ss = type->ref->next; ss; ss = ss->next) { MCC_TRACE("br\n");
+				if (!ss->a.full_bitfield)
+					{ MCC_TRACE("br\n"); continue; }
+				ss->a.full_bitfield = 0;
+				if (!ad.a.packed)
+					{ MCC_TRACE("br\n"); continue; }
+				bsize = type_size(&ss->type, &align) * 8;
+				ss->type.t = (ss->type.t & ~VT_STRUCT_MASK) | VT_BITFIELD | ((unsigned)bsize << (VT_STRUCT_SHIFT + 6));
+			}
 			if (ad.cleanup_func) { MCC_TRACE("br\n");
 				mcc_warning("attribute '__cleanup__' ignored on type");
 			}
@@ -6392,6 +6445,16 @@ static void parse_btype_qualify(CType *type, int qualifiers) { MCC_TRACE("enter\
 		type = &type->ref->type;
 	}
 	type->t |= qualifiers;
+}
+
+static void unqualify_array_elem(CType *type) { MCC_TRACE("enter\n");
+	while (type->t & (VT_ARRAY | VT_VLA)) { MCC_TRACE("br\n");
+		type->ref = sym_push(SYM_FIELD, &type->ref->type, 0, type->ref->c);
+		type = &type->ref->type;
+		type->t &= ~VT_CONSTANT;
+		if (!(type->t & VT_ATOMIC_BIT))
+			{ MCC_TRACE("br\n"); type->t &= ~VT_VOLATILE; }
+	}
 }
 
 static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
@@ -7919,8 +7982,11 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			next();
 			parse_expr_type(&type1);
 			type1.t &= ~(VT_STORAGE & ~VT_TYPEDEF);
-			if (u == TOK_TYPEOF_UNQUAL)
-				{ MCC_TRACE("br\n"); type1.t &= ~(VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT); }
+			if (u == TOK_TYPEOF_UNQUAL) { MCC_TRACE("br\n");
+				type1.t &= ~(VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT);
+				if (type1.t & (VT_ARRAY | VT_VLA))
+					{ MCC_TRACE("br\n"); unqualify_array_elem(&type1); }
+			}
 			if (type1.ref) { MCC_TRACE("br\n");
 				sym_to_attr(ad, type1.ref);
 				if (type1.t & VT_ARRAY)
@@ -13226,7 +13292,12 @@ ST_FUNC void gexpr(void) { MCC_TRACE("enter\n");
 		CST_CLOSE();
 #endif
 
-		convert_parameter_type(&vtop->type);
+		if ((vtop->r & VT_NONLVAL) && (vtop->type.t & (VT_ARRAY | VT_VLA)) &&
+				mcc_state->cversion < 199901) { MCC_TRACE("br\n");
+			vtop->type.t &= ~VT_QUALIFY;
+		} else { MCC_TRACE("br\n");
+			convert_parameter_type(&vtop->type);
+		}
 
 		if ((vtop->r & VT_LVAL) && !nocode_wanted) { MCC_TRACE("br\n");
 			int bt = vtop->type.t & VT_BTYPE;
@@ -16312,7 +16383,7 @@ static int decl_in_preamble(void) { MCC_TRACE("enter\n");
 }
 
 static int decl(int l) {
-	int v, has_init, r, oldint, got_decl = 0;
+	int v, has_init, r, oldint, gnu_ei, got_decl = 0;
 	CType type, btype;
 	Sym *sym, *sa;
 	AttributeDef ad, adbase;
@@ -16384,6 +16455,7 @@ static int decl(int l) {
 			type = btype;
 			ad = adbase;
 			type_decl(&type, &ad, &v, l == VT_CMP ? TYPE_DIRECT | TYPE_PARAM : TYPE_DIRECT);
+			gnu_ei = 0;
 			if ((type.t & VT_BTYPE) == VT_FUNC) { MCC_TRACE("br\n");
 				if (oldint)
 					{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("return type defaults to 'int'"); }
@@ -16398,7 +16470,7 @@ static int decl(int l) {
 				}
 				if ((type.t & (VT_EXTERN | VT_INLINE)) == (VT_EXTERN | VT_INLINE)) { MCC_TRACE("br\n");
 					if (mcc_state->gnu89_inline || sym->f.func_alwinl || sym->f.func_gnuinl)
-						{ MCC_TRACE("br\n"); type.t = (type.t & ~VT_EXTERN) | VT_STATIC; }
+						{ MCC_TRACE("br\n"); type.t = (type.t & ~VT_EXTERN) | VT_STATIC; gnu_ei = 1; }
 					else
 						{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
 				} else if ((mcc_state->gnu89_inline || sym->f.func_gnuinl) &&
@@ -16498,6 +16570,8 @@ static int decl(int l) {
 						v >= TOK_IDENT && !strcmp(get_tok_str(v, NULL), "main"))
 					{ MCC_TRACE("br\n"); mcc_warning("'main' is not allowed to be declared inline"); }
 				sym = external_sym(v, &type, 0, &ad);
+				if (gnu_ei)
+					{ MCC_TRACE("br\n"); sym->a.gnu_inline_body = 1; }
 
 				{
 					CType *rt = &sym->type.ref->type;
