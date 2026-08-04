@@ -4433,11 +4433,27 @@ will chase it.
 
 ### Census at the close
 
-`mcc.c -O1`: **used 1174, fallback 31, skip 11**, down from 34-36 over the session and
-with four wrong-code defects closed underneath it (promotion of assigning loop
-conditions, `-freverse-funcargs` argument order, non-store loop-condition effects, and
-the chained-store duplication). The remaining 31 are catalogued by first-diff offset
-and length delta earlier in this file; `RVATTR` is the tool that makes them tractable.
+`mcc.c -O1`: **used 1181, fallback 24, skip 11** (`-O2` 25, `-O4` 54), down from 34-36
+over the session with **seven** wrong-code defects closed underneath it: promotion of
+assigning loop conditions, `-freverse-funcargs` argument order, non-store
+loop-condition effects, the chained-store duplication, and the three cast-erasure bugs
+above (`put_stabs`, `next`, `const_ref_data`/`format_str_literal`).
+
+The remaining 24, all of `src/mcc.c` at `-O1` -- 12 `len`, 11 `bytes`, 1 error path:
+
+    parse_include  embed_params_init  pragma_parse  pragma_operator  gen_complex_op
+    unary_nested   case_adjacent      gen_function  mcc_debug_new    mcc_debug_frame_end
+    mcc_eh_frame_hdr  put_elf_sym     relocate_syms bind_exe_dynsyms export_global_syms
+    cleanup_symbols   cleanup_sections rt_find_state _mcc_backtrace  rt_fault
+    decode  error1  so_filesize  asm_expr_cmp
+
+**Eight of those 24 are the proven-equivalent set above** (`put_elf_sym`,
+`relocate_syms`, `bind_exe_dynsyms`, `export_global_syms`, `rt_find_state`,
+`_mcc_backtrace`, `case_adjacent`, `so_filesize`), and `error1` is banked N10 "do not
+touch". So the genuinely open population is **15**, not 24. Disassemble before judging
+any of them: `RVATTR` attributes emitted bytes to arena nodes, and the instruction
+diff is what exposed all three miscompiles above -- the byte census called two of them
+zero-delta.
 
 ---
 
@@ -4500,3 +4516,28 @@ legs with `objdump -D -b binary -m i386:x86-64 -M intel --no-show-raw-insn`, and
 with **addresses dropped and branch targets rewritten as signed displacements** --
 without those two normalisations a body that shifts by a few bytes reads as wholly
 rewritten (`parse_include` showed 256 changed lines instead of 42).
+
+
+---
+
+## Running agents in parallel over one working tree
+
+Three agents were dispatched at once to investigate separate divergences. All three
+needed to edit `src/mccrir.c`, and they shared the checkout. What happened:
+
+- Two hit large, disjoint, random full-suite failures -- one saw 14 cells, another 13 --
+  caused by `cmake-verify/mcc` being relinked underneath a running `ctest`. Every one
+  passed on rerun.
+- Each attributed the others' edits to "another session" and reported a census that
+  silently included work it had not done. One reported `used=1181 fallback=24` for a
+  change worth `31 -> 30` on its own.
+- Both worked around it unprompted, one with a throwaway worktree and one with a
+  `git stash`/pop cycle. Nothing was lost, but only because they noticed.
+
+Nothing was wrong with the findings; the *numbers* were unreliable, and the combined
+tree had to be rebuilt and re-measured from scratch before anything could be believed.
+
+**Give parallel agents isolated worktrees whenever they may touch the same files**, or
+serialise them. This is the same live-tree confound that invalidated the first
+26-preset matrix run earlier in the same session -- a sweep that reads and builds from
+a tree someone else is writing cannot distinguish its own noise from a regression.
