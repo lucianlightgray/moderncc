@@ -138,17 +138,28 @@ gates this file recorded as green and were not. **Two of the three closed in
    five macOS jobs passed. The original entry also blamed `1f8f7e36` (xsuite's
    std forwarding), which the parts suite does not use.
 
-7. **`selfhost-fixpoint` is not stable at the default `-O`, on macOS arm64 and
-   on Windows.** A full local ctest at `3486e3a4` (macOS arm64, stage1 clang
-   build) gives `o1=3396582 o2=3396230 o3=3396582` — `o2 != o3`, so the
-   self-host is not a fixpoint. Every sibling passed in the same run: `-O1`,
-   `-O3`, `-Os`, `-gates`, and all three `memmodel` variants. CI run 30915974711
-   independently failed `selfhost-fixpoint-Os` on **both** Windows stage2 jobs
-   (`dynamic`, `pe`) while linux and macOS passed that cell, so the instability
-   is not one host's quirk. That `o1 == o3 != o2` shape says stage2's output is
-   the odd one out, i.e. mcc1 and mcc2 disagree on codegen for identical input —
-   the same signature as the arena/recorder divergences tracked below. **Not
-   diagnosed.** Unrelated to the item above; that was test-harness only.
+7. ~~**`selfhost-fixpoint` is not stable at the default `-O`, on macOS arm64 and
+   on Windows.**~~ **Diagnosed and closed on the Windows host, 2026-08-04.**
+   The instability was real, bimodal (every bad run produced the *same*
+   alternate object, ±192 bytes), and reproducible on Windows only with
+   *concurrent mcc compiles* (3 parallel fixpoint chains, ~1-5 in 30) — never
+   serially, never under plain CPU load. The divergence was always one body
+   (`mccstats_spark`) losing its `% 40` divmagic lowering to a plain `idiv`,
+   and a `-DMCC_CONFIG_TRACE=1` twin caught the branch:
+   `ast_divmagic_lowered` returned *"already lowered"* off a **stale
+   `ast_divmagic_base` watermark keyed on the arena's address**. Every body's
+   arena is a fresh `ast_arena_new()`; when the heap recycles a freed arena's
+   address — allocator-timing-dependent, which is what made it look like a
+   host quirk — `ast_divmagic_run`'s `base_arena != a` identity check cannot
+   see the reuse and the new body inherits the old watermark. The fix is the
+   invalidation hook the other five pointer-keyed caches already had in
+   `ast_arena_free`: `ast_divmagic_invalidate` beside `ast_du_invalidate` and
+   friends. Verified on the Windows host: 36/36 identical objects under the
+   reproducing stress, 12/12 clean chains over the gates knob set, `-Os` and
+   `-O3`, 3-way concurrent plus burn. The macOS arm64 `o1=3396582 o2=3396230
+   o3=3396582` reading at `3486e3a4` has the same signature and the mechanism
+   is OS-agnostic (any malloc recycles) — re-run that cell on the macOS host
+   at this fix before carrying it forward as a separate defect.
 
 8. **`mcctest`/`mcctest-bcheck` fail against Apple clang 21 as the reference.**
    `tests/diff/parts/legacy_numeric.h:7:23` is `static double nan2 = 0.0 / 0.0;`

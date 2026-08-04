@@ -191,6 +191,7 @@ static void ast_memo_invalidate(const AstArena *a);
 static void ast_hash_invalidate(const AstArena *a);
 static void ast_vlat_invalidate(const AstArena *a);
 static void ast_loopnest_invalidate(const AstArena *a);
+static void ast_divmagic_invalidate(const AstArena *a);
 #endif
 
 AstArena *ast_arena_new(void) { MCC_TRACE("enter\n");
@@ -218,6 +219,7 @@ void ast_arena_free(AstArena *a) { MCC_TRACE("enter\n");
 	ast_hash_invalidate(a);
 	ast_vlat_invalidate(a);
 	ast_loopnest_invalidate(a);
+	ast_divmagic_invalidate(a);
 #endif
 	free(a->kind);
 	free(a->parent);
@@ -10070,6 +10072,16 @@ static MCC_OPT_TLS int ast_divmagic_folds;
 
 static MCC_OPT_TLS const AstArena *ast_divmagic_base_arena;
 static MCC_OPT_TLS AstLocal ast_divmagic_base;
+
+/* the base watermark is keyed on the arena's address; a freed arena's address
+   can be recycled for a later body, so free must drop the memo or that body
+   inherits a stale base and ast_divmagic_lowered misreads its nodes */
+static void ast_divmagic_invalidate(const AstArena *a) { MCC_TRACE("enter\n");
+	if (ast_divmagic_base_arena == a) { MCC_TRACE("br\n");
+		ast_divmagic_base_arena = NULL;
+		ast_divmagic_base = 0;
+	}
+}
 
 static int ast_divmagic_dup_budget(AstArena *a, AstLocal n, int budget) { MCC_TRACE("enter\n");
 	if (budget < 0)
