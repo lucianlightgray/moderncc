@@ -1277,6 +1277,13 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	cstr_free(&s1->cmdline_incl);
 	mcc_free(s1->asm_cfi_st.buf);
 	dynarray_reset(&s1->alias_fixups, &s1->nb_alias_fixups);
+	/* The Replay_IR journal and the capture buffers are module-level caches that grow
+	   for the life of the run; nothing freed them, and mcc_s reported roughly a
+	   megabyte leaked per invocation, which is what turned sanitize-selfcheck red. */
+	rir_teardown();
+#if MCC_CONFIG_OPTIMIZER
+	ast_teardown();
+#endif
 	mcc_free(s1->dState);
 #ifdef MCC_TARGET_IS_HOST
 	mcc_run_free(s1);

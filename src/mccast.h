@@ -39,6 +39,7 @@ AstArena *ast_arena_new(void);
 AstArena *ast_arena_clone(const AstArena *src);
 AstLocal ast_dup_sub(AstArena *a, AstLocal n);
 void ast_arena_free(AstArena *a);
+void ast_teardown(void);
 void ast_arena_reset(AstArena *a);
 
 AstLocal ast_node(AstArena *a, uint16_t kind);

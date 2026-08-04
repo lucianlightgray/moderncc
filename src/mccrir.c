@@ -373,12 +373,17 @@ void rir_mark_vla(int t, uint64_t ref, int addr, int new_save, int locorig,
 	RirMark *m;
 	if (!rir_active)
 		return;
+	/* Pack two 32-bit words per slot. Shift in unsigned width: a negative `result` or
+	   `locorig` widens to a value near 2^32, and shifting that left by 32 as a signed
+	   long long is undefined -- UBSan reports "left shift of 4294967272 by 32 places
+	   cannot be represented in type 'long long int'" on every VLA mark. */
 	rir_mark_v2(RIR_T_MARK, RIR_M_VLA, (new_save ? 1 : 0) | (align << 1),
-							(long long)(unsigned)t | (((long long)(unsigned)result) << 32),
+							(long long)((unsigned long long)(unsigned)t |
+													((unsigned long long)(unsigned)result << 32)),
 							(long long)ref);
 	m = &rir_marks[rir_markn - 1];
-	m->v3 = ((long long)(unsigned)addr) |
-					(((long long)(unsigned)locorig) << 32);
+	m->v3 = (long long)((unsigned long long)(unsigned)addr |
+											((unsigned long long)(unsigned)locorig << 32));
 }
 
 void rir_vla_begin(void) {
@@ -4659,6 +4664,50 @@ static int rir_prod_reg_dangle(AstLocal n) {
    census needs to be driven to zero. */
 const char *rir_prod_why = "";
 const char *rir_unfaithful_why = "";
+
+/* Free the Replay_IR caches. Like the capture buffers these are module-level and grow
+   for the life of the run, so nothing released them: mcc_s reported the operation
+   journal alone at ~600KB, and sanitize-selfcheck -- green when this file was last
+   green -- went red on the accumulated total. */
+void rir_teardown(void) {
+	mcc_free(rir_ops);
+	mcc_free(rir_marks);
+	mcc_free(rir_mvs);
+	mcc_free(rir_cmap);
+	mcc_free(rir_jlbl);
+	mcc_free(rir_jlbl2);
+	mcc_free(rir_jpt);
+	mcc_free(rir_jsvlbl);
+	mcc_free(rir_vslbl);
+	mcc_free(rir_vslbl2);
+	mcc_free(rir_vscapt);
+	mcc_free(rir_lblhead);
+	mcc_free(rir_ptaddr);
+	rir_ops = NULL;
+	rir_marks = NULL;
+	rir_mvs = NULL;
+	rir_cmap = NULL;
+	rir_jlbl = NULL;
+	rir_jlbl2 = NULL;
+	rir_jpt = NULL;
+	rir_jsvlbl = NULL;
+	rir_vslbl = NULL;
+	rir_vslbl2 = NULL;
+	rir_vscapt = NULL;
+	rir_lblhead = NULL;
+	rir_ptaddr = NULL;
+	rir_n = rir_cap = 0;
+	rir_markn = rir_markcap = 0;
+	rir_mvsn = rir_mvscap = 0;
+	rir_cmapn = rir_cmapcap = 0;
+	rir_jcap = 0;
+	rir_vscap = 0;
+	rir_lblcap = 0;
+	rir_ptn = rir_ptcap = 0;
+	/* Deliberately not freeing rir_arena: rir_prod_take hands it to the AST side,
+	   which owns and frees it, and releasing it here double-frees. */
+	ir_cap_teardown();
+}
 
 struct AstArena *rir_prod_take(void) {
 	char msg[256];

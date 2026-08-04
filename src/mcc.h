@@ -1954,6 +1954,14 @@ ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess);
 ST_FUNC void mcc_assemble_inline(MCCState *s1, const char *str, int len, int global);
 #if MCC_CONFIG_ASM
 #ifdef MCC_IR_CAPTURE
+void ir_cap_teardown(void);
+#if MCC_REPLAY_IR
+/* Declared here as well as in mccrir.h: libmcc.c does not include that header, so the
+   call in mcc_delete only resolved in single-source builds. */
+void rir_teardown(void);
+#else
+#define rir_teardown() ((void)0)
+#endif
 void ir_cap_asm(const char *str, int len, int global);
 void ir_cap_asm_gen_code(ASMOperand *operands, int nb_operands, int nb_outputs,
 												 int is_output, uint8_t *clobber_regs, int out_reg);
