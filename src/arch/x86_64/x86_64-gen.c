@@ -1387,6 +1387,14 @@ static int x86_64_complex_ldouble(CType *vt) { MCC_TRACE("enter\n");
 	return (vt->t & VT_BTYPE) == VT_STRUCT && vt->ref->a.is_complex && (vt->ref->next->type.t & VT_BTYPE) == VT_LDOUBLE;
 }
 
+#define X86_64_ARG_BASE (MCC_PTR_SIZE * 2)
+
+static int x86_64_stack_arg_align(int addr, int align) { MCC_TRACE("enter\n");
+	if (align <= 8)
+		{ MCC_TRACE("br\n"); return addr; }
+	return X86_64_ARG_BASE + ((addr - X86_64_ARG_BASE + align - 1) & -align);
+}
+
 ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int *regsize) { MCC_TRACE("enter\n");
 	int size, align, reg_count;
 	if (x86_64_complex_ldouble(vt)) { MCC_TRACE("br\n");
@@ -1431,16 +1439,42 @@ ST_FUNC void arch_transfer_ret_regs(int aftercall) { MCC_TRACE("enter\n");
 		return;
 	}
 	if (x86_64_mixed_class(&sv->type, cls)) { MCC_TRACE("br\n");
-		int e;
-		for (e = 0; e < 2; e++) { MCC_TRACE("br\n");
+		int i, br = sv->r;
+		Sym *bsym = sv->sym;
+		if (fr == VT_LLOCAL ||
+				(fr == VT_CONST && (br & VT_SYM) &&
+				 (!(bsym->type.t & VT_STATIC) || (bsym->type.t & VT_TLS)))) { MCC_TRACE("br\n");
+			SValue v1;
+			int tr = get_reg(MCC_RC_INT);
+			v1.type.t = VT_PTR;
+			v1.type.ref = NULL;
+			v1.r2 = VT_CONST;
+			v1.c.i = fc;
+			if (fr == VT_LLOCAL) { MCC_TRACE("br\n");
+				v1.r = VT_LOCAL | VT_LVAL;
+				v1.sym = NULL;
+			} else { MCC_TRACE("br\n");
+				v1.r = br & ~VT_LVAL;
+				v1.sym = bsym;
+			}
+			load(tr, &v1);
+			br = tr | VT_LVAL | VT_REGDISP;
+			fc = 0;
+			bsym = NULL;
+		} else if (fr < VT_CONST && !(br & VT_REGDISP)) { MCC_TRACE("br\n");
+			br |= VT_REGDISP;
+			fc = 0;
+		}
+		for (i = 0; i < 2; i++) { MCC_TRACE("br\n");
 			SValue s;
+			int e = (cls[0] == x86_64_mode_integer) ? 1 - i : i;
 			int reg = (cls[e] == x86_64_mode_sse) ? MCC_TREG_XMM0 : MCC_TREG_RAX;
 			s.type.ref = NULL;
 			s.type.t = (cls[e] == x86_64_mode_sse) ? VT_DOUBLE : VT_LLONG;
-			s.r = sv->r;
+			s.r = br;
 			s.r2 = VT_CONST;
 			s.c.i = fc + e * 8;
-			s.sym = sv->sym;
+			s.sym = bsym;
 			if (aftercall)
 				{ MCC_TRACE("br\n"); store(reg, &s); }
 			else
@@ -1643,13 +1677,13 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	int nb_reg_args = 0;
 	int nb_sse_args = 0;
 	int sse_reg, gen_reg;
-	char *onstack;
+	int *onstack;
 
 	if (gen_alloca_inline(nb_args))
 		{ MCC_TRACE("br\n"); return; }
 	if (gen_ovf_addsub(nb_args))
 		{ MCC_TRACE("br\n"); return; }
-	onstack = mcc_malloc((nb_args + 1) * sizeof(char));
+	onstack = mcc_malloc((nb_args + 1) * sizeof(int));
 
 #if MCC_CONFIG_DIAG_RT >= 2
 	if (mcc_state->do_bounds_check)
@@ -1669,12 +1703,9 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				nb_sse_args++;
 				onstack[i] = 0;
 			} else { MCC_TRACE("br\n");
-				if (align == 16 && (stack_adjust &= 15)) { MCC_TRACE("br\n");
-					onstack[i] = 2;
-					stack_adjust = 0;
-				} else
-					{ MCC_TRACE("br\n"); onstack[i] = 1; }
-				stack_adjust += size;
+				int pad = ((stack_adjust + align - 1) & -align) - stack_adjust;
+				onstack[i] = 1 + pad / 8;
+				stack_adjust += pad + size;
 			}
 		} else if ((mode == x86_64_mode_sse || mode == x86_64_mode_sseup) &&
 				nb_sse_args + reg_count <= 8) { MCC_TRACE("br\n");
@@ -1686,12 +1717,9 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 		} else if (mode == x86_64_mode_none) { MCC_TRACE("br\n");
 			onstack[i] = 0;
 		} else { MCC_TRACE("br\n");
-			if (align == 16 && (stack_adjust &= 15)) { MCC_TRACE("br\n");
-				onstack[i] = 2;
-				stack_adjust = 0;
-			} else
-				{ MCC_TRACE("br\n"); onstack[i] = 1; }
-			stack_adjust += size;
+			int pad = ((stack_adjust + align - 1) & -align) - stack_adjust;
+			onstack[i] = 1 + pad / 8;
+			stack_adjust += pad + size;
 		}
 	}
 
@@ -1701,7 +1729,7 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	gen_reg = nb_reg_args;
 	sse_reg = nb_sse_args;
 	args_size = 0;
-	stack_adjust &= 15;
+	stack_adjust = -stack_adjust & 15;
 	for (int i = 0, k = 0; i < nb_args;) { MCC_TRACE("br\n");
 		mode = classify_x86_64_arg(&vtop[-i].type, NULL, &size, &align, &reg_count);
 		if (size) { MCC_TRACE("br\n");
@@ -1709,13 +1737,12 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				++i;
 				continue;
 			}
-			if (stack_adjust) { MCC_TRACE("br\n");
+			while (stack_adjust > 0) { MCC_TRACE("br\n");
 				o(0x50);
 				args_size += 8;
-				stack_adjust = 0;
+				stack_adjust -= 8;
 			}
-			if (onstack[i + k] == 2)
-				{ MCC_TRACE("br\n"); stack_adjust = 1; }
+			stack_adjust = (onstack[i + k] - 1) * 8;
 		}
 
 		vrotb(i + 1);
@@ -1975,7 +2002,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 			switch (mode) { MCC_TRACE("br\n");
 			default:
 			stack_arg:
-				seen_stack_size = ((seen_stack_size + align - 1) & -align) + size;
+				seen_stack_size = x86_64_stack_arg_align(seen_stack_size, align) + size;
 				break;
 
 			case x86_64_mode_integer:
@@ -2044,7 +2071,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 				gen_modrm(sse_param_index, VT_LOCAL, NULL, param_addr + (1 - ebint) * 8);
 				++sse_param_index;
 			} else { MCC_TRACE("br\n");
-				addr = (addr + align - 1) & -align;
+				addr = x86_64_stack_arg_align(addr, align);
 				param_addr = addr;
 				addr += size;
 			}
@@ -2062,7 +2089,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 				gen_modrm(sse_param_index, VT_LOCAL, NULL, param_addr);
 				++sse_param_index;
 			} else { MCC_TRACE("br\n");
-				addr = (addr + align - 1) & -align;
+				addr = x86_64_stack_arg_align(addr, align);
 				param_addr = addr;
 				addr += size;
 			}
@@ -2080,7 +2107,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 					++sse_param_index;
 				}
 			} else { MCC_TRACE("br\n");
-				addr = (addr + align - 1) & -align;
+				addr = x86_64_stack_arg_align(addr, align);
 				param_addr = addr;
 				addr += size;
 			}
@@ -2088,7 +2115,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 
 		case x86_64_mode_memory:
 		case x86_64_mode_x87:
-			addr = (addr + align - 1) & -align;
+			addr = x86_64_stack_arg_align(addr, align);
 			param_addr = addr;
 			addr += size;
 			break;
@@ -2102,7 +2129,7 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 					++reg_param_index;
 				}
 			} else { MCC_TRACE("br\n");
-				addr = (addr + align - 1) & -align;
+				addr = x86_64_stack_arg_align(addr, align);
 				param_addr = addr;
 				addr += size;
 			}

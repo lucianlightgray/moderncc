@@ -2530,6 +2530,47 @@ on `dg-require-effective-target` — including `builtin-issignaling-1.c`, skippe
 `dg-add-options(ieee)` rather than for the missing builtin. The 13 real FAILCOMPILE are
 `compare-fp-3.c` and `fp-cmp-{6,7,9}.c`.
 
+### Open — 32-byte vector types are laid out at 16-byte alignment
+
+`mk_vector_type` (`src/mccgen.c:6532`) caps vector alignment at `MCC_MAX_ALIGN`, 16 on
+x86-64. gcc and clang both lay out a bare `__vector_size__(32)` type at **32**:
+
+```c
+typedef float v8f __attribute__((__vector_size__(32)));   /* no __aligned__ */
+struct H { char c; v8f v; };
+/* gcc and clang: sizeof 64, offsetof(v) 32   |   mcc: sizeof 48, offsetof(v) 16 */
+```
+
+Independent of argument classification, in a different file from the ABI fix, and only
+affects 32-byte vectors written *without* an explicit `__aligned__`. Confirmed present on
+unmodified `main`. With these shapes excluded the ABI differential is fully green; with
+them included, the only remaining diffs in a 31-shape run are the `sizeof`/`_Alignof`
+lines themselves — every computed value still matches gcc. Fixing it changes struct layout
+for a whole type class, a wider ABI decision than the defect it was found beside.
+
+### Closed — the vector-float NaN "operand ordering" lead was wrong
+
+Recorded earlier as a pre-existing defect: plain `__v4sf + __v4sf` diverging from gcc when
+both operands are NaN. **There is nothing to fix, because gcc contradicts itself.** Over
+9,408 bit-pattern cases (14 × 14 patterns × `+ - * /` × every lane of `__v4sf`/`__v8sf`):
+
+| reference | mcc agreement |
+|---|---|
+| gcc `-O0` | 8032/9408 |
+| **gcc `-O1`** | **9408/9408** |
+| gcc `-O2` | 8032/9408 |
+| **clang `-O0` / `-O2`** | **9408/9408** |
+
+gcc-O0 versus gcc-O1 differ on 1,376 of 9,408 for identical source. The cause is which
+operand gcc's unoptimised expansion leaves in the destination register — `-O0` emits
+`movaps VA,%xmm1; movaps VB,%xmm0; addps %xmm1,%xmm0` (destination holds VB), `-O1`+ emits
+`movaps VA,%xmm0; addps VB,%xmm0` (destination holds VA). It is not a lowering rule and it
+is not vector-specific: scalar `float + float` on two globals diverges identically, which
+contradicts the original report's "scalar never diverges" — those cases used register
+operands. The reported "~30 of 100" is exactly 1376/4800, i.e. a comparison against gcc
+`-O0` specifically. mcc already matches gcc once optimising and clang everywhere; changing
+it would break both, on a payload IEEE 754 leaves unspecified.
+
 ### The board was hiding ~1,900 gcc.target tests that clang can run
 
 `tools/xsuite.py` skipped **every** `-m*` dg-option via `BAD_OPT_RE`, and `tok_true()`
