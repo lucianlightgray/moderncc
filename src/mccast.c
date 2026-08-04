@@ -1638,6 +1638,7 @@ static int ast_jit_eval_refused;
 int ast_jit_eval_refused_count(void) { MCC_TRACE("enter\n"); return ast_jit_eval_refused; }
 
 static MCC_OPT_TLS int ast_templates_env;
+static MCC_OPT_TLS int ast_cload_env;
 static int ast_search_env;
 static int ast_slice_env;
 static int ast_search_emitsize_env;
@@ -1994,6 +1995,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_replay_dump = ast_env_gate("MCC_AST_REPLAY_DUMP", 0);
 	ast_verify_diff = getenv("MCC_AST_VERIFY_DIFF");
 	ast_templates_env = ast_env_gate("MCC_AST_TEMPLATES", o4 || s1->optimize >= 1);
+	ast_cload_env = ast_env_gate("MCC_AST_CLOAD", o4 || s1->optimize >= 1);
 	ast_search_env = ast_env_gate("MCC_AST_SEARCH", s1->optimize_search_seconds > 0);
 	ast_search_verbose_env = ast_env_gate("MCC_AST_SEARCH_VERBOSE", 0);
 	ast_slice_env = ast_env_gate("MCC_AST_SLICE", 0);
@@ -13555,6 +13557,241 @@ typedef struct AstStrategy {
 	int (*apply)(AstArena *a, Sym *sym);
 } AstStrategy;
 
+/* Reading a `static const` object at a link-time-constant address.
+
+   gen.c already knows how to do this -- `const_lval_bytes` (the SHT_NOBITS test,
+   the bounds test and the relocation-overlap scan) and `fold_const_lval_at` (the
+   sign/zero extension) -- but `fold_const_lval` gates them on
+   `global_expr && CONST_WANTED`, so nothing folds these loads inside a function
+   body. What is missing is not the byte reader, it is a way to get from an arena
+   subtree back to `sym + byte offset`. That is `ast_cload_addr`/`ast_cload_lval`
+   below.
+
+   The index operand of `AST_Binary '+'` is in ELEMENT units, not bytes: the IR
+   capture suppresses nesting, so `gen_op`'s own `vpush_type_size(); gen_op('*')`
+   for pointer arithmetic never reaches the arena. The stride is therefore implied
+   entirely by the pointee type carried alongside the address, which is why these
+   two functions thread a `CType` and not just an offset. `AST_Load` carries no
+   type of its own, so the loaded type is the pointee its child resolved to.
+
+   Two guards are stricter than gen.c's. `const_lval_bytes` waives its SHF_WRITE
+   check for anonymous symbols, which is sound where it is used -- a constant
+   expression is evaluated before any store can have run -- and is not sound in a
+   function body, where a file-scope compound literal in .data may already have
+   been written; so a non-writable section is required outright. And the fold only
+   fires where the parent consumes the node as a plain rvalue, because AST_OP_ADDR,
+   AST_OP_MEMBER and the inc/dec path all need the lvalue itself. */
+static int ast_cload_addr(AstArena *a, AstLocal n, Sym **sym, int64_t *off,
+													CType *pt, int depth);
+
+static int ast_cload_lval(AstArena *a, AstLocal n, Sym **sym, int64_t *off,
+													CType *dt, int depth) { MCC_TRACE("enter\n");
+	int k, r;
+	if (n == AST_NONE || depth > 24)
+		{ MCC_TRACE("br\n"); return 0; }
+	k = ast_kind(a, n);
+	if (k == AST_Ref) { MCC_TRACE("br\n");
+		r = ast_op(a, n);
+		if (ast_nchild(a, n) || (r & VT_VALMASK) != VT_CONST || !(r & VT_SYM) ||
+				!(r & VT_LVAL) || !ast_sym(a, n))
+			{ MCC_TRACE("br\n"); return 0; }
+		*sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		*off = (int64_t)ast_ival(a, n);
+		dt->t = ast_type_t(a, n);
+		dt->ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		return 1;
+	}
+	if (k == AST_Load && ast_nchild(a, n) == 1)
+		{ MCC_TRACE("br\n"); return ast_cload_addr(a, ast_child(a, n, 0), sym, off, dt,
+																							 depth + 1); }
+	if (k == AST_Unary && ast_op(a, n) == AST_OP_MEMBER &&
+			ast_nchild(a, n) == 1) { MCC_TRACE("br\n");
+		CType base;
+		if (!ast_cload_lval(a, ast_child(a, n, 0), sym, off, &base, depth + 1))
+			{ MCC_TRACE("br\n"); return 0; }
+		*off += (int)ast_ival(a, n);
+		dt->t = ast_type_t(a, n);
+		dt->ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+		return 1;
+	}
+	return 0;
+}
+
+static int ast_cload_addr(AstArena *a, AstLocal n, Sym **sym, int64_t *off,
+													CType *pt, int depth) { MCC_TRACE("enter\n");
+	CType desig;
+	int k, t;
+	uint64_t tref;
+	if (n == AST_NONE || depth > 24)
+		{ MCC_TRACE("br\n"); return 0; }
+	k = ast_kind(a, n);
+	t = ast_type_t(a, n);
+	tref = ast_type_ref(a, n);
+	if (k == AST_Convert && ast_nchild(a, n) == 1) { MCC_TRACE("br\n");
+		if ((t & (VT_BTYPE | VT_ARRAY)) != VT_PTR || !tref)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (!ast_cload_addr(a, ast_child(a, n, 0), sym, off, pt, depth + 1))
+			{ MCC_TRACE("br\n"); return 0; }
+		*pt = ((Sym *)(uintptr_t)tref)->type;
+		return 1;
+	}
+	if (k == AST_Binary && ast_nchild(a, n) == 2) { MCC_TRACE("br\n");
+		int bop = ast_op(a, n), align, lt, neg = 0;
+		AstLocal x = ast_child(a, n, 0), y = ast_child(a, n, 1), pn, ln;
+		int64_t idx, esz;
+		if (bop == '+') { MCC_TRACE("br\n");
+			if (ast_kind(a, y) == AST_Literal)
+				{ MCC_TRACE("br\n"); pn = x; ln = y; }
+			else if (ast_kind(a, x) == AST_Literal)
+				{ MCC_TRACE("br\n"); pn = y; ln = x; }
+			else
+				{ MCC_TRACE("br\n"); return 0; }
+		} else if (bop == '-') { MCC_TRACE("br\n");
+			if (ast_kind(a, y) != AST_Literal)
+				{ MCC_TRACE("br\n"); return 0; }
+			pn = x;
+			ln = y;
+			neg = 1;
+		} else { MCC_TRACE("br\n");
+			return 0;
+		}
+		lt = ast_type_t(a, ln);
+		if (ast_bad_type(lt) || is_float(lt) || (lt & VT_ARRAY) ||
+				ast_nchild(a, ln))
+			{ MCC_TRACE("br\n"); return 0; }
+		if (!ast_cload_addr(a, pn, sym, off, pt, depth + 1))
+			{ MCC_TRACE("br\n"); return 0; }
+		esz = type_size(pt, &align);
+		if (esz <= 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		idx = (int64_t)value64(ast_ival(a, ln), lt);
+		if (idx > (int64_t)1 << 30 || idx < -((int64_t)1 << 30))
+			{ MCC_TRACE("br\n"); return 0; }
+		*off += (neg ? -idx : idx) * esz;
+		return 1;
+	}
+	/* An array that has already decayed is a bare VT_CONST|VT_SYM value with no
+	   VT_LVAL -- gaddrof cleared it -- so it never reaches ast_cload_lval. */
+	if (k == AST_Ref && !ast_nchild(a, n)) { MCC_TRACE("br\n");
+		int r = ast_op(a, n);
+		if ((r & (VT_VALMASK | VT_LVAL | VT_SYM)) != (VT_CONST | VT_SYM) ||
+				!ast_sym(a, n) || (t & VT_BTYPE) != VT_PTR || !tref)
+			{ MCC_TRACE("br\n"); return 0; }
+		*sym = (Sym *)(uintptr_t)ast_sym(a, n);
+		*off = (int64_t)ast_ival(a, n);
+		*pt = ((Sym *)(uintptr_t)tref)->type;
+		return 1;
+	}
+	if (!ast_cload_lval(a, n, sym, off, &desig, depth))
+		{ MCC_TRACE("br\n"); return 0; }
+	/* Only an array lvalue decays to its own address; anything else would have to
+	   be loaded first, and its contents are not this address. */
+	if ((desig.t & (VT_BTYPE | VT_ARRAY)) != (VT_PTR | VT_ARRAY) || !desig.ref)
+		{ MCC_TRACE("br\n"); return 0; }
+	*pt = desig.ref->type;
+	return 1;
+}
+
+static int ast_cload_readonly(Sym *sym) { MCC_TRACE("enter\n");
+	ElfSym *esym;
+	Section *ssec;
+	if (!sym || sym->a.weak)
+		{ MCC_TRACE("br\n"); return 0; }
+	esym = elfsym(sym);
+	if (!esym || esym->st_shndx == SHN_UNDEF ||
+			esym->st_shndx >= mcc_state->nb_sections)
+		{ MCC_TRACE("br\n"); return 0; }
+	ssec = mcc_state->sections[esym->st_shndx];
+	if (!ssec || (ssec->sh_flags & SHF_WRITE))
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+static int ast_cload_rvalue_use(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	AstLocal p = ast_parent(a, n);
+	if (p == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	switch (ast_kind(a, p)) { MCC_TRACE("br\n");
+	case AST_Binary:
+		return ast_op(a, p) < AST_OP_ADDR;
+	case AST_Convert:
+	case AST_If:
+	case AST_Return:
+		return 1;
+	case AST_Invoke:
+		return ast_child(a, p, 0) != n;
+	case AST_Store:
+		return ast_op(a, p) != AST_OP_OPASSIGN && ast_child(a, p, 0) != n;
+	default:
+		return 0;
+	}
+}
+
+static int ast_cload_run(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal n, nn = ast_count(a);
+	int hits = 0;
+	if (!ast_cload_env)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		Sym *sym = NULL;
+		CType lt;
+		SValue v;
+		int64_t off = 0;
+		int bt, sv_ice, k = ast_kind(a, n);
+		/* Three shapes read the same object: a dereference (`t[i]`), the symbol's
+		   own lvalue (`k` for a scalar `static const int k`), and a member of one
+		   (`t[i].f`). Folding only the first would leave `cars[1].tire_pressure[2]`
+		   constant while `cars[1].speed` stayed a load, which is a worse place to
+		   stop than either end. */
+		if (k == AST_Load && ast_nchild(a, n) == 1) { MCC_TRACE("br\n");
+			/* This Load may be standing in for the lvalue rather than dereferencing
+			   it; the replay skips indir() for exactly that shape, so folding it
+			   would drop a member address on the floor. */
+			if (!(ast_fbits(a, n) & AST_FB_LOAD_LVAL) && ast_load_over_member(a, n))
+				{ MCC_TRACE("br\n"); continue; }
+			if (!ast_cload_rvalue_use(a, n))
+				{ MCC_TRACE("br\n"); continue; }
+			if (!ast_cload_addr(a, ast_child(a, n, 0), &sym, &off, &lt, 0))
+				{ MCC_TRACE("br\n"); continue; }
+		} else if (k == AST_Ref ||
+							 (k == AST_Unary && ast_op(a, n) == AST_OP_MEMBER)) { MCC_TRACE("br\n");
+			if (!ast_cload_rvalue_use(a, n))
+				{ MCC_TRACE("br\n"); continue; }
+			if (!ast_cload_lval(a, n, &sym, &off, &lt, 0))
+				{ MCC_TRACE("br\n"); continue; }
+		} else { MCC_TRACE("br\n");
+			continue;
+		}
+		if (!ast_cload_readonly(sym))
+			{ MCC_TRACE("br\n"); continue; }
+		bt = lt.t & VT_BTYPE;
+		if (ast_bad_type(lt.t) || is_float(lt.t) || bt == VT_STRUCT ||
+				bt == VT_VOID || bt == VT_FUNC || bt == VT_PTR || (lt.t & VT_ARRAY))
+			{ MCC_TRACE("br\n"); continue; }
+		memset(&v, 0, sizeof v);
+		v.r = VT_CONST | VT_SYM | VT_LVAL;
+		v.sym = sym;
+		v.c.i = (uint64_t)off;
+		v.type = lt;
+		sv_ice = ice_nonconst;
+		if (!fold_const_lval_at(&v)) { MCC_TRACE("br\n");
+			ice_nonconst = sv_ice;
+			continue;
+		}
+		ice_nonconst = sv_ice;
+		ast_set_kind(a, n, AST_Literal);
+		ast_clear_children(a, n);
+		ast_set_op(a, n, VT_CONST);
+		ast_set_type(a, n, lt.t, (uint64_t)(uintptr_t)lt.ref);
+		ast_set_ival(a, n, v.c.i);
+		ast_set_wide(a, n, 0, AST_R2_NONE);
+		ast_set_fbits(a, n, 0);
+		ast_set_sym(a, n, 0);
+		hits++;
+	}
+	return hits;
+}
+
 static int sg_templates(void) { MCC_TRACE("enter\n"); return ast_templates_env; }
 static int sg_narrow(void) { MCC_TRACE("enter\n"); return ast_narrow_env; }
 static int sg_ltemp(void) { MCC_TRACE("enter\n"); return ast_licm_temp_env; }
@@ -13594,6 +13831,7 @@ static int ast_strat_reassoc(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)
 static int ast_strat_sethi(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_sethi_run(a); }
 static int ast_strat_tco(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); return ast_tco_run(a, s); }
 static int ast_strat_inline(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_inline_run(a); }
+static int ast_strat_cload(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_cload_run(a); }
 
 enum {
 	AST_STRAT_BFOLD,
@@ -13617,6 +13855,7 @@ enum {
 	AST_STRAT_SETHI,
 	AST_STRAT_TCO,
 	AST_STRAT_INLINE,
+	AST_STRAT_CLOAD,
 	AST_STRAT_COUNT
 };
 typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
@@ -13643,6 +13882,7 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"sethi", sg_sethi, ast_strat_sethi},
 	{"tco", sg_templates, ast_strat_tco},
 	{"inline", sg_inline, ast_strat_inline},
+	{"cload", sg_templates, ast_strat_cload},
 };
 
 static long ast_run_strat_seq(AstArena *a, Sym *sym, int faithful,
@@ -15663,6 +15903,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int tcos = 0;
 			int narrows = 0;
 			int divmagics = 0;
+			int cloads = 0;
 			int selects = 0;
 			int interchanged = 0;
 			int fused = 0;
@@ -15859,10 +16100,12 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					sethis = sf[AST_STRAT_SETHI];
 					tcos = sf[AST_STRAT_TCO];
 					divmagics = sf[AST_STRAT_DIVMAGIC];
+					cloads = sf[AST_STRAT_CLOAD];
 					selects = sf[AST_STRAT_SELECT];
 				}
 				ast_search_gates_set(ast_search_sv_gates);
 				int do_divmagic = divmagics > 0;
+				int do_cload = cloads > 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
 				int do_narrow = narrows > 0;
@@ -15898,17 +16141,18 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					do_narrow = 0;
 					do_divmagic = 0;
 					do_select = 0;
+					do_cload = 0;
 					ast_promo_n = 0;
 				}
 				if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled ||
-						math_inlined)
+						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
+						interchanged || fused || tiled || math_inlined)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
-						!interchanged && !fused && !tiled && !math_inlined)
+						!do_cload && !interchanged && !fused && !tiled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && faithful) { MCC_TRACE("br\n");
 					ind = ast_body_ind_sv;
@@ -15925,8 +16169,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										(int)rel_len);
 				} else if (do_inline || do_promote || do_bfold || do_ident || do_cprop ||
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
-						do_tco || do_narrow || do_divmagic || do_select || interchanged || fused || tiled ||
-						math_inlined) { MCC_TRACE("br\n");
+						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
+						interchanged || fused || tiled || math_inlined) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -15941,7 +16185,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 		ast_fconst_i = (do_bfold || do_ident || do_cprop || do_cse || do_licm ||     \
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
 										do_tco || do_narrow || do_divmagic || do_select ||          \
-										interchanged || fused || tiled || math_inlined || (ui))      \
+										do_cload || interchanged || fused || tiled ||               \
+										math_inlined || (ui))                                        \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \
@@ -16406,6 +16651,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 									ast_tmpl_folds, funcname); }
 				if (bfolds)
 					{ MCC_TRACE("br\n"); fprintf(stderr, "[ast-bfold] %d %s\n", bfolds, funcname); }
+				if (cloads)
+					{ MCC_TRACE("br\n"); fprintf(stderr, "[ast-cload] %d %s\n", cloads, funcname); }
 				if (idents)
 					{ MCC_TRACE("br\n"); fprintf(stderr, "[ast-ident] %d %s\n", idents, funcname); }
 				if (narrows)

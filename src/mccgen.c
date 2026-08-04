@@ -6187,6 +6187,8 @@ do_decl:
 				if (v < TOK_UIDENT)
 					{ MCC_TRACE("br\n"); expect("identifier"); }
 				next();
+				memset(&ad1, 0, sizeof ad1);
+				parse_attribute(&ad1);
 				if (tok == '=') { MCC_TRACE("br\n");
 					next();
 					ice_float_op = ice_nonconst = 0;
@@ -6374,7 +6376,7 @@ do_decl:
 						}
 					}
 					if (no_field) { MCC_TRACE("br\n");
-						if (tok == ';' || tok == TOK_EOF)
+						if (tok == ';' || tok == '}' || tok == TOK_EOF)
 							{ MCC_TRACE("br\n"); break; }
 						skip(',');
 						continue;
@@ -6394,11 +6396,14 @@ do_decl:
 						*ps = ss;
 						ps = &ss->next;
 					}
-					if (tok == ';' || tok == TOK_EOF)
+					if (tok == ';' || tok == '}' || tok == TOK_EOF)
 						{ MCC_TRACE("br\n"); break; }
 					skip(',');
 				}
-				skip(';');
+				if (tok == '}')
+					{ MCC_TRACE("br\n"); mcc_warning("no semicolon at end of struct or union"); }
+				else
+					{ MCC_TRACE("br\n"); skip(';'); }
 			}
 			skip('}');
 			if (!c)
@@ -8266,12 +8271,19 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 				case TOK_RESTRICT2:
 				case TOK_RESTRICT3:
 				case TOK_CONST1:
+				case TOK_CONST2:
+				case TOK_CONST3:
 				case TOK_VOLATILE1:
+				case TOK_VOLATILE2:
+				case TOK_VOLATILE3:
+				case TOK__Atomic:
 				case TOK_STATIC:
 					if (td & TYPE_NEST)
 						{ MCC_TRACE("br\n"); mcc_error("'static' or type qualifiers used in non-outermost array declarator"); }
 					if (tok == TOK_RESTRICT1 && mcc_state->cversion < 199901)
 						{ MCC_TRACE("br\n"); mcc_pedantic("'restrict' is a C99 feature"); }
+					if (tok == TOK__Atomic && mcc_state->cversion < 201112)
+						{ MCC_TRACE("br\n"); mcc_pedantic("'_Atomic' is a C11 feature"); }
 					if (tok == TOK_STATIC)
 						{ MCC_TRACE("br\n"); saw_static = 1; }
 					ad->storage_class |= 64;
@@ -11317,6 +11329,7 @@ tok_next:
 	case TOK_IMAGPART1:
 	case TOK_IMAGPART2:
 	case TOK_SIZEOF:
+	case TOK_COUNTOF:
 	case TOK_ALIGNOF1:
 	case TOK_ALIGNOF2:
 	case TOK_ALIGNOF3:
@@ -11586,12 +11599,15 @@ tok_next:
 		}
 		break;
 	case TOK_SIZEOF:
+	case TOK_COUNTOF:
 	case TOK_ALIGNOF1:
 	case TOK_ALIGNOF2:
 	case TOK_ALIGNOF3:
 		t = tok;
 		if (t == TOK_ALIGNOF3 && mcc_state->cversion < 201112)
 			{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignof' is a C11 feature"); }
+		if (t == TOK_COUNTOF && mcc_state->cversion < 202400)
+			{ MCC_TRACE("br\n"); mcc_pedantic("'_Countof' is a C2Y feature"); }
 		next();
 		sizeof_parsed_type = 0;
 		sizeof_parsed_align = 0;
@@ -11606,7 +11622,23 @@ tok_next:
 #endif
 		if (type.t & VT_BITFIELD)
 			{ MCC_TRACE("br\n"); mcc_error("'%s' cannot be applied to a bit-field",
-								t == TOK_SIZEOF ? "sizeof" : "_Alignof"); }
+								t == TOK_SIZEOF ? "sizeof" : t == TOK_COUNTOF ? "_Countof" : "_Alignof"); }
+		if (t == TOK_COUNTOF) { MCC_TRACE("br\n");
+			if (!(type.t & (VT_ARRAY | VT_VLA)))
+				{ MCC_TRACE("br\n"); mcc_error("'_Countof' requires an operand of array type"); }
+			if (type.t & VT_VLA) { MCC_TRACE("br\n");
+				int ealign;
+				vpush_type_size(&type, &align);
+				vpush_type_size(pointed_type(&type), &ealign);
+				gen_op('/');
+			} else { MCC_TRACE("br\n");
+				if (type.ref->c < 0)
+					{ MCC_TRACE("br\n"); mcc_error("'_Countof' applied to an incomplete array type"); }
+				vpushs(type.ref->c);
+			}
+			gen_cast_s(VT_SIZE_T);
+			break;
+		}
 		if (t == TOK_ALIGNOF3 && !sizeof_parsed_type)
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not allow '_Alignof' applied to an expression"); }
 		if ((type.t & VT_BTYPE) == VT_FUNC)
@@ -12354,6 +12386,7 @@ tok_next:
 		int has_default = 0;
 		int has_match = 0;
 		int learn = 0;
+		int ctl_is_type = 0;
 		TokenString *str = NULL;
 		CType *assoc_types = NULL;
 		int nb_assoc = 0;
@@ -12364,8 +12397,20 @@ tok_next:
 			{ MCC_TRACE("br\n"); mcc_pedantic("'_Generic' is a C11 feature"); }
 		next();
 		skip('(');
-		expr_type(&controlling_type, expr_eq);
-		convert_parameter_type(&controlling_type);
+		if (parse_btype(&controlling_type, &ad, 0)) { MCC_TRACE("br\n");
+			int gv;
+			type_decl(&controlling_type, &ad, &gv, TYPE_ABSTRACT);
+			if (controlling_type.t & VT_VLA)
+				{ MCC_TRACE("br\n"); mcc_error("'_Generic' controlling operand has a variably "
+										"modified type"); }
+			if (mcc_state->cversion < 202400)
+				{ MCC_TRACE("br\n"); mcc_pedantic("use of a type name as the '_Generic' controlling "
+										"operand is a C2Y feature"); }
+			ctl_is_type = 1;
+		} else { MCC_TRACE("br\n");
+			expr_type(&controlling_type, expr_eq);
+			convert_parameter_type(&controlling_type);
+		}
 
 		nocode_wanted = saved_nocode_wanted;
 
@@ -12385,13 +12430,14 @@ tok_next:
 				type_decl(&type, &ad, &v, TYPE_ABSTRACT);
 				if (type.t & VT_VLA)
 					{ MCC_TRACE("br\n"); mcc_error("'_Generic' association has a variably modified type"); }
-				else if ((type.t & VT_BTYPE) == VT_FUNC)
-					{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a '_Generic' association with a "
-											 "function type"); }
-				else { MCC_TRACE("br\n");
+				else if ((type.t & VT_BTYPE) == VT_FUNC) { MCC_TRACE("br\n");
+					if (mcc_state->cversion < 202400)
+						{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a '_Generic' association with a "
+												 "function type"); }
+				} else { MCC_TRACE("br\n");
 					int gsz, galign;
 					gsz = type_size(&type, &galign);
-					if (gsz < 0 || (type.t & VT_BTYPE) == VT_VOID)
+					if ((gsz < 0 || (type.t & VT_BTYPE) == VT_VOID) && mcc_state->cversion < 202400)
 						{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a '_Generic' association "
 												 "with an incomplete type"); }
 				}
@@ -15119,7 +15165,27 @@ static int merge_str_kind(int merge_kind, int tk) {
 	return merge_kind;
 }
 
+static void decl_initializer_1(init_params *p, CType *type, unsigned long c, int flags);
+
 static void decl_initializer(init_params *p, CType *type, unsigned long c, int flags) {
+	unsigned char save_warn_pedantic = mcc_state->warn_pedantic;
+	unsigned char save_pedantic_errors = mcc_state->pedantic_errors;
+	int saw_ext = 0;
+
+	while (!(flags & DIF_HAVE_ELEM) && tok == TOK_EXTENSION) { MCC_TRACE("br\n");
+		saw_ext = 1;
+		mcc_state->warn_pedantic = 0;
+		mcc_state->pedantic_errors = 0;
+		next();
+	}
+	decl_initializer_1(p, type, c, flags);
+	if (saw_ext) { MCC_TRACE("br\n");
+		mcc_state->warn_pedantic = save_warn_pedantic;
+		mcc_state->pedantic_errors = save_pedantic_errors;
+	}
+}
+
+static void decl_initializer_1(init_params *p, CType *type, unsigned long c, int flags) {
 	int len, n, no_oblock;
 	int size1, align1;
 	Sym *s, *f;
@@ -15351,6 +15417,19 @@ static void decl_initializer(init_params *p, CType *type, unsigned long c, int f
 						"too many braces around scalar initializer"); }
 		}
 		decl_initializer(p, type, c, flags & ~DIF_HAVE_ELEM);
+		while (tok == ',') { MCC_TRACE("br\n");
+			next();
+			if (tok == '}')
+				{ MCC_TRACE("br\n"); break; }
+			if (tok == ',')
+				{ MCC_TRACE("br\n"); expect("expression"); }
+			if (!p->excess_warned) { MCC_TRACE("br\n");
+				p->excess_warned = 1;
+				mcc_warning_c(warn_excess_initializers)(
+						"excess elements in scalar initializer");
+			}
+			skip_or_save_block(NULL);
+		}
 		skip('}');
 	} else
 	one_elem:
@@ -16582,7 +16661,8 @@ static int decl(int l) {
 				for (sa = sym->type.ref; (sa = sa->next) != NULL;) { MCC_TRACE("br\n");
 					if (!(sa->v & ~SYM_FIELD)) { MCC_TRACE("br\n");
 						if (mcc_state->cversion < 202311)
-							{ MCC_TRACE("br\n"); expect("identifier"); }
+							{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not support omitting parameter "
+													 "names in function definitions before C23"); }
 						sa->v = (anon_sym++) | SYM_FIELD;
 					}
 					if (((sa->type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(sa->type.t)) && sa->type.ref->c < 0)
@@ -16590,7 +16670,8 @@ static int decl(int l) {
 											get_tok_str(sa->v & ~SYM_FIELD, NULL)); }
 					if (sym->type.ref->f.func_type == FUNC_OLD) { MCC_TRACE("br\n");
 						if (sa->type.t & VT_EXTERN) { MCC_TRACE("br\n");
-							if (mcc_state->cversion >= 199901)
+							if (mcc_state->cversion >= 199901 && !mcc_state->permissive &&
+								(mcc_state->warn_implicit_int & WARN_ON))
 								{ MCC_TRACE("br\n"); mcc_error_noabort("type of '%s' defaults to 'int' (implicit int removed in C99)",
 																	get_tok_str(sa->v & ~SYM_FIELD, NULL)); }
 							else

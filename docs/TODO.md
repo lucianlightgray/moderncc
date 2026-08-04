@@ -4076,3 +4076,179 @@ before changing anything.
 
 `tests/ast/rir_c2.cmake` reports counts only; naming the six needs instrumentation in
 the C2 leg, which does not exist yet.
+
+## The 119 `gcc.dg` FAILEXE: 74% are not ours, and none of the rest is an optimizer bug
+
+Re-measured at `d4bf0d27` with `tools/xsuite.py --opt=-O0 --ref clang`: **120**
+`gcc.dg` `FAILEXE`, not 119. Every one of them was then re-run through the *same*
+harness with `--mcc /usr/bin/gcc` and `--mcc clang` so the flags and the timeout are
+identical rather than reconstructed by hand.
+
+| verdict | count | reading |
+|---|---:|---|
+| gcc **and** clang pass at `-O0` | 30 | ours |
+| gcc passes, clang does not | 48 | out of scope: the goal metric is *"every gcc test clang can run"* |
+| neither reference passes | 42 | not a compiler gap at all |
+
+Taking "clang passes" as the bar — which is what the goal sentence says — the
+in-scope set is **31 of 120 (26%)**: the 30 above plus `pointer-counted-by-8.c`,
+where clang passes and gcc does not. The other 89 are noise in this block and should
+stop being counted against mcc. The largest single family in the 48 is
+`builtin-object-size-*`/`builtin-dynamic-object-size-*`, which clang cannot do at
+`-O0` at all.
+
+**The 31, clustered.** Each was also run at `-O0/-O1/-O2/-O3`:
+
+| cluster | n | root cause |
+|---|---:|---|
+| VLA-typed operand of `sizeof`/`typeof` is not evaluated | 8 | `expr_type()` at **`src/mccgen.c:8609`** |
+| `__builtin_object_size` precision | 8 | `builtin-{,dynamic-}object-size-{9,11,12}`, `pr39343`, `pointer-counted-by-8` |
+| `__builtin_constant_p` true only after IPA | 4 | `ipa/inline-8`, `ipa/pr92497-1`, `tree-ssa/modref-{2,5}` |
+| `ms_struct` bitfield layout | 2 | `bf-ms-layout-{2,5}` |
+| gnu23 tag-based aliasing exploited by the optimizer | 2 | `gnu23-tag-alias-{2,5}` |
+| singletons | 7 | `c11-uni-string-1` (`u8`/`u`/`U` as macro names), `c90-scope-1`, `cpp/embed-12`, `fwrapv-2`, `gnu99-init-1` (GNU range designators), `vla-24`, `torture/20240517-1` |
+
+**The finding that matters: 30 of the 31 fail identically at `-O0`, `-O1`, `-O2` and
+`-O3`.** (The exception is `torture/20240517-1`, which *passes* at `-O2`/`-O3` and
+wants `-fmerge-all-constants` at lower levels.) So not one of them is a wrong-code
+defect introduced by the AST/RIR optimizer; they are missing front-end and codegen
+capability. Anyone taking this block should expect to work in `src/mccgen.c`, and
+`src/mccast.c`/`src/mccrir.c` will not help.
+
+**The VLA cluster is one line of ownership away.** `expr_type()` does an
+unconditional `nocode_wanted++` around the operand, but C99 6.5.3.4p2 requires a
+VLA-typed operand to be *evaluated*. Confirmed with a two-line repro: `sizeof
+(typeof (*(++i, (char (*)[i])a)))` leaves `i == 0` under mcc and `i == 1` under gcc.
+It pays `vla-{14,15,16}`, `vla-stexp-{4,6,9}`, `typename-vla-1` and `pr114831-2`
+(`typeof((n++,a))`), i.e. 8 of the 31, and it is the single highest-yield change in
+the whole block. `vla-24` is *not* in it: there the VLA scope exit restores the stack
+pointer and takes an `alloca` from the same scope with it.
+
+**Both known flakes re-measured** on the tip: `20050527-1.c` is 40/40 clean now and
+`flex-array-counted-by-pr121000.c` is **13/40** — still nondeterministic, so any
+board that shows either of them moving is showing a coin flip. `20050527-1.c` carries
+no `dg-options`, so it runs at `-O0`, where the AST optimizer is off entirely; it can
+never be evidence about an optimizer change.
+
+## The `link_error` block: what each of the 56 actually wants
+
+85 files reach the linker with an unresolved `link_error`. 29 are `REFFAIL` (clang
+misses them too) and are out of scope, leaving **56**. Classified by reading every
+one of them, the capability needed is:
+
+| capability | n |
+|---|---:|
+| alias analysis (TBAA, restrict, points-to, distinct mallocs) | 10 |
+| ranges through arithmetic (`>>`, `/`, `*`, narrowing casts, bitfield precision) | 7 |
+| folding comparisons of address expressions | 6 |
+| plain copy/constant propagation across a merge | 6 |
+| `__builtin_{pow,exp,copysign,fmod}` constant folding | 4 |
+| ranges from constant aggregate initializers, unknown index | 4 |
+| unsigned/signed wrap reasoning | 4 |
+| range narrowed by a dominating condition | 4 |
+| loop unrolling / store motion / IV range | 4 |
+| known-bits (alignment, low-zero-bit) propagation | 2 |
+| interprocedural (indirect inlining, callee return range) | 2 |
+| **constant-index read from a `static const` aggregate** | **1** |
+| proving a loop never exits | 1 |
+| `__attribute__((nonnull))` as a range source | 1 |
+
+The last-but-two line is now closed; see below. Two notes for whoever takes the rest:
+
+*The address-comparison cluster is in `gen_opic`, not in the AST.* `src/mccgen.c:3586`
+already folds `sym+a <op> sym+b` for `-`/`==`/`!=` when both sides are
+`VT_CONST|VT_SYM` with the *same* symbol, and `:3596` folds two *different* named
+symbols under `CONST_WANTED`. What is missing is (a) the same treatment when both
+sides are `VT_LOCAL` with no symbol -- which is what `pr15791-{1,2}`, `pr19807-1` and
+`pr27150-1` all are, since their arrays are on the stack -- and (b) an arm for a
+symbol address compared against literal 0, which is `pr15347`. Neither belongs in
+`mccast.c`. **(a) has a real hazard**: `loc` is restored at block exit, so two locals
+in disjoint sibling scopes can share a frame offset, and "same offset" would then
+wrongly mean "same object". Any implementation must prove that cannot reach the fold.
+
+*`fwrapv-2` wants `(2*x)/2 -> x`.* Legal only because signed overflow is undefined,
+so it must be predicated on `-fwrapv` being off. One test; weigh it against the fact
+that this is the exact identity the wrong-fold audit calls out as an example.
+
+## Landed: constant-index reads from `static const` aggregates (`ast_cload_run`)
+
+`src/mccast.c`, strategy index 21, gate `MCC_AST_CLOAD` (default `-O1`+ and `-O4`).
+Rewrites an arena node that reads a `static const` object at a link-time-constant
+address into an `AST_Literal`. Three node shapes fold -- an `AST_Load` over a
+constant address, an `AST_Ref` that is itself the lvalue, and an `AST_OP_MEMBER` over
+either -- because folding only the first would leave `cars[1].tire_pressure[2]`
+constant while `cars[1].speed` stayed a load.
+
+**It reuses `gen.c` rather than reimplementing it.** `mccast.c` is `#include`d into
+the same TU, so `const_lval_bytes` (`src/mccgen.c:3355`: `SHT_NOBITS`, bounds, and
+the relocation-overlap scan) and `fold_const_lval_at` (`:3393`: sign/zero extension)
+are directly callable. They were already correct; they were simply unreachable from a
+function body, because `fold_const_lval` gates them on `global_expr && CONST_WANTED`.
+What was missing was only the walk from an arena subtree back to `sym + byte offset`,
+which is `ast_cload_addr`/`ast_cload_lval`.
+
+**Two things about the arena that cost most of the debugging time and are worth
+writing down.**
+
+1. *The index operand of `AST_Binary '+'` is in element units, not bytes.* The IR
+   capture suppresses nesting, so `gen_op`'s own `vpush_type_size(); gen_op('*')` for
+   pointer arithmetic never reaches the arena. The stride is implied entirely by the
+   pointee type, which is why the two walkers thread a `CType` alongside the offset.
+   `AST_Load` carries no type of its own; the loaded type *is* the pointee the child
+   resolved to, which also makes `*(const unsigned char *)&ia[0]` read as a byte
+   because the `AST_Convert` updates it.
+2. *A decayed array `Ref` has no `VT_LVAL`.* `gaddrof` cleared it, so it is a bare
+   `VT_CONST|VT_SYM` value and never reaches the lvalue walker. That needed its own
+   arm.
+
+**Two guards are deliberately stricter than `gen.c`'s.** `const_lval_bytes` waives its
+`SHF_WRITE` check for anonymous symbols, which is sound where it is used -- a constant
+expression is evaluated before any store can run -- and is *not* sound inside a
+function body, where a file-scope compound literal in `.data` may already have been
+written; so a non-writable section is required outright. And the fold only fires where
+the parent consumes the node as a plain rvalue (`ast_cload_rvalue_use`), because
+`AST_OP_ADDR`, `AST_OP_MEMBER` and the inc/dec path all need the lvalue itself.
+
+**The architectural constraint this ran into, for the next person.** The first attempt
+folded at replay time, inside `ast_replay_value`'s `AST_Load` arm, and moved nothing.
+`ast_func_end` replays the arena *once as a fidelity check* and computes `faithful` by
+comparing the emitted bytes and relocations against the parser's; a replay that
+optimizes is unfaithful and the whole body falls back. Any pass that changes code must
+be an arena rewrite in the post-fidelity strategy phase, and its hit count must be
+wired into the `do_*` disjunctions at `src/mccast.c:16135`/`:16158` and into
+`AST_PF_EMIT`'s `ast_fconst_i` -- **a strategy that is not in those lists runs and is
+then thrown away**, which is exactly what happened. This is also why
+`ast_run_templates` may run *before* the fidelity replay: `Literal op Literal` was
+already folded by `gen_opic` during parsing, so it is byte-neutral.
+
+**Yield: one test**, `gcc.dg/tree-ssa/pr14841.c`, `FAIL -> PASS`. The whole-tree sweep
+moves 18,837 -> 18,840 `PASS` with **zero** regressions; the other two rows are the
+`flex-array-counted-by-pr121000` and `20050527-1` flakes documented above.
+`gcc.c-torture/execute` at `-O0/-O1/-O2/-O3` is byte-for-byte the same board before and
+after (0 cells moved). `ctest` 8122/8122, `selfhost-fixpoint -O3` byte-identical,
+`tracegate`/`schemagate` OK. `-O0` output cannot move: the gate is `optimize >= 1` and
+so is the `sg_templates` strategy gate. Compiling `src/mcc.c` at `-O3` the fold fires
+**7 times in 6 bodies**, so `selfhost-fixpoint` is a real exercise of it and not a
+vacuous pass. A 26-case adversarial file (`INT_MIN`/`INT_MAX`, `UINT_MAX`, signed and
+unsigned `char`/`short`/`long long`, `_Bool`, mixed-member structs, 2-D arrays,
+string-literal indexing, `&ia[2]-&ia[0]`, a runtime index that must still load, and
+`*(const unsigned char *)&ia[0]`) agrees with gcc at all four levels.
+
+One test is a thin return for the machinery, and that is the honest headline. The
+reason to keep it is that it is the *prerequisite* for the four-test
+`CONST-AGG-RANGE` row above and it is the piece with no soundness argument left to
+make.
+
+**Next step on this line, precisely.** `vrp-from-cst-agg-{3,4,7}` need the same walk
+with a *non-literal* index: enumerate `base + i*stride` for `0 <= i < count` (out of
+bounds is UB, so the union over declared elements is legal), cap the enumeration, and
+take min/max of the bytes. The hard half is not that; it is delivering the range to
+the comparison. In all three tests the value is stored into a local first, and
+`ast_vlat_use_of` (`src/mccast.c:9732`) refuses any local that is not
+`ast_local_is_readonly`. Either relax it to "written exactly once, from an expression
+with a known range" -- in which case `ast_vlat_recompute` must be extended in lockstep
+or the `MCC_CONFIG_AST_SHADOW` build aborts -- or add an expression-level
+`ast_expr_range()` independent of the lattice. Note also that `ast_range_run` rewrites
+`v <= 2 || v > 11` into `(unsigned)(v-3) > 8` before any of this is asked, so the fold
+must either happen inside the earlier `ast_ident_run` fixpoint or see through
+`Convert`+`-`.

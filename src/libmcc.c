@@ -2901,6 +2901,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				{ MCC_TRACE("br\n"); s->cversion = 201710; }
 			else if (!strcmp(std, "23") || !strcmp(std, "2x"))
 				{ MCC_TRACE("br\n"); s->cversion = 202311; }
+			else if (!strcmp(std, "2y"))
+				{ MCC_TRACE("br\n"); s->cversion = 202400; }
 			else
 				{ MCC_TRACE("br\n"); mcc_warning("unsupported language standard '%s'", disp); }
 			if (strict_iso)
