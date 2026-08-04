@@ -301,6 +301,9 @@ DEF(TOK_builtin_va_arg, "__builtin_va_arg")
 #elif defined MCC_TARGET_RISCV64
 DEF(TOK_builtin_va_start, "__builtin_va_start")
 #endif
+#if !defined MCC_TARGET_X86_64 || defined MCC_TARGET_PE
+DEF(TOK_builtin_c23_va_start, "__builtin_c23_va_start")
+#endif
 
 #define DEF_ATOMIC(ID) DEF(TOK_##__##ID, "__" #ID)
 DEF_ATOMIC(atomic_store)

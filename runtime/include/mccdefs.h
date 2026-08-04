@@ -589,6 +589,9 @@
 	#define __builtin_va_start(ap, last) \
 	(__builtin_va_start_check(last), \
 	 *(ap) = *(struct __va_list_tag *)((__mcc_char_t*)__builtin_frame_address(0) - 24))
+	#define __builtin_c23_va_start(ap, ...) \
+	(__builtin_va_start_check(__VA_ARGS__), \
+	 *(ap) = *(struct __va_list_tag *)((__mcc_char_t*)__builtin_frame_address(0) - 24))
 	#define __builtin_va_arg(ap, t)   \
 	(*(t *)(__va_arg_inline(ap, __builtin_va_arg_types(t), sizeof(t), __alignof__(t))))
 	#define __builtin_va_copy(dest, src) (*(dest) = *(src))
