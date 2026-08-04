@@ -628,6 +628,32 @@ source reads the way it looks.
 The probes to continue with are in the tree, all under `RIRPRODDUMP=<funcname>`:
 `[rir-proddump]`, `[ast-handover]`, `[ast-mid]`, `[ast-injmp]`, `[ast-predump]`.
 
+**Confirmed against the unfiltered dumps** — an earlier `awk` filter was a plausible
+confound and is not one. Full output, same run:
+
+```
+[ast-mid]   arena=0x…7a0 root=0 count=16     [ast-injmp] arena=0x…7a0 root=0 count=16
+BasicBlock                                    BasicBlock
+  Store                                         Store
+    Ref #0                                        Ref #0
+    Binary -                                      Literal 0
+      Binary -                                  Invoke #0        <- identical below
+        Literal 0                                 …
+        Literal 9223372036854775807
+      Literal 1
+  Invoke #0        <- identical below
+```
+
+Only the `Store`'s value child changes; the `Invoke` and `Return` subtrees are
+byte-identical, and `count` stays 16 because the folded result **reuses a node** rather
+than shrinking the arena. So the rewrite is narrow and targeted, not a wholesale
+rebuild — which argues for a real fold somewhere rather than a stray write.
+
+One lead not yet followed: `mcc_malloc` is a macro onto `mcc_malloc_debug(size,
+__FILE__, __LINE__)` (`src/mcc.h:1316`), so the two allocations in the window are not
+the plain calls they look like. That is the only remaining thing in the window that is
+more than it appears.
+
 ### Earlier framing, superseded: the production arena is correct but the replay does not walk it
 
 **`RIRPRODDUMP=<funcname>` is new and is the only window onto the arena production
