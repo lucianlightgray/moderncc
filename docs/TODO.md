@@ -4369,3 +4369,65 @@ with four wrong-code defects closed underneath it (promotion of assigning loop
 conditions, `-freverse-funcargs` argument order, non-store loop-condition effects, and
 the chained-store duplication). The remaining 31 are catalogued by first-diff offset
 and length delta earlier in this file; `RVATTR` is the tool that makes them tractable.
+
+---
+
+## Three miscompiles the census could not distinguish from reordering
+
+Found by disassembling the fallback bodies and diffing the *instructions* rather than
+the bytes (`docs/fallbacks-O1.md`, regenerate per the note below). All three were
+sitting in the census looking innocuous; two had a **zero** length delta, which is the
+least suspicious row shape there is.
+
+| body | verdict | the difference | consequence |
+|---|---|---|---|
+| `put_stabs` | `bytes`, delta 0 | `sub rax,0xc` → `sub rax,0x1` | pointer 11 bytes off the intended stab record |
+| `next` | `bytes`, delta 0 | `ja` → `jg` | every token below `0xa8` treated as a digraph |
+| `const_ref_data`, `format_str_literal` | `len`, +1 | `mov ecx,[rcx]` → `mov rcx,[rcx]` | 8-byte read of a value cast to `unsigned` |
+
+**One root cause behind all three: a cast that emits no instruction leaves no trace in
+the arena.** `gen_cast` returns without emitting for a pointer→pointer cast, for a
+signedness-only cast on a value already in a register, and for an lvalue narrowing on
+the `ALLOW_SUBTYPE_ACCESS` path. No instruction means no IR op, no hook, and no
+`AST_Convert` node — so the replay re-derives the operation from operand types that no
+longer carry the cast, and picks a different element size, signedness, or width.
+
+`src/mccrir.c` already reconciles arena types against the parser's captured `SValue`
+in three places. Each had a gap on exactly one side:
+
+- the `GENOP` pointer repair read `ast_type_t(cur)` directly, and a `Binary` from a
+  previous `GENOP` carries type 0, so `ptr-arith → cast → ptr-arith` chains bailed out;
+- the genop signedness reconcile had `unsigned → signed` but no mirror;
+- `rir_stamp_sv` reconciled widening (`cs >= vs2`) but discarded narrowing.
+
+**None of the three had a use-site fix.** The information is physically absent from the
+arena by the time the replay runs, which is worth remembering the next time the "fix at
+the USE site" rule is applied — it holds only where the arena still carries what is
+needed.
+
+Measured on the combined tree: `mcc.c -O1` **31 → 24** fallbacks (`-O2` 32 → 25, `-O4`
+60 → 54), `used` 1174 → 1181. ctest 8255 with only the two banked W6 i386 C2 cells,
+docker tier 26 of 26, all four side configurations build.
+
+### Eight bodies proven equivalent, not fixed
+
+Audited separately and all safe: `put_elf_sym`, `relocate_syms`, `bind_exe_dynsyms`,
+`export_global_syms`, `rt_find_state`, `_mcc_backtrace`, `case_adjacent`, `so_filesize`.
+Seven are one transposed pair of *adjacent* loads with no store, call or barrier
+between them — two loads with no intervening write read the same values in either
+order, so aliasing never arises; the hoisted one is always a `[rbp-disp8]` frame slot
+that cannot fault. `so_filesize` is different: a then/else block layout swap in a
+ternary, both arms 55 bytes landing on the same join point.
+
+These are the natural first entries for `RIREQUIV` (`rir_c2_equiv_proven`,
+`src/mccrir.c`), whose comment already says the proof must come from outside the
+compiler. Not wired up yet.
+
+### Regenerating docs/fallbacks-O1.md
+
+Not tracked -- it is a snapshot that goes stale the moment the census moves. Rebuild by
+dumping full bodies (`MCC_LOG=0xff MCC_AST_UNFAITHFUL_DUMP=20000`), disassembling both
+legs with `objdump -D -b binary -m i386:x86-64 -M intel --no-show-raw-insn`, and diffing
+with **addresses dropped and branch targets rewritten as signed displacements** --
+without those two normalisations a body that shifts by a few bytes reads as wholly
+rewritten (`parse_include` showed 256 changed lines instead of 42).

@@ -1750,6 +1750,19 @@ static int rir_child_uns_to_signed(AstLocal n, int st, uint64_t ref) {
 	return 0;
 }
 
+static int rir_child_signed_to_uns(AstLocal n, int st, uint64_t ref) {
+	int i, nc = ast_nchild(rir_arena, n), ss;
+	if (!rir_int_kind(st) || !(st & VT_UNSIGNED))
+		return 0;
+	ss = rir_type_size(st, ref);
+	for (i = 0; i < nc; i++) {
+		AstLocal c = ast_child(rir_arena, n, i);
+		if (rir_eff_unsigned(c, 0) == 0 && rir_eff_size(c, 0) == ss)
+			return 1;
+	}
+	return 0;
+}
+
 static int rir_const_eval(AstLocal n, long long *out, int depth) {
 	long long a, b;
 	int op;
@@ -1812,6 +1825,38 @@ static int rir_ptr_elem_size(int t, uint64_t ref) {
 	if ((pt.t & VT_BTYPE) == VT_FUNC || (pt.t & VT_BTYPE) == VT_VOID)
 		return -1;
 	return type_size(&pt, &al);
+}
+
+static int rir_eff_ptr_type(AstLocal n, int *t, uint64_t *ref, int depth) {
+	int op, lt, rt;
+	uint64_t lref, rref;
+	if (n == AST_NONE || depth > 8)
+		return 0;
+	if (ast_type_t(rir_arena, n)) {
+		*t = ast_type_t(rir_arena, n);
+		*ref = ast_type_ref(rir_arena, n);
+		return 1;
+	}
+	if (ast_kind(rir_arena, n) != AST_Binary || ast_nchild(rir_arena, n) != 2)
+		return 0;
+	op = ast_op(rir_arena, n);
+	if (op != '+' && op != '-')
+		return 0;
+	if (!rir_eff_ptr_type(ast_child(rir_arena, n, 0), &lt, &lref, depth + 1))
+		return 0;
+	if (!rir_eff_ptr_type(ast_child(rir_arena, n, 1), &rt, &rref, depth + 1))
+		return 0;
+	if ((lt & VT_BTYPE) == VT_PTR && (rt & VT_BTYPE) != VT_PTR) {
+		*t = lt;
+		*ref = lref;
+		return 1;
+	}
+	if (op == '+' && (rt & VT_BTYPE) == VT_PTR && (lt & VT_BTYPE) != VT_PTR) {
+		*t = rt;
+		*ref = rref;
+		return 1;
+	}
+	return 0;
 }
 
 static int rir_node_wider(AstLocal n, int st, uint64_t ref) {
@@ -1924,6 +1969,33 @@ static void rir_stamp_flt_fold(const SValue *base, int n) {
 	}
 }
 
+/* gen_cast narrows an lvalue for free: ALLOW_SUBTYPE_ACCESS retypes vtop and emits
+   nothing, so `(unsigned)sv->c.i` reaches the later gv() as a 4-byte load off an
+   8-byte member. Nothing is captured for that retype, so the arena keeps the member's
+   declared type and the replay loads 8 bytes -- a different value whenever the high
+   half is set. Only these node shapes are still lvalues at that point, so only they
+   can take the same free path back in the replay. */
+static int rir_subtype_bt(int t) {
+	int bt = t & VT_BTYPE;
+	return bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT || bt == VT_LLONG;
+}
+
+static int rir_lval_shape(AstLocal n) {
+	uint16_t k;
+	if (n == AST_NONE)
+		return 0;
+	k = ast_kind(rir_arena, n);
+	if (k == AST_Load)
+		return 1;
+	if (k == AST_Ref)
+		return (ast_op(rir_arena, n) & VT_LVAL) != 0;
+	if (k == AST_Unary) {
+		int op = ast_op(rir_arena, n);
+		return op == AST_OP_MEMBER || op == AST_OP_MEMBER_ARROW;
+	}
+	return 0;
+}
+
 static void rir_stamp_sv(const SValue *base, int n) {
 	int k, want;
 	if (n < 0)
@@ -2000,6 +2072,16 @@ static void rir_stamp_sv(const SValue *base, int n) {
 				ast_set_type(rir_arena, cur, v->type.t,
 										 (uint64_t)(uintptr_t)v->type.ref);
 #endif
+			if (cs > vs2 && (v->r & VT_LVAL) && rir_subtype_bt(ct) &&
+					rir_subtype_bt(v->type.t) && !((ct | v->type.t) & VT_BITFIELD) &&
+					rir_lval_shape(cur))
+				{
+					AstLocal cv = ast_node(rir_arena, AST_Convert);
+					ast_set_type(rir_arena, cv, v->type.t,
+											 (uint64_t)(uintptr_t)v->type.ref);
+					ast_add_child(rir_arena, cv, cur);
+					rir_sh[k] = cv;
+				}
 			continue;
 		}
 		{
@@ -2292,7 +2374,9 @@ static void rir_op_effect(const RirOp *ro) {
 					continue;
 				if (!opdiff && !rir_child_width_differs(cur, st, (uint64_t)(uintptr_t)sv2->type.ref) &&
 						!rir_child_wider(cur, st, (uint64_t)(uintptr_t)sv2->type.ref) &&
-						!rir_child_uns_to_signed(cur, st, (uint64_t)(uintptr_t)sv2->type.ref))
+						!rir_child_uns_to_signed(cur, st, (uint64_t)(uintptr_t)sv2->type.ref) &&
+						!(TOK_ISCOND(o->a0) &&
+							rir_child_signed_to_uns(cur, st, (uint64_t)(uintptr_t)sv2->type.ref)))
 					continue;
 				{
 					AstLocal cv = ast_node(rir_arena, AST_Convert);
@@ -2307,15 +2391,17 @@ static void rir_op_effect(const RirOp *ro) {
 			int q;
 			for (q = 0; q < 2; q++) {
 				int si = rir_shn - 1 - q, ct;
+				uint64_t cref;
 				AstLocal cur = rir_sh[si];
 				const SValue *sv3 = &ir_cap_vs[o->vs_off + o->vs_n - 1 - q];
 				int st = sv3->type.t;
 				if (cur == AST_NONE || rir_shtype[si])
 					continue;
-				ct = ast_type_t(rir_arena, cur);
+				if (!rir_eff_ptr_type(cur, &ct, &cref, 0))
+					continue;
 				if ((ct & VT_BTYPE) != VT_PTR || (st & VT_BTYPE) != VT_PTR)
 					continue;
-				if (rir_ptr_elem_size(ct, ast_type_ref(rir_arena, cur)) ==
+				if (rir_ptr_elem_size(ct, cref) ==
 						rir_ptr_elem_size(st, (uint64_t)(uintptr_t)sv3->type.ref))
 					continue;
 				{
