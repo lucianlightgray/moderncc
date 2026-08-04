@@ -2622,6 +2622,45 @@ operands. The reported "~30 of 100" is exactly 1376/4800, i.e. a comparison agai
 `-O0` specifically. mcc already matches gcc once optimising and clang everywhere; changing
 it would break both, on a payload IEEE 754 leaves unspecified.
 
+### Local test tiers: what runs, and the one host change that would add more
+
+docker, wine and qemu-user are all available on this host, and the tiers are green:
+
+| tier | result |
+|---|---|
+| `cross` + `qemu` + `wine` (cmake-cross) | **90/90** — 79 run, 11 need `MCC_REPLAY_IR_C2=1` |
+| full cross-build `ctest` | **8,255/8,255** |
+| `docker` | **26/26** (3 arm64 cells skipped, see below) |
+
+This matters because a large share of this session's work was ABI and codegen —
+x86-64 stack-argument alignment, SSEUP vector classification, mixed INTEGER+SSE struct
+returns — validated only on x86-64 Linux. The cross build exercises arm, arm64, riscv64,
+i386, arm-win32, arm-wince, i386-win32, arm64-win32 and arm64-osx, and qemu-user actually
+*runs* the results. **Run `cmake --preset cross` and the `cross|qemu|wine` tier before
+pushing anything touching `src/arch/`, ABI classification or codegen.**
+
+**Fixed while enabling this:** `riscv64-promote-docker` bind-mounts the build directory
+and runs as root, so it left root-owned files behind and its own `rm -rf "$WORK"` then
+failed with EPERM — it passed once and failed on every subsequent run. The container now
+chowns the work tree back to the invoking uid/gid on exit, and `dg_reset_work` in
+`tools/dockergate.sh` clears a directory an older run already poisoned, via a throwaway
+container when the host `rm` cannot.
+
+**Open, needs a host change rather than a repo change.** The three arm64 docker cells skip
+because this host's `qemu-aarch64` binfmt handler is registered with flags `OC` and not
+**`F`**. Without `F` the kernel resolves the interpreter inside the *container's* mount
+namespace, where `/usr/bin/qemu-aarch64` does not exist, so any arm64 container dies with
+`exec ...: no such file or directory`. One command fixes it, and it changes host state,
+not the repo:
+
+```
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+```
+
+Worth doing: `abi-diff-arm64-docker` is an ABI differential against a real arm64
+toolchain, which is precisely the class of test that caught the 32-byte vector defect on
+x86-64.
+
 ### Board state at `29e0167b` — the goal metric
 
 Goal: every gcc test clang can run should work under mcc. That is exactly the gcc-suite
