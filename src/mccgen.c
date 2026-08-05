@@ -5355,7 +5355,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		if (r == VT_STRUCT) { MCC_TRACE("br\n");
 			store_packed_bf(bit_pos, bit_size);
 		} else { MCC_TRACE("br\n");
-			unsigned long long mask = (1ULL << bit_size) - 1;
+			unsigned long long mask = bit_size >= 64 ? ~0ULL : (1ULL << bit_size) - 1;
 			if (dbt != VT_BOOL) { MCC_TRACE("br\n");
 				if (dbt == VT_LLONG)
 					{ MCC_TRACE("br\n"); vpushll(mask); }
@@ -6581,10 +6581,7 @@ do_decl:
 							mcc_error("width of '%s' exceeds its type",
 												get_tok_str(v, NULL));
 						} else if (bit_size == bsize && bt != VT_BOOL && !*mcc_state->pack_stack_ptr && !ad.a.packed && !ad1.a.packed) { MCC_TRACE("br\n");
-							if (bit_size != 64)
-								{ MCC_TRACE("br\n"); late_bf = 1; }
-						} else if (bit_size == 64) { MCC_TRACE("br\n");
-							;
+							late_bf = 1;
 						} else { MCC_TRACE("br\n");
 							type1.t = (type1.t & ~VT_STRUCT_MASK) | VT_BITFIELD;
 							type1.bp = 0;
