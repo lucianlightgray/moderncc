@@ -450,15 +450,45 @@ host-native self-host unmeasurable on this machine.
 | W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so nothing under **External suites** or **Vector types** could be checked on this host. **Partly answered upstream**: `214ed40f` re-ran the whole tree and reports 82.6/82.4 over 20,513 tests — see **The eight-cluster sweep**. The gap that remains is that this host still cannot reproduce it. |
 | W8 | **`selfhost-jit` faults `0xC0000374` (STATUS_HEAP_CORRUPTION) on x86_64 Windows** | Live. `mcc --jit -O13 -run src/mcc.c` corrupts the heap during the in-memory recompile of its own source; basic JIT `-run` works and the same cell is green under `linux-gcc`/`linux-clang` in WSL, so this is Windows-PE-JIT-specific and in the same swapped-variant/KGC-stub residual family as the `0xC0000005` skip. `tools/selfhost-jit.py` now SKIPs `0xC0000374` alongside `0xC0000005`; the heap-corruption defect itself is still open and needs a `cdb`/PageHeap run to name the faulting allocation. |
 
-**Parity-sweep leak (host-independent):** `exec/star_vla_prototype` prints `OK` but
-leaks two 64-byte chunks (`src/mccpp.c:1144`, the `tokstr_alloc` backing store),
-caught only under `MCC_DIAG` so it surfaces in the `diagnostics` preset (23 cells)
-and nowhere else. The tokens are the saved `[n]` dimension expression: `parse_btype`
-stashes them on the VLA-ref sym as `sym->vla_array_str` (`src/mccgen.c:8649`), and
-`sym_free` (`src/mccgen.c:1275`) never releases it. A blind free there is unsafe --
-`vla_array_str` shares storage with other Sym fields and is only live when
-`type.t & VT_VLA` -- so the free belongs wherever a VLA-ref sym is retired with its
-type still in hand, not in the generic `sym_free`. Miscompile-free; low severity.
+**Parity-sweep leak (host-independent) — closed 2026-08-05.** `exec/star_vla_prototype`
+printed `OK` but leaked two 64-byte chunks (`src/mccpp.c:1144`, the `tokstr_alloc`
+backing store), caught only under `MCC_DIAG` so it surfaced in the `diagnostics`
+preset and nowhere else. Three things about the entry above turned out to be wrong,
+and they are worth recording because they steer the fix.
+
+First, the leak is not about `[*]`. `post_type` saves the dimension tokens for
+*every* parameter array dimension (`td & TYPE_PARAM`) and keeps them whenever the
+dimension is variable, so any non-defining function declarator with a VLA parameter
+leaks: a plain prototype `void f(int n, double x[n]);` (1 chunk), a function pointer
+`void (*p)(int n, double x[3][n]);` (2), a `typedef void F(int n, double x[3][n]);`
+(2), a struct member `void (*cb)(int n, double x[n]);` (1), a block-scope prototype
+(2). Definitions did not leak only because `func_vla_arg` happened to free the
+tokens while evaluating them. `star_vla_prototype` was just the one test in the tree
+that declared such a prototype.
+
+Second, `type.t & VT_VLA` does not identify the owning Sym. The ref sym's `type` is
+the *element* type as it stood before `type->t` was rewritten, so for `double x[3][n]`
+the inner ref sym holding `"n"` has `type.t == VT_DOUBLE`, and for `double x[n][3]`
+the outer ref sym holding `"n"` has `type.t == VT_ARRAY|VT_PTR`. There is no test on
+the sym that separates it from a struct-type or function-type sym whose `next` slot
+is a real `Sym *`.
+
+Third, there is no site where such a sym is retired other than the generic
+`sym_pop`/`sym_free`: `post_type` finishes its parameter list with `sym_pop(ps, sr, 1)`
+(`keep == 1`), so the ref syms stay on the global or local stack until teardown.
+
+So ownership moved off the Sym entirely. `post_type` still hands the pointer to
+`sym->vla_array_str` for the consumers to read, but it also registers the token
+string in a per-translation-unit table (`MCCState.vla_array_strs`), and
+`mccgen_finish` releases the table with `tok_str_free_str` before `mccpp_delete`
+tears down `tokstr_alloc`. The two consumers, `func_vla_arg_code` and
+`vla_arg_eval_discard`, now `begin_macro(..., 2)` instead of `1`, so `end_macro`
+frees only the `TokenString` header and leaves the token array to the table. That
+also removes the dangling `vla_array_str` those two used to leave behind — a pointer
+`ast_inline_capture` (`src/mccast.c:2693`) reads as a predicate after `gen_function`
+has already freed it. The table is the single owner from save to teardown, so no
+double free is reachable and `sym_free_first` reuse is irrelevant: `sym_free`
+overwrites the union slot with the free-list link and `sym_push2` memsets.
 
 **W4 is closed (2026-08-05); W5 remains, and needs Windows-on-ARM hardware this host
 does not have.** The completed preset sweep below ran `stage2` — exactly W4 — to a

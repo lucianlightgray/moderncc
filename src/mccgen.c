@@ -265,6 +265,8 @@ ST_DATA Sym *local_label_stack;
 #define sym_free_first (mcc_state->sym_free_first)
 #define sym_pools (mcc_state->sym_pools)
 #define nb_sym_pools (mcc_state->nb_sym_pools)
+#define vla_array_strs (mcc_state->vla_array_strs)
+#define nb_vla_array_strs (mcc_state->nb_vla_array_strs)
 
 #define all_cleanups (mcc_state->all_cleanups)
 #define pending_gotos (mcc_state->pending_gotos)
@@ -1083,6 +1085,11 @@ ST_FUNC void mccgen_finish(MCCState *s1) { MCC_TRACE("enter\n");
 	s1->gen_complex_re_tok = s1->gen_complex_im_tok = 0;
 	sym_pop(&local_stack, NULL, 0);
 	free_defines(NULL);
+	for (int i = 0; i < nb_vla_array_strs; i++) { MCC_TRACE("br\n");
+		tok_str_free_str(vla_array_strs[i]);
+		vla_array_strs[i] = NULL;
+	}
+	dynarray_reset(&vla_array_strs, &nb_vla_array_strs);
 	dynarray_reset(&sym_pools, &nb_sym_pools);
 	cstr_free(&initstr);
 	dynarray_reset(&stk_data, &nb_stk_data);
@@ -8642,9 +8649,10 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 		type->ref = s;
 
 		if (vla_array_str) { MCC_TRACE("br\n");
-			if ((t1 & VT_VLA) && (td & (TYPE_NEST | TYPE_PARAM)))
-				{ MCC_TRACE("br\n"); s->vla_array_str = vla_array_str; }
-			else
+			if ((t1 & VT_VLA) && (td & (TYPE_NEST | TYPE_PARAM))) { MCC_TRACE("br\n");
+				s->vla_array_str = vla_array_str;
+				dynarray_add(&vla_array_strs, &nb_vla_array_strs, vla_array_str);
+			} else
 				{ MCC_TRACE("br\n"); tok_str_free_str(vla_array_str); }
 		}
 	}
@@ -16212,7 +16220,7 @@ static void func_vla_arg_code(Sym *arg) {
 		unget_tok(0);
 		vla_array_tok = tok_str_alloc();
 		vla_array_tok->str = arg->type.ref->vla_array_str;
-		begin_macro(vla_array_tok, 1);
+		begin_macro(vla_array_tok, 2);
 		next();
 		gexpr();
 		end_macro();
@@ -16231,7 +16239,7 @@ static void vla_arg_eval_discard(int *vla_str) {
 
 	unget_tok(0);
 	vla_array_tok->str = vla_str;
-	begin_macro(vla_array_tok, 1);
+	begin_macro(vla_array_tok, 2);
 	next();
 	gexpr();
 	end_macro();

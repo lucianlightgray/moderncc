@@ -993,6 +993,8 @@ struct MCCState {
 	Sym *sym_free_first;
 	void **sym_pools;
 	int nb_sym_pools;
+	void **vla_array_strs;
+	int nb_vla_array_strs;
 	Sym *all_cleanups, *pending_gotos;
 	int local_scope;
 	SValue gen_vstack[1 + VSTACK_SIZE];
