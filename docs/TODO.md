@@ -1,5 +1,63 @@
 # TODO
 
+## Where things stand — 2026-08-04, `66df3c7e`
+
+| Gate | State |
+|---|---|
+| board, gcc suite | `FAIL 449` / `FAILEXE 122` |
+| board, llvm suite | `FAIL 226` |
+| `ctest` | **8150/8157 — 7 deliberate reds**, all `run-tier/<triple>`, all `-run` TLS |
+| `-O3` fixpoint | byte-identical, **3068543** in the primary checkout |
+| cross / qemu / wine | 90/90 |
+| tracegate, schemagate | OK |
+
+**The 8145/8145 baseline is retired.** `run-tier` added twelve cells and seven of them
+are red on purpose, against two real pre-existing `-run` TLS defects. Do not "fix" them
+by weakening the corpus. Any *eighth* failure is a regression.
+
+**Fixpoint sizes do not compare across trees.** A git worktree's longer path inflates
+embedded strings: the same commit measures 3068543 in `/home/llg/Projects/mcc` and
+3076911 under `.claude/worktrees/…`. The gate is `o1 == o2 == o3` **within one tree**.
+An absolute size quoted from a worktree cost one agent a false discrepancy hunt.
+
+### Landed today
+
+`72fedcf1` four semantic gaps (board 471 → 449) · `7a31e90b` uninitialised `is_label`
+· `d50c480d` bitfield side-car · `7bded795` `VT_BTYPE` widened to 5 bits ·
+`2217535a` riscv64 `-run` veneer, arm64 `svc`, arm asm register numbering ·
+`66df3c7e` the `run-tier` tier · plus the qemu-user bootstrap that made
+`run-parity-arm`/`-arm64`/`-riscv64` execute at all.
+
+### Open, roughly by value
+
+1. **`-run` TLS, two defects** — the seven red cells. `tls_threads` fails on *every*
+   runnable triple including x86_64: a `pthread_create`d thread reads 0 from every
+   initialised `__thread` variable. `tls` additionally fails on `i386`, `arm`,
+   `riscv64` and both PE targets, losing `.tdata` initialisers in the main thread.
+   Neither is a JIT-tier bug; AOT is correct everywhere. Details below.
+2. **`__bf16`** — the type word is no longer the blocker. Slots 16-31 are free. What
+   remains is the encode/decode helper and per-backend ABI. **Do not alias it onto
+   `_Float16`**: they differ only in the helper, so an alias miscompiles silently.
+3. **Width-64 bitfields are never marked `VT_BITFIELD`** (`mccgen.c:6559`), the source
+   of all ten gcc/clang bitfield deviations. The six-bit ceiling that forced it is gone;
+   lifting it is now a layout change that needs its own differential.
+4. **riscv64 aborts on every mixed int/float two-register struct return** —
+   `arch_transfer_ret_regs` asserts `vtop->r == (VT_LOCAL | VT_LVAL)`, failing 7 of 37
+   shapes. A hard abort, not a miscompile.
+5. **arm64 `store()` does not strip `VT_MUSTCAST`** while its own `load()` does — the
+   same shape as the mask bug that cost a cross-tier failure, one mask narrower.
+6. **C23 structural tag compatibility** (8 files) — a subsystem, not a patch; a
+   half-implementation hands the wrong `Sym` to later member lookups.
+7. Smaller and precisely located: `register` array decay accepted where gcc/clang
+   reject · `const`-qualified *parameter* assignment accepted (not complex-specific) ·
+   `_Atomic _Complex ++` unsupported · one-argument `va_start` on i386, arm and
+   x86_64-PE · the seven costed cluster root causes in the table further down.
+8. **Unproven rather than open**: the Darwin branch of `run-tier.sh` has never
+   executed — treat its first run on a Mac as untested. And `arm-win32`,
+   `arm64-win32` and `arm-wince` have no runner on any host available here (wine
+   emulates x86 PE only; qemu-user cannot load PE), so their `-run` paths are
+   untested by anything and will stay that way without Windows-on-ARM hardware.
+
 ## `_Float16` landed on all five backends; `__bf16` is refused, and cannot be added without a type-word change
 
 `_Float16` (IEEE binary16) is implemented and verified on x86_64, i386, arm, arm64
