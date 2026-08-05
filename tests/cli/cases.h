@@ -2046,6 +2046,19 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'C2Y feature or GCC extension|OFF_OK' | sort | uniq -c | sed 's/^ *//'",
 		 "2 C2Y feature or GCC extension\n1 OFF_OK\n"},
 
+		{"attr_deprecated_unavailable", "",
+		 "printf '__attribute__((deprecated)) void od(void);\\n"
+		 "__attribute__((deprecated(\"m\"))) extern int ox;\\n"
+		 "__attribute__((unavailable)) void ou(void);\\n"
+		 "void f(void){ od(); (void)ox; }\\n' > {W}/dep.c && "
+		 "printf '__attribute__((unavailable)) void ou(void);\\n"
+		 "void g(void){ ou(); }\\n' > {W}/unav.c && "
+		 "{ {MCC} -B{B} -I{I} -c {W}/dep.c -o /dev/null 2>&1; "
+		 "{MCC} -B{B} -I{I} -Wno-deprecated-declarations -Werror -c {W}/dep.c -o /dev/null 2>&1 && echo OFF_OK; "
+		 "{MCC} -B{B} -I{I} -c {W}/unav.c -o /dev/null 2>&1; } | "
+		 "grep -oE \"is deprecated|is unavailable|OFF_OK\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 OFF_OK\n2 is deprecated\n1 is unavailable\n"},
+
 		{"fsyntax_only_no_output", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "
 		 "printf 'int main(void){ int 3x; }\\n' > {W}/so_bad.c && "

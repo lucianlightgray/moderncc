@@ -5637,6 +5637,12 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			break;
 		case TOK_DEPRECATED1:
 		case TOK_DEPRECATED2:
+			ad->a.deprecated = 1;
+			goto skip_param;
+		case TOK_UNAVAILABLE1:
+		case TOK_UNAVAILABLE2:
+			ad->a.unavailable = 1;
+			goto skip_param;
 		case TOK_NODISCARD1:
 		case TOK_NODISCARD2:
 			goto skip_param;
@@ -12862,6 +12868,13 @@ tok_next:
 		}
 
 		s->a.used = 1;
+
+		if (s->a.unavailable && !nocode_wanted)
+			{ MCC_TRACE("br\n"); mcc_error("'%s' is unavailable",
+												get_tok_str(s->v, NULL)); }
+		if (s->a.deprecated)
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_deprecated_declarations)(
+						"'%s' is deprecated", get_tok_str(s->v, NULL)); }
 
 		if (cur_func_inline_extern &&
 				(s->type.t & (VT_BTYPE | VT_STATIC | VT_INLINE)) == (VT_FUNC | VT_STATIC)) { MCC_TRACE("br\n");

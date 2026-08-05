@@ -1187,6 +1187,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->pie = -1;
 	s->pic = mcc_target_defaults.pic;
 	s->warn_implicit_function_declaration = WARN_ON;
+	s->warn_deprecated_declarations = WARN_ON;
 	s->warn_unsupported_option = WARN_ON;
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
@@ -2387,6 +2388,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_shift_count_overflow), 0, "shift-count-overflow"},
 		{offsetof(MCCState, warn_undefined_internal), 0, "undefined-internal"},
 		{offsetof(MCCState, warn_return_local_addr), 0, "return-local-addr"},
+		{offsetof(MCCState, warn_deprecated_declarations), WD_ALL, "deprecated-declarations"},
 		{0, 0, NULL}};
 
 /* FlagDef.offset is a uint16_t, so the far end of optflag[] has to stay inside

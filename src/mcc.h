@@ -279,6 +279,8 @@ struct SymAttr {
 			is_vector : 1,
 			tentative_array : 1,
 			tentative_incomplete : 1,
+			deprecated : 1,
+			unavailable : 1,
 			is_register : 1,
 			used : 1,
 			inited : 1,
@@ -724,6 +726,7 @@ struct MCCState {
 	unsigned char warn_shift_count_overflow;
 	unsigned char warn_undefined_internal;
 	unsigned char warn_return_local_addr;
+	unsigned char warn_deprecated_declarations;
 	unsigned char warn_extra_ptr_zero_cmp;
 	int max_errors;
 	unsigned char warn_pedantic;

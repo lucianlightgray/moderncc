@@ -5687,3 +5687,38 @@ Top clusters across both boards after this work, by error text:
 | 10 | `constant expression expected` | same family |
 | ~10 | `#pragma pack(show)`, `ms_struct`, mac68k alignment | pragma surface |
 | 6 | `identifier expected` | `_BitInt(N)` |
+
+### Landed after that table: `deprecated` and `unavailable`
+
+`__attribute__((deprecated))` / `[[deprecated]]` and `__attribute__((unavailable))`
+were parsed and thrown away. They now set `a.deprecated` / `a.unavailable` and
+diagnose at the *use* site in `unary()`'s identifier path -- a warning under the new
+`-Wdeprecated-declarations` (on by default, as in gcc) and a hard error for
+`unavailable`. Worth `attr-unavailable-{1,4}` and three `XPASS` rows, and it is the
+kind of gap that costs nothing in the board and a lot in real builds.
+
+What is *not* done, and why the remaining `attr-unavailable`/`c23-attr-deprecated`
+rows still fail: those want the attribute on a **type** (`struct {...}
+__attribute__((unavailable)) x;` then `typeof(x) y;`) and want a diagnostic when the
+attribute appears in a position where it is *ignored* (`int [[deprecated]] var;`).
+Both need the attribute to live on the `CType`, not just the `Sym`.
+
+`nodiscard` was deliberately left alone. Warning on a discarded result needs the
+call's SValue to carry the attribute to the point where the statement drops it, and
+every cheap way to fake that (a global set at the call, cleared "when consumed")
+mis-fires on `f(get())` and `get() + 1`. It is two `XPASS` rows; it is not worth a
+heuristic that warns on correct code.
+
+### One attempt reverted: unevaluated VM type names at file scope
+
+`int b = sizeof (int (*)[a]);` is accepted by gcc and clang (the size is not
+evaluated, so a variably-modified *type name* is fine at file scope) and mcc rejects
+it with `constant expression expected`. The obvious fix -- a new `TYPE_TNAME`
+declarator bit that survives the `TYPE_ABSTRACT` strip in `type_decl_1`, letting
+`post_type` take a non-constant bound at file scope and build a VLA with no size slot
+-- makes `vla-21.c` pass and **segfaults on `gcc.dg/pr88701.c`**, which puts a
+compound literal of pointer-to-array type in a parameter's array bound. It was
+reverted rather than landed with a crash. Anyone retrying it needs a sentinel for
+"VLA with no size slot" that `vpush_type_size` rejects loudly: `ref->c` is a *negative*
+frame offset for real VLAs, so `c < 0` cannot be that sentinel, and `c == 0` (which is
+what the reverted patch used) is not enough on its own -- pr88701 crashes before it.
