@@ -139,8 +139,8 @@ jobs:
           lipo -info "$bin" | grep -q 'arm64'
           lipo -info "$bin" | grep -q 'x86_64'
           codesign -v --deep "$bin"
-          arch -arm64 "$bin" -version
-          arch -x86_64 "$bin" -version
+          arch -arm64 "$bin" --version | grep -q 'AArch64 Darwin'
+          arch -x86_64 "$bin" --version | grep -q 'x86_64 Darwin'
       - uses: actions/upload-artifact@v7
         with:
           name: mcc-macos-universal
