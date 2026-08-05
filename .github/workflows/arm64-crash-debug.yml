@@ -42,37 +42,34 @@ jobs:
           set MCC_JIT=0
           mcc.exe -c ..\runtime\lib\alloca.c -o alloca-jit0.o -B..\runtime\win32 -I..\runtime\include
           echo MCC_JIT=0 rc=%ERRORLEVEL%
-          set MCC_JIT=1
-          mcc.exe -c ..\runtime\lib\alloca.c -o alloca-jit1.o -B..\runtime\win32 -I..\runtime\include
-          echo MCC_JIT=1 rc=%ERRORLEVEL%
-      - name: rerun the crashing compile under procdump (first-chance)
-        continue-on-error: true
-        shell: cmd
-        working-directory: cmake-stage2-release
-        run: |
-          mkdir ..\dumps
-          rem the process eats its own second chance (exits 0xc0000005 with no
-          rem unhandled pass), so dump on the FIRST-chance access violation.
-          where procdump64a && set PD=procdump64a || set PD=procdump
-          %PD% -accepteula -ma -e 1 -f C0000005 -x ..\dumps mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
-      - name: print the faulting stack with cdb, if the image has one
+      - name: why is CreateProcess denied? (exact error, CI/AppLocker logs, rename, debugger)
         if: always()
         continue-on-error: true
         shell: pwsh
+        working-directory: cmake-stage2-release
         run: |
-          $dmp = Get-ChildItem dumps -Filter *.dmp -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $dmp) { Write-Host "no dump captured"; exit 0 }
-          Write-Host "dump: $($dmp.FullName) ($($dmp.Length) bytes)"
+          Write-Host "=== exact Win32 error from Start-Process"
+          try { $p = Start-Process -FilePath .\mcc.exe -ArgumentList "-v" -NoNewWindow -PassThru -Wait } catch { $_.Exception | Format-List * -Force | Out-String | Write-Host }
+          Write-Host "=== copy under a new name and run"
+          Copy-Item mcc.exe probe2.exe -Force
+          & .\probe2.exe -v; Write-Host "probe2 rc=$LASTEXITCODE"
+          Write-Host "=== copy to a different volume-ish path and run"
+          Copy-Item mcc.exe "$env:TEMP\probe3.exe" -Force
+          & "$env:TEMP\probe3.exe" -v; Write-Host "probe3 rc=$LASTEXITCODE"
+          Write-Host "=== launch under cdb (debugged processes bypass some policy)"
           $cdb = @(
             "C:\Program Files (x86)\Windows Kits\10\Debuggers\arm64\cdb.exe",
             "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
           ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $cdb) { Write-Host "no cdb on this image; dump goes out as an artifact"; exit 0 }
-          & $cdb -z $dmp.FullName -c ".exr -1; .cxr; r; k 60; lm; q"
-      - name: list dumps
-        if: always()
-        shell: pwsh
-        run: Get-ChildItem -Recurse dumps -ErrorAction SilentlyContinue | Out-String | Write-Host
+          if ($cdb) { & $cdb -g -G -c "q" .\mcc.exe -v 2>&1 | Select-Object -Last 15 }
+          Write-Host "=== Defender detections"
+          Get-MpThreatDetection -ErrorAction SilentlyContinue | Out-String | Write-Host
+          Write-Host "=== CodeIntegrity operational log (last 10)"
+          Get-WinEvent -LogName "Microsoft-Windows-CodeIntegrity/Operational" -MaxEvents 10 -ErrorAction SilentlyContinue | Format-List TimeCreated, Id, Message | Out-String | Write-Host
+          Write-Host "=== AppLocker EXE and DLL log (last 10)"
+          Get-WinEvent -LogName "Microsoft-Windows-AppLocker/EXE and DLL" -MaxEvents 10 -ErrorAction SilentlyContinue | Format-List TimeCreated, Id, Message | Out-String | Write-Host
+          Write-Host "=== Windows Defender operational log (last 10)"
+          Get-WinEvent -LogName "Microsoft-Windows-Windows Defender/Operational" -MaxEvents 10 -ErrorAction SilentlyContinue | Format-List TimeCreated, Id, Message | Out-String | Write-Host
       - uses: actions/upload-artifact@v7
         if: always()
         with:
