@@ -1,6 +1,9 @@
-# temporary instrument: capture a WER minidump of the stage2 arm64-PE mcc
-# that crashes instantly on windows-11-arm (see TODO.md "the arm64-Windows
-# dist self-host crashes at startup"). Dispatch by hand; delete when closed.
+# temporary instrument: capture and analyze a crash dump of the stage2
+# arm64-PE mcc that dies instantly on windows-11-arm (see TODO.md "the
+# arm64-Windows dist self-host crashes at startup"). WER LocalDumps produced
+# nothing on this runner image, so procdump does the capture and cdb (when
+# the image has it) prints the faulting stack straight into the log.
+# Dispatch by hand; delete when the defect closes.
 name: arm64-crash-debug
 on: workflow_dispatch
 jobs:
@@ -14,25 +17,35 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: arm64
-      - name: install ninja
-        run: choco install ninja -y
-      - uses: ./.github/actions/ci
-      - name: enable WER local dumps
-        shell: pwsh
+      - name: install ninja + procdump
         run: |
-          $k = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
-          New-Item -Path $k -Force | Out-Null
-          Set-ItemProperty -Path $k -Name DumpFolder -Value "$env:GITHUB_WORKSPACE\dumps"
-          Set-ItemProperty -Path $k -Name DumpType -Value 2
-          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\dumps" | Out-Null
+          choco install ninja -y
+          choco install procdump -y
+      - uses: ./.github/actions/ci
       - name: dist msvc arm64 (crashes at the stage2 self-host)
         continue-on-error: true
         run: mcc-ci dist --preset dist-msvc --plat windows-arm64-msvc --version dbg --no-bench
-      - name: rerun the crashing compile for a clean dump
+      - name: rerun the crashing compile under procdump
         continue-on-error: true
         shell: cmd
         working-directory: cmake-stage2-release
-        run: mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
+        run: |
+          mkdir ..\dumps
+          procdump -accepteula -ma -e -x ..\dumps mcc.exe -c ..\runtime\lib\alloca.c -o alloca-dbg.o -B..\runtime\win32 -I..\runtime\include
+      - name: print the faulting stack with cdb, if the image has one
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $dmp = Get-ChildItem dumps -Filter *.dmp -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $dmp) { Write-Host "no dump captured"; exit 0 }
+          Write-Host "dump: $($dmp.FullName) ($($dmp.Length) bytes)"
+          $cdb = @(
+            "C:\Program Files (x86)\Windows Kits\10\Debuggers\arm64\cdb.exe",
+            "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $cdb) { Write-Host "no cdb on this image; dump goes out as an artifact"; exit 0 }
+          & $cdb -z $dmp.FullName -c ".exr -1; .cxr; r; k 60; lm; q"
       - name: list dumps
         if: always()
         shell: pwsh
