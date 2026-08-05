@@ -3233,7 +3233,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			ch = *p++;
 			b = 16;
 		} else if (mcc_state->mcc_ext && (ch == 'b' || ch == 'B')) { MCC_TRACE("br\n");
-			if (mcc_state->warn_pedantic) { MCC_TRACE("br\n");
+			if (mcc_state->cversion < 202311 && mcc_state->warn_pedantic) { MCC_TRACE("br\n");
 				if (mcc_state->pedantic_errors)
 					{ MCC_TRACE("br\n"); mcc_error("binary integer constants are a C23/GNU extension"); }
 				else
@@ -3242,6 +3242,17 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			q--;
 			ch = *p++;
 			b = 2;
+		} else if (mcc_state->mcc_ext && (ch == 'o' || ch == 'O')) { MCC_TRACE("br\n");
+			if (mcc_state->cversion < 202400 && mcc_state->warn_pedantic &&
+					!(file && file->system_header)) { MCC_TRACE("br\n");
+				if (mcc_state->pedantic_errors)
+					{ MCC_TRACE("br\n"); mcc_error("'0o' prefixed constants are a C2Y feature or GCC extension"); }
+				else
+					{ MCC_TRACE("br\n"); mcc_warning("'0o' prefixed constants are a C2Y feature or GCC extension"); }
+			}
+			q--;
+			ch = *p++;
+			b = 8;
 		}
 	}
 	while (1) { MCC_TRACE("br\n");
@@ -3681,8 +3692,41 @@ static void cst_capture_tok(void) { MCC_TRACE("enter\n");
 	}
 }
 
+static int digit_sep_enabled(void) { MCC_TRACE("enter\n");
+	return mcc_state->cversion >= 202311;
+}
+
+static int digit_of_base(int c, int base) { MCC_TRACE("enter\n");
+	if (c >= '0' && c <= '9')
+		{ MCC_TRACE("br\n"); return c - '0' < base || base == 16; }
+	if (base == 16)
+		{ MCC_TRACE("br\n"); return (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }
+	return 0;
+}
+
+static int num_base_so_far(const char *s, int len) { MCC_TRACE("enter\n");
+	if (len >= 2 && s[0] == '0') { MCC_TRACE("br\n");
+		int c = toup(s[1]);
+		if (c == 'X')
+			{ MCC_TRACE("br\n"); return 16; }
+		if (c == 'B')
+			{ MCC_TRACE("br\n"); return 2; }
+		if (c == 'O')
+			{ MCC_TRACE("br\n"); return 8; }
+	}
+	return 10;
+}
+
+static int num_at_base_indicator(const char *s, int len) { MCC_TRACE("enter\n");
+	int c;
+	if (len != 2 || s[0] != '0')
+		{ MCC_TRACE("br\n"); return 0; }
+	c = toup(s[1]);
+	return c == 'X' || c == 'B' || c == 'O';
+}
+
 static void next_nomacro(void) { MCC_TRACE("enter\n");
-	int t, c, str_prefix, len, uc;
+	int t, c, str_prefix, len, uc, num_sep_cur, num_sep_next;
 	TokenSym *ts;
 	uint8_t *p, *p1;
 	unsigned int h;
@@ -3961,11 +4005,31 @@ redo_no_start:
 		PEEKC(c, p);
 	parse_num:
 		cstr_reset(&tokcstr);
+		num_sep_next = num_sep_cur = 0;
 		for (;;) { MCC_TRACE("br\n");
 			cstr_ccat(&tokcstr, t);
-			if (!((isidnum_table[c - CH_EOF] & (IS_ID | IS_NUM)) || c == '.' || ((c == '+' || c == '-') && (((t == 'e' || t == 'E') && !(parse_flags & PARSE_FLAG_ASM_FILE && ((char *)tokcstr.data)[0] == '0' && toup(((char *)tokcstr.data)[1]) == 'X')) || ((t == 'p' || t == 'P') && !(mcc_state->std_strict_ansi && mcc_state->cversion < 199901))))))
+			while (c == '\'' && digit_sep_enabled() &&
+					!(parse_flags & PARSE_FLAG_ASM_FILE)) { MCC_TRACE("br\n");
+				int nc = p[1];
+				if (digit_of_base(nc, num_base_so_far((char *)tokcstr.data,
+						tokcstr.size))) { MCC_TRACE("br\n");
+					if (num_at_base_indicator((char *)tokcstr.data, tokcstr.size))
+						{ MCC_TRACE("br\n"); mcc_error("digit separator after base indicator"); }
+					num_sep_next = 1;
+					PEEKC(c, p);
+				} else if (nc == '\'') { MCC_TRACE("br\n");
+					mcc_error("adjacent digit separators");
+				} else if (isidnum_table[nc - CH_EOF] & (IS_ID | IS_NUM)) { MCC_TRACE("br\n");
+					mcc_error("digit separator outside digit sequence");
+				} else { MCC_TRACE("br\n");
+					break;
+				}
+			}
+			if (!((isidnum_table[c - CH_EOF] & (IS_ID | IS_NUM)) || c == '.' || ((c == '+' || c == '-') && !num_sep_cur && (((t == 'e' || t == 'E') && !(parse_flags & PARSE_FLAG_ASM_FILE && ((char *)tokcstr.data)[0] == '0' && toup(((char *)tokcstr.data)[1]) == 'X')) || ((t == 'p' || t == 'P') && !(mcc_state->std_strict_ansi && mcc_state->cversion < 199901))))))
 				{ MCC_TRACE("br\n"); break; }
 			t = c;
+			num_sep_cur = num_sep_next;
+			num_sep_next = 0;
 			PEEKC(c, p);
 		}
 		cstr_ccat(&tokcstr, '\0');

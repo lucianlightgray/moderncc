@@ -2039,12 +2039,12 @@ static const cli_case_t cli_cases[] = {
 		 "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects a floating argument\n1 expects a pointer argument\n1 expects an integer argument\n1 more conversions than arguments\n"},
 
 		{"wpedantic_alias", "",
-		 "printf 'int x = 0b101;\\nint main(void){return x;}\\n' > {W}/wp.c && "
+		 "printf 'int x = 0o5;\\nint main(void){return x;}\\n' > {W}/wp.c && "
 		 "{ {MCC} -B{B} -I{I} -Wpedantic -c {W}/wp.c -o /dev/null 2>&1; "
 		 "{MCC} -B{B} -I{I} -Wpedantic -Wno-pedantic -Werror -c {W}/wp.c -o /dev/null 2>&1 && echo OFF_OK; "
 		 "{MCC} -B{B} -I{I} -Wpedantic -pedantic-errors -c {W}/wp.c -o /dev/null 2>&1; } | "
-		 "grep -oE 'C23/GNU extension|OFF_OK' | sort | uniq -c | sed 's/^ *//'",
-		 "2 C23/GNU extension\n1 OFF_OK\n"},
+		 "grep -oE 'C2Y feature or GCC extension|OFF_OK' | sort | uniq -c | sed 's/^ *//'",
+		 "2 C2Y feature or GCC extension\n1 OFF_OK\n"},
 
 		{"fsyntax_only_no_output", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/so_ok.c && "

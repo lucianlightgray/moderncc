@@ -1041,6 +1041,18 @@ static void finalize_tentative_arrays(void) { MCC_TRACE("enter\n");
 	for (sym = global_stack; sym; sym = sym->prev) { MCC_TRACE("br\n");
 		ElfSym *esym;
 		int size, align;
+		if (sym->a.tentative_incomplete) { MCC_TRACE("br\n");
+			esym = elfsym(sym);
+			if (esym && esym->st_shndx != SHN_UNDEF)
+				{ MCC_TRACE("br\n"); continue; }
+			size = type_size(&sym->type, &align);
+			if (size < 0)
+				{ MCC_TRACE("br\n"); mcc_error("storage size of '%s' isn't known",
+													get_tok_str(sym->v, NULL)); }
+			sym->type.t &= ~VT_EXTERN;
+			put_extern_sym(sym, common_section, align, size);
+			continue;
+		}
 		if (!sym->a.tentative_array)
 			{ MCC_TRACE("br\n"); continue; }
 		if (!(sym->type.t & VT_ARRAY) || sym->type.ref->c >= 0)
@@ -6443,6 +6455,8 @@ do_decl:
 								if (!c)
 									{ MCC_TRACE("br\n"); mcc_pedantic("flexible array member in a "
 															 "struct with no named members"); }
+							} else if ((u == VT_UNION) && (type1.t & VT_ARRAY)) { MCC_TRACE("br\n");
+								mcc_pedantic("flexible array member in union is a GCC extension");
 							} else
 								{ MCC_TRACE("br\n"); mcc_error("field '%s' has incomplete type",
 													get_tok_str(v, NULL)); }
@@ -8396,6 +8410,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 	} else if (tok == '[') { MCC_TRACE("br\n");
 		int saved_nocode_wanted;
 		int saw_static;
+		int star_dim = 0;
 		{
 			int save = tok;
 
@@ -8439,8 +8454,10 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 					continue;
 				case '*':
 					next();
-					if (tok == ']')
-						{ MCC_TRACE("br\n"); ad->storage_class |= 32; }
+					if (tok == ']') { MCC_TRACE("br\n");
+						ad->storage_class |= 32;
+						star_dim = 1;
+					}
 					continue;
 				default:
 					break;
@@ -8504,11 +8521,13 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids an array of a structure with a "
 									 "flexible array member"); }
 
+		if (star_dim)
+			{ MCC_TRACE("br\n"); t1 |= VT_VLA; }
 		t1 |= type->t & VT_VLA;
 
 		if (t1 & VT_VLA) { MCC_TRACE("br\n");
 			if (n < 0) { MCC_TRACE("br\n");
-				if (td & TYPE_NEST)
+				if ((td & TYPE_NEST) && !star_dim)
 					{ MCC_TRACE("br\n"); mcc_error("need explicit inner array size in VLAs"); }
 			} else { MCC_TRACE("br\n");
 				loc -= type_size(&int_type, &align);
@@ -16875,11 +16894,17 @@ static int decl(int l) {
 						goto var_done;
 					}
 
-					if (((type.t & VT_EXTERN) && (!has_init || l != VT_CONST)) || (type.t & VT_BTYPE) == VT_FUNC || ((type.t & VT_ARRAY) && !has_init && l == VT_CONST && type.ref->c < 0)) { MCC_TRACE("br\n");
+					int was_tentative_incomplete =
+							!(type.t & VT_EXTERN) && !has_init && l == VT_CONST &&
+							!(type.t & VT_ARRAY) && (type.t & VT_BTYPE) == VT_STRUCT &&
+							type.ref->c < 0;
+					if (((type.t & VT_EXTERN) && (!has_init || l != VT_CONST)) || (type.t & VT_BTYPE) == VT_FUNC || ((type.t & VT_ARRAY) && !has_init && l == VT_CONST && type.ref->c < 0) || was_tentative_incomplete) { MCC_TRACE("br\n");
 						int was_tentative_flex =
 								!(type.t & VT_EXTERN) && (type.t & VT_ARRAY) && !has_init && l == VT_CONST && type.ref->c < 0;
 						type.t |= VT_EXTERN;
 						sym = external_sym(v, &type, r, &ad);
+						if (was_tentative_incomplete && sym)
+							{ MCC_TRACE("br\n"); sym->a.tentative_incomplete = 1; }
 						if (was_tentative_flex && sym) { MCC_TRACE("br\n");
 							sym->a.tentative_array = 1;
 							if (mcc_state->warn_pedantic)

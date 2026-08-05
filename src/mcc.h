@@ -278,6 +278,7 @@ struct SymAttr {
 			is_complex : 1,
 			is_vector : 1,
 			tentative_array : 1,
+			tentative_incomplete : 1,
 			is_register : 1,
 			used : 1,
 			inited : 1,
