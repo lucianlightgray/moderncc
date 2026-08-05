@@ -1,0 +1,12 @@
+copy=resolve-against-host
+len=20
+set=xxxxxxxx
+cmp=1
+callocz=0
+calloc=1240
+realloc=1256
+snprintf=fmt-17
+memmove=fmt-fmt-
+memcmp=1
+strchr=2
+abs=7

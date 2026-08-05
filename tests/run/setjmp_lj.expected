@@ -1,0 +1,6 @@
+setjmp=0
+longjmp=42
+depth=6
+local=7
+hits=3
+final=3

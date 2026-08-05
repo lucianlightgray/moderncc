@@ -1,0 +1,10 @@
+sum=36
+names=alpha,beta,gamma
+auxptr=4
+auxpriv=200
+auxchars=mcc-r
+localptr=30
+msg=local-string
+localnames=one/two
+lit=inline-literal
+litchar=100

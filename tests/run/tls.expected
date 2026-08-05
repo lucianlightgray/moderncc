@@ -1,0 +1,15 @@
+init=42
+zero=0
+static=9
+staticzero=0
+w1=100
+w2=200
+w3=300
+w4=400
+aux=7
+auxfn=7
+auxset=55
+auxdirect=66
+auxzero=0
+auxpriv=4
+addr=100

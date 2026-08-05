@@ -5056,3 +5056,86 @@ cross target — is the first step, and it should go red immediately.
 (arm additionally prints `fsum=0.000` under `-run` where riscv64 correctly gets `10.000`,
 so arm `-run` has a soft-float problem on top of the TLS one. Same test, same command,
 unrelated to everything above.)
+
+## `run-tier/<triple>` — `-run` on all twelve triples, and the TLS red it was built to find
+
+`tools/run-tier.sh <triple> <bdir> <xdir>` bootstraps a **`<triple>`-hosted** mcc and runs
+the fourteen-program corpus in `tests/run/` through it under both `MCC_JIT=0` and
+`MCC_JIT=1`, asserting `JIT=0 == JIT=1 == expected`. Registered as `run-tier/<triple>` for
+every `MCC_X` triple. Emulated cells are labelled `qemu`/`wine`/`macho`, never `cross`, so
+they land in the `ctest -LE native` set the stage2 emulate job runs.
+
+| Cell | Runner | 12 non-TLS | `tls` (single-threaded) | `tls_threads` |
+|---|---|---|---|---|
+| `x86_64` | native | pass | pass | **FAIL** |
+| `arm64` | qemu-aarch64 | pass | pass | **FAIL** |
+| `i386` `arm` `riscv64` | qemu-user | pass | **FAIL** | **FAIL** |
+| `x86_64-win32` `i386-win32` | wine64 / wine | pass | **FAIL** | **FAIL** |
+| `x86_64-osx` `arm64-osx` | Darwin only | skip on Linux | | |
+| `arm64-win32` `arm-win32` `arm-wince` | none anywhere | `mcc_skip_test` | | |
+
+**riscv64 passes all twelve non-TLS programs** after the veneer fix above — relocations
+across translation units, function pointers, a 1 MB `.bss`, `setjmp`/`longjmp`, structs by
+value at every size that straddles the register/memory boundary, and mixed int/double
+varargs. arm passes `fp_double` and `fp_longdouble` too; the `fsum=0.000` soft-float
+symptom recorded above does **not** reproduce through a hardfloat-built arm mcc.
+
+### The TLS red, refined into two distinct defects
+
+The corpus splits `-run` TLS into a single-threaded case and a threaded one, and they fail
+on different sets of targets — so they are two bugs, not one.
+
+- **`tls_threads` fails everywhere, including x86_64 and arm64.** The main thread is right;
+  a thread created with `pthread_create` reads **0** from every initialized `__thread`
+  variable (`child_init=0` where the linked binary prints `42`). Writes inside the child
+  work, and the main thread's values survive the join. So the run TLS slab exists but is
+  never seeded for threads other than the one that called `mcc_run`.
+- **`tls` — no threads at all — additionally fails on `i386`, `arm`, `riscv64` and both PE
+  targets.** There the `.tdata` initializers are lost in the *main* thread:
+  `init=0 static=0 aux=0 auxpriv=1` where the linked binary gives `42 9 7 4`. Zero-init
+  TLS, writes and reads-back are all correct. This matches `host_run_tls_slab_tpoff`
+  (`mcchost.c:1449`) only reading the real thread pointer on `__x86_64__`/`__aarch64__`.
+
+Both are pre-existing, both are identical under `MCC_JIT=0` and `MCC_JIT=1` — so neither is
+a JIT-tier bug — and the AOT compile-and-link path is correct on every one of these targets.
+The cells are **deliberately red**; fix `-run` TLS, do not weaken the corpus.
+
+### What a PE-hosted mcc needed, since nothing had ever built one
+
+`mcc-x86_64-win32` compiles `src/mcc.c` into a working `mcc.exe` in under a second, and
+`wine64 mcc.exe -run prog.c a b` works, argv and all. `pthread_create` works under wine too.
+Three things were not obvious:
+
+- **`-I runtime/win32/include/winapi` on top of `-I runtime/win32/include`.**
+  `src/mcchost.h` includes `<windows.h>`, which lives only in the `winapi/` subdirectory.
+- **Every `src/arch/*` directory on the include path**, not just the target's:
+  `mcctok.h` includes `i386-tok.h` unconditionally.
+- **`-L$B` as well as `-B$B`.** `mcc_add_support("runmain.o")` resolves through
+  `mcc_add_dll` → `s->library_paths` (`src/libmcc.c:1615`), which `-B` does not populate.
+  Without it the run still *executes* and prints the right answer, but mcc reports
+  `file 'runmain.o' not found` and exits **5** — correct stdout behind a red exit code,
+  the shape that hides in a test which only diffs output.
+
+The rest is `suite_pewine`'s recipe (`tools/mccharness.c:2318`): `runtime/win32/lib/*.def`
+plus `cmake-cross/lib-<t>/*.o` plus `<t>-libmccrt.a` staged into the `-B` directory.
+
+### Two traps the corpus is built around
+
+- **`long` is 32-bit on `arm` and `i386`.** The corpus uses `<stdint.h>` fixed-width types
+  throughout and never prints a `long`, a pointer or a `size_t`, so one `.expected` file per
+  program is correct on all twelve triples — no per-arch constant bank. `long double` is
+  exercised as an argument and return type, but every value is exactly representable in
+  `double` and printed as one, so the 80/128/64-bit split never reaches the golden.
+- **Wine writes CRLF.** The driver strips `\r` before comparing. Without that every PE cell
+  fails with a `want` and a `got` that render identically in the log.
+
+The driver also asserts the `mcc -v` target string (`(AArch64 Linux)`, `(i386 Windows)`, …)
+before running anything, so a runner silently falling back to the host fails loudly instead
+of passing a cell it never tested.
+
+### Open
+
+- `x86_64-osx` / `arm64-osx` skip on Linux and the Darwin branch of `run-tier.sh` has
+  **never executed**. It mirrors the `tools/c2_equiv.sh:61-81` host gate and the Mach-O
+  bootstrap shape; treat its first run on a Mac as unproven.
+- The `x86_64` cell uses the build directory's own `mcc` rather than re-bootstrapping one.

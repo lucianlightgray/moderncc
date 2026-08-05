@@ -1,0 +1,7 @@
+argc=4
+arg1=alpha len=5
+arg2=beta len=4
+arg3=gamma-42 len=8
+total=17
+last=gamma-42
+nullterm=1

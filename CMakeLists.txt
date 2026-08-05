@@ -4029,6 +4029,30 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endforeach()
 
+        foreach(_rt x86_64 i386 arm arm64 riscv64
+                    x86_64-win32 i386-win32 x86_64-osx arm64-osx)
+            if(_rt MATCHES "(win32|wince)$")
+                set(_rtlabels LABELS "wine")
+            elseif(_rt MATCHES "osx$")
+                set(_rtlabels LABELS "macho")
+            elseif(_rt STREQUAL "x86_64")
+                set(_rtlabels "")
+            else()
+                set(_rtlabels LABELS "qemu")
+            endif()
+            add_test(NAME run-tier/${_rt}
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/run-tier.sh"
+                        "${_rt}" "${CMAKE_BINARY_DIR}" "${MCC_CROSS_DIR}")
+            set_tests_properties(run-tier/${_rt} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                ${_rtlabels} TIMEOUT 1800)
+        endforeach()
+        foreach(_rt arm64-win32 arm-win32 arm-wince)
+            mcc_skip_test(run-tier/${_rt}
+                "${_rt} -run needs a ${_rt}-hosted mcc, and no host here can execute one: wine emulates x86 PE only and qemu-user cannot load PE"
+                LABELS "wine" TIMEOUT 1800)
+        endforeach()
+
         find_program(MCC_OBJCOPY objcopy)
         if(UNIX AND MCC_OBJCOPY)
             add_test(NAME superopt/promote-floor

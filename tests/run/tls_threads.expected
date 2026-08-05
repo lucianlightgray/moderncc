@@ -1,0 +1,13 @@
+main_init=42
+main_zero=0
+main_aux=11
+child_init=42
+child_zero=0
+child_aux=11
+child_w1=100
+child_w2=200
+child_w3=300
+joined=1
+after_init=7
+after_zero=0
+after_aux=8
