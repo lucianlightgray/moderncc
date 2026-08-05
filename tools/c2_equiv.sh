@@ -133,7 +133,7 @@ FORCEENV=
 if [ -n "$C2_FORCE" ]; then
 	gates=$(grep -hoE 'ast_env_gate\("MCC_AST_[A-Z0-9_]+", *o4 \|\| s1->optimize >= 1\)' \
 			"$S"/src/*.c | sed -E 's/.*"(MCC_AST_[A-Z0-9_]+)".*/\1/' | sort -u)
-	ngate=$(printf '%s\n' $gates | grep -c .)
+	ngate=$(printf '%s\n' $gates | grep -c . || true)
 	if [ "$ngate" -eq 0 ]; then
 		echo "c2_equiv: C2_FORCE derived 0 gates from $S/src -- the ast_env_gate" >&2
 		echo "  spelling changed, so this run would measure -O0 with every pass" >&2

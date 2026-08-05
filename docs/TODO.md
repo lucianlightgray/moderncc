@@ -97,9 +97,26 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   (hence the nondeterministic `0xC0000374`/`0xC0000005`); the MSVC-ASan `mcc_s` binary
   makes it deterministic — `mcc_s` + `tools/selfhost-jit.py` is the verification
   harness. The fix needs the full suite as a regression gate, not just the ASan oracle.
-- **W3 residual** — `selfhost-fixpoint-O3` passed a plain macOS preset run but was never
-  re-run under the 3-way-concurrent stress that first exposed the default-`-O`
-  bimodality. Stress re-run still worth doing.
+- ~~**W3 residual** — the 3-way-concurrent stress re-run.~~ **Closed 2026-08-05 on a
+  macOS arm64 host, with a negative control.** 399 chains at the fix, 0 non-identical,
+  over default `-O`, `-O1`, `-Os`, `-O3`, the 12-flag gates set and
+  `memmodel-{O2,O3,Os}`, at concurrency 3, 6 and 10. A zero alone would prove nothing if
+  the stress never reached the condition here, so it was paired with a twin built from
+  `git archive HEAD` with `5aa66d88`'s `src/mccast.c` hunk reverse-applied — only the
+  `ast_divmagic_invalidate` hook differing. **The defect reproduces on macOS arm64**:
+  5 non-identical in 150 chains, 2 of them in 30 at exactly the Windows-matching cell,
+  strictly bimodal at a constant −336, never serial. Rule of three bounds the fixed side
+  at 0.75% (1 in 133); Fisher exact one-sided p = 0.0015. The claim is that the original
+  failure mode at its actual rate is gone, not that the compiler is proven deterministic.
+- **One-off, unexplained**: `selfhost-fixpoint-memmodel-{O3,Os}` SIGSEGV'd once in stage2
+  (mcc1 compiling `src/mcc.c`) during a `macos-cross` run, mid-compile at ~2.5 s against
+  a normal ~5.5 s. It survived 38 clean re-runs (4/4, then until-fail:10 over both cells,
+  then a 28-minute load-reproduction at `-j8`). Two unconfirmed causes: memory/CPU
+  pressure, or a mid-edit source tree — `src/mccgen.c`, which `src/mcc.c` amalgamates,
+  was being written while that suite ran, and the re-runs all recompile from the tree and
+  pass, which favours the second. **Durable lesson: separate build directories are not
+  isolation, because `selfhost-*` and `mcctest` compile the live `src/` tree.** If it
+  recurs on an idle machine with a clean tree it is real and wants a core dump.
 
 ### Flag-sweep coverage
 - Wire `tests/optfire/flagsweep.sh`'s exec half as ctest cells (see the config note
@@ -116,7 +133,45 @@ their task; the broader landmine set is in [`ARCHIVED.md`](ARCHIVED.md).
   load-bearing — ≥4 of the fallback bodies are genuinely wrong, not benign.
 - `-fno-replay-fallback` + selfhost-jit-with-mcc blows RSS ~6.7×; bisect via
   `MCC_RIR_NOFB_SKIP`. Measure on the full suite, not the 317 exec goldens.
-- Re-bank `o0-baseline` at HEAD on an x86_64 Linux host.
+- Re-bank `o0-baseline` at HEAD on an x86_64 Linux host. (Verified 2026-08-05 that the
+  Darwin side *reproduces*: all five PE keys are byte-identical to a Linux run at the
+  same HEAD, and the two `*-osx` keys are measurable only on Darwin. Also fixed there:
+  `o0_ab.sh`'s `x86_64` key used `$BUILD/mcc`, the build's own compiler, so on a
+  non-x86_64-Linux host it measured the host's native target under the `x86_64` label and
+  reported a plausible board of 276 objects for a key it never touched; it now checks the
+  `mcc -v` target string and falls back to `mcc-x86_64` plus the usual sysroot
+  requirement.)
+- **`C2_FORCE=1` is dead, and was failing silently until 2026-08-05.** Both
+  `tools/c2_sweep.sh` and `tools/c2_equiv.sh` derive the forced-`-O0` gate list by regex
+  for `ast_env_gate("MCC_AST_…", o4 || s1->optimize >= 1)`; `ast_env_gate` no longer
+  exists anywhere in `src/` after the `-f` conversion, so the regex matches zero. The
+  authors' guard — refuse rather than "measure `-O0` with every pass off and call it
+  parity" — **could never fire**: `ngate=$(… | grep -c .)` exits 1 on zero and `set -e`
+  killed the script at that assignment, before the diagnostic printed (`exit 1`, zero
+  bytes of stdout *and* stderr). `|| true` on both counts is fixed; **the derivation is
+  still dead**, so it now fails loudly. Any forced-`-O0` row taken today is worthless.
+  To restore it: scrape every `MCC_OPTD_LEVEL(1)` row of `src/mccopt.h` (21) and add the
+  `MCC_OPT_SPECIAL` rows whose expression is `o4 || optimize >= 1` — **those are
+  per-target**. `reg-disp` is `optimize >= 1` only under `MCC_TARGET_X86_64`; forcing it
+  on arm64 moves `const_member_copy.c::main` by one `len` unit and fabricates a
+  divergence. Correct sets: arm64 = 21 + `ivopts` + `builtin-minmax` + `builtin-fma`;
+  x86_64 = 21 + `ivopts` + `reg-disp`. Pass as `-f<name>` on the compile line, not as
+  env, with `MCC_FORCE_REPLAY=1 MCC_RIR_FORCE=1`. `MCC_AST_INT128=1` no longer exists
+  either. Reproduce single files under `sh`, not `zsh` — zsh does not word-split
+  unquoted `$FLAGS`, so mcc silently ignores it and you measure plain `-O0`.
+- **Settled 2026-08-05, both were open questions in the archive.** (i) `arm64-osx`'s
+  forced-`-O0` board *is* identical to its `-O1` board, per file as well as on all four
+  sub-counters — but the control no longer reproduces: `x86_64-osx` is now also
+  identical, so the equality is a property of the **tree**, not of the key, which is the
+  opposite of the inference drawn from it. Likely `a55c0a07`, which moved six
+  replay-fidelity knobs to always-on and removed the `-O0`-only gap. (ii) The
+  `fuzz/runner.c` live-on-Linux / fallback-on-Mach-O split was **code drift, not a
+  per-key pre-flight difference**, bisected to `c5db86ae` (`AST_FB_LOAD_LVAL`); all three
+  bodies are live on every measurable key at HEAD. The axis was also misread — at
+  `b89723f9` the fallback set is arm64/arm/i386 against x86_64, on **both sides** of the
+  ELF/PE/Mach-O line. And the "pre-flight" framing had a wrong premise: `rir_prod_why` is
+  empty in every fallback observed, so nothing declined; the fallback is the post-replay
+  byte compare.
 - `ptr_unlink` for-condition-store segfault: root-caused, fix open (the `rir_cf_cond` /
   `rir_docond` machinery; a 5-fix / 34-break discriminator).
 
