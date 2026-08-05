@@ -425,6 +425,174 @@ preset sweep already closed the 8MB host-exe stack reserve and the `_WIN32_WINNT
 0x0600 floor; `stage2` is listed there as not started, which is exactly W4. Do not
 open a second front on either.
 
+## The macOS host reading — W1 and W3 closed, `run-tier`'s Darwin branch executed (2026-08-05)
+
+Measured on a real Darwin host: macOS 26.5.2, arm64 (M1 Pro), Apple clang 21,
+Homebrew GCC 16.1.0, wine 11.0, mingw-w64, docker via colima. This is the host the
+rows above kept deferring to, so the deferred cells are now numbers.
+
+**Every count below was taken at `5f678517`**, i.e. before the c23/TLS/VLA batch that
+landed as `27f692d3..f73c80b3`. The cell *counts* will have moved with the new
+`tests/exec` files; the pass/fail readings and the plumbing defects are what to carry
+forward, not the totals.
+
+| cell | result |
+|---|---|
+| `macos` preset, `CC=clang` (AppleClang 21) | **8098/8098**, 1148 skipped, 1635 s |
+| `macos` preset, `CC=gcc-16` (Homebrew GCC 16.1.0) | **8099/8099**, 1875 s |
+| `macos-cross` preset, `CC=clang` | **8236/8236**, 1714 s |
+| `macos-cross` preset, `CC=gcc-16` | **8236/8236**, 1609 s |
+| `ctest -L macho` (in `cmake-macos-cross`) | **30/30** |
+| `ctest -L wine` (in `cmake-macos-cross`) | `pe-wine-conformance` **PASS**; two `run-tier` reds, see below |
+| `mccharness pewine` standalone | **36/36** — `x86_64-win32` + `i386-win32` |
+| qemu matrix via `qemu-docker`, `x86_64` / glibc | **13/13** |
+| qemu matrix via `qemu-docker`, `i386;arm;arm64;riscv64` / glibc | **30/30**, incl. `qemu-arm64-osx` |
+| `linux-gcc` via the new `ci-docker` target | configures, builds, ctests from macOS |
+
+**W1 is closed.** The full `ctest` suite has now had its Mach-O reading, on both
+presets and under both host toolchains — four full runs, all 100%. The `dist-macos`
+release path also packages clean (`mcc`, `libmcc`, `mcc-cross`, `mcc-selfhost`,
+`bundle`).
+
+**W3 is closed.** `selfhost-fixpoint-O3` — recorded as *"green again by side effect,
+and the defect underneath it was never found… treat this as latent, not fixed"*, and
+macOS-only — **passes on the macOS host**, in both preset configurations, as do
+`selfhost-fixpoint{,-O1,-Os,-gates,-memmodel-O2,-memmodel-O3}`. It is fixed, not
+dormant.
+
+**`run-tier`'s Darwin branch has now executed** — item 8 of *Open, roughly by value*
+said to treat its first run on a Mac as untested. Both keys bootstrap a Mach-O-hosted
+mcc and run the whole corpus under both JIT tiers:
+
+- `run-tier/arm64-osx` — **14/14 OK**, `MCC_JIT=0 == MCC_JIT=1 == expected`
+- `run-tier/x86_64-osx` — **14/14 OK** (the x86_64 slice runs under Rosetta 2)
+
+**Why it had never run, and this is the part worth keeping:** those two cells carry
+`LABELS "macho"`, and every `testPresets` entry filters `include.label = native`. A
+label that is not `native` is invisible to `ctest --preset`, so a full green preset run
+on a Mac never touched them. They are reached with `ctest -L macho` / `-L wine`
+against the cross build dir, or through `mcc-ci stage3 --consume emulate` (which is
+`ctest -LE native` and is what the `emulate` job in `matrix.yml` runs).
+
+**`tls` and `tls_threads` pass on both Darwin keys.** Item 1 of *Open, roughly by
+value* still reads *"`tls_threads` fails on **every** runnable triple including
+x86_64"* — that was a Linux-host reading and it is **not** universal: on Mach-O both
+`-run` TLS programs are clean under both JIT tiers. Taken together with `b29ffa2f`
+(*-run TLS works on i386, arm and riscv64 — five of seven red cells green*), the
+surviving reds are the two **PE** cells, which is what this host also measures. Item 1
+should be rewritten to say PE rather than "every runnable triple"; it has not been.
+
+The two `run-tier` reds under `-L wine` are the **already-documented deliberate
+reds**, reproduced identically on this host — `tls_threads` and `tls`, `MCC_JIT=0`
+output mismatch, on `x86_64-win32` and `i386-win32`, 2 of 14 programs each. Nothing
+new. `pe-wine-conformance` passes alongside them.
+
+## Six parity defects in the CI plumbing, closed (2026-08-05)
+
+All four were found by running the local driver on a Mac and comparing it against
+what the workflows actually do. Each one silently *reduced* coverage while reporting
+success, which is the failure mode worth watching for here.
+
+**1. The `pe` feature was blocked on Darwin, and did not need to be.** `FEATURES[]`
+in `tools/ci.c` carried `OS_WIN | OS_LINUX` for `pe`, with the blocker *"no PE
+validator on a Darwin host (pe-wine-conformance needs wine…)"*. wine runs on macOS
+and executes both x86 PE keys: `mccharness pewine` is **36/36** here. The row is now
+`OS_WIN | OS_LINUX | OS_MAC` with `xdflags_os` widened to match, `{macos-arm64-clang,
+pe}` is a `GATE_CELLS` entry, and both `ci.yml` and `matrix.yml` grew a Rosetta+wine
+install step for macOS `pe` cells (best-effort; without wine the cell self-skips 77
+rather than failing). `matrix.yml`'s existing wine step was gated
+`startsWith(matrix.runner, 'ubuntu')`, so the macOS half had no way to work.
+
+**2. `tests/ci/docker/` was orphaned.** The image — gcc, clang, mingw, wine,
+qemu-user on Ubuntu 24.04 — was referenced by no CMake target, no `ci.c` command and
+no workflow. It is now the **`ci-docker`** target, beside `qemu-docker`, driven by
+`MCC_CI_DOCKER_PRESET` (default `linux-gcc`) and `MCC_CI_DOCKER_PLATFORM`. This is
+the only way a non-Linux workstation can run the Linux cells at all; verified here by
+configuring, building and ctesting `linux-gcc` from macOS.
+
+**3. The CI image silently lost wine on arm64.** `apt-get install wine64` on an arm64
+host installs `/usr/lib/wine/wine64` and **no PATH entry**, so
+`host_find_tool_any({"wine64","wine",…})` found nothing and `pe-wine-conformance`
+self-skipped — a SKIP, which reads as a pass. The Dockerfile now also installs
+`wine` (which is what ships `/usr/bin/wine`), adds `wine32:i386` on amd64, and
+**asserts** wine, both mingw drivers and all five qemu binaries are on PATH, the way
+the qemu image already asserted its own. `wine32` is amd64-only, so an arm64 image
+prints that it covers arm64 PE only and points at `--platform linux/amd64`.
+
+**4. `ci local`'s Darwin `gcc` cell was clang in disguise.** It drove the cell off the
+bare name `gcc`; on Darwin `/usr/bin/gcc` is an Apple clang shim (clang 21 here), so
+the run claimed a gcc toolchain axis it never exercised — while the workflows
+correctly resolve `gcc-N` from brew. `loc_gnu_gcc()` now probes `gcc-16`…`gcc-10`,
+`gcc`, `cc` and rejects any whose `--version` banner says clang, matching
+`mcc_find_gnu_gcc` in `CMakeLists.txt`. `LocJob.cc` widened from `char[16]` to
+`char[512]` to hold a path. With no GNU gcc the cell is now an explicit skip instead
+of a silent duplicate of the clang cell. `do_local_stage2` had the same trap and got
+the same fix.
+
+`ci local` also now reports the docker route rather than a bare "not found": with
+docker present the qemu skips name `--target qemu-docker`, and the host probe line
+names `ci-docker` on a non-Linux host. `ci parity` stays at full preset coverage.
+
+**5. `LOCAL_CI_STAGE2=1 ci local` could not build a single cell — the install prefix
+was silently discarded.** This is the one that mattered most, because it made the
+whole local stage2 sweep unusable and the failure looked like a compiler problem.
+
+`ci run-preset --out DIR` passed `-DCMAKE_INSTALL_PREFIX=DIR` **relative** and then
+ran `cmake --install cmake-<preset>` with **no `--prefix`**, trusting the cache. When
+the build dir already existed with a different `CMAKE_C_COMPILER` — exactly what
+happens when the local sweep runs a clang cell after a gcc cell — CMake announces
+*"You have changed variables that require your cache to be deleted"*, wipes the cache
+and re-runs, and `CMAKE_INSTALL_PREFIX` comes back **defaulted to the shared `dist`
+tree**. stage1's mcc therefore installed to `dist/bin/mcc`, `stage1/<host>/bin/mcc`
+never existed, `host_path_canonical` returned NULL, and `do_stage2` fell through to
+passing the raw *relative* path to CMake, which rejects it:
+
+    CMAKE_C_COMPILER: stage1/macos-arm64-clang/bin/mcc
+    is not a full path and was not found in the PATH.
+
+All eight buildable features failed that way — `0 built, 4 skipped, 8 FAILED`. The
+workflows never hit it because a fresh runner has no stale build dir to wipe.
+
+Fixed three ways, so no single failure can resurrect it: `--out` is made absolute
+(`ci_abspath`) before it reaches `-DCMAKE_INSTALL_PREFIX`; `cmake --install` is now
+given an explicit `--prefix`, so a wiped or stale cache cannot redirect the install;
+and `do_local_stage2` stats the stage1 mcc and fails loudly if it is missing rather
+than handing a bad path downstream. After the fix: **8 built, 4 skipped, 0 FAILED**.
+
+**6. Reusing a `cmake-<preset>` dir across a compiler change silently produced a
+mis-configured build — the same cache wipe, a worse symptom.** Running
+`CC=gcc-16 ci run-preset macos-cross` over a build dir left by the clang run made
+CMake wipe and re-run, and the second configure came back with **`MCC_ENABLE_CROSS =
+OFF`** even though the `macos-cross` preset sets it `ON`. The run then reported a
+clean green — at **8099** tests instead of **8236** — having quietly tested the native
+configuration twice and the cross configuration never. A green with the wrong test
+count is the worst shape a CI defect can take, and nothing in the output said so.
+
+`do_run_preset` now reads `CMakeCache.txt`, compares its `CMAKE_C_COMPILER` against
+`$CC` (resolving both through `host_find_tool`, so `clang` and `/usr/bin/clang` match)
+and removes the build dir *before* configuring when they differ, so the preset's
+cacheVariables land on a fresh cache. `do_stage2` already used an explicit
+`cmake -E rm -rf` for exactly this reason; `run-preset` did not. Re-run after the fix:
+`MCC_ENABLE_CROSS = ON`, **8236** tests, one configure pass.
+
+### What the macOS stage2 sweep measures, now that it runs
+
+`stage3 --consume emulate` over `cmake-stage2-pe` (46 cells, `ctest -LE native`) —
+this is a stage2 mcc-built-by-mcc tree, cross-built for all three win32 keys:
+
+- **`pe-wine-conformance` PASS** — the `pe` fix proven end to end through the real
+  driver, on a Darwin host, against a self-hosted mcc.
+- `run-tier/x86_64-win32`, `run-tier/i386-win32` — the two documented deliberate reds.
+- `eh-unwind-amd64-docker` **FAIL, local-only, not an mcc defect.** `g++` dies with
+  *"internal compiler error: Segmentation fault signal terminated program collect2"*
+  inside the container. It is the only cell whose **container** is emulated amd64 on
+  this arm64 host; it took 145 s against 32 s for `eh-unwind-arm64-docker`, which
+  passes, as do the riscv64 and gdb docker cells. `dg_need_platform` in
+  `tools/dockergate.sh` gates on *"can this platform run `true`"*, which an emulated
+  platform passes, so the cell runs and then dies in qemu rather than skipping. On a
+  native amd64 runner it runs natively and this does not arise. **Do not chase this as
+  a codegen bug without a real amd64 host.**
+
 ## Open — the Windows-host preset sweep, interrupted by a reboot (2026-08-03)
 
 A full presets-x-tests sweep on the Windows x86_64 host (scoop clang MSVC-ABI as default CC), four host-build defects fixed and pushed: the `_WIN32_WINNT` 0x0600 floor (SRWLocks), the 8MB host-exe stack reserve (mcc-ejboot 0xC00000FD), the diagnostics `mcc_p` skip under MSVC-ABI clang, and gcc discovery preferring vendored winlibs over CLion's bundle (whose clang-built libpthread.a references `__intrinsic_setjmpex` its GNU runtime never defines — probe-linked now, do not re-diagnose).

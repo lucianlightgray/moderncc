@@ -9,6 +9,75 @@ static const char *ci_cwd(char *buf, size_t n) {
 #endif
 }
 
+static int ci_is_abs(const char *p) {
+	if (!p || !*p)
+		return 0;
+#if MCC_HOST_WIN32
+	if ((p[0] == '\\' || p[0] == '/') && (p[1] == '\\' || p[1] == '/'))
+		return 1;
+	if (((p[0] >= 'A' && p[0] <= 'Z') || (p[0] >= 'a' && p[0] <= 'z')) &&
+			p[1] == ':' && (p[2] == '\\' || p[2] == '/'))
+		return 1;
+	return 0;
+#else
+	return p[0] == '/';
+#endif
+}
+
+static const char *ci_abspath(const char *p, char *buf, size_t n) {
+	char cwd[4096];
+	if (ci_is_abs(p)) {
+		snprintf(buf, n, "%s", p);
+		return buf;
+	}
+	if (!ci_cwd(cwd, sizeof cwd)) {
+		snprintf(buf, n, "%s", p);
+		return buf;
+	}
+	snprintf(buf, n, "%s/%s", cwd, p);
+	return buf;
+}
+
+static int ci_cc_same(const char *a, const char *b) {
+	char ra[4096], rb[4096];
+	if (!a || !b || !*a || !*b)
+		return 0;
+	if (!strcmp(a, b))
+		return 1;
+	if (!host_find_tool(a, ".exe", ra, sizeof ra))
+		snprintf(ra, sizeof ra, "%s", a);
+	if (!host_find_tool(b, ".exe", rb, sizeof rb))
+		snprintf(rb, sizeof rb, "%s", b);
+	return !strcmp(ra, rb);
+}
+
+static int ci_cache_cc_stale(const char *builddir) {
+	char path[4200], *text, *line, *nl;
+	const char *cc = getenv("CC");
+	int stale = 0;
+
+	if (!cc || !*cc)
+		return 0;
+	ts_path(path, sizeof path, builddir, "CMakeCache.txt");
+	text = ts_read_file(path, NULL);
+	if (!text)
+		return 0;
+	for (line = text; line && *line; line = nl ? nl + 1 : NULL) {
+		static const char KEY[] = "CMAKE_C_COMPILER:";
+		nl = strchr(line, '\n');
+		if (nl)
+			*nl = 0;
+		if (!strncmp(line, KEY, sizeof KEY - 1)) {
+			char *eq = strchr(line, '=');
+			if (eq)
+				stale = !ci_cc_same(eq + 1, cc);
+			break;
+		}
+	}
+	free(text);
+	return stale;
+}
+
 static const char *ci_cmake(void) {
 	static char resolved[8192];
 	static int done = 0;
@@ -170,12 +239,27 @@ static int do_run_preset(int argc, char **argv) {
 	snprintf(jflag, sizeof jflag, "-j%d", jobs > 0 ? jobs : 1);
 
 	{
+		char bdir[256];
+		snprintf(bdir, sizeof bdir, "cmake-%s", preset);
+		if (ci_cache_cc_stale(bdir)) {
+			const char *a[] = {ci_cmake(), "-E", "rm", "-rf", bdir, 0};
+			printf("==> %s was configured with a different C compiler; removing "
+					"it so the preset's cache variables are applied cleanly\n",
+					bdir);
+			if (ts_run(a))
+				return 1;
+		}
+	}
+
+	{
 		Argv v = {{0}, 0};
 		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--preset");
 		ts_arg(&v, preset);
 		if (out) {
-			snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s", out);
+			char absout[4096];
+			snprintf(prefix, sizeof prefix, "-DCMAKE_INSTALL_PREFIX=%s",
+					ci_abspath(out, absout, sizeof absout));
 			ts_arg(&v, prefix);
 		}
 		if (no_test)
@@ -276,10 +360,15 @@ static int do_run_preset(int argc, char **argv) {
 
 	if (out || do_install) {
 		Argv v = {{0}, 0};
+		char absout[4096];
 		snprintf(instdir, sizeof instdir, "cmake-%s", preset);
 		ts_arg(&v, ci_cmake());
 		ts_arg(&v, "--install");
 		ts_arg(&v, instdir);
+		if (out) {
+			ts_arg(&v, "--prefix");
+			ts_arg(&v, ci_abspath(out, absout, sizeof absout));
+		}
 		if (config) {
 			ts_arg(&v, "--config");
 			ts_arg(&v, config);
@@ -402,7 +491,7 @@ static int do_qemu(int argc, char **argv) {
 
 typedef struct
 {
-	char preset[64], cc[16], plat[64];
+	char preset[64], cc[512], plat[64];
 	int no_test;
 	int vendor_cc;
 } LocJob;
@@ -569,11 +658,11 @@ static const struct {
 				"-DMCC_ENABLE_CROSS=ON;-DMCC_CROSS_TARGETS=x86_64-osx,arm64-osx",
 				OS_MAC | OS_LINUX, OS_LINUX},
 		{"pe", "-DMCC_CONFIG_MINGW=ON",
-				"no PE validator on a Darwin host (pe-wine-conformance needs "
-				"wine, pe-native-conformance needs a WIN32 host)",
+				"no PE validator on this host (pe-wine-conformance needs wine, "
+				"pe-native-conformance needs a WIN32 host)",
 				"-DMCC_ENABLE_CROSS=ON;"
 				"-DMCC_CROSS_TARGETS=i386-win32,x86_64-win32,arm64-win32",
-				OS_WIN | OS_LINUX, OS_LINUX},
+				OS_WIN | OS_LINUX | OS_MAC, OS_LINUX | OS_MAC},
 		{"asm-off", "",
 				"asm axis: the assembler is always compiled in; -fno-asm "
 				"disables the `asm` keyword at runtime, as in gcc. .s files "
@@ -602,6 +691,7 @@ static const struct {
 		{"macos-arm64-clang", "dynamic"},
 		{"macos-arm64-clang", "sanitize"},
 		{"macos-arm64-clang", "macho"},
+		{"macos-arm64-clang", "pe"},
 		{"macos-arm64-gcc", "dynamic"},
 		{"macos-arm64-gcc", "sanitize"},
 		{"windows-x86_64-msvc", "dynamic"},
@@ -699,6 +789,26 @@ static const struct {
 static int loc_have(const char *name) {
 	char buf[4096];
 	return host_find_tool(name, ".exe", buf, sizeof buf);
+}
+
+static int loc_gnu_gcc(char *out, size_t n) {
+	static const char *CAND[] = {
+			"gcc-16", "gcc-15", "gcc-14", "gcc-13", "gcc-12",
+			"gcc-11", "gcc-10", "gcc", "cc", 0};
+	int i;
+	for (i = 0; CAND[i]; i++) {
+		char path[4096], ver[256];
+		if (!host_find_tool(CAND[i], ".exe", path, sizeof path))
+			continue;
+		ver[0] = 0;
+		if (ts_cc_probe(path, NULL, 0, ver, sizeof ver) != 0)
+			continue;
+		if (strstr(ver, "clang") || strstr(ver, "Clang"))
+			continue;
+		snprintf(out, n, "%s", path);
+		return 1;
+	}
+	return 0;
 }
 
 static void loc_setcc(const char *cc) {
@@ -876,7 +986,23 @@ static int do_local_stage2(void) {
 	}
 	snprintf(stagedir, sizeof stagedir, "stage1/%s", HOSTS[h].name);
 	printf("\n==== local stage1 -> stage2 self-host (%s) ====\n", HOSTS[h].name);
+#if MCC_HOST_DARWIN
+	if (!strcmp(HOSTS[h].hostcc, "gcc")) {
+		char gnugcc[512];
+		if (loc_gnu_gcc(gnugcc, sizeof gnugcc)) {
+			loc_setcc(gnugcc);
+		} else {
+			fprintf(stderr, "ci local (stage2): host %s wants gcc but no GNU "
+					"gcc is installed (/usr/bin/gcc is an Apple clang shim)\n",
+					HOSTS[h].name);
+			return 2;
+		}
+	} else {
+		loc_setcc(HOSTS[h].hostcc);
+	}
+#else
 	loc_setcc(HOSTS[h].hostcc);
+#endif
 	{
 		char *a[4];
 		int na = 0;
@@ -889,8 +1015,17 @@ static int do_local_stage2(void) {
 			return 1;
 		}
 	}
-	snprintf(mccpath, sizeof mccpath, "%s/bin/mcc%s", stagedir,
-			MCC_HOST_WIN32 ? ".exe" : "");
+	{
+		char absstage[4096];
+		snprintf(mccpath, sizeof mccpath, "%s/bin/mcc%s",
+				ci_abspath(stagedir, absstage, sizeof absstage),
+				MCC_HOST_WIN32 ? ".exe" : "");
+	}
+	if (host_stat(mccpath, NULL, NULL, NULL)) {
+		fprintf(stderr, "ci local (stage2): stage1 reported success but %s "
+				"does not exist -- the install prefix did not take\n", mccpath);
+		return 1;
+	}
 	for (f = 0; FEATURES[f].name; f++) {
 		char *a[3];
 		int na = 0, rc;
@@ -983,7 +1118,7 @@ static int do_local(int argc, char **argv) {
 	do {                                              \
 		if (n_test < LOC_MAX) {                         \
 			snprintf(test[n_test].preset, 64, "%s", (P)); \
-			snprintf(test[n_test].cc, 16, "%s", (CC));    \
+			snprintf(test[n_test].cc, sizeof test[n_test].cc, "%s", (CC)); \
 			test[n_test].no_test = (NT);                  \
 			test[n_test].vendor_cc = (VC);                \
 			n_test++;                                     \
@@ -998,7 +1133,7 @@ static int do_local(int argc, char **argv) {
 	do {                                               \
 		if (n_dist < LOC_MAX) {                          \
 			snprintf(dist[n_dist].preset, 64, "%s", (P));  \
-			snprintf(dist[n_dist].cc, 16, "%s", (CC));     \
+			snprintf(dist[n_dist].cc, sizeof dist[n_dist].cc, "%s", (CC)); \
 			snprintf(dist[n_dist].plat, 64, "%s", (PLAT)); \
 			dist[n_dist].vendor_cc = (VC);                 \
 			n_dist++;                                      \
@@ -1036,12 +1171,17 @@ static int do_local(int argc, char **argv) {
 								 PS_SUPER[i]);
 		}
 	} else if (!strcmp(os, "Darwin")) {
+		char gnugcc[512];
+		int have_gnu = loc_gnu_gcc(gnugcc, sizeof gnugcc);
 		for (i = 0; PS_DARWIN[i]; i++) {
 			if (have_clang)
 				LOC_TEST(PS_DARWIN[i], "clang", 0, 0);
-			if (have_gcc)
-				LOC_TEST(PS_DARWIN[i], "gcc", 0, 0);
-			if (!have_clang && !have_gcc)
+			if (have_gnu)
+				LOC_TEST(PS_DARWIN[i], gnugcc, 0, 0);
+			else
+				LOC_SKIP("%s CC=gcc - no GNU gcc (/usr/bin/gcc is an Apple "
+								 "clang shim); brew install gcc", PS_DARWIN[i]);
+			if (!have_clang && !have_gnu)
 				LOC_SKIP("%s - no C compiler (need clang or gcc)", PS_DARWIN[i]);
 		}
 	} else if (!strcmp(os, "Windows")) {
@@ -1062,8 +1202,13 @@ static int do_local(int argc, char **argv) {
 			if (qfound[i]) {
 				snprintf(p, sizeof p, "qemu-%s", QARCH[i]);
 				LOC_TEST(p, "", 0, 0);
+			} else if (have_docker) {
+				LOC_SKIP("qemu-%s - %s not found; run it in Docker: "
+								 "cmake --build <dir> --target qemu-docker",
+								 QARCH[i], QBIN[i]);
 			} else {
-				LOC_SKIP("qemu-%s - %s not found (install qemu-user)",
+				LOC_SKIP("qemu-%s - %s not found (install qemu-user, or "
+								 "install docker for the qemu-docker target)",
 								 QARCH[i], QBIN[i]);
 			}
 		}
@@ -1123,7 +1268,10 @@ static int do_local(int argc, char **argv) {
 				 have_vmingw ? " (+ vendored winlibs)" : "");
 	printf("  musl sysroot    : %s   (vendor/musl-sysroot)\n",
 				 have_vmusl ? "yes" : "no");
-	printf("  docker          : %s\n", have_docker ? "yes" : "no");
+	printf("  docker          : %s%s\n", have_docker ? "yes" : "no",
+				 (have_docker && strcmp(os, "Linux"))
+						 ? "   (linux cells: --target ci-docker, qemu-docker)"
+						 : "");
 	printf("  qemu-user       : %d arch(es)\n", n_qemu);
 	printf("  --------------------------------------------------------\n");
 	printf("  test presets    : %d\n", n_test);

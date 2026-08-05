@@ -6276,8 +6276,29 @@ if(DOCKER_EXE)
                 ${_qd_env} mcc-qemu
         USES_TERMINAL VERBATIM
         COMMENT "qemu-user cross matrix in Docker (image mcc-qemu)")
+
+    set(MCC_CI_DOCKER_PRESET "linux-gcc" CACHE STRING
+        "CMake preset the `ci-docker` target runs inside the Linux CI image")
+    set(MCC_CI_DOCKER_PLATFORM "" CACHE STRING
+        "docker --platform for `ci-docker` (e.g. linux/amd64 to get 32-bit wine \
+and the x86 PE cells on an arm64 workstation; empty = native)")
+    set(_cid_plat "")
+    if(MCC_CI_DOCKER_PLATFORM)
+        list(APPEND _cid_plat --platform "${MCC_CI_DOCKER_PLATFORM}")
+    endif()
+    add_custom_target(ci-docker
+        COMMAND "${DOCKER_EXE}" build ${_cid_plat} -t mcc-ci-linux
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/docker"
+        COMMAND "${DOCKER_EXE}" run --rm ${_cid_plat}
+                -e "PRESET=${MCC_CI_DOCKER_PRESET}"
+                -v "${CMAKE_CURRENT_SOURCE_DIR}:/work"
+                -v "${MCC_VENDOR_DIR}:/vendor"
+                -v "${MCC_DIST_DIR}:/dist"
+                mcc-ci-linux
+        USES_TERMINAL VERBATIM
+        COMMENT "Linux CI preset ${MCC_CI_DOCKER_PRESET} in Docker (image mcc-ci-linux)")
 else()
-    message(STATUS "mcc: docker not found — `qemu-docker` target unavailable")
+    message(STATUS "mcc: docker not found — `qemu-docker`/`ci-docker` targets unavailable")
 endif()
 
 get_property(_mcc_all_tests DIRECTORY PROPERTY TESTS)

@@ -114,6 +114,12 @@ jobs:
         run: |
           brew untap aws/tap 2>/dev/null || true
           brew install cmake ninja
+      - name: install Rosetta 2 + wine (macos pe cell drives pe-wine-conformance)
+        if: ${{ startsWith(matrix.runner, 'macos') && matrix.feature == 'pe' && !matrix.skip }}
+        run: |
+          sudo softwareupdate --install-rosetta --agree-to-license
+          HOMEBREW_CASK_OPTS=--no-quarantine brew install --cask wine-stable || true
+          wine --version || true
       - name: set up MSVC dev shell + ninja (windows)
         if: startsWith(matrix.runner, 'windows')
         uses: TheMrMilchmann/setup-msvc-dev@v4
