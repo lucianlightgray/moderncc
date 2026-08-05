@@ -22,6 +22,15 @@ jobs:
           choco install ninja -y
           choco install procdump -y
       - uses: ./.github/actions/ci
+      - name: exclude the workspace from Defender
+        shell: pwsh
+        run: |
+          # The stage2 mcc.exe now loads correctly (its TLS directory is
+          # base-relocated; wine executes the very image this runner refused),
+          # but CreateProcess still answers "Access is denied" 370ms after the
+          # link -- the runner's realtime scanner blocking a fresh unsigned
+          # binary. Exclude the workspace the way most Windows CI does.
+          Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE"
       - name: dist msvc arm64 (crashes at the stage2 self-host)
         continue-on-error: true
         run: mcc-ci dist --preset dist-msvc --plat windows-arm64-msvc --version dbg --no-bench
