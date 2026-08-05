@@ -33,9 +33,11 @@ esac
 INC="-I/usr/include/i386-linux-gnu -I/work/src -I/work/include -I/work/src/formats
      -I/work/src/objfmt -I/work/src/arch/i386 -L/usr/lib/i386-linux-gnu -L/lib/i386-linux-gnu"
 
-MCC_JIT=1 /work/b/mcc -B/work/b $INC -O1 --stats -run src/mcc.c \
+# -DMCC_JIT_TLS_MAX: the whole TLS of the inner mcc (its own -run slab + the
+# per-worker _Thread_local optimizer gates) must fit the 64K slab of the outer mcc.
+MCC_JIT=1 /work/b/mcc -B/work/b $INC -O1 --stats -DMCC_JIT_TLS_MAX=4096 -run src/mcc.c \
     -B/work/b $INC -c src/mcc.c -o /work/jit1.o >/work/o1 2>/work/e1 || true
-MCC_JIT=0 /work/b/mcc -B/work/b $INC -O1 --stats -run src/mcc.c \
+MCC_JIT=0 /work/b/mcc -B/work/b $INC -O1 --stats -DMCC_JIT_TLS_MAX=4096 -run src/mcc.c \
     -B/work/b $INC -c src/mcc.c -o /work/jit0.o >/work/o0 2>/work/e0 || true
 
 grep -q "error:" /work/e1 && { echo "FAIL: MCC_JIT=1 run errored:"; grep "error:" /work/e1 | head -3; exit 1; }

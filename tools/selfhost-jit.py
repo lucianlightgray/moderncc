@@ -102,7 +102,11 @@ def main():
         print(f"selfhost-jit: {mcc} --jit -O13 -run src/mcc.c -> inner -c workload  "
               f"knobs={sys.argv[3:] or '(none)'}")
         cap = win
+        # The inner mcc's whole TLS (its own -run slab plus the optimizer's
+        # per-worker _Thread_local gates) must fit the OUTER mcc's 64K slab,
+        # so the inner gets a token-sized slab -- it never -runs anything.
         r = subprocess.run([mcc, "--jit", "-O13", *incs, *brt,
+                            "-DMCC_JIT_TLS_MAX=4096",
                             "-run", mccsrc, *inner_inc, "-c", wl, "-o", out],
                            cwd=root, env=env,
                            capture_output=cap, text=cap)

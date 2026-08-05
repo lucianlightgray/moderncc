@@ -1435,7 +1435,14 @@ ST_FUNC size_t host_pagesize(void) { MCC_TRACE("enter\n");
 }
 
 #if defined(__linux__)
+/* Overridable because a self-hosted mcc cannot fit otherwise: a -run guest's
+   TLS must fit this slab, and a guest mcc carries its own equally-sized slab
+   plus the optimizer's per-worker TLS on top. Harnesses that -run src/mcc.c
+   compile the inner mcc with a small -DMCC_JIT_TLS_MAX; the inner never hosts
+   a -run guest of its own, so its slab only has to exist, not to be large. */
+#ifndef MCC_JIT_TLS_MAX
 #define MCC_JIT_TLS_MAX 65536
+#endif
 static _Alignas(64) __thread unsigned char mcc_jit_tls_slab[MCC_JIT_TLS_MAX];
 
 ST_FUNC MAYBE_UNUSED unsigned char *host_run_tls_slab_base(void) { MCC_TRACE("enter\n");
