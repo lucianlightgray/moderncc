@@ -5401,6 +5401,20 @@ checking, which is where a regression would matter. The suppressed error-path le
 are real but bounded (the longjmp path frees `stk_data` slots only); auditing them
 one by one is open, low priority.
 
+Two shapes the error window did NOT cover, found on the next run:
+
+- **`mcc_run_tls_seed` really leaked.** The thread-seed snapshot from `26881521` is
+  module-level (so `mcc_run_thr_start` can reach it) and nothing state-owned freed
+  it — every `-run` of a TLS-using program reported 8 bytes at `mccrun.c` under
+  MCC_DIAG (`exec/builtins`, `bound_global`, `bound_test_b`; runtime bound errors
+  are `rt_printf`, not `mcc_error`, so no error taint). `mcc_run_free` now frees it.
+- **Embed-JIT recompiles make the window meaningless.** Recompile states nest inside
+  the running state and their intent/KGC registries are retained for the process
+  lifetime; `exec-zerobss/run_atexit` dumped 538,880 "leaked" bytes and then a
+  *negative* `mem_leak=` from the overlap. `mccjit_recompile_common` now taints the
+  window like a compile error does. A per-state (rather than process-window) leak
+  accounting would measure through JIT activity honestly; open, low priority.
+
 ### Self-hosting under `-run` and the TLS slab arithmetic
 
 `selfhost-jit` died with `mccrun: TLS size 65976 exceeds -run slab`. The arithmetic:
