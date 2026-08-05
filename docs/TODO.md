@@ -437,7 +437,7 @@ host-native self-host unmeasurable on this machine.
 | W1 | **`arm64-osx` and `x86_64-osx` runtime A/B and self-host** — **the A/B half is done** | Mach-O will not execute here at all. **Closed on 2026-08-03 for the differential**: the macOS arm64 host ran `tools/c2_equiv.sh` on both keys at forced `-O0`/`-O1`/`-O2`/`-O3`, eight cells, all `differential: NONE`, and the whole byte gap on both keys measures `[rir-prod] fallback` per body — see the macOS item under **For the Windows and macOS hosts**. ~~**Still open on that host: the full `ctest` suite and `o0_ab.sh`**~~ — **both closed 2026-08-05**: four full preset runs (`macos`/`macos-cross` x clang/gcc-16), all 100%, and `o0_ab.sh` run and cross-checked against a Linux run at the same HEAD. See **The macOS host reading** below. **W1 is closed.** |
 | W2 | **`arm64-win32`, `arm-win32`, `arm-wince` execution** | wine on an x86_64 host runs x86 PE only; ARM and ARM64 PE do not load. Three keys, 47 divergences between them, never executed. |
 | W3 | **`selfhost-fixpoint-O3` on macOS** | Recorded as *"green again by side effect, and the defect underneath it was never found… treat this as latent, not fixed."* **Closed 2026-08-05**: `selfhost-fixpoint-O3` passes on the macOS arm64 host in both preset configurations, as do the `-O1`/`-Os`/`-gates`/`-memmodel-O2`/`-memmodel-O3` siblings. It is fixed, not dormant. One caveat carried forward: that was a plain preset run, not the 3-way-concurrent stress that reproduced the default-`-O` bimodality, so the stress re-run is still worth doing. |
-| W4 | **Windows host stage2 (`pe`, `sanitize`, `dynamic`)** | The three reds at the P5 merge were closed by raising `SizeOfStackReserve` to 8MB, which is present at `src/objfmt/mccpe.c:738` and verified by reading. The *stack-overflow behaviour it fixes* needs a real 1MB-default PE process to confirm; wine's stack handling is not the same test. |
+| W4 | ~~**Windows host stage2 (`pe`, `sanitize`, `dynamic`)**~~ — **CLOSED 2026-08-05** | The 8MB `SizeOfStackReserve` (`src/objfmt/mccpe.c:738`) is now confirmed on real hardware, not just by reading. The `stage2` preset (stage1 = `cmake-release/mcc.exe`) had that mcc PE-link stage2 with its own linker and ran the full 8458-cell suite (100%, 0 failures) under a real 1MB-default PE process — no stack overflow, no `0xC0000005`, no `0xC00000FD`. `sanitize-msvc` and the msvc/dist-msvc PE builds are all green too. See the completed preset-sweep section below. |
 | W5 | **mcc cannot self-host on Windows arm64** | Still open, still unreachable. Stage1 mcc takes an access violation (`0xC0000005`) on `lib/atomic.c`, `lib/alloca.S`, `lib/alloca-bt.S`, `lib/builtin.c`. Host ABI — varargs, `alloca`, stack probe — and it needs a Windows arm64 machine. |
 | W6 | **Re-bank `verify-baseline` — now moot, record the closure** | The prediction that `x86_64-darwin.txt` and `x86_64-win32.txt` needed re-banking on their own hosts is **dead**: P5 deleted all four files and `tests/ast/verify-baseline/` no longer exists. Nothing to do; do not carry it forward. |
 | W7 | **The external suites cannot be run here at all** | `cmake-release` does not exist and no gcc/llvm test tree is vendored, so nothing under **External suites** or **Vector types** could be checked on this host. **Partly answered upstream**: `214ed40f` re-ran the whole tree and reports 82.6/82.4 over 20,513 tests — see **The eight-cluster sweep**. The gap that remains is that this host still cannot reproduce it. |
@@ -453,10 +453,11 @@ stashes them on the VLA-ref sym as `sym->vla_array_str` (`src/mccgen.c:8649`), a
 `type.t & VT_VLA` -- so the free belongs wherever a VLA-ref sym is retired with its
 type still in hand, not in the generic `sym_free`. Miscompile-free; low severity.
 
-**W4 and W5 above are live work on the Windows host — see the section below.** The
-preset sweep already closed the 8MB host-exe stack reserve and the `_WIN32_WINNT`
-0x0600 floor; `stage2` is listed there as not started, which is exactly W4. Do not
-open a second front on either.
+**W4 is closed (2026-08-05); W5 remains, and needs Windows-on-ARM hardware this host
+does not have.** The completed preset sweep below ran `stage2` — exactly W4 — to a
+green 8458-cell board on a real 1MB-default PE process, so the 8MB stack reserve is
+confirmed, not just read. W5 (mcc self-host on Windows arm64, `0xC0000005` on
+`lib/atomic.c`/`alloca.S`/`builtin.c`) is untouched and unreachable here.
 
 ## The macOS host reading — W1 and W3 closed, `run-tier`'s Darwin branch executed (2026-08-05)
 
@@ -796,14 +797,28 @@ failure shape the script's own sysroot guard was written for.
 Still to do: re-bank `tests/ast/o0-baseline/` at HEAD on an x86_64 Linux host —
 neither this Mac nor an emulated container should be the machine that banks it.
 
-## Open — the Windows-host preset sweep, interrupted by a reboot (2026-08-03)
+## Closed — the Windows-host preset sweep completed 2026-08-05 at `740da411`
 
-A full presets-x-tests sweep on the Windows x86_64 host (scoop clang MSVC-ABI as default CC), four host-build defects fixed and pushed: the `_WIN32_WINNT` 0x0600 floor (SRWLocks), the 8MB host-exe stack reserve (mcc-ejboot 0xC00000FD), the diagnostics `mcc_p` skip under MSVC-ABI clang, and gcc discovery preferring vendored winlibs over CLion's bundle (whose clang-built libpthread.a references `__intrinsic_setjmpex` its GNU runtime never defines — probe-linked now, do not re-diagnose).
+The full presets-x-tests sweep on the Windows x86_64 host (VS 18 `cl.exe` 19.51 for
+the MSVC family, scoop winlibs mingw gcc 16.1.0 for the GNU/mingw family) is **done,
+every remaining preset run at the pushed HEAD `740da411`**. The four host-build
+defects from the pre-reboot run remain fixed and needed no rework: the `_WIN32_WINNT`
+0x0600 floor (SRWLocks), the 8MB host-exe stack reserve (mcc-ejboot 0xC00000FD), the
+diagnostics `mcc_p` skip under MSVC-ABI clang, and gcc discovery preferring vendored
+winlibs over CLion's bundle (whose clang-built libpthread.a references
+`__intrinsic_setjmpex` its GNU runtime never defines — probe-linked, do not re-diagnose).
 
-State when the machine went down: `cross`/`debug`/`release`/`sanitize`/`cst` green at 8160-8184 each, on the pre-rebase base. Still to run, all on the pushed HEAD:
+Results, all at `740da411`, **zero real regressions across every preset**:
 
-- `matrix` — clean rebuild was in flight when the reboot killed it; `rm -rf cmake-matrix` and rerun (config log should print the winlibs gcc, not CLion's).
-- `diagnostics` — rerun with the mcc_p skip; everything cascaded from that one link before.
+- `matrix` — rebuilt clean (`rm -rf cmake-matrix`; config log printed the winlibs
+  gcc, not CLion's). The superbuild's four sub-builds each ran a full ctest and every
+  one was **100%**: gcc-native 8478, gcc-cross 8458, clang-native 8458, clang-cross
+  8478 — 0 failures anywhere.
+- `diagnostics` (`-DMCC_DIAG=ON`, cl 19.51, the `mcc_p` skip in place) — full 8418-cell
+  ctest, **green except the 23 `star_vla_prototype` cells**, which is *exactly* the
+  documented MCC_DIAG-only tokstr leak (see the parity-sweep-leak note above): one
+  test failing across all 23 exec-optimization variants, caught only under MCC_DIAG,
+  miscompile-free. 643 skips, all the known-benign host classes.
 - ~~`msvc`~~ — **green on 2026-08-04** at `583acfc3` + the shadow-iv bash fix: full
   suite passes with only the expected skips (no cross sysroots, no docker, macho).
   Two Windows-host defects closed on the way: `#embed`'s `S_ISREG` (UCRT has no
@@ -814,8 +829,43 @@ State when the machine went down: `cross`/`debug`/`release`/`sanitize`/`cst` gre
   asking that sh via cygpath — a scoop shim dir holds no bash.exe) and prepends
   its directory to the test PATH, since bare bash.exe does not bring its own
   usr/bin along.
-- `sanitize-msvc` (VS 18 is installed), `mingw`, `stage2` (stage1 = the release mcc), `dist-mingw`, `dist-msvc` — not started.
-- Re-verify one full suite at the final HEAD: the green five above tested the tree before ~30 upstream commits landed mid-batch.
+- `sanitize-msvc` (`MCC_BUILD_SANITIZE=ON`, MSVC / VS generator + ASAN) — 8420 cells,
+  **7776 passed / 1 failed / 643 skipped**, and the one failure
+  (`cli/pragma_comment_lib`) is a `-j 8` parallel-run flake — the per-test `_hccmd.sh`
+  working-dir script raced under heavy concurrent load and the isolated re-run passes.
+  Same `-j` contention class this file already notes for the `selfhost-*` family, not
+  a codegen defect. `star_vla_prototype` **passes** here (correct for a non-DIAG build).
+- `mingw` (host winlibs mingw gcc, vendored winlibs target toolchain already present) —
+  **100% of 8458**, 0 failures, 669 skips.
+- `stage2` / **W4** (`MCC_TOOLCHAIN_PROFILE=mcc`, stage1 = the existing
+  `cmake-release/mcc.exe` passed via `-DCMAKE_C_COMPILER`) — stage1 mcc self-compiled
+  every TU and **PE-linked stage2 with its own linker, no vcvars needed**; **100% of
+  8458**, 0 failures, 668 skips. **This closes the W4 stack-reserve question**: the
+  stage2 mcc.exe was PE-linked carrying the 8MB `SizeOfStackReserve`
+  (`src/objfmt/mccpe.c:738`) and then ran ~7790 compile/link/exec cells under a real
+  1MB-default PE process with **no stack overflow, no `0xC0000005`, no `0xC00000FD`**.
+  `star_vla_prototype` passes (non-DIAG). Aside worth a look under W8:
+  `selfhost-jit` **passed** (23.95s) in this Debug/mcc-built stage2 even though it is
+  on the expected-skip list and heap-corrupts (`0xC0000374`) in the release embed-jit
+  build.
+- `dist-mingw` (static, stripped, `MCC_BUILD_TESTS=OFF`) — configure + build + install
+  clean; the packaged ~4.7 MB driver compiles and runs a hello-world standalone (no
+  `-B` override needed; runtime auto-resolved).
+- `dist-msvc` (static, stripped) — configure + build + install clean to `dist/`; the
+  5.1 MB driver compiles and runs a hello-world from an isolated dir. "Static" here
+  means static against libmcc/tcc; the MSVC C runtime is linked dynamically
+  (`VCRUNTIME140.dll` + UCRT `api-ms-win-crt-*`) — expected `/MD` behaviour, there is
+  no ELF-style fully-static or symbol-strip on PE.
+- Re-verify one full suite at the final HEAD — **satisfied by the sweep itself**: every
+  preset above ran at `740da411`, so the pre-rebase "green five" no longer gates.
+
+**Harness note for the next Windows run:** running all of these concurrently (a
+matrix superbuild + full ctest runs of several other presets at once) oversubscribes
+the CPU badly and starves the slow docker/cross tail (`cross/shadow-iv-x86_64` 503s,
+`eh-unwind-riscv64-docker` 386s) and produced the one `pragma_comment_lib` `-j` flake.
+Docker-backed cells (`*-docker`, `pe-native-conformance`) **do** run and pass on this
+host. Serialize the heavy presets, or drop per-job `-j`, if a clean single-flake-free
+board matters more than wall-clock.
 
 Cut the AST recorder and the operation journal out and leave Replay_IR as the compiler's only intermediate representation. **Cut to Replay_IR** at the end of this file is the staged plan; P0 through P4 have landed and `MCC_RIR_PROD` now defaults to **1**, so Replay_IR is the production arena — read P4 before touching the arena, it is where the three wrong-code classes are written down. **`MCC_RIR_ONLY` now defaults to 1 as well**: the recorder's per-body decline verdict was the arena's admission gate, and with it bypassed the arena is adopted on its own pre-flight alone. That widened the optimized population by 6.3% of bodies; the eight defects the widening exposed are closed, the three `optfire` cells that died with the gates they measure are deleted, and the tree is green at **8252/8252**. **The next step is the deletion itself** — read P5, which is now a pure deletion that moves nothing by construction. Everything above P5 is the C2 work, which the plan no longer blocks on — the per-body fallback decision means a body Replay_IR cannot re-emit keeps the parser's bytes rather than blocking the deletion.
 
