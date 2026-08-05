@@ -441,6 +441,31 @@ Two bars, both required. **Replay** (`rir_verify`) replays a captured body again
 
 **The corpus is now all of `tests/`, not `tests/exec`.** 657 files against 277, and about twice the bodies per key — 1980–2521 against 1146–1318. `tests/exec` was never a wrong measurement, but it was a narrow one: it reads a 14-body gap where the whole tree reads 148, and it says `c2bytes=0` everywhere where the whole tree finds byte divergences on ten of twelve keys. `C2_CORPUS=exec` still produces the historical board for continuity; `C2_CORPUS=all` is the default and is the bar.
 
+## The stage2 `diagnostics` cell no longer runs in CI (2026-08-05)
+
+`diagnostics` (`-DMCC_DIAG=ON`) is now listed in `FEAT_CI_SKIP` in `tools/ci.c`, so
+`ci plan --job stage2` and `--job stage2-nightly` emit its cells with a `skip` reason
+instead of a build, and `ci local` (the all-features stage2 sweep) counts it as a skip.
+Both workflows already honour `matrix.skip`, so the cells still appear in the run with
+one `SKIP diagnostics: …` line each rather than vanishing. Reason banked in the plan
+output: *local instrumentation axis; the CI gate covers the same code through the other
+feature cells.*
+
+What is **not** skipped, and is how the axis is still exercised:
+
+- `mcc-ci stage2 diagnostics --mcc …` invoked by name — unchanged, no skip path.
+- The `diagnostics` and `linux-gcc-diagnostics` presets — unchanged; both are already
+  in `PS_EXEMPT`, so the preset-coverage gate stays quiet either way.
+- `ckconfig`/`MCC_DIAG` itself in `CMakeLists.txt:1207` — untouched.
+
+`ci plan --job stage2-gate` now hard-fails if a `FEAT_CI_SKIP` feature is ever added to
+`GATE_CELLS`, so the two tables cannot contradict each other silently. To put the cell
+back, delete its `FEAT_CI_SKIP` row — nothing else was changed.
+
+Standing risk of the skip: `MCC_DIAG` is the everything-on warning/debug build, and
+`525235f8` records it catching two real defects rather than noise. Nothing in CI reads
+those warnings now, so a diag-only regression will only surface on a local run.
+
 ## Handoff — state at this checkpoint
 
 **Re-measured at `da3a461b`, 2026-08-03: `ctest -j 8` registers 8254 cells and reads

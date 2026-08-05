@@ -594,6 +594,13 @@ static const struct {
 		{"windows-x86_64-msvc", "pe"},
 		{0, 0}};
 
+static const struct {
+	const char *feature, *why;
+} FEAT_CI_SKIP[] = {
+		{"diagnostics", "local instrumentation axis; the CI gate covers the "
+				"same code through the other feature cells"},
+		{0, 0}};
+
 static void ci_add_dflags(Argv *v, const char *dflags, char *buf, size_t bufsz) {
 	char *s, *p;
 	if (!dflags || !*dflags)
@@ -627,6 +634,14 @@ static int feature_find(const char *name) {
 		if (!strcmp(FEATURES[i].name, name))
 			return i;
 	return -1;
+}
+
+static const char *feature_ci_skip(const char *name) {
+	int i;
+	for (i = 0; FEAT_CI_SKIP[i].feature; i++)
+		if (!strcmp(FEAT_CI_SKIP[i].feature, name))
+			return FEAT_CI_SKIP[i].why;
+	return NULL;
 }
 
 static int do_stage1(int argc, char **argv);
@@ -864,6 +879,13 @@ static int do_local_stage2(void) {
 	for (f = 0; FEATURES[f].name; f++) {
 		char *a[3];
 		int na = 0, rc;
+		const char *ciskip = feature_ci_skip(FEATURES[f].name);
+		if (ciskip) {
+			printf("\n>>>> [stage2] %s\nSKIP stage2 %s: %s\n",
+					FEATURES[f].name, FEATURES[f].name, ciskip);
+			nskip++;
+			continue;
+		}
 		a[na++] = (char *)FEATURES[f].name;
 		a[na++] = (char *)"--mcc";
 		a[na++] = mccpath;
@@ -1687,14 +1709,16 @@ static int do_plan(int argc, char **argv) {
 			if (!allhosts && HOSTS[i].gate != 1)
 				continue;
 			for (f = 0; FEATURES[f].name; f++) {
-				if (!(FEATURES[f].self_os & HOSTS[i].osbit))
+				const char *ciskip = feature_ci_skip(FEATURES[f].name);
+				if (!(FEATURES[f].self_os & HOSTS[i].osbit) || ciskip)
 					plan_cell(&first,
 										"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
 										"\"msvcarch\":\"%s\",\"feature\":\"%s\","
 										"\"artifact\":\"stage1-%s\",\"skip\":\"%s\"",
 										HOSTS[i].name, HOSTS[i].arch, HOSTS[i].runner,
 										HOSTS[i].msvcarch, FEATURES[f].name,
-										HOSTS[i].name, FEATURES[f].blocker);
+										HOSTS[i].name,
+										ciskip ? ciskip : FEATURES[f].blocker);
 				else
 					plan_cell(&first,
 										"\"host\":\"%s\",\"arch\":\"%s\",\"runner\":\"%s\","
@@ -1719,6 +1743,13 @@ static int do_plan(int argc, char **argv) {
 				fprintf(stderr, "ci plan stage2-gate: %s cannot self-host %s "
 						"(%s) -- drop it from GATE_CELLS\n", GATE_CELLS[c].host,
 						GATE_CELLS[c].feature, FEATURES[fi].blocker);
+				return 2;
+			}
+			if (feature_ci_skip(GATE_CELLS[c].feature)) {
+				fprintf(stderr, "ci plan stage2-gate: %s is skipped in CI "
+						"(%s) -- drop it from GATE_CELLS or from FEAT_CI_SKIP\n",
+						GATE_CELLS[c].feature,
+						feature_ci_skip(GATE_CELLS[c].feature));
 				return 2;
 			}
 			plan_cell(&first,
