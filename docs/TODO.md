@@ -380,8 +380,34 @@ gates this file recorded as green and were not. **Two of the three closed in
    reproducing stress, 12/12 clean chains over the gates knob set, `-Os` and
    `-O3`, 3-way concurrent plus burn. The macOS arm64 `o1=3396582 o2=3396230
    o3=3396582` reading at `3486e3a4` has the same signature and the mechanism
-   is OS-agnostic (any malloc recycles) — re-run that cell on the macOS host
-   at this fix before carrying it forward as a separate defect.
+   is OS-agnostic (any malloc recycles) — ~~re-run that cell on the macOS host
+   at this fix before carrying it forward as a separate defect.~~
+   **Done 2026-08-05: the macOS half is closed, with a negative control.**
+
+   At the fix: **399 chains, 0 non-identical**, across default `-O`, `-O1`,
+   `-Os`, `-O3`, the 12-flag gates set and `memmodel-{O2,O3,Os}`, at concurrency
+   3, 6 and 10.
+
+   A zero on its own would prove nothing if the stress never reached the
+   condition on this host, so the run was paired with a twin built from
+   `git archive HEAD` with `5aa66d88`'s `src/mccast.c` hunk reverse-applied —
+   the *only* delta being the 12-line `ast_divmagic_invalidate` hook, its forward
+   declaration and its call site. **The defect reproduces on macOS arm64**:
+   **5 non-identical in 150 chains**, including **2 in 30** at exactly the
+   Windows-matching cell (default `-O`, 3-way concurrent), inside the recorded
+   "1-5 in 30". Strictly bimodal, always the same **−336** alternate object,
+   never any other value, and it never fired serially — the same signature as the
+   banked `o1=3396582 o2=3396230 o3=3396582` reading (−352 at that older HEAD)
+   and as Windows' ±192, the magnitude differing because this is arm64
+   divmagic-vs-`sdiv`.
+
+   Power, stated honestly: control 5/150 = 3.3%, fixed 0/399. Rule of three puts
+   the 95% upper bound on the fixed side at **0.75% (1 in 133)**; a residual at
+   1 in 500 would plausibly still read zero here. P(0 in 399 | 3.3%) = 1.3e-6;
+   Fisher exact one-sided p = **0.0015**. The supported claim is precise: *the
+   original failure mode, at the rate it actually occurred, is gone* — not that
+   the compiler is proven deterministic. Do not carry it forward as a separate
+   defect.
 
 8. ~~**`mcctest`/`mcctest-bcheck` fail against Apple clang 21 as the reference.**~~
    **CLOSED 2026-08-05 — both cells pass** on the macOS arm64 host against Apple
