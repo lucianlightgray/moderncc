@@ -435,8 +435,6 @@ PUB_FUNC void mcc_memcheck(int d) { MCC_TRACE("enter\n");
 		mem_max_size = 0;
 		mem_debug_chain = NULL;
 	}
-	if (0 == nb_states)
-		{ MCC_TRACE("br\n"); mcc_leakcheck_quiet = 0; }
 	HOST_SEM_POST(&mem_sem);
 }
 

@@ -1282,9 +1282,13 @@ enum mcc_token {
 
 ST_DATA struct MCCState *mcc_state;
 ST_DATA int mccjit_error_quiet;
-/* nonzero once a compile error has been diagnosed in the current MCC_DIAG
-   leak-check window: the error path longjmps past cleanup, so leak reports
-   would be expected noise rather than findings */
+/* nonzero once a compile error has been diagnosed (or an embed-JIT recompile
+   has run) in this process: the error path longjmps past cleanup and the
+   arena's deferred Syms are orphaned across windows, so every later MCC_DIAG
+   leak report in the process would be noise, not findings. Deliberately
+   never reset -- a window after the first error also inherits stale
+   accounting (its frees of earlier windows' blocks print a negative
+   mem_leak=), so per-window resetting cannot be made honest. */
 ST_DATA int mcc_leakcheck_quiet;
 
 #include "mcclog.h"
