@@ -5401,7 +5401,19 @@ checking, which is where a regression would matter. The suppressed error-path le
 are real but bounded (the longjmp path frees `stk_data` slots only); auditing them
 one by one is open, low priority.
 
-Two shapes the error window did NOT cover, found on the next run:
+Four shapes the error window did NOT cover, found on the next run. Two were real
+defects the instrumentation caught, not report noise:
+
+- **`-fmacro-eval` freed across allocators.** `host_spawn_ex` hands captured stdout
+  to `pp_macro_eval`, which frees it with `mcc_free`; the POSIX `host_slurp_fd` sat
+  in the libc `push_macro` region and allocated with plain `malloc` (the Windows
+  pipe reader already used `mcc_malloc`). Under MCC_DIAG that was an instant
+  "mcc_free check failed" `exit(1)` (`cli/macro_eval_recursive`); on any build it
+  was a cross-allocator free. The slurp goes through the mcc allocator now.
+- **`ir_cap_teardown` missed `ir_cap_raw`.** The teardown that exists precisely to
+  stop capture-cache leak reports freed `ops`/`vs`/`fc` but not the raw byte
+  buffer — 4096 bytes at `mccircap.c` on `exec-search*/led`, `grep`,
+  `translation_limits`, `switch_semantics`.
 
 - **`mcc_run_tls_seed` really leaked.** The thread-seed snapshot from `26881521` is
   module-level (so `mcc_run_thr_start` can reach it) and nothing state-owned freed
