@@ -4928,7 +4928,37 @@ if(MCC_BUILD_TESTS)
                     "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
         set_tests_properties(libtest-extra PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
+        # api_threaded.c drives mcc_setjmp/mcc_set_backtrace_func, which
+        # mccrun.c only compiles when the C-level MCC_TARGET_IS_HOST holds.
+        # The pointer-size check above cannot see an x86_64 compiler
+        # configured for an arm64 target (the Rosetta dist stage2, where
+        # mcc ignores clang's -arch), so ask the compiler itself whether it
+        # targets the configured MCC_CPU/MCC_TARGETOS.
+        include(CheckCSourceCompiles)
+        if(MCC_CPU STREQUAL "i386")
+            set(_mcc_run_api_arch "defined __i386__")
+        elseif(MCC_CPU STREQUAL "x86_64")
+            set(_mcc_run_api_arch "defined __x86_64__")
+        elseif(MCC_CPU STREQUAL "arm")
+            set(_mcc_run_api_arch "defined __arm__")
+        elseif(MCC_CPU STREQUAL "arm64")
+            set(_mcc_run_api_arch "defined __aarch64__")
+        else()
+            set(_mcc_run_api_arch "defined __riscv && defined __LP64__")
+        endif()
+        if(MCC_TARGETOS STREQUAL "WIN32")
+            set(_mcc_run_api_os "defined _WIN32")
+        elseif(MCC_TARGETOS STREQUAL "Darwin")
+            set(_mcc_run_api_os "defined __APPLE__")
+        else()
+            set(_mcc_run_api_os "!defined _WIN32 && !defined __APPLE__")
+        endif()
+        check_c_source_compiles("
+#if !(${_mcc_run_api_arch}) || !(${_mcc_run_api_os})
+#error the compiler does not target the configured MCC_CPU/MCC_TARGETOS
+#endif
+int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
+        if(MCC_RUN_API_IS_HOST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/api_threaded.c")
             add_executable(libmcc_test_mt tests/embed/api_threaded.c)
             target_link_libraries(libmcc_test_mt PRIVATE libmcc)
             target_include_directories(libmcc_test_mt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -4942,6 +4972,8 @@ if(MCC_BUILD_TESTS)
                         "-B${CMAKE_BINARY_DIR}"
                         "-I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
             set_tests_properties(libtest-mt PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        elseif(NOT MCC_RUN_API_IS_HOST)
+            mcc_skip_test(libtest-mt "the compiler does not target ${MCC_CPU}/${MCC_TARGETOS}: libmcc will not export the -run API (mccrun.c is MCC_TARGET_IS_HOST-gated)")
         endif()
     else()
         mcc_skip_test(libtest "mcc targets ${MCC_CPU} but runs on a ${CMAKE_SIZEOF_VOID_P}-byte host: the JIT run API (mcc_run/mcc_relocate) is compiled out")
