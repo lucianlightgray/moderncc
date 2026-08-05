@@ -4811,7 +4811,8 @@ if(MCC_BUILD_TESTS)
             add_test(NAME jit/selftest-search-live COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 $<TARGET_FILE:jit_selftest>)
             set_tests_properties(jit/selftest-search-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
-            if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC") OR
+            if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC"
+                AND NOT WIN32) OR
                (MCC_CPU STREQUAL "arm64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC"
                 AND NOT WIN32))
                 add_test(NAME regression/o4-aot-jit COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ci/regression_o4_aot_jit.sh" "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
