@@ -34,14 +34,32 @@ jobs:
       - name: dist msvc arm64 (crashes at the stage2 self-host)
         continue-on-error: true
         run: mcc-ci dist --preset dist-msvc --plat windows-arm64-msvc --version dbg --no-bench
-      - name: is it the embedded JIT? (MCC_JIT=0 vs MCC_JIT=1)
+      - name: capture ntdll loader snaps -- which import fails to resolve
         continue-on-error: true
-        shell: cmd
+        shell: pwsh
         working-directory: cmake-stage2-release
         run: |
-          set MCC_JIT=0
-          mcc.exe -c ..\runtime\lib\alloca.c -o alloca-jit0.o -B..\runtime\win32 -I..\runtime\include
-          echo MCC_JIT=0 rc=%ERRORLEVEL%
+          # exit moved to 0xC0000139 ENTRYPOINT_NOT_FOUND / 0xC0000135
+          # DLL_NOT_FOUND: the image loads now (TLS fixed) but a static import
+          # will not resolve on real arm64. Turn on FLG_SHOW_LDR_SNAPS (0x2)
+          # for this image via IFEO and run under cdb; the loader prints the
+          # exact DLL + entry point it cannot bind.
+          $ifeo = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\mcc.exe"
+          New-Item -Path $ifeo -Force | Out-Null
+          Set-ItemProperty -Path $ifeo -Name GlobalFlag -Value 0x2 -Type DWord
+          $cdb = @(
+            "C:\Program Files (x86)\Windows Kits\10\Debuggers\arm64\cdb.exe",
+            "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if ($cdb) {
+            & $cdb -g -G -c "q" mcc.exe -v 2>&1 |
+              Select-String -Pattern "LDR|not found|Snap|Unable|ntdll|msvcrt|kernel32|ERROR|failed" |
+              Select-Object -Last 60 | ForEach-Object { $_.Line } | Write-Host
+          } else {
+            Write-Host "no cdb; running bare for the exit code"
+            & .\mcc.exe -v; Write-Host "bare rc=$LASTEXITCODE"
+          }
+          Remove-ItemProperty -Path $ifeo -Name GlobalFlag -ErrorAction SilentlyContinue
       - name: why is CreateProcess denied? (exact error, CI/AppLocker logs, rename, debugger)
         if: always()
         continue-on-error: true
