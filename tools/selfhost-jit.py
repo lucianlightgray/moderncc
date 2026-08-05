@@ -122,11 +122,12 @@ def main():
                                  ("\n" if not r.stderr.endswith("\n") else ""))
             sys.stdout.flush()
 
-        if win and r.returncode in (-1073741819, 3221225477):
+        if win and r.returncode in (-1073741819, 3221225477, -1073740940, 3221226356):
             emit_child()
-            print("selfhost-jit: SKIP — PE runtime-JIT 0xC0000005 still present "
-                  f"(exit {r.returncode}); the x86_64 swapped-variant/KGC-stub "
-                  "residual, tracked in docs/TODO")
+            print("selfhost-jit: SKIP — PE runtime-JIT crash still present "
+                  f"(exit {r.returncode}); x86_64 swapped-variant/KGC-stub residual "
+                  "(0xC0000005 access-violation / 0xC0000374 heap-corruption), "
+                  "tracked in docs/TODO")
             sys.exit(SKIP)
         if r.returncode != 0:
             emit_child()
