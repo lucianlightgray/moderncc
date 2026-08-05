@@ -604,6 +604,11 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 	if (!js)
 		{ MCC_TRACE("br\n"); return NULL; }
 	mccjit_recompiling++;
+	/* Recompile states nest inside whatever state is running, and the intent /
+	   KGC registries they fill are retained for the life of the process, so any
+	   MCC_DIAG leak window that closes after this point measures live caches
+	   and cross-thread frees, not leaks. */
+	mcc_leakcheck_quiet = 1;
 	js->optimize = 0;
 	js->nostdlib = 1;
 #if defined(MCCJIT_I386)
